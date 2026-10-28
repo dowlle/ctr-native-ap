@@ -44,3 +44,144 @@ hand to put it there: the track record gained `named_block: 8` and
 `room_title: "Baby T Park"`, and its Trophy check moved from the generic slot
 code `35016300` to `35201600`. Nothing else in them changed. The paired
 validator accepts all three again.
+
+Track modes (#133 PR 3): `track-modes.json` is slot data the paired apworld
+emitted (`worlds/ctr/test/test_track_modes.py` helpers, seed 20261016) with
+`modes: [trophy, ctr, relic]`, two stages and a per-pad mode order. It holds
+the 18 retail tracks (all three modes, frozen Trophy, CTR Token Challenge and
+Time Trial codes) and three test packages whose pins name no real files:
+`tv-world` on named block 78 with CTR and Relic claimed (block offsets 0, 9
+and 6 to 8), the B+ `fixture-loop` with Trophy and Relic (generic slot 1), and
+the Relic-only `relic-loop` (no arcade, generic slot 2). Every pad with two or
+more modes has a `stage2:<physical>` record, and the plan declares
+`track_modes_v1`. `test-content-plan.cpp` checks the resolved modes, stages,
+codes and gate answers, refuses forged gates, records, modes and awards, and
+admits the same plan rewritten to one stage. The earlier fixtures are Trophy
+only and unchanged.
+
+Per-track check families (#133 PR 3b): `track-checks.json` and
+`track-checks-global.json` are slot data the paired apworld emitted
+(`worlds/ctr/test/test_track_checks.py` helpers, seeds 20261017 and 20261018,
+script `emit-track-checks-fixtures.py` in the PR 3b artifacts) with all three
+modes, two stages and a per-pad order, on three retail tracks (Crash Cove,
+Roo's Tubes, Slide Coliseum, small enough for the field mutations), Baby T Park
+1.0.2 on named block 8 (generic slot 1) and the B+ `fixture-loop` test package
+with letters and Wumpa claimed (generic slot 2, pins name no real files). The
+first has four podium rungs, per-track Reach 10 Wumpa and Lettersanity mode 2
+with two letters per CTR Challenge; the second has all five rungs, global
+Wumpa and Lettersanity mode 3. Both carry a `track_checks` record and the
+matching `podium_rungs_v1`, `wumpa_checks_v1` and `lettersanity_v1` features.
+`test-content-plan.cpp` checks the resolved rung, Wumpa and letter codes and
+the pooled letter items per pad, runs the field mutations on the first, and
+refuses forged settings, routes, letter draws and letter item rows. The
+earlier fixtures have no `track_checks` record and are unchanged.
+
+Cortex Vortex as a track and Relic Race Perfect checks (#133 PR 3c):
+`cortex-perfect.json` is slot data the paired apworld emitted
+(`worlds/ctr/test/test_cortex_relic_perfect.py` helpers, seed 20261017,
+script `emit-cortex-perfect-fixture.py` in the PR 3c artifacts) with all three
+modes, two stages and a per-pad order on Crash Cove, Oxide Station (Cortex
+Vortex's engine host) and Slide Coliseum, Cortex Vortex (origin
+`cortex_vortex`, no package row, no custom slot), Baby T Park 1.0.2 on named
+block 8 (no Relic Race), North Pole test data on named block 53 and the B+
+`fixture-loop` (both with a Relic Race; pins name no real files). It has
+`relic_perfect: true`, four rungs, per-track Wumpa and Lettersanity mode 3, so
+Cortex Vortex pools its own letter items 35010200 to 35010202.
+`test-content-plan.cpp` checks every pad's perfect code (retail frozen,
+35026005, block offset 10, generic slot), Cortex Vortex's frozen codes and
+host, runs the field mutations and refuses forged perfects, settings and
+Cortex Vortex records. The earlier fixtures have no perfect and are unchanged.
+
+Pool-only packs and the content-plan envelope (#133 PR 4a):
+`item-packs.json` is slot data the paired apworld emitted
+(`worlds/ctr/test/test_item_packs.py` helpers, seed 20261017, script
+`emit-item-packs-fixture.py` in the PR 4a artifacts) on Crash Cove, Papu's
+Pyramid and Slide Coliseum plus Baby T Park 1.0.2 and the B+ `fixture-loop`,
+with all three modes, four rungs and per-track Wumpa. Its plan carries
+`item_packs` (Progressive Starting Wumpa 3, Turbo Grant, Tizi Helper) with one
+ledger row each, and its envelope an explicit `death_link_send` 6,
+`warp_pad_item_display` 1, `ap_item_type_colors` false, `death_link` 3
+(race_loss) and the `trap_identities` block. `test-content-plan.cpp` checks
+the applied settings, the trap block (read like a normal room's, a malformed
+block silences traps without refusing the room), the absent-key defaults, runs
+the field mutations outside the trap block and refuses forged envelope values
+and pack records and rows. The earlier fixtures have none of these and are
+unchanged.
+
+Character packs (#133 PR 4b): `racers.json` is slot data the paired apworld
+emitted (`worlds/ctr/test/test_character_packs.py` helpers, seed 20261018,
+script `emit-racers-fixture.py` in the PR 4b artifacts) on Crash Cove, Papu's
+Pyramid, Slide Coliseum and N. Gin Labs plus Baby T Park 1.0.2 and the B+
+`fixture-loop`, with all three modes, four rungs and per-track Wumpa. Its plan
+carries `racers` (starting racer N. Gin, engine id 4, Remove Playable Oxide on,
+27 locks requested) with 14 racer rows, and four racer locks: Baby T Park on
+pad 19, `fixture-loop` on pad 15, Papu's Pyramid on pad 7 and N. Gin Labs on the Gem Cup seat
+104. Its envelope has `character_unlocks` true, `starting_stat_class` 3,
+`penta_stats` 1 and the editable-stats trio (2, 2, true).
+`test-content-plan.cpp` checks the applied settings, the lock mirror into
+`ctr_cfg.racer_lock` and `gem_cup_racer_lock`, runs the field mutations and
+refuses forged locks, records and envelope values. The earlier fixtures have
+none of these and are unchanged.
+
+Capability packs (#133 PR 4c): `capability.json` is slot data the paired
+apworld emitted (`worlds/ctr/test/test_capability_packs.py` helpers, seed
+20261018, script `emit-capability-fixture.py` in the PR 4c artifacts) on Crash
+Cove, Hot Air Skyway, Oxide Station and Slide Coliseum plus Baby T Park 1.0.2
+(`super_turbo_pads: true`, ruled generic terms only on 2026-10-18) and the
+B+ `fixture-loop` (`super_turbo_pads: true`, no ruling, so USF), with all three modes, rungs, per-track Wumpa, Lettersanity mode 2 and
+Relic Race Perfect checks. Its plan carries `capability` (shared Progressive
+Boost and Progressive Stats, medium, Shortcut Knowledge easy), the boost and
+stat chain rows, and a `boost` rank on every check whose race needs one. Its
+envelope has `progressive_boost` 1, `progressive_stats` 1 and the Progressive
+Stats trio (1, 1, false). `test-content-plan.cpp` checks the applied modes,
+the Trophy Race and CTR Token Challenge ranks per pad, the per-check ranks and
+the stated super turbo pads, runs the field mutations and refuses forged
+records, ranks outside the chain, rows and envelope values. A rank inside the
+chain is the apworld's logic and is read as given. The earlier fixtures have
+none of these and are unchanged; their package records state no
+`super_turbo_pads`.
+
+Global checks (#133 PR 4d): `global-checks.json` is slot data the paired
+apworld emitted (`worlds/ctr/test/test_global_checks.py` and
+`test_track_checks.py` helpers, seed 20261018, script
+`emit-global-checks-fixture.py` in the PR 4d artifacts; re-emitted for #133
+PR 5b by `emit-fixtures.py` in the PR 5b artifacts) on Crash Cove, Slide
+Coliseum, Tiger Temple and Cortex Vortex plus Baby T Park 1.0.2 and the B+
+`fixture-loop`, with all three modes, two stages, rungs and `wumpa: global`.
+Its plan carries `global_checks` (Itemsanity and Hit Character), the 22 use
+checks and 16 Hit checks with owner `global` and a route per Trophy Race and
+CTR Challenge (since #133 PR 5b a Hit guest too routes from the custom tracks
+and Cortex Vortex), and the 11 weapon rows. The
+room carries `hit_character_encounters` (block schema 3) with the content-plan
+Key fallback: the four boss guests, Penta Penguin (his wins are not in the
+plan) and Oxide. Its envelope has `hit_character` true.
+`test-content-plan.cpp` checks the itemsanity flag, the admitted Hit block and
+its fallback, runs the field mutations and refuses forged records, routes,
+rows, envelopes and fallbacks. The earlier fixtures have none of these and are
+unchanged.
+
+Cup hits (#133 PR 5b): `cup-hits.json` is slot data the paired apworld
+emitted (script `emit-fixtures.py` in the PR 5b artifacts, seed 20261021):
+Hit Character on, three cups over retail, custom (Baby T Park on its named
+block, the B+ `fixture-loop` on a generic slot) and Cortex Vortex legs,
+`one_lap_cups` and `cup_sweep_checks` on. Every Hit check, guests included,
+routes from every Trophy Race and CTR Challenge and from every cup leg (mode
+`cup`, the leg's `leg_id`), and `hit_character_encounters` carries
+`content_cups`: one draw order per cup name index. `test-content-plan.cpp`
+checks the parsed orders and the routes, refuses forged orders and routes,
+and refuses `content_cups` on a normal room. `cups.json` (Hit Character off)
+is unchanged.
+
+Boss garages (#133 PR 6): `bosses.json` and `bosses-final.json` are slot data
+the paired apworld emitted (script `emit-fixtures.py` in the PR 6 artifacts,
+seeds 20261022 and 20261023). `bosses.json`: bosses on with Boss Track
+Shuffle (four distinct certified venues), `oxide_goal` any_percent with
+Bosses Required Goal 2 and Gems Required Goal 2 (N. Oxide's Challenge carries
+the companion terms), the Final Challenge on Cortex Vortex with Sapphire
+relics, Progressive Boost and Hit Character on (each boss race is a Hit route
+for its boss). `bosses-final.json`: retail pairs, `oxide_goal` 101_percent
+with Oxide 1 optional, the Final Challenge on Oxide Station with
+total_relics, no Gem arm, two cups. `test-content-plan.cpp` checks the
+configuration the parser fills (Trophy doors, the Oxide garage's Keys, goal
+arms, Final Challenge venue, the drawn venues), refuses forged boss records
+and walks the boss records of `bosses-final.json`.

@@ -22,6 +22,7 @@
 #include "ap_net.h"     // ap_net_location_checked
 #include "ap_seedcfg.h" // ctr_cfg, ctr_cfg_active
 #include "ap_cortex_track.h" // AP_CortexSlotCode, AP_CV_SLOT_*
+#include "ap_content_plan.h" // ap_content_plan_start_count (#133 PR 4c)
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h> // CustomTrack_CupRaceRedirectActive
 #endif
@@ -125,6 +126,55 @@ static void AP_WinFactsNow(struct GameTracker *gGT, AP_WinRaceFacts *f)
 	}
 }
 
+// Received count of one item id on a content-plan room (#133 PR 4c): the
+// progression-flagged copies, as the win_logic leaves count them, plus the
+// plan's from-pool and additional starting copies (they arrive at location
+// -2, which the tally leaves out, and Archipelago's logic counts them).
+static int AP_WinEnvContentCount(void *user, long id)
+{
+	(void)user;
+	return AP_ItemIdTallyCount(&g_wl_tally, (long long)id) + ap_content_plan_start_count((int64_t)id);
+}
+
+// The cap leaf for a content-plan win check's boost rank (#133 PR 4c): the
+// pad's racer when it is locked, else any driveable racer, exactly the
+// win_logic definition (SCHEMA.md "The cap leaf"). An overflowed tally cannot
+// be trusted, so the rank counts as met and the 0.2.3 rule (a loss sends)
+// stays.
+static int AP_WinContentCapMet(int boost, int racer)
+{
+	AP_WinLogicEnv env;
+	if (boost <= 0)
+		return 1;
+	env = AP_WinEnvNow();
+	env.item_count = AP_WinEnvContentCount;
+	if (env.unreliable)
+		return 1;
+	return AP_WinLogicCap(0, &env, boost, racer);
+}
+
+// A content-plan race (#133 PR 4a) decides from its own pad: the room has no
+// win_logic block, and its pads are not the legacy destinations
+// AP_WinSetResolve reads from the level ID. Returns 0 when the race is not a
+// content-plan race on its pad's route, and the legacy path decides.
+static int AP_WinDecideContent(struct GameTracker *gGT, const char *when, AP_WinStakes *out)
+{
+	long code;
+	int needsItems, boost, racer;
+	char msg[192];
+
+	if (!AP_ContentWinFacts(&code, &needsItems, &boost, &racer))
+		return 0;
+	// The win's boost term (#133 PR 4c): out of logic until the rank arrives.
+	if (!AP_WinContentCapMet(boost, racer))
+		needsItems = 1;
+	*out = AP_WinStakesContentDecide(code, code > 0 && ap_net_location_checked((long long)code), needsItems);
+	snprintf(msg, sizeof msg, "[AP DEATH] race stakes %s: content-plan level=%d win=%ld -> %s (%s)\n",
+	         when, (int)gGT->levelID, code, out->stakes ? "a loss sends" : "exempt", AP_WinStakesWhyText(out->why));
+	AP_LogLine(msg);
+	return 1;
+}
+
 static AP_WinStakes AP_WinDecideNow(struct GameTracker *gGT, const char *when)
 {
 	AP_WinRaceFacts f;
@@ -135,6 +185,8 @@ static AP_WinStakes AP_WinDecideNow(struct GameTracker *gGT, const char *when)
 	char wins[48];
 	char msg[256];
 
+	if (AP_WinDecideContent(gGT, when, &s))
+		return s;
 	AP_WinFactsNow(gGT, &f);
 	n = AP_WinSetResolve(&f, AP_WinBitCode, set, &mode);
 	env = AP_WinEnvNow();

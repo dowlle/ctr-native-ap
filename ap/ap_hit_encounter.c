@@ -24,14 +24,18 @@ int AP_HitEncounterEnabled(void)
 }
 
 // The destination key for cursors: tracks 0..17 map to 0..17, cups 100..104 to
-// 18..22; anything else is -1.
-#define AP_HIT_DEST_KEYS (CTR_CFG_HIT_TRACK_COUNT + CTR_CFG_HIT_CUP_COUNT)
+// 18..22, content-plan cups 200..226 (#133 PR 5b) to 23..49; anything else is
+// -1.
+#define AP_HIT_DEST_KEYS (CTR_CFG_HIT_TRACK_COUNT + CTR_CFG_HIT_CUP_COUNT + CTR_CFG_HIT_CONTENT_CUP_COUNT)
 static int ap_hit_dest_key(int destLevelID)
 {
 	if (destLevelID >= 0 && destLevelID < CTR_CFG_HIT_TRACK_COUNT)
 		return destLevelID;
 	if (destLevelID >= 100 && destLevelID < 100 + CTR_CFG_HIT_CUP_COUNT)
 		return CTR_CFG_HIT_TRACK_COUNT + (destLevelID - 100);
+	if (destLevelID >= CTR_CFG_HIT_CONTENT_CUP_DEST &&
+	    destLevelID < CTR_CFG_HIT_CONTENT_CUP_DEST + CTR_CFG_HIT_CONTENT_CUP_COUNT)
+		return CTR_CFG_HIT_TRACK_COUNT + CTR_CFG_HIT_CUP_COUNT + (destLevelID - CTR_CFG_HIT_CONTENT_CUP_DEST);
 	return -1;
 }
 
@@ -44,6 +48,12 @@ const int *AP_HitEncounterOrder(int destLevelID)
 		return h->tracks[destLevelID].ids;
 	if (destLevelID >= 100 && destLevelID < 100 + CTR_CFG_HIT_CUP_COUNT)
 		return h->cups[destLevelID - 100].ids;
+	if (destLevelID >= CTR_CFG_HIT_CONTENT_CUP_DEST &&
+	    destLevelID < CTR_CFG_HIT_CONTENT_CUP_DEST + CTR_CFG_HIT_CONTENT_CUP_COUNT)
+	{
+		const int i = destLevelID - CTR_CFG_HIT_CONTENT_CUP_DEST;
+		return h->content_cup_present[i] ? h->content_cups[i].ids : NULL;
+	}
 	return NULL;
 }
 
@@ -300,23 +310,24 @@ void AP_HitEncounterResetDrawState(void)
 // Resolve/reuse the cup roster for this load. A NEW cup (pad entry, or an
 // invalid/mismatched snapshot) draws fresh with the cup's cursors; every
 // continuing leg and same-session retry copies the stored roster unchanged, so a
-// mid-cup unlock or hit cannot alter the active cup. Returns the AI seat count.
-int AP_HitCupSnapshotField(int cupID, int trackIndex, int player, int aiSeats,
-                           int *outIDs)
+// mid-cup unlock or hit cannot alter the active cup. `dest` is the wire
+// destination: 100 + cupID for a retail Gem Cup, 200 + name index for a
+// content-plan cup (#133 PR 5b). Returns the AI seat count.
+int AP_HitCupSnapshotFieldAt(int dest, int cupID, int trackIndex, int player, int aiSeats,
+                             int *outIDs)
 {
-	int kind = AP_HitCupLegKindPure(cupID, trackIndex, s_cupSnapshot.pending,
-	                                s_cupSnapshot.valid, s_cupSnapshot.cupID,
-	                                s_cupSnapshot.trackIndex);
+	int kind = AP_HitCupLegKindAtPure(dest, cupID, trackIndex, s_cupSnapshot.pending,
+	                                  s_cupSnapshot.valid, s_cupSnapshot.dest, s_cupSnapshot.cupID,
+	                                  s_cupSnapshot.trackIndex);
 	int i;
 
 	if (kind == AP_HIT_CUP_LEG_NEW)
 	{
-		// Wire cup keys are 100 + cupID.
-		int n = AP_HitEncounterDrawFresh(100 + cupID, player, aiSeats,
-		                                 s_cupSnapshot.ids);
+		int n = AP_HitEncounterDrawFresh(dest, player, aiSeats, s_cupSnapshot.ids);
 		s_cupSnapshot.count = n;
 		s_cupSnapshot.valid = 1;
 		s_cupSnapshot.cupID = cupID;
+		s_cupSnapshot.dest = dest;
 		s_cupSnapshot.pending = 0;
 	}
 	s_cupSnapshot.trackIndex = trackIndex;
@@ -324,6 +335,13 @@ int AP_HitCupSnapshotField(int cupID, int trackIndex, int player, int aiSeats,
 	for (i = 0; i < s_cupSnapshot.count; i++)
 		outIDs[i] = s_cupSnapshot.ids[i];
 	return s_cupSnapshot.count;
+}
+
+int AP_HitCupSnapshotField(int cupID, int trackIndex, int player, int aiSeats,
+                           int *outIDs)
+{
+	// Wire cup keys are 100 + cupID.
+	return AP_HitCupSnapshotFieldAt(100 + cupID, cupID, trackIndex, player, aiSeats, outIDs);
 }
 
 int AP_HitEncounterOnDamage(int victimEngineID, int damageType, unsigned flags)

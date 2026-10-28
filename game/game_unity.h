@@ -26,6 +26,7 @@
 #include "../ap/ap_charswap.h"   // character phase: hub picker + swap (#54/#209)
 #include "../ap/ap_tizi.h"       // Papu's Pyramid mask helper (#223)
 #include "../ap/ap_turbogrant.h" // in-race Turbo hand-out (#224)
+#include "../ap/ap_reserve_top_up.h"
 #include "../ap/ap_useful.h"     // queued one-shot useful grants
 #include "../ap/ap_pauserow.h"   // hub pause menu SELECT CHARACTER / TRACKER row wiring (#238)
 #include "../ap/ap_tracker.h"    // hub pause menu TRACKER row
@@ -389,12 +390,14 @@
 #include "../ap/ap_hooks_gates.c"
 #include "../ap/ap_hooks_apply_items.c"
 #include "../ap/ap_hooks_custom_content.c"
+#include "../ap/ap_hooks_seed_content.c" // #133 PR 7 Current Seed
 #include "../ap/ap_hooks_net.c"
 #include "../ap/ap_hooks_race.c"
 #include "../ap/ap_hooks_itemsanity.c"
 #include "../ap/ap_hooks_race_checks.c"
 #include "../ap/ap_hooks_frame.c"
 #include "../ap/ap_hooks_cup_sweeps.c"
+#include "../ap/ap_hooks_content_cups.c" // #133 PR 5 content-plan cups
 #include "../ap/ap_podium_skip.c"  // #285 podium-skip runtime (host-linkable)
 #include "../ap/ap_oxide_scene.c"  // #377 once-per-seed Oxide scene decision (host-linkable)
 #include "../ap/ap_boss_door_scene.c" // #377 once-per-hub boss-door scene decision (host-linkable)
@@ -423,6 +426,7 @@
 #include "../ap/ap_charswap.c"
 #include "../ap/ap_tizi.c"
 #include "../ap/ap_turbogrant.c"
+#include "../ap/ap_reserve_top_up.c"
 #include "../ap/ap_useful.c"
 #include "../ap/ap_statbar.c"
 #include "../ap/ap_spawn.c"

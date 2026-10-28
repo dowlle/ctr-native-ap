@@ -22,6 +22,18 @@ struct CustomTrackRaceContext
 	char levSha256[65];
 	char vrmSha256[65];
 	int crystal, timeLimitTicks;
+	// Content-plan track mode (#133 PR 3): 0 Trophy Race, 1 CTR Challenge,
+	// 2 Relic Race. trophyLocation is then the mode's first check code
+	// (Trophy, CTR, or the Sapphire tier). Crystal Challenges use 0.
+	int mode;
+	// Content-plan Cortex Vortex (#133 PR 3c): the bundled pair raced as a
+	// custom-bytes standalone race on host 13, with no custom slot.
+	int cortex;
+	// Content-plan cup (#133 PR 5): a leg of a four-leg cup. entryID is the
+	// cup's entry, trackID the leg's track, trophyLocation the cup's Win and
+	// laps this leg's laps. The context moves to the next leg at each leg
+	// advance (CustomRaceLatch_StageNext) and survives a restart.
+	int cup, leg;
 };
 
 struct CustomTrackRaceLatch
@@ -37,7 +49,8 @@ struct CustomTrackRaceLatch
 static inline int CustomRaceContext_IsPad(int id)
 {
 	return (id >= 0 && id <= 19) || id == 21 || id == 23 ||
-	       (id >= 100 && id <= 104);
+	       (id >= 100 && id <= 104) ||
+	       (id >= 1000 && id <= 1003); /* boss cup garages, AP_CONTENT_GARAGE_CUP_PAD (#133 PR 6b) */
 }
 
 static inline int CustomRaceContext_Key(const char *text, size_t size)
@@ -63,13 +76,17 @@ static inline int CustomRaceContext_Hash(const char text[65])
 
 static inline int CustomRaceContext_Valid(const struct CustomTrackRaceContext *c)
 {
-	return c && ((c->crystal == 0 && c->timeLimitTicks == 0 && c->hostLevelID >= 0 && c->hostLevelID < 18) ||
-               (c->crystal == 1 && c->retail == 1 && c->hostLevelID >= 18 && c->hostLevelID <= 24 &&
+	return c && ((c->crystal == 0 && c->timeLimitTicks == 0 && c->hostLevelID >= 0 && c->hostLevelID < 18 &&
+	              c->mode >= 0 && c->mode <= 2) ||
+               (c->crystal == 1 && c->retail == 1 && c->hostLevelID >= 18 && c->hostLevelID <= 24 && c->mode == 0 &&
                 c->laps == 1 && c->seedEpoch && c->timeLimitTicks > 0 && c->timeLimitTicks <= 576000)) &&
 	       CustomRaceContext_IsPad(c->physicalPad) &&
 	       c->returnHub >= 25 && c->returnHub <= 29 &&
-	       (c->retail == 0 || c->retail == 1) &&
-	       (c->retail ? c->slot == 0 : (c->slot >= 1 && c->slot <= 132)) &&
+	       (c->retail == 0 || c->retail == 1) && (c->cortex == 0 || c->cortex == 1) &&
+	       (!c->cortex || (!c->retail && !c->crystal && c->hostLevelID == 13)) &&
+	       (c->cup == 0 || c->cup == 1) && c->leg >= 0 && c->leg <= 3 && (c->cup || c->leg == 0) &&
+	       (!c->cup || (!c->crystal && c->mode == 0)) &&
+	       ((c->retail || c->cortex) ? c->slot == 0 : (c->slot >= 1 && c->slot <= 132)) &&
 	       c->laps >= 1 && c->laps <= 7 &&
 	       c->trophyLocation > 0 && c->trophyLocation <= INT64_C(9007199254740991) &&
 	       CustomRaceContext_Key(c->entryID, sizeof c->entryID) &&
@@ -82,6 +99,22 @@ static inline int CustomRaceLatch_Stage(struct CustomTrackRaceLatch *l,
 	                                    const struct CustomTrackRaceContext *c)
 {
 	if (!l || !CustomRaceContext_Valid(c) || l->active || l->pendingKind)
+		return 0;
+	l->pending = *c;
+	l->pendingKind = 2;
+	return 1;
+}
+
+// The next leg of the running cup (#133 PR 5): only while the current race
+// is a cup leg of the same seed, cup entry and pad, and only for the next leg.
+// The latch stays active; the next load request makes the staged leg current.
+static inline int CustomRaceLatch_StageNext(struct CustomTrackRaceLatch *l,
+	                                        const struct CustomTrackRaceContext *c)
+{
+	if (!l || !CustomRaceContext_Valid(c) || !l->active || l->pendingKind || !l->current.cup || !c->cup ||
+	    c->seedEpoch != l->current.seedEpoch || c->physicalPad != l->current.physicalPad ||
+	    c->leg != l->current.leg + 1 || strcmp(c->entryID, l->current.entryID) ||
+	    c->trophyLocation != l->current.trophyLocation)
 		return 0;
 	l->pending = *c;
 	l->pendingKind = 2;

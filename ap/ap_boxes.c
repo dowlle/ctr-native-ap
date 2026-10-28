@@ -17,6 +17,8 @@
 #include <platform/native_config.h> // g_config.itemBoxColours: the player's opt-out
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h> // the event race's own box verdict
+#include "ap_content_plan.h"      // #133 PR 4e: a content-plan custom track's box codes
+#include "ap_box_seat_logic.h"    // ... and which weapon crates they are seated on
 #endif
 
 // ============================================================================
@@ -53,6 +55,15 @@ struct ApBoxLive
 	AP_SpawnHandle spawn;
 	int            ghostTouched; // #354: drove through this ghost box, logged once
 	int            colour;       // AP_BOX_COLOUR_*: what the spawned model wears
+	// #133 PR 4e: a box seated on a custom track's own weapon crate. x/y/z are
+	// then that crate's position, the crate model's own origin, so the box
+	// spawns there without the ground-anchor lift. seatInst is the crate's
+	// instance, hidden while the box stands; seatFlags its draw and collision
+	// bits to give back, valid only while the pool generation is seatGen.
+	int              seated;
+	struct Instance *seatInst;
+	unsigned int     seatFlags;
+	int              seatGen;
 };
 
 static struct ApBoxLive s_live[AP_BOX_SLOTS_PER_TRACK];
@@ -258,7 +269,8 @@ static int AP_BoxesPadRoutePolicy(struct GameTracker *gGT, int level)
 	// pad with nothing to do with this encounter -- the same unrelated-pad
 	// problem the event race has below. A custom encounter override keeps the
 	// ungated route; gating it is a separate decision with its own descriptor.
-	if (CustomTrack_OxideFinalServing(level, gGT->bossID, isBoss))
+	if (CustomTrack_OxideFinalServing(level, gGT->bossID, isBoss) ||
+	    CustomTrack_GarageVenueServing(level, gGT->bossID, isBoss) >= 0) // #133 PR 6b
 		return AP_BoxPresentationFor(AP_BOX_ROUTE_OWN_PAD, -1, 0, 0, 0);
 #endif
 
@@ -329,11 +341,28 @@ static void AP_BoxesForget(void)
 		s_live[i].used = 0;
 		s_live[i].spawn = AP_SPAWN_INVALID;
 		s_live[i].ghostTouched = 0;
+		s_live[i].seated = 0; // its crate went with the pool
+		s_live[i].seatInst = 0;
 	}
 	s_liveCount = 0;
 	s_spawnGen = AP_Spawn_Generation();
 	s_modelWarned = 0;
 	s_spawnFull = 0;
+}
+
+// #133 PR 4e: give a seated box's weapon crate its draw and collision bits
+// back. Only inside the pool generation the seat was taken in: after a pool
+// reset the pointer may belong to another instance, and the crate is reborn
+// from its LEV entry anyway.
+static void AP_BoxesFreeSeat(int i)
+{
+	struct Instance *crate = s_live[i].seatInst;
+
+	if (s_live[i].seated && crate != 0 && s_live[i].seatGen == AP_Spawn_Generation())
+		crate->flags |= s_live[i].seatFlags;
+	s_live[i].seated = 0;
+	s_live[i].seatInst = 0;
+	s_live[i].seatFlags = 0;
 }
 
 static void AP_BoxesClear(void)
@@ -342,6 +371,7 @@ static void AP_BoxesClear(void)
 
 	for (i = 0; i < AP_BOX_SLOTS_PER_TRACK; i++)
 	{
+		AP_BoxesFreeSeat(i);
 		if (s_live[i].used && s_live[i].spawn != AP_SPAWN_INVALID)
 			AP_Spawn_Remove(s_live[i].spawn);
 		s_live[i].used = 0;
@@ -449,7 +479,17 @@ static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i)
 	// centre, so the row is passed through the shared spawn transform rather than
 	// copied into the matrix. Author-mode markers call the same helper, which is
 	// what makes a dropped box preview the height it will really stand at.
-	AP_BoxModel_SpawnPos(model, s_live[i].x, s_live[i].y, s_live[i].z, &pos);
+	if (s_live[i].seated)
+	{
+		// A seat is the weapon crate's own position, and the AP box wears the
+		// same crate model on an ordinary level, so it stands exactly where the
+		// crate stood (#133 PR 4e).
+		pos.x = s_live[i].x;
+		pos.y = s_live[i].y;
+		pos.z = s_live[i].z;
+	}
+	else
+		AP_BoxModel_SpawnPos(model, s_live[i].x, s_live[i].y, s_live[i].z, &pos);
 #if defined(CTR_NATIVE)
 	s_live[i].labelY = pos.y + AP_BoxModel_BaseOffsetY(model) + 28;
 #endif
@@ -482,6 +522,118 @@ static int AP_BoxesGeometryHere(const AP_BoxPlacement *scratch, int count, int l
 	return here;
 }
 
+#ifdef CTR_CUSTOM_TRACKS
+// The LEV entry of the `ordinal`-th weapon crate in instance-table order, or 0.
+static struct InstDef *AP_BoxesCrateDef(struct InstDef *defs, long count, long ordinal)
+{
+	long k, seen = 0;
+
+	for (k = 0; k < count; k++)
+	{
+		if (defs[k].model == 0 || defs[k].model->id != PU_RANDOM_CRATE)
+			continue;
+		if (seen++ == ordinal)
+			return &defs[k];
+	}
+	return 0;
+}
+
+// #133 PR 4e: stand a content-plan custom track's Item Box checks on its own
+// weapon crates (ap_box_seat_logic.h). The plan's box codes and measured crate
+// count come from the pad the race was entered from; the crates are read from
+// the LEV that is loaded now, whose bytes the loader hashed against the pins
+// before arming. Every disagreement stands nothing, with one log line.
+static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrackRaceContext *race)
+{
+	const ctr_content_pad *pad = ap_content_plan_active() ? ap_content_plan_pad(race->physicalPad) : 0;
+	struct Level *lev = gGT->level1;
+	struct InstDef *defs;
+	long count, k, crates = 0;
+	int seats, i;
+	char msg[224];
+
+	if (pad == 0 || !pad->occupied || pad->box_count <= 0)
+	{
+		snprintf(msg, sizeof msg,
+		         "[AP BOX] level %d: custom-bytes race from pad %d has no Item Box checks (no box ids for "
+		         "this track, or none in this seed) -- nothing spawned\n",
+		         s_level, race->physicalPad);
+		AP_LogLine(msg);
+		return;
+	}
+	if (lev == 0 || lev->ptrInstDefs == 0 || lev->numInstances == 0 ||
+	    lev->numInstances > (u32)AP_BOX_SEAT_CRATES_MAX)
+	{
+		AP_LogLine("[AP BOX] WARNING: custom track has no readable instance table -- no Item Box seats\n");
+		return;
+	}
+	defs = lev->ptrInstDefs;
+	count = (long)lev->numInstances;
+	for (k = 0; k < count; k++)
+		if (defs[k].model != 0 && defs[k].model->id == PU_RANDOM_CRATE)
+			crates++;
+	seats = AP_BoxSeat_Count(crates);
+	if (!AP_BoxSeat_Agrees(crates, pad->box_crates, pad->box_count))
+	{
+		snprintf(msg, sizeof msg,
+		         "[AP BOX] WARNING: custom track on pad %d has %ld weapon crate(s), the seed was built for %d "
+		         "with %d box(es) -- no Item Box stands\n",
+		         race->physicalPad, crates, pad->box_crates, pad->box_count);
+		AP_LogLine(msg);
+		return;
+	}
+
+	AP_BoxProbeSeedClass();
+	for (i = 0; i < seats && i < AP_BOX_SLOTS_PER_TRACK; i++)
+	{
+		const long code = (long)pad->box_locations[i];
+		struct InstDef *def;
+		struct Instance *crate;
+
+		if (code <= 0 || !AP_BoxInSeed(code, 0) || AP_BoxChecked(code, 0))
+			continue;
+		def = AP_BoxesCrateDef(defs, count, AP_BoxSeat_Ordinal(i, crates));
+		if (def == 0)
+			continue;
+		s_live[i].used = 1;
+		s_live[i].slot = i;
+		s_live[i].code = code;
+		s_live[i].spawn = AP_SPAWN_INVALID;
+		s_live[i].x = def->pos.x;
+		s_live[i].y = def->pos.y;
+		s_live[i].z = def->pos.z;
+		s_live[i].rotY = def->rot.y;
+		s_live[i].ghostTouched = 0;
+		s_live[i].seated = 1;
+		s_live[i].seatGen = AP_Spawn_Generation();
+		crate = def->ptrInstance;
+		// A table the engine did not finish initialising leaves raw LEV values
+		// here (INSTANCE_LevInitAll returns when its pool runs out): only an
+		// instance from the pool that points back at this crate is touched.
+		if (crate != 0 &&
+		    (!AP_BoxSeat_PoolItem((uintptr_t)crate, (uintptr_t)gGT->JitPools.instance.ptrPoolData,
+		                          (long)gGT->JitPools.instance.maxItems,
+		                          (unsigned long)gGT->JitPools.instance.itemSize) ||
+		     crate->instDef != def))
+			crate = 0;
+		s_live[i].seatInst = crate;
+		s_live[i].seatFlags = crate != 0 ? (crate->flags & DRAW_COLLISION_MASK) : 0;
+		if (crate != 0)
+			crate->flags &= ~DRAW_COLLISION_MASK; // hidden and not collectable while its box stands
+		s_liveCount++;
+	}
+	for (i = 0; i < AP_BOX_SLOTS_PER_TRACK; i++)
+		if (s_live[i].used)
+			AP_BoxesSpawnOne(gGT, i);
+
+	snprintf(msg, sizeof msg,
+	         "[AP BOX] level %d: custom track on pad %d, %d of %d Item Box(es) standing on its weapon crates "
+	         "(%ld crates)\n",
+	         s_level, race->physicalPad, s_liveCount, seats, crates);
+	AP_LogLine(msg);
+}
+#endif
+
 static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 {
 	AP_BoxSlot slots[AP_BOX_SLOTS_PER_TRACK];
@@ -499,6 +651,20 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 		return; // hub, arena, menu: not a box track
 	if (!AP_BoxesRaceCarriesBoxes(gGT))
 		return; // arcade / VS / battle: outside the boxes' own logic
+#ifdef CTR_CUSTOM_TRACKS
+	// #133 PR 4e: a content-plan race on custom bytes (a custom package or
+	// Cortex Vortex) borrows a retail host LevelID, so the host's retail
+	// identity must never stand its authored boxes here. The track's own boxes
+	// are seated on its weapon crates, or there are none.
+	{
+		const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(level);
+		if (race != 0 && !race->retail)
+		{
+			AP_BoxesSeatCustom(gGT, race);
+			return;
+		}
+	}
+#endif
 	if (AP_CortexTrackActive())
 	{
 		AP_LogLine("[AP BOX] Cortex Vortex pad track: no AP boxes (host level 13 is "
@@ -670,6 +836,7 @@ static void AP_BoxBreak(struct GameTracker *gGT, int i, struct Instance *boxInst
 	s_live[i].spawn = AP_SPAWN_INVALID;
 	s_live[i].used = 0;
 	s_liveCount--;
+	AP_BoxesFreeSeat(i); // the weapon crate takes its seat back
 }
 
 // Is this the local human player? Shared by every attribution path a box
@@ -747,6 +914,7 @@ static void AP_BoxesTick(struct GameTracker *gGT)
 			s_live[i].spawn = AP_SPAWN_INVALID;
 			s_live[i].used = 0;
 			s_liveCount--;
+			AP_BoxesFreeSeat(i);
 			continue;
 		}
 

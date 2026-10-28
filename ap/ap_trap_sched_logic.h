@@ -65,6 +65,7 @@ enum AP_TrapEffectId
 	AP_TRAP_WARPBALL_AMBUSH,
 	AP_TRAP_DEMO_CAMERA,
 	AP_TRAP_CLOCKED_OUT,
+	AP_TRAP_REVERSE_CAMERA,
 	AP_TRAP_EFFECT_COUNT
 };
 
@@ -156,7 +157,7 @@ enum AP_TrapCondition
 	AP_TRAP_COND_HELD_ITEM = 1 << 2,       // a fully resolved weapon is in the slot
 	AP_TRAP_COND_ELIGIBLE_CRATES = 1 << 3, // this map has weapon or Wumpa crates
 	AP_TRAP_COND_AI_LEAD = 1 << 4,         // 15 continuous seconds in first, valid AI
-	AP_TRAP_COND_SAFE_HAZARD = 1 << 5,     // projected line reaches drivable ground
+	// 1 << 5 was the projected-hazard ground probe, retired by #486.
 	AP_TRAP_COND_DEMO_CAMERA = 1 << 6      // retail cinematic camera has a safe owner
 };
 
@@ -247,15 +248,18 @@ static const AP_TrapDescriptor AP_TRAP_DESC[AP_TRAP_EFFECT_COUNT] = {
 	{"Wireframe", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_SUSTAINED_MAP,
 	 AP_TRAP_DURATION_MAP_LIFETIME, AP_TRAP_DUP_QUEUE_LATER_MAP, AP_TRAP_FAMILY_NONE,
 	 AP_TRAP_COND_NONE, 1, 0, AP_TRAP_WARNING_MS},
+	// #486 (ruling of 2026-10-23): Nitro Drop and Red Potion hit the kart directly
+	// instead of spawning a hazard ahead of it, so steering cannot dodge them.
+	// No condition: the runtime waits for a state the hit can land in.
 	{"Nitro Drop", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_INSTANT,
 	 AP_TRAP_DURATION_ENGINE_NATURAL, AP_TRAP_DUP_SERIALIZE, AP_TRAP_FAMILY_NONE,
-	 AP_TRAP_COND_SAFE_HAZARD, 1, 0, AP_TRAP_WARNING_MS},
+	 AP_TRAP_COND_NONE, 1, 0, AP_TRAP_WARNING_MS},
 	{"Reverse Steering", AP_TRAP_CTX_ALL, AP_TRAP_TIMING_SHORT_WARNING,
 	 AP_TRAP_DURATION_FIXED_MS, AP_TRAP_DUP_REFRESH, AP_TRAP_FAMILY_NONE,
 	 AP_TRAP_COND_NONE, 1, 15000, AP_TRAP_WARNING_MS},
 	{"Red Potion", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_INSTANT,
 	 AP_TRAP_DURATION_ENGINE_NATURAL, AP_TRAP_DUP_SERIALIZE, AP_TRAP_FAMILY_NONE,
-	 AP_TRAP_COND_SAFE_HAZARD, 1, 0, AP_TRAP_WARNING_MS},
+	 AP_TRAP_COND_NONE, 1, 0, AP_TRAP_WARNING_MS},
 	// PROVISIONAL duration: the notebook leaves 15 versus 20 seconds to a live
 	// comfort test. 15 is the lower-risk placeholder.
 	{"Upside Down", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_SUSTAINED_TIMED,
@@ -276,6 +280,10 @@ static const AP_TrapDescriptor AP_TRAP_DESC[AP_TRAP_EFFECT_COUNT] = {
 	{"Clocked Out", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_INSTANT,
 	 AP_TRAP_DURATION_ENGINE_NATURAL, AP_TRAP_DUP_SERIALIZE, AP_TRAP_FAMILY_NONE,
 	 AP_TRAP_COND_NONE, 1, 0, AP_TRAP_WARNING_MS},
+	{"Reverse Camera", AP_TRAP_CTX_AI_RACE | AP_TRAP_CTX_TIME_TRIAL,
+	 AP_TRAP_TIMING_SUSTAINED_TIMED, AP_TRAP_DURATION_FIXED_MS, AP_TRAP_DUP_REFRESH,
+	 AP_TRAP_FAMILY_CAMERA_TRANSFORM, AP_TRAP_COND_NONE, 1, 15000,
+	 AP_TRAP_WARNING_MS},
 };
 
 // ── Registry ──
@@ -536,6 +544,37 @@ static inline int AP_TrapSchedPollGate(const AP_TrapSched *s, int effect)
 	return held ? AP_TRAP_POLL_HOLD : AP_TRAP_POLL_GONE;
 }
 
+// Item Reroll and Forced Use waiting for an item (#486). A copy whose warning
+// ran out on an empty or unresolved slot is ACTIVE but has nothing to act on
+// yet: the runtime keeps a wait flag and applies the effect the first frame a
+// resolved weapon is in the slot and the player has control.
+enum
+{
+	AP_TRAP_HELD_WAIT = 0, // nothing to do this tick
+	AP_TRAP_HELD_APPLY,    // a resolved item is in the slot: apply the effect now
+	AP_TRAP_HELD_DROP      // the slot went away (map change, reset): clear the flag
+};
+
+static inline int AP_TrapHeldItemWaitPoll(int waiting, int gate, int canApply,
+                                          int itemResolved)
+{
+	if (!waiting)
+		return AP_TRAP_HELD_WAIT;
+	if (gate == AP_TRAP_POLL_GONE)
+		return AP_TRAP_HELD_DROP;
+	// Suspended by a mask sequence (#416), no control, or no item yet: wait.
+	if (gate == AP_TRAP_POLL_HOLD || !canApply || !itemResolved)
+		return AP_TRAP_HELD_WAIT;
+	return AP_TRAP_HELD_APPLY;
+}
+
+// At a map boundary, is a waiting copy still owed? A suspended copy counts. The
+// runtime re-arms an owed copy after the boundary, like Forced Use and Flatten.
+static inline int AP_TrapHeldItemWaitOwed(int waiting, int gate)
+{
+	return waiting && gate != AP_TRAP_POLL_GONE;
+}
+
 // Flatten's two stages, kept pure so the host harness drives the same machine
 // the runtime does. PENDING means the copy has fired but the engine has not
 // accepted the squish yet; APPLIED means it did, and the copy is waiting out the
@@ -771,13 +810,15 @@ static inline int AP_TrapSchedEligible(const AP_TrapSched *s, const AP_TrapWorld
 	return 1;
 }
 
-// A projected hazard commits once its warning begins. Ground can disappear for
-// a frame while the kart crosses a seam or becomes airborne; re-arming there
-// would replay the warning every time the projection flickers. The engine-side
-// spawn path already retries quietly until it has a valid landing point.
+// Item Reroll and Forced Use commit once their warning begins (#486, ruling of
+// 2026-10-23: "stay pending until the player holds an item, then fire"). Before
+// #486 losing the held item during the warning re-armed the copy, so firing the
+// weapon inside every warning dodged the trap forever. Now the warning runs out
+// regardless, and a copy that fires on an empty slot waits in the runtime for
+// the next resolved item (AP_TrapHeldItemWaitPoll below).
 static inline int AP_TrapSchedWarningConditionIsSticky(int effect)
 {
-	return AP_TRAP_DESC[effect].condition == AP_TRAP_COND_SAFE_HAZARD;
+	return AP_TRAP_DESC[effect].condition == AP_TRAP_COND_HELD_ITEM;
 }
 
 // May an effect that has finished its warning actually begin? The starting
@@ -872,9 +913,9 @@ static inline void AP_TrapSchedStep(AP_TrapSched *s, const AP_TrapWorld *w)
 		if (freeze)
 			continue;
 		// A prerequisite lost during the warning re-arms the copy instead of
-		// consuming it: Item Reroll, Forced Use and Wumpa Wipeout all rule
-		// that losing the held item or the fruit during the warning keeps the
-		// trap waiting for the next eligible moment.
+		// consuming it: Wumpa Wipeout rules that losing the fruit during the
+		// warning keeps the trap waiting for the next eligible moment. The two
+		// inventory traps are sticky since #486 and do not re-arm here.
 		if (!AP_TrapSchedEligible(s, w, s->slots[i].effect) &&
 		    !AP_TrapSchedWarningConditionIsSticky(s->slots[i].effect))
 		{

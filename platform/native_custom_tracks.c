@@ -69,6 +69,13 @@ static int s_haveOxideFinalDescriptor;
 static int s_oxideFinalVerified;
 static int s_customTracksLoaded = 0;
 static struct CustomTrackRaceLatch s_standaloneRace = {.lastRequested = -1};
+// Content-plan cup (#133 PR 5): set while the next leg's package is armed
+// between two legs, so the active cup context does not hold the loader.
+static int s_cupLegSwitch;
+static int CustomTrack_LatchHoldsPackage(void)
+{
+	return (s_standaloneRace.active && !s_cupLegSwitch) || s_standaloneRace.pendingKind == 2;
+}
 static char s_customTrackServeFault[128];
 
 // Entry owns the verified bytes through asynchronous load and every restart.
@@ -352,6 +359,64 @@ int CustomTrack_ReverifyOxideFinalContent(void)
 
 int CustomTrack_OxideFinalReady(void) { return s_oxideFinalVerified; }
 
+static struct GarageVenueDescriptor s_garageVenue[CUSTOM_TRACK_GARAGE_VENUES];
+static struct CustomTrackSource s_garageVenueLev[CUSTOM_TRACK_GARAGE_VENUES];
+static struct CustomTrackSource s_garageVenueVrm[CUSTOM_TRACK_GARAGE_VENUES];
+static int s_garageVenueVerified[CUSTOM_TRACK_GARAGE_VENUES];
+
+void CustomTrack_ClearGarageVenueDescriptors(void)
+{
+	memset(s_garageVenue, 0, sizeof s_garageVenue);
+	memset(s_garageVenueLev, 0, sizeof s_garageVenueLev);
+	memset(s_garageVenueVrm, 0, sizeof s_garageVenueVrm);
+	memset(s_garageVenueVerified, 0, sizeof s_garageVenueVerified);
+}
+
+int CustomTrack_ApplyGarageVenueDescriptor(int garage, const struct GarageVenueDescriptor *d)
+{
+	if (garage < 0 || garage >= CUSTOM_TRACK_GARAGE_VENUES)
+		return 0;
+	if (d != NULL && d->enabled && !memcmp(&s_garageVenue[garage], d, sizeof *d))
+		return s_garageVenueVerified[garage];
+	memset(&s_garageVenue[garage], 0, sizeof s_garageVenue[garage]);
+	memset(&s_garageVenueLev[garage], 0, sizeof s_garageVenueLev[garage]);
+	memset(&s_garageVenueVrm[garage], 0, sizeof s_garageVenueVrm[garage]);
+	s_garageVenueVerified[garage] = 0;
+	if (d == NULL || !d->enabled)
+		return 1;
+	s_garageVenue[garage] = *d;
+	if (snprintf(s_garageVenueLev[garage].path, sizeof s_garageVenueLev[garage].path, "%s", d->levPath) >=
+	        (int)sizeof s_garageVenueLev[garage].path ||
+	    snprintf(s_garageVenueVrm[garage].path, sizeof s_garageVenueVrm[garage].path, "%s", d->vrmPath) >=
+	        (int)sizeof s_garageVenueVrm[garage].path || d->hostLevelID < 0)
+	{
+		CustomTrack_Log("[CustomTracks] garage %d venue REFUSED: file path or host LevelID is invalid\n", garage);
+		return 0;
+	}
+	CustomTrack_CopyField(s_garageVenueLev[garage].expectedHash, sizeof s_garageVenueLev[garage].expectedHash, d->levSha256);
+	CustomTrack_CopyField(s_garageVenueVrm[garage].expectedHash, sizeof s_garageVenueVrm[garage].expectedHash, d->vrmSha256);
+	CustomTrack_VerifySource(&s_garageVenueLev[garage], "garage venue lev");
+	CustomTrack_VerifySource(&s_garageVenueVrm[garage], "garage venue vrm");
+	s_garageVenueVerified[garage] = s_garageVenueLev[garage].verdict == CTR_CT_VERDICT_OK &&
+	                                s_garageVenueVrm[garage].verdict == CTR_CT_VERDICT_OK;
+	CustomTrack_Log("[CustomTracks] garage %d venue %s on host %d\n", garage,
+	                s_garageVenueVerified[garage] ? "armed" : "REFUSED: files missing or mismatched", d->hostLevelID);
+	return s_garageVenueVerified[garage];
+}
+
+int CustomTrack_GarageVenueReady(int garage)
+{
+	return garage >= 0 && garage < CUSTOM_TRACK_GARAGE_VENUES && s_garageVenueVerified[garage];
+}
+
+int CustomTrack_GarageVenueServing(int levelID, int bossID, int adventureBossActive)
+{
+	if (!adventureBossActive || bossID < 0 || bossID >= CUSTOM_TRACK_GARAGE_VENUES)
+		return -1;
+	return s_garageVenueVerified[bossID] && s_garageVenue[bossID].enabled &&
+	       s_garageVenue[bossID].hostLevelID == levelID ? bossID : -1;
+}
+
 int CustomTrack_OxideFinalServing(int levelID, int bossID, int adventureBossActive)
 {
 	return s_oxideFinalVerified && s_oxideFinalDescriptor.enabled &&
@@ -580,7 +645,7 @@ void CustomTrack_ClearSeedDescriptor(void)
 int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *package,
 	                              const struct CustomTrackManagerStatus *status)
 {
-	if (s_standaloneRace.active || s_standaloneRace.pendingKind == 2)
+	if (CustomTrack_LatchHoldsPackage())
 		return 0; // A prepared/active race retains its exact package until exit.
 	unsigned char uuid[CTR_CT_NAV_UUID_BYTES];
 
@@ -617,7 +682,7 @@ int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *packag
 
 int CustomTrack_UseContentFiles(const char *levPath, const char *vrmPath, const char *raceName)
 {
-	if (s_standaloneRace.active || s_standaloneRace.pendingKind == 2)
+	if (CustomTrack_LatchHoldsPackage())
 		return 0; // A prepared/active race retains its exact package until exit.
 	if (!s_customTracksLoaded)
 		CustomTrack_Load();
@@ -691,7 +756,7 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 	// unchanged descriptor must cost a memcmp and nothing else.
 	if (s_haveDescriptor && memcmp(&s_descriptor, d, sizeof(s_descriptor)) == 0)
 		return s_customTrackConfig.contentVerified;
-	if (s_standaloneRace.active || s_standaloneRace.pendingKind == 2)
+	if (CustomTrack_LatchHoldsPackage())
 		return 0;
 
 	s_descriptor = *d;
@@ -843,6 +908,43 @@ int CustomTrack_StageStandaloneRace(const struct CustomTrackRaceContext *context
 	return CustomRaceLatch_Stage(&s_standaloneRace, context);
 }
 
+// Content-plan cup (#133 PR 5): arm the next leg between two legs. Begin lets
+// the loader take the next leg's package while the cup context is active;
+// End closes that window again. Only while the current race is a cup leg.
+int CustomTrack_BeginCupLegSwitch(void)
+{
+	s_cupLegSwitch = s_standaloneRace.active && s_standaloneRace.current.cup && !s_standaloneRace.pendingKind;
+	return s_cupLegSwitch;
+}
+void CustomTrack_EndCupLegSwitch(void) { s_cupLegSwitch = 0; }
+
+// Stage the next leg of the running cup: a retail leg holds no bytes; a custom
+// or Cortex Vortex leg retains the exact verified bytes of its armed package.
+int CustomTrack_StageCupLeg(const struct CustomTrackRaceContext *context)
+{
+	if (!s_cupLegSwitch || !CustomRaceContext_Valid(context) || !context->cup)
+		return 0;
+	if (context->retail)
+	{
+		CustomTrack_ReleaseStandaloneBytes();
+		return CustomRaceLatch_StageNext(&s_standaloneRace, context);
+	}
+	if (!s_haveDescriptor || !s_customTrackConfig.standalone || !s_customTrackConfig.contentVerified ||
+	    context->hostLevelID != s_descriptor.hostLevelID || context->laps != s_descriptor.laps ||
+	    !NativeSha256_HexEquals(s_descriptor.levSha256, context->levSha256) ||
+	    !NativeSha256_HexEquals(s_descriptor.vrmSha256, context->vrmSha256))
+		return 0;
+	CustomTrack_ReleaseStandaloneBytes();
+	if (!CustomTrack_RetainFile(&s_customTrackLev, &s_standaloneLev) ||
+	    !CustomTrack_RetainFile(&s_customTrackVrm, &s_standaloneVrm))
+	{
+		CustomTrack_ReleaseStandaloneBytes();
+		CustomTrack_Log("[CustomTracks] cup leg refused: unable to retain the exact verified package bytes\n");
+		return 0;
+	}
+	return CustomRaceLatch_StageNext(&s_standaloneRace, context);
+}
+
 void CustomTrack_SelectRetailRace(void) { CustomRaceLatch_Retail(&s_standaloneRace); }
 void CustomTrack_OnRaceLoadRequested(int levelID)
 {
@@ -883,6 +985,30 @@ int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContex
 
 	if (!s_customTracksLoaded)
 		CustomTrack_Load();
+
+	// A content-plan garage venue on custom bytes (#133 PR 6b): the same
+	// shape as the Oxide 2 venue below, one descriptor per garage.
+	if (ctx != NULL)
+	{
+		int garage = CustomTrack_GarageVenueServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive);
+		if (garage >= 0)
+		{
+			role = CustomTrackPolicy_SubfileRole(subfileIndex, s_garageVenue[garage].hostLevelID);
+			if (role == CTR_CT_ROLE_NONE) return 0;
+			source = (role == CTR_CT_ROLE_LEV) ? &s_garageVenueLev[garage] : &s_garageVenueVrm[garage];
+			if (stat(source->path, &st) != 0 || (u32)st.st_size != source->verifiedSize)
+			{
+				s_garageVenueVerified[garage] = 0;
+				CustomTrack_Log("[CustomTracks] garage %d venue REFUSED subfile %d: file changed after verification\n",
+				                garage, subfileIndex);
+				return 0;
+			}
+			CustomTrack_CopyField(s_customTrackResolved, sizeof s_customTrackResolved, source->path);
+			if (outPath) *outPath = s_customTrackResolved;
+			if (outSize) *outSize = source->verifiedSize;
+			return 1;
+		}
+	}
 
 	if (ctx != NULL && (CustomTrack_OxideFinalServing(ctx->levelID, ctx->bossID,
 	                                                 ctx->adventureBossActive) ||

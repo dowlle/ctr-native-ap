@@ -3,6 +3,7 @@
 // real thread runtime; the C unity build only sees the narrow API above.
 
 #include "ap_custom_track_download.h"
+#include "ap_seed_content_logic.h" // ap_seed_size_agrees, ap_seed_root_safe (Current Seed, #133 PR 7)
 #ifdef CTR_CUSTOM_PACKAGES
 // Authoring build only: the Track Manager's Saphi catalogue and package install.
 #include <platform/native_saphi_catalogue.h>
@@ -27,9 +28,16 @@
 #include <thread>
 #include <vector>
 
+#include <sys/stat.h>
+#include <cerrno>
+#ifndef _WIN32
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 #ifdef _WIN32
 #include <windows.h>
 #include <winhttp.h>
+#include <direct.h>
 #else
 #include <asio.hpp>
 #include <asio/ssl.hpp>
@@ -424,6 +432,49 @@ std::string join_path(const std::string &left, const char *right)
 	return left + ((left.back() == '/' || left.back() == '\\') ? "" : "/") + right;
 }
 
+// Current Seed installs (#133 PR 7) create the package folder themselves,
+// and only after both files are verified, so a refused download leaves no
+// trace. Nothing they write may be reached through a link: the package
+// folder, its original folder and every file name are checked without
+// following links (lstat; a reparse point on Windows).
+enum NodeKind { kNodeAbsent, kNodeDirectory, kNodeFile, kNodeOther };
+
+NodeKind node_kind(const std::string &path)
+{
+#ifdef _WIN32
+	const DWORD attributes = GetFileAttributesA(path.c_str());
+	if (attributes == INVALID_FILE_ATTRIBUTES)
+		return GetLastError() == ERROR_FILE_NOT_FOUND || GetLastError() == ERROR_PATH_NOT_FOUND ? kNodeAbsent : kNodeOther;
+	if (attributes & FILE_ATTRIBUTE_REPARSE_POINT)
+		return kNodeOther;
+	return (attributes & FILE_ATTRIBUTE_DIRECTORY) ? kNodeDirectory : kNodeFile;
+#else
+	struct stat st;
+	if (lstat(path.c_str(), &st) != 0)
+		return errno == ENOENT || errno == ENOTDIR ? kNodeAbsent : kNodeOther;
+	if (S_ISDIR(st.st_mode)) return kNodeDirectory;
+	if (S_ISREG(st.st_mode)) return kNodeFile;
+	return kNodeOther;
+#endif
+}
+
+bool make_directory(const std::string &path)
+{
+	const NodeKind kind = node_kind(path);
+	if (kind != kNodeAbsent)
+		return kind == kNodeDirectory;
+#ifdef _WIN32
+	_mkdir(path.c_str());
+#else
+	mkdir(path.c_str(), 0755);
+#endif
+	return node_kind(path) == kNodeDirectory;
+}
+
+// 1 when path does not exist, 2 when it holds exactly `expected`, 0 otherwise
+// (another file, a link, or a name that is not a regular file).
+int existing_target(const std::string &path, const std::string &expected);
+
 struct MediaFile
 {
 	std::string path;
@@ -451,14 +502,182 @@ bool find_media(const nlohmann::json &root, const std::string &type,
 	return matches == 1;
 }
 
-void worker(std::string package_root, std::string api_url, std::string version,
-	        std::string lev_hash, std::string vrm_hash)
+// Publish a verified pinned install (Current Seed, #133 PR 7). It never
+// writes through a link, never replaces or removes a file it did not write,
+// and never takes anything back: each file is written to an unnamed file and
+// then given its name with linkat, which fails when the name exists.
+//
+// POSIX works on directory handles opened without following links:
+// <tracks>/<folder> and its original/ are created and opened with
+// O_NOFOLLOW. The data goes into an O_TMPFILE file in original/ and is named
+// through /proc/self/fd, so no temporary name exists that anything could
+// swap. Where the file system has no O_TMPFILE, a fresh exclusive name is
+// used: it is linked and later removed only while it still is this install's
+// open file (a swap in the instant between that check and the call remains
+// possible on such file systems). A name counts as published only
+// when it is this install's still-open file, and the bytes are read back
+// through that handle. The tracks folder itself is the player's
+// configuration and may be a link.
+//
+// A failure after the LEV is published leaves that verified LEV in place:
+// the track then shows Missing, and installing again keeps it and adds the
+// VRM. Windows takes the same steps by path (exclusive create of a fresh
+// name, a move that never replaces); a folder swapped for a junction between
+// the check and the write is not caught there.
+// `lev` / `vrm` are null when that file already is the pinned one.
+void publish_pinned(const std::string &tracks, const std::string &folder,
+                    const std::vector<unsigned char> *lev, const std::vector<unsigned char> *vrm)
 {
+	static const char *const names[2] = {"track.lev", "track.vrm"};
+	const std::vector<unsigned char> *bytes[2] = {lev, vrm};
+	bool done[2] = {false, false};
+	std::string failure;
+#ifdef _WIN32
+	const std::string original = join_path(join_path(tracks, folder.c_str()), "original");
+	if (!make_directory(join_path(tracks, folder.c_str())) || !make_directory(original))
+		throw std::runtime_error("Could not create the track folder. Nothing was installed.");
+	for (int i = 0; failure.empty() && i < 2; ++i)
+	{
+		if (!bytes[i]) continue;
+		std::string temp;
+		HANDLE h = INVALID_HANDLE_VALUE;
+		for (int k = 0; k < 64 && h == INVALID_HANDLE_VALUE; ++k)
+		{
+			char name[64];
+			std::snprintf(name, sizeof name, ".saphi-%lu-%d.part", static_cast<unsigned long>(GetCurrentProcessId()), k);
+			temp = join_path(original, name);
+			h = CreateFileA(temp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+			                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+			if (h == INVALID_HANDLE_VALUE && GetLastError() != ERROR_FILE_EXISTS) break;
+		}
+		DWORD wrote = 0;
+		const bool ok = h != INVALID_HANDLE_VALUE &&
+		                WriteFile(h, bytes[i]->data(), static_cast<DWORD>(bytes[i]->size()), &wrote, nullptr) &&
+		                wrote == bytes[i]->size() && FlushFileBuffers(h);
+		if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
+		if (ok && MoveFileExA(temp.c_str(), join_path(original, names[i]).c_str(), MOVEFILE_WRITE_THROUGH))
+			done[i] = true;
+		else
+		{
+			if (h != INVALID_HANDLE_VALUE) std::remove(temp.c_str());
+			failure = "Could not finish installing the verified Saphi files.";
+		}
+	}
+#else
+	const int tracks_fd = open(tracks.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	if (tracks_fd < 0)
+		throw std::runtime_error("Could not open the tracks folder. Nothing was installed.");
+	int root_fd = -1, original_fd = -1;
+	if ((mkdirat(tracks_fd, folder.c_str(), 0755) != 0 && errno != EEXIST) ||
+	    (root_fd = openat(tracks_fd, folder.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)) < 0 ||
+	    (mkdirat(root_fd, "original", 0755) != 0 && errno != EEXIST) ||
+	    (original_fd = openat(root_fd, "original", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)) < 0)
+		failure = "Its folder is a link or could not be created.";
+	// Each written file stays open until the end, so its inode cannot be
+	// reused: a published name is ours only while it is that open file.
+	int fds[2] = {-1, -1};
+	struct stat mine[2];
+	for (int i = 0; failure.empty() && i < 2; ++i)
+	{
+		if (!bytes[i]) continue;
+		char temp[64] = "";
+		int fd = -1;
+#ifdef O_TMPFILE
+		fd = openat(original_fd, ".", O_TMPFILE | O_RDWR | O_CLOEXEC, 0644);
+#endif
+		for (int k = 0; fd < 0 && k < 64; ++k)
+		{
+			std::snprintf(temp, sizeof temp, ".saphi-%d-%d.part", static_cast<int>(getpid()), k);
+			fd = openat(original_fd, temp, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0644);
+			if (fd < 0 && errno != EEXIST) break;
+		}
+		fds[i] = fd;
+		// Identify the file before writing, so cleanup after a failed write or
+		// fsync still knows which fallback name is this install's own.
+		const bool identified = fd >= 0 && fstat(fd, &mine[i]) == 0;
+		size_t at = 0;
+		while (identified && at < bytes[i]->size())
+		{
+			const ssize_t n = write(fd, bytes[i]->data() + at, bytes[i]->size() - at);
+			if (n <= 0) break;
+			at += static_cast<size_t>(n);
+		}
+		const bool written = identified && at == bytes[i]->size() && fsync(fd) == 0;
+		bool linked = false;
+		// The fallback's fresh name is used, and later removed, only while it
+		// still is this install's open file.
+		auto temp_is_mine = [&]() {
+			struct stat now;
+			return fstatat(original_fd, temp, &now, AT_SYMLINK_NOFOLLOW) == 0 && S_ISREG(now.st_mode) &&
+			       now.st_dev == mine[i].st_dev && now.st_ino == mine[i].st_ino;
+		};
+		bool temp_swapped = false;
+		if (written && temp[0])
+		{
+			temp_swapped = !temp_is_mine();
+			linked = !temp_swapped && linkat(original_fd, temp, original_fd, names[i], 0) == 0;
+		}
+		else if (written)
+		{
+			char self[48];
+			std::snprintf(self, sizeof self, "/proc/self/fd/%d", fd);
+			linked = linkat(AT_FDCWD, self, original_fd, names[i], AT_SYMLINK_FOLLOW) == 0;
+		}
+		const bool exists_already = written && !linked && !temp_swapped && errno == EEXIST;
+		if (fd >= 0 && temp[0] && (!identified || temp_is_mine())) unlinkat(original_fd, temp, 0); // the fallback's own fresh name (unidentified only when fstat failed right after its exclusive create)
+		struct stat published;
+		if (linked && fstatat(original_fd, names[i], &published, AT_SYMLINK_NOFOLLOW) == 0 &&
+		    S_ISREG(published.st_mode) && published.st_dev == mine[i].st_dev && published.st_ino == mine[i].st_ino)
+			done[i] = true;
+		else if (linked || temp_swapped)
+			failure = "Its folder changed during the install. Check tracks/" + folder + "/original.";
+		else
+			failure = exists_already ? "A track file appeared in its folder during the install."
+			                         : "Could not finish installing the verified Saphi files.";
+	}
+	// Read each published file back through its own handle: bytes changed
+	// since verification fail the install.
+	for (int i = 0; failure.empty() && i < 2; ++i)
+	{
+		if (!done[i]) continue;
+		std::vector<unsigned char> back(bytes[i]->size());
+		size_t at = 0;
+		while (at < back.size())
+		{
+			const ssize_t n = pread(fds[i], back.data() + at, back.size() - at, static_cast<off_t>(at));
+			if (n <= 0) break;
+			at += static_cast<size_t>(n);
+		}
+		if (at != back.size() || back != *bytes[i])
+			failure = "A track file changed while it was installed. Rescan, then try again.";
+	}
+	for (int fd : fds)
+		if (fd >= 0) close(fd);
+	if (original_fd >= 0) close(original_fd);
+	if (root_fd >= 0) close(root_fd);
+	close(tracks_fd);
+#endif
+	if (!failure.empty())
+		throw std::runtime_error(failure + (done[0] && !done[1] && bytes[1]
+		                                    ? " The verified LEV is in place; Install again adds the VRM."
+		                                    : done[0] || done[1] ? "" : " Nothing was installed."));
+}
+
+// `lev_bytes` / `vrm_bytes` are the room's size pins and `tracks` the folder
+// the package root must sit in (Current Seed, #133 PR 7); all zero / empty for
+// the legacy single-package download, which keeps its old behaviour.
+void worker(std::string package_root, std::string api_url, std::string version,
+	        std::string lev_hash, std::string vrm_hash,
+	        uint32_t lev_pin, uint32_t vrm_pin, std::string tracks)
+{
+	const bool pinned = !tracks.empty();
 	try
 	{
 		std::string api_path;
 		if (!saphi_url_path(api_url, api_path))
 			throw std::runtime_error("The release registry has an invalid Saphi API URL.");
+		if (pinned && !ap_seed_root_safe(tracks.c_str(), package_root.c_str()))
+			throw std::runtime_error("The track folder is not a safe place to install. Nothing was changed.");
 		set_state(AP_CT_DOWNLOAD_RUNNING, "Contacting Project Saphi...");
 		std::vector<unsigned char> metadata;
 		std::string error;
@@ -469,6 +688,8 @@ void worker(std::string package_root, std::string api_url, std::string version,
 		MediaFile vrm;
 		if (!find_media(root, "lev", version, lev) || !find_media(root, "vrm", version, vrm))
 			throw std::runtime_error("Saphi does not list exactly one matching LEV and VRM for this release.");
+		if (!ap_seed_size_agrees(lev_pin, lev.size) || !ap_seed_size_agrees(vrm_pin, vrm.size))
+			throw std::runtime_error("Saphi lists another file size than this seed pins. Nothing was changed.");
 
 		std::vector<unsigned char> lev_bytes;
 		std::vector<unsigned char> vrm_bytes;
@@ -483,19 +704,44 @@ void worker(std::string package_root, std::string api_url, std::string version,
 			throw std::runtime_error(error.empty() ? "The Saphi VRM download was incomplete." : error);
 		if (!hash_matches(vrm_bytes, vrm_hash))
 			throw std::runtime_error("The downloaded VRM does not match this release registry.");
+		if (!ap_seed_size_agrees(lev_pin, lev_bytes.size()) || !ap_seed_size_agrees(vrm_pin, vrm_bytes.size()))
+			throw std::runtime_error("The downloaded files are not the size this seed pins. Nothing was changed.");
 
 		const std::string original = join_path(package_root, "original");
 		const std::string lev_temp = join_path(original, ".saphi-track.lev.part");
 		const std::string vrm_temp = join_path(original, ".saphi-track.vrm.part");
 		const std::string lev_target = join_path(original, "track.lev");
 		const std::string vrm_target = join_path(original, "track.vrm");
-		if (!write_file(lev_temp, lev_bytes) || !write_file(vrm_temp, vrm_bytes))
+		bool write_lev = true, write_vrm = true;
+		if (pinned)
+		{
+			const NodeKind root_kind = node_kind(package_root), original_kind = node_kind(original);
+			if ((root_kind != kNodeAbsent && root_kind != kNodeDirectory) ||
+			    (original_kind != kNodeAbsent && original_kind != kNodeDirectory) ||
+			    (root_kind == kNodeAbsent && original_kind != kNodeAbsent))
+				throw std::runtime_error("Its folder is a link or not a folder. Move it out, then try again. "
+				                         "Nothing was changed.");
+			// Never replace a player's file: an existing track.lev / track.vrm
+			// must already be the pinned bytes, and is then kept as it is.
+			const int lev_existing = existing_target(lev_target, lev_hash);
+			const int vrm_existing = existing_target(vrm_target, vrm_hash);
+			if (!lev_existing || !vrm_existing)
+				throw std::runtime_error("Its folder already has a different track.lev or track.vrm. "
+				                         "Move it out, then try again. Nothing was changed.");
+			write_lev = lev_existing == 1;
+			write_vrm = vrm_existing == 1;
+			publish_pinned(tracks, package_root.substr(tracks.size() + 1), write_lev ? &lev_bytes : nullptr,
+			               write_vrm ? &vrm_bytes : nullptr);
+			set_state(AP_CT_DOWNLOAD_SUCCEEDED, "Download verified. Finishing local setup...");
+			return;
+		}
+		if ((write_lev && !write_file(lev_temp, lev_bytes)) || (write_vrm && !write_file(vrm_temp, vrm_bytes)))
 		{
 			std::remove(lev_temp.c_str());
 			std::remove(vrm_temp.c_str());
 			throw std::runtime_error("Could not write the downloaded files to the track folder.");
 		}
-		if (!replace_file(lev_temp, lev_target) || !replace_file(vrm_temp, vrm_target))
+		if ((write_lev && !replace_file(lev_temp, lev_target)) || (write_vrm && !replace_file(vrm_temp, vrm_target)))
 		{
 			std::remove(lev_temp.c_str());
 			std::remove(vrm_temp.c_str());
@@ -506,6 +752,46 @@ void worker(std::string package_root, std::string api_url, std::string version,
 	catch (const std::exception &e)
 	{
 		set_state(AP_CT_DOWNLOAD_FAILED, e.what());
+	}
+}
+
+int existing_target(const std::string &path, const std::string &expected)
+{
+	struct stat st;
+	const NodeKind kind = node_kind(path);
+	if (kind == kNodeAbsent)
+		return 1;
+	if (kind != kNodeFile || stat(path.c_str(), &st) != 0 || st.st_size <= 0 ||
+	    static_cast<uint64_t>(st.st_size) > kTrackFileMax)
+		return 0;
+	std::ifstream file(path, std::ios::binary);
+	std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+	return file.good() || file.eof() ? (hash_matches(bytes, expected) ? 2 : 0) : 0;
+}
+
+int start_worker(const char *package_root, const char *download_api_url, const char *package_version,
+	             const char *lev_sha256, const char *vrm_sha256,
+	             uint32_t lev_bytes, uint32_t vrm_bytes, const char *tracks)
+{
+	DownloadState &shared = download_state();
+	{
+		std::lock_guard<std::mutex> lock(shared.mutex);
+		if (shared.state == AP_CT_DOWNLOAD_RUNNING)
+			return 0;
+		shared.state = AP_CT_DOWNLOAD_RUNNING;
+		shared.detail = "Starting Project Saphi download...";
+	}
+	try
+	{
+		std::thread(worker, std::string(package_root), std::string(download_api_url), std::string(package_version),
+		            std::string(lev_sha256), std::string(vrm_sha256), lev_bytes, vrm_bytes,
+		            std::string(tracks ? tracks : "")).detach();
+		return 1;
+	}
+	catch (const std::exception &e)
+	{
+		set_state(AP_CT_DOWNLOAD_FAILED, std::string("Could not start downloader: ") + e.what());
+		return 0;
 	}
 }
 } // namespace
@@ -519,25 +805,22 @@ extern "C" int ap_custom_track_download_start(const char *package_root,
 	if (!package_root || !*package_root || !download_api_url || !*download_api_url ||
 	    !package_version || !*package_version || !lev_sha256 || !vrm_sha256)
 		return 0;
-	DownloadState &shared = download_state();
-	{
-		std::lock_guard<std::mutex> lock(shared.mutex);
-		if (shared.state == AP_CT_DOWNLOAD_RUNNING)
-			return 0;
-		shared.state = AP_CT_DOWNLOAD_RUNNING;
-		shared.detail = "Starting Project Saphi download...";
-	}
-	try
-	{
-		std::thread(worker, package_root, download_api_url, package_version,
-		            lev_sha256, vrm_sha256).detach();
-		return 1;
-	}
-	catch (const std::exception &e)
-	{
-		set_state(AP_CT_DOWNLOAD_FAILED, std::string("Could not start downloader: ") + e.what());
+	return start_worker(package_root, download_api_url, package_version, lev_sha256, vrm_sha256, 0, 0, nullptr);
+}
+
+extern "C" int ap_custom_track_download_start_pinned(const char *tracks_dir,
+	                                                  const char *package_root,
+	                                                  const char *download_api_url,
+	                                                  const char *package_version,
+	                                                  const char *lev_sha256, uint32_t lev_bytes,
+	                                                  const char *vrm_sha256, uint32_t vrm_bytes)
+{
+	if (!tracks_dir || !*tracks_dir || !package_root || !*package_root || !download_api_url ||
+	    !*download_api_url || !package_version || !*package_version || !lev_sha256 || !vrm_sha256 ||
+	    !lev_bytes || !vrm_bytes || !ap_seed_root_safe(tracks_dir, package_root))
 		return 0;
-	}
+	return start_worker(package_root, download_api_url, package_version, lev_sha256, vrm_sha256,
+	                    lev_bytes, vrm_bytes, tracks_dir);
 }
 
 extern "C" int ap_custom_track_download_status(char *detail, int detail_bytes)

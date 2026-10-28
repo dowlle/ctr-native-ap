@@ -24,6 +24,22 @@
 #define CHECK_SIZE 0x0c
 #define NAV_HEAD 0x4c
 #define NAV_FRAME 0x14
+/* Quad blocks (#133 PR 4c): Level.ptr_mesh_info at 0, mesh_info numQuadBlock
+   at 0 and ptrQuadBlockArray at 0xc; QuadBlock is 0x5c bytes, quadFlags at
+   0x12, terrain_type at 0x38. A null mesh pointer counts as no quads (the
+   synthetic harness LEVs have none; a retail or Saphi track always has one). A trigger quad (QUADBLOCK_FLAG_TRIGGER) ORs its
+   terrain byte into the step flags (COLL.c), where bit 0x2 is
+   COLL_STEP_TRIGGER_SUPER_TURBO_PAD (namespace_Coll.h). */
+#define MESH_P 0x00
+#define MESH_SIZE 0x20
+#define MESH_QUAD_N 0x00
+#define MESH_QUAD_P 0x0c
+#define QUAD_SIZE 0x5c
+#define QUAD_FLAGS 0x12
+#define QUAD_TERRAIN 0x38
+#define QUAD_FLAG_TRIGGER 0x0040u
+#define STEP_SUPER_TURBO_PAD 0x02u
+#define QUAD_MAX 65536u
 #ifndef CTR_CCV_FAULT
 #define CTR_CCV_FAULT(stage) 0
 #endif
@@ -93,11 +109,12 @@ static int analyze(const unsigned char*f,size_t n,struct CustomContentVerificati
 {
 	struct LevView l;size_t inst=0,cp=0,nav=0,i;uint32_t count;if(!lev_map(f,n,&l,e,en))return 0;
 	count=rd32(l.p+INST_N);if(count>65536||!pointer(&l,INST_P,(size_t)count*INST_SIZE,&inst,e,en)||(count&&!inst)){seterr(e,en,"invalid instance table");return 0;}o->measured.instances=count;
-	for(i=0;i<count;i++){size_t model=0;uint32_t m;if(!pointer(&l,inst+i*INST_SIZE+INST_MODEL_P,MODEL_ID+2,&model,e,en)||!model){seterr(e,en,"invalid instance model pointer");return 0;}m=(uint32_t)l.p[model+MODEL_ID]|((uint32_t)l.p[model+MODEL_ID+1]<<8);switch(m){case PU_WUMPA:o->measured.looseWumpa++;break;case PU_FRUIT:o->measured.fruitCrates++;o->measured.ordinaryCrates++;break;case PU_RANDOM:case PU_TNT:case STATIC_TNT:o->measured.ordinaryCrates++;break;case PU_TIME1:case PU_TIME2:case PU_TIME3:case STATIC_TIME1:case STATIC_TIME2:case STATIC_TIME3:o->measured.relicCrates++;break;case LETTER_C:o->measured.letterC++;break;case LETTER_T:o->measured.letterT++;break;case LETTER_R:o->measured.letterR++;break;case CRYSTAL:o->measured.crystals++;break;case START:o->measured.startLines++;break;case FINISH:o->measured.finishLines++;break;}}
+	for(i=0;i<count;i++){size_t model=0;uint32_t m;if(!pointer(&l,inst+i*INST_SIZE+INST_MODEL_P,MODEL_ID+2,&model,e,en)||!model){seterr(e,en,"invalid instance model pointer");return 0;}m=(uint32_t)l.p[model+MODEL_ID]|((uint32_t)l.p[model+MODEL_ID+1]<<8);switch(m){case PU_WUMPA:o->measured.looseWumpa++;break;case PU_FRUIT:o->measured.fruitCrates++;o->measured.ordinaryCrates++;break;case PU_RANDOM:o->measured.weaponCrates++;o->measured.ordinaryCrates++;break;case PU_TNT:case STATIC_TNT:o->measured.ordinaryCrates++;break;case PU_TIME1:case PU_TIME2:case PU_TIME3:case STATIC_TIME1:case STATIC_TIME2:case STATIC_TIME3:o->measured.relicCrates++;break;case LETTER_C:o->measured.letterC++;break;case LETTER_T:o->measured.letterT++;break;case LETTER_R:o->measured.letterR++;break;case CRYSTAL:o->measured.crystals++;break;case START:o->measured.startLines++;break;case FINISH:o->measured.finishLines++;break;}}
 	count=rd32(l.p+CHECK_N);if(count){unsigned char seen[255]={0};size_t cur=0,steps=0;if(count>255||!pointer(&l,CHECK_P,(size_t)count*CHECK_SIZE,&cp,e,en)||!cp){seterr(e,en,"invalid checkpoint table");return 0;}for(i=0;i<count;i++){size_t k;for(k=8;k<12;k++){unsigned v=l.p[cp+i*12+k];if(v!=0xff&&v>=count){seterr(e,en,"checkpoint index out of range");return 0;}}}while(!seen[cur]&&steps<count){seen[cur]=1;cur=l.p[cp+cur*12+8];steps++;if(cur==0xff||cur>=count){seterr(e,en,"checkpoint chain does not cycle");return 0;}}o->measured.checkpoints=count;}
 	for(i=0;i<8;i++){size_t j;int nz=0;for(j=0;j<12;j++)nz|=l.p[SPAWN_P+i*12+j];if(nz)o->measured.spawns++;}
 	if(!pointer(&l,NAV_P,12,&nav,e,en))return 0;
 	if(nav)for(i=0;i<3;i++){size_t h=0;unsigned points;if(!pointer(&l,nav+i*4,NAV_HEAD,&h,e,en))return 0;if(!h||rd16s(l.p+h)!=-0x1303)continue;points=l.p[h+2]|l.p[h+3]<<8;if(!points||!fits(h,NAV_HEAD+((size_t)points+1)*NAV_FRAME,l.map)){seterr(e,en,"navigation frame range invalid");return 0;}o->measured.navPaths++;}
+	{size_t mesh=0,quads=0;uint32_t nq;if(!pointer(&l,MESH_P,MESH_SIZE,&mesh,e,en)){seterr(e,en,"invalid mesh info pointer");return 0;}nq=mesh?rd32(l.p+mesh+MESH_QUAD_N):0;if(mesh&&(nq>QUAD_MAX||!pointer(&l,mesh+MESH_QUAD_P,(size_t)nq*QUAD_SIZE,&quads,e,en)||(nq&&!quads))){seterr(e,en,"invalid quad block table");return 0;}o->measured.quadBlocks=nq;for(i=0;i<nq;i++){const unsigned char*q=l.p+quads+i*QUAD_SIZE;unsigned flags=q[QUAD_FLAGS]|((unsigned)q[QUAD_FLAGS+1]<<8);if((flags&QUAD_FLAG_TRIGGER)&&(q[QUAD_TERRAIN]&STEP_SUPER_TURBO_PAD))o->measured.superTurboPads++;}}
 	derive(o);o->loadable=1;return 1;
 }
 

@@ -223,6 +223,19 @@ void ap_net_editstats_set(const int *values, int n);
 int  ap_net_editstats_known(int *out, int n);
 unsigned ap_net_editstats_revision(void);
 
+// ── Progressive rank selection sync (ruling 2026-09-11, Boost 2026-10-26) ──
+// AP_NET_STATSELECT_COUNT ints under "ctr_statselect_<slot>": the player's
+// chosen rank per capability chain, shared row then 16 roster rows (layout and
+// meaning owned by ap_capability.c / ap_stat_select_logic.h). Each value is -1
+// (follow the received ceiling) or an explicit rank 0..4. Same per-slot home and
+// the same untrusted-input rule as the editable package: exact length, integral,
+// every value in range, or the whole package is ignored.
+#define AP_NET_STATSELECT_COUNT 68
+void ap_net_statselect_subscribe(void);
+void ap_net_statselect_set(const int *values, int n);
+int  ap_net_statselect_known(int *out, int n);
+unsigned ap_net_statselect_revision(void);
+
 // ── DeathLink (issue #6) ──
 // Enable the "DeathLink" connection tag (ConnectUpdate) so the server relays
 // deaths to this client. Called by the game side after slot_data is parsed, only
@@ -237,10 +250,11 @@ void ap_net_deathlink_disable(void);
 // slot-connected.
 void ap_net_deathlink_send(const char *cause);
 
-// Drain the inbound death latch (network boundary only, one death per poll): returns
-// 1 and copies the cause and source-slot strings (truncated to their sizes, either
-// buffer may be NULL) if a DeathLink bounce was pending, then clears it; 0
-// otherwise. Own-slot echoes are already filtered out by the network handler.
+// Take the oldest inbound death not yet handed to the game thread: returns 1 and
+// copies the cause and source-slot strings (truncated to their sizes, either buffer
+// may be NULL), 0 when none is left. Call it until it returns 0: AP_DeathLinkTick
+// drains every death each frame (ap_deathlink_inbox.h). Own-slot echoes are
+// already filtered out by the network handler.
 int  ap_net_deathlink_take(char *cause_buf, int cause_n, char *source_buf, int source_n);
 
 void ap_net_shutdown(void);
@@ -254,7 +268,8 @@ void ap_net_doors_record(unsigned bit);
 // under team+slot keys so a fresh room starts empty. Rules: ap_fxmarker_logic.h.
 #define AP_NET_FX_EFFECT      0 // highest server item index whose effect was handled
 #define AP_NET_FX_TURBO_FIRED 1 // Turbo Grants fired by this slot
-#define AP_NET_FX_COUNT       2
+#define AP_NET_FX_RESERVE_SPENT 2 // Reserve Top-Up copies applied by this slot (#451)
+#define AP_NET_FX_COUNT       3
 // State of the connect-time Get reply for `which` (AP_FXM_STORE_*). Fills the
 // latest known integer value and a revision that moves on every reply.
 int  ap_net_fx_store(int which, long long *value, unsigned *rev);

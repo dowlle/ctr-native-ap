@@ -230,5 +230,45 @@ int AP_CapabilityFireGrant(struct Driver *driver, int *reserves, uint32_t type, 
 // the stat pack is active for this seed and this is the local player.
 void AP_CapabilityStats(struct Driver *driver);
 
+// ── Rank selector (ruling 2026-09-11, Boost added 2026-10-26) ──────────────
+// The functions above that return a tier or rank answer "what do the received
+// items unlock" -- the CEILING. They stay the only answer logic reads (the
+// Oxide gate, the tracker; win_logic and the content verifier count items
+// themselves). The *Applied* functions below answer "what does the kart drive":
+// the player's selection, clamped to that ceiling. Physics and the picker/Garage
+// display read the applied value. The policy lives in ap_stat_select_logic.h.
+
+// Applied boost tier for the character being driven, or -1 exactly when
+// AP_CapabilityBoostTier() is -1.
+int AP_CapabilityAppliedBoostTier(void);
+
+// Applied value for an explicit engine character ID, any chain
+// (AP_CAP_CHAIN_BOOST included). -1 when that chain's ceiling is -1.
+int AP_CapabilityAppliedRankForCharacter(int chain, int characterID);
+
+// Applied stat rank for the character being driven (stat chains only).
+int AP_CapabilityAppliedStatRankFor(int chain);
+
+// The received ceiling for any chain and an explicit character: the boost tier
+// or the stat rank the items unlock, -1 when that pack is not live.
+int AP_CapabilityCeilingForCharacter(int chain, int characterID);
+
+// 1 when this chain's selection for this character is below its ceiling.
+int AP_CapabilitySelectionLowered(int chain, int characterID);
+
+// One LEFT (dir < 0) / RIGHT (dir > 0) press on a chain for this character's
+// selection row (the shared row in shared_global mode). Returns 1 when the
+// applied value changed, and then writes the package to AP data storage.
+int AP_CapabilitySelectStep(int chain, int characterID, int dir);
+
+// Fresh slot connect: every selection back to "follow the ceiling" before the
+// stored package for the new slot can arrive. NOT called from
+// AP_CapabilityReset, which also runs for a replay and must not drop choices.
+void AP_CapabilitySelectConnectReset(void);
+
+// Apply a stored package that has arrived from the server, once per revision.
+// Cheap; called every frame.
+void AP_CapabilitySelectRestore(void);
+
 #endif // CTR_AP
 #endif // AP_CAPABILITY_H

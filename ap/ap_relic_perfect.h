@@ -21,10 +21,15 @@
 //
 // NOT A RETAIL IDENTITY. A Cortex Vortex pad race borrows LevelID 13 and a
 // custom package borrows its host LevelID; neither may send the borrowed retail
-// track's code. Cortex Vortex's perfect (35026005) is reserved but not minted,
-// so it resolves to nothing. A custom package resolves through its own seed
-// slot (`customCode`), which is -1 until the reserved custom perfect family is
-// minted and carried on the wire (see AP_RelicPerfectCustomCode in ap_hooks.c).
+// track's code. On the legacy path the Cortex Vortex pad track has no perfect
+// row and resolves to nothing, and a legacy custom package resolves through
+// its own seed slot (`customCode`), which stays -1 (AP_RelicPerfectCustomCode).
+//
+// CONTENT PLANS (#133 PR 3c, #453). A content-plan Relic Race resolves only
+// through its own pad's check (`contentCode`): a retail track's frozen code,
+// Cortex Vortex's 35026005, a named block's offset 10 or a generic slot's
+// `Custom Track N: Relic Race Perfect`. The parser derived it from the track's
+// identity, never from the engine host, and the retail table is not read.
 
 #define AP_RELIC_PERFECT_TRACK_COUNT 18
 #define AP_RELIC_PERFECT_CODE_BASE   35012400L
@@ -126,6 +131,8 @@ typedef struct
 	int cortexActive;    // Cortex Vortex pad track is on screen (borrowed 13)
 	int customServing;   // a custom package's bytes are this load (borrowed host)
 	long customCode;     // that package's own perfect code, -1 = none
+	int contentRoute;    // a content-plan Relic Race on its pad's route (#133 PR 3c)
+	long contentCode;    // that pad's perfect code, -1 = none this seed
 } AP_RelicPerfectFacts;
 
 // The one decision: which code (if any) this relic race end sends.
@@ -138,9 +145,12 @@ static inline long AP_RelicPerfectResolvePure(const AP_RelicPerfectFacts *f)
 	// A level without time crates has no perfect: 0 == 0 is not an achievement.
 	if (f->total <= 0 || f->broken != f->total)
 		return -1;
+	// A content-plan route pays its own pad's code and nothing else.
+	if (f->contentRoute)
+		return f->contentCode > 0 ? f->contentCode : -1;
 	// Borrowed LevelIDs never pay the retail track's code.
 	if (f->cortexActive)
-		return -1; // Cortex Vortex's own perfect identity is not minted
+		return -1; // the legacy Cortex Vortex pad track has no perfect row
 	if (f->customServing)
 		return f->customCode > 0 ? f->customCode : -1;
 	if (f->retail == 0 || f->levelID < 0 ||

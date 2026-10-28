@@ -40,7 +40,9 @@
 //       window that cannot land yet (mask-grab gate closed, rank order invalid) is
 //       retried for AP_DL_GRACE_FRAMES live frames, then dropped.
 //     * Every received death shows a feed popup naming the source and cause, or
-//       saying it was ignored (AP_FeedDeathLinkLine).
+//       saying it was ignored (AP_FeedDeathLinkLine). Only one death is pending at
+//       a time: a newer one (same frame, grace window or pause hold) replaces it,
+//       and the replaced one shows the ignored popup.
 //     * modes 1/2: force the full mask-grab reset via
 //       DRIVER_COLL_FLAG_MASK_GRAB_REQUEST (the proven Shortcutless precedent,
 //       COLL.c:1488). The request bit MUST be OR'd from INSIDE the physics
@@ -48,6 +50,13 @@
 //       not from AP_OnFrame: VehPhysForce_OnApplyForces zeroes collisionFlags
 //       every frame before the mask-grab gate reads it, so a pre-pipeline OR
 //       would be wiped. Receive, like send, is gated to adventure mode.
+//     * mode 4 (weapon_hit, #483): spin the local kart out as a weapon hit does,
+//       through the engine's own damage dispatch, so a shield, a mask or the
+//       post-hit invincibility window absorb it exactly as they absorb a weapon.
+//       The death is consumed (and its popup shown) once the dispatch runs; while
+//       the kart is not under control or has damage queued it waits inside the
+//       grace window. The spin it causes never sends (AP_DeathLinkOnHit skips
+//       it), and the receive cooldown mutes a fall it may cause.
 //     * mode 3 (race_loss): end the current attempt as a retail loss instead of
 //       resetting the mask. The local driver is moved to the last place rank
 //       (bijectively), marked finished and handed to the AI, then the common
@@ -75,7 +84,8 @@ enum
 	CTR_DL_OFF        = 0,
 	CTR_DL_MASK_RESET = 1,
 	CTR_DL_ANY_HIT    = 2,
-	CTR_DL_RACE_LOSS  = 3
+	CTR_DL_RACE_LOSS  = 3,
+	CTR_DL_WEAPON_HIT = 4  // #483
 };
 
 // Per-connect reset: clears the edge/receive/amnesty state and, when this seed opted

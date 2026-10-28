@@ -102,8 +102,11 @@ static void AP_NetTick(struct GameTracker *gGT)
 		AP_WinLogicTallyReset(); // #449: rebuilt from the resent ReceivedItems list
 		memset(ap_letter_received, 0, sizeof ap_letter_received);
 		memset(ap_custom_letter_received, 0, sizeof ap_custom_letter_received);
+		memset(ap_named_letter_received, 0, sizeof ap_named_letter_received);
 		memset(ap_cortex_letter_received, 0, sizeof ap_cortex_letter_received);
 		memset(ap_verify_custom_letter_foreign, 0, sizeof ap_verify_custom_letter_foreign);
+		ap_verify_sparse_foreign_n = 0;
+		ap_verify_sparse_foreign_overflow = 0;
 		for (k = 0; k < AP_CAT_COUNT; k++)
 			ap_item_count[k] = 0;
 		for (k = 0; k < AP_ITEMSANITY_WEAPON_COUNT; k++)
@@ -118,13 +121,11 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// authoritative replay, so a reconnect or a slot switch can never carry
 		// one slot's helper into another's session.
 		AP_TiziReset();
-		// Turbo Grant (#224): zero the session counters and reload this seed and
-		// slot's FIRED count (the room's AP_NET_FX_TURBO_FIRED key, #299).
-		// Deliberately not the effect-marker
-		// mechanism above -- that marks an item consumed when its batch drains,
-		// which would swallow a grant the player could not receive yet. See
-		// ap_turbogrant_logic.h.
+		// Turbo Grant (#224, per race since #487): zero the receipts and the
+		// per-race latch. The receipt is a switch rebuilt from the replay, not
+		// a one-shot effect, so the effect marker above does not apply to it.
 		AP_TurboGrantReset();
+		AP_ReserveTopUpReset();
 		AP_WumpaConnectReset();
 		AP_UsefulConnectReset();
 		AP_HitEncounterConnectReset(); // ticket 06: re-arm the Hit-check session mask
@@ -190,6 +191,18 @@ static void AP_NetTick(struct GameTracker *gGT)
 			// Fetching it always keeps the two keys' lifecycles identical.
 			ap_net_editstats_subscribe();
 		}
+
+		// Progressive rank selection (ruling 2026-09-11, Boost 2026-10-26):
+		// reset unconditionally for the same reason as the stat package above,
+		// then fetch this slot's stored choice when a capability pack is live.
+		// Not gated on the character phase: Progressive Boost can be live on a
+		// seed without it, and the picker still opens there (browse mode).
+		AP_CapabilitySelectConnectReset();
+		if (ctr_cfg.boost_mode == AP_CAP_MODE_SHARED_GLOBAL ||
+		    ctr_cfg.boost_mode == AP_CAP_MODE_PER_CHARACTER ||
+		    ctr_cfg.stats_mode == AP_CAP_MODE_SHARED_GLOBAL ||
+		    ctr_cfg.stats_mode == AP_CAP_MODE_PER_CHARACTER)
+			ap_net_statselect_subscribe();
 
 		// DeathLink (issue #6): reset per-session send/receive state and, when this
 		// seed opted in, enable the DeathLink connection tag. slot_data was parsed in
@@ -268,6 +281,13 @@ static void AP_NetTick(struct GameTracker *gGT)
 				ap_verify_custom_letter_foreign[(customLetterSlot - 1) * 3 + customLetter] = 1;
 			ap_state_gen++;
 		}
+		// Named-block letter items (#133 PR 3b): content-plan CTR Challenges
+		// read them by block (AP_ContentLetterReceived).
+		if (ap_named_item_is_letter(items[i]))
+		{
+			AP_NamedLetterReceive(items[i]);
+			ap_state_gen++;
+		}
 		// Schema 15: Cortex Vortex letter items (idx 200..202). Booleans rebuilt
 		// by the authoritative replay after the connect reset.
 		{
@@ -297,6 +317,9 @@ static void AP_NetTick(struct GameTracker *gGT)
 			    AP_LetterItemIndexIsLetterPure((int)idx))
 				ap_state_gen++;
 		}
+		else if (ap_net_recv_batch_player(i) != ap_net_self_slot() ||
+		         ap_net_recv_batch_location(i) <= 0)
+			ap_verify_sparse_foreign_add(items[i]);
 		if (idx >= 0 && idx < AP_ITEM_INDEX_COUNT)
 		{
 			const ctr_content_item *row = ap_content_plan_item(items[i]);
@@ -415,16 +438,18 @@ static void AP_NetTick(struct GameTracker *gGT)
 			AP_TiziReceiveHelper();
 		}
 
-		// Turbo Grant (#224, idx 189). A COUNT, not a boolean: every receipt is
-		// one more Turbo the player is owed, and duplicates are legitimate. It is
-		// rebuilt from zero on each fresh connect (AP_TurboGrantReset above), so
-		// the server's full replay reconstructs exactly the same total -- which
-		// is why this must NOT be filtered through the effect marker the way the
-		// trap and Wumpa arms are. A grant that has not been delivered yet is
-		// still owed, whatever index it arrived at.
+		// Turbo Grant (#224, idx 189; a Turbo every race since #487). Rebuilt
+		// from zero on each fresh connect (AP_TurboGrantReset above), so the
+		// server's full replay reconstructs it -- which is why this must NOT be
+		// filtered through the effect marker the way the trap and Wumpa arms
+		// are: a replayed receipt still switches the per-race Turbo on.
 		else if (idx == AP_TURBOGRANT_ITEM_INDEX)
 		{
 			AP_TurboGrantReceive();
+		}
+		else if (idx == AP_RESERVE_TOP_UP_ITEM_INDEX)
+		{
+			AP_ReserveTopUpReceive();
 		}
 		else if (idx == AP_WUMPA_SMALL_BUNDLE_ITEM_INDEX ||
 		         idx == AP_WUMPA_BIG_BUNDLE_ITEM_INDEX)

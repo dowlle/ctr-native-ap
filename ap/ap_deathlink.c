@@ -27,7 +27,9 @@ static int g_dl_amnesty_count  = 0; // eligible deaths counted toward the amnest
 // DeathLink is never queued. A received death is either applied inside a live race
 // or dropped. g_dl_pending_recv is only the short grace window (AP_DL_GRACE_FRAMES)
 // for a death that arrived in a live race but whose landing preconditions are not
-// met yet; outside a live race it is dropped at once.
+// met yet; outside a live race it is dropped at once. One death is pending at a
+// time: a newer one replaces it and the replaced one gets the ignored popup
+// (AP_DeathLinkDrainInbound).
 static int  g_dl_pending_recv = 0;         // in-window death still trying to land
 static int  g_dl_grace_left = 0;           // frames of grace left for it
 static char g_dl_pending_cause[128] = {0}; // its cause (log and popup)
@@ -65,6 +67,11 @@ void AP_DeathLinkSuppressSelfInflicted(int on)
 	g_dl_trap_self_inflicted = on ? 1 : 0;
 }
 
+// #483: set across the one synchronous damage dispatch a received weapon_hit
+// death performs, so the hit it lands never sends. Separate from both flags
+// above for the same reason they are separate from each other.
+static int g_dl_applying_received_hit = 0;
+
 // Send cooldown (frames). Observed live (2026-07-19 Deck 3-player session): a
 // RECEIVED death's forced mask grab bounces the kart state machine through
 // KS_MASK_GRABBED several times, producing 4-5 rising edges while the one-shot
@@ -92,7 +99,7 @@ static APDeathLinkState AP_DeathLinkStateNow(void)
 
 	if (!ctr_cfg_active())
 		return off;
-	if (row < 0 || row > CTR_DL_RACE_LOSS)
+	if (row < 0 || row > CTR_DL_WEAPON_HIT)
 		row = -1; // a hand-edited out-of-range value follows the seed
 	return AP_DeathLinkResolve(ctr_cfg.death_link, ctr_cfg.death_link_send,
 	                           row, g_config.dlSendFall,
@@ -100,7 +107,8 @@ static APDeathLinkState AP_DeathLinkStateNow(void)
 }
 
 // Effective receive mode. The forced values ARE the tier enum (1 = mask_reset,
-// 2 = any_hit, 3 = race_loss), so all in-game DeathLink layers stay selectable.
+// 2 = any_hit, 3 = race_loss, 4 = weapon_hit), so all in-game DeathLink layers
+// stay selectable.
 static int AP_DeathLinkEffMode(void)
 {
 	return AP_DeathLinkStateNow().recv;
@@ -272,6 +280,8 @@ void AP_DeathLinkOnHit(struct Driver *victim, int damageType, int reason)
 		return; // mid received-death application: never send
 	if (g_dl_trap_self_inflicted)
 		return; // a trap is driving this damage: ruled self-inflicted, never send
+	if (g_dl_applying_received_hit)
+		return; // #483: the hit a received DeathLink lands never sends
 
 	AP_DeathLinkFireLocal(gGT, AP_DeathLinkHitCause(damageType, reason));
 }
@@ -292,6 +302,7 @@ void AP_DeathLinkConnectReset(void)
 	// the other send-edge state means a latch that somehow survived cannot silence
 	// real deaths for the rest of a session.
 	g_dl_trap_self_inflicted = 0;
+	g_dl_applying_received_hit = 0;
 
 	// Opt in to the DeathLink tag for this seed. Safe to call unconditionally on a
 	// fresh connect: ctr_cfg was parsed in the slot-connected handler just before
@@ -382,6 +393,30 @@ static void AP_DeathLinkDrop(const char *why)
 	g_dl_pending_source[0] = '\0';
 	g_dl_defer_logged = 0;
 	g_dl_hold_logged = 0;
+}
+
+// Take every death the network received since the last frame, oldest first. Only
+// the newest stays pending (DeathLink is never queued, and the newest is the one
+// that applies). Each death it replaces, in the same frame or still in its grace
+// window or held for a pause, ends here with the ignored popup naming who died.
+static void AP_DeathLinkDrainInbound(void)
+{
+	char cause[128];
+	char source[64];
+
+	while (ap_net_deathlink_take(cause, sizeof cause, source, sizeof source))
+	{
+		if (AP_DeathLinkEffMode() == CTR_DL_OFF)
+			continue;
+		if (g_dl_pending_recv)
+			AP_DeathLinkDrop("newer death");
+		g_dl_pending_recv = 1;
+		g_dl_grace_left = AP_DL_GRACE_FRAMES;
+		g_dl_defer_logged = 0; // a new death gets its own deferral line
+		g_dl_hold_logged = 0;
+		snprintf(g_dl_pending_cause, sizeof g_dl_pending_cause, "%s", cause);
+		snprintf(g_dl_pending_source, sizeof g_dl_pending_source, "%s", source);
+	}
 }
 
 // Common bookkeeping once a forced loss is going to be applied: consume the
@@ -534,6 +569,47 @@ static void AP_DeathLinkApplyRaceLoss(struct GameTracker *gGT, struct Driver *lo
 	AP_LogLine(msg);
 }
 
+// #483 weapon_hit: spin the local kart out the way a landed weapon does. The
+// engine's damage dispatch decides what the hit does, so a bubble shield pops,
+// and an Aku Aku mask or the post-hit invincibility window laughs it off,
+// exactly as with a weapon ("as if hit by a weapon", ruling of 2026-10-23). The
+// death is consumed once the dispatch runs, whatever it decided. Before that it
+// waits, inside the grace window, for a kart under the player's control (the
+// weapon-fire path's own state test, VehPhysProc.c:489) with no damage queued:
+// the dispatch zeroes pendingDamageType at entry, so dispatching over a queued
+// hit would delete that hit (see AP_TrapFlattenReady). Returns 1 when consumed.
+static int AP_DeathLinkApplyWeaponHit(struct Driver *local)
+{
+	char msg[256];
+	int landed;
+
+	if (local->kartState != KS_NORMAL && local->kartState != KS_DRIFTING &&
+	    local->kartState != KS_ANTIVSHIFT)
+		return 0;
+	if (local->pendingDamageType != 0)
+		return 0;
+
+	AP_DeathLinkPopup(1, 0);
+	g_dl_send_cooldown = AP_DL_COOLDOWN_AFTER_RECV; // also mutes a fall the spin causes
+	g_dl_applying_received_hit = 1;
+	landed = RB_Hazard_HurtDriver(local, 1, 0, 0);
+	g_dl_applying_received_hit = 0;
+	if (landed)
+		local->damageColorTimer = 0x1e; // the red icon flash a landed weapon gives
+
+	snprintf(msg, sizeof msg, "[AP DEATH] received -> weapon hit, %s (%s)\n",
+	         landed ? "spun out" : "absorbed by a shield, mask or invincibility",
+	         g_dl_pending_cause[0] ? g_dl_pending_cause : "a death");
+	AP_LogLine(msg);
+	g_dl_pending_recv = 0;
+	g_dl_grace_left = 0;
+	g_dl_pending_cause[0] = '\0';
+	g_dl_pending_source[0] = '\0';
+	g_dl_defer_logged = 0;
+	g_dl_hold_logged = 0;
+	return 1;
+}
+
 // The live-race window a received death must land in (the trap-window idiom,
 // ap_traps.c:313-318): mid-race, lights out, not menu / cutscene / end-of-race, not
 // loading, on a real track. Returns AP_DL_WIN_PAUSED for the same race while
@@ -582,25 +658,16 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 		g_dl_defer_logged = 0;
 		g_dl_hold_logged = 0;
 		g_dl_swallow_edge = 0;
-		(void)ap_net_deathlink_take(cause, sizeof cause, source, sizeof source);
+		while (ap_net_deathlink_take(cause, sizeof cause, source, sizeof source))
+			;
 		return;
 	}
 
 	local = gGT->drivers[0];
 
-	// Drain the network inbound latch. A death is handled the frame it arrives: it
-	// applies inside a live race, is held while that race is paused, or is dropped. Two deaths in one grace window
-	// collapse to the newer one (the older is dropped without its own popup).
-	if (ap_net_deathlink_take(cause, sizeof cause, source, sizeof source) &&
-	    AP_DeathLinkEffMode() != CTR_DL_OFF)
-	{
-		g_dl_pending_recv = 1;
-		g_dl_grace_left = AP_DL_GRACE_FRAMES;
-		g_dl_defer_logged = 0; // a new death gets its own deferral line
-		g_dl_hold_logged = 0;
-		snprintf(g_dl_pending_cause, sizeof g_dl_pending_cause, "%s", cause);
-		snprintf(g_dl_pending_source, sizeof g_dl_pending_source, "%s", source);
-	}
+	// Drain the network inbox. A death is handled the frame it arrives: it applies
+	// inside a live race, is held while that race is paused, or is dropped.
+	AP_DeathLinkDrainInbound();
 
 	window = AP_DeathLinkWindow(gGT);
 	raceActive = window == AP_DL_WIN_LIVE;
@@ -625,6 +692,13 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 			g_dl_hold_logged = 1;
 			AP_LogLine("[AP DEATH] received while paused -> held until the race resumes\n");
 		}
+	}
+	else if (action == AP_DL_RECV_WEAPON_HIT)
+	{
+		// Consumed when it landed; otherwise grace, then drop.
+		if ((local == 0 || !AP_DeathLinkApplyWeaponHit(local)) &&
+		    AP_DeathLinkGraceStep(&g_dl_grace_left))
+			AP_DeathLinkDrop("could not apply");
 	}
 	else if (action == AP_DL_RECV_RACE_LOSS && local != 0)
 	{
@@ -685,6 +759,10 @@ int AP_DeathLinkForceReset(struct Driver *d)
 	// #286: race_loss is applied in AP_DeathLinkTick (rank reorder + retail end),
 	// never as a mask reset. Leave the pending death for that path.
 	if (AP_DeathLinkEffMode() == CTR_DL_RACE_LOSS)
+		return 0;
+	// #483: weapon_hit is applied in AP_DeathLinkTick as a spin-out, never as a
+	// mask reset.
+	if (AP_DeathLinkEffMode() == CTR_DL_WEAPON_HIT)
 		return 0;
 	if (!g_dl_pending_recv || d == 0)
 		return 0;

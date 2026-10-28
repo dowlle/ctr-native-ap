@@ -101,6 +101,41 @@ int main(void)
 	       !strcmp(AP_ContentCapabilityName(AP_CONTENT_CAP_CTR_TOKENS), "ctr_tokens") &&
 	       !strcmp(AP_ContentCapabilityName(AP_CONTENT_CAP_WUMPA), "wumpa"), "capability names match the descriptor keys");
 
+	/* Super turbo pads (#133 PR 4c): a stated value must match the bytes in
+	   both directions; an unstated one never refuses. */
+	r = full_track(); r.measured.superTurboPads = 2;
+	expect(AP_ContentSuperTurboPadsHold(1, &r, why, sizeof why) && why[0] == '\0', "super pads stated and present hold");
+	expect(!AP_ContentSuperTurboPadsHold(0, &r, why, sizeof why) && strstr(why, "is false") && strstr(why, "2 super turbo"),
+	       "super pads stated false on a track with two refuse");
+	expect(AP_ContentSuperTurboPadsHold(AP_CONTENT_SUPER_PADS_UNSTATED, &r, why, sizeof why), "unstated super pads hold");
+	r.measured.superTurboPads = 0;
+	expect(AP_ContentSuperTurboPadsHold(0, &r, why, sizeof why), "no super pads stated and absent hold");
+	expect(!AP_ContentSuperTurboPadsHold(1, &r, why, sizeof why) && strstr(why, "is true") && strstr(why, "0 super turbo"),
+	       "super pads stated true on a track without refuse");
+	expect(AP_ContentSuperTurboPadsHold(AP_CONTENT_SUPER_PADS_UNSTATED, &r, NULL, 0), "unstated holds without a reason buffer");
+	r.loadable = 0;
+	expect(!AP_ContentSuperTurboPadsHold(AP_CONTENT_SUPER_PADS_UNSTATED, &r, why, sizeof why) && strstr(why, "structural"),
+	       "unloadable bytes refuse even an unstated value");
+	expect(!AP_ContentSuperTurboPadsHold(1, NULL, why, sizeof why), "no report refuses");
+	expect(!(AP_CONTENT_CAP_ALL & 0x20u), "super pads are not one of the mode flags");
+
+	/* Weapon crates (#133 PR 4e): a stated count must be the measured count,
+	   higher or lower; an unstated count never refuses. */
+	r = full_track(); r.measured.weaponCrates = 8;
+	expect(AP_ContentWeaponCratesHold(8, &r, why, sizeof why) && why[0] == '\0', "the measured weapon crate count holds");
+	expect(!AP_ContentWeaponCratesHold(9, &r, why, sizeof why) && strstr(why, "weapon_crates is 9") && strstr(why, "8 weapon crates"),
+	       "one crate more than the bytes refuses");
+	expect(!AP_ContentWeaponCratesHold(7, &r, why, sizeof why), "one crate fewer refuses");
+	expect(!AP_ContentWeaponCratesHold(0, &r, why, sizeof why), "no crates on a track with eight refuses");
+	expect(AP_ContentWeaponCratesHold(AP_CONTENT_WEAPON_CRATES_UNSTATED, &r, why, sizeof why), "an unstated count holds");
+	expect(!AP_ContentWeaponCratesHold(-2, &r, why, sizeof why), "a negative count refuses");
+	r.measured.weaponCrates = 0;
+	expect(AP_ContentWeaponCratesHold(0, &r, NULL, 0), "no crates stated and none measured hold");
+	r.loadable = 0;
+	expect(!AP_ContentWeaponCratesHold(AP_CONTENT_WEAPON_CRATES_UNSTATED, &r, why, sizeof why) && strstr(why, "structural"),
+	       "unloadable bytes refuse even an unstated count");
+	expect(!AP_ContentWeaponCratesHold(0, NULL, why, sizeof why), "no report refuses");
+
 	printf("%d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

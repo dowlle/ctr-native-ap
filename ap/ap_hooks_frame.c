@@ -358,13 +358,45 @@ static void AP_DumpState(struct GameTracker *gGT)
 			const ctr_content_pad *pad = ap_content_plan_pad(id);
 			if (!pad || !pad->occupied)
 				continue;
+			// Track modes (#133 PR 3): the modes in pad order (0 Trophy, 1 CTR,
+			// 2 Relic) and the second-stage rule with its owned count and answer.
 			AP_TextBufPrintf(f,
 			        "%s    {\"pad\": %d, \"keys\": %d, \"rule_mask\": %u, "
-			        "\"rule_count\": %d, \"rule_owned\": %d, \"open\": %d}",
+			        "\"rule_count\": %d, \"rule_owned\": %d, \"open\": %d, "
+			        "\"modes\": [%d, %d, %d], \"mode_count\": %d, \"stage2_mask\": %u, "
+			        "\"stage2_count\": %d, \"stage2_owned\": %d, \"stage2_open\": %d",
 			        first ? "" : ",\n", pad->physical, pad->keys,
 			        pad->has_rule ? pad->rule_mask : 0u,
 			        pad->has_rule ? pad->rule_count : 0,
-			        AP_ContentPadRuleOwned(pad), AP_ContentPadOpen(pad));
+			        AP_ContentPadRuleOwned(pad), AP_ContentPadOpen(pad),
+			        pad->mode_count > 0 ? pad->modes[0] : -1, pad->mode_count > 1 ? pad->modes[1] : -1,
+			        pad->mode_count > 2 ? pad->modes[2] : -1, pad->mode_count,
+			        pad->has_stage2 ? pad->stage2_mask : 0u, pad->has_stage2 ? pad->stage2_count : 0,
+			        AP_ContentStage2Owned(pad),
+			        pad->mode_count > 1 ? AP_ContentModeOpen(pad, pad->modes[1]) : 0);
+			// Per-track families (#133 PR 3b): rung, Wumpa and letter codes
+			// (0 absent) and which pooled letter items have arrived.
+			AP_TextBufPrintf(f,
+			        ", \"rungs\": [%lld, %lld, %lld, %lld, %lld], \"wumpa\": %lld, \"wumpa_modes\": %u, "
+			        "\"letters\": [%lld, %lld, %lld], \"letter_items\": [%lld, %lld, %lld], "
+			        "\"letters_received\": [%d, %d, %d], \"perfect\": %lld, \"cortex\": %d, "
+			        "\"cup\": %d, \"cup_sweep\": %lld, \"cup_legs\": [%lld, %lld, %lld, %lld]}",
+			        (long long)pad->rung_locations[0], (long long)pad->rung_locations[1],
+			        (long long)pad->rung_locations[2], (long long)pad->rung_locations[3],
+			        (long long)pad->rung_locations[4], (long long)pad->wumpa_location, pad->wumpa_modes,
+			        (long long)pad->letter_locations[0], (long long)pad->letter_locations[1],
+			        (long long)pad->letter_locations[2], (long long)pad->letter_items[0],
+			        (long long)pad->letter_items[1], (long long)pad->letter_items[2],
+			        AP_ContentLetterItemReceived(pad->letter_items[0]),
+			        AP_ContentLetterItemReceived(pad->letter_items[1]),
+			        AP_ContentLetterItemReceived(pad->letter_items[2]),
+			        // Relic Race Perfect and Cortex Vortex (#133 PR 3c).
+			        (long long)pad->perfect_location, pad->cortex,
+			        // Cups (#133 PR 5): the Win is the Trophy code above
+			        // (trophy_location); the sweep and each leg's Cup Leg Victory.
+			        pad->cup, (long long)pad->sweep_location,
+			        (long long)pad->legs[0].victory, (long long)pad->legs[1].victory,
+			        (long long)pad->legs[2].victory, (long long)pad->legs[3].victory);
 			first = 0;
 		}
 		AP_TextBufPuts(f, "\n  ],\n");
@@ -635,6 +667,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	AP_WumpaTick(gGT); // Wumpa Fruit filler: drain banked fruit into drivers[0] in-race (#11)
 	AP_UsefulTick(gGT); // H-dossier: apply queued shield, mask and invisibility
 	AP_TiziTick(gGT);  // #223: expire a forced Mask whose item roll never resolved
+	AP_ReserveTopUpTick(gGT); // #451: apply one owed copy to positive live reserves
 	AP_TurboGrantTick(gGT); // #224: requeue a lost in-flight Turbo, then deliver
 	                        // one pending grant into an empty in-race weapon slot
 	AP_ShortcutKeys();

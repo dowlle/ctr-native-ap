@@ -806,6 +806,21 @@ const char *CustomTrackManager_StateText(int state)
 	}
 }
 
+int CustomTrackManager_ResolvePaths(const char *assetsRoot,
+	                                 const struct CustomTrackManagerPackage *package,
+	                                 struct CustomTrackManagerStatus *outStatus)
+{
+	if (outStatus == NULL)
+		return 0;
+	memset(outStatus, 0, sizeof *outStatus);
+	if (!Manager_PackageSupported(package))
+	{
+		Manager_SetDetail(outStatus, CTR_CT_MANAGER_UNSUPPORTED, "Package registry entry is invalid or unsupported.");
+		return 0;
+	}
+	return Manager_BuildPaths(assetsRoot, package, outStatus);
+}
+
 int CustomTrackManager_PrepareFolder(const char *assetsRoot,
 	                                  const struct CustomTrackManagerPackage *package,
 	                                  struct CustomTrackManagerStatus *outStatus)

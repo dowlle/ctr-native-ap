@@ -80,7 +80,7 @@ static const struct
 	T(AP_TRAP_WEAKENED_KART), T(AP_TRAP_BOOST_BLOCKER), T(AP_TRAP_WIREFRAME),
 	T(AP_TRAP_NITRO), T(AP_TRAP_REVERSE_STEERING), T(AP_TRAP_RED_POTION),
 	T(AP_TRAP_UPSIDE_DOWN), T(AP_TRAP_MIRROR_MODE), T(AP_TRAP_WARPBALL_AMBUSH),
-	T(AP_TRAP_DEMO_CAMERA), T(AP_TRAP_CLOCKED_OUT),
+	T(AP_TRAP_DEMO_CAMERA), T(AP_TRAP_CLOCKED_OUT), T(AP_TRAP_REVERSE_CAMERA),
 };
 #undef T
 
@@ -160,9 +160,17 @@ int main()
     const auto clocked=load("tools/fixtures/trap-identities/clocked_out.json");
     ap_seedcfg_parse_json(clocked["slot_data"]);
     for(size_t i=0;i<rows.size();++i)
-        expect(resolve_id(rows[i]["item_id"])==(int)i,"new generated seed resolves all appended trap identities");
+        expect(resolve_id(rows[i]["item_id"])==(clocked["slot_data"]["trap_identities"]["items"].contains(
+                   std::to_string(rows[i]["item_id"].get<long long>()))?(int)i:-1),
+               "Clocked Out seed resolves exactly its declared identities");
     expect(std::find(clocked["drawn_trap_ids"].begin(),clocked["drawn_trap_ids"].end(),35010206)!=clocked["drawn_trap_ids"].end(),
            "real generator drew the minted Clocked Out item");
+    const auto reverse=load("tools/fixtures/trap-identities/reverse_camera.json");
+    ap_seedcfg_parse_json(reverse["slot_data"]);
+    for(size_t i=0;i<rows.size();++i)
+        expect(resolve_id(rows[i]["item_id"])==(int)i,"new generated seed resolves every trap identity");
+    expect(std::find(reverse["drawn_trap_ids"].begin(),reverse["drawn_trap_ids"].end(),35010207)!=reverse["drawn_trap_ids"].end(),
+           "real generator drew the minted Reverse Camera item");
 
 	// ── 3. refusals and the legacy path ──
 	nlohmann::json legacy = sd;

@@ -51,27 +51,44 @@ int main(void)
 	char line[96];
 
 	// The composition itself.
-	AP_PickerLine_Compose(line, sizeof line, TIER_NONE, TIER_BLUEFIRE, "NONE", 1);
+	AP_PickerLine_Compose(line, sizeof line, TIER_NONE, TIER_BLUEFIRE, "NONE", NULL, 1);
 	expect_text(line, "BOOST 0/3 NONE", "unlocked racer, no tier yet");
 
-	AP_PickerLine_Compose(line, sizeof line, TIER_NONE, TIER_BLUEFIRE, "NONE", 0);
+	AP_PickerLine_Compose(line, sizeof line, TIER_NONE, TIER_BLUEFIRE, "NONE", NULL, 0);
 	expect_text(line, "BOOST 0/3 NONE  NOT UNLOCKED", "locked racer, no tier yet");
 
-	AP_PickerLine_Compose(line, sizeof line, TIER_BLUEFIRE, TIER_BLUEFIRE, "BLUE", 1);
+	AP_PickerLine_Compose(line, sizeof line, TIER_BLUEFIRE, TIER_BLUEFIRE, "BLUE", NULL, 1);
 	expect_text(line, "BOOST 3/3 BLUE", "unlocked racer at the ceiling");
 
-	AP_PickerLine_Compose(line, sizeof line, TIER_BOOST, TIER_USF, "BOOST", 0);
+	AP_PickerLine_Compose(line, sizeof line, TIER_BOOST, TIER_USF, "BOOST", NULL, 0);
 	expect_text(line, "BOOST 1/2 BOOST  NOT UNLOCKED", "locked racer, USF ceiling");
 
 	// No boost capability on the seed: no BOOST clause at all.
-	AP_PickerLine_Compose(line, sizeof line, -1, TIER_USF, "", 1);
+	AP_PickerLine_Compose(line, sizeof line, -1, TIER_USF, "", NULL, 1);
 	expect_text(line, "", "unlocked racer, seed grants no boost");
 
-	AP_PickerLine_Compose(line, sizeof line, -1, TIER_USF, "", 0);
+	AP_PickerLine_Compose(line, sizeof line, -1, TIER_USF, "", NULL, 0);
 	expect_text(line, "NOT UNLOCKED", "locked racer, seed grants no boost");
 
+	// Rank selector (ruling 2026-09-11, Boost 2026-10-26): a lowered tier
+	// names the unlocked one; at the ceiling (maxName NULL or empty) nothing.
+	AP_PickerLine_Compose(line, sizeof line, TIER_BOOST, TIER_BLUEFIRE, "BOOST", "BLUE", 1);
+	expect_text(line, "BOOST 1/3 BOOST  MAX BLUE", "lowered: names the unlocked tier");
+
+	AP_PickerLine_Compose(line, sizeof line, TIER_NONE, TIER_USF, "NONE", "USF", 1);
+	expect_text(line, "BOOST 0/2 NONE  MAX USF", "lowered to NONE under USF");
+
+	AP_PickerLine_Compose(line, sizeof line, TIER_USF, TIER_BLUEFIRE, "USF", "", 1);
+	expect_text(line, "BOOST 2/3 USF", "empty max name reads as not lowered");
+
+	AP_PickerLine_Compose(line, sizeof line, TIER_BOOST, TIER_BLUEFIRE, "BOOST", "BLUE", 0);
+	expect_text(line, "BOOST 1/3 BOOST  NOT UNLOCKED", "locked racer: NOT UNLOCKED wins over MAX");
+
+	AP_PickerLine_Compose(line, sizeof line, -1, TIER_USF, "", "USF", 1);
+	expect_text(line, "", "no boost pack: a stray max name adds nothing");
+
 	// Nothing seed-wide leaks back on.
-	AP_PickerLine_Compose(line, sizeof line, TIER_NONE, TIER_BLUEFIRE, "NONE", 0);
+	AP_PickerLine_Compose(line, sizeof line, TIER_NONE, TIER_BLUEFIRE, "NONE", NULL, 0);
 	expect_text(strstr(line, "PER-CHARACTER") ? "present" : "absent", "absent", "no ownership label on the line");
 	expect_text(strstr(line, "READ-ONLY") ? "present" : "absent", "absent", "no editability marker on the line");
 
@@ -79,10 +96,10 @@ int main(void)
 	// The width budget. The worst case is a locked racer at the Blue Fire
 	// ceiling with the longest tier name, which is what the field report hit.
 	// ------------------------------------------------------------------
-	AP_PickerLine_Compose(line, sizeof line, TIER_NONE, TIER_BLUEFIRE, "NONE", 0);
+	AP_PickerLine_Compose(line, sizeof line, TIER_NONE, TIER_BLUEFIRE, "NONE", NULL, 0);
 	expect_width(line, "worst case: locked, ceiling 3, tier NONE");
 
-	AP_PickerLine_Compose(line, sizeof line, TIER_BOOST, TIER_BLUEFIRE, "BOOST", 0);
+	AP_PickerLine_Compose(line, sizeof line, TIER_BOOST, TIER_BLUEFIRE, "BOOST", NULL, 0);
 	expect_width(line, "worst case: locked, ceiling 3, tier BOOST");
 
 	// Every tier name the picker can produce, locked, at the highest ceiling.
@@ -91,16 +108,28 @@ int main(void)
 		size_t i;
 		for (i = 0; i < sizeof names / sizeof names[0]; i++)
 		{
-			AP_PickerLine_Compose(line, sizeof line, TIER_BLUEFIRE, TIER_BLUEFIRE, names[i], 0);
+			AP_PickerLine_Compose(line, sizeof line, TIER_BLUEFIRE, TIER_BLUEFIRE, names[i], NULL, 0);
 			expect_width(line, "locked at ceiling 3, every tier name");
 		}
+	}
+
+	// Lowered, every tier name pair the picker can produce.
+	{
+		const char *names[] = {"NONE", "BOOST", "USF", "BLUE", "?"};
+		size_t i, j;
+		for (i = 0; i < sizeof names / sizeof names[0]; i++)
+			for (j = 0; j < sizeof names / sizeof names[0]; j++)
+			{
+				AP_PickerLine_Compose(line, sizeof line, TIER_NONE, TIER_BLUEFIRE, names[i], names[j], 1);
+				expect_width(line, "lowered at ceiling 3, every name pair");
+			}
 	}
 
 	// A caller that hands over a short buffer must still get a terminated
 	// string, not a truncated write past the end.
 	{
 		char small[8];
-		int n = AP_PickerLine_Compose(small, sizeof small, TIER_NONE, TIER_BLUEFIRE, "NONE", 0);
+		int n = AP_PickerLine_Compose(small, sizeof small, TIER_NONE, TIER_BLUEFIRE, "NONE", NULL, 0);
 		int ok = (small[sizeof small - 1] == '\0') && (n == (int)(sizeof small - 1));
 		printf("%s  %-44s \"%s\"\n", ok ? "ok  " : "FAIL", "short buffer stays terminated", small);
 		if (!ok)

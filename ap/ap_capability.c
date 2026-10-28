@@ -6,6 +6,8 @@
 
 #include "ap_capability.h"
 #include "ap_stat_ladder.h"
+#include "ap_stat_select_logic.h"
+#include "ap_net.h"      // ap_net_statselect_* (per-slot data storage)
 #include "ap_retro_fueled_logic.h"
 #include "ap_hooks.h"    // AP_LogLine
 #include "ap_seedcfg.h"  // ctr_cfg + ctr_cfg_active()
@@ -411,6 +413,196 @@ int AP_CapabilityStatRankForCharacter(int chain, int characterID)
 	return rank;
 }
 
+// ── Rank selector (ruling 2026-09-11, Boost added 2026-10-26) ───────────────
+//
+// Everything above this point answers "what do the received items unlock": the
+// CEILING, which is logic's answer and stays untouched. This block holds the
+// player's choice under that ceiling and answers "what does the kart drive".
+// The policy (follow-the-ceiling sentinel, clamp on read, step rules) lives in
+// ap_stat_select_logic.h so the harness runs the same code.
+//
+// Persisted per slot in AP data storage under "ctr_statselect_<slot>", the same
+// server-side home as the racer and the editable package, so the choice
+// survives a reconnect and a change of machine. Wire layout: AP_SS_WIRE_COUNT
+// ints, row-major, row 0 the shared_global row and rows 1..16 the roster slots,
+// each row AP_CAP_CHAIN_COUNT values in chain order.
+typedef char ap_cap_select_shape_check
+    [(AP_SS_CHAINS == AP_CAP_CHAIN_COUNT && AP_SS_ROSTER == AP_CAP_ROSTER_COUNT &&
+      AP_SS_WIRE_COUNT == AP_NET_STATSELECT_COUNT && AP_SS_VALUE_MAX == AP_CAP_STAT_COPIES &&
+      AP_SS_MODE_SHARED == AP_CAP_MODE_SHARED_GLOBAL &&
+      AP_SS_MODE_PER_CHARACTER == AP_CAP_MODE_PER_CHARACTER)
+         ? 1
+         : -1];
+
+// Stored as selection + 1, so the zero-initialised table already reads as
+// "follow the ceiling" everywhere before the first connect resets it.
+static signed char g_cap_select_plus1[AP_SS_WIRE_COUNT];
+static unsigned g_cap_select_restored_rev;
+
+static int AP_CapabilitySelGet(int idx)
+{
+	return (int)g_cap_select_plus1[idx] - 1;
+}
+
+static void AP_CapabilitySelSet(int idx, int sel)
+{
+	g_cap_select_plus1[idx] = (signed char)(sel + 1);
+}
+
+void AP_CapabilitySelectConnectReset(void)
+{
+	int i;
+	for (i = 0; i < AP_SS_WIRE_COUNT; i++)
+		AP_CapabilitySelSet(i, AP_SS_FOLLOW);
+	g_cap_select_restored_rev = 0;
+}
+
+// The capability mode that owns a chain: Progressive Boost for the boost chain,
+// Progressive Stats for the other three. 0 (off) when that pack is not live.
+static int AP_CapabilityChainMode(int chain)
+{
+	if (chain == AP_CAP_CHAIN_BOOST)
+		return AP_CapabilityBoostActive() ? ctr_cfg.boost_mode : 0;
+	if (chain > AP_CAP_CHAIN_BOOST && chain < AP_CAP_CHAIN_COUNT)
+		return AP_CapabilityStatsActive() ? ctr_cfg.stats_mode : 0;
+	return 0;
+}
+
+// The g_cap_select slot holding this chain's choice for this character, or -1.
+static int AP_CapabilitySelectIndex(int chain, int characterID)
+{
+	int row = AP_StatSel_Row(AP_CapabilityChainMode(chain),
+	                         AP_CapabilityRosterSlotForCharacter(characterID));
+	return AP_StatSel_Index(row, chain);
+}
+
+int AP_CapabilityCeilingForCharacter(int chain, int characterID)
+{
+	if (chain == AP_CAP_CHAIN_BOOST)
+		return AP_CapabilityBoostTierForCharacter(characterID);
+	return AP_CapabilityStatRankForCharacter(chain, characterID);
+}
+
+int AP_CapabilityAppliedRankForCharacter(int chain, int characterID)
+{
+	int ceiling = AP_CapabilityCeilingForCharacter(chain, characterID);
+	int idx;
+
+	if (ceiling < 0)
+		return ceiling;
+	idx = AP_CapabilitySelectIndex(chain, characterID);
+	if (idx < 0)
+		return ceiling;
+	return AP_StatSel_Applied(AP_CapabilitySelGet(idx), ceiling);
+}
+
+int AP_CapabilitySelectionLowered(int chain, int characterID)
+{
+	int ceiling = AP_CapabilityCeilingForCharacter(chain, characterID);
+	int idx = AP_CapabilitySelectIndex(chain, characterID);
+	return idx >= 0 && AP_StatSel_IsLowered(AP_CapabilitySelGet(idx), ceiling);
+}
+
+// The character the local player is driving, for the live-driver accessors.
+// -1 when there is none; the ceiling accessors already fail open for that case.
+static int AP_CapabilityCurrentCharacter(void)
+{
+	struct Driver *driver;
+
+	if (sdata == 0 || sdata->gGT == 0)
+		return -1;
+	driver = sdata->gGT->drivers[0];
+	if (driver == 0 || driver->driverID >= 8)
+		return -1;
+	return data.characterIDs[driver->driverID];
+}
+
+// The live-driver ceiling is resolved through the SAME accessor the old code
+// used (AP_CapabilityBoostTier / AP_CapabilityStatRankFor), so its fail-open
+// rule and its one-shot log are unchanged; only the selection is layered on.
+int AP_CapabilityAppliedBoostTier(void)
+{
+	int ceiling = AP_CapabilityBoostTier();
+	int idx;
+
+	if (ceiling < 0)
+		return ceiling;
+	idx = AP_CapabilitySelectIndex(AP_CAP_CHAIN_BOOST, AP_CapabilityCurrentCharacter());
+	if (idx < 0)
+		return ceiling;
+	return AP_StatSel_Applied(AP_CapabilitySelGet(idx), ceiling);
+}
+
+int AP_CapabilityAppliedStatRankFor(int chain)
+{
+	int ceiling = AP_CapabilityStatRankFor(chain);
+	int idx;
+
+	if (ceiling < 0)
+		return ceiling;
+	idx = AP_CapabilitySelectIndex(chain, AP_CapabilityCurrentCharacter());
+	if (idx < 0)
+		return ceiling;
+	return AP_StatSel_Applied(AP_CapabilitySelGet(idx), ceiling);
+}
+
+static void AP_CapabilitySelectPersist(void)
+{
+	int packed[AP_SS_WIRE_COUNT];
+	int i;
+
+	for (i = 0; i < AP_SS_WIRE_COUNT; i++)
+		packed[i] = AP_CapabilitySelGet(i);
+	ap_net_statselect_set(packed, AP_SS_WIRE_COUNT);
+}
+
+int AP_CapabilitySelectStep(int chain, int characterID, int dir)
+{
+	int ceiling = AP_CapabilityCeilingForCharacter(chain, characterID);
+	int idx = AP_CapabilitySelectIndex(chain, characterID);
+	int before, next;
+
+	if (ceiling < 0 || idx < 0)
+		return 0;
+	before = AP_StatSel_Applied(AP_CapabilitySelGet(idx), ceiling);
+	next = AP_StatSel_Step(AP_CapabilitySelGet(idx), ceiling, dir);
+	if (AP_StatSel_Applied(next, ceiling) == before)
+		return 0;
+	AP_CapabilitySelSet(idx, next);
+
+	{
+		char msg[160];
+		snprintf(msg, sizeof msg,
+		         "[AP CAP] selection: chain %d row %d -> %d of ceiling %d (%s)\n",
+		         chain, idx / AP_SS_CHAINS, AP_StatSel_Applied(next, ceiling), ceiling,
+		         next == AP_SS_FOLLOW ? "follows upgrades" : "lowered");
+		AP_LogLine(msg);
+	}
+	// Written on every change, like the editable package: there is no close
+	// event the player is obliged to reach before quitting or disconnecting.
+	AP_CapabilitySelectPersist();
+	return 1;
+}
+
+void AP_CapabilitySelectRestore(void)
+{
+	int packed[AP_SS_WIRE_COUNT];
+	unsigned rev;
+	int i;
+
+	if (!ctr_cfg_active())
+		return;
+	rev = ap_net_statselect_revision();
+	if (rev == g_cap_select_restored_rev)
+		return;
+	if (!ap_net_statselect_known(packed, AP_SS_WIRE_COUNT))
+		return;
+	g_cap_select_restored_rev = rev;
+	for (i = 0; i < AP_SS_WIRE_COUNT; i++)
+		AP_CapabilitySelSet(i, packed[i]); // range-checked by ap_net before acceptance
+	AP_LogLine("[AP CAP] rank selection restored from AP data storage\n");
+}
+
 // ── Boost tier ──────────────────────────────────────────────────────────────
 //
 // VehFire_Increment turns its fireLevel argument into a boost-speed cap with one
@@ -435,7 +627,10 @@ int AP_CapabilityStatRankForCharacter(int chain, int characterID)
 
 int AP_CapabilityFireGrant(struct Driver *driver, int *reserves, uint32_t type, int *fireLevel)
 {
-	const int tier = AP_TrapWeakenBoostTier(AP_CapabilityBoostTier());
+	// The APPLIED tier: the player may drive below what their items unlock
+	// (rank selector). It is -1 exactly when the ceiling is, so a seed with the
+	// pack off still never reaches a write.
+	const int tier = AP_TrapWeakenBoostTier(AP_CapabilityAppliedBoostTier());
 
 	if (tier < 0 || !AP_CapabilityIsLocal(driver))
 		return 1;
@@ -505,7 +700,7 @@ int AP_CapabilityFireGrant(struct Driver *driver, int *reserves, uint32_t type, 
 int AP_CapabilityRetroFueled(struct Driver *driver)
 {
 	return driver != 0 && AP_CapabilityIsLocal(driver) &&
-	       AP_TrapWeakenBoostTier(AP_CapabilityBoostTier()) == AP_CAP_BOOST_BLUEFIRE;
+	       AP_TrapWeakenBoostTier(AP_CapabilityAppliedBoostTier()) == AP_CAP_BOOST_BLUEFIRE;
 }
 
 // ── Stat ranks ──────────────────────────────────────────────────────────────
@@ -647,7 +842,8 @@ void AP_CapabilityStats(struct Driver *driver)
 		if (row == 0 || row->size <= 0)
 			continue; // table shape changed under us: leave the engine's own value
 
-		rank = AP_CapabilityStatRankFor(AP_CAP_STAT_ROWS[i].chain);
+		// The applied rank: the player's selection under the received ceiling.
+		rank = AP_CapabilityAppliedStatRankFor(AP_CAP_STAT_ROWS[i].chain);
 		if (rank < 0)
 		{
 			// Pack-off: derive the permanent vanilla anchor from the same character
