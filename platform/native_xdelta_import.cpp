@@ -503,6 +503,7 @@ struct Extractor
         if (layout.files.size() > 65536) throw std::runtime_error("Patched disc has too many files");
         bool known = layout.files.count(path) != 0;
         layout.files[path] = {lba, size};
+        byStartDirty = true;
         if (!known)
         {
             fileChanged[path] = false;
@@ -634,30 +635,48 @@ struct Extractor
         }
     }
 
+    /* Non-BIGFILE files by start sector, rebuilt when a directory adds files. */
+    std::map<uint32_t, std::vector<std::string>> byStart;
+    bool byStartDirty = true;
+
     void file_sector(uint32_t lba, const unsigned char *rawSector)
     {
-        /* Which non-BIGFILE file holds this sector? Files are few; a linear
-           scan over the learned list is cheap next to the decode. */
-        for (auto &f : layout.files)
+        if (byStartDirty)
         {
-            if (f.first == "/BIGFILE.BIG") continue;
-            const IsoFile &file = f.second;
-            uint32_t sectors = (file.size + kSector - 1) / kSector;
-            if (lba < file.lba || lba >= file.lba + sectors) continue;
-            bool &changedFlag = fileChanged[f.first];
-            if (changedFlag) return;
-            auto retail = disc.files.find(f.first);
-            unsigned char retailRaw[kRawSector];
-            if (retail == disc.files.end() || retail->second.size != file.size ||
-                !disc.raw(retail->second.lba + (lba - file.lba), retailRaw) ||
-                std::memcmp(retailRaw + 16, rawSector + 16, kRawSector - 16))
-                changedFlag = true;
-            return;
+            byStart.clear();
+            for (auto &f : layout.files)
+                if (f.first != "/BIGFILE.BIG" && f.second.size && byStart[f.second.lba].size() < 4)
+                    byStart[f.second.lba].push_back(f.first); /* Hostile layouts stay bounded. */
+            byStartDirty = false;
+        }
+        /* Files may share or overlap extents; look at the closest starts only. */
+        auto it = byStart.upper_bound(lba);
+        int looked = 0;
+        while (it != byStart.begin() && looked < 4)
+        {
+            --it; looked++;
+            for (const auto &path : it->second)
+            {
+                const IsoFile &file = layout.files[path];
+                uint32_t sectors = (file.size + kSector - 1) / kSector;
+                if (lba >= file.lba + sectors) continue;
+                bool &changedFlag = fileChanged[path];
+                if (changedFlag) continue;
+                auto retail = disc.files.find(path);
+                unsigned char retailRaw[kRawSector];
+                if (retail == disc.files.end() || retail->second.size != file.size ||
+                    !disc.raw(retail->second.lba + (lba - file.lba), retailRaw) ||
+                    std::memcmp(retailRaw + 16, rawSector + 16, kRawSector - 16))
+                    changedFlag = true;
+            }
         }
     }
 
+    const volatile int *cancel = nullptr;
+
     void sector(uint32_t lba, const unsigned char *rawSector)
     {
+        if (!(lba & 255) && load_flag(cancel)) throw std::runtime_error("Cancelled");
         const unsigned char *data = rawSector + kUserData;
         lastLba = lba;
         if (lba == 16)
@@ -1014,6 +1033,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
         {
             if (pass == 3) throw std::runtime_error("Patched disc layout could not be read in three passes");
             extractor.reset(new Extractor(disc, scratch.get(), layout));
+            extractor->cancel = cancel;
             std::rewind(patch.get());
             DecodeContext context{patch.get(), source.get(), summary.patchBytes, 0, extractor.get(), progress,
                                   5, 85, {}};
