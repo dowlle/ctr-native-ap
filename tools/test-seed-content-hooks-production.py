@@ -108,6 +108,7 @@ static void package(int i, const char *key, const char *rev, const struct Custom
 {
 	ctr_content_package *p = &packages[i];
 	memset(p, 0, sizeof *p);
+	p->locator_index = -1; /* the parser's value for a record without a locator */
 	snprintf(p->id, sizeof p->id, "package/%s/%s", key, rev);
 	snprintf(p->content_id, sizeof p->content_id, "%s", key);
 	snprintf(p->revision, sizeof p->revision, "%s", rev);
@@ -152,6 +153,19 @@ int main(void)
 	       !strcmp(rows[0].revision, "1.0.2") && rows[0].index == 0 && rows[0].locator.bigfile_index == -1 &&
 	       !rows[0].locator.patch_sha256[0], "compiled Baby T Park 1.0.2: Missing, from Saphi, with the room's pins");
 	expect(rows[1].source == AP_SEED_SOURCE_MANUAL && ap_seed_row_state(&rows[1]) == AP_SEED_STATE_READY, "open package: Ready");
+	/* xdelta importer: a record's locator reaches the row and its patch line. */
+	packages[1].locator_index = 1;
+	snprintf(packages[1].locator_sha256, sizeof packages[1].locator_sha256, "%s", "52a420e582fc44786210ae65817d7105c7d881c2f0b4387cebde2dce86064526");
+	snprintf(packages[1].locator_name, sizeof packages[1].locator_name, "%s", "LRG2Pancho.xdelta");
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	{
+		char locator[160];
+		ap_seed_locator_line(&rows[1], locator, sizeof locator);
+		expect(rows[1].locator.bigfile_index == 1 && !strcmp(locator, "Patch: LRG2Pancho.xdelta (52a420e5...) slot 1"),
+		       "open package with a locator: the patch line names it");
+	}
+	packages[1].locator_index = -1; packages[1].locator_sha256[0] = packages[1].locator_name[0] = 0;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
 	expect(rows[2].source == AP_SEED_SOURCE_MANUAL && rows[2].scan == AP_SEED_SCAN_MISMATCH, "open package: other files");
 	expect(rows[3].source == AP_SEED_SOURCE_BUNDLED && rows[3].index == -1 && ap_seed_row_state(&rows[3]) == AP_SEED_STATE_READY,
 	       "Cortex Vortex last, bundled, Ready");

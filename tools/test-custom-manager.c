@@ -54,6 +54,23 @@ void RECTMENU_DrawInnerRect(RECT *r,int x,uint32_t *ot)
 { (void)x;(void)ot;CHECK(r->x>=0&&r->x+r->w<=512&&r->y+r->h<=216); }
 void CTR_Box_DrawClearBox(const RECT *r,const Color *c,int t,uint32_t *ot)
 { (void)c;(void)t;(void)ot;CHECK(r->x+r->w<=512); }
+/* xdelta import view (0.3.0): worker, dialog and disc are stubbed. */
+#include <platform/native_xdelta_import.h>
+static int pickState=-1, scanState=-1, installState=-1, scanStarts, installStarts, discards, folderCount;
+static struct XdeltaImportSummary fakeSummary;
+static unsigned char lastSelected[CTR_XDELTA_ITEM_MAX];
+int XdeltaImport_ListFolder(const char *a,char names[][CTR_XDELTA_NAME_MAX],int max)
+{ (void)a; for(int i=0;i<folderCount&&i<max;i++) snprintf(names[i],CTR_XDELTA_NAME_MAX,"Pack %d.xdelta",i); return folderCount<max?folderCount:max; }
+const char *NativeDiscImage_GetPath(void) { return "/disc.bin"; }
+int XdeltaPick_Start(void) { pickState=0; return 1; }
+int XdeltaPick_Poll(char *path,size_t size) { int s=pickState; if(s==1) snprintf(path,size,"/patches/Pack.xdelta"); if(s==1||s==2) pickState=-1; return s; }
+int XdeltaImport_StartScan(const char *p,const char *d,const char *a) { (void)p;(void)d;(void)a; scanStarts++; scanState=0; return 1; }
+int XdeltaImport_PollScan(int *progress,struct XdeltaImportSummary *s,char *e,size_t n)
+{ *progress=37; if(scanState==1) *s=fakeSummary; if(scanState==-2) snprintf(e,n,"Patch does not match this disc"); return scanState; }
+void XdeltaImport_DiscardScan(void) { discards++; scanState=-1; }
+int XdeltaImport_StartInstall(const unsigned char *sel,unsigned count,const char *a)
+{ (void)a; memcpy(lastSelected,sel,count); installStarts++; installState=0; return 1; }
+int XdeltaImport_PollInstall(int *installed,char *e,size_t n) { (void)e;(void)n; int s=installState; if(s==1){*installed=2;installState=-1;} return s; }
 #include "../game/230/MM_CustomManager.c"
 static void tick(int buttons) { struct GamepadBuffer pad={0};pad.buttonsTapped=buttons;drawn[0]=0;MM_ConfigProc_CustomContent(NULL,NULL,&pad); }
 int main(void)
@@ -103,6 +120,26 @@ int main(void)
  CHECK(strstr(drawn,"\nNo races\n")&&strstr(drawn,"\nNo lap\ncheckpoints\n")&&!strstr(drawn,"..."));
  strcpy(installed.local.timeTrialReason,"Files failed checks");tick(0);
  CHECK(strstr(drawn,"\nFiles failed\nchecks\n"));
+ /* Import track files: Select opens it, back closes it before Options can. */
+ s_saphiDownloading=0;tick(BTN_SELECT);CHECK(MM_CustomImport_Active());
+ folderCount=2;tick(BTN_SQUARE);tick(0);CHECK(strstr(drawn,"Choose a file")&&strstr(drawn,"Pack 1.xdelta"));
+ tick(BTN_DOWN);tick(BTN_CROSS);CHECK(scanStarts==1);
+ tick(0);CHECK(strstr(drawn,"Reading patch\n37%"));
+ tick(BTN_TRIANGLE);CHECK(discards==1&&MM_CustomImport_Active()&&strstr(s_importMessage,"cancelled"));
+ tick(BTN_UP);tick(BTN_CROSS);CHECK(pickState==0);tick(0);CHECK(strstr(drawn,"Waiting"));
+ pickState=1;tick(0);CHECK(scanStarts==2);
+ fakeSummary.count=3;
+ fakeSummary.items[0].offered=1;strcpy(fakeSummary.items[0].title,"Snowy Valley");strcpy(fakeSummary.items[0].tags,"Race TT Arcade Relic CTR");
+ fakeSummary.items[1].offered=1;memset(fakeSummary.items[1].title,'W',150);
+ strcpy(fakeSummary.items[2].title,"LRG2Pancho slot 169");strcpy(fakeSummary.items[2].reason,"Arena: not supported yet");
+ scanState=1;tick(0);CHECK(strstr(drawn,"[x] Snowy Valley")&&strstr(drawn,"2 tracks"));
+ tick(BTN_DOWN);tick(BTN_DOWN);tick(BTN_SQUARE);tick(0);CHECK(strstr(drawn,"Skipped")&&strstr(drawn,"Arena: not"));
+ tick(BTN_UP);tick(BTN_SQUARE);tick(BTN_CROSS);CHECK(installStarts==1&&lastSelected[0]&&!lastSelected[1]&&!lastSelected[2]);
+ installState=1;s_contentStoreWanted=0;tick(0);CHECK(strstr(s_importMessage,"Installed 2 tracks")&&s_contentStoreWanted);
+ s_contentLibraryTab=0;tick(BTN_CROSS);CHECK(!MM_CustomImport_Active()&&s_contentLibraryTab==1);
+ tick(BTN_SELECT);scanState=-1;tick(BTN_CROSS);pickState=1;tick(0);scanState=-2;tick(0);
+ CHECK(strstr(drawn,"Patch does not match")||strstr(s_importMessage,"Patch does not match"));
+ tick(BTN_TRIANGLE);CHECK(!MM_CustomImport_Active());
  CHECK(CustomRevision_Compare("2.0.0","1.99.0")>0);
  CHECK(CustomRevision_Compare("1.0.0","1.0.0-rc1")>0);
  printf("custom manager: %d checks, %d failures\n",checks,failures);return failures!=0;

@@ -238,8 +238,9 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
     }
     snprintf(line,sizeof line,"R2 Search: %s%s",s_saphiQuery,s_contentSearchEditing ? "_" : "");
     MM_CustomText_Draw(line,256,180,456,1,JUSTIFY_CENTER | WHITE,ot);
-    snprintf(line,sizeof line,"%u/%u   L2 Refresh   Select: Import   Back: Options",count ? (unsigned)*selected+1 : 0,(unsigned)count);
+    snprintf(line,sizeof line,"%u/%u   L2 Refresh   Back: Options",count ? (unsigned)*selected+1 : 0,(unsigned)count);
     MM_CustomText_Draw(line,256,196,456,1,JUSTIFY_CENTER | WHITE,ot);
+    MM_CustomText_Draw("Select: Import track files",256,188,456,1,JUSTIFY_CENTER | ORANGE,ot);
     RECT listBox={20,64,268,108}, detailBox={297,64,190,108};
     RECTMENU_DrawInnerRect(&listBox,0,ot);RECTMENU_DrawInnerRect(&detailBox,0,ot);
     if(enterVersions) { s_saphiVersionTrack=enterVersions;s_saphiBrowseSelection=*selected;*selected=0; }

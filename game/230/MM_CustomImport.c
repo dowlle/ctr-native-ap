@@ -60,7 +60,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         else if (state == 2 || state == -1)
         {
             s_importStage = IMPORT_CHOOSE;
-            snprintf(s_importMessage, sizeof s_importMessage, "No file chosen. You can also put the patch in assets/tracks/import.");
+            snprintf(s_importMessage, sizeof s_importMessage, "No file chosen.");
         }
         tapped = 0;
     }
@@ -115,7 +115,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             if (s_importRow == 0)
             {
                 if (XdeltaPick_Start()) s_importStage = IMPORT_PICKING;
-                else snprintf(s_importMessage, sizeof s_importMessage, "No file dialog. Put the patch in assets/tracks/import.");
+                else snprintf(s_importMessage, sizeof s_importMessage, "No file dialog. Use the folder.");
             }
             else
             {
@@ -179,21 +179,21 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         for (size_t row = first; row < first + 7 && row < count; row++)
         {
             RECT box = {24, 68 + (int)(row - first) * 15, 260, 14};
-            MM_CustomText_Draw(row == 0 ? "Choose a patch file..." : s_importFiles[row - 1], 32, box.y + 2, 244, 1,
+            MM_CustomText_Draw(row == 0 ? "Choose a file" : s_importFiles[row - 1], 32, box.y + 2, 244, 1,
                                row == s_importRow ? ORANGE : WHITE, ot);
             if (row == s_importRow) CTR_Box_DrawClearBox(&box, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
         }
         MM_CustomText_Draw(s_importStage == IMPORT_PICKING ? "Waiting for the file dialog..." :
                            s_importMessage[0] ? s_importMessage :
-                           "An .xdelta patch for the NTSC-U disc. Race tracks become packages; nothing else is used.",
+                           "Pick an xdelta patch. Its race tracks become packages.",
                            305, 70, 176, 6, WHITE, ot);
         MM_CustomText_Draw("[ Rescan folder", 305, 159, 176, 1, ORANGE, ot);
     }
     else if (s_importStage == IMPORT_SCANNING)
     {
-        snprintf(line, sizeof line, "Reading patch... %d%%", s_importProgress);
-        MM_CustomText_Draw(line, 32, 84, 244, 1, WHITE, ot);
-        MM_CustomText_Draw("Back: Cancel", 305, 70, 176, 1, WHITE, ot);
+        snprintf(line, sizeof line, "%d%%", s_importProgress);
+        MM_CustomText_Draw("Reading patch", 32, 84, 244, 1, WHITE, ot);
+        MM_CustomText_Draw(line, 32, 99, 244, 1, ORANGE, ot);
     }
     else if (s_importStage == IMPORT_REVIEW || s_importStage == IMPORT_INSTALLING)
     {
@@ -226,10 +226,11 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
     {
         unsigned offered = 0;
         for (unsigned i = 0; i < s_importSummary.count; i++) offered += s_importSummary.items[i].offered != 0;
-        snprintf(line, sizeof line, "%u/%u   %u race track%s   Back: Cancel", count ? (unsigned)s_importRow + 1 : 0,
+        snprintf(line, sizeof line, "%u/%u  %u track%s  Back: Cancel", count ? (unsigned)s_importRow + 1 : 0,
                  (unsigned)count, offered, offered == 1 ? "" : "s");
     }
-    else snprintf(line, sizeof line, "%s", s_importStage == IMPORT_RESULT ? "X: Installed tracks" : "Back: Track Manager");
+    else snprintf(line, sizeof line, "%s", s_importStage == IMPORT_RESULT ? "X: Installed tracks" :
+                  s_importStage == IMPORT_SCANNING ? "Back: Cancel" : "Folder: assets/tracks/import");
     MM_CustomText_Draw(line, 256, 196, 456, 1, JUSTIFY_CENTER | WHITE, ot);
     {
         RECT listBox = {20, 64, 268, 108}, detailBox = {297, 64, 190, 108};
