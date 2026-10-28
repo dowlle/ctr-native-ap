@@ -11,6 +11,8 @@
 
 static void AP_NetTick(struct GameTracker *gGT)
 {
+	AP_Solo_Tick(); // #89: solo runtime jobs and the solo server session
+
 	if (!ap_net_started)
 	{
 		char uri[128] = "";
@@ -599,6 +601,7 @@ void AP_Net_Reconnect(const char *uri, const char *slot, const char *password)
 	         uri ? uri : "", slot ? slot : "");
 	AP_AppendLog(msg);
 
+	AP_Solo_BeforeReconnect(); // #89: any other connection ends a solo session
 	ap_net_shutdown();
 	if (ap_net_init("ctr-native", "Crash Team Racing", uri) == 0)
 		ap_net_connect_slot(slot, password);

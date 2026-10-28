@@ -304,6 +304,7 @@ void MM_MenuProc_Main(struct RectMenu *mainMenu)
 	if (choose == LNG_QUIT)
 	{
 #ifdef CTR_AP
+		AP_Solo_Shutdown(); // #89: let a solo server save and exit first
 		AP_Net_Shutdown();
 #endif
 		exit(0);

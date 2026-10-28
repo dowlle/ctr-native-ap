@@ -28,6 +28,7 @@
 #include "ap_hit_policy.h" // AP_HitFallbackConflictPure -- the block schema 3 check
 #include "ap_deathlink_inbox.h" // inbound DeathLink bounces until the game thread drains them
 #include "ap_stat_select_logic.h" // AP_StatSel_ValueOk: the stored rank selection bound
+#include "ap_solo_logic.hpp" // #89 solo check journal parse and resend set
 
 static APDoorHistory g_doors;
 static unsigned g_doors_sent = 0;
@@ -1053,6 +1054,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			    return g_locs_chk.count(code) != 0;
 		    },
 		    [](int64_t code) { return ap_net_try_send_location(code); });
+		ap_solo_journal_resend(connectedSeed);
 		if (heldFlush.discarded != 0)
 		{
 			char line[96];
@@ -1511,6 +1513,63 @@ extern "C" int ap_net_is_connected(void)
 	return (g_ap->get_state() == APClient::State::SLOT_CONNECTED) ? 1 : 0;
 }
 
+// #89 solo mode: while a solo session runs, every check is appended to the
+// room's checks.journal before it is sent, and every journalled check the
+// server still lists as missing is sent again on each slot-connect. The solo
+// server saves after each check batch; this covers a save lost to a crash.
+// Location checks are idempotent, so a resend never duplicates anything.
+static std::string g_solo_journal_path;
+static std::string g_solo_journal_seed;
+
+extern "C" void ap_net_set_check_journal(const char *path, const char *seed)
+{
+	g_solo_journal_path = path ? path : "";
+	g_solo_journal_seed = seed ? seed : "";
+}
+
+static void ap_solo_journal_append(int64_t code)
+{
+	if (g_solo_journal_path.empty())
+		return;
+	// Only checks of the solo room: before the first slot-connect the seed is
+	// unknown, and such a check is held for this session anyway.
+	if (g_ap && !g_ap->get_seed().empty() && g_ap->get_seed() != g_solo_journal_seed)
+		return;
+	FILE *f = std::fopen(g_solo_journal_path.c_str(), "ab");
+	if (!f)
+		return;
+	std::fprintf(f, "%lld\n", (long long)code);
+	std::fflush(f);
+	std::fclose(f);
+}
+
+static void ap_solo_journal_resend(const std::string &seed)
+{
+	if (g_solo_journal_path.empty() || seed != g_solo_journal_seed || !g_ap)
+		return;
+	FILE *f = std::fopen(g_solo_journal_path.c_str(), "rb");
+	if (!f)
+		return;
+	std::string text;
+	char chunk[4096];
+	size_t n;
+	while ((n = std::fread(chunk, 1, sizeof chunk, f)) > 0)
+		text.append(chunk, n);
+	std::fclose(f);
+	std::set<int64_t> missing = g_ap->get_missing_locations();
+	ap_locs_refresh();
+	std::vector<int64_t> resend = AP_SoloResendSet(AP_SoloJournalParse(text), g_locs_chk, missing);
+	if (resend.empty())
+		return;
+	AP_NET_GUARD("solo_journal_resend", {
+		g_ap->LocationChecks(std::list<int64_t>(resend.begin(), resend.end()));
+		ap_locs_invalidate();
+	});
+	char line[96];
+	std::snprintf(line, sizeof line, "[AP NET] solo journal: resent %d check(s)\n", (int)resend.size());
+	AP_LogLine(line);
+}
+
 static bool ap_net_try_send_location(int64_t code)
 {
 	if (!(g_ap && g_connected))
@@ -1536,6 +1595,7 @@ extern "C" void ap_net_send_location(long long location_code)
 	// reconnect.
 	if (g_rejected)
 		return;
+	ap_solo_journal_append(code);
 	if (ap_net_try_send_location(code))
 		return;
 	if (g_ap && g_connected)

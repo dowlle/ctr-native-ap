@@ -765,12 +765,26 @@ static void TextEdit_DrawHint(int y, uint32_t *ot)
 		0x100, y, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 }
 
+#if !defined(CTR_AP_AUTHORING)
+#include "MM_Solo.c" // #89 Play Solo pages, opened from the Connection page
+#define CONN_SOLO_ROWS 1
+#else
+#define CONN_SOLO_ROWS 0
+static int MM_Solo_ConsumesBack(void) { return 0; }
+#endif
+
 static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
 {
 	char buf[160];
 	const int sec = s_currentSection;
 	const int numStrings = s_sectionCount[sec]; // uri / slot / password
-	const int numRows = numStrings + 1;         // + Connect action row
+	const int numRows = numStrings + 1 + CONN_SOLO_ROWS; // + Connect (+ Play Solo)
+
+#if !defined(CTR_AP_AUTHORING)
+	// Play Solo owns the whole page while one of its pages is open.
+	if (MM_Solo_Frame(ot, pad))
+		return;
+#endif
 
 	// The Room links row lives on Options > Archipelago; this page only keeps
 	// the one-time notice for when another program owns room links (#334).
@@ -800,11 +814,19 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 				TextEdit_Begin(Section_Entry(sec, menu->rowSelected), menu->rowSelected,
 					CONN_ROW_START_Y + menu->rowSelected * CONN_ROW_SPACING - 2);
 			}
-			else
+			else if (menu->rowSelected == numStrings)
 			{
 				// Connect action: re-dial with the saved connection settings.
+				// A running solo session ends first (AP_Net_Reconnect).
 				AP_Net_Reconnect(g_config.uri, g_config.slot, g_config.password);
 			}
+#if !defined(CTR_AP_AUTHORING)
+			else
+			{
+				MM_Solo_Open(); // #89
+				return;
+			}
+#endif
 		}
 	}
 
@@ -846,6 +868,20 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
 		}
 	}
+
+#if !defined(CTR_AP_AUTHORING)
+	// Play Solo row (#89), in the spare line between Connect and Status.
+	{
+		int y = startY + (numStrings + 1) * rowSpacing;
+		DecalFont_DrawLineOT(AP_Solo_SessionState() == AP_SOLO_SESSION_LIVE ? "Play Solo (connected)" : "Play Solo",
+			labelX, y, FONT_SMALL, ORANGE, ot);
+		if (menu->rowSelected == numStrings + 1)
+		{
+			RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
+			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
+		}
+	}
+#endif
 
 	// Read-only status row (one line below the Connect row). Short states sit
 	// beside the label; anything longer than fits there (the unreachable-host
@@ -1232,6 +1268,10 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 #elif defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
 	    // Back first closes the Install missing content overview (#133 PR 7).
 	    && !MM_CurrentSeed_ConsumesBack(s_currentSection)
+#endif
+#ifdef CTR_AP
+	    // Back first steps out of the Play Solo pages (#89).
+	    && !MM_Solo_ConsumesBack()
 #endif
 	)
 	{
