@@ -52,16 +52,18 @@ void PickupBots_Init(void)
 	int hub;
 	int lev = sdata->gGT->levelID;
 
+#ifdef CTR_AP
+	// J03: reset before any early return, so no armed driver pointer from an
+	// earlier race survives into a custom-page race (review round 1).
+	AP_BossAdapterReset(&s_apBossAdapter);
+	s_apBossAdapterDriver = NULL;
+#endif
+
 #ifdef CTR_CUSTOM_PACKAGES
 	// A custom-page race has no hub and no boss: never read the host slot's
 	// level metadata. bossWeaponMeta is only read by boss AI.
 	if (MainRaceTrack_OfflineCustomLoad())
 		return;
-#endif
-
-#ifdef CTR_AP
-	AP_BossAdapterReset(&s_apBossAdapter);
-	s_apBossAdapterDriver = NULL;
 #endif
 
 	// get hubID of level
@@ -581,11 +583,20 @@ static void PickupBots_AdapterEndInvisibility(struct Driver *d)
 }
 
 // End every self-state of the armed driver: finish, race over, race exit.
-// The shield needs nothing: its own thread pops it when the driver finishes
-// (RB_ShieldDark_ThTick_Grow), and a reload frees it with the level.
+// A held shield is popped here too: its own thread only pops it once its
+// driver finishes, and the race can end while the boss is still driving
+// (review round 1). A reload frees it with the level.
 static void PickupBots_AdapterEndAll(struct Driver *d)
 {
 	struct MaskHeadWeapon *mask;
+
+	if (d->instBubbleHold != NULL && d->instBubbleHold->thread != NULL)
+	{
+		struct Shield *shield = (struct Shield *)d->instBubbleHold->thread->object;
+		if (shield != NULL)
+			shield->flags |= 1; // the retail pop VehPickState uses
+		d->instBubbleHold = NULL;
+	}
 
 	PickupBots_AdapterEndInvisibility(d);
 	d->superEngineTimer = 0;
@@ -916,16 +927,22 @@ void PickupBots_Update(void)
 			return;
 		}
 
-		PickupBots_UpdateArcade();
 #ifdef CTR_AP
-		// J03: an armed Purple Gem Cup gauntlet leg adds one boss-style
-		// attacker on top of the ordinary AI weapons.
-		if ((gGT->gameMode1 & END_OF_RACE) == 0)
 		{
-			struct Driver *attacker = PickupBots_GauntletAttacker();
+			// J03: an armed Purple Gem Cup gauntlet leg adds one boss-style
+			// attacker. Its ordinary AI weapons are held back while the leg
+			// is armed, so it never fires two systems in one frame (review
+			// round 1): a nonzero bot cooldown fails PickupBots_IsBotWeaponReady.
+			struct Driver *attacker =
+			    ((gGT->gameMode1 & END_OF_RACE) == 0) ? PickupBots_GauntletAttacker() : NULL;
+			if (attacker != NULL && attacker->botData.weaponCooldown == 0)
+				attacker->botData.weaponCooldown = 1;
+			PickupBots_UpdateArcade();
 			if (attacker != NULL)
 				PickupBots_UpdateBoss(attacker);
 		}
+#else
+		PickupBots_UpdateArcade();
 #endif
 		return;
 	}

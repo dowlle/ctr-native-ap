@@ -767,6 +767,15 @@ static struct MetaDataBOSS *AP_BossFinalAttackSchedule(int fill)
 		{
 			int cp = ctr_boss_encounters.finalSchedule[i].checkpoint;
 			cps[i] = (unsigned char)(remap ? AP_OxideWeaponCheckpoint(cp, points - 1) : cp);
+			// Decision 8: a remap that reorders segments or starts outside the
+			// loaded track throws nothing (review round 1). Two neighbouring
+			// rows on one checkpoint are allowed, as the retail Cortex Vortex
+			// Oxide remap already does: the boss just passes through one.
+			if ((int)cps[i] >= points || (i > 0 && cps[i] < cps[i - 1]))
+			{
+				AP_AppendLog("[AP BOSS] final record does not fit the loaded track: no attacks\n");
+				return AP_BossInertSchedule(s_apBossFinalAttack, AP_BOSS_FINAL_SEGMENTS + 1);
+			}
 		}
 		memset(s_apBossFinalAttack, 0, sizeof s_apBossFinalAttack);
 		AP_BossFillKit(s_apBossFinalAttack, ctr_boss_encounters.finalSchedule, AP_BOSS_FINAL_SEGMENTS, cps);
