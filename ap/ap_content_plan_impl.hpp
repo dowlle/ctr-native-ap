@@ -173,7 +173,7 @@ static void package_record(const J &pkg, ctr_content_package &target) {
             copy(target.locator_name, loc["patch_name"]);
         }
         if (loc.contains("source_url"))
-            need(printable(loc["source_url"], 256, "https://", 0x21), "package locator source is not an https link");
+            need(printable(loc["source_url"], 128, "https://", 0x21), "package locator source is not an https link");
         copy(target.locator_sha256, loc["patch_sha256"]);
         base.erase("locator");
     }

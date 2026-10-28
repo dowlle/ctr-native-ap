@@ -258,6 +258,10 @@ for name, change in [
                                                               patch_name="caf\u00e9"))),
         ("locator http", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1,
                                                       source_url="http://example.invalid"))),
+        ("locator url 128", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1,
+                                                         source_url="https://" + "x" * 120))),
+        ("locator url 129", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1,
+                                                         source_url="https://" + "x" * 121))),
         ("locator extra", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1, x=1))),
         ]:
     open_alter(name, change)
