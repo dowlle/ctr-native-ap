@@ -187,45 +187,57 @@ static void lifecycle(void)
 {
  ap_tl_request r; int i;
  AP_TLReset(&r);
- /* Same hub: the pad takes the kart, its menu takes the mode, done. */
- assert(AP_TLBegin(&r, 1, 1, 3, 7, C, C) == AP_TL_BEGIN_HERE && r.stage == AP_TL_ARRIVE);
+ /* Same hub: wait until the hub is safe (pause menu closed), then the pad
+  * takes the kart and its menu takes the mode. No hub load is asked. */
+ assert(AP_TLBegin(&r, 1, 1, 3, 7, C, C) == AP_TL_BEGIN_HERE && r.stage == AP_TL_LOADING);
  assert(AP_TLBegin(&r, 1, 1, 3, 7, C, C) == AP_TL_BEGIN_REFUSED); /* one start at a time */
+ assert(!AP_TLPadArrives(&r, 1, 3, 7));
+ for (i = 0; i < 5; i++) assert(AP_TLFrame(&r, 1, 1, 1) == AP_TL_DROP_NONE && r.stage == AP_TL_LOADING);
+ assert(!AP_TLWantsLoad(&r));
+ assert(AP_TLFrame(&r, 1, 0, 1) == AP_TL_DROP_NONE && r.stage == AP_TL_ARRIVE);
  assert(AP_TLPadArrives(&r, 1, 3, 7) && !AP_TLPadArrives(&r, 1, 3, 8) && !AP_TLPadArrives(&r, 2, 3, 7));
  assert(!AP_TLGarageArrives(&r, 1));
- assert(AP_TLFrame(&r, 1, 0, 1) == AP_TL_DROP_NONE);
  AP_TLTaken(&r); assert(r.stage == AP_TL_TAKEN && !AP_TLPadArrives(&r, 1, 3, 7));
  assert(AP_TLTakeMode(&r, 3, 8) == -1);
  assert(AP_TLTakeMode(&r, 3, 7) == C && r.stage == AP_TL_IDLE);
  assert(AP_TLTakeMode(&r, 3, 7) == -1);
  /* A pad without a menu is done when it takes the kart. */
- AP_TLBegin(&r, 0, 0, 100, 100, AP_PADACT_CUP, -1); AP_TLTaken(&r); assert(r.stage == AP_TL_IDLE);
- /* Another hub: wait through the load, then arrive. */
+ AP_TLBegin(&r, 0, 0, 100, 100, AP_PADACT_CUP, -1); AP_TLFrame(&r, 0, 0, 1);
+ AP_TLTaken(&r); assert(r.stage == AP_TL_IDLE);
+ /* Another hub: the load is asked once, when the hub is safe; then the
+  * start waits through the load and arrives in the pad's hub. */
  assert(AP_TLBegin(&r, 1, 4, 11, 11, T, T) == AP_TL_BEGIN_LOAD_HUB && r.stage == AP_TL_LOADING);
+ assert(AP_TLFrame(&r, 1, 1, 1) == AP_TL_DROP_NONE); /* not safe yet */
+ assert(AP_TLFrame(&r, 1, 0, 1) == AP_TL_DROP_NONE && r.stage == AP_TL_LOADING);
+ assert(AP_TLWantsLoad(&r) && !AP_TLWantsLoad(&r));
  assert(!AP_TLPadArrives(&r, 4, 11, 11));
- for (i = 0; i < 100; i++) assert(AP_TLFrame(&r, 1, 1, 1) == AP_TL_DROP_NONE);
+ for (i = 0; i < 100; i++) assert(AP_TLFrame(&r, -1, 1, 1) == AP_TL_DROP_NONE);
  assert(AP_TLFrame(&r, 4, 1, 1) == AP_TL_DROP_NONE && r.stage == AP_TL_LOADING);
  assert(AP_TLFrame(&r, 4, 0, 1) == AP_TL_DROP_NONE && r.stage == AP_TL_ARRIVE);
  assert(AP_TLPadArrives(&r, 4, 11, 11));
  /* The pad never takes the kart: dropped after a second. */
  for (i = 1; i < AP_TL_ARRIVE_FRAMES; i++) assert(AP_TLFrame(&r, 4, 0, 1) == AP_TL_DROP_NONE);
  assert(AP_TLFrame(&r, 4, 0, 1) == AP_TL_DROP_TIMEOUT && r.stage == AP_TL_IDLE);
- /* The gate closes on the way: dropped, never entered. */
- AP_TLBegin(&r, 1, 4, 11, 11, T, T); AP_TLFrame(&r, 4, 0, 1);
- assert(AP_TLFrame(&r, 4, 0, 0) == AP_TL_DROP_GATE && r.stage == AP_TL_IDLE);
- /* The load ends somewhere else: dropped. */
+ /* The gate closes before the load: dropped, nothing loaded. */
  AP_TLBegin(&r, 1, 4, 11, 11, T, T);
- assert(AP_TLFrame(&r, 4, 0, 1) == AP_TL_DROP_NONE);
+ assert(AP_TLFrame(&r, 1, 0, 0) == AP_TL_DROP_GATE && r.stage == AP_TL_IDLE && !AP_TLWantsLoad(&r));
+ /* The gate closes on arrival: dropped, never entered. */
+ AP_TLBegin(&r, 1, 4, 11, 11, T, T); AP_TLFrame(&r, 1, 0, 1); AP_TLWantsLoad(&r);
+ assert(AP_TLFrame(&r, 4, 0, 1) == AP_TL_DROP_NONE && r.stage == AP_TL_ARRIVE);
+ assert(AP_TLFrame(&r, 4, 0, 0) == AP_TL_DROP_GATE && r.stage == AP_TL_IDLE);
+ /* The player ends up somewhere else after arriving: dropped. */
+ AP_TLBegin(&r, 4, 4, 11, 11, T, T); AP_TLFrame(&r, 4, 0, 1);
  assert(AP_TLFrame(&r, -1, 0, 1) == AP_TL_DROP_ELSEWHERE && r.stage == AP_TL_IDLE);
- /* A load that never finishes: dropped. */
+ /* A hub that never becomes safe, or a load that never ends: dropped. */
  AP_TLBegin(&r, 1, 4, 11, 11, T, T);
  for (i = 0; i < AP_TL_LOAD_FRAMES; i++) assert(AP_TLFrame(&r, -1, 1, 1) == AP_TL_DROP_NONE);
- assert(AP_TLFrame(&r, -1, 1, 1) == AP_TL_DROP_TIMEOUT);
+ assert(AP_TLFrame(&r, -1, 1, 1) == AP_TL_DROP_TIMEOUT && r.stage == AP_TL_IDLE);
  /* A pad that holds the kart but never asks: dropped, not leaked. */
- AP_TLBegin(&r, 2, 2, 3, 3, R, R); AP_TLTaken(&r);
+ AP_TLBegin(&r, 2, 2, 3, 3, R, R); AP_TLFrame(&r, 2, 0, 1); AP_TLTaken(&r);
  for (i = 0; i < AP_TL_TAKEN_FRAMES; i++) assert(AP_TLFrame(&r, 2, 0, 0) == AP_TL_DROP_NONE);
  assert(AP_TLFrame(&r, 2, 0, 0) == AP_TL_DROP_TIMEOUT && r.stage == AP_TL_IDLE);
  /* A garage start. */
- AP_TLBegin(&r, 3, 3, -1, -1, AP_PADACT_BOSS, -1);
+ AP_TLBegin(&r, 3, 3, -1, -1, AP_PADACT_BOSS, -1); AP_TLFrame(&r, 3, 0, 1);
  assert(AP_TLGarageArrives(&r, 3) && !AP_TLPadArrives(&r, 3, -1, -1) && !AP_TLGarageArrives(&r, 2));
  AP_TLTaken(&r); assert(r.stage == AP_TL_IDLE);
  /* Bad hubs are refused. */
@@ -338,9 +350,15 @@ gacts = body(launch, "int AP_GarageActivities(")
 assert "AP_OxideGarageOpen()" in gacts and "AP_BossGarageOpen(hub - 1)" in gacts
 begin = body(launch, "int AP_TrackerLaunchBegin(")
 assert begin.index("AP_TLGateOpen(&probe)") < begin.index("MainFreeze_APResumeFromTracker();")
-assert "MainRaceTrack_RequestLoad((s16)(GEM_STONE_VALLEY + hub));" in begin
+assert "MainRaceTrack_RequestLoad" not in begin
+lframe = body(launch, "void AP_TrackerLaunchFrame(")
+assert "AP_HubSafeForRequest(gt)" in lframe
+assert "MainRaceTrack_RequestLoad((s16)(GEM_STONE_VALLEY + r->hub));" in lframe
+assert lframe.index("AP_TLWantsLoad(r)") < lframe.index("MainRaceTrack_RequestLoad(")
 # The tracker never loads a race itself: its only load is a hub.
 assert launch.count("MainRaceTrack_RequestLoad(") == 1
+cs = (root / "ap/ap_charswap.c").read_text()
+assert "return gGT != NULL && gGT->drivers[0] != NULL && ap_cs_safeToOpen(gGT);" in body(cs, "int AP_HubSafeForRequest(")
 frame = (root / "ap/ap_hooks_frame.c").read_text()
 assert "AP_TrackerLaunchFrame(gGT);" in body(frame, "void AP_OnFrame(struct GameTracker *gGT)")
 

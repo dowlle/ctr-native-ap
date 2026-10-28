@@ -16,7 +16,7 @@
 enum
 {
 	AP_TL_IDLE = 0,
-	AP_TL_LOADING = 1, // the pad's hub was requested; waiting for it to run
+	AP_TL_LOADING = 1, // waiting for a safe hub, the pad's hub load, or both
 	AP_TL_ARRIVE = 2,  // in the hub: the pad or garage may take the kart
 	AP_TL_TAKEN = 3    // the pad holds the kart; its menu takes `mode`
 };
@@ -25,7 +25,7 @@ enum
 {
 	AP_TL_BEGIN_REFUSED = 0,
 	AP_TL_BEGIN_HERE = 1,    // same hub: resume, the pad takes the kart
-	AP_TL_BEGIN_LOAD_HUB = 2 // load the pad's hub first
+	AP_TL_BEGIN_LOAD_HUB = 2 // load the pad's hub first, once the hub is safe
 };
 
 enum
@@ -44,7 +44,8 @@ enum
 // Frames a pad may hold the kart before its menu asks for the mode (it asks
 // on warp frame 61). Bounds a pad that released the kart on its own route.
 #define AP_TL_TAKEN_FRAMES 240
-// Frames a hub load may take before the start is dropped.
+// Frames a whole start may take, waiting for a safe hub, the hub load and the
+// pad, before it is dropped. Also the bound on a hub load.
 #define AP_TL_LOAD_FRAMES 1800
 
 typedef struct
@@ -56,6 +57,8 @@ typedef struct
 	int activity; // AP_PADACT_*
 	int mode;     // the pad menu's answer, -1 when the pad asks nothing
 	int frames;
+	int total;    // frames since the start began, any stage
+	int needLoad; // the hub load is still to be requested
 	int drop;     // last drop reason, for the log
 } ap_tl_request;
 
@@ -63,7 +66,7 @@ static inline void AP_TLReset(ap_tl_request *r)
 {
 	r->stage = AP_TL_IDLE;
 	r->hub = r->physical = r->dest = r->activity = r->mode = -1;
-	r->frames = 0;
+	r->frames = r->total = r->needLoad = 0;
 }
 
 static inline int AP_TLBegin(ap_tl_request *r, int currentHub, int hub, int physical, int dest,
@@ -76,9 +79,12 @@ static inline int AP_TLBegin(ap_tl_request *r, int currentHub, int hub, int phys
 	r->dest = dest;
 	r->activity = activity;
 	r->mode = mode;
-	r->frames = 0;
+	r->frames = r->total = 0;
 	r->drop = AP_TL_DROP_NONE;
-	r->stage = hub == currentHub ? AP_TL_ARRIVE : AP_TL_LOADING;
+	// Even in the same hub the start waits in LOADING until the hub is safe
+	// for a request (the pause menu closes over several frames).
+	r->stage = AP_TL_LOADING;
+	r->needLoad = hub != currentHub;
 	return hub == currentHub ? AP_TL_BEGIN_HERE : AP_TL_BEGIN_LOAD_HUB;
 }
 
@@ -89,13 +95,19 @@ static inline void AP_TLDrop(ap_tl_request *r, int why)
 }
 
 // Once per frame. `levelHub` is the running hub (0..4) or -1 for any other
-// level; `loading` is a level load in flight; `gateOpen` is the shared gate's
-// answer for the chosen row, asked again now. Returns a drop reason, or
-// AP_TL_DROP_NONE while the start is alive or idle.
+// level; `loading` is a level load in flight or a hub that is not yet safe
+// for a request (pause menu still closing, a cutscene, a hub swap); `gateOpen`
+// is the shared gate's answer for the chosen row, asked again now. Returns a
+// drop reason, or AP_TL_DROP_NONE while the start is alive or idle.
 static inline int AP_TLFrame(ap_tl_request *r, int levelHub, int loading, int gateOpen)
 {
 	if (r->stage == AP_TL_IDLE)
 		return AP_TL_DROP_NONE;
+	if (r->stage != AP_TL_TAKEN && ++r->total > AP_TL_LOAD_FRAMES)
+	{
+		AP_TLDrop(r, AP_TL_DROP_TIMEOUT);
+		return AP_TL_DROP_TIMEOUT;
+	}
 	if (r->stage == AP_TL_TAKEN)
 	{
 		if (!loading && ++r->frames > AP_TL_TAKEN_FRAMES)
@@ -107,12 +119,12 @@ static inline int AP_TLFrame(ap_tl_request *r, int levelHub, int loading, int ga
 	}
 	if (r->stage == AP_TL_LOADING)
 	{
-		if (++r->frames > AP_TL_LOAD_FRAMES)
+		if (!gateOpen && !loading)
 		{
-			AP_TLDrop(r, AP_TL_DROP_TIMEOUT);
-			return AP_TL_DROP_TIMEOUT;
+			AP_TLDrop(r, AP_TL_DROP_GATE);
+			return AP_TL_DROP_GATE;
 		}
-		if (loading || levelHub != r->hub)
+		if (r->needLoad || loading || levelHub != r->hub)
 			return AP_TL_DROP_NONE;
 		r->stage = AP_TL_ARRIVE;
 		r->frames = 0;
@@ -135,6 +147,16 @@ static inline int AP_TLFrame(ap_tl_request *r, int levelHub, int loading, int ga
 		return AP_TL_DROP_TIMEOUT;
 	}
 	return AP_TL_DROP_NONE;
+}
+
+// The hub is safe for a request: ask for the pad's hub once. Returns 1 when
+// the caller should request the load now.
+static inline int AP_TLWantsLoad(ap_tl_request *r)
+{
+	if (r->stage != AP_TL_LOADING || !r->needLoad)
+		return 0;
+	r->needLoad = 0;
+	return 1;
 }
 
 // The pad (physical, dest) asks whether the kart arrives at it this frame.

@@ -190,13 +190,7 @@ int AP_TrackerLaunchBegin(int hub, int physical, int dest, int activity, int mod
 	if (begin == AP_TL_BEGIN_REFUSED)
 		return 0;
 	MainFreeze_APResumeFromTracker();
-	if (begin == AP_TL_BEGIN_LOAD_HUB)
-	{
-		AP_TLLog("loads the pad's hub", r);
-		MainRaceTrack_RequestLoad((s16)(GEM_STONE_VALLEY + hub));
-	}
-	else
-		AP_TLLog("begins", r);
+	AP_TLLog(begin == AP_TL_BEGIN_LOAD_HUB ? "begins, the pad's hub loads first" : "begins", r);
 	return 1;
 }
 
@@ -209,12 +203,22 @@ void AP_TrackerLaunchFrame(struct GameTracker *gt)
 	if (r->stage == AP_TL_IDLE)
 		return;
 	levelHub = AP_TLLevelHub();
-	hold = sdata->Loading.stage != LOAD_IDLE || (gt && (gt->gameMode1 & PAUSE_1));
+	/* The same "genuinely idle hub" test the character swap waits for: no
+	 * load, pause menu fully closed, no cutscene, door, hint or hub swap. */
+	hold = sdata->Loading.stage != LOAD_IDLE || !gt || levelHub < 0 || !AP_HubSafeForRequest(gt);
 	/* Once the pad holds the kart its own gates decide; before that the
 	 * shared gate is asked again every frame. */
 	drop = AP_TLFrame(r, levelHub, hold, hold || r->stage == AP_TL_TAKEN || AP_TLGateOpen(r));
 	if (drop != AP_TL_DROP_NONE)
+	{
 		AP_TLLog(why[drop], &copy);
+		return;
+	}
+	if (!hold && AP_TLWantsLoad(r))
+	{
+		AP_TLLog("requests the pad's hub", r);
+		MainRaceTrack_RequestLoad((s16)(GEM_STONE_VALLEY + r->hub));
+	}
 }
 
 int AP_TrackerLaunchPadArrives(int physical, int dest)
