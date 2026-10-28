@@ -1,4 +1,4 @@
-// gcc -m32 -std=c++17 -Wall -Wextra -DCTR_CUSTOM_TRACKS -DCTR_CUSTOM_PACKAGES -DUTF8PROC_STATIC -I include -I . -I ap/vendor/json/include -I vendor/utf8proc
+// gcc -m32 -std=c++17 -Wall -Wextra -DCTR_CUSTOM_TRACKS -DCTR_CUSTOM_PACKAGES -DCTR_XDELTA_TESTING -DUTF8PROC_STATIC -I include -I . -I ap/vendor/json/include -I vendor/utf8proc
 // -x c++ tools/test-xdelta-import.cpp platform/native_xdelta_import.cpp platform/native_custom_package.cpp platform/native_custom_package_files.cpp
 // -x c platform/native_xdelta_decode.c platform/native_custom_package_owned.c platform/native_custom_content_verify.c platform/native_custom_offline.c platform/native_custom_unicode.c platform/native_custom_track_manager.c vendor/utf8proc/utf8proc.c -x none
 // -lstdc++ -lm -lpthread -o /tmp/test-xdelta-import
@@ -31,8 +31,10 @@ extern "C" {
 #include <string>
 #include <vector>
 #include <sys/stat.h>
+#include <dirent.h>
 #include <unistd.h>
 
+extern "C" int g_xdeltaTestFailRoomVrm;
 using Bytes = std::vector<unsigned char>;
 static int checks, failures;
 #define CHECK(cond, name) do { checks++; if (!(cond)) { failures++; std::printf("FAIL %s (line %d)\n", name, __LINE__); } } while (0)
@@ -509,6 +511,25 @@ int main()
             CHECK(XdeltaImport_Install(a.scan, selected.data(), pair.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == -1 &&
                   std::strstr(error, "in the way"), "a VRM in the way fails the pair");
             CHECK(stat((pair + "/tracks/pack-slot-1/original/" + stem + ".lev").c_str(), &info) != 0, "no lone LEV left behind");
+            /* The VRM fails after the LEV was placed: the LEV is removed again. */
+            std::string rollback = root + "/assets-rollback";
+            mkdir(rollback.c_str(), 0755);
+            g_xdeltaTestFailRoomVrm = 1;
+            CHECK(XdeltaImport_Install(a.scan, selected.data(), rollback.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == -1 &&
+                  std::strstr(error, "Test failure") && !std::strstr(error, "stays"), "VRM failure after the LEV fails the install");
+            g_xdeltaTestFailRoomVrm = 0;
+            CHECK(stat((rollback + "/tracks/pack-slot-1/original/" + stem + ".lev").c_str(), &info) != 0, "rollback removed the placed LEV");
+            {
+                int leftovers = 0;
+                if (DIR *d = opendir((rollback + "/tracks/pack-slot-1/original").c_str()))
+                {
+                    while (dirent *e = readdir(d)) if (e->d_name[0] != '.' || std::strncmp(e->d_name, ".xdelta", 7) == 0) leftovers++;
+                    closedir(d);
+                }
+                CHECK(leftovers == 0, "no temp or rollback names left");
+            }
+            CHECK(XdeltaImport_Install(a.scan, selected.data(), rollback.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == 2,
+                  "the next install after a rollback succeeds");
             /* The tracks folder itself may be a link (player configuration, as for Saphi installs). */
             std::string viaLink = root + "/assets-tracks-link";
             mkdir(viaLink.c_str(), 0755);

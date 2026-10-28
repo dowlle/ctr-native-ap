@@ -1285,6 +1285,15 @@ namespace {
    a LEV this install placed is removed again. <key> and original/ may not
    be links; the tracks folder itself is the player's configuration and may
    be one, as for Saphi installs (ap_custom_track_download.cpp). */
+#ifdef CTR_XDELTA_TESTING
+/* Harness only: fail the VRM after the LEV is placed, to test the rollback. */
+extern "C" int g_xdeltaTestFailRoomVrm;
+int g_xdeltaTestFailRoomVrm;
+#define XDELTA_TEST_FAIL_VRM() do { if (g_xdeltaTestFailRoomVrm) throw std::runtime_error("Test failure"); } while (0)
+#else
+#define XDELTA_TEST_FAIL_VRM() do { } while (0)
+#endif
+
 #ifdef _WIN32
 struct Handle
 {
@@ -1305,6 +1314,39 @@ bool pin_directory(const std::string &path, bool create, bool allowLink, Handle 
     return out.h != INVALID_HANDLE_VALUE && GetFileInformationByHandle(out.h, &info) &&
            (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
            (allowLink || !(info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT));
+}
+
+/* Hold a path's own entry (a junction or a plain folder) open without delete
+   sharing, so it cannot be renamed or replaced. */
+bool pin_link(const std::string &path, Handle &out)
+{
+    std::wstring p = wide(path);
+    out.h = p.empty() ? INVALID_HANDLE_VALUE
+                      : CreateFileW(p.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+                                    FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    BY_HANDLE_FILE_INFORMATION info;
+    return out.h != INVALID_HANDLE_VALUE && GetFileInformationByHandle(out.h, &info) &&
+           (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+/* Remove a LEV this install placed: only while the name still holds exactly
+   these bytes, through one handle opened without sharing, so the removed
+   file is the one checked. Returns false when it could not be done safely. */
+bool remove_own_file(const std::string &target, const std::vector<unsigned char> &bytes)
+{
+    HANDLE h = CreateFileW(wide(target).c_str(), GENERIC_READ | DELETE, 0, nullptr, OPEN_EXISTING,
+                           FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    bool same = true;
+    LARGE_INTEGER size;
+    if (!GetFileSizeEx(h, &size) || (unsigned long long)size.QuadPart != bytes.size()) same = false;
+    std::vector<unsigned char> back(same ? bytes.size() : 0);
+    DWORD got = 0;
+    if (same && (!ReadFile(h, back.data(), (DWORD)back.size(), &got, nullptr) || got != back.size() || back != bytes)) same = false;
+    FILE_DISPOSITION_INFO dispose = {TRUE};
+    const bool removed = same && SetFileInformationByHandle(h, FileDispositionInfo, &dispose, sizeof dispose);
+    CloseHandle(h);
+    return removed;
 }
 
 /* 0 absent, 1 the same bytes, -1 something else. */
@@ -1344,13 +1386,21 @@ void publish_room_file(const std::string &folder, const std::string &name, const
     if (room_name_state(folder + "/" + name, bytes) != 1) throw std::runtime_error("A track file changed while it was installed");
 }
 
+void publish_room_vrm(const std::string &folder, const std::string &name, const std::vector<unsigned char> &bytes)
+{
+    XDELTA_TEST_FAIL_VRM();
+    publish_room_file(folder, name, bytes);
+}
+
 void install_room(const std::string &assets, const std::string &key, const std::string &stem,
                   const std::vector<unsigned char> &lev, const std::vector<unsigned char> &vrm)
 {
     const std::string tracks = assets + "/tracks", root = tracks + "/" + key, original = root + "/original";
-    Handle tracksPin, rootPin, originalPin;
-    if (!pin_directory(tracks, true, true, tracksPin) || !pin_directory(root, true, false, rootPin) ||
-        !pin_directory(original, true, false, originalPin))
+    /* The tracks folder may be a junction: pin the junction itself and its
+       target, so neither can be swapped while the install runs. */
+    Handle tracksLink, tracksPin, rootPin, originalPin;
+    if (!pin_directory(tracks, true, true, tracksPin) || !pin_link(tracks, tracksLink) ||
+        !pin_directory(root, true, false, rootPin) || !pin_directory(original, true, false, originalPin))
         throw std::runtime_error("tracks/" + key + "/original is a link or could not be made");
     const std::string names[2] = {stem + ".lev", stem + ".vrm"};
     const std::vector<unsigned char> *bytes[2] = {&lev, &vrm};
@@ -1362,11 +1412,12 @@ void install_room(const std::string &assets, const std::string &key, const std::
     try
     {
         if (!state[0]) { publish_room_file(original, names[0], lev); placedLev = true; }
-        if (!state[1]) publish_room_file(original, names[1], vrm);
+        if (!state[1]) publish_room_vrm(original, names[1], vrm);
     }
-    catch (...)
+    catch (const std::exception &e)
     {
-        if (placedLev) fs_remove(original + "/" + names[0]);
+        if (placedLev && !remove_own_file(original + "/" + names[0], lev))
+            throw std::runtime_error(std::string(e.what()) + ". The LEV stays in tracks/" + key + "/original");
         throw;
     }
 }
@@ -1442,6 +1493,34 @@ struct stat publish_room_file(int folder, const std::string &name, const std::ve
     return mine;
 }
 
+void publish_room_vrm(int folder, const std::string &name, const std::vector<unsigned char> &bytes)
+{
+    XDELTA_TEST_FAIL_VRM();
+    publish_room_file(folder, name, bytes);
+}
+
+/* Remove a LEV this install placed without ever removing another file:
+   move the name aside to a fresh private name first (RENAME_NOREPLACE), and
+   unlink it only when the moved file is this install's own. Anything else is
+   moved back and kept. Returns false when the LEV could not be removed. */
+bool remove_own_file(int folder, const std::string &name, const struct stat &mine)
+{
+    char aside[64];
+    for (int k = 0; k < 64; k++)
+    {
+        std::snprintf(aside, sizeof aside, ".xdelta-rollback-%d-%d", (int)getpid(), k);
+        if (renameat2(folder, name.c_str(), folder, aside, RENAME_NOREPLACE) == 0) break;
+        if (errno != EEXIST) return false;
+        aside[0] = 0;
+    }
+    if (!aside[0]) return false;
+    struct stat now;
+    if (!fstatat(folder, aside, &now, AT_SYMLINK_NOFOLLOW) && now.st_dev == mine.st_dev && now.st_ino == mine.st_ino)
+        return unlinkat(folder, aside, 0) == 0;
+    renameat2(folder, aside, folder, name.c_str(), RENAME_NOREPLACE);
+    return false;
+}
+
 void install_room(const std::string &assets, const std::string &key, const std::string &stem,
                   const std::vector<unsigned char> &lev, const std::vector<unsigned char> &vrm)
 {
@@ -1462,14 +1541,12 @@ void install_room(const std::string &assets, const std::string &key, const std::
     try
     {
         if (!state[0]) { levIdentity = publish_room_file(original.fd, names[0], lev); placedLev = true; }
-        if (!state[1]) publish_room_file(original.fd, names[1], vrm);
+        if (!state[1]) publish_room_vrm(original.fd, names[1], vrm);
     }
-    catch (...)
+    catch (const std::exception &e)
     {
-        struct stat now;
-        if (placedLev && !fstatat(original.fd, names[0].c_str(), &now, AT_SYMLINK_NOFOLLOW) &&
-            now.st_dev == levIdentity.st_dev && now.st_ino == levIdentity.st_ino)
-            unlinkat(original.fd, names[0].c_str(), 0);
+        if (placedLev && !remove_own_file(original.fd, names[0], levIdentity))
+            throw std::runtime_error(std::string(e.what()) + ". The LEV stays in tracks/" + key + "/original");
         throw;
     }
 }
@@ -1504,7 +1581,11 @@ extern "C" int XdeltaImport_Install(const XdeltaImportScan *scan, const unsigned
         if ((where & CTR_XDELTA_INSTALL_PACKAGES) &&
             !CustomPackage_InstallAssets(scan->built[i].owned, assets, detail, sizeof detail))
         {
-            if (error && errorSize) std::snprintf(error, errorSize, "%s: %s", item.title, detail);
+            if (error && errorSize)
+            {
+                if (installed) std::snprintf(error, errorSize, "Installed %d, then %s: %s", installed, item.title, detail);
+                else std::snprintf(error, errorSize, "%s: %s", item.title, detail);
+            }
             return -1;
         }
         if (where & CTR_XDELTA_INSTALL_ROOM)
@@ -1519,7 +1600,11 @@ extern "C" int XdeltaImport_Install(const XdeltaImportScan *scan, const unsigned
             }
             catch (const std::exception &e)
             {
-                if (error && errorSize) std::snprintf(error, errorSize, "%s: %s", item.title, e.what());
+                if (error && errorSize)
+                {
+                    if (installed) std::snprintf(error, errorSize, "Installed %d, then %s: %s", installed, item.title, e.what());
+                    else std::snprintf(error, errorSize, "%s: %s", item.title, e.what());
+                }
                 return -1;
             }
         }

@@ -147,8 +147,9 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
 #ifdef CTR_CUSTOM_PACKAGES
             s_contentStoreWanted = 1;
 #else
-            /* Current Seed shows the new files at once. */
-            if (state == 1 && !AP_SeedContentInstallBusy()) AP_CustomContentRescan();
+            /* Current Seed shows the new files at once, also after a
+               failure part way through the list. */
+            if (!AP_SeedContentInstallBusy()) AP_CustomContentRescan();
 #endif
             if (state == 1) snprintf(s_importMessage, sizeof s_importMessage, "Installed %d track%s. Files verified.", installed, installed == 1 ? "" : "s");
             else snprintf(s_importMessage, sizeof s_importMessage, "%s", error);
