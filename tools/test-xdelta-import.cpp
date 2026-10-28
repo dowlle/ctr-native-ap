@@ -499,6 +499,23 @@ int main()
                   std::strstr(error, "is a link"), "a linked track folder is refused");
             CHECK(stat((root + "/elsewhere/original").c_str(), &info) != 0, "nothing written through the link");
             CHECK(XdeltaImport_Install(a.scan, selected.data(), linked.c_str(), 0, error, sizeof error) == -1, "no destination refused");
+            /* A VRM in the way is found before anything is written: no lone LEV is left. */
+            std::string pair = root + "/assets-pair";
+            mkdir(pair.c_str(), 0755);
+            mkdir((pair + "/tracks").c_str(), 0755);
+            mkdir((pair + "/tracks/pack-slot-1").c_str(), 0755);
+            mkdir((pair + "/tracks/pack-slot-1/original").c_str(), 0755);
+            write_path(pair + "/tracks/pack-slot-1/original/" + stem + ".vrm", Bytes(16, 9));
+            CHECK(XdeltaImport_Install(a.scan, selected.data(), pair.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == -1 &&
+                  std::strstr(error, "in the way"), "a VRM in the way fails the pair");
+            CHECK(stat((pair + "/tracks/pack-slot-1/original/" + stem + ".lev").c_str(), &info) != 0, "no lone LEV left behind");
+            /* The tracks folder itself may be a link (player configuration, as for Saphi installs). */
+            std::string viaLink = root + "/assets-tracks-link";
+            mkdir(viaLink.c_str(), 0755);
+            mkdir((root + "/shared-tracks").c_str(), 0755);
+            symlink((root + "/shared-tracks").c_str(), (viaLink + "/tracks").c_str());
+            CHECK(XdeltaImport_Install(a.scan, selected.data(), viaLink.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == 2 &&
+                  !stat((root + "/shared-tracks/pack-slot-1/original/" + stem + ".lev").c_str(), &info), "a linked tracks folder is followed");
         }
         {
             char key[65];

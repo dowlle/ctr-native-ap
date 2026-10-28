@@ -148,10 +148,11 @@ int main(void)
  CHECK(strstr(drawn,"Patch does not match")||strstr(s_importMessage,"Patch does not match"));
  tick(BTN_TRIANGLE);CHECK(!MM_CustomImport_Active());
  /* A patch dropped on the window opens the import and starts reading it;
-    a file that is not a patch says so. A drop waits while a scan runs. */
+    a file that is not a patch says so. A drop during a scan is turned away,
+    so Back never starts it. */
  before=scanStarts;dropState=1;tick(0);CHECK(MM_CustomImport_Active()&&scanStarts==before+1&&!strcmp(s_importPath,"/drop/LRG2.xdelta"));
- dropState=1;tick(0);CHECK(dropState==1&&scanStarts==before+1);
- tick(BTN_TRIANGLE);CHECK(dropState==0&&scanStarts==before+2);
+ dropState=1;tick(0);CHECK(dropState==0&&scanStarts==before+1&&strstr(s_importMessage,"Finish or cancel"));
+ tick(BTN_TRIANGLE);CHECK(scanStarts==before+1&&s_importStage==IMPORT_CHOOSE);
  tick(BTN_TRIANGLE);dropState=2;tick(0);CHECK(dropState==0&&strstr(s_importMessage,"Drop an .xdelta"));
  tick(BTN_TRIANGLE);CHECK(!MM_CustomImport_Active());
  CHECK(CustomRevision_Compare("2.0.0","1.99.0")>0);

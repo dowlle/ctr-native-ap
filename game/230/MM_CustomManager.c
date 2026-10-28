@@ -60,7 +60,7 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
     (void)menu;
     s_contentSearchPadPrev = rawPad;
     MM_CustomLibrary_Tick(0);
-    if (!s_contentSearchEditing && !MM_CustomLibrary_Busy()) MM_CustomImport_TakeDrop();
+    if (!s_contentSearchEditing && !MM_CustomLibrary_Busy() && !s_saphiDownloading) MM_CustomImport_TakeDrop();
     if (MM_CustomImport_Active()) { MM_CustomImport_Proc(ot, pad); return; }
     if (s_saphiRefreshBusy)
     {

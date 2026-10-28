@@ -981,7 +981,8 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 
 	// Import track files (decision 35): Select opens it, a patch dropped on
 	// the window opens it with that patch. It owns the page while open.
-	MM_CustomImport_TakeDrop();
+	if (!s_customContentDownloadActive && !AP_SeedContentInstallBusy())
+		MM_CustomImport_TakeDrop();
 	if (!MM_CustomImport_Active() && (pad->buttonsTapped & BTN_SELECT) && !s_customContentDownloadActive &&
 	    !AP_SeedContentInstallBusy())
 	{
@@ -1122,7 +1123,7 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 	}
 
 	CustomContent_DrawMessage(ot);
-	DecalFont_DrawLineOT("Select: Import track files", 0x100, 0xD6, FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
+	DecalFont_DrawLineOT("Select: Import track files", 0x100, 0x68, FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
 }
 #endif
 #endif // CTR_AP

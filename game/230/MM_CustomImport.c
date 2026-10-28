@@ -47,16 +47,23 @@ static void MM_CustomImport_Open(void)
 
 static void MM_CustomImport_StartScan(const char *path);
 
-/* A patch dropped on the window opens the import with it, from any page
-   that calls this (the Custom Content page), and starts it on the choose
-   step. Other steps leave the drop waiting. */
+/* A patch dropped on the window opens the import with it, from the page
+   that calls this (Custom Content), and starts it on the choose step. The
+   caller leaves a drop waiting while another content job runs. A drop while
+   this import is busy (dialog, scan, review, install) is turned away with a
+   note, so Back never starts a patch dropped meanwhile. */
 static int MM_CustomImport_TakeDrop(void)
 {
     char path[4096];
     int state;
-    if (s_importOpen && s_importStage != IMPORT_CHOOSE) return 0;
     state = XdeltaPick_TakeDrop(path, sizeof path);
     if (!state) return 0;
+    if (s_importOpen && s_importStage != IMPORT_CHOOSE)
+    {
+        if (s_importStage != IMPORT_RESULT)
+            snprintf(s_importMessage, sizeof s_importMessage, "Finish or cancel this import first.");
+        return 0;
+    }
     if (!s_importOpen) MM_CustomImport_Open();
     if (state == 1) MM_CustomImport_StartScan(path);
     else snprintf(s_importMessage, sizeof s_importMessage, "Drop an .xdelta or .vcdiff patch.");

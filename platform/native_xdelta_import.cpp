@@ -1281,32 +1281,44 @@ namespace {
    (CustomTrackManager_LocateContentFiles), so the files only need a name of
    their own: xdelta-<first 12 of the patch hash>-<BIGFILE index>.lev/.vrm. A
    file already under that name is kept when its bytes are the same and
-   refused otherwise; nothing is ever replaced. No folder on the way may be a
-   link. */
+   refused otherwise; nothing is ever replaced. If the VRM cannot be placed,
+   a LEV this install placed is removed again. <key> and original/ may not
+   be links; the tracks folder itself is the player's configuration and may
+   be one, as for Saphi installs (ap_custom_track_download.cpp). */
 #ifdef _WIN32
-bool plain_directory(const std::string &path, bool create)
+struct Handle
+{
+    HANDLE h = INVALID_HANDLE_VALUE;
+    ~Handle() { if (h != INVALID_HANDLE_VALUE) CloseHandle(h); }
+};
+
+/* Open a directory and keep it open without FILE_SHARE_DELETE, so it cannot
+   be renamed, removed or swapped for a junction while the install runs. */
+bool pin_directory(const std::string &path, bool create, bool allowLink, Handle &out)
 {
     std::wstring p = wide(path);
     if (p.empty()) return false;
     if (create) _wmkdir(p.c_str());
-    DWORD attributes = GetFileAttributesW(p.c_str());
-    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) &&
-           !(attributes & FILE_ATTRIBUTE_REPARSE_POINT);
+    out.h = CreateFileW(p.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+                        FILE_FLAG_BACKUP_SEMANTICS | (allowLink ? 0 : FILE_FLAG_OPEN_REPARSE_POINT), nullptr);
+    BY_HANDLE_FILE_INFORMATION info;
+    return out.h != INVALID_HANDLE_VALUE && GetFileInformationByHandle(out.h, &info) &&
+           (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+           (allowLink || !(info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT));
 }
 
-/* 1 written, 0 the same bytes were already there; throws otherwise. */
-int publish_room_file(const std::string &folder, const std::string &name, const std::vector<unsigned char> &bytes)
+/* 0 absent, 1 the same bytes, -1 something else. */
+int room_name_state(const std::string &target, const std::vector<unsigned char> &bytes)
 {
-    const std::string target = folder + "/" + name;
-    std::wstring wtarget = wide(target);
-    DWORD attributes = GetFileAttributesW(wtarget.c_str());
-    if (attributes != INVALID_FILE_ATTRIBUTES)
-    {
-        if ((attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) ||
-            hash_file(target, nullptr, nullptr) != hex_sha256(bytes.data(), bytes.size()))
-            throw std::runtime_error("Another file is in the way: " + name);
-        return 0;
-    }
+    DWORD attributes = GetFileAttributesW(wide(target).c_str());
+    if (attributes == INVALID_FILE_ATTRIBUTES) return GetLastError() == ERROR_FILE_NOT_FOUND ? 0 : -1;
+    if (attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) return -1;
+    try { return hash_file(target, nullptr, nullptr) == hex_sha256(bytes.data(), bytes.size()) ? 1 : -1; }
+    catch (const std::exception &) { return -1; }
+}
+
+void publish_room_file(const std::string &folder, const std::string &name, const std::vector<unsigned char> &bytes)
+{
     std::string temp;
     HANDLE h = INVALID_HANDLE_VALUE;
     for (int k = 0; k < 64 && h == INVALID_HANDLE_VALUE; k++)
@@ -1320,22 +1332,43 @@ int publish_room_file(const std::string &folder, const std::string &name, const 
     DWORD wrote = 0;
     const bool ok = WriteFile(h, bytes.data(), (DWORD)bytes.size(), &wrote, nullptr) && wrote == bytes.size() && FlushFileBuffers(h);
     CloseHandle(h);
-    if (!ok || !MoveFileExW(wide(temp).c_str(), wtarget.c_str(), MOVEFILE_WRITE_THROUGH))
+    /* MoveFileEx without MOVEFILE_REPLACE_EXISTING never replaces a name. */
+    const bool moved = ok && MoveFileExW(wide(temp).c_str(), wide(folder + "/" + name).c_str(), MOVEFILE_WRITE_THROUGH);
+    const DWORD moveError = GetLastError();
+    if (!moved)
     {
         fs_remove(temp);
-        throw std::runtime_error("Could not write in the track folder");
+        throw std::runtime_error(ok && (moveError == ERROR_ALREADY_EXISTS || moveError == ERROR_FILE_EXISTS)
+                                 ? "Another file is in the way: " + name : "Could not write in the track folder");
     }
-    return 1;
+    if (room_name_state(folder + "/" + name, bytes) != 1) throw std::runtime_error("A track file changed while it was installed");
 }
 
 void install_room(const std::string &assets, const std::string &key, const std::string &stem,
                   const std::vector<unsigned char> &lev, const std::vector<unsigned char> &vrm)
 {
     const std::string tracks = assets + "/tracks", root = tracks + "/" + key, original = root + "/original";
-    if (!plain_directory(tracks, true) || !plain_directory(root, true) || !plain_directory(original, true))
+    Handle tracksPin, rootPin, originalPin;
+    if (!pin_directory(tracks, true, true, tracksPin) || !pin_directory(root, true, false, rootPin) ||
+        !pin_directory(original, true, false, originalPin))
         throw std::runtime_error("tracks/" + key + "/original is a link or could not be made");
-    publish_room_file(original, stem + ".lev", lev);
-    publish_room_file(original, stem + ".vrm", vrm);
+    const std::string names[2] = {stem + ".lev", stem + ".vrm"};
+    const std::vector<unsigned char> *bytes[2] = {&lev, &vrm};
+    int state[2];
+    for (int i = 0; i < 2; i++)
+        if ((state[i] = room_name_state(original + "/" + names[i], *bytes[i])) < 0)
+            throw std::runtime_error("Another file is in the way: " + names[i]);
+    bool placedLev = false;
+    try
+    {
+        if (!state[0]) { publish_room_file(original, names[0], lev); placedLev = true; }
+        if (!state[1]) publish_room_file(original, names[1], vrm);
+    }
+    catch (...)
+    {
+        if (placedLev) fs_remove(original + "/" + names[0]);
+        throw;
+    }
 }
 #else
 struct Fd
@@ -1366,18 +1399,18 @@ bool same_bytes(int fd, const std::vector<unsigned char> &bytes)
     return back == bytes;
 }
 
-/* 1 written, 0 the same bytes were already there; throws otherwise. */
-int publish_room_file(int folder, const std::string &name, const std::vector<unsigned char> &bytes)
+/* 0 absent, 1 the same bytes, -1 something else. */
+int room_name_state(int folder, const std::string &name, const std::vector<unsigned char> &bytes)
 {
-    {
-        Fd existing(openat(folder, name.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC));
-        if (existing.fd >= 0)
-        {
-            if (!same_bytes(existing.fd, bytes)) throw std::runtime_error("Another file is in the way: " + name);
-            return 0;
-        }
-        if (errno != ENOENT) throw std::runtime_error("Another file is in the way: " + name);
-    }
+    Fd existing(openat(folder, name.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC));
+    if (existing.fd < 0) return errno == ENOENT ? 0 : -1;
+    return same_bytes(existing.fd, bytes) ? 1 : -1;
+}
+
+/* Publishes name and returns its identity, for a rollback that removes only
+   this install's own file. */
+struct stat publish_room_file(int folder, const std::string &name, const std::vector<unsigned char> &bytes)
+{
     char temp[64] = "";
     Fd out(-1);
     for (int k = 0; out.fd < 0 && k < 64; k++)
@@ -1387,34 +1420,58 @@ int publish_room_file(int folder, const std::string &name, const std::vector<uns
         if (out.fd < 0 && errno != EEXIST) break;
     }
     if (out.fd < 0) throw std::runtime_error("Could not write in the track folder");
+    struct stat mine;
     size_t at = 0;
-    while (at < bytes.size())
-    {
-        const ssize_t n = write(out.fd, bytes.data() + at, bytes.size() - at);
-        if (n <= 0) break;
-        at += (size_t)n;
-    }
+    if (fstat(out.fd, &mine) == 0)
+        while (at < bytes.size())
+        {
+            const ssize_t n = write(out.fd, bytes.data() + at, bytes.size() - at);
+            if (n <= 0) break;
+            at += (size_t)n;
+        }
     /* linkat never replaces: a name that appeared meanwhile fails the install. */
     const bool linked = at == bytes.size() && fsync(out.fd) == 0 && linkat(folder, temp, folder, name.c_str(), 0) == 0;
     const int linkError = errno;
     unlinkat(folder, temp, 0);
     if (!linked)
         throw std::runtime_error(linkError == EEXIST ? "Another file is in the way: " + name : "Could not write in the track folder");
-    Fd back(openat(folder, name.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC));
-    if (back.fd < 0 || !same_bytes(back.fd, bytes)) throw std::runtime_error("A track file changed while it was installed");
-    return 1;
+    struct stat placed;
+    if (fstatat(folder, name.c_str(), &placed, AT_SYMLINK_NOFOLLOW) || placed.st_dev != mine.st_dev ||
+        placed.st_ino != mine.st_ino || !same_bytes(out.fd, bytes))
+        throw std::runtime_error("A track file changed while it was installed");
+    return mine;
 }
 
 void install_room(const std::string &assets, const std::string &key, const std::string &stem,
                   const std::vector<unsigned char> &lev, const std::vector<unsigned char> &vrm)
 {
     Fd base(open(assets.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
-    Fd tracks(base.fd < 0 ? -1 : open_child_directory(base.fd, "tracks"));
+    if (base.fd >= 0 && mkdirat(base.fd, "tracks", 0755) != 0 && errno != EEXIST) base.fd = -1;
+    Fd tracks(base.fd < 0 ? -1 : openat(base.fd, "tracks", O_RDONLY | O_DIRECTORY | O_CLOEXEC));
     Fd root(tracks.fd < 0 ? -1 : open_child_directory(tracks.fd, key.c_str()));
     Fd original(root.fd < 0 ? -1 : open_child_directory(root.fd, "original"));
     if (original.fd < 0) throw std::runtime_error("tracks/" + key + "/original is a link or could not be made");
-    publish_room_file(original.fd, stem + ".lev", lev);
-    publish_room_file(original.fd, stem + ".vrm", vrm);
+    const std::string names[2] = {stem + ".lev", stem + ".vrm"};
+    const std::vector<unsigned char> *bytes[2] = {&lev, &vrm};
+    int state[2];
+    for (int i = 0; i < 2; i++)
+        if ((state[i] = room_name_state(original.fd, names[i], *bytes[i])) < 0)
+            throw std::runtime_error("Another file is in the way: " + names[i]);
+    bool placedLev = false;
+    struct stat levIdentity = {};
+    try
+    {
+        if (!state[0]) { levIdentity = publish_room_file(original.fd, names[0], lev); placedLev = true; }
+        if (!state[1]) publish_room_file(original.fd, names[1], vrm);
+    }
+    catch (...)
+    {
+        struct stat now;
+        if (placedLev && !fstatat(original.fd, names[0].c_str(), &now, AT_SYMLINK_NOFOLLOW) &&
+            now.st_dev == levIdentity.st_dev && now.st_ino == levIdentity.st_ino)
+            unlinkat(original.fd, names[0].c_str(), 0);
+        throw;
+    }
 }
 #endif
 
