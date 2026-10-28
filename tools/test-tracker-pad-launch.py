@@ -244,6 +244,14 @@ static void lifecycle(void)
  /* The player ends up somewhere else after arriving: dropped. */
  AP_TLBegin(&r, 4, 4, 11, 11, T, T); AP_TLFrame(&r, 4, 0, 1);
  assert(AP_TLFrame(&r, -1, 0, 1) == AP_TL_DROP_ELSEWHERE && r.stage == AP_TL_IDLE);
+ /* Arrived, then an unrelated load leaves the hub before the pad takes the
+  * kart: dropped at once, even while loading, so a later return cannot fire. */
+ AP_TLBegin(&r, 4, 4, 11, 11, T, T); AP_TLFrame(&r, 4, 0, 1); assert(r.stage == AP_TL_ARRIVE);
+ assert(AP_TLFrame(&r, -1, 1, 1) == AP_TL_DROP_ELSEWHERE && r.stage == AP_TL_IDLE);
+ /* A same-hub start that leaves its hub before arriving: dropped. */
+ AP_TLBegin(&r, 4, 4, 11, 11, T, T);
+ assert(AP_TLFrame(&r, 4, 1, 1) == AP_TL_DROP_NONE);
+ assert(AP_TLFrame(&r, -1, 1, 1) == AP_TL_DROP_ELSEWHERE && r.stage == AP_TL_IDLE);
  /* A hub that never becomes safe, or a load that never ends: dropped. */
  AP_TLBegin(&r, 1, 4, 11, 11, T, T);
  for (i = 0; i < AP_TL_LOAD_FRAMES; i++) assert(AP_TLFrame(&r, -1, 1, 1) == AP_TL_DROP_NONE);

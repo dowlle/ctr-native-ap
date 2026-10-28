@@ -59,6 +59,7 @@ typedef struct
 	int frames;
 	int total;    // frames since the start began, any stage
 	int needLoad; // the hub load is still to be requested
+	int loadAsked; // this start asked for its hub load
 	int drop;     // last drop reason, for the log
 } ap_tl_request;
 
@@ -66,7 +67,7 @@ static inline void AP_TLReset(ap_tl_request *r)
 {
 	r->stage = AP_TL_IDLE;
 	r->hub = r->physical = r->dest = r->activity = r->mode = -1;
-	r->frames = r->total = r->needLoad = 0;
+	r->frames = r->total = r->needLoad = r->loadAsked = 0;
 }
 
 static inline int AP_TLBegin(ap_tl_request *r, int currentHub, int hub, int physical, int dest,
@@ -132,18 +133,27 @@ static inline int AP_TLFrame(ap_tl_request *r, int levelHub, int loading, int ga
 			AP_TLDrop(r, AP_TL_DROP_GATE);
 			return AP_TL_DROP_GATE;
 		}
+		// A start in the player's own hub never asked for a load: leaving
+		// that hub before it arrives ends it.
+		if (!r->needLoad && !r->loadAsked && levelHub != r->hub)
+		{
+			AP_TLDrop(r, AP_TL_DROP_ELSEWHERE);
+			return AP_TL_DROP_ELSEWHERE;
+		}
 		if (r->needLoad || loading || levelHub != r->hub)
 			return AP_TL_DROP_NONE;
 		r->stage = AP_TL_ARRIVE;
 		r->frames = 0;
 	}
-	if (loading)
-		return AP_TL_DROP_NONE;
+	// Arrived: any other level, even mid-load, ends the start, so it cannot
+	// fire on a later return to the hub.
 	if (levelHub != r->hub)
 	{
 		AP_TLDrop(r, AP_TL_DROP_ELSEWHERE);
 		return AP_TL_DROP_ELSEWHERE;
 	}
+	if (loading)
+		return AP_TL_DROP_NONE;
 	if (!gateOpen)
 	{
 		AP_TLDrop(r, AP_TL_DROP_GATE);
@@ -164,6 +174,7 @@ static inline int AP_TLWantsLoad(ap_tl_request *r)
 	if (r->stage != AP_TL_LOADING || !r->needLoad)
 		return 0;
 	r->needLoad = 0;
+	r->loadAsked = 1;
 	return 1;
 }
 
