@@ -606,6 +606,11 @@ typedef struct
 	int adventure_structure;
 	int race_type_selector;
 	ap_rs_awards stage1_awards;
+	// ctr_options.tracker_pad_launch (#375, schema 18): a JSON Boolean, always
+	// emitted by a 0.3.0 apworld. True lets the in-game tracker start a pad's
+	// or garage's activities; absent or not a Boolean is off (logged once),
+	// and the tracker stays inspection only. No gate, location or item.
+	int tracker_pad_launch;
 
 	// DeathLink (issue #6). ADDITIVE ctr_options keys, no schema bump: a seed
 	// predating them leaves death_link 0 (off) and deathlink_amnesty 1, so the

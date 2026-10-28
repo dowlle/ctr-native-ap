@@ -228,7 +228,8 @@ cups = (root / "game/UI/UI_CupStandings.c").read_text()
 assert "(AP_RaceStructureCtrFirst() && !AP_CustomTrackTrophyChecked())" in cups
 assert "!AP_CustomTrackTrophyEarnedByCtr()" in cups
 pads_rows = (root / "ap/ap_hooks_pads.c").read_text()
-rows_fn = pads_rows[pads_rows.index("int AP_PadSelectorRows("):]
+# #375 moved the row facts into AP_PadSelectorFacts, shared with the tracker.
+rows_fn = pads_rows[pads_rows.index("int AP_PadSelectorFacts("):]
 rows_fn = rows_fn[:rows_fn.index("\n}\n")]
 assert "rungsLeft" in rows_fn and "AP_PadUncollectedGlowBits(" in rows_fn
 race_src = (root / "ap/ap_hooks_race.c").read_text()

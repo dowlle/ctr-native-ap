@@ -1307,27 +1307,28 @@ void AP_PadLogSelector(int physLevelID, int destLevelID, const ap_rs_rows *rows,
 	AP_LogLine(msg);
 }
 
-// #208 race type selector: the rows a race destination offers right now.
-// Returns 0 when the destination does not use the selector (no seed, a
-// content plan, or not a race destination: cups, arenas, unconfigured trial
-// tracks keep their own routes). Requirements key off the PHYSICAL pad,
-// lifecycle facts off the DESTINATION, as everywhere in the state model.
-int AP_PadSelectorRows(int physLevelID, int destLevelID, ap_rs_rows *rows)
+// #208 race type selector facts: which modes a race destination has, which
+// can still produce a check, and which the pad's gates admit. Returns 0 when
+// the destination does not use the selector (no seed, a content plan, or not
+// a race destination: cups, arenas, unconfigured trial tracks keep their own
+// routes), 2 when the room's structure was refused (no row at all), else 1.
+// Requirements key off the PHYSICAL pad, lifecycle facts off the
+// DESTINATION, as everywhere in the state model. The pad's menu
+// (AP_PadSelectorRows) and the tracker's activity list (#375,
+// AP_PadActivities) both read these, so they cannot disagree.
+int AP_PadSelectorFacts(int physLevelID, int destLevelID, ap_rs_facts *fOut,
+                        int admitted[AP_RS_COUNT], int *trophyCheckedOut, int *stage2MetOut)
 {
 	ap_rs_facts f;
-	int admitted[AP_RS_COUNT];
 	int unc[8];
 	int n, k;
-	int trophyChecked, ctrSide = 0, relicSide = 0, plainLeft, rungsLeft;
+	int trophyChecked, stage2Met, ctrSide = 0, relicSide = 0, plainLeft, rungsLeft;
 	int structure = ctr_cfg.adventure_structure;
 
 	if (!ctr_cfg_active() || ap_content_plan_active() || !AP_DestIsRace(destLevelID))
 		return 0;
 	if (structure == AP_RS_STRUCTURE_REFUSED)
-	{
-		rows->count = rows->productiveCount = rows->cursor = 0;
-		return 1; // fail closed: no row, the caller releases the kart
-	}
+		return 2; // fail closed: no row, the caller releases the kart
 	trophyChecked = AP_DestTrophyChecked(destLevelID);
 	// Open podium rungs: any race with AI earns them, the plain Trophy Race
 	// included, so they keep that row productive (a Collect can check every
@@ -1388,10 +1389,33 @@ int AP_PadSelectorRows(int physLevelID, int destLevelID, ap_rs_rows *rows)
 		                              AP_PadUncollectedWumpaCount(destLevelID));
 		relicSide = AP_PadRelicSideLeft(relicSide, AP_PadUncollectedRelicPerfectCount(destLevelID));
 	}
-	AP_RaceStructureAdmit(structure, trophyChecked, ctr_cfg_warp_stage2_unlocked(physLevelID),
-	                      admitted);
+	stage2Met = ctr_cfg_warp_stage2_unlocked(physLevelID);
+	AP_RaceStructureAdmit(structure, trophyChecked, stage2Met, admitted);
 	AP_RaceStructureProductive(structure, !trophyChecked, plainLeft, ctrSide, relicSide,
 	                           f.productive);
+	*fOut = f;
+	if (trophyCheckedOut)
+		*trophyCheckedOut = trophyChecked;
+	if (stage2MetOut)
+		*stage2MetOut = stage2Met;
+	return 1;
+}
+
+// #208 race type selector: the rows a race destination offers right now.
+// Returns 0 when the destination does not use the selector.
+int AP_PadSelectorRows(int physLevelID, int destLevelID, ap_rs_rows *rows)
+{
+	ap_rs_facts f;
+	int admitted[AP_RS_COUNT];
+	int got = AP_PadSelectorFacts(physLevelID, destLevelID, &f, admitted, 0, 0);
+
+	if (!got)
+		return 0;
+	if (got == 2)
+	{
+		rows->count = rows->productiveCount = rows->cursor = 0;
+		return 1; // fail closed: no row, the caller releases the kart
+	}
 	AP_RaceSelectorBuild(&f, admitted, rows);
 	return 1;
 }

@@ -866,6 +866,10 @@ int AP_PadPhase1ReRaceable(int physLevelID, int destLevelID);
 // met, which opens the selector instead of staying hard-locked.
 int AP_PadUsesSelector(int destLevelID);
 int AP_PadSelectorRows(int physLevelID, int destLevelID, ap_rs_rows *rows);
+// The facts behind those rows, shared with the tracker's activity list (#375).
+// 0 not a selector destination, 2 refused structure (no rows), 1 filled.
+int AP_PadSelectorFacts(int physLevelID, int destLevelID, ap_rs_facts *f,
+                        int admitted[AP_RS_COUNT], int *trophyChecked, int *stage2Met);
 void AP_PadLogSelector(int physLevelID, int destLevelID, const ap_rs_rows *rows, int decision);
 int AP_PadReplayable(int physLevelID, int destLevelID);
 

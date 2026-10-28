@@ -28,6 +28,9 @@ typedef struct {
 
 static struct {
 	int open, hub, tab, focus, pinned, count, loaded;
+	/* #375 activity list for the focused node: open, cursor, rows. */
+	int acts_open, acts_cursor;
+	ap_padact_list acts;
 	float mouse_x, mouse_y;
 	unsigned mouse_buttons;
 	AP_TrackerHubAsset hubs[AP_TRACKER_HUBS];
@@ -640,6 +643,36 @@ static void AP_TrackerDrawNode(int index)
 		}
 	}
 }
+/* #375: the focused node's activities, built from the shared gate. */
+static void AP_TrackerActivitiesBuild(void)
+{
+	AP_TrackerNode *n = &ap_tracker.nodes[ap_tracker.focus];
+	if (n->kind == 3) AP_GarageActivities(ap_tracker.hub, &ap_tracker.acts);
+	else AP_PadActivities(ap_tracker.hub, n->physical, n->destination, &ap_tracker.acts);
+}
+static void AP_TrackerDrawActivities(void)
+{
+	AP_TrackerNode *n = &ap_tracker.nodes[ap_tracker.focus];
+	int i, w = 520, rows = ap_tracker.acts.count ? ap_tracker.acts.count : 1;
+	int h = 104 + rows * 44, x = (TRACKER_W - w) / 2, y = 250;
+	AP_TrackerRect(x, y, w, h, AP_TrackerRGBA(10, 15, 18, 240));
+	AP_TrackerBorder(x, y, w, h, TRACKER_MINT, 3);
+	AP_TrackerText(n->title, x + 16, y + 12, 23, TRACKER_GOLD, w - 32);
+	AP_TrackerText(n->pad, x + 16, y + 42, 14, TRACKER_WHITE, w - 32);
+	if (!ap_tracker.acts.count) AP_TrackerText("NOTHING TO START HERE", x + 16, y + 74, 18, TRACKER_GRAY, w - 32);
+	for (i = 0; i < ap_tracker.acts.count; i++) {
+		int ry = y + 70 + i * 44, open = ap_tracker.acts.reason[i] == AP_PADACT_OPEN;
+		if (i == ap_tracker.acts_cursor) AP_TrackerRect(x + 8, ry - 4, w - 16, 36, AP_TrackerRGBA(200, 65, 4, 255));
+		AP_TrackerText(AP_PadActivityName(ap_tracker.acts.activity[i]), x + 20, ry, 20, open ? TRACKER_WHITE : TRACKER_GRAY, 250);
+		if (open) AP_TrackerText(ap_tracker.acts.left[i] ? "START" : "REPLAY", x + 290, ry + 3, 16,
+			ap_tracker.acts.left[i] ? TRACKER_GREEN : TRACKER_GOLD, w - 310);
+		else {
+			AP_TrackerLockIcon(x + 280, ry + 4);
+			AP_TrackerText(AP_PadActivityReasonName(ap_tracker.acts.reason[i]), x + 300, ry + 3, 14, TRACKER_GRAY, w - 316);
+		}
+	}
+	AP_TrackerText("* START   ^ BACK", x + 16, y + h - 26, 14, TRACKER_WHITE, w - 32);
+}
 static void AP_TrackerDraw(void)
 {
 	AP_TrackerHubAsset *h = &ap_tracker.hubs[ap_tracker.hub]; int i; char line[256];
@@ -684,8 +717,15 @@ static void AP_TrackerDraw(void)
 			AP_PadUncollectedBoxCount(n->destination),AP_PadUncollectedLetterCount(n->destination));
 	} else snprintf(line,sizeof line,"CHECK: O PENDING / TICK DONE    LETTER: ORANGE OWNED / LOCK NEEDED / - OFF%s",ap_net_is_connected()?"":"    OFFLINE");
 	AP_TrackerText(line,32,718,14,TRACKER_WHITE,1210);
-	AP_TrackerText(AP_TrackerTabShown(AP_TRACKER_TAB_RACERS) ? "L1/R1 HUBS, RACERS, ITEMS   D-PAD FOCUS   * INSPECT   ^ BACK"
-		: "L1/R1 HUBS, ITEMS   D-PAD FOCUS   * INSPECT   ^ BACK", 32,744,16,TRACKER_WHITE,1210);
+	{
+		/* #375: Cross opens the activity list when the seed allows starts. */
+		int launch = AP_TrackerLaunchEnabled();
+		AP_TrackerText(AP_TrackerTabShown(AP_TRACKER_TAB_RACERS)
+			? (launch ? "L1/R1 HUBS, RACERS, ITEMS   D-PAD FOCUS   * ACTIVITIES   ^ BACK" : "L1/R1 HUBS, RACERS, ITEMS   D-PAD FOCUS   * INSPECT   ^ BACK")
+			: (launch ? "L1/R1 HUBS, ITEMS   D-PAD FOCUS   * ACTIVITIES   ^ BACK" : "L1/R1 HUBS, ITEMS   D-PAD FOCUS   * INSPECT   ^ BACK"),
+			32,744,16,TRACKER_WHITE,1210);
+	}
+	if (ap_tracker.acts_open && ap_tracker.count) AP_TrackerDrawActivities();
 }
 
 int AP_TrackerOpen(void) { return ap_tracker.open; }
@@ -701,7 +741,7 @@ int AP_TrackerAvailable(void)
 }
 static void AP_TrackerClose(void)
 {
-	ap_tracker.open=0; ap_tracker.pinned=0;
+	ap_tracker.open=0; ap_tracker.pinned=0; ap_tracker.acts_open=0;
 	if(g_window && (SDL_GetWindowFlags(g_window)&SDL_WINDOW_FULLSCREEN)) SDL_HideCursor();
 }
 int AP_TrackerMenuFrame(void)
@@ -721,8 +761,24 @@ int AP_TrackerMenuFrame(void)
 		AH_Pause_Destroy(); ap_tracker.open=1; ap_tracker.hub=gt->levelID-GEM_STONE_VALLEY;
 		if(ap_tracker.hub<0 || ap_tracker.hub>=5) ap_tracker.hub=0;
 		ap_tracker.tab=ap_tracker.hub;
-		ap_tracker.focus=0; ap_tracker.pinned=0; AP_TrackerBuildNodes();
+		ap_tracker.focus=0; ap_tracker.pinned=0; ap_tracker.acts_open=0; AP_TrackerBuildNodes();
 		SDL_ShowCursor(); AP_LogLine("[AP TRACKER] enlarged hub map opened\n");
+	} else if(ap_tracker.acts_open) {
+		/* #375 activity list: it owns input until it closes or starts. */
+		AP_TrackerNode *n=&ap_tracker.nodes[ap_tracker.focus];
+		AP_TrackerActivitiesBuild(); /* live: a received item updates the rows */
+		if(ap_tracker.acts_cursor>=ap_tracker.acts.count) ap_tracker.acts_cursor=0;
+		if(tap&BTN_START) { AP_TrackerClose(); return 1; }
+		if(tap&(BTN_TRIANGLE|BTN_CIRCLE|BTN_SQUARE) || !AP_TrackerLaunchEnabled() || ap_tracker.count<=0) ap_tracker.acts_open=0;
+		else if(tap&(BTN_UP|BTN_DOWN) && ap_tracker.acts.count)
+			ap_tracker.acts_cursor=(ap_tracker.acts_cursor+((tap&BTN_UP)?ap_tracker.acts.count-1:1))%ap_tracker.acts.count;
+		else if((tap&BTN_CROSS) && ap_tracker.acts.count && ap_tracker.acts.reason[ap_tracker.acts_cursor]==AP_PADACT_OPEN) {
+			int row=ap_tracker.acts_cursor;
+			if(AP_TrackerLaunchBegin(ap_tracker.hub,n->kind==3?-1:n->physical,n->kind==3?-1:n->destination,
+			                         ap_tracker.acts.activity[row],ap_tracker.acts.launchMode[row])) {
+				AP_TrackerClose(); return 1;
+			}
+		}
 	} else {
 		if(tap&(BTN_TRIANGLE|BTN_CIRCLE|BTN_START|BTN_SQUARE)) { AP_TrackerClose(); return 1; }
 		int racersOn=AP_TrackerRacersOn(), step=0;
@@ -740,7 +796,7 @@ int AP_TrackerMenuFrame(void)
 		if(step) {
 			ap_tracker.tab=AP_TrackerTabStepPure(ap_tracker.tab,step,racersOn,1);
 			if(ap_tracker.tab<AP_TRACKER_TAB_HUBS) ap_tracker.hub=ap_tracker.tab;
-			ap_tracker.focus=0; ap_tracker.pinned=0; AP_TrackerBuildNodes();
+			ap_tracker.focus=0; ap_tracker.pinned=0; ap_tracker.acts_open=0; AP_TrackerBuildNodes();
 		}
 		if(ap_tracker.tab>=AP_TRACKER_TAB_HUBS) {
 			/* RACERS and ITEMS are read-only lists: no focus, pinning or map
@@ -749,7 +805,13 @@ int AP_TrackerMenuFrame(void)
 			if(tap&(BTN_UP|BTN_DOWN|BTN_LEFT|BTN_RIGHT)) {
 				ap_tracker.focus=(ap_tracker.focus+((tap&(BTN_UP|BTN_LEFT))?ap_tracker.count-1:1))%ap_tracker.count; ap_tracker.pinned=0;
 			}
-			if(tap&BTN_CROSS) ap_tracker.pinned=!ap_tracker.pinned;
+			if((tap&BTN_CROSS) && AP_TrackerLaunchEnabled() && ap_tracker.count) {
+				/* #375: open the focused node's activities; the summary line
+				 * below the map shows its counts meanwhile. */
+				ap_tracker.pinned=1; ap_tracker.acts_open=1; AP_TrackerActivitiesBuild();
+				ap_tracker.acts_cursor=AP_PadActivityCursor(&ap_tracker.acts);
+			}
+			else if(tap&BTN_CROSS) ap_tracker.pinned=!ap_tracker.pinned;
 			if(mx!=ap_tracker.mouse_x || my!=ap_tracker.mouse_y || (buttons&SDL_BUTTON_LMASK)) {
 				int vx,vy,vw,vh;
 				if(NativeRenderer_DisplayRectToWindow(0,0,activeDispEnv.disp.w,activeDispEnv.disp.h,&vx,&vy,&vw,&vh) && vw>0 && vh>0) {

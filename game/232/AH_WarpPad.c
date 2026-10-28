@@ -628,6 +628,21 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 	levelID = warppadObj->levelID;
 
+#ifdef CTR_AP
+	// #375: a start from the in-game tracker arrives at this pad. The kart is
+	// treated as standing on it, so everything below (the Done lock, a closed
+	// pad, the racer lock, custom content, the race type menu, cup setup,
+	// racer seating and the hub return) is this pad's own entry, unchanged.
+	// Once the pad holds the kart the start is handed over.
+	if (ctr_cfg_active() && AP_TrackerLaunchPadArrives(ctr_cfg_warp_phys(levelID), levelID))
+	{
+		if (warppadObj->boolEnteredWarppad)
+			AP_TrackerLaunchTaken();
+		else
+			dist = 0;
+	}
+#endif
+
 	// if near a portal
 	if (
 	    // Trophy tracks (-16)
@@ -1219,10 +1234,26 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			if (warppadObj->framesWarping == 61)
 			{
 				ap_content_selector sel;
+				int apTlMode = AP_TrackerLaunchTakeMode(physLevelID, levelID);
 				AP_ContentSelectorBuild(pad, &sel);
-				AH_WarpPad_ContentModeRows(&sel);
-				apContentModeChoice = -2;
-				RECTMENU_Show(&apContentModeMenu);
+				if (apTlMode >= 0)
+				{
+					// #375: the tracker's row answers this menu when the
+					// pad still has it open; otherwise the kart is released.
+					int k;
+					apContentModeChoice = -1;
+					for (k = 0; k < sel.count; k++)
+						if (sel.mode[k] == apTlMode && sel.open[k])
+							apContentModeChoice = apTlMode;
+					if (apContentModeChoice < 0)
+						AP_LogLine("[AP TRACKER] start dropped (mode not offered by the pad)\n");
+				}
+				else
+				{
+					AH_WarpPad_ContentModeRows(&sel);
+					apContentModeChoice = -2;
+					RECTMENU_Show(&apContentModeMenu);
+				}
 			}
 			if (apContentModeChoice == -2)
 				goto WarpPad_TrophyAnimateOnly;
@@ -1345,8 +1376,18 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		if (warppadObj->framesWarping == 61)
 		{
 			ap_rs_rows apRsRows;
+			int apTlMode = AP_TrackerLaunchTakeMode(physLevelID, levelID);
 			AP_PadSelectorRows(physLevelID, levelID, &apRsRows);
 			apRsMode = AP_RaceSelectorDecide(&apRsRows, ctr_cfg.race_type_selector);
+			// #375: a tracker start already chose its row from the same
+			// facts; it answers this menu if the pad still offers that
+			// row, else the pad releases the kart.
+			if (apTlMode >= 0)
+			{
+				apRsMode = AP_TLModeOffered(apRsRows.mode, apRsRows.count, apTlMode) ? apTlMode : AP_RS_NO_ROUTE;
+				if (apRsMode < 0)
+					AP_LogLine("[AP TRACKER] start dropped (mode not offered by the pad)\n");
+			}
 			AP_PadLogSelector(physLevelID, levelID, &apRsRows, apRsMode);
 			if (apRsMode == AP_RS_OPEN_MENU)
 			{
@@ -2417,6 +2458,7 @@ WarpPad_RequestLoad:
 	// the way the Hit chooser cancel does, then latch the pad until the kart
 	// leaves it so the release is not undone the next frame.
 WarpPad_RefuseEntry:
+	AP_TrackerLaunchDrop(AP_TL_DROP_REFUSED); // #375: no-op without a tracker start
 	RECTMENU_Hide(&D232.menuTokenRelic);
 	sdata->boolOpenTokenRelicMenu = 0;
 	warppadObj->boolEnteredWarppad = 0;

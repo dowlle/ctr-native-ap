@@ -1718,6 +1718,33 @@ extern "C" const char *ctr_cfg_custom_track_title_ascii(void)
 	return folded;
 }
 
+// Tracker pad launch (#375, schema 18): a JSON Boolean in ctr_options. Absent
+// is off without a word (a pre-0.3.0 room); any other type is off and logged
+// once, so a malformed room can never turn launching on.
+static void ap_seedcfg_parse_tracker_pad_launch(const nlohmann::json &opt)
+{
+	static int invalidLogged;
+	ctr_cfg.tracker_pad_launch = 0;
+	if (!opt.is_object())
+		return;
+	auto it = opt.find("tracker_pad_launch");
+	if (it == opt.end())
+		return;
+	if (it->is_boolean())
+	{
+		ctr_cfg.tracker_pad_launch = it->get<bool>() ? 1 : 0;
+		ap_cfg_log(ctr_cfg.tracker_pad_launch
+		           ? "[AP CFG] tracker_pad_launch=1 -> the tracker can start pad activities\n"
+		           : "[AP CFG] tracker_pad_launch=0 -> the tracker is inspection only\n");
+		return;
+	}
+	if (!invalidLogged)
+	{
+		invalidLogged = 1;
+		ap_cfg_log("[AP CFG] tracker_pad_launch is not a Boolean -> off, the tracker is inspection only\n");
+	}
+}
+
 // Adventure structure and race type selector (#208, schema 18). Both scalars
 // are strings and always emitted by a 0.3.0 apworld; absent is classic and the
 // `always` menu. ctr_first needs the top-level `race_structure` block (version
@@ -2024,6 +2051,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.adventure_structure = AP_RS_STRUCTURE_CLASSIC;
 	ctr_cfg.race_type_selector = AP_RS_SELECTOR_ALWAYS;
 	ctr_cfg.stage1_awards.count = 0;
+	ctr_cfg.tracker_pad_launch = 0;
 	// Podium checks -> disabled + all rungs absent (-1) until parsed below.
 	ctr_cfg.podium_enabled = 0;
 	ctr_cfg.lettersanity_mode = 0;
@@ -2059,7 +2087,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// from its input, then apply them only after that plan was admitted. A
 	// non-Boolean value stays in and the validator refuses it as before.
 	// Legacy options are read below.
-	static const char *const kAdditiveContentFields[] = {"reserve_top_up", "spoiler_items"};
+	static const char *const kAdditiveContentFields[] = {"reserve_top_up", "spoiler_items", "tracker_pad_launch"};
 	bool strip_additive = false;
 	if (j.is_object() && j.contains("content_plan") && j.contains("ctr_options") && j["ctr_options"].is_object())
 		for (const char *key : kAdditiveContentFields)
@@ -2076,6 +2104,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		{
 			ctr_cfg.reserve_top_up = json_int(j["ctr_options"], "reserve_top_up", 0) != 0;
 			ctr_cfg.spoiler_items = json_int(j["ctr_options"], "spoiler_items", 0) != 0;
+			ap_seedcfg_parse_tracker_pad_launch(j["ctr_options"]);
 		}
 	}
 	else
@@ -2206,6 +2235,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	if (ctr_cfg.spoiler_items)
 		ap_cfg_log("[AP CFG] spoiler_items=1 -> pad previews and AP box colours wait for their reveal items\n");
 	ap_seedcfg_parse_race_structure(j, opt);
+	ap_seedcfg_parse_tracker_pad_launch(opt);
 	if (ctr_cfg.color_boxes_by_item)
 		ap_cfg_log("[AP CFG] color_boxes_by_item=1 -> AP item boxes wear their item's Archipelago colour\n");
 	// Optional comfort field: absent -> stays -1 (unset). Not gated by and does not

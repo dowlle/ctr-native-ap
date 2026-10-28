@@ -449,6 +449,19 @@ LAB_800aede8:
 		gGT->pushBuffer_UI.fade_step = -0x2AA;
 	}
 
+#ifdef CTR_AP
+	// #375: a start from the in-game tracker arrives inside this garage. Only
+	// reached with the garage open (bossIsOpen above, the same gates the
+	// door uses); the load below, its boss intro and the hub return are the
+	// garage's own.
+	if (ctr_cfg_active() && AP_TrackerLaunchGarageArrives())
+	{
+		AP_TrackerLaunchTaken();
+		gGT->pushBuffer_UI.fadeFromBlack_desiredResult = 0;
+		gGT->pushBuffer_UI.fade_step = -0x2AA;
+	}
+#endif
+
 	// If fade complete, start loading level
 	if (gGT->pushBuffer_UI.fadeFromBlack_currentValue == 0)
 	{
