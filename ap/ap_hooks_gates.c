@@ -525,23 +525,34 @@ int AP_BossRivalAdvert(int bossIdx, char *out, int cap)
 // otherwise. The families in the order the schedule first uses them.
 int AP_BossKitAdvert(int bossIdx, char *out, int cap)
 {
-	static const char *const names[4] = {"bomb", "missile", "TNT", "potion"};
-	int seen[4] = {0, 0, 0, 0};
-	int i, used;
+	// J03: every family a composed kit can carry, one name per family.
+	static const struct
+	{
+		int weapon;
+		int family;
+	} kCodes[] = {{0x01, 0}, {0x02, 1}, {0x03, 2}, {0x64, 2}, {0x04, 3}, {0x66, 3}, {0x00, 4},
+	              {0x06, 5}, {0x07, 6}, {0x08, 7}, {0x09, 8}, {0x0c, 9}};
+	static const char *const names[10] = {"bomb", "missile", "TNT",   "potion",   "turbo",
+	                                      "shield", "mask",   "clock", "warp orb", "invisibility"};
+	int seen[10] = {0};
+	int i, k, used, any = 0;
 
 	if (out == 0 || cap <= 0 || !ctr_cfg_active() || bossIdx < 0 || bossIdx >= AP_BOSS_VENUE_GARAGES ||
 	    ctr_boss_encounters.state != AP_BOSS_ENC_VALID || !ctr_boss_encounters.composed[bossIdx])
 		return 0;
 	used = snprintf(out, (size_t)cap, "Kit:");
-	for (i = 0; i < AP_BOSS_VENUE_SEGMENTS && used < cap; i++)
+	for (i = 0; i < AP_BOSS_VENUE_SEGMENTS && used > 0 && used < cap; i++)
 	{
 		int w = ctr_boss_encounters.schedule[bossIdx][i].weapon;
-		int f = w == 0x01 ? 0 : w == 0x02 ? 1 : (w == 0x03 || w == 0x64) ? 2 : (w == 0x04 || w == 0x66) ? 3 : -1;
+		int f = -1;
+		for (k = 0; k < (int)(sizeof kCodes / sizeof kCodes[0]); k++)
+			if (kCodes[k].weapon == w)
+				f = kCodes[k].family;
 		if (f < 0 || seen[f])
 			continue;
-		used += snprintf(out + used, (size_t)(cap - used), "%s %s", seen[0] + seen[1] + seen[2] + seen[3] ? "," : "",
-		                 names[f]);
+		used += snprintf(out + used, (size_t)(cap - used), "%s %s", any ? "," : "", names[f]);
 		seen[f] = 1;
+		any = 1;
 	}
 	return 1;
 }
