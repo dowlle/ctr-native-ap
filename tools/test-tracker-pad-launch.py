@@ -152,6 +152,22 @@ static void single_and_garage(void)
   AP_PadActivityDecide(&f, &l);
   assert(l.count == 0);
  }
+ /* Content-plan cups and Crystal Challenges: the pad's Done gate runs before
+  * its content branch and never replays a content pad, so state 5 (a
+  * finished crystal, an empty slot, content not Ready) never starts; a
+  * finished cup (state 4) replays. */
+ for (int state = 1; state <= 5; state++)
+ for (int ready = 0; ready < 2; ready++)
+ for (int s1 = 0; s1 < 2; s1++) {
+  ap_padact_facts f; ap_padact_list l;
+  memset(&f, 0, sizeof f);
+  f.node = AP_PADACT_NODE_SINGLE; f.content = 1; f.single = AP_PADACT_CRYSTAL;
+  f.keysHave = f.keysNeed = 1; f.padState = state; f.contentReady = ready; f.stage1Met = s1; f.racerMet = 1;
+  AP_PadActivityDecide(&f, &l);
+  assert(l.count == 1);
+  assert((l.reason[0] == AP_PADACT_OPEN) == (ready && s1 && state != 5));
+  if (ready && state == 5) assert(l.reason[0] == AP_PADACT_LOCK_DONE);
+ }
 }
 
 static void hub_keys(void)
@@ -232,10 +248,15 @@ static void lifecycle(void)
  AP_TLBegin(&r, 1, 4, 11, 11, T, T);
  for (i = 0; i < AP_TL_LOAD_FRAMES; i++) assert(AP_TLFrame(&r, -1, 1, 1) == AP_TL_DROP_NONE);
  assert(AP_TLFrame(&r, -1, 1, 1) == AP_TL_DROP_TIMEOUT && r.stage == AP_TL_IDLE);
- /* A pad that holds the kart but never asks: dropped, not leaked. */
+ /* A pad that holds the kart but never asks: dropped, not leaked, even
+  * while the hub is not idle. */
  AP_TLBegin(&r, 2, 2, 3, 3, R, R); AP_TLFrame(&r, 2, 0, 1); AP_TLTaken(&r);
- for (i = 0; i < AP_TL_TAKEN_FRAMES; i++) assert(AP_TLFrame(&r, 2, 0, 0) == AP_TL_DROP_NONE);
- assert(AP_TLFrame(&r, 2, 0, 0) == AP_TL_DROP_TIMEOUT && r.stage == AP_TL_IDLE);
+ for (i = 0; i < AP_TL_TAKEN_FRAMES; i++) assert(AP_TLFrame(&r, 2, i & 1, 0) == AP_TL_DROP_NONE);
+ assert(AP_TLFrame(&r, 2, 1, 0) == AP_TL_DROP_TIMEOUT && r.stage == AP_TL_IDLE);
+ /* A held start whose warp ends in another level: dropped at once, so a
+  * later visit to the same pad cannot take its mode. */
+ AP_TLBegin(&r, 2, 2, 3, 3, R, R); AP_TLFrame(&r, 2, 0, 1); AP_TLTaken(&r);
+ assert(AP_TLFrame(&r, -1, 1, 0) == AP_TL_DROP_ELSEWHERE && AP_TLTakeMode(&r, 3, 3) == -1);
  /* A garage start. */
  AP_TLBegin(&r, 3, 3, -1, -1, AP_PADACT_BOSS, -1); AP_TLFrame(&r, 3, 0, 1);
  assert(AP_TLGarageArrives(&r, 3) && !AP_TLPadArrives(&r, 3, -1, -1) && !AP_TLGarageArrives(&r, 2));

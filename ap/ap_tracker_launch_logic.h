@@ -110,10 +110,18 @@ static inline int AP_TLFrame(ap_tl_request *r, int levelHub, int loading, int ga
 	}
 	if (r->stage == AP_TL_TAKEN)
 	{
-		if (!loading && ++r->frames > AP_TL_TAKEN_FRAMES)
+		// The pad asks for the mode on its warp frame 61. Anything that ends
+		// the warp first (a load, leaving the hub) must not leave the mode
+		// waiting for a later visit to the same pad.
+		if (++r->frames > AP_TL_TAKEN_FRAMES)
 		{
 			AP_TLDrop(r, AP_TL_DROP_TIMEOUT);
 			return AP_TL_DROP_TIMEOUT;
+		}
+		if (levelHub != r->hub)
+		{
+			AP_TLDrop(r, AP_TL_DROP_ELSEWHERE);
+			return AP_TL_DROP_ELSEWHERE;
 		}
 		return AP_TL_DROP_NONE;
 	}

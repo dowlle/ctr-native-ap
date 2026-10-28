@@ -137,8 +137,13 @@ static inline int AP_PadActivityEntryReason(const ap_padact_facts *f)
 {
 	if (f->content)
 	{
+		// AH_WarpPad_ThTick's Done gate runs before its content-plan branch
+		// and never replays a content pad: AP_PadState 5 is an empty slot, a
+		// pad whose content is not Ready, or a finished Crystal Challenge.
 		if (!f->contentReady)
 			return AP_PADACT_LOCK_CONTENT;
+		if (f->padState == 5)
+			return AP_PADACT_LOCK_DONE;
 		if (!f->stage1Met)
 			return f->racerMet ? AP_PADACT_LOCK_PAD : AP_PADACT_LOCK_RACER;
 		return AP_PADACT_OPEN;
