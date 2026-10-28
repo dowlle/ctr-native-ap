@@ -46,7 +46,9 @@
 #include <windows.h>
 #else
 #include <dirent.h>
+#include <fcntl.h>
 #include <unistd.h>
+#include <cerrno>
 #endif
 
 using nlohmann::json;
@@ -360,6 +362,46 @@ void closed(const json &object, std::initializer_list<const char *> allowed, con
             throw std::runtime_error(std::string(where) + " has unknown field " + it.key().substr(0, 32));
 }
 
+/* A registry track key: [a-z0-9]+(-[a-z0-9]+)*, at most 64 bytes. It names a
+   folder under assets/tracks, so nothing else is ever accepted. */
+bool track_key_valid(const std::string &key)
+{
+    if (key.empty() || key.size() > 64 || key.front() == '-' || key.back() == '-') return false;
+    for (size_t i = 0; i < key.size(); i++)
+    {
+        const char c = key[i];
+        if (c == '-') { if (key[i - 1] == '-') return false; }
+        else if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))) return false;
+    }
+    return true;
+}
+
+/* The registry's key rule (AP-Pie ctr_registry.rules.slugify_key, without
+   its clash suffix): NFKD, ASCII only, lowercase, every run of anything else
+   one '-', cut to 48, "track" when nothing is left. */
+std::string title_track_key(const std::string &title)
+{
+    char folded[641];
+    if (!CustomPackage_AsciiFold(title.data(), title.size(), folded, sizeof folded)) return "";
+    std::string key;
+    bool dash = false;
+    for (const char *p = folded; *p; p++)
+    {
+        char c = *p;
+        if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
+        {
+            if (dash && !key.empty()) key += '-';
+            key += c;
+            dash = false;
+        }
+        else dash = true;
+    }
+    if (key.size() > 48) key.resize(48);
+    while (!key.empty() && key.back() == '-') key.pop_back();
+    return key.empty() ? "track" : key;
+}
+
 Descriptor parse_descriptor(const std::vector<unsigned char> &bytes, const std::string &patchSha256)
 {
     Descriptor d;
@@ -386,7 +428,11 @@ Descriptor parse_descriptor(const std::vector<unsigned char> &bytes, const std::
         if (t.contains("title")) m.title = bounded_text(t["title"], "title", 640);
         if (t.contains("author")) m.author = bounded_text(t["author"], "author", 80);
         if (t.contains("version")) m.version = bounded_text(t["version"], "version", 64);
-        if (t.contains("track_key")) m.trackKey = bounded_text(t["track_key"], "track_key", 64);
+        if (t.contains("track_key"))
+        {
+            m.trackKey = bounded_text(t["track_key"], "track_key", 64);
+            if (!track_key_valid(m.trackKey)) throw std::runtime_error("track_key must be a registry track key");
+        }
         if (t.contains("laps"))
         {
             if (!t["laps"].is_number_unsigned() || t["laps"] < 1 || t["laps"] > 7) throw std::runtime_error("laps must be 1 to 7");
@@ -1148,6 +1194,14 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             if (m.letterC == 1 && m.letterT == 1 && m.letterR == 1 && !(meta && meta->excludeTokens)) tags += " CTR";
             set_text(item.tags, sizeof item.tags, tags);
             set_text(item.pin, sizeof item.pin, built.pin);
+            set_text(item.trackKey, sizeof item.trackKey, meta && !meta->trackKey.empty() ? meta->trackKey : title_track_key(title));
+            if (!track_key_valid(item.trackKey))
+            {
+                set_text(item.reason, sizeof item.reason, "No folder name fits this title");
+                CustomPackage_Free(&built.owned);
+                add_item(*scan, item);
+                continue;
+            }
             item.offered = 1;
             offeredBytes += candidate.lev.size() + candidate.vrm.size();
             seen[{levHash, vrmHash}] = title;
@@ -1209,20 +1263,208 @@ extern "C" int XdeltaImport_CopyManifest(const XdeltaImportScan *scan, unsigned 
     return CustomPackage_CopyManifestJSON(scan->built[item].owned, destination, capacity, written);
 }
 
+extern "C" int XdeltaImport_TrackKey(const char *title, char out[65])
+{
+    if (!out) return 0;
+    out[0] = 0;
+    if (!title) return 0;
+    const std::string key = title_track_key(title);
+    if (!track_key_valid(key)) return 0;
+    std::snprintf(out, 65, "%s", key.c_str());
+    return 1;
+}
+
+namespace {
+
+/* ---- Room folder install (decision 35): ASSETS/tracks/<key>/original. Rooms
+   and solo seeds look there and pick a LEV and VRM by their hashes
+   (CustomTrackManager_LocateContentFiles), so the files only need a name of
+   their own: xdelta-<first 12 of the patch hash>-<BIGFILE index>.lev/.vrm. A
+   file already under that name is kept when its bytes are the same and
+   refused otherwise; nothing is ever replaced. No folder on the way may be a
+   link. */
+#ifdef _WIN32
+bool plain_directory(const std::string &path, bool create)
+{
+    std::wstring p = wide(path);
+    if (p.empty()) return false;
+    if (create) _wmkdir(p.c_str());
+    DWORD attributes = GetFileAttributesW(p.c_str());
+    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) &&
+           !(attributes & FILE_ATTRIBUTE_REPARSE_POINT);
+}
+
+/* 1 written, 0 the same bytes were already there; throws otherwise. */
+int publish_room_file(const std::string &folder, const std::string &name, const std::vector<unsigned char> &bytes)
+{
+    const std::string target = folder + "/" + name;
+    std::wstring wtarget = wide(target);
+    DWORD attributes = GetFileAttributesW(wtarget.c_str());
+    if (attributes != INVALID_FILE_ATTRIBUTES)
+    {
+        if ((attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) ||
+            hash_file(target, nullptr, nullptr) != hex_sha256(bytes.data(), bytes.size()))
+            throw std::runtime_error("Another file is in the way: " + name);
+        return 0;
+    }
+    std::string temp;
+    HANDLE h = INVALID_HANDLE_VALUE;
+    for (int k = 0; k < 64 && h == INVALID_HANDLE_VALUE; k++)
+    {
+        temp = folder + "/.xdelta-" + std::to_string((unsigned long)GetCurrentProcessId()) + "-" + std::to_string(k) + ".part";
+        h = CreateFileW(wide(temp).c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+                        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+        if (h == INVALID_HANDLE_VALUE && GetLastError() != ERROR_FILE_EXISTS) break;
+    }
+    if (h == INVALID_HANDLE_VALUE) throw std::runtime_error("Could not write in the track folder");
+    DWORD wrote = 0;
+    const bool ok = WriteFile(h, bytes.data(), (DWORD)bytes.size(), &wrote, nullptr) && wrote == bytes.size() && FlushFileBuffers(h);
+    CloseHandle(h);
+    if (!ok || !MoveFileExW(wide(temp).c_str(), wtarget.c_str(), MOVEFILE_WRITE_THROUGH))
+    {
+        fs_remove(temp);
+        throw std::runtime_error("Could not write in the track folder");
+    }
+    return 1;
+}
+
+void install_room(const std::string &assets, const std::string &key, const std::string &stem,
+                  const std::vector<unsigned char> &lev, const std::vector<unsigned char> &vrm)
+{
+    const std::string tracks = assets + "/tracks", root = tracks + "/" + key, original = root + "/original";
+    if (!plain_directory(tracks, true) || !plain_directory(root, true) || !plain_directory(original, true))
+        throw std::runtime_error("tracks/" + key + "/original is a link or could not be made");
+    publish_room_file(original, stem + ".lev", lev);
+    publish_room_file(original, stem + ".vrm", vrm);
+}
+#else
+struct Fd
+{
+    int fd = -1;
+    explicit Fd(int value) : fd(value) {}
+    ~Fd() { if (fd >= 0) close(fd); }
+};
+
+int open_child_directory(int parent, const char *name)
+{
+    if (mkdirat(parent, name, 0755) != 0 && errno != EEXIST) return -1;
+    return openat(parent, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+}
+
+bool same_bytes(int fd, const std::vector<unsigned char> &bytes)
+{
+    struct stat info;
+    if (fstat(fd, &info) || !S_ISREG(info.st_mode) || (unsigned long long)info.st_size != bytes.size()) return false;
+    std::vector<unsigned char> back(bytes.size());
+    size_t at = 0;
+    while (at < back.size())
+    {
+        const ssize_t n = pread(fd, back.data() + at, back.size() - at, (off_t)at);
+        if (n <= 0) return false;
+        at += (size_t)n;
+    }
+    return back == bytes;
+}
+
+/* 1 written, 0 the same bytes were already there; throws otherwise. */
+int publish_room_file(int folder, const std::string &name, const std::vector<unsigned char> &bytes)
+{
+    {
+        Fd existing(openat(folder, name.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC));
+        if (existing.fd >= 0)
+        {
+            if (!same_bytes(existing.fd, bytes)) throw std::runtime_error("Another file is in the way: " + name);
+            return 0;
+        }
+        if (errno != ENOENT) throw std::runtime_error("Another file is in the way: " + name);
+    }
+    char temp[64] = "";
+    Fd out(-1);
+    for (int k = 0; out.fd < 0 && k < 64; k++)
+    {
+        std::snprintf(temp, sizeof temp, ".xdelta-%d-%d.part", (int)getpid(), k);
+        out.fd = openat(folder, temp, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0644);
+        if (out.fd < 0 && errno != EEXIST) break;
+    }
+    if (out.fd < 0) throw std::runtime_error("Could not write in the track folder");
+    size_t at = 0;
+    while (at < bytes.size())
+    {
+        const ssize_t n = write(out.fd, bytes.data() + at, bytes.size() - at);
+        if (n <= 0) break;
+        at += (size_t)n;
+    }
+    /* linkat never replaces: a name that appeared meanwhile fails the install. */
+    const bool linked = at == bytes.size() && fsync(out.fd) == 0 && linkat(folder, temp, folder, name.c_str(), 0) == 0;
+    const int linkError = errno;
+    unlinkat(folder, temp, 0);
+    if (!linked)
+        throw std::runtime_error(linkError == EEXIST ? "Another file is in the way: " + name : "Could not write in the track folder");
+    Fd back(openat(folder, name.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC));
+    if (back.fd < 0 || !same_bytes(back.fd, bytes)) throw std::runtime_error("A track file changed while it was installed");
+    return 1;
+}
+
+void install_room(const std::string &assets, const std::string &key, const std::string &stem,
+                  const std::vector<unsigned char> &lev, const std::vector<unsigned char> &vrm)
+{
+    Fd base(open(assets.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+    Fd tracks(base.fd < 0 ? -1 : open_child_directory(base.fd, "tracks"));
+    Fd root(tracks.fd < 0 ? -1 : open_child_directory(tracks.fd, key.c_str()));
+    Fd original(root.fd < 0 ? -1 : open_child_directory(root.fd, "original"));
+    if (original.fd < 0) throw std::runtime_error("tracks/" + key + "/original is a link or could not be made");
+    publish_room_file(original.fd, stem + ".lev", lev);
+    publish_room_file(original.fd, stem + ".vrm", vrm);
+}
+#endif
+
+std::vector<unsigned char> package_file(const CustomPackageOwned *package, const char *role)
+{
+    CustomPackageManifest manifest;
+    size_t size = 0, written = 0;
+    if (CustomPackage_GetManifest(package, &manifest))
+        for (size_t i = 0; i < manifest.count; i++)
+            if (!std::strcmp(manifest.files[i].role, role)) size = manifest.files[i].bytes;
+    std::vector<unsigned char> bytes(size);
+    if (!size || !CustomPackage_CopyFile(package, role, bytes.data(), bytes.size(), &written) || written != size)
+        throw std::runtime_error("The verified files could not be read back");
+    return bytes;
+}
+
+} // namespace
+
 extern "C" int XdeltaImport_Install(const XdeltaImportScan *scan, const unsigned char *selected,
-                                    const char *assets, char *error, size_t errorSize)
+                                    const char *assets, int where, char *error, size_t errorSize)
 {
     if (error && errorSize) error[0] = 0;
-    if (!scan || !selected || !assets) return -1;
+    if (!scan || !selected || !assets || !(where & (CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM))) return -1;
     int installed = 0;
     for (unsigned int i = 0; i < scan->summary.count; i++)
     {
-        if (!selected[i] || !scan->summary.items[i].offered || !scan->built[i].owned) continue;
+        const XdeltaImportItem &item = scan->summary.items[i];
+        if (!selected[i] || !item.offered || !scan->built[i].owned) continue;
         char detail[512];
-        if (!CustomPackage_InstallAssets(scan->built[i].owned, assets, detail, sizeof detail))
+        if ((where & CTR_XDELTA_INSTALL_PACKAGES) &&
+            !CustomPackage_InstallAssets(scan->built[i].owned, assets, detail, sizeof detail))
         {
-            if (error && errorSize) std::snprintf(error, errorSize, "%s: %s", scan->summary.items[i].title, detail);
+            if (error && errorSize) std::snprintf(error, errorSize, "%s: %s", item.title, detail);
             return -1;
+        }
+        if (where & CTR_XDELTA_INSTALL_ROOM)
+        {
+            try
+            {
+                if (!track_key_valid(item.trackKey)) throw std::runtime_error("No folder name fits this title");
+                const std::string stem = "xdelta-" + std::string(scan->summary.patchSha256).substr(0, 12) + "-" +
+                                         std::to_string(item.bigfileIndex);
+                install_room(assets, item.trackKey, stem, package_file(scan->built[i].owned, "lev"),
+                             package_file(scan->built[i].owned, "vrm"));
+            }
+            catch (const std::exception &e)
+            {
+                if (error && errorSize) std::snprintf(error, errorSize, "%s: %s", item.title, e.what());
+                return -1;
+            }
         }
         installed++;
     }
@@ -1342,7 +1584,7 @@ extern "C" int XdeltaImport_PollScan(int *progress, XdeltaImportSummary *summary
 
 extern "C" void XdeltaImport_CancelScan(void) { store_flag(&job().cancel, 1); }
 
-extern "C" int XdeltaImport_StartInstall(const unsigned char *selected, unsigned int count, const char *assets)
+extern "C" int XdeltaImport_StartInstall(const unsigned char *selected, unsigned int count, const char *assets, int where)
 {
     auto &s = job();
     std::lock_guard<std::mutex> guard(s.mutex);
@@ -1352,10 +1594,10 @@ extern "C" int XdeltaImport_StartInstall(const unsigned char *selected, unsigned
     {
         std::vector<unsigned char> chosen(selected, selected + count);
         std::string root(assets);
-        s.installJob = std::async(std::launch::async, [chosen, root] {
+        s.installJob = std::async(std::launch::async, [chosen, root, where] {
             auto &state = job();
             char error[512];
-            int n = XdeltaImport_Install(state.scan, chosen.data(), root.c_str(), error, sizeof error);
+            int n = XdeltaImport_Install(state.scan, chosen.data(), root.c_str(), where, error, sizeof error);
             std::lock_guard<std::mutex> lock(state.mutex);
             state.installed = n < 0 ? 0 : n;
             state.error = n < 0 ? error : "";

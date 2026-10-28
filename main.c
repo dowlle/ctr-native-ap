@@ -115,8 +115,8 @@
 // the same code; the SDL picker and confirmation are in native_disc_resolution.c.
 #include "platform/native_startup.c"
 #include "platform/native_disc_resolution.c"
-#ifdef CTR_CUSTOM_PACKAGES
-// Track Manager "Import track files" dialog (xdelta importer, 0.3.0).
+#ifdef CTR_XDELTA_IMPORT
+// "Import track files" dialog and window drops (xdelta importer, 0.3.0).
 #include "platform/native_xdelta_pick.c"
 #endif
 

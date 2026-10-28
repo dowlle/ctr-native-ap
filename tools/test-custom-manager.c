@@ -1,4 +1,4 @@
-// cc -m32 -ffunction-sections -fdata-sections -Wl,--gc-sections -DCTR_NATIVE -DCTR_CUSTOM_TRACKS -DBUILD=926 -I include -I . tools/test-custom-manager.c -o /tmp/test-custom-manager
+// cc -m32 -ffunction-sections -fdata-sections -Wl,--gc-sections -DCTR_NATIVE -DCTR_CUSTOM_TRACKS -DCTR_CUSTOM_PACKAGES -DBUILD=926 -I include -I . tools/test-custom-manager.c -o /tmp/test-custom-manager
 /* Production manager input and font-bound checks; workers/rendering are stubbed. */
 #include <stdio.h>
 #include <string.h>
@@ -70,8 +70,10 @@ int XdeltaImport_StartScan(const char *p,const char *d,const char *a) { (void)p;
 int XdeltaImport_PollScan(int *progress,struct XdeltaImportSummary *s,char *e,size_t n)
 { *progress=37; if(scanState==1) *s=fakeSummary; if(scanState==-2) snprintf(e,n,"Patch does not match this disc"); return scanState; }
 void XdeltaImport_DiscardScan(void) { discards++; scanState=-1; }
-int XdeltaImport_StartInstall(const unsigned char *sel,unsigned count,const char *a)
-{ (void)a; memcpy(lastSelected,sel,count); installStarts++; installState=0; return 1; }
+static int lastWhere, dropState;
+int XdeltaImport_StartInstall(const unsigned char *sel,unsigned count,const char *a,int where)
+{ (void)a; memcpy(lastSelected,sel,count); lastWhere=where; installStarts++; installState=0; return 1; }
+int XdeltaPick_TakeDrop(char *path,size_t size) { int s=dropState; if(s==1) snprintf(path,size,"/drop/LRG2.xdelta"); dropState=0; return s; }
 int XdeltaImport_PollInstall(int *installed,char *e,size_t n) { (void)e;(void)n; int s=installState; if(s==1){*installed=2;installState=-1;} return s; }
 #include "../game/230/MM_CustomManager.c"
 static void tick(int buttons) { struct GamepadBuffer pad={0};pad.buttonsTapped=buttons;drawn[0]=0;MM_ConfigProc_CustomContent(NULL,NULL,&pad); }
@@ -139,10 +141,18 @@ int main(void)
  scanState=1;tick(0);CHECK(strstr(drawn,"[x] Snowy Valley")&&strstr(drawn,"2 tracks"));
  tick(BTN_DOWN);tick(BTN_DOWN);tick(BTN_SQUARE);tick(0);CHECK(strstr(drawn,"Skipped")&&strstr(drawn,"Arena: not"));
  tick(BTN_UP);tick(BTN_SQUARE);tick(BTN_CROSS);CHECK(installStarts==1&&lastSelected[0]&&!lastSelected[1]&&!lastSelected[2]);
+ CHECK(lastWhere==(CTR_XDELTA_INSTALL_PACKAGES|CTR_XDELTA_INSTALL_ROOM));
  installState=1;s_contentStoreWanted=0;tick(0);CHECK(strstr(s_importMessage,"Installed 2 tracks")&&s_contentStoreWanted);
  s_contentLibraryTab=0;tick(BTN_CROSS);CHECK(!MM_CustomImport_Active()&&s_contentLibraryTab==1);
  tick(BTN_SELECT);scanState=-1;tick(BTN_CROSS);pickState=1;tick(0);scanState=-2;tick(0);
  CHECK(strstr(drawn,"Patch does not match")||strstr(s_importMessage,"Patch does not match"));
+ tick(BTN_TRIANGLE);CHECK(!MM_CustomImport_Active());
+ /* A patch dropped on the window opens the import and starts reading it;
+    a file that is not a patch says so. A drop waits while a scan runs. */
+ before=scanStarts;dropState=1;tick(0);CHECK(MM_CustomImport_Active()&&scanStarts==before+1&&!strcmp(s_importPath,"/drop/LRG2.xdelta"));
+ dropState=1;tick(0);CHECK(dropState==1&&scanStarts==before+1);
+ tick(BTN_TRIANGLE);CHECK(dropState==0&&scanStarts==before+2);
+ tick(BTN_TRIANGLE);dropState=2;tick(0);CHECK(dropState==0&&strstr(s_importMessage,"Drop an .xdelta"));
  tick(BTN_TRIANGLE);CHECK(!MM_CustomImport_Active());
  CHECK(CustomRevision_Compare("2.0.0","1.99.0")>0);
  CHECK(CustomRevision_Compare("1.0.0","1.0.0-rc1")>0);

@@ -269,6 +269,8 @@ static inline void ap_seed_instruction(const struct AP_SeedContentRow *row, char
 	case AP_SEED_SCAN_MISSING_FILE:
 		if (row->source == AP_SEED_SOURCE_SAPHI)
 			snprintf(out, size, "Downloads from Project Saphi with Install missing content.");
+		else if (row->locator.patch_sha256[0])
+			snprintf(out, size, "No download. Select: import the patch below, or drop it on the window.");
 		else
 			snprintf(out, size, "No download. Put the v%s LEV and VRM in tracks/%s/original, then Rescan.", rev, folder);
 		return;

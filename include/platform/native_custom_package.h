@@ -8,6 +8,10 @@ extern "C" {
 #define CTR_PACKAGE_FILE_MAX 32
 /* Unicode 15.0.0, NFC, 1..160 codepoints, no category-C or edge whitespace. */
 int CustomPackage_ValidateTitle(const char *utf8, size_t size);
+/* NFKD, then only the ASCII bytes kept (Python's
+   unicodedata.normalize("NFKD", text).encode("ascii", "ignore")). Writes at
+   most size - 1 bytes and a terminator; returns 0 for text that is not UTF-8. */
+int CustomPackage_AsciiFold(const char *utf8, size_t length, char *out, size_t size);
 struct CustomPackageFile
 {
     char role[24];

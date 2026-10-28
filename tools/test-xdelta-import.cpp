@@ -1,6 +1,6 @@
 // gcc -m32 -std=c++17 -Wall -Wextra -DCTR_CUSTOM_TRACKS -DCTR_CUSTOM_PACKAGES -DUTF8PROC_STATIC -I include -I . -I ap/vendor/json/include -I vendor/utf8proc
 // -x c++ tools/test-xdelta-import.cpp platform/native_xdelta_import.cpp platform/native_custom_package.cpp platform/native_custom_package_files.cpp
-// -x c platform/native_xdelta_decode.c platform/native_custom_package_owned.c platform/native_custom_content_verify.c platform/native_custom_offline.c platform/native_custom_unicode.c vendor/utf8proc/utf8proc.c -x none
+// -x c platform/native_xdelta_decode.c platform/native_custom_package_owned.c platform/native_custom_content_verify.c platform/native_custom_offline.c platform/native_custom_unicode.c platform/native_custom_track_manager.c vendor/utf8proc/utf8proc.c -x none
 // -lstdc++ -lm -lpthread -o /tmp/test-xdelta-import
 //
 // xdelta track importer (0.3.0). Everything here is synthetic: a small
@@ -18,6 +18,10 @@
 #include <platform/native_xdelta_import.h>
 #include <platform/native_xdelta_decode.h>
 #include <platform/native_custom_package.h>
+extern "C" {
+#include <platform/native_custom_track_manager.h>
+}
+#include <platform/native_sha256.h>
 #include <nlohmann/json.hpp>
 
 #include <cstdio>
@@ -268,6 +272,34 @@ static std::string write_file(const std::string &name, const Bytes &bytes)
     return path;
 }
 
+static Bytes read_file(const std::string &path)
+{
+    Bytes out;
+    FILE *f = std::fopen(path.c_str(), "rb");
+    if (!f) return out;
+    unsigned char buffer[65536];
+    size_t n;
+    while ((n = std::fread(buffer, 1, sizeof buffer, f)) > 0) out.insert(out.end(), buffer, buffer + n);
+    std::fclose(f);
+    return out;
+}
+static void write_path(const std::string &path, const Bytes &bytes)
+{
+    FILE *f = std::fopen(path.c_str(), "wb");
+    if (!f || (bytes.size() && std::fwrite(bytes.data(), 1, bytes.size(), f) != bytes.size()) || std::fclose(f)) std::exit(2);
+}
+static std::string sha_hex(const Bytes &bytes)
+{
+    NativeSha256Ctx context;
+    unsigned char digest[32];
+    char text[65];
+    NativeSha256_Init(&context);
+    NativeSha256_Update(&context, bytes.data(), bytes.size());
+    NativeSha256_Final(&context, digest);
+    NativeSha256_ToHex(digest, text);
+    return text;
+}
+
 struct ScanResult { int ok = 0; std::string error; XdeltaImportScan *scan = nullptr; };
 static ScanResult scan(const std::string &patch, const std::string &disc, const char *descriptor = nullptr)
 {
@@ -427,9 +459,54 @@ int main()
         std::vector<unsigned char> selected(s->count, 0);
         for (unsigned i = 0; i < s->count; i++) selected[i] = (unsigned char)s->items[i].offered;
         char error[512];
-        CHECK(XdeltaImport_Install(a.scan, selected.data(), assets.c_str(), error, sizeof error) == 2, "two tracks installed");
-        CHECK(XdeltaImport_Install(a.scan, selected.data(), assets.c_str(), error, sizeof error) == 2, "reinstall is harmless");
+        const int both = CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM;
+        CHECK(XdeltaImport_Install(a.scan, selected.data(), assets.c_str(), both, error, sizeof error) == 2, "two tracks installed");
+        CHECK(XdeltaImport_Install(a.scan, selected.data(), assets.c_str(), both, error, sizeof error) == 2, "reinstall is harmless");
         struct stat info;
+        /* Decision 35: the room folder rooms and solo seeds read. */
+        CHECK(!std::strcmp(t1->trackKey, "pack-slot-1"), "no descriptor: room folder from the title (registry key rule)");
+        const std::string stem = "xdelta-" + std::string(s->patchSha256).substr(0, 12) + "-1";
+        const std::string original = assets + "/tracks/pack-slot-1/original/";
+        CHECK(read_file(original + stem + ".lev") == cutLev, "room folder holds the cut LEV");
+        CHECK(sha_hex(read_file(original + stem + ".vrm")) == t1->vrmSha256, "room folder holds the cut VRM");
+        {
+            struct CustomTrackManagerStatus status;
+            CustomTrackManager_LocateContentFiles(assets.c_str(), "pack-slot-1", "Pack slot 1", "1.0.0", t1->levSha256,
+                                                  (unsigned long)cutLev.size(), t1->vrmSha256,
+                                                  (unsigned long)read_file(original + stem + ".vrm").size(), &status);
+            CHECK(status.state == CTR_CT_MANAGER_READY, "a room pinning these hashes finds the imported track");
+        }
+        {
+            /* Room only (the player client): no package store is written. */
+            std::string roomOnly = root + "/assets-room";
+            mkdir(roomOnly.c_str(), 0755);
+            CHECK(XdeltaImport_Install(a.scan, selected.data(), roomOnly.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == 2,
+                  "room-only install");
+            CHECK(stat((roomOnly + "/tracks/packages").c_str(), &info) != 0, "room-only install writes no package store");
+            /* A different file under the same name is never replaced. */
+            std::string clash = roomOnly + "/tracks/pack-slot-1/original/" + stem + ".vrm";
+            write_path(clash, Bytes(16, 7));
+            CHECK(XdeltaImport_Install(a.scan, selected.data(), roomOnly.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == -1 &&
+                  std::strstr(error, "in the way"), "a different file in the way fails the install");
+            CHECK(read_file(clash) == Bytes(16, 7), "the file in the way is left alone");
+            /* A folder that is a link is refused. */
+            std::string linked = root + "/assets-link";
+            mkdir(linked.c_str(), 0755);
+            mkdir((linked + "/tracks").c_str(), 0755);
+            mkdir((root + "/elsewhere").c_str(), 0755);
+            symlink((root + "/elsewhere").c_str(), (linked + "/tracks/pack-slot-1").c_str());
+            CHECK(XdeltaImport_Install(a.scan, selected.data(), linked.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == -1 &&
+                  std::strstr(error, "is a link"), "a linked track folder is refused");
+            CHECK(stat((root + "/elsewhere/original").c_str(), &info) != 0, "nothing written through the link");
+            CHECK(XdeltaImport_Install(a.scan, selected.data(), linked.c_str(), 0, error, sizeof error) == -1, "no destination refused");
+        }
+        {
+            char key[65];
+            CHECK(XdeltaImport_TrackKey("Dracula's Castle", key) && !std::strcmp(key, "dracula-s-castle"), "key rule: apostrophe");
+            CHECK(XdeltaImport_TrackKey("Caf\xc3\xa9 \xef\xbc\xa1  Run!", key) && !std::strcmp(key, "cafe-a-run"), "key rule: NFKD then ASCII");
+            CHECK(XdeltaImport_TrackKey("\xe6\x97\xa5\xe6\x9c\xac", key) && !std::strcmp(key, "track"), "key rule: nothing left is track");
+            CHECK(XdeltaImport_TrackKey(std::string(60, 'a').c_str(), key) && std::strlen(key) == 48, "key rule: cut to 48");
+        }
         CHECK(!stat((assets + "/tracks/packages/" + t1->pin + "/manifest.json").c_str(), &info), "package folder named by its pin");
         std::vector<CustomPackageStoreEntry> rows;
         CustomPackage_ScanStore((assets + "/tracks/packages").c_str(),
@@ -455,7 +532,7 @@ int main()
         const XdeltaImportSummary *s = XdeltaImport_Summary(a.scan);
         nlohmann::json d = {{"descriptor_version", 1}, {"patch_sha256", s->patchSha256}, {"pack_title", "Test Pack"},
                             {"pack_author", "Someone"},
-                            {"tracks", {{"1", {{"title", "Snow Lane"}, {"laps", 5}, {"relic_targets", {{"sapphire", 90000}, {"gold", 80000}, {"platinum", 70000}}}, {"excluded", {"ctr_tokens"}}}},
+                            {"tracks", {{"1", {{"title", "Snow Lane"}, {"track_key", "snow-lane-key"}, {"laps", 5}, {"relic_targets", {{"sapphire", 90000}, {"gold", 80000}, {"platinum", 70000}}}, {"excluded", {"ctr_tokens"}}}},
                                         {"9", {{"title", "Long Road"}}}}}};
         std::string text = d.dump();
         write_file("Pack.ctrpack.json", Bytes(text.begin(), text.end()));
@@ -481,7 +558,12 @@ int main()
             std::vector<unsigned char> selected(s3->count, 0);
             for (unsigned i = 0; i < s3->count; i++) selected[i] = (unsigned char)s3->items[i].offered;
             char error[512];
-            CHECK(XdeltaImport_Install(c.scan, selected.data(), assets.c_str(), error, sizeof error) == 2, "descriptor packages install");
+            CHECK(XdeltaImport_Install(c.scan, selected.data(), assets.c_str(), CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM,
+                                       error, sizeof error) == 2, "descriptor packages install");
+            CHECK(!std::strcmp(t1->trackKey, "snow-lane-key"), "descriptor track_key names the room folder");
+            CHECK(item_for(s3, 9) && !std::strcmp(item_for(s3, 9)->trackKey, "long-road"), "no track_key: key from the descriptor title");
+            struct stat info;
+            CHECK(!stat((assets + "/tracks/snow-lane-key/original").c_str(), &info), "room folder under the descriptor key");
             std::vector<CustomPackageStoreEntry> rows;
             CustomPackage_ScanStore((assets + "/tracks/packages").c_str(),
                 [](const CustomPackageStoreEntry *e, void *c) { if (e->verified) ((std::vector<CustomPackageStoreEntry> *)c)->push_back(*e); },
@@ -501,6 +583,15 @@ int main()
             CHECK(excluded, "descriptor exclusion clears CTR Challenge");
         }
         XdeltaImport_Free(&c.scan);
+        nlohmann::json badKey = d;
+        badKey["tracks"]["1"]["track_key"] = "../escape";
+        text = badKey.dump();
+        write_file("Pack.ctrpack.json", Bytes(text.begin(), text.end()));
+        ScanResult k = scan(patchPath, discPath);
+        CHECK(k.ok && !std::strcmp(XdeltaImport_Summary(k.scan)->descriptorNote,
+                                   "Pack descriptor not used: track_key must be a registry track key"),
+              "a track_key that is not a registry key refuses the descriptor");
+        XdeltaImport_Free(&k.scan);
         nlohmann::json wrong = d;
         wrong["patch_sha256"] = std::string(64, '0');
         text = wrong.dump();

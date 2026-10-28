@@ -46,7 +46,7 @@ int main(int argc, char **argv)
         if (it.offered)
         {
             offered++;
-            std::printf("OFFER %3d %-28s %-26s lev %s vrm %s pin %s\n", it.bigfileIndex, it.title, it.tags, it.levSha256, it.vrmSha256, it.pin);
+            std::printf("OFFER %3d %-28s %-26s key %s lev %s vrm %s pin %s\n", it.bigfileIndex, it.title, it.tags, it.trackKey, it.levSha256, it.vrmSha256, it.pin);
         }
         else std::printf("SKIP  %3d %-28s %s\n", it.bigfileIndex, it.title, it.reason);
     }
@@ -54,7 +54,8 @@ int main(int argc, char **argv)
     if (argc > 3)
     {
         std::vector<unsigned char> selected(s->count, 1);
-        int n = XdeltaImport_Install(scan, selected.data(), argv[3], error, sizeof error);
+        int n = XdeltaImport_Install(scan, selected.data(), argv[3],
+                                     CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM, error, sizeof error);
         std::printf("installed %d%s%s\n", n, n < 0 ? ": " : "", n < 0 ? error : "");
     }
     XdeltaImport_Free(&scan);

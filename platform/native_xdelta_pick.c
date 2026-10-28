@@ -1,6 +1,6 @@
 /* See include/platform/native_xdelta_pick.h. Included by main.c next to the
    disc picker, so it shares that unit's SDL headers. On Steam Deck Game Mode,
-   where a desktop dialog may not show, the Track Manager also lists
+   where a desktop dialog may not show, the import screen also lists
    assets/tracks/import/. */
 #include <platform/native_xdelta_pick.h>
 #include <stdint.h>
@@ -80,4 +80,52 @@ void XdeltaPick_Abandon(void)
 		s_xdeltaPickState = -1;
 	}
 	SDL_UnlockMutex(s_xdeltaPickMutex);
+}
+
+/* Window drops arrive on the main thread from Platform_PollHostEvents and are
+   read on the main thread by the menu, so no lock is needed. */
+static int s_xdeltaDropState;
+static char s_xdeltaDropPath[4096];
+
+static int XdeltaPick_IsPatchName(const char *path)
+{
+	static const char *const endings[] = {".xdelta", ".vcdiff"};
+	size_t length = strlen(path), i, k;
+	for (i = 0; i < 2; i++)
+	{
+		size_t n = strlen(endings[i]);
+		if (length <= n) continue;
+		for (k = 0; k < n; k++)
+		{
+			char c = path[length - n + k];
+			if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
+			if (c != endings[i][k]) break;
+		}
+		if (k == n) return 1;
+	}
+	return 0;
+}
+
+void XdeltaPick_Drop(const char *path)
+{
+	if (path == NULL || path[0] == 0 || strlen(path) >= sizeof s_xdeltaDropPath || !XdeltaPick_IsPatchName(path))
+	{
+		s_xdeltaDropState = 2;
+		return;
+	}
+	strcpy(s_xdeltaDropPath, path);
+	s_xdeltaDropState = 1;
+}
+
+int XdeltaPick_TakeDrop(char *path, size_t size)
+{
+	int state = s_xdeltaDropState;
+	if (state == 1)
+	{
+		if (path == NULL || size <= strlen(s_xdeltaDropPath))
+			return 0;
+		strcpy(path, s_xdeltaDropPath);
+	}
+	s_xdeltaDropState = 0;
+	return state;
 }

@@ -27,6 +27,7 @@ struct XdeltaImportItem
     char reason[CTR_XDELTA_REASON_MAX]; /* Skip reason; "" when offered. */
     char levSha256[65], vrmSha256[65];
     char pin[65];      /* Manifest pin of the built package, offered items only. */
+    char trackKey[65]; /* Room folder: assets/tracks/<trackKey>/original, offered items only. */
 };
 
 struct XdeltaImportSummary
@@ -61,11 +62,22 @@ const struct XdeltaImportSummary *XdeltaImport_Summary(const struct XdeltaImport
 /* Owned manifest bytes of an offered item, for harnesses and the corpus tool. */
 int XdeltaImport_CopyManifest(const struct XdeltaImportScan *scan, unsigned int item, void *destination,
                               size_t capacity, size_t *written);
-/* Install the selected offered items into ASSETS/tracks/packages. selected has
-   summary.count entries. Returns the number installed or reverified, -1 on a
-   failure (error names the first failing track). */
+/* Where Install writes (decision 35, 2026-10-28). PACKAGES: the package
+   store ASSETS/tracks/packages the Track Manager reads (authoring builds).
+   ROOM: the LEV and VRM in ASSETS/tracks/<track key>/original, where rooms
+   and solo seeds find a custom track by its hashes (every build). */
+#define CTR_XDELTA_INSTALL_PACKAGES 1
+#define CTR_XDELTA_INSTALL_ROOM 2
+/* Install the selected offered items. selected has summary.count entries.
+   Returns the number installed or reverified, -1 on a failure (error names
+   the first failing track). */
 int XdeltaImport_Install(const struct XdeltaImportScan *scan, const unsigned char *selected,
-                         const char *assets, char *error, size_t errorSize);
+                         const char *assets, int where, char *error, size_t errorSize);
+/* The room folder of a track: the descriptor's track_key, otherwise the
+   registry's key rule over the title (NFKD, ASCII only, lowercase, runs of
+   anything else become one '-', at most 48 characters, "track" when empty).
+   Returns 1, or 0 when no key fits. */
+int XdeltaImport_TrackKey(const char *title, char out[65]);
 void XdeltaImport_Free(struct XdeltaImportScan **scan);
 
 /* UUIDv5 over "xdelta:<patch_sha256>:<bigfile_index>" (the saphi_import_uuid recipe shape). */
@@ -88,7 +100,7 @@ int XdeltaImport_StartScan(const char *patchPath, const char *discPath, const ch
 /* -1 idle, 0 running (progress set), 1 scan ready (summary copied), -2 failed (error set). */
 int XdeltaImport_PollScan(int *progress, struct XdeltaImportSummary *summary, char *error, size_t errorSize);
 void XdeltaImport_CancelScan(void);
-int XdeltaImport_StartInstall(const unsigned char *selected, unsigned int count, const char *assets);
+int XdeltaImport_StartInstall(const unsigned char *selected, unsigned int count, const char *assets, int where);
 /* -1 idle, 0 running, 1 done (installed set), -2 failed (error set). Drops the scan. */
 int XdeltaImport_PollInstall(int *installed, char *error, size_t errorSize);
 void XdeltaImport_DiscardScan(void);

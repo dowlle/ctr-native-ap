@@ -6,9 +6,9 @@ Upstream: https://github.com/jmacd/xdelta
 Commit: `7508fd2a823443b1f0173ca361620f21d62a7d37`, branch `release3_1_apl`.
 Do not replace it with tag `v3.1.0` or the `xdelta-gpl` tree: those are GPLv2.
 
-Used only by the xdelta track importer in the custom-track package layer
-(`platform/native_xdelta_decode.c`, `CTR_CUSTOM_PACKAGES`). The player client
-does not build or link it. It is built decode only: no encoder, no command-line
+Used only by the xdelta track importer (`platform/native_xdelta_decode.c`),
+in the player client and in the Track Manager builds (`CTR_XDELTA_IMPORT`).
+It is built decode only: no encoder, no command-line
 main, DJW secondary decompression only (`XD3_ENCODER 0`, `SECONDARY_LZMA 0`,
 `SECONDARY_FGK 0`). A patch that needs LZMA or FGK is refused with
 "Unsupported patch compression".
