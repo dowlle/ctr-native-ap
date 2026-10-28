@@ -1228,7 +1228,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 #ifdef CTR_CUSTOM_PACKAGES
 	    // Drain a package or Saphi worker before leaving; Back first leaves
 	    // the Versions list of one track.
-	    && !MM_CustomLibrary_Busy() && !s_saphiVersionTrack
+	    && !MM_CustomLibrary_Busy() && !s_saphiVersionTrack && !MM_CustomImport_Active()
 #elif defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
 	    // Back first closes the Install missing content overview (#133 PR 7).
 	    && !MM_CurrentSeed_ConsumesBack(s_currentSection)

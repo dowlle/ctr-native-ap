@@ -248,6 +248,17 @@ for name, change in [
         ("no arcade", setter([1, "capabilities", "arcade"], False)),
         ("claims less", setter([0, "capabilities", "time_trial"], False)),
         ("extra field", setter([1, "source_url"], "https://example.invalid")),
+        ("locator ok", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1,
+                                                    patch_name="Pack.xdelta", source_url="https://example.invalid/p"))),
+        ("locator minimal", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=4095))),
+        ("locator kind", setter([0, "locator"], dict(kind="saphi", patch_sha256="5e" * 32, bigfile_index=1))),
+        ("locator hash case", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5E" * 32, bigfile_index=1))),
+        ("locator index over", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=4096))),
+        ("locator name unicode", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1,
+                                                              patch_name="caf\u00e9"))),
+        ("locator http", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1,
+                                                      source_url="http://example.invalid"))),
+        ("locator extra", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1, x=1))),
         ]:
     open_alter(name, change)
 alter("open-track laps differ", lambda p: next(t for t in p["tracks"] if t.get("package_id") == "package/fixture-loop/2.1").__setitem__("laps", 4), open_base)

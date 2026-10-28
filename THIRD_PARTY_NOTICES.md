@@ -355,3 +355,16 @@ freely, subject to the following restrictions:
 2. Altered source versions must be plainly marked as such, and must not be
    misrepresented as being the original software.
 3. This notice may not be removed or altered from any source distribution.
+
+## xdelta3 (box authoring build and authoring client only)
+
+Source: <https://github.com/jmacd/xdelta>, branch `release3_1_apl`, commit
+`7508fd2a823443b1f0173ca361620f21d62a7d37` (xdelta 3.1.1).
+
+Vendored as an unmodified decode-only subset in `vendor/xdelta3/` for the Track
+Manager's xdelta track importer. The player client does not include it.
+
+License: Apache License 2.0. The full text is in `vendor/xdelta3/LICENSE` and
+ships as `LICENSE-xdelta3.txt` in the release folders that include the importer.
+
+Copyright 2016 Joshua MacDonald

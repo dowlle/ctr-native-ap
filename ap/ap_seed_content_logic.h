@@ -60,9 +60,8 @@ enum
 };
 
 /* An xdelta patch locator ([[xdelta track importer design]]): which patch and
- * BIGFILE slot a track comes from. The room's package record has no such
- * field yet, so it is always empty in this build; the page still shows the
- * field so the importer can fill it without a layout change. */
+ * BIGFILE slot a track comes from, from the package record's optional
+ * `locator`. Empty (bigfile_index -1) when the room names no patch. */
 struct AP_SeedContentLocator
 {
 	char patch_name[AP_SEED_ID_MAX];

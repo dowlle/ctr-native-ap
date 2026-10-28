@@ -115,6 +115,15 @@ struct CustomPackageLocalInfo
     unsigned int laps; /* Laps the package races, 0 when its race settings are invalid. */
     char arcadeReason[48], timeTrialReason[48]; /* Short menu text; "" when allowed. */
     char levSha256[65], vrmSha256[65]; /* With uuid and laps: the Time Trial records key. */
+    /* Capability flags measured on the installed bytes (xdelta importer design,
+       2026-10-15). relic: time crates, a pinned relic_targets sidecar and not
+       excluded by the pack descriptor. ctrChallenge: exactly one C, one T and
+       one R, not excluded. Reasons are short menu text, "" when allowed. */
+    int relic, ctrChallenge;
+    char relicReason[48], ctrChallengeReason[48];
+    /* Provenance of an imported package (metadata/xdelta-source.json). */
+    int xdelta, bigfileIndex;
+    char patchSha256[65];
 };
 struct CustomPackageStoreEntry
 {

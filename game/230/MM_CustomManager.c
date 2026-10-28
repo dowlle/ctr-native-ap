@@ -1,6 +1,7 @@
 /* Track Manager (Options > Custom Content) for the box authoring build.
    Included by MM_ConfigMenu.c inside CTR_CUSTOM_PACKAGES only. */
 #include <platform/native_custom_revision.h>
+#include "MM_CustomImport.c"
 static int s_saphiVersionTrack;
 static size_t s_saphiBrowseSelection;
 /* Shared game-font manager: Browse and Installed, no race launch actions. */
@@ -59,6 +60,7 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
     (void)menu;
     s_contentSearchPadPrev = rawPad;
     MM_CustomLibrary_Tick(0);
+    if (MM_CustomImport_Active()) { MM_CustomImport_Proc(ot, pad); return; }
     if (s_saphiRefreshBusy)
     {
         struct CustomSaphiCatalogue *fresh = NULL;
@@ -107,6 +109,12 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
         s_saphiRefreshBusy = CustomSaphi_StartRefresh();
         if (!s_saphiRefreshBusy) snprintf(s_saphiMessage,sizeof s_saphiMessage,"Could not refresh Saphi. L2: Retry.");
         if (tapped & BTN_L2) s_contentStoreWanted = 1;
+    }
+    if ((tapped & BTN_SELECT) && !s_contentSearchEditing && !MM_CustomLibrary_Busy())
+    {
+        MM_CustomImport_Open();
+        OtherFX_Play(1,1);
+        return;
     }
     if (s_saphiVersionTrack && (tapped & (BTN_TRIANGLE | BTN_START)))
     {
@@ -230,7 +238,7 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
     }
     snprintf(line,sizeof line,"R2 Search: %s%s",s_saphiQuery,s_contentSearchEditing ? "_" : "");
     MM_CustomText_Draw(line,256,180,456,1,JUSTIFY_CENTER | WHITE,ot);
-    snprintf(line,sizeof line,"%u/%u   L2 Refresh   Back: Options",count ? (unsigned)*selected+1 : 0,(unsigned)count);
+    snprintf(line,sizeof line,"%u/%u   L2 Refresh   Select: Import   Back: Options",count ? (unsigned)*selected+1 : 0,(unsigned)count);
     MM_CustomText_Draw(line,256,196,456,1,JUSTIFY_CENTER | WHITE,ot);
     RECT listBox={20,64,268,108}, detailBox={297,64,190,108};
     RECTMENU_DrawInnerRect(&listBox,0,ot);RECTMENU_DrawInnerRect(&detailBox,0,ot);

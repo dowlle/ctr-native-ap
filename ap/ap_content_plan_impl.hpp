@@ -14,6 +14,7 @@
 #include "ap_named_blocks.h"
 #include "ap_arena_content.h"
 #include <array>
+#include <cstring>
 #include <map>
 #include <set>
 #include <stdexcept>
@@ -146,6 +147,36 @@ static void package_record(const J &pkg, ctr_content_package &target) {
     J base = pkg;
     const bool targets = base.contains("relic_targets");
     if (targets) base.erase("relic_targets");
+    // `locator` (xdelta importer) is optional and informational: which patch
+    // and BIGFILE slot an imported track comes from.
+    target.locator_index = -1;
+    target.locator_sha256[0] = target.locator_name[0] = 0;
+    if (base.contains("locator")) {
+        const J &loc = base["locator"];
+        need(loc.is_object(), "package locator is not an object");
+        J rest = loc;
+        for (const char *opt : {"patch_name", "source_url"}) rest.erase(opt);
+        fields(rest, {"kind", "patch_sha256", "bigfile_index"});
+        need(loc["kind"] == "xdelta", "package locator kind is not xdelta");
+        need(loc["patch_sha256"].is_string() && lower_hex(loc["patch_sha256"].get<std::string>(), 64),
+             "package locator hash is not 64 lowercase hex characters");
+        target.locator_index = number(loc["bigfile_index"], 0, 4095);
+        auto printable = [](const J &v, size_t max, const char *prefix, char low) {
+            if (!v.is_string()) return false;
+            const std::string t = v.get<std::string>();
+            if (t.empty() || t.size() > max || t.compare(0, std::strlen(prefix), prefix) != 0) return false;
+            for (unsigned char c : t) if (c < (unsigned char)low || c > 0x7e) return false;
+            return t.size() > std::strlen(prefix) || !*prefix;
+        };
+        if (loc.contains("patch_name")) {
+            need(printable(loc["patch_name"], 64, "", 0x20), "package locator patch name is not printable ASCII");
+            copy(target.locator_name, loc["patch_name"]);
+        }
+        if (loc.contains("source_url"))
+            need(printable(loc["source_url"], 256, "https://", 0x21), "package locator source is not an https link");
+        copy(target.locator_sha256, loc["patch_sha256"]);
+        base.erase("locator");
+    }
     fields(base, {"id", "content_id", "uuid", "revision", "display_name", "author", "laps", "capabilities", "files", "evidence"});
     need(pkg["content_id"].is_string() && track_key(pkg["content_id"].get<std::string>()), "package track key is not lowercase hyphenated text");
     need(pkg["revision"].is_string() && revision_text(pkg["revision"].get<std::string>()), "package revision has unsupported characters");

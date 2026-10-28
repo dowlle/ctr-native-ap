@@ -121,6 +121,9 @@ def main():
         companions += ('ap-config.example.txt',) if variant in ('ap', 'vanilla') else ()
         for file in companions:
             shutil.copy2(file, root / file)
+        if variant in ('authoring', 'authoring-client'):
+            # The Track Manager's xdelta importer vendors xdelta3 (Apache 2.0).
+            shutil.copy2('vendor/xdelta3/LICENSE', root / 'LICENSE-xdelta3.txt')
         if variant == 'authoring':
             shutil.copy2('docs/HELP_PLACE_BOXES.md', root / 'HELP-PLACE-BOXES.md')
         if variant == 'authoring-client':
