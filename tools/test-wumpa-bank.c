@@ -106,7 +106,11 @@ int main(void)
 		// Decision 22 (2026-10-28): race fruit banks only in Adventure races.
 		CHECK("mode: an Adventure race banks", AP_WumpaBankRaceMode(0x80000u));
 		CHECK("mode: a relic race banks", AP_WumpaBankRaceMode(0x4000000u));
-		CHECK("mode: an Arcade race banks nothing", !AP_WumpaBankRaceMode(0x0u));
+		CHECK("mode: no mode flag banks nothing", !AP_WumpaBankRaceMode(0x0u));
+		CHECK("mode: an Arcade race banks nothing", !AP_WumpaBankRaceMode(0x400000u));
+		CHECK("mode: a Time Trial banks nothing", !AP_WumpaBankRaceMode(0x20000u));
+		CHECK("mode: Arcade with a stale relic flag banks nothing", !AP_WumpaBankRaceMode(0x400000u | 0x4000000u));
+		CHECK("mode: Time Trial with a stale relic flag banks nothing", !AP_WumpaBankRaceMode(0x20000u | 0x4000000u));
 		CHECK("mode: Adventure battle banks nothing", !AP_WumpaBankRaceMode(0x80000u | 0x20u));
 		CHECK("mode: Arcade battle banks nothing", !AP_WumpaBankRaceMode(0x20u));
 	}

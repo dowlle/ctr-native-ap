@@ -89,14 +89,19 @@ static inline int AP_WumpaShopUsable(const AP_WumpaShopConfig *c)
 
 // Race modes whose fruit banks (decision 22, 2026-10-28): Adventure races,
 // relic races included (they carry RELIC_RACE without ADVENTURE_MODE), never
-// Battle mode. Arcade, Time Trial and the menus bank nothing.
-#define AP_WUMPA_MODE_ADVENTURE 0x80000u
-#define AP_WUMPA_MODE_RELIC     0x4000000u
-#define AP_WUMPA_MODE_BATTLE    0x20u
+// Battle mode. Arcade, Time Trial and the menus bank nothing. The Arcade and
+// Time Trial flags are refused outright: the main-menu reset clears
+// ADVENTURE_MODE but not RELIC_RACE (MM_MenuFlow.c), so a stale relic flag
+// must not open banking in the next Arcade or Time Trial race.
+#define AP_WUMPA_MODE_ADVENTURE  0x80000u
+#define AP_WUMPA_MODE_RELIC      0x4000000u
+#define AP_WUMPA_MODE_BATTLE     0x20u
+#define AP_WUMPA_MODE_ARCADE     0x400000u
+#define AP_WUMPA_MODE_TIME_TRIAL 0x20000u
 static inline int AP_WumpaBankRaceMode(unsigned int gameMode1)
 {
 	return (gameMode1 & (AP_WUMPA_MODE_ADVENTURE | AP_WUMPA_MODE_RELIC)) != 0 &&
-	       (gameMode1 & AP_WUMPA_MODE_BATTLE) == 0;
+	       (gameMode1 & (AP_WUMPA_MODE_BATTLE | AP_WUMPA_MODE_ARCADE | AP_WUMPA_MODE_TIME_TRIAL)) == 0;
 }
 
 // Fruit a positive change banks: what would pass the kart's cap of 10.
