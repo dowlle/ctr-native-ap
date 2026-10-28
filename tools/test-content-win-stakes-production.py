@@ -13,6 +13,7 @@ Engine and network state are controlled seams; this does not claim a Steam
 race.
 """
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import ap_hooks_unit
@@ -20,6 +21,10 @@ import ap_hooks_unit
 root = Path(__file__).resolve().parents[1]
 source = ap_hooks_unit.read()
 win_logic = (root / "ap" / "ap_win_logic.c").read_text(encoding="utf-8")
+# Review finding 5: the identity hash must be computed in its own statement, not
+# in the argument list of the call that reads it (C leaves that order open).
+assert re.search(r"known = ap_net_identity_hash\(&id\);\s*if \(AP_WinStakesConnectHash\(&g_wl_latch, known, id\)\)", win_logic), \
+    "AP_WinLogicTallyReset must hash the identity before the connect call"
 
 
 def function(signature, text=source):

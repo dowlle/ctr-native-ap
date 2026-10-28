@@ -33,11 +33,14 @@ static AP_WinStakesLatch g_wl_latch;
 void AP_WinLogicTallyReset(void)
 {
 	unsigned long long id = 0;
+	int known;
 	AP_ItemIdTallyReset(&g_wl_tally);
 	// Review minor 1: a decision made under another seed or slot never applies
 	// to a loss after this connect. A same-seed, same-slot reconnect keeps it.
 	// The hash covers the full names; the 96-byte copies elsewhere truncate.
-	if (AP_WinStakesConnectHash(&g_wl_latch, ap_net_identity_hash(&id), id))
+	// Hash first: C leaves the argument evaluation order open.
+	known = ap_net_identity_hash(&id);
+	if (AP_WinStakesConnectHash(&g_wl_latch, known, id))
 		AP_LogLine("[AP DEATH] race stakes forgotten: connected to another seed or slot\n");
 }
 

@@ -251,6 +251,7 @@ int main(void)
 	bounce("Last", "Last fell off");
 	frame(AP_DL_WIN_LIVE, 1);
 	assert(has_line("6 MORE: TOO MANY", 1));
+	assert(strcmp(feed[0], "DEATHLINK IGNORED") == 0 && strcmp(feed[1], "6 MORE: TOO MANY") == 0); /* summary first */
 	assert(has_line("DEATHLINK: Last", 0) && applied_n == 1 && strcmp(applied_src, "Last") == 0);
 	assert(g_dl_inbox.count == 0 && g_dl_inbox.dropped == 0);
 	frame(AP_DL_WIN_LIVE, 1);
