@@ -28,7 +28,8 @@ struct Driver { void (*funcPtrs[1])(void); int driverID;
  struct { int y; } posCurr; s16 turnAngleCurr; SVec3 rotCurr; struct Instance *instSelf; } driver;
 struct GameTracker { int gameMode1, gameMode2; struct Driver *drivers[1];
  struct { s16 cameraMode; } cameraDC[1]; } game, *gGT=&game;
-struct Warp { int framesWarping, boolEnteredWarppad; } warp, *warppadObj=&warp;
+struct Warp { int framesWarping, boolEnteredWarppad, levelID; } warp = {0, 0, 104}, *warppadObj=&warp;
+static int apEntryRefusedDest=-1;
 struct MenuRow { int stringIndex; };
 struct Menu { int rowSelected; struct MenuRow *rows; } apCustomRaceMenu;
 static struct MenuRow apCustomRaceRows[3], apCustomRaceRowsCtrFirst[2];
@@ -116,6 +117,7 @@ int main(void) {
   int result=evaluate();
   if(choice<0) {
    assert(result==-1 && warp.framesWarping==0 && warp.boolEnteredWarppad==0);
+   assert(apEntryRefusedDest==104); apEntryRefusedDest=-1; /* cancel latches the pad */
    assert(driver.funcPtrs[0]==VehPhysProc_Driving_Init);
    assert(driver.posCurr.y==123);
    assert(driver.turnAngleCurr==-1234 && driver.rotCurr.y==2345);

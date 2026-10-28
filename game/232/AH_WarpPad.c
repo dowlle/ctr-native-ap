@@ -1673,6 +1673,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				warppadObj->framesWarping = 0;
 				AH_WarpPad_WarpRestore(gGT);
 				gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
+				// Latch the pad until the kart leaves it, as WarpPad_RefuseEntry
+				// does, so the released kart is not captured again at once.
+				apEntryRefusedDest = warppadObj->levelID;
 				goto WarpPad_AnimateOpen;
 			}
 			gGT->gameMode2 &= ~TOKEN_RACE;
