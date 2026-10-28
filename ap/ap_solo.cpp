@@ -133,19 +133,20 @@ std::string ReadSmallPlainFile(const fs::path &path, size_t limit)
 }
 
 // Creates `path` (it must not exist: never through a link left there) and
-// writes `text`. False on any failure.
-bool WriteNewFile(const fs::path &path, const std::string &text)
+// writes `text`. 1 written; 0 not created (it exists, or no access): the
+// path is someone else's; -1 created by this call but the write failed.
+int WriteNewFile(const fs::path &path, const std::string &text)
 {
 #ifdef _WIN32
 	const int fd = _wopen(path.wstring().c_str(), _O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY, _S_IREAD | _S_IWRITE);
 	if (fd < 0)
-		return false;
+		return 0;
 	const bool ok = _write(fd, text.data(), (unsigned)text.size()) == (int)text.size();
-	return (_close(fd) == 0) && ok;
+	return (_close(fd) == 0) && ok ? 1 : -1;
 #else
 	const int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0644);
 	if (fd < 0)
-		return false;
+		return 0;
 	size_t done = 0;
 	while (done < text.size())
 	{
@@ -153,11 +154,11 @@ bool WriteNewFile(const fs::path &path, const std::string &text)
 		if (n <= 0)
 		{
 			close(fd);
-			return false;
+			return -1;
 		}
 		done += (size_t)n;
 	}
-	return close(fd) == 0;
+	return close(fd) == 0 ? 1 : -1;
 #endif
 }
 
@@ -889,22 +890,20 @@ extern "C" void AP_Solo_RecordTrackDescriptor(const char *contentId, const char 
 		if (ReadSmallPlainFile(target, kDescriptorMax) == json)
 			return;
 	}
-	// A temp name no other writer uses, created fresh (never an existing
-	// path, so never through a link someone left there).
+	// A fresh temp name, created exclusively (never through a link left
+	// there). A name someone else holds is skipped, never removed.
 	static unsigned serial = 0;
 	fs::path tmp;
-	for (int tries = 0; tries < 16; tries++)
+	int wrote = 0;
+	for (int tries = 0; tries < 16 && wrote == 0; tries++)
 	{
 		tmp = dir / fs::u8path(name + ".tmp-" + std::to_string(AP_SOLO_GETPID()) + "-" + std::to_string(++serial));
-		if (!fs::exists(fs::symlink_status(tmp, ec)))
-			break;
-		tmp.clear();
+		wrote = WriteNewFile(tmp, json);
 	}
-	if (tmp.empty())
-		return;
-	if (!WriteNewFile(tmp, json))
+	if (wrote != 1)
 	{
-		fs::remove(tmp, ec);
+		if (wrote == -1)
+			fs::remove(tmp, ec); // ours: created by this call
 		Log("could not keep the descriptor of " + name);
 		return;
 	}
