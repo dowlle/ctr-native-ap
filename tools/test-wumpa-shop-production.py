@@ -7,7 +7,8 @@ checks that production calls them at the right sites:
 1. banking: fruit past 10 in RB_Player_ModifyWumpa (local human player only,
    after the unlimited-fruit cheat has returned), AP fruit past 10 in
    AP_WumpaReceive instead of discarding it, the held fruit on the player's
-   race-finished edge in every race mode, armed by a newly seen countdown,
+   race-finished edge, only in an Adventure race (decision 22), armed by a
+   newly seen countdown,
    never for a forced DeathLink loss, nothing under the cheat, and AP fruit
    banked only after the effect marker that covers it is written;
 2. the wallet keys: connected, read, merged and flushed with "max", purchases
@@ -15,8 +16,11 @@ checks that production calls them at the right sites:
    and resent on connect;
 3. the goal arm and the Oxide companion arm read the lifetime total;
 4. the save screen: the WUMPA SHOP row, the menu procedure's row mapping,
-   the shop page owning input in RECTMENU_ProcessState, the row label, the
-   HUD number, and the slot_data parse.
+   the shop page owning input in RECTMENU_ProcessState, the row label, and
+   the slot_data parse;
+5. the numbers on screen (decisions 20 and 21): the race HUD keeps the
+   retail count only, both hub HUD passes draw the balance and banked
+   total, and the tracker's hub tab draws the shop line.
 """
 from pathlib import Path
 import re
@@ -63,7 +67,11 @@ check('kart banking is the local human player',
 fin = body(wumpa, 'void AP_WumpaOnRaceFinish(')
 check('finish banking takes the latch with the forced-loss predicate',
       'AP_WumpaFinishTake(&g_finish_latch, held, AP_RaceAttemptIsForcedLoss())' in fin)
-check('battle mode banks nothing', 'BATTLE_MODE' in fin and 'BATTLE_MODE' in kart)
+adv = body(wumpa, 'static int AP_WumpaAdventureRace(')
+check('banking takes the Adventure race mode test', 'AP_WumpaBankRaceMode(gGT->gameMode1)' in adv)
+check('kart and finish banking bank only in an Adventure race',
+      '!AP_WumpaAdventureRace(gGT)' in fin and '!AP_WumpaAdventureRace(gGT)' in kart and
+      'BATTLE_MODE) != 0' not in fin and 'BATTLE_MODE) != 0' not in kart)
 tick = body(wumpa, 'void AP_WumpaTick(')
 check('a newly seen countdown arms the finish payout',
       re.search(r'if \(!g_countdown_seen\)\s*AP_WumpaFinishArm\(&g_finish_latch\);\s*g_countdown_seen = 1;', tick) is not None)
@@ -111,7 +119,21 @@ rect = text('game/RECTMENU.c')
 state = body(rect, 'void RECTMENU_ProcessState()')
 check('the shop page owns input like the tracker', 'if (AP_WumpaShopMenuFrame()) return;' in state)
 check('the row label resolves', 'index == AP_LNG_WUMPA_SHOP' in rect)
-check('the HUD draws the banked total', 'AP_WumpaHudBanked(d, message' in text('game/UI/UI_DrawNum.c'))
+check('the race HUD draws no banked number', 'AP_Wumpa' not in text('game/UI/UI_DrawNum.c'))
+for path, fn in (('game/UI/UI_RenderFrame.c', 'void UI_RenderFrame_AdvHub(void)'), ('game/232/AH_Map.c', None)):
+    src = text(path) if fn is None else body(text(path), fn)
+    check(f'{path}: the hub counters draw the Wumpa balance',
+          re.search(r'UI_DrawNumTrophy\([^;]*\);\s*#ifdef CTR_AP\s*//[^\n]*\n\s*AP_WumpaDrawHub\(\);\s*#endif\s*\}', src) is not None)
+hub = body(wumpa, 'void AP_WumpaDrawHub(void)')
+check('the hub counter shows balance and lifetime banked total',
+      'AP_WumpaHubLine(line, (int)sizeof line, ap_net_wumpa_balance(), ap_net_wumpa_lifetime())' in hub and
+      'numPlyrCurrGame != 1' in hub)
+tracker = body(text('ap/ap_tracker.c'), 'static void AP_TrackerDraw(void)')
+check('the tracker hub tab draws the shop line',
+      'AP_WumpaShopHubTrackerLine(GEM_STONE_VALLEY+ap_tracker.hub,line,(int)sizeof line)' in tracker)
+tline = body(text('ap/ap_wumpa_shop_ui.c'), 'int AP_WumpaShopHubTrackerLine(')
+check('the shop line tallies the shop page\'s own slot states',
+      'states[k] = AP_WShopSlotState(hub, k);' in tline and 'AP_WumpaShopTallyStates(states, ctr_wumpa_shop.slots)' in tline)
 cfg = text('ap/ap_seedcfg.cpp')
 check('slot_data parses the block after the Cup sweeps and before activation',
       cfg.index('ap_wumpa_shop_parse(j, opt, schema, &shop)') > cfg.index('if (!parse_cup_sweeps(j,opt,schema)) return;') and

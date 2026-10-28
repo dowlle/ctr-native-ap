@@ -3,7 +3,8 @@
 // #249 banking decisions (ap/ap_wumpa_shop.h): fruit past 10 banks, the held
 // fruit banks once per finished attempt and never for a forced DeathLink loss,
 // quit and restart bank nothing held, the goal arm counts the lifetime total,
-// the shelf states, and the hub ids and codes the apworld mints. The engine
+// the shelf states, the hub ids and codes the apworld mints, the race modes
+// that bank (Adventure only), and the tracker and hub lines. The engine
 // wiring is checked by tools/test-wumpa-shop-production.py.
 #include <stdio.h>
 #include <string.h>
@@ -99,6 +100,35 @@ int main(void)
 		in.wumpaShort = 1;
 		st = AP_OxideGarageEvaluate(&in);
 		CHECK("oxide: optional Oxide is never gated by the Wumpa arm", st.open);
+	}
+
+	{
+		// Decision 22 (2026-10-28): race fruit banks only in Adventure races.
+		CHECK("mode: an Adventure race banks", AP_WumpaBankRaceMode(0x80000u));
+		CHECK("mode: a relic race banks", AP_WumpaBankRaceMode(0x4000000u));
+		CHECK("mode: an Arcade race banks nothing", !AP_WumpaBankRaceMode(0x0u));
+		CHECK("mode: Adventure battle banks nothing", !AP_WumpaBankRaceMode(0x80000u | 0x20u));
+		CHECK("mode: Arcade battle banks nothing", !AP_WumpaBankRaceMode(0x20u));
+	}
+	{
+		// Decision 21: the tracker's per-hub shop line.
+		int st[6] = {AP_WUMPA_SLOT_SOLD, AP_WUMPA_SLOT_FOR_SALE, AP_WUMPA_SLOT_TOO_POOR,
+		             AP_WUMPA_SLOT_LOCKED, AP_WUMPA_SLOT_PENDING, AP_WUMPA_SLOT_FOR_SALE};
+		int sold[2] = {AP_WUMPA_SLOT_SOLD, AP_WUMPA_SLOT_SOLD};
+		AP_WumpaShopTally t = AP_WumpaShopTallyStates(st, 6);
+		char line[64];
+		CHECK("tally: sold slots are not left", t.left == 5);
+		CHECK("tally: locked slots are not open", t.open == 4);
+		CHECK("tally: only for-sale slots are affordable", t.affordable == 2);
+		AP_WumpaShopTrackerLine(line, (int)sizeof line, t);
+		CHECK("tracker line text", strcmp(line, "WUMPA SHOP: 5 SLOTS LEFT, 4 OPEN, 2 AFFORDABLE") == 0);
+		t = AP_WumpaShopTallyStates(st + 3, 1);
+		AP_WumpaShopTrackerLine(line, (int)sizeof line, t);
+		CHECK("tracker line: one locked slot", strcmp(line, "WUMPA SHOP: 1 SLOT LEFT, 0 OPEN, 0 AFFORDABLE") == 0);
+		AP_WumpaShopTrackerLine(line, (int)sizeof line, AP_WumpaShopTallyStates(sold, 2));
+		CHECK("tracker line: sold out", strcmp(line, "WUMPA SHOP: SOLD OUT") == 0);
+		AP_WumpaHubLine(line, (int)sizeof line, 120, 340);
+		CHECK("hub line: balance and banked total", strcmp(line, "WUMPA 120   BANKED 340") == 0);
 	}
 
 	printf("%s\n", failures ? "FAILED" : "all passed");

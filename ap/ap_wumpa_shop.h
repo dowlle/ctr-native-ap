@@ -3,9 +3,10 @@
 
 // The Wumpa Shop and the Wumpa goal (#249): pure state and decisions.
 //
-// BANKING. Every fruit the local player collects while already holding 10 is
-// banked at once, and so is the fruit held at a legitimate race finish. AP
-// fruit that would pass 10 also banks at once, in or out of a race. A banked
+// BANKING. In an Adventure race, every fruit the local player collects while
+// already holding 10 is banked at once, and so is the fruit held at a
+// legitimate race finish (decision 22, 2026-10-28: Adventure only). AP fruit
+// that would pass 10 also banks at once, in or out of a race. A banked
 // fruit adds once to the LIFETIME total, which the Wumpa goal counts and which
 // never goes down. The wallet balance is lifetime minus the prices of the
 // distinct purchases (design note, "Wallet accounting"). Banking runs when
@@ -19,6 +20,8 @@
 //
 // Header-only and free of engine types so tools/test-wumpa-bank.c and
 // tools/test-wumpa-shop-seedcfg.cpp drive the same functions production runs.
+
+#include <stdio.h>
 
 #define AP_WUMPA_SHOP_HUBS 5
 #define AP_WUMPA_SHOP_MAX_SLOTS 25
@@ -84,6 +87,18 @@ static inline int AP_WumpaShopUsable(const AP_WumpaShopConfig *c)
 	return c != 0 && c->state == AP_WUMPA_SHOP_VALID && c->slots > 0;
 }
 
+// Race modes whose fruit banks (decision 22, 2026-10-28): Adventure races,
+// relic races included (they carry RELIC_RACE without ADVENTURE_MODE), never
+// Battle mode. Arcade, Time Trial and the menus bank nothing.
+#define AP_WUMPA_MODE_ADVENTURE 0x80000u
+#define AP_WUMPA_MODE_RELIC     0x4000000u
+#define AP_WUMPA_MODE_BATTLE    0x20u
+static inline int AP_WumpaBankRaceMode(unsigned int gameMode1)
+{
+	return (gameMode1 & (AP_WUMPA_MODE_ADVENTURE | AP_WUMPA_MODE_RELIC)) != 0 &&
+	       (gameMode1 & AP_WUMPA_MODE_BATTLE) == 0;
+}
+
 // Fruit a positive change banks: what would pass the kart's cap of 10.
 static inline int AP_WumpaBankOverflow(int held, int delta)
 {
@@ -136,6 +151,46 @@ static inline int AP_WumpaSlotState(const AP_WumpaShopSlot *s, long long lifetim
 	if (balance < s->price)
 		return AP_WUMPA_SLOT_TOO_POOR;
 	return AP_WUMPA_SLOT_FOR_SALE;
+}
+
+// The in-game tracker's per-hub shop line (decision 21, 2026-10-28): slots
+// not yet sold, how many of them are on sale (unlocked), and how many of
+// those the balance covers now. `states` holds AP_WumpaSlotState results.
+typedef struct AP_WumpaShopTally
+{
+	int left, open, affordable;
+} AP_WumpaShopTally;
+
+static inline AP_WumpaShopTally AP_WumpaShopTallyStates(const int *states, int n)
+{
+	AP_WumpaShopTally t = {0, 0, 0};
+	int k;
+	for (k = 0; k < n; k++)
+	{
+		if (states[k] == AP_WUMPA_SLOT_SOLD)
+			continue;
+		t.left++;
+		if (states[k] != AP_WUMPA_SLOT_LOCKED)
+			t.open++;
+		if (states[k] == AP_WUMPA_SLOT_FOR_SALE)
+			t.affordable++;
+	}
+	return t;
+}
+
+static inline int AP_WumpaShopTrackerLine(char *out, int cap, AP_WumpaShopTally t)
+{
+	if (t.left == 0)
+		return snprintf(out, (size_t)cap, "WUMPA SHOP: SOLD OUT");
+	return snprintf(out, (size_t)cap, "WUMPA SHOP: %d SLOT%s LEFT, %d OPEN, %d AFFORDABLE",
+	                t.left, t.left == 1 ? "" : "S", t.open, t.affordable);
+}
+
+// The hub counter (decision 20, 2026-10-28): spendable balance and lifetime
+// banked total.
+static inline int AP_WumpaHubLine(char *out, int cap, long long balance, long long lifetime)
+{
+	return snprintf(out, (size_t)cap, "WUMPA %lld   BANKED %lld", balance, lifetime);
 }
 
 // Goal arm: off, or the lifetime total reached the target. An unreadable

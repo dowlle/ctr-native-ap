@@ -40,14 +40,26 @@ static int g_countdown_seen = 0;
 // #249: the held-at-finish payout, armed when a new attempt's countdown is seen.
 static AP_WumpaFinishLatch g_finish_latch = {0};
 
-// #249: does this seed bank fruit? Banking runs on the local human player in
-// every race mode that has Wumpa (ruling 2026-09-18), never under the
-// unlimited-fruit cheat.
+// #249: does this seed bank fruit? Never under the unlimited-fruit cheat.
 static int AP_WumpaBanking(void)
 {
 	return ctr_cfg_active() && !ctr_cfg.schema_newer &&
 	       AP_WumpaBankingActive(&ctr_wumpa_shop) &&
 	       (sdata->gGT == 0 || (sdata->gGT->gameMode2 & CHEAT_WUMPA) == 0);
+}
+
+// #249: race fruit banks only in Adventure races, for the local human player
+// (decision 22, 2026-10-28, replacing the 2026-09-18 every-race-mode ruling),
+// so Arcade cannot farm fruit outside the seed's tracks. A relic race carries
+// RELIC_RACE without ADVENTURE_MODE (ap_boxes.c), so both count. Battle mode
+// is not a race.
+CTR_STATIC_ASSERT(AP_WUMPA_MODE_ADVENTURE == ADVENTURE_MODE);
+CTR_STATIC_ASSERT(AP_WUMPA_MODE_RELIC == RELIC_RACE);
+CTR_STATIC_ASSERT(AP_WUMPA_MODE_BATTLE == BATTLE_MODE);
+
+static int AP_WumpaAdventureRace(const struct GameTracker *gGT)
+{
+	return gGT != 0 && AP_WumpaBankRaceMode(gGT->gameMode1);
 }
 
 // AP fruit past 10 waits here until the received-item effect marker that
@@ -84,20 +96,24 @@ void AP_WumpaBankKart(struct Driver *driver, int held, int delta)
 	struct GameTracker *gGT = sdata->gGT;
 	if (!AP_WumpaBanking() || gGT == 0 || driver == 0 || driver != gGT->drivers[0])
 		return;
-	// Battle mode is not a race (ruling 2026-09-18: race modes with Wumpa).
-	if ((driver->actionsFlagSet & ACTION_BOT) != 0 || (gGT->gameMode1 & BATTLE_MODE) != 0)
+	if ((driver->actionsFlagSet & ACTION_BOT) != 0 || !AP_WumpaAdventureRace(gGT))
 		return;
 	AP_WumpaBank(AP_WumpaBankOverflow(held, delta), "past 10");
 }
 
-int AP_WumpaHudBanked(struct Driver *driver, char *out, int cap)
+// #249 hub counter (decision 20, 2026-10-28): the spendable balance and the
+// lifetime banked total, centred below the relic, key and trophy row in a 1P
+// hub. The race HUD keeps only the retail count of this race's fruit.
+void AP_WumpaDrawHub(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
-	if (!AP_WumpaBanking() || gGT == 0 || out == 0 || cap <= 0 || driver != gGT->drivers[0] ||
-	    gGT->numPlyrCurrGame != 1)
-		return 0;
-	snprintf(out, (size_t)cap, "%lld", ap_net_wumpa_lifetime());
-	return 1;
+	char line[48];
+	if (!AP_WumpaBanking() || gGT == 0 || gGT->numPlyrCurrGame != 1)
+		return;
+	if (!ap_net_wumpa_ready())
+		return;
+	AP_WumpaHubLine(line, (int)sizeof line, ap_net_wumpa_balance(), ap_net_wumpa_lifetime());
+	DecalFont_DrawLine(line, 0x100, 0x24, FONT_SMALL, ORANGE | JUSTIFY_CENTER);
 }
 
 // `wasHuman` and `held` come from the frame before the finish edge: the engine
@@ -111,7 +127,7 @@ void AP_WumpaOnRaceFinish(struct Driver *driver, int wasHuman, int held)
 	if (gGT == 0 || driver == 0 || driver != gGT->drivers[0])
 		return;
 	pay = AP_WumpaFinishTake(&g_finish_latch, held, AP_RaceAttemptIsForcedLoss());
-	if (!AP_WumpaBanking() || !wasHuman || (gGT->gameMode1 & BATTLE_MODE) != 0)
+	if (!AP_WumpaBanking() || !wasHuman || !AP_WumpaAdventureRace(gGT))
 		return;
 	AP_WumpaBank(pay, "held at the finish");
 }
@@ -230,8 +246,8 @@ void AP_WumpaTick(struct GameTracker *gGT)
 	// imply a case the preceding line has not already survived.
 	onTrack = LOAD_IsOpen_RacingOrBattle();
 	loading = sdata->Loading.stage != LOAD_IDLE;
-	// #249: the player's race-finished rising edge, in every race mode, once
-	// per attempt (the latch below). A finish seen during a load is ignored.
+	// #249: the player's race-finished rising edge, once per attempt (the
+	// latch below); AP_WumpaOnRaceFinish pays only in an Adventure race. A finish seen during a load is ignored.
 	{
 		static int finishedPrev = 0, humanPrev = 0, heldPrev = 0;
 		struct Driver *p = gGT->drivers[0];

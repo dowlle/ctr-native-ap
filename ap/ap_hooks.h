@@ -645,8 +645,10 @@ void AP_WumpaOnRaceFinish(struct Driver *driver, int wasHuman, int held);
 // #249: bank AP fruit past 10 held since the last effect-marker write
 // (ap_hooks_received.c calls it right after that write).
 void AP_WumpaCommitReceived(void);
-// #249 HUD: writes the banked total for the in-race Wumpa counter; 0 = draw nothing.
-int AP_WumpaHudBanked(struct Driver *driver, char *out, int cap);
+// #249 hub counter: balance and lifetime banked total in a 1P hub (decision 20).
+void AP_WumpaDrawHub(void);
+// #249 tracker: the hub's "shop slots left" line (decision 21); 0 = none.
+int AP_WumpaShopHubTrackerLine(int level, char *out, int cap);
 // #249 shop page (ap_wumpa_shop_ui.c, rows in ap_wumpa_shop_menu.h).
 // PrepareGreenMenu picks the green load/save rows before the save screen
 // shows them; GreenMenuRow maps a chosen row (opening the shop returns

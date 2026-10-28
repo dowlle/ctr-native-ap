@@ -146,6 +146,21 @@ static int AP_WShopSlotState(int hub, int k)
 	                         ap_wshop.buying == s->code);
 }
 
+// #249 tracker line for the hub at engine level `level` (decision 21,
+// 2026-10-28). 0 when the seed has no usable shop or the wallet is not loaded.
+int AP_WumpaShopHubTrackerLine(int level, char *out, int cap)
+{
+	int hub = AP_WumpaShopHubOfLevel(level), states[AP_WUMPA_SHOP_MAX_SLOTS], k;
+	if (out == 0 || cap <= 0 || hub < 0 || !AP_WumpaShopUsable(&ctr_wumpa_shop))
+		return 0;
+	if (!ap_net_wumpa_ready())
+		return 0;
+	for (k = 0; k < ctr_wumpa_shop.slots; k++)
+		states[k] = AP_WShopSlotState(hub, k);
+	AP_WumpaShopTrackerLine(out, cap, AP_WumpaShopTallyStates(states, ctr_wumpa_shop.slots));
+	return 1;
+}
+
 static void AP_WShopBuy(void)
 {
 	int hub = ap_wshop.hub, k = ap_wshop.cursor, r;
