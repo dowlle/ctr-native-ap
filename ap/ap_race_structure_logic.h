@@ -5,13 +5,19 @@
 // Freestanding so tools/test-race-structure.py pins it out of engine.
 //
 // Two seed options (ctr_options, schema 18):
-//   adventure_structure  "classic" | "ctr_first". Under ctr_first a track's
-//                        first race is its CTR Challenge; a qualifying CTR
-//                        win sends the CTR check and the paired Trophy Race
-//                        check (the `race_structure` award pairs), and a plain
-//                        Trophy Race win sends neither.
-//   race_type_selector   "productive" | "always". When the selector opens.
-//                        Presentation only.
+//   adventure_structure  "classic" | "ctr_first". Under ctr_first a track that
+//                        has a CTR Challenge (its Trophy code is in the
+//                        `race_structure` award pairs) offers only the CTR
+//                        Challenge at stage 1 and the Relic Race at stage 2
+//                        (decision 14 of 2026-10-28). A qualifying CTR win
+//                        sends the CTR check and the paired Trophy Race check;
+//                        boxes, Wumpa and podium rungs come from that race. A
+//                        track without a CTR Challenge keeps the classic order
+//                        inside a ctr_first seed (decision 4).
+//   race_type_selector   "productive" | "always". When the selector opens. The
+//                        seed value is the starting value; the in-game Options
+//                        row (SEED / ALWAYS / PRODUCTIVE) overrides it live
+//                        (decision 15). Presentation only.
 //
 // The selector serves every AP race pad that is not a content plan: retail
 // race destinations, configured trial tracks and the Cortex Vortex pad track.
@@ -60,36 +66,67 @@ typedef struct
 	int cursor;
 } ap_rs_rows;
 
-// Which modes the pad's gates admit. The physical pad's stage 1 (and racer
-// lock) is already met when a pad is entered at all. Classic: the CTR
-// Challenge and the Relic Race wait for the checked Trophy and the physical
-// pad's stage 2. ctr_first: the CTR Challenge is stage 1; the Relic Race keeps
-// both conditions, now earned through a CTR win. The Trophy Race row is always
-// admitted: a first race in classic, a plain race for boxes, Wumpa, Hit and
-// placement checks, or a replay.
+// The structure one destination runs. A ctr_first seed runs ctr_first only on
+// a destination whose Trophy code is in the award pairs (it has a CTR
+// Challenge); every other destination keeps the classic order (decision 4).
+// A refused seed stays refused, a classic seed stays classic.
+static inline int AP_RaceStructureForDest(int seedStructure, int paired)
+{
+	if (seedStructure == AP_RS_STRUCTURE_CTR_FIRST && !paired)
+		return AP_RS_STRUCTURE_CLASSIC;
+	return seedStructure;
+}
+
+// Which modes the pad's gates admit, for the destination's own structure
+// (AP_RaceStructureForDest). The physical pad's stage 1 (and racer lock) is
+// already met when a pad is entered at all. Classic: the Trophy Race first,
+// then the CTR Challenge and the Relic Race wait for the checked Trophy and
+// the physical pad's stage 2. ctr_first: no Trophy Race row at all (decision
+// 14); the CTR Challenge is stage 1 and the Relic Race keeps both conditions,
+// now earned through a CTR win.
 static inline void AP_RaceStructureAdmit(int structure, int trophyChecked, int stage2Met,
                                          int admitted[AP_RS_COUNT])
 {
 	int tier2 = trophyChecked && stage2Met;
-	admitted[AP_RS_TROPHY] = 1;
-	admitted[AP_RS_CTR] = structure == AP_RS_STRUCTURE_CTR_FIRST ? 1 : tier2;
+	int ctrFirst = structure == AP_RS_STRUCTURE_CTR_FIRST;
+	admitted[AP_RS_TROPHY] = !ctrFirst;
+	admitted[AP_RS_CTR] = ctrFirst ? 1 : tier2;
 	admitted[AP_RS_RELIC] = tier2;
 }
 
 // Whether a row can still produce a check. `trophyUnchecked` is the Trophy
-// Race location; `plainLeft` counts checks a plain race earns (AP boxes,
-// per-track Wumpa, a Hit guest, an Itemsanity use); `ctrSideLeft` is the CTR
-// location or a letter (AP_PadTokenSideLeft); `relicSideLeft` the relic tiers
-// or the perfect. Under ctr_first the Trophy location is earned by the CTR
-// row, never by the Trophy row.
+// Race location; `plainLeft` counts checks any race with AI on the track earns
+// (AP boxes, per-track Wumpa, open podium rungs, a Hit guest, an Itemsanity
+// use); `ctrSideLeft` is the CTR location or a letter (AP_PadTokenSideLeft);
+// `relicSideLeft` the relic tiers or the perfect. Under ctr_first the CTR
+// Challenge is the only race before stage 2, so it carries the Trophy and
+// every plain-race check.
 static inline void AP_RaceStructureProductive(int structure, int trophyUnchecked, int plainLeft,
                                               int ctrSideLeft, int relicSideLeft,
                                               int productive[AP_RS_COUNT])
 {
 	int ctrFirst = structure == AP_RS_STRUCTURE_CTR_FIRST;
-	productive[AP_RS_TROPHY] = (!ctrFirst && trophyUnchecked) || plainLeft > 0;
-	productive[AP_RS_CTR] = ctrSideLeft || (ctrFirst && trophyUnchecked);
+	productive[AP_RS_TROPHY] = !ctrFirst && (trophyUnchecked || plainLeft > 0);
+	productive[AP_RS_CTR] = ctrSideLeft || (ctrFirst && (trophyUnchecked || plainLeft > 0));
 	productive[AP_RS_RELIC] = relicSideLeft;
+}
+
+// Whether a finished race of this kind earns the podium rungs of its track:
+// a Trophy Race (cup legs included) always; a CTR Challenge only on a ctr_first
+// destination, where it is the track's first race and the rungs follow its
+// finishing place, letters or not (decision 14).
+static inline int AP_RaceStructureRaceEarnsRungs(int trophyRace, int tokenRace, int destCtrFirst)
+{
+	return trophyRace || (tokenRace && destCtrFirst);
+}
+
+// The selector setting in force: the in-game Options row (-1 SEED, 0
+// PRODUCTIVE, 1 ALWAYS) over the seed's value (decision 15).
+static inline int AP_RaceSelectorEffective(int menuValue, int seedValue)
+{
+	if (menuValue == AP_RS_SELECTOR_PRODUCTIVE || menuValue == AP_RS_SELECTOR_ALWAYS)
+		return menuValue;
+	return seedValue;
 }
 
 static inline void AP_RaceSelectorBuild(const ap_rs_facts *f, const int admitted[AP_RS_COUNT],

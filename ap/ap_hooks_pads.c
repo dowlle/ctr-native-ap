@@ -1131,8 +1131,9 @@ void AP_HitLogChooser(int physLevelID, int destLevelID, int action, int route,
 // destination track (location + lifecycle-category key). Under no shuffle these
 // are equal; the callers pass both so it is correct under destination shuffle.
 // #208: the CTR side of a race destination is still open: its CTR Challenge
-// location or one of its letters. Under ctr_first that side is stage 1, so it
-// keeps a pad Raceable the way boxes and Wumpa do before stage 2.
+// location or one of its letters. On a ctr_first destination that side is
+// stage 1, so it keeps a pad Raceable the way boxes and Wumpa do before stage
+// 2. A track without a CTR Challenge stays classic (decision 4).
 static int AP_DestCtrSideLeft(int destLevelID)
 {
 	int lettersLeft = AP_PadUncollectedLetterCount(destLevelID);
@@ -1256,7 +1257,7 @@ int AP_PadState(int physLevelID, int destLevelID)
 	                         boxesLeft + wumpaLeft + hitOpp + weaponOpp +
 	                         // #208 ctr_first: the CTR Challenge is stage 1, so
 	                         // an open CTR side never lets the pad Re-lock.
-	                         ((AP_RaceStructureCtrFirst() && AP_DestIsRace(destLevelID))
+	                         ((AP_RaceStructureDestCtrFirst(destLevelID) && AP_DestIsRace(destLevelID))
 	                              ? AP_DestCtrSideLeft(destLevelID) : 0));
 }
 
@@ -1295,7 +1296,7 @@ void AP_PadLogSelector(int physLevelID, int destLevelID, const ap_rs_rows *rows,
 	char msg[192];
 	int len, i;
 	len = snprintf(msg, sizeof msg, "[AP PAD] pad %d -> dest %d: selector structure=%d rows",
-	               physLevelID, destLevelID, ctr_cfg.adventure_structure);
+	               physLevelID, destLevelID, AP_RaceStructureDestStructure(destLevelID));
 	for (i = 0; i < rows->count && len > 0 && len < (int)sizeof msg; i++)
 		len += snprintf(msg + len, sizeof msg - len, " %s%s", names[rows->mode[i]],
 		                rows->productive[i] ? "" : "(grey)");
@@ -1319,7 +1320,8 @@ int AP_PadSelectorRows(int physLevelID, int destLevelID, ap_rs_rows *rows)
 	int unc[8];
 	int n, k;
 	int trophyChecked, ctrSide = 0, relicSide = 0, plainLeft, rungsLeft;
-	int structure = ctr_cfg.adventure_structure;
+	// ctr_first only where the track has a CTR Challenge (decision 4).
+	int structure = AP_RaceStructureDestStructure(destLevelID);
 
 	if (!ctr_cfg_active() || ap_content_plan_active() || !AP_DestIsRace(destLevelID))
 		return 0;
@@ -1329,9 +1331,10 @@ int AP_PadSelectorRows(int physLevelID, int destLevelID, ap_rs_rows *rows)
 		return 1; // fail closed: no row, the caller releases the kart
 	}
 	trophyChecked = AP_DestTrophyChecked(destLevelID);
-	// Open podium rungs: any race with AI earns them, the plain Trophy Race
-	// included, so they keep that row productive (a Collect can check every
-	// race location while a rung stays open).
+	// Open podium rungs keep the track's first race productive: the Trophy
+	// Race in classic, the CTR Challenge under ctr_first, where its finishing
+	// place earns them (decision 14). A Collect can check every race location
+	// while a rung stays open.
 	{
 		int glow[24];
 		int g = AP_PadUncollectedGlowBits(destLevelID, glow, (int)(sizeof glow / sizeof glow[0]));
@@ -1388,6 +1391,9 @@ int AP_PadSelectorRows(int physLevelID, int destLevelID, ap_rs_rows *rows)
 		                              AP_PadUncollectedWumpaCount(destLevelID));
 		relicSide = AP_PadRelicSideLeft(relicSide, AP_PadUncollectedRelicPerfectCount(destLevelID));
 	}
+	// A paired destination whose CTR Challenge cannot be served (trial letter
+	// assets missing) has no stage-1 row: the caller releases the kart and the
+	// log line names the pad.
 	AP_RaceStructureAdmit(structure, trophyChecked, ctr_cfg_warp_stage2_unlocked(physLevelID),
 	                      admitted);
 	AP_RaceStructureProductive(structure, !trophyChecked, plainLeft, ctrSide, relicSide,

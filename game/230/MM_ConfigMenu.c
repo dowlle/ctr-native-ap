@@ -315,6 +315,21 @@ static const int   s_dlSendValues[] = {-1, 0, 1};
 static const char *s_dlSendNames[]  = {"SEED", "OFF", "ON"};
 #define DLSEND_COUNT ((int)(sizeof(s_dlSendValues) / sizeof(s_dlSendValues[0])))
 
+// Race type menu (#208, decision 15): follow the seed / always / productive.
+// 1 and 0 are the AP_RS_SELECTOR_ALWAYS / AP_RS_SELECTOR_PRODUCTIVE values;
+// AP_RaceTypeSelectorSetting reads the row at every pad entry.
+static const int   s_raceMenuValues[] = {-1, 1, 0};
+static const char *s_raceMenuNames[]  = {"SEED", "ALWAYS", "PRODUCTIVE"};
+#define RACEMENU_COUNT ((int)(sizeof(s_raceMenuValues) / sizeof(s_raceMenuValues[0])))
+
+static int RaceMenu_Index(int value)
+{
+	for (int i = 0; i < RACEMENU_COUNT; i++)
+		if (s_raceMenuValues[i] == value)
+			return i;
+	return 0; // out-of-range persisted value renders and steps as SEED
+}
+
 // Sustained-trap comfort window. Zero is stored for Full race so config.ini
 // remains readable and the scheduler does not need a magic large duration.
 static const int   s_trapDurationValues[] = {10, 15, 20, 25, 30, 45, 60, 90, 0};
@@ -370,6 +385,8 @@ static const char *Enum_Label(const ConfigEntry *e)
 		return s_dlSendNames[DlSend_Index(*(int *)e->valuePtr)];
 	if (e->valuePtr == &g_config.trapDuration)
 		return s_trapDurationNames[TrapDuration_Index(*(int *)e->valuePtr)];
+	if (e->valuePtr == &g_config.raceTypeSelector)
+		return s_raceMenuNames[RaceMenu_Index(*(int *)e->valuePtr)];
 #endif
 	return AiDiff_Label(*(int *)e->valuePtr);
 }
@@ -425,6 +442,16 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 		if (i > DLSEND_COUNT - 1)
 			i = DLSEND_COUNT - 1;
 		*(int *)e->valuePtr = s_dlSendValues[i];
+		return;
+	}
+	if (e->valuePtr == &g_config.raceTypeSelector)
+	{
+		int i = RaceMenu_Index(*(int *)e->valuePtr) + dir;
+		if (i < 0)
+			i = 0;
+		if (i > RACEMENU_COUNT - 1)
+			i = RACEMENU_COUNT - 1;
+		*(int *)e->valuePtr = s_raceMenuValues[i];
 		return;
 	}
 	if (e->valuePtr == &g_config.trapDuration)
@@ -507,6 +534,11 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 			first = "Purple progression, blue useful,";
 			second = "cyan filler, salmon trap.";
 		}
+	}
+	if (e->valuePtr == &g_config.raceTypeSelector)
+	{
+		first = "When race pads ask which race.";
+		second = "SEED uses the seed's setting.";
 	}
 	if (first == 0)
 		return;

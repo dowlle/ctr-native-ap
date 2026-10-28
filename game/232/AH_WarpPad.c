@@ -74,6 +74,12 @@ static struct MenuRow apCustomRaceRows[] = {
 	{LNG_CTR_CHALLENGE_TITLE, 0, 1, 1, 1},
 	{-1, 0, 0, 0, 0}
 };
+// #208 decision 14: a ctr_first legacy custom track whose CTR win earns its
+// Trophy offers the CTR Challenge alone (row 0 of this list is choice 1).
+static struct MenuRow apCustomRaceRowsCtrFirst[] = {
+	{LNG_CTR_CHALLENGE_TITLE, 0, 0, 0, 0},
+	{-1, 0, 0, 0, 0}
+};
 static struct RectMenu apCustomRaceMenu = {
 	.stringIndexTitle = LNG_CHOOSE_RACE_TYPE,
 	.posX_curr = 0x100, .posY_curr = 0x6c,
@@ -1346,7 +1352,8 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		{
 			ap_rs_rows apRsRows;
 			AP_PadSelectorRows(physLevelID, levelID, &apRsRows);
-			apRsMode = AP_RaceSelectorDecide(&apRsRows, ctr_cfg.race_type_selector);
+			// The Options row over the seed's value, read now (decision 15).
+			apRsMode = AP_RaceSelectorDecide(&apRsRows, AP_RaceTypeSelectorSetting());
 			AP_PadLogSelector(physLevelID, levelID, &apRsRows, apRsMode);
 			if (apRsMode == AP_RS_OPEN_MENU)
 			{
@@ -1360,12 +1367,28 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		if (apRaceTypeChoice == -2)
 			goto WarpPad_TrophyAnimateOnly;
 		apRsMode = apRaceTypeChoice;
-		apRaceTypeChoice = -2;
 		RECTMENU_APSetReplayRows(0, 0);
 		// Cancel, or no row at all: release the kart and latch the pad until
 		// it leaves, so the menu does not reopen at once.
 		if (apRsMode < 0)
+		{
+			apRaceTypeChoice = -2;
 			goto WarpPad_RefuseEntry;
+		}
+		// Decision 16: Aku Aku's first-time CTR Challenge and Relic Race
+		// hints, as the retail token/relic menu shows them. The choice stays
+		// latched while he speaks; MainFrame_RequestMaskHint returns at once
+		// when the Skip Mask Hints option is on.
+		if (apRsMode == AP_RS_CTR || apRsMode == AP_RS_RELIC)
+		{
+			int apHint = apRsMode == AP_RS_CTR ? ADV_MASK_HINT_ID_CTR_TOKEN_CHALLENGE
+			                                   : ADV_MASK_HINT_ID_RELIC_CHALLENGE;
+			if (CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_FIRST_HINT + apHint) == 0)
+				MainFrame_RequestMaskHint(apHint, 1);
+			if ((AH_MaskHint_boolCanSpawn() & 0xffff) == 0)
+				goto WarpPad_TrophyAnimateOnly;
+		}
+		apRaceTypeChoice = -2;
 		gGT->gameMode2 &= ~TOKEN_RACE;
 		gGT->gameMode1 &= ~RELIC_RACE;
 		sdata->Loading.OnBegin.AddBitsConfig0 &= ~RELIC_RACE;
@@ -1620,13 +1643,26 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			if (warppadObj->framesWarping == 61)
 			{
 				apCustomRaceChoice = -2;
-				// #208 ctr_first: the CTR Challenge is the first race.
-				apCustomRaceMenu.rowSelected =
-				    (AP_CustomTrackTrophyChecked() || AP_RaceStructureCtrFirst()) ? 1 : 0;
+				// #208 ctr_first (decision 14): a track whose CTR win earns
+				// its Trophy has no Trophy Race row; one without a CTR
+				// Challenge never reaches this menu (decision 4).
+				if (AP_CustomTrackTrophyEarnedByCtr())
+				{
+					apCustomRaceMenu.rows = apCustomRaceRowsCtrFirst;
+					apCustomRaceMenu.rowSelected = 0;
+				}
+				else
+				{
+					apCustomRaceMenu.rows = apCustomRaceRows;
+					apCustomRaceMenu.rowSelected = AP_CustomTrackTrophyChecked() ? 1 : 0;
+				}
 				RECTMENU_Show(&apCustomRaceMenu);
 			}
 			if (apCustomRaceChoice == -2)
 				goto WarpPad_TrophyAnimateOnly;
+			// The CTR-only list's single row is the CTR Challenge.
+			if (apCustomRaceChoice == 0 && apCustomRaceMenu.rows == apCustomRaceRowsCtrFirst)
+				apCustomRaceChoice = 1;
 			if (apCustomRaceChoice < 0)
 			{
 				warppadObj->boolEnteredWarppad = 0;

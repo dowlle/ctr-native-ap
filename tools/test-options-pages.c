@@ -123,8 +123,8 @@ int main(void)
 			"texture_filtering", "dithering", "increase_draw_distance",
 			"disable_split_screen_lod", NULL};
 		static const char *const gameplay[] = {
-			"skip_intro", "skip_hints", "skip_podium", "skip_cutscenes", "ai_difficulty",
-			"mute_when_unfocused", NULL};
+			"skip_intro", "skip_hints", "race_type_selector", "skip_podium", "skip_cutscenes",
+			"ai_difficulty", "mute_when_unfocused", NULL};
 		static const char *const controls[] = {NULL};
 		static const char *const connection[] = {"uri", "slot", "password", NULL};
 		static const char *const archipelago[] = {
@@ -147,6 +147,7 @@ int main(void)
 	ExpectSection("skip_cutscenes", "Video & QoL");
 	ExpectSection("skip_hints", "Archipelago");
 	ExpectSection("ai_difficulty", "Archipelago");
+	ExpectSection("race_type_selector", "Archipelago");
 	ExpectSection("discord_status", "Archipelago");
 	ExpectSection("application_id", "Discord");
 

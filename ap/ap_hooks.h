@@ -757,6 +757,15 @@ int AP_RaceStructureSuppressTrophy(long trophyCode);
 int AP_RaceStructureSuppressTrophyBit(int rewardBit);
 void AP_RaceStructureTrophyRaceWon(int levelID);
 int AP_CustomTrackTrophyEarnedByCtr(void);
+// Per destination (decision 4): DestCtrFirst is 1 when this destination runs
+// ctr_first (its Trophy code is in the award pairs); DestStructure is the
+// structure the selector applies to it; PodiumCtrFirst asks the same by podium
+// track, so a CTR Challenge there earns its rungs (decision 14).
+int AP_RaceStructureDestCtrFirst(int destLevelID);
+int AP_RaceStructureDestStructure(int destLevelID);
+int AP_RaceStructurePodiumCtrFirst(int podiumTrack);
+// The race type selector in force: the Options row over the seed (decision 15).
+int AP_RaceTypeSelectorSetting(void);
 
 // ── Cortex Vortex pad track (schema 15, virtual destination 110) ──
 // AP_CortexTrackActive is THE identity question every LevelID-13 consumer asks

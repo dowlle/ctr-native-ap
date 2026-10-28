@@ -90,9 +90,10 @@ void AP_EmitBoxCheck(int levelID, int slot, long code)
 // covering a missed live capture and server /send_location grants -- and finishing
 // AT a position legitimately satisfies the held rungs at or below it. Sends dedup
 // against the checked-set, so the live listener + finish fan-out never double-send.
-// MUST be called only for AP_RACE_TROPHY finishes (incl. cup legs): relic / token /
-// crystal challenges run on the SAME levelIDs as the trophy tracks (only the mode
-// word differs), so gating on the levelID range alone would misfire.
+// MUST be called only for AP_RACE_TROPHY finishes (incl. cup legs), or a CTR
+// Challenge on a ctr_first track (#208, AP_RaceStructureRaceEarnsRungs): relic /
+// token / crystal challenges run on the SAME levelIDs as the trophy tracks (only
+// the mode word differs), so gating on the levelID range alone would misfire.
 static void AP_SendPodiumChecks(int track, int placement)
 {
 	// #286: the forced-loss attempt owns no finish rung, including the trophy
@@ -280,7 +281,11 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 
 		// Native fan-out: only trophy races carry podium rungs (relic/token/
 		// crystal share the same levelIDs, so the type gate is load-bearing).
-		if (ap_last_race_mode == AP_RACE_TROPHY)
+		// #208 decision 14: on a ctr_first track the CTR Challenge is the
+		// first race and its finishing place earns the rungs, letters or not.
+		if (AP_RaceStructureRaceEarnsRungs(ap_last_race_mode == AP_RACE_TROPHY,
+		                                   ap_last_race_mode == AP_RACE_TOKEN,
+		                                   AP_RaceStructurePodiumCtrFirst(podiumTrack)))
 			AP_SendPodiumChecks(podiumTrack, ap_last_race_place);
 	}
 	else if (!finishedNow && ap_finish_prev)
@@ -314,7 +319,8 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 	//       a live track, which can never happen inside the load gap;
 	//   (3) not START/END_OF_RACE / MAIN_MENU / GAME_CUTSCENE / PAUSE_ALL, lights out;
 	//   (4) AP_ClassifyRace == TROPHY -- trophy races AND cup legs (legs classify as
-	//       trophy), never relic/token/crystal/boss/arcade.
+	//       trophy), never relic/crystal/boss/arcade; token only on a ctr_first
+	//       track (#208).
 	// The debounce (position must hold AP_HELD_DEBOUNCE_MS) then rejects overtake
 	// flicker: any position change resets the stability timer, so a 1-2 frame swap
 	// at a pass never confirms.
@@ -339,7 +345,12 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 		     (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) == 0 &&
 		    gGT->trafficLightsTimer < 1 && onTrack && ap_held_countdown_seen;
 
-		if (heldWindow && AP_ClassifyRace(gGT) == AP_RACE_TROPHY &&
+		int raceType = AP_ClassifyRace(gGT);
+		// #208 decision 14: a CTR Challenge on a ctr_first track holds the
+		// rungs as a Trophy Race does.
+		if (heldWindow &&
+		    AP_RaceStructureRaceEarnsRungs(raceType == AP_RACE_TROPHY, raceType == AP_RACE_TOKEN,
+		                                   AP_RaceStructurePodiumCtrFirst(podiumTrack)) &&
 		    podiumTrack >= 0 && ap_live_position >= 1)
 		{
 			int elapsedMs = gGT->elapsedTimeMS;

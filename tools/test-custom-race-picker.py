@@ -29,15 +29,19 @@ struct Driver { void (*funcPtrs[1])(void); int driverID;
 struct GameTracker { int gameMode1, gameMode2; struct Driver *drivers[1];
  struct { s16 cameraMode; } cameraDC[1]; } game, *gGT=&game;
 struct Warp { int framesWarping, boolEnteredWarppad; } warp, *warppadObj=&warp;
-struct Menu { int rowSelected; } apCustomRaceMenu;
+struct MenuRow { int stringIndex; };
+struct Menu { int rowSelected; struct MenuRow *rows; } apCustomRaceMenu;
+static struct MenuRow apCustomRaceRows[3], apCustomRaceRowsCtrFirst[2];
 struct { struct { struct { int AddBitsConfig8, RemBitsConfig8, AddBitsConfig0, RemBitsConfig0; } OnBegin; } Loading; } data, *sdata=&data;
 struct { int custom_ctr_enabled; struct { int replaces_cup_level_id; } custom_track; } ctr_cfg;
 static int apCustomRaceChoice, shown, checked, active=1;
 void VehPhysProc_Driving_Init(void) {}
 int ctr_cfg_active(void) { return active; }
 int AP_CustomTrackTrophyChecked(void) { return checked; }
-/* #208 ctr_first seam: classic here, so the cursor rule is unchanged. */
-int AP_RaceStructureCtrFirst(void) { return 0; }
+/* #208 ctr_first seam: a paired track offers the CTR Challenge alone (decision 14). */
+static int ctrFirst;
+int AP_RaceStructureCtrFirst(void) { return ctrFirst; }
+int AP_CustomTrackTrophyEarnedByCtr(void) { return ctrFirst; }
 void RECTMENU_Show(struct Menu *menu) { assert(menu==&apCustomRaceMenu); shown++; }
 '''
 fixture += capture + r'''
@@ -56,9 +60,19 @@ int main(void) {
  for(checked=0;checked<2;checked++) {
   warp.framesWarping=61; shown=0; apCustomRaceChoice=0;
   assert(evaluate()==-2 && shown==1 && apCustomRaceChoice==-2);
-  assert(apCustomRaceMenu.rowSelected==checked);
+  assert(apCustomRaceMenu.rowSelected==checked && apCustomRaceMenu.rows==apCustomRaceRows);
   warp.framesWarping=63; assert(evaluate()==-2 && shown==1);
  }
+ /* ctr_first, paired: one CTR row, cursor 0, and that row loads the CTR Challenge. */
+ ctrFirst=1; checked=0; warp.framesWarping=61; shown=0; apCustomRaceChoice=0;
+ assert(evaluate()==-2 && shown==1);
+ assert(apCustomRaceMenu.rows==apCustomRaceRowsCtrFirst && apCustomRaceMenu.rowSelected==0);
+ warp.framesWarping=63; apCustomRaceChoice=0; game.gameMode2=16; game.gameMode1=256;
+ data.Loading.OnBegin.AddBitsConfig8=32; data.Loading.OnBegin.RemBitsConfig8=64 | TOKEN_RACE;
+ assert(evaluate()==1 && game.gameMode2==(16 | TOKEN_RACE));
+ assert(data.Loading.OnBegin.AddBitsConfig8==(32 | TOKEN_RACE) && data.Loading.OnBegin.RemBitsConfig8==64);
+ /* Back to classic for the routing matrix below. */
+ ctrFirst=0; warp.framesWarping=61; apCustomRaceChoice=0; assert(evaluate()==-2);
  for(int choice=-1;choice<=1;choice++)
  for(int live=0;live<2;live++)
  for(int add=0;add<2;add++)

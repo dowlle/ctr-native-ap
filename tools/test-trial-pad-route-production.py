@@ -74,6 +74,7 @@ static int AP_CortexDestValid(void){return 0;}
 static long AP_CortexTrackCode(int s){(void)s;return -1;}
 int AP_CortexTrackChecked(int s){(void)s;return 0;}
 int AP_RaceStructureCtrFirst(void){return 0;}
+int AP_RaceStructureDestCtrFirst(int d){(void)d;return 0;}
 static int AP_DestCtrSideLeft(int d){(void)d;return 0;}
 int AP_LocationCheckedByBit(int b){(void)b;return 0;}
 int AP_PadStage1Met(int p){(void)p;return 1;}

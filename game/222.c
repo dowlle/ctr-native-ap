@@ -640,8 +640,10 @@ void AA_EndEvent_DrawMenu(void)
 	if (AP_CortexTrackActive())
 	{
 		int token = (gGT->gameMode2 & TOKEN_RACE) != 0;
-		// #208 ctr_first: the CTR win earns this Trophy.
-		if (token == AP_RaceStructureCtrFirst() && !AP_CortexTrackChecked(AP_CV_SLOT_TROPHY))
+		// #208 ctr_first: the CTR win earns this Trophy when the track
+		// has a CTR Challenge (decision 4: otherwise classic).
+		if (token == AP_RaceStructureDestCtrFirst(AP_CORTEX_DEST) &&
+		    !AP_CortexTrackChecked(AP_CV_SLOT_TROPHY))
 			gGT->podiumRewardID = STATIC_TROPHY;
 		AP_NotifyCortexTrackRace(token);
 		// #285: the Cortex check is sent above; only then may the ceremony be
@@ -662,7 +664,7 @@ void AA_EndEvent_DrawMenu(void)
 		    ? CTR_CFG_TRIAL_CTR : CTR_CFG_TRIAL_TROPHY;
 		// #208 ctr_first: the CTR win earns the trial Trophy, so it is the
 		// one that goes to the podium with it.
-		if (AP_RaceStructureCtrFirst()
+		if (AP_RaceStructureDestCtrFirst(gGT->levelID)
 		        ? (challenge == CTR_CFG_TRIAL_CTR &&
 		           !AP_TrialTrackLocationChecked(gGT->levelID, CTR_CFG_TRIAL_TROPHY))
 		        : (challenge == CTR_CFG_TRIAL_TROPHY &&
