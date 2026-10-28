@@ -45,6 +45,7 @@ assert 'g_dl_incoming' not in net, 'the old depth-1 latch is back'
 # drains the whole inbox.
 tick = func(dl, 'void AP_DeathLinkTick(struct GameTracker *gGT)')
 assert 'AP_DeathLinkDrainInbound();' in tick
+assert 'AP_DeathLinkInboxTakeDropped(&g_dl_inbox)' in func(net, 'extern "C" int ap_net_deathlink_take_dropped('), 'ap_net no longer reports dropped deaths'
 assert re.search(r'while \(ap_net_deathlink_take\(cause, sizeof cause, source, sizeof source\)\)\s*;', tick)
 
 state = block(dl, 'static int  g_dl_pending_recv', 'static int  g_dl_hold_logged')
@@ -84,6 +85,10 @@ static APDeathLinkInbox g_dl_inbox;
 static int ap_net_deathlink_take(char *c, int cn, char *s, int sn)
 {
 	return AP_DeathLinkInboxTake(&g_dl_inbox, c, cn, s, sn);
+}
+static int ap_net_deathlink_take_dropped(void)
+{
+	return AP_DeathLinkInboxTakeDropped(&g_dl_inbox);
 }
 static void bounce(const char *source, const char *cause)
 {
@@ -237,6 +242,29 @@ int main(void)
 	frame(AP_DL_WIN_LIVE, 1);
 	assert(applied_n == 0 && feed_n == 6);
 	puts("PASS three deaths outside a race: three ignored popups, nothing held");
+
+	/* Review finding 12: more deaths than the inbox holds in one poll. The oldest
+	 * are discarded unread, and one ignored popup says how many. */
+	reset();
+	for (i = 0; i < AP_DL_INBOX_CAP + 5; i++)
+		bounce("Spam", "died");
+	bounce("Last", "Last fell off");
+	frame(AP_DL_WIN_LIVE, 1);
+	assert(has_line("6 MORE: TOO MANY", 1));
+	assert(has_line("DEATHLINK: Last", 0) && applied_n == 1 && strcmp(applied_src, "Last") == 0);
+	assert(g_dl_inbox.count == 0 && g_dl_inbox.dropped == 0);
+	frame(AP_DL_WIN_LIVE, 1);
+	assert(!has_line("1 MORE: TOO MANY", 1)); /* reported once */
+	puts("PASS inbox overflow shows one ignored popup with the count");
+
+	/* Overflow with receive off stays silent. */
+	reset();
+	mode = CTR_DL_OFF;
+	for (i = 0; i < AP_DL_INBOX_CAP + 3; i++)
+		bounce("Spam", "died");
+	frame(AP_DL_WIN_LIVE, 1);
+	assert(feed_n == 0 && g_dl_inbox.dropped == 0);
+	puts("PASS overflow with receive off is silent");
 
 	/* A lone death is unchanged: no extra popup. */
 	reset();

@@ -403,6 +403,7 @@ static void AP_DeathLinkDrainInbound(void)
 {
 	char cause[128];
 	char source[64];
+	int dropped;
 
 	while (ap_net_deathlink_take(cause, sizeof cause, source, sizeof source))
 	{
@@ -416,6 +417,19 @@ static void AP_DeathLinkDrainInbound(void)
 		g_dl_hold_logged = 0;
 		snprintf(g_dl_pending_cause, sizeof g_dl_pending_cause, "%s", cause);
 		snprintf(g_dl_pending_source, sizeof g_dl_pending_source, "%s", source);
+	}
+	// More deaths than the inbox holds arrived in one poll: the oldest were
+	// discarded unread. Say so with one ignored popup for the count.
+	dropped = ap_net_deathlink_take_dropped();
+	if (dropped > 0 && AP_DeathLinkEffMode() != CTR_DL_OFF)
+	{
+		char msg[96];
+
+		snprintf(msg, sizeof msg, "[AP DEATH] dropped: %d earlier deaths (inbox full)\n", dropped);
+		AP_LogLine(msg);
+		AP_FeedDeathLinkLine("DEATHLINK IGNORED", 1);
+		snprintf(msg, sizeof msg, "%d MORE: TOO MANY", dropped);
+		AP_FeedDeathLinkLine(msg, 1);
 	}
 }
 
@@ -660,6 +674,7 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 		g_dl_swallow_edge = 0;
 		while (ap_net_deathlink_take(cause, sizeof cause, source, sizeof source))
 			;
+		(void)ap_net_deathlink_take_dropped();
 		return;
 	}
 

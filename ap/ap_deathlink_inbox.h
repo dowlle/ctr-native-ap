@@ -17,7 +17,9 @@
 // at once: each popup is two lines and the feed's pending ring holds 24
 // (AP_FEED_QUEUE_MAX in ap_hooks_feed.c), so beyond 12 deaths the feed would drop
 // the oldest lines anyway. Past the cap the oldest death is discarded without a
-// popup; AP_DeathLinkInboxPush reports it so the caller can log it.
+// popup of its own; it is counted instead (AP_DeathLinkInboxTakeDropped) and the
+// game thread shows one ignored popup for the count, so no death vanishes
+// without a trace. AP_DeathLinkInboxPush also reports it so the caller can log it.
 
 #include <string.h>
 
@@ -36,6 +38,7 @@ typedef struct
 	APDeathLinkInboxEntry entry[AP_DL_INBOX_CAP];
 	int head;  // index of the oldest entry
 	int count; // entries held
+	int dropped; // deaths discarded because the inbox was full, since the last TakeDropped
 } APDeathLinkInbox;
 
 // Copy s into dst (size n > 0), truncating; NULL reads as "".
@@ -56,6 +59,7 @@ static inline void AP_DeathLinkInboxClear(APDeathLinkInbox *in)
 {
 	in->head = 0;
 	in->count = 0;
+	in->dropped = 0;
 }
 
 // Add a received death. Returns 1 if a full inbox discarded its oldest entry.
@@ -69,6 +73,7 @@ static inline int AP_DeathLinkInboxPush(APDeathLinkInbox *in, const char *cause,
 	{
 		in->head = (in->head + 1) % AP_DL_INBOX_CAP;
 		in->count--;
+		in->dropped++;
 	}
 	e = &in->entry[(in->head + in->count) % AP_DL_INBOX_CAP];
 	AP_DeathLinkInboxCopy(e->cause, (int)sizeof e->cause, cause);
@@ -92,6 +97,15 @@ static inline int AP_DeathLinkInboxTake(APDeathLinkInbox *in, char *cause_buf,
 	in->head = (in->head + 1) % AP_DL_INBOX_CAP;
 	in->count--;
 	return 1;
+}
+
+// How many deaths a full inbox discarded since the last call; resets the count.
+static inline int AP_DeathLinkInboxTakeDropped(APDeathLinkInbox *in)
+{
+	int n = in->dropped;
+
+	in->dropped = 0;
+	return n;
 }
 
 #endif // AP_DEATHLINK_INBOX_H
