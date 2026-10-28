@@ -1,4 +1,8 @@
 #include <common.h>
+
+#ifdef CTR_AP
+#include "../ap/ap_boss_adapter.h" // J03 boss adapter protection
+#endif
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_identity.h>
 #endif
@@ -962,6 +966,13 @@ void BOTS_ThTick_Drive(struct Thread *botThread)
 	}
 	else
 	{
+#ifdef CTR_AP
+		// J03: contact damage (a masked or shielded player) on a boss the
+		// adapter armed with a shield or mask is absorbed as VehPickState does.
+		if (PickupBots_AdapterProtect(botDriver))
+			botDriver->pendingDamageType = 0;
+		else
+#endif
 		BOTS_ChangeState(botDriver, botDriver->pendingDamageType, botDriver->pendingDamageAttacker, botDriver->pendingDamageReasonByte);
 	}
 

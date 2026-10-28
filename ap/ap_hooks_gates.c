@@ -10,6 +10,8 @@
 
 #ifdef CTR_AP
 
+#include "ap_boss_adapter.h" // J03 boss adapter decisions and glue prototypes
+
 int AP_GateCount(int itemType)
 {
 	if (itemType < 0 || itemType >= AP_ITEM_INDEX_COUNT)
@@ -644,6 +646,197 @@ static int AP_BossVenueCertifiedNow(int g)
 	return AP_BossEncounterCertifiedPoints(&ctr_boss_encounters, g, sdata->gGT->levelID);
 }
 
+// J03 decision 8: a refused schedule is one inert row. The boss keeps its
+// timers and throws nothing that race.
+static struct MetaDataBOSS *AP_BossInertSchedule(struct MetaDataBOSS *dst, int rows)
+{
+	memset(dst, 0, sizeof *dst * (size_t)rows);
+	dst[0].throwFlag = BOSS_WEAPON_NORMAL;
+	dst[0].weaponType = BOSS_WEAPON_NONE;
+	dst[0].weaponCooldown = 0x0f;
+	return dst;
+}
+
+// Copy composed segments into a MetaDataBOSS table (row n stays zero, the
+// retail terminator), with the checkpoints in `cps`.
+static void AP_BossFillKit(struct MetaDataBOSS *dst, const AP_BossKitSegment *seg, int n, const unsigned char *cps)
+{
+	int i;
+	for (i = 0; i < n; i++)
+	{
+		dst[i].trackCheckpoint = cps[i];
+		dst[i].throwFlag = seg[i].throwFlag;
+		dst[i].weaponType = seg[i].weapon;
+		dst[i].pathChangeDisabled = seg[i].pathDisabled;
+		dst[i].weaponCooldown = seg[i].cooldown;
+		dst[i].juiceFlag = seg[i].juice;
+	}
+}
+
+// Decision 8: a composed five-segment schedule recorded for `certified`
+// restart points, raced on `loaded`. Same count: the recorded checkpoints.
+// Different count: the proportional remap (ap_boss_adapter.h), kept only when
+// it still rises strictly from 0 inside the loaded track. Returns 1 and fills
+// `dst`, or 0.
+static int AP_BossFitKit(struct MetaDataBOSS *dst, const AP_BossKitSegment *seg, int certified, int loaded,
+                         const char *what)
+{
+	unsigned char cps[AP_BOSS_VENUE_SEGMENTS], mapped[AP_BOSS_VENUE_SEGMENTS];
+	AP_BossKitSegment copy[AP_BOSS_VENUE_SEGMENTS];
+	int i;
+	char msg[192];
+
+	for (i = 0; i < AP_BOSS_VENUE_SEGMENTS; i++)
+		cps[i] = seg[i].checkpoint;
+	if (loaded == certified)
+	{
+		if (AP_BossKitScheduleProblem(seg, AP_BOSS_VENUE_SEGMENTS, loaded))
+			return 0;
+		AP_BossFillKit(dst, seg, AP_BOSS_VENUE_SEGMENTS, cps);
+		return 1;
+	}
+	if (!AP_BossAdapterRemap(cps, AP_BOSS_VENUE_SEGMENTS, certified, loaded, mapped))
+		return 0;
+	for (i = 0; i < AP_BOSS_VENUE_SEGMENTS; i++)
+	{
+		copy[i] = seg[i];
+		copy[i].checkpoint = mapped[i];
+	}
+	if (AP_BossKitScheduleProblem(copy, AP_BOSS_VENUE_SEGMENTS, loaded))
+		return 0;
+	AP_BossFillKit(dst, seg, AP_BOSS_VENUE_SEGMENTS, mapped);
+	snprintf(msg, sizeof msg, "[AP BOSS] checkpoint fallback: %s recorded for %d restart points, remapped to %d\n",
+	         what, certified, loaded);
+	AP_AppendLog(msg);
+	return 1;
+}
+
+// ── N. Oxide's composed final record (J03, decision 5 and 7) ───────────────
+// Both Oxide races (bossID 4 and 5) with oxide_attack_profile all_compatible.
+// The 13 segments keep the retail Oxide starts, so the venue mapping is the
+// retail one: as recorded on Oxide Station, AP_OxideWeaponCheckpoint on the
+// Cortex Vortex venue or any graph the 0x7f scale does not fit, exactly as
+// the inherited Cortex Vortex Oxide table.
+static struct MetaDataBOSS s_apBossFinalAttack[AP_BOSS_FINAL_SEGMENTS + 1];
+
+int AP_BossFinalComposedNow(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const AP_BossEncounters *e = &ctr_boss_encounters;
+
+	if (gGT == NULL || !ctr_cfg_active() || (gGT->gameMode1 & ADVENTURE_BOSS) == 0 ||
+	    (gGT->gameMode1 & ADVENTURE_CUP) != 0 || (gGT->bossID != 4 && gGT->bossID != 5))
+		return 0;
+	return e->state == AP_BOSS_ENC_VALID && e->finalPresent && e->finalComposed;
+}
+
+static struct MetaDataBOSS *AP_BossFinalAttackSchedule(int fill)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int i, points, remap;
+
+	if (!AP_BossFinalComposedNow() || gGT->level1 == NULL)
+		return NULL;
+	if (!fill)
+		return s_apBossFinalAttack;
+	points = gGT->level1->cnt_restart_points;
+	if (points < 2 || AP_BossFinalScheduleProblem(ctr_boss_encounters.finalSchedule, AP_BOSS_FINAL_SEGMENTS))
+	{
+		AP_AppendLog("[AP BOSS] final record schedule refused at race init\n");
+		return AP_BossInertSchedule(s_apBossFinalAttack, AP_BOSS_FINAL_SEGMENTS + 1);
+	}
+	remap = points <= 0x7f;
+#ifdef CTR_CUSTOM_TRACKS
+	if (CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID, 1))
+		remap = 1;
+#endif
+	{
+		unsigned char cps[AP_BOSS_FINAL_SEGMENTS];
+		for (i = 0; i < AP_BOSS_FINAL_SEGMENTS; i++)
+		{
+			int cp = ctr_boss_encounters.finalSchedule[i].checkpoint;
+			cps[i] = (unsigned char)(remap ? AP_OxideWeaponCheckpoint(cp, points - 1) : cp);
+		}
+		memset(s_apBossFinalAttack, 0, sizeof s_apBossFinalAttack);
+		AP_BossFillKit(s_apBossFinalAttack, ctr_boss_encounters.finalSchedule, AP_BOSS_FINAL_SEGMENTS, cps);
+	}
+	return s_apBossFinalAttack;
+}
+
+// ── Purple Gem Cup gauntlet (J03, design answer 3, decision 5) ─────────────
+// Leg i of an adventure Purple Gem Cup arms gauntletSchedule[i] on the AI
+// that races gauntletAttacker[i]. Only on the leg's recorded retail track.
+static struct MetaDataBOSS s_apBossGauntletAttack[AP_BOSS_VENUE_SEGMENTS + 1];
+static int s_apBossGauntletLeg = -1; // leg whose schedule fitted at race init
+
+static int AP_BossGauntletLegNow(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const AP_BossEncounters *e = &ctr_boss_encounters;
+	int leg;
+
+	if (gGT == NULL || !ctr_cfg_active() || e->state != AP_BOSS_ENC_VALID || !e->gauntletOn)
+		return -1;
+	if ((gGT->gameMode1 & (ADVENTURE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS)) != (ADVENTURE_MODE | ADVENTURE_CUP))
+		return -1;
+	if (gGT->cup.cupID != 4)
+		return -1;
+	leg = gGT->cup.trackIndex;
+	if (leg < 0 || leg >= AP_BOSS_GAUNTLET_LEGS || !e->gauntletComposed[leg] || e->gauntletTrack[leg] < 0 ||
+	    e->gauntletTrack[leg] != gGT->levelID || !AP_BossVenueTrackKnown(e->gauntletTrack[leg]))
+		return -1;
+#ifdef CTR_CUSTOM_TRACKS
+	{
+		// A custom track served on the leg's host slot is not the recorded leg.
+		const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(gGT->levelID);
+		if (race && !race->retail)
+			return -1;
+	}
+#endif
+	return leg;
+}
+
+int AP_BossGauntletAttacker(void)
+{
+	int leg = AP_BossGauntletLegNow();
+	if (leg < 0 || leg != s_apBossGauntletLeg)
+		return -1;
+	return ctr_boss_encounters.gauntletAttacker[leg];
+}
+
+static struct MetaDataBOSS *AP_BossGauntletAttackSchedule(int fill)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int leg = AP_BossGauntletLegNow();
+	char what[48];
+
+	if (leg < 0 || gGT->level1 == NULL)
+	{
+		if (fill)
+			s_apBossGauntletLeg = -1;
+		return NULL;
+	}
+	if (!fill)
+		return s_apBossGauntletLeg == leg ? s_apBossGauntletAttack : NULL;
+	memset(s_apBossGauntletAttack, 0, sizeof s_apBossGauntletAttack);
+	snprintf(what, sizeof what, "gauntlet leg %d", leg + 1);
+	if (!AP_BossFitKit(s_apBossGauntletAttack, ctr_boss_encounters.gauntletSchedule[leg],
+	                   AP_BOSS_VENUE_RESTART_POINTS[ctr_boss_encounters.gauntletTrack[leg]],
+	                   gGT->level1->cnt_restart_points, what))
+	{
+		char msg[160];
+		snprintf(msg, sizeof msg, "[AP BOSS] gauntlet leg %d on venue %d (%d restart points) refused\n", leg + 1,
+		         (int)gGT->levelID, gGT->level1->cnt_restart_points);
+		AP_AppendLog(msg);
+		s_apBossGauntletLeg = -1;
+		return NULL;
+	}
+	s_apBossGauntletLeg = leg;
+	sdata->bossWeaponCooldown = s_apBossGauntletAttack[0].weaponCooldown + 0x3c;
+	sdata->bossJuiceCounter = 0;
+	return s_apBossGauntletAttack;
+}
+
 struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -653,38 +846,36 @@ struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill)
 
 	int k = AP_BossKitGarageNow();
 
+	{
+		struct MetaDataBOSS *fin = AP_BossFinalAttackSchedule(fill);
+		if (fin != NULL)
+			return fin;
+	}
+	{
+		struct MetaDataBOSS *leg = AP_BossGauntletAttackSchedule(fill);
+		if (leg != NULL)
+			return leg;
+	}
+
 	// #169 tier 3: a composed kit replaces the garage's retail attack on any
 	// venue, the home track included. Its checkpoints were composed for the
-	// recorded venue's restart point count, so a loaded graph that differs
-	// is refused loudly, as for the inherited attack.
+	// recorded venue's restart point count; a loaded graph that differs takes
+	// the decision 8 remap, or throws nothing when even that does not fit.
 	if (k >= 0 && gGT->level1 != NULL)
 	{
 		if (!fill)
 			return s_apBossVenueAttack;
 		venuePoints = gGT->level1->cnt_restart_points;
 		memset(s_apBossVenueAttack, 0, sizeof s_apBossVenueAttack);
-		if (venuePoints != AP_BossVenueCertifiedNow(k) ||
-		    AP_BossKitScheduleProblem(ctr_boss_encounters.schedule[k], AP_BOSS_VENUE_SEGMENTS, venuePoints))
+		if (!AP_BossFitKit(s_apBossVenueAttack, ctr_boss_encounters.schedule[k], AP_BossVenueCertifiedNow(k),
+		                   venuePoints, "composed kit"))
 		{
 			char msg[160];
 			snprintf(msg, sizeof msg,
 			         "[AP BOSS] venue %d has %d restart points, certified %d: composed kit refused\n",
 			         (int)gGT->levelID, venuePoints, AP_BossVenueCertifiedNow(k));
 			AP_AppendLog(msg);
-			s_apBossVenueAttack[0].throwFlag = BOSS_WEAPON_NORMAL;
-			s_apBossVenueAttack[0].weaponType = BOSS_WEAPON_NONE;
-			s_apBossVenueAttack[0].weaponCooldown = 0x0f;
-			return s_apBossVenueAttack;
-		}
-		for (i = 0; i < AP_BOSS_VENUE_SEGMENTS; i++)
-		{
-			const AP_BossKitSegment *seg = &ctr_boss_encounters.schedule[k][i];
-			s_apBossVenueAttack[i].trackCheckpoint = seg->checkpoint;
-			s_apBossVenueAttack[i].throwFlag = seg->throwFlag;
-			s_apBossVenueAttack[i].weaponType = seg->weapon;
-			s_apBossVenueAttack[i].pathChangeDisabled = seg->pathDisabled;
-			s_apBossVenueAttack[i].weaponCooldown = seg->cooldown;
-			s_apBossVenueAttack[i].juiceFlag = seg->juice;
+			return AP_BossInertSchedule(s_apBossVenueAttack, 8);
 		}
 		// Row 5 stays zero: the terminator retail tables end with.
 		return s_apBossVenueAttack;
@@ -695,23 +886,27 @@ struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill)
 		return s_apBossVenueAttack;
 	venuePoints = gGT->level1->cnt_restart_points;
 	// The certification saw the retail LEV's restart point count, or a custom
-	// venue's measured one (#133 PR 6b). A loaded track with a different graph
-	// (modified disc or files) is refused loudly: the boss keeps its timers
-	// but throws nothing rather than indexing a checkpoint the certification
-	// never saw.
-	if (venuePoints != AP_BossVenueCertifiedNow(g) ||
-	    !AP_BossVenueScheduleFits(g, venuePoints))
+	// venue's measured one (#133 PR 6b). The inherited attack is mapped from
+	// the garage's home track, so a loaded graph with a different count
+	// (modified disc or files) only needs the same mapping onto the count it
+	// really has (decision 8). When even that does not rise strictly the
+	// boss keeps its timers but throws nothing.
+	if (!AP_BossVenueScheduleFits(g, venuePoints))
 	{
 		char msg[160];
 		snprintf(msg, sizeof msg,
 		         "[AP BOSS] venue %d has %d restart points, certified %d: inherited attack refused\n",
 		         (int)gGT->levelID, venuePoints, AP_BossVenueCertifiedNow(g));
 		AP_AppendLog(msg);
-		memset(s_apBossVenueAttack, 0, sizeof s_apBossVenueAttack);
-		s_apBossVenueAttack[0].throwFlag = BOSS_WEAPON_NORMAL;
-		s_apBossVenueAttack[0].weaponType = BOSS_WEAPON_NONE;
-		s_apBossVenueAttack[0].weaponCooldown = 0x0f;
-		return s_apBossVenueAttack;
+		return AP_BossInertSchedule(s_apBossVenueAttack, 8);
+	}
+	if (venuePoints != AP_BossVenueCertifiedNow(g))
+	{
+		char msg[160];
+		snprintf(msg, sizeof msg,
+		         "[AP BOSS] checkpoint fallback: venue %d has %d restart points, certified %d: inherited attack remapped\n",
+		         (int)gGT->levelID, venuePoints, AP_BossVenueCertifiedNow(g));
+		AP_AppendLog(msg);
 	}
 	src = data.bossWeaponMetaPtr[g + 1];
 	homeLast = AP_BOSS_VENUE_RESTART_POINTS[AP_BOSS_VENUE_GARAGE[g].homeLevel] - 1;
