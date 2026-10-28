@@ -139,7 +139,7 @@ int NativeXdelta_Decode(const struct NativeXdeltaIo *io, char *error, size_t err
     for (;;)
     {
         long got;
-        if (io->cancel && *io->cancel) { result = NATIVE_XDELTA_CANCELLED; xdelta_error(error, errorSize, "Cancelled"); goto done; }
+        if (io->cancel && __atomic_load_n((const int *)io->cancel, __ATOMIC_ACQUIRE)) { result = NATIVE_XDELTA_CANCELLED; xdelta_error(error, errorSize, "Cancelled"); goto done; }
         got = io->readPatch(io->context, input, XDELTA_INPUT_CHUNK);
         if (got < 0) { xdelta_error(error, errorSize, "Cannot read the patch file"); goto done; }
         if (!started)
@@ -158,7 +158,7 @@ int NativeXdelta_Decode(const struct NativeXdeltaIo *io, char *error, size_t err
         xd3_avail_input(&stream, input, (usize_t)got);
         for (;;)
         {
-            if (io->cancel && *io->cancel) { result = NATIVE_XDELTA_CANCELLED; xdelta_error(error, errorSize, "Cancelled"); goto done; }
+            if (io->cancel && __atomic_load_n((const int *)io->cancel, __ATOMIC_ACQUIRE)) { result = NATIVE_XDELTA_CANCELLED; xdelta_error(error, errorSize, "Cancelled"); goto done; }
             ret = xd3_decode_input(&stream);
             if (ret == XD3_INPUT) break;
             if (ret == XD3_OUTPUT)
@@ -186,6 +186,13 @@ int NativeXdelta_Decode(const struct NativeXdeltaIo *io, char *error, size_t err
                     goto done;
                 }
                 continue;
+            }
+            if (ret == XD3_WINFINISH && !(stream.dec_win_ind & VCD_ADLER32))
+            {
+                /* Every window must prove its bytes (design: integrity). */
+                result = NATIVE_XDELTA_NO_CHECKSUM;
+                xdelta_error(error, errorSize, "Patch has no checksums");
+                goto done;
             }
             if (ret == XD3_GOTHEADER || ret == XD3_WINSTART || ret == XD3_WINFINISH) continue;
             if (stream.msg && strstr(stream.msg, "checksum mismatch"))

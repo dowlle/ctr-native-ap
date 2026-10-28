@@ -536,6 +536,22 @@ int main()
         XdeltaImport_Free(&r.scan);
     }
 
+    /* A patched disc cut off inside a BIGFILE table that spans sectors. */
+    {
+        DiscSpec wide = base;
+        while (wide.bigfile.size() < 600) wide.bigfile.push_back(Bytes(40, 7));
+        wide.dirAfterData = true;
+        Bytes full = make_disc(wide);
+        size_t bigSector = 0;
+        for (size_t lba = 17; lba * 2352 < full.size(); lba++)
+            if (full[lba * 2352 + 24 + 4] == 600 % 256 && full[lba * 2352 + 24 + 5] == 600 / 256) { bigSector = lba; break; }
+        CHECK(bigSector != 0, "fixture finds its BIGFILE table");
+        Bytes cut(full.begin(), full.begin() + (long)((bigSector + 1) * 2352));
+        ScanResult r = scan(write_file("Cut.xdelta", encode(baseDisc, cut)), discPath);
+        CHECK(!r.ok, "a disc cut inside its BIGFILE table is refused, not read past the table");
+        XdeltaImport_Free(&r.scan);
+    }
+
     /* Refusals. */
     {
         EncodeOptions bad; bad.corruptAdler = true;
@@ -546,6 +562,9 @@ int main()
         truncated.resize(truncated.size() - 7);
         r = scan(write_file("Short.xdelta", truncated), discPath);
         CHECK(!r.ok && r.error.rfind("Damaged patch", 0) == 0, "truncated patch refused");
+        EncodeOptions bare; bare.adler = false;
+        r = scan(write_file("Bare.xdelta", encode(baseDisc, patchedDisc, bare)), discPath);
+        CHECK(!r.ok && r.error == "Patch has no checksums", "windows without adler32 refused");
         EncodeOptions lzma; lzma.lzmaFlag = true;
         r = scan(write_file("Lzma.xdelta", encode(baseDisc, patchedDisc, lzma)), discPath);
         CHECK(!r.ok && r.error == "Unsupported patch compression", "LZMA refused");

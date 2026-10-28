@@ -5,7 +5,8 @@
    is built without its encoder, without LZMA and without FGK. The source is
    read through a callback in fixed blocks, so the whole base disc is never in
    memory; the target is handed to a sink window by window, in target order.
-   Every window that carries an adler32 is checked before it reaches the sink. */
+   Every window must carry an adler32, and it is checked before the window
+   reaches the sink; a window without one is refused. */
 #include <stddef.h>
 #ifdef __cplusplus
 extern "C" {
@@ -20,7 +21,8 @@ enum NativeXdeltaResult
     NATIVE_XDELTA_CHECKSUM = -3,       /* A target window's adler32 does not match. */
     NATIVE_XDELTA_SOURCE_RANGE = -4,   /* A window reads past the end of the source. */
     NATIVE_XDELTA_STOPPED = -5,        /* The sink asked to stop. */
-    NATIVE_XDELTA_CANCELLED = -6
+    NATIVE_XDELTA_CANCELLED = -6,
+    NATIVE_XDELTA_NO_CHECKSUM = -7     /* A window carries no adler32. */
 };
 
 /* Patch reader: copy up to size bytes, return the count, 0 at end, -1 on error. */

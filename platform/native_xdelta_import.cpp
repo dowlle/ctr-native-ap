@@ -59,6 +59,8 @@ const unsigned int kSector = 2048;
 const size_t kEntryMax = 16u * 1024u * 1024u; /* The package LEV limit; larger entries are never tracks. */
 const char *kRetailDiscSha256 = "f780bf2331476aabfc00772fa758b12dd95ebfbc907968132cbd3cdd4e2c07c0";
 const size_t kDescriptorMax = 256 * 1024;
+const size_t kActiveMax = 8;                         /* Overlapping BIGFILE entries held at once. */
+const size_t kOfferedBytesMax = 192u * 1024u * 1024u; /* Package bytes held for one review list. */
 
 std::string hex_sha256(const void *bytes, size_t size)
 {
@@ -130,12 +132,65 @@ unsigned long long file_size(FILE *file)
     return size < 0 ? 0 : (unsigned long long)size;
 }
 
+/* UTF-8 paths on every platform (the file dialog hands over UTF-8). */
+#ifdef _WIN32
+std::wstring wide(const std::string &text)
+{
+    if (text.empty()) return std::wstring();
+    int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), (int)text.size(), nullptr, 0);
+    if (size <= 0) return std::wstring();
+    std::wstring result((size_t)size, 0);
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), (int)text.size(), &result[0], size) != size) return std::wstring();
+    return result;
+}
+std::string narrow(const wchar_t *text)
+{
+    int size = WideCharToMultiByte(CP_UTF8, 0, text, -1, nullptr, 0, nullptr, nullptr);
+    if (size <= 1) return std::string();
+    std::string result((size_t)size - 1, 0);
+    WideCharToMultiByte(CP_UTF8, 0, text, -1, &result[0], size, nullptr, nullptr);
+    return result;
+}
+FILE *fs_open(const std::string &path, const char *mode)
+{
+    std::wstring p = wide(path), m = wide(mode);
+    return p.empty() ? nullptr : _wfopen(p.c_str(), m.c_str());
+}
+bool fs_mkdir(const std::string &path) { std::wstring p = wide(path); return !p.empty() && !_wmkdir(p.c_str()); }
+void fs_rmdir(const std::string &path) { std::wstring p = wide(path); if (!p.empty()) _wrmdir(p.c_str()); }
+void fs_remove(const std::string &path) { std::wstring p = wide(path); if (!p.empty()) _wremove(p.c_str()); }
+bool fs_stat(const std::string &path, long long *size, long long *mtime)
+{
+    struct _stat64 info;
+    std::wstring p = wide(path);
+    if (p.empty() || _wstat64(p.c_str(), &info)) return false;
+    *size = (long long)info.st_size; *mtime = (long long)info.st_mtime;
+    return true;
+}
+#else
+FILE *fs_open(const std::string &path, const char *mode) { return std::fopen(path.c_str(), mode); }
+bool fs_mkdir(const std::string &path) { return !mkdir(path.c_str(), 0700); }
+void fs_rmdir(const std::string &path) { rmdir(path.c_str()); }
+void fs_remove(const std::string &path) { std::remove(path.c_str()); }
+bool fs_stat(const std::string &path, long long *size, long long *mtime)
+{
+    struct stat info;
+    if (stat(path.c_str(), &info)) return false;
+    *size = (long long)info.st_size; *mtime = (long long)info.st_mtime;
+    return true;
+}
+#endif
+
+/* Flags shared with the main thread. */
+int load_flag(const volatile int *flag) { return flag ? __atomic_load_n((const int *)flag, __ATOMIC_ACQUIRE) : 0; }
+void store_flag(volatile int *flag, int value) { if (flag) __atomic_store_n((int *)flag, value, __ATOMIC_RELEASE); }
+
 struct FileCloser { void operator()(FILE *f) const { if (f) std::fclose(f); } };
 using File = std::unique_ptr<FILE, FileCloser>;
 
 File open_read(const std::string &path)
 {
-    File file(std::fopen(path.c_str(), "rb"));
+    File file(fs_open(path, "rb"));
     if (!file) throw std::runtime_error("Cannot open " + path.substr(path.find_last_of("/\\") + 1));
     return file;
 }
@@ -225,7 +280,7 @@ std::string hash_file(const std::string &path, unsigned long long *bytes, const 
     size_t got;
     while ((got = std::fread(buffer.data(), 1, buffer.size(), file.get())) > 0)
     {
-        if (cancel && *cancel) throw std::runtime_error("Cancelled");
+        if (load_flag(cancel)) throw std::runtime_error("Cancelled");
         NativeSha256_Update(&context, buffer.data(), got);
         total += got;
     }
@@ -428,6 +483,7 @@ struct Extractor
         auto big = layout.files.find("/BIGFILE.BIG");
         if (big != layout.files.end()) { bigLba = big->second.lba; bigSize = big->second.size; bigKnown = true; }
         if (bigKnown && !layout.bigfileTable.empty()) parse_table(layout.bigfileTable);
+        if (!tableReady) layout.bigfileTable.clear(); /* A partial table from an earlier pass is read again. */
     }
 
     void learn_dir(uint32_t lba, uint32_t size, const std::string &prefix)
@@ -483,7 +539,9 @@ struct Extractor
 
     void parse_table(const std::vector<unsigned char> &table)
     {
+        if (table.size() < 8) return;
         uint32_t n = rd32(&table[4]);
+        if (n > 4096 || table.size() < 8 + 8 * (size_t)n) return; /* Incomplete: never parsed. */
         entries.clear();
         for (uint32_t i = 0; i < n; i++) entries.push_back({rd32(&table[8 + 8 * i]), rd32(&table[12 + 8 * i])});
         order.clear();
@@ -540,6 +598,7 @@ struct Extractor
         {
             uint32_t index = order[nextEntry++];
             if (entries[index].first < rel) { needPass = true; continue; } /* Started before we knew it. */
+            if (active.size() >= kActiveMax) throw std::runtime_error("Patched BIGFILE has too many overlapping entries");
             Active a{index, {}, false, entries[index].second <= kEntryMax};
             if (a.keep) a.bytes.reserve(entries[index].second);
             active.push_back(std::move(a));
@@ -656,7 +715,7 @@ long read_patch(void *context, void *destination, size_t size)
     if (std::ferror(c->patch)) return -1;
     c->read += got;
     if (c->progress && c->patchBytes)
-        *c->progress = c->passBase + (int)((unsigned long long)c->passSpan * c->read / c->patchBytes);
+        store_flag(c->progress, c->passBase + (int)((unsigned long long)c->passSpan * c->read / c->patchBytes));
     return (long)got;
 }
 
@@ -715,6 +774,7 @@ std::string limit_codepoints(const std::string &text, size_t max)
 struct XdeltaImportScan
 {
     XdeltaImportSummary summary = {};
+    unsigned dropped = 0; /* Items past CTR_XDELTA_ITEM_MAX. */
     std::vector<Built> built; /* Parallel to summary.items. */
     ~XdeltaImportScan() { for (auto &b : built) CustomPackage_Free(&b.owned); }
 };
@@ -813,9 +873,11 @@ Built build_package(const Candidate &c, const std::string &title, const std::str
 
 void add_item(XdeltaImportScan &scan, const XdeltaImportItem &item, Built built = Built())
 {
-    if (scan.summary.count >= CTR_XDELTA_ITEM_MAX)
+    if (scan.summary.count >= CTR_XDELTA_ITEM_MAX - 1)
     {
+        /* The last row is kept for the overflow line. */
         CustomPackage_Free(&built.owned);
+        scan.dropped++;
         return;
     }
     scan.summary.items[scan.summary.count++] = item;
@@ -840,11 +902,7 @@ std::string scratch_folder(const std::string &parent)
         char name[32];
         std::snprintf(name, sizeof name, ".import-%08x", (unsigned)generator());
         std::string path = parent + "/" + name;
-#ifdef _WIN32
-        if (!_mkdir(path.c_str())) return path;
-#else
-        if (!mkdir(path.c_str(), 0700)) return path;
-#endif
+        if (fs_mkdir(path)) return path;
     }
     throw std::runtime_error("Cannot create the import scratch folder");
 }
@@ -854,12 +912,8 @@ struct ScratchGuard
     std::string folder, file;
     ~ScratchGuard()
     {
-        if (!file.empty()) std::remove(file.c_str());
-#ifdef _WIN32
-        if (!folder.empty()) _rmdir(folder.c_str());
-#else
-        if (!folder.empty()) rmdir(folder.c_str());
-#endif
+        if (!file.empty()) fs_remove(file);
+        if (!folder.empty()) fs_rmdir(folder);
     }
 };
 
@@ -868,9 +922,9 @@ std::map<std::string, std::string> &disc_hash_cache() { static auto *m = new std
 
 std::string disc_identity(const std::string &path)
 {
-    struct stat info;
-    if (stat(path.c_str(), &info)) return path;
-    return path + "|" + std::to_string((long long)info.st_size) + "|" + std::to_string((long long)info.st_mtime);
+    long long size = 0, mtime = 0;
+    if (!fs_stat(path, &size, &mtime)) return path;
+    return path + "|" + std::to_string(size) + "|" + std::to_string(mtime);
 }
 
 } // namespace
@@ -879,7 +933,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                                  volatile int *progress, const volatile int *cancel, char *error, size_t errorSize)
 {
     if (error && errorSize) error[0] = 0;
-    if (progress) *progress = 0;
+    store_flag(progress, 0);
     try
     {
         if (!request || !request->patchPath || !request->discPath || !request->scratchDir || !out || *out)
@@ -907,7 +961,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
         if (!request->skipRetailCheck && discSha != kRetailDiscSha256)
             throw std::runtime_error("Your disc is not the retail NTSC-U image this patch needs");
         set_text(summary.discSha256, sizeof summary.discSha256, discSha);
-        if (progress) *progress = 5;
+        store_flag(progress, 5);
         Disc disc(discPath);
         disc.walk();
 
@@ -917,7 +971,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
         {
             std::string path = request->descriptorPath ? request->descriptorPath
                                                        : path_dir(patchPath) + "/" + path_stem(patchPath) + ".ctrpack.json";
-            File file(std::fopen(path.c_str(), "rb"));
+            File file(fs_open(path, "rb"));
             if (file)
             {
                 try
@@ -943,7 +997,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
         ScratchGuard guard;
         guard.folder = scratch_folder(request->scratchDir);
         guard.file = guard.folder + "/entries.bin";
-        File scratch(std::fopen(guard.file.c_str(), "w+b"));
+        File scratch(fs_open(guard.file, "w+b"));
         if (!scratch) throw std::runtime_error("Cannot create the import scratch file");
         File source = open_read(discPath);
         PassLayout layout;
@@ -965,7 +1019,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             if (!extractor->needPass) break;
             layout = extractor->layout;
         }
-        if (progress) *progress = 92;
+        store_flag(progress, 92);
 
         /* 4. Pair, cut, build, classify. */
         Extractor &ex = *extractor;
@@ -982,11 +1036,12 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             return bytes;
         };
         std::set<uint32_t> consumed;
+        size_t offeredBytes = 0;
         std::map<std::pair<std::string, std::string>, std::string> seen;
         const std::string stem = limit_codepoints(path_stem(patchPath), 100);
         for (const auto &c : ex.changed)
         {
-            if (cancel && *cancel) throw std::runtime_error("Cancelled");
+            if (load_flag(cancel)) throw std::runtime_error("Cancelled");
             if (c.scratch < 0) continue;
             auto lev = entry_bytes(c.index);
             size_t levCut = cut_lev(lev.data(), lev.size());
@@ -1013,6 +1068,11 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             if (duplicate != seen.end())
             {
                 add_item(*scan, skip_item((int)c.index, title, "Same track as " + duplicate->second));
+                continue;
+            }
+            if (offeredBytes + candidate.lev.size() + candidate.vrm.size() > kOfferedBytesMax)
+            {
+                add_item(*scan, skip_item((int)c.index, title, "Too much for one import"));
                 continue;
             }
             std::string version = meta && !meta->version.empty() ? meta->version : "1.0.0";
@@ -1061,6 +1121,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             set_text(item.tags, sizeof item.tags, tags);
             set_text(item.pin, sizeof item.pin, built.pin);
             item.offered = 1;
+            offeredBytes += candidate.lev.size() + candidate.vrm.size();
             seen[{levHash, vrmHash}] = title;
             add_item(*scan, item, std::move(built));
         }
@@ -1091,7 +1152,13 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
         }
         if (other)
             add_item(*scan, skip_item(-1, "Other changed files (" + std::to_string(other) + ")", "Not track content"));
-        if (progress) *progress = 100;
+        if (scan->dropped)
+        {
+            XdeltaImportItem more = skip_item(-1, std::to_string(scan->dropped) + " more items", "Too many items for one list");
+            scan->summary.items[scan->summary.count++] = more;
+            scan->built.push_back(Built());
+        }
+        store_flag(progress, 100);
         *out = scan.release();
         return 1;
     }
@@ -1152,21 +1219,22 @@ extern "C" int XdeltaImport_ListFolder(const char *assets, char names[][CTR_XDEL
         auto ends = [&](const char *s) { size_t n = std::strlen(s); return lower.size() > n && lower.compare(lower.size() - n, n, s) == 0; };
         return name.size() < CTR_XDELTA_NAME_MAX && name[0] != '.' && (ends(".xdelta") || ends(".vcdiff"));
     };
+    fs_mkdir(std::string(assets) + "/tracks");
+    fs_mkdir(folder);
 #ifdef _WIN32
-    _mkdir((std::string(assets) + "/tracks").c_str());
-    _mkdir(folder.c_str());
-    WIN32_FIND_DATAA data;
-    HANDLE find = FindFirstFileA((folder + "/*").c_str(), &data);
+    WIN32_FIND_DATAW data;
+    HANDLE find = FindFirstFileW(wide(folder + "/*").c_str(), &data);
     if (find != INVALID_HANDLE_VALUE)
     {
         do
-            if (!(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && wanted(data.cFileName)) found.push_back(data.cFileName);
-        while (FindNextFileA(find, &data) && found.size() < 1024);
+        {
+            std::string name = narrow(data.cFileName);
+            if (!(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && !name.empty() && wanted(name)) found.push_back(name);
+        }
+        while (FindNextFileW(find, &data) && found.size() < 1024);
         FindClose(find);
     }
 #else
-    mkdir((std::string(assets) + "/tracks").c_str(), 0755);
-    mkdir(folder.c_str(), 0755);
     if (DIR *dir = opendir(folder.c_str()))
     {
         while (dirent *e = readdir(dir))
@@ -1212,18 +1280,14 @@ extern "C" int XdeltaImport_StartScan(const char *patchPath, const char *discPat
     if (s.scanState == 0 || s.installState == 0 || !patchPath || !discPath || !*discPath || !assets ||
         std::strlen(patchPath) > 4096 || std::strlen(assets) > 4096) return 0;
     XdeltaImport_Free(&s.scan);
-    s.scanState = 0; s.progress = 0; s.cancel = 0; s.error.clear();
+    s.scanState = 0; store_flag(&s.progress, 0); store_flag(&s.cancel, 0); s.error.clear();
     try
     {
         std::string patch(patchPath), disc(discPath), root(assets);
         s.scanJob = std::async(std::launch::async, [patch, disc, root] {
             auto &state = job();
             std::string tracks = root + "/tracks";
-#ifdef _WIN32
-            _mkdir(tracks.c_str());
-#else
-            mkdir(tracks.c_str(), 0755);
-#endif
+            fs_mkdir(tracks);
             XdeltaImportRequest request = {patch.c_str(), disc.c_str(), nullptr, tracks.c_str(), 0};
             XdeltaImportScan *result = nullptr;
             char error[256];
@@ -1242,13 +1306,13 @@ extern "C" int XdeltaImport_PollScan(int *progress, XdeltaImportSummary *summary
 {
     auto &s = job();
     std::lock_guard<std::mutex> guard(s.mutex);
-    if (progress) *progress = s.progress;
+    if (progress) *progress = load_flag(&s.progress);
     if (s.scanState == 1 && summary && s.scan) *summary = s.scan->summary;
     if (s.scanState == -2 && error && errorSize) std::snprintf(error, errorSize, "%s", s.error.c_str());
     return s.scanState;
 }
 
-extern "C" void XdeltaImport_CancelScan(void) { job().cancel = 1; }
+extern "C" void XdeltaImport_CancelScan(void) { store_flag(&job().cancel, 1); }
 
 extern "C" int XdeltaImport_StartInstall(const unsigned char *selected, unsigned int count, const char *assets)
 {
@@ -1293,11 +1357,11 @@ extern "C" int XdeltaImport_PollInstall(int *installed, char *error, size_t erro
 extern "C" void XdeltaImport_DiscardScan(void)
 {
     auto &s = job();
-    s.cancel = 1;
+    store_flag(&s.cancel, 1);
     if (s.scanJob.valid()) s.scanJob.wait();
     std::lock_guard<std::mutex> guard(s.mutex);
     if (s.installState == 0) return;
     XdeltaImport_Free(&s.scan);
     s.scanState = -1;
-    s.cancel = 0;
+    store_flag(&s.cancel, 0);
 }
