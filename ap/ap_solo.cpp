@@ -50,6 +50,7 @@ const uint64_t kGenerateLimitMs = 120000;
 const uint64_t kQuickLimitMs = 60000;   // list, describe, imports
 const uint64_t kReadyLimitMs = 30000;
 const uint64_t kConnectLimitMs = 20000;
+const size_t kDescriptorMax = 64 * 1024; // the wrapper reads no larger descriptor
 
 void Log(const std::string &line)
 {
@@ -796,7 +797,7 @@ extern "C" void AP_Solo_TracksClear(void)
 
 extern "C" void AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, const char *json)
 {
-	if (!contentId || !revision || !json || !*json)
+	if (!contentId || !revision || !json || !*json || std::strlen(json) > kDescriptorMax)
 		return;
 	const std::string name = AP_SoloDescriptorFileName(contentId, revision);
 	if (name.empty() || SoloRootIsLink())
@@ -807,29 +808,58 @@ extern "C" void AP_Solo_RecordTrackDescriptor(const char *contentId, const char 
 		return;
 	fs::create_directories(dir, ec);
 	const fs::path target = dir / fs::u8path(name);
+	// Only a plain file of descriptor size is read or replaced: a link, a
+	// FIFO or a huge file there is left alone (reading one could block or
+	// stall the frame).
+	const fs::file_status st = fs::symlink_status(target, ec);
+	if (fs::exists(st))
 	{
+		if (!fs::is_regular_file(st) || fs::file_size(target, ec) > kDescriptorMax || ec)
+		{
+			Log("left " + name + " alone: not a plain descriptor file");
+			return;
+		}
 		std::ifstream in(target, std::ios::binary);
 		std::stringstream have;
-		if (in)
-		{
-			have << in.rdbuf();
-			if (have.str() == json)
-				return;
-		}
+		have << in.rdbuf();
+		if (have.str() == json)
+			return;
 	}
-	const fs::path tmp = dir / fs::u8path(name + ".tmp");
+	// A temp name no other writer uses, created fresh (never an existing
+	// path, so never through a link someone left there).
+	static unsigned serial = 0;
+	fs::path tmp;
+	for (int tries = 0; tries < 16; tries++)
+	{
+		tmp = dir / fs::u8path(name + ".tmp-" + std::to_string(AP_SOLO_GETPID()) + "-" + std::to_string(++serial));
+		if (!fs::exists(fs::symlink_status(tmp, ec)))
+			break;
+		tmp.clear();
+	}
+	if (tmp.empty())
+		return;
 	{
 		std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
 		out << json;
 		if (!out.flush())
 		{
+			out.close();
 			fs::remove(tmp, ec);
 			Log("could not keep the descriptor of " + name);
 			return;
 		}
 	}
-	fs::remove(target, ec);
+	// rename replaces the old file in one step on Linux and, where the
+	// runtime supports it, on Windows. Only if that fails is the old file
+	// removed first; a crash in between loses a cached copy, which the next
+	// verification of the package writes again.
 	fs::rename(tmp, target, ec);
+	if (ec)
+	{
+		std::error_code ec2;
+		fs::remove(target, ec2);
+		fs::rename(tmp, target, ec);
+	}
 	if (ec)
 	{
 		fs::remove(tmp, ec);

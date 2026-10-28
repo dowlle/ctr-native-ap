@@ -666,6 +666,13 @@ static void MM_Solo_PageBusy(uint32_t *ot, struct GamepadBuffer *pad)
 			s_soloFromOptions = 2; /* the message returns to Options */
 			return;
 		}
+		if (s_soloBusyJob == SOLO_JOB_GENERATE && s_soloFromTracks)
+		{
+			/* For example a picked track was removed: list the tracks again. */
+			s_soloPage = SOLO_MESSAGE;
+			s_soloFromOptions = 3; /* the message returns to Custom Tracks */
+			return;
+		}
 		MM_Solo_Go(SOLO_MESSAGE);
 		return;
 	}
@@ -728,6 +735,14 @@ static void MM_Solo_PageMessage(uint32_t *ot, struct GamepadBuffer *pad)
 			s_soloPage = SOLO_OPTIONS;
 			s_soloSel = 0;
 			s_soloTop = 0;
+		}
+		else if (s_soloFromOptions == 3)
+		{
+			s_soloFromOptions = 1;
+			if (AP_Solo_TracksStart())
+				MM_Solo_Busy(SOLO_JOB_TRACKS);
+			else
+				MM_Solo_Go(SOLO_TRACKS);
 		}
 		else
 			MM_Solo_Go(AP_Solo_RuntimePresent() ? SOLO_HOME : SOLO_OFF);
