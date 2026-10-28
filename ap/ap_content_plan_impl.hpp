@@ -25,6 +25,9 @@ struct State {
     bool parsed = false, bound = false;
     std::array<ctr_content_pad, 27> pads{};
     std::array<ctr_content_package, AP_CONTENT_MAX_PACKAGES> packages{};
+    // Each package's descriptor as the room sent it (#89: solo keeps it once
+    // the files are verified, for its custom-track step).
+    std::array<std::string, AP_CONTENT_MAX_PACKAGES> package_json{};
     std::array<ctr_content_item, 15> items{};
     ctr_content_checks families{};
     int package_count = 0, goal_count = 0, goal_mask = 0;
@@ -611,6 +614,7 @@ static void validate(const J &p, State &out) {
         package_index.emplace(id, idx);
         auto &target = out.packages[idx];
         package_record(pkg, target);
+        out.package_json[idx] = pkg.dump();
         need(keys.insert(target.content_id).second && uuids.insert(target.uuid).second &&
              pairs.insert(std::string(target.lev_sha256) + target.vrm_sha256).second,
              "a track appears twice in the package list");
@@ -1900,6 +1904,10 @@ extern "C" const ctr_content_pad *ap_content_plan_pad(int physical) {
 extern "C" int ap_content_plan_cortex(void) { return ap_content_plan_active() && content_plan::state.cortex; }
 extern "C" const ctr_content_package *ap_content_plan_package(int index) {
     return ap_content_plan_active() && index >= 0 && index < content_plan::state.package_count ? &content_plan::state.packages[index] : nullptr;
+}
+extern "C" const char *ap_content_plan_package_json(int index) {
+    return ap_content_plan_active() && index >= 0 && index < content_plan::state.package_count
+               ? content_plan::state.package_json[index].c_str() : "";
 }
 extern "C" const ctr_content_checks *ap_content_plan_checks(void) {
     static const ctr_content_checks none{};

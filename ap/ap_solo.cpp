@@ -29,6 +29,7 @@
 
 extern "C" {
 const char *NativeAssets_GetBaseDir(void);
+const char *NativeAssets_GetAssetDir(void);
 void AP_LogLine(const char *msg);
 void AP_Net_Reconnect(const char *uri, const char *slot, const char *password);
 void AP_Net_Shutdown(void);
@@ -270,7 +271,7 @@ struct Child
 // ---------------------------------------------------------------------------
 // Jobs
 
-enum JobKind { JOB_NONE, JOB_LIST, JOB_DESCRIBE, JOB_GENERATE, JOB_IMPORT_ROOM, JOB_IMPORT_YAML };
+enum JobKind { JOB_NONE, JOB_LIST, JOB_DESCRIBE, JOB_GENERATE, JOB_IMPORT_ROOM, JOB_IMPORT_YAML, JOB_TRACKS };
 
 struct Job
 {
@@ -293,6 +294,14 @@ struct Lists
 } g_lists;
 
 std::vector<APSoloOption> g_options;
+std::vector<APSoloTrackInfo> g_tracks; // the custom-track step (decision 32)
+
+// The folder the client loads custom tracks from (assets/tracks/<key>/original).
+std::string AssetsDir()
+{
+	const char *assets = NativeAssets_GetAssetDir();
+	return assets ? assets : "";
+}
 
 // ---------------------------------------------------------------------------
 // Session
@@ -324,6 +333,31 @@ void JobFail(const std::string &kind, const std::string &message, const std::str
 	g_job.errorText = AP_SoloErrorText(kind, message);
 	g_job.errorOption = option;
 	Log("job failed (" + kind + "): " + message);
+}
+
+// A new track list keeps the picks of the tracks still in it.
+void ParseTracks(const nlohmann::json &r)
+{
+	std::vector<APSoloTrackInfo> next;
+	if (r.contains("tracks") && r["tracks"].is_array())
+		for (const auto &t : r["tracks"])
+		{
+			if (!t.is_object())
+				continue;
+			APSoloTrackInfo info;
+			std::memset(&info, 0, sizeof info);
+			if (!CopyText(info.id, sizeof info.id, AP_SoloJsonString(t, "id")) || info.id[0] == '\0')
+				continue;
+			CopyText(info.title, sizeof info.title, AP_SoloJsonString(t, "display_name"));
+			CopyText(info.revision, sizeof info.revision, AP_SoloJsonString(t, "revision"));
+			CopyText(info.author, sizeof info.author, AP_SoloJsonString(t, "author"));
+			CopyText(info.modes, sizeof info.modes, AP_SoloTrackModes(t.value("modes", nlohmann::json())));
+			for (const auto &old : g_tracks)
+				if (std::strcmp(old.id, info.id) == 0)
+					info.pick = old.pick;
+			next.push_back(info);
+		}
+	g_tracks = next;
 }
 
 void ParseList(const nlohmann::json &r)
@@ -447,6 +481,8 @@ void TickJob()
 				ParseList(g_job.result);
 			else if (g_job.kind == JOB_DESCRIBE)
 				g_options = AP_SoloBuildOptions(g_job.result);
+			else if (g_job.kind == JOB_TRACKS)
+				ParseTracks(g_job.result);
 			else if (g_job.kind == JOB_GENERATE || g_job.kind == JOB_IMPORT_ROOM)
 				g_job.resultRoom = AP_SoloJsonString(g_job.result, "room_id");
 		}
@@ -658,11 +694,16 @@ extern "C" int AP_Solo_ImportYamlStart(const char *path)
 	return JobStart(JOB_IMPORT_YAML, {"import-yaml", path}, kQuickLimitMs) ? 1 : 0;
 }
 
+extern "C" int AP_Solo_TracksStart(void)
+{
+	return JobStart(JOB_TRACKS, {"tracks", "--assets", AssetsDir()}, kQuickLimitMs) ? 1 : 0;
+}
+
 extern "C" int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName, const char *presetId, int useOptions)
 {
 	if (!yamlPath || !*yamlPath)
 		return 0;
-	std::vector<std::string> args = {"generate", "--yaml", yamlPath};
+	std::vector<std::string> args = {"generate", "--yaml", yamlPath, "--assets", AssetsDir()};
 	if (slotName && *slotName)
 	{
 		args.push_back("--name");
@@ -676,11 +717,25 @@ extern "C" int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName,
 		args.push_back("--stamp-requires");
 	}
 	if (useOptions)
+	{
 		for (const std::string &set : AP_SoloSetArgs(g_options))
 		{
 			args.push_back("--set");
 			args.push_back(set);
 		}
+		for (const APSoloTrackInfo &t : g_tracks)
+		{
+			if (t.pick == AP_SOLO_TRACK_OFF)
+				continue;
+			args.push_back("--track");
+			args.push_back(t.id);
+			if (t.pick == AP_SOLO_TRACK_GUARANTEED)
+			{
+				args.push_back("--guarantee");
+				args.push_back(t.id);
+			}
+		}
+	}
 	return JobStart(JOB_GENERATE, args, kGenerateLimitMs) ? 1 : 0;
 }
 
@@ -707,6 +762,81 @@ extern "C" void AP_Solo_JobClear(void)
 {
 	if (g_job.state != AP_SOLO_JOB_RUNNING)
 		g_job.state = AP_SOLO_JOB_IDLE;
+}
+
+extern "C" int AP_Solo_TrackCount(void) { return (int)g_tracks.size(); }
+
+extern "C" int AP_Solo_TrackGet(int index, struct APSoloTrackInfo *out)
+{
+	if (index < 0 || index >= (int)g_tracks.size() || !out)
+		return 0;
+	*out = g_tracks[index];
+	return 1;
+}
+
+extern "C" void AP_Solo_TrackCycle(int index)
+{
+	if (index >= 0 && index < (int)g_tracks.size())
+		g_tracks[index].pick = AP_SoloTrackNextPick(g_tracks[index].pick);
+}
+
+extern "C" int AP_Solo_TracksPicked(void)
+{
+	int n = 0;
+	for (const APSoloTrackInfo &t : g_tracks)
+		n += t.pick != AP_SOLO_TRACK_OFF;
+	return n;
+}
+
+extern "C" void AP_Solo_TracksClear(void)
+{
+	for (APSoloTrackInfo &t : g_tracks)
+		t.pick = AP_SOLO_TRACK_OFF;
+}
+
+extern "C" void AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, const char *json)
+{
+	if (!contentId || !revision || !json || !*json)
+		return;
+	const std::string name = AP_SoloDescriptorFileName(contentId, revision);
+	if (name.empty() || SoloRootIsLink())
+		return;
+	std::error_code ec;
+	const fs::path dir = fs::u8path(SoloPath("tracks"));
+	if (fs::is_symlink(dir, ec))
+		return;
+	fs::create_directories(dir, ec);
+	const fs::path target = dir / fs::u8path(name);
+	{
+		std::ifstream in(target, std::ios::binary);
+		std::stringstream have;
+		if (in)
+		{
+			have << in.rdbuf();
+			if (have.str() == json)
+				return;
+		}
+	}
+	const fs::path tmp = dir / fs::u8path(name + ".tmp");
+	{
+		std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+		out << json;
+		if (!out.flush())
+		{
+			fs::remove(tmp, ec);
+			Log("could not keep the descriptor of " + name);
+			return;
+		}
+	}
+	fs::remove(target, ec);
+	fs::rename(tmp, target, ec);
+	if (ec)
+	{
+		fs::remove(tmp, ec);
+		Log("could not keep the descriptor of " + name);
+		return;
+	}
+	Log("kept the descriptor of " + name + " for the custom-track step");
 }
 
 extern "C" int AP_Solo_RoomCount(void) { return (int)g_lists.rooms.size(); }

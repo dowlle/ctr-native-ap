@@ -14,6 +14,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <map>
@@ -247,6 +248,60 @@ static inline std::string AP_SoloErrorText(const std::string &kind, const std::s
 	if (kind == "foreign")
 		return message.empty() ? "Another program is using the solo port." : message;
 	return message.empty() ? "The solo runtime refused this." : message;
+}
+
+// ---------------------------------------------------------------------------
+// Custom-track step (decision 32)
+
+// The modes a track can run, from the wrapper's list ("trophy", "ctr",
+// "relic"), as the step shows them.
+static inline std::string AP_SoloTrackModes(const nlohmann::json &modes)
+{
+	std::string out;
+	if (!modes.is_array())
+		return out;
+	for (const auto &m : modes)
+	{
+		if (!m.is_string())
+			continue;
+		const std::string mode = m.get<std::string>();
+		const char *label = mode == "trophy" ? "Trophy" : mode == "ctr" ? "CTR" : mode == "relic" ? "Relic" : nullptr;
+		if (!label)
+			continue;
+		if (!out.empty())
+			out += ", ";
+		out += label;
+	}
+	return out;
+}
+
+// Cross on a track: off (0), in the pool (1), guaranteed a pad (2), off.
+static inline int AP_SoloTrackNextPick(int pick)
+{
+	return pick >= 0 && pick < 2 ? pick + 1 : 0;
+}
+
+// solo/tracks/<track key>__<revision>.json, or "" when either part is not
+// the plain text a package descriptor allows (ap_content_plan_impl.hpp: a
+// track key is lowercase letters and digits in hyphenated groups; a revision
+// starts with a letter or digit and then has only those and . _ + -). The
+// key has no "_", so "__" cannot be part of it.
+static inline std::string AP_SoloDescriptorFileName(const std::string &key, const std::string &revision)
+{
+	if (key.empty() || key.size() > 64 || revision.empty() || revision.size() > 64)
+		return std::string();
+	for (char c : key)
+		if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-'))
+			return std::string();
+	if (key.front() == '-' || key.back() == '-' || key.find("--") != std::string::npos)
+		return std::string();
+	for (char c : revision)
+		if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' ||
+		      c == '-' || c == '+'))
+			return std::string();
+	if (!std::isalnum((unsigned char)revision.front()))
+		return std::string();
+	return key + "__" + revision + ".json";
 }
 
 // Stop sequence for a running server: /save and /exit on stdin, then wait,

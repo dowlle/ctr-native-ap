@@ -80,6 +80,24 @@ struct APSoloOptionInfo
 	char note[AP_SOLO_TEXT];    /* forced reason or a warning */
 };
 
+/* An installed custom track the new-seed flow can include (decision 32). */
+enum APSoloTrackPick
+{
+	AP_SOLO_TRACK_OFF = 0,
+	AP_SOLO_TRACK_POOL,       /* in the pool: the generator may use it */
+	AP_SOLO_TRACK_GUARANTEED, /* in the pool with its own Adventure pad */
+};
+
+struct APSoloTrackInfo
+{
+	char id[72];               /* package/<track key>/<revision> */
+	char title[AP_SOLO_TEXT];
+	char revision[32];
+	char author[AP_SOLO_TEXT];
+	char modes[32];            /* "Trophy, CTR, Relic" */
+	int pick;                  /* enum APSoloTrackPick */
+};
+
 /* 1 when solo-runtime/ and its interpreter are present in the client folder. */
 int AP_Solo_RuntimePresent(void);
 
@@ -89,8 +107,11 @@ int AP_Solo_ListStart(void);
 int AP_Solo_DescribeStart(const char *yamlPath);
 int AP_Solo_ImportRoomStart(const char *path);
 int AP_Solo_ImportYamlStart(const char *path);
-/* yamlPath: preset or saved/inbox YAML. Options from the options screen are
-   passed only for presets (useOptions 1). */
+/* Installed custom tracks (assets/tracks/<track key>/original) with a known
+   descriptor. Picks survive a new list for the tracks still listed. */
+int AP_Solo_TracksStart(void);
+/* yamlPath: preset or saved/inbox YAML. Options from the options screen and
+   the picked custom tracks are passed only for presets (useOptions 1). */
 int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName, const char *presetId, int useOptions);
 int AP_Solo_JobState(void);
 const char *AP_Solo_JobPhase(void);
@@ -115,6 +136,17 @@ void AP_Solo_OptionStep(int index, int direction);
 const char *AP_Solo_OptionHelp(int index);
 int AP_Solo_OptionIndex(const char *name);
 void AP_Solo_OptionsReset(void);          /* back to the preset's values */
+
+/* Custom-track step. Cycle: off, in the pool, guaranteed a pad, off. */
+int AP_Solo_TrackCount(void);
+int AP_Solo_TrackGet(int index, struct APSoloTrackInfo *out);
+void AP_Solo_TrackCycle(int index);
+int AP_Solo_TracksPicked(void);
+void AP_Solo_TracksClear(void);           /* a new start: nothing picked */
+
+/* The client verified a content-plan package's files (#133): keep its
+   descriptor in solo/tracks so the custom-track step can offer the track. */
+void AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, const char *json);
 
 /* Import file dialog (SDL, answers on another thread). room 1: rooms,
    0: YAMLs. Take returns 1 with a path, -1 cancelled, -2 path too long,

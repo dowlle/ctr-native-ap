@@ -1,4 +1,5 @@
-/* Play Solo (#89): Options > Connection > Play Solo.
+/* Play Solo (#89): Options > Connection > Play Solo, and the title screen's
+   PLAY SOLO row (decision 30), which opens the same pages.
    Included by MM_ConfigMenu.c in the AP player client (CTR_AP, not
    CTR_AP_AUTHORING), ahead of MM_ConfigProc_Connection.
 
@@ -9,6 +10,8 @@
      New      bundled presets, saved YAMLs, then YAMLs in solo/inbox.
      Options  the curated options of a preset: Left / Right change, Square
               shows the help text. DeathLink is fixed off in solo.
+     Tracks   installed custom tracks for a preset (decision 32), shown only
+              when there are any: Cross cycles off, in the pool, own pad.
      Review   slot name (Cross edits it) and Generate.
      Busy     a runtime job with its phase; Circle cancels generation.
      Session  starting, connecting, connected or the reason it failed.
@@ -27,6 +30,7 @@ enum SoloPage
 	SOLO_DETAILS,
 	SOLO_NEW,
 	SOLO_OPTIONS,
+	SOLO_TRACKS,
 	SOLO_HELP,
 	SOLO_REVIEW,
 	SOLO_BUSY,
@@ -41,6 +45,7 @@ enum SoloBusyJob
 	SOLO_JOB_GENERATE,
 	SOLO_JOB_IMPORT_ROOM,
 	SOLO_JOB_IMPORT_YAML,
+	SOLO_JOB_TRACKS,
 };
 
 static int s_soloPage;
@@ -49,6 +54,7 @@ static int s_soloTop;
 static int s_soloBusyJob;
 static int s_soloDeleteArmed;
 static int s_soloFromOptions;   /* the Review page came from the Options page */
+static int s_soloFromTracks;    /* ... by way of the Tracks page */
 static int s_soloHighlight = -1; /* option row to highlight after an option error */
 static int s_soloHelpRow;
 static int s_soloEditing;
@@ -367,12 +373,14 @@ static void MM_Solo_PageNew(uint32_t *ot, struct GamepadBuffer *pad)
 		if (s_soloStart.isPreset)
 		{
 			s_soloHighlight = -1;
+			AP_Solo_TracksClear(); /* a new start: no custom tracks picked */
 			if (AP_Solo_DescribeStart(s_soloStart.path))
 				MM_Solo_Busy(SOLO_JOB_DESCRIBE);
 		}
 		else
 		{
 			s_soloFromOptions = 0;
+			s_soloFromTracks = 0;
 			MM_Solo_Go(SOLO_REVIEW);
 		}
 		return;
@@ -444,7 +452,12 @@ static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
 	{
 		OtherFX_Play(1, 1);
 		s_soloFromOptions = 1;
-		MM_Solo_Go(SOLO_REVIEW);
+		s_soloFromTracks = 0;
+		/* The custom-track step: list the installed tracks first. */
+		if (AP_Solo_TracksStart())
+			MM_Solo_Busy(SOLO_JOB_TRACKS);
+		else
+			MM_Solo_Go(SOLO_REVIEW);
 		return;
 	}
 
@@ -477,6 +490,61 @@ static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
 		DecalFont_DrawLineOT("More options: build a YAML on AP-Pie and import it", 0x100, 0xB4, FONT_SMALL,
 		                     JUSTIFY_CENTER | GRAY, ot);
 	MM_Solo_Footer("LEFT/RIGHT: CHANGE   SQUARE: HELP   ^: BACK", ot);
+}
+
+static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
+{
+	static const char *const picks[] = {"-", "In pool", "Own pad"};
+	const int rows = AP_Solo_TrackCount();
+	const int count = rows + 1;
+	struct APSoloTrackInfo info;
+	char line[200], fit[200];
+	int i;
+
+	MM_Solo_Navigate(pad, count);
+	if (s_soloSel < rows && (pad->buttonsTapped & (BTN_CROSS | BTN_LEFT | BTN_RIGHT)) != 0)
+	{
+		/* Left steps back through the cycle: two steps forward of three. */
+		AP_Solo_TrackCycle(s_soloSel);
+		if ((pad->buttonsTapped & BTN_LEFT) != 0)
+			AP_Solo_TrackCycle(s_soloSel);
+		OtherFX_Play(0, 1);
+	}
+	else if (s_soloSel == rows && (pad->buttonsTapped & BTN_CROSS) != 0)
+	{
+		OtherFX_Play(1, 1);
+		s_soloFromTracks = 1;
+		MM_Solo_Go(SOLO_REVIEW);
+		return;
+	}
+
+	MM_Solo_Title("Custom Tracks", ot);
+	DecalFont_DrawLineOT("In pool: the seed may use it. Own pad: it gets a pad.", 0x100, 0x28, FONT_SMALL,
+	                     JUSTIFY_CENTER | GRAY, ot);
+	for (i = s_soloTop; i < count && i < s_soloTop + SOLO_ROWS; i++)
+	{
+		const int y = SOLO_LIST_Y + (i - s_soloTop) * SOLO_ROW_H;
+		if (i == rows)
+			DecalFont_DrawLineOT("Continue", 0x38, y, FONT_SMALL, ORANGE, ot);
+		else
+		{
+			AP_Solo_TrackGet(i, &info);
+			snprintf(line, sizeof line, "%s %s", info.title, info.revision);
+			MM_Solo_Fit(line, fit, sizeof fit, 0x110);
+			DecalFont_DrawLineOT(fit, 0x38, y, FONT_SMALL, ORANGE, ot);
+			DecalFont_DrawLineOT((char *)picks[info.pick >= 0 && info.pick <= 2 ? info.pick : 0], 0x158, y, FONT_SMALL,
+			                     info.pick ? WHITE : GRAY, ot);
+		}
+		if (i == s_soloSel)
+			MM_Solo_Highlight(y, ot);
+	}
+	if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info))
+	{
+		snprintf(line, sizeof line, "By %s. Modes: %s", info.author, info.modes[0] ? info.modes : "none");
+		MM_Solo_Fit(line, fit, sizeof fit, 0x1A0);
+		DecalFont_DrawLineOT(fit, 0x100, 0xB4, FONT_SMALL, JUSTIFY_CENTER | GRAY, ot);
+	}
+	MM_Solo_Footer("*: CHANGE   ^: BACK", ot);
 }
 
 static void MM_Solo_PageHelp(uint32_t *ot, struct GamepadBuffer *pad)
@@ -538,8 +606,15 @@ static void MM_Solo_PageReview(uint32_t *ot, struct GamepadBuffer *pad)
 	snprintf(line, sizeof line, "Start: %s", s_soloStart.label);
 	MM_Solo_Fit(line, fit, sizeof fit, 0x1A0);
 	DecalFont_DrawLineOT(fit, 0x38, 0x38, FONT_SMALL, WHITE, ot);
-	DecalFont_DrawLineOT(s_soloFromOptions ? "Options: as set on the previous page" : "Options: as in the YAML",
-	                     0x38, 0x44, FONT_SMALL, WHITE, ot);
+	if (s_soloFromOptions && AP_Solo_TracksPicked() > 0)
+	{
+		snprintf(line, sizeof line, "Options: as set, plus %d custom track%s", AP_Solo_TracksPicked(),
+		         AP_Solo_TracksPicked() == 1 ? "" : "s");
+		DecalFont_DrawLineOT(line, 0x38, 0x44, FONT_SMALL, WHITE, ot);
+	}
+	else
+		DecalFont_DrawLineOT(s_soloFromOptions ? "Options: as set on the previous page" : "Options: as in the YAML",
+		                     0x38, 0x44, FONT_SMALL, WHITE, ot);
 	DecalFont_DrawLineOT("Slot name", 0x38, 0x58, FONT_SMALL, ORANGE, ot);
 	snprintf(line, sizeof line, "%s%s", s_soloName, s_soloEditing ? "_" : "");
 	DecalFont_DrawLineOT(line, 0xB0, 0x58, FONT_SMALL, WHITE, ot);
@@ -556,7 +631,7 @@ static void MM_Solo_PageBusy(uint32_t *ot, struct GamepadBuffer *pad)
 {
 	const int state = AP_Solo_JobState();
 	static const char *const titles[] = {"Loading", "Loading Options", "Generating", "Importing Room",
-	                                     "Importing YAML"};
+	                                     "Importing YAML", "Finding Custom Tracks"};
 	if (state == AP_SOLO_JOB_RUNNING)
 	{
 		if (s_soloBusyJob == SOLO_JOB_GENERATE && (pad->buttonsTapped & BTN_CIRCLE) != 0)
@@ -585,6 +660,12 @@ static void MM_Solo_PageBusy(uint32_t *ot, struct GamepadBuffer *pad)
 			s_soloFromOptions = 2; /* the message returns to Options */
 			return;
 		}
+		if (s_soloBusyJob == SOLO_JOB_TRACKS)
+		{
+			s_soloPage = SOLO_MESSAGE;
+			s_soloFromOptions = 2; /* the message returns to Options */
+			return;
+		}
 		MM_Solo_Go(SOLO_MESSAGE);
 		return;
 	}
@@ -596,6 +677,11 @@ static void MM_Solo_PageBusy(uint32_t *ot, struct GamepadBuffer *pad)
 		break;
 	case SOLO_JOB_DESCRIBE:
 		MM_Solo_Go(SOLO_OPTIONS);
+		break;
+	case SOLO_JOB_TRACKS:
+		/* The step is only shown when there is a track to pick. */
+		s_soloFromTracks = AP_Solo_TrackCount() > 0;
+		MM_Solo_Go(s_soloFromTracks ? SOLO_TRACKS : SOLO_REVIEW);
 		break;
 	case SOLO_JOB_GENERATE:
 	{
@@ -661,9 +747,16 @@ static void MM_Solo_Back(void)
 	case SOLO_HOME: s_soloPage = SOLO_OFF; break;
 	case SOLO_DETAILS: case SOLO_NEW: case SOLO_SESSION: MM_Solo_Refresh(); break;
 	case SOLO_OPTIONS: MM_Solo_Go(SOLO_NEW); break;
+	case SOLO_TRACKS:
+		s_soloPage = SOLO_OPTIONS;
+		s_soloSel = 0;
+		s_soloTop = 0;
+		break;
 	case SOLO_HELP: s_soloPage = SOLO_OPTIONS; break;
 	case SOLO_REVIEW:
-		if (s_soloFromOptions)
+		if (s_soloFromTracks)
+			MM_Solo_Go(SOLO_TRACKS);
+		else if (s_soloFromOptions)
 		{
 			s_soloPage = SOLO_OPTIONS;
 			s_soloSel = 0;
@@ -709,6 +802,7 @@ static int MM_Solo_Frame(uint32_t *ot, struct GamepadBuffer *pad)
 	case SOLO_DETAILS: MM_Solo_PageDetails(ot, pad); break;
 	case SOLO_NEW: MM_Solo_PageNew(ot, pad); break;
 	case SOLO_OPTIONS: MM_Solo_PageOptions(ot, pad); break;
+	case SOLO_TRACKS: MM_Solo_PageTracks(ot, pad); break;
 	case SOLO_HELP: MM_Solo_PageHelp(ot, pad); break;
 	case SOLO_REVIEW: MM_Solo_PageReview(ot, pad); break;
 	case SOLO_BUSY: MM_Solo_PageBusy(ot, pad); break;

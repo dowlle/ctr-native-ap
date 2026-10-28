@@ -118,6 +118,8 @@ static void pause_rows(void)
 		EXPECT(AP_PauseRow_Carry(six, n6, 1, five, n5) == 1, "SELECT CHARACTER stays selected");
 	}
 	EXPECT(AP_LNG_TRACKER > 0x1000 && AP_LNG_TRACKER < 0x8000, "the TRACKER label index is clear of retail strings and the lock bit");
+	EXPECT(AP_LNG_PLAY_SOLO > 0x1000 && AP_LNG_PLAY_SOLO < 0x8000 && AP_LNG_PLAY_SOLO != AP_LNG_TRACKER,
+	       "the PLAY SOLO label index (#89) is clear of retail strings, the lock bit and TRACKER");
 }
 
 int main(void)

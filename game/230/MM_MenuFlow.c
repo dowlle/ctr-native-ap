@@ -5,6 +5,9 @@
 extern struct MenuRow s_rowsMainMenuBasicConfig[];
 extern struct MenuRow s_rowsMainMenuWithSBConfig[];
 extern struct RectMenu g_configMenu;
+#if defined(CTR_AP) && !defined(CTR_AP_AUTHORING)
+void MM_Solo_OpenFromTitle(void); // MM_ConfigMenu.c (#89)
+#endif
 
 // NOTE(aalhendi): ASM-verified against retail 230 0x800abaf0-0x800abcac.
 u8 MM_TransitionInOut(struct TransitionMeta *meta, int framesPassed, int numFrames)
@@ -296,6 +299,17 @@ void MM_MenuProc_Main(struct RectMenu *mainMenu)
 		sdata->ptrDesiredMenu = &g_configMenu;
 		return;
 	}
+
+#if defined(CTR_AP) && !defined(CTR_AP_AUTHORING)
+	// PLAY SOLO (#89, decision 30): the Play Solo pages of Options >
+	// Connection, opened directly. Leaving Play Solo returns here.
+	if (choose == AP_LNG_PLAY_SOLO)
+	{
+		MM_Solo_OpenFromTitle();
+		sdata->ptrDesiredMenu = &g_configMenu;
+		return;
+	}
+#endif
 
 	// Quit (#211): controller-first exit, mirroring the window-close path
 	// (platform/native_platform.c's SDL_EVENT_WINDOW_CLOSE_REQUESTED handler).

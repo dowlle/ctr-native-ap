@@ -243,6 +243,39 @@ static void test_options()
 	CHECK(AP_SoloBuildOptions(nlohmann::json::parse("{\"overlay\": 5}")).empty());
 }
 
+// The custom-track step (decision 32): mode labels, the pick cycle and the
+// descriptor file name the client keeps in solo/tracks.
+static void test_tracks()
+{
+	CHECK(AP_SoloTrackModes(nlohmann::json::parse("[\"trophy\", \"ctr\", \"relic\"]")) == "Trophy, CTR, Relic");
+	CHECK(AP_SoloTrackModes(nlohmann::json::parse("[\"trophy\", \"relic\"]")) == "Trophy, Relic");
+	CHECK(AP_SoloTrackModes(nlohmann::json::parse("[\"other\", 3, \"ctr\"]")) == "CTR");
+	CHECK(AP_SoloTrackModes(nlohmann::json()).empty());
+
+	CHECK(AP_SoloTrackNextPick(0) == 1);
+	CHECK(AP_SoloTrackNextPick(1) == 2);
+	CHECK(AP_SoloTrackNextPick(2) == 0);
+	CHECK(AP_SoloTrackNextPick(7) == 0);
+	CHECK(AP_SoloTrackNextPick(-1) == 0);
+	// Left on the page is two steps forward: off -> own pad -> in pool -> off.
+	CHECK(AP_SoloTrackNextPick(AP_SoloTrackNextPick(0)) == 2);
+
+	CHECK(AP_SoloDescriptorFileName("baby-t-park", "1.0.2") == "baby-t-park__1.0.2.json");
+	CHECK(AP_SoloDescriptorFileName("fixture-loop", "2.1+lrg2_a") == "fixture-loop__2.1+lrg2_a.json");
+	CHECK(AP_SoloDescriptorFileName("", "1").empty());
+	CHECK(AP_SoloDescriptorFileName("Baby", "1").empty());
+	CHECK(AP_SoloDescriptorFileName("a_b", "1").empty());
+	CHECK(AP_SoloDescriptorFileName("-a", "1").empty());
+	CHECK(AP_SoloDescriptorFileName("a--b", "1").empty());
+	CHECK(AP_SoloDescriptorFileName("../x", "1").empty());
+	CHECK(AP_SoloDescriptorFileName("a", "").empty());
+	CHECK(AP_SoloDescriptorFileName("a", ".1").empty());
+	CHECK(AP_SoloDescriptorFileName("a", "1/2").empty());
+	CHECK(AP_SoloDescriptorFileName("a", "1\\2").empty());
+	CHECK(AP_SoloDescriptorFileName("a", std::string(65, '1')).empty());
+	CHECK(!AP_SoloDescriptorFileName("a", std::string(64, '1')).empty());
+}
+
 int main()
 {
 	test_parse_lines();
@@ -253,6 +286,7 @@ int main()
 	test_stop_and_timeout();
 	test_error_text();
 	test_options();
+	test_tracks();
 	if (g_fail)
 	{
 		std::printf("test-solo-logic: %d failure(s)\n", g_fail);
