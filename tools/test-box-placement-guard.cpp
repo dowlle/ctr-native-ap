@@ -68,6 +68,16 @@ int main()
 	CHECK(ctr_cfg.box_placement_state == -1);
 	CHECK(!ctr_cfg_box_placement_valid(7, native_count(7)));
 	CHECK(!ctr_cfg_box_placement_valid(3, native_count(3)));
+	// A block that is not an object, or a count above the 15-box ceiling.
+	auto notobj = seed;
+	notobj["item_box_checks"] = 5;
+	parse(notobj);
+	CHECK(ctr_cfg.box_placement_state == -1);
+	CHECK(!ctr_cfg_box_placement_valid(3, native_count(3)));
+	auto toomany = seed;
+	toomany["item_box_checks"]["placement_counts"]["3"] = 16;
+	parse(toomany);
+	CHECK(ctr_cfg.box_placement_state == -1);
 	// No block at all: item-box checks are off in this room, nothing to guard.
 	auto legacy = seed;
 	legacy.erase("item_box_checks");

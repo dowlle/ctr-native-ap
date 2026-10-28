@@ -90,6 +90,9 @@ extern "C" unsigned int ctr_cfg_box_placement_revision(void)
 	return s_box_parse_revision;
 }
 
+// Contract 7e: each retail track has at most 15 authored boxes (AP_BOX_SLOTS_PER_TRACK).
+#define CTR_CFG_BOX_COUNT_MAX 15
+
 static void ap_seedcfg_refuse_box_placement()
 {
 	ctr_cfg.box_placement_state = -1;
@@ -100,8 +103,13 @@ static void ap_seedcfg_refuse_box_placement()
 static void ap_seedcfg_parse_box_placement_counts(const nlohmann::json &j)
 {
 	auto block = j.find("item_box_checks");
-	if (block == j.end() || !block->is_object())
+	if (block == j.end())
 		return; // no item-box checks in this room, nothing to guard
+	if (!block->is_object())
+	{
+		ap_seedcfg_refuse_box_placement();
+		return;
+	}
 	// Contract 7e: the block always carries all 18 retail counts. A block
 	// without them cannot be checked, so it is refused like a bad map.
 	if (!block->contains("placement_counts") || !(*block)["placement_counts"].is_object() ||
@@ -139,7 +147,7 @@ static void ap_seedcfg_parse_box_placement_counts(const nlohmann::json &j)
 		if (it.value().is_number_unsigned())
 		{
 			auto number = it.value().get<std::uint64_t>();
-			if (number > INT_MAX)
+			if (number > CTR_CFG_BOX_COUNT_MAX)
 			{
 				ap_seedcfg_refuse_box_placement();
 				return;
@@ -149,7 +157,7 @@ static void ap_seedcfg_parse_box_placement_counts(const nlohmann::json &j)
 		else
 		{
 			auto number = it.value().get<std::int64_t>();
-			if (number < 0 || number > INT_MAX)
+			if (number < 0 || number > CTR_CFG_BOX_COUNT_MAX)
 			{
 				ap_seedcfg_refuse_box_placement();
 				return;
