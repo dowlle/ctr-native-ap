@@ -16,6 +16,7 @@
 #include "ap_win_logic.h"
 #include "ap_trap_items.h"
 #include "ap_named_blocks.h"
+#include "ap_hit_boss_shuffle.h"
 
 #include <cstdarg>
 #include <cstdlib>
@@ -500,7 +501,16 @@ static int hit_parse_order(const nlohmann::json &v, ctr_hit_order *out)
 // content-plan parser calls this after the plan itself is admitted.
 static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false)
 {
-	const int *fallbackTable = contentPlan ? kHitContentFallbackKeys : kHitFallbackKeys;
+	// J03 (decision 9): with boss opponent shuffle, the boss-win identities and
+	// guest unlock wins follow the drawn racers, and every guest may fall back
+	// to Keys (the content-plan table). The boss record is parsed first.
+	const int bossShuffled = !contentPlan && AP_HitBossShuffleActive(&ctr_boss_encounters);
+	int bossIdent[AP_HIT_BOSS_CODES];
+	for (int i = 0; i < AP_HIT_BOSS_CODES; i++)
+		bossIdent[i] = kHitBossIdentity[i];
+	if (bossShuffled)
+		AP_HitBossIdentity(&ctr_boss_encounters, bossIdent);
+	const int *fallbackTable = (contentPlan || bossShuffled) ? kHitContentFallbackKeys : kHitFallbackKeys;
 	// The scalar only exists inside a real ctr_options object, so an absent
 	// ctr_options means an absent scalar (legacy), not a malformed one.
 	const nlohmann::json *opt = NULL;
@@ -823,7 +833,22 @@ static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false
 					hit_reject("unlock_triggers[%d] must have exactly kind and any_of", guest);
 				return 0;
 			}
-			const hit_approved_trigger &ap = kHitTriggers[guest - 8];
+			struct
+			{
+				int kind;
+				int count;
+				long wins[CTR_CFG_HIT_TRIGGER_MAX];
+			} ap;
+			ap.kind = kHitTriggers[guest - 8].kind;
+			ap.count = kHitTriggers[guest - 8].count;
+			for (int k = 0; k < ap.count; k++)
+				ap.wins[k] = kHitTriggers[guest - 8].wins[k];
+			if (bossShuffled)
+			{
+				int kindBoss = 1;
+				ap.count = AP_HitBossGuestTrigger(bossIdent, guest, ap.wins, &kindBoss);
+				ap.kind = kindBoss ? CTR_CFG_HIT_KIND_BOSS : CTR_CFG_HIT_KIND_TRACK;
+			}
 			const char *wantKind = ap.kind == CTR_CFG_HIT_KIND_BOSS ? "boss" : "track";
 			if (!t["kind"].is_string() || t["kind"].get<std::string>() != wantKind)
 			{
@@ -839,7 +864,7 @@ static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false
 			ctr_hit_trigger trig;
 			std::memset(&trig, 0, sizeof trig);
 			trig.kind = ap.kind;
-			int used[2] = {0, 0};
+			int used[CTR_CFG_HIT_TRIGGER_MAX] = {0};
 			int n = 0;
 			for (const auto &w : any)
 			{
@@ -890,6 +915,13 @@ static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false
 				}
 				trig.fallback_keys = (int)fb;
 			}
+			// J03: a boss guest drawn for no encounter has no unlock win and
+			// can only ever join through Keys.
+			if (trig.count == 0 && trig.fallback_keys == 0)
+			{
+				hit_reject("unlock_triggers[%d] has no unlock win and no fallback_keys", guest);
+				return 0;
+			}
 			h.triggers[guest - 8] = trig;
 			got[guest - 8] = 1;
 		}
@@ -917,10 +949,10 @@ static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false
 				           kHitBossKeys[i]);
 				return 0;
 			}
-			if (id != kHitBossIdentity[i])
+			if (id != bossIdent[i])
 			{
-				hit_reject("bosses[%ld] is engine id %d, but the retail encounter is %d",
-				           kHitBossKeys[i], id, kHitBossIdentity[i]);
+				hit_reject("bosses[%ld] is engine id %d, but the %s encounter is %d",
+				           kHitBossKeys[i], id, bossShuffled ? "drawn" : "retail", bossIdent[i]);
 				return 0;
 			}
 			h.boss_identity[i] = id;
@@ -1550,6 +1582,37 @@ static void ap_boss_encounters_refuse(const char *why)
 	ap_cfg_log("[AP CFG] boss_encounters refused (%s): boss garages stay shut\n", why);
 }
 
+// One schedule list: up to `cap` segments of six integers, each in range.
+// Returns the segment count, or -1 when it is not such a list.
+static int ap_boss_parse_schedule(const nlohmann::json &sc, AP_BossKitSegment *out, int cap)
+{
+	int n = 0;
+	if (!sc.is_array() || (int)sc.size() > cap)
+		return -1;
+	for (const auto &seg : sc)
+	{
+		long long f[6];
+		if (!seg.is_array() || seg.size() != 6)
+			return -1;
+		for (int k = 0; k < 6; k++)
+		{
+			if (!seg[k].is_number_integer())
+				return -1;
+			f[k] = seg[k].get<long long>();
+			if (f[k] < 0 || f[k] > 0xffff || (k < 4 && f[k] > 0xff))
+				return -1;
+		}
+		out[n].checkpoint = (unsigned char)f[0];
+		out[n].throwFlag = (unsigned char)f[1];
+		out[n].weapon = (unsigned char)f[2];
+		out[n].pathDisabled = (unsigned char)f[3];
+		out[n].cooldown = (unsigned short)f[4];
+		out[n].juice = (unsigned short)f[5];
+		n++;
+	}
+	return n;
+}
+
 static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nlohmann::json &opt, int schema)
 {
 	AP_BossEncounters *e = &ctr_boss_encounters;
@@ -1576,8 +1639,51 @@ static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nloh
 		}
 		sw[k] = flag->get<bool>();
 	}
-	bool on = sw[0] || sw[1] || sw[2];
-	bool v2 = sw[1] || sw[2];
+	// J03 (decisions 5 to 7): N. Oxide in the pool, the Purple Gem Cup
+	// gauntlet and N. Oxide's attack profile. Absent = off / retail, so a
+	// version 2 seed from before these scalars still parses.
+	bool oxidePool = false, gauntlet = false, profileAll = false;
+	{
+		static const char *const newName[2] = {"boss_oxide_in_pool", "purple_cup_boss_gauntlet"};
+		bool *newSw[2] = {&oxidePool, &gauntlet};
+		for (int k = 0; k < 2; k++)
+		{
+			auto flag = opt.find(newName[k]);
+			if (flag == opt.end())
+				continue;
+			if (!flag->is_boolean())
+			{
+				char why[96];
+				std::snprintf(why, sizeof why, "%s is not a boolean", newName[k]);
+				ap_boss_encounters_refuse(why);
+				return;
+			}
+			*newSw[k] = flag->get<bool>();
+		}
+		auto prof = opt.find("oxide_attack_profile");
+		if (prof != opt.end())
+		{
+			if (!prof->is_string() || (*prof != "retail" && *prof != "all_compatible"))
+			{
+				ap_boss_encounters_refuse("oxide_attack_profile is not retail or all_compatible");
+				return;
+			}
+			profileAll = *prof == "all_compatible";
+		}
+	}
+	if (oxidePool && !sw[1])
+	{
+		ap_boss_encounters_refuse("boss_oxide_in_pool without boss_opponent_shuffle");
+		return;
+	}
+	if (gauntlet && !sw[2])
+	{
+		ap_boss_encounters_refuse("purple_cup_boss_gauntlet without boss_kit_shuffle");
+		return;
+	}
+	bool hasFinal = oxidePool || profileAll;
+	bool on = sw[0] || sw[1] || sw[2] || hasFinal;
+	bool v2 = sw[1] || sw[2] || hasFinal;
 	auto it = j.find("boss_encounters");
 	bool present = it != j.end();
 	if (!on && !present)
@@ -1599,8 +1705,11 @@ static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nloh
 		ap_boss_encounters_refuse(v2 ? "version is missing or not 2" : "version is missing or not 1");
 		return;
 	}
-	// Version 2: exactly version, garages and, with the kit switch, kit.
-	if (v2 && it->size() != (size_t)(sw[2] ? 3 : 2))
+	// Version 2: exactly version, garages and, with the kit switch, kit;
+	// with N. Oxide in the pool or his all_compatible profile, final; with
+	// the gauntlet, gauntlet.
+	if (v2 && (it->size() != (size_t)(2 + (sw[2] ? 1 : 0) + (hasFinal ? 1 : 0) + (gauntlet ? 1 : 0)) ||
+	           (hasFinal && it->find("final") == it->end()) || (gauntlet && it->find("gauntlet") == it->end())))
 	{
 		ap_boss_encounters_refuse("block has unexpected fields");
 		return;
@@ -1675,49 +1784,11 @@ static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nloh
 		r.trackOn = sw[0];
 		r.opponentOn = sw[1];
 		r.kitOn = sw[2];
+		r.oxideInPool = oxidePool;
 		if (v2)
 		{
 			auto sc = row->find("schedule");
-			r.scheduleCount = -1;
-			if (sc != row->end() && sc->is_array() && sc->size() <= AP_BOSS_VENUE_SEGMENTS)
-			{
-				bool ok = true;
-				int n = 0;
-				for (const auto &seg : *sc)
-				{
-					long long f[6];
-					if (!seg.is_array() || seg.size() != 6)
-					{
-						ok = false;
-						break;
-					}
-					for (int k = 0; k < 6; k++)
-					{
-						if (!seg[k].is_number_integer())
-						{
-							ok = false;
-							break;
-						}
-						f[k] = seg[k].get<long long>();
-						if (f[k] < 0 || f[k] > 0xffff)
-							ok = false;
-					}
-					if (!ok || f[0] > 0xff || f[1] > 0xff || f[2] > 0xff || f[3] > 0xff)
-					{
-						ok = false;
-						break;
-					}
-					r.schedule[n].checkpoint = (unsigned char)f[0];
-					r.schedule[n].throwFlag = (unsigned char)f[1];
-					r.schedule[n].weapon = (unsigned char)f[2];
-					r.schedule[n].pathDisabled = (unsigned char)f[3];
-					r.schedule[n].cooldown = (unsigned short)f[4];
-					r.schedule[n].juice = (unsigned short)f[5];
-					n++;
-				}
-				if (ok)
-					r.scheduleCount = n;
-			}
+			r.scheduleCount = sc != row->end() ? ap_boss_parse_schedule(*sc, r.schedule, AP_BOSS_VENUE_SEGMENTS) : -1;
 		}
 		const char *problem = AP_BossEncounterRowProblem(i, &r);
 		if (problem)
@@ -1728,7 +1799,7 @@ static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nloh
 			return;
 		}
 		e->track[i] = (signed char)r.track;
-		e->opponent[i] = (signed char)(sw[1] ? AP_BossOpponentCharacter(r.opponent)
+		e->opponent[i] = (signed char)(sw[1] ? AP_BossOpponentCharacterEx(r.opponent, oxidePool)
 		                                     : AP_BOSS_VENUE_GARAGE[i].character);
 		if (sw[2])
 		{
@@ -1736,11 +1807,133 @@ static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nloh
 			std::memcpy(e->schedule[i], r.schedule, sizeof e->schedule[i]);
 		}
 	}
+	e->trackOn = sw[0];
+	e->opponentOn = sw[1];
+	e->oxideInPool = oxidePool;
+	e->gauntletOn = gauntlet;
+	e->oxideProfileAll = profileAll;
+	e->finalOpponent = AP_BOSS_OXIDE_CHARACTER;
+	// J03: N. Oxide's garage record, both Oxide races (decision 7).
+	if (hasFinal)
+	{
+		auto fin = it->find("final");
+		AP_BossFinalRow fr;
+		std::memset(&fr, 0, sizeof fr);
+		fr.scheduleCount = -1;
+		if (!fin->is_object())
+		{
+			ap_boss_encounters_refuse("final record is not an object");
+			return;
+		}
+		fr.fieldCount = (int)fin->size();
+		auto lo = fin->find("locations");
+		fr.locationsOk = lo != fin->end() && lo->is_array() && lo->size() == 2 && (*lo)[0].is_number_integer() &&
+		                 (*lo)[1].is_number_integer() && (*lo)[0].get<long long>() == 35011104LL &&
+		                 (*lo)[1].get<long long>() == 35011105LL;
+		auto op = fin->find("opponent");
+		auto at = fin->find("attack");
+		fr.opponent = (op != fin->end() && op->is_string()) ? op->get_ref<const std::string &>().c_str() : nullptr;
+		fr.attack = (at != fin->end() && at->is_string()) ? at->get_ref<const std::string &>().c_str() : nullptr;
+		auto sc = fin->find("schedule");
+		if (sc != fin->end())
+			fr.scheduleCount = ap_boss_parse_schedule(*sc, fr.schedule, AP_BOSS_FINAL_SEGMENTS);
+		const char *problem = AP_BossFinalRowProblem(&fr, oxidePool, profileAll);
+		if (problem)
+		{
+			ap_boss_encounters_refuse(problem);
+			return;
+		}
+		e->finalPresent = 1;
+		e->finalOpponent = (signed char)AP_BossOpponentCharacterEx(fr.opponent, 1);
+		if (profileAll)
+		{
+			e->finalComposed = 1;
+			std::memcpy(e->finalSchedule, fr.schedule, sizeof e->finalSchedule);
+		}
+	}
+	// J03 (decision 7): encounters never repeat. Version 2 only: a tier 1
+	// block keeps its own rules.
+	if (v2)
+	{
+		for (int a = 0; a < AP_BOSS_VENUE_GARAGES; a++)
+			for (int b = a + 1; b < AP_BOSS_VENUE_GARAGES; b++)
+			{
+				if (sw[0] && e->track[a] == e->track[b])
+				{
+					ap_boss_encounters_refuse("two garages share a venue");
+					return;
+				}
+				if (sw[1] && e->opponent[a] == e->opponent[b])
+				{
+					ap_boss_encounters_refuse("two garages share a racer");
+					return;
+				}
+			}
+		if (sw[1] && e->finalPresent)
+			for (int a = 0; a < AP_BOSS_VENUE_GARAGES; a++)
+				if (e->opponent[a] == e->finalOpponent)
+				{
+					ap_boss_encounters_refuse("the final race shares a racer with a garage");
+					return;
+				}
+	}
+	// J03 (decision 5): the Purple Gem Cup gauntlet, leg i armed with garage
+	// i's racer.
+	if (gauntlet)
+	{
+		auto ga = it->find("gauntlet");
+		auto legs = ga->is_object() && ga->size() == 1 ? ga->find("legs") : ga->end();
+		if (legs == ga->end() || !legs->is_array() || legs->size() != AP_BOSS_GAUNTLET_LEGS)
+		{
+			ap_boss_encounters_refuse("gauntlet must hold exactly four legs");
+			return;
+		}
+		for (int i = 0; i < AP_BOSS_GAUNTLET_LEGS; i++)
+		{
+			const nlohmann::json &leg = (*legs)[i];
+			AP_BossGauntletLeg gl;
+			std::memset(&gl, 0, sizeof gl);
+			gl.scheduleCount = -1;
+			gl.track = -2;
+			if (!leg.is_object())
+			{
+				ap_boss_encounters_refuse("gauntlet leg is not an object");
+				return;
+			}
+			gl.fieldCount = (int)leg.size();
+			auto tr = leg.find("track");
+			if (tr != leg.end() && tr->is_number_integer())
+			{
+				long long t = tr->get<long long>();
+				gl.track = (t >= -1 && t < AP_BOSS_VENUE_TRACKS) ? (int)t : -2;
+			}
+			auto atk = leg.find("attacker");
+			gl.attacker = (atk != leg.end() && atk->is_string()) ? atk->get_ref<const std::string &>().c_str() : nullptr;
+			auto sc = leg.find("schedule");
+			if (sc != leg.end())
+				gl.scheduleCount = ap_boss_parse_schedule(*sc, gl.schedule, AP_BOSS_VENUE_SEGMENTS);
+			const char *problem = gl.track == -2 ? "gauntlet leg track is not -1 or a retail LevelID"
+			                                     : AP_BossGauntletLegProblem(i, &gl, e->opponent[i], oxidePool);
+			if (problem)
+			{
+				char why[96];
+				std::snprintf(why, sizeof why, "gauntlet leg %d: %s", i, problem);
+				ap_boss_encounters_refuse(why);
+				return;
+			}
+			e->gauntletTrack[i] = (signed char)gl.track;
+			e->gauntletAttacker[i] = e->opponent[i];
+			e->gauntletComposed[i] = gl.track >= 0;
+			if (gl.track >= 0)
+				std::memcpy(e->gauntletSchedule[i], gl.schedule, sizeof e->gauntletSchedule[i]);
+		}
+	}
 	e->state = AP_BOSS_ENC_VALID;
 	ap_cfg_log("[AP CFG] boss_encounters v%d: venues roo=%d papu=%d komodo=%d pinstripe=%d "
-	           "opponents=%d,%d,%d,%d kit=%d easing=%d\n",
+	           "opponents=%d,%d,%d,%d kit=%d easing=%d final=%d%s gauntlet=%d\n",
 	           e->version, e->track[0], e->track[1], e->track[2], e->track[3],
-	           e->opponent[0], e->opponent[1], e->opponent[2], e->opponent[3], e->kit, e->lossEasing);
+	           e->opponent[0], e->opponent[1], e->opponent[2], e->opponent[3], e->kit, e->lossEasing,
+	           e->finalOpponent, e->finalComposed ? " composed" : "", e->gauntletOn);
 }
 
 #include "ap_content_plan_impl.hpp"
@@ -2093,6 +2286,17 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		content_result = parse_content_plan(j);
 	if (content_result != 1)
 		return;
+	// J03 (decision 9): the boss record shapes the Hit block's boss-win
+	// identities and unlock wins, so it is read before the Hit block. The same
+	// read below is then a repeat of this one.
+	if (j.is_object())
+	{
+		auto preOpt = j.find("ctr_options");
+		if (preOpt != j.end() && preOpt->is_object())
+			ap_seedcfg_parse_boss_encounters(j, *preOpt, json_int(*preOpt, "schema_version", 0));
+		else
+			std::memset(&ctr_boss_encounters, 0, sizeof ctr_boss_encounters);
+	}
 	if (!parse_hit_character(j))
 		return;
 
@@ -2133,7 +2337,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		             schema, CTR_CFG_SCHEMA_KNOWN);
 	}
 	ap_seedcfg_parse_trap_identities(j, schema);
-	ap_seedcfg_parse_boss_encounters(j, opt, schema);
+	// Already read before the Hit block (same inputs, same result).
 
 	ctr_cfg.goal = json_int(opt, "goal", 0);
 	// Issue #152: composed goal conditions, additive on the existing schema
@@ -3555,6 +3759,15 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 extern "C" int ctr_cfg_active(void)
 {
 	return ctr_cfg.schema_version >= 1;
+}
+
+// J03 (decision 7): the racer the N. Oxide garage loads as P2 for both Oxide
+// races, or -1 for N. Oxide himself.
+extern "C" int AP_BossFinalGarageOpponent(void)
+{
+	if (!ctr_cfg_active())
+		return -1;
+	return AP_BossEncounterFinalOpponent(&ctr_boss_encounters);
 }
 
 extern "C" const ctr_req *ctr_cfg_slide_coliseum_req(void)

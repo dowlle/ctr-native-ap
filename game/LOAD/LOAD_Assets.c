@@ -498,6 +498,17 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 		{
 			int bossExtra;
 			int bossPack = AP_BossRaceOpponentModels((int)data.characterIDs[0], &bossExtra);
+			// J03 (decision 7): N. Oxide's garage against a drawn racer
+			// keeps Oxide's own pack and adds the racer's hi model, the
+			// same way.
+			if (bossPack < 0 && (sdata->gGT->bossID == 4 || sdata->gGT->bossID == 5) &&
+			    (gameMode1 & ADVENTURE_CUP) == 0)
+			{
+				int finalOpponent = AP_BossFinalGarageOpponent();
+				if (finalOpponent >= 0)
+					bossPack = AP_BossOpponentModels(AP_BOSS_OXIDE_CHARACTER, finalOpponent,
+					                                 (int)data.characterIDs[0], &bossExtra);
+			}
 			if (bossPack >= 0)
 			{
 				lastFileIndexMPK = BI_TIMETRIALPACK + bossPack;

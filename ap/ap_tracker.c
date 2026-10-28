@@ -537,6 +537,10 @@ static void AP_TrackerBuildNodes(void)
 			if (ap_tracker.hub) { char rival[48]; size_t used = strlen(n->pad);
 				if (AP_BossRivalAdvert(ap_tracker.hub - 1, rival, (int)sizeof rival) && used + 3 < sizeof n->pad)
 					snprintf(n->pad + used, sizeof n->pad - used, "%s%s", used ? ", " : "", rival); }
+			/* J03 (decision 7): N. Oxide's garage shows the racer the final race drew. */
+			if (!ap_tracker.hub && AP_BossFinalGarageOpponent() >= 0)
+				snprintf(n->pad, sizeof n->pad, "Rival: %s",
+				         sdata->lngStrings[data.MetaDataCharacters[AP_BossFinalGarageOpponent()].name_LNG_short]);
 			AP_TrackerProject(AP_TRACKER_MARK_GARAGE, item[0], item[1], &n->x, &n->y);
 			order[ap_tracker.count] = ap_tracker.count; ap_tracker.count++; break;
 		}

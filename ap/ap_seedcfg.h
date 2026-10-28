@@ -1083,6 +1083,11 @@ int AP_BossGarageOpponent(int bossIdx);
 // opponent needs (-1 for none); -1 for any load the retail path keeps.
 int AP_BossRaceOpponentModels(int player, int *extra);
 
+// J03 (decision 7): the engine character the N. Oxide garage races in both
+// Oxide races when the seed drew one (boss_oxide_in_pool), else -1. bossID
+// stays 4 or 5. IMPLEMENTED in ap_seedcfg.cpp.
+int AP_BossFinalGarageOpponent(void);
+
 // #169 tier 3: 0 when the running garage race has a composed kit with
 // boss_loss_easing off; 1 otherwise (retail per-loss cooldown easing).
 int AP_BossLossEasingNow(void);

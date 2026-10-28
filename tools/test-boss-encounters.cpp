@@ -25,6 +25,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <set>
 #include <string>
 #include <nlohmann/json.hpp>
 
@@ -82,7 +83,20 @@ static void shared_fixture()
 	       "cooldown range");
 	for (auto &w : doc["weapon_codes"])
 		expect(AP_BossKitWeaponKnown(w.get<int>()), "weapon code known");
-	expect(!AP_BossKitWeaponKnown(0x06) && !AP_BossKitWeaponKnown(0x09), "shield and warp orb refused");
+	expect(doc["weapon_codes"].size() == 14, "fixture weapon code count");
+	expect(!AP_BossKitWeaponKnown(0x05) && !AP_BossKitWeaponKnown(0x0a) && !AP_BossKitWeaponKnown(0x0e),
+	       "spring, triple bomb and unknown codes refused");
+	// J03: the final record's tables.
+	expect(doc["oxide"][0] == AP_BOSS_OXIDE_KEY && doc["oxide"][1] == AP_BOSS_OXIDE_CHARACTER, "fixture Oxide key");
+	expect(AP_BossOpponentCharacterEx("nitros_oxide", 1) == 15, "Oxide with the pool switch");
+	expect(AP_BossOpponentCharacterEx("nitros_oxide", 0) == -1, "Oxide without the pool switch");
+	expect(doc["oxide_checkpoints"].size() == AP_BOSS_FINAL_SEGMENTS, "Oxide segment count");
+	for (int i = 0; i < AP_BOSS_FINAL_SEGMENTS; i++)
+		expect(doc["oxide_checkpoints"][i] == AP_BOSS_OXIDE_CHECKPOINTS[i], "Oxide checkpoint");
+	expect(doc["final_locations"][0] == 35011104 && doc["final_locations"][1] == 35011105, "final locations");
+	expect(doc["gauntlet_legs"] == AP_BOSS_GAUNTLET_LEGS, "gauntlet legs");
+	expect(doc["oxide_only_families"].size() == 1 && doc["oxide_only_families"][0] == "super_engine",
+	       "super engine is Oxide's only");
 	expect(doc["certified_rows"].size() == AP_BOSS_KIT_CERTIFIED_ROWS, "certified row count");
 	for (auto &r : doc["certified_rows"])
 		expect(AP_BossKitRowCertified(r[0], r[1], r[2], r[3]), "certified row known");
@@ -230,6 +244,183 @@ static void refusals()
 	}, "mask110");
 }
 
+// J03: build a valid full-suite seed from mask111 (all three switches): N.
+// Oxide in the pool, a final record and the gauntlet.
+static nlohmann::json full_suite(bool profileAll, bool oxideDrawn)
+{
+	nlohmann::json sd = load("tools/fixtures/boss-encounters/mask111_slot_data.json");
+	auto &b = sd["boss_encounters"];
+	sd["ctr_options"]["boss_oxide_in_pool"] = true;
+	sd["ctr_options"]["purple_cup_boss_gauntlet"] = true;
+	sd["ctr_options"]["oxide_attack_profile"] = profileAll ? "all_compatible" : "retail";
+	std::set<std::string> used;
+	for (int g = 0; g < AP_BOSS_VENUE_GARAGES; g++)
+		used.insert(b["garages"][AP_BOSS_VENUE_GARAGE[g].key]["opponent"].get<std::string>());
+	if (oxideDrawn)
+	{
+		b["garages"]["komodo_joe"]["opponent"] = "nitros_oxide";
+		used.insert("nitros_oxide");
+	}
+	std::string finalRacer;
+	for (int i = 0; i < AP_BOSS_OPPONENTS && finalRacer.empty(); i++)
+		if (!used.count(AP_BOSS_OPPONENT[i].key))
+			finalRacer = AP_BOSS_OPPONENT[i].key;
+	nlohmann::json sched = nlohmann::json::array();
+	if (profileAll)
+		for (int i = 0; i < AP_BOSS_FINAL_SEGMENTS; i++)
+		{
+			static const int rows[4][4] = {{0x0d, 3, 1, 0}, {0x08, 3, 1, 0}, {0x09, 2, 1, 0}, {0x0f, 3, 1, 0}};
+			const int *r = rows[i % 4];
+			sched.push_back({AP_BOSS_OXIDE_CHECKPOINTS[i], r[1], r[0], r[2], 12, r[3]});
+		}
+	b["final"] = {{"locations", {35011104, 35011105}}, {"opponent", finalRacer},
+	              {"attack", profileAll ? "composed" : "inherited"}, {"schedule", sched}};
+	nlohmann::json legs = nlohmann::json::array();
+	static const int legTrack[4] = {6, 5, -1, 7};
+	for (int i = 0; i < AP_BOSS_GAUNTLET_LEGS; i++)
+	{
+		nlohmann::json ls = nlohmann::json::array();
+		if (legTrack[i] >= 0)
+		{
+			int homeLast = AP_BOSS_VENUE_RESTART_POINTS[AP_BOSS_VENUE_GARAGE[i].homeLevel] - 1;
+			static const int rows[5][4] = {{0x07, 3, 1, 0}, {0x06, 3, 1, 0}, {0x00, 3, 1, 0}, {0x0c, 3, 1, 1}, {0x01, 3, 1, 0}};
+			for (int k = 0; k < AP_BOSS_VENUE_SEGMENTS; k++)
+				ls.push_back({AP_BossVenueCheckpoint(AP_BOSS_VENUE_GARAGE[i].attack[k], homeLast,
+				                                     AP_BOSS_VENUE_RESTART_POINTS[legTrack[i]] - 1),
+				              rows[k][1], rows[k][0], rows[k][2], 12, rows[k][3]});
+		}
+		legs.push_back({{"track", legTrack[i]},
+		                {"attacker", b["garages"][AP_BOSS_VENUE_GARAGE[i].key]["opponent"]},
+		                {"schedule", ls}});
+	}
+	b["gauntlet"] = {{"legs", legs}};
+	return sd;
+}
+
+static void full_suite_cases()
+{
+	for (int variant = 0; variant < 4; variant++)
+	{
+		bool profileAll = variant & 1, oxideDrawn = variant & 2;
+		std::string v = "full suite " + std::to_string(variant);
+		ap_seedcfg_parse_json(full_suite(profileAll, oxideDrawn));
+		const AP_BossEncounters *e = &ctr_boss_encounters;
+		expect(e->state == AP_BOSS_ENC_VALID, v + " valid: " + e->reason);
+		expect(e->oxideInPool && e->gauntletOn && e->oxideProfileAll == profileAll, v + " scalars");
+		expect(e->finalPresent && e->finalOpponent >= 0 && e->finalOpponent != 15, v + " final racer");
+		expect(AP_BossEncounterFinalOpponent(e) == e->finalOpponent, v + " final accessor");
+		expect(e->finalComposed == (profileAll ? 1 : 0), v + " final composed");
+		if (profileAll)
+			expect(e->finalSchedule[0].weapon == 0x0d && e->finalSchedule[12].checkpoint == 0x7f, v + " final schedule");
+		if (oxideDrawn)
+			expect(e->opponent[2] == 15, v + " Oxide drawn for Joe's garage");
+		expect(e->gauntletTrack[2] == -1 && !e->gauntletComposed[2], v + " leg without a track");
+		expect(e->gauntletTrack[0] == 6 && e->gauntletComposed[0] && e->gauntletSchedule[0][0].weapon == 0x07,
+		       v + " leg 0 armed");
+		for (int i = 0; i < AP_BOSS_GAUNTLET_LEGS; i++)
+			expect(e->gauntletAttacker[i] == e->opponent[i], v + " leg attacker is the garage racer");
+	}
+	// Profile only: no garage switch, a version 2 block of retail rows and a
+	// composed final record for N. Oxide himself.
+	{
+		nlohmann::json sd = load("tools/fixtures/boss-encounters/mask000_slot_data.json");
+		nlohmann::json v2 = load("tools/fixtures/boss-encounters/mask010_slot_data.json")["boss_encounters"];
+		for (int g = 0; g < AP_BOSS_VENUE_GARAGES; g++)
+			v2["garages"][AP_BOSS_VENUE_GARAGE[g].key]["opponent"] = AP_BOSS_VENUE_GARAGE[g].key;
+		nlohmann::json fin = full_suite(true, false)["boss_encounters"]["final"];
+		fin["opponent"] = "nitros_oxide";
+		v2["final"] = fin;
+		sd["boss_encounters"] = v2;
+		sd["ctr_options"]["oxide_attack_profile"] = "all_compatible";
+		ap_seedcfg_parse_json(sd);
+		const AP_BossEncounters *e = &ctr_boss_encounters;
+		expect(e->state == AP_BOSS_ENC_VALID, std::string("profile only valid: ") + e->reason);
+		expect(e->finalComposed && e->finalOpponent == 15 && AP_BossEncounterFinalOpponent(e) == -1,
+		       "profile only keeps N. Oxide");
+		for (int g = 0; g < AP_BOSS_VENUE_GARAGES; g++)
+			expect(AP_BossEncounterKitGarage(e, 1, 0, g, AP_BOSS_VENUE_GARAGE[g].homeLevel) == -1,
+			       "profile only composes no garage kit");
+	}
+
+	auto refuseFull = [](const char *name, void (*mutate)(nlohmann::json &)) {
+		nlohmann::json sd = full_suite(true, true);
+		mutate(sd);
+		ap_seedcfg_parse_json(sd);
+		expect(ctr_boss_encounters.state == AP_BOSS_ENC_REFUSED, std::string("refuse ") + name);
+	};
+	refuseFull("pool switch not bool", [](nlohmann::json &j) { j["ctr_options"]["boss_oxide_in_pool"] = 1; });
+	refuseFull("unknown profile", [](nlohmann::json &j) { j["ctr_options"]["oxide_attack_profile"] = "mayhem"; });
+	refuseFull("pool without opponent switch", [](nlohmann::json &j) { j["ctr_options"]["boss_opponent_shuffle"] = false; });
+	refuseFull("gauntlet without kit", [](nlohmann::json &j) { j["ctr_options"]["boss_kit_shuffle"] = false; });
+	refuseFull("final missing", [](nlohmann::json &j) { j["boss_encounters"].erase("final"); });
+	refuseFull("gauntlet missing", [](nlohmann::json &j) { j["boss_encounters"].erase("gauntlet"); });
+	refuseFull("gauntlet without its switch", [](nlohmann::json &j) { j["ctr_options"]["purple_cup_boss_gauntlet"] = false; });
+	refuseFull("final extra field", [](nlohmann::json &j) { j["boss_encounters"]["final"]["x"] = 1; });
+	refuseFull("final wrong locations", [](nlohmann::json &j) { j["boss_encounters"]["final"]["locations"] = {35011104}; });
+	refuseFull("final is N. Oxide with the pool", [](nlohmann::json &j) { j["boss_encounters"]["final"]["opponent"] = "nitros_oxide"; });
+	refuseFull("final repeats a garage racer", [](nlohmann::json &j) {
+		j["boss_encounters"]["final"]["opponent"] = j["boss_encounters"]["garages"]["ripper_roo"]["opponent"];
+	});
+	refuseFull("two garages share a racer", [](nlohmann::json &j) {
+		j["boss_encounters"]["garages"]["papu_papu"]["opponent"] = j["boss_encounters"]["garages"]["ripper_roo"]["opponent"];
+	});
+	refuseFull("final inherited with all_compatible", [](nlohmann::json &j) {
+		j["boss_encounters"]["final"]["attack"] = "inherited";
+		j["boss_encounters"]["final"]["schedule"] = nlohmann::json::array();
+	});
+	refuseFull("final schedule short", [](nlohmann::json &j) { j["boss_encounters"]["final"]["schedule"].erase(0); });
+	refuseFull("final checkpoint moved", [](nlohmann::json &j) { j["boss_encounters"]["final"]["schedule"][3][0] = 48; });
+	refuseFull("final uncertified row", [](nlohmann::json &j) { j["boss_encounters"]["final"]["schedule"][1][1] = 2; });
+	refuseFull("super engine in a garage kit", [](nlohmann::json &j) {
+		auto &seg = j["boss_encounters"]["garages"]["papu_papu"]["schedule"][1];
+		seg = {seg[0], 3, 13, 1, 12, 0};
+	});
+	refuseFull("super engine in a gauntlet leg", [](nlohmann::json &j) {
+		auto &seg = j["boss_encounters"]["gauntlet"]["legs"][0]["schedule"][1];
+		seg = {seg[0], 3, 13, 1, 12, 0};
+	});
+	refuseFull("three legs", [](nlohmann::json &j) { j["boss_encounters"]["gauntlet"]["legs"].erase(3); });
+	refuseFull("leg attacker not the garage racer", [](nlohmann::json &j) {
+		j["boss_encounters"]["gauntlet"]["legs"][0]["attacker"] = j["boss_encounters"]["final"]["opponent"];
+	});
+	refuseFull("leg track out of range", [](nlohmann::json &j) { j["boss_encounters"]["gauntlet"]["legs"][0]["track"] = 18; });
+	refuseFull("leg without track with schedule", [](nlohmann::json &j) {
+		j["boss_encounters"]["gauntlet"]["legs"][2]["schedule"] = j["boss_encounters"]["gauntlet"]["legs"][0]["schedule"];
+	});
+	refuseFull("leg checkpoint off the mapped segment", [](nlohmann::json &j) {
+		auto &seg = j["boss_encounters"]["gauntlet"]["legs"][1]["schedule"][2];
+		seg[0] = seg[0].get<int>() + 1;
+	});
+	refuseFull("gauntlet extra field", [](nlohmann::json &j) { j["boss_encounters"]["gauntlet"]["x"] = 1; });
+	refuseFull("two garages share a venue", [](nlohmann::json &j) {
+		// Same venue in two garages (the schedules follow the venue).
+		j["boss_encounters"]["garages"]["papu_papu"]["track"] = j["boss_encounters"]["garages"]["ripper_roo"]["track"];
+	});
+	// Venues never repeat (decision 7): a track and opponent seed whose two
+	// garages share a venue.
+	{
+		nlohmann::json sd = load("tools/fixtures/boss-encounters/mask110_slot_data.json");
+		sd["boss_encounters"]["garages"]["papu_papu"]["track"] = sd["boss_encounters"]["garages"]["ripper_roo"]["track"];
+		ap_seedcfg_parse_json(sd);
+		expect(ctr_boss_encounters.state == AP_BOSS_ENC_REFUSED &&
+		           std::string(ctr_boss_encounters.reason) == "two garages share a venue",
+		       "refuse two garages sharing a venue");
+	}
+	// N. Oxide drawn for a garage without the pool switch (and no final).
+	{
+		nlohmann::json sd = load("tools/fixtures/boss-encounters/mask010_slot_data.json");
+		sd["boss_encounters"]["garages"]["pinstripe"]["opponent"] = "nitros_oxide";
+		ap_seedcfg_parse_json(sd);
+		expect(ctr_boss_encounters.state == AP_BOSS_ENC_REFUSED, "refuse Oxide without the pool switch");
+	}
+	// A version 2 seed from before the new scalars still parses (absent =
+	// off) and has no final record.
+	ap_seedcfg_parse_json(load("tools/fixtures/boss-encounters/mask111_slot_data.json"));
+	expect(ctr_boss_encounters.state == AP_BOSS_ENC_VALID && !ctr_boss_encounters.finalPresent &&
+	           AP_BossEncounterFinalOpponent(&ctr_boss_encounters) == -1,
+	       "older version 2 seed parses without a final record");
+}
+
 static void isolation()
 {
 	ap_seedcfg_parse_json(load("tools/fixtures/boss-encounters/mask011_slot_data.json"));
@@ -263,6 +454,7 @@ int main()
 	shared_fixture();
 	round_trip();
 	refusals();
+	full_suite_cases();
 	isolation();
 	std::printf("%s: %d checks, %d failures\n", failures ? "FAIL" : "PASS", checks, failures);
 	return failures ? 1 : 0;

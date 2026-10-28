@@ -112,18 +112,25 @@ static const unsigned char AP_BOSS_OXIDE_CHECKPOINTS[AP_BOSS_FINAL_SEGMENTS] = {
 #define AP_BOSS_KIT_COOLDOWN_MIN 2
 #define AP_BOSS_KIT_COOLDOWN_MAX 0xff
 
+// J03 (decisions 5 and 6): the advanced families, engine item ids fired
+// through native's boss adapter: 0x00 turbo, 0x06 shield, 0x07 mask, 0x08
+// clock, 0x09 warp orb, 0x0c invisibility, 0x0d super engine (N. Oxide's
+// final record only).
+#define AP_BOSS_KIT_SUPER_ENGINE 0x0d
 static inline int AP_BossKitWeaponKnown(int w)
 {
-	return w == 0x01 || w == 0x02 || w == 0x03 || w == 0x04 || w == 0x0f || w == 0x64 || w == 0x66;
+	return w == 0x00 || w == 0x01 || w == 0x02 || w == 0x03 || w == 0x04 || w == 0x06 || w == 0x07 ||
+	       w == 0x08 || w == 0x09 || w == 0x0c || w == 0x0d || w == 0x0f || w == 0x64 || w == 0x66;
 }
 
 // Every (weapon, throw, path, juice) a composed segment may carry: the
 // certified family variants and the four retail signature rows. The
 // apworld's boss_encounters.CERTIFIED_ROWS is the twin (shared fixture).
-#define AP_BOSS_KIT_CERTIFIED_ROWS 9
+#define AP_BOSS_KIT_CERTIFIED_ROWS 17
 static const unsigned char AP_BOSS_KIT_CERTIFIED[AP_BOSS_KIT_CERTIFIED_ROWS][4] = {
-	{0x01, 3, 1, 0}, {0x02, 3, 1, 0}, {0x03, 3, 0, 0}, {0x04, 2, 1, 1}, {0x0f, 2, 0, 2},
-	{0x0f, 2, 1, 2}, {0x0f, 3, 1, 0}, {0x64, 2, 0, 2}, {0x66, 2, 1, 2},
+	{0x00, 3, 1, 0}, {0x01, 3, 1, 0}, {0x02, 3, 1, 0}, {0x03, 3, 0, 0}, {0x04, 2, 1, 1}, {0x06, 3, 1, 0},
+	{0x07, 3, 1, 0}, {0x08, 3, 1, 0}, {0x09, 2, 1, 0}, {0x0c, 3, 1, 0}, {0x0c, 3, 1, 1}, {0x0d, 3, 1, 0},
+	{0x0f, 2, 0, 2}, {0x0f, 2, 1, 2}, {0x0f, 3, 1, 0}, {0x64, 2, 0, 2}, {0x66, 2, 1, 2},
 };
 
 static inline int AP_BossKitRowCertified(int weapon, int throwFlag, int path, int juice)
@@ -137,13 +144,16 @@ static inline int AP_BossKitRowCertified(int weapon, int throwFlag, int path, in
 }
 
 // NULL when `seg` is a schedule this build can race on a venue with
-// `venuePoints` restart points: five segments, the first at checkpoint 0,
-// strictly increasing inside the venue, every field a known code.
-static inline const char *AP_BossKitScheduleProblem(const AP_BossKitSegment *seg, int n, int venuePoints)
+// `venuePoints` restart points: `want` segments, the first at checkpoint 0,
+// strictly increasing inside the venue, every row certified, at least one
+// attack. Super engine only where `allowSuper` (N. Oxide's final record).
+static inline const char *AP_BossKitScheduleProblemN(const AP_BossKitSegment *seg, int n, int want,
+                                                      int venuePoints, int allowSuper)
 {
 	int i, prev = -1, attacks = 0;
-	if (seg == 0 || n != AP_BOSS_VENUE_SEGMENTS)
-		return "schedule must have five segments";
+	if (seg == 0 || n != want)
+		return want == AP_BOSS_VENUE_SEGMENTS ? "schedule must have five segments"
+		                                      : "schedule has the wrong segment count";
 	for (i = 0; i < n; i++)
 	{
 		const AP_BossKitSegment *s = &seg[i];
@@ -152,6 +162,8 @@ static inline const char *AP_BossKitScheduleProblem(const AP_BossKitSegment *seg
 		if (!AP_BossKitRowCertified(s->weapon, s->throwFlag, s->pathDisabled, s->juice) ||
 		    s->cooldown < AP_BOSS_KIT_COOLDOWN_MIN || s->cooldown > AP_BOSS_KIT_COOLDOWN_MAX)
 			return "schedule has a code this build cannot race";
+		if (s->weapon == AP_BOSS_KIT_SUPER_ENGINE && !allowSuper)
+			return "super engine is N. Oxide's only";
 		if (s->weapon != 0x0f)
 			attacks++;
 		prev = s->checkpoint;
@@ -161,8 +173,34 @@ static inline const char *AP_BossKitScheduleProblem(const AP_BossKitSegment *seg
 	return 0;
 }
 
+// A garage kit or gauntlet leg: five segments, no super engine.
+static inline const char *AP_BossKitScheduleProblem(const AP_BossKitSegment *seg, int n, int venuePoints)
+{
+	return AP_BossKitScheduleProblemN(seg, n, AP_BOSS_VENUE_SEGMENTS, venuePoints, 0);
+}
+
+// N. Oxide's composed profile (oxide_attack_profile: all_compatible): the 13
+// retail Oxide segment starts exactly, every row certified, super engine
+// allowed. The table's own checkpoint scale (0x7f last) is checked, not a
+// venue: native maps it at load like the retail Oxide table.
+static inline const char *AP_BossFinalScheduleProblem(const AP_BossKitSegment *seg, int n)
+{
+	int i;
+	const char *p = AP_BossKitScheduleProblemN(seg, n, AP_BOSS_FINAL_SEGMENTS, 0x80, 1);
+	if (p)
+		return p;
+	for (i = 0; i < AP_BOSS_FINAL_SEGMENTS; i++)
+		if (seg[i].checkpoint != AP_BOSS_OXIDE_CHECKPOINTS[i])
+			return "final schedule checkpoints are not the retail Oxide segments";
+	return 0;
+}
+
 // The engine character id of wire opponent `key`, or -1.
 static inline int AP_BossOpponentCharacter(const char *key);
+// Decision 7: N. Oxide as a wire opponent, only with boss_oxide_in_pool.
+#define AP_BOSS_OXIDE_KEY "nitros_oxide"
+#define AP_BOSS_OXIDE_CHARACTER 15
+static inline int AP_BossOpponentCharacterEx(const char *key, int allowOxide);
 
 // A retail segment start on the home track, mapped to the same relative lap
 // position on a venue whose last checkpoint index is `venueLast`. The apworld
@@ -245,6 +283,8 @@ typedef struct
 	// without a final record); finalComposed 1 when finalSchedule replaces
 	// Oxide's retail table. gauntletTrack[i] is leg i's retail LevelID or -1
 	// (no attacks), gauntletAttacker[i] the engine id that fires it.
+	unsigned char trackOn;
+	unsigned char opponentOn;
 	unsigned char oxideInPool;
 	unsigned char gauntletOn;
 	unsigned char oxideProfileAll;
@@ -275,6 +315,7 @@ typedef struct
 	int trackOn;
 	int opponentOn;
 	int kitOn;
+	int oxideInPool; // J03: nitros_oxide is a valid opponent
 	int scheduleCount;
 	AP_BossKitSegment schedule[AP_BOSS_VENUE_SEGMENTS];
 } AP_BossEncounterRow;
@@ -303,6 +344,13 @@ static inline int AP_BossOpponentCharacter(const char *key)
 	return -1;
 }
 
+static inline int AP_BossOpponentCharacterEx(const char *key, int allowOxide)
+{
+	if (allowOxide && AP_BossVenueStrEq(key, AP_BOSS_OXIDE_KEY))
+		return AP_BOSS_OXIDE_CHARACTER;
+	return AP_BossOpponentCharacter(key);
+}
+
 // NULL when garage `g`'s row is one this build can race, else the reason.
 static inline const char *AP_BossEncounterRowProblem(int g, const AP_BossEncounterRow *r)
 {
@@ -321,7 +369,7 @@ static inline const char *AP_BossEncounterRowProblem(int g, const AP_BossEncount
 		return "venue moved without the track switch";
 	if (v2 && r->opponentOn)
 	{
-		if (AP_BossOpponentCharacter(r->opponent) < 0)
+		if (AP_BossOpponentCharacterEx(r->opponent, r->oxideInPool) < 0)
 			return "unknown opponent";
 	}
 	else if (!AP_BossVenueStrEq(r->opponent, AP_BOSS_VENUE_GARAGE[g].key))
@@ -362,6 +410,105 @@ static inline const char *AP_BossEncounterRowProblem(int g, const AP_BossEncount
 	if (!AP_BossVenueCertified(g, r->track))
 		return "track cannot carry this boss's attack";
 	return 0;
+}
+
+// J03: N. Oxide's garage record (`final`, both Oxide races), already
+// type-checked by the JSON reader. scheduleCount -1 = not a valid list.
+typedef struct
+{
+	int fieldCount;
+	int locationsOk; // exactly [35011104, 35011105]
+	const char *opponent;
+	const char *attack;
+	int scheduleCount;
+	AP_BossKitSegment schedule[AP_BOSS_FINAL_SEGMENTS];
+} AP_BossFinalRow;
+
+#define AP_BOSS_FINAL_FIELDS 4
+
+// NULL when the final record matches the switches: with boss_oxide_in_pool
+// a drawn racer other than N. Oxide, else N. Oxide; composed exactly with
+// oxide_attack_profile all_compatible.
+static inline const char *AP_BossFinalRowProblem(const AP_BossFinalRow *r, int oxideInPool, int profileAll)
+{
+	int c;
+	if (r == 0 || r->fieldCount != AP_BOSS_FINAL_FIELDS)
+		return "final record has unexpected fields";
+	if (!r->locationsOk)
+		return "final record locations are not N. Oxide's two races";
+	c = AP_BossOpponentCharacterEx(r->opponent, 1);
+	if (c < 0)
+		return "final record has an unknown opponent";
+	if (oxideInPool ? c == AP_BOSS_OXIDE_CHARACTER : c != AP_BOSS_OXIDE_CHARACTER)
+		return oxideInPool ? "final race must draw a racer with N. Oxide in the pool"
+		                   : "final racer swapped without boss_oxide_in_pool";
+	if (profileAll)
+	{
+		if (!AP_BossVenueStrEq(r->attack, "composed"))
+			return "oxide_attack_profile all_compatible but the final attack is not composed";
+		if (r->scheduleCount < 0)
+			return "final schedule is not a list of six integers per segment";
+		return AP_BossFinalScheduleProblem(r->schedule, r->scheduleCount);
+	}
+	if (!AP_BossVenueStrEq(r->attack, "inherited"))
+		return "final attack composed without oxide_attack_profile all_compatible";
+	if (r->scheduleCount != 0)
+		return "inherited final attack with a schedule";
+	return 0;
+}
+
+// J03: one Purple Gem Cup gauntlet leg, type-checked by the JSON reader.
+typedef struct
+{
+	int fieldCount;
+	int track; // -1 or a retail LevelID; -2 when not an integer
+	const char *attacker;
+	int scheduleCount;
+	AP_BossKitSegment schedule[AP_BOSS_VENUE_SEGMENTS];
+} AP_BossGauntletLeg;
+
+#define AP_BOSS_GAUNTLET_LEG_FIELDS 3
+
+// NULL when leg `i` is one this build can race: attacked by garage i's
+// resolved racer (`attacker`, engine id), on a retail leg track with garage
+// i's retail segment starts mapped onto it, or track -1 with no schedule.
+static inline const char *AP_BossGauntletLegProblem(int i, const AP_BossGauntletLeg *l, int attacker,
+                                                    int oxideInPool)
+{
+	int k, homeLast;
+	if (i < 0 || i >= AP_BOSS_GAUNTLET_LEGS || l == 0 || l->fieldCount != AP_BOSS_GAUNTLET_LEG_FIELDS)
+		return "gauntlet leg has unexpected fields";
+	if (AP_BossOpponentCharacterEx(l->attacker, oxideInPool) != attacker)
+		return "gauntlet attacker is not the garage's racer";
+	if (l->track == -1)
+		return l->scheduleCount == 0 ? 0 : "gauntlet leg without a track has a schedule";
+	if (!AP_BossVenueCertified(i, l->track))
+		return "gauntlet leg track cannot carry the attack";
+	if (l->scheduleCount < 0)
+		return "gauntlet schedule is not a list of six integers per segment";
+	{
+		const char *p = AP_BossKitScheduleProblem(l->schedule, l->scheduleCount,
+		                                          AP_BOSS_VENUE_RESTART_POINTS[l->track]);
+		if (p)
+			return p;
+	}
+	homeLast = AP_BOSS_VENUE_RESTART_POINTS[AP_BOSS_VENUE_GARAGE[i].homeLevel] - 1;
+	for (k = 0; k < AP_BOSS_VENUE_SEGMENTS; k++)
+		if (l->schedule[k].checkpoint !=
+		    AP_BossVenueCheckpoint(AP_BOSS_VENUE_GARAGE[i].attack[k], homeLast,
+		                           AP_BOSS_VENUE_RESTART_POINTS[l->track] - 1))
+			return "gauntlet checkpoints are not the garage's mapped segments";
+	return 0;
+}
+
+// The engine id racing N. Oxide's garage when the seed drew one, or -1 for
+// N. Oxide himself (no final record, profile-only record, or refused).
+static inline int AP_BossEncounterFinalOpponent(const AP_BossEncounters *e)
+{
+	if (e == 0 || e->state != AP_BOSS_ENC_VALID || e->version != AP_BOSS_ENCOUNTERS_VERSION_2 ||
+	    !e->finalPresent || e->finalOpponent == AP_BOSS_OXIDE_CHARACTER || e->finalOpponent < 0)
+		return -1;
+	return e->finalOpponent;
 }
 
 // The engine character id garage `g` races, or -1 for the retail opponent

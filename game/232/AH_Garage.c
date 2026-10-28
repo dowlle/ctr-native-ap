@@ -315,6 +315,19 @@ LAB_800aec34:
 			memcpy(advert, joined, sizeof advert);
 			advertVisible = 1;
 		}
+		// J03 (decision 7): N. Oxide's garage names the racer the final
+		// race drew, open or shut, as the first line.
+		if (advertBoss == 4 && AP_BossFinalGarageOpponent() >= 0)
+		{
+			char joined[192];
+			int c = AP_BossFinalGarageOpponent();
+			int used = snprintf(joined, sizeof joined, "Rival: %s",
+			                    sdata->lngStrings[data.MetaDataCharacters[c].name_LNG_short]);
+			if (advertVisible && used < (int)sizeof joined)
+				snprintf(joined + used, sizeof joined - used, "\r%s", advert);
+			memcpy(advert, joined, sizeof advert);
+			advertVisible = 1;
+		}
 		if (advertVisible)
 		{
 			advertLines = AP_OxideGarageAdvertLineCount(advert);
@@ -557,6 +570,18 @@ LAB_800aede8:
 			// The venue may be a custom track's host slot; this load is retail.
 			CustomTrack_SelectRetailRace();
 #endif
+		}
+		else if (hubID == 0)
+		{
+			// J03 (decision 7): with N. Oxide in the pool the final race
+			// draws a racer, for both Oxide races. bossID stays 4 or 5, so
+			// the checks, goal, flags and loss count are N. Oxide's; the
+			// venue (Oxide Station or the Cortex Vortex Oxide 2 role) is
+			// unchanged. LOAD_DriverMPK keeps Oxide's pack and sideloads the
+			// racer's hi model.
+			int finalOpponent = AP_BossFinalGarageOpponent();
+			if (finalOpponent >= 0)
+				data.characterIDs[1] = (s16)finalOpponent;
 		}
 #endif
 
