@@ -3418,7 +3418,9 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		     (warppadObj->levelID == AP_CORTEX_DEST &&
 		      AP_CortexTrackChecked(AP_CV_SLOT_TROPHY))) &&
 		    !ctr_cfg_warp_stage2_unlocked(levelID) &&
-		    !AP_PadPhase1ReRaceable(levelID, warppadObj->levelID))
+		    !AP_PadPhase1ReRaceable(levelID, warppadObj->levelID) &&
+		    // #208: a replayable Done pad is built open, even before stage 2.
+		    !AP_PadReplayable(levelID, warppadObj->levelID))
 		{
 			const ctr_req *r = &ctr_cfg.warp_pad_unlock[levelID].stage2;
 			reqRelicTint = AP_ReqRelicTintTier(r);

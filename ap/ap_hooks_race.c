@@ -438,12 +438,33 @@ int AP_RaceStructureDestCtrFirst(int destLevelID)
 	return AP_RaceStructureSuppressTrophy(AP_RaceStructureDestTrophyCode(destLevelID));
 }
 
+// The CTR Challenge code of a race destination, or -1.
+static long AP_RaceStructureDestCtrCode(int destLevelID)
+{
+	if (destLevelID == AP_CORTEX_DEST)
+		return AP_CortexTrackCode(AP_CV_SLOT_TOKEN);
+	if (AP_TrialTrackConfigured(destLevelID))
+		return AP_TrialTrackLocation(destLevelID, CTR_CFG_TRIAL_CTR);
+	if (destLevelID >= 0 && destLevelID < 16)
+		return AP_LookupLocationCode(destLevelID + ADV_REWARD_FIRST_CTR_TOKEN);
+	return -1;
+}
+
 // The structure the selector applies to one destination: refused and classic
-// seeds as they are, ctr_first only where the track has a CTR Challenge.
+// seeds as they are, ctr_first only where the track has a CTR Challenge. A
+// destination whose codes sit in crossed pairs is refused: its pad offers no
+// row and releases the kart (the result paths assume a track's own pair).
 int AP_RaceStructureDestStructure(int destLevelID)
 {
-	return AP_RaceStructureForDest(ctr_cfg.adventure_structure,
-	                               AP_RaceStructureDestCtrFirst(destLevelID));
+	int state;
+	if (!AP_RaceStructureCtrFirst())
+		return ctr_cfg.adventure_structure;
+	state = AP_RaceStructurePairState(&ctr_cfg.stage1_awards,
+	                                  AP_RaceStructureDestCtrCode(destLevelID),
+	                                  AP_RaceStructureDestTrophyCode(destLevelID));
+	if (state < 0)
+		return AP_RS_STRUCTURE_REFUSED;
+	return AP_RaceStructureForDest(ctr_cfg.adventure_structure, state > 0);
 }
 
 // The same question keyed by podium track (AP_RetailPodiumTrack): does a CTR

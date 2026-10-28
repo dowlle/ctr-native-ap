@@ -132,6 +132,13 @@ static void awards(void){
  a.trophy[1]=35000006;assert(AP_RaceStructureAwardsProblem(&a));
  a.trophy[1]=35000076;assert(AP_RaceStructureAwardsProblem(&a));
  a.trophy[1]=0;assert(AP_RaceStructureAwardsProblem(&a));
+ // A track's own pair, an unpaired track, and crossed pairs (fail closed).
+ a.count=2;a.ctr[0]=35000076;a.trophy[0]=35000006;a.ctr[1]=35000077;a.trophy[1]=35000007;
+ assert(AP_RaceStructurePairState(&a,35000076,35000006)==1);
+ assert(AP_RaceStructurePairState(&a,35000078,35000008)==0);
+ assert(AP_RaceStructurePairState(&a,35000076,35000007)==-1);
+ assert(AP_RaceStructurePairState(&a,35000078,35000006)==-1);
+ assert(AP_RaceStructurePairState(&a,35000076,-1)==-1);
  a.count=0;assert(AP_RaceStructureAwardsProblem(&a));
  a.count=AP_RS_AWARD_MAX+1;assert(AP_RaceStructureAwardsProblem(&a));
 }
@@ -252,7 +259,9 @@ assert (block.index("MainFrame_RequestMaskHint(apHint, 1);") < block.index("AH_M
         < block.index("goto WarpPad_RequestLoad;"))
 assert "AP_CustomTrackTrophyEarnedByCtr()" in warp and "apCustomRaceRowsCtrFirst" in warp
 assert "RECTMENU_APSetReplayRows(&apRaceTypeMenu, AP_RaceSelectorReplayMask(rows));" in warp
-assert warp.count("!AP_PadReplayable(") == 2, "Done look and Done lock both honour replay"
+assert warp.count("!AP_PadReplayable(") == 3, "Done look, Done lock and the stage-2 look honour replay"
+stage2_look = warp[warp.index("AP_LocationCheckedByBit(warppadObj->levelID + ADV_REWARD_FIRST_TROPHY)) ||"):]
+assert "!AP_PadReplayable(levelID, warppadObj->levelID))" in stage2_look[:700]
 menu = (root / "game/RECTMENU.c").read_text()
 draw = menu[menu.index("textFlags = uVar8;"):]
 assert draw.index("RECTMENU_APReplayRow(menu, sVar6)") < draw.index("DecalFont_DrawLine(titleString")
@@ -285,6 +294,9 @@ state = pads[pads.index("int AP_PadState(int physLevelID, int destLevelID)"):]
 state = state[:state.index("\n}\n")]
 assert "AP_RaceStructureDestCtrFirst(destLevelID)" in state and "AP_DestCtrSideLeft(destLevelID)" in state
 assert "int structure = AP_RaceStructureDestStructure(destLevelID);" in rows_fn
+dest_structure = race[race.index("int AP_RaceStructureDestStructure("):]
+dest_structure = dest_structure[:dest_structure.index("\n}\n")]
+assert "AP_RaceStructurePairState(" in dest_structure and "return AP_RS_STRUCTURE_REFUSED;" in dest_structure
 checks = (root / "ap/ap_hooks_race_checks.c").read_text()
 assert checks.count("AP_RaceStructureRaceEarnsRungs(") == 2, "finish and held rungs both follow ctr_first"
 assert checks.count("AP_RaceStructurePodiumCtrFirst(podiumTrack)") == 2

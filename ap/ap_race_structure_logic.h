@@ -217,6 +217,22 @@ static inline int AP_RaceStructureTrophyIsStage1Ctr(const ap_rs_awards *a, long 
 	return 0;
 }
 
+// How a destination's own CTR and Trophy codes sit in the pairs: 1 when they
+// are one pair, 0 when neither is paired (a classic track, decision 4), -1
+// when they cross (its CTR pairs with another Trophy, or its Trophy with
+// another CTR). The apworld never emits a crossed pair; the retail result
+// path sends the track's own Trophy, so a crossed room fails closed.
+static inline int AP_RaceStructurePairState(const ap_rs_awards *a, long ctr, long trophy)
+{
+	long paired = AP_RaceStructurePairedTrophy(a, ctr);
+	int trophyPaired = AP_RaceStructureTrophyIsStage1Ctr(a, trophy);
+	if (paired <= 0 && !trophyPaired)
+		return 0;
+	if (trophy > 0 && paired == trophy)
+		return 1;
+	return -1;
+}
+
 // Validate a parsed pair list: 1..AP_RS_AWARD_MAX rows, positive codes, no
 // code used twice in either column or across them. Returns 0 when valid, else
 // a short reason.
