@@ -1281,12 +1281,23 @@ namespace {
    (CustomTrackManager_LocateContentFiles), so the files only need a name of
    their own: xdelta-<first 12 of the patch hash>-<BIGFILE index>.lev/.vrm. A
    file already under that name is kept when its bytes are the same and
-   refused otherwise; nothing is ever replaced. If the VRM cannot be placed,
-   a LEV this install placed is removed again. <key> and original/ may not
+   refused otherwise; nothing is ever replaced or removed. Both names are
+   checked before anything is written. If the VRM still cannot be placed
+   after the LEV was, the verified LEV stays and the error says so: the track
+   shows Missing Files and importing again adds the VRM, the same rule as the
+   Saphi installer (ap_custom_track_download.cpp). <key> and original/ may not
    be links; the tracks folder itself is the player's configuration and may
-   be one, as for Saphi installs (ap_custom_track_download.cpp). */
+   be one, as for Saphi installs. */
+/* The error for a pair that failed part way: says which new file stayed. */
+std::string room_failure(const std::string &what, bool placedLev, bool placedVrm)
+{
+    if (placedVrm) return what + ". Its new LEV and VRM stay in place; import again to check them";
+    if (placedLev) return what + ". The new LEV stays in place; import again to add the VRM";
+    return what;
+}
+
 #ifdef CTR_XDELTA_TESTING
-/* Harness only: fail the VRM after the LEV is placed, to test the rollback. */
+/* Harness only: fail the VRM after the LEV is placed. */
 extern "C" int g_xdeltaTestFailRoomVrm;
 int g_xdeltaTestFailRoomVrm;
 #define XDELTA_TEST_FAIL_VRM() do { if (g_xdeltaTestFailRoomVrm) throw std::runtime_error("Test failure"); } while (0)
@@ -1302,13 +1313,18 @@ struct Handle
 };
 
 /* Open a directory and keep it open without FILE_SHARE_DELETE, so it cannot
-   be renamed, removed or swapped for a junction while the install runs. */
+   be renamed or removed (and so swapped for a junction) while the install
+   runs. FILE_LIST_DIRECTORY makes the open take part in sharing checks; an
+   attributes-only open would not. Write sharing stays allowed because the
+   final MoveFileEx opens original/ for writing. Not caught: a process that
+   rewrites the target of an existing junction in place during the install,
+   as for the Saphi installer. */
 bool pin_directory(const std::string &path, bool create, bool allowLink, Handle &out)
 {
     std::wstring p = wide(path);
     if (p.empty()) return false;
     if (create) _wmkdir(p.c_str());
-    out.h = CreateFileW(p.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+    out.h = CreateFileW(p.c_str(), FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
                         FILE_FLAG_BACKUP_SEMANTICS | (allowLink ? 0 : FILE_FLAG_OPEN_REPARSE_POINT), nullptr);
     BY_HANDLE_FILE_INFORMATION info;
     return out.h != INVALID_HANDLE_VALUE && GetFileInformationByHandle(out.h, &info) &&
@@ -1322,31 +1338,11 @@ bool pin_link(const std::string &path, Handle &out)
 {
     std::wstring p = wide(path);
     out.h = p.empty() ? INVALID_HANDLE_VALUE
-                      : CreateFileW(p.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+                      : CreateFileW(p.c_str(), FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
                                     FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
     BY_HANDLE_FILE_INFORMATION info;
     return out.h != INVALID_HANDLE_VALUE && GetFileInformationByHandle(out.h, &info) &&
            (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY);
-}
-
-/* Remove a LEV this install placed: only while the name still holds exactly
-   these bytes, through one handle opened without sharing, so the removed
-   file is the one checked. Returns false when it could not be done safely. */
-bool remove_own_file(const std::string &target, const std::vector<unsigned char> &bytes)
-{
-    HANDLE h = CreateFileW(wide(target).c_str(), GENERIC_READ | DELETE, 0, nullptr, OPEN_EXISTING,
-                           FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
-    if (h == INVALID_HANDLE_VALUE) return false;
-    bool same = true;
-    LARGE_INTEGER size;
-    if (!GetFileSizeEx(h, &size) || (unsigned long long)size.QuadPart != bytes.size()) same = false;
-    std::vector<unsigned char> back(same ? bytes.size() : 0);
-    DWORD got = 0;
-    if (same && (!ReadFile(h, back.data(), (DWORD)back.size(), &got, nullptr) || got != back.size() || back != bytes)) same = false;
-    FILE_DISPOSITION_INFO dispose = {TRUE};
-    const bool removed = same && SetFileInformationByHandle(h, FileDispositionInfo, &dispose, sizeof dispose);
-    CloseHandle(h);
-    return removed;
 }
 
 /* 0 absent, 1 the same bytes, -1 something else. */
@@ -1359,7 +1355,9 @@ int room_name_state(const std::string &target, const std::vector<unsigned char> 
     catch (const std::exception &) { return -1; }
 }
 
-void publish_room_file(const std::string &folder, const std::string &name, const std::vector<unsigned char> &bytes)
+/* placed turns true once the name holds the new file, before it is read back. */
+void publish_room_file(const std::string &folder, const std::string &name, const std::vector<unsigned char> &bytes,
+                       bool &placed)
 {
     std::string temp;
     HANDLE h = INVALID_HANDLE_VALUE;
@@ -1383,13 +1381,15 @@ void publish_room_file(const std::string &folder, const std::string &name, const
         throw std::runtime_error(ok && (moveError == ERROR_ALREADY_EXISTS || moveError == ERROR_FILE_EXISTS)
                                  ? "Another file is in the way: " + name : "Could not write in the track folder");
     }
+    placed = true;
     if (room_name_state(folder + "/" + name, bytes) != 1) throw std::runtime_error("A track file changed while it was installed");
 }
 
-void publish_room_vrm(const std::string &folder, const std::string &name, const std::vector<unsigned char> &bytes)
+void publish_room_vrm(const std::string &folder, const std::string &name, const std::vector<unsigned char> &bytes,
+                      bool &placed)
 {
     XDELTA_TEST_FAIL_VRM();
-    publish_room_file(folder, name, bytes);
+    publish_room_file(folder, name, bytes, placed);
 }
 
 void install_room(const std::string &assets, const std::string &key, const std::string &stem,
@@ -1408,17 +1408,15 @@ void install_room(const std::string &assets, const std::string &key, const std::
     for (int i = 0; i < 2; i++)
         if ((state[i] = room_name_state(original + "/" + names[i], *bytes[i])) < 0)
             throw std::runtime_error("Another file is in the way: " + names[i]);
-    bool placedLev = false;
+    bool placedLev = false, placedVrm = false;
     try
     {
-        if (!state[0]) { publish_room_file(original, names[0], lev); placedLev = true; }
-        if (!state[1]) publish_room_vrm(original, names[1], vrm);
+        if (!state[0]) publish_room_file(original, names[0], lev, placedLev);
+        if (!state[1]) publish_room_vrm(original, names[1], vrm, placedVrm);
     }
     catch (const std::exception &e)
     {
-        if (placedLev && !remove_own_file(original + "/" + names[0], lev))
-            throw std::runtime_error(std::string(e.what()) + ". The LEV stays in tracks/" + key + "/original");
-        throw;
+        throw std::runtime_error(room_failure(e.what(), placedLev, placedVrm));
     }
 }
 #else
@@ -1458,9 +1456,8 @@ int room_name_state(int folder, const std::string &name, const std::vector<unsig
     return same_bytes(existing.fd, bytes) ? 1 : -1;
 }
 
-/* Publishes name and returns its identity, for a rollback that removes only
-   this install's own file. */
-struct stat publish_room_file(int folder, const std::string &name, const std::vector<unsigned char> &bytes)
+/* placed turns true once the name holds the new file, before it is read back. */
+void publish_room_file(int folder, const std::string &name, const std::vector<unsigned char> &bytes, bool &placed)
 {
     char temp[64] = "";
     Fd out(-1);
@@ -1486,39 +1483,17 @@ struct stat publish_room_file(int folder, const std::string &name, const std::ve
     unlinkat(folder, temp, 0);
     if (!linked)
         throw std::runtime_error(linkError == EEXIST ? "Another file is in the way: " + name : "Could not write in the track folder");
-    struct stat placed;
-    if (fstatat(folder, name.c_str(), &placed, AT_SYMLINK_NOFOLLOW) || placed.st_dev != mine.st_dev ||
-        placed.st_ino != mine.st_ino || !same_bytes(out.fd, bytes))
+    placed = true;
+    struct stat now;
+    if (fstatat(folder, name.c_str(), &now, AT_SYMLINK_NOFOLLOW) || now.st_dev != mine.st_dev ||
+        now.st_ino != mine.st_ino || !same_bytes(out.fd, bytes))
         throw std::runtime_error("A track file changed while it was installed");
-    return mine;
 }
 
-void publish_room_vrm(int folder, const std::string &name, const std::vector<unsigned char> &bytes)
+void publish_room_vrm(int folder, const std::string &name, const std::vector<unsigned char> &bytes, bool &placed)
 {
     XDELTA_TEST_FAIL_VRM();
-    publish_room_file(folder, name, bytes);
-}
-
-/* Remove a LEV this install placed without ever removing another file:
-   move the name aside to a fresh private name first (RENAME_NOREPLACE), and
-   unlink it only when the moved file is this install's own. Anything else is
-   moved back and kept. Returns false when the LEV could not be removed. */
-bool remove_own_file(int folder, const std::string &name, const struct stat &mine)
-{
-    char aside[64];
-    for (int k = 0; k < 64; k++)
-    {
-        std::snprintf(aside, sizeof aside, ".xdelta-rollback-%d-%d", (int)getpid(), k);
-        if (renameat2(folder, name.c_str(), folder, aside, RENAME_NOREPLACE) == 0) break;
-        if (errno != EEXIST) return false;
-        aside[0] = 0;
-    }
-    if (!aside[0]) return false;
-    struct stat now;
-    if (!fstatat(folder, aside, &now, AT_SYMLINK_NOFOLLOW) && now.st_dev == mine.st_dev && now.st_ino == mine.st_ino)
-        return unlinkat(folder, aside, 0) == 0;
-    renameat2(folder, aside, folder, name.c_str(), RENAME_NOREPLACE);
-    return false;
+    publish_room_file(folder, name, bytes, placed);
 }
 
 void install_room(const std::string &assets, const std::string &key, const std::string &stem,
@@ -1536,18 +1511,15 @@ void install_room(const std::string &assets, const std::string &key, const std::
     for (int i = 0; i < 2; i++)
         if ((state[i] = room_name_state(original.fd, names[i], *bytes[i])) < 0)
             throw std::runtime_error("Another file is in the way: " + names[i]);
-    bool placedLev = false;
-    struct stat levIdentity = {};
+    bool placedLev = false, placedVrm = false;
     try
     {
-        if (!state[0]) { levIdentity = publish_room_file(original.fd, names[0], lev); placedLev = true; }
-        if (!state[1]) publish_room_vrm(original.fd, names[1], vrm);
+        if (!state[0]) publish_room_file(original.fd, names[0], lev, placedLev);
+        if (!state[1]) publish_room_vrm(original.fd, names[1], vrm, placedVrm);
     }
     catch (const std::exception &e)
     {
-        if (placedLev && !remove_own_file(original.fd, names[0], levIdentity))
-            throw std::runtime_error(std::string(e.what()) + ". The LEV stays in tracks/" + key + "/original");
-        throw;
+        throw std::runtime_error(room_failure(e.what(), placedLev, placedVrm));
     }
 }
 #endif

@@ -511,25 +511,28 @@ int main()
             CHECK(XdeltaImport_Install(a.scan, selected.data(), pair.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == -1 &&
                   std::strstr(error, "in the way"), "a VRM in the way fails the pair");
             CHECK(stat((pair + "/tracks/pack-slot-1/original/" + stem + ".lev").c_str(), &info) != 0, "no lone LEV left behind");
-            /* The VRM fails after the LEV was placed: the LEV is removed again. */
+            /* The VRM fails after the LEV was placed: the verified LEV stays (as for
+               Saphi installs), the error says so, and importing again adds the VRM. */
             std::string rollback = root + "/assets-rollback";
             mkdir(rollback.c_str(), 0755);
             g_xdeltaTestFailRoomVrm = 1;
             CHECK(XdeltaImport_Install(a.scan, selected.data(), rollback.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == -1 &&
-                  std::strstr(error, "Test failure") && !std::strstr(error, "stays"), "VRM failure after the LEV fails the install");
+                  std::strstr(error, "Test failure") && std::strstr(error, "new LEV stays in place"), "VRM failure after the LEV is reported");
             g_xdeltaTestFailRoomVrm = 0;
-            CHECK(stat((rollback + "/tracks/pack-slot-1/original/" + stem + ".lev").c_str(), &info) != 0, "rollback removed the placed LEV");
+            CHECK(read_file(rollback + "/tracks/pack-slot-1/original/" + stem + ".lev") == cutLev, "the verified LEV stays");
+            CHECK(stat((rollback + "/tracks/pack-slot-1/original/" + stem + ".vrm").c_str(), &info) != 0, "no VRM was placed");
             {
                 int leftovers = 0;
                 if (DIR *d = opendir((rollback + "/tracks/pack-slot-1/original").c_str()))
                 {
-                    while (dirent *e = readdir(d)) if (e->d_name[0] != '.' || std::strncmp(e->d_name, ".xdelta", 7) == 0) leftovers++;
+                    while (dirent *e = readdir(d)) if (std::strncmp(e->d_name, ".xdelta", 7) == 0) leftovers++;
                     closedir(d);
                 }
-                CHECK(leftovers == 0, "no temp or rollback names left");
+                CHECK(leftovers == 0, "no temp names left");
             }
-            CHECK(XdeltaImport_Install(a.scan, selected.data(), rollback.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == 2,
-                  "the next install after a rollback succeeds");
+            CHECK(XdeltaImport_Install(a.scan, selected.data(), rollback.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == 2 &&
+                  sha_hex(read_file(rollback + "/tracks/pack-slot-1/original/" + stem + ".vrm")) == t1->vrmSha256,
+                  "importing again keeps the LEV and adds the VRM");
             /* The tracks folder itself may be a link (player configuration, as for Saphi installs). */
             std::string viaLink = root + "/assets-tracks-link";
             mkdir(viaLink.c_str(), 0755);
