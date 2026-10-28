@@ -314,6 +314,33 @@ int AP_WarpPadRewardScale(int globalBit)
 	return AP_RewardScaleForCat(cat);
 }
 
+int AP_WarpPadNeutralMarkerReady(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	return AP_MarkerModel_IsRegistered() && gGT != 0 && gGT->modelPtr[STATIC_AP] != 0;
+}
+
+int AP_WarpPadShowNeutralMarker(struct Instance *prize)
+{
+	int oldModelID;
+
+	if (prize == 0 || !AP_WarpPadNeutralMarkerReady())
+		return 0;
+	// The same treatment the glow pass gives a classified marker (AH_WarpPad.c,
+	// case STATIC_AP): plain prim writer, colour lerped in by alphaScale. Only
+	// the colour differs: always the uniform one.
+	oldModelID = (prize->model != 0) ? prize->model->id : -1;
+	prize->model = sdata->gGT->modelPtr[STATIC_AP];
+	prize->flags &= ~(DRAW_TRANSPARENT | USE_SPECULAR_LIGHT | GHOST_DRAW_TRANSPARENT);
+	prize->colorRGBA = AP_TINT_UNIFORM;
+	prize->alphaScale = AP_MARKER_TINT_STRENGTH;
+	// #222: a slot that showed the fruit before the preview was hidden again
+	// (fresh connect replay) drops the fruit animation bits.
+	if (AP_WumpaShouldClearAnim(oldModelID, STATIC_AP))
+		AP_WumpaClearFruitAnim(&prize->flags);
+	return 1;
+}
+
 int AP_CeremonyRewardProp(struct Instance *prop, int globalBit)
 {
 	struct GameTracker *gGT;
