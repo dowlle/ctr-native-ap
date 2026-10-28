@@ -201,7 +201,12 @@ static void refusals()
 		auto &s = j["boss_encounters"]["garages"]["papu_papu"]["schedule"];
 		s[2][0] = s[1][0];
 	});
-	refuse("shield weapon", [](nlohmann::json &j) { j["boss_encounters"]["garages"]["papu_papu"]["schedule"][1][2] = 6; });
+	// A shield row is certified only as (0x06, 3, 1, 0); any other throw,
+	// path or juice is refused.
+	refuse("uncertified shield row", [](nlohmann::json &j) {
+		auto &r = j["boss_encounters"]["garages"]["papu_papu"]["schedule"][1];
+		r[1] = 2; r[2] = 6; r[3] = 1; r[5] = 0;
+	});
 	refuse("bad throw", [](nlohmann::json &j) { j["boss_encounters"]["garages"]["papu_papu"]["schedule"][1][1] = 1; });
 	refuse("zero cooldown", [](nlohmann::json &j) { j["boss_encounters"]["garages"]["papu_papu"]["schedule"][1][4] = 0; });
 	refuse("negative field", [](nlohmann::json &j) { j["boss_encounters"]["garages"]["papu_papu"]["schedule"][1][5] = -1; });
@@ -449,6 +454,53 @@ static void isolation()
 	expect(AP_BossOpponentModels(8, 12, 14, &extra) == 8 && extra == 12, "N. Tropy extra");
 }
 
+// J03: apworld-produced full-suite seeds (scripts/mk_native_fixtures.py):
+// every switch with N. Oxide in the pool, the gauntlet, N. Oxide's
+// all_compatible profile and Hit Character; and the profile alone. The parsed
+// record and the Hit block must match what the apworld drew.
+static void apworld_full_suite()
+{
+	static const long kBossCodes[6] = {35011100, 35011101, 35011102, 35011103, 35011104, 35011105};
+	for (const char *name : {"full_suite", "profile_only"})
+	{
+		std::string base = std::string("tools/fixtures/boss-encounters/") + name;
+		nlohmann::json sd = load(base + "_slot_data.json");
+		nlohmann::json want = load(base + "_expect.json");
+		ap_seedcfg_parse_json(sd);
+		const AP_BossEncounters *e = &ctr_boss_encounters;
+		std::string m = name;
+		expect(e->state == AP_BOSS_ENC_VALID, m + " valid: " + e->reason);
+		expect(e->finalPresent == 1, m + " final record");
+		expect(e->finalOpponent == AP_BossOpponentCharacterEx(want["final_opponent"].get<std::string>().c_str(), 1),
+		       m + " final opponent");
+		expect(e->finalComposed == 1 && e->oxideProfileAll == 1, m + " composed profile");
+		auto &rows = want["final_schedule"];
+		bool same = rows.size() == AP_BOSS_FINAL_SEGMENTS;
+		for (int i = 0; same && i < AP_BOSS_FINAL_SEGMENTS; i++)
+		{
+			const AP_BossKitSegment &s = e->finalSchedule[i];
+			same = s.checkpoint == rows[i][0] && s.throwFlag == rows[i][1] && s.weapon == rows[i][2] &&
+			       s.pathDisabled == rows[i][3] && s.cooldown == rows[i][4] && s.juice == rows[i][5];
+		}
+		expect(same, m + " final schedule");
+		for (int g = 0; g < AP_BOSS_VENUE_GARAGES; g++)
+		{
+			const char *key = AP_BOSS_VENUE_GARAGE[g].key;
+			expect(e->opponent[g] == AP_BossOpponentCharacterEx(want["opponents"][key].get<std::string>().c_str(), 1),
+			       m + " " + key + " opponent");
+		}
+		if (m == "full_suite")
+		{
+			expect(e->oxideInPool == 1 && e->gauntletOn == 1, m + " scalars");
+			expect(ctr_cfg.hit.valid == 1, m + " Hit block admitted with the drawn tables");
+			for (int i = 0; i < 6; i++)
+				expect(ctr_cfg.hit.boss_identity[i] ==
+				           want["hit_bosses"][std::to_string(kBossCodes[i])].get<int>(),
+				       m + " Hit boss identity " + std::to_string(kBossCodes[i]));
+		}
+	}
+}
+
 int main()
 {
 	shared_fixture();
@@ -456,6 +508,7 @@ int main()
 	refusals();
 	full_suite_cases();
 	isolation();
+	apworld_full_suite();
 	std::printf("%s: %d checks, %d failures\n", failures ? "FAIL" : "PASS", checks, failures);
 	return failures ? 1 : 0;
 }
