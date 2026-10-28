@@ -186,6 +186,16 @@ class SoloRuntimeReleaseTests(unittest.TestCase):
         with self.assertRaises(VERIFIER.PolicyError):
             VERIFIER.verify_solo_runtime(release, "v0.3.0")
 
+    def test_verifier_refuses_special_zip_members(self) -> None:
+        release = self.write_release("v0.3.0", self.runtime("windows"), self.runtime("linux"))
+        archive = release / "ctr-archipelago-v0.3.0-windows-x86.zip"
+        with zipfile.ZipFile(archive, "a") as bundle:
+            fifo = zipfile.ZipInfo("ctr-archipelago-v0.3.0/solo-runtime/pipe")
+            fifo.external_attr = (0o010644) << 16  # a FIFO
+            bundle.writestr(fifo, b"")
+        with self.assertRaises(VERIFIER.PolicyError):
+            VERIFIER.verify_solo_runtime(release, "v0.3.0")
+
     def test_verifier_refuses_swapped_platforms(self) -> None:
         release = self.write_release("v0.3.0", self.runtime("linux", name="a"), self.runtime("windows", name="b"))
         with self.assertRaises(VERIFIER.PolicyError):

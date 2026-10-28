@@ -236,6 +236,8 @@ static inline APSoloIdentity AP_SoloIdentity(const std::string &serverSeed, cons
 // "Invalid options and other errors").
 static inline std::string AP_SoloErrorText(const std::string &kind, const std::string &message)
 {
+	if (kind == "link")
+		return message;
 	if (kind == "runtime" || kind == "internal" || kind == "start")
 		return "Solo runtime is damaged. Reinstall or update the client.";
 	if (kind == "fill" || kind == "generate")

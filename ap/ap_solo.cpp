@@ -77,6 +77,15 @@ std::string Interpreter()
 	return ClientPath(kInterpreter);
 }
 
+// The solo folder must be a real folder in the client folder: a link could
+// send rooms, saves and the check journal somewhere else.
+bool SoloRootIsLink()
+{
+	std::error_code ec;
+	std::string root = BaseDir() + "solo";
+	return fs::is_symlink(fs::u8path(root), ec);
+}
+
 bool FileExists(const std::string &path)
 {
 	std::error_code ec;
@@ -379,6 +388,13 @@ bool JobStart(JobKind kind, const std::vector<std::string> &args, uint64_t limit
 {
 	if (g_job.state == AP_SOLO_JOB_RUNNING || !AP_Solo_RuntimePresent())
 		return false;
+	if (SoloRootIsLink())
+	{
+		g_job.kind = kind;
+		g_job.state = AP_SOLO_JOB_RUNNING;
+		JobFail("link", "The solo folder is a link. Make it a normal folder inside the client folder.", "");
+		return true;
+	}
 	g_job.child.release();
 	g_job.kind = kind;
 	g_job.state = AP_SOLO_JOB_RUNNING;
@@ -850,6 +866,12 @@ extern "C" int AP_Solo_SessionStart(const char *roomId)
 	g_session.child.release();
 	g_session = Session();
 	g_session.roomId = roomId;
+	if (SoloRootIsLink())
+	{
+		g_session.error = "The solo folder is a link. Make it a normal folder inside the client folder.";
+		g_session.state = AP_SOLO_SESSION_FAILED;
+		return 1;
+	}
 	if (!SessionSpawn())
 	{
 		g_session.error = AP_SoloErrorText("start", "");

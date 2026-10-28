@@ -147,8 +147,9 @@ def runtime_tree_from_archive(archive: Path) -> tuple[str, dict[str, str]]:
                 rel = info.filename.split("/", 1)[1] if "/" in info.filename else ""
                 if not rel.startswith(prefix) or info.is_dir():
                     continue
-                if (info.external_attr >> 16) & 0o170000 == 0o120000:
-                    fail(f"{archive.name}: solo runtime member is a link: {rel}")
+                kind = (info.external_attr >> 16) & 0o170000
+                if kind not in (0, 0o100000):  # no Unix type recorded, or a regular file
+                    fail(f"{archive.name}: solo runtime member is not a regular file: {rel}")
                 add(rel[len(prefix):], bundle.read(info))
     else:
         with tarfile.open(archive) as bundle:
