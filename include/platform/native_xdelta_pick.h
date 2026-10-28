@@ -6,4 +6,7 @@
 #include <stddef.h>
 int XdeltaPick_Start(void);
 int XdeltaPick_Poll(char *path, size_t size);
+/* Stop waiting for an open dialog (it may never answer in Game Mode). A late
+   answer is dropped and Start works again. */
+void XdeltaPick_Abandon(void);
 #endif

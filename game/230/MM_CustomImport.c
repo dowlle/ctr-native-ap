@@ -62,6 +62,14 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             s_importStage = IMPORT_CHOOSE;
             snprintf(s_importMessage, sizeof s_importMessage, "No file chosen.");
         }
+        else if (tapped & (BTN_TRIANGLE | BTN_START))
+        {
+            /* The dialog may never show (Steam Deck Game Mode): stop waiting. */
+            XdeltaPick_Abandon();
+            s_importStage = IMPORT_CHOOSE;
+            snprintf(s_importMessage, sizeof s_importMessage, "No file chosen.");
+            OtherFX_Play(2, 1);
+        }
         tapped = 0;
     }
     if (s_importStage == IMPORT_SCANNING)
@@ -183,7 +191,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
                                row == s_importRow ? ORANGE : WHITE, ot);
             if (row == s_importRow) CTR_Box_DrawClearBox(&box, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
         }
-        MM_CustomText_Draw(s_importStage == IMPORT_PICKING ? "Waiting for the file dialog..." :
+        MM_CustomText_Draw(s_importStage == IMPORT_PICKING ? "Waiting for the file dialog. Back: stop waiting" :
                            s_importMessage[0] ? s_importMessage :
                            "Pick an xdelta patch. Its race tracks become packages.",
                            305, 70, 176, 6, WHITE, ot);

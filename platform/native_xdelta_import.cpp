@@ -59,7 +59,9 @@ const unsigned int kSector = 2048;
 const size_t kEntryMax = 16u * 1024u * 1024u; /* The package LEV limit; larger entries are never tracks. */
 const char *kRetailDiscSha256 = "f780bf2331476aabfc00772fa758b12dd95ebfbc907968132cbd3cdd4e2c07c0";
 const size_t kDescriptorMax = 256 * 1024;
-const size_t kActiveMax = 8;                         /* Overlapping BIGFILE entries held at once. */
+const size_t kActiveMax = 8;
+const size_t kDirBytesMax = 8u * 1024u * 1024u;       /* Directory bytes collected at once. */
+const long long kScratchBytesMax = 512ll * 1024 * 1024; /* Changed entries kept on disk. */                         /* Overlapping BIGFILE entries held at once. */
 const size_t kOfferedBytesMax = 192u * 1024u * 1024u; /* Package bytes held for one review list. */
 
 std::string hex_sha256(const void *bytes, size_t size)
@@ -461,6 +463,7 @@ struct Extractor
 
     /* Directory collection. */
     std::map<uint32_t, std::vector<unsigned char>> dirData;
+    size_t dirBytes = 0; /* Collected directory bytes, this pass. */
     std::set<uint32_t> dirsParsed;
 
     /* BIGFILE. */
@@ -563,6 +566,7 @@ struct Extractor
         c.size = size;
         if (a.keep && a.bytes.size() == size)
         {
+            if (scratchEnd + (long long)size > kScratchBytesMax) throw std::runtime_error("Patch changes too much track data");
             if (seek64(scratch, (unsigned long long)scratchEnd) || std::fwrite(a.bytes.data(), 1, size, scratch) != size)
                 throw std::runtime_error("Cannot write the import scratch file");
             c.scratch = scratchEnd;
@@ -669,7 +673,11 @@ struct Extractor
             if (lba < dir->first + sectors && !dirsParsed.count(dir->first))
             {
                 auto &buffer = dirData[dir->first];
-                if (buffer.size() == (size_t)(lba - dir->first) * kSector) buffer.insert(buffer.end(), data, data + kSector);
+                if (buffer.size() == (size_t)(lba - dir->first) * kSector)
+                {
+                    if ((dirBytes += kSector) > kDirBytesMax) throw std::runtime_error("Patched disc directory is too large");
+                    buffer.insert(buffer.end(), data, data + kSector);
+                }
                 if (buffer.size() >= dir->second) { buffer.resize(dir->second); parse_dir(dir->first); }
             }
         }

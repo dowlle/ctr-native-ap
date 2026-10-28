@@ -63,6 +63,8 @@ int XdeltaImport_ListFolder(const char *a,char names[][CTR_XDELTA_NAME_MAX],int 
 { (void)a; for(int i=0;i<folderCount&&i<max;i++) snprintf(names[i],CTR_XDELTA_NAME_MAX,"Pack %d.xdelta",i); return folderCount<max?folderCount:max; }
 const char *NativeDiscImage_GetPath(void) { return "/disc.bin"; }
 int XdeltaPick_Start(void) { pickState=0; return 1; }
+static int abandons;
+void XdeltaPick_Abandon(void) { abandons++; pickState=-1; }
 int XdeltaPick_Poll(char *path,size_t size) { int s=pickState; if(s==1) snprintf(path,size,"/patches/Pack.xdelta"); if(s==1||s==2) pickState=-1; return s; }
 int XdeltaImport_StartScan(const char *p,const char *d,const char *a) { (void)p;(void)d;(void)a; scanStarts++; scanState=0; return 1; }
 int XdeltaImport_PollScan(int *progress,struct XdeltaImportSummary *s,char *e,size_t n)
@@ -127,6 +129,8 @@ int main(void)
  tick(0);CHECK(strstr(drawn,"Reading patch\n37%"));
  tick(BTN_TRIANGLE);CHECK(discards==1&&MM_CustomImport_Active()&&strstr(s_importMessage,"cancelled"));
  tick(BTN_UP);tick(BTN_CROSS);CHECK(pickState==0);tick(0);CHECK(strstr(drawn,"Waiting"));
+ tick(BTN_TRIANGLE);CHECK(abandons==1&&MM_CustomImport_Active()&&s_importStage==IMPORT_CHOOSE);
+ tick(BTN_CROSS);CHECK(pickState==0);
  pickState=1;tick(0);CHECK(scanStarts==2);
  fakeSummary.count=3;
  fakeSummary.items[0].offered=1;strcpy(fakeSummary.items[0].title,"Snowy Valley");strcpy(fakeSummary.items[0].tags,"Race TT Arcade Relic CTR");
