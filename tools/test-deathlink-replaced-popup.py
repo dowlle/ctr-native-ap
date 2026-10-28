@@ -38,6 +38,11 @@ def block(source, first, last):
 
 # ap_net.cpp must hand every bounce through the inbox (no single latch left).
 assert 'AP_DeathLinkInboxPush(&g_dl_inbox' in net, 'bounced handler no longer pushes into the inbox'
+# The cap must leave room for the overflow summary in the feed's pending ring.
+feed_src = (root / 'ap/ap_hooks_feed.c').read_text()
+ring = int(re.search(r'#define AP_FEED_QUEUE_MAX\s+(\d+)', feed_src).group(1))
+cap = int(re.search(r'#define AP_DL_INBOX_CAP\s+(\d+)', (root / 'ap/ap_deathlink_inbox.h').read_text()).group(1))
+assert 2 + 2 * cap <= ring, 'inbox cap too big: the overflow summary would evict a retained death from the feed ring'
 take = func(net, 'extern "C" int ap_net_deathlink_take(')
 assert 'AP_DeathLinkInboxTake(&g_dl_inbox' in take, 'ap_net_deathlink_take no longer reads the inbox'
 assert 'g_dl_incoming' not in net, 'the old depth-1 latch is back'
@@ -254,6 +259,7 @@ int main(void)
 	assert(strcmp(feed[0], "DEATHLINK IGNORED") == 0 && strcmp(feed[1], "6 MORE: TOO MANY") == 0); /* summary first */
 	assert(has_line("DEATHLINK: Last", 0) && applied_n == 1 && strcmp(applied_src, "Last") == 0);
 	assert(g_dl_inbox.count == 0 && g_dl_inbox.dropped == 0);
+	assert(feed_n <= 24); /* fits the feed's pending ring: nothing is evicted */
 	frame(AP_DL_WIN_LIVE, 1);
 	assert(!has_line("1 MORE: TOO MANY", 1)); /* reported once */
 	puts("PASS inbox overflow shows one ignored popup with the count");

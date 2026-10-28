@@ -13,17 +13,19 @@
 //
 // The inbox is bounded. ap_net_poll runs once per frame (AP_NetTick) and the tick
 // drains the inbox later in the same frame, so it only fills if more than
-// AP_DL_INBOX_CAP deaths arrive in one poll. The cap matches what the feed can show
-// at once: each popup is two lines and the feed's pending ring holds 24
-// (AP_FEED_QUEUE_MAX in ap_hooks_feed.c), so beyond 12 deaths the feed would drop
-// the oldest lines anyway. Past the cap the oldest death is discarded without a
-// popup of its own; it is counted instead (AP_DeathLinkInboxTakeDropped) and the
-// game thread shows one ignored popup for the count, so no death vanishes
-// without a trace. AP_DeathLinkInboxPush also reports it so the caller can log it.
+// AP_DL_INBOX_CAP deaths arrive in one poll. The cap is sized to the feed: each
+// popup is two lines and the feed's pending ring holds 24 (AP_FEED_QUEUE_MAX in
+// ap_hooks_feed.c). A full drain shows the overflow summary (2 lines), one ignored
+// popup for each of the CAP-1 replaced deaths, and the newest death's own popup:
+// 2 + 2 * CAP lines, so CAP 11 fills the ring exactly and nothing is evicted.
+// Past the cap the oldest death is discarded without a popup of its own; it is
+// counted instead (AP_DeathLinkInboxTakeDropped) and the game thread shows one
+// ignored popup for the count, so no death vanishes without a trace.
+// AP_DeathLinkInboxPush also reports it so the caller can log it.
 
 #include <string.h>
 
-#define AP_DL_INBOX_CAP        12
+#define AP_DL_INBOX_CAP        11
 #define AP_DL_INBOX_CAUSE_MAX  128
 #define AP_DL_INBOX_SOURCE_MAX 64
 
