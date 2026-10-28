@@ -101,6 +101,14 @@ typedef struct
 	unsigned short cooldown, juice;
 } AP_BossKitSegment;
 
+// J03: N. Oxide's composed profile keeps the 13 retail Oxide segment
+// starts; the Purple Gem Cup gauntlet has four legs.
+#define AP_BOSS_FINAL_SEGMENTS 13
+#define AP_BOSS_GAUNTLET_LEGS 4
+static const unsigned char AP_BOSS_OXIDE_CHECKPOINTS[AP_BOSS_FINAL_SEGMENTS] = {
+	0x00, 0x10, 0x21, 0x2f, 0x3b, 0x40, 0x46, 0x56, 0x5d, 0x60, 0x65, 0x66, 0x7f,
+};
+
 #define AP_BOSS_KIT_COOLDOWN_MIN 2
 #define AP_BOSS_KIT_COOLDOWN_MAX 0xff
 
@@ -231,6 +239,23 @@ typedef struct
 	// level, custom[g] 1 and points[g] the certified restart point count.
 	unsigned char custom[AP_BOSS_VENUE_GARAGES];
 	short points[AP_BOSS_VENUE_GARAGES];
+	// J03 2026-10-28 (decisions 5 to 9): the three new scalars, N. Oxide's
+	// garage record (`final`, both Oxide races) and the Purple Gem Cup
+	// gauntlet. finalOpponent is the engine id racing the Oxide garage (15
+	// without a final record); finalComposed 1 when finalSchedule replaces
+	// Oxide's retail table. gauntletTrack[i] is leg i's retail LevelID or -1
+	// (no attacks), gauntletAttacker[i] the engine id that fires it.
+	unsigned char oxideInPool;
+	unsigned char gauntletOn;
+	unsigned char oxideProfileAll;
+	unsigned char finalPresent;
+	signed char finalOpponent;
+	unsigned char finalComposed;
+	AP_BossKitSegment finalSchedule[AP_BOSS_FINAL_SEGMENTS];
+	signed char gauntletTrack[AP_BOSS_GAUNTLET_LEGS];
+	signed char gauntletAttacker[AP_BOSS_GAUNTLET_LEGS];
+	unsigned char gauntletComposed[AP_BOSS_GAUNTLET_LEGS];
+	AP_BossKitSegment gauntletSchedule[AP_BOSS_GAUNTLET_LEGS][AP_BOSS_VENUE_SEGMENTS];
 } AP_BossEncounters;
 
 // One garage row's fields, already type-checked by the JSON reader.
