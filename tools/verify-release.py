@@ -15,9 +15,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import shutil
 import subprocess
 import sys
+import tarfile
+import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "release"))
@@ -105,7 +108,56 @@ def verify_archive_hashes(release: Path, artifacts: dict[str, str]) -> None:
             )
 
 
-def verify(release: Path, version: str, public_key: Path, pre_sign: bool) -> None:
+SOLO_RUNTIME_MANIFEST = "solo-runtime/RUNTIME.txt"
+
+
+def _runtime_value(text: str, key: str) -> str | None:
+    for line in text.splitlines():
+        name, sep, value = line.partition(":")
+        if sep and name.strip() == key:
+            return value.strip()
+    return None
+
+
+def read_archive_member(archive: Path, suffix: str) -> bytes | None:
+    """Bytes of the one member `<root>/<suffix>`, or None."""
+    if archive.name.endswith(".zip"):
+        with zipfile.ZipFile(archive) as bundle:
+            names = [n for n in bundle.namelist() if n.count("/") >= 1 and n.split("/", 1)[1] == suffix]
+            return bundle.read(names[0]) if len(names) == 1 else None
+    with tarfile.open(archive) as bundle:
+        members = [m for m in bundle.getmembers()
+                   if m.isfile() and m.name.count("/") >= 1 and m.name.split("/", 1)[1] == suffix]
+        if len(members) != 1:
+            return None
+        stream = bundle.extractfile(members[0])
+        return stream.read() if stream else None
+
+
+def verify_solo_runtime(release: Path, tag: str) -> None:
+    """Each client archive carries solo-runtime/RUNTIME.txt (#89), built for the
+    exact ctr.apworld asset of this release, with its interpreter inside."""
+    apworld = sha256(release / "ctr.apworld")
+    for platform, interpreter in (("windows", "python/python.exe"), ("linux", "python/bin/python3.12")):
+        suffix = ".zip" if platform == "windows" else ".tar.gz"
+        archive = release / f"ctr-archipelago-{tag}-{platform}-x86{suffix}"
+        text = read_archive_member(archive, SOLO_RUNTIME_MANIFEST)
+        if text is None:
+            fail(f"{archive.name} has no {SOLO_RUNTIME_MANIFEST}")
+        manifest = text.decode("utf-8")
+        if _runtime_value(manifest, "platform") != platform:
+            fail(f"{archive.name}: solo runtime is not the {platform} runtime")
+        if _runtime_value(manifest, "ctr.apworld sha256") != apworld:
+            fail(f"{archive.name}: solo runtime ctr.apworld hash differs from the ctr.apworld asset")
+        if read_archive_member(archive, f"solo-runtime/{interpreter}") is None:
+            fail(f"{archive.name}: solo runtime has no {interpreter}")
+        bundled = read_archive_member(archive, "ctr.apworld")
+        if bundled is None or hashlib.sha256(bundled).hexdigest() != apworld:
+            fail(f"{archive.name}: bundled ctr.apworld differs from the ctr.apworld asset")
+
+
+def verify(release: Path, version: str, public_key: Path, pre_sign: bool,
+           require_solo_runtime: bool = False) -> None:
     if not release.is_dir():
         fail(f"release directory does not exist: {release}")
     tag = version if version.startswith("v") else f"v{version}"
@@ -133,6 +185,8 @@ def verify(release: Path, version: str, public_key: Path, pre_sign: bool) -> Non
 
     verify_archive_hashes(release, artifacts)
     verify_standard_sidecars(release, tag)
+    if require_solo_runtime:
+        verify_solo_runtime(release, tag)
     release_policy.verify_authoring_sidecars(release, tag)
 
     if pre_sign:
@@ -158,6 +212,11 @@ def parser() -> argparse.ArgumentParser:
         help="verify an unsigned pre-sign assembly instead of a signed release",
     )
     result.add_argument(
+        "--require-solo-runtime",
+        action="store_true",
+        help="also require solo-runtime/RUNTIME.txt in both client archives, built for ctr.apworld (#89)",
+    )
+    result.add_argument(
         "--public-key",
         type=Path,
         default=Path(__file__).resolve().parents[1] / PUBLIC_KEY_NAME,
@@ -168,8 +227,9 @@ def parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = parser().parse_args()
     try:
-        verify(args.release_directory, args.version, args.public_key, args.pre_sign)
-    except (OSError, PolicyError) as error:
+        verify(args.release_directory, args.version, args.public_key, args.pre_sign,
+               args.require_solo_runtime)
+    except (OSError, PolicyError, zipfile.BadZipFile, tarfile.TarError) as error:
         print(f"release verification failed: {error}", file=sys.stderr)
         return 1
     return 0

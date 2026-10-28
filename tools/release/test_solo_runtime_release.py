@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""Solo runtime (#89) in the release: assembler entries, archive modes and the
+verifier's --require-solo-runtime check. Uses small fake runtimes; the real
+runtime build is tools/solo/build-runtime.py."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import io
+import os
+import tarfile
+import tempfile
+import unittest
+import zipfile
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+
+
+def load(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+ASSEMBLER = load("assemble_release_solo", HERE / "assemble-release.py")
+VERIFIER = load("verify_release_solo", HERE.parent / "verify-release.py")
+BUILDER = load("build_runtime_solo", HERE.parent / "solo" / "build-runtime.py")
+INTERPRETER = {"windows": "python/python.exe", "linux": "python/bin/python3.12"}
+
+
+def sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+class SoloRuntimeReleaseTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.apworld = self.root / "ctr.apworld"
+        self.apworld.write_bytes(b"apworld-bytes")
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def runtime(self, platform: str, apworld_sha: str | None = None, name: str | None = None) -> Path:
+        folder = self.root / (name or f"rt-{platform}")
+        for rel in (INTERPRETER[platform], "ctr_solo.py", "archipelago/MultiServer.py", "presets/standard.yaml"):
+            path = folder / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(rel.encode())
+        (folder / "RUNTIME.txt").write_text(
+            "# test\nschema: 1\n"
+            f"platform: {platform}\ninterpreter: {INTERPRETER[platform]}\n"
+            f"ctr.apworld sha256: {apworld_sha or sha(self.apworld.read_bytes())}\n", encoding="utf-8")
+        return folder
+
+    def test_entries_accept_a_matching_runtime(self) -> None:
+        entries = ASSEMBLER.solo_runtime_entries(self.runtime("linux"), "linux", self.apworld)
+        names = {name for _, name in entries}
+        self.assertIn("solo-runtime/RUNTIME.txt", names)
+        self.assertIn("solo-runtime/python/bin/python3.12", names)
+        self.assertTrue(all(name.startswith("solo-runtime/") for name in names))
+
+    def test_entries_refuse_another_apworld(self) -> None:
+        with self.assertRaises(ASSEMBLER.AssemblyError):
+            ASSEMBLER.solo_runtime_entries(self.runtime("windows", apworld_sha="0" * 64), "windows", self.apworld)
+
+    def test_entries_refuse_the_wrong_platform(self) -> None:
+        with self.assertRaises(ASSEMBLER.AssemblyError):
+            ASSEMBLER.solo_runtime_entries(self.runtime("linux"), "windows", self.apworld)
+
+    def test_entries_refuse_a_symlink(self) -> None:
+        runtime = self.runtime("linux")
+        os.symlink("python3.12", runtime / "python" / "bin" / "python3")
+        with self.assertRaises(ASSEMBLER.AssemblyError):
+            ASSEMBLER.solo_runtime_entries(runtime, "linux", self.apworld)
+
+    def test_entries_refuse_a_missing_interpreter(self) -> None:
+        runtime = self.runtime("windows")
+        (runtime / INTERPRETER["windows"]).unlink()
+        with self.assertRaises(ASSEMBLER.AssemblyError):
+            ASSEMBLER.solo_runtime_entries(runtime, "windows", self.apworld)
+
+    def test_linux_interpreter_is_executable_in_the_tarball(self) -> None:
+        entries = ASSEMBLER.solo_runtime_entries(self.runtime("linux"), "linux", self.apworld)
+        tarball = self.root / "client.tar.gz"
+        ASSEMBLER.create_archive(tarball, "root", entries, linux=True)
+        with tarfile.open(tarball) as bundle:
+            modes = {m.name: m.mode for m in bundle.getmembers()}
+        self.assertEqual(modes["root/solo-runtime/python/bin/python3.12"], 0o755)
+        self.assertEqual(modes["root/solo-runtime/ctr_solo.py"], 0o644)
+
+    def write_release(self, tag: str, windows_runtime: Path | None, linux_runtime: Path | None,
+                      bundled_apworld: bytes | None = None) -> Path:
+        release = self.root / "release"
+        release.mkdir()
+        (release / "ctr.apworld").write_bytes(self.apworld.read_bytes())
+        apworld_entry = self.root / "bundled.apworld"
+        apworld_entry.write_bytes(bundled_apworld if bundled_apworld is not None else self.apworld.read_bytes())
+        for platform, runtime in (("windows", windows_runtime), ("linux", linux_runtime)):
+            entries = [(apworld_entry, "ctr.apworld")]
+            if runtime is not None:
+                entries += [(p, f"solo-runtime/{p.relative_to(runtime).as_posix()}")
+                            for p in sorted(runtime.rglob("*")) if p.is_file()]
+            suffix = ".zip" if platform == "windows" else ".tar.gz"
+            ASSEMBLER.create_archive(release / f"ctr-archipelago-{tag}-{platform}-x86{suffix}",
+                                     f"ctr-archipelago-{tag}", entries, linux=platform == "linux")
+        return release
+
+    def test_verifier_accepts_matching_runtimes(self) -> None:
+        release = self.write_release("v0.3.0", self.runtime("windows"), self.runtime("linux"))
+        VERIFIER.verify_solo_runtime(release, "v0.3.0")
+
+    def test_verifier_requires_the_runtime(self) -> None:
+        release = self.write_release("v0.3.0", self.runtime("windows"), None)
+        with self.assertRaises(VERIFIER.PolicyError):
+            VERIFIER.verify_solo_runtime(release, "v0.3.0")
+
+    def test_verifier_refuses_a_runtime_for_another_apworld(self) -> None:
+        release = self.write_release("v0.3.0", self.runtime("windows"),
+                                     self.runtime("linux", apworld_sha="1" * 64))
+        with self.assertRaises(VERIFIER.PolicyError):
+            VERIFIER.verify_solo_runtime(release, "v0.3.0")
+
+    def test_verifier_refuses_swapped_platforms(self) -> None:
+        release = self.write_release("v0.3.0", self.runtime("linux", name="a"), self.runtime("windows", name="b"))
+        with self.assertRaises(VERIFIER.PolicyError):
+            VERIFIER.verify_solo_runtime(release, "v0.3.0")
+
+    def test_verifier_refuses_a_different_bundled_apworld(self) -> None:
+        release = self.write_release("v0.3.0", self.runtime("windows"), self.runtime("linux"),
+                                     bundled_apworld=b"other")
+        with self.assertRaises(VERIFIER.PolicyError):
+            VERIFIER.verify_solo_runtime(release, "v0.3.0")
+
+    def test_builder_refuses_an_apworld_without_solo_files(self) -> None:
+        old = self.root / "old.apworld"
+        with zipfile.ZipFile(old, "w") as bundle:
+            bundle.writestr("ctr/__init__.py", "")
+        with self.assertRaises(BUILDER.BuildError):
+            BUILDER.extract_solo(old, self.root / "solo")
+
+    def test_builder_extracts_solo_files(self) -> None:
+        apworld = self.root / "new.apworld"
+        with zipfile.ZipFile(apworld, "w") as bundle:
+            bundle.writestr("ctr/__init__.py", "")
+            bundle.writestr("ctr/LICENSE", "MIT")
+            bundle.writestr("ctr/solo/ctr_solo.py", "print()")
+            bundle.writestr("ctr/solo/presets/standard.yaml", "name: Player")
+        BUILDER.extract_solo(apworld, self.root / "solo")
+        self.assertTrue((self.root / "solo" / "ctr_solo.py").is_file())
+        self.assertTrue((self.root / "solo" / "presets" / "standard.yaml").is_file())
+        self.assertEqual((self.root / "solo" / "LICENSE").read_text(), "MIT")
+
+    def test_lock_pins_every_dependency_for_both_platforms(self) -> None:
+        import json
+        lock = json.loads((HERE.parent / "solo" / "runtime-lock.json").read_text(encoding="utf-8"))
+        for platform in ("windows", "linux"):
+            self.assertRegex(lock["python"][platform]["sha256"], r"^[0-9a-f]{64}$")
+        self.assertRegex(lock["archipelago"]["commit"], r"^[0-9a-f]{40}$")
+        for name, entry in lock["wheels"].items():
+            self.assertTrue(entry.get("license"), name)
+            for platform in ("windows", "linux"):
+                pin = entry.get("any") or entry.get(platform)
+                self.assertIsNotNone(pin, f"{name} {platform}")
+                self.assertRegex(pin["sha256"], r"^[0-9a-f]{64}$")
+                self.assertTrue(pin["url"].startswith("https://"))
+
+
+if __name__ == "__main__":
+    unittest.main()
