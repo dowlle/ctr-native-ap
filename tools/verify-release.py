@@ -119,6 +119,41 @@ def _runtime_value(text: str, key: str) -> str | None:
     return None
 
 
+SOLO_RUNTIME_FROM = (0, 3, 0)  # releases from 0.3.0 on must carry the solo runtime (#89)
+
+
+def solo_runtime_required(tag: str) -> bool:
+    import re
+    numbers = re.match(r"^v?(\d+)\.(\d+)\.(\d+)", tag)
+    return bool(numbers) and tuple(int(n) for n in numbers.groups()) >= SOLO_RUNTIME_FROM
+
+
+def runtime_tree_from_archive(archive: Path) -> tuple[str, dict[str, str]]:
+    """Recompute RUNTIME.txt's tree sha256 from the archive's solo-runtime/
+    members. Returns the digest and the per-file hashes."""
+    files: dict[str, str] = {}
+    prefix = "solo-runtime/"
+    if archive.name.endswith(".zip"):
+        with zipfile.ZipFile(archive) as bundle:
+            for name in bundle.namelist():
+                rel = name.split("/", 1)[1] if "/" in name else ""
+                if rel.startswith(prefix) and not name.endswith("/"):
+                    files[rel[len(prefix):]] = hashlib.sha256(bundle.read(name)).hexdigest()
+    else:
+        with tarfile.open(archive) as bundle:
+            for member in bundle.getmembers():
+                rel = member.name.split("/", 1)[1] if "/" in member.name else ""
+                if rel.startswith(prefix) and member.isfile():
+                    stream = bundle.extractfile(member)
+                    files[rel[len(prefix):]] = hashlib.sha256(stream.read() if stream else b"").hexdigest()
+    digest = hashlib.sha256()
+    for rel, file_sha in sorted(files.items()):
+        if rel == "RUNTIME.txt":
+            continue
+        digest.update(rel.encode() + b"\0" + file_sha.encode() + b"\n")
+    return digest.hexdigest(), files
+
+
 def read_archive_member(archive: Path, suffix: str) -> bytes | None:
     """Bytes of the one member `<root>/<suffix>`, or None."""
     if archive.name.endswith(".zip"):
@@ -151,6 +186,11 @@ def verify_solo_runtime(release: Path, tag: str) -> None:
             fail(f"{archive.name}: solo runtime ctr.apworld hash differs from the ctr.apworld asset")
         if read_archive_member(archive, f"solo-runtime/{interpreter}") is None:
             fail(f"{archive.name}: solo runtime has no {interpreter}")
+        tree, files = runtime_tree_from_archive(archive)
+        if _runtime_value(manifest, "tree sha256") != tree:
+            fail(f"{archive.name}: solo runtime files differ from its RUNTIME.txt (tree sha256)")
+        if _runtime_value(manifest, "ctr_solo.py sha256") != files.get("ctr_solo.py"):
+            fail(f"{archive.name}: solo runtime ctr_solo.py differs from its RUNTIME.txt")
         bundled = read_archive_member(archive, "ctr.apworld")
         if bundled is None or hashlib.sha256(bundled).hexdigest() != apworld:
             fail(f"{archive.name}: bundled ctr.apworld differs from the ctr.apworld asset")
@@ -185,7 +225,7 @@ def verify(release: Path, version: str, public_key: Path, pre_sign: bool,
 
     verify_archive_hashes(release, artifacts)
     verify_standard_sidecars(release, tag)
-    if require_solo_runtime:
+    if require_solo_runtime or solo_runtime_required(tag):
         verify_solo_runtime(release, tag)
     release_policy.verify_authoring_sidecars(release, tag)
 
@@ -214,7 +254,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--require-solo-runtime",
         action="store_true",
-        help="also require solo-runtime/RUNTIME.txt in both client archives, built for ctr.apworld (#89)",
+        help="require the solo runtime (#89) for a release before 0.3.0 too; from 0.3.0 on it is always required",
     )
     result.add_argument(
         "--public-key",

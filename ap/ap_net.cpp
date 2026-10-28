@@ -192,6 +192,8 @@ static std::string           g_room_endpoint;
 // slot-connected callback is unsafe.
 static bool                  g_rejected = false;
 static void ap_solo_journal_resend(const std::string &seed); // #89, defined below
+static std::string g_solo_journal_path; // #89 solo check journal (see ap_net_set_check_journal)
+static std::string g_solo_journal_seed;
 static bool                  g_reject_stop_pending = false;
 
 // "ws://host:port/path" -> "host". The connection menu's uri row already carries
@@ -875,6 +877,14 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		}
 	});
 	g_ap->set_room_info_handler([]() {
+		// #89: a solo session expects its own room. A listener that answers
+		// with another seed never gets the slot name or the session password;
+		// ap_solo.cpp sees the seed mismatch and ends the session.
+		if (!g_solo_journal_seed.empty() && g_ap->get_seed() != g_solo_journal_seed)
+		{
+			AP_LogLine("[AP NET] solo: RoomInfo is for another seed; not connecting the slot\n");
+			return;
+		}
 		std::fprintf(stderr, "[AP NET] RoomInfo; connecting slot '%s'\n", g_slot.c_str());
 		// items_handling 0b111 = remote items + own world + starting inventory.
 		g_ap->ConnectSlot(g_slot, g_password, 7, {"AP"}, APClient::Version{0, 6, 7});
@@ -1519,13 +1529,26 @@ extern "C" int ap_net_is_connected(void)
 // server still lists as missing is sent again on each slot-connect. The solo
 // server saves after each check batch; this covers a save lost to a crash.
 // Location checks are idempotent, so a resend never duplicates anything.
-static std::string g_solo_journal_path;
-static std::string g_solo_journal_seed;
-
 extern "C" void ap_net_set_check_journal(const char *path, const char *seed)
 {
 	g_solo_journal_path = path ? path : "";
 	g_solo_journal_seed = seed ? seed : "";
+}
+
+// UTF-8 path on every platform (the client folder may hold any characters).
+static FILE *ap_solo_open_utf8(const std::string &path, const wchar_t *wmode, const char *mode)
+{
+#ifdef _WIN32
+	int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path.c_str(), -1, nullptr, 0);
+	if (n <= 0)
+		return nullptr;
+	std::wstring wide((size_t)n, L'\0');
+	MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path.c_str(), -1, &wide[0], n);
+	return _wfopen(wide.c_str(), wmode);
+#else
+	(void)wmode;
+	return std::fopen(path.c_str(), mode);
+#endif
 }
 
 static void ap_solo_journal_append(int64_t code)
@@ -1536,19 +1559,30 @@ static void ap_solo_journal_append(int64_t code)
 	// unknown, and such a check is held for this session anyway.
 	if (g_ap && !g_ap->get_seed().empty() && g_ap->get_seed() != g_solo_journal_seed)
 		return;
-	FILE *f = std::fopen(g_solo_journal_path.c_str(), "ab");
-	if (!f)
-		return;
-	std::fprintf(f, "%lld\n", (long long)code);
-	std::fflush(f);
-	std::fclose(f);
+	// The check is still sent when the journal cannot be written: the solo
+	// server saves after every check batch, and refusing the check would lose
+	// it for certain. The failure is logged.
+	FILE *f = ap_solo_open_utf8(g_solo_journal_path, L"ab", "ab");
+	bool ok = f != nullptr;
+	if (f)
+	{
+		ok = std::fprintf(f, "%lld\n", (long long)code) > 0;
+		ok = (std::fflush(f) == 0) && ok;
+		ok = (std::fclose(f) == 0) && ok;
+	}
+	if (!ok)
+	{
+		char line[128];
+		std::snprintf(line, sizeof line, "[AP NET] solo journal: could not record check %lld\n", (long long)code);
+		AP_LogLine(line);
+	}
 }
 
 static void ap_solo_journal_resend(const std::string &seed)
 {
 	if (g_solo_journal_path.empty() || seed != g_solo_journal_seed || !g_ap)
 		return;
-	FILE *f = std::fopen(g_solo_journal_path.c_str(), "rb");
+	FILE *f = ap_solo_open_utf8(g_solo_journal_path, L"rb", "rb");
 	if (!f)
 		return;
 	std::string text;
@@ -1565,6 +1599,8 @@ static void ap_solo_journal_resend(const std::string &seed)
 	AP_NET_GUARD("solo_journal_resend", {
 		g_ap->LocationChecks(std::list<int64_t>(resend.begin(), resend.end()));
 		ap_locs_invalidate();
+		for (int64_t code : resend)
+			g_pending_checks.insert(code); // #85: in flight until its receipt drains
 	});
 	char line[96];
 	std::snprintf(line, sizeof line, "[AP NET] solo journal: resent %d check(s)\n", (int)resend.size());

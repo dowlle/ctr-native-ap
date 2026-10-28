@@ -198,7 +198,10 @@ static void MM_Solo_Pick(int kind)
 static void MM_Solo_PollPick(void)
 {
 	char path[1024];
-	if (AP_Solo_PickTake(path, sizeof path) != 1)
+	const int took = AP_Solo_PickTake(path, sizeof path);
+	if (took == -2)
+		MM_Solo_Message("The path of that file is too long. Move it to a shorter folder, or use the inbox.");
+	if (took != 1)
 		return;
 	if (s_soloPickKind == SOLO_JOB_IMPORT_ROOM ? AP_Solo_ImportRoomStart(path) : AP_Solo_ImportYamlStart(path))
 		MM_Solo_Busy(s_soloPickKind);
@@ -675,7 +678,8 @@ static void MM_Solo_Back(void)
 }
 
 /* The Connection page calls this first every frame. Returns 1 when Play Solo
-   owns the page this frame. */
+   owns the page this frame, 2 when it closed this frame (draw the Connection
+   page, but take no input), 0 otherwise. */
 static int MM_Solo_Frame(uint32_t *ot, struct GamepadBuffer *pad)
 {
 	if (s_soloPage == SOLO_OFF)
@@ -692,8 +696,12 @@ static int MM_Solo_Frame(uint32_t *ot, struct GamepadBuffer *pad)
 	    s_soloPage != SOLO_BUSY)
 	{
 		MM_Solo_Back();
+		/* Back owns this frame: the new page reads input from the next one.
+		   On leaving Play Solo the Connection page draws but takes no input
+		   this frame (2). */
 		if (s_soloPage == SOLO_OFF)
-			return 0;
+			return 2;
+		return 1;
 	}
 	switch (s_soloPage)
 	{

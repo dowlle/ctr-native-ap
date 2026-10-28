@@ -83,11 +83,13 @@ bool FileExists(const std::string &path)
 	return fs::is_regular_file(fs::u8path(path), ec);
 }
 
-void CopyText(char *dst, size_t size, const std::string &src)
+// Returns false when src did not fit (the copy is cut).
+bool CopyText(char *dst, size_t size, const std::string &src)
 {
 	if (size == 0)
-		return;
+		return false;
 	std::snprintf(dst, size, "%s", src.c_str());
+	return src.size() < size;
 }
 
 // ---------------------------------------------------------------------------
@@ -298,6 +300,7 @@ struct Session
 	uint64_t stopStart = 0;
 	int runningRetries = 0;
 	uint64_t retryAt = 0;      // a respawn waiting for an old server to exit
+	std::string pendingRoom;   // the next room, once this session has stopped
 	bool reconnecting = false; // our own AP_Net_Reconnect call
 } g_session;
 
@@ -360,8 +363,9 @@ void ParseList(const nlohmann::json &r)
 			if (!preset && AP_SoloJsonString(e, "source") == "inbox")
 				label = "Inbox: " + label;
 			CopyText(s.label, sizeof s.label, label);
-			CopyText(s.path, sizeof s.path, AP_SoloJsonString(e, "path"));
 			CopyText(s.error, sizeof s.error, AP_SoloJsonString(e, "error"));
+			if (!CopyText(s.path, sizeof s.path, AP_SoloJsonString(e, "path")))
+				CopyText(s.error, sizeof s.error, "The path of this file is too long.");
 			CopyText(s.presetId, sizeof s.presetId, AP_SoloJsonString(e, "id"));
 			g_lists.starts.push_back(s);
 		}
@@ -412,6 +416,12 @@ void TickJob()
 			return;
 		}
 	}
+	if (AP_SoloJobTimedOut(SDL_GetTicks() - g_job.child.started, g_job.limitMs))
+	{
+		JobFail(g_job.kind == JOB_GENERATE ? "timeout" : "internal", "the runtime did not answer in time", "");
+		FinishJob();
+		return;
+	}
 	if (g_job.child.exited)
 	{
 		if (g_job.result.is_object())
@@ -426,12 +436,6 @@ void TickJob()
 		}
 		else
 			JobFail("internal", "the runtime exited without an answer", "");
-		FinishJob();
-		return;
-	}
-	if (AP_SoloJobTimedOut(SDL_GetTicks() - g_job.child.started, g_job.limitMs))
-	{
-		JobFail(g_job.kind == JOB_GENERATE ? "timeout" : "internal", "the runtime did not answer in time", "");
 		FinishJob();
 	}
 }
@@ -502,10 +506,12 @@ void TickSession()
 			char uri[64];
 			std::snprintf(uri, sizeof uri, "ws://127.0.0.1:%d", ev.port);
 			const std::string journal = SoloPath("rooms/" + s.roomId + "/checks.journal");
+			// The journal's seed is also the seed ap_net expects in RoomInfo
+			// before it sends the slot and password.
+			ap_net_set_check_journal(journal.c_str(), s.seed.c_str());
 			s.reconnecting = true;
 			AP_Net_Reconnect(uri, ev.slot.c_str(), ev.password.c_str());
 			s.reconnecting = false;
-			ap_net_set_check_journal(journal.c_str(), s.seed.c_str());
 			s.state = AP_SOLO_SESSION_CONNECTING;
 			s.phaseStart = SDL_GetTicks();
 			Log("server ready on port " + std::to_string(ev.port) + " for room " + s.roomId);
@@ -810,8 +816,10 @@ extern "C" int AP_Solo_PickTake(char *out, int size)
 	std::lock_guard<std::mutex> lock(g_pickLock);
 	if (g_pickState < 2)
 		return 0;
-	const int result = g_pickState == 2 ? 1 : -1;
-	if (out && size > 0)
+	int result = g_pickState == 2 ? 1 : -1;
+	if (result == 1 && (!out || size <= 0 || g_pickPath.size() >= (size_t)size))
+		result = -2; // the path does not fit: refuse it rather than pass a cut path
+	if (result == 1)
 		std::snprintf(out, (size_t)size, "%s", g_pickPath.c_str());
 	g_pickState = 0;
 	g_pickPath.clear();
@@ -824,9 +832,14 @@ extern "C" int AP_Solo_SessionStart(const char *roomId)
 		return 0;
 	if (AP_Solo_SessionActive())
 	{
-		if (g_session.roomId == roomId)
+		if (g_session.roomId == roomId && g_session.state != AP_SOLO_SESSION_STOPPING)
 			return 1; // already running for this room: one server per room
-		AP_Solo_Shutdown();
+		// Switch rooms without blocking the frame: stop this one, start the
+		// next from AP_Solo_Tick once the old server has exited.
+		std::string next = roomId;
+		AP_Solo_SessionStop();
+		g_session.pendingRoom = next;
+		return 1;
 	}
 	g_session.child.release();
 	g_session = Session();
@@ -884,10 +897,17 @@ extern "C" void AP_Solo_Tick(void)
 {
 	TickJob();
 	TickSession();
+	if (!g_session.pendingRoom.empty() && !AP_Solo_SessionActive())
+	{
+		std::string next = g_session.pendingRoom;
+		g_session.pendingRoom.clear();
+		AP_Solo_SessionStart(next.c_str());
+	}
 }
 
 extern "C" void AP_Solo_Shutdown(void)
 {
+	g_session.pendingRoom.clear();
 	AP_Solo_JobCancel();
 	AP_Solo_SessionStop();
 	// Bounded wait for the server to save and exit.

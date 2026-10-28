@@ -780,10 +780,15 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	const int numStrings = s_sectionCount[sec]; // uri / slot / password
 	const int numRows = numStrings + 1 + CONN_SOLO_ROWS; // + Connect (+ Play Solo)
 
+	int soloClosed = 0;
 #if !defined(CTR_AP_AUTHORING)
 	// Play Solo owns the whole page while one of its pages is open.
-	if (MM_Solo_Frame(ot, pad))
-		return;
+	{
+		const int solo = MM_Solo_Frame(ot, pad);
+		if (solo == 1)
+			return;
+		soloClosed = (solo == 2);
+	}
 #endif
 
 	// The Room links row lives on Options > Archipelago; this page only keeps
@@ -794,7 +799,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 
 	// While editing (or on the frame we just resolved) all menu navigation is
 	// suppressed: text mode owns input.
-	if (!s_connEditing && !justResolved)
+	if (!s_connEditing && !justResolved && !soloClosed)
 	{
 		if ((pad->buttonsTapped & BTN_UP) != 0)
 		{

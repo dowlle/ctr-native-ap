@@ -209,9 +209,13 @@ def precompile(runtime: Path) -> int:
 
 
 def manifest_hashes(runtime: Path) -> str:
+    """Digest of (relative posix path, SHA-256) pairs, sorted by path string,
+    RUNTIME.txt excluded. The release assembler and verifier recompute it."""
     digest = hashlib.sha256()
-    for path in sorted(p for p in runtime.rglob("*") if p.is_file() and p.name != "RUNTIME.txt"):
-        rel = path.relative_to(runtime).as_posix()
+    files = sorted((p.relative_to(runtime).as_posix(), p) for p in runtime.rglob("*") if p.is_file())
+    for rel, path in files:
+        if rel == "RUNTIME.txt":
+            continue
         digest.update(rel.encode() + b"\0" + sha256(path).encode() + b"\n")
     return digest.hexdigest()
 

@@ -48,14 +48,19 @@ class SoloRuntimeReleaseTests(unittest.TestCase):
 
     def runtime(self, platform: str, apworld_sha: str | None = None, name: str | None = None) -> Path:
         folder = self.root / (name or f"rt-{platform}")
-        for rel in (INTERPRETER[platform], "ctr_solo.py", "archipelago/MultiServer.py", "presets/standard.yaml"):
+        # Names whose string order differs from path order ("a.b" vs "a/b").
+        for rel in (INTERPRETER[platform], "ctr_solo.py", "archipelago/MultiServer.py", "presets/standard.yaml",
+                    "python/lib-dynload/x.so", "python/lib.txt", "python-x/y"):
             path = folder / rel
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(rel.encode())
+        files = [(p.relative_to(folder).as_posix(), sha(p.read_bytes())) for p in folder.rglob("*") if p.is_file()]
         (folder / "RUNTIME.txt").write_text(
             "# test\nschema: 1\n"
             f"platform: {platform}\ninterpreter: {INTERPRETER[platform]}\n"
-            f"ctr.apworld sha256: {apworld_sha or sha(self.apworld.read_bytes())}\n", encoding="utf-8")
+            f"ctr.apworld sha256: {apworld_sha or sha(self.apworld.read_bytes())}\n"
+            f"ctr_solo.py sha256: {sha((folder / 'ctr_solo.py').read_bytes())}\n"
+            f"tree sha256: {ASSEMBLER.runtime_tree_sha256(files)}\n", encoding="utf-8")
         return folder
 
     def test_entries_accept_a_matching_runtime(self) -> None:
@@ -84,6 +89,24 @@ class SoloRuntimeReleaseTests(unittest.TestCase):
         (runtime / INTERPRETER["windows"]).unlink()
         with self.assertRaises(ASSEMBLER.AssemblyError):
             ASSEMBLER.solo_runtime_entries(runtime, "windows", self.apworld)
+
+    def test_entries_refuse_a_changed_file(self) -> None:
+        runtime = self.runtime("windows")
+        (runtime / "archipelago" / "MultiServer.py").write_text("changed")
+        with self.assertRaises(ASSEMBLER.AssemblyError):
+            ASSEMBLER.solo_runtime_entries(runtime, "windows", self.apworld)
+
+    def test_tree_digest_matches_the_builder(self) -> None:
+        runtime = self.runtime("linux")
+        self.assertEqual(BUILDER.manifest_hashes(runtime),
+                         ASSEMBLER.read_runtime_manifest((runtime / "RUNTIME.txt").read_text())["tree sha256"])
+
+    def test_required_from_0_3_0(self) -> None:
+        self.assertFalse(ASSEMBLER.solo_runtime_required("0.2.4"))
+        self.assertTrue(ASSEMBLER.solo_runtime_required("0.3.0"))
+        self.assertTrue(ASSEMBLER.solo_runtime_required("0.3.0-rc1"))
+        self.assertTrue(VERIFIER.solo_runtime_required("v1.0.0"))
+        self.assertFalse(VERIFIER.solo_runtime_required("v0.2.9-alpha1"))
 
     def test_linux_interpreter_is_executable_in_the_tarball(self) -> None:
         entries = ASSEMBLER.solo_runtime_entries(self.runtime("linux"), "linux", self.apworld)
@@ -123,6 +146,14 @@ class SoloRuntimeReleaseTests(unittest.TestCase):
     def test_verifier_refuses_a_runtime_for_another_apworld(self) -> None:
         release = self.write_release("v0.3.0", self.runtime("windows"),
                                      self.runtime("linux", apworld_sha="1" * 64))
+        with self.assertRaises(VERIFIER.PolicyError):
+            VERIFIER.verify_solo_runtime(release, "v0.3.0")
+
+    def test_verifier_refuses_a_changed_runtime_file(self) -> None:
+        windows = self.runtime("windows")
+        linux = self.runtime("linux")
+        (linux / "ctr_solo.py").write_text("tampered")
+        release = self.write_release("v0.3.0", windows, linux)
         with self.assertRaises(VERIFIER.PolicyError):
             VERIFIER.verify_solo_runtime(release, "v0.3.0")
 

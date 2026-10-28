@@ -55,7 +55,7 @@ struct APSoloRoomInfo
 struct APSoloStartInfo
 {
 	char label[AP_SOLO_TEXT];
-	char path[512];
+	char path[1024];
 	char error[AP_SOLO_TEXT];   /* non-empty: refused, shown greyed */
 	int isPreset;
 	char presetId[32];
@@ -117,7 +117,8 @@ int AP_Solo_OptionIndex(const char *name);
 void AP_Solo_OptionsReset(void);          /* back to the preset's values */
 
 /* Import file dialog (SDL, answers on another thread). room 1: rooms,
-   0: YAMLs. Take returns 1 with a path, -1 cancelled, 0 nothing yet. */
+   0: YAMLs. Take returns 1 with a path, -1 cancelled, -2 path too long,
+   0 nothing yet. */
 int AP_Solo_PickStart(int room);
 int AP_Solo_PickTake(char *out, int size);
 

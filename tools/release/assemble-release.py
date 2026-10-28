@@ -391,6 +391,26 @@ def read_runtime_manifest(text: str) -> dict[str, str]:
     return result
 
 
+SOLO_RUNTIME_FROM = (0, 3, 0)  # releases from 0.3.0 on must carry the solo runtime (#89)
+
+
+def solo_runtime_required(version: str) -> bool:
+    numbers = re.match(r"^v?(\d+)\.(\d+)\.(\d+)", version)
+    return bool(numbers) and tuple(int(n) for n in numbers.groups()) >= SOLO_RUNTIME_FROM
+
+
+def runtime_tree_sha256(files: list[tuple[str, str]]) -> str:
+    """Same digest as tools/solo/build-runtime.py: sorted (relative path,
+    file SHA-256) pairs of every file except RUNTIME.txt."""
+    import hashlib
+    digest = hashlib.sha256()
+    for rel, file_sha in sorted(files):
+        if rel == "RUNTIME.txt":
+            continue
+        digest.update(rel.encode() + b"\0" + file_sha.encode() + b"\n")
+    return digest.hexdigest()
+
+
 def solo_runtime_entries(runtime: Path, platform: str, apworld: Path) -> list[tuple[Path, str]]:
     """Check a built solo runtime (#89) and return its archive entries."""
     manifest_path = runtime / "RUNTIME.txt"
@@ -413,6 +433,12 @@ def solo_runtime_entries(runtime: Path, platform: str, apworld: Path) -> list[tu
     for needed in (SOLO_INTERPRETER[platform], "ctr_solo.py", "archipelago/MultiServer.py"):
         if f"{SOLO_RUNTIME_DIR}/{needed}" not in names:
             fail(f"{platform} solo runtime lacks {needed}")
+    # The files must be the ones RUNTIME.txt describes.
+    tree = runtime_tree_sha256([(path.relative_to(runtime).as_posix(), sha256(path)) for path, _ in entries])
+    if manifest.get("tree sha256") != tree:
+        fail(f"{platform} solo runtime files differ from its RUNTIME.txt (tree sha256)")
+    if manifest.get("ctr_solo.py sha256") != sha256(runtime / "ctr_solo.py"):
+        fail(f"{platform} solo runtime ctr_solo.py differs from its RUNTIME.txt")
     return entries
 
 
@@ -591,6 +617,8 @@ def assemble(args: argparse.Namespace) -> list[Path]:
         solo_linux = getattr(args, "solo_runtime_linux", None)
         if (solo_windows is None) != (solo_linux is None):
             fail("give both --solo-runtime-windows and --solo-runtime-linux, or neither")
+        if solo_windows is None and solo_runtime_required(version):
+            fail(f"release {version} needs the solo runtime: give --solo-runtime-windows and --solo-runtime-linux")
         if solo_windows is not None:
             windows_files += solo_runtime_entries(solo_windows.resolve(), "windows", args.apworld.resolve())
             linux_files += solo_runtime_entries(solo_linux.resolve(), "linux", args.apworld.resolve())
