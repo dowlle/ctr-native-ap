@@ -144,8 +144,38 @@ static inline bool AP_SoloRoomIdValid(const std::string &id)
 	return true;
 }
 
-// Check journal: one decimal location id per line, appended before the check
-// is sent. Damaged lines (a torn last write) are skipped.
+// The solo server's port range (design: above the 38281 to 38300 range of
+// the hosted test servers). A ready line naming another port is not dialed.
+#define AP_SOLO_PORT_FIRST 38301
+#define AP_SOLO_PORT_LAST 38320
+
+static inline bool AP_SoloPortAllowed(int port)
+{
+	return port >= AP_SOLO_PORT_FIRST && port <= AP_SOLO_PORT_LAST;
+}
+
+// Check journal record: "<code> <code>\n", the location id written twice. A
+// torn write (a crash mid-line, possibly followed by the next record on the
+// same line) can never pass as a record, because both halves must be equal
+// decimal numbers on one complete line.
+static inline std::string AP_SoloJournalRecord(int64_t code)
+{
+	const std::string n = std::to_string((long long)code);
+	return n + " " + n + "\n";
+}
+
+static inline bool AP_SoloJournalDigits(const std::string &s)
+{
+	if (s.empty() || s.size() > 19)
+		return false;
+	for (char c : s)
+		if (c < '0' || c > '9')
+			return false;
+	return true;
+}
+
+// Check journal: one record per line, appended before the check is sent.
+// Lines that are not a complete record (a torn write) are skipped.
 static inline std::vector<int64_t> AP_SoloJournalParse(const std::string &text)
 {
 	std::vector<int64_t> codes;
@@ -160,14 +190,13 @@ static inline std::vector<int64_t> AP_SoloJournalParse(const std::string &text)
 		start = nl + 1;
 		if (!line.empty() && line.back() == '\r')
 			line.pop_back();
-		if (line.empty() || line.size() > 19)
+		const size_t space = line.find(' ');
+		if (space == std::string::npos)
 			continue;
-		bool digits = true;
-		for (char c : line)
-			digits = digits && c >= '0' && c <= '9';
-		if (!digits)
+		const std::string first = line.substr(0, space), second = line.substr(space + 1);
+		if (first != second || !AP_SoloJournalDigits(first))
 			continue;
-		const int64_t code = (int64_t)std::strtoll(line.c_str(), nullptr, 10);
+		const int64_t code = (int64_t)std::strtoll(first.c_str(), nullptr, 10);
 		if (code > 0 && seen.insert(code).second)
 			codes.push_back(code);
 	}

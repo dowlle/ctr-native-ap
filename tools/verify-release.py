@@ -130,22 +130,39 @@ def solo_runtime_required(tag: str) -> bool:
 
 def runtime_tree_from_archive(archive: Path) -> tuple[str, dict[str, str]]:
     """Recompute RUNTIME.txt's tree sha256 from the archive's solo-runtime/
-    members. Returns the digest and the per-file hashes."""
+    members. Refuses links, special files, duplicate paths and (Linux) an
+    interpreter without execute permission. Returns the digest and the
+    per-file hashes."""
     files: dict[str, str] = {}
     prefix = "solo-runtime/"
+
+    def add(rel: str, data: bytes) -> None:
+        if rel in files:
+            fail(f"{archive.name}: duplicate solo runtime member {rel}")
+        files[rel] = hashlib.sha256(data).hexdigest()
+
     if archive.name.endswith(".zip"):
         with zipfile.ZipFile(archive) as bundle:
-            for name in bundle.namelist():
-                rel = name.split("/", 1)[1] if "/" in name else ""
-                if rel.startswith(prefix) and not name.endswith("/"):
-                    files[rel[len(prefix):]] = hashlib.sha256(bundle.read(name)).hexdigest()
+            for info in bundle.infolist():
+                rel = info.filename.split("/", 1)[1] if "/" in info.filename else ""
+                if not rel.startswith(prefix) or info.is_dir():
+                    continue
+                if (info.external_attr >> 16) & 0o170000 == 0o120000:
+                    fail(f"{archive.name}: solo runtime member is a link: {rel}")
+                add(rel[len(prefix):], bundle.read(info))
     else:
         with tarfile.open(archive) as bundle:
             for member in bundle.getmembers():
                 rel = member.name.split("/", 1)[1] if "/" in member.name else ""
-                if rel.startswith(prefix) and member.isfile():
-                    stream = bundle.extractfile(member)
-                    files[rel[len(prefix):]] = hashlib.sha256(stream.read() if stream else b"").hexdigest()
+                if not rel.startswith(prefix) or member.isdir():
+                    continue
+                if not member.isfile():
+                    fail(f"{archive.name}: solo runtime member is not a regular file: {rel}")
+                name = rel[len(prefix):]
+                if name == "python/bin/python3.12" and not member.mode & 0o111:
+                    fail(f"{archive.name}: the solo runtime interpreter is not executable")
+                stream = bundle.extractfile(member)
+                add(name, stream.read() if stream else b"")
     digest = hashlib.sha256()
     for rel, file_sha in sorted(files.items()):
         if rel == "RUNTIME.txt":

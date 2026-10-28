@@ -76,10 +76,24 @@ static void test_room_id()
 
 static void test_journal()
 {
-	std::vector<int64_t> codes = AP_SoloJournalParse("35011000\n35011001\r\n35011000\njunk\n-5\n0\n\n3501");
-	CHECK(codes.size() == 2 && codes[0] == 35011000 && codes[1] == 35011001); // torn last line skipped
+	CHECK(AP_SoloJournalRecord(35011000) == "35011000 35011000\n");
+	std::string text = AP_SoloJournalRecord(35011000) + AP_SoloJournalRecord(35011001) +
+	                   "35011000 35011000\r\n" + "junk\n-5 -5\n0 0\n\n";
+	std::vector<int64_t> codes = AP_SoloJournalParse(text);
+	CHECK(codes.size() == 2 && codes[0] == 35011000 && codes[1] == 35011001);
 	CHECK(AP_SoloJournalParse("").empty());
-	CHECK(AP_SoloJournalParse("99999999999999999999\n").empty()); // too long
+	CHECK(AP_SoloJournalParse("99999999999999999999 99999999999999999999\n").empty()); // too long
+	// A torn write: "3501" left by a crash, then the next record appended on
+	// the same line. Neither half passes; the next clean record does.
+	codes = AP_SoloJournalParse("35011000 3501" + AP_SoloJournalRecord(35011002) + AP_SoloJournalRecord(35011003));
+	CHECK(codes.size() == 1 && codes[0] == 35011003);
+	// The old single-number form and an unfinished last line are not records.
+	CHECK(AP_SoloJournalParse("35011000\n").empty());
+	CHECK(AP_SoloJournalParse("35011000 35011000").empty());
+
+	// The solo port range.
+	CHECK(AP_SoloPortAllowed(38301) && AP_SoloPortAllowed(38320));
+	CHECK(!AP_SoloPortAllowed(38300) && !AP_SoloPortAllowed(38321) && !AP_SoloPortAllowed(38281));
 
 	// After a deleted .apsave the server lists the checks as missing again:
 	// every journalled check it still misses is resent, nothing else.

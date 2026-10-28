@@ -447,7 +447,9 @@ void SessionFail(const std::string &message)
 {
 	g_session.error = message;
 	Log("session failed: " + message);
-	ap_net_set_check_journal(nullptr, nullptr);
+	// The journal stays on this room: checks earned while the server is gone
+	// are recorded and sent when the seed is resumed. Any other connection
+	// clears it (AP_Solo_BeforeReconnect).
 	AP_Net_Shutdown();
 	if (g_session.child.running())
 	{
@@ -501,6 +503,11 @@ void TickSession()
 				SessionFail("The solo runtime opened a different room.");
 				return;
 			}
+			if (!AP_SoloPortAllowed(ev.port))
+			{
+				SessionFail("The solo runtime chose a port outside its range.");
+				return;
+			}
 			s.seed = ev.seedName;
 			s.port = ev.port;
 			char uri[64];
@@ -529,7 +536,6 @@ void TickSession()
 				return;
 			}
 			s.child.release();
-			ap_net_set_check_journal(nullptr, nullptr);
 			s.error = AP_SoloErrorText(ev.errorKind, ev.message);
 			s.state = AP_SOLO_SESSION_FAILED;
 			Log("serve refused (" + ev.errorKind + "): " + ev.message);
@@ -866,9 +872,11 @@ extern "C" int AP_Solo_SessionActive(void)
 extern "C" void AP_Solo_SessionStop(void)
 {
 	Session &s = g_session;
+	s.pendingRoom.clear();
 	if (s.state == AP_SOLO_SESSION_NONE || s.state == AP_SOLO_SESSION_FAILED || s.state == AP_SOLO_SESSION_STOPPING)
 		return;
-	ap_net_set_check_journal(nullptr, nullptr);
+	// The journal stays on this room until another connection is made, so a
+	// check earned offline after leaving is still resent on the next resume.
 	AP_Net_Shutdown();
 	s.error.clear();
 	if (s.child.running())
@@ -886,11 +894,17 @@ extern "C" void AP_Solo_SessionStop(void)
 
 extern "C" void AP_Solo_BeforeReconnect(void)
 {
-	if (!g_session.reconnecting && AP_Solo_SessionActive())
+	if (g_session.reconnecting)
+		return;
+	// Another connection (Connect, a room link): no queued room may start
+	// later, the running session ends, and checks stop going to the journal.
+	g_session.pendingRoom.clear();
+	if (AP_Solo_SessionActive())
 	{
 		Log("another connection replaces the solo session");
 		AP_Solo_SessionStop();
 	}
+	ap_net_set_check_journal(nullptr, nullptr);
 }
 
 extern "C" void AP_Solo_Tick(void)

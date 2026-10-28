@@ -1562,11 +1562,21 @@ static void ap_solo_journal_append(int64_t code)
 	// The check is still sent when the journal cannot be written: the solo
 	// server saves after every check batch, and refusing the check would lose
 	// it for certain. The failure is logged.
-	FILE *f = ap_solo_open_utf8(g_solo_journal_path, L"ab", "ab");
-	bool ok = f != nullptr;
-	if (f)
+	const std::string record = AP_SoloJournalRecord(code);
+	bool ok = false;
+	for (int attempt = 0; attempt < 2 && !ok; attempt++)
 	{
-		ok = std::fprintf(f, "%lld\n", (long long)code) > 0;
+		FILE *f = ap_solo_open_utf8(g_solo_journal_path, L"a+b", "a+b");
+		if (!f)
+			continue;
+		// A torn last line from a crash gets its own line ending first, so
+		// this record starts on a clean line (the torn one is skipped).
+		bool clean = true;
+		if (std::fseek(f, -1, SEEK_END) == 0)
+			clean = std::fgetc(f) == '\n';
+		std::fseek(f, 0, SEEK_END);
+		ok = (clean || std::fputc('\n', f) != EOF);
+		ok = ok && std::fwrite(record.data(), 1, record.size(), f) == record.size();
 		ok = (std::fflush(f) == 0) && ok;
 		ok = (std::fclose(f) == 0) && ok;
 	}

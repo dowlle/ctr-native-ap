@@ -157,6 +157,35 @@ class SoloRuntimeReleaseTests(unittest.TestCase):
         with self.assertRaises(VERIFIER.PolicyError):
             VERIFIER.verify_solo_runtime(release, "v0.3.0")
 
+    def test_verifier_refuses_a_non_executable_interpreter_and_links(self) -> None:
+        import tarfile
+        release = self.write_release("v0.3.0", self.runtime("windows"), self.runtime("linux"))
+        tarball = release / "ctr-archipelago-v0.3.0-linux-x86.tar.gz"
+        repacked = self.root / "repacked.tar.gz"
+        with tarfile.open(tarball) as src, tarfile.open(repacked, "w:gz") as out:
+            for member in src.getmembers():
+                data = src.extractfile(member).read() if member.isfile() else None
+                if member.name.endswith("python/bin/python3.12"):
+                    member.mode = 0o644
+                out.addfile(member, io.BytesIO(data) if data is not None else None)
+        repacked.replace(tarball)
+        with self.assertRaises(VERIFIER.PolicyError):
+            VERIFIER.verify_solo_runtime(release, "v0.3.0")
+        with tarfile.open(tarball) as src, \
+                tarfile.open(self.root / "linked.tar.gz", "w:gz") as out:
+            for member in src.getmembers():
+                data = src.extractfile(member).read() if member.isfile() else None
+                if member.name.endswith("python/bin/python3.12"):
+                    member.mode = 0o755
+                out.addfile(member, io.BytesIO(data) if data is not None else None)
+            link = tarfile.TarInfo("ctr-archipelago-v0.3.0/solo-runtime/python/bin/python3")
+            link.type = tarfile.SYMTYPE
+            link.linkname = "python3.12"
+            out.addfile(link)
+        (self.root / "linked.tar.gz").replace(tarball)
+        with self.assertRaises(VERIFIER.PolicyError):
+            VERIFIER.verify_solo_runtime(release, "v0.3.0")
+
     def test_verifier_refuses_swapped_platforms(self) -> None:
         release = self.write_release("v0.3.0", self.runtime("linux", name="a"), self.runtime("windows", name="b"))
         with self.assertRaises(VERIFIER.PolicyError):
