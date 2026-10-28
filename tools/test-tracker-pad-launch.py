@@ -348,10 +348,14 @@ sel = sel[:sel.index("goto WarpPad_RequestLoad;")]
 assert "AP_TrackerLaunchTakeMode(physLevelID, levelID)" in sel
 assert "AP_PadSelectorRows(physLevelID, levelID, &apRsRows);" in sel
 assert "AP_TLModeOffered(apRsRows.mode, apRsRows.count, apTlMode) ? apTlMode : AP_RS_NO_ROUTE" in sel
+assert "if (apTlMode == -2)\n\t\t\t\tapRsMode = AP_RS_NO_ROUTE;" in sel
+take = body((root / "ap/ap_tracker_launch.c").read_text(), "int AP_TrackerLaunchTakeMode(")
+assert take.index("AP_TLGateOpen(r)") < take.index("AP_TLTakeMode(r, physical, dest)") and "return -2;" in take
 content = tick[tick.index("if (!pad->crystal && pad->mode_count > 1)"):]
 content = content[:content.index("host = AP_ContentPreparePad(physLevelID, mode);")]
 assert "AP_TrackerLaunchTakeMode(physLevelID, levelID)" in content
 assert "sel.mode[k] == apTlMode && sel.open[k]" in content
+assert "if (apTlMode == -2)\n\t\t\t\t\tapContentModeChoice = -1;" in content
 assert "AP_TrackerLaunchDrop(AP_TL_DROP_REFUSED);" in warp[warp.index("WarpPad_RefuseEntry:"):][:200]
 
 garage = (root / "game/232/AH_Garage.c").read_text()

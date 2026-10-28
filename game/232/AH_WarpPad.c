@@ -1236,7 +1236,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				ap_content_selector sel;
 				int apTlMode = AP_TrackerLaunchTakeMode(physLevelID, levelID);
 				AP_ContentSelectorBuild(pad, &sel);
-				if (apTlMode >= 0)
+				if (apTlMode == -2)
+					apContentModeChoice = -1; // the gate closed during the warp
+				else if (apTlMode >= 0)
 				{
 					// #375: the tracker's row answers this menu when the
 					// pad still has it open; otherwise the kart is released.
@@ -1382,7 +1384,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			// #375: a tracker start already chose its row from the same
 			// facts; it answers this menu if the pad still offers that
 			// row, else the pad releases the kart.
-			if (apTlMode >= 0)
+			if (apTlMode == -2)
+				apRsMode = AP_RS_NO_ROUTE; // the gate closed during the warp
+			else if (apTlMode >= 0)
 			{
 				apRsMode = AP_TLModeOffered(apRsRows.mode, apRsRows.count, apTlMode) ? apTlMode : AP_RS_NO_ROUTE;
 				if (apRsMode < 0)

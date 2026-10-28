@@ -240,12 +240,23 @@ void AP_TrackerLaunchTaken(void)
 	AP_TLLog("taken by the pad", &copy);
 }
 
+/* The pad's menu asks for the chosen mode (warp frame 61). The shared gate is
+ * asked once more first: a seed change during the warp must not apply a mode
+ * the new room closes. Returns the mode, -1 without a tracker start for this
+ * pad, or -2 when the gate closed (the caller releases the kart). */
 int AP_TrackerLaunchTakeMode(int physical, int dest)
 {
 	ap_tl_request *r = AP_TLState(), copy = *r;
+	int open = r->stage == AP_TL_TAKEN && r->physical == physical && r->dest == dest && AP_TLGateOpen(r);
 	int mode = AP_TLTakeMode(r, physical, dest);
-	if (mode >= 0)
-		AP_TLLog("answers the pad menu", &copy);
+	if (mode < 0)
+		return -1;
+	if (!open)
+	{
+		AP_TLLog("dropped (gate closed during the warp)", &copy);
+		return -2;
+	}
+	AP_TLLog("answers the pad menu", &copy);
 	return mode;
 }
 
