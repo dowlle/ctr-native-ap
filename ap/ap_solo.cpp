@@ -20,9 +20,14 @@
 #include <vector>
 
 #ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
 #include <process.h>
+#include <sys/stat.h>
 #define AP_SOLO_GETPID() ((long)_getpid())
 #else
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #define AP_SOLO_GETPID() ((long)getpid())
 #endif
@@ -92,6 +97,68 @@ bool FileExists(const std::string &path)
 {
 	std::error_code ec;
 	return fs::is_regular_file(fs::u8path(path), ec);
+}
+
+// A plain file of at most `limit` bytes, or "" (a link, a FIFO or anything
+// larger is not read). On POSIX the open does not follow a link and does not
+// wait for a FIFO writer, and the opened file itself is checked.
+std::string ReadSmallPlainFile(const fs::path &path, size_t limit)
+{
+#ifdef _WIN32
+	std::error_code ec;
+	const fs::file_status st = fs::symlink_status(path, ec);
+	if (ec || !fs::is_regular_file(st) || fs::file_size(path, ec) > limit || ec)
+		return std::string();
+	std::ifstream in(path, std::ios::binary);
+	std::string data(limit + 1, '\0');
+	in.read(&data[0], (std::streamsize)data.size());
+	data.resize((size_t)in.gcount());
+#else
+	const int fd = open(path.c_str(), O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+	if (fd < 0)
+		return std::string();
+	struct stat st;
+	std::string data;
+	if (fstat(fd, &st) == 0 && S_ISREG(st.st_mode) && (size_t)st.st_size <= limit)
+	{
+		data.resize(limit + 1);
+		ssize_t got = 0, n;
+		while ((size_t)got < data.size() && (n = read(fd, &data[(size_t)got], data.size() - (size_t)got)) > 0)
+			got += n;
+		data.resize(got > 0 ? (size_t)got : 0);
+	}
+	close(fd);
+#endif
+	return data.size() > limit ? std::string() : data;
+}
+
+// Creates `path` (it must not exist: never through a link left there) and
+// writes `text`. False on any failure.
+bool WriteNewFile(const fs::path &path, const std::string &text)
+{
+#ifdef _WIN32
+	const int fd = _wopen(path.wstring().c_str(), _O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY, _S_IREAD | _S_IWRITE);
+	if (fd < 0)
+		return false;
+	const bool ok = _write(fd, text.data(), (unsigned)text.size()) == (int)text.size();
+	return (_close(fd) == 0) && ok;
+#else
+	const int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0644);
+	if (fd < 0)
+		return false;
+	size_t done = 0;
+	while (done < text.size())
+	{
+		const ssize_t n = write(fd, text.data() + done, text.size() - done);
+		if (n <= 0)
+		{
+			close(fd);
+			return false;
+		}
+		done += (size_t)n;
+	}
+	return close(fd) == 0;
+#endif
 }
 
 // Returns false when src did not fit (the copy is cut).
@@ -819,10 +886,7 @@ extern "C" void AP_Solo_RecordTrackDescriptor(const char *contentId, const char 
 			Log("left " + name + " alone: not a plain descriptor file");
 			return;
 		}
-		std::ifstream in(target, std::ios::binary);
-		std::stringstream have;
-		have << in.rdbuf();
-		if (have.str() == json)
+		if (ReadSmallPlainFile(target, kDescriptorMax) == json)
 			return;
 	}
 	// A temp name no other writer uses, created fresh (never an existing
@@ -838,28 +902,16 @@ extern "C" void AP_Solo_RecordTrackDescriptor(const char *contentId, const char 
 	}
 	if (tmp.empty())
 		return;
+	if (!WriteNewFile(tmp, json))
 	{
-		std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-		out << json;
-		if (!out.flush())
-		{
-			out.close();
-			fs::remove(tmp, ec);
-			Log("could not keep the descriptor of " + name);
-			return;
-		}
+		fs::remove(tmp, ec);
+		Log("could not keep the descriptor of " + name);
+		return;
 	}
-	// rename replaces the old file in one step on Linux and, where the
-	// runtime supports it, on Windows. Only if that fails is the old file
-	// removed first; a crash in between loses a cached copy, which the next
-	// verification of the package writes again.
+	// rename replaces the old file in one step (MoveFileExW with
+	// MOVEFILE_REPLACE_EXISTING under MinGW libstdc++, rename(2) on Linux).
+	// If it fails, the old descriptor stays.
 	fs::rename(tmp, target, ec);
-	if (ec)
-	{
-		std::error_code ec2;
-		fs::remove(target, ec2);
-		fs::rename(tmp, target, ec);
-	}
 	if (ec)
 	{
 		fs::remove(tmp, ec);

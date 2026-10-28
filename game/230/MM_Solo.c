@@ -151,6 +151,10 @@ static void MM_Solo_Navigate(struct GamepadBuffer *pad, int count)
 
 static void MM_Solo_Go(int page)
 {
+	/* A message that was to return to Options or Custom Tracks is gone once
+	   any page is chosen another way (for example Back to the seed list). */
+	if (s_soloFromOptions > 1)
+		s_soloFromOptions = 1;
 	s_soloPage = page;
 	s_soloSel = 0;
 	s_soloTop = 0;
