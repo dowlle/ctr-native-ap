@@ -523,7 +523,11 @@ static inline int AP_BossEncounterOpponent(const AP_BossEncounters *e, int g)
 
 // The garage whose composed kit is running now, or -1: a garage boss race on
 // that garage's recorded venue, never Oxide, a cup leg or an ordinary race.
-// Unlike the inherited-attack adapter this applies on the home track too.
+// Unlike the inherited-attack adapter this applies on the home track too, and
+// (J11) on a content-plan venue on custom bytes (a custom package or Cortex
+// Vortex served on the home LevelID): its kit was composed for the venue's
+// certified restart point count (points[g]), which
+// AP_BossEncounterCertifiedPoints hands the decision 8 fit.
 static inline int AP_BossEncounterKitGarage(const AP_BossEncounters *e, int advBoss, int advCup,
                                             int bossID, int level)
 {
@@ -532,7 +536,7 @@ static inline int AP_BossEncounterKitGarage(const AP_BossEncounters *e, int advB
 		return -1;
 	if (bossID < 0 || bossID >= AP_BOSS_VENUE_GARAGES || !e->composed[bossID])
 		return -1;
-	if (e->track[bossID] != level || e->custom[bossID])
+	if (e->track[bossID] != level)
 		return -1;
 	return bossID;
 }

@@ -135,6 +135,10 @@ void AP_EvaluateGoal(void)
 		done = ap_content_plan_goal(gems) &&
 		       AP_ComposedGoalMet(ctr_cfg.goal_oxide, ap_oxide_first_beaten || AP_OxideFirstChallengeCleared(),
 		                          ap_oxide_final_beaten, ctr_cfg.goal_bosses, AP_ComposedBossesWon(), 0, 0);
+		// J11: the plan's `wumpa_banked` arm, ANDed like the ordinary room's
+		// (#249). The parser sets ctr_wumpa_shop.goal from it (0 without the
+		// arm, which AP_WumpaGoalMet treats as met).
+		done = done && AP_WumpaGoalMet(ctr_wumpa_shop.goal, ap_net_wumpa_lifetime());
 	}
 	else if (!ctr_cfg_active())
 	{

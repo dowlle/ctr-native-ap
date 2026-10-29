@@ -499,6 +499,24 @@ int AP_BossVenueAdvert(int bossIdx, char *out, int cap)
 #endif
 	if (ctr_boss_encounters.state != AP_BOSS_ENC_VALID)
 		return 0;
+#ifdef CTR_CUSTOM_TRACKS
+	// J11: a content-plan venue on custom bytes is served on the garage's
+	// home LevelID; name the track it really is, so the Rival and Kit lines
+	// that follow sit under the right venue.
+	if (bossIdx >= 0 && bossIdx < AP_BOSS_VENUE_GARAGES && ctr_boss_encounters.custom[bossIdx] &&
+	    ap_content_plan_active())
+	{
+		const ctr_content_bosses *b = ap_content_plan_bosses();
+		const ctr_content_package *pkg = b->venue_cortex[bossIdx] ? NULL : ap_content_plan_package(b->venue_package[bossIdx]);
+		if (b->venue_cortex[bossIdx])
+			snprintf(out, (size_t)cap, "Track: Cortex Vortex");
+		else if (pkg && pkg->display_name[0])
+			snprintf(out, (size_t)cap, "Track: %s", pkg->display_name);
+		else
+			snprintf(out, (size_t)cap, "Track: custom track");
+		return 1;
+	}
+#endif
 	venue = AP_BossGarageVenue(bossIdx);
 	if (!AP_BossVenueTrackKnown(venue))
 		return 0;
@@ -995,9 +1013,10 @@ static AP_OxideGarageInputs AP_OxideInputs(void)
 		in.gemsHeld = ap_content_plan_gems_held(gems);
 	}
 	in.firstOptional = ctr_cfg.oxide_1_optional;
+	// #249 decision 19: N. Oxide's garage waits for the Wumpa target, on
+	// content-plan rooms too (J11: the parser sets ctr_wumpa_shop.goal from
+	// the plan's `wumpa_banked` arm, 0 without one).
 	in.wumpaShort = !AP_WumpaGoalMet(ctr_wumpa_shop.goal, ap_net_wumpa_lifetime());
-	if (ap_content_plan_active())
-		in.wumpaShort = 0;
 	return in;
 }
 
@@ -1412,7 +1431,20 @@ int AP_GoalAdvert(char *out, int cap)
 			const ctr_content_item *row = ap_content_plan_item(AP_ITEM_BASE + AP_IDX_GEM_RED + i);
 			if (row && row->base && AP_GateCountGemColour(i) > 0) ++owned;
 		}
-		return snprintf(out, cap, "Goal: %d/%d selected Gem colours", owned, ctr_cfg.goal_gems);
+		// J11: the plan's Wumpa arm follows the Gem arm; a Wumpa-only
+		// goal shows the Wumpa counter alone. Without a Wumpa arm the line
+		// is the one content plans always showed.
+		if (ctr_cfg.goal_gems > 0 || ctr_wumpa_shop.goal <= 0)
+		{
+			int n = snprintf(out, cap, "Goal: %d/%d selected Gem colours", owned, ctr_cfg.goal_gems);
+			if (ctr_wumpa_shop.goal > 0 && n > 0 && n < cap)
+				snprintf(out + n, (size_t)(cap - n), " - WUMPA %d/%d",
+				         ap_net_wumpa_lifetime() > ctr_wumpa_shop.goal ? ctr_wumpa_shop.goal
+				                                                       : (int)ap_net_wumpa_lifetime(),
+				         ctr_wumpa_shop.goal);
+			return 1;
+		}
+		return AP_GoalLineAppendWumpa(out, cap, 0, ap_net_wumpa_lifetime(), ctr_wumpa_shop.goal);
 	}
 
 	// The Oxide segment is driven by goal_oxide alone, so `optional` (0) and

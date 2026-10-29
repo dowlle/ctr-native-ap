@@ -360,6 +360,9 @@ int AP_StandaloneRaceActive(void);
 // Race-loss stakes facts of the running content-plan race (#133 PR 4a, ap_hooks_race.c;
 // the boost rank and racer from PR 4c).
 int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *outRacer);
+// ctr_first (J11): the Trophy Race check the running content-plan CTR
+// Challenge also pays, with the higher of the two boost ranks; 0 when none.
+int AP_ContentWinPairedFacts(long *outCode, int *outBoost);
 // Content-plan podium identity of the running Trophy Race, or -1 (#133 PR 3b).
 int AP_StandalonePodiumTrack(void);
 int AP_NotifyStandaloneRace(void);

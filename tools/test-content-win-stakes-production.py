@@ -11,6 +11,11 @@ has that many Progressive Boosts, counted from progression-flagged receipts
 plus the plan's starting copies (AP_WinEnvContentCount, AP_WinContentCapMet).
 Engine and network state are controlled seams; this does not claim a Steam
 race.
+
+J11 (ctr_first on content plans, decision 14): a CTR Challenge on a ctr_first
+pad also pays the entry's Trophy Race check (AP_ContentWinPairedFacts), so a
+loss sends while either check is open and in logic; the Trophy needs the CTR
+check's letters and the higher of the two boost ranks.
 """
 from pathlib import Path
 import subprocess
@@ -97,7 +102,8 @@ static AP_WinLogicEnv AP_WinEnvNow(void) {
 static void got(long long id, unsigned flags) { AP_ItemIdTallyReceive(&g_wl_tally,id,7,flags); }
 '''
 for signature in ("static const ctr_content_pad *AP_StandaloneRoutePad(",
-                  "int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *outRacer)\n{"):
+                  "int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *outRacer)\n{",
+                  "int AP_ContentWinPairedFacts(long *outCode, int *outBoost)\n{"):
     fixture += function(signature) + "\n"
 for signature in ("static int AP_WinEnvContentCount(", "static int AP_WinContentCapMet("):
     fixture += function(signature, win_logic) + "\n"
@@ -210,6 +216,35 @@ int main(void) {
  game.bossID=5; roomCodes[roomCount++]=35011105; s=decide(&handled); assert(handled && s.stakes && s.code==35011105); cases++;
  game.bossID=4; s=decide(&handled); assert(handled && !s.stakes && s.why==AP_WS_WHY_NO_ENTRY); cases++; /* not in the room */
  game.gameMode1=ADVENTURE_BOSS|ADVENTURE_CUP; decide(&handled); assert(!handled); cases++;
+ /* ctr_first (J11): CTR and Relic modes only; the CTR win pays the Trophy too. */
+ reset(AP_CONTENT_MODE_CTR,1); pad.ctr_first=1; pad.mode_count=2; pad.modes[0]=AP_CONTENT_MODE_CTR; pad.modes[1]=AP_CONTENT_MODE_RELIC;
+ roomCodes[roomCount++]=35011000; s=decide(&handled);
+ assert(handled && s.stakes && s.code==35012300); cases++;                              /* CTR open: its own code */
+ checked[checkedCount++]=35012300; s=decide(&handled);
+ assert(handled && s.stakes && s.code==35011000 && strstr(lastLog,"win=35011000")); cases++; /* CTR collected, Trophy open */
+ checked[checkedCount++]=35011000; s=decide(&handled);
+ assert(handled && !s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;                   /* both collected */
+ /* The paired Trophy waits for the CTR check's letter items. */
+ reset(AP_CONTENT_MODE_CTR,1); pad.ctr_first=1; pad.mode_count=2; pad.modes[0]=AP_CONTENT_MODE_CTR; pad.modes[1]=AP_CONTENT_MODE_RELIC;
+ roomCodes[roomCount++]=35011000; checked[checkedCount++]=35012300; pad.letter_items[1]=35010140; s=decide(&handled);
+ assert(handled && !s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;
+ received[receivedCount++]=35010140; s=decide(&handled); assert(handled && s.stakes && s.code==35011000); cases++;
+ /* ... and for its own boost rank, above the CTR's. */
+ reset(AP_CONTENT_MODE_CTR,1); pad.ctr_first=1; pad.mode_count=2; pad.modes[0]=AP_CONTENT_MODE_CTR; pad.modes[1]=AP_CONTENT_MODE_RELIC;
+ roomCodes[roomCount++]=35011000; checked[checkedCount++]=35012300; envBoostMode=1; pad.ctr_boost=0; pad.trophy_boost=1;
+ s=decide(&handled); assert(handled && !s.stakes); cases++;
+ got(35010027,1); s=decide(&handled); assert(handled && s.stakes && s.code==35011000); cases++;
+ /* A paired Trophy the room does not have is no stake; a classic CTR pad pays no Trophy. */
+ reset(AP_CONTENT_MODE_CTR,1); pad.ctr_first=1; pad.mode_count=2; pad.modes[0]=AP_CONTENT_MODE_CTR; pad.modes[1]=AP_CONTENT_MODE_RELIC;
+ checked[checkedCount++]=35012300; s=decide(&handled); assert(handled && !s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;
+ reset(AP_CONTENT_MODE_CTR,1); roomCodes[roomCount++]=35011000; checked[checkedCount++]=35012300; s=decide(&handled);
+ assert(handled && !s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;                   /* ctr_first 0: unchanged */
+ /* A forged flag on an entry that still has a Trophy mode pays nothing extra. */
+ reset(AP_CONTENT_MODE_CTR,1); pad.ctr_first=1; roomCodes[roomCount++]=35011000; checked[checkedCount++]=35012300;
+ s=decide(&handled); assert(handled && !s.stakes); cases++;
+ /* The Relic Race of a ctr_first pad stakes nothing. */
+ reset(AP_CONTENT_MODE_RELIC,1); pad.ctr_first=1; pad.mode_count=2; pad.modes[0]=AP_CONTENT_MODE_CTR; pad.modes[1]=AP_CONTENT_MODE_RELIC;
+ roomCodes[roomCount++]=35011000; s=decide(&handled); assert(handled && !s.stakes && s.why==AP_WS_WHY_NO_ENTRY); cases++;
  /* The pure decision on its own. */
  s=AP_WinStakesContentDecide(0,0,0); assert(!s.stakes && s.why==AP_WS_WHY_NO_ENTRY); cases++;
  s=AP_WinStakesContentDecide(35011000,1,1); assert(!s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;

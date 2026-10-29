@@ -178,6 +178,9 @@ tools/test-content-track-checks.c
 tools/test-content-track-checks-production.py
 tools/test-content-cortex-perfect-production.py
 tools/test-content-win-stakes-production.py
+tools/test-content-ctr-first-production.py
+tools/test-content-wumpa-production.py
+tools/test-content-boss-shuffle-production.py
 tools/test-content-racer-lock-production.py
 tools/test-content-global-checks-production.cpp
 tools/test-content-bosses-production.py
