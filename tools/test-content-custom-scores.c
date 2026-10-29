@@ -18,6 +18,9 @@
 #include <common.h>
 #include "ap_hooks.h"
 #include "ap_race_attempt_logic.h"
+// Declared here so a compiler that rejects implicit declarations (gcc 15) builds the units below.
+int AP_RaceAttempt_ProducerBlocked(int producerClass);
+void AP_DeathLinkOnRaceEnd(struct GameTracker *gGT, struct Driver *player);
 #include "game/GAMEPROG.c"
 #include "game/MAIN/MainGameEnd.c"
 #include "game/223.c"

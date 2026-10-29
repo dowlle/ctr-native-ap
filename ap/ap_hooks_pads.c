@@ -325,10 +325,11 @@ static void AP_AppendTrackRungGlow(int track, int *outBits, int cap, int *count)
 // (decision 3, 2026-07-16 wayfinder). Kept separate from
 // AP_PadUncollectedBits so the tier-2 menu stays tier-only. AP_PadState consumes
 // the glow-complete enumeration because a Done lock may not strand a rung.
-int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
+// Content-plan pad enumeration. openOnly hides the checks of a mode still locked
+// behind stage 2 (decision 26, review finding 11); the pad's glow asks for that,
+// while the pad state and the tracker count every open location, locked or not.
+static int AP_ContentPadGlowBits(int destLevelID, int *outBits, int cap, int openOnly)
 {
-	if (ap_content_plan_active())
-	{
 		const ctr_content_pad *pad = ap_content_plan_pad(destLevelID);
         int count=0,n;
         if(!pad || !pad->occupied || !outBits || cap<=0)return 0;
@@ -352,7 +353,7 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
         for(n=0;!pad->crystal && n<pad->mode_count && count<cap;++n) {
             int64_t codes[3]={0,0,0};
             int k,c;
-            if(!AP_ContentModeOpen(pad,pad->modes[n]))continue;
+            if(openOnly && !AP_ContentModeOpen(pad,pad->modes[n]))continue;
             c=ap_content_mode_codes(pad,pad->modes[n],codes);
             for(k=0;k<c && count<cap;++k) {
                 if(codes[k]<=0 || ap_net_location_checked((long)codes[k]))continue;
@@ -370,7 +371,7 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
                 int64_t codes[AP_CONTENT_FAMILY_SLOTS];
                 int slots[AP_CONTENT_FAMILY_SLOTS];
                 int k,c;
-                if(!AP_ContentModeOpen(pad,pad->modes[n]))continue;
+                if(openOnly && !AP_ContentModeOpen(pad,pad->modes[n]))continue;
                 c=ap_content_mode_family_codes(pad,pad->modes[n],codes,slots);
                 for(k=0;k<c && count<cap;++k) {
                     if((seen & (1u<<slots[k])) || ap_net_location_checked((long)codes[k]))continue;
@@ -386,7 +387,12 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
         for(n=0;n<pad->crystal_count && count<cap;++n)
             if(!ap_net_location_checked((long)pad->crystal_locations[n]))outBits[count++]=60000+pad->physical*20+n;
         return count;
-	}
+}
+
+int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
+{
+	if (ap_content_plan_active())
+		return AP_ContentPadGlowBits(destLevelID, outBits, cap, 0);
 	int count;
 
 #ifdef CTR_CUSTOM_TRACKS
@@ -744,7 +750,7 @@ int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap)
 	// Item Box checks included (#133 PR 4e). The legacy appends below key on
 	// a retail LevelID, which a content-plan physical pad is not.
 	if (ap_content_plan_active())
-		return count;
+		return AP_ContentPadGlowBits(destLevelID, outBits, cap, 1);
 #ifdef CTR_CUSTOM_TRACKS
 	if (AP_CustomPadOwnsDestination(&ctr_cfg, destLevelID))
 	{

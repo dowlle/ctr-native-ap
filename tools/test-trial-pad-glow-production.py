@@ -269,11 +269,16 @@ int main(void){
   lockedMode=-1;
   n=AP_PadUncollectedGlowBits(3,bits,AP_PAD_DISPLAY_BITS_MAX);
   assert(has(bits,n,AP_CONTENT_BIT_TROPHY+3)&&has(bits,n,AP_CONTENT_BIT_RELIC+3*3)&&has(bits,n,AP_CONTENT_BIT_RELIC+3*3+2));
+  n=AP_PadUncollectedDisplayBits(3,bits,AP_PAD_DISPLAY_BITS_MAX);
+  assert(has(bits,n,AP_CONTENT_BIT_TROPHY+3)&&has(bits,n,AP_CONTENT_BIT_RELIC+3*3));
   lockedMode=AP_CONTENT_MODE_RELIC;
-  n=AP_PadUncollectedGlowBits(3,bits,AP_PAD_DISPLAY_BITS_MAX);
+  n=AP_PadUncollectedDisplayBits(3,bits,AP_PAD_DISPLAY_BITS_MAX);
   assert(n==1&&bits[0]==AP_CONTENT_BIT_TROPHY+3);
-  lockedMode=AP_CONTENT_MODE_TROPHY;
+  /* the pad state and the tracker count every open location, locked or not */
   n=AP_PadUncollectedGlowBits(3,bits,AP_PAD_DISPLAY_BITS_MAX);
+  assert(n==4&&has(bits,n,AP_CONTENT_BIT_RELIC+3*3));
+  lockedMode=AP_CONTENT_MODE_TROPHY;
+  n=AP_PadUncollectedDisplayBits(3,bits,AP_PAD_DISPLAY_BITS_MAX);
   assert(!has(bits,n,AP_CONTENT_BIT_TROPHY+3)&&has(bits,n,AP_CONTENT_BIT_RELIC+3*3));
   lockedMode=-1;planOn=0;
  }
@@ -281,7 +286,7 @@ int main(void){
 }
 '''
 signatures=['static int AP_PadTrackBoxesLeft(int levelID)','int AP_PadUncollectedBoxCount(int destLevelID)',
- 'int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)','int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap)','static int AP_GlowBitRewardGroup(int globalBit)']
+ 'static int AP_ContentPadGlowBits(int destLevelID, int *outBits, int cap, int openOnly)','int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)','int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap)','static int AP_GlowBitRewardGroup(int globalBit)']
 with tempfile.TemporaryDirectory() as tmp:
  src=Path(tmp)/'fixture.c';exe=Path(tmp)/'fixture'
  src.write_text(fixture+'\n'.join(extract(s) for s in signatures)+tests)
