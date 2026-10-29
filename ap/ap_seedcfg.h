@@ -138,6 +138,7 @@ extern "C" {
 #define CTR_CFG_PODIUM_STORAGE_COUNT 18
 #define AP_TRIAL_PODIUM_LOGICAL_BASE 48
 #define CTR_CFG_LETTER_TRACK_COUNT 18
+#define CTR_CFG_BOX_TRACK_COUNT 18 // retail item-box LevelIDs 0..17
 #define CTR_CFG_LETTER_COUNT 3
 #define CTR_LETTER_ITEM_FIRST_INDEX 139
 
@@ -585,6 +586,12 @@ typedef struct
 	// key, no schema bump: absent (every older seed) -> 0 -> pink, which is what
 	// every earlier client draws. Display only: no gate, location or item.
 	int color_boxes_by_item;
+	// item_box_checks.placement_counts: -1 means no count for that LevelID.
+	// A room without the item_box_checks block is unaffected. A block with a
+	// missing, partial or malformed map refuses all retail item-box checks.
+	int box_placement_state; // 0 absent, 1 valid, -1 malformed
+	int box_placement_refused; // 1 once any track's box checks were refused (banner)
+	int box_placement_counts[CTR_CFG_BOX_TRACK_COUNT];
 	// #451: absent is off; receipts still use their own room-backed accounting.
 	int reserve_top_up;
 	// Spoiler Items (#459, schema 18): absent is off. On, pad reward previews
@@ -833,6 +840,11 @@ typedef struct
 
 // Global config, zero-init; schema_version == 0 until ap_seedcfg_parse_json runs.
 extern ctr_seed_config ctr_cfg;
+// Checks the authored count before a retail track may expose any box checks.
+// Logs each distinct mismatch once per parsed room; also refuses a malformed map.
+int ctr_cfg_box_placement_valid(int levelID, int nativeCount);
+// Changes on every slot-data parse so a live race rebuilds after reconnect.
+unsigned int ctr_cfg_box_placement_revision(void);
 extern AP_CrystalChecks ctr_crystal_checks;
 extern AP_CupSweepConfig ctr_cup_sweeps;
 extern AP_WumpaShopConfig ctr_wumpa_shop;

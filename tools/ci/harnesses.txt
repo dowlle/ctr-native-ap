@@ -20,6 +20,7 @@ tools/test-box-colour.c
 tools/test-box-edge.c
 tools/test-box-ghost-visual.py
 tools/test-box-map.c
+tools/test-box-placement-guard.cpp
 tools/test-box-number.c
 tools/test-box-offset.c
 tools/test-box-seat.c
