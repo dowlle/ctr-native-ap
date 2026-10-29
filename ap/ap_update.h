@@ -57,7 +57,11 @@ void ap_update_cancel(void);
 // Player dismissed a failure or the offer was declined: back to AP_UPD_NONE.
 void ap_update_dismiss(void);
 
-// Install the staged build (renames only). 1 on success (AP_UPD_INSTALLED).
+// 1 while a solo session (starting to stopping) or a solo job runs (#89).
+// The updater never installs then: the runtime runs from solo-runtime/.
+int ap_update_solo_busy(void);
+// Install the staged build (renames only). 1 on success (AP_UPD_INSTALLED),
+// 0 on failure, -1 refused while ap_update_solo_busy() (stays AP_UPD_READY).
 int ap_update_apply(void);
 // Start the installed executable as a new process (direct launches only).
 int ap_update_relaunch(void);

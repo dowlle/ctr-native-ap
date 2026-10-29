@@ -16,6 +16,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <dirent.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -500,10 +501,23 @@ static bool Inflate(const unsigned char *data, size_t size, int windowBits, size
 }
 
 static const char kCortexDir[] = "assets/tracks/cortex-vortex/";
+const char kRuntimeDir[] = "solo-runtime";
+const char kRuntimeIdRel[] = "solo-runtime/RUNTIME.txt";
+// The runtime as one journal and marker entry (a folder, not a file).
+static const char kRuntimeEntry[] = "solo-runtime/";
+
+bool IsRuntimePath(const std::string &rel)
+{
+	const size_t n = sizeof kRuntimeEntry - 1;
+	return rel.size() > n && rel.compare(0, n, kRuntimeEntry) == 0 && rel.back() != '/';
+}
 
 bool IsInstallPath(const std::string &rel, Platform platform)
 {
 	if (rel == ExecutableName(platform) || rel == "ctr.apworld")
+		return true;
+	// The whole bundled runtime, at any depth. Never the player's solo/ folder.
+	if (IsRuntimePath(rel))
 		return true;
 	// Files directly inside the shipped custom track folder, no deeper.
 	const size_t n = sizeof kCortexDir - 1;
@@ -520,15 +534,22 @@ struct PendingMember
 // Install set order: executable first, then the rest in archive order.
 static Result FinishInstallSet(std::vector<InstallFile> &out, Platform platform)
 {
-	size_t exeCount = 0, total = 0;
-	for (const InstallFile &f : out)
+	size_t exeCount = 0, total = 0, runtime = 0, runtimeId = 0;
+	for (InstallFile &f : out)
 	{
 		exeCount += f.rel == ExecutableName(platform);
+		runtime += IsRuntimePath(f.rel);
+		runtimeId += f.rel == kRuntimeIdRel;
 		total += f.data.size();
 		if (f.data.size() > kMaxExecutable)
 			return ERR_SIZE;
+		if (f.rel == ExecutableName(platform))
+			f.executable = true;
 	}
 	if (exeCount != 1)
+		return ERR_ARCHIVE;
+	// The runtime is told apart from an older one by its RUNTIME.txt.
+	if (runtime && runtimeId != 1)
 		return ERR_ARCHIVE;
 	if (total > kMaxUnpacked)
 		return ERR_SIZE;
@@ -714,6 +735,14 @@ static Result ExtractTarGz(const Bytes &a, const std::string &root, Platform pla
 {
 	Bytes tar;
 	size_t used = 0;
+	// One allocation for the unpacked tar where the gzip trailer says its size
+	// (mod 2^32, so only a hint): no doubling of a 70 MB buffer in a 32-bit process.
+	if (a.size() >= 18)
+	{
+		const uint32_t isize = Le32(&a[a.size() - 4]);
+		if (isize % 512 == 0 && isize <= kMaxUnpacked)
+			tar.reserve(isize);
+	}
 	if (!Inflate(a.data(), a.size(), 16 + MAX_WBITS, kMaxUnpacked, tar, &used))
 		return tar.size() >= kMaxUnpacked ? ERR_SIZE : ERR_ARCHIVE;
 	if (used != a.size())
@@ -800,6 +829,8 @@ static Result ExtractTarGz(const Bytes &a, const std::string &root, Platform pla
 			InstallFile f;
 			f.rel = rel;
 			f.data.assign(tar.begin() + dataOff, tar.begin() + dataOff + (size_t)size);
+			uint64_t mode = 0;
+			f.executable = OctalField(h + 100, 8, mode) && (mode & 0111) != 0;
 			out.push_back(std::move(f));
 		}
 		p = dataOff + padded;
@@ -1040,19 +1071,57 @@ static std::string InstallTarget(const std::string &exe, const std::string &rel)
 	return IsExecutableRel(rel) ? exe : TargetPath(exe, rel);
 }
 
-// A release path read back from the journal or marker. Only install-set paths
-// are ever acted on, so a damaged file cannot point the cleanup elsewhere.
-static bool SafeLocalRel(const std::string &rel)
+// No empty, "." or ".." segment, no backslash, colon or control character.
+static bool CleanRel(const std::string &rel)
 {
 	if (rel.empty() || rel.size() > 512 || rel[0] == '/')
 		return false;
 	for (unsigned char c : rel)
 		if (c < 0x20 || c == 0x7F || c == '\\' || c == ':')
 			return false;
-	if (rel.find("/./") != std::string::npos || rel.find("/../") != std::string::npos ||
-	    rel.find("//") != std::string::npos)
-		return false;
-	return IsInstallPath(rel, PLATFORM_WINDOWS) || IsInstallPath(rel, PLATFORM_LINUX);
+	size_t start = 0;
+	while (start < rel.size())
+	{
+		size_t end = rel.find('/', start);
+		if (end == std::string::npos)
+			end = rel.size();
+		const std::string seg = rel.substr(start, end - start);
+		if (seg.empty() || seg == "." || seg == "..")
+			return false;
+		start = end + 1;
+	}
+	return true;
+}
+
+// A release path of an install file. Only install-set paths are ever acted on.
+static bool SafeLocalRel(const std::string &rel)
+{
+	return CleanRel(rel) && (IsInstallPath(rel, PLATFORM_WINDOWS) || IsInstallPath(rel, PLATFORM_LINUX));
+}
+
+// An entry read back from the journal or marker: an install file outside the
+// runtime, or the runtime folder as a whole. A damaged file cannot point the
+// cleanup elsewhere.
+static bool SafeEntryRel(const std::string &rel)
+{
+	if (rel == kRuntimeEntry)
+		return true;
+	return SafeLocalRel(rel) && !IsRuntimePath(rel);
+}
+
+static bool IsRuntimeEntry(const std::string &rel) { return rel == kRuntimeEntry; }
+
+// The installed runtime folder, and where a runtime file is staged.
+static std::string RuntimeTarget(const std::string &exe) { return TargetPath(exe, kRuntimeDir); }
+static std::string StagedFileOf(const std::string &exe, const std::string &rel)
+{
+	if (IsRuntimePath(rel))
+		return TargetPath(exe, std::string(kRuntimeDir) + ".update" + rel.substr(sizeof kRuntimeDir - 1));
+	return StagedPath(InstallTarget(exe, rel));
+}
+static std::string PartFileOf(const std::string &exe, const std::string &rel)
+{
+	return IsRuntimePath(rel) ? StagedFileOf(exe, rel) + ".part" : PartPath(InstallTarget(exe, rel));
 }
 
 #ifdef _WIN32
@@ -1070,17 +1139,18 @@ static std::wstring Wide(const std::string &utf8)
 #endif
 
 #ifndef _WIN32
-// Flush the folder entry of `path` so a rename or a new file survives power loss.
-static void SyncParentDir(const std::string &path)
+// Flush the folder entry of `path` so a rename or a new file survives power
+// loss. False when the folder cannot be opened or flushed.
+static bool SyncParentDir(const std::string &path)
 {
 	const size_t slash = path.find_last_of('/');
 	const std::string dir = slash == std::string::npos ? "." : (slash == 0 ? "/" : path.substr(0, slash));
 	const int fd = open(dir.c_str(), O_RDONLY | O_DIRECTORY);
-	if (fd >= 0)
-	{
-		fsync(fd);
-		close(fd);
-	}
+	if (fd < 0)
+		return false;
+	const bool ok = fsync(fd) == 0;
+	close(fd);
+	return ok;
 }
 #endif
 
@@ -1111,9 +1181,12 @@ static bool RealWrite(void *, const std::string &path, const Bytes &data)
 	ok = std::fflush(f) == 0 && ok;
 	ok = fsync(fileno(f)) == 0 && ok;
 	ok = std::fclose(f) == 0 && ok;
-	if (ok)
-		SyncParentDir(path);
-	return ok;
+	// Every staged file, the journals and the marker are written here, each in
+	// a folder a later rename uses. A folder that cannot be flushed fails the
+	// write, so the update stops before anything is replaced when durability
+	// cannot be had. The renames themselves then only flush folders that
+	// already passed (their result is the rename's).
+	return ok && SyncParentDir(path);
 #endif
 }
 
@@ -1200,6 +1273,81 @@ static bool RealRemove(void *ctx, const std::string &path)
 	return !RealExists(ctx, path);
 }
 
+static bool RealRemoveTree(void *ctx, const std::string &path)
+{
+#ifdef _WIN32
+	const std::wstring w = Wide(path);
+	const DWORD attr = GetFileAttributesW(w.c_str());
+	if (attr == INVALID_FILE_ATTRIBUTES)
+		return true;
+	if ((attr & FILE_ATTRIBUTE_DIRECTORY) == 0)
+	{
+		if (attr & FILE_ATTRIBUTE_READONLY)
+			SetFileAttributesW(w.c_str(), attr & ~FILE_ATTRIBUTE_READONLY);
+		DeleteFileW(w.c_str());
+		return !RealExists(ctx, path);
+	}
+	// A junction or folder symlink: remove the link, never what it points at.
+	if ((attr & FILE_ATTRIBUTE_REPARSE_POINT) == 0)
+	{
+		WIN32_FIND_DATAW fd;
+		HANDLE h = FindFirstFileW((w + L"\\*").c_str(), &fd);
+		if (h != INVALID_HANDLE_VALUE)
+		{
+			do
+			{
+				const std::wstring name = fd.cFileName;
+				if (name == L"." || name == L"..")
+					continue;
+				const int n = WideCharToMultiByte(CP_UTF8, 0, name.c_str(), (int)name.size(), nullptr, 0, nullptr, nullptr);
+				std::string child((size_t)(n > 0 ? n : 0), '\0');
+				if (n > 0)
+					WideCharToMultiByte(CP_UTF8, 0, name.c_str(), (int)name.size(), &child[0], n, nullptr, nullptr);
+				RealRemoveTree(ctx, path + "\\" + child);
+			} while (FindNextFileW(h, &fd));
+			FindClose(h);
+		}
+	}
+	RemoveDirectoryW(w.c_str());
+	return !RealExists(ctx, path);
+#else
+	char buf[8];
+	if (readlink(path.c_str(), buf, sizeof buf) >= 0)
+	{
+		unlink(path.c_str()); // a link: removed, never followed
+		return !RealExists(ctx, path) && readlink(path.c_str(), buf, sizeof buf) < 0;
+	}
+	DIR *d = opendir(path.c_str());
+	if (!d)
+	{
+		std::remove(path.c_str());
+		return !RealExists(ctx, path);
+	}
+	// readdir64: the 32-bit client has no large-file support, and a plain
+	// readdir fails with EOVERFLOW on 64-bit inode numbers (btrfs, overlayfs;
+	// see ap_net.cpp). Names only, no stat.
+	std::vector<std::string> children;
+#ifdef __GLIBC__
+	while (struct dirent64 *e = readdir64(d))
+#else
+	while (struct dirent *e = readdir(d))
+#endif
+	{
+		const std::string name = e->d_name;
+		if (name != "." && name != "..")
+			children.push_back(name);
+	}
+	closedir(d);
+	for (const std::string &name : children)
+		RealRemoveTree(ctx, path + "/" + name);
+	rmdir(path.c_str());
+	const bool gone = !RealExists(ctx, path);
+	if (gone)
+		SyncParentDir(path);
+	return gone;
+#endif
+}
+
 static bool RealMakeExecutable(void *, const std::string &path)
 {
 #ifdef _WIN32
@@ -1259,6 +1407,7 @@ FsOps RealFsOps()
 	ops.makeExecutable = RealMakeExecutable;
 	ops.makeDir = RealMakeDir;
 	ops.isLink = RealIsLink;
+	ops.removeTree = RealRemoveTree;
 #ifdef _WIN32
 	ops.linkFile = nullptr;
 	ops.replaceFile = nullptr;
@@ -1304,15 +1453,24 @@ static Bytes JoinLines(const std::vector<std::string> &lines)
 	return out;
 }
 
-// Remove the staging files of every release path, and the journal.
+// Remove the staging files of every release path (the staged runtime folder
+// for runtime paths), and the journal.
 static void DropStaged(const FsOps &fs, const std::string &exe, const std::vector<std::string> &rels)
 {
+	bool runtime = false;
 	for (const std::string &rel : rels)
 	{
+		if (IsRuntimeEntry(rel) || IsRuntimePath(rel))
+		{
+			runtime = true;
+			continue;
+		}
 		const std::string t = InstallTarget(exe, rel);
 		fs.removeFile(fs.ctx, PartPath(t));
 		fs.removeFile(fs.ctx, StagedPath(t));
 	}
+	if (runtime)
+		fs.removeTree(fs.ctx, StagedPath(RuntimeTarget(exe)));
 	fs.removeFile(fs.ctx, JournalPath(exe));
 }
 
@@ -1343,17 +1501,28 @@ Result Stage(const FsOps &fs, const std::string &exe, const std::vector<InstallF
 	if (fs.exists(fs.ctx, SwapJournalPath(exe)))
 		return ERR_UNDO_FAILED;
 	staged.clear();
-	std::vector<std::string> rels;
-	size_t exes = 0;
+	std::vector<std::string> rels; // journal entries: files, and the runtime once
+	size_t exes = 0, runtime = 0, runtimeId = 0;
 	for (const InstallFile &f : files)
 	{
 		if (!SafeLocalRel(f.rel) || f.data.size() > kMaxExecutable)
 			return ERR_ARCHIVE;
 		exes += IsExecutableRel(f.rel);
-		rels.push_back(f.rel);
+		runtimeId += f.rel == kRuntimeIdRel;
+		if (IsRuntimePath(f.rel))
+		{
+			if (runtime++ == 0)
+				rels.push_back(kRuntimeEntry);
+		}
+		else
+			rels.push_back(f.rel);
 	}
-	if (exes != 1)
+	if (exes != 1 || (runtime && runtimeId != 1))
 		return ERR_ARCHIVE;
+	// The runtime folder and its staging folder are replaced whole: a link or
+	// junction there would send the writes, or a later removal, elsewhere.
+	if (runtime && (fs.isLink(fs.ctx, RuntimeTarget(exe)) || fs.isLink(fs.ctx, StagedPath(RuntimeTarget(exe)))))
+		return ERR_IO;
 	// The journal names what is being staged, so a crash in the middle is
 	// cleaned up at the next launch.
 	DropStaged(fs, exe, rels);
@@ -1364,15 +1533,18 @@ Result Stage(const FsOps &fs, const std::string &exe, const std::vector<InstallF
 	}
 	for (const InstallFile &f : files)
 	{
-		const std::string target = InstallTarget(exe, f.rel);
-		const std::string part = PartPath(target);
+		const std::string part = PartFileOf(exe, f.rel);
+		// Folders on the way: the install folder's own for files, the staged
+		// runtime folder's (solo-runtime.update/...) for runtime files.
+		const std::string folderRel =
+		    IsRuntimePath(f.rel) ? std::string(kRuntimeDir) + ".update" + f.rel.substr(sizeof kRuntimeDir - 1) : f.rel;
 		Bytes back;
-		if (Sha256Hex(f.data) != f.sha256 || !EnsureFolders(fs, exe, f.rel) ||
+		if (Sha256Hex(f.data) != f.sha256 || !EnsureFolders(fs, exe, folderRel) ||
 		    !fs.writeFile(fs.ctx, part, f.data) || !fs.readFile(fs.ctx, part, kMaxExecutable, back) ||
 		    Sha256Hex(back) != f.sha256 ||
 		    // Executable before the swap, so a crash never leaves a non-executable game.
-		    (IsExecutableRel(f.rel) && !fs.makeExecutable(fs.ctx, part)) ||
-		    !fs.renameFile(fs.ctx, part, StagedPath(target)))
+		    ((IsExecutableRel(f.rel) || f.executable) && !fs.makeExecutable(fs.ctx, part)) ||
+		    !fs.renameFile(fs.ctx, part, StagedFileOf(exe, f.rel)))
 		{
 			DropStaged(fs, exe, rels);
 			staged.clear();
@@ -1398,7 +1570,8 @@ struct Step
 {
 	std::string target;
 	bool hadOld;
-	bool atomic; // the previous file was kept as a hard link and the new one renamed over it
+	bool atomic; // the previous file was kept as .old (link or copy) and the new one renamed over it
+	bool folder; // the runtime folder: undo removes the new folder before the old one returns
 };
 } // namespace
 
@@ -1415,7 +1588,7 @@ static bool Undo(const FsOps &fs, const std::vector<Step> &steps)
 				ok = false;
 			continue;
 		}
-		if (!fs.removeFile(fs.ctx, st.target))
+		if (!(st.folder ? fs.removeTree(fs.ctx, st.target) : fs.removeFile(fs.ctx, st.target)))
 		{
 			ok = false;
 			continue;
@@ -1426,23 +1599,45 @@ static bool Undo(const FsOps &fs, const std::vector<Step> &steps)
 	return ok;
 }
 
+// Keep the running executable as .old while its path stays in place: a hard
+// link, or where the file system has none (exFAT, some network shares) a
+// verified copy. False when neither worked; nothing is then left at .old.
+static bool KeepExecutable(const FsOps &fs, const std::string &target, const std::string &old)
+{
+	if (fs.linkFile && fs.linkFile(fs.ctx, target, old))
+		return true;
+	Bytes cur, back;
+	if (fs.readFile(fs.ctx, target, kMaxExecutable, cur) && fs.writeFile(fs.ctx, old, cur) &&
+	    fs.readFile(fs.ctx, old, kMaxExecutable, back) && back == cur && fs.makeExecutable(fs.ctx, old))
+		return true;
+	fs.removeFile(fs.ctx, old);
+	return false;
+}
+
 Result Apply(const FsOps &fs, const std::string &exe, const std::vector<StagedFile> &staged,
              const std::string &newTag)
 {
 	if (fs.exists(fs.ctx, SwapJournalPath(exe)))
 		return ERR_UNDO_FAILED;
 	std::vector<std::string> rels;
+	bool hasRuntime = false;
+	std::string runtimeId; // SHA-256 of the new RUNTIME.txt
 	for (const StagedFile &f : staged)
+	{
 		rels.push_back(f.rel);
+		if (IsRuntimePath(f.rel))
+			hasRuntime = true;
+		if (f.rel == kRuntimeIdRel)
+			runtimeId = f.sha256;
+	}
 	size_t exes = 0;
 	for (const StagedFile &f : staged)
 		exes += IsExecutableRel(f.rel) && SafeLocalRel(f.rel);
-	bool good = IsStableTag(newTag) && exes == 1;
+	bool good = IsStableTag(newTag) && exes == 1 && (!hasRuntime || !runtimeId.empty());
 	for (const StagedFile &f : staged)
 	{
 		Bytes check;
-		if (!good || !SafeLocalRel(f.rel) ||
-		    !fs.readFile(fs.ctx, StagedPath(InstallTarget(exe, f.rel)), kMaxExecutable, check) ||
+		if (!good || !SafeLocalRel(f.rel) || !fs.readFile(fs.ctx, StagedFileOf(exe, f.rel), kMaxExecutable, check) ||
 		    Sha256Hex(check) != f.sha256)
 		{
 			good = false;
@@ -1456,25 +1651,46 @@ Result Apply(const FsOps &fs, const std::string &exe, const std::vector<StagedFi
 	}
 	if (!fs.exists(fs.ctx, exe))
 		return ERR_IO;
+	const std::string runtimeDir = RuntimeTarget(exe);
+	if (hasRuntime && (fs.isLink(fs.ctx, runtimeDir) || fs.isLink(fs.ctx, StagedPath(runtimeDir))))
+	{
+		DropStaged(fs, exe, rels);
+		return ERR_IO;
+	}
 
-	// Everything else first, the executable last.
-	std::vector<const StagedFile *> order;
+	// One entry per swap step: files first, then the runtime folder, the
+	// executable last.
+	struct Entry
+	{
+		std::string rel, sha;
+	};
+	std::vector<Entry> order;
 	for (const StagedFile &f : staged)
-		if (!IsExecutableRel(f.rel))
-			order.push_back(&f);
+		if (!IsExecutableRel(f.rel) && !IsRuntimePath(f.rel))
+			order.push_back(Entry{f.rel, f.sha256});
+	if (hasRuntime)
+		order.push_back(Entry{kRuntimeEntry, runtimeId});
 	for (const StagedFile &f : staged)
 		if (IsExecutableRel(f.rel))
-			order.push_back(&f);
+			order.push_back(Entry{f.rel, f.sha256});
+	auto targetOf = [&](const std::string &rel) { return IsRuntimeEntry(rel) ? runtimeDir : InstallTarget(exe, rel); };
 
+	// An older marker must be gone before the journal goes down: recovery reads
+	// a marker beside a journal as this swap's finish. If it cannot be removed,
+	// stop here with nothing changed.
+	if (!fs.removeFile(fs.ctx, MarkerPath(exe)))
+	{
+		DropStaged(fs, exe, rels);
+		return ERR_IO;
+	}
 	// The swap journal goes down, flushed, before the first rename: it names
-	// every file, the hash of the new copy and whether an installed copy exists.
+	// every entry, the hash of the new copy (of RUNTIME.txt for the runtime
+	// folder) and whether an installed copy exists.
 	std::vector<std::string> journal;
 	journal.push_back("applying");
 	journal.push_back(newTag);
-	for (const StagedFile *f : order)
-		journal.push_back(f->rel + "\t" + f->sha256 + "\t" +
-		                  (fs.exists(fs.ctx, InstallTarget(exe, f->rel)) ? "1" : "0"));
-	fs.removeFile(fs.ctx, MarkerPath(exe));
+	for (const Entry &e : order)
+		journal.push_back(e.rel + "\t" + e.sha + "\t" + (fs.exists(fs.ctx, targetOf(e.rel)) ? "1" : "0"));
 	const std::string swapPath = SwapJournalPath(exe);
 	if (!fs.writeFile(fs.ctx, swapPath, JoinLines(journal)))
 	{
@@ -1484,7 +1700,7 @@ Result Apply(const FsOps &fs, const std::string &exe, const std::vector<StagedFi
 	}
 
 	std::vector<Step> steps;
-	std::vector<std::string> kept; // release paths that now have a .old copy
+	std::vector<std::string> kept; // entries that now have a .old copy
 	// A failed step: undo what was done. When the undo itself fails the swap
 	// journal stays so the next launch restores the .old copies.
 	auto fail = [&](bool thisStepUndone) -> Result {
@@ -1497,32 +1713,30 @@ Result Apply(const FsOps &fs, const std::string &exe, const std::vector<StagedFi
 		}
 		return ERR_UNDO_FAILED;
 	};
-	for (const StagedFile *sf : order)
+	for (const Entry &e : order)
 	{
-		const std::string &rel = sf->rel;
-		const std::string target = InstallTarget(exe, rel);
+		const std::string &rel = e.rel;
+		const bool folder = IsRuntimeEntry(rel);
+		const std::string target = targetOf(rel);
 		const std::string old = OldPath(target);
+		const std::string from = StagedPath(target); // F.update, or solo-runtime.update
 		// An older rollback copy belongs to a finished update; this one replaces it.
-		bool ok = fs.removeFile(fs.ctx, old);
+		bool ok = folder ? fs.removeTree(fs.ctx, old) : fs.removeFile(fs.ctx, old);
 		const bool had = ok && fs.exists(fs.ctx, target);
-		bool atomic = false;
+		// Where atomic replace exists (Linux) the executable is never moved
+		// aside: its path must hold a launchable file at every moment.
+		const bool atomic = IsExecutableRel(rel) && fs.replaceFile != nullptr;
 		bool moved = false;
 		if (ok && had)
 		{
-			if (IsExecutableRel(rel) && fs.linkFile && fs.replaceFile && fs.linkFile(fs.ctx, target, old))
-			{
-				atomic = true; // target stays in place until the one atomic rename
-				moved = true;
-			}
+			if (atomic)
+				ok = KeepExecutable(fs, target, old);
 			else
-			{
 				ok = fs.renameFile(fs.ctx, target, old);
-				moved = ok;
-			}
+			moved = ok;
 		}
 		if (ok)
-			ok = atomic ? fs.replaceFile(fs.ctx, StagedPath(target), target)
-			            : fs.renameFile(fs.ctx, StagedPath(target), target);
+			ok = atomic ? fs.replaceFile(fs.ctx, from, target) : fs.renameFile(fs.ctx, from, target);
 		if (!ok)
 		{
 			bool stepUndone = true;
@@ -1535,7 +1749,7 @@ Result Apply(const FsOps &fs, const std::string &exe, const std::vector<StagedFi
 			}
 			return fail(stepUndone);
 		}
-		steps.push_back(Step{target, moved, atomic});
+		steps.push_back(Step{target, moved, atomic && moved, folder});
 		if (moved)
 			kept.push_back(rel);
 	}
@@ -1577,36 +1791,54 @@ static bool FileHashIs(const FsOps &fs, const std::string &path, const std::stri
 	return fs.readFile(fs.ctx, path, kMaxExecutable, b) && Sha256Hex(b) == sha;
 }
 
-// A swap journal without a marker: the swap was cut short. 0 = nothing to do,
-// 1 = previous files restored, 2 = every installed file matches the new set,
-// so it is finished instead (marker written), 3 = some file could not be put back
-// (journal kept for the next launch).
+// The file whose hash a journal entry records: the file itself, or the
+// runtime folder's RUNTIME.txt.
+static std::string EntryTarget(const std::string &exe, const std::string &rel)
+{
+	return IsRuntimeEntry(rel) ? RuntimeTarget(exe) : InstallTarget(exe, rel);
+}
+static bool EntryIsNew(const FsOps &fs, const std::string &exe, const std::string &rel, const std::string &sha)
+{
+	const std::string t = EntryTarget(exe, rel);
+	return FileHashIs(fs, IsRuntimeEntry(rel) ? TargetPath(exe, kRuntimeIdRel) : t, sha);
+}
+
+static bool ReadSwapJournal(const FsOps &fs, const std::string &exe, std::string &tag, std::vector<SwapEntry> &entries)
+{
+	const std::vector<std::string> lines = ReadLines(fs, SwapJournalPath(exe));
+	tag.clear();
+	entries.clear();
+	if (lines.size() < 2 || lines[0] != "applying" || !IsStableTag(lines[1]))
+		return false;
+	tag = lines[1];
+	for (size_t i = 2; i < lines.size(); i++)
+	{
+		const size_t t1 = lines[i].find('\t');
+		const size_t t2 = t1 == std::string::npos ? t1 : lines[i].find('\t', t1 + 1);
+		if (t2 == std::string::npos)
+			continue; // a half-written last line
+		SwapEntry e;
+		e.rel = lines[i].substr(0, t1);
+		e.sha = lines[i].substr(t1 + 1, t2 - t1 - 1);
+		const std::string had = lines[i].substr(t2 + 1);
+		e.had = had == "1";
+		if (!SafeEntryRel(e.rel) || e.sha.size() != 64 || (had != "0" && had != "1"))
+			continue;
+		entries.push_back(e);
+	}
+	return !entries.empty();
+}
+
+// A swap journal that no valid marker finishes: the swap was cut short.
+// 0 = nothing to do, 1 = previous files restored, 2 = every installed file
+// matches the new set, so it is finished instead (marker written), 3 = some
+// file could not be put back (journal kept for the next launch).
 static int RecoverSwap(const FsOps &fs, const std::string &exe)
 {
 	const std::string swapPath = SwapJournalPath(exe);
-	const std::vector<std::string> lines = ReadLines(fs, swapPath);
 	std::string tag;
 	std::vector<SwapEntry> entries;
-	if (lines.size() >= 2 && lines[0] == "applying" && IsStableTag(lines[1]))
-	{
-		tag = lines[1];
-		for (size_t i = 2; i < lines.size(); i++)
-		{
-			const size_t t1 = lines[i].find('\t');
-			const size_t t2 = t1 == std::string::npos ? t1 : lines[i].find('\t', t1 + 1);
-			if (t2 == std::string::npos)
-				continue; // a half-written last line
-			SwapEntry e;
-			e.rel = lines[i].substr(0, t1);
-			e.sha = lines[i].substr(t1 + 1, t2 - t1 - 1);
-			const std::string had = lines[i].substr(t2 + 1);
-			e.had = had == "1";
-			if (!SafeLocalRel(e.rel) || e.sha.size() != 64 || (had != "0" && had != "1"))
-				continue;
-			entries.push_back(e);
-		}
-	}
-	if (tag.empty() || entries.empty())
+	if (!ReadSwapJournal(fs, exe, tag, entries))
 	{
 		fs.removeFile(fs.ctx, swapPath); // unreadable: nothing trustworthy to act on
 		return 0;
@@ -1618,14 +1850,14 @@ static int RecoverSwap(const FsOps &fs, const std::string &exe)
 	for (const SwapEntry &e : entries)
 	{
 		hasExe = hasExe || IsExecutableRel(e.rel);
-		if (!FileHashIs(fs, InstallTarget(exe, e.rel), e.sha))
+		if (!EntryIsNew(fs, exe, e.rel, e.sha))
 			allNew = false;
 	}
 	if (hasExe && allNew)
 	{
 		std::vector<std::string> marker(1, tag);
 		for (const SwapEntry &k : entries)
-			if (fs.exists(fs.ctx, OldPath(InstallTarget(exe, k.rel))))
+			if (fs.exists(fs.ctx, OldPath(EntryTarget(exe, k.rel))))
 				marker.push_back(k.rel);
 		if (fs.writeFile(fs.ctx, MarkerPath(exe), JoinLines(marker)))
 		{
@@ -1637,7 +1869,8 @@ static int RecoverSwap(const FsOps &fs, const std::string &exe)
 	bool complete = true;
 	for (const SwapEntry &e : entries)
 	{
-		const std::string target = InstallTarget(exe, e.rel);
+		const bool folder = IsRuntimeEntry(e.rel);
+		const std::string target = EntryTarget(exe, e.rel);
 		const std::string old = OldPath(target);
 		const bool hasOld = fs.exists(fs.ctx, old);
 		const bool hasTarget = fs.exists(fs.ctx, target);
@@ -1646,7 +1879,7 @@ static int RecoverSwap(const FsOps &fs, const std::string &exe)
 			if (hasTarget)
 			{
 				Bytes oldBytes;
-				if (FileHashIs(fs, target, e.sha))
+				if (EntryIsNew(fs, exe, e.rel, e.sha))
 				{
 					// Keep a launchable executable even if restoring it fails.
 					if (IsExecutableRel(e.rel) && fs.replaceFile)
@@ -1656,17 +1889,18 @@ static int RecoverSwap(const FsOps &fs, const std::string &exe)
 						continue;
 					}
 					// Only the new copy may be cleared to make room for the old one.
-					if (!fs.removeFile(fs.ctx, target))
+					if (!(folder ? fs.removeTree(fs.ctx, target) : fs.removeFile(fs.ctx, target)))
 					{
 						complete = false;
 						continue;
 					}
 				}
-				else if (fs.readFile(fs.ctx, old, kMaxExecutable, oldBytes) &&
+				else if (!folder && fs.readFile(fs.ctx, old, kMaxExecutable, oldBytes) &&
 				         FileHashIs(fs, target, Sha256Hex(oldBytes)))
 				{
-					// Cut short between the hard link and the rename: the target
-					// is still the previous file and .old is its duplicate.
+					// Cut short between keeping the executable (link or copy)
+					// and the rename: the target is still the previous file
+					// and .old is its duplicate.
 					if (!fs.removeFile(fs.ctx, old))
 						complete = false;
 					continue;
@@ -1680,15 +1914,18 @@ static int RecoverSwap(const FsOps &fs, const std::string &exe)
 			if (!fs.renameFile(fs.ctx, old, target))
 				complete = false;
 		}
-		else if (!e.had && hasTarget && FileHashIs(fs, target, e.sha))
+		else if (!e.had && hasTarget && EntryIsNew(fs, exe, e.rel, e.sha))
 		{
-			// A file this update added; it did not exist before.
-			if (!fs.removeFile(fs.ctx, target))
+			// An entry this update added; it did not exist before.
+			if (!(folder ? fs.removeTree(fs.ctx, target) : fs.removeFile(fs.ctx, target)))
 				complete = false;
 		}
 	}
 	if (!complete)
 		return 3;
+	// Apply removed any older marker before writing this journal, so a marker
+	// here can only be this swap's, written before the undo: it is void.
+	fs.removeFile(fs.ctx, MarkerPath(exe));
 	fs.removeFile(fs.ctx, swapPath);
 	return 1;
 }
@@ -1699,8 +1936,17 @@ StartupState StartupCheck(const FsOps &fs, const std::string &exe, const std::st
 	const std::string swapPath = SwapJournalPath(exe);
 	if (fs.exists(fs.ctx, swapPath))
 	{
-		if (fs.exists(fs.ctx, MarkerPath(exe)))
-			fs.removeFile(fs.ctx, swapPath); // the swap finished; only the cleanup was cut short
+		// A marker beside the journal means the swap finished and only the
+		// journal's removal was cut short, but only when it is this swap's
+		// marker (same tag) and every entry really holds the new copy.
+		std::string tag;
+		std::vector<SwapEntry> entries;
+		const std::vector<std::string> marker = ReadLines(fs, MarkerPath(exe));
+		bool finished = !marker.empty() && ReadSwapJournal(fs, exe, tag, entries) && marker[0] == tag;
+		for (const SwapEntry &e : entries)
+			finished = finished && EntryIsNew(fs, exe, e.rel, e.sha);
+		if (finished)
+			fs.removeFile(fs.ctx, swapPath);
 		else
 		{
 			const int r = RecoverSwap(fs, exe);
@@ -1713,9 +1959,10 @@ StartupState StartupCheck(const FsOps &fs, const std::string &exe, const std::st
 
 	std::vector<std::string> rels;
 	for (const std::string &rel : ReadLines(fs, JournalPath(exe)))
-		if (SafeLocalRel(rel))
+		if (SafeEntryRel(rel))
 			rels.push_back(rel);
 	rels.push_back(ExecutableName(PLATFORM_WINDOWS)); // the executable maps to `exe` either way
+	rels.push_back(kRuntimeEntry);                     // a staged runtime folder is never trusted either
 	// A failed restore keeps the staged copies too: nothing more is touched.
 	if (recovery != STARTUP_RESTORE_FAILED)
 		DropStaged(fs, exe, rels);
@@ -1741,8 +1988,14 @@ void ConfirmStarted(const FsOps &fs, const std::string &exe)
 		return; // recovery still owns these rollback copies
 	const std::vector<std::string> lines = ReadLines(fs, MarkerPath(exe));
 	for (size_t i = 1; i < lines.size(); i++)
-		if (SafeLocalRel(lines[i]))
+	{
+		if (!SafeEntryRel(lines[i]))
+			continue;
+		if (IsRuntimeEntry(lines[i]))
+			fs.removeTree(fs.ctx, OldPath(RuntimeTarget(exe)));
+		else
 			fs.removeFile(fs.ctx, OldPath(InstallTarget(exe, lines[i])));
+	}
 	fs.removeFile(fs.ctx, MarkerPath(exe));
 }
 

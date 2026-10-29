@@ -268,12 +268,12 @@ static Bytes Zip(const std::vector<Member> &members, bool deflateIt = true)
 	return out;
 }
 
-static void TarHeader(Bytes &out, const std::string &name, size_t size, char type)
+static void TarHeader(Bytes &out, const std::string &name, size_t size, char type, unsigned mode = 0644)
 {
 	unsigned char h[512];
 	std::memset(h, 0, sizeof h);
 	std::memcpy(h, name.data(), std::min<size_t>(name.size(), 100));
-	std::snprintf((char *)h + 100, 8, "%07o", 0644);
+	std::snprintf((char *)h + 100, 8, "%07o", mode & 07777);
 	std::snprintf((char *)h + 108, 8, "%07o", 0);
 	std::snprintf((char *)h + 116, 8, "%07o", 0);
 	std::snprintf((char *)h + 124, 12, "%011o", (unsigned)size);
@@ -305,7 +305,7 @@ static Bytes TarGz(const std::vector<Member> &members)
 			TarHeader(tar, "././@PaxHeader", m.pax.size(), 'x');
 			TarData(tar, B(m.pax));
 		}
-		TarHeader(tar, m.name, m.type == '0' ? m.data.size() : 0, m.type);
+		TarHeader(tar, m.name, m.type == '0' ? m.data.size() : 0, m.type, m.unixMode ? m.unixMode : 0644);
 		if (m.type == '0')
 			TarData(tar, m.data);
 	}
@@ -1050,7 +1050,10 @@ static void TestInstall()
 				if (mode == 0)
 					g_faults.failRenameFrom = {StagedPath(t)}; // staged -> target fails
 				else
-					g_faults.failRenameTo = OldPath(t);   // target -> .old fails
+				{
+					g_faults.failRenameTo = OldPath(t); // target -> .old fails (rename or hard link)
+					g_faults.failWriteOf = OldPath(t);  // ... and so does the copy fallback
+				}
 				CHECK_EQ(Apply(faulty, in.exe, staged, "v0.3.1"), ERR_IO);
 				CHECK(OldState(in));
 				CHECK(NoLeftovers(in, false));
@@ -1528,7 +1531,7 @@ static void TestChunkOverflow()
 	CHECK_EQ(ParseHttpResponse(B(ch + "3\r\nabc\r\n5\r\nxxxxx\r"), 100, resp), HTTP_INCOMPLETE);
 	CHECK_EQ(ParseHttpResponse(B(ch + "3\r\nabc\r\n5\r\nxxxxx\r\n0\r\n\r\n"), 100, resp), HTTP_COMPLETE);
 	CHECK_EQ(ParseHttpResponse(B(ch + "3\r\nabc\r\n98\r\n"), 100, resp), HTTP_TOO_LARGE);
-	CHECK(kMaxArchive <= 32u * 1024u * 1024u);
+	CHECK(kMaxArchive <= 64u * 1024u * 1024u);
 }
 
 // ── one staging worker at a time ──
@@ -1574,6 +1577,445 @@ static void TestAllowlist()
 	CHECK(!AllowedUrl("https://github.com/dowlle/ctr-native-ap/releases/download/v1/a b", true, host, path));
 }
 
+// ── Linux executable swap without hard links, marker and folder-sync faults ──
+
+static bool NoLink(void *, const std::string &, const std::string &) { return false; }
+static std::string g_failRemoveOf;
+static bool FRemove(void *c, const std::string &p)
+{
+	return p != g_failRemoveOf && RealFsOps().removeFile(c, p);
+}
+
+static void TestExecutableSwapFallbacks()
+{
+	char tmpl[] = "/tmp/ctr-update-nolink-XXXXXX";
+	const char *dirp = mkdtemp(tmpl);
+	CHECK(dirp != nullptr);
+	if (!dirp)
+		return;
+	const std::string dir = dirp;
+	const FsOps real = RealFsOps();
+	std::vector<StagedFile> staged;
+	struct stat st;
+
+	// No hard links (exFAT, some shares): the running executable is copied to
+	// .old and the new one renamed over it. The path never goes missing.
+	FsOps noLink = real;
+	noLink.linkFile = NoLink;
+	Install in = MakeInstall(dir);
+	chmod(in.exe.c_str(), 0755);
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	CHECK_EQ(Apply(noLink, in.exe, staged, "v0.3.1"), OK);
+	CHECK(NewState(in));
+	CHECK(ReadText(OldPath(in.exe)) == "OLD EXE");
+	CHECK(stat(OldPath(in.exe).c_str(), &st) == 0 && (st.st_mode & 0111) == 0111); // the rollback copy runs
+	CHECK_EQ(StartupCheck(real, in.exe, "v0.3.1"), STARTUP_UPDATED);
+	ConfirmStarted(real, in.exe);
+	CHECK(NoLeftovers(in, false));
+	Clean(in);
+
+	// Neither a link nor a copy: the update stops, everything as before, and
+	// the executable is never moved aside (the old two-rename fallback).
+	in = MakeInstall(dir);
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	{
+		FsOps ops = FaultOps();
+		ops.linkFile = NoLink;
+		g_faults = Faults();
+		g_faults.failWriteOf = OldPath(in.exe);
+		CHECK_EQ(Apply(ops, in.exe, staged, "v0.3.1"), ERR_IO);
+		CHECK(OldState(in) && NoLeftovers(in, false));
+		CHECK(!real.exists(nullptr, MarkerPath(in.exe)));
+	}
+	Clean(in);
+
+	// Power loss at every step with the copy fallback: the executable path
+	// always holds a file, and recovery lands on the old or the new install.
+	int points = 0;
+	for (int limit = 0; limit < 64; limit++)
+	{
+		in = MakeInstall(dir);
+		CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+		FsOps ops = CrashOps(true);
+		ops.linkFile = NoLink;
+		g_crash = Crash();
+		g_crash.limit = limit;
+		const Result r = Apply(ops, in.exe, staged, "v0.3.1");
+		if (!g_crash.dead)
+		{
+			CHECK_EQ(r, OK);
+			Clean(in);
+			break;
+		}
+		points++;
+		CHECK(real.exists(nullptr, in.exe));
+		const bool newExe = ReadText(in.exe) == "NEW EXE";
+		const StartupState stt = StartupCheck(real, in.exe, newExe ? "v0.3.1" : "v0.3.0");
+		if (newExe)
+			CHECK(stt == STARTUP_UPDATED && NewState(in));
+		else
+			CHECK((stt == STARTUP_RECOVERED || stt == STARTUP_CLEAN) && OldState(in) && NoLeftovers(in, false));
+		Clean(in);
+	}
+	CHECK(points > 15);
+
+	// A marker from an earlier update that cannot be removed stops the swap
+	// before the journal is written: nothing changes.
+	in = MakeInstall(dir);
+	WriteText(MarkerPath(in.exe), "v0.3.0\nctr.apworld\n");
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	{
+		FsOps ops = real;
+		ops.removeFile = FRemove;
+		g_failRemoveOf = MarkerPath(in.exe);
+		CHECK_EQ(Apply(ops, in.exe, staged, "v0.3.1"), ERR_IO);
+		g_failRemoveOf.clear();
+		CHECK(OldState(in));
+		CHECK(!real.exists(nullptr, SwapJournalPath(in.exe)));
+		CHECK(!real.exists(nullptr, StagedPath(in.exe)) && !real.exists(nullptr, JournalPath(in.exe)));
+	}
+	real.removeFile(nullptr, MarkerPath(in.exe));
+	Clean(in);
+
+	// A marker of another release beside a journal is not this swap's finish:
+	// the cut-short swap is undone, not accepted.
+	in = MakeInstall(dir);
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	{
+		g_crash = Crash();
+		g_crash.limit = 4; // journal written, some files swapped
+		Apply(CrashOps(true), in.exe, staged, "v0.3.1");
+		CHECK(g_crash.dead && real.exists(nullptr, SwapJournalPath(in.exe)));
+		WriteText(MarkerPath(in.exe), "v0.3.0\n");
+		CHECK(ReadText(in.exe) == "OLD EXE");
+		CHECK_EQ(StartupCheck(real, in.exe, "v0.3.0"), STARTUP_RECOVERED);
+		CHECK(OldState(in) && NoLeftovers(in, false));
+		CHECK(!real.exists(nullptr, MarkerPath(in.exe)));
+	}
+	Clean(in);
+	// Even this release's tag does not count when the files are not all new.
+	in = MakeInstall(dir);
+	CHECK_EQ(Stage(real, in.exe, NewSet(), staged), OK);
+	{
+		g_crash = Crash();
+		g_crash.limit = 4;
+		Apply(CrashOps(true), in.exe, staged, "v0.3.1");
+		WriteText(MarkerPath(in.exe), "v0.3.1\n");
+		CHECK_EQ(StartupCheck(real, in.exe, "v0.3.0"), STARTUP_RECOVERED);
+		CHECK(OldState(in) && NoLeftovers(in, false));
+		CHECK(!real.exists(nullptr, MarkerPath(in.exe)));
+	}
+	Clean(in);
+
+	// A folder that cannot be flushed fails the write (here: it cannot even
+	// be opened for reading), so staging stops before anything is replaced.
+	if (geteuid() != 0)
+	{
+		const std::string locked = dir + "/locked";
+		mkdir(locked.c_str(), 0700);
+		chmod(locked.c_str(), 0300); // write and search, no read: open(O_DIRECTORY) fails
+		CHECK(!real.writeFile(nullptr, locked + "/f", B("x")));
+		chmod(locked.c_str(), 0700);
+		real.removeFile(nullptr, locked + "/f");
+		rmdir(locked.c_str());
+	}
+
+	rmdir((dir + "/assets/tracks/cortex-vortex").c_str());
+	rmdir((dir + "/assets/tracks").c_str());
+	rmdir((dir + "/assets").c_str());
+	rmdir((dir + "/memcards").c_str());
+	CHECK(rmdir(dir.c_str()) == 0);
+}
+
+// ── solo mode (#89): solo-runtime/ replaced whole, solo/ never touched ──
+
+static const char kRtId[] = "solo-runtime/RUNTIME.txt";
+static const char kRtPy[] = "solo-runtime/python/bin/python3.12";
+static const char kRtMs[] = "solo-runtime/archipelago/MultiServer.py";
+
+static void MakeDirs(const std::string &path)
+{
+	for (size_t i = 1; i <= path.size(); i++)
+		if (i == path.size() || path[i] == '/')
+			mkdir(path.substr(0, i).c_str(), 0755);
+}
+
+static void Put(const std::string &dir, const std::string &rel, const std::string &text)
+{
+	const size_t slash = (dir + "/" + rel).find_last_of('/');
+	MakeDirs((dir + "/" + rel).substr(0, slash));
+	WriteText(dir + "/" + rel, text);
+}
+
+// An install with an older runtime (one file the new runtime no longer has)
+// and the player's solo folder.
+static void AddRuntime(const Install &in)
+{
+	Put(in.dir, kRtId, "OLD RT");
+	Put(in.dir, kRtPy, "OLD PY");
+	Put(in.dir, "solo-runtime/stale.py", "STALE");
+	chmod((in.dir + "/" + kRtPy).c_str(), 0755);
+	Put(in.dir, "solo/rooms/r1/room.json", "ROOM");
+	Put(in.dir, "solo/saved/me.yaml", "YAML");
+}
+
+static std::vector<InstallFile> RuntimeSet()
+{
+	std::vector<InstallFile> set = NewSet();
+	set.push_back(IF(kRtId, "NEW RT"));
+	InstallFile py = IF(kRtPy, "NEW PY");
+	py.executable = true;
+	set.push_back(py);
+	set.push_back(IF(kRtMs, "NEW MS"));
+	return set;
+}
+
+static bool SoloUntouched(const Install &in)
+{
+	return ReadText(in.dir + "/solo/rooms/r1/room.json") == "ROOM" && ReadText(in.dir + "/solo/saved/me.yaml") == "YAML" &&
+	       !RealFsOps().exists(nullptr, in.dir + "/solo.old") && !RealFsOps().exists(nullptr, in.dir + "/solo.update");
+}
+
+static bool OldRuntime(const Install &in)
+{
+	return ReadText(in.dir + "/" + kRtId) == "OLD RT" && ReadText(in.dir + "/" + kRtPy) == "OLD PY" &&
+	       ReadText(in.dir + "/solo-runtime/stale.py") == "STALE" &&
+	       !RealFsOps().exists(nullptr, in.dir + "/" + kRtMs);
+}
+
+static bool NewRuntime(const Install &in)
+{
+	struct stat st;
+	return ReadText(in.dir + "/" + kRtId) == "NEW RT" && ReadText(in.dir + "/" + kRtPy) == "NEW PY" &&
+	       ReadText(in.dir + "/" + kRtMs) == "NEW MS" &&
+	       !RealFsOps().exists(nullptr, in.dir + "/solo-runtime/stale.py") &&
+	       stat((in.dir + "/" + kRtPy).c_str(), &st) == 0 && (st.st_mode & 0111) != 0;
+}
+
+static bool NoRuntimeLeftovers(const Install &in, bool allowOld)
+{
+	const FsOps fs = RealFsOps();
+	return !fs.exists(nullptr, in.dir + "/solo-runtime.update") &&
+	       (allowOld || !fs.exists(nullptr, in.dir + "/solo-runtime.old"));
+}
+
+static void RemoveAll(const std::string &path)
+{
+	const std::string rm = "rm -rf '" + path + "'";
+	CHECK(std::system(rm.c_str()) == 0);
+}
+
+static void CleanRuntime(const Install &in)
+{
+	Clean(in);
+	for (const char *d : {"solo-runtime", "solo-runtime.old", "solo-runtime.update", "solo"})
+		RemoveAll(in.dir + "/" + d);
+}
+
+static void TestSoloRuntime()
+{
+	// Install set: every runtime file at any depth, never solo/ or look-alikes.
+	for (int pi = 0; pi < 2; pi++)
+	{
+		const Platform p = (Platform)pi;
+		std::vector<Member> m = GoodMembers(p);
+		m.push_back(File(kRoot + kRtId, "rt"));
+		Member py = File(kRoot + kRtPy, "py");
+		py.unixMode = 0100755;
+		m.push_back(py);
+		m.push_back(File(kRoot + "solo-runtime/python/lib/python3.12/os.py", "os"));
+		m.push_back(File(kRoot + "solo/rooms/x/room.json", "room"));
+		m.push_back(File(kRoot + "solo-runtimeX/a", "no"));
+		m.push_back(File(kRoot + "solo-runtime.old/a", "no"));
+		std::vector<InstallFile> set;
+		CHECK_EQ(ExtractInstallSet(Archive(p, m), p, kTag, set), OK);
+		CHECK_EQ(set.size(), 6);
+		size_t runtime = 0;
+		for (const InstallFile &f : set)
+		{
+			runtime += IsRuntimePath(f.rel);
+			CHECK(f.rel.compare(0, 5, "solo/") != 0 && f.rel.compare(0, 13, "solo-runtimeX") != 0 &&
+			      f.rel.compare(0, 16, "solo-runtime.old") != 0);
+			if (f.rel == kRtPy && p == PLATFORM_LINUX)
+				CHECK(f.executable); // the tar mode carries the interpreter's x bit
+			if (f.rel == kRtId)
+				CHECK(!f.executable);
+		}
+		CHECK_EQ(runtime, 3);
+		// A runtime without RUNTIME.txt cannot be told apart from an older one.
+		m = GoodMembers(p);
+		m.push_back(File(kRoot + kRtPy, "py"));
+		CHECK_EQ(ExtractInstallSet(Archive(p, m), p, kTag, set), ERR_ARCHIVE);
+		CHECK(!IsInstallPath("solo/rooms/r/room.json", p) && !IsInstallPath("solo-runtime", p) &&
+		      !IsInstallPath("solo-runtime/", p) && !IsInstallPath("Solo-Runtime/x", p) && IsInstallPath(kRtMs, p));
+	}
+
+	char tmpl[] = "/tmp/ctr-update-solo-XXXXXX";
+	const char *dirp = mkdtemp(tmpl);
+	CHECK(dirp != nullptr);
+	if (!dirp)
+		return;
+	const std::string dir = dirp;
+	const FsOps real = RealFsOps();
+	std::vector<StagedFile> staged;
+
+	// Happy path: the runtime folder is replaced whole (the stale file goes),
+	// solo/ is untouched, the old runtime waits as solo-runtime.old.
+	Install in = MakeInstall(dir);
+	AddRuntime(in);
+	CHECK_EQ(Stage(real, in.exe, RuntimeSet(), staged), OK);
+	CHECK(ReadText(dir + "/solo-runtime.update/python/bin/python3.12") == "NEW PY" && OldRuntime(in));
+	CHECK(ReadText(JournalPath(in.exe)).find("solo-runtime/\n") != std::string::npos);
+	CHECK(ReadText(JournalPath(in.exe)).find(kRtPy) == std::string::npos); // one entry for the folder
+	CHECK_EQ(Apply(real, in.exe, staged, "v0.3.1"), OK);
+	CHECK(NewState(in) && NewRuntime(in) && SoloUntouched(in));
+	CHECK(ReadText(dir + "/solo-runtime.old/stale.py") == "STALE");
+	CHECK(ReadText(MarkerPath(in.exe)).find("solo-runtime/\n") != std::string::npos);
+	CHECK_EQ(StartupCheck(real, in.exe, "v0.3.1"), STARTUP_UPDATED);
+	ConfirmStarted(real, in.exe);
+	CHECK(NoLeftovers(in, false) && NoRuntimeLeftovers(in, false) && NewRuntime(in) && SoloUntouched(in));
+	CleanRuntime(in);
+
+	// No runtime installed yet (a client older than solo mode): it is added,
+	// and an undo removes it again.
+	in = MakeInstall(dir);
+	Put(dir, "solo/rooms/r1/room.json", "ROOM");
+	Put(dir, "solo/saved/me.yaml", "YAML");
+	CHECK_EQ(Stage(real, in.exe, RuntimeSet(), staged), OK);
+	CHECK_EQ(Apply(real, in.exe, staged, "v0.3.1"), OK);
+	CHECK(NewRuntime(in) && SoloUntouched(in) && !real.exists(nullptr, dir + "/solo-runtime.old"));
+	ConfirmStarted(real, in.exe);
+	CleanRuntime(in);
+
+	// A failure at either folder rename, or at the executable after the
+	// folder moved: everything back, the old runtime in place, nothing staged.
+	{
+		const std::string rt = dir + "/solo-runtime";
+		struct Case
+		{
+			std::vector<std::string> from;
+			std::string to;
+		};
+		const Case cases[] = {{{StagedPath(rt)}, ""}, {{}, OldPath(rt)}, {{StagedPath(dir + "/ctr_native_ap")}, ""}};
+		for (int strategy = 0; strategy < 2; strategy++)
+			for (const Case &c : cases)
+			{
+				in = MakeInstall(dir);
+				AddRuntime(in);
+				CHECK_EQ(Stage(real, in.exe, RuntimeSet(), staged), OK);
+				g_faults = Faults();
+				g_faults.failRenameFrom = c.from;
+				g_faults.failRenameTo = c.to;
+				CHECK_EQ(Apply(FaultOps(strategy == 0), in.exe, staged, "v0.3.1"), ERR_IO);
+				CHECK(OldState(in) && OldRuntime(in) && SoloUntouched(in));
+				CHECK(NoLeftovers(in, false) && NoRuntimeLeftovers(in, false));
+				CleanRuntime(in);
+			}
+		g_faults = Faults();
+	}
+
+	// A staged runtime file changed after staging: nothing moves.
+	in = MakeInstall(dir);
+	AddRuntime(in);
+	CHECK_EQ(Stage(real, in.exe, RuntimeSet(), staged), OK);
+	WriteText(dir + "/solo-runtime.update/archipelago/MultiServer.py", "TAMPERED");
+	CHECK_EQ(Apply(real, in.exe, staged, "v0.3.1"), ERR_STAGED_CHANGED);
+	CHECK(OldState(in) && OldRuntime(in) && NoRuntimeLeftovers(in, false));
+	// A staged runtime left by an earlier session is removed at launch.
+	CHECK_EQ(Stage(real, in.exe, RuntimeSet(), staged), OK);
+	CHECK_EQ(StartupCheck(real, in.exe, "v0.3.0"), STARTUP_CLEAN);
+	CHECK(OldRuntime(in) && NoRuntimeLeftovers(in, false) && NoLeftovers(in, false) && SoloUntouched(in));
+	CleanRuntime(in);
+
+	// A linked runtime folder is refused before anything is written, so a
+	// shared or outside folder is never replaced or written into.
+	{
+		char shared[] = "/tmp/ctr-update-rtlink-XXXXXX";
+		const char *sh = mkdtemp(shared);
+		CHECK(sh != nullptr);
+		in = MakeInstall(dir);
+		WriteText(std::string(sh) + "/RUNTIME.txt", "SHARED");
+		CHECK(symlink(sh, (dir + "/solo-runtime").c_str()) == 0);
+		CHECK_EQ(Stage(real, in.exe, RuntimeSet(), staged), ERR_IO);
+		CHECK(ReadText(std::string(sh) + "/RUNTIME.txt") == "SHARED" && OldState(in));
+		CHECK(NoLeftovers(in, false) && NoRuntimeLeftovers(in, false));
+		unlink((dir + "/solo-runtime").c_str());
+		// A link inside an old rollback folder is removed, never followed.
+		Put(dir, "solo-runtime/RUNTIME.txt", "OLD RT");
+		MakeDirs(dir + "/solo-runtime.old");
+		CHECK(symlink(sh, (dir + "/solo-runtime.old/escape").c_str()) == 0);
+		CHECK_EQ(Stage(real, in.exe, RuntimeSet(), staged), OK);
+		CHECK_EQ(Apply(real, in.exe, staged, "v0.3.1"), OK);
+		CHECK(ReadText(std::string(sh) + "/RUNTIME.txt") == "SHARED");
+		CHECK(ReadText(dir + "/solo-runtime.old/RUNTIME.txt") == "OLD RT");
+		ConfirmStarted(real, in.exe);
+		CHECK(!real.exists(nullptr, dir + "/solo-runtime.old"));
+		RemoveAll(sh);
+		CleanRuntime(in);
+	}
+
+	// Journal and marker entries: the runtime folder only as a whole; a
+	// runtime file, solo/ or a path that climbs out is never acted on.
+	in = MakeInstall(dir);
+	Put(dir, "solo.old/keep", "KEEP");
+	Put(dir, "solo-runtime.old/x", "KEEP");
+	WriteText(MarkerPath(in.exe), "v0.3.0\nsolo/\nsolo-runtime/x\nsolo-runtime/../solo/\n");
+	ConfirmStarted(real, in.exe);
+	CHECK(ReadText(dir + "/solo.old/keep") == "KEEP" && ReadText(dir + "/solo-runtime.old/x") == "KEEP");
+	RemoveAll(dir + "/solo.old");
+	CleanRuntime(in);
+
+	// Power loss at every step with the runtime in the set, both executable
+	// strategies: the old install (runtime included) or the new one, never a mix.
+	int points = 0;
+	for (int strategy = 0; strategy < 2; strategy++)
+	{
+		for (int limit = 0; limit < 80; limit++)
+		{
+			in = MakeInstall(dir);
+			AddRuntime(in);
+			CHECK_EQ(Stage(real, in.exe, RuntimeSet(), staged), OK);
+			FsOps ops = CrashOps(strategy == 0);
+			ops.removeTree = [](void *c, const std::string &p) { return Alive() && RealFsOps().removeTree(c, p); };
+			g_crash = Crash();
+			g_crash.limit = limit;
+			const Result r = Apply(ops, in.exe, staged, "v0.3.1");
+			if (!g_crash.dead)
+			{
+				CHECK_EQ(r, OK);
+				CHECK(NewState(in) && NewRuntime(in));
+				CleanRuntime(in);
+				break;
+			}
+			points++;
+			const bool newExe = ReadText(in.exe) == "NEW EXE";
+			const StartupState stt = StartupCheck(real, in.exe, newExe ? "v0.3.1" : "v0.3.0");
+			if (newExe)
+			{
+				CHECK(stt == STARTUP_UPDATED);
+				CHECK(NewState(in) && NewRuntime(in));
+				ConfirmStarted(real, in.exe);
+				CHECK(NoRuntimeLeftovers(in, false));
+			}
+			else
+			{
+				CHECK(stt == STARTUP_RECOVERED || stt == STARTUP_CLEAN);
+				CHECK(OldState(in) && OldRuntime(in));
+				CHECK(NoLeftovers(in, false) && NoRuntimeLeftovers(in, false));
+			}
+			CHECK(SoloUntouched(in));
+			CleanRuntime(in);
+		}
+	}
+	CHECK(points > 25);
+
+	rmdir((dir + "/assets/tracks/cortex-vortex").c_str());
+	rmdir((dir + "/assets/tracks").c_str());
+	rmdir((dir + "/assets").c_str());
+	rmdir((dir + "/memcards").c_str());
+	CHECK(rmdir(dir.c_str()) == 0);
+}
+
 int main()
 {
 	TestInterop();
@@ -1589,6 +2031,8 @@ int main()
 	TestCrashRecovery();
 	TestPartialUndoRecovery();
 	TestStagingAndMarker();
+	TestExecutableSwapFallbacks();
+	TestSoloRuntime();
 	TestChunkOverflow();
 	TestWorkGate();
 	TestAllowlist();

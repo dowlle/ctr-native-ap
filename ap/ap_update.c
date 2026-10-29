@@ -12,6 +12,11 @@
 // itself. The first start of the new build at the main menu deletes the
 // rollback copy (<exe>.old).
 //
+// Solo mode (#89): the update replaces solo-runtime/ and never touches the
+// player's solo/ folder. While a solo session or solo job runs the updater
+// does not run: no offer is shown, and a staged update waits (RESTART is
+// refused) until Play Solo is stopped.
+//
 // The trust decisions are not here: see ap/ap_update_core.h.
 
 #if !defined(CTR_AP_AUTHORING)
@@ -145,7 +150,13 @@ static void AP_UpdateQuit(void)
 
 static void AP_UpdateRestart(void)
 {
-	if (!ap_update_apply())
+	const int applied = ap_update_apply();
+	if (applied < 0)
+	{
+		AP_UpdateLog("install waits: Play Solo is running");
+		return; // still READY; the prompt says why
+	}
+	if (!applied)
 		return; // FAILED_INSTALL: the next frame shows it; the running build is in place
 	AP_UpdateLog("installed");
 	NativeConfig_Save();
@@ -172,6 +183,7 @@ int AP_UpdateMenuFrame(void)
 	int permille = -1;
 	int tap;
 	int status;
+	int soloBusy;
 
 	if (!ap_upd_started || gGT == NULL || !AP_UpdateSafe(gGT))
 	{
@@ -181,6 +193,7 @@ int AP_UpdateMenuFrame(void)
 
 	status = ap_update_status(tag, sizeof tag, &permille);
 	tap = sdata->buttonTapPerPlayer[0];
+	soloBusy = ap_update_solo_busy();
 
 	if (ap_upd_finished)
 	{
@@ -196,6 +209,8 @@ int AP_UpdateMenuFrame(void)
 	switch (status)
 	{
 	case AP_UPD_OFFER:
+		if (soloBusy)
+			break; // the offer waits until Play Solo stops
 		snprintf(title, sizeof title, "UPDATE %s AVAILABLE", tag);
 		snprintf(line, sizeof line, "You have %s.", CTR_AP_COMPAT_VERSION);
 		ap_upd_prompting = 1;
@@ -241,6 +256,13 @@ int AP_UpdateMenuFrame(void)
 		snprintf(title, sizeof title, "UPDATE %s READY", tag);
 		ap_upd_prompting = 1;
 		gGT->demoCountdownTimer = 900;
+		if (soloBusy)
+		{
+			AP_UpdateDraw(title, "Play Solo is running.", "Stop it to install the update.", NULL, "^: LATER");
+			if (tap & BTN_TRIANGLE)
+				ap_upd_snoozed = 1;
+			return 1;
+		}
 		AP_UpdateDraw(title, "Verified and ready.", "Restart to install it.", NULL, "*: RESTART   ^: LATER");
 		if (tap & BTN_CROSS)
 			AP_UpdateRestart();

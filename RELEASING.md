@@ -216,12 +216,15 @@ released clients: it offers only a stable `vX.Y.Z` release whose assets include
 `manifest.json`, `manifest.json.minisig` and both client archives, verifies the
 signature with the public key compiled into the client, and installs from the
 platform archive's `ctr-archipelago-vX.Y.Z/` folder only `ctr_native_ap(.exe)`,
-`ctr.apworld` and the files directly in `assets/tracks/cortex-vortex/`. Changing
-the archive names, the folder inside them, those paths or the signing key
-changes what older clients install or stops them offering updates; treat any of
-those as a reviewed change. A file placed in that Cortex Vortex folder reaches
-every updated install, so it needs the same redistribution permission as the
-archive itself.
+`ctr.apworld`, the files directly in `assets/tracks/cortex-vortex/` and the whole
+`solo-runtime/` folder (#89), which replaces the installed runtime folder as one
+unit and must carry `solo-runtime/RUNTIME.txt`. The player's `solo/` folder is
+never written. The archive may be at most 64 MB. Changing the archive names,
+the folder inside them, those paths or the signing key changes what older
+clients install or stops them offering updates; treat any of those as a
+reviewed change. A file placed in that Cortex Vortex folder or in the runtime
+reaches every updated install, so it needs the same redistribution permission
+as the archive itself.
 
 It covers **only the two client archives**. `ctr.apworld`, the player YAML,
 debug files and checksum sidecars stay outside it: the manifest is the client

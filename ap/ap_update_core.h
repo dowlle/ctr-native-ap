@@ -21,11 +21,13 @@
 //      replay of an older signed release, no prerelease);
 //   4. the platform archive's SHA-256 equals the signed value.
 // The archive is then validated member by member, and the install set is
-// taken out of it: the client executable, ctr.apworld and the files under
+// taken out of it: the client executable, ctr.apworld, the files under
 // assets/tracks/cortex-vortex/ (the custom track the release ships, whose
-// hashes the client checks at load, so it must move with the executable).
-// Nothing else in the archive is installed: config.ini, ap-config.txt, the
-// rest of assets/, memory cards and AP state are never touched.
+// hashes the client checks at load, so it must move with the executable) and
+// the whole solo-runtime/ folder (#89: the bundled Python runtime, replaced as
+// one folder so no file of an older runtime stays behind). Nothing else in
+// the archive is installed: config.ini, ap-config.txt, the rest of assets/,
+// memory cards, AP state and the player's solo/ folder are never touched.
 //
 // The signed manifest covers the two archives, not single files. Each
 // installed file is therefore trusted through the archive hash: its SHA-256
@@ -37,6 +39,13 @@
 // an injectable file-operation table so the harness can fail any step and check
 // that every installed file survives. All files move as one unit: any failure
 // puts every file already moved back.
+//
+// solo-runtime/ is staged as the folder solo-runtime.update/ and swapped with
+// two folder renames (solo-runtime -> solo-runtime.old, then the staged folder
+// in). Its RUNTIME.txt names every runtime file's hash and the apworld hash,
+// so the SHA-256 of RUNTIME.txt identifies which runtime a folder holds during
+// recovery. The caller must not apply while a solo session or job runs: the
+// runtime's interpreter would be running from the folder being replaced.
 
 #include <cstddef>
 #include <cstdint>
@@ -80,11 +89,13 @@ enum Result
 
 const char *ResultText(Result r);
 
-// Hard limits. A real client archive is about 7 MB and its executable 12 MB.
+// Hard limits. The executable is about 12 MB; the largest runtime file (the
+// Linux libpython) about 39 MB; the Linux runtime unpacks to about 70 MB.
 const size_t kMaxReleaseJson = 1024 * 1024;
 const size_t kMaxManifest = 4096;
 const size_t kMaxSignature = 4096;
-const size_t kMaxArchive = 32u * 1024u * 1024u; // the real archive is about 7 MB
+// A 0.3.0 archive with the solo runtime: Windows 14 MB, Linux 22 MB.
+const size_t kMaxArchive = 64u * 1024u * 1024u;
 const size_t kMaxExecutable = 64u * 1024u * 1024u;
 const size_t kMaxUnpacked = 256u * 1024u * 1024u;
 const size_t kMaxMembers = 4096;
@@ -158,11 +169,18 @@ struct InstallFile
 	std::string rel;    // path inside the release folder, '/' separated
 	Bytes data;
 	std::string sha256; // of `data`, taken from the verified archive
+	bool executable = false; // the executable, or a tar member with an x bit
 };
+// The bundled solo runtime folder (#89) and its identity file.
+extern const char kRuntimeDir[];   // "solo-runtime"
+extern const char kRuntimeIdRel[]; // "solo-runtime/RUNTIME.txt"
 // 1 when a release-relative path is part of the install set.
 bool IsInstallPath(const std::string &rel, Platform platform);
+// 1 for a file inside solo-runtime/ (any depth).
+bool IsRuntimePath(const std::string &rel);
 // Validate every member and return the install set, executable first. The
-// executable must be present exactly once.
+// executable must be present exactly once; a set with runtime files must
+// carry solo-runtime/RUNTIME.txt.
 Result ExtractInstallSet(const Bytes &archive, Platform platform, const std::string &tag,
                          std::vector<InstallFile> &out);
 // The executable alone (harness convenience).
@@ -224,12 +242,16 @@ struct FsOps
 	// both, the executable swap leaves no moment without an executable.
 	bool (*linkFile)(void *ctx, const std::string &existing, const std::string &newLink);
 	bool (*replaceFile)(void *ctx, const std::string &from, const std::string &to);
+	// Remove a folder and everything in it. A link or junction inside is
+	// removed itself, never followed. True when nothing is left at `path`.
+	bool (*removeTree)(void *ctx, const std::string &path);
 };
 // Real file operations (UTF-8 paths; wide APIs on Windows).
 FsOps RealFsOps();
 
 // Per installed file F: F.update.part while writing, F.update when staged,
-// F.old while the previous version is kept.
+// F.old while the previous version is kept. The runtime folder R: R.update
+// (its files written inside, each through a .part) and R.old.
 std::string StagedPath(const std::string &file);
 std::string PartPath(const std::string &file);
 std::string OldPath(const std::string &file);
@@ -266,10 +288,13 @@ Result Stage(const FsOps &fs, const std::string &exe, const std::vector<InstallF
 void DiscardStaged(const FsOps &fs, const std::string &exe, const std::vector<StagedFile> &staged);
 
 // Swap the staged set in as one unit. Re-hashes every staged file first,
-// writes the swap journal, then for each file: the installed copy (if any) is
-// renamed to F.old (replacing an older rollback copy), then F.update is
-// renamed into place. The executable goes last; where hard links and atomic
-// replace exist it is linked to .old and replaced in one rename. Any failed
+// removes an older marker (failing if it cannot), writes the swap journal,
+// then for each file: the installed copy (if any) is renamed to F.old
+// (replacing an older rollback copy), then F.update is renamed into place.
+// The runtime folder follows the files the same way. The executable goes
+// last; where atomic replace exists (Linux) the running file is kept as .old
+// by a hard link, or by a copy where the file system has no hard links, and
+// the new one renamed over it, so the executable path never vanishes. Any failed
 // step undoes every step already taken, newest first, so the previous files
 // are all back (ERR_IO). When the undo itself fails the journal stays and the
 // result is ERR_UNDO_FAILED. Writes the marker on success.

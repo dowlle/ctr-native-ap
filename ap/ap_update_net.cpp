@@ -9,6 +9,7 @@
 
 #include "ap_update.h"
 #include "ap_update_core.h"
+#include "ap_solo.h"
 
 #include <algorithm>
 #include <atomic>
@@ -805,12 +806,24 @@ extern "C" void ap_update_dismiss(void)
 	s.progress = -1;
 }
 
+extern "C" int ap_update_solo_busy(void)
+{
+	return AP_Solo_SessionActive() || AP_Solo_JobState() == AP_SOLO_JOB_RUNNING;
+}
+
 extern "C" int ap_update_apply(void)
 {
 	State &s = S();
 	std::lock_guard<std::mutex> lock(s.mutex);
 	if (s.status != AP_UPD_READY || s.exe.empty())
 		return 0;
+	// The solo runtime's interpreter runs from solo-runtime/ during a solo
+	// session or job: never swap the folder under it (#89). Stays READY.
+	if (ap_update_solo_busy())
+	{
+		s.detail = "install refused: a solo session or job is running";
+		return -1;
+	}
 	const Result r = Apply(RealFsOps(), s.exe, s.staged, s.tag);
 	if (r != OK)
 	{

@@ -96,10 +96,17 @@ def verify_signature(manifest: Path, signature: Path, public_key: Path) -> None:
         fail(f"bad manifest signature: {detail}")
 
 
+# The in-game updater (#301, kMaxArchive in ap/ap_update_core.h) refuses a
+# larger client archive, so released clients could not update to it.
+UPDATER_MAX_ARCHIVE = 64 * 1024 * 1024
+
+
 def verify_archive_hashes(release: Path, artifacts: dict[str, str]) -> None:
     for name, expected in sorted(artifacts.items()):
         artifact = release / name
         require_regular_file(artifact, "covered archive")
+        if artifact.stat().st_size > UPDATER_MAX_ARCHIVE:
+            fail(f"{name} is larger than the in-game updater accepts ({UPDATER_MAX_ARCHIVE} bytes)")
         actual = sha256(artifact)
         if actual != expected:
             fail(
