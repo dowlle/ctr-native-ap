@@ -284,6 +284,8 @@ int ap_content_plan_active(void);
 uint64_t ap_content_plan_epoch(void);
 const ctr_content_pad *ap_content_plan_pad(int physical);
 const ctr_content_package *ap_content_plan_package(int index);
+/* The package's descriptor JSON as the room sent it, "" without one (#89). */
+const char *ap_content_plan_package_json(int index);
 /* 1 when the active plan has a Cortex Vortex track entry (#133 PR 3c). */
 int ap_content_plan_cortex(void);
 const ctr_content_item *ap_content_plan_item(int64_t item);

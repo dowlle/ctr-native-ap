@@ -329,6 +329,33 @@ Source: <https://github.com/thecodingbob/ctr-native>, PR 54 (commits
 
 License: GPL-3.0, the same license as this project.
 
+## Solo runtime (AP release archives only)
+
+Path in the client archive: `solo-runtime/`. Built by
+`tools/solo/build-runtime.py` from the pins in `tools/solo/runtime-lock.json`;
+`solo-runtime/RUNTIME.txt` lists every pinned part with its SHA-256. The client
+starts it as a separate program for solo play (#89); it is not linked into
+`ctr_native_ap`. Each component keeps its own license text in
+`solo-runtime/LICENSES/` and in its `site-packages/*.dist-info` folder. All
+Python parts ship as unmodified source files (plus precompiled bytecode).
+
+- CPython 3.12.10, PSF License Agreement. Windows: the python.org embeddable
+  package. Linux: python-build-standalone (`install_only_stripped`), which
+  also bundles OpenSSL, zlib, xz, bzip2, libffi, SQLite and other libraries
+  under their own licenses; see
+  https://github.com/astral-sh/python-build-standalone and the CPython
+  `LICENSE.txt` shipped beside the interpreter.
+- Archipelago 0.6.7 core (trimmed: core modules, Generic world, rule_builder),
+  MIT License, Copyright (c) 2017 LLCoolDave, Copyright (c) 2025 Berserker66,
+  Copyright (c) 2022 CaitSith2, Copyright (c) 2021 LegendaryLinux and
+  contributors. https://github.com/ArchipelagoMW/Archipelago
+- PyYAML 6.0.3, MIT. websockets 13.1, BSD-3-Clause. jellyfish 1.2.1, MIT.
+  Jinja2 3.1.6 and MarkupSafe 3.0.3, BSD-3-Clause. schema 0.7.8, MIT.
+  typing_extensions 4.15.0, PSF-2.0. platformdirs 4.9.4, MIT.
+  colorama 0.4.6, BSD-3-Clause. bsdiff4 1.2.6, BSD-2-Clause.
+- pathspec 1.0.4, Mozilla Public License 2.0. The files are unmodified; the
+  source is the shipped `.py` files and https://github.com/cpburnz/python-pathspec.
+
 ## SDL3
 
 Path: `externals/SDL`

@@ -170,6 +170,20 @@ jobs:
           test -n "$template_path" -a -s "$template_path"
           cp "$template_path" generated-template/Crash.Team.Racing.yaml
 
+      - name: Python 3.12 for the solo runtime bytecode
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the solo runtimes from the exact apworld (#89)
+        run: |
+          set -euo pipefail
+          apworld="$(find apworld-artifact -type f -name ctr.apworld -print -quit)"
+          for platform in windows linux; do
+            python tools/solo/build-runtime.py --platform "$platform" \
+              --apworld "$apworld" --out "solo-runtime-$platform" --cache solo-runtime-cache
+          done
+
       - name: Assemble the eleven standard assets, the box authoring download and unsigned manifest
         env:
           RELEASE_VERSION: ${{ inputs.version }}
@@ -183,6 +197,8 @@ jobs:
             --template generated-template/Crash.Team.Racing.yaml \
             --version "$RELEASE_VERSION" \
             --output-dir release \
+            --solo-runtime-windows solo-runtime-windows \
+            --solo-runtime-linux solo-runtime-linux \
             --authoring
 
       - name: Verify the unsigned assembly before upload
@@ -192,7 +208,7 @@ jobs:
           set -euo pipefail
           python3 tools/verify-release.py release \
             --version "v${RELEASE_VERSION#v}" \
-            --pre-sign
+            --pre-sign --require-solo-runtime
 
       - name: Upload prepared release assets
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

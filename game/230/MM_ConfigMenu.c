@@ -58,6 +58,39 @@
 // is appended last, after OPTIONS, reusing LNG_QUIT (0x003) -- already proven as
 // a MenuRow stringIndex elsewhere (e.g. game/225.c's battle pause row) rather
 // than a title-only string -- so no new label is minted.
+//
+// The AP player client adds PLAY SOLO (#89, decision 30) just above OPTIONS,
+// with its own string slot (AP_LNG_PLAY_SOLO). It opens the same Play Solo
+// pages as Options > Connection > Play Solo. The box authoring download and
+// the build without Archipelago keep the rows below.
+#if defined(CTR_AP) && !defined(CTR_AP_AUTHORING)
+struct MenuRow s_rowsMainMenuBasicConfig[] = {
+	{0x4C, 0, 1, 0, 0},
+	{0x4D, 0, 2, 1, 1},
+	{0x4E, 1, 3, 2, 2},
+	{0x4F, 2, 4, 3, 3},
+	{0x50, 3, 5, 4, 4},
+	{0x51, 4, 6, 5, 5},
+	{AP_LNG_PLAY_SOLO, 5, 7, 6, 6},
+	{0x0E, 6, 8, 7, 7},
+	{LNG_QUIT, 7, 8, 8, 8},
+	{-1},
+};
+
+struct MenuRow s_rowsMainMenuWithSBConfig[] = {
+	{0x4C, 0, 1, 0, 0},
+	{0x4D, 0, 2, 1, 1},
+	{0x4E, 1, 3, 2, 2},
+	{0x4F, 2, 4, 3, 3},
+	{0x50, 3, 5, 4, 4},
+	{0x51, 4, 6, 5, 5},
+	{0x234, 5, 7, 6, 6},
+	{AP_LNG_PLAY_SOLO, 6, 8, 7, 7},
+	{0x0E, 7, 9, 8, 8},
+	{LNG_QUIT, 8, 9, 9, 9},
+	{-1},
+};
+#else
 struct MenuRow s_rowsMainMenuBasicConfig[] = {
 	{0x4C, 0, 1, 0, 0},
 	{0x4D, 0, 2, 1, 1},
@@ -82,6 +115,7 @@ struct MenuRow s_rowsMainMenuWithSBConfig[] = {
 	{LNG_QUIT, 7, 8, 8, 8},
 	{-1},
 };
+#endif
 
 static void MM_MenuProc_Config(struct RectMenu *menu);
 
@@ -765,12 +799,72 @@ static void TextEdit_DrawHint(int y, uint32_t *ot)
 		0x100, y, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 }
 
+#if !defined(CTR_AP_AUTHORING)
+#include "MM_Solo.c" // #89 Play Solo pages, opened from the Connection page
+#define CONN_SOLO_ROWS 1
+
+// Play Solo opened from the title screen's PLAY SOLO row (decision 30): the
+// options menu opens on the Connection page with Play Solo already open, and
+// leaving Play Solo goes straight back to the title screen.
+static int s_soloFromTitle;
+
+void MM_Solo_OpenFromTitle(void)
+{
+	int sec;
+	if (s_numSections == 0)
+		BuildSectionMap();
+	for (sec = 0; sec < s_numSections; sec++)
+		if (strcmp(s_sectionName[sec], "Connection") == 0)
+			break;
+	if (sec == s_numSections)
+		return; // no Connection page: the options menu opens as usual
+	s_currentSection = sec;
+	g_configMenu.rowSelected = s_sectionCount[sec] + 1; // the Play Solo row
+	s_soloFromTitle = 1;
+	MM_Solo_Open();
+}
+
+// Leaving the options menu the way Back does on the page list.
+static void MM_Solo_ReturnToTitle(struct RectMenu *menu)
+{
+	s_soloFromTitle = 0;
+	menu->rowSelected = 0;
+	s_currentSection = -1;
+	NativeRenderer_CaptureWindowGeometry();
+	NativeConfig_Save();
+	NativeControls_Save();
+	AP_AiDifficultyCommit();
+	sdata->ptrDesiredMenu = &D230.menuMainMenu;
+}
+#else
+#define CONN_SOLO_ROWS 0
+static int MM_Solo_ConsumesBack(void) { return 0; }
+#endif
+
 static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
 {
 	char buf[160];
 	const int sec = s_currentSection;
 	const int numStrings = s_sectionCount[sec]; // uri / slot / password
-	const int numRows = numStrings + 1;         // + Connect action row
+	const int numRows = numStrings + 1 + CONN_SOLO_ROWS; // + Connect (+ Play Solo)
+
+	int soloClosed = 0;
+#if !defined(CTR_AP_AUTHORING)
+	// Play Solo owns the whole page while one of its pages is open.
+	{
+		const int solo = MM_Solo_Frame(ot, pad);
+		if (solo == 1)
+			return;
+		soloClosed = (solo == 2);
+		// Opened from the title screen: closing Play Solo, by Back or after a
+		// message, goes back there instead of to this page.
+		if (s_soloFromTitle && s_soloPage == SOLO_OFF)
+		{
+			MM_Solo_ReturnToTitle(menu);
+			return;
+		}
+	}
+#endif
 
 	// The Room links row lives on Options > Archipelago; this page only keeps
 	// the one-time notice for when another program owns room links (#334).
@@ -780,7 +874,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 
 	// While editing (or on the frame we just resolved) all menu navigation is
 	// suppressed: text mode owns input.
-	if (!s_connEditing && !justResolved)
+	if (!s_connEditing && !justResolved && !soloClosed)
 	{
 		if ((pad->buttonsTapped & BTN_UP) != 0)
 		{
@@ -800,11 +894,19 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 				TextEdit_Begin(Section_Entry(sec, menu->rowSelected), menu->rowSelected,
 					CONN_ROW_START_Y + menu->rowSelected * CONN_ROW_SPACING - 2);
 			}
-			else
+			else if (menu->rowSelected == numStrings)
 			{
 				// Connect action: re-dial with the saved connection settings.
+				// A running solo session ends first (AP_Net_Reconnect).
 				AP_Net_Reconnect(g_config.uri, g_config.slot, g_config.password);
 			}
+#if !defined(CTR_AP_AUTHORING)
+			else
+			{
+				MM_Solo_Open(); // #89
+				return;
+			}
+#endif
 		}
 	}
 
@@ -846,6 +948,20 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
 		}
 	}
+
+#if !defined(CTR_AP_AUTHORING)
+	// Play Solo row (#89), in the spare line between Connect and Status.
+	{
+		int y = startY + (numStrings + 1) * rowSpacing;
+		DecalFont_DrawLineOT(AP_Solo_SessionState() == AP_SOLO_SESSION_LIVE ? "Play Solo (connected)" : "Play Solo",
+			labelX, y, FONT_SMALL, ORANGE, ot);
+		if (menu->rowSelected == numStrings + 1)
+		{
+			RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
+			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
+		}
+	}
+#endif
 
 	// Read-only status row (one line below the Connect row). Short states sit
 	// beside the label; anything longer than fits there (the unreachable-host
@@ -1232,6 +1348,10 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 #elif defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
 	    // Back first closes the Install missing content overview (#133 PR 7).
 	    && !MM_CurrentSeed_ConsumesBack(s_currentSection)
+#endif
+#ifdef CTR_AP
+	    // Back first steps out of the Play Solo pages (#89).
+	    && !MM_Solo_ConsumesBack()
 #endif
 	)
 	{
