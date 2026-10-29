@@ -107,7 +107,7 @@ static void content_parity(void)
   ap_padact_facts f; ap_padact_list l; int i;
   memset(&f, 0, sizeof f);
   f.node = AP_PADACT_NODE_CONTENT; f.content = 1; f.keysHave = keys; f.keysNeed = 1;
-  f.contentReady = ready; f.stage1Met = s1; f.racerMet = racer; f.modeCount = n;
+  f.contentReady = ready; f.stage1Met = s1; f.padReqMet = s1; f.racerMet = racer; f.modeCount = n;
   for (i = 0; i < n; i++) { f.contentMode[i] = (i + 1) % 3; f.contentOpen[i] = (open >> i) & 1; f.contentLeft[i] = i & 1; }
   AP_PadActivityDecide(&f, &l);
   assert(l.count == n);
@@ -162,7 +162,7 @@ static void single_and_garage(void)
   ap_padact_facts f; ap_padact_list l;
   memset(&f, 0, sizeof f);
   f.node = AP_PADACT_NODE_SINGLE; f.content = 1; f.single = AP_PADACT_CRYSTAL;
-  f.keysHave = f.keysNeed = 1; f.padState = state; f.contentReady = ready; f.stage1Met = s1; f.racerMet = 1;
+  f.keysHave = f.keysNeed = 1; f.padState = state; f.contentReady = ready; f.stage1Met = s1; f.padReqMet = s1; f.racerMet = 1;
   AP_PadActivityDecide(&f, &l);
   assert(l.count == 1);
   assert((l.reason[0] == AP_PADACT_OPEN) == (ready && s1 && state != 5));
@@ -304,6 +304,24 @@ static void missing_all(void)
  AP_PadActivityDecide(&f, &l);
  for (int i = 0; i < l.count; i++) assert(l.reason[i] == AP_PADACT_LOCK_RACER && l.mask[i] & AP_PADACT_BIT(AP_PADACT_LOCK_RACER) && !(l.mask[i] & AP_PADACT_BIT(AP_PADACT_LOCK_PAD)));
  f.padReqMet = 0;
+ /* A content-plan pad: its rule met, the racer missing (stage 1 reads closed). */
+ memset(&f, 0, sizeof f);
+ f.node = AP_PADACT_NODE_CONTENT; f.content = 1; f.contentReady = 1; f.padState = 2;
+ f.stage1Met = 0; f.padReqMet = 1; f.racerMet = 0; f.modeCount = 2;
+ f.contentMode[0] = T; f.contentMode[1] = R; f.contentOpen[0] = f.contentOpen[1] = 1;
+ AP_PadActivityDecide(&f, &l);
+ for (int i = 0; i < l.count; i++) assert(l.reason[i] == AP_PADACT_LOCK_RACER && l.mask[i] == AP_PADACT_BIT(AP_PADACT_LOCK_RACER));
+ f.padReqMet = 0;
+ AP_PadActivityDecide(&f, &l);
+ for (int i = 0; i < l.count; i++) assert(l.mask[i] == (AP_PADACT_BIT(AP_PADACT_LOCK_RACER) | AP_PADACT_BIT(AP_PADACT_LOCK_PAD)));
+
+ /* Restore the selector facts for the cases below. */
+
+ memset(&f, 0, sizeof f);
+ f.node = AP_PADACT_NODE_SELECTOR; f.keysNeed = 2; f.padState = 1; f.contentReady = 1;
+ f.structure = AP_RS_STRUCTURE_CLASSIC;
+ f.rs.present[T] = f.rs.present[C] = f.rs.present[R] = 1;
+ f.keysHave = 2; f.racerMet = 1; f.padReqMet = 0;
  /* Keys back, racer back: the pad requirement alone is left. */
  f.keysHave = 2; f.racerMet = 1;
  AP_PadActivityDecide(&f, &l);

@@ -327,6 +327,8 @@ int AP_ReqMetCounts(const ctr_req *r, const int *counts);
 // Pad state, the capture and final load gates, the tracker launch and the
 // pad text all call this, so they cannot disagree.
 int AP_ContentPadOpen(const ctr_content_pad *pad);
+int AP_ContentPadBaseOpen(const ctr_content_pad *pad);  // without the racer lock (#375)
+int AP_ContentPadRacerMet(const ctr_content_pad *pad);
 // Owned count for the pad's manual rule (0 when it has none).
 int AP_ContentPadRuleOwned(const ctr_content_pad *pad);
 // Track modes (#133 PR 3): the pad is open and the mode's stage is met

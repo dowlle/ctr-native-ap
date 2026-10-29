@@ -375,6 +375,18 @@ int AP_ContentPadOpen(const ctr_content_pad *pad)
 	       (pad->racer_lock < 0 || AP_CharacterUnlocked(pad->racer_lock));
 }
 
+// AP_ContentPadOpen split in its two terms, for the tracker's list of missing
+// requirements (#375): the pad's own gates, and the racer lock on top.
+int AP_ContentPadBaseOpen(const ctr_content_pad *pad)
+{
+	return ap_content_pad_open(pad, ap_recv_count);
+}
+
+int AP_ContentPadRacerMet(const ctr_content_pad *pad)
+{
+	return pad->racer_lock < 0 || AP_CharacterUnlocked(pad->racer_lock);
+}
+
 int AP_ContentPadRuleOwned(const ctr_content_pad *pad)
 {
 	return pad && pad->has_rule ? ap_content_rule_owned(pad, ap_recv_count) : 0;

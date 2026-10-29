@@ -77,7 +77,7 @@ typedef struct
 	// Pads (not garages)
 	int padState;   // AP_PadState: 1 locked, 2 raceable, 3 re-locked, 4 tier 2, 5 done, 0 unknown
 	int stage1Met;  // AP_PadStage1Met (content plan: AP_ContentPadOpen)
-	int padReqMet;  // a race pad's own requirement without the racer lock (AP_PadStage1BaseMet); content: = stage1Met
+	int padReqMet;  // the pad's own requirement without the racer lock (AP_PadStage1BaseMet, AP_ContentPadBaseOpen)
 	int racerMet;   // ctr_cfg_racer_lock_met
 	int replayable; // AP_PadReplayable
 	int contentReady; // not AP_CustomContentRequired; content plan: occupied and Ready
@@ -194,7 +194,7 @@ static inline int AP_PadActivityEntryMask(const ap_padact_facts *f)
 			return AP_PADACT_BIT(AP_PADACT_LOCK_CONTENT);
 		if (f->padState == 5)
 			return AP_PADACT_BIT(AP_PADACT_LOCK_DONE);
-		if (!f->stage1Met)
+		if (!f->padReqMet)
 			m |= AP_PADACT_BIT(AP_PADACT_LOCK_PAD);
 		if (!f->racerMet)
 			m |= AP_PADACT_BIT(AP_PADACT_LOCK_RACER);

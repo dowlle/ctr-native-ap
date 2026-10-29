@@ -75,7 +75,11 @@ int AP_PadActivities(int hub, int physical, int dest, ap_padact_list *out)
 #else
 		f.contentReady = 0; /* this build has no content-plan entry route */
 #endif
-		f.stage1Met = f.padReqMet = AP_ContentPadOpen(pad);
+		f.stage1Met = AP_ContentPadOpen(pad);
+		/* AP_ContentPadOpen already includes the pad's racer lock: list the pad's
+		 * own gates and the racer separately. */
+		f.padReqMet = AP_ContentPadBaseOpen(pad);
+		f.racerMet = pad ? AP_ContentPadRacerMet(pad) : 1;
 		if (pad && pad->occupied && (pad->crystal || pad->cup))
 		{
 			f.node = AP_PADACT_NODE_SINGLE;
