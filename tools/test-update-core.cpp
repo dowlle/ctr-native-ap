@@ -1344,6 +1344,17 @@ static void TestCrashRecovery()
 		ConfirmStarted(real, in.exe);
 		Clean(in);
 	}
+	// A file that existed before with neither copy left is a failed restore,
+	// never reported as recovered; the journal stays.
+	{
+		Install in = MakeInstall(dir);
+		real.removeFile(nullptr, in.apworld);
+		WriteText(SwapJournalPath(in.exe),
+		          "applying\nv0.3.1\nctr.apworld\t" + Sha256Hex(B("NEW WORLD")) + "\t1\n");
+		CHECK(StartupCheck(real, in.exe, "v0.3.0") == STARTUP_RESTORE_FAILED);
+		CHECK(real.exists(nullptr, SwapJournalPath(in.exe)));
+		Clean(in);
+	}
 	// A kept-back file that is neither the new copy nor the old one is not touched.
 	{
 		Install in = MakeInstall(dir);

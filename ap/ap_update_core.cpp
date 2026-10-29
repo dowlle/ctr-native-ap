@@ -1801,6 +1801,8 @@ Result Apply(const FsOps &fs, const std::string &exe, const std::vector<StagedFi
 					stepUndone = fs.removeFile(fs.ctx, old); // target was never replaced
 				else if (!fs.exists(fs.ctx, target))
 					stepUndone = fs.renameFile(fs.ctx, old, target);
+				// This step is not in `steps`: flush its own undo too.
+				stepUndone = stepUndone && (!fs.syncDir || fs.syncDir(target));
 			}
 			return fail(stepUndone);
 		}
@@ -1979,6 +1981,8 @@ static int RecoverSwap(const FsOps &fs, const std::string &exe)
 			if (!(folder ? fs.removeTree(fs.ctx, target) : fs.removeFile(fs.ctx, target)))
 				complete = false;
 		}
+		else if (e.had && !hasTarget)
+			complete = false; // it existed before, and neither copy is left: not restored
 	}
 	if (!complete)
 		return 3;
