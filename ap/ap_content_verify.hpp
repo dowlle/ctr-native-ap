@@ -42,11 +42,13 @@ static const int kFirstGuest = 8, kTigerTemple = 4, kPapusPyramid = 5;
 static const int kTurbo = 0, kMask = 6; // AP_VerifyWeaponOwned indices
 static const int kUsf = 2, kFirstBoost = 1;
 
-enum Op { ALWAYS, COUNT, SUM, DISTINCT, CHECKED, ALL, ANY };
+// WUMPA: the goal's `wumpa_banked` arm (J11), met when Wumpa Income is.
+enum Op { ALWAYS, COUNT, SUM, DISTINCT, CHECKED, ALL, ANY, WUMPA };
 struct Node { Op op; int count; std::vector<int64_t> codes; std::vector<int> kids; };
 struct Region { std::vector<int> gates; int lock = -1; };
 struct Route { int region = -1, stage = -1, lock = -1, need = 0, encounter = -1; bool boss = false; };
-enum Kind { PAD, SHARED, LEG, ENCOUNTER, ITEMSANITY, HIT };
+// SHOP: a Wumpa Shop slot (J11), its hub's Key floor (`target`) and income.
+enum Kind { PAD, SHARED, LEG, ENCOUNTER, ITEMSANITY, HIT, SHOP };
 enum Arm { ARM_NONE, ARM_FAMILIES, ARM_PAPU };
 struct Loc {
     int64_t code = 0;
@@ -65,6 +67,10 @@ struct Model {
     std::vector<Loc> locs;
     std::vector<int> encounter_loc;   // encounter index -> locs index
     std::vector<int64_t> items;       // every item code the plan pools
+    // Wumpa Income (J11, apworld content plan): a Trophy Race or CTR
+    // Challenge route on a normal pad racing a retail race track 0..15, with
+    // its pad's gates and the track's finish rank bound to the racer lock.
+    std::vector<Route> income;
     int goal = -1;
     bool itemsanity = false;
 };
@@ -95,7 +101,8 @@ static int compile(Model &m, const J &n) {
     } else if (op == "all" || op == "any") {
         out.op = op == "all" ? ALL : ANY;
         for (const auto &t : n.at("terms")) out.kids.push_back(compile(m, t));
-    } else if (op != "always") throw std::runtime_error("unsupported predicate " + op);
+    } else if (op == "wumpa_banked") out.op = WUMPA;
+    else if (op != "always") throw std::runtime_error("unsupported predicate " + op);
     if (n.contains("count")) out.count = n["count"].get<int>();
     m.nodes.push_back(out);
     return (int)m.nodes.size() - 1;
@@ -209,6 +216,9 @@ static Model build() {
             for (int i = 0; i < 3; ++i) {
                 if (pad.letter_items[i] <= 0) continue;
                 letters[pad.ctr_location].push_back(pad.letter_items[i]);
+                // ctr_first (J11): the CTR win pays the Trophy Race, which
+                // needs what the CTR Challenge needs.
+                if (pad.ctr_first && pad.trophy_location) letters[pad.trophy_location].push_back(pad.letter_items[i]);
                 if (pad.letter_locations[i] > 0) letters[pad.letter_locations[i]].push_back(pad.letter_items[i]);
             }
         }
@@ -227,11 +237,41 @@ static Model build() {
             if (pad.box_locations[4] > 0 && present.count(pad.box_locations[4])) door.insert(pad.box_locations[4]);
         }
 
+    // Wumpa Income routes (J11): every Trophy Race and CTR Challenge of a
+    // track entry on a retail race track, in its pad's region.
+    for (const auto &pad : p.at("pads")) {
+        if (pad.at("entry_id").is_null() || pad.at("kind") != "normal") continue;
+        const J &entry = *entries.at(pad["entry_id"].get<std::string>());
+        if (entry.at("kind") != "track") continue;
+        const J &track = *tracks.at(entry.at("track_id").get<std::string>());
+        if (track.at("origin") != "retail" || track.at("retail_id").get<int>() > 15) continue;
+        for (const auto &mode : entry.at("modes")) {
+            if (mode != "trophy" && mode != "ctr") continue;
+            Route R;
+            R.region = region_of(entry.at("id").get<std::string>());
+            const auto &later = stage2[pad.at("id").get<std::string>()];
+            const auto it = later.find(mode.get<std::string>());
+            R.stage = it == later.end() ? -1 : it->second;
+            R.lock = lock_of(pad);
+            R.need = finish_boost(track, packages, o);
+            m.income.push_back(R);
+        }
+    }
     for (const auto &c : p.at("checks")) {
         Loc L;
         L.code = c.at("location").get<int64_t>();
         const std::string kind = c.at("kind").get<std::string>();
         const J &routes = c.at("routes");
+        if (kind == "wumpa_shop") {
+            // No route: its hub's Key floor (N. Sanity Beach 0, Gem Stone
+            // Valley and The Lost Ruins 1, Glacier Park 2, Citadel City 3) and
+            // Wumpa Income.
+            static const std::map<std::string, int> floors = {{"hub:26", 0}, {"hub:25", 1}, {"hub:27", 1}, {"hub:28", 2}, {"hub:29", 3}};
+            L.kind = SHOP;
+            L.target = floors.at(c.at("owner").get<std::string>());
+            m.locs.push_back(L);
+            continue;
+        }
         const J &first = routes.at(0);
         const auto boost = state.boosts.find(L.code);
         L.boost = boost == state.boosts.end() ? 0 : boost->second;
@@ -242,7 +282,10 @@ static Model build() {
         // content_capability.weapon_arm: only with Itemsanity, on a track
         // check whose rank is the first boost and not a finish term.
         const J *track = tracks.count(c.at("owner").get<std::string>()) ? tracks.at(c["owner"].get<std::string>()) : nullptr;
-        if (m.itemsanity && track && L.boost == kFirstBoost && o.boost_mode && !finish_boost(*track, packages, o)) {
+        // A ctr_first Trophy Race (J11) routes from the CTR Challenge and takes
+        // its terms, which have no weapon alternative.
+        const bool ctr_first_trophy = kind == "trophy" && first.at("mode") == "ctr";
+        if (m.itemsanity && track && !ctr_first_trophy && L.boost == kFirstBoost && o.boost_mode && !finish_boost(*track, packages, o)) {
             const std::string award = first.at("award").get<std::string>();
             const bool gated = difficulty_track(*track);
             if (kind == "trophy" && o.logic_difficulty < 2 && gated) { L.arm = ARM_FAMILIES; L.arm_families = AP_VF_DIFFICULTY_WEAPON_FAMILY_MIN; }
@@ -362,10 +405,18 @@ struct Sweep {
         case CHECKED: for (auto c : x.codes) sum += won(c); return sum >= x.count;
         case ALL: for (int k : x.kids) if (!eval(k)) return false; return true;
         case ANY: for (int k : x.kids) if (eval(k)) return true; return false;
+        case WUMPA: return income();
         }
         return false;
     }
     bool region(int r) const { return r >= 0 && open[r]; }
+    bool income() const {
+        for (const auto &r : m.income)
+            if (region(r.region) && (r.stage < 0 || eval(r.stage)) &&
+                (!r.need || AP_VerifyCapabilityGate(&o, dense, r.lock, r.need, 0)))
+                return true;
+        return false;
+    }
     bool route(const Route &r) const { return region(r.region) && (r.stage < 0 || eval(r.stage)); }
     // with_boost: the check's rank and stat term, bound to its racer lock,
     // or the Itemsanity weapon alternative.
@@ -443,6 +494,9 @@ struct Sweep {
             break;
         case HIT:
             ok = hit(L);
+            break;
+        case SHOP:
+            ok = count(kKeyItem) >= L.target && income();
             break;
         }
         return ok && (!L.door || AP_VerifyTigerDoorWeapon(dense));

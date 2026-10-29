@@ -185,3 +185,22 @@ total_relics, no Gem arm, two cups. `test-content-plan.cpp` checks the
 configuration the parser fills (Trophy doors, the Oxide garage's Keys, goal
 arms, Final Challenge venue, the drawn venues), refuses forged boss records
 and walks the boss records of `bosses-final.json`.
+
+J11 (ctr_first, the Wumpa Shop and goal, boss opponent and kit shuffle):
+`ctr-first.json`, `wumpa-shop.json`, `wumpa-goal-only.json`,
+`boss-shuffle.json` and `all-030.json` are slot data the paired apworld
+emitted (script `emit-fixtures.py` in the J11 artifacts
+`030-content-plan-features-2026-10-29`, seeds 20261029 to 20261033), copied
+unchanged; that directory's README lists what each carries. `ctr-first.json`
+has ctr_first entries (`[ctr, relic]` and Baby T Park `[ctr]`) and two
+decision 4 fallbacks (Roo's Tubes overridden to `[trophy, relic]`, the B+
+`fixture-loop`); `wumpa-shop.json` a three-slot `excluded` shop with a Gem and
+Wumpa goal; `wumpa-goal-only.json` a Wumpa-only goal; `boss-shuffle.json`
+opponent and kit shuffle with N. Oxide in the pool and `all_compatible`, kits
+on Cortex Vortex (255) and Baby T Park (35) and the Hit block following the
+draw; `all-030.json` all four after a real fill. `test-content-features.cpp`
+admits and sweeps them, checks the filled configuration, walks their J11
+records and refuses forgeries; it also derives J11 plans from the earlier
+fixtures by the wire spec. `test-content-verify.cpp` sweeps them, and
+`test-content-plan-parity.py` compares the production parser with the paired
+validator on them and their mutations.

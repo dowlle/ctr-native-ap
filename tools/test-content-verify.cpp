@@ -92,7 +92,9 @@ static void fixtures() {
     static const char *names[] = {"baseline", "starts-extras", "manual-rules", "open-packages", "track-modes", "track-checks",
                                   "track-checks-global", "cortex-perfect", "item-packs", "racers", "capability",
                                   "global-checks", "item-boxes", "cups", "cup-hits", "bosses", "bosses-custom",
-                                  "bosses-final", "bosses-cups"};
+                                  "bosses-final", "bosses-cups",
+                                  // J11: ctr_first, the Wumpa Shop and goal, boss opponent and kit shuffle
+                                  "ctr-first", "wumpa-shop", "wumpa-goal-only", "boss-shuffle", "all-030"};
     for (const char *name : names) {
         std::ifstream in(std::string("tools/fixtures/content-plan/") + name + ".json");
         if (!in) { expect(false, std::string("fixture missing: ") + name); continue; }
@@ -111,7 +113,10 @@ static void fixtures() {
         Room none;
         none.present = all.present;
         r = run(none);
-        expect(!r.goal && r.reachable < r.total, std::string(name) + ": nothing held does not reach the goal");
+        // A Wumpa-only goal (J11) is met from the start when a free pad races a
+        // retail track: Wumpa Income needs no item.
+        expect((slot["content_plan"]["goal"]["op"] == "wumpa_banked" || !r.goal) && r.reachable < r.total,
+               std::string(name) + ": nothing held does not reach the goal");
         // Checked locations count as reached and bank their own item.
         Room done = none;
         for (auto id : ids) { done.checked.insert(id); }

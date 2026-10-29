@@ -624,8 +624,9 @@ static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false
 {
 	// J03 (decision 9): with boss opponent shuffle, the boss-win identities and
 	// guest unlock wins follow the drawn racers, and every guest may fall back
-	// to Keys (the content-plan table). The boss record is parsed first.
-	const int bossShuffled = !contentPlan && AP_HitBossShuffleActive(&ctr_boss_encounters);
+	// to Keys (the content-plan table). The boss record is parsed first; on a
+	// content plan (J11) the plan's encounters fill it before this runs.
+	const int bossShuffled = AP_HitBossShuffleActive(&ctr_boss_encounters);
 	int bossIdent[AP_HIT_BOSS_CODES];
 	for (int i = 0; i < AP_HIT_BOSS_CODES; i++)
 		bossIdent[i] = kHitBossIdentity[i];
@@ -2057,6 +2058,9 @@ static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nloh
 	           e->finalOpponent, e->finalComposed ? " composed" : "", e->gauntletOn);
 }
 
+// The content-plan parser fills the Wumpa Shop configuration through the
+// ordinary block parser (J11), so it is included first.
+#include "ap_wumpa_shop_parser.hpp"
 #include "ap_content_plan_impl.hpp"
 #include "ap_content_verify.hpp"
 
@@ -2262,7 +2266,6 @@ static void ap_seedcfg_parse_crystals(const nlohmann::json &j,
 }
 
 #include "ap_cup_sweep_parser.hpp"
-#include "ap_wumpa_shop_parser.hpp"
 
 void ap_seedcfg_parse_json(const nlohmann::json &j)
 {

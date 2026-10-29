@@ -205,7 +205,31 @@ typedef struct ctr_content_bosses {
      * cup (its legs are the cup pad ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD
      * + g)); cup_points[g][n] each leg's certified restart point count. */
     int cup[4], cup_points[4][4];
+    /* J11 (decisions 7 and 9): boss opponent and kit shuffle on a content
+     * plan. `extended` is 1 when the record carries the opponent and kit keys
+     * (any of opponent_shuffle, kit_shuffle, oxide_attack_profile
+     * all_compatible). opponent[g] is the engine character id garage g races
+     * (its own boss without opponent_shuffle), final_opponent the one racing
+     * both N. Oxide encounters (15 unless drawn, -1 when Oxide is disabled).
+     * kit_intensity 0 relaxed .. 3 mayhem (1 without the kit switch),
+     * kit_assignment 0 mixed_loadouts, 1 signature_profiles. home_venues 1
+     * with track_assignment character_home_track. The composed schedules are
+     * filled into ctr_boss_encounters exactly as an ordinary version 2 room's. */
+    int extended, opponent_shuffle, oxide_in_pool, kit_shuffle, oxide_profile_all, home_venues;
+    int kit_assignment, kit_intensity, loss_easing;
+    int opponent[4], final_opponent;
 } ctr_content_bosses;
+
+/* Wumpa Shop and Wumpa goal on a content plan (J11). The plan's `wumpa_shop`
+ * record and its `wumpa_banked` goal arm; the parser also fills the ordinary
+ * ctr_wumpa_shop configuration from them, so the runtime reads that. */
+typedef struct ctr_content_wumpa {
+    int shop_slots;  /* per hub, 0 without the record */
+    int prices;      /* wumpa_shop_prices percent, 25..400 */
+    int excluded;    /* progression "excluded" */
+    int hints;
+    int goal;        /* the wumpa_banked arm's count, 0 without one */
+} ctr_content_wumpa;
 
 typedef struct ctr_content_item {
     int base, extra, start_from_pool, start_additional, remaining, receipt_cap;
@@ -309,6 +333,10 @@ int ap_content_plan_goal(const int received_gems[5]);
 int ap_content_plan_gems_held(const int received_gems[5]);
 /* Boss garages (#133 PR 6): the record (all zero without one). */
 const ctr_content_bosses *ap_content_plan_bosses(void);
+/* J11: the Wumpa Shop and goal record (all zero without one), and 1 when the
+ * plan's adventure_structure is ctr_first. */
+const ctr_content_wumpa *ap_content_plan_wumpa(void);
+int ap_content_plan_ctr_first(void);
 /* Completability sweep (#133 PR 8, ap_content_verify.hpp): the plan's own
  * logic graph evaluated to a fixed point from the receipts that are not this
  * world's own location rewards (other players, starting inventory, server
