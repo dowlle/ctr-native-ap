@@ -410,6 +410,84 @@ int AP_RaceStructureSuppressTrophyBit(int rewardBit)
 	       AP_RaceStructureSuppressTrophy(AP_LookupLocationCode(rewardBit));
 }
 
+// #208 decision 15: the seed's race_type_selector is the starting value; the
+// Options row (config.ini race_type_selector: -1 SEED, 0 PRODUCTIVE, 1
+// ALWAYS) overrides it. Read at every pad entry, so an edit applies live.
+int AP_RaceTypeSelectorSetting(void)
+{
+	return AP_RaceSelectorEffective(g_config.raceTypeSelector, ctr_cfg.race_type_selector);
+}
+
+// #208 decision 4: the Trophy code of a race destination, or -1. A destination
+// runs ctr_first only when this code is in the award pairs, that is when the
+// track has a CTR Challenge; any other track keeps the classic order inside a
+// ctr_first seed.
+static long AP_RaceStructureDestTrophyCode(int destLevelID)
+{
+	if (destLevelID == AP_CORTEX_DEST)
+		return AP_CortexTrackCode(AP_CV_SLOT_TROPHY);
+	if (AP_TrialTrackConfigured(destLevelID))
+		return AP_TrialTrackLocation(destLevelID, CTR_CFG_TRIAL_TROPHY);
+	if (destLevelID >= 0 && destLevelID < 16)
+		return AP_LookupLocationCode(destLevelID + ADV_REWARD_FIRST_TROPHY);
+	return -1;
+}
+
+int AP_RaceStructureDestCtrFirst(int destLevelID)
+{
+	return AP_RaceStructureSuppressTrophy(AP_RaceStructureDestTrophyCode(destLevelID));
+}
+
+// The CTR Challenge code of a race destination, or -1.
+static long AP_RaceStructureDestCtrCode(int destLevelID)
+{
+	if (destLevelID == AP_CORTEX_DEST)
+		return AP_CortexTrackCode(AP_CV_SLOT_TOKEN);
+	if (AP_TrialTrackConfigured(destLevelID))
+		return AP_TrialTrackLocation(destLevelID, CTR_CFG_TRIAL_CTR);
+	if (destLevelID >= 0 && destLevelID < 16)
+		return AP_LookupLocationCode(destLevelID + ADV_REWARD_FIRST_CTR_TOKEN);
+	return -1;
+}
+
+// The structure the selector applies to one destination: refused and classic
+// seeds as they are, ctr_first only where the track has a CTR Challenge. A
+// destination whose codes sit in crossed pairs is refused: its pad offers no
+// row and releases the kart (the result paths assume a track's own pair).
+int AP_RaceStructureDestStructure(int destLevelID)
+{
+	int state;
+	if (!AP_RaceStructureCtrFirst())
+		return ctr_cfg.adventure_structure;
+	state = AP_RaceStructurePairState(&ctr_cfg.stage1_awards,
+	                                  AP_RaceStructureDestCtrCode(destLevelID),
+	                                  AP_RaceStructureDestTrophyCode(destLevelID));
+	if (state < 0)
+		return AP_RS_STRUCTURE_REFUSED;
+	return AP_RaceStructureForDest(ctr_cfg.adventure_structure, state > 0);
+}
+
+// The same question keyed by podium track (AP_RetailPodiumTrack): does a CTR
+// Challenge on this track earn its rungs (decision 14)?
+int AP_RaceStructurePodiumCtrFirst(int podiumTrack)
+{
+	long code = -1;
+	if (podiumTrack >= 0 && podiumTrack < 16)
+		code = AP_LookupLocationCode(podiumTrack + ADV_REWARD_FIRST_TROPHY);
+	else if (podiumTrack >= AP_TRIAL_PODIUM_LOGICAL_BASE &&
+	         podiumTrack < AP_TRIAL_PODIUM_LOGICAL_BASE + CTR_CFG_TRIAL_TRACK_COUNT)
+		code = AP_TrialTrackLocation(16 + podiumTrack - AP_TRIAL_PODIUM_LOGICAL_BASE,
+		                             CTR_CFG_TRIAL_TROPHY);
+	else if (podiumTrack == AP_CV_PODIUM_LOGICAL_TRACK)
+		code = AP_CortexTrackCode(AP_CV_SLOT_TROPHY);
+#ifdef CTR_CUSTOM_TRACKS
+	else if (ctr_cfg_active() && ctr_cfg.custom_tracks_ok &&
+	         podiumTrack == CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1)
+		code = ctr_cfg.custom_track.trophy_location;
+#endif
+	return AP_RaceStructureSuppressTrophy(code);
+}
+
 // A qualifying CTR win (first place with the letters) of `ctrCode` also sends
 // its paired Trophy Race check, once: the class emitter drops a code that is
 // already checked, so a re-win after Collect or a reconnect sends only what is

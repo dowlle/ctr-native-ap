@@ -74,6 +74,12 @@ static struct MenuRow apCustomRaceRows[] = {
 	{LNG_CTR_CHALLENGE_TITLE, 0, 1, 1, 1},
 	{-1, 0, 0, 0, 0}
 };
+// #208 decision 14: a ctr_first legacy custom track whose CTR win earns its
+// Trophy offers the CTR Challenge alone (row 0 of this list is choice 1).
+static struct MenuRow apCustomRaceRowsCtrFirst[] = {
+	{LNG_CTR_CHALLENGE_TITLE, 0, 0, 0, 0},
+	{-1, 0, 0, 0, 0}
+};
 static struct RectMenu apCustomRaceMenu = {
 	.stringIndexTitle = LNG_CHOOSE_RACE_TYPE,
 	.posX_curr = 0x100, .posY_curr = 0x6c,
@@ -1380,7 +1386,8 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			ap_rs_rows apRsRows;
 			int apTlMode = AP_TrackerLaunchTakeMode(physLevelID, levelID);
 			AP_PadSelectorRows(physLevelID, levelID, &apRsRows);
-			apRsMode = AP_RaceSelectorDecide(&apRsRows, ctr_cfg.race_type_selector);
+			// The Options row over the seed's value, read now (decision 15).
+			apRsMode = AP_RaceSelectorDecide(&apRsRows, AP_RaceTypeSelectorSetting());
 			// #375: a tracker start already chose its row from the same
 			// facts; it answers this menu if the pad still offers that
 			// row, else the pad releases the kart.
@@ -1405,12 +1412,28 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		if (apRaceTypeChoice == -2)
 			goto WarpPad_TrophyAnimateOnly;
 		apRsMode = apRaceTypeChoice;
-		apRaceTypeChoice = -2;
 		RECTMENU_APSetReplayRows(0, 0);
 		// Cancel, or no row at all: release the kart and latch the pad until
 		// it leaves, so the menu does not reopen at once.
 		if (apRsMode < 0)
+		{
+			apRaceTypeChoice = -2;
 			goto WarpPad_RefuseEntry;
+		}
+		// Decision 16: Aku Aku's first-time CTR Challenge and Relic Race
+		// hints, as the retail token/relic menu shows them. The choice stays
+		// latched while he speaks; MainFrame_RequestMaskHint returns at once
+		// when the Skip Mask Hints option is on.
+		if (apRsMode == AP_RS_CTR || apRsMode == AP_RS_RELIC)
+		{
+			int apHint = apRsMode == AP_RS_CTR ? ADV_MASK_HINT_ID_CTR_TOKEN_CHALLENGE
+			                                   : ADV_MASK_HINT_ID_RELIC_CHALLENGE;
+			if (CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_FIRST_HINT + apHint) == 0)
+				MainFrame_RequestMaskHint(apHint, 1);
+			if ((AH_MaskHint_boolCanSpawn() & 0xffff) == 0)
+				goto WarpPad_TrophyAnimateOnly;
+		}
+		apRaceTypeChoice = -2;
 		gGT->gameMode2 &= ~TOKEN_RACE;
 		gGT->gameMode1 &= ~RELIC_RACE;
 		sdata->Loading.OnBegin.AddBitsConfig0 &= ~RELIC_RACE;
@@ -1665,19 +1688,39 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			if (warppadObj->framesWarping == 61)
 			{
 				apCustomRaceChoice = -2;
-				// #208 ctr_first: the CTR Challenge is the first race.
-				apCustomRaceMenu.rowSelected =
-				    (AP_CustomTrackTrophyChecked() || AP_RaceStructureCtrFirst()) ? 1 : 0;
-				RECTMENU_Show(&apCustomRaceMenu);
+				// #208 ctr_first (decision 14): a track whose CTR win earns
+				// its Trophy has no Trophy Race row; one without a CTR
+				// Challenge never reaches this menu (decision 4).
+				if (AP_CustomTrackTrophyEarnedByCtr())
+				{
+					apCustomRaceMenu.rows = apCustomRaceRowsCtrFirst;
+					apCustomRaceMenu.rowSelected = 0;
+					// Decision 15: PRODUCTIVE loads the one race directly.
+					if (AP_RaceTypeSelectorSetting() == AP_RS_SELECTOR_PRODUCTIVE)
+						apCustomRaceChoice = 1;
+				}
+				else
+				{
+					apCustomRaceMenu.rows = apCustomRaceRows;
+					apCustomRaceMenu.rowSelected = AP_CustomTrackTrophyChecked() ? 1 : 0;
+				}
+				if (apCustomRaceChoice == -2)
+					RECTMENU_Show(&apCustomRaceMenu);
 			}
 			if (apCustomRaceChoice == -2)
 				goto WarpPad_TrophyAnimateOnly;
+			// The CTR-only list's single row is the CTR Challenge.
+			if (apCustomRaceChoice == 0 && apCustomRaceMenu.rows == apCustomRaceRowsCtrFirst)
+				apCustomRaceChoice = 1;
 			if (apCustomRaceChoice < 0)
 			{
 				warppadObj->boolEnteredWarppad = 0;
 				warppadObj->framesWarping = 0;
 				AH_WarpPad_WarpRestore(gGT);
 				gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
+				// Latch the pad until the kart leaves it, as WarpPad_RefuseEntry
+				// does, so the released kart is not captured again at once.
+				apEntryRefusedDest = warppadObj->levelID;
 				goto WarpPad_AnimateOpen;
 			}
 			gGT->gameMode2 &= ~TOKEN_RACE;
@@ -1691,6 +1734,14 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				gGT->gameMode2 |= TOKEN_RACE;
 				sdata->Loading.OnBegin.RemBitsConfig8 &= ~TOKEN_RACE;
 				sdata->Loading.OnBegin.AddBitsConfig8 |= TOKEN_RACE;
+				// Decision 16: Aku Aku's first-time CTR Challenge hint, as
+				// from the race type selector; the choice stays latched
+				// while he speaks. Skip Mask Hints returns at once.
+				if (CHECK_ADV_BIT(sdata->advProgress.rewards,
+				                  ADV_REWARD_FIRST_HINT + ADV_MASK_HINT_ID_CTR_TOKEN_CHALLENGE) == 0)
+					MainFrame_RequestMaskHint(ADV_MASK_HINT_ID_CTR_TOKEN_CHALLENGE, 1);
+				if ((AH_MaskHint_boolCanSpawn() & 0xffff) == 0)
+					goto WarpPad_TrophyAnimateOnly;
 			}
 		}
 #endif
@@ -2623,6 +2674,7 @@ WarpPad_AnimateOpen:
 	int apUncBits[AP_PAD_DISPLAY_BITS_MAX];
 	int apUncN = -1;     // -1 = "not an AP glow destination" -> leave vanilla glow alone
 	int apSlotBit[3] = {-1, -1, -1}; // per-slot advertised bit, or -1 = hide slot
+	int apNeutral = 0;   // #459: slot 0 shows the neutral AP marker, the rest hide
 	if ((levelID >= 0 && levelID < AH_WP_SLIDE_COLISEUM) ||       // race 0..15
 	    (levelID == AH_WP_SLIDE_COLISEUM) || (levelID == AH_WP_TURBO_TRACK) || // trial 16/17
 	    (((u16)(levelID - AH_WP_NITRO_COURT)) < 2) || (levelID == 21) || (levelID == 23) || // arena
@@ -2631,9 +2683,13 @@ WarpPad_AnimateOpen:
 	{
 		apUncN = AP_PadUncollectedDisplayBits(warppadObj->levelID, apUncBits,
 		                                   (int)(sizeof apUncBits / sizeof apUncBits[0]));
-		// Spoiler Items (#459): until Warp Pad Preview arrives, hide all three
-		// prize slots, exactly as for a pad with nothing left. Only the draw is
-		// gated: AP_PadState, the counters and the entry gate are untouched.
+		// Spoiler Items (#459): until Warp Pad Preview arrives, the real rewards
+		// are held back. A pad with any open location left shows one neutral
+		// Archipelago marker in slot 0; a finished pad shows nothing (#459
+		// ruling, 2026-10-28). Only the draw is gated: AP_PadState, the counters and the
+		// entry gate are untouched.
+		apNeutral = AP_Spoiler_PadNeutralMarker(AP_SpoilerPadPreviewShown(), apUncN,
+		                                        AP_WarpPadNeutralMarkerReady());
 		apUncN = AP_Spoiler_PadDisplayCount(AP_SpoilerPadPreviewShown(), apUncN);
 		if (apUncN > 0)
 			AP_PadGlowSlots(apUncBits, apUncN, (int)(gGT->timer / 0x3C), apSlotBit);
@@ -2652,7 +2708,7 @@ WarpPad_AnimateOpen:
 			if (apUncN >= 0)
 			{
 				struct Instance *apPrize = instArr[WPIS_OPEN_PRIZE1 + i];
-				if (apSlotBit[i] < 0)
+				if (apSlotBit[i] < 0 && !(apNeutral && i == 0 && AP_WarpPadShowNeutralMarker(apPrize)))
 				{
 					// Nothing to advertise in this slot -> force-hide and skip the
 					// spin/scale entirely so it neither renders nor mutates.
@@ -2662,10 +2718,12 @@ WarpPad_AnimateOpen:
 					continue;
 				}
 
-				// Swap this slot to the advertised reward's model + tint. Model-
+				// Swap this slot to the advertised reward's model + tint (the neutral
+				// marker above has no bit and skips this). Model-
 				// pointer reassignment is a native pattern; SpinRewards/scale below
 				// read the new model->id. Unscouted / unresolved / no marker model ->
 				// AP_WarpPadRewardModel returns -1; we keep the existing model then.
+				if (apSlotBit[i] >= 0)
 				{
 					int apModel = AP_WarpPadRewardModel(apSlotBit[i]);
 					// #212: another CTR player's OG reward keeps its own model and is
@@ -3409,7 +3467,9 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		     (warppadObj->levelID == AP_CORTEX_DEST &&
 		      AP_CortexTrackChecked(AP_CV_SLOT_TROPHY))) &&
 		    !ctr_cfg_warp_stage2_unlocked(levelID) &&
-		    !AP_PadPhase1ReRaceable(levelID, warppadObj->levelID))
+		    !AP_PadPhase1ReRaceable(levelID, warppadObj->levelID) &&
+		    // #208: a replayable Done pad is built open, even before stage 2.
+		    !AP_PadReplayable(levelID, warppadObj->levelID))
 		{
 			const ctr_req *r = &ctr_cfg.warp_pad_unlock[levelID].stage2;
 			reqRelicTint = AP_ReqRelicTintTier(r);

@@ -315,6 +315,21 @@ static const int   s_dlSendValues[] = {-1, 0, 1};
 static const char *s_dlSendNames[]  = {"SEED", "OFF", "ON"};
 #define DLSEND_COUNT ((int)(sizeof(s_dlSendValues) / sizeof(s_dlSendValues[0])))
 
+// Race type menu (#208, decision 15): follow the seed / always / productive.
+// 1 and 0 are the AP_RS_SELECTOR_ALWAYS / AP_RS_SELECTOR_PRODUCTIVE values;
+// AP_RaceTypeSelectorSetting reads the row at every pad entry.
+static const int   s_raceMenuValues[] = {-1, 1, 0};
+static const char *s_raceMenuNames[]  = {"SEED", "ALWAYS", "PRODUCTIVE"};
+#define RACEMENU_COUNT ((int)(sizeof(s_raceMenuValues) / sizeof(s_raceMenuValues[0])))
+
+static int RaceMenu_Index(int value)
+{
+	for (int i = 0; i < RACEMENU_COUNT; i++)
+		if (s_raceMenuValues[i] == value)
+			return i;
+	return 0; // out-of-range persisted value renders and steps as SEED
+}
+
 // Sustained-trap comfort window. Zero is stored for Full race so config.ini
 // remains readable and the scheduler does not need a magic large duration.
 static const int   s_trapDurationValues[] = {10, 15, 20, 25, 30, 45, 60, 90, 0};
@@ -370,6 +385,8 @@ static const char *Enum_Label(const ConfigEntry *e)
 		return s_dlSendNames[DlSend_Index(*(int *)e->valuePtr)];
 	if (e->valuePtr == &g_config.trapDuration)
 		return s_trapDurationNames[TrapDuration_Index(*(int *)e->valuePtr)];
+	if (e->valuePtr == &g_config.raceTypeSelector)
+		return s_raceMenuNames[RaceMenu_Index(*(int *)e->valuePtr)];
 #endif
 	return AiDiff_Label(*(int *)e->valuePtr);
 }
@@ -427,6 +444,16 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 		*(int *)e->valuePtr = s_dlSendValues[i];
 		return;
 	}
+	if (e->valuePtr == &g_config.raceTypeSelector)
+	{
+		int i = RaceMenu_Index(*(int *)e->valuePtr) + dir;
+		if (i < 0)
+			i = 0;
+		if (i > RACEMENU_COUNT - 1)
+			i = RACEMENU_COUNT - 1;
+		*(int *)e->valuePtr = s_raceMenuValues[i];
+		return;
+	}
 	if (e->valuePtr == &g_config.trapDuration)
 	{
 		int i = TrapDuration_Index(*(int *)e->valuePtr) + dir;
@@ -463,15 +490,17 @@ static void Enum_Advance(const ConfigEntry *e)
 // The Item Box Colours row is the player's opt-out of the seed's item box
 // colours. While a loaded seed has them off, it reads "OFF (SEED)" in grey and
 // takes no input: a player can turn colours off, never on. While Spoiler Items
-// (#459) still holds the colours behind AP Box Colours, it reads "LOCKED (ITEM)"
-// the same way; the boxes are pink until the item arrives either way.
+// (#459) still holds the colours behind AP Box Colours, the row stays editable
+// (#459 ruling, 2026-10-28): it reads "ON (LOCKED)" or "OFF", and an OFF set early
+// keeps the boxes pink after the item arrives.
 static int Config_RowLockedBySeed(const ConfigEntry *e)
 {
-	int state;
-	if (e->valuePtr != &g_config.itemBoxColours)
-		return 0;
-	state = AP_Boxes_ColourRowState();
-	return state == AP_BOX_COLOUR_ROW_SEED_OFF || state == AP_BOX_COLOUR_ROW_ITEM_LOCKED;
+	return e->valuePtr == &g_config.itemBoxColours && AP_Boxes_ColourRowState() == AP_BOX_COLOUR_ROW_SEED_OFF;
+}
+
+static int Config_RowLockedByItem(const ConfigEntry *e)
+{
+	return e->valuePtr == &g_config.itemBoxColours && AP_Boxes_ColourRowState() == AP_BOX_COLOUR_ROW_ITEM_LOCKED;
 }
 
 static void Config_DrawHelpLines(const char *first, const char *second, uint32_t *ot)
@@ -490,10 +519,10 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 
 	if (e->valuePtr == &g_config.itemBoxColours)
 	{
-		if (Config_RowLockedBySeed(e) && AP_Boxes_ColourRowState() == AP_BOX_COLOUR_ROW_ITEM_LOCKED)
+		if (Config_RowLockedByItem(e))
 		{
-			first = "Find AP Box Colours to see";
-			second = "box colours. Boxes stay pink.";
+			first = "Pink until AP Box Colours.";
+			second = "Set OFF to keep them pink.";
 		}
 		else if (Config_RowLockedBySeed(e))
 		{
@@ -505,6 +534,11 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 			first = "Purple progression, blue useful,";
 			second = "cyan filler, salmon trap.";
 		}
+	}
+	if (e->valuePtr == &g_config.raceTypeSelector)
+	{
+		first = "When race pads ask which race.";
+		second = "SEED uses the seed's setting.";
 	}
 	if (first == 0)
 		return;
@@ -534,8 +568,12 @@ static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint
 #ifdef CTR_AP
 	if (Config_RowLockedBySeed(e))
 	{
-		DecalFont_DrawLineOT(AP_Boxes_ColourRowState() == AP_BOX_COLOUR_ROW_ITEM_LOCKED ? "LOCKED (ITEM)" : "OFF (SEED)",
-		                     valueX, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
+		DecalFont_DrawLineOT("OFF (SEED)", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
+		return;
+	}
+	if (Config_RowLockedByItem(e))
+	{
+		DecalFont_DrawLineOT(*(bool *)e->valuePtr ? "ON (LOCKED)" : "OFF", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 		return;
 	}
 #endif
@@ -1343,7 +1381,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			if (e == NULL)
 				AP_LinkRegAction(); // Room links: use this client for ctr-ap:// links, or stop
 			else if (Config_RowLockedBySeed(e))
-				; // the seed or AP Box Colours (#459) holds the colours: nothing to toggle
+				; // the seed has item box colours off: nothing to toggle
 			else
 #endif
 			if (e->type == CFG_BOOL)

@@ -74,7 +74,7 @@ typedef struct
 	int replayable; // AP_PadReplayable
 	int contentReady; // not AP_CustomContentRequired; content plan: occupied and Ready
 	// SELECTOR
-	int structure;  // ctr_cfg.adventure_structure
+	int structure;  // AP_RaceStructureDestStructure (per-track classic fallback)
 	int trophyChecked;
 	int stage2Met;
 	ap_rs_facts rs;

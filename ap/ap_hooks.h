@@ -615,6 +615,14 @@ int AP_WarpPadRewardGemColour(int globalBit);
 // back to the vanilla token group on -1 (unscouted placeholder).
 int AP_WarpPadRewardTokenColour(int globalBit);
 
+// Spoiler Items (#459 ruling, 2026-10-28): turn one warp pad prize slot into
+// the neutral Archipelago marker a pad shows while Warp Pad Preview is missing.
+// The marker wears the uniform surprise colour whatever the seed's
+// ap_item_type_colors says, so it names no item, class or count. Returns 0 and
+// leaves the instance alone when the marker model is not parked.
+int AP_WarpPadNeutralMarkerReady(void);
+int AP_WarpPadShowNeutralMarker(struct Instance *prize);
+
 // 1 if the AP location at `globalBit` (= word*32+bit) has been CHECKED on the
 // server for our own slot. Use this -- NOT CHECK_ADV_BIT on the AdvProgress bits
 // -- to ask "has the player completed this location" in AP mode: AP_ApplyItems
@@ -749,6 +757,15 @@ int AP_RaceStructureSuppressTrophy(long trophyCode);
 int AP_RaceStructureSuppressTrophyBit(int rewardBit);
 void AP_RaceStructureTrophyRaceWon(int levelID);
 int AP_CustomTrackTrophyEarnedByCtr(void);
+// Per destination (decision 4): DestCtrFirst is 1 when this destination runs
+// ctr_first (its Trophy code is in the award pairs); DestStructure is the
+// structure the selector applies to it; PodiumCtrFirst asks the same by podium
+// track, so a CTR Challenge there earns its rungs (decision 14).
+int AP_RaceStructureDestCtrFirst(int destLevelID);
+int AP_RaceStructureDestStructure(int destLevelID);
+int AP_RaceStructurePodiumCtrFirst(int podiumTrack);
+// The race type selector in force: the Options row over the seed (decision 15).
+int AP_RaceTypeSelectorSetting(void);
 
 // ── Cortex Vortex pad track (schema 15, virtual destination 110) ──
 // AP_CortexTrackActive is THE identity question every LevelID-13 consumer asks

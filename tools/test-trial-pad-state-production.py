@@ -58,6 +58,7 @@ int AP_CortexTrackChecked(int slot){assert(slot==AP_CV_SLOT_TROPHY);return cvVal
 /* #208 ctr_first seam: the structure and the destination's open CTR side. */
 static int ctrFirst=0,ctrSide=0;
 int AP_RaceStructureCtrFirst(void){return ctrFirst;}
+int AP_RaceStructureDestCtrFirst(int d){assert(d==destination);return ctrFirst;}
 static int AP_DestCtrSideLeft(int d){assert(d==destination);return ctrSide;}
 '''
 tests=r'''

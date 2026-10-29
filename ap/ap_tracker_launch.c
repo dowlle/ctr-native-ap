@@ -116,7 +116,7 @@ int AP_PadActivities(int hub, int physical, int dest, ap_padact_list *out)
 		if (got)
 		{
 			f.node = AP_PADACT_NODE_SELECTOR;
-			f.structure = got == 2 ? AP_RS_STRUCTURE_REFUSED : ctr_cfg.adventure_structure;
+			f.structure = got == 2 ? AP_RS_STRUCTURE_REFUSED : AP_RaceStructureDestStructure(dest);
 			if (got == 2)
 				f.rs.present[AP_RS_TROPHY] = 1; /* one row to carry the reason */
 		}

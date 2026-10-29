@@ -781,7 +781,7 @@ void UI_CupStandings_InputAndDraw(void)
 							       // Trophy, so a Collect of the CTR check alone still
 							       // leaves this win something to send.
 							       ? (!AP_CustomTrackCtrChecked() ||
-							          (AP_RaceStructureCtrFirst() && !AP_CustomTrackTrophyChecked()))
+							          (AP_CustomTrackTrophyEarnedByCtr() && !AP_CustomTrackTrophyChecked()))
 							       // #208 ctr_first: a plain race does not earn
 							       // the custom Trophy, so no prize podium.
 							       : (!AP_CustomTrackTrophyChecked() &&

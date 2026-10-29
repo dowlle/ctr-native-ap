@@ -2,9 +2,13 @@
 pure rules, the race-loss win set and the real schema-18 parser on the host,
 and pin the production call sites.
 
-Pins: which rows each structure admits, which rows are productive (including
-"a plain Trophy Race never earns the Trophy under ctr_first"), the cursor, the
-always / productive decision, grey replay rows, the CTR -> Trophy award pairs,
+Pins: which rows each structure admits (no Trophy Race row under ctr_first,
+decision 14 of 2026-10-28), the per-track classic fallback for a track without
+a CTR Challenge (decision 4), which rows are productive (the CTR Challenge
+carries the Trophy, boxes, Wumpa and rungs under ctr_first), podium rungs from
+a ctr_first CTR Challenge, the Options row over the seed value (decision 15),
+the Aku Aku hints from the selector (decision 16), the cursor, the always /
+productive decision, grey replay rows, the CTR -> Trophy award pairs,
 the CTR win's win set carrying its paired Trophy, the parser's classic,
 ctr_first, refused and absent cases, and that the pad, result and menu code
 call these gates. Run from the repository root.
@@ -28,7 +32,7 @@ static void admit(void){
  int a[3];
  for(int s=0;s<2;s++)for(int tc=0;tc<2;tc++)for(int s2=0;s2<2;s2++){
   AP_RaceStructureAdmit(s,tc,s2,a);
-  assert(a[T]==1);
+  assert(a[T]==(s!=AP_RS_STRUCTURE_CTR_FIRST));
   assert(a[R]==(tc&&s2));
   assert(a[C]==(s==AP_RS_STRUCTURE_CTR_FIRST?1:(tc&&s2)));
  }
@@ -38,9 +42,9 @@ static void productive(void){
  for(int s=0;s<2;s++)for(int tu=0;tu<2;tu++)for(int pl=0;pl<2;pl++)for(int cs=0;cs<2;cs++)for(int rs=0;rs<2;rs++){
   AP_RaceStructureProductive(s,tu,pl,cs,rs,p);
   if(s==AP_RS_STRUCTURE_CTR_FIRST){
-   // The Trophy location is the CTR row's to earn; the Trophy row keeps only plain-race checks.
-   assert(p[T]==(pl>0));
-   assert(p[C]==(cs||tu));
+   // No Trophy row: the CTR row earns the Trophy and every plain-race check.
+   assert(p[T]==0);
+   assert(p[C]==(cs||tu||pl>0));
   }else{
    assert(p[T]==(tu||pl>0));
    assert(p[C]==cs);
@@ -62,19 +66,26 @@ static void rows(void){
  assert(r.count==1&&r.mode[0]==T&&r.productive[0]&&r.cursor==0);
  assert(AP_RaceSelectorDecide(&r,AP_RS_SELECTOR_ALWAYS)==AP_RS_OPEN_MENU);
  assert(AP_RaceSelectorDecide(&r,AP_RS_SELECTOR_PRODUCTIVE)==T);
- // ctr_first first visit: grey Trophy row, CTR productive, no Relic; cursor on CTR.
+ // ctr_first first visit: the CTR Challenge alone, productive; the menu still
+ // opens under always (decision 13).
  r=build(1,0,1,1,0,1,1,1);
- assert(r.count==2&&r.mode[0]==T&&r.mode[1]==C&&!r.productive[0]&&r.productive[1]&&r.cursor==1);
- assert(AP_RaceSelectorReplayMask(&r)==1u);
+ assert(r.count==1&&r.mode[0]==C&&r.productive[0]&&r.cursor==0);
+ assert(AP_RaceSelectorReplayMask(&r)==0u);
  assert(AP_RaceSelectorDecide(&r,AP_RS_SELECTOR_PRODUCTIVE)==C);
  assert(AP_RaceSelectorDecide(&r,AP_RS_SELECTOR_ALWAYS)==AP_RS_OPEN_MENU);
- // ctr_first with boxes standing: Trophy row productive too, cursor on Trophy.
- r=build(1,0,1,1,1,1,1,1);
- assert(r.productive[0]&&r.productive[1]&&r.cursor==0);
- assert(AP_RaceSelectorDecide(&r,AP_RS_SELECTOR_PRODUCTIVE)==AP_RS_OPEN_MENU);
- // ctr_first, Trophy earned, stage 2 unmet: no Relic row.
+ // ctr_first, CTR and letters done but boxes or rungs standing: the CTR row stays productive.
+ r=build(1,1,0,0,1,0,0,1);
+ assert(r.count==1&&r.mode[0]==C&&r.productive[0]);
+ // ctr_first, Trophy earned, stage 2 unmet: the CTR row only, grey.
  r=build(1,1,0,0,0,0,1,1);
- assert(r.count==2&&r.mode[1]==C&&!r.productive[0]&&!r.productive[1]);
+ assert(r.count==1&&r.mode[0]==C&&!r.productive[0]&&AP_RaceSelectorReplayMask(&r)==1u);
+ // ctr_first tier 2: CTR then Relic, cursor on Relic when only it is open.
+ r=build(1,1,1,0,0,0,1,1);
+ assert(r.count==2&&r.mode[0]==C&&r.mode[1]==R&&r.cursor==1);
+ assert(AP_RaceSelectorDecide(&r,AP_RS_SELECTOR_PRODUCTIVE)==R);
+ // A paired track whose CTR Challenge cannot be served: no stage-1 row, no route.
+ r=build(1,0,1,1,1,1,1,0);
+ assert(r.count==0&&AP_RaceSelectorDecide(&r,AP_RS_SELECTOR_ALWAYS)==AP_RS_NO_ROUTE);
  // Classic tier 2 with both sides open: three rows, cursor on CTR.
  r=build(0,1,1,0,0,1,1,1);
  assert(r.count==3&&r.cursor==1&&r.productiveCount==2&&AP_RaceSelectorReplayMask(&r)==1u);
@@ -89,6 +100,26 @@ static void rows(void){
  r.count=0;r.productiveCount=0;
  assert(AP_RaceSelectorDecide(&r,AP_RS_SELECTOR_ALWAYS)==AP_RS_NO_ROUTE);
 }
+static void per_track(void){
+ // Decision 4: a ctr_first seed runs ctr_first only on paired tracks.
+ assert(AP_RaceStructureForDest(AP_RS_STRUCTURE_CTR_FIRST,1)==AP_RS_STRUCTURE_CTR_FIRST);
+ assert(AP_RaceStructureForDest(AP_RS_STRUCTURE_CTR_FIRST,0)==AP_RS_STRUCTURE_CLASSIC);
+ assert(AP_RaceStructureForDest(AP_RS_STRUCTURE_CLASSIC,1)==AP_RS_STRUCTURE_CLASSIC);
+ assert(AP_RaceStructureForDest(AP_RS_STRUCTURE_REFUSED,0)==AP_RS_STRUCTURE_REFUSED);
+ // An unpaired track in a ctr_first seed builds the classic rows: Trophy first.
+ ap_rs_rows r=build(AP_RaceStructureForDest(AP_RS_STRUCTURE_CTR_FIRST,0),0,1,1,0,1,1,0);
+ assert(r.count==1&&r.mode[0]==T&&r.productive[0]);
+ // Decision 14: rungs from a Trophy Race always, from a CTR Challenge only on a ctr_first track.
+ assert(AP_RaceStructureRaceEarnsRungs(1,0,0)&&AP_RaceStructureRaceEarnsRungs(1,0,1));
+ assert(AP_RaceStructureRaceEarnsRungs(0,1,1)&&!AP_RaceStructureRaceEarnsRungs(0,1,0));
+ assert(!AP_RaceStructureRaceEarnsRungs(0,0,1));
+ // Decision 15: the Options row over the seed.
+ assert(AP_RaceSelectorEffective(-1,AP_RS_SELECTOR_PRODUCTIVE)==AP_RS_SELECTOR_PRODUCTIVE);
+ assert(AP_RaceSelectorEffective(-1,AP_RS_SELECTOR_ALWAYS)==AP_RS_SELECTOR_ALWAYS);
+ assert(AP_RaceSelectorEffective(0,AP_RS_SELECTOR_ALWAYS)==AP_RS_SELECTOR_PRODUCTIVE);
+ assert(AP_RaceSelectorEffective(1,AP_RS_SELECTOR_PRODUCTIVE)==AP_RS_SELECTOR_ALWAYS);
+ assert(AP_RaceSelectorEffective(7,AP_RS_SELECTOR_PRODUCTIVE)==AP_RS_SELECTOR_PRODUCTIVE);
+}
 static void awards(void){
  ap_rs_awards a; a.count=2;
  a.ctr[0]=35000076;a.trophy[0]=35000006;a.ctr[1]=35026004;a.trophy[1]=35026000;
@@ -101,6 +132,13 @@ static void awards(void){
  a.trophy[1]=35000006;assert(AP_RaceStructureAwardsProblem(&a));
  a.trophy[1]=35000076;assert(AP_RaceStructureAwardsProblem(&a));
  a.trophy[1]=0;assert(AP_RaceStructureAwardsProblem(&a));
+ // A track's own pair, an unpaired track, and crossed pairs (fail closed).
+ a.count=2;a.ctr[0]=35000076;a.trophy[0]=35000006;a.ctr[1]=35000077;a.trophy[1]=35000007;
+ assert(AP_RaceStructurePairState(&a,35000076,35000006)==1);
+ assert(AP_RaceStructurePairState(&a,35000078,35000008)==0);
+ assert(AP_RaceStructurePairState(&a,35000076,35000007)==-1);
+ assert(AP_RaceStructurePairState(&a,35000078,35000006)==-1);
+ assert(AP_RaceStructurePairState(&a,35000076,-1)==-1);
  a.count=0;assert(AP_RaceStructureAwardsProblem(&a));
  a.count=AP_RS_AWARD_MAX+1;assert(AP_RaceStructureAwardsProblem(&a));
 }
@@ -145,7 +183,7 @@ static void winset(void){
  f.levelID=3;f.relic=1;n=AP_WinSetResolve(&f,code,out,&mode);assert(n==3&&mode==AP_WS_MODE_RELIC);
 }
 int main(void){
- admit();productive();rows();awards();winset();
+ admit();productive();rows();per_track();awards();winset();
  puts("PASS: race structure rows, decisions, award pairs and win sets");
  return 0;
 }
@@ -208,13 +246,22 @@ racer_at = warp.index("if (!ctr_cfg_racer_lock_met(physLevelID))\n\t\tgoto WarpP
 assert racer_at < selector_at < cortex_at, "the selector runs after the racer lock and before the older routes"
 block = warp[selector_at:cortex_at]
 for needle in ("AP_PadSelectorRows(physLevelID, levelID, &apRsRows);",
-               "AP_RaceSelectorDecide(&apRsRows, ctr_cfg.race_type_selector);",
+               "AP_RaceSelectorDecide(&apRsRows, AP_RaceTypeSelectorSetting());",
+               "MainFrame_RequestMaskHint(apHint, 1);",
+               "ADV_MASK_HINT_ID_CTR_TOKEN_CHALLENGE", "ADV_MASK_HINT_ID_RELIC_CHALLENGE",
                "AP_CortexTrackEntryReady(", "goto WarpPad_RefuseEntry;",
                "goto WarpPad_RequestLoad;", "RECTMENU_APSetReplayRows(0, 0);"):
     assert needle in block, needle
 assert block.index("AP_CortexTrackEntryReady(") < block.index("AH_WarpPad_WarpCapture(gGT);")
+# Decision 16: the hint waits for Aku Aku before the load, and the choice is
+# released only after it.
+assert (block.index("MainFrame_RequestMaskHint(apHint, 1);") < block.index("AH_MaskHint_boolCanSpawn()")
+        < block.index("goto WarpPad_RequestLoad;"))
+assert "AP_CustomTrackTrophyEarnedByCtr()" in warp and "apCustomRaceRowsCtrFirst" in warp
 assert "RECTMENU_APSetReplayRows(&apRaceTypeMenu, AP_RaceSelectorReplayMask(rows));" in warp
-assert warp.count("!AP_PadReplayable(") == 2, "Done look and Done lock both honour replay"
+assert warp.count("!AP_PadReplayable(") == 3, "Done look, Done lock and the stage-2 look honour replay"
+stage2_look = warp[warp.index("AP_LocationCheckedByBit(warppadObj->levelID + ADV_REWARD_FIRST_TROPHY)) ||"):]
+assert "!AP_PadReplayable(levelID, warppadObj->levelID))" in stage2_look[:700]
 menu = (root / "game/RECTMENU.c").read_text()
 draw = menu[menu.index("textFlags = uVar8;"):]
 assert draw.index("RECTMENU_APReplayRow(menu, sVar6)") < draw.index("DecalFont_DrawLine(titleString")
@@ -225,13 +272,15 @@ trophy_at = result.index("rewardBit = gGT->levelID + ADV_REWARD_FIRST_TROPHY;")
 assert "AP_RaceStructureSuppressTrophyBit(rewardBit)" in result[trophy_at:trophy_at + 2500]
 assert "AP_RaceStructureTrophyRaceWon(gGT->levelID);" in result
 cups = (root / "game/UI/UI_CupStandings.c").read_text()
-assert "(AP_RaceStructureCtrFirst() && !AP_CustomTrackTrophyChecked())" in cups
+assert "(AP_CustomTrackTrophyEarnedByCtr() && !AP_CustomTrackTrophyChecked())" in cups
 assert "!AP_CustomTrackTrophyEarnedByCtr()" in cups
 pads_rows = (root / "ap/ap_hooks_pads.c").read_text()
 # #375 moved the row facts into AP_PadSelectorFacts, shared with the tracker.
 rows_fn = pads_rows[pads_rows.index("int AP_PadSelectorFacts("):]
 rows_fn = rows_fn[:rows_fn.index("\n}\n")]
 assert "rungsLeft" in rows_fn and "AP_PadUncollectedGlowBits(" in rows_fn
+# Cortex Vortex rungs live in its own pseudo-bit block, not [0x100, 0x200).
+assert "AP_CortexPseudoDecode(glow[k], &cvSlot) && cvSlot >= AP_CV_SLOT_RUNG0" in rows_fn
 race_src = (root / "ap/ap_hooks_race.c").read_text()
 assert "sent ? AP_CUSTOM_CTR_PSEUDO_BIT : AP_CUSTOM_TROPHY_PSEUDO_BIT" in race_src
 race = (root / "ap/ap_hooks_race.c").read_text()
@@ -244,7 +293,21 @@ assert "AP_RaceStructureSuppressTrophy(code)" in cortex and "AP_RaceStructureCtr
 pads = (root / "ap/ap_hooks_pads.c").read_text()
 state = pads[pads.index("int AP_PadState(int physLevelID, int destLevelID)"):]
 state = state[:state.index("\n}\n")]
-assert "AP_DestCtrSideLeft(destLevelID)" in state
+assert "AP_RaceStructureDestCtrFirst(destLevelID)" in state and "AP_DestCtrSideLeft(destLevelID)" in state
+assert "int structure = AP_RaceStructureDestStructure(destLevelID);" in rows_fn
+dest_structure = race[race.index("int AP_RaceStructureDestStructure("):]
+dest_structure = dest_structure[:dest_structure.index("\n}\n")]
+assert "AP_RaceStructurePairState(" in dest_structure and "return AP_RS_STRUCTURE_REFUSED;" in dest_structure
+checks = (root / "ap/ap_hooks_race_checks.c").read_text()
+assert checks.count("AP_RaceStructureRaceEarnsRungs(") == 2, "finish and held rungs both follow ctr_first"
+assert checks.count("AP_RaceStructurePodiumCtrFirst(podiumTrack)") == 2
+assert "AP_RaceStructureDestCtrFirst(gGT->levelID)" in result
+assert "AP_RaceStructureDestCtrFirst(AP_CORTEX_DEST)" in result
+cfg = (root / "platform/native_config.c").read_text()
+assert '"race_type_selector"' in cfg and "&g_config.raceTypeSelector" in cfg
+cmenu = (root / "game/230/MM_ConfigMenu.c").read_text()
+assert '{"SEED", "ALWAYS", "PRODUCTIVE"}' in cmenu and "{-1, 1, 0}" in cmenu
+assert "AP_RaceSelectorEffective(g_config.raceTypeSelector, ctr_cfg.race_type_selector)" in race
 wl = (root / "ap/ap_win_logic.c").read_text()
 assert "f->ctrFirstAwards = AP_RaceStructureCtrFirst() ? &ctr_cfg.stage1_awards : 0;" in wl
 
