@@ -245,6 +245,9 @@ struct FsOps
 	// Remove a folder and everything in it. A link or junction inside is
 	// removed itself, never followed. True when nothing is left at `path`.
 	bool (*removeTree)(void *ctx, const std::string &path);
+	// Optional (null on Windows): flush the folder that holds `path`. Apply
+	// flushes every folder it renamed in before it writes the marker.
+	bool (*syncDir)(const std::string &path);
 };
 // Real file operations (UTF-8 paths; wide APIs on Windows).
 FsOps RealFsOps();
@@ -313,7 +316,8 @@ enum StartupState
 // staged or partial file from an earlier session (an unapplied download is
 // never trusted across launches), then read the marker.
 StartupState StartupCheck(const FsOps &fs, const std::string &exe, const std::string &runningTag);
-// The new build reached the main menu: delete the .old copies and the marker.
+// The new build reached the main menu: delete the .old copies, then the marker
+// (kept when a copy could not be removed, so the next start retries).
 void ConfirmStarted(const FsOps &fs, const std::string &exe);
 
 // ── One staging worker at a time ──

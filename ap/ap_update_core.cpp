@@ -1273,6 +1273,44 @@ static bool RealRemove(void *ctx, const std::string &path)
 	return !RealExists(ctx, path);
 }
 
+#ifndef _WIN32
+// Remove `name` inside the folder `dirfd`: a link or file is unlinked, a
+// folder emptied through its own descriptor and then removed.
+static void RemoveTreeAt(int parent, const std::string &name)
+{
+	const int fd = openat(parent, name.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+	if (fd < 0)
+	{
+		unlinkat(parent, name.c_str(), 0); // a file or a link: never followed
+		return;
+	}
+	DIR *d = fdopendir(fd);
+	if (!d)
+	{
+		close(fd);
+		return;
+	}
+	// readdir64: the 32-bit client has no large-file support, and a plain
+	// readdir fails with EOVERFLOW on 64-bit inode numbers (btrfs, overlayfs;
+	// see ap_net.cpp). Names only, no stat.
+	std::vector<std::string> children;
+#ifdef __GLIBC__
+	while (struct dirent64 *e = readdir64(d))
+#else
+	while (struct dirent *e = readdir(d))
+#endif
+	{
+		const std::string child = e->d_name;
+		if (child != "." && child != "..")
+			children.push_back(child);
+	}
+	for (const std::string &child : children)
+		RemoveTreeAt(dirfd(d), child);
+	closedir(d);
+	unlinkat(parent, name.c_str(), AT_REMOVEDIR);
+}
+#endif
+
 static bool RealRemoveTree(void *ctx, const std::string &path)
 {
 #ifdef _WIN32
@@ -1311,37 +1349,18 @@ static bool RealRemoveTree(void *ctx, const std::string &path)
 	RemoveDirectoryW(w.c_str());
 	return !RealExists(ctx, path);
 #else
-	char buf[8];
-	if (readlink(path.c_str(), buf, sizeof buf) >= 0)
-	{
-		unlink(path.c_str()); // a link: removed, never followed
-		return !RealExists(ctx, path) && readlink(path.c_str(), buf, sizeof buf) < 0;
-	}
-	DIR *d = opendir(path.c_str());
-	if (!d)
-	{
-		std::remove(path.c_str());
+	// Every step goes through folder descriptors opened with O_NOFOLLOW, so a
+	// folder swapped for a link while this runs is unlinked, never entered.
+	const size_t slash = path.find_last_of('/');
+	const std::string parent = slash == std::string::npos ? "." : (slash == 0 ? "/" : path.substr(0, slash));
+	const std::string name = slash == std::string::npos ? path : path.substr(slash + 1);
+	const int pfd = open(parent.c_str(), O_RDONLY | O_DIRECTORY);
+	if (pfd < 0)
 		return !RealExists(ctx, path);
-	}
-	// readdir64: the 32-bit client has no large-file support, and a plain
-	// readdir fails with EOVERFLOW on 64-bit inode numbers (btrfs, overlayfs;
-	// see ap_net.cpp). Names only, no stat.
-	std::vector<std::string> children;
-#ifdef __GLIBC__
-	while (struct dirent64 *e = readdir64(d))
-#else
-	while (struct dirent *e = readdir(d))
-#endif
-	{
-		const std::string name = e->d_name;
-		if (name != "." && name != "..")
-			children.push_back(name);
-	}
-	closedir(d);
-	for (const std::string &name : children)
-		RealRemoveTree(ctx, path + "/" + name);
-	rmdir(path.c_str());
-	const bool gone = !RealExists(ctx, path);
+	RemoveTreeAt(pfd, name);
+	close(pfd);
+	char buf[8];
+	const bool gone = !RealExists(ctx, path) && readlink(path.c_str(), buf, sizeof buf) < 0;
 	if (gone)
 		SyncParentDir(path);
 	return gone;
@@ -1362,10 +1381,12 @@ static bool RealMakeDir(void *ctx, const std::string &path)
 {
 #ifdef _WIN32
 	CreateDirectoryW(Wide(path).c_str(), nullptr);
-#else
-	mkdir(path.c_str(), 0755);
-#endif
 	return RealExists(ctx, path);
+#else
+	// A new folder's own entry is flushed too, so a staged tree is durable.
+	const bool made = mkdir(path.c_str(), 0755) == 0;
+	return RealExists(ctx, path) && (!made || SyncParentDir(path));
+#endif
 }
 
 static bool RealIsLink(void *, const std::string &path)
@@ -1409,9 +1430,11 @@ FsOps RealFsOps()
 	ops.isLink = RealIsLink;
 	ops.removeTree = RealRemoveTree;
 #ifdef _WIN32
+	ops.syncDir = nullptr; // MoveFileExW(MOVEFILE_WRITE_THROUGH) is all Windows offers
 	ops.linkFile = nullptr;
 	ops.replaceFile = nullptr;
 #else
+	ops.syncDir = SyncParentDir;
 	ops.linkFile = RealLink;
 	ops.replaceFile = RealReplace;
 #endif
@@ -1753,6 +1776,12 @@ Result Apply(const FsOps &fs, const std::string &exe, const std::vector<StagedFi
 		if (moved)
 			kept.push_back(rel);
 	}
+	// Every rename must be durable before the marker says the swap finished:
+	// flush each folder that had one (the .old name sits in the same folder).
+	if (fs.syncDir)
+		for (const Step &st : steps)
+			if (!fs.syncDir(st.target))
+				return fail(true);
 	// The marker doubles as the journal's "finished" mark: written first, so a
 	// crash before the journal is removed is not mistaken for a half swap.
 	std::vector<std::string> marker(1, newTag);
@@ -1987,16 +2016,20 @@ void ConfirmStarted(const FsOps &fs, const std::string &exe)
 	if (fs.exists(fs.ctx, SwapJournalPath(exe)))
 		return; // recovery still owns these rollback copies
 	const std::vector<std::string> lines = ReadLines(fs, MarkerPath(exe));
+	bool allGone = true;
 	for (size_t i = 1; i < lines.size(); i++)
 	{
 		if (!SafeEntryRel(lines[i]))
 			continue;
 		if (IsRuntimeEntry(lines[i]))
-			fs.removeTree(fs.ctx, OldPath(RuntimeTarget(exe)));
+			allGone = fs.removeTree(fs.ctx, OldPath(RuntimeTarget(exe))) && allGone;
 		else
-			fs.removeFile(fs.ctx, OldPath(InstallTarget(exe, lines[i])));
+			allGone = fs.removeFile(fs.ctx, OldPath(InstallTarget(exe, lines[i]))) && allGone;
 	}
-	fs.removeFile(fs.ctx, MarkerPath(exe));
+	// A rollback copy still held open (Windows) keeps the marker, so the next
+	// start of this build tries the cleanup again.
+	if (allGone)
+		fs.removeFile(fs.ctx, MarkerPath(exe));
 }
 
 bool ClaimStaging(WorkSession &s, unsigned gen)

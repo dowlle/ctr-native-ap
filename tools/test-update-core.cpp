@@ -1965,6 +1965,49 @@ static void TestSoloRuntime()
 	RemoveAll(dir + "/solo.old");
 	CleanRuntime(in);
 
+	// A renamed folder that cannot be flushed: no marker, everything undone.
+	in = MakeInstall(dir);
+	AddRuntime(in);
+	CHECK_EQ(Stage(real, in.exe, RuntimeSet(), staged), OK);
+	{
+		FsOps ops = real;
+		ops.syncDir = [](const std::string &) { return false; };
+		CHECK_EQ(Apply(ops, in.exe, staged, "v0.3.1"), ERR_IO);
+		CHECK(OldState(in) && OldRuntime(in) && SoloUntouched(in));
+		CHECK(NoLeftovers(in, false) && NoRuntimeLeftovers(in, false) && !real.exists(nullptr, MarkerPath(in.exe)));
+	}
+	CleanRuntime(in);
+
+	// A rollback copy that cannot be removed keeps the marker for a retry.
+	in = MakeInstall(dir);
+	AddRuntime(in);
+	CHECK_EQ(Stage(real, in.exe, RuntimeSet(), staged), OK);
+	CHECK_EQ(Apply(real, in.exe, staged, "v0.3.1"), OK);
+	{
+		FsOps ops = real;
+		ops.removeTree = [](void *, const std::string &) { return false; };
+		ConfirmStarted(ops, in.exe);
+		CHECK(real.exists(nullptr, MarkerPath(in.exe)) && real.exists(nullptr, dir + "/solo-runtime.old"));
+		CHECK_EQ(StartupCheck(real, in.exe, "v0.3.1"), STARTUP_UPDATED);
+		ConfirmStarted(real, in.exe);
+		CHECK(!real.exists(nullptr, MarkerPath(in.exe)) && NoRuntimeLeftovers(in, false) && NewRuntime(in));
+	}
+	CleanRuntime(in);
+
+	// Tree removal of a path that is itself a link removes only the link.
+	{
+		char shared[] = "/tmp/ctr-update-rtlink2-XXXXXX";
+		const char *sh = mkdtemp(shared);
+		CHECK(sh != nullptr);
+		Put(sh, "deep/keep.txt", "KEEP");
+		CHECK(symlink(sh, (dir + "/solo-runtime.old").c_str()) == 0);
+		CHECK(real.removeTree(nullptr, dir + "/solo-runtime.old"));
+		CHECK(ReadText(std::string(sh) + "/deep/keep.txt") == "KEEP");
+		char lb[8];
+		CHECK(readlink((dir + "/solo-runtime.old").c_str(), lb, sizeof lb) < 0);
+		RemoveAll(sh);
+	}
+
 	// Power loss at every step with the runtime in the set, both executable
 	// strategies: the old install (runtime included) or the new one, never a mix.
 	int points = 0;
