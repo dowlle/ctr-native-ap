@@ -544,6 +544,8 @@ int main()
         {
             char key[65];
             CHECK(XdeltaImport_TrackKey("Dracula's Castle", key) && !std::strcmp(key, "dracula-s-castle"), "key rule: apostrophe");
+            /* The registry key of Sid's House is sids-house, not what the rule gives for the title, so the LRG2 pack descriptor names it. */
+            CHECK(XdeltaImport_TrackKey("Sid's House", key) && !std::strcmp(key, "sid-s-house"), "key rule: apostrophe without a descriptor key");
             CHECK(XdeltaImport_TrackKey("Caf\xc3\xa9 \xef\xbc\xa1  Run!", key) && !std::strcmp(key, "cafe-a-run"), "key rule: NFKD then ASCII");
             CHECK(XdeltaImport_TrackKey("\xe6\x97\xa5\xe6\x9c\xac", key) && !std::strcmp(key, "track"), "key rule: nothing left is track");
             CHECK(XdeltaImport_TrackKey(std::string(60, 'a').c_str(), key) && std::strlen(key) == 48, "key rule: cut to 48");
