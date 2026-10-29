@@ -298,6 +298,12 @@ static void missing_all(void)
  assert(strstr(lines[0], "NEEDS HUB KEYS") && strstr(lines[1] , "SECOND REQUIREMENT"));
  assert(AP_PadActivityReasonLines(AP_PADACT_BIT(AP_PADACT_LOCK_RACER), 34, lines) == 1 && !strcmp(lines[0], "NEEDS RACER"));
  assert(AP_PadActivityReasonLines(0, 34, lines) == 0);
+ /* A racer-only lock on a retail race pad: stage 1 reads closed because it
+  * includes the lock, but the pad's own requirement is met. */
+ f.keysHave = 2; f.racerMet = 0; f.padReqMet = 1; f.stage1Met = 0;
+ AP_PadActivityDecide(&f, &l);
+ for (int i = 0; i < l.count; i++) assert(l.reason[i] == AP_PADACT_LOCK_RACER && l.mask[i] & AP_PADACT_BIT(AP_PADACT_LOCK_RACER) && !(l.mask[i] & AP_PADACT_BIT(AP_PADACT_LOCK_PAD)));
+ f.padReqMet = 0;
  /* Keys back, racer back: the pad requirement alone is left. */
  f.keysHave = 2; f.racerMet = 1;
  AP_PadActivityDecide(&f, &l);
@@ -414,8 +420,10 @@ assert "LOAD_RequestLoad" not in tick[arrive:arrive + 1500] and "MainRaceTrack_R
 # Decision 33: the kart is put on the pad on arrival, before the warp capture
 # remembers its height and before the entry gates.
 place = tick.index("AP_TLKartOnPad(apPadPos", arrive)
-assert place < tick.index("dist = 0;", arrive) and place < tick.index("AH_WarpPad_WarpCapture(gGT);", arrive)
+assert place < tick.index("dist = 0;", place) and place < tick.index("AH_WarpPad_WarpCapture(gGT);", arrive)
 assert "driver->quadBlockHeight = apGround;" in tick[place:place + 900]
+# A pad that refused the kart earlier (the entry latch) is not placed on again.
+assert "else if (apEntryRefusedDest == levelID)" in tick[arrive:place]
 # The selector's menu takes the tracker's row only if the pad offers it.
 sel = tick[tick.index("if (AP_PadUsesSelector(levelID))"):]
 sel = sel[:sel.index("goto WarpPad_RequestLoad;")]

@@ -644,6 +644,8 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	{
 		if (warppadObj->boolEnteredWarppad)
 			AP_TrackerLaunchTaken();
+		else if (apEntryRefusedDest == levelID)
+			dist = 0; // refused earlier and still on the pad: the latch below holds it, the kart is not moved again
 		else
 		{
 			// Decision 33: the kart is put on this pad, so no frame shows it

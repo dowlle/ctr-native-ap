@@ -77,7 +77,7 @@ typedef struct
 	// Pads (not garages)
 	int padState;   // AP_PadState: 1 locked, 2 raceable, 3 re-locked, 4 tier 2, 5 done, 0 unknown
 	int stage1Met;  // AP_PadStage1Met (content plan: AP_ContentPadOpen)
-	int padReqMet;  // the pad's own requirement without the racer lock (AP_PadStage1BaseMet)
+	int padReqMet;  // a race pad's own requirement without the racer lock (AP_PadStage1BaseMet); content: = stage1Met
 	int racerMet;   // ctr_cfg_racer_lock_met
 	int replayable; // AP_PadReplayable
 	int contentReady; // not AP_CustomContentRequired; content plan: occupied and Ready
@@ -167,7 +167,7 @@ static inline int AP_PadActivityEntryReason(const ap_padact_facts *f)
 	if (f->padState == 5 && !f->replayable)
 		return AP_PADACT_LOCK_DONE;
 	if (f->padState == 1)
-		return !f->stage1Met ? AP_PADACT_LOCK_PAD : AP_PADACT_LOCK_RACER;
+		return !f->padReqMet ? AP_PADACT_LOCK_PAD : AP_PADACT_LOCK_RACER;
 	if (f->padState == 3)
 		return AP_PADACT_LOCK_STAGE2;
 	if (!f->racerMet)
@@ -194,11 +194,11 @@ static inline int AP_PadActivityEntryMask(const ap_padact_facts *f)
 			return AP_PADACT_BIT(AP_PADACT_LOCK_CONTENT);
 		if (f->padState == 5)
 			return AP_PADACT_BIT(AP_PADACT_LOCK_DONE);
-		if (!f->padReqMet)
+		if (!f->stage1Met)
 			m |= AP_PADACT_BIT(AP_PADACT_LOCK_PAD);
 		if (!f->racerMet)
 			m |= AP_PADACT_BIT(AP_PADACT_LOCK_RACER);
-		return m | AP_PADACT_BIT(first);
+		return m ? m : AP_PADACT_BIT(first);
 	}
 	if (f->padState == 0)
 		return AP_PADACT_BIT(AP_PADACT_LOCK_CLOSED);
@@ -219,7 +219,7 @@ static inline int AP_PadActivityEntryMask(const ap_padact_facts *f)
 		m |= AP_PADACT_BIT(AP_PADACT_LOCK_CONTENT);
 	if (f->node == AP_PADACT_NODE_SELECTOR && f->structure == AP_RS_STRUCTURE_REFUSED)
 		m |= AP_PADACT_BIT(AP_PADACT_LOCK_CLOSED);
-	return m | AP_PADACT_BIT(first);
+	return m ? m : AP_PADACT_BIT(first);
 }
 
 static inline void AP_PadActivityDecide(const ap_padact_facts *f, ap_padact_list *out)
