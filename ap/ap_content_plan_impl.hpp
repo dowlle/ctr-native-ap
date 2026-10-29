@@ -477,6 +477,9 @@ static void boss_settings(const J &b, ctr_content_bosses &out) {
     out.repeats = b["repeats"].get<bool>() ? 1 : 0;
     need(!out.oxide_1_optional || out.oxide_goal == 2, "bosses.oxide_1_optional belongs to oxide_goal 101_percent only");
     need(!out.repeats || out.track_shuffle, "bosses.repeats belongs to track_shuffle only");
+    // Decision 7 (2026-10-28): boss encounters never repeat. The field stays on
+    // the wire, always false (apworld content_bosses.check_record).
+    need(!out.repeats, "bosses.repeats must be false: boss encounters never repeat");
     out.final_unlock = number(b["oxide_final_unlock"], 0, 4);
     out.final_count = number(b["oxide_final_count"], 1, out.final_unlock == 4 ? 54 : 18);
     need(out.oxide_goal != 3 || (out.final_unlock == 0 && out.final_count == 18),
@@ -502,8 +505,6 @@ static void boss_settings(const J &b, ctr_content_bosses &out) {
     need(!out.oxide_in_pool || out.opponent_shuffle, "bosses.oxide_in_pool needs opponent_shuffle");
     need(!out.home_venues || (out.track_shuffle && out.opponent_shuffle),
          "bosses.track_assignment character_home_track needs track_shuffle and opponent_shuffle");
-    // Decision 7: venues, racers and kits never repeat.
-    need(!out.repeats, "bosses.repeats with a drawn opponent or kit: boss encounters never repeat");
     need(b["cups"].empty() || (!out.opponent_shuffle && !out.kit_shuffle), "boss cups do not take a drawn opponent or kit yet");
     const J &kit = b["kit"];
     if (out.kit_shuffle) {

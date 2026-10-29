@@ -1439,6 +1439,165 @@ for name, change in [
         ("cups check kind", lambda c: b_check(c, 35011101).__setitem__("kind", "boss_race")),
         ]:
     boss_env(name, change, cups_base)
+# J11: ctr_first, the Wumpa Shop and goal, boss opponent and kit shuffle. The
+# paired apworld's own fixtures, then forgeries of every new field; native and
+# the generator's validator must agree on each.
+for fixture in ("ctr-first", "wumpa-shop", "wumpa-goal-only", "boss-shuffle", "all-030"):
+    cases.append((fixture + "-fixture", json.loads((root / f"tools/fixtures/content-plan/{fixture}.json").read_text()), True))
+def j11_env(name, change, fixture):
+    case = copy.deepcopy(next(w for n, w, ok in cases if n == fixture + "-fixture"))
+    change(case)
+    try:
+        cp.validate(case["content_plan"])
+        cgc.check_encounter_block(case["content_plan"], case)
+        accepted = cp.goal_envelope(case["content_plan"]) == {k: case["ctr_options"][k] for k in
+                                                              ("goal_oxide", "goal_bosses", "goal_gems")}
+    except (ValueError, TypeError, KeyError, OverflowError, AttributeError, IndexError):
+        accepted = False
+    cases.append((f"j11-{fixture}-{name}", case, accepted))
+def j_entry(c, eid):
+    return next(e for e in c["content_plan"]["entries"] if e["id"] == eid)
+def j_check(c, code):
+    return next(x for x in c["content_plan"]["checks"] if x["location"] == code)
+def j_pad(c, pid):
+    return next(x for x in c["content_plan"]["pads"] if x["id"] == pid)
+def j_drop_feature(c, name):
+    c["content_plan"]["required_features"].remove(name)
+def j_shop(c):
+    return [x for x in c["content_plan"]["checks"] if x["kind"] == "wumpa_shop"]
+def j_swap_last(c):
+    x = c["content_plan"]["checks"]
+    x[-1], x[-2] = x[-2], x[-1]
+def j_hit_to_retail(c):
+    c["hit_character_encounters"]["bosses"]["35011100"] = 10
+def j_garage_kit_row(c, g, seg, row):
+    j_entry(c, f"entry/boss:{g}/0")["opponent"]["schedule"][seg][1:4] = row[:3]
+    j_entry(c, f"entry/boss:{g}/0")["opponent"]["schedule"][seg][4:6] = row[3:]
+def j_oxide(c, key, value):
+    for i in (0, 1):
+        j_entry(c, f"entry/boss:4/{i}")["opponent"][key] = copy.deepcopy(value)
+for name, change in [
+        ("unchanged copy", lambda c: None),
+        ("Trophy mode kept", lambda c: j_entry(c, "entry/retail:3").__setitem__("modes", ["ctr", "trophy", "relic"])),
+        ("relic first", lambda c: j_entry(c, "entry/retail:3").__setitem__("modes", ["relic", "ctr"])),
+        ("relic dropped", lambda c: j_entry(c, "entry/retail:3").__setitem__("modes", ["ctr"])),
+        ("Trophy check from trophy", lambda c: j_check(c, 35011000)["routes"][0].__setitem__("mode", "trophy")),
+        ("Trophy check award win", lambda c: j_check(c, 35011000)["routes"][0].__setitem__("award", "win")),
+        ("rung from trophy", lambda c: j_check(c, 35015100)["routes"][0].__setitem__("mode", "trophy")),
+        ("Wumpa from trophy", lambda c: j_check(c, 35016101)["routes"][0].__setitem__("mode", "trophy")),
+        ("structure classic", lambda c: c["content_plan"].__setitem__("adventure_structure", "classic")),
+        ("structure dropped", lambda c: c["content_plan"].pop("adventure_structure")),
+        ("feature dropped", lambda c: j_drop_feature(c, "ctr_first_v1")),
+        ("CTR at stage 2", lambda c: j_pad(c, "pad:6")["mode_gates"][0].__setitem__("stage", 2)),
+        ("fallback track as ctr_first", lambda c: j_entry(c, "entry/retail:6").__setitem__("modes", ["relic"])),
+        ]:
+    j11_env(name, change, "ctr-first")
+for name, change in [
+        ("unchanged copy", lambda c: None),
+        ("unlock forged", lambda c: j_shop(c)[2].__setitem__("unlock_banked", j_shop(c)[2]["unlock_banked"] + 1)),
+        ("unlock on a starting shelf", lambda c: j_shop(c)[0].__setitem__("unlock_banked", 1)),
+        ("price above the ceiling", lambda c: j_shop(c)[0].__setitem__("price", 100001)),
+        ("price negative", lambda c: j_shop(c)[0].__setitem__("price", -1)),
+        ("price dropped", lambda c: j_shop(c)[0].pop("price")),
+        ("price a Boolean", lambda c: j_shop(c)[0].__setitem__("price", True)),
+        ("a route", lambda c: j_shop(c)[0].__setitem__("routes", copy.deepcopy(c["content_plan"]["checks"][0]["routes"]))),
+        ("owner", lambda c: j_shop(c)[3].__setitem__("owner", "hub:26")),
+        ("name", lambda c: j_shop(c)[6].__setitem__("display_name", "The Lost Ruins Shop: Slot 1")),
+        ("kind", lambda c: j_shop(c)[0].__setitem__("kind", "wumpa")),
+        ("order", j_swap_last),
+        ("record slots", lambda c: c["content_plan"]["wumpa_shop"].__setitem__("slots", 4)),
+        ("record prices", lambda c: c["content_plan"]["wumpa_shop"].__setitem__("prices", 100)),
+        ("record prices below 25", lambda c: c["content_plan"]["wumpa_shop"].__setitem__("prices", 24)),
+        ("record progression", lambda c: c["content_plan"]["wumpa_shop"].__setitem__("progression", "progression")),
+        ("record hints", lambda c: c["content_plan"]["wumpa_shop"].__setitem__("hints", 1)),
+        ("record extra", lambda c: c["content_plan"]["wumpa_shop"].__setitem__("version", 1)),
+        ("record dropped", lambda c: c["content_plan"].pop("wumpa_shop")),
+        ("shop feature dropped", lambda c: j_drop_feature(c, "wumpa_shop_v1")),
+        ("goal feature dropped", lambda c: j_drop_feature(c, "wumpa_goal_v1")),
+        ("features reordered", lambda c: c["content_plan"]["required_features"].reverse()),
+        ("goal count 0", lambda c: c["content_plan"]["goal"]["terms"][1].__setitem__("count", 0)),
+        ("goal count 5001", lambda c: c["content_plan"]["goal"]["terms"][1].__setitem__("count", 5001)),
+        ("goal arms reordered", lambda c: c["content_plan"]["goal"]["terms"].reverse()),
+        ("goal two Wumpa arms", lambda c: c["content_plan"]["goal"]["terms"].append(copy.deepcopy(c["content_plan"]["goal"]["terms"][1]))),
+        ("Wumpa arm in a requirement", lambda c: next(r for r in c["content_plan"]["requirements"] if r["id"] == "keys:1")
+                                                  .__setitem__("predicate", dict(op="wumpa_banked", count=1))),
+        ]:
+    j11_env(name, change, "wumpa-shop")
+for name, change in [
+        ("unchanged copy", lambda c: None),
+        ("count 0", lambda c: c["content_plan"]["goal"].__setitem__("count", 0)),
+        ("count 5001", lambda c: c["content_plan"]["goal"].__setitem__("count", 5001)),
+        ("wrapped alone", lambda c: c["content_plan"].__setitem__("goal", dict(op="all", terms=[c["content_plan"]["goal"]]))),
+        ("extra key", lambda c: c["content_plan"]["goal"].__setitem__("items", [])),
+        ("envelope Gem count", lambda c: c["ctr_options"].__setitem__("goal_gems", 1)),
+        ("feature dropped", lambda c: j_drop_feature(c, "wumpa_goal_v1")),
+        ]:
+    j11_env(name, change, "wumpa-goal-only")
+for name, change in [
+        ("unchanged copy", lambda c: None),
+        ("two garages one racer", lambda c: j_entry(c, "entry/boss:1/0")["opponent"].__setitem__("character_id", 7)),
+        ("garage seats the final racer", lambda c: j_entry(c, "entry/boss:2/0")["opponent"].__setitem__("character_id", 11)),
+        ("final racer N. Oxide with the pool", lambda c: j_oxide(c, "character_id", 15)),
+        ("Oxide encounters differ", lambda c: j_entry(c, "entry/boss:4/1")["opponent"].__setitem__("character_id", 6)),
+        ("racer id 16", lambda c: j_entry(c, "entry/boss:0/0")["opponent"].__setitem__("character_id", 16)),
+        ("oxide_in_pool off", lambda c: c["content_plan"]["bosses"].__setitem__("oxide_in_pool", False)),
+        ("opponent_shuffle off", lambda c: c["content_plan"]["bosses"].__setitem__("opponent_shuffle", False)),
+        ("kit row uncertified", lambda c: j_entry(c, "entry/boss:2/0")["opponent"]["schedule"][1].__setitem__(3, 0)),
+        ("kit cooldown 1", lambda c: j_entry(c, "entry/boss:2/0")["opponent"]["schedule"][0].__setitem__(4, 1)),
+        ("kit cooldown unscaled", lambda c: j_entry(c, "entry/boss:2/0")["opponent"]["schedule"][0].__setitem__(4, 200)),
+        ("two garages one kit", lambda c: j_entry(c, "entry/boss:3/0")["opponent"].__setitem__(
+            "schedule", [[x[0]] + y[1:] for x, y in zip(j_entry(c, "entry/boss:3/0")["opponent"]["schedule"],
+                                                     j_entry(c, "entry/boss:2/0")["opponent"]["schedule"])])),
+        ("Oxide cooldown unscaled", lambda c: [j_entry(c, f"entry/boss:4/{i}")["opponent"]["schedule"][0].__setitem__(4, 200) for i in (0, 1)]),
+        ("kit checkpoint moved", lambda c: j_entry(c, "entry/boss:2/0")["opponent"]["schedule"][2].__setitem__(
+            0, j_entry(c, "entry/boss:2/0")["opponent"]["schedule"][2][0] + 1)),
+        ("custom venue checkpoint moved", lambda c: j_entry(c, "entry/boss:1/0")["opponent"]["schedule"][1].__setitem__(0, 6)),
+        ("kit never attacks", lambda c: [j_garage_kit_row(c, 2, i, [3, 0x0F, 1, 11, 0]) for i in range(5)]),
+        ("super engine in a garage", lambda c: j_garage_kit_row(c, 2, 1, [3, 0x0D, 1, 9, 0])),
+        ("four segments", lambda c: j_entry(c, "entry/boss:2/0")["opponent"]["schedule"].pop()),
+        ("kit inherited", lambda c: (j_entry(c, "entry/boss:2/0")["opponent"].__setitem__("attack_profile", "inherited"),
+                                     j_entry(c, "entry/boss:2/0")["opponent"].pop("schedule"))),
+        ("Oxide twelve segments", lambda c: [j_entry(c, f"entry/boss:4/{i}")["opponent"]["schedule"].pop() for i in (0, 1)]),
+        ("Oxide off its checkpoints", lambda c: [j_entry(c, f"entry/boss:4/{i}")["opponent"]["schedule"][3].__setitem__(0, 48) for i in (0, 1)]),
+        ("driving profile", lambda c: j_entry(c, "entry/boss:0/0")["opponent"].__setitem__("driving_profile", "boss")),
+        ("slot 2", lambda c: j_entry(c, "entry/boss:0/0")["opponent"].__setitem__("slot", 2)),
+        ("kit intensity", lambda c: c["content_plan"]["bosses"]["kit"].__setitem__("intensity", "standard")),
+        ("kit loss_easing", lambda c: c["content_plan"]["bosses"]["kit"].__setitem__("loss_easing", 0)),
+        ("kit dropped", lambda c: c["content_plan"]["bosses"].__setitem__("kit", None)),
+        ("track_assignment home", lambda c: c["content_plan"]["bosses"].__setitem__("track_assignment", "character_home_track")),
+        ("Oxide profile retail", lambda c: c["content_plan"]["bosses"].__setitem__("oxide_attack_profile", "retail")),
+        ("repeats", lambda c: c["content_plan"]["bosses"].__setitem__("repeats", True)),
+        ("record keys dropped", lambda c: [c["content_plan"]["bosses"].pop(k) for k in
+                                           ("opponent_shuffle", "oxide_in_pool", "kit_shuffle", "kit", "oxide_attack_profile", "track_assignment")]),
+        ("feature dropped", lambda c: j_drop_feature(c, "boss_opponents_v1")),
+        ("Hit route kept by the retail boss", lambda c: j_check(c, 35025010)["routes"].append(copy.deepcopy(j_check(c, 35025007)["routes"][-1]))),
+        ("Hit route dropped from the drawn racer", lambda c: j_check(c, 35025007)["routes"].pop()),
+        ("Hit table retail", j_hit_to_retail),
+        ("Hit fallback missing", lambda c: c["hit_character_encounters"]["unlock_triggers"]["8"].pop("fallback_keys")),
+        ("Hit fallback on a drawn guest", lambda c: c["hit_character_encounters"]["unlock_triggers"]["13"].__setitem__("fallback_keys", 2)),
+        ("Hit trigger keeps the retail win", lambda c: c["hit_character_encounters"]["unlock_triggers"].__setitem__(
+            "10", dict(kind="boss", any_of=[35011100]))),
+        ]:
+    j11_env(name, change, "boss-shuffle")
+# Kit invariants native cross-checks and the generator's validator does not
+# (yet): a mixed loadout is drawn from two to four families
+# (boss_encounters._mixed_rows), and a signature_profiles kit is a retail
+# garage profile. Native refuses both; the generator emits neither.
+native_refuses = set()
+for name, change in [
+        ("mixed kit of one family", lambda c: [j_garage_kit_row(c, 2, i, [3, 0x01, 1, 11, 0]) for i in range(5)]),
+        ("kit assignment", lambda c: c["content_plan"]["bosses"]["kit"].__setitem__("assignment", "signature_profiles")),
+        ]:
+    j11_env("native " + name, change, "boss-shuffle")
+    native_refuses.add(cases[-1][0])
+for name, change in [
+        ("unchanged copy", lambda c: None),
+        ("home venue moved", lambda c: j_entry(c, "entry/boss:0/0").__setitem__("track_id", "retail:14")),
+        ("independent with home venues", lambda c: None if c["content_plan"]["bosses"].__setitem__("track_assignment", "independent_track") else None),
+        ("shop price forged high", lambda c: j_shop(c)[0].__setitem__("price", 100001)),
+        ("ctr_first dropped", lambda c: (c["content_plan"].pop("adventure_structure"), j_drop_feature(c, "ctr_first_v1"))),
+        ]:
+    j11_env(name, change, "all-030")
 # The verifier's copy of the per-track USF finish rulings (#133 PR 8,
 # ap/ap_content_verify.hpp kUsfRulings) equals the apworld's table.
 from worlds.ctr import content_capability as ccap
@@ -1450,10 +1609,14 @@ run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json
 answers = run.stdout.splitlines()
 assert len(answers) == len(cases), (len(answers), len(cases), run.stderr[-1000:])
 disagreements = [name for (name, _, expected), actual in zip(cases, answers)
-                 if name not in native_trusts and (actual == "ACCEPT") != expected]
+                 if name not in native_trusts and name not in native_refuses and (actual == "ACCEPT") != expected]
 assert not disagreements, disagreements
 # Forged ranks inside the chain: the generator refuses, native trusts them.
 trusted = [name for (name, _, _), actual in zip(cases, answers) if name in native_trusts and actual != "ACCEPT"]
 assert not trusted, trusted
+# J11 kit invariants: native refuses them whatever the generator says.
+stricter = [name for (name, _, _), actual in zip(cases, answers) if name in native_refuses and actual == "ACCEPT"]
+assert not stricter, stricter
 print(f"PASS registry parity and {len(cases)} native/generator admission cases ({sum(x[2] for x in cases)} accepted, "
-      f"{len(native_trusts)} forged ranks and box terms the generator alone refuses)")
+      f"{len(native_trusts)} forged ranks and box terms the generator alone refuses, "
+      f"{len(native_refuses)} kit invariants native alone refuses)")

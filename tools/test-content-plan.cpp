@@ -1434,7 +1434,7 @@ int main(int argc, char **argv) {
     expect(parse(customroom) && bind_room(customroom) && ap_content_plan_active(), "bosses-custom: room binds");
     {
         const ctr_content_bosses *b = ap_content_plan_bosses();
-        expect(b->present && b->track_shuffle && b->repeats &&
+        expect(b->present && b->track_shuffle && !b->repeats &&
                b->venue_cortex[1] == 1 && b->venue_points[1] == 255 && b->venues[1] == AP_BOSS_VENUE_GARAGE[1].homeLevel &&
                b->venue_package[3] >= 0 && b->venue_points[3] == 35 && b->venues[3] == AP_BOSS_VENUE_GARAGE[3].homeLevel &&
                b->venue_package[0] < 0 && !b->venue_cortex[0] && b->venue_package[2] < 0 && !b->venue_cortex[2],
@@ -1456,8 +1456,9 @@ int main(int argc, char **argv) {
         c_refuse("no AI navigation", [&](J &j) { pkg(j)["capabilities"]["ai_nav"] = false; });
         c_refuse("no stated count", [&](J &j) { pkg(j)["capabilities"].erase("checkpoints"); });
         c_refuse("a custom venue without track_shuffle", [](J &j) { j["content_plan"]["bosses"]["track_shuffle"] = false; });
-        c_refuse("a repeated custom venue without repeats", [](J &j) {
-            j["content_plan"]["bosses"]["repeats"] = false;
+        // Decision 7: repeats is always false, so a repeated venue refuses.
+        c_refuse("repeats on", [](J &j) { j["content_plan"]["bosses"]["repeats"] = true; });
+        c_refuse("a repeated custom venue", [](J &j) {
             for (auto &e : j["content_plan"]["entries"]) if (e["id"] == "entry/boss:0/0") e["track_id"] = "cortex_vortex"; });
     }
     expect(parse(bosses) && bind_room(bosses) && ap_content_plan_active(), "bosses: room binds");

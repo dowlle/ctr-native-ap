@@ -204,3 +204,8 @@ records and refuses forgeries; it also derives J11 plans from the earlier
 fixtures by the wire spec. `test-content-verify.cpp` sweeps them, and
 `test-content-plan-parity.py` compares the production parser with the paired
 validator on them and their mutations.
+
+Decision 7 (2026-10-28, J11): boss encounters never repeat and `bosses.repeats`
+is always false on both sides. `bosses-custom.json`, emitted before that
+ruling with `repeats: true` (its four garage venues were already distinct),
+was edited by hand to `repeats: false`. Nothing else in it changed.
