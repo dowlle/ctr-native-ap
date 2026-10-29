@@ -1575,6 +1575,24 @@ Result Stage(const FsOps &fs, const std::string &exe, const std::vector<InstallF
 		}
 		staged.push_back(StagedFile{f.rel, f.sha256});
 	}
+	// Every .part -> staged rename must be durable before Apply trusts the
+	// set: flush each folder that received one (once per folder).
+	if (fs.syncDir)
+	{
+		std::set<std::string> folders;
+		for (const StagedFile &f : staged)
+		{
+			const std::string path = StagedFileOf(exe, f.rel);
+			const size_t slash = path.find_last_of("/\\");
+			if (folders.insert(slash == std::string::npos ? std::string() : path.substr(0, slash)).second &&
+			    !fs.syncDir(path))
+			{
+				DropStaged(fs, exe, rels);
+				staged.clear();
+				return ERR_IO;
+			}
+		}
+	}
 	return OK;
 }
 
@@ -1699,9 +1717,13 @@ Result Apply(const FsOps &fs, const std::string &exe, const std::vector<StagedFi
 	auto targetOf = [&](const std::string &rel) { return IsRuntimeEntry(rel) ? runtimeDir : InstallTarget(exe, rel); };
 
 	// An older marker must be gone before the journal goes down: recovery reads
-	// a marker beside a journal as this swap's finish. If it cannot be removed,
-	// stop here with nothing changed.
-	if (!fs.removeFile(fs.ctx, MarkerPath(exe)))
+	// a marker beside a journal as this swap's finish. Its rollback copies go
+	// first (ConfirmStarted keeps the marker while one is left), so a copy that
+	// cannot be removed keeps its marker for the next retry. Either failing
+	// stops here with nothing changed.
+	if (fs.exists(fs.ctx, MarkerPath(exe)))
+		ConfirmStarted(fs, exe);
+	if (fs.exists(fs.ctx, MarkerPath(exe)) || !fs.removeFile(fs.ctx, MarkerPath(exe)))
 	{
 		DropStaged(fs, exe, rels);
 		return ERR_IO;
@@ -1726,8 +1748,18 @@ Result Apply(const FsOps &fs, const std::string &exe, const std::vector<StagedFi
 	std::vector<std::string> kept; // entries that now have a .old copy
 	// A failed step: undo what was done. When the undo itself fails the swap
 	// journal stays so the next launch restores the .old copies.
+	// Flush every folder a step renamed in; false if any flush fails.
+	auto syncSteps = [&]() {
+		bool ok = true;
+		if (fs.syncDir)
+			for (const Step &st : steps)
+				ok = fs.syncDir(st.target) && ok;
+		return ok;
+	};
 	auto fail = [&](bool thisStepUndone) -> Result {
-		const bool undone = Undo(fs, steps) && thisStepUndone;
+		// The journal is dropped only when the undo is complete and durable;
+		// otherwise the next launch checks every entry again.
+		const bool undone = Undo(fs, steps) && thisStepUndone && syncSteps();
 		DropStaged(fs, exe, rels);
 		if (undone)
 		{
@@ -1778,10 +1810,8 @@ Result Apply(const FsOps &fs, const std::string &exe, const std::vector<StagedFi
 	}
 	// Every rename must be durable before the marker says the swap finished:
 	// flush each folder that had one (the .old name sits in the same folder).
-	if (fs.syncDir)
-		for (const Step &st : steps)
-			if (!fs.syncDir(st.target))
-				return fail(true);
+	if (!syncSteps())
+		return fail(true);
 	// The marker doubles as the journal's "finished" mark: written first, so a
 	// crash before the journal is removed is not mistaken for a half swap.
 	std::vector<std::string> marker(1, newTag);

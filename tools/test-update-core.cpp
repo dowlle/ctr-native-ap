@@ -1965,16 +1965,56 @@ static void TestSoloRuntime()
 	RemoveAll(dir + "/solo.old");
 	CleanRuntime(in);
 
-	// A renamed folder that cannot be flushed: no marker, everything undone.
+	// A renamed folder that cannot be flushed: no marker, everything undone,
+	// and since the undo cannot be flushed either the journal stays for the
+	// next launch, which finds the previous files and closes it.
 	in = MakeInstall(dir);
 	AddRuntime(in);
 	CHECK_EQ(Stage(real, in.exe, RuntimeSet(), staged), OK);
 	{
 		FsOps ops = real;
 		ops.syncDir = [](const std::string &) { return false; };
-		CHECK_EQ(Apply(ops, in.exe, staged, "v0.3.1"), ERR_IO);
+		CHECK_EQ(Apply(ops, in.exe, staged, "v0.3.1"), ERR_UNDO_FAILED);
 		CHECK(OldState(in) && OldRuntime(in) && SoloUntouched(in));
-		CHECK(NoLeftovers(in, false) && NoRuntimeLeftovers(in, false) && !real.exists(nullptr, MarkerPath(in.exe)));
+		CHECK(!real.exists(nullptr, MarkerPath(in.exe)) && real.exists(nullptr, SwapJournalPath(in.exe)));
+		CHECK_EQ(StartupCheck(real, in.exe, "v0.3.0"), STARTUP_RECOVERED);
+		CHECK(OldState(in) && OldRuntime(in) && NoLeftovers(in, false) && NoRuntimeLeftovers(in, false));
+		// Only the final flush failing (the undo's own flushes work): ERR_IO, no journal.
+		static int calls;
+		calls = 0;
+		CHECK_EQ(Stage(real, in.exe, RuntimeSet(), staged), OK);
+		ops.syncDir = [](const std::string &p) { return ++calls != 1 && RealFsOps().syncDir(p); };
+		CHECK_EQ(Apply(ops, in.exe, staged, "v0.3.1"), ERR_IO);
+		CHECK(OldState(in) && OldRuntime(in) && NoLeftovers(in, false) && NoRuntimeLeftovers(in, false));
+		// A staged folder that cannot be flushed fails staging, nothing left.
+		CHECK_EQ(Stage(ops, in.exe, RuntimeSet(), staged), OK); // calls is past 1 now
+		ops.syncDir = [](const std::string &) { return false; };
+		CHECK_EQ(Stage(ops, in.exe, RuntimeSet(), staged), ERR_IO);
+		CHECK(staged.empty() && OldState(in) && NoLeftovers(in, false) && NoRuntimeLeftovers(in, false));
+	}
+	CleanRuntime(in);
+
+	// A finished update whose runtime rollback copy is still held: the next
+	// update clears it first, and if it still cannot, keeps the marker and
+	// changes nothing.
+	in = MakeInstall(dir);
+	AddRuntime(in);
+	CHECK_EQ(Stage(real, in.exe, RuntimeSet(), staged), OK);
+	CHECK_EQ(Apply(real, in.exe, staged, "v0.3.1"), OK);
+	{
+		const std::vector<InstallFile> next = {IF("ctr_native_ap", "NEWER EXE"), IF(kRtId, "NEWER RT")};
+		FsOps held = real;
+		held.removeTree = [](void *, const std::string &) { return false; };
+		CHECK_EQ(Stage(real, in.exe, next, staged), OK);
+		CHECK_EQ(Apply(held, in.exe, staged, "v0.3.2"), ERR_IO);
+		CHECK(real.exists(nullptr, MarkerPath(in.exe)) && real.exists(nullptr, dir + "/solo-runtime.old"));
+		CHECK(NewState(in) && NewRuntime(in) && !real.exists(nullptr, SwapJournalPath(in.exe)));
+		// Released: the next attempt clears the copy and installs.
+		CHECK_EQ(Stage(real, in.exe, next, staged), OK);
+		CHECK_EQ(Apply(real, in.exe, staged, "v0.3.2"), OK);
+		CHECK(ReadText(in.exe) == "NEWER EXE" && ReadText(dir + "/" + kRtId) == "NEWER RT");
+		CHECK(ReadText(dir + "/solo-runtime.old/RUNTIME.txt") == "NEW RT");
+		ConfirmStarted(real, in.exe);
 	}
 	CleanRuntime(in);
 
