@@ -74,6 +74,12 @@ typedef struct ctr_content_pad {
     /* Relic Race Perfect (#133 PR 3c, #453): the check for breaking every time
      * crate in this pad's Relic Race; 0 when the seed or entry has none. */
     int64_t perfect_location;
+    /* ctr_first (#208 on content plans, J11): 1 when the plan's
+     * adventure_structure is ctr_first and this track entry runs it. The entry
+     * then has no Trophy mode (modes are CTR, then Relic), trophy_location is
+     * still the track's Trophy Race code, paid by a qualifying CTR win, and
+     * rung_locations are earned by finishing place in the CTR Challenge. */
+    int ctr_first;
     /* Racer lock (#133 PR 4b): the engine character id this pad requires, or
      * -1. ANDed onto the pad's gates by AP_ContentPadOpen; the parser also
      * mirrors it into ctr_cfg.racer_lock / gem_cup_racer_lock, so the pad's
