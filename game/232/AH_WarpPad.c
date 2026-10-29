@@ -54,6 +54,25 @@ static void AH_WarpPad_WarpRestore(struct GameTracker *gGT)
 #endif
 
 #ifdef CTR_AP
+// Decision 33: put the kart on a pad (tracker starts). Positions are the
+// driver's 24.8 fixed point; the pad instance is in world units. Before the
+// warp capture, which then remembers the pad height as the kart's own.
+static void AH_WarpPad_PlaceKartOnPad(struct Driver *driver, struct Instance *driverInst, MATRIX *warppadMatrix)
+{
+	int padPos[3] = {warppadMatrix->t[0], warppadMatrix->t[1], warppadMatrix->t[2]};
+	int kartPos[3], ground;
+	AP_TLKartOnPad(padPos, driver->posCurr.y, driver->quadBlockHeight, kartPos, &ground);
+	driver->posCurr.x = driver->posPrev.x = kartPos[0];
+	driver->posCurr.y = driver->posPrev.y = kartPos[1];
+	driver->posCurr.z = driver->posPrev.z = kartPos[2];
+	driver->quadBlockHeight = ground;
+	driverInst->matrix.t[0] = kartPos[0] >> 8;
+	driverInst->matrix.t[1] = kartPos[1] >> 8;
+	driverInst->matrix.t[2] = kartPos[2] >> 8;
+}
+#endif
+
+#ifdef CTR_AP
 // Entry fail-safe latch (2026-10-09). Holds the destination of the pad whose
 // entry was last refused by WarpPad_RefuseEntry, so the released kart is not
 // grabbed again the next frame while it still sits on the pad. Cleared once the
@@ -648,19 +667,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			dist = 0; // refused earlier and still on the pad: the latch below holds it, the kart is not moved again
 		else
 		{
-			// Decision 33: the kart is put on this pad, so no frame shows it
-			// at the hub spawn point. Before the capture below, which then
-			// remembers the pad height as the kart's own.
-			int apPadPos[3] = {warppadMatrix->t[0], warppadMatrix->t[1], warppadMatrix->t[2]};
-			int apKartPos[3], apGround;
-			AP_TLKartOnPad(apPadPos, driver->posCurr.y, driver->quadBlockHeight, apKartPos, &apGround);
-			driver->posCurr.x = driver->posPrev.x = apKartPos[0];
-			driver->posCurr.y = driver->posPrev.y = apKartPos[1];
-			driver->posCurr.z = driver->posPrev.z = apKartPos[2];
-			driver->quadBlockHeight = apGround;
-			driverInst->matrix.t[0] = apKartPos[0] >> 8;
-			driverInst->matrix.t[1] = apKartPos[1] >> 8;
-			driverInst->matrix.t[2] = apKartPos[2] >> 8;
+			AH_WarpPad_PlaceKartOnPad(driver, driverInst, warppadMatrix);
 			dist = 0;
 		}
 	}

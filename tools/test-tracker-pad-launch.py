@@ -63,7 +63,9 @@ static void selector_parity(void)
   for (i = 0; i < 3; i++) f.rs.productive[i] = (prod >> i) & 1;
   AP_PadActivityDecide(&f, &l);
   /* Every mode the destination has is listed, open or not. */
-  assert(l.count == 2 + ctrPresent);
+  assert(l.count == 2 + ctrPresent - (st == AP_RS_STRUCTURE_CTR_FIRST));
+  /* ctr_first lists no Trophy Race row. */
+  if (st == AP_RS_STRUCTURE_CTR_FIRST) for (i = 0; i < l.count; i++) assert(l.activity[i] != T);
   /* The pad's own menu over the same facts (AP_PadSelectorRows). */
   AP_RaceStructureAdmit(st == AP_RS_STRUCTURE_CTR_FIRST ? st : AP_RS_STRUCTURE_CLASSIC, tc, s2, admitted);
   AP_RaceSelectorBuild(&f.rs, admitted, &rows);
@@ -304,6 +306,13 @@ static void missing_all(void)
  AP_PadActivityDecide(&f, &l);
  for (int i = 0; i < l.count; i++) assert(l.reason[i] == AP_PADACT_LOCK_RACER && l.mask[i] & AP_PADACT_BIT(AP_PADACT_LOCK_RACER) && !(l.mask[i] & AP_PADACT_BIT(AP_PADACT_LOCK_PAD)));
  f.padReqMet = 0;
+ /* A content-plan pad whose only gap is its own rule: no invented second requirement. */
+ memset(&f, 0, sizeof f);
+ f.node = AP_PADACT_NODE_CONTENT; f.content = 1; f.contentReady = 1; f.padState = 2; f.keysHave = f.keysNeed = 1;
+ f.stage1Met = 0; f.padReqMet = 0; f.racerMet = 1; f.modeCount = 2;
+ f.contentMode[0] = T; f.contentMode[1] = R; f.contentOpen[0] = f.contentOpen[1] = 0;
+ AP_PadActivityDecide(&f, &l);
+ for (int i = 0; i < l.count; i++) assert(l.mask[i] == AP_PADACT_BIT(AP_PADACT_LOCK_PAD));
  /* A content-plan pad: its rule met, the racer missing (stage 1 reads closed). */
  memset(&f, 0, sizeof f);
  f.node = AP_PADACT_NODE_CONTENT; f.content = 1; f.contentReady = 1; f.padState = 2;
@@ -437,9 +446,9 @@ assert "dist = 0;" in tick[arrive:arrive + 1500] and "AP_TrackerLaunchTaken();" 
 assert "LOAD_RequestLoad" not in tick[arrive:arrive + 1500] and "MainRaceTrack_RequestLoad" not in tick[arrive:arrive + 1500]
 # Decision 33: the kart is put on the pad on arrival, before the warp capture
 # remembers its height and before the entry gates.
-place = tick.index("AP_TLKartOnPad(apPadPos", arrive)
+place = tick.index("AH_WarpPad_PlaceKartOnPad(driver, driverInst, warppadMatrix);", arrive)
 assert place < tick.index("dist = 0;", place) and place < tick.index("AH_WarpPad_WarpCapture(gGT);", arrive)
-assert "driver->quadBlockHeight = apGround;" in tick[place:place + 900]
+assert "driver->quadBlockHeight = ground;" in warp[:warp.index("void AH_WarpPad_ThTick")] and "AP_TLKartOnPad(padPos" in warp
 # A pad that refused the kart earlier (the entry latch) is not placed on again.
 assert "else if (apEntryRefusedDest == levelID)" in tick[arrive:place]
 # The selector's menu takes the tracker's row only if the pad offers it.

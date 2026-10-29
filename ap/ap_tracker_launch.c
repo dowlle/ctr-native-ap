@@ -226,14 +226,27 @@ void AP_TrackerLaunchFrame(struct GameTracker *gt)
 	}
 }
 
+/* The gate is asked once more at the moment the pad would take the kart: a
+ * reconnect that removed Keys earlier in this frame must not let a pad with
+ * no mode handoff start. */
+static int AP_TLStillOpenNow(void)
+{
+	ap_tl_request *r = AP_TLState(), copy = *r;
+	if (AP_TLGateOpen(r))
+		return 1;
+	AP_TLDrop(r, AP_TL_DROP_GATE);
+	AP_TLLog("dropped (gate closed)", &copy);
+	return 0;
+}
+
 int AP_TrackerLaunchPadArrives(int physical, int dest)
 {
-	return AP_TLPadArrives(AP_TLState(), AP_TLLevelHub(), physical, dest);
+	return AP_TLPadArrives(AP_TLState(), AP_TLLevelHub(), physical, dest) && AP_TLStillOpenNow();
 }
 
 int AP_TrackerLaunchGarageArrives(void)
 {
-	return AP_TLGarageArrives(AP_TLState(), AP_TLLevelHub());
+	return AP_TLGarageArrives(AP_TLState(), AP_TLLevelHub()) && AP_TLStillOpenNow();
 }
 
 void AP_TrackerLaunchTaken(void)

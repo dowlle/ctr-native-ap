@@ -222,7 +222,7 @@ static inline int AP_PadActivityEntryMask(const ap_padact_facts *f)
 	return m ? m : AP_PADACT_BIT(first);
 }
 
-static inline void AP_PadActivityDecide(const ap_padact_facts *f, ap_padact_list *out)
+static inline void AP_PadActivityDecideRows(const ap_padact_facts *f, ap_padact_list *out)
 {
 	int m, entry, entryMask, hubShort;
 	out->count = 0;
@@ -243,6 +243,9 @@ static inline void AP_PadActivityDecide(const ap_padact_facts *f, ap_padact_list
 		{
 			if (!f->rs.present[m])
 				continue;
+			// ctr_first has no Trophy Race row (decision 14): the pad's menu never offers it.
+			if (m == AP_RS_TROPHY && structure == AP_RS_STRUCTURE_CTR_FIRST)
+				continue;
 			int first = admitted[m] ? AP_PADACT_OPEN
 			            : !f->trophyChecked ? (structure == AP_RS_STRUCTURE_CTR_FIRST ? AP_PADACT_LOCK_CTRCHAL : AP_PADACT_LOCK_TROPHY)
 			            : AP_PADACT_LOCK_STAGE2;
@@ -262,10 +265,17 @@ static inline void AP_PadActivityDecide(const ap_padact_facts *f, ap_padact_list
 	}
 	case AP_PADACT_NODE_CONTENT:
 		for (m = 0; m < f->modeCount && m < AP_PADACT_MAX_ROWS; m++)
+		{
 			AP_PadActivityRow(out, f->contentMode[m],
 			                  f->contentOpen[m] ? AP_PADACT_OPEN : AP_PADACT_LOCK_STAGE2,
 			                  f->contentLeft[m] ? 1 : 0,
 			                  f->modeCount > 1 ? f->contentMode[m] : -1);
+			// A mode also reads closed when the pad's own requirement is unmet
+			// (ap_content_mode_open); then the pad-wide reasons below name it,
+			// not a second requirement that may be met.
+			if (!f->contentOpen[m] && !f->padReqMet)
+				out->mask[out->count - 1] = 0;
+		}
 		break;
 	case AP_PADACT_NODE_SINGLE:
 		AP_PadActivityRow(out, f->single, AP_PADACT_OPEN, f->padState != 5 && f->padState != 4, -1);
@@ -347,6 +357,16 @@ static inline const char *AP_PadActivityReasonName(int reason)
 		"SECOND REQUIREMENT", "INSTALL CONTENT IN OPTIONS", "COMPLETE", "CLOSED",
 		"BOSS LOCKED", "FINISH CTR CHALLENGE FIRST"};
 	return reason >= 0 && reason < AP_PADACT_REASONS ? names[reason] : "LOCKED";
+}
+
+static inline void AP_PadActivityDecide(const ap_padact_facts *f, ap_padact_list *out)
+{
+	int i;
+	AP_PadActivityDecideRows(f, out);
+	// A row that is not open always names at least its first reason.
+	for (i = 0; i < out->count; i++)
+		if (out->reason[i] != AP_PADACT_OPEN && !out->mask[i])
+			out->mask[i] = AP_PADACT_BIT(out->reason[i]);
 }
 
 // The reasons of a mask, in the order a player meets them, joined with ", "
