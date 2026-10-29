@@ -1579,17 +1579,16 @@ for name, change in [
             "10", dict(kind="boss", any_of=[35011100]))),
         ]:
     j11_env(name, change, "boss-shuffle")
-# Kit invariants native cross-checks and the generator's validator does not
-# (yet): a mixed loadout is drawn from two to four families
+# Kit invariants: a mixed loadout is drawn from two to four families
 # (boss_encounters._mixed_rows), and a signature_profiles kit is a retail
-# garage profile. Native refuses both; the generator emits neither.
+# garage profile. Both sides refuse both (content_bosses._check_kit_shape);
+# native_refuses stays for invariants only native checks, none today.
 native_refuses = set()
 for name, change in [
         ("mixed kit of one family", lambda c: [j_garage_kit_row(c, 2, i, [3, 0x01, 1, 11, 0]) for i in range(5)]),
         ("kit assignment", lambda c: c["content_plan"]["bosses"]["kit"].__setitem__("assignment", "signature_profiles")),
         ]:
     j11_env("native " + name, change, "boss-shuffle")
-    native_refuses.add(cases[-1][0])
 for name, change in [
         ("unchanged copy", lambda c: None),
         ("home venue moved", lambda c: j_entry(c, "entry/boss:0/0").__setitem__("track_id", "retail:14")),
