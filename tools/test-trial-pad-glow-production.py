@@ -28,6 +28,8 @@ fixture=r'''
 #include "ap_content_plan.h"
 #include "ap_content_modes.h"
 static int planOn;static ctr_content_pad cpad;
+static int lockedMode=-1;
+int AP_ContentModeOpen(const ctr_content_pad *p,int mode){(void)p;return mode!=lockedMode;}
 int ap_content_plan_active(void){return planOn;}
 const ctr_content_pad *ap_content_plan_pad(int p){return planOn&&p==cpad.physical?&cpad:NULL;}
 static long crystalChecked;
@@ -81,7 +83,7 @@ int main(void){
   ctr_cup_sweeps.enabled=1;ctr_cup_sweeps.present[0]=1;ctr_cup_sweeps.locations[0]=35028300;
   n=AP_PadUncollectedGlowBits(100,bits,24);
   assert(n==1&&bits[0]==AP_CUP_SWEEP_PSEUDO_BASE);
-  assert(AP_GlowBitRewardGroup(bits[0])==2);
+  assert(AP_GlowBitRewardGroup(bits[0])==0); /* decision 29: the race slot, as on a content plan */
   crystalChecked=35028300;assert(AP_PadUncollectedGlowBits(100,bits,24)==0);
   crystalChecked=0;ctr_cup_sweeps.enabled=0;
   assert(AP_PadUncollectedGlowBits(100,bits,24)==0);relics=rung=1;
@@ -255,6 +257,25 @@ int main(void){
   assert(AP_PadUncollectedBoxCount(4)==0); /* a pad the plan does not know */
   cpad.box_count=0;assert(AP_PadUncollectedGlowBits(3,bits,AP_PAD_DISPLAY_BITS_MAX)==1&&AP_PadUncollectedBoxCount(3)==0);
   planOn=0;nChecked=0;ctr_cfg.wumpa.mode=CTR_CFG_WUMPA_GLOBAL;
+ }
+ /* Decision 26: a content-plan mode still locked behind stage 2 stays out of the glow. */
+ {
+  int bits[AP_PAD_DISPLAY_BITS_MAX],n;
+  planOn=1;memset(&cpad,0,sizeof cpad);nChecked=0;crystalChecked=0;
+  cpad.physical=3;cpad.occupied=1;cpad.mode_count=2;
+  cpad.modes[0]=AP_CONTENT_MODE_TROPHY;cpad.stages[0]=1;
+  cpad.modes[1]=AP_CONTENT_MODE_RELIC;cpad.stages[1]=2;
+  cpad.trophy_location=35014990;cpad.relic_locations[0]=35014991;cpad.relic_locations[1]=35014992;cpad.relic_locations[2]=35014993;
+  lockedMode=-1;
+  n=AP_PadUncollectedGlowBits(3,bits,AP_PAD_DISPLAY_BITS_MAX);
+  assert(has(bits,n,AP_CONTENT_BIT_TROPHY+3)&&has(bits,n,AP_CONTENT_BIT_RELIC+3*3)&&has(bits,n,AP_CONTENT_BIT_RELIC+3*3+2));
+  lockedMode=AP_CONTENT_MODE_RELIC;
+  n=AP_PadUncollectedGlowBits(3,bits,AP_PAD_DISPLAY_BITS_MAX);
+  assert(n==1&&bits[0]==AP_CONTENT_BIT_TROPHY+3);
+  lockedMode=AP_CONTENT_MODE_TROPHY;
+  n=AP_PadUncollectedGlowBits(3,bits,AP_PAD_DISPLAY_BITS_MAX);
+  assert(!has(bits,n,AP_CONTENT_BIT_TROPHY+3)&&has(bits,n,AP_CONTENT_BIT_RELIC+3*3));
+  lockedMode=-1;planOn=0;
  }
  puts("Trial pad glow production gather passed");
 }

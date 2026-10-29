@@ -345,11 +345,15 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
         if(pad->crystal) {
             if(!ap_net_location_checked((long)pad->trophy_location))outBits[count++]=AP_CONTENT_BIT_TROPHY+pad->physical;
         }
-        // Track modes (#133 PR 3): every unchecked check of every mode, in the
-        // pad's mode order, as the glow ruling of 2026-09-30 asks.
+        // Track modes (#133 PR 3): every unchecked check of every mode that is
+        // open now, in the pad's mode order, as the glow ruling of 2026-09-30
+        // asks. A mode still locked behind stage 2 stays hidden, like a legacy
+        // pad (decision 26, review finding 11).
         for(n=0;!pad->crystal && n<pad->mode_count && count<cap;++n) {
             int64_t codes[3]={0,0,0};
-            int k,c=ap_content_mode_codes(pad,pad->modes[n],codes);
+            int k,c;
+            if(!AP_ContentModeOpen(pad,pad->modes[n]))continue;
+            c=ap_content_mode_codes(pad,pad->modes[n],codes);
             for(k=0;k<c && count<cap;++k) {
                 if(codes[k]<=0 || ap_net_location_checked((long)codes[k]))continue;
                 outBits[count++]=pad->modes[n]==AP_CONTENT_MODE_TROPHY ? AP_CONTENT_BIT_TROPHY+pad->physical :
@@ -365,7 +369,9 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
             for(n=0;!pad->crystal && n<pad->mode_count && count<cap;++n) {
                 int64_t codes[AP_CONTENT_FAMILY_SLOTS];
                 int slots[AP_CONTENT_FAMILY_SLOTS];
-                int k,c=ap_content_mode_family_codes(pad,pad->modes[n],codes,slots);
+                int k,c;
+                if(!AP_ContentModeOpen(pad,pad->modes[n]))continue;
+                c=ap_content_mode_family_codes(pad,pad->modes[n],codes,slots);
                 for(k=0;k<c && count<cap;++k) {
                     if((seen & (1u<<slots[k])) || ap_net_location_checked((long)codes[k]))continue;
                     seen|=1u<<slots[k];
@@ -846,7 +852,9 @@ CTR_STATIC_ASSERT(AP_PAD_DISPLAY_BITS_MAX >=
 // <first-bit-of-its-block> + index, so the block bases ARE the boundaries.
 static int AP_GlowBitRewardGroup(int globalBit)
 {
-    if(globalBit>=AP_CUP_SWEEP_PSEUDO_BASE && globalBit<AP_CUP_SWEEP_PSEUDO_BASE+5)return 2;
+    // A cup's sweep rides the race slot on a normal room too, like a content
+    // plan's (decision 29, review finding 10).
+    if(globalBit>=AP_CUP_SWEEP_PSEUDO_BASE && globalBit<AP_CUP_SWEEP_PSEUDO_BASE+5)return 0;
     if(globalBit>=60000 && globalBit<62100)return 2;
     {
         // Content-plan pads: Trophy rides the race slot, the relic tiers the
