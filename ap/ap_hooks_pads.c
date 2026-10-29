@@ -1032,6 +1032,16 @@ int AP_PadStage1Met(int physLevelID)
 	return 1; // unknown pad -> treat as enterable (defensive; AP_PadState gates)
 }
 
+// AP_PadStage1Met without the racer lock, for the tracker's list of missing
+// requirements (#375). Only the retail race pads fold the lock into stage 1
+// (ctr_cfg_warp_unlocked); every other pad answers as AP_PadStage1Met does.
+int AP_PadStage1BaseMet(int physLevelID)
+{
+	if (!ap_content_plan_active() && physLevelID >= 0 && physLevelID < 16)
+		return ctr_cfg_warp_base_unlocked(physLevelID);
+	return AP_PadStage1Met(physLevelID);
+}
+
 // The effective player at a physical pad. A met racer lock OVERRIDES the chosen
 // racer, because AH_WarpPad.c calls AP_RacerLock_ForceForWarp immediately before
 // the load reads characterIDs[0] -- so the hub-time chosen racer is not what

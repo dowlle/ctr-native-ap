@@ -75,7 +75,7 @@ int AP_PadActivities(int hub, int physical, int dest, ap_padact_list *out)
 #else
 		f.contentReady = 0; /* this build has no content-plan entry route */
 #endif
-		f.stage1Met = AP_ContentPadOpen(pad);
+		f.stage1Met = f.padReqMet = AP_ContentPadOpen(pad);
 		if (pad && pad->occupied && (pad->crystal || pad->cup))
 		{
 			f.node = AP_PADACT_NODE_SINGLE;
@@ -103,6 +103,7 @@ int AP_PadActivities(int hub, int physical, int dest, ap_padact_list *out)
 	f.padState = ctr_cfg_arena_pad_disabled(physical) || ctr_cfg_arena_pad_disabled(dest)
 		? 0 : AP_PadState(physical, dest);
 	f.stage1Met = AP_PadStage1Met(physical);
+	f.padReqMet = AP_PadStage1BaseMet(physical);
 	f.replayable = AP_PadReplayable(physical, dest);
 	f.contentReady = 1;
 #ifdef CTR_CUSTOM_TRACKS

@@ -869,6 +869,7 @@ int AP_PadState(int physLevelID, int destLevelID);
 // Exposed for the Gem Cup AP-box policy (WO-A3, ap_boxes.c), which has to ask
 // this exact question about the pad hosting a cup leg's INDIVIDUAL race.
 int AP_PadStage1Met(int physLevelID);
+int AP_PadStage1BaseMet(int physLevelID); // without the racer lock (#375 tracker list)
 
 // Is this pad in the phase-1 re-entry window? The destination's Trophy Race is
 // checked, stage 2 is not met, and an AP box or per-track Wumpa check still

@@ -228,4 +228,21 @@ static inline int AP_TLModeOffered(const int *modes, int count, int mode)
 	return 0;
 }
 
+// Where the kart stands when a tracker start arrives at a pad (decision 33):
+// on the pad's centre in x and z, and as high above the floor as it was at the
+// hub spawn, so the warp animation plays on the pad and not at the spawn
+// point. `pad` is the pad instance's world position, `curY` and `groundY` the
+// driver's posCurr.y and quadBlockHeight (24.8 fixed point); `out` is the
+// driver's new posCurr and `*groundOut` its new quadBlockHeight.
+static inline void AP_TLKartOnPad(const int pad[3], int curY, int groundY, int out[3], int *groundOut)
+{
+	int above = curY - groundY;
+	if (above < 0 || above > (0x200 << 8)) // not standing on the floor: use no height
+		above = 0;
+	out[0] = pad[0] * 256;
+	out[2] = pad[2] * 256;
+	*groundOut = pad[1] * 256;
+	out[1] = *groundOut + above;
+}
+
 #endif

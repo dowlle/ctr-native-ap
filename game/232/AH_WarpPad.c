@@ -645,7 +645,22 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		if (warppadObj->boolEnteredWarppad)
 			AP_TrackerLaunchTaken();
 		else
+		{
+			// Decision 33: the kart is put on this pad, so no frame shows it
+			// at the hub spawn point. Before the capture below, which then
+			// remembers the pad height as the kart's own.
+			int apPadPos[3] = {warppadMatrix->t[0], warppadMatrix->t[1], warppadMatrix->t[2]};
+			int apKartPos[3], apGround;
+			AP_TLKartOnPad(apPadPos, driver->posCurr.y, driver->quadBlockHeight, apKartPos, &apGround);
+			driver->posCurr.x = driver->posPrev.x = apKartPos[0];
+			driver->posCurr.y = driver->posPrev.y = apKartPos[1];
+			driver->posCurr.z = driver->posPrev.z = apKartPos[2];
+			driver->quadBlockHeight = apGround;
+			driverInst->matrix.t[0] = apKartPos[0] >> 8;
+			driverInst->matrix.t[1] = apKartPos[1] >> 8;
+			driverInst->matrix.t[2] = apKartPos[2] >> 8;
 			dist = 0;
+		}
 	}
 #endif
 

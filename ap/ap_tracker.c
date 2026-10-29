@@ -653,7 +653,7 @@ static void AP_TrackerActivitiesBuild(void)
 static void AP_TrackerDrawActivities(void)
 {
 	AP_TrackerNode *n = &ap_tracker.nodes[ap_tracker.focus];
-	int i, w = 520, rows = ap_tracker.acts.count ? ap_tracker.acts.count : 1;
+	int i, w = 640, rows = ap_tracker.acts.count ? ap_tracker.acts.count : 1;
 	int h = 104 + rows * 44, x = (TRACKER_W - w) / 2, y = 250;
 	AP_TrackerRect(x, y, w, h, AP_TrackerRGBA(10, 15, 18, 240));
 	AP_TrackerBorder(x, y, w, h, TRACKER_MINT, 3);
@@ -667,8 +667,15 @@ static void AP_TrackerDrawActivities(void)
 		if (open) AP_TrackerText(ap_tracker.acts.left[i] ? "START" : "REPLAY", x + 290, ry + 3, 16,
 			ap_tracker.acts.left[i] ? TRACKER_GREEN : TRACKER_GOLD, w - 310);
 		else {
+			/* Every missing requirement (decision 34); a second line when they do not fit one. */
+			char lines[2][112];
+			int n = AP_PadActivityReasonLines(ap_tracker.acts.mask[i], 34, lines);
 			AP_TrackerLockIcon(x + 280, ry + 4);
-			AP_TrackerText(AP_PadActivityReasonName(ap_tracker.acts.reason[i]), x + 300, ry + 3, 14, TRACKER_GRAY, w - 316);
+			if (n < 2) AP_TrackerText(n ? lines[0] : AP_PadActivityReasonName(ap_tracker.acts.reason[i]), x + 300, ry + 3, 14, TRACKER_GRAY, w - 316);
+			else {
+				AP_TrackerText(lines[0], x + 300, ry - 2, 14, TRACKER_GRAY, w - 316);
+				AP_TrackerText(lines[1], x + 300, ry + 15, 14, TRACKER_GRAY, w - 316);
+			}
 		}
 	}
 	AP_TrackerText("* START   ^ BACK", x + 16, y + h - 26, 14, TRACKER_WHITE, w - 32);
