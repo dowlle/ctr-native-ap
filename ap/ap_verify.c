@@ -190,6 +190,9 @@ static int ap_vf_oxide_open(int wantFinal, int firstCleared, int bossesWon,
 	in.bossesWon = bossesWon;
 	in.goalGems = ctr_cfg.goal_gems;
 	in.firstOptional = ctr_cfg.oxide_1_optional;
+	// #249: banked fruit costs time, not items, so the sweep treats the Wumpa
+	// arm as met, as the apworld's Oxide rules do.
+	in.wumpaShort = 0;
 	in.gemsHeld = (counts[AP_IDX_GEM_RED] > 0) + (counts[AP_IDX_GEM_RED + 1] > 0) +
 	              (counts[AP_IDX_GEM_RED + 2] > 0) + (counts[AP_IDX_GEM_RED + 3] > 0) +
 	              (counts[AP_IDX_GEM_RED + 4] > 0);

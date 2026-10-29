@@ -4,6 +4,9 @@
 
 #include "ap_wumpa.h"
 #include "ap_hooks.h" // AP_LogLine (non-static log shim)
+#include "ap_net.h"   // ap_net_wumpa_credit: the #249 bank
+#include "ap_deathlink.h" // AP_RaceAttemptIsForcedLoss
+#include "ap_wumpa_shop.h"
 
 // ============================================================================
 // AP WUMPA FRUIT filler grant -- implementation. See ap_wumpa.h for the design
@@ -33,6 +36,103 @@ static int g_starting_applied = 1;
 // that gap, so the latch closes it; it also re-arms per cup leg (END_OF_RACE
 // reset) so a mid-cup receipt cannot leak into the next leg's load gap.
 static int g_countdown_seen = 0;
+
+// #249: the held-at-finish payout, armed when a new attempt's countdown is seen.
+static AP_WumpaFinishLatch g_finish_latch = {0};
+
+// #249: does this seed bank fruit? Never under the unlimited-fruit cheat.
+static int AP_WumpaBanking(void)
+{
+	return ctr_cfg_active() && !ctr_cfg.schema_newer &&
+	       AP_WumpaBankingActive(&ctr_wumpa_shop) &&
+	       (sdata->gGT == 0 || (sdata->gGT->gameMode2 & CHEAT_WUMPA) == 0);
+}
+
+// #249: race fruit banks only in Adventure races, for the local human player
+// (decision 22, 2026-10-28, replacing the 2026-09-18 every-race-mode ruling),
+// so Arcade cannot farm fruit outside the seed's tracks. A relic race carries
+// RELIC_RACE without ADVENTURE_MODE (ap_boxes.c), so both count. Battle mode
+// is not a race.
+CTR_STATIC_ASSERT(AP_WUMPA_MODE_ADVENTURE == ADVENTURE_MODE);
+CTR_STATIC_ASSERT(AP_WUMPA_MODE_RELIC == RELIC_RACE);
+CTR_STATIC_ASSERT(AP_WUMPA_MODE_BATTLE == BATTLE_MODE);
+CTR_STATIC_ASSERT(AP_WUMPA_MODE_ARCADE == ARCADE_MODE);
+CTR_STATIC_ASSERT(AP_WUMPA_MODE_TIME_TRIAL == TIME_TRIAL);
+
+static int AP_WumpaAdventureRace(const struct GameTracker *gGT)
+{
+	return gGT != 0 && AP_WumpaBankRaceMode(gGT->gameMode1);
+}
+
+// AP fruit past 10 waits here until the received-item effect marker that
+// covers it has been written, so a crash cannot bank a replayed receipt twice
+// (the marker write is queued before the bank write).
+static int g_wumpa_ap_credit = 0;
+
+void AP_WumpaCommitReceived(void)
+{
+	int n = g_wumpa_ap_credit;
+	char msg[96];
+	g_wumpa_ap_credit = 0;
+	if (n <= 0)
+		return;
+	ap_net_wumpa_credit(n);
+	snprintf(msg, sizeof msg, "[AP WUMPA BANK] +%d AP fruit past 10 (lifetime %lld)\n", n,
+	         ap_net_wumpa_lifetime());
+	AP_LogLine(msg);
+}
+
+static void AP_WumpaBank(int n, const char *why)
+{
+	char msg[96];
+	if (n <= 0)
+		return;
+	ap_net_wumpa_credit(n);
+	snprintf(msg, sizeof msg, "[AP WUMPA BANK] +%d %s (lifetime %lld)\n", n, why,
+	         ap_net_wumpa_lifetime());
+	AP_LogLine(msg);
+}
+
+void AP_WumpaBankKart(struct Driver *driver, int held, int delta)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	if (!AP_WumpaBanking() || gGT == 0 || driver == 0 || driver != gGT->drivers[0])
+		return;
+	if ((driver->actionsFlagSet & ACTION_BOT) != 0 || !AP_WumpaAdventureRace(gGT))
+		return;
+	AP_WumpaBank(AP_WumpaBankOverflow(held, delta), "past 10");
+}
+
+// #249 hub counter (decision 20, 2026-10-28): the spendable balance and the
+// lifetime banked total, centred below the relic, key and trophy row in a 1P
+// hub. The race HUD keeps only the retail count of this race's fruit.
+void AP_WumpaDrawHub(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	char line[48];
+	if (!AP_WumpaBanking() || gGT == 0 || gGT->numPlyrCurrGame != 1)
+		return;
+	if (!ap_net_wumpa_ready())
+		return;
+	AP_WumpaHubLine(line, (int)sizeof line, ap_net_wumpa_balance(), ap_net_wumpa_lifetime());
+	DecalFont_DrawLine(line, 0x100, 0x24, FONT_SMALL, ORANGE | JUSTIFY_CENTER);
+}
+
+// `wasHuman` and `held` come from the frame before the finish edge: the engine
+// hands a finished player's kart to the AI on the finish frame
+// (PlayLevel_UpdateLapStats -> BOTS_Driver_Convert), so ACTION_BOT is already
+// set when the edge is seen.
+void AP_WumpaOnRaceFinish(struct Driver *driver, int wasHuman, int held)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int pay;
+	if (gGT == 0 || driver == 0 || driver != gGT->drivers[0])
+		return;
+	pay = AP_WumpaFinishTake(&g_finish_latch, held, AP_RaceAttemptIsForcedLoss());
+	if (!AP_WumpaBanking() || !wasHuman || !AP_WumpaAdventureRace(gGT))
+		return;
+	AP_WumpaBank(pay, "held at the finish");
+}
 
 // The local human player. Single-player Adventure: drivers[0]. Same convention as
 // the trap module's AP_TrapLocalDriver.
@@ -64,6 +164,13 @@ void AP_WumpaReceive(int count)
 		g_wumpa_pending = AP_WUMPA_MAX; // a kart can never hold more; no cross-race hoard
 	}
 	discarded = count - banked;
+	// #249 (ruled 2026-10-16): with banking on, AP fruit past 10 goes into the
+	// Wumpa bank at once, in or out of a race, instead of being discarded.
+	if (discarded > 0 && AP_WumpaBanking())
+	{
+		g_wumpa_ap_credit += discarded; // committed by AP_WumpaCommitReceived
+		discarded = 0;
+	}
 
 	if (discarded == 0)
 		snprintf(msg, sizeof msg, "[AP WUMPA] banked +%d (pending %d)\n",
@@ -141,13 +248,32 @@ void AP_WumpaTick(struct GameTracker *gGT)
 	// imply a case the preceding line has not already survived.
 	onTrack = LOAD_IsOpen_RacingOrBattle();
 	loading = sdata->Loading.stage != LOAD_IDLE;
+	// #249: the player's race-finished rising edge, once per attempt (the
+	// latch below); AP_WumpaOnRaceFinish pays only in an Adventure race. A finish seen during a load is ignored.
+	{
+		static int finishedPrev = 0, humanPrev = 0, heldPrev = 0;
+		struct Driver *p = gGT->drivers[0];
+		int finished = p != 0 && onTrack && (p->actionsFlagSet & ACTION_RACE_FINISHED) != 0;
+		if (finished && !finishedPrev && !loading)
+			AP_WumpaOnRaceFinish(p, humanPrev, p->numWumpas > heldPrev ? p->numWumpas : heldPrev);
+		finishedPrev = finished;
+		// The player as of this frame, for the next frame's finish edge.
+		humanPrev = p != 0 && onTrack && !finished && (p->actionsFlagSet & ACTION_BOT) == 0;
+		heldPrev = humanPrev ? p->numWumpas : 0;
+	}
 	if (!onTrack || loading || (gGT->gameMode1 & END_OF_RACE) != 0)
 	{
 		g_countdown_seen = 0;
 		g_starting_applied = 0;
 	}
 	else if (gGT->trafficLightsTimer >= 1)
+	{
+		// #249: a newly seen countdown starts a race attempt (a pause-menu
+		// restart too), which arms the held-at-finish payout once.
+		if (!g_countdown_seen)
+			AP_WumpaFinishArm(&g_finish_latch);
 		g_countdown_seen = 1;
+	}
 
 	if (g_wumpa_pending <= 0 && (g_wumpa_starting <= 0 || g_starting_applied))
 		return;

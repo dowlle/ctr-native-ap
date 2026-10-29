@@ -686,6 +686,9 @@ static void AP_TrackerDraw(void)
 		AP_TrackerArrow(x,y,sdata->gGT->drivers[0]->rotCurr.y+0x800,10,TRACKER_GOLD);
 	}
 	for(i=0;i<ap_tracker.count;i++) AP_TrackerDrawNode(i);
+	/* #249: this hub's Wumpa Shop slots left, open and affordable (decision 21). */
+	if(AP_WumpaShopHubTrackerLine(GEM_STONE_VALLEY+ap_tracker.hub,line,(int)sizeof line))
+		AP_TrackerText(line,32,692,14,TRACKER_GOLD,1210);
 	if(ap_tracker.pinned && ap_tracker.count) {
 		AP_TrackerNode *n=&ap_tracker.nodes[ap_tracker.focus]; int bits[48], remaining=n->physical>=0?AP_PadUncollectedGlowBits(n->destination,bits,48):0;
 		snprintf(line,sizeof line,"%s: %d RACE CHECKS, %d BOXES, %d LETTERS LEFT",n->title,remaining,

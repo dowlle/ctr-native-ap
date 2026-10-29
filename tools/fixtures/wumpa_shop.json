@@ -1,0 +1,140 @@
+{
+ "_comment": "Shared Wumpa Shop wire fixture (#249). A byte-identical copy lives in native as tools/fixtures/wumpa_shop.json. Four slots per hub at wumpa_shop_prices 150; slot 1 of each hub is priced as progression (its band bottom).",
+ "ctr_options": {
+  "wumpa_shop_slots": 4,
+  "wumpa_shop_prices": 150,
+  "wumpa_shop_progression": 0,
+  "wumpa_shop_hints": true,
+  "goal_wumpa": 300
+ },
+ "wumpa_shop": {
+  "version": 1,
+  "hubs": [
+   {
+    "level": 26,
+    "slots": [
+     {
+      "code": 35028600,
+      "price": 15,
+      "unlock_banked": 0
+     },
+     {
+      "code": 35028601,
+      "price": 29,
+      "unlock_banked": 0
+     },
+     {
+      "code": 35028602,
+      "price": 36,
+      "unlock_banked": 75
+     },
+     {
+      "code": 35028603,
+      "price": 43,
+      "unlock_banked": 150
+     }
+    ]
+   },
+   {
+    "level": 25,
+    "slots": [
+     {
+      "code": 35028640,
+      "price": 30,
+      "unlock_banked": 0
+     },
+     {
+      "code": 35028641,
+      "price": 44,
+      "unlock_banked": 0
+     },
+     {
+      "code": 35028642,
+      "price": 51,
+      "unlock_banked": 75
+     },
+     {
+      "code": 35028643,
+      "price": 58,
+      "unlock_banked": 150
+     }
+    ]
+   },
+   {
+    "level": 27,
+    "slots": [
+     {
+      "code": 35028680,
+      "price": 30,
+      "unlock_banked": 0
+     },
+     {
+      "code": 35028681,
+      "price": 44,
+      "unlock_banked": 0
+     },
+     {
+      "code": 35028682,
+      "price": 51,
+      "unlock_banked": 75
+     },
+     {
+      "code": 35028683,
+      "price": 58,
+      "unlock_banked": 150
+     }
+    ]
+   },
+   {
+    "level": 28,
+    "slots": [
+     {
+      "code": 35028720,
+      "price": 45,
+      "unlock_banked": 0
+     },
+     {
+      "code": 35028721,
+      "price": 59,
+      "unlock_banked": 0
+     },
+     {
+      "code": 35028722,
+      "price": 66,
+      "unlock_banked": 75
+     },
+     {
+      "code": 35028723,
+      "price": 73,
+      "unlock_banked": 150
+     }
+    ]
+   },
+   {
+    "level": 29,
+    "slots": [
+     {
+      "code": 35028760,
+      "price": 60,
+      "unlock_banked": 0
+     },
+     {
+      "code": 35028761,
+      "price": 74,
+      "unlock_banked": 0
+     },
+     {
+      "code": 35028762,
+      "price": 81,
+      "unlock_banked": 75
+     },
+     {
+      "code": 35028763,
+      "price": 88,
+      "unlock_banked": 150
+     }
+    ]
+   }
+  ]
+ }
+}

@@ -147,6 +147,10 @@ void AP_EvaluateGoal(void)
 		    ctr_cfg.goal_oxide, ap_oxide_first_beaten, ap_oxide_final_beaten,
 		    ctr_cfg.goal_bosses, won,
 		    ctr_cfg.goal_gems, AP_GateCountGemSum());
+		// #249: the Wumpa arm counts the lifetime banked total, kept per seed
+		// and slot in data storage. Checked or Collected shop slots never add
+		// to it, and spending never lowers it.
+		done = done && AP_WumpaGoalMet(ctr_wumpa_shop.goal, ap_net_wumpa_lifetime());
 	}
 
 	if (done)
@@ -154,10 +158,11 @@ void AP_EvaluateGoal(void)
 		char msg[128];
 		ap_goal_sent = 1;
 		snprintf(msg, sizeof msg,
-		         "[AP GOAL] goal (oxide=%d bosses=%d gems=%d) complete -- StatusUpdate(GOAL)\n",
+		         "[AP GOAL] goal (oxide=%d bosses=%d gems=%d wumpa=%d) complete -- StatusUpdate(GOAL)\n",
 		         ctr_cfg_active() ? ctr_cfg.goal_oxide : -1,
 		         ctr_cfg_active() ? ctr_cfg.goal_bosses : -1,
-		         ctr_cfg_active() ? ctr_cfg.goal_gems : -1);
+		         ctr_cfg_active() ? ctr_cfg.goal_gems : -1,
+		         ctr_cfg_active() ? ctr_wumpa_shop.goal : -1);
 		AP_AppendLog(msg);
 		ap_net_send_goal();
 	}

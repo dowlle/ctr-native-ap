@@ -995,6 +995,9 @@ static AP_OxideGarageInputs AP_OxideInputs(void)
 		in.gemsHeld = ap_content_plan_gems_held(gems);
 	}
 	in.firstOptional = ctr_cfg.oxide_1_optional;
+	in.wumpaShort = !AP_WumpaGoalMet(ctr_wumpa_shop.goal, ap_net_wumpa_lifetime());
+	if (ap_content_plan_active())
+		in.wumpaShort = 0;
 	return in;
 }
 
@@ -1417,9 +1420,11 @@ int AP_GoalAdvert(char *out, int cap)
 	// the Oxide race has been BEATEN is deliberately not shown -- under the
 	// approved encounter flow the enabled arms gate the selected finale, so
 	// winning it completes the composed goal in the same moment.
-	return AP_GoalLineFormat(out, cap, ctr_cfg.goal_oxide,
-	                         ctr_cfg.goal_bosses, AP_ComposedBossesWon(),
-	                         ctr_cfg.goal_gems, AP_GateCountGemSum());
+	return AP_GoalLineAppendWumpa(out, cap,
+	                              AP_GoalLineFormat(out, cap, ctr_cfg.goal_oxide,
+	                                                ctr_cfg.goal_bosses, AP_ComposedBossesWon(),
+	                                                ctr_cfg.goal_gems, AP_GateCountGemSum()),
+	                              ap_net_wumpa_lifetime(), ctr_wumpa_shop.goal);
 }
 
 // Trophy-track warp pad LOAD gate. When a per-seed requirement applies use it;
