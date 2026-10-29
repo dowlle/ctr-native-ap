@@ -596,6 +596,9 @@ void RECTMENU_GetHeight(struct RectMenu *m, s16 *height, b32 boolCheckSubmenu);
 void RECTMENU_GetWidth(struct RectMenu *m, s16 *width, b32 boolCheckSubmenu);
 void RECTMENU_Hide(struct RectMenu *m);
 void RECTMENU_Show(struct RectMenu *m);
+#ifdef CTR_AP
+void RECTMENU_APSetReplayRows(const struct RectMenu *m, unsigned rows);
+#endif
 
 int MixRNG_Scramble(void);
 int MixRNG_Particles(int param_1);

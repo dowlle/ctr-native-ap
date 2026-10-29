@@ -488,11 +488,16 @@ void AA_EndEvent_DrawMenu(void)
 	// trophy win that is not a boss race or a CTR-token race (which draws its own
 	// block above). The trophy check sends on the continue-press, so it is passed
 	// as the primary bit; podium rungs come from the ledger.
+	// #208 ctr_first: a plain Trophy Race win earns no Trophy check, so it
+	// shows no "TROPHY WON" block.
 	if (didWin && !didEarnCtrToken && !IS_BOSS_RACE(gGT->gameMode1) &&
 #if defined(CTR_CUSTOM_TRACKS)
 	    !AP_StandaloneRaceActive() &&
 #endif
-	    !AP_TrialTrackConfigured(gGT->levelID))
+	    !AP_TrialTrackConfigured(gGT->levelID) &&
+	    !AP_RaceStructureSuppressTrophyBit(
+	        AP_CortexTrackActive() ? AP_CortexTrackBit(AP_CV_SLOT_TROPHY)
+	                               : gGT->levelID + ADV_REWARD_FIRST_TROPHY))
 		AP_CeremonyDraw(0x100, 0x40,
 		                AP_CortexTrackActive() ? AP_CortexTrackBit(AP_CV_SLOT_TROPHY)
 		                                       : gGT->levelID + ADV_REWARD_FIRST_TROPHY, 1);
@@ -635,7 +640,10 @@ void AA_EndEvent_DrawMenu(void)
 	if (AP_CortexTrackActive())
 	{
 		int token = (gGT->gameMode2 & TOKEN_RACE) != 0;
-		if (!token && !AP_CortexTrackChecked(AP_CV_SLOT_TROPHY))
+		// #208 ctr_first: the CTR win earns this Trophy when the track
+		// has a CTR Challenge (decision 4: otherwise classic).
+		if (token == AP_RaceStructureDestCtrFirst(AP_CORTEX_DEST) &&
+		    !AP_CortexTrackChecked(AP_CV_SLOT_TROPHY))
 			gGT->podiumRewardID = STATIC_TROPHY;
 		AP_NotifyCortexTrackRace(token);
 		// #285: the Cortex check is sent above; only then may the ceremony be
@@ -654,8 +662,13 @@ void AA_EndEvent_DrawMenu(void)
 	{
 		int challenge = (gGT->gameMode2 & TOKEN_RACE)
 		    ? CTR_CFG_TRIAL_CTR : CTR_CFG_TRIAL_TROPHY;
-		if (challenge == CTR_CFG_TRIAL_TROPHY &&
-		    !AP_TrialTrackLocationChecked(gGT->levelID, challenge))
+		// #208 ctr_first: the CTR win earns the trial Trophy, so it is the
+		// one that goes to the podium with it.
+		if (AP_RaceStructureDestCtrFirst(gGT->levelID)
+		        ? (challenge == CTR_CFG_TRIAL_CTR &&
+		           !AP_TrialTrackLocationChecked(gGT->levelID, CTR_CFG_TRIAL_TROPHY))
+		        : (challenge == CTR_CFG_TRIAL_TROPHY &&
+		           !AP_TrialTrackLocationChecked(gGT->levelID, challenge)))
 			gGT->podiumRewardID = STATIC_TROPHY;
 		AP_NotifyTrialTrackRace(gGT->levelID,
 		    challenge);
@@ -697,8 +710,15 @@ void AA_EndEvent_DrawMenu(void)
 	// set => track 12 falsely "won"). Gate on the AP location CHECKED-state instead
 	// (same fix class as ThTick:601 f9fbfa7a0). AP_NotifyAdvReward dedupes, so a
 	// re-win is safe.
-	if (ctr_cfg_active() ? !AP_LocationCheckedByBit(rewardBit)
-	                     : (CHECK_ADV_BIT(adv->rewards, rewardBit) == 0))
+	// #208 ctr_first: a plain Trophy Race win does not earn the Trophy check;
+	// the CTR Challenge win does (it reaches this branch with TOKEN_RACE set
+	// and sends the Trophy as retail does). The first place still earns the
+	// podium rungs.
+	if (ctr_cfg_active() && (gGT->gameMode2 & TOKEN_RACE) == 0 &&
+	    AP_RaceStructureSuppressTrophyBit(rewardBit))
+		AP_RaceStructureTrophyRaceWon(gGT->levelID);
+	else if (ctr_cfg_active() ? !AP_LocationCheckedByBit(rewardBit)
+	                          : (CHECK_ADV_BIT(adv->rewards, rewardBit) == 0))
 #else
 	if (CHECK_ADV_BIT(adv->rewards, rewardBit) == 0)
 #endif

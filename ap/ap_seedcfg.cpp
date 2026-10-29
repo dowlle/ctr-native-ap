@@ -2018,6 +2018,86 @@ extern "C" const char *ctr_cfg_custom_track_title_ascii(void)
 	return folded;
 }
 
+// Adventure structure and race type selector (#208, schema 18). Both scalars
+// are strings and always emitted by a 0.3.0 apworld; absent is classic and the
+// `always` menu. ctr_first needs the top-level `race_structure` block (version
+// 1, `stage1_awards`: [[CTR code, Trophy code], ...]); without a valid block,
+// or with an unknown structure value, the structure is REFUSED and every
+// selector pad refuses entry rather than race under rules the apworld did not
+// generate.
+static void ap_seedcfg_parse_race_structure(const nlohmann::json &j, const nlohmann::json &opt)
+{
+	char value[24];
+	const char *problem = 0;
+	ap_rs_awards awards;
+
+	json_str(opt, "race_type_selector", value, sizeof value);
+	if (std::strcmp(value, "productive") == 0)
+		ctr_cfg.race_type_selector = AP_RS_SELECTOR_PRODUCTIVE;
+	else
+		ctr_cfg.race_type_selector = AP_RS_SELECTOR_ALWAYS;
+
+	json_str(opt, "adventure_structure", value, sizeof value);
+	auto present = opt.find("adventure_structure");
+	if (present == opt.end() || std::strcmp(value, "classic") == 0)
+	{
+		ctr_cfg.adventure_structure = AP_RS_STRUCTURE_CLASSIC;
+		if (j.find("race_structure") != j.end())
+		{
+			ctr_cfg.adventure_structure = AP_RS_STRUCTURE_REFUSED;
+			ap_cfg_log("[AP CFG] race_structure refused (block present on a classic room): race pads refuse entry\n");
+		}
+		return;
+	}
+	if (std::strcmp(value, "ctr_first") != 0)
+	{
+		ctr_cfg.adventure_structure = AP_RS_STRUCTURE_REFUSED;
+		ap_cfg_log("[AP CFG] adventure_structure refused (unknown value): race pads refuse entry\n");
+		return;
+	}
+	awards.count = 0;
+	auto block = j.find("race_structure");
+	if (block == j.end() || !block->is_object())
+		problem = "block missing";
+	else if (json_int(*block, "version", -1) != 1)
+		problem = "version is missing or not 1";
+	else
+	{
+		auto rows = block->find("stage1_awards");
+		if (rows == block->end() || !rows->is_array())
+			problem = "stage1_awards missing";
+		else if (rows->size() > AP_RS_AWARD_MAX)
+			problem = "too many award pairs";
+		else
+		{
+			for (const auto &row : *rows)
+			{
+				if (!row.is_array() || row.size() != 2 ||
+				    !row[0].is_number_integer() || !row[1].is_number_integer())
+				{
+					problem = "an award pair is not two integers";
+					break;
+				}
+				awards.ctr[awards.count] = row[0].get<long>();
+				awards.trophy[awards.count] = row[1].get<long>();
+				awards.count++;
+			}
+			if (!problem)
+				problem = AP_RaceStructureAwardsProblem(&awards);
+		}
+	}
+	if (problem)
+	{
+		ctr_cfg.adventure_structure = AP_RS_STRUCTURE_REFUSED;
+		ap_cfg_log("[AP CFG] race_structure refused (%s): race pads refuse entry\n", problem);
+		return;
+	}
+	ctr_cfg.adventure_structure = AP_RS_STRUCTURE_CTR_FIRST;
+	ctr_cfg.stage1_awards = awards;
+	ap_cfg_log("[AP CFG] adventure_structure=ctr_first: %d CTR Challenge win(s) also send their Trophy Race\n",
+	           awards.count);
+}
+
 static void ap_seedcfg_parse_crystals(const nlohmann::json &j,
                                       const nlohmann::json &opt, int schema)
 {
@@ -2241,6 +2321,11 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// AP item box colours (R11): pink until a seed asks for item colours.
 	ctr_cfg.color_boxes_by_item = 0;
 	ctr_cfg.reserve_top_up = 0;
+	ctr_cfg.spoiler_items = 0;
+	ctr_cfg.seed_box_locations = 0;
+	ctr_cfg.adventure_structure = AP_RS_STRUCTURE_CLASSIC;
+	ctr_cfg.race_type_selector = AP_RS_SELECTOR_ALWAYS;
+	ctr_cfg.stage1_awards.count = 0;
 	// Podium checks -> disabled + all rungs absent (-1) until parsed below.
 	ctr_cfg.podium_enabled = 0;
 	ctr_cfg.lettersanity_mode = 0;
@@ -2271,22 +2356,35 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// skipped; an enabled feature under a pre-16 global schema also refuses.
 	// The new plan owns its complete profile. Never interpret its physical
 	// identities or item ledger through the legacy pad/cup fallback parser.
-	// #451 owns this additive envelope field. Keep the content-plan validator's
-	// closed option set intact by removing only our field from its input, then
-	// apply it only after that plan was admitted. Legacy options are read below.
+	// #451 and #459 own these additive envelope fields. Keep the content-plan
+	// validator's closed option set intact by removing only our Boolean fields
+	// from its input, then apply them only after that plan was admitted. A
+	// non-Boolean value stays in and the validator refuses it as before.
+	// Legacy options are read below.
+	static const char *const kAdditiveContentFields[] = {"reserve_top_up", "spoiler_items"};
+	bool strip_additive = false;
+	if (j.is_object() && j.contains("content_plan") && j.contains("ctr_options") && j["ctr_options"].is_object())
+		for (const char *key : kAdditiveContentFields)
+			strip_additive |= j["ctr_options"].contains(key) && j["ctr_options"][key].is_boolean();
 	int content_result;
-	if (j.is_object() && j.contains("content_plan") && j.contains("ctr_options") &&
-	    j["ctr_options"].is_object() && j["ctr_options"].contains("reserve_top_up") &&
-	    j["ctr_options"]["reserve_top_up"].is_boolean())
+	if (strip_additive)
 	{
 		nlohmann::json content_input = j;
-		content_input["ctr_options"].erase("reserve_top_up");
+		for (const char *key : kAdditiveContentFields)
+			if (content_input["ctr_options"].contains(key) && content_input["ctr_options"][key].is_boolean())
+				content_input["ctr_options"].erase(key);
 		content_result = parse_content_plan(content_input);
 		if (content_result == 2)
+		{
 			ctr_cfg.reserve_top_up = json_int(j["ctr_options"], "reserve_top_up", 0) != 0;
+			ctr_cfg.spoiler_items = json_int(j["ctr_options"], "spoiler_items", 0) != 0;
+		}
 	}
 	else
 		content_result = parse_content_plan(j);
+	// #459: an admitted content plan's envelope says whether it has AP boxes.
+	if (content_result == 2)
+		ctr_cfg.seed_box_locations = json_int(j["ctr_options"], "box_locations", 0) != 0;
 	if (content_result != 1)
 		return;
 	// J03 (decision 9): the boss record shapes the Hit block's boss-win
@@ -2415,6 +2513,12 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// no schema bump. Absent -> 0 -> every box pink, the shipped look.
 	ctr_cfg.color_boxes_by_item = json_int(opt, "color_boxes_by_item", 0) != 0;
 	ctr_cfg.reserve_top_up = json_int(opt, "reserve_top_up", 0) != 0;
+	// Spoiler Items (#459): absent -> 0 -> previews and colours as before.
+	ctr_cfg.spoiler_items = json_int(opt, "spoiler_items", 0) != 0;
+	ctr_cfg.seed_box_locations = json_int(opt, "box_locations", 0) != 0;
+	if (ctr_cfg.spoiler_items)
+		ap_cfg_log("[AP CFG] spoiler_items=1 -> pad previews and AP box colours wait for their reveal items\n");
+	ap_seedcfg_parse_race_structure(j, opt);
 	if (ctr_cfg.color_boxes_by_item)
 		ap_cfg_log("[AP CFG] color_boxes_by_item=1 -> AP item boxes wear their item's Archipelago colour\n");
 	// Optional comfort field: absent -> stays -1 (unset). Not gated by and does not

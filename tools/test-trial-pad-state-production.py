@@ -55,6 +55,11 @@ static int cvValid=0,cvTrophyCode=35026000,cvTrophyChecked=0;
 static int AP_CortexDestValid(void){return active&&cvValid;}
 static long AP_CortexTrackCode(int slot){assert(slot==AP_CV_SLOT_TROPHY);return cvValid?cvTrophyCode:-1;}
 int AP_CortexTrackChecked(int slot){assert(slot==AP_CV_SLOT_TROPHY);return cvValid&&cvTrophyChecked;}
+/* #208 ctr_first seam: the structure and the destination's open CTR side. */
+static int ctrFirst=0,ctrSide=0;
+int AP_RaceStructureCtrFirst(void){return ctrFirst;}
+int AP_RaceStructureDestCtrFirst(int d){assert(d==destination);return ctrFirst;}
+static int AP_DestCtrSideLeft(int d){assert(d==destination);return ctrSide;}
 '''
 tests=r'''
 int main(void){
@@ -100,6 +105,16 @@ int main(void){
  wumpa=0;stage2=1;assert(AP_PadState(physical,destination)==4);
  remaining=0;assert(AP_PadState(physical,destination)==5);
  cvTrophyCode=-1;assert(AP_PadState(physical,destination)==0);cvTrophyCode=35026000;
+ /* #208 ctr_first: an open CTR side is stage 1, so a won pad without stage 2
+  * stays Raceable instead of Re-locking; classic ignores the CTR side. */
+ for(destination=0;destination<=16;destination+=16){
+  remaining=1;boxes=0;wumpa=0;letters=0;trophyChecked=1;stage2=0;
+  ctrSide=1;ctrFirst=0;assert(AP_PadState(physical,destination)==3);
+  ctrFirst=1;assert(AP_PadState(physical,destination)==2);
+  assert(AP_PadPhase1ReRaceable(physical,destination));
+  ctrSide=0;assert(AP_PadState(physical,destination)==3);
+  ctrFirst=0;
+ }
  /* Retail and trial answers are unchanged with the block accepted. */
  remaining=1;destination=0;trophyChecked=1;stage2=1;
  assert(AP_PadState(physical,destination)==4);

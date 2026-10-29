@@ -311,14 +311,17 @@ static void family_settings(const J &t, ctr_content_checks &fam) {
 }
 // Pool-only packs (#133 PR 4a): items that add no location and no rule. The
 // plan's optional `item_packs` record sizes their ledger rows (apworld
-// content_plan.PACK_ITEMS). Returns item code -> copies.
-static std::map<int64_t, int> item_packs(const J &t) {
-    static const char *const keys[3] = {"progressive_starting_wumpa", "turbo_grant", "tizi_helper"};
-    static const int64_t codes[3] = {35010122, 35010189, 35010188};
-    need(t.is_object() && !t.empty() && t.size() <= 3, "item_packs must be a nonempty record");
+// content_plan.PACK_ITEMS). Returns item code -> copies. Spoiler Items (#459)
+// add Warp Pad Preview and, only on a plan with item boxes, AP Box Colours,
+// which needs Warp Pad Preview (apworld content_plan.check_pack_settings).
+static std::map<int64_t, int> item_packs(const J &t, bool has_boxes) {
+    static const char *const keys[5] = {"progressive_starting_wumpa", "turbo_grant", "tizi_helper",
+                                        "warp_pad_preview", "ap_box_colours"};
+    static const int64_t codes[5] = {35010122, 35010189, 35010188, 35010204, 35010205};
+    need(t.is_object() && !t.empty() && t.size() <= 5, "item_packs must be a nonempty record");
     std::map<int64_t, int> out;
     size_t seen = 0;
-    for (int k = 0; k < 3; ++k) {
+    for (int k = 0; k < 5; ++k) {
         if (!t.contains(keys[k])) continue;
         ++seen;
         const J &v = t[keys[k]];
@@ -326,6 +329,8 @@ static std::map<int64_t, int> item_packs(const J &t) {
         else { need(v.is_boolean() && v.get<bool>(), "item_packs grants must be true when present"); out[codes[k]] = 1; }
     }
     need(seen == t.size(), "unknown item_packs field");
+    need(!t.contains("ap_box_colours") || (t.contains("warp_pad_preview") && has_boxes),
+         "item_packs.ap_box_colours needs warp_pad_preview and item boxes");
     return out;
 }
 // Character unlocks (#133 PR 4b). Roster slot (the unlock item 35010123 +
@@ -498,7 +503,7 @@ static void validate(const J &p, State &out) {
     ctr_content_checks &fam = out.families;
     fam = ctr_content_checks{};
     if (has_families) family_settings(p["track_checks"], fam);
-    const std::map<int64_t, int> packs = has_packs ? item_packs(p["item_packs"]) : std::map<int64_t, int>{};
+    const std::map<int64_t, int> packs = has_packs ? item_packs(p["item_packs"], has_boxes) : std::map<int64_t, int>{};
     // Character unlocks (#133 PR 4b): one ledger row per unlock racer.
     std::map<int64_t, int> racer_rows;
     if (has_racers) {

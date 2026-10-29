@@ -213,6 +213,7 @@ tools/test-deathlink-send-seedcfg.cpp
 tools/test-reconnect-catchup.cpp skip needs the fake AP server (tools/fake-ap-server.py) on a socket; run by hand, see its header
 tools/test-proc-hitbox-distance.c
 tools/test-spawn-null-guards.py
+tools/test-spoiler-items-production.py
 tools/test-statbar-rank.c
 tools/test-bsp-instance.py
 tools/test-custom-ctr-result.py
@@ -235,3 +236,4 @@ tools/test-content-pad-entry.py skip needs the installed Baby T Park package, a 
 tools/test-content-plan-parity.py skip needs a paired apworld checkout and the AP virtualenv; run by hand
 tools/test-arcade-crystals-production.py
 tools/test-reverse-camera-production.py
+tools/test-race-structure.py

@@ -616,6 +616,14 @@ int AP_WarpPadRewardGemColour(int globalBit);
 // back to the vanilla token group on -1 (unscouted placeholder).
 int AP_WarpPadRewardTokenColour(int globalBit);
 
+// Spoiler Items (#459 ruling, 2026-10-28): turn one warp pad prize slot into
+// the neutral Archipelago marker a pad shows while Warp Pad Preview is missing.
+// The marker wears the uniform surprise colour whatever the seed's
+// ap_item_type_colors says, so it names no item, class or count. Returns 0 and
+// leaves the instance alone when the marker model is not parked.
+int AP_WarpPadNeutralMarkerReady(void);
+int AP_WarpPadShowNeutralMarker(struct Instance *prize);
+
 // 1 if the AP location at `globalBit` (= word*32+bit) has been CHECKED on the
 // server for our own slot. Use this -- NOT CHECK_ADV_BIT on the AdvProgress bits
 // -- to ask "has the player completed this location" in AP mode: AP_ApplyItems
@@ -763,6 +771,24 @@ int AP_TrialTrackLocationChecked(int levelID, int challenge);
 // Pad lifecycle, glow and the trial entry route all key off this.
 int AP_TrialChallengeServable(int destLevelID);
 void AP_NotifyTrialTrackRace(int levelID, int challenge);
+// Adventure structure ctr_first (#208, ap_hooks_race.c). CtrFirst: the seed
+// runs ctr_first with a valid award block. SuppressTrophy: a plain Trophy Race
+// win must not send this Trophy code (a CTR win earns it). TrophyRaceWon: a
+// retail Trophy Race won under ctr_first; sends the podium rungs only.
+int AP_RaceStructureCtrFirst(void);
+int AP_RaceStructureSuppressTrophy(long trophyCode);
+int AP_RaceStructureSuppressTrophyBit(int rewardBit);
+void AP_RaceStructureTrophyRaceWon(int levelID);
+int AP_CustomTrackTrophyEarnedByCtr(void);
+// Per destination (decision 4): DestCtrFirst is 1 when this destination runs
+// ctr_first (its Trophy code is in the award pairs); DestStructure is the
+// structure the selector applies to it; PodiumCtrFirst asks the same by podium
+// track, so a CTR Challenge there earns its rungs (decision 14).
+int AP_RaceStructureDestCtrFirst(int destLevelID);
+int AP_RaceStructureDestStructure(int destLevelID);
+int AP_RaceStructurePodiumCtrFirst(int podiumTrack);
+// The race type selector in force: the Options row over the seed (decision 15).
+int AP_RaceTypeSelectorSetting(void);
 
 // ── Cortex Vortex pad track (schema 15, virtual destination 110) ──
 // AP_CortexTrackActive is THE identity question every LevelID-13 consumer asks
@@ -874,6 +900,14 @@ int AP_PadStage1Met(int physLevelID);
 // stage-2 requirement it is not actually withholding entry on. Same keying as
 // AP_PadState. Returns 0 in vanilla mode and for any non-race destination.
 int AP_PadPhase1ReRaceable(int physLevelID, int destLevelID);
+// #208 race type selector (ap_hooks_pads.c). Rows: fills the rows a race
+// destination offers now and returns 1, or returns 0 when the destination
+// does not use the selector. Replayable: a Done race pad whose entry is still
+// met, which opens the selector instead of staying hard-locked.
+int AP_PadUsesSelector(int destLevelID);
+int AP_PadSelectorRows(int physLevelID, int destLevelID, ap_rs_rows *rows);
+void AP_PadLogSelector(int physLevelID, int destLevelID, const ap_rs_rows *rows, int decision);
+int AP_PadReplayable(int physLevelID, int destLevelID);
 
 // Is there a Hit Character opportunity behind this pad (block schema 2, the
 // pool draw)? True for a Hit-supported ordinary destination (0..17, trials only
