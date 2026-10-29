@@ -792,19 +792,15 @@ extern "C" int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName,
 			args.push_back("--set");
 			args.push_back(set);
 		}
-		for (const APSoloTrackInfo &t : g_tracks)
-		{
-			if (t.pick == AP_SOLO_TRACK_OFF)
-				continue;
-			args.push_back("--track");
-			args.push_back(t.id);
-			if (t.pick == AP_SOLO_TRACK_GUARANTEED)
-			{
-				args.push_back("--guarantee");
-				args.push_back(t.id);
-			}
-		}
 	}
+	// Picked custom tracks go with a preset's options and with an imported or
+	// inbox YAML alike (round 2 decision 5); the picks are cleared whenever a
+	// new start is chosen.
+	std::vector<std::pair<std::string, int>> picks;
+	for (const APSoloTrackInfo &t : g_tracks)
+		picks.emplace_back(t.id, t.pick);
+	for (const std::string &arg : AP_SoloTrackArgs(picks))
+		args.push_back(arg);
 	return JobStart(JOB_GENERATE, args, kGenerateLimitMs) ? 1 : 0;
 }
 
@@ -832,6 +828,8 @@ extern "C" void AP_Solo_JobClear(void)
 	if (g_job.state != AP_SOLO_JOB_RUNNING)
 		g_job.state = AP_SOLO_JOB_IDLE;
 }
+
+extern "C" int AP_Solo_TracksViaOptions(int isPreset) { return AP_SoloTracksViaOptions(isPreset != 0) ? 1 : 0; }
 
 extern "C" int AP_Solo_TrackCount(void) { return (int)g_tracks.size(); }
 

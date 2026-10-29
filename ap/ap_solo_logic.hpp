@@ -281,6 +281,35 @@ static inline int AP_SoloTrackNextPick(int pick)
 	return pick >= 0 && pick < 2 ? pick + 1 : 0;
 }
 
+// The --track and --guarantee arguments for the picks (id, pick 0 off, 1 in
+// the pool, 2 own pad). They go with a preset's options and with an imported
+// or inbox YAML alike (round 2 decision 5); a YAML gets no --set arguments.
+static inline std::vector<std::string> AP_SoloTrackArgs(const std::vector<std::pair<std::string, int>> &picks)
+{
+	std::vector<std::string> out;
+	for (const auto &p : picks)
+	{
+		if (p.second != 1 && p.second != 2)
+			continue;
+		out.push_back("--track");
+		out.push_back(p.first);
+		if (p.second == 2)
+		{
+			out.push_back("--guarantee");
+			out.push_back(p.first);
+		}
+	}
+	return out;
+}
+
+// Back from Custom Tracks, a refused pick's message and the Review page's
+// "options as set" line follow the start: a preset came by way of its
+// options screen, a YAML straight from the start list.
+static inline bool AP_SoloTracksViaOptions(bool isPreset)
+{
+	return isPreset;
+}
+
 // solo/tracks/<track key>__<revision>.json, or "" when either part is not
 // the plain text a package descriptor allows (ap_content_plan_impl.hpp: a
 // track key is lowercase letters and digits in hyphenated groups; a revision

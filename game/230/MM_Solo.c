@@ -10,7 +10,8 @@
      New      bundled presets, saved YAMLs, then YAMLs in solo/inbox.
      Options  the curated options of a preset: Left / Right change, Square
               shows the help text. DeathLink is fixed off in solo.
-     Tracks   installed custom tracks for a preset (decision 32), shown only
+     Tracks   installed custom tracks for a preset (decision 32) or an
+              imported or inbox YAML (round 2 decision 5), shown only
               when there are any: Cross cycles off, in the pool, own pad.
      Review   slot name (Cross edits it) and Generate.
      Busy     a runtime job with its phase; Circle cancels generation.
@@ -383,9 +384,15 @@ static void MM_Solo_PageNew(uint32_t *ot, struct GamepadBuffer *pad)
 		}
 		else
 		{
+			/* An imported or inbox YAML generates as it is, but may still
+			   take custom tracks (round 2 decision 5): list them first. */
 			s_soloFromOptions = 0;
 			s_soloFromTracks = 0;
-			MM_Solo_Go(SOLO_REVIEW);
+			AP_Solo_TracksClear();
+			if (AP_Solo_TracksStart())
+				MM_Solo_Busy(SOLO_JOB_TRACKS);
+			else
+				MM_Solo_Go(SOLO_REVIEW);
 		}
 		return;
 	}
@@ -548,6 +555,9 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 		MM_Solo_Fit(line, fit, sizeof fit, 0x1A0);
 		DecalFont_DrawLineOT(fit, 0x100, 0xB4, FONT_SMALL, JUSTIFY_CENTER | GRAY, ot);
 	}
+	if (!s_soloStart.isPreset && s_soloSel >= rows)
+		DecalFont_DrawLineOT("The YAML's own settings stay; the tracks are added.", 0x100, 0xB4, FONT_SMALL,
+		                     JUSTIFY_CENTER | GRAY, ot);
 	MM_Solo_Footer("*: CHANGE   ^: BACK", ot);
 }
 
@@ -610,9 +620,10 @@ static void MM_Solo_PageReview(uint32_t *ot, struct GamepadBuffer *pad)
 	snprintf(line, sizeof line, "Start: %s", s_soloStart.label);
 	MM_Solo_Fit(line, fit, sizeof fit, 0x1A0);
 	DecalFont_DrawLineOT(fit, 0x38, 0x38, FONT_SMALL, WHITE, ot);
-	if (s_soloFromOptions && AP_Solo_TracksPicked() > 0)
+	if (AP_Solo_TracksPicked() > 0)
 	{
-		snprintf(line, sizeof line, "Options: as set, plus %d custom track%s", AP_Solo_TracksPicked(),
+		snprintf(line, sizeof line, "Options: %s, plus %d custom track%s",
+		         s_soloFromOptions ? "as set" : "as in the YAML", AP_Solo_TracksPicked(),
 		         AP_Solo_TracksPicked() == 1 ? "" : "s");
 		DecalFont_DrawLineOT(line, 0x38, 0x44, FONT_SMALL, WHITE, ot);
 	}
@@ -667,7 +678,7 @@ static void MM_Solo_PageBusy(uint32_t *ot, struct GamepadBuffer *pad)
 		if (s_soloBusyJob == SOLO_JOB_TRACKS)
 		{
 			s_soloPage = SOLO_MESSAGE;
-			s_soloFromOptions = 2; /* the message returns to Options */
+			s_soloFromOptions = 2; /* the message returns to Options, or to the YAML list */
 			return;
 		}
 		if (s_soloBusyJob == SOLO_JOB_GENERATE && s_soloFromTracks)
@@ -733,7 +744,9 @@ static void MM_Solo_PageMessage(uint32_t *ot, struct GamepadBuffer *pad)
 	if ((pad->buttonsTapped & BTN_CROSS) != 0)
 	{
 		OtherFX_Play(2, 1);
-		if (s_soloFromOptions == 2)
+		if (s_soloFromOptions == 2 && !AP_Solo_TracksViaOptions(s_soloStart.isPreset))
+			MM_Solo_Go(SOLO_NEW);
+		else if (s_soloFromOptions == 2)
 		{
 			s_soloFromOptions = 1;
 			s_soloPage = SOLO_OPTIONS;
@@ -742,7 +755,7 @@ static void MM_Solo_PageMessage(uint32_t *ot, struct GamepadBuffer *pad)
 		}
 		else if (s_soloFromOptions == 3)
 		{
-			s_soloFromOptions = 1;
+			s_soloFromOptions = AP_Solo_TracksViaOptions(s_soloStart.isPreset);
 			if (AP_Solo_TracksStart())
 				MM_Solo_Busy(SOLO_JOB_TRACKS);
 			else
@@ -767,9 +780,14 @@ static void MM_Solo_Back(void)
 	case SOLO_DETAILS: case SOLO_NEW: case SOLO_SESSION: MM_Solo_Refresh(); break;
 	case SOLO_OPTIONS: MM_Solo_Go(SOLO_NEW); break;
 	case SOLO_TRACKS:
-		s_soloPage = SOLO_OPTIONS;
-		s_soloSel = 0;
-		s_soloTop = 0;
+		if (AP_Solo_TracksViaOptions(s_soloStart.isPreset))
+		{
+			s_soloPage = SOLO_OPTIONS;
+			s_soloSel = 0;
+			s_soloTop = 0;
+		}
+		else
+			MM_Solo_Go(SOLO_NEW);
 		break;
 	case SOLO_HELP: s_soloPage = SOLO_OPTIONS; break;
 	case SOLO_REVIEW:
