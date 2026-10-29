@@ -507,5 +507,29 @@ class AuthoringDownloadVerifierTests(unittest.TestCase):
         self.assertIn("checksum mismatch", result.stderr)
 
 
+class UpdaterArchiveLimitTests(unittest.TestCase):
+    """The in-game updater refuses client archives over 64 MB (#301)."""
+
+    def test_archive_over_updater_limit_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            release = Path(tmp)
+            name = "ctr-archipelago-v0.3.1-linux-x86.tar.gz"
+            with (release / name).open("wb") as out:
+                out.truncate(VERIFIER.UPDATER_MAX_ARCHIVE + 1)
+            with self.assertRaises(VERIFIER.PolicyError) as raised:
+                VERIFIER.verify_archive_hashes(release, {name: "0" * 64})
+            self.assertIn("larger than the in-game updater accepts", str(raised.exception))
+
+    def test_archive_at_updater_limit_reaches_hash_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            release = Path(tmp)
+            name = "ctr-archipelago-v0.3.1-linux-x86.tar.gz"
+            with (release / name).open("wb") as out:
+                out.truncate(VERIFIER.UPDATER_MAX_ARCHIVE)
+            with self.assertRaises(VERIFIER.PolicyError) as raised:
+                VERIFIER.verify_archive_hashes(release, {name: "0" * 64})
+            self.assertIn("SHA-256 mismatch", str(raised.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -18,6 +18,9 @@
 #include <common.h>
 #include "ap_hooks.h"
 #include "ap_race_attempt_logic.h"
+// MainGameEnd.c and 223.c call DeathLink hooks; the unity build declares them
+// through game_unity.h.
+#include "ap_deathlink.h"
 #include "game/GAMEPROG.c"
 #include "game/MAIN/MainGameEnd.c"
 #include "game/223.c"

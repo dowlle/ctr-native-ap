@@ -33,6 +33,8 @@
 // every difference between builds comes from the camera math, never from
 // level data.
 
+// CAM.c calls the demo camera; the unity build declares it through game_unity.h.
+#include "ap/ap_democam.h"
 #include "game/CAM.c"
 #include "game/MATH/MATH_7_MatrixStubs.c"
 #include "game/MATH/MATH_0_Sin.c"

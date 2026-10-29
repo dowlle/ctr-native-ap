@@ -245,6 +245,59 @@ generated Crash Team Racing YAML locally.
 The released client and apworld are a pair. Update both together, even when a
 release appears to change only one side.
 
+### If an in-game update is interrupted
+
+The in-game updater (a prompt on the main menu appears when a newer stable
+release exists) installs `ctr.apworld`, the Cortex Vortex files (in the assets
+folder the game reads), the bundled solo runtime (`solo-runtime/`, replaced as
+a whole folder) and the client in one step. It keeps your previous files next
+to the new ones with a `.old` ending (`solo-runtime.old` for the runtime). If
+the game is closed, killed or loses power during that step, the next start
+restores the `.old` files by itself. Your solo seeds and saves in `solo/` are
+never touched. While Play Solo runs a session or makes a seed, the update
+waits: stop Play Solo first, then choose RESTART.
+
+On Linux and Steam Deck the client file is never missing during the update:
+the new one replaces it in a single step, and the previous one is kept as
+`ctr_native_ap.old`.
+
+On Windows one moment cannot be covered: the client is renamed to
+`ctr_native_ap.exe.old` just before the new one takes its place. If that is the
+moment the install was cut off, the game does not start because no
+`ctr_native_ap.exe` exists. Rename `ctr_native_ap.exe.old` back to
+`ctr_native_ap.exe` and start the game; it then restores the other files. The
+same step by hand works for any file whose `.old` copy is still there (for
+example `ctr.apworld.old` back to `ctr.apworld`, or the `solo-runtime.old`
+folder back to `solo-runtime` after removing the new one). Your `config.ini`,
+saves, solo seeds and the disc image are never touched by an update.
+
+## Playing solo, without a server
+
+From 0.3.0 the client can make and host a single-player seed itself. Choose
+**PLAY SOLO** on the title screen, or open **Options > Connection > Play Solo**:
+
+- **New solo seed** offers the bundled presets (Quick, Standard, Full
+  Adventure), any YAML you imported, and any YAML you drop into the `solo/inbox`
+  folder next to the game (the screen shows the path). A preset opens a short
+  options screen; Square shows what an option does. DeathLink is off in solo,
+  because nobody else is in the room.
+- When custom tracks are installed, a preset then shows **Custom Tracks**. Cross
+  on a track cycles: not used, **In pool** (the seed may use it) and **Own pad**
+  (it gets an Adventure pad of its own). A track is listed when its files are in
+  `assets/tracks/<track>/original` and the client knows its descriptor: from a
+  room that used the track, or a descriptor file in the `solo/tracks` folder.
+- **Import YAML file** takes a YAML you made with the YAML Builder.
+- **Import room file** takes a one-player CTR room (`.archipelago` or
+  `AP_*.zip`) generated elsewhere.
+- Your solo seeds are listed with their progress. Cross resumes one; Square shows
+  its details and lets you delete it.
+
+The client starts a private Archipelago server on your own computer
+(127.0.0.1, ports 38301 to 38320) and connects to it; nothing goes over the
+internet. Everything solo is stored in the `solo` folder next to the game, so
+back that folder up together with your memory cards. Multiplayer still uses
+**Connect** as before.
+
 ## Experimental custom content in 0.2.0
 
 The public archive contains no custom-track files. Version 0.2.0 recognizes one

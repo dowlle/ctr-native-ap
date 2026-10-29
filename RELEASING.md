@@ -211,6 +211,21 @@ exact shape, with sorted keys and a single trailing newline:
 }
 ```
 
+The in-game updater (#301, `ap/ap_update_core.cpp`) reads this contract in
+released clients: it offers only a stable `vX.Y.Z` release whose assets include
+`manifest.json`, `manifest.json.minisig` and both client archives, verifies the
+signature with the public key compiled into the client, and installs from the
+platform archive's `ctr-archipelago-vX.Y.Z/` folder only `ctr_native_ap(.exe)`,
+`ctr.apworld`, the files directly in `assets/tracks/cortex-vortex/` and the whole
+`solo-runtime/` folder (#89), which replaces the installed runtime folder as one
+unit and must carry `solo-runtime/RUNTIME.txt`. The player's `solo/` folder is
+never written. The archive may be at most 64 MB. Changing the archive names,
+the folder inside them, those paths or the signing key changes what older
+clients install or stops them offering updates; treat any of those as a
+reviewed change. A file placed in that Cortex Vortex folder or in the runtime
+reaches every updated install, so it needs the same redistribution permission
+as the archive itself.
+
 It covers **only the two client archives**. `ctr.apworld`, the player YAML,
 debug files and checksum sidecars stay outside it: the manifest is the client
 download contract, while the standard asset gate below still requires them. A
@@ -220,10 +235,20 @@ and upload steps are scoped to a complete two-platform release in section 7.
 - [ ] Confirm the assembly output contains `manifest.json` with a trailing
       newline and exactly the two client archive names above.
 - [ ] The preparation workflow already ran
-      `python3 tools/verify-release.py release --version vX.Y.Z --pre-sign` on
+      `python3 tools/verify-release.py release --version vX.Y.Z --pre-sign --require-solo-runtime` on
       the twelve-file unsigned assembly. Run it again yourself if you assembled
       by hand. `--pre-sign` verifies the archive hashes and the standard
       sidecars without a signature and prints that it is not a signed release.
+      `--require-solo-runtime` checks that both client archives carry
+      `solo-runtime/RUNTIME.txt`, the interpreter, and a `ctr.apworld` equal to
+      the standalone asset.
+- [ ] Solo runtime (#89): the preparation workflow builds `solo-runtime/` for
+      each platform with `tools/solo/build-runtime.py` from the exact
+      `ctr.apworld` and the pins in `tools/solo/runtime-lock.json`, and the
+      assembler puts it inside both client archives, so the signed manifest
+      covers it. Before the tag, add both new archives to the VirusTotal and
+      Microsoft false-positive routine. Change the Archipelago core or the
+      interpreter pin only in its own PR, with a full fuzz run on that core.
 
 ## 5. Tag
 

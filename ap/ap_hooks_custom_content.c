@@ -182,6 +182,10 @@ static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct Custom
 	snprintf(ap_content_files[index].levPath, sizeof ap_content_files[index].levPath, "%s", status->levPath);
 	snprintf(ap_content_files[index].vrmPath, sizeof ap_content_files[index].vrmPath, "%s", status->vrmPath);
 	ap_content_files[index].measured = report.measured;
+#if !defined(CTR_AP_AUTHORING)
+	// Verified on disk: Play Solo's custom-track step may now offer it (#89).
+	AP_Solo_RecordTrackDescriptor(pkg->content_id, pkg->revision, ap_content_plan_package_json(index));
+#endif
 	return 1;
 }
 

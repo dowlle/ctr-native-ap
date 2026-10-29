@@ -421,12 +421,15 @@ void RECTMENU_GetHeight(struct RectMenu *m, s16 *height, b32 boolCheckSubmenu)
 
 
 // Row label lookup. Retail reads sdata->lngStrings directly; AP rows that have
-// no retail string (the hub pause TRACKER row, AP_LNG_TRACKER) resolve here.
+// no retail string (the hub pause TRACKER row, AP_LNG_TRACKER, and the title
+// screen's PLAY SOLO row, AP_LNG_PLAY_SOLO) resolve here.
 static char *RECTMENU_RowString(int index)
 {
 #ifdef CTR_AP
 	if (index == AP_LNG_TRACKER)
 		return (char *)"TRACKER";
+	if (index == AP_LNG_PLAY_SOLO)
+		return (char *)"PLAY SOLO";
 #endif
 	return sdata->lngStrings[index];
 }
@@ -929,6 +932,8 @@ void RECTMENU_ProcessState()
 	// A room-link prompt on the settled main menu owns input the same way
 	// (issue #334): the menu underneath neither runs nor sees the answer press.
 	if (AP_LinkMenuFrame()) return;
+	// The updater prompt (issue #301) likewise, after a waiting room link.
+	if (AP_UpdateMenuFrame()) return;
 #endif
 	struct RectMenu *currMenu;
 	s16 width;
