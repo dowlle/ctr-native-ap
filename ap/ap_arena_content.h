@@ -26,7 +26,7 @@ static inline int AP_ArenaPickupCode(int level,int ordinal) {
  return a<0?0:35028400+20*a+ordinal;
 }
 static inline int AP_ArenaTimeLimit(int level) {
- return AP_ArcadeArenaIndex(level)>=0?576000:level==21?79680:level==19?81600:level==23?76800:level==18?115200:0;
+ return level==20?62400:level==22?86400:level==24?48000:level==21?79680:level==19?81600:level==23?76800:level==18?115200:0;
 }
 static const short ap_arcade_anchors[3][20][3] = {
  { /* Parking Lot */

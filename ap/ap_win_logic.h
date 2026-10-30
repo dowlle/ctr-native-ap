@@ -750,8 +750,6 @@ enum
 	AP_WS_NEED_CUP  = 2
 };
 
-#define AP_WS_IDENT_CAP 192
-
 typedef struct
 {
 	int raceValid;
@@ -759,8 +757,10 @@ typedef struct
 	int cupValid;
 	AP_WinStakes cup;
 	int cupArmed; // entered a cup from the hub; its first leg decides
-	// Seed and slot the decisions above belong to (AP_WinStakesConnect).
-	char ident[AP_WS_IDENT_CAP];
+	// Seed and slot the decisions above belong to (AP_WinStakesConnect), as a
+	// 64-bit hash of the full names. Names are never truncated for this.
+	int identValid;
+	unsigned long long ident;
 } AP_WinStakesLatch;
 
 static inline void AP_WinStakesLatchReset(AP_WinStakesLatch *l)
@@ -776,35 +776,42 @@ static inline void AP_WinStakesLatchReset(AP_WinStakesLatch *l)
 // server switch to another room) or an unknown identity forgets every decision:
 // the previous seed's stakes must never apply to this seed's loss. Returns 1
 // when the decisions were forgotten.
-static inline int AP_WinStakesConnect(AP_WinStakesLatch *l, const char *seed, const char *slot)
+// FNV-1a over the seed name, a separator no name contains, and the slot name.
+// Returns 0 when either name is unknown. Feeds the full strings, so two long
+// names that share a prefix still differ.
+static inline int AP_WinStakesIdentHash(const char *seed, const char *slot, unsigned long long *out)
 {
-	char now[AP_WS_IDENT_CAP];
-	int n = 0, i, same;
-	const char *p;
+	unsigned long long h = 14695981039346656037ULL;
+	const unsigned char *p;
 
-	if (seed && seed[0] && slot && slot[0])
-	{
-		for (p = seed; *p && n < AP_WS_IDENT_CAP - 2; p++)
-			now[n++] = *p;
-		now[n++] = '\x1f'; // separator no seed or slot name contains
-		for (p = slot; *p && n < AP_WS_IDENT_CAP - 1; p++)
-			now[n++] = *p;
-	}
-	now[n] = '\0';
-	same = n > 0;
-	for (i = 0; same && i < AP_WS_IDENT_CAP; i++)
-	{
-		if (l->ident[i] != now[i])
-			same = 0;
-		if (now[i] == '\0')
-			break;
-	}
-	if (same)
+	if (!seed || !seed[0] || !slot || !slot[0])
+		return 0;
+	for (p = (const unsigned char *)seed; *p; p++)
+		h = (h ^ *p) * 1099511628211ULL;
+	h = (h ^ 0x1f) * 1099511628211ULL;
+	for (p = (const unsigned char *)slot; *p; p++)
+		h = (h ^ *p) * 1099511628211ULL;
+	*out = h;
+	return 1;
+}
+
+// Same as AP_WinStakesConnect for an identity hash already computed from the
+// full names (identValid 0 = unknown identity, which always forgets).
+static inline int AP_WinStakesConnectHash(AP_WinStakesLatch *l, int identValid, unsigned long long ident)
+{
+	if (identValid && l->identValid && l->ident == ident)
 		return 0;
 	AP_WinStakesLatchReset(l);
-	for (i = 0; i <= n; i++)
-		l->ident[i] = now[i];
+	l->identValid = identValid;
+	l->ident = identValid ? ident : 0;
 	return 1;
+}
+
+static inline int AP_WinStakesConnect(AP_WinStakesLatch *l, const char *seed, const char *slot)
+{
+	unsigned long long id = 0;
+	int ok = AP_WinStakesIdentHash(seed, slot, &id);
+	return AP_WinStakesConnectHash(l, ok, id);
 }
 
 static inline void AP_WinStakesCupEntered(AP_WinStakesLatch *l)

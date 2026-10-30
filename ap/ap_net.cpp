@@ -26,6 +26,7 @@
 #include "ap_boss_door_scene_seen.h" // #377 once-per-hub boss-door scene flag
 #include "ap_boss_won_flags.h" // #458 personally won boss races and Oxide's Challenge
 #include "ap_hit_policy.h" // AP_HitFallbackConflictPure -- the block schema 3 check
+#include "ap_win_logic.h" // AP_WinStakesIdentHash: full-name identity for the race stakes latch
 #include "ap_deathlink_inbox.h" // inbound DeathLink bounces until the game thread drains them
 #include "ap_stat_select_logic.h" // AP_StatSel_ValueOk: the stored rank selection bound
 
@@ -2302,6 +2303,22 @@ extern "C" int ap_net_slot_name(char *buf, int n)
 	return buf[0] != '\0';
 }
 
+// Hash of the full seed and slot names (no truncation), for the race stakes
+// latch. 0 and *out untouched when either name is unknown.
+extern "C" int ap_net_identity_hash(unsigned long long *out)
+{
+	if (!out || !g_ap)
+		return 0;
+	try
+	{
+		return AP_WinStakesIdentHash(g_ap->get_seed().c_str(), g_ap->get_slot().c_str(), out);
+	}
+	catch (...)
+	{
+		return 0;
+	}
+}
+
 extern "C" void ap_net_deathlink_enable(void)
 {
 	if (!g_ap)
@@ -2351,6 +2368,13 @@ extern "C" void ap_net_deathlink_send(const char *cause)
 extern "C" int ap_net_deathlink_take(char *cause_buf, int cause_n, char *source_buf, int source_n)
 {
 	return AP_DeathLinkInboxTake(&g_dl_inbox, cause_buf, cause_n, source_buf, source_n);
+}
+
+// Deaths the full inbox discarded since the last call (0 when none), so the
+// game thread can show one ignored popup for them.
+extern "C" int ap_net_deathlink_take_dropped(void)
+{
+	return AP_DeathLinkInboxTakeDropped(&g_dl_inbox);
 }
 
 extern "C" void ap_net_shutdown(void)
