@@ -527,9 +527,12 @@ static void validate(const J &p, State &out) {
     // `pad_requirements_v1`: drawn and vanilla stage 1 records and, on every
     // pad with several races, the first race won rule.
     const bool has_pad_requirements = p.is_object() && p.contains("pad_requirements");
+    // One generator row 4: items fixed to their own check. Declares
+    // `fixed_items_v1`. The ledger's locked fields are recomputed from it.
+    const bool has_fixed = p.is_object() && p.contains("fixed_items");
     need(p.is_object() && p.size() == 11u + (has_families ? 1u : 0u) + (has_packs ? 1u : 0u) + (has_racers ? 1u : 0u) +
                                          (has_capability ? 1u : 0u) + (has_global ? 1u : 0u) + (has_boxes ? 1u : 0u) +
-                                         (has_bosses ? 1u : 0u) + (has_pad_requirements ? 1u : 0u),
+                                         (has_bosses ? 1u : 0u) + (has_pad_requirements ? 1u : 0u) + (has_fixed ? 1u : 0u),
          "unsupported or incomplete record fields");
     for (const char *name : {"version", "required_features", "packages", "tracks", "entries", "pads", "encounters", "requirements", "checks", "items", "goal"})
         need(p.contains(name), std::string("missing field: ") + name);
@@ -594,6 +597,15 @@ static void validate(const J &p, State &out) {
                    record["mode"] == "random_without_4_keys" ? PAD_REQ_NO_FOUR_KEYS : -1;
         need(pad_mode >= 0, "pad_requirements.mode is unknown");
     }
+    bool fixed_keys = false, fixed_gems = false, fixed_filler = false;
+    if (has_fixed) {
+        const J &record = p["fixed_items"];
+        need(record.is_object() && !record.empty(), "fixed_items must be a nonempty mapping");
+        for (const auto &item : record.items())
+            need((item.key() == "keys" || item.key() == "gems" || item.key() == "oxide_1_filler") && item.value() == true,
+                 "fixed_items holds keys, gems and oxide_1_filler, true when present");
+        fixed_keys = record.contains("keys"); fixed_gems = record.contains("gems"); fixed_filler = record.contains("oxide_1_filler");
+    }
     need(pads.size() == 32 && requirements.size() >= 5, "physical pad or requirement registry mismatch");
     // Manual pad requirements (#463): every record beyond the five physical hub
     // ones must be `manual:<physical>`, is checked against the item ledger
@@ -633,6 +645,20 @@ static void validate(const J &p, State &out) {
         const J &entry_modes = pair.second->at("modes");
         relic_races += entry_modes.is_array() && std::find(entry_modes.begin(), entry_modes.end(), J("relic")) != entry_modes.end();
     }
+    // The relic guard (one generator row 4): with vanilla requirements and Gems
+    // fixed, a Relic Race on the physical five-Gem pad holds no tier check. The
+    // item counts stay exact, so a tier's checks follow the eligible races.
+    std::string guarded_entry;
+    if (pad_mode == PAD_REQ_VANILLA && fixed_gems && pads.count("pad:17")) {
+        const J &entry_id = pads.at("pad:17")->at("entry_id");
+        if (entry_id.is_string() && entries.count(entry_id.get<std::string>())) {
+            const J &entry = *entries.at(entry_id.get<std::string>());
+            if (entry.at("kind") == "track" && entry.at("modes").is_array() &&
+                std::find(entry["modes"].begin(), entry["modes"].end(), J("relic")) != entry["modes"].end())
+                guarded_entry = entry_id.get<std::string>();
+        }
+    }
+    const int eligible_races = relic_races - (guarded_entry.empty() ? 0 : 1);
     // Item ledger facts the feature list needs before the ledger is read: the
     // five surface items (one generator row 2) and each relic tier's copies.
     bool surface_rows = false, relic_cut = false;
@@ -646,7 +672,7 @@ static void validate(const J &p, State &out) {
             for (int t = 0; t < 3; ++t)
                 if (code == kRelicItems[t]) {
                     relic_supply[t] = (int64_t)number(row.at("base")) + number(row.at("extra"));
-                    relic_cut |= relic_supply[t] < relic_races;
+                    relic_cut |= std::min<int64_t>(relic_supply[t], eligible_races) < relic_races;
                 }
         }
     }
@@ -673,6 +699,7 @@ static void validate(const J &p, State &out) {
     if(surface_rows)features.push_back("surface_items_v1");
     if(relic_cut)features.push_back("relic_tier_checks_v1");
     if(has_pad_requirements)features.push_back("pad_requirements_v1"); // one generator row 3
+    if(has_fixed)features.push_back("fixed_items_v1");                 // one generator row 4
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -1068,6 +1095,7 @@ static void validate(const J &p, State &out) {
         for (int t = 0; t < 3; ++t) {
             dest.relic_locations[t] = relic_race && plan_codes.count(codes[AP_CONTENT_MODE_RELIC][t]) ? codes[AP_CONTENT_MODE_RELIC][t] : 0;
             relic_checks[t] += dest.relic_locations[t] != 0;
+            need(!dest.relic_locations[t] || entry["id"] != guarded_entry, "the Relic Race on the guarded five-Gem pad holds a tier check");
         }
         static const char *awards[AP_CONTENT_MODE_COUNT][3] = {{"win"}, {"win_letters"}, {"sapphire", "gold", "platinum"}};
         static const char *suffixes[AP_CONTENT_MODE_COUNT][3] = {{"Trophy Race"}, {"CTR Token Challenge"},
@@ -1538,7 +1566,7 @@ static void validate(const J &p, State &out) {
          "item family registry mismatch");
     std::set<int> item_ids;
     std::set<int64_t> letter_rows, pack_rows, unlock_rows, chain_rows, weapon_seen, surface_seen;
-    int64_t remaining = 0;
+    int64_t remaining = 0, locked_checks = fixed_filler ? 1 : 0;
     J gems = J::array();
     for (const auto &row : items["rows"]) {
         fields(row, {"item", "base", "extra", "start_from_pool", "start_additional", "locked_selected", "remaining", "receipt_cap", "requirement_ceiling"});
@@ -1563,7 +1591,12 @@ static void validate(const J &p, State &out) {
         r.base = number(row["base"]); r.extra = number(row["extra"]);
         r.start_from_pool = number(row["start_from_pool"], 0, 10000); r.start_additional = number(row["start_additional"], 0, 10000);
         r.remaining = number(row["remaining"]); r.receipt_cap = number(row["receipt_cap"]);
-        need(row["locked_selected"] == 0 && r.remaining == (int64_t)r.base + r.extra - r.start_from_pool && r.receipt_cap == (int64_t)r.base + r.extra + r.start_additional && number(row["requirement_ceiling"]) == r.base, "selected item ledger mismatch");
+        // A fixed item takes a base copy that a from-pool start left (content_fixed.placements).
+        const int64_t copies = (int64_t)r.base + r.extra - r.start_from_pool;
+        const int64_t locked = i == 14 && fixed_keys ? std::max<int64_t>(0, std::min<int64_t>(r.base, copies)) :
+                               i >= 9 && i <= 13 && fixed_gems && r.base && copies > 0 ? 1 : 0;
+        locked_checks += locked;
+        need(row["locked_selected"] == locked && r.remaining == copies - locked && r.receipt_cap == (int64_t)r.base + r.extra + r.start_additional && number(row["requirement_ceiling"]) == r.base, "selected item ledger mismatch");
         need(i != 14 || r.base == 4, "four base Keys are mandatory");
         need(i >= 0 || pack || r.base == 1, "a letter item is pooled once");
         need(i < 9 || i > 13 || r.base <= 1, "base Gems must be distinct colours");
@@ -1633,7 +1666,7 @@ static void validate(const J &p, State &out) {
          "item family registry mismatch");
     // A tier's checks follow its copies, capped by the Relic Races in the seed.
     for (int t = 0; t < 3; ++t)
-        need(relic_checks[t] == std::min<int64_t>(relic_supply[t], relic_races), "relic tier checks do not follow the item counts");
+        need(relic_checks[t] == std::min<int64_t>(relic_supply[t], eligible_races), "relic tier checks do not follow the item counts");
     // Racer locks (#133 PR 4b), apworld content_plan.lock_eligible: only on an
     // occupied pad that does not open at the start, because its hub gate needs
     // Keys or its stage 1 rule is not met by the starting items (from-pool and
@@ -1664,7 +1697,15 @@ static void validate(const J &p, State &out) {
     // #27), so a plan whose goal is an Oxide challenge keeps one filler slot.
     need(!out.bosses.present || (out.bosses.oxide_goal != 1 && out.bosses.oxide_goal != 2) || filler >= 1,
          "the Oxide goal check needs one filler slot");
-    need(number(items["coded_checks"], 0, 4096) == (int)out.checks.size() && items["locked_checks"] == 0 && remaining + filler == (int64_t)out.checks.size() && number(items["trap_count"], 0, 4096) <= filler, "item/check capacity mismatch");
+    need(number(items["coded_checks"], 0, 4096) == (int)out.checks.size() && items["locked_checks"] == locked_checks && remaining + filler + locked_checks == (int64_t)out.checks.size() && number(items["trap_count"], 0, 4096) <= filler, "item/check capacity mismatch");
+    // What the record fixes must exist: garages, all five Gem Cups, and the Final
+    // Challenge goal with the optional first race.
+    need(!fixed_keys || out.bosses.present, "fixed_items.keys needs boss garages");
+    if (fixed_gems)
+        for (int colour = 0; colour < 5; ++colour)
+            need(entries.count("entry/gem_cup:" + std::to_string(colour)) != 0, "fixed_items.gems needs all five Gem Cups");
+    need(!fixed_filler || (out.bosses.present && out.bosses.oxide_goal == 2 && out.bosses.oxide_1_optional),
+         "fixed_items.oxide_1_filler belongs to oxide_goal 101_percent with oxide_1_optional");
     // The goal (#133 PR 6): the Gem arm counts the selected distinct base Gem
     // colours, alone without the `bosses` record; with it, the AND of the
     // Oxide, Boss and Gem arms the record and the Gem arm give (apworld

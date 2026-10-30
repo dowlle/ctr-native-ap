@@ -1616,6 +1616,50 @@ for name, source, change in [
         ("vanilla garage below the table", row3_vanilla, row3_garage_free_trophies),
         ]:
     alter("row3 " + name, change, source)
+# One generator row 4: fixed Keys, Gems and the Oxide filler, on both pad
+# requirement families, with extras, starts and the relic guard.
+row4_cases = 0
+row4_sets = [dict(shuffle_keys=False), dict(shuffle_gems=False), dict(shuffle_keys=False, shuffle_gems=False),
+             dict(oxide_goal="101_percent", oxide_1_optional="filler"),
+             dict(oxide_goal="101_percent", oxide_1_optional="filler", shuffle_keys=False, shuffle_gems=False),
+             dict(shuffle_keys=False, shuffle_gems=False, item_pool=dict(extra=dict(keys=2, gems=dict(red=1)))),
+             dict(shuffle_keys=False, shuffle_gems=False, start_inventory_from_pool={"Key": 1, "Red Gem": 1}),
+             dict(shuffle_keys=False, shuffle_gems=False, item_pool=dict(extra=dict(keys=1)),
+                  start_inventory_from_pool={"Key": 2})]
+for index, extra in enumerate(row4_sets):
+    for unlock in ("randomized", "vanilla"):
+        for placement in ("vanilla", "shuffle_within_kind", "shuffle"):
+            for seed in range(4):
+                options = row3_options(unlock, placement, "full", **copy.deepcopy(extra))
+                cases.append((f"row4-{index}-{unlock}-{placement}-{seed}", make_world(options, seed=seed).fill_slot_data(), True))
+                row4_cases += 1
+assert row4_cases == 192, row4_cases
+from worlds.ctr import content_fixed as fixed_items
+row4_guarded = next(w for w in (make_world(row3_options("vanilla", shuffle_gems=False), seed=seed).fill_slot_data()
+                                for seed in range(40))
+                    if fixed_items.guarded_track("vanilla", w["content_plan"]["fixed_items"], w["content_plan"]["pads"], w["content_plan"]["entries"]))
+row4_both = make_world(row3_options(shuffle_keys=False, shuffle_gems=False, oxide_goal="101_percent", oxide_1_optional="filler"), seed=1).fill_slot_data()
+cases.append(("row4-guarded", row4_guarded, True))
+cases.append(("row4-both", row4_both, True))
+def row4_row(p, item):
+    return next(r for r in p["items"]["rows"] if r["item"] == item)
+for name, source, change in [
+        ("record dropped", row4_both, lambda p: p.pop("fixed_items")),
+        ("feature dropped", row4_both, lambda p: p["required_features"].remove("fixed_items_v1")),
+        ("empty record", row4_both, lambda p: p.update(fixed_items={})),
+        ("unknown field", row4_both, lambda p: p["fixed_items"].update(trophies=True)),
+        ("false value", row4_both, lambda p: p["fixed_items"].update(keys=False)),
+        ("locked checks", row4_both, lambda p: p["items"].update(locked_checks=9)),
+        ("Key left out", row4_both, lambda p: row4_row(p, 35010014).update(locked_selected=3, remaining=1)),
+        ("Gem left out", row4_both, lambda p: row4_row(p, 35010009).update(locked_selected=0, remaining=1)),
+        ("Gem pooled too", row4_both, lambda p: row4_row(p, 35010009).update(remaining=1)),
+        ("filler on a mandatory first race", row4_both, lambda p: p["bosses"].update(oxide_1_optional=False)),
+        ("filler on another goal", row3_random, lambda p: (p.__setitem__("fixed_items", dict(oxide_1_filler=True)),
+                                                           p["required_features"].append("fixed_items_v1"))),
+        ("Gems without the guard", row4_guarded, lambda p: p.pop("fixed_items")),
+        ("guarded race dropped from the record", row4_guarded, lambda p: p["required_features"].remove("relic_tier_checks_v1")),
+        ]:
+    alter("row4 " + name, change, source)
 # The verifier's copy of the per-track USF finish rulings (#133 PR 8,
 # ap/ap_content_verify.hpp kUsfRulings) equals the apworld's table.
 from worlds.ctr import content_capability as ccap
