@@ -72,6 +72,18 @@ int main(void)
     // Codes per mode, and an absent mode owns none.
     expect(ap_content_mode_codes(&p, AP_CONTENT_MODE_RELIC, codes) == 3 && codes[2] == 35012200, "relic owns three codes");
     expect(ap_content_mode_codes(&p, AP_CONTENT_MODE_CTR, codes) == 1 && codes[0] == 35012300, "CTR owns one code");
+    // Relic tier checks follow the item counts (one generator row 2): the race
+    // keeps its route when the seed holds some tiers or none.
+    {
+        ctr_content_pad cut = p;
+        expect(ap_content_mode_route(&cut, AP_CONTENT_MODE_RELIC) == 35012000, "a route without relic_route is the first code");
+        cut.relic_route = 35012000;
+        cut.relic_locations[0] = 0;
+        expect(ap_content_mode_route(&cut, AP_CONTENT_MODE_RELIC) == 35012000, "a missing Sapphire check keeps the route");
+        cut.relic_locations[1] = cut.relic_locations[2] = 0;
+        expect(ap_content_mode_route(&cut, AP_CONTENT_MODE_RELIC) == 35012000, "no tier check keeps the route");
+        expect(ap_content_mode_route(&cut, AP_CONTENT_MODE_CTR) == 35012300, "other modes route on their own code");
+    }
     {
         ctr_content_pad relicOnly = pad3(AP_CONTENT_MODE_RELIC, 0, 0, 0);
         relicOnly.mode_count = 1; relicOnly.has_stage2 = 0; relicOnly.trophy_location = 0; relicOnly.ctr_location = 0;

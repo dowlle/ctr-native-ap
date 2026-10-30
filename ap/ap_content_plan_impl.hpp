@@ -265,6 +265,11 @@ static const std::map<std::string, NamedBlock> &named_block_table(const J &regis
     need(!table.empty(), "compiled named-block table is malformed");
     return table;
 }
+// The five surface items (35010021..25) and the three relic items, Sapphire,
+// Gold and Platinum (one generator row 2).
+static const int64_t kSurfaceFirst = 35010021, kSurfaceLast = 35010025;
+static const int kSurfaceCount = 5;
+static const int64_t kRelicItems[3] = {35010001, 35010002, 35010003};
 // Per-track check families (#133 PR 3b). Rung keys in SLOT_ORDER (apworld
 // podium.SLOT_ORDER) with their location suffixes; bit k is rung k.
 static const char *const rung_keys[5] = {"held_1st", "held_3rd", "held_5th", "finish_podium", "finish_any"};
@@ -567,11 +572,33 @@ static void validate(const J &p, State &out) {
         need((later ? stage2_ids : manual_ids).emplace(std::stoi(digits), pair.first).second, "duplicate pad requirement");
     }
     need(requirements.size() == 5 + manual_ids.size() + stage2_ids.size() + boss_requirements, "requirement registry mismatch");
-    bool arenas=false, arcade=false, pickups=false, modes=false, cups=false;
+    bool arenas=false, arcade=false, pickups=false, modes=false, cups=false, gem_cups=false;
+    int relic_races = 0;
     for (const auto &pair : entries) if(pair.second->at("kind")=="crystal") {
         arenas=true; arcade |= AP_ArcadeArenaIndex(number(pair.second->at("arena_id"),18,24))>=0;
-    } else if (pair.second->at("kind") == "cup") cups = true;
-    else if (pair.second->at("kind") != "boss_race" && pair.second->at("kind") != "boss_cup") modes |= pair.second->at("modes") != J::array({"trophy"});
+    } else if (pair.second->at("kind") == "cup") { cups = true; gem_cups |= pair.first.rfind("entry/gem_cup:", 0) == 0; }
+    else if (pair.second->at("kind") != "boss_race" && pair.second->at("kind") != "boss_cup") {
+        modes |= pair.second->at("modes") != J::array({"trophy"});
+        const J &entry_modes = pair.second->at("modes");
+        relic_races += entry_modes.is_array() && std::find(entry_modes.begin(), entry_modes.end(), J("relic")) != entry_modes.end();
+    }
+    // Item ledger facts the feature list needs before the ledger is read: the
+    // five surface items (one generator row 2) and each relic tier's copies.
+    bool surface_rows = false, relic_cut = false;
+    int64_t relic_supply[3] = {0, 0, 0};
+    {
+        const J &rows = p.at("items").at("rows");
+        need(rows.is_array(), "item ledger rows");
+        for (const auto &row : rows) {
+            const int64_t code = number(row.at("item"), 1);
+            surface_rows |= code >= kSurfaceFirst && code <= kSurfaceLast;
+            for (int t = 0; t < 3; ++t)
+                if (code == kRelicItems[t]) {
+                    relic_supply[t] = (int64_t)number(row.at("base")) + number(row.at("extra"));
+                    relic_cut |= relic_supply[t] < relic_races;
+                }
+        }
+    }
     need(p["checks"].is_array() && p["checks"].size()<=4096,"check array bounds");
     for(const auto &check:p["checks"]) pickups |= check.at("kind")=="crystal_pickup";
     J features=J::array({"content_plan_v1"});
@@ -591,6 +618,9 @@ static void validate(const J &p, State &out) {
     if(has_boxes)features.push_back("item_boxes_v1"); // #133 PR 4e
     if(cups)features.push_back("cup_entries_v1");      // #133 PR 5
     if(has_bosses)features.push_back("boss_encounters_v1"); // #133 PR 6
+    if(gem_cups)features.push_back("gem_cups_v1");          // one generator row 2
+    if(surface_rows)features.push_back("surface_items_v1");
+    if(relic_cut)features.push_back("relic_tier_checks_v1");
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -640,6 +670,7 @@ static void validate(const J &p, State &out) {
     std::map<int, ctr_content_pad *> manual_pad; // occupied pad per manual record
     std::map<int, ctr_content_pad *> stage2_pad; // pad whose later modes use each stage-2 record
     bool starting_entry = false;
+    int relic_checks[3] = {0, 0, 0}; // tier checks in the plan, per tier
     // Cups (#133 PR 5). A leg names a plan track; a track raced only in cups
     // is checked here like a standalone one (registry metadata, package,
     // named block, room title) and must list the trophy mode only. A leg track
@@ -718,7 +749,7 @@ static void validate(const J &p, State &out) {
         return leg_tracks.emplace(track_id, lt).first->second;
     };
     int shortened = -1; // the plan-wide shortened-cup switch, -1 before a leg tells
-    std::set<int> cup_names;
+    std::set<int> cup_names, gem_colours;
     struct LegUse { std::string track, entry, pad, leg; };
     std::vector<LegUse> leg_uses; // in pad order; re-sorted to entry order below
     for (int pi = 0; pi < 32; ++pi) {
@@ -759,21 +790,24 @@ static void validate(const J &p, State &out) {
         const bool crystal=entry.at("kind")=="crystal";
         if (entry.at("kind") == "cup") {
             // Cups (#133 PR 5): `entry/cup:<name index>`, the pool name, four
-            // legs `<entry>/leg:<n>`, the player-only roster, eight karts.
+            // legs `<entry>/leg:<n>`, the player-only roster, eight karts. The
+            // first five cups are the Gem Cups, `entry/gem_cup:<colour>`, with
+            // their frozen Gem and sweep checks (one generator row 2).
             fields(entry, {"id", "kind", "display_name", "legs", "roster", "field_size"});
             const std::string first = manual_ids.count(physical) ? manual_ids.at(physical) : std::string("free");
             need(pad["mode_gates"] == J::array({J{{"mode", "cup"}, {"stage", 1}, {"requirement_id", first}}}), "unsupported mode gates");
             if (manual_ids.count(physical)) manual_pad[physical] = &dest;
-            const std::string prefix = "entry/cup:";
-            need(entry_id.rfind(prefix, 0) == 0 && entry_id.size() > prefix.size() && entry_id.size() <= prefix.size() + 2, "cup entry id is not entry/cup:<name index>");
+            const bool gem = entry_id.rfind("entry/gem_cup:", 0) == 0;
+            const std::string prefix = gem ? "entry/gem_cup:" : "entry/cup:";
+            need(entry_id.rfind(prefix, 0) == 0 && entry_id.size() > prefix.size() && entry_id.size() <= prefix.size() + 2, "cup entry id is not entry/cup:<name index> or entry/gem_cup:<colour>");
             const std::string digits = entry_id.substr(prefix.size());
             need(std::all_of(digits.begin(), digits.end(), [](unsigned char c) { return c >= '0' && c <= '9'; }) &&
-                 (digits.size() == 1 || digits[0] != '0'), "cup entry id is not entry/cup:<name index>");
+                 (digits.size() == 1 || digits[0] != '0'), "cup entry id is not entry/cup:<name index> or entry/gem_cup:<colour>");
             const int index = std::stoi(digits);
-            const J &names = registry["cups"];
-            need(index < (int)names.size() && cup_names.insert(index).second, "unknown or repeated cup name");
+            const J &names = registry[gem ? "gem_cups" : "cups"];
+            need(index < (int)names.size() && (gem ? gem_colours : cup_names).insert(index).second, "unknown or repeated cup name");
             const std::string name = names[index]["name"];
-            need(entry["display_name"] == name, "cup display name is not its pool name");
+            need(entry["display_name"] == name, "cup display name is not its Gem Cup or pool name");
             need(entry["roster"] == J::array({J{{"role", "player"}, {"slot", 0}}}) && entry["field_size"] == 8,
                  "cup roster or field size is not the Adventure field");
             const J &legs = entry["legs"];
@@ -802,15 +836,16 @@ static void validate(const J &p, State &out) {
                     cup_hit_routes.push_back(CupHitRoute{physical, entry_id, id, leg_id});
             }
             dest.occupied = dest.cup = 1;
-            dest.cup_index = index;
+            dest.cup_index = gem ? -1 : index;
+            dest.gem_cup = gem ? 100 + index : 0;
             dest.laps = dest.legs[0].laps;
             dest.trophy_location = names[index]["win"].get<int64_t>();
             dest.sweep_location = sweeps ? names[index]["sweep"].get<int64_t>() : 0;
-            const std::string owner = "cup:" + std::to_string(index);
+            const std::string owner = (gem ? "gem_cup:" : "cup:") + std::to_string(index);
             copy(dest.entry_id, entry["id"]); copy(dest.track_id, J(owner));
             copy(dest.display_name, J(name)); copy(dest.room_title, J(name));
             need(expected_checks.emplace(dest.trophy_location, J{{"location", dest.trophy_location}, {"owner", owner}, {"kind", "cup"},
-                                                                 {"display_name", name + ": Win"},
+                                                                 {"display_name", name + (gem ? ": Gem" : ": Win")},
                                                                  {"routes", J::array({route_record(entry_id, "cup", id, "win")})}}).second,
                  "duplicate check identity");
             if (sweeps)
@@ -973,8 +1008,14 @@ static void validate(const J &p, State &out) {
         copy(dest.room_title, J(check_title));
         dest.trophy_location = (mode_bits & (1u << AP_CONTENT_MODE_TROPHY)) ? codes[AP_CONTENT_MODE_TROPHY][0] : 0;
         dest.ctr_location = (mode_bits & (1u << AP_CONTENT_MODE_CTR)) ? codes[AP_CONTENT_MODE_CTR][0] : 0;
-        for (int t = 0; t < 3; ++t)
-            dest.relic_locations[t] = (mode_bits & (1u << AP_CONTENT_MODE_RELIC)) ? codes[AP_CONTENT_MODE_RELIC][t] : 0;
+        // A tier's check exists where the plan lists it (one generator row 2):
+        // the list is the seed's draw, its size is checked against the ledger.
+        const bool relic_race = (mode_bits & (1u << AP_CONTENT_MODE_RELIC)) != 0;
+        dest.relic_route = relic_race ? codes[AP_CONTENT_MODE_RELIC][0] : 0;
+        for (int t = 0; t < 3; ++t) {
+            dest.relic_locations[t] = relic_race && plan_codes.count(codes[AP_CONTENT_MODE_RELIC][t]) ? codes[AP_CONTENT_MODE_RELIC][t] : 0;
+            relic_checks[t] += dest.relic_locations[t] != 0;
+        }
         static const char *awards[AP_CONTENT_MODE_COUNT][3] = {{"win"}, {"win_letters"}, {"sapphire", "gold", "platinum"}};
         static const char *suffixes[AP_CONTENT_MODE_COUNT][3] = {{"Trophy Race"}, {"CTR Token Challenge"},
                                                                  {"Sapphire Time Trial", "Gold Time Trial", "Platinum Time Trial"}};
@@ -1013,6 +1054,7 @@ static void validate(const J &p, State &out) {
         for (int k = 0; k < dest.mode_count; ++k) {
             const int mode = dest.modes[k];
             for (int t = 0; t < (mode == AP_CONTENT_MODE_RELIC ? 3 : 1); ++t) {
+                if (mode == AP_CONTENT_MODE_RELIC && !dest.relic_locations[t]) continue;
                 const J route{{"entry_id", entry_id}, {"mode", mode_names[mode]}, {"leg_id", nullptr}, {"encounter_id", nullptr}, {"own_pad_id", id}, {"award", awards[mode][t]}};
                 const J check{{"location", codes[mode][t]}, {"owner", track_id}, {"kind", mode_names[mode]},
                               {"display_name", check_title + ": " + suffixes[mode][t]}, {"routes", J::array({route})}};
@@ -1118,6 +1160,9 @@ static void validate(const J &p, State &out) {
     }
     for (const auto &pair : leg_tracks)
         if (pair.second.leg.package_index >= 0) used_packages.insert(out.packages[pair.second.leg.package_index].id);
+    // The first five cups are the Gem Cups, Red first (one generator row 2).
+    need((gem_colours.empty() || *gem_colours.rbegin() == (int)gem_colours.size() - 1) &&
+         (cup_names.empty() || gem_colours.size() == 5), "a plan's first five cups are the Gem Cups, Red first");
     // `Cup Leg Victory`: a route per occurrence, in the plan's entry order,
     // then leg order (apworld content_cups.leg_victories).
     {
@@ -1436,10 +1481,10 @@ static void validate(const J &p, State &out) {
     // The 15 counted families, plus one row per pooled letter item (#133 PR 3b),
     // one per pool-only pack item (#133 PR 4a) and one per unlock racer (#133 PR 4b).
     need(items["rows"].is_array() && items["rows"].size() == 15 + letter_items.size() + packs.size() + racer_rows.size() + cap_rows.size() +
-                                                           weapon_rows.size(),
+                                                           weapon_rows.size() + (surface_rows ? kSurfaceCount : 0),
          "item family registry mismatch");
     std::set<int> item_ids;
-    std::set<int64_t> letter_rows, pack_rows, unlock_rows, chain_rows, weapon_seen;
+    std::set<int64_t> letter_rows, pack_rows, unlock_rows, chain_rows, weapon_seen, surface_seen;
     int64_t remaining = 0;
     J gems = J::array();
     for (const auto &row : items["rows"]) {
@@ -1452,11 +1497,13 @@ static void validate(const J &p, State &out) {
         const bool racer = racer_rows.count(code) != 0;
         const bool chain = cap_rows.count(code) != 0;
         const bool weapon = weapon_rows.count(code) != 0;
-        const bool pack = packs.count(code) != 0 || racer || chain || weapon;
+        // The five surface items are pooled together or not at all.
+        const bool surface = code >= kSurfaceFirst && code <= kSurfaceLast;
+        const bool pack = packs.count(code) != 0 || racer || chain || weapon || surface;
         if (pack)
-            need((racer ? unlock_rows : chain ? chain_rows : weapon ? weapon_seen : pack_rows).insert(code).second &&
-                 row["base"] == (racer || weapon ? 1 : chain ? cap_rows.at(code) : packs.at(code)) &&
-                 row["extra"] == 0, "a pack, racer, capability or weapon item row disagrees with its record");
+            need((racer ? unlock_rows : chain ? chain_rows : weapon ? weapon_seen : surface ? surface_seen : pack_rows).insert(code).second &&
+                 row["base"] == (racer || weapon || surface ? 1 : chain ? cap_rows.at(code) : packs.at(code)) &&
+                 row["extra"] == 0, "a pack, racer, capability, weapon or surface item row disagrees with its record");
         const int i = letter_items.count(code) || pack ? -1 : number(row["item"], 35010000, 35010014) - 35010000;
         need(i < 0 || item_ids.insert(i).second, "duplicate item family");
         auto &r = i < 0 ? letter_row : out.items[i];
@@ -1509,7 +1556,11 @@ static void validate(const J &p, State &out) {
     }
     need(item_ids.size() == 15 && letter_rows.size() == letter_items.size() && pack_rows.size() == packs.size() &&
          unlock_rows.size() == racer_rows.size() && chain_rows.size() == cap_rows.size() &&
-         weapon_seen.size() == weapon_rows.size(), "item family registry mismatch");
+         weapon_seen.size() == weapon_rows.size() && surface_seen.size() == (surface_rows ? (size_t)kSurfaceCount : 0u),
+         "item family registry mismatch");
+    // A tier's checks follow its copies, capped by the Relic Races in the seed.
+    for (int t = 0; t < 3; ++t)
+        need(relic_checks[t] == std::min<int64_t>(relic_supply[t], relic_races), "relic tier checks do not follow the item counts");
     // Racer locks (#133 PR 4b), apworld content_plan.lock_eligible: only on an
     // occupied pad that does not open at the start, because its hub gate needs
     // Keys or its manual rule is not met by the starting items (from-pool and

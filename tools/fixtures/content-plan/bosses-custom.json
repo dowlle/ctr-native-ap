@@ -3124,36 +3124,36 @@
     },
     {
      "item": 35010001,
-     "base": 6,
+     "base": 19,
      "extra": 0,
      "start_from_pool": 0,
      "start_additional": 0,
      "locked_selected": 0,
-     "remaining": 6,
-     "receipt_cap": 6,
-     "requirement_ceiling": 6
+     "remaining": 19,
+     "receipt_cap": 19,
+     "requirement_ceiling": 19
     },
     {
      "item": 35010002,
-     "base": 4,
+     "base": 19,
      "extra": 0,
      "start_from_pool": 0,
      "start_additional": 0,
      "locked_selected": 0,
-     "remaining": 4,
-     "receipt_cap": 4,
-     "requirement_ceiling": 4
+     "remaining": 19,
+     "receipt_cap": 19,
+     "requirement_ceiling": 19
     },
     {
      "item": 35010003,
-     "base": 2,
+     "base": 19,
      "extra": 0,
      "start_from_pool": 0,
      "start_additional": 0,
      "locked_selected": 0,
-     "remaining": 2,
-     "receipt_cap": 2,
-     "requirement_ceiling": 2
+     "remaining": 19,
+     "receipt_cap": 19,
+     "requirement_ceiling": 19
     },
     {
      "item": 35010004,
@@ -3279,7 +3279,7 @@
    ],
    "coded_checks": 103,
    "locked_checks": 0,
-   "filler_count": 66,
+   "filler_count": 21,
    "trap_count": 6
   },
   "goal": {
