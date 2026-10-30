@@ -144,6 +144,8 @@ static void test_orders(void)
 	expect(AP_HitEncounterOrder(203) == ctr_cfg.hit.content_cups[3].ids, "content cup 3 order");
 	expect(AP_HitEncounterOrder(207) == ctr_cfg.hit.content_cups[7].ids, "content cup 7 order");
 	expect(AP_HitEncounterOrder(200) == NULL, "no order for a cup the plan lacks");
+	expect(AP_HitEncounterOrder(102) != NULL, "a Gem Cup on a plan draws from the block's own cup order");
+	expect_eq(AP_HitCupDestinationPure(0, 102), 102, "a Gem Cup's destination wins over engine cup 0");
 	expect(AP_HitEncounterOrder(227) == NULL, "no destination past name index 26");
 	expect(AP_HitEncounterOrder(199) == NULL, "no destination below 200");
 	expect(AP_HitEncounterOrder(100) == ctr_cfg.hit.cups[0].ids, "retail cup order unchanged");

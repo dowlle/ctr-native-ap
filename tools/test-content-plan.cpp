@@ -1275,9 +1275,13 @@ int main(int argc, char **argv) {
             ++seen;
             const std::string id = pad_record["id"];
             const ctr_content_pad *pad = ap_content_plan_pad(std::stoi(id.substr(4)));
-            const int index = std::stoi((*entry)["id"].get<std::string>().substr(10));
-            expect(pad && pad->occupied && pad->cup && !pad->crystal && pad->mode_count == 0 && pad->cup_index == index &&
-                   pad->trophy_location == 35027000 + index && pad->sweep_location == 35027200 + index &&
+            const std::string cup_id = (*entry)["id"];
+            const bool gem = cup_id.rfind("entry/gem_cup:", 0) == 0;
+            const int index = std::stoi(cup_id.substr(gem ? 14 : 10));
+            expect(pad && pad->occupied && pad->cup && !pad->crystal && pad->mode_count == 0 &&
+                   pad->cup_index == (gem ? -1 : index) && pad->gem_cup == (gem ? 100 + index : 0) &&
+                   pad->trophy_location == (gem ? 35011200 : 35027000) + index &&
+                   pad->sweep_location == (gem ? 35028300 : 35027200) + index &&
                    (*entry)["display_name"] == pad->display_name, "cups: pad, name, Win and sweep codes");
             for (int n = 0; pad && n < 4; ++n) {
                 const J &leg = (*entry)["legs"][n];
@@ -1309,10 +1313,25 @@ int main(int argc, char **argv) {
             if (e["kind"] == "cup") { e["legs"][0]["laps"] = 6; break; }
         expect(!parse(forged), "cups: a leg with neither its laps nor the shortened laps (6) refuses");
     }
-    // Hit Character with cups (#133 PR 5b): three cups over retail, custom
+    // One generator row 2: forged Gem Cups, surface rows and relic checks.
+    {
+        const auto rows = [](J &j) -> J & { return j["content_plan"]["items"]["rows"]; };
+        refuse([&] { J j = cups; for (auto &e : j["content_plan"]["entries"]) if (e["id"] == "entry/gem_cup:0") e["display_name"] = "Green Gem Cup"; return j; }(),
+               "gem cups: a Gem Cup under another name");
+        refuse([&] { J j = cups; j["content_plan"]["required_features"].erase(j["content_plan"]["required_features"].size() - 1); return j; }(),
+               "gem cups: the feature is required");
+        refuse([&] { J j = cups; for (auto &c : j["content_plan"]["checks"]) if (c["location"] == 35011200) c["display_name"] = "Red Gem Cup: Win"; return j; }(),
+               "gem cups: the Gem check keeps its frozen name");
+        refuse([&] { J j = cups; for (auto &row : rows(j)) if (row["item"] == 35010001) { row["base"] = 1; row["remaining"] = 1; row["receipt_cap"] = 1; row["requirement_ceiling"] = 1; } return j; }(),
+               "relic checks: a tier with one copy keeps its checks on every race");
+        refuse([&] { J j = cups; rows(j).push_back(rows(j)[0]); rows(j).back()["item"] = 35010021; return j; }(),
+               "surface items: one row alone");
+    }
+    // Hit Character with cups (#133 PR 5b): seven cups over retail, custom
     // (named and generic) and Cortex Vortex legs. Every Hit check routes from
     // every Trophy Race, CTR Challenge and cup leg, guests included, and the
-    // block carries one draw order per cup name index.
+    // block carries one draw order per pool cup's name index; a Gem Cup draws
+    // from the block's own `cups` order.
     J cuphits;
     std::ifstream("tools/fixtures/content-plan/cup-hits.json") >> cuphits;
     expect(parse(cuphits) && bind_room(cuphits) && ap_content_plan_active(), "cup hits: room binds");
@@ -1322,9 +1341,14 @@ int main(int argc, char **argv) {
         const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
         expect(h && h->enabled, "cup hits: Hit Character block admitted");
         std::set<int> indices;
+        int gem_cups = 0;
         for (const auto &e : plan["entries"])
-            if (e["kind"] == "cup") indices.insert(std::stoi(e["id"].get<std::string>().substr(10)));
-        expect(indices.size() == 3, "cup hits: three cups");
+            if (e["kind"] == "cup") {
+                const std::string cup_id = e["id"];
+                if (cup_id.rfind("entry/gem_cup:", 0) == 0) ++gem_cups;
+                else indices.insert(std::stoi(cup_id.substr(10)));
+            }
+        expect(gem_cups == 5 && indices.size() == 2, "cup hits: the five Gem Cups and two pool cups");
         bool orders = h != nullptr;
         for (int c = 0; orders && c < CTR_CFG_HIT_CONTENT_CUP_COUNT; ++c) {
             orders = (h->content_cup_present[c] != 0) == (indices.count(c) != 0);
@@ -1341,7 +1365,7 @@ int main(int argc, char **argv) {
             expect(c["routes"] == (*first)["routes"], "cup hits: every target has the same routes");
         }
         for (const auto &r : (*first)["routes"]) legs += r["mode"] == "cup";
-        expect(hits == 16 && legs == 12, "cup hits: sixteen Hit checks, a route per cup leg");
+        expect(hits == 16 && legs == 28, "cup hits: sixteen Hit checks, a route per cup leg");
         auto c_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
             J bad = cuphits; change(bad); refuse(bad, "cup hits: " + why);
         };

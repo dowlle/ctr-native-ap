@@ -82,6 +82,7 @@ for row in expected["retail"]:
     row["cup_leg"] = L[ccup.cup_leg_name(row["name"])]
 expected["cortex_vortex"]["cup_leg"] = ccup.CORTEX_VORTEX_CUP_LEG_CODE
 expected["cups"] = [dict(name=n, win=L[ccup.cup_win_name(n)], sweep=L[ccup.cup_sweep_name(n)]) for n in ccup.CUP_NAMES]
+expected["gem_cups"] = [dict(name=n, win=L[f"{n}: Gem"], sweep=L[ccup.cup_sweep_name(n)]) for n in ccup.GEM_CUPS]
 expected["custom_cup_leg_locations"] = [L[ccup.cup_leg_name(f"Custom Track {i}")] for i in range(1, 33)]
 expected["named_blocks"] = expected.pop("named_blocks")  # registry key order
 assert registry == expected, "native frozen registry differs from paired apworld; run tools/sync-content-registry.py"
@@ -320,12 +321,19 @@ for index, (modes, stages, order) in enumerate(itertools.product(subsets, ("sing
     custom = [d for d in custom if set(modes) & set(cp.supported_modes("custom", d))]
     for seed in range(2):
         options = mode_options(modes, stages, order, custom=custom)
-        if modes in (["trophy"], ["ctr"]):
-            options["item_pool"] = small_pool()  # about 20 checks cannot hold the larger pool
+        if "relic" not in modes:
+            options["item_pool"] = small_pool()  # relic checks follow the items, so no room for the larger pool
+        else:
+            options["item_pool"]["base"]["trophies"] = 2
         if seed:
             options["warp_pad_rules"] = {"Crash Cove": dict(item="Trophy", count=2)}
             options["warppad_unlock_requirements"] = "randomized"
-        cases.append((f"modes-{'+'.join(modes)}-{stages}-{order}-{seed}", make_world(options, seed=seed + index).fill_slot_data(), True))
+        try:
+            cases.append((f"modes-{'+'.join(modes)}-{stages}-{order}-{seed}", make_world(options, seed=seed + index).fill_slot_data(), True))
+        except cp.OptionError as exc:
+            # Only Relic Races: a relic check for each relic item leaves no
+            # check for the Keys and Gems.
+            assert modes == ["relic"] or "at the start" in str(exc), exc
 modes_base = make_world(mode_options(list(cp.MODES), "two", "per_pad", custom=mode_custom()), seed=3).fill_slot_data()
 cases.append(("modes-base", modes_base, True))
 def multi_pad(p):
@@ -1232,7 +1240,8 @@ from worlds.ctr.test.test_content_cups import hit_cup_options
 hit_cup_cases = []
 for seed in range(40):
     try:
-        wire = make_world(hit_cup_options(seed, itemsanity=seed % 3 == 0), seed=seed).fill_slot_data()
+        options = hit_cup_options(seed, itemsanity=seed % 3 == 0)
+        wire = make_world(options, seed=seed).fill_slot_data()
     except CupOptionError:
         continue
     hit_cup_cases.append(wire)
@@ -1439,6 +1448,62 @@ for name, change in [
         ("cups check kind", lambda c: b_check(c, 35011101).__setitem__("kind", "boss_race")),
         ]:
     boss_env(name, change, cups_base)
+# One generator row 2: Gem Cups first, surface items and relic checks that
+# follow the item counts, then forgeries of each.
+from worlds.ctr.test.test_content_plan_row2 import plan_options, relic_options
+row2_base = None
+for count in (1, 3, 5, 7):
+    for tracks in ("off", "random", "random_no_repeats"):
+        for relics in (dict(sapphire=18, gold=18, platinum=0), dict(sapphire=6, gold=4, platinum=2)):
+            options = relic_options(relics)
+            options["content_pool"]["cups"] = dict(count=count, tracks=tracks)
+            options["cup_sweep_checks"] = count % 2 == 1
+            wire = json.loads(json.dumps(make_world(options, seed=count).fill_slot_data()))
+            cases.append((f"row2-{count}-{tracks}-{relics['platinum']}", wire, True))
+            row2_base = wire
+def row2_alter(name, change):
+    alter("row2-" + name, change, row2_base)
+def row2_row(p, code):
+    return next(r for r in p["items"]["rows"] if r["item"] == code)
+def row2_entry(p, colour):
+    return next(e for e in p["entries"] if e["id"] == f"entry/gem_cup:{colour}")
+def row2_rename(p, colour, new):
+    old = f"entry/gem_cup:{colour}"
+    text = json.dumps(p).replace(old, new)
+    p.clear()
+    p.update(json.loads(text))
+def row2_relic_check(p, tier):
+    return next(c for c in p["checks"] if c["kind"] == "relic" and c["routes"][0]["award"] == tier)
+def row2_drop_surface(p):
+    p["items"]["rows"].remove(row2_row(p, 35010021))
+    p["items"]["filler_count"] += 1
+def row2_drop_all_surface(p):
+    for code in range(35010021, 35010026):
+        p["items"]["rows"].remove(row2_row(p, code))
+    p["items"]["filler_count"] += 5
+    p["required_features"].remove("surface_items_v1")
+def row2_extra_relic_check(p):
+    check = row2_relic_check(p, "gold")
+    track = next(t for t in p["tracks"] if t["id"] == check["owner"])
+    p["checks"].remove(check)
+    p["items"]["coded_checks"] -= 1
+    p["items"]["filler_count"] -= 1
+for name, change in [
+        ("unchanged copy", lambda p: None),
+        ("Gem Cup name", lambda p: row2_entry(p, 0).__setitem__("display_name", "Green Gem Cup")),
+        ("Gem Cup colour past Purple", lambda p: row2_rename(p, 4, "entry/gem_cup:5")),
+        ("Gem Cup colour with a leading zero", lambda p: row2_rename(p, 1, "entry/gem_cup:01")),
+        ("Gem Cup feature dropped", lambda p: p["required_features"].remove("gem_cups_v1")),
+        ("Gem check name", lambda p: next(c for c in p["checks"] if c["location"] == 35011200).__setitem__("display_name", "Red Gem Cup: Win")),
+        ("Gem check code", lambda p: next(c for c in p["checks"] if c["location"] == 35011200).__setitem__("location", 35027000)),
+        ("surface row alone", row2_drop_surface),
+        ("surface pack dropped together", row2_drop_all_surface),
+        ("surface feature dropped", lambda p: p["required_features"].remove("surface_items_v1")),
+        ("surface extra copy", lambda p: row2_row(p, 35010021).update(extra=1, remaining=2, receipt_cap=2)),
+        ("relic feature dropped", lambda p: p["required_features"].remove("relic_tier_checks_v1")),
+        ("relic check dropped", row2_extra_relic_check),
+        ]:
+    row2_alter(name, change)
 # The verifier's copy of the per-track USF finish rulings (#133 PR 8,
 # ap/ap_content_verify.hpp kUsfRulings) equals the apworld's table.
 from worlds.ctr import content_capability as ccap
