@@ -708,7 +708,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					// missing, else whether they still hold checks. Above the
 					// pad name; a racer-locked pad's racer line (#133 PR 4b)
 					// moves up one line to make room (apLockLift below).
-					if (pad && pad->occupied && pad->has_stage2)
+					if (pad && pad->occupied && (pad->has_stage2 || (pad->first_race_rule && pad->mode_count > 1)))
 					{
 						char later[48], stage2[160];
 						int left = 0, n = 0;
@@ -776,7 +776,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					if (ap_content_plan_active())
 					{
 						const ctr_content_pad *apLockPad = ap_content_plan_pad(levelID);
-						if (apLockPad && apLockPad->occupied && apLockPad->has_stage2)
+						if (apLockPad && apLockPad->occupied && (apLockPad->has_stage2 || (apLockPad->first_race_rule && apLockPad->mode_count > 1)))
 							apLockLift = 15;
 					}
 

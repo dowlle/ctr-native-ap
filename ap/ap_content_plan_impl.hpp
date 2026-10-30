@@ -1610,6 +1610,7 @@ static void validate(const J &p, State &out) {
         // refused at generation, and Key rules on the wire fall under the same bar.
         need(pad_mode != PAD_REQ_NO_FOUR_KEYS || mask != (1u << 14) || count < 4, "random_without_4_keys asks for 4 Keys");
     }
+    need(pad_mode != PAD_REQ_VANILLA || manual_ids.empty(), "manual rules need a random pad requirement mode");
     if (pad_mode == PAD_REQ_VANILLA) vanilla_pads(out);
     else if (has_pad_requirements) {
         // A drawn stage keeps its count ceiling (Keys excepted), and a stage 2
