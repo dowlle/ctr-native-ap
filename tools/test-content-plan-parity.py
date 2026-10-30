@@ -134,6 +134,26 @@ for seed in range(40):
 assert manual_refused <= 4, manual_refused
 cases.append(("manual-fixture", json.loads((root / "tools/fixtures/content-plan/manual-rules.json").read_text()), True))
 
+from worlds.ctr.test.test_content_plan_row3 import options as row3_options
+relic_wire = make_world(row3_options(warppad_unlock_requirements="vanilla", accessibility="minimal",
+                                     oxide_goal="disabled", gems_required_goal=1), seed=2).fill_slot_data()
+assert relic_wire["ctr_options"]["relic_progression"] == {
+    "Sapphire Relic": True, "Gold Relic": False, "Platinum Relic": False}
+cases.append(("relic-progression-generated", relic_wire, True))
+for name, value in (("missing tier", {"Sapphire Relic": True}),
+                    ("extra tier", {"Sapphire Relic": True, "Gold Relic": False,
+                                    "Platinum Relic": False, "Ruby Relic": True}),
+                    ("nonboolean", {"Sapphire Relic": True, "Gold Relic": 0, "Platinum Relic": False}),
+                    ("nonobject", [])):
+    case = copy.deepcopy(relic_wire)
+    case["ctr_options"]["relic_progression"] = value
+    try:
+        cp.check_relic_progression(case["ctr_options"])
+        accepted = True
+    except cp.OptionError:
+        accepted = False
+    cases.append(("relic-progression-" + name, case, accepted))
+
 # All arena subsets and both Crystalsanity modes exercise the real parser.
 from worlds.ctr.test.test_arcade_arenas import arena_options
 for count in range(1,8):

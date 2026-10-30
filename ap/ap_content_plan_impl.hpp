@@ -1844,6 +1844,15 @@ static int parse_content_plan(const nlohmann::json &j) {
         need(!box_flag || co["box_locations"] == true, "box_locations must be true when present");
         need(!box_colours || co["color_boxes_by_item"].is_boolean(), "color_boxes_by_item must be true or false");
         for(const char *key:{"box_locations","color_boxes_by_item"})base.erase(key);
+        const bool relic_progression = co.contains("relic_progression");
+        if(relic_progression) {
+            const J &map = co["relic_progression"];
+            need(map.is_object() && map.size() == 3 && map.contains("Sapphire Relic") &&
+                 map.contains("Gold Relic") && map.contains("Platinum Relic") &&
+                 map["Sapphire Relic"].is_boolean() && map["Gold Relic"].is_boolean() &&
+                 map["Platinum Relic"].is_boolean(), "relic_progression must name the three relic tiers with boolean values");
+            base.erase("relic_progression");
+        }
         fields(base, {"schema_version", "world_version", "content_plan", "goal", "goal_oxide", "goal_bosses", "goal_gems", "starting_character", "character_unlocks", "progressive_boost", "progressive_stats", "hit_character", "death_link", "deathlink_amnesty"});
         need(number(co["schema_version"]) == 18 && co["content_plan"] == true, "inconsistent content-plan envelope");
         need(co["goal"] == -1 && co["character_unlocks"].is_boolean() && co["hit_character"].is_boolean(),
@@ -1876,7 +1885,7 @@ static int parse_content_plan(const nlohmann::json &j) {
              "box envelope disagrees with the plan's item_boxes record");
         const size_t optional = (send ? 1u : 0u) + (display ? 1u : 0u) + (colors ? 1u : 0u) +
                                 (stat_class ? 1u : 0u) + (penta ? 1u : 0u) + (trio ? 3u : 0u) +
-                                (box_flag ? 2u : 0u);
+                                (box_flag ? 2u : 0u) + (relic_progression ? 1u : 0u);
         if(arenas) {
             need(co.size()==base.size()+3+optional && co.at("include_battle_arenas")==true &&
                  co.at("include_arcade_arenas")==arcade && co.at("crystalsanity")==pickups,"arena options disagree with plan");

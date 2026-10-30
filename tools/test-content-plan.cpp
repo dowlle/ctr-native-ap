@@ -799,6 +799,18 @@ int main(int argc, char **argv) {
         env_refuse("display 2", [](J &j) { j["ctr_options"]["warp_pad_item_display"] = 2; });
         env_refuse("display as Boolean", [](J &j) { j["ctr_options"]["warp_pad_item_display"] = true; });
         env_refuse("colours as integer", [](J &j) { j["ctr_options"]["ap_item_type_colors"] = 1; });
+        J relic = packs;
+        relic["ctr_options"]["relic_progression"] = {{"Sapphire Relic", true}, {"Gold Relic", false},
+                                                     {"Platinum Relic", false}};
+        expect(parse(relic) && bind_room(relic, "seed-relic"), "relic classification hint admits and binds");
+        relic["ctr_options"].erase("relic_progression");
+        expect(parse(relic), "absent relic classification hint admits");
+        env_refuse("relic map missing a tier", [](J &j) { j["ctr_options"]["relic_progression"] = {{"Sapphire Relic", true}}; });
+        env_refuse("relic map has an extra tier", [](J &j) { j["ctr_options"]["relic_progression"] =
+            {{"Sapphire Relic", true}, {"Gold Relic", false}, {"Platinum Relic", false}, {"Ruby Relic", true}}; });
+        env_refuse("relic map value is not Boolean", [](J &j) { j["ctr_options"]["relic_progression"] =
+            {{"Sapphire Relic", true}, {"Gold Relic", 0}, {"Platinum Relic", false}}; });
+        env_refuse("relic map is not an object", [](J &j) { j["ctr_options"]["relic_progression"] = J::array(); });
         env_refuse("an unknown envelope key", [](J &j) { j["ctr_options"]["turbo_grant"] = true; });
         env_refuse("an unknown top-level block", [](J &j) { j["itemsanity_checks"] = J::object(); });
         auto pack_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
