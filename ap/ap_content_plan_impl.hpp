@@ -1611,6 +1611,21 @@ static void validate(const J &p, State &out) {
         need(pad_mode != PAD_REQ_NO_FOUR_KEYS || mask != (1u << 14) || count < 4, "random_without_4_keys asks for 4 Keys");
     }
     if (pad_mode == PAD_REQ_VANILLA) vanilla_pads(out);
+    else if (has_pad_requirements) {
+        // A drawn stage keeps its count ceiling (Keys excepted), and a stage 2
+        // asks more than its pad's stage 1, the apworld's check_record. The
+        // draw itself is not redone.
+        for (const auto &pair : stage1_ids) {
+            const ctr_content_pad &pad = *manual_pad.at(pair.first);
+            need(pad.rule_mask == (1u << 14) || pad.rule_count <= 8, "a drawn stage 1 asks above its count ceiling");
+        }
+        for (const auto &pair : stage2_ids) {
+            const ctr_content_pad &pad = *stage2_pad.at(pair.first);
+            need(pad.stage2_mask == (1u << 14) || pad.stage2_count <= 4, "a drawn stage 2 asks above its count ceiling");
+            need(!pad.has_rule || pad.stage2_count > pad.rule_count || (pad.rule_mask & ~pad.stage2_mask),
+                 "a stage 2 asks no more than its stage 1");
+        }
+    }
     need(item_ids.size() == 15 && letter_rows.size() == letter_items.size() && pack_rows.size() == packs.size() &&
          unlock_rows.size() == racer_rows.size() && chain_rows.size() == cap_rows.size() &&
          weapon_seen.size() == weapon_rows.size() && surface_seen.size() == (surface_rows ? (size_t)kSurfaceCount : 0u),
@@ -1722,6 +1737,7 @@ static void validate(const J &p, State &out) {
             }
             const int count = number(pred["count"], 1);
             need(supply >= 1 && count <= supply, "a boss garage asks for more than the base supply");
+            if (type == 1 && !has_pad_requirements) need(count == 4, "a Trophy garage asks exactly four Trophies");
             if (pad_mode == PAD_REQ_VANILLA)
                 need(type == 1 && count == std::min<long long>(4 * (g + 1), supply), "vanilla garages ask the Trophy table");
             if (type == 2) need(count > g && count <= 3, "a Key garage asks more than its hub gate and at most three");

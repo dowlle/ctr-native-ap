@@ -1557,6 +1557,11 @@ def row3_both(p):
     pad = "pad:" + rid.split(":")[1]
     p["requirements"].append(dict(id="manual:" + rid.split(":")[1], predicate=row3_req(p, "stage1:")["predicate"]))
     p["required_features"].insert(1, "manual_pad_requirements_v1")
+def row3_stage2_echo(p):
+    first = {r["id"].split(":")[1]: r for r in p["requirements"] if r["id"].startswith("stage1:")}
+    second = next(r for r in p["requirements"] if r["id"].startswith("stage2:") and r["id"].split(":")[1] in first)
+    second["predicate"] = copy.deepcopy(first[second["id"].split(":")[1]]["predicate"])
+    second["predicate"]["count"] = min(second["predicate"]["count"], 4)
 def row3_garage_free_trophies(p):
     next(r for r in p["requirements"] if r["id"] == "boss:1")["predicate"].__init__(op="count", item=35010000, count=4)
 for name, source, change in [
@@ -1571,6 +1576,9 @@ for name, source, change in [
         ("4 Keys at stage 1 without 4 Keys", row3_no4, row3_key("stage1:", 4)),
         ("4 Keys at stage 2 without 4 Keys", row3_no4, row3_key("stage2:", 4)),
         ("3 Keys at stage 2 without 4 Keys", row3_no4, row3_key("stage2:", 3)),
+        ("drawn stage 1 above the ceiling", row3_random, lambda p: row3_req(p, "stage1:")["predicate"].__init__(op="count", item=35010000, count=9)),
+        ("drawn stage 2 above the ceiling", row3_random, lambda p: row3_req(p, "stage2:")["predicate"].__init__(op="count", item=35010000, count=5)),
+        ("stage 2 met by its stage 1", row3_random, row3_stage2_echo),
         ("vanilla stage 1 count", row3_vanilla, row3_count("stage1:", 2)),
         ("vanilla stage 2 count", row3_vanilla, row3_count("stage2:", 3)),
         ("vanilla stage 2 item", row3_vanilla, lambda p: row3_req(p, "stage2:")["predicate"].__init__(op="count", item=35010000, count=1)),
