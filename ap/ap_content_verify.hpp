@@ -45,7 +45,7 @@ static const int kUsf = 2, kFirstBoost = 1;
 enum Op { ALWAYS, COUNT, SUM, DISTINCT, CHECKED, ALL, ANY };
 struct Node { Op op; int count; std::vector<int64_t> codes; std::vector<int> kids; };
 struct Region { std::vector<int> gates; int lock = -1; };
-struct Route { int region = -1, stage = -1, lock = -1, need = 0, encounter = -1; bool boss = false; };
+struct Route { int region = -1, stage = -1, lock = -1, need = 0, encounter = -1; bool boss = false; std::vector<int64_t> first; };
 enum Kind { PAD, SHARED, LEG, ENCOUNTER, ITEMSANITY, HIT };
 enum Arm { ARM_NONE, ARM_FAMILIES, ARM_PAPU };
 struct Loc {
@@ -54,6 +54,7 @@ struct Loc {
     int region = -1, lock = -1, boost = 0, arm = ARM_NONE, arm_families = 0, weapon = -1, target = -1;
     bool stats = false, door = false;
     std::vector<int> stages;          // PAD: one stage-2 gate per route, all set, else empty
+    std::vector<int64_t> first;       // PAD: the first race's checks, one needed, for a check of a later race
     std::vector<Route> routes;        // SHARED, LEG, ITEMSANITY, HIT
     std::vector<int64_t> letters;     // Lettersanity items the check needs
     std::vector<int64_t> triggers;    // HIT: the guest's created unlock wins
@@ -194,6 +195,26 @@ static Model build() {
     }
     m.encounter_loc.assign(encounter.size(), -1);
     auto region_of = [&](const std::string &entry) { return region.count(entry) ? region.at(entry) : -1; };
+    // The first race won rule (`pad_requirements_v1`): a later race counts once
+    // a check of the pad's first mode is reached. content_plan.create_regions.
+    std::map<std::string, std::string> first_mode;
+    std::map<std::string, std::vector<int64_t>> first_checks;
+    if (p.contains("pad_requirements"))
+        for (const auto &pad : p.at("pads"))
+            if (pad.at("mode_gates").size() > 1) first_mode[pad.at("id").get<std::string>()] = pad["mode_gates"][0].at("mode").get<std::string>();
+    for (const auto &c : p.at("checks")) {
+        const auto &rs = c.at("routes");
+        const auto own = first_mode.find(rs.at(0).at("own_pad_id").get<std::string>());
+        if (own != first_mode.end() && c.at("kind") == own->second &&
+            std::all_of(rs.begin(), rs.end(), [&](const J &r) { return r.at("own_pad_id") == rs.at(0).at("own_pad_id"); }))
+            first_checks[own->first].push_back(c.at("location").get<int64_t>());
+    }
+    auto first_of = [&](const J &route) {
+        const std::string id = route.at("own_pad_id").get<std::string>();
+        const auto own = first_mode.find(id);
+        return own == first_mode.end() || own->second == route.at("mode") || !first_checks.count(id)
+                   ? std::vector<int64_t>() : first_checks.at(id);
+    };
     auto stage_of = [&](const J &route) {
         const auto &later = stage2[route.at("own_pad_id").get<std::string>()];
         const auto it = later.find(route.at("mode").get<std::string>());
@@ -286,6 +307,7 @@ static Model build() {
             for (const auto &r : routes) later.push_back(stage_of(r));
             if (std::all_of(later.begin(), later.end(), [](int s) { return s >= 0; }))
                 for (int s : later) if (std::find(L.stages.begin(), L.stages.end(), s) == L.stages.end()) L.stages.push_back(s);
+            if (std::all_of(routes.begin(), routes.end(), [&](const J &r) { return !first_of(r).empty(); })) L.first = first_of(routes.at(0));
             m.locs.push_back(L);
             continue;
         }
@@ -294,6 +316,7 @@ static Model build() {
             Route R;
             R.region = region_of(r.at("entry_id").get<std::string>());
             R.stage = stage_of(r);
+            R.first = first_of(r);
             R.lock = lock_of(*pads.at(r.at("own_pad_id").get<std::string>()));
             const std::string mode = r.at("mode").get<std::string>();
             R.boss = mode == "boss_race" || mode == "boss_cup";
@@ -366,7 +389,14 @@ struct Sweep {
         return false;
     }
     bool region(int r) const { return r >= 0 && open[r]; }
-    bool route(const Route &r) const { return region(r.region) && (r.stage < 0 || eval(r.stage)); }
+    // A check of the pad's first mode was reached in this sweep.
+    bool first_won(const std::vector<int64_t> &codes) const {
+        if (codes.empty()) return true;
+        for (size_t i = 0; i < m.locs.size(); ++i)
+            if (reached[i] && std::find(codes.begin(), codes.end(), m.locs[i].code) != codes.end()) return true;
+        return false;
+    }
+    bool route(const Route &r) const { return region(r.region) && (r.stage < 0 || eval(r.stage)) && first_won(r.first); }
     // with_boost: the check's rank and stat term, bound to its racer lock,
     // or the Itemsanity weapon alternative.
     bool boost(const Loc &L) const {
@@ -419,7 +449,7 @@ struct Sweep {
                 ok = false;
                 for (int s : L.stages) ok = ok || eval(s);
             }
-            ok = ok && letters(L) && boost(L);
+            ok = ok && first_won(L.first) && letters(L) && boost(L);
             break;
         case SHARED:
             for (const auto &r : L.routes) ok = ok || route(r);

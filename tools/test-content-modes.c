@@ -49,24 +49,24 @@ int main(void)
 
     // Gates: stage 1 opens with the pad; stage 2 needs its own rule, never a
     // win in another mode.
-    expect(ap_content_mode_open(&p, AP_CONTENT_MODE_TROPHY, counts), "stage-1 mode opens with the pad");
-    expect(!ap_content_mode_open(&p, AP_CONTENT_MODE_CTR, counts), "stage-2 CTR closed without its rule");
-    expect(!ap_content_mode_open(&p, AP_CONTENT_MODE_RELIC, counts), "stage-2 Relic closed without its rule");
+    expect(ap_content_mode_open(&p, AP_CONTENT_MODE_TROPHY, counts, checked), "stage-1 mode opens with the pad");
+    expect(!ap_content_mode_open(&p, AP_CONTENT_MODE_CTR, counts, checked), "stage-2 CTR closed without its rule");
+    expect(!ap_content_mode_open(&p, AP_CONTENT_MODE_RELIC, counts, checked), "stage-2 Relic closed without its rule");
     counts[2] = 1;
-    expect(!ap_content_mode_open(&p, AP_CONTENT_MODE_CTR, counts), "one of two Gold Relics is not enough");
+    expect(!ap_content_mode_open(&p, AP_CONTENT_MODE_CTR, counts, checked), "one of two Gold Relics is not enough");
     counts[2] = 2;
-    expect(ap_content_mode_open(&p, AP_CONTENT_MODE_CTR, counts) && ap_content_mode_open(&p, AP_CONTENT_MODE_RELIC, counts),
+    expect(ap_content_mode_open(&p, AP_CONTENT_MODE_CTR, counts, checked) && ap_content_mode_open(&p, AP_CONTENT_MODE_RELIC, counts, checked),
            "both later modes open on the stage-2 rule alone (Trophy unchecked)");
     expect(ap_content_stage2_owned(&p, counts) == 2, "stage-2 owned count");
     p.keys = 2;
-    expect(!ap_content_mode_open(&p, AP_CONTENT_MODE_TROPHY, counts) && !ap_content_mode_open(&p, AP_CONTENT_MODE_CTR, counts),
+    expect(!ap_content_mode_open(&p, AP_CONTENT_MODE_TROPHY, counts, checked) && !ap_content_mode_open(&p, AP_CONTENT_MODE_CTR, counts, checked),
            "the hub Key floor closes every mode");
     counts[14] = 2;
-    expect(ap_content_mode_open(&p, AP_CONTENT_MODE_TROPHY, counts), "Keys reopen the pad");
+    expect(ap_content_mode_open(&p, AP_CONTENT_MODE_TROPHY, counts, checked), "Keys reopen the pad");
     p.has_rule = 1; p.rule_mask = 1u; p.rule_count = 3; // manual stage-1 rule: 3 Trophies
-    expect(!ap_content_mode_open(&p, AP_CONTENT_MODE_RELIC, counts), "a manual stage-1 rule also closes stage 2");
+    expect(!ap_content_mode_open(&p, AP_CONTENT_MODE_RELIC, counts, checked), "a manual stage-1 rule also closes stage 2");
     counts[0] = 3;
-    expect(ap_content_mode_open(&p, AP_CONTENT_MODE_RELIC, counts), "manual rule and stage-2 rule both met");
+    expect(ap_content_mode_open(&p, AP_CONTENT_MODE_RELIC, counts, checked), "manual rule and stage-2 rule both met");
     p.has_rule = 0; p.keys = 0;
 
     // Codes per mode, and an absent mode owns none.
@@ -88,8 +88,8 @@ int main(void)
         ctr_content_pad relicOnly = pad3(AP_CONTENT_MODE_RELIC, 0, 0, 0);
         relicOnly.mode_count = 1; relicOnly.has_stage2 = 0; relicOnly.trophy_location = 0; relicOnly.ctr_location = 0;
         expect(ap_content_mode_codes(&relicOnly, AP_CONTENT_MODE_TROPHY, codes) == 0, "absent Trophy owns no code");
-        expect(ap_content_mode_open(&relicOnly, AP_CONTENT_MODE_RELIC, counts) &&
-               !ap_content_mode_open(&relicOnly, AP_CONTENT_MODE_TROPHY, counts), "a Relic-only entry opens Relic only");
+        expect(ap_content_mode_open(&relicOnly, AP_CONTENT_MODE_RELIC, counts, checked) &&
+               !ap_content_mode_open(&relicOnly, AP_CONTENT_MODE_TROPHY, counts, checked), "a Relic-only entry opens Relic only");
     }
 
     // Single stage: every mode uses the entrance gate.
@@ -98,7 +98,7 @@ int main(void)
         int none[15];
         memset(none, 0, sizeof none);
         single.has_stage2 = 0; single.stages[1] = single.stages[2] = 1;
-        expect(ap_content_mode_open(&single, AP_CONTENT_MODE_RELIC, none) && ap_content_mode_open(&single, AP_CONTENT_MODE_TROPHY, none),
+        expect(ap_content_mode_open(&single, AP_CONTENT_MODE_RELIC, none, checked) && ap_content_mode_open(&single, AP_CONTENT_MODE_TROPHY, none, checked),
                "single stage opens every mode with the pad");
     }
 

@@ -114,6 +114,7 @@ manual_maps = [
     {"Tiger Temple": ("Key", 4), "Green Cup": ("Red Gem", 1), "Rocky Road": ("AnyGem", 5), "Sewer Speedway": ("free", 0)},
     {"Polar Pass": ("Trophy", 1)},
 ]
+manual_refused = 0
 for seed in range(40):
     options = profile_options()
     options["item_pool"] = manual_pool()
@@ -121,9 +122,37 @@ for seed in range(40):
                                  for pad, (item, count) in manual_maps[seed % len(manual_maps)].items()}
     if seed % 2:
         options["start_inventory"] = {"Trophy": 1}
-    world = make_world(options, seed=seed)
+    try:
+        world = make_world(options, seed=seed)
+    except cp.OptionError as exc:
+        # This 19-check pool is all progression: a rule that asks for every
+        # Trophy can leave the solo fill check nothing to place them on.
+        assert "warp_pad_rules" in str(exc), exc
+        manual_refused += 1
+        continue
     cases.append((f"manual-generated-{seed}", world.fill_slot_data(), True))
+assert manual_refused <= 4, manual_refused
 cases.append(("manual-fixture", json.loads((root / "tools/fixtures/content-plan/manual-rules.json").read_text()), True))
+
+from worlds.ctr.test.test_content_plan_row3 import options as row3_options
+relic_wire = make_world(row3_options(warppad_unlock_requirements="vanilla", accessibility="minimal",
+                                     oxide_goal="disabled", gems_required_goal=1), seed=2).fill_slot_data()
+assert relic_wire["ctr_options"]["relic_progression"] == {
+    "Sapphire Relic": True, "Gold Relic": False, "Platinum Relic": False}
+cases.append(("relic-progression-generated", relic_wire, True))
+for name, value in (("missing tier", {"Sapphire Relic": True}),
+                    ("extra tier", {"Sapphire Relic": True, "Gold Relic": False,
+                                    "Platinum Relic": False, "Ruby Relic": True}),
+                    ("nonboolean", {"Sapphire Relic": True, "Gold Relic": 0, "Platinum Relic": False}),
+                    ("nonobject", [])):
+    case = copy.deepcopy(relic_wire)
+    case["ctr_options"]["relic_progression"] = value
+    try:
+        cp.check_relic_progression(case["ctr_options"])
+        accepted = True
+    except cp.OptionError:
+        accepted = False
+    cases.append(("relic-progression-" + name, case, accepted))
 
 # All arena subsets and both Crystalsanity modes exercise the real parser.
 from worlds.ctr.test.test_arcade_arenas import arena_options
@@ -709,7 +738,12 @@ for seed in range(12):
                                  for pad, (item, count) in manual_maps[seed % len(manual_maps)].items()}
     if seed % 2:
         options["start_inventory"] = {"Trophy": 1}
-    cases.append((f"racers-manual-{seed}", make_world(options, seed=seed).fill_slot_data(), True))
+    try:
+        cases.append((f"racers-manual-{seed}", make_world(options, seed=seed).fill_slot_data(), True))
+    except cp.OptionError as exc:  # as for the manual-generated cases above
+        assert "warp_pad_rules" in str(exc), exc
+        manual_refused += 1
+assert manual_refused <= 8, manual_refused
 racer_base = make_world(racer_options(locks=6, oxide=True, starting_stat_class="speed", penta_stats="pal",
                                       editable_stats="per_character"), seed=20261017).fill_slot_data()
 cases.append(("racers-base", racer_base, True))
@@ -1508,6 +1542,80 @@ for name, change in [
         ("relic check dropped", row2_extra_relic_check),
         ]:
     row2_alter(name, change)
+# One generator row 3: every unlock mode, placement and stage density the
+# generator draws, then forged requirement records.
+row3_shape = dict(preset="mixed", tracks=dict(retail="all", modes=["trophy", "ctr", "relic"], custom=[]),
+                  cups=dict(count=5), crystals=dict(count=4), bosses=dict(enabled=True))
+def row3_options(unlock="randomized", placement="shuffle", density="full", **extra):
+    return {"content_pool": copy.deepcopy(row3_shape), "item_pool": {}, "warppad_unlock_requirements": unlock,
+            "two_stage_density": density, "pad_layout": dict(placement=placement, stages="two", mode_order="per_pad",
+                                                             merge_trophy_ctr=False), **extra}
+row3_cases = 0
+for unlock in ("vanilla", "randomized", "random_without_4_keys"):
+    for placement in ("vanilla", "shuffle_within_kind", "shuffle"):
+        for density in ("off", "light", "standard", "deep", "full"):
+            for seed in range(3):
+                wire = make_world(row3_options(unlock, placement, density), seed=seed).fill_slot_data()
+                cases.append((f"row3-{unlock}-{placement}-{density}-{seed}", wire, True))
+                row3_cases += 1
+assert row3_cases == 135, row3_cases
+row3_random = make_world(row3_options(), seed=1).fill_slot_data()
+row3_vanilla = make_world(row3_options("vanilla"), seed=1).fill_slot_data()
+row3_no4 = make_world(row3_options("random_without_4_keys"), seed=1).fill_slot_data()
+for name, source in (("row3-random", row3_random), ("row3-vanilla", row3_vanilla), ("row3-no4", row3_no4)):
+    cases.append((name, source, True))
+def row3_req(p, prefix):
+    return next(r for r in p["requirements"] if r["id"].startswith(prefix))
+def row3_count(prefix, count):
+    return lambda p: row3_req(p, prefix)["predicate"].update(count=count)
+def row3_key(prefix, count):
+    return lambda p: row3_req(p, prefix)["predicate"].__init__(op="count", item=35010014, count=count)
+def row3_unknown_id(p):
+    row3_req(p, "stage1:")["id"] = "stage3:9"
+def row3_both(p):
+    rid = row3_req(p, "stage1:")["id"]
+    pad = "pad:" + rid.split(":")[1]
+    p["requirements"].append(dict(id="manual:" + rid.split(":")[1], predicate=row3_req(p, "stage1:")["predicate"]))
+    p["required_features"].insert(1, "manual_pad_requirements_v1")
+def row3_stage2_echo(p):
+    first = {r["id"].split(":")[1]: r for r in p["requirements"] if r["id"].startswith("stage1:")}
+    second = next(r for r in p["requirements"] if r["id"].startswith("stage2:") and r["id"].split(":")[1] in first)
+    second["predicate"] = copy.deepcopy(first[second["id"].split(":")[1]]["predicate"])
+    second["predicate"]["count"] = min(second["predicate"]["count"], 4)
+def row3_manual_vanilla(p):
+    row = row3_req(p, "stage1:")
+    physical = row["id"].split(":")[1]
+    gate = row["id"]
+    row["id"] = "manual:" + physical
+    next(x for x in p["pads"] if x["id"] == "pad:" + physical)["mode_gates"][0]["requirement_id"] = row["id"]
+    for g in next(x for x in p["pads"] if x["id"] == "pad:" + physical)["mode_gates"]:
+        if g["requirement_id"] == gate:
+            g["requirement_id"] = row["id"]
+    p["required_features"].insert(1, "manual_pad_requirements_v1")
+def row3_garage_free_trophies(p):
+    next(r for r in p["requirements"] if r["id"] == "boss:1")["predicate"].__init__(op="count", item=35010000, count=4)
+for name, source, change in [
+        ("feature dropped", row3_random, lambda p: p["required_features"].remove("pad_requirements_v1")),
+        ("unknown mode", row3_random, lambda p: p["pad_requirements"].update(mode="sometimes")),
+        ("extra record field", row3_random, lambda p: p["pad_requirements"].update(placement="shuffle")),
+        ("unknown record id", row3_random, row3_unknown_id),
+        ("a manual rule beside a drawn one", row3_random, row3_both),
+        ("count above the base supply", row3_random, row3_count("stage1:", 999)),
+        ("stage 2 count above the base supply", row3_random, row3_count("stage2:", 999)),
+        ("drawn Keys above the supply", row3_random, row3_key("stage1:", 5)),
+        ("4 Keys at stage 1 without 4 Keys", row3_no4, row3_key("stage1:", 4)),
+        ("4 Keys at stage 2 without 4 Keys", row3_no4, row3_key("stage2:", 4)),
+        ("3 Keys at stage 2 without 4 Keys", row3_no4, row3_key("stage2:", 3)),
+        ("drawn stage 1 above the ceiling", row3_random, lambda p: row3_req(p, "stage1:")["predicate"].__init__(op="count", item=35010000, count=9)),
+        ("drawn stage 2 above the ceiling", row3_random, lambda p: row3_req(p, "stage2:")["predicate"].__init__(op="count", item=35010000, count=5)),
+        ("stage 2 met by its stage 1", row3_random, row3_stage2_echo),
+        ("vanilla record renamed manual", row3_vanilla, row3_manual_vanilla),
+        ("vanilla stage 1 count", row3_vanilla, row3_count("stage1:", 2)),
+        ("vanilla stage 2 count", row3_vanilla, row3_count("stage2:", 3)),
+        ("vanilla stage 2 item", row3_vanilla, lambda p: row3_req(p, "stage2:")["predicate"].__init__(op="count", item=35010000, count=1)),
+        ("vanilla garage below the table", row3_vanilla, row3_garage_free_trophies),
+        ]:
+    alter("row3 " + name, change, source)
 # The verifier's copy of the per-track USF finish rulings (#133 PR 8,
 # ap/ap_content_verify.hpp kUsfRulings) equals the apworld's table.
 from worlds.ctr import content_capability as ccap

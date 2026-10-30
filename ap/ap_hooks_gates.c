@@ -382,7 +382,7 @@ int AP_ContentPadRuleOwned(const ctr_content_pad *pad)
 
 int AP_ContentModeOpen(const ctr_content_pad *pad, int mode)
 {
-	return ap_content_mode_open(pad, mode, ap_recv_count);
+	return ap_content_mode_open(pad, mode, ap_recv_count, AP_ContentCodeChecked);
 }
 
 int AP_ContentStage2Owned(const ctr_content_pad *pad)

@@ -457,6 +457,36 @@ static void boss_settings(const J &b, ctr_content_bosses &out) {
     need(out.oxide_goal != 3 || (out.final_unlock == 0 && out.final_count == 18),
          "bosses.oxide_final_unlock and oxide_final_count keep their defaults when Oxide is disabled");
 }
+// Vanilla pad requirements (one generator row 3): every pad keeps its original
+// requirement on the physical pad, clamped to the seed's base items, and with
+// any stage 2 in the plan every pad with several races asks Keys from the
+// physical pad's hub (apworld content_requirements.vanilla_requirements).
+static void vanilla_pads(const State &out)
+{
+    static const struct { int physical, first, last, count; } rows[] = {
+        {3, 0, 0, 0}, {6, 0, 0, 0}, {9, 0, 0, 1}, {8, 0, 0, 3}, {14, 0, 0, 4}, {4, 0, 0, 4}, {5, 0, 0, 6}, {0, 0, 0, 7},
+        {2, 0, 0, 8}, {1, 0, 0, 9}, {12, 0, 0, 10}, {15, 0, 0, 11}, {7, 0, 0, 14}, {10, 0, 0, 12}, {11, 0, 0, 12},
+        {13, 0, 0, 15}, {21, 14, 14, 1}, {19, 14, 14, 2}, {23, 14, 14, 3}, {18, 14, 14, 4}, {16, 1, 1, 10},
+        {17, 9, 13, 5}, {100, 4, 4, 4}, {101, 5, 5, 4}, {102, 6, 6, 4}, {103, 7, 7, 4}, {104, 8, 8, 4}};
+    bool any_stage2 = false;
+    for (const auto &pad : out.pads) any_stage2 = any_stage2 || pad.has_stage2;
+    for (const auto &row : rows)
+        for (const auto &pad : out.pads) {
+            if (pad.physical != row.physical || !pad.occupied) continue;
+            unsigned mask = 0;
+            long long supply = 0;
+            for (int i = row.first; i <= row.last; ++i)
+                if (out.items[i].base) { mask |= 1u << i; supply += out.items[i].base; }
+            const long long want = std::min<long long>(row.count, supply);
+            need(want ? pad.has_rule && pad.rule_mask == mask && pad.rule_count == want : !pad.has_rule,
+                 "vanilla stage 1 requirements do not match the physical pads");
+            const int keys = pad.physical >= 100 ? 3 : (pad.physical == 16 || pad.physical == 17) ? 2 : pad.keys + 1;
+            if (pad.mode_count > 1 && any_stage2)
+                need(pad.has_stage2 && pad.stage2_mask == (1u << 14) && pad.stage2_count == std::min<long long>(keys, out.items[14].base),
+                     "vanilla stage 2 requirements do not match the physical pads");
+        }
+}
+
 // The four ordinary garages' frozen Boss Race checks and opponents, then N.
 // Oxide's two challenges (apworld content_bosses.GARAGES and EVENTS).
 static const int64_t kBossCodes[6] = {35011100, 35011101, 35011102, 35011103, 35011104, 35011105};
@@ -493,9 +523,13 @@ static void validate(const J &p, State &out) {
     const bool has_global = p.is_object() && p.contains("global_checks");
     const bool has_boxes = p.is_object() && p.contains("item_boxes");
     const bool has_bosses = p.is_object() && p.contains("bosses"); // #133 PR 6
+    // One generator row 3: the pad requirement mode. Declares
+    // `pad_requirements_v1`: drawn and vanilla stage 1 records and, on every
+    // pad with several races, the first race won rule.
+    const bool has_pad_requirements = p.is_object() && p.contains("pad_requirements");
     need(p.is_object() && p.size() == 11u + (has_families ? 1u : 0u) + (has_packs ? 1u : 0u) + (has_racers ? 1u : 0u) +
                                          (has_capability ? 1u : 0u) + (has_global ? 1u : 0u) + (has_boxes ? 1u : 0u) +
-                                         (has_bosses ? 1u : 0u),
+                                         (has_bosses ? 1u : 0u) + (has_pad_requirements ? 1u : 0u),
          "unsupported or incomplete record fields");
     for (const char *name : {"version", "required_features", "packages", "tracks", "entries", "pads", "encounters", "requirements", "checks", "items", "goal"})
         need(p.contains(name), std::string("missing field: ") + name);
@@ -549,7 +583,17 @@ static void validate(const J &p, State &out) {
     const auto tracks = table(p.at("tracks"), 64);
     const auto entries = table(p.at("entries"), 33); // 27 pads and six boss encounters
     const auto pads = table(p.at("pads"), 32);
-    const auto requirements = table(p.at("requirements"), 70); // 5 hub, up to 27 manual and 27 stage-2, 6 boss
+    const auto requirements = table(p.at("requirements"), 70); // 5 hub, 27 manual or stage-1, 27 stage-2, 6 boss
+    enum { PAD_REQ_VANILLA, PAD_REQ_RANDOM, PAD_REQ_NO_FOUR_KEYS };
+    int pad_mode = PAD_REQ_RANDOM;
+    if (has_pad_requirements) {
+        const J &record = p["pad_requirements"];
+        need(record.is_object(), "pad_requirements must be a mapping");
+        fields(record, {"mode"});
+        pad_mode = record["mode"] == "vanilla" ? PAD_REQ_VANILLA : record["mode"] == "randomized" ? PAD_REQ_RANDOM :
+                   record["mode"] == "random_without_4_keys" ? PAD_REQ_NO_FOUR_KEYS : -1;
+        need(pad_mode >= 0, "pad_requirements.mode is unknown");
+    }
     need(pads.size() == 32 && requirements.size() >= 5, "physical pad or requirement registry mismatch");
     // Manual pad requirements (#463): every record beyond the five physical hub
     // ones must be `manual:<physical>`, is checked against the item ledger
@@ -558,20 +602,27 @@ static void validate(const J &p, State &out) {
     // evaluator never reads a Key-only plan by mistake.
     // Second-stage records (#133 PR 3) are `stage2:<physical>`: the shared
     // gate of a pad's later modes, parsed and checked exactly like a manual rule.
-    std::map<int, std::string> manual_ids, stage2_ids;
+    // Drawn and vanilla stage 1 records (one generator row 3) are
+    // `stage1:<physical>`, the same shape as a manual rule; a pad holds one or
+    // the other, so gate_ids is the pad's one stage 1 record.
+    std::map<int, std::string> manual_ids, stage1_ids, stage2_ids;
     size_t boss_requirements = 0; // `boss:<g>`, `oxide:first`, `oxide:final` (#133 PR 6), checked below
     for (const auto &pair : requirements) {
         if (pair.first == "free" || pair.first.rfind("keys:", 0) == 0) continue;
         if (pair.first == "boss:0" || pair.first == "boss:1" || pair.first == "boss:2" || pair.first == "boss:3" ||
             pair.first == "oxide:first" || pair.first == "oxide:final") { ++boss_requirements; continue; }
         const bool later = pair.first.rfind("stage2:", 0) == 0;
-        const size_t prefix = 7; // "manual:" and "stage2:" have the same length
-        need((later || pair.first.rfind("manual:", 0) == 0) && pair.first.size() > prefix && pair.first.size() <= prefix + 3, "unknown requirement record: " + pair.first);
+        const bool drawn = pair.first.rfind("stage1:", 0) == 0;
+        const size_t prefix = 7; // "manual:", "stage1:" and "stage2:" have the same length
+        need((later || drawn || pair.first.rfind("manual:", 0) == 0) && pair.first.size() > prefix && pair.first.size() <= prefix + 3, "unknown requirement record: " + pair.first);
         const std::string digits = pair.first.substr(prefix);
         need(std::all_of(digits.begin(), digits.end(), [](unsigned char c) { return c >= '0' && c <= '9'; }) && (digits.size() == 1 || digits[0] != '0'), "malformed pad requirement id");
-        need((later ? stage2_ids : manual_ids).emplace(std::stoi(digits), pair.first).second, "duplicate pad requirement");
+        need((later ? stage2_ids : drawn ? stage1_ids : manual_ids).emplace(std::stoi(digits), pair.first).second, "duplicate pad requirement");
     }
-    need(requirements.size() == 5 + manual_ids.size() + stage2_ids.size() + boss_requirements, "requirement registry mismatch");
+    need(requirements.size() == 5 + manual_ids.size() + stage1_ids.size() + stage2_ids.size() + boss_requirements, "requirement registry mismatch");
+    need(has_pad_requirements || stage1_ids.empty(), "a stage 1 record needs the pad_requirements record");
+    std::map<int, std::string> gate_ids = stage1_ids;
+    for (const auto &pair : manual_ids) need(gate_ids.insert(pair).second, "a manual rule and a drawn requirement on one pad");
     bool arenas=false, arcade=false, pickups=false, modes=false, cups=false, gem_cups=false;
     int relic_races = 0;
     for (const auto &pair : entries) if(pair.second->at("kind")=="crystal") {
@@ -621,6 +672,7 @@ static void validate(const J &p, State &out) {
     if(gem_cups)features.push_back("gem_cups_v1");          // one generator row 2
     if(surface_rows)features.push_back("surface_items_v1");
     if(relic_cut)features.push_back("relic_tier_checks_v1");
+    if(has_pad_requirements)features.push_back("pad_requirements_v1"); // one generator row 3
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -667,7 +719,7 @@ static void validate(const J &p, State &out) {
     // field seated in every leg. A leg on a crateless custom track is none.
     struct CupHitRoute { int physical; std::string entry, pad, leg; };
     std::vector<CupHitRoute> cup_hit_routes;
-    std::map<int, ctr_content_pad *> manual_pad; // occupied pad per manual record
+    std::map<int, ctr_content_pad *> manual_pad; // occupied pad per manual or stage 1 record
     std::map<int, ctr_content_pad *> stage2_pad; // pad whose later modes use each stage-2 record
     bool starting_entry = false;
     int relic_checks[3] = {0, 0, 0}; // tier checks in the plan, per tier
@@ -794,9 +846,9 @@ static void validate(const J &p, State &out) {
             // first five cups are the Gem Cups, `entry/gem_cup:<colour>`, with
             // their frozen Gem and sweep checks (one generator row 2).
             fields(entry, {"id", "kind", "display_name", "legs", "roster", "field_size"});
-            const std::string first = manual_ids.count(physical) ? manual_ids.at(physical) : std::string("free");
+            const std::string first = gate_ids.count(physical) ? gate_ids.at(physical) : std::string("free");
             need(pad["mode_gates"] == J::array({J{{"mode", "cup"}, {"stage", 1}, {"requirement_id", first}}}), "unsupported mode gates");
-            if (manual_ids.count(physical)) manual_pad[physical] = &dest;
+            if (gate_ids.count(physical)) manual_pad[physical] = &dest;
             const bool gem = entry_id.rfind("entry/gem_cup:", 0) == 0;
             const std::string prefix = gem ? "entry/gem_cup:" : "entry/cup:";
             need(entry_id.rfind(prefix, 0) == 0 && entry_id.size() > prefix.size() && entry_id.size() <= prefix.size() + 2, "cup entry id is not entry/cup:<name index> or entry/gem_cup:<colour>");
@@ -856,10 +908,10 @@ static void validate(const J &p, State &out) {
             if (!keys) starting_entry = true;
             continue;
         }
-        const std::string first_gate = manual_ids.count(physical) ? manual_ids.at(physical) : std::string("free");
+        const std::string first_gate = gate_ids.count(physical) ? gate_ids.at(physical) : std::string("free");
         if (crystal)
             need(pad["mode_gates"] == J::array({J{{"mode", "crystal"}, {"stage", 1}, {"requirement_id", first_gate}}}), "unsupported mode gates");
-        if (manual_ids.count(physical)) manual_pad[physical] = &dest;
+        if (gate_ids.count(physical)) manual_pad[physical] = &dest;
         if(crystal) {
             fields(entry,{"id","kind","arena_id","target","time_limit_ticks"});
             const int level=number(entry["arena_id"],18,24);
@@ -923,6 +975,7 @@ static void validate(const J &p, State &out) {
         }
         need(pad["mode_gates"] == gates, "unsupported mode gates");
         if (later_stage && dest.mode_count > 1) { stage2_pad[physical] = &dest; dest.has_stage2 = 1; }
+        dest.first_race_rule = has_pad_requirements;
         const auto title = text(track.at("display_name"), false);
         std::string check_title = title;
         int64_t codes[AP_CONTENT_MODE_COUNT][3] = {};
@@ -1520,10 +1573,10 @@ static void validate(const J &p, State &out) {
     // Manual requirement records: item identities and counts come from the
     // ledger, so a forged record cannot name an item the seed lacks or ask for
     // more than the base supply (`requirement_ceiling`).
-    need(manual_pad.size() == manual_ids.size(), "manual requirement without an occupied pad");
+    need(manual_pad.size() == gate_ids.size(), "manual requirement without an occupied pad");
     need(stage2_pad.size() == stage2_ids.size(), "second-stage requirement without a pad that uses it");
     for (int pass = 0; pass < 2; ++pass)
-    for (const auto &pair : pass ? stage2_ids : manual_ids) {
+    for (const auto &pair : pass ? stage2_ids : gate_ids) {
         fields(*requirements.at(pair.second), {"id", "predicate"});
         const J &pred = requirements.at(pair.second)->at("predicate");
         ctr_content_pad &target = *(pass ? stage2_pad : manual_pad).at(pair.first);
@@ -1553,6 +1606,26 @@ static void validate(const J &p, State &out) {
         need(mask && count <= supply, "pad rule count outside the base supply");
         if (pass) { target.stage2_count = count; target.stage2_mask = mask; }
         else { target.has_rule = 1; target.rule_count = count; target.rule_mask = mask; }
+        // A drawn requirement of this mode never asks 4 Keys; a manual rule is
+        // refused at generation, and Key rules on the wire fall under the same bar.
+        need(pad_mode != PAD_REQ_NO_FOUR_KEYS || mask != (1u << 14) || count < 4, "random_without_4_keys asks for 4 Keys");
+    }
+    need(pad_mode != PAD_REQ_VANILLA || manual_ids.empty(), "manual rules need a random pad requirement mode");
+    if (pad_mode == PAD_REQ_VANILLA) vanilla_pads(out);
+    else if (has_pad_requirements) {
+        // A drawn stage keeps its count ceiling (Keys excepted), and a stage 2
+        // asks more than its pad's stage 1, the apworld's check_record. The
+        // draw itself is not redone.
+        for (const auto &pair : stage1_ids) {
+            const ctr_content_pad &pad = *manual_pad.at(pair.first);
+            need(pad.rule_mask == (1u << 14) || pad.rule_count <= 8, "a drawn stage 1 asks above its count ceiling");
+        }
+        for (const auto &pair : stage2_ids) {
+            const ctr_content_pad &pad = *stage2_pad.at(pair.first);
+            need(pad.stage2_mask == (1u << 14) || pad.stage2_count <= 4, "a drawn stage 2 asks above its count ceiling");
+            need(!pad.has_rule || pad.stage2_count > pad.rule_count || (pad.rule_mask & ~pad.stage2_mask),
+                 "a stage 2 asks no more than its stage 1");
+        }
     }
     need(item_ids.size() == 15 && letter_rows.size() == letter_items.size() && pack_rows.size() == packs.size() &&
          unlock_rows.size() == racer_rows.size() && chain_rows.size() == cap_rows.size() &&
@@ -1563,8 +1636,10 @@ static void validate(const J &p, State &out) {
         need(relic_checks[t] == std::min<int64_t>(relic_supply[t], relic_races), "relic tier checks do not follow the item counts");
     // Racer locks (#133 PR 4b), apworld content_plan.lock_eligible: only on an
     // occupied pad that does not open at the start, because its hub gate needs
-    // Keys or its manual rule is not met by the starting items (from-pool and
+    // Keys or its stage 1 rule is not met by the starting items (from-pool and
     // additional starts), and exactly min(requested_locks, eligible) of them.
+    // With the pad_requirements record the four N. Sanity Beach race pads never
+    // take a lock, and vanilla requirements lock no pad.
     {
         int eligible = 0, locks = 0;
         for (const auto &pad : out.pads) {
@@ -1572,7 +1647,9 @@ static void validate(const J &p, State &out) {
             long long held = 0;
             for (int i = 0; i < 15; ++i)
                 if (pad.rule_mask & (1u << i)) held += (long long)out.items[i].start_from_pool + out.items[i].start_additional;
-            const bool opens = pad.keys == 0 && (!pad.has_rule || held >= pad.rule_count);
+            const bool beach = pad.physical == 3 || pad.physical == 6 || pad.physical == 9 || pad.physical == 8;
+            const bool opens = (has_pad_requirements && (beach || pad_mode == PAD_REQ_VANILLA)) ||
+                               (pad.keys == 0 && (!pad.has_rule || held >= pad.rule_count));
             if (!opens) ++eligible;
             if (pad.racer_lock >= 0) {
                 need(!opens, "a racer lock on a pad that opens at the start or holds no entry");
@@ -1624,9 +1701,9 @@ static void validate(const J &p, State &out) {
         // companion arms when Oxide is the goal and its relic term on the base
         // supply (one tier, any tier with enough, or the sum of the tiers).
         // The ordinary garages (#133 PR 6b) carry the mixed-item roll: one
-        // family over its base items, Trophy exactly four, Keys above the
-        // garage's hub gate (0, 1, 2, 3 Keys) and at most three, any other
-        // count 1 to the family's base supply (apworld
+        // family over its base items, Keys above the garage's hub gate (0, 1,
+        // 2, 3 Keys) and at most three, any other count 1 to the family's base
+        // supply; with vanilla pad requirements the Trophy table (apworld
         // content_bosses.check_garage_requirement). The draw is not redone.
         std::map<std::string, J> want;
         for (int g = 0; g < 4; ++g) {
@@ -1661,7 +1738,9 @@ static void validate(const J &p, State &out) {
             }
             const int count = number(pred["count"], 1);
             need(supply >= 1 && count <= supply, "a boss garage asks for more than the base supply");
-            if (type == 1) need(count == 4, "a Trophy garage asks exactly four Trophies");
+            if (type == 1 && !has_pad_requirements) need(count == 4, "a Trophy garage asks exactly four Trophies");
+            if (pad_mode == PAD_REQ_VANILLA)
+                need(type == 1 && count == std::min<long long>(4 * (g + 1), supply), "vanilla garages ask the Trophy table");
             if (type == 2) need(count > g && count <= 3, "a Key garage asks more than its hub gate and at most three");
             out.bosses.garage_req_type[g] = type;
             out.bosses.garage_req_count[g] = count;
@@ -1765,6 +1844,15 @@ static int parse_content_plan(const nlohmann::json &j) {
         need(!box_flag || co["box_locations"] == true, "box_locations must be true when present");
         need(!box_colours || co["color_boxes_by_item"].is_boolean(), "color_boxes_by_item must be true or false");
         for(const char *key:{"box_locations","color_boxes_by_item"})base.erase(key);
+        const bool relic_progression = co.contains("relic_progression");
+        if(relic_progression) {
+            const J &map = co["relic_progression"];
+            need(map.is_object() && map.size() == 3 && map.contains("Sapphire Relic") &&
+                 map.contains("Gold Relic") && map.contains("Platinum Relic") &&
+                 map["Sapphire Relic"].is_boolean() && map["Gold Relic"].is_boolean() &&
+                 map["Platinum Relic"].is_boolean(), "relic_progression must name the three relic tiers with boolean values");
+            base.erase("relic_progression");
+        }
         fields(base, {"schema_version", "world_version", "content_plan", "goal", "goal_oxide", "goal_bosses", "goal_gems", "starting_character", "character_unlocks", "progressive_boost", "progressive_stats", "hit_character", "death_link", "deathlink_amnesty"});
         need(number(co["schema_version"]) == 18 && co["content_plan"] == true, "inconsistent content-plan envelope");
         need(co["goal"] == -1 && co["character_unlocks"].is_boolean() && co["hit_character"].is_boolean(),
@@ -1797,7 +1885,7 @@ static int parse_content_plan(const nlohmann::json &j) {
              "box envelope disagrees with the plan's item_boxes record");
         const size_t optional = (send ? 1u : 0u) + (display ? 1u : 0u) + (colors ? 1u : 0u) +
                                 (stat_class ? 1u : 0u) + (penta ? 1u : 0u) + (trio ? 3u : 0u) +
-                                (box_flag ? 2u : 0u);
+                                (box_flag ? 2u : 0u) + (relic_progression ? 1u : 0u);
         if(arenas) {
             need(co.size()==base.size()+3+optional && co.at("include_battle_arenas")==true &&
                  co.at("include_arcade_arenas")==arcade && co.at("crystalsanity")==pickups,"arena options disagree with plan");
