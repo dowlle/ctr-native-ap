@@ -21,6 +21,8 @@
 #include <cstdlib>
 #include <cstdio>
 #include <algorithm>
+#include <climits>
+#include <cstdint>
 #include <cstring>
 #include <set>
 #include <string>
@@ -67,6 +69,124 @@ static void ap_cfg_log(const char *fmt, ...)
 	va_end(ap);
 	std::fputs(buf, stderr);
 	AP_LogLine(buf);
+}
+
+// The placement table is owned by the C game side and may be replaced by an
+// external file after slot_data is parsed. Remember the wire counts here and
+// compare only when that table is read. -1 means this LevelID has no guard.
+static int s_box_warned_count[CTR_CFG_BOX_TRACK_COUNT];
+static unsigned int s_box_parse_revision;
+// Diagnostic labels only; LevelID remains the wire identity used for policy.
+static const char *const s_box_track_names[CTR_CFG_BOX_TRACK_COUNT] = {
+	"DINGO_CANYON", "DRAGON_MINES", "BLIZZARD_BLUFF", "CRASH_COVE",
+	"TIGER_TEMPLE", "PAPU_PYRAMID", "ROO_TUBES", "HOT_AIR_SKYWAY",
+	"SEWER_SPEEDWAY", "MYSTERY_CAVES", "CORTEX_CASTLE", "N_GIN_LABS",
+	"POLAR_PASS", "OXIDE_STATION", "COCO_PARK", "TINY_ARENA",
+	"SLIDE_COLISEUM", "TURBO_TRACK"
+};
+
+extern "C" unsigned int ctr_cfg_box_placement_revision(void)
+{
+	return s_box_parse_revision;
+}
+
+// Contract 7e: each retail track has at most 15 authored boxes (AP_BOX_SLOTS_PER_TRACK).
+#define CTR_CFG_BOX_COUNT_MAX 15
+
+static void ap_seedcfg_refuse_box_placement()
+{
+	ctr_cfg.box_placement_state = -1;
+	ctr_cfg.box_placement_refused = 1;
+	ap_cfg_log("[AP CFG] item_box_checks.placement_counts refused (expected all 18 decimal retail LevelIDs with non-negative integer counts): all retail item-box checks disabled\n");
+}
+
+static void ap_seedcfg_parse_box_placement_counts(const nlohmann::json &j)
+{
+	auto block = j.find("item_box_checks");
+	if (block == j.end())
+		return; // no item-box checks in this room, nothing to guard
+	if (!block->is_object())
+	{
+		ap_seedcfg_refuse_box_placement();
+		return;
+	}
+	// Contract 7e: the block always carries all 18 retail counts. A block
+	// without them cannot be checked, so it is refused like a bad map.
+	if (!block->contains("placement_counts") || !(*block)["placement_counts"].is_object() ||
+	    (*block)["placement_counts"].size() != CTR_CFG_BOX_TRACK_COUNT)
+	{
+		ap_seedcfg_refuse_box_placement();
+		return;
+	}
+	const auto &counts = (*block)["placement_counts"];
+	for (auto it = counts.begin(); it != counts.end(); ++it)
+	{
+		const std::string key = it.key();
+		int level = 0;
+		if (key.empty())
+		{
+			ap_seedcfg_refuse_box_placement();
+			return;
+		}
+		for (char digit : key)
+		{
+			if (digit < '0' || digit > '9' || level > (CTR_CFG_BOX_TRACK_COUNT - 1) / 10)
+			{
+				ap_seedcfg_refuse_box_placement();
+				return;
+			}
+			level = level * 10 + digit - '0';
+		}
+		if (level >= CTR_CFG_BOX_TRACK_COUNT || std::to_string(level) != key ||
+		    !it.value().is_number_integer())
+		{
+			ap_seedcfg_refuse_box_placement();
+			return;
+		}
+		int count;
+		if (it.value().is_number_unsigned())
+		{
+			auto number = it.value().get<std::uint64_t>();
+			if (number > CTR_CFG_BOX_COUNT_MAX)
+			{
+				ap_seedcfg_refuse_box_placement();
+				return;
+			}
+			count = (int)number;
+		}
+		else
+		{
+			auto number = it.value().get<std::int64_t>();
+			if (number < 0 || number > CTR_CFG_BOX_COUNT_MAX)
+			{
+				ap_seedcfg_refuse_box_placement();
+				return;
+			}
+			count = (int)number;
+		}
+		ctr_cfg.box_placement_counts[level] = count;
+	}
+	ctr_cfg.box_placement_state = 1;
+	return;
+}
+
+extern "C" int ctr_cfg_box_placement_valid(int levelID, int nativeCount)
+{
+	if (levelID < 0 || levelID >= CTR_CFG_BOX_TRACK_COUNT)
+		return 0;
+	if (ctr_cfg.box_placement_state < 0)
+		return 0;
+	int expected = ctr_cfg.box_placement_counts[levelID];
+	if (expected < 0 || expected == nativeCount)
+		return 1;
+	ctr_cfg.box_placement_refused = 1;
+	if (s_box_warned_count[levelID] != nativeCount)
+	{
+		ap_cfg_log("[AP CFG] item_box_checks: %s (LevelID %d) placement count mismatch (seed %d, native %d); item-box checks disabled on this track\n",
+		           s_box_track_names[levelID], levelID, expected, nativeCount);
+		s_box_warned_count[levelID] = nativeCount;
+	}
+	return 0;
 }
 
 // §0 available-items bound table, indexed by type code (0..5). Defensive clamp
@@ -1765,6 +1885,7 @@ static void ap_seedcfg_parse_crystals(const nlohmann::json &j,
 
 void ap_seedcfg_parse_json(const nlohmann::json &j)
 {
+	s_box_parse_revision++;
     std::memset(&ctr_crystal_checks, 0, sizeof ctr_crystal_checks);
     std::memset(&ctr_cup_sweeps, 0, sizeof ctr_cup_sweeps);
 	// A parse that stops early (no ctr_options, schema < 1) leaves this legacy.
@@ -1778,6 +1899,13 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// Reset to a clean state; identity warp map; type:0 reqs (= native vanilla).
 	ctr_cfg.schema_version = 0;
 	ctr_cfg.schema_newer = 0;
+	ctr_cfg.box_placement_state = 0;
+	ctr_cfg.box_placement_refused = 0;
+	for (int level = 0; level < CTR_CFG_BOX_TRACK_COUNT; level++)
+	{
+		ctr_cfg.box_placement_counts[level] = -1;
+		s_box_warned_count[level] = -1;
+	}
 	ctr_cfg.include_battle_arenas = 1;
 	// Oxide-final gate defaults: mode 0 (Sapphire) + count 18 = the pre-v0.1.1
 	// behaviour, applied when a seed omits the fields (schema < 5 or Phase-1).
@@ -2026,6 +2154,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		             "incorrectly until you do. ***\n",
 		             schema, CTR_CFG_SCHEMA_KNOWN);
 	}
+	ap_seedcfg_parse_box_placement_counts(j);
 	ap_seedcfg_parse_trap_identities(j, schema);
 	ap_seedcfg_parse_boss_encounters(j, opt, schema);
 
