@@ -7,7 +7,6 @@
 // the selector offers is a mode the race-start gate admits.
 #include "ap_content_plan.h"
 
-typedef int (*ap_content_checked_fn)(int64_t code);
 
 // Per-track check families (#133 PR 3b) a mode reaches on this pad, with their
 // display slot: podium rungs (slots 0..4) on the Trophy Race, the track's own
@@ -102,7 +101,7 @@ static inline int ap_content_selector_build(const ctr_content_pad *pad, const in
     for (i = 0; pad && i < pad->mode_count && i < AP_CONTENT_MODE_COUNT; ++i) {
         const int mode = pad->modes[i];
         out->mode[i] = mode;
-        out->open[i] = ap_content_mode_open(pad, mode, counts);
+        out->open[i] = ap_content_mode_open(pad, mode, counts, checked);
         out->pending[i] = ap_content_mode_pending(pad, mode, checked);
         out->count++;
         if (out->open[i]) {
@@ -124,7 +123,7 @@ static inline int ap_content_track_pad_state(const ctr_content_pad *pad, const i
     for (i = 0; i < pad->mode_count && i < AP_CONTENT_MODE_COUNT; ++i) {
         const int left = ap_content_mode_pending(pad, pad->modes[i], checked);
         if (!left) continue;
-        if (ap_content_mode_open(pad, pad->modes[i], counts)) return 2;
+        if (ap_content_mode_open(pad, pad->modes[i], counts, checked)) return 2;
         lockedLeft = 1;
     }
     return lockedLeft ? 3 : 4;

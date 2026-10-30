@@ -55,6 +55,9 @@ typedef struct ctr_content_pad {
     int mode_count, modes[AP_CONTENT_MODE_COUNT], stages[AP_CONTENT_MODE_COUNT];
     int has_stage2, stage2_count;
     unsigned stage2_mask;
+    /* `pad_requirements_v1` (one generator row 3): a later mode counts only
+     * after the pad's first race is won, ap_content_first_race_won. */
+    int first_race_rule;
     int64_t ctr_location;         /* CTR Token Challenge, 0 without the mode */
     int64_t relic_locations[3];   /* Sapphire, Gold, Platinum Time Trial, 0 where the seed has no such check */
     /* The frozen Sapphire code of a Relic Race (one generator row 2). It names
@@ -265,15 +268,6 @@ static inline int ap_content_stage2_owned(const ctr_content_pad *pad, const int 
         if (pad->stage2_mask & (1u << i)) owned += counts[i];
     return owned;
 }
-/* The single mode gate: the pad is open, and a stage-2 mode's second rule is
- * met. No mode needs a win in another one (Wayfinder ticket 16). Pad entry,
- * the mode selector, the race-start gate and the tracker all call this. */
-static inline int ap_content_mode_open(const ctr_content_pad *pad, int mode, const int *counts)
-{
-    const int i = ap_content_mode_slot(pad, mode);
-    if (i < 0 || !ap_content_pad_open(pad, counts)) return 0;
-    return pad->stages[i] == 1 || (pad->has_stage2 && ap_content_stage2_owned(pad, counts) >= pad->stage2_count);
-}
 /* The check codes a mode owns on this pad (Trophy 1, CTR 1, Relic 3); 0 when
  * the entry lacks the mode. */
 static inline int ap_content_mode_codes(const ctr_content_pad *pad, int mode, int64_t out[3])
@@ -283,6 +277,36 @@ static inline int ap_content_mode_codes(const ctr_content_pad *pad, int mode, in
     if (mode == AP_CONTENT_MODE_CTR) { out[0] = pad->ctr_location; return 1; }
     out[0] = pad->relic_locations[0]; out[1] = pad->relic_locations[1]; out[2] = pad->relic_locations[2];
     return 3;
+}
+/* Server checked-state of a content-plan code. */
+typedef int (*ap_content_checked_fn)(int64_t code);
+/* The pad's first race is won: a check of its first mode is checked, as v0.2.x
+ * reads the Trophy Race. A first race with no check of its own (a Relic Race
+ * with no tier check) proves nothing, so then only the items count, as in the
+ * apworld's logic (content_plan.create_regions). */
+static inline int ap_content_first_race_won(const ctr_content_pad *pad, ap_content_checked_fn checked)
+{
+    int64_t codes[3] = {0, 0, 0};
+    int i, n, any = 0;
+    if (!pad->first_race_rule || pad->mode_count < 2) return 1;
+    n = ap_content_mode_codes(pad, pad->modes[0], codes);
+    for (i = 0; i < n; ++i) {
+        if (codes[i] <= 0) continue;
+        any = 1;
+        if (checked(codes[i])) return 1;
+    }
+    return !any;
+}
+/* The single mode gate: the pad is open, a later mode's pad has won its first
+ * race (ruled 2026-10-30), and a stage-2 mode's second rule is met. Pad entry,
+ * the mode selector, the race-start gate and the tracker all call this. */
+static inline int ap_content_mode_open(const ctr_content_pad *pad, int mode, const int *counts,
+                                       ap_content_checked_fn checked)
+{
+    const int i = ap_content_mode_slot(pad, mode);
+    if (i < 0 || !ap_content_pad_open(pad, counts)) return 0;
+    if (i && !ap_content_first_race_won(pad, checked)) return 0;
+    return pad->stages[i] == 1 || (pad->has_stage2 && ap_content_stage2_owned(pad, counts) >= pad->stage2_count);
 }
 
 /* The code that names a mode's route in its race context: its first check,

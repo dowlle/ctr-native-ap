@@ -719,7 +719,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 							              ap_content_mode_label(pad->modes[k]));
 							left += ap_content_mode_pending(pad, pad->modes[k], AP_ContentCodeChecked);
 						}
-						if (!AP_ContentModeOpen(pad, pad->modes[1]))
+						if (!ap_content_first_race_won(pad, AP_ContentCodeChecked))
+							snprintf(stage2, sizeof stage2, "%s: win %s first", later, firstMode);
+						else if (!AP_ContentModeOpen(pad, pad->modes[1]))
 							snprintf(stage2, sizeof stage2, "%s: locked, needs %d %s (have %d)", later,
 							         pad->stage2_count, AP_ContentStage2Name(pad), AP_ContentStage2Owned(pad));
 						else

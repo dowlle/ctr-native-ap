@@ -16,6 +16,9 @@
 using J = nlohmann::json;
 extern "C" void AP_LogLine(const char *) {}
 static int checks, failures;
+static int nothing_checked(int64_t) { return 0; }
+static int64_t won_code;
+static int won_check(int64_t code) { return code == won_code; }
 static void expect(bool good, const std::string &why) {
     ++checks;
     if (!good) { ++failures; std::cout << "FAIL: " << why << '\n'; }
@@ -405,16 +408,16 @@ int main(int argc, char **argv) {
             if (!p || !p->occupied || p->crystal) continue;
             int64_t codes[3];
             expect(p->mode_count >= 1 && p->stages[0] == 1, "first mode opens with the pad");
-            expect(ap_content_mode_open(p, p->modes[0], keys), "first mode open with the hub Keys");
+            expect(ap_content_mode_open(p, p->modes[0], keys, nothing_checked), "first mode open with the hub Keys");
             if (p->mode_count > 1) {
                 ++later;
                 expect(p->has_stage2 && p->stage2_mask && p->stage2_count >= 1 && p->stage2_count <= 4,
                        "multi-mode pad has its second-stage rule");
                 for (int k = 1; k < p->mode_count; ++k)
-                    expect(p->stages[k] == 2 && !ap_content_mode_open(p, p->modes[k], keys), "later mode closed without its rule");
+                    expect(p->stages[k] == 2 && !ap_content_mode_open(p, p->modes[k], keys, nothing_checked), "later mode closed without its rule");
                 int rich[15] = {};
                 for (int i = 0; i < 15; ++i) rich[i] = 99;
-                expect(ap_content_mode_open(p, p->modes[1], rich), "later mode opens on the rule");
+                expect(ap_content_mode_open(p, p->modes[1], rich, nothing_checked), "later mode opens on the rule");
             }
             if (p->modes[0] == AP_CONTENT_MODE_RELIC) ++relicFirst;
             if (p->retail_id >= 0) {
@@ -440,7 +443,7 @@ int main(int argc, char **argv) {
             else
                 expect(key == "relic-loop" && p->mode_count == 1 && p->modes[0] == AP_CONTENT_MODE_RELIC && !p->has_stage2 &&
                        p->trophy_location == 0 && p->relic_locations[0] == 35022003 && p->relic_locations[2] == 35022005 &&
-                       ap_content_mode_open(p, AP_CONTENT_MODE_RELIC, none) == (p->keys == 0),
+                       ap_content_mode_open(p, AP_CONTENT_MODE_RELIC, none, nothing_checked) == (p->keys == 0),
                        "Relic-only package on generic slot 2");
         }
         expect(retail == 18 && custom == 3 && later == 20, "18 retail and 3 custom track pads, 20 with later modes");
@@ -513,7 +516,7 @@ int main(int argc, char **argv) {
         expect(parse(single) && bind_room(single, "seed-S"), "the same plan with one stage admits");
         const auto *p = ap_content_plan_pad(3);
         int none[15] = {};
-        expect(p && p->mode_count == 3 && !p->has_stage2 && ap_content_mode_open(p, p->modes[2], none),
+        expect(p && p->mode_count == 3 && !p->has_stage2 && ap_content_mode_open(p, p->modes[2], none, nothing_checked),
                "one stage: every mode opens with the pad");
     }
     // Per-track check families (#133 PR 3b): the paired apworld's plans with
@@ -1648,6 +1651,35 @@ int main(int argc, char **argv) {
     // Bosses off: the garages stay empty and the goal is the Gem arm alone.
     expect(parse(base) && bind_room(base) && !ap_content_plan_bosses()->present && ctr_cfg.goal_oxide == 3 &&
            ctr_cfg.goal_bosses == 0 && ctr_boss_encounters.state == AP_BOSS_ENC_RETAIL, "bosses off: empty garages");
+    // One generator row 3: a later race needs the pad's first race won, on a
+    // pad with a second stage and on one without.
+    {
+        ctr_content_pad pad{};
+        int counts[15] = {};
+        counts[0] = 9;
+        pad.occupied = 1; pad.mode_count = 3; pad.racer_lock = -1; pad.first_race_rule = 1;
+        pad.modes[0] = AP_CONTENT_MODE_TROPHY; pad.modes[1] = AP_CONTENT_MODE_CTR; pad.modes[2] = AP_CONTENT_MODE_RELIC;
+        pad.stages[0] = 1; pad.stages[1] = pad.stages[2] = 2;
+        pad.has_stage2 = 1; pad.stage2_mask = 1u; pad.stage2_count = 2;
+        pad.trophy_location = 5001; pad.ctr_location = 5002;
+        won_code = 0;
+        expect(ap_content_mode_open(&pad, AP_CONTENT_MODE_TROPHY, counts, won_check), "the first race opens with the pad");
+        expect(!ap_content_mode_open(&pad, AP_CONTENT_MODE_CTR, counts, won_check), "items alone do not open a later race");
+        won_code = 5001;
+        expect(ap_content_mode_open(&pad, AP_CONTENT_MODE_RELIC, counts, won_check), "the win and the items open it");
+        counts[0] = 1;
+        expect(!ap_content_mode_open(&pad, AP_CONTENT_MODE_CTR, counts, won_check), "the win alone does not open stage 2");
+        pad.has_stage2 = 0; pad.stages[1] = pad.stages[2] = 1;
+        won_code = 0;
+        expect(!ap_content_mode_open(&pad, AP_CONTENT_MODE_CTR, counts, won_check), "no second stage still waits for the win");
+        won_code = 5001;
+        expect(ap_content_mode_open(&pad, AP_CONTENT_MODE_CTR, counts, won_check), "no second stage opens with the win");
+        pad.modes[0] = AP_CONTENT_MODE_RELIC; pad.modes[2] = AP_CONTENT_MODE_TROPHY; pad.trophy_location = 0;
+        won_code = 0;
+        expect(ap_content_mode_open(&pad, AP_CONTENT_MODE_CTR, counts, won_check), "a first race with no check proves nothing");
+        pad.first_race_rule = 0; pad.modes[0] = AP_CONTENT_MODE_TROPHY; pad.trophy_location = 5001;
+        expect(ap_content_mode_open(&pad, AP_CONTENT_MODE_CTR, counts, won_check), "a plan without the feature keeps its gates");
+    }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;
 }
