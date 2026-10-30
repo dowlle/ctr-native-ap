@@ -315,6 +315,7 @@ def mode_custom():
     tv["relic_targets"] = dict(sapphire=90000, gold=80000, platinum=70000)
     return [tv, copy.deepcopy(UNKNOWN), relic_only()]
 subsets = [list(c) for n in (1, 2, 3) for c in itertools.combinations(cp.MODES, n)]
+modes_refused = 0
 for index, (modes, stages, order) in enumerate(itertools.product(subsets, ("single", "two"), ("fixed", "per_seed", "per_pad"))):
     custom = mode_custom() if index % 2 == 0 else [copy.deepcopy(cp.PACKAGES[1]), copy.deepcopy(UNKNOWN)]
     # Keep only the custom tracks that can run one of the selected modes.
@@ -334,6 +335,9 @@ for index, (modes, stages, order) in enumerate(itertools.product(subsets, ("sing
             # Only Relic Races: a relic check for each relic item leaves no
             # check for the Keys and Gems.
             assert modes == ["relic"] or "at the start" in str(exc), exc
+            modes_refused += modes != ["relic"]
+assert modes_refused <= 6, f"{modes_refused} mode cases refused at the start"
+assert sum(name.startswith("modes-") for name, _, _ in cases) >= 80
 modes_base = make_world(mode_options(list(cp.MODES), "two", "per_pad", custom=mode_custom()), seed=3).fill_slot_data()
 cases.append(("modes-base", modes_base, True))
 def multi_pad(p):
