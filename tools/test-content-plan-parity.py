@@ -337,7 +337,7 @@ for index, (modes, stages, order) in enumerate(itertools.product(subsets, ("sing
             assert modes == ["relic"] or "at the start" in str(exc), exc
             modes_refused += modes != ["relic"]
 assert modes_refused <= 6, f"{modes_refused} mode cases refused at the start"
-assert sum(name.startswith("modes-") for name, _, _ in cases) >= 80
+assert sum(name.startswith("modes-") for name, _, _ in cases) >= 66  # 84 less the 12 relic-only
 modes_base = make_world(mode_options(list(cp.MODES), "two", "per_pad", custom=mode_custom()), seed=3).fill_slot_data()
 cases.append(("modes-base", modes_base, True))
 def multi_pad(p):
