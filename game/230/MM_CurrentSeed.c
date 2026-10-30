@@ -270,8 +270,8 @@ static int MM_CurrentSeed_Page(uint32_t *ot, struct GamepadBuffer *pad)
 			DecalFont_DrawLineOT(fit, 0x20, 0xBA, FONT_SMALL, WHITE, ot);
 		}
 	}
-	if (s_seedMessage[0])
-		MM_Seed_DrawWrapped(s_seedMessage, 0x20, 0xC8, 0x1C0, 1, ORANGE, ot);
+	MM_Seed_DrawWrapped(s_seedMessage[0] ? s_seedMessage : "Select: Import track files from an xdelta patch",
+	                    0x20, 0xC8, 0x1C0, 1, ORANGE, ot);
 	DecalFont_DrawLineOT(AP_SeedContentInstallBusy() ? "Installing...    Square: Rescan" :
 	                     "Cross: Install missing content    Square: Rescan",
 	                     0x100, 0xD6, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);

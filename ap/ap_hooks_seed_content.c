@@ -68,9 +68,11 @@ int AP_SeedContentRows(struct AP_SeedContentRow *rows, int max)
 		row->source = compiled && compiled->downloadApiUrl && compiled->downloadApiUrl[0]
 		              ? AP_SEED_SOURCE_SAPHI : AP_SEED_SOURCE_MANUAL;
 		row->index = i;
-		// The room's package record has no patch locator yet: the field
-		// stays empty.
-		row->locator.bigfile_index = -1;
+		// The xdelta patch an imported track comes from, when the room's
+		// package record names one.
+		row->locator.bigfile_index = pkg->locator_index;
+		snprintf(row->locator.patch_sha256, sizeof row->locator.patch_sha256, "%s", pkg->locator_sha256);
+		snprintf(row->locator.patch_name, sizeof row->locator.patch_name, "%s", pkg->locator_name);
 	}
 	if (ap_content_plan_cortex() && n < max)
 	{

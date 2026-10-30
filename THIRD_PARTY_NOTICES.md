@@ -355,3 +355,29 @@ freely, subject to the following restrictions:
 2. Altered source versions must be plainly marked as such, and must not be
    misrepresented as being the original software.
 3. This notice may not be removed or altered from any source distribution.
+
+## xdelta3 (AP build, box authoring build and authoring client)
+
+Source: <https://github.com/jmacd/xdelta>, branch `release3_1_apl`, commit
+`7508fd2a823443b1f0173ca361620f21d62a7d37` (xdelta 3.1.1).
+
+Vendored as an unmodified decode-only subset in `vendor/xdelta3/` for the xdelta
+track importer (Options > Custom Content > Import track files).
+
+License: Apache License 2.0. The full text is in `vendor/xdelta3/LICENSE` and
+ships as `LICENSE-xdelta3.txt` in the release folders that include the importer.
+
+Copyright 2016 Joshua MacDonald
+
+## utf8proc (AP build, box authoring build and authoring client)
+
+Source: utf8proc 2.8.0 (Unicode 15.0.0), vendored in `vendor/utf8proc/` and
+pinned by `vendor/utf8proc/SHA256SUMS`. Used for custom-track title checks and
+track folder names.
+
+License: MIT ("expat"), with the Unicode data files under the Unicode license.
+The full text is in `vendor/utf8proc/LICENSE.md` and ships as
+`LICENSE-utf8proc.md` in the release folders that include it.
+
+Copyright 2014-2021 Steven G. Johnson, Jiahao Chen, Tony Kelman, Jonas Fonseca
+and other contributors; Copyright 2009, 2013 Public Software Group e. V., Berlin.

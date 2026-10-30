@@ -60,9 +60,8 @@ enum
 };
 
 /* An xdelta patch locator ([[xdelta track importer design]]): which patch and
- * BIGFILE slot a track comes from. The room's package record has no such
- * field yet, so it is always empty in this build; the page still shows the
- * field so the importer can fill it without a layout change. */
+ * BIGFILE slot a track comes from, from the package record's optional
+ * `locator`. Empty (bigfile_index -1) when the room names no patch. */
 struct AP_SeedContentLocator
 {
 	char patch_name[AP_SEED_ID_MAX];
@@ -270,6 +269,8 @@ static inline void ap_seed_instruction(const struct AP_SeedContentRow *row, char
 	case AP_SEED_SCAN_MISSING_FILE:
 		if (row->source == AP_SEED_SOURCE_SAPHI)
 			snprintf(out, size, "Downloads from Project Saphi with Install missing content.");
+		else if (row->locator.patch_sha256[0])
+			snprintf(out, size, "No download. Select: import the patch below, or drop it on the window.");
 		else
 			snprintf(out, size, "No download. Put the v%s LEV and VRM in tracks/%s/original, then Rescan.", rev, folder);
 		return;

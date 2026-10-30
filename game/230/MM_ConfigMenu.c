@@ -901,6 +901,8 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 }
 
 #if defined(CTR_CUSTOM_TRACKS) && !defined(CTR_CUSTOM_PACKAGES)
+#include "MM_CustomText.c"
+#include "MM_CustomImport.c" // xdelta importer in the player client (decision 35)
 #include "MM_CurrentSeed.c" // content-plan rooms: the Current Seed tab (#133 PR 7)
 #define CUSTOM_CONTENT_ACTION_COUNT 6
 static const char *const s_customContentActions[CUSTOM_CONTENT_ACTION_COUNT] = {
@@ -976,6 +978,23 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 	char downloadMessage[128];
 	int downloadState = AP_CustomContentDownloadStatus(downloadMessage, sizeof downloadMessage);
 	int i;
+
+	// Import track files (decision 35): Select opens it, a patch dropped on
+	// the window opens it with that patch. It owns the page while open.
+	if (!s_customContentDownloadActive && !AP_SeedContentInstallBusy())
+		MM_CustomImport_TakeDrop();
+	if (!MM_CustomImport_Active() && (pad->buttonsTapped & BTN_SELECT) && !s_customContentDownloadActive &&
+	    !AP_SeedContentInstallBusy())
+	{
+		MM_CustomImport_Open();
+		OtherFX_Play(1, 1);
+		return;
+	}
+	if (MM_CustomImport_Active())
+	{
+		MM_CustomImport_Proc(ot, pad);
+		return;
+	}
 
 	// A content-plan room opens on Current Seed; L1 / R1 reach this page.
 	if (MM_CurrentSeed_Page(ot, pad))
@@ -1104,6 +1123,7 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 	}
 
 	CustomContent_DrawMessage(ot);
+	DecalFont_DrawLineOT("Select: Import track files", 0x100, 0x68, FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
 }
 #endif
 #endif // CTR_AP
@@ -1228,10 +1248,10 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 #ifdef CTR_CUSTOM_PACKAGES
 	    // Drain a package or Saphi worker before leaving; Back first leaves
 	    // the Versions list of one track.
-	    && !MM_CustomLibrary_Busy() && !s_saphiVersionTrack
+	    && !MM_CustomLibrary_Busy() && !s_saphiVersionTrack && !MM_CustomImport_Active()
 #elif defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
 	    // Back first closes the Install missing content overview (#133 PR 7).
-	    && !MM_CurrentSeed_ConsumesBack(s_currentSection)
+	    && !MM_CurrentSeed_ConsumesBack(s_currentSection) && !MM_CustomImport_Active()
 #endif
 	)
 	{

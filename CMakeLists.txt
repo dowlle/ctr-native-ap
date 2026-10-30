@@ -195,6 +195,8 @@ set(CTR_CUSTOM_PACKAGE_SOURCES
     platform/native_custom_track_library.c
     platform/native_custom_unicode.c
     platform/native_saphi_catalogue.cpp
+    platform/native_xdelta_import.cpp
+    platform/native_xdelta_decode.c
     vendor/utf8proc/utf8proc.c)
 
 if(NOT CTR_AP)
@@ -223,7 +225,7 @@ if(NOT CTR_AP)
         endif()
         target_compile_options(custom_package PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fexceptions;-frtti>)
         target_link_libraries(custom_package PUBLIC OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB Threads::Threads)
-        target_compile_definitions(ctr_native PRIVATE CTR_CUSTOM_PACKAGES)
+        target_compile_definitions(ctr_native PRIVATE CTR_CUSTOM_PACKAGES CTR_XDELTA_IMPORT)
         target_link_libraries(ctr_native custom_package)
         if(WIN32)
             target_link_libraries(ctr_native winhttp ws2_32 crypt32)
@@ -331,9 +333,35 @@ if(CTR_AP)
     # seed's custom track with the structural verifier the package library
     # uses, so it can refuse a capability the bytes do not have. Only this one
     # C file, as its own translation unit; the library, Track Manager and
-    # utf8proc stay out of the player client.
+    # Saphi catalogue stay out of the player client.
     if(CTR_CUSTOM_TRACKS AND NOT CTR_CUSTOM_PACKAGES)
         target_sources(ctr_native PRIVATE platform/native_custom_content_verify.c)
+        # The xdelta importer in the player client (decision 35, 2026-10-28):
+        # Options > Custom Content imports a patch into the folder rooms and
+        # solo seeds read (assets/tracks/<track key>/original). It builds and
+        # verifies each track as a package in memory, so it brings the package
+        # parser, utf8proc and the decoder, but not the package store, the
+        # Track Manager or the Saphi catalogue. CTR_CUSTOM_PACKAGES stays off.
+        include(${CMAKE_SOURCE_DIR}/cmake/CustomPackageDeps.cmake)
+        add_library(xdelta_import STATIC
+            platform/native_xdelta_import.cpp
+            platform/native_xdelta_decode.c
+            platform/native_custom_package.cpp
+            platform/native_custom_package_files.cpp
+            platform/native_custom_package_owned.c
+            platform/native_custom_offline.c
+            platform/native_custom_unicode.c
+            vendor/utf8proc/utf8proc.c)
+        set_target_properties(xdelta_import PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+        target_include_directories(xdelta_import PRIVATE ${CMAKE_SOURCE_DIR}/include
+            ${AP_VENDOR}/json/include ${CMAKE_SOURCE_DIR}/vendor/utf8proc)
+        target_compile_definitions(xdelta_import PRIVATE CTR_CUSTOM_TRACKS UTF8PROC_STATIC)
+        target_compile_options(xdelta_import PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fexceptions;-frtti>)
+        target_link_libraries(xdelta_import PUBLIC Threads::Threads)
+        target_link_libraries(ctr_native xdelta_import)
+    endif()
+    if(CTR_CUSTOM_TRACKS)
+        target_compile_definitions(ctr_native PRIVATE CTR_XDELTA_IMPORT)
     endif()
     target_compile_options(ap_net PRIVATE -O1 -fexceptions -frtti)
     # -Wa,-mbig-obj is a COFF-only assembler flag (mingw); ELF has no such limit.

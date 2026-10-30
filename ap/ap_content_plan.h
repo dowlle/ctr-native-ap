@@ -161,6 +161,12 @@ typedef struct ctr_content_package {
      * stated value the bytes disagree with. With both a track may be a
      * boss venue under Boss Track Shuffle. */
     int checkpoints, ai_nav;
+    /* Optional `locator` (xdelta importer, 0.3.0): the xdelta patch and
+     * BIGFILE slot an imported track comes from, shown on Current Seed so
+     * the player knows which patch to import. Informational only. */
+    int locator_index;        /* -1 when the record names no patch */
+    char locator_sha256[65];  /* lowercase hex, "" when absent */
+    char locator_name[65];    /* printable ASCII file name, "" when absent */
 } ctr_content_package;
 #define AP_CONTENT_UNSTATED (-1)
 #define AP_CONTENT_WEAPON_CRATES_UNSTATED (-1)

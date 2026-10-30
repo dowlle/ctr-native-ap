@@ -15,6 +15,9 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#ifdef CTR_XDELTA_IMPORT
+#include <platform/native_xdelta_pick.h>
+#endif
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -769,6 +772,13 @@ void Platform_PollHostEvents(void)
 		case SDL_EVENT_TEXT_INPUT:
 			Platform_HandleTextInput(event.text.text);
 			break;
+#ifdef CTR_XDELTA_IMPORT
+		// An xdelta patch dropped on the window (decision 35): kept for the
+		// import screen, which opens with it on Options > Custom Content.
+		case SDL_EVENT_DROP_FILE:
+			XdeltaPick_Drop(event.drop.data);
+			break;
+#endif
 		case SDL_EVENT_KEY_DOWN:
 		case SDL_EVENT_KEY_UP:
 		{
