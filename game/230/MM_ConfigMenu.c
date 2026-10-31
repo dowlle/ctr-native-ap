@@ -807,33 +807,46 @@ static void TextEdit_Begin(const ConfigEntry *e, int row, int rowY)
 	s_connEditing = 1;
 }
 
-// A status too long for one line of the panel breaks at spaces, over at most
-// three rows (the v0.2.x room refusal needs them).
-static void Conn_DrawLongStatus(const char *status, int y, int rowSpacing, uint32_t *ot)
+// A long status: "Error:" stays beside the label and the reason takes up to two
+// centred rows, broken at spaces (the v0.2.x room refusal needs both). A word too
+// wide for the panel is cut, and text past the last row ends in "...". The second
+// row is the edit hint's while a row is being edited.
+static void Conn_DrawLongStatus(const char *status, int labelY, int valueX, int rowSpacing, uint32_t *ot)
 {
-	char line[128];
+	const int rows = s_connEditing ? 1 : 2;
 	int row;
 
-	for (row = 0; row < 3 && *status != '\0'; row++)
+	if (strncmp(status, "Error: ", 7) == 0)
 	{
+		DecalFont_DrawLineOT((char *)"Error:", valueX, labelY, FONT_SMALL, WHITE, ot);
+		status += 7;
+	}
+	for (row = 0; row < rows && *status != '\0'; row++)
+	{
+		char line[128];
 		int end = 0;
 		int i;
 
-		for (i = 0; status[i] != '\0' && i < (int)sizeof line - 1; i++)
+		for (i = 0; status[i] != '\0' && i < (int)sizeof line - 4; i++)
 		{
 			line[i] = status[i];
 			line[i + 1] = '\0';
-			if (status[i + 1] != ' ' && status[i + 1] != '\0')
-				continue;
-			if (end != 0 && DecalFont_GetLineWidth(line, FONT_SMALL) > CONN_STATUS_LINE_WIDTH)
+			if (DecalFont_GetLineWidth(line, FONT_SMALL) > CONN_STATUS_LINE_WIDTH)
+			{
+				if (end == 0)
+					end = i;
 				break;
-			end = i + 1;
+			}
+			if (status[i + 1] == ' ' || status[i + 1] == '\0')
+				end = i + 1;
 		}
 		line[end] = '\0';
-		DecalFont_DrawLineOT(line, 0x100, y + row * rowSpacing, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 		status += end;
 		while (*status == ' ')
 			status++;
+		if (row == rows - 1 && *status != '\0' && end >= 3)
+			memcpy(line + end - 3, "...", 3);
+		DecalFont_DrawLineOT(line, 0x100, labelY + (row + 1) * rowSpacing, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 	}
 }
 
@@ -937,7 +950,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		const char *status = AP_Net_StatusLine();
 		DecalFont_DrawLineOT("Status", labelX, y, FONT_SMALL, ORANGE, ot);
 		if ((int)strlen(status) > CONN_STATUS_INLINE_MAX)
-			Conn_DrawLongStatus(status, y + rowSpacing, rowSpacing, ot);
+			Conn_DrawLongStatus(status, y, valueX, rowSpacing, ot);
 		else
 			DecalFont_DrawLineOT((char *)status, valueX, y, FONT_SMALL, WHITE, ot);
 	}
