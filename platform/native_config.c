@@ -47,6 +47,7 @@ NativeConfig g_config = {
 	-1,    // dlSendHit
 	-1,    // dlSendLoss
 	15,    // trapDuration (recommended default, seconds; 0 = full race)
+	-1,    // raceTypeSelector (-1 = follow the seed's race_type_selector)
 	"",    // uri      (empty = no saved room; startup skips the auto-dial)
 	"",    // slot
 	"",    // password
@@ -147,6 +148,9 @@ const ConfigEntry g_configEntries[] = {
 	{"Connection",  "slot",                     "Slot",                         CFG_STRING, g_config.slot,     0, (int)sizeof(g_config.slot),     0},
 	{"Connection",  "password",                 "Password",                     CFG_STRING, g_config.password, 0, (int)sizeof(g_config.password), 0},
 	{"Archipelago", "skip_hints",               "Skip Mask Hints",              CFG_BOOL, &g_config.skipHints},
+	// Race type menu on plan pads (#208, CFG_ENUM SEED / ALWAYS / PRODUCTIVE).
+	// SEED follows the seed's race_type_selector. Shown on the Gameplay page.
+	{"Archipelago", "race_type_selector",       "Race Type Menu",               CFG_ENUM, &g_config.raceTypeSelector},
 	{"Archipelago", "map_flash",                "Map Flash",                    CFG_BOOL, &g_config.mapFlash},
 	// Item Box Colours: this player's opt-out of the seed's AP item box colours
 	// (color_boxes_by_item). Off = pink boxes for this player only. The menu

@@ -2,7 +2,7 @@
 #define AP_TRACKER_LAUNCH_LOGIC_H
 
 // A start from the in-game tracker (#375, 0.3.0). Freestanding so
-// tools/test-pad-activity.py pins it out of engine.
+// tools/test-tracker-pad-launch.py pins it out of engine.
 //
 // The tracker never loads a race. It records which physical pad or garage
 // the player chose, resumes the hub, loads the pad's hub first when the

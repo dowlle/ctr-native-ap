@@ -2173,7 +2173,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// from its input, then apply them only after that plan was admitted. A
 	// non-Boolean value stays in and the validator refuses it as before.
 	// Legacy options are read below.
-	static const char *const kAdditiveContentFields[] = {"reserve_top_up", "spoiler_items", "tracker_pad_launch"};
+	static const char *const kAdditiveContentFields[] = {"reserve_top_up", "spoiler_items"};
 	bool strip_additive = false;
 	if (j.is_object() && j.contains("content_plan") && j.contains("ctr_options") && j["ctr_options"].is_object())
 		for (const char *key : kAdditiveContentFields)
@@ -2195,7 +2195,6 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		{
 			ctr_cfg.reserve_top_up = json_int(j["ctr_options"], "reserve_top_up", 0) != 0;
 			ctr_cfg.spoiler_items = json_int(j["ctr_options"], "spoiler_items", 0) != 0;
-			ap_seedcfg_parse_tracker_pad_launch(j["ctr_options"]);
 		}
 	}
 	else
@@ -2203,6 +2202,9 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// #459: an admitted content plan's envelope says whether it has AP boxes.
 	if (content_result == 2)
 		ctr_cfg.seed_box_locations = json_int(j["ctr_options"], "box_locations", 0) != 0;
+	// One generator row 6: a plan room's race-loss stakes read the exported logic.
+	if (content_result == 2)
+		ap_seedcfg_parse_win_logic(j);
 	if (content_result != 1)
 		return;
 	if (!parse_hit_character(j))

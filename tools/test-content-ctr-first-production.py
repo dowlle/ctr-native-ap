@@ -273,15 +273,15 @@ int main(void) {
    /* CTR, Trophy and four rungs count under the CTR mode; three relic tiers under Relic. */
    assert(ap_content_mode_pending(&pad,AP_CONTENT_MODE_CTR,checkedFn)==6); cases++;
    assert(ap_content_mode_pending(&pad,AP_CONTENT_MODE_RELIC,checkedFn)==3); cases++;
-   assert(ap_content_track_pad_state(&pad,counts,checkedFn)==2); cases++;
+   assert(ap_content_track_pad_state(&pad, counts, checkedFn, 0)==2); cases++;
    checkedCodes[checkedCount++]=CTR; assert(ap_content_mode_pending(&pad,AP_CONTENT_MODE_CTR,checkedFn)==5); cases++;
    checkedCodes[checkedCount++]=35015100; checkedCodes[checkedCount++]=35015101; checkedCodes[checkedCount++]=35015103;
    checkedCodes[checkedCount++]=35015002;
    /* Only the Trophy is left at stage 1: the pad keeps its open look. */
-   assert(ap_content_mode_pending(&pad,AP_CONTENT_MODE_CTR,checkedFn)==1 && ap_content_track_pad_state(&pad,counts,checkedFn)==2); cases++;
+   assert(ap_content_mode_pending(&pad,AP_CONTENT_MODE_CTR,checkedFn)==1 && ap_content_track_pad_state(&pad, counts, checkedFn, 0)==2); cases++;
    checkedCodes[checkedCount++]=TROPHY;
    /* Stage-1 work done, the Relic Race waits behind stage 2. */
-   assert(ap_content_track_pad_state(&pad,counts,checkedFn)==3); cases++;
+   assert(ap_content_track_pad_state(&pad, counts, checkedFn, 0)==3); cases++;
    /* The selector: one row per entry mode, CTR then Relic, no Trophy row. */
    { ap_content_selector sel; ap_content_selector_build(&pad,counts,checkedFn,&sel);
      assert(sel.count==2 && sel.mode[0]==AP_CONTENT_MODE_CTR && sel.mode[1]==AP_CONTENT_MODE_RELIC &&
@@ -321,7 +321,7 @@ assert "AP_ContentCtrFirstPlace();" in checks
 # The content-plan result path reports through AP_NotifyStandaloneRace.
 assert "AP_NotifyStandaloneRace();" in game222
 # The content-plan mode menu is built from the entry's own modes.
-assert re.search(r"AP_ContentSelectorBuild\(pad, &sel\);\s*AH_WarpPad_ContentModeRows\(&sel\);", warp)
+assert re.search(r"AP_ContentMenuRows\(pad, &apRsRows\);", warp)
 
 with tempfile.TemporaryDirectory() as temporary:
     path = Path(temporary) / "ctrfirst.c"

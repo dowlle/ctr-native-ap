@@ -1,15 +1,13 @@
-"""Start pad activities from the in-game tracker (#375): execute the shared
-activity decision, the start lifecycle and the real schema-18 parser on the
-host, and pin the production call sites.
+"""Start pad activities from the in-game tracker (#375, one generator row 6):
+execute the shared activity decision, the start lifecycle and the real schema-18
+parser on the host, and pin the production call sites.
 
-Parity: for every combination of hub Keys, pad state, stage 1, racer lock,
-replay, custom content, structure, checked Trophy, stage 2 and the modes a
-destination has, the tracker's open rows are exactly the rows the pad's own
-race type menu builds (AP_RaceSelectorBuild over the same facts) whenever the
-pad takes the kart, and no row is open when it does not. Content-plan pads
-and single-route pads (cups, arenas, trials, garages) are pinned the same way.
-The start lifecycle never loads anything itself and drops on a timeout, a
-different level or a closed gate. Run from the repository root.
+Plan pads only: a room without a plan keeps an inspection-only tracker. For every
+combination of hub Keys, pad state, stage 1, racer lock, replay, custom content
+and open modes, a row is open exactly when the plan pad's own entry takes the
+kart and offers that race. Cups, Crystal Challenges and garages are pinned the
+same way. The start lifecycle never loads anything itself and drops on a timeout,
+a different level or a closed gate. Run from the repository root.
 """
 from pathlib import Path
 import subprocess
@@ -21,124 +19,94 @@ logic = r'''
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#define CTR_AP 1
+#include "ap_content_modes.h"
 #include "ap_pad_activity_logic.h"
 #include "ap_tracker_launch_logic.h"
 
-enum { T = AP_RS_TROPHY, C = AP_RS_CTR, R = AP_RS_RELIC };
+static int64_t g_won;
+static int won_fn(int64_t code) { return g_won && code == g_won; }
 
-/* The pad's own entry, in AH_WarpPad_ThTick order, for a selector pad: does
- * it take the kart at all? Done without a replay returns, a closed pad never
- * reaches entry (state 1 locked, state 3 re-locked), the racer lock and
- * custom content refuse, and a refused structure has no row. */
-static int pad_takes(int state, int racer, int replayable, int content, int structure)
-{
- if (state == 0) return 0;
- if (state == 5 && !replayable) return 0;
- if (state == 1 || state == 3) return 0;
- if (!racer || !content) return 0;
- if (structure == AP_RS_STRUCTURE_REFUSED) return 0;
- return 1;
-}
+enum { T = 0, C = 1, R = 2 };
 
-static void selector_parity(void)
+/* The plan pad's entry in AH_WarpPad_ThTick order: an occupied, Ready pad; not
+ * Done unless it replays; stage 1 with the racer lock; not closed again. */
+static int pad_takes(int state, int ready, int s1, int replay)
 {
- int cases = 0;
- for (int keys = 0; keys < 2; keys++)
- for (int state = 0; state <= 5; state++)
- for (int s1 = 0; s1 < 2; s1++)
- for (int racer = 0; racer < 2; racer++)
- for (int rep = 0; rep < 2; rep++)
- for (int content = 0; content < 2; content++)
- for (int st = -1; st <= 1; st++)
- for (int tc = 0; tc < 2; tc++)
- for (int s2 = 0; s2 < 2; s2++)
- for (int ctrPresent = 0; ctrPresent < 2; ctrPresent++)
- for (int prod = 0; prod < 8; prod++) {
-  ap_padact_facts f; ap_padact_list l; ap_rs_rows rows; int admitted[3], i, open = 0;
-  memset(&f, 0, sizeof f);
-  f.node = AP_PADACT_NODE_SELECTOR; f.keysHave = keys; f.keysNeed = 1;
-  f.padState = state; f.stage1Met = s1; f.padReqMet = s1; f.racerMet = racer; f.replayable = rep;
-  f.contentReady = content; f.structure = st; f.trophyChecked = tc; f.stage2Met = s2;
-  f.rs.present[T] = 1; f.rs.present[C] = ctrPresent; f.rs.present[R] = 1;
-  for (i = 0; i < 3; i++) f.rs.productive[i] = (prod >> i) & 1;
-  AP_PadActivityDecide(&f, &l);
-  /* Every mode the destination has is listed, open or not. */
-  assert(l.count == 2 + ctrPresent - (st == AP_RS_STRUCTURE_CTR_FIRST));
-  /* ctr_first lists no Trophy Race row. */
-  if (st == AP_RS_STRUCTURE_CTR_FIRST) for (i = 0; i < l.count; i++) assert(l.activity[i] != T);
-  /* The pad's own menu over the same facts (AP_PadSelectorRows). */
-  AP_RaceStructureAdmit(st == AP_RS_STRUCTURE_CTR_FIRST ? st : AP_RS_STRUCTURE_CLASSIC, tc, s2, admitted);
-  AP_RaceSelectorBuild(&f.rs, admitted, &rows);
-  for (i = 0; i < l.count; i++) {
-   int inMenu = AP_TLModeOffered(rows.mode, rows.count, l.launchMode[i]);
-   int takes = keys && pad_takes(state, racer, rep, content, st);
-   assert(l.launchMode[i] == l.activity[i]);
-   if (l.reason[i] == AP_PADACT_OPEN) { open++; assert(takes && inMenu); }
-   else {
-    assert(!takes || !inMenu);
-    assert(l.reason[i] > 0 && l.reason[i] < AP_PADACT_REASONS);
-    assert(AP_PadActivityReasonName(l.reason[i])[0]);
-   }
-   if (takes && inMenu) assert(l.reason[i] == AP_PADACT_OPEN);
-  }
-  /* Missing hub Keys come first, for every row. */
-  if (!keys) for (i = 0; i < l.count; i++) assert(l.reason[i] == AP_PADACT_LOCK_HUB);
-  if (keys && state == 1) for (i = 0; i < l.count; i++)
-   assert(l.reason[i] == (s1 ? AP_PADACT_LOCK_RACER : AP_PADACT_LOCK_PAD));
-  if (keys && state == 5 && !rep) for (i = 0; i < l.count; i++) assert(l.reason[i] == AP_PADACT_LOCK_DONE);
-  /* A mode the gates hold back names the gate: the Trophy first in classic. */
-  if (keys && pad_takes(state, racer, rep, content, st) && st == AP_RS_STRUCTURE_CLASSIC && !tc)
-   for (i = 0; i < l.count; i++) if (l.activity[i] != T) assert(l.reason[i] == AP_PADACT_LOCK_TROPHY);
-  if (keys && pad_takes(state, racer, rep, content, st) && tc && !s2)
-   for (i = 0; i < l.count; i++) if (l.activity[i] == R) assert(l.reason[i] == AP_PADACT_LOCK_STAGE2);
-  /* Grey rows in the pad's menu are replays in the tracker. */
-  for (i = 0; i < l.count; i++) assert(l.left[i] == f.rs.productive[l.activity[i]]);
-  cases++;
- }
- printf("selector parity: %d cases\n", cases);
+ if (!ready || (state == 5 && !replay) || !s1) return 0;
+ return state != 3;
 }
 
 static void content_parity(void)
 {
+ int cases = 0;
  for (int keys = 0; keys < 2; keys++)
  for (int ready = 0; ready < 2; ready++)
  for (int s1 = 0; s1 < 2; s1++)
  for (int racer = 0; racer < 2; racer++)
+ for (int state = 1; state <= 5; state++)
+ for (int replay = 0; replay < 2; replay++)
  for (int n = 1; n <= 3; n++)
  for (int open = 0; open < 8; open++) {
   ap_padact_facts f; ap_padact_list l; int i;
   memset(&f, 0, sizeof f);
-  f.node = AP_PADACT_NODE_CONTENT; f.content = 1; f.keysHave = keys; f.keysNeed = 1;
-  f.contentReady = ready; f.stage1Met = s1; f.padReqMet = s1; f.racerMet = racer; f.modeCount = n;
+  f.node = AP_PADACT_NODE_CONTENT; f.occupied = 1; f.keysHave = keys; f.keysNeed = 1; f.padState = state;
+  f.contentReady = ready; f.stage1Met = s1; f.padReqMet = s1; f.racerMet = racer; f.modeCount = n; f.replayable = replay;
   for (i = 0; i < n; i++) { f.contentMode[i] = (i + 1) % 3; f.contentOpen[i] = (open >> i) & 1; f.contentLeft[i] = i & 1; }
   AP_PadActivityDecide(&f, &l);
   assert(l.count == n);
   for (i = 0; i < n; i++) {
-   /* The content-plan entry: occupied and Ready, AP_ContentPadOpen, then
-    * the pad's selector row must be open. */
-   int takes = keys && ready && s1 && f.contentOpen[i];
+   int takes = keys && pad_takes(state, ready, s1, replay) && f.contentOpen[i];
    assert((l.reason[i] == AP_PADACT_OPEN) == takes);
    assert(l.activity[i] == f.contentMode[i]);
-   /* One mode: the pad asks nothing; several: the row answers its menu. */
-   assert(l.launchMode[i] == (n > 1 ? f.contentMode[i] : -1));
+   /* The row answers the pad's menu, one row or three. */
+   assert(l.launchMode[i] == f.contentMode[i]);
+   assert(l.left[i] == (i & 1));
+   cases++;
   }
  }
+ printf("content parity: %d cases\n", cases);
+}
+
+/* The menu's rows are the open rows of the list on the same pad. */
+static void menu_parity(void)
+{
+ int cases = 0;
+ for (int order = 0; order < 2; order++)
+ for (int won = 0; won < 2; won++)
+ for (int stage2 = 0; stage2 < 2; stage2++) {
+  ctr_content_pad pad; ap_rs_rows rows; ap_content_selector sel; ap_padact_facts f; ap_padact_list l;
+  int counts[15] = {0}; int i, r;
+  memset(&pad, 0, sizeof pad);
+  pad.occupied = 1; pad.first_race_rule = 1; pad.mode_count = 3; pad.racer_lock = -1;
+  pad.modes[0] = order ? AP_CONTENT_MODE_RELIC : AP_CONTENT_MODE_TROPHY;
+  pad.modes[1] = AP_CONTENT_MODE_CTR;
+  pad.modes[2] = order ? AP_CONTENT_MODE_TROPHY : AP_CONTENT_MODE_RELIC;
+  pad.stages[0] = 1; pad.stages[1] = pad.stages[2] = 2; pad.has_stage2 = 1; pad.stage2_count = 1; pad.stage2_mask = 1;
+  pad.trophy_location = 1; pad.ctr_location = 2; pad.relic_locations[0] = 3;
+  g_won = won ? (order ? 3 : 1) : 0;
+  counts[0] = stage2;
+  ap_content_menu_rows(&pad, counts, won_fn, 0, &rows);
+  ap_content_selector_build(&pad, counts, won_fn, &sel);
+  memset(&f, 0, sizeof f);
+  f.node = AP_PADACT_NODE_CONTENT; f.occupied = 1; f.contentReady = 1; f.padState = 2; f.stage1Met = f.padReqMet = f.racerMet = 1;
+  f.firstRaceWon = won; f.stage2Open = stage2; f.modeCount = sel.count;
+  for (i = 0; i < sel.count; i++) { f.contentMode[i] = sel.mode[i]; f.contentOpen[i] = sel.open[i]; f.contentLeft[i] = sel.pending[i]; }
+  AP_PadActivityDecide(&f, &l);
+  for (i = 0, r = 0; i < l.count; i++) if (l.reason[i] == AP_PADACT_OPEN) {
+   assert(r < rows.count && rows.mode[r] == l.launchMode[i]); r++;
+  }
+  assert(r == rows.count);
+  /* A later race waits for the first race, then for stage 2, and says which. */
+  if (!won) assert(l.mask[1] & AP_PADACT_BIT(AP_PADACT_LOCK_TROPHY));
+  if (!stage2) assert(l.mask[1] & AP_PADACT_BIT(AP_PADACT_LOCK_STAGE2));
+  cases++;
+ }
+ printf("menu parity: %d cases\n", cases);
 }
 
 static void single_and_garage(void)
 {
- for (int keys = 0; keys < 2; keys++)
- for (int state = 0; state <= 5; state++)
- for (int racer = 0; racer < 2; racer++)
- for (int content = 0; content < 2; content++) {
-  ap_padact_facts f; ap_padact_list l;
-  memset(&f, 0, sizeof f);
-  f.node = AP_PADACT_NODE_SINGLE; f.single = AP_PADACT_CUP; f.keysHave = keys; f.keysNeed = 1;
-  f.padState = state; f.stage1Met = 1; f.racerMet = racer; f.contentReady = content;
-  AP_PadActivityDecide(&f, &l);
-  assert(l.count == 1 && l.activity[0] == AP_PADACT_CUP && l.launchMode[0] == -1);
-  assert((l.reason[0] == AP_PADACT_OPEN) == (keys && pad_takes(state, racer, 0, content, 0)));
- }
  for (int keys = 0; keys < 2; keys++)
  for (int open = 0; open < 2; open++) {
   ap_padact_facts f; ap_padact_list l;
@@ -154,21 +122,31 @@ static void single_and_garage(void)
   AP_PadActivityDecide(&f, &l);
   assert(l.count == 0);
  }
- /* Content-plan cups and Crystal Challenges: the pad's Done gate runs before
-  * its content branch and never replays a content pad, so state 5 (a
-  * finished crystal, an empty slot, content not Ready) never starts; a
-  * finished cup (state 4) replays. */
+ /* Cups and Crystal Challenges: a finished cup replays, a finished Crystal
+  * Challenge does not, and neither starts on a pad without its content. */
  for (int state = 1; state <= 5; state++)
  for (int ready = 0; ready < 2; ready++)
+ for (int replay = 0; replay < 2; replay++)
  for (int s1 = 0; s1 < 2; s1++) {
   ap_padact_facts f; ap_padact_list l;
+  if (state == 3 || state == 4) continue;
   memset(&f, 0, sizeof f);
-  f.node = AP_PADACT_NODE_SINGLE; f.content = 1; f.single = AP_PADACT_CRYSTAL;
-  f.keysHave = f.keysNeed = 1; f.padState = state; f.contentReady = ready; f.stage1Met = s1; f.padReqMet = s1; f.racerMet = 1;
+  f.node = AP_PADACT_NODE_SINGLE; f.occupied = 1; f.single = replay ? AP_PADACT_CUP : AP_PADACT_CRYSTAL;
+  f.keysHave = f.keysNeed = 1; f.padState = state; f.contentReady = ready; f.stage1Met = s1; f.padReqMet = s1;
+  f.racerMet = 1; f.replayable = replay;
   AP_PadActivityDecide(&f, &l);
-  assert(l.count == 1);
-  assert((l.reason[0] == AP_PADACT_OPEN) == (ready && s1 && state != 5));
-  if (ready && state == 5) assert(l.reason[0] == AP_PADACT_LOCK_DONE);
+  assert(l.count == 1 && l.launchMode[0] == -1);
+  assert((l.reason[0] == AP_PADACT_OPEN) == (ready && s1 && (state != 5 || replay)));
+  if (ready && state == 5 && !replay) assert(l.reason[0] == AP_PADACT_LOCK_DONE);
+  if (state == 5) assert(!l.left[0] || l.reason[0] != AP_PADACT_OPEN);
+ }
+ /* A spare pad is closed and asks for nothing. */
+ {
+  ap_padact_facts f; ap_padact_list l;
+  memset(&f, 0, sizeof f);
+  f.node = AP_PADACT_NODE_CONTENT; f.padState = 5;
+  AP_PadActivityDecide(&f, &l);
+  assert(l.count == 0);
  }
 }
 
@@ -281,85 +259,67 @@ static void lifecycle(void)
 }
 
 /* Decision 34: a locked row lists every missing requirement. */
+static ap_padact_facts content_facts(void)
+{
+ ap_padact_facts f;
+ memset(&f, 0, sizeof f);
+ f.node = AP_PADACT_NODE_CONTENT; f.occupied = 1; f.contentReady = 1; f.padState = 2; f.keysHave = f.keysNeed = 1;
+ f.stage1Met = f.padReqMet = f.racerMet = 1; f.modeCount = 3; f.stage2Open = 1; f.firstRaceWon = 1;
+ f.contentMode[0] = T; f.contentMode[1] = C; f.contentMode[2] = R; f.contentOpen[0] = f.contentOpen[1] = f.contentOpen[2] = 1;
+ return f;
+}
+
 static void missing_all(void)
 {
- ap_padact_facts f; ap_padact_list l; char lines[2][112];
- memset(&f, 0, sizeof f);
- f.node = AP_PADACT_NODE_SELECTOR; f.keysHave = 0; f.keysNeed = 2;
- f.padState = 1; f.stage1Met = 0; f.padReqMet = 0; f.racerMet = 0; f.contentReady = 1;
- f.structure = AP_RS_STRUCTURE_CLASSIC; f.trophyChecked = 0; f.stage2Met = 0;
- f.rs.present[T] = f.rs.present[C] = f.rs.present[R] = 1;
+ ap_padact_facts f = content_facts(); ap_padact_list l; char lines[2][112];
+ int need = AP_PADACT_BIT(AP_PADACT_LOCK_HUB) | AP_PADACT_BIT(AP_PADACT_LOCK_PAD) | AP_PADACT_BIT(AP_PADACT_LOCK_RACER);
+ f.keysHave = 0; f.keysNeed = 2; f.padState = 1; f.stage1Met = f.padReqMet = f.racerMet = 0;
  AP_PadActivityDecide(&f, &l);
- for (int i = 0; i < l.count; i++) {
-  int need = AP_PADACT_BIT(AP_PADACT_LOCK_HUB) | AP_PADACT_BIT(AP_PADACT_LOCK_PAD) | AP_PADACT_BIT(AP_PADACT_LOCK_RACER);
-  assert(l.reason[i] == AP_PADACT_LOCK_HUB && (l.mask[i] & need) == need);
-  if (l.activity[i] != T) assert(l.mask[i] & AP_PADACT_BIT(AP_PADACT_LOCK_TROPHY) && l.mask[i] & AP_PADACT_BIT(AP_PADACT_LOCK_STAGE2));
- }
+ for (int i = 0; i < l.count; i++) assert(l.reason[i] == AP_PADACT_LOCK_HUB && (l.mask[i] & need) == need);
  /* Two lines when they do not fit one; one reason or a short list stays on one. */
- assert(AP_PadActivityReasonLines(l.mask[2], 34, lines) == 2 && lines[0][0] && lines[1][0]);
- assert(strstr(lines[0], "NEEDS HUB KEYS") && strstr(lines[1] , "SECOND REQUIREMENT"));
+ f = content_facts(); f.keysHave = 0; f.keysNeed = 2; f.padState = 1; f.stage1Met = f.racerMet = 1; f.padReqMet = 1;
+ f.contentOpen[1] = 0; f.firstRaceWon = 0; f.stage2Open = 0;
+ AP_PadActivityDecide(&f, &l);
+ assert(AP_PadActivityReasonLines(l.mask[1], 24, lines) == 2 && lines[0][0] && lines[1][0]);
+ assert(strstr(lines[0], "NEEDS HUB KEYS") && strstr(lines[1], "SECOND REQUIREMENT"));
  assert(AP_PadActivityReasonLines(AP_PADACT_BIT(AP_PADACT_LOCK_RACER), 34, lines) == 1 && !strcmp(lines[0], "NEEDS RACER"));
  assert(AP_PadActivityReasonLines(0, 34, lines) == 0);
- /* A racer-only lock on a retail race pad: stage 1 reads closed because it
-  * includes the lock, but the pad's own requirement is met. */
- f.keysHave = 2; f.racerMet = 0; f.padReqMet = 1; f.stage1Met = 0;
- AP_PadActivityDecide(&f, &l);
- for (int i = 0; i < l.count; i++) assert(l.reason[i] == AP_PADACT_LOCK_RACER && l.mask[i] & AP_PADACT_BIT(AP_PADACT_LOCK_RACER) && !(l.mask[i] & AP_PADACT_BIT(AP_PADACT_LOCK_PAD)));
- f.padReqMet = 0;
- /* A content-plan pad whose only gap is its own rule: no invented second requirement. */
- memset(&f, 0, sizeof f);
- f.node = AP_PADACT_NODE_CONTENT; f.content = 1; f.contentReady = 1; f.padState = 2; f.keysHave = f.keysNeed = 1;
- f.stage1Met = 0; f.padReqMet = 0; f.racerMet = 1; f.modeCount = 2;
- f.contentMode[0] = T; f.contentMode[1] = R; f.contentOpen[0] = f.contentOpen[1] = 0;
- AP_PadActivityDecide(&f, &l);
- for (int i = 0; i < l.count; i++) assert(l.mask[i] == AP_PADACT_BIT(AP_PADACT_LOCK_PAD));
- /* A content-plan pad: its rule met, the racer missing (stage 1 reads closed). */
- memset(&f, 0, sizeof f);
- f.node = AP_PADACT_NODE_CONTENT; f.content = 1; f.contentReady = 1; f.padState = 2;
- f.stage1Met = 0; f.padReqMet = 1; f.racerMet = 0; f.modeCount = 2;
- f.contentMode[0] = T; f.contentMode[1] = R; f.contentOpen[0] = f.contentOpen[1] = 1;
+ /* Its rule met, the racer missing: stage 1 reads closed, the racer is named. */
+ f = content_facts(); f.stage1Met = 0; f.racerMet = 0;
  AP_PadActivityDecide(&f, &l);
  for (int i = 0; i < l.count; i++) assert(l.reason[i] == AP_PADACT_LOCK_RACER && l.mask[i] == AP_PADACT_BIT(AP_PADACT_LOCK_RACER));
  f.padReqMet = 0;
  AP_PadActivityDecide(&f, &l);
  for (int i = 0; i < l.count; i++) assert(l.mask[i] == (AP_PADACT_BIT(AP_PADACT_LOCK_RACER) | AP_PADACT_BIT(AP_PADACT_LOCK_PAD)));
-
- /* Restore the selector facts for the cases below. */
-
- memset(&f, 0, sizeof f);
- f.node = AP_PADACT_NODE_SELECTOR; f.keysNeed = 2; f.padState = 1; f.contentReady = 1;
- f.structure = AP_RS_STRUCTURE_CLASSIC;
- f.rs.present[T] = f.rs.present[C] = f.rs.present[R] = 1;
- f.keysHave = 2; f.racerMet = 1; f.padReqMet = 0;
- /* Keys back, racer back: the pad requirement alone is left. */
- f.keysHave = 2; f.racerMet = 1;
+ /* The pad's own rule alone: no invented second requirement. */
+ f = content_facts(); f.stage1Met = f.padReqMet = 0; f.contentOpen[0] = f.contentOpen[1] = f.contentOpen[2] = 0;
  AP_PadActivityDecide(&f, &l);
- assert(l.reason[0] == AP_PADACT_LOCK_PAD && (l.mask[0] & AP_PADACT_BIT(AP_PADACT_LOCK_PAD)));
- assert(!(l.mask[0] & AP_PADACT_BIT(AP_PADACT_LOCK_HUB)) && !(l.mask[0] & AP_PADACT_BIT(AP_PADACT_LOCK_RACER)));
- /* A finished pad stands alone; open rows carry no mask. */
- f.padState = 5; f.replayable = 0; f.padReqMet = 1; f.stage1Met = 1;
+ for (int i = 0; i < l.count; i++) assert(l.mask[i] == AP_PADACT_BIT(AP_PADACT_LOCK_PAD));
+ /* Closed again after the first race: every row says the second requirement. */
+ f = content_facts(); f.padState = 3; f.contentOpen[1] = f.contentOpen[2] = 0; f.stage2Open = 0;
+ AP_PadActivityDecide(&f, &l);
+ for (int i = 0; i < l.count; i++) assert(l.reason[i] == AP_PADACT_LOCK_STAGE2);
+ /* A finished pad stands alone; a replay opens its open rows. */
+ f = content_facts(); f.padState = 5;
  AP_PadActivityDecide(&f, &l);
  for (int i = 0; i < l.count; i++) assert(l.mask[i] == AP_PADACT_BIT(AP_PADACT_LOCK_DONE));
- f.padState = 2; f.trophyChecked = 1; f.stage2Met = 1;
+ f.replayable = 1;
  AP_PadActivityDecide(&f, &l);
- for (int i = 0; i < l.count; i++) assert(l.reason[i] == AP_PADACT_OPEN && l.mask[i] == 0);
+ for (int i = 0; i < l.count; i++) assert(l.reason[i] == AP_PADACT_OPEN && !l.left[i] && l.mask[i] == 0);
  /* ctr_first names the CTR Challenge, not the Trophy Race. */
- f.structure = AP_RS_STRUCTURE_CTR_FIRST; f.trophyChecked = 0; f.stage2Met = 1;
+ f = content_facts(); f.ctrFirst = 1; f.firstRaceWon = 0; f.modeCount = 2; f.contentMode[0] = C; f.contentMode[1] = R; f.contentOpen[1] = 0;
  AP_PadActivityDecide(&f, &l);
- for (int i = 0; i < l.count; i++) if (l.activity[i] == R)
-  assert(l.mask[i] == AP_PADACT_BIT(AP_PADACT_LOCK_CTRCHAL));
- /* One open row still lists (dispatcher decision, as decision 13). */
- assert(l.count >= 1);
+ assert(l.mask[1] == AP_PADACT_BIT(AP_PADACT_LOCK_CTRCHAL));
  /* Garage: keys and the garage's own requirement. */
  memset(&f, 0, sizeof f); f.node = AP_PADACT_NODE_GARAGE; f.keysNeed = 1; f.garageOpen = 0;
  AP_PadActivityDecide(&f, &l);
  assert(l.reason[0] == AP_PADACT_LOCK_HUB && l.mask[0] == (AP_PADACT_BIT(AP_PADACT_LOCK_HUB) | AP_PADACT_BIT(AP_PADACT_LOCK_BOSS)));
  /* Invariant: open iff no mask bit, the first reason is a bit of the mask. */
- for (int state = 0; state <= 5; state++) for (int bits = 0; bits < 32; bits++) for (int node = 1; node <= 3; node++) {
-  memset(&f, 0, sizeof f); f.node = node; f.single = AP_PADACT_CUP; f.content = bits & 1;
+ for (int state = 0; state <= 5; state++) for (int bits = 0; bits < 64; bits++) for (int node = 2; node <= 3; node++) {
+  memset(&f, 0, sizeof f); f.node = node; f.single = AP_PADACT_CUP; f.occupied = (bits >> 5) & 1;
   f.keysNeed = 1; f.keysHave = (bits >> 1) & 1; f.padState = state; f.stage1Met = (bits >> 2) & 1;
   f.padReqMet = f.stage1Met; f.racerMet = (bits >> 3) & 1; f.contentReady = (bits >> 4) & 1; f.replayable = state & 1;
-  f.rs.present[T] = 1; f.modeCount = 1; f.contentMode[0] = T; f.contentOpen[0] = bits & 1;
+  f.modeCount = 1; f.contentMode[0] = T; f.contentOpen[0] = bits & 1;
   AP_PadActivityDecide(&f, &l);
   for (int i = 0; i < l.count; i++) {
    assert((l.reason[i] == AP_PADACT_OPEN) == (l.mask[i] == 0));
@@ -382,7 +342,7 @@ static void kart_on_pad(void)
 
 int main(void)
 {
- missing_all(); kart_on_pad(); selector_parity(); content_parity(); single_and_garage(); hub_keys(); cursor(); lifecycle();
+ missing_all(); kart_on_pad(); content_parity(); menu_parity(); single_and_garage(); hub_keys(); cursor(); lifecycle();
  puts("PASS: tracker activity decision and start lifecycle");
  return 0;
 }
@@ -393,32 +353,17 @@ parser = r'''
 #include <cstdio>
 #include <fstream>
 #include "ap_seedcfg.h"
+#include "ap_content_plan.h"
 extern "C" void AP_LogLine(const char *) {}
 using J = nlohmann::json;
 int main(int argc, char **argv){
- J j={{"ctr_options",{{"schema_version",18}}}};
- // Absent: off, inspection only.
- ap_seedcfg_parse_json(j);assert(ctr_cfg_active()&&ctr_cfg.tracker_pad_launch==0);
- j["ctr_options"]["tracker_pad_launch"]=true;ap_seedcfg_parse_json(j);assert(ctr_cfg.tracker_pad_launch==1);
- j["ctr_options"]["tracker_pad_launch"]=false;ap_seedcfg_parse_json(j);assert(ctr_cfg.tracker_pad_launch==0);
- // Not a Boolean: off, never on.
- j["ctr_options"]["tracker_pad_launch"]=1;ap_seedcfg_parse_json(j);assert(ctr_cfg.tracker_pad_launch==0);
- j["ctr_options"]["tracker_pad_launch"]="true";ap_seedcfg_parse_json(j);assert(ctr_cfg.tracker_pad_launch==0);
- // A reparse without the key forgets an earlier true.
- j["ctr_options"]["tracker_pad_launch"]=true;ap_seedcfg_parse_json(j);
- j["ctr_options"].erase("tracker_pad_launch");ap_seedcfg_parse_json(j);assert(ctr_cfg.tracker_pad_launch==0);
- // A content-plan room carries it as an additive envelope field.
+ // A room without a plan: the key is not read, whatever it says.
+ J j={{"ctr_options",{{"schema_version",18},{"tracker_pad_launch",true},{"race_type_selector","productive"}}}};
+ ap_seedcfg_parse_json(j);assert(ctr_cfg_active()&&!ap_content_plan_pad_client()->present);
  assert(argc==2);
  std::ifstream input(argv[1]);J plan;input>>plan;
- plan["ctr_options"]["tracker_pad_launch"]=true;
- ap_seedcfg_parse_json(plan);assert(ctr_cfg_active()&&ctr_cfg.tracker_pad_launch==1);
- plan["ctr_options"]["tracker_pad_launch"]=false;
- ap_seedcfg_parse_json(plan);assert(ctr_cfg_active()&&ctr_cfg.tracker_pad_launch==0);
- plan["ctr_options"].erase("tracker_pad_launch");
- ap_seedcfg_parse_json(plan);assert(ctr_cfg_active()&&ctr_cfg.tracker_pad_launch==0);
- // A non-Boolean value stays in the closed envelope, which refuses it.
- plan["ctr_options"]["tracker_pad_launch"]=1;
- ap_seedcfg_parse_json(plan);assert(!ctr_cfg_active()&&ctr_cfg.tracker_pad_launch==0);
+ // A plan from before the record: nothing.
+ ap_seedcfg_parse_json(plan);assert(ctr_cfg_active()&&!ap_content_plan_pad_client()->present);
  std::puts("PASS: tracker_pad_launch parse");
  return 0;
 }
@@ -440,7 +385,7 @@ assert tick.index("dist = x * x + y * y + z * z;") < arrive
 for gate in ("if ((dist > 0x8fff) && (warppadObj->boolEnteredWarppad == 0))",
              "AP_PadState(ctr_cfg_warp_phys(warppadObj->levelID), warppadObj->levelID) == 5",
              "if (!ctr_cfg_racer_lock_met(physLevelID))",
-             "if (AP_PadUsesSelector(levelID))"):
+             "AP_ContentMenuRows(pad, &apRsRows);"):
     assert arrive < tick.index(gate), gate
 assert "dist = 0;" in tick[arrive:arrive + 1500] and "AP_TrackerLaunchTaken();" in tick[arrive:arrive + 1500]
 assert "LOAD_RequestLoad" not in tick[arrive:arrive + 1500] and "MainRaceTrack_RequestLoad" not in tick[arrive:arrive + 1500]
@@ -451,20 +396,14 @@ assert place < tick.index("dist = 0;", place) and place < tick.index("AH_WarpPad
 assert "driver->quadBlockHeight = ground;" in warp[:warp.index("void AH_WarpPad_ThTick")] and "AP_TLKartOnPad(padPos" in warp
 # A pad that refused the kart earlier (the entry latch) is not placed on again.
 assert "else if (apEntryRefusedDest == levelID)" in tick[arrive:place]
-# The selector's menu takes the tracker's row only if the pad offers it.
-sel = tick[tick.index("if (AP_PadUsesSelector(levelID))"):]
-sel = sel[:sel.index("goto WarpPad_RequestLoad;")]
+# The menu takes the tracker's row only if the pad offers it.
+sel = tick[tick.index("AP_ContentMenuRows(pad, &apRsRows);") - 200:]
+sel = sel[:sel.index("host = AP_ContentPreparePad(physLevelID, mode);")]
 assert "AP_TrackerLaunchTakeMode(physLevelID, levelID)" in sel
-assert "AP_PadSelectorRows(physLevelID, levelID, &apRsRows);" in sel
 assert "AP_TLModeOffered(apRsRows.mode, apRsRows.count, apTlMode) ? apTlMode : AP_RS_NO_ROUTE" in sel
-assert "if (apTlMode == -2)\n\t\t\t\tapRsMode = AP_RS_NO_ROUTE;" in sel
+assert "if (apTlMode == -2)\n\t\t\t\t\tapRsMode = AP_RS_NO_ROUTE;" in sel
 take = body((root / "ap/ap_tracker_launch.c").read_text(), "int AP_TrackerLaunchTakeMode(")
 assert take.index("AP_TLGateOpen(r)") < take.index("AP_TLTakeMode(r, physical, dest)") and "return -2;" in take
-content = tick[tick.index("if (!pad->crystal && pad->mode_count > 1)"):]
-content = content[:content.index("host = AP_ContentPreparePad(physLevelID, mode);")]
-assert "AP_TrackerLaunchTakeMode(physLevelID, levelID)" in content
-assert "sel.mode[k] == apTlMode && sel.open[k]" in content
-assert "if (apTlMode == -2)\n\t\t\t\t\tapContentModeChoice = -1;" in content
 assert "AP_TrackerLaunchDrop(AP_TL_DROP_REFUSED);" in warp[warp.index("WarpPad_RefuseEntry:"):][:200]
 
 garage = (root / "game/232/AH_Garage.c").read_text()
@@ -474,20 +413,15 @@ garrive = gtick.index("AP_TrackerLaunchGarageArrives()")
 assert gtick.index("LAB_800aede8:") < garrive < gtick.index("if (gGT->pushBuffer_UI.fadeFromBlack_currentValue == 0)")
 assert gtick.index("if (!bossIsOpen)\n\t{\n\t\treturn;") < gtick.index("LAB_800aede8:")
 
-pads = (root / "ap/ap_hooks_pads.c").read_text()
-rows = body(pads, "int AP_PadSelectorRows(")
-assert "AP_PadSelectorFacts(physLevelID, destLevelID, &f, admitted, 0, 0)" in rows
-assert "AP_RaceSelectorBuild(&f, admitted, rows);" in rows
-facts = body(pads, "int AP_PadSelectorFacts(")
-assert "rungsLeft" in facts and "AP_RaceStructureAdmit(structure, trophyChecked, stage2Met, admitted);" in facts
-
 launch = (root / "ap/ap_tracker_launch.c").read_text()
 acts = body(launch, "int AP_PadActivities(")
-for call in ("AP_PadSelectorFacts(physical, dest, &f.rs, admitted, &f.trophyChecked, &f.stage2Met)",
-             "AP_PadState(physical, dest)", "AP_PadStage1Met(physical)", "AP_PadReplayable(physical, dest)",
-             "ctr_cfg_racer_lock_met(physical)", "AP_CustomContentRequired()", "AP_ContentSelectorBuild(pad, &sel)",
-             "AP_ContentPadOpen(pad)", "AP_PadActivityHubKeys(hub, physical)", "AP_PadActivityDecide(&f, out)"):
+for call in ("AP_PadState(physical, dest)", "AP_PadReplayable(physical, dest)", "AP_ContentPadReady(physical)",
+             "AP_ContentSelectorBuild(pad, &sel)", "AP_ContentPadOpen(pad)", "AP_ContentPadBaseOpen(pad)",
+             "AP_ContentPadRacerMet(pad)", "AP_PadActivityHubKeys(hub, physical)", "AP_PadActivityDecide(&f, out)"):
     assert call in acts, call
+# A room without a plan has no list and no start.
+assert "ap_content_plan_pad_client()->tracker_pad_launch" in body(launch, "int AP_TrackerLaunchEnabled(")
+assert "if (!AP_TrackerLaunchEnabled() || physical < 0)" in acts
 gacts = body(launch, "int AP_GarageActivities(")
 assert "AP_OxideGarageOpen()" in gacts and "AP_BossGarageOpen(hub - 1)" in gacts
 begin = body(launch, "int AP_TrackerLaunchBegin(")
@@ -520,7 +454,8 @@ with tempfile.TemporaryDirectory(prefix="ctr-tracker-launch-") as tmp:
     src, exe = Path(tmp) / "test.c", Path(tmp) / "test"
     src.write_text(logic)
     subprocess.run(["cc", "-std=c99", "-DCTR_AP", "-fsanitize=undefined", "-Wall", "-Wextra",
-                    "-I", str(root / "ap"), str(src), "-o", str(exe)], check=True)
+                    "-I", str(root / "ap"), "-I", str(root), "-I", str(root / "include"), str(src), "-o", str(exe)],
+                   check=True)
     subprocess.run([str(exe)], check=True)
     src = Path(tmp) / "parser.cpp"
     src.write_text(parser)

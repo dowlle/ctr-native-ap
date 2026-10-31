@@ -1,41 +1,38 @@
 #ifndef AP_PAD_ACTIVITY_LOGIC_H
 #define AP_PAD_ACTIVITY_LOGIC_H
 
-// What a pad or boss garage offers right now, and why a mode is locked
-// (#375, 0.3.0). Freestanding so tools/test-pad-activity.py pins it out of
-// engine.
+// What a plan pad or boss garage offers right now, and why a race is locked
+// (#375, one generator row 6). Freestanding so tools/test-tracker-pad-launch.py
+// pins it out of engine.
 //
 // One decision for the in-game tracker's activity list. Its facts come from
 // the same functions the physical pad and garage ask (AP_PadState,
-// AP_PadReplayable, AP_PadStage1Met, ctr_cfg_racer_lock_met,
-// AP_PadSelectorFacts, AP_ContentSelectorBuild, AP_CustomContentRequired,
-// AP_BossGarageOpen, AP_OxideGarageOpen), gathered by AP_PadActivities in
-// ap_hooks_pads.c. A tracker start never loads anything itself: it moves the
-// player to the pad's hub and lets that pad or garage run its own entry, so
-// the pad keeps the last word. The tracker adds one gate the pad cannot see
-// from where the player stands: the hub's door Keys.
+// AP_PadReplayable, AP_ContentPadOpen, AP_ContentSelectorBuild,
+// AP_ContentPadReady, AP_BossGarageOpen, AP_OxideGarageOpen), gathered by
+// AP_PadActivities in ap_tracker_launch.c. A tracker start never loads anything
+// itself: it moves the player to the pad's hub and lets that pad or garage run
+// its own entry, so the pad keeps the last word. The tracker adds one gate the
+// pad cannot see from where the player stands: the hub's door Keys.
 //
-// Rows, in order: the race selector's Trophy Race, CTR Challenge and Relic
-// Race; a content-plan pad's own modes; or one row for a cup, arena, trial,
-// legacy custom race or boss garage. A locked row stays in the list, grey.
+// Rows, in order: a plan pad's own modes in the pad's order, or one row for a
+// cup, Crystal Challenge or boss garage. A locked row stays in the list, grey.
 // It carries every requirement it is missing (decision 34), not only the
 // first: `reason` is the first one the player meets, `mask` has a bit for
-// each, and AP_PadActivityReasonLines wraps them onto two lines.
+// each, and AP_PadActivityReasonLines wraps them onto two lines. A room without
+// a plan has no list: its tracker stays inspection only.
 
 #include <string.h>
 
-#include "ap_race_structure_logic.h"
 
 enum
 {
-	AP_PADACT_TROPHY = 0, // same values as AP_RS_TROPHY / CTR / RELIC
+	AP_PADACT_TROPHY = 0, // same values as AP_CONTENT_MODE_*
 	AP_PADACT_CTR = 1,
 	AP_PADACT_RELIC = 2,
 	AP_PADACT_CUP = 3,
 	AP_PADACT_CRYSTAL = 4,
 	AP_PADACT_BOSS = 5,
-	AP_PADACT_RACE = 6, // a pad that asks for its race type itself
-	AP_PADACT_KINDS = 7
+	AP_PADACT_KINDS = 6
 };
 
 enum
@@ -48,7 +45,7 @@ enum
 	AP_PADACT_LOCK_STAGE2 = 5,  // the pad's second requirement
 	AP_PADACT_LOCK_CONTENT = 6, // custom content is not installed or Ready
 	AP_PADACT_LOCK_DONE = 7,    // every check here is done and it cannot replay
-	AP_PADACT_LOCK_CLOSED = 8,  // no entry at all (arena off, refused room)
+	AP_PADACT_LOCK_CLOSED = 8,  // no entry on this pad
 	AP_PADACT_LOCK_BOSS = 9,    // the garage requirement
 	AP_PADACT_LOCK_CTRCHAL = 10, // ctr_first: finish the CTR Challenge first
 	AP_PADACT_REASONS = 11
@@ -59,8 +56,7 @@ enum
 enum
 {
 	AP_PADACT_NODE_NONE = 0,
-	AP_PADACT_NODE_SELECTOR = 1, // #208 race type selector pad
-	AP_PADACT_NODE_CONTENT = 2,  // content-plan track pad with its own modes
+	AP_PADACT_NODE_CONTENT = 2,  // track pad with its own modes
 	AP_PADACT_NODE_SINGLE = 3,   // one activity, the pad's own route
 	AP_PADACT_NODE_GARAGE = 4
 };
@@ -73,24 +69,22 @@ typedef struct
 	int single;     // the activity of a SINGLE node
 	int keysHave;   // received Keys
 	int keysNeed;   // the hub doors on the way to this pad
-	int content;    // a content-plan room: the pad's gate is AP_ContentPadOpen
 	// Pads (not garages)
-	int padState;   // AP_PadState: 1 locked, 2 raceable, 3 re-locked, 4 tier 2, 5 done, 0 unknown
-	int stage1Met;  // AP_PadStage1Met (content plan: AP_ContentPadOpen)
-	int padReqMet;  // the pad's own requirement without the racer lock (AP_PadStage1BaseMet, AP_ContentPadBaseOpen)
-	int racerMet;   // ctr_cfg_racer_lock_met
+	int padState;   // AP_PadState: 1 locked, 2 raceable, 3 closed again, 4 stage 2 open, 5 done
+	int occupied;   // the pad has an entry
+	int stage1Met;  // AP_ContentPadOpen
+	int padReqMet;  // the pad's own requirement without the racer lock (AP_ContentPadBaseOpen)
+	int racerMet;   // the racer lock (AP_ContentPadRacerMet)
 	int replayable; // AP_PadReplayable
-	int contentReady; // not AP_CustomContentRequired; content plan: occupied and Ready
-	// SELECTOR
-	int structure;  // AP_RaceStructureDestStructure (per-track classic fallback)
-	int trophyChecked;
-	int stage2Met;
-	ap_rs_facts rs;
+	int contentReady; // AP_ContentPadReady
+	int firstRaceWon; // ap_content_first_race_won
+	int ctrFirst;   // ap_content_pad_ctr_first
 	// CONTENT
 	int modeCount;
 	int contentMode[AP_PADACT_MAX_ROWS];
 	int contentOpen[AP_PADACT_MAX_ROWS];
 	int contentLeft[AP_PADACT_MAX_ROWS];
+	int stage2Open;  // the pad's stage 2 is met, or it has none
 	// GARAGE
 	int garageOpen;
 } ap_padact_facts;
@@ -145,80 +139,36 @@ static inline void AP_PadActivityRow(ap_padact_list *out, int activity, int reas
 }
 
 // The node-level reason a pad refuses entry, before any mode is asked, in
-// the order AH_WarpPad_ThTick meets them: Done without a replay, a closed
-// (locked or re-locked) pad, the racer lock, custom content. 0 when open.
+// the order AH_WarpPad_ThTick meets them. 0 when open.
 static inline int AP_PadActivityEntryReason(const ap_padact_facts *f)
 {
-	if (f->content)
-	{
-		// AH_WarpPad_ThTick's Done gate runs before its content-plan branch
-		// and never replays a content pad: AP_PadState 5 is an empty slot, a
-		// pad whose content is not Ready, or a finished Crystal Challenge.
-		if (!f->contentReady)
-			return AP_PADACT_LOCK_CONTENT;
-		if (f->padState == 5)
-			return AP_PADACT_LOCK_DONE;
-		if (!f->stage1Met)
-			return f->racerMet ? AP_PADACT_LOCK_PAD : AP_PADACT_LOCK_RACER;
-		return AP_PADACT_OPEN;
-	}
-	if (f->padState == 0)
+	if (!f->occupied)
 		return AP_PADACT_LOCK_CLOSED;
-	if (f->padState == 5 && !f->replayable)
-		return AP_PADACT_LOCK_DONE;
-	if (f->padState == 1)
-		return !f->padReqMet ? AP_PADACT_LOCK_PAD : AP_PADACT_LOCK_RACER;
-	if (f->padState == 3)
-		return AP_PADACT_LOCK_STAGE2;
-	if (!f->racerMet)
-		return AP_PADACT_LOCK_RACER;
 	if (!f->contentReady)
 		return AP_PADACT_LOCK_CONTENT;
-	if (f->node == AP_PADACT_NODE_SELECTOR && f->structure == AP_RS_STRUCTURE_REFUSED)
-		return AP_PADACT_LOCK_CLOSED;
+	if (f->padState == 5 && !f->replayable)
+		return AP_PADACT_LOCK_DONE;
+	if (!f->stage1Met)
+		return f->padReqMet ? AP_PADACT_LOCK_RACER : AP_PADACT_LOCK_PAD;
+	if (f->padState == 3)
+		return AP_PADACT_LOCK_STAGE2;
 	return AP_PADACT_OPEN;
 }
 
-// Every requirement the pad's entry is missing, in a mask. Done and a closed
-// pad stand alone (nothing else matters there); a content-plan pad whose
-// content is not Ready the same. The first reason (AP_PadActivityEntryReason)
-// is always one of the bits.
+// Every requirement the pad's entry is missing, in a mask. An empty, finished
+// or uninstalled pad stands alone (nothing else matters there). The first
+// reason (AP_PadActivityEntryReason) is always one of the bits.
 static inline int AP_PadActivityEntryMask(const ap_padact_facts *f)
 {
 	int m = 0, first = AP_PadActivityEntryReason(f);
 	if (first == AP_PADACT_OPEN)
 		return 0;
-	if (f->content)
-	{
-		if (!f->contentReady)
-			return AP_PADACT_BIT(AP_PADACT_LOCK_CONTENT);
-		if (f->padState == 5)
-			return AP_PADACT_BIT(AP_PADACT_LOCK_DONE);
-		if (!f->padReqMet)
-			m |= AP_PADACT_BIT(AP_PADACT_LOCK_PAD);
-		if (!f->racerMet)
-			m |= AP_PADACT_BIT(AP_PADACT_LOCK_RACER);
-		return m ? m : AP_PADACT_BIT(first);
-	}
-	if (f->padState == 0)
-		return AP_PADACT_BIT(AP_PADACT_LOCK_CLOSED);
-	if (f->padState == 5 && !f->replayable)
-		return AP_PADACT_BIT(AP_PADACT_LOCK_DONE);
-	if (f->padState == 1)
-	{
-		if (!f->padReqMet)
-			m |= AP_PADACT_BIT(AP_PADACT_LOCK_PAD);
-		if (!f->racerMet)
-			m |= AP_PADACT_BIT(AP_PADACT_LOCK_RACER);
-	}
-	if (f->padState == 3)
-		m |= AP_PADACT_BIT(AP_PADACT_LOCK_STAGE2);
+	if (first == AP_PADACT_LOCK_CLOSED || first == AP_PADACT_LOCK_CONTENT || first == AP_PADACT_LOCK_DONE)
+		return AP_PADACT_BIT(first);
+	if (!f->padReqMet)
+		m |= AP_PADACT_BIT(AP_PADACT_LOCK_PAD);
 	if (!f->racerMet)
 		m |= AP_PADACT_BIT(AP_PADACT_LOCK_RACER);
-	if (!f->contentReady)
-		m |= AP_PADACT_BIT(AP_PADACT_LOCK_CONTENT);
-	if (f->node == AP_PADACT_NODE_SELECTOR && f->structure == AP_RS_STRUCTURE_REFUSED)
-		m |= AP_PADACT_BIT(AP_PADACT_LOCK_CLOSED);
 	return m ? m : AP_PADACT_BIT(first);
 }
 
@@ -231,45 +181,18 @@ static inline void AP_PadActivityDecideRows(const ap_padact_facts *f, ap_padact_
 	case AP_PADACT_NODE_GARAGE:
 		AP_PadActivityRow(out, AP_PADACT_BOSS, f->garageOpen ? AP_PADACT_OPEN : AP_PADACT_LOCK_BOSS, 1, -1);
 		break;
-	case AP_PADACT_NODE_SELECTOR:
-	{
-		// AP_RaceStructureAdmit, the selector's own admission: the Trophy
-		// Race always; the CTR Challenge at stage 1 under ctr_first; the rest
-		// after the checked Trophy and the pad's second requirement.
-		int admitted[AP_RS_COUNT];
-		int structure = f->structure == AP_RS_STRUCTURE_CTR_FIRST ? AP_RS_STRUCTURE_CTR_FIRST : AP_RS_STRUCTURE_CLASSIC;
-		AP_RaceStructureAdmit(structure, f->trophyChecked, f->stage2Met, admitted);
-		for (m = 0; m < AP_RS_COUNT; m++)
-		{
-			if (!f->rs.present[m])
-				continue;
-			// ctr_first has no Trophy Race row (decision 14): the pad's menu never offers it.
-			if (m == AP_RS_TROPHY && structure == AP_RS_STRUCTURE_CTR_FIRST)
-				continue;
-			int first = admitted[m] ? AP_PADACT_OPEN
-			            : !f->trophyChecked ? (structure == AP_RS_STRUCTURE_CTR_FIRST ? AP_PADACT_LOCK_CTRCHAL : AP_PADACT_LOCK_TROPHY)
-			            : AP_PADACT_LOCK_STAGE2;
-			AP_PadActivityRow(out, m, first, f->rs.productive[m] ? 1 : 0, m);
-			if (!admitted[m])
-			{
-				// AP_RaceStructureAdmit: the second tier needs the Trophy
-				// check (the CTR Challenge's finish under ctr_first) and the
-				// pad's second requirement; both can be missing at once.
-				if (!f->trophyChecked)
-					out->mask[out->count - 1] |= AP_PADACT_BIT(first);
-				if (!f->stage2Met)
-					out->mask[out->count - 1] |= AP_PADACT_BIT(AP_PADACT_LOCK_STAGE2);
-			}
-		}
-		break;
-	}
 	case AP_PADACT_NODE_CONTENT:
 		for (m = 0; m < f->modeCount && m < AP_PADACT_MAX_ROWS; m++)
 		{
-			AP_PadActivityRow(out, f->contentMode[m],
-			                  f->contentOpen[m] ? AP_PADACT_OPEN : AP_PADACT_LOCK_STAGE2,
-			                  f->contentLeft[m] ? 1 : 0,
-			                  f->modeCount > 1 ? f->contentMode[m] : -1);
+			int reason = AP_PADACT_OPEN;
+			if (!f->contentOpen[m])
+				reason = f->firstRaceWon ? AP_PADACT_LOCK_STAGE2
+				         : f->ctrFirst ? AP_PADACT_LOCK_CTRCHAL : AP_PADACT_LOCK_TROPHY;
+			AP_PadActivityRow(out, f->contentMode[m], reason, f->contentLeft[m] ? 1 : 0, f->contentMode[m]);
+			// A later race that waits for the first race may wait for stage 2
+			// as well; a met pad gate leaves only those two reasons.
+			if (reason != AP_PADACT_OPEN && !f->firstRaceWon && f->stage2Open == 0)
+				out->mask[out->count - 1] |= AP_PADACT_BIT(AP_PADACT_LOCK_STAGE2);
 			// A mode also reads closed when the pad's own requirement is unmet
 			// (ap_content_mode_open); then the pad-wide reasons below name it,
 			// not a second requirement that may be met.
@@ -278,7 +201,7 @@ static inline void AP_PadActivityDecideRows(const ap_padact_facts *f, ap_padact_
 		}
 		break;
 	case AP_PADACT_NODE_SINGLE:
-		AP_PadActivityRow(out, f->single, AP_PADACT_OPEN, f->padState != 5 && f->padState != 4, -1);
+		AP_PadActivityRow(out, f->single, AP_PADACT_OPEN, f->padState != 5, -1);
 		break;
 	default:
 		return;
@@ -295,13 +218,11 @@ static inline void AP_PadActivityDecideRows(const ap_padact_facts *f, ap_padact_
 	}
 	entry = AP_PadActivityEntryReason(f);
 	entryMask = AP_PadActivityEntryMask(f);
+	// Nothing else matters on an empty, finished or uninstalled pad.
 	if (entryMask & (AP_PADACT_BIT(AP_PADACT_LOCK_DONE) | AP_PADACT_BIT(AP_PADACT_LOCK_CLOSED) |
-	                 (f->content ? AP_PADACT_BIT(AP_PADACT_LOCK_CONTENT) : 0)))
-	{
-		// Nothing else matters on a finished, closed or content-less pad.
+	                 AP_PADACT_BIT(AP_PADACT_LOCK_CONTENT)))
 		for (m = 0; m < out->count; m++)
 			out->mask[m] = 0;
-	}
 	if (hubShort)
 	{
 		AP_PadActivityAll(out, AP_PADACT_LOCK_HUB, entryMask);
@@ -345,8 +266,8 @@ static inline int AP_PadActivityStillOpen(const ap_padact_list *l, int activity,
 static inline const char *AP_PadActivityName(int activity)
 {
 	static const char *const names[AP_PADACT_KINDS] = {
-		"TROPHY RACE", "CTR CHALLENGE", "RELIC RACE", "GEM CUP",
-		"CRYSTAL CHALLENGE", "BOSS RACE", "RACE"};
+		"TROPHY RACE", "CTR CHALLENGE", "RELIC RACE", "CUP",
+		"CRYSTAL CHALLENGE", "BOSS RACE"};
 	return activity >= 0 && activity < AP_PADACT_KINDS ? names[activity] : "?";
 }
 

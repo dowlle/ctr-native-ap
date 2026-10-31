@@ -106,6 +106,16 @@ static APDeathLinkState AP_DeathLinkStateNow(void)
 	                           g_config.dlSendHit, g_config.dlSendLoss);
 }
 
+// What the DeathLink row shows (Stef, 2026-10-29): on a plan room the mode in
+// use when a DL Send row turned receiving on, not SEED. Other rooms and an
+// unconnected menu show the row's own value.
+int AP_DeathLinkRowValue(int row)
+{
+	if (row == -1 && ctr_cfg_active() && ap_content_plan_active())
+		return AP_DeathLinkRowShown(row, ctr_cfg.death_link, AP_DeathLinkStateNow().recv);
+	return row;
+}
+
 // Effective receive mode. The forced values ARE the tier enum (1 = mask_reset,
 // 2 = any_hit, 3 = race_loss, 4 = weapon_hit), so all in-game DeathLink layers
 // stay selectable.

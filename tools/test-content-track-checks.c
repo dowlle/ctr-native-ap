@@ -80,20 +80,20 @@ int main(void)
     checked_count = 0;
     check(35011000); check(35012300); check(35012000); check(35012100); check(35012200);
     expect(ap_content_mode_pending(&p, AP_CONTENT_MODE_TROPHY, checked) == 5, "rungs and Wumpa pending after the win");
-    expect(ap_content_track_pad_state(&p, counts, checked) == 2, "pad stays open for its family checks");
+    expect(ap_content_track_pad_state(&p, counts, checked, 0) == 4, "pad stays open for its family checks");
     check(35015100); check(35015101); check(35015103); check(35015002);
     expect(ap_content_mode_pending(&p, AP_CONTENT_MODE_TROPHY, checked) == 1 &&
            ap_content_mode_pending(&p, AP_CONTENT_MODE_CTR, checked) == 3, "Wumpa pending in both modes that reach it");
     check(35016104); check(35012500);
-    expect(ap_content_track_pad_state(&p, counts, checked) == 2, "one letter left keeps the pad open");
+    expect(ap_content_track_pad_state(&p, counts, checked, 0) == 4, "one letter left keeps the pad open");
     check(35012502);
-    expect(ap_content_track_pad_state(&p, counts, checked) == 4, "everything checked: replayable");
+    expect(ap_content_track_pad_state(&p, counts, checked, 0) == 5, "everything checked: Done");
     {
         ctr_content_pad later = p;
         later.stages[1] = 2; later.has_stage2 = 1; later.stage2_mask = 1u; later.stage2_count = 2;
         checked_count = 5;
         check(35015100); check(35015101); check(35015103); check(35015002); check(35016104);
-        expect(ap_content_track_pad_state(&later, counts, checked) == 3,
+        expect(ap_content_track_pad_state(&later, counts, checked, 0) == 3,
                "letters left only behind the second-stage gate: state 3");
     }
     {
@@ -104,7 +104,7 @@ int main(void)
         memset(off.letter_items, 0, sizeof off.letter_items);
         checked_count = 0;
         check(35011000); check(35012300); check(35012000); check(35012100); check(35012200);
-        expect(ap_content_track_pad_state(&off, counts, checked) == 4, "families off: the 3a pad state");
+        expect(ap_content_track_pad_state(&off, counts, checked, 0) == 5, "families off: the 3a pad state");
     }
 
     // Wumpa code a race sends.
@@ -193,15 +193,15 @@ int main(void)
         checked_count = 0;
         check(35011000); check(35012300); check(35012000); check(35012100); check(35012200);
         check(35015100); check(35015101); check(35015103); check(35015002); check(35016104); check(35012500); check(35012502);
-        expect(ap_content_mode_pending(&r, AP_CONTENT_MODE_RELIC, checked) == 1 && ap_content_track_pad_state(&r, counts, checked) == 2,
+        expect(ap_content_mode_pending(&r, AP_CONTENT_MODE_RELIC, checked) == 1 && ap_content_track_pad_state(&r, counts, checked, 0) == 4,
                "every relic tier checked: the unchecked perfect keeps the pad open (#453)");
         {
             ctr_content_pad later = r;
             later.stages[2] = 2; later.has_stage2 = 1; later.stage2_mask = 1u; later.stage2_count = 2;
-            expect(ap_content_track_pad_state(&later, counts, checked) == 3, "a perfect behind the second stage: state 3");
+            expect(ap_content_track_pad_state(&later, counts, checked, 0) == 3, "a perfect behind the second stage: state 3");
         }
         check(35012400);
-        expect(ap_content_track_pad_state(&r, counts, checked) == 4, "the perfect checked: replayable");
+        expect(ap_content_track_pad_state(&r, counts, checked, 0) == 5, "the perfect checked: Done");
         expect(ap_content_family_bit_code(&r, AP_CONTENT_FAMILY_PERFECT) == 35012400 &&
                ap_content_family_bit_code(&p, AP_CONTENT_FAMILY_PERFECT) == -1, "perfect display bit resolves to its code");
         expect(ap_content_family_reward_group(AP_CONTENT_FAMILY_PERFECT) == 1 && ap_content_family_reward_group(0) == 0 &&
@@ -228,12 +228,12 @@ int main(void)
         expect(ap_content_mode_pending(&b, AP_CONTENT_MODE_TROPHY, checked) == 3 &&
                ap_content_mode_pending(&b, AP_CONTENT_MODE_CTR, checked) == 3 &&
                ap_content_mode_pending(&b, AP_CONTENT_MODE_RELIC, checked) == 3, "every mode reaches every box");
-        expect(ap_content_track_pad_state(&b, counts, checked) == 2, "a box left keeps the pad open");
+        expect(ap_content_track_pad_state(&b, counts, checked, 0) == 4, "a box left keeps the pad open");
         b.modes[2] = AP_CONTENT_MODE_RELIC; b.mode_count = 2;
         expect(ap_content_mode_pending(&b, AP_CONTENT_MODE_RELIC, checked) == 0, "a mode the pad lacks reaches no box");
         b.mode_count = 3;
         check(35014045); check(35014046); check(35014047);
-        expect(ap_content_track_pad_state(&b, counts, checked) == 4, "every box checked: replayable");
+        expect(ap_content_track_pad_state(&b, counts, checked, 0) == 5, "every box checked: Done");
         b.box_count = 0;
         expect(ap_content_box_pending(&b, checked) == 0 && ap_content_box_pending(NULL, checked) == 0, "no boxes, no pending");
         b.box_count = 3;

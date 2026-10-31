@@ -266,6 +266,11 @@ static const char *AP_TrackerPadName(int physical)
 static const char *AP_TrackerPadDestinationName(int physical)
 {
 	int dest = ctr_cfg_warp_dest(physical);
+	if (ap_content_plan_active()) {
+		const ctr_content_pad *pad = ap_content_plan_pad(physical);
+		if (pad && pad->occupied) return pad->room_title[0] ? pad->room_title : pad->display_name;
+		return AP_TrackerPadName(physical);
+	}
 	if (dest >= 100 && dest < 105) {
 		const char *custom = NULL;
 #ifdef CTR_CUSTOM_TRACKS
@@ -504,9 +509,17 @@ static void AP_TrackerBuildNodes(void)
 	ap_tracker.count = h->pad_count;
 	for (i = 0; i < h->pad_count; i++) {
 		AP_TrackerNode *n = &ap_tracker.nodes[i]; int physical = h->pads[i].physical, dest = ctr_cfg_warp_dest(physical);
+		const ctr_content_pad *plan = ap_content_plan_active() ? ap_content_plan_pad(physical) : NULL;
 		memset(n, 0, sizeof *n); n->physical = physical; n->destination = dest; n->kind = 0; n->bit = -1;
 		AP_TrackerProject(AP_TRACKER_MARK_WORLD, h->pads[i].world_x, h->pads[i].world_z, &n->x, &n->y);
-		if (dest >= 100 && dest < 105) {
+		if (ap_content_plan_active()) {
+			/* One generator row 6: the pad's own entry. A plan keys pad state,
+			 * requirements and checks by the physical pad. */
+			n->destination = physical;
+			n->kind = plan && plan->occupied ? (plan->cup ? 2 : plan->crystal ? 1 : 0) : 4;
+			snprintf(n->title, sizeof n->title, "%s", !plan || !plan->occupied ? "NO ENTRY"
+				: plan->room_title[0] ? plan->room_title : plan->display_name);
+		} else if (dest >= 100 && dest < 105) {
 			const char *custom = NULL;
 #ifdef CTR_CUSTOM_TRACKS
 			custom = CustomTrack_CupDisplayName(dest - 100, 1);
@@ -592,10 +605,38 @@ static void AP_TrackerDrawLetterCell(int bx, int by, char glyph, int mode, int s
 	if(cell.tick) AP_TrackerTick(bx+17,by+8,2);
 	if(cell.locked) { AP_TrackerBorder(bx+19,by+8,11,10,TRACKER_GRAY,2); AP_TrackerCircle(bx+24,by+8,4,TRACKER_GRAY,2); }
 }
+/* One generator row 6: a plan pad's checks. Every code comes from the pad, never
+ * from a retail table keyed by level: the same five prizes and the same bottom
+ * row as an ordinary node, for what this pad holds. */
+static void AP_TrackerDrawContentNode(const AP_TrackerNode *n, int x, int y)
+{
+	const ctr_content_pad *pad = ap_content_plan_pad(n->physical);
+	const ctr_content_checks *fam = ap_content_plan_checks();
+	int i, wumpaGlobal = fam->wumpa == 1; char text[96]; long wumpa;
+	if (n->kind == 4) { AP_TrackerText("SPARE PAD, STAYS CLOSED",x+12,y+64,18,TRACKER_GRAY,340); return; }
+	if (n->kind == 0) {
+		long codes[5] = {(long)pad->trophy_location, (long)pad->ctr_location, (long)pad->relic_locations[0],
+			(long)pad->relic_locations[1], (long)pad->relic_locations[2]};
+		for (i = 0; i < 5; i++) AP_TrackerPrize(x+12+i*70,y+61,i,AP_TrackerCodeState(codes[i]>0?codes[i]:-1));
+	} else {
+		AP_TrackerText(n->kind==1?"CRYSTAL CHECK":"CUP CHECK",x+12,y+64,18,TRACKER_GOLD,300);
+		AP_TrackerTick(x+315,y+65,AP_TrackerCodeState((long)pad->trophy_location));
+	}
+	wumpa = n->kind == 0 ? (long)(wumpaGlobal ? fam->wumpa_global : pad->wumpa_location) : 0;
+	snprintf(text,sizeof text,"BOX %d",ap_content_box_pending(pad,AP_ContentCodeChecked));
+	AP_TrackerText(text,x+12,y+96,16,TRACKER_WHITE,110);
+	AP_TrackerText(wumpaGlobal ? "10W*" : "10W",x+130,y+96,16,TRACKER_GOLD,55); AP_TrackerTick(x+179,y+99,AP_TrackerCodeState(wumpa>0?wumpa:-1));
+	if (n->kind == 0) for (i = 0; i < 3; i++) {
+		long code = pad->letter_locations[i] > 0 ? (long)pad->letter_locations[i] : -1;
+		AP_TrackerDrawLetterCell(x+216+i*49,y+95,"CTR"[i],fam->lettersanity,AP_TrackerCodeState(code),
+			pad->letter_items[i] <= 0 || AP_ContentLetterItemReceived(pad->letter_items[i]));
+	}
+}
 static void AP_TrackerDrawNode(int index)
 {
 	AP_TrackerNode *n = &ap_tracker.nodes[index]; int x = n->cx, y = n->cy, i, states[5]; char text[96];
-	int selected = index == ap_tracker.focus, boxes = AP_PadUncollectedBoxCount(n->destination);
+	int plan = ap_content_plan_active() && n->kind != 3;
+	int selected = index == ap_tracker.focus, boxes = plan ? 0 : AP_PadUncollectedBoxCount(n->destination);
 	uint32_t body = AP_TrackerRGBA(10, 15, 18, 226);
 	AP_TrackerRect(x, y, n->cw, n->ch, body); AP_TrackerBorder(x,y,n->cw,n->ch,TRACKER_MINT,selected ? 3 : 2);
 	if (selected) AP_TrackerRect(x+5,y+5,n->cw-10,29,AP_TrackerRGBA(200,65,4,255));
@@ -611,6 +652,7 @@ static void AP_TrackerDrawNode(int index)
 			if (met) AP_TrackerTick(x+344,y+36,2); else AP_TrackerLockIcon(x+342,y+36);
 		} else AP_TrackerText(n->pad,x+12,y+39,14,TRACKER_WHITE,n->cw-24);
 	}
+	if (plan) { AP_TrackerDrawContentNode(n,x,y); return; }
 	if (n->kind == 0) {
 		AP_TrackerRaceStates(n->destination,states);
 		for (i=0;i<5;i++) {
@@ -656,6 +698,7 @@ static void AP_TrackerActivitiesBuild(void)
 {
 	AP_TrackerNode *n = &ap_tracker.nodes[ap_tracker.focus];
 	if (n->kind == 3) AP_GarageActivities(ap_tracker.hub, &ap_tracker.acts);
+	else if (n->kind == 4) ap_tracker.acts.count = 0;
 	else AP_PadActivities(ap_tracker.hub, n->physical, n->destination, &ap_tracker.acts);
 }
 static void AP_TrackerDrawActivities(void)
@@ -731,8 +774,11 @@ static void AP_TrackerDraw(void)
 		AP_TrackerText(line,32,692,14,TRACKER_GOLD,1210);
 	if(ap_tracker.pinned && ap_tracker.count) {
 		AP_TrackerNode *n=&ap_tracker.nodes[ap_tracker.focus]; int bits[48], remaining=n->physical>=0?AP_PadUncollectedGlowBits(n->destination,bits,48):0;
-		snprintf(line,sizeof line,"%s: %d RACE CHECKS, %d BOXES, %d LETTERS LEFT",n->title,remaining,
-			AP_PadUncollectedBoxCount(n->destination),AP_PadUncollectedLetterCount(n->destination));
+		const ctr_content_pad *plan=ap_content_plan_active()&&n->physical>=0?ap_content_plan_pad(n->physical):NULL;
+		int boxes=plan?ap_content_box_pending(plan,AP_ContentCodeChecked):AP_PadUncollectedBoxCount(n->destination), letters=0, k;
+		if(plan) { for(k=0;k<3;k++) letters+=plan->letter_locations[k]>0 && !AP_ContentCodeChecked(plan->letter_locations[k]); }
+		else letters=AP_PadUncollectedLetterCount(n->destination);
+		snprintf(line,sizeof line,"%s: %d RACE CHECKS, %d BOXES, %d LETTERS LEFT",n->title,remaining,boxes,letters);
 	} else snprintf(line,sizeof line,"CHECK: O PENDING / TICK DONE    LETTER: ORANGE OWNED / LOCK NEEDED / - OFF%s",ap_net_is_connected()?"":"    OFFLINE");
 	AP_TrackerText(line,32,718,14,TRACKER_WHITE,1210);
 	{

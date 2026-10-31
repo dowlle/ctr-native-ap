@@ -31,104 +31,58 @@ static ap_tl_request *AP_TLState(void)
 	return &ap_tl;
 }
 
+/* A room without a plan keeps its tracker inspection only (one generator row 6). */
 int AP_TrackerLaunchEnabled(void)
 {
-	return ctr_cfg_active() && ctr_cfg.tracker_pad_launch;
-}
-
-static int AP_TLSingleActivity(int dest)
-{
-	if (dest >= 100 && dest < 105)
-	{
-#ifdef CTR_CUSTOM_TRACKS
-		/* A legacy custom track in a cup slot asks Trophy or CTR itself. */
-		if (AP_CustomPadOwnsDestination(&ctr_cfg, dest))
-			return AP_PADACT_RACE;
-#endif
-		return AP_PADACT_CUP;
-	}
-	if (dest >= 18 && dest < 25)
-		return AP_PADACT_CRYSTAL;
-	if (dest == 16 || dest == 17)
-		return AP_PADACT_RELIC;
-	return AP_PADACT_RACE;
+	return ctr_cfg_active() && ap_content_plan_pad_client()->tracker_pad_launch;
 }
 
 int AP_PadActivities(int hub, int physical, int dest, ap_padact_list *out)
 {
+	const ctr_content_pad *pad;
 	ap_padact_facts f;
-	int admitted[AP_RS_COUNT];
 	memset(&f, 0, sizeof f);
 	out->count = 0;
-	if (!ctr_cfg_active() || physical < 0)
+	if (!AP_TrackerLaunchEnabled() || physical < 0)
 		return 0;
+	pad = ap_content_plan_pad(physical);
 	f.keysHave = AP_GateCount(AP_IDX_KEY);
 	f.keysNeed = AP_PadActivityHubKeys(hub, physical);
-	f.racerMet = ctr_cfg_racer_lock_met(physical);
-	if (ap_content_plan_active())
-	{
-		const ctr_content_pad *pad = ap_content_plan_pad(physical);
-		f.content = 1;
-		f.padState = AP_PadState(physical, dest);
+	f.padState = AP_PadState(physical, dest);
+	f.occupied = pad && pad->occupied;
 #ifdef CTR_CUSTOM_TRACKS
-		f.contentReady = pad && pad->occupied && AP_ContentPadReady(physical);
+	f.contentReady = f.occupied && AP_ContentPadReady(physical);
 #else
-		f.contentReady = 0; /* this build has no content-plan entry route */
+	f.contentReady = 0; /* this build has no content-plan entry route */
 #endif
-		f.stage1Met = AP_ContentPadOpen(pad);
-		/* AP_ContentPadOpen already includes the pad's racer lock: list the pad's
-		 * own gates and the racer separately. */
-		f.padReqMet = AP_ContentPadBaseOpen(pad);
-		f.racerMet = pad ? AP_ContentPadRacerMet(pad) : 1;
-		if (pad && pad->occupied && (pad->crystal || pad->cup))
-		{
-			f.node = AP_PADACT_NODE_SINGLE;
-			f.single = pad->cup ? AP_PADACT_CUP : AP_PADACT_CRYSTAL;
-		}
-		else
-		{
-			ap_content_selector sel;
-			int i;
-			memset(&sel, 0, sizeof sel);
-			if (pad && pad->occupied)
-				AP_ContentSelectorBuild(pad, &sel);
-			f.node = AP_PADACT_NODE_CONTENT;
-			f.modeCount = sel.count < AP_PADACT_MAX_ROWS ? sel.count : AP_PADACT_MAX_ROWS;
-			for (i = 0; i < f.modeCount; i++)
-			{
-				f.contentMode[i] = sel.mode[i];
-				f.contentOpen[i] = sel.open[i];
-				f.contentLeft[i] = sel.pending[i];
-			}
-		}
-		AP_PadActivityDecide(&f, out);
-		return 1;
-	}
-	f.padState = ctr_cfg_arena_pad_disabled(physical) || ctr_cfg_arena_pad_disabled(dest)
-		? 0 : AP_PadState(physical, dest);
-	f.stage1Met = AP_PadStage1Met(physical);
-	f.padReqMet = AP_PadStage1BaseMet(physical);
 	f.replayable = AP_PadReplayable(physical, dest);
-	f.contentReady = 1;
-#ifdef CTR_CUSTOM_TRACKS
-	if (AP_CustomContentRequired())
-		f.contentReady = 0;
-#endif
-	if (dest == AP_CORTEX_DEST && !AP_CortexTrackEntryReady(0))
-		f.contentReady = 0;
+	f.stage1Met = AP_ContentPadOpen(pad);
+	/* AP_ContentPadOpen already includes the pad's racer lock: list the pad's
+	 * own gates and the racer separately. */
+	f.padReqMet = AP_ContentPadBaseOpen(pad);
+	f.racerMet = pad ? AP_ContentPadRacerMet(pad) : 1;
+	if (f.occupied && (pad->crystal || pad->cup))
 	{
-		int got = AP_PadSelectorFacts(physical, dest, &f.rs, admitted, &f.trophyChecked, &f.stage2Met);
-		if (got)
+		f.node = AP_PADACT_NODE_SINGLE;
+		f.single = pad->cup ? AP_PADACT_CUP : AP_PADACT_CRYSTAL;
+	}
+	else
+	{
+		ap_content_selector sel;
+		int i;
+		memset(&sel, 0, sizeof sel);
+		if (f.occupied)
+			AP_ContentSelectorBuild(pad, &sel);
+		f.node = AP_PADACT_NODE_CONTENT;
+		f.firstRaceWon = f.occupied && ap_content_first_race_won(pad, AP_ContentCodeChecked);
+		f.ctrFirst = f.occupied && ap_content_pad_ctr_first(pad);
+		f.stage2Open = f.occupied && (!pad->has_stage2 || AP_ContentStage2Owned(pad) >= pad->stage2_count);
+		f.modeCount = sel.count < AP_PADACT_MAX_ROWS ? sel.count : AP_PADACT_MAX_ROWS;
+		for (i = 0; i < f.modeCount; i++)
 		{
-			f.node = AP_PADACT_NODE_SELECTOR;
-			f.structure = got == 2 ? AP_RS_STRUCTURE_REFUSED : AP_RaceStructureDestStructure(dest);
-			if (got == 2)
-				f.rs.present[AP_RS_TROPHY] = 1; /* one row to carry the reason */
-		}
-		else
-		{
-			f.node = AP_PADACT_NODE_SINGLE;
-			f.single = AP_TLSingleActivity(dest);
+			f.contentMode[i] = sel.mode[i];
+			f.contentOpen[i] = sel.open[i];
+			f.contentLeft[i] = sel.pending[i] || (AP_ContentPadPlainLeft(pad) && ap_content_mode_plain(sel.mode[i]));
 		}
 	}
 	AP_PadActivityDecide(&f, out);
@@ -140,7 +94,7 @@ int AP_GarageActivities(int hub, ap_padact_list *out)
 	ap_padact_facts f;
 	memset(&f, 0, sizeof f);
 	out->count = 0;
-	if (!ctr_cfg_active() || hub < 0 || hub > 4)
+	if (!AP_TrackerLaunchEnabled() || hub < 0 || hub > 4)
 		return 0;
 	f.node = AP_PADACT_NODE_GARAGE;
 	f.keysHave = AP_GateCount(AP_IDX_KEY);

@@ -159,6 +159,13 @@ static inline APDeathLinkState AP_DeathLinkResolve(int seedRecv, int seedSend,
 	return r;
 }
 
+// The value the DeathLink row shows: its own, unless it follows a seed that
+// receives nothing while a DL Send row made the client receive.
+static inline int AP_DeathLinkRowShown(int row, int seedRecv, int recvNow)
+{
+	return row == -1 && seedRecv == 0 && recvNow != 0 ? recvNow : row;
+}
+
 // The connection tag is declared while anything receives or sends.
 static inline int AP_DeathLinkTagWanted(int recvMode, int sendMask)
 {

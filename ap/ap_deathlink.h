@@ -96,6 +96,8 @@ void AP_DeathLinkConnectReset(void);
 // 1 when DeathLink is effectively on: it receives or any send trigger is on (seed
 // options and the runtime OPTIONS rows combined).
 int AP_DeathLinkActive(void);
+// What the Options DeathLink row shows for its value `row` (ap_deathlink.c).
+int AP_DeathLinkRowValue(int row);
 
 // Per-frame driver, called from AP_OnFrame (all modes). Drains the network inbound
 // latch, decides each received death (apply, hold for a pause, or drop) and runs

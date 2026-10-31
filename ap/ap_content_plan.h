@@ -242,6 +242,15 @@ typedef struct ctr_content_wumpa {
     int goal;        /* the wumpa_banked arm's count, 0 without one */
 } ctr_content_wumpa;
 
+/* Plan pads in the client (one generator row 6): the plan's `pad_client`
+ * record. Without one (a plan from before the record) the menu is `always` and
+ * the tracker starts nothing. */
+typedef struct ctr_content_pad_client {
+    int present;
+    int race_type_selector; /* AP_RS_SELECTOR_* */
+    int tracker_pad_launch;
+} ctr_content_pad_client;
+
 typedef struct ctr_content_item {
     int base, extra, start_from_pool, start_additional, remaining, receipt_cap;
 } ctr_content_item;
@@ -381,6 +390,8 @@ const ctr_content_bosses *ap_content_plan_bosses(void);
  * plan's adventure_structure is ctr_first. */
 const ctr_content_wumpa *ap_content_plan_wumpa(void);
 int ap_content_plan_ctr_first(void);
+/* Row 6: the record, read through the active plan (all zero without one). */
+const ctr_content_pad_client *ap_content_plan_pad_client(void);
 /* Completability sweep (#133 PR 8, ap_content_verify.hpp): the plan's own
  * logic graph evaluated to a fixed point from the receipts that are not this
  * world's own location rewards (other players, starting inventory, server
