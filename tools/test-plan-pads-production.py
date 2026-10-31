@@ -63,10 +63,16 @@ gate = warp[warp.index("if (pad && AP_PadState(levelID, warppadObj->levelID) == 
 gate = gate[:gate.index("goto ContentPad_BuildGate;")]
 assert "AP_ContentMaskToReq(pad->stage2_mask, pad->stage2_count, &rule);" in gate
 assert "unlockItem_numNeeded = pad->stage2_count;" in gate and "AP_ContentStage2Owned(pad)" in gate
-# A replayable Done pad is built open and taken, a spare or finished Crystal pad is not.
-assert "!AP_PadReplayable(levelID, warppadObj->levelID)" in warp
+# A Done pad wears its grey X; a replayable one still takes the kart, a spare or
+# finished Crystal pad does not.
+assert "AP_PadState(levelID, warppadObj->levelID) == 5)\n\t{\n\t\twarppadObj->digit1s = 0;" in warp
 assert "!AP_PadReplayable(ctr_cfg_warp_phys(warppadObj->levelID), warppadObj->levelID)" in tick
 assert body(gates, "int AP_ContentTrackPadState(").count("AP_ContentPadPlainLeft(pad)") == 1
+# A closing pad strands no check that belongs to no pad.
+plain = body(pads, "int AP_ContentPadPlainLeft(")
+assert "fam->wumpa == 1 && pad->wumpa_modes" in plain and "AP_HitEncounterOpportunity(" in plain and "AP_ItemsanityPadOpportunity(host)" in plain
+# A start after a cancelled menu on the same pad is a new entry.
+assert "apEntryRefusedDest = -1;\n\t\t\tdist = 0;" in tick
 
 # Item 5, the glow lists open races and the pad state every location.
 assert "return AP_ContentPadGlowBits(destLevelID, outBits, cap, 1);" in body(pads, "int AP_PadUncollectedDisplayBits(")

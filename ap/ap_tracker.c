@@ -622,7 +622,7 @@ static void AP_TrackerDrawContentNode(const AP_TrackerNode *n, int x, int y)
 		AP_TrackerText(n->kind==1?"CRYSTAL CHECK":"CUP CHECK",x+12,y+64,18,TRACKER_GOLD,300);
 		AP_TrackerTick(x+315,y+65,AP_TrackerCodeState((long)pad->trophy_location));
 	}
-	wumpa = n->kind == 0 ? (long)(wumpaGlobal ? fam->wumpa_global : pad->wumpa_location) : 0;
+	wumpa = n->kind == 0 && pad->wumpa_modes ? (long)(wumpaGlobal ? fam->wumpa_global : pad->wumpa_location) : 0;
 	snprintf(text,sizeof text,"BOX %d",ap_content_box_pending(pad,AP_ContentCodeChecked));
 	AP_TrackerText(text,x+12,y+96,16,TRACKER_WHITE,110);
 	AP_TrackerText(wumpaGlobal ? "10W*" : "10W",x+130,y+96,16,TRACKER_GOLD,55); AP_TrackerTick(x+179,y+99,AP_TrackerCodeState(wumpa>0?wumpa:-1));
@@ -778,6 +778,7 @@ static void AP_TrackerDraw(void)
 		int boxes=plan?ap_content_box_pending(plan,AP_ContentCodeChecked):AP_PadUncollectedBoxCount(n->destination), letters=0, k;
 		if(plan) { for(k=0;k<3;k++) letters+=plan->letter_locations[k]>0 && !AP_ContentCodeChecked(plan->letter_locations[k]); }
 		else letters=AP_PadUncollectedLetterCount(n->destination);
+		if(plan) remaining-=boxes+letters; /* the plan's list holds both */
 		snprintf(line,sizeof line,"%s: %d RACE CHECKS, %d BOXES, %d LETTERS LEFT",n->title,remaining,boxes,letters);
 	} else snprintf(line,sizeof line,"CHECK: O PENDING / TICK DONE    LETTER: ORANGE OWNED / LOCK NEEDED / - OFF%s",ap_net_is_connected()?"":"    OFFLINE");
 	AP_TrackerText(line,32,718,14,TRACKER_WHITE,1210);

@@ -611,7 +611,12 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		if (warppadObj->boolEnteredWarppad)
 			AP_TrackerLaunchTaken();
 		else if (apEntryRefusedDest == levelID)
-			dist = 0; // refused earlier and still on the pad: the latch below holds it, the kart is not moved again
+		{
+			// Refused earlier and still on the pad: a new start is a new
+			// entry. The kart is not moved again, and a refusal drops the start.
+			apEntryRefusedDest = -1;
+			dist = 0;
+		}
 		else
 		{
 			AH_WarpPad_PlaceKartOnPad(driver, driverInst, warppadMatrix);
@@ -3118,10 +3123,9 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 	// CLOSED_ITEM -- nor the warp path). Hard-locked, always: a done pad has nothing
 	// left, so blocking entry is pure UX and cannot gate progression (design #1).
 	// levelID = physical pad; warppadObj->levelID = destination (location key).
-	// One generator row 6: a replayable Done plan pad is built open (no prizes
-	// are left to show), so it reads as enterable.
-	if (ctr_cfg_active() && AP_PadState(levelID, warppadObj->levelID) == 5 &&
-	    !AP_PadReplayable(levelID, warppadObj->levelID))
+	// One generator row 6: a replayable Done plan pad wears the same grey X
+	// (Rulebook, Closed and Done pads); AH_WarpPad_ThTick still takes the kart.
+	if (ctr_cfg_active() && AP_PadState(levelID, warppadObj->levelID) == 5)
 	{
 		warppadObj->digit1s = 0;
 		warppadObj->digit10s = 0;

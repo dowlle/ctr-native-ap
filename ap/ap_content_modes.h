@@ -15,7 +15,7 @@
 // Reach 10 Wumpa check (slot 5) on every mode with a Wumpa route, and the
 // letter checks (slots 6..8) on the CTR Challenge, and the Relic Race Perfect
 // check (slot 9, #133 PR 3c) on the Relic Race. The `wumpa: global` check
-// belongs to no pad and keeps no pad open, as on the legacy path.
+// belongs to no pad: AP_ContentPadPlainLeft keeps a first race open for it.
 #define AP_CONTENT_FAMILY_SLOTS 10
 #define AP_CONTENT_FAMILY_PERFECT 9
 // Content-plan podium identity of a pad's Trophy Race: logical podium track
@@ -153,8 +153,9 @@ static inline int ap_content_mode_plain(int mode) { return mode != AP_CONTENT_MO
 // The race type menu of a track pad (#208 on plans, one generator row 6): a row
 // per race the pad has open now, in the pad's order; a race not open yet has no
 // row. A row with nothing left is grey and can still be chosen. `plainLeft` is
-// 1 while a Hit Character or Itemsanity use can still happen in a race here;
-// those checks belong to no pad, so they are not in the pending count.
+// 1 while a Hit Character or Itemsanity use, or the global Wumpa check, can
+// still happen in a race here; they belong to no pad, so they are not in the
+// pending count.
 static inline void ap_content_menu_rows(const ctr_content_pad *pad, const int *counts, ap_content_checked_fn checked,
                                         int plainLeft, ap_rs_rows *out)
 {
@@ -192,8 +193,8 @@ static inline int ap_content_first_mode_checked(const ctr_content_pad *pad, ap_c
 // Pad state codes of AP_PadState for a content-plan track pad, the model in
 // ap_pad_state.h: 1 locked, 2 raceable, 3 closed again after the first race
 // (nothing left in an open race, stage 2 not met), 4 stage 2 open with checks
-// left, 5 Done. A Hit Character or Itemsanity use (`plainLeft`) keeps the first
-// race open, as on an ordinary pad, so a closing pad never strands one.
+// left, 5 Done. `plainLeft` keeps the first race open, as on an ordinary pad, so
+// a closing pad never strands a check that belongs to no pad.
 static inline int ap_content_track_pad_state(const ctr_content_pad *pad, const int *counts,
                                              ap_content_checked_fn checked, int plainLeft)
 {

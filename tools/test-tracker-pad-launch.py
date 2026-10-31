@@ -395,7 +395,7 @@ place = tick.index("AH_WarpPad_PlaceKartOnPad(driver, driverInst, warppadMatrix)
 assert place < tick.index("dist = 0;", place) and place < tick.index("AH_WarpPad_WarpCapture(gGT);", arrive)
 assert "driver->quadBlockHeight = ground;" in warp[:warp.index("void AH_WarpPad_ThTick")] and "AP_TLKartOnPad(padPos" in warp
 # A pad that refused the kart earlier (the entry latch) is not placed on again.
-assert "else if (apEntryRefusedDest == levelID)" in tick[arrive:place]
+assert "else if (apEntryRefusedDest == levelID)" in tick[arrive:arrive + 900]
 # The menu takes the tracker's row only if the pad offers it.
 sel = tick[tick.index("AP_ContentMenuRows(pad, &apRsRows);") - 200:]
 sel = sel[:sel.index("host = AP_ContentPreparePad(physLevelID, mode);")]

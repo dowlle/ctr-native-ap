@@ -1289,15 +1289,19 @@ int AP_PadPhase1ReRaceable(int physLevelID, int destLevelID)
 	return AP_PadState(physLevelID, destLevelID) == 2;
 }
 
-// A Hit Character or Itemsanity use a race on this plan pad can still serve
-// (one generator row 6). They belong to no pad, so a closing pad would strand
-// them: both keep the first race open, as on an ordinary pad. Asked for the
-// engine track the pad's race loads.
+// A Hit Character or Itemsanity use, or the `wumpa: global` check, a race on this
+// plan pad can still serve (one generator row 6). They belong to no pad, so a
+// closing pad would strand them, and logic counts every first race as a route:
+// they keep the first race open, as on an ordinary pad. Asked for the engine
+// track the pad's race loads.
 int AP_ContentPadPlainLeft(const ctr_content_pad *pad)
 {
+	const ctr_content_checks *fam = ap_content_plan_checks();
 	int host;
 	if (!pad || !pad->occupied || pad->crystal || pad->cup)
 		return 0;
+	if (fam->wumpa == 1 && pad->wumpa_modes && fam->wumpa_global > 0 && !AP_ContentCodeChecked(fam->wumpa_global))
+		return 1;
 	host = ap_content_pad_host(pad);
 	return (AP_HitEncounterEnabled() &&
 	        AP_HitEncounterOpportunity(host, AP_HitEffectivePlayer(pad->physical)) >= 0) ||
