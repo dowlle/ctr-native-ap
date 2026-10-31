@@ -7,7 +7,7 @@
 //
 // One decision for the in-game tracker's activity list. Its facts come from
 // the same functions the physical pad and garage ask (AP_PadState,
-// AP_PadReplayable, AP_ContentPadOpen, AP_ContentSelectorBuild,
+// AP_PadReplayable, AP_ContentPadRuleOwned, AP_ContentSelectorBuild,
 // AP_ContentPadReady, AP_BossGarageOpen, AP_OxideGarageOpen), gathered by
 // AP_PadActivities in ap_tracker_launch.c. A tracker start never loads anything
 // itself: it moves the player to the pad's hub and lets that pad or garage run
@@ -72,8 +72,8 @@ typedef struct
 	// Pads (not garages)
 	int padState;   // AP_PadState: 1 locked, 2 raceable, 3 closed again, 4 stage 2 open, 5 done
 	int occupied;   // the pad has an entry
-	int stage1Met;  // AP_ContentPadOpen
-	int padReqMet;  // the pad's own requirement without the racer lock (AP_ContentPadBaseOpen)
+	int stage1Met;  // the pad's own rule and its racer lock; the Keys are keysNeed
+	int padReqMet;  // the pad's own rule, without the hub Keys or the racer lock
 	int racerMet;   // the racer lock (AP_ContentPadRacerMet)
 	int replayable; // AP_PadReplayable
 	int contentReady; // AP_ContentPadReady
@@ -84,7 +84,8 @@ typedef struct
 	int contentMode[AP_PADACT_MAX_ROWS];
 	int contentOpen[AP_PADACT_MAX_ROWS];
 	int contentLeft[AP_PADACT_MAX_ROWS];
-	int stage2Open;  // the pad's stage 2 is met, or it has none
+	int contentStage2[AP_PADACT_MAX_ROWS]; // the race waits for the pad's stage 2
+	int stage2Open;  // the pad's stage 2 is met
 	// GARAGE
 	int garageOpen;
 } ap_padact_facts;
@@ -184,20 +185,18 @@ static inline void AP_PadActivityDecideRows(const ap_padact_facts *f, ap_padact_
 	case AP_PADACT_NODE_CONTENT:
 		for (m = 0; m < f->modeCount && m < AP_PADACT_MAX_ROWS; m++)
 		{
-			int reason = AP_PADACT_OPEN;
-			if (!f->contentOpen[m])
-				reason = f->firstRaceWon ? AP_PADACT_LOCK_STAGE2
-				         : f->ctrFirst ? AP_PADACT_LOCK_CTRCHAL : AP_PADACT_LOCK_TROPHY;
+			// What this race waits for on top of the pad's own entry: a later
+			// race for the first race, a stage-2 race for the second requirement.
+			int first = f->ctrFirst ? AP_PADACT_LOCK_CTRCHAL : AP_PADACT_LOCK_TROPHY;
+			int bits = 0, reason = AP_PADACT_OPEN;
+			if (m > 0 && !f->firstRaceWon)
+				bits |= AP_PADACT_BIT(first);
+			if (f->contentStage2[m] && !f->stage2Open)
+				bits |= AP_PADACT_BIT(AP_PADACT_LOCK_STAGE2);
+			if (!f->contentOpen[m] && (bits || f->padReqMet))
+				reason = bits & AP_PADACT_BIT(first) ? first : AP_PADACT_LOCK_STAGE2;
 			AP_PadActivityRow(out, f->contentMode[m], reason, f->contentLeft[m] ? 1 : 0, f->contentMode[m]);
-			// A later race that waits for the first race may wait for stage 2
-			// as well; a met pad gate leaves only those two reasons.
-			if (reason != AP_PADACT_OPEN && !f->firstRaceWon && f->stage2Open == 0)
-				out->mask[out->count - 1] |= AP_PADACT_BIT(AP_PADACT_LOCK_STAGE2);
-			// A mode also reads closed when the pad's own requirement is unmet
-			// (ap_content_mode_open); then the pad-wide reasons below name it,
-			// not a second requirement that may be met.
-			if (!f->contentOpen[m] && !f->padReqMet)
-				out->mask[out->count - 1] = 0;
+			out->mask[out->count - 1] |= bits;
 		}
 		break;
 	case AP_PADACT_NODE_SINGLE:

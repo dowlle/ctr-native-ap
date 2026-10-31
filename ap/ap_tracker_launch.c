@@ -48,6 +48,8 @@ int AP_PadActivities(int hub, int physical, int dest, ap_padact_list *out)
 	pad = ap_content_plan_pad(physical);
 	f.keysHave = AP_GateCount(AP_IDX_KEY);
 	f.keysNeed = AP_PadActivityHubKeys(hub, physical);
+	if (pad && pad->keys > f.keysNeed)
+		f.keysNeed = pad->keys;
 	f.padState = AP_PadState(physical, dest);
 	f.occupied = pad && pad->occupied;
 #ifdef CTR_CUSTOM_TRACKS
@@ -56,11 +58,11 @@ int AP_PadActivities(int hub, int physical, int dest, ap_padact_list *out)
 	f.contentReady = 0; /* this build has no content-plan entry route */
 #endif
 	f.replayable = AP_PadReplayable(physical, dest);
-	f.stage1Met = AP_ContentPadOpen(pad);
-	/* AP_ContentPadOpen already includes the pad's racer lock: list the pad's
-	 * own gates and the racer separately. */
-	f.padReqMet = AP_ContentPadBaseOpen(pad);
+	/* AP_ContentPadOpen in its three terms, each with its own reason: the Keys
+	 * above, the pad's rule and the racer lock. */
+	f.padReqMet = pad && (!pad->has_rule || AP_ContentPadRuleOwned(pad) >= pad->rule_count);
 	f.racerMet = pad ? AP_ContentPadRacerMet(pad) : 1;
+	f.stage1Met = f.padReqMet && f.racerMet;
 	if (f.occupied && (pad->crystal || pad->cup))
 	{
 		f.node = AP_PADACT_NODE_SINGLE;
@@ -76,12 +78,13 @@ int AP_PadActivities(int hub, int physical, int dest, ap_padact_list *out)
 		f.node = AP_PADACT_NODE_CONTENT;
 		f.firstRaceWon = f.occupied && ap_content_first_race_won(pad, AP_ContentCodeChecked);
 		f.ctrFirst = f.occupied && ap_content_pad_ctr_first(pad);
-		f.stage2Open = f.occupied && (!pad->has_stage2 || AP_ContentStage2Owned(pad) >= pad->stage2_count);
+		f.stage2Open = f.occupied && pad->has_stage2 && AP_ContentStage2Owned(pad) >= pad->stage2_count;
 		f.modeCount = sel.count < AP_PADACT_MAX_ROWS ? sel.count : AP_PADACT_MAX_ROWS;
 		for (i = 0; i < f.modeCount; i++)
 		{
 			f.contentMode[i] = sel.mode[i];
 			f.contentOpen[i] = sel.open[i];
+			f.contentStage2[i] = pad->stages[i] == 2;
 			f.contentLeft[i] = sel.pending[i] || (AP_ContentPadPlainLeft(pad) && ap_content_mode_plain(sel.mode[i]));
 		}
 	}

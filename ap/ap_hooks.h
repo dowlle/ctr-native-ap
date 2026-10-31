@@ -329,7 +329,6 @@ int AP_ReqMetCounts(const ctr_req *r, const int *counts);
 // Pad state, the capture and final load gates, the tracker launch and the
 // pad text all call this, so they cannot disagree.
 int AP_ContentPadOpen(const ctr_content_pad *pad);
-int AP_ContentPadBaseOpen(const ctr_content_pad *pad);  // without the racer lock (#375)
 int AP_ContentPadRacerMet(const ctr_content_pad *pad);
 // Owned count for the pad's manual rule (0 when it has none).
 int AP_ContentPadRuleOwned(const ctr_content_pad *pad);
@@ -892,7 +891,6 @@ int AP_PadState(int physLevelID, int destLevelID);
 // Exposed for the Gem Cup AP-box policy (WO-A3, ap_boxes.c), which has to ask
 // this exact question about the pad hosting a cup leg's INDIVIDUAL race.
 int AP_PadStage1Met(int physLevelID);
-int AP_PadStage1BaseMet(int physLevelID); // without the racer lock (#375 tracker list)
 
 // Is this pad in the phase-1 re-entry window? The destination's Trophy Race is
 // checked, stage 2 is not met, and an AP box or per-track Wumpa check still

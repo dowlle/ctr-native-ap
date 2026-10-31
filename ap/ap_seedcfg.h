@@ -947,7 +947,6 @@ static inline int AP_CustomLetterNamedBlock(void)
 // numTrophiesToOpen threshold from data.metaDataLEV[] for the Phase-1 fallback,
 // neither of which is reachable from the isolated C++ static lib.
 int ctr_cfg_warp_unlocked(int levelID);
-int ctr_cfg_warp_base_unlocked(int levelID); // the same without the racer lock (#375)
 
 // The ENGINE character id a physical pad demands, or -1 when it carries no
 // racer lock (#54/#209). Dense pads 0..27 and cup pads 100..104, keyed exactly

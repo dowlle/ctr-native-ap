@@ -91,7 +91,7 @@ static void menu_parity(void)
   memset(&f, 0, sizeof f);
   f.node = AP_PADACT_NODE_CONTENT; f.occupied = 1; f.contentReady = 1; f.padState = 2; f.stage1Met = f.padReqMet = f.racerMet = 1;
   f.firstRaceWon = won; f.stage2Open = stage2; f.modeCount = sel.count;
-  for (i = 0; i < sel.count; i++) { f.contentMode[i] = sel.mode[i]; f.contentOpen[i] = sel.open[i]; f.contentLeft[i] = sel.pending[i]; }
+  for (i = 0; i < sel.count; i++) { f.contentMode[i] = sel.mode[i]; f.contentOpen[i] = sel.open[i]; f.contentLeft[i] = sel.pending[i]; f.contentStage2[i] = pad.stages[i] == 2; }
   AP_PadActivityDecide(&f, &l);
   for (i = 0, r = 0; i < l.count; i++) if (l.reason[i] == AP_PADACT_OPEN) {
    assert(r < rows.count && rows.mode[r] == l.launchMode[i]); r++;
@@ -100,6 +100,7 @@ static void menu_parity(void)
   /* A later race waits for the first race, then for stage 2, and says which. */
   if (!won) assert(l.mask[1] & AP_PADACT_BIT(AP_PADACT_LOCK_TROPHY));
   if (!stage2) assert(l.mask[1] & AP_PADACT_BIT(AP_PADACT_LOCK_STAGE2));
+  assert(!(l.mask[0] & (AP_PADACT_BIT(AP_PADACT_LOCK_TROPHY) | AP_PADACT_BIT(AP_PADACT_LOCK_STAGE2))));
   cases++;
  }
  printf("menu parity: %d cases\n", cases);
@@ -278,7 +279,7 @@ static void missing_all(void)
  for (int i = 0; i < l.count; i++) assert(l.reason[i] == AP_PADACT_LOCK_HUB && (l.mask[i] & need) == need);
  /* Two lines when they do not fit one; one reason or a short list stays on one. */
  f = content_facts(); f.keysHave = 0; f.keysNeed = 2; f.padState = 1; f.stage1Met = f.racerMet = 1; f.padReqMet = 1;
- f.contentOpen[1] = 0; f.firstRaceWon = 0; f.stage2Open = 0;
+ f.contentOpen[1] = 0; f.firstRaceWon = 0; f.stage2Open = 0; f.contentStage2[1] = 1;
  AP_PadActivityDecide(&f, &l);
  assert(AP_PadActivityReasonLines(l.mask[1], 24, lines) == 2 && lines[0][0] && lines[1][0]);
  assert(strstr(lines[0], "NEEDS HUB KEYS") && strstr(lines[1], "SECOND REQUIREMENT"));
@@ -295,8 +296,13 @@ static void missing_all(void)
  f = content_facts(); f.stage1Met = f.padReqMet = 0; f.contentOpen[0] = f.contentOpen[1] = f.contentOpen[2] = 0;
  AP_PadActivityDecide(&f, &l);
  for (int i = 0; i < l.count; i++) assert(l.mask[i] == AP_PADACT_BIT(AP_PADACT_LOCK_PAD));
+ /* A shut pad and a first race not won: a later row lists both. */
+ f.firstRaceWon = 0;
+ AP_PadActivityDecide(&f, &l);
+ assert(l.mask[0] == AP_PADACT_BIT(AP_PADACT_LOCK_PAD));
+ assert(l.mask[1] == (AP_PADACT_BIT(AP_PADACT_LOCK_PAD) | AP_PADACT_BIT(AP_PADACT_LOCK_TROPHY)));
  /* Closed again after the first race: every row says the second requirement. */
- f = content_facts(); f.padState = 3; f.contentOpen[1] = f.contentOpen[2] = 0; f.stage2Open = 0;
+ f = content_facts(); f.padState = 3; f.contentOpen[1] = f.contentOpen[2] = 0; f.stage2Open = 0; f.contentStage2[1] = f.contentStage2[2] = 1;
  AP_PadActivityDecide(&f, &l);
  for (int i = 0; i < l.count; i++) assert(l.reason[i] == AP_PADACT_LOCK_STAGE2);
  /* A finished pad stands alone; a replay opens its open rows. */
@@ -416,7 +422,7 @@ assert gtick.index("if (!bossIsOpen)\n\t{\n\t\treturn;") < gtick.index("LAB_800a
 launch = (root / "ap/ap_tracker_launch.c").read_text()
 acts = body(launch, "int AP_PadActivities(")
 for call in ("AP_PadState(physical, dest)", "AP_PadReplayable(physical, dest)", "AP_ContentPadReady(physical)",
-             "AP_ContentSelectorBuild(pad, &sel)", "AP_ContentPadOpen(pad)", "AP_ContentPadBaseOpen(pad)",
+             "AP_ContentSelectorBuild(pad, &sel)", "AP_ContentPadRuleOwned(pad)", "pad->keys > f.keysNeed",
              "AP_ContentPadRacerMet(pad)", "AP_PadActivityHubKeys(hub, physical)", "AP_PadActivityDecide(&f, out)"):
     assert call in acts, call
 # A room without a plan has no list and no start.

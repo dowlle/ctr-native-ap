@@ -377,13 +377,7 @@ int AP_ContentPadOpen(const ctr_content_pad *pad)
 	       (pad->racer_lock < 0 || AP_CharacterUnlocked(pad->racer_lock));
 }
 
-// AP_ContentPadOpen split in its two terms, for the tracker's list of missing
-// requirements (#375): the pad's own gates, and the racer lock on top.
-int AP_ContentPadBaseOpen(const ctr_content_pad *pad)
-{
-	return ap_content_pad_open(pad, ap_recv_count);
-}
-
+// The racer lock on its own, for the tracker's list of missing requirements (#375).
 int AP_ContentPadRacerMet(const ctr_content_pad *pad)
 {
 	return pad->racer_lock < 0 || AP_CharacterUnlocked(pad->racer_lock);
@@ -1579,16 +1573,7 @@ int ctr_cfg_warp_unlocked(int levelID)
 	// the load gate, the spawn visual and the map advert are all one source.
 	if (!ctr_cfg_racer_lock_met(levelID))
 		return 0;
-	return ctr_cfg_warp_base_unlocked(levelID);
-}
 
-// The pad's own stage-1 requirement without the racer lock (#375: the
-// tracker lists a missing racer and a missing requirement separately).
-// ctr_cfg_warp_unlocked is exactly the arena test, the racer lock, then this.
-int ctr_cfg_warp_base_unlocked(int levelID)
-{
-	if (ctr_cfg_arena_pad_disabled(levelID))
-		return 0;
 	if (ctr_cfg_active() && levelID >= 0 && levelID < CTR_CFG_PAD_COUNT &&
 	    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
 		return AP_BossReqMet(&ctr_cfg.warp_pad_unlock[levelID].stage1);
