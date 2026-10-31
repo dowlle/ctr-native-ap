@@ -16,6 +16,9 @@
 using J = nlohmann::json;
 extern "C" void AP_LogLine(const char *) {}
 static int checks, failures;
+static int nothing_checked(int64_t) { return 0; }
+static int64_t won_code;
+static int won_check(int64_t code) { return code == won_code; }
 static void expect(bool good, const std::string &why) {
     ++checks;
     if (!good) { ++failures; std::cout << "FAIL: " << why << '\n'; }
@@ -405,16 +408,16 @@ int main(int argc, char **argv) {
             if (!p || !p->occupied || p->crystal) continue;
             int64_t codes[3];
             expect(p->mode_count >= 1 && p->stages[0] == 1, "first mode opens with the pad");
-            expect(ap_content_mode_open(p, p->modes[0], keys), "first mode open with the hub Keys");
+            expect(ap_content_mode_open(p, p->modes[0], keys, nothing_checked), "first mode open with the hub Keys");
             if (p->mode_count > 1) {
                 ++later;
                 expect(p->has_stage2 && p->stage2_mask && p->stage2_count >= 1 && p->stage2_count <= 4,
                        "multi-mode pad has its second-stage rule");
                 for (int k = 1; k < p->mode_count; ++k)
-                    expect(p->stages[k] == 2 && !ap_content_mode_open(p, p->modes[k], keys), "later mode closed without its rule");
+                    expect(p->stages[k] == 2 && !ap_content_mode_open(p, p->modes[k], keys, nothing_checked), "later mode closed without its rule");
                 int rich[15] = {};
                 for (int i = 0; i < 15; ++i) rich[i] = 99;
-                expect(ap_content_mode_open(p, p->modes[1], rich), "later mode opens on the rule");
+                expect(ap_content_mode_open(p, p->modes[1], rich, nothing_checked), "later mode opens on the rule");
             }
             if (p->modes[0] == AP_CONTENT_MODE_RELIC) ++relicFirst;
             if (p->retail_id >= 0) {
@@ -440,7 +443,7 @@ int main(int argc, char **argv) {
             else
                 expect(key == "relic-loop" && p->mode_count == 1 && p->modes[0] == AP_CONTENT_MODE_RELIC && !p->has_stage2 &&
                        p->trophy_location == 0 && p->relic_locations[0] == 35022003 && p->relic_locations[2] == 35022005 &&
-                       ap_content_mode_open(p, AP_CONTENT_MODE_RELIC, none) == (p->keys == 0),
+                       ap_content_mode_open(p, AP_CONTENT_MODE_RELIC, none, nothing_checked) == (p->keys == 0),
                        "Relic-only package on generic slot 2");
         }
         expect(retail == 18 && custom == 3 && later == 20, "18 retail and 3 custom track pads, 20 with later modes");
@@ -513,7 +516,7 @@ int main(int argc, char **argv) {
         expect(parse(single) && bind_room(single, "seed-S"), "the same plan with one stage admits");
         const auto *p = ap_content_plan_pad(3);
         int none[15] = {};
-        expect(p && p->mode_count == 3 && !p->has_stage2 && ap_content_mode_open(p, p->modes[2], none),
+        expect(p && p->mode_count == 3 && !p->has_stage2 && ap_content_mode_open(p, p->modes[2], none, nothing_checked),
                "one stage: every mode opens with the pad");
     }
     // Per-track check families (#133 PR 3b): the paired apworld's plans with
@@ -796,6 +799,18 @@ int main(int argc, char **argv) {
         env_refuse("display 2", [](J &j) { j["ctr_options"]["warp_pad_item_display"] = 2; });
         env_refuse("display as Boolean", [](J &j) { j["ctr_options"]["warp_pad_item_display"] = true; });
         env_refuse("colours as integer", [](J &j) { j["ctr_options"]["ap_item_type_colors"] = 1; });
+        J relic = packs;
+        relic["ctr_options"]["relic_progression"] = {{"Sapphire Relic", true}, {"Gold Relic", false},
+                                                     {"Platinum Relic", false}};
+        expect(parse(relic) && bind_room(relic, "seed-relic"), "relic classification hint admits and binds");
+        relic["ctr_options"].erase("relic_progression");
+        expect(parse(relic), "absent relic classification hint admits");
+        env_refuse("relic map missing a tier", [](J &j) { j["ctr_options"]["relic_progression"] = {{"Sapphire Relic", true}}; });
+        env_refuse("relic map has an extra tier", [](J &j) { j["ctr_options"]["relic_progression"] =
+            {{"Sapphire Relic", true}, {"Gold Relic", false}, {"Platinum Relic", false}, {"Ruby Relic", true}}; });
+        env_refuse("relic map value is not Boolean", [](J &j) { j["ctr_options"]["relic_progression"] =
+            {{"Sapphire Relic", true}, {"Gold Relic", 0}, {"Platinum Relic", false}}; });
+        env_refuse("relic map is not an object", [](J &j) { j["ctr_options"]["relic_progression"] = J::array(); });
         env_refuse("an unknown envelope key", [](J &j) { j["ctr_options"]["turbo_grant"] = true; });
         env_refuse("an unknown top-level block", [](J &j) { j["itemsanity_checks"] = J::object(); });
         auto pack_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
@@ -1275,9 +1290,13 @@ int main(int argc, char **argv) {
             ++seen;
             const std::string id = pad_record["id"];
             const ctr_content_pad *pad = ap_content_plan_pad(std::stoi(id.substr(4)));
-            const int index = std::stoi((*entry)["id"].get<std::string>().substr(10));
-            expect(pad && pad->occupied && pad->cup && !pad->crystal && pad->mode_count == 0 && pad->cup_index == index &&
-                   pad->trophy_location == 35027000 + index && pad->sweep_location == 35027200 + index &&
+            const std::string cup_id = (*entry)["id"];
+            const bool gem = cup_id.rfind("entry/gem_cup:", 0) == 0;
+            const int index = std::stoi(cup_id.substr(gem ? 14 : 10));
+            expect(pad && pad->occupied && pad->cup && !pad->crystal && pad->mode_count == 0 &&
+                   pad->cup_index == (gem ? -1 : index) && pad->gem_cup == (gem ? 100 + index : 0) &&
+                   pad->trophy_location == (gem ? 35011200 : 35027000) + index &&
+                   pad->sweep_location == (gem ? 35028300 : 35027200) + index &&
                    (*entry)["display_name"] == pad->display_name, "cups: pad, name, Win and sweep codes");
             for (int n = 0; pad && n < 4; ++n) {
                 const J &leg = (*entry)["legs"][n];
@@ -1309,10 +1328,25 @@ int main(int argc, char **argv) {
             if (e["kind"] == "cup") { e["legs"][0]["laps"] = 6; break; }
         expect(!parse(forged), "cups: a leg with neither its laps nor the shortened laps (6) refuses");
     }
-    // Hit Character with cups (#133 PR 5b): three cups over retail, custom
+    // One generator row 2: forged Gem Cups, surface rows and relic checks.
+    {
+        const auto rows = [](J &j) -> J & { return j["content_plan"]["items"]["rows"]; };
+        refuse([&] { J j = cups; for (auto &e : j["content_plan"]["entries"]) if (e["id"] == "entry/gem_cup:0") e["display_name"] = "Green Gem Cup"; return j; }(),
+               "gem cups: a Gem Cup under another name");
+        refuse([&] { J j = cups; j["content_plan"]["required_features"].erase(j["content_plan"]["required_features"].size() - 1); return j; }(),
+               "gem cups: the feature is required");
+        refuse([&] { J j = cups; for (auto &c : j["content_plan"]["checks"]) if (c["location"] == 35011200) c["display_name"] = "Red Gem Cup: Win"; return j; }(),
+               "gem cups: the Gem check keeps its frozen name");
+        refuse([&] { J j = cups; for (auto &row : rows(j)) if (row["item"] == 35010001) { row["base"] = 1; row["remaining"] = 1; row["receipt_cap"] = 1; row["requirement_ceiling"] = 1; } return j; }(),
+               "relic checks: a tier with one copy keeps its checks on every race");
+        refuse([&] { J j = cups; rows(j).push_back(rows(j)[0]); rows(j).back()["item"] = 35010021; return j; }(),
+               "surface items: one row alone");
+    }
+    // Hit Character with cups (#133 PR 5b): seven cups over retail, custom
     // (named and generic) and Cortex Vortex legs. Every Hit check routes from
     // every Trophy Race, CTR Challenge and cup leg, guests included, and the
-    // block carries one draw order per cup name index.
+    // block carries one draw order per pool cup's name index; a Gem Cup draws
+    // from the block's own `cups` order.
     J cuphits;
     std::ifstream("tools/fixtures/content-plan/cup-hits.json") >> cuphits;
     expect(parse(cuphits) && bind_room(cuphits) && ap_content_plan_active(), "cup hits: room binds");
@@ -1322,9 +1356,14 @@ int main(int argc, char **argv) {
         const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
         expect(h && h->enabled, "cup hits: Hit Character block admitted");
         std::set<int> indices;
+        int gem_cups = 0;
         for (const auto &e : plan["entries"])
-            if (e["kind"] == "cup") indices.insert(std::stoi(e["id"].get<std::string>().substr(10)));
-        expect(indices.size() == 3, "cup hits: three cups");
+            if (e["kind"] == "cup") {
+                const std::string cup_id = e["id"];
+                if (cup_id.rfind("entry/gem_cup:", 0) == 0) ++gem_cups;
+                else indices.insert(std::stoi(cup_id.substr(10)));
+            }
+        expect(gem_cups == 5 && indices.size() == 2, "cup hits: the five Gem Cups and two pool cups");
         bool orders = h != nullptr;
         for (int c = 0; orders && c < CTR_CFG_HIT_CONTENT_CUP_COUNT; ++c) {
             orders = (h->content_cup_present[c] != 0) == (indices.count(c) != 0);
@@ -1341,7 +1380,7 @@ int main(int argc, char **argv) {
             expect(c["routes"] == (*first)["routes"], "cup hits: every target has the same routes");
         }
         for (const auto &r : (*first)["routes"]) legs += r["mode"] == "cup";
-        expect(hits == 16 && legs == 12, "cup hits: sixteen Hit checks, a route per cup leg");
+        expect(hits == 16 && legs == 28, "cup hits: sixteen Hit checks, a route per cup leg");
         auto c_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
             J bad = cuphits; change(bad); refuse(bad, "cup hits: " + why);
         };
@@ -1593,7 +1632,62 @@ int main(int argc, char **argv) {
             for (auto &r : items["rows"])
                 if (r["item"] == 35010000) { r["extra"] = filler; r["remaining"] = 16 + filler; r["receipt_cap"] = 16 + filler; }
             items["filler_count"] = 0; items["trap_count"] = 0; });
+        // Fixed items (one generator row 4): the record, the ledger's locked
+        // fields and the capacity sum move together, recomputed from the ledger.
+        auto key_row = [](J &j) -> J & {
+            for (auto &r : j["content_plan"]["items"]["rows"]) if (r["item"] == 35010014) return r;
+            throw std::runtime_error("no Key row"); };
+        auto fix_keys = [&](J &j) {
+            j["content_plan"]["fixed_items"] = J{{"keys", true}};
+            j["content_plan"]["required_features"].push_back("fixed_items_v1");
+            key_row(j).update(J{{"locked_selected", 4}, {"remaining", 0}});
+            j["content_plan"]["items"]["locked_checks"] = 4; };
+        J fixed = bosses;
+        fix_keys(fixed);
+        expect(parse(fixed), "fixed items: four Keys on their bosses are admitted");
+        auto f_refuse = [&](const char *name, const std::function<void(J &)> &change) {
+            J j = fixed;
+            change(j);
+            refuse(j, std::string("fixed items: ") + name); };
+        f_refuse("the record dropped", [](J &j) { j["content_plan"].erase("fixed_items"); });
+        f_refuse("the feature dropped", [](J &j) {
+            auto &f = j["content_plan"]["required_features"]; f.erase(f.size() - 1); });
+        f_refuse("an unknown field", [](J &j) { j["content_plan"]["fixed_items"]["trophies"] = true; });
+        f_refuse("a false value", [](J &j) { j["content_plan"]["fixed_items"]["keys"] = false; });
+        f_refuse("an empty record", [](J &j) { j["content_plan"]["fixed_items"] = J::object(); });
+        f_refuse("locked_checks off by one", [](J &j) { j["content_plan"]["items"]["locked_checks"] = 3; });
+        f_refuse("a Key left out of the pins", [&](J &j) { key_row(j).update(J{{"locked_selected", 3}, {"remaining", 1}}); });
+        f_refuse("a Key both pinned and pooled", [&](J &j) { key_row(j)["remaining"] = 1; });
+        f_refuse("Gems without their cups", [](J &j) { j["content_plan"]["fixed_items"]["gems"] = true; });
+        f_refuse("the filler without its goal", [](J &j) {
+            j["content_plan"]["fixed_items"]["oxide_1_filler"] = true;
+            j["content_plan"]["items"]["locked_checks"] = 5;
+            j["content_plan"]["items"]["filler_count"] = j["content_plan"]["items"]["filler_count"].get<int>() - 1; });
+        J started = bosses;
+        fix_keys(started);
+        key_row(started).update(J{{"start_from_pool", 1}, {"locked_selected", 3}, {"remaining", 0}});
+        started["content_plan"]["items"]["locked_checks"] = 3;
+        started["content_plan"]["items"]["filler_count"] = started["content_plan"]["items"]["filler_count"].get<int>() + 1;
+        expect(parse(started), "fixed items: a started Key is not pinned again");
         expect(parse(bosses), "bosses: the room parses again after the forgeries");
+    }
+    {
+        // `oxide_1_optional: filler`: a Wumpa Fruit on N. Oxide's Challenge takes a
+        // locked check and no ledger row, so one filler slot goes.
+        J filler = finalroom;
+        filler["content_plan"]["fixed_items"] = J{{"oxide_1_filler", true}};
+        filler["content_plan"]["required_features"].push_back("fixed_items_v1");
+        filler["content_plan"]["items"]["locked_checks"] = 1;
+        filler["content_plan"]["items"]["filler_count"] = filler["content_plan"]["items"]["filler_count"].get<int>() - 1;
+        if (filler["content_plan"]["items"]["trap_count"] > filler["content_plan"]["items"]["filler_count"])
+            filler["content_plan"]["items"]["trap_count"] = filler["content_plan"]["items"]["filler_count"];
+        expect(parse(filler), "fixed items: the filler on N. Oxide's Challenge is admitted");
+        J unsized = filler;
+        unsized["content_plan"]["items"]["filler_count"] = finalroom["content_plan"]["items"]["filler_count"];
+        refuse(unsized, "fixed items: the pinned Wumpa Fruit also counted as filler");
+        J mandatory = filler;
+        mandatory["content_plan"]["bosses"]["oxide_1_optional"] = false;
+        refuse(mandatory, "fixed items: the filler on a mandatory first race");
     }
     expect(parse(finalroom) && bind_room(finalroom) && ap_content_plan_active(), "bosses-final: room binds");
     {
@@ -1625,6 +1719,35 @@ int main(int argc, char **argv) {
     // Bosses off: the garages stay empty and the goal is the Gem arm alone.
     expect(parse(base) && bind_room(base) && !ap_content_plan_bosses()->present && ctr_cfg.goal_oxide == 3 &&
            ctr_cfg.goal_bosses == 0 && ctr_boss_encounters.state == AP_BOSS_ENC_RETAIL, "bosses off: empty garages");
+    // One generator row 3: a later race needs the pad's first race won, on a
+    // pad with a second stage and on one without.
+    {
+        ctr_content_pad pad{};
+        int counts[15] = {};
+        counts[0] = 9;
+        pad.occupied = 1; pad.mode_count = 3; pad.racer_lock = -1; pad.first_race_rule = 1;
+        pad.modes[0] = AP_CONTENT_MODE_TROPHY; pad.modes[1] = AP_CONTENT_MODE_CTR; pad.modes[2] = AP_CONTENT_MODE_RELIC;
+        pad.stages[0] = 1; pad.stages[1] = pad.stages[2] = 2;
+        pad.has_stage2 = 1; pad.stage2_mask = 1u; pad.stage2_count = 2;
+        pad.trophy_location = 5001; pad.ctr_location = 5002;
+        won_code = 0;
+        expect(ap_content_mode_open(&pad, AP_CONTENT_MODE_TROPHY, counts, won_check), "the first race opens with the pad");
+        expect(!ap_content_mode_open(&pad, AP_CONTENT_MODE_CTR, counts, won_check), "items alone do not open a later race");
+        won_code = 5001;
+        expect(ap_content_mode_open(&pad, AP_CONTENT_MODE_RELIC, counts, won_check), "the win and the items open it");
+        counts[0] = 1;
+        expect(!ap_content_mode_open(&pad, AP_CONTENT_MODE_CTR, counts, won_check), "the win alone does not open stage 2");
+        pad.has_stage2 = 0; pad.stages[1] = pad.stages[2] = 1;
+        won_code = 0;
+        expect(!ap_content_mode_open(&pad, AP_CONTENT_MODE_CTR, counts, won_check), "no second stage still waits for the win");
+        won_code = 5001;
+        expect(ap_content_mode_open(&pad, AP_CONTENT_MODE_CTR, counts, won_check), "no second stage opens with the win");
+        pad.modes[0] = AP_CONTENT_MODE_RELIC; pad.modes[2] = AP_CONTENT_MODE_TROPHY; pad.trophy_location = 0;
+        won_code = 0;
+        expect(ap_content_mode_open(&pad, AP_CONTENT_MODE_CTR, counts, won_check), "a first race with no check proves nothing");
+        pad.first_race_rule = 0; pad.modes[0] = AP_CONTENT_MODE_TROPHY; pad.trophy_location = 5001;
+        expect(ap_content_mode_open(&pad, AP_CONTENT_MODE_CTR, counts, won_check), "a plan without the feature keeps its gates");
+    }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;
 }

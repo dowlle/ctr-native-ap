@@ -33,6 +33,8 @@
 // every difference between builds comes from the camera math, never from
 // level data.
 
+// Declared here so a compiler that rejects implicit declarations (gcc 15) builds CAM.c.
+int AP_DemoCamOwnsCamera(void);
 #include "game/CAM.c"
 #include "game/MATH/MATH_7_MatrixStubs.c"
 #include "game/MATH/MATH_0_Sin.c"

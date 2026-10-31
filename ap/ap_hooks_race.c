@@ -661,7 +661,8 @@ static const ctr_content_pad *AP_StandaloneRoutePad(const struct CustomTrackRace
 	int64_t codes[3] = {0, 0, 0};
 	if (!pad || !pad->occupied || pad->crystal || !context->seedEpoch ||
 	    context->seedEpoch != ap_content_plan_epoch() ||
-	    ap_content_mode_codes(pad, context->mode, codes) < 1 || codes[0] != context->trophyLocation ||
+	    ap_content_mode_codes(pad, context->mode, codes) < 1 ||
+	    ap_content_mode_route(pad, context->mode) != context->trophyLocation ||
 	    pad->hub != context->returnHub || pad->laps != context->laps || pad->custom_slot != context->slot ||
 	    context->retail != (pad->retail_id >= 0) || context->cortex != pad->cortex ||
 	    context->hostLevelID != ap_content_pad_host(pad) ||

@@ -135,6 +135,12 @@ int main(void) {
  /* A tier the room lacks is skipped. */
  reset(0); existsMissing=35012109;
  assert(AP_NotifyStandaloneRelic(1)==2); cases++;
+ /* Tier checks follow the item counts: the route stays on the frozen Sapphire
+    code, a tier the seed does not hold sends nothing, the others still pay. */
+ reset(0); pad.relic_route=35012009; pad.relic_locations[0]=0;
+ assert(AP_NotifyStandaloneRelic(1)==2 && sentCodes[0]==35012109 && sentCodes[1]==35012209); cases++;
+ reset(0); pad.relic_route=35012009; pad.relic_locations[0]=pad.relic_locations[1]=pad.relic_locations[2]=0;
+ assert(AP_NotifyStandaloneRelic(1)==0 && sentCount==0); cases++;
  /* Refusals: no relic route, wrong context, stale epoch, wrong code, no bytes. */
  for (int bad=0;bad<14;bad++) {
   reset(0);

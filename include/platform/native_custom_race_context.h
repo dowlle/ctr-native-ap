@@ -23,8 +23,9 @@ struct CustomTrackRaceContext
 	char vrmSha256[65];
 	int crystal, timeLimitTicks;
 	// Content-plan track mode (#133 PR 3): 0 Trophy Race, 1 CTR Challenge,
-	// 2 Relic Race. trophyLocation is then the mode's first check code
-	// (Trophy, CTR, or the Sapphire tier). Crystal Challenges use 0.
+	// 2 Relic Race. trophyLocation is then the mode's route code (Trophy,
+	// CTR, or the track's frozen Sapphire code, which the seed need not hold
+	// as a check). Crystal Challenges use 0.
 	int mode;
 	// Content-plan Cortex Vortex (#133 PR 3c): the bundled pair raced as a
 	// custom-bytes standalone race on host 13, with no custom slot.
