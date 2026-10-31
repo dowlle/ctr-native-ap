@@ -96,6 +96,8 @@ assert "s_dlinkNames[Dlink_Index(AP_DeathLinkRowValue(*(int *)e->valuePtr))]" in
 nodes = body(tracker, "static void AP_TrackerBuildNodes(void)")
 assert "if (ap_content_plan_active()) {" in nodes and "n->destination = physical;" in nodes
 assert "if (plan) { AP_TrackerDrawContentNode(n,x,y); return; }" in tracker
+node = body(tracker, "static void AP_TrackerDrawContentNode(")
+assert "ap_content_cup_codes(pad, codes, slots)" in node and "pad->crystal_locations[i]" in node
 assert "ctr_cfg.tracker_pad_launch" not in (root / "ap/ap_tracker_launch.c").read_text(encoding="utf-8")
 
 

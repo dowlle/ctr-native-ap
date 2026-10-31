@@ -619,8 +619,12 @@ static void AP_TrackerDrawContentNode(const AP_TrackerNode *n, int x, int y)
 			(long)pad->relic_locations[1], (long)pad->relic_locations[2]};
 		for (i = 0; i < 5; i++) AP_TrackerPrize(x+12+i*70,y+61,i,AP_TrackerCodeState(codes[i]>0?codes[i]:-1));
 	} else {
+		/* Done only when the pad is: a cup's sweep and leg checks, the crystals. */
+		int64_t codes[6]; int slots[6], c = ap_content_cup_codes(pad, codes, slots), state = AP_TrackerCodeState((long)pad->trophy_location);
+		for (i = 0; i < c; i++) if (!AP_ContentCodeChecked(codes[i]) && state == 2) state = 1;
+		for (i = 0; i < pad->crystal_count; i++) if (!AP_ContentCodeChecked(pad->crystal_locations[i]) && state == 2) state = 1;
 		AP_TrackerText(n->kind==1?"CRYSTAL CHECK":"CUP CHECK",x+12,y+64,18,TRACKER_GOLD,300);
-		AP_TrackerTick(x+315,y+65,AP_TrackerCodeState((long)pad->trophy_location));
+		AP_TrackerTick(x+315,y+65,(int)state);
 	}
 	wumpa = n->kind == 0 && pad->wumpa_modes ? (long)(wumpaGlobal ? fam->wumpa_global : pad->wumpa_location) : 0;
 	snprintf(text,sizeof text,"BOX %d",ap_content_box_pending(pad,AP_ContentCodeChecked));
