@@ -39,8 +39,8 @@ static const char *const s_ctrMenuPageVideo[] = {
 	"disable_split_screen_lod", NULL,
 };
 static const char *const s_ctrMenuPageGameplay[] = {
-	"skip_intro", "skip_hints", "race_type_selector", "skip_podium", "skip_cutscenes",
-	"ai_difficulty", "mute_when_unfocused", NULL,
+	"skip_intro", "skip_hints", "skip_podium", "skip_cutscenes", "ai_difficulty",
+	"mute_when_unfocused", NULL,
 };
 static const char *const s_ctrMenuPageControls[] = {
 	NULL,

@@ -226,7 +226,7 @@ typedef struct ctr_content_bosses {
      * kit_assignment 0 mixed_loadouts, 1 signature_profiles. home_venues 1
      * with track_assignment character_home_track. The composed schedules are
      * filled into ctr_boss_encounters exactly as an ordinary version 2 room's. */
-    int extended, opponent_shuffle, oxide_in_pool, kit_shuffle, oxide_profile_all, home_venues;
+    int extended, opponent_shuffle, oxide_in_pool, kit_shuffle, gauntlet, oxide_profile_all, home_venues;
     int kit_assignment, kit_intensity, loss_easing;
     int opponent[4], final_opponent;
 } ctr_content_bosses;
@@ -313,12 +313,14 @@ typedef int (*ap_content_checked_fn)(int64_t code);
 /* The pad's first race is won: a check of its first mode is checked, as v0.2.x
  * reads the Trophy Race. A first race with no check of its own (a Relic Race
  * with no tier check) proves nothing, so then only the items count, as in the
- * apworld's logic (content_plan.create_regions). */
+ * apworld's logic (content_plan.create_regions). A ctr_first entry's win is its
+ * Trophy Race check: the CTR Token check needs the letters on top. */
 static inline int ap_content_first_race_won(const ctr_content_pad *pad, ap_content_checked_fn checked)
 {
     int64_t codes[3] = {0, 0, 0};
     int i, n, any = 0;
     if (!pad->first_race_rule || pad->mode_count < 2) return 1;
+    if (pad->ctr_first && pad->trophy_location > 0) return checked(pad->trophy_location);
     n = ap_content_mode_codes(pad, pad->modes[0], codes);
     for (i = 0; i < n; ++i) {
         if (codes[i] <= 0) continue;

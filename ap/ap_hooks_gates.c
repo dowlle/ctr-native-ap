@@ -577,6 +577,17 @@ int AP_BossKitAdvert(int bossIdx, char *out, int cap)
 
 // #169 tier 2: the character garage bossIdx races, for the garage load. -1
 // keeps the retail boss (no record, tier 1, refused, or a content plan).
+// 1 while garage `g`'s boss cup is running.
+static int AP_BossCupGarageNow(int g)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	return g >= 0 && g < AP_BOSS_VENUE_GARAGES && AP_ContentGarageCupRunning() == g;
+#else
+	(void)g;
+	return 0;
+#endif
+}
+
 int AP_BossGarageOpponent(int bossIdx)
 {
 	if (!ctr_cfg_active())
@@ -594,10 +605,12 @@ int AP_BossRaceOpponentModels(int player, int *extra)
 	int g, opp;
 
 	*extra = -1;
-	if (gGT == NULL || !ctr_cfg_active() || (gGT->gameMode1 & ADVENTURE_BOSS) == 0 ||
-	    (gGT->gameMode1 & ADVENTURE_CUP) != 0)
+	if (gGT == NULL || !ctr_cfg_active() || (gGT->gameMode1 & ADVENTURE_BOSS) == 0)
 		return -1;
 	g = gGT->bossID;
+	// A boss cup seats the garage's drawn racer on every leg.
+	if ((gGT->gameMode1 & ADVENTURE_CUP) != 0 && !AP_BossCupGarageNow(g))
+		return -1;
 	opp = AP_BossEncounterOpponent(&ctr_boss_encounters, g);
 	if (opp < 0)
 		return -1;
@@ -610,6 +623,9 @@ static int AP_BossKitGarageNow(void)
 
 	if (gGT == NULL || !ctr_cfg_active())
 		return -1;
+	// A boss cup carries the garage's one composed kit on every leg.
+	if (AP_BossCupGarageNow(gGT->bossID))
+		return (gGT->gameMode1 & ADVENTURE_BOSS) && ctr_boss_encounters.composed[gGT->bossID] ? gGT->bossID : -1;
 	return AP_BossEncounterKitGarage(&ctr_boss_encounters, (gGT->gameMode1 & ADVENTURE_BOSS) != 0,
 	                                 (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->bossID, gGT->levelID);
 }
@@ -673,6 +689,16 @@ static int AP_BossVenueCertifiedNow(int g)
 		return AP_ContentGarageCupLegPoints();
 #endif
 	return AP_BossEncounterCertifiedPoints(&ctr_boss_encounters, g, sdata->gGT->levelID);
+}
+
+// The restart point count a composed kit was written for: the running venue's,
+// or the garage's home track on a boss cup, whose kit keeps the retail segment
+// starts and maps them onto each leg (apworld content_bosses.kit_points).
+static int AP_BossKitCertifiedNow(int g)
+{
+	if (AP_BossCupGarageNow(g))
+		return AP_BOSS_VENUE_RESTART_POINTS[AP_BOSS_VENUE_GARAGE[g].homeLevel];
+	return AP_BossVenueCertifiedNow(g);
 }
 
 // J03 decision 8: a refused schedule is one inert row. The boss keeps its
@@ -817,8 +843,16 @@ static int AP_BossGauntletLegNow(void)
 		return -1;
 	if ((gGT->gameMode1 & (ADVENTURE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS)) != (ADVENTURE_MODE | ADVENTURE_CUP))
 		return -1;
-	if (gGT->cup.cupID != 4)
-		return -1;
+#ifdef CTR_CUSTOM_TRACKS
+	// Plan cups run on engine cup 0, so the pad names the Purple Gem Cup.
+	{
+		const ctr_content_pad *pad = AP_ContentCupPad();
+		if (pad == NULL || pad->gem_cup != 104)
+			return -1;
+	}
+#else
+	return -1;
+#endif
 	leg = gGT->cup.trackIndex;
 	if (leg < 0 || leg >= AP_BOSS_GAUNTLET_LEGS || !e->gauntletComposed[leg] || e->gauntletTrack[leg] < 0 ||
 	    e->gauntletTrack[leg] != gGT->levelID || !AP_BossVenueTrackKnown(e->gauntletTrack[leg]))
@@ -905,13 +939,13 @@ struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill)
 			return s_apBossVenueAttack;
 		venuePoints = gGT->level1->cnt_restart_points;
 		memset(s_apBossVenueAttack, 0, sizeof s_apBossVenueAttack);
-		if (!AP_BossFitKit(s_apBossVenueAttack, ctr_boss_encounters.schedule[k], AP_BossVenueCertifiedNow(k),
+		if (!AP_BossFitKit(s_apBossVenueAttack, ctr_boss_encounters.schedule[k], AP_BossKitCertifiedNow(k),
 		                   venuePoints, "composed kit"))
 		{
 			char msg[160];
 			snprintf(msg, sizeof msg,
 			         "[AP BOSS] venue %d has %d restart points, certified %d: composed kit refused\n",
-			         (int)gGT->levelID, venuePoints, AP_BossVenueCertifiedNow(k));
+			         (int)gGT->levelID, venuePoints, AP_BossKitCertifiedNow(k));
 			AP_AppendLog(msg);
 			return AP_BossInertSchedule(s_apBossVenueAttack, 8);
 		}

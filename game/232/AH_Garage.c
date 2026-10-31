@@ -537,8 +537,12 @@ LAB_800aede8:
 			{
 				int i;
 				const ctr_content_pad *cupPad = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + hubID - 1);
+				int cupOpponent = AP_BossGarageOpponent(hubID - 1);
 				sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_CUP;
 				sdata->Loading.OnBegin.RemBitsConfig0 &= ~ADVENTURE_CUP;
+				// One drawn racer through all four races, as in a boss race.
+				if (cupOpponent >= 0)
+					data.characterIDs[1] = (s16)cupOpponent;
 				gGT->cup.cupID = 0;
 				gGT->cup.trackIndex = 0;
 				for (i = 0; i < 8; i++)

@@ -22,7 +22,6 @@
 #include "ap_crystal_checks.h"
 #include "ap_cup_sweeps.h"
 #include "ap_wumpa_shop.h"
-#include "ap_race_structure_logic.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -604,16 +603,6 @@ typedef struct
 	// AP Box Colours item to wait for; box spawning keeps its server-membership
 	// test.
 	int seed_box_locations;
-	// Adventure structure and race type selector (#208, schema 18).
-	// adventure_structure: AP_RS_STRUCTURE_CLASSIC (absent, "classic"),
-	// AP_RS_STRUCTURE_CTR_FIRST ("ctr_first" with a valid `race_structure`
-	// block) or AP_RS_STRUCTURE_REFUSED (an unknown value, or ctr_first whose
-	// block is missing or malformed: every selector pad refuses entry).
-	// race_type_selector: AP_RS_SELECTOR_ALWAYS (absent, the 0.3.0 default)
-	// or AP_RS_SELECTOR_PRODUCTIVE. stage1_awards: CTR code -> Trophy code.
-	int adventure_structure;
-	int race_type_selector;
-	ap_rs_awards stage1_awards;
 
 	// DeathLink (issue #6). ADDITIVE ctr_options keys, no schema bump: a seed
 	// predating them leaves death_link 0 (off) and deathlink_amnesty 1, so the

@@ -451,7 +451,7 @@ static void boss_settings(const J &b, ctr_content_bosses &out) {
     out.extended = b.is_object() && b.contains("opponent_shuffle") ? 1 : 0;
     if (out.extended)
         fields(b, {"oxide_goal", "bosses_required", "oxide_1_optional", "oxide_final_unlock", "oxide_final_count", "track_shuffle",
-                   "repeats", "requirement_level", "cups", "opponent_shuffle", "oxide_in_pool", "kit_shuffle", "kit",
+                   "repeats", "requirement_level", "cups", "opponent_shuffle", "oxide_in_pool", "kit_shuffle", "gauntlet", "kit",
                    "oxide_attack_profile", "track_assignment"});
     else
         fields(b, {"oxide_goal", "bosses_required", "oxide_1_optional", "oxide_final_unlock", "oxide_final_count", "track_shuffle", "repeats", "requirement_level", "cups"});
@@ -494,11 +494,13 @@ static void boss_settings(const J &b, ctr_content_bosses &out) {
     out.kit_intensity = 1; // standard: N. Oxide's profile without the kit switch
     out.loss_easing = 1;
     if (!out.extended) return;
-    for (const char *key : {"opponent_shuffle", "oxide_in_pool", "kit_shuffle"})
+    for (const char *key : {"opponent_shuffle", "oxide_in_pool", "kit_shuffle", "gauntlet"})
         need(b[key].is_boolean(), std::string("bosses.") + key + " must be true or false");
     out.opponent_shuffle = b["opponent_shuffle"].get<bool>() ? 1 : 0;
     out.oxide_in_pool = b["oxide_in_pool"].get<bool>() ? 1 : 0;
     out.kit_shuffle = b["kit_shuffle"].get<bool>() ? 1 : 0;
+    out.gauntlet = b["gauntlet"].get<bool>() ? 1 : 0;
+    need(!out.gauntlet || out.kit_shuffle, "bosses.gauntlet needs kit_shuffle");
     need(b["oxide_attack_profile"] == "retail" || b["oxide_attack_profile"] == "all_compatible",
          "bosses.oxide_attack_profile must be retail or all_compatible");
     out.oxide_profile_all = b["oxide_attack_profile"] == "all_compatible" ? 1 : 0;
@@ -510,7 +512,6 @@ static void boss_settings(const J &b, ctr_content_bosses &out) {
     need(!out.oxide_in_pool || out.opponent_shuffle, "bosses.oxide_in_pool needs opponent_shuffle");
     need(!out.home_venues || (out.track_shuffle && out.opponent_shuffle),
          "bosses.track_assignment character_home_track needs track_shuffle and opponent_shuffle");
-    need(b["cups"].empty() || (!out.opponent_shuffle && !out.kit_shuffle), "boss cups do not take a drawn opponent or kit yet");
     const J &kit = b["kit"];
     if (out.kit_shuffle) {
         fields(kit, {"assignment", "intensity", "loss_easing"});
@@ -653,6 +654,8 @@ static void vanilla_pads(const State &out)
                      "vanilla stage 2 requirements do not match the physical pads");
         }
 }
+static const int64_t kFirstSurfaceItem = 35010021, kLastSurfaceItem = 35010025; // the useful surface items
+static const int kPurpleGemCup = 104;     // the Purple Gem Cup's engine LevelID
 static const int kOxideStationLevel = 13; // N. Oxide's Challenge, and the Final Challenge's other venue
 static const int kCortexVenue = -2;       // the Final Challenge on the bundled Cortex Vortex pair
 static const int kCortexRestartPoints = 255; // the bundled Cortex Vortex LEV (#133 PR 6b), re-measured on load
@@ -1360,8 +1363,8 @@ static void validate(const J &p, State &out) {
                 family_check(perfect, "perfect", "Relic Race Perfect", J::array({route_record(entry_id, "relic", id, "perfect")}));
             }
             // A Trophy Race carries the seed's podium rungs; under ctr_first
-            // the CTR Challenge does, by finishing place (decision 14), and its
-            // qualifying win pays the Trophy Race check.
+            // the CTR Challenge does, by finishing place (decision 14), and
+            // first place pays the Trophy Race check (ruled 2026-10-29).
             const int rung_mode = dest.ctr_first ? AP_CONTENT_MODE_CTR : AP_CONTENT_MODE_TROPHY;
             for (int r = 0; mode == rung_mode && r < 5; ++r)
                 if (fam.podium & (1 << r)) {
@@ -1371,7 +1374,7 @@ static void validate(const J &p, State &out) {
             if (mode == AP_CONTENT_MODE_CTR && dest.ctr_first) {
                 const int64_t trophy = codes[AP_CONTENT_MODE_TROPHY][0];
                 const J check{{"location", trophy}, {"owner", track_id}, {"kind", "trophy"},
-                              {"display_name", check_title + ": Trophy Race"}, {"routes", J::array({route_record(entry_id, "ctr", id, "win_letters")})}};
+                              {"display_name", check_title + ": Trophy Race"}, {"routes", J::array({route_record(entry_id, "ctr", id, "win")})}};
                 need(expected_checks.emplace(trophy, check).second, "duplicate check identity");
             }
             // A CTR Challenge carries letters_per_track letter checks
@@ -1524,9 +1527,19 @@ static void validate(const J &p, State &out) {
             need(cup_garage == (entry["kind"] == "boss_cup"), "boss cup garages do not match the bosses record");
             if (cup_garage) {
                 fields(entry, {"id", "kind", "legs", "opponent"});
-                need(entry["opponent"] == J{{"role", "opponent"}, {"slot", 1}, {"character_id", kBossOpponents[k]},
+                need(out.bosses.extended ||
+                     entry["opponent"] == J{{"role", "opponent"}, {"slot", 1}, {"character_id", kBossOpponents[k]},
                                            {"driving_profile", "retail"}, {"attack_profile", "inherited"}},
                      "boss cup entry does not match its garage's retail opponent");
+                // One racer and one weapon set through all four races. The kit
+                // keeps the garage's retail segment starts, as on its home track;
+                // each leg maps them onto its own restart points at race start.
+                int cup_racer = kBossOpponents[k];
+                if (out.bosses.extended) {
+                    cup_racer = boss_opponent(entry["opponent"], k, g, AP_BOSS_VENUE_RESTART_POINTS[AP_BOSS_VENUE_GARAGE[g].homeLevel],
+                                              out.bosses, out.kits[g]);
+                    out.bosses.opponent[g] = cup_racer;
+                }
                 const J &legs = entry["legs"];
                 need(legs.is_array() && legs.size() == AP_CONTENT_CUP_LEGS, "a boss cup races four legs");
                 ctr_content_pad &cp = out.garage_cups[g];
@@ -1593,7 +1606,7 @@ static void validate(const J &p, State &out) {
                                                               {"display_name", kBossNames[k]}, {"routes", J::array({route})}}).second,
                      "duplicate check identity");
                 J hit = route; hit["award"] = "hit";
-                boss_hits[kBossOpponents[k]].push_back(hit);
+                boss_hits[cup_racer].push_back(hit);
                 boss_requirement_ids.push_back(enc["requirement_id"]);
                 continue;
             }
@@ -1926,7 +1939,7 @@ static void validate(const J &p, State &out) {
         need(i >= 0 || pack || r.base == 1, "a letter item is pooled once");
         need(i < 9 || i > 13 || r.base <= 1, "base Gems must be distinct colours");
         out.starts[code] = r.start_from_pool + r.start_additional;
-        if (packs.count(code)) pack_supply += r.remaining;
+        if (packs.count(code) || (code >= kFirstSurfaceItem && code <= kLastSurfaceItem)) pack_supply += r.remaining;
         remaining += r.remaining;
     }
     // Manual requirement records: item identities and counts come from the
@@ -2033,6 +2046,7 @@ static void validate(const J &p, State &out) {
              "wumpa_shop excluded: not enough non-progression copies for the shop slots");
     }
     need(number(items["coded_checks"], 0, 4096) == (int)out.checks.size() && items["locked_checks"] == locked_checks && remaining + filler + locked_checks == (int64_t)out.checks.size() && number(items["trap_count"], 0, 4096) <= filler, "item/check capacity mismatch");
+    need(!out.bosses.gauntlet || entries.count("entry/gem_cup:4"), "bosses.gauntlet needs the Purple Gem Cup");
     // What the record fixes must exist: garages, all five Gem Cups, and the Final
     // Challenge goal with the optional first race.
     need(!fixed_keys || out.bosses.present, "fixed_items.keys needs boss garages");
@@ -2348,7 +2362,27 @@ static int parse_content_plan(const nlohmann::json &j) {
                 e.trackOn = (unsigned char)b.track_shuffle;
                 e.opponentOn = (unsigned char)b.opponent_shuffle;
                 e.oxideInPool = (unsigned char)b.oxide_in_pool;
-                e.gauntletOn = 0;
+                // The Purple Gem Cup gauntlet: leg i arms garage i's racer with
+                // garage i's kit, its segments mapped onto the leg's track as a
+                // drawn venue maps them. A leg no retail track certified for that
+                // garage carries no attack (apworld content_bosses, `gauntlet`).
+                e.gauntletOn = (unsigned char)b.gauntlet;
+                for (const auto &pad : candidate.pads) {
+                    if (!b.gauntlet || !pad.occupied || !pad.cup || pad.gem_cup != kPurpleGemCup) continue;
+                    for (int g = 0; g < AP_BOSS_GAUNTLET_LEGS; ++g) {
+                        const int level = pad.legs[g].retail_id;
+                        e.gauntletAttacker[g] = e.opponent[g];
+                        e.gauntletTrack[g] = -1;
+                        if (level < 0 || level >= AP_BOSS_VENUE_TRACKS || !AP_BossVenueCertified(g, level)) continue;
+                        const int home = AP_BOSS_VENUE_RESTART_POINTS[AP_BOSS_VENUE_GARAGE[g].homeLevel] - 1;
+                        e.gauntletTrack[g] = (signed char)level;
+                        e.gauntletComposed[g] = 1;
+                        std::memcpy(e.gauntletSchedule[g], candidate.kits[g], sizeof e.gauntletSchedule[g]);
+                        for (int s = 0; s < AP_BOSS_VENUE_SEGMENTS; ++s)
+                            e.gauntletSchedule[g][s].checkpoint = (unsigned char)AP_BossVenueCheckpoint(
+                                AP_BOSS_VENUE_GARAGE[g].attack[s], home, AP_BOSS_VENUE_RESTART_POINTS[level] - 1);
+                    }
+                }
                 e.oxideProfileAll = (unsigned char)b.oxide_profile_all;
                 e.finalPresent = (unsigned char)(b.oxide_goal != 3 && (b.oxide_in_pool || b.oxide_profile_all));
                 e.finalOpponent = (signed char)(e.finalPresent ? b.final_opponent : AP_BOSS_OXIDE_CHARACTER);

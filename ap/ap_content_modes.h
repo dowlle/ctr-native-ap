@@ -24,9 +24,10 @@
 #define AP_CONTENT_PODIUM_LOGICAL_BASE 1000
 // ctr_first (#208 on content plans, J11, decision 14): a track entry whose
 // plan runs ctr_first has no Trophy Race. Its CTR Challenge is the first race:
-// a qualifying win (first place with the letters the CTR Challenge needs)
-// pays the CTR check and the Trophy Race check (trophy_location), and the
-// podium rungs follow its finishing place, letters or not. Only a track entry
+// first place pays the Trophy Race check (trophy_location), first place with
+// the letters the CTR Challenge needs also pays the CTR check (ruled
+// 2026-10-29), and the podium rungs follow its finishing place, letters or
+// not. Only a track entry
 // with a CTR mode and no Trophy mode qualifies; a crystal or cup never does,
 // so a forged flag cannot move a check onto another race.
 static inline int ap_content_pad_ctr_first(const ctr_content_pad *pad)
@@ -43,8 +44,8 @@ static inline int ap_content_rung_mode(const ctr_content_pad *pad)
     if (ap_content_pad_ctr_first(pad)) return AP_CONTENT_MODE_CTR;
     return ap_content_mode_slot(pad, AP_CONTENT_MODE_TROPHY) >= 0 ? AP_CONTENT_MODE_TROPHY : -1;
 }
-// The Trophy Race code a qualifying win in `mode` pays besides the mode's own
-// code: the ctr_first CTR Challenge's Trophy; 0 for every other race.
+// The Trophy Race code first place in `mode` pays, letters or not: the ctr_first
+// CTR Challenge's Trophy; 0 for every other race.
 static inline int64_t ap_content_mode_paired_trophy(const ctr_content_pad *pad, int mode)
 {
     return mode == AP_CONTENT_MODE_CTR && ap_content_pad_ctr_first(pad) && pad->trophy_location > 0

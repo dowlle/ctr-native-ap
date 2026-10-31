@@ -360,8 +360,8 @@ int AP_StandaloneRaceActive(void);
 // Race-loss stakes facts of the running content-plan race (#133 PR 4a, ap_hooks_race.c;
 // the boost rank and racer from PR 4c).
 int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *outRacer);
-// ctr_first (J11): the Trophy Race check the running content-plan CTR
-// Challenge also pays, with the higher of the two boost ranks; 0 when none.
+// ctr_first: the Trophy Race check the running content-plan CTR Challenge pays
+// on first place, with its boost rank; 0 when none.
 int AP_ContentWinPairedFacts(long *outCode, int *outBoost);
 // Content-plan podium identity of the running Trophy Race, or -1 (#133 PR 3b).
 int AP_StandalonePodiumTrack(void);
@@ -774,24 +774,12 @@ int AP_TrialTrackLocationChecked(int levelID, int challenge);
 // Pad lifecycle, glow and the trial entry route all key off this.
 int AP_TrialChallengeServable(int destLevelID);
 void AP_NotifyTrialTrackRace(int levelID, int challenge);
-// Adventure structure ctr_first (#208, ap_hooks_race.c). CtrFirst: the seed
-// runs ctr_first with a valid award block. SuppressTrophy: a plain Trophy Race
-// win must not send this Trophy code (a CTR win earns it). TrophyRaceWon: a
-// retail Trophy Race won under ctr_first; sends the podium rungs only.
-int AP_RaceStructureCtrFirst(void);
-int AP_RaceStructureSuppressTrophy(long trophyCode);
-int AP_RaceStructureSuppressTrophyBit(int rewardBit);
-void AP_RaceStructureTrophyRaceWon(int levelID);
-int AP_CustomTrackTrophyEarnedByCtr(void);
-// Per destination (decision 4): DestCtrFirst is 1 when this destination runs
-// ctr_first (its Trophy code is in the award pairs); DestStructure is the
-// structure the selector applies to it; PodiumCtrFirst asks the same by podium
-// track, so a CTR Challenge there earns its rungs (decision 14).
-int AP_RaceStructureDestCtrFirst(int destLevelID);
-int AP_RaceStructureDestStructure(int destLevelID);
+#include "ap_race_structure_logic.h"
+// ctr_first on content plans (ap_hooks_race.c). PodiumCtrFirst: a CTR Challenge
+// on this podium track earns its rungs (decision 14). CtrFirstPlace: first place
+// in such a race pays the Trophy Race check.
 int AP_RaceStructurePodiumCtrFirst(int podiumTrack);
-// The race type selector in force: the Options row over the seed (decision 15).
-int AP_RaceTypeSelectorSetting(void);
+void AP_ContentCtrFirstPlace(void);
 
 // ── Cortex Vortex pad track (schema 15, virtual destination 110) ──
 // AP_CortexTrackActive is THE identity question every LevelID-13 consumer asks
@@ -903,14 +891,6 @@ int AP_PadStage1Met(int physLevelID);
 // stage-2 requirement it is not actually withholding entry on. Same keying as
 // AP_PadState. Returns 0 in vanilla mode and for any non-race destination.
 int AP_PadPhase1ReRaceable(int physLevelID, int destLevelID);
-// #208 race type selector (ap_hooks_pads.c). Rows: fills the rows a race
-// destination offers now and returns 1, or returns 0 when the destination
-// does not use the selector. Replayable: a Done race pad whose entry is still
-// met, which opens the selector instead of staying hard-locked.
-int AP_PadUsesSelector(int destLevelID);
-int AP_PadSelectorRows(int physLevelID, int destLevelID, ap_rs_rows *rows);
-void AP_PadLogSelector(int physLevelID, int destLevelID, const ap_rs_rows *rows, int decision);
-int AP_PadReplayable(int physLevelID, int destLevelID);
 
 // Is there a Hit Character opportunity behind this pad (block schema 2, the
 // pool draw)? True for a Hit-supported ordinary destination (0..17, trials only

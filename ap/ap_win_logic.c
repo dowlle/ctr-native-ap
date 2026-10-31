@@ -117,7 +117,6 @@ static void AP_WinFactsNow(struct GameTracker *gGT, AP_WinRaceFacts *f)
 	for (i = 0; i < 3; i++)
 		f->cortexCodes[1 + i] = AP_CortexTrackCode(AP_CV_SLOT_RELIC0 + i);
 	f->cortexCodes[4] = AP_CortexTrackCode(AP_CV_SLOT_TOKEN);
-	f->ctrFirstAwards = AP_RaceStructureCtrFirst() ? &ctr_cfg.stage1_awards : 0;
 	f->customTrophy = -1;
 	f->customCtr = -1;
 	if (ctr_cfg_active() && ctr_cfg.custom_tracks_ok)
@@ -172,9 +171,9 @@ static int AP_WinDecideContent(struct GameTracker *gGT, const char *when, AP_Win
 	if (!AP_WinContentCapMet(boost, racer))
 		needsItems = 1;
 	*out = AP_WinStakesContentDecide(code, code > 0 && ap_net_location_checked((long long)code), needsItems);
-	// ctr_first (J11, decision 14): a CTR Challenge on a ctr_first content
-	// pad also pays its Trophy Race check, so that check is at stake too
-	// while it is open and in logic (the CTR check's needs and its own rank).
+	// ctr_first (ruled 2026-10-29): first place on a ctr_first content pad
+	// pays its Trophy Race check, letters or not, so that check is at stake
+	// too while it is open and in logic (its own rank).
 	if (!out->stakes)
 	{
 		long paired;
@@ -183,7 +182,7 @@ static int AP_WinDecideContent(struct GameTracker *gGT, const char *when, AP_Win
 		{
 			const AP_WinStakes p = AP_WinStakesContentDecide(
 			    paired, ap_net_location_checked((long long)paired),
-			    needsItems || !AP_WinContentCapMet(pairedBoost, racer));
+			    !AP_WinContentCapMet(pairedBoost, racer));
 			if (p.stakes)
 			{
 				*out = p;

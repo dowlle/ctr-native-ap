@@ -206,13 +206,20 @@ static Model build() {
     // a check of the pad's first mode is reached. content_plan.create_regions.
     std::map<std::string, std::string> first_mode;
     std::map<std::string, std::vector<int64_t>> first_checks;
+    // A ctr_first pad: its Trophy Race check proves the win, and the CTR Token
+    // check needs that win too (content_plan.first_race_checks and merged_race).
+    std::map<std::string, std::vector<int64_t>> merged;
+    for (const auto &c : p.at("checks"))
+        if (c.at("kind") == "trophy" && c.at("routes").at(0).at("mode") == "ctr")
+            merged[c.at("routes").at(0).at("own_pad_id").get<std::string>()].push_back(c.at("location").get<int64_t>());
     if (p.contains("pad_requirements"))
         for (const auto &pad : p.at("pads"))
             if (pad.at("mode_gates").size() > 1) first_mode[pad.at("id").get<std::string>()] = pad["mode_gates"][0].at("mode").get<std::string>();
     for (const auto &c : p.at("checks")) {
         const auto &rs = c.at("routes");
+        if (rs.empty()) continue;
         const auto own = first_mode.find(rs.at(0).at("own_pad_id").get<std::string>());
-        if (own != first_mode.end() && c.at("kind") == own->second &&
+        if (own != first_mode.end() && c.at("kind") == (merged.count(own->first) ? "trophy" : own->second) &&
             std::all_of(rs.begin(), rs.end(), [&](const J &r) { return r.at("own_pad_id") == rs.at(0).at("own_pad_id"); }))
             first_checks[own->first].push_back(c.at("location").get<int64_t>());
     }
@@ -237,9 +244,6 @@ static Model build() {
             for (int i = 0; i < 3; ++i) {
                 if (pad.letter_items[i] <= 0) continue;
                 letters[pad.ctr_location].push_back(pad.letter_items[i]);
-                // ctr_first (J11): the CTR win pays the Trophy Race, which
-                // needs what the CTR Challenge needs.
-                if (pad.ctr_first && pad.trophy_location) letters[pad.trophy_location].push_back(pad.letter_items[i]);
                 if (pad.letter_locations[i] > 0) letters[pad.letter_locations[i]].push_back(pad.letter_items[i]);
             }
         }
@@ -275,6 +279,7 @@ static Model build() {
             R.stage = it == later.end() ? -1 : it->second;
             R.lock = lock_of(pad);
             R.need = finish_boost(track, packages, o);
+            R.first = first_of(J{{"own_pad_id", pad.at("id")}, {"mode", mode}});
             m.income.push_back(R);
         }
     }
@@ -303,10 +308,7 @@ static Model build() {
         // content_capability.weapon_arm: only with Itemsanity, on a track
         // check whose rank is the first boost and not a finish term.
         const J *track = tracks.count(c.at("owner").get<std::string>()) ? tracks.at(c["owner"].get<std::string>()) : nullptr;
-        // A ctr_first Trophy Race (J11) routes from the CTR Challenge and takes
-        // its terms, which have no weapon alternative.
-        const bool ctr_first_trophy = kind == "trophy" && first.at("mode") == "ctr";
-        if (m.itemsanity && track && !ctr_first_trophy && L.boost == kFirstBoost && o.boost_mode && !finish_boost(*track, packages, o)) {
+        if (m.itemsanity && track && L.boost == kFirstBoost && o.boost_mode && !finish_boost(*track, packages, o)) {
             const std::string award = first.at("award").get<std::string>();
             const bool gated = difficulty_track(*track);
             if (kind == "trophy" && o.logic_difficulty < 2 && gated) { L.arm = ARM_FAMILIES; L.arm_families = AP_VF_DIFFICULTY_WEAPON_FAMILY_MIN; }
@@ -360,6 +362,8 @@ static Model build() {
             R.region = region_of(r.at("entry_id").get<std::string>());
             R.stage = stage_of(r);
             R.first = first_of(r);
+            const auto won = merged.find(r.at("own_pad_id").get<std::string>());
+            if (kind == "ctr" && won != merged.end()) R.first = won->second;
             R.lock = lock_of(*pads.at(r.at("own_pad_id").get<std::string>()));
             const std::string mode = r.at("mode").get<std::string>();
             R.boss = mode == "boss_race" || mode == "boss_cup";
