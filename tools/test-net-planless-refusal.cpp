@@ -11,8 +11,8 @@
 //       -lssl -lcrypto -pthread -o /tmp/test-net-planless-refusal && /tmp/test-net-planless-refusal
 //
 // What it pins:
-//   1. a schema 16 room, a room with no schema and an empty room are refused with
-//      the exact message, which the connection page shows,
+//   1. a schema 16 room, a later schema, a room with no schema and an empty room
+//      are refused with the exact message and no update banner,
 //   2. a refused room sends no door storage, no check and no scout, and its items
 //      do not enter the queue,
 //   3. a room with a broken plan keeps the plan's own refusal.
@@ -68,10 +68,13 @@ static void test_refused(const nlohmann::json &room, const char *name)
 	std::printf("%s: %s\n", name, ap_net_last_error());
 	expect(ap_net_is_connected() == 0, "not connected");
 	expect(ap_net_status() == AP_NET_STATUS_ERROR, "status is ERROR");
-	expect(std::strstr(ap_net_last_error(), kMessage) != nullptr, "the exact message");
+	expect(std::strcmp(ap_net_last_error(), kMessage) == 0, "the exact message");
 	expect(ap_seedcfg_rejected() == 1, "the parser state says refused");
+	expect(ctr_cfg.schema_newer == 0, "no update banner");
 	expect(ap_net_location_checked(35011000) == 0, "checked state stays hidden");
 	expect(m->calls.data_set == 0, "no door storage");
+	expect(m->calls.data_get == 0, "no door Get");
+	expect(m->calls.set_notify == 0, "no SetNotify");
 	expect(m->calls.location_checks == 0, "no check sent");
 	expect(m->calls.location_scouts == 0, "no scout");
 
@@ -105,6 +108,7 @@ static void test_broken_plan_keeps_its_refusal(void)
 int main(void)
 {
 	test_refused({{"ctr_options", {{"schema_version", 16}}}}, "schema 16 room");
+	test_refused({{"ctr_options", {{"schema_version", 19}}}}, "room with a later schema and no plan");
 	test_refused({{"ctr_options", nlohmann::json::object()}}, "room with no schema");
 	test_refused(nlohmann::json::object(), "empty room");
 	test_broken_plan_keeps_its_refusal();
