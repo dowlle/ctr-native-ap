@@ -1631,7 +1631,62 @@ int main(int argc, char **argv) {
             for (auto &r : items["rows"])
                 if (r["item"] == 35010000) { r["extra"] = filler; r["remaining"] = 16 + filler; r["receipt_cap"] = 16 + filler; }
             items["filler_count"] = 0; items["trap_count"] = 0; });
+        // Fixed items (one generator row 4): the record, the ledger's locked
+        // fields and the capacity sum move together, recomputed from the ledger.
+        auto key_row = [](J &j) -> J & {
+            for (auto &r : j["content_plan"]["items"]["rows"]) if (r["item"] == 35010014) return r;
+            throw std::runtime_error("no Key row"); };
+        auto fix_keys = [&](J &j) {
+            j["content_plan"]["fixed_items"] = J{{"keys", true}};
+            j["content_plan"]["required_features"].push_back("fixed_items_v1");
+            key_row(j).update(J{{"locked_selected", 4}, {"remaining", 0}});
+            j["content_plan"]["items"]["locked_checks"] = 4; };
+        J fixed = bosses;
+        fix_keys(fixed);
+        expect(parse(fixed), "fixed items: four Keys on their bosses are admitted");
+        auto f_refuse = [&](const char *name, const std::function<void(J &)> &change) {
+            J j = fixed;
+            change(j);
+            refuse(j, std::string("fixed items: ") + name); };
+        f_refuse("the record dropped", [](J &j) { j["content_plan"].erase("fixed_items"); });
+        f_refuse("the feature dropped", [](J &j) {
+            auto &f = j["content_plan"]["required_features"]; f.erase(f.size() - 1); });
+        f_refuse("an unknown field", [](J &j) { j["content_plan"]["fixed_items"]["trophies"] = true; });
+        f_refuse("a false value", [](J &j) { j["content_plan"]["fixed_items"]["keys"] = false; });
+        f_refuse("an empty record", [](J &j) { j["content_plan"]["fixed_items"] = J::object(); });
+        f_refuse("locked_checks off by one", [](J &j) { j["content_plan"]["items"]["locked_checks"] = 3; });
+        f_refuse("a Key left out of the pins", [&](J &j) { key_row(j).update(J{{"locked_selected", 3}, {"remaining", 1}}); });
+        f_refuse("a Key both pinned and pooled", [&](J &j) { key_row(j)["remaining"] = 1; });
+        f_refuse("Gems without their cups", [](J &j) { j["content_plan"]["fixed_items"]["gems"] = true; });
+        f_refuse("the filler without its goal", [](J &j) {
+            j["content_plan"]["fixed_items"]["oxide_1_filler"] = true;
+            j["content_plan"]["items"]["locked_checks"] = 5;
+            j["content_plan"]["items"]["filler_count"] = j["content_plan"]["items"]["filler_count"].get<int>() - 1; });
+        J started = bosses;
+        fix_keys(started);
+        key_row(started).update(J{{"start_from_pool", 1}, {"locked_selected", 3}, {"remaining", 0}});
+        started["content_plan"]["items"]["locked_checks"] = 3;
+        started["content_plan"]["items"]["filler_count"] = started["content_plan"]["items"]["filler_count"].get<int>() + 1;
+        expect(parse(started), "fixed items: a started Key is not pinned again");
         expect(parse(bosses), "bosses: the room parses again after the forgeries");
+    }
+    {
+        // `oxide_1_optional: filler`: a Wumpa Fruit on N. Oxide's Challenge takes a
+        // locked check and no ledger row, so one filler slot goes.
+        J filler = finalroom;
+        filler["content_plan"]["fixed_items"] = J{{"oxide_1_filler", true}};
+        filler["content_plan"]["required_features"].push_back("fixed_items_v1");
+        filler["content_plan"]["items"]["locked_checks"] = 1;
+        filler["content_plan"]["items"]["filler_count"] = filler["content_plan"]["items"]["filler_count"].get<int>() - 1;
+        if (filler["content_plan"]["items"]["trap_count"] > filler["content_plan"]["items"]["filler_count"])
+            filler["content_plan"]["items"]["trap_count"] = filler["content_plan"]["items"]["filler_count"];
+        expect(parse(filler), "fixed items: the filler on N. Oxide's Challenge is admitted");
+        J unsized = filler;
+        unsized["content_plan"]["items"]["filler_count"] = finalroom["content_plan"]["items"]["filler_count"];
+        refuse(unsized, "fixed items: the pinned Wumpa Fruit also counted as filler");
+        J mandatory = filler;
+        mandatory["content_plan"]["bosses"]["oxide_1_optional"] = false;
+        refuse(mandatory, "fixed items: the filler on a mandatory first race");
     }
     expect(parse(finalroom) && bind_room(finalroom) && ap_content_plan_active(), "bosses-final: room binds");
     {
