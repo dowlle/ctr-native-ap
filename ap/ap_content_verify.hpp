@@ -45,7 +45,7 @@ static const int kUsf = 2, kFirstBoost = 1;
 // WUMPA: the goal's `wumpa_banked` arm (J11), met when Wumpa Income is.
 enum Op { ALWAYS, COUNT, SUM, DISTINCT, CHECKED, ALL, ANY, WUMPA };
 struct Node { Op op; int count; std::vector<int64_t> codes; std::vector<int> kids; };
-struct Region { std::vector<int> gates; int lock = -1; };
+struct Region { std::vector<int> gates; int lock = -1; bool income = false; };
 struct Route { int region = -1, stage = -1, lock = -1, need = 0, encounter = -1; bool boss = false; std::vector<int64_t> first; };
 // SHOP: a Wumpa Shop slot, its hub's Key floor (`target`) and income.
 enum Kind { PAD, SHARED, LEG, ENCOUNTER, ITEMSANITY, HIT, SHOP };
@@ -191,10 +191,18 @@ static Model build() {
     }
     std::map<std::string, int> encounter;
     std::map<int64_t, int> encounter_of_code;
+    const J &goal_node = p.at("goal");
+    bool wumpa_goal = goal_node.at("op") == "wumpa_banked";
+    if (goal_node.at("op") == "all")
+        for (const auto &term : goal_node.at("terms")) wumpa_goal = wumpa_goal || term.at("op") == "wumpa_banked";
     for (const auto &enc : p.at("encounters")) {
         Region r;
         r.gates.push_back(req.at(pads.at(enc.at("pad_id").get<std::string>())->at("entrance_req").get<std::string>()));
         r.gates.push_back(req.at(enc.at("requirement_id").get<std::string>()));
+        // With the Wumpa goal, the N. Oxide race that finishes the seed also
+        // needs Wumpa Income (content_bosses.install).
+        r.income = wumpa_goal && p.contains("bosses") && enc.at("completion_location") ==
+                   (p.at("bosses").at("oxide_goal") == 1 ? 35011104 : p.at("bosses").at("oxide_goal") == 2 ? 35011105 : 0);
         region[enc.at("entry_id").get<std::string>()] = (int)m.regions.size();
         m.regions.push_back(r);
         encounter_of_code[enc.at("completion_location").get<int64_t>()] = (int)encounter.size();
@@ -556,6 +564,7 @@ static int sweep(const Model &model, const ap_content_verify_io *io, ap_content_
         for (size_t r = 0; r < model.regions.size(); ++r) {
             bool ok = model.regions[r].lock < 0 || AP_VerifyCharacterUnlocked(&s.o, s.dense, model.regions[r].lock);
             for (int g : model.regions[r].gates) ok = ok && s.eval(g);
+            ok = ok && (!model.regions[r].income || s.income());
             s.open[r] = ok;
         }
         // The companion event (`checked` predicates): the race won in this

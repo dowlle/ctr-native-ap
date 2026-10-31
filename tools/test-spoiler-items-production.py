@@ -139,10 +139,11 @@ int main(int argc,char **argv){
  assert(ctr_cfg.seed_box_locations==1);
  assert(ctr_cfg.reserve_top_up==(plan["ctr_options"]["reserve_top_up"]==true));
  assert(!ap_content_plan_item(35010204)&&!ap_content_plan_item(35010205));
- J p=plan;p["ctr_options"]["spoiler_items"]=false;
- ap_seedcfg_parse_json(p);assert(ctr_cfg_active()&&ctr_cfg.spoiler_items==0);
+ J // The flag agrees with the reveal items, on both sides.
+ p=plan;p["ctr_options"]["spoiler_items"]=false;
+ ap_seedcfg_parse_json(p);assert(!ctr_cfg_active()&&ctr_cfg.spoiler_items==0);
  p=plan;p["ctr_options"].erase("spoiler_items");
- ap_seedcfg_parse_json(p);assert(ctr_cfg_active()&&ctr_cfg.spoiler_items==0);
+ ap_seedcfg_parse_json(p);assert(!ctr_cfg_active()&&ctr_cfg.spoiler_items==0);
  p=plan;p["ctr_options"].erase("reserve_top_up");
  ap_seedcfg_parse_json(p);assert(ctr_cfg_active()&&ctr_cfg.spoiler_items==1&&ctr_cfg.reserve_top_up==0);
  // A non-Boolean value stays in the closed envelope and is refused.
@@ -157,10 +158,10 @@ int main(int argc,char **argv){
  ap_seedcfg_parse_json(p);assert(!ctr_cfg_active());
  p=plan;p["content_plan"]["item_packs"].erase("ap_box_colours");
  ap_seedcfg_parse_json(p);assert(!ctr_cfg_active());
- // Without AP Box Colours its slot goes back to filler.
+ // Item boxes without AP Box Colours disagree with the flag.
  p=plan;p["content_plan"]["item_packs"].erase("ap_box_colours");drop_row(p,35010205);
  p["content_plan"]["items"]["filler_count"]=p["content_plan"]["items"]["filler_count"].get<int>()+1;
- ap_seedcfg_parse_json(p);assert(ctr_cfg_active()&&ctr_cfg.spoiler_items==1);
+ ap_seedcfg_parse_json(p);assert(!ctr_cfg_active());
  p=plan;p["content_plan"]["item_packs"]["warp_pad_preview"]=1;
  ap_seedcfg_parse_json(p);assert(!ctr_cfg_active());
  p=plan;p["content_plan"]["item_packs"]["spoiler_extra"]=true;

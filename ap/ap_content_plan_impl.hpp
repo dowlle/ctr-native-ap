@@ -654,6 +654,9 @@ static void vanilla_pads(const State &out)
                      "vanilla stage 2 requirements do not match the physical pads");
         }
 }
+// The flag ap_seedcfg strips from the envelope before admission.
+static bool envelope_spoiler_items = false;
+static const int64_t kWarpPadPreviewItem = 35010204, kApBoxColoursItem = 35010205;
 static const int64_t kFirstSurfaceItem = 35010021, kLastSurfaceItem = 35010025; // the useful surface items
 static const int kPurpleGemCup = 104;     // the Purple Gem Cup's engine LevelID
 static const int kOxideStationLevel = 13; // N. Oxide's Challenge, and the Final Challenge's other venue
@@ -728,6 +731,11 @@ static void validate(const J &p, State &out) {
     fam = ctr_content_checks{};
     if (has_families) family_settings(p["track_checks"], fam);
     const std::map<int64_t, int> packs = has_packs ? item_packs(p["item_packs"], has_boxes) : std::map<int64_t, int>{};
+    // Spoiler Items: the envelope flag agrees with the reveal items, and AP Box
+    // Colours exists exactly with AP item boxes (apworld check_spoiler_envelope).
+    need(envelope_spoiler_items == (packs.count(kWarpPadPreviewItem) != 0), "spoiler_items envelope disagrees with the plan's item_packs");
+    need((packs.count(kApBoxColoursItem) != 0) == (envelope_spoiler_items && has_boxes),
+         "item_packs.ap_box_colours disagrees with the plan's item boxes");
     // Character unlocks (#133 PR 4b): one ledger row per unlock racer.
     std::map<int64_t, int> racer_rows;
     if (has_racers) {

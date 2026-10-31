@@ -2185,7 +2185,12 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		for (const char *key : kAdditiveContentFields)
 			if (content_input["ctr_options"].contains(key) && content_input["ctr_options"][key].is_boolean())
 				content_input["ctr_options"].erase(key);
+		// The stripped flag still has to agree with the plan's reveal items.
+		content_plan::envelope_spoiler_items =
+		    j["ctr_options"].contains("spoiler_items") && j["ctr_options"]["spoiler_items"].is_boolean() &&
+		    j["ctr_options"]["spoiler_items"].get<bool>();
 		content_result = parse_content_plan(content_input);
+		content_plan::envelope_spoiler_items = false;
 		if (content_result == 2)
 		{
 			ctr_cfg.reserve_top_up = json_int(j["ctr_options"], "reserve_top_up", 0) != 0;

@@ -81,6 +81,7 @@ struct Data { MetaDataBOSS *bossWeaponMetaPtr[5]; } data;
 struct CustomTrackRaceContext { int retail; };
 static MetaDataBOSS retail[5][8];
 static int cfg_active = 1; static int ctr_cfg_active(void) { return cfg_active; }
+static int ap_content_plan_active(void) { return 1; }
 AP_BossEncounters ctr_boss_encounters;
 static int logs; static char lastLog[256];
 static void AP_AppendLog(const char *m) { logs++; std::snprintf(lastLog, sizeof lastLog, "%s", m); }

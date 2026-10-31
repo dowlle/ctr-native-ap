@@ -975,8 +975,10 @@ struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill)
 	// the garage's home track, so a loaded graph with a different count
 	// (modified disc or files) only needs the same mapping onto the count it
 	// really has (decision 8). When even that does not rise strictly the
-	// boss keeps its timers but throws nothing.
-	if (!AP_BossVenueScheduleFits(g, venuePoints))
+	// boss keeps its timers but throws nothing. A room without a plan keeps its
+	// refusal of any other count.
+	if (!AP_BossVenueScheduleFits(g, venuePoints) ||
+	    (!ap_content_plan_active() && venuePoints != AP_BossVenueCertifiedNow(g)))
 	{
 		char msg[160];
 		snprintf(msg, sizeof msg,

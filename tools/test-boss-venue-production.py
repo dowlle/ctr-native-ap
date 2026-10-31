@@ -83,6 +83,7 @@ struct SData { GameTracker *gGT; int bossWeaponCooldown; int bossJuiceCounter; }
 struct Data { MetaDataBOSS *bossWeaponMetaPtr[5]; } data;
 static MetaDataBOSS oxide[1], roo[6] = {ROO}, papu[6] = {PAPU}, joe[6] = {JOE}, pin[6] = {PIN};
 static int cfg_active = 1; static int ctr_cfg_active(void) { return cfg_active; }
+static int ap_content_plan_active(void) { return 1; }
 AP_BossEncounters ctr_boss_encounters;
 static int logs; static void AP_AppendLog(const char *) { logs++; }
 ''' + prod + r'''
