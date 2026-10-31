@@ -2232,7 +2232,12 @@ static int parse_content_plan(const nlohmann::json &j) {
         // `hit_character_encounters` (#133 PR 4d): the normal room's block,
         // present exactly when the plan has Hit Character on (checked below).
         const bool hit_block = j.is_object() && j.contains("hit_character_encounters");
-        need(j.is_object() && j.size() == 3u + (traps ? 1u : 0u) + (hit_block ? 1u : 0u) && j.contains("schema_version") &&
+        // `win_logic` (one generator row 6): the exported logic of race-loss
+        // stakes, read by ap_seedcfg_parse_win_logic. Optional: another world
+        // that wrapped a rule leaves it out, and then every loss sends.
+        const bool win_block = j.is_object() && j.contains("win_logic");
+        need(j.is_object() && j.size() == 3u + (traps ? 1u : 0u) + (hit_block ? 1u : 0u) + (win_block ? 1u : 0u) &&
+             j.contains("schema_version") &&
              j.contains("content_plan") && j.contains("ctr_options"), "unsupported or incomplete record fields");
         need(number(j["schema_version"]) == 18, "content-plan global schema must be 18");
         const J &co = j["ctr_options"];
