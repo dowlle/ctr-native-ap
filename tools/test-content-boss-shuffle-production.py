@@ -36,6 +36,7 @@ def extract(source, signature):
 
 
 prod = extract(unit, 'static int AP_BossCupGarageNow(int g)\n{')
+prod += extract(unit, 'static int AP_BossCupGarageHeld(int g)\n{')
 prod += extract(unit, 'int AP_BossGarageOpponent(int bossIdx)\n{')
 prod += extract(unit, 'int AP_BossRaceOpponentModels(int player, int *extra)\n{')
 prod += extract(unit, 'static int AP_BossKitGarageNow(void)\n{')
@@ -86,6 +87,7 @@ static void AP_AppendLog(const char *m) { logs++; std::snprintf(lastLog, sizeof 
 /* Content-plan seams: no boss cup runs; the Cortex Vortex Final serves on Oxide Station. */
 static int oxideFinalCortex;
 static int AP_ContentGarageCupRunning(void) { return -1; }
+static int AP_ContentGarageCupReady(int) { return -1; }
 struct ctr_content_pad { int gem_cup; }; static const ctr_content_pad purplePad = {104};
 static const ctr_content_pad *AP_ContentCupPad(void) { return &purplePad; }
 static int AP_ContentGarageCupLegPoints(void) { return -1; }

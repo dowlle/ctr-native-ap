@@ -31,6 +31,7 @@ def extract(source, signature):
 
 
 prod = extract(unit, 'static int AP_BossCupGarageNow(int g)\n{')
+prod += extract(unit, 'static int AP_BossCupGarageHeld(int g)\n{')
 prod += extract(unit, 'int AP_BossGarageVenue(int bossIdx)\n{')
 prod += extract(unit, 'static int AP_BossKitGarageNow(void)\n{')
 prod += extract(unit, 'static int AP_BossShuffledGarageNow(void)\n{')

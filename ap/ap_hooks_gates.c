@@ -588,6 +588,17 @@ static int AP_BossCupGarageNow(int g)
 #endif
 }
 
+// 1 when garage `g` holds a boss cup.
+static int AP_BossCupGarageHeld(int g)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	return g >= 0 && g < AP_BOSS_VENUE_GARAGES && AP_ContentGarageCupReady(g) >= 0;
+#else
+	(void)g;
+	return 0;
+#endif
+}
+
 int AP_BossGarageOpponent(int bossIdx)
 {
 	if (!ctr_cfg_active())
@@ -608,8 +619,9 @@ int AP_BossRaceOpponentModels(int player, int *extra)
 	if (gGT == NULL || !ctr_cfg_active() || (gGT->gameMode1 & ADVENTURE_BOSS) == 0)
 		return -1;
 	g = gGT->bossID;
-	// A boss cup seats the garage's drawn racer on every leg.
-	if ((gGT->gameMode1 & ADVENTURE_CUP) != 0 && !AP_BossCupGarageNow(g))
+	// A boss cup seats the garage's drawn racer on every leg. This runs during
+	// the load, before the leg's race context answers AP_BossCupGarageNow.
+	if ((gGT->gameMode1 & ADVENTURE_CUP) != 0 && !AP_BossCupGarageHeld(g))
 		return -1;
 	opp = AP_BossEncounterOpponent(&ctr_boss_encounters, g);
 	if (opp < 0)
