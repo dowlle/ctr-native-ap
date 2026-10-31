@@ -135,9 +135,10 @@ tline = body(text('ap/ap_wumpa_shop_ui.c'), 'int AP_WumpaShopHubTrackerLine(')
 check('the shop line tallies the shop page\'s own slot states',
       'states[k] = AP_WShopSlotState(hub, k);' in tline and 'AP_WumpaShopTallyStates(states, ctr_wumpa_shop.slots)' in tline)
 cfg = text('ap/ap_seedcfg.cpp')
-check('slot_data parses the block after the Cup sweeps and before activation',
-      cfg.index('ap_wumpa_shop_parse(j, opt, schema, &shop)') > cfg.index('if (!parse_cup_sweeps(j,opt,schema)) return;') and
-      cfg.index('ap_wumpa_shop_parse(j, opt, schema, &shop)') < cfg.index('ctr_cfg.schema_version = schema;'))
+check('the block parser sits before the plan admission',
+      cfg.index('#include "ap_wumpa_shop_parser.hpp"') < cfg.index('#include "ap_content_plan_impl.hpp"'))
+check('the plan fills the shop through the block parser',
+      'ap_wumpa_shop_parse(room, opt, 18, &shop)' in text('ap/ap_content_plan_impl.hpp'))
 check('the shop page is a unity member after ap_wumpa.c',
       text('game/game_unity.h').index('ap_wumpa_shop_ui.c') > text('game/game_unity.h').index('ap_wumpa.c"'))
 check('the shared wire fixture is present', (root / 'tools/fixtures/wumpa_shop.json').is_file())

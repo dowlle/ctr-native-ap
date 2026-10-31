@@ -127,17 +127,8 @@ static J legacy(const J &value){
  return j;
 }
 int main(int argc,char **argv){
- ap_seedcfg_parse_json(legacy(true));assert(ctr_cfg.spoiler_items==1&&ctr_cfg.seed_box_locations==0);
- {J b=legacy(true);b["ctr_options"]["box_locations"]=true;ap_seedcfg_parse_json(b);assert(ctr_cfg.seed_box_locations==1);
-  ap_seedcfg_parse_json(legacy(true));assert(ctr_cfg.seed_box_locations==0);}
- ap_seedcfg_parse_json(legacy(false));assert(ctr_cfg.spoiler_items==0);
- ap_seedcfg_parse_json(legacy(1));assert(ctr_cfg.spoiler_items==1);
- ap_seedcfg_parse_json(legacy(0));assert(ctr_cfg.spoiler_items==0);
- ap_seedcfg_parse_json(legacy("yes"));assert(ctr_cfg.spoiler_items==0);
- ap_seedcfg_parse_json(legacy(nullptr));assert(ctr_cfg.spoiler_items==0);
- ap_seedcfg_parse_json(legacy(true));
- ap_seedcfg_parse_json(legacy(J(J::value_t::discarded)));assert(ctr_cfg.spoiler_items==0);
- ap_seedcfg_parse_json(legacy(true));
+ /* A room without a plan reads neither key: Spoiler Items lives on the plan. */
+ ap_seedcfg_parse_json(legacy(true));assert(ctr_cfg.spoiler_items==0&&ctr_cfg.seed_box_locations==0);
  ap_seedcfg_parse_json(J::object());assert(ctr_cfg.spoiler_items==0);
  // An apworld-emitted content-plan room with both reveal items and coloured boxes.
  assert(argc==2);

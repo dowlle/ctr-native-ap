@@ -2497,10 +2497,12 @@ WarpPad_AnimateOpen:
 					continue;
 				}
 
-				// Swap this slot to the advertised reward's model + tint. Model-
+				// Swap this slot to the advertised reward's model + tint (the neutral
+				// marker above has no bit and skips this). Model-
 				// pointer reassignment is a native pattern; SpinRewards/scale below
 				// read the new model->id. Unscouted / unresolved / no marker model ->
 				// AP_WarpPadRewardModel returns -1; we keep the existing model then.
+				if (apSlotBit[i] >= 0)
 				{
 					int apModel = AP_WarpPadRewardModel(apSlotBit[i]);
 					// #212: another CTR player's OG reward keeps its own model and is
