@@ -94,7 +94,7 @@ static void fixtures() {
                                   "global-checks", "item-boxes", "cups", "cup-hits", "bosses", "bosses-custom",
                                   "bosses-final", "bosses-cups",
                                   // J11: ctr_first, the Wumpa Shop and goal, boss opponent and kit shuffle
-                                  "ctr-first", "wumpa-shop", "wumpa-goal-only", "boss-shuffle", "all-030"};
+                                  "ctr-first", "wumpa-shop", "wumpa-goal-only", "boss-shuffle", "all-030", "boss-cups-gauntlet"};
     for (const char *name : names) {
         std::ifstream in(std::string("tools/fixtures/content-plan/") + name + ".json");
         if (!in) { expect(false, std::string("fixture missing: ") + name); continue; }

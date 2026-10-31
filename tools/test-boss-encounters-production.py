@@ -14,7 +14,7 @@
    missing one, both loss-easing sites ask the helper, and the panel and
    tracker name the rival.
 
-The table, parser and decision logic are covered by tools/test-boss-encounters.cpp.
+The admission of a plan's boss races is covered by tools/test-content-features.cpp.
 """
 from pathlib import Path
 import re
@@ -32,13 +32,15 @@ def extract(source, signature):
     return source[start:end]
 
 
-prod = extract(unit, 'int AP_BossGarageOpponent(int bossIdx)\n{')
+prod = extract(unit, 'static int AP_BossCupGarageNow(int g)\n{')
+prod += extract(unit, 'int AP_BossGarageOpponent(int bossIdx)\n{')
 prod += extract(unit, 'int AP_BossRaceOpponentModels(int player, int *extra)\n{')
 prod += extract(unit, 'static int AP_BossKitGarageNow(void)\n{')
 prod += extract(unit, 'int AP_BossLossEasingNow(void)\n{')
 prod += extract(unit, 'static int AP_BossShuffledGarageNow(void)\n{')
 prod += 'static struct MetaDataBOSS s_apBossVenueAttack[8];\n'
 prod += extract(unit, 'static int AP_BossVenueCertifiedNow(int g)\n{')
+prod += extract(unit, 'static int AP_BossKitCertifiedNow(int g)\n{')
 # J03: the helpers the attack schedule now calls (the final record, the
 # gauntlet and the decision 8 fit; test-boss-venue-production.py covers them).
 prod += extract(unit, 'static struct MetaDataBOSS *AP_BossInertSchedule(struct MetaDataBOSS *dst, int rows)\n{')
@@ -214,7 +216,7 @@ load = garage[garage.index('// new levelID'):garage.index('MainRaceTrack_Request
 # The drawn racer replaces the home track's boss only after the venue check,
 # and bossID stays the physical garage.
 assert load.index('characterID_Boss') < load.index('AP_BossGarageVenue(hubID - 1)') \
-    < load.index('AP_BossGarageOpponent(hubID - 1)') < load.index('data.characterIDs[1] = (s16)opponent;')
+    < load.index('opponent = AP_BossGarageOpponent(hubID - 1)') < load.index('data.characterIDs[1] = (s16)opponent;')
 assert 'gGT->bossID = R232.bossIDs[hubID];' in garage
 require('game/232/AH_Garage.c', 'AP_BossRivalAdvert(advertBoss, rivalLine', 'AP_BossKitAdvert(advertBoss, kitLine',
         'char advert[192];')

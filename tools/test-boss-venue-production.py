@@ -30,12 +30,14 @@ def extract(source, signature):
     return source[start:end]
 
 
-prod = extract(unit, 'int AP_BossGarageVenue(int bossIdx)\n{')
+prod = extract(unit, 'static int AP_BossCupGarageNow(int g)\n{')
+prod += extract(unit, 'int AP_BossGarageVenue(int bossIdx)\n{')
 prod += extract(unit, 'static int AP_BossKitGarageNow(void)\n{')
 prod += extract(unit, 'static int AP_BossShuffledGarageNow(void)\n{')
 prod += extract(unit, 'int AP_BossRetailRulesLevel(int levelID)\n{')
 prod += 'static struct MetaDataBOSS s_apBossVenueAttack[8];\n'
 prod += extract(unit, 'static int AP_BossVenueCertifiedNow(int g)\n{')
+prod += extract(unit, 'static int AP_BossKitCertifiedNow(int g)\n{')
 # J03: the inert row, the decision 8 fit, the final record and the gauntlet.
 prod += extract(unit, 'static struct MetaDataBOSS *AP_BossInertSchedule(struct MetaDataBOSS *dst, int rows)\n{')
 prod += extract(unit, 'static void AP_BossFillKit(')

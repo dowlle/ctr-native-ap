@@ -2,9 +2,10 @@
 
 A content-plan track entry that runs ctr_first has no Trophy Race: its modes
 are the CTR Challenge, then the Relic Race. Through the production code of the
-ap_hooks unit this pins that a qualifying CTR win (first place with the letters
-the CTR Challenge needs, Lettersanity letter items included) sends the CTR code
-and the entry's Trophy Race code once each, skipping checked codes; that the
+ap_hooks unit this pins that first place sends the entry's Trophy Race code,
+letters or not, that first place with the letters the CTR Challenge needs
+(Lettersanity letter items included) also sends the CTR code, once each,
+skipping checked codes; that the
 podium rungs are routed from that CTR Challenge by finishing place, letters or
 not (finish fan-out, live held listener and the won-Trophy backstop); that the
 plain Trophy rung route stays closed on such a pad; and that a classic entry
@@ -100,12 +101,9 @@ const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int level) {
  return haveContext && level==context.hostLevelID ? &context : NULL;
 }
 int CustomTrack_ServingLoad(int level,int cup,int id) { (void)cup; (void)id; return level==context.hostLevelID && serving; }
-/* The legacy ctr_first answer (ctr_cfg.adventure_structure + award pairs):
-   a content plan must never consult it. */
 static int legacySuppress, legacyAsked;
 long AP_LookupLocationCode(int bit) { return bit; }
 long AP_TrialTrackLocation(int level,int challenge) { (void)level; (void)challenge; return -1; }
-int AP_RaceStructureSuppressTrophy(long code) { (void)code; legacyAsked++; return legacySuppress; }
 int CustomTrack_RetailPodiumLevelID(int level,int cup,int id) { (void)cup; (void)id; return level; }
 int AP_CortexTrackActive(void) { return 0; }
 int AP_CortexTrackChecked(int slot) { (void)slot; return 0; }
@@ -151,6 +149,7 @@ for signature in ("static int AP_NamedLetterBit(int64_t code)",
                   "int AP_LettersRequiredCount(int track)",
                   "int AP_LetterTokenEarned(int track, int didWin, int collected)",
                   "int AP_NotifyStandaloneRace(void)",
+                  "void AP_ContentCtrFirstPlace(void)",
                   "int AP_RaceStructurePodiumCtrFirst(int podiumTrack)",
                   "static void AP_EmitRung(int track, long code, int rungTag, int position,",
                   "static void AP_SendPodiumChecks(int track, int placement)\n{",
@@ -222,25 +221,30 @@ int main(void) {
  reset(AP_CONTENT_MODE_CTR,1); AP_ReconcilePodiumFromTrophies(); assert(sentCount==0);
  checkedCodes[checkedCount++]=TROPHY; AP_ReconcilePodiumFromTrophies(); assert(sentCount==4);
  AP_ReconcilePodiumFromTrophies(); assert(sentCount==4); cases++;
- /* ── the qualifying CTR win pays the CTR and the Trophy, once each ── */
- reset(AP_CONTENT_MODE_CTR,1);
- assert(AP_NotifyStandaloneRace()==1 && sentTimes(CTR)==1 && sentTimes(TROPHY)==1 && sentCount==2); cases++;
+ /* ── first place pays the Trophy, letters or not; the letters also pay the CTR ── */
+ reset(AP_CONTENT_MODE_CTR,1); driver.PickupLetterHUD.numCollected=0;
+ AP_ContentCtrFirstPlace(); assert(sentTimes(TROPHY)==1 && sentCount==1); cases++;
  assert(strstr(lastLog,"ctr_first") && strstr(lastLog,"35011000")); cases++;
- assert(AP_NotifyStandaloneRace()==0 && sentCount==2); cases++;      /* a re-win sends nothing */
- reset(AP_CONTENT_MODE_CTR,1); checkedCodes[checkedCount++]=CTR;      /* CTR collected, Trophy open */
- assert(AP_NotifyStandaloneRace()==1 && sentCount==1 && sent(TROPHY)); cases++;
+ assert(AP_NotifyStandaloneRace()==0 && sentCount==1); cases++;       /* no CTR without the letters */
+ AP_ContentCtrFirstPlace(); assert(sentCount==1); cases++;            /* a re-win sends nothing */
+ reset(AP_CONTENT_MODE_CTR,1);
+ AP_ContentCtrFirstPlace(); assert(AP_NotifyStandaloneRace()==1 && sentTimes(CTR)==1 && sentTimes(TROPHY)==1 && sentCount==2); cases++;
  reset(AP_CONTENT_MODE_CTR,1); checkedCodes[checkedCount++]=TROPHY;   /* Trophy collected, CTR open */
- assert(AP_NotifyStandaloneRace()==1 && sentCount==1 && sent(CTR)); cases++;
+ AP_ContentCtrFirstPlace(); assert(AP_NotifyStandaloneRace()==1 && sentCount==1 && sent(CTR)); cases++;
+ reset(AP_CONTENT_MODE_CTR,1); checkedCodes[checkedCount++]=CTR;      /* CTR collected, Trophy open */
+ AP_ContentCtrFirstPlace(); assert(sentCount==1 && sent(TROPHY)); cases++;
  reset(AP_CONTENT_MODE_CTR,1); driver.driverRank=1; assert(AP_NotifyStandaloneRace()==0 && sentCount==0); cases++; /* second */
  reset(AP_CONTENT_MODE_CTR,1); driver.PickupLetterHUD.numCollected=2; assert(AP_NotifyStandaloneRace()==0 && sentCount==0); cases++;
- reset(AP_CONTENT_MODE_CTR,1); blocked=1; assert(AP_NotifyStandaloneRace()==0 && sentCount==0); cases++; /* forced loss */
- /* Lettersanity items: the win waits for the pooled letters, then pays both. */
+ reset(AP_CONTENT_MODE_CTR,1); blocked=1; AP_ContentCtrFirstPlace(); assert(sentCount==0); cases++; /* forced loss */
+ reset(AP_CONTENT_MODE_CTR,0); AP_ContentCtrFirstPlace(); assert(sentCount==0); cases++;           /* classic pad */
+ reset(AP_CONTENT_MODE_RELIC,1); AP_ContentCtrFirstPlace(); assert(sentCount==0); cases++;         /* its Relic Race */
+ /* Lettersanity items: the CTR check waits for the pooled letters, the Trophy does not. */
  reset(AP_CONTENT_MODE_CTR,1); families.lettersanity=2; families.letters_per_track=2;
  pad.letter_locations[0]=35012500; pad.letter_locations[2]=35012502; pad.letter_items[0]=35010139; pad.letter_items[2]=35010141;
- driver.PickupLetterHUD.numCollected=2; assert(AP_NotifyStandaloneRace()==0 && sentCount==0); cases++;
+ driver.PickupLetterHUD.numCollected=2; AP_ContentCtrFirstPlace(); assert(AP_NotifyStandaloneRace()==0 && sentCount==1 && sent(TROPHY)); cases++;
  { int level,letter; assert(AP_LetterItemIndexToIdentityPure(139,&level,&letter)); ap_letter_received[level][letter]=1;
    assert(AP_LetterItemIndexToIdentityPure(141,&level,&letter)); ap_letter_received[level][letter]=1; }
- assert(AP_NotifyStandaloneRace()==1 && sent(CTR) && sent(TROPHY) && sentCount==2); cases++;
+ assert(AP_NotifyStandaloneRace()==1 && sent(CTR) && sentCount==2); cases++;
  /* ── classic content pads are unchanged ── */
  reset(AP_CONTENT_MODE_CTR,0);
  assert(AP_StandalonePodiumTrack()==-1 && AP_RaceStructurePodiumCtrFirst(logical)==0 && !listenerEarns()); cases++;
@@ -307,11 +311,13 @@ warp = (root / "game" / "232" / "AH_WarpPad.c").read_text(encoding="utf-8")
 # The pad display bit of a ctr_first Trophy resolves to its code (AP_LookupLocationCode).
 assert "if (contentMode == AP_CONTENT_MODE_TROPHY && ap_content_pad_ctr_first(pad))" in hooks
 # The glow lists the paired Trophy under the CTR mode.
-glow = pads[pads.index("int AP_PadUncollectedGlowBits("):]
+glow = pads[pads.index("static int AP_ContentPadGlowBits("):]
 glow = glow[:glow.index("\n}\n")]
 assert "ap_content_mode_paired_trophy(pad,pad->modes[n])" in glow and "AP_CONTENT_BIT_TROPHY+pad->physical" in glow
 # Both rung producers ask the same per-podium question.
 assert checks.count("AP_RaceStructurePodiumCtrFirst(podiumTrack)") == 2
+# The finish listener pays the Trophy on first place.
+assert "AP_ContentCtrFirstPlace();" in checks
 # The content-plan result path reports through AP_NotifyStandaloneRace.
 assert "AP_NotifyStandaloneRace();" in game222
 # The content-plan mode menu is built from the entry's own modes.

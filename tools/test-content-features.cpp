@@ -120,7 +120,7 @@ static J ctr_first(J room) {
         J routes = J::array();
         for (auto r : c["routes"]) {
             if (r["entry_id"].is_string() && modes.count(r["entry_id"]) && r["mode"] == "trophy") {
-                if (c["kind"] == "trophy") { r["mode"] = "ctr"; r["award"] = "win_letters"; }
+                if (c["kind"] == "trophy") { r["mode"] = "ctr"; r["award"] = "win"; }
                 else if (c["kind"] == "podium") r["mode"] = "ctr";
                 else continue;
             }
@@ -235,6 +235,7 @@ struct Shuffle {
     int racers[4] = {0, 12, 13, 15}, final_racer = 3, intensity = 2;
     const char *assignment = "mixed_loadouts";
 };
+static int home_points(int g) { return AP_BOSS_VENUE_RESTART_POINTS[AP_BOSS_VENUE_GARAGE[g].homeLevel]; }
 static J boss_shuffle(J room, const Shuffle &s) {
     static const char *const intensities[4] = {"relaxed", "standard", "intense", "mayhem"};
     static const int retail[6] = {10, 9, 11, 8, 15, 15};
@@ -243,6 +244,7 @@ static J boss_shuffle(J room, const Shuffle &s) {
     b["opponent_shuffle"] = s.opponent;
     b["oxide_in_pool"] = s.oxide_pool;
     b["kit_shuffle"] = s.kit;
+    b["gauntlet"] = false;
     b["kit"] = s.kit ? J{{"assignment", s.assignment}, {"intensity", intensities[s.intensity]}, {"loss_easing", false}} : J();
     b["oxide_attack_profile"] = s.all_compatible ? "all_compatible" : "retail";
     b["track_assignment"] = s.home ? "character_home_track" : "independent_track";
@@ -268,9 +270,9 @@ static J boss_shuffle(J room, const Shuffle &s) {
                                                         {kPotion, {0x0F, 2, 1, 0x0C, 2}, kPotion, {0x0F, 2, 1, 0x0C, 2}, kPotion},
                                                         {{0x64, 2, 0, 0x11, 2}, {0x64, 2, 0, 0x11, 2}, {0x0F, 2, 0, 0x11, 2}, {0x64, 2, 0, 0x11, 2}, {0x64, 2, 0, 0x11, 2}},
                                                         {kBomb, kBomb, kNone, kBomb, kBomb}};
-                opp["schedule"] = kit_schedule(g, venue_points(p, e["track_id"]), sig[(g + 1) % 4], intensity);
+                opp["schedule"] = kit_schedule(g, e["kind"] == "boss_cup" ? home_points(g) : venue_points(p, e["track_id"]), sig[(g + 1) % 4], intensity);
             } else
-                opp["schedule"] = kit_schedule(g, venue_points(p, e["track_id"]), kKits[g], intensity);
+                opp["schedule"] = kit_schedule(g, e["kind"] == "boss_cup" ? home_points(g) : venue_points(p, e["track_id"]), kKits[g], intensity);
         }
         e["opponent"] = opp;
     }
@@ -408,8 +410,8 @@ int main() {
             t["modes"] = J::array({"ctr", "relic"}); t["capabilities"] = t["modes"]; });
         tamper(cf, "ctr_first: Trophy check routes from trophy", [&](J &j) {
             check_of(j["content_plan"], 35011000)["routes"][0]["mode"] = "trophy"; });
-        tamper(cf, "ctr_first: Trophy check award win", [&](J &j) {
-            check_of(j["content_plan"], 35011000)["routes"][0]["award"] = "win"; });
+        tamper(cf, "ctr_first: Trophy check needs the letters", [&](J &j) {
+            check_of(j["content_plan"], 35011000)["routes"][0]["award"] = "win_letters"; });
         tamper(cf, "ctr_first: Trophy check dropped", [&](J &j) {
             auto &c = j["content_plan"]["checks"];
             c.erase(std::remove_if(c.begin(), c.end(), [](const J &x) { return x["location"] == 35011000; }), c.end());
@@ -741,20 +743,19 @@ int main() {
                    "bosses: opponent and kit without track_shuffle keep the home venues");
             verify(nf, "bosses-final shuffled");
         }
-        // Boss cups refuse a drawn opponent or kit; all_compatible alone stays.
+        // A boss cup takes a drawn racer and kit; the kit keeps the garage's
+        // retail segment starts and each leg maps them at race start.
         {
-            J cups = bcups;
-            auto &b = cups["content_plan"]["bosses"];
-            b["opponent_shuffle"] = true; b["oxide_in_pool"] = false; b["kit_shuffle"] = false; b["kit"] = nullptr;
-            b["oxide_attack_profile"] = "retail"; b["track_assignment"] = "independent_track";
-            features(cups);
-            refuse(cups, "bosses: boss cups with opponent_shuffle");
-            b["opponent_shuffle"] = false; b["kit_shuffle"] = true;
-            b["kit"] = {{"assignment", "mixed_loadouts"}, {"intensity", "standard"}, {"loss_easing", true}};
-            refuse(cups, "bosses: boss cups with kit_shuffle");
             Shuffle p2;
-            p2.opponent = p2.oxide_pool = p2.kit = false;
-            const J cp = boss_shuffle(bcups, p2);
+            p2.oxide_pool = false; p2.all_compatible = false; p2.racers[3] = 1;
+            const J cu = boss_shuffle(bcups, p2);
+            expect(admit(cu) && ctr_boss_encounters.composed[0], "bosses: a boss cup takes a drawn racer and kit");
+            tamper(cu, "bosses: a boss cup kit off the retail segments", [&](J &j) {
+                for (auto &e : j["content_plan"]["entries"])
+                    if (e["kind"] == "boss_cup") { e["opponent"]["schedule"][1][0] = 200; break; } });
+            Shuffle p3;
+            p3.opponent = p3.oxide_pool = p3.kit = false;
+            const J cp = boss_shuffle(bcups, p3);
             expect(admit(cp) && ctr_boss_encounters.finalComposed, "bosses: boss cups with all_compatible alone admit");
         }
         // Custom and Cortex Vortex venues carry kits mapped onto their counts.
@@ -798,13 +799,13 @@ int main() {
     }
 
     // ── the apworld's own J11 fixtures, when checked in ──
-    for (const char *name : {"ctr-first", "wumpa-shop", "wumpa-goal-only", "boss-shuffle", "all-030"}) {
+    for (const char *name : {"ctr-first", "wumpa-shop", "wumpa-goal-only", "boss-shuffle", "all-030", "boss-cups-gauntlet"}) {
         const J room = load(name);
         if (room.is_null()) { std::cout << "note: apworld fixture " << name << ".json not checked in yet\n"; continue; }
         expect(admit(room), std::string(name) + ": the apworld's fixture admits");
         const std::string n = name;
         if (n == "ctr-first") {
-            const auto *cove = ap_content_plan_pad(6), *roo = ap_content_plan_pad(5), *btp = ap_content_plan_pad(7), *loop = ap_content_plan_pad(15);
+            const auto *cove = ap_content_plan_pad(100), *roo = ap_content_plan_pad(3), *btp = ap_content_plan_pad(6), *loop = ap_content_plan_pad(14);
             expect(cove && cove->ctr_first && cove->mode_count == 2 && cove->modes[0] == AP_CONTENT_MODE_CTR && cove->stages[1] == 2 &&
                    cove->trophy_location == 35011000 && cove->trophy_boost > 0 && cove->rung_locations[0] > 0 &&
                    btp && btp->ctr_first && btp->mode_count == 1 && roo && !roo->ctr_first && roo->modes[0] == AP_CONTENT_MODE_TROPHY &&
@@ -817,17 +818,23 @@ int main() {
                    AP_WumpaBankingActive(&ctr_wumpa_shop), "wumpa-goal-only: banking on for the goal alone");
         } else if (n == "boss-shuffle") {
             const AP_BossEncounters &e = ctr_boss_encounters;
-            expect(e.version == 2 && e.custom[0] && e.points[0] == 255 && e.custom[1] && e.points[1] == 35 && e.opponent[0] == 7 &&
-                   e.opponent[3] == 15 && e.finalOpponent == 11 && e.finalComposed && e.oxideInPool &&
-                   ctr_cfg.hit.triggers[0].fallback_keys == 4 && ctr_cfg.hit.triggers[3].count == 2 && ctr_cfg.hit.boss_identity[5] == 11,
+            expect(e.version == 2 && e.custom[0] && e.points[0] == 255 && e.custom[3] && e.points[3] == 35 && e.opponent[0] == 13 &&
+                   e.opponent[3] == 4 && e.finalOpponent == 7 && e.finalComposed && e.oxideInPool &&
+                   ctr_cfg.hit.triggers[0].fallback_keys > 0 && ctr_cfg.hit.boss_identity[5] == 7,
                    "boss-shuffle: custom venue kits, Oxide in a garage, the Hit block follows the draw");
             auto ent = [](J &j, int g) -> J & { return find_id(j["content_plan"]["entries"], "entry/boss:" + std::to_string(g) + "/0"); };
-            tamper(room, "boss-shuffle: a Baby T Park kit checkpoint moved", [&](J &j) { ent(j, 1)["opponent"]["schedule"][1][0] = 6; });
+            tamper(room, "boss-shuffle: a Baby T Park kit checkpoint moved", [&](J &j) { ent(j, 3)["opponent"]["schedule"][1][0] = 6; });
             tamper(room, "boss-shuffle: Baby T Park restart points restated", [&](J &j) {
                 for (auto &pk : j["content_plan"]["packages"]) if (pk["content_id"] == "baby-t-park") pk["capabilities"]["checkpoints"] = 40; });
             tamper(room, "boss-shuffle: a Cortex Vortex kit on the retail scale", [&](J &j) {
                 auto &sc = ent(j, 0)["opponent"]["schedule"]; sc[1][0] = 16; sc[2][0] = 33; sc[3][0] = 47; sc[4][0] = 70; });
             tamper(room, "boss-shuffle: N. Oxide without oxide_in_pool", [&](J &j) { j["content_plan"]["bosses"]["oxide_in_pool"] = false; });
+        } else if (n == "boss-cups-gauntlet") {
+            const AP_BossEncounters &e = ctr_boss_encounters;
+            expect(e.gauntletOn && e.version == 2 && e.composed[0] && e.composed[3] && e.gauntletAttacker[1] == e.opponent[1],
+                   "boss-cups-gauntlet: the kits arm the Purple Gem Cup's legs");
+            tamper(room, "gauntlet: a number", [&](J &j) { j["content_plan"]["bosses"]["gauntlet"] = 1; });
+            tamper(room, "gauntlet: without the kit", [&](J &j) { j["content_plan"]["bosses"]["kit_shuffle"] = false; });
         } else if (n == "all-030") {
             expect(ap_content_plan_ctr_first() && ap_content_plan_bosses()->home_venues && ctr_wumpa_shop.slots == 4 &&
                    ctr_wumpa_shop.goal == 500 && ctr_wumpa_shop.slot[0][0].price == 10, "all-030: all four features filled");

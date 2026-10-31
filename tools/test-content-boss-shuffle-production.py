@@ -35,13 +35,15 @@ def extract(source, signature):
     return source[start:end]
 
 
-prod = extract(unit, 'int AP_BossGarageOpponent(int bossIdx)\n{')
+prod = extract(unit, 'static int AP_BossCupGarageNow(int g)\n{')
+prod += extract(unit, 'int AP_BossGarageOpponent(int bossIdx)\n{')
 prod += extract(unit, 'int AP_BossRaceOpponentModels(int player, int *extra)\n{')
 prod += extract(unit, 'static int AP_BossKitGarageNow(void)\n{')
 prod += extract(unit, 'int AP_BossLossEasingNow(void)\n{')
 prod += extract(unit, 'static int AP_BossShuffledGarageNow(void)\n{')
 prod += 'static struct MetaDataBOSS s_apBossVenueAttack[8];\n'
 prod += extract(unit, 'static int AP_BossVenueCertifiedNow(int g)\n{')
+prod += extract(unit, 'static int AP_BossKitCertifiedNow(int g)\n{')
 prod += extract(unit, 'static struct MetaDataBOSS *AP_BossInertSchedule(struct MetaDataBOSS *dst, int rows)\n{')
 prod += extract(unit, 'static void AP_BossFillKit(')
 prod += extract(unit, 'static int AP_BossFitKit(')
@@ -84,6 +86,8 @@ static void AP_AppendLog(const char *m) { logs++; std::snprintf(lastLog, sizeof 
 /* Content-plan seams: no boss cup runs; the Cortex Vortex Final serves on Oxide Station. */
 static int oxideFinalCortex;
 static int AP_ContentGarageCupRunning(void) { return -1; }
+struct ctr_content_pad { int gem_cup; }; static const ctr_content_pad purplePad = {104};
+static const ctr_content_pad *AP_ContentCupPad(void) { return &purplePad; }
 static int AP_ContentGarageCupLegPoints(void) { return -1; }
 static const CustomTrackRaceContext *CustomTrack_StandaloneContext(int) { return nullptr; }
 static int CustomTrack_OxideFinalServing(int level, int boss, int adv) { return oxideFinalCortex && level == 13 && adv && (boss == 4 || boss == 5); }

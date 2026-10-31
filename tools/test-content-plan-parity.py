@@ -1818,6 +1818,63 @@ for name, change in [
         ("ctr_first dropped", lambda c: (c["content_plan"].pop("adventure_structure"), j_drop_feature(c, "ctr_first_v1"))),
         ]:
     j11_env(name, change, "all-030")
+# One generator row 5: bosses with every switch, boss cups, the gauntlet, the
+# shop, the Wumpa goal and Spoiler Items on the pad requirement shapes, each
+# plan through both validators, then forgeries of what the row added.
+row5_cases = 0
+row5_cups = dict(min=1, max=2)
+row5_sets = [dict(adventure_structure="ctr_first"), dict(adventure_structure="ctr_first", lettersanity="items_only"),
+             dict(adventure_structure="ctr_first", lettersanity="locations_and_items", progressive_boost="shared_global"),
+             dict(boss_opponent_shuffle=True), dict(boss_kit_shuffle=True, boss_attack_assignment="signature_profiles"),
+             dict(boss_track_shuffle=True, boss_opponent_shuffle=True, boss_kit_shuffle=True, boss_oxide_in_pool=True,
+                  oxide_attack_profile="all_compatible", hit_character=True),
+             dict(boss_opponent_shuffle=True, boss_kit_shuffle=True, cups=row5_cups, hit_character=True),
+             dict(boss_kit_shuffle=True, purple_cup_boss_gauntlet=True),
+             dict(boss_opponent_shuffle=True, boss_kit_shuffle=True, purple_cup_boss_gauntlet=True, cups=row5_cups),
+             dict(wumpa_shop_slots=10, wumpa_shop_progression="excluded"),
+             dict(wumpa_shop_slots=25, wumpa_shop_prices=400, goal_wumpa=1000),
+             dict(goal_wumpa=1000, oxide_goal="disabled"),
+             dict(wumpa_shop_slots=10, wumpa_shop_progression="excluded", shuffle_keys=False, shuffle_gems=False),
+             dict(goal_wumpa=500, oxide_goal="101_percent", oxide_1_optional="filler"),
+             dict(spoiler_items=True), dict(spoiler_items=True, box_locations=True)]
+def row5_options(unlock, extra):
+    extra = dict(extra)
+    options = row3_options(unlock, "shuffle", "full", **{k: v for k, v in extra.items() if k != "cups"})
+    if "cups" in extra:
+        options["content_pool"]["bosses"]["cups"] = extra["cups"]
+    return options
+for index, extra in enumerate(row5_sets):
+    for unlock in ("randomized", "vanilla"):
+        for seed in range(4):
+            options = row5_options(unlock, extra)
+            cases.append((f"row5-{index}-{unlock}-{seed}", make_world(options, seed=seed).fill_slot_data(), True))
+            row5_cases += 1
+assert row5_cases == 128, row5_cases
+row5_cup = make_world(row5_options("randomized", row5_sets[6]), seed=1).fill_slot_data()
+row5_gauntlet = make_world(row5_options("randomized", row5_sets[7]), seed=1).fill_slot_data()
+row5_first = make_world(row5_options("randomized", row5_sets[0]), seed=1).fill_slot_data()
+row5_shop = make_world(row5_options("randomized", row5_sets[9]), seed=1).fill_slot_data()
+def row5_kit(p, garage):
+    return next(e for e in p["entries"] if e["id"] == f"entry/boss:{garage}/0")["opponent"]
+def row5_trophy(p):
+    return next(c for c in p["checks"] if c["kind"] == "trophy" and c["routes"][0]["mode"] == "ctr")
+def row5_drop_purple(p):
+    text = json.dumps(p).replace("entry/gem_cup:4", "entry/gem_cup:9")
+    p.clear()
+    p.update(json.loads(text))
+for name, source, change in [
+        ("cup kit off the retail segments", row5_cup, lambda p: row5_kit(p, p["bosses"]["cups"][0])["schedule"][1].__setitem__(0, 200)),
+        ("cup racer repeated", row5_cup, lambda p: row5_kit(p, p["bosses"]["cups"][0]).__setitem__(
+            "character_id", row5_kit(p, next(g for g in range(4) if g != p["bosses"]["cups"][0]))["character_id"])),
+        ("gauntlet without a kit", row5_cup, lambda p: (p["bosses"].__setitem__("gauntlet", True), p["bosses"].__setitem__("kit_shuffle", False))),
+        ("gauntlet a number", row5_gauntlet, lambda p: p["bosses"].__setitem__("gauntlet", 1)),
+        ("gauntlet dropped", row5_gauntlet, lambda p: p["bosses"].pop("gauntlet")),
+        ("gauntlet without the Purple Gem Cup", row5_gauntlet, row5_drop_purple),
+        ("Trophy needs the letters", row5_first, lambda p: row5_trophy(p)["routes"][0].__setitem__("award", "win_letters")),
+        ("Trophy from the Trophy Race", row5_first, lambda p: row5_trophy(p)["routes"][0].__setitem__("mode", "trophy")),
+        ("excluded with too little filler", row5_shop, lambda p: p["items"].__setitem__("filler_count", 0)),
+        ]:
+    alter("row5 " + name, change, source)
 # The verifier's copy of the per-track USF finish rulings (#133 PR 8,
 # ap/ap_content_verify.hpp kUsfRulings) equals the apworld's table.
 from worlds.ctr import content_capability as ccap

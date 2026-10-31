@@ -52,93 +52,10 @@
   ],
   "tracks": [
    {
-    "id": "custom/baby-t-park/1.0.2",
-    "origin": "custom",
-    "package_id": "package/baby-t-park/1.0.2",
-    "custom_slot": 1,
-    "display_name": "Baby T Park",
-    "laps": 7,
-    "modes": [
-     "trophy",
-     "ctr"
-    ],
-    "capabilities": [
-     "trophy",
-     "ctr"
-    ],
-    "field_size": 8,
-    "named_block": 8,
-    "room_title": "Baby T Park"
-   },
-   {
-    "id": "retail:16",
-    "origin": "retail",
-    "retail_id": 16,
-    "display_name": "Slide Coliseum",
-    "laps": 3,
-    "modes": [
-     "trophy",
-     "ctr"
-    ],
-    "capabilities": [
-     "trophy",
-     "ctr"
-    ],
-    "field_size": 8
-   },
-   {
     "id": "retail:3",
     "origin": "retail",
     "retail_id": 3,
     "display_name": "Crash Cove",
-    "laps": 3,
-    "modes": [
-     "trophy",
-     "ctr"
-    ],
-    "capabilities": [
-     "trophy",
-     "ctr"
-    ],
-    "field_size": 8
-   },
-   {
-    "id": "retail:12",
-    "origin": "retail",
-    "retail_id": 12,
-    "display_name": "Polar Pass",
-    "laps": 3,
-    "modes": [
-     "trophy",
-     "ctr"
-    ],
-    "capabilities": [
-     "trophy",
-     "ctr"
-    ],
-    "field_size": 8
-   },
-   {
-    "id": "retail:7",
-    "origin": "retail",
-    "retail_id": 7,
-    "display_name": "Hot Air Skyway",
-    "laps": 3,
-    "modes": [
-     "trophy",
-     "ctr"
-    ],
-    "capabilities": [
-     "trophy",
-     "ctr"
-    ],
-    "field_size": 8
-   },
-   {
-    "id": "retail:0",
-    "origin": "retail",
-    "retail_id": 0,
-    "display_name": "Dingo Canyon",
     "laps": 3,
     "modes": [
      "trophy",
@@ -167,10 +84,93 @@
     "field_size": 8
    },
    {
+    "id": "custom/baby-t-park/1.0.2",
+    "origin": "custom",
+    "package_id": "package/baby-t-park/1.0.2",
+    "custom_slot": 1,
+    "display_name": "Baby T Park",
+    "laps": 7,
+    "modes": [
+     "trophy",
+     "ctr"
+    ],
+    "capabilities": [
+     "trophy",
+     "ctr"
+    ],
+    "field_size": 8,
+    "named_block": 8,
+    "room_title": "Baby T Park"
+   },
+   {
+    "id": "retail:0",
+    "origin": "retail",
+    "retail_id": 0,
+    "display_name": "Dingo Canyon",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr"
+    ],
+    "capabilities": [
+     "trophy",
+     "ctr"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "retail:12",
+    "origin": "retail",
+    "retail_id": 12,
+    "display_name": "Polar Pass",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr"
+    ],
+    "capabilities": [
+     "trophy",
+     "ctr"
+    ],
+    "field_size": 8
+   },
+   {
     "id": "retail:1",
     "origin": "retail",
     "retail_id": 1,
     "display_name": "Dragon Mines",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr"
+    ],
+    "capabilities": [
+     "trophy",
+     "ctr"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "retail:16",
+    "origin": "retail",
+    "retail_id": 16,
+    "display_name": "Slide Coliseum",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr"
+    ],
+    "capabilities": [
+     "trophy",
+     "ctr"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "retail:7",
+    "origin": "retail",
+    "retail_id": 7,
+    "display_name": "Hot Air Skyway",
     "laps": 3,
     "modes": [
      "trophy",
@@ -201,59 +201,9 @@
   ],
   "entries": [
    {
-    "id": "entry/custom/baby-t-park/1.0.2",
-    "kind": "track",
-    "track_id": "custom/baby-t-park/1.0.2",
-    "modes": [
-     "trophy",
-     "ctr"
-    ],
-    "merged": false
-   },
-   {
-    "id": "entry/retail:16",
-    "kind": "track",
-    "track_id": "retail:16",
-    "modes": [
-     "trophy",
-     "ctr"
-    ],
-    "merged": false
-   },
-   {
     "id": "entry/retail:3",
     "kind": "track",
     "track_id": "retail:3",
-    "modes": [
-     "trophy",
-     "ctr"
-    ],
-    "merged": false
-   },
-   {
-    "id": "entry/retail:12",
-    "kind": "track",
-    "track_id": "retail:12",
-    "modes": [
-     "trophy",
-     "ctr"
-    ],
-    "merged": false
-   },
-   {
-    "id": "entry/retail:7",
-    "kind": "track",
-    "track_id": "retail:7",
-    "modes": [
-     "trophy",
-     "ctr"
-    ],
-    "merged": false
-   },
-   {
-    "id": "entry/retail:0",
-    "kind": "track",
-    "track_id": "retail:0",
     "modes": [
      "trophy",
      "ctr"
@@ -271,9 +221,59 @@
     "merged": false
    },
    {
+    "id": "entry/custom/baby-t-park/1.0.2",
+    "kind": "track",
+    "track_id": "custom/baby-t-park/1.0.2",
+    "modes": [
+     "trophy",
+     "ctr"
+    ],
+    "merged": false
+   },
+   {
+    "id": "entry/retail:0",
+    "kind": "track",
+    "track_id": "retail:0",
+    "modes": [
+     "trophy",
+     "ctr"
+    ],
+    "merged": false
+   },
+   {
+    "id": "entry/retail:12",
+    "kind": "track",
+    "track_id": "retail:12",
+    "modes": [
+     "trophy",
+     "ctr"
+    ],
+    "merged": false
+   },
+   {
     "id": "entry/retail:1",
     "kind": "track",
     "track_id": "retail:1",
+    "modes": [
+     "trophy",
+     "ctr"
+    ],
+    "merged": false
+   },
+   {
+    "id": "entry/retail:16",
+    "kind": "track",
+    "track_id": "retail:16",
+    "modes": [
+     "trophy",
+     "ctr"
+    ],
+    "merged": false
+   },
+   {
+    "id": "entry/retail:7",
+    "kind": "track",
+    "track_id": "retail:7",
     "modes": [
      "trophy",
      "ctr"
@@ -293,11 +293,11 @@
   ],
   "pads": [
    {
-    "id": "pad:104",
-    "hub_id": "hub:25",
+    "id": "pad:8",
+    "hub_id": "hub:26",
     "kind": "normal",
-    "entry_id": "entry/custom/baby-t-park/1.0.2",
-    "entrance_req": "keys:2",
+    "entry_id": "entry/retail:3",
+    "entrance_req": "free",
     "mode_gates": [
      {
       "mode": "trophy",
@@ -313,11 +313,71 @@
     "racer_lock": null
    },
    {
-    "id": "pad:5",
-    "hub_id": "hub:27",
+    "id": "pad:11",
+    "hub_id": "hub:29",
     "kind": "normal",
-    "entry_id": "entry/retail:16",
-    "entrance_req": "keys:1",
+    "entry_id": "entry/retail:6",
+    "entrance_req": "keys:3",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "stage": 1,
+      "requirement_id": "stage1:11"
+     },
+     {
+      "mode": "ctr",
+      "stage": 1,
+      "requirement_id": "stage1:11"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:103",
+    "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": "entry/custom/baby-t-park/1.0.2",
+    "entrance_req": "keys:2",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "stage": 1,
+      "requirement_id": "stage1:103"
+     },
+     {
+      "mode": "ctr",
+      "stage": 1,
+      "requirement_id": "stage1:103"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:100",
+    "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": "entry/retail:0",
+    "entrance_req": "keys:2",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "stage": 1,
+      "requirement_id": "stage1:100"
+     },
+     {
+      "mode": "ctr",
+      "stage": 1,
+      "requirement_id": "stage1:100"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:6",
+    "hub_id": "hub:26",
+    "kind": "normal",
+    "entry_id": "entry/retail:12",
+    "entrance_req": "free",
     "mode_gates": [
      {
       "mode": "trophy",
@@ -336,158 +396,80 @@
     "id": "pad:2",
     "hub_id": "hub:28",
     "kind": "normal",
-    "entry_id": "entry/retail:3",
-    "entrance_req": "keys:2",
-    "mode_gates": [
-     {
-      "mode": "trophy",
-      "stage": 1,
-      "requirement_id": "free"
-     },
-     {
-      "mode": "ctr",
-      "stage": 1,
-      "requirement_id": "free"
-     }
-    ],
-    "racer_lock": null
-   },
-   {
-    "id": "pad:23",
-    "hub_id": "hub:28",
-    "kind": "normal",
-    "entry_id": "entry/retail:12",
-    "entrance_req": "keys:2",
-    "mode_gates": [
-     {
-      "mode": "trophy",
-      "stage": 1,
-      "requirement_id": "free"
-     },
-     {
-      "mode": "ctr",
-      "stage": 1,
-      "requirement_id": "free"
-     }
-    ],
-    "racer_lock": null
-   },
-   {
-    "id": "pad:18",
-    "hub_id": "hub:29",
-    "kind": "normal",
-    "entry_id": "entry/retail:7",
-    "entrance_req": "keys:3",
-    "mode_gates": [
-     {
-      "mode": "trophy",
-      "stage": 1,
-      "requirement_id": "free"
-     },
-     {
-      "mode": "ctr",
-      "stage": 1,
-      "requirement_id": "free"
-     }
-    ],
-    "racer_lock": null
-   },
-   {
-    "id": "pad:4",
-    "hub_id": "hub:27",
-    "kind": "normal",
-    "entry_id": "entry/retail:0",
-    "entrance_req": "keys:1",
-    "mode_gates": [
-     {
-      "mode": "trophy",
-      "stage": 1,
-      "requirement_id": "free"
-     },
-     {
-      "mode": "ctr",
-      "stage": 1,
-      "requirement_id": "free"
-     }
-    ],
-    "racer_lock": null
-   },
-   {
-    "id": "pad:9",
-    "hub_id": "hub:26",
-    "kind": "normal",
-    "entry_id": "entry/retail:6",
-    "entrance_req": "free",
-    "mode_gates": [
-     {
-      "mode": "trophy",
-      "stage": 1,
-      "requirement_id": "free"
-     },
-     {
-      "mode": "ctr",
-      "stage": 1,
-      "requirement_id": "free"
-     }
-    ],
-    "racer_lock": null
-   },
-   {
-    "id": "pad:101",
-    "hub_id": "hub:25",
-    "kind": "normal",
     "entry_id": "entry/retail:1",
     "entrance_req": "keys:2",
     "mode_gates": [
      {
       "mode": "trophy",
       "stage": 1,
-      "requirement_id": "free"
+      "requirement_id": "stage1:2"
      },
      {
       "mode": "ctr",
       "stage": 1,
-      "requirement_id": "free"
+      "requirement_id": "stage1:2"
      }
     ],
     "racer_lock": null
    },
    {
-    "id": "pad:8",
-    "hub_id": "hub:26",
+    "id": "pad:5",
+    "hub_id": "hub:27",
     "kind": "normal",
-    "entry_id": "entry/retail:9",
-    "entrance_req": "free",
+    "entry_id": "entry/retail:16",
+    "entrance_req": "keys:1",
     "mode_gates": [
      {
       "mode": "trophy",
       "stage": 1,
-      "requirement_id": "free"
+      "requirement_id": "stage1:5"
      },
      {
       "mode": "ctr",
       "stage": 1,
-      "requirement_id": "free"
+      "requirement_id": "stage1:5"
      }
     ],
     "racer_lock": null
    },
    {
-    "id": "pad:103",
+    "id": "pad:16",
     "hub_id": "hub:25",
     "kind": "normal",
-    "entry_id": null,
-    "entrance_req": "keys:2",
-    "mode_gates": [],
+    "entry_id": "entry/retail:7",
+    "entrance_req": "keys:1",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "stage": 1,
+      "requirement_id": "stage1:16"
+     },
+     {
+      "mode": "ctr",
+      "stage": 1,
+      "requirement_id": "stage1:16"
+     }
+    ],
     "racer_lock": null
    },
    {
-    "id": "pad:21",
-    "hub_id": "hub:26",
+    "id": "pad:0",
+    "hub_id": "hub:27",
     "kind": "normal",
-    "entry_id": null,
-    "entrance_req": "free",
-    "mode_gates": [],
+    "entry_id": "entry/retail:9",
+    "entrance_req": "keys:1",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "stage": 1,
+      "requirement_id": "stage1:0"
+     },
+     {
+      "mode": "ctr",
+      "stage": 1,
+      "requirement_id": "stage1:0"
+     }
+    ],
     "racer_lock": null
    },
    {
@@ -496,24 +478,6 @@
     "kind": "normal",
     "entry_id": null,
     "entrance_req": "keys:2",
-    "mode_gates": [],
-    "racer_lock": null
-   },
-   {
-    "id": "pad:100",
-    "hub_id": "hub:25",
-    "kind": "normal",
-    "entry_id": null,
-    "entrance_req": "keys:2",
-    "mode_gates": [],
-    "racer_lock": null
-   },
-   {
-    "id": "pad:19",
-    "hub_id": "hub:27",
-    "kind": "normal",
-    "entry_id": null,
-    "entrance_req": "keys:1",
     "mode_gates": [],
     "racer_lock": null
    },
@@ -527,34 +491,7 @@
     "racer_lock": null
    },
    {
-    "id": "pad:16",
-    "hub_id": "hub:25",
-    "kind": "normal",
-    "entry_id": null,
-    "entrance_req": "keys:1",
-    "mode_gates": [],
-    "racer_lock": null
-   },
-   {
-    "id": "pad:11",
-    "hub_id": "hub:29",
-    "kind": "normal",
-    "entry_id": null,
-    "entrance_req": "keys:3",
-    "mode_gates": [],
-    "racer_lock": null
-   },
-   {
-    "id": "pad:14",
-    "hub_id": "hub:27",
-    "kind": "normal",
-    "entry_id": null,
-    "entrance_req": "keys:1",
-    "mode_gates": [],
-    "racer_lock": null
-   },
-   {
-    "id": "pad:0",
+    "id": "pad:4",
     "hub_id": "hub:27",
     "kind": "normal",
     "entry_id": null,
@@ -572,15 +509,6 @@
     "racer_lock": null
    },
    {
-    "id": "pad:7",
-    "hub_id": "hub:29",
-    "kind": "normal",
-    "entry_id": null,
-    "entrance_req": "keys:3",
-    "mode_gates": [],
-    "racer_lock": null
-   },
-   {
     "id": "pad:17",
     "hub_id": "hub:25",
     "kind": "normal",
@@ -590,7 +518,34 @@
     "racer_lock": null
    },
    {
-    "id": "pad:6",
+    "id": "pad:7",
+    "hub_id": "hub:29",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:3",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:10",
+    "hub_id": "hub:29",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:3",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:19",
+    "hub_id": "hub:27",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:1",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:21",
     "hub_id": "hub:26",
     "kind": "normal",
     "entry_id": null,
@@ -599,8 +554,62 @@
     "racer_lock": null
    },
    {
-    "id": "pad:102",
+    "id": "pad:14",
+    "hub_id": "hub:27",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:1",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:104",
     "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:2",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:18",
+    "hub_id": "hub:29",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:3",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:13",
+    "hub_id": "hub:29",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:3",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:101",
+    "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:2",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:9",
+    "hub_id": "hub:26",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "free",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:23",
+    "hub_id": "hub:28",
     "kind": "normal",
     "entry_id": null,
     "entrance_req": "keys:2",
@@ -617,20 +626,11 @@
     "racer_lock": null
    },
    {
-    "id": "pad:10",
-    "hub_id": "hub:29",
+    "id": "pad:102",
+    "hub_id": "hub:25",
     "kind": "normal",
     "entry_id": null,
-    "entrance_req": "keys:3",
-    "mode_gates": [],
-    "racer_lock": null
-   },
-   {
-    "id": "pad:13",
-    "hub_id": "hub:29",
-    "kind": "normal",
-    "entry_id": null,
-    "entrance_req": "keys:3",
+    "entrance_req": "keys:2",
     "mode_gates": [],
     "racer_lock": null
    },
@@ -719,9 +719,141 @@
      "item": 35010014,
      "count": 4
     }
+   },
+   {
+    "id": "stage1:0",
+    "predicate": {
+     "op": "count",
+     "item": 35010013,
+     "count": 1
+    }
+   },
+   {
+    "id": "stage1:2",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 2
+    }
+   },
+   {
+    "id": "stage1:5",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 3
+    }
+   },
+   {
+    "id": "stage1:11",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 2
+    }
+   },
+   {
+    "id": "stage1:16",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 1
+    }
+   },
+   {
+    "id": "stage1:100",
+    "predicate": {
+     "op": "sum",
+     "items": [
+      35010009,
+      35010010,
+      35010011,
+      35010012,
+      35010013
+     ],
+     "count": 2
+    }
+   },
+   {
+    "id": "stage1:103",
+    "predicate": {
+     "op": "sum",
+     "items": [
+      35010009,
+      35010010,
+      35010011,
+      35010012,
+      35010013
+     ],
+     "count": 1
+    }
    }
   ],
   "checks": [
+   {
+    "location": 35011000,
+    "owner": "retail:3",
+    "kind": "trophy",
+    "display_name": "Crash Cove: Trophy Race",
+    "routes": [
+     {
+      "entry_id": "entry/retail:3",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35012300,
+    "owner": "retail:3",
+    "kind": "ctr",
+    "display_name": "Crash Cove: CTR Token Challenge",
+    "routes": [
+     {
+      "entry_id": "entry/retail:3",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "win_letters"
+     }
+    ]
+   },
+   {
+    "location": 35011001,
+    "owner": "retail:6",
+    "kind": "trophy",
+    "display_name": "Roo's Tubes: Trophy Race",
+    "routes": [
+     {
+      "entry_id": "entry/retail:6",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35012301,
+    "owner": "retail:6",
+    "kind": "ctr",
+    "display_name": "Roo's Tubes: CTR Token Challenge",
+    "routes": [
+     {
+      "entry_id": "entry/retail:6",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "win_letters"
+     }
+    ]
+   },
    {
     "location": 35201600,
     "owner": "custom/baby-t-park/1.0.2",
@@ -733,7 +865,7 @@
       "mode": "trophy",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:104",
+      "own_pad_id": "pad:103",
       "award": "win"
      }
     ]
@@ -749,7 +881,103 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:104",
+      "own_pad_id": "pad:103",
+      "award": "win_letters"
+     }
+    ]
+   },
+   {
+    "location": 35011007,
+    "owner": "retail:0",
+    "kind": "trophy",
+    "display_name": "Dingo Canyon: Trophy Race",
+    "routes": [
+     {
+      "entry_id": "entry/retail:0",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35012307,
+    "owner": "retail:0",
+    "kind": "ctr",
+    "display_name": "Dingo Canyon: CTR Token Challenge",
+    "routes": [
+     {
+      "entry_id": "entry/retail:0",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "win_letters"
+     }
+    ]
+   },
+   {
+    "location": 35011010,
+    "owner": "retail:12",
+    "kind": "trophy",
+    "display_name": "Polar Pass: Trophy Race",
+    "routes": [
+     {
+      "entry_id": "entry/retail:12",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:6",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35012310,
+    "owner": "retail:12",
+    "kind": "ctr",
+    "display_name": "Polar Pass: CTR Token Challenge",
+    "routes": [
+     {
+      "entry_id": "entry/retail:12",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:6",
+      "award": "win_letters"
+     }
+    ]
+   },
+   {
+    "location": 35011009,
+    "owner": "retail:1",
+    "kind": "trophy",
+    "display_name": "Dragon Mines: Trophy Race",
+    "routes": [
+     {
+      "entry_id": "entry/retail:1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:2",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35012309,
+    "owner": "retail:1",
+    "kind": "ctr",
+    "display_name": "Dragon Mines: CTR Token Challenge",
+    "routes": [
+     {
+      "entry_id": "entry/retail:1",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:2",
       "award": "win_letters"
      }
     ]
@@ -787,70 +1015,6 @@
     ]
    },
    {
-    "location": 35011000,
-    "owner": "retail:3",
-    "kind": "trophy",
-    "display_name": "Crash Cove: Trophy Race",
-    "routes": [
-     {
-      "entry_id": "entry/retail:3",
-      "mode": "trophy",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:2",
-      "award": "win"
-     }
-    ]
-   },
-   {
-    "location": 35012300,
-    "owner": "retail:3",
-    "kind": "ctr",
-    "display_name": "Crash Cove: CTR Token Challenge",
-    "routes": [
-     {
-      "entry_id": "entry/retail:3",
-      "mode": "ctr",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:2",
-      "award": "win_letters"
-     }
-    ]
-   },
-   {
-    "location": 35011010,
-    "owner": "retail:12",
-    "kind": "trophy",
-    "display_name": "Polar Pass: Trophy Race",
-    "routes": [
-     {
-      "entry_id": "entry/retail:12",
-      "mode": "trophy",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:23",
-      "award": "win"
-     }
-    ]
-   },
-   {
-    "location": 35012310,
-    "owner": "retail:12",
-    "kind": "ctr",
-    "display_name": "Polar Pass: CTR Token Challenge",
-    "routes": [
-     {
-      "entry_id": "entry/retail:12",
-      "mode": "ctr",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:23",
-      "award": "win_letters"
-     }
-    ]
-   },
-   {
     "location": 35011012,
     "owner": "retail:7",
     "kind": "trophy",
@@ -861,7 +1025,7 @@
       "mode": "trophy",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:18",
+      "own_pad_id": "pad:16",
       "award": "win"
      }
     ]
@@ -877,103 +1041,7 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:18",
-      "award": "win_letters"
-     }
-    ]
-   },
-   {
-    "location": 35011007,
-    "owner": "retail:0",
-    "kind": "trophy",
-    "display_name": "Dingo Canyon: Trophy Race",
-    "routes": [
-     {
-      "entry_id": "entry/retail:0",
-      "mode": "trophy",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:4",
-      "award": "win"
-     }
-    ]
-   },
-   {
-    "location": 35012307,
-    "owner": "retail:0",
-    "kind": "ctr",
-    "display_name": "Dingo Canyon: CTR Token Challenge",
-    "routes": [
-     {
-      "entry_id": "entry/retail:0",
-      "mode": "ctr",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:4",
-      "award": "win_letters"
-     }
-    ]
-   },
-   {
-    "location": 35011001,
-    "owner": "retail:6",
-    "kind": "trophy",
-    "display_name": "Roo's Tubes: Trophy Race",
-    "routes": [
-     {
-      "entry_id": "entry/retail:6",
-      "mode": "trophy",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:9",
-      "award": "win"
-     }
-    ]
-   },
-   {
-    "location": 35012301,
-    "owner": "retail:6",
-    "kind": "ctr",
-    "display_name": "Roo's Tubes: CTR Token Challenge",
-    "routes": [
-     {
-      "entry_id": "entry/retail:6",
-      "mode": "ctr",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:9",
-      "award": "win_letters"
-     }
-    ]
-   },
-   {
-    "location": 35011009,
-    "owner": "retail:1",
-    "kind": "trophy",
-    "display_name": "Dragon Mines: Trophy Race",
-    "routes": [
-     {
-      "entry_id": "entry/retail:1",
-      "mode": "trophy",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:101",
-      "award": "win"
-     }
-    ]
-   },
-   {
-    "location": 35012309,
-    "owner": "retail:1",
-    "kind": "ctr",
-    "display_name": "Dragon Mines: CTR Token Challenge",
-    "routes": [
-     {
-      "entry_id": "entry/retail:1",
-      "mode": "ctr",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:101",
+      "own_pad_id": "pad:16",
       "award": "win_letters"
      }
     ]
@@ -989,7 +1057,7 @@
       "mode": "trophy",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:8",
+      "own_pad_id": "pad:0",
       "award": "win"
      }
     ]
@@ -1005,7 +1073,7 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:8",
+      "own_pad_id": "pad:0",
       "award": "win_letters"
      }
     ]
@@ -1016,7 +1084,7 @@
     "kind": "wumpa_shop",
     "display_name": "N. Sanity Beach Shop: Slot 1",
     "routes": [],
-    "price": 18,
+    "price": 20,
     "unlock_banked": 0
    },
    {
@@ -1025,7 +1093,7 @@
     "kind": "wumpa_shop",
     "display_name": "N. Sanity Beach Shop: Slot 2",
     "routes": [],
-    "price": 39,
+    "price": 35,
     "unlock_banked": 0
    },
    {
@@ -1043,7 +1111,7 @@
     "kind": "wumpa_shop",
     "display_name": "Gem Stone Valley Shop: Slot 1",
     "routes": [],
-    "price": 33,
+    "price": 35,
     "unlock_banked": 0
    },
    {
@@ -1052,7 +1120,7 @@
     "kind": "wumpa_shop",
     "display_name": "Gem Stone Valley Shop: Slot 2",
     "routes": [],
-    "price": 35,
+    "price": 68,
     "unlock_banked": 0
    },
    {
@@ -1061,7 +1129,7 @@
     "kind": "wumpa_shop",
     "display_name": "Gem Stone Valley Shop: Slot 3",
     "routes": [],
-    "price": 47,
+    "price": 53,
     "unlock_banked": 75
    },
    {
@@ -1070,7 +1138,7 @@
     "kind": "wumpa_shop",
     "display_name": "Lost Ruins Shop: Slot 1",
     "routes": [],
-    "price": 48,
+    "price": 32,
     "unlock_banked": 0
    },
    {
@@ -1079,7 +1147,7 @@
     "kind": "wumpa_shop",
     "display_name": "Lost Ruins Shop: Slot 2",
     "routes": [],
-    "price": 56,
+    "price": 32,
     "unlock_banked": 0
    },
    {
@@ -1088,7 +1156,7 @@
     "kind": "wumpa_shop",
     "display_name": "Lost Ruins Shop: Slot 3",
     "routes": [],
-    "price": 50,
+    "price": 54,
     "unlock_banked": 75
    },
    {
@@ -1097,7 +1165,7 @@
     "kind": "wumpa_shop",
     "display_name": "Glacier Park Shop: Slot 1",
     "routes": [],
-    "price": 50,
+    "price": 54,
     "unlock_banked": 0
    },
    {
@@ -1106,7 +1174,7 @@
     "kind": "wumpa_shop",
     "display_name": "Glacier Park Shop: Slot 2",
     "routes": [],
-    "price": 86,
+    "price": 87,
     "unlock_banked": 0
    },
    {
@@ -1115,7 +1183,7 @@
     "kind": "wumpa_shop",
     "display_name": "Glacier Park Shop: Slot 3",
     "routes": [],
-    "price": 66,
+    "price": 50,
     "unlock_banked": 75
    },
    {
@@ -1124,7 +1192,7 @@
     "kind": "wumpa_shop",
     "display_name": "Citadel City Shop: Slot 1",
     "routes": [],
-    "price": 113,
+    "price": 92,
     "unlock_banked": 0
    },
    {
@@ -1133,7 +1201,7 @@
     "kind": "wumpa_shop",
     "display_name": "Citadel City Shop: Slot 2",
     "routes": [],
-    "price": 119,
+    "price": 98,
     "unlock_banked": 0
    },
    {
@@ -1142,7 +1210,7 @@
     "kind": "wumpa_shop",
     "display_name": "Citadel City Shop: Slot 3",
     "routes": [],
-    "price": 80,
+    "price": 65,
     "unlock_banked": 75
    }
   ],
@@ -1150,14 +1218,14 @@
    "rows": [
     {
      "item": 35010000,
-     "base": 5,
+     "base": 0,
      "extra": 0,
      "start_from_pool": 0,
      "start_additional": 0,
      "locked_selected": 0,
-     "remaining": 5,
-     "receipt_cap": 5,
-     "requirement_ceiling": 5
+     "remaining": 0,
+     "receipt_cap": 0,
+     "requirement_ceiling": 0
     },
     {
      "item": 35010001,
@@ -1312,6 +1380,61 @@
      "remaining": 4,
      "receipt_cap": 4,
      "requirement_ceiling": 4
+    },
+    {
+     "item": 35010021,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010022,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010023,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010024,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010025,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
     }
    ],
    "coded_checks": 33,
@@ -1342,9 +1465,14 @@
   "required_features": [
    "content_plan_v1",
    "track_modes_v1",
+   "surface_items_v1",
+   "pad_requirements_v1",
    "wumpa_shop_v1",
    "wumpa_goal_v1"
   ],
+  "pad_requirements": {
+   "mode": "randomized"
+  },
   "wumpa_shop": {
    "slots": 3,
    "prices": 150,

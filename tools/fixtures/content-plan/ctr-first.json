@@ -108,19 +108,17 @@
     "field_size": 8
    },
    {
-    "id": "retail:16",
+    "id": "retail:6",
     "origin": "retail",
-    "retail_id": 16,
-    "display_name": "Slide Coliseum",
+    "retail_id": 6,
+    "display_name": "Roo's Tubes",
     "laps": 3,
     "modes": [
      "trophy",
-     "ctr",
      "relic"
     ],
     "capabilities": [
      "trophy",
-     "ctr",
      "relic"
     ],
     "field_size": 8
@@ -145,6 +143,24 @@
     "room_title": "Baby T Park"
    },
    {
+    "id": "retail:16",
+    "origin": "retail",
+    "retail_id": 16,
+    "display_name": "Slide Coliseum",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "field_size": 8
+   },
+   {
     "id": "custom/fixture-loop/2.1",
     "origin": "custom",
     "package_id": "package/fixture-loop/2.1",
@@ -161,22 +177,6 @@
     ],
     "field_size": 8,
     "room_title": "Fixture Loop"
-   },
-   {
-    "id": "retail:6",
-    "origin": "retail",
-    "retail_id": 6,
-    "display_name": "Roo's Tubes",
-    "laps": 3,
-    "modes": [
-     "trophy",
-     "relic"
-    ],
-    "capabilities": [
-     "trophy",
-     "relic"
-    ],
-    "field_size": 8
    }
   ],
   "entries": [
@@ -191,11 +191,11 @@
     "merged": false
    },
    {
-    "id": "entry/retail:16",
+    "id": "entry/retail:6",
     "kind": "track",
-    "track_id": "retail:16",
+    "track_id": "retail:6",
     "modes": [
-     "ctr",
+     "trophy",
      "relic"
     ],
     "merged": false
@@ -210,19 +210,19 @@
     "merged": false
    },
    {
-    "id": "entry/custom/fixture-loop/2.1",
+    "id": "entry/retail:16",
     "kind": "track",
-    "track_id": "custom/fixture-loop/2.1",
+    "track_id": "retail:16",
     "modes": [
-     "trophy",
+     "ctr",
      "relic"
     ],
     "merged": false
    },
    {
-    "id": "entry/retail:6",
+    "id": "entry/custom/fixture-loop/2.1",
     "kind": "track",
-    "track_id": "retail:6",
+    "track_id": "custom/fixture-loop/2.1",
     "modes": [
      "trophy",
      "relic"
@@ -232,66 +232,31 @@
   ],
   "pads": [
    {
-    "id": "pad:6",
-    "hub_id": "hub:26",
+    "id": "pad:100",
+    "hub_id": "hub:25",
     "kind": "normal",
     "entry_id": "entry/retail:3",
-    "entrance_req": "free",
+    "entrance_req": "keys:2",
     "mode_gates": [
      {
       "mode": "ctr",
       "stage": 1,
-      "requirement_id": "free"
+      "requirement_id": "stage1:100"
      },
      {
       "mode": "relic",
       "stage": 2,
-      "requirement_id": "stage2:6"
+      "requirement_id": "stage2:100"
      }
     ],
     "racer_lock": null
    },
    {
-    "id": "pad:9",
+    "id": "pad:3",
     "hub_id": "hub:26",
     "kind": "normal",
-    "entry_id": "entry/retail:16",
+    "entry_id": "entry/retail:6",
     "entrance_req": "free",
-    "mode_gates": [
-     {
-      "mode": "ctr",
-      "stage": 1,
-      "requirement_id": "free"
-     },
-     {
-      "mode": "relic",
-      "stage": 2,
-      "requirement_id": "stage2:9"
-     }
-    ],
-    "racer_lock": null
-   },
-   {
-    "id": "pad:7",
-    "hub_id": "hub:29",
-    "kind": "normal",
-    "entry_id": "entry/custom/baby-t-park/1.0.2",
-    "entrance_req": "keys:3",
-    "mode_gates": [
-     {
-      "mode": "ctr",
-      "stage": 1,
-      "requirement_id": "free"
-     }
-    ],
-    "racer_lock": null
-   },
-   {
-    "id": "pad:15",
-    "hub_id": "hub:28",
-    "kind": "normal",
-    "entry_id": "entry/custom/fixture-loop/2.1",
-    "entrance_req": "keys:2",
     "mode_gates": [
      {
       "mode": "trophy",
@@ -301,7 +266,22 @@
      {
       "mode": "relic",
       "stage": 2,
-      "requirement_id": "stage2:15"
+      "requirement_id": "stage2:3"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:6",
+    "hub_id": "hub:26",
+    "kind": "normal",
+    "entry_id": "entry/custom/baby-t-park/1.0.2",
+    "entrance_req": "free",
+    "mode_gates": [
+     {
+      "mode": "ctr",
+      "stage": 1,
+      "requirement_id": "free"
      }
     ],
     "racer_lock": null
@@ -310,13 +290,13 @@
     "id": "pad:5",
     "hub_id": "hub:27",
     "kind": "normal",
-    "entry_id": "entry/retail:6",
+    "entry_id": "entry/retail:16",
     "entrance_req": "keys:1",
     "mode_gates": [
      {
-      "mode": "trophy",
+      "mode": "ctr",
       "stage": 1,
-      "requirement_id": "free"
+      "requirement_id": "stage1:5"
      },
      {
       "mode": "relic",
@@ -327,39 +307,23 @@
     "racer_lock": null
    },
    {
-    "id": "pad:11",
-    "hub_id": "hub:29",
+    "id": "pad:14",
+    "hub_id": "hub:27",
     "kind": "normal",
-    "entry_id": null,
-    "entrance_req": "keys:3",
-    "mode_gates": [],
-    "racer_lock": null
-   },
-   {
-    "id": "pad:103",
-    "hub_id": "hub:25",
-    "kind": "normal",
-    "entry_id": null,
-    "entrance_req": "keys:2",
-    "mode_gates": [],
-    "racer_lock": null
-   },
-   {
-    "id": "pad:17",
-    "hub_id": "hub:25",
-    "kind": "normal",
-    "entry_id": null,
+    "entry_id": "entry/custom/fixture-loop/2.1",
     "entrance_req": "keys:1",
-    "mode_gates": [],
-    "racer_lock": null
-   },
-   {
-    "id": "pad:2",
-    "hub_id": "hub:28",
-    "kind": "normal",
-    "entry_id": null,
-    "entrance_req": "keys:2",
-    "mode_gates": [],
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "stage": 1,
+      "requirement_id": "stage1:14"
+     },
+     {
+      "mode": "relic",
+      "stage": 2,
+      "requirement_id": "stage2:14"
+     }
+    ],
     "racer_lock": null
    },
    {
@@ -368,15 +332,6 @@
     "kind": "normal",
     "entry_id": null,
     "entrance_req": "keys:2",
-    "mode_gates": [],
-    "racer_lock": null
-   },
-   {
-    "id": "pad:3",
-    "hub_id": "hub:26",
-    "kind": "normal",
-    "entry_id": null,
-    "entrance_req": "free",
     "mode_gates": [],
     "racer_lock": null
    },
@@ -390,8 +345,8 @@
     "racer_lock": null
    },
    {
-    "id": "pad:1",
-    "hub_id": "hub:28",
+    "id": "pad:101",
+    "hub_id": "hub:25",
     "kind": "normal",
     "entry_id": null,
     "entrance_req": "keys:2",
@@ -399,8 +354,8 @@
     "racer_lock": null
    },
    {
-    "id": "pad:23",
-    "hub_id": "hub:28",
+    "id": "pad:104",
+    "hub_id": "hub:25",
     "kind": "normal",
     "entry_id": null,
     "entrance_req": "keys:2",
@@ -417,7 +372,16 @@
     "racer_lock": null
    },
    {
-    "id": "pad:18",
+    "id": "pad:16",
+    "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:1",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:11",
     "hub_id": "hub:29",
     "kind": "normal",
     "entry_id": null,
@@ -435,7 +399,7 @@
     "racer_lock": null
    },
    {
-    "id": "pad:16",
+    "id": "pad:17",
     "hub_id": "hub:25",
     "kind": "normal",
     "entry_id": null,
@@ -444,20 +408,20 @@
     "racer_lock": null
    },
    {
-    "id": "pad:14",
-    "hub_id": "hub:27",
+    "id": "pad:15",
+    "hub_id": "hub:28",
     "kind": "normal",
     "entry_id": null,
-    "entrance_req": "keys:1",
+    "entrance_req": "keys:2",
     "mode_gates": [],
     "racer_lock": null
    },
    {
-    "id": "pad:19",
-    "hub_id": "hub:27",
+    "id": "pad:9",
+    "hub_id": "hub:26",
     "kind": "normal",
     "entry_id": null,
-    "entrance_req": "keys:1",
+    "entrance_req": "free",
     "mode_gates": [],
     "racer_lock": null
    },
@@ -471,11 +435,11 @@
     "racer_lock": null
    },
    {
-    "id": "pad:104",
-    "hub_id": "hub:25",
+    "id": "pad:18",
+    "hub_id": "hub:29",
     "kind": "normal",
     "entry_id": null,
-    "entrance_req": "keys:2",
+    "entrance_req": "keys:3",
     "mode_gates": [],
     "racer_lock": null
    },
@@ -485,15 +449,6 @@
     "kind": "normal",
     "entry_id": null,
     "entrance_req": "free",
-    "mode_gates": [],
-    "racer_lock": null
-   },
-   {
-    "id": "pad:100",
-    "hub_id": "hub:25",
-    "kind": "normal",
-    "entry_id": null,
-    "entrance_req": "keys:2",
     "mode_gates": [],
     "racer_lock": null
    },
@@ -516,7 +471,52 @@
     "racer_lock": null
    },
    {
-    "id": "pad:101",
+    "id": "pad:2",
+    "hub_id": "hub:28",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:2",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:23",
+    "hub_id": "hub:28",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:2",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:1",
+    "hub_id": "hub:28",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:2",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:7",
+    "hub_id": "hub:29",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:3",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:19",
+    "hub_id": "hub:27",
+    "kind": "normal",
+    "entry_id": null,
+    "entrance_req": "keys:1",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:103",
     "hub_id": "hub:25",
     "kind": "normal",
     "entry_id": null,
@@ -611,35 +611,65 @@
     }
    },
    {
-    "id": "stage2:5",
+    "id": "stage1:5",
     "predicate": {
      "op": "count",
-     "item": 35010006,
-     "count": 1
+     "item": 35010000,
+     "count": 2
     }
    },
    {
-    "id": "stage2:6",
+    "id": "stage1:14",
     "predicate": {
      "op": "count",
-     "item": 35010001,
+     "item": 35010000,
+     "count": 2
+    }
+   },
+   {
+    "id": "stage1:100",
+    "predicate": {
+     "op": "count",
+     "item": 35010000,
      "count": 4
     }
    },
    {
-    "id": "stage2:9",
+    "id": "stage2:3",
     "predicate": {
      "op": "count",
-     "item": 35010003,
+     "item": 35010014,
      "count": 1
     }
    },
    {
-    "id": "stage2:15",
+    "id": "stage2:5",
+    "predicate": {
+     "op": "sum",
+     "items": [
+      35010009,
+      35010010,
+      35010011,
+      35010012,
+      35010013
+     ],
+     "count": 1
+    }
+   },
+   {
+    "id": "stage2:14",
     "predicate": {
      "op": "count",
-     "item": 35010012,
-     "count": 1
+     "item": 35010000,
+     "count": 3
+    }
+   },
+   {
+    "id": "stage2:100",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 3
     }
    }
   ],
@@ -655,8 +685,8 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:6",
-      "award": "win_letters"
+      "own_pad_id": "pad:100",
+      "award": "win"
      }
     ],
     "boost": 1
@@ -672,7 +702,7 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:6",
+      "own_pad_id": "pad:100",
       "award": "held_1st"
      }
     ],
@@ -689,7 +719,7 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:6",
+      "own_pad_id": "pad:100",
       "award": "held_3rd"
      }
     ]
@@ -705,7 +735,7 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:6",
+      "own_pad_id": "pad:100",
       "award": "finish_podium"
      }
     ]
@@ -721,7 +751,7 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:6",
+      "own_pad_id": "pad:100",
       "award": "finish_any"
      }
     ]
@@ -737,7 +767,7 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:6",
+      "own_pad_id": "pad:100",
       "award": "win_letters"
      }
     ],
@@ -754,7 +784,7 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:6",
+      "own_pad_id": "pad:100",
       "award": "letter_c"
      }
     ]
@@ -770,60 +800,10 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:6",
+      "own_pad_id": "pad:100",
       "award": "letter_r"
      }
     ]
-   },
-   {
-    "location": 35012000,
-    "owner": "retail:3",
-    "kind": "relic",
-    "display_name": "Crash Cove: Sapphire Time Trial",
-    "routes": [
-     {
-      "entry_id": "entry/retail:3",
-      "mode": "relic",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:6",
-      "award": "sapphire"
-     }
-    ]
-   },
-   {
-    "location": 35012100,
-    "owner": "retail:3",
-    "kind": "relic",
-    "display_name": "Crash Cove: Gold Time Trial",
-    "routes": [
-     {
-      "entry_id": "entry/retail:3",
-      "mode": "relic",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:6",
-      "award": "gold"
-     }
-    ],
-    "boost": 1
-   },
-   {
-    "location": 35012200,
-    "owner": "retail:3",
-    "kind": "relic",
-    "display_name": "Crash Cove: Platinum Time Trial",
-    "routes": [
-     {
-      "entry_id": "entry/retail:3",
-      "mode": "relic",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:6",
-      "award": "platinum"
-     }
-    ],
-    "boost": 2
    },
    {
     "location": 35016101,
@@ -833,6 +813,251 @@
     "routes": [
      {
       "entry_id": "entry/retail:3",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "wumpa"
+     }
+    ]
+   },
+   {
+    "location": 35011001,
+    "owner": "retail:6",
+    "kind": "trophy",
+    "display_name": "Roo's Tubes: Trophy Race",
+    "routes": [
+     {
+      "entry_id": "entry/retail:6",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:3",
+      "award": "win"
+     }
+    ],
+    "boost": 1
+   },
+   {
+    "location": 35015104,
+    "owner": "retail:6",
+    "kind": "podium",
+    "display_name": "Roo's Tubes: Held 1st",
+    "routes": [
+     {
+      "entry_id": "entry/retail:6",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:3",
+      "award": "held_1st"
+     }
+    ],
+    "boost": 1
+   },
+   {
+    "location": 35015105,
+    "owner": "retail:6",
+    "kind": "podium",
+    "display_name": "Roo's Tubes: Held 3rd",
+    "routes": [
+     {
+      "entry_id": "entry/retail:6",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:3",
+      "award": "held_3rd"
+     }
+    ]
+   },
+   {
+    "location": 35015107,
+    "owner": "retail:6",
+    "kind": "podium",
+    "display_name": "Roo's Tubes: Finish on Podium",
+    "routes": [
+     {
+      "entry_id": "entry/retail:6",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:3",
+      "award": "finish_podium"
+     }
+    ]
+   },
+   {
+    "location": 35015005,
+    "owner": "retail:6",
+    "kind": "podium",
+    "display_name": "Roo's Tubes: Finish (Any Position)",
+    "routes": [
+     {
+      "entry_id": "entry/retail:6",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:3",
+      "award": "finish_any"
+     }
+    ]
+   },
+   {
+    "location": 35016102,
+    "owner": "retail:6",
+    "kind": "wumpa",
+    "display_name": "Roo's Tubes: Reach 10 Wumpa",
+    "routes": [
+     {
+      "entry_id": "entry/retail:6",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:3",
+      "award": "wumpa"
+     }
+    ]
+   },
+   {
+    "location": 35201600,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "trophy",
+    "display_name": "Baby T Park: Trophy Race",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:6",
+      "award": "win"
+     }
+    ],
+    "boost": 1
+   },
+   {
+    "location": 35201601,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "podium",
+    "display_name": "Baby T Park: Held 1st",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:6",
+      "award": "held_1st"
+     }
+    ],
+    "boost": 1
+   },
+   {
+    "location": 35201602,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "podium",
+    "display_name": "Baby T Park: Held 3rd",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:6",
+      "award": "held_3rd"
+     }
+    ]
+   },
+   {
+    "location": 35201604,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "podium",
+    "display_name": "Baby T Park: Finish on Podium",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:6",
+      "award": "finish_podium"
+     }
+    ]
+   },
+   {
+    "location": 35201605,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "podium",
+    "display_name": "Baby T Park: Finish (Any Position)",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:6",
+      "award": "finish_any"
+     }
+    ]
+   },
+   {
+    "location": 35201609,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "ctr",
+    "display_name": "Baby T Park: CTR Token Challenge",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:6",
+      "award": "win_letters"
+     }
+    ],
+    "boost": 1
+   },
+   {
+    "location": 35201611,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "letter",
+    "display_name": "Baby T Park: Letter C",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:6",
+      "award": "letter_c"
+     }
+    ]
+   },
+   {
+    "location": 35201613,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "letter",
+    "display_name": "Baby T Park: Letter R",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
+      "mode": "ctr",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:6",
+      "award": "letter_r"
+     }
+    ]
+   },
+   {
+    "location": 35201614,
+    "owner": "custom/baby-t-park/1.0.2",
+    "kind": "wumpa",
+    "display_name": "Baby T Park: Reach 10 Wumpa",
+    "routes": [
+     {
+      "entry_id": "entry/custom/baby-t-park/1.0.2",
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
@@ -852,8 +1077,8 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:9",
-      "award": "win_letters"
+      "own_pad_id": "pad:5",
+      "award": "win"
      }
     ],
     "boost": 1
@@ -869,7 +1094,7 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:9",
+      "own_pad_id": "pad:5",
       "award": "held_1st"
      }
     ],
@@ -886,7 +1111,7 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:9",
+      "own_pad_id": "pad:5",
       "award": "held_3rd"
      }
     ]
@@ -902,7 +1127,7 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:9",
+      "own_pad_id": "pad:5",
       "award": "finish_podium"
      }
     ]
@@ -918,7 +1143,7 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:9",
+      "own_pad_id": "pad:5",
       "award": "finish_any"
      }
     ]
@@ -934,7 +1159,7 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:9",
+      "own_pad_id": "pad:5",
       "award": "win_letters"
      }
     ],
@@ -951,7 +1176,7 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:9",
+      "own_pad_id": "pad:5",
       "award": "letter_t"
      }
     ]
@@ -967,60 +1192,10 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:9",
+      "own_pad_id": "pad:5",
       "award": "letter_r"
      }
     ]
-   },
-   {
-    "location": 35012016,
-    "owner": "retail:16",
-    "kind": "relic",
-    "display_name": "Slide Coliseum: Sapphire Time Trial",
-    "routes": [
-     {
-      "entry_id": "entry/retail:16",
-      "mode": "relic",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:9",
-      "award": "sapphire"
-     }
-    ]
-   },
-   {
-    "location": 35012116,
-    "owner": "retail:16",
-    "kind": "relic",
-    "display_name": "Slide Coliseum: Gold Time Trial",
-    "routes": [
-     {
-      "entry_id": "entry/retail:16",
-      "mode": "relic",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:9",
-      "award": "gold"
-     }
-    ],
-    "boost": 1
-   },
-   {
-    "location": 35012216,
-    "owner": "retail:16",
-    "kind": "relic",
-    "display_name": "Slide Coliseum: Platinum Time Trial",
-    "routes": [
-     {
-      "entry_id": "entry/retail:16",
-      "mode": "relic",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:9",
-      "award": "platinum"
-     }
-    ],
-    "boost": 2
    },
    {
     "location": 35016117,
@@ -1033,154 +1208,7 @@
       "mode": "ctr",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:9",
-      "award": "wumpa"
-     }
-    ]
-   },
-   {
-    "location": 35201600,
-    "owner": "custom/baby-t-park/1.0.2",
-    "kind": "trophy",
-    "display_name": "Baby T Park: Trophy Race",
-    "routes": [
-     {
-      "entry_id": "entry/custom/baby-t-park/1.0.2",
-      "mode": "ctr",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:7",
-      "award": "win_letters"
-     }
-    ],
-    "boost": 1
-   },
-   {
-    "location": 35201601,
-    "owner": "custom/baby-t-park/1.0.2",
-    "kind": "podium",
-    "display_name": "Baby T Park: Held 1st",
-    "routes": [
-     {
-      "entry_id": "entry/custom/baby-t-park/1.0.2",
-      "mode": "ctr",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:7",
-      "award": "held_1st"
-     }
-    ],
-    "boost": 1
-   },
-   {
-    "location": 35201602,
-    "owner": "custom/baby-t-park/1.0.2",
-    "kind": "podium",
-    "display_name": "Baby T Park: Held 3rd",
-    "routes": [
-     {
-      "entry_id": "entry/custom/baby-t-park/1.0.2",
-      "mode": "ctr",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:7",
-      "award": "held_3rd"
-     }
-    ]
-   },
-   {
-    "location": 35201604,
-    "owner": "custom/baby-t-park/1.0.2",
-    "kind": "podium",
-    "display_name": "Baby T Park: Finish on Podium",
-    "routes": [
-     {
-      "entry_id": "entry/custom/baby-t-park/1.0.2",
-      "mode": "ctr",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:7",
-      "award": "finish_podium"
-     }
-    ]
-   },
-   {
-    "location": 35201605,
-    "owner": "custom/baby-t-park/1.0.2",
-    "kind": "podium",
-    "display_name": "Baby T Park: Finish (Any Position)",
-    "routes": [
-     {
-      "entry_id": "entry/custom/baby-t-park/1.0.2",
-      "mode": "ctr",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:7",
-      "award": "finish_any"
-     }
-    ]
-   },
-   {
-    "location": 35201609,
-    "owner": "custom/baby-t-park/1.0.2",
-    "kind": "ctr",
-    "display_name": "Baby T Park: CTR Token Challenge",
-    "routes": [
-     {
-      "entry_id": "entry/custom/baby-t-park/1.0.2",
-      "mode": "ctr",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:7",
-      "award": "win_letters"
-     }
-    ],
-    "boost": 1
-   },
-   {
-    "location": 35201611,
-    "owner": "custom/baby-t-park/1.0.2",
-    "kind": "letter",
-    "display_name": "Baby T Park: Letter C",
-    "routes": [
-     {
-      "entry_id": "entry/custom/baby-t-park/1.0.2",
-      "mode": "ctr",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:7",
-      "award": "letter_c"
-     }
-    ]
-   },
-   {
-    "location": 35201613,
-    "owner": "custom/baby-t-park/1.0.2",
-    "kind": "letter",
-    "display_name": "Baby T Park: Letter R",
-    "routes": [
-     {
-      "entry_id": "entry/custom/baby-t-park/1.0.2",
-      "mode": "ctr",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:7",
-      "award": "letter_r"
-     }
-    ]
-   },
-   {
-    "location": 35201614,
-    "owner": "custom/baby-t-park/1.0.2",
-    "kind": "wumpa",
-    "display_name": "Baby T Park: Reach 10 Wumpa",
-    "routes": [
-     {
-      "entry_id": "entry/custom/baby-t-park/1.0.2",
-      "mode": "ctr",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:7",
+      "own_pad_id": "pad:5",
       "award": "wumpa"
      }
     ]
@@ -1196,7 +1224,7 @@
       "mode": "trophy",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:15",
+      "own_pad_id": "pad:14",
       "award": "win"
      }
     ],
@@ -1213,7 +1241,7 @@
       "mode": "trophy",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:15",
+      "own_pad_id": "pad:14",
       "award": "held_1st"
      }
     ],
@@ -1230,7 +1258,7 @@
       "mode": "trophy",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:15",
+      "own_pad_id": "pad:14",
       "award": "held_3rd"
      }
     ]
@@ -1246,7 +1274,7 @@
       "mode": "trophy",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:15",
+      "own_pad_id": "pad:14",
       "award": "finish_podium"
      }
     ],
@@ -1263,290 +1291,91 @@
       "mode": "trophy",
       "leg_id": null,
       "encounter_id": null,
-      "own_pad_id": "pad:15",
+      "own_pad_id": "pad:14",
       "award": "finish_any"
      }
     ],
     "boost": 2
-   },
-   {
-    "location": 35022003,
-    "owner": "custom/fixture-loop/2.1",
-    "kind": "relic",
-    "display_name": "Fixture Loop: Sapphire Time Trial",
-    "routes": [
-     {
-      "entry_id": "entry/custom/fixture-loop/2.1",
-      "mode": "relic",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:15",
-      "award": "sapphire"
-     }
-    ],
-    "boost": 2
-   },
-   {
-    "location": 35022004,
-    "owner": "custom/fixture-loop/2.1",
-    "kind": "relic",
-    "display_name": "Fixture Loop: Gold Time Trial",
-    "routes": [
-     {
-      "entry_id": "entry/custom/fixture-loop/2.1",
-      "mode": "relic",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:15",
-      "award": "gold"
-     }
-    ],
-    "boost": 2
-   },
-   {
-    "location": 35022005,
-    "owner": "custom/fixture-loop/2.1",
-    "kind": "relic",
-    "display_name": "Fixture Loop: Platinum Time Trial",
-    "routes": [
-     {
-      "entry_id": "entry/custom/fixture-loop/2.1",
-      "mode": "relic",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:15",
-      "award": "platinum"
-     }
-    ],
-    "boost": 2
-   },
-   {
-    "location": 35011001,
-    "owner": "retail:6",
-    "kind": "trophy",
-    "display_name": "Roo's Tubes: Trophy Race",
-    "routes": [
-     {
-      "entry_id": "entry/retail:6",
-      "mode": "trophy",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:5",
-      "award": "win"
-     }
-    ],
-    "boost": 1
-   },
-   {
-    "location": 35015104,
-    "owner": "retail:6",
-    "kind": "podium",
-    "display_name": "Roo's Tubes: Held 1st",
-    "routes": [
-     {
-      "entry_id": "entry/retail:6",
-      "mode": "trophy",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:5",
-      "award": "held_1st"
-     }
-    ],
-    "boost": 1
-   },
-   {
-    "location": 35015105,
-    "owner": "retail:6",
-    "kind": "podium",
-    "display_name": "Roo's Tubes: Held 3rd",
-    "routes": [
-     {
-      "entry_id": "entry/retail:6",
-      "mode": "trophy",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:5",
-      "award": "held_3rd"
-     }
-    ]
-   },
-   {
-    "location": 35015107,
-    "owner": "retail:6",
-    "kind": "podium",
-    "display_name": "Roo's Tubes: Finish on Podium",
-    "routes": [
-     {
-      "entry_id": "entry/retail:6",
-      "mode": "trophy",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:5",
-      "award": "finish_podium"
-     }
-    ]
-   },
-   {
-    "location": 35015005,
-    "owner": "retail:6",
-    "kind": "podium",
-    "display_name": "Roo's Tubes: Finish (Any Position)",
-    "routes": [
-     {
-      "entry_id": "entry/retail:6",
-      "mode": "trophy",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:5",
-      "award": "finish_any"
-     }
-    ]
-   },
-   {
-    "location": 35012001,
-    "owner": "retail:6",
-    "kind": "relic",
-    "display_name": "Roo's Tubes: Sapphire Time Trial",
-    "routes": [
-     {
-      "entry_id": "entry/retail:6",
-      "mode": "relic",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:5",
-      "award": "sapphire"
-     }
-    ]
-   },
-   {
-    "location": 35012101,
-    "owner": "retail:6",
-    "kind": "relic",
-    "display_name": "Roo's Tubes: Gold Time Trial",
-    "routes": [
-     {
-      "entry_id": "entry/retail:6",
-      "mode": "relic",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:5",
-      "award": "gold"
-     }
-    ],
-    "boost": 1
-   },
-   {
-    "location": 35012201,
-    "owner": "retail:6",
-    "kind": "relic",
-    "display_name": "Roo's Tubes: Platinum Time Trial",
-    "routes": [
-     {
-      "entry_id": "entry/retail:6",
-      "mode": "relic",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:5",
-      "award": "platinum"
-     }
-    ],
-    "boost": 2
-   },
-   {
-    "location": 35016102,
-    "owner": "retail:6",
-    "kind": "wumpa",
-    "display_name": "Roo's Tubes: Reach 10 Wumpa",
-    "routes": [
-     {
-      "entry_id": "entry/retail:6",
-      "mode": "trophy",
-      "leg_id": null,
-      "encounter_id": null,
-      "own_pad_id": "pad:5",
-      "award": "wumpa"
-     }
-    ]
    }
   ],
   "items": {
    "rows": [
     {
      "item": 35010000,
-     "base": 6,
+     "base": 5,
      "extra": 0,
      "start_from_pool": 0,
      "start_additional": 0,
      "locked_selected": 0,
-     "remaining": 6,
-     "receipt_cap": 6,
-     "requirement_ceiling": 6
+     "remaining": 5,
+     "receipt_cap": 5,
+     "requirement_ceiling": 5
     },
     {
      "item": 35010001,
-     "base": 4,
+     "base": 0,
      "extra": 0,
      "start_from_pool": 0,
      "start_additional": 0,
      "locked_selected": 0,
-     "remaining": 4,
-     "receipt_cap": 4,
-     "requirement_ceiling": 4
+     "remaining": 0,
+     "receipt_cap": 0,
+     "requirement_ceiling": 0
     },
     {
      "item": 35010002,
-     "base": 3,
+     "base": 0,
      "extra": 0,
      "start_from_pool": 0,
      "start_additional": 0,
      "locked_selected": 0,
-     "remaining": 3,
-     "receipt_cap": 3,
-     "requirement_ceiling": 3
+     "remaining": 0,
+     "receipt_cap": 0,
+     "requirement_ceiling": 0
     },
     {
      "item": 35010003,
-     "base": 2,
+     "base": 0,
      "extra": 0,
      "start_from_pool": 0,
      "start_additional": 0,
      "locked_selected": 0,
-     "remaining": 2,
-     "receipt_cap": 2,
-     "requirement_ceiling": 2
+     "remaining": 0,
+     "receipt_cap": 0,
+     "requirement_ceiling": 0
     },
     {
      "item": 35010004,
-     "base": 2,
+     "base": 0,
      "extra": 0,
      "start_from_pool": 0,
      "start_additional": 0,
      "locked_selected": 0,
-     "remaining": 2,
-     "receipt_cap": 2,
-     "requirement_ceiling": 2
+     "remaining": 0,
+     "receipt_cap": 0,
+     "requirement_ceiling": 0
     },
     {
      "item": 35010005,
-     "base": 2,
+     "base": 0,
      "extra": 0,
      "start_from_pool": 0,
      "start_additional": 0,
      "locked_selected": 0,
-     "remaining": 2,
-     "receipt_cap": 2,
-     "requirement_ceiling": 2
+     "remaining": 0,
+     "receipt_cap": 0,
+     "requirement_ceiling": 0
     },
     {
      "item": 35010006,
-     "base": 1,
+     "base": 0,
      "extra": 0,
      "start_from_pool": 0,
      "start_additional": 0,
      "locked_selected": 0,
-     "remaining": 1,
-     "receipt_cap": 1,
-     "requirement_ceiling": 1
+     "remaining": 0,
+     "receipt_cap": 0,
+     "requirement_ceiling": 0
     },
     {
      "item": 35010007,
@@ -1637,6 +1466,61 @@
      "requirement_ceiling": 4
     },
     {
+     "item": 35010021,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010022,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010023,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010024,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010025,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
      "item": 35010027,
      "base": 2,
      "extra": 0,
@@ -1648,9 +1532,9 @@
      "requirement_ceiling": 2
     }
    ],
-   "coded_checks": 50,
+   "coded_checks": 38,
    "locked_checks": 0,
-   "filler_count": 19,
+   "filler_count": 17,
    "trap_count": 1
   },
   "goal": {
@@ -1671,8 +1555,14 @@
    "wumpa_checks_v1",
    "lettersanity_v1",
    "capability_packs_v1",
+   "surface_items_v1",
+   "relic_tier_checks_v1",
+   "pad_requirements_v1",
    "ctr_first_v1"
   ],
+  "pad_requirements": {
+   "mode": "randomized"
+  },
   "adventure_structure": "ctr_first",
   "track_checks": {
    "podium_rungs": [
@@ -1701,7 +1591,7 @@
   "goal_oxide": 3,
   "goal_bosses": 0,
   "goal_gems": 5,
-  "starting_character": 1,
+  "starting_character": 0,
   "character_unlocks": false,
   "progressive_boost": 1,
   "progressive_stats": 0,

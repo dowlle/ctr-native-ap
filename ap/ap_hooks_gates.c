@@ -625,7 +625,7 @@ static int AP_BossKitGarageNow(void)
 		return -1;
 	// A boss cup carries the garage's one composed kit on every leg.
 	if (AP_BossCupGarageNow(gGT->bossID))
-		return (gGT->gameMode1 & ADVENTURE_BOSS) && ctr_boss_encounters.composed[gGT->bossID] ? gGT->bossID : -1;
+		return (gGT->gameMode1 & ADVENTURE_BOSS) && ctr_boss_encounters.composed[(int)gGT->bossID] ? gGT->bossID : -1;
 	return AP_BossEncounterKitGarage(&ctr_boss_encounters, (gGT->gameMode1 & ADVENTURE_BOSS) != 0,
 	                                 (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->bossID, gGT->levelID);
 }
@@ -851,7 +851,8 @@ static int AP_BossGauntletLegNow(void)
 			return -1;
 	}
 #else
-	return -1;
+	if (gGT->cup.cupID != 4)
+		return -1;
 #endif
 	leg = gGT->cup.trackIndex;
 	if (leg < 0 || leg >= AP_BOSS_GAUNTLET_LEGS || !e->gauntletComposed[leg] || e->gauntletTrack[leg] < 0 ||

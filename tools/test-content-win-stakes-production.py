@@ -12,10 +12,9 @@ plus the plan's starting copies (AP_WinEnvContentCount, AP_WinContentCapMet).
 Engine and network state are controlled seams; this does not claim a Steam
 race.
 
-J11 (ctr_first on content plans, decision 14): a CTR Challenge on a ctr_first
-pad also pays the entry's Trophy Race check (AP_ContentWinPairedFacts), so a
-loss sends while either check is open and in logic; the Trophy needs the CTR
-check's letters and the higher of the two boost ranks.
+ctr_first on content plans: first place in a CTR Challenge on a ctr_first pad
+pays the entry's Trophy Race check (AP_ContentWinPairedFacts), so a loss sends
+while either check is open and in logic; the Trophy needs its own boost rank.
 """
 from pathlib import Path
 import re
@@ -229,12 +228,11 @@ int main(void) {
  assert(handled && s.stakes && s.code==35011000 && strstr(lastLog,"win=35011000")); cases++; /* CTR collected, Trophy open */
  checked[checkedCount++]=35011000; s=decide(&handled);
  assert(handled && !s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;                   /* both collected */
- /* The paired Trophy waits for the CTR check's letter items. */
+ /* First place pays the paired Trophy without the CTR check's letter items. */
  reset(AP_CONTENT_MODE_CTR,1); pad.ctr_first=1; pad.mode_count=2; pad.modes[0]=AP_CONTENT_MODE_CTR; pad.modes[1]=AP_CONTENT_MODE_RELIC;
  roomCodes[roomCount++]=35011000; checked[checkedCount++]=35012300; pad.letter_items[1]=35010140; s=decide(&handled);
- assert(handled && !s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++;
- received[receivedCount++]=35010140; s=decide(&handled); assert(handled && s.stakes && s.code==35011000); cases++;
- /* ... and for its own boost rank, above the CTR's. */
+ assert(handled && s.stakes && s.code==35011000); cases++;
+ /* It waits for its own boost rank. */
  reset(AP_CONTENT_MODE_CTR,1); pad.ctr_first=1; pad.mode_count=2; pad.modes[0]=AP_CONTENT_MODE_CTR; pad.modes[1]=AP_CONTENT_MODE_RELIC;
  roomCodes[roomCount++]=35011000; checked[checkedCount++]=35012300; envBoostMode=1; pad.ctr_boost=0; pad.trophy_boost=1;
  s=decide(&handled); assert(handled && !s.stakes); cases++;
