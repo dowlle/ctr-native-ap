@@ -366,6 +366,10 @@ static long AP_LookupLocationCode(int globalBit)
             if (!pad || !pad->occupied) return -1;
             // A Crystal Challenge's completion, or a cup's Win (#133 PR 5).
             if (pad->crystal || pad->cup) return contentMode == AP_CONTENT_MODE_TROPHY ? (long)pad->trophy_location : -1;
+            // ctr_first (J11): the Trophy Race check of an entry without a
+            // Trophy mode, paid by its CTR Challenge win.
+            if (contentMode == AP_CONTENT_MODE_TROPHY && ap_content_pad_ctr_first(pad))
+                return pad->trophy_location > 0 && pad->trophy_location <= 2147483647 ? (long)pad->trophy_location : -1;
             return ap_content_mode_codes(pad, contentMode, codes) > contentTier && codes[contentTier] > 0
                        ? (long)codes[contentTier] : -1;
         }

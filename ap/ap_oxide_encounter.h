@@ -28,7 +28,8 @@
 //   2 101_percent        | door req                  | door req + relics + companions
 //   3 disabled           | absent, garage shut       | absent, garage shut
 //
-// "Companions" is every ACTIVE non-Oxide goal arm (goal_bosses, goal_gems); a
+// "Companions" is every ACTIVE non-Oxide goal arm (goal_bosses, goal_gems,
+// and since #249 goal_wumpa against the lifetime banked total); a
 // zero count means that arm is off, exactly as in AP_ComposedGoalMet. They
 // gate the SELECTED finale only. Under `optional` Oxide is ordinary content
 // and no non-Oxide goal arm touches either race, even when those arms are
@@ -93,6 +94,9 @@ typedef struct AP_OxideGarageInputs
 	int goalGems;
 	int gemsHeld;
 	int firstOptional; // schema 13: only applies to the Final Challenge goal
+	// #249: 1 when goal_wumpa is on and the lifetime banked total is below it.
+	// Zero (the memset default) means met or off.
+	int wumpaShort;
 } AP_OxideGarageInputs;
 
 typedef struct AP_OxideGarageState
@@ -111,6 +115,10 @@ static inline int AP_OxideCompanionsMet(const AP_OxideGarageInputs *in)
 	if (in->goalBosses > 0 && in->bossesWon < in->goalBosses)
 		return 0;
 	if (in->goalGems > 0 && in->gemsHeld < in->goalGems)
+		return 0;
+	// #249: the Wumpa goal is a companion arm too, so beating the finale
+	// still completes the goal in the same moment.
+	if (in->wumpaShort)
 		return 0;
 	return 1;
 }

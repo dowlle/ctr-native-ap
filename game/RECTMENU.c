@@ -427,6 +427,8 @@ static char *RECTMENU_RowString(int index)
 #ifdef CTR_AP
 	if (index == AP_LNG_TRACKER)
 		return (char *)"TRACKER";
+	if (index == AP_LNG_WUMPA_SHOP)
+		return (char *)"WUMPA SHOP";
 #endif
 	return sdata->lngStrings[index];
 }
@@ -926,6 +928,8 @@ void RECTMENU_ProcessState()
 	// The map owns input while open, preventing focus/inspect/back from
 	// also selecting Resume, Quit or another underlying pause-menu row.
 	if (AP_TrackerMenuFrame()) return;
+	// The #249 Wumpa Shop page owns input and drawing the same way.
+	if (AP_WumpaShopMenuFrame()) return;
 	// A room-link prompt on the settled main menu owns input the same way
 	// (issue #334): the menu underneath neither runs nor sees the answer press.
 	if (AP_LinkMenuFrame()) return;

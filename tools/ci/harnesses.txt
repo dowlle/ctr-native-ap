@@ -8,7 +8,9 @@ tools/test-author-pad.c
 tools/test-authoring-client-config.c
 tools/test-trial-letter-identity.cpp
 tools/test-blue-fire.c
+tools/test-boss-adapter.c
 tools/test-boss-assist.c
+tools/test-boss-encounters-production.py
 tools/test-boss-venue.cpp
 tools/test-boss-venue-production.py
 tools/test-box-colour-config.c
@@ -163,6 +165,7 @@ tools/test-tunnel-charswap-production.py
 tools/test-door-history-production.py
 tools/test-trial-track-seedcfg.cpp
 tools/test-content-plan.cpp
+tools/test-content-features.cpp
 tools/test-content-verify.cpp
 tools/test-content-cup-latch.c
 tools/test-content-capability.c
@@ -174,6 +177,9 @@ tools/test-content-track-checks.c
 tools/test-content-track-checks-production.py
 tools/test-content-cortex-perfect-production.py
 tools/test-content-win-stakes-production.py
+tools/test-content-ctr-first-production.py
+tools/test-content-wumpa-production.py
+tools/test-content-boss-shuffle-production.py
 tools/test-content-racer-lock-production.py
 tools/test-content-global-checks-production.cpp
 tools/test-content-bosses-production.py
@@ -202,10 +208,15 @@ tools/test-wumpa-production.c skip build-fail under the generic recipe; give it 
 tools/test-wumpa-residency.c
 tools/test-retail-asset-reader.c
 tools/test-wumpa-seedcfg.cpp
+tools/test-wumpa-bank.c
+tools/test-wumpa-shop-seedcfg.cpp
+tools/test-wumpa-shop-ledger.cpp
+tools/test-wumpa-shop-production.py
 tools/test-deathlink-send-seedcfg.cpp
 tools/test-reconnect-catchup.cpp skip needs the fake AP server (tools/fake-ap-server.py) on a socket; run by hand, see its header
 tools/test-proc-hitbox-distance.c
 tools/test-spawn-null-guards.py
+tools/test-spoiler-items-production.py
 tools/test-statbar-rank.c
 tools/test-bsp-instance.py
 tools/test-custom-ctr-result.py

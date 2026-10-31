@@ -361,6 +361,13 @@ static int AP_ContentPadGlowBits(int destLevelID, int *outBits, int cap, int ope
                                  pad->modes[n]==AP_CONTENT_MODE_CTR ? AP_CONTENT_BIT_CTR+pad->physical :
                                  AP_CONTENT_BIT_RELIC+pad->physical*3+k;
             }
+            // ctr_first (J11): the CTR Challenge also pays the Trophy Race
+            // check, so it glows under the CTR mode, right after the CTR.
+            {
+                const int64_t paired=ap_content_mode_paired_trophy(pad,pad->modes[n]);
+                if(paired>0 && count<cap && !ap_net_location_checked((long)paired))
+                    outBits[count++]=AP_CONTENT_BIT_TROPHY+pad->physical;
+            }
         }
         // Per-track families (#133 PR 3b): podium rungs, the track's Wumpa
         // check (once, whichever modes reach it) and the letter checks; the

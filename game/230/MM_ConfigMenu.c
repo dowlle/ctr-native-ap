@@ -462,10 +462,18 @@ static void Enum_Advance(const ConfigEntry *e)
 #ifdef CTR_AP
 // The Item Box Colours row is the player's opt-out of the seed's item box
 // colours. While a loaded seed has them off, it reads "OFF (SEED)" in grey and
-// takes no input: a player can turn colours off, never on.
+// takes no input: a player can turn colours off, never on. While Spoiler Items
+// (#459) still holds the colours behind AP Box Colours, the row stays editable
+// (#459 ruling, 2026-10-28): it reads "ON (LOCKED)" or "OFF", and an OFF set early
+// keeps the boxes pink after the item arrives.
 static int Config_RowLockedBySeed(const ConfigEntry *e)
 {
 	return e->valuePtr == &g_config.itemBoxColours && AP_Boxes_ColourRowState() == AP_BOX_COLOUR_ROW_SEED_OFF;
+}
+
+static int Config_RowLockedByItem(const ConfigEntry *e)
+{
+	return e->valuePtr == &g_config.itemBoxColours && AP_Boxes_ColourRowState() == AP_BOX_COLOUR_ROW_ITEM_LOCKED;
 }
 
 static void Config_DrawHelpLines(const char *first, const char *second, uint32_t *ot)
@@ -484,7 +492,12 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 
 	if (e->valuePtr == &g_config.itemBoxColours)
 	{
-		if (Config_RowLockedBySeed(e))
+		if (Config_RowLockedByItem(e))
+		{
+			first = "Pink until AP Box Colours.";
+			second = "Set OFF to keep them pink.";
+		}
+		else if (Config_RowLockedBySeed(e))
 		{
 			first = "This seed turned box colours off.";
 			second = "All AP item boxes stay pink.";
@@ -524,6 +537,11 @@ static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint
 	if (Config_RowLockedBySeed(e))
 	{
 		DecalFont_DrawLineOT("OFF (SEED)", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
+		return;
+	}
+	if (Config_RowLockedByItem(e))
+	{
+		DecalFont_DrawLineOT(*(bool *)e->valuePtr ? "ON (LOCKED)" : "OFF", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 		return;
 	}
 #endif

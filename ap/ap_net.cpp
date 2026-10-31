@@ -25,6 +25,7 @@
 #include "ap_oxide_scene_seen.h" // #377 once-per-seed Final Challenge scene flag
 #include "ap_boss_door_scene_seen.h" // #377 once-per-hub boss-door scene flag
 #include "ap_boss_won_flags.h" // #458 personally won boss races and Oxide's Challenge
+#include "ap_wumpa_ledger.h" // #249 Wumpa Shop wallet
 #include "ap_hit_policy.h" // AP_HitFallbackConflictPure -- the block schema 3 check
 #include "ap_win_logic.h" // AP_WinStakesIdentHash: full-name identity for the race stakes latch
 #include "ap_deathlink_inbox.h" // inbound DeathLink bounces until the game thread drains them
@@ -39,6 +40,9 @@ static APBossDoorSceneSeen g_boss_door_scene;
 static void ap_boss_door_scene_flush();
 static APBossWonFlags g_boss_won;
 static void ap_boss_won_flush();
+static APWumpaLedger g_wumpa;
+static void ap_wumpa_flush();
+static void ap_wumpa_resend_paid();
 static unsigned ap_boss_won_migration_bits();
 
 // #299: room-scoped one-shot effect markers. Keys are per team+slot inside the
@@ -714,6 +718,7 @@ static void ap_net_refuse_seed(const std::string &reason)
 	g_oxide_scene.disconnected();
 	g_boss_door_scene.disconnected();
 	g_boss_won.disconnected();
+	g_wumpa.disconnected();
 	g_status = AP_NET_STATUS_ERROR;
 	g_last_error = reason;
 	char line[256];
@@ -1047,6 +1052,22 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		g_boss_won.connect(g_room_endpoint, connectedSeed, g_ap->get_team_number(), g_ap->get_player_number());
 		g_ap->SetNotify({g_boss_won.key});
 		g_ap->Get({g_boss_won.key});
+		// #249: the Wumpa Shop wallet, same scoping. Only when the seed banks.
+		g_wumpa.connect(g_room_endpoint, connectedSeed, g_ap->get_team_number(), g_ap->get_player_number());
+		{
+			// The seed's prices: a stored entry counts at its slot's price, and
+			// a code this seed does not sell counts nothing.
+			std::map<long long, int> prices;
+			if (AP_WumpaShopUsable(&ctr_wumpa_shop))
+				for (int h = 0; h < AP_WUMPA_SHOP_HUBS; ++h)
+					for (int k = 0; k < ctr_wumpa_shop.slots; ++k)
+						prices[ctr_wumpa_shop.slot[h][k].code] = ctr_wumpa_shop.slot[h][k].price;
+			g_wumpa.configure(prices);
+		}
+		if (AP_WumpaBankingActive(&ctr_wumpa_shop)) {
+			g_ap->SetNotify({g_wumpa.bankKey, g_wumpa.shopKey});
+			g_ap->Get({g_wumpa.bankKey, g_wumpa.shopKey});
+		}
 		APHeldCheckFlush heldFlush = g_held_checks.onConnected(
 		    connectedSeed, g_slot,
 		    [](int64_t code) {
@@ -1178,6 +1199,24 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			AP_LogLine(line);
 			ap_boss_won_flush();
 		}
+		auto wBank = keys.find(g_wumpa.bankKey);
+		if (g_connected && !g_wumpa.bankKey.empty() && wBank != keys.end()) {
+			g_wumpa.bankRetrieved(wBank->second);
+			char line[160];
+			std::snprintf(line, sizeof line, "[AP WUMPA BANK] retrieved valid=%d lifetime=%lld server=%lld\n",
+			              (int)g_wumpa.bankValid, g_wumpa.lifetime, g_wumpa.server);
+			AP_LogLine(line);
+			ap_wumpa_flush();
+		}
+		auto wShop = keys.find(g_wumpa.shopKey);
+		if (g_connected && !g_wumpa.shopKey.empty() && wShop != keys.end()) {
+			g_wumpa.shopRetrieved(wShop->second);
+			char line[160];
+			std::snprintf(line, sizeof line, "[AP WUMPA SHOP] wallet retrieved valid=%d bought=%d\n",
+			              (int)g_wumpa.shopValid, (int)g_wumpa.bought.size());
+			AP_LogLine(line);
+			ap_wumpa_resend_paid();
+		}
 		auto it = keys.find(ap_diff_key());
 		if (it != keys.end() && it->second.is_number_integer())
 		{
@@ -1207,7 +1246,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			             AP_NET_STATSELECT_COUNT);
 	});
 	g_ap->set_set_reply_handler([](const std::string &key, const nlohmann::json &value,
-	                               const nlohmann::json &) {
+	                               const nlohmann::json &original) {
 		if (g_rejected)
 			return; // no rejected-seed state may activate
 		if (g_connected && key == g_doors.key) {
@@ -1250,6 +1289,30 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			              g_boss_won.valid, g_boss_won.bits, g_boss_won.pending);
 			AP_LogLine(line);
 			ap_boss_won_flush();
+		}
+		if (g_connected && !g_wumpa.bankKey.empty() && key == g_wumpa.bankKey) {
+			bool wasOverspent = g_wumpa.overspent();
+			g_wumpa.bankReply(value);
+			ap_wumpa_flush();
+			// Banking that covers an overspent wallet releases the purchases
+			// that were waiting for it.
+			if (wasOverspent && !g_wumpa.overspent())
+				ap_wumpa_resend_paid();
+		}
+		if (g_connected && !g_wumpa.shopKey.empty() && key == g_wumpa.shopKey) {
+			long long code = g_wumpa.pendingCode;
+			int outcome = g_wumpa.shopReply(value, original);
+			char line[160];
+			if (outcome == APWumpaLedger::REPLY_CONFIRMED) {
+				std::snprintf(line, sizeof line, "[AP WUMPA SHOP] bought %lld; sending its check\n", code);
+				AP_LogLine(line);
+				ap_net_try_send_location((int64_t)code);
+			} else if (outcome == APWumpaLedger::REPLY_ROLLBACK) {
+				std::snprintf(line, sizeof line,
+				              "[AP WUMPA SHOP] %lld refused: the fruit was spent elsewhere first; undoing\n", code);
+				AP_LogLine(line);
+				ap_wumpa_flush();
+			}
 		}
 		if (key == ap_diff_key() && value.is_number_integer())
 		{
@@ -1492,6 +1555,7 @@ static void ap_net_apply_seed_reject(void)
 	g_oxide_scene.disconnected();
 	g_boss_door_scene.disconnected();
 	g_boss_won.disconnected();
+	g_wumpa.disconnected();
 	// Restore the visible refusal defensively, LAST (a handler fired by delete
 	// may have touched either field). The menu keeps showing why the seed was
 	// refused.
@@ -1966,6 +2030,119 @@ extern "C" void ap_net_boss_won_record(unsigned bit)
 	ap_boss_won_flush();
 }
 
+// #249: the Wumpa Shop wallet (ap/ap_wumpa_ledger.h). Banking is flushed with
+// "max"; a refused purchase is undone with "pop".
+static void ap_wumpa_flush()
+{
+	if (!g_ap || !g_connected || g_rejected) return;
+	if (!ctr_cfg_active() || ctr_cfg.schema_newer) return;
+	if (g_wumpa.bankWantsSend()) {
+		AP_NET_GUARD("wumpa_bank_set", {
+			APClient::DataStorageOperation op;
+			op.operation = "max"; op.value = g_wumpa.lifetime;
+			if (g_ap->Set(g_wumpa.bankKey, 0, true, {op})) g_wumpa.bankSent = true;
+		});
+	}
+	std::vector<long long> undo = g_wumpa.rollbacks;
+	for (long long code : undo) {
+		AP_NET_GUARD("wumpa_shop_pop", {
+			APClient::DataStorageOperation op;
+			op.operation = "pop"; op.value = std::to_string(code);
+			if (g_ap->Set(g_wumpa.shopKey, nlohmann::json::object(), true, {op}))
+				g_wumpa.rollbackSent(code);
+		});
+	}
+}
+
+// Every bought slot whose check the server does not have yet: sent again on
+// each connect, so a crash between paying and checking costs nothing.
+static void ap_wumpa_resend_paid()
+{
+	if (!g_ap || !g_connected || g_rejected || !g_wumpa.shopKnown()) return;
+	ap_locs_refresh();
+	auto done = [](long long code) {
+		return g_locs_chk.count((int64_t)code) != 0 || g_locs_miss.count((int64_t)code) == 0;
+	};
+	// A purchase another client outspent may still be in the wallet if that
+	// client stopped before undoing it. Send nothing while the wallet is
+	// overspent: the purchases wait until banking pays for them.
+	if (g_wumpa.overspent()) {
+		char line[128];
+		std::snprintf(line, sizeof line, "[AP WUMPA SHOP] wallet overspent by %lld: unchecked purchases wait\n",
+		              -g_wumpa.balance());
+		AP_LogLine(line);
+		return;
+	}
+	std::vector<long long> unsent = g_wumpa.unsentPaid(done);
+	for (long long code : unsent) {
+		char line[128];
+		std::snprintf(line, sizeof line, "[AP WUMPA SHOP] resending the check of bought slot %lld\n", code);
+		AP_LogLine(line);
+		ap_net_try_send_location((int64_t)code);
+	}
+}
+
+extern "C" void ap_net_wumpa_credit(int n)
+{
+	if (g_rejected || n <= 0) return;
+	g_wumpa.credit(n);
+	ap_wumpa_flush();
+}
+extern "C" long long ap_net_wumpa_lifetime(void)
+{
+	return g_rejected ? 0 : g_wumpa.shownLifetime();
+}
+extern "C" long long ap_net_wumpa_balance(void)
+{
+	return g_rejected ? 0 : g_wumpa.balance();
+}
+extern "C" int ap_net_wumpa_ready(void)
+{
+	return g_ap && g_connected && !g_rejected && g_wumpa.bankKnown() && g_wumpa.shopKnown();
+}
+extern "C" int ap_net_wumpa_bought(long long code)
+{
+	return !g_rejected && g_wumpa.isBought(code);
+}
+extern "C" int ap_net_wumpa_pending(void)
+{
+	return !g_rejected && (g_wumpa.pendingCode >= 0 || !g_wumpa.rollbacks.empty());
+}
+extern "C" int ap_net_wumpa_buy(long long code, int price, int unlock)
+{
+	if (!g_ap || !g_connected || g_rejected) return APWumpaLedger::BUY_NOT_READY;
+	if (!ctr_cfg_active() || ctr_cfg.schema_newer) return APWumpaLedger::BUY_NOT_READY;
+	ap_locs_refresh();
+	if (g_locs_miss.count((int64_t)code) == 0 && g_locs_chk.count((int64_t)code) == 0)
+		return APWumpaLedger::BUY_NOT_READY; // not a location of this slot
+	int r = g_wumpa.tryBuy(code, price, unlock, g_locs_chk.count((int64_t)code) != 0);
+	if (r != APWumpaLedger::BUY_OK) return r;
+	bool sent = false;
+	AP_NET_GUARD("wumpa_shop_buy", {
+		APClient::DataStorageOperation op;
+		op.operation = "update";
+		op.value = nlohmann::json::object({{std::to_string(code), price}});
+		sent = g_ap->Set(g_wumpa.shopKey, nlohmann::json::object(), true, {op});
+	});
+	if (!sent) {
+		g_wumpa.pendingCode = -1; g_wumpa.pendingPrice = 0;
+		return APWumpaLedger::BUY_NOT_READY;
+	}
+	char line[128];
+	std::snprintf(line, sizeof line, "[AP WUMPA SHOP] buying %lld for %d\n", code, price);
+	AP_LogLine(line);
+	return r;
+}
+// Hint the given shop codes to their owners (LocationScouts, create_as_hint 2:
+// only new hints are announced).
+extern "C" void ap_net_wumpa_hint(const long long *codes, int n)
+{
+	if (!g_ap || !g_connected || g_rejected || codes == nullptr || n <= 0) return;
+	std::list<int64_t> locs;
+	for (int i = 0; i < n; ++i) locs.push_back((int64_t)codes[i]);
+	AP_NET_GUARD("wumpa_shop_hint", g_ap->LocationScouts(locs, 2));
+}
+
 extern "C" void ap_net_difficulty_subscribe(int slot_default)
 {
 	if (!g_ap || !g_connected)
@@ -2407,6 +2584,7 @@ extern "C" void ap_net_shutdown(void)
 	g_oxide_scene.disconnected();
 	g_boss_door_scene.disconnected();
 	g_boss_won.disconnected();
+	g_wumpa.disconnected();
 	g_items_player.clear();
 	g_items_index.clear();
 	g_items_location.clear();

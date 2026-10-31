@@ -11,6 +11,7 @@
 #ifdef CTR_AP
 
 #include "ap_seedcfg.h" // per-seed slot_data config (ctr_cfg + getters), Phase 2
+#include "ap_wumpa_shop_menu.h" // #249 green load/save menu row ids
 #include "ap_content_plan.h"
 #include "ap_content_modes.h"
 #include "ap_lettersanity.h" // freestanding pickup and token-gate decisions
@@ -359,6 +360,9 @@ int AP_StandaloneRaceActive(void);
 // Race-loss stakes facts of the running content-plan race (#133 PR 4a, ap_hooks_race.c;
 // the boost rank and racer from PR 4c).
 int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *outRacer);
+// ctr_first: the Trophy Race check the running content-plan CTR Challenge pays
+// on first place, with its boost rank; 0 when none.
+int AP_ContentWinPairedFacts(long *outCode, int *outBoost);
 // Content-plan podium identity of the running Trophy Race, or -1 (#133 PR 3b).
 int AP_StandalonePodiumTrack(void);
 int AP_NotifyStandaloneRace(void);
@@ -615,6 +619,14 @@ int AP_WarpPadRewardGemColour(int globalBit);
 // back to the vanilla token group on -1 (unscouted placeholder).
 int AP_WarpPadRewardTokenColour(int globalBit);
 
+// Spoiler Items (#459 ruling, 2026-10-28): turn one warp pad prize slot into
+// the neutral Archipelago marker a pad shows while Warp Pad Preview is missing.
+// The marker wears the uniform surprise colour whatever the seed's
+// ap_item_type_colors says, so it names no item, class or count. Returns 0 and
+// leaves the instance alone when the marker model is not parked.
+int AP_WarpPadNeutralMarkerReady(void);
+int AP_WarpPadShowNeutralMarker(struct Instance *prize);
+
 // 1 if the AP location at `globalBit` (= word*32+bit) has been CHECKED on the
 // server for our own slot. Use this -- NOT CHECK_ADV_BIT on the AdvProgress bits
 // -- to ask "has the player completed this location" in AP mode: AP_ApplyItems
@@ -637,6 +649,28 @@ void AP_DoorHistoryReconcile(int level, int door);
 int AP_LettersRequiredCount(int track);
 int AP_LetterTokenEarned(int track, int didWin, int collected);
 void AP_WumpaReachedTen(struct Driver *driver);
+// #249 banking (ap_wumpa.c): fruit past 10 for the local player, and the fruit
+// held at the race-finished edge, once per attempt.
+void AP_WumpaBankKart(struct Driver *driver, int held, int delta);
+void AP_WumpaOnRaceFinish(struct Driver *driver, int wasHuman, int held);
+// #249: bank AP fruit past 10 held since the last effect-marker write
+// (ap_hooks_received.c calls it right after that write).
+void AP_WumpaCommitReceived(void);
+// #249 hub counter: balance and lifetime banked total in a 1P hub (decision 20).
+void AP_WumpaDrawHub(void);
+// #249 tracker: the hub's "shop slots left" line (decision 21); 0 = none.
+int AP_WumpaShopHubTrackerLine(int level, char *out, int cap);
+// #249 shop page (ap_wumpa_shop_ui.c, rows in ap_wumpa_shop_menu.h).
+// PrepareGreenMenu picks the green load/save rows before the save screen
+// shows them; GreenMenuRow maps a chosen row (opening the shop returns
+// AP_WSHOP_GREEN_HANDLED); GreenExitRow is that menu's EXIT row;
+// MenuFrame owns input and drawing while the page is open.
+struct RectMenu;
+int AP_WumpaShopRowShown(void);
+void AP_WumpaShopPrepareGreenMenu(struct RectMenu *menu);
+int AP_WumpaShopGreenMenuRow(struct RectMenu *menu, int row);
+int AP_WumpaShopGreenExitRow(const struct RectMenu *menu);
+int AP_WumpaShopMenuFrame(void);
 
 // Hit Character encounters (schema 16, ticket 06): send one parsed Hit location
 // through the shared class-check path (per-seed membership + server-checked
@@ -740,6 +774,12 @@ int AP_TrialTrackLocationChecked(int levelID, int challenge);
 // Pad lifecycle, glow and the trial entry route all key off this.
 int AP_TrialChallengeServable(int destLevelID);
 void AP_NotifyTrialTrackRace(int levelID, int challenge);
+#include "ap_race_structure_logic.h"
+// ctr_first on content plans (ap_hooks_race.c). PodiumCtrFirst: a CTR Challenge
+// on this podium track earns its rungs (decision 14). CtrFirstPlace: first place
+// in such a race pays the Trophy Race check.
+int AP_RaceStructurePodiumCtrFirst(int podiumTrack);
+void AP_ContentCtrFirstPlace(void);
 
 // ── Cortex Vortex pad track (schema 15, virtual destination 110) ──
 // AP_CortexTrackActive is THE identity question every LevelID-13 consumer asks

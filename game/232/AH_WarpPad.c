@@ -2453,6 +2453,7 @@ WarpPad_AnimateOpen:
 	int apUncBits[AP_PAD_DISPLAY_BITS_MAX];
 	int apUncN = -1;     // -1 = "not an AP glow destination" -> leave vanilla glow alone
 	int apSlotBit[3] = {-1, -1, -1}; // per-slot advertised bit, or -1 = hide slot
+	int apNeutral = 0;   // #459: slot 0 shows the neutral AP marker, the rest hide
 	if ((levelID >= 0 && levelID < AH_WP_SLIDE_COLISEUM) ||       // race 0..15
 	    (levelID == AH_WP_SLIDE_COLISEUM) || (levelID == AH_WP_TURBO_TRACK) || // trial 16/17
 	    (((u16)(levelID - AH_WP_NITRO_COURT)) < 2) || (levelID == 21) || (levelID == 23) || // arena
@@ -2461,6 +2462,14 @@ WarpPad_AnimateOpen:
 	{
 		apUncN = AP_PadUncollectedDisplayBits(warppadObj->levelID, apUncBits,
 		                                   (int)(sizeof apUncBits / sizeof apUncBits[0]));
+		// Spoiler Items (#459): until Warp Pad Preview arrives, the real rewards
+		// are held back. A pad with any open location left shows one neutral
+		// Archipelago marker in slot 0; a finished pad shows nothing (#459
+		// ruling, 2026-10-28). Only the draw is gated: AP_PadState, the counters and the
+		// entry gate are untouched.
+		apNeutral = AP_Spoiler_PadNeutralMarker(AP_SpoilerPadPreviewShown(), apUncN,
+		                                        AP_WarpPadNeutralMarkerReady());
+		apUncN = AP_Spoiler_PadDisplayCount(AP_SpoilerPadPreviewShown(), apUncN);
 		if (apUncN > 0)
 			AP_PadGlowSlots(apUncBits, apUncN, (int)(gGT->timer / 0x3C), apSlotBit);
 		// apUncN == 0 -> all apSlotBit stay -1 (hide everything: all checked).
@@ -2478,7 +2487,7 @@ WarpPad_AnimateOpen:
 			if (apUncN >= 0)
 			{
 				struct Instance *apPrize = instArr[WPIS_OPEN_PRIZE1 + i];
-				if (apSlotBit[i] < 0)
+				if (apSlotBit[i] < 0 && !(apNeutral && i == 0 && AP_WarpPadShowNeutralMarker(apPrize)))
 				{
 					// Nothing to advertise in this slot -> force-hide and skip the
 					// spin/scale entirely so it neither renders nor mutates.
@@ -2488,10 +2497,12 @@ WarpPad_AnimateOpen:
 					continue;
 				}
 
-				// Swap this slot to the advertised reward's model + tint. Model-
+				// Swap this slot to the advertised reward's model + tint (the neutral
+				// marker above has no bit and skips this). Model-
 				// pointer reassignment is a native pattern; SpinRewards/scale below
 				// read the new model->id. Unscouted / unresolved / no marker model ->
 				// AP_WarpPadRewardModel returns -1; we keep the existing model then.
+				if (apSlotBit[i] >= 0)
 				{
 					int apModel = AP_WarpPadRewardModel(apSlotBit[i]);
 					// #212: another CTR player's OG reward keeps its own model and is

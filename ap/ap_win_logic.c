@@ -171,6 +171,25 @@ static int AP_WinDecideContent(struct GameTracker *gGT, const char *when, AP_Win
 	if (!AP_WinContentCapMet(boost, racer))
 		needsItems = 1;
 	*out = AP_WinStakesContentDecide(code, code > 0 && ap_net_location_checked((long long)code), needsItems);
+	// ctr_first (ruled 2026-10-29): first place on a ctr_first content pad
+	// pays its Trophy Race check, letters or not, so that check is at stake
+	// too while it is open and in logic (its own rank).
+	if (!out->stakes)
+	{
+		long paired;
+		int pairedBoost;
+		if (AP_ContentWinPairedFacts(&paired, &pairedBoost))
+		{
+			const AP_WinStakes p = AP_WinStakesContentDecide(
+			    paired, ap_net_location_checked((long long)paired),
+			    !AP_WinContentCapMet(pairedBoost, racer));
+			if (p.stakes)
+			{
+				*out = p;
+				code = paired;
+			}
+		}
+	}
 	snprintf(msg, sizeof msg, "[AP DEATH] race stakes %s: content-plan level=%d win=%ld -> %s (%s)\n",
 	         when, (int)gGT->levelID, code, out->stakes ? "a loss sends" : "exempt", AP_WinStakesWhyText(out->why));
 	AP_LogLine(msg);

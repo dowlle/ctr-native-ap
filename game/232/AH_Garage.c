@@ -279,7 +279,7 @@ LAB_800aec34:
 	int challengeY = (view.y + view.h) - 0x1e;
 
 #ifdef CTR_AP
-	char advert[128];
+	char advert[192];
 	int advertVisible = 0;
 	int advertLines = 0;
 
@@ -302,11 +302,29 @@ LAB_800aec34:
 		if (advertBoss < 4 &&
 		    AP_BossVenueAdvert(advertBoss, venueLine, (int)sizeof venueLine))
 		{
-			char joined[128];
-			if (advertVisible)
-				snprintf(joined, sizeof joined, "%s\r%s", venueLine, advert);
-			else
-				snprintf(joined, sizeof joined, "%s", venueLine);
+			char joined[192];
+			// #169 tiers 2 and 3: the drawn rival and kit follow the track.
+			char rivalLine[48], kitLine[96];
+			int used = snprintf(joined, sizeof joined, "%s", venueLine);
+			if (AP_BossRivalAdvert(advertBoss, rivalLine, (int)sizeof rivalLine) && used < (int)sizeof joined)
+				used += snprintf(joined + used, sizeof joined - used, "\r%s", rivalLine);
+			if (AP_BossKitAdvert(advertBoss, kitLine, (int)sizeof kitLine) && used < (int)sizeof joined)
+				used += snprintf(joined + used, sizeof joined - used, "\r%s", kitLine);
+			if (advertVisible && used < (int)sizeof joined)
+				snprintf(joined + used, sizeof joined - used, "\r%s", advert);
+			memcpy(advert, joined, sizeof advert);
+			advertVisible = 1;
+		}
+		// J03 (decision 7): N. Oxide's garage names the racer the final
+		// race drew, open or shut, as the first line.
+		if (advertBoss == 4 && AP_BossFinalGarageOpponent() >= 0)
+		{
+			char joined[192];
+			int c = AP_BossFinalGarageOpponent();
+			int used = snprintf(joined, sizeof joined, "Rival: %s",
+			                    sdata->lngStrings[data.MetaDataCharacters[c].name_LNG_short]);
+			if (advertVisible && used < (int)sizeof joined)
+				snprintf(joined + used, sizeof joined - used, "\r%s", advert);
 			memcpy(advert, joined, sizeof advert);
 			advertVisible = 1;
 		}
@@ -519,8 +537,12 @@ LAB_800aede8:
 			{
 				int i;
 				const ctr_content_pad *cupPad = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + hubID - 1);
+				int cupOpponent = AP_BossGarageOpponent(hubID - 1);
 				sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_CUP;
 				sdata->Loading.OnBegin.RemBitsConfig0 &= ~ADVENTURE_CUP;
+				// One drawn racer through all four races, as in a boss race.
+				if (cupOpponent >= 0)
+					data.characterIDs[1] = (s16)cupOpponent;
 				gGT->cup.cupID = 0;
 				gGT->cup.trackIndex = 0;
 				for (i = 0; i < 8; i++)
@@ -534,6 +556,7 @@ LAB_800aede8:
 			}
 #endif
 			int venue = AP_BossGarageVenue(hubID - 1);
+			int opponent;
 			if (venue < 0)
 			{
 				gGT->pushBuffer_UI.fadeFromBlack_desiredResult = 0x1000;
@@ -541,10 +564,28 @@ LAB_800aede8:
 				return;
 			}
 			levelID = venue;
+			// #169 tier 2: the seed's drawn racer replaces the garage's boss
+			// as P2. bossID stays physical; LOAD_DriverMPK keeps the boss's
+			// own pack and sideloads the racer's hi model.
+			opponent = AP_BossGarageOpponent(hubID - 1);
+			if (opponent >= 0)
+				data.characterIDs[1] = (s16)opponent;
 #ifdef CTR_CUSTOM_TRACKS
 			// The venue may be a custom track's host slot; this load is retail.
 			CustomTrack_SelectRetailRace();
 #endif
+		}
+		else if (hubID == 0)
+		{
+			// J03 (decision 7): with N. Oxide in the pool the final race
+			// draws a racer, for both Oxide races. bossID stays 4 or 5, so
+			// the checks, goal, flags and loss count are N. Oxide's; the
+			// venue (Oxide Station or the Cortex Vortex Oxide 2 role) is
+			// unchanged. LOAD_DriverMPK keeps Oxide's pack and sideloads the
+			// racer's hi model.
+			int finalOpponent = AP_BossFinalGarageOpponent();
+			if (finalOpponent >= 0)
+				data.characterIDs[1] = (s16)finalOpponent;
 		}
 #endif
 
