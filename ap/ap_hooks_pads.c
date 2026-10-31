@@ -1167,13 +1167,13 @@ int AP_PadState(int physLevelID, int destLevelID)
             int bits[21];
             return AP_PadUncollectedGlowBits(physLevelID,bits,21) ? 2 : 5;
         }
-        // Cups (#133 PR 5): open while a cup check is left, then done (replayable).
+        // Cups (#133 PR 5): open while a cup check is left, then Done
+        // (AP_PadReplayable keeps the race open).
         if(pad->cup) {
             int bits[6];
-            return AP_PadUncollectedGlowBits(physLevelID,bits,6) ? 2 : 4;
+            return AP_PadUncollectedGlowBits(physLevelID,bits,6) ? 2 : 5;
         }
-		// Track modes (#133 PR 3): 2 while an open mode has a check left, 3
-		// when only the second-stage modes do, 4 when everything is checked.
+		// Track modes (#133 PR 3), the states of ap_pad_state.h.
 		return AP_ContentTrackPadState(pad);
 	}
 	// Sized for the widest case: a cup pad aggregates its four legs' rungs
@@ -1277,6 +1277,54 @@ int AP_PadPhase1ReRaceable(int physLevelID, int destLevelID)
 	if (!AP_DestTrophyChecked(destLevelID))
 		return 0;
 	return AP_PadState(physLevelID, destLevelID) == 2;
+}
+
+// A Hit Character or Itemsanity use, or the `wumpa: global` check, a race on this
+// plan pad can still serve (one generator row 6). They belong to no pad, so a
+// closing pad would strand them, and logic counts every first race as a route:
+// they keep the first race open, as on an ordinary pad. Asked for the engine
+// track the pad's race loads.
+int AP_ContentPadPlainLeft(const ctr_content_pad *pad)
+{
+	const ctr_content_checks *fam = ap_content_plan_checks();
+	int host;
+	if (!pad || !pad->occupied || pad->crystal || pad->cup)
+		return 0;
+	if (fam->wumpa == 1 && pad->wumpa_modes && fam->wumpa_global > 0 && !AP_ContentCodeChecked(fam->wumpa_global))
+		return 1;
+	host = ap_content_pad_host(pad);
+	return (AP_HitEncounterEnabled() &&
+	        AP_HitEncounterOpportunity(host, AP_HitEffectivePlayer(pad->physical)) >= 0) ||
+	       AP_ItemsanityPadOpportunity(host);
+}
+
+int AP_PadReplayable(int physLevelID, int destLevelID)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	const ctr_content_pad *pad = ap_content_plan_active() ? ap_content_plan_pad(physLevelID) : NULL;
+	return pad && pad->occupied && !pad->crystal && AP_ContentPadReady(physLevelID) && AP_ContentPadOpen(pad) &&
+	       AP_PadState(physLevelID, destLevelID) == 5;
+#else
+	(void)physLevelID;
+	(void)destLevelID;
+	return 0;
+#endif
+}
+
+// One line per menu decision, so a player log shows what a pad offered.
+void AP_ContentLogMenu(const ctr_content_pad *pad, const ap_rs_rows *rows, int decision)
+{
+	static const char *const names[AP_RS_COUNT] = {"trophy", "ctr", "relic"};
+	char msg[160];
+	int len, i;
+	len = snprintf(msg, sizeof msg, "[AP PAD] plan pad %d: race menu rows", pad->physical);
+	for (i = 0; i < rows->count && len > 0 && len < (int)sizeof msg; i++)
+		len += snprintf(msg + len, sizeof msg - len, " %s%s", names[rows->mode[i]],
+		                rows->productive[i] ? "" : "(grey)");
+	if (len > 0 && len < (int)sizeof msg)
+		snprintf(msg + len, sizeof msg - len, " -> %s\n",
+		         decision == AP_RS_OPEN_MENU ? "menu" : decision == AP_RS_NO_ROUTE ? "refused" : names[decision]);
+	AP_LogLine(msg);
 }
 
 // The warp-pad entry fail-safe (2026-10-09). AH_WarpPad.c calls this when a

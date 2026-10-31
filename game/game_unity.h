@@ -439,6 +439,7 @@
 #include "../ap/ap_boxes.c"
 #include "../ap/ap_navrec.c"
 #include "../ap/ap_tracker.c"
+#include "../ap/ap_tracker_launch.c" // #375 tracker pad start
 #include "../ap/ap_link.c"     // one-click-connect glue (#334 slice 3)
 #else
 // The authoring client without Archipelago (see the header block above). Each

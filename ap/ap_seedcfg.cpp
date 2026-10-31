@@ -2202,6 +2202,9 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// #459: an admitted content plan's envelope says whether it has AP boxes.
 	if (content_result == 2)
 		ctr_cfg.seed_box_locations = json_int(j["ctr_options"], "box_locations", 0) != 0;
+	// One generator row 6: a plan room's race-loss stakes read the exported logic.
+	if (content_result == 2)
+		ap_seedcfg_parse_win_logic(j);
 	if (content_result != 1)
 		return;
 	if (!parse_hit_character(j))

@@ -420,6 +420,24 @@ void RECTMENU_GetHeight(struct RectMenu *m, s16 *height, b32 boolCheckSubmenu)
 
 
 
+#ifdef CTR_AP
+// #208 race type menu: rows drawn grey that stay selectable. One menu at a
+// time owns the mask; every other menu, vanilla ones included, is untouched.
+static const struct RectMenu *s_apReplayMenu;
+static unsigned s_apReplayRows;
+
+void RECTMENU_APSetReplayRows(const struct RectMenu *m, unsigned rows)
+{
+	s_apReplayMenu = m;
+	s_apReplayRows = rows;
+}
+
+static int RECTMENU_APReplayRow(const struct RectMenu *m, int row)
+{
+	return m == s_apReplayMenu && row >= 0 && row < 32 && (s_apReplayRows & (1u << row)) != 0;
+}
+#endif
+
 // Row label lookup. Retail reads sdata->lngStrings directly; AP rows that have
 // no retail string (the hub pause TRACKER row, AP_LNG_TRACKER) resolve here.
 static char *RECTMENU_RowString(int index)
@@ -625,6 +643,13 @@ LAB_80045e94:
 				if ((uVar5 & 0x8000) == 0)
 				{
 					textFlags = uVar8;
+#ifdef CTR_AP
+					// #208: a grey row that can still be chosen (a replay
+					// in the race type menu). Drawn like a locked row;
+					// activation below only looks at the 0x8000 bit.
+					if (RECTMENU_APReplayRow(menu, sVar6))
+						textFlags = 0x17;
+#endif
 				}
 				if ((uVar5 & 0x7fff) != 0)
 				{

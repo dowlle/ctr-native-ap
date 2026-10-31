@@ -6,6 +6,7 @@
 // question goes through ap_content_mode_open (ap_content_plan.h), so a row
 // the selector offers is a mode the race-start gate admits.
 #include "ap_content_plan.h"
+#include "ap_race_structure_logic.h"
 
 
 // Per-track check families (#133 PR 3b) a mode reaches on this pad, with their
@@ -14,7 +15,7 @@
 // Reach 10 Wumpa check (slot 5) on every mode with a Wumpa route, and the
 // letter checks (slots 6..8) on the CTR Challenge, and the Relic Race Perfect
 // check (slot 9, #133 PR 3c) on the Relic Race. The `wumpa: global` check
-// belongs to no pad and keeps no pad open, as on the legacy path.
+// belongs to no pad: AP_ContentPadPlainLeft keeps a first race open for it.
 #define AP_CONTENT_FAMILY_SLOTS 10
 #define AP_CONTENT_FAMILY_PERFECT 9
 // Content-plan podium identity of a pad's Trophy Race: logical podium track
@@ -116,8 +117,8 @@ static inline void ap_content_letter_codes(const ctr_content_pad *pad, long out[
     for (l = 0; l < 3; ++l) out[l] = pad && pad->letter_locations[l] > 0 ? (long)pad->letter_locations[l] : -1;
 }
 
-// One selector row per mode, in the pad's order. A locked row is drawn grey
-// and cannot be chosen; its missing requirement is shown under the pad name.
+// One selector row per mode, in the pad's order, for the in-game tracker's
+// activity list: a locked row stays in that list, grey, with its reasons.
 typedef struct ap_content_selector {
     int count, cursor;
     int mode[AP_CONTENT_MODE_COUNT], open[AP_CONTENT_MODE_COUNT], pending[AP_CONTENT_MODE_COUNT];
@@ -145,21 +146,79 @@ static inline int ap_content_selector_build(const ctr_content_pad *pad, const in
     return open;
 }
 
-// Pad state codes of AP_PadState for a content-plan track pad: 1 locked,
-// 2 a check is left in an open mode, 3 checks are left only behind the
-// second-stage gate, 4 everything is checked (replayable).
-static inline int ap_content_track_pad_state(const ctr_content_pad *pad, const int *counts,
-                                             ap_content_checked_fn checked)
+// Does a race in `mode` put weapons and other racers on the track? A Relic Race
+// is alone: a Hit Character or Itemsanity use cannot happen there.
+static inline int ap_content_mode_plain(int mode) { return mode != AP_CONTENT_MODE_RELIC; }
+
+// The race type menu of a track pad (#208 on plans, one generator row 6): a row
+// per race the pad has open now, in the pad's order; a race not open yet has no
+// row. A row with nothing left is grey and can still be chosen. `plainLeft` is
+// 1 while a Hit Character or Itemsanity use, or the global Wumpa check, can
+// still happen in a race here; they belong to no pad, so they are not in the
+// pending count.
+static inline void ap_content_menu_rows(const ctr_content_pad *pad, const int *counts, ap_content_checked_fn checked,
+                                        int plainLeft, ap_rs_rows *out)
 {
-    int i, lockedLeft = 0;
+    int i;
+    out->count = out->productiveCount = 0;
+    out->cursor = -1;
+    for (i = 0; pad && i < pad->mode_count && i < AP_CONTENT_MODE_COUNT; ++i) {
+        const int mode = pad->modes[i];
+        if (!ap_content_mode_open(pad, mode, counts, checked)) continue;
+        out->mode[out->count] = mode;
+        out->productive[out->count] = ap_content_mode_pending(pad, mode, checked) > 0 ||
+                                      (plainLeft && ap_content_mode_plain(mode));
+        if (out->productive[out->count]) {
+            if (out->cursor < 0) out->cursor = out->count;
+            out->productiveCount++;
+        }
+        out->count++;
+    }
+    if (out->cursor < 0) out->cursor = 0;
+}
+
+// A check says the pad's first race was won: one of its first mode's, or the
+// Trophy Race check a ctr_first CTR Challenge pays. 0 when it has none of its own.
+static inline int ap_content_first_mode_checked(const ctr_content_pad *pad, ap_content_checked_fn checked)
+{
+    int64_t codes[3] = {0, 0, 0};
+    int i, n;
+    if (ap_content_pad_ctr_first(pad)) return pad->trophy_location > 0 && checked(pad->trophy_location);
+    n = pad->mode_count ? ap_content_mode_codes(pad, pad->modes[0], codes) : 0;
+    for (i = 0; i < n; ++i)
+        if (codes[i] > 0 && checked(codes[i])) return 1;
+    return 0;
+}
+
+// Pad state codes of AP_PadState for a content-plan track pad, the model in
+// ap_pad_state.h: 1 locked, 2 raceable, 3 closed again after the first race
+// (nothing left in an open race, stage 2 not met), 4 stage 2 open with checks
+// left, 5 Done. `plainLeft` keeps the first race open, as on an ordinary pad, so
+// a closing pad never strands a check that belongs to no pad.
+static inline int ap_content_track_pad_state(const ctr_content_pad *pad, const int *counts,
+                                             ap_content_checked_fn checked, int plainLeft)
+{
+    int i, openLeft = 0, lockedLeft = 0;
     if (!ap_content_pad_open(pad, counts)) return 1;
     for (i = 0; i < pad->mode_count && i < AP_CONTENT_MODE_COUNT; ++i) {
-        const int left = ap_content_mode_pending(pad, pad->modes[i], checked);
+        const int left = ap_content_mode_pending(pad, pad->modes[i], checked) > 0 ||
+                         (plainLeft && ap_content_mode_plain(pad->modes[i]));
         if (!left) continue;
-        if (ap_content_mode_open(pad, pad->modes[i], counts, checked)) return 2;
-        lockedLeft = 1;
+        if (ap_content_mode_open(pad, pad->modes[i], counts, checked)) openLeft = 1;
+        else lockedLeft = 1;
     }
-    return lockedLeft ? 3 : 4;
+    if (!openLeft && !lockedLeft) return 5;
+    if (!openLeft) return 3;
+    if (pad->mode_count < 2 || !ap_content_first_mode_checked(pad, checked)) return 2;
+    return ap_content_mode_open(pad, pad->modes[1], counts, checked) ? 4 : 2;
+}
+
+// `AP BOXES LEFT: <n>` under the pad's name: the unbroken AP item boxes of a
+// track pad whose first race is won, 0 before that.
+static inline int ap_content_boxes_line(const ctr_content_pad *pad, ap_content_checked_fn checked)
+{
+    if (!pad || !pad->occupied || pad->crystal || pad->cup || pad->mode_count < 1) return 0;
+    return ap_content_first_mode_checked(pad, checked) ? ap_content_box_pending(pad, checked) : 0;
 }
 
 // Relic tiers a finish reaches, bit t for Sapphire, Gold, Platinum: the time

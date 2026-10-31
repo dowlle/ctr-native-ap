@@ -1875,6 +1875,29 @@ for name, source, change in [
         ("excluded with too little filler", row5_shop, lambda p: p["items"].__setitem__("filler_count", 0)),
         ]:
     alter("row5 " + name, change, source)
+# One generator row 6: the plan's `pad_client` record on both validators. A plan
+# without the record stays valid; `win_logic` is no part of the plan.
+row6_room = make_world(row5_options("randomized", row5_sets[0]), seed=2).fill_slot_data()
+assert row6_room["content_plan"]["pad_client"] == dict(race_type_selector="always", tracker_pad_launch=True)
+assert row6_room["win_logic"]["checks"], "a plan room carries the exported logic"
+cases.append(("row6 room", row6_room, True))
+row6_off = make_world({**row5_options("randomized", row5_sets[0]), "race_type_selector": "productive",
+                       "tracker_pad_launch": False}, seed=2).fill_slot_data()
+cases.append(("row6 settings off", row6_off, True))
+for name, change in [
+        ("unknown menu value", lambda p: p["pad_client"].__setitem__("race_type_selector", "never")),
+        ("a number for the menu", lambda p: p["pad_client"].__setitem__("race_type_selector", 1)),
+        ("launch a number", lambda p: p["pad_client"].__setitem__("tracker_pad_launch", 1)),
+        ("extra key", lambda p: p["pad_client"].__setitem__("extra", True)),
+        ("missing key", lambda p: p["pad_client"].pop("tracker_pad_launch")),
+        ("feature dropped", lambda p: p["required_features"].remove("pad_client_v1")),
+        ("record dropped", lambda p: p.pop("pad_client")),
+        ]:
+    alter("row6 " + name, change, row6_room)
+def row6_old(p):
+    p.pop("pad_client")
+    p["required_features"].remove("pad_client_v1")
+alter("row6 plan from before the record", row6_old, row6_room)
 # The verifier's copy of the per-track USF finish rulings (#133 PR 8,
 # ap/ap_content_verify.hpp kUsfRulings) equals the apworld's table.
 from worlds.ctr import content_capability as ccap

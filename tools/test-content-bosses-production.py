@@ -19,7 +19,7 @@ the production consumers out of the ap_hooks unit against that configuration:
 4. The wiring: the Oxide garage arms the bundled Cortex Vortex pair for a
    content plan's Final Challenge on Cortex Vortex only, and the race-loss
    stakes know boss races (tools/test-content-win-stakes-production.py runs
-   AP_ContentWinFacts).
+   AP_ContentWinSet).
 
 Engine and network state are controlled seams; this does not claim a Steam
 race.
@@ -169,7 +169,7 @@ assert "b->final_track != CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX" in plan_arm and "d.
     "a content plan arms the Oxide 2 venue for a Final Challenge on Cortex Vortex"
 assert "padTrackEnabled" not in plan_arm, "a content plan never arms the legacy Cortex Vortex pad track"
 assert "ap_oxide_final_content_required = 1;" in plan_arm, "a refused pair keeps the Final Challenge shut"
-race = extract("int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *outRacer)\n{")
+race = extract("int AP_ContentWinSet(long set[AP_WS_WINSET_MAX])\n{")
 assert "ap_content_plan_bosses()->present && (gGT->gameMode1 & ADVENTURE_BOSS)" in race, "boss races have content stakes"
 
 with tempfile.TemporaryDirectory() as temporary:

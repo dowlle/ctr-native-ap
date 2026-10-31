@@ -14,6 +14,7 @@
 #include "ap_wumpa_shop_menu.h" // #249 green load/save menu row ids
 #include "ap_content_plan.h"
 #include "ap_content_modes.h"
+#include "ap_win_logic.h"
 #include "ap_lettersanity.h" // freestanding pickup and token-gate decisions
 #include "ap_cortex_track.h" // Cortex Vortex pad track slots + pseudo-bits (schema 15)
 #include "ap_podium_skip_logic.h" // local podium-skip policy + 0xd call-site gate (#285)
@@ -328,6 +329,7 @@ int AP_ReqMetCounts(const ctr_req *r, const int *counts);
 // Pad state, the capture and final load gates, the tracker launch and the
 // pad text all call this, so they cannot disagree.
 int AP_ContentPadOpen(const ctr_content_pad *pad);
+int AP_ContentPadRacerMet(const ctr_content_pad *pad);
 // Owned count for the pad's manual rule (0 when it has none).
 int AP_ContentPadRuleOwned(const ctr_content_pad *pad);
 // Track modes (#133 PR 3): the pad is open and the mode's stage is met
@@ -343,6 +345,14 @@ int AP_ContentCodeChecked(int64_t code);
 int AP_ContentSelectorBuild(const ctr_content_pad *pad, ap_content_selector *out);
 // AP_PadState of an open or locked content-plan track pad (ap_content_track_pad_state).
 int AP_ContentTrackPadState(const ctr_content_pad *pad);
+// One generator row 6: the pad's race type menu, the selector setting in force,
+// the number on its AP BOXES LEFT line, and whether a race on this pad can still
+// serve a Hit Character or Itemsanity use (ap_hooks_pads.c).
+void AP_ContentMenuRows(const ctr_content_pad *pad, ap_rs_rows *rows);
+int AP_RaceTypeSelectorSetting(void);
+int AP_ContentBoxesLine(const ctr_content_pad *pad);
+int AP_ContentPadPlainLeft(const ctr_content_pad *pad);
+void AP_ContentLogMenu(const ctr_content_pad *pad, const ap_rs_rows *rows, int decision);
 
 // Per-frame verdict tick + the solo-seed "not completable" banner (drawn at the
 // AP_DrawSchemaWarning call sites). Full contract in ap_verify.h.
@@ -357,12 +367,10 @@ const struct CustomTrackManagerStatus *AP_CustomContentStatus(void);
 // connected seed's exact profile, otherwise the current Baby T Park release.
 const struct CustomTrackManagerPackage *AP_CustomContentPackage(void);
 int AP_StandaloneRaceActive(void);
-// Race-loss stakes facts of the running content-plan race (#133 PR 4a, ap_hooks_race.c;
-// the boost rank and racer from PR 4c).
-int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *outRacer);
-// ctr_first: the Trophy Race check the running content-plan CTR Challenge pays
-// on first place, with its boost rank; 0 when none.
-int AP_ContentWinPairedFacts(long *outCode, int *outBoost);
+// The win set of the running content-plan race (one generator row 6,
+// ap_hooks_race.c): the checks `win_logic` decides its stakes from. Returns -1
+// when no content-plan race on its pad's route is running.
+int AP_ContentWinSet(long set[AP_WS_WINSET_MAX]);
 // Content-plan podium identity of the running Trophy Race, or -1 (#133 PR 3b).
 int AP_StandalonePodiumTrack(void);
 int AP_NotifyStandaloneRace(void);
@@ -891,6 +899,9 @@ int AP_PadStage1Met(int physLevelID);
 // stage-2 requirement it is not actually withholding entry on. Same keying as
 // AP_PadState. Returns 0 in vanilla mode and for any non-race destination.
 int AP_PadPhase1ReRaceable(int physLevelID, int destLevelID);
+// A Done plan pad whose entry is still met opens for a replay (one generator
+// row 6): its race type menu with every row grey, or its cup. 0 on other rooms.
+int AP_PadReplayable(int physLevelID, int destLevelID);
 
 // Is there a Hit Character opportunity behind this pad (block schema 2, the
 // pool draw)? True for a Hit-supported ordinary destination (0..17, trials only

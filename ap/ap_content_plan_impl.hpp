@@ -55,6 +55,7 @@ struct State {
     // each shop slot's final price, and the composed boss kits (garage g's
     // five segments, N. Oxide's thirteen) for ctr_boss_encounters.
     bool ctr_first = false;
+    ctr_content_pad_client pad_client{};
     ctr_content_wumpa wumpa{};
     int shop_price[5][25]{};
     AP_BossKitSegment kits[4][AP_BOSS_VENUE_SEGMENTS]{};
@@ -690,6 +691,8 @@ static void validate(const J &p, State &out) {
     // Row 5: `adventure_structure` (ctr_first) and the `wumpa_shop` record.
     const bool has_structure = p.is_object() && p.contains("adventure_structure");
     const bool has_shop = p.is_object() && p.contains("wumpa_shop");
+    // One generator row 6: the client settings, `pad_client_v1`.
+    const bool has_pad_client = p.is_object() && p.contains("pad_client");
     // One generator row 3: the pad requirement mode. Declares
     // `pad_requirements_v1`: drawn and vanilla stage 1 records and, on every
     // pad with several races, the first race won rule.
@@ -700,10 +703,21 @@ static void validate(const J &p, State &out) {
     need(p.is_object() && p.size() == 11u + (has_families ? 1u : 0u) + (has_packs ? 1u : 0u) + (has_racers ? 1u : 0u) +
                                          (has_capability ? 1u : 0u) + (has_global ? 1u : 0u) + (has_boxes ? 1u : 0u) +
                                          (has_bosses ? 1u : 0u) + (has_pad_requirements ? 1u : 0u) + (has_fixed ? 1u : 0u) +
-                                         (has_structure ? 1u : 0u) + (has_shop ? 1u : 0u),
+                                         (has_structure ? 1u : 0u) + (has_shop ? 1u : 0u) + (has_pad_client ? 1u : 0u),
          "unsupported or incomplete record fields");
     if (has_structure) need(p["adventure_structure"] == "ctr_first", "adventure_structure must be ctr_first when present");
     out.ctr_first = has_structure;
+    out.pad_client = ctr_content_pad_client{};
+    if (has_pad_client) {
+        const J &c = p["pad_client"];
+        fields(c, {"race_type_selector", "tracker_pad_launch"});
+        need(c["race_type_selector"] == "always" || c["race_type_selector"] == "productive",
+             "pad_client.race_type_selector must be always or productive");
+        need(c["tracker_pad_launch"].is_boolean(), "pad_client.tracker_pad_launch must be true or false");
+        out.pad_client.present = 1;
+        out.pad_client.race_type_selector = c["race_type_selector"] == "always" ? 1 : 0;
+        out.pad_client.tracker_pad_launch = c["tracker_pad_launch"].get<bool>() ? 1 : 0;
+    }
     out.wumpa = ctr_content_wumpa{};
     if (has_shop) {
         const J &w = p["wumpa_shop"];
@@ -900,6 +914,7 @@ static void validate(const J &p, State &out) {
     if(out.bosses.extended)features.push_back("boss_opponents_v1");
     if(has_shop)features.push_back("wumpa_shop_v1");
     if(wumpa_goal)features.push_back("wumpa_goal_v1");
+    if(has_pad_client)features.push_back("pad_client_v1"); // one generator row 6
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -2217,7 +2232,12 @@ static int parse_content_plan(const nlohmann::json &j) {
         // `hit_character_encounters` (#133 PR 4d): the normal room's block,
         // present exactly when the plan has Hit Character on (checked below).
         const bool hit_block = j.is_object() && j.contains("hit_character_encounters");
-        need(j.is_object() && j.size() == 3u + (traps ? 1u : 0u) + (hit_block ? 1u : 0u) && j.contains("schema_version") &&
+        // `win_logic` (one generator row 6): the exported logic of race-loss
+        // stakes, read by ap_seedcfg_parse_win_logic. Optional: another world
+        // that wrapped a rule leaves it out, and then every loss sends.
+        const bool win_block = j.is_object() && j.contains("win_logic");
+        need(j.is_object() && j.size() == 3u + (traps ? 1u : 0u) + (hit_block ? 1u : 0u) + (win_block ? 1u : 0u) &&
+             j.contains("schema_version") &&
              j.contains("content_plan") && j.contains("ctr_options"), "unsupported or incomplete record fields");
         need(number(j["schema_version"]) == 18, "content-plan global schema must be 18");
         const J &co = j["ctr_options"];
@@ -2575,6 +2595,10 @@ extern "C" const ctr_content_bosses *ap_content_plan_bosses(void) {
 extern "C" const ctr_content_wumpa *ap_content_plan_wumpa(void) {
     static const ctr_content_wumpa none{};
     return ap_content_plan_active() ? &content_plan::state.wumpa : &none;
+}
+extern "C" const ctr_content_pad_client *ap_content_plan_pad_client(void) {
+    static const ctr_content_pad_client empty{};
+    return ap_content_plan_active() ? &content_plan::state.pad_client : &empty;
 }
 extern "C" int ap_content_plan_ctr_first(void) { return ap_content_plan_active() && content_plan::state.ctr_first; }
 extern "C" int ap_content_plan_bind(const char *seed, int team, int slot, const int64_t *locations, size_t count) {

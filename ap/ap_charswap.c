@@ -853,6 +853,13 @@ static int ap_cs_safeToOpen(struct GameTracker *gGT)
 	return 1;
 }
 
+// #375: a tracker start waits for the same idle hub before it loads a hub or
+// lets a pad take the kart (ap_tracker_launch.c).
+int AP_HubSafeForRequest(struct GameTracker *gGT)
+{
+	return gGT != NULL && gGT->drivers[0] != NULL && ap_cs_safeToOpen(gGT);
+}
+
 // The engine half of the hold, in both directions. See ap/ap_charfreeze.h for
 // why the flag alone is not a freeze: it stops driving INPUT and nothing else,
 // so a kart carrying speed into the picker keeps that speed and keeps moving.

@@ -126,19 +126,19 @@ int main(void)
     checked_count = 0;
     memset(counts, 0, sizeof counts);
     p = pad3(AP_CONTENT_MODE_TROPHY, AP_CONTENT_MODE_CTR, AP_CONTENT_MODE_RELIC, 1);
-    expect(ap_content_track_pad_state(&p, counts, checked) == 2, "raceable with the Trophy open");
+    expect(ap_content_track_pad_state(&p, counts, checked, 0) == 2, "raceable with the Trophy open");
     checked_codes[checked_count++] = 35011000;
-    expect(ap_content_track_pad_state(&p, counts, checked) == 3, "only stage-2 checks left: re-locked");
+    expect(ap_content_track_pad_state(&p, counts, checked, 0) == 3, "only stage-2 checks left: re-locked");
     counts[2] = 1;
-    expect(ap_content_track_pad_state(&p, counts, checked) == 2, "stage 2 opens: raceable");
+    expect(ap_content_track_pad_state(&p, counts, checked, 0) == 4, "stage 2 opens: the later races are open");
     checked_codes[checked_count++] = 35012300;
     checked_codes[checked_count++] = 35012000;
     checked_codes[checked_count++] = 35012100;
-    expect(ap_content_track_pad_state(&p, counts, checked) == 2, "one relic tier left");
+    expect(ap_content_track_pad_state(&p, counts, checked, 0) == 4, "one relic tier left");
     checked_codes[checked_count++] = 35012200;
-    expect(ap_content_track_pad_state(&p, counts, checked) == 4, "all checked: replayable");
+    expect(ap_content_track_pad_state(&p, counts, checked, 0) == 5, "all checked: Done");
     p.keys = 1;
-    expect(ap_content_track_pad_state(&p, counts, checked) == 1, "hub Keys missing: locked");
+    expect(ap_content_track_pad_state(&p, counts, checked, 0) == 1, "hub Keys missing: locked");
 
     // Relic tiers: at or under the target, each tier independently.
     {

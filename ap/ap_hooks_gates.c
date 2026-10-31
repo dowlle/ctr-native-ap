@@ -377,6 +377,12 @@ int AP_ContentPadOpen(const ctr_content_pad *pad)
 	       (pad->racer_lock < 0 || AP_CharacterUnlocked(pad->racer_lock));
 }
 
+// The racer lock on its own, for the tracker's list of missing requirements (#375).
+int AP_ContentPadRacerMet(const ctr_content_pad *pad)
+{
+	return pad->racer_lock < 0 || AP_CharacterUnlocked(pad->racer_lock);
+}
+
 int AP_ContentPadRuleOwned(const ctr_content_pad *pad)
 {
 	return pad && pad->has_rule ? ap_content_rule_owned(pad, ap_recv_count) : 0;
@@ -399,7 +405,26 @@ int AP_ContentSelectorBuild(const ctr_content_pad *pad, ap_content_selector *out
 
 int AP_ContentTrackPadState(const ctr_content_pad *pad)
 {
-	return ap_content_track_pad_state(pad, ap_recv_count, AP_ContentCodeChecked);
+	return ap_content_track_pad_state(pad, ap_recv_count, AP_ContentCodeChecked, AP_ContentPadPlainLeft(pad));
+}
+
+// The race type menu of a plan pad (one generator row 6).
+void AP_ContentMenuRows(const ctr_content_pad *pad, ap_rs_rows *rows)
+{
+	ap_content_menu_rows(pad, ap_recv_count, AP_ContentCodeChecked, AP_ContentPadPlainLeft(pad), rows);
+}
+
+// The Options row over the seed's value, read at every pad entry (decision 15).
+int AP_RaceTypeSelectorSetting(void)
+{
+	const ctr_content_pad_client *client = ap_content_plan_pad_client();
+	return AP_RaceSelectorEffective(g_config.raceTypeSelector,
+	                                client->present ? client->race_type_selector : AP_RS_SELECTOR_ALWAYS);
+}
+
+int AP_ContentBoxesLine(const ctr_content_pad *pad)
+{
+	return ap_content_boxes_line(pad, AP_ContentCodeChecked);
 }
 
 int AP_BossReqMet(const ctr_req *r)

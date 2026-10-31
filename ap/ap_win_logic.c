@@ -128,70 +128,29 @@ static void AP_WinFactsNow(struct GameTracker *gGT, AP_WinRaceFacts *f)
 	}
 }
 
-// Received count of one item id on a content-plan room (#133 PR 4c): the
-// progression-flagged copies, as the win_logic leaves count them, plus the
-// plan's from-pool and additional starting copies (they arrive at location
-// -2, which the tally leaves out, and Archipelago's logic counts them).
-static int AP_WinEnvContentCount(void *user, long id)
-{
-	(void)user;
-	return AP_ItemIdTallyCount(&g_wl_tally, (long long)id) + ap_content_plan_start_count((int64_t)id);
-}
-
-// The cap leaf for a content-plan win check's boost rank (#133 PR 4c): the
-// pad's racer when it is locked, else any driveable racer, exactly the
-// win_logic definition (SCHEMA.md "The cap leaf"). An overflowed tally cannot
-// be trusted, so the rank counts as met and the 0.2.3 rule (a loss sends)
-// stays.
-static int AP_WinContentCapMet(int boost, int racer)
-{
-	AP_WinLogicEnv env;
-	if (boost <= 0)
-		return 1;
-	env = AP_WinEnvNow();
-	env.item_count = AP_WinEnvContentCount;
-	if (env.unreliable)
-		return 1;
-	return AP_WinLogicCap(0, &env, boost, racer);
-}
-
-// A content-plan race (#133 PR 4a) decides from its own pad: the room has no
-// win_logic block, and its pads are not the legacy destinations
-// AP_WinSetResolve reads from the level ID. Returns 0 when the race is not a
-// content-plan race on its pad's route, and the legacy path decides.
+// A content-plan race decides from the plan's exported logic (dispatcher ruling
+// of 2026-10-30, one generator row 6), as an ordinary race does. Only its win set
+// comes from the pad: its pads are not the legacy destinations AP_WinSetResolve
+// reads from the level ID. Returns 0 when the race is not a content-plan race on
+// its pad's route, and the legacy path decides.
 static int AP_WinDecideContent(struct GameTracker *gGT, const char *when, AP_WinStakes *out)
 {
-	long code;
-	int needsItems, boost, racer;
+	long set[AP_WS_WINSET_MAX];
+	AP_WinLogicEnv env;
+	char wins[48];
 	char msg[192];
+	int n = AP_ContentWinSet(set), i, used;
 
-	if (!AP_ContentWinFacts(&code, &needsItems, &boost, &racer))
+	if (n < 0)
 		return 0;
-	// The win's boost term (#133 PR 4c): out of logic until the rank arrives.
-	if (!AP_WinContentCapMet(boost, racer))
-		needsItems = 1;
-	*out = AP_WinStakesContentDecide(code, code > 0 && ap_net_location_checked((long long)code), needsItems);
-	// ctr_first (ruled 2026-10-29): first place on a ctr_first content pad
-	// pays its Trophy Race check, letters or not, so that check is at stake
-	// too while it is open and in logic (its own rank).
-	if (!out->stakes)
-	{
-		long paired;
-		int pairedBoost;
-		if (AP_ContentWinPairedFacts(&paired, &pairedBoost))
-		{
-			const AP_WinStakes p = AP_WinStakesContentDecide(
-			    paired, ap_net_location_checked((long long)paired),
-			    !AP_WinContentCapMet(pairedBoost, racer));
-			if (p.stakes)
-			{
-				*out = p;
-				code = paired;
-			}
-		}
-	}
-	snprintf(msg, sizeof msg, "[AP DEATH] race stakes %s: content-plan level=%d win=%ld -> %s (%s)\n",
-	         when, (int)gGT->levelID, code, out->stakes ? "a loss sends" : "exempt", AP_WinStakesWhyText(out->why));
+	env = AP_WinEnvNow();
+	*out = AP_WinStakesDecide(&ctr_win_logic, &env, set, n);
+	wins[0] = '\0';
+	for (i = 0, used = 0; i < n; i++)
+		used += snprintf(wins + used, sizeof wins - (size_t)used, "%s%ld", i ? "," : "", set[i]);
+	snprintf(msg, sizeof msg, "[AP DEATH] race stakes %s: content-plan level=%d win=%s -> %s (%s)\n",
+	         when, (int)gGT->levelID, n > 0 ? wins : "none",
+	         out->stakes ? "a loss sends" : "exempt", AP_WinStakesWhyText(out->why));
 	AP_LogLine(msg);
 	return 1;
 }

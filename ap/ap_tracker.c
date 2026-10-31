@@ -28,6 +28,9 @@ typedef struct {
 
 static struct {
 	int open, hub, tab, focus, pinned, count, loaded;
+	/* #375 activity list for the focused node: open, cursor, rows. */
+	int acts_open, acts_cursor;
+	ap_padact_list acts;
 	float mouse_x, mouse_y;
 	unsigned mouse_buttons;
 	AP_TrackerHubAsset hubs[AP_TRACKER_HUBS];
@@ -263,6 +266,11 @@ static const char *AP_TrackerPadName(int physical)
 static const char *AP_TrackerPadDestinationName(int physical)
 {
 	int dest = ctr_cfg_warp_dest(physical);
+	if (ap_content_plan_active()) {
+		const ctr_content_pad *pad = ap_content_plan_pad(physical);
+		if (pad && pad->occupied) return pad->room_title[0] ? pad->room_title : pad->display_name;
+		return AP_TrackerPadName(physical);
+	}
 	if (dest >= 100 && dest < 105) {
 		const char *custom = NULL;
 #ifdef CTR_CUSTOM_TRACKS
@@ -501,9 +509,17 @@ static void AP_TrackerBuildNodes(void)
 	ap_tracker.count = h->pad_count;
 	for (i = 0; i < h->pad_count; i++) {
 		AP_TrackerNode *n = &ap_tracker.nodes[i]; int physical = h->pads[i].physical, dest = ctr_cfg_warp_dest(physical);
+		const ctr_content_pad *plan = ap_content_plan_active() ? ap_content_plan_pad(physical) : NULL;
 		memset(n, 0, sizeof *n); n->physical = physical; n->destination = dest; n->kind = 0; n->bit = -1;
 		AP_TrackerProject(AP_TRACKER_MARK_WORLD, h->pads[i].world_x, h->pads[i].world_z, &n->x, &n->y);
-		if (dest >= 100 && dest < 105) {
+		if (ap_content_plan_active()) {
+			/* One generator row 6: the pad's own entry. A plan keys pad state,
+			 * requirements and checks by the physical pad. */
+			n->destination = physical;
+			n->kind = plan && plan->occupied ? (plan->cup ? 2 : plan->crystal ? 1 : 0) : 4;
+			snprintf(n->title, sizeof n->title, "%s", !plan || !plan->occupied ? "NO ENTRY"
+				: plan->room_title[0] ? plan->room_title : plan->display_name);
+		} else if (dest >= 100 && dest < 105) {
 			const char *custom = NULL;
 #ifdef CTR_CUSTOM_TRACKS
 			custom = CustomTrack_CupDisplayName(dest - 100, 1);
@@ -589,10 +605,42 @@ static void AP_TrackerDrawLetterCell(int bx, int by, char glyph, int mode, int s
 	if(cell.tick) AP_TrackerTick(bx+17,by+8,2);
 	if(cell.locked) { AP_TrackerBorder(bx+19,by+8,11,10,TRACKER_GRAY,2); AP_TrackerCircle(bx+24,by+8,4,TRACKER_GRAY,2); }
 }
+/* One generator row 6: a plan pad's checks. Every code comes from the pad, never
+ * from a retail table keyed by level: the same five prizes and the same bottom
+ * row as an ordinary node, for what this pad holds. */
+static void AP_TrackerDrawContentNode(const AP_TrackerNode *n, int x, int y)
+{
+	const ctr_content_pad *pad = ap_content_plan_pad(n->physical);
+	const ctr_content_checks *fam = ap_content_plan_checks();
+	int i, wumpaGlobal = fam->wumpa == 1; char text[96]; long wumpa;
+	if (n->kind == 4) { AP_TrackerText("SPARE PAD, STAYS CLOSED",x+12,y+64,18,TRACKER_GRAY,340); return; }
+	if (n->kind == 0) {
+		long codes[5] = {(long)pad->trophy_location, (long)pad->ctr_location, (long)pad->relic_locations[0],
+			(long)pad->relic_locations[1], (long)pad->relic_locations[2]};
+		for (i = 0; i < 5; i++) AP_TrackerPrize(x+12+i*70,y+61,i,AP_TrackerCodeState(codes[i]>0?codes[i]:-1));
+	} else {
+		/* Done only when the pad is: a cup's sweep and leg checks, the crystals. */
+		int64_t codes[6]; int slots[6], c = ap_content_cup_codes(pad, codes, slots), state = AP_TrackerCodeState((long)pad->trophy_location);
+		for (i = 0; i < c; i++) if (!AP_ContentCodeChecked(codes[i]) && state == 2) state = 1;
+		for (i = 0; i < pad->crystal_count; i++) if (!AP_ContentCodeChecked(pad->crystal_locations[i]) && state == 2) state = 1;
+		AP_TrackerText(n->kind==1?"CRYSTAL CHECK":"CUP CHECK",x+12,y+64,18,TRACKER_GOLD,300);
+		AP_TrackerTick(x+315,y+65,(int)state);
+	}
+	wumpa = n->kind == 0 && pad->wumpa_modes ? (long)(wumpaGlobal ? fam->wumpa_global : pad->wumpa_location) : 0;
+	snprintf(text,sizeof text,"BOX %d",ap_content_box_pending(pad,AP_ContentCodeChecked));
+	AP_TrackerText(text,x+12,y+96,16,TRACKER_WHITE,110);
+	AP_TrackerText(wumpaGlobal ? "10W*" : "10W",x+130,y+96,16,TRACKER_GOLD,55); AP_TrackerTick(x+179,y+99,AP_TrackerCodeState(wumpa>0?wumpa:-1));
+	if (n->kind == 0) for (i = 0; i < 3; i++) {
+		long code = pad->letter_locations[i] > 0 ? (long)pad->letter_locations[i] : -1;
+		AP_TrackerDrawLetterCell(x+216+i*49,y+95,"CTR"[i],fam->lettersanity,AP_TrackerCodeState(code),
+			pad->letter_items[i] <= 0 || AP_ContentLetterItemReceived(pad->letter_items[i]));
+	}
+}
 static void AP_TrackerDrawNode(int index)
 {
 	AP_TrackerNode *n = &ap_tracker.nodes[index]; int x = n->cx, y = n->cy, i, states[5]; char text[96];
-	int selected = index == ap_tracker.focus, boxes = AP_PadUncollectedBoxCount(n->destination);
+	int plan = ap_content_plan_active() && n->kind != 3;
+	int selected = index == ap_tracker.focus, boxes = plan ? 0 : AP_PadUncollectedBoxCount(n->destination);
 	uint32_t body = AP_TrackerRGBA(10, 15, 18, 226);
 	AP_TrackerRect(x, y, n->cw, n->ch, body); AP_TrackerBorder(x,y,n->cw,n->ch,TRACKER_MINT,selected ? 3 : 2);
 	if (selected) AP_TrackerRect(x+5,y+5,n->cw-10,29,AP_TrackerRGBA(200,65,4,255));
@@ -608,6 +656,7 @@ static void AP_TrackerDrawNode(int index)
 			if (met) AP_TrackerTick(x+344,y+36,2); else AP_TrackerLockIcon(x+342,y+36);
 		} else AP_TrackerText(n->pad,x+12,y+39,14,TRACKER_WHITE,n->cw-24);
 	}
+	if (plan) { AP_TrackerDrawContentNode(n,x,y); return; }
 	if (n->kind == 0) {
 		AP_TrackerRaceStates(n->destination,states);
 		for (i=0;i<5;i++) {
@@ -647,6 +696,44 @@ static void AP_TrackerDrawNode(int index)
 				AP_TrackerCodeState(code),AP_LetterAvailable(n->destination,i));
 		}
 	}
+}
+/* #375: the focused node's activities, built from the shared gate. */
+static void AP_TrackerActivitiesBuild(void)
+{
+	AP_TrackerNode *n = &ap_tracker.nodes[ap_tracker.focus];
+	if (n->kind == 3) AP_GarageActivities(ap_tracker.hub, &ap_tracker.acts);
+	else if (n->kind == 4) ap_tracker.acts.count = 0;
+	else AP_PadActivities(ap_tracker.hub, n->physical, n->destination, &ap_tracker.acts);
+}
+static void AP_TrackerDrawActivities(void)
+{
+	AP_TrackerNode *n = &ap_tracker.nodes[ap_tracker.focus];
+	int i, w = 640, rows = ap_tracker.acts.count ? ap_tracker.acts.count : 1;
+	int h = 104 + rows * 44, x = (TRACKER_W - w) / 2, y = 250;
+	AP_TrackerRect(x, y, w, h, AP_TrackerRGBA(10, 15, 18, 240));
+	AP_TrackerBorder(x, y, w, h, TRACKER_MINT, 3);
+	AP_TrackerText(n->title, x + 16, y + 12, 23, TRACKER_GOLD, w - 32);
+	AP_TrackerText(n->pad, x + 16, y + 42, 14, TRACKER_WHITE, w - 32);
+	if (!ap_tracker.acts.count) AP_TrackerText("NOTHING TO START HERE", x + 16, y + 74, 18, TRACKER_GRAY, w - 32);
+	for (i = 0; i < ap_tracker.acts.count; i++) {
+		int ry = y + 70 + i * 44, open = ap_tracker.acts.reason[i] == AP_PADACT_OPEN;
+		if (i == ap_tracker.acts_cursor) AP_TrackerRect(x + 8, ry - 4, w - 16, 36, AP_TrackerRGBA(200, 65, 4, 255));
+		AP_TrackerText(AP_PadActivityName(ap_tracker.acts.activity[i]), x + 20, ry, 20, open ? TRACKER_WHITE : TRACKER_GRAY, 250);
+		if (open) AP_TrackerText(ap_tracker.acts.left[i] ? "START" : "REPLAY", x + 290, ry + 3, 16,
+			ap_tracker.acts.left[i] ? TRACKER_GREEN : TRACKER_GOLD, w - 310);
+		else {
+			/* Every missing requirement (decision 34); a second line when they do not fit one. */
+			char lines[2][112];
+			int n = AP_PadActivityReasonLines(ap_tracker.acts.mask[i], 34, lines);
+			AP_TrackerLockIcon(x + 280, ry + 4);
+			if (n < 2) AP_TrackerText(n ? lines[0] : AP_PadActivityReasonName(ap_tracker.acts.reason[i]), x + 300, ry + 3, 14, TRACKER_GRAY, w - 316);
+			else {
+				AP_TrackerText(lines[0], x + 300, ry - 2, 14, TRACKER_GRAY, w - 316);
+				AP_TrackerText(lines[1], x + 300, ry + 15, 14, TRACKER_GRAY, w - 316);
+			}
+		}
+	}
+	AP_TrackerText("* START   ^ BACK", x + 16, y + h - 26, 14, TRACKER_WHITE, w - 32);
 }
 static void AP_TrackerDraw(void)
 {
@@ -691,12 +778,23 @@ static void AP_TrackerDraw(void)
 		AP_TrackerText(line,32,692,14,TRACKER_GOLD,1210);
 	if(ap_tracker.pinned && ap_tracker.count) {
 		AP_TrackerNode *n=&ap_tracker.nodes[ap_tracker.focus]; int bits[48], remaining=n->physical>=0?AP_PadUncollectedGlowBits(n->destination,bits,48):0;
-		snprintf(line,sizeof line,"%s: %d RACE CHECKS, %d BOXES, %d LETTERS LEFT",n->title,remaining,
-			AP_PadUncollectedBoxCount(n->destination),AP_PadUncollectedLetterCount(n->destination));
+		const ctr_content_pad *plan=ap_content_plan_active()&&n->physical>=0?ap_content_plan_pad(n->physical):NULL;
+		int boxes=plan?ap_content_box_pending(plan,AP_ContentCodeChecked):AP_PadUncollectedBoxCount(n->destination), letters=0, k;
+		if(plan) { for(k=0;k<3;k++) letters+=plan->letter_locations[k]>0 && !AP_ContentCodeChecked(plan->letter_locations[k]); }
+		else letters=AP_PadUncollectedLetterCount(n->destination);
+		if(plan) remaining-=boxes+letters; /* the plan's list holds both */
+		snprintf(line,sizeof line,"%s: %d RACE CHECKS, %d BOXES, %d LETTERS LEFT",n->title,remaining,boxes,letters);
 	} else snprintf(line,sizeof line,"CHECK: O PENDING / TICK DONE    LETTER: ORANGE OWNED / LOCK NEEDED / - OFF%s",ap_net_is_connected()?"":"    OFFLINE");
 	AP_TrackerText(line,32,718,14,TRACKER_WHITE,1210);
-	AP_TrackerText(AP_TrackerTabShown(AP_TRACKER_TAB_RACERS) ? "L1/R1 HUBS, RACERS, ITEMS   D-PAD FOCUS   * INSPECT   ^ BACK"
-		: "L1/R1 HUBS, ITEMS   D-PAD FOCUS   * INSPECT   ^ BACK", 32,744,16,TRACKER_WHITE,1210);
+	{
+		/* #375: Cross opens the activity list when the seed allows starts. */
+		int launch = AP_TrackerLaunchEnabled();
+		AP_TrackerText(AP_TrackerTabShown(AP_TRACKER_TAB_RACERS)
+			? (launch ? "L1/R1 HUBS, RACERS, ITEMS   D-PAD FOCUS   * ACTIVITIES   ^ BACK" : "L1/R1 HUBS, RACERS, ITEMS   D-PAD FOCUS   * INSPECT   ^ BACK")
+			: (launch ? "L1/R1 HUBS, ITEMS   D-PAD FOCUS   * ACTIVITIES   ^ BACK" : "L1/R1 HUBS, ITEMS   D-PAD FOCUS   * INSPECT   ^ BACK"),
+			32,744,16,TRACKER_WHITE,1210);
+	}
+	if (ap_tracker.acts_open && ap_tracker.count) AP_TrackerDrawActivities();
 }
 
 int AP_TrackerOpen(void) { return ap_tracker.open; }
@@ -712,7 +810,7 @@ int AP_TrackerAvailable(void)
 }
 static void AP_TrackerClose(void)
 {
-	ap_tracker.open=0; ap_tracker.pinned=0;
+	ap_tracker.open=0; ap_tracker.pinned=0; ap_tracker.acts_open=0;
 	if(g_window && (SDL_GetWindowFlags(g_window)&SDL_WINDOW_FULLSCREEN)) SDL_HideCursor();
 }
 int AP_TrackerMenuFrame(void)
@@ -732,8 +830,24 @@ int AP_TrackerMenuFrame(void)
 		AH_Pause_Destroy(); ap_tracker.open=1; ap_tracker.hub=gt->levelID-GEM_STONE_VALLEY;
 		if(ap_tracker.hub<0 || ap_tracker.hub>=5) ap_tracker.hub=0;
 		ap_tracker.tab=ap_tracker.hub;
-		ap_tracker.focus=0; ap_tracker.pinned=0; AP_TrackerBuildNodes();
+		ap_tracker.focus=0; ap_tracker.pinned=0; ap_tracker.acts_open=0; AP_TrackerBuildNodes();
 		SDL_ShowCursor(); AP_LogLine("[AP TRACKER] enlarged hub map opened\n");
+	} else if(ap_tracker.acts_open) {
+		/* #375 activity list: it owns input until it closes or starts. */
+		AP_TrackerNode *n=&ap_tracker.nodes[ap_tracker.focus];
+		AP_TrackerActivitiesBuild(); /* live: a received item updates the rows */
+		if(ap_tracker.acts_cursor>=ap_tracker.acts.count) ap_tracker.acts_cursor=0;
+		if(tap&BTN_START) { AP_TrackerClose(); return 1; }
+		if(tap&(BTN_TRIANGLE|BTN_CIRCLE|BTN_SQUARE) || !AP_TrackerLaunchEnabled() || ap_tracker.count<=0) ap_tracker.acts_open=0;
+		else if(tap&(BTN_UP|BTN_DOWN) && ap_tracker.acts.count)
+			ap_tracker.acts_cursor=(ap_tracker.acts_cursor+((tap&BTN_UP)?ap_tracker.acts.count-1:1))%ap_tracker.acts.count;
+		else if((tap&BTN_CROSS) && ap_tracker.acts.count && ap_tracker.acts.reason[ap_tracker.acts_cursor]==AP_PADACT_OPEN) {
+			int row=ap_tracker.acts_cursor;
+			if(AP_TrackerLaunchBegin(ap_tracker.hub,n->kind==3?-1:n->physical,n->kind==3?-1:n->destination,
+			                         ap_tracker.acts.activity[row],ap_tracker.acts.launchMode[row])) {
+				AP_TrackerClose(); return 1;
+			}
+		}
 	} else {
 		if(tap&(BTN_TRIANGLE|BTN_CIRCLE|BTN_START|BTN_SQUARE)) { AP_TrackerClose(); return 1; }
 		int racersOn=AP_TrackerRacersOn(), step=0;
@@ -751,7 +865,7 @@ int AP_TrackerMenuFrame(void)
 		if(step) {
 			ap_tracker.tab=AP_TrackerTabStepPure(ap_tracker.tab,step,racersOn,1);
 			if(ap_tracker.tab<AP_TRACKER_TAB_HUBS) ap_tracker.hub=ap_tracker.tab;
-			ap_tracker.focus=0; ap_tracker.pinned=0; AP_TrackerBuildNodes();
+			ap_tracker.focus=0; ap_tracker.pinned=0; ap_tracker.acts_open=0; AP_TrackerBuildNodes();
 		}
 		if(ap_tracker.tab>=AP_TRACKER_TAB_HUBS) {
 			/* RACERS and ITEMS are read-only lists: no focus, pinning or map
@@ -760,7 +874,13 @@ int AP_TrackerMenuFrame(void)
 			if(tap&(BTN_UP|BTN_DOWN|BTN_LEFT|BTN_RIGHT)) {
 				ap_tracker.focus=(ap_tracker.focus+((tap&(BTN_UP|BTN_LEFT))?ap_tracker.count-1:1))%ap_tracker.count; ap_tracker.pinned=0;
 			}
-			if(tap&BTN_CROSS) ap_tracker.pinned=!ap_tracker.pinned;
+			if((tap&BTN_CROSS) && AP_TrackerLaunchEnabled() && ap_tracker.count) {
+				/* #375: open the focused node's activities; the summary line
+				 * below the map shows its counts meanwhile. */
+				ap_tracker.pinned=1; ap_tracker.acts_open=1; AP_TrackerActivitiesBuild();
+				ap_tracker.acts_cursor=AP_PadActivityCursor(&ap_tracker.acts);
+			}
+			else if(tap&BTN_CROSS) ap_tracker.pinned=!ap_tracker.pinned;
 			if(mx!=ap_tracker.mouse_x || my!=ap_tracker.mouse_y || (buttons&SDL_BUTTON_LMASK)) {
 				int vx,vy,vw,vh;
 				if(NativeRenderer_DisplayRectToWindow(0,0,activeDispEnv.disp.w,activeDispEnv.disp.h,&vx,&vy,&vw,&vh) && vw>0 && vh>0) {
