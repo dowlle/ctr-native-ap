@@ -393,6 +393,9 @@ static void AP_FxWrite(int which, const AP_FxMarker *m)
 {
 	int storeState = ap_net_fx_store(which, NULL, NULL);
 	ap_net_fx_store_write(which, m->value, AP_FxMarkerWriteOp(m, storeState));
+	// #249: AP fruit banked from the items this marker now covers.
+	if (which == AP_NET_FX_EFFECT)
+		AP_WumpaCommitReceived();
 }
 
 // Resolve one marker from its Get reply. Returns 1 on the tick it resolved.

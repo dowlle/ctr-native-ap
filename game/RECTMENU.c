@@ -420,24 +420,6 @@ void RECTMENU_GetHeight(struct RectMenu *m, s16 *height, b32 boolCheckSubmenu)
 
 
 
-#ifdef CTR_AP
-// #208 race type selector: rows drawn grey that stay selectable. One menu at a
-// time owns the mask; every other menu, vanilla ones included, is untouched.
-static const struct RectMenu *s_apReplayMenu;
-static unsigned s_apReplayRows;
-
-void RECTMENU_APSetReplayRows(const struct RectMenu *m, unsigned rows)
-{
-	s_apReplayMenu = m;
-	s_apReplayRows = rows;
-}
-
-static int RECTMENU_APReplayRow(const struct RectMenu *m, int row)
-{
-	return m == s_apReplayMenu && row >= 0 && row < 32 && (s_apReplayRows & (1u << row)) != 0;
-}
-#endif
-
 // Row label lookup. Retail reads sdata->lngStrings directly; AP rows that have
 // no retail string (the hub pause TRACKER row, AP_LNG_TRACKER) resolve here.
 static char *RECTMENU_RowString(int index)
@@ -445,6 +427,8 @@ static char *RECTMENU_RowString(int index)
 #ifdef CTR_AP
 	if (index == AP_LNG_TRACKER)
 		return (char *)"TRACKER";
+	if (index == AP_LNG_WUMPA_SHOP)
+		return (char *)"WUMPA SHOP";
 #endif
 	return sdata->lngStrings[index];
 }
@@ -641,13 +625,6 @@ LAB_80045e94:
 				if ((uVar5 & 0x8000) == 0)
 				{
 					textFlags = uVar8;
-#ifdef CTR_AP
-					// #208: a grey row that can still be chosen (a replay
-					// in the race type selector). Drawn like a locked row;
-					// activation below only looks at the 0x8000 bit.
-					if (RECTMENU_APReplayRow(menu, sVar6))
-						textFlags = 0x17;
-#endif
 				}
 				if ((uVar5 & 0x7fff) != 0)
 				{
@@ -951,6 +928,8 @@ void RECTMENU_ProcessState()
 	// The map owns input while open, preventing focus/inspect/back from
 	// also selecting Resume, Quit or another underlying pause-menu row.
 	if (AP_TrackerMenuFrame()) return;
+	// The #249 Wumpa Shop page owns input and drawing the same way.
+	if (AP_WumpaShopMenuFrame()) return;
 	// A room-link prompt on the settled main menu owns input the same way
 	// (issue #334): the menu underneath neither runs nor sees the answer press.
 	if (AP_LinkMenuFrame()) return;

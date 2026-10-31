@@ -421,27 +421,27 @@
     "merged": false
    },
    {
-    "id": "entry/cup:2",
+    "id": "entry/gem_cup:0",
     "kind": "cup",
-    "display_name": "Taor Cup",
+    "display_name": "Red Gem Cup",
     "legs": [
      {
-      "id": "entry/cup:2/leg:0",
+      "id": "entry/gem_cup:0/leg:0",
       "track_id": "retail:2",
       "laps": 1
      },
      {
-      "id": "entry/cup:2/leg:1",
+      "id": "entry/gem_cup:0/leg:1",
       "track_id": "retail:7",
       "laps": 1
      },
      {
-      "id": "entry/cup:2/leg:2",
+      "id": "entry/gem_cup:0/leg:2",
       "track_id": "retail:15",
       "laps": 1
      },
      {
-      "id": "entry/cup:2/leg:3",
+      "id": "entry/gem_cup:0/leg:3",
       "track_id": "retail:1",
       "laps": 1
      }
@@ -619,27 +619,27 @@
     "merged": false
    },
    {
-    "id": "entry/cup:9",
+    "id": "entry/gem_cup:1",
     "kind": "cup",
-    "display_name": "TheRedhotbr Cup",
+    "display_name": "Green Gem Cup",
     "legs": [
      {
-      "id": "entry/cup:9/leg:0",
+      "id": "entry/gem_cup:1/leg:0",
       "track_id": "retail:6",
       "laps": 1
      },
      {
-      "id": "entry/cup:9/leg:1",
+      "id": "entry/gem_cup:1/leg:1",
       "track_id": "retail:14",
       "laps": 1
      },
      {
-      "id": "entry/cup:9/leg:2",
+      "id": "entry/gem_cup:1/leg:2",
       "track_id": "retail:4",
       "laps": 1
      },
      {
-      "id": "entry/cup:9/leg:3",
+      "id": "entry/gem_cup:1/leg:3",
       "track_id": "retail:2",
       "laps": 1
      }
@@ -808,7 +808,7 @@
     "id": "pad:5",
     "hub_id": "hub:27",
     "kind": "normal",
-    "entry_id": "entry/cup:2",
+    "entry_id": "entry/gem_cup:0",
     "entrance_req": "keys:1",
     "mode_gates": [
      {
@@ -1193,7 +1193,7 @@
     "id": "pad:103",
     "hub_id": "hub:25",
     "kind": "normal",
-    "entry_id": "entry/cup:9",
+    "entry_id": "entry/gem_cup:1",
     "entrance_req": "keys:2",
     "mode_gates": [
      {
@@ -1650,13 +1650,13 @@
     ]
    },
    {
-    "location": 35027002,
-    "owner": "cup:2",
+    "location": 35011200,
+    "owner": "gem_cup:0",
     "kind": "cup",
-    "display_name": "Taor Cup: Win",
+    "display_name": "Red Gem Cup: Gem",
     "routes": [
      {
-      "entry_id": "entry/cup:2",
+      "entry_id": "entry/gem_cup:0",
       "mode": "cup",
       "leg_id": null,
       "encounter_id": null,
@@ -2818,13 +2818,13 @@
     ]
    },
    {
-    "location": 35027009,
-    "owner": "cup:9",
+    "location": 35011201,
+    "owner": "gem_cup:1",
     "kind": "cup",
-    "display_name": "TheRedhotbr Cup: Win",
+    "display_name": "Green Gem Cup: Gem",
     "routes": [
      {
-      "entry_id": "entry/cup:9",
+      "entry_id": "entry/gem_cup:1",
       "mode": "cup",
       "leg_id": null,
       "encounter_id": null,
@@ -3105,36 +3105,36 @@
     },
     {
      "item": 35010001,
-     "base": 6,
+     "base": 18,
      "extra": 0,
      "start_from_pool": 0,
      "start_additional": 0,
      "locked_selected": 0,
-     "remaining": 6,
-     "receipt_cap": 6,
-     "requirement_ceiling": 6
+     "remaining": 18,
+     "receipt_cap": 18,
+     "requirement_ceiling": 18
     },
     {
      "item": 35010002,
-     "base": 4,
+     "base": 18,
      "extra": 0,
      "start_from_pool": 0,
      "start_additional": 0,
      "locked_selected": 0,
-     "remaining": 4,
-     "receipt_cap": 4,
-     "requirement_ceiling": 4
+     "remaining": 18,
+     "receipt_cap": 18,
+     "requirement_ceiling": 18
     },
     {
      "item": 35010003,
-     "base": 2,
+     "base": 18,
      "extra": 0,
      "start_from_pool": 0,
      "start_additional": 0,
      "locked_selected": 0,
-     "remaining": 2,
-     "receipt_cap": 2,
-     "requirement_ceiling": 2
+     "remaining": 18,
+     "receipt_cap": 18,
+     "requirement_ceiling": 18
     },
     {
      "item": 35010004,
@@ -3260,7 +3260,7 @@
    ],
    "coded_checks": 100,
    "locked_checks": 0,
-   "filler_count": 63,
+   "filler_count": 21,
    "trap_count": 6
   },
   "goal": {
@@ -3274,7 +3274,8 @@
    "content_plan_v1",
    "track_modes_v1",
    "cup_entries_v1",
-   "boss_encounters_v1"
+   "boss_encounters_v1",
+   "gem_cups_v1"
   ],
   "bosses": {
    "oxide_goal": 2,

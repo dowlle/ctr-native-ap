@@ -15,15 +15,6 @@ fixture = r'''
 #include "ap_race_attempt_logic.h"
 #define TOKEN_RACE 8
 #define AP_CUSTOM_CTR_PSEUDO_BIT 514
-#define AP_CUSTOM_TROPHY_PSEUDO_BIT 512
-#define CTR_CFG_PODIUM_TRACK_COUNT 16
-/* #208 ctr_first seam: the paired Trophy send. Classic here, so it must be
- * called with this slot's CTR code and change nothing. */
-static int ctr_won_calls;
-static int AP_RaceStructureCtrWon(long code, int podium, int bit) {
-  (void)podium; assert(bit == AP_CUSTOM_TROPHY_PSEUDO_BIT); assert(code == 35023006); ctr_won_calls++;
-  return 0;
-}
 // #286: production reaches the freestanding decision through
 // AP_RaceAttempt_ProducerBlocked (ap_deathlink.c) with the live attempt latch.
 // The fixture drives that exact decision with a controllable latch.

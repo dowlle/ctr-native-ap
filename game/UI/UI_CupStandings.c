@@ -777,15 +777,7 @@ void UI_CupStandings_InputAndDraw(void)
 						// AP_NotifyAdvReward dedupes, so a re-win is safe.
 						if (ctr_cfg_active() ? (customTrackTrophy
 							? ((gGT->gameMode2 & TOKEN_RACE)
-							       // #208 ctr_first: the CTR win also earns the paired
-							       // Trophy, so a Collect of the CTR check alone still
-							       // leaves this win something to send.
-							       ? (!AP_CustomTrackCtrChecked() ||
-							          (AP_CustomTrackTrophyEarnedByCtr() && !AP_CustomTrackTrophyChecked()))
-							       // #208 ctr_first: a plain race does not earn
-							       // the custom Trophy, so no prize podium.
-							       : (!AP_CustomTrackTrophyChecked() &&
-							          !AP_CustomTrackTrophyEarnedByCtr()))
+							       ? !AP_CustomTrackCtrChecked() : !AP_CustomTrackTrophyChecked())
 							: !AP_LocationCheckedByBit(bitIndex))
 						                     : (CHECK_ADV_BIT(rewardsSet, bitIndex) == 0))
 #else

@@ -39,6 +39,7 @@ int  ap_net_take_recv_reset(void);
 // Seed / slot name of the connected room, empty/0 until slot-connected.
 int  ap_net_seed_name(char *buf, int n);
 int  ap_net_slot_name(char *buf, int n);
+int  ap_net_identity_hash(unsigned long long *out); // FNV-1a of the full seed and slot names, 0 if unknown
 
 // ── Reward-glow / pad-state support (scouted on slot-connect) ──
 // 1 (and fills any non-null out params) if a scout result is known for
@@ -256,6 +257,7 @@ void ap_net_deathlink_send(const char *cause);
 // drains every death each frame (ap_deathlink_inbox.h). Own-slot echoes are
 // already filtered out by the network handler.
 int  ap_net_deathlink_take(char *cause_buf, int cause_n, char *source_buf, int source_n);
+int  ap_net_deathlink_take_dropped(void); // deaths a full inbox discarded since the last call
 
 void ap_net_shutdown(void);
 int ap_net_doors_ready(void);
@@ -303,6 +305,20 @@ void ap_net_boss_door_scene_record(int hub);
 int ap_net_boss_won_known(void);
 unsigned ap_net_boss_won_bits(void);
 void ap_net_boss_won_record(unsigned bit);
+// #249: the Wumpa Shop wallet (ap/ap_wumpa_ledger.h). `credit` banks n fruit
+// (kept while offline, flushed with "max"); `lifetime` is the banked total the
+// goal counts, `balance` lifetime minus the prices paid. `ready` is 1 once both
+// keys were read on this connection. `buy` returns an APWumpaLedger BuyResult
+// (0 = sent; the check follows the room's reply). `pending` is 1 while a
+// purchase or its undo is in flight.
+void ap_net_wumpa_credit(int n);
+long long ap_net_wumpa_lifetime(void);
+long long ap_net_wumpa_balance(void);
+int ap_net_wumpa_ready(void);
+int ap_net_wumpa_bought(long long code);
+int ap_net_wumpa_pending(void);
+int ap_net_wumpa_buy(long long code, int price, int unlock);
+void ap_net_wumpa_hint(const long long *codes, int n);
 
 #ifdef __cplusplus
 }

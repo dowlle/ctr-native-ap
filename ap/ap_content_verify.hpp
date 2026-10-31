@@ -42,11 +42,13 @@ static const int kFirstGuest = 8, kTigerTemple = 4, kPapusPyramid = 5;
 static const int kTurbo = 0, kMask = 6; // AP_VerifyWeaponOwned indices
 static const int kUsf = 2, kFirstBoost = 1;
 
-enum Op { ALWAYS, COUNT, SUM, DISTINCT, CHECKED, ALL, ANY };
+// WUMPA: the goal's `wumpa_banked` arm (J11), met when Wumpa Income is.
+enum Op { ALWAYS, COUNT, SUM, DISTINCT, CHECKED, ALL, ANY, WUMPA };
 struct Node { Op op; int count; std::vector<int64_t> codes; std::vector<int> kids; };
-struct Region { std::vector<int> gates; int lock = -1; };
-struct Route { int region = -1, stage = -1, lock = -1, need = 0, encounter = -1; bool boss = false; };
-enum Kind { PAD, SHARED, LEG, ENCOUNTER, ITEMSANITY, HIT };
+struct Region { std::vector<int> gates; int lock = -1; bool income = false; };
+struct Route { int region = -1, stage = -1, lock = -1, need = 0, encounter = -1; bool boss = false; std::vector<int64_t> first; };
+// SHOP: a Wumpa Shop slot, its hub's Key floor (`target`) and income.
+enum Kind { PAD, SHARED, LEG, ENCOUNTER, ITEMSANITY, HIT, SHOP };
 enum Arm { ARM_NONE, ARM_FAMILIES, ARM_PAPU };
 struct Loc {
     int64_t code = 0;
@@ -54,6 +56,7 @@ struct Loc {
     int region = -1, lock = -1, boost = 0, arm = ARM_NONE, arm_families = 0, weapon = -1, target = -1;
     bool stats = false, door = false;
     std::vector<int> stages;          // PAD: one stage-2 gate per route, all set, else empty
+    std::vector<int64_t> first;       // PAD: the first race's checks, one needed, for a check of a later race
     std::vector<Route> routes;        // SHARED, LEG, ITEMSANITY, HIT
     std::vector<int64_t> letters;     // Lettersanity items the check needs
     std::vector<int64_t> triggers;    // HIT: the guest's created unlock wins
@@ -65,6 +68,10 @@ struct Model {
     std::vector<Loc> locs;
     std::vector<int> encounter_loc;   // encounter index -> locs index
     std::vector<int64_t> items;       // every item code the plan pools
+    // Wumpa Income (J11, apworld content plan): a Trophy Race or CTR
+    // Challenge route on a normal pad racing a retail race track 0..15, with
+    // its pad's gates and the track's finish rank bound to the racer lock.
+    std::vector<Route> income;
     int goal = -1;
     bool itemsanity = false;
 };
@@ -95,7 +102,8 @@ static int compile(Model &m, const J &n) {
     } else if (op == "all" || op == "any") {
         out.op = op == "all" ? ALL : ANY;
         for (const auto &t : n.at("terms")) out.kids.push_back(compile(m, t));
-    } else if (op != "always") throw std::runtime_error("unsupported predicate " + op);
+    } else if (op == "wumpa_banked") out.op = WUMPA;
+    else if (op != "always") throw std::runtime_error("unsupported predicate " + op);
     if (n.contains("count")) out.count = n["count"].get<int>();
     m.nodes.push_back(out);
     return (int)m.nodes.size() - 1;
@@ -183,10 +191,18 @@ static Model build() {
     }
     std::map<std::string, int> encounter;
     std::map<int64_t, int> encounter_of_code;
+    const J &goal_node = p.at("goal");
+    bool wumpa_goal = goal_node.at("op") == "wumpa_banked";
+    if (goal_node.at("op") == "all")
+        for (const auto &term : goal_node.at("terms")) wumpa_goal = wumpa_goal || term.at("op") == "wumpa_banked";
     for (const auto &enc : p.at("encounters")) {
         Region r;
         r.gates.push_back(req.at(pads.at(enc.at("pad_id").get<std::string>())->at("entrance_req").get<std::string>()));
         r.gates.push_back(req.at(enc.at("requirement_id").get<std::string>()));
+        // With the Wumpa goal, the N. Oxide race that finishes the seed also
+        // needs Wumpa Income (content_bosses.install).
+        r.income = wumpa_goal && p.contains("bosses") && enc.at("completion_location") ==
+                   (p.at("bosses").at("oxide_goal") == 1 ? 35011104 : p.at("bosses").at("oxide_goal") == 2 ? 35011105 : 0);
         region[enc.at("entry_id").get<std::string>()] = (int)m.regions.size();
         m.regions.push_back(r);
         encounter_of_code[enc.at("completion_location").get<int64_t>()] = (int)encounter.size();
@@ -194,6 +210,33 @@ static Model build() {
     }
     m.encounter_loc.assign(encounter.size(), -1);
     auto region_of = [&](const std::string &entry) { return region.count(entry) ? region.at(entry) : -1; };
+    // The first race won rule (`pad_requirements_v1`): a later race counts once
+    // a check of the pad's first mode is reached. content_plan.create_regions.
+    std::map<std::string, std::string> first_mode;
+    std::map<std::string, std::vector<int64_t>> first_checks;
+    // A ctr_first pad: its Trophy Race check proves the win, and the CTR Token
+    // check needs that win too (content_plan.first_race_checks and merged_race).
+    std::map<std::string, std::vector<int64_t>> merged;
+    for (const auto &c : p.at("checks"))
+        if (c.at("kind") == "trophy" && c.at("routes").at(0).at("mode") == "ctr")
+            merged[c.at("routes").at(0).at("own_pad_id").get<std::string>()].push_back(c.at("location").get<int64_t>());
+    if (p.contains("pad_requirements"))
+        for (const auto &pad : p.at("pads"))
+            if (pad.at("mode_gates").size() > 1) first_mode[pad.at("id").get<std::string>()] = pad["mode_gates"][0].at("mode").get<std::string>();
+    for (const auto &c : p.at("checks")) {
+        const auto &rs = c.at("routes");
+        if (rs.empty()) continue;
+        const auto own = first_mode.find(rs.at(0).at("own_pad_id").get<std::string>());
+        if (own != first_mode.end() && c.at("kind") == (merged.count(own->first) ? "trophy" : own->second) &&
+            std::all_of(rs.begin(), rs.end(), [&](const J &r) { return r.at("own_pad_id") == rs.at(0).at("own_pad_id"); }))
+            first_checks[own->first].push_back(c.at("location").get<int64_t>());
+    }
+    auto first_of = [&](const J &route) {
+        const std::string id = route.at("own_pad_id").get<std::string>();
+        const auto own = first_mode.find(id);
+        return own == first_mode.end() || own->second == route.at("mode") || !first_checks.count(id)
+                   ? std::vector<int64_t>() : first_checks.at(id);
+    };
     auto stage_of = [&](const J &route) {
         const auto &later = stage2[route.at("own_pad_id").get<std::string>()];
         const auto it = later.find(route.at("mode").get<std::string>());
@@ -227,11 +270,42 @@ static Model build() {
             if (pad.box_locations[4] > 0 && present.count(pad.box_locations[4])) door.insert(pad.box_locations[4]);
         }
 
+    // Wumpa Income routes (J11): every Trophy Race and CTR Challenge of a
+    // track entry on a retail race track, in its pad's region.
+    for (const auto &pad : p.at("pads")) {
+        if (pad.at("entry_id").is_null() || pad.at("kind") != "normal") continue;
+        const J &entry = *entries.at(pad["entry_id"].get<std::string>());
+        if (entry.at("kind") != "track") continue;
+        const J &track = *tracks.at(entry.at("track_id").get<std::string>());
+        if (track.at("origin") != "retail" || track.at("retail_id").get<int>() > 15) continue;
+        for (const auto &mode : entry.at("modes")) {
+            if (mode != "trophy" && mode != "ctr") continue;
+            Route R;
+            R.region = region_of(entry.at("id").get<std::string>());
+            const auto &later = stage2[pad.at("id").get<std::string>()];
+            const auto it = later.find(mode.get<std::string>());
+            R.stage = it == later.end() ? -1 : it->second;
+            R.lock = lock_of(pad);
+            R.need = finish_boost(track, packages, o);
+            R.first = first_of(J{{"own_pad_id", pad.at("id")}, {"mode", mode}});
+            m.income.push_back(R);
+        }
+    }
     for (const auto &c : p.at("checks")) {
         Loc L;
         L.code = c.at("location").get<int64_t>();
         const std::string kind = c.at("kind").get<std::string>();
         const J &routes = c.at("routes");
+        if (kind == "wumpa_shop") {
+            // No route: its hub's Key floor (N. Sanity Beach 0, Gem Stone
+            // Valley and The Lost Ruins 1, Glacier Park 2, Citadel City 3) and
+            // Wumpa Income.
+            static const std::map<std::string, int> floors = {{"hub:26", 0}, {"hub:25", 1}, {"hub:27", 1}, {"hub:28", 2}, {"hub:29", 3}};
+            L.kind = SHOP;
+            L.target = floors.at(c.at("owner").get<std::string>());
+            m.locs.push_back(L);
+            continue;
+        }
         const J &first = routes.at(0);
         const auto boost = state.boosts.find(L.code);
         L.boost = boost == state.boosts.end() ? 0 : boost->second;
@@ -286,6 +360,7 @@ static Model build() {
             for (const auto &r : routes) later.push_back(stage_of(r));
             if (std::all_of(later.begin(), later.end(), [](int s) { return s >= 0; }))
                 for (int s : later) if (std::find(L.stages.begin(), L.stages.end(), s) == L.stages.end()) L.stages.push_back(s);
+            if (std::all_of(routes.begin(), routes.end(), [&](const J &r) { return !first_of(r).empty(); })) L.first = first_of(routes.at(0));
             m.locs.push_back(L);
             continue;
         }
@@ -294,6 +369,9 @@ static Model build() {
             Route R;
             R.region = region_of(r.at("entry_id").get<std::string>());
             R.stage = stage_of(r);
+            R.first = first_of(r);
+            const auto won = merged.find(r.at("own_pad_id").get<std::string>());
+            if (kind == "ctr" && won != merged.end()) R.first = won->second;
             R.lock = lock_of(*pads.at(r.at("own_pad_id").get<std::string>()));
             const std::string mode = r.at("mode").get<std::string>();
             R.boss = mode == "boss_race" || mode == "boss_cup";
@@ -362,11 +440,26 @@ struct Sweep {
         case CHECKED: for (auto c : x.codes) sum += won(c); return sum >= x.count;
         case ALL: for (int k : x.kids) if (!eval(k)) return false; return true;
         case ANY: for (int k : x.kids) if (eval(k)) return true; return false;
+        case WUMPA: return income();
         }
         return false;
     }
     bool region(int r) const { return r >= 0 && open[r]; }
-    bool route(const Route &r) const { return region(r.region) && (r.stage < 0 || eval(r.stage)); }
+    // A check of the pad's first mode was reached in this sweep.
+    bool first_won(const std::vector<int64_t> &codes) const {
+        if (codes.empty()) return true;
+        for (size_t i = 0; i < m.locs.size(); ++i)
+            if (reached[i] && std::find(codes.begin(), codes.end(), m.locs[i].code) != codes.end()) return true;
+        return false;
+    }
+    bool income() const {
+        for (const auto &r : m.income)
+            if (region(r.region) && (r.stage < 0 || eval(r.stage)) && first_won(r.first) &&
+                (!r.need || AP_VerifyCapabilityGate(&o, dense, r.lock, r.need, 0)))
+                return true;
+        return false;
+    }
+    bool route(const Route &r) const { return region(r.region) && (r.stage < 0 || eval(r.stage)) && first_won(r.first); }
     // with_boost: the check's rank and stat term, bound to its racer lock,
     // or the Itemsanity weapon alternative.
     bool boost(const Loc &L) const {
@@ -419,7 +512,7 @@ struct Sweep {
                 ok = false;
                 for (int s : L.stages) ok = ok || eval(s);
             }
-            ok = ok && letters(L) && boost(L);
+            ok = ok && first_won(L.first) && letters(L) && boost(L);
             break;
         case SHARED:
             for (const auto &r : L.routes) ok = ok || route(r);
@@ -443,6 +536,9 @@ struct Sweep {
             break;
         case HIT:
             ok = hit(L);
+            break;
+        case SHOP:
+            ok = count(kKeyItem) >= L.target && income();
             break;
         }
         return ok && (!L.door || AP_VerifyTigerDoorWeapon(dense));
@@ -468,6 +564,7 @@ static int sweep(const Model &model, const ap_content_verify_io *io, ap_content_
         for (size_t r = 0; r < model.regions.size(); ++r) {
             bool ok = model.regions[r].lock < 0 || AP_VerifyCharacterUnlocked(&s.o, s.dense, model.regions[r].lock);
             for (int g : model.regions[r].gates) ok = ok && s.eval(g);
+            ok = ok && (!model.regions[r].income || s.income());
             s.open[r] = ok;
         }
         // The companion event (`checked` predicates): the race won in this

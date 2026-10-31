@@ -57,6 +57,7 @@ fixture = r'''
 #include "ap_boss_venue.h"
 #include "ap_oxide_encounter.h"
 #include "ap_goal_logic.h"
+#include "ap_wumpa_shop.h"
 #define ADV_REWARD_FIRST_TROPHY 6
 #define CTR_CFG_BOSS_COUNT 5
 #define ORANGE 0
@@ -67,6 +68,8 @@ struct {
     ctr_req boss_req[5]; int boss_n_tracks[5]; int boss_tracks[5][4];
 } ctr_cfg;
 AP_BossEncounters ctr_boss_encounters;
+AP_WumpaShopConfig ctr_wumpa_shop; /* #249: no Wumpa goal in these cases */
+static long long ap_net_wumpa_lifetime(void) { return 0; }
 typedef struct { int present, oxide_goal, bosses_required, oxide_1_optional, final_unlock, final_count,
                  track_shuffle, repeats, venues[4], final_track; } ctr_content_bosses;
 static ctr_content_bosses g_bosses;

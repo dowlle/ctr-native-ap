@@ -55,8 +55,15 @@ typedef struct ctr_content_pad {
     int mode_count, modes[AP_CONTENT_MODE_COUNT], stages[AP_CONTENT_MODE_COUNT];
     int has_stage2, stage2_count;
     unsigned stage2_mask;
+    /* `pad_requirements_v1` (one generator row 3): a later mode counts only
+     * after the pad's first race is won, ap_content_first_race_won. */
+    int first_race_rule;
     int64_t ctr_location;         /* CTR Token Challenge, 0 without the mode */
-    int64_t relic_locations[3];   /* Sapphire, Gold, Platinum Time Trial */
+    int64_t relic_locations[3];   /* Sapphire, Gold, Platinum Time Trial, 0 where the seed has no such check */
+    /* The frozen Sapphire code of a Relic Race (one generator row 2). It names
+     * the race's route when tier checks follow the item counts and the track's
+     * Sapphire check, or every tier check, is not in the seed. Never sent. */
+    int64_t relic_route;
     /* Per-track check families (#133 PR 3b), 0 when the seed or track has
      * none. rung_locations: the podium rungs of the Trophy Race in SLOT_ORDER
      * (held 1st, 3rd, 5th, finish on podium, finish any). wumpa_location: the
@@ -74,6 +81,12 @@ typedef struct ctr_content_pad {
     /* Relic Race Perfect (#133 PR 3c, #453): the check for breaking every time
      * crate in this pad's Relic Race; 0 when the seed or entry has none. */
     int64_t perfect_location;
+    /* ctr_first (#208 on content plans, J11): 1 when the plan's
+     * adventure_structure is ctr_first and this track entry runs it. The entry
+     * then has no Trophy mode (modes are CTR, then Relic), trophy_location is
+     * still the track's Trophy Race code, paid by a qualifying CTR win, and
+     * rung_locations are earned by finishing place in the CTR Challenge. */
+    int ctr_first;
     /* Racer lock (#133 PR 4b): the engine character id this pad requires, or
      * -1. ANDed onto the pad's gates by AP_ContentPadOpen; the parser also
      * mirrors it into ctr_cfg.racer_lock / gem_cup_racer_lock, so the pad's
@@ -101,8 +114,12 @@ typedef struct ctr_content_pad {
      * check owner `cup:<index>`. mode_count is 0. Each leg names the track it
      * races (as a standalone pad would: retail_id, cortex, or package_index
      * with custom_slot and named_block), its laps and its `Cup Leg Victory`
-     * code, 0 when the track has a standalone Trophy Race. */
-    int cup, cup_index, sweep_boost;
+     * code, 0 when the track has a standalone Trophy Race.
+     * gem_cup (one generator row 2): the engine LevelID of an original Gem Cup,
+     * 100 (Red) to 104 (Purple), else 0. cup_index is then -1, trophy_location
+     * `<Colour> Gem Cup: Gem`, sweep_location its Win All Legs, track_id
+     * `gem_cup:<colour>`. The cup still runs on engine cup 0. */
+    int cup, cup_index, gem_cup, sweep_boost;
     int64_t sweep_location;
     ctr_content_leg legs[AP_CONTENT_CUP_LEGS];
 } ctr_content_pad;
@@ -199,7 +216,31 @@ typedef struct ctr_content_bosses {
      * cup (its legs are the cup pad ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD
      * + g)); cup_points[g][n] each leg's certified restart point count. */
     int cup[4], cup_points[4][4];
+    /* J11 (decisions 7 and 9): boss opponent and kit shuffle on a content
+     * plan. `extended` is 1 when the record carries the opponent and kit keys
+     * (any of opponent_shuffle, kit_shuffle, oxide_attack_profile
+     * all_compatible). opponent[g] is the engine character id garage g races
+     * (its own boss without opponent_shuffle), final_opponent the one racing
+     * both N. Oxide encounters (15 unless drawn, -1 when Oxide is disabled).
+     * kit_intensity 0 relaxed .. 3 mayhem (1 without the kit switch),
+     * kit_assignment 0 mixed_loadouts, 1 signature_profiles. home_venues 1
+     * with track_assignment character_home_track. The composed schedules are
+     * filled into ctr_boss_encounters exactly as an ordinary version 2 room's. */
+    int extended, opponent_shuffle, oxide_in_pool, kit_shuffle, gauntlet, oxide_profile_all, home_venues;
+    int kit_assignment, kit_intensity, loss_easing;
+    int opponent[4], final_opponent;
 } ctr_content_bosses;
+
+/* Wumpa Shop and Wumpa goal on a content plan (J11). The plan's `wumpa_shop`
+ * record and its `wumpa_banked` goal arm; the parser also fills the ordinary
+ * ctr_wumpa_shop configuration from them, so the runtime reads that. */
+typedef struct ctr_content_wumpa {
+    int shop_slots;  /* per hub, 0 without the record */
+    int prices;      /* wumpa_shop_prices percent, 25..400 */
+    int excluded;    /* progression "excluded" */
+    int hints;
+    int goal;        /* the wumpa_banked arm's count, 0 without one */
+} ctr_content_wumpa;
 
 typedef struct ctr_content_item {
     int base, extra, start_from_pool, start_additional, remaining, receipt_cap;
@@ -257,15 +298,6 @@ static inline int ap_content_stage2_owned(const ctr_content_pad *pad, const int 
         if (pad->stage2_mask & (1u << i)) owned += counts[i];
     return owned;
 }
-/* The single mode gate: the pad is open, and a stage-2 mode's second rule is
- * met. No mode needs a win in another one (Wayfinder ticket 16). Pad entry,
- * the mode selector, the race-start gate and the tracker all call this. */
-static inline int ap_content_mode_open(const ctr_content_pad *pad, int mode, const int *counts)
-{
-    const int i = ap_content_mode_slot(pad, mode);
-    if (i < 0 || !ap_content_pad_open(pad, counts)) return 0;
-    return pad->stages[i] == 1 || (pad->has_stage2 && ap_content_stage2_owned(pad, counts) >= pad->stage2_count);
-}
 /* The check codes a mode owns on this pad (Trophy 1, CTR 1, Relic 3); 0 when
  * the entry lacks the mode. */
 static inline int ap_content_mode_codes(const ctr_content_pad *pad, int mode, int64_t out[3])
@@ -275,6 +307,48 @@ static inline int ap_content_mode_codes(const ctr_content_pad *pad, int mode, in
     if (mode == AP_CONTENT_MODE_CTR) { out[0] = pad->ctr_location; return 1; }
     out[0] = pad->relic_locations[0]; out[1] = pad->relic_locations[1]; out[2] = pad->relic_locations[2];
     return 3;
+}
+/* Server checked-state of a content-plan code. */
+typedef int (*ap_content_checked_fn)(int64_t code);
+/* The pad's first race is won: a check of its first mode is checked, as v0.2.x
+ * reads the Trophy Race. A first race with no check of its own (a Relic Race
+ * with no tier check) proves nothing, so then only the items count, as in the
+ * apworld's logic (content_plan.create_regions). A ctr_first entry's win is its
+ * Trophy Race check: the CTR Token check needs the letters on top. */
+static inline int ap_content_first_race_won(const ctr_content_pad *pad, ap_content_checked_fn checked)
+{
+    int64_t codes[3] = {0, 0, 0};
+    int i, n, any = 0;
+    if (!pad->first_race_rule || pad->mode_count < 2) return 1;
+    if (pad->ctr_first && pad->trophy_location > 0) return checked(pad->trophy_location);
+    n = ap_content_mode_codes(pad, pad->modes[0], codes);
+    for (i = 0; i < n; ++i) {
+        if (codes[i] <= 0) continue;
+        any = 1;
+        if (checked(codes[i])) return 1;
+    }
+    return !any;
+}
+/* The single mode gate: the pad is open, a later mode's pad has won its first
+ * race (ruled 2026-10-30), and a stage-2 mode's second rule is met. Pad entry,
+ * the mode selector, the race-start gate and the tracker all call this. */
+static inline int ap_content_mode_open(const ctr_content_pad *pad, int mode, const int *counts,
+                                       ap_content_checked_fn checked)
+{
+    const int i = ap_content_mode_slot(pad, mode);
+    if (i < 0 || !ap_content_pad_open(pad, counts)) return 0;
+    if (i && !ap_content_first_race_won(pad, checked)) return 0;
+    return pad->stages[i] == 1 || (pad->has_stage2 && ap_content_stage2_owned(pad, counts) >= pad->stage2_count);
+}
+
+/* The code that names a mode's route in its race context: its first check,
+ * and for a Relic Race the track's frozen Sapphire code whichever tier checks
+ * the seed holds. Never a check to send on its own for a Relic Race. */
+static inline int64_t ap_content_mode_route(const ctr_content_pad *pad, int mode)
+{
+    int64_t codes[3] = {0, 0, 0};
+    if (ap_content_mode_codes(pad, mode, codes) < 1) return 0;
+    return mode == AP_CONTENT_MODE_RELIC && pad->relic_route > 0 ? pad->relic_route : codes[0];
 }
 
 /* Parsed != admitted. Net admission must bind the exact room location union
@@ -303,6 +377,10 @@ int ap_content_plan_goal(const int received_gems[5]);
 int ap_content_plan_gems_held(const int received_gems[5]);
 /* Boss garages (#133 PR 6): the record (all zero without one). */
 const ctr_content_bosses *ap_content_plan_bosses(void);
+/* J11: the Wumpa Shop and goal record (all zero without one), and 1 when the
+ * plan's adventure_structure is ctr_first. */
+const ctr_content_wumpa *ap_content_plan_wumpa(void);
+int ap_content_plan_ctr_first(void);
 /* Completability sweep (#133 PR 8, ap_content_verify.hpp): the plan's own
  * logic graph evaluated to a fixed point from the receipts that are not this
  * world's own location rewards (other players, starting inventory, server

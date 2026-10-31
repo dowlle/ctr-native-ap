@@ -829,7 +829,18 @@ int main(void)
 		std::string longSeed(400, 'x');
 		expect_int(AP_WinStakesConnect(&ses.latch, longSeed.c_str(), "AppieCTR"), 1, "long seed recorded");
 		expect_int(AP_WinStakesConnect(&ses.latch, longSeed.c_str(), "AppieCTR"), 0,
-		           "long seed: same identity kept (truncated consistently)");
+		           "long seed: same identity kept");
+		// Review finding 5: two long names that share a long prefix are different seeds.
+		std::string otherSeed = longSeed;
+		otherSeed[399] = 'y';
+		expect_int(AP_WinStakesConnect(&ses.latch, otherSeed.c_str(), "AppieCTR"), 1,
+		           "long seeds that differ only at the end forget");
+		std::string longSlot(400, 's'), otherSlot = longSlot;
+		otherSlot[399] = 't';
+		expect_int(AP_WinStakesConnect(&ses.latch, "seedA", longSlot.c_str()), 1, "long slot recorded");
+		expect_int(AP_WinStakesConnect(&ses.latch, "seedA", otherSlot.c_str()), 1,
+		           "long slots that differ only at the end forget");
+		expect_int(AP_WinStakesConnect(&ses.latch, "seedA", otherSlot.c_str()), 0, "long slot: same identity kept");
 	}
 
     // #246: collecting the points-win Gem leaves an independent sweep stake.

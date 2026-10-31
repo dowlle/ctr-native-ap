@@ -536,6 +536,14 @@ static void AP_TrackerBuildNodes(void)
 			snprintf(n->title, sizeof n->title, "%s", ap_tracker.hub ? names[ap_tracker.hub - 1] : "N. OXIDE");
 			/* #169: a drawn boss track is shown under the boss name. */
 			if (ap_tracker.hub) AP_BossVenueAdvert(ap_tracker.hub - 1, n->pad, (int)sizeof n->pad);
+			/* #169 tier 2: a drawn rival is shown under the boss name too. */
+			if (ap_tracker.hub) { char rival[48]; size_t used = strlen(n->pad);
+				if (AP_BossRivalAdvert(ap_tracker.hub - 1, rival, (int)sizeof rival) && used + 3 < sizeof n->pad)
+					snprintf(n->pad + used, sizeof n->pad - used, "%s%s", used ? ", " : "", rival); }
+			/* J03 (decision 7): N. Oxide's garage shows the racer the final race drew. */
+			if (!ap_tracker.hub && AP_BossFinalGarageOpponent() >= 0)
+				snprintf(n->pad, sizeof n->pad, "Rival: %s",
+				         sdata->lngStrings[data.MetaDataCharacters[AP_BossFinalGarageOpponent()].name_LNG_short]);
 			AP_TrackerProject(AP_TRACKER_MARK_GARAGE, item[0], item[1], &n->x, &n->y);
 			order[ap_tracker.count] = ap_tracker.count; ap_tracker.count++; break;
 		}
@@ -718,6 +726,9 @@ static void AP_TrackerDraw(void)
 		AP_TrackerArrow(x,y,sdata->gGT->drivers[0]->rotCurr.y+0x800,10,TRACKER_GOLD);
 	}
 	for(i=0;i<ap_tracker.count;i++) AP_TrackerDrawNode(i);
+	/* #249: this hub's Wumpa Shop slots left, open and affordable (decision 21). */
+	if(AP_WumpaShopHubTrackerLine(GEM_STONE_VALLEY+ap_tracker.hub,line,(int)sizeof line))
+		AP_TrackerText(line,32,692,14,TRACKER_GOLD,1210);
 	if(ap_tracker.pinned && ap_tracker.count) {
 		AP_TrackerNode *n=&ap_tracker.nodes[ap_tracker.focus]; int bits[48], remaining=n->physical>=0?AP_PadUncollectedGlowBits(n->destination,bits,48):0;
 		snprintf(line,sizeof line,"%s: %d RACE CHECKS, %d BOXES, %d LETTERS LEFT",n->title,remaining,

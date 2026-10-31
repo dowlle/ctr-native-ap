@@ -7,10 +7,10 @@
 // the selector offers is a mode the race-start gate admits.
 #include "ap_content_plan.h"
 
-typedef int (*ap_content_checked_fn)(int64_t code);
 
 // Per-track check families (#133 PR 3b) a mode reaches on this pad, with their
-// display slot: podium rungs (slots 0..4) on the Trophy Race, the track's own
+// display slot: podium rungs (slots 0..4) on the Trophy Race (on the CTR
+// Challenge of a ctr_first entry, J11), the track's own
 // Reach 10 Wumpa check (slot 5) on every mode with a Wumpa route, and the
 // letter checks (slots 6..8) on the CTR Challenge, and the Relic Race Perfect
 // check (slot 9, #133 PR 3c) on the Relic Race. The `wumpa: global` check
@@ -22,12 +22,42 @@ typedef int (*ap_content_checked_fn)(int64_t code);
 // own rung codes (ap_hooks_race.c AP_ContentPodiumRungs), never the engine
 // host's row.
 #define AP_CONTENT_PODIUM_LOGICAL_BASE 1000
+// ctr_first (#208 on content plans, J11, decision 14): a track entry whose
+// plan runs ctr_first has no Trophy Race. Its CTR Challenge is the first race:
+// first place pays the Trophy Race check (trophy_location), first place with
+// the letters the CTR Challenge needs also pays the CTR check (ruled
+// 2026-10-29), and the podium rungs follow its finishing place, letters or
+// not. Only a track entry
+// with a CTR mode and no Trophy mode qualifies; a crystal or cup never does,
+// so a forged flag cannot move a check onto another race.
+static inline int ap_content_pad_ctr_first(const ctr_content_pad *pad)
+{
+    return pad && pad->ctr_first && pad->occupied && !pad->crystal && !pad->cup &&
+           ap_content_mode_slot(pad, AP_CONTENT_MODE_CTR) >= 0 &&
+           ap_content_mode_slot(pad, AP_CONTENT_MODE_TROPHY) < 0;
+}
+// The mode whose race earns the pad's podium rungs: the Trophy Race, or the
+// CTR Challenge of a ctr_first entry. -1 when the entry has neither.
+static inline int ap_content_rung_mode(const ctr_content_pad *pad)
+{
+    if (!pad || pad->crystal || pad->cup) return -1;
+    if (ap_content_pad_ctr_first(pad)) return AP_CONTENT_MODE_CTR;
+    return ap_content_mode_slot(pad, AP_CONTENT_MODE_TROPHY) >= 0 ? AP_CONTENT_MODE_TROPHY : -1;
+}
+// The Trophy Race code first place in `mode` pays, letters or not: the ctr_first
+// CTR Challenge's Trophy; 0 for every other race.
+static inline int64_t ap_content_mode_paired_trophy(const ctr_content_pad *pad, int mode)
+{
+    return mode == AP_CONTENT_MODE_CTR && ap_content_pad_ctr_first(pad) && pad->trophy_location > 0
+               ? pad->trophy_location : 0;
+}
+
 static inline int ap_content_mode_family_codes(const ctr_content_pad *pad, int mode,
                                                int64_t out[AP_CONTENT_FAMILY_SLOTS], int slots[AP_CONTENT_FAMILY_SLOTS])
 {
     int n = 0, k;
     if (!pad || ap_content_mode_slot(pad, mode) < 0) return 0;
-    for (k = 0; mode == AP_CONTENT_MODE_TROPHY && k < 5; ++k)
+    for (k = 0; mode == ap_content_rung_mode(pad) && k < 5; ++k)
         if (pad->rung_locations[k] > 0) { out[n] = pad->rung_locations[k]; slots[n++] = k; }
     if (pad->wumpa_location > 0 && (pad->wumpa_modes & (1u << mode))) { out[n] = pad->wumpa_location; slots[n++] = 5; }
     for (k = 0; mode == AP_CONTENT_MODE_CTR && k < 3; ++k)
@@ -48,15 +78,17 @@ static inline int ap_content_box_pending(const ctr_content_pad *pad, ap_content_
     return left;
 }
 
-// Unchecked codes a mode still owns on this pad, its family checks and the
-// pad's Item Box checks included.
+// Unchecked codes a mode still owns on this pad, its family checks, the
+// pad's Item Box checks and a ctr_first CTR Challenge's Trophy (J11) included.
 static inline int ap_content_mode_pending(const ctr_content_pad *pad, int mode, ap_content_checked_fn checked)
 {
     int64_t codes[3], family[AP_CONTENT_FAMILY_SLOTS];
     int slots[AP_CONTENT_FAMILY_SLOTS];
     int n = ap_content_mode_codes(pad, mode, codes), i, left = 0;
+    const int64_t paired = ap_content_mode_paired_trophy(pad, mode);
     for (i = 0; i < n; ++i)
         if (codes[i] > 0 && !checked(codes[i])) ++left;
+    if (paired > 0 && !checked(paired)) ++left;
     n = ap_content_mode_family_codes(pad, mode, family, slots);
     for (i = 0; i < n; ++i)
         if (!checked(family[i])) ++left;
@@ -102,7 +134,7 @@ static inline int ap_content_selector_build(const ctr_content_pad *pad, const in
     for (i = 0; pad && i < pad->mode_count && i < AP_CONTENT_MODE_COUNT; ++i) {
         const int mode = pad->modes[i];
         out->mode[i] = mode;
-        out->open[i] = ap_content_mode_open(pad, mode, counts);
+        out->open[i] = ap_content_mode_open(pad, mode, counts, checked);
         out->pending[i] = ap_content_mode_pending(pad, mode, checked);
         out->count++;
         if (out->open[i]) {
@@ -124,7 +156,7 @@ static inline int ap_content_track_pad_state(const ctr_content_pad *pad, const i
     for (i = 0; i < pad->mode_count && i < AP_CONTENT_MODE_COUNT; ++i) {
         const int left = ap_content_mode_pending(pad, pad->modes[i], checked);
         if (!left) continue;
-        if (ap_content_mode_open(pad, pad->modes[i], counts)) return 2;
+        if (ap_content_mode_open(pad, pad->modes[i], counts, checked)) return 2;
         lockedLeft = 1;
     }
     return lockedLeft ? 3 : 4;

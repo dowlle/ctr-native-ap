@@ -389,150 +389,6 @@ void AP_NotifyRelicPerfect(void)
 	                  facts.levelID, facts.broken, facts.total, code);
 }
 
-// ── Adventure structure ctr_first (#208) ───────────────────────────────────
-int AP_RaceStructureCtrFirst(void)
-{
-	return ctr_cfg_active() && ctr_cfg.adventure_structure == AP_RS_STRUCTURE_CTR_FIRST;
-}
-
-// Under ctr_first a plain Trophy Race win must not send a Trophy Race check
-// that the award pairs give to a CTR Challenge win.
-int AP_RaceStructureSuppressTrophy(long trophyCode)
-{
-	return AP_RaceStructureCtrFirst() &&
-	       AP_RaceStructureTrophyIsStage1Ctr(&ctr_cfg.stage1_awards, trophyCode);
-}
-
-// The same, for a reward bit (retail Trophy bits, Cortex Vortex pseudo-bits).
-int AP_RaceStructureSuppressTrophyBit(int rewardBit)
-{
-	return AP_RaceStructureCtrFirst() &&
-	       AP_RaceStructureSuppressTrophy(AP_LookupLocationCode(rewardBit));
-}
-
-// #208 decision 15: the seed's race_type_selector is the starting value; the
-// Options row (config.ini race_type_selector: -1 SEED, 0 PRODUCTIVE, 1
-// ALWAYS) overrides it. Read at every pad entry, so an edit applies live.
-int AP_RaceTypeSelectorSetting(void)
-{
-	return AP_RaceSelectorEffective(g_config.raceTypeSelector, ctr_cfg.race_type_selector);
-}
-
-// #208 decision 4: the Trophy code of a race destination, or -1. A destination
-// runs ctr_first only when this code is in the award pairs, that is when the
-// track has a CTR Challenge; any other track keeps the classic order inside a
-// ctr_first seed.
-static long AP_RaceStructureDestTrophyCode(int destLevelID)
-{
-	if (destLevelID == AP_CORTEX_DEST)
-		return AP_CortexTrackCode(AP_CV_SLOT_TROPHY);
-	if (AP_TrialTrackConfigured(destLevelID))
-		return AP_TrialTrackLocation(destLevelID, CTR_CFG_TRIAL_TROPHY);
-	if (destLevelID >= 0 && destLevelID < 16)
-		return AP_LookupLocationCode(destLevelID + ADV_REWARD_FIRST_TROPHY);
-	return -1;
-}
-
-int AP_RaceStructureDestCtrFirst(int destLevelID)
-{
-	return AP_RaceStructureSuppressTrophy(AP_RaceStructureDestTrophyCode(destLevelID));
-}
-
-// The CTR Challenge code of a race destination, or -1.
-static long AP_RaceStructureDestCtrCode(int destLevelID)
-{
-	if (destLevelID == AP_CORTEX_DEST)
-		return AP_CortexTrackCode(AP_CV_SLOT_TOKEN);
-	if (AP_TrialTrackConfigured(destLevelID))
-		return AP_TrialTrackLocation(destLevelID, CTR_CFG_TRIAL_CTR);
-	if (destLevelID >= 0 && destLevelID < 16)
-		return AP_LookupLocationCode(destLevelID + ADV_REWARD_FIRST_CTR_TOKEN);
-	return -1;
-}
-
-// The structure the selector applies to one destination: refused and classic
-// seeds as they are, ctr_first only where the track has a CTR Challenge. A
-// destination whose codes sit in crossed pairs is refused: its pad offers no
-// row and releases the kart (the result paths assume a track's own pair).
-int AP_RaceStructureDestStructure(int destLevelID)
-{
-	int state;
-	if (!AP_RaceStructureCtrFirst())
-		return ctr_cfg.adventure_structure;
-	state = AP_RaceStructurePairState(&ctr_cfg.stage1_awards,
-	                                  AP_RaceStructureDestCtrCode(destLevelID),
-	                                  AP_RaceStructureDestTrophyCode(destLevelID));
-	if (state < 0)
-		return AP_RS_STRUCTURE_REFUSED;
-	return AP_RaceStructureForDest(ctr_cfg.adventure_structure, state > 0);
-}
-
-// The same question keyed by podium track (AP_RetailPodiumTrack): does a CTR
-// Challenge on this track earn its rungs (decision 14)?
-int AP_RaceStructurePodiumCtrFirst(int podiumTrack)
-{
-	long code = -1;
-	if (podiumTrack >= 0 && podiumTrack < 16)
-		code = AP_LookupLocationCode(podiumTrack + ADV_REWARD_FIRST_TROPHY);
-	else if (podiumTrack >= AP_TRIAL_PODIUM_LOGICAL_BASE &&
-	         podiumTrack < AP_TRIAL_PODIUM_LOGICAL_BASE + CTR_CFG_TRIAL_TRACK_COUNT)
-		code = AP_TrialTrackLocation(16 + podiumTrack - AP_TRIAL_PODIUM_LOGICAL_BASE,
-		                             CTR_CFG_TRIAL_TROPHY);
-	else if (podiumTrack == AP_CV_PODIUM_LOGICAL_TRACK)
-		code = AP_CortexTrackCode(AP_CV_SLOT_TROPHY);
-#ifdef CTR_CUSTOM_TRACKS
-	else if (ctr_cfg_active() && ctr_cfg.custom_tracks_ok &&
-	         podiumTrack == CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1)
-		code = ctr_cfg.custom_track.trophy_location;
-#endif
-	return AP_RaceStructureSuppressTrophy(code);
-}
-
-// A qualifying CTR win (first place with the letters) of `ctrCode` also sends
-// its paired Trophy Race check, once: the class emitter drops a code that is
-// already checked, so a re-win after Collect or a reconnect sends only what is
-// still open. The win is a first-place finish, so the podium rungs of
-// `podiumTrack` (-1: none) are earned too, as after a classic Trophy win.
-static int AP_RaceStructureCtrWon(long ctrCode, int podiumTrack, int ledgerBit)
-{
-	long trophy;
-	int sent;
-	if (!AP_RaceStructureCtrFirst())
-		return 0;
-	trophy = AP_RaceStructurePairedTrophy(&ctr_cfg.stage1_awards, ctrCode);
-	if (trophy <= 0)
-		return 0;
-	sent = AP_EmitClassCheck(trophy, ledgerBit >= 0, ledgerBit, -1, 1,
-	                         "[AP CHECK] ctr_first: CTR Challenge %ld won, Trophy Race location %ld\n",
-	                         ctrCode, trophy);
-	if (podiumTrack >= 0)
-		AP_SendPodiumChecks(podiumTrack, 1);
-	ap_state_gen++;
-	return sent;
-}
-
-// Legacy custom track (#208 ctr_first): its plain race does not earn its
-// Trophy, so the Cup standings give no prize podium for it.
-int AP_CustomTrackTrophyEarnedByCtr(void)
-{
-	return ctr_cfg_active() && ctr_cfg.custom_tracks_ok &&
-	       AP_RaceStructureSuppressTrophy(ctr_cfg.custom_track.trophy_location);
-}
-
-// Retail track, ctr_first, plain Trophy Race won (game/222.c): no Trophy check,
-// but first place still earns the podium rungs.
-void AP_RaceStructureTrophyRaceWon(int levelID)
-{
-	char msg[128];
-	if (levelID < 0 || levelID >= 16)
-		return;
-	snprintf(msg, sizeof msg,
-	         "[AP CHECK] ctr_first: Trophy Race won on track %d; its Trophy check "
-	         "comes from the CTR Challenge, rungs only\n", levelID);
-	AP_AppendLog(msg);
-	AP_SendPodiumChecks(levelID, 1);
-}
-
 void AP_NotifyTrialTrackRace(int levelID, int challenge)
 {
 	// #286: a forced-loss trial attempt emits no direct trial check or podium rung.
@@ -540,21 +396,11 @@ void AP_NotifyTrialTrackRace(int levelID, int challenge)
 		return;
 
 	long code = AP_TrialTrackLocation(levelID, challenge);
-	int podium = AP_TRIAL_PODIUM_LOGICAL_BASE + levelID - 16;
-	if (challenge == CTR_CFG_TRIAL_TROPHY && AP_RaceStructureSuppressTrophy(code))
-	{
-		// #208 ctr_first: the CTR Challenge earns this Trophy; the win still
-		// earns the rungs.
-		AP_SendPodiumChecks(podium, 1);
-		return;
-	}
 	AP_EmitClassCheck(code, 0, -1, -1, 1,
 	                  "[AP CHECK] trial track=%d challenge=%d location %ld\n",
 	                  levelID, challenge, code);
 	if (challenge == CTR_CFG_TRIAL_TROPHY && code > 0)
-		AP_SendPodiumChecks(podium, 1);
-	if (challenge == CTR_CFG_TRIAL_CTR)
-		AP_RaceStructureCtrWon(code, podium, -1);
+		AP_SendPodiumChecks(AP_TRIAL_PODIUM_LOGICAL_BASE+levelID-16, 1);
 }
 
 // Schema 15: the Cortex Vortex pad track's race result. Called from the win
@@ -578,10 +424,6 @@ void AP_NotifyCortexTrackRace(int token)
 	for (i = 0; i < n; i++)
 	{
 		long code = AP_LookupLocationCode(bits[i]);
-		// #208 ctr_first: a plain Trophy Race win leaves this Trophy to the
-		// CTR Challenge.
-		if (!token && AP_RaceStructureSuppressTrophy(code))
-			continue;
 		AP_EmitClassCheck(code, 1, bits[i], -1, 1,
 		                  "[AP CHECK] Cortex Vortex %s location %ld\n",
 		                  token ? "CTR Token Challenge" : "Trophy Race", code);
@@ -589,9 +431,6 @@ void AP_NotifyCortexTrackRace(int token)
 	// A trophy win is a 1st-place finish: every configured rung is earned.
 	if (!token && AP_CortexTrackCode(AP_CV_SLOT_TROPHY) > 0)
 		AP_SendPodiumChecks(AP_CV_PODIUM_LOGICAL_TRACK, 1);
-	if (token)
-		AP_RaceStructureCtrWon(AP_CortexTrackCode(AP_CV_SLOT_TOKEN), AP_CV_PODIUM_LOGICAL_TRACK,
-		                       AP_CortexPseudoBit(AP_CV_SLOT_TROPHY));
 	ap_state_gen++;
 }
 
@@ -654,7 +493,8 @@ static const ctr_content_pad *AP_StandaloneRoutePad(const struct CustomTrackRace
 	int64_t codes[3] = {0, 0, 0};
 	if (!pad || !pad->occupied || pad->crystal || !context->seedEpoch ||
 	    context->seedEpoch != ap_content_plan_epoch() ||
-	    ap_content_mode_codes(pad, context->mode, codes) < 1 || codes[0] != context->trophyLocation ||
+	    ap_content_mode_codes(pad, context->mode, codes) < 1 ||
+	    ap_content_mode_route(pad, context->mode) != context->trophyLocation ||
 	    pad->hub != context->returnHub || pad->laps != context->laps || pad->custom_slot != context->slot ||
 	    context->retail != (pad->retail_id >= 0) || context->cortex != pad->cortex ||
 	    context->hostLevelID != ap_content_pad_host(pad) ||
@@ -663,12 +503,15 @@ static const ctr_content_pad *AP_StandaloneRoutePad(const struct CustomTrackRace
 }
 
 // The running standalone race's content-plan podium identity, or -1: only a
-// Trophy Race on its pad's route (#133 PR 3b, AP_RetailPodiumTrack).
+// Trophy Race on its pad's route (#133 PR 3b, AP_RetailPodiumTrack), or the
+// CTR Challenge of a ctr_first entry (J11, decision 14), whose finishing
+// place earns the rungs.
 int AP_StandalonePodiumTrack(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	const struct CustomTrackRaceContext *context = gGT ? CustomTrack_StandaloneContext((int)gGT->levelID) : NULL;
-	if (!context || context->mode != AP_CONTENT_MODE_TROPHY || !AP_StandaloneRoutePad(context) ||
+	const ctr_content_pad *pad;
+	if (!context || !(pad = AP_StandaloneRoutePad(context)) || context->mode != ap_content_rung_mode(pad) ||
 	    (!context->retail && !CustomTrack_ServingLoad((int)gGT->levelID, 0, 0)))
 		return -1;
 	return AP_CONTENT_PODIUM_LOGICAL_BASE + context->physicalPad;
@@ -685,7 +528,8 @@ static int AP_ContentPodiumRungs(int track, ctr_podium_rungs *out)
 	if (track < AP_CONTENT_PODIUM_LOGICAL_BASE || track > AP_CONTENT_PODIUM_LOGICAL_BASE + 110)
 		return 0;
 	pad = ap_content_plan_pad(track - AP_CONTENT_PODIUM_LOGICAL_BASE);
-	if (!pad || !pad->occupied || pad->crystal || ap_content_mode_slot(pad, AP_CONTENT_MODE_TROPHY) < 0)
+	// The Trophy Race's rungs, or a ctr_first CTR Challenge's (J11).
+	if (!pad || !pad->occupied || pad->crystal || ap_content_rung_mode(pad) < 0)
 		return 0;
 	for (k = 0; k < 5; ++k)
 	{
@@ -695,6 +539,15 @@ static int AP_ContentPodiumRungs(int track, ctr_podium_rungs *out)
 	out->held_1st = codes[0]; out->held_3rd = codes[1]; out->held_5th = codes[2];
 	out->finish_podium = codes[3]; out->finish_any = codes[4];
 	return any;
+}
+
+// A content-plan podium track's rungs come from a CTR Challenge here: a
+// ctr_first entry, by finishing place, letters or not (decision 14).
+int AP_RaceStructurePodiumCtrFirst(int podiumTrack)
+{
+	return podiumTrack >= AP_CONTENT_PODIUM_LOGICAL_BASE && podiumTrack <= AP_CONTENT_PODIUM_LOGICAL_BASE + 110 &&
+	       ap_content_plan_active() &&
+	       ap_content_pad_ctr_first(ap_content_plan_pad(podiumTrack - AP_CONTENT_PODIUM_LOGICAL_BASE));
 }
 
 // Trophy Race and CTR Challenge finish of a standalone race. The context's
@@ -728,10 +581,13 @@ int AP_NotifyStandaloneRace(void)
 		return 0;
 	if ((context->seedEpoch || ap_content_plan_active()) && !AP_StandaloneRoutePad(context))
 		return 0;
-	return AP_EmitClassCheck((long)context->trophyLocation, 0, -1, -1, 1,
-	                        "[AP CHECK] standalone entry=%s track=%s slot=%d mode=%d location=%ld\n",
-	                        context->entryID, context->trackID, context->slot, context->mode,
-	                        (long)context->trophyLocation);
+	{
+		int sent = AP_EmitClassCheck((long)context->trophyLocation, 0, -1, -1, 1,
+		                             "[AP CHECK] standalone entry=%s track=%s slot=%d mode=%d location=%ld\n",
+		                             context->entryID, context->trackID, context->slot, context->mode,
+		                             (long)context->trophyLocation);
+		return sent;
+	}
 }
 
 // The Reach 10 Wumpa check the running standalone race sends (#133 PR 3b):
@@ -894,14 +750,6 @@ static void AP_NotifyCustomTrackTrophyImpl(void)
 	if (!ctr_cfg_active() || !ctr_cfg.custom_tracks_ok ||
 	    (sdata->gGT && (sdata->gGT->gameMode2 & TOKEN_RACE)))
 		return;
-	podiumTrack = CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1;
-	// #208 ctr_first: the custom CTR Challenge earns this Trophy; the win
-	// still earns the rungs.
-	if (AP_RaceStructureSuppressTrophy(ctr_cfg.custom_track.trophy_location))
-	{
-		AP_SendPodiumChecks(podiumTrack, 1);
-		return;
-	}
 	sent = AP_EmitClassCheck(ctr_cfg.custom_track.trophy_location,
 	                         1, AP_CUSTOM_TROPHY_PSEUDO_BIT, -1, 1,
 	                         "[AP CHECK] custom track slot=%d Trophy Race location %ld\n",
@@ -909,6 +757,7 @@ static void AP_NotifyCustomTrackTrophyImpl(void)
 	                         ctr_cfg.custom_track.trophy_location);
 	AP_CustomTrophyCeremonyArm(&ap_custom_trophy_ceremony, sent);
 	if (sent) ap_custom_ceremony_bit = AP_CUSTOM_TROPHY_PSEUDO_BIT;
+	podiumTrack = CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1;
 	AP_SendPodiumChecks(podiumTrack, 1);
 }
 
@@ -1009,6 +858,57 @@ int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *ou
 	*outCode = code > 0 && code <= 2147483647 ? (long)code : 0;
 	return 1;
 }
+
+// ctr_first (ruled 2026-10-29): first place in a CTR Challenge on a ctr_first
+// content pad pays its Trophy Race check, letters or not; first place with the
+// letters also pays the CTR check, in AP_NotifyStandaloneRace. Once: the emitter
+// skips a checked code, so a re-win after Collect sends only what is open.
+void AP_ContentCtrFirstPlace(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const struct CustomTrackRaceContext *context;
+	int64_t paired;
+	if (!gGT || !ctr_cfg_active() || !ap_content_plan_active() ||
+	    AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_CUSTOM_TROPHY) || !(gGT->gameMode1 & ADVENTURE_MODE) ||
+	    !(gGT->gameMode2 & TOKEN_RACE) ||
+	    (gGT->gameMode1 & (ARCADE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS | RELIC_RACE | CRYSTAL_CHALLENGE)))
+		return;
+	context = CustomTrack_StandaloneContext(gGT->levelID);
+	if (!context || context->mode != AP_CONTENT_MODE_CTR)
+		return;
+	paired = ap_content_mode_paired_trophy(AP_StandaloneRoutePad(context), context->mode);
+	if (paired > 0 && paired <= 2147483647 && ap_net_location_exists((long)paired))
+		AP_EmitClassCheck((long)paired, 0, -1, -1, 1,
+		                  "[AP CHECK] ctr_first: content-plan CTR Challenge entry=%s first place, "
+		                  "Trophy Race location %ld\n",
+		                  context->entryID, (long)paired);
+}
+
+// ctr_first: the Trophy Race check the running content-plan CTR Challenge pays
+// on first place, for the race-loss stakes, with its Progressive Boost rank.
+// Returns 0 for every race that pays no paired Trophy (crystal, cups, boss
+// races, classic entries).
+int AP_ContentWinPairedFacts(long *outCode, int *outBoost)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const struct CustomTrackRaceContext *context;
+	const ctr_content_pad *pad;
+	int64_t paired;
+	*outCode = 0;
+	*outBoost = 0;
+	if (!gGT || !ap_content_plan_active() || (gGT->gameMode1 & (ADVENTURE_BOSS | ADVENTURE_CUP)) ||
+	    AP_ContentCrystalPad() != NULL || AP_ContentGarageCupRunning() >= 0 || AP_ContentCupPad() != NULL)
+		return 0;
+	context = CustomTrack_StandaloneContext(gGT->levelID);
+	if (!context || context->crystal || !(pad = AP_StandaloneRoutePad(context)))
+		return 0;
+	paired = ap_content_mode_paired_trophy(pad, context->mode);
+	if (paired <= 0 || paired > 2147483647 || !ap_net_location_exists((long)paired))
+		return 0;
+	*outCode = (long)paired;
+	*outBoost = pad->trophy_boost;
+	return 1;
+}
 #else
 int AP_CustomTrackTrophyChecked(void) { return 0; }
 void AP_NotifyCustomTrackTrophy(void) {}
@@ -1019,6 +919,18 @@ int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *ou
 	*outNeedsItems = 0;
 	*outBoost = 0;
 	*outRacer = -1;
+	return 0;
+}
+int AP_ContentWinPairedFacts(long *outCode, int *outBoost)
+{
+	*outCode = 0;
+	*outBoost = 0;
+	return 0;
+}
+void AP_ContentCtrFirstPlace(void) {}
+int AP_RaceStructurePodiumCtrFirst(int podiumTrack)
+{
+	(void)podiumTrack;
 	return 0;
 }
 #endif
@@ -1062,22 +974,11 @@ static void AP_NotifyCustomTrackCtrImpl(int didWin, int collected)
 	int sent = AP_EmitClassCheck(ctr_cfg.custom_ctr_location, 0, -1, -1, 1,
 	                  "[AP CHECK] custom track slot=%d CTR challenge location %ld\n",
 	                  ctr_cfg.custom_track.slot, ctr_cfg.custom_ctr_location);
-	// #208 ctr_first: the qualifying CTR win also sends the paired Trophy.
-	// When only the Trophy is new (the CTR check was collected), the
-	// ceremony shows the Trophy.
-#ifdef CTR_CUSTOM_TRACKS
-	int pairSent = AP_RaceStructureCtrWon(ctr_cfg.custom_ctr_location,
-	                                      CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1,
-	                                      AP_CUSTOM_TROPHY_PSEUDO_BIT);
-#else
-	int pairSent = AP_RaceStructureCtrWon(ctr_cfg.custom_ctr_location,
-	                                      CTR_CFG_PODIUM_TRACK_COUNT + ctr_cfg.custom_track.slot - 1, -1);
-#endif
-	if (sent || pairSent)
+	if (sent)
 	{
 #ifdef CTR_CUSTOM_TRACKS
-		ap_custom_ceremony_bit = sent ? AP_CUSTOM_CTR_PSEUDO_BIT : AP_CUSTOM_TROPHY_PSEUDO_BIT;
-		AP_CustomTrophyCeremonyArm(&ap_custom_trophy_ceremony, 1);
+		ap_custom_ceremony_bit = AP_CUSTOM_CTR_PSEUDO_BIT;
+		AP_CustomTrophyCeremonyArm(&ap_custom_trophy_ceremony, sent);
 #endif
 	}
 }

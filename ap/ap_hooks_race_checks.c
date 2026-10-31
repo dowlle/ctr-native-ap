@@ -287,6 +287,8 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 		                                   ap_last_race_mode == AP_RACE_TOKEN,
 		                                   AP_RaceStructurePodiumCtrFirst(podiumTrack)))
 			AP_SendPodiumChecks(podiumTrack, ap_last_race_place);
+		if (ap_last_race_mode == AP_RACE_TOKEN && ap_last_race_place == 1)
+			AP_ContentCtrFirstPlace();
 	}
 	else if (!finishedNow && ap_finish_prev)
 	{

@@ -143,4 +143,32 @@ static inline int AP_GoalLineFormat(char *out, int cap, int goalOxide,
 	return written;
 }
 
+// #249: append the Wumpa arm, "WUMPA 412/1000", to a line AP_GoalLineFormat
+// built (or start one when it wrote nothing). Returns 1 when the line has any
+// segment afterwards.
+static inline int AP_GoalLineAppendWumpa(char *out, int cap, int written,
+                                         long long banked, int goalWumpa)
+{
+	int pos;
+	if (out == 0 || cap <= 0)
+		return 0;
+	if (goalWumpa <= 0)
+		return written;
+	if (!written)
+	{
+		out[0] = '\0';
+		pos = 0;
+		AP_GoalLinePut(out, cap, &pos, "GOAL: ");
+	}
+	else
+	{
+		for (pos = 0; pos < cap && out[pos] != '\0'; pos++)
+			;
+		AP_GoalLinePut(out, cap, &pos, " - ");
+	}
+	AP_GoalLinePutCounter(out, cap, &pos, "WUMPA",
+	                      banked > goalWumpa ? goalWumpa : (int)banked, goalWumpa);
+	return 1;
+}
+
 #endif // AP_GOAL_LINE_H

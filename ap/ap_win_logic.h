@@ -1,8 +1,6 @@
 #ifndef AP_WIN_LOGIC_H
 #define AP_WIN_LOGIC_H
 
-#include "ap_race_structure_logic.h"
-
 // Race-loss DeathLink stakes (native #449, 0.2.4): the freestanding half.
 //
 // With the race_loss send trigger on, a loss, a lost Gem Cup, or RESTART / EXIT
@@ -628,9 +626,6 @@ typedef struct
 	long cortexCodes[5];          // trophy, sapphire, gold, platinum, CTR (-1 absent)
 	long customTrophy, customCtr; // custom-slot direct codes (-1 absent)
 	long cupSweep; // #246: an independent four-first-place Cup win check
-	// #208 ctr_first award pairs, or 0 (classic): a CTR Challenge win also
-	// wins its paired Trophy Race check, so both are at stake.
-	const ap_rs_awards *ctrFirstAwards;
 } AP_WinRaceFacts;
 
 #define AP_WS_WINSET_MAX 3
@@ -668,18 +663,6 @@ static inline int AP_WinSetPush(long *out, int n, long code)
 	return n;
 }
 
-// #208 ctr_first, applied to a one-code Trophy or CTR win set: a CTR win also
-// wins its paired Trophy; a plain Trophy race whose Trophy a CTR win earns has
-// no win check at all (exempt, like any race that cannot earn one).
-static inline int AP_WinSetPairCtrFirst(const AP_WinRaceFacts *f, long *out, int n)
-{
-	if (!f->ctrFirstAwards || n != 1)
-		return n;
-	if (f->token)
-		return AP_WinSetPush(out, n, AP_RaceStructurePairedTrophy(f->ctrFirstAwards, out[0]));
-	return AP_RaceStructureTrophyIsStage1Ctr(f->ctrFirstAwards, out[0]) ? 0 : n;
-}
-
 // Fills out[] with the race's win set and returns its size; *mode names the
 // race mode for the log. 0 entries means "no win identified".
 static inline int AP_WinSetResolve(const AP_WinRaceFacts *f, long (*bitCode)(int bit),
@@ -711,8 +694,7 @@ static inline int AP_WinSetResolve(const AP_WinRaceFacts *f, long (*bitCode)(int
 	{
 		*mode = AP_WS_MODE_GEM_CUP;
 		if (f->cupCustom)
-			return AP_WinSetPairCtrFirst(f, out,
-			    AP_WinSetPush(out, n, f->token ? f->customCtr : f->customTrophy));
+			return AP_WinSetPush(out, n, f->token ? f->customCtr : f->customTrophy);
 		if (f->cupID < 0 || f->cupID > 4)
 			return 0;
 		return AP_WinSetPush(out, AP_WinSetPush(out,n,bitCode(AP_WS_BIT_GEM+f->cupID)),f->cupSweep);
@@ -734,14 +716,12 @@ static inline int AP_WinSetResolve(const AP_WinRaceFacts *f, long (*bitCode)(int
 	}
 	*mode = f->token ? AP_WS_MODE_CTR : AP_WS_MODE_TROPHY;
 	if (f->cortex)
-		n = AP_WinSetPush(out, n, f->token ? f->cortexCodes[4] : f->cortexCodes[0]);
-	else if (f->trial)
-		n = AP_WinSetPush(out, n, f->token ? f->trialCtr : f->trialTrophy);
-	else if (L < 0 || L > 15)
+		return AP_WinSetPush(out, n, f->token ? f->cortexCodes[4] : f->cortexCodes[0]);
+	if (f->trial)
+		return AP_WinSetPush(out, n, f->token ? f->trialCtr : f->trialTrophy);
+	if (L < 0 || L > 15)
 		return 0;
-	else
-		n = AP_WinSetPush(out, n, bitCode((f->token ? AP_WS_BIT_CTR_TOKEN : AP_WS_BIT_TROPHY) + L));
-	return AP_WinSetPairCtrFirst(f, out, n);
+	return AP_WinSetPush(out, n, bitCode((f->token ? AP_WS_BIT_CTR_TOKEN : AP_WS_BIT_TROPHY) + L));
 }
 
 static inline const char *AP_WinModeName(int mode)
@@ -770,8 +750,6 @@ enum
 	AP_WS_NEED_CUP  = 2
 };
 
-#define AP_WS_IDENT_CAP 192
-
 typedef struct
 {
 	int raceValid;
@@ -779,8 +757,10 @@ typedef struct
 	int cupValid;
 	AP_WinStakes cup;
 	int cupArmed; // entered a cup from the hub; its first leg decides
-	// Seed and slot the decisions above belong to (AP_WinStakesConnect).
-	char ident[AP_WS_IDENT_CAP];
+	// Seed and slot the decisions above belong to (AP_WinStakesConnect), as a
+	// 64-bit hash of the full names. Names are never truncated for this.
+	int identValid;
+	unsigned long long ident;
 } AP_WinStakesLatch;
 
 static inline void AP_WinStakesLatchReset(AP_WinStakesLatch *l)
@@ -796,35 +776,42 @@ static inline void AP_WinStakesLatchReset(AP_WinStakesLatch *l)
 // server switch to another room) or an unknown identity forgets every decision:
 // the previous seed's stakes must never apply to this seed's loss. Returns 1
 // when the decisions were forgotten.
-static inline int AP_WinStakesConnect(AP_WinStakesLatch *l, const char *seed, const char *slot)
+// FNV-1a over the seed name, a separator no name contains, and the slot name.
+// Returns 0 when either name is unknown. Feeds the full strings, so two long
+// names that share a prefix still differ.
+static inline int AP_WinStakesIdentHash(const char *seed, const char *slot, unsigned long long *out)
 {
-	char now[AP_WS_IDENT_CAP];
-	int n = 0, i, same;
-	const char *p;
+	unsigned long long h = 14695981039346656037ULL;
+	const unsigned char *p;
 
-	if (seed && seed[0] && slot && slot[0])
-	{
-		for (p = seed; *p && n < AP_WS_IDENT_CAP - 2; p++)
-			now[n++] = *p;
-		now[n++] = '\x1f'; // separator no seed or slot name contains
-		for (p = slot; *p && n < AP_WS_IDENT_CAP - 1; p++)
-			now[n++] = *p;
-	}
-	now[n] = '\0';
-	same = n > 0;
-	for (i = 0; same && i < AP_WS_IDENT_CAP; i++)
-	{
-		if (l->ident[i] != now[i])
-			same = 0;
-		if (now[i] == '\0')
-			break;
-	}
-	if (same)
+	if (!seed || !seed[0] || !slot || !slot[0])
+		return 0;
+	for (p = (const unsigned char *)seed; *p; p++)
+		h = (h ^ *p) * 1099511628211ULL;
+	h = (h ^ 0x1f) * 1099511628211ULL;
+	for (p = (const unsigned char *)slot; *p; p++)
+		h = (h ^ *p) * 1099511628211ULL;
+	*out = h;
+	return 1;
+}
+
+// Same as AP_WinStakesConnect for an identity hash already computed from the
+// full names (identValid 0 = unknown identity, which always forgets).
+static inline int AP_WinStakesConnectHash(AP_WinStakesLatch *l, int identValid, unsigned long long ident)
+{
+	if (identValid && l->identValid && l->ident == ident)
 		return 0;
 	AP_WinStakesLatchReset(l);
-	for (i = 0; i <= n; i++)
-		l->ident[i] = now[i];
+	l->identValid = identValid;
+	l->ident = identValid ? ident : 0;
 	return 1;
+}
+
+static inline int AP_WinStakesConnect(AP_WinStakesLatch *l, const char *seed, const char *slot)
+{
+	unsigned long long id = 0;
+	int ok = AP_WinStakesIdentHash(seed, slot, &id);
+	return AP_WinStakesConnectHash(l, ok, id);
 }
 
 static inline void AP_WinStakesCupEntered(AP_WinStakesLatch *l)

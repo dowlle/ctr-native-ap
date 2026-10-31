@@ -77,6 +77,7 @@ static int s_spawnGen;      // AP_Spawn_Generation() the handles were taken at
 // coalesced with ap_author.c's counter of the same name, so this comparison
 // read the counter against itself and the placement-change rebuild never fired.
 static int s_boxesPlaceGen = -1;
+static unsigned int s_boxesCfgRev; // a reconnect may replace the guard mid-race
 static int s_advMode = -1;  // ADVENTURE_MODE state the set was built under
 // The alternate-route (cup leg / boss) decision the set was built under, as an
 // AP_BoxPresentation value: NONE, SOLID or GHOST (#354). -1 is "never asked".
@@ -508,9 +509,8 @@ static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i)
 		s_spawnFull = 1;
 }
 
-// How many placements this level carries in the LIVE table, capped at the frozen
-// ceiling: the number of box slots this track could possibly stand if every one
-// of them were live and unchecked. The denominator of the zero-box diagnosis.
+// Raw authored count for this level. Include rows beyond the frozen ceiling so
+// the placement guard can detect drift even if the first 15 slots still fit.
 static int AP_BoxesGeometryHere(const AP_BoxPlacement *scratch, int count, int level)
 {
 	int i, here = 0;
@@ -519,8 +519,6 @@ static int AP_BoxesGeometryHere(const AP_BoxPlacement *scratch, int count, int l
 	{
 		if (scratch[i].level != level)
 			continue;
-		if (here >= AP_BOX_SLOTS_PER_TRACK)
-			break;
 		here++;
 	}
 	return here;
@@ -648,6 +646,7 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 	AP_BoxesClear();
 	s_level = level;
 	s_boxesPlaceGen = AP_Author_PlacementGeneration();
+	s_boxesCfgRev = ctr_cfg_box_placement_revision();
 	s_advMode = AP_BoxesRaceCarriesBoxes(gGT);
 	s_boxPresent = AP_BoxesPadRoutePolicy(gGT, level);
 
@@ -694,6 +693,10 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 	AP_BoxProbeSeedClass();
 	placements = AP_BoxesSnapshotPlacements();
 	here = AP_BoxesGeometryHere(s_scratch, placements, level);
+	// Slot numbers come from this positional table. A different authored count
+	// means later boxes may name the wrong AP locations, so stand none here.
+	if (!ctr_cfg_box_placement_valid(level, here))
+		return;
 
 	n = AP_BoxMap_BuildSet(s_scratch, placements, level,
 	                       AP_BoxInSeed, AP_BoxChecked, 0,
@@ -1161,6 +1164,7 @@ void AP_Boxes_OnFrame(struct GameTracker *gGT)
 	// after the pad opened, and the acceptance row is precisely that the boxes
 	// appear on the running race once the item lands.
 	if (level != s_level || AP_Author_PlacementGeneration() != s_boxesPlaceGen ||
+	    ctr_cfg_box_placement_revision() != s_boxesCfgRev ||
 	    AP_BoxesRaceCarriesBoxes(gGT) != s_advMode ||
 	    AP_BoxesPadRoutePolicy(gGT, level) != s_boxPresent)
 		AP_BoxesRebuild(gGT, level);

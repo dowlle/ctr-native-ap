@@ -32,13 +32,15 @@ static AP_WinStakesLatch g_wl_latch;
 
 void AP_WinLogicTallyReset(void)
 {
-	char seed[96], slot[96];
+	unsigned long long id = 0;
+	int known;
 	AP_ItemIdTallyReset(&g_wl_tally);
 	// Review minor 1: a decision made under another seed or slot never applies
 	// to a loss after this connect. A same-seed, same-slot reconnect keeps it.
-	(void)ap_net_seed_name(seed, (int)sizeof seed);
-	(void)ap_net_slot_name(slot, (int)sizeof slot);
-	if (AP_WinStakesConnect(&g_wl_latch, seed, slot))
+	// The hash covers the full names; the 96-byte copies elsewhere truncate.
+	// Hash first: C leaves the argument evaluation order open.
+	known = ap_net_identity_hash(&id);
+	if (AP_WinStakesConnectHash(&g_wl_latch, known, id))
 		AP_LogLine("[AP DEATH] race stakes forgotten: connected to another seed or slot\n");
 }
 
@@ -115,7 +117,6 @@ static void AP_WinFactsNow(struct GameTracker *gGT, AP_WinRaceFacts *f)
 	for (i = 0; i < 3; i++)
 		f->cortexCodes[1 + i] = AP_CortexTrackCode(AP_CV_SLOT_RELIC0 + i);
 	f->cortexCodes[4] = AP_CortexTrackCode(AP_CV_SLOT_TOKEN);
-	f->ctrFirstAwards = AP_RaceStructureCtrFirst() ? &ctr_cfg.stage1_awards : 0;
 	f->customTrophy = -1;
 	f->customCtr = -1;
 	if (ctr_cfg_active() && ctr_cfg.custom_tracks_ok)
@@ -170,6 +171,25 @@ static int AP_WinDecideContent(struct GameTracker *gGT, const char *when, AP_Win
 	if (!AP_WinContentCapMet(boost, racer))
 		needsItems = 1;
 	*out = AP_WinStakesContentDecide(code, code > 0 && ap_net_location_checked((long long)code), needsItems);
+	// ctr_first (ruled 2026-10-29): first place on a ctr_first content pad
+	// pays its Trophy Race check, letters or not, so that check is at stake
+	// too while it is open and in logic (its own rank).
+	if (!out->stakes)
+	{
+		long paired;
+		int pairedBoost;
+		if (AP_ContentWinPairedFacts(&paired, &pairedBoost))
+		{
+			const AP_WinStakes p = AP_WinStakesContentDecide(
+			    paired, ap_net_location_checked((long long)paired),
+			    !AP_WinContentCapMet(pairedBoost, racer));
+			if (p.stakes)
+			{
+				*out = p;
+				code = paired;
+			}
+		}
+	}
 	snprintf(msg, sizeof msg, "[AP DEATH] race stakes %s: content-plan level=%d win=%ld -> %s (%s)\n",
 	         when, (int)gGT->levelID, code, out->stakes ? "a loss sends" : "exempt", AP_WinStakesWhyText(out->why));
 	AP_LogLine(msg);

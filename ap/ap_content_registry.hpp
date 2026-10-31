@@ -17,6 +17,8 @@
 // `itemsanity` and `hit_character` (#133 PR 4d) are the global check families'
 // codes and frozen names, in the apworld's class order (itemsanity.py,
 // hit_character.py): the 22 weapon use checks and the 16 Hit checks.
+// Gem Cups (one generator row 2): `gem_cups` is the five original cups, Red
+// first, with their frozen Gem and sweep codes.
 // Cups (#133 PR 5): `cups` is the 27-name pool in code order with each name's
 // `win` and `sweep` codes; `cup_leg` on the retail rows and Cortex Vortex and
 // `custom_cup_leg_locations` per generic slot are the Cup Leg Victory codes.
@@ -2901,6 +2903,33 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       "sweep": 35027226
     }
   ],
+  "gem_cups": [
+    {
+      "name": "Red Gem Cup",
+      "win": 35011200,
+      "sweep": 35028300
+    },
+    {
+      "name": "Green Gem Cup",
+      "win": 35011201,
+      "sweep": 35028301
+    },
+    {
+      "name": "Blue Gem Cup",
+      "win": 35011202,
+      "sweep": 35028302
+    },
+    {
+      "name": "Yellow Gem Cup",
+      "win": 35011203,
+      "sweep": 35028303
+    },
+    {
+      "name": "Purple Gem Cup",
+      "win": 35011204,
+      "sweep": 35028304
+    }
+  ],
   "custom_cup_leg_locations": [
     35016820,
     35016821,
@@ -3232,9 +3261,19 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       "name": "Sampa Run"
     },
     {
+      "key": "sewer-baby-park",
+      "block": 85,
+      "name": "Sewer Baby Park"
+    },
+    {
       "key": "sid-house",
       "block": 61,
       "name": "Sid House"
+    },
+    {
+      "key": "sids-house",
+      "block": 86,
+      "name": "Sid's House"
     },
     {
       "key": "skater-s-retreat",
@@ -3267,6 +3306,11 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       "name": "Space Labs"
     },
     {
+      "key": "specter-station",
+      "block": 87,
+      "name": "Specter Station"
+    },
+    {
       "key": "sunken-sprint",
       "block": 69,
       "name": "Sunken Sprint"
@@ -3290,6 +3334,11 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       "key": "the-lab",
       "block": 73,
       "name": "The Lab"
+    },
+    {
+      "key": "tizi-challenge",
+      "block": 88,
+      "name": "Tizi Challenge"
     },
     {
       "key": "toasty-terrace",
