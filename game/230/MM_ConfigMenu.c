@@ -671,6 +671,7 @@ static int  s_connPadPrev = 0;   // previous frame's physical-pad mask, for edge
 // panel at FONT_SMALL (13 px per character). Longer status text is moved to its
 // own centred line below the row.
 #define CONN_STATUS_INLINE_MAX 24
+#define CONN_STATUS_LINE_WIDTH 0x1B0
 
 // Render a CFG_STRING value into out: masked (one '*' per char) for the password,
 // plain otherwise, with a blinking trailing cursor while this row is being edited.
@@ -806,6 +807,36 @@ static void TextEdit_Begin(const ConfigEntry *e, int row, int rowY)
 	s_connEditing = 1;
 }
 
+// A status too long for one line of the panel breaks at spaces, over at most
+// three rows (the v0.2.x room refusal needs them).
+static void Conn_DrawLongStatus(const char *status, int y, int rowSpacing, uint32_t *ot)
+{
+	char line[128];
+	int row;
+
+	for (row = 0; row < 3 && *status != '\0'; row++)
+	{
+		int end = 0;
+		int i;
+
+		for (i = 0; status[i] != '\0' && i < (int)sizeof line - 1; i++)
+		{
+			line[i] = status[i];
+			line[i + 1] = '\0';
+			if (status[i + 1] != ' ' && status[i + 1] != '\0')
+				continue;
+			if (end != 0 && DecalFont_GetLineWidth(line, FONT_SMALL) > CONN_STATUS_LINE_WIDTH)
+				break;
+			end = i + 1;
+		}
+		line[end] = '\0';
+		DecalFont_DrawLineOT(line, 0x100, y + row * rowSpacing, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+		status += end;
+		while (*status == ' ')
+			status++;
+	}
+}
+
 // Pad hint while a row is being edited, so the controller exits are
 // discoverable. '*' and '^' are the font's own PSX face button glyphs (see
 // game/DecalFont.c).
@@ -906,8 +937,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		const char *status = AP_Net_StatusLine();
 		DecalFont_DrawLineOT("Status", labelX, y, FONT_SMALL, ORANGE, ot);
 		if ((int)strlen(status) > CONN_STATUS_INLINE_MAX)
-			DecalFont_DrawLineOT((char *)status, 0x100, y + rowSpacing,
-				FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+			Conn_DrawLongStatus(status, y + rowSpacing, rowSpacing, ot);
 		else
 			DecalFont_DrawLineOT((char *)status, valueX, y, FONT_SMALL, WHITE, ot);
 	}

@@ -3750,6 +3750,7 @@ extern "C" void ap_seedcfg_reject_late(const char *reason)
 	// rejection leaves: the whole config inactive, no encounter data reachable,
 	// the flag raised and the reason visible.
 	ctr_cfg.schema_version = 0;
+	ctr_cfg.schema_newer = 0; // a refused room shows its reason, not the update banner
 	ctr_cfg.hit.valid = 0;
 	hit_reject("%s", (reason != NULL && reason[0] != '\0')
 	                     ? reason

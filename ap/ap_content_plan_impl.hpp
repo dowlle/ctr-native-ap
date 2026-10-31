@@ -286,11 +286,9 @@ static const char *const rung_keys[5] = {"held_1st", "held_3rd", "held_5th", "fi
 static const char *const rung_suffixes[5] = {"Held 1st", "Held 3rd", "Held 5th", "Finish on Podium", "Finish (Any Position)"};
 static const char *const letter_keys[3] = {"letter_c", "letter_t", "letter_r"};
 static const char *const letter_suffixes[3] = {"Letter C", "Letter T", "Letter R"};
-// The rung sets the podium options can create (podium.created_rung_keys): held
-// 1st and 3rd, optionally 5th; finish on podium, optionally any position.
+// `podium_rungs` is any nonempty set of rungs, with no parent switches.
 static bool rung_set_ok(int mask) {
-    const int held = mask & 7, finish = mask & 24;
-    return mask && (held == 0 || held == 3 || held == 7) && (finish == 0 || finish == 8 || finish == 24);
+    return mask != 0;
 }
 static void family_settings(const J &t, ctr_content_checks &fam) {
     need(t.is_object() && !t.empty(), "track_checks must be a nonempty record");
@@ -307,7 +305,7 @@ static void family_settings(const J &t, ctr_content_checks &fam) {
             need(k > last, "podium_rungs must list known rungs in slot order");
             last = k; mask |= 1 << k;
         }
-        need(rung_set_ok(mask), "podium_rungs is not a rung set the podium options create");
+        need(rung_set_ok(mask), "podium_rungs lists no rung");
         fam.podium = mask;
     }
     if (t.contains("wumpa")) {

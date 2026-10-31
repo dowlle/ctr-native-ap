@@ -33,6 +33,9 @@
 //      follows own sends, RoomUpdate, a second Connected, shutdown and refusal,
 //      and steady-state probes copy neither set.
 
+// This harness drives rooms without a plan on purpose; test-net-planless-refusal.cpp
+// runs the refusal such a room gets in a real build.
+#define AP_NET_TEST_PLANLESS_ROOMS
 #include "../ap/ap_net.cpp"
 
 #include <cstdio>
