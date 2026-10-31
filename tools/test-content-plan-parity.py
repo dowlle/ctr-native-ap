@@ -376,7 +376,7 @@ for rungs in (["held_3rd"], ["held_5th"], ["finish_any"], ["held_5th", "finish_p
     wire = make_world(options, seed=1).fill_slot_data()
     assert wire["content_plan"]["track_checks"]["podium_rungs"] == rungs, rungs
     cases.append(("rungs-" + "+".join(rungs), wire, True))
-assert sum(name.startswith("modes-") for name, _, _ in cases) >= 66  # 84 less the 12 relic-only
+assert sum(name.startswith("modes-") for name, _, _ in cases) >= 42  # 60 less the 12 relic-only and 6 refusals
 modes_base = make_world(mode_options(list(cp.MODES), "two", "per_pad", custom=mode_custom()), seed=3).fill_slot_data()
 cases.append(("modes-base", modes_base, True))
 def multi_pad(p):
