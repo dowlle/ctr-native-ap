@@ -242,5 +242,5 @@ require('ap/ap_tracker.c', 'AP_BossRivalAdvert(ap_tracker.hub - 1, rival')
 icon = text('game/UI/UI_Icon.c')
 body = icon[icon.index('void UI_DrawDriverIcon('):]
 assert body.index('if (icon == NULL)') < body.index('icon->texLayout'), 'UI_DrawDriverIcon must guard a NULL icon'
-require('ap/ap_seedcfg.cpp', '"boss_opponent_shuffle", "boss_kit_shuffle"')
+require('ap/ap_content_plan_impl.hpp', '"opponent_shuffle", "oxide_in_pool", "kit_shuffle", "gauntlet"')
 print('boss opponent and kit production wiring: ok')
