@@ -91,4 +91,69 @@ nodes = body(tracker, "static void AP_TrackerBuildNodes(void)")
 assert "if (ap_content_plan_active()) {" in nodes and "n->destination = physical;" in nodes
 assert "if (plan) { AP_TrackerDrawContentNode(n,x,y); return; }" in tracker
 assert "ctr_cfg.tracker_pad_launch" not in (root / "ap/ap_tracker_launch.c").read_text(encoding="utf-8")
+
+
+# Item 5 executed: the production enumerator over a pad with a locked stage 2.
+def function(text, signature):
+    start = text.index(signature)
+    end = text.index("{", start) + 1
+    depth = 1
+    while depth:
+        depth += (text[end] == "{") - (text[end] == "}")
+        end += 1
+    return text[start:end]
+
+
+glow = r"""
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include "ap_content_modes.h"
+static ctr_content_pad pad;
+static int counts[15];
+static long long done[8]; static int doneCount;
+const ctr_content_pad *ap_content_plan_pad(int physical) { (void)physical; return &pad; }
+int ap_net_location_checked(long code) { for (int i = 0; i < doneCount; i++) if (done[i] == code) return 1; return 0; }
+static int checkedFn(int64_t code) { return ap_net_location_checked((long)code); }
+int AP_ContentModeOpen(const ctr_content_pad *p, int mode) { return ap_content_mode_open(p, mode, counts, checkedFn); }
+""" + function(pads, "static int AP_ContentPadGlowBits(") + r"""
+static int has(const int *bits, int n, int bit) { for (int i = 0; i < n; i++) if (bits[i] == bit) return 1; return 0; }
+int main(void) {
+ int bits[32], n;
+ memset(&pad, 0, sizeof pad);
+ pad.physical = 3; pad.occupied = 1; pad.first_race_rule = 1; pad.mode_count = 3; pad.racer_lock = -1;
+ pad.modes[0] = AP_CONTENT_MODE_TROPHY; pad.modes[1] = AP_CONTENT_MODE_CTR; pad.modes[2] = AP_CONTENT_MODE_RELIC;
+ pad.stages[0] = 1; pad.stages[1] = pad.stages[2] = 2; pad.has_stage2 = 1; pad.stage2_mask = 1; pad.stage2_count = 1;
+ pad.trophy_location = 10; pad.ctr_location = 11; pad.relic_locations[0] = 12;
+ pad.letter_locations[0] = 13; pad.perfect_location = 14; pad.rung_locations[0] = 15; pad.box_count = 1; pad.box_locations[0] = 16;
+ /* Locked later races: their checks are hidden, the pad state's list keeps them. */
+ n = AP_ContentPadGlowBits(3, bits, 32, 1);
+ assert(has(bits, n, AP_CONTENT_BIT_TROPHY + 3) && !has(bits, n, AP_CONTENT_BIT_CTR + 3) && !has(bits, n, AP_CONTENT_BIT_RELIC + 9));
+ assert(!has(bits, n, AP_CONTENT_BIT_FAMILY + 3 * AP_CONTENT_FAMILY_STRIDE + 6));
+ assert(!has(bits, n, AP_CONTENT_BIT_FAMILY + 3 * AP_CONTENT_FAMILY_STRIDE + AP_CONTENT_FAMILY_PERFECT));
+ assert(has(bits, n, AP_CONTENT_BIT_FAMILY + 3 * AP_CONTENT_FAMILY_STRIDE) && has(bits, n, AP_CONTENT_BIT_BOX + 3 * AP_CONTENT_BOX_STRIDE));
+ n = AP_ContentPadGlowBits(3, bits, 32, 0);
+ assert(has(bits, n, AP_CONTENT_BIT_CTR + 3) && has(bits, n, AP_CONTENT_BIT_RELIC + 9));
+ /* Stage 2 met but the first race not won: still hidden. */
+ counts[0] = 1; n = AP_ContentPadGlowBits(3, bits, 32, 1);
+ assert(!has(bits, n, AP_CONTENT_BIT_CTR + 3));
+ /* First race won and stage 2 met: shown. */
+ done[doneCount++] = 10; n = AP_ContentPadGlowBits(3, bits, 32, 1);
+ assert(has(bits, n, AP_CONTENT_BIT_CTR + 3) && has(bits, n, AP_CONTENT_BIT_RELIC + 9) && !has(bits, n, AP_CONTENT_BIT_TROPHY + 3));
+ /* ctr_first: the Trophy Race check glows with the CTR Challenge. */
+ pad.ctr_first = 1; pad.mode_count = 2; pad.modes[0] = AP_CONTENT_MODE_CTR; pad.modes[1] = AP_CONTENT_MODE_RELIC; doneCount = 0; counts[0] = 0;
+ n = AP_ContentPadGlowBits(3, bits, 32, 1);
+ assert(has(bits, n, AP_CONTENT_BIT_CTR + 3) && has(bits, n, AP_CONTENT_BIT_TROPHY + 3) && !has(bits, n, AP_CONTENT_BIT_RELIC + 9));
+ puts("PASS: the glow hides locked races");
+ return 0;
+}
+"""
+import subprocess
+import tempfile
+with tempfile.TemporaryDirectory() as tmp:
+    src, exe = Path(tmp) / "glow.c", Path(tmp) / "glow"
+    src.write_text(glow)
+    subprocess.run(["cc", "-std=c99", "-DCTR_AP", "-Wall", "-Wextra", "-Wno-unused-function", "-fsanitize=undefined",
+                    "-I", str(root / "ap"), "-I", str(root), "-I", str(root / "include"), str(src), "-o", str(exe)], check=True)
+    subprocess.run([str(exe)], check=True)
 print("PASS: plan pads production text")
