@@ -67,7 +67,7 @@ struct InstDef { struct Model *model; struct Instance *ptrInstance; SVec3 pos; S
 struct Level { u32 numInstances; struct InstDef *ptrInstDefs; };
 struct JitPool { int maxItems; u32 itemSize; void *ptrPoolData; };
 struct GameTracker { struct Level *level1; struct { struct JitPool instance; } JitPools; };
-struct CustomTrackRaceContext { int physicalPad; int retail; };
+struct CustomTrackRaceContext { int physicalPad; int retail; int leg; };
 #include "ap/ap_content_plan.h"
 #include "ap/ap_box_seat_logic.h"
 
@@ -100,7 +100,7 @@ static struct InstDef defs[200];
 static struct Instance insts[200];
 static struct Level lev;
 static struct GameTracker gGT;
-static struct CustomTrackRaceContext race = {12, 0};
+static struct CustomTrackRaceContext race = {12, 0, 0};
 
 /* n instances; every third one is not a crate, one has no model. */
 static int table(int crates_wanted) {

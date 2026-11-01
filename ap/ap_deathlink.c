@@ -106,6 +106,16 @@ static APDeathLinkState AP_DeathLinkStateNow(void)
 	                           g_config.dlSendHit, g_config.dlSendLoss);
 }
 
+// What the DeathLink row shows (ruled 2026-10-29): on a plan room the mode in
+// use when a DL Send row turned receiving on, not SEED. Other rooms and an
+// unconnected menu show the row's own value.
+int AP_DeathLinkRowValue(int row)
+{
+	if (row == -1 && ctr_cfg_active() && ap_content_plan_active())
+		return AP_DeathLinkRowShown(row, ctr_cfg.death_link, AP_DeathLinkStateNow().recv);
+	return row;
+}
+
 // Effective receive mode. The forced values ARE the tier enum (1 = mask_reset,
 // 2 = any_hit, 3 = race_loss, 4 = weapon_hit), so all in-game DeathLink layers
 // stay selectable.
@@ -403,6 +413,23 @@ static void AP_DeathLinkDrainInbound(void)
 {
 	char cause[128];
 	char source[64];
+	int dropped;
+
+	// More deaths than the inbox holds arrived in one poll: the oldest were
+	// discarded unread. Say so with one ignored popup for the count. It goes
+	// first, so if the feed ring is short of room it evicts this summary and not
+	// a retained death.
+	dropped = ap_net_deathlink_take_dropped();
+	if (dropped > 0 && AP_DeathLinkEffMode() != CTR_DL_OFF)
+	{
+		char msg[96];
+
+		snprintf(msg, sizeof msg, "[AP DEATH] dropped: %d earlier deaths (inbox full)\n", dropped);
+		AP_LogLine(msg);
+		AP_FeedDeathLinkLine("DEATHLINK IGNORED", 1);
+		snprintf(msg, sizeof msg, "%d MORE: TOO MANY", dropped);
+		AP_FeedDeathLinkLine(msg, 1);
+	}
 
 	while (ap_net_deathlink_take(cause, sizeof cause, source, sizeof source))
 	{
@@ -660,6 +687,7 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 		g_dl_swallow_edge = 0;
 		while (ap_net_deathlink_take(cause, sizeof cause, source, sizeof source))
 			;
+		(void)ap_net_deathlink_take_dropped();
 		return;
 	}
 

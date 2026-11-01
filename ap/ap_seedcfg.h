@@ -21,6 +21,8 @@
 #include "ap_boss_venue.h"
 #include "ap_crystal_checks.h"
 #include "ap_cup_sweeps.h"
+#include "ap_lap_checks.h"
+#include "ap_wumpa_shop.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -136,6 +138,7 @@ extern "C" {
 #define CTR_CFG_PODIUM_STORAGE_COUNT 18
 #define AP_TRIAL_PODIUM_LOGICAL_BASE 48
 #define CTR_CFG_LETTER_TRACK_COUNT 18
+#define CTR_CFG_BOX_TRACK_COUNT 18 // retail item-box LevelIDs 0..17
 #define CTR_CFG_LETTER_COUNT 3
 #define CTR_LETTER_ITEM_FIRST_INDEX 139
 
@@ -583,8 +586,24 @@ typedef struct
 	// key, no schema bump: absent (every older seed) -> 0 -> pink, which is what
 	// every earlier client draws. Display only: no gate, location or item.
 	int color_boxes_by_item;
+	// item_box_checks.placement_counts: -1 means no count for that LevelID.
+	// A room without the item_box_checks block is unaffected. A block with a
+	// missing, partial or malformed map refuses all retail item-box checks.
+	int box_placement_state; // 0 absent, 1 valid, -1 malformed
+	int box_placement_refused; // 1 once any track's box checks were refused (banner)
+	int box_placement_counts[CTR_CFG_BOX_TRACK_COUNT];
 	// #451: absent is off; receipts still use their own room-backed accounting.
 	int reserve_top_up;
+	// Spoiler Items (#459, schema 18): absent is off. On, pad reward previews
+	// wait for Warp Pad Preview and AP box colours wait for AP Box Colours
+	// (ap_spoiler_items_logic.h). Display only: no gate, location or item.
+	int spoiler_items;
+	// ctr_options.box_locations (always emitted on ordinary rooms, present on a
+	// content-plan envelope exactly with its item_boxes record). Absent is off.
+	// Read only so Spoiler Items knows the seed has AP boxes, and therefore an
+	// AP Box Colours item to wait for; box spawning keeps its server-membership
+	// test.
+	int seed_box_locations;
 
 	// DeathLink (issue #6). ADDITIVE ctr_options keys, no schema bump: a seed
 	// predating them leaves death_link 0 (off) and deathlink_amnesty 1, so the
@@ -811,8 +830,14 @@ typedef struct
 
 // Global config, zero-init; schema_version == 0 until ap_seedcfg_parse_json runs.
 extern ctr_seed_config ctr_cfg;
+// Checks the authored count before a retail track may expose any box checks.
+// Logs each distinct mismatch once per parsed room; also refuses a malformed map.
+int ctr_cfg_box_placement_valid(int levelID, int nativeCount);
+// Changes on every slot-data parse so a live race rebuilds after reconnect.
+unsigned int ctr_cfg_box_placement_revision(void);
 extern AP_CrystalChecks ctr_crystal_checks;
 extern AP_CupSweepConfig ctr_cup_sweeps;
+extern AP_WumpaShopConfig ctr_wumpa_shop;
 
 // schema_version >= 1 (slot_data parsed and active).
 int ctr_cfg_active(void);
@@ -1067,6 +1092,30 @@ int AP_BossRetailRulesLevel(int levelID);
 // otherwise (retail seed, refused record). Shown on the garage panel whether
 // the door is open or shut. IMPLEMENTED C-SIDE in ap_hooks_gates.c.
 int AP_BossVenueAdvert(int bossIdx, char *out, int cap);
+
+// #169 tier 2: "Rival: <name>" for a garage whose seed drew its opponent;
+// #169 tier 3: "Kit: <families>" for one with a composed kit. 0 otherwise.
+// IMPLEMENTED C-SIDE in ap_hooks_gates.c.
+int AP_BossRivalAdvert(int bossIdx, char *out, int cap);
+int AP_BossKitAdvert(int bossIdx, char *out, int cap);
+
+// #169 tier 2: the engine character garage bossIdx races (the garage load
+// writes it to data.characterIDs[1]), or -1 for the retail boss.
+int AP_BossGarageOpponent(int bossIdx);
+
+// #169 tier 2: for the boss race being loaded, the time-trial pack character
+// (the garage's own boss) and in *extra the one extra hi model the drawn
+// opponent needs (-1 for none); -1 for any load the retail path keeps.
+int AP_BossRaceOpponentModels(int player, int *extra);
+
+// J03 (decision 7): the engine character the N. Oxide garage races in both
+// Oxide races when the seed drew one (boss_oxide_in_pool), else -1. bossID
+// stays 4 or 5. IMPLEMENTED in ap_seedcfg.cpp.
+int AP_BossFinalGarageOpponent(void);
+
+// #169 tier 3: 0 when the running garage race has a composed kit with
+// boss_loss_easing off; 1 otherwise (retail per-loss cooldown easing).
+int AP_BossLossEasingNow(void);
 
 // The per-race copy of the inherited attack schedule for a shuffled venue,
 // its checkpoints mapped onto the loaded track; `fill` rebuilds it (race

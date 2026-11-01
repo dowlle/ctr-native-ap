@@ -2,15 +2,15 @@
  "content_plan": {
   "checks": [
    {
-    "display_name": "JurnthReinal Cup: Win",
+    "display_name": "Green Gem Cup: Gem",
     "kind": "cup",
-    "location": 35027003,
-    "owner": "cup:3",
+    "location": 35011201,
+    "owner": "gem_cup:1",
     "routes": [
      {
       "award": "win",
       "encounter_id": null,
-      "entry_id": "entry/cup:3",
+      "entry_id": "entry/gem_cup:1",
       "leg_id": null,
       "mode": "cup",
       "own_pad_id": "pad:101"
@@ -18,15 +18,15 @@
     ]
    },
    {
-    "display_name": "JurnthReinal Cup: Win All Legs",
+    "display_name": "Green Gem Cup: Win All Legs",
     "kind": "cup_sweep",
-    "location": 35027203,
-    "owner": "cup:3",
+    "location": 35028301,
+    "owner": "gem_cup:1",
     "routes": [
      {
       "award": "win_all_legs",
       "encounter_id": null,
-      "entry_id": "entry/cup:3",
+      "entry_id": "entry/gem_cup:1",
       "leg_id": null,
       "mode": "cup",
       "own_pad_id": "pad:101"
@@ -114,15 +114,15 @@
     ]
    },
    {
-    "display_name": "Superstarxalien Cup: Win",
+    "display_name": "Purple Gem Cup: Gem",
     "kind": "cup",
-    "location": 35027008,
-    "owner": "cup:8",
+    "location": 35011204,
+    "owner": "gem_cup:4",
     "routes": [
      {
       "award": "win",
       "encounter_id": null,
-      "entry_id": "entry/cup:8",
+      "entry_id": "entry/gem_cup:4",
       "leg_id": null,
       "mode": "cup",
       "own_pad_id": "pad:103"
@@ -130,15 +130,15 @@
     ]
    },
    {
-    "display_name": "Superstarxalien Cup: Win All Legs",
+    "display_name": "Purple Gem Cup: Win All Legs",
     "kind": "cup_sweep",
-    "location": 35027208,
-    "owner": "cup:8",
+    "location": 35028304,
+    "owner": "gem_cup:4",
     "routes": [
      {
       "award": "win_all_legs",
       "encounter_id": null,
-      "entry_id": "entry/cup:8",
+      "entry_id": "entry/gem_cup:4",
       "leg_id": null,
       "mode": "cup",
       "own_pad_id": "pad:103"
@@ -530,15 +530,15 @@
     ]
    },
    {
-    "display_name": "Hypnoshark Cup: Win",
+    "display_name": "Yellow Gem Cup: Gem",
     "kind": "cup",
-    "location": 35027005,
-    "owner": "cup:5",
+    "location": 35011203,
+    "owner": "gem_cup:3",
     "routes": [
      {
       "award": "win",
       "encounter_id": null,
-      "entry_id": "entry/cup:5",
+      "entry_id": "entry/gem_cup:3",
       "leg_id": null,
       "mode": "cup",
       "own_pad_id": "pad:1"
@@ -546,15 +546,15 @@
     ]
    },
    {
-    "display_name": "Hypnoshark Cup: Win All Legs",
+    "display_name": "Yellow Gem Cup: Win All Legs",
     "kind": "cup_sweep",
-    "location": 35027205,
-    "owner": "cup:5",
+    "location": 35028303,
+    "owner": "gem_cup:3",
     "routes": [
      {
       "award": "win_all_legs",
       "encounter_id": null,
-      "entry_id": "entry/cup:5",
+      "entry_id": "entry/gem_cup:3",
       "leg_id": null,
       "mode": "cup",
       "own_pad_id": "pad:1"
@@ -722,15 +722,15 @@
     ]
    },
    {
-    "display_name": "Icebound Cup: Win",
+    "display_name": "Red Gem Cup: Gem",
     "kind": "cup",
-    "location": 35027001,
-    "owner": "cup:1",
+    "location": 35011200,
+    "owner": "gem_cup:0",
     "routes": [
      {
       "award": "win",
       "encounter_id": null,
-      "entry_id": "entry/cup:1",
+      "entry_id": "entry/gem_cup:0",
       "leg_id": null,
       "mode": "cup",
       "own_pad_id": "pad:4"
@@ -738,15 +738,15 @@
     ]
    },
    {
-    "display_name": "Icebound Cup: Win All Legs",
+    "display_name": "Red Gem Cup: Win All Legs",
     "kind": "cup_sweep",
-    "location": 35027201,
-    "owner": "cup:1",
+    "location": 35028300,
+    "owner": "gem_cup:0",
     "routes": [
      {
       "award": "win_all_legs",
       "encounter_id": null,
-      "entry_id": "entry/cup:1",
+      "entry_id": "entry/gem_cup:0",
       "leg_id": null,
       "mode": "cup",
       "own_pad_id": "pad:4"
@@ -834,15 +834,15 @@
     ]
    },
    {
-    "display_name": "Lockheart Cup: Win",
+    "display_name": "Blue Gem Cup: Gem",
     "kind": "cup",
-    "location": 35027004,
-    "owner": "cup:4",
+    "location": 35011202,
+    "owner": "gem_cup:2",
     "routes": [
      {
       "award": "win",
       "encounter_id": null,
-      "entry_id": "entry/cup:4",
+      "entry_id": "entry/gem_cup:2",
       "leg_id": null,
       "mode": "cup",
       "own_pad_id": "pad:16"
@@ -850,15 +850,15 @@
     ]
    },
    {
-    "display_name": "Lockheart Cup: Win All Legs",
+    "display_name": "Blue Gem Cup: Win All Legs",
     "kind": "cup_sweep",
-    "location": 35027204,
-    "owner": "cup:4",
+    "location": 35028302,
+    "owner": "gem_cup:2",
     "routes": [
      {
       "award": "win_all_legs",
       "encounter_id": null,
-      "entry_id": "entry/cup:4",
+      "entry_id": "entry/gem_cup:2",
       "leg_id": null,
       "mode": "cup",
       "own_pad_id": "pad:16"
@@ -1674,16 +1674,16 @@
      {
       "award": "leg_win",
       "encounter_id": null,
-      "entry_id": "entry/cup:3",
-      "leg_id": "entry/cup:3/leg:3",
+      "entry_id": "entry/gem_cup:1",
+      "leg_id": "entry/gem_cup:1/leg:3",
       "mode": "cup",
       "own_pad_id": "pad:101"
      },
      {
       "award": "leg_win",
       "encounter_id": null,
-      "entry_id": "entry/cup:1",
-      "leg_id": "entry/cup:1/leg:3",
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": "entry/gem_cup:0/leg:3",
       "mode": "cup",
       "own_pad_id": "pad:4"
      }
@@ -1698,8 +1698,8 @@
      {
       "award": "leg_win",
       "encounter_id": null,
-      "entry_id": "entry/cup:8",
-      "leg_id": "entry/cup:8/leg:0",
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": "entry/gem_cup:4/leg:0",
       "mode": "cup",
       "own_pad_id": "pad:103"
      },
@@ -1757,28 +1757,28 @@
   "encounters": [],
   "entries": [
    {
-    "display_name": "JurnthReinal Cup",
+    "display_name": "Green Gem Cup",
     "field_size": 8,
-    "id": "entry/cup:3",
+    "id": "entry/gem_cup:1",
     "kind": "cup",
     "legs": [
      {
-      "id": "entry/cup:3/leg:0",
+      "id": "entry/gem_cup:1/leg:0",
       "laps": 1,
       "track_id": "cortex_vortex"
      },
      {
-      "id": "entry/cup:3/leg:1",
+      "id": "entry/gem_cup:1/leg:1",
       "laps": 3,
       "track_id": "custom/baby-t-park/1.0.2"
      },
      {
-      "id": "entry/cup:3/leg:2",
+      "id": "entry/gem_cup:1/leg:2",
       "laps": 1,
       "track_id": "custom/fixture-loop/2.1"
      },
      {
-      "id": "entry/cup:3/leg:3",
+      "id": "entry/gem_cup:1/leg:3",
       "laps": 1,
       "track_id": "retail:6"
      }
@@ -1802,28 +1802,28 @@
     "track_id": "retail:15"
    },
    {
-    "display_name": "Superstarxalien Cup",
+    "display_name": "Purple Gem Cup",
     "field_size": 8,
-    "id": "entry/cup:8",
+    "id": "entry/gem_cup:4",
     "kind": "cup",
     "legs": [
      {
-      "id": "entry/cup:8/leg:0",
+      "id": "entry/gem_cup:4/leg:0",
       "laps": 2,
       "track_id": "custom/tv-world/1.1.0"
      },
      {
-      "id": "entry/cup:8/leg:1",
+      "id": "entry/gem_cup:4/leg:1",
       "laps": 1,
       "track_id": "retail:5"
      },
      {
-      "id": "entry/cup:8/leg:2",
+      "id": "entry/gem_cup:4/leg:2",
       "laps": 1,
       "track_id": "retail:3"
      },
      {
-      "id": "entry/cup:8/leg:3",
+      "id": "entry/gem_cup:4/leg:3",
       "laps": 1,
       "track_id": "retail:7"
      }
@@ -1890,28 +1890,28 @@
     "track_id": "retail:9"
    },
    {
-    "display_name": "Hypnoshark Cup",
+    "display_name": "Yellow Gem Cup",
     "field_size": 8,
-    "id": "entry/cup:5",
+    "id": "entry/gem_cup:3",
     "kind": "cup",
     "legs": [
      {
-      "id": "entry/cup:5/leg:0",
+      "id": "entry/gem_cup:3/leg:0",
       "laps": 1,
       "track_id": "retail:13"
      },
      {
-      "id": "entry/cup:5/leg:1",
+      "id": "entry/gem_cup:3/leg:1",
       "laps": 1,
       "track_id": "retail:11"
      },
      {
-      "id": "entry/cup:5/leg:2",
+      "id": "entry/gem_cup:3/leg:2",
       "laps": 1,
       "track_id": "retail:15"
      },
      {
-      "id": "entry/cup:5/leg:3",
+      "id": "entry/gem_cup:3/leg:3",
       "laps": 3,
       "track_id": "custom/baby-t-park/1.0.2"
      }
@@ -1946,28 +1946,28 @@
     "track_id": "retail:17"
    },
    {
-    "display_name": "Icebound Cup",
+    "display_name": "Red Gem Cup",
     "field_size": 8,
-    "id": "entry/cup:1",
+    "id": "entry/gem_cup:0",
     "kind": "cup",
     "legs": [
      {
-      "id": "entry/cup:1/leg:0",
+      "id": "entry/gem_cup:0/leg:0",
       "laps": 1,
       "track_id": "custom/fixture-loop/2.1"
      },
      {
-      "id": "entry/cup:1/leg:1",
+      "id": "entry/gem_cup:0/leg:1",
       "laps": 1,
       "track_id": "retail:0"
      },
      {
-      "id": "entry/cup:1/leg:2",
+      "id": "entry/gem_cup:0/leg:2",
       "laps": 1,
       "track_id": "retail:15"
      },
      {
-      "id": "entry/cup:1/leg:3",
+      "id": "entry/gem_cup:0/leg:3",
       "laps": 1,
       "track_id": "retail:6"
      }
@@ -1991,28 +1991,28 @@
     "track_id": "retail:7"
    },
    {
-    "display_name": "Lockheart Cup",
+    "display_name": "Blue Gem Cup",
     "field_size": 8,
-    "id": "entry/cup:4",
+    "id": "entry/gem_cup:2",
     "kind": "cup",
     "legs": [
      {
-      "id": "entry/cup:4/leg:0",
+      "id": "entry/gem_cup:2/leg:0",
       "laps": 1,
       "track_id": "custom/fixture-loop/2.1"
      },
      {
-      "id": "entry/cup:4/leg:1",
+      "id": "entry/gem_cup:2/leg:1",
       "laps": 1,
       "track_id": "retail:13"
      },
      {
-      "id": "entry/cup:4/leg:2",
+      "id": "entry/gem_cup:2/leg:2",
       "laps": 1,
       "track_id": "retail:3"
      },
      {
-      "id": "entry/cup:4/leg:3",
+      "id": "entry/gem_cup:2/leg:3",
       "laps": 1,
       "track_id": "retail:5"
      }
@@ -2272,7 +2272,7 @@
   },
   "items": {
    "coded_checks": 107,
-   "filler_count": 93,
+   "filler_count": 42,
    "locked_checks": 0,
    "rows": [
     {
@@ -2287,35 +2287,35 @@
      "start_from_pool": 0
     },
     {
-     "base": 0,
+     "base": 17,
      "extra": 0,
      "item": 35010001,
      "locked_selected": 0,
-     "receipt_cap": 0,
-     "remaining": 0,
-     "requirement_ceiling": 0,
+     "receipt_cap": 17,
+     "remaining": 17,
+     "requirement_ceiling": 17,
      "start_additional": 0,
      "start_from_pool": 0
     },
     {
-     "base": 0,
+     "base": 17,
      "extra": 0,
      "item": 35010002,
      "locked_selected": 0,
-     "receipt_cap": 0,
-     "remaining": 0,
-     "requirement_ceiling": 0,
+     "receipt_cap": 17,
+     "remaining": 17,
+     "requirement_ceiling": 17,
      "start_additional": 0,
      "start_from_pool": 0
     },
     {
-     "base": 0,
+     "base": 17,
      "extra": 0,
      "item": 35010003,
      "locked_selected": 0,
-     "receipt_cap": 0,
-     "remaining": 0,
-     "requirement_ceiling": 0,
+     "receipt_cap": 17,
+     "remaining": 17,
+     "requirement_ceiling": 17,
      "start_additional": 0,
      "start_from_pool": 0
     },
@@ -2565,7 +2565,7 @@
   "pads": [
    {
     "entrance_req": "keys:2",
-    "entry_id": "entry/cup:3",
+    "entry_id": "entry/gem_cup:1",
     "hub_id": "hub:25",
     "id": "pad:101",
     "kind": "normal",
@@ -2605,7 +2605,7 @@
    },
    {
     "entrance_req": "keys:2",
-    "entry_id": "entry/cup:8",
+    "entry_id": "entry/gem_cup:4",
     "hub_id": "hub:25",
     "id": "pad:103",
     "kind": "normal",
@@ -2740,7 +2740,7 @@
    },
    {
     "entrance_req": "keys:2",
-    "entry_id": "entry/cup:5",
+    "entry_id": "entry/gem_cup:3",
     "hub_id": "hub:28",
     "id": "pad:1",
     "kind": "normal",
@@ -2805,7 +2805,7 @@
    },
    {
     "entrance_req": "keys:1",
-    "entry_id": "entry/cup:1",
+    "entry_id": "entry/gem_cup:0",
     "hub_id": "hub:27",
     "id": "pad:4",
     "kind": "normal",
@@ -2845,7 +2845,7 @@
    },
    {
     "entrance_req": "keys:1",
-    "entry_id": "entry/cup:4",
+    "entry_id": "entry/gem_cup:2",
     "hub_id": "hub:25",
     "id": "pad:16",
     "kind": "normal",
@@ -3187,7 +3187,8 @@
   "required_features": [
    "content_plan_v1",
    "track_modes_v1",
-   "cup_entries_v1"
+   "cup_entries_v1",
+   "gem_cups_v1"
   ],
   "requirements": [
    {

@@ -19,7 +19,7 @@ the production consumers out of the ap_hooks unit against that configuration:
 4. The wiring: the Oxide garage arms the bundled Cortex Vortex pair for a
    content plan's Final Challenge on Cortex Vortex only, and the race-loss
    stakes know boss races (tools/test-content-win-stakes-production.py runs
-   AP_ContentWinFacts).
+   AP_ContentWinSet).
 
 Engine and network state are controlled seams; this does not claim a Steam
 race.
@@ -57,6 +57,7 @@ fixture = r'''
 #include "ap_boss_venue.h"
 #include "ap_oxide_encounter.h"
 #include "ap_goal_logic.h"
+#include "ap_wumpa_shop.h"
 #define ADV_REWARD_FIRST_TROPHY 6
 #define CTR_CFG_BOSS_COUNT 5
 #define ORANGE 0
@@ -67,6 +68,8 @@ struct {
     ctr_req boss_req[5]; int boss_n_tracks[5]; int boss_tracks[5][4];
 } ctr_cfg;
 AP_BossEncounters ctr_boss_encounters;
+AP_WumpaShopConfig ctr_wumpa_shop; /* #249: no Wumpa goal in these cases */
+static long long ap_net_wumpa_lifetime(void) { return 0; }
 typedef struct { int present, oxide_goal, bosses_required, oxide_1_optional, final_unlock, final_count,
                  track_shuffle, repeats, venues[4], final_track; } ctr_content_bosses;
 static ctr_content_bosses g_bosses;
@@ -166,7 +169,7 @@ assert "b->final_track != CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX" in plan_arm and "d.
     "a content plan arms the Oxide 2 venue for a Final Challenge on Cortex Vortex"
 assert "padTrackEnabled" not in plan_arm, "a content plan never arms the legacy Cortex Vortex pad track"
 assert "ap_oxide_final_content_required = 1;" in plan_arm, "a refused pair keeps the Final Challenge shut"
-race = extract("int AP_ContentWinFacts(long *outCode, int *outNeedsItems, int *outBoost, int *outRacer)\n{")
+race = extract("int AP_ContentWinSet(long set[AP_WS_WINSET_MAX])\n{")
 assert "ap_content_plan_bosses()->present && (gGT->gameMode1 & ADVENTURE_BOSS)" in race, "boss races have content stakes"
 
 with tempfile.TemporaryDirectory() as temporary:

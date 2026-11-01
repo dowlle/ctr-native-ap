@@ -17,9 +17,13 @@
 // `itemsanity` and `hit_character` (#133 PR 4d) are the global check families'
 // codes and frozen names, in the apworld's class order (itemsanity.py,
 // hit_character.py): the 22 weapon use checks and the 16 Hit checks.
+// Gem Cups (one generator row 2): `gem_cups` is the five original cups, Red
+// first, with their frozen Gem and sweep codes.
 // Cups (#133 PR 5): `cups` is the 27-name pool in code order with each name's
 // `win` and `sweep` codes; `cup_leg` on the retail rows and Cortex Vortex and
 // `custom_cup_leg_locations` per generic slot are the Cup Leg Victory codes.
+// Lap completion (#344): `lap` on the retail rows and Cortex Vortex and
+// `custom_lap_locations` per generic slot are the Complete One Lap codes.
 // Custom packages are not listed: content plans admit any complete descriptor
 // (#133 PR 2) and the bytes are verified on load.
 // `named_blocks` is the apworld's named-track table (data/named_tracks.json):
@@ -121,7 +125,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           0
         ]
       ],
-      "cup_leg": 35016807
+      "cup_leg": 35016807,
+      "lap": 35028007
     },
     {
       "id": 1,
@@ -206,7 +211,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           0
         ]
       ],
-      "cup_leg": 35016809
+      "cup_leg": 35016809,
+      "lap": 35028009
     },
     {
       "id": 2,
@@ -295,7 +301,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           0
         ]
       ],
-      "cup_leg": 35016808
+      "cup_leg": 35016808,
+      "lap": 35028008
     },
     {
       "id": 3,
@@ -368,7 +375,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           0
         ]
       ],
-      "cup_leg": 35016800
+      "cup_leg": 35016800,
+      "lap": 35028000
     },
     {
       "id": 4,
@@ -441,7 +449,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           0
         ]
       ],
-      "cup_leg": 35016805
+      "cup_leg": 35016805,
+      "lap": 35028005
     },
     {
       "id": 5,
@@ -522,7 +531,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           1
         ]
       ],
-      "cup_leg": 35016806
+      "cup_leg": 35016806,
+      "lap": 35028006
     },
     {
       "id": 6,
@@ -599,7 +609,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           0
         ]
       ],
-      "cup_leg": 35016801
+      "cup_leg": 35016801,
+      "lap": 35028001
     },
     {
       "id": 7,
@@ -692,7 +703,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           0
         ]
       ],
-      "cup_leg": 35016812
+      "cup_leg": 35016812,
+      "lap": 35028012
     },
     {
       "id": 8,
@@ -785,7 +797,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           0
         ]
       ],
-      "cup_leg": 35016803
+      "cup_leg": 35016803,
+      "lap": 35028003
     },
     {
       "id": 9,
@@ -870,7 +883,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           0
         ]
       ],
-      "cup_leg": 35016802
+      "cup_leg": 35016802,
+      "lap": 35028002
     },
     {
       "id": 10,
@@ -959,7 +973,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           0
         ]
       ],
-      "cup_leg": 35016813
+      "cup_leg": 35016813,
+      "lap": 35028013
     },
     {
       "id": 11,
@@ -1052,7 +1067,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           0
         ]
       ],
-      "cup_leg": 35016814
+      "cup_leg": 35016814,
+      "lap": 35028014
     },
     {
       "id": 12,
@@ -1145,7 +1161,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           0
         ]
       ],
-      "cup_leg": 35016810
+      "cup_leg": 35016810,
+      "lap": 35028010
     },
     {
       "id": 13,
@@ -1234,7 +1251,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           0
         ]
       ],
-      "cup_leg": 35016815
+      "cup_leg": 35016815,
+      "lap": 35028015
     },
     {
       "id": 14,
@@ -1307,7 +1325,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           0
         ]
       ],
-      "cup_leg": 35016804
+      "cup_leg": 35016804,
+      "lap": 35028004
     },
     {
       "id": 15,
@@ -1400,7 +1419,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           0
         ]
       ],
-      "cup_leg": 35016811
+      "cup_leg": 35016811,
+      "lap": 35028011
     },
     {
       "id": 16,
@@ -1493,7 +1513,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           0
         ]
       ],
-      "cup_leg": 35016816
+      "cup_leg": 35016816,
+      "lap": 35028016
     },
     {
       "id": 17,
@@ -1586,7 +1607,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           0
         ]
       ],
-      "cup_leg": 35016817
+      "cup_leg": 35016817,
+      "lap": 35028017
     }
   ],
   "pads": [
@@ -2606,7 +2628,8 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       35010201,
       35010202
     ],
-    "cup_leg": 35027027
+    "cup_leg": 35027027,
+    "lap": 35026009
   },
   "itemsanity": [
     {
@@ -2901,6 +2924,33 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       "sweep": 35027226
     }
   ],
+  "gem_cups": [
+    {
+      "name": "Red Gem Cup",
+      "win": 35011200,
+      "sweep": 35028300
+    },
+    {
+      "name": "Green Gem Cup",
+      "win": 35011201,
+      "sweep": 35028301
+    },
+    {
+      "name": "Blue Gem Cup",
+      "win": 35011202,
+      "sweep": 35028302
+    },
+    {
+      "name": "Yellow Gem Cup",
+      "win": 35011203,
+      "sweep": 35028303
+    },
+    {
+      "name": "Purple Gem Cup",
+      "win": 35011204,
+      "sweep": 35028304
+    }
+  ],
   "custom_cup_leg_locations": [
     35016820,
     35016821,
@@ -2934,6 +2984,40 @@ static const char kContentRegistryJSON[] = R"CTRREG(
     35016849,
     35016850,
     35016851
+  ],
+  "custom_lap_locations": [
+    35028100,
+    35028101,
+    35028102,
+    35028103,
+    35028104,
+    35028105,
+    35028106,
+    35028107,
+    35028108,
+    35028109,
+    35028110,
+    35028111,
+    35028112,
+    35028113,
+    35028114,
+    35028115,
+    35028116,
+    35028117,
+    35028118,
+    35028119,
+    35028120,
+    35028121,
+    35028122,
+    35028123,
+    35028124,
+    35028125,
+    35028126,
+    35028127,
+    35028128,
+    35028129,
+    35028130,
+    35028131
   ],
   "named_blocks": [
     {
@@ -3232,9 +3316,19 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       "name": "Sampa Run"
     },
     {
+      "key": "sewer-baby-park",
+      "block": 85,
+      "name": "Sewer Baby Park"
+    },
+    {
       "key": "sid-house",
       "block": 61,
       "name": "Sid House"
+    },
+    {
+      "key": "sids-house",
+      "block": 86,
+      "name": "Sid's House"
     },
     {
       "key": "skater-s-retreat",
@@ -3267,6 +3361,11 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       "name": "Space Labs"
     },
     {
+      "key": "specter-station",
+      "block": 87,
+      "name": "Specter Station"
+    },
+    {
       "key": "sunken-sprint",
       "block": 69,
       "name": "Sunken Sprint"
@@ -3290,6 +3389,11 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       "key": "the-lab",
       "block": 73,
       "name": "The Lab"
+    },
+    {
+      "key": "tizi-challenge",
+      "block": 88,
+      "name": "Tizi Challenge"
     },
     {
       "key": "toasty-terrace",

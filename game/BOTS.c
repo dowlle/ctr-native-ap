@@ -1,4 +1,8 @@
 #include <common.h>
+
+#ifdef CTR_AP
+#include "../ap/ap_boss_adapter.h" // J03 boss adapter protection
+#endif
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_identity.h>
 #endif
@@ -269,13 +273,21 @@ void BOTS_Adv_AdjustDifficulty(void)
 	else if ((gameMode1 & ADVENTURE_BOSS) != 0)
 	{
 		s32 bossID = gGT->bossID;
-		s32 lostModifier = BOTS_Adv_NumTimesLostEvent(sdata->advProgress.timesLostBossRace[bossID]) - 0xe1;
+#ifdef CTR_AP
+		// #169 tier 3: boss_loss_easing off drives the encounter at its
+		// zero-loss base on every try (Vanilla AI only; a fixed AI setting
+		// replaces this factor anyway).
+		s32 bossLosses = AP_BossLossEasingNow() ? sdata->advProgress.timesLostBossRace[bossID] : 0;
+#else
+		s32 bossLosses = sdata->advProgress.timesLostBossRace[bossID];
+#endif
+		s32 lostModifier = BOTS_Adv_NumTimesLostEvent(bossLosses) - 0xe1;
 		s32 maxDifficulty = bossID * 5;
 
 		if ((gameMode2 & CHEAT_ADV) != 0)
 		{
 			maxDifficulty = bossID * 7;
-			lostModifier = BOTS_Adv_NumTimesLostEvent(sdata->advProgress.timesLostBossRace[bossID]) - 0x141;
+			lostModifier = BOTS_Adv_NumTimesLostEvent(bossLosses) - 0x141;
 		}
 
 		currDifficulty = maxDifficulty - lostModifier;
@@ -954,6 +966,13 @@ void BOTS_ThTick_Drive(struct Thread *botThread)
 	}
 	else
 	{
+#ifdef CTR_AP
+		// J03: contact damage (a masked or shielded player) on a boss the
+		// adapter armed with a shield or mask is absorbed as VehPickState does.
+		if (PickupBots_AdapterProtect(botDriver))
+			botDriver->pendingDamageType = 0;
+		else
+#endif
 		BOTS_ChangeState(botDriver, botDriver->pendingDamageType, botDriver->pendingDamageAttacker, botDriver->pendingDamageReasonByte);
 	}
 
