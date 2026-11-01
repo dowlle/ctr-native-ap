@@ -230,7 +230,7 @@ int main(int argc, char **argv)
             CHECK(item->supportedModes == 0);
             if (!strcmp(item->manifestSha256, store[0].pin))
             {
-                CHECK(item->installed);
+                CHECK(item->installed && !item->scanFailed);
                 CHECK(!strcmp(item->title, store[0].manifest.title));
                 CHECK(!strcmp(item->version, "2.0.0"));
             }
@@ -238,6 +238,7 @@ int main(int argc, char **argv)
             {
                 CHECK(!item->installed);
                 CHECK(!strcmp(item->disabledReason, "Damaged revision"));
+                CHECK(item->scanFailed);
             }
         }
         /* Discovered, bytes verified or Ready, for each mode on its own. */
@@ -264,7 +265,7 @@ int main(int argc, char **argv)
         CHECK(!CustomTrackLibrary_ApplyStore(&library, store, 2));
         CHECK(library.count == 4);
         CHECK(CustomTrackLibrary_ApplyStore(&library, NULL, 0));
-        for (i = 0; i < (int)library.count; i++) CHECK(!library.entries[i].installed);
+        for (i = 0; i < (int)library.count; i++) CHECK(!library.entries[i].installed && !library.entries[i].scanFailed);
     }
     CustomTrackLibrary_Free(&library);
     CustomTrackLibrary_Free(&library);

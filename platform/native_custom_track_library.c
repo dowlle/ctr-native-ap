@@ -239,6 +239,7 @@ int CustomTrackLibrary_ApplyStore(struct CustomTrackLibrary *library,
         if (merged[i].installed)
             snprintf(merged[i].disabledReason, sizeof merged[i].disabledReason, "Installed revision absent at last store scan");
         merged[i].installed = 0;
+        merged[i].scanFailed = 0;
         merged[i].supportedModes = 0;
         memset(&merged[i].local, 0, sizeof merged[i].local);
     }
@@ -268,8 +269,12 @@ int CustomTrackLibrary_ApplyStore(struct CustomTrackLibrary *library,
             snprintf(merged[j].disabledReason, sizeof merged[j].disabledReason,
                      "Installed exact revision; gameplay certification and launch integration pending");
         }
-        else snprintf(merged[j].disabledReason, sizeof merged[j].disabledReason, "%s",
-                      source->error[0] ? source->error : "Installed revision failed verification");
+        else
+        {
+            merged[j].scanFailed = 1;
+            snprintf(merged[j].disabledReason, sizeof merged[j].disabledReason, "%s",
+                     source->error[0] ? source->error : "Installed revision failed verification");
+        }
     }
     result = CustomTrackLibrary_Replace(library, merged, total);
     free(merged);

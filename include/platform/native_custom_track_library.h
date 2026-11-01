@@ -21,6 +21,7 @@ struct CustomTrackLibraryEntry
     char disabledReason[257];
     unsigned int supportedModes; /* Derived elsewhere from verified evidence. */
     int installed;
+    int scanFailed; /* The last store scan found this revision and refused it. */
     int requiredBySeed;
     struct CustomPackageLocalInfo local;
 };

@@ -148,7 +148,7 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
         {
             const struct CustomTrackLibraryEntry *r = &s_contentLibrary.entries[i];
             /* A revision that failed its checks stays listed with its reason. */
-            if ((r->installed || r->disabledReason[0]) && (MM_CustomSearchMatch(r->title,s_saphiQuery) || MM_CustomSearchMatch(r->author,s_saphiQuery) ||
+            if ((r->installed || r->scanFailed) && (MM_CustomSearchMatch(r->title,s_saphiQuery) || MM_CustomSearchMatch(r->author,s_saphiQuery) ||
                 MM_CustomSearchMatch(r->version,s_saphiQuery)))
             {
                 size_t at=0;
