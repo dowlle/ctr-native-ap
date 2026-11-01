@@ -29,8 +29,10 @@ option(CTR_CUSTOM_TRACKS "Load a hash-verified custom track from disk" OFF)
 #   CTR_BOX_AUTHORING    Box Author Mode, the in-game box placement editor.
 #   CTR_AI_LAP_RECORDER  the AI lap recorder. Always compiled into CTR_AP
 #                        builds, so this option only matters with CTR_AP=OFF.
-# With CTR_AP=ON the first two follow CTR_AP_AUTHORING: the player client never
-# gets them, the box authoring download always does.
+# With CTR_AP=ON, CTR_CUSTOM_PACKAGES follows CTR_CUSTOM_TRACKS: the player
+# client gets the library and the Arcade custom pages, its rooms stay on the
+# Current Seed path. CTR_BOX_AUTHORING follows CTR_AP_AUTHORING: only the box
+# authoring download gets it.
 #
 # The authoring client is the one-switch, no-Archipelago build of all of them:
 #   cmake -S . -B build-authoring -DCTR_AUTHORING_CLIENT=ON
@@ -51,15 +53,11 @@ if(CTR_AUTHORING_CLIENT)
     set(CTR_AI_LAP_RECORDER ON)
 endif()
 if(CTR_AP)
-    set(_ctr_ap_packages OFF)
-    if(CTR_AP_AUTHORING AND CTR_CUSTOM_TRACKS)
-        set(_ctr_ap_packages ON)
+    if((CTR_CUSTOM_PACKAGES AND NOT CTR_CUSTOM_TRACKS) OR (CTR_BOX_AUTHORING AND NOT CTR_AP_AUTHORING))
+        message(FATAL_ERROR "With CTR_AP=ON, CTR_CUSTOM_PACKAGES comes from CTR_CUSTOM_TRACKS and "
+            "CTR_BOX_AUTHORING from CTR_AP_AUTHORING. Do not set them directly.")
     endif()
-    if((CTR_CUSTOM_PACKAGES AND NOT _ctr_ap_packages) OR (CTR_BOX_AUTHORING AND NOT CTR_AP_AUTHORING))
-        message(FATAL_ERROR "With CTR_AP=ON, CTR_CUSTOM_PACKAGES and CTR_BOX_AUTHORING come only "
-            "from CTR_AP_AUTHORING (packages also need CTR_CUSTOM_TRACKS). Do not set them directly.")
-    endif()
-    set(CTR_CUSTOM_PACKAGES ${_ctr_ap_packages})
+    set(CTR_CUSTOM_PACKAGES ${CTR_CUSTOM_TRACKS})
     set(CTR_BOX_AUTHORING ${CTR_AP_AUTHORING})
     set(CTR_AI_LAP_RECORDER OFF) # always present in an AP build; no define needed
 elseif(CTR_AP_AUTHORING)
@@ -180,8 +178,8 @@ endif()
 
 # Custom-track packages (library, Track Manager, Arcade custom pages, the
 # offline package loader and Saphi install). CTR_CUSTOM_PACKAGES is the one
-# switch every guarded call site checks. The AP box authoring download builds
-# these sources inside the CTR_AP block below; the authoring client without
+# switch every guarded call site checks. The AP clients build these sources
+# inside the CTR_AP block below; the authoring client without
 # Archipelago builds them here, together with the Saphi downloader.
 set(CTR_CUSTOM_PACKAGE_SOURCES
     platform/native_custom_package.cpp
@@ -311,10 +309,10 @@ if(CTR_AP)
         target_compile_definitions(ap_net PRIVATE CTR_AP_AUTHORING)
     endif()
 
-    # Custom-track packages in an AP build: box authoring download only
-    # (CTR_CUSTOM_PACKAGES follows CTR_AP_AUTHORING, see the options above). The
-    # player client keeps the single-package Custom Content page it was tested
-    # with, and none of these sources, utf8proc or their defines reach it.
+    # Custom-track packages in an AP build: CTR_CUSTOM_PACKAGES follows
+    # CTR_CUSTOM_TRACKS, see the options above. A room still takes its tracks
+    # from its own pins; the player client's Custom Content page stays its own,
+    # and the library gets a Track Library page next to it.
     if(CTR_CUSTOM_PACKAGES)
         include(${CMAKE_SOURCE_DIR}/cmake/CustomPackageDeps.cmake)
         add_library(custom_package STATIC ${CTR_CUSTOM_PACKAGE_SOURCES})
@@ -322,7 +320,8 @@ if(CTR_AP)
         target_include_directories(custom_package PRIVATE ${CMAKE_SOURCE_DIR}/include
             ${AP_VENDOR}/json/include ${CMAKE_SOURCE_DIR}/vendor/utf8proc)
         target_compile_definitions(custom_package PRIVATE
-            CTR_CUSTOM_TRACKS CTR_AP_AUTHORING CTR_CUSTOM_PACKAGES UTF8PROC_STATIC)
+            CTR_CUSTOM_TRACKS CTR_CUSTOM_PACKAGES UTF8PROC_STATIC
+            $<$<BOOL:${CTR_AP_AUTHORING}>:CTR_AP_AUTHORING>)
         target_compile_options(custom_package PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fexceptions;-frtti>)
         target_link_libraries(custom_package PUBLIC Threads::Threads)
         target_compile_definitions(ctr_native PRIVATE CTR_CUSTOM_PACKAGES)
@@ -330,14 +329,6 @@ if(CTR_AP)
         target_include_directories(ap_net PRIVATE ${CMAKE_SOURCE_DIR}/include)
         target_link_libraries(ap_net PUBLIC custom_package)
         target_link_libraries(ctr_native custom_package)
-    endif()
-    # Open content-plan admission (#133 PR 2): the player client measures a
-    # seed's custom track with the structural verifier the package library
-    # uses, so it can refuse a capability the bytes do not have. Only this one
-    # C file, as its own translation unit; the library, Track Manager and
-    # utf8proc stay out of the player client.
-    if(CTR_CUSTOM_TRACKS AND NOT CTR_CUSTOM_PACKAGES)
-        target_sources(ctr_native PRIVATE platform/native_custom_content_verify.c)
     endif()
     target_compile_options(ap_net PRIVATE -O1 -fexceptions -frtti)
     # -Wa,-mbig-obj is a COFF-only assembler flag (mingw); ELF has no such limit.

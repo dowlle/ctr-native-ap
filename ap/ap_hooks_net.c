@@ -229,6 +229,12 @@ static void AP_NetTick(struct GameTracker *gGT)
 		}
 	}
 
+	// A custom Arcade race holds the room: received items stay in the net queue
+	// and drain here after it ends, so the feed and the tallies see them as
+	// ordinary late receipts.
+	if (AP_ArcadeHoldsRoom())
+		return;
+
 	// Podium backstop (connect-time): reconcile rungs for any trophy race whose
 	// win was already recorded (a prior session, or a crash that lost the live
 	// capture). Winning == 1st == all rungs, so the durable trophy-checked signal

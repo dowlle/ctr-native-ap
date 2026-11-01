@@ -1,5 +1,6 @@
-/* Track Manager (Options > Custom Content) for the box authoring build.
-   Included by MM_ConfigMenu.c inside CTR_CUSTOM_PACKAGES only. */
+/* Track Manager: Options > Track Library in the player client, Options >
+   Custom Content in the authoring builds. Included by MM_ConfigMenu.c inside
+   CTR_CUSTOM_PACKAGES only. */
 #include <platform/native_custom_revision.h>
 static int s_saphiVersionTrack;
 static size_t s_saphiBrowseSelection;
@@ -46,7 +47,7 @@ static const struct CustomTrackLibraryEntry *MM_CustomSourceInstalled(const stru
     return exact;
 }
 
-static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
+static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
 {
     size_t visible[CTR_LIBRARY_MAX], count = 0, first;
     const struct CustomSaphiRevision *source = NULL;

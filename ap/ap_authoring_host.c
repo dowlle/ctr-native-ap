@@ -35,11 +35,15 @@ void AP_LogLine(const char *msg)
 }
 
 #ifdef CTR_CUSTOM_PACKAGES
-// In an AP build an Arcade custom page refuses to launch while a seed is
-// loaded, because the seed owns the session (ap_hooks.c). There is no seed here.
+// There is no room in this build, so an Arcade custom page always may start.
 int AP_CustomOfflineLaunchAllowed(void)
 {
 	return 1;
+}
+
+const char *AP_CustomOfflineRoomNote(void)
+{
+	return "";
 }
 #endif
 

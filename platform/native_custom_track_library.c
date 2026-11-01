@@ -279,6 +279,13 @@ fail:
     return 0;
 }
 
+enum CustomTrackAdmission CustomTrackLibrary_Admission(const struct CustomTrackLibraryEntry *entry, int timeTrial)
+{
+    if (!entry || !entry->installed) return CTR_ADMISSION_DISCOVERED;
+    return (timeTrial ? entry->local.timeTrial : entry->local.arcade) ? CTR_ADMISSION_READY
+                                                                     : CTR_ADMISSION_BYTES_VERIFIED;
+}
+
 int CustomTrackLibrary_Filter(struct CustomTrackLibrary *library, const char *query,
                              unsigned int mode, int requiredOnly)
 {

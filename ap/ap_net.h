@@ -27,6 +27,9 @@ int  ap_net_is_connected(void);
 // Game -> server.
 void ap_net_send_location(long long location_code); // LocationChecks([code])
 void ap_net_send_goal(void);                         // StatusUpdate(GOAL)
+// While held, ap_net_send_location and ap_net_send_goal do nothing: a custom
+// Arcade race has no room identity, so nothing it does may reach the room.
+void ap_net_hold_checks(int hold);
 
 // Drain newly-received item ids into out (capacity max). Returns count copied.
 int  ap_net_drain_items(long long *out, int max);

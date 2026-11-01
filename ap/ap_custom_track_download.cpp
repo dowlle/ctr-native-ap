@@ -5,7 +5,7 @@
 #include "ap_custom_track_download.h"
 #include "ap_seed_content_logic.h" // ap_seed_size_agrees, ap_seed_root_safe (Current Seed, #133 PR 7)
 #ifdef CTR_CUSTOM_PACKAGES
-// Authoring build only: the Track Manager's Saphi catalogue and package install.
+// The Track Manager's Saphi catalogue and package install.
 #include <platform/native_saphi_catalogue.h>
 #include <platform/native_custom_package.h>
 #include <zlib.h>
@@ -223,10 +223,10 @@ bool https_get(const std::string &path, size_t max_bytes,
 }
 #else
 #ifdef CTR_CUSTOM_PACKAGES
-// The authoring build carries the CA-trust and timeout fixes from the custom
-// content campaign (SteamOS lacks the build host's OPENSSLDIR, and a stalled
-// catalogue request must not hold the Track Manager forever). The player build
-// keeps the resolver it was tested with, below.
+// Package builds carry the CA-trust and timeout fixes from the custom content
+// campaign (SteamOS lacks the build host's OPENSSLDIR, and a stalled catalogue
+// request must not hold the Track Manager forever). A build without packages
+// keeps the plain resolver below.
 bool load_ca_store(asio::ssl::context &context)
 {
 	asio::error_code ec;
@@ -834,7 +834,7 @@ extern "C" int ap_custom_track_download_status(char *detail, int detail_bytes)
 
 #ifdef CTR_CUSTOM_PACKAGES
 // Track Manager: the Saphi catalogue refresh and the explicit install of one
-// catalogue revision into the package store. Authoring build only.
+// catalogue revision into the package store.
 namespace {
 struct SaphiRefreshState
 {
