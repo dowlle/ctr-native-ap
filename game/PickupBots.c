@@ -698,6 +698,21 @@ static void PickupBots_AdapterTick(void)
 	int ms, rule, timer;
 	int live = 0, i;
 
+	// A chaos rival's shield has no armed driver behind it. Its thread pops it
+	// at that rival's finish, and the race can end first.
+	if ((gGT->gameMode1 & END_OF_RACE) != 0 && AP_ChaosFinalNow())
+	{
+		for (i = 1; i <= AP_ROSTER_CHAOS_RIVALS; i++)
+		{
+			struct Driver *rival = gGT->drivers[i];
+			if (rival != NULL && rival->instBubbleHold != NULL && rival->instBubbleHold->thread != NULL)
+			{
+				((struct Shield *)rival->instBubbleHold->thread->object)->flags |= 1;
+				rival->instBubbleHold = NULL;
+			}
+		}
+	}
+
 	if (!s_apBossAdapter.armed || d == NULL)
 		return;
 	for (i = 0; i < 8; i++)
