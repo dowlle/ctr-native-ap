@@ -884,7 +884,8 @@ static void validate(const J &p, State &out) {
         }
     }
     need(p["checks"].is_array() && p["checks"].size()<=4096,"check array bounds");
-    for(const auto &check:p["checks"]) pickups |= check.at("kind")=="crystal_pickup";
+    bool plan_laps = false; // #344: lap checks exist for every raced track or none
+    for(const auto &check:p["checks"]) { pickups |= check.at("kind")=="crystal_pickup"; plan_laps |= check.at("kind")=="lap"; }
     J features=J::array({"content_plan_v1"});
     if(!manual_ids.empty())features.push_back("manual_pad_requirements_v1");
     if(arenas)features.push_back("crystal_entries_v1");
@@ -913,6 +914,7 @@ static void validate(const J &p, State &out) {
     if(has_shop)features.push_back("wumpa_shop_v1");
     if(wumpa_goal)features.push_back("wumpa_goal_v1");
     if(has_pad_client)features.push_back("pad_client_v1"); // one generator row 6
+    if(plan_laps)features.push_back("lap_checks_v1");             // #344
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -1055,6 +1057,26 @@ static void validate(const J &p, State &out) {
     std::set<int> cup_names, gem_colours;
     struct LegUse { std::string track, entry, pad, leg; };
     std::vector<LegUse> leg_uses; // in pad order; re-sorted to entry order below
+    // Complete One Lap (#344): a route per standalone mode, per cup leg and
+    // per boss race; re-sorted to entry order below (apworld content_laps).
+    struct LapUse { std::string track, title, entry, pad, mode, leg, encounter; int64_t code; };
+    std::vector<LapUse> lap_uses;
+    auto lap_code = [&](int retail_id, int cortex, int named_block, int custom_slot) -> int64_t {
+        if (retail_id >= 0) return registry["retail"][retail_id]["lap"].get<int64_t>();
+        if (cortex) return registry["cortex_vortex"]["lap"].get<int64_t>();
+        if (named_block >= 0) return ap_named_location_code(named_block, AP_NAMED_OFF_LAP);
+        need(custom_slot >= 1 && custom_slot <= AP_CONTENT_MAX_PACKAGES, "a lap check names no track identity");
+        return registry["custom_lap_locations"][custom_slot - 1].get<int64_t>();
+    };
+    // A boss venue's lap code and room title, from its plan track record.
+    auto venue_lap = [&](const std::string &track_id, std::string &title) -> int64_t {
+        const J &track = *tracks.at(track_id);
+        title = text(track.contains("room_title") ? track["room_title"] : track.at("display_name"), false);
+        if (track.at("origin") == "retail") return lap_code(number(track["retail_id"], 0, 17), 0, -1, 0);
+        if (track.at("origin") == "cortex_vortex") return lap_code(-1, 1, -1, 0);
+        return lap_code(-1, 0, track.contains("named_block") ? number(track["named_block"], 0, AP_NAMED_BLOCK_LIMIT - 1) : -1,
+                        number(track["custom_slot"], 1, AP_CONTENT_MAX_PACKAGES));
+    };
     for (int pi = 0; pi < 32; ++pi) {
         const bool garage = pi >= 27;
         const int physical = garage ? pi - 27 : registry["pads"][pi]["physical"].get<int>();
@@ -1135,6 +1157,11 @@ static void validate(const J &p, State &out) {
                 }
                 dest.legs[n].laps = laps;
                 if (dest.legs[n].victory) leg_uses.push_back(LegUse{dest.legs[n].track_id, entry_id, id, leg_id});
+                if (plan_laps) {
+                    const ctr_content_leg &l = dest.legs[n];
+                    dest.legs[n].lap = lap_code(l.retail_id, l.cortex, l.named_block, l.custom_slot);
+                    lap_uses.push_back(LapUse{l.track_id, info.title, entry_id, id, "cup", leg_id, "", dest.legs[n].lap});
+                }
                 if (dest.legs[n].package_index < 0 || out.packages[dest.legs[n].package_index].weapon_crates != 0)
                     cup_hit_routes.push_back(CupHitRoute{physical, entry_id, id, leg_id});
             }
@@ -1464,6 +1491,12 @@ static void validate(const J &p, State &out) {
                 family_check(dest.box_locations[b], "box", "Item Box " + std::to_string(b + 1), routes);
             }
         }
+        // Complete One Lap (#344): every mode of the pad has laps.
+        if (plan_laps) {
+            dest.lap_location = lap_code(dest.retail_id, dest.cortex, dest.named_block, dest.custom_slot);
+            for (int k = 0; k < dest.mode_count; ++k)
+                lap_uses.push_back(LapUse{track_id, check_title, entry_id, id, mode_names[dest.modes[k]], "", "", dest.lap_location});
+        }
         if (!keys) starting_entry = true;
     }
     // Cups (#133 PR 5): tracks raced only as legs take their identities here,
@@ -1618,6 +1651,11 @@ static void validate(const J &p, State &out) {
                     ctr_content_leg l = leg_track(ltrack).leg;
                     l.victory = 0; l.laps = AP_CONTENT_RETAIL_LAPS;
                     copy(l.leg_id, J(lid));
+                    if (plan_laps) {
+                        std::string title;
+                        l.lap = venue_lap(ltrack, title);
+                        lap_uses.push_back(LapUse{ltrack, title, nid, pad, "boss_cup", lid, eid, l.lap});
+                    }
                     cp.legs[n] = l;
                     out.bosses.cup_points[g][n] = points;
                 }
@@ -1731,6 +1769,11 @@ static void validate(const J &p, State &out) {
                 }
                 used_tracks.insert(track_id);
             }
+            if (plan_laps) {
+                std::string title;
+                out.bosses.lap[k] = venue_lap(track_id, title);
+                lap_uses.push_back(LapUse{track_id, title, nid, pad, "boss_race", "", eid, out.bosses.lap[k]});
+            }
             const J route{{"entry_id", nid}, {"mode", "boss_race"}, {"leg_id", nullptr}, {"encounter_id", eid}, {"own_pad_id", pad}, {"award", "win"}};
             need(expected_checks.emplace(kBossCodes[k], J{{"location", kBossCodes[k]}, {"owner", eid}, {"kind", "boss_race"},
                                                           {"display_name", kBossNames[k]}, {"routes", J::array({route})}}).second,
@@ -1758,6 +1801,43 @@ static void validate(const J &p, State &out) {
             }
         }
     }
+    // `Complete One Lap` (#344): one check per raced track, a route per
+    // standalone mode, per cup leg and per boss race, in the plan's entry
+    // order, then mode or leg order (apworld content_laps.checks).
+    if (plan_laps) {
+        std::map<std::string, size_t> entry_order;
+        for (size_t i = 0; i < p["entries"].size(); ++i) entry_order[p["entries"][i].at("id").get<std::string>()] = i;
+        std::stable_sort(lap_uses.begin(), lap_uses.end(), [&](const LapUse &a, const LapUse &b) {
+            return entry_order.at(a.entry) < entry_order.at(b.entry); });
+        std::vector<std::string> order;
+        std::map<std::string, J> lap_checks;
+        for (const auto &use : lap_uses) {
+            if (!lap_checks.count(use.track)) {
+                order.push_back(use.track);
+                lap_checks[use.track] = J{{"location", use.code}, {"owner", use.track}, {"kind", "lap"},
+                                          {"display_name", use.title + ": Complete One Lap"}, {"routes", J::array()}};
+            }
+            need(lap_checks[use.track]["location"] == use.code, "a track's lap check has two codes");
+            lap_checks[use.track]["routes"].push_back(J{{"entry_id", use.entry}, {"mode", use.mode},
+                                                        {"leg_id", use.leg.empty() ? J(nullptr) : J(use.leg)},
+                                                        {"encounter_id", use.encounter.empty() ? J(nullptr) : J(use.encounter)},
+                                                        {"own_pad_id", use.pad}, {"award", "lap"}});
+        }
+        for (const auto &track : order)
+            need(expected_checks.emplace(lap_checks[track]["location"].get<int64_t>(), lap_checks[track]).second, "duplicate check identity");
+    }
+    // A cup leg's track pad: the standalone pad on the same track, whose boxes
+    // and Wumpa check the cup's glow, state and legs also reach. Boss cups too.
+    auto seat_track_pads = [&](ctr_content_pad &cup) {
+        for (int n = 0; cup.cup && n < AP_CONTENT_CUP_LEGS; ++n) {
+            cup.legs[n].track_pad = -1;
+            for (const auto &pad : out.pads)
+                if (pad.occupied && !pad.cup && !pad.crystal && !std::strcmp(pad.track_id, cup.legs[n].track_id))
+                    cup.legs[n].track_pad = pad.physical;
+        }
+    };
+    for (auto &cup : out.pads) seat_track_pads(cup);
+    for (auto &cup : out.garage_cups) seat_track_pads(cup);
     need(used_entries.size() == entries.size() && used_tracks.size() == tracks.size() && used_packages.size() == packages.size(), "unused entry, track or package");
     // `wumpa: global`: one check, a route per Trophy Race and CTR Challenge
     // that can reach ten fruit, in physical pad order, then mode order.

@@ -844,8 +844,8 @@ static void Conn_DrawLongStatus(const char *status, int labelY, int valueX, int 
 		status += end;
 		while (*status == ' ')
 			status++;
-		if (row == rows - 1 && *status != '\0' && end >= 3)
-			memcpy(line + end - 3, "...", 3);
+		if (row == rows - 1 && *status != '\0')
+			memcpy(line + (end >= 3 ? end - 3 : end), "...", 4);
 		DecalFont_DrawLineOT(line, 0x100, labelY + (row + 1) * rowSpacing, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 	}
 }

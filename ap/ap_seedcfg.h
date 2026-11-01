@@ -21,6 +21,7 @@
 #include "ap_boss_venue.h"
 #include "ap_crystal_checks.h"
 #include "ap_cup_sweeps.h"
+#include "ap_lap_checks.h"
 #include "ap_wumpa_shop.h"
 
 #ifdef __cplusplus

@@ -89,6 +89,10 @@ int AP_PadActivities(int hub, int physical, int dest, ap_padact_list *out)
 		}
 	}
 	AP_PadActivityDecide(&f, out);
+	/* The row names what stage 2 asks for (one generator row 8). */
+	out->stage2[0] = 0;
+	if (f.occupied && !pad->cup && !pad->crystal && pad->has_stage2)
+		ap_content_requirement_text(pad->stage2_mask, pad->stage2_count, out->stage2, sizeof out->stage2);
 	return 1;
 }
 

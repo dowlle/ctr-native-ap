@@ -599,6 +599,15 @@ static long AP_StandaloneWumpaCode(void)
 	const struct CustomTrackRaceContext *context = gGT ? CustomTrack_StandaloneContext(gGT->levelID) : NULL;
 	const ctr_content_pad *pad;
 	int64_t code;
+	// A cup leg earns its track's own check, also while the track's pad is
+	// shut. Logic counts no cup route, so it stays stricter than the race.
+	if (context && context->cup)
+	{
+		const ctr_content_pad *cup = AP_ContentCupPad();
+		const int leg = AP_ContentCupLeg();
+		pad = cup && leg >= 0 && cup->legs[leg].track_pad >= 0 ? ap_content_plan_pad(cup->legs[leg].track_pad) : NULL;
+		return pad && pad->wumpa_location > 0 && pad->wumpa_location <= 2147483647 ? (long)pad->wumpa_location : -1;
+	}
 	if (!context || !ap_content_plan_active() ||
 	    (!context->retail && !CustomTrack_ServingLoad(gGT->levelID, 0, 0)) ||
 	    !(pad = AP_StandaloneRoutePad(context)))

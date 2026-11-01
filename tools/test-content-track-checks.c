@@ -134,12 +134,13 @@ int main(void)
     {
         const int bit = AP_CONTENT_BIT_FAMILY + p.physical * AP_CONTENT_FAMILY_STRIDE + slot;
         const int64_t want = slot < 5 ? p.rung_locations[slot] : slot == 5 ? p.wumpa_location :
-                             slot == AP_CONTENT_FAMILY_PERFECT ? p.perfect_location : p.letter_locations[slot - 6];
+                             slot == AP_CONTENT_FAMILY_PERFECT ? p.perfect_location :
+                             slot == AP_CONTENT_FAMILY_LAP ? p.lap_location : p.letter_locations[slot - 6];
         expect(ap_content_family_bit_decode(bit, &physical, &i) && physical == 3 && i == slot &&
                ap_content_family_bit_code(&p, i) == (want > 0 ? want : -1), "family bit decodes to its code");
         expect(!ap_content_bit_decode(bit, &physical, &i, &n), "family bits are outside the mode bit ranges");
     }
-    expect(!ap_content_family_bit_decode(AP_CONTENT_BIT_FAMILY + 3 * AP_CONTENT_FAMILY_STRIDE + 10, &physical, &slot) &&
+    expect(!ap_content_family_bit_decode(AP_CONTENT_BIT_FAMILY + 3 * AP_CONTENT_FAMILY_STRIDE + 11, &physical, &slot) &&
            !ap_content_family_bit_decode(AP_CONTENT_BIT_FAMILY - 1, &physical, &slot) &&
            !ap_content_family_bit_decode(AP_CONTENT_BIT_FAMILY + 111 * AP_CONTENT_FAMILY_STRIDE, &physical, &slot),
            "unused and out-of-range family bits decode to nothing");

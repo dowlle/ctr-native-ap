@@ -281,10 +281,10 @@ static void missing_all(void)
  f = content_facts(); f.keysHave = 0; f.keysNeed = 2; f.padState = 1; f.stage1Met = f.racerMet = 1; f.padReqMet = 1;
  f.contentOpen[1] = 0; f.firstRaceWon = 0; f.stage2Open = 0; f.contentStage2[1] = 1;
  AP_PadActivityDecide(&f, &l);
- assert(AP_PadActivityReasonLines(l.mask[1], 24, lines) == 2 && lines[0][0] && lines[1][0]);
+ assert(AP_PadActivityReasonLines(l.mask[1], 24, NULL, lines) == 2 && lines[0][0] && lines[1][0]);
  assert(strstr(lines[0], "NEEDS HUB KEYS") && strstr(lines[1], "SECOND REQUIREMENT"));
- assert(AP_PadActivityReasonLines(AP_PADACT_BIT(AP_PADACT_LOCK_RACER), 34, lines) == 1 && !strcmp(lines[0], "NEEDS RACER"));
- assert(AP_PadActivityReasonLines(0, 34, lines) == 0);
+ assert(AP_PadActivityReasonLines(AP_PADACT_BIT(AP_PADACT_LOCK_RACER), 34, NULL, lines) == 1 && !strcmp(lines[0], "NEEDS RACER"));
+ assert(AP_PadActivityReasonLines(0, 34, NULL, lines) == 0);
  /* Its rule met, the racer missing: stage 1 reads closed, the racer is named. */
  f = content_facts(); f.stage1Met = 0; f.racerMet = 0;
  AP_PadActivityDecide(&f, &l);
@@ -450,7 +450,7 @@ assert "AP_TrackerLaunchBegin(ap_tracker.hub" in menu
 assert "ap_tracker.acts.reason[ap_tracker.acts_cursor]==AP_PADACT_OPEN" in menu
 # Decision 34: every missing requirement, on up to two lines.
 drawn = (root / "ap/ap_tracker.c").read_text()
-assert "AP_PadActivityReasonLines(ap_tracker.acts.mask[i]" in drawn
+assert "AP_PadActivityReasonLines(ap_tracker.acts.mask[i], 34, ap_tracker.acts.stage2, lines)" in drawn
 assert "AP_TrackerLaunchEnabled()" in menu
 freeze = (root / "game/MAIN/MainFreeze.c").read_text()
 resume = body(freeze, "void MainFreeze_APResumeFromTracker(void)")

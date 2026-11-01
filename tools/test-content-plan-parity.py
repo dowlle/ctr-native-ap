@@ -84,6 +84,11 @@ expected["cortex_vortex"]["cup_leg"] = ccup.CORTEX_VORTEX_CUP_LEG_CODE
 expected["cups"] = [dict(name=n, win=L[ccup.cup_win_name(n)], sweep=L[ccup.cup_sweep_name(n)]) for n in ccup.CUP_NAMES]
 expected["gem_cups"] = [dict(name=n, win=L[f"{n}: Gem"], sweep=L[ccup.cup_sweep_name(n)]) for n in ccup.GEM_CUPS]
 expected["custom_cup_leg_locations"] = [L[ccup.cup_leg_name(f"Custom Track {i}")] for i in range(1, 33)]
+# Lap completion (#344): every track's Complete One Lap code.
+for row in expected["retail"]:
+    row["lap"] = L[row["name"] + ": Complete One Lap"]
+expected["cortex_vortex"]["lap"] = L[CV + ": Complete One Lap"]
+expected["custom_lap_locations"] = [L[f"Custom Track {i}: Complete One Lap"] for i in range(1, 33)]
 expected["named_blocks"] = expected.pop("named_blocks")  # registry key order
 assert registry == expected, "native frozen registry differs from paired apworld; run tools/sync-content-registry.py"
 assert (root/'tools/fixtures/arcade-arenas-v1.json').read_bytes()==(args.apworld/'worlds/ctr/data/arcade_arenas_v1.json').read_bytes(), "arcade manifests differ across the pair"
@@ -1496,6 +1501,74 @@ for name, change in [
         ("cups check kind", lambda c: b_check(c, 35011101).__setitem__("kind", "boss_race")),
         ]:
     boss_env(name, change, cups_base)
+# Lap completion checks (#344): generated plans with laps on over the base,
+# cup and track-mode profiles, custom tracks and Cortex Vortex, then forged
+# lap records.
+lap_cases = []
+for seed in range(40):
+    options = cup_options(seed) if seed % 2 else profile_options()
+    options["lap_completion_checks"] = True
+    if seed % 4 == 2:
+        options["content_pool"]["tracks"]["cortex_vortex"] = True
+        options["content_pool"]["tracks"]["modes"] = ["trophy", "ctr", "relic"]
+        options["pad_layout"]["stages"] = "two"
+    try:
+        wire = make_world(options, seed=seed).fill_slot_data()
+    except CupOptionError:
+        continue
+    assert any(c["kind"] == "lap" for c in wire["content_plan"]["checks"]), seed
+    lap_cases.append(wire)
+    cases.append((f"laps-generated-{seed}", wire, True))
+lap_base = next(w for w in lap_cases if any(len(c["routes"]) > 1 and c["kind"] == "lap" for c in w["content_plan"]["checks"])
+                and any(e["kind"] == "cup" for e in w["content_plan"]["entries"]))
+def lap_check(p, legs=False):
+    return next(c for c in p["checks"] if c["kind"] == "lap" and any((r["leg_id"] is not None) == legs for r in c["routes"]))
+def lap_env(name, change):
+    alter("lap-" + name, change, lap_base)
+for name, change in [
+        ("unchanged copy", lambda p: None),
+        ("dropped", lambda p: p["checks"].remove(lap_check(p))),
+        ("all dropped", lambda p: p.__setitem__("checks", [c for c in p["checks"] if c["kind"] != "lap"])),
+        ("code", lambda p: lap_check(p).__setitem__("location", lap_check(p)["location"] + 1)),
+        ("name", lambda p: lap_check(p).__setitem__("display_name", "Lap")),
+        ("owner", lambda p: lap_check(p).__setitem__("owner", "retail:15")),
+        ("route dropped", lambda p: lap_check(p)["routes"].pop()),
+        ("route award", lambda p: lap_check(p)["routes"][0].__setitem__("award", "win")),
+        ("route mode", lambda p: lap_check(p)["routes"][0].__setitem__("mode", "relic")),
+        ("route order", lambda p: lap_check(p)["routes"].reverse()),
+        ("cup route leg", lambda p: lap_check(p, True)["routes"][-1].__setitem__("leg_id", None)),
+        ("feature missing", lambda p: p["required_features"].remove("lap_checks_v1")),
+        ("feature without checks", lambda p: (p.__setitem__("checks", [c for c in p["checks"] if c["kind"] != "lap"]))),
+        ]:
+    lap_env(name, change)
+# Boss races earn the venue's lap check: every boss shape, then forged routes.
+from worlds.ctr.test.test_content_bosses import boss_options
+lap_boss_base = None
+for seed in range(12):
+    options = boss_options(lap_completion_checks=True, boss_track_shuffle=bool(seed % 3 == 1))
+    if seed % 2:
+        options["content_pool"]["bosses"]["cups"] = 1 + seed % 4
+    wire = make_world(options, seed=seed).fill_slot_data()
+    cases.append((f"laps-boss-{seed}", wire, True))
+    if seed == 0:
+        lap_boss_base = wire
+assert lap_boss_base is not None
+def lap_boss_check(p):
+    return next(c for c in p["checks"] if c["kind"] == "lap" and any(r["encounter_id"] for r in c["routes"]))
+def lap_boss_route(p):
+    return next(r for r in lap_boss_check(p)["routes"] if r["encounter_id"])
+for name, change in [
+        ("unchanged copy", lambda p: None),
+        ("route dropped", lambda p: lap_boss_check(p)["routes"].remove(lap_boss_route(p))),
+        ("encounter", lambda p: lap_boss_route(p).__setitem__("encounter_id", "encounter/garage:4/0")),
+        ("mode", lambda p: lap_boss_route(p).__setitem__("mode", "boss_cup")),
+        ("pad", lambda p: lap_boss_route(p).__setitem__("own_pad_id", "garage:1" if lap_boss_route(p)["own_pad_id"] != "garage:1" else "garage:2")),
+        ("award", lambda p: lap_boss_route(p).__setitem__("award", "win")),
+        ("venue check dropped", lambda p: p["checks"].remove(next(c for c in p["checks"] if c["kind"] == "lap" and all(r["encounter_id"] for r in c["routes"])))),
+        ]:
+    alter("lap-boss-" + name, change, lap_boss_base)
+# A plan with laps off that declares the feature.
+alter("lap-feature on a plan without laps", lambda p: p["required_features"].append("lap_checks_v1"))
 # One generator row 2: Gem Cups first, surface items and relic checks that
 # follow the item counts, then forgeries of each.
 from worlds.ctr.test.test_content_plan_row2 import plan_options, relic_options

@@ -710,7 +710,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				// exact server-truth count below the title only in that transitional
 				// state; before the trophy it is ordinary race content, and at zero
 				// the line disappears as the pad advances normally.
-				// Plan pads show this line and no other (Stef, 2026-10-30).
+				// Plan pads show this line and no other (ruled 2026-10-30).
 				if (ap_content_plan_active())
 					apBoxesLeft = AP_ContentBoxesLine(ap_content_plan_pad(levelID));
 				else if (levelID < AH_WP_SLIDE_COLISEUM &&
@@ -1006,7 +1006,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// reach here. Keyed off AP_PadState so it also hard-locks a pad that BECOMES
 	// done live (its look updates on the next re-birth; the gate is honest now).
 	// One generator row 6: a Done plan pad whose entry is still met opens for a
-	// replay, its menu rows grey (Stef, 2026-10-28).
+	// replay, its menu rows grey (ruled 2026-10-28).
 	if (ctr_cfg_active() &&
 	    AP_PadState(ctr_cfg_warp_phys(warppadObj->levelID), warppadObj->levelID) == 5 &&
 	    !AP_PadReplayable(ctr_cfg_warp_phys(warppadObj->levelID), warppadObj->levelID))

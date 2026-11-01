@@ -379,6 +379,10 @@ static long AP_LookupLocationCode(int globalBit)
             return code > 0 ? (long)code : -1;
         }
         // A cup's sweep and Cup Leg Victory checks (#133 PR 5).
+        if (ap_content_cup_lap_bit_decode(globalBit, &contentPad, &contentTier)) {
+            const int64_t code = ap_content_cup_lap_bit_code(ap_content_plan_pad(contentPad), contentTier);
+            return code > 0 && code <= 2147483647 ? (long)code : -1;
+        }
         if (ap_content_cup_bit_decode(globalBit, &contentPad, &contentTier)) {
             const int64_t code = ap_content_cup_bit_code(ap_content_plan_pad(contentPad), contentTier);
             return code > 0 ? (long)code : -1;

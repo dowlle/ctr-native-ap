@@ -98,6 +98,7 @@ typedef struct
 	int mask[AP_PADACT_MAX_ROWS];       // every lock reason, AP_PADACT_BIT(reason); 0 when open
 	int left[AP_PADACT_MAX_ROWS];       // an open check is left (else a replay)
 	int launchMode[AP_PADACT_MAX_ROWS]; // the mode the pad's own menu takes, -1 none
+	char stage2[40];                    // what stage 2 asks for, `2 Red Gems`, or empty
 } ap_padact_list;
 
 // The Keys the hub doors need before a physical pad or garage in hub `hub`
@@ -290,10 +291,11 @@ static inline void AP_PadActivityDecide(const ap_padact_facts *f, ap_padact_list
 }
 
 // The reasons of a mask, in the order a player meets them, joined with ", "
-// and split onto at most two lines of about `maxChars` characters (only
+// (`stage2`, when not empty, names what stage 2 asks for in place of its
+// reason) and split onto at most two lines of about `maxChars` characters (only
 // between reasons; the second line takes the rest). Returns the line count,
 // 0 for an empty mask.
-static inline int AP_PadActivityReasonLines(int mask, int maxChars, char lines[2][112])
+static inline int AP_PadActivityReasonLines(int mask, int maxChars, const char *stage2, char lines[2][112])
 {
 	static const int order[AP_PADACT_REASONS - 1] = {
 		AP_PADACT_LOCK_HUB, AP_PADACT_LOCK_CLOSED, AP_PADACT_LOCK_DONE, AP_PADACT_LOCK_CONTENT,
@@ -307,7 +309,7 @@ static inline int AP_PadActivityReasonLines(int mask, int maxChars, char lines[2
 		int len, cur;
 		if (!(mask & AP_PADACT_BIT(order[i])))
 			continue;
-		name = AP_PadActivityReasonName(order[i]);
+		name = order[i] == AP_PADACT_LOCK_STAGE2 && stage2 && stage2[0] ? stage2 : AP_PadActivityReasonName(order[i]);
 		len = (int)strlen(name);
 		cur = (int)strlen(lines[line]);
 		if (cur > 0 && line == 0 && cur + 2 + len > maxChars)

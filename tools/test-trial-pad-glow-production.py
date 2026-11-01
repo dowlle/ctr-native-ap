@@ -30,6 +30,7 @@ fixture=r'''
 static int planOn;static ctr_content_pad cpad;
 static int lockedMode=-1;
 int AP_ContentModeOpen(const ctr_content_pad *p,int mode){(void)p;return mode!=lockedMode;}
+int AP_ContentPadOpen(const ctr_content_pad *p){(void)p;return 1;}
 int ap_content_plan_active(void){return planOn;}
 const ctr_content_pad *ap_content_plan_pad(int p){return planOn&&p==cpad.physical?&cpad:NULL;}
 static long crystalChecked;

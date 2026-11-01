@@ -161,7 +161,7 @@ int main(void) {
    assert(handled && s.stakes && s.code==35012300); cases++;
    checked[checkedCount++]=35012300; s=decide(&handled);
    assert(handled && !s.stakes && s.why==AP_WS_WHY_COLLECTED); cases++; }
- /* Relic Race: stakes while a tier check is open and in logic (Stef, 2026-10-29). */
+ /* Relic Race: stakes while a tier check is open and in logic (ruled 2026-10-29). */
  { const long codes[]={35012000,35012100}; reset(AP_CONTENT_MODE_RELIC,1); pad.relic_locations[2]=0; room(codes,2,-1); s=decide(&handled);
    assert(handled && s.stakes && s.code==35012000); cases++;
    checked[checkedCount++]=35012000; s=decide(&handled); assert(handled && s.stakes && s.code==35012100); cases++;

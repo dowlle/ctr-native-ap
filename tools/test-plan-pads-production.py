@@ -124,6 +124,7 @@ const ctr_content_pad *ap_content_plan_pad(int physical) { (void)physical; retur
 int ap_net_location_checked(long code) { for (int i = 0; i < doneCount; i++) if (done[i] == code) return 1; return 0; }
 static int checkedFn(int64_t code) { return ap_net_location_checked((long)code); }
 int AP_ContentModeOpen(const ctr_content_pad *p, int mode) { return ap_content_mode_open(p, mode, counts, checkedFn); }
+int AP_ContentPadOpen(const ctr_content_pad *p) { (void)p; return 1; }
 """ + function(pads, "static int AP_ContentPadGlowBits(") + r"""
 static int has(const int *bits, int n, int bit) { for (int i = 0; i < n; i++) if (bits[i] == bit) return 1; return 0; }
 int main(void) {

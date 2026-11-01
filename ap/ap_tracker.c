@@ -621,13 +621,18 @@ static void AP_TrackerDrawContentNode(const AP_TrackerNode *n, int x, int y)
 	} else {
 		/* Done only when the pad is: a cup's sweep and leg checks, the crystals. */
 		int64_t codes[6]; int slots[6], c = ap_content_cup_codes(pad, codes, slots), state = AP_TrackerCodeState((long)pad->trophy_location);
+		ap_content_cup_track_check rows[AP_CONTENT_CUP_TRACK_CHECKS];
 		for (i = 0; i < c; i++) if (!AP_ContentCodeChecked(codes[i]) && state == 2) state = 1;
+		c = ap_content_cup_track_checks(pad, ap_content_plan_pad, rows);
+		for (i = 0; i < c; i++) if (!AP_ContentCodeChecked(rows[i].code) && state == 2) state = 1;
 		for (i = 0; i < pad->crystal_count; i++) if (!AP_ContentCodeChecked(pad->crystal_locations[i]) && state == 2) state = 1;
 		AP_TrackerText(n->kind==1?"CRYSTAL CHECK":"CUP CHECK",x+12,y+64,18,TRACKER_GOLD,300);
 		AP_TrackerTick(x+315,y+65,(int)state);
 	}
 	wumpa = n->kind == 0 && pad->wumpa_modes ? (long)(wumpaGlobal ? fam->wumpa_global : pad->wumpa_location) : 0;
-	snprintf(text,sizeof text,"BOX %d",ap_content_box_pending(pad,AP_ContentCodeChecked));
+	if (pad->cup) wumpa = (long)ap_content_cup_wumpa_code(pad, ap_content_plan_pad, AP_ContentCodeChecked);
+	snprintf(text,sizeof text,"BOX %d",pad->cup ? ap_content_cup_box_pending(pad,ap_content_plan_pad,AP_ContentCodeChecked)
+	                                            : ap_content_box_pending(pad,AP_ContentCodeChecked));
 	AP_TrackerText(text,x+12,y+96,16,TRACKER_WHITE,110);
 	AP_TrackerText(wumpaGlobal ? "10W*" : "10W",x+130,y+96,16,TRACKER_GOLD,55); AP_TrackerTick(x+179,y+99,AP_TrackerCodeState(wumpa>0?wumpa:-1));
 	if (n->kind == 0) for (i = 0; i < 3; i++) {
@@ -724,7 +729,7 @@ static void AP_TrackerDrawActivities(void)
 		else {
 			/* Every missing requirement (decision 34); a second line when they do not fit one. */
 			char lines[2][112];
-			int n = AP_PadActivityReasonLines(ap_tracker.acts.mask[i], 34, lines);
+			int n = AP_PadActivityReasonLines(ap_tracker.acts.mask[i], 34, ap_tracker.acts.stage2, lines);
 			AP_TrackerLockIcon(x + 280, ry + 4);
 			if (n < 2) AP_TrackerText(n ? lines[0] : AP_PadActivityReasonName(ap_tracker.acts.reason[i]), x + 300, ry + 3, 14, TRACKER_GRAY, w - 316);
 			else {
@@ -777,9 +782,9 @@ static void AP_TrackerDraw(void)
 	if(AP_WumpaShopHubTrackerLine(GEM_STONE_VALLEY+ap_tracker.hub,line,(int)sizeof line))
 		AP_TrackerText(line,32,692,14,TRACKER_GOLD,1210);
 	if(ap_tracker.pinned && ap_tracker.count) {
-		AP_TrackerNode *n=&ap_tracker.nodes[ap_tracker.focus]; int bits[48], remaining=n->physical>=0?AP_PadUncollectedGlowBits(n->destination,bits,48):0;
+		AP_TrackerNode *n=&ap_tracker.nodes[ap_tracker.focus]; int bits[96], remaining=n->physical>=0?AP_PadUncollectedGlowBits(n->destination,bits,96):0;
 		const ctr_content_pad *plan=ap_content_plan_active()&&n->physical>=0?ap_content_plan_pad(n->physical):NULL;
-		int boxes=plan?ap_content_box_pending(plan,AP_ContentCodeChecked):AP_PadUncollectedBoxCount(n->destination), letters=0, k;
+		int boxes=plan?(plan->cup?ap_content_cup_box_pending(plan,ap_content_plan_pad,AP_ContentCodeChecked):ap_content_box_pending(plan,AP_ContentCodeChecked)):AP_PadUncollectedBoxCount(n->destination), letters=0, k;
 		if(plan) { for(k=0;k<3;k++) letters+=plan->letter_locations[k]>0 && !AP_ContentCodeChecked(plan->letter_locations[k]); }
 		else letters=AP_PadUncollectedLetterCount(n->destination);
 		if(plan) remaining-=boxes+letters; /* the plan's list holds both */

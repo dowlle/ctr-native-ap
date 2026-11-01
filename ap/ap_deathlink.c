@@ -106,7 +106,7 @@ static APDeathLinkState AP_DeathLinkStateNow(void)
 	                           g_config.dlSendHit, g_config.dlSendLoss);
 }
 
-// What the DeathLink row shows (Stef, 2026-10-29): on a plan room the mode in
+// What the DeathLink row shows (ruled 2026-10-29): on a plan room the mode in
 // use when a DL Send row turned receiving on, not SEED. Other rooms and an
 // unconnected menu show the row's own value.
 int AP_DeathLinkRowValue(int row)

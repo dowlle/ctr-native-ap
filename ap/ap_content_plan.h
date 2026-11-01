@@ -24,6 +24,10 @@ typedef struct ctr_content_leg {
     int package_index; /* custom package, or -1 */
     int custom_slot, named_block, laps;
     int64_t victory;   /* `<Track>: Cup Leg Victory`, 0 when none */
+    int64_t lap;       /* `<Track>: Complete One Lap` (#344), 0 when none */
+    /* The physical pad of the standalone race on this track, or -1. Its boxes
+     * and Wumpa check are the leg's too, for the cup's glow and state. */
+    int track_pad;
     char leg_id[65], track_id[65];
 } ctr_content_leg;
 typedef struct ctr_content_pad {
@@ -81,6 +85,11 @@ typedef struct ctr_content_pad {
     /* Relic Race Perfect (#133 PR 3c, #453): the check for breaking every time
      * crate in this pad's Relic Race; 0 when the seed or entry has none. */
     int64_t perfect_location;
+    /* Complete One Lap (#344): the track's lap check, paid by the first lap
+     * of any of this pad's modes; 0 when the seed has no lap checks. A cup
+     * pad carries its legs' lap codes in legs[n].lap instead, and a boss race
+     * its venue's in ctr_content_bosses.lap. */
+    int64_t lap_location;
     /* ctr_first (#208 on content plans, J11): 1 when the plan's
      * adventure_structure is ctr_first and this track entry runs it. The entry
      * then has no Trophy mode (modes are CTR, then Relic), trophy_location is
@@ -229,6 +238,10 @@ typedef struct ctr_content_bosses {
     int extended, opponent_shuffle, oxide_in_pool, kit_shuffle, gauntlet, oxide_profile_all, home_venues;
     int kit_assignment, kit_intensity, loss_easing;
     int opponent[4], final_opponent;
+    /* Complete One Lap (#344): the venue's lap check of each encounter, by
+     * gGT->bossID (0 to 3 the garages, 4 and 5 N. Oxide's two races), 0 for a
+     * boss cup, whose legs carry theirs, or a seed without lap checks. */
+    int64_t lap[6];
 } ctr_content_bosses;
 
 /* Wumpa Shop and Wumpa goal on a content plan (J11). The plan's `wumpa_shop`

@@ -335,12 +335,21 @@ static int AP_ContentPadGlowBits(int destLevelID, int *outBits, int cap, int ope
         if(!pad || !pad->occupied || !outBits || cap<=0)return 0;
         if(pad->cup) {
             // Cups (#133 PR 5): the Win, the sweep and each leg track's Cup
-            // Leg Victory once.
+            // Leg Victory once, then each track's first lap, Wumpa check and
+            // boxes once. A leg breaks a box only while the track's own pad
+            // is open, so the glow keeps a shut pad's boxes hidden.
             int64_t codes[6]; int slots[6], k, c=ap_content_cup_codes(pad,codes,slots);
+            ap_content_cup_track_check rows[AP_CONTENT_CUP_TRACK_CHECKS];
             for(k=0;k<c && count<cap;++k)
                 if(!ap_net_location_checked((long)codes[k]))
                     outBits[count++]=slots[k]<0 ? AP_CONTENT_BIT_TROPHY+pad->physical
                                                 : AP_CONTENT_BIT_CUP+pad->physical*AP_CONTENT_CUP_STRIDE+slots[k];
+            c=ap_content_cup_track_checks(pad,ap_content_plan_pad,rows);
+            for(k=0;k<c && count<cap;++k) {
+                if(ap_net_location_checked((long)rows[k].code))continue;
+                if(openOnly && rows[k].box_pad>=0 && !AP_ContentPadOpen(ap_content_plan_pad(rows[k].box_pad)))continue;
+                outBits[count++]=rows[k].bit;
+            }
             return count;
         }
         if(pad->crystal) {
@@ -885,10 +894,12 @@ static int AP_GlowBitRewardGroup(int globalBit)
         if(ap_content_family_bit_decode(globalBit,&contentPad,&contentTier))
             return ap_content_family_reward_group(contentTier);
         // Item Box checks (#133 PR 4e) ride the race slot, and so do a cup's
-        // sweep and Cup Leg Victory checks (#133 PR 5).
+        // sweep, Cup Leg Victory (#133 PR 5) and first lap checks.
         if(ap_content_box_bit_decode(globalBit,&contentPad,&contentTier))
             return 0;
         if(ap_content_cup_bit_decode(globalBit,&contentPad,&contentTier))
+            return 0;
+        if(ap_content_cup_lap_bit_decode(globalBit,&contentPad,&contentTier))
             return 0;
     }
     if (globalBit>=AP_CRYSTAL_PSEUDO_BASE && globalBit<AP_CRYSTAL_PSEUDO_BASE+80) return 2;
@@ -1167,11 +1178,11 @@ int AP_PadState(int physLevelID, int destLevelID)
             int bits[21];
             return AP_PadUncollectedGlowBits(physLevelID,bits,21) ? 2 : 5;
         }
-        // Cups (#133 PR 5): open while a cup check is left, then Done
-        // (AP_PadReplayable keeps the race open).
+        // Cups (#133 PR 5): open while a cup check or a check of its tracks
+        // is left, then Done (AP_PadReplayable keeps the race open).
         if(pad->cup) {
-            int bits[6];
-            return AP_PadUncollectedGlowBits(physLevelID,bits,6) ? 2 : 5;
+            int bits[6+AP_CONTENT_CUP_TRACK_CHECKS];
+            return AP_PadUncollectedGlowBits(physLevelID,bits,6+AP_CONTENT_CUP_TRACK_CHECKS) ? 2 : 5;
         }
 		// Track modes (#133 PR 3), the states of ap_pad_state.h.
 		return AP_ContentTrackPadState(pad);
