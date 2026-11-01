@@ -44,6 +44,8 @@ enum {
     AP_NAMED_OFF_WUMPA = 14,
     /* Cup Leg Victory (#133 PR 5, the 0.3.0 id step). */
     AP_NAMED_OFF_CUP_LEG_VICTORY = 15,
+    /* Complete One Lap (#344, the 0.3.0 id step). */
+    AP_NAMED_OFF_LAP = 16,
     /* Item Box 1 to 15 (#133 PR 4e, the 0.3.0 id step): 20 + slot. */
     AP_NAMED_OFF_ITEM_BOX_1 = 20,
     AP_NAMED_ITEM_BOX_SLOTS = 15

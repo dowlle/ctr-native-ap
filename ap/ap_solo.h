@@ -109,9 +109,10 @@ int AP_Solo_ImportRoomStart(const char *path);
 int AP_Solo_ImportYamlStart(const char *path);
 /* Installed custom tracks (assets/tracks/<track key>/original) with a known
    descriptor. Picks survive a new list for the tracks still listed. */
-int AP_Solo_TracksStart(void);
-/* yamlPath: preset or saved/inbox YAML. Options from the options screen and
-   the picked custom tracks are passed only for presets (useOptions 1). */
+int AP_Solo_TracksStart(const char *yamlPath);
+/* yamlPath: preset or saved/inbox YAML. Options from the options screen are
+   passed only for presets (useOptions 1). The picked custom tracks are passed
+   for both; a YAML keeps its own settings and gets the tracks added. */
 int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName, const char *presetId, int useOptions);
 int AP_Solo_JobState(void);
 const char *AP_Solo_JobPhase(void);
@@ -142,7 +143,10 @@ int AP_Solo_TrackCount(void);
 int AP_Solo_TrackGet(int index, struct APSoloTrackInfo *out);
 void AP_Solo_TrackCycle(int index);
 int AP_Solo_TracksPicked(void);
-void AP_Solo_TracksClear(void);           /* a new start: nothing picked */
+void AP_Solo_TracksClear(void);           /* a new start: the next list sets the picks */
+/* 1 when the Custom Tracks step of this start sits behind the options screen
+   (a preset), 0 when it follows the start list (an imported or inbox YAML). */
+int AP_Solo_TracksViaOptions(int isPreset);
 
 /* The client verified a content-plan package's files (#133): keep its
    descriptor in solo/tracks so the custom-track step can offer the track. */
@@ -161,6 +165,7 @@ const char *AP_Solo_SessionError(void);
 const char *AP_Solo_SessionRoom(void);
 void AP_Solo_SessionStop(void);           /* /save, /exit, then end the child */
 int AP_Solo_SessionActive(void);          /* starting, connecting, live or stopping */
+int AP_Solo_SessionOwnsConnection(void);  /* starting, connecting or live: not stopping */
 
 /* AP_Net_Reconnect from anything but the solo session ends the solo session. */
 void AP_Solo_BeforeReconnect(void);

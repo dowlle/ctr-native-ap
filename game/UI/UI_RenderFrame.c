@@ -954,6 +954,10 @@ void UI_RenderFrame_AdvHub(void)
 		UI_DrawNumRelic(hudStructPtr[0xE].x + 0x10, hudStructPtr[0xE].y - 10);
 		UI_DrawNumKey(hudStructPtr[0xF].x + 0x10, hudStructPtr[0xF].y - 10);
 		UI_DrawNumTrophy(hudStructPtr[0x10].x + 0x10, hudStructPtr[0x10].y - 10);
+#ifdef CTR_AP
+		// #249: Wumpa balance and banked total below the counters.
+		AP_WumpaDrawHub();
+#endif
 	}
 
 #ifdef CTR_AP

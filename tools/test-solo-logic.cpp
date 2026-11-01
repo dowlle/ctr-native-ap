@@ -6,6 +6,8 @@
 
 #include <cstdio>
 #include <string>
+#include <utility>
+#include <vector>
 
 static int g_fail = 0;
 #define CHECK(cond)                                                                  \
@@ -259,6 +261,30 @@ static void test_tracks()
 	CHECK(AP_SoloTrackNextPick(-1) == 0);
 	// Left on the page is two steps forward: off -> own pad -> in pool -> off.
 	CHECK(AP_SoloTrackNextPick(AP_SoloTrackNextPick(0)) == 2);
+
+	// The Custom Tracks page flow (round 2 decision 5): the picks become
+	// --track and --guarantee arguments, for a preset and for a YAML alike.
+	{
+		using Picks = std::vector<std::pair<std::string, int>>;
+		using Args = std::vector<std::string>;
+		CHECK(AP_SoloTrackArgs(Picks{}).empty());
+		// Any listed track means the page was shown, even with everything off.
+		CHECK((AP_SoloTrackArgs(Picks{{"package/a/1", 0}, {"package/b/1", 0}}) == Args{"--tracks-page"}));
+		CHECK((AP_SoloTrackArgs(Picks{{"package/a/1", 1}}) == Args{"--tracks-page", "--track", "package/a/1"}));
+		CHECK((AP_SoloTrackArgs(Picks{{"package/a/1", 2}}) ==
+		       Args{"--tracks-page", "--track", "package/a/1", "--guarantee", "package/a/1"}));
+		CHECK((AP_SoloTrackArgs(Picks{{"package/a/1", 1}, {"package/b/1", 0}, {"package/c/2", 2}}) ==
+		       Args{"--tracks-page", "--track", "package/a/1", "--track", "package/c/2", "--guarantee", "package/c/2"}));
+		CHECK((AP_SoloTrackArgs(Picks{{"package/a/1", 9}, {"package/b/1", -1}}) == Args{"--tracks-page"}));
+		// A YAML's own value is the starting pick.
+		CHECK(AP_SoloTrackStart(nlohmann::json{{"start", 1}}) == 1);
+		CHECK(AP_SoloTrackStart(nlohmann::json{{"start", 2}}) == 2);
+		CHECK(AP_SoloTrackStart(nlohmann::json{{"start", 3}}) == 0);
+		CHECK(AP_SoloTrackStart(nlohmann::json{{"id", "x"}}) == 0);
+		// A preset's Custom Tracks page sits behind its options screen; a YAML's follows the start list.
+		CHECK(AP_SoloTracksViaOptions(true));
+		CHECK(!AP_SoloTracksViaOptions(false));
+	}
 
 	CHECK(AP_SoloDescriptorFileName("baby-t-park", "1.0.2") == "baby-t-park__1.0.2.json");
 	CHECK(AP_SoloDescriptorFileName("fixture-loop", "2.1+lrg2_a") == "fixture-loop__2.1+lrg2_a.json");

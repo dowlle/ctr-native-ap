@@ -404,7 +404,8 @@ void JobFail(const std::string &kind, const std::string &message, const std::str
 	Log("job failed (" + kind + "): " + message);
 }
 
-// A new track list keeps the picks of the tracks still in it.
+// A new track list keeps the picks of the tracks still in it. The first list of a
+// start begins as the YAML has each track.
 void ParseTracks(const nlohmann::json &r)
 {
 	std::vector<APSoloTrackInfo> next;
@@ -421,6 +422,7 @@ void ParseTracks(const nlohmann::json &r)
 			CopyText(info.revision, sizeof info.revision, AP_SoloJsonString(t, "revision"));
 			CopyText(info.author, sizeof info.author, AP_SoloJsonString(t, "author"));
 			CopyText(info.modes, sizeof info.modes, AP_SoloTrackModes(t.value("modes", nlohmann::json())));
+			info.pick = AP_SoloTrackStart(t);
 			for (const auto &old : g_tracks)
 				if (std::strcmp(old.id, info.id) == 0)
 					info.pick = old.pick;
@@ -763,9 +765,15 @@ extern "C" int AP_Solo_ImportYamlStart(const char *path)
 	return JobStart(JOB_IMPORT_YAML, {"import-yaml", path}, kQuickLimitMs) ? 1 : 0;
 }
 
-extern "C" int AP_Solo_TracksStart(void)
+extern "C" int AP_Solo_TracksStart(const char *yamlPath)
 {
-	return JobStart(JOB_TRACKS, {"tracks", "--assets", AssetsDir()}, kQuickLimitMs) ? 1 : 0;
+	std::vector<std::string> args = {"tracks", "--assets", AssetsDir()};
+	if (yamlPath && *yamlPath)
+	{
+		args.push_back("--yaml");
+		args.push_back(yamlPath);
+	}
+	return JobStart(JOB_TRACKS, args, kQuickLimitMs) ? 1 : 0;
 }
 
 extern "C" int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName, const char *presetId, int useOptions)
@@ -792,19 +800,15 @@ extern "C" int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName,
 			args.push_back("--set");
 			args.push_back(set);
 		}
-		for (const APSoloTrackInfo &t : g_tracks)
-		{
-			if (t.pick == AP_SOLO_TRACK_OFF)
-				continue;
-			args.push_back("--track");
-			args.push_back(t.id);
-			if (t.pick == AP_SOLO_TRACK_GUARANTEED)
-			{
-				args.push_back("--guarantee");
-				args.push_back(t.id);
-			}
-		}
 	}
+	// Picked custom tracks go with a preset's options and with an imported or
+	// inbox YAML alike (round 2 decision 5); the picks are cleared whenever a
+	// new start is chosen.
+	std::vector<std::pair<std::string, int>> picks;
+	for (const APSoloTrackInfo &t : g_tracks)
+		picks.emplace_back(t.id, t.pick);
+	for (const std::string &arg : AP_SoloTrackArgs(picks))
+		args.push_back(arg);
 	return JobStart(JOB_GENERATE, args, kGenerateLimitMs) ? 1 : 0;
 }
 
@@ -833,6 +837,8 @@ extern "C" void AP_Solo_JobClear(void)
 		g_job.state = AP_SOLO_JOB_IDLE;
 }
 
+extern "C" int AP_Solo_TracksViaOptions(int isPreset) { return AP_SoloTracksViaOptions(isPreset != 0) ? 1 : 0; }
+
 extern "C" int AP_Solo_TrackCount(void) { return (int)g_tracks.size(); }
 
 extern "C" int AP_Solo_TrackGet(int index, struct APSoloTrackInfo *out)
@@ -859,8 +865,7 @@ extern "C" int AP_Solo_TracksPicked(void)
 
 extern "C" void AP_Solo_TracksClear(void)
 {
-	for (APSoloTrackInfo &t : g_tracks)
-		t.pick = AP_SOLO_TRACK_OFF;
+	g_tracks.clear();
 }
 
 extern "C" void AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, const char *json)
@@ -1102,6 +1107,14 @@ extern "C" int AP_Solo_SessionActive(void)
 	       s == AP_SOLO_SESSION_STOPPING;
 }
 
+extern "C" int AP_Solo_SessionOwnsConnection(void)
+{
+	// Stopping has already closed the solo connection, so any connection then is
+	// the next room's own.
+	const int s = g_session.state;
+	return s == AP_SOLO_SESSION_STARTING || s == AP_SOLO_SESSION_CONNECTING || s == AP_SOLO_SESSION_LIVE;
+}
+
 extern "C" void AP_Solo_SessionStop(void)
 {
 	Session &s = g_session;
@@ -1142,6 +1155,7 @@ extern "C" void AP_Solo_BeforeReconnect(void)
 
 extern "C" void AP_Solo_Tick(void)
 {
+	ap_net_set_solo_session_query(AP_Solo_SessionOwnsConnection);
 	TickJob();
 	TickSession();
 	if (!g_session.pendingRoom.empty() && !AP_Solo_SessionActive())

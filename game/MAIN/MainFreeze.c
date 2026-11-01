@@ -876,6 +876,24 @@ void MainFreeze_SafeAdvDestroy(void)
 	return;
 }
 
+#ifdef CTR_AP
+// #375: a start from the in-game tracker leaves the hub pause exactly as the
+// RESUME row does (the case below), so the pad that takes the kart next runs
+// on an unpaused hub with the game's own cooldown and audio state.
+void MainFreeze_APResumeFromTracker(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	gGT->cooldownFromUnpauseUntilPause = 5;
+	if (sdata->ptrActiveMenu != NULL)
+		RECTMENU_Hide(sdata->ptrActiveMenu);
+	MainFreeze_SafeAdvDestroy();
+	ElimBG_Deactivate(gGT);
+	gGT->gameMode1 &= ~PAUSE_1;
+	MainFrame_TogglePauseAudio(0);
+	OtherFX_Play(1, 1);
+}
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80039a44-0x80039dcc.
 void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 {
