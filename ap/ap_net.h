@@ -41,6 +41,9 @@ int  ap_net_seed_name(char *buf, int n);
 int  ap_net_slot_name(char *buf, int n);
 int  ap_net_identity_hash(unsigned long long *out); // FNV-1a of the full seed and slot names, 0 if unknown
 
+// #89 solo mode: 1 while a Play Solo session runs. DeathLink stays off the wire.
+void ap_net_set_solo_session(int active);
+
 // #89 solo mode: journal every check of the solo room to `path` and resend the
 // journalled checks the server still misses on each slot-connect to `seed`.
 // NULL path stops journalling.

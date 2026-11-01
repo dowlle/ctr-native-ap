@@ -109,7 +109,7 @@ int AP_Solo_ImportRoomStart(const char *path);
 int AP_Solo_ImportYamlStart(const char *path);
 /* Installed custom tracks (assets/tracks/<track key>/original) with a known
    descriptor. Picks survive a new list for the tracks still listed. */
-int AP_Solo_TracksStart(void);
+int AP_Solo_TracksStart(const char *yamlPath);
 /* yamlPath: preset or saved/inbox YAML. Options from the options screen are
    passed only for presets (useOptions 1). The picked custom tracks are passed
    for both; a YAML keeps its own settings and gets the tracks added. */
@@ -143,7 +143,7 @@ int AP_Solo_TrackCount(void);
 int AP_Solo_TrackGet(int index, struct APSoloTrackInfo *out);
 void AP_Solo_TrackCycle(int index);
 int AP_Solo_TracksPicked(void);
-void AP_Solo_TracksClear(void);           /* a new start: nothing picked */
+void AP_Solo_TracksClear(void);           /* a new start: the next list sets the picks */
 /* 1 when the Custom Tracks step of this start sits behind the options screen
    (a preset), 0 when it follows the start list (an imported or inbox YAML). */
 int AP_Solo_TracksViaOptions(int isPreset);

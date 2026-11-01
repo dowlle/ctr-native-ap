@@ -159,6 +159,16 @@ static inline APDeathLinkState AP_DeathLinkResolve(int seedRecv, int seedSend,
 	return r;
 }
 
+// A Play Solo session has no other players: DeathLink is off whatever the room or
+// the OPTIONS rows say, for imported rooms too.
+static inline APDeathLinkState AP_DeathLinkResolveSession(int soloSession, int seedRecv, int seedSend,
+                                                          int cfgMode, int ovFall, int ovHit, int ovLoss)
+{
+	if (soloSession)
+		return AP_DeathLinkResolve(0, 0, 0, 0, 0, 0);
+	return AP_DeathLinkResolve(seedRecv, seedSend, cfgMode, ovFall, ovHit, ovLoss);
+}
+
 // The value the DeathLink row shows: its own, unless it follows a seed that
 // receives nothing while a DL Send row made the client receive.
 static inline int AP_DeathLinkRowShown(int row, int seedRecv, int recvNow)

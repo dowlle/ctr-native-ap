@@ -9,6 +9,7 @@
 #include "ap_hooks.h"   // AP_LogLine
 #include "ap_net.h"     // ap_net_deathlink_enable / _send / _take, ap_net_is_connected
 #include "ap_seedcfg.h" // ctr_cfg, ctr_cfg_active
+#include "ap_solo.h"    // AP_Solo_SessionActive
 #include "ap_win_logic.h" // #449 race-loss stakes: decided at race start, consulted before a loss send
 
 #include "platform/native_config.h" // g_config.deathLink (the OPTIONS menu row)
@@ -101,9 +102,9 @@ static APDeathLinkState AP_DeathLinkStateNow(void)
 		return off;
 	if (row < 0 || row > CTR_DL_WEAPON_HIT)
 		row = -1; // a hand-edited out-of-range value follows the seed
-	return AP_DeathLinkResolve(ctr_cfg.death_link, ctr_cfg.death_link_send,
-	                           row, g_config.dlSendFall,
-	                           g_config.dlSendHit, g_config.dlSendLoss);
+	return AP_DeathLinkResolveSession(AP_Solo_SessionActive(), ctr_cfg.death_link, ctr_cfg.death_link_send,
+	                                  row, g_config.dlSendFall,
+	                                  g_config.dlSendHit, g_config.dlSendLoss);
 }
 
 // What the DeathLink row shows (ruled 2026-10-29): on a plan room the mode in

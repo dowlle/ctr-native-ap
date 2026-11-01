@@ -281,12 +281,21 @@ static inline int AP_SoloTrackNextPick(int pick)
 	return pick >= 0 && pick < 2 ? pick + 1 : 0;
 }
 
+// How the YAML has a track: its starting pick. Anything else starts off.
+static inline int AP_SoloTrackStart(const nlohmann::json &track)
+{
+	const int start = track.is_object() ? track.value("start", 0) : 0;
+	return start == 1 || start == 2 ? start : 0;
+}
+
 // The --track and --guarantee arguments for the picks (id, pick 0 off, 1 in
 // the pool, 2 own pad). They go with a preset's options and with an imported
 // or inbox YAML alike (round 2 decision 5); a YAML gets no --set arguments.
 static inline std::vector<std::string> AP_SoloTrackArgs(const std::vector<std::pair<std::string, int>> &picks)
 {
 	std::vector<std::string> out;
+	if (!picks.empty())
+		out.push_back("--tracks-page"); // a listed track means the page was shown
 	for (const auto &p : picks)
 	{
 		if (p.second != 1 && p.second != 2)

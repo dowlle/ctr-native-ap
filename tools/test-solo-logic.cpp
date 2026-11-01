@@ -268,13 +268,19 @@ static void test_tracks()
 		using Picks = std::vector<std::pair<std::string, int>>;
 		using Args = std::vector<std::string>;
 		CHECK(AP_SoloTrackArgs(Picks{}).empty());
-		CHECK(AP_SoloTrackArgs(Picks{{"package/a/1", 0}, {"package/b/1", 0}}).empty());
-		CHECK((AP_SoloTrackArgs(Picks{{"package/a/1", 1}}) == Args{"--track", "package/a/1"}));
+		// Any listed track means the page was shown, even with everything off.
+		CHECK((AP_SoloTrackArgs(Picks{{"package/a/1", 0}, {"package/b/1", 0}}) == Args{"--tracks-page"}));
+		CHECK((AP_SoloTrackArgs(Picks{{"package/a/1", 1}}) == Args{"--tracks-page", "--track", "package/a/1"}));
 		CHECK((AP_SoloTrackArgs(Picks{{"package/a/1", 2}}) ==
-		       Args{"--track", "package/a/1", "--guarantee", "package/a/1"}));
+		       Args{"--tracks-page", "--track", "package/a/1", "--guarantee", "package/a/1"}));
 		CHECK((AP_SoloTrackArgs(Picks{{"package/a/1", 1}, {"package/b/1", 0}, {"package/c/2", 2}}) ==
-		       Args{"--track", "package/a/1", "--track", "package/c/2", "--guarantee", "package/c/2"}));
-		CHECK(AP_SoloTrackArgs(Picks{{"package/a/1", 9}, {"package/b/1", -1}}).empty());
+		       Args{"--tracks-page", "--track", "package/a/1", "--track", "package/c/2", "--guarantee", "package/c/2"}));
+		CHECK((AP_SoloTrackArgs(Picks{{"package/a/1", 9}, {"package/b/1", -1}}) == Args{"--tracks-page"}));
+		// A YAML's own value is the starting pick.
+		CHECK(AP_SoloTrackStart(nlohmann::json{{"start", 1}}) == 1);
+		CHECK(AP_SoloTrackStart(nlohmann::json{{"start", 2}}) == 2);
+		CHECK(AP_SoloTrackStart(nlohmann::json{{"start", 3}}) == 0);
+		CHECK(AP_SoloTrackStart(nlohmann::json{{"id", "x"}}) == 0);
 		// A preset's Custom Tracks page sits behind its options screen; a YAML's follows the start list.
 		CHECK(AP_SoloTracksViaOptions(true));
 		CHECK(!AP_SoloTracksViaOptions(false));

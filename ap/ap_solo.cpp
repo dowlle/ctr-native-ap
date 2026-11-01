@@ -404,7 +404,8 @@ void JobFail(const std::string &kind, const std::string &message, const std::str
 	Log("job failed (" + kind + "): " + message);
 }
 
-// A new track list keeps the picks of the tracks still in it.
+// A new track list keeps the picks of the tracks still in it. The first list of a
+// start begins as the YAML has each track.
 void ParseTracks(const nlohmann::json &r)
 {
 	std::vector<APSoloTrackInfo> next;
@@ -421,6 +422,7 @@ void ParseTracks(const nlohmann::json &r)
 			CopyText(info.revision, sizeof info.revision, AP_SoloJsonString(t, "revision"));
 			CopyText(info.author, sizeof info.author, AP_SoloJsonString(t, "author"));
 			CopyText(info.modes, sizeof info.modes, AP_SoloTrackModes(t.value("modes", nlohmann::json())));
+			info.pick = AP_SoloTrackStart(t);
 			for (const auto &old : g_tracks)
 				if (std::strcmp(old.id, info.id) == 0)
 					info.pick = old.pick;
@@ -763,9 +765,15 @@ extern "C" int AP_Solo_ImportYamlStart(const char *path)
 	return JobStart(JOB_IMPORT_YAML, {"import-yaml", path}, kQuickLimitMs) ? 1 : 0;
 }
 
-extern "C" int AP_Solo_TracksStart(void)
+extern "C" int AP_Solo_TracksStart(const char *yamlPath)
 {
-	return JobStart(JOB_TRACKS, {"tracks", "--assets", AssetsDir()}, kQuickLimitMs) ? 1 : 0;
+	std::vector<std::string> args = {"tracks", "--assets", AssetsDir()};
+	if (yamlPath && *yamlPath)
+	{
+		args.push_back("--yaml");
+		args.push_back(yamlPath);
+	}
+	return JobStart(JOB_TRACKS, args, kQuickLimitMs) ? 1 : 0;
 }
 
 extern "C" int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName, const char *presetId, int useOptions)
@@ -857,8 +865,7 @@ extern "C" int AP_Solo_TracksPicked(void)
 
 extern "C" void AP_Solo_TracksClear(void)
 {
-	for (APSoloTrackInfo &t : g_tracks)
-		t.pick = AP_SOLO_TRACK_OFF;
+	g_tracks.clear();
 }
 
 extern "C" void AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, const char *json)
@@ -1140,6 +1147,7 @@ extern "C" void AP_Solo_BeforeReconnect(void)
 
 extern "C" void AP_Solo_Tick(void)
 {
+	ap_net_set_solo_session(AP_Solo_SessionActive());
 	TickJob();
 	TickSession();
 	if (!g_session.pendingRoom.empty() && !AP_Solo_SessionActive())

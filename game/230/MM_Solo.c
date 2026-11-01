@@ -389,7 +389,7 @@ static void MM_Solo_PageNew(uint32_t *ot, struct GamepadBuffer *pad)
 			s_soloFromOptions = 0;
 			s_soloFromTracks = 0;
 			AP_Solo_TracksClear();
-			if (AP_Solo_TracksStart())
+			if (AP_Solo_TracksStart(s_soloStart.path))
 				MM_Solo_Busy(SOLO_JOB_TRACKS);
 			else
 				MM_Solo_Go(SOLO_REVIEW);
@@ -465,7 +465,7 @@ static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
 		s_soloFromOptions = 1;
 		s_soloFromTracks = 0;
 		/* The custom-track step: list the installed tracks first. */
-		if (AP_Solo_TracksStart())
+		if (AP_Solo_TracksStart(s_soloStart.path))
 			MM_Solo_Busy(SOLO_JOB_TRACKS);
 		else
 			MM_Solo_Go(SOLO_REVIEW);
@@ -551,7 +551,10 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 	}
 	if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info))
 	{
-		snprintf(line, sizeof line, "By %s. Modes: %s", info.author, info.modes[0] ? info.modes : "none");
+		if (info.author[0])
+			snprintf(line, sizeof line, "By %s. Modes: %s", info.author, info.modes[0] ? info.modes : "none");
+		else
+			snprintf(line, sizeof line, "Modes: %s", info.modes[0] ? info.modes : "none");
 		MM_Solo_Fit(line, fit, sizeof fit, 0x1A0);
 		DecalFont_DrawLineOT(fit, 0x100, 0xB4, FONT_SMALL, JUSTIFY_CENTER | GRAY, ot);
 	}
@@ -756,7 +759,7 @@ static void MM_Solo_PageMessage(uint32_t *ot, struct GamepadBuffer *pad)
 		else if (s_soloFromOptions == 3)
 		{
 			s_soloFromOptions = AP_Solo_TracksViaOptions(s_soloStart.isPreset);
-			if (AP_Solo_TracksStart())
+			if (AP_Solo_TracksStart(s_soloStart.path))
 				MM_Solo_Busy(SOLO_JOB_TRACKS);
 			else
 				MM_Solo_Go(SOLO_TRACKS);
