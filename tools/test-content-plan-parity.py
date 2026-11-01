@@ -343,7 +343,8 @@ def mode_custom():
     tv["capabilities"].update(ctr_tokens=True, relic=True)
     tv["relic_targets"] = dict(sapphire=90000, gold=80000, platinum=70000)
     return [tv, copy.deepcopy(UNKNOWN), relic_only()]
-subsets = [list(c) for n in (1, 2, 3) for c in itertools.combinations(cp.MODES, n)]
+# A CTR Challenge needs the Trophy Race in the same list (`track_modes`).
+subsets = [list(c) for n in (1, 2, 3) for c in itertools.combinations(cp.MODES, n) if "ctr" not in c or "trophy" in c]
 modes_refused = 0
 for index, (modes, stages, order) in enumerate(itertools.product(subsets, ("single", "two"), ("fixed", "per_seed", "per_pad"))):
     custom = mode_custom() if index % 2 == 0 else [copy.deepcopy(cp.PACKAGES[1]), copy.deepcopy(UNKNOWN)]
@@ -366,7 +367,16 @@ for index, (modes, stages, order) in enumerate(itertools.product(subsets, ("sing
             assert modes == ["relic"] or "at the start" in str(exc), exc
             modes_refused += modes != ["relic"]
 assert modes_refused <= 6, f"{modes_refused} mode cases refused at the start"
-assert sum(name.startswith("modes-") for name, _, _ in cases) >= 66  # 84 less the 12 relic-only
+# `podium_rungs` has no parent switches: a set the five old switches could not make.
+for rungs in (["held_3rd"], ["held_5th"], ["finish_any"], ["held_5th", "finish_podium"]):
+    options = mode_options(("trophy",), "single", "fixed", custom=[])
+    options.pop("podium_placement_checks", None)
+    options["podium_rungs"] = ["finish_on_podium" if key == "finish_podium" else key for key in rungs]
+    options["item_pool"] = small_pool()
+    wire = make_world(options, seed=1).fill_slot_data()
+    assert wire["content_plan"]["track_checks"]["podium_rungs"] == rungs, rungs
+    cases.append(("rungs-" + "+".join(rungs), wire, True))
+assert sum(name.startswith("modes-") for name, _, _ in cases) >= 42  # 60 less the 12 relic-only and 6 refusals
 modes_base = make_world(mode_options(list(cp.MODES), "two", "per_pad", custom=mode_custom()), seed=3).fill_slot_data()
 cases.append(("modes-base", modes_base, True))
 def multi_pad(p):
@@ -503,8 +513,8 @@ for name, change in [
         ("letter item with an extra copy", lambda p: letter_row(p).update(extra=1, remaining=2, receipt_cap=2)),
         ("letter item started from the pool", lambda p: letter_row(p).update(start_from_pool=1, remaining=0)),
         ("unknown item row", lambda p: letter_row(p).__setitem__("item", 35010187)),
-        ("rung set never created", lambda p: p["track_checks"].__setitem__("podium_rungs", ["held_3rd"])),
-        ("rung set held 5th alone", lambda p: p["track_checks"].__setitem__("podium_rungs", ["held_5th"])),
+        ("rung list without its checks", lambda p: p["track_checks"].__setitem__("podium_rungs", ["held_3rd"])),
+        ("rung list without its checks, held 5th", lambda p: p["track_checks"].__setitem__("podium_rungs", ["held_5th"])),
         ("rungs out of slot order", lambda p: p["track_checks"].__setitem__("podium_rungs", ["held_3rd", "held_1st", "finish_podium", "finish_any"])),
         ("rung unknown", lambda p: p["track_checks"]["podium_rungs"].__setitem__(0, "held_2nd")),
         ("rung repeated", lambda p: p["track_checks"]["podium_rungs"].__setitem__(1, "held_1st")),

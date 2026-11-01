@@ -671,6 +671,7 @@ static int  s_connPadPrev = 0;   // previous frame's physical-pad mask, for edge
 // panel at FONT_SMALL (13 px per character). Longer status text is moved to its
 // own centred line below the row.
 #define CONN_STATUS_INLINE_MAX 24
+#define CONN_STATUS_LINE_WIDTH 0x1B0
 
 // Render a CFG_STRING value into out: masked (one '*' per char) for the password,
 // plain otherwise, with a blinking trailing cursor while this row is being edited.
@@ -806,6 +807,49 @@ static void TextEdit_Begin(const ConfigEntry *e, int row, int rowY)
 	s_connEditing = 1;
 }
 
+// A long status: "Error:" stays beside the label and the reason takes up to two
+// centred rows, broken at spaces (the v0.2.x room refusal needs both). A word too
+// wide for the panel is cut, and text past the last row ends in "...". The second
+// row is the edit hint's while a row is being edited.
+static void Conn_DrawLongStatus(const char *status, int labelY, int valueX, int rowSpacing, uint32_t *ot)
+{
+	const int rows = s_connEditing ? 1 : 2;
+	int row;
+
+	if (strncmp(status, "Error: ", 7) == 0)
+	{
+		DecalFont_DrawLineOT((char *)"Error:", valueX, labelY, FONT_SMALL, WHITE, ot);
+		status += 7;
+	}
+	for (row = 0; row < rows && *status != '\0'; row++)
+	{
+		char line[128];
+		int end = 0;
+		int i;
+
+		for (i = 0; status[i] != '\0' && i < (int)sizeof line - 4; i++)
+		{
+			line[i] = status[i];
+			line[i + 1] = '\0';
+			if (DecalFont_GetLineWidth(line, FONT_SMALL) > CONN_STATUS_LINE_WIDTH)
+			{
+				if (end == 0)
+					end = i;
+				break;
+			}
+			if (status[i + 1] == ' ' || status[i + 1] == '\0')
+				end = i + 1;
+		}
+		line[end] = '\0';
+		status += end;
+		while (*status == ' ')
+			status++;
+		if (row == rows - 1 && *status != '\0' && end >= 3)
+			memcpy(line + end - 3, "...", 3);
+		DecalFont_DrawLineOT(line, 0x100, labelY + (row + 1) * rowSpacing, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	}
+}
+
 // Pad hint while a row is being edited, so the controller exits are
 // discoverable. '*' and '^' are the font's own PSX face button glyphs (see
 // game/DecalFont.c).
@@ -906,8 +950,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		const char *status = AP_Net_StatusLine();
 		DecalFont_DrawLineOT("Status", labelX, y, FONT_SMALL, ORANGE, ot);
 		if ((int)strlen(status) > CONN_STATUS_INLINE_MAX)
-			DecalFont_DrawLineOT((char *)status, 0x100, y + rowSpacing,
-				FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+			Conn_DrawLongStatus(status, y, valueX, rowSpacing, ot);
 		else
 			DecalFont_DrawLineOT((char *)status, valueX, y, FONT_SMALL, WHITE, ot);
 	}

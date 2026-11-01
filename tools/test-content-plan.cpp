@@ -614,7 +614,7 @@ int main(int argc, char **argv) {
         fam_refuse("letter item with an extra copy", fams, [&](J &p) {
             J &r = letter_row(p); r["extra"] = 1; r["remaining"] = 2; r["receipt_cap"] = 2; });
         fam_refuse("unknown item row", fams, [&](J &p) { letter_row(p)["item"] = 35010187; });
-        fam_refuse("rung set the options never create", fams, [&](J &p) { p["track_checks"]["podium_rungs"] = J::array({"held_3rd"}); });
+        fam_refuse("rung list that leaves the plan's rung checks over", fams, [&](J &p) { p["track_checks"]["podium_rungs"] = J::array({"held_3rd"}); });
         fam_refuse("rungs out of slot order", fams, [&](J &p) {
             p["track_checks"]["podium_rungs"] = J::array({"held_3rd", "held_1st", "finish_podium", "finish_any"}); });
         fam_refuse("unknown rung", fams, [&](J &p) { p["track_checks"]["podium_rungs"][0] = "held_2nd"; });
