@@ -8,7 +8,9 @@ tools/test-author-pad.c
 tools/test-authoring-client-config.c
 tools/test-trial-letter-identity.cpp
 tools/test-blue-fire.c
+tools/test-boss-adapter.c
 tools/test-boss-assist.c
+tools/test-boss-encounters-production.py
 tools/test-boss-venue.cpp
 tools/test-boss-venue-production.py
 tools/test-box-colour-config.c
@@ -17,6 +19,7 @@ tools/test-box-colour.c
 tools/test-box-edge.c
 tools/test-box-ghost-visual.py
 tools/test-box-map.c
+tools/test-box-placement-guard.cpp
 tools/test-box-number.c
 tools/test-box-offset.c
 tools/test-box-seat.c
@@ -88,6 +91,9 @@ tools/test-held-race-rearm.c
 tools/test-instance-birth-production.c skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-item-aliases.c
 tools/test-itemsanity.c
+tools/test-lap-checks.cpp
+tools/test-lap-checks-production.py
+tools/test-pad-laps-cups.py
 tools/test-launch-request.c
 tools/test-link-handoff.c
 tools/test-link-windows.c
@@ -102,6 +108,8 @@ tools/test-native-ptr-scratch.c
 tools/test-navrec-label.c
 tools/test-navrec.c
 tools/test-net-admission.cpp
+tools/test-net-planless-refusal.cpp
+tools/test-solo-deathlink.cpp
 tools/test-options-pages.c
 tools/test-oxide-cutscene.c
 tools/test-oxide-encounter.c
@@ -142,6 +150,9 @@ tools/test-tracker-boss-node.c
 tools/test-tracker-markers.c
 tools/test-tracker-progress.c
 tools/test-tracker-tabs.c
+tools/test-tracker-pad-launch.py
+tools/test-plan-pads.c
+tools/test-plan-pads-production.py
 tools/test-retro-fueled.c
 tools/test-retry-budget.cpp
 tools/test-reward-policy.c
@@ -150,6 +161,7 @@ tools/test-seed-content.c
 tools/test-seed-content-download-production.py
 tools/test-seed-content-hooks-production.py
 tools/test-slide-coliseum-gate-seedcfg.cpp
+tools/test-solo-logic.cpp
 tools/test-spu-memory.c
 tools/test-stat-ladder.c
 tools/test-stat-select.c
@@ -162,6 +174,7 @@ tools/test-tunnel-charswap-production.py
 tools/test-door-history-production.py
 tools/test-trial-track-seedcfg.cpp
 tools/test-content-plan.cpp
+tools/test-content-features.cpp
 tools/test-content-verify.cpp
 tools/test-content-cup-latch.c
 tools/test-content-capability.c
@@ -173,6 +186,9 @@ tools/test-content-track-checks.c
 tools/test-content-track-checks-production.py
 tools/test-content-cortex-perfect-production.py
 tools/test-content-win-stakes-production.py
+tools/test-content-ctr-first-production.py
+tools/test-content-wumpa-production.py
+tools/test-content-boss-shuffle-production.py
 tools/test-content-racer-lock-production.py
 tools/test-content-global-checks-production.cpp
 tools/test-content-bosses-production.py
@@ -201,10 +217,15 @@ tools/test-wumpa-production.c skip build-fail under the generic recipe; give it 
 tools/test-wumpa-residency.c
 tools/test-retail-asset-reader.c
 tools/test-wumpa-seedcfg.cpp
+tools/test-wumpa-bank.c
+tools/test-wumpa-shop-seedcfg.cpp
+tools/test-wumpa-shop-ledger.cpp
+tools/test-wumpa-shop-production.py
 tools/test-deathlink-send-seedcfg.cpp
 tools/test-reconnect-catchup.cpp skip needs the fake AP server (tools/fake-ap-server.py) on a socket; run by hand, see its header
 tools/test-proc-hitbox-distance.c
 tools/test-spawn-null-guards.py
+tools/test-spoiler-items-production.py
 tools/test-statbar-rank.c
 tools/test-bsp-instance.py
 tools/test-custom-ctr-result.py

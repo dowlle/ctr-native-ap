@@ -92,7 +92,9 @@ static void fixtures() {
     static const char *names[] = {"baseline", "starts-extras", "manual-rules", "open-packages", "track-modes", "track-checks",
                                   "track-checks-global", "cortex-perfect", "item-packs", "racers", "capability",
                                   "global-checks", "item-boxes", "cups", "cup-hits", "bosses", "bosses-custom",
-                                  "bosses-final", "bosses-cups"};
+                                  "bosses-final", "bosses-cups",
+                                  // J11: ctr_first, the Wumpa Shop and goal, boss opponent and kit shuffle
+                                  "ctr-first", "wumpa-shop", "wumpa-goal-only", "boss-shuffle", "all-030", "boss-cups-gauntlet"};
     for (const char *name : names) {
         std::ifstream in(std::string("tools/fixtures/content-plan/") + name + ".json");
         if (!in) { expect(false, std::string("fixture missing: ") + name); continue; }
@@ -111,7 +113,10 @@ static void fixtures() {
         Room none;
         none.present = all.present;
         r = run(none);
-        expect(!r.goal && r.reachable < r.total, std::string(name) + ": nothing held does not reach the goal");
+        // A Wumpa-only goal (J11) is met from the start when a free pad races a
+        // retail track: Wumpa Income needs no item.
+        expect((slot["content_plan"]["goal"]["op"] == "wumpa_banked" || !r.goal) && r.reachable < r.total,
+               std::string(name) + ": nothing held does not reach the goal");
         // Checked locations count as reached and bank their own item.
         Room done = none;
         for (auto id : ids) { done.checked.insert(id); }
@@ -252,9 +257,41 @@ static void probe(const char *path) {
     std::cout << "probe rows " << rows << ", inventory samples " << samples << '\n';
 }
 
+// One generator row 3: with `pad_requirements_v1` a later race counts only once
+// the pad's first race is reached. The capability fixture has first races that
+// need a boost rank and later checks that do not.
+static void first_race_won() {
+    std::ifstream in("tools/fixtures/content-plan/capability.json");
+    J slot = J::parse(in);
+    const auto ids = plan_locations(slot);
+    const auto sweep = [&](const J &room_slot) {
+        std::set<int64_t> miss;
+        expect(admit(room_slot, ids), "capability: admitted for the first race case");
+        Room room;
+        for (auto id : ids) room.present.insert(id);
+        for (int64_t code = 35010000; code <= 35010014; ++code) room.foreign[code] = 99;
+        run(room, &miss);
+        return miss;
+    };
+    const std::set<int64_t> before = sweep(slot);
+    J &plan = slot["content_plan"];
+    plan["pad_requirements"] = {{"mode", "randomized"}};
+    plan["required_features"].push_back("pad_requirements_v1");
+    const std::set<int64_t> after = sweep(slot);
+    expect(after.size() > before.size(), "the rule closes later checks whose first race needs a boost");
+    std::map<int64_t, std::string> later;
+    for (const auto &pad : plan["pads"])
+        for (size_t i = 1; i < pad["mode_gates"].size(); ++i)
+            for (const auto &c : plan["checks"])
+                if (c["routes"][0]["own_pad_id"] == pad["id"] && c["routes"][0]["mode"] == pad["mode_gates"][i]["mode"])
+                    later[c["location"].get<int64_t>()] = c["kind"].get<std::string>();
+    for (auto code : after)
+        if (!before.count(code)) expect(later.count(code) != 0, "only a later race closes: " + std::to_string(code));
+}
+
 int main(int argc, char **argv) {
     if (argc > 2 && std::string(argv[1]) == "--probe") probe(argv[2]);
-    else { fixtures(); chain(); checked_is_not_reached(); }
+    else { fixtures(); chain(); checked_is_not_reached(); first_race_won(); }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;
 }

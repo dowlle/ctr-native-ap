@@ -38,6 +38,7 @@ static AP_OxideGarageState Eval(int req, int goalOxide, int firstCleared,
 	in.goalGems = goalGems;
 	in.gemsHeld = gemsHeld;
 	in.firstOptional = 0;
+	in.wumpaShort = 0;
 	return AP_OxideGarageEvaluate(&in);
 }
 
@@ -71,7 +72,7 @@ int main(void)
 		for (int gems = 4; gems <= 5; gems++)
 		{
 			AP_OxideGarageInputs in = {req, goal, cleared, relics,
-			                                4, bosses, 5, gems, optional};
+			                                4, bosses, 5, gems, optional, 0};
 			AP_OxideGarageState st = AP_OxideGarageEvaluate(&in);
 			int wantFinal = cleared || (goal == 2 && optional && req &&
 			                            relics && bosses == 4 && gems == 5);

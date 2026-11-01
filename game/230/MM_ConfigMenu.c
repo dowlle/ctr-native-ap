@@ -58,6 +58,39 @@
 // is appended last, after OPTIONS, reusing LNG_QUIT (0x003) -- already proven as
 // a MenuRow stringIndex elsewhere (e.g. game/225.c's battle pause row) rather
 // than a title-only string -- so no new label is minted.
+//
+// The AP player client adds PLAY SOLO (#89, decision 30) just above OPTIONS,
+// with its own string slot (AP_LNG_PLAY_SOLO). It opens the same Play Solo
+// pages as Options > Connection > Play Solo. The box authoring download and
+// the build without Archipelago keep the rows below.
+#if defined(CTR_AP) && !defined(CTR_AP_AUTHORING)
+struct MenuRow s_rowsMainMenuBasicConfig[] = {
+	{0x4C, 0, 1, 0, 0},
+	{0x4D, 0, 2, 1, 1},
+	{0x4E, 1, 3, 2, 2},
+	{0x4F, 2, 4, 3, 3},
+	{0x50, 3, 5, 4, 4},
+	{0x51, 4, 6, 5, 5},
+	{AP_LNG_PLAY_SOLO, 5, 7, 6, 6},
+	{0x0E, 6, 8, 7, 7},
+	{LNG_QUIT, 7, 8, 8, 8},
+	{-1},
+};
+
+struct MenuRow s_rowsMainMenuWithSBConfig[] = {
+	{0x4C, 0, 1, 0, 0},
+	{0x4D, 0, 2, 1, 1},
+	{0x4E, 1, 3, 2, 2},
+	{0x4F, 2, 4, 3, 3},
+	{0x50, 3, 5, 4, 4},
+	{0x51, 4, 6, 5, 5},
+	{0x234, 5, 7, 6, 6},
+	{AP_LNG_PLAY_SOLO, 6, 8, 7, 7},
+	{0x0E, 7, 9, 8, 8},
+	{LNG_QUIT, 8, 9, 9, 9},
+	{-1},
+};
+#else
 struct MenuRow s_rowsMainMenuBasicConfig[] = {
 	{0x4C, 0, 1, 0, 0},
 	{0x4D, 0, 2, 1, 1},
@@ -82,6 +115,7 @@ struct MenuRow s_rowsMainMenuWithSBConfig[] = {
 	{LNG_QUIT, 7, 8, 8, 8},
 	{-1},
 };
+#endif
 
 static void MM_MenuProc_Config(struct RectMenu *menu);
 
@@ -315,6 +349,21 @@ static const int   s_dlSendValues[] = {-1, 0, 1};
 static const char *s_dlSendNames[]  = {"SEED", "OFF", "ON"};
 #define DLSEND_COUNT ((int)(sizeof(s_dlSendValues) / sizeof(s_dlSendValues[0])))
 
+// Race type menu (#208, decision 15): follow the seed / always / productive.
+// 1 and 0 are the AP_RS_SELECTOR_ALWAYS / AP_RS_SELECTOR_PRODUCTIVE values;
+// AP_RaceTypeSelectorSetting reads the row at every plan pad entry.
+static const int   s_raceMenuValues[] = {-1, 1, 0};
+static const char *s_raceMenuNames[]  = {"SEED", "ALWAYS", "PRODUCTIVE"};
+#define RACEMENU_COUNT ((int)(sizeof(s_raceMenuValues) / sizeof(s_raceMenuValues[0])))
+
+static int RaceMenu_Index(int value)
+{
+	for (int i = 0; i < RACEMENU_COUNT; i++)
+		if (s_raceMenuValues[i] == value)
+			return i;
+	return 0; // out-of-range persisted value renders and steps as SEED
+}
+
 // Sustained-trap comfort window. Zero is stored for Full race so config.ini
 // remains readable and the scheduler does not need a magic large duration.
 static const int   s_trapDurationValues[] = {10, 15, 20, 25, 30, 45, 60, 90, 0};
@@ -365,11 +414,13 @@ static const char *Enum_Label(const ConfigEntry *e)
 		return s_vsyncNames[Vsync_Index(*(int *)e->valuePtr)];
 #ifdef CTR_AP
 	if (e->valuePtr == &g_config.deathLink)
-		return s_dlinkNames[Dlink_Index(*(int *)e->valuePtr)];
+		return s_dlinkNames[Dlink_Index(AP_DeathLinkRowValue(*(int *)e->valuePtr))];
 	if (IsDlSendField((const int *)e->valuePtr))
 		return s_dlSendNames[DlSend_Index(*(int *)e->valuePtr)];
 	if (e->valuePtr == &g_config.trapDuration)
 		return s_trapDurationNames[TrapDuration_Index(*(int *)e->valuePtr)];
+	if (e->valuePtr == &g_config.raceTypeSelector)
+		return s_raceMenuNames[RaceMenu_Index(*(int *)e->valuePtr)];
 #endif
 	return AiDiff_Label(*(int *)e->valuePtr);
 }
@@ -427,6 +478,16 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 		*(int *)e->valuePtr = s_dlSendValues[i];
 		return;
 	}
+	if (e->valuePtr == &g_config.raceTypeSelector)
+	{
+		int i = RaceMenu_Index(*(int *)e->valuePtr) + dir;
+		if (i < 0)
+			i = 0;
+		if (i > RACEMENU_COUNT - 1)
+			i = RACEMENU_COUNT - 1;
+		*(int *)e->valuePtr = s_raceMenuValues[i];
+		return;
+	}
 	if (e->valuePtr == &g_config.trapDuration)
 	{
 		int i = TrapDuration_Index(*(int *)e->valuePtr) + dir;
@@ -462,10 +523,25 @@ static void Enum_Advance(const ConfigEntry *e)
 #ifdef CTR_AP
 // The Item Box Colours row is the player's opt-out of the seed's item box
 // colours. While a loaded seed has them off, it reads "OFF (SEED)" in grey and
-// takes no input: a player can turn colours off, never on.
+// takes no input: a player can turn colours off, never on. While Spoiler Items
+// (#459) still holds the colours behind AP Box Colours, the row stays editable
+// (#459 ruling, 2026-10-28): it reads "ON (LOCKED)" or "OFF", and an OFF set early
+// keeps the boxes pink after the item arrives.
 static int Config_RowLockedBySeed(const ConfigEntry *e)
 {
 	return e->valuePtr == &g_config.itemBoxColours && AP_Boxes_ColourRowState() == AP_BOX_COLOUR_ROW_SEED_OFF;
+}
+
+// A Play Solo session has no other players: the DeathLink rows read "OFF (SOLO)" in
+// grey and take no input. Their saved values stay for multiworld rooms.
+static int Config_RowLockedBySolo(const ConfigEntry *e)
+{
+	return (e->valuePtr == &g_config.deathLink || IsDlSendField((const int *)e->valuePtr)) && AP_Solo_SessionOwnsConnection();
+}
+
+static int Config_RowLockedByItem(const ConfigEntry *e)
+{
+	return e->valuePtr == &g_config.itemBoxColours && AP_Boxes_ColourRowState() == AP_BOX_COLOUR_ROW_ITEM_LOCKED;
 }
 
 static void Config_DrawHelpLines(const char *first, const char *second, uint32_t *ot)
@@ -484,7 +560,12 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 
 	if (e->valuePtr == &g_config.itemBoxColours)
 	{
-		if (Config_RowLockedBySeed(e))
+		if (Config_RowLockedByItem(e))
+		{
+			first = "Pink until AP Box Colours.";
+			second = "Set OFF to keep them pink.";
+		}
+		else if (Config_RowLockedBySeed(e))
 		{
 			first = "This seed turned box colours off.";
 			second = "All AP item boxes stay pink.";
@@ -494,6 +575,16 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 			first = "Purple progression, blue useful,";
 			second = "cyan filler, salmon trap.";
 		}
+	}
+	if (Config_RowLockedBySolo(e))
+	{
+		first = "No other players in solo.";
+		second = "DeathLink stays off.";
+	}
+	if (e->valuePtr == &g_config.raceTypeSelector)
+	{
+		first = "When race pads ask which race.";
+		second = "SEED uses the seed's setting.";
 	}
 	if (first == 0)
 		return;
@@ -524,6 +615,16 @@ static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint
 	if (Config_RowLockedBySeed(e))
 	{
 		DecalFont_DrawLineOT("OFF (SEED)", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
+		return;
+	}
+	if (Config_RowLockedBySolo(e))
+	{
+		DecalFont_DrawLineOT("OFF (SOLO)", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
+		return;
+	}
+	if (Config_RowLockedByItem(e))
+	{
+		DecalFont_DrawLineOT(*(bool *)e->valuePtr ? "ON (LOCKED)" : "OFF", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 		return;
 	}
 #endif
@@ -621,6 +722,7 @@ static int  s_connPadPrev = 0;   // previous frame's physical-pad mask, for edge
 // panel at FONT_SMALL (13 px per character). Longer status text is moved to its
 // own centred line below the row.
 #define CONN_STATUS_INLINE_MAX 24
+#define CONN_STATUS_LINE_WIDTH 0x1B0
 
 // Render a CFG_STRING value into out: masked (one '*' per char) for the password,
 // plain otherwise, with a blinking trailing cursor while this row is being edited.
@@ -756,6 +858,49 @@ static void TextEdit_Begin(const ConfigEntry *e, int row, int rowY)
 	s_connEditing = 1;
 }
 
+// A long status: "Error:" stays beside the label and the reason takes up to two
+// centred rows, broken at spaces (the v0.2.x room refusal needs both). A word too
+// wide for the panel is cut, and text past the last row ends in "...". The second
+// row is the edit hint's while a row is being edited.
+static void Conn_DrawLongStatus(const char *status, int labelY, int valueX, int rowSpacing, uint32_t *ot)
+{
+	const int rows = s_connEditing ? 1 : 2;
+	int row;
+
+	if (strncmp(status, "Error: ", 7) == 0)
+	{
+		DecalFont_DrawLineOT((char *)"Error:", valueX, labelY, FONT_SMALL, WHITE, ot);
+		status += 7;
+	}
+	for (row = 0; row < rows && *status != '\0'; row++)
+	{
+		char line[128];
+		int end = 0;
+		int i;
+
+		for (i = 0; status[i] != '\0' && i < (int)sizeof line - 4; i++)
+		{
+			line[i] = status[i];
+			line[i + 1] = '\0';
+			if (DecalFont_GetLineWidth(line, FONT_SMALL) > CONN_STATUS_LINE_WIDTH)
+			{
+				if (end == 0)
+					end = i;
+				break;
+			}
+			if (status[i + 1] == ' ' || status[i + 1] == '\0')
+				end = i + 1;
+		}
+		line[end] = '\0';
+		status += end;
+		while (*status == ' ')
+			status++;
+		if (row == rows - 1 && *status != '\0')
+			memcpy(line + (end >= 3 ? end - 3 : end), "...", 4);
+		DecalFont_DrawLineOT(line, 0x100, labelY + (row + 1) * rowSpacing, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	}
+}
+
 // Pad hint while a row is being edited, so the controller exits are
 // discoverable. '*' and '^' are the font's own PSX face button glyphs (see
 // game/DecalFont.c).
@@ -765,12 +910,72 @@ static void TextEdit_DrawHint(int y, uint32_t *ot)
 		0x100, y, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 }
 
+#if !defined(CTR_AP_AUTHORING)
+#include "MM_Solo.c" // #89 Play Solo pages, opened from the Connection page
+#define CONN_SOLO_ROWS 1
+
+// Play Solo opened from the title screen's PLAY SOLO row (decision 30): the
+// options menu opens on the Connection page with Play Solo already open, and
+// leaving Play Solo goes straight back to the title screen.
+static int s_soloFromTitle;
+
+void MM_Solo_OpenFromTitle(void)
+{
+	int sec;
+	if (s_numSections == 0)
+		BuildSectionMap();
+	for (sec = 0; sec < s_numSections; sec++)
+		if (strcmp(s_sectionName[sec], "Connection") == 0)
+			break;
+	if (sec == s_numSections)
+		return; // no Connection page: the options menu opens as usual
+	s_currentSection = sec;
+	g_configMenu.rowSelected = s_sectionCount[sec] + 1; // the Play Solo row
+	s_soloFromTitle = 1;
+	MM_Solo_Open();
+}
+
+// Leaving the options menu the way Back does on the page list.
+static void MM_Solo_ReturnToTitle(struct RectMenu *menu)
+{
+	s_soloFromTitle = 0;
+	menu->rowSelected = 0;
+	s_currentSection = -1;
+	NativeRenderer_CaptureWindowGeometry();
+	NativeConfig_Save();
+	NativeControls_Save();
+	AP_AiDifficultyCommit();
+	sdata->ptrDesiredMenu = &D230.menuMainMenu;
+}
+#else
+#define CONN_SOLO_ROWS 0
+static int MM_Solo_ConsumesBack(void) { return 0; }
+#endif
+
 static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
 {
 	char buf[160];
 	const int sec = s_currentSection;
 	const int numStrings = s_sectionCount[sec]; // uri / slot / password
-	const int numRows = numStrings + 1;         // + Connect action row
+	const int numRows = numStrings + 1 + CONN_SOLO_ROWS; // + Connect (+ Play Solo)
+
+	int soloClosed = 0;
+#if !defined(CTR_AP_AUTHORING)
+	// Play Solo owns the whole page while one of its pages is open.
+	{
+		const int solo = MM_Solo_Frame(ot, pad);
+		if (solo == 1)
+			return;
+		soloClosed = (solo == 2);
+		// Opened from the title screen: closing Play Solo, by Back or after a
+		// message, goes back there instead of to this page.
+		if (s_soloFromTitle && s_soloPage == SOLO_OFF)
+		{
+			MM_Solo_ReturnToTitle(menu);
+			return;
+		}
+	}
+#endif
 
 	// The Room links row lives on Options > Archipelago; this page only keeps
 	// the one-time notice for when another program owns room links (#334).
@@ -780,7 +985,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 
 	// While editing (or on the frame we just resolved) all menu navigation is
 	// suppressed: text mode owns input.
-	if (!s_connEditing && !justResolved)
+	if (!s_connEditing && !justResolved && !soloClosed)
 	{
 		if ((pad->buttonsTapped & BTN_UP) != 0)
 		{
@@ -800,11 +1005,19 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 				TextEdit_Begin(Section_Entry(sec, menu->rowSelected), menu->rowSelected,
 					CONN_ROW_START_Y + menu->rowSelected * CONN_ROW_SPACING - 2);
 			}
-			else
+			else if (menu->rowSelected == numStrings)
 			{
 				// Connect action: re-dial with the saved connection settings.
+				// A running solo session ends first (AP_Net_Reconnect).
 				AP_Net_Reconnect(g_config.uri, g_config.slot, g_config.password);
 			}
+#if !defined(CTR_AP_AUTHORING)
+			else
+			{
+				MM_Solo_Open(); // #89
+				return;
+			}
+#endif
 		}
 	}
 
@@ -847,6 +1060,20 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		}
 	}
 
+#if !defined(CTR_AP_AUTHORING)
+	// Play Solo row (#89), in the spare line between Connect and Status.
+	{
+		int y = startY + (numStrings + 1) * rowSpacing;
+		DecalFont_DrawLineOT(AP_Solo_SessionState() == AP_SOLO_SESSION_LIVE ? "Play Solo (connected)" : "Play Solo",
+			labelX, y, FONT_SMALL, ORANGE, ot);
+		if (menu->rowSelected == numStrings + 1)
+		{
+			RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
+			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
+		}
+	}
+#endif
+
 	// Read-only status row (one line below the Connect row). Short states sit
 	// beside the label; anything longer than fits there (the unreachable-host
 	// line, a wordy slot refusal) is centred on the next line instead, where the
@@ -856,8 +1083,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		const char *status = AP_Net_StatusLine();
 		DecalFont_DrawLineOT("Status", labelX, y, FONT_SMALL, ORANGE, ot);
 		if ((int)strlen(status) > CONN_STATUS_INLINE_MAX)
-			DecalFont_DrawLineOT((char *)status, 0x100, y + rowSpacing,
-				FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+			Conn_DrawLongStatus(status, y, valueX, rowSpacing, ot);
 		else
 			DecalFont_DrawLineOT((char *)status, valueX, y, FONT_SMALL, WHITE, ot);
 	}
@@ -1253,6 +1479,10 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 	    // Back first closes the Install missing content overview (#133 PR 7).
 	    && !MM_CurrentSeed_ConsumesBack(s_currentSection) && !MM_CustomImport_Active()
 #endif
+#ifdef CTR_AP
+	    // Back first steps out of the Play Solo pages (#89).
+	    && !MM_Solo_ConsumesBack()
+#endif
 	)
 	{
 		OtherFX_Play(2, 1);
@@ -1352,6 +1582,8 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 				AP_LinkRegAction(); // Room links: use this client for ctr-ap:// links, or stop
 			else if (Config_RowLockedBySeed(e))
 				; // the seed has item box colours off: nothing to toggle
+			else if (Config_RowLockedBySolo(e))
+				; // no DeathLink in a solo session: nothing to toggle
 			else
 #endif
 			if (e->type == CFG_BOOL)
@@ -1391,7 +1623,11 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		// enum entries: tap left/right to step through the preset ladder
 		{
 			const ConfigEntry *e = selEntry;
+#ifdef CTR_AP
+			if (e != NULL && e->type == CFG_ENUM && !Config_RowLockedBySolo(e))
+#else
 			if (e != NULL && e->type == CFG_ENUM)
+#endif
 			{
 				if ((pad->buttonsTapped & BTN_LEFT) != 0)
 				{
@@ -1433,7 +1669,11 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			const int editing = 0;
 #endif
 
+#ifdef CTR_AP
+			DecalFont_DrawLineOT((char *)e->label, labelX, y, FONT_SMALL, Config_RowLockedBySolo(e) ? GRAY : ORANGE, ot);
+#else
 			DecalFont_DrawLineOT((char *)e->label, labelX, y, FONT_SMALL, ORANGE, ot);
+#endif
 			Config_DrawValue(e, valueX, y, ot, buf, editing);
 
 			if (j == menu->rowSelected)

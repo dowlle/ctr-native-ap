@@ -841,6 +841,10 @@ void AH_Map_Main(void)
 		UI_DrawNumRelic(ptrHudData[0xE].x + 0x10, ptrHudData[0xE].y - 10);
 		UI_DrawNumKey(ptrHudData[0xF].x + 0x10, ptrHudData[0xF].y - 10);
 		UI_DrawNumTrophy(ptrHudData[0x10].x + 0x10, ptrHudData[0x10].y - 10);
+#ifdef CTR_AP
+		// #249: Wumpa balance and banked total below the counters.
+		AP_WumpaDrawHub();
+#endif
 	}
 
 #ifdef CTR_AP

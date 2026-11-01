@@ -160,6 +160,9 @@ internal void Platform_ExitClean(void)
 {
 	NativeRenderer_CaptureWindowGeometry();
 	NativeConfig_Save();
+#ifdef CTR_AP
+	AP_Solo_Shutdown(); // #89: let a solo server save and exit
+#endif
 	exit(0);
 }
 

@@ -30,11 +30,26 @@ def extract(source, signature):
     return source[start:end]
 
 
-prod = extract(unit, 'int AP_BossGarageVenue(int bossIdx)\n{')
+prod = extract(unit, 'static int AP_BossCupGarageNow(int g)\n{')
+prod += extract(unit, 'static int AP_BossCupGarageHeld(int g)\n{')
+prod += extract(unit, 'int AP_BossGarageVenue(int bossIdx)\n{')
+prod += extract(unit, 'static int AP_BossKitGarageNow(void)\n{')
 prod += extract(unit, 'static int AP_BossShuffledGarageNow(void)\n{')
 prod += extract(unit, 'int AP_BossRetailRulesLevel(int levelID)\n{')
 prod += 'static struct MetaDataBOSS s_apBossVenueAttack[8];\n'
 prod += extract(unit, 'static int AP_BossVenueCertifiedNow(int g)\n{')
+prod += extract(unit, 'static int AP_BossKitCertifiedNow(int g)\n{')
+# J03: the inert row, the decision 8 fit, the final record and the gauntlet.
+prod += extract(unit, 'static struct MetaDataBOSS *AP_BossInertSchedule(struct MetaDataBOSS *dst, int rows)\n{')
+prod += extract(unit, 'static void AP_BossFillKit(')
+prod += extract(unit, 'static int AP_BossFitKit(')
+prod += 'static struct MetaDataBOSS s_apBossFinalAttack[AP_BOSS_FINAL_SEGMENTS + 1];\n'
+prod += extract(unit, 'int AP_BossFinalComposedNow(void)\n{')
+prod += extract(unit, 'static struct MetaDataBOSS *AP_BossFinalAttackSchedule(int fill)\n{')
+prod += 'static struct MetaDataBOSS s_apBossGauntletAttack[AP_BOSS_VENUE_SEGMENTS + 1];\nstatic int s_apBossGauntletLeg = -1;\n'
+prod += extract(unit, 'static int AP_BossGauntletLegNow(void)\n{')
+prod += extract(unit, 'int AP_BossGauntletAttacker(void)\n{')
+prod += extract(unit, 'static struct MetaDataBOSS *AP_BossGauntletAttackSchedule(int fill)\n{')
 prod += extract(unit, 'struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill)\n{')
 
 # The retail rows, read from the data table so the stub cannot drift.
@@ -53,16 +68,22 @@ fixture = r'''
 typedef unsigned char u8; typedef unsigned short u16;
 struct MetaDataBOSS { u8 trackCheckpoint, throwFlag, weaponType, pathChangeDisabled; u16 weaponCooldown, juiceFlag; };
 #include "ap_boss_venue.h"
+#define AP_BOSS_ADAPTER_PURE
+#include "ap_boss_adapter.h"
+#include "ap_oxide_weapon_schedule.h"
 #define ADVENTURE_BOSS 0x80000000u
 #define ADVENTURE_CUP 0x10000000u
+#define ADVENTURE_MODE 0x00080000u
 #define BOSS_WEAPON_NORMAL 3
 #define BOSS_WEAPON_NONE 0xf
 struct Level { int cnt_restart_points; };
-struct GameTracker { unsigned gameMode1; short levelID; char bossID; Level *level1; };
-struct SData { GameTracker *gGT; } sdata_s, *sdata = &sdata_s;
+struct Cup { int cupID; int trackIndex; };
+struct GameTracker { unsigned gameMode1; short levelID; char bossID; Level *level1; Cup cup; };
+struct SData { GameTracker *gGT; int bossWeaponCooldown; int bossJuiceCounter; } sdata_s, *sdata = &sdata_s;
 struct Data { MetaDataBOSS *bossWeaponMetaPtr[5]; } data;
 static MetaDataBOSS oxide[1], roo[6] = {ROO}, papu[6] = {PAPU}, joe[6] = {JOE}, pin[6] = {PIN};
 static int cfg_active = 1; static int ctr_cfg_active(void) { return cfg_active; }
+static int ap_content_plan_active(void) { return 1; }
 AP_BossEncounters ctr_boss_encounters;
 static int logs; static void AP_AppendLog(const char *) { logs++; }
 ''' + prod + r'''
@@ -111,12 +132,119 @@ int main() {
   race(ADVENTURE_CUP | ADVENTURE_BOSS, 3, 0, 72);
   assert(AP_BossVenueAttackSchedule(1) == nullptr);
 
-  // A loaded graph the certification did not see: logged, nothing thrown.
+  // Decision 8: a loaded graph the certification did not see is mapped from
+  // the home track onto the count it really has, with one log line.
   race(ADVENTURE_BOSS, 3, 0, 60);
   logs = 0;
   m = AP_BossVenueAttackSchedule(1);
   assert(m != nullptr && logs == 1);
+  for (int i = 0; i < 5; i++) {
+    assert(m[i].weaponType == roo[i].weaponType);
+    assert(m[i].trackCheckpoint == AP_BossVenueCheckpoint(roo[i].trackCheckpoint, 77, 59));
+  }
+  // One that cannot keep the segments apart: logged, nothing thrown.
+  race(ADVENTURE_BOSS, 3, 0, 4);
+  logs = 0;
+  m = AP_BossVenueAttackSchedule(1);
+  assert(m != nullptr && logs == 1);
   assert(m[0].weaponType == BOSS_WEAPON_NONE && m[1].throwFlag == 0);
+
+  // J03 composed kit on a modified venue: remapped from the recorded count.
+  {
+    static const unsigned char cps[5] = {0, 16, 33, 47, 70};
+    ctr_boss_encounters.version = AP_BOSS_ENCOUNTERS_VERSION_2;
+    ctr_boss_encounters.composed[0] = 1;
+    for (int i = 0; i < 5; i++) {
+      AP_BossKitSegment g = {0, 3, 0x01, 1, 15, 0};
+      g.checkpoint = (unsigned char)AP_BossVenueCheckpoint(cps[i], 77, 71);
+      if (i == 2) { g.weapon = 0x06; g.throwFlag = 3; g.pathDisabled = 1; g.cooldown = 12; }
+      ctr_boss_encounters.schedule[0][i] = g;
+    }
+    race(ADVENTURE_BOSS, 3, 0, 72);
+    logs = 0;
+    m = AP_BossVenueAttackSchedule(1);
+    assert(m != nullptr && logs == 0 && m[2].weaponType == 0x06 && m[5].throwFlag == 0);
+    for (int i = 0; i < 5; i++) assert(m[i].trackCheckpoint == ctr_boss_encounters.schedule[0][i].checkpoint);
+    race(ADVENTURE_BOSS, 3, 0, 100);
+    m = AP_BossVenueAttackSchedule(1);
+    assert(m != nullptr && logs == 1 && m[2].weaponType == 0x06);
+    for (int i = 0; i < 5; i++)
+      assert(m[i].trackCheckpoint == (ctr_boss_encounters.schedule[0][i].checkpoint * 99) / 71);
+    race(ADVENTURE_BOSS, 3, 0, 3);
+    logs = 0;
+    m = AP_BossVenueAttackSchedule(1);
+    assert(m != nullptr && logs == 1 && m[0].weaponType == BOSS_WEAPON_NONE);
+    ctr_boss_encounters.composed[0] = 0;
+  }
+
+  // J03 N. Oxide's composed final record: both Oxide races, retail Oxide
+  // segment starts, the 0x7f scale remapped on a track it does not fit.
+  {
+    ctr_boss_encounters.finalPresent = 1;
+    ctr_boss_encounters.finalComposed = 1;
+    for (int i = 0; i < AP_BOSS_FINAL_SEGMENTS; i++) {
+      AP_BossKitSegment g = {AP_BOSS_OXIDE_CHECKPOINTS[i], 3, (unsigned char)(i == 4 ? 0x0d : 0x01), 1, 12, 0};
+      ctr_boss_encounters.finalSchedule[i] = g;
+    }
+    for (int boss = 4; boss <= 5; boss++) {
+      race(ADVENTURE_BOSS, 13, boss, 190);
+      assert(AP_BossFinalComposedNow());
+      m = AP_BossVenueAttackSchedule(1);
+      assert(m != nullptr && m[4].weaponType == 0x0d && m[12].trackCheckpoint == 0x7f && m[13].throwFlag == 0);
+      assert(AP_BossVenueAttackSchedule(0) == m);
+    }
+    race(ADVENTURE_BOSS, 13, 5, 100);
+    m = AP_BossVenueAttackSchedule(1);
+    assert(m[12].trackCheckpoint == 99 && m[1].trackCheckpoint == AP_OxideWeaponCheckpoint(0x10, 99));
+    // Never a garage race, never without the record.
+    race(ADVENTURE_BOSS, 13, 2, 190);
+    assert(!AP_BossFinalComposedNow());
+    ctr_boss_encounters.finalComposed = 0;
+    race(ADVENTURE_BOSS, 13, 5, 190);
+    assert(!AP_BossFinalComposedNow() && AP_BossVenueAttackSchedule(1) == nullptr);
+    ctr_boss_encounters.finalPresent = 0;
+  }
+
+  // J03 Purple Gem Cup gauntlet: leg 2 on its recorded track only.
+  {
+    static const unsigned char cps[5] = {0, 15, 34, 83, 93};
+    ctr_boss_encounters.gauntletOn = 1;
+    ctr_boss_encounters.gauntletTrack[1] = 9; // Mystery Caves, 123 points
+    ctr_boss_encounters.gauntletAttacker[1] = 13;
+    ctr_boss_encounters.gauntletComposed[1] = 1;
+    for (int i = 0; i < 5; i++) {
+      AP_BossKitSegment g = {(unsigned char)AP_BossVenueCheckpoint(cps[i], 101, 122), 2, 0x09, 1, 12, 0};
+      ctr_boss_encounters.gauntletSchedule[1][i] = g;
+    }
+    race(ADVENTURE_MODE | ADVENTURE_CUP, 9, 0, 123);
+    gt.cup.cupID = 4; gt.cup.trackIndex = 1;
+    assert(AP_BossGauntletAttacker() == -1); // not armed before race init
+    m = AP_BossVenueAttackSchedule(1);
+    assert(m != nullptr && m[0].weaponType == 0x09 && m[5].throwFlag == 0);
+    assert(AP_BossGauntletAttacker() == 13 && AP_BossVenueAttackSchedule(0) == m);
+    // Another cup, another leg, a wrong track, or no adventure: nothing.
+    gt.cup.cupID = 3;
+    assert(AP_BossVenueAttackSchedule(1) == nullptr && AP_BossGauntletAttacker() == -1);
+    gt.cup.cupID = 4; gt.cup.trackIndex = 0;
+    assert(AP_BossVenueAttackSchedule(1) == nullptr && AP_BossGauntletAttacker() == -1);
+    gt.cup.trackIndex = 1; gt.levelID = 8;
+    assert(AP_BossVenueAttackSchedule(1) == nullptr && AP_BossGauntletAttacker() == -1);
+    race(ADVENTURE_CUP, 9, 0, 123);
+    assert(AP_BossVenueAttackSchedule(1) == nullptr);
+    // A boss cup leg (#133 PR 6b) is a boss race, never the gauntlet.
+    race(ADVENTURE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS, 9, 0, 123);
+    assert(AP_BossGauntletAttacker() == -1);
+    // A modified leg track takes the decision 8 remap, a hopeless one nothing.
+    race(ADVENTURE_MODE | ADVENTURE_CUP, 9, 0, 140);
+    logs = 0;
+    m = AP_BossVenueAttackSchedule(1);
+    assert(m != nullptr && logs == 1 && m[4].trackCheckpoint == AP_BossVenueCheckpoint(cps[4] * 122 / 101, 122, 139));
+    race(ADVENTURE_MODE | ADVENTURE_CUP, 9, 0, 3);
+    assert(AP_BossVenueAttackSchedule(1) == nullptr && AP_BossGauntletAttacker() == -1);
+    ctr_boss_encounters.gauntletOn = 0;
+    race(ADVENTURE_MODE | ADVENTURE_CUP, 9, 0, 123);
+    assert(AP_BossVenueAttackSchedule(1) == nullptr);
+  }
 
   // No slot_data: retail venues; a refused record loads nothing.
   cfg_active = 0;
@@ -172,6 +300,14 @@ require('game/222.c', 'AP_BossRetailRulesLevel(gGT->levelID) == HOT_AIR_SKYWAY')
 require('game/Vehicle/VehPhysGeneral.c', 'AP_BossRetailRulesLevel(gGT->levelID) == DRAGON_MINES')
 require('game/Vehicle/VehBirth.c', 'gGT->prevLEV == AP_BossGarageVenue(3)')
 require('ap/ap_tracker.c', 'AP_BossVenueAdvert(ap_tracker.hub - 1, n->pad')
+# J03 boss adapter wiring: protection on both bot damage paths, the
+# per-frame self-state tick, race-init reset, and the advanced families
+# routed away from the projectile branch.
+require('game/231/RB_Hazard.c', 'if (PickupBots_AdapterProtect(driverVictim))')
+require('game/BOTS.c', 'if (PickupBots_AdapterProtect(botDriver))')
+require('game/PickupBots.c', 'PickupBots_AdapterTick();', 'AP_BossAdapterReset(&s_apBossAdapter);',
+        'if (AP_BossAdapterIsAdvanced(bossMeta->weaponType))', 'PickupBots_UpdateBoss(gGT->drivers[1]);',
+        'PickupBots_UpdateBoss(attacker);')
 require('ap/ap_seedcfg.cpp', 'ap_seedcfg_parse_boss_encounters(j, opt, schema);',
         'std::memset(&ctr_boss_encounters, 0, sizeof ctr_boss_encounters);')
 # Every remaining retail boss-track test in the AP build must be one of the
