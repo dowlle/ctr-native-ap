@@ -238,6 +238,8 @@ typedef struct ctr_content_bosses {
     int extended, opponent_shuffle, oxide_in_pool, kit_shuffle, gauntlet, oxide_profile_all, home_venues;
     int kit_assignment, kit_intensity, loss_easing;
     int opponent[4], final_opponent;
+    /* The chaos Final Challenge (`bosses.final_chaos`). */
+    int final_chaos;
     /* Complete One Lap (#344): the venue's lap check of each encounter, by
      * gGT->bossID (0 to 3 the garages, 4 and 5 N. Oxide's two races), 0 for a
      * boss cup, whose legs carry theirs, or a seed without lap checks. */

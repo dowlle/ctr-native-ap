@@ -17,6 +17,7 @@
 #include "ap_trap_items.h"
 #include "ap_named_blocks.h"
 #include "ap_hit_boss_shuffle.h"
+#include "ap_roster_swap.h"
 
 #include <cstdarg>
 #include <cstdlib>
@@ -1037,9 +1038,14 @@ static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false
 				}
 				trig.fallback_keys = (int)fb;
 			}
-			// J03: a boss guest drawn for no encounter has no unlock win and
-			// can only ever join through Keys.
-			if (trig.count == 0 && trig.fallback_keys == 0)
+			// The roster swap: an original boss drawn for no encounter has no
+			// unlock win and no Keys, and races from the start.
+			if (trig.count == 0 && trig.fallback_keys != 0)
+			{
+				hit_reject("unlock_triggers[%d] has fallback_keys with no unlock win", guest);
+				return 0;
+			}
+			if (trig.count == 0 && !(bossShuffled && AP_RosterOriginalBoss(guest)))
 			{
 				hit_reject("unlock_triggers[%d] has no unlock win and no fallback_keys", guest);
 				return 0;

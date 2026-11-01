@@ -92,7 +92,8 @@ enum
 {
 	AP_HIT_POOL_UNHIT = 0, // eligible guest, not the player, Hit unchecked
 	AP_HIT_POOL_OTHER,     // eligible non-stock id, not the player, not taken
-	AP_HIT_POOL_STOCK      // stock id, not taken
+	AP_HIT_POOL_STOCK,     // eligible stock id, not taken
+	AP_HIT_POOL_HELD       // stock id waiting behind its garage, not taken
 };
 
 static inline int AP_HitPoolMemberPure(int pool, int id, int player,
@@ -106,6 +107,8 @@ static inline int AP_HitPoolMemberPure(int pool, int id, int player,
 		return id >= 8 && eligible[id] && unchecked[id];
 	if (pool == AP_HIT_POOL_OTHER)
 		return !AP_HitInStockPure(id, player) && eligible[id];
+	if (pool == AP_HIT_POOL_STOCK)
+		return AP_HitInStockPure(id, player) && eligible[id];
 	return AP_HitInStockPure(id, player);
 }
 
@@ -185,6 +188,11 @@ static inline int AP_HitDrawFieldPure(const int *order,
 
 	AP_HitTakePure(order, AP_HIT_POOL_STOCK, player, eligible, unchecked, taken,
 	               &cur->stock, aiSeats - out->count, out);
+	// The roster swap holds a default racer drawn as a boss out of the stock
+	// seats. Three extra models cannot cover four or more of them, so the
+	// field fills from those racers rather than run short.
+	AP_HitTakePure(order, AP_HIT_POOL_HELD, player, eligible, unchecked, taken,
+	               &cur->stock, aiSeats - out->count, out);
 	return out->count;
 }
 
@@ -205,7 +213,8 @@ static inline int AP_HitGuestFallbackEligiblePure(int triggerMet, int fallbackKe
 }
 
 // Is `guest` (engine id 0..15) allowed to appear as an encounter? Defaults
-// (0..7) always are. A guest (8..15) needs one authoritative trigger win checked
+// (0..7) always are here; AP_HitEncounterGuestEligible holds one drawn as a
+// boss (ap_roster_swap.h). A guest (8..15) needs one authoritative trigger win checked
 // (`triggerMet` is the parsed any_of list reduced to a 0/1 fact by the gather),
 // or its Key fallback met (`fallbackKeys` is indexed the same way, 0 where the
 // guest has no fallback).

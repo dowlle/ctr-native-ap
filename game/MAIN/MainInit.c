@@ -583,6 +583,12 @@ void MainInit_Drivers(struct GameTracker *gGT)
 		if (gameMode < 0)
 		{
 			numDrivers = numPlyrCurrGame + 1;
+#ifdef CTR_AP
+			if (AP_ChaosFinalNow())
+			{
+				numDrivers = numPlyrCurrGame + AP_ROSTER_CHAOS_RIVALS;
+			}
+#endif
 		}
 
 		// Purple Gem Cup

@@ -553,6 +553,10 @@ internal b32 VehBirth_ModelNameEquals(const struct Model *model, const char *nam
 	return true;
 }
 
+#ifdef CTR_AP
+struct Model *LOAD_ChaosSideModel(int i);
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80058948-0x80058a60.
 struct Model *VehBirth_GetModelByName(char *searchName)
 {
@@ -572,6 +576,17 @@ struct Model *VehBirth_GetModelByName(char *searchName)
 			return m;
 		}
 	}
+
+#ifdef CTR_AP
+	// The chaos Final Challenge's two extra rivals beyond the three slots.
+	for (i = 0; (m = LOAD_ChaosSideModel(i)) != NULL; i++)
+	{
+		if (VehBirth_ModelNameEquals(m, searchName))
+		{
+			return m;
+		}
+	}
+#endif
 
 	models = (struct Model **)sdata->PLYROBJECTLIST;
 

@@ -182,6 +182,10 @@ typedef struct
 	long wumpa_location;
 	char lev_sha256[65];
 	char vrm_sha256[65];
+	// The chaos Final Challenge: the seed's five bosses in one race, the final
+	// racer first (ap_roster_swap.h). Content plans only.
+	int chaos;
+	int chaos_lineup[5];
 } ctr_oxide_final_venue;
 
 // The exact Lockheart Cortex Vortex pair. One definition for the Oxide 2 venue
@@ -1112,6 +1116,14 @@ int AP_BossRaceOpponentModels(int player, int *extra);
 // Oxide races when the seed drew one (boss_oxide_in_pool), else -1. bossID
 // stays 4 or 5. IMPLEMENTED in ap_seedcfg.cpp.
 int AP_BossFinalGarageOpponent(void);
+// The chaos Final Challenge race is being loaded or run.
+int AP_ChaosFinalNow(void);
+// Its five rivals, the final racer first; 0 when this is no such race.
+int AP_ChaosFinalLineup(int out[5]);
+// "Chaos: N rivals" for the garage and the tracker; 0 without a chaos final.
+int AP_ChaosFinalAdvert(char *out, int cap);
+// The gauntlet leg being loaded: the racer who must be seated, or -1.
+int AP_BossGauntletLoadAttacker(void);
 
 // #169 tier 3: 0 when the running garage race has a composed kit with
 // boss_loss_easing off; 1 otherwise (retail per-loss cooldown easing).

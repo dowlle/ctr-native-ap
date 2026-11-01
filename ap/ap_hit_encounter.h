@@ -24,6 +24,10 @@ extern "C" {
 // was absent/disabled/refused, or the feature scalar was off.
 int AP_HitEncounterEnabled(void);
 
+// The roster swap draws the field too: on with the Hit block, or without it on
+// a seed whose bosses moved or whose Purple Gem Cup is a gauntlet.
+int AP_HitEncounterFieldOn(void);
+
 // The parsed draw order (16 engine ids) for a destination: ordinary tracks
 // 0..17, cups 100..104 and content-plan cups 200..226 (#133 PR 5b, present
 // only for the plan's cups). NULL when the feature is off or the destination

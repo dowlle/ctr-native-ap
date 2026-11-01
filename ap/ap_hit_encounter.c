@@ -6,6 +6,7 @@
 
 #include "ap_hit_encounter.h"
 #include "ap_hit_policy.h"
+#include "ap_roster_swap.h"
 #include "ap_net.h"
 #include "ap_hooks.h" // AP_EmitHitCharacterCheck (wraps AP_EmitClassCheck), AP_GateCount
 
@@ -21,6 +22,38 @@ int AP_HitEncounterEnabled(void)
 {
 	const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
 	return (h != NULL && h->enabled) ? 1 : 0;
+}
+
+// Which boss win codes are checked, as a mask over AP_HIT_BOSS_WIN_CODES. The
+// checked state is the ruling: a garage check collected counts as beaten.
+static unsigned ap_hit_boss_checked_mask(void)
+{
+	unsigned mask = 0;
+	int k;
+	for (k = 0; k < AP_HIT_BOSS_CODES; k++)
+		if (ap_net_location_checked(AP_HIT_BOSS_WIN_CODES[k]))
+			mask |= 1u << k;
+	return mask;
+}
+
+// The seed's boss identities with the swap on, else 0.
+static int ap_hit_swap_identity(int ident[AP_HIT_BOSS_CODES])
+{
+	if (!AP_HitBossShuffleActive(&ctr_boss_encounters))
+		return 0;
+	AP_HitBossIdentity(&ctr_boss_encounters, ident);
+	return 1;
+}
+
+int AP_HitEncounterFieldOn(void)
+{
+	int ident[AP_HIT_BOSS_CODES];
+	if (AP_HitEncounterEnabled())
+		return 1;
+	if (!ctr_cfg_active())
+		return 0;
+	return ap_hit_swap_identity(ident) ||
+	       (ctr_boss_encounters.state == AP_BOSS_ENC_VALID && ctr_boss_encounters.gauntletOn);
 }
 
 // The destination key for cursors: tracks 0..17 map to 0..17, cups 100..104 to
@@ -42,8 +75,13 @@ static int ap_hit_dest_key(int destLevelID)
 const int *AP_HitEncounterOrder(int destLevelID)
 {
 	const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
-	if (h == NULL)
-		return NULL;
+	if (h == NULL || !h->enabled)
+	{
+		// No Hit block, so no seeded order: the swap walks the ids in turn.
+		static const int s_rosterOrder[CTR_CFG_HIT_CHARACTER_COUNT] = {0, 1, 2,  3,  4,  5,  6,  7,
+		                                                               8, 9, 10, 11, 12, 13, 14, 15};
+		return AP_HitEncounterFieldOn() && ap_hit_dest_key(destLevelID) >= 0 ? s_rosterOrder : NULL;
+	}
 	if (destLevelID >= 0 && destLevelID < CTR_CFG_HIT_TRACK_COUNT)
 		return h->tracks[destLevelID].ids;
 	if (destLevelID >= 100 && destLevelID < 100 + CTR_CFG_HIT_CUP_COUNT)
@@ -61,7 +99,7 @@ int AP_HitEncounterShouldApply(int isAdventure, int destLevelID, int isCup,
                                int isBoss, int isArcade, int isRelic,
                                int isToken, int isCrystal, int numPlayers)
 {
-	if (!AP_HitEncounterEnabled())
+	if (!AP_HitEncounterFieldOn())
 		return 0;
 	return AP_HitOrdinaryAppliesPure(isAdventure, destLevelID, isCup, isBoss, isArcade,
 	                                 isRelic, isToken, isCrystal, numPlayers);
@@ -77,7 +115,12 @@ int AP_HitEncounterGuestEligible(int guest)
 	if (guest < 0 || guest >= CTR_CFG_HIT_CHARACTER_COUNT)
 		return 0;
 	if (guest < 8)
-		return 1; // defaults always appear
+	{
+		// A default racer drawn as a boss waits for that boss race.
+		int ident[AP_HIT_BOSS_CODES];
+		return !ap_hit_swap_identity(ident) ||
+		       AP_RosterDefaultEligible(ident, guest, ap_hit_boss_checked_mask());
+	}
 	{
 		const ctr_hit_trigger *t = &h->triggers[guest - 8];
 		for (i = 0; i < t->count; i++)
@@ -89,7 +132,10 @@ int AP_HitEncounterGuestEligible(int guest)
 		// Held Keys are the RECEIVED item count (AP_GateCount), not the cosmetic
 		// currAdvProfile.numKeys rebuilt from reward bits: with shuffle_keys off a
 		// Key is still delivered as an item, and the apworld's fallback term is
-		// state.has("Key", n) over the same receipts.
+		// state.has("Key", n) over the same receipts. An original boss raced
+		// nowhere has neither: it swapped slots and races from the start.
+		if (t->count == 0 && t->fallback_keys == 0)
+			return 1;
 		return AP_HitGuestFallbackEligiblePure(triggerMet, t->fallback_keys,
 		                                       AP_GateCount(AP_IDX_KEY));
 	}
@@ -105,8 +151,24 @@ int AP_HitEncounterGather(unsigned char *eligible, unsigned char *unchecked)
 		eligible[i] = 0;
 		unchecked[i] = 0;
 	}
-	if (h == NULL)
-		return 0;
+	if (h == NULL || !h->enabled)
+	{
+		// The swap with no Hit block: the same pool, no Hit target to seat.
+		int ident[AP_HIT_BOSS_CODES];
+		unsigned checked;
+		if (!AP_HitEncounterFieldOn())
+			return 0;
+		if (!ap_hit_swap_identity(ident))
+		{
+			for (i = 0; i < 8; i++)
+				eligible[i] = 1;
+			return 1;
+		}
+		checked = ap_hit_boss_checked_mask();
+		for (i = 0; i < CTR_CFG_HIT_CHARACTER_COUNT; i++)
+			eligible[i] = (unsigned char)AP_RosterEligibleNoHit(ident, i, checked);
+		return 1;
+	}
 	for (i = 0; i < CTR_CFG_HIT_CHARACTER_COUNT; i++)
 	{
 		long code = h->locations[i];

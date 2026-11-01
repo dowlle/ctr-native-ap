@@ -8,6 +8,10 @@
 // or a failed load never carries a use or a timer into the next race.
 static AP_BossAdapterState s_apBossAdapter;
 static struct Driver *s_apBossAdapterDriver;
+// The chaos Final Challenge: whose turn it is, and set by a real attack this
+// update. One schedule, one cooldown, five rivals taking turns.
+static int s_apChaosCursor;
+static int s_apChaosFired;
 #endif
 
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
@@ -57,6 +61,7 @@ void PickupBots_Init(void)
 	// earlier race survives into a custom-page race (review round 1).
 	AP_BossAdapterReset(&s_apBossAdapter);
 	s_apBossAdapterDriver = NULL;
+	s_apChaosCursor = 0;
 #endif
 
 #ifdef CTR_CUSTOM_PACKAGES
@@ -382,8 +387,9 @@ static void PickupBots_UpdateBossPathRequest(struct Driver *boss)
 
 #ifdef CTR_AP
 	// J03: the boss lane requests belong to the garage boss race only; a
-	// gauntlet attacker keeps its ordinary race lanes.
-	if ((sdata->gGT->gameMode1 & ADVENTURE_BOSS) == 0)
+	// gauntlet attacker keeps its ordinary race lanes, and so does a chaos
+	// rival, whose turn moves on with every shot.
+	if ((sdata->gGT->gameMode1 & ADVENTURE_BOSS) == 0 || AP_ChaosFinalNow())
 	{
 		return;
 	}
@@ -807,6 +813,43 @@ static struct Driver *PickupBots_GauntletAttacker(void)
 }
 #endif
 
+static void PickupBots_UpdateBoss(struct Driver *boss);
+
+#ifdef CTR_AP
+// The chaos Final Challenge: the schedule runs once for the whole field, and
+// its next attack is fired by the next rival who can. The adapter keeps its
+// timers for one driver, so a weapon of an advanced family stays with the rival
+// it armed once it has armed one.
+static void PickupBots_UpdateChaos(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	unsigned char canFire[AP_ROSTER_CHAOS_RIVALS];
+	struct Driver *rival[AP_ROSTER_CHAOS_RIVALS];
+	int i, owner;
+
+	for (i = 0; i < AP_ROSTER_CHAOS_RIVALS; i++)
+	{
+		struct Driver *d = gGT->drivers[1 + i];
+		rival[i] = d;
+		canFire[i] = d != NULL && (d->actionsFlagSet & ACTION_BOT) != 0 &&
+		             (d->botData.botFlags & BOT_FLAG_DAMAGE_ACTIVE) == 0 &&
+		             (d->actionsFlagSet & ACTION_RACE_FINISHED) == 0 && d->instTntRecv == NULL &&
+		             d->clockReceive == 0 && d->botData.aiPhysics.speedLinear >= 0x1f41;
+	}
+	owner = AP_RosterChaosOwner(s_apChaosCursor, canFire, AP_ROSTER_CHAOS_RIVALS);
+	if (AP_BossAdapterIsAdvanced(sdata->bossWeaponMeta->weaponType) && s_apBossAdapterDriver != NULL)
+		for (i = 0; i < AP_ROSTER_CHAOS_RIVALS; i++)
+			if (rival[i] == s_apBossAdapterDriver && canFire[i])
+				owner = i;
+	if (owner < 0)
+		return;
+	s_apChaosFired = 0;
+	PickupBots_UpdateBoss(rival[owner]);
+	if (s_apChaosFired)
+		s_apChaosCursor = (owner + 1) % AP_ROSTER_CHAOS_RIVALS;
+}
+#endif
+
 static void PickupBots_UpdateBoss(struct Driver *boss)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -820,7 +863,13 @@ static void PickupBots_UpdateBoss(struct Driver *boss)
 		return;
 	}
 
+#ifdef CTR_AP
+	// A chaos schedule keeps to one kart's lap, the final racer's: the turn
+	// passes between karts all over the track.
+	PickupBots_AdvanceBossMeta(AP_ChaosFinalNow() ? gGT->drivers[1] : boss);
+#else
 	PickupBots_AdvanceBossMeta(boss);
+#endif
 	bossMeta = sdata->bossWeaponMeta;
 
 	PickupBots_UpdateBossPathRequest(boss);
@@ -834,6 +883,8 @@ static void PickupBots_UpdateBoss(struct Driver *boss)
 	PickupBots_SetBossCooldown(bossMeta);
 
 #ifdef CTR_AP
+	s_apChaosFired = 1;
+
 	// J03: the advanced families go through the boss adapter, never the
 	// projectile branch below. Retail tables never carry these codes.
 	if (AP_BossAdapterIsAdvanced(bossMeta->weaponType))
@@ -946,6 +997,14 @@ void PickupBots_Update(void)
 #endif
 		return;
 	}
+
+#ifdef CTR_AP
+	if (AP_ChaosFinalNow())
+	{
+		PickupBots_UpdateChaos();
+		return;
+	}
+#endif
 
 	PickupBots_UpdateBoss(gGT->drivers[1]);
 }

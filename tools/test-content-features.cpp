@@ -206,9 +206,10 @@ static std::vector<Row> oxide_rows() {
 }
 static const int kContentFallback[8] = {4, 2, 1, 3, 3, 2, 1, 4};
 // The Hit Character block on a content plan (decision 9): `bosses` names the
-// racer each boss race seats; a guest's any_of is its retail track wins then
-// every boss code seating it; kind boss with a boss code, else track, else the
-// retail kind; the content-plan Keys when none of its wins is a plan check.
+// racer each boss race seats; a guest's any_of is every boss code seating it,
+// else its retail track wins; kind boss with a boss code, else track, else the
+// retail kind; the content-plan Keys when it has wins and none is a plan check.
+// An original boss raced nowhere has neither (the roster swap).
 static void derive_hit(J &room, const int ident[6]) {
     static const int64_t codes[6] = {35011100, 35011101, 35011102, 35011103, 35011104, 35011105};
     static const int retail[6] = {10, 9, 11, 8, 15, 15};
@@ -222,11 +223,11 @@ static void derive_hit(J &room, const int ident[6]) {
     for (int guest = 8; guest < 16; ++guest) {
         J any = J::array();
         bool boss = false, present = false;
-        for (auto w : track_wins[guest - 8]) any.push_back(w);
         for (int i = 0; i < 6; ++i) if (ident[i] == guest) { any.push_back(codes[i]); boss = true; }
+        if (!boss) for (auto w : track_wins[guest - 8]) any.push_back(w);
         for (const auto &w : any) present |= plan.count(w.get<int64_t>()) != 0;
         J t = {{"kind", boss ? "boss" : !track_wins[guest - 8].empty() ? "track" : "boss"}, {"any_of", any}};
-        if (!present) t["fallback_keys"] = kContentFallback[guest - 8];
+        if (!present && !any.empty()) t["fallback_keys"] = kContentFallback[guest - 8];
         h["unlock_triggers"][std::to_string(guest)] = t;
     }
 }
@@ -613,8 +614,8 @@ int main() {
                "bosses: the ordinary version 2 boss record is filled from the plan");
         const ctr_hit_encounters &h = ctr_cfg.hit;
         expect(h.valid && h.boss_identity[0] == 0 && h.boss_identity[1] == 12 && h.boss_identity[2] == 13 && h.boss_identity[3] == 15 &&
-               h.boss_identity[4] == 3 && h.boss_identity[5] == 3 && h.triggers[0].fallback_keys == 4 && h.triggers[0].count == 0 &&
-               h.triggers[4].kind == CTR_CFG_HIT_KIND_BOSS && h.triggers[4].count == 3 && h.triggers[4].fallback_keys == 0 &&
+               h.boss_identity[4] == 3 && h.boss_identity[5] == 3 && h.triggers[0].fallback_keys == 0 && h.triggers[0].count == 0 &&
+               h.triggers[4].kind == CTR_CFG_HIT_KIND_BOSS && h.triggers[4].count == 1 && h.triggers[4].fallback_keys == 0 &&
                h.triggers[7].count == 1 && h.triggers[7].any_of[0] == 35011103,
                "bosses: the Hit block follows the drawn racers (decision 9)");
         verify(bs, "boss shuffle");
@@ -672,8 +673,11 @@ int main() {
         tamper(bs, "bosses: Hit table final racer", [&](J &j) { j["hit_character_encounters"]["bosses"]["35011105"] = 15; });
         tamper(bs, "bosses: Hit trigger keeps the retail win", [&](J &j) {
             j["hit_character_encounters"]["unlock_triggers"]["10"] = {{"kind", "boss"}, {"any_of", J::array({35011100})}}; });
-        tamper(bs, "bosses: Hit fallback missing for a boss raced nowhere", [&](J &j) {
-            j["hit_character_encounters"]["unlock_triggers"]["8"].erase("fallback_keys"); });
+        tamper(bs, "bosses: Hit fallback on a boss raced nowhere", [&](J &j) {
+            j["hit_character_encounters"]["unlock_triggers"]["8"]["fallback_keys"] = 4; });
+        tamper(bs, "bosses: Hit trigger keeps a drawn guest's track wins", [&](J &j) {
+            auto &any = j["hit_character_encounters"]["unlock_triggers"]["12"]["any_of"];
+            any = J::array({35016200, 35016201, any[0]}); });
         tamper(bs, "bosses: Hit fallback on a guest raced in an encounter", [&](J &j) {
             j["hit_character_encounters"]["unlock_triggers"]["12"]["fallback_keys"] = 3; });
         tamper(bs, "bosses: Hit fallback count", [&](J &j) { j["hit_character_encounters"]["unlock_triggers"]["9"]["fallback_keys"] = 1; });
@@ -799,7 +803,7 @@ int main() {
     }
 
     // ── the apworld's own J11 fixtures, when checked in ──
-    for (const char *name : {"ctr-first", "wumpa-shop", "wumpa-goal-only", "boss-shuffle", "all-030", "boss-cups-gauntlet"}) {
+    for (const char *name : {"ctr-first", "wumpa-shop", "wumpa-goal-only", "boss-shuffle", "all-030", "boss-cups-gauntlet", "chaos-final"}) {
         const J room = load(name);
         if (room.is_null()) { std::cout << "note: apworld fixture " << name << ".json not checked in yet\n"; continue; }
         expect(admit(room), std::string(name) + ": the apworld's fixture admits");
@@ -820,7 +824,8 @@ int main() {
             const AP_BossEncounters &e = ctr_boss_encounters;
             expect(e.version == 2 && e.custom[0] && e.points[0] == 255 && e.custom[3] && e.points[3] == 35 && e.opponent[0] == 13 &&
                    e.opponent[3] == 4 && e.finalOpponent == 7 && e.finalComposed && e.oxideInPool &&
-                   ctr_cfg.hit.triggers[0].fallback_keys > 0 && ctr_cfg.hit.boss_identity[5] == 7,
+                   ctr_cfg.hit.triggers[0].fallback_keys == 0 && ctr_cfg.hit.triggers[0].count == 0 &&
+                   ctr_cfg.hit.boss_identity[5] == 7,
                    "boss-shuffle: custom venue kits, Oxide in a garage, the Hit block follows the draw");
             auto ent = [](J &j, int g) -> J & { return find_id(j["content_plan"]["entries"], "entry/boss:" + std::to_string(g) + "/0"); };
             tamper(room, "boss-shuffle: a Baby T Park kit checkpoint moved", [&](J &j) { ent(j, 3)["opponent"]["schedule"][1][0] = 6; });
@@ -835,6 +840,21 @@ int main() {
                    "boss-cups-gauntlet: the kits arm the Purple Gem Cup's legs");
             tamper(room, "gauntlet: a number", [&](J &j) { j["content_plan"]["bosses"]["gauntlet"] = 1; });
             tamper(room, "gauntlet: without the kit", [&](J &j) { j["content_plan"]["bosses"]["kit_shuffle"] = false; });
+        } else if (n == "chaos-final") {
+            const ctr_oxide_final_venue &v = ctr_cfg.oxide_final_venue;
+            expect(v.valid && v.chaos && ap_content_plan_bosses()->final_chaos && v.chaos_lineup[0] == 10 && v.chaos_lineup[1] == 12 &&
+                   v.chaos_lineup[2] == 5 && v.chaos_lineup[3] == 8 && v.chaos_lineup[4] == 14,
+                   "chaos-final: the final racer first, then the four garages");
+            expect(ctr_cfg.hit.triggers[3].count == 0 && ctr_cfg.hit.triggers[3].fallback_keys == 0, "chaos-final: a displaced boss needs no Keys");
+            tamper(room, "chaos: false", [&](J &j) { j["content_plan"]["bosses"]["final_chaos"] = false; });
+            tamper(room, "chaos: a number", [&](J &j) { j["content_plan"]["bosses"]["final_chaos"] = 1; });
+            tamper(room, "chaos: without the feature", [&](J &j) {
+                auto &f = j["content_plan"]["required_features"];
+                f.erase(std::remove(f.begin(), f.end(), J("final_chaos_v1")), f.end()); });
+            tamper(room, "chaos: a Key count on a displaced boss", [&](J &j) {
+                j["hit_character_encounters"]["unlock_triggers"]["11"]["fallback_keys"] = 3; });
+            tamper(room, "chaos: a displaced boss with no room for a race", [&](J &j) {
+                j["hit_character_encounters"]["unlock_triggers"]["12"]["any_of"] = J::array(); });
         } else if (n == "all-030") {
             expect(ap_content_plan_ctr_first() && ap_content_plan_bosses()->home_venues && ctr_wumpa_shop.slots == 4 &&
                    ctr_wumpa_shop.goal == 500 && ctr_wumpa_shop.slot[0][0].price == 10, "all-030: all four features filled");

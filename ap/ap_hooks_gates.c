@@ -914,6 +914,46 @@ int AP_BossGauntletAttacker(void)
 	return ctr_boss_encounters.gauntletAttacker[leg];
 }
 
+// The load comes before race init, so it asks the leg alone, not whether the
+// schedule fitted: a seat without a fitting schedule costs nothing.
+int AP_BossGauntletLoadAttacker(void)
+{
+	int leg = AP_BossGauntletLegNow();
+	return leg < 0 ? -1 : ctr_boss_encounters.gauntletAttacker[leg];
+}
+
+// ── The chaos Final Challenge (ruled 2026-10-30) ───────────────────────────
+// bossID 5 with `bosses.final_chaos`: the check, the goal and the attack
+// schedule stay the Final Challenge's; only the field grows. N. Oxide's
+// Challenge (bossID 4) is never chaos.
+int AP_ChaosFinalNow(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+
+	return gGT != NULL && ctr_cfg_active() && ctr_cfg.oxide_final_venue.valid && ctr_cfg.oxide_final_venue.chaos &&
+	       (gGT->gameMode1 & ADVENTURE_BOSS) != 0 && (gGT->gameMode1 & ADVENTURE_CUP) == 0 && gGT->bossID == 5;
+}
+
+int AP_ChaosFinalLineup(int out[5])
+{
+	int i;
+
+	if (!AP_ChaosFinalNow())
+		return 0;
+	for (i = 0; i < 5; i++)
+		out[i] = ctr_cfg.oxide_final_venue.chaos_lineup[i];
+	return 1;
+}
+
+int AP_ChaosFinalAdvert(char *out, int cap)
+{
+	if (out == 0 || cap <= 0 || !ctr_cfg_active() || !ctr_cfg.oxide_final_venue.valid ||
+	    !ctr_cfg.oxide_final_venue.chaos)
+		return 0;
+	snprintf(out, (size_t)cap, "Final Challenge: 5 rivals");
+	return 1;
+}
+
 static struct MetaDataBOSS *AP_BossGauntletAttackSchedule(int fill)
 {
 	struct GameTracker *gGT = sdata->gGT;

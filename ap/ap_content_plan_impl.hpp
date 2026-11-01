@@ -451,12 +451,19 @@ static void boss_settings(const J &b, ctr_content_bosses &out) {
     // J11: the opponent and kit keys come together, present exactly when the
     // seed draws an opponent or a kit or composes N. Oxide's profile.
     out.extended = b.is_object() && b.contains("opponent_shuffle") ? 1 : 0;
+    // The chaos Final Challenge: one optional key, true when present.
+    out.final_chaos = b.is_object() && b.contains("final_chaos") ? 1 : 0;
+    J base = b;
+    if (out.final_chaos) {
+        need(b["final_chaos"].is_boolean() && b["final_chaos"].get<bool>(), "bosses.final_chaos is true when present");
+        base.erase("final_chaos");
+    }
     if (out.extended)
-        fields(b, {"oxide_goal", "bosses_required", "oxide_1_optional", "oxide_final_unlock", "oxide_final_count", "track_shuffle",
-                   "repeats", "requirement_level", "cups", "opponent_shuffle", "oxide_in_pool", "kit_shuffle", "gauntlet", "kit",
-                   "oxide_attack_profile", "track_assignment"});
+        fields(base, {"oxide_goal", "bosses_required", "oxide_1_optional", "oxide_final_unlock", "oxide_final_count", "track_shuffle",
+                      "repeats", "requirement_level", "cups", "opponent_shuffle", "oxide_in_pool", "kit_shuffle", "gauntlet", "kit",
+                      "oxide_attack_profile", "track_assignment"});
     else
-        fields(b, {"oxide_goal", "bosses_required", "oxide_1_optional", "oxide_final_unlock", "oxide_final_count", "track_shuffle", "repeats", "requirement_level", "cups"});
+        fields(base, {"oxide_goal", "bosses_required", "oxide_1_optional", "oxide_final_unlock", "oxide_final_count", "track_shuffle", "repeats", "requirement_level", "cups"});
     out.present = 1;
     // #133 PR 6b: the ordinary garages holding a boss cup, distinct and in order.
     need(b["cups"].is_array() && b["cups"].size() <= 4, "bosses.cups must list ordinary garages");
@@ -476,6 +483,7 @@ static void boss_settings(const J &b, ctr_content_bosses &out) {
         need(out.requirement_level >= 0, "bosses.requirement_level must be standard, high, very_high or chaotic");
     }
     out.oxide_goal = number(b["oxide_goal"], 0, 3);
+    need(!out.final_chaos || out.oxide_goal != 3, "bosses.final_chaos needs N. Oxide's races");
     out.bosses_required = number(b["bosses_required"], 0, 4);
     for (const char *key : {"oxide_1_optional", "track_shuffle", "repeats"})
         need(b[key].is_boolean(), std::string("bosses.") + key + " must be true or false");
@@ -914,6 +922,7 @@ static void validate(const J &p, State &out) {
     // Row 5, after every earlier feature and in this order.
     if(has_structure)features.push_back("ctr_first_v1");
     if(out.bosses.extended)features.push_back("boss_opponents_v1");
+    if(out.bosses.final_chaos)features.push_back("final_chaos_v1");
     if(has_shop)features.push_back("wumpa_shop_v1");
     if(wumpa_goal)features.push_back("wumpa_goal_v1");
     if(has_pad_client)features.push_back("pad_client_v1"); // one generator row 6
@@ -2510,6 +2519,15 @@ static int parse_content_plan(const nlohmann::json &j) {
                 ctr_oxide_final_venue &v = ctr_cfg.oxide_final_venue;
                 v.seen = v.valid = 1;
                 v.track = b.final_track;
+                // The chaos Final Challenge: this seed's five bosses, with or
+                // without drawn encounters.
+                v.chaos = b.final_chaos;
+                {
+                    int ident[AP_HIT_BOSS_CODES];
+                    for (int g = 0; g < 4; ++g) ident[g] = b.opponent[g];
+                    ident[4] = ident[5] = b.final_opponent;
+                    AP_RosterChaosLineup(ident, v.chaos_lineup);
+                }
                 v.host_level_id = CTR_CFG_CORTEX_HOST_LEVEL;
                 v.location = 35011105;
                 std::snprintf(v.lev_sha256, sizeof v.lev_sha256, "%s", CTR_CFG_CORTEX_LEV_SHA256);
@@ -2568,7 +2586,7 @@ static int parse_content_plan(const nlohmann::json &j) {
                 const ctr_hit_trigger &t = ctr_cfg.hit.triggers[g];
                 bool present = false;
                 for (int k = 0; k < t.count; ++k) present |= candidate.checks.count(t.any_of[k]) != 0;
-                need((t.fallback_keys > 0) == !present, "hit_character_encounters fallback disagrees with the plan's unlock wins");
+                need((t.fallback_keys > 0) == (t.count > 0 && !present), "hit_character_encounters fallback disagrees with the plan's unlock wins");
             }
             // Content-plan cups (#133 PR 5b): one draw order per cup of the
             // plan, by name index, and none for any other index.

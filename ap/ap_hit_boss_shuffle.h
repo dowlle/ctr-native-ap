@@ -12,11 +12,19 @@
 //   bosses[code]  the drawn engine id per boss-win code (garages 35011100 to
 //                 35011103, both Oxide races 35011104 and 35011105 from the
 //                 final record, 15 without one);
-//   any_of[g]     the guest's retail track wins (N. Tropy, Penta, Fake Crash)
-//                 in retail order, then every boss code drawn as g, ascending;
+//   any_of[g]     every boss code drawn as g, ascending: a drawn boss waits
+//                 for that race, whatever its retail track wins say. A guest
+//                 drawn nowhere keeps its retail track wins (N. Tropy, Penta,
+//                 Fake Crash) in retail order, and an original boss drawn
+//                 nowhere has none: it swapped slots and races from the start
+//                 (ruled 2026-10-30);
 //   kind[g]       boss if any_of holds a boss code, else track if it holds a
 //                 track win, else the retail kind (boss), with any_of empty;
-//   fallback_keys the content-plan table for every guest.
+//   fallback_keys the content-plan table for a guest whose any_of is not empty
+//                 and not in the seed.
+//
+// A default racer drawn as a boss has no trigger on the wire: ap_roster_swap.h
+// reads it from `bosses`.
 //
 // Native derives the same tables from the parsed boss record and the Hit
 // parser compares them exactly. Freestanding: tools/test-hit-boss-shuffle.cpp
@@ -84,19 +92,22 @@ static inline int AP_HitBossGuestTrigger(const int ident[AP_HIT_BOSS_CODES], int
 	*kindBoss = 1;
 	if (guest < AP_HIT_GUEST_FIRST || guest >= AP_HIT_GUEST_FIRST + AP_HIT_GUESTS)
 		return 0;
-	tw = AP_HIT_GUEST_TRACK_WINS[guest - AP_HIT_GUEST_FIRST];
-	for (k = 0; k < 2; k++)
-		if (tw[k] > 0)
-		{
-			anyOf[n++] = tw[k];
-			hasTrack = 1;
-		}
 	for (k = 0; k < AP_HIT_BOSS_CODES; k++)
 		if (ident[k] == guest)
 		{
 			anyOf[n++] = AP_HIT_BOSS_WIN_CODES[k];
 			hasBoss = 1;
 		}
+	if (!hasBoss)
+	{
+		tw = AP_HIT_GUEST_TRACK_WINS[guest - AP_HIT_GUEST_FIRST];
+		for (k = 0; k < 2; k++)
+			if (tw[k] > 0)
+			{
+				anyOf[n++] = tw[k];
+				hasTrack = 1;
+			}
+	}
 	*kindBoss = hasBoss ? 1 : (hasTrack ? 0 : 1);
 	return n;
 }

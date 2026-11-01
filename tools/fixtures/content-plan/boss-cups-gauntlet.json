@@ -13539,8 +13539,7 @@
    },
    "11": {
     "kind": "boss",
-    "any_of": [],
-    "fallback_keys": 3
+    "any_of": []
    },
    "12": {
     "kind": "track",
