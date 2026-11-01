@@ -780,8 +780,8 @@ int PickupBots_AdapterProtect(struct Driver *victim)
 	// A chaos rival's shield needs no timer, so it may sit on any rival. It
 	// pops as usual, with no pop invincibility: that timer is the armed
 	// driver's alone.
-	if (victim != NULL && victim != s_apBossAdapterDriver && victim->instBubbleHold != NULL &&
-	    victim->kartState != KS_MASK_GRABBED && AP_ChaosFinalNow())
+	if (victim != NULL && victim != s_apBossAdapterDriver && (victim->actionsFlagSet & ACTION_BOT) != 0 &&
+	    victim->instBubbleHold != NULL && victim->kartState != KS_MASK_GRABBED && AP_ChaosFinalNow())
 	{
 		struct Shield *shieldObj = victim->instBubbleHold->thread->object;
 		shieldObj->flags |= 1;
