@@ -1649,7 +1649,11 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			const int editing = 0;
 #endif
 
+#ifdef CTR_AP
+			DecalFont_DrawLineOT((char *)e->label, labelX, y, FONT_SMALL, Config_RowLockedBySolo(e) ? GRAY : ORANGE, ot);
+#else
 			DecalFont_DrawLineOT((char *)e->label, labelX, y, FONT_SMALL, ORANGE, ot);
+#endif
 			Config_DrawValue(e, valueX, y, ot, buf, editing);
 
 			if (j == menu->rowSelected)

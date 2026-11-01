@@ -1147,7 +1147,7 @@ extern "C" void AP_Solo_BeforeReconnect(void)
 
 extern "C" void AP_Solo_Tick(void)
 {
-	ap_net_set_solo_session(AP_Solo_SessionActive());
+	ap_net_set_solo_session_query(AP_Solo_SessionActive);
 	TickJob();
 	TickSession();
 	if (!g_session.pendingRoom.empty() && !AP_Solo_SessionActive())

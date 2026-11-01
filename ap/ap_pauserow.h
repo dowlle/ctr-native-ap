@@ -45,7 +45,7 @@
 
 // The title screen's PLAY SOLO row (#89, decision 30) has no retail string
 // either. Same rule: an AP-owned index, resolved to "PLAY SOLO" by RECTMENU.c.
-#define AP_LNG_PLAY_SOLO 0x7f01
+#define AP_LNG_PLAY_SOLO 0x7f02
 
 // Rows in order for the given AP rows. Returns the row count (4, 5 or 6).
 // (0, 0) is the retail set.

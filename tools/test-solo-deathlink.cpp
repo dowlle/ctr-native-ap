@@ -15,7 +15,8 @@
 //   1. every seed mode, send list and OPTIONS row resolves to nothing in a session,
 //      with the same inputs live outside one,
 //   2. in a session the DeathLink tag is not declared, a death is not sent and a
-//      bounced death does not reach the game, and all three work outside one.
+//      bounced death does not reach the game, and all three work outside one,
+//   3. the frame a session ends, the tag can be declared again.
 
 #define AP_NET_TEST_PLANLESS_ROOMS
 #include "../ap/ap_net.cpp"
@@ -25,8 +26,11 @@ extern "C"
 #include "../ap/ap_race_attempt_logic.h"
 }
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <vector>
 
 extern "C" void AP_LogLine(const char *line)
 {
@@ -83,8 +87,22 @@ static APClient *start(void)
 	return g_ap;
 }
 
+static int g_solo = 0;
+
+static int solo_query(void)
+{
+	return g_solo;
+}
+
+static bool has_tag(const std::vector<std::string> &tags)
+{
+	return std::find(tags.begin(), tags.end(), "DeathLink") != tags.end();
+}
+
 static void test_wire(int solo)
 {
+	g_solo = solo; // the session starts before the room connects
+	ap_net_set_solo_session_query(solo_query);
 	APClient *m = start();
 	expect(m != nullptr, "client up");
 	if (!m)
@@ -92,13 +110,14 @@ static void test_wire(int solo)
 	m->emit_socket_connected();
 	m->emit_room_info();
 	m->emit_slot_connected(nlohmann::json{{"ctr_options", {{"death_link", 3}, {"death_link_send", 7}}}});
-	ap_net_set_solo_session(solo);
 	m->calls.reset();
 
 	ap_net_deathlink_enable();
 	expect(m->calls.connect_update == (solo ? 0 : 1), "the tag follows the session");
+	expect(has_tag(m->calls.last_tags) == (solo == 0), "the update carries the DeathLink tag");
 	ap_net_deathlink_send("lost the race");
 	expect(m->calls.bounce == (solo ? 0 : 1), "a death goes out only outside a session");
+	expect(has_tag(m->calls.bounce_tags) == (solo == 0), "the death carries the DeathLink tag");
 
 	m->emit_bounced(nlohmann::json{{"tags", {"DeathLink"}},
 	                               {"data", {{"source", "Elsewhere"}, {"cause", "Elsewhere fell"}}}});
@@ -106,7 +125,15 @@ static void test_wire(int solo)
 	char source[64] = {0};
 	const int took = ap_net_deathlink_take(cause, sizeof cause, source, sizeof source);
 	expect((took != 0) == (solo == 0), "a death comes in only outside a session");
-	ap_net_set_solo_session(0);
+
+	// The session ends and the same frame's multiworld connection declares the tag.
+	if (solo)
+	{
+		g_solo = 0;
+		m->calls.reset();
+		ap_net_deathlink_enable();
+		expect(m->calls.connect_update == 1 && has_tag(m->calls.last_tags), "nothing stale after a session");
+	}
 }
 
 int main(void)
