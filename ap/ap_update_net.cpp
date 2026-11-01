@@ -683,6 +683,16 @@ extern "C" void ap_update_set_asset_dir(const char *dir)
 		SetAssetDir(dir);
 }
 
+extern "C" void ap_update_set_base_dir(const char *dir)
+{
+	// Only an absolute path is taken; anything else keeps the exe folder.
+	if (!dir || !*dir)
+		return;
+	const bool absolute = dir[0] == '/' || dir[0] == '\\' || (dir[0] && dir[1] == ':');
+	if (absolute)
+		SetBaseDir(dir);
+}
+
 extern "C" int ap_update_startup(const char *running_tag)
 {
 	State &s = S();

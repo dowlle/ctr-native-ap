@@ -30,9 +30,10 @@ NativeConfig g_config;
 static int fake_status = AP_UPD_NONE;
 static int fake_solo, fake_startup, fake_apply_result = 1, fake_relaunch = 1;
 static int checks_started, downloads, cancels, dismissals, applies, relaunches, confirms, saves, quits;
-static char checked_declined[32];
+static char checked_declined[32], base_dir[32];
 
 void ap_update_set_asset_dir(const char *dir) { (void)dir; }
+void ap_update_set_base_dir(const char *dir) { snprintf(base_dir, sizeof base_dir, "%s", dir); }
 int ap_update_startup(const char *running_tag) { (void)running_tag; return fake_startup; }
 void ap_update_confirm_started(void) { ++confirms; }
 void ap_update_check_start(const char *running_tag, const char *declined)
@@ -82,6 +83,7 @@ void NativeConfig_Save(void) { ++saves; }
 NativeLinkHost *AP_LinkHost(void) { return NULL; }
 void NativeLinkHost_ReleasePrimary(NativeLinkHost *host) { (void)host; }
 const char *NativeAssets_GetAssetDir(void) { return "assets"; }
+const char *NativeAssets_GetBaseDir(void) { return "/game"; }
 int NativeSteamRoute_ParseGameId(const char *text, unsigned long long *out)
 {
 	if (!text || !*text)
@@ -309,7 +311,9 @@ static void test_restart(void)
 	if (setjmp(quit_jump) == 0)
 		frame(BTN_CROSS);
 	quit_armed = 0;
-	expect(applies == 1 && relaunches == 1 && quits == 1 && saves == 1, "a direct launch starts the new build");
+	expect(applies == 1 && relaunches == 1 && quits == 1, "a direct launch starts the new build");
+	expect(saves == 0, "installing never writes config.ini");
+	expect(strcmp(base_dir, "/game") == 0, "the worker learns the base folder");
 
 	reset_all();
 	setenv("SteamGameId", "123", 1);

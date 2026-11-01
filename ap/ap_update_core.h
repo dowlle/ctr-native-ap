@@ -270,6 +270,10 @@ std::string SwapJournalPath(const std::string &exe);
 // `assets` or a case variant such as `Assets`). Release paths starting with
 // "assets/" install under it. Empty (the default) means <exe folder>/assets.
 void SetAssetDir(const std::string &dir);
+// Where the game's base folder really is (it may be the executable's parent).
+// ctr.apworld and solo-runtime/ install under it, where Play Solo reads them.
+// Empty (the default) means the exe folder.
+void SetBaseDir(const std::string &dir);
 // Install directory of `exe` joined with a release path.
 std::string TargetPath(const std::string &exe, const std::string &rel);
 

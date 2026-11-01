@@ -1035,6 +1035,14 @@ void SetAssetDir(const std::string &dir)
 		g_assetDir.pop_back();
 }
 
+static std::string g_baseDir;
+void SetBaseDir(const std::string &dir)
+{
+	g_baseDir = dir;
+	while (g_baseDir.size() > 1 && (g_baseDir.back() == '/' || g_baseDir.back() == '\\'))
+		g_baseDir.pop_back();
+}
+
 static bool IsExecutableRel(const std::string &rel)
 {
 	return rel == ExecutableName(PLATFORM_WINDOWS) || rel == ExecutableName(PLATFORM_LINUX);
@@ -1060,6 +1068,9 @@ std::string TargetPath(const std::string &exe, const std::string &rel)
 		const std::string rest = rel.size() > 7 ? native.substr(7) : std::string();
 		return rest.empty() ? g_assetDir : g_assetDir + sep + rest;
 	}
+	// Play Solo reads these from the base folder (ap_solo.cpp).
+	if (!g_baseDir.empty() && (rel == "ctr.apworld" || rel.compare(0, sizeof kRuntimeDir - 1, kRuntimeDir) == 0))
+		return g_baseDir + sep + native;
 	const std::string dir = InstallDir(exe);
 	return dir.empty() ? native : dir + sep + native;
 }

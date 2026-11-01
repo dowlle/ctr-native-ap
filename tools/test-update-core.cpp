@@ -1898,6 +1898,41 @@ static void TestSoloRuntime()
 	ConfirmStarted(real, in.exe);
 	CleanRuntime(in);
 
+	// The executable in a child of the game's base folder: ctr.apworld and the
+	// runtime install where Play Solo reads them, beside solo/.
+	{
+		const std::string base = dir + "/base";
+		const std::string game = base + "/game";
+		const std::string exe = game + "/ctr_native_ap";
+		MakeDirs(game);
+		WriteText(exe, "OLD EXE");
+		Put(base, "ctr.apworld", "OLD WORLD");
+		Put(base, "solo-runtime/RUNTIME.txt", "OLD ID");
+		Put(base, "solo-runtime/stale.py", "STALE");
+		Put(base, "solo/room.archipelago", "SEED");
+		SetBaseDir(base + "/");
+		SetAssetDir(base + "/assets");
+		CHECK(TargetPath(exe, "ctr.apworld") == base + "/ctr.apworld");
+		CHECK(TargetPath(exe, kRtPy) == base + "/" + kRtPy);
+		CHECK_EQ(Stage(real, exe, RuntimeSet(), staged), OK);
+		CHECK(!real.exists(nullptr, game + "/solo-runtime.update"));
+		CHECK_EQ(Apply(real, exe, staged, "v0.3.1"), OK);
+		CHECK(ReadText(exe) == "NEW EXE");
+		CHECK(ReadText(base + "/ctr.apworld") == "NEW WORLD");
+		CHECK(ReadText(base + "/" + kRtId) != "OLD ID");
+		CHECK(real.exists(nullptr, base + "/" + kRtPy));
+		CHECK(!real.exists(nullptr, base + "/solo-runtime/stale.py"));
+		CHECK(!real.exists(nullptr, game + "/ctr.apworld") && !real.exists(nullptr, game + "/solo-runtime"));
+		CHECK(ReadText(base + "/solo/room.archipelago") == "SEED");
+		CHECK_EQ((int)StartupCheck(real, exe, "v0.3.1"), (int)STARTUP_UPDATED);
+		ConfirmStarted(real, exe);
+		CHECK(!real.exists(nullptr, base + "/solo-runtime.old") && !real.exists(nullptr, base + "/ctr.apworld.old"));
+		SetBaseDir("");
+		SetAssetDir("");
+		CHECK(TargetPath(exe, "ctr.apworld") == game + "/ctr.apworld");
+		CHECK(std::system(("rm -rf '" + base + "'").c_str()) == 0);
+	}
+
 	// A failure at either folder rename, or at the executable after the
 	// folder moved: everything back, the old runtime in place, nothing staged.
 	{
