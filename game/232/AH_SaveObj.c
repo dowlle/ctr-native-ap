@@ -165,6 +165,10 @@ void AH_SaveObj_ThTick(struct Thread *t)
 						SelectProfile_GetTrackID();
 
 						// enable menu for green load/save screen
+#ifdef CTR_AP
+						// #249: the WUMPA SHOP row when the seed has a shop.
+						AP_WumpaShopPrepareGreenMenu(&data.menuGreenLoadSave);
+#endif
 						RECTMENU_Show(&data.menuGreenLoadSave);
 					}
 

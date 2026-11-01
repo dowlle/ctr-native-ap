@@ -108,7 +108,7 @@
           800
         ]
       ],
-      "time_limit_ticks": 576000,
+      "time_limit_ticks": 62400,
       "completion_location": 35028500,
       "crystal_locations": [
         35028520,
@@ -238,7 +238,7 @@
           -5515
         ]
       ],
-      "time_limit_ticks": 576000,
+      "time_limit_ticks": 86400,
       "completion_location": 35028501,
       "crystal_locations": [
         35028540,
@@ -368,7 +368,7 @@
           1100
         ]
       ],
-      "time_limit_ticks": 576000,
+      "time_limit_ticks": 48000,
       "completion_location": 35028502,
       "crystal_locations": [
         35028560,

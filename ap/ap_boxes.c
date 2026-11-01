@@ -13,6 +13,7 @@
 #include "ap_net.h"     // ap_net_location_checked(): server truth
 #include "ap_hooks.h"   // AP_LogLine, AP_EmitBoxCheck
 #include "ap_box_colour_logic.h" // AP_BoxColour_Pick: which colour one box wears
+#include "ap_spoiler_items.h"    // #459: AP Box Colours may still hold the colours back
 #include "ap_box_number_logic.h"
 #include <platform/native_config.h> // g_config.itemBoxColours: the player's opt-out
 #ifdef CTR_CUSTOM_TRACKS
@@ -76,6 +77,7 @@ static int s_spawnGen;      // AP_Spawn_Generation() the handles were taken at
 // coalesced with ap_author.c's counter of the same name, so this comparison
 // read the counter against itself and the placement-change rebuild never fired.
 static int s_boxesPlaceGen = -1;
+static unsigned int s_boxesCfgRev; // a reconnect may replace the guard mid-race
 static int s_advMode = -1;  // ADVENTURE_MODE state the set was built under
 // The alternate-route (cup leg / boss) decision the set was built under, as an
 // AP_BoxPresentation value: NONE, SOLID or GHOST (#354). -1 is "never asked".
@@ -309,6 +311,19 @@ static int AP_BoxesPadRoutePolicy(struct GameTracker *gGT, int level)
 	// the cup arm wins because ADVENTURE_CUP is the one that routes rewards.
 	route = isCupLeg ? AP_BOX_ROUTE_CUP_LEG : AP_BOX_ROUTE_BOSS;
 	phys  = ctr_cfg_warp_phys(level);
+#ifdef CTR_CUSTOM_TRACKS
+	// A plan has no pad map: its pads name their tracks.
+	if (ap_content_plan_active())
+	{
+		int p;
+		for (p = 0; p < 105; p++)
+		{
+			const ctr_content_pad *pad = ap_content_plan_pad(p);
+			if (pad && pad->occupied && !pad->cup && !pad->crystal && pad->retail_id == level)
+				phys = p;
+		}
+	}
+#endif
 
 	return AP_BoxPresentationFor(route, phys,
 	                             AP_GateCount(AP_IDX_KEY),
@@ -413,23 +428,26 @@ static int AP_BoxesSnapshotPlacements(void)
 
 // The colour this box should wear now. Pink unless the seed has
 // color_boxes_by_item on, the player has not switched Item Box Colours off in
-// Options, and the connect-time scout already holds this location;
+// Options, Spoiler Items (#459) is off or AP Box Colours has arrived, and the
+// connect-time scout already holds this location;
 // the scout reply can land after the box stands, so AP_BoxesTick asks again
 // every frame and recolours the box in place (AP_BoxesApplyColour).
 static int AP_BoxesColourFor(long code)
 {
 	unsigned flags = 0;
 	int scouted;
+	int unlocked = AP_SpoilerBoxColoursUnlocked();
 
-	if (!AP_BoxColour_Enabled(ctr_cfg.color_boxes_by_item, g_config.itemBoxColours))
+	if (!unlocked || !AP_BoxColour_Enabled(ctr_cfg.color_boxes_by_item, g_config.itemBoxColours))
 		return AP_BOX_COLOUR_PINK;
 	scouted = ap_net_scout_known((long long)code, 0, 0, &flags);
-	return AP_BoxColour_Pick(1, scouted, flags);
+	return AP_BoxColour_Effective(unlocked, ctr_cfg.color_boxes_by_item, g_config.itemBoxColours, scouted, flags);
 }
 
 int AP_Boxes_ColourRowState(void)
 {
-	return AP_BoxColour_RowState(ctr_cfg_active(), ctr_cfg.color_boxes_by_item);
+	return AP_BoxColour_RowStateWithItem(ctr_cfg_active(), ctr_cfg.color_boxes_by_item,
+	                                     AP_SpoilerBoxColoursUnlocked());
 }
 
 static void AP_BoxesApplyColour(struct GameTracker *gGT, int i)
@@ -504,9 +522,8 @@ static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i)
 		s_spawnFull = 1;
 }
 
-// How many placements this level carries in the LIVE table, capped at the frozen
-// ceiling: the number of box slots this track could possibly stand if every one
-// of them were live and unchecked. The denominator of the zero-box diagnosis.
+// Raw authored count for this level. Include rows beyond the frozen ceiling so
+// the placement guard can detect drift even if the first 15 slots still fit.
 static int AP_BoxesGeometryHere(const AP_BoxPlacement *scratch, int count, int level)
 {
 	int i, here = 0;
@@ -515,8 +532,6 @@ static int AP_BoxesGeometryHere(const AP_BoxPlacement *scratch, int count, int l
 	{
 		if (scratch[i].level != level)
 			continue;
-		if (here >= AP_BOX_SLOTS_PER_TRACK)
-			break;
 		here++;
 	}
 	return here;
@@ -644,6 +659,7 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 	AP_BoxesClear();
 	s_level = level;
 	s_boxesPlaceGen = AP_Author_PlacementGeneration();
+	s_boxesCfgRev = ctr_cfg_box_placement_revision();
 	s_advMode = AP_BoxesRaceCarriesBoxes(gGT);
 	s_boxPresent = AP_BoxesPadRoutePolicy(gGT, level);
 
@@ -690,6 +706,10 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 	AP_BoxProbeSeedClass();
 	placements = AP_BoxesSnapshotPlacements();
 	here = AP_BoxesGeometryHere(s_scratch, placements, level);
+	// Slot numbers come from this positional table. A different authored count
+	// means later boxes may name the wrong AP locations, so stand none here.
+	if (!ctr_cfg_box_placement_valid(level, here))
+		return;
 
 	n = AP_BoxMap_BuildSet(s_scratch, placements, level,
 	                       AP_BoxInSeed, AP_BoxChecked, 0,
@@ -983,7 +1003,7 @@ static void AP_BoxesTick(struct GameTracker *gGT)
 // the parallel, non-BSP route for the same outcome.
 //
 // PLAYER-attribution mirrors RB_CrateAny_GetDriver (RB_Crate.c): the
-// TrackerWeapon carries driverParent, "who shot me". Ruled by Stef 2026-08-12:
+// TrackerWeapon carries driverParent, "who shot me". Ruled 2026-08-12:
 // AP boxes break from weapons/items passing through them and from
 // PLAYER-caused explosions; opponent-caused explosions do not count. Reuses
 // AP_BoxOwnedByLocalPlayer, the exact same test the kart-contact path above
@@ -1157,6 +1177,7 @@ void AP_Boxes_OnFrame(struct GameTracker *gGT)
 	// after the pad opened, and the acceptance row is precisely that the boxes
 	// appear on the running race once the item lands.
 	if (level != s_level || AP_Author_PlacementGeneration() != s_boxesPlaceGen ||
+	    ctr_cfg_box_placement_revision() != s_boxesCfgRev ||
 	    AP_BoxesRaceCarriesBoxes(gGT) != s_advMode ||
 	    AP_BoxesPadRoutePolicy(gGT, level) != s_boxPresent)
 		AP_BoxesRebuild(gGT, level);

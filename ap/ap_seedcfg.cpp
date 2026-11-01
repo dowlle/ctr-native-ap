@@ -16,11 +16,14 @@
 #include "ap_win_logic.h"
 #include "ap_trap_items.h"
 #include "ap_named_blocks.h"
+#include "ap_hit_boss_shuffle.h"
 
 #include <cstdarg>
 #include <cstdlib>
 #include <cstdio>
 #include <algorithm>
+#include <climits>
+#include <cstdint>
 #include <cstring>
 #include <set>
 #include <string>
@@ -32,7 +35,7 @@ extern "C"
 	ctr_seed_config ctr_cfg = {0};
 	AP_CrystalChecks ctr_crystal_checks = {0};
     AP_CupSweepConfig ctr_cup_sweeps = {0};
-    AP_LapChecks ctr_lap_checks = {0};
+    AP_WumpaShopConfig ctr_wumpa_shop = {0};
 }
 
 // Cached vanilla Gem Cup leg table (issue #166), pushed in once at boot by the C
@@ -68,6 +71,124 @@ static void ap_cfg_log(const char *fmt, ...)
 	va_end(ap);
 	std::fputs(buf, stderr);
 	AP_LogLine(buf);
+}
+
+// The placement table is owned by the C game side and may be replaced by an
+// external file after slot_data is parsed. Remember the wire counts here and
+// compare only when that table is read. -1 means this LevelID has no guard.
+static int s_box_warned_count[CTR_CFG_BOX_TRACK_COUNT];
+static unsigned int s_box_parse_revision;
+// Diagnostic labels only; LevelID remains the wire identity used for policy.
+static const char *const s_box_track_names[CTR_CFG_BOX_TRACK_COUNT] = {
+	"DINGO_CANYON", "DRAGON_MINES", "BLIZZARD_BLUFF", "CRASH_COVE",
+	"TIGER_TEMPLE", "PAPU_PYRAMID", "ROO_TUBES", "HOT_AIR_SKYWAY",
+	"SEWER_SPEEDWAY", "MYSTERY_CAVES", "CORTEX_CASTLE", "N_GIN_LABS",
+	"POLAR_PASS", "OXIDE_STATION", "COCO_PARK", "TINY_ARENA",
+	"SLIDE_COLISEUM", "TURBO_TRACK"
+};
+
+extern "C" unsigned int ctr_cfg_box_placement_revision(void)
+{
+	return s_box_parse_revision;
+}
+
+// Contract 7e: each retail track has at most 15 authored boxes (AP_BOX_SLOTS_PER_TRACK).
+#define CTR_CFG_BOX_COUNT_MAX 15
+
+static void ap_seedcfg_refuse_box_placement()
+{
+	ctr_cfg.box_placement_state = -1;
+	ctr_cfg.box_placement_refused = 1;
+	ap_cfg_log("[AP CFG] item_box_checks.placement_counts refused (expected all 18 decimal retail LevelIDs with non-negative integer counts): all retail item-box checks disabled\n");
+}
+
+static void ap_seedcfg_parse_box_placement_counts(const nlohmann::json &j)
+{
+	auto block = j.find("item_box_checks");
+	if (block == j.end())
+		return; // no item-box checks in this room, nothing to guard
+	if (!block->is_object())
+	{
+		ap_seedcfg_refuse_box_placement();
+		return;
+	}
+	// Contract 7e: the block always carries all 18 retail counts. A block
+	// without them cannot be checked, so it is refused like a bad map.
+	if (!block->contains("placement_counts") || !(*block)["placement_counts"].is_object() ||
+	    (*block)["placement_counts"].size() != CTR_CFG_BOX_TRACK_COUNT)
+	{
+		ap_seedcfg_refuse_box_placement();
+		return;
+	}
+	const auto &counts = (*block)["placement_counts"];
+	for (auto it = counts.begin(); it != counts.end(); ++it)
+	{
+		const std::string key = it.key();
+		int level = 0;
+		if (key.empty())
+		{
+			ap_seedcfg_refuse_box_placement();
+			return;
+		}
+		for (char digit : key)
+		{
+			if (digit < '0' || digit > '9' || level > (CTR_CFG_BOX_TRACK_COUNT - 1) / 10)
+			{
+				ap_seedcfg_refuse_box_placement();
+				return;
+			}
+			level = level * 10 + digit - '0';
+		}
+		if (level >= CTR_CFG_BOX_TRACK_COUNT || std::to_string(level) != key ||
+		    !it.value().is_number_integer())
+		{
+			ap_seedcfg_refuse_box_placement();
+			return;
+		}
+		int count;
+		if (it.value().is_number_unsigned())
+		{
+			auto number = it.value().get<std::uint64_t>();
+			if (number > CTR_CFG_BOX_COUNT_MAX)
+			{
+				ap_seedcfg_refuse_box_placement();
+				return;
+			}
+			count = (int)number;
+		}
+		else
+		{
+			auto number = it.value().get<std::int64_t>();
+			if (number < 0 || number > CTR_CFG_BOX_COUNT_MAX)
+			{
+				ap_seedcfg_refuse_box_placement();
+				return;
+			}
+			count = (int)number;
+		}
+		ctr_cfg.box_placement_counts[level] = count;
+	}
+	ctr_cfg.box_placement_state = 1;
+	return;
+}
+
+extern "C" int ctr_cfg_box_placement_valid(int levelID, int nativeCount)
+{
+	if (levelID < 0 || levelID >= CTR_CFG_BOX_TRACK_COUNT)
+		return 0;
+	if (ctr_cfg.box_placement_state < 0)
+		return 0;
+	int expected = ctr_cfg.box_placement_counts[levelID];
+	if (expected < 0 || expected == nativeCount)
+		return 1;
+	ctr_cfg.box_placement_refused = 1;
+	if (s_box_warned_count[levelID] != nativeCount)
+	{
+		ap_cfg_log("[AP CFG] item_box_checks: %s (LevelID %d) placement count mismatch (seed %d, native %d); item-box checks disabled on this track\n",
+		           s_box_track_names[levelID], levelID, expected, nativeCount);
+		s_box_warned_count[levelID] = nativeCount;
+	}
+	return 0;
 }
 
 // §0 available-items bound table, indexed by type code (0..5). Defensive clamp
@@ -501,7 +622,17 @@ static int hit_parse_order(const nlohmann::json &v, ctr_hit_order *out)
 // content-plan parser calls this after the plan itself is admitted.
 static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false)
 {
-	const int *fallbackTable = contentPlan ? kHitContentFallbackKeys : kHitFallbackKeys;
+	// J03 (decision 9): with boss opponent shuffle, the boss-win identities and
+	// guest unlock wins follow the drawn racers, and every guest may fall back
+	// to Keys (the content-plan table). The boss record is parsed first; on a
+	// content plan (J11) the plan's encounters fill it before this runs.
+	const int bossShuffled = AP_HitBossShuffleActive(&ctr_boss_encounters);
+	int bossIdent[AP_HIT_BOSS_CODES];
+	for (int i = 0; i < AP_HIT_BOSS_CODES; i++)
+		bossIdent[i] = kHitBossIdentity[i];
+	if (bossShuffled)
+		AP_HitBossIdentity(&ctr_boss_encounters, bossIdent);
+	const int *fallbackTable = (contentPlan || bossShuffled) ? kHitContentFallbackKeys : kHitFallbackKeys;
 	// The scalar only exists inside a real ctr_options object, so an absent
 	// ctr_options means an absent scalar (legacy), not a malformed one.
 	const nlohmann::json *opt = NULL;
@@ -824,7 +955,22 @@ static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false
 					hit_reject("unlock_triggers[%d] must have exactly kind and any_of", guest);
 				return 0;
 			}
-			const hit_approved_trigger &ap = kHitTriggers[guest - 8];
+			struct
+			{
+				int kind;
+				int count;
+				long wins[CTR_CFG_HIT_TRIGGER_MAX];
+			} ap;
+			ap.kind = kHitTriggers[guest - 8].kind;
+			ap.count = kHitTriggers[guest - 8].count;
+			for (int k = 0; k < ap.count; k++)
+				ap.wins[k] = kHitTriggers[guest - 8].wins[k];
+			if (bossShuffled)
+			{
+				int kindBoss = 1;
+				ap.count = AP_HitBossGuestTrigger(bossIdent, guest, ap.wins, &kindBoss);
+				ap.kind = kindBoss ? CTR_CFG_HIT_KIND_BOSS : CTR_CFG_HIT_KIND_TRACK;
+			}
 			const char *wantKind = ap.kind == CTR_CFG_HIT_KIND_BOSS ? "boss" : "track";
 			if (!t["kind"].is_string() || t["kind"].get<std::string>() != wantKind)
 			{
@@ -840,7 +986,7 @@ static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false
 			ctr_hit_trigger trig;
 			std::memset(&trig, 0, sizeof trig);
 			trig.kind = ap.kind;
-			int used[2] = {0, 0};
+			int used[CTR_CFG_HIT_TRIGGER_MAX] = {0};
 			int n = 0;
 			for (const auto &w : any)
 			{
@@ -891,6 +1037,13 @@ static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false
 				}
 				trig.fallback_keys = (int)fb;
 			}
+			// J03: a boss guest drawn for no encounter has no unlock win and
+			// can only ever join through Keys.
+			if (trig.count == 0 && trig.fallback_keys == 0)
+			{
+				hit_reject("unlock_triggers[%d] has no unlock win and no fallback_keys", guest);
+				return 0;
+			}
 			h.triggers[guest - 8] = trig;
 			got[guest - 8] = 1;
 		}
@@ -918,10 +1071,10 @@ static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false
 				           kHitBossKeys[i]);
 				return 0;
 			}
-			if (id != kHitBossIdentity[i])
+			if (id != bossIdent[i])
 			{
-				hit_reject("bosses[%ld] is engine id %d, but the retail encounter is %d",
-				           kHitBossKeys[i], id, kHitBossIdentity[i]);
+				hit_reject("bosses[%ld] is engine id %d, but the %s encounter is %d",
+				           kHitBossKeys[i], id, bossShuffled ? "drawn" : "retail", bossIdent[i]);
 				return 0;
 			}
 			h.boss_identity[i] = id;
@@ -1551,6 +1704,37 @@ static void ap_boss_encounters_refuse(const char *why)
 	ap_cfg_log("[AP CFG] boss_encounters refused (%s): boss garages stay shut\n", why);
 }
 
+// One schedule list: up to `cap` segments of six integers, each in range.
+// Returns the segment count, or -1 when it is not such a list.
+static int ap_boss_parse_schedule(const nlohmann::json &sc, AP_BossKitSegment *out, int cap)
+{
+	int n = 0;
+	if (!sc.is_array() || (int)sc.size() > cap)
+		return -1;
+	for (const auto &seg : sc)
+	{
+		long long f[6];
+		if (!seg.is_array() || seg.size() != 6)
+			return -1;
+		for (int k = 0; k < 6; k++)
+		{
+			if (!seg[k].is_number_integer())
+				return -1;
+			f[k] = seg[k].get<long long>();
+			if (f[k] < 0 || f[k] > 0xffff || (k < 4 && f[k] > 0xff))
+				return -1;
+		}
+		out[n].checkpoint = (unsigned char)f[0];
+		out[n].throwFlag = (unsigned char)f[1];
+		out[n].weapon = (unsigned char)f[2];
+		out[n].pathDisabled = (unsigned char)f[3];
+		out[n].cooldown = (unsigned short)f[4];
+		out[n].juice = (unsigned short)f[5];
+		n++;
+	}
+	return n;
+}
+
 static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nlohmann::json &opt, int schema)
 {
 	AP_BossEncounters *e = &ctr_boss_encounters;
@@ -1638,6 +1822,9 @@ static void ap_seedcfg_parse_boss_encounters(const nlohmann::json &j, const nloh
 	           AP_BOSS_ENCOUNTERS_VERSION, e->track[0], e->track[1], e->track[2], e->track[3]);
 }
 
+// The content-plan parser fills the Wumpa Shop configuration through this
+// block parser, so it is included first.
+#include "ap_wumpa_shop_parser.hpp"
 #include "ap_content_plan_impl.hpp"
 #include "ap_content_verify.hpp"
 
@@ -1763,13 +1950,13 @@ static void ap_seedcfg_parse_crystals(const nlohmann::json &j,
 }
 
 #include "ap_cup_sweep_parser.hpp"
-#include "ap_lap_checks_parser.hpp"
 
 void ap_seedcfg_parse_json(const nlohmann::json &j)
 {
+	s_box_parse_revision++;
     std::memset(&ctr_crystal_checks, 0, sizeof ctr_crystal_checks);
     std::memset(&ctr_cup_sweeps, 0, sizeof ctr_cup_sweeps);
-    AP_LapChecksReset(&ctr_lap_checks);
+    std::memset(&ctr_wumpa_shop, 0, sizeof ctr_wumpa_shop);
 	// A parse that stops early (no ctr_options, schema < 1) leaves this legacy.
 	std::memset(&ctr_trap_identities, 0, sizeof ctr_trap_identities);
 	std::memset(&ctr_boss_encounters, 0, sizeof ctr_boss_encounters);
@@ -1781,6 +1968,13 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// Reset to a clean state; identity warp map; type:0 reqs (= native vanilla).
 	ctr_cfg.schema_version = 0;
 	ctr_cfg.schema_newer = 0;
+	ctr_cfg.box_placement_state = 0;
+	ctr_cfg.box_placement_refused = 0;
+	for (int level = 0; level < CTR_CFG_BOX_TRACK_COUNT; level++)
+	{
+		ctr_cfg.box_placement_counts[level] = -1;
+		s_box_warned_count[level] = -1;
+	}
 	ctr_cfg.include_battle_arenas = 1;
 	// Oxide-final gate defaults: mode 0 (Sapphire) + count 18 = the pre-v0.1.1
 	// behaviour, applied when a seed omits the fields (schema < 5 or Phase-1).
@@ -1942,6 +2136,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// AP item box colours (R11): pink until a seed asks for item colours.
 	ctr_cfg.color_boxes_by_item = 0;
 	ctr_cfg.reserve_top_up = 0;
+	ctr_cfg.spoiler_items = 0;
+	ctr_cfg.seed_box_locations = 0;
 	// Podium checks -> disabled + all rungs absent (-1) until parsed below.
 	ctr_cfg.podium_enabled = 0;
 	ctr_cfg.lettersanity_mode = 0;
@@ -1972,22 +2168,43 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// skipped; an enabled feature under a pre-16 global schema also refuses.
 	// The new plan owns its complete profile. Never interpret its physical
 	// identities or item ledger through the legacy pad/cup fallback parser.
-	// #451 owns this additive envelope field. Keep the content-plan validator's
-	// closed option set intact by removing only our field from its input, then
-	// apply it only after that plan was admitted. Legacy options are read below.
+	// #451 and #459 own these additive envelope fields. Keep the content-plan
+	// validator's closed option set intact by removing only our Boolean fields
+	// from its input, then apply them only after that plan was admitted. A
+	// non-Boolean value stays in and the validator refuses it as before.
+	// Legacy options are read below.
+	static const char *const kAdditiveContentFields[] = {"reserve_top_up", "spoiler_items"};
+	bool strip_additive = false;
+	if (j.is_object() && j.contains("content_plan") && j.contains("ctr_options") && j["ctr_options"].is_object())
+		for (const char *key : kAdditiveContentFields)
+			strip_additive |= j["ctr_options"].contains(key) && j["ctr_options"][key].is_boolean();
 	int content_result;
-	if (j.is_object() && j.contains("content_plan") && j.contains("ctr_options") &&
-	    j["ctr_options"].is_object() && j["ctr_options"].contains("reserve_top_up") &&
-	    j["ctr_options"]["reserve_top_up"].is_boolean())
+	if (strip_additive)
 	{
 		nlohmann::json content_input = j;
-		content_input["ctr_options"].erase("reserve_top_up");
+		for (const char *key : kAdditiveContentFields)
+			if (content_input["ctr_options"].contains(key) && content_input["ctr_options"][key].is_boolean())
+				content_input["ctr_options"].erase(key);
+		// The stripped flag still has to agree with the plan's reveal items.
+		content_plan::envelope_spoiler_items =
+		    j["ctr_options"].contains("spoiler_items") && j["ctr_options"]["spoiler_items"].is_boolean() &&
+		    j["ctr_options"]["spoiler_items"].get<bool>();
 		content_result = parse_content_plan(content_input);
+		content_plan::envelope_spoiler_items = false;
 		if (content_result == 2)
+		{
 			ctr_cfg.reserve_top_up = json_int(j["ctr_options"], "reserve_top_up", 0) != 0;
+			ctr_cfg.spoiler_items = json_int(j["ctr_options"], "spoiler_items", 0) != 0;
+		}
 	}
 	else
 		content_result = parse_content_plan(j);
+	// #459: an admitted content plan's envelope says whether it has AP boxes.
+	if (content_result == 2)
+		ctr_cfg.seed_box_locations = json_int(j["ctr_options"], "box_locations", 0) != 0;
+	// One generator row 6: a plan room's race-loss stakes read the exported logic.
+	if (content_result == 2)
+		ap_seedcfg_parse_win_logic(j);
 	if (content_result != 1)
 		return;
 	if (!parse_hit_character(j))
@@ -2029,6 +2246,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		             "incorrectly until you do. ***\n",
 		             schema, CTR_CFG_SCHEMA_KNOWN);
 	}
+	ap_seedcfg_parse_box_placement_counts(j);
 	ap_seedcfg_parse_trap_identities(j, schema);
 	ap_seedcfg_parse_boss_encounters(j, opt, schema);
 
@@ -3319,7 +3537,6 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	}
 
     if (!parse_cup_sweeps(j,opt,schema)) return;
-    if (!parse_lap_checks(j,opt,schema)) return;
 
 	// Activate LAST -- a partial parse never flips ctr_cfg_active() true.
 	ctr_cfg.schema_version = schema;
@@ -3455,6 +3672,15 @@ extern "C" int ctr_cfg_active(void)
 	return ctr_cfg.schema_version >= 1;
 }
 
+// J03 (decision 7): the racer the N. Oxide garage loads as P2 for both Oxide
+// races, or -1 for N. Oxide himself.
+extern "C" int AP_BossFinalGarageOpponent(void)
+{
+	if (!ctr_cfg_active())
+		return -1;
+	return AP_BossEncounterFinalOpponent(&ctr_boss_encounters);
+}
+
 extern "C" const ctr_req *ctr_cfg_slide_coliseum_req(void)
 {
 	const ctr_req *r;
@@ -3524,6 +3750,7 @@ extern "C" void ap_seedcfg_reject_late(const char *reason)
 	// rejection leaves: the whole config inactive, no encounter data reachable,
 	// the flag raised and the reason visible.
 	ctr_cfg.schema_version = 0;
+	ctr_cfg.schema_newer = 0; // a refused room shows its reason, not the update banner
 	ctr_cfg.hit.valid = 0;
 	hit_reject("%s", (reason != NULL && reason[0] != '\0')
 	                     ? reason

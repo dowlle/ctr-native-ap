@@ -5,73 +5,53 @@
 // AP_ContentCupPad from ap_hooks_content_cups.c).
 //
 // `<Track>: Complete One Lap` is sent at the first accepted lap of any race
-// with laps on that track: a Trophy Race, CTR Challenge, Relic Race or Cup
-// leg, in Adventure. PlayLevel_UpdateLapStats calls AP_LapOnCrossing right
+// with laps on that track: a Trophy Race, CTR Challenge, Relic Race, cup leg or
+// boss race, in Adventure. PlayLevel_UpdateLapStats calls AP_LapOnCrossing right
 // after it advances a driver's lapIndex at the forward finish crossing, which
 // also covers a one-lap race's final crossing. Only the local player's kart
-// counts. Boss races are left out: the apworld models no boss route to a lap
-// check (worlds/ctr/lap_checks.py), so native does not send one there either.
+// counts.
 
 #ifdef CTR_AP
 
-// The lap check of the running race, or -1. The served track's identity,
-// never the engine host's LevelID alone: a content plan names it on its pad or
-// cup leg; a normal room keys it by retail LevelID, Cortex Vortex or the
-// legacy custom track's slot, as the podium identity does (AP_RetailPodiumTrack).
+// The lap check of the running race, or -1. The plan names it on its pad, cup
+// leg or boss encounter, never by the engine host's LevelID.
 static long AP_LapCode(struct GameTracker *gGT)
 {
+#ifdef CTR_CUSTOM_TRACKS
 	const int level = (int)gGT->levelID;
-	const int cup = (gGT->gameMode1 & ADVENTURE_CUP) != 0;
+	const struct CustomTrackRaceContext *context = CustomTrack_StandaloneContext(level);
+	const ctr_content_pad *pad;
+	int64_t code = 0;
 #ifdef CTR_CUSTOM_PACKAGES
 	// A custom-page race has no AP identity.
 	if (MainRaceTrack_OfflineCustomLoad())
 		return -1;
 #endif
-#ifdef CTR_CUSTOM_TRACKS
-	if (ap_content_plan_active())
+	if (!ap_content_plan_active())
+		return -1;
+	if ((pad = AP_ContentCupPad()) != NULL)
 	{
-		const struct CustomTrackRaceContext *context = CustomTrack_StandaloneContext(level);
-		const ctr_content_pad *pad = AP_ContentCupPad();
-		int64_t code = 0;
-		if (pad)
-		{
-			const int leg = AP_ContentCupLeg();
-			// A boss cup's legs carry no lap code (no boss route).
-			code = leg >= 0 && leg < AP_CONTENT_CUP_LEGS ? pad->legs[leg].lap : 0;
-		}
-		else if (context && !context->cup && (context->retail || CustomTrack_ServingLoad(level, 0, 0)) &&
-		         (pad = AP_StandaloneRoutePad(context)) != NULL)
-			code = pad->lap_location;
-		return code > 0 && code <= 2147483647 ? (long)code : -1;
+		const int leg = AP_ContentCupLeg();
+		code = leg >= 0 && leg < AP_CONTENT_CUP_LEGS ? pad->legs[leg].lap : 0;
 	}
-	// Outside a content plan a standalone race has no lap identity.
-	if (CustomTrack_StandaloneContext(level))
-		return -1;
-#endif
-	if (!ctr_lap_checks.enabled)
-		return -1;
-	// Checked first: Cortex Vortex is served on Oxide Station's LevelID 13.
-	if (AP_CortexTrackActive())
-		return AP_LapCodeFor(&ctr_lap_checks, AP_LAP_ID_CORTEX, AP_LAP_CORTEX_KEY);
-#ifdef CTR_CUSTOM_TRACKS
-	if (ctr_cfg.custom_tracks_ok && CustomTrack_ServingLoad(level, cup, gGT->cup.cupID))
-		return AP_LapCodeFor(&ctr_lap_checks, AP_LAP_ID_CUSTOM, ctr_cfg.custom_track.slot);
-	if (level == 16 || level == 17)
-		return AP_LapCodeFor(&ctr_lap_checks, AP_LAP_ID_RETAIL, level);
-	return AP_LapCodeFor(&ctr_lap_checks, AP_LAP_ID_RETAIL,
-	                     CustomTrack_RetailPodiumLevelID(level, cup, gGT->cup.cupID));
+	else if (IS_BOSS_RACE(gGT->gameMode1))
+		code = gGT->bossID >= 0 && gGT->bossID < 6 ? ap_content_plan_bosses()->lap[(int)gGT->bossID] : 0;
+	else if (context && !context->cup && (context->retail || CustomTrack_ServingLoad(level, 0, 0)) &&
+	         (pad = AP_StandaloneRoutePad(context)) != NULL)
+		code = pad->lap_location;
+	return code > 0 && code <= 2147483647 ? (long)code : -1;
 #else
-	(void)cup;
-	return AP_LapCodeFor(&ctr_lap_checks, AP_LAP_ID_RETAIL, level);
+	(void)gGT;
+	return -1;
 #endif
 }
 
-// An Adventure race with laps: not a boss race, Crystal Challenge, the hub,
-// Arcade, Battle, the main menu or the demo.
+// An Adventure race with laps: not a Crystal Challenge, the hub, Arcade,
+// Battle, the main menu or the demo.
 static int AP_LapRaceMode(const struct GameTracker *gGT)
 {
 	return (gGT->gameMode1 & ADVENTURE_MODE) && !gGT->boolDemoMode &&
-	       !(gGT->gameMode1 & (ADVENTURE_ARENA | ADVENTURE_BOSS | ARCADE_MODE | BATTLE_MODE | CRYSTAL_CHALLENGE | MAIN_MENU));
+	       !(gGT->gameMode1 & (ADVENTURE_ARENA | ARCADE_MODE | BATTLE_MODE | CRYSTAL_CHALLENGE | MAIN_MENU));
 }
 
 void AP_LapOnCrossing(struct GameTracker *gGT, struct Driver *driver, int driverSlot)

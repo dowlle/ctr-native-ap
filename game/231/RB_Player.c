@@ -168,6 +168,10 @@ void RB_Player_ModifyWumpa(struct Driver *driver, int wumpaDelta)
 	{
 		// for end-of-race comments
 		driver->numTimesWumpa += wumpaDelta;
+#ifdef CTR_AP
+		// #249: fruit past 10 goes into the Wumpa bank.
+		AP_WumpaBankKart(driver, numWumpaOriginal, wumpaDelta);
+#endif
 	}
 
 	// works for positive and negative delta

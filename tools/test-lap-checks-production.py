@@ -1,9 +1,9 @@
 """Run the production lap crossing dispatch (#344) against deterministic engine seams.
 
 Compiles ap/ap_hooks_laps.c as written with stand-ins for the engine, the
-content-plan race contexts and the network, then drives AP_LapOnCrossing
-through retail, trial, Cortex Vortex, legacy custom, content-plan standalone
-and content-plan cup races, and every case that must not send. Also checks
+plan's race contexts and the network, then drives AP_LapOnCrossing
+through plan pads, cup legs, boss races and boss cup legs, and every case that
+must not send. Also checks
 that game/PlayLevel.c calls it right after the forward crossing advances
 lapIndex, and that the unity build includes the part.
 """
@@ -38,23 +38,22 @@ fixture = r"""
 #define CTR_AP 1
 #define CTR_CUSTOM_TRACKS 1
 #define CTR_CUSTOM_PACKAGES 1
-#define ADVENTURE_BOSS 0x80000000u
 #define ACTION_BOT 0x100000
+#define ADVENTURE_BOSS 0x80000000u
+#define IS_BOSS_RACE(gm) ((int)(gm) < 0)
 struct Driver {int actionsFlagSet, lapIndex;};
-struct GameTracker {unsigned gameMode1; int levelID; char boolDemoMode; struct {int cupID;} cup;};
+struct GameTracker {unsigned gameMode1; int levelID; int bossID; char boolDemoMode;};
 struct CustomTrackRaceContext {int cup, retail;};
-static struct {int custom_tracks_ok; struct {int slot;} custom_track;} ctr_cfg;
-AP_LapChecks ctr_lap_checks;
-static int active = 1, plan, offline, cortex, serving, exists = 1, checked, sent, podium = -1, cup_leg = -1;
+static int active = 1, plan = 1, offline, serving, exists = 1, checked, sent, cup_leg = -1;
 static long last;
 static struct CustomTrackRaceContext context, *context_on;
 static ctr_content_pad pad, cup_pad, *route_pad, *cup_on;
+static ctr_content_bosses bosses;
 int ctr_cfg_active(void) {return active;}
 int ap_content_plan_active(void) {return plan;}
+const ctr_content_bosses *ap_content_plan_bosses(void) {return &bosses;}
 int MainRaceTrack_OfflineCustomLoad(void) {return offline;}
-int AP_CortexTrackActive(void) {return cortex;}
 int CustomTrack_ServingLoad(int a, int b, int c) {(void)a; (void)b; (void)c; return serving;}
-int CustomTrack_RetailPodiumLevelID(int level, int cup, int id) {(void)cup; (void)id; return podium == -2 ? level : podium;}
 const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int level) {(void)level; return context_on;}
 const ctr_content_pad *AP_ContentCupPad(void) {return cup_on;}
 int AP_ContentCupLeg(void) {return cup_leg;}
@@ -72,16 +71,15 @@ static struct Driver driver;
 static struct GameTracker g;
 static void reset(void)
 {
-    active = exists = 1; plan = offline = cortex = serving = checked = 0; podium = -2; cup_leg = -1;
+    active = exists = plan = 1; offline = serving = checked = 0; cup_leg = -1;
     context_on = NULL; route_pad = cup_on = NULL;
     memset(&context, 0, sizeof context); memset(&pad, 0, sizeof pad); memset(&cup_pad, 0, sizeof cup_pad);
-    ctr_cfg.custom_tracks_ok = 0; ctr_cfg.custom_track.slot = 0;
-    AP_LapChecksReset(&ctr_lap_checks); ctr_lap_checks.enabled = 1;
-    for (int lid = 0; lid < AP_LAP_RETAIL_TRACKS; ++lid) ctr_lap_checks.tracks[lid] = AP_LapRetailCode(lid);
-    ctr_lap_checks.cortex = AP_LAP_CORTEX_CODE;
+    memset(&bosses, 0, sizeof bosses);
     driver.actionsFlagSet = 0; driver.lapIndex = 1;
-    g.gameMode1 = ADVENTURE_MODE; g.levelID = 3; g.boolDemoMode = 0; g.cup.cupID = 0;
+    g.gameMode1 = ADVENTURE_MODE; g.levelID = 3; g.bossID = 0; g.boolDemoMode = 0;
+    context.retail = 1; pad.lap_location = 35028003;
 }
+static void standalone(void) { context_on = &context; route_pad = &pad; }
 static long cross(int slot)
 {
     int before = sent;
@@ -91,62 +89,49 @@ static long cross(int slot)
 }
 int main(void)
 {
-    // Retail Trophy Race, CTR Challenge, Relic Race and Gem Cup leg.
-    reset(); assert(cross(0) == AP_LapRetailCode(3));
-    reset(); g.gameMode1 |= RELIC_RACE; assert(cross(0) == AP_LapRetailCode(3));
-    reset(); g.gameMode1 |= ADVENTURE_CUP; g.levelID = 9; assert(cross(0) == AP_LapRetailCode(9));
-    reset(); driver.lapIndex = 3; assert(cross(0) == AP_LapRetailCode(3)); // a later lap, still unchecked
-    // The trial tracks keep their own LevelIDs.
-    reset(); g.levelID = 16; podium = -1; assert(cross(0) == AP_LapRetailCode(16));
-    reset(); g.levelID = 17; podium = -1; assert(cross(0) == AP_LapRetailCode(17));
-    // Cortex Vortex on its Oxide Station host.
-    reset(); g.levelID = 13; cortex = 1; assert(cross(0) == AP_LAP_CORTEX_CODE);
-    reset(); g.levelID = 13; cortex = 1; ctr_lap_checks.cortex = -1; assert(cross(0) == -1);
-    // The legacy custom track on its borrowed host is its slot, never the host.
-    reset(); g.levelID = 6; serving = 1; ctr_cfg.custom_tracks_ok = 1; ctr_cfg.custom_track.slot = 1;
-    ctr_lap_checks.custom_slot = 1; ctr_lap_checks.custom = 35028100; assert(cross(0) == 35028100);
-    reset(); g.levelID = 6; serving = 1; ctr_cfg.custom_tracks_ok = 1; ctr_cfg.custom_track.slot = 1;
-    assert(cross(0) == -1); // the seed has no lap check for it: no retail fallback
-    // A retail host the custom policy does not name as retail sends nothing.
-    reset(); podium = -1; assert(cross(0) == -1);
-    // The seed's subset only.
-    reset(); ctr_lap_checks.tracks[3] = -1; assert(cross(0) == -1);
-    reset(); ctr_lap_checks.enabled = 0; assert(cross(0) == -1);
-    // Not this kart, not this race.
-    reset(); assert(cross(1) == -1);
-    reset(); driver.actionsFlagSet = ACTION_BOT; assert(cross(0) == -1);
-    reset(); driver.lapIndex = 0; assert(cross(0) == -1);
-    reset(); g.gameMode1 |= ADVENTURE_BOSS; assert(cross(0) == -1);
-    reset(); g.gameMode1 = ARCADE_MODE; assert(cross(0) == -1);
-    reset(); g.gameMode1 = ADVENTURE_MODE | CRYSTAL_CHALLENGE; assert(cross(0) == -1);
-    reset(); g.gameMode1 = ADVENTURE_MODE | ADVENTURE_ARENA; assert(cross(0) == -1);
-    reset(); g.gameMode1 = ADVENTURE_MODE | BATTLE_MODE; assert(cross(0) == -1);
-    reset(); g.boolDemoMode = 1; assert(cross(0) == -1);
-    reset(); active = 0; assert(cross(0) == -1);
-    reset(); offline = 1; assert(cross(0) == -1);
-    // Membership and checked state.
-    reset(); exists = 0; assert(cross(0) == -1);
-    reset(); checked = 1; assert(cross(0) == -1);
-    // Content plans: the pad's own code for a standalone race in any mode, the
-    // cup leg's code in a cup, nothing from the normal room's table.
-    reset(); plan = 1; context_on = &context; context.retail = 1; route_pad = &pad; pad.lap_location = 35201616;
-    assert(cross(0) == 35201616);
-    reset(); plan = 1; context_on = &context; context.retail = 0; route_pad = &pad; pad.lap_location = 35028104;
-    assert(cross(0) == -1); // custom bytes not served
-    serving = 1; assert(cross(0) == 35028104);
-    reset(); plan = 1; context_on = &context; context.retail = 1; route_pad = NULL; assert(cross(0) == -1);
-    reset(); plan = 1; context_on = &context; context.retail = 1; route_pad = &pad; pad.lap_location = 0; assert(cross(0) == -1);
-    reset(); plan = 1; assert(cross(0) == -1); // no context: never the retail table
-    reset(); plan = 1; cup_on = &cup_pad; cup_leg = 2; context_on = &context; context.cup = 1;
+    // A standalone race in any mode sends its pad's code, a later lap too.
+    reset(); standalone(); assert(cross(0) == 35028003);
+    reset(); standalone(); g.gameMode1 |= RELIC_RACE; assert(cross(0) == 35028003);
+    reset(); standalone(); driver.lapIndex = 3; assert(cross(0) == 35028003);
+    // Custom bytes count only while they are served.
+    reset(); standalone(); context.retail = 0; assert(cross(0) == -1);
+    serving = 1; assert(cross(0) == 35028003);
+    reset(); context_on = &context; assert(cross(0) == -1); // no route pad
+    reset(); standalone(); pad.lap_location = 0; assert(cross(0) == -1);
+    reset(); assert(cross(0) == -1); // no context: never a retail table
+    // A cup leg sends its own track's code.
+    reset(); cup_on = &cup_pad; cup_leg = 2; context_on = &context; context.cup = 1;
+    g.gameMode1 |= ADVENTURE_CUP;
     cup_pad.legs[2].lap = 35028003; cup_pad.legs[1].lap = 35028004; assert(cross(0) == 35028003);
     cup_leg = 1; assert(cross(0) == 35028004);
-    cup_leg = 3; assert(cross(0) == -1); // a leg without a lap code (a boss cup leg)
-    reset(); plan = 1; context_on = &context; context.cup = 1; route_pad = &pad; pad.lap_location = 35028001;
-    assert(cross(0) == -1); // a stale cup context is no standalone route
-    // Outside a content plan a standalone context has no identity.
-    reset(); context_on = &context; assert(cross(0) == -1);
-    puts("Production lap dispatch: retail, trial, Cortex Vortex, legacy custom, content-plan pads and cup legs, "
-         "and every refusal passed");
+    cup_leg = 3; assert(cross(0) == -1); // a leg without a code
+    reset(); context_on = &context; context.cup = 1; route_pad = &pad; assert(cross(0) == -1); // a stale cup context
+    // A boss race sends its venue's code, by the encounter.
+    for (int boss = 0; boss < 6; ++boss) {
+        reset(); g.gameMode1 |= ADVENTURE_BOSS; g.bossID = boss; bosses.lap[boss] = 35028010 + boss;
+        assert(cross(0) == 35028010 + boss);
+    }
+    reset(); g.gameMode1 |= ADVENTURE_BOSS; assert(cross(0) == -1); // no lap checks in the seed
+    reset(); g.gameMode1 |= ADVENTURE_BOSS; g.bossID = 6; bosses.lap[0] = 35028010; assert(cross(0) == -1);
+    // A boss cup leg is a cup leg of the garage's cup pad.
+    reset(); g.gameMode1 |= ADVENTURE_BOSS | ADVENTURE_CUP; cup_on = &cup_pad; cup_leg = 1; context_on = &context;
+    context.cup = 1; cup_pad.legs[1].lap = 35028006; bosses.lap[0] = 35028010; assert(cross(0) == 35028006);
+    // Not this kart, not this race.
+    reset(); standalone(); assert(cross(1) == -1);
+    reset(); standalone(); driver.actionsFlagSet = ACTION_BOT; assert(cross(0) == -1);
+    reset(); standalone(); driver.lapIndex = 0; assert(cross(0) == -1);
+    reset(); standalone(); g.gameMode1 = ARCADE_MODE; assert(cross(0) == -1);
+    reset(); standalone(); g.gameMode1 = ADVENTURE_MODE | CRYSTAL_CHALLENGE; assert(cross(0) == -1);
+    reset(); standalone(); g.gameMode1 = ADVENTURE_MODE | ADVENTURE_ARENA; assert(cross(0) == -1);
+    reset(); standalone(); g.gameMode1 = ADVENTURE_MODE | BATTLE_MODE; assert(cross(0) == -1);
+    reset(); standalone(); g.boolDemoMode = 1; assert(cross(0) == -1);
+    reset(); standalone(); active = 0; assert(cross(0) == -1);
+    reset(); standalone(); offline = 1; assert(cross(0) == -1);
+    reset(); standalone(); plan = 0; assert(cross(0) == -1);
+    // Membership and checked state.
+    reset(); standalone(); exists = 0; assert(cross(0) == -1);
+    reset(); standalone(); checked = 1; assert(cross(0) == -1);
+    puts("Production lap dispatch: plan pads, cup legs, boss races, boss cup legs and every refusal passed");
     return 0;
 }
 """

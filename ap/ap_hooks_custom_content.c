@@ -380,7 +380,7 @@ int AP_ContentPreparePad(int physicalPad, int mode)
 	                 : (!AP_ContentModeOpen(pad, mode) || ap_content_mode_codes(pad, mode, codes) < 1)) return -1;
 	memset(&race, 0, sizeof race);
 	race.physicalPad = physicalPad; race.returnHub = pad->hub;
-	race.laps = pad->laps; race.trophyLocation = pad->crystal ? pad->trophy_location : codes[0];
+	race.laps = pad->laps; race.trophyLocation = pad->crystal ? pad->trophy_location : ap_content_mode_route(pad, mode);
 	race.mode = mode;
 	race.crystal = pad->crystal; race.timeLimitTicks = pad->time_limit_ticks;
 	race.seedEpoch = ap_content_plan_epoch(); race.retail = pad->retail_id >= 0;

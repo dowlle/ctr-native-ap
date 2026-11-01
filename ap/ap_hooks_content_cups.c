@@ -95,12 +95,14 @@ int AP_ContentGarageCupReturn(struct GameTracker *gGT, int g)
 }
 
 // The wire destination of the running content-plan cup's frozen field:
-// 200 + the cup's name index (the encounter block's `content_cups`), or -1.
-// A boss cup seats no Hit field (#133 PR 6b): the boss arm loads two karts.
+// 200 + the cup's name index (the encounter block's `content_cups`), a Gem
+// Cup's own LevelID 100 to 104 (the block's `cups` order), or -1. A boss cup
+// seats no Hit field (#133 PR 6b): the boss arm loads two karts.
 int AP_ContentCupHitDestination(void)
 {
 	const ctr_content_pad *pad = AP_ContentCupPad();
-	return pad && AP_ContentGarageCupRunning() < 0 ? CTR_CFG_HIT_CONTENT_CUP_DEST + pad->cup_index : -1;
+	if (!pad || AP_ContentGarageCupRunning() >= 0) return -1;
+	return pad->gem_cup ? pad->gem_cup : CTR_CFG_HIT_CONTENT_CUP_DEST + pad->cup_index;
 }
 
 // The running cup leg's index, or -1.

@@ -58,6 +58,13 @@ void AP_WumpaConnectReset(void);
 // is the live GameTracker; no-op outside a race or with nothing pending.
 void AP_WumpaTick(struct GameTracker *gGT);
 
+// #249 banking. AP_WumpaBankKart is called from RB_Player_ModifyWumpa with the
+// fruit held before a change and the change: what passes 10 is banked for the
+// local human player in Adventure mode. AP_WumpaOnRaceFinish is called on the
+// player's race-finished edge and banks the held fruit once per attempt,
+// never for a forced DeathLink loss.
+// Declared in ap_hooks.h, where RB_Player.c and the race listener see them.
+
 #endif // CTR_AP
 
 #endif // AP_WUMPA_H
