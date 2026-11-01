@@ -208,12 +208,15 @@ static void test_remap(void)
 
 static void test_busy(void)
 {
-	CHECK(!AP_BossAdapterBusy(0, 0, 0, 0, 0));
-	CHECK(AP_BossAdapterBusy(1, 0, 0, 0, 0));
-	CHECK(AP_BossAdapterBusy(0, 1, 0, 0, 0));
-	CHECK(AP_BossAdapterBusy(0, 0, 1, 0, 0));
-	CHECK(AP_BossAdapterBusy(0, 0, 0, 1, 0));
-	CHECK(AP_BossAdapterBusy(0, 0, 0, 0, 1));
+	CHECK(!AP_BossAdapterBusy(0, 0, 0, 0));
+	CHECK(AP_BossAdapterBusy(1, 0, 0, 0));
+	CHECK(AP_BossAdapterBusy(0, 1, 0, 0));
+	CHECK(AP_BossAdapterBusy(0, 0, 1, 0));
+	CHECK(AP_BossAdapterBusy(0, 0, 0, 1));
+	CHECK(AP_BossAdapterNeedsTimers(AP_BA_MASK) && AP_BossAdapterNeedsTimers(AP_BA_INVISIBILITY) &&
+	      AP_BossAdapterNeedsTimers(AP_BA_SUPER_ENGINE));
+	CHECK(!AP_BossAdapterNeedsTimers(AP_BA_SHIELD) && !AP_BossAdapterNeedsTimers(AP_BA_TURBO) &&
+	      !AP_BossAdapterNeedsTimers(AP_BA_CLOCK) && !AP_BossAdapterNeedsTimers(AP_BA_WARP_ORB));
 }
 
 int main(void)

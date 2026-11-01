@@ -8,8 +8,9 @@
 // or a failed load never carries a use or a timer into the next race.
 static AP_BossAdapterState s_apBossAdapter;
 static struct Driver *s_apBossAdapterDriver;
-// The chaos Final Challenge: whose turn it is, and set only when a weapon left
-// a kart this update. One schedule, one cooldown, five rivals taking turns.
+// The chaos Final Challenge: whose turn it is, and set when this update used the
+// turn: a weapon left a kart, or the rival had to leave the use to the next one.
+// One schedule, one cooldown, five rivals taking turns.
 static int s_apChaosCursor;
 static int s_apChaosFired;
 #endif
@@ -628,13 +629,17 @@ static void PickupBots_FireAdvanced(struct Driver *boss, struct Driver *player, 
 
 	PickupBots_AdapterSegment(bossMeta, &f.segment, &f.lastSegment);
 	f.weapon = bossMeta->weaponType;
-	f.lap = boss->lapIndex;
+	// A segment's one use belongs to the schedule: in a chaos race its lap is
+	// the final racer's, not the lap of whichever rival has the turn.
+	f.lap = AP_ChaosFinalNow() ? gGT->drivers[1]->lapIndex : boss->lapIndex;
 	f.numLaps = (s8)gGT->numLaps;
 	AP_BossAdapterEnter(&s_apBossAdapter, f.lap, f.segment);
 	if (s_apBossAdapter.used)
 		return;
-	// Only one driver is armed per race.
-	if (s_apBossAdapterDriver != NULL && s_apBossAdapterDriver != boss)
+	// Only one driver is armed per race. In a chaos race that holds for the
+	// weapons that need the timers: the attack waits for them to run out.
+	if (s_apBossAdapterDriver != NULL && s_apBossAdapterDriver != boss &&
+	    (!AP_ChaosFinalNow() || AP_BossAdapterNeedsTimers(bossMeta->weaponType)))
 		return;
 	f.bossRank = boss->driverRank;
 	f.playerRank = player->driverRank;
@@ -647,10 +652,11 @@ static void PickupBots_FireAdvanced(struct Driver *boss, struct Driver *player, 
 	f.superAllowed = AP_BossFinalComposedNow();
 	decision = AP_BossAdapterDecide(&s_apBossAdapter, &f);
 	AP_BossAdapterCommit(&s_apBossAdapter, &f, decision);
+	s_apChaosFired = decision == AP_BA_FIRE || decision == AP_BA_WAIT;
 	if (decision != AP_BA_FIRE)
 		return;
-	s_apBossAdapterDriver = boss;
-	s_apChaosFired = 1;
+	if (!AP_ChaosFinalNow() || AP_BossAdapterNeedsTimers(f.weapon))
+		s_apBossAdapterDriver = boss;
 
 	// The juice bit picks the retail juiced duration (invisibility only).
 	oldWumpa = boss->numWumpas;
@@ -771,6 +777,18 @@ static void PickupBots_AdapterTick(void)
 // check, no DeathLink).
 int PickupBots_AdapterProtect(struct Driver *victim)
 {
+	// A chaos rival's shield needs no timer, so it may sit on any rival. It
+	// pops as usual, with no pop invincibility: that timer is the armed
+	// driver's alone.
+	if (victim != NULL && victim != s_apBossAdapterDriver && victim->instBubbleHold != NULL &&
+	    victim->kartState != KS_MASK_GRABBED && AP_ChaosFinalNow())
+	{
+		struct Shield *shieldObj = victim->instBubbleHold->thread->object;
+		shieldObj->flags |= 1;
+		victim->instBubbleHold = NULL;
+		Voiceline_RequestPlay(2, data.characterIDs[victim->driverID], 0x10);
+		return 1;
+	}
 	if (!s_apBossAdapter.armed || victim == NULL || victim != s_apBossAdapterDriver)
 		return 0;
 	if (victim->kartState == KS_MASK_GRABBED)
@@ -819,9 +837,8 @@ static void PickupBots_UpdateBoss(struct Driver *boss);
 #ifdef CTR_AP
 // The chaos Final Challenge: the schedule runs once for the whole field, and
 // its next attack is fired by the next rival who can. The adapter keeps its
-// timers for one driver, so while a rival's mask, shield, invisibility or super
-// engine runs, the next advanced attack waits for that rival. Once the effect
-// ends the adapter is free and the turn order holds for every weapon.
+// timers for one driver, so while a rival's mask, invisibility or super engine
+// runs, another of those three waits. Every other weapon fires on its turn.
 static void PickupBots_UpdateChaos(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -841,21 +858,12 @@ static void PickupBots_UpdateChaos(void)
 	}
 	owner = AP_RosterChaosOwner(s_apChaosCursor, canFire, AP_ROSTER_CHAOS_RIVALS);
 	armed = s_apBossAdapterDriver;
-	if (armed != NULL &&
-	    !AP_BossAdapterBusy(s_apBossAdapter.maskOn, armed->invisibleTimer != 0, armed->superEngineTimer != 0,
-	                        armed->instBubbleHold != NULL, armed->invincibleTimer != 0))
+	if (armed != NULL && !AP_BossAdapterBusy(s_apBossAdapter.maskOn, armed->invisibleTimer != 0,
+	                                         armed->superEngineTimer != 0, armed->invincibleTimer != 0))
 	{
 		// Keeps the segment's use: only the driver binding is released.
 		s_apBossAdapterDriver = NULL;
 		s_apBossAdapter.armed = 0;
-		armed = NULL;
-	}
-	if (armed != NULL && AP_BossAdapterIsAdvanced(sdata->bossWeaponMeta->weaponType))
-	{
-		owner = -1;
-		for (i = 0; i < AP_ROSTER_CHAOS_RIVALS; i++)
-			if (rival[i] == armed && canFire[i])
-				owner = i;
 	}
 	if (owner < 0)
 		return;
