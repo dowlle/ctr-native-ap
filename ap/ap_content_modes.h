@@ -377,7 +377,7 @@ static inline int ap_content_cup_track_checks(const ctr_content_pad *pad, ap_con
         int seen = 0;
         for (j = 0; j < k; ++j) seen |= !strcmp(pad->legs[j].track_id, leg->track_id);
         if (seen) continue;
-        if (leg->lap > 0) {
+        if (leg->lap > 0 && pad->physical < AP_CONTENT_GARAGE_CUP_PAD) { // a garage has no glow
             out[n].code = leg->lap; out[n].box_pad = -1;
             out[n++].bit = AP_CONTENT_BIT_CUP_LAP + pad->physical * AP_CONTENT_CUP_LAP_STRIDE + k;
         }
@@ -393,6 +393,22 @@ static inline int ap_content_cup_track_checks(const ctr_content_pad *pad, ap_con
             }
     }
     return n;
+}
+// The per-track Wumpa check a cup's tracker node shows: an unchecked one, else
+// a checked one, else 0 when no track of the cup has one.
+static inline int64_t ap_content_cup_wumpa_code(const ctr_content_pad *pad, ap_content_pad_fn lookup,
+                                                ap_content_checked_fn checked)
+{
+    ap_content_cup_track_check rows[AP_CONTENT_CUP_TRACK_CHECKS];
+    int i, n = ap_content_cup_track_checks(pad, lookup, rows);
+    int64_t code = 0;
+    for (i = 0; i < n; ++i)
+        if ((rows[i].bit - AP_CONTENT_BIT_FAMILY) % AP_CONTENT_FAMILY_STRIDE == 5 && rows[i].bit >= AP_CONTENT_BIT_FAMILY &&
+            rows[i].bit < AP_CONTENT_BIT_BOX) {
+            code = rows[i].code;
+            if (!checked(code)) return code;
+        }
+    return code;
 }
 // The Item Boxes still unchecked on a cup's tracks.
 static inline int ap_content_cup_box_pending(const ctr_content_pad *pad, ap_content_pad_fn lookup,

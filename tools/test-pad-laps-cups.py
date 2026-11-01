@@ -38,6 +38,7 @@ assert "if(ap_content_cup_lap_bit_decode(globalBit,&contentPad,&contentTier))\n 
 assert "ap_content_requirement_text(pad->stage2_mask, pad->stage2_count, out->stage2, sizeof out->stage2);" in launch
 node = function(tracker, "static void AP_TrackerDrawContentNode(")
 assert "ap_content_cup_track_checks(pad, ap_content_plan_pad, rows)" in node and "ap_content_cup_box_pending(" in node
+assert "ap_content_cup_wumpa_code(pad, ap_content_plan_pad, AP_ContentCodeChecked)" in node
 # A plan cup leg earns its track's Wumpa check; a leg's box gate reads the pad on that track.
 wumpa = function(race, "static long AP_StandaloneWumpaCode(void)")
 assert "cup->legs[leg].track_pad" in wumpa and "context && context->cup" in wumpa
@@ -140,6 +141,22 @@ int main(void)
     assert(AP_ContentPadGlowBits(100, bits, 96, 0) == 0);
     assert(ap_content_cup_box_pending(&cup, ap_content_plan_pad, checkedFn) == 0);
     doneCount = 0;
+    /* The cup's tracker node: an open Wumpa check first, then a done one, none on a cup without one. */
+    assert(ap_content_cup_wumpa_code(&cup, ap_content_plan_pad, checkedFn) == 103);
+    done[doneCount++] = 103;
+    assert(ap_content_cup_wumpa_code(&cup, ap_content_plan_pad, checkedFn) == 203);
+    done[doneCount++] = 203;
+    assert(ap_content_cup_wumpa_code(&cup, ap_content_plan_pad, checkedFn) == 203);
+    doneCount = 0;
+    track_a.wumpa_location = track_b.wumpa_location = 0;
+    assert(ap_content_cup_wumpa_code(&cup, ap_content_plan_pad, checkedFn) == 0);
+    track_a.wumpa_location = 103; track_b.wumpa_location = 203;
+    /* A garage's boss cup has no glow: its lap has no display bit. */
+    cup.physical = AP_CONTENT_GARAGE_CUP_PAD;
+    { ap_content_cup_track_check rows[AP_CONTENT_CUP_TRACK_CHECKS];
+      int c = ap_content_cup_track_checks(&cup, ap_content_plan_pad, rows);
+      for (int i = 0; i < c; ++i) assert(rows[i].bit < AP_CONTENT_BIT_CUP_LAP); }
+    cup.physical = 100;
     /* The worst cup fits the state's list and the glow. */
     assert(AP_CONTENT_CUP_TRACK_CHECKS + 6 <= 96);
     /* Item 3: the row names stage 2. */

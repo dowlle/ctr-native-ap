@@ -630,6 +630,7 @@ static void AP_TrackerDrawContentNode(const AP_TrackerNode *n, int x, int y)
 		AP_TrackerTick(x+315,y+65,(int)state);
 	}
 	wumpa = n->kind == 0 && pad->wumpa_modes ? (long)(wumpaGlobal ? fam->wumpa_global : pad->wumpa_location) : 0;
+	if (pad->cup) wumpa = (long)ap_content_cup_wumpa_code(pad, ap_content_plan_pad, AP_ContentCodeChecked);
 	snprintf(text,sizeof text,"BOX %d",pad->cup ? ap_content_cup_box_pending(pad,ap_content_plan_pad,AP_ContentCodeChecked)
 	                                            : ap_content_box_pending(pad,AP_ContentCodeChecked));
 	AP_TrackerText(text,x+12,y+96,16,TRACKER_WHITE,110);
