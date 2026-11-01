@@ -256,14 +256,14 @@ From 0.3.0 the client can make and host a single-player seed itself. Choose
   options screen; Square shows what an option does. DeathLink is off in solo,
   because nobody else is in the room.
 - When custom tracks are installed, a preset or a YAML then shows **Custom
-  Tracks**. Cross on a track cycles: not used, **In pool** (the seed may use it)
-  and **Own pad** (it gets one of the 18 race pads). A preset gets the vanilla
-  layout (18 race pads, 5 Gem Cups, 4 Crystal Challenges, the boss garages)
-  where your picked tracks and the retail tracks share one pool, so a custom
-  track on a pad takes the place of a retail track. A YAML keeps its own
-  settings: with its own content plan the tracks are added to it, without one it
-  gets the vanilla layout only where it sets nothing. If a pick does not fit the
-  YAML, the screen says why and you can change the picks. A track is listed
+  Tracks**, with Cortex Vortex once its files are installed. Cross on a track
+  cycles: not used, **In pool** (the seed may use it) and **Own pad** (it gets
+  one of the race pads). The default seed has 18 race pads, 5 Gem Cups, 4
+  Crystal Challenges and the boss garages. Your picked tracks and the retail
+  tracks share one pool, so a custom track on a pad takes the place of a retail
+  track. A YAML keeps its own settings, and the tracks it lists start as picked.
+  If a pick does not fit the YAML, the screen says why and you can change the
+  picks. A track is listed
   when its files are in `assets/tracks/<track>/original` and the client knows
   its descriptor: from a room that used the track, or a descriptor file in the
   `solo/tracks` folder.
