@@ -1574,8 +1574,10 @@ extern "C" int XdeltaImport_Install(const XdeltaImportScan *scan, const unsigned
             {
                 if (error && errorSize)
                 {
-                    if (installed) std::snprintf(error, errorSize, "Installed %d, then %s: %s", installed, item.title, e.what());
-                    else std::snprintf(error, errorSize, "%s: %s", item.title, e.what());
+                    /* The package store took this track before the room write failed. */
+                    const char *kept = (where & CTR_XDELTA_INSTALL_PACKAGES) ? ". Its package is installed." : "";
+                    if (installed) std::snprintf(error, errorSize, "Installed %d, then %s: %s%s", installed, item.title, e.what(), kept);
+                    else std::snprintf(error, errorSize, "%s: %s%s", item.title, e.what(), kept);
                 }
                 return -1;
             }

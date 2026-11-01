@@ -491,6 +491,9 @@ int main()
             CHECK(XdeltaImport_Install(a.scan, selected.data(), roomOnly.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == -1 &&
                   std::strstr(error, "in the way"), "a different file in the way fails the install");
             CHECK(read_file(clash) == Bytes(16, 7), "the file in the way is left alone");
+            CHECK(XdeltaImport_Install(a.scan, selected.data(), roomOnly.c_str(), both, error, sizeof error) == -1 &&
+                  std::strstr(error, "in the way") && std::strstr(error, "Its package is installed."),
+                  "a failed room write says the package stayed");
             /* A folder that is a link is refused. */
             std::string linked = root + "/assets-link";
             mkdir(linked.c_str(), 0755);
