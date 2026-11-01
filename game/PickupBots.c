@@ -8,8 +8,8 @@
 // or a failed load never carries a use or a timer into the next race.
 static AP_BossAdapterState s_apBossAdapter;
 static struct Driver *s_apBossAdapterDriver;
-// The chaos Final Challenge: whose turn it is, and set by a real attack this
-// update. One schedule, one cooldown, five rivals taking turns.
+// The chaos Final Challenge: whose turn it is, and set only when a weapon left
+// a kart this update. One schedule, one cooldown, five rivals taking turns.
 static int s_apChaosCursor;
 static int s_apChaosFired;
 #endif
@@ -650,6 +650,7 @@ static void PickupBots_FireAdvanced(struct Driver *boss, struct Driver *player, 
 	if (decision != AP_BA_FIRE)
 		return;
 	s_apBossAdapterDriver = boss;
+	s_apChaosFired = 1;
 
 	// The juice bit picks the retail juiced duration (invisibility only).
 	oldWumpa = boss->numWumpas;
@@ -818,13 +819,15 @@ static void PickupBots_UpdateBoss(struct Driver *boss);
 #ifdef CTR_AP
 // The chaos Final Challenge: the schedule runs once for the whole field, and
 // its next attack is fired by the next rival who can. The adapter keeps its
-// timers for one driver, so a weapon of an advanced family stays with the rival
-// it armed once it has armed one.
+// timers for one driver, so while a rival's mask, shield, invisibility or super
+// engine runs, the next advanced attack waits for that rival. Once the effect
+// ends the adapter is free and the turn order holds for every weapon.
 static void PickupBots_UpdateChaos(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	unsigned char canFire[AP_ROSTER_CHAOS_RIVALS];
 	struct Driver *rival[AP_ROSTER_CHAOS_RIVALS];
+	struct Driver *armed;
 	int i, owner;
 
 	for (i = 0; i < AP_ROSTER_CHAOS_RIVALS; i++)
@@ -837,10 +840,23 @@ static void PickupBots_UpdateChaos(void)
 		             d->clockReceive == 0 && d->botData.aiPhysics.speedLinear >= 0x1f41;
 	}
 	owner = AP_RosterChaosOwner(s_apChaosCursor, canFire, AP_ROSTER_CHAOS_RIVALS);
-	if (AP_BossAdapterIsAdvanced(sdata->bossWeaponMeta->weaponType) && s_apBossAdapterDriver != NULL)
+	armed = s_apBossAdapterDriver;
+	if (armed != NULL &&
+	    !AP_BossAdapterBusy(s_apBossAdapter.maskOn, armed->invisibleTimer != 0, armed->superEngineTimer != 0,
+	                        armed->instBubbleHold != NULL, armed->invincibleTimer != 0))
+	{
+		// Keeps the segment's use: only the driver binding is released.
+		s_apBossAdapterDriver = NULL;
+		s_apBossAdapter.armed = 0;
+		armed = NULL;
+	}
+	if (armed != NULL && AP_BossAdapterIsAdvanced(sdata->bossWeaponMeta->weaponType))
+	{
+		owner = -1;
 		for (i = 0; i < AP_ROSTER_CHAOS_RIVALS; i++)
-			if (rival[i] == s_apBossAdapterDriver && canFire[i])
+			if (rival[i] == armed && canFire[i])
 				owner = i;
+	}
 	if (owner < 0)
 		return;
 	s_apChaosFired = 0;
@@ -883,8 +899,6 @@ static void PickupBots_UpdateBoss(struct Driver *boss)
 	PickupBots_SetBossCooldown(bossMeta);
 
 #ifdef CTR_AP
-	s_apChaosFired = 1;
-
 	// J03: the advanced families go through the boss adapter, never the
 	// projectile branch below. Retail tables never carry these codes.
 	if (AP_BossAdapterIsAdvanced(bossMeta->weaponType))
@@ -901,6 +915,9 @@ static void PickupBots_UpdateBoss(struct Driver *boss)
 	if (weaponID >= 0)
 	{
 		u8 oldWumpa = boss->numWumpas;
+#ifdef CTR_AP
+		s_apChaosFired = 1;
+#endif
 		boss->numWumpas = ((bossMeta->juiceFlag & BOSS_WEAPON_JUICED) != 0) ? 10 : 0;
 		boss->heldItemID = weaponID;
 

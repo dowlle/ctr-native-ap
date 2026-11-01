@@ -206,8 +206,19 @@ static void test_remap(void)
 	}
 }
 
+static void test_busy(void)
+{
+	CHECK(!AP_BossAdapterBusy(0, 0, 0, 0, 0));
+	CHECK(AP_BossAdapterBusy(1, 0, 0, 0, 0));
+	CHECK(AP_BossAdapterBusy(0, 1, 0, 0, 0));
+	CHECK(AP_BossAdapterBusy(0, 0, 1, 0, 0));
+	CHECK(AP_BossAdapterBusy(0, 0, 0, 1, 0));
+	CHECK(AP_BossAdapterBusy(0, 0, 0, 0, 1));
+}
+
 int main(void)
 {
+	test_busy();
 	test_codes();
 	test_once_per_segment();
 	test_families();

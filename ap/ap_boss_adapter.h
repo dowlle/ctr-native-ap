@@ -166,6 +166,14 @@ static inline void AP_BossAdapterCommit(AP_BossAdapterState *s, const AP_BossAda
 		s->superMs = AP_BOSS_ADAPTER_SUPER_MS;
 }
 
+// Does the armed driver still have an effect the adapter's one set of timers is
+// keeping? Only then must the next advanced attack stay with it: an idle driver
+// can hand the adapter to whoever's turn it is (the chaos Final Challenge).
+static inline int AP_BossAdapterBusy(int maskOn, int invisible, int superEngine, int shieldHeld, int invincible)
+{
+	return maskOn || invisible || superEngine || shieldHeld || invincible;
+}
+
 // A countdown in ms. Returns 1 on the frame it reaches zero.
 static inline int AP_BossAdapterCountdown(int *timer, int elapsedMs)
 {
