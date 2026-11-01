@@ -781,9 +781,9 @@ static void AP_TrackerDraw(void)
 	if(AP_WumpaShopHubTrackerLine(GEM_STONE_VALLEY+ap_tracker.hub,line,(int)sizeof line))
 		AP_TrackerText(line,32,692,14,TRACKER_GOLD,1210);
 	if(ap_tracker.pinned && ap_tracker.count) {
-		AP_TrackerNode *n=&ap_tracker.nodes[ap_tracker.focus]; int bits[48], remaining=n->physical>=0?AP_PadUncollectedGlowBits(n->destination,bits,48):0;
+		AP_TrackerNode *n=&ap_tracker.nodes[ap_tracker.focus]; int bits[96], remaining=n->physical>=0?AP_PadUncollectedGlowBits(n->destination,bits,96):0;
 		const ctr_content_pad *plan=ap_content_plan_active()&&n->physical>=0?ap_content_plan_pad(n->physical):NULL;
-		int boxes=plan?ap_content_box_pending(plan,AP_ContentCodeChecked):AP_PadUncollectedBoxCount(n->destination), letters=0, k;
+		int boxes=plan?(plan->cup?ap_content_cup_box_pending(plan,ap_content_plan_pad,AP_ContentCodeChecked):ap_content_box_pending(plan,AP_ContentCodeChecked)):AP_PadUncollectedBoxCount(n->destination), letters=0, k;
 		if(plan) { for(k=0;k<3;k++) letters+=plan->letter_locations[k]>0 && !AP_ContentCodeChecked(plan->letter_locations[k]); }
 		else letters=AP_PadUncollectedLetterCount(n->destination);
 		if(plan) remaining-=boxes+letters; /* the plan's list holds both */

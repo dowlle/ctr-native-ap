@@ -43,6 +43,14 @@ wumpa = function(race, "static long AP_StandaloneWumpaCode(void)")
 assert "cup->legs[leg].track_pad" in wumpa and "context && context->cup" in wumpa
 policy = function(boxes, "static int AP_BoxesPadRoutePolicy(")
 assert "pad->retail_id == level" in policy
+assert "cup->legs[race->leg].track_pad" in policy and "return AP_BOX_PRESENT_NONE;" in policy
+seat = function(boxes, "static void AP_BoxesSeatCustom(")
+assert "pad->legs[race->leg].track_pad" in seat
+footer = tracker[tracker.index("if(ap_tracker.pinned && ap_tracker.count) {"):]
+assert "ap_content_cup_box_pending(plan,ap_content_plan_pad,AP_ContentCodeChecked)" in footer and "int bits[96]" in footer
+# Every cup pad knows its legs' track pads, boss cups too: 0 would be a real pad.
+parser = (root / "ap/ap_content_plan_impl.hpp").read_text(encoding="utf-8")
+assert "for (auto &cup : out.pads) seat_track_pads(cup);" in parser and "for (auto &cup : out.garage_cups) seat_track_pads(cup);" in parser
 # A status cut on a very short word still ends in dots.
 assert 'memcpy(line + (end >= 3 ? end - 3 : end), "...", 4);' in menu
 

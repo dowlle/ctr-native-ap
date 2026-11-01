@@ -1827,14 +1827,17 @@ static void validate(const J &p, State &out) {
             need(expected_checks.emplace(lap_checks[track]["location"].get<int64_t>(), lap_checks[track]).second, "duplicate check identity");
     }
     // A cup leg's track pad: the standalone pad on the same track, whose boxes
-    // and Wumpa check the cup's glow and state also count.
-    for (auto &cup : out.pads)
+    // and Wumpa check the cup's glow, state and legs also reach. Boss cups too.
+    auto seat_track_pads = [&](ctr_content_pad &cup) {
         for (int n = 0; cup.cup && n < AP_CONTENT_CUP_LEGS; ++n) {
             cup.legs[n].track_pad = -1;
             for (const auto &pad : out.pads)
                 if (pad.occupied && !pad.cup && !pad.crystal && !std::strcmp(pad.track_id, cup.legs[n].track_id))
                     cup.legs[n].track_pad = pad.physical;
         }
+    };
+    for (auto &cup : out.pads) seat_track_pads(cup);
+    for (auto &cup : out.garage_cups) seat_track_pads(cup);
     need(used_entries.size() == entries.size() && used_tracks.size() == tracks.size() && used_packages.size() == packages.size(), "unused entry, track or package");
     // `wumpa: global`: one check, a route per Trophy Race and CTR Challenge
     // that can reach ten fruit, in physical pad order, then mode order.

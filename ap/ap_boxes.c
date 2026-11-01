@@ -280,6 +280,30 @@ static int AP_BoxesPadRoutePolicy(struct GameTracker *gGT, int level)
 		return AP_BoxPresentationFor(AP_BOX_ROUTE_OWN_PAD, -1, 0, 0, 0); // ordinary / relic: unchanged
 
 #ifdef CTR_CUSTOM_TRACKS
+	// A plan has no pad map: its pads name their tracks. A leg or boss race on a
+	// track with no pad of its own has no box checks.
+	if (ap_content_plan_active())
+	{
+		const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(level);
+		const ctr_content_pad *cup = race && race->cup ? ap_content_plan_pad(race->physicalPad) : 0;
+		int p;
+		phys = -1;
+		if (cup && cup->cup && race->leg >= 0 && race->leg < AP_CONTENT_CUP_LEGS)
+			phys = cup->legs[race->leg].track_pad;
+		for (p = 0; !race && p < 105; p++)
+		{
+			const ctr_content_pad *pad = ap_content_plan_pad(p);
+			if (pad && pad->occupied && !pad->cup && !pad->crystal && pad->retail_id == level)
+				phys = p;
+		}
+		if (phys < 0)
+			return AP_BOX_PRESENT_NONE;
+		return AP_BoxPresentationFor(isCupLeg ? AP_BOX_ROUTE_CUP_LEG : AP_BOX_ROUTE_BOSS, phys,
+		                             AP_GateCount(AP_IDX_KEY),
+		                             AP_PadStage1Met(phys),
+		                             ctr_cfg_racer_lock_met(phys));
+	}
+
 	// The custom-track event race sets ADVENTURE_CUP for reward routing (see
 	// AH_WarpPad.c: clearing it would award a trophy instead of the gem), but it
 	// is NOT a gem-cup leg. Left to the code below it would be gated on
@@ -311,19 +335,6 @@ static int AP_BoxesPadRoutePolicy(struct GameTracker *gGT, int level)
 	// the cup arm wins because ADVENTURE_CUP is the one that routes rewards.
 	route = isCupLeg ? AP_BOX_ROUTE_CUP_LEG : AP_BOX_ROUTE_BOSS;
 	phys  = ctr_cfg_warp_phys(level);
-#ifdef CTR_CUSTOM_TRACKS
-	// A plan has no pad map: its pads name their tracks.
-	if (ap_content_plan_active())
-	{
-		int p;
-		for (p = 0; p < 105; p++)
-		{
-			const ctr_content_pad *pad = ap_content_plan_pad(p);
-			if (pad && pad->occupied && !pad->cup && !pad->crystal && pad->retail_id == level)
-				phys = p;
-		}
-	}
-#endif
 
 	return AP_BoxPresentationFor(route, phys,
 	                             AP_GateCount(AP_IDX_KEY),
@@ -562,6 +573,10 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 {
 	const ctr_content_pad *pad = ap_content_plan_active() ? ap_content_plan_pad(race->physicalPad) : 0;
 	struct Level *lev = gGT->level1;
+	// A cup leg stands its track's own boxes; the pad of that track holds them.
+	if (pad != 0 && pad->cup)
+		pad = race->leg >= 0 && race->leg < AP_CONTENT_CUP_LEGS && pad->legs[race->leg].track_pad >= 0
+		          ? ap_content_plan_pad(pad->legs[race->leg].track_pad) : 0;
 	struct InstDef *defs;
 	long count, k, crates = 0;
 	int seats, i;
