@@ -251,9 +251,9 @@ release appears to change only one side.
 
 From 0.3.0 there is one list of options and no separate content setup. A YAML
 that sets nothing gets the original game's shape: the 18 race tracks, the 5 Gem
-Cups, the 4 Crystal Challenges and the five garages, on the 27 warp pads. Each
-option you set changes that seed. The options come in the order you would fill
-them in:
+Cups and the 4 Crystal Challenges on the 27 warp pads, plus the five boss
+garages. Each option you set changes that seed. The options come in the order
+you would fill them in:
 
 - **Content:** `retail_tracks`, `track_modes`, `custom_tracks`,
   `cortex_vortex_track`, `required_entries`, the cups and arenas, and the boss

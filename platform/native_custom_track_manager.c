@@ -1157,13 +1157,26 @@ static int Manager_IsDescriptorRevision(const char *s)
 	return 1;
 }
 
+// Printable ASCII only: the apworld refuses control characters and invalid
+// UTF-8, and the managed packages' titles and authors are plain ASCII.
+static int Manager_IsPrintableAscii(const char *s)
+{
+	if (s == NULL || *s == '\0')
+		return 0;
+	for (; *s != '\0'; s++)
+		if ((unsigned char)*s < 0x20 || (unsigned char)*s > 0x7e)
+			return 0;
+	return 1;
+}
+
 static int Manager_IsDescriptorExportable(const struct CustomTrackManagerPackage *package,
 	                                      const struct CustomTrackManagerStatus *status)
 {
 	return Manager_IsDescriptorKey(package->id) && Manager_IsDescriptorRevision(package->version) &&
 	       strlen("package/") + strlen(package->id) + 1 + strlen(package->version) <= 64 &&
 	       Manager_IsLowerHex(package->packageUuid, 36) && Manager_IsLowerHex(package->levSha256, 64) &&
-	       Manager_IsLowerHex(package->vrmSha256, 64) && strlen(package->title) <= 128 &&
+	       Manager_IsLowerHex(package->vrmSha256, 64) && Manager_IsPrintableAscii(package->title) &&
+	       strlen(package->title) <= 128 && Manager_IsPrintableAscii(package->author) &&
 	       strlen(package->author) <= 128 && status->levBytes <= 16ul * 1024 * 1024 &&
 	       status->vrmBytes <= 4ul * 1024 * 1024;
 }
