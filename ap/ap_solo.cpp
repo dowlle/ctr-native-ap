@@ -1107,6 +1107,14 @@ extern "C" int AP_Solo_SessionActive(void)
 	       s == AP_SOLO_SESSION_STOPPING;
 }
 
+extern "C" int AP_Solo_SessionOwnsConnection(void)
+{
+	// Stopping has already closed the solo connection, so any connection then is
+	// the next room's own.
+	const int s = g_session.state;
+	return s == AP_SOLO_SESSION_STARTING || s == AP_SOLO_SESSION_CONNECTING || s == AP_SOLO_SESSION_LIVE;
+}
+
 extern "C" void AP_Solo_SessionStop(void)
 {
 	Session &s = g_session;
@@ -1147,7 +1155,7 @@ extern "C" void AP_Solo_BeforeReconnect(void)
 
 extern "C" void AP_Solo_Tick(void)
 {
-	ap_net_set_solo_session_query(AP_Solo_SessionActive);
+	ap_net_set_solo_session_query(AP_Solo_SessionOwnsConnection);
 	TickJob();
 	TickSession();
 	if (!g_session.pendingRoom.empty() && !AP_Solo_SessionActive())

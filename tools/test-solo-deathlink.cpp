@@ -29,6 +29,8 @@ extern "C"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -136,8 +138,36 @@ static void test_wire(int solo)
 	}
 }
 
+static std::string source_of(const char *path)
+{
+	std::ifstream in(path, std::ios::binary);
+	std::stringstream text;
+	text << in.rdbuf();
+	return text.str();
+}
+
+// The production calls the checks above depend on. A session that is stopping has
+// closed its connection, so the query must not cover it: the next room's DeathLink
+// would stay off until the old server had exited.
+static void test_production(void)
+{
+	const std::string solo = source_of("ap/ap_solo.cpp");
+	const std::string dl = source_of("ap/ap_deathlink.c");
+	const std::string menu = source_of("game/230/MM_ConfigMenu.c");
+	expect(solo.find("ap_net_set_solo_session_query(AP_Solo_SessionOwnsConnection);") != std::string::npos,
+	       "the client registers the query");
+	expect(dl.find("AP_DeathLinkResolveSession(AP_Solo_SessionOwnsConnection(),") != std::string::npos,
+	       "the game side asks the same question");
+	expect(menu.find("AP_Solo_SessionOwnsConnection()") != std::string::npos, "so do the OPTIONS rows");
+	const size_t at = solo.find("int AP_Solo_SessionOwnsConnection(void)");
+	expect(at != std::string::npos &&
+	           solo.substr(at, solo.find('}', at) - at).find("AP_SOLO_SESSION_STOPPING") == std::string::npos,
+	       "a stopping session owns no connection");
+}
+
 int main(void)
 {
+	test_production();
 	test_resolve();
 	test_wire(0);
 	test_wire(1);

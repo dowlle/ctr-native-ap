@@ -102,7 +102,7 @@ static APDeathLinkState AP_DeathLinkStateNow(void)
 		return off;
 	if (row < 0 || row > CTR_DL_WEAPON_HIT)
 		row = -1; // a hand-edited out-of-range value follows the seed
-	return AP_DeathLinkResolveSession(AP_Solo_SessionActive(), ctr_cfg.death_link, ctr_cfg.death_link_send,
+	return AP_DeathLinkResolveSession(AP_Solo_SessionOwnsConnection(), ctr_cfg.death_link, ctr_cfg.death_link_send,
 	                                  row, g_config.dlSendFall,
 	                                  g_config.dlSendHit, g_config.dlSendLoss);
 }

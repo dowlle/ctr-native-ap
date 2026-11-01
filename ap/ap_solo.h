@@ -165,6 +165,7 @@ const char *AP_Solo_SessionError(void);
 const char *AP_Solo_SessionRoom(void);
 void AP_Solo_SessionStop(void);           /* /save, /exit, then end the child */
 int AP_Solo_SessionActive(void);          /* starting, connecting, live or stopping */
+int AP_Solo_SessionOwnsConnection(void);  /* starting, connecting or live: not stopping */
 
 /* AP_Net_Reconnect from anything but the solo session ends the solo session. */
 void AP_Solo_BeforeReconnect(void);

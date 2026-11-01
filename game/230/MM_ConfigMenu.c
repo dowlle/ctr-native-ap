@@ -536,7 +536,7 @@ static int Config_RowLockedBySeed(const ConfigEntry *e)
 // grey and take no input. Their saved values stay for multiworld rooms.
 static int Config_RowLockedBySolo(const ConfigEntry *e)
 {
-	return (e->valuePtr == &g_config.deathLink || IsDlSendField((const int *)e->valuePtr)) && AP_Solo_SessionActive();
+	return (e->valuePtr == &g_config.deathLink || IsDlSendField((const int *)e->valuePtr)) && AP_Solo_SessionOwnsConnection();
 }
 
 static int Config_RowLockedByItem(const ConfigEntry *e)
