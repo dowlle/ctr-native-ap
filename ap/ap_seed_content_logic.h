@@ -22,7 +22,7 @@
 extern "C" {
 #endif
 
-#define AP_SEED_ROWS_MAX 33 /* AP_CONTENT_MAX_PACKAGES plus Cortex Vortex */
+#define AP_SEED_ROWS_MAX 133 /* AP_CONTENT_MAX_PACKAGES plus Cortex Vortex */
 #define AP_SEED_TEXT_MAX 129
 #define AP_SEED_ID_MAX 65
 /* The largest track file the Saphi downloader accepts (kTrackFileMax). A room

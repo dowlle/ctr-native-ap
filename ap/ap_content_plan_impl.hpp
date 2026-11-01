@@ -822,9 +822,8 @@ static void validate(const J &p, State &out) {
     for (const auto &row : named_table) reserved_titles.insert(fold(row.second.name));
     reserved_titles.insert(fold(registry["cortex_vortex"]["name"].get<std::string>()));
     const auto packages = table(p.at("packages"), AP_CONTENT_MAX_PACKAGES);
-    // Cups (#133 PR 5) add tracks raced only as legs: at most every retail
-    // race track, every package and Cortex Vortex.
-    const auto tracks = table(p.at("tracks"), 64);
+    // Cups (#133 PR 5) add tracks raced only as legs.
+    const auto tracks = table(p.at("tracks"), AP_CONTENT_MAX_TRACKS);
     const auto entries = table(p.at("entries"), 33); // 27 pads and six boss encounters
     const auto pads = table(p.at("pads"), 32);
     const auto requirements = table(p.at("requirements"), 70); // 5 hub, 27 manual or stage-1, 27 stage-2, 6 boss

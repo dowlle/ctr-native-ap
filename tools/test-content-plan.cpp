@@ -290,6 +290,45 @@ int main(int argc, char **argv) {
         expect(ap_content_plan_package(1) && !ap_content_plan_package(2) && !ap_content_plan_package(AP_CONTENT_MAX_PACKAGES),
                "package lookup bounded by the plan");
     }
+    // 132 custom tracks per YAML: slots past 32 race on the
+    // race family v2 ids, and a plan holds more than the old 64 tracks.
+    J high;
+    std::ifstream("tools/fixtures/content-plan/custom-132.json") >> high;
+    expect(high["content_plan"]["tracks"].size() > 64 && high["content_plan"]["packages"].size() > 32,
+           "the fixture is past the old limits");
+    expect(parse(high) && bind_room(high, "seed-132") && ap_content_plan_active(), "a plan past the old limits binds");
+    {
+        int top = 0, leg_top = 0;
+        for (int id = 0; id <= 110; ++id) {
+            const auto *p = ap_content_plan_pad(id);
+            if (!p || !p->occupied) continue;
+            for (int l = 0; p->cup && l < AP_CONTENT_CUP_LEGS; ++l) {
+                const auto &leg = p->legs[l];
+                if (leg.package_index < 0 || leg.named_block >= 0) continue;
+                leg_top = std::max(leg_top, leg.custom_slot);
+                if (leg.custom_slot > 32)
+                    expect(ap_content_plan_package(leg.package_index) != nullptr, "a high slot leg names its package");
+                expect(leg.lap == 0 || leg.lap == 35028100 + leg.custom_slot - 1, "a generic leg uses its slot's lap code");
+            }
+            if (p->retail_id >= 0 || p->cup || p->cortex || p->package_index < 0 || p->named_block >= 0) continue;
+            top = std::max(top, p->custom_slot);
+            if (p->custom_slot > 32)
+                expect(p->trophy_location == 35019000 + 6 * (p->custom_slot - 1), "a high slot pad uses race family v2");
+        }
+        expect(std::max(top, leg_top) == 132, "the fixture races the last slot");
+        expect(!ap_content_plan_package(AP_CONTENT_MAX_PACKAGES), "package lookup bounded at 132");
+    }
+    {
+        J bad = high;
+        for (auto &t : bad["content_plan"]["tracks"])
+            if (t.contains("custom_slot") && t["custom_slot"] == 132) t["custom_slot"] = 133;
+        refuse(bad, "a slot past 132");
+        bad = high;
+        J &packages = bad["content_plan"]["packages"];
+        const J first = packages[0];
+        while (packages.size() <= AP_CONTENT_MAX_PACKAGES) packages.push_back(first);
+        refuse(bad, "more than 132 packages");
+    }
     mutations(open, open, J::json_pointer(""));
     auto package_refuses = [&](const std::string &why, const std::function<void(J &)> &change) {
         J bad = open; change(bad["content_plan"]["packages"]); refuse(bad, "open package: " + why);

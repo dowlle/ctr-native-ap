@@ -136,7 +136,10 @@ typedef struct ctr_content_pad {
 /* Open admission (#133 PR 2): any complete descriptor, not only compiled
  * revisions. Bytes are located and verified on load, and a claimed capability
  * the bytes do not have refuses the package (ap_content_capability.h). */
-#define AP_CONTENT_MAX_PACKAGES 32
+#define AP_CONTENT_MAX_PACKAGES 132
+/* Every retail race track, every package and Cortex Vortex (cups add tracks
+ * raced only as legs). */
+#define AP_CONTENT_MAX_TRACKS (18 + AP_CONTENT_MAX_PACKAGES + 1)
 /* Descriptor capability flags (worlds/ctr/custom_packages.py CAPABILITIES). */
 #define AP_CONTENT_CAP_TIME_TRIAL 0x01u
 #define AP_CONTENT_CAP_ARCADE 0x02u

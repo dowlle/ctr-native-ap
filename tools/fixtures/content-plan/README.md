@@ -209,3 +209,9 @@ Decision 7 (2026-10-28, J11): boss encounters never repeat and `bosses.repeats`
 is always false on both sides. `bosses-custom.json`, emitted before that
 ruling with `repeats: true` (its four garage venues were already distinct),
 was edited by hand to `repeats: false`. Nothing else in it changed.
+
+132 custom tracks: `custom-132.json` is slot data the paired
+apworld emitted (`worlds/ctr/test/test_custom_tracks_132.py`, `many_cups`) from
+132 made-up packages and 27 cups, at the seed of the first 40 with the most
+tracks that races slot 132. It is past both old limits, 32 packages and 64
+tracks, and its pins name no real files.

@@ -90,6 +90,8 @@ int AP_SeedContentRows(struct AP_SeedContentRow *rows, int max)
 	return n;
 }
 
+_Static_assert(AP_SEED_ROWS_MAX == AP_CONTENT_MAX_PACKAGES + 1, "one row per package, plus Cortex Vortex");
+
 static struct
 {
 	int active, waiting, count, at, installed;
