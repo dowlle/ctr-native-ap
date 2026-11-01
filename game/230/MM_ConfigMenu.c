@@ -1560,8 +1560,10 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 #ifdef CTR_AP
 			if (e == NULL)
 				AP_LinkRegAction(); // Room links: use this client for ctr-ap:// links, or stop
-			else if (Config_RowLockedBySeed(e) || Config_RowLockedBySolo(e))
-				; // the seed has item box colours off, or solo has DeathLink off: nothing to toggle
+			else if (Config_RowLockedBySeed(e))
+				; // the seed has item box colours off: nothing to toggle
+			else if (Config_RowLockedBySolo(e))
+				; // no DeathLink in a solo session: nothing to toggle
 			else
 #endif
 			if (e->type == CFG_BOOL)
