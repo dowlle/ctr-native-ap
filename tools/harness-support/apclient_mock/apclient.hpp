@@ -82,6 +82,8 @@ public:
 		int status_update = 0;
 		int bounce = 0;
 		int connect_slot = 0;
+		std::vector<std::string> last_tags;
+		std::vector<std::string> bounce_tags;
 		std::vector<long long> checked_codes;
 		std::vector<std::string> set_keys;
 		std::vector<std::string> get_keys;
@@ -89,6 +91,8 @@ public:
 		{
 			location_checks = location_scouts = data_set = data_get = 0;
 			set_notify = connect_update = status_update = bounce = connect_slot = 0;
+			last_tags.clear();
+			bounce_tags.clear();
 			checked_codes.clear();
 			set_keys.clear();
 			get_keys.clear();
@@ -129,7 +133,7 @@ public:
 		calls.connect_slot++;
 		state_ = State::SLOT_CONNECTED;
 	}
-	void ConnectUpdate(bool, int, bool, std::vector<std::string>) { calls.connect_update++; }
+	void ConnectUpdate(bool, int, bool, std::vector<std::string> tags) { calls.connect_update++; calls.last_tags = tags; }
 	void LocationChecks(std::list<int64_t> codes)
 	{
 		calls.location_checks++;
@@ -161,7 +165,7 @@ public:
 		for (auto &k : keys)
 			calls.get_keys.push_back(k);
 	}
-	void Bounce(nlohmann::json, std::vector<int>, std::vector<int>, std::vector<std::string>) { calls.bounce++; }
+	void Bounce(nlohmann::json, std::vector<int>, std::vector<int>, std::vector<std::string> tags) { calls.bounce++; calls.bounce_tags = tags; }
 
 	// ── inbound state ──
 	State get_state() const { return state_; }

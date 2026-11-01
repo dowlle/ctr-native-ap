@@ -109,6 +109,7 @@ tools/test-navrec-label.c
 tools/test-navrec.c
 tools/test-net-admission.cpp
 tools/test-net-planless-refusal.cpp
+tools/test-solo-deathlink.cpp
 tools/test-options-pages.c
 tools/test-oxide-cutscene.c
 tools/test-oxide-encounter.c
@@ -160,6 +161,7 @@ tools/test-seed-content.c
 tools/test-seed-content-download-production.py
 tools/test-seed-content-hooks-production.py
 tools/test-slide-coliseum-gate-seedcfg.cpp
+tools/test-solo-logic.cpp
 tools/test-spu-memory.c
 tools/test-stat-ladder.c
 tools/test-stat-select.c

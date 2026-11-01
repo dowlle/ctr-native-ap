@@ -220,10 +220,20 @@ and upload steps are scoped to a complete two-platform release in section 7.
 - [ ] Confirm the assembly output contains `manifest.json` with a trailing
       newline and exactly the two client archive names above.
 - [ ] The preparation workflow already ran
-      `python3 tools/verify-release.py release --version vX.Y.Z --pre-sign` on
+      `python3 tools/verify-release.py release --version vX.Y.Z --pre-sign --require-solo-runtime` on
       the twelve-file unsigned assembly. Run it again yourself if you assembled
       by hand. `--pre-sign` verifies the archive hashes and the standard
       sidecars without a signature and prints that it is not a signed release.
+      `--require-solo-runtime` checks that both client archives carry
+      `solo-runtime/RUNTIME.txt`, the interpreter, and a `ctr.apworld` equal to
+      the standalone asset.
+- [ ] Solo runtime (#89): the preparation workflow builds `solo-runtime/` for
+      each platform with `tools/solo/build-runtime.py` from the exact
+      `ctr.apworld` and the pins in `tools/solo/runtime-lock.json`, and the
+      assembler puts it inside both client archives, so the signed manifest
+      covers it. Before the tag, add both new archives to the VirusTotal and
+      Microsoft false-positive routine. Change the Archipelago core or the
+      interpreter pin only in its own PR, with a full fuzz run on that core.
 
 ## 5. Tag
 

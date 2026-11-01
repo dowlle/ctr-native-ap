@@ -30,6 +30,7 @@
 #include "ap_win_logic.h" // AP_WinStakesIdentHash: full-name identity for the race stakes latch
 #include "ap_deathlink_inbox.h" // inbound DeathLink bounces until the game thread drains them
 #include "ap_stat_select_logic.h" // AP_StatSel_ValueOk: the stored rank selection bound
+#include "ap_solo_logic.hpp" // #89 solo check journal parse and resend set
 
 static APDoorHistory g_doors;
 static unsigned g_doors_sent = 0;
@@ -195,6 +196,11 @@ static std::string           g_room_endpoint;
 // teardown to after g_ap->poll() returns -- deleting g_ap from inside its own
 // slot-connected callback is unsafe.
 static bool                  g_rejected = false;
+static void ap_solo_journal_resend(const std::string &seed); // #89, defined below
+static std::string g_solo_journal_path; // #89 solo check journal (see ap_net_set_check_journal)
+static int (*g_solo_session)(void) = nullptr; // #89 is a solo session running: no DeathLink on the wire
+static bool ap_net_in_solo_session(void) { return g_solo_session && g_solo_session(); }
+static std::string g_solo_journal_seed;
 static bool                  g_reject_stop_pending = false;
 
 // "ws://host:port/path" -> "host". The connection menu's uri row already carries
@@ -879,6 +885,14 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		}
 	});
 	g_ap->set_room_info_handler([]() {
+		// #89: a solo session expects its own room. A listener that answers
+		// with another seed never gets the slot name or the session password;
+		// ap_solo.cpp sees the seed mismatch and ends the session.
+		if (!g_solo_journal_seed.empty() && g_ap->get_seed() != g_solo_journal_seed)
+		{
+			AP_LogLine("[AP NET] solo: RoomInfo is for another seed; not connecting the slot\n");
+			return;
+		}
 		std::fprintf(stderr, "[AP NET] RoomInfo; connecting slot '%s'\n", g_slot.c_str());
 		// items_handling 0b111 = remote items + own world + starting inventory.
 		g_ap->ConnectSlot(g_slot, g_password, 7, {"AP"}, APClient::Version{0, 6, 7});
@@ -1086,6 +1100,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			    return g_locs_chk.count(code) != 0;
 		    },
 		    [](int64_t code) { return ap_net_try_send_location(code); });
+		ap_solo_journal_resend(connectedSeed);
 		if (heldFlush.discarded != 0)
 		{
 			char line[96];
@@ -1362,8 +1377,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	// DeathLink tag, ignores our own death echoed back by the server (we carry the
 	// tag too), and adds the death to the inbox the game thread drains each frame.
 	g_ap->set_bounced_handler([](const nlohmann::json &packet) {
-		if (g_rejected)
-			return; // a refused seed's DeathLink bounce must not latch
+		if (g_rejected || ap_net_in_solo_session())
+			return; // a refused seed's DeathLink bounce must not latch; a solo session has none
 		if (!packet.contains("tags") || !packet["tags"].is_array())
 			return;
 		bool isDeath = false;
@@ -1587,6 +1602,99 @@ extern "C" int ap_net_is_connected(void)
 	return (g_ap->get_state() == APClient::State::SLOT_CONNECTED) ? 1 : 0;
 }
 
+// #89 solo mode: while a solo session runs, every check is appended to the
+// room's checks.journal before it is sent, and every journalled check the
+// server still lists as missing is sent again on each slot-connect. The solo
+// server saves after each check batch; this covers a save lost to a crash.
+// Location checks are idempotent, so a resend never duplicates anything.
+extern "C" void ap_net_set_check_journal(const char *path, const char *seed)
+{
+	g_solo_journal_path = path ? path : "";
+	g_solo_journal_seed = seed ? seed : "";
+}
+
+// UTF-8 path on every platform (the client folder may hold any characters).
+static FILE *ap_solo_open_utf8(const std::string &path, const wchar_t *wmode, const char *mode)
+{
+#ifdef _WIN32
+	int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path.c_str(), -1, nullptr, 0);
+	if (n <= 0)
+		return nullptr;
+	std::wstring wide((size_t)n, L'\0');
+	MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path.c_str(), -1, &wide[0], n);
+	return _wfopen(wide.c_str(), wmode);
+#else
+	(void)wmode;
+	return std::fopen(path.c_str(), mode);
+#endif
+}
+
+static void ap_solo_journal_append(int64_t code)
+{
+	if (g_solo_journal_path.empty())
+		return;
+	// Only checks of the solo room: before the first slot-connect the seed is
+	// unknown, and such a check is held for this session anyway.
+	if (g_ap && !g_ap->get_seed().empty() && g_ap->get_seed() != g_solo_journal_seed)
+		return;
+	// The check is still sent when the journal cannot be written: the solo
+	// server saves after every check batch, and refusing the check would lose
+	// it for certain. The failure is logged.
+	const std::string record = AP_SoloJournalRecord(code);
+	bool ok = false;
+	for (int attempt = 0; attempt < 2 && !ok; attempt++)
+	{
+		FILE *f = ap_solo_open_utf8(g_solo_journal_path, L"a+b", "a+b");
+		if (!f)
+			continue;
+		// A torn last line from a crash gets its own line ending first, so
+		// this record starts on a clean line (the torn one is skipped).
+		bool clean = true;
+		if (std::fseek(f, -1, SEEK_END) == 0)
+			clean = std::fgetc(f) == '\n';
+		std::fseek(f, 0, SEEK_END);
+		ok = (clean || std::fputc('\n', f) != EOF);
+		ok = ok && std::fwrite(record.data(), 1, record.size(), f) == record.size();
+		ok = (std::fflush(f) == 0) && ok;
+		ok = (std::fclose(f) == 0) && ok;
+	}
+	if (!ok)
+	{
+		char line[128];
+		std::snprintf(line, sizeof line, "[AP NET] solo journal: could not record check %lld\n", (long long)code);
+		AP_LogLine(line);
+	}
+}
+
+static void ap_solo_journal_resend(const std::string &seed)
+{
+	if (g_solo_journal_path.empty() || seed != g_solo_journal_seed || !g_ap)
+		return;
+	FILE *f = ap_solo_open_utf8(g_solo_journal_path, L"rb", "rb");
+	if (!f)
+		return;
+	std::string text;
+	char chunk[4096];
+	size_t n;
+	while ((n = std::fread(chunk, 1, sizeof chunk, f)) > 0)
+		text.append(chunk, n);
+	std::fclose(f);
+	std::set<int64_t> missing = g_ap->get_missing_locations();
+	ap_locs_refresh();
+	std::vector<int64_t> resend = AP_SoloResendSet(AP_SoloJournalParse(text), g_locs_chk, missing);
+	if (resend.empty())
+		return;
+	AP_NET_GUARD("solo_journal_resend", {
+		g_ap->LocationChecks(std::list<int64_t>(resend.begin(), resend.end()));
+		ap_locs_invalidate();
+		for (int64_t code : resend)
+			g_pending_checks.insert(code); // #85: in flight until its receipt drains
+	});
+	char line[96];
+	std::snprintf(line, sizeof line, "[AP NET] solo journal: resent %d check(s)\n", (int)resend.size());
+	AP_LogLine(line);
+}
+
 static bool ap_net_try_send_location(int64_t code)
 {
 	if (!(g_ap && g_connected))
@@ -1612,6 +1720,7 @@ extern "C" void ap_net_send_location(long long location_code)
 	// reconnect.
 	if (g_rejected)
 		return;
+	ap_solo_journal_append(code);
 	if (ap_net_try_send_location(code))
 		return;
 	if (g_ap && g_connected)
@@ -2449,6 +2558,14 @@ extern "C" int ap_net_item_text(long long item_id, int sender_slot, char *item_b
 
 // ── DeathLink (issue #6) ──
 
+// A Play Solo session has no other players, whatever the room says: no tag, no
+// death sent, none taken in. A call rather than a copied flag, so a session that
+// ends in the same frame as the next connection leaves nothing stale behind.
+extern "C" void ap_net_set_solo_session_query(int (*active)(void))
+{
+	g_solo_session = active;
+}
+
 // Add the "DeathLink" connection tag on top of the base "AP" tag so the server
 // relays deaths to us. ConnectUpdate replaces the whole tag set, so both tags are
 // re-declared; items_handling is left unchanged (send_items_handling = false).
@@ -2509,6 +2626,8 @@ extern "C" int ap_net_identity_hash(unsigned long long *out)
 
 extern "C" void ap_net_deathlink_enable(void)
 {
+	if (ap_net_in_solo_session())
+		return;
 	if (!g_ap)
 		return;
 	AP_NET_GUARD("deathlink_enable", {
@@ -2534,7 +2653,7 @@ extern "C" void ap_net_deathlink_disable(void)
 // "<player> <cause>" line. No-op unless slot-connected.
 extern "C" void ap_net_deathlink_send(const char *cause)
 {
-	if (!g_ap || !g_connected)
+	if (!g_ap || !g_connected || ap_net_in_solo_session())
 		return;
 	AP_NET_GUARD("deathlink_send", {
 		std::string slot = g_ap->get_slot();

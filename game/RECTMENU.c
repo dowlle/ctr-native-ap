@@ -439,12 +439,15 @@ static int RECTMENU_APReplayRow(const struct RectMenu *m, int row)
 #endif
 
 // Row label lookup. Retail reads sdata->lngStrings directly; AP rows that have
-// no retail string (the hub pause TRACKER row, AP_LNG_TRACKER) resolve here.
+// no retail string (the hub pause TRACKER row, AP_LNG_TRACKER, and the title
+// screen's PLAY SOLO row, AP_LNG_PLAY_SOLO) resolve here.
 static char *RECTMENU_RowString(int index)
 {
 #ifdef CTR_AP
 	if (index == AP_LNG_TRACKER)
 		return (char *)"TRACKER";
+	if (index == AP_LNG_PLAY_SOLO)
+		return (char *)"PLAY SOLO";
 	if (index == AP_LNG_WUMPA_SHOP)
 		return (char *)"WUMPA SHOP";
 #endif

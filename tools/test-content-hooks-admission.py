@@ -64,6 +64,14 @@ static ctr_content_package plan_package;
 static ctr_content_pad plan_pad;
 static int plan_has_package = 1;
 const ctr_content_package *ap_content_plan_package(int index) { return index == 0 && plan_has_package ? &plan_package : NULL; }
+const char *ap_content_plan_package_json(int index) { return index == 0 && plan_has_package ? "{}" : ""; }
+/* Play Solo keeps the descriptor of a verified package (#89). */
+static int solo_descriptors_kept;
+void AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, const char *json)
+{
+	(void)contentId; (void)revision; (void)json;
+	solo_descriptors_kept++;
+}
 const ctr_content_pad *ap_content_plan_pad(int physical) { return physical == plan_pad.physical ? &plan_pad : NULL; }
 uint64_t ap_content_plan_epoch(void) { return 7; }
 int AP_ContentPadOpen(const ctr_content_pad *pad) { return pad != NULL; }
@@ -169,6 +177,7 @@ int main(void)
 	plan_package.capabilities = AP_CONTENT_CAP_TIME_TRIAL | AP_CONTENT_CAP_ARCADE | AP_CONTENT_CAP_CTR_TOKENS;
 	reset_calls();
 	expect(preflight() && AP_ContentPadReady(3) && !ap_custom_content_required, "honest claim is Ready at connect");
+	expect(solo_descriptors_kept > 0, "a verified package's descriptor is kept for Play Solo");
 	expect(strcmp(ap_content_files[0].levPath, lev) == 0 && strcmp(ap_content_files[0].vrmPath, vrm) == 0,
 	       "open package located by digest under its track key");
 	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6, "honest claim enters on host level 6");
