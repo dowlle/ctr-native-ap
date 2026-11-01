@@ -24,8 +24,9 @@ and a CTR YAML file; see [Generating or hosting a multiworld](#generating-or-hos
 
 For a guided first setup, use the
 [CTR setup guide on AP-Pie](https://ap-pie.com/guides/ctr). To create a player
-file for stable 0.2.0, open the
-[0.2.0 CTR YAML Builder](https://ap-pie.com/yaml-builder/ctr?version=0.2.0).
+file, open the
+[AP-Pie CTR YAML Builder](https://ap-pie.com/yaml-builder/ctr) and pick the
+version that matches your client.
 
 **Choose your next step:** if your room is already generated, install the
 client and connect using the host's details. If the host is still collecting
@@ -270,9 +271,11 @@ presets give you a start: **Quick** (a short goal with few locks), **Standard**
 (the defaults) and **Full Adventure** (everything on, every location
 reachable). They are the same three that Play Solo offers.
 
-Old YAMLs: option names that 0.3.0 no longer has are ignored without a message,
-so a v0.2.x YAML still generates. Read it again before you rely on it, because
-the defaults changed. A room made with v0.2.x needs the v0.2.4 client; the 0.3.0
+Old YAMLs: option names that 0.3.0 no longer has are ignored without a message.
+That does not make a v0.2.x YAML safe to reuse: the defaults changed, and some
+old forms are refused (the `custom_tracks` mapping that put Baby T Park on the
+Purple Gem Cup, for one). Build a new YAML, or read the old one again before you
+rely on it. A room made with v0.2.x needs the v0.2.4 client; the 0.3.0
 client refuses it and says so. v0.2.4 stays downloadable on the
 [releases page](https://github.com/dowlle/ctr-native-ap/releases).
 

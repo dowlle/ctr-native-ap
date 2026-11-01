@@ -1117,6 +1117,57 @@ int CustomTrackManager_Preflight(const char *assetsRoot,
 	return state;
 }
 
+// The apworld admits a descriptor only inside its own limits
+// (worlds/ctr/custom_packages.py admit): a lowercase track key, a revision of
+// letters, digits and . _ + -, lowercase UUID and hashes, labels of 1 to 128
+// bytes, and files within the LEV and VRM size limits. Export refuses anything
+// outside them instead of writing a YAML the generator would refuse.
+static int Manager_IsLowerHex(const char *s, size_t n)
+{
+	size_t i;
+	if (s == NULL || strlen(s) != n)
+		return 0;
+	for (i = 0; i < n; i++)
+		if (!((s[i] >= '0' && s[i] <= '9') || (s[i] >= 'a' && s[i] <= 'f') || s[i] == '-'))
+			return 0;
+	return 1;
+}
+
+static int Manager_IsDescriptorKey(const char *s)
+{
+	size_t i, n = s ? strlen(s) : 0;
+	if (n == 0 || s[0] == '-' || s[n - 1] == '-')
+		return 0;
+	for (i = 0; i < n; i++)
+		if (s[i] == '-' && s[i + 1] == '-')
+			return 0;
+	return 1; // Manager_IsSafeId already limits the characters
+}
+
+static int Manager_IsDescriptorRevision(const char *s)
+{
+	size_t i, n = s ? strlen(s) : 0;
+	if (n == 0 || n > 64 || !((s[0] >= '0' && s[0] <= '9') || (s[0] >= 'a' && s[0] <= 'z') ||
+	                         (s[0] >= 'A' && s[0] <= 'Z')))
+		return 0;
+	for (i = 1; i < n; i++)
+		if (!((s[i] >= '0' && s[i] <= '9') || (s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z') ||
+		      s[i] == '.' || s[i] == '_' || s[i] == '+' || s[i] == '-'))
+			return 0;
+	return 1;
+}
+
+static int Manager_IsDescriptorExportable(const struct CustomTrackManagerPackage *package,
+	                                      const struct CustomTrackManagerStatus *status)
+{
+	return Manager_IsDescriptorKey(package->id) && Manager_IsDescriptorRevision(package->version) &&
+	       strlen("package/") + strlen(package->id) + 1 + strlen(package->version) <= 64 &&
+	       Manager_IsLowerHex(package->packageUuid, 36) && Manager_IsLowerHex(package->levSha256, 64) &&
+	       Manager_IsLowerHex(package->vrmSha256, 64) && strlen(package->title) <= 128 &&
+	       strlen(package->author) <= 128 && status->levBytes <= 16ul * 1024 * 1024 &&
+	       status->vrmBytes <= 4ul * 1024 * 1024;
+}
+
 int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *package,
 	                               const struct CustomTrackManagerStatus *status,
 	                               char *dst, size_t dstSize)
@@ -1125,7 +1176,8 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 	char receipt[NATIVE_SHA256_HEX_BYTES];
 
 	if (!Manager_PackageSupported(package) || status == NULL || status->state != CTR_CT_MANAGER_READY ||
-	    dst == NULL || dstSize == 0 || status->levBytes == 0 || status->vrmBytes == 0)
+	    dst == NULL || dstSize == 0 || status->levBytes == 0 || status->vrmBytes == 0 ||
+	    !Manager_IsDescriptorExportable(package, status))
 		return 0;
 	// Ready only describes the package that was scanned. Export must name the
 	// same bytes, so a Ready 1.0.2 status can never be written out as 1.0.0.
