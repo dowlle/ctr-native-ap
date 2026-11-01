@@ -226,6 +226,12 @@ static void test_offer(void)
 
 	reset_all();
 	fake_status = AP_UPD_OFFER;
+	frame(0);
+	g_config.updateCheck = false;
+	expect(frame(BTN_CROSS) == 0 && lines == 0 && downloads == 0, "update_check off hides an offer already found");
+
+	reset_all();
+	fake_status = AP_UPD_OFFER;
 	frame(BTN_CROSS);
 	expect(downloads == 1, "CROSS starts the download");
 	expect(frame(0) == 1 && shown("DOWNLOADING") && shown("50 percent"), "progress is shown");

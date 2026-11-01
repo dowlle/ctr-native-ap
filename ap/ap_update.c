@@ -211,6 +211,8 @@ int AP_UpdateMenuFrame(void)
 	case AP_UPD_OFFER:
 		if (soloBusy)
 			break; // the offer waits until Play Solo stops
+		if (!g_config.updateCheck)
+			break; // switched off after the check started
 		snprintf(title, sizeof title, "UPDATE %s AVAILABLE", tag);
 		snprintf(line, sizeof line, "You have %s.", CTR_AP_COMPAT_VERSION);
 		ap_upd_prompting = 1;
