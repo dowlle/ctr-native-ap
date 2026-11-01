@@ -1125,7 +1125,7 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 	char receipt[NATIVE_SHA256_HEX_BYTES];
 
 	if (!Manager_PackageSupported(package) || status == NULL || status->state != CTR_CT_MANAGER_READY ||
-	    dst == NULL || dstSize == 0)
+	    dst == NULL || dstSize == 0 || status->levBytes == 0 || status->vrmBytes == 0)
 		return 0;
 	// Ready only describes the package that was scanned. Export must name the
 	// same bytes, so a Ready 1.0.2 status can never be written out as 1.0.0.
@@ -1136,43 +1136,37 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 	    !NativeSha256_HexEquals(status->verifiedPackageSha256, receipt))
 		return 0;
 
+	// The 0.3.0 plan form: one complete package descriptor in a list, as the
+	// apworld's custom_tracks option admits it (worlds/ctr/custom_packages.py).
+	// The old mapping that put the track on the Purple Gem Cup is refused there.
+	// Every value is plain text, so double quotes need no escaping, and quoting
+	// keeps a revision such as 1.0 from reading as a number. The capabilities
+	// are the measured flags: arcade needs AI paths and two or more spawns,
+	// time_trial needs the restart points, and `checkpoints` and `ai_nav` are
+	// the boss venue facts. relic stays false: the manager holds no author
+	// target times, and a Relic Race cannot be listed without them.
 	wrote = snprintf(dst, dstSize,
 		"custom_tracks:\n"
-		"  %s:\n"
-		"    package_uuid: %s\n"
-		"    package_version: %s\n"
-		"    minimum_client_version: %s\n"
-		"    minimum_apworld_version: %s\n"
-		"    lev_sha256: %s\n"
-		"    vrm_sha256: %s\n"
-		"    navigation:\n"
-		"      uuid: %s\n"
-		"      revision: %u\n"
+		"  - id: \"package/%s/%s\"\n"
+		"    content_id: \"%s\"\n"
+		"    uuid: \"%s\"\n"
+		"    revision: \"%s\"\n"
+		"    display_name: \"%s\"\n"
+		"    author: \"%s\"\n"
 		"    laps: %d\n"
-		"    replaces: purple_gem_cup\n"
-		"    boxes: false\n"
-		"    flags:\n"
-		"      crates: %s\n"
-		"      ctr_letters: %s\n"
-		"      relic_crates: %s\n"
-		"      ai_nav: %s\n"
-		"      minimap: %s\n"
-		"      ghosts: %s\n"
-		"      wumpa_collectible: %s\n"
-		"      spawns: %d\n"
-		"      checkpoints: %d\n",
-		package->id, package->packageUuid, package->version,
-		package->minimumClientVersion, package->minimumApworldVersion,
-		package->levSha256, package->vrmSha256,
-		package->navigationUuid, package->navigationRevision, package->laps,
-		package->flagCrates ? "true" : "false",
+		"    capabilities: {time_trial: true, arcade: %s, relic: false, ctr_tokens: %s, wumpa: %s, "
+		"checkpoints: %d, ai_nav: %s}\n"
+		"    files:\n"
+		"      - {role: lev, sha256: \"%s\", bytes: %lu, format: ctr-lev, format_version: 1}\n"
+		"      - {role: vrm, sha256: \"%s\", bytes: %lu, format: ctr-vrm, format_version: 1}\n"
+		"    evidence: []\n",
+		package->id, package->version, package->id, package->packageUuid, package->version,
+		package->title, package->author, package->laps,
+		(package->flagAiNav && package->flagSpawns >= 2) ? "true" : "false",
 		package->flagCtrLetters ? "true" : "false",
-		package->flagRelicCrates ? "true" : "false",
-		package->flagAiNav ? "true" : "false",
-		package->flagMinimap ? "true" : "false",
-		package->flagGhosts ? "true" : "false",
 		package->flagWumpaCollectible ? "true" : "false",
-		package->flagSpawns, package->flagCheckpoints);
+		package->flagCheckpoints, package->flagAiNav ? "true" : "false",
+		package->levSha256, status->levBytes, package->vrmSha256, status->vrmBytes);
 
 	return wrote >= 0 && (size_t)wrote < dstSize;
 }

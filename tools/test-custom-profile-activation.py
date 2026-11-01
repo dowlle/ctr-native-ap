@@ -78,6 +78,7 @@ int main(void) {
   assert(AP_CustomContentSelectedPackage()==chosen);
   assert(CustomTrackPolicy_ParseNavUuid(chosen->navigationUuid,expected));
   ap_custom_content_status.state=CTR_CT_MANAGER_READY;
+  ap_custom_content_status.levBytes=2558168; ap_custom_content_status.vrmBytes=458808;
   snprintf(ap_custom_content_status.levPath,sizeof ap_custom_content_status.levPath,"profile%d.lev",i);
   snprintf(ap_custom_content_status.vrmPath,sizeof ap_custom_content_status.vrmPath,"profile%d.vrm",i);
   snprintf(ap_custom_content_status.actualLevSha256,sizeof ap_custom_content_status.actualLevSha256,"%s",chosen->levSha256);
