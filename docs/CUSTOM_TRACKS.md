@@ -41,9 +41,10 @@ Options > Track Library and the Arcade custom pages, Single Race only. Its
 Custom Content page and a room's tracks stay on the seed path; a library install
 never serves a room.
 
-An Arcade custom race in a room holds that room (`AP_ArcadeHoldsRoom`): no check
-or goal leaves, received items stay queued, and their effects wait until the
-race is left.
+An Arcade custom race in a room holds that room (`AP_ArcadeHoldsRoom`): nothing
+the race does sends a check or a goal, received items stay queued, and their
+effects and a reconnect's reset wait until the race is left. Checks earned before
+the race can still go out through their own resend paths.
 
 Linux, from a checkout:
 

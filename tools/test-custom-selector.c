@@ -219,13 +219,17 @@ static void generic_scenarios(const struct CustomTrackLibraryEntry *start)
     strcpy(textBuffer, "some auth"); tick(0);
     CHECK(s_arcadeLibrary.visibleCount == 1 && !strcmp(CustomTrackLibrary_Row(&s_arcadeLibrary, 0)->title, "Track 03"));
     CHECK(tick(BTN_LEFT) == 1 && s_arcadePage == 1); /* Typing never navigates. */
-    rawPad = RAW_BTN_CROSS; tick(0); rawPad = 0;
+    /* The Cross that commits is also a menu tap on that frame: it picks nothing. */
+    before = prepared;
+    rawPad = RAW_BTN_CROSS; tick(BTN_CROSS_one); rawPad = 0;
     CHECK(!s_arcadeSearching && !textActive && s_arcadeLibrary.visibleCount == 1);
+    CHECK(prepared == before && !s_arcadePrepareBusy);
     tick(0); CHECK(drawnHas("Ready\n"));
     tick(BTN_R2); strcpy(textBuffer, "7.7.7"); tick(0);
     CHECK(s_arcadeLibrary.visibleCount == 1 && !strcmp(CustomTrackLibrary_Row(&s_arcadeLibrary, 0)->title, "Track 04"));
-    rawPad = RAW_BTN_TRIANGLE; tick(0); rawPad = 0;
+    rawPad = RAW_BTN_TRIANGLE; tick(BTN_TRIANGLE); rawPad = 0;
     CHECK(!s_arcadeSearching && !strcmp(s_arcadeQuery, "some auth") && s_arcadeLibrary.visibleCount == 1);
+    CHECK(D230.trackSel_transitionState == IN_MENU); /* Its Triangle stays on the page. */
     tick(BTN_R2); strcpy(textBuffer, "nothing like it"); tick(0);
     rawPad = RAW_BTN_START; tick(0); rawPad = 0; tick(0);
     CHECK(s_arcadeLibrary.visibleCount == 0 && drawnHas("No search"));

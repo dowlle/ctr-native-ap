@@ -1,6 +1,6 @@
 """A custom Arcade race holds the room (Rulebook, Custom Arcade rule 4).
 
-Runs the production send functions against a stubbed socket, and pins the frame
+Runs the two send functions a race can reach against a stubbed socket, and pins the frame
 order that keeps received items and their effects out of the race. The race's
 own lifetime (a retry keeps it, leaving ends it at the load) is covered by
 test-custom-exit-window.c. No game, no server: only play can prove the race.
@@ -71,6 +71,6 @@ for effect in ('AP_WumpaTick', 'AP_UsefulTick', 'AP_TiziTick', 'AP_ReserveTopUpT
 
 tick = function((root / 'ap/ap_hooks_net.c').read_text(), 'static void AP_NetTick')
 hold = tick.index('if (AP_ArcadeHoldsRoom())')
-for later in ('AP_ReconcilePodiumFromTrophies', 'ap_net_drain_items', 'AP_FeedEndDrain'):
+for later in ('ap_net_take_recv_reset', 'AP_ReconcilePodiumFromTrophies', 'ap_net_drain_items', 'AP_FeedEndDrain'):
     assert hold < tick.index(later), later
 print('arcade room hold: ok')

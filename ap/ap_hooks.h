@@ -432,8 +432,9 @@ void AP_DrawCustomContentWarning(void);
 int AP_CustomOfflineLaunchAllowed(void);
 // A line for the start panel in a room, "" outside one.
 const char *AP_CustomOfflineRoomNote(void);
-// A custom Arcade race is running in this client. Nothing crosses to or from
-// the room: no check leaves, and received items stay queued until it ends.
+// A custom Arcade race is running in this client. Nothing it does reaches the
+// room, and received items stay queued until it ends. Checks earned before the
+// race (held offline, a shop purchase) may still go out on their own paths.
 int AP_ArcadeHoldsRoom(void);
 #else
 #define AP_ArcadeHoldsRoom() 0

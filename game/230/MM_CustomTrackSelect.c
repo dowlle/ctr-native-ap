@@ -237,8 +237,10 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
         }
         s_arcadeGeneration = s_contentStoreGeneration;
     }
-    MM_CustomTrackSelect_SearchTick();
+    /* The frame that ends the entry belongs to it too: its Cross or Triangle
+       must not also pick a track or leave the page. */
     if (s_arcadeSearching) tapped = 0;
+    MM_CustomTrackSelect_SearchTick();
     pages = CustomTrackLibrary_PageCount(&s_arcadeLibrary) + 1;
     if (s_arcadePage >= pages) s_arcadePage = pages - 1;
     if (D230.trackSel_transitionState != IN_MENU || D230.trackSel_boolOpenLapBox ||
