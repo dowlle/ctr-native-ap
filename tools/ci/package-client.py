@@ -121,6 +121,11 @@ def main():
         companions += ('ap-config.example.txt',) if variant in ('ap', 'vanilla') else ()
         for file in companions:
             shutil.copy2(file, root / file)
+        if variant in ('ap', 'authoring', 'authoring-client'):
+            # The xdelta importer (player client and Track Manager) vendors
+            # xdelta3 (Apache 2.0) and utf8proc (MIT, Unicode data license).
+            shutil.copy2('vendor/xdelta3/LICENSE', root / 'LICENSE-xdelta3.txt')
+            shutil.copy2('vendor/utf8proc/LICENSE.md', root / 'LICENSE-utf8proc.md')
         if variant == 'authoring':
             shutil.copy2('docs/HELP_PLACE_BOXES.md', root / 'HELP-PLACE-BOXES.md')
         if variant == 'authoring-client':
@@ -129,13 +134,15 @@ def main():
         if variant in ('ap', 'authoring'):
             cortex = root / 'assets' / 'tracks' / 'cortex-vortex'
             cortex.mkdir(parents=True)
-            for file in ('CVortex Arcade All.lev', 'CVortex Arcade All.vrm'):
+            for file in ('CVortex Arcade All.lev', 'CVortex Arcade All.vrm', 'CVortex Arcade All.sca'):
                 source = Path('assets/tracks/cortex-vortex') / file
                 shutil.copy2(source, cortex / file)
             if digest(cortex / 'CVortex Arcade All.lev') != '4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13':
                 raise ValueError('Bundled Cortex Vortex LEV hash mismatch')
             if digest(cortex / 'CVortex Arcade All.vrm') != '4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d':
                 raise ValueError('Bundled Cortex Vortex VRM hash mismatch')
+            if digest(cortex / 'CVortex Arcade All.sca') != 'ddde81cf1be8042400c717edeeded0d8727e3bb8ba24f0100201708372ef8b1c':
+                raise ValueError('Bundled Cortex Vortex music hash mismatch')
         for file in (('support-bundle.bat', 'support-bundle.ps1') if platform == 'windows' else ('support-bundle.sh',)):
             shutil.copy2(file, root / file)
         (root / 'versions.txt').write_text(output('bash', 'tools/release-versions.sh'))

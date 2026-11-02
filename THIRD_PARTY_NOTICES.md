@@ -275,12 +275,13 @@ License (icon design): CC BY-NC 4.0.
 ## Cortex Vortex track (AP build only)
 
 Paths: `assets/tracks/cortex-vortex/CVortex Arcade All.lev`,
-`assets/tracks/cortex-vortex/CVortex Arcade All.vrm`
+`assets/tracks/cortex-vortex/CVortex Arcade All.vrm`,
+`assets/tracks/cortex-vortex/CVortex Arcade All.sca` (the track's music)
 
 Cortex Vortex was created by **Lockheart**. These exact author-supplied files
-are bundled for use as the N. Oxide Final Challenge venue with the author's
-permission. They are redistributed unchanged and are not relicensed by this
-project.
+are bundled for use as the N. Oxide Final Challenge venue, as a randomized
+track and for its own music, with the author's permission. They are
+redistributed unchanged and are not relicensed by this project.
 
 License: author permission for redistribution inside CTR AP for the described
 Final Challenge and randomized-track uses. No broader license is claimed.
@@ -288,6 +289,8 @@ Final Challenge and randomized-track uses. No broader license is claimed.
 LEV SHA-256: `4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13`
 
 VRM SHA-256: `4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d`
+
+SCA SHA-256: `ddde81cf1be8042400c717edeeded0d8727e3bb8ba24f0100201708372ef8b1c`
 
 ## CTR ModSDK Retro-Fueled mechanics and Blue Fire palette (AP build only)
 
@@ -382,3 +385,29 @@ freely, subject to the following restrictions:
 2. Altered source versions must be plainly marked as such, and must not be
    misrepresented as being the original software.
 3. This notice may not be removed or altered from any source distribution.
+
+## xdelta3 (AP build, box authoring build and authoring client)
+
+Source: <https://github.com/jmacd/xdelta>, branch `release3_1_apl`, commit
+`7508fd2a823443b1f0173ca361620f21d62a7d37` (xdelta 3.1.1).
+
+Vendored as an unmodified decode-only subset in `vendor/xdelta3/` for the xdelta
+track importer (Options > Custom Content > Import track files).
+
+License: Apache License 2.0. The full text is in `vendor/xdelta3/LICENSE` and
+ships as `LICENSE-xdelta3.txt` in the release folders that include the importer.
+
+Copyright 2016 Joshua MacDonald
+
+## utf8proc (AP build, box authoring build and authoring client)
+
+Source: utf8proc 2.8.0 (Unicode 15.0.0), vendored in `vendor/utf8proc/` and
+pinned by `vendor/utf8proc/SHA256SUMS`. Used for custom-track title checks and
+track folder names.
+
+License: MIT ("expat"), with the Unicode data files under the Unicode license.
+The full text is in `vendor/utf8proc/LICENSE.md` and ships as
+`LICENSE-utf8proc.md` in the release folders that include it.
+
+Copyright 2014-2021 Steven G. Johnson, Jiahao Chen, Tony Kelman, Jonas Fonseca
+and other contributors; Copyright 2009, 2013 Public Software Group e. V., Berlin.

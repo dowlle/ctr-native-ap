@@ -136,7 +136,10 @@ typedef struct ctr_content_pad {
 /* Open admission (#133 PR 2): any complete descriptor, not only compiled
  * revisions. Bytes are located and verified on load, and a claimed capability
  * the bytes do not have refuses the package (ap_content_capability.h). */
-#define AP_CONTENT_MAX_PACKAGES 32
+#define AP_CONTENT_MAX_PACKAGES 132
+/* Every retail race track, every package and Cortex Vortex (cups add tracks
+ * raced only as legs). */
+#define AP_CONTENT_MAX_TRACKS (18 + AP_CONTENT_MAX_PACKAGES + 1)
 /* Descriptor capability flags (worlds/ctr/custom_packages.py CAPABILITIES). */
 #define AP_CONTENT_CAP_TIME_TRIAL 0x01u
 #define AP_CONTENT_CAP_ARCADE 0x02u
@@ -179,6 +182,12 @@ typedef struct ctr_content_package {
      * stated value the bytes disagree with. With both a track may be a
      * boss venue under Boss Track Shuffle. */
     int checkpoints, ai_nav;
+    /* Optional `locator` (xdelta importer, 0.3.0): the xdelta patch and
+     * BIGFILE slot an imported track comes from, shown on Current Seed so
+     * the player knows which patch to import. Informational only. */
+    int locator_index;        /* -1 when the record names no patch */
+    char locator_sha256[65];  /* lowercase hex, "" when absent */
+    char locator_name[65];    /* printable ASCII file name, "" when absent */
 } ctr_content_package;
 #define AP_CONTENT_UNSTATED (-1)
 #define AP_CONTENT_WEAPON_CRATES_UNSTATED (-1)

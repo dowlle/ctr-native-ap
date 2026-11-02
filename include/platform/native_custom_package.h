@@ -8,6 +8,10 @@ extern "C" {
 #define CTR_PACKAGE_FILE_MAX 32
 /* Unicode 15.0.0, NFC, 1..160 codepoints, no category-C or edge whitespace. */
 int CustomPackage_ValidateTitle(const char *utf8, size_t size);
+/* NFKD, then only the ASCII bytes kept (Python's
+   unicodedata.normalize("NFKD", text).encode("ascii", "ignore")). Writes at
+   most size - 1 bytes and a terminator; returns 0 for text that is not UTF-8. */
+int CustomPackage_AsciiFold(const char *utf8, size_t length, char *out, size_t size);
 struct CustomPackageFile
 {
     char role[24];
@@ -115,6 +119,15 @@ struct CustomPackageLocalInfo
     unsigned int laps; /* Laps the package races, 0 when its race settings are invalid. */
     char arcadeReason[48], timeTrialReason[48]; /* Short menu text; "" when allowed. */
     char levSha256[65], vrmSha256[65]; /* With uuid and laps: the Time Trial records key. */
+    /* Capability flags measured on the installed bytes (xdelta importer design,
+       2026-10-15). relic: time crates, a pinned relic_targets sidecar and not
+       excluded by the pack descriptor. ctrChallenge: exactly one C, one T and
+       one R, not excluded. Reasons are short menu text, "" when allowed. */
+    int relic, ctrChallenge;
+    char relicReason[48], ctrChallengeReason[48];
+    /* Provenance of an imported package (metadata/xdelta-source.json). */
+    int xdelta, bigfileIndex;
+    char patchSha256[65];
 };
 struct CustomPackageStoreEntry
 {
