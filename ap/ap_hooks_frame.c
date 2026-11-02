@@ -381,7 +381,7 @@ static void AP_DumpState(struct GameTracker *gGT)
 			        "\"letters\": [%lld, %lld, %lld], \"letter_items\": [%lld, %lld, %lld], "
 			        "\"letters_received\": [%d, %d, %d], \"perfect\": %lld, \"cortex\": %d, "
 			        "\"cup\": %d, \"cup_sweep\": %lld, \"cup_legs\": [%lld, %lld, %lld, %lld], "
-			        "\"cup_leg_wumpa\": [%lld, %lld, %lld, %lld]}",
+			        "\"cup_leg_wumpa\": [%lld, %lld, %lld, %lld]",
 			        (long long)pad->rung_locations[0], (long long)pad->rung_locations[1],
 			        (long long)pad->rung_locations[2], (long long)pad->rung_locations[3],
 			        (long long)pad->rung_locations[4], (long long)pad->wumpa_location, pad->wumpa_modes,
@@ -401,6 +401,14 @@ static void AP_DumpState(struct GameTracker *gGT)
 			        // Row 10i: each leg's own Reach 10 Wumpa code (0 none).
 			        (long long)pad->legs[0].wumpa, (long long)pad->legs[1].wumpa,
 			        (long long)pad->legs[2].wumpa, (long long)pad->legs[3].wumpa);
+			// cup_only_podium_rungs: each leg's own rung codes (0 none).
+			AP_TextBufPuts(f, ", \"cup_leg_rungs\": [");
+			for (int leg = 0; leg < AP_CONTENT_CUP_LEGS; ++leg)
+				AP_TextBufPrintf(f, "%s[%lld, %lld, %lld, %lld, %lld]", leg ? ", " : "",
+				        (long long)pad->legs[leg].rungs[0], (long long)pad->legs[leg].rungs[1],
+				        (long long)pad->legs[leg].rungs[2], (long long)pad->legs[leg].rungs[3],
+				        (long long)pad->legs[leg].rungs[4]);
+			AP_TextBufPuts(f, "]}");
 			first = 0;
 		}
 		AP_TextBufPuts(f, "\n  ],\n");

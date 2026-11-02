@@ -26,6 +26,10 @@ typedef struct ctr_content_leg {
     int64_t victory;   /* `<Track>: Cup Leg Victory`, 0 when none */
     int64_t lap;       /* `<Track>: Complete One Lap` (#344), 0 when none */
     int64_t wumpa;     /* `<Track>: Reach 10 Wumpa` with per_track, 0 when none (row 10i) */
+    /* cup_only_podium_rungs (ruling of 2026-11-02): the podium rungs of a Gem Cup
+     * leg on a track with no pad of its own, in SLOT_ORDER, 0 when none. A
+     * leg on a track with a pad earns that pad's rungs instead. */
+    int64_t rungs[5];
     /* The physical pad of the standalone race on this track, or -1. Its boxes
      * and Wumpa check are the leg's too, for the cup's glow and state. */
     int track_pad;

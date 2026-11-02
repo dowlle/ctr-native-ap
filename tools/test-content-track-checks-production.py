@@ -85,9 +85,11 @@ static unsigned char ap_named_letter_received[(AP_NAMED_BLOCK_LIMIT * 3 + 7) / 8
 int ctr_cfg_active(void) { return active; }
 int ap_content_plan_active(void) { return planActive; }
 uint64_t ap_content_plan_epoch(void) { return planActive ? epoch : 0; }
-const ctr_content_pad *ap_content_plan_pad(int physical) { return planActive && pad.physical==physical ? &pad : NULL; }
 /* Row 10i: a running cup leg, a Gem Cup's or a garage's. */
 static ctr_content_pad cupPad; static int cupRunning, cupLeg;
+const ctr_content_pad *ap_content_plan_pad(int physical) {
+ return !planActive ? NULL : pad.physical==physical ? &pad : cupRunning && cupPad.physical==physical ? &cupPad : NULL;
+}
 const ctr_content_pad *AP_ContentCupPad(void) { return cupRunning ? &cupPad : NULL; }
 int AP_ContentCupLeg(void) { return cupRunning ? cupLeg : -1; }
 const ctr_content_checks *ap_content_plan_checks(void) { static const ctr_content_checks none; return planActive ? &families : &none; }
@@ -239,6 +241,19 @@ int main(void) {
  cup_leg(CC,35016104,1); assert(AP_StandaloneWumpaCode()==35016104 && AP_StandalonePodiumTrack()==-1); cases++;
  cup_leg(CC,35016104,0); memset(pad.rung_locations,0,sizeof pad.rung_locations); pad.modes[0]=AP_CONTENT_MODE_RELIC;
  pad.mode_count=1; assert(AP_StandalonePodiumTrack()==-1); cases++; /* a pad without a Trophy Race has no rungs */
+ /* cup_only_podium_rungs: a Gem Cup leg on a track with no pad sends the
+  * leg's own rungs by finishing place, and held rungs live; a garage's leg
+  * sends none. */
+ cup_leg(-1,0,0); cupPad.legs[2].rungs[0]=35015108; cupPad.legs[2].rungs[3]=35015111; cupPad.legs[2].rungs[4]=35015112;
+ assert(AP_StandalonePodiumTrack()==AP_CONTENT_LEG_PODIUM_LOGICAL_BASE+101*AP_CONTENT_CUP_LEGS+2); cases++;
+ AP_SendPodiumChecks(AP_StandalonePodiumTrack(),4);
+ assert(sentCount==1 && sent(35015112)); cases++; /* fourth place: finish any only */
+ AP_SendPodiumChecks(AP_StandalonePodiumTrack(),1);
+ assert(sentCount==3 && sent(35015108) && sent(35015111)); cases++;
+ cup_leg(-1,0,0); cupPad.legs[2].rungs[0]=35015108; AP_SendHeldChecks(AP_StandalonePodiumTrack(),1);
+ assert(sentCount==1 && sent(35015108)); cases++;
+ cup_leg(-1,0,1); cupPad.legs[2].rungs[0]=35015108; assert(AP_StandalonePodiumTrack()==-1); cases++;
+ cup_leg(-1,0,0); assert(AP_StandalonePodiumTrack()==-1); cases++; /* option off: no leg rungs */
  /* Letters, Lettersanity off: the retail rule on the host level. */
  reset(AP_CONTENT_MODE_CTR,1);
  assert(AP_LetterAvailable(3,1) && AP_LetterLocation(3,0)==-1 && AP_LettersRequiredCount(3)==3 &&

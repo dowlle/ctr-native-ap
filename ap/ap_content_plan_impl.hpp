@@ -1907,8 +1907,39 @@ static void validate(const J &p, State &out) {
     // order. Reach 10 Wumpa takes every cup leg and boss race on a track that
     // can reach ten fruit, and a track no pad reaches takes its check here.
     // The rungs of a track with a Trophy Race take its cup legs, never a boss
-    // race; a track raced only in cups has no rungs.
+    // race. A track raced only in Gem Cup legs has no rungs, unless
+    // cup_only_podium_rungs is on (ruling of 2026-11-02): then it takes the seed's
+    // rungs, routed from those legs only. The plan carries no flag for it: a
+    // podium check whose routes are all cup leg routes is the option on
+    // (apworld content_race_routes.cup_only_on).
     {
+        bool cup_only_rungs = false;
+        if (fam.podium && p["checks"].is_array())
+            for (const auto &c : p["checks"]) {
+                if (!c.is_object() || !c.contains("kind") || c["kind"] != "podium" || !c.contains("routes") ||
+                    !c["routes"].is_array() || c["routes"].empty())
+                    continue;
+                bool all_legs = true;
+                for (const auto &r : c["routes"])
+                    all_legs = all_legs && r.is_object() && r.contains("leg_id") && !r["leg_id"].is_null();
+                cup_only_rungs = cup_only_rungs || all_legs;
+            }
+        // A plan track's five rung codes in SLOT_ORDER: retail rows, the
+        // named block's offsets, or the generic slot's family.
+        auto rung_codes = [&](const std::string &track_id, int64_t codes[5]) {
+            const J &track = *tracks.at(track_id);
+            if (track.at("origin") == "retail" || track.at("origin") == "cortex_vortex") {
+                const J &row = track.at("origin") == "cortex_vortex" ? registry["cortex_vortex"]
+                                                                     : registry["retail"][number(track["retail_id"], 0, 17)];
+                for (int k = 0; k < 5; ++k) codes[k] = row["podium"][k].get<int64_t>();
+            } else if (track.contains("named_block")) {
+                const int block = number(track["named_block"], 0, AP_NAMED_BLOCK_LIMIT - 1);
+                for (int k = 0; k < 5; ++k) codes[k] = ap_named_location_code(block, AP_NAMED_OFF_HELD_1ST + k);
+            } else {
+                const int s = number(track["custom_slot"], 1, AP_CONTENT_MAX_PACKAGES) - 1;
+                for (int k = 0; k < 5; ++k) codes[k] = registry["custom_podium_locations"][s][k].get<int64_t>();
+            }
+        };
         std::map<std::string, size_t> entry_order;
         for (size_t i = 0; i < p["entries"].size(); ++i) entry_order[p["entries"][i].at("id").get<std::string>()] = i;
         std::stable_sort(wumpa_uses.begin(), wumpa_uses.end(), [&](const RaceUse &a, const RaceUse &b) {
@@ -1920,9 +1951,11 @@ static void validate(const J &p, State &out) {
             return J{{"entry_id", entry}, {"mode", mode}, {"leg_id", leg.empty() ? J(nullptr) : J(leg)},
                      {"encounter_id", encounter.empty() ? J(nullptr) : J(encounter)}, {"own_pad_id", pad}, {"award", award}};
         };
-        for (const auto &use : rung_uses)
+        for (const auto &use : rung_uses) {
+            bool own_pad = false;
             for (const auto &pad : out.pads) {
                 if (!pad.occupied || pad.cup || pad.crystal || use.track != pad.track_id) continue;
+                own_pad = true;
                 for (int r = 0; r < 5; ++r) {
                     if (!pad.rung_locations[r]) continue;
                     const auto it = expected_checks.find(pad.rung_locations[r]);
@@ -1930,6 +1963,31 @@ static void validate(const J &p, State &out) {
                     it->second["routes"].push_back(leg_route(use.entry, "cup", use.leg, "", use.pad, rung_keys[r]));
                 }
             }
+            if (own_pad || !cup_only_rungs) continue;
+            // A track raced only in Gem Cup legs: its rungs, created at its
+            // first leg, and the leg's own codes for the runtime.
+            int64_t codes[5] = {};
+            rung_codes(use.track, codes);
+            const J &track = *tracks.at(use.track);
+            const std::string title = text(track.contains("room_title") ? track["room_title"] : track.at("display_name"), false);
+            ctr_content_leg *leg = nullptr;
+            for (auto &cup : out.pads)
+                if (cup.occupied && cup.cup && use.entry == cup.entry_id)
+                    for (int n = 0; n < AP_CONTENT_CUP_LEGS; ++n)
+                        if (use.leg == cup.legs[n].leg_id) leg = &cup.legs[n];
+            need(leg != nullptr, "a cup leg rung route names no leg");
+            for (int r = 0; r < 5; ++r) {
+                if (!(fam.podium & (1 << r))) continue;
+                auto it = expected_checks.find(codes[r]);
+                if (it == expected_checks.end())
+                    it = expected_checks.emplace(codes[r], J{{"location", codes[r]}, {"owner", use.track}, {"kind", "podium"},
+                                                             {"display_name", title + ": " + rung_suffixes[r]},
+                                                             {"routes", J::array()}}).first;
+                need(it->second["kind"] == "podium" && it->second["owner"] == use.track, "a track's rung has two codes");
+                it->second["routes"].push_back(leg_route(use.entry, "cup", use.leg, "", use.pad, rung_keys[r]));
+                leg->rungs[r] = codes[r];
+            }
+        }
         for (const auto &use : wumpa_uses) {
             auto it = expected_checks.find(use.code);
             if (it == expected_checks.end())

@@ -388,6 +388,11 @@ static long AP_LookupLocationCode(int globalBit)
             const int64_t code = ap_content_cup_wumpa_bit_code(ap_content_plan_pad(contentPad), contentTier);
             return code > 0 && code <= 2147483647 ? (long)code : -1;
         }
+        // A Gem Cup leg's own podium rungs (cup_only_podium_rungs).
+        if (ap_content_cup_rung_bit_decode(globalBit, &contentPad, &contentTier)) {
+            const int64_t code = ap_content_cup_rung_bit_code(ap_content_plan_pad(contentPad), contentTier);
+            return code > 0 && code <= 2147483647 ? (long)code : -1;
+        }
         if (ap_content_cup_bit_decode(globalBit, &contentPad, &contentTier)) {
             const int64_t code = ap_content_cup_bit_code(ap_content_plan_pad(contentPad), contentTier);
             return code > 0 ? (long)code : -1;

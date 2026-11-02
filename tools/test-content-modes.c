@@ -69,6 +69,22 @@ static void cup_track_checks_case(void)
     checked_count = 0;
     checked_codes[checked_count++] = 35016104;
     expect(ap_content_cup_wumpa_code(&cup, cup_lookup, checked) == 35016107, "the tracker shows the cup-only track's open check");
+    /* cup_only_podium_rungs: the cup-only track's own rungs, on its leg's bits. */
+    cup.legs[1].rungs[0] = 35015108; cup.legs[1].rungs[4] = 35015112;
+    n = ap_content_cup_track_checks(&cup, cup_lookup, rows);
+    for (k = 0, rung = 0; k < n; ++k)
+        rung += (rows[k].code == 35015108 && rows[k].bit == AP_CONTENT_BIT_CUP_RUNG + 101 * 20 + 1 * 5 + 0) ||
+                (rows[k].code == 35015112 && rows[k].bit == AP_CONTENT_BIT_CUP_RUNG + 101 * 20 + 1 * 5 + 4);
+    expect(n == 6 && rung == 2, "a cup lists a cup-only track's own rungs");
+    {
+        int physical, slot;
+        expect(ap_content_cup_rung_bit_decode(AP_CONTENT_BIT_CUP_RUNG + 101 * 20 + 1 * 5 + 4, &physical, &slot) &&
+               physical == 101 && slot == 9 && ap_content_cup_rung_bit_code(&cup, slot) == 35015112 &&
+               ap_content_cup_rung_bit_code(&cup, 6) == -1, "leg rung bit round trip");
+        expect(!ap_content_cup_rung_bit_decode(AP_CONTENT_BIT_CUP_WUMPA + 101 * 4 + 1, &physical, &slot) &&
+               AP_CONTENT_BIT_CUP_WUMPA + 111 * AP_CONTENT_CUP_LAP_STRIDE <= AP_CONTENT_BIT_CUP_RUNG,
+               "leg rung bits follow the leg Wumpa bits");
+    }
     cup.physical = AP_CONTENT_GARAGE_CUP_PAD;
     n = ap_content_cup_track_checks(&cup, cup_lookup, rows);
     expect(n == 1 && rows[0].code == 35016104, "a garage cup shows no rung and no leg bit");

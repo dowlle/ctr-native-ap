@@ -506,7 +506,9 @@ static const ctr_content_pad *AP_StandaloneRoutePad(const struct CustomTrackRace
 // Trophy Race on its pad's route (#133 PR 3b, AP_RetailPodiumTrack), or the
 // CTR Challenge of a ctr_first entry (J11, decision 14), whose finishing
 // place earns the rungs. A Gem Cup leg (row 10i) earns the rungs of its
-// track's own pad, when that pad has them; a boss cup leg earns none.
+// track's own pad, when that pad has them; on a track with no pad of its own,
+// the leg's own rungs (cup_only_podium_rungs, ruling of 2026-11-02). A boss cup leg
+// earns none.
 int AP_StandalonePodiumTrack(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -516,9 +518,16 @@ int AP_StandalonePodiumTrack(void)
 	{
 		const ctr_content_pad *cup = AP_ContentCupPad();
 		const int leg = AP_ContentCupLeg();
+		int k, own = 0;
 		if (!cup || cup->physical >= AP_CONTENT_GARAGE_CUP_PAD || IS_BOSS_RACE(gGT->gameMode1) ||
-		    leg < 0 || leg >= AP_CONTENT_CUP_LEGS || cup->legs[leg].track_pad < 0 ||
-		    !(pad = ap_content_plan_pad(cup->legs[leg].track_pad)) || !pad->occupied || pad->cup || pad->crystal ||
+		    leg < 0 || leg >= AP_CONTENT_CUP_LEGS)
+			return -1;
+		if (cup->legs[leg].track_pad < 0)
+		{
+			for (k = 0; k < 5; ++k) own |= cup->legs[leg].rungs[k] > 0;
+			return own ? AP_CONTENT_LEG_PODIUM_LOGICAL_BASE + cup->physical * AP_CONTENT_CUP_LEGS + leg : -1;
+		}
+		if (!(pad = ap_content_plan_pad(cup->legs[leg].track_pad)) || !pad->occupied || pad->cup || pad->crystal ||
 		    ap_content_rung_mode(pad) < 0)
 			return -1;
 		return AP_CONTENT_PODIUM_LOGICAL_BASE + cup->legs[leg].track_pad;
@@ -537,6 +546,23 @@ static int AP_ContentPodiumRungs(int track, ctr_podium_rungs *out)
 	const ctr_content_pad *pad;
 	long codes[5];
 	int k, any = 0;
+	// A Gem Cup leg's own rungs (cup_only_podium_rungs).
+	if (track >= AP_CONTENT_LEG_PODIUM_LOGICAL_BASE &&
+	    track < AP_CONTENT_LEG_PODIUM_LOGICAL_BASE + 111 * AP_CONTENT_CUP_LEGS)
+	{
+		const int leg = (track - AP_CONTENT_LEG_PODIUM_LOGICAL_BASE) % AP_CONTENT_CUP_LEGS;
+		pad = ap_content_plan_pad((track - AP_CONTENT_LEG_PODIUM_LOGICAL_BASE) / AP_CONTENT_CUP_LEGS);
+		if (!pad || !pad->occupied || !pad->cup || pad->physical >= AP_CONTENT_GARAGE_CUP_PAD)
+			return 0;
+		for (k = 0; k < 5; ++k)
+		{
+			codes[k] = pad->legs[leg].rungs[k] > 0 && pad->legs[leg].rungs[k] <= 2147483647 ? (long)pad->legs[leg].rungs[k] : -1;
+			any |= codes[k] > 0;
+		}
+		out->held_1st = codes[0]; out->held_3rd = codes[1]; out->held_5th = codes[2];
+		out->finish_podium = codes[3]; out->finish_any = codes[4];
+		return any;
+	}
 	if (track < AP_CONTENT_PODIUM_LOGICAL_BASE || track > AP_CONTENT_PODIUM_LOGICAL_BASE + 110)
 		return 0;
 	pad = ap_content_plan_pad(track - AP_CONTENT_PODIUM_LOGICAL_BASE);

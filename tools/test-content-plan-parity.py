@@ -2076,6 +2076,56 @@ alter("row10i Turbo Track as a Gem sum", r10_turbo_sum, r10_vanilla)
 def r10_garage_free(p):
     next(r for r in p["requirements"] if r["id"] == "boss:0")["predicate"] = dict(op="always")
 alter("row10i free vanilla garage with Trophies", r10_garage_free, r10_vanilla)
+# cup_only_podium_rungs (ruling of 2026-11-02): a track raced only in Gem Cup legs
+# takes the seed's rungs from those legs; no plan field, the routes say it.
+cup_rungs = []
+for seed in range(4):
+    o = {"cup_only_podium_rungs": True, "cup_count": [8, 10][seed % 2], "accessibility": "full",
+         "wumpa_check": ["off", "per_track"][seed % 2]}
+    if seed == 1:
+        o["progressive_boost"] = "shared_global"
+    if seed == 2:
+        o["podium_rungs"] = ["held_1st", "finish_any"]
+    world = make_world(o, seed=seed)
+    cup_rungs.append(world.fill_slot_data())
+    cases.append((f"cup-only-rungs-generated-{seed}", cup_rungs[-1], True))
+def cup_only_rungs(p):
+    own = {e["track_id"] for e in p["entries"] if e["kind"] == "track"}
+    return [c for c in p["checks"] if c["kind"] == "podium" and c["owner"] not in own]
+assert all(cup_only_rungs(v["content_plan"]) for v in cup_rungs)
+def cr_one_track_dropped(p):
+    gone = cup_only_rungs(p)[0]["owner"]
+    p["checks"] = [c for c in p["checks"] if not (c["kind"] == "podium" and c["owner"] == gone)]
+alter("cup-only rungs of one track dropped", cr_one_track_dropped, cup_rungs[0])
+def cr_one_rung_dropped(p):
+    gone = cup_only_rungs(p)[0]["location"]
+    p["checks"] = [c for c in p["checks"] if c["location"] != gone]
+alter("cup-only rung dropped", cr_one_rung_dropped, cup_rungs[0])
+def cr_leg_dropped(p):
+    c = next(c for c in cup_only_rungs(p) if len(c["routes"]) > 1)
+    c["routes"] = c["routes"][1:]
+alter("cup-only rung leg route dropped", cr_leg_dropped, cup_rungs[0])
+def cr_boss_route(p):
+    c = cup_only_rungs(p)[0]
+    e = p["encounters"][0]
+    c["routes"].append(dict(entry_id=e["entry_id"], mode="boss_race", leg_id=None, encounter_id=e["id"],
+                            own_pad_id=e["pad_id"], award=c["routes"][0]["award"]))
+alter("cup-only rung boss route added", cr_boss_route, cup_rungs[0])
+def cr_award(p):
+    c = cup_only_rungs(p)[0]
+    for r in c["routes"]:
+        r["award"] = "finish_any" if r["award"] != "finish_any" else "held_1st"
+alter("cup-only rung award swapped", cr_award, cup_rungs[2])
+def cr_extra_rung(p):
+    # A rung the seed's podium_rungs does not list.
+    c = copy.deepcopy(cup_only_rungs(p)[0])
+    c["location"] += 2
+    c["display_name"] = c["display_name"].rsplit(": ", 1)[0] + ": Held 5th"
+    for r in c["routes"]:
+        r["award"] = "held_5th"
+    p["checks"].insert(p["checks"].index(cup_only_rungs(p)[0]), c)
+alter("cup-only rung outside podium_rungs", cr_extra_rung, cup_rungs[2])
+assert not any(ok for name, _case, ok in cases if name.startswith("cup-only rung")), "a cup-only rung forgery validates"
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()
