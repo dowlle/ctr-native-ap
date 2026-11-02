@@ -80,6 +80,10 @@ static int s_oxideFinalVerified;
 #define CORTEX_SCA_MAX_BYTES (2u * 1024u * 1024u)
 static unsigned char *s_cortexMusic;
 static size_t s_cortexMusicSize;
+// The bytes a level load holds (CustomTrack_CortexMusicHold): the music player
+// keeps pointers into them from the bank until the song, so a seed withdrawn
+// in between only drops them once the load lets go.
+static unsigned char *s_cortexMusicHeld;
 static int s_customTracksLoaded = 0;
 static struct CustomTrackRaceLatch s_standaloneRace = {.lastRequested = -1};
 // Content-plan cup (#133 PR 5): set while the next leg's package is armed
@@ -176,7 +180,8 @@ static const char *CustomTrack_VerdictText(int verdict)
 // this function just turned off.
 static void CustomTrack_ClearCortexMusic(void)
 {
-	free(s_cortexMusic);
+	if (s_cortexMusic != s_cortexMusicHeld)
+		free(s_cortexMusic);
 	s_cortexMusic = NULL;
 	s_cortexMusicSize = 0;
 }
@@ -393,10 +398,31 @@ int CustomTrack_CortexMusic(const void **data, size_t *size)
 	return 1;
 }
 
+int CustomTrack_CortexMusicHold(const void **data, size_t *size)
+{
+	CustomTrack_CortexMusicRelease();
+	if (!CustomTrack_CortexMusic(data, size))
+		return 0;
+	s_cortexMusicHeld = s_cortexMusic;
+	return 1;
+}
+
+void CustomTrack_CortexMusicRelease(void)
+{
+	if (s_cortexMusicHeld != NULL && s_cortexMusicHeld != s_cortexMusic)
+		free(s_cortexMusicHeld);
+	s_cortexMusicHeld = NULL;
+}
+
+// The race on screen is the plan's Cortex Vortex entry (its context says so)
+// with the bundled pair armed. A package that happens to carry the same files
+// under another entry is not.
 int CustomTrack_CortexMusicServing(int levelID, int adventureCupActive, int cupID)
 {
-	return levelID == 13 && CustomTrack_DescriptorIsCortex() && s_cortexMusic != NULL &&
-	       CustomTrack_ServingLoad(levelID, adventureCupActive, cupID);
+	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(levelID);
+
+	return levelID == 13 && race != NULL && race->cortex && !race->retail && CustomTrack_DescriptorIsCortex() &&
+	       s_cortexMusic != NULL && CustomTrack_ServingLoad(levelID, adventureCupActive, cupID);
 }
 
 void CustomTrack_ClearOxideFinalDescriptor(void)

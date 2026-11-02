@@ -39,6 +39,9 @@ void AP_LogLine(const char *msg);
 #define HOWL_CUSTOM_LATER_BANKS 5
 
 static struct CustomMusicSca s_customSca; // valid from LoadBank until BankDone
+// Cortex Vortex's bundled .sca, held from LoadBank until SetSong or Reset.
+static const void *s_cortexBytes;
+static size_t s_cortexSize;
 static int s_customBankServing;
 static int s_customBankLoaded; // the level bank of this load is the .sca's
 static u16 s_customSavedIDs[CTR_SCA_MAX_SAMPLES];
@@ -60,13 +63,37 @@ static int HOWL_CustomMusic_Acquire(struct CustomMusicSca *sca, char *error, siz
 	const void *bytes;
 	size_t size;
 
-	if (MainRaceTrack_OfflineCustomLoad() ? !CustomOffline_RuntimeAudio(&bytes, &size)
-	                                      : !CustomTrack_CortexMusic(&bytes, &size))
+	if (MainRaceTrack_OfflineCustomLoad())
 	{
-		snprintf(error, errorSize, "%s", "");
-		return 0;
+		if (!CustomOffline_RuntimeAudio(&bytes, &size))
+		{
+			snprintf(error, errorSize, "%s", "");
+			return 0;
+		}
+	}
+	else
+	{
+		// The bank and the song must come from the same bytes, whatever the
+		// seed does in between.
+		if (s_cortexBytes == NULL && !CustomTrack_CortexMusicHold(&s_cortexBytes, &s_cortexSize))
+		{
+			s_cortexBytes = NULL;
+			snprintf(error, errorSize, "%s", "");
+			return 0;
+		}
+		bytes = s_cortexBytes;
+		size = s_cortexSize;
 	}
 	return CustomMusic_Parse(bytes, size, (unsigned int)sdata->ptrHowlHeader->numSpuAddrs, sca, error, errorSize);
+}
+
+static void HOWL_CustomMusic_ReleaseCortex(void)
+{
+	if (s_cortexBytes == NULL)
+		return;
+	s_cortexBytes = NULL;
+	s_cortexSize = 0;
+	CustomTrack_CortexMusicRelease();
 }
 
 // Undo the slot sizes and forget the served bank. Music_LoadBanks calls this
@@ -81,6 +108,7 @@ void HOWL_CustomMusic_Reset(void)
 	memset(&s_customSca, 0, sizeof s_customSca);
 	s_customBankServing = 0;
 	s_customBankLoaded = 0;
+	HOWL_CustomMusic_ReleaseCortex();
 }
 
 // Read one retail bank's header sector for the admission check.
@@ -241,5 +269,7 @@ int HOWL_CustomMusic_SetSong(void)
 	memcpy(s_customSong, sca.cseq, sca.cseqSize);
 	howl_ParseCseqHeader((struct CseqHeader *)s_customSong);
 	sdata->songLoadStage = 3;
+	// The song is in its own buffer and the bank on the SPU: done with the .sca.
+	HOWL_CustomMusic_ReleaseCortex();
 	return 1;
 }

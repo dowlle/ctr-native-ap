@@ -67,6 +67,7 @@ static int arm(void)
 	return CustomTrack_ApplySeedDescriptor(&d);
 }
 
+// The plan's Cortex Vortex pad entry, as AP_ContentPreparePad builds it.
 static struct CustomTrackRaceContext pad_race(void)
 {
 	struct CustomTrackRaceContext race;
@@ -74,7 +75,8 @@ static struct CustomTrackRaceContext pad_race(void)
 	race.hostLevelID = HOST;
 	race.physicalPad = 3;
 	race.returnHub = 26;
-	race.slot = 1;
+	race.cortex = 1;
+	race.slot = 0;
 	race.laps = 3;
 	race.trophyLocation = 35016300;
 	strcpy(race.entryID, "entry/cortex");
@@ -148,16 +150,50 @@ static void loader(void)
 	EXPECT(CustomTrack_CortexMusicServing(HOST, 0, 0) == 0, "missing music: Oxide Station's music");
 	CustomTrack_ClearSeedDescriptor();
 
-	// A custom package that is not the bundled pair never reads a .sca, even
-	// one sitting beside it with the pinned bytes.
+	// An ordinary package entry (a custom slot, not the plan's Cortex Vortex
+	// entry) that carries the very same files: the track races, the music does
+	// not play.
 	snprintf(cmd, sizeof cmd, "cp 'assets/tracks/cortex-vortex/CVortex Arcade All.sca' '%s'", s_sca);
 	run(cmd);
+	EXPECT(arm() == 1, "same files arm");
 	{
-		struct CustomTrackSeedDescriptor d = cortex_descriptor();
-		d.levSha256[0] = d.levSha256[0] == '0' ? '1' : '0';
-		EXPECT(CustomTrack_UseContentFiles(s_lev, s_vrm, "OTHER") == 1, "other package selected");
-		EXPECT(CustomTrack_ApplySeedDescriptor(&d) == 0, "other pins do not verify these files");
-		EXPECT(CustomTrack_CortexMusic(&bytes, &size) == 0, "other package: no music");
+		struct CustomTrackRaceContext race = pad_race();
+		race.cortex = 0;
+		race.slot = 1;
+		strcpy(race.trackID, "custom/cortex-copy/1.0.0");
+		EXPECT(CustomTrack_StageStandaloneRace(&race) == 1, "ordinary entry stages");
+		CustomTrack_OnRaceLoadRequested(HOST);
+		EXPECT(CustomTrack_ServingLoad(HOST, 0, 0) == 1, "ordinary entry: the track is served");
+		EXPECT(CustomTrack_CortexMusicServing(HOST, 0, 0) == 0, "ordinary entry: no Cortex music");
+		CustomTrack_OnRaceLoadRequested(26);
+	}
+	CustomTrack_ClearSeedDescriptor();
+
+	// A load holds the bytes from the bank to the song: a seed withdrawn in
+	// between does not free them; the release does, and nothing is served after.
+	EXPECT(arm() == 1, "re-armed for the hold");
+	{
+		const void *held;
+		size_t heldSize;
+		const unsigned char *b;
+		EXPECT(CustomTrack_CortexMusicHold(&held, &heldSize) == 1 && heldSize == SCA_BYTES, "load holds the music");
+		CustomTrack_ClearSeedDescriptor();
+		EXPECT(CustomTrack_CortexMusic(&bytes, &size) == 0, "withdrawn seed serves no new music");
+		b = (const unsigned char *)held;
+		EXPECT(memcmp(b, "SCA", 3) == 0, "held bytes stay readable");
+		EXPECT(s_cortexMusicHeld == held && s_cortexMusic == NULL, "held buffer kept, current dropped");
+		CustomTrack_CortexMusicRelease();
+		EXPECT(s_cortexMusicHeld == NULL, "release lets go");
+		EXPECT(CustomTrack_CortexMusicHold(&held, &heldSize) == 0, "nothing to hold without a seed");
+	}
+	// Holding the current bytes and releasing while still armed keeps them.
+	EXPECT(arm() == 1, "re-armed after the hold");
+	{
+		const void *held;
+		size_t heldSize;
+		EXPECT(CustomTrack_CortexMusicHold(&held, &heldSize) == 1, "hold again");
+		CustomTrack_CortexMusicRelease();
+		EXPECT(CustomTrack_CortexMusic(&bytes, &size) == 1 && bytes == held, "armed bytes survive a release");
 	}
 	CustomTrack_ClearSeedDescriptor();
 }

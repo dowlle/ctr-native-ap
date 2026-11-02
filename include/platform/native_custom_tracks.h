@@ -162,8 +162,12 @@ int CustomTrack_CortexTrackReady(void);
 // verified bytes while that pair is armed, 0 when there are none (missing,
 // changed or unreadable), which leaves Oxide Station's music in place.
 // CortexMusicServing: this load is that race and the music is there.
+// Hold gives the same bytes and keeps them alive, even past a withdrawn seed,
+// until Release (the music player holds them from the bank to the song).
 int CustomTrack_CortexMusic(const void **data, size_t *size);
 int CustomTrack_CortexMusicServing(int levelID, int adventureCupActive, int cupID);
+int CustomTrack_CortexMusicHold(const void **data, size_t *size);
+void CustomTrack_CortexMusicRelease(void);
 
 // Read the [CustomTracks] section of config.ini, once, at startup. It carries
 // ONLY the two file paths now; the loader stays disarmed until a seed hands over
