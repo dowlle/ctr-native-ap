@@ -217,3 +217,9 @@ routes by script (`content_race_routes.extend` from the paired apworld, appended
 after each rung's own route, in the route's key order). Nothing else in them
 changed. No fixture has per-track Wumpa with cups or bosses, or vanilla pad
 requirements, so the other fixtures are unchanged.
+
+132 custom tracks: `custom-132.json` is slot data the paired
+apworld emitted (`worlds/ctr/test/test_custom_tracks_132.py`, `many_cups`) from
+132 made-up packages and 27 cups, at the seed of the first 40 with the most
+tracks that races slot 132. It is past both old limits, 32 packages and 64
+tracks, and its pins name no real files.

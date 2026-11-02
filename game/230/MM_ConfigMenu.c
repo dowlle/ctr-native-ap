@@ -14,6 +14,12 @@
 #include <platform/native_assets.h>
 #include <platform/native_custom_track_manager.h>
 #include "../../ap/ap_seed_content.h" // Current Seed (#133 PR 7)
+#ifndef CTR_AP_AUTHORING
+// The player client: its xdelta importer opens on Custom Content and writes
+// only where rooms and Play Solo look, never into the Track Library store
+// (decision 35, ruled 2026-11-02).
+#define MM_IMPORT_PLAYER
+#endif
 #ifdef CTR_CUSTOM_PACKAGES
 // The package library and Saphi Track Manager: the Custom Content page of the
 // box authoring download, a Track Library page of its own in the player client.
@@ -1139,6 +1145,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 }
 
 #if defined(CTR_CUSTOM_TRACKS) && !defined(CTR_AP_AUTHORING)
+#include "MM_CustomImport.c" // xdelta importer on Custom Content, not Track Library (decision 35)
 #include "MM_CurrentSeed.c" // content-plan rooms: the Current Seed tab (#133 PR 7)
 #define CUSTOM_CONTENT_ACTION_COUNT 6
 static const char *const s_customContentActions[CUSTOM_CONTENT_ACTION_COUNT] = {
@@ -1214,6 +1221,23 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 	char downloadMessage[128];
 	int downloadState = AP_CustomContentDownloadStatus(downloadMessage, sizeof downloadMessage);
 	int i;
+
+	// Import track files (decision 35): Select opens it, a patch dropped on
+	// the window opens it with that patch. It owns the page while open.
+	if (!s_customContentDownloadActive && !AP_SeedContentInstallBusy())
+		MM_CustomImport_TakeDrop();
+	if (!MM_CustomImport_Active() && (pad->buttonsTapped & BTN_SELECT) && !s_customContentDownloadActive &&
+	    !AP_SeedContentInstallBusy())
+	{
+		MM_CustomImport_Open();
+		OtherFX_Play(1, 1);
+		return;
+	}
+	if (MM_CustomImport_Active())
+	{
+		MM_CustomImport_Proc(ot, pad);
+		return;
+	}
 
 	// A content-plan room opens on Current Seed; L1 / R1 reach this page.
 	if (MM_CurrentSeed_Page(ot, pad))
@@ -1342,6 +1366,7 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 	}
 
 	CustomContent_DrawMessage(ot);
+	DecalFont_DrawLineOT("Select: Import track files", 0x100, 0x68, FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
 }
 #endif
 #endif // CTR_AP
@@ -1470,8 +1495,8 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 	if (!backHandled && (backTapped & (BTN_TRIANGLE | BTN_START)) != 0 && !NativeText_Active()
 #ifdef CTR_CUSTOM_PACKAGES
 	    // Drain a package or Saphi worker before leaving; Back first leaves
-	    // the Versions list of one track.
-	    && !MM_CustomLibrary_Busy() && !s_saphiVersionTrack
+	    // the Versions list of one track or the xdelta import screen.
+	    && !MM_CustomLibrary_Busy() && !s_saphiVersionTrack && !MM_CustomImport_Active()
 #endif
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS) && !defined(CTR_AP_AUTHORING)
 	    // Back first closes the Install missing content overview (#133 PR 7).
