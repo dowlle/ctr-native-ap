@@ -209,7 +209,7 @@ int main(void)
 		       "while the registry loads");
 		r.registry = AP_SEED_REGISTRY_OFFLINE;
 		ap_seed_instruction(&r, text, sizeof text);
-		expect(strstr(ap_seed_source_text(&r), "registry offline") && strstr(text, "tracks/baby-t-park/original"),
+		expect(strstr(ap_seed_source_text(&r), "registry unavailable") && strstr(text, "tracks/baby-t-park/original"),
 		       "offline without cache: the reason and the manual steps");
 		r.registry = AP_SEED_REGISTRY_NOT_LISTED;
 		expect(strstr(ap_seed_source_text(&r), "not registered") != NULL, "not registered");

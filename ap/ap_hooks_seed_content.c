@@ -61,7 +61,7 @@ static struct
 	int result[AP_CONTENT_MAX_PACKAGES];
 	struct ApTrackRegistryMatch match[AP_CONTENT_MAX_PACKAGES];
 } ap_seed_registry;
-static int ap_seed_registry_asked;
+static int ap_seed_registry_asked, ap_seed_registry_last_state;
 static uint64_t ap_seed_registry_asked_epoch;
 
 // assets/track-registry-cache.json: next to tracks/, which is writable
@@ -82,9 +82,20 @@ static int AP_SeedRegistryCachePath(char *out, size_t size)
 // `force` (Rescan) asks again unless a fetch is running.
 static void AP_SeedRegistryEnsure(int force)
 {
-	char path[CTR_CT_MANAGER_PATH_MAX], line[640];
+	char path[CTR_CT_MANAGER_PATH_MAX], line[640], detail[256];
 	int i, needed = 0, source = AP_TRACK_REGISTRY_SOURCE_NONE;
-	const int state = ap_track_registry_status(&source, NULL, 0);
+	const int state = ap_track_registry_status(&source, detail, sizeof detail);
+	// Say once in the log how a fetch ended: the screen only has room for
+	// "unavailable" or "cached registry".
+	if (state != ap_seed_registry_last_state && ap_seed_registry_last_state == AP_TRACK_REGISTRY_LOADING)
+	{
+		snprintf(line, sizeof line, "[CustomTracks] Current Seed: track registry %s%s%s\n",
+		         source == AP_TRACK_REGISTRY_SOURCE_LIVE ? "fetched" :
+		         source == AP_TRACK_REGISTRY_SOURCE_CACHED ? "not fetched, using the cached copy" : "unavailable, no cached copy",
+		         detail[0] ? ": " : "", detail);
+		AP_AppendLog(line);
+	}
+	ap_seed_registry_last_state = state;
 	if (state == AP_TRACK_REGISTRY_LOADING) return;
 	if (!force && ap_seed_registry_asked && ap_seed_registry_asked_epoch == ap_content_plan_epoch()) return;
 	for (i = 0; i < AP_CONTENT_MAX_PACKAGES && !needed; ++i)

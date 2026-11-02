@@ -60,7 +60,7 @@ enum
 	AP_SEED_REGISTRY_LIVE,         /* located on Saphi by the registry fetched this session */
 	AP_SEED_REGISTRY_CACHED,       /* located by the cached registry copy */
 	AP_SEED_REGISTRY_CHECKING,     /* the registry is being fetched */
-	AP_SEED_REGISTRY_OFFLINE,      /* no live registry and no cached copy */
+	AP_SEED_REGISTRY_OFFLINE,      /* no usable live registry (offline or refused) and no cached copy */
 	AP_SEED_REGISTRY_NOT_LISTED,   /* no registered revision has the room's hashes */
 	AP_SEED_REGISTRY_NOT_ON_SAPHI, /* registered, with no Saphi download */
 	AP_SEED_REGISTRY_CONFLICT      /* registered hashes, but another size than the room pins */
@@ -274,7 +274,7 @@ static inline const char *ap_seed_source_text(const struct AP_SeedContentRow *ro
 	switch (row->registry)
 	{
 	case AP_SEED_REGISTRY_CHECKING: return "No download yet (checking registry)";
-	case AP_SEED_REGISTRY_OFFLINE: return "No download (registry offline)";
+	case AP_SEED_REGISTRY_OFFLINE: return "No download (registry unavailable)";
 	case AP_SEED_REGISTRY_NOT_LISTED: return "No download (not registered)";
 	case AP_SEED_REGISTRY_NOT_ON_SAPHI: return "No download (not on Saphi)";
 	case AP_SEED_REGISTRY_CONFLICT: return "No download (registry size differs)";

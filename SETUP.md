@@ -371,6 +371,19 @@ them it has no Relic Race. **Clear Relic Times** removes them. Every player whos
 requires the track must install the same verified package. A missing or
 mismatched package fails closed instead of loading the displaced retail race.
 
+In a room, **OPTIONS → Custom Content → Current Seed** lists the tracks the
+room needs. **Install missing content** downloads every missing track that is
+in the public [track registry](https://github.com/dowlle/ctr-track-registry)
+and on Project Saphi. The game reads the registry from GitHub when the room
+needs it, so a newly registered track can be downloaded without a new client.
+The registry only says where on Project Saphi a track is: the room fixes each
+track's exact files, and the download installs nothing unless the files match.
+The last registry copy is kept in `assets/track-registry-cache.json` and used
+when GitHub cannot be reached; the track then shows "cached registry". A track
+that is not registered, not on Project Saphi, or that the game cannot look up
+(offline with no saved copy) shows "No download" and the folder to copy its
+files into by hand. Rescan checks the registry again.
+
 ## Importing custom tracks from an xdelta patch
 
 Some custom tracks come as an xdelta patch for the game disc (for example a

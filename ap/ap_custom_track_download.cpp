@@ -199,9 +199,19 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 		return false;
 	}
 	WinHttpSetTimeouts(session, 10000, 10000, 15000, 30000);
-	// The host allow-list holds only if a redirect cannot leave the host.
+	// The host allow-list holds only if a redirect cannot leave the host:
+	// without that policy, no request.
 	DWORD redirects = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
-	WinHttpSetOption(session, WINHTTP_OPTION_REDIRECT_POLICY, &redirects, sizeof redirects);
+	if (!WinHttpSetOption(session, WINHTTP_OPTION_REDIRECT_POLICY, &redirects, sizeof redirects))
+	{
+		WinHttpCloseHandle(session);
+		error = "Could not set up Windows HTTPS safely.";
+		return false;
+	}
+	// The timeouts above are per operation; this bounds the whole request
+	// like the Linux transport's 35 seconds (one stalled read can add its own
+	// timeout on top).
+	const ULONGLONG deadline = GetTickCount64() + 35000;
 	const std::wstring wide_host = widen_ascii(host);
 	HINTERNET connection = WinHttpConnect(session, wide_host.c_str(),
 	                                      INTERNET_DEFAULT_HTTPS_PORT, 0);
@@ -222,6 +232,12 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 	while (ok)
 	{
 		DWORD available = 0;
+		if (GetTickCount64() > deadline)
+		{
+			error = label + " request timed out; check connection and retry.";
+			ok = false;
+			break;
+		}
 		if (!WinHttpQueryDataAvailable(request, &available))
 		{
 			ok = false;

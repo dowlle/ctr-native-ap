@@ -109,11 +109,13 @@ int ap_track_registry_status(int *source, char *detail, int n)
 	return reg_state;
 }
 uint32_t ap_track_registry_generation(void) { return reg_generation; }
+/* The registry's one entry: LEV reg_lev, VRM REG_VRM, sizes 810876 and 458808. */
+#define REG_VRM "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 int ap_track_registry_lookup(const char *lev, uint32_t lb, const char *vrm, uint32_t vb, struct ApTrackRegistryMatch *m)
 {
-	(void)lb; (void)vrm; (void)vb;
 	if (reg_result == AP_TRACK_REGISTRY_NO_INDEX) return reg_result;
-	if (strcmp(lev, reg_lev)) return AP_TRACK_REGISTRY_NOT_LISTED;
+	if (strcmp(lev, reg_lev) || strcmp(vrm, REG_VRM)) return AP_TRACK_REGISTRY_NOT_LISTED;
+	if (lb != 810876 || vb != 458808) return AP_TRACK_REGISTRY_PIN_CONFLICT;
 	if (reg_result == AP_TRACK_REGISTRY_MATCH && m)
 	{
 		memset(m, 0, sizeof *m);
@@ -303,9 +305,10 @@ int main(void)
 	package(0, "baby-t-park", "1.0.2", current, 2470836, 115732, CTR_CT_MANAGER_READY);
 	package(1, "acid-lake", "1.0.0", NULL, 810876, 458808, CTR_CT_MANAGER_NOT_INSTALLED);
 	package_count = 2; plan_cortex = 0;
-	snprintf(packages[1].lev_sha256, sizeof packages[1].lev_sha256, "%s", "aa");
-	snprintf(packages[1].vrm_sha256, sizeof packages[1].vrm_sha256, "%s", "bb");
-	snprintf(reg_lev, sizeof reg_lev, "aa");
+#define REG_LEV "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	snprintf(packages[1].lev_sha256, sizeof packages[1].lev_sha256, "%s", REG_LEV);
+	snprintf(packages[1].vrm_sha256, sizeof packages[1].vrm_sha256, "%s", REG_VRM);
+	snprintf(reg_lev, sizeof reg_lev, REG_LEV);
 	plan_epoch = 20; reg_refreshes = 0;
 	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
 	snprintf(path, sizeof path, "%s/track-registry-cache.json", assets_root);
@@ -319,7 +322,7 @@ int main(void)
 	reg_state = AP_TRACK_REGISTRY_UNAVAILABLE;
 	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
 	expect(rows[1].source == AP_SEED_SOURCE_MANUAL && rows[1].registry == AP_SEED_REGISTRY_OFFLINE &&
-	       !strcmp(ap_seed_source_text(&rows[1]), "No download (registry offline)"), "offline without cache: manual, says why");
+	       !strcmp(ap_seed_source_text(&rows[1]), "No download (registry unavailable)"), "offline without cache: manual, says why");
 	expect(!AP_SeedContentInstallStart(message, sizeof message) && reg_starts == 0 && starts == 0,
 	       "offline without cache: no download starts");
 	/* Rescan asks again. */
@@ -345,7 +348,7 @@ int main(void)
 	       "the install starts the registry download, not the compiled one");
 	snprintf(path, sizeof path, "%s/acid-lake", tracks);
 	expect(!strcmp(reg_root, path) && reg_track == 121 && reg_lev_id == 872 && reg_vrm_id == 873 &&
-	       !strcmp(reg_pin_lev, "aa") && !strcmp(reg_pin_vrm, "bb") && reg_lev_bytes == 810876 && reg_vrm_bytes == 458808,
+	       !strcmp(reg_pin_lev, REG_LEV) && !strcmp(reg_pin_vrm, REG_VRM) && reg_lev_bytes == 810876 && reg_vrm_bytes == 458808,
 	       "registry download: tracks/<key>, the located ids, the room's own pins");
 	expect(strstr(log_text, "cached track registry") && strstr(log_text, "Saphi track 121"), "the log names the cached source");
 	dl_state = AP_CT_DOWNLOAD_SUCCEEDED;
@@ -361,7 +364,12 @@ int main(void)
 	expect(rows[1].registry == AP_SEED_REGISTRY_NOT_LISTED && rows[1].source == AP_SEED_SOURCE_MANUAL &&
 	       !strcmp(ap_seed_source_text(&rows[1]), "No download (not registered)"), "other hashes: not registered");
 	/* An unsafe track key refuses before any download. */
-	snprintf(reg_lev, sizeof reg_lev, "aa"); reg_generation++;
+	/* A size off the pin: the registry disagrees with the room, no download. */
+	snprintf(reg_lev, sizeof reg_lev, REG_LEV); reg_generation++;
+	packages[1].vrm_bytes = 458809;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(rows[1].registry == AP_SEED_REGISTRY_CONFLICT && rows[1].source == AP_SEED_SOURCE_MANUAL, "size off the pin: manual");
+	packages[1].vrm_bytes = 458808; reg_generation++;
 	snprintf(packages[1].content_id, sizeof packages[1].content_id, "%s", "../escape");
 	reg_starts = 0;
 	expect(!AP_SeedContentInstallStart(message, sizeof message) && reg_starts == 0, "an unsafe key refuses the install");
