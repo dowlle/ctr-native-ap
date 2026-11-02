@@ -112,7 +112,7 @@ static void test_bundle_quantities_and_window(void)
 	reset_case();
 	AP_WumpaReceive(3);
 	expect(g_wumpa_pending == 3, "small bundle banks three fruit");
-	expect(strstr(lastLog, "banked +3") != NULL, "small bundle log reports three");
+	expect(strstr(lastLog, "held for the kart +3 (pending 3)") != NULL, "small bundle log reports three");
 	AP_WumpaTick(&tracker);
 	expect(modifyCalls == 0, "hub does not consume small bundle");
 
@@ -142,7 +142,7 @@ static void test_bank_clamp(void)
 	AP_WumpaReceive(3);
 	AP_WumpaReceive(10);
 	expect(g_wumpa_pending == 10, "combined bundle bank clamps at ten");
-	expect(strstr(lastLog, "banked +7, discarded +3") != NULL,
+	expect(strstr(lastLog, "held for the kart +7, discarded +3") != NULL,
 	       "overflow log reports banked and discarded quantities");
 	AP_WumpaReceive(3);
 	expect(g_wumpa_pending == 10, "full bank remains capped");

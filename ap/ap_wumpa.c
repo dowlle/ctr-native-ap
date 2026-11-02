@@ -146,42 +146,35 @@ static struct Driver *AP_WumpaLocalDriver(struct GameTracker *gGT)
 // ── AP item pipeline seam ──
 void AP_WumpaReceive(int count)
 {
-	char msg[96];
-	int banked, discarded;
+	char msg[112];
+	int held, past, banked = 0;
 
 	if (count <= 0)
 		return;
 
-	// #144: report what actually happened. A receive that would push the bank
-	// past AP_WUMPA_MAX has the overflow discarded by the clamp below, not
-	// banked -- "banked +N" for a discarded N was a lie the log told fifteen
-	// times in a row in one player's submitted log.
-	banked = count;
+	// #144: report what actually happened. The fruit is held for the kart
+	// (handed over at the next race start, or on the next frame mid-race); a
+	// receive that would push the held fruit past AP_WUMPA_MAX has the overflow
+	// banked or discarded below. Since 2026-11-02 it no longer logs "banked"
+	// for the held fruit, which read as the Wumpa bank in play.
+	held = count;
 	g_wumpa_pending += count;
 	if (g_wumpa_pending > AP_WUMPA_MAX)
 	{
-		banked = count - (g_wumpa_pending - AP_WUMPA_MAX);
+		held = count - (g_wumpa_pending - AP_WUMPA_MAX);
 		g_wumpa_pending = AP_WUMPA_MAX; // a kart can never hold more; no cross-race hoard
 	}
-	discarded = count - banked;
+	past = count - held;
 	// #249 (ruled 2026-10-16): with banking on, AP fruit past 10 goes into the
 	// Wumpa bank at once, in or out of a race, instead of being discarded.
-	if (discarded > 0 && AP_WumpaBanking())
+	if (past > 0 && AP_WumpaBanking())
 	{
-		g_wumpa_ap_credit += discarded; // committed by AP_WumpaCommitReceived
-		discarded = 0;
+		g_wumpa_ap_credit += past; // committed by AP_WumpaCommitReceived
+		banked = past;
+		past = 0;
 	}
 
-	if (discarded == 0)
-		snprintf(msg, sizeof msg, "[AP WUMPA] banked +%d (pending %d)\n",
-		         banked, g_wumpa_pending);
-	else if (banked == 0)
-		snprintf(msg, sizeof msg, "[AP WUMPA] discarded +%d (bank full at %d)\n",
-		         discarded, AP_WUMPA_MAX);
-	else
-		snprintf(msg, sizeof msg,
-		         "[AP WUMPA] banked +%d, discarded +%d (bank full at %d)\n",
-		         banked, discarded, AP_WUMPA_MAX);
+	AP_WumpaReceiveLine(msg, (int)sizeof msg, held, g_wumpa_pending, banked, past, AP_WUMPA_MAX);
 	AP_LogLine(msg);
 }
 
