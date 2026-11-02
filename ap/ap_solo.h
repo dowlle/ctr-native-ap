@@ -96,6 +96,8 @@ struct APSoloTrackInfo
 	char author[AP_SOLO_TEXT];
 	char modes[32];            /* "Trophy, CTR, Relic" */
 	int pick;                  /* enum APSoloTrackPick */
+	int needsLaps;             /* 1: an imported track waiting for its laps */
+	int laps;                  /* the laps shown while needsLaps, 1 to 7 */
 };
 
 /* 1 when solo-runtime/ and its interpreter are present in the client folder. */
@@ -151,6 +153,15 @@ int AP_Solo_TracksViaOptions(int isPreset);
 /* The client verified a content-plan package's files (#133): keep its
    descriptor in solo/tracks so the custom-track step can offer the track. */
 void AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, const char *json);
+/* The xdelta importer installed a track whose laps nobody gave (ruling of
+   2026-11-02): keep its descriptor, without laps, in solo/needs-laps. The
+   custom-track step lists it and asks for the laps before it can be picked. */
+void AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *revision, const char *json);
+/* On a row waiting for its laps: Left/Right change the laps shown, Keep writes
+   the descriptor with them to solo/tracks (1) and drops the waiting copy.
+   List the tracks again afterwards. */
+void AP_Solo_TrackStepLaps(int index, int direction);
+int AP_Solo_TrackKeepLaps(int index);
 
 /* Import file dialog (SDL, answers on another thread). room 1: rooms,
    0: YAMLs. Take returns 1 with a path, -1 cancelled, -2 path too long,

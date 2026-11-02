@@ -13,6 +13,8 @@
      Tracks   installed custom tracks for a preset (decision 32) or an
               imported or inbox YAML (round 2 decision 5), shown only
               when there are any: Cross cycles off, in the pool, own pad.
+              An imported track without laps asks for them first: Left /
+              Right pick 1 to 7, Cross keeps them (ruling of 2026-11-02).
      Review   slot name (Cross edits it) and Generate.
      Busy     a runtime job with its phase; Circle cancels generation.
      Session  starting, connecting, connected or the reason it failed.
@@ -68,6 +70,7 @@ static char s_soloNameBackup[64];
 static char s_soloMsg[256];
 
 static int s_soloPickKind;       /* SOLO_JOB_IMPORT_ROOM or SOLO_JOB_IMPORT_YAML */
+static int s_soloLapsFailed;     /* the Tracks page could not keep a track's laps */
 
 static void MM_Solo_DrawWrapped(const char *text, int x, int y, int width, int lines, int color, uint32_t *ot)
 {
@@ -513,7 +516,31 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 	int i;
 
 	MM_Solo_Navigate(pad, count);
-	if (s_soloSel < rows && (pad->buttonsTapped & (BTN_CROSS | BTN_LEFT | BTN_RIGHT)) != 0)
+	if ((pad->buttonsTapped & (BTN_UP | BTN_DOWN)) != 0)
+		s_soloLapsFailed = 0;
+	if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info) && info.needsLaps)
+	{
+		/* An imported track without laps: Left / Right pick them, Cross keeps
+		   them with its Play Solo entry and lists the tracks again. */
+		if ((pad->buttonsTapped & (BTN_LEFT | BTN_RIGHT)) != 0)
+		{
+			AP_Solo_TrackStepLaps(s_soloSel, (pad->buttonsTapped & BTN_LEFT) != 0 ? -1 : 1);
+			OtherFX_Play(0, 1);
+		}
+		else if ((pad->buttonsTapped & BTN_CROSS) != 0)
+		{
+			if (AP_Solo_TrackKeepLaps(s_soloSel) && AP_Solo_TracksStart(s_soloStart.path))
+			{
+				OtherFX_Play(1, 1);
+				s_soloLapsFailed = 0;
+				MM_Solo_Busy(SOLO_JOB_TRACKS);
+				return;
+			}
+			OtherFX_Play(5, 1);
+			s_soloLapsFailed = 1;
+		}
+	}
+	else if (s_soloSel < rows && (pad->buttonsTapped & (BTN_CROSS | BTN_LEFT | BTN_RIGHT)) != 0)
 	{
 		/* Left steps back through the cycle: two steps forward of three. */
 		AP_Solo_TrackCycle(s_soloSel);
@@ -543,13 +570,28 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 			snprintf(line, sizeof line, "%s %s", info.title, info.revision);
 			MM_Solo_Fit(line, fit, sizeof fit, 0x110);
 			DecalFont_DrawLineOT(fit, 0x38, y, FONT_SMALL, ORANGE, ot);
-			DecalFont_DrawLineOT((char *)picks[info.pick >= 0 && info.pick <= 2 ? info.pick : 0], 0x158, y, FONT_SMALL,
-			                     info.pick ? WHITE : GRAY, ot);
+			if (info.needsLaps)
+			{
+				snprintf(line, sizeof line, "< %d lap%s >", info.laps, info.laps == 1 ? "" : "s");
+				DecalFont_DrawLineOT(line, 0x158, y, FONT_SMALL, RED, ot);
+			}
+			else
+				DecalFont_DrawLineOT((char *)picks[info.pick >= 0 && info.pick <= 2 ? info.pick : 0], 0x158, y,
+				                     FONT_SMALL, info.pick ? WHITE : GRAY, ot);
 		}
 		if (i == s_soloSel)
 			MM_Solo_Highlight(y, ot);
 	}
-	if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info))
+	if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info) && info.needsLaps)
+	{
+		if (s_soloLapsFailed)
+			snprintf(line, sizeof line, "Could not keep the laps. See the client log.");
+		else
+			snprintf(line, sizeof line, "By %s. Pick its laps, then press * to use it.", info.author);
+		MM_Solo_Fit(line, fit, sizeof fit, 0x1A0);
+		DecalFont_DrawLineOT(fit, 0x100, 0xB4, FONT_SMALL, JUSTIFY_CENTER | (s_soloLapsFailed ? RED : GRAY), ot);
+	}
+	else if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info))
 	{
 		if (info.author[0])
 			snprintf(line, sizeof line, "By %s. Modes: %s", info.author, info.modes[0] ? info.modes : "none");
@@ -561,7 +603,10 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 	if (!s_soloStart.isPreset && s_soloSel >= rows)
 		DecalFont_DrawLineOT("The YAML's own settings stay; the tracks are added.", 0x100, 0xB4, FONT_SMALL,
 		                     JUSTIFY_CENTER | GRAY, ot);
-	MM_Solo_Footer("*: CHANGE   ^: BACK", ot);
+	if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info) && info.needsLaps)
+		MM_Solo_Footer("LEFT/RIGHT: LAPS   *: KEEP   ^: BACK", ot);
+	else
+		MM_Solo_Footer("*: CHANGE   ^: BACK", ot);
 }
 
 static void MM_Solo_PageHelp(uint32_t *ot, struct GamepadBuffer *pad)

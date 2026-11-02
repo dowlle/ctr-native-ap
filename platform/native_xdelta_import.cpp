@@ -1615,10 +1615,15 @@ unsigned long long pinned_bytes(const CustomPackageManifest &manifest, const cha
     return 0;
 }
 
+/* The author shown for a track whose pack descriptor names none (ruling of
+   2026-11-02): "unknown", never a guessed name. */
+const char *const kUnknownAuthor = "Unknown";
+
 /* See XdeltaImport_PlanDescriptor. */
 bool plan_descriptor(const XdeltaImportSummary &summary, const XdeltaImportItem &item, const Built &b,
-                     std::string &out, std::string &why)
+                     std::string &out, std::string &why, bool &needsLaps)
 {
+    needsLaps = false;
     CustomPackageManifest manifest;
     CustomContentVerification report;
     unsigned int laps = 0;
@@ -1628,16 +1633,19 @@ bool plan_descriptor(const XdeltaImportSummary &summary, const XdeltaImportItem 
         why = "its files are not verified";
         return false;
     }
-    /* Laps and the author are the author's, never filled in (track package
-       rule 4): without them the track gets no descriptor. */
+    /* Laps and the author are the author's, never guessed (track package
+       rule 4). Without laps the descriptor leaves them out and the player
+       picks them on Play Solo's Custom Tracks page; without an author it
+       says "Unknown" (ruling of 2026-11-02). */
     if (!CustomPackage_GetRaceLaps(b.owned, &laps, nullptr, 0) || laps < 1 || laps > 7)
     {
-        why = "the pack descriptor gives no laps";
-        return false;
+        laps = 0;
+        needsLaps = true;
     }
-    if (b.author.empty() || b.author.size() > 128)
+    const std::string author = b.author.empty() ? std::string(kUnknownAuthor) : b.author;
+    if (author.size() > 128)
     {
-        why = "the pack descriptor names no author";
+        why = "its author is longer than 128 bytes";
         return false;
     }
     const std::string key = item.trackKey, revision = manifest.version, title = item.title;
@@ -1661,10 +1669,11 @@ bool plan_descriptor(const XdeltaImportSummary &summary, const XdeltaImportItem 
     /* Every capability is measured on the verified pair with the rules the
        client checks a descriptor against on load (ap_content_capability.h),
        so no claim can refuse the track. The pack descriptor may only take
-       relic and ctr_tokens away. */
+       relic and ctr_tokens away. Relic times are set for the author's laps,
+       so a track whose laps the player picks has no relic. */
     const CustomContentMeasurements &m = report.measured;
     CustomPackageRelicTargets targets = {};
-    const bool relic = report.fileAnalysis[CTR_CCV_RELIC_RACE].result == CTR_CCV_DETECTED && !b.excludeRelic &&
+    const bool relic = !needsLaps && report.fileAnalysis[CTR_CCV_RELIC_RACE].result == CTR_CCV_DETECTED && !b.excludeRelic &&
                        CustomPackage_GetRelicTargets(b.owned, &targets, nullptr, 0) &&
                        targets.ticks[0] > targets.ticks[1] && targets.ticks[1] > targets.ticks[2] &&
                        targets.ticks[2] >= 1 && targets.ticks[0] <= 960 * 60 * 60;
@@ -1685,9 +1694,11 @@ bool plan_descriptor(const XdeltaImportSummary &summary, const XdeltaImportItem 
     files.push_back({{"role", "vrm"}, {"sha256", item.vrmSha256}, {"bytes", pinned_bytes(manifest, "vrm")},
                      {"format", "ctr-vrm"}, {"format_version", 1}});
     json d = {{"id", id}, {"content_id", key}, {"uuid", manifest.uuid}, {"revision", revision},
-              {"display_name", title}, {"author", b.author}, {"laps", laps}, {"capabilities", caps},
+              {"display_name", title}, {"author", author}, {"capabilities", caps},
               {"files", files}, {"evidence", json::array()},
               {"locator", {{"kind", "xdelta"}, {"patch_sha256", summary.patchSha256}, {"bigfile_index", item.bigfileIndex}}}};
+    if (!needsLaps)
+        d["laps"] = laps;
     if (relic)
         d["relic_targets"] = {{"sapphire", targets.ticks[0]}, {"gold", targets.ticks[1]}, {"platinum", targets.ticks[2]}};
     out = json_dump(d);
@@ -1709,7 +1720,8 @@ extern "C" int XdeltaImport_PlanDescriptor(const XdeltaImportScan *scan, unsigne
     if (!scan || !out || !capacity || item >= scan->summary.count || item >= scan->built.size()) return 0;
     std::string text, reason;
     CustomPackageManifest manifest;
-    if (!plan_descriptor(scan->summary, scan->summary.items[item], scan->built[item], text, reason) ||
+    bool needsLaps = false;
+    if (!plan_descriptor(scan->summary, scan->summary.items[item], scan->built[item], text, reason, needsLaps) ||
         !CustomPackage_GetManifest(scan->built[item].owned, &manifest))
     {
         if (why && whySize) std::snprintf(why, whySize, "%s", reason.c_str());
@@ -1723,7 +1735,7 @@ extern "C" int XdeltaImport_PlanDescriptor(const XdeltaImportScan *scan, unsigne
     std::memcpy(out, text.c_str(), text.size() + 1);
     if (contentId) std::snprintf(contentId, 65, "%s", scan->summary.items[item].trackKey);
     if (revision) std::snprintf(revision, 65, "%s", manifest.version);
-    return 1;
+    return needsLaps ? 2 : 1;
 }
 
 extern "C" void XdeltaImport_Free(XdeltaImportScan **scan)
@@ -1783,20 +1795,23 @@ extern "C" int XdeltaImport_ListFolder(const char *assets, char names[][CTR_XDEL
 
 /* ---- Job API. */
 namespace {
-struct KeptDescriptor { std::string contentId, revision, json; };
+struct KeptDescriptor { std::string contentId, revision, json; bool needsLaps; };
 
 /* The Play Solo descriptors of the installed items `done`, one per track key
-   and version; `note` names the first track without one and why. */
+   and version; `note` names the first track without one and why, otherwise
+   the first track whose laps the player picks. */
 void collect_descriptors(const XdeltaImportScan *scan, const std::vector<unsigned int> &done,
                          std::vector<KeptDescriptor> &kept, std::string &note)
 {
     std::set<std::pair<std::string, std::string>> names;
+    std::string lapsNote;
     for (unsigned int i : done)
     {
         std::string json, why;
         CustomPackageManifest manifest;
+        bool needsLaps = false;
         const XdeltaImportItem &item = scan->summary.items[i];
-        if (plan_descriptor(scan->summary, item, scan->built[i], json, why) &&
+        if (plan_descriptor(scan->summary, item, scan->built[i], json, why, needsLaps) &&
             CustomPackage_GetManifest(scan->built[i].owned, &manifest))
         {
             /* One descriptor file per track key and version: a second track
@@ -1804,7 +1819,9 @@ void collect_descriptors(const XdeltaImportScan *scan, const std::vector<unsigne
                cannot list both. The first keeps it. */
             if (names.insert({item.trackKey, manifest.version}).second)
             {
-                kept.push_back({item.trackKey, manifest.version, json});
+                kept.push_back({item.trackKey, manifest.version, json, needsLaps});
+                if (needsLaps && lapsNote.empty())
+                    lapsNote = limit_codepoints(std::string(item.title), 40) + ": pick its laps in Play Solo";
                 continue;
             }
             why = "another track in this patch has the same track key";
@@ -1812,6 +1829,8 @@ void collect_descriptors(const XdeltaImportScan *scan, const std::vector<unsigne
         if (note.empty())
             note = limit_codepoints(std::string(item.title), 40) + " is not on Play Solo: " + why;
     }
+    if (note.empty())
+        note = lapsNote;
 }
 
 struct JobState
@@ -1927,7 +1946,8 @@ extern "C" int XdeltaImport_PollInstall(int *installed, char *error, size_t erro
 /* Harness view of the install job's descriptor step: Install, then the
    descriptors it would keep. Returns the install result; *kept and note. */
 extern "C" int XdeltaImportTest_InstallDescriptors(const XdeltaImportScan *scan, const unsigned char *selected,
-                                                   const char *assets, int *kept, char *note, size_t noteSize)
+                                                   const char *assets, int *kept, int *needsLaps, char *note,
+                                                   size_t noteSize)
 {
     std::vector<unsigned int> done;
     std::vector<KeptDescriptor> list;
@@ -1936,6 +1956,11 @@ extern "C" int XdeltaImportTest_InstallDescriptors(const XdeltaImportScan *scan,
     int n = install_items(scan, selected, assets, CTR_XDELTA_INSTALL_ROOM, error, sizeof error, &done);
     collect_descriptors(scan, done, list, text);
     if (kept) *kept = (int)list.size();
+    if (needsLaps)
+    {
+        *needsLaps = 0;
+        for (const auto &d : list) *needsLaps += d.needsLaps ? 1 : 0;
+    }
     if (note && noteSize) std::snprintf(note, noteSize, "%s", text.c_str());
     return n;
 }
@@ -1949,7 +1974,7 @@ extern "C" int XdeltaImport_InstalledDescriptorCount(void)
 }
 
 extern "C" int XdeltaImport_InstalledDescriptor(int index, char contentId[65], char revision[65], char *json,
-                                                size_t capacity)
+                                                size_t capacity, int *needsLaps)
 {
     auto &s = job();
     std::lock_guard<std::mutex> guard(s.mutex);
@@ -1960,6 +1985,7 @@ extern "C" int XdeltaImport_InstalledDescriptor(int index, char contentId[65], c
     std::snprintf(contentId, 65, "%s", d.contentId.c_str());
     std::snprintf(revision, 65, "%s", d.revision.c_str());
     std::memcpy(json, d.json.c_str(), d.json.size() + 1);
+    if (needsLaps) *needsLaps = d.needsLaps ? 1 : 0;
     return 1;
 }
 

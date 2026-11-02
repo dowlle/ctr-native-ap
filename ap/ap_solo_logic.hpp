@@ -342,6 +342,46 @@ static inline std::string AP_SoloDescriptorFileName(const std::string &key, cons
 	return key + "__" + revision + ".json";
 }
 
+// Laps the player picks for an imported track without them (ruling of
+// 2026-11-02): the xdelta importer keeps such a track's descriptor without
+// "laps" in solo/needs-laps, the Custom Tracks page lists it, and Left/Right
+// pick 1 to 7 laps (the descriptor's range, worlds/ctr/custom_packages.py),
+// starting at 3, retail's race length.
+#define AP_SOLO_LAPS_MIN 1
+#define AP_SOLO_LAPS_MAX 7
+#define AP_SOLO_LAPS_DEFAULT 3
+
+// Left (-1) or Right (+1) on the lap count: it stops at both ends.
+static inline int AP_SoloLapsStep(int laps, int direction)
+{
+	laps += direction < 0 ? -1 : direction > 0 ? 1 : 0;
+	return laps < AP_SOLO_LAPS_MIN ? AP_SOLO_LAPS_MIN : laps > AP_SOLO_LAPS_MAX ? AP_SOLO_LAPS_MAX : laps;
+}
+
+// A descriptor kept in solo/needs-laps: an object without "laps" whose id is
+// package/<content_id>/<revision>, with a title and an author. Its file name
+// is AP_SoloDescriptorFileName of the two; anything else is not listed.
+static inline bool AP_SoloNeedsLapsDescriptor(const nlohmann::json &d, const std::string &fileName)
+{
+	if (!d.is_object() || d.contains("laps"))
+		return false;
+	const std::string key = AP_SoloJsonString(d, "content_id"), revision = AP_SoloJsonString(d, "revision");
+	const std::string name = AP_SoloDescriptorFileName(key, revision);
+	return !name.empty() && name == fileName && AP_SoloJsonString(d, "id") == "package/" + key + "/" + revision &&
+	       !AP_SoloJsonString(d, "display_name").empty() && !AP_SoloJsonString(d, "author").empty();
+}
+
+// The descriptor for solo/tracks: the kept one with the picked laps added and
+// nothing else changed, or "" when the laps are out of range.
+static inline std::string AP_SoloDescriptorWithLaps(const nlohmann::json &d, int laps)
+{
+	if (!d.is_object() || d.contains("laps") || laps < AP_SOLO_LAPS_MIN || laps > AP_SOLO_LAPS_MAX)
+		return std::string();
+	nlohmann::json out = d;
+	out["laps"] = laps;
+	return out.dump();
+}
+
 // Stop sequence for a running server: /save and /exit on stdin, then wait,
 // then end the child. Returns what to do this tick.
 enum APSoloStopStep

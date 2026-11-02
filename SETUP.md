@@ -387,10 +387,15 @@ The tracks are saved in `assets/tracks/<track>/original/`, where rooms and solo
 seeds look for custom tracks. The Track Library page keeps its own packages,
 so imported tracks are not listed there. If a pack descriptor (`<patch name>.ctrpack.json`)
 sits next to the patch, it supplies the track names, laps and relic times.
-When it gives a track's laps and author, the import also lists the track on
-the Play Solo Custom Tracks page at once (a descriptor in `solo/tracks`). The
-track's other facts are measured from its files. Without laps or an author the
-result line says the track is not on Play Solo, and why.
+Every imported track is also listed on the Play Solo Custom Tracks page at
+once (a descriptor in `solo/tracks`). Its facts are measured from its files;
+laps, author and relic times come only from the pack descriptor. Without an
+author the page shows it as Unknown. Without laps (for example a patch with no
+pack descriptor) the page asks for them first: Left and Right pick 1 to 7 laps,
+starting at 3, and Cross keeps them with the track's Play Solo entry. Until
+then the track waits in `solo/needs-laps` and cannot be picked. Such a track
+has no relic, because relic times belong to the author's laps. The track files
+are never changed.
 Only race tracks are imported; arenas, game code and other changed files are
 listed but skipped.
 

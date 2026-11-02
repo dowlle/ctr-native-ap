@@ -10,6 +10,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -404,6 +405,8 @@ void JobFail(const std::string &kind, const std::string &message, const std::str
 	Log("job failed (" + kind + "): " + message);
 }
 
+void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows); // below, by its writer
+
 // A new track list keeps the picks of the tracks still in it. The first list of a
 // start begins as the YAML has each track.
 void ParseTracks(const nlohmann::json &r)
@@ -428,6 +431,11 @@ void ParseTracks(const nlohmann::json &r)
 					info.pick = old.pick;
 			next.push_back(info);
 		}
+	AddNeedsLapsRows(next);
+	for (APSoloTrackInfo &info : next)
+		for (const auto &old : g_tracks)
+			if (info.needsLaps && std::strcmp(old.id, info.id) == 0 && old.needsLaps)
+				info.laps = old.laps;
 	g_tracks = next;
 }
 
@@ -806,7 +814,8 @@ extern "C" int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName,
 	// new start is chosen.
 	std::vector<std::pair<std::string, int>> picks;
 	for (const APSoloTrackInfo &t : g_tracks)
-		picks.emplace_back(t.id, t.pick);
+		if (!t.needsLaps) // not usable until its laps are kept
+			picks.emplace_back(t.id, t.pick);
 	for (const std::string &arg : AP_SoloTrackArgs(picks))
 		args.push_back(arg);
 	return JobStart(JOB_GENERATE, args, kGenerateLimitMs) ? 1 : 0;
@@ -851,7 +860,7 @@ extern "C" int AP_Solo_TrackGet(int index, struct APSoloTrackInfo *out)
 
 extern "C" void AP_Solo_TrackCycle(int index)
 {
-	if (index >= 0 && index < (int)g_tracks.size())
+	if (index >= 0 && index < (int)g_tracks.size() && !g_tracks[index].needsLaps)
 		g_tracks[index].pick = AP_SoloTrackNextPick(g_tracks[index].pick);
 }
 
@@ -868,17 +877,17 @@ extern "C" void AP_Solo_TracksClear(void)
 	g_tracks.clear();
 }
 
-extern "C" void AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, const char *json)
+namespace
 {
-	if (!contentId || !revision || !json || !*json || std::strlen(json) > kDescriptorMax)
-		return;
-	const std::string name = AP_SoloDescriptorFileName(contentId, revision);
-	if (name.empty() || SoloRootIsLink())
-		return;
+// Keeps `json` as solo/<folder>/<name>; true once the file holds it.
+bool KeepDescriptorFile(const char *folder, const std::string &name, const std::string &json)
+{
+	if (json.empty() || json.size() > kDescriptorMax || name.empty() || SoloRootIsLink())
+		return false;
 	std::error_code ec;
-	const fs::path dir = fs::u8path(SoloPath("tracks"));
+	const fs::path dir = fs::u8path(SoloPath(folder));
 	if (fs::is_symlink(dir, ec))
-		return;
+		return false;
 	fs::create_directories(dir, ec);
 	const fs::path target = dir / fs::u8path(name);
 	// Only a plain file of descriptor size is read or replaced: a link, a
@@ -890,10 +899,10 @@ extern "C" void AP_Solo_RecordTrackDescriptor(const char *contentId, const char 
 		if (!fs::is_regular_file(st) || fs::file_size(target, ec) > kDescriptorMax || ec)
 		{
 			Log("left " + name + " alone: not a plain descriptor file");
-			return;
+			return false;
 		}
 		if (ReadSmallPlainFile(target, kDescriptorMax) == json)
-			return;
+			return true;
 	}
 	// A fresh temp name, created exclusively (never through a link left
 	// there). A name someone else holds is skipped, never removed.
@@ -910,7 +919,7 @@ extern "C" void AP_Solo_RecordTrackDescriptor(const char *contentId, const char 
 		if (wrote == -1)
 			fs::remove(tmp, ec); // ours: created by this call
 		Log("could not keep the descriptor of " + name);
-		return;
+		return false;
 	}
 	// rename replaces the old file in one step (MoveFileExW with
 	// MOVEFILE_REPLACE_EXISTING under MinGW libstdc++, rename(2) on Linux).
@@ -920,9 +929,117 @@ extern "C" void AP_Solo_RecordTrackDescriptor(const char *contentId, const char 
 	{
 		fs::remove(tmp, ec);
 		Log("could not keep the descriptor of " + name);
-		return;
+		return false;
 	}
-	Log("kept the descriptor of " + name + " for the custom-track step");
+	Log(std::string("kept the descriptor of ") + name + " in solo/" + folder);
+	return true;
+}
+
+// Removes solo/needs-laps/<name> when it is a plain file: its track now has a
+// complete descriptor in solo/tracks.
+void DropNeedsLaps(const std::string &name)
+{
+	std::error_code ec;
+	const fs::path dir = fs::u8path(SoloPath("needs-laps"));
+	if (name.empty() || SoloRootIsLink() || fs::is_symlink(dir, ec))
+		return;
+	const fs::path target = dir / fs::u8path(name);
+	if (fs::is_regular_file(fs::symlink_status(target, ec)))
+		fs::remove(target, ec);
+}
+
+// solo/needs-laps/<track key>__<revision>.json of a listed row
+// (id package/<track key>/<revision>), or "".
+std::string NeedsLapsFileName(const APSoloTrackInfo &t)
+{
+	const std::string id = t.id;
+	const size_t slash = id.find('/', 8);
+	if (id.compare(0, 8, "package/") != 0 || slash == std::string::npos)
+		return std::string();
+	return AP_SoloDescriptorFileName(id.substr(8, slash - 8), id.substr(slash + 1));
+}
+
+// The tracks in solo/needs-laps the wrapper's list does not already have, as
+// rows that wait for their laps (ruling of 2026-11-02).
+void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows)
+{
+	std::error_code ec;
+	const fs::path dir = fs::u8path(SoloPath("needs-laps"));
+	if (SoloRootIsLink() || fs::is_symlink(dir, ec) || !fs::is_directory(dir, ec))
+		return;
+	std::vector<std::string> names;
+	for (fs::directory_iterator it(dir, ec), end; !ec && it != end && names.size() < 256; it.increment(ec))
+	{
+		const std::string name = it->path().filename().u8string();
+		if (name.size() > 5 && name.compare(name.size() - 5, 5, ".json") == 0)
+			names.push_back(name);
+	}
+	std::sort(names.begin(), names.end());
+	for (const std::string &name : names)
+	{
+		const nlohmann::json d = nlohmann::json::parse(ReadSmallPlainFile(dir / fs::u8path(name), kDescriptorMax),
+		                                               nullptr, false);
+		if (!AP_SoloNeedsLapsDescriptor(d, name))
+			continue;
+		APSoloTrackInfo info;
+		std::memset(&info, 0, sizeof info);
+		if (!CopyText(info.id, sizeof info.id, AP_SoloJsonString(d, "id")) ||
+		    !CopyText(info.revision, sizeof info.revision, AP_SoloJsonString(d, "revision")))
+			continue;
+		CopyText(info.title, sizeof info.title, AP_SoloJsonString(d, "display_name"));
+		CopyText(info.author, sizeof info.author, AP_SoloJsonString(d, "author"));
+		bool listed = false;
+		for (const APSoloTrackInfo &row : rows)
+			listed = listed || std::strcmp(row.id, info.id) == 0;
+		if (listed)
+			continue;
+		info.needsLaps = 1;
+		info.laps = AP_SOLO_LAPS_DEFAULT;
+		rows.push_back(info);
+	}
+}
+} // namespace
+
+extern "C" void AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, const char *json)
+{
+	if (!contentId || !revision || !json)
+		return;
+	const std::string name = AP_SoloDescriptorFileName(contentId, revision);
+	if (KeepDescriptorFile("tracks", name, json))
+		DropNeedsLaps(name);
+}
+
+extern "C" void AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *revision, const char *json)
+{
+	if (!contentId || !revision || !json)
+		return;
+	KeepDescriptorFile("needs-laps", AP_SoloDescriptorFileName(contentId, revision), json);
+}
+
+extern "C" void AP_Solo_TrackStepLaps(int index, int direction)
+{
+	if (index >= 0 && index < (int)g_tracks.size() && g_tracks[index].needsLaps)
+		g_tracks[index].laps = AP_SoloLapsStep(g_tracks[index].laps, direction);
+}
+
+extern "C" int AP_Solo_TrackKeepLaps(int index)
+{
+	if (index < 0 || index >= (int)g_tracks.size() || !g_tracks[index].needsLaps)
+		return 0;
+	const std::string name = NeedsLapsFileName(g_tracks[index]);
+	std::error_code ec;
+	const fs::path dir = fs::u8path(SoloPath("needs-laps"));
+	if (name.empty() || SoloRootIsLink() || fs::is_symlink(dir, ec))
+		return 0;
+	const nlohmann::json d =
+	    nlohmann::json::parse(ReadSmallPlainFile(dir / fs::u8path(name), kDescriptorMax), nullptr, false);
+	if (!AP_SoloNeedsLapsDescriptor(d, name))
+		return 0;
+	const std::string json = AP_SoloDescriptorWithLaps(d, g_tracks[index].laps);
+	if (json.empty() || !KeepDescriptorFile("tracks", name, json))
+		return 0;
+	DropNeedsLaps(name);
+	return 1;
 }
 
 extern "C" int AP_Solo_RoomCount(void) { return (int)g_lists.rooms.size(); }

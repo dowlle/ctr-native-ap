@@ -79,9 +79,11 @@ int XdeltaImport_Install(const struct XdeltaImportScan *scan, const unsigned cha
    optional super_turbo_pads, weapon_crates, checkpoints and ai_nav included,
    is measured on the item's verified files with the rules the client checks
    a descriptor against on load. Laps, author and relic times come from the
-   pack descriptor and are never filled in; the pack descriptor may also take
-   relic and ctr_tokens away. Returns 1 with the JSON, its track key and
-   revision, or 0 with a short reason ("the pack descriptor gives no laps"). */
+   pack descriptor and are never guessed; the pack descriptor may also take
+   relic and ctr_tokens away. No author: "Unknown". Returns 1 with the JSON,
+   its track key and revision; 2 when the pack descriptor gives no laps (or
+   there is none): the JSON then has no "laps" and no relic, and the player
+   picks the laps on Play Solo's Custom Tracks page; 0 with a short reason. */
 int XdeltaImport_PlanDescriptor(const struct XdeltaImportScan *scan, unsigned int item, char *json, size_t capacity,
                                 char contentId[65], char revision[65], char *why, size_t whySize);
 /* The room folder of a track: the descriptor's track_key, otherwise the
@@ -117,10 +119,13 @@ int XdeltaImport_PollInstall(int *installed, char *error, size_t errorSize);
 void XdeltaImport_DiscardScan(void);
 /* After PollInstall reported done or failed: the Play Solo descriptors of the
    tracks that install wrote to the room folders (CTR_XDELTA_INSTALL_ROOM), in
-   list order, kept until the next install starts. A track without one is
-   named in the note with its reason ("" when every track has one). */
+   list order, kept until the next install starts. *needsLaps (may be NULL)
+   is 1 for a descriptor without laps (XdeltaImport_PlanDescriptor's 2). The
+   note names a track without a descriptor and why, otherwise a track whose
+   laps the player picks ("" when every track is complete). */
 int XdeltaImport_InstalledDescriptorCount(void);
-int XdeltaImport_InstalledDescriptor(int index, char contentId[65], char revision[65], char *json, size_t capacity);
+int XdeltaImport_InstalledDescriptor(int index, char contentId[65], char revision[65], char *json, size_t capacity,
+                                     int *needsLaps);
 void XdeltaImport_InstalledDescriptorNote(char *note, size_t size);
 
 #ifdef __cplusplus

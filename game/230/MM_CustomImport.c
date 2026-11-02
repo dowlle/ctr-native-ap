@@ -25,15 +25,21 @@
 #ifdef MM_IMPORT_PLAYER
 /* The importer's Play Solo descriptors (ruling of 2026-11-02): each installed
    track with one goes into solo/tracks, so the Play Solo Custom Tracks page
-   lists it at once. */
+   lists it at once. A track without laps goes into solo/needs-laps: the page
+   lists it too and asks the player for its laps first. */
 static void MM_CustomImport_KeepSoloDescriptors(void)
 {
     static char json[16384];
     char contentId[65], revision[65];
-    int i, count = XdeltaImport_InstalledDescriptorCount();
+    int i, needsLaps, count = XdeltaImport_InstalledDescriptorCount();
     for (i = 0; i < count; i++)
-        if (XdeltaImport_InstalledDescriptor(i, contentId, revision, json, sizeof json))
-            AP_Solo_RecordTrackDescriptor(contentId, revision, json);
+        if (XdeltaImport_InstalledDescriptor(i, contentId, revision, json, sizeof json, &needsLaps))
+        {
+            if (needsLaps)
+                AP_Solo_RecordTrackNeedsLaps(contentId, revision, json);
+            else
+                AP_Solo_RecordTrackDescriptor(contentId, revision, json);
+        }
 }
 #endif
 
