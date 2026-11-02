@@ -7,6 +7,7 @@
 #include "ap_capability.h"
 #include "ap_stat_ladder.h"
 #include "ap_stat_select_logic.h"
+#include "ap_race_stats_logic.h" // Arcade races drive vanilla stats (ruling of 2026-11-02)
 #include "ap_net.h"      // ap_net_statselect_* (per-slot data storage)
 #include "ap_retro_fueled_logic.h"
 #include "ap_hooks.h"    // AP_LogLine
@@ -222,6 +223,16 @@ static int AP_CapabilityBoostActive(void)
 static int AP_CapabilityStatsActive(void)
 {
 	return ctr_cfg_active() && AP_CapabilityModeLive(ctr_cfg.stats_mode);
+}
+
+typedef char ap_cap_race_stats_mode_check
+    [(AP_RS_ARCADE_MODE == ARCADE_MODE && AP_RS_TIME_TRIAL == TIME_TRIAL) ? 1 : -1];
+
+int AP_CapabilityRoomStatsRace(void)
+{
+	if (sdata == 0 || sdata->gGT == 0)
+		return 1;
+	return AP_RaceStats_RoomApplies(sdata->gGT->gameMode1);
 }
 
 // The local human player. Adventure / arcade single player: drivers[0]. Same
@@ -822,11 +833,14 @@ void AP_CapabilityStats(struct Driver *driver)
 {
 	int i;
 	int weakened;
+	int statsLive;
 
 	if (!AP_CapabilityIsLocal(driver))
 		return;
 	weakened = AP_TrapWeakenedActive(driver);
-	if (!AP_CapabilityStatsActive() && !weakened && !g_cap_weaken_stats_applied)
+	// An Arcade race drives vanilla stats: the pack counts as off there.
+	statsLive = AP_CapabilityStatsActive() && AP_CapabilityRoomStatsRace();
+	if (!statsLive && !weakened && !g_cap_weaken_stats_applied)
 		return;
 
 	// Written every frame rather than once on a rank change: six stores, no
@@ -843,7 +857,7 @@ void AP_CapabilityStats(struct Driver *driver)
 			continue; // table shape changed under us: leave the engine's own value
 
 		// The applied rank: the player's selection under the received ceiling.
-		rank = AP_CapabilityAppliedStatRankFor(AP_CAP_STAT_ROWS[i].chain);
+		rank = statsLive ? AP_CapabilityAppliedStatRankFor(AP_CAP_STAT_ROWS[i].chain) : -1;
 		if (rank < 0)
 		{
 			// Pack-off: derive the permanent vanilla anchor from the same character

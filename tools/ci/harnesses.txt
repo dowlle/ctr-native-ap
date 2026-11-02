@@ -45,6 +45,7 @@ tools/test-custom-selector.c
 tools/test-custom-selector-player.c
 tools/test-custom-state-identity.c
 tools/test-custom-time-trial.c
+tools/test-custom-time-trial-player.c
 tools/test-custom-track-load.c
 tools/test-custom-relic-times.c
 tools/test-custom-track-manager.c
@@ -141,6 +142,7 @@ tools/test-podium-seedcfg.cpp
 tools/test-podium-skip.c
 tools/test-podium-trophy-presentation.c
 tools/test-race-attempt-lifecycle.c
+tools/test-race-stats.c
 tools/test-received-backlog.cpp
 tools/test-relic-goal.c
 tools/test-relic-perfect.c

@@ -653,6 +653,10 @@ void AP_CharSwap_ApplyStatPackage(struct Driver *driver)
 		return;
 	if (!ap_cs_packageActive())
 		return;
+	// An Arcade race drives vanilla stats (ruling of 2026-11-02): no editable
+	// package, Penta MAX table or class override over VehBirth_SetConsts.
+	if (!AP_CapabilityRoomStatsRace())
+		return;
 	if (driver->driverID != 0)
 		return; // local player only
 	if (gGT->drivers[0] != driver)

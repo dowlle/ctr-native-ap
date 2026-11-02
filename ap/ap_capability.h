@@ -230,6 +230,11 @@ int AP_CapabilityFireGrant(struct Driver *driver, int *reserves, uint32_t type, 
 // the stat pack is active for this seed and this is the local player.
 void AP_CapabilityStats(struct Driver *driver);
 
+// 1 when the race in progress drives the room's kart stats, 0 for an Arcade
+// race (Arcade, its custom pages and Time Trial), which drives vanilla stats
+// (ruling of 2026-11-02). Adventure keeps the room's stats. ap_race_stats_logic.h.
+int AP_CapabilityRoomStatsRace(void);
+
 // ── Rank selector (ruling 2026-09-11, Boost added 2026-10-26) ──────────────
 // The functions above that return a tier or rank answer "what do the received
 // items unlock" -- the CEILING. They stay the only answer logic reads (the
