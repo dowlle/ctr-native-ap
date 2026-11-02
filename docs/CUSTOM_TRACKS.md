@@ -37,9 +37,13 @@ All options are in `CMakeLists.txt`.
 With `CTR_AP=ON`, packages follow `CTR_CUSTOM_TRACKS` and Box Author Mode comes
 only from `CTR_AP_AUTHORING` (the box authoring download,
 `ctr_native_ap_authoring`). The Archipelago player client has the library on
-Options > Track Library and the Arcade custom pages, Single Race only. Its
-Custom Content page and a room's tracks stay on the seed path; a library install
-never serves a room.
+Options > Track Library and the custom pages for Single Race and Time Trial.
+Its Custom Content page and a room's tracks stay on the seed path; a library
+install never serves a room.
+
+Every Arcade race drives vanilla kart stats for now, retail Arcade in a room
+and the custom pages included, and so does Time Trial. Adventure keeps the
+room's stats (`ap/ap_race_stats_logic.h`).
 
 An Arcade custom race in a room holds that room (`AP_ArcadeHoldsRoom`): nothing
 the race does sends a check or a goal, received items stay queued, and their

@@ -1,5 +1,5 @@
-/* Custom pages at the normal track selector. Arcade in every client with
-   packages, Time Trial in the authoring builds only (MM_CUSTOM_TIME_TRIAL).
+/* Custom pages at the normal track selector. Arcade and Time Trial in every
+   client with packages (MM_CUSTOM_TIME_TRIAL).
    Included by MM_TrackSelect.c inside CTR_CUSTOM_PACKAGES. Custom pages use owned library metadata, never indices
    into retail track/ghost tables.
 
@@ -32,13 +32,11 @@
    the audit in native_custom_identity.h and tools/test-custom-identity.c. */
 #define MM_CUSTOM_ARCADE_HOST_LEVEL 6
 
-/* The player client races Single Race only: the rulings make that the required
-   mode and add no ghost work. 1 opens the Time Trial pages there too. */
-#if defined(CTR_AP) && !defined(CTR_AP_AUTHORING)
-#define MM_CUSTOM_TIME_TRIAL 0
-#else
+/* Every client with packages has the Time Trial pages: the player client got
+   them on the ruling of 2026-11-02 (the plan's "Single Race and Time Trial
+   both"). Best times and the ghost live in custom-records/ there as in the
+   authoring builds. 0 would close the Time Trial pages again. */
 #define MM_CUSTOM_TIME_TRIAL 1
-#endif
 
 static struct CustomTrackLibrary s_arcadeLibrary;
 static size_t s_arcadePage;
