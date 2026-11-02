@@ -2,6 +2,9 @@
    Custom Content in the authoring builds. Included by MM_ConfigMenu.c inside
    CTR_CUSTOM_PACKAGES only. */
 #include <platform/native_custom_revision.h>
+#ifndef MM_IMPORT_PLAYER // the player client imports on Custom Content instead
+#include "MM_CustomImport.c"
+#endif
 static int s_saphiVersionTrack;
 static size_t s_saphiBrowseSelection;
 /* Shared game-font manager: Browse and Installed, no race launch actions. */
@@ -60,6 +63,10 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
     (void)menu;
     s_contentSearchPadPrev = rawPad;
     MM_CustomLibrary_Tick(0);
+#ifndef MM_IMPORT_PLAYER
+    if (!s_contentSearchEditing && !MM_CustomLibrary_Busy() && !s_saphiDownloading) MM_CustomImport_TakeDrop();
+    if (MM_CustomImport_Active()) { MM_CustomImport_Proc(ot, pad); return; }
+#endif
     if (s_saphiRefreshBusy)
     {
         struct CustomSaphiCatalogue *fresh = NULL;
@@ -109,6 +116,14 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
         if (!s_saphiRefreshBusy) snprintf(s_saphiMessage,sizeof s_saphiMessage,"Could not refresh Saphi. L2: Retry.");
         if (tapped & BTN_L2) s_contentStoreWanted = 1;
     }
+#ifndef MM_IMPORT_PLAYER
+    if ((tapped & BTN_SELECT) && !s_contentSearchEditing && !MM_CustomLibrary_Busy())
+    {
+        MM_CustomImport_Open();
+        OtherFX_Play(1,1);
+        return;
+    }
+#endif
     if (s_saphiVersionTrack && (tapped & (BTN_TRIANGLE | BTN_START)))
     {
         s_saphiVersionTrack=0;s_saphiSelection[0]=s_saphiBrowseSelection;tapped=0;
@@ -235,6 +250,9 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
     MM_CustomText_Draw(line,256,180,456,1,JUSTIFY_CENTER | WHITE,ot);
     snprintf(line,sizeof line,"%u/%u   L2 Refresh   Back: Options",count ? (unsigned)*selected+1 : 0,(unsigned)count);
     MM_CustomText_Draw(line,256,196,456,1,JUSTIFY_CENTER | WHITE,ot);
+#ifndef MM_IMPORT_PLAYER
+    MM_CustomText_Draw("Select: Import track files",256,188,456,1,JUSTIFY_CENTER | ORANGE,ot);
+#endif
     RECT listBox={20,64,268,108}, detailBox={297,64,190,108};
     RECTMENU_DrawInnerRect(&listBox,0,ot);RECTMENU_DrawInnerRect(&detailBox,0,ot);
     if(enterVersions) { s_saphiVersionTrack=enterVersions;s_saphiBrowseSelection=*selected;*selected=0; }

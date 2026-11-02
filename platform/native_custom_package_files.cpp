@@ -3,6 +3,7 @@
 #endif
 #include <platform/native_custom_package.h>
 #include <platform/native_custom_offline.h>
+#include <platform/native_custom_content_verify.h>
 #include <nlohmann/json.hpp>
 #include <cstdio>
 #include <cstring>
@@ -504,6 +505,59 @@ extern "C" int CustomPackage_InstallInbox(const char *assets, const char *pin, c
     }
 }
 
+/* Relic and CTR Challenge capability, plus xdelta provenance. Display and
+   admission hints only: a missing or damaged provenance file only clears the
+   hints, it never refuses the package. */
+static void package_capabilities(CustomPackageOwned *package, CustomPackageStoreEntry &entry)
+{
+    bool excludeRelic = false, excludeTokens = false;
+    for (unsigned int i = 0; i < entry.manifest.count; i++)
+    {
+        const auto &file = entry.manifest.files[i];
+        if (std::strcmp(file.role, "presentation") || std::strcmp(file.path, "metadata/xdelta-source.json") || file.bytes > 4096) continue;
+        std::string bytes(file.bytes, '\0');
+        if (!CustomPackage_CopyFile(package, "presentation", bytes.data(), bytes.size(), nullptr)) continue;
+        try
+        {
+            auto source = nlohmann::json::parse(bytes);
+            if (source.at("provider") != "xdelta" || source.at("schema_version") != 1) continue;
+            auto patch = source.at("patch_sha256").get<std::string>();
+            int index = source.at("bigfile_index").get<int>();
+            if (patch.size() != 64 || patch.find_first_not_of("0123456789abcdef") != std::string::npos || index < 0) continue;
+            entry.local.xdelta = 1;
+            entry.local.bigfileIndex = index;
+            std::memcpy(entry.local.patchSha256, patch.c_str(), sizeof entry.local.patchSha256);
+            if (source.contains("excluded"))
+                for (const auto &e : source["excluded"])
+                {
+                    if (e == "relic") excludeRelic = true;
+                    if (e == "ctr_tokens") excludeTokens = true;
+                }
+            if (source.contains("author") && source["author"].is_string())
+            {
+                auto author = source["author"].get<std::string>();
+                if (!author.empty() && author.size() < sizeof entry.local.author &&
+                    std::none_of(author.begin(), author.end(), [](unsigned char c) { return c < 32 || c == 127; }))
+                    std::memcpy(entry.local.author, author.c_str(), author.size() + 1);
+            }
+        }
+        catch (const std::exception &) { /* Optional display metadata cannot grant admission. */ }
+    }
+    CustomContentVerification report;
+    if (!CustomPackage_GetPairReport(package, &report)) return;
+    const auto &m = report.measured;
+    CustomPackageRelicTargets targets;
+    const char *relic = !m.relicCrates ? "No time crates"
+        : !CustomPackage_GetRelicTargets(package, &targets, nullptr, 0) ? "No relic times"
+        : excludeRelic ? "Relic excluded" : "";
+    const char *ctr = !(m.letterC == 1 && m.letterT == 1 && m.letterR == 1) ? "No CTR letters"
+        : excludeTokens ? "Letters excluded" : "";
+    entry.local.relic = !*relic;
+    entry.local.ctrChallenge = !*ctr;
+    std::snprintf(entry.local.relicReason, sizeof entry.local.relicReason, "%s", relic);
+    std::snprintf(entry.local.ctrChallengeReason, sizeof entry.local.ctrChallengeReason, "%s", ctr);
+}
+
 extern "C" int CustomPackage_ScanStore(const char *path, CustomPackageStoreVisitor visitor, void *context,
                                       char *error, size_t errorSize)
 {
@@ -537,6 +591,7 @@ extern "C" int CustomPackage_ScanStore(const char *path, CustomPackageStoreVisit
                     if (!std::strcmp(file.role,"lev")) std::memcpy(entry.local.levSha256,file.sha256,sizeof entry.local.levSha256);
                     else if (!std::strcmp(file.role,"vrm")) std::memcpy(entry.local.vrmSha256,file.sha256,sizeof entry.local.vrmSha256);
                 }
+                package_capabilities(package, entry);
                 for (unsigned int i=0;i<entry.manifest.count;i++)
                 {
                     const auto &file=entry.manifest.files[i];

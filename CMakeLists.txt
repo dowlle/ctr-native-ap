@@ -193,6 +193,8 @@ set(CTR_CUSTOM_PACKAGE_SOURCES
     platform/native_custom_track_library.c
     platform/native_custom_unicode.c
     platform/native_saphi_catalogue.cpp
+    platform/native_xdelta_import.cpp
+    platform/native_xdelta_decode.c
     vendor/utf8proc/utf8proc.c)
 
 if(NOT CTR_AP)
@@ -221,7 +223,7 @@ if(NOT CTR_AP)
         endif()
         target_compile_options(custom_package PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fexceptions;-frtti>)
         target_link_libraries(custom_package PUBLIC OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB Threads::Threads)
-        target_compile_definitions(ctr_native PRIVATE CTR_CUSTOM_PACKAGES)
+        target_compile_definitions(ctr_native PRIVATE CTR_CUSTOM_PACKAGES CTR_XDELTA_IMPORT)
         target_link_libraries(ctr_native custom_package)
         if(WIN32)
             target_link_libraries(ctr_native winhttp ws2_32 crypt32)
@@ -329,7 +331,9 @@ if(CTR_AP)
             $<$<BOOL:${CTR_AP_AUTHORING}>:CTR_AP_AUTHORING>)
         target_compile_options(custom_package PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fexceptions;-frtti>)
         target_link_libraries(custom_package PUBLIC Threads::Threads)
-        target_compile_definitions(ctr_native PRIVATE CTR_CUSTOM_PACKAGES)
+        # The xdelta importer (decision 35, 2026-10-28) rides in the package
+        # library, so the player and authoring clients build it the same way.
+        target_compile_definitions(ctr_native PRIVATE CTR_CUSTOM_PACKAGES CTR_XDELTA_IMPORT)
         target_compile_definitions(ap_net PRIVATE CTR_CUSTOM_PACKAGES)
         target_include_directories(ap_net PRIVATE ${CMAKE_SOURCE_DIR}/include)
         target_link_libraries(ap_net PUBLIC custom_package)

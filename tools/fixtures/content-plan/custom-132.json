@@ -1,0 +1,6843 @@
+{
+ "schema_version": 18,
+ "content_plan": {
+  "version": 1,
+  "packages": [
+   {
+    "id": "package/fixture-001/1.0",
+    "content_id": "fixture-001",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000001",
+    "revision": "1.0",
+    "display_name": "Fixture 001",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000001",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "00000000000000000000000000000000000000000000000000000000000003e9",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-007/1.0",
+    "content_id": "fixture-007",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000007",
+    "revision": "1.0",
+    "display_name": "Fixture 007",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000007",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "00000000000000000000000000000000000000000000000000000000000003ef",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-009/1.0",
+    "content_id": "fixture-009",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000009",
+    "revision": "1.0",
+    "display_name": "Fixture 009",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000009",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "00000000000000000000000000000000000000000000000000000000000003f1",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-010/1.0",
+    "content_id": "fixture-010",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000000a",
+    "revision": "1.0",
+    "display_name": "Fixture 010",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000000a",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "00000000000000000000000000000000000000000000000000000000000003f2",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-014/1.0",
+    "content_id": "fixture-014",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000000e",
+    "revision": "1.0",
+    "display_name": "Fixture 014",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000000e",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "00000000000000000000000000000000000000000000000000000000000003f6",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-015/1.0",
+    "content_id": "fixture-015",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000000f",
+    "revision": "1.0",
+    "display_name": "Fixture 015",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000000f",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "00000000000000000000000000000000000000000000000000000000000003f7",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-016/1.0",
+    "content_id": "fixture-016",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000010",
+    "revision": "1.0",
+    "display_name": "Fixture 016",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000010",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "00000000000000000000000000000000000000000000000000000000000003f8",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-018/1.0",
+    "content_id": "fixture-018",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000012",
+    "revision": "1.0",
+    "display_name": "Fixture 018",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000012",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "00000000000000000000000000000000000000000000000000000000000003fa",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-019/1.0",
+    "content_id": "fixture-019",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000013",
+    "revision": "1.0",
+    "display_name": "Fixture 019",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000013",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "00000000000000000000000000000000000000000000000000000000000003fb",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-025/1.0",
+    "content_id": "fixture-025",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000019",
+    "revision": "1.0",
+    "display_name": "Fixture 025",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000019",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000401",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-029/1.0",
+    "content_id": "fixture-029",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000001d",
+    "revision": "1.0",
+    "display_name": "Fixture 029",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000001d",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000405",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-030/1.0",
+    "content_id": "fixture-030",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000001e",
+    "revision": "1.0",
+    "display_name": "Fixture 030",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000001e",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000406",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-031/1.0",
+    "content_id": "fixture-031",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000001f",
+    "revision": "1.0",
+    "display_name": "Fixture 031",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000001f",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000407",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-036/1.0",
+    "content_id": "fixture-036",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000024",
+    "revision": "1.0",
+    "display_name": "Fixture 036",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000024",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000040c",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-039/1.0",
+    "content_id": "fixture-039",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000027",
+    "revision": "1.0",
+    "display_name": "Fixture 039",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000027",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000040f",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-040/1.0",
+    "content_id": "fixture-040",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000028",
+    "revision": "1.0",
+    "display_name": "Fixture 040",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000028",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000410",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-041/1.0",
+    "content_id": "fixture-041",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000029",
+    "revision": "1.0",
+    "display_name": "Fixture 041",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000029",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000411",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-043/1.0",
+    "content_id": "fixture-043",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000002b",
+    "revision": "1.0",
+    "display_name": "Fixture 043",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000002b",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000413",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-045/1.0",
+    "content_id": "fixture-045",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000002d",
+    "revision": "1.0",
+    "display_name": "Fixture 045",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000002d",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000415",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-047/1.0",
+    "content_id": "fixture-047",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000002f",
+    "revision": "1.0",
+    "display_name": "Fixture 047",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000002f",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000417",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-048/1.0",
+    "content_id": "fixture-048",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000030",
+    "revision": "1.0",
+    "display_name": "Fixture 048",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000030",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000418",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-049/1.0",
+    "content_id": "fixture-049",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000031",
+    "revision": "1.0",
+    "display_name": "Fixture 049",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000031",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000419",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-055/1.0",
+    "content_id": "fixture-055",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000037",
+    "revision": "1.0",
+    "display_name": "Fixture 055",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000037",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000041f",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-057/1.0",
+    "content_id": "fixture-057",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000039",
+    "revision": "1.0",
+    "display_name": "Fixture 057",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000039",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000421",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-058/1.0",
+    "content_id": "fixture-058",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000003a",
+    "revision": "1.0",
+    "display_name": "Fixture 058",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000003a",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000422",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-059/1.0",
+    "content_id": "fixture-059",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000003b",
+    "revision": "1.0",
+    "display_name": "Fixture 059",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000003b",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000423",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-060/1.0",
+    "content_id": "fixture-060",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000003c",
+    "revision": "1.0",
+    "display_name": "Fixture 060",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000003c",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000424",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-062/1.0",
+    "content_id": "fixture-062",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000003e",
+    "revision": "1.0",
+    "display_name": "Fixture 062",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000003e",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000426",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-065/1.0",
+    "content_id": "fixture-065",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000041",
+    "revision": "1.0",
+    "display_name": "Fixture 065",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000041",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000429",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-066/1.0",
+    "content_id": "fixture-066",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000042",
+    "revision": "1.0",
+    "display_name": "Fixture 066",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000042",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000042a",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-068/1.0",
+    "content_id": "fixture-068",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000044",
+    "revision": "1.0",
+    "display_name": "Fixture 068",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000044",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000042c",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-070/1.0",
+    "content_id": "fixture-070",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000046",
+    "revision": "1.0",
+    "display_name": "Fixture 070",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000046",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000042e",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-075/1.0",
+    "content_id": "fixture-075",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000004b",
+    "revision": "1.0",
+    "display_name": "Fixture 075",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000004b",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000433",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-087/1.0",
+    "content_id": "fixture-087",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000057",
+    "revision": "1.0",
+    "display_name": "Fixture 087",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000057",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000043f",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-088/1.0",
+    "content_id": "fixture-088",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000058",
+    "revision": "1.0",
+    "display_name": "Fixture 088",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000058",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000440",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-089/1.0",
+    "content_id": "fixture-089",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000059",
+    "revision": "1.0",
+    "display_name": "Fixture 089",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000059",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000441",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-090/1.0",
+    "content_id": "fixture-090",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000005a",
+    "revision": "1.0",
+    "display_name": "Fixture 090",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000005a",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000442",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-094/1.0",
+    "content_id": "fixture-094",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000005e",
+    "revision": "1.0",
+    "display_name": "Fixture 094",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000005e",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000446",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-100/1.0",
+    "content_id": "fixture-100",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000064",
+    "revision": "1.0",
+    "display_name": "Fixture 100",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000064",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000044c",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-103/1.0",
+    "content_id": "fixture-103",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000067",
+    "revision": "1.0",
+    "display_name": "Fixture 103",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000067",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000044f",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-104/1.0",
+    "content_id": "fixture-104",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000068",
+    "revision": "1.0",
+    "display_name": "Fixture 104",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000068",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000450",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-105/1.0",
+    "content_id": "fixture-105",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000069",
+    "revision": "1.0",
+    "display_name": "Fixture 105",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000069",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000451",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-106/1.0",
+    "content_id": "fixture-106",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000006a",
+    "revision": "1.0",
+    "display_name": "Fixture 106",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000006a",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000452",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-107/1.0",
+    "content_id": "fixture-107",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000006b",
+    "revision": "1.0",
+    "display_name": "Fixture 107",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000006b",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000453",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-110/1.0",
+    "content_id": "fixture-110",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000006e",
+    "revision": "1.0",
+    "display_name": "Fixture 110",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000006e",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000456",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-113/1.0",
+    "content_id": "fixture-113",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000071",
+    "revision": "1.0",
+    "display_name": "Fixture 113",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000071",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000459",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-114/1.0",
+    "content_id": "fixture-114",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000072",
+    "revision": "1.0",
+    "display_name": "Fixture 114",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000072",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000045a",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-117/1.0",
+    "content_id": "fixture-117",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000075",
+    "revision": "1.0",
+    "display_name": "Fixture 117",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000075",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000045d",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-122/1.0",
+    "content_id": "fixture-122",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000007a",
+    "revision": "1.0",
+    "display_name": "Fixture 122",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000007a",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000462",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-126/1.0",
+    "content_id": "fixture-126",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-00000000007e",
+    "revision": "1.0",
+    "display_name": "Fixture 126",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000007e",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000466",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-128/1.0",
+    "content_id": "fixture-128",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000080",
+    "revision": "1.0",
+    "display_name": "Fixture 128",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000080",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000468",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-130/1.0",
+    "content_id": "fixture-130",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000082",
+    "revision": "1.0",
+    "display_name": "Fixture 130",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000082",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000046a",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   },
+   {
+    "id": "package/fixture-132/1.0",
+    "content_id": "fixture-132",
+    "uuid": "0f0e0d0c-0b0a-4908-8706-000000000084",
+    "revision": "1.0",
+    "display_name": "Fixture 132",
+    "author": "Fixture Author",
+    "laps": 3,
+    "capabilities": {
+     "time_trial": true,
+     "arcade": true,
+     "relic": true,
+     "ctr_tokens": true,
+     "wumpa": true
+    },
+    "relic_targets": {
+     "sapphire": 96000,
+     "gold": 86400,
+     "platinum": 76800
+    },
+    "files": [
+     {
+      "role": "lev",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000084",
+      "bytes": 1234567,
+      "format": "ctr-lev",
+      "format_version": 1
+     },
+     {
+      "role": "vrm",
+      "sha256": "000000000000000000000000000000000000000000000000000000000000046c",
+      "bytes": 458808,
+      "format": "ctr-vrm",
+      "format_version": 1
+     }
+    ],
+    "evidence": []
+   }
+  ],
+  "tracks": [
+   {
+    "id": "retail:2",
+    "origin": "retail",
+    "retail_id": 2,
+    "display_name": "Blizzard Bluff",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "retail:9",
+    "origin": "retail",
+    "retail_id": 9,
+    "display_name": "Mystery Caves",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "custom/fixture-132/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-132/1.0",
+    "custom_slot": 132,
+    "display_name": "Fixture 132",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 132"
+   },
+   {
+    "id": "retail:1",
+    "origin": "retail",
+    "retail_id": 1,
+    "display_name": "Dragon Mines",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "custom/fixture-043/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-043/1.0",
+    "custom_slot": 43,
+    "display_name": "Fixture 043",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 043"
+   },
+   {
+    "id": "retail:8",
+    "origin": "retail",
+    "retail_id": 8,
+    "display_name": "Sewer Speedway",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "custom/fixture-036/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-036/1.0",
+    "custom_slot": 36,
+    "display_name": "Fixture 036",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 036"
+   },
+   {
+    "id": "custom/fixture-058/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-058/1.0",
+    "custom_slot": 58,
+    "display_name": "Fixture 058",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 058"
+   },
+   {
+    "id": "retail:12",
+    "origin": "retail",
+    "retail_id": 12,
+    "display_name": "Polar Pass",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "custom/fixture-107/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-107/1.0",
+    "custom_slot": 107,
+    "display_name": "Fixture 107",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 107"
+   },
+   {
+    "id": "custom/fixture-059/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-059/1.0",
+    "custom_slot": 59,
+    "display_name": "Fixture 059",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 059"
+   },
+   {
+    "id": "custom/fixture-094/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-094/1.0",
+    "custom_slot": 94,
+    "display_name": "Fixture 094",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 094"
+   },
+   {
+    "id": "custom/fixture-048/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-048/1.0",
+    "custom_slot": 48,
+    "display_name": "Fixture 048",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 048"
+   },
+   {
+    "id": "retail:11",
+    "origin": "retail",
+    "retail_id": 11,
+    "display_name": "N. Gin Labs",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "custom/fixture-016/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-016/1.0",
+    "custom_slot": 16,
+    "display_name": "Fixture 016",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 016"
+   },
+   {
+    "id": "custom/fixture-130/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-130/1.0",
+    "custom_slot": 130,
+    "display_name": "Fixture 130",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 130"
+   },
+   {
+    "id": "retail:7",
+    "origin": "retail",
+    "retail_id": 7,
+    "display_name": "Hot Air Skyway",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "custom/fixture-029/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-029/1.0",
+    "custom_slot": 29,
+    "display_name": "Fixture 029",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 029"
+   },
+   {
+    "id": "custom/fixture-128/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-128/1.0",
+    "custom_slot": 128,
+    "display_name": "Fixture 128",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 128"
+   },
+   {
+    "id": "retail:4",
+    "origin": "retail",
+    "retail_id": 4,
+    "display_name": "Tiger Temple",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "retail:13",
+    "origin": "retail",
+    "retail_id": 13,
+    "display_name": "Oxide Station",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "retail:15",
+    "origin": "retail",
+    "retail_id": 15,
+    "display_name": "Tiny Arena",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "custom/fixture-049/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-049/1.0",
+    "custom_slot": 49,
+    "display_name": "Fixture 049",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 049"
+   },
+   {
+    "id": "custom/fixture-070/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-070/1.0",
+    "custom_slot": 70,
+    "display_name": "Fixture 070",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 070"
+   },
+   {
+    "id": "custom/fixture-015/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-015/1.0",
+    "custom_slot": 15,
+    "display_name": "Fixture 015",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 015"
+   },
+   {
+    "id": "custom/fixture-062/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-062/1.0",
+    "custom_slot": 62,
+    "display_name": "Fixture 062",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 062"
+   },
+   {
+    "id": "retail:0",
+    "origin": "retail",
+    "retail_id": 0,
+    "display_name": "Dingo Canyon",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "custom/fixture-039/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-039/1.0",
+    "custom_slot": 39,
+    "display_name": "Fixture 039",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 039"
+   },
+   {
+    "id": "custom/fixture-100/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-100/1.0",
+    "custom_slot": 100,
+    "display_name": "Fixture 100",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 100"
+   },
+   {
+    "id": "custom/fixture-105/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-105/1.0",
+    "custom_slot": 105,
+    "display_name": "Fixture 105",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 105"
+   },
+   {
+    "id": "custom/fixture-090/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-090/1.0",
+    "custom_slot": 90,
+    "display_name": "Fixture 090",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 090"
+   },
+   {
+    "id": "custom/fixture-045/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-045/1.0",
+    "custom_slot": 45,
+    "display_name": "Fixture 045",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 045"
+   },
+   {
+    "id": "custom/fixture-075/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-075/1.0",
+    "custom_slot": 75,
+    "display_name": "Fixture 075",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 075"
+   },
+   {
+    "id": "custom/fixture-068/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-068/1.0",
+    "custom_slot": 68,
+    "display_name": "Fixture 068",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 068"
+   },
+   {
+    "id": "retail:10",
+    "origin": "retail",
+    "retail_id": 10,
+    "display_name": "Cortex Castle",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "custom/fixture-040/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-040/1.0",
+    "custom_slot": 40,
+    "display_name": "Fixture 040",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 040"
+   },
+   {
+    "id": "custom/fixture-104/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-104/1.0",
+    "custom_slot": 104,
+    "display_name": "Fixture 104",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 104"
+   },
+   {
+    "id": "custom/fixture-117/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-117/1.0",
+    "custom_slot": 117,
+    "display_name": "Fixture 117",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 117"
+   },
+   {
+    "id": "custom/fixture-010/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-010/1.0",
+    "custom_slot": 10,
+    "display_name": "Fixture 010",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 010"
+   },
+   {
+    "id": "custom/fixture-025/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-025/1.0",
+    "custom_slot": 25,
+    "display_name": "Fixture 025",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 025"
+   },
+   {
+    "id": "custom/fixture-088/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-088/1.0",
+    "custom_slot": 88,
+    "display_name": "Fixture 088",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 088"
+   },
+   {
+    "id": "custom/fixture-001/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-001/1.0",
+    "custom_slot": 1,
+    "display_name": "Fixture 001",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 001"
+   },
+   {
+    "id": "retail:3",
+    "origin": "retail",
+    "retail_id": 3,
+    "display_name": "Crash Cove",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "custom/fixture-087/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-087/1.0",
+    "custom_slot": 87,
+    "display_name": "Fixture 087",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 087"
+   },
+   {
+    "id": "custom/fixture-007/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-007/1.0",
+    "custom_slot": 7,
+    "display_name": "Fixture 007",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 007"
+   },
+   {
+    "id": "custom/fixture-055/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-055/1.0",
+    "custom_slot": 55,
+    "display_name": "Fixture 055",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 055"
+   },
+   {
+    "id": "custom/fixture-110/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-110/1.0",
+    "custom_slot": 110,
+    "display_name": "Fixture 110",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 110"
+   },
+   {
+    "id": "retail:14",
+    "origin": "retail",
+    "retail_id": 14,
+    "display_name": "Coco Park",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "custom/fixture-089/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-089/1.0",
+    "custom_slot": 89,
+    "display_name": "Fixture 089",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 089"
+   },
+   {
+    "id": "custom/fixture-126/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-126/1.0",
+    "custom_slot": 126,
+    "display_name": "Fixture 126",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 126"
+   },
+   {
+    "id": "custom/fixture-009/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-009/1.0",
+    "custom_slot": 9,
+    "display_name": "Fixture 009",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 009"
+   },
+   {
+    "id": "custom/fixture-018/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-018/1.0",
+    "custom_slot": 18,
+    "display_name": "Fixture 018",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 018"
+   },
+   {
+    "id": "custom/fixture-103/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-103/1.0",
+    "custom_slot": 103,
+    "display_name": "Fixture 103",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 103"
+   },
+   {
+    "id": "custom/fixture-122/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-122/1.0",
+    "custom_slot": 122,
+    "display_name": "Fixture 122",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 122"
+   },
+   {
+    "id": "custom/fixture-065/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-065/1.0",
+    "custom_slot": 65,
+    "display_name": "Fixture 065",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 065"
+   },
+   {
+    "id": "custom/fixture-041/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-041/1.0",
+    "custom_slot": 41,
+    "display_name": "Fixture 041",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 041"
+   },
+   {
+    "id": "custom/fixture-047/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-047/1.0",
+    "custom_slot": 47,
+    "display_name": "Fixture 047",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 047"
+   },
+   {
+    "id": "custom/fixture-031/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-031/1.0",
+    "custom_slot": 31,
+    "display_name": "Fixture 031",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 031"
+   },
+   {
+    "id": "custom/fixture-019/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-019/1.0",
+    "custom_slot": 19,
+    "display_name": "Fixture 019",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 019"
+   },
+   {
+    "id": "custom/fixture-060/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-060/1.0",
+    "custom_slot": 60,
+    "display_name": "Fixture 060",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 060"
+   },
+   {
+    "id": "custom/fixture-014/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-014/1.0",
+    "custom_slot": 14,
+    "display_name": "Fixture 014",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 014"
+   },
+   {
+    "id": "custom/fixture-114/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-114/1.0",
+    "custom_slot": 114,
+    "display_name": "Fixture 114",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 114"
+   },
+   {
+    "id": "custom/fixture-057/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-057/1.0",
+    "custom_slot": 57,
+    "display_name": "Fixture 057",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 057"
+   },
+   {
+    "id": "custom/fixture-113/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-113/1.0",
+    "custom_slot": 113,
+    "display_name": "Fixture 113",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 113"
+   },
+   {
+    "id": "custom/fixture-066/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-066/1.0",
+    "custom_slot": 66,
+    "display_name": "Fixture 066",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 066"
+   },
+   {
+    "id": "custom/fixture-106/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-106/1.0",
+    "custom_slot": 106,
+    "display_name": "Fixture 106",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 106"
+   },
+   {
+    "id": "custom/fixture-030/1.0",
+    "origin": "custom",
+    "package_id": "package/fixture-030/1.0",
+    "custom_slot": 30,
+    "display_name": "Fixture 030",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8,
+    "room_title": "Fixture 030"
+   },
+   {
+    "id": "retail:5",
+    "origin": "retail",
+    "retail_id": 5,
+    "display_name": "Papu's Pyramid",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "capabilities": [
+     "trophy"
+    ],
+    "field_size": 8
+   }
+  ],
+  "entries": [
+   {
+    "id": "entry/cup:8",
+    "kind": "cup",
+    "display_name": "Superstarxalien Cup",
+    "legs": [
+     {
+      "id": "entry/cup:8/leg:0",
+      "track_id": "retail:2",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:8/leg:1",
+      "track_id": "retail:9",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:8/leg:2",
+      "track_id": "custom/fixture-132/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:8/leg:3",
+      "track_id": "retail:1",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:20",
+    "kind": "cup",
+    "display_name": "DragRedSim Cup",
+    "legs": [
+     {
+      "id": "entry/cup:20/leg:0",
+      "track_id": "custom/fixture-043/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:20/leg:1",
+      "track_id": "retail:9",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:20/leg:2",
+      "track_id": "retail:8",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:20/leg:3",
+      "track_id": "custom/fixture-036/1.0",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:23",
+    "kind": "cup",
+    "display_name": "Turbo Cup",
+    "legs": [
+     {
+      "id": "entry/cup:23/leg:0",
+      "track_id": "custom/fixture-058/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:23/leg:1",
+      "track_id": "retail:12",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:23/leg:2",
+      "track_id": "custom/fixture-107/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:23/leg:3",
+      "track_id": "custom/fixture-059/1.0",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/gem_cup:3",
+    "kind": "cup",
+    "display_name": "Yellow Gem Cup",
+    "legs": [
+     {
+      "id": "entry/gem_cup:3/leg:0",
+      "track_id": "custom/fixture-094/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/gem_cup:3/leg:1",
+      "track_id": "custom/fixture-048/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/gem_cup:3/leg:2",
+      "track_id": "retail:11",
+      "laps": 1
+     },
+     {
+      "id": "entry/gem_cup:3/leg:3",
+      "track_id": "custom/fixture-016/1.0",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:19",
+    "kind": "cup",
+    "display_name": "Kabarakh Cup",
+    "legs": [
+     {
+      "id": "entry/cup:19/leg:0",
+      "track_id": "custom/fixture-130/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:19/leg:1",
+      "track_id": "retail:7",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:19/leg:2",
+      "track_id": "custom/fixture-029/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:19/leg:3",
+      "track_id": "custom/fixture-128/1.0",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:12",
+    "kind": "cup",
+    "display_name": "Venusyprime Cup",
+    "legs": [
+     {
+      "id": "entry/cup:12/leg:0",
+      "track_id": "retail:2",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:12/leg:1",
+      "track_id": "retail:4",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:12/leg:2",
+      "track_id": "retail:9",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:12/leg:3",
+      "track_id": "retail:13",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:25",
+    "kind": "cup",
+    "display_name": "Multiworld Cup",
+    "legs": [
+     {
+      "id": "entry/cup:25/leg:0",
+      "track_id": "retail:15",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:25/leg:1",
+      "track_id": "retail:4",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:25/leg:2",
+      "track_id": "retail:2",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:25/leg:3",
+      "track_id": "custom/fixture-049/1.0",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:10",
+    "kind": "cup",
+    "display_name": "Avery Cup",
+    "legs": [
+     {
+      "id": "entry/cup:10/leg:0",
+      "track_id": "custom/fixture-070/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:10/leg:1",
+      "track_id": "custom/fixture-132/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:10/leg:2",
+      "track_id": "custom/fixture-015/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:10/leg:3",
+      "track_id": "custom/fixture-062/1.0",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/gem_cup:0",
+    "kind": "cup",
+    "display_name": "Red Gem Cup",
+    "legs": [
+     {
+      "id": "entry/gem_cup:0/leg:0",
+      "track_id": "retail:0",
+      "laps": 1
+     },
+     {
+      "id": "entry/gem_cup:0/leg:1",
+      "track_id": "custom/fixture-039/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/gem_cup:0/leg:2",
+      "track_id": "custom/fixture-100/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/gem_cup:0/leg:3",
+      "track_id": "custom/fixture-105/1.0",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:9",
+    "kind": "cup",
+    "display_name": "TheRedhotbr Cup",
+    "legs": [
+     {
+      "id": "entry/cup:9/leg:0",
+      "track_id": "custom/fixture-090/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:9/leg:1",
+      "track_id": "custom/fixture-045/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:9/leg:2",
+      "track_id": "custom/fixture-075/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:9/leg:3",
+      "track_id": "custom/fixture-068/1.0",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/gem_cup:2",
+    "kind": "cup",
+    "display_name": "Blue Gem Cup",
+    "legs": [
+     {
+      "id": "entry/gem_cup:2/leg:0",
+      "track_id": "retail:4",
+      "laps": 1
+     },
+     {
+      "id": "entry/gem_cup:2/leg:1",
+      "track_id": "custom/fixture-036/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/gem_cup:2/leg:2",
+      "track_id": "retail:10",
+      "laps": 1
+     },
+     {
+      "id": "entry/gem_cup:2/leg:3",
+      "track_id": "custom/fixture-040/1.0",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:18",
+    "kind": "cup",
+    "display_name": "TheUbMunster Cup",
+    "legs": [
+     {
+      "id": "entry/cup:18/leg:0",
+      "track_id": "custom/fixture-104/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:18/leg:1",
+      "track_id": "custom/fixture-117/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:18/leg:2",
+      "track_id": "custom/fixture-010/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:18/leg:3",
+      "track_id": "retail:0",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:24",
+    "kind": "cup",
+    "display_name": "Relic Cup",
+    "legs": [
+     {
+      "id": "entry/cup:24/leg:0",
+      "track_id": "custom/fixture-025/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:24/leg:1",
+      "track_id": "custom/fixture-088/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:24/leg:2",
+      "track_id": "custom/fixture-040/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:24/leg:3",
+      "track_id": "custom/fixture-001/1.0",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:1",
+    "kind": "cup",
+    "display_name": "Icebound Cup",
+    "legs": [
+     {
+      "id": "entry/cup:1/leg:0",
+      "track_id": "retail:12",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:1/leg:1",
+      "track_id": "retail:7",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:1/leg:2",
+      "track_id": "retail:3",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:1/leg:3",
+      "track_id": "retail:10",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:22",
+    "kind": "cup",
+    "display_name": "Bob90 Cup",
+    "legs": [
+     {
+      "id": "entry/cup:22/leg:0",
+      "track_id": "custom/fixture-087/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:22/leg:1",
+      "track_id": "custom/fixture-059/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:22/leg:2",
+      "track_id": "custom/fixture-007/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:22/leg:3",
+      "track_id": "custom/fixture-055/1.0",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:26",
+    "kind": "cup",
+    "display_name": "Sphere Cup",
+    "legs": [
+     {
+      "id": "entry/cup:26/leg:0",
+      "track_id": "custom/fixture-110/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:26/leg:1",
+      "track_id": "retail:14",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:26/leg:2",
+      "track_id": "custom/fixture-089/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:26/leg:3",
+      "track_id": "retail:2",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/gem_cup:4",
+    "kind": "cup",
+    "display_name": "Purple Gem Cup",
+    "legs": [
+     {
+      "id": "entry/gem_cup:4/leg:0",
+      "track_id": "retail:15",
+      "laps": 1
+     },
+     {
+      "id": "entry/gem_cup:4/leg:1",
+      "track_id": "custom/fixture-126/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/gem_cup:4/leg:2",
+      "track_id": "retail:12",
+      "laps": 1
+     },
+     {
+      "id": "entry/gem_cup:4/leg:3",
+      "track_id": "custom/fixture-009/1.0",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:0",
+    "kind": "cup",
+    "display_name": "Patries Cup",
+    "legs": [
+     {
+      "id": "entry/cup:0/leg:0",
+      "track_id": "retail:8",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:0/leg:1",
+      "track_id": "custom/fixture-018/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:0/leg:2",
+      "track_id": "retail:15",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:0/leg:3",
+      "track_id": "custom/fixture-103/1.0",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:11",
+    "kind": "cup",
+    "display_name": "MarioSpore Cup",
+    "legs": [
+     {
+      "id": "entry/cup:11/leg:0",
+      "track_id": "custom/fixture-122/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:11/leg:1",
+      "track_id": "custom/fixture-065/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:11/leg:2",
+      "track_id": "retail:8",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:11/leg:3",
+      "track_id": "custom/fixture-016/1.0",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:14",
+    "kind": "cup",
+    "display_name": "Bethany Cup",
+    "legs": [
+     {
+      "id": "entry/cup:14/leg:0",
+      "track_id": "custom/fixture-105/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:14/leg:1",
+      "track_id": "custom/fixture-041/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:14/leg:2",
+      "track_id": "retail:13",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:14/leg:3",
+      "track_id": "retail:9",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/gem_cup:1",
+    "kind": "cup",
+    "display_name": "Green Gem Cup",
+    "legs": [
+     {
+      "id": "entry/gem_cup:1/leg:0",
+      "track_id": "retail:10",
+      "laps": 1
+     },
+     {
+      "id": "entry/gem_cup:1/leg:1",
+      "track_id": "retail:12",
+      "laps": 1
+     },
+     {
+      "id": "entry/gem_cup:1/leg:2",
+      "track_id": "retail:14",
+      "laps": 1
+     },
+     {
+      "id": "entry/gem_cup:1/leg:3",
+      "track_id": "retail:13",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:21",
+    "kind": "cup",
+    "display_name": "Stroodlydoodles Cup",
+    "legs": [
+     {
+      "id": "entry/cup:21/leg:0",
+      "track_id": "custom/fixture-047/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:21/leg:1",
+      "track_id": "custom/fixture-031/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:21/leg:2",
+      "track_id": "custom/fixture-019/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:21/leg:3",
+      "track_id": "retail:14",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:4",
+    "kind": "cup",
+    "display_name": "Lockheart Cup",
+    "legs": [
+     {
+      "id": "entry/cup:4/leg:0",
+      "track_id": "custom/fixture-100/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:4/leg:1",
+      "track_id": "custom/fixture-105/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:4/leg:2",
+      "track_id": "retail:7",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:4/leg:3",
+      "track_id": "retail:4",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:6",
+    "kind": "cup",
+    "display_name": "Appie Cup",
+    "legs": [
+     {
+      "id": "entry/cup:6/leg:0",
+      "track_id": "custom/fixture-107/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:6/leg:1",
+      "track_id": "custom/fixture-060/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:6/leg:2",
+      "track_id": "retail:12",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:6/leg:3",
+      "track_id": "custom/fixture-014/1.0",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:17",
+    "kind": "cup",
+    "display_name": "MateusFavarin Cup",
+    "legs": [
+     {
+      "id": "entry/cup:17/leg:0",
+      "track_id": "retail:13",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:17/leg:1",
+      "track_id": "retail:14",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:17/leg:2",
+      "track_id": "custom/fixture-114/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:17/leg:3",
+      "track_id": "retail:8",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:7",
+    "kind": "cup",
+    "display_name": "TheCodingBob Cup",
+    "legs": [
+     {
+      "id": "entry/cup:7/leg:0",
+      "track_id": "custom/fixture-057/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:7/leg:1",
+      "track_id": "custom/fixture-113/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:7/leg:2",
+      "track_id": "custom/fixture-066/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:7/leg:3",
+      "track_id": "custom/fixture-049/1.0",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   },
+   {
+    "id": "entry/cup:2",
+    "kind": "cup",
+    "display_name": "Taor Cup",
+    "legs": [
+     {
+      "id": "entry/cup:2/leg:0",
+      "track_id": "custom/fixture-106/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:2/leg:1",
+      "track_id": "custom/fixture-030/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:2/leg:2",
+      "track_id": "custom/fixture-107/1.0",
+      "laps": 1
+     },
+     {
+      "id": "entry/cup:2/leg:3",
+      "track_id": "retail:5",
+      "laps": 1
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ],
+    "field_size": 8
+   }
+  ],
+  "pads": [
+   {
+    "id": "pad:16",
+    "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": "entry/cup:8",
+    "entrance_req": "keys:1",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:16"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:14",
+    "hub_id": "hub:27",
+    "kind": "normal",
+    "entry_id": "entry/cup:20",
+    "entrance_req": "keys:1",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:14"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:102",
+    "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": "entry/cup:23",
+    "entrance_req": "keys:2",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:102"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:23",
+    "hub_id": "hub:28",
+    "kind": "normal",
+    "entry_id": "entry/gem_cup:3",
+    "entrance_req": "keys:2",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:23"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:5",
+    "hub_id": "hub:27",
+    "kind": "normal",
+    "entry_id": "entry/cup:19",
+    "entrance_req": "keys:1",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:5"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:18",
+    "hub_id": "hub:29",
+    "kind": "normal",
+    "entry_id": "entry/cup:12",
+    "entrance_req": "keys:3",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:18"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:15",
+    "hub_id": "hub:28",
+    "kind": "normal",
+    "entry_id": "entry/cup:25",
+    "entrance_req": "keys:2",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:15"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:17",
+    "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": "entry/cup:10",
+    "entrance_req": "keys:1",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:17"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:12",
+    "hub_id": "hub:28",
+    "kind": "normal",
+    "entry_id": "entry/gem_cup:0",
+    "entrance_req": "keys:2",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:12"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:0",
+    "hub_id": "hub:27",
+    "kind": "normal",
+    "entry_id": "entry/cup:9",
+    "entrance_req": "keys:1",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:0"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:19",
+    "hub_id": "hub:27",
+    "kind": "normal",
+    "entry_id": "entry/gem_cup:2",
+    "entrance_req": "keys:1",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:19"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:4",
+    "hub_id": "hub:27",
+    "kind": "normal",
+    "entry_id": "entry/cup:18",
+    "entrance_req": "keys:1",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:4"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:3",
+    "hub_id": "hub:26",
+    "kind": "normal",
+    "entry_id": "entry/cup:24",
+    "entrance_req": "free",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "free"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:104",
+    "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": "entry/cup:1",
+    "entrance_req": "keys:2",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:104"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:6",
+    "hub_id": "hub:26",
+    "kind": "normal",
+    "entry_id": "entry/cup:22",
+    "entrance_req": "free",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "free"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:10",
+    "hub_id": "hub:29",
+    "kind": "normal",
+    "entry_id": "entry/cup:26",
+    "entrance_req": "keys:3",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:10"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:13",
+    "hub_id": "hub:29",
+    "kind": "normal",
+    "entry_id": "entry/gem_cup:4",
+    "entrance_req": "keys:3",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:13"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:7",
+    "hub_id": "hub:29",
+    "kind": "normal",
+    "entry_id": "entry/cup:0",
+    "entrance_req": "keys:3",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:7"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:9",
+    "hub_id": "hub:26",
+    "kind": "normal",
+    "entry_id": "entry/cup:11",
+    "entrance_req": "free",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:9"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:103",
+    "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": "entry/cup:14",
+    "entrance_req": "keys:2",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:103"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:2",
+    "hub_id": "hub:28",
+    "kind": "normal",
+    "entry_id": "entry/gem_cup:1",
+    "entrance_req": "keys:2",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:2"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:21",
+    "hub_id": "hub:26",
+    "kind": "normal",
+    "entry_id": "entry/cup:21",
+    "entrance_req": "free",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "free"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:1",
+    "hub_id": "hub:28",
+    "kind": "normal",
+    "entry_id": "entry/cup:4",
+    "entrance_req": "keys:2",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:1"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:11",
+    "hub_id": "hub:29",
+    "kind": "normal",
+    "entry_id": "entry/cup:6",
+    "entrance_req": "keys:3",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:11"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:101",
+    "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": "entry/cup:17",
+    "entrance_req": "keys:2",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:101"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:100",
+    "hub_id": "hub:25",
+    "kind": "normal",
+    "entry_id": "entry/cup:7",
+    "entrance_req": "keys:2",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:100"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "pad:8",
+    "hub_id": "hub:26",
+    "kind": "normal",
+    "entry_id": "entry/cup:2",
+    "entrance_req": "free",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "stage": 1,
+      "requirement_id": "stage1:8"
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "id": "garage:0",
+    "hub_id": "hub:26",
+    "kind": "garage",
+    "entry_id": null,
+    "entrance_req": "free",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "garage:1",
+    "hub_id": "hub:27",
+    "kind": "garage",
+    "entry_id": null,
+    "entrance_req": "free",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "garage:2",
+    "hub_id": "hub:28",
+    "kind": "garage",
+    "entry_id": null,
+    "entrance_req": "free",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "garage:3",
+    "hub_id": "hub:29",
+    "kind": "garage",
+    "entry_id": null,
+    "entrance_req": "free",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "id": "garage:4",
+    "hub_id": "hub:25",
+    "kind": "garage",
+    "entry_id": null,
+    "entrance_req": "free",
+    "mode_gates": [],
+    "racer_lock": null
+   }
+  ],
+  "encounters": [],
+  "requirements": [
+   {
+    "id": "free",
+    "predicate": {
+     "op": "always"
+    }
+   },
+   {
+    "id": "keys:1",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 1
+    }
+   },
+   {
+    "id": "keys:2",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 2
+    }
+   },
+   {
+    "id": "keys:3",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 3
+    }
+   },
+   {
+    "id": "keys:4",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 4
+    }
+   },
+   {
+    "id": "stage1:0",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 2
+    }
+   },
+   {
+    "id": "stage1:1",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 2
+    }
+   },
+   {
+    "id": "stage1:2",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 3
+    }
+   },
+   {
+    "id": "stage1:4",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 1
+    }
+   },
+   {
+    "id": "stage1:5",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 1
+    }
+   },
+   {
+    "id": "stage1:7",
+    "predicate": {
+     "op": "sum",
+     "items": [
+      35010009,
+      35010010,
+      35010011,
+      35010012,
+      35010013
+     ],
+     "count": 2
+    }
+   },
+   {
+    "id": "stage1:8",
+    "predicate": {
+     "op": "sum",
+     "items": [
+      35010009,
+      35010010,
+      35010011,
+      35010012,
+      35010013
+     ],
+     "count": 2
+    }
+   },
+   {
+    "id": "stage1:9",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 1
+    }
+   },
+   {
+    "id": "stage1:10",
+    "predicate": {
+     "op": "sum",
+     "items": [
+      35010009,
+      35010010,
+      35010011,
+      35010012,
+      35010013
+     ],
+     "count": 1
+    }
+   },
+   {
+    "id": "stage1:11",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 2
+    }
+   },
+   {
+    "id": "stage1:12",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 2
+    }
+   },
+   {
+    "id": "stage1:13",
+    "predicate": {
+     "op": "count",
+     "item": 35010010,
+     "count": 1
+    }
+   },
+   {
+    "id": "stage1:14",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 2
+    }
+   },
+   {
+    "id": "stage1:15",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 3
+    }
+   },
+   {
+    "id": "stage1:16",
+    "predicate": {
+     "op": "sum",
+     "items": [
+      35010009,
+      35010010,
+      35010011,
+      35010012,
+      35010013
+     ],
+     "count": 1
+    }
+   },
+   {
+    "id": "stage1:17",
+    "predicate": {
+     "op": "sum",
+     "items": [
+      35010009,
+      35010010,
+      35010011,
+      35010012,
+      35010013
+     ],
+     "count": 2
+    }
+   },
+   {
+    "id": "stage1:18",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 3
+    }
+   },
+   {
+    "id": "stage1:19",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 2
+    }
+   },
+   {
+    "id": "stage1:23",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 3
+    }
+   },
+   {
+    "id": "stage1:100",
+    "predicate": {
+     "op": "sum",
+     "items": [
+      35010009,
+      35010010,
+      35010011,
+      35010012,
+      35010013
+     ],
+     "count": 2
+    }
+   },
+   {
+    "id": "stage1:101",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 2
+    }
+   },
+   {
+    "id": "stage1:102",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 2
+    }
+   },
+   {
+    "id": "stage1:103",
+    "predicate": {
+     "op": "count",
+     "item": 35010014,
+     "count": 2
+    }
+   },
+   {
+    "id": "stage1:104",
+    "predicate": {
+     "op": "sum",
+     "items": [
+      35010009,
+      35010010,
+      35010011,
+      35010012,
+      35010013
+     ],
+     "count": 2
+    }
+   }
+  ],
+  "checks": [
+   {
+    "location": 35027008,
+    "owner": "cup:8",
+    "kind": "cup",
+    "display_name": "Superstarxalien Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:8",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:16",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027020,
+    "owner": "cup:20",
+    "kind": "cup",
+    "display_name": "DragRedSim Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:20",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:14",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027023,
+    "owner": "cup:23",
+    "kind": "cup",
+    "display_name": "Turbo Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:23",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35011203,
+    "owner": "gem_cup:3",
+    "kind": "cup",
+    "display_name": "Yellow Gem Cup: Gem",
+    "routes": [
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027019,
+    "owner": "cup:19",
+    "kind": "cup",
+    "display_name": "Kabarakh Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:19",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027012,
+    "owner": "cup:12",
+    "kind": "cup",
+    "display_name": "Venusyprime Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:12",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027025,
+    "owner": "cup:25",
+    "kind": "cup",
+    "display_name": "Multiworld Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:25",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027010,
+    "owner": "cup:10",
+    "kind": "cup",
+    "display_name": "Avery Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:10",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:17",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35011200,
+    "owner": "gem_cup:0",
+    "kind": "cup",
+    "display_name": "Red Gem Cup: Gem",
+    "routes": [
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:12",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027009,
+    "owner": "cup:9",
+    "kind": "cup",
+    "display_name": "TheRedhotbr Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:9",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:0",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35011202,
+    "owner": "gem_cup:2",
+    "kind": "cup",
+    "display_name": "Blue Gem Cup: Gem",
+    "routes": [
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027018,
+    "owner": "cup:18",
+    "kind": "cup",
+    "display_name": "TheUbMunster Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:18",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027024,
+    "owner": "cup:24",
+    "kind": "cup",
+    "display_name": "Relic Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:24",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:3",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027001,
+    "owner": "cup:1",
+    "kind": "cup",
+    "display_name": "Icebound Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:1",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:104",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027022,
+    "owner": "cup:22",
+    "kind": "cup",
+    "display_name": "Bob90 Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:22",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:6",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027026,
+    "owner": "cup:26",
+    "kind": "cup",
+    "display_name": "Sphere Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:26",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35011204,
+    "owner": "gem_cup:4",
+    "kind": "cup",
+    "display_name": "Purple Gem Cup: Gem",
+    "routes": [
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:13",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027000,
+    "owner": "cup:0",
+    "kind": "cup",
+    "display_name": "Patries Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:0",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:7",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027011,
+    "owner": "cup:11",
+    "kind": "cup",
+    "display_name": "MarioSpore Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:11",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:9",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027014,
+    "owner": "cup:14",
+    "kind": "cup",
+    "display_name": "Bethany Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:14",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:103",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35011201,
+    "owner": "gem_cup:1",
+    "kind": "cup",
+    "display_name": "Green Gem Cup: Gem",
+    "routes": [
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:2",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027021,
+    "owner": "cup:21",
+    "kind": "cup",
+    "display_name": "Stroodlydoodles Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:21",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027004,
+    "owner": "cup:4",
+    "kind": "cup",
+    "display_name": "Lockheart Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:4",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:1",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027006,
+    "owner": "cup:6",
+    "kind": "cup",
+    "display_name": "Appie Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:6",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027017,
+    "owner": "cup:17",
+    "kind": "cup",
+    "display_name": "MateusFavarin Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:17",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:101",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027007,
+    "owner": "cup:7",
+    "kind": "cup",
+    "display_name": "TheCodingBob Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:7",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35027002,
+    "owner": "cup:2",
+    "kind": "cup",
+    "display_name": "Taor Cup: Win",
+    "routes": [
+     {
+      "entry_id": "entry/cup:2",
+      "mode": "cup",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "win"
+     }
+    ]
+   },
+   {
+    "location": 35016808,
+    "owner": "retail:2",
+    "kind": "cup_leg",
+    "display_name": "Blizzard Bluff: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:8",
+      "mode": "cup",
+      "leg_id": "entry/cup:8/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:16",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:12",
+      "mode": "cup",
+      "leg_id": "entry/cup:12/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:25",
+      "mode": "cup",
+      "leg_id": "entry/cup:25/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:26",
+      "mode": "cup",
+      "leg_id": "entry/cup:26/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016802,
+    "owner": "retail:9",
+    "kind": "cup_leg",
+    "display_name": "Mystery Caves: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:8",
+      "mode": "cup",
+      "leg_id": "entry/cup:8/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:16",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:20",
+      "mode": "cup",
+      "leg_id": "entry/cup:20/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:14",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:12",
+      "mode": "cup",
+      "leg_id": "entry/cup:12/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:14",
+      "mode": "cup",
+      "leg_id": "entry/cup:14/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:103",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016951,
+    "owner": "custom/fixture-132/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 132: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:8",
+      "mode": "cup",
+      "leg_id": "entry/cup:8/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:16",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:10",
+      "mode": "cup",
+      "leg_id": "entry/cup:10/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:17",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016809,
+    "owner": "retail:1",
+    "kind": "cup_leg",
+    "display_name": "Dragon Mines: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:8",
+      "mode": "cup",
+      "leg_id": "entry/cup:8/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:16",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016862,
+    "owner": "custom/fixture-043/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 043: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:20",
+      "mode": "cup",
+      "leg_id": "entry/cup:20/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:14",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016803,
+    "owner": "retail:8",
+    "kind": "cup_leg",
+    "display_name": "Sewer Speedway: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:20",
+      "mode": "cup",
+      "leg_id": "entry/cup:20/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:14",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:0",
+      "mode": "cup",
+      "leg_id": "entry/cup:0/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:7",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:11",
+      "mode": "cup",
+      "leg_id": "entry/cup:11/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:9",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:17",
+      "mode": "cup",
+      "leg_id": "entry/cup:17/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:101",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016855,
+    "owner": "custom/fixture-036/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 036: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:20",
+      "mode": "cup",
+      "leg_id": "entry/cup:20/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:14",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016877,
+    "owner": "custom/fixture-058/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 058: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:23",
+      "mode": "cup",
+      "leg_id": "entry/cup:23/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016810,
+    "owner": "retail:12",
+    "kind": "cup_leg",
+    "display_name": "Polar Pass: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:23",
+      "mode": "cup",
+      "leg_id": "entry/cup:23/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:1",
+      "mode": "cup",
+      "leg_id": "entry/cup:1/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:104",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:13",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:2",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:6",
+      "mode": "cup",
+      "leg_id": "entry/cup:6/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016926,
+    "owner": "custom/fixture-107/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 107: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:23",
+      "mode": "cup",
+      "leg_id": "entry/cup:23/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:6",
+      "mode": "cup",
+      "leg_id": "entry/cup:6/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:2",
+      "mode": "cup",
+      "leg_id": "entry/cup:2/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016878,
+    "owner": "custom/fixture-059/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 059: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:23",
+      "mode": "cup",
+      "leg_id": "entry/cup:23/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:22",
+      "mode": "cup",
+      "leg_id": "entry/cup:22/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:6",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016913,
+    "owner": "custom/fixture-094/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 094: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016867,
+    "owner": "custom/fixture-048/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 048: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016814,
+    "owner": "retail:11",
+    "kind": "cup_leg",
+    "display_name": "N. Gin Labs: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016835,
+    "owner": "custom/fixture-016/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 016: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:11",
+      "mode": "cup",
+      "leg_id": "entry/cup:11/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:9",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016949,
+    "owner": "custom/fixture-130/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 130: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:19",
+      "mode": "cup",
+      "leg_id": "entry/cup:19/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016812,
+    "owner": "retail:7",
+    "kind": "cup_leg",
+    "display_name": "Hot Air Skyway: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:19",
+      "mode": "cup",
+      "leg_id": "entry/cup:19/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:1",
+      "mode": "cup",
+      "leg_id": "entry/cup:1/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:104",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:4",
+      "mode": "cup",
+      "leg_id": "entry/cup:4/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:1",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016848,
+    "owner": "custom/fixture-029/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 029: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:19",
+      "mode": "cup",
+      "leg_id": "entry/cup:19/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016947,
+    "owner": "custom/fixture-128/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 128: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:19",
+      "mode": "cup",
+      "leg_id": "entry/cup:19/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016805,
+    "owner": "retail:4",
+    "kind": "cup_leg",
+    "display_name": "Tiger Temple: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:12",
+      "mode": "cup",
+      "leg_id": "entry/cup:12/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:25",
+      "mode": "cup",
+      "leg_id": "entry/cup:25/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:4",
+      "mode": "cup",
+      "leg_id": "entry/cup:4/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:1",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016815,
+    "owner": "retail:13",
+    "kind": "cup_leg",
+    "display_name": "Oxide Station: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:12",
+      "mode": "cup",
+      "leg_id": "entry/cup:12/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:18",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:14",
+      "mode": "cup",
+      "leg_id": "entry/cup:14/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:103",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:2",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:17",
+      "mode": "cup",
+      "leg_id": "entry/cup:17/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:101",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016811,
+    "owner": "retail:15",
+    "kind": "cup_leg",
+    "display_name": "Tiny Arena: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:25",
+      "mode": "cup",
+      "leg_id": "entry/cup:25/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:13",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:0",
+      "mode": "cup",
+      "leg_id": "entry/cup:0/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:7",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016868,
+    "owner": "custom/fixture-049/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 049: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:25",
+      "mode": "cup",
+      "leg_id": "entry/cup:25/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:15",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:7",
+      "mode": "cup",
+      "leg_id": "entry/cup:7/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016889,
+    "owner": "custom/fixture-070/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 070: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:10",
+      "mode": "cup",
+      "leg_id": "entry/cup:10/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:17",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016834,
+    "owner": "custom/fixture-015/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 015: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:10",
+      "mode": "cup",
+      "leg_id": "entry/cup:10/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:17",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016881,
+    "owner": "custom/fixture-062/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 062: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:10",
+      "mode": "cup",
+      "leg_id": "entry/cup:10/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:17",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016807,
+    "owner": "retail:0",
+    "kind": "cup_leg",
+    "display_name": "Dingo Canyon: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:12",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:18",
+      "mode": "cup",
+      "leg_id": "entry/cup:18/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016858,
+    "owner": "custom/fixture-039/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 039: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:12",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016919,
+    "owner": "custom/fixture-100/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 100: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:12",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:4",
+      "mode": "cup",
+      "leg_id": "entry/cup:4/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:1",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016924,
+    "owner": "custom/fixture-105/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 105: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:12",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:14",
+      "mode": "cup",
+      "leg_id": "entry/cup:14/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:103",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:4",
+      "mode": "cup",
+      "leg_id": "entry/cup:4/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:1",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016909,
+    "owner": "custom/fixture-090/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 090: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:9",
+      "mode": "cup",
+      "leg_id": "entry/cup:9/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:0",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016864,
+    "owner": "custom/fixture-045/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 045: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:9",
+      "mode": "cup",
+      "leg_id": "entry/cup:9/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:0",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016894,
+    "owner": "custom/fixture-075/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 075: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:9",
+      "mode": "cup",
+      "leg_id": "entry/cup:9/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:0",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016887,
+    "owner": "custom/fixture-068/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 068: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:9",
+      "mode": "cup",
+      "leg_id": "entry/cup:9/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:0",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016813,
+    "owner": "retail:10",
+    "kind": "cup_leg",
+    "display_name": "Cortex Castle: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:1",
+      "mode": "cup",
+      "leg_id": "entry/cup:1/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:104",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:2",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016859,
+    "owner": "custom/fixture-040/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 040: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:19",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:24",
+      "mode": "cup",
+      "leg_id": "entry/cup:24/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:3",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016923,
+    "owner": "custom/fixture-104/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 104: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:18",
+      "mode": "cup",
+      "leg_id": "entry/cup:18/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016936,
+    "owner": "custom/fixture-117/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 117: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:18",
+      "mode": "cup",
+      "leg_id": "entry/cup:18/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016829,
+    "owner": "custom/fixture-010/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 010: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:18",
+      "mode": "cup",
+      "leg_id": "entry/cup:18/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016844,
+    "owner": "custom/fixture-025/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 025: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:24",
+      "mode": "cup",
+      "leg_id": "entry/cup:24/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:3",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016907,
+    "owner": "custom/fixture-088/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 088: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:24",
+      "mode": "cup",
+      "leg_id": "entry/cup:24/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:3",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016820,
+    "owner": "custom/fixture-001/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 001: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:24",
+      "mode": "cup",
+      "leg_id": "entry/cup:24/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:3",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016800,
+    "owner": "retail:3",
+    "kind": "cup_leg",
+    "display_name": "Crash Cove: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:1",
+      "mode": "cup",
+      "leg_id": "entry/cup:1/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:104",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016906,
+    "owner": "custom/fixture-087/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 087: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:22",
+      "mode": "cup",
+      "leg_id": "entry/cup:22/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:6",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016826,
+    "owner": "custom/fixture-007/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 007: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:22",
+      "mode": "cup",
+      "leg_id": "entry/cup:22/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:6",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016874,
+    "owner": "custom/fixture-055/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 055: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:22",
+      "mode": "cup",
+      "leg_id": "entry/cup:22/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:6",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016929,
+    "owner": "custom/fixture-110/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 110: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:26",
+      "mode": "cup",
+      "leg_id": "entry/cup:26/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016804,
+    "owner": "retail:14",
+    "kind": "cup_leg",
+    "display_name": "Coco Park: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:26",
+      "mode": "cup",
+      "leg_id": "entry/cup:26/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:2",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:21",
+      "mode": "cup",
+      "leg_id": "entry/cup:21/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "leg_win"
+     },
+     {
+      "entry_id": "entry/cup:17",
+      "mode": "cup",
+      "leg_id": "entry/cup:17/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:101",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016908,
+    "owner": "custom/fixture-089/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 089: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:26",
+      "mode": "cup",
+      "leg_id": "entry/cup:26/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016945,
+    "owner": "custom/fixture-126/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 126: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:13",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016828,
+    "owner": "custom/fixture-009/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 009: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:13",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016837,
+    "owner": "custom/fixture-018/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 018: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:0",
+      "mode": "cup",
+      "leg_id": "entry/cup:0/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:7",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016922,
+    "owner": "custom/fixture-103/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 103: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:0",
+      "mode": "cup",
+      "leg_id": "entry/cup:0/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:7",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016941,
+    "owner": "custom/fixture-122/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 122: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:11",
+      "mode": "cup",
+      "leg_id": "entry/cup:11/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:9",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016884,
+    "owner": "custom/fixture-065/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 065: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:11",
+      "mode": "cup",
+      "leg_id": "entry/cup:11/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:9",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016860,
+    "owner": "custom/fixture-041/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 041: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:14",
+      "mode": "cup",
+      "leg_id": "entry/cup:14/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:103",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016866,
+    "owner": "custom/fixture-047/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 047: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:21",
+      "mode": "cup",
+      "leg_id": "entry/cup:21/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016850,
+    "owner": "custom/fixture-031/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 031: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:21",
+      "mode": "cup",
+      "leg_id": "entry/cup:21/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016838,
+    "owner": "custom/fixture-019/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 019: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:21",
+      "mode": "cup",
+      "leg_id": "entry/cup:21/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:21",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016879,
+    "owner": "custom/fixture-060/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 060: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:6",
+      "mode": "cup",
+      "leg_id": "entry/cup:6/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016833,
+    "owner": "custom/fixture-014/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 014: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:6",
+      "mode": "cup",
+      "leg_id": "entry/cup:6/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:11",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016933,
+    "owner": "custom/fixture-114/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 114: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:17",
+      "mode": "cup",
+      "leg_id": "entry/cup:17/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:101",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016876,
+    "owner": "custom/fixture-057/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 057: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:7",
+      "mode": "cup",
+      "leg_id": "entry/cup:7/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016932,
+    "owner": "custom/fixture-113/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 113: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:7",
+      "mode": "cup",
+      "leg_id": "entry/cup:7/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016885,
+    "owner": "custom/fixture-066/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 066: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:7",
+      "mode": "cup",
+      "leg_id": "entry/cup:7/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:100",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016925,
+    "owner": "custom/fixture-106/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 106: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:2",
+      "mode": "cup",
+      "leg_id": "entry/cup:2/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016849,
+    "owner": "custom/fixture-030/1.0",
+    "kind": "cup_leg",
+    "display_name": "Fixture 030: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:2",
+      "mode": "cup",
+      "leg_id": "entry/cup:2/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "leg_win"
+     }
+    ]
+   },
+   {
+    "location": 35016806,
+    "owner": "retail:5",
+    "kind": "cup_leg",
+    "display_name": "Papu's Pyramid: Cup Leg Victory",
+    "routes": [
+     {
+      "entry_id": "entry/cup:2",
+      "mode": "cup",
+      "leg_id": "entry/cup:2/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "leg_win"
+     }
+    ]
+   }
+  ],
+  "items": {
+   "rows": [
+    {
+     "item": 35010000,
+     "base": 0,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 0,
+     "receipt_cap": 0,
+     "requirement_ceiling": 0
+    },
+    {
+     "item": 35010001,
+     "base": 0,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 0,
+     "receipt_cap": 0,
+     "requirement_ceiling": 0
+    },
+    {
+     "item": 35010002,
+     "base": 0,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 0,
+     "receipt_cap": 0,
+     "requirement_ceiling": 0
+    },
+    {
+     "item": 35010003,
+     "base": 0,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 0,
+     "receipt_cap": 0,
+     "requirement_ceiling": 0
+    },
+    {
+     "item": 35010004,
+     "base": 0,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 0,
+     "receipt_cap": 0,
+     "requirement_ceiling": 0
+    },
+    {
+     "item": 35010005,
+     "base": 0,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 0,
+     "receipt_cap": 0,
+     "requirement_ceiling": 0
+    },
+    {
+     "item": 35010006,
+     "base": 0,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 0,
+     "receipt_cap": 0,
+     "requirement_ceiling": 0
+    },
+    {
+     "item": 35010007,
+     "base": 0,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 0,
+     "receipt_cap": 0,
+     "requirement_ceiling": 0
+    },
+    {
+     "item": 35010008,
+     "base": 0,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 0,
+     "receipt_cap": 0,
+     "requirement_ceiling": 0
+    },
+    {
+     "item": 35010009,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010010,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010011,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010012,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010013,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010014,
+     "base": 4,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 4,
+     "receipt_cap": 4,
+     "requirement_ceiling": 4
+    },
+    {
+     "item": 35010021,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010022,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010023,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010024,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    },
+    {
+     "item": 35010025,
+     "base": 1,
+     "extra": 0,
+     "start_from_pool": 0,
+     "start_additional": 0,
+     "locked_selected": 0,
+     "remaining": 1,
+     "receipt_cap": 1,
+     "requirement_ceiling": 1
+    }
+   ],
+   "coded_checks": 95,
+   "locked_checks": 0,
+   "filler_count": 81,
+   "trap_count": 8
+  },
+  "goal": {
+   "op": "distinct",
+   "items": [
+    35010009,
+    35010010,
+    35010011,
+    35010012,
+    35010013
+   ],
+   "count": 5
+  },
+  "required_features": [
+   "content_plan_v1",
+   "cup_entries_v1",
+   "gem_cups_v1",
+   "surface_items_v1",
+   "pad_requirements_v1",
+   "pad_client_v1"
+  ],
+  "pad_requirements": {
+   "mode": "randomized"
+  },
+  "pad_client": {
+   "race_type_selector": "always",
+   "tracker_pad_launch": true
+  }
+ },
+ "ctr_options": {
+  "schema_version": 18,
+  "world_version": "0.2.4",
+  "content_plan": true,
+  "goal": -1,
+  "goal_oxide": 3,
+  "goal_bosses": 0,
+  "goal_gems": 5,
+  "starting_character": 7,
+  "character_unlocks": false,
+  "progressive_boost": 0,
+  "progressive_stats": 0,
+  "hit_character": false,
+  "death_link": 0,
+  "deathlink_amnesty": 1,
+  "reserve_top_up": true,
+  "spoiler_items": false
+ }
+}

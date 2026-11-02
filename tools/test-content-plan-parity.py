@@ -32,11 +32,11 @@ expected = dict(retail=[dict(id=i, name=n, location=L[n + ": Trophy Race"], ctr=
                              relic=[L[f"{n}: {t} Time Trial"] for t in cp.RELIC_TIERS])
                         for i, n in sorted(cp.RETAIL.items())],
                 pads=[dict(physical=p, hub=h, keys=k) for p, h, k in cp.pad_registry()],
-                custom_locations=[L[f"Custom Track {i}: Trophy Race"] for i in range(1, 33)],
+                custom_locations=[L[f"Custom Track {i}: Trophy Race"] for i in range(1, 133)],
                 # Track modes (#133 PR 3): generic-slot CTR and relic tier codes.
-                custom_ctr_locations=[L[f"Custom Track {i}: CTR Token Challenge"] for i in range(1, 33)],
+                custom_ctr_locations=[L[f"Custom Track {i}: CTR Token Challenge"] for i in range(1, 133)],
                 custom_relic_locations=[[L[f"Custom Track {i}: {t} Time Trial"] for t in cp.RELIC_TIERS]
-                                        for i in range(1, 33)],
+                                        for i in range(1, 133)],
                 # The named-block table native binds track keys to (#133 PR 2
                 # review); tools/sync-content-registry.py rewrites it.
                 named_blocks=[dict(key=t.track_key, block=t.block_index, name=t.ap_name)
@@ -50,13 +50,13 @@ for row in expected["retail"]:
                letters=[L[f"{n}: Letter {x}"] for x in cp.LETTERS],
                letter_items=[cp.content_item_pool.ITEMS[f"Letter {x} ({n})"] for x in cp.LETTERS],
                perfect=L[f"{n}: Relic Race Perfect"])
-expected.update(custom_podium_locations=[[L[f"Custom Track {i}: {s}"] for s in RUNGS] for i in range(1, 33)],
-                custom_wumpa_locations=[L[f"Custom Track {i}: Reach 10 Wumpa"] for i in range(1, 33)],
-                custom_letter_locations=[[L[f"Custom Track {i}: Letter {x}"] for x in cp.LETTERS] for i in range(1, 33)],
-                custom_letter_items=[[cp.custom_check_code("letter_item", i, j) for j in range(3)] for i in range(1, 33)],
+expected.update(custom_podium_locations=[[L[f"Custom Track {i}: {s}"] for s in RUNGS] for i in range(1, 133)],
+                custom_wumpa_locations=[L[f"Custom Track {i}: Reach 10 Wumpa"] for i in range(1, 133)],
+                custom_letter_locations=[[L[f"Custom Track {i}: Letter {x}"] for x in cp.LETTERS] for i in range(1, 133)],
+                custom_letter_items=[[cp.custom_check_code("letter_item", i, j) for j in range(3)] for i in range(1, 133)],
                 # Relic Race Perfect per generic slot and Cortex Vortex as a
                 # track (#133 PR 3c).
-                custom_perfect_locations=[L[f"Custom Track {i}: Relic Race Perfect"] for i in range(1, 33)],
+                custom_perfect_locations=[L[f"Custom Track {i}: Relic Race Perfect"] for i in range(1, 133)],
                 wumpa_global=L["Wumpa: Reach 10 Wumpa"])
 CV = cp.destinations.CORTEX_VORTEX
 expected["cortex_vortex"] = dict(
@@ -83,12 +83,12 @@ for row in expected["retail"]:
 expected["cortex_vortex"]["cup_leg"] = ccup.CORTEX_VORTEX_CUP_LEG_CODE
 expected["cups"] = [dict(name=n, win=L[ccup.cup_win_name(n)], sweep=L[ccup.cup_sweep_name(n)]) for n in ccup.CUP_NAMES]
 expected["gem_cups"] = [dict(name=n, win=L[f"{n}: Gem"], sweep=L[ccup.cup_sweep_name(n)]) for n in ccup.GEM_CUPS]
-expected["custom_cup_leg_locations"] = [L[ccup.cup_leg_name(f"Custom Track {i}")] for i in range(1, 33)]
+expected["custom_cup_leg_locations"] = [L[ccup.cup_leg_name(f"Custom Track {i}")] for i in range(1, 133)]
 # Lap completion (#344): every track's Complete One Lap code.
 for row in expected["retail"]:
     row["lap"] = L[row["name"] + ": Complete One Lap"]
 expected["cortex_vortex"]["lap"] = L[CV + ": Complete One Lap"]
-expected["custom_lap_locations"] = [L[f"Custom Track {i}: Complete One Lap"] for i in range(1, 33)]
+expected["custom_lap_locations"] = [L[f"Custom Track {i}: Complete One Lap"] for i in range(1, 133)]
 expected["named_blocks"] = expected.pop("named_blocks")  # registry key order
 assert registry == expected, "native frozen registry differs from paired apworld; run tools/sync-content-registry.py"
 assert (root/'tools/fixtures/arcade-arenas-v1.json').read_bytes()==(args.apworld/'worlds/ctr/data/arcade_arenas_v1.json').read_bytes(), "arcade manifests differ across the pair"
@@ -176,6 +176,16 @@ for seed in range(30):
     cases.append((f"open-generated-{seed}", make_world(options_with(custom), seed=seed).fill_slot_data(), True))
 cases.append(("open-fixture", json.loads((root / "tools/fixtures/content-plan/open-packages.json").read_text()), True))
 
+# 132 custom tracks: generated plans on slots past 32 and past
+# the old 64 tracks. The forgeries are below.
+from worlds.ctr.test.test_custom_tracks_132 import fixtures, many_cups
+for seed in range(12):
+    last = fixtures(132)
+    required = [f"custom/{d['content_id']}/{d['revision']}" for d in last[-(seed % 5 + 1):]]
+    cases.append((f"high-slots-{seed}", make_world(options_with(last, required), seed=seed).fill_slot_data(), True))
+    cases.append((f"many-tracks-{seed}", make_world(many_cups(), seed=seed).fill_slot_data(), True))
+cases.append(("custom-132-fixture", json.loads((root / "tools/fixtures/content-plan/custom-132.json").read_text()), True))
+
 base = cases[0][1]
 def alter(name, change, source=None):
     case = copy.deepcopy(source or base)
@@ -186,6 +196,15 @@ def alter(name, change, source=None):
     except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
         accepted = False
     cases.append((name, case, accepted))
+
+high_base = next(w for name, w, ok in cases if name == "custom-132-fixture")
+def high_slot(p, slot):
+    for track in p["tracks"]:
+        if track.get("custom_slot") == 132:
+            track["custom_slot"] = slot
+alter("high slot 133", lambda p: high_slot(p, 133), high_base)
+alter("high slot 131 taken or moved", lambda p: high_slot(p, 131), high_base)
+alter("high too many packages", lambda p: p["packages"].extend(copy.deepcopy(p["packages"][0]) for _ in range(120)), high_base)
 
 manual_base = next(w for name,w,ok in cases if name=="manual-fixture")
 def manual_req(plan, rid):
@@ -283,6 +302,21 @@ for name, change in [
         ("no arcade", setter([1, "capabilities", "arcade"], False)),
         ("claims less", setter([0, "capabilities", "time_trial"], False)),
         ("extra field", setter([1, "source_url"], "https://example.invalid")),
+        ("locator ok", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1,
+                                                    patch_name="Pack.xdelta", source_url="https://example.invalid/p"))),
+        ("locator minimal", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=4095))),
+        ("locator kind", setter([0, "locator"], dict(kind="saphi", patch_sha256="5e" * 32, bigfile_index=1))),
+        ("locator hash case", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5E" * 32, bigfile_index=1))),
+        ("locator index over", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=4096))),
+        ("locator name unicode", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1,
+                                                              patch_name="caf\u00e9"))),
+        ("locator http", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1,
+                                                      source_url="http://example.invalid"))),
+        ("locator url 128", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1,
+                                                         source_url="https://" + "x" * 120))),
+        ("locator url 129", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1,
+                                                         source_url="https://" + "x" * 121))),
+        ("locator extra", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1, x=1))),
         ]:
     open_alter(name, change)
 alter("open-track laps differ", lambda p: next(t for t in p["tracks"] if t.get("package_id") == "package/fixture-loop/2.1").__setitem__("laps", 4), open_base)

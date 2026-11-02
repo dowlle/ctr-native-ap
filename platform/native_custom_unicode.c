@@ -39,3 +39,20 @@ int CustomPackage_ValidateTitle(const char *input, size_t size)
     free(normalized);
     return valid;
 }
+
+int CustomPackage_AsciiFold(const char *input, size_t length, char *out, size_t size)
+{
+    utf8proc_uint8_t *folded = NULL;
+    utf8proc_ssize_t foldedSize, i;
+    size_t n = 0;
+    if (!input || !out || !size) return 0;
+    out[0] = 0;
+    foldedSize = utf8proc_map((const utf8proc_uint8_t *)input, (utf8proc_ssize_t)length, &folded,
+                              UTF8PROC_STABLE | UTF8PROC_DECOMPOSE | UTF8PROC_COMPAT);
+    if (foldedSize < 0) return 0;
+    for (i = 0; i < foldedSize && n + 1 < size; i++)
+        if (folded[i] < 0x80) out[n++] = (char)folded[i];
+    out[n] = 0;
+    free(folded);
+    return 1;
+}
