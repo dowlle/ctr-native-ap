@@ -108,6 +108,9 @@ static void AP_SeedRegistryEnsure(int force)
 	if (!AP_SeedRegistryCachePath(path, sizeof path)) path[0] = '\0';
 	if (ap_track_registry_refresh(path))
 	{
+		// Pending from here, so a fetch that ends before the next frame is
+		// still logged.
+		ap_seed_registry_last_state = AP_TRACK_REGISTRY_LOADING;
 		snprintf(line, sizeof line, "[CustomTracks] Current Seed: checking the track registry (%s)\n",
 		         AP_TRACK_REGISTRY_HOST AP_TRACK_REGISTRY_PATH);
 		AP_AppendLog(line);

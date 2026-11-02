@@ -313,6 +313,12 @@ int main(void)
 	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
 	snprintf(path, sizeof path, "%s/track-registry-cache.json", assets_root);
 	expect(reg_refreshes == 1 && !strcmp(reg_cache, path), "a missing open package fetches the registry, cache in assets");
+	/* A fetch that ends before the next frame is still logged with its reason. */
+	reg_state = AP_TRACK_REGISTRY_UNAVAILABLE;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(strstr(log_text, "track registry unavailable, no cached copy") != NULL, "a fast failure is logged");
+	reg_state = AP_TRACK_REGISTRY_IDLE;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
 	expect(rows[1].source == AP_SEED_SOURCE_MANUAL && rows[1].registry == AP_SEED_REGISTRY_CHECKING &&
 	       strstr(ap_seed_source_text(&rows[1]), "checking"), "while it loads: no download yet, checking");
 	reg_state = AP_TRACK_REGISTRY_LOADING;
