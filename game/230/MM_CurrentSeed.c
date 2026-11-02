@@ -1,6 +1,6 @@
 /* Current Seed (#133 PR 7): Options > Custom Content in a content-plan room.
    Included by MM_ConfigMenu.c in the player client (CTR_AP, CTR_CUSTOM_TRACKS,
-   not CTR_CUSTOM_PACKAGES), ahead of MM_ConfigProc_CustomContent.
+   not CTR_AP_AUTHORING), ahead of MM_ConfigProc_CustomContent.
 
    L1 / R1 switch between Current Seed and the package page that every room
    had before. Current Seed lists the room's required tracks with Ready,

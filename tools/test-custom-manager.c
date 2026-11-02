@@ -55,7 +55,7 @@ void RECTMENU_DrawInnerRect(RECT *r,int x,uint32_t *ot)
 void CTR_Box_DrawClearBox(const RECT *r,const Color *c,int t,uint32_t *ot)
 { (void)c;(void)t;(void)ot;CHECK(r->x+r->w<=512); }
 #include "../game/230/MM_CustomManager.c"
-static void tick(int buttons) { struct GamepadBuffer pad={0};pad.buttonsTapped=buttons;drawn[0]=0;MM_ConfigProc_CustomContent(NULL,NULL,&pad); }
+static void tick(int buttons) { struct GamepadBuffer pad={0};pad.buttonsTapped=buttons;drawn[0]=0;MM_ConfigProc_TrackLibrary(NULL,NULL,&pad); }
 int main(void)
 {
  data.font_charPixWidth[FONT_SMALL]=13;data.font_charPixWidth[FONT_BIG]=17;
@@ -103,6 +103,12 @@ int main(void)
  CHECK(strstr(drawn,"\nNo races\n")&&strstr(drawn,"\nNo lap\ncheckpoints\n")&&!strstr(drawn,"..."));
  strcpy(installed.local.timeTrialReason,"Files failed checks");tick(0);
  CHECK(strstr(drawn,"\nFiles failed\nchecks\n"));
+ /* A revision the store scan refused stays listed with its reason; a row
+    that is only in the catalogue does not. */
+ installed.installed=0;installed.scanFailed=1;strcpy(installed.disabledReason,"Hash mismatch");tick(0);
+ CHECK(strstr(drawn,"\nNot installed\n")&&(strstr(drawn,"Hash\nmismatch\n")||strstr(drawn,"Hash mismatch\n"))&&!strstr(drawn,"verified"));
+ installed.scanFailed=0;strcpy(installed.disabledReason,"Catalogue only");tick(0);
+ CHECK(strstr(drawn,"No installed")&&!strstr(drawn,"Catalogue only"));
  CHECK(CustomRevision_Compare("2.0.0","1.99.0")>0);
  CHECK(CustomRevision_Compare("1.0.0","1.0.0-rc1")>0);
  printf("custom manager: %d checks, %d failures\n",checks,failures);return failures!=0;

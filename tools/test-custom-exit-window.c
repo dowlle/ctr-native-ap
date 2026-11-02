@@ -191,6 +191,7 @@ int main(void)
 	enter_arcade_menu();
 	start_custom_race();
 	CHECK(s_runtimeActiveAtLevelFile == 1);
+	CHECK(CustomOffline_RuntimeActive()); // AP_ArcadeHoldsRoom: the room is held
 	CHECK(s_gt.levelID == HOST);
 	CHECK(s_gt.numLaps == CTR_CUSTOM_DEFAULT_LAPS);
 	CHECK(MainRaceTrack_OfflineCustomLoad());
