@@ -1060,22 +1060,28 @@ extern "C" void AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *
 	// files its laps were picked before and stay. With other files this import
 	// replaces it, as a complete descriptor would (the newest import wins), so
 	// the old entry cannot hide this track's laps picker.
+	// Only a descriptor the wrapper could read (a plain file of descriptor
+	// size that parses) is compared or removed; anything else there is left
+	// alone, and the wrapper does not list it either.
 	const fs::path kept = tracks / fs::u8path(name);
-	if (fs::is_regular_file(fs::symlink_status(kept, ec)))
+	const nlohmann::json old = fs::is_regular_file(fs::symlink_status(kept, ec))
+	                               ? nlohmann::json::parse(ReadSmallPlainFile(kept, kDescriptorMax), nullptr, false)
+	                               : nlohmann::json();
+	if (old.is_object() && old.contains("files") && old["files"] == fresh.value("files", nlohmann::json()))
 	{
-		const nlohmann::json old = nlohmann::json::parse(ReadSmallPlainFile(kept, kDescriptorMax), nullptr, false);
-		if (old.is_object() && old.contains("files") && old["files"] == fresh.value("files", nlohmann::json()))
-		{
-			DropNeedsLaps(name);
-			return;
-		}
-		if (!KeepDescriptorFile("needs-laps", name, json))
-			return;
-		fs::remove(kept, ec);
-		Log("replaced " + name + " in solo/tracks: the new import waits for its laps");
+		DropNeedsLaps(name);
 		return;
 	}
-	KeepDescriptorFile("needs-laps", name, json);
+	if (!KeepDescriptorFile("needs-laps", name, json) || !old.is_object())
+		return;
+	// Both entries must never stay: the old one would hide the laps picker.
+	if (!fs::remove(kept, ec) || ec)
+	{
+		DropNeedsLaps(name);
+		Log("could not replace " + name + " in solo/tracks: the old entry stays");
+		return;
+	}
+	Log("replaced " + name + " in solo/tracks: the new import waits for its laps");
 }
 
 extern "C" void AP_Solo_TrackStepLaps(int index, int direction)
