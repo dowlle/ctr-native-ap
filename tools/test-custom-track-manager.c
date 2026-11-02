@@ -309,13 +309,22 @@ int main(void)
 	expect_int(status.state, CTR_CT_MANAGER_READY, "finalized package is Ready");
 	expect_int(CustomTrackManager_RenderYaml(&package, &status, yaml, sizeof yaml), 1,
 	           "Ready package renders YAML");
-	expect_contains(yaml, "custom_tracks:\n  fixture-track:",
-	                "YAML is one combined custom_tracks mapping");
-	expect_contains(yaml, "boxes: false", "Alpha6 export fails boxes closed");
-	expect_contains(yaml, "package_uuid: 11111111-2222-4333-8444-555555555555",
+	expect_contains(yaml, "custom_tracks:\n  - id: \"package/fixture-track/1.2.3\"",
+	                "YAML is one plan descriptor in a custom_tracks list");
+	expect_contains(yaml, "    content_id: \"fixture-track\"\n", "YAML names the track key");
+	expect_contains(yaml, "    uuid: \"11111111-2222-4333-8444-555555555555\"",
 	                "YAML carries package provenance");
-	expect_contains(yaml, "navigation:\n      uuid: aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
-	                "YAML carries navigation identity separately");
+	expect_contains(yaml, "    revision: \"1.2.3\"\n", "revision is quoted so 1.0 stays text");
+	expect_contains(yaml, "    author: \"Fixture Author\"\n", "YAML names the author");
+	// checkpoints (35) and ai_nav (true) are the boss venue facts; arcade needs
+	// AI paths and two spawns (the fixture has 8); relic is never exported.
+	expect_contains(yaml, "capabilities: {time_trial: true, arcade: true, relic: false, ctr_tokens: true, "
+	                "wumpa: true, checkpoints: 35, ai_nav: true}",
+	                "YAML carries the measured capabilities including checkpoints and ai_nav");
+	expect_int(strstr(yaml, "navigation") == NULL && strstr(yaml, "boxes:") == NULL &&
+	           strstr(yaml, "replaces") == NULL, 1, "the old Alpha6 mapping fields are gone");
+	expect_contains(yaml, "format: ctr-lev, format_version: 1}\n", "YAML pins the LEV file");
+	expect_contains(yaml, "    evidence: []\n", "YAML ends with an empty evidence list");
 	expect_contains(yaml, package.levSha256, "YAML carries verified LEV identity");
 	{
 		// Ready describes the bytes that were scanned. Exporting it under a
@@ -635,8 +644,7 @@ int main(void)
 		expect_int(CustomTrackManager_RenderYaml(&package, &wumpaStatus, yaml,
 		                                         sizeof yaml), 1,
 		           "Ready package still renders YAML");
-		expect_contains(yaml, "wumpa_collectible: true",
-		                "the YAML fragment exports the measured capability");
+		expect_contains(yaml, "wumpa: true", "the YAML exports the measured capability");
 
 		// A registry entry that claims a capability the installed bytes do not
 		// have is refused. The digests match, so this can only mean the registry
@@ -684,6 +692,8 @@ int main(void)
 		expect_contains(baby->version, "1.0.0", "legacy getter stays 1.0.0");
 		memset(&ready, 0, sizeof ready);
 		ready.state = CTR_CT_MANAGER_READY;
+		ready.levBytes = 2558168;
+		ready.vrmBytes = 458808;
 		snprintf(ready.levPath, sizeof ready.levPath, "%s", "track.lev");
 		snprintf(ready.vrmPath, sizeof ready.vrmPath, "%s", "track.vrm");
 		snprintf(ready.actualLevSha256, sizeof ready.actualLevSha256, "%s", cur->levSha256);
@@ -693,7 +703,7 @@ int main(void)
 		           "1.0.2 scan receipt recorded");
 		expect_int(CustomTrackManager_RenderYaml(cur, &ready, yaml, sizeof yaml), 1,
 		           "Ready 1.0.2 scan exports under the 1.0.2 handle");
-		expect_contains(yaml, "package_version: 1.0.2", "1.0.2 export names 1.0.2");
+		expect_contains(yaml, "    revision: \"1.0.2\"\n", "1.0.2 export names 1.0.2");
 		expect_contains(yaml, cur->levSha256, "1.0.2 export carries the 1.0.2 LEV digest");
 		expect_int(CustomTrackManager_RenderYaml(baby, &ready, yaml, sizeof yaml), 0,
 		           "Ready 1.0.2 scan cannot be exported as 1.0.0");
