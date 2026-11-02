@@ -225,7 +225,11 @@ int HOWL_CustomMusic_CortexLoadBank(int level, struct Bank *thisBank)
 
 	if (laterBanks == CORTEX_MUSIC_OFF)
 		return 0;
-	return HOWL_CustomMusic_LoadBankFor(thisBank, laterBanks);
+	if (HOWL_CustomMusic_LoadBankFor(thisBank, laterBanks))
+		return 1;
+	// Refused: Oxide Station's bank and song, and the .sca is let go now.
+	HOWL_CustomMusic_ReleaseCortex();
+	return 0;
 }
 
 // Stage 1 entry: the level bank is on the SPU; its sectors are no longer read.
