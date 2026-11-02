@@ -1108,8 +1108,6 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             if (!extractor->needPass) break;
             layout = extractor->layout;
         }
-        if (file_stamp(patch.get()) != patchStamp || file_stamp(disc.file.get()) != discStamp)
-            throw std::runtime_error("The patch or the disc changed while it was being read");
         store_flag(progress, 92);
 
         /* 4. Pair, cut, build, classify. */
@@ -1261,6 +1259,8 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             scan->built.push_back(Built());
         }
         store_flag(progress, 100);
+        if (file_stamp(patch.get()) != patchStamp || file_stamp(disc.file.get()) != discStamp)
+            throw std::runtime_error("The patch or the disc changed while it was being read");
         *out = scan.release();
         return 1;
     }
