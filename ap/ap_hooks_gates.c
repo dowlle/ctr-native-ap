@@ -1585,17 +1585,9 @@ int AP_GoalAdvert(char *out, int cap)
 		}
 		return AP_GoalLineAppendWumpa(out, cap, 0, ap_net_wumpa_lifetime(), ctr_wumpa_shop.goal);
 	}
-
-	// The Oxide segment is driven by goal_oxide alone, so `optional` (0) and
-	// `disabled` (3) both omit it: neither is a completion condition. Whether
-	// the Oxide race has been BEATEN is deliberately not shown -- under the
-	// approved encounter flow the enabled arms gate the selected finale, so
-	// winning it completes the composed goal in the same moment.
-	return AP_GoalLineAppendWumpa(out, cap,
-	                              AP_GoalLineFormat(out, cap, ctr_cfg.goal_oxide,
-	                                                ctr_cfg.goal_bosses, AP_ComposedBossesWon(),
-	                                                ctr_cfg.goal_gems, AP_GateCountGemSum()),
-	                              ap_net_wumpa_lifetime(), ctr_wumpa_shop.goal);
+	// One generator row 12: an active config is always a content plan; the
+	// normal-seed goal line was deleted.
+	return 0;
 }
 
 // Trophy-track warp pad LOAD gate. When a per-seed requirement applies use it;

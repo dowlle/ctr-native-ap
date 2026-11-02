@@ -308,8 +308,9 @@ require('game/BOTS.c', 'if (PickupBots_AdapterProtect(botDriver))')
 require('game/PickupBots.c', 'PickupBots_AdapterTick();', 'AP_BossAdapterReset(&s_apBossAdapter);',
         'if (AP_BossAdapterIsAdvanced(bossMeta->weaponType))', 'PickupBots_UpdateBoss(gGT->drivers[1]);',
         'PickupBots_UpdateBoss(attacker);')
-require('ap/ap_seedcfg.cpp', 'ap_seedcfg_parse_boss_encounters(j, opt, schema);',
-        'std::memset(&ctr_boss_encounters, 0, sizeof ctr_boss_encounters);')
+# One generator row 12 deleted the legacy reader's boss_encounters parse; the
+# plan admission reads the plan's bosses. Every parse still clears the table.
+require('ap/ap_seedcfg.cpp', 'std::memset(&ctr_boss_encounters, 0, sizeof ctr_boss_encounters);')
 # Every remaining retail boss-track test in the AP build must be one of the
 # adapted sites above; a new one has to decide whether it is venue geometry
 # or boss behaviour.

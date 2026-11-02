@@ -509,67 +509,6 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 	return count;
 }
 
-// ── §6: boxes behind a pad ──────────────────────────────────────────────────
-//
-// RULED 2026-08-11 (rulings note §6). AP_PadUncollectedGlowBits enumerates tier
-// bits and podium rungs, and neither of those is a box: itemsanity box locations
-// (#109) carry no AdvProgress bit at all. So a trophy win with boxes still
-// standing Re-locked the pad and stranded them until stage 2, and a track whose
-// tier bits were all checked went Done, which HARD-LOCKS the pad and made those
-// boxes unreachable for the rest of the seed.
-//
-// This is counted, not enumerated into outBits, and deliberately so: the glow
-// cycle shows REWARD placeholders (trophy / relic / token models) and a box has
-// no placeholder to show. The count feeds AP_PadState's lifecycle decisions only;
-// the glow itself is byte-identical.
-//
-// THE PREDICATE IS THE SPAWN PREDICATE. A box counts as uncollected only if it
-// could actually be broken: it needs GEOMETRY (a placement at that slot on that
-// level) and a LIVE location (in this slot's seed, per §7) that is not yet
-// checked. Counting bare locations instead would let a seed that created more box
-// locations than the placement set covers keep a pad green forever.
-static int AP_PadTrackBoxSlots(int levelID)
-{
-	// Per-level placement counts, rebuilt only when the placement table changes
-	// (a load, or an author-mode drop/undo). AP_PadState runs per pad per frame,
-	// so re-walking 241..512 placements for every pad every frame would be real
-	// work for a number that changes about twice a session.
-	static int s_slots[AP_BOX_TRACK_COUNT];
-	static int s_gen = -1;
-
-	int gen;
-
-	if (levelID < 0 || levelID >= AP_BOX_TRACK_COUNT)
-		return 0;
-
-	AP_Author_EnsureLoaded();
-	gen = AP_Author_PlacementGeneration();
-	if (gen != s_gen)
-	{
-		int i, n = AP_Author_PlacementCount();
-
-		for (i = 0; i < AP_BOX_TRACK_COUNT; i++)
-			s_slots[i] = 0;
-
-		for (i = 0; i < n; i++)
-		{
-			int lvl;
-			if (!AP_Author_PlacementGet(i, &lvl, 0, 0, 0, 0))
-				continue;
-			if (lvl < 0 || lvl >= AP_BOX_TRACK_COUNT)
-				continue;
-			s_slots[lvl]++;
-		}
-		s_gen = gen;
-	}
-
-	// The guard compares the raw authored count, including rows beyond the
-	// frozen 15-slot ceiling. A refused track contributes no box checks to pad
-	// state or glow, matching the spawn path in ap_boxes.c.
-	return ctr_cfg_box_placement_valid(levelID, s_slots[levelID])
-	           ? s_slots[levelID] : 0;
-}
-
 // Server truth, in the shape AP_BoxMap_CountStanding wants. ap_boxes.c holds its
 // own pair for the spawn set; these two ask the same two questions of the same
 // two sets, which is what keeps the pad's idea of "still standing" identical to
@@ -586,24 +525,13 @@ static int AP_PadBoxChecked(long code, void *ctx)
 	return ap_net_location_checked((long long)code); // already broken
 }
 
-static int AP_PadTrackBoxesLeft(int levelID)
-{
-	// The count itself is AP_BoxMap_CountStanding (freestanding, and exercised by
-	// tools/test-box-map.c); this only supplies the two server-truth predicates,
-	// which are the SAME pair the spawn set is built from -- §7 liveness and the
-	// checked set. One rule, one implementation, so the pad and the track can
-	// never disagree about what is still standing.
-	return AP_BoxMap_CountStanding(levelID, AP_PadTrackBoxSlots(levelID),
-	                               AP_PadBoxLive, AP_PadBoxChecked, 0);
-}
-
 // How many breakable boxes still stand behind this pad's destination. A cup pad
 // aggregates its four legs, exactly as AP_PadUncollectedGlowBits does for rungs
 // and for the same reason: a cup leg is not independently raceable from the hub,
 // so a Done cup pad would strand its legs' boxes permanently.
 int AP_PadUncollectedBoxCount(int destLevelID)
 {
-	int leg, n = 0;
+	int n = 0;
 
 	if (!ctr_cfg_active())
 		return 0;
@@ -620,24 +548,8 @@ int AP_PadUncollectedBoxCount(int destLevelID)
 				n++;
 		return n;
 	}
-
-	if (destLevelID >= 0 && destLevelID < AP_BOX_TRACK_COUNT)
-		return AP_PadTrackBoxesLeft(destLevelID);
-
-	if (destLevelID >= 100 && destLevelID < 105)
-	{
-		int cup = destLevelID - 100;
-#ifdef CTR_CUSTOM_TRACKS
-		// A displaced cup runs no retail legs.  Until custom box identities and
-		// placements exist, counting the wire row's retail boxes here would keep
-		// the custom pad open for checks it cannot serve.
-		if (AP_CustomPadOwnsDestination(&ctr_cfg, destLevelID))
-			return 0;
-#endif
-		for (leg = 0; leg < 4; leg++)
-			n += AP_PadTrackBoxesLeft(ctr_cfg_cup_leg(cup, leg));
-	}
-	return n;
+	// One generator row 12: an active config is always a content plan.
+	return 0;
 }
 
 // Per-track Wumpa checks carry no AdvProgress bit, so they need the same
@@ -760,94 +672,15 @@ int AP_PadUncollectedRelicPerfectCount(int destLevelID)
 int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap)
 {
 	int count = AP_PadUncollectedGlowBits(destLevelID, outBits, cap);
-	int wumpaOn;
 
 	if (!ctr_cfg_active())
 		return count;
 	// A content-plan pad's glow above already lists every family it owns, its
-	// Item Box checks included (#133 PR 4e). The legacy appends below key on
-	// a retail LevelID, which a content-plan physical pad is not.
+	// Item Box checks included (#133 PR 4e).
 	if (ap_content_plan_active())
 		return AP_ContentPadGlowBits(destLevelID, outBits, cap, 1);
-#ifdef CTR_CUSTOM_TRACKS
-	if (AP_CustomPadOwnsDestination(&ctr_cfg, destLevelID))
-	{
-		// The custom CTR letters, with the predicate of their pad-state count.
-		int letter;
-		if (AP_CustomPadLettersLeft(&ctr_cfg, destLevelID, AP_PadBoxLive,
-		                            AP_PadBoxChecked, 0) > 0)
-			for (letter = 0; letter < CTR_CFG_LETTER_COUNT && count < cap; letter++)
-			{
-				long code = ctr_cfg.custom_letter_locations[letter];
-				if (code > 0 && ap_net_location_exists(code) &&
-				    !ap_net_location_checked(code))
-					outBits[count++] = AP_PadGlowCustomLetterBit(letter);
-			}
-		return count;
-	}
-#endif
-	wumpaOn = ctr_cfg.wumpa.mode == CTR_CFG_WUMPA_PER_TRACK;
-
-	if (destLevelID >= 0 && destLevelID < AP_BOX_TRACK_COUNT)
-	{
-		count = AP_PadGlowAppendBoxes(destLevelID, AP_PadTrackBoxSlots(destLevelID),
-		                              outBits, cap, count,
-		                              AP_PadBoxLive, AP_PadBoxChecked, 0);
-		// Same gate as AP_PadUncollectedLetterCount: trial letters only show
-		// while the trial CTR Challenge can be served.
-		if ((destLevelID != 16 && destLevelID != 17) ||
-		    AP_TrialChallengeServable(destLevelID))
-			count = AP_PadGlowAppendLetters(ctr_cfg.lettersanity_locations[destLevelID],
-			                                destLevelID, outBits, cap, count,
-			                                AP_PadBoxLive, AP_PadBoxChecked, 0);
-		if (wumpaOn && destLevelID < CTR_CFG_WUMPA_TRACK_COUNT)
-			count = AP_PadGlowAppendWumpa(ctr_cfg.wumpa.tracks[destLevelID], destLevelID,
-			                              outBits, cap, count,
-			                              AP_PadBoxLive, AP_PadBoxChecked, 0);
-	}
-	else if (destLevelID == AP_CORTEX_DEST)
-	{
-		if (AP_CortexDestValid())
-			count = AP_CortexPadAppendOpen(&ctr_cfg.cortex_track,
-			                               AP_CV_APPEND_LETTERS |
-			                                   (wumpaOn ? AP_CV_APPEND_WUMPA : 0),
-			                               outBits, cap, count,
-			                               AP_PadBoxLive, AP_PadBoxChecked, 0);
-	}
-	else if (destLevelID >= 100 && destLevelID < 105)
-	{
-		int cup = destLevelID - 100;
-		int leg, prev;
-		int seen[4];
-
-		for (leg = 0; leg < 4; leg++)
-		{
-			int track = ctr_cfg_cup_leg(cup, leg);
-			int dup = 0;
-
-			seen[leg] = track;
-			for (prev = 0; prev < leg; prev++)
-				if (seen[prev] == track)
-					dup = 1;
-			if (dup)
-				continue; // repeated leg: one location, listed once
-			if (track == AP_CORTEX_DEST)
-			{
-				if (wumpaOn && AP_CortexDestValid())
-					count = AP_CortexPadAppendOpen(&ctr_cfg.cortex_track,
-					                               AP_CV_APPEND_WUMPA, outBits, cap, count,
-					                               AP_PadBoxLive, AP_PadBoxChecked, 0);
-				continue;
-			}
-			count = AP_PadGlowAppendBoxes(track, AP_PadTrackBoxSlots(track),
-			                              outBits, cap, count,
-			                              AP_PadBoxLive, AP_PadBoxChecked, 0);
-			if (wumpaOn && track >= 0 && track < CTR_CFG_WUMPA_TRACK_COUNT)
-				count = AP_PadGlowAppendWumpa(ctr_cfg.wumpa.tracks[track], track,
-				                              outBits, cap, count,
-				                              AP_PadBoxLive, AP_PadBoxChecked, 0);
-		}
-	}
+	// One generator row 12: an active config is always a content plan; the
+	// normal-seed appends were deleted.
 	return count;
 }
 
