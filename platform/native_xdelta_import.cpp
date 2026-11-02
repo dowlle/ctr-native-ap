@@ -1783,6 +1783,37 @@ extern "C" int XdeltaImport_ListFolder(const char *assets, char names[][CTR_XDEL
 
 /* ---- Job API. */
 namespace {
+struct KeptDescriptor { std::string contentId, revision, json; };
+
+/* The Play Solo descriptors of the installed items `done`, one per track key
+   and version; `note` names the first track without one and why. */
+void collect_descriptors(const XdeltaImportScan *scan, const std::vector<unsigned int> &done,
+                         std::vector<KeptDescriptor> &kept, std::string &note)
+{
+    std::set<std::pair<std::string, std::string>> names;
+    for (unsigned int i : done)
+    {
+        std::string json, why;
+        CustomPackageManifest manifest;
+        const XdeltaImportItem &item = scan->summary.items[i];
+        if (plan_descriptor(scan->summary, item, scan->built[i], json, why) &&
+            CustomPackage_GetManifest(scan->built[i].owned, &manifest))
+        {
+            /* One descriptor file per track key and version: a second track
+               with the same pair would replace the first, and one seed
+               cannot list both. The first keeps it. */
+            if (names.insert({item.trackKey, manifest.version}).second)
+            {
+                kept.push_back({item.trackKey, manifest.version, json});
+                continue;
+            }
+            why = "another track in this patch has the same track key";
+        }
+        if (note.empty())
+            note = limit_codepoints(std::string(item.title), 40) + " is not on Play Solo: " + why;
+    }
+}
+
 struct JobState
 {
     std::mutex mutex;
@@ -1795,8 +1826,7 @@ struct JobState
     int installState = -1;
     int installed = 0;
     /* The last install's Play Solo descriptors, and why a track got none. */
-    struct Kept { std::string contentId, revision, json; };
-    std::vector<Kept> descriptors;
+    std::vector<KeptDescriptor> descriptors;
     std::string descriptorNote;
 };
 JobState &job() { static auto *s = new JobState(); return *s; }
@@ -1862,19 +1892,9 @@ extern "C" int XdeltaImport_StartInstall(const unsigned char *selected, unsigned
             int n = install_items(state.scan, chosen.data(), root.c_str(), where, error, sizeof error, &done);
             /* Every track now in a room folder, also before a failure part
                way through the list, gets its Play Solo descriptor. */
-            std::vector<JobState::Kept> kept;
+            std::vector<KeptDescriptor> kept;
             std::string note;
-            for (unsigned int i : (where & CTR_XDELTA_INSTALL_ROOM) ? done : std::vector<unsigned int>())
-            {
-                std::string json, why;
-                CustomPackageManifest manifest;
-                const XdeltaImportItem &item = state.scan->summary.items[i];
-                if (plan_descriptor(state.scan->summary, item, state.scan->built[i], json, why) &&
-                    CustomPackage_GetManifest(state.scan->built[i].owned, &manifest))
-                    kept.push_back({item.trackKey, manifest.version, json});
-                else if (note.empty())
-                    note = limit_codepoints(std::string(item.title), 40) + " is not on Play Solo: " + why;
-            }
+            if (where & CTR_XDELTA_INSTALL_ROOM) collect_descriptors(state.scan, done, kept, note);
             std::lock_guard<std::mutex> lock(state.mutex);
             state.descriptors = std::move(kept);
             state.descriptorNote = note;
@@ -1902,6 +1922,24 @@ extern "C" int XdeltaImport_PollInstall(int *installed, char *error, size_t erro
     }
     return state;
 }
+
+#ifdef CTR_XDELTA_TESTING
+/* Harness view of the install job's descriptor step: Install, then the
+   descriptors it would keep. Returns the install result; *kept and note. */
+extern "C" int XdeltaImportTest_InstallDescriptors(const XdeltaImportScan *scan, const unsigned char *selected,
+                                                   const char *assets, int *kept, char *note, size_t noteSize)
+{
+    std::vector<unsigned int> done;
+    std::vector<KeptDescriptor> list;
+    std::string text;
+    char error[512];
+    int n = install_items(scan, selected, assets, CTR_XDELTA_INSTALL_ROOM, error, sizeof error, &done);
+    collect_descriptors(scan, done, list, text);
+    if (kept) *kept = (int)list.size();
+    if (note && noteSize) std::snprintf(note, noteSize, "%s", text.c_str());
+    return n;
+}
+#endif
 
 extern "C" int XdeltaImport_InstalledDescriptorCount(void)
 {

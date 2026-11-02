@@ -36,6 +36,8 @@ extern "C" {
 #include <unistd.h>
 
 extern "C" int g_xdeltaTestFailRoomVrm;
+extern "C" int XdeltaImportTest_InstallDescriptors(const XdeltaImportScan *scan, const unsigned char *selected,
+                                                   const char *assets, int *kept, char *note, size_t noteSize);
 using Bytes = std::vector<unsigned char>;
 static int checks, failures;
 #define CHECK(cond, name) do { checks++; if (!(cond)) { failures++; std::printf("FAIL %s (line %d)\n", name, __LINE__); } } while (0)
@@ -673,8 +675,44 @@ int main()
             CHECK(t9 && !XdeltaImport_PlanDescriptor(c.scan, (unsigned)(t9 - s3->items), solo, sizeof solo, key, revision,
                                                      why, sizeof why) && !std::strcmp(why, "the pack descriptor gives no laps"),
                   "no laps in the pack descriptor: no Play Solo descriptor, never a guessed lap count");
+            /* The install job's step: one descriptor, and the note names the
+               track left off Play Solo. */
+            {
+                int kept = -1;
+                char note[200];
+                std::string jobAssets = root + "/assets-job";
+                mkdir(jobAssets.c_str(), 0755);
+                CHECK(XdeltaImportTest_InstallDescriptors(c.scan, selected.data(), jobAssets.c_str(), &kept, note, sizeof note) == 2 &&
+                      kept == 1 && !std::strcmp(note, "Long Road is not on Play Solo: the pack descriptor gives no laps"),
+                      "install keeps one Play Solo descriptor and names the track without one");
+            }
         }
         XdeltaImport_Free(&c.scan);
+        /* Two tracks with one track key and version: the first keeps the
+           Play Solo descriptor, the second would replace its file. */
+        {
+            nlohmann::json same = d;
+            same["tracks"]["9"]["track_key"] = "snow-lane-key";
+            same["tracks"]["9"]["laps"] = 3;
+            text = same.dump();
+            write_file("Pack.ctrpack.json", Bytes(text.begin(), text.end()));
+            ScanResult twin = scan(patchPath, discPath);
+            CHECK(twin.ok, "scan with two tracks on one key");
+            if (twin.ok)
+            {
+                const XdeltaImportSummary *st = XdeltaImport_Summary(twin.scan);
+                std::vector<unsigned char> sel(st->count, 0);
+                for (unsigned i = 0; i < st->count; i++) sel[i] = (unsigned char)st->items[i].offered;
+                int kept = -1;
+                char note[200];
+                std::string twinAssets = root + "/assets-twin";
+                mkdir(twinAssets.c_str(), 0755);
+                CHECK(XdeltaImportTest_InstallDescriptors(twin.scan, sel.data(), twinAssets.c_str(), &kept, note, sizeof note) == 2 &&
+                      kept == 1 && !std::strcmp(note, "Long Road is not on Play Solo: another track in this patch has the same track key"),
+                      "one descriptor per track key and version");
+            }
+            XdeltaImport_Free(&twin.scan);
+        }
         nlohmann::json badKey = d;
         badKey["tracks"]["1"]["track_key"] = "../escape";
         text = badKey.dump();
