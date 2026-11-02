@@ -302,6 +302,40 @@ static void test_tracks()
 	CHECK(!AP_SoloDescriptorFileName("a", std::string(64, '1')).empty());
 }
 
+// An imported track without laps (ruling of 2026-11-02): listed from
+// solo/needs-laps, laps picked 1 to 7 from 3, then kept with nothing else
+// changed.
+static void test_needs_laps()
+{
+	CHECK(AP_SOLO_LAPS_MIN == 1 && AP_SOLO_LAPS_MAX == 7 && AP_SOLO_LAPS_DEFAULT == 3);
+	CHECK(AP_SoloLapsStep(3, 1) == 4 && AP_SoloLapsStep(3, -1) == 2);
+	CHECK(AP_SoloLapsStep(7, 1) == 7 && AP_SoloLapsStep(1, -1) == 1); // stops at both ends
+	CHECK(AP_SoloLapsStep(0, 0) == 1 && AP_SoloLapsStep(99, 0) == 7);
+
+	const nlohmann::json d = {{"id", "package/long-road/1.0.0"}, {"content_id", "long-road"}, {"revision", "1.0.0"},
+	                          {"display_name", "Long Road"}, {"author", "Unknown"}, {"capabilities", {{"relic", false}}}};
+	const std::string name = "long-road__1.0.0.json";
+	CHECK(AP_SoloNeedsLapsDescriptor(d, name));
+	CHECK(!AP_SoloNeedsLapsDescriptor(d, "other__1.0.0.json")); // the file name must match
+	nlohmann::json bad = d;
+	bad["laps"] = 3;
+	CHECK(!AP_SoloNeedsLapsDescriptor(bad, name)); // already has laps
+	bad = d;
+	bad["id"] = "package/long-road/2.0.0";
+	CHECK(!AP_SoloNeedsLapsDescriptor(bad, name));
+	bad = d;
+	bad.erase("author");
+	CHECK(!AP_SoloNeedsLapsDescriptor(bad, name));
+	CHECK(!AP_SoloNeedsLapsDescriptor(nlohmann::json::array(), name));
+
+	CHECK(AP_SoloDescriptorWithLaps(d, 0).empty() && AP_SoloDescriptorWithLaps(d, 8).empty());
+	nlohmann::json kept = nlohmann::json::parse(AP_SoloDescriptorWithLaps(d, 5));
+	nlohmann::json want = d;
+	want["laps"] = 5;
+	CHECK(kept == want);
+	CHECK(AP_SoloDescriptorWithLaps(kept, 4).empty()); // never over laps it has
+}
+
 int main()
 {
 	test_parse_lines();
@@ -313,6 +347,7 @@ int main()
 	test_error_text();
 	test_options();
 	test_tracks();
+	test_needs_laps();
 	if (g_fail)
 	{
 		std::printf("test-solo-logic: %d failure(s)\n", g_fail);

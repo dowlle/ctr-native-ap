@@ -1,10 +1,10 @@
 #ifndef NATIVE_CUSTOM_RECORDS_H
 #define NATIVE_CUSTOM_RECORDS_H
-/* Time Trial records for custom tracks (box authoring build, CTR_CUSTOM_PACKAGES).
+/* Time Trial records for custom tracks (every build with CTR_CUSTOM_PACKAGES).
 
    A custom track's best times and its saved ghost never touch the memory card
    or the retail save layout. They live in their own files in custom-records/
-   next to the authoring exe, one pair per track identity:
+   next to the exe, one pair per track identity:
 
      custom-records/<uuid>-<lev 16 hex>-<vrm 16 hex>-<laps>l.times   text
      custom-records/<uuid>-<lev 16 hex>-<vrm 16 hex>-<laps>l.ghost   binary

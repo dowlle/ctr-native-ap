@@ -15,6 +15,9 @@
 #else
 #include <dirent.h>
 #endif
+#ifdef CTR_CUSTOM_PACKAGES
+#include <platform/native_custom_content_verify.h>
+#endif
 
 #define CTR_CT_MANAGER_HASH_CHUNK 65536
 #define CTR_CT_MANAGER_TEXT_MAX 4096
@@ -1310,12 +1313,62 @@ int CustomTrackManager_ClearRelicTimes(const char *assetsRoot,
 	return stat(path, &info) != 0 && errno == ENOENT;
 }
 
+// The optional facts `weapon_crates` (a count) and `super_turbo_pads` of the
+// descriptor export. The registry holds only a yes/no for crates and nothing
+// for super turbo pads, so they are measured at export by the verifier the
+// loader compares a descriptor against (native_custom_content_verify.h,
+// ap_content_capability.h), on the bytes that carry the package's own hashes.
+// Returns 0 when those bytes cannot be read or measured, or no longer carry
+// those hashes; the export is refused then. Returns 1 otherwise, with
+// `measured` 0 in a build without the verifier (CTR_CUSTOM_PACKAGES off),
+// where the descriptor leaves both facts out.
+struct Manager_ExportFacts
+{
+	int measured;
+	unsigned long weaponCrates;
+	int superTurboPads;
+};
+
+static int Manager_MeasureExportFacts(const struct CustomTrackManagerPackage *package,
+	                                  const struct CustomTrackManagerStatus *status,
+	                                  struct Manager_ExportFacts *facts)
+{
+	memset(facts, 0, sizeof *facts);
+#ifdef CTR_CUSTOM_PACKAGES
+	{
+		struct CustomContentOwnedPair pair;
+		char error[160];
+		int ok;
+
+		if (!CustomContentVerify_AcquirePair(status->levPath, status->vrmPath, &pair, error, sizeof error))
+			return 0;
+		ok = NativeSha256_HexEquals(package->levSha256, pair.report.levSha256) &&
+		     NativeSha256_HexEquals(package->vrmSha256, pair.report.vrmSha256) &&
+		     CustomContentVerify_AnalyzePair(&pair, error, sizeof error);
+		if (ok)
+		{
+			facts->measured = 1;
+			facts->weaponCrates = pair.report.measured.weaponCrates;
+			facts->superTurboPads = pair.report.measured.superTurboPads > 0;
+		}
+		CustomContentVerify_FreePair(&pair);
+		return ok;
+	}
+#else
+	(void)package;
+	(void)status;
+	return 1;
+#endif
+}
+
 int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *package,
 	                               const struct CustomTrackManagerStatus *status,
 	                               const struct CustomTrackRelicTimes *relic,
 	                               char *dst, size_t dstSize)
 {
 	int wrote;
+	struct Manager_ExportFacts facts;
+	char optional[96] = "";
 	int relicRace;
 	char receipt[NATIVE_SHA256_HEX_BYTES];
 	char targets[128] = "";
@@ -1338,11 +1391,19 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 	// The old mapping that put the track on the Purple Gem Cup is refused there.
 	// Every value is plain text, so double quotes need no escaping, and quoting
 	// keeps a revision such as 1.0 from reading as a number. The capabilities
-	// are the measured flags: arcade needs AI paths and two or more spawns,
+	// are the measured flags: arcade means 8 racers with AI driving lines
+	// (Rulebook track package rule 2), so AI paths and all 8 spawns;
 	// time_trial needs the restart points, and `checkpoints` and `ai_nav` are
 	// the boss venue facts. relic is true only with the author's target times
 	// and measured relic crates (row 10j); times the apworld would refuse
-	// refuse the export instead.
+	// refuse the export instead. `weapon_crates` and `super_turbo_pads` come
+	// from Manager_MeasureExportFacts, never from a default: a missing
+	// super_turbo_pads would count as true in logic.
+	if (!Manager_MeasureExportFacts(package, status, &facts))
+		return 0;
+	if (facts.measured)
+		snprintf(optional, sizeof optional, ", super_turbo_pads: %s, weapon_crates: %lu",
+		         facts.superTurboPads ? "true" : "false", facts.weaponCrates);
 	relicRace = relic != NULL && relic->set && package->flagRelicCrates;
 	if (relicRace)
 	{
@@ -1361,7 +1422,7 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 		"    author: \"%s\"\n"
 		"    laps: %d\n"
 		"    capabilities: {time_trial: true, arcade: %s, relic: %s, ctr_tokens: %s, wumpa: %s, "
-		"checkpoints: %d, ai_nav: %s}\n"
+		"checkpoints: %d, ai_nav: %s%s}\n"
 		"%s"
 		"    files:\n"
 		"      - {role: lev, sha256: \"%s\", bytes: %lu, format: ctr-lev, format_version: 1}\n"
@@ -1369,11 +1430,11 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 		"    evidence: []\n",
 		package->id, package->version, package->id, package->packageUuid, package->version,
 		package->title, package->author, package->laps,
-		(package->flagAiNav && package->flagSpawns >= 2) ? "true" : "false",
+		(package->flagAiNav && package->flagSpawns >= 8) ? "true" : "false",
 		relicRace ? "true" : "false",
 		package->flagCtrLetters ? "true" : "false",
 		package->flagWumpaCollectible ? "true" : "false",
-		package->flagCheckpoints, package->flagAiNav ? "true" : "false", targets,
+		package->flagCheckpoints, package->flagAiNav ? "true" : "false", optional, targets,
 		package->levSha256, status->levBytes, package->vrmSha256, status->vrmBytes);
 
 	return wrote >= 0 && (size_t)wrote < dstSize;

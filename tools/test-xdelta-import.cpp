@@ -20,6 +20,7 @@
 #include <platform/native_custom_package.h>
 extern "C" {
 #include <platform/native_custom_track_manager.h>
+#include <platform/native_custom_content_verify.h>
 }
 #include <platform/native_sha256.h>
 #include <nlohmann/json.hpp>
@@ -35,6 +36,11 @@ extern "C" {
 #include <unistd.h>
 
 extern "C" int g_xdeltaTestFailRoomVrm;
+#include "ap/ap_solo_logic.hpp"
+
+extern "C" int XdeltaImportTest_InstallDescriptors(const XdeltaImportScan *scan, const unsigned char *selected,
+                                                   const char *assets, int *kept, int *needsLaps, char *note,
+                                                   size_t noteSize);
 using Bytes = std::vector<unsigned char>;
 static int checks, failures;
 #define CHECK(cond, name) do { checks++; if (!(cond)) { failures++; std::printf("FAIL %s (line %d)\n", name, __LINE__); } } while (0)
@@ -464,6 +470,46 @@ int main()
         const int both = CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM;
         CHECK(XdeltaImport_Install(a.scan, selected.data(), assets.c_str(), both, error, sizeof error) == 2, "two tracks installed");
         CHECK(XdeltaImport_Install(a.scan, selected.data(), assets.c_str(), both, error, sizeof error) == 2, "reinstall is harmless");
+
+        /* No pack descriptor (ruling of 2026-11-02): a Play Solo descriptor
+           without laps and with author "Unknown"; the player picks the laps
+           on the Custom Tracks page. Everything else is measured. */
+        {
+            char solo[16384], key[65], revision[65], why[160];
+            CHECK(XdeltaImport_PlanDescriptor(a.scan, idx1, solo, sizeof solo, key, revision, why, sizeof why) == 2 && !why[0],
+                  "no pack descriptor: a descriptor that waits for laps");
+            auto pd = nlohmann::json::parse(solo);
+            CHECK(!pd.contains("laps") && pd["author"] == "Unknown", "laps left out, never guessed; author Unknown");
+            CHECK(pd["display_name"] == "Pack slot 1" && pd["capabilities"]["relic"] == false && !pd.contains("relic_targets"),
+                  "slot name as title, no relic without the author's laps");
+            CHECK(pd["files"][0]["sha256"] == t1->levSha256 && pd["files"][1]["sha256"] == t1->vrmSha256,
+                  "files pinned as installed");
+            const std::string name = AP_SoloDescriptorFileName(key, revision);
+            CHECK(AP_SoloNeedsLapsDescriptor(pd, name), "Play Solo lists it as waiting for laps");
+            CHECK(AP_SoloDescriptorWithLaps(pd, 0).empty() && AP_SoloDescriptorWithLaps(pd, 8).empty(),
+                  "laps outside 1 to 7 are refused");
+            auto picked = nlohmann::json::parse(AP_SoloDescriptorWithLaps(pd, AP_SOLO_LAPS_DEFAULT));
+            nlohmann::json expected = pd;
+            expected["laps"] = 3;
+            CHECK(picked == expected && !AP_SoloNeedsLapsDescriptor(picked, name),
+                  "picked laps added, nothing else changed");
+            /* The apworld admission gate reads this file. */
+            if (const char *out = std::getenv("XDELTA_TEST_PICKED_DESCRIPTOR"))
+                if (FILE *f = std::fopen(out, "wb"))
+                {
+                    const std::string text = picked.dump(2);
+                    std::fwrite(text.data(), 1, text.size(), f);
+                    std::fclose(f);
+                }
+            int kept = -1, waiting = -1;
+            char note[200];
+            std::string jobAssets = root + "/assets-plain";
+            mkdir(jobAssets.c_str(), 0755);
+            CHECK(XdeltaImportTest_InstallDescriptors(a.scan, selected.data(), jobAssets.c_str(), &kept, &waiting, note,
+                                                      sizeof note) == 2 &&
+                      kept == 2 && waiting == 2 && !std::strcmp(note, "Pack slot 1: pick its laps in Play Solo"),
+                  "install keeps both, waiting for laps, and the note says where to pick them");
+        }
         struct stat info;
         /* Decision 35: the room folder rooms and solo seeds read. */
         CHECK(!std::strcmp(t1->trackKey, "pack-slot-1"), "no descriptor: room folder from the title (registry key rule)");
@@ -627,8 +673,97 @@ int main()
             CHECK(relic, "relic capability with descriptor times and crates");
             CHECK(laps, "descriptor laps reach race settings");
             CHECK(excluded, "descriptor exclusion clears CTR Challenge");
+
+            /* The Play Solo descriptor (ruling of 2026-11-02): complete, and
+               every fact measured on the installed room files. */
+            char solo[16384], key[65], revision[65], why[160];
+            CHECK(XdeltaImport_PlanDescriptor(c.scan, (unsigned)(t1 - s3->items), solo, sizeof solo, key, revision,
+                                              why, sizeof why) == 1, "Play Solo descriptor for a track with laps and author");
+            CHECK(!std::strcmp(key, "snow-lane-key") && !std::strcmp(revision, "1.0.0"), "descriptor file names key and revision");
+            auto pd = nlohmann::json::parse(solo);
+            CHECK(pd["id"] == "package/snow-lane-key/1.0.0" && pd["content_id"] == "snow-lane-key" && pd["revision"] == "1.0.0",
+                  "descriptor identity");
+            CHECK(pd["display_name"] == "Snow Lane" && pd["author"] == "Someone" && pd["laps"] == 5, "descriptor title, author and laps");
+            {
+                char uuid[37];
+                XdeltaImport_PackageUuid(s3->patchSha256, 1, uuid);
+                CHECK(pd["uuid"] == uuid, "descriptor uuid is the package UUID");
+            }
+            CHECK(pd["relic_targets"] == nlohmann::json({{"sapphire", 90000}, {"gold", 80000}, {"platinum", 70000}}),
+                  "descriptor relic targets from the pack descriptor");
+            CHECK(pd["locator"] == nlohmann::json({{"kind", "xdelta"}, {"patch_sha256", s3->patchSha256}, {"bigfile_index", 1}}),
+                  "descriptor locator names the patch and slot");
+            CHECK(pd["evidence"] == nlohmann::json::array() && pd["files"].size() == 2 && pd["files"][0]["role"] == "lev" &&
+                  pd["files"][0]["sha256"] == t1->levSha256 && pd["files"][1]["sha256"] == t1->vrmSha256 &&
+                  pd["files"][0]["format"] == "ctr-lev" && pd["files"][1]["format"] == "ctr-vrm",
+                  "descriptor pins the two files");
+            {
+                std::string folder = assets + "/tracks/snow-lane-key/original/xdelta-" + std::string(s3->patchSha256).substr(0, 12) + "-1";
+                CustomContentVerification v;
+                char error2[256];
+                CHECK(CustomContentVerify_Files((folder + ".lev").c_str(), (folder + ".vrm").c_str(), &v, error2, sizeof error2),
+                      "installed room files measure");
+                const auto &caps = pd["capabilities"];
+                CHECK(pd["files"][0]["bytes"] == v.levBytes && pd["files"][1]["bytes"] == v.vrmBytes, "descriptor file sizes");
+                CHECK(caps["time_trial"] == true && caps["relic"] == true, "Time Trial and relic measured");
+                CHECK(caps["arcade"] == (CustomContentVerify_ArcadeRaceReason(&v, nullptr, 0) != 0), "arcade as measured");
+                CHECK(caps["ctr_tokens"] == false, "excluded letters stay false");
+                CHECK(caps["wumpa"] == (v.measured.fruitCrates * 5 + v.measured.looseWumpa >= 10), "wumpa as measured");
+                CHECK(caps["super_turbo_pads"] == (v.measured.superTurboPads > 0), "super_turbo_pads written and measured");
+                CHECK(caps["weapon_crates"] == v.measured.weaponCrates, "weapon_crates written and measured");
+                CHECK(caps["checkpoints"] == v.measured.checkpoints && caps["ai_nav"] == (v.measured.navPaths > 0),
+                      "boss venue facts measured");
+            }
+            const XdeltaImportItem *t9 = item_for(s3, 9);
+            CHECK(t9 && XdeltaImport_PlanDescriptor(c.scan, (unsigned)(t9 - s3->items), solo, sizeof solo, key, revision,
+                                                    why, sizeof why) == 2,
+                  "no laps in the pack descriptor: the player picks them, never a guessed lap count");
+            {
+                auto lr = nlohmann::json::parse(solo);
+                CHECK(!lr.contains("laps") && lr["author"] == "Someone" && !lr.contains("relic_targets"),
+                      "the pack author stays; no laps, no relic times");
+            }
+            /* The install job's step: one descriptor, and the note names the
+               track left off Play Solo. */
+            {
+                int kept = -1;
+                char note[200];
+                std::string jobAssets = root + "/assets-job";
+                mkdir(jobAssets.c_str(), 0755);
+                int waiting = -1;
+                CHECK(XdeltaImportTest_InstallDescriptors(c.scan, selected.data(), jobAssets.c_str(), &kept, &waiting, note,
+                                                          sizeof note) == 2 &&
+                      kept == 2 && waiting == 1 && !std::strcmp(note, "Long Road: pick its laps in Play Solo"),
+                      "install keeps both descriptors and names the track waiting for laps");
+            }
         }
         XdeltaImport_Free(&c.scan);
+        /* Two tracks with one track key and version: the first keeps the
+           Play Solo descriptor, the second would replace its file. */
+        {
+            nlohmann::json same = d;
+            same["tracks"]["9"]["track_key"] = "snow-lane-key";
+            same["tracks"]["9"]["laps"] = 3;
+            text = same.dump();
+            write_file("Pack.ctrpack.json", Bytes(text.begin(), text.end()));
+            ScanResult twin = scan(patchPath, discPath);
+            CHECK(twin.ok, "scan with two tracks on one key");
+            if (twin.ok)
+            {
+                const XdeltaImportSummary *st = XdeltaImport_Summary(twin.scan);
+                std::vector<unsigned char> sel(st->count, 0);
+                for (unsigned i = 0; i < st->count; i++) sel[i] = (unsigned char)st->items[i].offered;
+                int kept = -1;
+                char note[200];
+                std::string twinAssets = root + "/assets-twin";
+                mkdir(twinAssets.c_str(), 0755);
+                CHECK(XdeltaImportTest_InstallDescriptors(twin.scan, sel.data(), twinAssets.c_str(), &kept, nullptr, note,
+                                                          sizeof note) == 2 &&
+                      kept == 1 && !std::strcmp(note, "Long Road is not on Play Solo: another track in this patch has the same track key"),
+                      "one descriptor per track key and version");
+            }
+            XdeltaImport_Free(&twin.scan);
+        }
         nlohmann::json badKey = d;
         badKey["tracks"]["1"]["track_key"] = "../escape";
         text = badKey.dump();

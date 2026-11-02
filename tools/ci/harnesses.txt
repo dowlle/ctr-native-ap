@@ -34,6 +34,7 @@ tools/test-cup-sweeps.cpp
 tools/test-cup-sweeps-production.py
 tools/test-current-seed-page-production.py
 tools/test-custom-content-verify.c
+tools/test-custom-export-facts.c
 tools/test-custom-identity.c
 tools/test-custom-exit-window.c
 tools/test-custom-manager.c
@@ -45,6 +46,7 @@ tools/test-custom-selector.c
 tools/test-custom-selector-player.c
 tools/test-custom-state-identity.c
 tools/test-custom-time-trial.c
+tools/test-custom-time-trial-player.c
 tools/test-custom-track-load.c
 tools/test-custom-relic-times.c
 tools/test-custom-track-manager.c
@@ -143,6 +145,7 @@ tools/test-podium-seedcfg.cpp
 tools/test-podium-skip.c
 tools/test-podium-trophy-presentation.c
 tools/test-race-attempt-lifecycle.c
+tools/test-race-stats.c
 tools/test-received-backlog.cpp
 tools/test-relic-goal.c
 tools/test-relic-perfect.c

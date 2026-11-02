@@ -344,13 +344,9 @@ int main(void)
     D230.trackSel_transitionState=IN_MENU;
     tick(BTN_RIGHT); CHECK(s_arcadePage==1);
     s_arcadeRows[0]=0; tick(0);
-#ifndef CTR_AP
     CHECK(drawnHas("No AI paths. Use\nTime Trial.\n") || drawnHas("No AI paths.\nUse Time\nTrial.\n"));
-#endif
     { int before = prepared; tick(BTN_CROSS_one); CHECK(prepared == before && !s_arcadePrepareBusy); }
-#ifndef CTR_AP
     CHECK(!strcmp(s_arcadeMessage, "No AI paths. Use Time Trial."));
-#endif
     CHECK(!drawnHas("..."));
 
     /* A revision that can race beats a newer one that cannot. */
@@ -361,22 +357,8 @@ int main(void)
     entries[2].local.arcade=1; entries[2].local.arcadeReason[0]=0;
 
     generic_scenarios(entries);
-#ifdef CTR_AP
-    /* The player client races Single Race only: Time Trial stays retail. */
-    tracker.gameMode1=TIME_TRIAL;
-    CHECK(MM_CustomTrackSelect_Mode()==0);
-    { int before=ticksSeen; MM_CustomTrackSelect_Init(); CHECK(ticksSeen==before); }
-    CHECK(tick(BTN_RIGHT)==0);
-    /* A Time Trial fact does not send the player to a page they do not have. */
-    tracker.gameMode1=ARCADE_MODE;
-    {
-        struct CustomTrackLibraryEntry only=entries[0];
-        char why[260];
-        only.local.arcade=0; only.local.timeTrial=1; strcpy(only.local.arcadeReason,"No AI paths");
-        CHECK(!MM_CustomTrackSelect_Eligible(&only,why,sizeof why) && !strcmp(why,"No AI paths"));
-    }
-#else
-    /* Time Trial: the same pages, the Time Trial rule, the Time Trial runtime. */
+    /* Time Trial: the same pages, the Time Trial rule, the Time Trial runtime,
+       in the player client too (ruling of 2026-11-02). */
     tracker.gameMode1=TIME_TRIAL; tracker.numLaps=3;
     entries[1].local.timeTrial=0; strcpy(entries[1].local.timeTrialReason,"No lap checkpoints");
     entries[2].local.timeTrial=0; strcpy(entries[2].local.timeTrialReason,"No lap checkpoints");
@@ -414,7 +396,6 @@ int main(void)
     /* A retail Time Trial exit is left to the retail ghost selection. */
     CHECK(!MM_CustomTrackSelect_TimeTrialStart());
     tracker.gameMode1=ARCADE_MODE;
-#endif
     CustomTrackLibrary_Free(&s_contentLibrary);
     CustomTrackLibrary_Free(&s_arcadeLibrary);
     printf("custom selector: %d checks, %d failures\n", checks, failures);
