@@ -860,13 +860,18 @@ static void PickupBots_UpdateChaos(void)
 	unsigned char canFire[AP_ROSTER_CHAOS_RIVALS];
 	struct Driver *rival[AP_ROSTER_CHAOS_RIVALS];
 	struct Driver *armed;
+	int lineup[AP_ROSTER_CHAOS_RIVALS];
 	int i, owner;
 
+	if (!AP_ChaosFinalLineup(lineup))
+		return;
 	for (i = 0; i < AP_ROSTER_CHAOS_RIVALS; i++)
 	{
 		struct Driver *d = gGT->drivers[1 + i];
 		rival[i] = d;
-		canFire[i] = d != NULL && (d->actionsFlagSet & ACTION_BOT) != 0 &&
+		// A stand-in for the player's own racer is no boss and never fires.
+		canFire[i] = d != NULL && !AP_RosterChaosStandIn(lineup, i, (int)data.characterIDs[1 + i]) &&
+		             (d->actionsFlagSet & ACTION_BOT) != 0 &&
 		             (d->botData.botFlags & BOT_FLAG_DAMAGE_ACTIVE) == 0 &&
 		             (d->actionsFlagSet & ACTION_RACE_FINISHED) == 0 && d->instTntRecv == NULL &&
 		             d->clockReceive == 0 && d->botData.aiPhysics.speedLinear >= 0x1f41;

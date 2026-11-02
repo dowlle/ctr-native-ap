@@ -626,6 +626,16 @@ void MainInit_Drivers(struct GameTracker *gGT)
 			numDrivers = 6;
 		}
 
+#ifdef CTR_AP
+		// The roster swap: a field that could not fill without a racer held
+		// behind its garage races with fewer karts (ruled 2026-10-30,
+		// dispatcher 2026-11-02). Set by this race's load, else -1.
+		if (gameMode >= 0 && AP_HitFieldShortSeats() >= 0 && numPlyrCurrGame + AP_HitFieldShortSeats() < numDrivers)
+		{
+			numDrivers = numPlyrCurrGame + AP_HitFieldShortSeats();
+		}
+#endif
+
 		// Spawn AIs
 		for (i = numPlyrCurrGame; i < numDrivers; i++)
 		{

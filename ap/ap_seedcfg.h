@@ -1124,6 +1124,9 @@ int AP_ChaosFinalLineup(int out[5]);
 int AP_ChaosFinalAdvert(char *out, int cap);
 // The gauntlet leg being loaded: the racer who must be seated, or -1.
 int AP_BossGauntletLoadAttacker(void);
+// A gauntlet's Purple Gem Cup is being loaded or run, any leg. With Hit
+// Character off and bosses in place, only these legs draw the field.
+int AP_BossGauntletCupNow(void);
 
 // #169 tier 3: 0 when the running garage race has a composed kit with
 // boss_loss_easing off; 1 otherwise (retail per-loss cooldown easing).

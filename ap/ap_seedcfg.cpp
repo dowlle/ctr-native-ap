@@ -629,10 +629,17 @@ static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false
 	// content plan (J11) the plan's encounters fill it before this runs.
 	const int bossShuffled = AP_HitBossShuffleActive(&ctr_boss_encounters);
 	int bossIdent[AP_HIT_BOSS_CODES];
+	int bossSeats[AP_HIT_BOSS_CODES];
 	for (int i = 0; i < AP_HIT_BOSS_CODES; i++)
 		bossIdent[i] = kHitBossIdentity[i];
 	if (bossShuffled)
 		AP_HitBossIdentity(&ctr_boss_encounters, bossIdent);
+	// The triggers follow who a code seats: N. Oxide's codes seat nobody on a
+	// shuffled seed without his races (fixes 2026-11-02).
+	for (int i = 0; i < AP_HIT_BOSS_CODES; i++)
+		bossSeats[i] = bossIdent[i];
+	if (bossShuffled)
+		AP_HitBossSeats(&ctr_boss_encounters, bossSeats);
 	const int *fallbackTable = (contentPlan || bossShuffled) ? kHitContentFallbackKeys : kHitFallbackKeys;
 	// The scalar only exists inside a real ctr_options object, so an absent
 	// ctr_options means an absent scalar (legacy), not a malformed one.
@@ -969,7 +976,7 @@ static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false
 			if (bossShuffled)
 			{
 				int kindBoss = 1;
-				ap.count = AP_HitBossGuestTrigger(bossIdent, guest, ap.wins, &kindBoss);
+				ap.count = AP_HitBossGuestTrigger(bossSeats, guest, ap.wins, &kindBoss);
 				ap.kind = kindBoss ? CTR_CFG_HIT_KIND_BOSS : CTR_CFG_HIT_KIND_TRACK;
 			}
 			const char *wantKind = ap.kind == CTR_CFG_HIT_KIND_BOSS ? "boss" : "track";

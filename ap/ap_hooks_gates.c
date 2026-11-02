@@ -870,27 +870,37 @@ static struct MetaDataBOSS *AP_BossFinalAttackSchedule(int fill)
 static struct MetaDataBOSS s_apBossGauntletAttack[AP_BOSS_VENUE_SEGMENTS + 1];
 static int s_apBossGauntletLeg = -1; // leg whose schedule fitted at race init
 
+int AP_BossGauntletCupNow(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const AP_BossEncounters *e = &ctr_boss_encounters;
+
+	if (gGT == NULL || !ctr_cfg_active() || e->state != AP_BOSS_ENC_VALID || !e->gauntletOn)
+		return 0;
+	if ((gGT->gameMode1 & (ADVENTURE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS)) != (ADVENTURE_MODE | ADVENTURE_CUP))
+		return 0;
+#ifdef CTR_CUSTOM_TRACKS
+	// Plan cups run on engine cup 0, so the pad names the Purple Gem Cup.
+	{
+		const ctr_content_pad *pad = AP_ContentCupPad();
+		if (pad == NULL || pad->gem_cup != 104)
+			return 0;
+	}
+#else
+	if (gGT->cup.cupID != 4)
+		return 0;
+#endif
+	return 1;
+}
+
 static int AP_BossGauntletLegNow(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	const AP_BossEncounters *e = &ctr_boss_encounters;
 	int leg;
 
-	if (gGT == NULL || !ctr_cfg_active() || e->state != AP_BOSS_ENC_VALID || !e->gauntletOn)
+	if (!AP_BossGauntletCupNow())
 		return -1;
-	if ((gGT->gameMode1 & (ADVENTURE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS)) != (ADVENTURE_MODE | ADVENTURE_CUP))
-		return -1;
-#ifdef CTR_CUSTOM_TRACKS
-	// Plan cups run on engine cup 0, so the pad names the Purple Gem Cup.
-	{
-		const ctr_content_pad *pad = AP_ContentCupPad();
-		if (pad == NULL || pad->gem_cup != 104)
-			return -1;
-	}
-#else
-	if (gGT->cup.cupID != 4)
-		return -1;
-#endif
 	leg = gGT->cup.trackIndex;
 	if (leg < 0 || leg >= AP_BOSS_GAUNTLET_LEGS || !e->gauntletComposed[leg] || e->gauntletTrack[leg] < 0 ||
 	    e->gauntletTrack[leg] != gGT->levelID || !AP_BossVenueTrackKnown(e->gauntletTrack[leg]))

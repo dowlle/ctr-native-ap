@@ -28,6 +28,11 @@ int AP_HitEncounterEnabled(void);
 // a seed whose bosses moved or whose Purple Gem Cup is a gauntlet.
 int AP_HitEncounterFieldOn(void);
 
+// Every Adventure race draws its field: the Hit block, or bosses that moved.
+// A gauntlet alone is FieldOn but not FieldAll: only its Purple Gem Cup legs
+// draw (AP_BossGauntletCupNow), every other race keeps the retail field.
+int AP_HitEncounterFieldAll(void);
+
 // The parsed draw order (16 engine ids) for a destination: ordinary tracks
 // 0..17, cups 100..104 and content-plan cups 200..226 (#133 PR 5b, present
 // only for the plan's cups). NULL when the feature is off or the destination
@@ -79,6 +84,13 @@ void AP_HitEncounterResetDrawState(void);
 // the previous load was an ordinary apply load, which is what lets a restart
 // or retry reuse its field.
 void AP_HitLoadBegin(void);
+
+// The field this load seated. A field the roster swap left short (racers held
+// behind their garages, three extra models) races with fewer karts:
+// AP_HitFieldShortSeats is then its AI count for MainInit_Drivers, else -1.
+// Cleared by AP_HitLoadBegin.
+void AP_HitFieldSeated(int seated, int aiSeats);
+int AP_HitFieldShortSeats(void);
 
 // The field for an ordinary apply load at `destLevelID`: reuses the stored
 // field when the immediately previous driver load was an ordinary apply for

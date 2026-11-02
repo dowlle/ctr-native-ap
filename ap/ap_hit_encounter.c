@@ -36,24 +36,29 @@ static unsigned ap_hit_boss_checked_mask(void)
 	return mask;
 }
 
-// The seed's boss identities with the swap on, else 0.
+// Who the seed's boss codes seat with the swap on, else 0. A code raced
+// nowhere seats nobody (AP_HitBossSeats).
 static int ap_hit_swap_identity(int ident[AP_HIT_BOSS_CODES])
 {
 	if (!AP_HitBossShuffleActive(&ctr_boss_encounters))
 		return 0;
-	AP_HitBossIdentity(&ctr_boss_encounters, ident);
+	AP_HitBossSeats(&ctr_boss_encounters, ident);
 	return 1;
 }
 
-int AP_HitEncounterFieldOn(void)
+int AP_HitEncounterFieldAll(void)
 {
 	int ident[AP_HIT_BOSS_CODES];
 	if (AP_HitEncounterEnabled())
 		return 1;
-	if (!ctr_cfg_active())
-		return 0;
-	return ap_hit_swap_identity(ident) ||
-	       (ctr_boss_encounters.state == AP_BOSS_ENC_VALID && ctr_boss_encounters.gauntletOn);
+	return ctr_cfg_active() && ap_hit_swap_identity(ident);
+}
+
+int AP_HitEncounterFieldOn(void)
+{
+	if (AP_HitEncounterFieldAll())
+		return 1;
+	return ctr_cfg_active() && ctr_boss_encounters.state == AP_BOSS_ENC_VALID && ctr_boss_encounters.gauntletOn;
 }
 
 // The destination key for cursors: tracks 0..17 map to 0..17, cups 100..104 to
@@ -99,7 +104,9 @@ int AP_HitEncounterShouldApply(int isAdventure, int destLevelID, int isCup,
                                int isBoss, int isArcade, int isRelic,
                                int isToken, int isCrystal, int numPlayers)
 {
-	if (!AP_HitEncounterFieldOn())
+	// A gauntlet alone draws only the Purple Gem Cup's legs (LOAD_Assets.c):
+	// every other race keeps the retail field (fixes 2026-11-02).
+	if (!AP_HitEncounterFieldAll())
 		return 0;
 	return AP_HitOrdinaryAppliesPure(isAdventure, destLevelID, isCup, isBoss, isArcade,
 	                                 isRelic, isToken, isCrystal, numPlayers);
@@ -304,10 +311,23 @@ static ap_hit_race_snapshot s_raceSnap;
 static int s_lastLoadWasRace; // set by an ordinary apply load
 static int s_raceArmed;       // latched at the next load's begin
 
+static int s_shortSeats = -1; // AI seats of a field that could not fill, else -1
+
 void AP_HitLoadBegin(void)
 {
 	s_raceArmed = s_lastLoadWasRace;
 	s_lastLoadWasRace = 0;
+	s_shortSeats = -1;
+}
+
+void AP_HitFieldSeated(int seated, int aiSeats)
+{
+	s_shortSeats = seated >= 0 && seated < aiSeats ? seated : -1;
+}
+
+int AP_HitFieldShortSeats(void)
+{
+	return s_shortSeats;
 }
 
 int AP_HitRaceField(int destLevelID, int player, int aiSeats, int *outIDs, int *outFresh)

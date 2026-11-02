@@ -121,6 +121,50 @@ static inline void AP_RosterChaosLineup(const int ident[AP_HIT_BOSS_CODES], int 
 	out[4] = ident[3];
 }
 
+// The chaos field as seated. The player may drive one of the five drawn
+// racers, and the retail field never seats the player's own racer: there
+// LOAD_Robots1P skips the player's id and takes the next. So a rival who is
+// the player's racer gives the seat to the first id of the player's pack not
+// in the lineup (a stock id, so no extra model). The stand-in races but is no
+// boss: it takes no attack turn (AP_RosterChaosStandIn). Returns the stand-in's
+// seat, or -1. Fixes 2026-11-02.
+static inline int AP_RosterChaosSeat(const int lineup[AP_ROSTER_CHAOS_RIVALS], int player,
+                                     int (*inStock)(int id, int player), int out[AP_ROSTER_CHAOS_RIVALS])
+{
+	int i, j, id, seat = -1;
+
+	for (i = 0; i < AP_ROSTER_CHAOS_RIVALS; i++)
+	{
+		out[i] = lineup[i];
+		if (lineup[i] == player)
+			seat = i;
+	}
+	if (seat < 0)
+		return -1;
+	for (id = 0; id < AP_ROSTER_CHARACTERS; id++)
+	{
+		int used = 0;
+		if (!inStock(id, player))
+			continue;
+		for (j = 0; j < AP_ROSTER_CHAOS_RIVALS; j++)
+			if (lineup[j] == id)
+				used = 1;
+		if (!used)
+		{
+			out[seat] = id;
+			return seat;
+		}
+	}
+	return -1;
+}
+
+// Is the kart in chaos seat `seat` a stand-in for the player's racer? It then
+// takes no turn on the shared attack schedule.
+static inline int AP_RosterChaosStandIn(const int lineup[AP_ROSTER_CHAOS_RIVALS], int seat, int seatedId)
+{
+	return seat >= 0 && seat < AP_ROSTER_CHAOS_RIVALS && seatedId != lineup[seat];
+}
+
 // The chaos field's own models: every rival neither the player nor in the
 // player's pack. Five at most, never above `cap`; the caller has room for all.
 static inline int AP_RosterChaosExtras(const int lineup[AP_ROSTER_CHAOS_RIVALS], int player,

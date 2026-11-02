@@ -95,6 +95,36 @@ static void test_triggers(void)
 	CHECK(n == 2 && kind == 0, "the retail table is untouched");
 	n = AP_HitBossGuestTrigger(kRetail, OXIDE, any, &kind);
 	CHECK(n == 2 && any[0] == 35011104L && kind == 1, "both N. Oxide races");
+
+	// N. Oxide with his races disabled on a random-boss seed: his codes seat
+	// nobody, so he has no win and races from the start (fixes 2026-11-02).
+	{
+		AP_BossEncounters e;
+		int seats[6];
+		const int disabled[6] = {CRASH, PAPU, JOE, PINSTRIPE, -1, -1};
+		memset(&e, 0, sizeof e);
+		e.state = AP_BOSS_ENC_VALID;
+		e.version = AP_BOSS_ENCOUNTERS_VERSION_2;
+		e.opponent[0] = CRASH;
+		e.opponent[1] = PAPU;
+		e.opponent[2] = JOE;
+		e.opponent[3] = PINSTRIPE;
+		AP_HitBossSeats(&e, seats);
+		CHECK(seats[0] == CRASH && seats[4] == -1 && seats[5] == -1, "no final record: his codes seat nobody");
+		n = AP_HitBossGuestTrigger(seats, OXIDE, any, &kind);
+		CHECK(n == 0 && kind == 1, "N. Oxide disabled has no win on a random-boss seed");
+		CHECK(AP_RosterEligibleNoHit(disabled, OXIDE, 0), "N. Oxide disabled races from the start without Hit");
+		CHECK(!AP_RosterEligibleNoHit(disabled, CRASH, 0) && AP_RosterEligibleNoHit(disabled, ROO, 0),
+		      "the garages swap as before");
+		e.finalPresent = 1;
+		e.finalOpponent = OXIDE;
+		AP_HitBossSeats(&e, seats);
+		CHECK(seats[4] == OXIDE && seats[5] == OXIDE, "with his races he waits for them");
+		e.finalPresent = 0;
+		e.opponent[0] = ROO;
+		AP_HitBossSeats(&e, seats);
+		CHECK(seats[4] == OXIDE && seats[5] == OXIDE, "retail bosses keep the retail table and its Keys");
+	}
 }
 
 static void test_draw(void)
@@ -112,12 +142,17 @@ static void test_draw(void)
 	draw(one, 1u << 0, 5, 7, &f);
 	CHECK(f.count == 7, "full field after the win");
 
-	// Four and five defaults held: three extras cannot cover them. Never short,
-	// never above three extras, never a duplicate, never the player.
+	// Four and five defaults held: three extras cannot cover them. The race
+	// runs with fewer karts; a held racer never takes a seat early (fixes
+	// 2026-11-02). Never above three extras, never a duplicate, never the player.
 	draw(four, 0, 5, 7, &f);
-	CHECK(f.count == 7 && f.unhit + f.other <= 3, "four held: seven seats");
+	CHECK(f.count == 6 && f.unhit + f.other == 3, "four held: six seats");
+	CHECK(!seated(&f, 0) && !seated(&f, 1) && !seated(&f, 2) && !seated(&f, 3), "four held: none seated");
 	draw(five, 0, 7, 7, &f);
-	CHECK(f.count == 7 && f.unhit + f.other <= 3 && !seated(&f, 7), "five held: seven seats");
+	CHECK(f.count == 5 && f.unhit + f.other == 3 && !seated(&f, 7), "five held: five seats");
+	CHECK(!seated(&f, 0) && !seated(&f, 4), "five held: none seated");
+	draw(four, 0, 5, 4, &f);
+	CHECK(f.count == 4, "a four seat cup still fills");
 	{
 		int i, j, seen = 0;
 		for (i = 0; i < f.count; i++)
@@ -208,6 +243,35 @@ static void test_chaos(void)
 		CHECK(AP_RosterChaosOwner(3, some, 5) == 2, "a stuck rival loses the turn");
 		CHECK(AP_RosterChaosOwner(9, all, 5) == 0, "a bad cursor is safe");
 		CHECK(AP_RosterChaosOwner(0, all, 0) == -1, "no field");
+	}
+
+	// Never a mirror kart of the player (fixes 2026-11-02): the player's racer
+	// among the five gives the seat to the first free id of the player's pack.
+	{
+		int seated5[5], seat;
+		AP_RosterChaosLineup(retail, lineup);
+		seat = AP_RosterChaosSeat(lineup, 5, in_stock, seated5);
+		CHECK(seat == -1 && !memcmp(seated5, lineup, sizeof lineup), "no duplicate: the five as drawn");
+		seat = AP_RosterChaosSeat(lineup, ROO, in_stock, seated5);
+		CHECK(seat == 1 && seated5[1] == 0 && in_stock(seated5[1], ROO), "Roo driving: a stand-in from his pack");
+		CHECK(AP_RosterChaosStandIn(lineup, 1, seated5[1]) && !AP_RosterChaosStandIn(lineup, 0, seated5[0]),
+		      "the stand-in takes no turn");
+		n = AP_RosterChaosExtras(seated5, ROO, in_stock, extras, 5);
+		CHECK(n == 4, "a stand-in costs no model");
+		AP_RosterChaosLineup(mixed, lineup);
+		seat = AP_RosterChaosSeat(lineup, CRASH, in_stock, seated5);
+		CHECK(seat == 1 && seated5[1] == 1, "Crash driving: Coco stands in");
+		{
+			const int defaults[6] = {0, 1, 2, 3, 4, 4};
+			int i, j, dup = 0;
+			AP_RosterChaosLineup(defaults, lineup);
+			seat = AP_RosterChaosSeat(lineup, 4, in_stock, seated5);
+			CHECK(seat == 0 && seated5[0] == 5, "the final racer's seat: the next free default");
+			for (i = 0; i < 5; i++)
+				for (j = i + 1; j < 5; j++)
+					dup += seated5[i] == seated5[j];
+			CHECK(dup == 0, "no duplicate seat");
+		}
 	}
 }
 

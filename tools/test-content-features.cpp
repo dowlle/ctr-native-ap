@@ -803,7 +803,7 @@ int main() {
     }
 
     // ── the apworld's own J11 fixtures, when checked in ──
-    for (const char *name : {"ctr-first", "wumpa-shop", "wumpa-goal-only", "boss-shuffle", "all-030", "boss-cups-gauntlet", "chaos-final"}) {
+    for (const char *name : {"ctr-first", "wumpa-shop", "wumpa-goal-only", "boss-shuffle", "all-030", "boss-cups-gauntlet", "chaos-final", "oxide-off-swap"}) {
         const J room = load(name);
         if (room.is_null()) { std::cout << "note: apworld fixture " << name << ".json not checked in yet\n"; continue; }
         expect(admit(room), std::string(name) + ": the apworld's fixture admits");
@@ -840,6 +840,18 @@ int main() {
                    "boss-cups-gauntlet: the kits arm the Purple Gem Cup's legs");
             tamper(room, "gauntlet: a number", [&](J &j) { j["content_plan"]["bosses"]["gauntlet"] = 1; });
             tamper(room, "gauntlet: without the kit", [&](J &j) { j["content_plan"]["bosses"]["kit_shuffle"] = false; });
+        } else if (n == "oxide-off-swap") {
+            // Fixes 2026-11-02: N. Oxide's races off on a random-boss seed. The
+            // wire still names him on both codes; nobody sits there, so he races
+            // from the start with no Keys.
+            expect(!ctr_boss_encounters.finalPresent && ctr_cfg.hit.boss_identity[4] == 15 &&
+                   ctr_cfg.hit.boss_identity[5] == 15 && ctr_cfg.hit.triggers[7].count == 0 &&
+                   ctr_cfg.hit.triggers[7].fallback_keys == 0,
+                   "oxide-off-swap: N. Oxide disabled races from the start");
+            tamper(room, "oxide-off: his Keys back", [&](J &j) {
+                j["hit_character_encounters"]["unlock_triggers"]["15"]["fallback_keys"] = 4; });
+            tamper(room, "oxide-off: his races as wins", [&](J &j) {
+                j["hit_character_encounters"]["unlock_triggers"]["15"]["any_of"] = J::array({35011104, 35011105}); });
         } else if (n == "chaos-final") {
             const ctr_oxide_final_venue &v = ctr_cfg.oxide_final_venue;
             expect(v.valid && v.chaos && ap_content_plan_bosses()->final_chaos && v.chaos_lineup[0] == 10 && v.chaos_lineup[1] == 12 &&

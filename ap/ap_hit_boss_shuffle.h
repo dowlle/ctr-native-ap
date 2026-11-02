@@ -11,7 +11,8 @@
 //
 //   bosses[code]  the drawn engine id per boss-win code (garages 35011100 to
 //                 35011103, both Oxide races 35011104 and 35011105 from the
-//                 final record, 15 without one);
+//                 final record, 15 without one); the triggers below read
+//                 AP_HitBossSeats, where a code raced nowhere seats nobody;
 //   any_of[g]     every boss code drawn as g, ascending: a drawn boss waits
 //                 for that race, whatever its retail track wins say. A guest
 //                 drawn nowhere keeps its retail track wins (N. Tropy, Penta,
@@ -79,6 +80,20 @@ static inline void AP_HitBossIdentity(const AP_BossEncounters *e, int out[AP_HIT
 	for (g = 0; g < AP_BOSS_VENUE_GARAGES; g++)
 		out[g] = e->opponent[g];
 	out[4] = out[5] = e->finalPresent ? e->finalOpponent : AP_BOSS_OXIDE_CHARACTER;
+}
+
+// Who each boss-win code actually seats, for the unlock triggers and the
+// roster swap: the identity, except that with the shuffle active a code the
+// seed races nowhere (N. Oxide's two, without a final record) seats nobody
+// (-1). So N. Oxide with his races disabled swaps slots like any original boss
+// raced nowhere and races from the start (ruled 2026-10-30: the fixed Key
+// fallback goes on seeds with random bosses). The wire's `bosses` table stays
+// the identity. The apworld's content_bosses.seats is the twin.
+static inline void AP_HitBossSeats(const AP_BossEncounters *e, int out[AP_HIT_BOSS_CODES])
+{
+	AP_HitBossIdentity(e, out);
+	if (AP_HitBossShuffleActive(e) && !e->finalPresent)
+		out[4] = out[5] = -1;
 }
 
 // Guest `guest` (8..15): writes its expected any_of (at most

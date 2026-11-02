@@ -760,20 +760,38 @@ static void test_roster_swap(void)
 	expect(AP_HitEncounterShouldApply(1, 3, 0, 0, 0, 0, 0, 0, 1), "an ordinary Adventure race applies");
 	expect(!AP_HitEncounterShouldApply(1, 3, 0, 1, 0, 0, 0, 0, 1), "a boss race keeps its own field");
 
-	// Five held defaults: the field still fills.
+	// Four held defaults with a guest player: three free stock ids and three
+	// extras. The race runs with six AI, none of them held (fixes 2026-11-02).
+	// No final record: N. Oxide's races are off, so he races from the start.
 	reset_state();
 	swap_bosses(0, 1, 2, 3, 0);
-	n = race_after_hub(3, 7, ids);
-	expect_eq(n, 7, "four held defaults, seven seats");
+	expect(AP_HitEncounterGuestEligible(15) || !AP_HitEncounterEnabled(), "N. Oxide disabled is in the pool");
+	n = race_after_hub(3, 13, ids);
+	expect_eq(n, 6, "four held defaults, six seats");
+	for (int i = 0; i < n; i++)
+		expect(ids[i] > 3, "no held default seated early");
+	AP_HitFieldSeated(n, 7);
+	expect_eq(AP_HitFieldShortSeats(), 6, "the short field reaches MainInit_Drivers");
+	AP_HitLoadBegin();
+	expect_eq(AP_HitFieldShortSeats(), -1, "the next load clears it");
+	AP_HitFieldSeated(7, 7);
+	expect_eq(AP_HitFieldShortSeats(), -1, "a full field races eight karts");
+	{
+		bool oxide = false;
+		for (int k = 0; k < 6 && !oxide; k++)
+		{
+			n = race_after_hub(3, 13, ids);
+			oxide = field_has(ids, n, 15);
+		}
+		expect(oxide, "N. Oxide with his races off rotates into the field");
+	}
 
-	// A gauntlet with the retail bosses draws too, from stock alone.
+	// A gauntlet with the retail bosses: only its Purple Gem Cup legs draw.
 	reset_state();
 	swap_bosses(10, 9, 11, 8, 1);
 	expect(AP_HitEncounterFieldOn(), "the gauntlet needs the draw to seat its racer");
-	n = race_after_hub(3, 5, ids);
-	expect(n == 7, "stock field");
-	for (int i = 0; i < n; i++)
-		expect(ids[i] < 8, "no guest on a retail gauntlet's ordinary race");
+	expect(!AP_HitEncounterFieldAll(), "a gauntlet alone does not draw every race");
+	expect(!AP_HitEncounterShouldApply(1, 3, 0, 0, 0, 0, 0, 0, 1), "an ordinary race keeps the retail field");
 
 	std::memset(&ctr_boss_encounters, 0, sizeof ctr_boss_encounters);
 	ap_seedcfg_parse_json(g_fixture);

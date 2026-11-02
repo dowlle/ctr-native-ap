@@ -92,8 +92,7 @@ enum
 {
 	AP_HIT_POOL_UNHIT = 0, // eligible guest, not the player, Hit unchecked
 	AP_HIT_POOL_OTHER,     // eligible non-stock id, not the player, not taken
-	AP_HIT_POOL_STOCK,     // eligible stock id, not taken
-	AP_HIT_POOL_HELD       // stock id waiting behind its garage, not taken
+	AP_HIT_POOL_STOCK      // eligible stock id, not taken
 };
 
 static inline int AP_HitPoolMemberPure(int pool, int id, int player,
@@ -107,9 +106,7 @@ static inline int AP_HitPoolMemberPure(int pool, int id, int player,
 		return id >= 8 && eligible[id] && unchecked[id];
 	if (pool == AP_HIT_POOL_OTHER)
 		return !AP_HitInStockPure(id, player) && eligible[id];
-	if (pool == AP_HIT_POOL_STOCK)
-		return AP_HitInStockPure(id, player) && eligible[id];
-	return AP_HitInStockPure(id, player);
+	return AP_HitInStockPure(id, player) && eligible[id];
 }
 
 // Walk `order` cyclically from position *cursor + 1 (sixteen steps at most) and
@@ -158,7 +155,11 @@ static inline int AP_HitTakePure(const int *order, int pool, int player,
 // is full. Every pool rotates through the order, so each member is seated
 // within a bounded number of fresh draws (guarantees G1 to G5, see the
 // apworld's hit_character module). Never the player, never a duplicate, at most
-// three non-stock ids, always exactly aiSeats opponents. Returns the count.
+// three non-stock ids, at most aiSeats opponents. Returns the count: fewer than
+// aiSeats only when the roster swap holds default racers behind their garages
+// and three extra models cannot cover them. Then the race runs with fewer
+// karts (ruled 2026-10-30, dispatcher 2026-11-02); a held racer never takes a
+// seat early.
 static inline int AP_HitDrawFieldPure(const int *order,
                                       const unsigned char *eligible,
                                       const unsigned char *unchecked,
@@ -187,11 +188,6 @@ static inline int AP_HitDrawFieldPure(const int *order,
 	                            taken, &cur->other, want, out);
 
 	AP_HitTakePure(order, AP_HIT_POOL_STOCK, player, eligible, unchecked, taken,
-	               &cur->stock, aiSeats - out->count, out);
-	// The roster swap holds a default racer drawn as a boss out of the stock
-	// seats. Three extra models cannot cover four or more of them, so the
-	// field fills from those racers rather than run short.
-	AP_HitTakePure(order, AP_HIT_POOL_HELD, player, eligible, unchecked, taken,
 	               &cur->stock, aiSeats - out->count, out);
 	return out->count;
 }
