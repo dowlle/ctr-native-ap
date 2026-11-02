@@ -1140,7 +1140,8 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 
 #if defined(CTR_CUSTOM_TRACKS) && !defined(CTR_AP_AUTHORING)
 #include "MM_CurrentSeed.c" // content-plan rooms: the Current Seed tab (#133 PR 7)
-#define CUSTOM_CONTENT_ACTION_COUNT 6
+#define CUSTOM_CONTENT_ACTION_COUNT 8
+#define CUSTOM_CONTENT_ACTION_ROWS 4
 static const char *const s_customContentActions[CUSTOM_CONTENT_ACTION_COUNT] = {
 	"Download Saphi",
 	"Rescan",
@@ -1148,10 +1149,183 @@ static const char *const s_customContentActions[CUSTOM_CONTENT_ACTION_COUNT] = {
 	"Open Source",
 	"Copy YAML",
 	"Save YAML",
+	"Relic Times",
+	"Clear Relic Times",
 };
 static char s_customContentMessage[128] =
 	"Download from Saphi, or add the original LEV and VRM files, then Rescan.";
 static int s_customContentDownloadActive = 0;
+
+// The author's relic target times (row 10j). Up / Down change the selected
+// digit, Left / Right move between digits and on to the next tier, Cross
+// saves, Triangle cancels. The page keeps a copy of the stored times to show;
+// export always reads the file again.
+#define RELIC_EDIT_DIGITS 6 // M M : S S . C C
+static const char *const s_relicTierNames[3] = {"Sapphire", "Gold", "Platinum"};
+static int s_relicEditOpen = 0;
+static int s_relicEditCursor = 0; // tier * RELIC_EDIT_DIGITS + digit
+static int s_relicEditCentis[3];
+static struct CustomTrackRelicTimes s_relicShown;
+static char s_relicShownFor[NATIVE_SHA256_HEX_BYTES + 8];
+
+static int MM_CustomContent_ConsumesBack(int section)
+{
+	return section == s_customContentSection && s_relicEditOpen;
+}
+
+static void RelicTime_Format(int centis, char *dst, size_t dstSize)
+{
+	snprintf(dst, dstSize, "%d:%02d.%02d", centis / 6000, (centis / 100) % 60, centis % 100);
+}
+
+// Digit d of a time as the editor shows it, MM:SS.CC.
+static int RelicTime_Digit(int centis, int d)
+{
+	static const int place[RELIC_EDIT_DIGITS] = {60000, 6000, 1000, 100, 10, 1};
+	int minutes = centis / 6000, rest = centis % 6000;
+	if (d < 2)
+		return (d == 0 ? minutes / 10 : minutes % 10);
+	return (rest / place[d]) % (d == 2 ? 6 : 10);
+}
+
+static int RelicTime_StepDigit(int centis, int d, int up)
+{
+	static const int limit[RELIC_EDIT_DIGITS] = {6, 10, 6, 10, 10, 10};
+	int digits[RELIC_EDIT_DIGITS], i;
+	for (i = 0; i < RELIC_EDIT_DIGITS; i++)
+		digits[i] = RelicTime_Digit(centis, i);
+	digits[d] = (digits[d] + (up ? 1 : limit[d] - 1)) % limit[d];
+	return (digits[0] * 10 + digits[1]) * 6000 + (digits[2] * 10 + digits[3]) * 100 + digits[4] * 10 + digits[5];
+}
+
+static void RelicTimes_Refresh(const struct CustomTrackManagerPackage *package,
+	                           const struct CustomTrackManagerStatus *status, int force)
+{
+	char key[sizeof s_relicShownFor];
+	snprintf(key, sizeof key, "%d:%s", status->state, status->verifiedPackageSha256);
+	if (!force && strcmp(key, s_relicShownFor) == 0)
+		return;
+	snprintf(s_relicShownFor, sizeof s_relicShownFor, "%s", key);
+	CustomTrackManager_LoadRelicTimes(NativeAssets_GetAssetDir(), package, status, &s_relicShown);
+}
+
+static void RelicTimes_Open(const struct CustomTrackManagerPackage *package,
+	                        const struct CustomTrackManagerStatus *status)
+{
+	int t;
+	if (status->state != CTR_CT_MANAGER_READY)
+	{
+		CustomContent_SetMessage("Relic times need a Ready package.");
+		return;
+	}
+	if (!package->flagRelicCrates)
+	{
+		CustomContent_SetMessage("This track has no relic crates.");
+		return;
+	}
+	RelicTimes_Refresh(package, status, 1);
+	for (t = 0; t < 3; t++)
+		s_relicEditCentis[t] = s_relicShown.set ? CustomTrackManager_RelicCentisFromTicks(s_relicShown.ticks[t]) : 0;
+	s_relicEditCursor = 0;
+	s_relicEditOpen = 1;
+	CustomContent_SetMessage("Up/Down digit, Left/Right move, X save, Triangle cancel.");
+}
+
+static void RelicTimes_Save(const struct CustomTrackManagerPackage *package,
+	                        const struct CustomTrackManagerStatus *status)
+{
+	int ticks[3], t;
+	for (t = 0; t < 3; t++)
+	{
+		ticks[t] = CustomTrackManager_RelicTicksFromCentis(s_relicEditCentis[t]);
+		if (ticks[t] < 0)
+		{
+			CustomContent_SetMessage("Enter all three times, 0:00.01 or longer.");
+			return;
+		}
+	}
+	if (!CustomTrackManager_RelicTimesValid(ticks))
+	{
+		CustomContent_SetMessage("Sapphire must be slower than Gold, Gold slower than Platinum.");
+		return;
+	}
+	if (!CustomTrackManager_SaveRelicTimes(NativeAssets_GetAssetDir(), package, status, ticks))
+	{
+		CustomContent_SetMessage("Could not save the relic times.");
+		return;
+	}
+	s_relicEditOpen = 0;
+	RelicTimes_Refresh(package, status, 1);
+	CustomContent_SetMessage("Relic times saved. Copy or Save YAML to export them.");
+}
+
+// The editor owns the page's input while it is open.
+static void RelicTimes_Input(const struct CustomTrackManagerPackage *package,
+	                         const struct CustomTrackManagerStatus *status, struct GamepadBuffer *pad)
+{
+	const int count = 3 * RELIC_EDIT_DIGITS;
+	int tier = s_relicEditCursor / RELIC_EDIT_DIGITS;
+	int digit = s_relicEditCursor % RELIC_EDIT_DIGITS;
+
+	if (status->state != CTR_CT_MANAGER_READY)
+	{
+		s_relicEditOpen = 0;
+		CustomContent_SetMessage("Relic times need a Ready package.");
+		return;
+	}
+	if ((pad->buttonsTapped & (BTN_UP | BTN_DOWN)) != 0)
+	{
+		s_relicEditCentis[tier] = RelicTime_StepDigit(s_relicEditCentis[tier], digit,
+		                                              (pad->buttonsTapped & BTN_UP) != 0);
+		OtherFX_Play(0, 1);
+	}
+	if ((pad->buttonsTapped & BTN_LEFT) != 0)
+	{
+		s_relicEditCursor = (s_relicEditCursor + count - 1) % count;
+		OtherFX_Play(0, 1);
+	}
+	if ((pad->buttonsTapped & BTN_RIGHT) != 0)
+	{
+		s_relicEditCursor = (s_relicEditCursor + 1) % count;
+		OtherFX_Play(0, 1);
+	}
+	if ((pad->buttonsTapped & BTN_TRIANGLE) != 0)
+	{
+		s_relicEditOpen = 0;
+		OtherFX_Play(2, 1);
+		CustomContent_SetMessage("Relic times not changed.");
+	}
+	else if ((pad->buttonsTapped & BTN_CROSS) != 0)
+	{
+		OtherFX_Play(1, 1);
+		RelicTimes_Save(package, status);
+	}
+}
+
+static void RelicTimes_DrawEditor(uint32_t *ot)
+{
+	int t, d;
+	char text[16];
+	for (t = 0; t < 3; t++)
+	{
+		int y = 0x78 + t * 0x14;
+		int centis = s_relicEditCentis[t];
+		DecalFont_DrawLineOT((char *)s_relicTierNames[t], 0xC8, y, FONT_SMALL, JUSTIFY_RIGHT | ORANGE, ot);
+		snprintf(text, sizeof text, "%d%d:%d%d.%d%d", RelicTime_Digit(centis, 0), RelicTime_Digit(centis, 1),
+		         RelicTime_Digit(centis, 2), RelicTime_Digit(centis, 3), RelicTime_Digit(centis, 4),
+		         RelicTime_Digit(centis, 5));
+		DecalFont_DrawLineOT(text, 0xE0, y, FONT_SMALL, WHITE, ot);
+		if (t == s_relicEditCursor / RELIC_EDIT_DIGITS)
+		{
+			// Digit columns in "MM:SS.CC" skip the ':' and '.' characters.
+			static const int column[RELIC_EDIT_DIGITS] = {0, 1, 3, 4, 6, 7};
+			d = s_relicEditCursor % RELIC_EDIT_DIGITS;
+			RECT sel = {0xE0 + DecalFont_GetLineWidthStrlen(text, column[d], FONT_SMALL) - 1, y - 2,
+			            DecalFont_GetLineWidthStrlen(text + column[d], 1, FONT_SMALL) + 2, 0x0C};
+			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
+		}
+	}
+}
 
 static void CustomContent_SetMessage(const char *message)
 {
@@ -1209,6 +1383,7 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 	const struct CustomTrackManagerPackage *package = AP_CustomContentPackage();
 	const struct CustomTrackManagerStatus *status = AP_CustomContentStatus();
 	struct CustomTrackManagerStatus exported;
+	struct CustomTrackRelicTimes relic;
 	char line[160];
 	char yaml[4096];
 	char downloadMessage[128];
@@ -1217,7 +1392,10 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 
 	// A content-plan room opens on Current Seed; L1 / R1 reach this page.
 	if (MM_CurrentSeed_Page(ot, pad))
+	{
+		s_relicEditOpen = 0; // Back must never wait on an editor that is not shown
 		return;
+	}
 
 	if (package == NULL)
 	{
@@ -1241,21 +1419,26 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 			s_customContentDownloadActive = 0;
 	}
 
+	RelicTimes_Refresh(package, status, 0);
+	if (s_relicEditOpen)
+		RelicTimes_Input(package, status, pad);
+	else
+	{
 	if ((pad->buttonsTapped & BTN_UP) != 0)
 	{
-		int row = menu->rowSelected % 3;
-		menu->rowSelected += row > 0 ? -1 : 2;
+		int row = menu->rowSelected % CUSTOM_CONTENT_ACTION_ROWS;
+		menu->rowSelected += row > 0 ? -1 : CUSTOM_CONTENT_ACTION_ROWS - 1;
 		OtherFX_Play(0, 1);
 	}
 	if ((pad->buttonsTapped & BTN_DOWN) != 0)
 	{
-		int row = menu->rowSelected % 3;
-		menu->rowSelected += row < 2 ? 1 : -2;
+		int row = menu->rowSelected % CUSTOM_CONTENT_ACTION_ROWS;
+		menu->rowSelected += row < CUSTOM_CONTENT_ACTION_ROWS - 1 ? 1 : 1 - CUSTOM_CONTENT_ACTION_ROWS;
 		OtherFX_Play(0, 1);
 	}
 	if ((pad->buttonsTapped & (BTN_LEFT | BTN_RIGHT)) != 0)
 	{
-		menu->rowSelected = (menu->rowSelected + 3) % CUSTOM_CONTENT_ACTION_COUNT;
+		menu->rowSelected = (menu->rowSelected + CUSTOM_CONTENT_ACTION_ROWS) % CUSTOM_CONTENT_ACTION_COUNT;
 		OtherFX_Play(0, 1);
 	}
 
@@ -1292,14 +1475,17 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 			                        : "Could not open the official source page.");
 			break;
 		case 4:
-			if (CustomTrackManager_RenderYaml(package, status, yaml, sizeof yaml) &&
+			CustomTrackManager_LoadRelicTimes(NativeAssets_GetAssetDir(), package, status, &relic);
+			if (CustomTrackManager_RenderYaml(package, status, &relic, yaml, sizeof yaml) &&
 			    Platform_SetClipboardText(yaml))
-				CustomContent_SetMessage("Verified custom_tracks YAML copied.");
+				CustomContent_SetMessage(relic.set ? "Verified custom_tracks YAML copied, with relic times."
+				                                   : "Verified custom_tracks YAML copied.");
 			else
 				CustomContent_SetMessage("Copy YAML requires a Ready package.");
 			break;
 		case 5:
-			if (CustomTrackManager_SaveYaml(NativeAssets_GetAssetDir(), package, status,
+			CustomTrackManager_LoadRelicTimes(NativeAssets_GetAssetDir(), package, status, &relic);
+			if (CustomTrackManager_SaveYaml(NativeAssets_GetAssetDir(), package, status, &relic,
 			                                &exported))
 			{
 				char savedMessage[96];
@@ -1310,7 +1496,20 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 			else
 				CustomContent_SetMessage("Save YAML requires a Ready package.");
 			break;
+		case 6:
+			RelicTimes_Open(package, status);
+			break;
+		case 7:
+			if (CustomTrackManager_ClearRelicTimes(NativeAssets_GetAssetDir(), package))
+				CustomContent_SetMessage("Relic times cleared. Export writes no Relic Race.");
+			else
+				CustomContent_SetMessage("Could not clear the relic times.");
+			RelicTimes_Refresh(package, status, 1);
+			break;
 		}
+		// Rescan and Verify can change the scanned bytes, and with them the times.
+		RelicTimes_Refresh(package, AP_CustomContentStatus(), 1);
+	}
 	}
 
 	status = AP_CustomContentStatus();
@@ -1326,13 +1525,32 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 	             : "OPTIONAL");
 	DecalFont_DrawLineOT(line, 0x100, 0x5A, FONT_SMALL, JUSTIFY_CENTER |
 	                   (AP_CustomContentRequired() ? RED : ORANGE), ot);
+	if (!package->flagRelicCrates)
+		snprintf(line, sizeof line, "Relic times: no relic crates");
+	else if (!s_relicShown.set)
+		snprintf(line, sizeof line, "Relic times: not set, no Relic Race");
+	else
+	{
+		char times[3][16];
+		for (i = 0; i < 3; i++)
+			RelicTime_Format(CustomTrackManager_RelicCentisFromTicks(s_relicShown.ticks[i]), times[i],
+			                 sizeof times[i]);
+		snprintf(line, sizeof line, "Relic times: %s / %s / %s", times[0], times[1], times[2]);
+	}
+	DecalFont_DrawLineOT(line, 0x100, 0x68, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 
+	if (s_relicEditOpen)
+	{
+		RelicTimes_DrawEditor(ot);
+		CustomContent_DrawMessage(ot);
+		return;
+	}
 	for (i = 0; i < CUSTOM_CONTENT_ACTION_COUNT; i++)
 	{
-		int column = i / 3;
-		int row = i % 3;
+		int column = i / CUSTOM_CONTENT_ACTION_ROWS;
+		int row = i % CUSTOM_CONTENT_ACTION_ROWS;
 		int x = column == 0 ? 0x38 : 0x118;
-		int y = 0x78 + row * 0x18;
+		int y = 0x78 + row * 0x10;
 		DecalFont_DrawLineOT((char *)s_customContentActions[i], x, y, FONT_SMALL, ORANGE, ot);
 		if (i == menu->rowSelected)
 		{
@@ -1476,6 +1694,8 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS) && !defined(CTR_AP_AUTHORING)
 	    // Back first closes the Install missing content overview (#133 PR 7).
 	    && !MM_CurrentSeed_ConsumesBack(s_currentSection)
+	    // Back first closes the relic time editor (row 10j).
+	    && !MM_CustomContent_ConsumesBack(s_currentSection)
 #endif
 #ifdef CTR_AP
 	    // Back first steps out of the Play Solo pages (#89).
