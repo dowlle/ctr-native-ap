@@ -13,6 +13,23 @@ static struct Driver *s_apBossAdapterDriver;
 // One schedule, one cooldown, five rivals taking turns.
 static int s_apChaosCursor;
 static int s_apChaosFired;
+
+// The kart whose lap and checkpoints pace a chaos schedule: the final racer,
+// or the first drawn rival when a stand-in for the player's own racer holds
+// that seat (it is no boss).
+static struct Driver *PickupBots_ChaosPace(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int lineup[AP_ROSTER_CHAOS_RIVALS], seated[AP_ROSTER_CHAOS_RIVALS], i;
+	struct Driver *d;
+
+	if (!AP_ChaosFinalLineup(lineup))
+		return gGT->drivers[1];
+	for (i = 0; i < AP_ROSTER_CHAOS_RIVALS; i++)
+		seated[i] = (int)data.characterIDs[1 + i];
+	d = gGT->drivers[1 + AP_RosterChaosPaceSeat(lineup, seated)];
+	return d != NULL ? d : gGT->drivers[1];
+}
 #endif
 
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
@@ -630,8 +647,8 @@ static void PickupBots_FireAdvanced(struct Driver *boss, struct Driver *player, 
 	PickupBots_AdapterSegment(bossMeta, &f.segment, &f.lastSegment);
 	f.weapon = bossMeta->weaponType;
 	// A segment's one use belongs to the schedule: in a chaos race its lap is
-	// the final racer's, not the lap of whichever rival has the turn.
-	f.lap = AP_ChaosFinalNow() ? gGT->drivers[1]->lapIndex : boss->lapIndex;
+	// the pacing kart's, not the lap of whichever rival has the turn.
+	f.lap = AP_ChaosFinalNow() ? PickupBots_ChaosPace()->lapIndex : boss->lapIndex;
 	f.numLaps = (s8)gGT->numLaps;
 	AP_BossAdapterEnter(&s_apBossAdapter, f.lap, f.segment);
 	if (s_apBossAdapter.used)
@@ -908,9 +925,10 @@ static void PickupBots_UpdateBoss(struct Driver *boss)
 	}
 
 #ifdef CTR_AP
-	// A chaos schedule keeps to one kart's lap, the final racer's: the turn
-	// passes between karts all over the track.
-	PickupBots_AdvanceBossMeta(AP_ChaosFinalNow() ? gGT->drivers[1] : boss);
+	// A chaos schedule keeps to one kart's lap, the final racer's (or the
+	// first drawn rival's when a stand-in holds that seat): the turn passes
+	// between karts all over the track.
+	PickupBots_AdvanceBossMeta(AP_ChaosFinalNow() ? PickupBots_ChaosPace() : boss);
 #else
 	PickupBots_AdvanceBossMeta(boss);
 #endif

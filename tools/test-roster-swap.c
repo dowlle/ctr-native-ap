@@ -254,6 +254,7 @@ static void test_chaos(void)
 		CHECK(seat == 1 && seated5[1] == 0 && in_stock(seated5[1], ROO), "Roo driving: a stand-in from his pack");
 		CHECK(AP_RosterChaosStandIn(lineup, 1, seated5[1]) && !AP_RosterChaosStandIn(lineup, 0, seated5[0]),
 		      "the stand-in takes no turn");
+		CHECK(AP_RosterChaosPaceSeat(lineup, seated5) == 0, "the final racer still paces the schedule");
 		n = AP_RosterChaosExtras(seated5, ROO, in_stock, extras, 5);
 		CHECK(n == 4, "a stand-in costs no model");
 		AP_RosterChaosLineup(mixed, lineup);
@@ -265,6 +266,7 @@ static void test_chaos(void)
 			AP_RosterChaosLineup(defaults, lineup);
 			seat = AP_RosterChaosSeat(lineup, 4, in_stock, seated5);
 			CHECK(seat == 0 && seated5[0] == 5, "the final racer's seat: the next free default");
+			CHECK(AP_RosterChaosPaceSeat(lineup, seated5) == 1, "a stand-in in the final seat never paces it");
 			for (i = 0; i < 5; i++)
 				for (j = i + 1; j < 5; j++)
 					dup += seated5[i] == seated5[j];

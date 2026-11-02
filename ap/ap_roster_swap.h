@@ -165,6 +165,19 @@ static inline int AP_RosterChaosStandIn(const int lineup[AP_ROSTER_CHAOS_RIVALS]
 	return seat >= 0 && seat < AP_ROSTER_CHAOS_RIVALS && seatedId != lineup[seat];
 }
 
+// The seat whose kart paces the shared attack schedule: the final racer's,
+// or the first drawn rival's when a stand-in holds it. `seated` is the field
+// as AP_RosterChaosSeat wrote it.
+static inline int AP_RosterChaosPaceSeat(const int lineup[AP_ROSTER_CHAOS_RIVALS],
+                                         const int seated[AP_ROSTER_CHAOS_RIVALS])
+{
+	int i;
+	for (i = 0; i < AP_ROSTER_CHAOS_RIVALS; i++)
+		if (!AP_RosterChaosStandIn(lineup, i, seated[i]))
+			return i;
+	return 0;
+}
+
 // The chaos field's own models: every rival neither the player nor in the
 // player's pack. Five at most, never above `cap`; the caller has room for all.
 static inline int AP_RosterChaosExtras(const int lineup[AP_ROSTER_CHAOS_RIVALS], int player,
