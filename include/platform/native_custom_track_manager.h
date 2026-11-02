@@ -230,10 +230,66 @@ int CustomTrackManager_Preflight(const char *assetsRoot,
 	                              int autoFinalize,
 	                              struct CustomTrackManagerStatus *outStatus);
 
-// Render the Alpha6-compatible player-YAML fragment. It always emits one
-// combined custom_tracks mapping and boxes:false; a package must be READY.
+// ── the author's relic target times (one generator row 10j) ────────────────
+//
+// A Relic Race on a custom track needs the author's Sapphire, Gold and
+// Platinum times in the descriptor; the project never invents them (ruled
+// 2026-09-07). The Custom Content page asks for them and keeps them in a
+// manager-owned file beside manifest.json, never in the package files:
+//
+//   tracks/<package folder>/manager-relic-times.json
+//
+// The file names the LEV and VRM SHA-256 it was entered for. Times only load
+// for a Ready package whose scanned bytes are those exact files, so a package
+// whose bytes change exports without a Relic Race until the author enters
+// times again. Saving new times replaces the file.
+//
+// Times are entered as M:SS.CC on the page and kept in race-clock ticks (960
+// per second). A hundredth becomes the first tick that the race clock shows
+// as that hundredth (ceil of 9.6 per hundredth), so the times read back as
+// typed. The apworld admits 1 to 3,456,000 ticks, strictly faster from
+// Sapphire to Platinum (worlds/ctr/custom_packages.py); the page takes 0:00.01
+// to 59:59.99, which stays inside that.
+#define CTR_CT_RELIC_TICKS_PER_SECOND 960
+#define CTR_CT_RELIC_TICKS_MAX (CTR_CT_RELIC_TICKS_PER_SECOND * 60 * 60)
+#define CTR_CT_RELIC_CENTIS_MAX (60 * 60 * 100 - 1)
+
+struct CustomTrackRelicTimes
+{
+	int set;      // 1 when ticks holds valid, stored times
+	int ticks[3]; // sapphire, gold, platinum
+};
+
+// Hundredths to ticks; -1 outside 1 to CTR_CT_RELIC_CENTIS_MAX.
+int CustomTrackManager_RelicTicksFromCentis(int centis);
+// Ticks to the hundredths the race clock shows (floor).
+int CustomTrackManager_RelicCentisFromTicks(int ticks);
+// Each time 1 to CTR_CT_RELIC_TICKS_MAX and Sapphire > Gold > Platinum.
+int CustomTrackManager_RelicTimesValid(const int ticks[3]);
+// Load the stored times for a Ready package. Returns 1 and sets out->set only
+// when the file exists, is well formed, holds valid times and names the bytes
+// the status scanned; anything else returns 0 with out->set 0.
+int CustomTrackManager_LoadRelicTimes(const char *assetsRoot,
+	                                   const struct CustomTrackManagerPackage *package,
+	                                   const struct CustomTrackManagerStatus *status,
+	                                   struct CustomTrackRelicTimes *out);
+// Store times for a Ready package with relic crates. Refuses invalid times.
+int CustomTrackManager_SaveRelicTimes(const char *assetsRoot,
+	                                   const struct CustomTrackManagerPackage *package,
+	                                   const struct CustomTrackManagerStatus *status,
+	                                   const int ticks[3]);
+// Remove the stored times. Returns 1 when none are stored afterwards.
+int CustomTrackManager_ClearRelicTimes(const char *assetsRoot,
+	                                    const struct CustomTrackManagerPackage *package);
+
+// Render the player-YAML fragment: one complete package descriptor in a
+// custom_tracks list; a package must be READY. With `relic` set and the
+// package's relic crates, the descriptor has `relic: true` and the times as
+// `relic_targets`; otherwise `relic: false`. Set but invalid times refuse the
+// export. `relic` may be NULL.
 int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *package,
 	                               const struct CustomTrackManagerStatus *status,
+	                               const struct CustomTrackRelicTimes *relic,
 	                               char *dst, size_t dstSize);
 
 // Save that exact fragment at assets/tracks/custom_tracks.generated.yaml.
@@ -244,6 +300,7 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 int CustomTrackManager_SaveYaml(const char *assetsRoot,
 	                             const struct CustomTrackManagerPackage *package,
 	                             const struct CustomTrackManagerStatus *status,
+	                             const struct CustomTrackRelicTimes *relic,
 	                             struct CustomTrackManagerStatus *outStatus);
 
 // Longest rendering of "Saved to: <path>" the Custom Content message area can

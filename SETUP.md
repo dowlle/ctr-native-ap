@@ -358,7 +358,16 @@ To use a package, copy or save its YAML from the Custom Content page and add
 that entry to the `custom_tracks` list of the player YAML before generating the
 room. The entry is the track's complete descriptor, including its file checks,
 the lap count and what it can do. A track with restart points and AI paths
-(`checkpoints` and `ai_nav`) can also race a boss. Every player whose slot
+(`checkpoints` and `ai_nav`) can also race a boss.
+
+A Relic Race on a custom track needs the author's target times. On the Custom
+Content page choose **Relic Times** and enter Sapphire, Gold and Platinum as
+M:SS.CC: Up and Down change a digit, Left and Right move, Cross saves, Triangle
+cancels. Sapphire must be slower than Gold and Gold slower than Platinum. The
+times are kept beside the package's manifest, never in the track files, and
+only for those exact files: if the files change, enter the times again. With
+times saved, the exported entry has `relic: true` and `relic_targets`; without
+them it has no Relic Race. **Clear Relic Times** removes them. Every player whose slot
 requires the track must install the same verified package. A missing or
 mismatched package fails closed instead of loading the displaced retail race.
 

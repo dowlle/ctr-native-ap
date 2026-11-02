@@ -4,6 +4,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -1181,12 +1182,143 @@ static int Manager_IsDescriptorExportable(const struct CustomTrackManagerPackage
 	       status->vrmBytes <= 4ul * 1024 * 1024;
 }
 
+// ── the author's relic target times (row 10j) ───────────────────────────────
+// See the header. The file is manager data in the package folder, never one of
+// the package's own files, and it is bound to the LEV and VRM bytes.
+#define MANAGER_RELIC_FILE "manager-relic-times.json"
+
+int CustomTrackManager_RelicTicksFromCentis(int centis)
+{
+	if (centis < 1 || centis > CTR_CT_RELIC_CENTIS_MAX)
+		return -1;
+	// ceil(centis * 9.6): the first tick the clock shows as this hundredth.
+	return (centis * 96 + 9) / 10;
+}
+
+int CustomTrackManager_RelicCentisFromTicks(int ticks)
+{
+	if (ticks < 0)
+		return 0;
+	return (int)(((long long)ticks * 100) / CTR_CT_RELIC_TICKS_PER_SECOND);
+}
+
+int CustomTrackManager_RelicTimesValid(const int ticks[3])
+{
+	int i;
+	if (ticks == NULL)
+		return 0;
+	for (i = 0; i < 3; i++)
+		if (ticks[i] < 1 || ticks[i] > CTR_CT_RELIC_TICKS_MAX)
+			return 0;
+	return ticks[0] > ticks[1] && ticks[1] > ticks[2];
+}
+
+// Times belong to the exact bytes a Ready scan verified for this package.
+static int Manager_RelicPackageReady(const struct CustomTrackManagerPackage *package,
+	                                 const struct CustomTrackManagerStatus *status)
+{
+	return Manager_PackageSupported(package) && status != NULL && status->state == CTR_CT_MANAGER_READY &&
+	       NativeSha256_HexEquals(status->actualLevSha256, package->levSha256) &&
+	       NativeSha256_HexEquals(status->actualVrmSha256, package->vrmSha256);
+}
+
+static int Manager_RelicPath(const char *assetsRoot, const struct CustomTrackManagerPackage *package,
+	                         char *dst, size_t dstSize)
+{
+	struct CustomTrackManagerStatus paths;
+	return Manager_PackageSupported(package) && Manager_BuildPaths(assetsRoot, package, &paths) &&
+	       Manager_Join(dst, dstSize, paths.packageRoot, MANAGER_RELIC_FILE);
+}
+
+static int Manager_RenderRelicTimes(const char *levSha256, const char *vrmSha256, const int ticks[3],
+	                                char *dst, size_t dstSize)
+{
+	int wrote = snprintf(dst, dstSize,
+		"{\"schema_version\": 1, \"lev_sha256\": \"%s\", \"vrm_sha256\": \"%s\", "
+		"\"sapphire\": %d, \"gold\": %d, \"platinum\": %d}\n",
+		levSha256, vrmSha256, ticks[0], ticks[1], ticks[2]);
+	return wrote >= 0 && (size_t)wrote < dstSize;
+}
+
+int CustomTrackManager_LoadRelicTimes(const char *assetsRoot,
+	                                   const struct CustomTrackManagerPackage *package,
+	                                   const struct CustomTrackManagerStatus *status,
+	                                   struct CustomTrackRelicTimes *out)
+{
+	char path[CTR_CT_MANAGER_PATH_MAX];
+	char text[512];
+	char canonical[512];
+	char lev[65], vrm[65];
+	char digits[3][8];
+	int ticks[3];
+	int missing;
+	int i;
+
+	if (out == NULL)
+		return 0;
+	memset(out, 0, sizeof *out);
+	if (!Manager_RelicPackageReady(package, status) || !Manager_RelicPath(assetsRoot, package, path, sizeof path) ||
+	    !Manager_ReadText(path, text, sizeof text, &missing))
+		return 0;
+	if (sscanf(text,
+	           "{\"schema_version\": 1, \"lev_sha256\": \"%64[0-9a-f]\", \"vrm_sha256\": \"%64[0-9a-f]\", "
+	           "\"sapphire\": %7[0-9], \"gold\": %7[0-9], \"platinum\": %7[0-9]}",
+	           lev, vrm, digits[0], digits[1], digits[2]) != 5)
+		return 0;
+	// At most seven digits each, so no value can overflow an int; the range
+	// check below refuses anything over one hour.
+	for (i = 0; i < 3; i++)
+		ticks[i] = atoi(digits[i]);
+	// Only the exact text this manager writes is accepted, so a hand edit with
+	// extra keys, signs or spacing is ignored rather than half-read.
+	if (!Manager_RenderRelicTimes(lev, vrm, ticks, canonical, sizeof canonical) || strcmp(text, canonical) != 0 ||
+	    !CustomTrackManager_RelicTimesValid(ticks))
+		return 0;
+	// Times entered for other bytes do not carry over to these.
+	if (!NativeSha256_HexEquals(status->actualLevSha256, lev) || !NativeSha256_HexEquals(status->actualVrmSha256, vrm))
+		return 0;
+	memcpy(out->ticks, ticks, sizeof ticks);
+	out->set = 1;
+	return 1;
+}
+
+int CustomTrackManager_SaveRelicTimes(const char *assetsRoot,
+	                                   const struct CustomTrackManagerPackage *package,
+	                                   const struct CustomTrackManagerStatus *status,
+	                                   const int ticks[3])
+{
+	char path[CTR_CT_MANAGER_PATH_MAX];
+	char text[512];
+
+	if (!Manager_RelicPackageReady(package, status) || !package->flagRelicCrates ||
+	    !CustomTrackManager_RelicTimesValid(ticks) || !Manager_RelicPath(assetsRoot, package, path, sizeof path) ||
+	    !Manager_RenderRelicTimes(package->levSha256, package->vrmSha256, ticks, text, sizeof text))
+		return 0;
+	return Manager_WriteAtomic(path, text);
+}
+
+int CustomTrackManager_ClearRelicTimes(const char *assetsRoot,
+	                                    const struct CustomTrackManagerPackage *package)
+{
+	char path[CTR_CT_MANAGER_PATH_MAX];
+	struct stat info;
+
+	if (!Manager_RelicPath(assetsRoot, package, path, sizeof path))
+		return 0;
+	if (remove(path) == 0)
+		return 1;
+	return stat(path, &info) != 0 && errno == ENOENT;
+}
+
 int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *package,
 	                               const struct CustomTrackManagerStatus *status,
+	                               const struct CustomTrackRelicTimes *relic,
 	                               char *dst, size_t dstSize)
 {
 	int wrote;
+	int relicRace;
 	char receipt[NATIVE_SHA256_HEX_BYTES];
+	char targets[128] = "";
 
 	if (!Manager_PackageSupported(package) || status == NULL || status->state != CTR_CT_MANAGER_READY ||
 	    dst == NULL || dstSize == 0 || status->levBytes == 0 || status->vrmBytes == 0 ||
@@ -1208,8 +1340,17 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 	// keeps a revision such as 1.0 from reading as a number. The capabilities
 	// are the measured flags: arcade needs AI paths and two or more spawns,
 	// time_trial needs the restart points, and `checkpoints` and `ai_nav` are
-	// the boss venue facts. relic stays false: the manager holds no author
-	// target times, and a Relic Race cannot be listed without them.
+	// the boss venue facts. relic is true only with the author's target times
+	// and measured relic crates (row 10j); times the apworld would refuse
+	// refuse the export instead.
+	relicRace = relic != NULL && relic->set && package->flagRelicCrates;
+	if (relicRace)
+	{
+		if (!CustomTrackManager_RelicTimesValid(relic->ticks))
+			return 0;
+		snprintf(targets, sizeof targets, "    relic_targets: {sapphire: %d, gold: %d, platinum: %d}\n",
+		         relic->ticks[0], relic->ticks[1], relic->ticks[2]);
+	}
 	wrote = snprintf(dst, dstSize,
 		"custom_tracks:\n"
 		"  - id: \"package/%s/%s\"\n"
@@ -1219,8 +1360,9 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 		"    display_name: \"%s\"\n"
 		"    author: \"%s\"\n"
 		"    laps: %d\n"
-		"    capabilities: {time_trial: true, arcade: %s, relic: false, ctr_tokens: %s, wumpa: %s, "
+		"    capabilities: {time_trial: true, arcade: %s, relic: %s, ctr_tokens: %s, wumpa: %s, "
 		"checkpoints: %d, ai_nav: %s}\n"
+		"%s"
 		"    files:\n"
 		"      - {role: lev, sha256: \"%s\", bytes: %lu, format: ctr-lev, format_version: 1}\n"
 		"      - {role: vrm, sha256: \"%s\", bytes: %lu, format: ctr-vrm, format_version: 1}\n"
@@ -1228,9 +1370,10 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 		package->id, package->version, package->id, package->packageUuid, package->version,
 		package->title, package->author, package->laps,
 		(package->flagAiNav && package->flagSpawns >= 2) ? "true" : "false",
+		relicRace ? "true" : "false",
 		package->flagCtrLetters ? "true" : "false",
 		package->flagWumpaCollectible ? "true" : "false",
-		package->flagCheckpoints, package->flagAiNav ? "true" : "false",
+		package->flagCheckpoints, package->flagAiNav ? "true" : "false", targets,
 		package->levSha256, status->levBytes, package->vrmSha256, status->vrmBytes);
 
 	return wrote >= 0 && (size_t)wrote < dstSize;
@@ -1239,6 +1382,7 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 int CustomTrackManager_SaveYaml(const char *assetsRoot,
 	                             const struct CustomTrackManagerPackage *package,
 	                             const struct CustomTrackManagerStatus *status,
+	                             const struct CustomTrackRelicTimes *relic,
 	                             struct CustomTrackManagerStatus *outStatus)
 {
 	char yaml[CTR_CT_MANAGER_TEXT_MAX];
@@ -1247,7 +1391,7 @@ int CustomTrackManager_SaveYaml(const char *assetsRoot,
 		return 0;
 	if (status != outStatus)
 		memcpy(outStatus, status, sizeof *outStatus);
-	if (!CustomTrackManager_RenderYaml(package, status, yaml, sizeof yaml))
+	if (!CustomTrackManager_RenderYaml(package, status, relic, yaml, sizeof yaml))
 	{
 		Manager_SetDetail(outStatus, CTR_CT_MANAGER_IO_ERROR, "YAML export requires a Ready package.");
 		return 0;
