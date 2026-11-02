@@ -6,9 +6,17 @@
 //
 // Per stat the player picks one of the five rank values (VERY LOW, LOW, MEDIUM,
 // HIGH, VERY HIGH), the same ladder Progressive Stats drives (ap_stat_ladder.h).
-// There are no free values. The package on the wire is unchanged: a delta over
-// the racer's vanilla value, so a stored package from an older client still
-// reads, and snaps to the nearest rank value when it is used or edited.
+// There are no free values. The package on the wire keeps its shape, four
+// signed numbers per setup, and a stored package from an older client still
+// reads: it snaps to the nearest rank value when it is used or edited.
+//
+// Per racer, the number is a delta over that racer's vanilla value, and a
+// racer's vanilla value is itself one of the rank values.
+//
+// Global, one pick has to land every racer on the same rank value, which a delta
+// over each racer's own vanilla cannot do (the shift snaps differently per
+// racer). So the global number is 0 for "vanilla, nothing picked" and otherwise
+// the picked rank value minus the lowest rank value, plus one.
 //
 // Freestanding on purpose: tools/test-editstat-rank.c compiles exactly the code
 // production runs.
@@ -63,6 +71,20 @@ static inline int AP_EditRank_Step(const int values[AP_EDITRANK_COUNT], int curr
 static inline int AP_EditRank_Snap(const int values[AP_EDITRANK_COUNT], int current)
 {
 	return values[AP_EditRank_Nearest(values, current)];
+}
+
+// Global setups: the value every racer takes from the stored number, given the
+// racer's own vanilla value, and the number to store for a picked value.
+static inline int AP_EditRank_GlobalValue(const int values[AP_EDITRANK_COUNT], int stored, int vanilla)
+{
+	if (stored == 0)
+		return vanilla;
+	return AP_EditRank_Snap(values, values[0] + stored - 1);
+}
+
+static inline int AP_EditRank_GlobalStore(const int values[AP_EDITRANK_COUNT], int picked)
+{
+	return AP_EditRank_Snap(values, picked) - values[0] + 1;
 }
 
 #endif

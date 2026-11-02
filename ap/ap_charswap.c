@@ -513,6 +513,8 @@ static int ap_cs_editDelta(int statIndex, int characterID)
 	base = ap_cs_vanillaValue(statIndex, characterID);
 	if (base < 0 || !AP_CharStatRow_IsShown(statIndex) || !ap_cs_rankValues(statIndex, ranks))
 		return stored;
+	if (ap_cs_editMode == AP_CS_MODE_GLOBAL)
+		return AP_EditRank_GlobalValue(ranks, stored, base) - base;
 	return AP_EditRank_Snap(ranks, base + stored) - base;
 }
 
@@ -571,7 +573,17 @@ static int ap_cs_effectiveRank(int statIndex, int characterID)
 {
 	int chain, rank;
 
-	if (!ctr_cfg_active() || ap_cs_progMode == AP_CS_MODE_OFF)
+	if (ap_cs_progMode == AP_CS_MODE_OFF)
+	{
+		// Editable stats are rank values too, and the retail-spread bar cannot
+		// tell the two above vanilla from each other (#466).
+		int ranks[AP_EDITRANK_COUNT];
+		if (ap_cs_editMode == AP_CS_MODE_OFF || !ap_cs_rankValues(statIndex, ranks) ||
+		    !AP_CharStatRow_IsShown(statIndex))
+			return -1;
+		return AP_EditRank_Nearest(ranks, ap_cs_effectiveValue(statIndex, characterID));
+	}
+	if (!ctr_cfg_active())
 		return -1;
 	chain = ap_cs_progChainForStat(statIndex);
 	if (chain < 0)
@@ -1292,9 +1304,9 @@ static void ap_cs_adjust(struct GameTracker *gGT, int dir)
 		return;
 
 	// One press moves to the next rank value, never to a free value.
-	next = AP_EditRank_Step(ranks, base + *slot, dir);
+	next = AP_EditRank_Step(ranks, base + ap_cs_editDelta(stat, characterID), dir);
 	next = ap_cs_clamp(stat, next);
-	*slot = (short)(next - base);
+	*slot = (short)((ap_cs_editMode == AP_CS_MODE_GLOBAL) ? AP_EditRank_GlobalStore(ranks, next) : next - base);
 
 	// Only the character you are standing as can be applied live; the others
 	// take effect when you swap to them.

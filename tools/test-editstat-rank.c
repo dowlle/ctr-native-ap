@@ -71,6 +71,25 @@ int main(void)
 		EXPECT(AP_EditRank_Step(flat, 7, -1), 7, "flat ladder down");
 	}
 
+	// Global: one picked value lands every racer on the same rank value, whatever
+	// their own vanilla value, and 0 stays vanilla.
+	{
+		const int vanillas[4] = {12950, 13140, 13520, 13900};
+		int stored = AP_EditRank_GlobalStore(sp, 13900);
+		EXPECT(stored != 0, 1, "a picked value is never the vanilla marker");
+		EXPECT(AP_EditRank_GlobalStore(sp, 12950), 1, "the lowest rank stores 1");
+		for (int r = 0; r < 4; r++)
+		{
+			EXPECT(AP_EditRank_GlobalValue(sp, stored, vanillas[r]), 13900, "every racer reads the picked rank");
+			EXPECT(AP_EditRank_GlobalValue(sp, 0, vanillas[r]), vanillas[r], "0 leaves each racer at vanilla");
+		}
+		// Pressing up from a racer's vanilla, then reading as another racer.
+		v = AP_EditRank_Step(sp, AP_EditRank_GlobalValue(sp, 0, 13140), 1);
+		EXPECT(AP_EditRank_GlobalValue(sp, AP_EditRank_GlobalStore(sp, v), 12950), 13520, "up from LOW reads MEDIUM for a VERY LOW racer");
+		EXPECT(AP_EditRank_GlobalValue(sp, -5, 13520), 12950, "an old negative number snaps to the lowest rank");
+		EXPECT(AP_EditRank_GlobalValue(sp, 30000, 13520), 14280, "an old huge number snaps to VERY HIGH");
+	}
+
 	printf("%s: %d checks, %d failures\n", failures ? "FAIL" : "PASS", checks, failures);
 	return failures != 0;
 }
