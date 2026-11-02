@@ -422,6 +422,12 @@ static Model build() {
                     for (int k = 0; k < t.count && k < CTR_CFG_HIT_TRIGGER_MAX; ++k)
                         if (present.count(t.any_of[k])) L.triggers.push_back(t.any_of[k]);
             }
+            // The roster swap: a default racer drawn as a boss waits for that
+            // boss race like a guest does.
+            if (L.target < kFirstGuest && ctr_cfg.hit.valid)
+                for (int k = 0; k < AP_HIT_BOSS_CODES; ++k)
+                    if (ctr_cfg.hit.boss_identity[k] == L.target && present.count(AP_HIT_BOSS_WIN_CODES[k]))
+                        L.triggers.push_back(AP_HIT_BOSS_WIN_CODES[k]);
         }
         m.locs.push_back(L);
     }

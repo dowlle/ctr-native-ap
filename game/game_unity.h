@@ -13,6 +13,7 @@
 #include "../ap/ap_hit_policy.h"    // freestanding Hit Character encounter decisions (ticket 06)
 #include "../ap/ap_hit_chooser.h"   // freestanding ordinary chooser state machine (ticket 06)
 #include "../ap/ap_hit_encounter.h" // Hit Character gather: roster + dispatch (ticket 06)
+#include "../ap/ap_roster_swap.h"   // roster swap: guest racers, gauntlet seat, chaos field
 #include "../ap/ap_traps.h"    // trap-effect framework (declares the engine hooks)
 #include "../ap/ap_democam.h"  // Demo Camera trap: CAM.c skips the L2 zoom toggle while engaged (#454)
 #include "../ap/ap_shortcut.h" // Shortcutless mechanism

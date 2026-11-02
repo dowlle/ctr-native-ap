@@ -88,6 +88,7 @@ tools/test-hit-content-cups.cpp
 tools/test-hit-legacy-custom-production.py
 tools/test-hit-encounter-production.cpp
 tools/test-hit-policy.c
+tools/test-roster-swap.c
 tools/test-hit-roster-fixture.cpp
 tools/test-held-checks.cpp
 tools/test-held-race-rearm.c

@@ -884,6 +884,18 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 			// Choose Itemset based on number of Drivers
 			int mode = gGT->numPlyrCurrGame + gGT->numBotsNextGame;
 
+#ifdef CTR_AP
+			// The roster swap can race seven karts when racers wait behind
+			// their garages (AP_HitFieldShortSeats). Retail has no seven kart
+			// table, and the -1 default would skip the itemsanity filter, so
+			// seven use the eight kart table: its rank pairs cover 0..6. Six
+			// already have the 2P Arcade table.
+			if (mode == 7)
+			{
+				mode = 8;
+			}
+#endif
+
 			switch (mode)
 			{
 			// if boss race

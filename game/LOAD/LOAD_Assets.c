@@ -102,10 +102,87 @@ static ap_hit_extras_state s_hitExtras;
 // for this load, or -1. Reset with the Hit extras on every load entry.
 static int s_bossExtra = -1;
 
+// The chaos Final Challenge seats five rivals, and any of them may be missing
+// from the player's pack. The three extra slots are the engine's; these two sit
+// beside them and VehBirth_GetModelByName searches both. Medium models, the LOD
+// the pack's own karts race at: five hi models would be the largest load the
+// game has seen.
+#define LOAD_CHAOS_SIDE_SLOTS (AP_ROSTER_CHAOS_RIVALS - 3)
+static DriverModelExtraSlot s_chaosSideSlots[LOAD_CHAOS_SIDE_SLOTS];
+static int s_chaosSideIDs[LOAD_CHAOS_SIDE_SLOTS];
+static int s_chaosSideCount;
+
+struct Model *LOAD_ChaosSideModel(int i)
+{
+	return i >= 0 && i < s_chaosSideCount ? s_chaosSideSlots[i].model : NULL;
+}
+
 void LOAD_HitEncounterResetExtras(void)
 {
+	int i;
+
 	AP_HitExtrasResetPure(&s_hitExtras);
+	s_chaosSideCount = 0;
+	for (i = 0; i < LOAD_CHAOS_SIDE_SLOTS; i++)
+		s_chaosSideSlots[i].fileBase = NULL;
 	s_bossExtra = -1;
+}
+
+// Stage 6, the side slots' half of the retail fileBase to model step.
+void LOAD_ChaosConvertSideSlots(void)
+{
+	int i;
+
+	for (i = 0; i < s_chaosSideCount; i++)
+	{
+		if (s_chaosSideSlots[i].fileBase == NULL)
+		{
+			char msg[160];
+			snprintf(msg, sizeof msg, "Chaos rival model for character %d failed to load.", s_chaosSideIDs[i]);
+			Platform_Fatal("CTR Native - Chaos Final", msg);
+		}
+		s_chaosSideSlots[i].model = (struct Model *)((u8 *)s_chaosSideSlots[i].fileBase + 4);
+	}
+}
+
+static int LOAD_RosterInStock(int id, int player)
+{
+	return AP_HitInStockPure(id, player);
+}
+
+// Seat the chaos field over the stock ids LOAD_Robots1P just wrote and queue
+// the models the player's pack does not carry.
+static void LOAD_ChaosQueueField(struct BigHeader *bigfile)
+{
+	int lineup[AP_ROSTER_CHAOS_RIVALS];
+	int seated[AP_ROSTER_CHAOS_RIVALS];
+	int extras[AP_ROSTER_CHAOS_RIVALS];
+	int player = (int)data.characterIDs[0];
+	int count, k, standIn;
+	char line[160];
+
+	if (!AP_ChaosFinalLineup(lineup))
+		return;
+	// Never a mirror kart of the player: a rival who is the player's racer
+	// gives the seat to a stand-in from the player's pack.
+	standIn = AP_RosterChaosSeat(lineup, player, LOAD_RosterInStock, seated);
+	for (k = 0; k < AP_ROSTER_CHAOS_RIVALS; k++)
+		data.characterIDs[1 + k] = (s16)seated[k];
+	count = AP_RosterChaosExtras(seated, player, LOAD_RosterInStock, extras, AP_ROSTER_CHAOS_RIVALS);
+	if (!AP_HitQueueFitsPure((int)sdata->queueLength, count + 1, 8))
+		Platform_Fatal("CTR Native - Chaos Final", "Chaos rival models do not fit the load queue.");
+	for (k = 0; k < count; k++)
+	{
+		DriverModelExtraSlot *slot = k < 3 ? &data.driverModelExtras[k] : &s_chaosSideSlots[k - 3];
+		LOAD_AppendQueue(bigfile, LT_GETADDR, BI_RACERMODELMED + extras[k], &slot->fileBase,
+		                 LOAD_DriverMPK_SetPointer);
+		if (k >= 3)
+			s_chaosSideIDs[s_chaosSideCount++] = extras[k];
+	}
+	AP_HitExtrasRecordPure(&s_hitExtras, extras, count);
+	snprintf(line, sizeof line, "[AP CHAOS] field %d,%d,%d,%d,%d player=%d extras=%d stand_in=%d\n", seated[0],
+	         seated[1], seated[2], seated[3], seated[4], player, count, standIn);
+	AP_LogLine(line);
 }
 
 // Stage 6: a sideloaded boss opponent whose model did not load is a load
@@ -252,7 +329,13 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 			goto QueueLastPack;
 		}
 
+#ifdef CTR_AP
+		// The chaos Final Challenge is a boss race with a full race's load: the
+		// player's arcade pack and the extras, below.
+		if ((gameMode1 & ADVENTURE_BOSS) != 0 && !AP_ChaosFinalNow())
+#else
 		if ((gameMode1 & ADVENTURE_BOSS) != 0)
+#endif
 		{
 			goto LoadHighAndPack;
 		}
@@ -268,7 +351,8 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 		    // Ticket 11: with the Hit feature enabled the Purple cup takes the
 		    // player arcade-pack + extra-model path (four AI seats) instead of
 		    // the stock four-boss pack/ID override. Feature off keeps retail.
-		    && !AP_HitEncounterEnabled()
+		    // Same predicate as the cup draw below.
+		    && !(AP_HitEncounterFieldAll() || AP_BossGauntletCupNow())
 #endif
 
 #ifdef CTR_CUSTOM_TRACKS
@@ -373,6 +457,7 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 				int hitCupDest;
 				int hitApply = 0;
 				int aiSeats = 7;
+				int chaosFinal = AP_ChaosFinalNow();
 
 #ifdef CTR_CUSTOM_TRACKS
 				customServed = CustomTrack_ServingLoad((int)gGT->levelID, isCup,
@@ -386,8 +471,14 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 					eventFieldSize = CustomTrack_EventFieldSize((int)gGT->levelID, 1, gGT->cup.cupID);
 #endif
 				hitCupDest = AP_HitCupDestinationPure((int)gGT->cup.cupID, contentCupDest);
-				if (isCup && AP_HitEncounterEnabled())
+				if (chaosFinal)
 				{
+					LOAD_ChaosQueueField(bigfile);
+				}
+				else if (isCup && (AP_HitEncounterFieldAll() || AP_BossGauntletCupNow()))
+				{
+					// A gauntlet alone draws its Purple Gem Cup legs only; every
+					// other cup keeps the retail field (fixes 2026-11-02).
 					// Gem Cup: four AI in the retail Purple cup, seven otherwise,
 					// and the measured field of a legacy custom event race,
 					// matching MainInit's field count.
@@ -424,8 +515,17 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 						hitCount = AP_HitRaceField((int)gGT->levelID,
 						                           (int)data.characterIDs[0],
 						                           aiSeats, hitRoster, &hitFresh);
+					// The gauntlet's drawn racer sits in this leg's field. Only
+					// the seated copy changes: the cup's frozen roster stays,
+					// and each leg loads its own models.
+					if (isCup)
+						AP_RosterSeatAttacker(hitRoster, hitCount, AP_BossGauntletLoadAttacker(),
+						                      (int)data.characterIDs[0], 3, LOAD_RosterInStock);
 					for (k = 0; k < hitCount; k++)
 						data.characterIDs[1 + k] = (s16)hitRoster[k];
+					// A held racer never takes a seat early: a short field races
+					// with fewer karts (MainInit_Drivers reads this).
+					AP_HitFieldSeated(hitCount, aiSeats);
 
 					hitNeed = AP_HitEncounterExtras(hitRoster, hitCount,
 					                                (int)data.characterIDs[0],
@@ -451,7 +551,7 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 					}
 					AP_HitExtrasRecordPure(&s_hitExtras, hitExtras, hitNeed);
 				}
-				else if (AP_HitEncounterEnabled())
+				else if (!chaosFinal && AP_HitEncounterEnabled())
 				{
 					char hitLine[200];
 					snprintf(hitLine, sizeof hitLine,

@@ -17,6 +17,7 @@
 #include "ap_trap_items.h"
 #include "ap_named_blocks.h"
 #include "ap_hit_boss_shuffle.h"
+#include "ap_roster_swap.h"
 
 #include <cstdarg>
 #include <cstdlib>
@@ -628,10 +629,17 @@ static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false
 	// content plan (J11) the plan's encounters fill it before this runs.
 	const int bossShuffled = AP_HitBossShuffleActive(&ctr_boss_encounters);
 	int bossIdent[AP_HIT_BOSS_CODES];
+	int bossSeats[AP_HIT_BOSS_CODES];
 	for (int i = 0; i < AP_HIT_BOSS_CODES; i++)
 		bossIdent[i] = kHitBossIdentity[i];
 	if (bossShuffled)
 		AP_HitBossIdentity(&ctr_boss_encounters, bossIdent);
+	// The triggers follow who a code seats: N. Oxide's codes seat nobody on a
+	// shuffled seed without his races (fixes 2026-11-02).
+	for (int i = 0; i < AP_HIT_BOSS_CODES; i++)
+		bossSeats[i] = bossIdent[i];
+	if (bossShuffled)
+		AP_HitBossSeats(&ctr_boss_encounters, bossSeats);
 	const int *fallbackTable = (contentPlan || bossShuffled) ? kHitContentFallbackKeys : kHitFallbackKeys;
 	// The scalar only exists inside a real ctr_options object, so an absent
 	// ctr_options means an absent scalar (legacy), not a malformed one.
@@ -968,7 +976,7 @@ static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false
 			if (bossShuffled)
 			{
 				int kindBoss = 1;
-				ap.count = AP_HitBossGuestTrigger(bossIdent, guest, ap.wins, &kindBoss);
+				ap.count = AP_HitBossGuestTrigger(bossSeats, guest, ap.wins, &kindBoss);
 				ap.kind = kindBoss ? CTR_CFG_HIT_KIND_BOSS : CTR_CFG_HIT_KIND_TRACK;
 			}
 			const char *wantKind = ap.kind == CTR_CFG_HIT_KIND_BOSS ? "boss" : "track";
@@ -1037,9 +1045,14 @@ static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false
 				}
 				trig.fallback_keys = (int)fb;
 			}
-			// J03: a boss guest drawn for no encounter has no unlock win and
-			// can only ever join through Keys.
-			if (trig.count == 0 && trig.fallback_keys == 0)
+			// The roster swap: an original boss drawn for no encounter has no
+			// unlock win and no Keys, and races from the start.
+			if (trig.count == 0 && trig.fallback_keys != 0)
+			{
+				hit_reject("unlock_triggers[%d] has fallback_keys with no unlock win", guest);
+				return 0;
+			}
+			if (trig.count == 0 && !(bossShuffled && AP_RosterOriginalBoss(guest)))
 			{
 				hit_reject("unlock_triggers[%d] has no unlock win and no fallback_keys", guest);
 				return 0;

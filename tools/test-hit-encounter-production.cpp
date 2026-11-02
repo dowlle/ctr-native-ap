@@ -707,6 +707,98 @@ static void test_boss_race_feature_off(void)
 	ap_seedcfg_parse_json(g_fixture);
 }
 
+// The roster swap through the real gather (ap_roster_swap.h): the parsed boss
+// record is set by hand here; the plan path that fills it has its own harness.
+static void swap_bosses(int a, int b, int c, int d, int gauntlet)
+{
+	std::memset(&ctr_boss_encounters, 0, sizeof ctr_boss_encounters);
+	ctr_boss_encounters.state = AP_BOSS_ENC_VALID;
+	ctr_boss_encounters.version = AP_BOSS_ENCOUNTERS_VERSION_2;
+	ctr_boss_encounters.opponent[0] = (signed char)a;
+	ctr_boss_encounters.opponent[1] = (signed char)b;
+	ctr_boss_encounters.opponent[2] = (signed char)c;
+	ctr_boss_encounters.opponent[3] = (signed char)d;
+	ctr_boss_encounters.gauntletOn = (unsigned char)gauntlet;
+}
+
+static void test_roster_swap(void)
+{
+	nlohmann::json off = g_fixture;
+	int ids[AP_HIT_FIELD_MAX];
+	int n;
+
+	// Hit on: Crash takes hub 1. He waits for that garage, a Collect counts.
+	ap_seedcfg_parse_json(g_fixture);
+	reset_state();
+	swap_bosses(0, 9, 11, 8, 0);
+	expect(!AP_HitEncounterGuestEligible(0), "Crash on hub 1 leaves the pool");
+	expect(AP_HitEncounterGuestEligible(1), "the other defaults stay");
+	g_checked.insert(35011101LL); // Papu's win: a guest to take his seat
+	n = race_after_hub(3, 5, ids);
+	expect(n == 7 && !field_has(ids, n, 0), "Crash sits out of an ordinary race");
+	g_checked.insert(35011100LL);
+	expect(AP_HitEncounterGuestEligible(0), "the garage checked brings him back");
+
+	// No Hit block: the same pool, with Roo in Crash's place.
+	off["ctr_options"]["hit_character"] = false;
+	off.erase("hit_character_encounters");
+	ap_seedcfg_parse_json(off);
+	expect(!AP_HitEncounterFieldOn(), "no swap and no gauntlet: the stock field stays");
+	expect(AP_HitEncounterOrder(3) == NULL, "no order to draw from");
+	reset_state();
+	swap_bosses(0, 9, 11, 8, 0);
+	expect(!AP_HitEncounterEnabled() && AP_HitEncounterFieldOn(), "the swap draws without the Hit block");
+	expect(AP_HitEncounterOrder(3) != NULL && AP_HitEncounterOrder(99) == NULL, "every race destination, nothing else");
+	n = race_after_hub(3, 5, ids);
+	expect(n == 7 && !field_has(ids, n, 0), "Crash is out without Hit Character");
+	expect(field_has(ids, n, 10), "the ruling's example: Roo races in his place");
+	expect(!field_has(ids, n, 9), "a boss in its own garage waits");
+	expect_eq(AP_HitEncounterOpportunity(3, 5), -1, "no Hit target keeps a pad open");
+	g_checked.insert(35011101LL);
+	n = race_after_hub(3, 5, ids);
+	expect(field_has(ids, n, 9), "beaten, Papu joins");
+	expect(AP_HitEncounterShouldApply(1, 3, 0, 0, 0, 0, 0, 0, 1), "an ordinary Adventure race applies");
+	expect(!AP_HitEncounterShouldApply(1, 3, 0, 1, 0, 0, 0, 0, 1), "a boss race keeps its own field");
+
+	// Four held defaults with a guest player: three free stock ids and three
+	// extras. The race runs with six AI, none of them held (fixes 2026-11-02).
+	// N. Oxide's races are off, so he races from the start.
+	reset_state();
+	swap_bosses(0, 1, 2, 3, 0);
+	ctr_boss_encounters.oxideDisabled = 1;
+	expect(AP_HitEncounterGuestEligible(15) || !AP_HitEncounterEnabled(), "N. Oxide disabled is in the pool");
+	n = race_after_hub(3, 13, ids);
+	expect_eq(n, 6, "four held defaults, six seats");
+	for (int i = 0; i < n; i++)
+		expect(ids[i] > 3, "no held default seated early");
+	AP_HitFieldSeated(n, 7);
+	expect_eq(AP_HitFieldShortSeats(), 6, "the short field reaches MainInit_Drivers");
+	AP_HitLoadBegin();
+	expect_eq(AP_HitFieldShortSeats(), -1, "the next load clears it");
+	AP_HitFieldSeated(7, 7);
+	expect_eq(AP_HitFieldShortSeats(), -1, "a full field races eight karts");
+	{
+		bool oxide = false;
+		for (int k = 0; k < 6 && !oxide; k++)
+		{
+			n = race_after_hub(3, 13, ids);
+			oxide = field_has(ids, n, 15);
+		}
+		expect(oxide, "N. Oxide with his races off rotates into the field");
+	}
+
+	// A gauntlet with the retail bosses: only its Purple Gem Cup legs draw.
+	reset_state();
+	swap_bosses(10, 9, 11, 8, 1);
+	expect(AP_HitEncounterFieldOn(), "the gauntlet needs the draw to seat its racer");
+	expect(!AP_HitEncounterFieldAll(), "a gauntlet alone does not draw every race");
+	expect(!AP_HitEncounterShouldApply(1, 3, 0, 0, 0, 0, 0, 0, 1), "an ordinary race keeps the retail field");
+
+	std::memset(&ctr_boss_encounters, 0, sizeof ctr_boss_encounters);
+	ap_seedcfg_parse_json(g_fixture);
+	reset_state();
+}
+
 int main(int argc, char **argv)
 {
 	const char *path = argc > 1 ? argv[1] : "tools/fixtures/ctr_hit_character_seed2101.json";
@@ -741,6 +833,7 @@ int main(int argc, char **argv)
 	test_seed_change_and_reconnect();
 	test_default_target_opportunity();
 	test_boss_race_feature_off();
+	test_roster_swap();
 
 	std::printf("%s: %d checks, %d failures\n",
 	            g_failures ? "FAIL" : "PASS", g_checks, g_failures);

@@ -9051,23 +9051,19 @@
   "unlock_triggers": {
    "8": {
     "kind": "boss",
-    "any_of": [],
-    "fallback_keys": 4
+    "any_of": []
    },
    "9": {
     "kind": "boss",
-    "any_of": [],
-    "fallback_keys": 2
+    "any_of": []
    },
    "10": {
     "kind": "boss",
-    "any_of": [],
-    "fallback_keys": 1
+    "any_of": []
    },
    "11": {
     "kind": "boss",
-    "any_of": [],
-    "fallback_keys": 3
+    "any_of": []
    },
    "12": {
     "kind": "track",
@@ -9079,23 +9075,18 @@
    "13": {
     "kind": "boss",
     "any_of": [
-     35011008,
-     35011010,
      35011100
     ]
    },
    "14": {
     "kind": "boss",
     "any_of": [
-     35011000,
-     35011003,
      35011102
     ]
    },
    "15": {
     "kind": "boss",
-    "any_of": [],
-    "fallback_keys": 4
+    "any_of": []
    }
   },
   "bosses": {

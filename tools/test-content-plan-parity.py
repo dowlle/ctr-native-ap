@@ -1780,7 +1780,7 @@ for name, source, change in [
 # J11: ctr_first, the Wumpa Shop and goal, boss opponent and kit shuffle. The
 # paired apworld's own fixtures, then forgeries of every new field; native and
 # the generator's validator must agree on each.
-for fixture in ("ctr-first", "wumpa-shop", "wumpa-goal-only", "boss-shuffle", "all-030"):
+for fixture in ("ctr-first", "wumpa-shop", "wumpa-goal-only", "boss-shuffle", "all-030", "chaos-final", "oxide-off-swap"):
     cases.append((fixture + "-fixture", json.loads((root / f"tools/fixtures/content-plan/{fixture}.json").read_text()), True))
 def j11_env(name, change, fixture):
     case = copy.deepcopy(next(w for n, w, ok in cases if n == fixture + "-fixture"))
@@ -1793,6 +1793,20 @@ def j11_env(name, change, fixture):
     except (ValueError, TypeError, KeyError, OverflowError, AttributeError, IndexError):
         accepted = False
     cases.append((f"j11-{fixture}-{name}", case, accepted))
+for name, change in (
+        ("false", lambda c: c["content_plan"]["bosses"].__setitem__("final_chaos", False)),
+        ("a number", lambda c: c["content_plan"]["bosses"].__setitem__("final_chaos", 1)),
+        ("without the feature", lambda c: c["content_plan"]["required_features"].remove("final_chaos_v1")),
+        ("Keys on a displaced boss", lambda c: c["hit_character_encounters"]["unlock_triggers"]["11"].__setitem__("fallback_keys", 3)),
+        ):
+    j11_env("chaos " + name, change, "chaos-final")
+# Fixes 2026-11-02: N. Oxide's races off on a random-boss seed race him from the start.
+for name, change in (
+        ("Keys back", lambda c: c["hit_character_encounters"]["unlock_triggers"]["15"].__setitem__("fallback_keys", 4)),
+        ("his races as wins", lambda c: c["hit_character_encounters"]["unlock_triggers"]["15"].__setitem__(
+            "any_of", [35011104, 35011105])),
+        ):
+    j11_env("oxide off " + name, change, "oxide-off-swap")
 def j_entry(c, eid):
     return next(e for e in c["content_plan"]["entries"] if e["id"] == eid)
 def j_check(c, code):
@@ -1911,7 +1925,7 @@ for name, change in [
         ("Hit route kept by the retail boss", lambda c: j_check(c, 35025010)["routes"].append(copy.deepcopy(j_check(c, 35025007)["routes"][-1]))),
         ("Hit route dropped from the drawn racer", lambda c: j_check(c, 35025007)["routes"].pop()),
         ("Hit table retail", j_hit_to_retail),
-        ("Hit fallback missing", lambda c: c["hit_character_encounters"]["unlock_triggers"]["8"].pop("fallback_keys")),
+        ("Hit fallback on a boss raced nowhere", lambda c: c["hit_character_encounters"]["unlock_triggers"]["8"].__setitem__("fallback_keys", 4)),
         ("Hit fallback on a drawn guest", lambda c: c["hit_character_encounters"]["unlock_triggers"]["13"].__setitem__("fallback_keys", 2)),
         ("Hit trigger keeps the retail win", lambda c: c["hit_character_encounters"]["unlock_triggers"].__setitem__(
             "10", dict(kind="boss", any_of=[35011100]))),

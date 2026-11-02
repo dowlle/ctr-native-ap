@@ -116,6 +116,12 @@ void UI_DrawRankedDrivers(void)
 		{
 			// Show 2 racers
 			iVar14 = 2;
+#ifdef CTR_AP
+			if (AP_ChaosFinalNow())
+			{
+				iVar14 = 4;
+			}
+#endif
 		}
 
 		iVar15 = 0;
