@@ -166,6 +166,21 @@ static inline void AP_BossAdapterCommit(AP_BossAdapterState *s, const AP_BossAda
 		s->superMs = AP_BOSS_ADAPTER_SUPER_MS;
 }
 
+// The chaos Final Challenge has one adapter for five rivals. These weapons need
+// its timers on the driver that fired them; the others end by themselves and
+// any rival can fire them at any time.
+static inline int AP_BossAdapterNeedsTimers(int weapon)
+{
+	return weapon == AP_BA_MASK || weapon == AP_BA_INVISIBILITY || weapon == AP_BA_SUPER_ENGINE;
+}
+
+// Are the timers in use? Until they run out a weapon that needs them is deferred
+// on another rival's turn. Once free they pass to whoever's turn it is.
+static inline int AP_BossAdapterBusy(int maskOn, int invisible, int superEngine, int invincible)
+{
+	return maskOn || invisible || superEngine || invincible;
+}
+
 // A countdown in ms. Returns 1 on the frame it reaches zero.
 static inline int AP_BossAdapterCountdown(int *timer, int elapsedMs)
 {

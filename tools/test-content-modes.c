@@ -37,6 +37,60 @@ static ctr_content_pad pad3(int first, int second, int third, int need)
     return p;
 }
 
+/* Row 10i: a Gem Cup over a track with a pad (rungs and Wumpa there) and a
+ * track raced only in cups (its own leg Wumpa code). */
+static ctr_content_pad cup_own;
+static const ctr_content_pad *cup_lookup(int physical) { return physical == 3 ? &cup_own : NULL; }
+static void cup_track_checks_case(void)
+{
+    ctr_content_pad cup;
+    ap_content_cup_track_check rows[AP_CONTENT_CUP_TRACK_CHECKS];
+    int n, k, rung = 0, wumpa = 0, leg_wumpa = 0;
+    memset(&cup, 0, sizeof cup); memset(&cup_own, 0, sizeof cup_own);
+    cup_own.physical = 3; cup_own.occupied = 1; cup_own.wumpa_location = 35016104;
+    cup_own.rung_locations[0] = 35015100; cup_own.rung_locations[3] = 35015103;
+    cup.physical = 101; cup.occupied = cup.cup = 1;
+    strcpy(cup.legs[0].track_id, "retail:3"); cup.legs[0].track_pad = 3; cup.legs[0].wumpa = 35016104;
+    strcpy(cup.legs[1].track_id, "retail:8"); cup.legs[1].track_pad = -1; cup.legs[1].wumpa = 35016107;
+    strcpy(cup.legs[2].track_id, "retail:3"); cup.legs[2].track_pad = 3; cup.legs[2].wumpa = 35016104;
+    strcpy(cup.legs[3].track_id, "retail:9"); cup.legs[3].track_pad = -1;
+    n = ap_content_cup_track_checks(&cup, cup_lookup, rows);
+    for (k = 0; k < n; ++k) {
+        rung += rows[k].code == 35015100 || rows[k].code == 35015103;
+        wumpa += rows[k].code == 35016104;
+        leg_wumpa += rows[k].code == 35016107 && rows[k].bit == AP_CONTENT_BIT_CUP_WUMPA + 101 * 4 + 1;
+    }
+    expect(n == 4 && rung == 2 && wumpa == 1 && leg_wumpa == 1, "a cup lists its tracks' rungs and Wumpa, a cup-only track's too");
+    {
+        int physical, leg;
+        expect(ap_content_cup_wumpa_bit_decode(AP_CONTENT_BIT_CUP_WUMPA + 101 * 4 + 1, &physical, &leg) &&
+               physical == 101 && leg == 1 && ap_content_cup_wumpa_bit_code(&cup, leg) == 35016107, "leg Wumpa bit round trip");
+    }
+    checked_count = 0;
+    checked_codes[checked_count++] = 35016104;
+    expect(ap_content_cup_wumpa_code(&cup, cup_lookup, checked) == 35016107, "the tracker shows the cup-only track's open check");
+    /* cup_only_podium_rungs: the cup-only track's own rungs, on its leg's bits. */
+    cup.legs[1].rungs[0] = 35015108; cup.legs[1].rungs[4] = 35015112;
+    n = ap_content_cup_track_checks(&cup, cup_lookup, rows);
+    for (k = 0, rung = 0; k < n; ++k)
+        rung += (rows[k].code == 35015108 && rows[k].bit == AP_CONTENT_BIT_CUP_RUNG + 101 * 20 + 1 * 5 + 0) ||
+                (rows[k].code == 35015112 && rows[k].bit == AP_CONTENT_BIT_CUP_RUNG + 101 * 20 + 1 * 5 + 4);
+    expect(n == 6 && rung == 2, "a cup lists a cup-only track's own rungs");
+    {
+        int physical, slot;
+        expect(ap_content_cup_rung_bit_decode(AP_CONTENT_BIT_CUP_RUNG + 101 * 20 + 1 * 5 + 4, &physical, &slot) &&
+               physical == 101 && slot == 9 && ap_content_cup_rung_bit_code(&cup, slot) == 35015112 &&
+               ap_content_cup_rung_bit_code(&cup, 6) == -1, "leg rung bit round trip");
+        expect(!ap_content_cup_rung_bit_decode(AP_CONTENT_BIT_CUP_WUMPA + 101 * 4 + 1, &physical, &slot) &&
+               AP_CONTENT_BIT_CUP_WUMPA + 111 * AP_CONTENT_CUP_LAP_STRIDE <= AP_CONTENT_BIT_CUP_RUNG,
+               "leg rung bits follow the leg Wumpa bits");
+    }
+    cup.physical = AP_CONTENT_GARAGE_CUP_PAD;
+    n = ap_content_cup_track_checks(&cup, cup_lookup, rows);
+    expect(n == 1 && rows[0].code == 35016104, "a garage cup shows no rung and no leg bit");
+    checked_count = 0;
+}
+
 int main(void)
 {
     int counts[15];
@@ -68,6 +122,23 @@ int main(void)
     counts[0] = 3;
     expect(ap_content_mode_open(&p, AP_CONTENT_MODE_RELIC, counts, checked), "manual rule and stage-2 rule both met");
     p.has_rule = 0; p.keys = 0;
+    cup_track_checks_case();
+    // Row 10i: Turbo Track's vanilla five Gems count one of each colour, so
+    // five Red Gems do not open it; a sum rule over the same Gems would.
+    {
+        ctr_content_pad turbo = p;
+        int gems[15] = {0};
+        turbo.has_rule = 1; turbo.rule_mask = 0x3E00u; turbo.rule_count = 5; turbo.rule_distinct = 1;
+        gems[9] = 5;
+        expect(ap_content_rule_owned(&turbo, gems) == 1 && !ap_content_pad_open(&turbo, gems), "five Red Gems are one colour");
+        turbo.rule_distinct = 0;
+        expect(ap_content_pad_open(&turbo, gems), "a sum rule counts copies");
+        turbo.rule_distinct = 1;
+        gems[10] = gems[11] = gems[12] = 1;
+        expect(!ap_content_pad_open(&turbo, gems), "four colours are not enough");
+        gems[13] = 2;
+        expect(ap_content_rule_owned(&turbo, gems) == 5 && ap_content_pad_open(&turbo, gems), "one Gem of each colour opens it");
+    }
 
     // Codes per mode, and an absent mode owns none.
     expect(ap_content_mode_codes(&p, AP_CONTENT_MODE_RELIC, codes) == 3 && codes[2] == 35012200, "relic owns three codes");

@@ -39,9 +39,10 @@ assert "ap_content_requirement_text(pad->stage2_mask, pad->stage2_count, out->st
 node = function(tracker, "static void AP_TrackerDrawContentNode(")
 assert "ap_content_cup_track_checks(pad, ap_content_plan_pad, rows)" in node and "ap_content_cup_box_pending(" in node
 assert "ap_content_cup_wumpa_code(pad, ap_content_plan_pad, AP_ContentCodeChecked)" in node
-# A plan cup leg earns its track's Wumpa check; a leg's box gate reads the pad on that track.
+# A plan cup leg earns its track's Wumpa check, the leg's own code (row 10i:
+# also on a track with no pad); a leg's box gate reads the pad on that track.
 wumpa = function(race, "static long AP_StandaloneWumpaCode(void)")
-assert "cup->legs[leg].track_pad" in wumpa and "context && context->cup" in wumpa
+assert "cup->legs[leg].wumpa" in wumpa and "context && context->cup" in wumpa
 policy = function(boxes, "static int AP_BoxesPadRoutePolicy(")
 assert "pad->retail_id == level" in policy
 assert "cup->legs[race->leg].track_pad" in policy and "return AP_BOX_PRESENT_NONE;" in policy

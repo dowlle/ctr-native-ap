@@ -27,6 +27,10 @@
 // own rung codes (ap_hooks_race.c AP_ContentPodiumRungs), never the engine
 // host's row.
 #define AP_CONTENT_PODIUM_LOGICAL_BASE 1000
+// A Gem Cup leg on a track with no pad of its own (cup_only_podium_rungs, ruling of
+// 2026-11-02): logical podium track AP_CONTENT_LEG_PODIUM_LOGICAL_BASE + cup
+// pad * 4 + leg, resolved through the leg's own rung codes.
+#define AP_CONTENT_LEG_PODIUM_LOGICAL_BASE 2000
 // ctr_first (#208 on content plans, J11, decision 14): a track entry whose
 // plan runs ctr_first has no Trophy Race. Its CTR Challenge is the first race:
 // first place pays the Trophy Race check (trophy_location), first place with
@@ -356,11 +360,45 @@ static inline int64_t ap_content_cup_lap_bit_code(const ctr_content_pad *pad, in
     if (!pad || !pad->cup || leg < 0 || leg >= AP_CONTENT_CUP_LEGS) return -1;
     return pad->legs[leg].lap > 0 ? pad->legs[leg].lap : -1;
 }
-// The checks of a cup's tracks, each track once: every leg's first lap, and the
-// per-track Wumpa check and Item Boxes of the track's standalone pad. `box_pad`
-// is that pad on a box, whose check a leg can only earn while the pad is open,
-// else -1. A track raced only in cups owns no Wumpa check or box.
-#define AP_CONTENT_CUP_TRACK_CHECKS (AP_CONTENT_CUP_LEGS * 17)
+// A cup leg's Reach 10 Wumpa check on a track with no Wumpa check of its pad
+// (row 10i): display bit 64500 + pad * 4 + leg, in the race slot.
+#define AP_CONTENT_BIT_CUP_WUMPA 64500
+static inline int ap_content_cup_wumpa_bit_decode(int bit, int *physical, int *leg)
+{
+    if (bit < AP_CONTENT_BIT_CUP_WUMPA || bit >= AP_CONTENT_BIT_CUP_WUMPA + 111 * AP_CONTENT_CUP_LAP_STRIDE) return 0;
+    *physical = (bit - AP_CONTENT_BIT_CUP_WUMPA) / AP_CONTENT_CUP_LAP_STRIDE;
+    *leg = (bit - AP_CONTENT_BIT_CUP_WUMPA) % AP_CONTENT_CUP_LAP_STRIDE;
+    return 1;
+}
+static inline int64_t ap_content_cup_wumpa_bit_code(const ctr_content_pad *pad, int leg)
+{
+    if (!pad || !pad->cup || leg < 0 || leg >= AP_CONTENT_CUP_LEGS) return -1;
+    return pad->legs[leg].wumpa > 0 ? pad->legs[leg].wumpa : -1;
+}
+// A Gem Cup leg's own podium rungs (cup_only_podium_rungs, ruling of 2026-11-02):
+// display bit 65000 + pad * 20 + leg * 5 + rung, in the race slot.
+#define AP_CONTENT_BIT_CUP_RUNG 65000
+#define AP_CONTENT_CUP_RUNG_STRIDE (AP_CONTENT_CUP_LEGS * 5)
+static inline int ap_content_cup_rung_bit_decode(int bit, int *physical, int *slot)
+{
+    if (bit < AP_CONTENT_BIT_CUP_RUNG || bit >= AP_CONTENT_BIT_CUP_RUNG + 111 * AP_CONTENT_CUP_RUNG_STRIDE) return 0;
+    *physical = (bit - AP_CONTENT_BIT_CUP_RUNG) / AP_CONTENT_CUP_RUNG_STRIDE;
+    *slot = (bit - AP_CONTENT_BIT_CUP_RUNG) % AP_CONTENT_CUP_RUNG_STRIDE;
+    return 1;
+}
+// `slot` is leg * 5 + rung.
+static inline int64_t ap_content_cup_rung_bit_code(const ctr_content_pad *pad, int slot)
+{
+    if (!pad || !pad->cup || slot < 0 || slot >= AP_CONTENT_CUP_RUNG_STRIDE) return -1;
+    return pad->legs[slot / 5].rungs[slot % 5] > 0 ? pad->legs[slot / 5].rungs[slot % 5] : -1;
+}
+// The checks of a cup's tracks, each track once: every leg's first lap, the
+// track's Reach 10 Wumpa check (row 10i: also on a track without a pad), and
+// the podium rungs (row 10i, a Gem Cup only; with cup_only_podium_rungs also
+// the leg's own on a track without a pad) and Item Boxes of the track's
+// standalone pad. `box_pad` is that pad on a box, whose check a leg can only
+// earn while the pad is open, else -1. A track raced only in cups owns no box.
+#define AP_CONTENT_CUP_TRACK_CHECKS (AP_CONTENT_CUP_LEGS * 22) // lap, Wumpa, 5 rungs, 15 boxes
 typedef struct ap_content_cup_track_check {
     int64_t code;
     int bit, box_pad;
@@ -381,11 +419,26 @@ static inline int ap_content_cup_track_checks(const ctr_content_pad *pad, ap_con
             out[n].code = leg->lap; out[n].box_pad = -1;
             out[n++].bit = AP_CONTENT_BIT_CUP_LAP + pad->physical * AP_CONTENT_CUP_LAP_STRIDE + k;
         }
-        if (!own) continue;
-        if (own->wumpa_location > 0) {
+        if (own && own->wumpa_location > 0) {
             out[n].code = own->wumpa_location; out[n].box_pad = -1;
             out[n++].bit = AP_CONTENT_BIT_FAMILY + own->physical * AP_CONTENT_FAMILY_STRIDE + 5;
+        } else if (leg->wumpa > 0 && pad->physical < AP_CONTENT_GARAGE_CUP_PAD) {
+            out[n].code = leg->wumpa; out[n].box_pad = -1;
+            out[n++].bit = AP_CONTENT_BIT_CUP_WUMPA + pad->physical * AP_CONTENT_CUP_LAP_STRIDE + k;
         }
+        if (!own) {
+            for (b = 0; pad->physical < AP_CONTENT_GARAGE_CUP_PAD && b < 5; ++b)
+                if (leg->rungs[b] > 0) {
+                    out[n].code = leg->rungs[b]; out[n].box_pad = -1;
+                    out[n++].bit = AP_CONTENT_BIT_CUP_RUNG + pad->physical * AP_CONTENT_CUP_RUNG_STRIDE + k * 5 + b;
+                }
+            continue;
+        }
+        for (b = 0; pad->physical < AP_CONTENT_GARAGE_CUP_PAD && b < 5; ++b)
+            if (own->rung_locations[b] > 0) {
+                out[n].code = own->rung_locations[b]; out[n].box_pad = -1;
+                out[n++].bit = AP_CONTENT_BIT_FAMILY + own->physical * AP_CONTENT_FAMILY_STRIDE + b;
+            }
         for (b = 0; b < own->box_count && b < 15; ++b)
             if (own->box_locations[b] > 0) {
                 out[n].code = own->box_locations[b]; out[n].box_pad = own->physical;
@@ -403,8 +456,9 @@ static inline int64_t ap_content_cup_wumpa_code(const ctr_content_pad *pad, ap_c
     int i, n = ap_content_cup_track_checks(pad, lookup, rows);
     int64_t code = 0;
     for (i = 0; i < n; ++i)
-        if ((rows[i].bit - AP_CONTENT_BIT_FAMILY) % AP_CONTENT_FAMILY_STRIDE == 5 && rows[i].bit >= AP_CONTENT_BIT_FAMILY &&
-            rows[i].bit < AP_CONTENT_BIT_BOX) {
+        if ((rows[i].bit >= AP_CONTENT_BIT_FAMILY && rows[i].bit < AP_CONTENT_BIT_BOX &&
+             (rows[i].bit - AP_CONTENT_BIT_FAMILY) % AP_CONTENT_FAMILY_STRIDE == 5) ||
+            (rows[i].bit >= AP_CONTENT_BIT_CUP_WUMPA && rows[i].bit < AP_CONTENT_BIT_CUP_WUMPA + 111 * AP_CONTENT_CUP_LAP_STRIDE)) {
             code = rows[i].code;
             if (!checked(code)) return code;
         }

@@ -557,6 +557,10 @@ static void AP_TrackerBuildNodes(void)
 			if (!ap_tracker.hub && AP_BossFinalGarageOpponent() >= 0)
 				snprintf(n->pad, sizeof n->pad, "Rival: %s",
 				         sdata->lngStrings[data.MetaDataCharacters[AP_BossFinalGarageOpponent()].name_LNG_short]);
+			/* The chaos Final Challenge names itself: its rivals do not fit here. */
+			if (!ap_tracker.hub) { char chaos[48]; size_t used = strlen(n->pad);
+				if (AP_ChaosFinalAdvert(chaos, (int)sizeof chaos) && used + 3 < sizeof n->pad)
+					snprintf(n->pad + used, sizeof n->pad - used, "%s%s", used ? ", " : "", chaos); }
 			AP_TrackerProject(AP_TRACKER_MARK_GARAGE, item[0], item[1], &n->x, &n->y);
 			order[ap_tracker.count] = ap_tracker.count; ap_tracker.count++; break;
 		}

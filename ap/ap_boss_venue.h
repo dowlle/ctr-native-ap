@@ -289,6 +289,9 @@ typedef struct
 	unsigned char gauntletOn;
 	unsigned char oxideProfileAll;
 	unsigned char finalPresent;
+	// N. Oxide's two races are not in the seed (`oxide_goal: disabled`). Set by
+	// the content plan; 0 everywhere else.
+	unsigned char oxideDisabled;
 	signed char finalOpponent;
 	unsigned char finalComposed;
 	AP_BossKitSegment finalSchedule[AP_BOSS_FINAL_SEGMENTS];

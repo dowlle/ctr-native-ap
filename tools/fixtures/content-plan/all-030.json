@@ -11401,24 +11401,19 @@
    },
    "9": {
     "kind": "boss",
-    "any_of": [],
-    "fallback_keys": 2
+    "any_of": []
    },
    "10": {
     "kind": "boss",
-    "any_of": [],
-    "fallback_keys": 1
+    "any_of": []
    },
    "11": {
     "kind": "boss",
-    "any_of": [],
-    "fallback_keys": 3
+    "any_of": []
    },
    "12": {
     "kind": "boss",
     "any_of": [
-     35016200,
-     35016201,
      35011102
     ]
    },
@@ -11438,8 +11433,7 @@
    },
    "15": {
     "kind": "boss",
-    "any_of": [],
-    "fallback_keys": 4
+    "any_of": []
    }
   },
   "bosses": {

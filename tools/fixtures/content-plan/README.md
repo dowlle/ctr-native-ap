@@ -210,8 +210,25 @@ is always false on both sides. `bosses-custom.json`, emitted before that
 ruling with `repeats: true` (its four garage venues were already distinct),
 was edited by hand to `repeats: false`. Nothing else in it changed.
 
+Row 10i parity fixes: a Gem Cup leg is now a route of its track's podium rungs
+(apworld `content_race_routes`). `boss-cups-gauntlet.json` and
+`spoiler-items.json`, the two fixtures with both rungs and cups, gained those
+routes by script (`content_race_routes.extend` from the paired apworld, appended
+after each rung's own route, in the route's key order). Nothing else in them
+changed. No fixture has per-track Wumpa with cups or bosses, or vanilla pad
+requirements, so the other fixtures are unchanged.
+
 132 custom tracks: `custom-132.json` is slot data the paired
 apworld emitted (`worlds/ctr/test/test_custom_tracks_132.py`, `many_cups`) from
 132 made-up packages and 27 cups, at the seed of the first 40 with the most
 tracks that races slot 132. It is past both old limits, 32 packages and 64
 tracks, and its pins name no real files.
+
+Wumpa Income from custom tracks (row 10f): `wumpa-custom-income.json` is slot
+data the paired apworld emitted (`worlds/ctr/test/test_custom_tracks_132.py`
+helpers, seed 1) from three made-up packages with measured Wumpa, the two
+retail tracks that bank no fruit (16 and 17), five shop slots per hub with
+`allowed` and `goal_wumpa: 300`. Its only Wumpa Income routes are the custom
+tracks. `test-content-verify.cpp` sweeps it and
+`test-content-plan-parity.py` compares both validators on it and on forgeries
+that take the income away.

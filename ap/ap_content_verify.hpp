@@ -48,7 +48,7 @@ struct Node { Op op; int count; std::vector<int64_t> codes; std::vector<int> kid
 struct Region { std::vector<int> gates; int lock = -1; bool income = false; };
 struct Route { int region = -1, stage = -1, lock = -1, need = 0, encounter = -1; bool boss = false; std::vector<int64_t> first; };
 // SHOP: a Wumpa Shop slot, its hub's Key floor (`target`) and income.
-enum Kind { PAD, SHARED, LEG, ENCOUNTER, ITEMSANITY, HIT, SHOP, LAP };
+enum Kind { PAD, SHARED, LEG, ENCOUNTER, ITEMSANITY, HIT, SHOP, LAP, RACE };
 enum Arm { ARM_NONE, ARM_FAMILIES, ARM_PAPU };
 struct Loc {
     int64_t code = 0;
@@ -69,8 +69,10 @@ struct Model {
     std::vector<int> encounter_loc;   // encounter index -> locs index
     std::vector<int64_t> items;       // every item code the plan pools
     // Wumpa Income (J11, apworld content plan): a Trophy Race or CTR
-    // Challenge route on a normal pad racing a retail race track 0..15, with
-    // its pad's gates and the track's finish rank bound to the racer lock.
+    // Challenge route on a normal pad racing a retail race track 0..15 or a
+    // custom track whose package has measured Wumpa capability (ruling of
+    // 2026-11-02), with its pad's gates and the track's finish rank bound to
+    // the racer lock.
     std::vector<Route> income;
     int goal = -1;
     bool itemsanity = false;
@@ -271,13 +273,19 @@ static Model build() {
         }
 
     // Wumpa Income routes (J11): every Trophy Race and CTR Challenge of a
-    // track entry on a retail race track, in its pad's region.
+    // track entry on a retail race track 0..15 or a custom track with measured
+    // Wumpa capability (apworld content_wumpa.income_track), in its pad's
+    // region.
     for (const auto &pad : p.at("pads")) {
         if (pad.at("entry_id").is_null() || pad.at("kind") != "normal") continue;
         const J &entry = *entries.at(pad["entry_id"].get<std::string>());
         if (entry.at("kind") != "track") continue;
         const J &track = *tracks.at(entry.at("track_id").get<std::string>());
-        if (track.at("origin") != "retail" || track.at("retail_id").get<int>() > 15) continue;
+        const std::string origin = track.at("origin").get<std::string>();
+        const J *pkg = packages.count(track.value("package_id", "")) ? packages.at(track.value("package_id", "")) : nullptr;
+        const bool banks = origin == "retail" ? track.at("retail_id").get<int>() <= 15
+                                              : origin == "custom" && pkg && pkg->at("capabilities").value("wumpa", false);
+        if (!banks) continue;
         for (const auto &mode : entry.at("modes")) {
             if (mode != "trophy" && mode != "ctr") continue;
             Route R;
@@ -350,6 +358,28 @@ static Model build() {
             m.locs.push_back(L);
             continue;
         }
+        // Reach 10 Wumpa and rungs with a cup leg or boss race route (row 10i,
+        // content_plan.create_regions): any route. A pad route keeps its
+        // stage gate and first race; a cup route needs the finish of every
+        // earlier leg; a boss route its encounter. The check's rank is on top,
+        // bound to the route pad's racer lock.
+        if ((kind == "wumpa" || kind == "podium") &&
+            std::any_of(routes.begin(), routes.end(), [](const J &r) { return !r.at("leg_id").is_null() || !r.at("encounter_id").is_null(); })) {
+            L.kind = RACE;
+            for (const auto &r : routes) {
+                Route R;
+                R.region = region_of(r.at("entry_id").get<std::string>());
+                R.lock = lock_of(*pads.at(r.at("own_pad_id").get<std::string>()));
+                R.need = L.boost;
+                if (!r.at("leg_id").is_null())
+                    R.need = std::max(R.need, leg_boost(*entries.at(r["entry_id"].get<std::string>()),
+                                                        r.at("leg_id").get<std::string>(), false, tracks, packages, o));
+                else if (r.at("encounter_id").is_null()) { R.stage = stage_of(r); R.first = first_of(r); }
+                L.routes.push_back(R);
+            }
+            m.locs.push_back(L);
+            continue;
+        }
         // Complete One Lap (#344, content_plan.create_regions): any route; a
         // standalone route needs its mode's stage-2 gate and the track's
         // finish rank, a cup route the finish of every leg up to its own, a
@@ -414,6 +444,12 @@ static Model build() {
                     for (int k = 0; k < t.count && k < CTR_CFG_HIT_TRIGGER_MAX; ++k)
                         if (present.count(t.any_of[k])) L.triggers.push_back(t.any_of[k]);
             }
+            // The roster swap: a default racer drawn as a boss waits for that
+            // boss race like a guest does.
+            if (L.target < kFirstGuest && ctr_cfg.hit.valid)
+                for (int k = 0; k < AP_HIT_BOSS_CODES; ++k)
+                    if (ctr_cfg.hit.boss_identity[k] == L.target && present.count(AP_HIT_BOSS_WIN_CODES[k]))
+                        L.triggers.push_back(AP_HIT_BOSS_WIN_CODES[k]);
         }
         m.locs.push_back(L);
     }
@@ -489,6 +525,16 @@ struct Sweep {
         if (L.arm == ARM_PAPU) return AP_VerifyWeaponOwned(dense, kTurbo) || AP_VerifyWeaponOwned(dense, kMask);
         return false;
     }
+    // with_boost for one route of a RACE check (row 10i): the route's rank on
+    // its pad's racer lock; the weapon alternative only at the check's rank.
+    bool route_boost(const Loc &L, const Route &r) const {
+        if (!r.need && !L.stats) return true;
+        if (AP_VerifyCapabilityGate(&o, dense, r.lock, r.need, L.stats)) return true;
+        if (r.need != L.boost) return false;
+        if (L.arm == ARM_FAMILIES) return AP_VerifyUsefulWeaponFamilies(dense) >= L.arm_families;
+        if (L.arm == ARM_PAPU) return AP_VerifyWeaponOwned(dense, kTurbo) || AP_VerifyWeaponOwned(dense, kMask);
+        return false;
+    }
     bool letters(const Loc &L) const {
         for (auto c : L.letters) if (count(c) <= 0) return false;
         return true;
@@ -546,6 +592,9 @@ struct Sweep {
             for (const auto &r : L.routes)
                 ok = ok || (region(r.region) && (r.stage < 0 || eval(r.stage)) &&
                             (!r.need || AP_VerifyCapabilityGate(&o, dense, r.lock, r.need, 0)));
+            break;
+        case RACE:
+            for (const auto &r : L.routes) ok = ok || (route(r) && route_boost(L, r));
             break;
         case ENCOUNTER:
             ok = region(L.region) && boost(L);

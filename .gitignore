@@ -5,6 +5,7 @@ assets/tracks/*
 !assets/tracks/cortex-vortex/
 !assets/tracks/cortex-vortex/CVortex Arcade All.lev
 !assets/tracks/cortex-vortex/CVortex Arcade All.vrm
+!assets/tracks/cortex-vortex/CVortex Arcade All.sca
 debug/
 *.exe
 *.o

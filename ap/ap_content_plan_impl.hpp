@@ -482,12 +482,19 @@ static void boss_settings(const J &b, ctr_content_bosses &out) {
     // J11: the opponent and kit keys come together, present exactly when the
     // seed draws an opponent or a kit or composes N. Oxide's profile.
     out.extended = b.is_object() && b.contains("opponent_shuffle") ? 1 : 0;
+    // The chaos Final Challenge: one optional key, true when present.
+    out.final_chaos = b.is_object() && b.contains("final_chaos") ? 1 : 0;
+    J base = b;
+    if (out.final_chaos) {
+        need(b["final_chaos"].is_boolean() && b["final_chaos"].get<bool>(), "bosses.final_chaos is true when present");
+        base.erase("final_chaos");
+    }
     if (out.extended)
-        fields(b, {"oxide_goal", "bosses_required", "oxide_1_optional", "oxide_final_unlock", "oxide_final_count", "track_shuffle",
-                   "repeats", "requirement_level", "cups", "opponent_shuffle", "oxide_in_pool", "kit_shuffle", "gauntlet", "kit",
-                   "oxide_attack_profile", "track_assignment"});
+        fields(base, {"oxide_goal", "bosses_required", "oxide_1_optional", "oxide_final_unlock", "oxide_final_count", "track_shuffle",
+                      "repeats", "requirement_level", "cups", "opponent_shuffle", "oxide_in_pool", "kit_shuffle", "gauntlet", "kit",
+                      "oxide_attack_profile", "track_assignment"});
     else
-        fields(b, {"oxide_goal", "bosses_required", "oxide_1_optional", "oxide_final_unlock", "oxide_final_count", "track_shuffle", "repeats", "requirement_level", "cups"});
+        fields(base, {"oxide_goal", "bosses_required", "oxide_1_optional", "oxide_final_unlock", "oxide_final_count", "track_shuffle", "repeats", "requirement_level", "cups"});
     out.present = 1;
     // #133 PR 6b: the ordinary garages holding a boss cup, distinct and in order.
     need(b["cups"].is_array() && b["cups"].size() <= 4, "bosses.cups must list ordinary garages");
@@ -507,6 +514,7 @@ static void boss_settings(const J &b, ctr_content_bosses &out) {
         need(out.requirement_level >= 0, "bosses.requirement_level must be standard, high, very_high or chaotic");
     }
     out.oxide_goal = number(b["oxide_goal"], 0, 3);
+    need(!out.final_chaos || out.oxide_goal != 3, "bosses.final_chaos needs N. Oxide's races");
     out.bosses_required = number(b["bosses_required"], 0, 4);
     for (const char *key : {"oxide_1_optional", "track_shuffle", "repeats"})
         need(b[key].is_boolean(), std::string("bosses.") + key + " must be true or false");
@@ -674,12 +682,16 @@ static void vanilla_pads(const State &out)
     for (const auto &row : rows)
         for (const auto &pad : out.pads) {
             if (pad.physical != row.physical || !pad.occupied) continue;
+            // Turbo Track asks one Gem of each colour (row 10i): its supply is
+            // the colours the seed has.
+            const bool distinct = row.physical == 17;
             unsigned mask = 0;
             long long supply = 0;
             for (int i = row.first; i <= row.last; ++i)
-                if (out.items[i].base) { mask |= 1u << i; supply += out.items[i].base; }
+                if (out.items[i].base) { mask |= 1u << i; supply += distinct ? 1 : out.items[i].base; }
             const long long want = std::min<long long>(row.count, supply);
-            need(want ? pad.has_rule && pad.rule_mask == mask && pad.rule_count == want : !pad.has_rule,
+            need(want ? pad.has_rule && pad.rule_mask == mask && pad.rule_count == want && pad.rule_distinct == (distinct ? 1 : 0)
+                      : !pad.has_rule,
                  "vanilla stage 1 requirements do not match the physical pads");
             const int keys = pad.physical >= 100 ? 3 : (pad.physical == 16 || pad.physical == 17) ? 2 : pad.keys + 1;
             if (pad.mode_count > 1 && any_stage2)
@@ -944,6 +956,7 @@ static void validate(const J &p, State &out) {
     // Row 5, after every earlier feature and in this order.
     if(has_structure)features.push_back("ctr_first_v1");
     if(out.bosses.extended)features.push_back("boss_opponents_v1");
+    if(out.bosses.final_chaos)features.push_back("final_chaos_v1");
     if(has_shop)features.push_back("wumpa_shop_v1");
     if(wumpa_goal)features.push_back("wumpa_goal_v1");
     if(has_pad_client)features.push_back("pad_client_v1"); // one generator row 6
@@ -1102,6 +1115,26 @@ static void validate(const J &p, State &out) {
         need(custom_slot >= 1 && custom_slot <= AP_CONTENT_MAX_PACKAGES, "a lap check names no track identity");
         return registry["custom_lap_locations"][custom_slot - 1].get<int64_t>();
     };
+    // Row 10i (apworld content_race_routes): a route per cup leg and boss
+    // race of a track's Reach 10 Wumpa check, and per cup leg of its rungs.
+    struct RaceUse { std::string track, title, entry, pad, mode, leg, encounter; int64_t code; };
+    std::vector<RaceUse> wumpa_uses;
+    struct RungUse { std::string track, entry, pad, leg; };
+    std::vector<RungUse> rung_uses;
+    // A plan track's per-track Reach 10 Wumpa code and room title, 0 without
+    // per_track or on a track that cannot reach ten fruit (a custom package
+    // without its measured `wumpa` capability).
+    auto wumpa_code = [&](const std::string &track_id, std::string &title) -> int64_t {
+        if (fam.wumpa != 2) return 0;
+        const J &track = *tracks.at(track_id);
+        title = text(track.contains("room_title") ? track["room_title"] : track.at("display_name"), false);
+        if (track.at("origin") == "retail") return registry["retail"][number(track["retail_id"], 0, 17)]["wumpa"].get<int64_t>();
+        if (track.at("origin") == "cortex_vortex") return registry["cortex_vortex"]["wumpa"].get<int64_t>();
+        if (!(out.packages[package_index.at(text(track.at("package_id")))].capabilities & AP_CONTENT_CAP_WUMPA)) return 0;
+        if (track.contains("named_block"))
+            return ap_named_location_code(number(track["named_block"], 0, AP_NAMED_BLOCK_LIMIT - 1), AP_NAMED_OFF_WUMPA);
+        return registry["custom_wumpa_locations"][number(track["custom_slot"], 1, AP_CONTENT_MAX_PACKAGES) - 1].get<int64_t>();
+    };
     // A boss venue's lap code and room title, from its plan track record.
     auto venue_lap = [&](const std::string &track_id, std::string &title) -> int64_t {
         const J &track = *tracks.at(track_id);
@@ -1195,6 +1228,13 @@ static void validate(const J &p, State &out) {
                     const ctr_content_leg &l = dest.legs[n];
                     dest.legs[n].lap = lap_code(l.retail_id, l.cortex, l.named_block, l.custom_slot);
                     lap_uses.push_back(LapUse{l.track_id, info.title, entry_id, id, "cup", leg_id, "", dest.legs[n].lap});
+                }
+                {
+                    std::string title;
+                    dest.legs[n].wumpa = wumpa_code(dest.legs[n].track_id, title);
+                    if (dest.legs[n].wumpa)
+                        wumpa_uses.push_back(RaceUse{dest.legs[n].track_id, title, entry_id, id, "cup", leg_id, "", dest.legs[n].wumpa});
+                    if (fam.podium) rung_uses.push_back(RungUse{dest.legs[n].track_id, entry_id, id, leg_id});
                 }
                 if (dest.legs[n].package_index < 0 || out.packages[dest.legs[n].package_index].weapon_crates != 0)
                     cup_hit_routes.push_back(CupHitRoute{physical, entry_id, id, leg_id});
@@ -1690,6 +1730,11 @@ static void validate(const J &p, State &out) {
                         l.lap = venue_lap(ltrack, title);
                         lap_uses.push_back(LapUse{ltrack, title, nid, pad, "boss_cup", lid, eid, l.lap});
                     }
+                    {
+                        std::string title;
+                        l.wumpa = wumpa_code(ltrack, title);
+                        if (l.wumpa) wumpa_uses.push_back(RaceUse{ltrack, title, nid, pad, "boss_cup", lid, eid, l.wumpa});
+                    }
                     cp.legs[n] = l;
                     out.bosses.cup_points[g][n] = points;
                 }
@@ -1808,6 +1853,12 @@ static void validate(const J &p, State &out) {
                 out.bosses.lap[k] = venue_lap(track_id, title);
                 lap_uses.push_back(LapUse{track_id, title, nid, pad, "boss_race", "", eid, out.bosses.lap[k]});
             }
+            {
+                std::string title;
+                out.bosses.wumpa[k] = wumpa_code(track_id, title);
+                if (out.bosses.wumpa[k])
+                    wumpa_uses.push_back(RaceUse{track_id, title, nid, pad, "boss_race", "", eid, out.bosses.wumpa[k]});
+            }
             const J route{{"entry_id", nid}, {"mode", "boss_race"}, {"leg_id", nullptr}, {"encounter_id", eid}, {"own_pad_id", pad}, {"award", "win"}};
             need(expected_checks.emplace(kBossCodes[k], J{{"location", kBossCodes[k]}, {"owner", eid}, {"kind", "boss_race"},
                                                           {"display_name", kBossNames[k]}, {"routes", J::array({route})}}).second,
@@ -1859,6 +1910,102 @@ static void validate(const J &p, State &out) {
         }
         for (const auto &track : order)
             need(expected_checks.emplace(lap_checks[track]["location"].get<int64_t>(), lap_checks[track]).second, "duplicate check identity");
+    }
+    // Row 10i (apworld content_race_routes.extend): after a check's own pad
+    // routes, a route per cup leg and boss race in plan entry order, then leg
+    // order. Reach 10 Wumpa takes every cup leg and boss race on a track that
+    // can reach ten fruit, and a track no pad reaches takes its check here.
+    // The rungs of a track with a Trophy Race take its cup legs, never a boss
+    // race. A track raced only in Gem Cup legs has no rungs, unless
+    // cup_only_podium_rungs is on (ruling of 2026-11-02): then it takes the seed's
+    // rungs, routed from those legs only. The plan carries no flag for it: a
+    // podium check whose routes are all cup leg routes is the option on
+    // (apworld content_race_routes.cup_only_on).
+    {
+        bool cup_only_rungs = false;
+        if (fam.podium && p["checks"].is_array())
+            for (const auto &c : p["checks"]) {
+                if (!c.is_object() || !c.contains("kind") || c["kind"] != "podium" || !c.contains("routes") ||
+                    !c["routes"].is_array() || c["routes"].empty())
+                    continue;
+                bool all_legs = true;
+                for (const auto &r : c["routes"])
+                    all_legs = all_legs && r.is_object() && r.contains("leg_id") && !r["leg_id"].is_null();
+                cup_only_rungs = cup_only_rungs || all_legs;
+            }
+        // A plan track's five rung codes in SLOT_ORDER: retail rows, the
+        // named block's offsets, or the generic slot's family.
+        auto rung_codes = [&](const std::string &track_id, int64_t codes[5]) {
+            const J &track = *tracks.at(track_id);
+            if (track.at("origin") == "retail" || track.at("origin") == "cortex_vortex") {
+                const J &row = track.at("origin") == "cortex_vortex" ? registry["cortex_vortex"]
+                                                                     : registry["retail"][number(track["retail_id"], 0, 17)];
+                for (int k = 0; k < 5; ++k) codes[k] = row["podium"][k].get<int64_t>();
+            } else if (track.contains("named_block")) {
+                const int block = number(track["named_block"], 0, AP_NAMED_BLOCK_LIMIT - 1);
+                for (int k = 0; k < 5; ++k) codes[k] = ap_named_location_code(block, AP_NAMED_OFF_HELD_1ST + k);
+            } else {
+                const int s = number(track["custom_slot"], 1, AP_CONTENT_MAX_PACKAGES) - 1;
+                for (int k = 0; k < 5; ++k) codes[k] = registry["custom_podium_locations"][s][k].get<int64_t>();
+            }
+        };
+        std::map<std::string, size_t> entry_order;
+        for (size_t i = 0; i < p["entries"].size(); ++i) entry_order[p["entries"][i].at("id").get<std::string>()] = i;
+        std::stable_sort(wumpa_uses.begin(), wumpa_uses.end(), [&](const RaceUse &a, const RaceUse &b) {
+            return entry_order.at(a.entry) < entry_order.at(b.entry); });
+        std::stable_sort(rung_uses.begin(), rung_uses.end(), [&](const RungUse &a, const RungUse &b) {
+            return entry_order.at(a.entry) < entry_order.at(b.entry); });
+        auto leg_route = [](const std::string &entry, const char *mode, const std::string &leg, const std::string &encounter,
+                            const std::string &pad, const char *award) {
+            return J{{"entry_id", entry}, {"mode", mode}, {"leg_id", leg.empty() ? J(nullptr) : J(leg)},
+                     {"encounter_id", encounter.empty() ? J(nullptr) : J(encounter)}, {"own_pad_id", pad}, {"award", award}};
+        };
+        for (const auto &use : rung_uses) {
+            bool own_pad = false;
+            for (const auto &pad : out.pads) {
+                if (!pad.occupied || pad.cup || pad.crystal || use.track != pad.track_id) continue;
+                own_pad = true;
+                for (int r = 0; r < 5; ++r) {
+                    if (!pad.rung_locations[r]) continue;
+                    const auto it = expected_checks.find(pad.rung_locations[r]);
+                    need(it != expected_checks.end(), "a rung code without its check");
+                    it->second["routes"].push_back(leg_route(use.entry, "cup", use.leg, "", use.pad, rung_keys[r]));
+                }
+            }
+            if (own_pad || !cup_only_rungs) continue;
+            // A track raced only in Gem Cup legs: its rungs, created at its
+            // first leg, and the leg's own codes for the runtime.
+            int64_t codes[5] = {};
+            rung_codes(use.track, codes);
+            const J &track = *tracks.at(use.track);
+            const std::string title = text(track.contains("room_title") ? track["room_title"] : track.at("display_name"), false);
+            ctr_content_leg *leg = nullptr;
+            for (auto &cup : out.pads)
+                if (cup.occupied && cup.cup && use.entry == cup.entry_id)
+                    for (int n = 0; n < AP_CONTENT_CUP_LEGS; ++n)
+                        if (use.leg == cup.legs[n].leg_id) leg = &cup.legs[n];
+            need(leg != nullptr, "a cup leg rung route names no leg");
+            for (int r = 0; r < 5; ++r) {
+                if (!(fam.podium & (1 << r))) continue;
+                auto it = expected_checks.find(codes[r]);
+                if (it == expected_checks.end())
+                    it = expected_checks.emplace(codes[r], J{{"location", codes[r]}, {"owner", use.track}, {"kind", "podium"},
+                                                             {"display_name", title + ": " + rung_suffixes[r]},
+                                                             {"routes", J::array()}}).first;
+                need(it->second["kind"] == "podium" && it->second["owner"] == use.track, "a track's rung has two codes");
+                it->second["routes"].push_back(leg_route(use.entry, "cup", use.leg, "", use.pad, rung_keys[r]));
+                leg->rungs[r] = codes[r];
+            }
+        }
+        for (const auto &use : wumpa_uses) {
+            auto it = expected_checks.find(use.code);
+            if (it == expected_checks.end())
+                it = expected_checks.emplace(use.code, J{{"location", use.code}, {"owner", use.track}, {"kind", "wumpa"},
+                                                         {"display_name", use.title + ": Reach 10 Wumpa"},
+                                                         {"routes", J::array()}}).first;
+            need(it->second["kind"] == "wumpa" && it->second["owner"] == use.track, "a track's Wumpa check has two codes");
+            it->second["routes"].push_back(leg_route(use.entry, use.mode.c_str(), use.leg, use.encounter, use.pad, "wumpa"));
+        }
     }
     // A cup leg's track pad: the standalone pad on the same track, whose boxes
     // and Wumpa check the cup's glow, state and legs also reach. Boss cups too.
@@ -1953,14 +2100,17 @@ static void validate(const J &p, State &out) {
             }
     }
     // Banking (J11): the shop and the Wumpa goal need Wumpa Income, a Trophy
-    // Race or CTR Challenge on a retail race track (apworld wumpa_shop.
-    // create_locations refuses a seed without one).
+    // Race or CTR Challenge on a retail race track 0..15 or on a custom track
+    // whose package has measured Wumpa capability (ruling of 2026-11-02; apworld
+    // content_wumpa.check_income refuses a seed without one).
     if (out.wumpa.shop_slots || wumpa_goal) {
         bool income = false;
         for (const auto &pad : out.pads)
-            income |= pad.occupied && !pad.crystal && !pad.cup && !pad.cortex && pad.retail_id >= 0 && pad.retail_id <= 15 &&
+            income |= pad.occupied && !pad.crystal && !pad.cup && !pad.cortex &&
+                      ((pad.retail_id >= 0 && pad.retail_id <= 15) ||
+                       (pad.package_index >= 0 && (record_caps(out, pad) & AP_CONTENT_CAP_WUMPA))) &&
                       (ap_content_mode_slot(&pad, AP_CONTENT_MODE_TROPHY) >= 0 || ap_content_mode_slot(&pad, AP_CONTENT_MODE_CTR) >= 0);
-        need(income, "the Wumpa Shop and the Wumpa goal need a retail race to bank fruit");
+        need(income, "the Wumpa Shop and the Wumpa goal need a retail or Wumpa-capable custom race to bank fruit");
     }
     // Two checks never share a name, so a room cannot show two identical rows.
     std::set<std::string> check_names;
@@ -2089,10 +2239,20 @@ static void validate(const J &p, State &out) {
         ctr_content_pad &target = *(pass ? stage2_pad : manual_pad).at(pair.first);
         long long supply = 0;
         unsigned mask = 0;
+        bool distinct = false;
         if (pred.is_object() && pred.contains("op") && pred["op"] == "count") {
             fields(pred, {"op", "item", "count"});
             const int item = number(pred["item"], 35010000, 35010014) - 35010000;
             mask = 1u << item; supply = out.items[item].base;
+        } else if (pred.is_object() && pred.contains("op") && pred["op"] == "distinct") {
+            // Turbo Track's vanilla five Gems, one of each colour (row 10i):
+            // a stage 1 over exactly the base Gem colours, counted once each.
+            fields(pred, {"op", "items", "count"});
+            need(!pass && pad_mode == PAD_REQ_VANILLA, "a distinct rule is only a vanilla stage 1");
+            J eligible = J::array();
+            for (int i = 9; i <= 13; ++i) if (out.items[i].base) { eligible.push_back(35010000 + i); mask |= 1u << i; ++supply; }
+            need(pred["items"] == eligible, "distinct rule items are not the base Gem colours");
+            distinct = true;
         } else {
             need(pred.is_object() && pred.contains("op") && pred["op"] == "sum", "unsupported manual predicate");
             fields(pred, {"op", "items", "count"});
@@ -2112,7 +2272,7 @@ static void validate(const J &p, State &out) {
         const int count = number(pred["count"], 1);
         need(mask && count <= supply, "pad rule count outside the base supply");
         if (pass) { target.stage2_count = count; target.stage2_mask = mask; }
-        else { target.has_rule = 1; target.rule_count = count; target.rule_mask = mask; }
+        else { target.has_rule = 1; target.rule_count = count; target.rule_mask = mask; target.rule_distinct = distinct ? 1 : 0; }
         // A drawn requirement of this mode never asks 4 Keys; a manual rule is
         // refused at generation, and Key rules on the wire fall under the same bar.
         need(pad_mode != PAD_REQ_NO_FOUR_KEYS || mask != (1u << 14) || count < 4, "random_without_4_keys asks for 4 Keys");
@@ -2252,6 +2412,16 @@ static void validate(const J &p, State &out) {
             need(requirements.count(rid) != 0, "a boss garage has no requirement record");
             fields(*requirements.at(rid), {"id", "predicate"});
             const J &pred = requirements.at(rid)->at("predicate");
+            // Vanilla garages ask the Trophies that exist, and open free in a
+            // seed without base Trophies (row 10i): type 0, always met.
+            if (pad_mode == PAD_REQ_VANILLA && !out.items[0].base) {
+                need(pred == J{{"op", "always"}}, "vanilla garages open free without base Trophies");
+                out.bosses.garage_req_type[g] = 0;
+                out.bosses.garage_req_count[g] = 0;
+                out.bosses.garage_req_colour[g] = -1;
+                want[rid] = pred;
+                continue;
+            }
             need(pred.is_object() && pred.contains("op") && (pred["op"] == "count" || pred["op"] == "sum"),
                  "a boss garage requirement is one item count or one family sum");
             int type = 0, colour = -1;
@@ -2525,6 +2695,7 @@ static int parse_content_plan(const nlohmann::json &j) {
                 }
                 e.oxideProfileAll = (unsigned char)b.oxide_profile_all;
                 e.finalPresent = (unsigned char)(b.oxide_goal != 3 && (b.oxide_in_pool || b.oxide_profile_all));
+                e.oxideDisabled = (unsigned char)(b.oxide_goal == 3);
                 e.finalOpponent = (signed char)(e.finalPresent ? b.final_opponent : AP_BOSS_OXIDE_CHARACTER);
                 e.finalComposed = (unsigned char)(e.finalPresent && b.oxide_profile_all);
                 if (e.finalComposed) std::memcpy(e.finalSchedule, candidate.final_kit, sizeof e.finalSchedule);
@@ -2540,6 +2711,15 @@ static int parse_content_plan(const nlohmann::json &j) {
                 ctr_oxide_final_venue &v = ctr_cfg.oxide_final_venue;
                 v.seen = v.valid = 1;
                 v.track = b.final_track;
+                // The chaos Final Challenge: this seed's five bosses, with or
+                // without drawn encounters.
+                v.chaos = b.final_chaos;
+                {
+                    int ident[AP_HIT_BOSS_CODES];
+                    for (int g = 0; g < 4; ++g) ident[g] = b.opponent[g];
+                    ident[4] = ident[5] = b.final_opponent;
+                    AP_RosterChaosLineup(ident, v.chaos_lineup);
+                }
                 v.host_level_id = CTR_CFG_CORTEX_HOST_LEVEL;
                 v.location = 35011105;
                 std::snprintf(v.lev_sha256, sizeof v.lev_sha256, "%s", CTR_CFG_CORTEX_LEV_SHA256);
@@ -2598,7 +2778,7 @@ static int parse_content_plan(const nlohmann::json &j) {
                 const ctr_hit_trigger &t = ctr_cfg.hit.triggers[g];
                 bool present = false;
                 for (int k = 0; k < t.count; ++k) present |= candidate.checks.count(t.any_of[k]) != 0;
-                need((t.fallback_keys > 0) == !present, "hit_character_encounters fallback disagrees with the plan's unlock wins");
+                need((t.fallback_keys > 0) == (t.count > 0 && !present), "hit_character_encounters fallback disagrees with the plan's unlock wins");
             }
             // Content-plan cups (#133 PR 5b): one draw order per cup of the
             // plan, by name index, and none for any other index.

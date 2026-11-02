@@ -328,6 +328,19 @@ LAB_800aec34:
 			memcpy(advert, joined, sizeof advert);
 			advertVisible = 1;
 		}
+		// The chaos Final Challenge says so at the garage, open or shut.
+		if (advertBoss == 4)
+		{
+			char joined[192], chaosLine[64];
+			if (AP_ChaosFinalAdvert(chaosLine, (int)sizeof chaosLine))
+			{
+				int used = snprintf(joined, sizeof joined, "%s", chaosLine);
+				if (advertVisible && used < (int)sizeof joined)
+					snprintf(joined + used, sizeof joined - used, "\r%s", advert);
+				memcpy(advert, joined, sizeof advert);
+				advertVisible = 1;
+			}
+		}
 		if (advertVisible)
 		{
 			advertLines = AP_OxideGarageAdvertLineCount(advert);

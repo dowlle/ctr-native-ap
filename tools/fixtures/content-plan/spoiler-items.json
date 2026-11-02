@@ -2629,6 +2629,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:18",
       "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "held_1st"
      }
     ]
    },
@@ -2644,6 +2652,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:18",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
       "award": "held_3rd"
      }
     ]
@@ -2661,6 +2677,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:18",
       "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "finish_podium"
      }
     ]
    },
@@ -2676,6 +2700,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:18",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
       "award": "finish_any"
      }
     ]
@@ -3125,6 +3157,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:6",
       "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "held_1st"
      }
     ]
    },
@@ -3140,6 +3180,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:6",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
       "award": "held_3rd"
      }
     ]
@@ -3157,6 +3205,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:6",
       "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "finish_podium"
      }
     ]
    },
@@ -3172,6 +3228,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:6",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
       "award": "finish_any"
      }
     ]
@@ -3717,6 +3781,22 @@
       "encounter_id": null,
       "own_pad_id": "pad:9",
       "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
+      "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
+      "award": "held_1st"
      }
     ]
    },
@@ -3732,6 +3812,22 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:9",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
       "award": "held_3rd"
      }
     ]
@@ -3749,6 +3845,22 @@
       "encounter_id": null,
       "own_pad_id": "pad:9",
       "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
+      "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
+      "award": "finish_podium"
      }
     ]
    },
@@ -3764,6 +3876,22 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:9",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
       "award": "finish_any"
      }
     ]
@@ -4229,6 +4357,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:23",
       "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "held_1st"
      }
     ]
    },
@@ -4244,6 +4380,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:23",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
       "award": "held_3rd"
      }
     ]
@@ -4261,6 +4405,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:23",
       "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "finish_podium"
      }
     ]
    },
@@ -4276,6 +4428,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:23",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
       "award": "finish_any"
      }
     ]
@@ -4805,6 +4965,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:0",
       "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
+      "award": "held_1st"
      }
     ]
    },
@@ -4820,6 +4988,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:0",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
       "award": "held_3rd"
      }
     ]
@@ -4837,6 +5013,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:0",
       "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
+      "award": "finish_podium"
      }
     ]
    },
@@ -4852,6 +5036,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:0",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
       "award": "finish_any"
      }
     ]
@@ -5413,6 +5605,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:12",
       "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "held_1st"
      }
     ]
    },
@@ -5428,6 +5628,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:12",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
       "award": "held_3rd"
      }
     ]
@@ -5445,6 +5653,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:12",
       "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "finish_podium"
      }
     ]
    },
@@ -5460,6 +5676,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:12",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
       "award": "finish_any"
      }
     ]
@@ -6613,6 +6837,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:3",
       "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
+      "award": "held_1st"
      }
     ]
    },
@@ -6628,6 +6860,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:3",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
       "award": "held_3rd"
      }
     ]
@@ -6645,6 +6885,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:3",
       "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
+      "award": "finish_podium"
      }
     ]
    },
@@ -6660,6 +6908,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:3",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
       "award": "finish_any"
      }
     ]
@@ -7221,6 +7477,30 @@
       "encounter_id": null,
       "own_pad_id": "pad:14",
       "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
+      "award": "held_1st"
      }
     ]
    },
@@ -7236,6 +7516,30 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:14",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
       "award": "held_3rd"
      }
     ]
@@ -7253,6 +7557,30 @@
       "encounter_id": null,
       "own_pad_id": "pad:14",
       "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
+      "award": "finish_podium"
      }
     ]
    },
@@ -7268,6 +7596,30 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:14",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
       "award": "finish_any"
      }
     ]
@@ -7765,6 +8117,30 @@
       "encounter_id": null,
       "own_pad_id": "pad:100",
       "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
+      "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
+      "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
+      "award": "held_1st"
      }
     ]
    },
@@ -7780,6 +8156,30 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:100",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
       "award": "held_3rd"
      }
     ]
@@ -7797,6 +8197,30 @@
       "encounter_id": null,
       "own_pad_id": "pad:100",
       "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
+      "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
+      "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
+      "award": "finish_podium"
      }
     ]
    },
@@ -7812,6 +8236,30 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:100",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
       "award": "finish_any"
      }
     ]
@@ -8757,6 +9205,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:21",
       "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
+      "award": "held_1st"
      }
     ]
    },
@@ -8772,6 +9228,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:21",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
       "award": "held_3rd"
      }
     ]
@@ -8789,6 +9253,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:21",
       "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
+      "award": "finish_podium"
      }
     ]
    },
@@ -8804,6 +9276,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:21",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:3",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
       "award": "finish_any"
      }
     ]
@@ -9365,6 +9845,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:103",
       "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "held_1st"
      }
     ]
    },
@@ -9380,6 +9868,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:103",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
       "award": "held_3rd"
      }
     ]
@@ -9397,6 +9893,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:103",
       "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
+      "award": "finish_podium"
      }
     ]
    },
@@ -9412,6 +9916,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:103",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:1",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:1/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:10",
       "award": "finish_any"
      }
     ]
@@ -9781,6 +10293,22 @@
       "encounter_id": null,
       "own_pad_id": "pad:7",
       "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
+      "award": "held_1st"
      }
     ]
    },
@@ -9796,6 +10324,22 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:7",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
       "award": "held_3rd"
      }
     ]
@@ -9813,6 +10357,22 @@
       "encounter_id": null,
       "own_pad_id": "pad:7",
       "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
+      "award": "finish_podium"
      }
     ]
    },
@@ -9828,6 +10388,22 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:7",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:2",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:2/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:8",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:0",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:0/leg:1",
+      "encounter_id": null,
+      "own_pad_id": "pad:5",
       "award": "finish_any"
      }
     ]
@@ -10165,6 +10741,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:104",
       "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
+      "award": "held_1st"
      }
     ]
    },
@@ -10180,6 +10764,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:104",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
       "award": "held_3rd"
      }
     ]
@@ -10197,6 +10789,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:104",
       "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
+      "award": "finish_podium"
      }
     ]
    },
@@ -10212,6 +10812,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:104",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:3",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:3/leg:2",
+      "encounter_id": null,
+      "own_pad_id": "pad:4",
       "award": "finish_any"
      }
     ]
@@ -10613,6 +11221,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:15",
       "award": "held_1st"
+     },
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
+      "award": "held_1st"
      }
     ]
    },
@@ -10628,6 +11244,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:15",
+      "award": "held_3rd"
+     },
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
       "award": "held_3rd"
      }
     ]
@@ -10645,6 +11269,14 @@
       "encounter_id": null,
       "own_pad_id": "pad:15",
       "award": "finish_podium"
+     },
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
+      "award": "finish_podium"
      }
     ]
    },
@@ -10660,6 +11292,14 @@
       "leg_id": null,
       "encounter_id": null,
       "own_pad_id": "pad:15",
+      "award": "finish_any"
+     },
+     {
+      "entry_id": "entry/gem_cup:4",
+      "mode": "cup",
+      "leg_id": "entry/gem_cup:4/leg:0",
+      "encounter_id": null,
+      "own_pad_id": "pad:102",
       "award": "finish_any"
      }
     ]
