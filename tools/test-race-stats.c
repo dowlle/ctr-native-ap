@@ -1,13 +1,13 @@
 // cc -std=c11 -Wall -Wextra -Werror -o /tmp/test-race-stats tools/test-race-stats.c
 //
-// Arcade races drive vanilla kart stats (ruling of 2026-11-02): retail Arcade in a
-// room, the custom Arcade pages, Arcade cups and Time Trial. Adventure keeps the
-// room's stats. Two parts:
+// Only Adventure drives the room's kart stats (ruling of 2026-11-02). Arcade
+// (retail in a room, the custom pages, Arcade cups), Time Trial, Versus and
+// Battle drive vanilla stats. Two parts:
 //
 // 1. ap/ap_race_stats_logic.h, the one rule, against every game mode the
 //    player can race in.
 // 2. The two writers of the room's stats ask that rule: AP_CapabilityStats
-//    (progressive stats, every frame) treats the pack as off in an Arcade race,
+//    (progressive stats, every frame) treats the pack as off outside Adventure,
 //    and AP_CharSwap_ApplyStatPackage (editable stats, Penta's PAL table, the
 //    starting class) writes nothing there. Read from the source, run from the
 //    repository root as CI does.
@@ -18,7 +18,7 @@
 
 #include "../ap/ap_race_stats_logic.h"
 
-// gameMode1 bits as in include/namespace_Main.h (ap_capability.c pins the two
+// gameMode1 bits as in include/namespace_Main.h (ap_capability.c pins the one
 // the rule reads).
 #define MAIN_MENU 0x2000u
 #define TIME_TRIAL 0x20000u
@@ -30,6 +30,9 @@
 #define ADVENTURE_CUP 0x10000000u
 #define ADVENTURE_BOSS 0x80000000u
 #define BATTLE_MODE 0x20u
+#define POINT_LIMIT 0x4000u
+#define LIFE_LIMIT 0x8000u
+#define TIME_LIMIT 0x10000u
 
 static int failures;
 
@@ -107,29 +110,35 @@ int main(void)
 	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE | CRYSTAL_CHALLENGE | ADVENTURE_ARENA), 1,
 	       "Crystal Challenge: room stats");
 	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE | ADVENTURE_ARENA), 1, "Adventure hub: room stats");
-	expect(AP_RaceStats_RoomApplies(0), 1, "Versus race (no Arcade bit): unchanged");
-	expect(AP_RaceStats_RoomApplies(BATTLE_MODE), 1, "Battle: unchanged");
+	expect(AP_RaceStats_RoomApplies(0), 0, "Versus race (no mode bit): vanilla");
+	expect(AP_RaceStats_RoomApplies(MAIN_MENU), 0, "Versus track select: vanilla");
+	expect(AP_RaceStats_RoomApplies(BATTLE_MODE), 0, "Battle: vanilla");
+	expect(AP_RaceStats_RoomApplies(BATTLE_MODE | POINT_LIMIT), 0, "Battle, point limit: vanilla");
+	expect(AP_RaceStats_RoomApplies(BATTLE_MODE | LIFE_LIMIT), 0, "Battle, life limit: vanilla");
+	expect(AP_RaceStats_RoomApplies(BATTLE_MODE | TIME_LIMIT), 0, "Battle, time limit: vanilla");
+	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE | ADVENTURE_BOSS | RELIC_RACE), 1,
+	       "Adventure with any extra bit: room stats");
 
 	// ── The writers ask it ──
 	cap = slurp("ap/ap_capability.c");
 	swap = slurp("ap/ap_charswap.c");
 	expect(cap != NULL && swap != NULL, 1, "sources readable from the repository root");
-	expect(cap && strstr(cap, "AP_RS_ARCADE_MODE == ARCADE_MODE && AP_RS_TIME_TRIAL == TIME_TRIAL") != NULL, 1,
-	       "ap_capability.c pins the two mode bits");
+	expect(cap && strstr(cap, "AP_RS_ADVENTURE_MODE == ADVENTURE_MODE") != NULL, 1,
+	       "ap_capability.c pins the Adventure mode bit");
 	expect(cap && strstr(cap, "return AP_RaceStats_RoomApplies(sdata->gGT->gameMode1);") != NULL, 1,
 	       "AP_CapabilityRoomStatsRace reads the rule on the live mode");
 
 	stats = body_of(cap, "void AP_CapabilityStats(struct Driver *driver)\n{");
 	expect(stats && strstr(stats, "statsLive = AP_CapabilityStatsActive() && AP_CapabilityRoomStatsRace();") != NULL,
-	       1, "progressive stats: pack live only outside Arcade");
+	       1, "progressive stats: pack live only in Adventure");
 	expect(stats && strstr(stats, "rank = statsLive ? AP_CapabilityAppliedStatRankFor(") != NULL, 1,
-	       "progressive stats: an Arcade race takes the vanilla anchor");
+	       "progressive stats: a non-Adventure race takes the vanilla anchor");
 	expect(stats && strstr(stats, "AP_CapabilityStatsActive() && !weakened") == NULL, 1,
-	       "progressive stats: no early test that skips the Arcade rule");
+	       "progressive stats: no early test that skips the mode rule");
 
 	package = body_of(swap, "void AP_CharSwap_ApplyStatPackage(struct Driver *driver)\n{");
 	expect(package && before(package, "if (!AP_CapabilityRoomStatsRace())", "ap_cs_effectiveValue("), 1,
-	       "stat package: an Arcade race returns before any write");
+	       "stat package: a non-Adventure race returns before any write");
 
 	free(stats);
 	free(package);

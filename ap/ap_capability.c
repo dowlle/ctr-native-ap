@@ -7,7 +7,7 @@
 #include "ap_capability.h"
 #include "ap_stat_ladder.h"
 #include "ap_stat_select_logic.h"
-#include "ap_race_stats_logic.h" // Arcade races drive vanilla stats (ruling of 2026-11-02)
+#include "ap_race_stats_logic.h" // only Adventure drives the room's stats (ruling of 2026-11-02)
 #include "ap_net.h"      // ap_net_statselect_* (per-slot data storage)
 #include "ap_retro_fueled_logic.h"
 #include "ap_hooks.h"    // AP_LogLine
@@ -226,7 +226,7 @@ static int AP_CapabilityStatsActive(void)
 }
 
 typedef char ap_cap_race_stats_mode_check
-    [(AP_RS_ARCADE_MODE == ARCADE_MODE && AP_RS_TIME_TRIAL == TIME_TRIAL) ? 1 : -1];
+    [(AP_RS_ADVENTURE_MODE == ADVENTURE_MODE) ? 1 : -1];
 
 int AP_CapabilityRoomStatsRace(void)
 {
@@ -838,7 +838,7 @@ void AP_CapabilityStats(struct Driver *driver)
 	if (!AP_CapabilityIsLocal(driver))
 		return;
 	weakened = AP_TrapWeakenedActive(driver);
-	// An Arcade race drives vanilla stats: the pack counts as off there.
+	// Outside Adventure a race drives vanilla stats: the pack counts as off there.
 	statsLive = AP_CapabilityStatsActive() && AP_CapabilityRoomStatsRace();
 	if (!statsLive && !weakened && !g_cap_weaken_stats_applied)
 		return;

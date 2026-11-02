@@ -41,9 +41,9 @@ Options > Track Library and the custom pages for Single Race and Time Trial.
 Its Custom Content page and a room's tracks stay on the seed path; a library
 install never serves a room.
 
-Every Arcade race drives vanilla kart stats for now, retail Arcade in a room
-and the custom pages included, and so does Time Trial. Adventure keeps the
-room's stats (`ap/ap_race_stats_logic.h`).
+Every race outside Adventure drives vanilla kart stats, in a room or not:
+Arcade (retail and the custom pages), Time Trial, Versus and Battle. Adventure
+keeps the room's stats (`ap/ap_race_stats_logic.h`).
 
 An Arcade custom race in a room holds that room (`AP_ArcadeHoldsRoom`): nothing
 the race does sends a check or a goal, received items stay queued, and their
