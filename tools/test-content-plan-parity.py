@@ -2155,6 +2155,52 @@ def cr_extra_rung(p):
     p["checks"].insert(p["checks"].index(cup_only_rungs(p)[0]), c)
 alter("cup-only rung outside podium_rungs", cr_extra_rung, cup_rungs[2])
 assert not any(ok for name, _case, ok in cases if name.startswith("cup-only rung")), "a cup-only rung forgery validates"
+# Ruling of 2026-11-02: with cup_only_podium_rungs on, a track whose pad
+# has no Trophy Race, raced in a cup, takes the seed's rungs from its legs too.
+NO_TROPHY = {"default": ["trophy", "ctr", "relic"], "Crash Cove": ["relic"], "Roo's Tubes": ["relic"],
+             "Mystery Caves": ["relic"], "Sewer Speedway": ["relic"]}
+pad_rungs = []
+for seed, on in ((1, True), (2, True), (3, False)):
+    o = {"cup_only_podium_rungs": on, "cup_count": 8, "accessibility": "full", "track_modes": NO_TROPHY,
+         "wumpa_check": ["off", "per_track"][seed % 2]}
+    world = make_world(o, seed=seed)
+    pad_rungs.append(world.fill_slot_data())
+    cases.append((f"pad-no-trophy-rungs-generated-{seed}-{'on' if on else 'off'}", pad_rungs[-1], True))
+def pad_no_trophy_rungs(p):
+    pads = {pad["entry_id"] for pad in p["pads"] if pad["entry_id"]}
+    bare = {e["track_id"] for e in p["entries"] if e["kind"] == "track" and e["id"] in pads and "trophy" not in e["modes"]}
+    return [c for c in p["checks"] if c["kind"] == "podium" and c["owner"] in bare]
+assert all(pad_no_trophy_rungs(v["content_plan"]) for v in pad_rungs[:2])
+assert not pad_no_trophy_rungs(pad_rungs[2]["content_plan"])
+def pr_one_track_dropped(p):
+    gone = pad_no_trophy_rungs(p)[0]["owner"]
+    p["checks"] = [c for c in p["checks"] if not (c["kind"] == "podium" and c["owner"] == gone)]
+alter("pad-no-trophy rungs of one track dropped", pr_one_track_dropped, pad_rungs[0])
+def pr_own_pad_route(p):
+    c = pad_no_trophy_rungs(p)[0]
+    pad = next(pad for pad in p["pads"] if pad["entry_id"] == "entry/" + c["owner"])
+    c["routes"].insert(0, dict(entry_id=pad["entry_id"], mode="trophy", leg_id=None, encounter_id=None,
+                               own_pad_id=pad["id"], award=c["routes"][0]["award"]))
+alter("pad-no-trophy rung routed from its own pad", pr_own_pad_route, pad_rungs[0])
+def pr_leg_dropped(p):
+    c = next(c for c in pad_no_trophy_rungs(p) if len(c["routes"]) > 1)
+    c["routes"] = c["routes"][1:]
+alter("pad-no-trophy rung leg route dropped", pr_leg_dropped, pad_rungs[0])
+def pr_forged_on(p):
+    # The option off, then one such track's rungs added by hand.
+    src = pad_no_trophy_rungs(pad_rungs[0]["content_plan"])
+    owner = src[0]["owner"]
+    legs = [(e["id"], leg["id"], pad["id"]) for e in p["entries"] if e["kind"] == "cup"
+            for pad in p["pads"] if pad["entry_id"] == e["id"] for leg in e["legs"] if leg["track_id"] == owner]
+    assert legs
+    for c in src:
+        if c["owner"] != owner:
+            continue
+        key = c["routes"][0]["award"]
+        p["checks"].append(dict(c, routes=[dict(entry_id=e, mode="cup", leg_id=l, encounter_id=None, own_pad_id=pad,
+                                                award=key) for e, l, pad in legs]))
+alter("pad-no-trophy rungs forged onto an off seed", pr_forged_on, pad_rungs[2])
+assert not any(ok for name, _case, ok in cases if name.startswith("pad-no-trophy rung")), "a pad rung forgery validates"
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()

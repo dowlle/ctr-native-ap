@@ -76,6 +76,23 @@ static void cup_track_checks_case(void)
         rung += (rows[k].code == 35015108 && rows[k].bit == AP_CONTENT_BIT_CUP_RUNG + 101 * 20 + 1 * 5 + 0) ||
                 (rows[k].code == 35015112 && rows[k].bit == AP_CONTENT_BIT_CUP_RUNG + 101 * 20 + 1 * 5 + 4);
     expect(n == 6 && rung == 2, "a cup lists a cup-only track's own rungs");
+    /* Ruling of 2026-11-02: a track whose pad has no Trophy Race lists
+     * its leg's own rungs, beside that pad's Wumpa. */
+    {
+        ctr_content_pad cup2 = cup;
+        int own_wumpa = 0;
+        memset(cup_own.rung_locations, 0, sizeof cup_own.rung_locations);
+        memset(cup2.legs[1].rungs, 0, sizeof cup2.legs[1].rungs);
+        cup2.legs[0].rungs[0] = 35015100; cup2.legs[0].rungs[3] = 35015103;
+        n = ap_content_cup_track_checks(&cup2, cup_lookup, rows);
+        for (k = 0, rung = 0; k < n; ++k) {
+            rung += (rows[k].code == 35015100 && rows[k].bit == AP_CONTENT_BIT_CUP_RUNG + 101 * 20 + 0) ||
+                    (rows[k].code == 35015103 && rows[k].bit == AP_CONTENT_BIT_CUP_RUNG + 101 * 20 + 3);
+            own_wumpa += rows[k].code == 35016104;
+        }
+        expect(n == 4 && rung == 2 && own_wumpa == 1, "a cup lists the leg rungs of a track whose pad has none");
+        cup_own.rung_locations[0] = 35015100; cup_own.rung_locations[3] = 35015103;
+    }
     {
         int physical, slot;
         expect(ap_content_cup_rung_bit_decode(AP_CONTENT_BIT_CUP_RUNG + 101 * 20 + 1 * 5 + 4, &physical, &slot) &&

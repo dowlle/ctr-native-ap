@@ -506,9 +506,9 @@ static const ctr_content_pad *AP_StandaloneRoutePad(const struct CustomTrackRace
 // Trophy Race on its pad's route (#133 PR 3b, AP_RetailPodiumTrack), or the
 // CTR Challenge of a ctr_first entry (J11, decision 14), whose finishing
 // place earns the rungs. A Gem Cup leg (row 10i) earns the rungs of its
-// track's own pad, when that pad has them; on a track with no pad of its own,
-// the leg's own rungs (cup_only_podium_rungs, ruling of 2026-11-02). A boss cup leg
-// earns none.
+// track's own pad, when that pad has them; on a track with no rungs of its
+// own (no pad, or a pad without a Trophy Race), the leg's own rungs
+// (cup_only_podium_rungs, rulings of 2026-11-02). A boss cup leg earns none.
 int AP_StandalonePodiumTrack(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -522,12 +522,12 @@ int AP_StandalonePodiumTrack(void)
 		if (!cup || cup->physical >= AP_CONTENT_GARAGE_CUP_PAD || IS_BOSS_RACE(gGT->gameMode1) ||
 		    leg < 0 || leg >= AP_CONTENT_CUP_LEGS)
 			return -1;
-		if (cup->legs[leg].track_pad < 0)
-		{
-			for (k = 0; k < 5; ++k) own |= cup->legs[leg].rungs[k] > 0;
-			return own ? AP_CONTENT_LEG_PODIUM_LOGICAL_BASE + cup->physical * AP_CONTENT_CUP_LEGS + leg : -1;
-		}
-		if (!(pad = ap_content_plan_pad(cup->legs[leg].track_pad)) || !pad->occupied || pad->cup || pad->crystal ||
+		// The parser seats a leg's own rungs only when its track's pad has none.
+		for (k = 0; k < 5; ++k) own |= cup->legs[leg].rungs[k] > 0;
+		if (own)
+			return AP_CONTENT_LEG_PODIUM_LOGICAL_BASE + cup->physical * AP_CONTENT_CUP_LEGS + leg;
+		if (cup->legs[leg].track_pad < 0 ||
+		    !(pad = ap_content_plan_pad(cup->legs[leg].track_pad)) || !pad->occupied || pad->cup || pad->crystal ||
 		    ap_content_rung_mode(pad) < 0)
 			return -1;
 		return AP_CONTENT_PODIUM_LOGICAL_BASE + cup->legs[leg].track_pad;
