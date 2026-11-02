@@ -68,6 +68,8 @@ int AP_SeedContentInstallStart(char *m, size_t n) { starts++; busy = 1; snprintf
 int AP_SeedContentInstallTick(char *m, size_t n) { (void)m; (void)n; return busy; }
 int AP_SeedContentInstallBusy(void) { return busy; }
 void AP_CustomContentRescan(void) { rescans++; }
+static int registry_retries;
+void AP_SeedContentRegistryRetry(void) { registry_retries++; }
 '''
 
 tests = r'''
