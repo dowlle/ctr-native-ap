@@ -303,6 +303,21 @@ std::string hash_stream(FILE *file, const std::string &path, unsigned long long 
     return text;
 }
 
+/* Size and modification time of an open file, to notice an edit in place while it is read. */
+std::string file_stamp(FILE *file)
+{
+#ifdef _WIN32
+    struct _stat64 info;
+    if (_fstat64(_fileno(file), &info)) return "?";
+    return std::to_string((long long)info.st_size) + "|" + std::to_string((long long)info.st_mtime);
+#else
+    struct stat info;
+    if (fstat(fileno(file), &info)) return "?";
+    return std::to_string((long long)info.st_size) + "|" + std::to_string((long long)info.st_mtim.tv_sec) + "|" +
+           std::to_string((long long)info.st_mtim.tv_nsec);
+#endif
+}
+
 std::string hash_file(const std::string &path, unsigned long long *bytes, const volatile int *cancel)
 {
     File file = open_read(path);
@@ -1027,9 +1042,11 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
         int header = NativeXdelta_CheckHeader(head, headBytes);
         if (header == NATIVE_XDELTA_NOT_VCDIFF) throw std::runtime_error("Not an xdelta patch");
         if (header == NATIVE_XDELTA_UNSUPPORTED) throw std::runtime_error("Unsupported patch compression");
+        const std::string patchStamp = file_stamp(patch.get());
         set_text(summary.patchSha256, sizeof summary.patchSha256, hash_stream(patch.get(), patchPath, &summary.patchBytes, cancel));
         /* One handle of the disc is hashed, walked and decoded from, so a swapped or edited file cannot differ between them. */
         Disc disc(discPath);
+        const std::string discStamp = file_stamp(disc.file.get());
         const std::string discSha = hash_stream(disc.file.get(), discPath, nullptr, cancel);
         if (!request->skipRetailCheck && discSha != kRetailDiscSha256)
             throw std::runtime_error("Your disc is not the retail NTSC-U image this patch needs");
@@ -1091,6 +1108,8 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             if (!extractor->needPass) break;
             layout = extractor->layout;
         }
+        if (file_stamp(patch.get()) != patchStamp || file_stamp(disc.file.get()) != discStamp)
+            throw std::runtime_error("The patch or the disc changed while it was being read");
         store_flag(progress, 92);
 
         /* 4. Pair, cut, build, classify. */

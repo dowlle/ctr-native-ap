@@ -638,6 +638,7 @@ int main()
             auto m = good ? nlohmann::json::parse(std::string(manifest, written)) : nlohmann::json::object();
             int sidecars = 0;
             if (good) for (auto &f : m["files"]) if (f["role"] == "relic_targets" || f["role"] == "race_settings") sidecars++;
+            CHECK(t1 && !std::strcmp(t1->title, "No Laps") && sn->descriptorSha256[0], "the descriptor with relic times was accepted");
             CHECK(good && sidecars == 0, "no relic file with a guessed lap count when the descriptor gives no laps");
             XdeltaImport_Free(&n.scan);
         }
