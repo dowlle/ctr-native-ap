@@ -133,6 +133,7 @@ tools/test-oxide-weapon-schedule.c
 tools/test-oxide-final-venue-seedcfg.cpp
 tools/test-cortex-track.c
 tools/test-cortex-track-seedcfg.cpp
+tools/test-cortex-music.c
 tools/test-cv-tracker-letters.c
 tools/test-pad-glow-items.c
 tools/test-picker-infoline.c

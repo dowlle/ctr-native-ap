@@ -275,12 +275,13 @@ License (icon design): CC BY-NC 4.0.
 ## Cortex Vortex track (AP build only)
 
 Paths: `assets/tracks/cortex-vortex/CVortex Arcade All.lev`,
-`assets/tracks/cortex-vortex/CVortex Arcade All.vrm`
+`assets/tracks/cortex-vortex/CVortex Arcade All.vrm`,
+`assets/tracks/cortex-vortex/CVortex Arcade All.sca` (the track's music)
 
 Cortex Vortex was created by **Lockheart**. These exact author-supplied files
-are bundled for use as the N. Oxide Final Challenge venue with the author's
-permission. They are redistributed unchanged and are not relicensed by this
-project.
+are bundled for use as the N. Oxide Final Challenge venue, as a randomized
+track and for its own music, with the author's permission. They are
+redistributed unchanged and are not relicensed by this project.
 
 License: author permission for redistribution inside CTR AP for the described
 Final Challenge and randomized-track uses. No broader license is claimed.
@@ -288,6 +289,8 @@ Final Challenge and randomized-track uses. No broader license is claimed.
 LEV SHA-256: `4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13`
 
 VRM SHA-256: `4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d`
+
+SCA SHA-256: `ddde81cf1be8042400c717edeeded0d8727e3bb8ba24f0100201708372ef8b1c`
 
 ## CTR ModSDK Retro-Fueled mechanics and Blue Fire palette (AP build only)
 
