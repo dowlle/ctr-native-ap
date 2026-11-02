@@ -102,6 +102,9 @@ typedef struct
 	                            // colours on when the seed has them off
 	                            // (AP_BoxColour_Enabled, ap/ap_box_colour_logic.h).
 	bool itemBoxNumbers;        // Archipelago: local overhead AP box numbers (default on).
+	bool itemFeed;              // Archipelago: the AP item feed in the hub and in races
+	                            // (default on). Replaces ap-config.txt "hub_feed="
+	                            // when config.ini exists, like mapFlash (AP_HubFeedOn).
 	int  aiDifficulty;          // Archipelago: AI-difficulty preset, stored as the raw
 	                            // engine difficulty VALUE (0=vanilla, 0x50, 0xa0, 0xf0,
 	                            // 0x140, 0x280). Local value; synced to the per-slot

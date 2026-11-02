@@ -9,7 +9,10 @@
               AP-Pie YAML builder. Triangle leaves Play Solo.
      New      bundled presets, saved YAMLs, then YAMLs in solo/inbox.
      Options  the curated options of a preset: Left / Right change, Square
-              shows the help text. DeathLink is fixed off in solo.
+              shows the help text. A row is one line when the full name and
+              value fit, otherwise the value takes a second line, right
+              aligned: names and values are never cut (Deck menu scan,
+              2026-11-03). DeathLink is off in solo and has no row.
      Tracks   installed custom tracks for a preset (decision 32) or an
               imported or inbox YAML (round 2 decision 5), shown only
               when there are any: Cross cycles off, in the pool, own pad.
@@ -19,11 +22,26 @@
      Busy     a runtime job with its phase; Circle cancels generation.
      Session  starting, connecting, connected or the reason it failed.
    The runtime, jobs and session live in ap/ap_solo.cpp; the option rules in
-   ap/ap_solo_logic.hpp. */
+   ap/ap_solo_logic.hpp.
+
+   Layout (512 x 216, FONT_SMALL advances 13 pixels): every text stays between
+   SOLO_EDGE_L and SOLO_EDGE_R, inside the menu frame. The list holds nine lines
+   from SOLO_LIST_Y, two help lines follow at SOLO_HELP_Y and the footer at
+   SOLO_FOOTER_Y. A dimmed panel sits behind the list and help, as on the Track
+   Manager, so the logo does not show through. tools/test-solo-layout.c checks
+   the bounds. */
 
 #define SOLO_ROWS 9
 #define SOLO_LIST_Y 0x38
 #define SOLO_ROW_H 0x0C
+#define SOLO_EDGE_L 0x18
+#define SOLO_EDGE_R 0x1E8
+#define SOLO_TEXT_W (SOLO_EDGE_R - SOLO_EDGE_L) /* centred lines */
+#define SOLO_ROW_X 0x38
+#define SOLO_ROW_R 0x1C8                         /* right edge of a row's value */
+#define SOLO_ROW_W (SOLO_ROW_R - SOLO_ROW_X)
+#define SOLO_HELP_Y 0xA8
+#define SOLO_FOOTER_Y 0xC4
 #define SOLO_AP_PIE_URL "https://ap-pie.com/yaml-builder/ctr"
 
 enum SoloPage
@@ -72,15 +90,18 @@ static char s_soloMsg[256];
 static int s_soloPickKind;       /* SOLO_JOB_IMPORT_ROOM or SOLO_JOB_IMPORT_YAML */
 static int s_soloLapsFailed;     /* the Tracks page could not keep a track's laps */
 
-static void MM_Solo_DrawWrapped(const char *text, int x, int y, int width, int lines, int color, uint32_t *ot)
+/* Word-wrapped FONT_SMALL text, `lines` lines at most; text that does not
+   fit ends the last line with "...". `flags` is the colour, optionally with
+   JUSTIFY_CENTER (x is then the centre). */
+static void MM_Solo_DrawWrapped(const char *text, int x, int y, int width, int lines, int flags, uint32_t *ot)
 {
-	char line[160];
+	char line[200];
 	const char *cursor = text;
 	int i;
 	for (i = 0; i < lines && *cursor; i++)
 	{
 		size_t n = 0, cut = 0;
-		while (cursor[n] && cursor[n] != '\n' && n + 1 < sizeof line)
+		while (cursor[n] && cursor[n] != '\n' && n + 4 < sizeof line)
 		{
 			line[n] = cursor[n];
 			line[n + 1] = '\0';
@@ -88,45 +109,106 @@ static void MM_Solo_DrawWrapped(const char *text, int x, int y, int width, int l
 			if (cursor[n] == ' ') cut = n;
 			n++;
 		}
-		if (cursor[n] && cursor[n] != '\n' && cut > 0) n = cut;
+		/* Break at the last space, unless that leaves most of the line empty
+		   (a long file name): then break inside the word. */
+		if (cursor[n] && cursor[n] != '\n' && cut > 0 && cut >= n / 2) n = cut;
 		line[n] = '\0';
-		DecalFont_DrawLineOT(line, x, y + i * SOLO_ROW_H, FONT_SMALL, color, ot);
 		cursor += n;
 		while (*cursor == ' ' || *cursor == '\n') cursor++;
+		if (*cursor && i + 1 == lines)
+		{
+			for (;;)
+			{
+				memcpy(line + n, "...", 4);
+				if (DecalFont_GetLineWidth(line, FONT_SMALL) <= width || n == 0) break;
+				n--;
+			}
+		}
+		DecalFont_DrawLineOT(line, x, y + i * SOLO_ROW_H, FONT_SMALL, flags, ot);
 	}
 }
 
-static void MM_Solo_Fit(const char *text, char *out, size_t size, int width)
+static void MM_Solo_FitFont(const char *text, char *out, size_t size, int width, int font)
 {
 	size_t n;
 	snprintf(out, size, "%s", text);
 	n = strlen(out);
-	if (DecalFont_GetLineWidth(out, FONT_SMALL) <= width) return;
+	if (DecalFont_GetLineWidth(out, font) <= width) return;
 	while (n > 0)
 	{
 		n--;
 		if (n + 4 > size) continue;
 		memcpy(out + n, "...", 4);
-		if (DecalFont_GetLineWidth(out, FONT_SMALL) <= width) return;
+		if (DecalFont_GetLineWidth(out, font) <= width) return;
 	}
 	out[0] = '\0';
 }
 
+static void MM_Solo_Fit(const char *text, char *out, size_t size, int width)
+{
+	MM_Solo_FitFont(text, out, size, width, FONT_SMALL);
+}
+
+/* `prefix` then as much of the end of `text` as fits, "..." in front of a
+   shortened end: a path keeps its last folders (the inbox line). */
+static void MM_Solo_FitLeft(const char *prefix, const char *text, char *out, size_t size, int width)
+{
+	const char *tail = text;
+	snprintf(out, size, "%s%s", prefix, text);
+	while (*tail && DecalFont_GetLineWidth(out, FONT_SMALL) > width)
+	{
+		tail++;
+		snprintf(out, size, "%s...%s", prefix, tail);
+	}
+}
+
+/* The page title in the big font; a name too long for it (an option's help
+   page) is drawn in the small font instead of being cut. */
 static void MM_Solo_Title(const char *title, uint32_t *ot)
 {
-	DecalFont_DrawLineOT((char *)title, 0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
+	char fit[160];
+	if (DecalFont_GetLineWidth((char *)title, FONT_BIG) <= SOLO_TEXT_W)
+	{
+		DecalFont_DrawLineOT((char *)title, 0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
+		return;
+	}
+	MM_Solo_Fit(title, fit, sizeof fit, SOLO_TEXT_W);
+	DecalFont_DrawLineOT(fit, 0x100, 0x1C, FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
 }
 
 static void MM_Solo_Footer(const char *hint, uint32_t *ot)
 {
-	DecalFont_DrawLineOT((char *)hint, 0x100, 0xC4, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	char fit[160];
+	MM_Solo_Fit(hint, fit, sizeof fit, SOLO_TEXT_W);
+	DecalFont_DrawLineOT(fit, 0x100, SOLO_FOOTER_Y, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+}
+
+/* Up to two centred help lines above the footer. */
+static void MM_Solo_Help(const char *text, int flags, uint32_t *ot)
+{
+	MM_Solo_DrawWrapped(text, 0x100, SOLO_HELP_Y, SOLO_TEXT_W, 2, JUSTIFY_CENTER | flags, ot);
+}
+
+static void MM_Solo_HighlightLines(int y, int lines, uint32_t *ot)
+{
+	RECT sel = {0x30, y - 2, 0x1A0, SOLO_ROW_H * lines};
+	CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
 }
 
 static void MM_Solo_Highlight(int y, uint32_t *ot)
 {
-	RECT sel = {0x30, y - 2, 0x1A0, 0x0C};
-	CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
+	MM_Solo_HighlightLines(y, 1, ot);
 }
+
+/* The dimmed panel behind the list and help lines, drawn after the text so it
+   sits behind it (Track Manager does the same). */
+static void MM_Solo_Panel(uint32_t *ot)
+{
+	RECT panel = {0x14, 0x32, 0x1D8, 0x8E};
+	RECTMENU_DrawInnerRect(&panel, 0, ot);
+}
+
+static int s_soloRowsShown = SOLO_ROWS; /* list rows of the current page */
 
 /* Up / Down over `count` rows, keeping the selection in view. */
 static void MM_Solo_Navigate(struct GamepadBuffer *pad, int count)
@@ -150,7 +232,7 @@ static void MM_Solo_Navigate(struct GamepadBuffer *pad, int count)
 	}
 	if (s_soloSel >= count) s_soloSel = count - 1;
 	if (s_soloSel < s_soloTop) s_soloTop = s_soloSel;
-	if (s_soloSel >= s_soloTop + SOLO_ROWS) s_soloTop = s_soloSel - SOLO_ROWS + 1;
+	if (s_soloSel >= s_soloTop + s_soloRowsShown) s_soloTop = s_soloSel - s_soloRowsShown + 1;
 }
 
 static void MM_Solo_Go(int page)
@@ -245,6 +327,9 @@ static void MM_Solo_PageHome(uint32_t *ot, struct GamepadBuffer *pad)
 	char line[160], fit[160];
 	int i;
 
+	const int listY = SOLO_LIST_Y + (rooms == 0 ? SOLO_ROW_H : 0); /* below "No solo seeds yet." */
+
+	s_soloRowsShown = rooms == 0 ? SOLO_ROWS - 1 : SOLO_ROWS;
 	MM_Solo_Navigate(pad, count);
 	if ((pad->buttonsTapped & BTN_CROSS) != 0)
 	{
@@ -279,10 +364,10 @@ static void MM_Solo_PageHome(uint32_t *ot, struct GamepadBuffer *pad)
 
 	MM_Solo_Title("Play Solo", ot);
 	if (rooms == 0)
-		DecalFont_DrawLineOT("No solo seeds yet.", 0x100, 0x28, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-	for (i = s_soloTop; i < count && i < s_soloTop + SOLO_ROWS; i++)
+		DecalFont_DrawLineOT("No solo seeds yet.", SOLO_ROW_X, SOLO_LIST_Y, FONT_SMALL, GRAY, ot);
+	for (i = s_soloTop; i < count && i < s_soloTop + s_soloRowsShown; i++)
 	{
-		const int y = SOLO_LIST_Y + (i - s_soloTop) * SOLO_ROW_H;
+		const int y = listY + (i - s_soloTop) * SOLO_ROW_H;
 		const int row = i - stopRow;
 		int color = ORANGE;
 		if (stopRow && i == 0)
@@ -305,23 +390,23 @@ static void MM_Solo_PageHome(uint32_t *ot, struct GamepadBuffer *pad)
 		}
 		else
 			snprintf(line, sizeof line, "%s", s_soloHomeActions[row - rooms]);
-		MM_Solo_Fit(line, fit, sizeof fit, 0x190);
-		DecalFont_DrawLineOT(fit, 0x38, y, FONT_SMALL, color, ot);
+		MM_Solo_Fit(line, fit, sizeof fit, SOLO_ROW_W);
+		DecalFont_DrawLineOT(fit, SOLO_ROW_X, y, FONT_SMALL, color, ot);
 		if (i == s_soloSel)
 			MM_Solo_Highlight(y, ot);
 	}
 	if (AP_Solo_InboxPath()[0])
 	{
-		snprintf(line, sizeof line, "Inbox: %s", AP_Solo_InboxPath());
-		MM_Solo_Fit(line, fit, sizeof fit, 0x1A0);
-		DecalFont_DrawLineOT(fit, 0x100, 0xB4, FONT_SMALL, JUSTIFY_CENTER | GRAY, ot);
+		/* A long path keeps its end: "Inbox: ...folder/solo/inbox". */
+		MM_Solo_FitLeft("Inbox: ", AP_Solo_InboxPath(), fit, sizeof fit, SOLO_TEXT_W);
+		DecalFont_DrawLineOT(fit, 0x100, SOLO_HELP_Y + SOLO_ROW_H, FONT_SMALL, JUSTIFY_CENTER | GRAY, ot);
 	}
-	MM_Solo_Footer("*: PLAY   SQUARE: DETAILS   ^: BACK", ot);
+	MM_Solo_Footer("*: PLAY   [: DETAILS   ^: BACK", ot);
 }
 
 static void MM_Solo_PageDetails(uint32_t *ot, struct GamepadBuffer *pad)
 {
-	char line[160];
+	char line[160], fit[160];
 	MM_Solo_Navigate(pad, 2);
 	if ((pad->buttonsTapped & BTN_CROSS) != 0)
 	{
@@ -341,21 +426,24 @@ static void MM_Solo_PageDetails(uint32_t *ot, struct GamepadBuffer *pad)
 	}
 	MM_Solo_Title("Solo Seed", ot);
 	snprintf(line, sizeof line, "Slot: %s", s_soloRoom.slot);
-	DecalFont_DrawLineOT(line, 0x38, 0x38, FONT_SMALL, WHITE, ot);
+	MM_Solo_Fit(line, fit, sizeof fit, SOLO_ROW_W);
+	DecalFont_DrawLineOT(fit, SOLO_ROW_X, 0x38, FONT_SMALL, WHITE, ot);
 	snprintf(line, sizeof line, "Seed: %s", s_soloRoom.seedName);
-	DecalFont_DrawLineOT(line, 0x38, 0x44, FONT_SMALL, WHITE, ot);
+	MM_Solo_Fit(line, fit, sizeof fit, SOLO_ROW_W);
+	DecalFont_DrawLineOT(fit, SOLO_ROW_X, 0x44, FONT_SMALL, WHITE, ot);
 	snprintf(line, sizeof line, "From: %s   Made: %s", s_soloRoom.source, s_soloRoom.created);
-	DecalFont_DrawLineOT(line, 0x38, 0x50, FONT_SMALL, WHITE, ot);
+	MM_Solo_Fit(line, fit, sizeof fit, SOLO_ROW_W);
+	DecalFont_DrawLineOT(fit, SOLO_ROW_X, 0x50, FONT_SMALL, WHITE, ot);
 	if (s_soloRoom.checksDone >= 0)
 		snprintf(line, sizeof line, "Checks: %d of %d", s_soloRoom.checksDone, s_soloRoom.checksTotal);
 	else
 		snprintf(line, sizeof line, "Checks: unknown of %d", s_soloRoom.checksTotal);
-	DecalFont_DrawLineOT(line, 0x38, 0x5C, FONT_SMALL, WHITE, ot);
+	DecalFont_DrawLineOT(line, SOLO_ROW_X, 0x5C, FONT_SMALL, WHITE, ot);
 	snprintf(line, sizeof line, "World version: %s%s", s_soloRoom.worldVersion,
 	         s_soloRoom.versionMatches ? "" : " (not this client's)");
-	DecalFont_DrawLineOT(line, 0x38, 0x68, FONT_SMALL, s_soloRoom.versionMatches ? WHITE : RED, ot);
-	DecalFont_DrawLineOT("Resume", 0x38, 0x84, FONT_SMALL, ORANGE, ot);
-	DecalFont_DrawLineOT(s_soloDeleteArmed ? "Press Cross again to delete" : "Delete", 0x38, 0x90, FONT_SMALL,
+	MM_Solo_DrawWrapped(line, SOLO_ROW_X, 0x68, SOLO_ROW_W, 2, s_soloRoom.versionMatches ? WHITE : RED, ot);
+	DecalFont_DrawLineOT("Resume", SOLO_ROW_X, 0x84, FONT_SMALL, ORANGE, ot);
+	DecalFont_DrawLineOT(s_soloDeleteArmed ? "Press Cross again to delete" : "Delete", SOLO_ROW_X, 0x90, FONT_SMALL,
 	                     s_soloDeleteArmed ? RED : ORANGE, ot);
 	MM_Solo_Highlight(s_soloSel == 0 ? 0x84 : 0x90, ot);
 	MM_Solo_Footer("*: SELECT   ^: BACK", ot);
@@ -401,14 +489,14 @@ static void MM_Solo_PageNew(uint32_t *ot, struct GamepadBuffer *pad)
 	}
 	MM_Solo_Title("New Solo Seed", ot);
 	if (count == 0)
-		DecalFont_DrawLineOT("No presets found.", 0x100, 0x48, FONT_SMALL, JUSTIFY_CENTER | RED, ot);
+		DecalFont_DrawLineOT("No presets found.", 0x100, SOLO_LIST_Y, FONT_SMALL, JUSTIFY_CENTER | RED, ot);
 	for (i = s_soloTop; i < count && i < s_soloTop + SOLO_ROWS; i++)
 	{
 		struct APSoloStartInfo st;
 		const int y = SOLO_LIST_Y + (i - s_soloTop) * SOLO_ROW_H;
 		AP_Solo_StartGet(i, &st);
-		MM_Solo_Fit(st.label, fit, sizeof fit, 0x190);
-		DecalFont_DrawLineOT(fit, 0x38, y, FONT_SMALL, st.error[0] ? GRAY : (st.isPreset ? ORANGE : WHITE), ot);
+		MM_Solo_Fit(st.label, fit, sizeof fit, SOLO_ROW_W);
+		DecalFont_DrawLineOT(fit, SOLO_ROW_X, y, FONT_SMALL, st.error[0] ? GRAY : (st.isPreset ? ORANGE : WHITE), ot);
 		if (i == s_soloSel)
 			MM_Solo_Highlight(y, ot);
 	}
@@ -424,6 +512,25 @@ static int MM_Solo_VisibleOptions(int *map, int cap)
 		if (AP_Solo_OptionGet(i, &info) && info.visible)
 			map[n++] = i;
 	return n;
+}
+
+/* Lines an option row takes: one when the full name and value fit side by
+   side, two when the value goes under the name. */
+#define SOLO_OPTION_GAP 0x10
+static int MM_Solo_OptionLines(const struct APSoloOptionInfo *info)
+{
+	return DecalFont_GetLineWidth((char *)info->label, FONT_SMALL) + SOLO_OPTION_GAP +
+	               DecalFont_GetLineWidth((char *)info->value, FONT_SMALL) <= SOLO_ROW_W
+	           ? 1
+	           : 2;
+}
+
+static int MM_Solo_OptionRowLines(const int *map, int rows, int i)
+{
+	struct APSoloOptionInfo info;
+	if (i >= rows || !AP_Solo_OptionGet(map[i], &info))
+		return 1; /* Continue */
+	return MM_Solo_OptionLines(&info);
 }
 
 static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
@@ -444,6 +551,19 @@ static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
 		if (s_soloSel >= SOLO_ROWS) s_soloTop = s_soloSel - SOLO_ROWS + 1;
 	}
 	MM_Solo_Navigate(pad, count);
+	{
+		/* Rows take one or two lines: scroll until the selection's last line
+		   is within the nine list lines. */
+		int lines;
+		do
+		{
+			lines = 0;
+			for (i = s_soloTop; i <= s_soloSel && i < count; i++)
+				lines += MM_Solo_OptionRowLines(map, rows, i);
+			if (lines > SOLO_ROWS && s_soloTop < s_soloSel)
+				s_soloTop++;
+		} while (lines > SOLO_ROWS && s_soloTop < s_soloSel);
+	}
 	if (s_soloSel < rows && (pad->buttonsTapped & (BTN_LEFT | BTN_RIGHT)) != 0)
 	{
 		AP_Solo_OptionGet(map[s_soloSel], &info);
@@ -476,35 +596,45 @@ static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
 	}
 
 	snprintf(line, sizeof line, "%s Options", s_soloStart.label);
-	MM_Solo_Fit(line, fit, sizeof fit, 0x1C0);
+	MM_Solo_FitFont(line, fit, sizeof fit, SOLO_TEXT_W, FONT_BIG);
 	DecalFont_DrawLineOT(fit, 0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
-	for (i = s_soloTop; i < count && i < s_soloTop + SOLO_ROWS; i++)
 	{
-		const int y = SOLO_LIST_Y + (i - s_soloTop) * SOLO_ROW_H;
-		if (i == rows)
-			DecalFont_DrawLineOT("Continue", 0x38, y, FONT_SMALL, ORANGE, ot);
-		else
+		int used = 0; /* list lines drawn */
+		for (i = s_soloTop; i < count; i++)
 		{
-			AP_Solo_OptionGet(map[i], &info);
-			MM_Solo_Fit(info.label, fit, sizeof fit, 0xD0);
-			DecalFont_DrawLineOT(fit, 0x38, y, FONT_SMALL, info.forced ? GRAY : ORANGE, ot);
-			MM_Solo_Fit(info.value, fit, sizeof fit, 0xB8);
-			DecalFont_DrawLineOT(fit, 0x118, y, FONT_SMALL, info.forced ? GRAY : (info.note[0] ? RED : WHITE), ot);
+			const int y = SOLO_LIST_Y + used * SOLO_ROW_H;
+			const int lines = MM_Solo_OptionRowLines(map, rows, i);
+			if (used + lines > SOLO_ROWS)
+				break;
+			if (i == rows)
+				DecalFont_DrawLineOT("Continue", SOLO_ROW_X, y, FONT_SMALL, ORANGE, ot);
+			else
+			{
+				AP_Solo_OptionGet(map[i], &info);
+				/* Names fit the row (the longest overlay name is 30 characters);
+				   the fit only guards a future longer one. */
+				MM_Solo_Fit(info.label, fit, sizeof fit, SOLO_ROW_W);
+				DecalFont_DrawLineOT(fit, SOLO_ROW_X, y, FONT_SMALL, info.forced ? GRAY : ORANGE, ot);
+				MM_Solo_Fit(info.value, fit, sizeof fit, SOLO_ROW_W - SOLO_OPTION_GAP);
+				DecalFont_DrawLineOT(fit, SOLO_ROW_R, y + (lines - 1) * SOLO_ROW_H, FONT_SMALL,
+				                     JUSTIFY_RIGHT | (info.forced ? GRAY : (info.note[0] ? RED : WHITE)), ot);
+			}
+			if (i == s_soloSel)
+				MM_Solo_HighlightLines(y, lines, ot);
+			used += lines;
 		}
-		if (i == s_soloSel)
-			MM_Solo_Highlight(y, ot);
 	}
 	if (s_soloSel < rows && AP_Solo_OptionGet(map[s_soloSel], &info))
 	{
-		snprintf(line, sizeof line, "%s%s%s", info.group, info.note[0] ? ": " : "", info.note);
-		MM_Solo_Fit(line, fit, sizeof fit, 0x1A0);
-		DecalFont_DrawLineOT(fit, 0x100, 0xB4, FONT_SMALL, JUSTIFY_CENTER | (info.note[0] ? RED : GRAY), ot);
+		/* A forced reason or warning replaces the group name: it needs both lines. */
+		MM_Solo_Help(info.note[0] ? info.note : info.group, info.note[0] ? RED : GRAY, ot);
 	}
 	else
-		DecalFont_DrawLineOT("More options: build a YAML on AP-Pie and import it", 0x100, 0xB4, FONT_SMALL,
-		                     JUSTIFY_CENTER | GRAY, ot);
-	MM_Solo_Footer("LEFT/RIGHT: CHANGE   SQUARE: HELP   ^: BACK", ot);
+		MM_Solo_Help("More options: build a YAML on AP-Pie and import it.", GRAY, ot);
+	MM_Solo_Footer("LEFT/RIGHT: CHANGE  [: HELP  ^: BACK", ot);
 }
+
+#define SOLO_TRACK_PICK_X 0x150 /* the pick column: "-", "In pool", "Own pad" or laps */
 
 static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 {
@@ -515,6 +645,8 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 	char line[200], fit[200];
 	int i;
 
+	/* Eight rows: three help lines sit under them. */
+	s_soloRowsShown = SOLO_ROWS - 1;
 	MM_Solo_Navigate(pad, count);
 	if ((pad->buttonsTapped & (BTN_UP | BTN_DOWN)) != 0)
 		s_soloLapsFailed = 0;
@@ -557,54 +689,62 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 	}
 
 	MM_Solo_Title("Custom Tracks", ot);
-	DecalFont_DrawLineOT("In pool: the seed may use it. Own pad: it gets a pad.", 0x100, 0x28, FONT_SMALL,
-	                     JUSTIFY_CENTER | GRAY, ot);
-	for (i = s_soloTop; i < count && i < s_soloTop + SOLO_ROWS; i++)
+	for (i = s_soloTop; i < count && i < s_soloTop + s_soloRowsShown; i++)
 	{
 		const int y = SOLO_LIST_Y + (i - s_soloTop) * SOLO_ROW_H;
 		if (i == rows)
-			DecalFont_DrawLineOT("Continue", 0x38, y, FONT_SMALL, ORANGE, ot);
+			DecalFont_DrawLineOT("Continue", SOLO_ROW_X, y, FONT_SMALL, ORANGE, ot);
 		else
 		{
 			AP_Solo_TrackGet(i, &info);
 			snprintf(line, sizeof line, "%s %s", info.title, info.revision);
-			MM_Solo_Fit(line, fit, sizeof fit, 0x110);
-			DecalFont_DrawLineOT(fit, 0x38, y, FONT_SMALL, ORANGE, ot);
+			MM_Solo_Fit(line, fit, sizeof fit, SOLO_TRACK_PICK_X - SOLO_ROW_X - 0x08);
+			DecalFont_DrawLineOT(fit, SOLO_ROW_X, y, FONT_SMALL, ORANGE, ot);
 			if (info.needsLaps)
 			{
 				snprintf(line, sizeof line, "< %d lap%s >", info.laps, info.laps == 1 ? "" : "s");
-				DecalFont_DrawLineOT(line, 0x158, y, FONT_SMALL, RED, ot);
+				DecalFont_DrawLineOT(line, SOLO_TRACK_PICK_X, y, FONT_SMALL, RED, ot);
 			}
 			else
-				DecalFont_DrawLineOT((char *)picks[info.pick >= 0 && info.pick <= 2 ? info.pick : 0], 0x158, y,
-				                     FONT_SMALL, info.pick ? WHITE : GRAY, ot);
+				DecalFont_DrawLineOT((char *)picks[info.pick >= 0 && info.pick <= 2 ? info.pick : 0],
+				                     SOLO_TRACK_PICK_X, y, FONT_SMALL, info.pick ? WHITE : GRAY, ot);
 		}
 		if (i == s_soloSel)
 			MM_Solo_Highlight(y, ot);
 	}
-	if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info) && info.needsLaps)
+	/* Three help lines under the eight rows: what the selected track is, then
+	   what the picks mean (that line used to sit on the title rule). */
 	{
-		if (s_soloLapsFailed)
-			snprintf(line, sizeof line, "Could not keep the laps. See the client log.");
-		else
-			snprintf(line, sizeof line, "By %s. Pick its laps, then press * to use it.", info.author);
-		MM_Solo_Fit(line, fit, sizeof fit, 0x1A0);
-		DecalFont_DrawLineOT(fit, 0x100, 0xB4, FONT_SMALL, JUSTIFY_CENTER | (s_soloLapsFailed ? RED : GRAY), ot);
+		const int helpY = SOLO_HELP_Y - SOLO_ROW_H;
+		int legendLines = 2;
+		if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info) && info.needsLaps)
+		{
+			if (s_soloLapsFailed)
+				snprintf(line, sizeof line, "Could not keep the laps. See the client log.");
+			else
+				snprintf(line, sizeof line, "By %s. Pick its laps, then press * to use it.", info.author);
+			MM_Solo_DrawWrapped(line, 0x100, helpY, SOLO_TEXT_W, 3, JUSTIFY_CENTER | (s_soloLapsFailed ? RED : GRAY),
+			                    ot);
+			legendLines = 0;
+		}
+		else if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info))
+		{
+			if (info.author[0])
+				snprintf(line, sizeof line, "By %s. Modes: %s", info.author, info.modes[0] ? info.modes : "none");
+			else
+				snprintf(line, sizeof line, "Modes: %s", info.modes[0] ? info.modes : "none");
+			MM_Solo_Fit(line, fit, sizeof fit, SOLO_TEXT_W);
+			DecalFont_DrawLineOT(fit, 0x100, helpY, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+		}
+		else if (!s_soloStart.isPreset)
+			MM_Solo_DrawWrapped("The YAML's own settings stay; the tracks are added.", 0x100, helpY, SOLO_TEXT_W, 1,
+			                    JUSTIFY_CENTER | WHITE, ot);
+		if (legendLines)
+			MM_Solo_DrawWrapped("In pool: the seed may use it. Own pad: it gets a pad.", 0x100, SOLO_HELP_Y,
+			                    SOLO_TEXT_W, legendLines, JUSTIFY_CENTER | GRAY, ot);
 	}
-	else if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info))
-	{
-		if (info.author[0])
-			snprintf(line, sizeof line, "By %s. Modes: %s", info.author, info.modes[0] ? info.modes : "none");
-		else
-			snprintf(line, sizeof line, "Modes: %s", info.modes[0] ? info.modes : "none");
-		MM_Solo_Fit(line, fit, sizeof fit, 0x1A0);
-		DecalFont_DrawLineOT(fit, 0x100, 0xB4, FONT_SMALL, JUSTIFY_CENTER | GRAY, ot);
-	}
-	if (!s_soloStart.isPreset && s_soloSel >= rows)
-		DecalFont_DrawLineOT("The YAML's own settings stay; the tracks are added.", 0x100, 0xB4, FONT_SMALL,
-		                     JUSTIFY_CENTER | GRAY, ot);
 	if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info) && info.needsLaps)
-		MM_Solo_Footer("LEFT/RIGHT: LAPS   *: KEEP   ^: BACK", ot);
+		MM_Solo_Footer("LEFT/RIGHT: LAPS  *: KEEP  ^: BACK", ot);
 	else
 		MM_Solo_Footer("*: CHANGE   ^: BACK", ot);
 }
@@ -615,7 +755,7 @@ static void MM_Solo_PageHelp(uint32_t *ot, struct GamepadBuffer *pad)
 	(void)pad;
 	AP_Solo_OptionGet(s_soloHelpRow, &info);
 	MM_Solo_Title(info.label, ot);
-	MM_Solo_DrawWrapped(AP_Solo_OptionHelp(s_soloHelpRow), 0x30, 0x34, 0x1A0, 11, WHITE, ot);
+	MM_Solo_DrawWrapped(AP_Solo_OptionHelp(s_soloHelpRow), 0x30, SOLO_LIST_Y, 0x1A0, 11, WHITE, ot);
 	MM_Solo_Footer("^: BACK", ot);
 }
 
@@ -643,9 +783,11 @@ static void MM_Solo_UpdateNameEdit(void)
 	}
 }
 
+#define SOLO_REVIEW_NAME_Y 0x6C /* under the start and options lines, two each */
+
 static void MM_Solo_PageReview(uint32_t *ot, struct GamepadBuffer *pad)
 {
-	char line[160], fit[160];
+	char line[160];
 	if (!s_soloEditing && !s_soloEditJustEnded)
 	{
 		MM_Solo_Navigate(pad, 2);
@@ -655,7 +797,7 @@ static void MM_Solo_PageReview(uint32_t *ot, struct GamepadBuffer *pad)
 			if (s_soloSel == 0)
 			{
 				snprintf(s_soloNameBackup, sizeof s_soloNameBackup, "%s", s_soloName);
-				NativeText_Begin(s_soloName, 16, CONN_ROW_X, 0x58 - 2, CONN_ROW_W, CONN_ROW_H, 0);
+				NativeText_Begin(s_soloName, 16, CONN_ROW_X, SOLO_REVIEW_NAME_Y - 2, CONN_ROW_W, CONN_ROW_H, 0);
 				s_soloEditing = 1;
 			}
 			else if (AP_Solo_GenerateStart(s_soloStart.path, s_soloName,
@@ -666,27 +808,23 @@ static void MM_Solo_PageReview(uint32_t *ot, struct GamepadBuffer *pad)
 	}
 	MM_Solo_Title("Review", ot);
 	snprintf(line, sizeof line, "Start: %s", s_soloStart.label);
-	MM_Solo_Fit(line, fit, sizeof fit, 0x1A0);
-	DecalFont_DrawLineOT(fit, 0x38, 0x38, FONT_SMALL, WHITE, ot);
+	MM_Solo_DrawWrapped(line, SOLO_ROW_X, 0x38, SOLO_ROW_W, 2, WHITE, ot);
 	if (AP_Solo_TracksPicked() > 0)
-	{
 		snprintf(line, sizeof line, "Options: %s, plus %d custom track%s",
 		         s_soloFromOptions ? "as set" : "as in the YAML", AP_Solo_TracksPicked(),
 		         AP_Solo_TracksPicked() == 1 ? "" : "s");
-		DecalFont_DrawLineOT(line, 0x38, 0x44, FONT_SMALL, WHITE, ot);
-	}
 	else
-		DecalFont_DrawLineOT(s_soloFromOptions ? "Options: as set on the previous page" : "Options: as in the YAML",
-		                     0x38, 0x44, FONT_SMALL, WHITE, ot);
-	DecalFont_DrawLineOT("Slot name", 0x38, 0x58, FONT_SMALL, ORANGE, ot);
+		snprintf(line, sizeof line, "%s",
+		         s_soloFromOptions ? "Options: as set on the previous page" : "Options: as in the YAML");
+	MM_Solo_DrawWrapped(line, SOLO_ROW_X, 0x50, SOLO_ROW_W, 2, WHITE, ot);
+	DecalFont_DrawLineOT("Slot name", SOLO_ROW_X, SOLO_REVIEW_NAME_Y, FONT_SMALL, ORANGE, ot);
 	snprintf(line, sizeof line, "%s%s", s_soloName, s_soloEditing ? "_" : "");
-	DecalFont_DrawLineOT(line, 0xB0, 0x58, FONT_SMALL, WHITE, ot);
-	DecalFont_DrawLineOT("Generate", 0x38, 0x64, FONT_SMALL, ORANGE, ot);
+	DecalFont_DrawLineOT(line, 0xB0, SOLO_REVIEW_NAME_Y, FONT_SMALL, WHITE, ot);
+	DecalFont_DrawLineOT("Generate", SOLO_ROW_X, SOLO_REVIEW_NAME_Y + SOLO_ROW_H, FONT_SMALL, ORANGE, ot);
 	if (!s_soloEditing)
-		MM_Solo_Highlight(s_soloSel == 0 ? 0x58 : 0x64, ot);
+		MM_Solo_Highlight(s_soloSel == 0 ? SOLO_REVIEW_NAME_Y : SOLO_REVIEW_NAME_Y + SOLO_ROW_H, ot);
 	if (!s_soloStart.isPreset)
-		DecalFont_DrawLineOT("The YAML's own name is used unless you change it here.", 0x100, 0x80, FONT_SMALL,
-		                     JUSTIFY_CENTER | GRAY, ot);
+		MM_Solo_Help("The YAML's own name is used unless you change it here.", GRAY, ot);
 	MM_Solo_Footer(s_soloEditing ? "* OR START: SAVE   ^: CANCEL" : "*: SELECT   ^: BACK", ot);
 }
 
@@ -705,7 +843,7 @@ static void MM_Solo_PageBusy(uint32_t *ot, struct GamepadBuffer *pad)
 			return;
 		}
 		MM_Solo_Title(titles[s_soloBusyJob], ot);
-		DecalFont_DrawLineOT((char *)AP_Solo_JobPhase(), 0x100, 0x60, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+		MM_Solo_DrawWrapped(AP_Solo_JobPhase(), 0x100, 0x60, SOLO_TEXT_W, 2, JUSTIFY_CENTER | WHITE, ot);
 		if (s_soloBusyJob == SOLO_JOB_GENERATE)
 			MM_Solo_Footer("CIRCLE: CANCEL", ot);
 		return;
@@ -881,6 +1019,7 @@ static int MM_Solo_Frame(uint32_t *ot, struct GamepadBuffer *pad)
 			return 2;
 		return 1;
 	}
+	s_soloRowsShown = SOLO_ROWS;
 	switch (s_soloPage)
 	{
 	case SOLO_HOME: MM_Solo_PageHome(ot, pad); break;
@@ -895,5 +1034,6 @@ static int MM_Solo_Frame(uint32_t *ot, struct GamepadBuffer *pad)
 	case SOLO_MESSAGE: MM_Solo_PageMessage(ot, pad); break;
 	default: break;
 	}
+	MM_Solo_Panel(ot);
 	return 1;
 }
