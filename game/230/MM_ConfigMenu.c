@@ -1167,6 +1167,9 @@ static int s_relicEditCursor = 0; // tier * RELIC_EDIT_DIGITS + digit
 static int s_relicEditCentis[3];
 static struct CustomTrackRelicTimes s_relicShown;
 static char s_relicShownFor[NATIVE_SHA256_HEX_BYTES + 8];
+// The package the open editor was opened for; another package closes it.
+static char s_relicEditFor[NATIVE_SHA256_HEX_BYTES];
+static unsigned int s_relicLastFrame;
 
 static int MM_CustomContent_ConsumesBack(int section)
 {
@@ -1227,6 +1230,7 @@ static void RelicTimes_Open(const struct CustomTrackManagerPackage *package,
 	for (t = 0; t < 3; t++)
 		s_relicEditCentis[t] = s_relicShown.set ? CustomTrackManager_RelicCentisFromTicks(s_relicShown.ticks[t]) : 0;
 	s_relicEditCursor = 0;
+	snprintf(s_relicEditFor, sizeof s_relicEditFor, "%s", status->verifiedPackageSha256);
 	s_relicEditOpen = 1;
 	CustomContent_SetMessage("Up/Down digit, Left/Right move, X save, Triangle cancel.");
 }
@@ -1267,10 +1271,12 @@ static void RelicTimes_Input(const struct CustomTrackManagerPackage *package,
 	int tier = s_relicEditCursor / RELIC_EDIT_DIGITS;
 	int digit = s_relicEditCursor % RELIC_EDIT_DIGITS;
 
-	if (status->state != CTR_CT_MANAGER_READY)
+	if (status->state != CTR_CT_MANAGER_READY || strcmp(status->verifiedPackageSha256, s_relicEditFor) != 0)
 	{
+		// The package changed under the editor (a rescan or another room's
+		// package): its times were typed for other bytes, so nothing is saved.
 		s_relicEditOpen = 0;
-		CustomContent_SetMessage("Relic times need a Ready package.");
+		CustomContent_SetMessage("The package changed. Relic times not saved.");
 		return;
 	}
 	if ((pad->buttonsTapped & (BTN_UP | BTN_DOWN)) != 0)
@@ -1420,7 +1426,13 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 			s_customContentDownloadActive = 0;
 	}
 
-	RelicTimes_Refresh(package, status, 0);
+	{
+		// A fresh visit reads the stored times again; within a visit the copy
+		// follows the scan, and every save, clear and export reads the file.
+		const unsigned int now = (unsigned int)sdata->gGT->timer;
+		RelicTimes_Refresh(package, status, now - s_relicLastFrame > 2);
+		s_relicLastFrame = now;
+	}
 	if (s_relicEditOpen)
 		RelicTimes_Input(package, status, pad);
 	else
