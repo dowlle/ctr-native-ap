@@ -67,6 +67,23 @@ static struct CustomTrackSource s_oxideFinalVrm;
 static struct CustomTrackSource s_oxideFinalLev;
 static int s_haveOxideFinalDescriptor;
 static int s_oxideFinalVerified;
+
+// Cortex Vortex's own music: the .sca Lockheart published with the track, shipped
+// beside the bundled LEV and VRM. It is read when a content-plan race arms that
+// exact pair (the LEV and VRM pins of ap/ap_seedcfg.h) and kept only when its
+// sha256 is the pinned one. Optional by design: a missing, changed or unreadable
+// file costs the music only (Oxide Station's plays), never the track.
+#define CORTEX_LEV_SHA256 "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13"
+#define CORTEX_VRM_SHA256 "4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d"
+#define CORTEX_SCA_SHA256 "ddde81cf1be8042400c717edeeded0d8727e3bb8ba24f0100201708372ef8b1c"
+#define CORTEX_SCA_NAME "CVortex Arcade All.sca"
+#define CORTEX_SCA_MAX_BYTES (2u * 1024u * 1024u)
+static unsigned char *s_cortexMusic;
+static size_t s_cortexMusicSize;
+// The bytes a level load holds (CustomTrack_CortexMusicHold): the music player
+// keeps pointers into them from the bank until the song, so a seed withdrawn
+// in between only drops them once the load lets go.
+static unsigned char *s_cortexMusicHeld;
 static int s_customTracksLoaded = 0;
 static struct CustomTrackRaceLatch s_standaloneRace = {.lastRequested = -1};
 // Content-plan cup (#133 PR 5): set while the next leg's package is armed
@@ -161,9 +178,18 @@ static const char *CustomTrack_VerdictText(int verdict)
 // cannot show it on a cup that is no longer displaced, because
 // CustomTrackPolicy_CupDisplayName answers through the redirect predicate that
 // this function just turned off.
+static void CustomTrack_ClearCortexMusic(void)
+{
+	if (s_cortexMusic != s_cortexMusicHeld)
+		free(s_cortexMusic);
+	s_cortexMusic = NULL;
+	s_cortexMusicSize = 0;
+}
+
 static void CustomTrack_ResetArmedState(void)
 {
 	CustomTrack_ReleaseStandaloneBytes();
+	CustomTrack_ClearCortexMusic();
 	s_customTrackConfig.mappedLevelID = -1;
 	s_customTrackConfig.contentVerified = 0;
 	s_customTrackConfig.raceEnabled = 0;
@@ -293,6 +319,110 @@ static void CustomTrack_VerifySource(struct CustomTrackSource *source, const cha
 	source->verifiedSize = total;
 	CustomTrack_Log("[CustomTracks] verified %s \"%s\" (%u bytes, sha256 %s)\n", roleName, source->path,
                         (unsigned)total, actualHex);
+}
+
+// The armed race is the bundled Cortex Vortex pair: the seed's digests are its
+// pins. A Saphi download of Cortex Vortex is a different pair and never matches.
+static int CustomTrack_DescriptorIsCortex(void)
+{
+	return s_haveDescriptor && NativeSha256_HexEquals(CORTEX_LEV_SHA256, s_descriptor.levSha256) &&
+	       NativeSha256_HexEquals(CORTEX_VRM_SHA256, s_descriptor.vrmSha256);
+}
+
+// Read the .sca beside the verified LEV whole and keep it only when its sha256
+// is the pinned one.
+static void CustomTrack_LoadCortexMusic(const char *levPath)
+{
+	char path[CUSTOM_TRACK_PATH_MAX];
+	struct NativeSha256Ctx ctx;
+	unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
+	char hex[NATIVE_SHA256_HEX_BYTES];
+	struct stat st;
+	unsigned char *bytes;
+	const char *slash = strrchr(levPath, '/');
+	const char *back = strrchr(levPath, '\\');
+	size_t dirLength;
+	FILE *f;
+
+	CustomTrack_ClearCortexMusic();
+	if (back != NULL && (slash == NULL || back > slash))
+		slash = back;
+	dirLength = slash ? (size_t)(slash - levPath) + 1 : 0;
+	if (dirLength + sizeof CORTEX_SCA_NAME <= sizeof path)
+	{
+		memcpy(path, levPath, dirLength);
+		memcpy(path + dirLength, CORTEX_SCA_NAME, sizeof CORTEX_SCA_NAME);
+	}
+	if (dirLength + sizeof CORTEX_SCA_NAME > sizeof path || stat(path, &st) != 0 || st.st_size <= 0 ||
+	    (unsigned long)st.st_size > CORTEX_SCA_MAX_BYTES)
+	{
+		CustomTrack_Log("[CortexVortex] music not available, Oxide Station's music plays\n");
+		return;
+	}
+	bytes = (unsigned char *)malloc((size_t)st.st_size);
+	f = bytes ? fopen(path, "rb") : NULL;
+	if (f == NULL || fread(bytes, 1, (size_t)st.st_size, f) != (size_t)st.st_size)
+	{
+		if (f)
+			fclose(f);
+		free(bytes);
+		CustomTrack_Log("[CortexVortex] music could not be read, Oxide Station's music plays\n");
+		return;
+	}
+	fclose(f);
+	NativeSha256_Init(&ctx);
+	NativeSha256_Update(&ctx, bytes, (size_t)st.st_size);
+	NativeSha256_Final(&ctx, digest);
+	NativeSha256_ToHex(digest, hex);
+	if (!NativeSha256_HexEquals(CORTEX_SCA_SHA256, hex))
+	{
+		free(bytes);
+		CustomTrack_Log("[CortexVortex] music REFUSED: sha256 mismatch, Oxide Station's music plays\n");
+		return;
+	}
+	s_cortexMusic = bytes;
+	s_cortexMusicSize = (size_t)st.st_size;
+	CustomTrack_Log("[CortexVortex] music verified (%u bytes)\n", (unsigned)s_cortexMusicSize);
+}
+
+int CustomTrack_CortexMusic(const void **data, size_t *size)
+{
+	if (data)
+		*data = NULL;
+	if (size)
+		*size = 0;
+	if (!data || !size || !s_cortexMusic || !s_customTrackConfig.contentVerified || !CustomTrack_DescriptorIsCortex())
+		return 0;
+	*data = s_cortexMusic;
+	*size = s_cortexMusicSize;
+	return 1;
+}
+
+int CustomTrack_CortexMusicHold(const void **data, size_t *size)
+{
+	CustomTrack_CortexMusicRelease();
+	if (!CustomTrack_CortexMusic(data, size))
+		return 0;
+	s_cortexMusicHeld = s_cortexMusic;
+	return 1;
+}
+
+void CustomTrack_CortexMusicRelease(void)
+{
+	if (s_cortexMusicHeld != NULL && s_cortexMusicHeld != s_cortexMusic)
+		free(s_cortexMusicHeld);
+	s_cortexMusicHeld = NULL;
+}
+
+// The race on screen is the plan's Cortex Vortex entry (its context says so)
+// with the bundled pair armed. A package that happens to carry the same files
+// under another entry is not.
+int CustomTrack_CortexMusicServing(int levelID, int adventureCupActive, int cupID)
+{
+	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(levelID);
+
+	return levelID == 13 && race != NULL && race->cortex && !race->retail && CustomTrack_DescriptorIsCortex() &&
+	       s_cortexMusic != NULL && CustomTrack_ServingLoad(levelID, adventureCupActive, cupID);
 }
 
 void CustomTrack_ClearOxideFinalDescriptor(void)
@@ -857,6 +987,8 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 
 	s_customTrackConfig.contentVerified = 1;
 	s_customTrackServeFault[0] = '\0';
+	if (CustomTrack_DescriptorIsCortex())
+		CustomTrack_LoadCortexMusic(s_customTrackLev.path);
 	if (d->standalone)
 		CustomTrack_Log("[CustomTracks] standalone package verified: %d laps on host slot %d; awaiting entry context\n",
 		                d->laps, d->hostLevelID);

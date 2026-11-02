@@ -466,9 +466,11 @@ struct HighScoreEntry *MainRaceTrack_CustomHighScores(void);
 void MainRaceTrack_CustomSaveHighScores(void);
 int MainRaceTrack_CustomLoadGhost(struct GhostHeader *dst);
 void MainRaceTrack_CustomSaveGhost(const struct GhostHeader *gh);
-// Custom-race music from the package's .sca (game/HOWL/HOWL_CustomMusic.c).
+// Custom-race music from the package's .sca, and Cortex Vortex's bundled .sca
+// (game/HOWL/HOWL_CustomMusic.c).
 void HOWL_CustomMusic_Reset(void);
 int HOWL_CustomMusic_LoadBank(struct Bank *thisBank);
+int HOWL_CustomMusic_CortexLoadBank(int level, struct Bank *thisBank);
 void HOWL_CustomMusic_BankDone(void);
 int HOWL_CustomMusic_ServeSectors(void *destination, int firstSector, int numSector);
 int HOWL_CustomMusic_SetSong(void);
