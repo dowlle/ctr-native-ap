@@ -2015,6 +2015,26 @@ def row6_old(p):
     p.pop("pad_client")
     p["required_features"].remove("pad_client_v1")
 alter("row6 plan from before the record", row6_old, row6_room)
+# Row 10f: Wumpa Income from a custom track with measured Wumpa capability
+# (ruling of 2026-11-02). Plans whose only income is such a track; without the
+# capability both validators refuse them.
+from worlds.ctr.test.test_custom_tracks_132 import only_custom_income
+cases.append(("custom-income-fixture", json.loads((root / "tools/fixtures/content-plan/wumpa-custom-income.json").read_text()), True))
+for seed in (1, 2):
+    cases.append((f"custom-income-generated-{seed}", only_custom_income(True, seed=seed).fill_slot_data(), True))
+def lose_wumpa(p):
+    for package in p["packages"]:
+        package["capabilities"]["wumpa"] = False
+def income_relic_only(p):
+    for entry in p["entries"]:
+        if entry.get("kind") == "track" and entry["track_id"].startswith("custom/"):
+            entry["modes"] = ["relic"]
+custom_income = next(w for name, w, ok in cases if name == "custom-income-fixture")
+for name, change in [
+        ("custom income loses its Wumpa capability", lose_wumpa),
+        ("custom income races only Relic Races", income_relic_only),
+        ]:
+    alter("row10f " + name, change, custom_income)
 # The verifier's copy of the per-track USF finish rulings (#133 PR 8,
 # ap/ap_content_verify.hpp kUsfRulings) equals the apworld's table.
 from worlds.ctr import content_capability as ccap

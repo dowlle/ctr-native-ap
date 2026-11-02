@@ -1953,14 +1953,17 @@ static void validate(const J &p, State &out) {
             }
     }
     // Banking (J11): the shop and the Wumpa goal need Wumpa Income, a Trophy
-    // Race or CTR Challenge on a retail race track (apworld wumpa_shop.
-    // create_locations refuses a seed without one).
+    // Race or CTR Challenge on a retail race track 0..15 or on a custom track
+    // whose package has measured Wumpa capability (ruling of 2026-11-02; apworld
+    // content_wumpa.check_income refuses a seed without one).
     if (out.wumpa.shop_slots || wumpa_goal) {
         bool income = false;
         for (const auto &pad : out.pads)
-            income |= pad.occupied && !pad.crystal && !pad.cup && !pad.cortex && pad.retail_id >= 0 && pad.retail_id <= 15 &&
+            income |= pad.occupied && !pad.crystal && !pad.cup && !pad.cortex &&
+                      ((pad.retail_id >= 0 && pad.retail_id <= 15) ||
+                       (pad.package_index >= 0 && (record_caps(out, pad) & AP_CONTENT_CAP_WUMPA))) &&
                       (ap_content_mode_slot(&pad, AP_CONTENT_MODE_TROPHY) >= 0 || ap_content_mode_slot(&pad, AP_CONTENT_MODE_CTR) >= 0);
-        need(income, "the Wumpa Shop and the Wumpa goal need a retail race to bank fruit");
+        need(income, "the Wumpa Shop and the Wumpa goal need a retail or Wumpa-capable custom race to bank fruit");
     }
     // Two checks never share a name, so a room cannot show two identical rows.
     std::set<std::string> check_names;
