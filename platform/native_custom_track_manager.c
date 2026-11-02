@@ -1117,6 +1117,70 @@ int CustomTrackManager_Preflight(const char *assetsRoot,
 	return state;
 }
 
+// The apworld admits a descriptor only inside its own limits
+// (worlds/ctr/custom_packages.py admit): a lowercase track key, a revision of
+// letters, digits and . _ + -, lowercase UUID and hashes, labels of 1 to 128
+// bytes, and files within the LEV and VRM size limits. Export refuses anything
+// outside them instead of writing a YAML the generator would refuse.
+static int Manager_IsLowerHex(const char *s, size_t n)
+{
+	size_t i;
+	if (s == NULL || strlen(s) != n)
+		return 0;
+	for (i = 0; i < n; i++)
+		if (!((s[i] >= '0' && s[i] <= '9') || (s[i] >= 'a' && s[i] <= 'f') || s[i] == '-'))
+			return 0;
+	return 1;
+}
+
+static int Manager_IsDescriptorKey(const char *s)
+{
+	size_t i, n = s ? strlen(s) : 0;
+	if (n == 0 || s[0] == '-' || s[n - 1] == '-')
+		return 0;
+	for (i = 0; i < n; i++)
+		if (s[i] == '-' && s[i + 1] == '-')
+			return 0;
+	return 1; // Manager_IsSafeId already limits the characters
+}
+
+static int Manager_IsDescriptorRevision(const char *s)
+{
+	size_t i, n = s ? strlen(s) : 0;
+	if (n == 0 || n > 64 || !((s[0] >= '0' && s[0] <= '9') || (s[0] >= 'a' && s[0] <= 'z') ||
+	                         (s[0] >= 'A' && s[0] <= 'Z')))
+		return 0;
+	for (i = 1; i < n; i++)
+		if (!((s[i] >= '0' && s[i] <= '9') || (s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z') ||
+		      s[i] == '.' || s[i] == '_' || s[i] == '+' || s[i] == '-'))
+			return 0;
+	return 1;
+}
+
+// Printable ASCII only: the apworld refuses control characters and invalid
+// UTF-8, and the managed packages' titles and authors are plain ASCII.
+static int Manager_IsPrintableAscii(const char *s)
+{
+	if (s == NULL || *s == '\0')
+		return 0;
+	for (; *s != '\0'; s++)
+		if ((unsigned char)*s < 0x20 || (unsigned char)*s > 0x7e)
+			return 0;
+	return 1;
+}
+
+static int Manager_IsDescriptorExportable(const struct CustomTrackManagerPackage *package,
+	                                      const struct CustomTrackManagerStatus *status)
+{
+	return Manager_IsDescriptorKey(package->id) && Manager_IsDescriptorRevision(package->version) &&
+	       strlen("package/") + strlen(package->id) + 1 + strlen(package->version) <= 64 &&
+	       Manager_IsLowerHex(package->packageUuid, 36) && Manager_IsLowerHex(package->levSha256, 64) &&
+	       Manager_IsLowerHex(package->vrmSha256, 64) && Manager_IsPrintableAscii(package->title) &&
+	       strlen(package->title) <= 128 && Manager_IsPrintableAscii(package->author) &&
+	       strlen(package->author) <= 128 && status->levBytes <= 16ul * 1024 * 1024 &&
+	       status->vrmBytes <= 4ul * 1024 * 1024;
+}
+
 int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *package,
 	                               const struct CustomTrackManagerStatus *status,
 	                               char *dst, size_t dstSize)
@@ -1125,7 +1189,8 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 	char receipt[NATIVE_SHA256_HEX_BYTES];
 
 	if (!Manager_PackageSupported(package) || status == NULL || status->state != CTR_CT_MANAGER_READY ||
-	    dst == NULL || dstSize == 0)
+	    dst == NULL || dstSize == 0 || status->levBytes == 0 || status->vrmBytes == 0 ||
+	    !Manager_IsDescriptorExportable(package, status))
 		return 0;
 	// Ready only describes the package that was scanned. Export must name the
 	// same bytes, so a Ready 1.0.2 status can never be written out as 1.0.0.
@@ -1136,43 +1201,37 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 	    !NativeSha256_HexEquals(status->verifiedPackageSha256, receipt))
 		return 0;
 
+	// The 0.3.0 plan form: one complete package descriptor in a list, as the
+	// apworld's custom_tracks option admits it (worlds/ctr/custom_packages.py).
+	// The old mapping that put the track on the Purple Gem Cup is refused there.
+	// Every value is plain text, so double quotes need no escaping, and quoting
+	// keeps a revision such as 1.0 from reading as a number. The capabilities
+	// are the measured flags: arcade needs AI paths and two or more spawns,
+	// time_trial needs the restart points, and `checkpoints` and `ai_nav` are
+	// the boss venue facts. relic stays false: the manager holds no author
+	// target times, and a Relic Race cannot be listed without them.
 	wrote = snprintf(dst, dstSize,
 		"custom_tracks:\n"
-		"  %s:\n"
-		"    package_uuid: %s\n"
-		"    package_version: %s\n"
-		"    minimum_client_version: %s\n"
-		"    minimum_apworld_version: %s\n"
-		"    lev_sha256: %s\n"
-		"    vrm_sha256: %s\n"
-		"    navigation:\n"
-		"      uuid: %s\n"
-		"      revision: %u\n"
+		"  - id: \"package/%s/%s\"\n"
+		"    content_id: \"%s\"\n"
+		"    uuid: \"%s\"\n"
+		"    revision: \"%s\"\n"
+		"    display_name: \"%s\"\n"
+		"    author: \"%s\"\n"
 		"    laps: %d\n"
-		"    replaces: purple_gem_cup\n"
-		"    boxes: false\n"
-		"    flags:\n"
-		"      crates: %s\n"
-		"      ctr_letters: %s\n"
-		"      relic_crates: %s\n"
-		"      ai_nav: %s\n"
-		"      minimap: %s\n"
-		"      ghosts: %s\n"
-		"      wumpa_collectible: %s\n"
-		"      spawns: %d\n"
-		"      checkpoints: %d\n",
-		package->id, package->packageUuid, package->version,
-		package->minimumClientVersion, package->minimumApworldVersion,
-		package->levSha256, package->vrmSha256,
-		package->navigationUuid, package->navigationRevision, package->laps,
-		package->flagCrates ? "true" : "false",
+		"    capabilities: {time_trial: true, arcade: %s, relic: false, ctr_tokens: %s, wumpa: %s, "
+		"checkpoints: %d, ai_nav: %s}\n"
+		"    files:\n"
+		"      - {role: lev, sha256: \"%s\", bytes: %lu, format: ctr-lev, format_version: 1}\n"
+		"      - {role: vrm, sha256: \"%s\", bytes: %lu, format: ctr-vrm, format_version: 1}\n"
+		"    evidence: []\n",
+		package->id, package->version, package->id, package->packageUuid, package->version,
+		package->title, package->author, package->laps,
+		(package->flagAiNav && package->flagSpawns >= 2) ? "true" : "false",
 		package->flagCtrLetters ? "true" : "false",
-		package->flagRelicCrates ? "true" : "false",
-		package->flagAiNav ? "true" : "false",
-		package->flagMinimap ? "true" : "false",
-		package->flagGhosts ? "true" : "false",
 		package->flagWumpaCollectible ? "true" : "false",
-		package->flagSpawns, package->flagCheckpoints);
+		package->flagCheckpoints, package->flagAiNav ? "true" : "false",
+		package->levSha256, status->levBytes, package->vrmSha256, status->vrmBytes);
 
 	return wrote >= 0 && (size_t)wrote < dstSize;
 }

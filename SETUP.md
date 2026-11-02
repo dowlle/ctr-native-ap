@@ -24,8 +24,9 @@ and a CTR YAML file; see [Generating or hosting a multiworld](#generating-or-hos
 
 For a guided first setup, use the
 [CTR setup guide on AP-Pie](https://ap-pie.com/guides/ctr). To create a player
-file for stable 0.2.0, open the
-[0.2.0 CTR YAML Builder](https://ap-pie.com/yaml-builder/ctr?version=0.2.0).
+file, open the
+[AP-Pie CTR YAML Builder](https://ap-pie.com/yaml-builder/ctr) and pick the
+version that matches your client.
 
 **Choose your next step:** if your room is already generated, install the
 client and connect using the host's details. If the host is still collecting
@@ -227,10 +228,11 @@ through [Reporting a crash or a stuck seed](#reporting-a-crash-or-a-stuck-seed).
 ## Generating or hosting a multiworld
 
 Create your player file with the
-[0.2.0 CTR YAML Builder](https://ap-pie.com/yaml-builder/ctr?version=0.2.0).
-Download the resulting YAML and give it to the person generating the room. The
-Builder prepares and validates player configuration; it does not generate the
-seed or host the playable server.
+[AP-Pie YAML Builder](https://ap-pie.com/yaml-builder/ctr). Pick the version that
+matches your client, start from a preset or the defaults, change what you want,
+and download the YAML. Give it to the person generating the room. The Builder
+prepares and validates player configuration; it does not generate the seed or
+host the playable server.
 
 Only the person generating the room needs the `ctr.apworld`. Download it from
 the same release as the client and install it by double-clicking it or placing
@@ -244,6 +246,45 @@ generated Crash Team Racing YAML locally.
 
 The released client and apworld are a pair. Update both together, even when a
 release appears to change only one side.
+
+### Choosing your options in 0.3.0
+
+From 0.3.0 there is one list of options and no separate content setup. A YAML
+that sets nothing gets the original game's shape: the 18 race tracks, the 5 Gem
+Cups and the 4 Crystal Challenges on the 27 warp pads, plus the five boss
+garages. Each option you set changes that seed. The options come in the order
+you would fill them in:
+
+- **Content:** `retail_tracks`, `track_modes`, `custom_tracks`,
+  `cortex_vortex_track`, `required_entries`, the cups and arenas, and the boss
+  garages and boss cups.
+- **Goal:** `oxide_goal` and what it needs.
+- **Pads and requirements:** where content lands (`pad_placement`), what each
+  pad asks for (`warppad_unlock_requirements`, `requirement_weights`,
+  `two_stage_density`, `warp_pad_rules`) and whether Keys and Gems are shuffled.
+- **Checks:** which extra checks exist (podium rungs, relic perfects, letters,
+  lap checks, item boxes, Itemsanity and more).
+- **Items and traps, characters and stats, boost, DeathLink, display.**
+
+Every option explains itself in the Builder and in the generated template. Three
+presets give you a start: **Quick** (a short goal with few locks), **Standard**
+(the defaults) and **Full Adventure** (everything on, every location
+reachable). They are the same three that Play Solo offers.
+
+Old YAMLs: option names that 0.3.0 no longer has are ignored without a message.
+That does not make a v0.2.x YAML safe to reuse: the defaults changed, and some
+old forms are refused (the `custom_tracks` mapping that put Baby T Park on the
+Purple Gem Cup, for one). Build a new YAML, or read the old one again before you
+rely on it. A room made with v0.2.x needs the v0.2.4 client; the 0.3.0
+client refuses it and says so. v0.2.4 stays downloadable on the
+[releases page](https://github.com/dowlle/ctr-native-ap/releases).
+
+### Updating from 0.2.x
+
+There is no in-game update from 0.2.x. Download the 0.3.0 archive from the
+releases page yourself and set it up with the steps above. Keep your old folder
+until the new one connects. Update the `ctr.apworld` on the generating side to
+the same release.
 
 ## Playing solo, without a server
 
@@ -279,7 +320,7 @@ internet. Everything solo is stored in the `solo` folder next to the game, so
 back that folder up together with your memory cards. Multiplayer still uses
 **Connect** as before.
 
-## Experimental custom content in 0.2.0
+## Experimental custom content
 
 The public archive contains no custom-track files. Version 0.2.0 recognizes one
 experimental Baby T Park package supplied by its creator. Open **OPTIONS →
@@ -287,10 +328,13 @@ Custom Content** to inspect it, follow the creator link and verify the installed
 files. **Ready** means the files are compatible; it does not make a generated
 seed use the track.
 
-To use the preview, export its YAML fragment from the manager and add that block
-to the player YAML before generating the room. Every player whose slot requires
-the track must install the same verified package. A missing or mismatched package
-fails closed instead of loading the displaced retail race.
+To use a package, copy or save its YAML from the Custom Content page and add
+that entry to the `custom_tracks` list of the player YAML before generating the
+room. The entry is the track's complete descriptor, including its file checks,
+the lap count and what it can do. A track with restart points and AI paths
+(`checkpoints` and `ai_nav`) can also race a boss. Every player whose slot
+requires the track must install the same verified package. A missing or
+mismatched package fails closed instead of loading the displaced retail race.
 
 ## Optional: controllers and Steam Input
 
