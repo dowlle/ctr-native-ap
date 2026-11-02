@@ -1161,6 +1161,7 @@ static int s_customContentDownloadActive = 0;
 // saves, Triangle cancels. The page keeps a copy of the stored times to show;
 // export always reads the file again.
 #define RELIC_EDIT_DIGITS 6 // M M : S S . C C
+static void CustomContent_SetMessage(const char *message);
 static const char *const s_relicTierNames[3] = {"Sapphire", "Gold", "Platinum"};
 static int s_relicEditOpen = 0;
 static int s_relicEditCursor = 0; // tier * RELIC_EDIT_DIGITS + digit
@@ -1312,7 +1313,7 @@ static void RelicTimes_Input(const struct CustomTrackManagerPackage *package,
 static void RelicTimes_DrawEditor(uint32_t *ot)
 {
 	int t, d;
-	char text[16];
+	char text[32];
 	for (t = 0; t < 3; t++)
 	{
 		int y = 0x78 + t * 0x14;
