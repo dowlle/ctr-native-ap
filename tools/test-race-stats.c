@@ -118,13 +118,20 @@ int main(void)
 	expect(AP_RaceStats_RoomApplies(BATTLE_MODE | TIME_LIMIT), 0, "Battle, time limit: vanilla");
 	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE | ADVENTURE_BOSS | RELIC_RACE), 1,
 	       "Adventure with any extra bit: room stats");
+	expect(AP_RaceStats_RoomApplies(RELIC_RACE), 1, "Relic Race without the Adventure bit: room stats");
+	expect(AP_RaceStats_RoomApplies(CRYSTAL_CHALLENGE), 1, "Crystal Challenge bit alone: room stats");
+	expect(AP_RaceStats_RoomApplies(ADVENTURE_CUP), 1, "Adventure cup bit alone: room stats");
+	expect(AP_RaceStats_RoomApplies(ADVENTURE_BOSS), 1, "Boss bit alone: room stats");
+	expect(AP_RaceStats_RoomApplies(TIME_TRIAL | RELIC_RACE), 0, "Time Trial with a stale relic bit: vanilla");
+	expect(AP_RaceStats_RoomApplies(BATTLE_MODE | ADVENTURE_ARENA), 0, "Battle with a stale hub bit: vanilla");
 
 	// ── The writers ask it ──
 	cap = slurp("ap/ap_capability.c");
 	swap = slurp("ap/ap_charswap.c");
 	expect(cap != NULL && swap != NULL, 1, "sources readable from the repository root");
-	expect(cap && strstr(cap, "AP_RS_ADVENTURE_MODE == ADVENTURE_MODE") != NULL, 1,
-	       "ap_capability.c pins the Adventure mode bit");
+	expect(cap && strstr(cap, "AP_RS_ADVENTURE_MODE == ADVENTURE_MODE") != NULL &&
+	           strstr(cap, "AP_RS_RELIC_RACE == RELIC_RACE") != NULL && strstr(cap, "AP_RS_BATTLE_MODE == BATTLE_MODE") != NULL,
+	       1, "ap_capability.c pins the mode bits");
 	expect(cap && strstr(cap, "return AP_RaceStats_RoomApplies(sdata->gGT->gameMode1);") != NULL, 1,
 	       "AP_CapabilityRoomStatsRace reads the rule on the live mode");
 

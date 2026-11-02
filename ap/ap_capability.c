@@ -226,7 +226,12 @@ static int AP_CapabilityStatsActive(void)
 }
 
 typedef char ap_cap_race_stats_mode_check
-    [(AP_RS_ADVENTURE_MODE == ADVENTURE_MODE) ? 1 : -1];
+    [(AP_RS_BATTLE_MODE == BATTLE_MODE && AP_RS_TIME_TRIAL == TIME_TRIAL && AP_RS_ADVENTURE_MODE == ADVENTURE_MODE &&
+      AP_RS_ADVENTURE_ARENA == ADVENTURE_ARENA && AP_RS_ARCADE_MODE == ARCADE_MODE && AP_RS_RELIC_RACE == RELIC_RACE &&
+      AP_RS_CRYSTAL_CHALLENGE == CRYSTAL_CHALLENGE && AP_RS_ADVENTURE_CUP == ADVENTURE_CUP &&
+      AP_RS_ADVENTURE_BOSS == ADVENTURE_BOSS)
+         ? 1
+         : -1];
 
 int AP_CapabilityRoomStatsRace(void)
 {

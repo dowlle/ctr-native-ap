@@ -8,6 +8,8 @@
 #include "ap_solo_logic.hpp"
 #include "ap_net.h"
 
+#include <platform/native_sha256.h>
+
 #include <SDL3/SDL.h>
 
 #include <algorithm>
@@ -959,8 +961,57 @@ std::string NeedsLapsFileName(const APSoloTrackInfo &t)
 	return AP_SoloDescriptorFileName(id.substr(8, slash - 8), id.substr(slash + 1));
 }
 
-// The tracks in solo/needs-laps the wrapper's list does not already have, as
-// rows that wait for their laps (ruling of 2026-11-02).
+// A file in assets/tracks/<key>/original with the pin's suffix, size and
+// SHA-256, whatever its name: the wrapper's rule for a listed track
+// (ctr_solo.py _pinned_file), so a waiting track is listed only while its
+// files are installed.
+bool PinnedFileInstalled(const std::string &key, const nlohmann::json &pin)
+{
+	if (!pin.is_object())
+		return false;
+	const std::string role = AP_SoloJsonString(pin, "role"), sha = AP_SoloJsonString(pin, "sha256");
+	const auto bytes = pin.find("bytes");
+	if ((role != "lev" && role != "vrm") || sha.size() != 64 || bytes == pin.end() || !bytes->is_number_unsigned())
+		return false;
+	const std::uintmax_t size = bytes->get<std::uintmax_t>();
+	std::error_code ec;
+	const fs::path folder = fs::u8path(AssetsDir()) / "tracks" / fs::u8path(key) / "original";
+	for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec))
+	{
+		std::string name = it->path().filename().u8string();
+		for (char &c : name)
+			c = (char)std::tolower((unsigned char)c);
+		std::error_code fe;
+		if (name.size() < 4 || name.compare(name.size() - 4, 4, "." + role) != 0 ||
+		    !fs::is_regular_file(it->symlink_status(fe)) || fs::file_size(it->path(), fe) != size || fe)
+			continue;
+		std::ifstream in(it->path(), std::ios::binary);
+		NativeSha256Ctx ctx;
+		NativeSha256_Init(&ctx);
+		char buf[65536];
+		std::uintmax_t got = 0;
+		while (in && got <= size)
+		{
+			in.read(buf, sizeof buf);
+			const std::streamsize n = in.gcount();
+			if (n <= 0)
+				break;
+			NativeSha256_Update(&ctx, buf, (size_t)n);
+			got += (std::uintmax_t)n;
+		}
+		unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
+		char hex[NATIVE_SHA256_HEX_BYTES];
+		NativeSha256_Final(&ctx, digest);
+		NativeSha256_ToHex(digest, hex);
+		if (got == size && NativeSha256_HexEquals(sha.c_str(), hex))
+			return true;
+	}
+	return false;
+}
+
+// The tracks in solo/needs-laps the wrapper's list does not already have and
+// whose files are installed, as rows that wait for their laps (ruling of
+// 2026-11-02).
 void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows)
 {
 	std::error_code ec;
@@ -992,6 +1043,13 @@ void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows)
 		for (const APSoloTrackInfo &row : rows)
 			listed = listed || std::strcmp(row.id, info.id) == 0;
 		if (listed)
+			continue;
+		const auto files = d.find("files");
+		bool installed = files != d.end() && files->is_array() && files->size() == 2;
+		if (installed)
+			for (const auto &pin : *files)
+				installed = installed && PinnedFileInstalled(AP_SoloJsonString(d, "content_id"), pin);
+		if (!installed)
 			continue;
 		info.needsLaps = 1;
 		info.laps = AP_SOLO_LAPS_DEFAULT;

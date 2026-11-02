@@ -21,14 +21,34 @@
 // ap_capability.c pins these values to the engine's enum.
 // ---------------------------------------------------------------------------
 
+#define AP_RS_BATTLE_MODE 0x20u
+#define AP_RS_TIME_TRIAL 0x20000u
 #define AP_RS_ADVENTURE_MODE 0x80000u
+#define AP_RS_ADVENTURE_ARENA 0x100000u
+#define AP_RS_ARCADE_MODE 0x400000u
+#define AP_RS_RELIC_RACE 0x4000000u
+#define AP_RS_CRYSTAL_CHALLENGE 0x8000000u
+#define AP_RS_ADVENTURE_CUP 0x10000000u
+#define AP_RS_ADVENTURE_BOSS 0x80000000u
+
+// The modes that are never Adventure, and the bits only Adventure sets. A
+// Relic Race on the AP map can run without ADVENTURE_MODE (ap_boxes.c,
+// AP_BoxesRaceCarriesBoxes, live test of 2026-08-12), so every Adventure bit
+// counts. An explicit Arcade, Time Trial or Battle bit wins over a stale
+// Adventure bit.
+#define AP_RS_NOT_ADVENTURE (AP_RS_ARCADE_MODE | AP_RS_TIME_TRIAL | AP_RS_BATTLE_MODE)
+#define AP_RS_ADVENTURE_BITS                                                                              \
+	(AP_RS_ADVENTURE_MODE | AP_RS_ADVENTURE_ARENA | AP_RS_RELIC_RACE | AP_RS_CRYSTAL_CHALLENGE |       \
+	 AP_RS_ADVENTURE_CUP | AP_RS_ADVENTURE_BOSS)
 
 // 1 when the room's kart stats apply to a race in this game mode (gameMode1),
-// 0 when the race drives on vanilla stats. Versus has no mode bit of its own,
-// so the rule names the one mode that keeps the room's stats, not the others.
+// 0 when the race drives on vanilla stats. Versus has no mode bit of its own:
+// it is the race with neither kind of bit.
 static inline int AP_RaceStats_RoomApplies(unsigned int gameMode1)
 {
-	return (gameMode1 & AP_RS_ADVENTURE_MODE) != 0;
+	if ((gameMode1 & AP_RS_NOT_ADVENTURE) != 0)
+		return 0;
+	return (gameMode1 & AP_RS_ADVENTURE_BITS) != 0;
 }
 
 #endif
