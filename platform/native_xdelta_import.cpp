@@ -1297,9 +1297,11 @@ std::string room_failure(const std::string &what, bool placedLev, bool placedVrm
 }
 
 #ifdef CTR_XDELTA_TESTING
-/* Harness only: fail the VRM after the LEV is placed. */
-extern "C" int g_xdeltaTestFailRoomVrm;
-int g_xdeltaTestFailRoomVrm;
+/* Harness only: fail the VRM after the LEV is placed. The harness links to it,
+   so it stays out of the unnamed namespace. */
+} // namespace
+extern "C" { int g_xdeltaTestFailRoomVrm; }
+namespace {
 #define XDELTA_TEST_FAIL_VRM() do { if (g_xdeltaTestFailRoomVrm) throw std::runtime_error("Test failure"); } while (0)
 #else
 #define XDELTA_TEST_FAIL_VRM() do { } while (0)
