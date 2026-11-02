@@ -8,7 +8,7 @@
 // so 512 KB is also the most they can express, and Bank_AssignSpuAddrs stops
 // a bank that would end at or past 0x7e000.
 //
-// Box authoring build (CTR_CUSTOM_PACKAGES): 1 MiB, so a custom track's own
+// Builds with packages (CTR_CUSTOM_PACKAGES): 1 MiB, so a custom track's own
 // Saphi sound bank fits next to bank 0, the eight-driver bank 54 and the
 // character banks. The same u16 fields then hold addresses in 16-byte units,
 // which reach 1 MiB. Nothing read from KART.HWL changes: spuSize stays in
@@ -19,8 +19,8 @@
 // unused, as in retail. The native reverb keeps its own buffer
 // (native_audio.c) and never uses SPU memory.
 //
-// The player client builds without CTR_CUSTOM_PACKAGES, where every macro
-// below reduces to the retail constant.
+// A build without CTR_CUSTOM_PACKAGES reduces every macro below to the retail
+// constant.
 
 #define CTR_SPU_RETAIL_BYTES   (512 * 1024)
 #define CTR_SPU_RETAIL_CEILING 0x7e000

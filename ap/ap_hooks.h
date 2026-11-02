@@ -426,9 +426,18 @@ int AP_CustomContentGateEventEntry(int forceVerify);
 void AP_DrawCustomContentWarning(void);
 #endif
 #ifdef CTR_CUSTOM_PACKAGES
-// Box authoring build: may the Arcade custom pages start a package race? The
-// authoring build never joins a room (ap_net_init), so this is "no seed".
+// May the Arcade custom pages start a package race now? The box authoring
+// download never joins a room (ap_net_init), so there this is "no seed". The
+// player client may also start one in a room, see AP_ArcadeHoldsRoom.
 int AP_CustomOfflineLaunchAllowed(void);
+// A line for the start panel in a room, "" outside one.
+const char *AP_CustomOfflineRoomNote(void);
+// A custom Arcade race is running in this client. Nothing it does reaches the
+// room, and received items stay queued until it ends. Checks earned before the
+// race (held offline, a shop purchase) may still go out on their own paths.
+int AP_ArcadeHoldsRoom(void);
+#else
+#define AP_ArcadeHoldsRoom() 0
 #endif
 
 // Append a line to the AP debug log (forwards to the module's AP_AppendLog).

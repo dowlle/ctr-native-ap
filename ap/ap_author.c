@@ -16,7 +16,12 @@
 #ifdef CTR_BOX_AUTHORING
 #include "ap_author_pad.h"     // controller keys: Select, Select+L1, Select+R1
 #endif
-#ifdef CTR_CUSTOM_PACKAGES
+// Box placements on custom tracks: the player client has packages but no Box
+// Author Mode.
+#if defined(CTR_CUSTOM_PACKAGES) && defined(CTR_BOX_AUTHORING)
+#define AP_AUTHOR_CUSTOM
+#endif
+#ifdef AP_AUTHOR_CUSTOM
 #include "ap_author_custom.h"  // custom-track placements: package key, own file
 #include <platform/native_custom_offline.h>
 #include <platform/native_custom_package.h>
@@ -70,7 +75,7 @@ static int s_bossPauseLogged;  // one log line per boss race, not per frame (#19
 // copies a fixed 15 characters out of whatever it is handed (INSTANCE.c:24-27).
 static char s_markerName[16] = "apbox";
 
-#ifdef CTR_CUSTOM_PACKAGES
+#ifdef AP_AUTHOR_CUSTOM
 static void AP_AuthorCustomForgetMarkers(void); // custom-track markers, further down
 #endif
 
@@ -211,7 +216,7 @@ static void AP_AuthorForgetMarkers(void)
 	int i;
 	for (i = 0; i < AP_AUTHOR_MAX_PLACEMENTS; i++)
 		s_marker[i] = AP_SPAWN_INVALID;
-#ifdef CTR_CUSTOM_PACKAGES
+#ifdef AP_AUTHOR_CUSTOM
 	AP_AuthorCustomForgetMarkers();
 #endif
 	s_markerGen = AP_Spawn_Generation();
@@ -616,7 +621,7 @@ static void AP_AuthorDrawPadHint(void)
 }
 #endif
 
-#ifdef CTR_CUSTOM_PACKAGES
+#ifdef AP_AUTHOR_CUSTOM
 // ============================================================================
 // CUSTOM TRACKS (box authoring build only). A package raced from the Arcade or
 // Time Trial custom pages borrows host slot 6, so its placements are keyed by the served
@@ -976,7 +981,7 @@ static int AP_AuthorCustomDrawHud(void)
 	AP_AuthorDrawPadHint();
 	return 1;
 }
-#endif // CTR_CUSTOM_PACKAGES
+#endif // AP_AUTHOR_CUSTOM
 
 #ifdef CTR_BOX_AUTHORING
 // ── controller keys (ap_author_pad.h) ──────────────────────────────────────
@@ -997,7 +1002,7 @@ static int AP_AuthorPadLive(struct GameTracker *gGT)
 		return 0;
 	if (!AP_AuthorRaceAllowsAuthoring(IS_BOSS_RACE(gGT->gameMode1)) || (gGT->gameMode1 & PAUSE_ALL) != 0)
 		return 0;
-#ifdef CTR_CUSTOM_PACKAGES
+#ifdef AP_AUTHOR_CUSTOM
 	{
 		AP_CustomBoxKey key;
 		int mode = AP_AuthorCustomMode(&key, NULL, 0, NULL, 0);
@@ -1076,7 +1081,7 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 			// behaves like a switch rather than like something that needs a
 			// restart to undo.
 			AP_AuthorClearMarkers();
-#ifdef CTR_CUSTOM_PACKAGES
+#ifdef AP_AUTHOR_CUSTOM
 			AP_AuthorCustomClearMarkers();
 #endif
 			s_markerLevel = -1;
@@ -1142,7 +1147,7 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 		AP_AuthorSeedFileFromEmbedded();
 	}
 
-#ifdef CTR_CUSTOM_PACKAGES
+#ifdef AP_AUTHOR_CUSTOM
 	// A custom-page race owns the frame: its own key, file and markers.
 	if (AP_AuthorCustomOnFrame(gGT, padAction))
 		return;
@@ -1212,7 +1217,7 @@ void AP_Author_DrawHud(void)
 		return;
 	}
 
-#ifdef CTR_CUSTOM_PACKAGES
+#ifdef AP_AUTHOR_CUSTOM
 	if (AP_AuthorCustomDrawHud())
 		return;
 #endif

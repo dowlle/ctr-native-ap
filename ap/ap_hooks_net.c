@@ -82,6 +82,12 @@ static void AP_NetTick(struct GameTracker *gGT)
 	ap_net_poll();
 	AP_PerfSectionEnd(AP_PERF_SEC_POLL);
 
+	// A custom Arcade race holds the room: received items stay in the net queue
+	// and a reconnect's reset waits with them, so the race never sees the room's
+	// state change, and the feed and tallies see ordinary late receipts after it.
+	if (AP_ArcadeHoldsRoom())
+		return;
+
 	// On a fresh slot-connect (new seed, reconnect, or server switch) the server
 	// resends the FULL ReceivedItems list from index 0. Zero the per-session
 	// tallies + goal/notify state FIRST so everything rebuilds from the

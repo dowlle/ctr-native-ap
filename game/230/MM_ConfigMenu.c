@@ -15,8 +15,8 @@
 #include <platform/native_custom_track_manager.h>
 #include "../../ap/ap_seed_content.h" // Current Seed (#133 PR 7)
 #ifdef CTR_CUSTOM_PACKAGES
-// Box authoring build: the package library and Saphi Track Manager replace the
-// single-package Custom Content page (CMakeLists.txt, CTR_CUSTOM_PACKAGES).
+// The package library and Saphi Track Manager: the Custom Content page of the
+// box authoring download, a Track Library page of its own in the player client.
 #include <stdlib.h>
 #include <platform/native_custom_track_library.h>
 #include <platform/native_custom_package.h>
@@ -130,6 +130,9 @@ static int s_numSections = 0;
 #if (defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)) || defined(CTR_CUSTOM_PACKAGES)
 static int s_customContentSection = -1;
 #endif
+#ifdef CTR_CUSTOM_PACKAGES
+static int s_trackLibrarySection = -1;
+#endif
 
 static void BuildSectionMap(void)
 {
@@ -140,6 +143,15 @@ static void BuildSectionMap(void)
 	s_sectionCount[s_numSections] = 0;
 	s_sectionName[s_numSections] = "Custom Content";
 	s_numSections++;
+#endif
+#if defined(CTR_CUSTOM_PACKAGES) && defined(CTR_AP) && !defined(CTR_AP_AUTHORING)
+	// The player client's Custom Content stays the room's page (Current Seed).
+	s_trackLibrarySection = s_numSections;
+	s_sectionCount[s_numSections] = 0;
+	s_sectionName[s_numSections] = "Track Library";
+	s_numSections++;
+#elif defined(CTR_CUSTOM_PACKAGES)
+	s_trackLibrarySection = s_customContentSection;
 #endif
 }
 
@@ -1126,7 +1138,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		TextEdit_DrawHint(startY + (numStrings + 4) * rowSpacing, ot);
 }
 
-#if defined(CTR_CUSTOM_TRACKS) && !defined(CTR_CUSTOM_PACKAGES)
+#if defined(CTR_CUSTOM_TRACKS) && !defined(CTR_AP_AUTHORING)
 #include "MM_CurrentSeed.c" // content-plan rooms: the Current Seed tab (#133 PR 7)
 #define CUSTOM_CONTENT_ACTION_COUNT 6
 static const char *const s_customContentActions[CUSTOM_CONTENT_ACTION_COUNT] = {
@@ -1334,8 +1346,8 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 #endif
 #endif // CTR_AP
 
-// The package library and Track Manager: the AP box authoring download and the
-// authoring client without Archipelago.
+// The package library and Track Manager: the AP clients and the authoring
+// client without Archipelago.
 #ifdef CTR_CUSTOM_PACKAGES
 static struct CustomTrackLibrary s_contentLibrary;
 static int s_contentLibraryLoaded;
@@ -1347,6 +1359,7 @@ static int s_contentInstallBusy;
 static char s_contentInstallPin[65];
 static char s_contentInstallMessage[512];
 static int s_contentStoreBusy, s_contentStoreWanted;
+static unsigned int s_contentStoreGeneration; /* Bumped by every finished scan. */
 static char s_contentStoreMessage[512];
 static struct CustomSaphiCatalogue *s_saphiCatalogue;
 static int s_saphiRefreshBusy, s_saphiLoaded, s_saphiDownloading;
@@ -1387,7 +1400,11 @@ static void MM_CustomLibrary_Tick(int reload)
     if (s_contentStoreBusy)
     {
         int result = CustomPackage_PollStoreScan(&s_contentLibrary, s_contentStoreMessage, sizeof s_contentStoreMessage);
-        if (result == 1 || result == -2) s_contentStoreBusy = 0;
+        if (result == 1 || result == -2)
+        {
+            s_contentStoreBusy = 0;
+            s_contentStoreGeneration++;
+        }
         if (result == 1) s_contentInstallPin[0] = 0; /* Fresh store evidence supersedes an old action message. */
     }
     if (s_contentStoreWanted && !s_contentStoreBusy && !s_contentInstallBusy)
@@ -1455,7 +1472,8 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 	    // Drain a package or Saphi worker before leaving; Back first leaves
 	    // the Versions list of one track.
 	    && !MM_CustomLibrary_Busy() && !s_saphiVersionTrack
-#elif defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+#endif
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS) && !defined(CTR_AP_AUTHORING)
 	    // Back first closes the Install missing content overview (#133 PR 7).
 	    && !MM_CurrentSeed_ConsumesBack(s_currentSection)
 #endif
@@ -1500,11 +1518,18 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 #ifdef CTR_AP
 		// Connection and Custom Content have bespoke action/state surfaces.
 #ifdef CTR_CUSTOM_TRACKS
+		if (sec == s_trackLibrarySection)
+		{
+			MM_ConfigProc_TrackLibrary(menu, ot, pad);
+		}
+		else
+#ifndef CTR_AP_AUTHORING
 		if (sec == s_customContentSection)
 		{
 			MM_ConfigProc_CustomContent(menu, ot, pad);
 		}
 		else
+#endif
 #endif
 		if (strcmp(s_sectionName[sec], "Connection") == 0)
 		{
@@ -1523,9 +1548,9 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 #ifdef CTR_CUSTOM_PACKAGES
 		// The authoring client without Archipelago: Custom Content is the only
 		// bespoke page.
-		if (sec == s_customContentSection)
+		if (sec == s_trackLibrarySection)
 		{
-			MM_ConfigProc_CustomContent(menu, ot, pad);
+			MM_ConfigProc_TrackLibrary(menu, ot, pad);
 		}
 		else
 		{

@@ -13,6 +13,9 @@
 #include "ap_content_capability.h"
 #include "ap_seed_content.h" // AP_SeedContentInstallBusy (#133 PR 7)
 #include <platform/native_custom_content_verify.h>
+#ifdef CTR_CUSTOM_PACKAGES
+#include <platform/native_custom_offline.h>
+#endif
 
 // Arms the bundled Cortex Vortex pair for whichever of its two roles this seed
 // uses: the Oxide 2 venue (schema 11) and the pad track (schema 15). The two
@@ -641,7 +644,23 @@ int AP_CustomContentRequired(void)
 #ifdef CTR_CUSTOM_PACKAGES
 int AP_CustomOfflineLaunchAllowed(void)
 {
+#ifdef CTR_AP_AUTHORING
 	return !ctr_cfg_active();
+#else
+	// A pad race owns the loader until it ends. A room is no refusal here: its
+	// pins stay on their own path, and AP_ArcadeHoldsRoom keeps the race apart.
+	return !CustomTrack_StandaloneBusy();
+#endif
+}
+
+const char *AP_CustomOfflineRoomNote(void)
+{
+	return ctr_cfg_active() ? "Room: no checks here, items wait" : "";
+}
+
+int AP_ArcadeHoldsRoom(void)
+{
+	return CustomOffline_RuntimeActive();
 }
 #endif
 

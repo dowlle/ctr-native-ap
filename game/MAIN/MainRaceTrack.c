@@ -11,7 +11,7 @@
 #include <platform/native_custom_records.h>
 CTR_STATIC_ASSERT(sizeof(((struct GameTracker *)0)->lapTime) / sizeof(int) == CTR_OFFLINE_MAX_LAPS);
 
-// Box authoring build: a package chosen on the Arcade or Time Trial custom
+// A package chosen on the Arcade or Time Trial custom
 // pages races only as a one-player Arcade single race or a Time Trial on its
 // host slot, and only in the mode it was started for. Every other mode on that
 // slot loads retail bytes.

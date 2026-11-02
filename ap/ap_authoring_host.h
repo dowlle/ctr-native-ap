@@ -27,6 +27,7 @@ void AP_LogLine(const char *msg);
 
 #ifdef CTR_CUSTOM_PACKAGES
 int AP_CustomOfflineLaunchAllowed(void);
+const char *AP_CustomOfflineRoomNote(void);
 #endif
 
 #if defined(CTR_BOX_AUTHORING) || defined(CTR_AI_LAP_RECORDER)
