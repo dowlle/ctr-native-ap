@@ -277,27 +277,51 @@ struct Disc
     }
 };
 
-std::string hash_file(const std::string &path, unsigned long long *bytes, const volatile int *cancel)
+/* SHA-256 of an open file from its start, leaving it rewound. Hashing the
+   handle that is then read keeps the hashed bytes the applied bytes. */
+std::string hash_stream(FILE *file, const std::string &path, unsigned long long *bytes, const volatile int *cancel)
 {
-    File file = open_read(path);
+    std::rewind(file);
     NativeSha256Ctx context;
     NativeSha256_Init(&context);
     std::vector<unsigned char> buffer(1 << 20);
     unsigned long long total = 0;
     size_t got;
-    while ((got = std::fread(buffer.data(), 1, buffer.size(), file.get())) > 0)
+    while ((got = std::fread(buffer.data(), 1, buffer.size(), file)) > 0)
     {
         if (load_flag(cancel)) throw std::runtime_error("Cancelled");
         NativeSha256_Update(&context, buffer.data(), got);
         total += got;
     }
-    if (std::ferror(file.get())) throw std::runtime_error("Cannot read " + path.substr(path.find_last_of("/\\") + 1));
+    if (std::ferror(file)) throw std::runtime_error("Cannot read " + path.substr(path.find_last_of("/\\") + 1));
+    std::rewind(file);
     unsigned char digest[32];
     char text[65];
     NativeSha256_Final(&context, digest);
     NativeSha256_ToHex(digest, text);
     if (bytes) *bytes = total;
     return text;
+}
+
+/* Size and modification time of an open file, to notice an edit in place while it is read. */
+std::string file_stamp(FILE *file)
+{
+#ifdef _WIN32
+    struct _stat64 info;
+    if (_fstat64(_fileno(file), &info)) return "?";
+    return std::to_string((long long)info.st_size) + "|" + std::to_string((long long)info.st_mtime);
+#else
+    struct stat info;
+    if (fstat(fileno(file), &info)) return "?";
+    return std::to_string((long long)info.st_size) + "|" + std::to_string((long long)info.st_mtim.tv_sec) + "|" +
+           std::to_string((long long)info.st_mtim.tv_nsec);
+#endif
+}
+
+std::string hash_file(const std::string &path, unsigned long long *bytes, const volatile int *cancel)
+{
+    File file = open_read(path);
+    return hash_stream(file.get(), path, bytes, cancel);
 }
 
 /* ---- Cutter version 1 (the 2026-09-28 and 2026-10-15 research scripts). */
@@ -919,10 +943,10 @@ Built build_package(const Candidate &c, const std::string &title, const std::str
         files.push_back({{"role", "race_settings"}, {"path", "metadata/race-settings.json"},
                          {"sha256", hex_sha256(settings.data(), settings.size())}, {"bytes", settings.size()}});
     }
-    if (meta && meta->relic)
+    if (meta && meta->relic && meta->laps)
     {
         relic = json_dump({{"schema_version", 1}, {"lev_sha256", levHash}, {"vrm_sha256", vrmHash},
-                           {"laps", meta->laps ? meta->laps : 3}, {"ticks_per_second", 960},
+                           {"laps", meta->laps}, {"ticks_per_second", 960},
                            {"sapphire", meta->ticks[0]}, {"gold", meta->ticks[1]}, {"platinum", meta->ticks[2]}});
         files.push_back({{"role", "relic_targets"}, {"path", "metadata/relic-targets.json"},
                          {"sha256", hex_sha256(relic.data(), relic.size())}, {"bytes", relic.size()}});
@@ -996,16 +1020,6 @@ struct ScratchGuard
     }
 };
 
-std::mutex &disc_hash_mutex() { static std::mutex m; return m; }
-std::map<std::string, std::string> &disc_hash_cache() { static auto *m = new std::map<std::string, std::string>(); return *m; }
-
-std::string disc_identity(const std::string &path)
-{
-    long long size = 0, mtime = 0;
-    if (!fs_stat(path, &size, &mtime)) return path;
-    return path + "|" + std::to_string(size) + "|" + std::to_string(mtime);
-}
-
 } // namespace
 
 extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImportScan **out,
@@ -1028,20 +1042,16 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
         int header = NativeXdelta_CheckHeader(head, headBytes);
         if (header == NATIVE_XDELTA_NOT_VCDIFF) throw std::runtime_error("Not an xdelta patch");
         if (header == NATIVE_XDELTA_UNSUPPORTED) throw std::runtime_error("Unsupported patch compression");
-        set_text(summary.patchSha256, sizeof summary.patchSha256, hash_file(patchPath, &summary.patchBytes, cancel));
-        std::string discSha;
-        {
-            std::lock_guard<std::mutex> guard(disc_hash_mutex());
-            auto key = disc_identity(discPath);
-            auto cached = disc_hash_cache().find(key);
-            if (cached != disc_hash_cache().end()) discSha = cached->second;
-            else disc_hash_cache()[key] = discSha = hash_file(discPath, nullptr, cancel);
-        }
+        const std::string patchStamp = file_stamp(patch.get());
+        set_text(summary.patchSha256, sizeof summary.patchSha256, hash_stream(patch.get(), patchPath, &summary.patchBytes, cancel));
+        /* One handle of the disc is hashed, walked and decoded from, so a swapped or edited file cannot differ between them. */
+        Disc disc(discPath);
+        const std::string discStamp = file_stamp(disc.file.get());
+        const std::string discSha = hash_stream(disc.file.get(), discPath, nullptr, cancel);
         if (!request->skipRetailCheck && discSha != kRetailDiscSha256)
             throw std::runtime_error("Your disc is not the retail NTSC-U image this patch needs");
         set_text(summary.discSha256, sizeof summary.discSha256, discSha);
         store_flag(progress, 5);
-        Disc disc(discPath);
         disc.walk();
 
         /* 2. The optional pack descriptor. */
@@ -1078,7 +1088,6 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
         guard.file = guard.folder + "/entries.bin";
         File scratch(fs_open(guard.file, "w+b"));
         if (!scratch) throw std::runtime_error("Cannot create the import scratch file");
-        File source = open_read(discPath);
         PassLayout layout;
         std::unique_ptr<Extractor> extractor;
         for (unsigned pass = 0;; pass++)
@@ -1087,7 +1096,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             extractor.reset(new Extractor(disc, scratch.get(), layout));
             extractor->cancel = cancel;
             std::rewind(patch.get());
-            DecodeContext context{patch.get(), source.get(), summary.patchBytes, 0, extractor.get(), progress,
+            DecodeContext context{patch.get(), disc.file.get(), summary.patchBytes, 0, extractor.get(), progress,
                                   5, 85, {}};
             NativeXdeltaIo io = {read_patch, read_source, write_target, &context, disc.bytes, cancel};
             char detail[256];
@@ -1250,6 +1259,8 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             scan->built.push_back(Built());
         }
         store_flag(progress, 100);
+        if (file_stamp(patch.get()) != patchStamp || file_stamp(disc.file.get()) != discStamp)
+            throw std::runtime_error("The patch or the disc changed while it was being read");
         *out = scan.release();
         return 1;
     }

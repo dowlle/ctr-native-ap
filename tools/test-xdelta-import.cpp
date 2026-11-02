@@ -32,6 +32,7 @@ extern "C" {
 #include <string>
 #include <vector>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <dirent.h>
 #include <unistd.h>
 
@@ -616,6 +617,50 @@ int main()
             else CHECK(e.local.bigfileIndex == 9 && !e.local.ctrChallenge && !std::strcmp(e.local.ctrChallengeReason, "No CTR letters"),
                        "no letters, no CTR Challenge");
         }
+    }
+
+    /* Review fixes, 2026-11-02: relic times without laps write no guessed lap count; the disc hash follows the file's bytes. */
+    if (a.ok)
+    {
+        const XdeltaImportSummary *s = XdeltaImport_Summary(a.scan);
+        nlohmann::json d = {{"descriptor_version", 1}, {"patch_sha256", s->patchSha256},
+                            {"tracks", {{"1", {{"title", "No Laps"}, {"relic_targets", {{"sapphire", 90000}, {"gold", 80000}, {"platinum", 70000}}}}}}}};
+        std::string text = d.dump();
+        write_file("Pack.ctrpack.json", Bytes(text.begin(), text.end()));
+        ScanResult n = scan(patchPath, discPath);
+        CHECK(n.ok, "scan with relic times and no laps");
+        if (n.ok)
+        {
+            const XdeltaImportSummary *sn = XdeltaImport_Summary(n.scan);
+            const XdeltaImportItem *t1 = item_for(sn, 1);
+            char manifest[8192]; size_t written = 0;
+            bool good = t1 && XdeltaImport_CopyManifest(n.scan, (unsigned)(t1 - sn->items), manifest, sizeof manifest, &written);
+            auto m = good ? nlohmann::json::parse(std::string(manifest, written)) : nlohmann::json::object();
+            int sidecars = 0;
+            if (good) for (auto &f : m["files"]) if (f["role"] == "relic_targets" || f["role"] == "race_settings") sidecars++;
+            CHECK(t1 && !std::strcmp(t1->title, "No Laps") && sn->descriptorSha256[0], "the descriptor with relic times was accepted");
+            CHECK(good && sidecars == 0, "no relic file with a guessed lap count when the descriptor gives no laps");
+            XdeltaImport_Free(&n.scan);
+        }
+        std::remove((root + "/Pack.ctrpack.json").c_str());
+    }
+    {
+        Bytes edited = baseDisc;
+        edited[100] ^= 0x5a; /* system area, never read */
+        const std::string swapPath = write_file("swap.bin", baseDisc);
+        struct stat info;
+        stat(swapPath.c_str(), &info);
+        ScanResult first = scan(patchPath, swapPath);
+        std::string firstHash = first.ok ? XdeltaImport_Summary(first.scan)->discSha256 : "";
+        write_file("swap.bin", edited);
+        struct timeval times[2] = {{info.st_atime, 0}, {info.st_mtime, 0}};
+        utimes(swapPath.c_str(), times);
+        ScanResult second = scan(write_file("Swap.xdelta", encode(edited, patchedDisc)), swapPath);
+        CHECK(first.ok && second.ok && firstHash == sha_hex(baseDisc) &&
+              !std::strcmp(XdeltaImport_Summary(second.scan)->discSha256, sha_hex(edited).c_str()),
+              "a changed disc with the same path, size and time is hashed again");
+        if (first.ok) XdeltaImport_Free(&first.scan);
+        if (second.ok) XdeltaImport_Free(&second.scan);
     }
 
     /* Descriptor: titles, laps, relic targets; one for another patch is ignored with a note. */
