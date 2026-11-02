@@ -901,6 +901,10 @@ static int AP_GlowBitRewardGroup(int globalBit)
             return 0;
         if(ap_content_cup_lap_bit_decode(globalBit,&contentPad,&contentTier))
             return 0;
+        if(ap_content_cup_wumpa_bit_decode(globalBit,&contentPad,&contentTier))
+            return 0;
+        if(ap_content_cup_rung_bit_decode(globalBit,&contentPad,&contentTier))
+            return 0;
     }
     if (globalBit>=AP_CRYSTAL_PSEUDO_BASE && globalBit<AP_CRYSTAL_PSEUDO_BASE+80) return 2;
 	int cortexGroup = AP_CortexPseudoRewardGroup(globalBit);

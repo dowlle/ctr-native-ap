@@ -25,6 +25,11 @@ typedef struct ctr_content_leg {
     int custom_slot, named_block, laps;
     int64_t victory;   /* `<Track>: Cup Leg Victory`, 0 when none */
     int64_t lap;       /* `<Track>: Complete One Lap` (#344), 0 when none */
+    int64_t wumpa;     /* `<Track>: Reach 10 Wumpa` with per_track, 0 when none (row 10i) */
+    /* cup_only_podium_rungs (ruling of 2026-11-02): the podium rungs of a Gem Cup
+     * leg on a track with no pad of its own, in SLOT_ORDER, 0 when none. A
+     * leg on a track with a pad earns that pad's rungs instead. */
+    int64_t rungs[5];
     /* The physical pad of the standalone race on this track, or -1. Its boxes
      * and Wumpa check are the leg's too, for the cup's glow and state. */
     int track_pad;
@@ -37,9 +42,12 @@ typedef struct ctr_content_pad {
      * rule is met when the received counts of the masked items sum to at least
      * rule_count (one bit is a concrete item, several are an Any rule over the
      * items the seed has as base items). has_rule 0 is a free pad: only the hub
-     * Key floor (`keys`) applies. */
+     * Key floor (`keys`) applies. rule_distinct 1 counts one copy of each
+     * masked item instead: Turbo Track's vanilla five Gems, one of each colour
+     * (`distinct`, row 10i). */
     int has_rule, rule_count;
     unsigned rule_mask;
+    int rule_distinct;
     int retail_id; /* -1 custom or Cortex Vortex, otherwise engine track/arena LevelID */
     /* Cortex Vortex (#133 PR 3c): the bundled pair under its own identity,
      * raced on AP_CONTENT_CORTEX_HOST with no package row and no custom slot
@@ -253,6 +261,10 @@ typedef struct ctr_content_bosses {
      * gGT->bossID (0 to 3 the garages, 4 and 5 N. Oxide's two races), 0 for a
      * boss cup, whose legs carry theirs, or a seed without lap checks. */
     int64_t lap[6];
+    /* Reach 10 Wumpa (row 10i): the venue's per-track check of each boss
+     * race, by gGT->bossID as `lap`; 0 for a boss cup (its legs carry theirs),
+     * a venue that cannot reach ten fruit, or a seed without per_track. */
+    int64_t wumpa[6];
 } ctr_content_bosses;
 
 /* Wumpa Shop and Wumpa goal on a content plan (J11). The plan's `wumpa_shop`
@@ -308,7 +320,7 @@ static inline int ap_content_rule_owned(const ctr_content_pad *pad, const int *c
 {
     int i, owned = 0;
     for (i = 0; i < 15; ++i)
-        if (pad->rule_mask & (1u << i)) owned += counts[i];
+        if (pad->rule_mask & (1u << i)) owned += pad->rule_distinct ? counts[i] > 0 : counts[i];
     return owned;
 }
 static inline int ap_content_pad_open(const ctr_content_pad *pad, const int *counts)

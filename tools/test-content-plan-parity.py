@@ -2050,6 +2050,111 @@ from worlds.ctr import content_capability as ccap
 native_rulings = {k: v == "1" for k, v in re.findall(r'\{"([a-z0-9-]+)", ([01])\}',
                   re.search(r"kUsfRulings\[\] = \{(.*?)\};", (root / "ap/ap_content_verify.hpp").read_text(), re.S)[1])}
 assert native_rulings == ccap.USF_FINISH_RULINGS, (native_rulings, ccap.USF_FINISH_RULINGS)
+# Row 10i parity fixes: Reach 10 Wumpa from cup legs and boss races, rungs
+# from cup legs, vanilla garages free without Trophies, Turbo Track's five Gem
+# colours. Generated on the vanilla-shape plan with many cups, so some tracks
+# are raced only in cups, plus forged routes and records.
+row10i = []
+for seed in range(12):
+    o = {"wumpa_check": ["per_track", "global", "off"][seed % 3], "cup_count": [5, 8, 10][seed % 3 if seed < 9 else 1],
+         "accessibility": "full", "lap_completion_checks": seed % 4 == 1}
+    if seed % 2:
+        o["warppad_unlock_requirements"] = "vanilla"
+    if seed % 6 == 5:
+        o["item_pool"] = {"base": {"trophies": 0}}
+    try:
+        world = make_world(o, seed=seed)
+    except cp.OptionError:
+        continue
+    row10i.append((seed, world.fill_slot_data()))
+    cases.append((f"row10i-generated-{seed}", row10i[-1][1], True))
+assert len(row10i) >= 9, len(row10i)
+r10_base = next(v for seed, v in row10i if seed % 3 == 0)
+def r10_drop_cup_route(p):
+    c = next(c for c in p["checks"] if c["kind"] == "wumpa" and any(r["mode"] == "cup" for r in c["routes"]))
+    c["routes"] = [r for r in c["routes"] if r["mode"] != "cup"] or c["routes"][:1]
+alter("row10i wumpa cup route dropped", r10_drop_cup_route, r10_base)
+def r10_drop_boss_route(p):
+    c = next(c for c in p["checks"] if c["kind"] == "wumpa" and any(r["mode"] == "boss_race" for r in c["routes"]))
+    c["routes"] = [r for r in c["routes"] if r["mode"] != "boss_race"] or c["routes"][:1]
+alter("row10i wumpa boss route dropped", r10_drop_boss_route, r10_base)
+def r10_reorder(p):
+    c = next(c for c in p["checks"] if c["kind"] == "wumpa" and len(c["routes"]) > 2)
+    c["routes"].reverse()
+alter("row10i wumpa routes reordered", r10_reorder, r10_base)
+def r10_rung_cup_dropped(p):
+    c = next(c for c in p["checks"] if c["kind"] == "podium" and any(r["mode"] == "cup" for r in c["routes"]))
+    c["routes"] = c["routes"][:1]
+alter("row10i rung cup route dropped", r10_rung_cup_dropped, r10_base)
+def r10_rung_boss(p):
+    c = next(c for c in p["checks"] if c["kind"] == "podium")
+    e = p["encounters"][0]
+    c["routes"].append(dict(entry_id=e["entry_id"], mode="boss_race", leg_id=None, encounter_id=e["id"],
+                            own_pad_id=e["pad_id"], award=c["routes"][0]["award"]))
+alter("row10i rung boss route added", r10_rung_boss, r10_base)
+r10_free = next((v for seed, v in row10i if seed % 6 == 5), None)
+if r10_free is not None:
+    def r10_garage_asks(p):
+        next(r for r in p["requirements"] if r["id"] == "boss:0")["predicate"] = dict(op="count", item=35010000, count=1)
+    alter("row10i free vanilla garage asks a Trophy", r10_garage_asks, r10_free)
+r10_vanilla = next(v for seed, v in row10i if seed % 2 and seed % 6 != 5)
+def r10_turbo_sum(p):
+    r = next(r for r in p["requirements"] if r["predicate"].get("op") == "distinct")
+    r["predicate"]["op"] = "sum"
+alter("row10i Turbo Track as a Gem sum", r10_turbo_sum, r10_vanilla)
+def r10_garage_free(p):
+    next(r for r in p["requirements"] if r["id"] == "boss:0")["predicate"] = dict(op="always")
+alter("row10i free vanilla garage with Trophies", r10_garage_free, r10_vanilla)
+# cup_only_podium_rungs (ruling of 2026-11-02): a track raced only in Gem Cup legs
+# takes the seed's rungs from those legs; no plan field, the routes say it.
+cup_rungs = []
+for seed in range(4):
+    o = {"cup_only_podium_rungs": True, "cup_count": [8, 10][seed % 2], "accessibility": "full",
+         "wumpa_check": ["off", "per_track"][seed % 2]}
+    if seed == 1:
+        o["progressive_boost"] = "shared_global"
+    if seed == 2:
+        o["podium_rungs"] = ["held_1st", "finish_any"]
+    world = make_world(o, seed=seed)
+    cup_rungs.append(world.fill_slot_data())
+    cases.append((f"cup-only-rungs-generated-{seed}", cup_rungs[-1], True))
+def cup_only_rungs(p):
+    own = {e["track_id"] for e in p["entries"] if e["kind"] == "track"}
+    return [c for c in p["checks"] if c["kind"] == "podium" and c["owner"] not in own]
+assert all(cup_only_rungs(v["content_plan"]) for v in cup_rungs)
+def cr_one_track_dropped(p):
+    gone = cup_only_rungs(p)[0]["owner"]
+    p["checks"] = [c for c in p["checks"] if not (c["kind"] == "podium" and c["owner"] == gone)]
+alter("cup-only rungs of one track dropped", cr_one_track_dropped, cup_rungs[0])
+def cr_one_rung_dropped(p):
+    gone = cup_only_rungs(p)[0]["location"]
+    p["checks"] = [c for c in p["checks"] if c["location"] != gone]
+alter("cup-only rung dropped", cr_one_rung_dropped, cup_rungs[0])
+def cr_leg_dropped(p):
+    c = next(c for c in cup_only_rungs(p) if len(c["routes"]) > 1)
+    c["routes"] = c["routes"][1:]
+alter("cup-only rung leg route dropped", cr_leg_dropped, cup_rungs[0])
+def cr_boss_route(p):
+    c = cup_only_rungs(p)[0]
+    e = p["encounters"][0]
+    c["routes"].append(dict(entry_id=e["entry_id"], mode="boss_race", leg_id=None, encounter_id=e["id"],
+                            own_pad_id=e["pad_id"], award=c["routes"][0]["award"]))
+alter("cup-only rung boss route added", cr_boss_route, cup_rungs[0])
+def cr_award(p):
+    c = cup_only_rungs(p)[0]
+    for r in c["routes"]:
+        r["award"] = "finish_any" if r["award"] != "finish_any" else "held_1st"
+alter("cup-only rung award swapped", cr_award, cup_rungs[2])
+def cr_extra_rung(p):
+    # A rung the seed's podium_rungs does not list.
+    c = copy.deepcopy(cup_only_rungs(p)[0])
+    c["location"] += 2
+    c["display_name"] = c["display_name"].rsplit(": ", 1)[0] + ": Held 5th"
+    for r in c["routes"]:
+        r["award"] = "held_5th"
+    p["checks"].insert(p["checks"].index(cup_only_rungs(p)[0]), c)
+alter("cup-only rung outside podium_rungs", cr_extra_rung, cup_rungs[2])
+assert not any(ok for name, _case, ok in cases if name.startswith("cup-only rung")), "a cup-only rung forgery validates"
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()

@@ -42,6 +42,7 @@ fixture = r'''
 #define ADVENTURE_BOSS 8
 #define RELIC_RACE 16
 #define CRYSTAL_CHALLENGE 32
+#define IS_BOSS_RACE(m) (((m) & ADVENTURE_BOSS) != 0)
 #define TOKEN_RACE 1
 #define AP_ITEM_BASE 35010000
 #define AP_RESULT_PRODUCER_CUSTOM_TROPHY 1
@@ -84,9 +85,13 @@ static unsigned char ap_named_letter_received[(AP_NAMED_BLOCK_LIMIT * 3 + 7) / 8
 int ctr_cfg_active(void) { return active; }
 int ap_content_plan_active(void) { return planActive; }
 uint64_t ap_content_plan_epoch(void) { return planActive ? epoch : 0; }
-const ctr_content_pad *ap_content_plan_pad(int physical) { return planActive && pad.physical==physical ? &pad : NULL; }
-const ctr_content_pad *AP_ContentCupPad(void) { return NULL; }
-int AP_ContentCupLeg(void) { return -1; }
+/* Row 10i: a running cup leg, a Gem Cup's or a garage's. */
+static ctr_content_pad cupPad; static int cupRunning, cupLeg;
+const ctr_content_pad *ap_content_plan_pad(int physical) {
+ return !planActive ? NULL : pad.physical==physical ? &pad : cupRunning && cupPad.physical==physical ? &cupPad : NULL;
+}
+const ctr_content_pad *AP_ContentCupPad(void) { return cupRunning ? &cupPad : NULL; }
+int AP_ContentCupLeg(void) { return cupRunning ? cupLeg : -1; }
 const ctr_content_checks *ap_content_plan_checks(void) { static const ctr_content_checks none; return planActive ? &families : &none; }
 const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int level) {
  return haveContext && level==context.hostLevelID ? &context : NULL;
@@ -166,6 +171,16 @@ static void reset(int mode, int retail) {
  context.trophyLocation=mode==AP_CONTENT_MODE_TROPHY ? pad.trophy_location : mode==AP_CONTENT_MODE_CTR ? pad.ctr_location : pad.relic_locations[0];
  strcpy(pad.entry_id,"entry/x"); strcpy(pad.track_id,"x");
  families.podium=27; families.wumpa=2;
+ memset(&cupPad,0,sizeof cupPad); cupRunning=0; cupLeg=-1;
+}
+/* A Gem Cup leg (or a garage's with `garage`) on the pad's track, or on a
+ * track with no pad of its own (track_pad -1), sending `wumpa`. */
+static void cup_leg(int trackPad, long wumpa, int garage) {
+ reset(AP_CONTENT_MODE_TROPHY,1);
+ context.cup=1; cupRunning=1; cupLeg=2;
+ cupPad.physical=garage ? AP_CONTENT_GARAGE_CUP_PAD : 101; cupPad.occupied=cupPad.cup=1;
+ cupPad.legs[2].track_pad=trackPad; cupPad.legs[2].wumpa=wumpa;
+ if (garage) game.gameMode1|=ADVENTURE_BOSS;
 }
 static int sent(long code) { for (int i=0;i<sentCount;i++) if (sentCodes[i]==code) return 1; return 0; }
 int main(void) {
@@ -215,6 +230,36 @@ int main(void) {
  reset(AP_CONTENT_MODE_TROPHY,1); families.wumpa=0; assert(AP_StandaloneWumpaCode()==-1); cases++;
  reset(AP_CONTENT_MODE_TROPHY,0); serving=0; assert(AP_StandaloneWumpaCode()==-1); cases++;
  reset(AP_CONTENT_MODE_TROPHY,1); epoch=9; assert(AP_StandaloneWumpaCode()==-1); cases++;
+ /* Row 10i: a cup leg sends its leg's own Wumpa code, with or without a pad
+  * on the track, and earns the rungs of the track's pad; a garage's cup leg
+  * earns no rung. */
+ cup_leg(CC,35016104,0); assert(AP_StandaloneWumpaCode()==35016104); cases++;
+ assert(AP_StandalonePodiumTrack()==AP_CONTENT_PODIUM_LOGICAL_BASE+CC); cases++;
+ AP_SendPodiumChecks(AP_StandalonePodiumTrack(),1); assert(sentCount==4 && sent(35015100)); cases++;
+ cup_leg(-1,35016107,0); assert(AP_StandaloneWumpaCode()==35016107 && AP_StandalonePodiumTrack()==-1); cases++;
+ cup_leg(CC,0,0); assert(AP_StandaloneWumpaCode()==-1); cases++;
+ cup_leg(CC,35016104,1); assert(AP_StandaloneWumpaCode()==35016104 && AP_StandalonePodiumTrack()==-1); cases++;
+ cup_leg(CC,35016104,0); memset(pad.rung_locations,0,sizeof pad.rung_locations); pad.modes[0]=AP_CONTENT_MODE_RELIC;
+ pad.mode_count=1; assert(AP_StandalonePodiumTrack()==-1); cases++; /* a pad without a Trophy Race has no rungs */
+ /* cup_only_podium_rungs: a Gem Cup leg on a track with no pad sends the
+  * leg's own rungs by finishing place, and held rungs live; a garage's leg
+  * sends none. */
+ cup_leg(-1,0,0); cupPad.legs[2].rungs[0]=35015108; cupPad.legs[2].rungs[3]=35015111; cupPad.legs[2].rungs[4]=35015112;
+ assert(AP_StandalonePodiumTrack()==AP_CONTENT_LEG_PODIUM_LOGICAL_BASE+101*AP_CONTENT_CUP_LEGS+2); cases++;
+ AP_SendPodiumChecks(AP_StandalonePodiumTrack(),4);
+ assert(sentCount==1 && sent(35015112)); cases++; /* fourth place: finish any only */
+ AP_SendPodiumChecks(AP_StandalonePodiumTrack(),1);
+ assert(sentCount==3 && sent(35015108) && sent(35015111)); cases++;
+ cup_leg(-1,0,0); cupPad.legs[2].rungs[0]=35015108; AP_SendHeldChecks(AP_StandalonePodiumTrack(),1);
+ assert(sentCount==1 && sent(35015108)); cases++;
+ cup_leg(-1,0,1); cupPad.legs[2].rungs[0]=35015108; assert(AP_StandalonePodiumTrack()==-1); cases++;
+ cup_leg(-1,0,0); assert(AP_StandalonePodiumTrack()==-1); cases++; /* option off: no leg rungs */
+ /* Reconnect: a checked Cup Leg Victory was a first place, so the leg's own
+  * rungs are earned; an unchecked one earns none. */
+ cup_leg(-1,0,0); cupPad.legs[2].rungs[0]=35015108; cupPad.legs[2].rungs[4]=35015112; cupPad.legs[2].victory=35016800;
+ AP_ReconcilePodiumFromTrophies(); assert(sentCount==0); cases++;
+ checkedCodes[checkedCount++]=35016800; AP_ReconcilePodiumFromTrophies();
+ assert(sentCount==2 && sent(35015108) && sent(35015112)); cases++;
  /* Letters, Lettersanity off: the retail rule on the host level. */
  reset(AP_CONTENT_MODE_CTR,1);
  assert(AP_LetterAvailable(3,1) && AP_LetterLocation(3,0)==-1 && AP_LettersRequiredCount(3)==3 &&
