@@ -492,9 +492,9 @@ int main() {
             room.foreign[35010014] = 0;
             std::set<int64_t> miss;
             sweep(room, &miss);
-            // Row 10f (ruling of 2026-11-02): the B+ `fixture-loop` has measured Wumpa,
-            // so its keyless pad is income: N. Sanity Beach opens, Gem Stone
-            // Valley still needs its Key.
+            // Row 10f (ruling of 2026-11-02): this fixture's keyless custom races
+            // have measured Wumpa, so they are income: N. Sanity Beach opens,
+            // Gem Stone Valley still needs its Key.
             expect(!miss.count(35028600) && miss.count(35028640),
                    "shop: the keyless custom race with measured Wumpa is income; Gem Stone Valley needs a Key");
             room.foreign[35010014] = 2; // Crash Cove's pad (keys:2) banks fruit
