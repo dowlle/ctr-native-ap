@@ -254,6 +254,12 @@ int main(void) {
  assert(sentCount==1 && sent(35015108)); cases++;
  cup_leg(-1,0,1); cupPad.legs[2].rungs[0]=35015108; assert(AP_StandalonePodiumTrack()==-1); cases++;
  cup_leg(-1,0,0); assert(AP_StandalonePodiumTrack()==-1); cases++; /* option off: no leg rungs */
+ /* Reconnect: a checked Cup Leg Victory was a first place, so the leg's own
+  * rungs are earned; an unchecked one earns none. */
+ cup_leg(-1,0,0); cupPad.legs[2].rungs[0]=35015108; cupPad.legs[2].rungs[4]=35015112; cupPad.legs[2].victory=35016800;
+ AP_ReconcilePodiumFromTrophies(); assert(sentCount==0); cases++;
+ checkedCodes[checkedCount++]=35016800; AP_ReconcilePodiumFromTrophies();
+ assert(sentCount==2 && sent(35015108) && sent(35015112)); cases++;
  /* Letters, Lettersanity off: the retail rule on the host level. */
  reset(AP_CONTENT_MODE_CTR,1);
  assert(AP_LetterAvailable(3,1) && AP_LetterLocation(3,0)==-1 && AP_LettersRequiredCount(3)==3 &&

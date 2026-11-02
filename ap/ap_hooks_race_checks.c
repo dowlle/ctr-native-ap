@@ -199,6 +199,19 @@ static void AP_ReconcilePodiumFromTrophies(void)
 			    AP_ContentPodiumRungs(AP_CONTENT_PODIUM_LOGICAL_BASE + id, &rungs) &&
 			    ap_net_location_checked((long)pad->trophy_location))
 				AP_SendPodiumChecks(AP_CONTENT_PODIUM_LOGICAL_BASE + id, 1);
+			// cup_only_podium_rungs: a checked Cup Leg Victory was a first
+			// place on that track, so the leg's own rungs are earned too.
+			if (pad && pad->occupied && pad->cup && pad->physical < AP_CONTENT_GARAGE_CUP_PAD)
+			{
+				int leg;
+				for (leg = 0; leg < AP_CONTENT_CUP_LEGS; leg++)
+				{
+					const int track = AP_CONTENT_LEG_PODIUM_LOGICAL_BASE + id * AP_CONTENT_CUP_LEGS + leg;
+					if (pad->legs[leg].victory > 0 && AP_ContentPodiumRungs(track, &rungs) &&
+					    ap_net_location_checked((long)pad->legs[leg].victory))
+						AP_SendPodiumChecks(track, 1);
+				}
+			}
 		}
 		return;
 	}
