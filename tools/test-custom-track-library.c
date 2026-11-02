@@ -230,7 +230,7 @@ int main(int argc, char **argv)
             CHECK(item->supportedModes == 0);
             if (!strcmp(item->manifestSha256, store[0].pin))
             {
-                CHECK(item->installed);
+                CHECK(item->installed && !item->scanFailed);
                 CHECK(!strcmp(item->title, store[0].manifest.title));
                 CHECK(!strcmp(item->version, "2.0.0"));
             }
@@ -238,13 +238,34 @@ int main(int argc, char **argv)
             {
                 CHECK(!item->installed);
                 CHECK(!strcmp(item->disabledReason, "Damaged revision"));
+                CHECK(item->scanFailed);
+            }
+        }
+        /* Discovered, bytes verified or Ready, for each mode on its own. */
+        CHECK(CustomTrackLibrary_Admission(NULL, 0) == CTR_ADMISSION_DISCOVERED);
+        for (i = 0; i < (int)library.count; i++)
+        {
+            struct CustomTrackLibraryEntry row = library.entries[i];
+            if (!strcmp(row.manifestSha256, store[1].pin))
+            {
+                row.local.arcade = 1; /* A stale fact never outranks failed bytes. */
+                CHECK(CustomTrackLibrary_Admission(&row, 0) == CTR_ADMISSION_DISCOVERED);
+            }
+            if (!strcmp(row.manifestSha256, store[0].pin))
+            {
+                CHECK(CustomTrackLibrary_Admission(&row, 0) == CTR_ADMISSION_BYTES_VERIFIED);
+                row.local.arcade = 1;
+                CHECK(CustomTrackLibrary_Admission(&row, 0) == CTR_ADMISSION_READY);
+                CHECK(CustomTrackLibrary_Admission(&row, 1) == CTR_ADMISSION_BYTES_VERIFIED);
+                row.local.timeTrial = 1;
+                CHECK(CustomTrackLibrary_Admission(&row, 1) == CTR_ADMISSION_READY);
             }
         }
         store[1] = store[0];
         CHECK(!CustomTrackLibrary_ApplyStore(&library, store, 2));
         CHECK(library.count == 4);
         CHECK(CustomTrackLibrary_ApplyStore(&library, NULL, 0));
-        for (i = 0; i < (int)library.count; i++) CHECK(!library.entries[i].installed);
+        for (i = 0; i < (int)library.count; i++) CHECK(!library.entries[i].installed && !library.entries[i].scanFailed);
     }
     CustomTrackLibrary_Free(&library);
     CustomTrackLibrary_Free(&library);

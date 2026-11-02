@@ -1,7 +1,10 @@
-/* Track Manager (Options > Custom Content) for the box authoring build.
-   Included by MM_ConfigMenu.c inside CTR_CUSTOM_PACKAGES only. */
+/* Track Manager: Options > Track Library in the player client, Options >
+   Custom Content in the authoring builds. Included by MM_ConfigMenu.c inside
+   CTR_CUSTOM_PACKAGES only. */
 #include <platform/native_custom_revision.h>
+#ifndef MM_IMPORT_PLAYER // the player client imports on Custom Content instead
 #include "MM_CustomImport.c"
+#endif
 static int s_saphiVersionTrack;
 static size_t s_saphiBrowseSelection;
 /* Shared game-font manager: Browse and Installed, no race launch actions. */
@@ -47,7 +50,7 @@ static const struct CustomTrackLibraryEntry *MM_CustomSourceInstalled(const stru
     return exact;
 }
 
-static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
+static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
 {
     size_t visible[CTR_LIBRARY_MAX], count = 0, first;
     const struct CustomSaphiRevision *source = NULL;
@@ -60,8 +63,10 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
     (void)menu;
     s_contentSearchPadPrev = rawPad;
     MM_CustomLibrary_Tick(0);
+#ifndef MM_IMPORT_PLAYER
     if (!s_contentSearchEditing && !MM_CustomLibrary_Busy() && !s_saphiDownloading) MM_CustomImport_TakeDrop();
     if (MM_CustomImport_Active()) { MM_CustomImport_Proc(ot, pad); return; }
+#endif
     if (s_saphiRefreshBusy)
     {
         struct CustomSaphiCatalogue *fresh = NULL;
@@ -111,12 +116,14 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
         if (!s_saphiRefreshBusy) snprintf(s_saphiMessage,sizeof s_saphiMessage,"Could not refresh Saphi. L2: Retry.");
         if (tapped & BTN_L2) s_contentStoreWanted = 1;
     }
+#ifndef MM_IMPORT_PLAYER
     if ((tapped & BTN_SELECT) && !s_contentSearchEditing && !MM_CustomLibrary_Busy())
     {
         MM_CustomImport_Open();
         OtherFX_Play(1,1);
         return;
     }
+#endif
     if (s_saphiVersionTrack && (tapped & (BTN_TRIANGLE | BTN_START)))
     {
         s_saphiVersionTrack=0;s_saphiSelection[0]=s_saphiBrowseSelection;tapped=0;
@@ -155,7 +162,8 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
         for (size_t i = 0; i < s_contentLibrary.count && count < CTR_LIBRARY_MAX; i++)
         {
             const struct CustomTrackLibraryEntry *r = &s_contentLibrary.entries[i];
-            if (r->installed && (MM_CustomSearchMatch(r->title,s_saphiQuery) || MM_CustomSearchMatch(r->author,s_saphiQuery) ||
+            /* A revision that failed its checks stays listed with its reason. */
+            if ((r->installed || r->scanFailed) && (MM_CustomSearchMatch(r->title,s_saphiQuery) || MM_CustomSearchMatch(r->author,s_saphiQuery) ||
                 MM_CustomSearchMatch(r->version,s_saphiQuery)))
             {
                 size_t at=0;
@@ -223,12 +231,13 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
         MM_CustomText_Draw(line,305,98,176,1,WHITE,ot);
         /* Installed: which custom pages list the track as raceable. */
         MM_CustomText_Draw(source ? ((source->modeTags&1) ? "Arcade tagged" : (source->modeTags&2) ? "Time Trial" : "Other modes") :
-            installed->local.arcade ? "Arcade" : installed->local.timeTrial ? "Time Trial" : "No races",305,112,176,1,WHITE,ot);
+            !installed->installed ? "Not installed" : installed->local.arcade ? "Arcade" : installed->local.timeTrial ? "Time Trial" : "No races",305,112,176,1,WHITE,ot);
         MM_CustomText_Draw(s_saphiDownloading ? "Downloading..." : source ?
             sourceInstalled ? "* Recheck" : source->disabledReason[0] ? "Unavailable" : hasOlder ? "* Update" : "* Download" : "* Recheck",305,130,176,1,ORANGE,ot);
         /* An installed track that is not on the Arcade pages says why, in up
            to two lines (native_custom_content_verify.h). */
-        const char *why = installed && !installed->local.arcade ?
+        const char *why = installed && !installed->installed ? installed->disabledReason :
+            installed && !installed->local.arcade ?
             (installed->local.timeTrial ? installed->local.arcadeReason : installed->local.timeTrialReason) : "";
         const char *status = source && source->disabledReason[0] ? source->disabledReason :
             sourceInstalled ? "Installed" : hasOlder && !s_saphiVersionTrack ? "Update available" : s_saphiMessage[0] ? s_saphiMessage : source ?
@@ -241,7 +250,9 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
     MM_CustomText_Draw(line,256,180,456,1,JUSTIFY_CENTER | WHITE,ot);
     snprintf(line,sizeof line,"%u/%u   L2 Refresh   Back: Options",count ? (unsigned)*selected+1 : 0,(unsigned)count);
     MM_CustomText_Draw(line,256,196,456,1,JUSTIFY_CENTER | WHITE,ot);
+#ifndef MM_IMPORT_PLAYER
     MM_CustomText_Draw("Select: Import track files",256,188,456,1,JUSTIFY_CENTER | ORANGE,ot);
+#endif
     RECT listBox={20,64,268,108}, detailBox={297,64,190,108};
     RECTMENU_DrawInnerRect(&listBox,0,ot);RECTMENU_DrawInnerRect(&detailBox,0,ot);
     if(enterVersions) { s_saphiVersionTrack=enterVersions;s_saphiBrowseSelection=*selected;*selected=0; }

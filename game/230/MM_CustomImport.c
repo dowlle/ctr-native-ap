@@ -1,18 +1,20 @@
-/* "Import track files" (xdelta importer, 0.3.0). Included by
-   MM_CustomManager.c in the Track Manager builds (CTR_CUSTOM_PACKAGES) and by
-   MM_ConfigMenu.c in the player client (decision 35, 2026-10-28). Select
-   opens it on Options > Custom Content. The player picks a patch through the
+/* "Import track files" (xdelta importer, 0.3.0). Included once: by
+   MM_ConfigMenu.c next to Current Seed in the player client (MM_IMPORT_PLAYER),
+   by MM_CustomManager.c in the authoring builds (decision 35, 2026-10-28).
+   Select opens it on Options > Custom Content; the player client's Track
+   Library page does not offer it. The player picks a patch through the
    system dialog, from assets/tracks/import/ (Steam Deck Game Mode), or drops
    it on the client window; the patch is read on a worker against the mounted
    disc, and the review list shows one line per found item. Confirm installs
    the selected race tracks where rooms and solo seeds find them
-   (assets/tracks/<track key>/original) and, in the Track Manager builds, as
-   packages too. */
+   (assets/tracks/<track key>/original) and, in the authoring builds, as
+   packages too. The player client keeps the room store and the Track
+   Library store apart (ruled 2026-11-02). */
 #include <platform/native_xdelta_import.h>
 #include <platform/native_xdelta_pick.h>
 #include <platform/native_disc_image.h>
 
-#ifdef CTR_CUSTOM_PACKAGES
+#ifndef MM_IMPORT_PLAYER
 #define IMPORT_WHERE (CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM)
 #define IMPORT_HINT "Pick or drop an xdelta patch. Its race tracks become packages."
 #else
@@ -144,7 +146,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         if (state == 1 || state == -2)
         {
             s_importStage = IMPORT_RESULT;
-#ifdef CTR_CUSTOM_PACKAGES
+#ifndef MM_IMPORT_PLAYER
             s_contentStoreWanted = 1;
 #else
             /* Current Seed shows the new files at once, also after a
@@ -212,7 +214,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         if (tapped & (BTN_CROSS | BTN_CIRCLE | BTN_TRIANGLE | BTN_START))
         {
             s_importOpen = 0;
-#ifdef CTR_CUSTOM_PACKAGES
+#ifndef MM_IMPORT_PLAYER
             s_contentLibraryTab = 1;
 #endif
             OtherFX_Play(2, 1);
@@ -284,7 +286,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         snprintf(line, sizeof line, "%u/%u  %u track%s  Back: Cancel", count ? (unsigned)s_importRow + 1 : 0,
                  (unsigned)count, offered, offered == 1 ? "" : "s");
     }
-#ifdef CTR_CUSTOM_PACKAGES
+#ifndef MM_IMPORT_PLAYER
 #define IMPORT_DONE "X: Installed tracks"
 #else
 #define IMPORT_DONE "X: Custom Content"

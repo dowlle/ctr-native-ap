@@ -37,10 +37,12 @@ tools/test-custom-content-verify.c
 tools/test-custom-identity.c
 tools/test-custom-exit-window.c
 tools/test-custom-manager.c
+cmd Track Library page in the player client, without the xdelta importer :: d=$(mktemp -d) && cc -m32 -ffunction-sections -fdata-sections -Wl,--gc-sections -DCTR_NATIVE -DCTR_CUSTOM_TRACKS -DCTR_CUSTOM_PACKAGES -DMM_IMPORT_PLAYER -DBUILD=926 -I include -I . tools/test-custom-manager.c -o $d/t && $d/t
 tools/test-custom-music.c
 tools/test-custom-pad-lifecycle.c
 tools/test-custom-records.c
 tools/test-custom-selector.c
+tools/test-custom-selector-player.c
 tools/test-custom-state-identity.c
 tools/test-custom-time-trial.c
 tools/test-custom-track-load.c
@@ -164,6 +166,7 @@ tools/test-slide-coliseum-gate-seedcfg.cpp
 tools/test-solo-logic.cpp
 tools/test-spu-memory.c
 tools/test-stat-ladder.c
+tools/test-editstat-rank.c
 tools/test-stat-select.c
 tools/test-surface-items.c skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-text-buf.c
@@ -203,6 +206,9 @@ tools/test-crystal-pickup-production.py
 tools/test-trap-scheduler.c
 tools/test-mirror-model-cull.c
 tools/test-turbo-grant.c
+tools/test-update-core.cpp
+tools/test-update-menu.c
+tools/test-update-solo-gate.cpp
 tools/test-verify-020.c
 tools/test-verify-families.cpp
 tools/test-verify-parity-329.c
@@ -247,5 +253,6 @@ tools/test-standalone-race-result.py
 tools/test-content-pad-entry.py skip needs the installed Baby T Park package, a built libap_net.a and optionally a live MultiServer; run by hand
 tools/test-content-plan-parity.py skip needs a paired apworld checkout and the AP virtualenv; run by hand
 tools/test-arcade-crystals-production.py
+tools/test-arcade-room-hold.py
 tools/test-reverse-camera-production.py
 tools/test-xdelta-import.cpp
