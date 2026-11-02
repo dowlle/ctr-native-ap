@@ -84,7 +84,7 @@ static inline void AP_HitBossIdentity(const AP_BossEncounters *e, int out[AP_HIT
 
 // Who each boss-win code actually seats, for the unlock triggers and the
 // roster swap: the identity, except that with the shuffle active a code the
-// seed races nowhere (N. Oxide's two, without a final record) seats nobody
+// seed races nowhere (N. Oxide's two, with his races disabled) seats nobody
 // (-1). So N. Oxide with his races disabled swaps slots like any original boss
 // raced nowhere and races from the start (ruled 2026-10-30: the fixed Key
 // fallback goes on seeds with random bosses). The wire's `bosses` table stays
@@ -92,7 +92,7 @@ static inline void AP_HitBossIdentity(const AP_BossEncounters *e, int out[AP_HIT
 static inline void AP_HitBossSeats(const AP_BossEncounters *e, int out[AP_HIT_BOSS_CODES])
 {
 	AP_HitBossIdentity(e, out);
-	if (AP_HitBossShuffleActive(e) && !e->finalPresent)
+	if (AP_HitBossShuffleActive(e) && e->oxideDisabled)
 		out[4] = out[5] = -1;
 }
 

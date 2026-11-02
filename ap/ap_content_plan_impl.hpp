@@ -2504,6 +2504,7 @@ static int parse_content_plan(const nlohmann::json &j) {
                 }
                 e.oxideProfileAll = (unsigned char)b.oxide_profile_all;
                 e.finalPresent = (unsigned char)(b.oxide_goal != 3 && (b.oxide_in_pool || b.oxide_profile_all));
+                e.oxideDisabled = (unsigned char)(b.oxide_goal == 3);
                 e.finalOpponent = (signed char)(e.finalPresent ? b.final_opponent : AP_BOSS_OXIDE_CHARACTER);
                 e.finalComposed = (unsigned char)(e.finalPresent && b.oxide_profile_all);
                 if (e.finalComposed) std::memcpy(e.finalSchedule, candidate.final_kit, sizeof e.finalSchedule);

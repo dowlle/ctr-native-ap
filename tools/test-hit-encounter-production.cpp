@@ -762,9 +762,10 @@ static void test_roster_swap(void)
 
 	// Four held defaults with a guest player: three free stock ids and three
 	// extras. The race runs with six AI, none of them held (fixes 2026-11-02).
-	// No final record: N. Oxide's races are off, so he races from the start.
+	// N. Oxide's races are off, so he races from the start.
 	reset_state();
 	swap_bosses(0, 1, 2, 3, 0);
+	ctr_boss_encounters.oxideDisabled = 1;
 	expect(AP_HitEncounterGuestEligible(15) || !AP_HitEncounterEnabled(), "N. Oxide disabled is in the pool");
 	n = race_after_hub(3, 13, ids);
 	expect_eq(n, 6, "four held defaults, six seats");

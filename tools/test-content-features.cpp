@@ -844,7 +844,7 @@ int main() {
             // Fixes 2026-11-02: N. Oxide's races off on a random-boss seed. The
             // wire still names him on both codes; nobody sits there, so he races
             // from the start with no Keys.
-            expect(!ctr_boss_encounters.finalPresent && ctr_cfg.hit.boss_identity[4] == 15 &&
+            expect(ctr_boss_encounters.oxideDisabled && ctr_cfg.hit.boss_identity[4] == 15 &&
                    ctr_cfg.hit.boss_identity[5] == 15 && ctr_cfg.hit.triggers[7].count == 0 &&
                    ctr_cfg.hit.triggers[7].fallback_keys == 0,
                    "oxide-off-swap: N. Oxide disabled races from the start");

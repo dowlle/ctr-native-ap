@@ -110,17 +110,15 @@ static void test_triggers(void)
 		e.opponent[2] = JOE;
 		e.opponent[3] = PINSTRIPE;
 		AP_HitBossSeats(&e, seats);
-		CHECK(seats[0] == CRASH && seats[4] == -1 && seats[5] == -1, "no final record: his codes seat nobody");
+		CHECK(seats[4] == OXIDE && seats[5] == OXIDE, "his races in the seed: he waits for them");
+		e.oxideDisabled = 1;
+		AP_HitBossSeats(&e, seats);
+		CHECK(seats[0] == CRASH && seats[4] == -1 && seats[5] == -1, "his races disabled: his codes seat nobody");
 		n = AP_HitBossGuestTrigger(seats, OXIDE, any, &kind);
 		CHECK(n == 0 && kind == 1, "N. Oxide disabled has no win on a random-boss seed");
 		CHECK(AP_RosterEligibleNoHit(disabled, OXIDE, 0), "N. Oxide disabled races from the start without Hit");
 		CHECK(!AP_RosterEligibleNoHit(disabled, CRASH, 0) && AP_RosterEligibleNoHit(disabled, ROO, 0),
 		      "the garages swap as before");
-		e.finalPresent = 1;
-		e.finalOpponent = OXIDE;
-		AP_HitBossSeats(&e, seats);
-		CHECK(seats[4] == OXIDE && seats[5] == OXIDE, "with his races he waits for them");
-		e.finalPresent = 0;
 		e.opponent[0] = ROO;
 		AP_HitBossSeats(&e, seats);
 		CHECK(seats[4] == OXIDE && seats[5] == OXIDE, "retail bosses keep the retail table and its Keys");
