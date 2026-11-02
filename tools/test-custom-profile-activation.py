@@ -89,9 +89,9 @@ int main(void) {
   assert(Manager_PackageReceipt(chosen,&ap_custom_content_status,
          ap_custom_content_status.verifiedPackageSha256));
   assert(CustomTrackManager_RenderYaml(AP_CustomContentSelectedPackage(),
-         &ap_custom_content_status,yaml,sizeof yaml));
+         &ap_custom_content_status,NULL,yaml,sizeof yaml));
   assert(strstr(yaml,chosen->levSha256));
-  assert(!CustomTrackManager_RenderYaml(profiles[1-i],&ap_custom_content_status,yaml,sizeof yaml));
+  assert(!CustomTrackManager_RenderYaml(profiles[1-i],&ap_custom_content_status,NULL,yaml,sizeof yaml));
   s_haveDescriptor=1; resets=applied=0;
   assert(AP_CustomContentActivateReady());
   assert(memcmp(s_customTrackConfig.navTrackUuid,expected,16)==0);
