@@ -1916,9 +1916,10 @@ static void validate(const J &p, State &out) {
     // order. Reach 10 Wumpa takes every cup leg and boss race on a track that
     // can reach ten fruit, and a track no pad reaches takes its check here.
     // The rungs of a track with a Trophy Race take its cup legs, never a boss
-    // race. A track raced only in Gem Cup legs has no rungs, unless
-    // cup_only_podium_rungs is on (ruling of 2026-11-02): then it takes the seed's
-    // rungs, routed from those legs only. The plan carries no flag for it: a
+    // race. A cup leg track with no rungs of its own (no pad, or a pad without
+    // a Trophy Race) has none, unless cup_only_podium_rungs is on (rulings of
+    // 2026-11-02): then it takes the seed's rungs, routed from those legs
+    // only. The plan carries no flag for it: a
     // podium check whose routes are all cup leg routes is the option on
     // (apworld content_race_routes.cup_only_on).
     {
@@ -1961,20 +1962,20 @@ static void validate(const J &p, State &out) {
                      {"encounter_id", encounter.empty() ? J(nullptr) : J(encounter)}, {"own_pad_id", pad}, {"award", award}};
         };
         for (const auto &use : rung_uses) {
-            bool own_pad = false;
+            bool own_rungs = false;
             for (const auto &pad : out.pads) {
                 if (!pad.occupied || pad.cup || pad.crystal || use.track != pad.track_id) continue;
-                own_pad = true;
                 for (int r = 0; r < 5; ++r) {
                     if (!pad.rung_locations[r]) continue;
+                    own_rungs = true;
                     const auto it = expected_checks.find(pad.rung_locations[r]);
                     need(it != expected_checks.end(), "a rung code without its check");
                     it->second["routes"].push_back(leg_route(use.entry, "cup", use.leg, "", use.pad, rung_keys[r]));
                 }
             }
-            if (own_pad || !cup_only_rungs) continue;
-            // A track raced only in Gem Cup legs: its rungs, created at its
-            // first leg, and the leg's own codes for the runtime.
+            if (own_rungs || !cup_only_rungs) continue;
+            // A cup leg track with no rungs of its own: its rungs, created at
+            // its first leg, and the leg's own codes for the runtime.
             int64_t codes[5] = {};
             rung_codes(use.track, codes);
             const J &track = *tracks.at(use.track);

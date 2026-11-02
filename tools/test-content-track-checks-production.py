@@ -254,6 +254,16 @@ int main(void) {
  assert(sentCount==1 && sent(35015108)); cases++;
  cup_leg(-1,0,1); cupPad.legs[2].rungs[0]=35015108; assert(AP_StandalonePodiumTrack()==-1); cases++;
  cup_leg(-1,0,0); assert(AP_StandalonePodiumTrack()==-1); cases++; /* option off: no leg rungs */
+ /* Ruling of 2026-11-02: a leg on a track whose pad has no Trophy Race
+  * carries its own rungs with the option on and sends them through the leg
+  * identity, not the pad's; a garage's leg sends none. */
+ cup_leg(CC,0,0); memset(pad.rung_locations,0,sizeof pad.rung_locations); pad.modes[0]=AP_CONTENT_MODE_RELIC;
+ pad.mode_count=1; cupPad.legs[2].rungs[0]=35015100; cupPad.legs[2].rungs[4]=35015104;
+ assert(AP_StandalonePodiumTrack()==AP_CONTENT_LEG_PODIUM_LOGICAL_BASE+101*AP_CONTENT_CUP_LEGS+2); cases++;
+ AP_SendPodiumChecks(AP_StandalonePodiumTrack(),1);
+ assert(sentCount==2 && sent(35015100) && sent(35015104)); cases++;
+ cup_leg(CC,0,1); memset(pad.rung_locations,0,sizeof pad.rung_locations); pad.modes[0]=AP_CONTENT_MODE_RELIC;
+ pad.mode_count=1; cupPad.legs[2].rungs[0]=35015100; assert(AP_StandalonePodiumTrack()==-1); cases++;
  /* Reconnect: a checked Cup Leg Victory was a first place, so the leg's own
   * rungs are earned; an unchecked one earns none. */
  cup_leg(-1,0,0); cupPad.legs[2].rungs[0]=35015108; cupPad.legs[2].rungs[4]=35015112; cupPad.legs[2].victory=35016800;
