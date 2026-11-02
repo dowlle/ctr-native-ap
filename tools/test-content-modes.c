@@ -68,6 +68,22 @@ int main(void)
     counts[0] = 3;
     expect(ap_content_mode_open(&p, AP_CONTENT_MODE_RELIC, counts, checked), "manual rule and stage-2 rule both met");
     p.has_rule = 0; p.keys = 0;
+    // Row 10i: Turbo Track's vanilla five Gems count one of each colour, so
+    // five Red Gems do not open it; a sum rule over the same Gems would.
+    {
+        ctr_content_pad turbo = p;
+        int gems[15] = {0};
+        turbo.has_rule = 1; turbo.rule_mask = 0x3E00u; turbo.rule_count = 5; turbo.rule_distinct = 1;
+        gems[9] = 5;
+        expect(ap_content_rule_owned(&turbo, gems) == 1 && !ap_content_pad_open(&turbo, gems), "five Red Gems are one colour");
+        turbo.rule_distinct = 0;
+        expect(ap_content_pad_open(&turbo, gems), "a sum rule counts copies");
+        turbo.rule_distinct = 1;
+        gems[10] = gems[11] = gems[12] = 1;
+        expect(!ap_content_pad_open(&turbo, gems), "four colours are not enough");
+        gems[13] = 2;
+        expect(ap_content_rule_owned(&turbo, gems) == 5 && ap_content_pad_open(&turbo, gems), "one Gem of each colour opens it");
+    }
 
     // Codes per mode, and an absent mode owns none.
     expect(ap_content_mode_codes(&p, AP_CONTENT_MODE_RELIC, codes) == 3 && codes[2] == 35012200, "relic owns three codes");

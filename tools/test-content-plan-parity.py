@@ -1987,6 +1987,61 @@ from worlds.ctr import content_capability as ccap
 native_rulings = {k: v == "1" for k, v in re.findall(r'\{"([a-z0-9-]+)", ([01])\}',
                   re.search(r"kUsfRulings\[\] = \{(.*?)\};", (root / "ap/ap_content_verify.hpp").read_text(), re.S)[1])}
 assert native_rulings == ccap.USF_FINISH_RULINGS, (native_rulings, ccap.USF_FINISH_RULINGS)
+# Row 10i parity fixes: Reach 10 Wumpa from cup legs and boss races, rungs
+# from cup legs, vanilla garages free without Trophies, Turbo Track's five Gem
+# colours. Generated on the vanilla-shape plan with many cups, so some tracks
+# are raced only in cups, plus forged routes and records.
+row10i = []
+for seed in range(12):
+    o = {"wumpa_check": ["per_track", "global", "off"][seed % 3], "cup_count": [5, 8, 10][seed % 3 if seed < 9 else 1],
+         "accessibility": "full", "lap_completion_checks": seed % 4 == 1}
+    if seed % 2:
+        o["warppad_unlock_requirements"] = "vanilla"
+    if seed % 6 == 5:
+        o["item_pool"] = {"base": {"trophies": 0}}
+    try:
+        world = make_world(o, seed=seed)
+    except cp.OptionError:
+        continue
+    row10i.append((seed, world.fill_slot_data()))
+    cases.append((f"row10i-generated-{seed}", row10i[-1][1], True))
+assert len(row10i) >= 9, len(row10i)
+r10_base = next(v for seed, v in row10i if seed % 3 == 0)
+def r10_drop_cup_route(p):
+    c = next(c for c in p["checks"] if c["kind"] == "wumpa" and any(r["mode"] == "cup" for r in c["routes"]))
+    c["routes"] = [r for r in c["routes"] if r["mode"] != "cup"] or c["routes"][:1]
+alter("row10i wumpa cup route dropped", r10_drop_cup_route, r10_base)
+def r10_drop_boss_route(p):
+    c = next(c for c in p["checks"] if c["kind"] == "wumpa" and any(r["mode"] == "boss_race" for r in c["routes"]))
+    c["routes"] = [r for r in c["routes"] if r["mode"] != "boss_race"] or c["routes"][:1]
+alter("row10i wumpa boss route dropped", r10_drop_boss_route, r10_base)
+def r10_reorder(p):
+    c = next(c for c in p["checks"] if c["kind"] == "wumpa" and len(c["routes"]) > 2)
+    c["routes"].reverse()
+alter("row10i wumpa routes reordered", r10_reorder, r10_base)
+def r10_rung_cup_dropped(p):
+    c = next(c for c in p["checks"] if c["kind"] == "podium" and any(r["mode"] == "cup" for r in c["routes"]))
+    c["routes"] = c["routes"][:1]
+alter("row10i rung cup route dropped", r10_rung_cup_dropped, r10_base)
+def r10_rung_boss(p):
+    c = next(c for c in p["checks"] if c["kind"] == "podium")
+    e = p["encounters"][0]
+    c["routes"].append(dict(entry_id=e["entry_id"], mode="boss_race", leg_id=None, encounter_id=e["id"],
+                            own_pad_id=e["pad_id"], award=c["routes"][0]["award"]))
+alter("row10i rung boss route added", r10_rung_boss, r10_base)
+r10_free = next((v for seed, v in row10i if seed % 6 == 5), None)
+if r10_free is not None:
+    def r10_garage_asks(p):
+        next(r for r in p["requirements"] if r["id"] == "boss:0")["predicate"] = dict(op="count", item=35010000, count=1)
+    alter("row10i free vanilla garage asks a Trophy", r10_garage_asks, r10_free)
+r10_vanilla = next(v for seed, v in row10i if seed % 2 and seed % 6 != 5)
+def r10_turbo_sum(p):
+    r = next(r for r in p["requirements"] if r["predicate"].get("op") == "distinct")
+    r["predicate"]["op"] = "sum"
+alter("row10i Turbo Track as a Gem sum", r10_turbo_sum, r10_vanilla)
+def r10_garage_free(p):
+    next(r for r in p["requirements"] if r["id"] == "boss:0")["predicate"] = dict(op="always")
+alter("row10i free vanilla garage with Trophies", r10_garage_free, r10_vanilla)
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()

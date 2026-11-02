@@ -505,12 +505,24 @@ static const ctr_content_pad *AP_StandaloneRoutePad(const struct CustomTrackRace
 // The running standalone race's content-plan podium identity, or -1: only a
 // Trophy Race on its pad's route (#133 PR 3b, AP_RetailPodiumTrack), or the
 // CTR Challenge of a ctr_first entry (J11, decision 14), whose finishing
-// place earns the rungs.
+// place earns the rungs. A Gem Cup leg (row 10i) earns the rungs of its
+// track's own pad, when that pad has them; a boss cup leg earns none.
 int AP_StandalonePodiumTrack(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	const struct CustomTrackRaceContext *context = gGT ? CustomTrack_StandaloneContext((int)gGT->levelID) : NULL;
 	const ctr_content_pad *pad;
+	if (context && context->cup)
+	{
+		const ctr_content_pad *cup = AP_ContentCupPad();
+		const int leg = AP_ContentCupLeg();
+		if (!cup || cup->physical >= AP_CONTENT_GARAGE_CUP_PAD || IS_BOSS_RACE(gGT->gameMode1) ||
+		    leg < 0 || leg >= AP_CONTENT_CUP_LEGS || cup->legs[leg].track_pad < 0 ||
+		    !(pad = ap_content_plan_pad(cup->legs[leg].track_pad)) || !pad->occupied || pad->cup || pad->crystal ||
+		    ap_content_rung_mode(pad) < 0)
+			return -1;
+		return AP_CONTENT_PODIUM_LOGICAL_BASE + cup->legs[leg].track_pad;
+	}
 	if (!context || !(pad = AP_StandaloneRoutePad(context)) || context->mode != ap_content_rung_mode(pad) ||
 	    (!context->retail && !CustomTrack_ServingLoad((int)gGT->levelID, 0, 0)))
 		return -1;
@@ -599,14 +611,14 @@ static long AP_StandaloneWumpaCode(void)
 	const struct CustomTrackRaceContext *context = gGT ? CustomTrack_StandaloneContext(gGT->levelID) : NULL;
 	const ctr_content_pad *pad;
 	int64_t code;
-	// A cup leg earns its track's own check, also while the track's pad is
-	// shut. Logic counts no cup route, so it stays stricter than the race.
+	// A cup leg, a Gem Cup's or a boss cup's, earns its track's own check,
+	// also while the track's pad is shut or the track has none (row 10i).
 	if (context && context->cup)
 	{
 		const ctr_content_pad *cup = AP_ContentCupPad();
 		const int leg = AP_ContentCupLeg();
-		pad = cup && leg >= 0 && cup->legs[leg].track_pad >= 0 ? ap_content_plan_pad(cup->legs[leg].track_pad) : NULL;
-		return pad && pad->wumpa_location > 0 && pad->wumpa_location <= 2147483647 ? (long)pad->wumpa_location : -1;
+		code = cup && leg >= 0 && leg < AP_CONTENT_CUP_LEGS ? cup->legs[leg].wumpa : 0;
+		return code > 0 && code <= 2147483647 ? (long)code : -1;
 	}
 	if (!context || !ap_content_plan_active() ||
 	    (!context->retail && !CustomTrack_ServingLoad(gGT->levelID, 0, 0)) ||
@@ -1146,6 +1158,25 @@ void AP_WumpaReachedTen(struct Driver *driver)
 			return;
 		AP_EmitClassCheck(code, 0, -1, 0, 1,
 		                  "[AP WUMPA] reached 10 fruit (content plan, location %ld)\n", code);
+		return;
+	}
+	// A content-plan boss race with per_track Wumpa (row 10i) sends its
+	// venue's own check, by gGT->bossID as the lap check does; a boss cup leg
+	// took the branch above. Global mode keeps the path below.
+	if (ap_content_plan_active() && ap_content_plan_checks()->wumpa == 2 && IS_BOSS_RACE(sdata->gGT->gameMode1))
+	{
+		const int boss = (int)sdata->gGT->bossID;
+		const int64_t venue = boss >= 0 && boss < 6 ? ap_content_plan_bosses()->wumpa[boss] : 0;
+		if (venue <= 0 || venue > 2147483647 || !ap_net_location_exists((long)venue))
+		{
+			snprintf(msg, sizeof msg,
+			         "[AP WUMPA] reached 10 fruit, no check sent: no Wumpa route for this "
+			         "boss race (boss=%d)\n", boss);
+			AP_AppendLog(msg);
+			return;
+		}
+		AP_EmitClassCheck((long)venue, 0, -1, 0, 1,
+		                  "[AP WUMPA] reached 10 fruit (content plan boss race, location %ld)\n", (long)venue);
 		return;
 	}
 #endif

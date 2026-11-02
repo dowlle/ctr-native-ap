@@ -53,6 +53,7 @@ fixture = r'''
 #define ADVENTURE_BOSS 8
 #define RELIC_RACE 16
 #define CRYSTAL_CHALLENGE 32
+#define IS_BOSS_RACE(m) (((m) & ADVENTURE_BOSS) != 0)
 #define TOKEN_RACE 1
 #define AP_ITEM_BASE 35010000
 #define AP_RESULT_PRODUCER_CUSTOM_TROPHY 1
@@ -101,6 +102,9 @@ const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int level) {
  return haveContext && level==context.hostLevelID ? &context : NULL;
 }
 int CustomTrack_ServingLoad(int level,int cup,int id) { (void)cup; (void)id; return level==context.hostLevelID && serving; }
+/* Row 10i: AP_StandalonePodiumTrack reads the running cup leg. */
+const ctr_content_pad *AP_ContentCupPad(void) { return NULL; }
+int AP_ContentCupLeg(void) { return -1; }
 static int legacySuppress, legacyAsked;
 long AP_LookupLocationCode(int bit) { return bit; }
 long AP_TrialTrackLocation(int level,int challenge) { (void)level; (void)challenge; return -1; }

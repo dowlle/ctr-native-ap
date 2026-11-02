@@ -209,3 +209,11 @@ Decision 7 (2026-10-28, J11): boss encounters never repeat and `bosses.repeats`
 is always false on both sides. `bosses-custom.json`, emitted before that
 ruling with `repeats: true` (its four garage venues were already distinct),
 was edited by hand to `repeats: false`. Nothing else in it changed.
+
+Row 10i parity fixes: a Gem Cup leg is now a route of its track's podium rungs
+(apworld `content_race_routes`). `boss-cups-gauntlet.json` and
+`spoiler-items.json`, the two fixtures with both rungs and cups, gained those
+routes by script (`content_race_routes.extend` from the paired apworld, appended
+after each rung's own route, in the route's key order). Nothing else in them
+changed. No fixture has per-track Wumpa with cups or bosses, or vanilla pad
+requirements, so the other fixtures are unchanged.
