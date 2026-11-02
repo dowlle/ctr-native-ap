@@ -199,6 +199,34 @@ int main(void)
 	ap_seed_instruction(&rows[3], text, sizeof text);
 	expect(strstr(text, "Move them out") != NULL, "a mismatched Saphi folder is never overwritten: the player moves the files");
 	{
+		/* Row 10k: where a track comes from, on screen. */
+		struct AP_SeedContentRow r = rows[2];
+		expect(!strcmp(ap_seed_source_text(&rows[1]), "Project Saphi"), "compiled profile: Project Saphi");
+		expect(!strcmp(ap_seed_source_text(&r), "No download"), "manual without a registry answer");
+		r.registry = AP_SEED_REGISTRY_CHECKING;
+		ap_seed_instruction(&r, text, sizeof text);
+		expect(strstr(ap_seed_source_text(&r), "checking registry") && strstr(text, "Checking the track registry"),
+		       "while the registry loads");
+		r.registry = AP_SEED_REGISTRY_OFFLINE;
+		ap_seed_instruction(&r, text, sizeof text);
+		expect(strstr(ap_seed_source_text(&r), "registry offline") && strstr(text, "tracks/baby-t-park/original"),
+		       "offline without cache: the reason and the manual steps");
+		r.registry = AP_SEED_REGISTRY_NOT_LISTED;
+		expect(strstr(ap_seed_source_text(&r), "not registered") != NULL, "not registered");
+		r.registry = AP_SEED_REGISTRY_NOT_ON_SAPHI;
+		expect(strstr(ap_seed_source_text(&r), "not on Saphi") != NULL, "not on Saphi");
+		r.registry = AP_SEED_REGISTRY_CONFLICT;
+		expect(strstr(ap_seed_source_text(&r), "size differs") != NULL, "registry size differs from the pin");
+		r.source = AP_SEED_SOURCE_SAPHI;
+		r.registry = AP_SEED_REGISTRY_LIVE;
+		ap_seed_instruction(&r, text, sizeof text);
+		expect(!strcmp(ap_seed_source_text(&r), "Project Saphi (registry)") && strstr(text, "Install missing content"),
+		       "a live registry match downloads");
+		r.registry = AP_SEED_REGISTRY_CACHED;
+		expect(!strcmp(ap_seed_source_text(&r), "Project Saphi (cached registry)"), "a cached-copy match says so");
+		expect(ap_seed_row_downloadable(&r), "a registry match is downloadable when missing");
+	}
+	{
 		struct AP_SeedContentRow r = rows[2];
 		r.scan = AP_SEED_SCAN_MISMATCH;
 		ap_seed_instruction(&r, text, sizeof text);

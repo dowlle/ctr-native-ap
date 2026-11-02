@@ -41,6 +41,10 @@ int AP_SeedContentInstallStart(char *message, size_t messageSize);
 int AP_SeedContentInstallTick(char *message, size_t messageSize);
 int AP_SeedContentInstallBusy(void);
 
+// Rescan (row 10k): fetch the track registry again unless a fetch is running,
+// so a room that found no registry, or an old copy, can try once more.
+void AP_SeedContentRegistryRetry(void);
+
 #ifdef __cplusplus
 }
 #endif

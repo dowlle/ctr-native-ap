@@ -19,7 +19,14 @@ Cases:
   5. a failure stops the queue: no further download, one rescan for what was
      installed, the failure in the message,
   6. a room change stops the queue after the running download,
-  7. a second start while one runs is refused.
+  7. a second start while one runs is refused,
+  8. the live track registry (row 10k, stubbed here): a missing package
+     without a compiled profile is fetched for once per room, with the cache
+     at assets/track-registry-cache.json; a registry match makes its row a
+     Project Saphi download, labelled live or cached; offline, not listed or
+     not on Saphi stay manual with the reason; the install calls the registry
+     download with the room's pins and the track-key folder, never the
+     compiled path; an unsafe key refuses; Rescan asks again.
 """
 from pathlib import Path
 import subprocess
@@ -46,6 +53,7 @@ static void AP_AppendLog(const char *msg) { AP_LogLine(msg); }
 #include "platform/native_custom_track_manager.c"
 #include "ap/ap_content_plan.h"
 #include "ap/ap_custom_track_download.h"
+#include "ap/ap_track_registry.h"
 '''
 
 stubs = r'''
@@ -86,6 +94,45 @@ int ap_custom_track_download_status(char *detail, int bytes)
 }
 static int rescans;
 void AP_CustomContentRescan(void) { rescans++; }
+/* Row 10k: the registry and its download, recorded. */
+static int reg_state = AP_TRACK_REGISTRY_IDLE, reg_source = AP_TRACK_REGISTRY_SOURCE_NONE, reg_result = AP_TRACK_REGISTRY_NO_INDEX;
+static int reg_refreshes, reg_starts;
+static uint32_t reg_generation = 1;
+static char reg_cache[512], reg_lev[80], reg_root[512], reg_pin_lev[80], reg_pin_vrm[80];
+static int reg_track, reg_lev_id, reg_vrm_id;
+static uint32_t reg_lev_bytes, reg_vrm_bytes;
+int ap_track_registry_refresh(const char *cache) { reg_refreshes++; snprintf(reg_cache, sizeof reg_cache, "%s", cache); return 1; }
+int ap_track_registry_status(int *source, char *detail, int n)
+{
+	if (source) *source = reg_source;
+	if (detail && n > 0) detail[0] = 0;
+	return reg_state;
+}
+uint32_t ap_track_registry_generation(void) { return reg_generation; }
+int ap_track_registry_lookup(const char *lev, uint32_t lb, const char *vrm, uint32_t vb, struct ApTrackRegistryMatch *m)
+{
+	(void)lb; (void)vrm; (void)vb;
+	if (reg_result == AP_TRACK_REGISTRY_NO_INDEX) return reg_result;
+	if (strcmp(lev, reg_lev)) return AP_TRACK_REGISTRY_NOT_LISTED;
+	if (reg_result == AP_TRACK_REGISTRY_MATCH && m)
+	{
+		memset(m, 0, sizeof *m);
+		m->saphi_track_id = 121; m->lev_download_id = 872; m->vrm_download_id = 873;
+	}
+	return reg_result;
+}
+int ap_custom_track_download_start_registry(const char *tracks, const char *rootDir, int track, int levId, int vrmId,
+                                            const char *lev, uint32_t levBytes, const char *vrm, uint32_t vrmBytes)
+{
+	(void)tracks;
+	reg_starts++;
+	snprintf(reg_root, sizeof reg_root, "%s", rootDir);
+	reg_track = track; reg_lev_id = levId; reg_vrm_id = vrmId;
+	snprintf(reg_pin_lev, sizeof reg_pin_lev, "%s", lev); snprintf(reg_pin_vrm, sizeof reg_pin_vrm, "%s", vrm);
+	reg_lev_bytes = levBytes; reg_vrm_bytes = vrmBytes;
+	dl_state = AP_CT_DOWNLOAD_RUNNING;
+	return 1;
+}
 '''
 
 tests = r'''
@@ -250,6 +297,87 @@ int main(void)
 	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
 	expect(rows[n - 1].scan == AP_SEED_SCAN_UNKNOWN, "Cortex Vortex before the first scan is not Ready");
 
+	/* 8. The live track registry (row 10k). */
+	ap_custom_content_scanned = 1;
+	starts = 0; rescans = 0; dl_state = AP_CT_DOWNLOAD_IDLE;
+	package(0, "baby-t-park", "1.0.2", current, 2470836, 115732, CTR_CT_MANAGER_READY);
+	package(1, "acid-lake", "1.0.0", NULL, 810876, 458808, CTR_CT_MANAGER_NOT_INSTALLED);
+	package_count = 2; plan_cortex = 0;
+	snprintf(packages[1].lev_sha256, sizeof packages[1].lev_sha256, "%s", "aa");
+	snprintf(packages[1].vrm_sha256, sizeof packages[1].vrm_sha256, "%s", "bb");
+	snprintf(reg_lev, sizeof reg_lev, "aa");
+	plan_epoch = 20; reg_refreshes = 0;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	snprintf(path, sizeof path, "%s/track-registry-cache.json", assets_root);
+	expect(reg_refreshes == 1 && !strcmp(reg_cache, path), "a missing open package fetches the registry, cache in assets");
+	expect(rows[1].source == AP_SEED_SOURCE_MANUAL && rows[1].registry == AP_SEED_REGISTRY_CHECKING &&
+	       strstr(ap_seed_source_text(&rows[1]), "checking"), "while it loads: no download yet, checking");
+	reg_state = AP_TRACK_REGISTRY_LOADING;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(reg_refreshes == 1, "not asked again for the same room");
+	/* Offline, no cache. */
+	reg_state = AP_TRACK_REGISTRY_UNAVAILABLE;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(rows[1].source == AP_SEED_SOURCE_MANUAL && rows[1].registry == AP_SEED_REGISTRY_OFFLINE &&
+	       !strcmp(ap_seed_source_text(&rows[1]), "No download (registry offline)"), "offline without cache: manual, says why");
+	expect(!AP_SeedContentInstallStart(message, sizeof message) && reg_starts == 0 && starts == 0,
+	       "offline without cache: no download starts");
+	/* Rescan asks again. */
+	AP_SeedContentRegistryRetry();
+	expect(reg_refreshes == 2, "Rescan fetches the registry again");
+	/* A live match. */
+	reg_state = AP_TRACK_REGISTRY_DONE; reg_source = AP_TRACK_REGISTRY_SOURCE_LIVE;
+	reg_result = AP_TRACK_REGISTRY_MATCH; reg_generation++;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(rows[1].source == AP_SEED_SOURCE_SAPHI && rows[1].registry == AP_SEED_REGISTRY_LIVE &&
+	       !strcmp(ap_seed_source_text(&rows[1]), "Project Saphi (registry)"), "registry match: a Saphi download");
+	expect(rows[0].registry == AP_SEED_REGISTRY_NONE && !strcmp(ap_seed_source_text(&rows[0]), "Project Saphi"),
+	       "the compiled profile stays as it was");
+	/* Cached copy: said on screen. */
+	reg_source = AP_TRACK_REGISTRY_SOURCE_CACHED;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(rows[1].registry == AP_SEED_REGISTRY_CACHED && strstr(ap_seed_source_text(&rows[1]), "cached registry"),
+	       "a cached-copy match says so");
+	/* Install: the registry download with the room's pins and the key folder. */
+	expect(AP_SeedContentInstallPreview(plan, &count, &bytes, message, sizeof message) == AP_SEED_PLAN_OK && count == 1 &&
+	       plan[0] == 1, "preview queues the registry track");
+	expect(AP_SeedContentInstallStart(message, sizeof message) && reg_starts == 1 && starts == 0,
+	       "the install starts the registry download, not the compiled one");
+	snprintf(path, sizeof path, "%s/acid-lake", tracks);
+	expect(!strcmp(reg_root, path) && reg_track == 121 && reg_lev_id == 872 && reg_vrm_id == 873 &&
+	       !strcmp(reg_pin_lev, "aa") && !strcmp(reg_pin_vrm, "bb") && reg_lev_bytes == 810876 && reg_vrm_bytes == 458808,
+	       "registry download: tracks/<key>, the located ids, the room's own pins");
+	expect(strstr(log_text, "cached track registry") && strstr(log_text, "Saphi track 121"), "the log names the cached source");
+	dl_state = AP_CT_DOWNLOAD_SUCCEEDED;
+	expect(AP_SeedContentInstallTick(message, sizeof message) == 0 && rescans == 1 && entries(path) == -1,
+	       "success rescans; the hooks create no folder for a registry track");
+	/* Not listed, not on Saphi: manual with the reason. */
+	dl_state = AP_CT_DOWNLOAD_IDLE;
+	reg_result = AP_TRACK_REGISTRY_NOT_ON_SAPHI; reg_generation++;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(rows[1].source == AP_SEED_SOURCE_MANUAL && rows[1].registry == AP_SEED_REGISTRY_NOT_ON_SAPHI, "not on Saphi: manual");
+	snprintf(reg_lev, sizeof reg_lev, "other"); reg_result = AP_TRACK_REGISTRY_MATCH; reg_generation++;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(rows[1].registry == AP_SEED_REGISTRY_NOT_LISTED && rows[1].source == AP_SEED_SOURCE_MANUAL &&
+	       !strcmp(ap_seed_source_text(&rows[1]), "No download (not registered)"), "other hashes: not registered");
+	/* An unsafe track key refuses before any download. */
+	snprintf(reg_lev, sizeof reg_lev, "aa"); reg_generation++;
+	snprintf(packages[1].content_id, sizeof packages[1].content_id, "%s", "../escape");
+	reg_starts = 0;
+	expect(!AP_SeedContentInstallStart(message, sizeof message) && reg_starts == 0, "an unsafe key refuses the install");
+	snprintf(packages[1].content_id, sizeof packages[1].content_id, "%s", "acid-lake");
+	/* Live this session and a new room: no new fetch; all open packages Ready: none either. */
+	reg_source = AP_TRACK_REGISTRY_SOURCE_LIVE; plan_epoch = 21; reg_refreshes = 0;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(reg_refreshes == 0, "the live copy of this session serves the next room");
+	reg_source = AP_TRACK_REGISTRY_SOURCE_CACHED; plan_epoch = 22;
+	ap_content_package_scan[1] = CTR_CT_MANAGER_READY + 1;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(reg_refreshes == 0, "no fetch when every open package is Ready");
+	ap_content_package_scan[1] = CTR_CT_MANAGER_NOT_INSTALLED + 1; plan_epoch = 23;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(reg_refreshes == 1, "a cached copy is refreshed for a new room");
+
 	snprintf(path, sizeof path, "rm -rf '%s'", assets_root);
 	if (system(path) != 0) return 2;
 	printf("%d checks, %d failures\n", checks, failures);
@@ -266,4 +394,5 @@ with tempfile.TemporaryDirectory() as tmp:
                     str(src), "-o", str(exe)], check=True, cwd=root)
     subprocess.run([str(exe)], check=True, cwd=root)
 print("PASS: Current Seed hooks: rows and sources, refusals before any download or folder, exact pins per "
-      "revision, folder setup only after success, failure and room-change stops")
+      "revision, folder setup only after success, failure and room-change stops, registry rows (live, cached, "
+      "offline, not listed) and the registry download with the room's pins")

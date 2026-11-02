@@ -87,7 +87,7 @@ static void MM_CurrentSeed_DrawTabs(uint32_t *ot)
 
 static void MM_CurrentSeed_DrawOverview(const struct AP_SeedContentRow *rows, int count, uint32_t *ot)
 {
-	int plan[AP_SEED_ROWS_MAX], queued = 0, i, manual = 0, y = MM_SEED_LIST_Y;
+	int plan[AP_SEED_ROWS_MAX], queued = 0, i, manual = 0, cached = 0, y = MM_SEED_LIST_Y;
 	uint64_t bytes = 0;
 	char line[200], fit[200], size[24], reason[160];
 	if (AP_SeedContentInstallPreview(plan, &queued, &bytes, reason, sizeof reason) != AP_SEED_PLAN_OK)
@@ -115,6 +115,8 @@ static void MM_CurrentSeed_DrawOverview(const struct AP_SeedContentRow *rows, in
 	}
 	for (i = 0; i < count; i++)
 		if (ap_seed_row_state(&rows[i]) != AP_SEED_STATE_READY && !ap_seed_row_downloadable(&rows[i])) manual++;
+	for (i = 0; i < queued; i++)
+		if (rows[plan[i]].registry == AP_SEED_REGISTRY_CACHED) cached++;
 	ap_seed_format_bytes(bytes, size, sizeof size);
 	snprintf(line, sizeof line, "Total: %d track%s, %s from Project Saphi.", queued, queued == 1 ? "" : "s", size);
 	DecalFont_DrawLineOT(line, 0x100, 0xA2, FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
@@ -124,6 +126,9 @@ static void MM_CurrentSeed_DrawOverview(const struct AP_SeedContentRow *rows, in
 		         manual, manual == 1 ? "" : "s", manual == 1 ? "s" : "");
 		MM_Seed_DrawWrapped(line, 0x20, 0xB0, 0x1C0, 1, WHITE, ot);
 	}
+	if (cached)
+		MM_Seed_DrawWrapped("Track locations from the cached registry copy.",
+		                    0x20, 0xBE, 0x1C0, 1, WHITE, ot);
 	DecalFont_DrawLineOT("Cross: Install    Triangle: Cancel", 0x100, 0xD6, FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
 }
 
@@ -194,6 +199,7 @@ static int MM_CurrentSeed_Page(uint32_t *ot, struct GamepadBuffer *pad)
 			snprintf(s_seedMessage, sizeof s_seedMessage, "Wait for the install to finish, then Rescan.");
 		else
 		{
+			AP_SeedContentRegistryRetry();
 			AP_CustomContentRescan();
 			count = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
 			ready = ap_seed_ready_count(rows, count);
@@ -252,12 +258,11 @@ static int MM_CurrentSeed_Page(uint32_t *ot, struct GamepadBuffer *pad)
 		const struct AP_SeedContentRow *r = &rows[s_seedSelected];
 		char instruction[256], locator[160];
 		if (r->source == AP_SEED_SOURCE_BUNDLED)
-			snprintf(line, sizeof line, "Comes with the client");
+			snprintf(line, sizeof line, "%s", ap_seed_source_text(r));
 		else
 		{
 			ap_seed_format_bytes((uint64_t)r->lev_bytes + r->vrm_bytes, size, sizeof size);
-			snprintf(line, sizeof line, "By %.48s  |  %s  |  %s", r->author, size,
-			         r->source == AP_SEED_SOURCE_SAPHI ? "Project Saphi" : "No download");
+			snprintf(line, sizeof line, "By %.48s  |  %s  |  %s", r->author, size, ap_seed_source_text(r));
 		}
 		MM_Seed_Fit(line, fit, sizeof fit, 0x1C0);
 		DecalFont_DrawLineOT(fit, 0x20, 0x94, FONT_SMALL, ORANGE, ot);

@@ -47,8 +47,23 @@ enum
 enum
 {
 	AP_SEED_SOURCE_MANUAL = 0, /* no trusted download: the player adds the files */
-	AP_SEED_SOURCE_SAPHI,      /* a compiled release profile with a Project Saphi download */
+	AP_SEED_SOURCE_SAPHI,      /* a Project Saphi download: compiled profile or track registry */
 	AP_SEED_SOURCE_BUNDLED     /* Cortex Vortex, shipped with the client */
+};
+
+/* What the live track registry said about a package without a compiled
+ * profile (row 10k). The registry only locates a pinned track on Saphi; the
+ * room's hashes decide what installs. */
+enum
+{
+	AP_SEED_REGISTRY_NONE = 0,     /* compiled profile, Cortex Vortex, or not asked */
+	AP_SEED_REGISTRY_LIVE,         /* located on Saphi by the registry fetched this session */
+	AP_SEED_REGISTRY_CACHED,       /* located by the cached registry copy */
+	AP_SEED_REGISTRY_CHECKING,     /* the registry is being fetched */
+	AP_SEED_REGISTRY_OFFLINE,      /* no live registry and no cached copy */
+	AP_SEED_REGISTRY_NOT_LISTED,   /* no registered revision has the room's hashes */
+	AP_SEED_REGISTRY_NOT_ON_SAPHI, /* registered, with no Saphi download */
+	AP_SEED_REGISTRY_CONFLICT      /* registered hashes, but another size than the room pins */
 };
 
 /* Row states the page shows. */
@@ -80,6 +95,7 @@ struct AP_SeedContentRow
 	int source; /* AP_SEED_SOURCE_* */
 	int index;  /* package index, -1 for Cortex Vortex */
 	struct AP_SeedContentLocator locator;
+	int registry; /* AP_SEED_REGISTRY_* */
 };
 
 /* Copy room text for drawing: printable ASCII only (a UTF-8 sequence becomes
@@ -247,6 +263,25 @@ static inline void ap_seed_format_bytes(uint64_t bytes, char *out, size_t size)
 	}
 }
 
+/* Where the selected track comes from, for the line under the list. A
+ * location from the cached registry copy says so. */
+static inline const char *ap_seed_source_text(const struct AP_SeedContentRow *row)
+{
+	if (row->source == AP_SEED_SOURCE_BUNDLED) return "Comes with the client";
+	if (row->source == AP_SEED_SOURCE_SAPHI)
+		return row->registry == AP_SEED_REGISTRY_CACHED ? "Project Saphi (cached registry)" :
+		       row->registry == AP_SEED_REGISTRY_LIVE ? "Project Saphi (registry)" : "Project Saphi";
+	switch (row->registry)
+	{
+	case AP_SEED_REGISTRY_CHECKING: return "No download yet (checking registry)";
+	case AP_SEED_REGISTRY_OFFLINE: return "No download (registry offline)";
+	case AP_SEED_REGISTRY_NOT_LISTED: return "No download (not registered)";
+	case AP_SEED_REGISTRY_NOT_ON_SAPHI: return "No download (not on Saphi)";
+	case AP_SEED_REGISTRY_CONFLICT: return "No download (registry size differs)";
+	default: return "No download";
+	}
+}
+
 /* The per-track instruction under the list. */
 static inline void ap_seed_instruction(const struct AP_SeedContentRow *row, char *out, size_t size)
 {
@@ -269,6 +304,8 @@ static inline void ap_seed_instruction(const struct AP_SeedContentRow *row, char
 	case AP_SEED_SCAN_MISSING_FILE:
 		if (row->source == AP_SEED_SOURCE_SAPHI)
 			snprintf(out, size, "Downloads from Project Saphi with Install missing content.");
+		else if (row->registry == AP_SEED_REGISTRY_CHECKING)
+			snprintf(out, size, "Checking the track registry for a download...");
 		else if (row->locator.patch_sha256[0])
 			snprintf(out, size, "No download. Select: import the patch below, or drop it on the window.");
 		else
