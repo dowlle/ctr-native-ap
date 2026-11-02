@@ -33,22 +33,26 @@
 
 // The modes that are never Adventure, and the bits only Adventure sets. A
 // Relic Race on the AP map can run without ADVENTURE_MODE (ap_boxes.c,
-// AP_BoxesRaceCarriesBoxes, live test of 2026-08-12), so every Adventure bit
-// counts. An explicit Arcade, Time Trial or Battle bit wins over a stale
-// Adventure bit.
+// AP_BoxesRaceCarriesBoxes, live test of 2026-08-12), so the other Adventure
+// bits count too, but only in a 1P race: quitting an event to the title can
+// leave its bit set (MM_MenuFlow.c does not clear RELIC_RACE), and Versus,
+// which has no mode bit of its own, is always 2 to 4 players. An explicit
+// Arcade, Time Trial or Battle bit wins over any stale Adventure bit.
 #define AP_RS_NOT_ADVENTURE (AP_RS_ARCADE_MODE | AP_RS_TIME_TRIAL | AP_RS_BATTLE_MODE)
-#define AP_RS_ADVENTURE_BITS                                                                              \
-	(AP_RS_ADVENTURE_MODE | AP_RS_ADVENTURE_ARENA | AP_RS_RELIC_RACE | AP_RS_CRYSTAL_CHALLENGE |       \
-	 AP_RS_ADVENTURE_CUP | AP_RS_ADVENTURE_BOSS)
+#define AP_RS_ADVENTURE_EVENT_BITS                                                                       \
+	(AP_RS_ADVENTURE_ARENA | AP_RS_RELIC_RACE | AP_RS_CRYSTAL_CHALLENGE | AP_RS_ADVENTURE_CUP |       \
+	 AP_RS_ADVENTURE_BOSS)
 
-// 1 when the room's kart stats apply to a race in this game mode (gameMode1),
-// 0 when the race drives on vanilla stats. Versus has no mode bit of its own:
-// it is the race with neither kind of bit.
-static inline int AP_RaceStats_RoomApplies(unsigned int gameMode1)
+// 1 when the room's kart stats apply to a race in this game mode (gameMode1)
+// with this many human players (numPlyrCurrGame), 0 when the race drives on
+// vanilla stats.
+static inline int AP_RaceStats_RoomApplies(unsigned int gameMode1, int players)
 {
 	if ((gameMode1 & AP_RS_NOT_ADVENTURE) != 0)
 		return 0;
-	return (gameMode1 & AP_RS_ADVENTURE_BITS) != 0;
+	if ((gameMode1 & AP_RS_ADVENTURE_MODE) != 0)
+		return 1;
+	return players <= 1 && (gameMode1 & AP_RS_ADVENTURE_EVENT_BITS) != 0;
 }
 
 #endif

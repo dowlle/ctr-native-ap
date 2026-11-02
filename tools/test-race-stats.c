@@ -99,31 +99,35 @@ int main(void)
 	char *cap, *swap, *stats, *package;
 
 	// ── The rule ──
-	expect(AP_RaceStats_RoomApplies(ARCADE_MODE), 0, "Arcade single race: vanilla");
-	expect(AP_RaceStats_RoomApplies(ARCADE_MODE | MAIN_MENU), 0, "Arcade track select: vanilla");
-	expect(AP_RaceStats_RoomApplies(TIME_TRIAL), 0, "Time Trial: vanilla");
-	expect(AP_RaceStats_RoomApplies(ARCADE_MODE | RELIC_RACE), 0, "Arcade with a stray relic bit: still vanilla");
-	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE), 1, "Adventure race: room stats");
-	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE | ADVENTURE_CUP), 1, "Adventure cup: room stats");
-	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE | ADVENTURE_BOSS), 1, "Boss race: room stats");
-	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE | RELIC_RACE), 1, "Relic Race: room stats");
-	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE | CRYSTAL_CHALLENGE | ADVENTURE_ARENA), 1,
+	expect(AP_RaceStats_RoomApplies(ARCADE_MODE, 1), 0, "Arcade single race: vanilla");
+	expect(AP_RaceStats_RoomApplies(ARCADE_MODE | MAIN_MENU, 1), 0, "Arcade track select: vanilla");
+	expect(AP_RaceStats_RoomApplies(TIME_TRIAL, 1), 0, "Time Trial: vanilla");
+	expect(AP_RaceStats_RoomApplies(ARCADE_MODE | RELIC_RACE, 1), 0, "Arcade with a stray relic bit: still vanilla");
+	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE, 1), 1, "Adventure race: room stats");
+	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE | ADVENTURE_CUP, 1), 1, "Adventure cup: room stats");
+	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE | ADVENTURE_BOSS, 1), 1, "Boss race: room stats");
+	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE | RELIC_RACE, 1), 1, "Relic Race: room stats");
+	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE | CRYSTAL_CHALLENGE | ADVENTURE_ARENA, 1), 1,
 	       "Crystal Challenge: room stats");
-	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE | ADVENTURE_ARENA), 1, "Adventure hub: room stats");
-	expect(AP_RaceStats_RoomApplies(0), 0, "Versus race (no mode bit): vanilla");
-	expect(AP_RaceStats_RoomApplies(MAIN_MENU), 0, "Versus track select: vanilla");
-	expect(AP_RaceStats_RoomApplies(BATTLE_MODE), 0, "Battle: vanilla");
-	expect(AP_RaceStats_RoomApplies(BATTLE_MODE | POINT_LIMIT), 0, "Battle, point limit: vanilla");
-	expect(AP_RaceStats_RoomApplies(BATTLE_MODE | LIFE_LIMIT), 0, "Battle, life limit: vanilla");
-	expect(AP_RaceStats_RoomApplies(BATTLE_MODE | TIME_LIMIT), 0, "Battle, time limit: vanilla");
-	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE | ADVENTURE_BOSS | RELIC_RACE), 1,
+	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE | ADVENTURE_ARENA, 1), 1, "Adventure hub: room stats");
+	expect(AP_RaceStats_RoomApplies(0, 2), 0, "Versus race (no mode bit): vanilla");
+	expect(AP_RaceStats_RoomApplies(MAIN_MENU, 2), 0, "Versus track select: vanilla");
+	expect(AP_RaceStats_RoomApplies(BATTLE_MODE, 1), 0, "Battle: vanilla");
+	expect(AP_RaceStats_RoomApplies(BATTLE_MODE | POINT_LIMIT, 1), 0, "Battle, point limit: vanilla");
+	expect(AP_RaceStats_RoomApplies(BATTLE_MODE | LIFE_LIMIT, 1), 0, "Battle, life limit: vanilla");
+	expect(AP_RaceStats_RoomApplies(BATTLE_MODE | TIME_LIMIT, 1), 0, "Battle, time limit: vanilla");
+	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE | ADVENTURE_BOSS | RELIC_RACE, 1), 1,
 	       "Adventure with any extra bit: room stats");
-	expect(AP_RaceStats_RoomApplies(RELIC_RACE), 1, "Relic Race without the Adventure bit: room stats");
-	expect(AP_RaceStats_RoomApplies(CRYSTAL_CHALLENGE), 1, "Crystal Challenge bit alone: room stats");
-	expect(AP_RaceStats_RoomApplies(ADVENTURE_CUP), 1, "Adventure cup bit alone: room stats");
-	expect(AP_RaceStats_RoomApplies(ADVENTURE_BOSS), 1, "Boss bit alone: room stats");
-	expect(AP_RaceStats_RoomApplies(TIME_TRIAL | RELIC_RACE), 0, "Time Trial with a stale relic bit: vanilla");
-	expect(AP_RaceStats_RoomApplies(BATTLE_MODE | ADVENTURE_ARENA), 0, "Battle with a stale hub bit: vanilla");
+	expect(AP_RaceStats_RoomApplies(RELIC_RACE, 1), 1, "Relic Race without the Adventure bit: room stats");
+	expect(AP_RaceStats_RoomApplies(CRYSTAL_CHALLENGE, 1), 1, "Crystal Challenge bit alone: room stats");
+	expect(AP_RaceStats_RoomApplies(ADVENTURE_CUP, 1), 1, "Adventure cup bit alone: room stats");
+	expect(AP_RaceStats_RoomApplies(ADVENTURE_BOSS, 1), 1, "Boss bit alone: room stats");
+	expect(AP_RaceStats_RoomApplies(TIME_TRIAL | RELIC_RACE, 1), 0, "Time Trial with a stale relic bit: vanilla");
+	expect(AP_RaceStats_RoomApplies(RELIC_RACE, 2), 0, "Versus with a stale relic bit: vanilla");
+	expect(AP_RaceStats_RoomApplies(RELIC_RACE | ADVENTURE_BOSS | CRYSTAL_CHALLENGE, 4), 0,
+	       "4P Versus with stale event bits: vanilla");
+	expect(AP_RaceStats_RoomApplies(ADVENTURE_MODE, 2), 1, "Adventure with two players: room stats");
+	expect(AP_RaceStats_RoomApplies(BATTLE_MODE | ADVENTURE_ARENA, 1), 0, "Battle with a stale hub bit: vanilla");
 
 	// ── The writers ask it ──
 	cap = slurp("ap/ap_capability.c");
@@ -132,8 +136,8 @@ int main(void)
 	expect(cap && strstr(cap, "AP_RS_ADVENTURE_MODE == ADVENTURE_MODE") != NULL &&
 	           strstr(cap, "AP_RS_RELIC_RACE == RELIC_RACE") != NULL && strstr(cap, "AP_RS_BATTLE_MODE == BATTLE_MODE") != NULL,
 	       1, "ap_capability.c pins the mode bits");
-	expect(cap && strstr(cap, "return AP_RaceStats_RoomApplies(sdata->gGT->gameMode1);") != NULL, 1,
-	       "AP_CapabilityRoomStatsRace reads the rule on the live mode");
+	expect(cap && strstr(cap, "return AP_RaceStats_RoomApplies(sdata->gGT->gameMode1, (int)(u8)sdata->gGT->numPlyrCurrGame);") != NULL, 1,
+	       "AP_CapabilityRoomStatsRace reads the rule on the live mode and player count");
 
 	stats = body_of(cap, "void AP_CapabilityStats(struct Driver *driver)\n{");
 	expect(stats && strstr(stats, "statsLive = AP_CapabilityStatsActive() && AP_CapabilityRoomStatsRace();") != NULL,

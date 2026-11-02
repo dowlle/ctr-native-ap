@@ -155,7 +155,9 @@ int AP_Solo_TracksViaOptions(int isPreset);
 void AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, const char *json);
 /* The xdelta importer installed a track whose laps nobody gave (ruling of
    2026-11-02): keep its descriptor, without laps, in solo/needs-laps. The
-   custom-track step lists it and asks for the laps before it can be picked. */
+   custom-track step lists it and asks for the laps before it can be picked.
+   An entry for the same track key and version in solo/tracks stays when it
+   pins the same files (its laps were picked before) and is replaced when not. */
 void AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *revision, const char *json);
 /* On a row waiting for its laps: Left/Right change the laps shown, Keep writes
    the descriptor with them to solo/tracks (1) and drops the waiting copy.

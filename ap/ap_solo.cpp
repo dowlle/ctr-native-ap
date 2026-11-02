@@ -8,8 +8,6 @@
 #include "ap_solo_logic.hpp"
 #include "ap_net.h"
 
-#include <platform/native_sha256.h>
-
 #include <SDL3/SDL.h>
 
 #include <algorithm>
@@ -961,17 +959,18 @@ std::string NeedsLapsFileName(const APSoloTrackInfo &t)
 	return AP_SoloDescriptorFileName(id.substr(8, slash - 8), id.substr(slash + 1));
 }
 
-// A file in assets/tracks/<key>/original with the pin's suffix, size and
-// SHA-256, whatever its name: the wrapper's rule for a listed track
-// (ctr_solo.py _pinned_file), so a waiting track is listed only while its
-// files are installed.
-bool PinnedFileInstalled(const std::string &key, const nlohmann::json &pin)
+// A file in assets/tracks/<key>/original with the pin's suffix and size,
+// whatever its name, so a waiting track is listed only while its files are
+// installed. Size only: this runs on the game thread. The wrapper checks the
+// SHA-256 too (ctr_solo.py _pinned_file) in its own job once the laps are
+// kept, and lists the track only then.
+bool PinnedFilePresent(const std::string &key, const nlohmann::json &pin)
 {
 	if (!pin.is_object())
 		return false;
-	const std::string role = AP_SoloJsonString(pin, "role"), sha = AP_SoloJsonString(pin, "sha256");
+	const std::string role = AP_SoloJsonString(pin, "role");
 	const auto bytes = pin.find("bytes");
-	if ((role != "lev" && role != "vrm") || sha.size() != 64 || bytes == pin.end() || !bytes->is_number_unsigned())
+	if ((role != "lev" && role != "vrm") || bytes == pin.end() || !bytes->is_number_unsigned())
 		return false;
 	const std::uintmax_t size = bytes->get<std::uintmax_t>();
 	std::error_code ec;
@@ -982,28 +981,8 @@ bool PinnedFileInstalled(const std::string &key, const nlohmann::json &pin)
 		for (char &c : name)
 			c = (char)std::tolower((unsigned char)c);
 		std::error_code fe;
-		if (name.size() < 4 || name.compare(name.size() - 4, 4, "." + role) != 0 ||
-		    !fs::is_regular_file(it->symlink_status(fe)) || fs::file_size(it->path(), fe) != size || fe)
-			continue;
-		std::ifstream in(it->path(), std::ios::binary);
-		NativeSha256Ctx ctx;
-		NativeSha256_Init(&ctx);
-		char buf[65536];
-		std::uintmax_t got = 0;
-		while (in && got <= size)
-		{
-			in.read(buf, sizeof buf);
-			const std::streamsize n = in.gcount();
-			if (n <= 0)
-				break;
-			NativeSha256_Update(&ctx, buf, (size_t)n);
-			got += (std::uintmax_t)n;
-		}
-		unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
-		char hex[NATIVE_SHA256_HEX_BYTES];
-		NativeSha256_Final(&ctx, digest);
-		NativeSha256_ToHex(digest, hex);
-		if (got == size && NativeSha256_HexEquals(sha.c_str(), hex))
+		if (name.size() > 4 && name.compare(name.size() - 4, 4, "." + role) == 0 &&
+		    fs::is_regular_file(it->symlink_status(fe)) && fs::file_size(it->path(), fe) == size && !fe)
 			return true;
 	}
 	return false;
@@ -1048,7 +1027,7 @@ void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows)
 		bool installed = files != d.end() && files->is_array() && files->size() == 2;
 		if (installed)
 			for (const auto &pin : *files)
-				installed = installed && PinnedFileInstalled(AP_SoloJsonString(d, "content_id"), pin);
+				installed = installed && PinnedFilePresent(AP_SoloJsonString(d, "content_id"), pin);
 		if (!installed)
 			continue;
 		info.needsLaps = 1;
@@ -1071,7 +1050,32 @@ extern "C" void AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *
 {
 	if (!contentId || !revision || !json)
 		return;
-	KeepDescriptorFile("needs-laps", AP_SoloDescriptorFileName(contentId, revision), json);
+	const std::string name = AP_SoloDescriptorFileName(contentId, revision);
+	const nlohmann::json fresh = nlohmann::json::parse(json, nullptr, false);
+	std::error_code ec;
+	const fs::path tracks = fs::u8path(SoloPath("tracks"));
+	if (name.empty() || !fresh.is_object() || SoloRootIsLink() || fs::is_symlink(tracks, ec))
+		return;
+	// The same track key and version already in solo/tracks: with the same
+	// files its laps were picked before and stay. With other files this import
+	// replaces it, as a complete descriptor would (the newest import wins), so
+	// the old entry cannot hide this track's laps picker.
+	const fs::path kept = tracks / fs::u8path(name);
+	if (fs::is_regular_file(fs::symlink_status(kept, ec)))
+	{
+		const nlohmann::json old = nlohmann::json::parse(ReadSmallPlainFile(kept, kDescriptorMax), nullptr, false);
+		if (old.is_object() && old.contains("files") && old["files"] == fresh.value("files", nlohmann::json()))
+		{
+			DropNeedsLaps(name);
+			return;
+		}
+		if (!KeepDescriptorFile("needs-laps", name, json))
+			return;
+		fs::remove(kept, ec);
+		Log("replaced " + name + " in solo/tracks: the new import waits for its laps");
+		return;
+	}
+	KeepDescriptorFile("needs-laps", name, json);
 }
 
 extern "C" void AP_Solo_TrackStepLaps(int index, int direction)

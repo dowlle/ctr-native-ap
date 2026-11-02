@@ -237,7 +237,7 @@ int AP_CapabilityRoomStatsRace(void)
 {
 	if (sdata == 0 || sdata->gGT == 0)
 		return 1;
-	return AP_RaceStats_RoomApplies(sdata->gGT->gameMode1);
+	return AP_RaceStats_RoomApplies(sdata->gGT->gameMode1, (int)(u8)sdata->gGT->numPlyrCurrGame);
 }
 
 // The local human player. Adventure / arcade single player: drivers[0]. Same
