@@ -20,6 +20,7 @@
 #include <platform/native_custom_package.h>
 extern "C" {
 #include <platform/native_custom_track_manager.h>
+#include <platform/native_custom_content_verify.h>
 }
 #include <platform/native_sha256.h>
 #include <nlohmann/json.hpp>
@@ -627,6 +628,51 @@ int main()
             CHECK(relic, "relic capability with descriptor times and crates");
             CHECK(laps, "descriptor laps reach race settings");
             CHECK(excluded, "descriptor exclusion clears CTR Challenge");
+
+            /* The Play Solo descriptor (ruling of 2026-11-02): complete, and
+               every fact measured on the installed room files. */
+            char solo[16384], key[65], revision[65], why[160];
+            CHECK(XdeltaImport_PlanDescriptor(c.scan, (unsigned)(t1 - s3->items), solo, sizeof solo, key, revision,
+                                              why, sizeof why) == 1, "Play Solo descriptor for a track with laps and author");
+            CHECK(!std::strcmp(key, "snow-lane-key") && !std::strcmp(revision, "1.0.0"), "descriptor file names key and revision");
+            auto pd = nlohmann::json::parse(solo);
+            CHECK(pd["id"] == "package/snow-lane-key/1.0.0" && pd["content_id"] == "snow-lane-key" && pd["revision"] == "1.0.0",
+                  "descriptor identity");
+            CHECK(pd["display_name"] == "Snow Lane" && pd["author"] == "Someone" && pd["laps"] == 5, "descriptor title, author and laps");
+            {
+                char uuid[37];
+                XdeltaImport_PackageUuid(s3->patchSha256, 1, uuid);
+                CHECK(pd["uuid"] == uuid, "descriptor uuid is the package UUID");
+            }
+            CHECK(pd["relic_targets"] == nlohmann::json({{"sapphire", 90000}, {"gold", 80000}, {"platinum", 70000}}),
+                  "descriptor relic targets from the pack descriptor");
+            CHECK(pd["locator"] == nlohmann::json({{"kind", "xdelta"}, {"patch_sha256", s3->patchSha256}, {"bigfile_index", 1}}),
+                  "descriptor locator names the patch and slot");
+            CHECK(pd["evidence"] == nlohmann::json::array() && pd["files"].size() == 2 && pd["files"][0]["role"] == "lev" &&
+                  pd["files"][0]["sha256"] == t1->levSha256 && pd["files"][1]["sha256"] == t1->vrmSha256 &&
+                  pd["files"][0]["format"] == "ctr-lev" && pd["files"][1]["format"] == "ctr-vrm",
+                  "descriptor pins the two files");
+            {
+                std::string folder = assets + "/tracks/snow-lane-key/original/xdelta-" + std::string(s3->patchSha256).substr(0, 12) + "-1";
+                CustomContentVerification v;
+                char error2[256];
+                CHECK(CustomContentVerify_Files((folder + ".lev").c_str(), (folder + ".vrm").c_str(), &v, error2, sizeof error2),
+                      "installed room files measure");
+                const auto &caps = pd["capabilities"];
+                CHECK(pd["files"][0]["bytes"] == v.levBytes && pd["files"][1]["bytes"] == v.vrmBytes, "descriptor file sizes");
+                CHECK(caps["time_trial"] == true && caps["relic"] == true, "Time Trial and relic measured");
+                CHECK(caps["arcade"] == (CustomContentVerify_ArcadeRaceReason(&v, nullptr, 0) != 0), "arcade as measured");
+                CHECK(caps["ctr_tokens"] == false, "excluded letters stay false");
+                CHECK(caps["wumpa"] == (v.measured.fruitCrates * 5 + v.measured.looseWumpa >= 10), "wumpa as measured");
+                CHECK(caps["super_turbo_pads"] == (v.measured.superTurboPads > 0), "super_turbo_pads written and measured");
+                CHECK(caps["weapon_crates"] == v.measured.weaponCrates, "weapon_crates written and measured");
+                CHECK(caps["checkpoints"] == v.measured.checkpoints && caps["ai_nav"] == (v.measured.navPaths > 0),
+                      "boss venue facts measured");
+            }
+            const XdeltaImportItem *t9 = item_for(s3, 9);
+            CHECK(t9 && !XdeltaImport_PlanDescriptor(c.scan, (unsigned)(t9 - s3->items), solo, sizeof solo, key, revision,
+                                                     why, sizeof why) && !std::strcmp(why, "the pack descriptor gives no laps"),
+                  "no laps in the pack descriptor: no Play Solo descriptor, never a guessed lap count");
         }
         XdeltaImport_Free(&c.scan);
         nlohmann::json badKey = d;

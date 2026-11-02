@@ -22,6 +22,21 @@
 #define IMPORT_HINT "Pick or drop an xdelta patch for rooms and solo seeds."
 #endif
 
+#ifdef MM_IMPORT_PLAYER
+/* The importer's Play Solo descriptors (ruling of 2026-11-02): each installed
+   track with one goes into solo/tracks, so the Play Solo Custom Tracks page
+   lists it at once. */
+static void MM_CustomImport_KeepSoloDescriptors(void)
+{
+    static char json[16384];
+    char contentId[65], revision[65];
+    int i, count = XdeltaImport_InstalledDescriptorCount();
+    for (i = 0; i < count; i++)
+        if (XdeltaImport_InstalledDescriptor(i, contentId, revision, json, sizeof json))
+            AP_Solo_RecordTrackDescriptor(contentId, revision, json);
+}
+#endif
+
 enum { IMPORT_CHOOSE, IMPORT_PICKING, IMPORT_SCANNING, IMPORT_REVIEW, IMPORT_INSTALLING, IMPORT_RESULT };
 static int s_importOpen, s_importStage, s_importFileCount, s_importProgress;
 static size_t s_importRow;
@@ -152,9 +167,22 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             /* Current Seed shows the new files at once, also after a
                failure part way through the list. */
             if (!AP_SeedContentInstallBusy()) AP_CustomContentRescan();
+            MM_CustomImport_KeepSoloDescriptors();
 #endif
             if (state == 1) snprintf(s_importMessage, sizeof s_importMessage, "Installed %d track%s. Files verified.", installed, installed == 1 ? "" : "s");
             else snprintf(s_importMessage, sizeof s_importMessage, "%s", error);
+#ifdef MM_IMPORT_PLAYER
+            if (state == 1)
+            {
+                char note[160];
+                XdeltaImport_InstalledDescriptorNote(note, sizeof note);
+                if (note[0])
+                {
+                    size_t used = strlen(s_importMessage);
+                    snprintf(s_importMessage + used, sizeof s_importMessage - used, " %s.", note);
+                }
+            }
+#endif
         }
         tapped = 0;
     }

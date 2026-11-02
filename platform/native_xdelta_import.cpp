@@ -16,12 +16,15 @@
 #include <platform/native_xdelta_import.h>
 #include <platform/native_xdelta_decode.h>
 #include <platform/native_custom_package.h>
-#include <platform/native_custom_content_verify.h>
+extern "C" {
+#include <platform/native_custom_content_verify.h> /* C linkage: the header has no guard */
+}
 #include <platform/native_custom_offline.h>
 #include <platform/native_sha256.h>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -822,6 +825,9 @@ struct Built
 {
     std::string manifest, pin;
     CustomPackageOwned *owned = nullptr;
+    /* From the pack descriptor, for the Play Solo descriptor. */
+    std::string author;
+    bool excludeRelic = false, excludeTokens = false;
 };
 
 void set_text(char *destination, size_t capacity, const std::string &text)
@@ -1160,6 +1166,9 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                 built = build_package(candidate, title, "1.0.0", nullptr, summary, author, retry);
                 if (built.owned) failure.clear();
             }
+            built.author = author;
+            built.excludeRelic = meta && meta->excludeRelic;
+            built.excludeTokens = meta && meta->excludeTokens;
             XdeltaImportItem item = skip_item((int)c.index, title, "");
             set_text(item.levSha256, sizeof item.levSha256, levHash);
             set_text(item.vrmSha256, sizeof item.vrmSha256, vrmHash);
@@ -1539,10 +1548,9 @@ std::vector<unsigned char> package_file(const CustomPackageOwned *package, const
     return bytes;
 }
 
-} // namespace
-
-extern "C" int XdeltaImport_Install(const XdeltaImportScan *scan, const unsigned char *selected,
-                                    const char *assets, int where, char *error, size_t errorSize)
+/* XdeltaImport_Install, noting in `done` each item it installed. */
+int install_items(const XdeltaImportScan *scan, const unsigned char *selected, const char *assets, int where,
+                  char *error, size_t errorSize, std::vector<unsigned int> *done)
 {
     if (error && errorSize) error[0] = 0;
     if (!scan || !selected || !assets || !(where & (CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM))) return -1;
@@ -1585,8 +1593,137 @@ extern "C" int XdeltaImport_Install(const XdeltaImportScan *scan, const unsigned
             }
         }
         installed++;
+        if (done) done->push_back(i);
     }
     return installed;
+}
+
+/* The apworld's rule for a revision (worlds/ctr/custom_packages.py
+   REVISION): a letter or digit, then letters, digits and . _ + -. */
+bool revision_valid(const std::string &revision)
+{
+    if (revision.empty() || revision.size() > 64 || !std::isalnum((unsigned char)revision[0])) return false;
+    for (char c : revision)
+        if (!std::isalnum((unsigned char)c) && c != '.' && c != '_' && c != '+' && c != '-') return false;
+    return true;
+}
+
+unsigned long long pinned_bytes(const CustomPackageManifest &manifest, const char *role)
+{
+    for (size_t i = 0; i < manifest.count; i++)
+        if (!std::strcmp(manifest.files[i].role, role)) return manifest.files[i].bytes;
+    return 0;
+}
+
+/* See XdeltaImport_PlanDescriptor. */
+bool plan_descriptor(const XdeltaImportSummary &summary, const XdeltaImportItem &item, const Built &b,
+                     std::string &out, std::string &why)
+{
+    CustomPackageManifest manifest;
+    CustomContentVerification report;
+    unsigned int laps = 0;
+    if (!item.offered || !b.owned || !CustomPackage_GetManifest(b.owned, &manifest) ||
+        !CustomPackage_GetPairReport(b.owned, &report) || !report.loadable)
+    {
+        why = "its files are not verified";
+        return false;
+    }
+    /* Laps and the author are the author's, never filled in (track package
+       rule 4): without them the track gets no descriptor. */
+    if (!CustomPackage_GetRaceLaps(b.owned, &laps, nullptr, 0) || laps < 1 || laps > 7)
+    {
+        why = "the pack descriptor gives no laps";
+        return false;
+    }
+    if (b.author.empty() || b.author.size() > 128)
+    {
+        why = "the pack descriptor names no author";
+        return false;
+    }
+    const std::string key = item.trackKey, revision = manifest.version, title = item.title;
+    const std::string id = "package/" + key + "/" + revision;
+    if (!track_key_valid(key) || !revision_valid(revision) || id.size() > 64 ||
+        ("custom/" + key + "/" + revision).size() > 64)
+    {
+        why = "its track key and version do not fit a package id";
+        return false;
+    }
+    if (title.empty() || title.size() > 128)
+    {
+        why = "its title is longer than 128 bytes";
+        return false;
+    }
+    if (item.bigfileIndex < 0 || item.bigfileIndex > 4095)
+    {
+        why = "its BIGFILE index is out of range";
+        return false;
+    }
+    /* Every capability is measured on the verified pair with the rules the
+       client checks a descriptor against on load (ap_content_capability.h),
+       so no claim can refuse the track. The pack descriptor may only take
+       relic and ctr_tokens away. */
+    const CustomContentMeasurements &m = report.measured;
+    CustomPackageRelicTargets targets = {};
+    const bool relic = report.fileAnalysis[CTR_CCV_RELIC_RACE].result == CTR_CCV_DETECTED && !b.excludeRelic &&
+                       CustomPackage_GetRelicTargets(b.owned, &targets, nullptr, 0) &&
+                       targets.ticks[0] > targets.ticks[1] && targets.ticks[1] > targets.ticks[2] &&
+                       targets.ticks[2] >= 1 && targets.ticks[0] <= 960 * 60 * 60;
+    const bool wumpa = m.fruitCrates <= 1000000ul && m.looseWumpa <= 1000000ul &&
+                       m.fruitCrates * 5 + m.looseWumpa >= 10;
+    json caps = {{"time_trial", CustomContentVerify_TimeTrialReason(&report, nullptr, 0) != 0},
+                 {"arcade", CustomContentVerify_ArcadeRaceReason(&report, nullptr, 0) != 0},
+                 {"relic", relic},
+                 {"ctr_tokens", report.fileAnalysis[CTR_CCV_CTR_CHALLENGE].result == CTR_CCV_DETECTED && !b.excludeTokens},
+                 {"wumpa", wumpa},
+                 {"super_turbo_pads", m.superTurboPads > 0},
+                 {"weapon_crates", m.weaponCrates},
+                 {"ai_nav", m.navPaths > 0}};
+    if (m.checkpoints >= 1 && m.checkpoints <= 255) caps["checkpoints"] = m.checkpoints;
+    json files = json::array();
+    files.push_back({{"role", "lev"}, {"sha256", item.levSha256}, {"bytes", pinned_bytes(manifest, "lev")},
+                     {"format", "ctr-lev"}, {"format_version", 1}});
+    files.push_back({{"role", "vrm"}, {"sha256", item.vrmSha256}, {"bytes", pinned_bytes(manifest, "vrm")},
+                     {"format", "ctr-vrm"}, {"format_version", 1}});
+    json d = {{"id", id}, {"content_id", key}, {"uuid", manifest.uuid}, {"revision", revision},
+              {"display_name", title}, {"author", b.author}, {"laps", laps}, {"capabilities", caps},
+              {"files", files}, {"evidence", json::array()},
+              {"locator", {{"kind", "xdelta"}, {"patch_sha256", summary.patchSha256}, {"bigfile_index", item.bigfileIndex}}}};
+    if (relic)
+        d["relic_targets"] = {{"sapphire", targets.ticks[0]}, {"gold", targets.ticks[1]}, {"platinum", targets.ticks[2]}};
+    out = json_dump(d);
+    return true;
+}
+
+} // namespace
+
+extern "C" int XdeltaImport_Install(const XdeltaImportScan *scan, const unsigned char *selected,
+                                    const char *assets, int where, char *error, size_t errorSize)
+{
+    return install_items(scan, selected, assets, where, error, errorSize, nullptr);
+}
+
+extern "C" int XdeltaImport_PlanDescriptor(const XdeltaImportScan *scan, unsigned int item, char *out, size_t capacity,
+                                           char contentId[65], char revision[65], char *why, size_t whySize)
+{
+    if (why && whySize) why[0] = 0;
+    if (!scan || !out || !capacity || item >= scan->summary.count || item >= scan->built.size()) return 0;
+    std::string text, reason;
+    CustomPackageManifest manifest;
+    if (!plan_descriptor(scan->summary, scan->summary.items[item], scan->built[item], text, reason) ||
+        !CustomPackage_GetManifest(scan->built[item].owned, &manifest))
+    {
+        if (why && whySize) std::snprintf(why, whySize, "%s", reason.c_str());
+        return 0;
+    }
+    if (text.size() >= capacity)
+    {
+        if (why && whySize) std::snprintf(why, whySize, "its descriptor is too long");
+        return 0;
+    }
+    std::memcpy(out, text.c_str(), text.size() + 1);
+    if (contentId) std::snprintf(contentId, 65, "%s", scan->summary.items[item].trackKey);
+    if (revision) std::snprintf(revision, 65, "%s", manifest.version);
+    return 1;
 }
 
 extern "C" void XdeltaImport_Free(XdeltaImportScan **scan)
@@ -1657,6 +1794,10 @@ struct JobState
     int scanState = -1;     /* -1 idle, 0 running, 1 ready, -2 failed */
     int installState = -1;
     int installed = 0;
+    /* The last install's Play Solo descriptors, and why a track got none. */
+    struct Kept { std::string contentId, revision, json; };
+    std::vector<Kept> descriptors;
+    std::string descriptorNote;
 };
 JobState &job() { static auto *s = new JobState(); return *s; }
 }
@@ -1708,6 +1849,8 @@ extern "C" int XdeltaImport_StartInstall(const unsigned char *selected, unsigned
     std::lock_guard<std::mutex> guard(s.mutex);
     if (s.scanState != 1 || !s.scan || s.installState == 0 || !selected || !assets || count != s.scan->summary.count) return 0;
     s.installState = 0;
+    s.descriptors.clear();
+    s.descriptorNote.clear();
     try
     {
         std::vector<unsigned char> chosen(selected, selected + count);
@@ -1715,8 +1858,26 @@ extern "C" int XdeltaImport_StartInstall(const unsigned char *selected, unsigned
         s.installJob = std::async(std::launch::async, [chosen, root, where] {
             auto &state = job();
             char error[512];
-            int n = XdeltaImport_Install(state.scan, chosen.data(), root.c_str(), where, error, sizeof error);
+            std::vector<unsigned int> done;
+            int n = install_items(state.scan, chosen.data(), root.c_str(), where, error, sizeof error, &done);
+            /* Every track now in a room folder, also before a failure part
+               way through the list, gets its Play Solo descriptor. */
+            std::vector<JobState::Kept> kept;
+            std::string note;
+            for (unsigned int i : (where & CTR_XDELTA_INSTALL_ROOM) ? done : std::vector<unsigned int>())
+            {
+                std::string json, why;
+                CustomPackageManifest manifest;
+                const XdeltaImportItem &item = state.scan->summary.items[i];
+                if (plan_descriptor(state.scan->summary, item, state.scan->built[i], json, why) &&
+                    CustomPackage_GetManifest(state.scan->built[i].owned, &manifest))
+                    kept.push_back({item.trackKey, manifest.version, json});
+                else if (note.empty())
+                    note = limit_codepoints(std::string(item.title), 40) + " is not on Play Solo: " + why;
+            }
             std::lock_guard<std::mutex> lock(state.mutex);
+            state.descriptors = std::move(kept);
+            state.descriptorNote = note;
             state.installed = n < 0 ? 0 : n;
             state.error = n < 0 ? error : "";
             state.installState = n < 0 ? -2 : 1;
@@ -1740,6 +1901,35 @@ extern "C" int XdeltaImport_PollInstall(int *installed, char *error, size_t erro
         s.scanState = -1;
     }
     return state;
+}
+
+extern "C" int XdeltaImport_InstalledDescriptorCount(void)
+{
+    auto &s = job();
+    std::lock_guard<std::mutex> guard(s.mutex);
+    return s.installState == 0 ? 0 : (int)s.descriptors.size();
+}
+
+extern "C" int XdeltaImport_InstalledDescriptor(int index, char contentId[65], char revision[65], char *json,
+                                                size_t capacity)
+{
+    auto &s = job();
+    std::lock_guard<std::mutex> guard(s.mutex);
+    if (s.installState == 0 || index < 0 || index >= (int)s.descriptors.size() || !contentId || !revision || !json ||
+        s.descriptors[(size_t)index].json.size() >= capacity)
+        return 0;
+    const auto &d = s.descriptors[(size_t)index];
+    std::snprintf(contentId, 65, "%s", d.contentId.c_str());
+    std::snprintf(revision, 65, "%s", d.revision.c_str());
+    std::memcpy(json, d.json.c_str(), d.json.size() + 1);
+    return 1;
+}
+
+extern "C" void XdeltaImport_InstalledDescriptorNote(char *note, size_t size)
+{
+    auto &s = job();
+    std::lock_guard<std::mutex> guard(s.mutex);
+    if (note && size) std::snprintf(note, size, "%s", s.installState == 0 ? "" : s.descriptorNote.c_str());
 }
 
 extern "C" void XdeltaImport_DiscardScan(void)
