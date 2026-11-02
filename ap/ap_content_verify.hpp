@@ -69,8 +69,10 @@ struct Model {
     std::vector<int> encounter_loc;   // encounter index -> locs index
     std::vector<int64_t> items;       // every item code the plan pools
     // Wumpa Income (J11, apworld content plan): a Trophy Race or CTR
-    // Challenge route on a normal pad racing a retail race track 0..15, with
-    // its pad's gates and the track's finish rank bound to the racer lock.
+    // Challenge route on a normal pad racing a retail race track 0..15 or a
+    // custom track whose package has measured Wumpa capability (ruling of
+    // 2026-11-02), with its pad's gates and the track's finish rank bound to
+    // the racer lock.
     std::vector<Route> income;
     int goal = -1;
     bool itemsanity = false;
@@ -271,13 +273,19 @@ static Model build() {
         }
 
     // Wumpa Income routes (J11): every Trophy Race and CTR Challenge of a
-    // track entry on a retail race track, in its pad's region.
+    // track entry on a retail race track 0..15 or a custom track with measured
+    // Wumpa capability (apworld content_wumpa.income_track), in its pad's
+    // region.
     for (const auto &pad : p.at("pads")) {
         if (pad.at("entry_id").is_null() || pad.at("kind") != "normal") continue;
         const J &entry = *entries.at(pad["entry_id"].get<std::string>());
         if (entry.at("kind") != "track") continue;
         const J &track = *tracks.at(entry.at("track_id").get<std::string>());
-        if (track.at("origin") != "retail" || track.at("retail_id").get<int>() > 15) continue;
+        const std::string origin = track.at("origin").get<std::string>();
+        const J *pkg = packages.count(track.value("package_id", "")) ? packages.at(track.value("package_id", "")) : nullptr;
+        const bool banks = origin == "retail" ? track.at("retail_id").get<int>() <= 15
+                                              : origin == "custom" && pkg && pkg->at("capabilities").value("wumpa", false);
+        if (!banks) continue;
         for (const auto &mode : entry.at("modes")) {
             if (mode != "trophy" && mode != "ctr") continue;
             Route R;
