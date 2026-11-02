@@ -1289,7 +1289,8 @@ static void RelicTimes_Input(const struct CustomTrackManagerPackage *package,
 		s_relicEditCursor = (s_relicEditCursor + 1) % count;
 		OtherFX_Play(0, 1);
 	}
-	if ((pad->buttonsTapped & BTN_TRIANGLE) != 0)
+	// Start is Back everywhere in Options, so it cancels here too.
+	if ((pad->buttonsTapped & (BTN_TRIANGLE | BTN_START)) != 0)
 	{
 		s_relicEditOpen = 0;
 		OtherFX_Play(2, 1);

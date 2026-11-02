@@ -4,6 +4,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -1248,8 +1249,10 @@ int CustomTrackManager_LoadRelicTimes(const char *assetsRoot,
 	char text[512];
 	char canonical[512];
 	char lev[65], vrm[65];
+	char digits[3][8];
 	int ticks[3];
 	int missing;
+	int i;
 
 	if (out == NULL)
 		return 0;
@@ -1259,9 +1262,13 @@ int CustomTrackManager_LoadRelicTimes(const char *assetsRoot,
 		return 0;
 	if (sscanf(text,
 	           "{\"schema_version\": 1, \"lev_sha256\": \"%64[0-9a-f]\", \"vrm_sha256\": \"%64[0-9a-f]\", "
-	           "\"sapphire\": %d, \"gold\": %d, \"platinum\": %d}",
-	           lev, vrm, &ticks[0], &ticks[1], &ticks[2]) != 5)
+	           "\"sapphire\": %7[0-9], \"gold\": %7[0-9], \"platinum\": %7[0-9]}",
+	           lev, vrm, digits[0], digits[1], digits[2]) != 5)
 		return 0;
+	// At most seven digits each, so no value can overflow an int; the range
+	// check below refuses anything over one hour.
+	for (i = 0; i < 3; i++)
+		ticks[i] = atoi(digits[i]);
 	// Only the exact text this manager writes is accepted, so a hand edit with
 	// extra keys, signs or spacing is ignored rather than half-read.
 	if (!Manager_RenderRelicTimes(lev, vrm, ticks, canonical, sizeof canonical) || strcmp(text, canonical) != 0 ||

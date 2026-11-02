@@ -294,6 +294,12 @@ int main(void)
 		write_file(path, text);
 		expect_int(CustomTrackManager_LoadRelicTimes(assets, park, &status, &relic), 0,
 		           "stored times out of order load nothing");
+		snprintf(text, sizeof text, "%s", good);
+		*strstr(text, "\"gold\": ") = '\0';
+		strcat(text, "\"gold\": 99999999999, \"platinum\": 57600}\n");
+		write_file(path, text);
+		expect_int(CustomTrackManager_LoadRelicTimes(assets, park, &status, &relic), 0,
+		           "a number too long for an int loads nothing");
 		write_file(path, good);
 		expect_int(CustomTrackManager_LoadRelicTimes(assets, park, &status, &relic), 1, "the written text loads");
 	}
