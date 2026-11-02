@@ -34,6 +34,7 @@ tools/test-cup-sweeps.cpp
 tools/test-cup-sweeps-production.py
 tools/test-current-seed-page-production.py
 tools/test-custom-content-verify.c
+tools/test-custom-export-facts.c
 tools/test-custom-identity.c
 tools/test-custom-exit-window.c
 tools/test-custom-manager.c

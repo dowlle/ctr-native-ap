@@ -317,11 +317,41 @@ int main(void)
 	expect_contains(yaml, "    revision: \"1.2.3\"\n", "revision is quoted so 1.0 stays text");
 	expect_contains(yaml, "    author: \"Fixture Author\"\n", "YAML names the author");
 	// checkpoints (35) and ai_nav (true) are the boss venue facts; arcade needs
-	// AI paths and two spawns (the fixture has 8); relic needs author times
-	// (tools/test-custom-relic-times.c), so it is false here.
+	// AI paths and all 8 spawns (the fixture has 8); relic needs author times
+	// (tools/test-custom-relic-times.c), so it is false here. This build has no
+	// verifier (CTR_CUSTOM_PACKAGES off), so super_turbo_pads and weapon_crates
+	// are left out (tools/test-custom-export-facts.c measures them).
 	expect_contains(yaml, "capabilities: {time_trial: true, arcade: true, relic: false, ctr_tokens: true, "
 	                "wumpa: true, checkpoints: 35, ai_nav: true}",
 	                "YAML carries the measured capabilities including checkpoints and ai_nav");
+	expect_int(strstr(yaml, "super_turbo_pads") == NULL && strstr(yaml, "weapon_crates") == NULL, 1,
+	           "without the verifier the optional facts are left out");
+	{
+		// Rulebook track package rule 2: arcade means 8 racers with AI
+		// driving lines. Seven spawns or no AI paths export arcade: false.
+		// The export receipt binds the flags, so each variant is finalized
+		// as its own Ready package first.
+		struct CustomTrackManagerPackage seven = package;
+		struct CustomTrackManagerPackage noNav = package;
+		struct CustomTrackManagerStatus variant;
+		seven.flagSpawns = 7;
+		noNav.flagAiNav = 0;
+		CustomTrackManager_ScanPackage(assets, &seven, &variant);
+		expect_int(CustomTrackManager_FinalizePackage(assets, &seven, &variant), 1, "a 7-spawn package is Ready");
+		expect_int(CustomTrackManager_RenderYaml(&seven, &variant, NULL, yaml, sizeof yaml), 1,
+		           "a 7-spawn package still exports");
+		expect_contains(yaml, "{time_trial: true, arcade: false,", "7 spawns export arcade: false");
+		CustomTrackManager_ScanPackage(assets, &noNav, &variant);
+		expect_int(CustomTrackManager_FinalizePackage(assets, &noNav, &variant), 1, "a package without AI paths is Ready");
+		expect_int(CustomTrackManager_RenderYaml(&noNav, &variant, NULL, yaml, sizeof yaml), 1,
+		           "a package without AI paths still exports");
+		expect_contains(yaml, "{time_trial: true, arcade: false,", "no AI paths export arcade: false");
+		CustomTrackManager_ScanPackage(assets, &package, &status);
+		expect_int(CustomTrackManager_FinalizePackage(assets, &package, &status), 1, "the 8-spawn package is Ready again");
+		expect_int(CustomTrackManager_RenderYaml(&package, &status, NULL, yaml, sizeof yaml), 1,
+		           "the 8-spawn package renders again");
+		expect_contains(yaml, "{time_trial: true, arcade: true,", "8 spawns with AI paths export arcade: true");
+	}
 	expect_int(strstr(yaml, "navigation") == NULL && strstr(yaml, "boxes:") == NULL &&
 	           strstr(yaml, "replaces") == NULL, 1, "the old Alpha6 mapping fields are gone");
 	expect_contains(yaml, "format: ctr-lev, format_version: 1}\n", "YAML pins the LEV file");
