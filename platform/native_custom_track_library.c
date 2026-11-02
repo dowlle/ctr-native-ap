@@ -239,6 +239,7 @@ int CustomTrackLibrary_ApplyStore(struct CustomTrackLibrary *library,
         if (merged[i].installed)
             snprintf(merged[i].disabledReason, sizeof merged[i].disabledReason, "Installed revision absent at last store scan");
         merged[i].installed = 0;
+        merged[i].scanFailed = 0;
         merged[i].supportedModes = 0;
         memset(&merged[i].local, 0, sizeof merged[i].local);
     }
@@ -268,8 +269,12 @@ int CustomTrackLibrary_ApplyStore(struct CustomTrackLibrary *library,
             snprintf(merged[j].disabledReason, sizeof merged[j].disabledReason,
                      "Installed exact revision; gameplay certification and launch integration pending");
         }
-        else snprintf(merged[j].disabledReason, sizeof merged[j].disabledReason, "%s",
-                      source->error[0] ? source->error : "Installed revision failed verification");
+        else
+        {
+            merged[j].scanFailed = 1;
+            snprintf(merged[j].disabledReason, sizeof merged[j].disabledReason, "%s",
+                     source->error[0] ? source->error : "Installed revision failed verification");
+        }
     }
     result = CustomTrackLibrary_Replace(library, merged, total);
     free(merged);
@@ -277,6 +282,13 @@ int CustomTrackLibrary_ApplyStore(struct CustomTrackLibrary *library,
 fail:
     free(merged);
     return 0;
+}
+
+enum CustomTrackAdmission CustomTrackLibrary_Admission(const struct CustomTrackLibraryEntry *entry, int timeTrial)
+{
+    if (!entry || !entry->installed) return CTR_ADMISSION_DISCOVERED;
+    return (timeTrial ? entry->local.timeTrial : entry->local.arcade) ? CTR_ADMISSION_READY
+                                                                     : CTR_ADMISSION_BYTES_VERIFIED;
 }
 
 int CustomTrackLibrary_Filter(struct CustomTrackLibrary *library, const char *query,

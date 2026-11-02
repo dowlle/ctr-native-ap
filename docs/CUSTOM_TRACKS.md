@@ -34,9 +34,17 @@ All options are in `CMakeLists.txt`.
 | `CTR_AI_LAP_RECORDER` | The AI lap recorder (always present when `CTR_AP` is on) | nothing |
 | `CTR_AUTHORING_CLIENT` | All four of the above, without Archipelago; exe `ctr_native_authoring`, window title `AUTHORING CLIENT (no Archipelago)` | `CTR_AP=OFF` |
 
-With `CTR_AP=ON`, packages and Box Author Mode come only from
-`CTR_AP_AUTHORING` (the box authoring download, `ctr_native_ap_authoring`).
-The Archipelago player client never contains them.
+With `CTR_AP=ON`, packages follow `CTR_CUSTOM_TRACKS` and Box Author Mode comes
+only from `CTR_AP_AUTHORING` (the box authoring download,
+`ctr_native_ap_authoring`). The Archipelago player client has the library on
+Options > Track Library and the Arcade custom pages, Single Race only. Its
+Custom Content page and a room's tracks stay on the seed path; a library install
+never serves a room.
+
+An Arcade custom race in a room holds that room (`AP_ArcadeHoldsRoom`): nothing
+the race does sends a check or a goal, received items stay queued, and their
+effects and a reconnect's reset wait until the race is left. Checks earned before
+the race can still go out through their own resend paths.
 
 Linux, from a checkout:
 
@@ -219,8 +227,9 @@ In order:
 3. **Begin.** The second Cross calls `CustomOffline_BeginRuntime` with the host
    slot and mode, sets the lap count from the package, and starts the normal
    race load for the host slot. In the Archipelago box authoring download this
-   is refused while a seed is loaded (`AP_CustomOfflineLaunchAllowed`); in the
-   authoring client it is always allowed (`ap/ap_authoring_host.c`).
+   is refused while a seed is loaded (`AP_CustomOfflineLaunchAllowed`), in the
+   player client only while a pad race owns the loader, and in the authoring
+   client it is always allowed (`ap/ap_authoring_host.c`).
 4. **Load request.** `game/MAIN/MainRaceTrack.c: MainRaceTrack_RequestLoad`
    tells the runtime a load was requested; a retry of the host slot keeps it.
 5. **Load start.** `MainRaceTrack_StartLoad` refuses the load (back to the

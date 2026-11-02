@@ -21,6 +21,7 @@ struct CustomTrackLibraryEntry
     char disabledReason[257];
     unsigned int supportedModes; /* Derived elsewhere from verified evidence. */
     int installed;
+    int scanFailed; /* The last store scan found this revision and refused it. */
     int requiredBySeed;
     struct CustomPackageLocalInfo local;
 };
@@ -56,6 +57,20 @@ int CustomTrackLibrary_ApplyStore(struct CustomTrackLibrary *library,
     const struct CustomPackageStoreEntry *entries, size_t count);
 const struct CustomTrackLibraryEntry *CustomTrackLibrary_Selected(const struct CustomTrackLibrary *library);
 const struct CustomTrackLibraryEntry *CustomTrackLibrary_Row(const struct CustomTrackLibrary *library, size_t row);
+/* How far one listed revision has come toward an Arcade or Time Trial race.
+   Discovered: known to the catalogue or the store, its bytes not proven.
+   Bytes verified: the manifest pin and every declared file matched, but the
+   measured structure does not support this mode. Ready: both, and the measured
+   structure supports this mode (Rulebook, Custom Arcade rule 1). Ready is the
+   only state that may launch; the loader still re-verifies the pin at launch.
+   No gameplay evidence goes into Ready: if it ever needs some, it goes here. */
+enum CustomTrackAdmission
+{
+    CTR_ADMISSION_DISCOVERED,
+    CTR_ADMISSION_BYTES_VERIFIED,
+    CTR_ADMISSION_READY
+};
+enum CustomTrackAdmission CustomTrackLibrary_Admission(const struct CustomTrackLibraryEntry *entry, int timeTrial);
 /* Custom pages only; the game owns the preceding Vanilla page. Navigation
    wraps within a page, retaining each page's row in the caller. */
 size_t CustomTrackLibrary_PageCount(const struct CustomTrackLibrary *library);

@@ -649,26 +649,35 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// transition is never missed by the throttle below. Observation-only.
 	AP_RaceListenerTick(gGT);
 
+	// Custom Arcade race in a room: no check leaves until it ends.
+	ap_net_hold_checks(AP_ArcadeHoldsRoom());
+
 	// Network: connect once + pump every frame, in all game modes.
 	AP_NetTick(gGT);
 	// Room links (issue #334): claim handed-over requests, expire, notices.
 	AP_LinkTick(gGT);
+	AP_UpdateTick(gGT);
 
 	// Trap framework: advance prime->fire->clear lifecycle + apply the FP camera,
 	// and poll the Shortcutless debug keys. Runs every frame / all modes (the tick
 	// gates its own race-only logic). Physics effects apply at their engine sites.
-	AP_TrapTick(gGT);
+	// A custom Arcade race gets no item effects: they wait with the items.
+	if (!AP_ArcadeHoldsRoom())
+		AP_TrapTick(gGT);
 	// Demo Camera: holds or force-clears the cinematic-camera
 	// engagement. Shares AP_TrapTick's placement for the same reason -- it runs
 	// before the camera PROC ticks this frame, so a clear lands while the camera
 	// the snapshot describes is still the live one.
 	AP_DemoCamTick(gGT);
-	AP_WumpaTick(gGT); // Wumpa Fruit filler: drain banked fruit into drivers[0] in-race (#11)
-	AP_UsefulTick(gGT); // H-dossier: apply queued shield, mask and invisibility
-	AP_TiziTick(gGT);  // #223: expire a forced Mask whose item roll never resolved
-	AP_ReserveTopUpTick(gGT); // #451: apply one owed copy to positive live reserves
-	AP_TurboGrantTick(gGT); // #224: requeue a lost in-flight Turbo, then deliver
-	                        // one pending grant into an empty in-race weapon slot
+	if (!AP_ArcadeHoldsRoom())
+	{
+		AP_WumpaTick(gGT); // Wumpa Fruit filler: drain banked fruit into drivers[0] in-race (#11)
+		AP_UsefulTick(gGT); // H-dossier: apply queued shield, mask and invisibility
+		AP_TiziTick(gGT);  // #223: expire a forced Mask whose item roll never resolved
+		AP_ReserveTopUpTick(gGT); // #451: apply one owed copy to positive live reserves
+		AP_TurboGrantTick(gGT); // #224: requeue a lost in-flight Turbo, then deliver
+		                        // one pending grant into an empty in-race weapon slot
+	}
 	AP_ShortcutKeys();
 	AP_NavRec_Tick(gGT);      // AI lap recorder; inert unless nav_record is on
 	AP_ShortcutSkipTick(gGT); // layer-2 checkpoint-% gap-skip detector (Shortcutless)

@@ -54,7 +54,8 @@ void RECTMENU_DrawInnerRect(RECT *r,int x,uint32_t *ot)
 { (void)x;(void)ot;CHECK(r->x>=0&&r->x+r->w<=512&&r->y+r->h<=216); }
 void CTR_Box_DrawClearBox(const RECT *r,const Color *c,int t,uint32_t *ot)
 { (void)c;(void)t;(void)ot;CHECK(r->x+r->w<=512); }
-/* xdelta import view (0.3.0): worker, dialog and disc are stubbed. */
+/* xdelta import view (0.3.0): worker, dialog and disc are stubbed. Unused
+   with -DMM_IMPORT_PLAYER, where the page does not include the importer. */
 #include <platform/native_xdelta_import.h>
 static int pickState=-1, scanState=-1, installState=-1, scanStarts, installStarts, discards, folderCount;
 static struct XdeltaImportSummary fakeSummary;
@@ -76,7 +77,7 @@ int XdeltaImport_StartInstall(const unsigned char *sel,unsigned count,const char
 int XdeltaPick_TakeDrop(char *path,size_t size) { int s=dropState; if(s==1) snprintf(path,size,"/drop/LRG2.xdelta"); dropState=0; return s; }
 int XdeltaImport_PollInstall(int *installed,char *e,size_t n) { (void)e;(void)n; int s=installState; if(s==1){*installed=2;installState=-1;} return s; }
 #include "../game/230/MM_CustomManager.c"
-static void tick(int buttons) { struct GamepadBuffer pad={0};pad.buttonsTapped=buttons;drawn[0]=0;MM_ConfigProc_CustomContent(NULL,NULL,&pad); }
+static void tick(int buttons) { struct GamepadBuffer pad={0};pad.buttonsTapped=buttons;drawn[0]=0;MM_ConfigProc_TrackLibrary(NULL,NULL,&pad); }
 int main(void)
 {
  data.font_charPixWidth[FONT_SMALL]=13;data.font_charPixWidth[FONT_BIG]=17;
@@ -124,6 +125,13 @@ int main(void)
  CHECK(strstr(drawn,"\nNo races\n")&&strstr(drawn,"\nNo lap\ncheckpoints\n")&&!strstr(drawn,"..."));
  strcpy(installed.local.timeTrialReason,"Files failed checks");tick(0);
  CHECK(strstr(drawn,"\nFiles failed\nchecks\n"));
+ /* A revision the store scan refused stays listed with its reason; a row
+    that is only in the catalogue does not. */
+ installed.installed=0;installed.scanFailed=1;strcpy(installed.disabledReason,"Hash mismatch");tick(0);
+ CHECK(strstr(drawn,"\nNot installed\n")&&(strstr(drawn,"Hash\nmismatch\n")||strstr(drawn,"Hash mismatch\n"))&&!strstr(drawn,"verified"));
+ installed.scanFailed=0;strcpy(installed.disabledReason,"Catalogue only");tick(0);
+ CHECK(strstr(drawn,"No installed")&&!strstr(drawn,"Catalogue only"));
+#ifndef MM_IMPORT_PLAYER
  /* Import track files: Select opens it, back closes it before Options can. */
  s_saphiDownloading=0;tick(BTN_SELECT);CHECK(MM_CustomImport_Active());
  folderCount=2;tick(BTN_SQUARE);tick(0);CHECK(strstr(drawn,"Choose a file")&&strstr(drawn,"Pack 1.xdelta"));
@@ -155,6 +163,14 @@ int main(void)
  tick(BTN_TRIANGLE);CHECK(scanStarts==before+1&&s_importStage==IMPORT_CHOOSE);
  tick(BTN_TRIANGLE);dropState=2;tick(0);CHECK(dropState==0&&strstr(s_importMessage,"Drop an .xdelta"));
  tick(BTN_TRIANGLE);CHECK(!MM_CustomImport_Active());
+#else
+ /* Player client (tools/ci/harnesses.txt runs this file with
+    -DMM_IMPORT_PLAYER): the importer is on Custom Content, not on the Track
+    Library page. Select opens nothing, no hint is drawn, and a dropped patch
+    waits for Custom Content. */
+ s_saphiDownloading=0;tick(BTN_SELECT);tick(0);CHECK(!strstr(drawn,"Import")&&!strstr(drawn,"Choose a file"));
+ dropState=1;tick(0);CHECK(dropState==1);dropState=0;
+#endif
  CHECK(CustomRevision_Compare("2.0.0","1.99.0")>0);
  CHECK(CustomRevision_Compare("1.0.0","1.0.0-rc1")>0);
  printf("custom manager: %d checks, %d failures\n",checks,failures);return failures!=0;

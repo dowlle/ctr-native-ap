@@ -148,6 +148,7 @@ static int       g_recv_batch_n = 0;
 static std::string           g_slot;
 static std::string           g_password;
 static bool                  g_connected = false;
+static bool                  g_hold_checks = false; // see ap_net_hold_checks
 
 // Coarse status + last refusal reason for the in-game connection manager (read
 // through ap_net_status / ap_net_last_error). Maintained entirely from the socket
@@ -1710,8 +1711,15 @@ static bool ap_net_try_send_location(int64_t code)
 	return sent;
 }
 
+extern "C" void ap_net_hold_checks(int hold)
+{
+	g_hold_checks = hold != 0;
+}
+
 extern "C" void ap_net_send_location(long long location_code)
 {
+	if (g_hold_checks)
+		return;
 	const int64_t code = (int64_t)location_code;
 	// While a seed is explicitly rejected, the session is not admitted: do not
 	// mutate the held-check queue (which still belongs to the last ACCEPTED
@@ -1738,7 +1746,7 @@ extern "C" void ap_net_send_location(long long location_code)
 
 extern "C" void ap_net_send_goal(void)
 {
-	if (g_ap && g_connected)
+	if (!g_hold_checks && g_ap && g_connected)
 		AP_NET_GUARD("send_goal", g_ap->StatusUpdate(APClient::ClientStatus::GOAL));
 }
 
