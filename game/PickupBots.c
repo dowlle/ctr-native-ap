@@ -9,7 +9,7 @@
 static AP_BossAdapterState s_apBossAdapter;
 static struct Driver *s_apBossAdapterDriver;
 // The chaos Final Challenge: whose turn it is, and set when this update used the
-// turn: a weapon left a kart, or the rival had to leave the use to the next one.
+// turn: the rival fired, skipped the segment or left its use to the next rival.
 // One schedule, one cooldown, five rivals taking turns.
 static int s_apChaosCursor;
 static int s_apChaosFired;
@@ -652,7 +652,7 @@ static void PickupBots_FireAdvanced(struct Driver *boss, struct Driver *player, 
 	f.superAllowed = AP_BossFinalComposedNow();
 	decision = AP_BossAdapterDecide(&s_apBossAdapter, &f);
 	AP_BossAdapterCommit(&s_apBossAdapter, &f, decision);
-	s_apChaosFired = decision == AP_BA_FIRE || decision == AP_BA_WAIT;
+	s_apChaosFired = 1;
 	if (decision != AP_BA_FIRE)
 		return;
 	if (!AP_ChaosFinalNow() || AP_BossAdapterNeedsTimers(f.weapon))

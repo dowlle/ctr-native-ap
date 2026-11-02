@@ -1884,7 +1884,7 @@ for name, change in [
         ("Hit route kept by the retail boss", lambda c: j_check(c, 35025010)["routes"].append(copy.deepcopy(j_check(c, 35025007)["routes"][-1]))),
         ("Hit route dropped from the drawn racer", lambda c: j_check(c, 35025007)["routes"].pop()),
         ("Hit table retail", j_hit_to_retail),
-        ("Hit fallback missing", lambda c: c["hit_character_encounters"]["unlock_triggers"]["8"].pop("fallback_keys")),
+        ("Hit fallback on a boss raced nowhere", lambda c: c["hit_character_encounters"]["unlock_triggers"]["8"].__setitem__("fallback_keys", 4)),
         ("Hit fallback on a drawn guest", lambda c: c["hit_character_encounters"]["unlock_triggers"]["13"].__setitem__("fallback_keys", 2)),
         ("Hit trigger keeps the retail win", lambda c: c["hit_character_encounters"]["unlock_triggers"].__setitem__(
             "10", dict(kind="boss", any_of=[35011100]))),
