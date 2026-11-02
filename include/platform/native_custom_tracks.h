@@ -157,6 +157,13 @@ int CustomTrack_CortexTrackServing(int levelID, int adventureBossActive);
 // The level being left (e.g. on a hub return) was Cortex Vortex.
 int CustomTrack_CortexTrackPrevServed(void);
 int CustomTrack_CortexTrackReady(void);
+// Cortex Vortex's bundled .sca music (the content-plan race, which arms the
+// bundled pair as a standalone package on host 13). CortexMusic gives the
+// verified bytes while that pair is armed, 0 when there are none (missing,
+// changed or unreadable), which leaves Oxide Station's music in place.
+// CortexMusicServing: this load is that race and the music is there.
+int CustomTrack_CortexMusic(const void **data, size_t *size);
+int CustomTrack_CortexMusicServing(int levelID, int adventureCupActive, int cupID);
 
 // Read the [CustomTracks] section of config.ini, once, at startup. It carries
 // ONLY the two file paths now; the loader stays disarmed until a seed hands over

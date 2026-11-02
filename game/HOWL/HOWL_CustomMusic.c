@@ -1,4 +1,5 @@
-// Box authoring build only (CTR_CUSTOM_PACKAGES), included by HOWL_Music.c.
+// Builds with packages only (CTR_CUSTOM_PACKAGES, which brings the 1 MiB sound
+// memory of include/platform/native_spu_memory.h), included by HOWL_Music.c.
 //
 // A custom-page race plays its package's own music when the package pins a
 // Saphi .sca (include/platform/native_custom_music.h). The .sca carries a
@@ -14,17 +15,28 @@
 //
 // Without an .sca, or when it is refused, the race keeps the fixed default
 // (Crash Cove's bank and song, native_custom_identity.h).
+//
+// The Cortex Vortex race of a content plan (a pad or a cup leg, on host level 13)
+// uses the same path with the .sca that ships with the project
+// (CustomTrack_CortexMusic). Whenever the bundled file is missing,
+// changed or refused, or the race is one this file does not size (below), the
+// host level's (Oxide Station's) bank and song play as before, with no error.
 
 #include <platform/native_custom_music.h>
 #include <platform/native_custom_offline.h>
+#include <platform/native_custom_tracks.h>
+#include <platform/native_cortex_music_select.h>
 
 void AP_LogLine(const char *msg);
 
 // Sector numbers at and above this one never exist in KART.HWL (a few
 // thousand sectors); the level bank reads land here while an .sca is served.
 #define HOWL_CUSTOM_SCA_SECTOR 0x10000000
-// numPlyrCurrGame never exceeds four.
+// numPlyrCurrGame never exceeds four; the undisplaced Purple Gem Cup loads five
+// character banks. Bank 54 plus four players is the other most.
 #define HOWL_CUSTOM_MAX_PLAYERS 4
+#define HOWL_CUSTOM_ROSTER_BANKS 5
+#define HOWL_CUSTOM_LATER_BANKS 5
 
 static struct CustomMusicSca s_customSca; // valid from LoadBank until BankDone
 static int s_customBankServing;
@@ -32,7 +44,7 @@ static int s_customBankLoaded; // the level bank of this load is the .sca's
 static u16 s_customSavedIDs[CTR_SCA_MAX_SAMPLES];
 static u16 s_customSavedSizes[CTR_SCA_MAX_SAMPLES];
 static int s_customSavedCount;
-static s16 s_customLaterBanks[1 + HOWL_CUSTOM_MAX_PLAYERS][CTR_SCA_SECTOR / 2];
+static s16 s_customLaterBanks[HOWL_CUSTOM_LATER_BANKS][CTR_SCA_SECTOR / 2];
 // Byte buffer like retail sampleBlock1, 4-aligned for the CseqHeader reads.
 static unsigned char s_customSong[CTR_SCA_MAX_SONG_BYTES] __attribute__((aligned(4)));
 
@@ -48,7 +60,8 @@ static int HOWL_CustomMusic_Acquire(struct CustomMusicSca *sca, char *error, siz
 	const void *bytes;
 	size_t size;
 
-	if (!CustomOffline_RuntimeAudio(&bytes, &size))
+	if (MainRaceTrack_OfflineCustomLoad() ? !CustomOffline_RuntimeAudio(&bytes, &size)
+	                                      : !CustomTrack_CortexMusic(&bytes, &size))
 	{
 		snprintf(error, errorSize, "%s", "");
 		return 0;
@@ -79,12 +92,14 @@ static int HOWL_CustomMusic_ReadBankHeader(int bankID, s16 *sector)
 }
 
 // Music_AsyncParseBanks stage 0 of a custom race. Returns 1 when the .sca's
-// bank was started with Bank_Load; 0 means use the default bank.
-int HOWL_CustomMusic_LoadBank(struct Bank *thisBank)
+// bank was started with Bank_Load; 0 means use the default bank. laterBanks is
+// what stages 1 and 2 load after it (native_cortex_music_select.h); a custom
+// race always takes bank 54.
+static int HOWL_CustomMusic_LoadBankFor(struct Bank *thisBank, enum CortexMusicBanks laterBanks)
 {
 	struct CustomMusicSca sca;
-	const int16_t *later[1 + HOWL_CUSTOM_MAX_PLAYERS];
-	unsigned int laterCount = 0, needed = 0, i;
+	const int16_t *later[HOWL_CUSTOM_LATER_BANKS];
+	unsigned int laterCount = 0, needed = 0, i, count;
 	char error[128];
 	struct GameTracker *gGT = sdata->gGT;
 
@@ -97,19 +112,24 @@ int HOWL_CustomMusic_LoadBank(struct Bank *thisBank)
 		return 0;
 	}
 
-	// The banks Music_AsyncParseBanks loads after this one in a custom race:
-	// bank 54 (always, see the custom-race terms in stage 1), then a bank for
-	// each player whose character bank 54 does not carry (stage 2).
-	if (!HOWL_CustomMusic_ReadBankHeader(54, s_customLaterBanks[laterCount]))
+	// The banks Music_AsyncParseBanks loads after this one: bank 54 when stage 1
+	// loads it, then a bank for each player whose character bank 54 does not
+	// carry, for every player without bank 54, or for the five roster slots of
+	// the undisplaced Purple Gem Cup (stage 2).
+	if (laterBanks == CORTEX_MUSIC_BANK54)
 	{
-		HOWL_CustomMusic_Log("track music refused, default music", "cannot read the driver bank");
-		return 0;
+		if (!HOWL_CustomMusic_ReadBankHeader(54, s_customLaterBanks[laterCount]))
+		{
+			HOWL_CustomMusic_Log("track music refused, default music", "cannot read the driver bank");
+			return 0;
+		}
+		later[laterCount] = s_customLaterBanks[laterCount];
+		laterCount++;
 	}
-	later[laterCount] = s_customLaterBanks[laterCount];
-	laterCount++;
-	for (i = 0; i < (unsigned int)gGT->numPlyrCurrGame && i < HOWL_CUSTOM_MAX_PLAYERS; i++)
+	count = laterBanks == CORTEX_MUSIC_ROSTER5 ? HOWL_CUSTOM_ROSTER_BANKS : (unsigned int)gGT->numPlyrCurrGame;
+	for (i = 0; i < count && laterCount < HOWL_CUSTOM_LATER_BANKS; i++)
 	{
-		if (data.characterIDs[i] < PINSTRIPE)
+		if (laterBanks == CORTEX_MUSIC_BANK54 && data.characterIDs[i] < PINSTRIPE)
 			continue;
 		if (!HOWL_CustomMusic_ReadBankHeader(data.characterIDs[i] + 0x37, s_customLaterBanks[laterCount]))
 		{
@@ -155,6 +175,29 @@ int HOWL_CustomMusic_LoadBank(struct Bank *thisBank)
 		HOWL_CustomMusic_Log("playing the track's own music", detail);
 	}
 	return 1;
+}
+
+int HOWL_CustomMusic_LoadBank(struct Bank *thisBank)
+{
+	return HOWL_CustomMusic_LoadBankFor(thisBank, CORTEX_MUSIC_BANK54);
+}
+
+// Stage 0 of any other driving race: the bundled Cortex Vortex music while its
+// content-plan race is served on host level 13 (native_cortex_music_select.h).
+// A boss race never gets here: stage 0 gives it the boss bank first. 0 keeps
+// Oxide Station's bank, and its song in stage 3.
+int HOWL_CustomMusic_CortexLoadBank(int level, struct Bank *thisBank)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	u32 mode = gGT->gameMode1;
+	int adventureCup = (mode & ADVENTURE_CUP) != 0;
+	enum CortexMusicBanks laterBanks =
+	    CortexMusic_Banks(CustomTrack_CortexMusicServing(level, adventureCup, gGT->cup.cupID), mode, gGT->cup.cupID,
+	                      CustomTrack_ServingLoad(level, adventureCup, gGT->cup.cupID));
+
+	if (laterBanks == CORTEX_MUSIC_OFF)
+		return 0;
+	return HOWL_CustomMusic_LoadBankFor(thisBank, laterBanks);
 }
 
 // Stage 1 entry: the level bank is on the SPU; its sectors are no longer read.
