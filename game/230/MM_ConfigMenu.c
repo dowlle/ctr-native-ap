@@ -1217,7 +1217,9 @@ static void RelicTimes_Open(const struct CustomTrackManagerPackage *package,
 	                        const struct CustomTrackManagerStatus *status)
 {
 	int t;
-	if (status->state != CTR_CT_MANAGER_READY)
+	// No verified identity means the files on disk are not this page's
+	// package (a content-plan track without a compiled profile).
+	if (status->state != CTR_CT_MANAGER_READY || status->verifiedPackageSha256[0] == '\0')
 	{
 		CustomContent_SetMessage("Relic times need a Ready package.");
 		return;
@@ -1272,7 +1274,8 @@ static void RelicTimes_Input(const struct CustomTrackManagerPackage *package,
 	int tier = s_relicEditCursor / RELIC_EDIT_DIGITS;
 	int digit = s_relicEditCursor % RELIC_EDIT_DIGITS;
 
-	if (status->state != CTR_CT_MANAGER_READY || strcmp(status->verifiedPackageSha256, s_relicEditFor) != 0)
+	if (status->state != CTR_CT_MANAGER_READY || s_relicEditFor[0] == '\0' ||
+	    strcmp(status->verifiedPackageSha256, s_relicEditFor) != 0)
 	{
 		// The package changed under the editor (a rescan or another room's
 		// package): its times were typed for other bytes, so nothing is saved.
@@ -1402,6 +1405,7 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 	if (MM_CurrentSeed_Page(ot, pad))
 	{
 		s_relicEditOpen = 0; // Back must never wait on an editor that is not shown
+		s_relicShownFor[0] = '\0'; // coming back reads the stored times again
 		return;
 	}
 
