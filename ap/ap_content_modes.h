@@ -199,6 +199,16 @@ static inline int ap_content_first_mode_checked(const ctr_content_pad *pad, ap_c
     return 0;
 }
 
+// A won first Trophy Race (or ctr_first CTR Challenge) remains selectable
+// for Wumpa income without opening any later mode. Stage-two rules do not
+// enter this predicate; pad entrance and racer gates are checked by callers.
+static inline int ap_content_first_mode_replayable(const ctr_content_pad *pad, ap_content_checked_fn checked)
+{
+    return pad && pad->occupied && !pad->cup && !pad->crystal && pad->mode_count > 0 &&
+           pad->stages[0] == 1 && ap_content_mode_plain(pad->modes[0]) &&
+           ap_content_first_mode_checked(pad, checked);
+}
+
 // Pad state codes of AP_PadState for a content-plan track pad, the model in
 // ap_pad_state.h: 1 locked, 2 raceable, 3 closed again after the first race
 // (nothing left in an open race, stage 2 not met), 4 stage 2 open with checks

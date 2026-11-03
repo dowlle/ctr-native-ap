@@ -152,7 +152,7 @@ static inline int AP_PadActivityEntryReason(const ap_padact_facts *f)
 		return AP_PADACT_LOCK_DONE;
 	if (!f->stage1Met)
 		return f->padReqMet ? AP_PADACT_LOCK_RACER : AP_PADACT_LOCK_PAD;
-	if (f->padState == 3)
+	if (f->padState == 3 && !f->replayable)
 		return AP_PADACT_LOCK_STAGE2;
 	return AP_PADACT_OPEN;
 }

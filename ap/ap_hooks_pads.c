@@ -1317,8 +1317,14 @@ int AP_PadReplayable(int physLevelID, int destLevelID)
 {
 #ifdef CTR_CUSTOM_TRACKS
 	const ctr_content_pad *pad = ap_content_plan_active() ? ap_content_plan_pad(physLevelID) : NULL;
-	return pad && pad->occupied && !pad->crystal && AP_ContentPadReady(physLevelID) && AP_ContentPadOpen(pad) &&
-	       AP_PadState(physLevelID, destLevelID) == 5;
+	int state;
+	if (!pad || !pad->occupied || pad->crystal || !AP_ContentPadReady(physLevelID) || !AP_ContentPadOpen(pad))
+		return 0;
+	state = AP_PadState(physLevelID, destLevelID);
+	if (state == 5) return 1;
+	// A won stage-one Trophy/CTR race remains an income route while stage
+	// two is closed. Keep the pad's state and its remaining-check display.
+	return state == 3 && !pad->cup && ap_content_first_mode_replayable(pad, AP_ContentCodeChecked);
 #else
 	(void)physLevelID;
 	(void)destLevelID;
