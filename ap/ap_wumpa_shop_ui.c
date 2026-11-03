@@ -308,7 +308,7 @@ static void AP_WShopDraw(void)
 		if (ap_wshop.top > 0)
 			DecalFont_DrawLine("^", 0x100, 0x40, FONT_SMALL, WHITE | JUSTIFY_CENTER);
 		if (ap_wshop.top + AP_WSHOP_VISIBLE < ctr_wumpa_shop.slots)
-			DecalFont_DrawLine("v", 0x100, 0x48 + AP_WSHOP_VISIBLE * AP_WSHOP_ROW_H, FONT_SMALL,
+			DecalFont_DrawLine("v", 0x1e0, 0xb0, FONT_SMALL,
 			                   WHITE | JUSTIFY_CENTER);
 	}
 

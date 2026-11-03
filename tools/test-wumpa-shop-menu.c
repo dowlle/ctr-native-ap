@@ -8,6 +8,7 @@
 // tools/test-wumpa-shop-production.py.
 #include <stdio.h>
 #include <string.h>
+#include <limits.h>
 #include "ap_wumpa_shop.h"
 #include "ap_wumpa_shop_menu.h"
 
@@ -63,6 +64,14 @@ int main(void)
 	CHECK("hub line fits the screen with six-digit numbers", (int)strlen(line) * GLYPH <= SCREEN);
 	AP_WumpaShopHeaderLine(line, (int)sizeof line, 999999, 999999);
 	CHECK("shop header fits the screen with six-digit numbers", (int)strlen(line) * GLYPH <= SCREEN);
+	AP_WumpaShopHeaderLine(line, (int)sizeof line, 1000000000LL, 1000000000LL);
+	CHECK("the largest server wallet fits inside the panel", strcmp(line, "BALANCE 1e+09 COLLECTED 1e+09") == 0 && (int)strlen(line) * GLYPH <= 464);
+	AP_WumpaShopHeaderLine(line, (int)sizeof line, LLONG_MAX, LLONG_MAX);
+	CHECK("a locally accumulated extreme wallet fits the panel", (int)strlen(line) * GLYPH <= 464);
+	AP_WumpaShopHeaderLine(line, (int)sizeof line, LLONG_MIN, LLONG_MAX);
+	CHECK("an overspent extreme wallet fits the panel", (int)strlen(line) * GLYPH <= 464);
+	AP_WumpaHubLine(line, (int)sizeof line, LLONG_MAX, LLONG_MAX);
+	CHECK("the hub line fits even with extreme totals", (int)strlen(line) * GLYPH <= SCREEN);
 	CHECK("no BANKED label left", strstr(line, "BANKED") == NULL);
 
 	AP_WumpaReceiveLine(line, (int)sizeof line, 1, 1, 0, 0, 10);

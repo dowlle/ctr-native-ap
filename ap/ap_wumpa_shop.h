@@ -217,13 +217,23 @@ static inline int AP_WumpaReceiveLine(char *out, int cap, int held, int pending,
 // 32 here and 34 in the shop header.
 static inline int AP_WumpaHubLine(char *out, int cap, long long balance, long long lifetime)
 {
-	return snprintf(out, (size_t)cap, "WUMPA %lld  COLLECTED %lld", balance, lifetime);
+	int n = snprintf(out, (size_t)cap, "WUMPA %lld  COLLECTED %lld", balance, lifetime);
+	if (n <= 39) return n;
+	return snprintf(out, (size_t)cap, "WUMPA %.4g COLLECTED %.4g", (double)balance, (double)lifetime);
 }
 
 // The shop page header: the same two numbers.
 static inline int AP_WumpaShopHeaderLine(char *out, int cap, long long balance, long long lifetime)
 {
-	return snprintf(out, (size_t)cap, "BALANCE %lld  COLLECTED %lld", balance, lifetime);
+	int n = snprintf(out, (size_t)cap, "BALANCE %lld  COLLECTED %lld", balance, lifetime);
+	if (n <= 35) return n;
+	// The panel is 464 pixels wide: at most 35 small glyphs. Preserve exact
+	// totals where possible; unusually large totals use significant digits.
+	n = snprintf(out, (size_t)cap, "BALANCE %lld COLLECTED %lld", balance, lifetime);
+	if (n <= 35) return n;
+	n = snprintf(out, (size_t)cap, "BALANCE %.3g COLLECTED %.3g", (double)balance, (double)lifetime);
+	if (n <= 35) return n;
+	return snprintf(out, (size_t)cap, "BALANCE %.2g COLLECTED %.2g", (double)balance, (double)lifetime);
 }
 
 // Goal arm: off, or the lifetime total reached the target. An unreadable

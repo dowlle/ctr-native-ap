@@ -127,6 +127,8 @@ check('the shop header reads COLLECTED',
       'AP_WumpaShopHeaderLine(line, (int)sizeof line, ap_net_wumpa_balance(), ap_net_wumpa_lifetime());' in ui and
       '"ON SALE AT %d COLLECTED"' in ui and 'BANKED' not in ui)
 rect = text('game/RECTMENU.c')
+check('the down arrow is beside the last row, clear of the footer',
+      'DecalFont_DrawLine("v", 0x1e0, 0xb0, FONT_SMALL,' in ui)
 state = body(rect, 'void RECTMENU_ProcessState()')
 check('the shop page owns input like the tracker', 'if (AP_WumpaShopMenuFrame()) return;' in state)
 check('the row label resolves', 'index == AP_LNG_WUMPA_SHOP' in rect)
