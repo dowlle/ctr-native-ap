@@ -63,7 +63,7 @@ banking = body(wumpa, 'static int AP_WumpaBanking(void)')
 check('the unlimited-fruit cheat banks nothing', 'CHEAT_WUMPA' in banking)
 kart = body(wumpa, 'static int AP_WumpaRaceTracking(')
 check('kart banking is the local human player',
-      'driver != gGT->drivers[0]' in kart and 'ACTION_BOT' in kart and 'AP_WumpaBanking()' in kart)
+      'driver != gGT->drivers[0]' in kart and 'ACTION_BOT' in kart and 'ctr_cfg_active()' in kart and 'CHEAT_WUMPA' in kart)
 fin = body(wumpa, 'void AP_WumpaOnRaceFinish(')
 check('finish banking takes the latch with the forced-loss predicate',
       'AP_WumpaFinishTake(&g_finish_latch, g_race_wumpa >= 0 ? g_race_wumpa : held, AP_RaceAttemptIsForcedLoss())' in fin)

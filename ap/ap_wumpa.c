@@ -100,7 +100,9 @@ static void AP_WumpaBank(int n, const char *why)
 static int AP_WumpaRaceTracking(struct Driver *driver)
 {
 	struct GameTracker *gGT = sdata->gGT;
-	if (!AP_WumpaBanking() || gGT == 0 || driver == 0 || driver != gGT->drivers[0])
+	if (!ctr_cfg_active() || ctr_cfg.schema_newer || gGT == 0 || driver == 0 || driver != gGT->drivers[0])
+		return 0;
+	if ((gGT->gameMode2 & CHEAT_WUMPA) != 0)
 		return 0;
 	if ((driver->actionsFlagSet & ACTION_BOT) != 0 || !AP_WumpaAdventureRace(gGT))
 		return 0;
@@ -114,7 +116,8 @@ static int AP_WumpaReceiptInRace(void)
 {
 	struct GameTracker *gt = sdata->gGT;
 	struct Driver *d = gt ? gt->drivers[0] : 0;
-	return AP_WumpaBanking() && AP_WumpaAdventureRace(gt) && LOAD_IsOpen_RacingOrBattle() && d &&
+	return ctr_cfg_active() && !ctr_cfg.schema_newer && AP_WumpaAdventureRace(gt) &&
+	       !(gt->gameMode2 & CHEAT_WUMPA) && LOAD_IsOpen_RacingOrBattle() && d &&
 	       !(d->actionsFlagSet & (ACTION_BOT | ACTION_RACE_FINISHED)) &&
 	       !(gt->gameMode1 & (END_OF_RACE | MAIN_MENU | GAME_CUTSCENE));
 }

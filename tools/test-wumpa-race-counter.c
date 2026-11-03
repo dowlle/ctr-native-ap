@@ -122,6 +122,31 @@ int main(void)
 		AP_WumpaCommitReceived();
 		CHECK("outside-race received overflow still banks after its marker", credited == before + 10);
 	}
+	{
+		// The Adventure counter rule is independent of a shop or Wumpa goal.
+		int before = credited;
+		ctr_wumpa_shop.state = AP_WUMPA_SHOP_ABSENT;
+		ctr_wumpa_shop.goal = 0;
+		g_wumpa_pending = 0;
+		onTrack = 1;
+		sdata->Loading.stage = LOAD_RESTART;
+		AP_WumpaTick(&gt);
+		sdata->Loading.stage = LOAD_IDLE;
+		gt.gameMode1 = ADVENTURE_MODE;
+		gt.trafficLightsTimer = 5;
+		d.numWumpas = 0;
+		AP_WumpaTick(&gt);
+		gt.trafficLightsTimer = -1;
+		RB_Player_ModifyWumpa(&d, 14);
+		CHECK("shop-off Adventure still counts past ten", AP_WumpaRaceCount(&d) == 14 && d.numWumpas == 10);
+		RB_Player_ModifyWumpa(&d, -3);
+		CHECK("shop-off hits use the same full count", AP_WumpaRaceCount(&d) == 11 && d.numWumpas == 10);
+		AP_WumpaReceive(3);
+		AP_WumpaTick(&gt);
+		CHECK("shop-off receipts join the race count", AP_WumpaRaceCount(&d) == 14 && d.numWumpas == 10 && g_wumpa_ap_credit == 0);
+		AP_WumpaOnRaceFinish(&d, 1, d.numWumpas);
+		CHECK("shop and goal off never credits a wallet", credited == before && !AP_WumpaBanking());
+	}
 	printf("%s Wumpa full race counter\n", failures ? "FAIL" : "PASS");
 	return failures != 0;
 }
