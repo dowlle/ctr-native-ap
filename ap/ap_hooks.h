@@ -680,9 +680,9 @@ void AP_WumpaDrawHub(void);
 int AP_WumpaShopHubTrackerLine(int level, char *out, int cap);
 // #249 shop page (ap_wumpa_shop_ui.c, rows in ap_wumpa_shop_menu.h).
 // PrepareGreenMenu picks the green load/save rows before the save screen
-// shows them; GreenMenuRow maps a chosen row (opening the shop returns
-// AP_WSHOP_GREEN_HANDLED); GreenExitRow is that menu's EXIT row;
-// MenuFrame owns input and drawing while the page is open.
+// shows them, WUMPA SHOP first; GreenMenuRow maps a chosen row to its retail
+// row (opening the shop returns AP_WSHOP_GREEN_HANDLED); GreenExitRow is that
+// menu's EXIT row; MenuFrame owns input and drawing while the page is open.
 struct RectMenu;
 int AP_WumpaShopRowShown(void);
 void AP_WumpaShopPrepareGreenMenu(struct RectMenu *menu);
