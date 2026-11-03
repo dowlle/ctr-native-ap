@@ -75,8 +75,8 @@ assert "fam->wumpa == 1 && pad->wumpa_modes" in plain and "AP_HitEncounterOpport
 assert "apEntryRefusedDest = -1;\n\t\t\tdist = 0;" in tick
 
 # Item 5, the glow lists open races and the pad state every location.
-assert "return AP_ContentPadGlowBits(destLevelID, outBits, cap, 1);" in body(pads, "int AP_PadUncollectedDisplayBits(")
-assert "return AP_ContentPadGlowBits(destLevelID, outBits, cap, 0);" in pads
+assert "return AP_ContentPadGlowBits(destLevelID, outBits, NULL, cap, 1);" in body(pads, "int AP_PadUncollectedDisplayBits(")
+assert "return AP_ContentPadGlowBits(destLevelID, outBits, NULL, cap, 0);" in pads
 assert "if(openOnly && !AP_ContentModeOpen(pad,pad->modes[n]))continue;" in body(pads, "static int AP_ContentPadGlowBits(")
 
 # Item 6, stakes through the exported logic on a plan room.
@@ -125,7 +125,7 @@ int ap_net_location_checked(long code) { for (int i = 0; i < doneCount; i++) if 
 static int checkedFn(int64_t code) { return ap_net_location_checked((long)code); }
 int AP_ContentModeOpen(const ctr_content_pad *p, int mode) { return ap_content_mode_open(p, mode, counts, checkedFn); }
 int AP_ContentPadOpen(const ctr_content_pad *p) { (void)p; return 1; }
-""" + function(pads, "static int AP_ContentPadGlowBits(") + r"""
+""" + function(pads, "static int AP_GlowPush(") + function(pads, "static int AP_ContentPadGlowBits(") + r"""
 static int has(const int *bits, int n, int bit) { for (int i = 0; i < n; i++) if (bits[i] == bit) return 1; return 0; }
 int main(void) {
  int bits[32], n;
@@ -136,22 +136,22 @@ int main(void) {
  pad.trophy_location = 10; pad.ctr_location = 11; pad.relic_locations[0] = 12;
  pad.letter_locations[0] = 13; pad.perfect_location = 14; pad.rung_locations[0] = 15; pad.box_count = 1; pad.box_locations[0] = 16;
  /* Locked later races: their checks are hidden, the pad state's list keeps them. */
- n = AP_ContentPadGlowBits(3, bits, 32, 1);
+ n = AP_ContentPadGlowBits(3, bits, NULL, 32, 1);
  assert(has(bits, n, AP_CONTENT_BIT_TROPHY + 3) && !has(bits, n, AP_CONTENT_BIT_CTR + 3) && !has(bits, n, AP_CONTENT_BIT_RELIC + 9));
  assert(!has(bits, n, AP_CONTENT_BIT_FAMILY + 3 * AP_CONTENT_FAMILY_STRIDE + 6));
  assert(!has(bits, n, AP_CONTENT_BIT_FAMILY + 3 * AP_CONTENT_FAMILY_STRIDE + AP_CONTENT_FAMILY_PERFECT));
  assert(has(bits, n, AP_CONTENT_BIT_FAMILY + 3 * AP_CONTENT_FAMILY_STRIDE) && has(bits, n, AP_CONTENT_BIT_BOX + 3 * AP_CONTENT_BOX_STRIDE));
- n = AP_ContentPadGlowBits(3, bits, 32, 0);
+ n = AP_ContentPadGlowBits(3, bits, NULL, 32, 0);
  assert(has(bits, n, AP_CONTENT_BIT_CTR + 3) && has(bits, n, AP_CONTENT_BIT_RELIC + 9));
  /* Stage 2 met but the first race not won: still hidden. */
- counts[0] = 1; n = AP_ContentPadGlowBits(3, bits, 32, 1);
+ counts[0] = 1; n = AP_ContentPadGlowBits(3, bits, NULL, 32, 1);
  assert(!has(bits, n, AP_CONTENT_BIT_CTR + 3));
  /* First race won and stage 2 met: shown. */
- done[doneCount++] = 10; n = AP_ContentPadGlowBits(3, bits, 32, 1);
+ done[doneCount++] = 10; n = AP_ContentPadGlowBits(3, bits, NULL, 32, 1);
  assert(has(bits, n, AP_CONTENT_BIT_CTR + 3) && has(bits, n, AP_CONTENT_BIT_RELIC + 9) && !has(bits, n, AP_CONTENT_BIT_TROPHY + 3));
  /* ctr_first: the Trophy Race check glows with the CTR Challenge. */
  pad.ctr_first = 1; pad.mode_count = 2; pad.modes[0] = AP_CONTENT_MODE_CTR; pad.modes[1] = AP_CONTENT_MODE_RELIC; doneCount = 0; counts[0] = 0;
- n = AP_ContentPadGlowBits(3, bits, 32, 1);
+ n = AP_ContentPadGlowBits(3, bits, NULL, 32, 1);
  assert(has(bits, n, AP_CONTENT_BIT_CTR + 3) && has(bits, n, AP_CONTENT_BIT_TROPHY + 3) && !has(bits, n, AP_CONTENT_BIT_RELIC + 9));
  puts("PASS: the glow hides locked races");
  return 0;
