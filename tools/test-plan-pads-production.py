@@ -42,7 +42,8 @@ assert "apContentModeMenu" not in warp and "AP_PadUsesSelector" not in warp
 ordinary = tick[tick.index("goto WarpPad_RequestLoad;"):]
 assert "apRaceTypeMenu" not in ordinary and "AP_ContentMenuRows" not in ordinary
 replay = body(pads, "int AP_PadReplayable(")
-assert "ap_content_plan_active() ? ap_content_plan_pad(physLevelID) : NULL" in replay and "!pad->crystal" in replay
+assert "ap_content_plan_active() ? ap_content_plan_pad(physLevelID) : NULL" in replay and "pad->crystal" in replay
+assert "state == 3 && !pad->cup && ap_content_first_mode_replayable(pad, AP_ContentCodeChecked)" in replay
 sel = body(gates, "int AP_RaceTypeSelectorSetting(void)")
 assert "AP_RaceSelectorEffective(g_config.raceTypeSelector" in sel and "client->present ?" in sel
 assert '"race_type_selector"' in pages and '"Race Type Menu"' in config and "s_raceMenuNames" in menu
@@ -57,12 +58,13 @@ assert "AP BOXES LEFT: %d" in draw
 
 # Item 4, the pad closes again and floats stage 2.
 closed = plan.index("AP_PadState(physLevelID, levelID) == 3")
-assert closed < plan.index("AH_WarpPad_WarpCapture(gGT)") and "goto WarpPad_AnimateOpen;" in plan[closed:closed + 80]
+assert closed < plan.index("AH_WarpPad_WarpCapture(gGT)") and "!AP_PadReplayable(physLevelID, levelID)" in plan[closed:closed + 160]
 build = body(warp, "static void AH_WarpPad_BuildInstances(struct Thread *t)")
 gate = warp[warp.index("if (pad && AP_PadState(levelID, warppadObj->levelID) == 3)"):]
 gate = gate[:gate.index("goto ContentPad_BuildGate;")]
 assert "AP_ContentMaskToReq(pad->stage2_mask, pad->stage2_count, &rule);" in gate
 assert "unlockItem_numNeeded = pad->stage2_count;" in gate and "AP_ContentStage2Owned(pad)" in gate
+assert "|| AP_PadReplayable(levelID, warppadObj->levelID)" in warp
 # A Done pad wears its grey X; a replayable one still takes the kart, a spare or
 # finished Crystal pad does not.
 assert "AP_PadState(levelID, warppadObj->levelID) == 5)\n\t{\n\t\twarppadObj->digit1s = 0;" in warp
