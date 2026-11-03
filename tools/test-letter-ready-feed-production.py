@@ -18,6 +18,7 @@ fixture=r'''
 struct {int lettersanity_mode;long lettersanity_locations[18][3];} ctr_cfg;
 static unsigned char ap_letter_received[18][3],ap_feed_letters_ready[18];
 static int ap_feed_primed,ap_hub_feed_on=1,count;
+int AP_HubFeedOn(void){return ap_hub_feed_on;}
 int ctr_cfg_active(void){return 1;}
 void AP_FeedEnqueue(const char *s,int color,int sound){
  assert(!strcmp(s,count==0?"Slide Coliseum: Got CTR letters":"Turbo Track: Got CTR letters"));count++;
