@@ -230,6 +230,7 @@ tools/test-wumpa-residency.c
 tools/test-retail-asset-reader.c
 tools/test-wumpa-seedcfg.cpp
 tools/test-wumpa-bank.c
+tools/test-wumpa-race-counter.c
 tools/test-wumpa-shop-seedcfg.cpp
 tools/test-wumpa-shop-ledger.cpp
 tools/test-wumpa-shop-production.py

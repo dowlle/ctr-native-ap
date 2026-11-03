@@ -3,10 +3,10 @@
 
 // The Wumpa Shop and the Wumpa goal (#249): pure state and decisions.
 //
-// BANKING. In an Adventure race, every fruit the local player collects while
-// already holding 10 is banked at once, and so is the fruit held at a
-// legitimate race finish (decision 22, 2026-10-28: Adventure only). AP fruit
-// that would pass 10 also banks at once, in or out of a race. A banked
+// BANKING. In an Adventure race, the full count, including fruit past ten,
+// banks only at a legitimate finish (2026-11-03 ruling). Hits reduce the whole
+// count; quit and restart forfeit it. Outside the race, received AP fruit
+// that would pass ten waiting still banks at once. A banked
 // fruit adds once to the LIFETIME total, which the Wumpa goal counts and which
 // never goes down. The wallet balance is lifetime minus the prices of the
 // distinct purchases (design note, "Wallet accounting"). Banking runs when
@@ -133,7 +133,7 @@ static inline int AP_WumpaFinishTake(AP_WumpaFinishLatch *l, int held, int force
 	l->armed = 0;
 	if (!armed || forcedLoss || held <= 0)
 		return 0;
-	return held > AP_WUMPA_KART_MAX ? AP_WUMPA_KART_MAX : held;
+	return held;
 }
 
 // What a shop row shows and whether Cross buys it.

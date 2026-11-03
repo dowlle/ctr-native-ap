@@ -47,10 +47,10 @@ def body(source, signature):
 
 rb = body(text('game/231/RB_Player.c'), 'void RB_Player_ModifyWumpa(')
 cheat = rb.index('CHEAT_WUMPA')
-bank = rb.find('AP_WumpaBankKart(driver, numWumpaOriginal, wumpaDelta)')
-check('ModifyWumpa banks the overflow after the cheat early return', bank > cheat)
-check('ModifyWumpa banks inside the human-driver branch', bank > rb.index('ACTION_BOT) == 0)'))
-check('ModifyWumpa banks before the count is capped', bank < rb.index('driver->numWumpas > 10'))
+bank = rb.find('AP_WumpaRaceModify(driver, wumpaDelta)')
+check('ModifyWumpa changes the full race count after cheat and mask protection', bank > cheat and bank > rb.index('ACTION_MASK_WEAPON'))
+check('the full race count handles losses as well as gains', bank > rb.index('driver->numTimesWumpa += wumpaDelta;'))
+check('the full race count is applied before the retail cap', bank < rb.index('driver->numWumpas > 10'))
 
 wumpa = text('ap/ap_wumpa.c')
 recv = body(wumpa, 'void AP_WumpaReceive(int count)')
@@ -61,12 +61,12 @@ check('held AP credits are banked only after the effect marker write',
       fxwrite.index('ap_net_fx_store_write(') < fxwrite.index('AP_WumpaCommitReceived();'))
 banking = body(wumpa, 'static int AP_WumpaBanking(void)')
 check('the unlimited-fruit cheat banks nothing', 'CHEAT_WUMPA' in banking)
-kart = body(wumpa, 'void AP_WumpaBankKart(')
+kart = body(wumpa, 'static int AP_WumpaRaceTracking(')
 check('kart banking is the local human player',
       'driver != gGT->drivers[0]' in kart and 'ACTION_BOT' in kart and 'AP_WumpaBanking()' in kart)
 fin = body(wumpa, 'void AP_WumpaOnRaceFinish(')
 check('finish banking takes the latch with the forced-loss predicate',
-      'AP_WumpaFinishTake(&g_finish_latch, held, AP_RaceAttemptIsForcedLoss())' in fin)
+      'AP_WumpaFinishTake(&g_finish_latch, g_race_wumpa >= 0 ? g_race_wumpa : held, AP_RaceAttemptIsForcedLoss())' in fin)
 adv = body(wumpa, 'static int AP_WumpaAdventureRace(')
 check('banking takes the Adventure race mode test', 'AP_WumpaBankRaceMode(gGT->gameMode1)' in adv)
 check('kart and finish banking bank only in an Adventure race',
@@ -132,7 +132,7 @@ check('the down arrow is beside the last row, clear of the footer',
 state = body(rect, 'void RECTMENU_ProcessState()')
 check('the shop page owns input like the tracker', 'if (AP_WumpaShopMenuFrame()) return;' in state)
 check('the row label resolves', 'index == AP_LNG_WUMPA_SHOP' in rect)
-check('the race HUD draws no banked number', 'AP_Wumpa' not in text('game/UI/UI_DrawNum.c'))
+check('the race HUD draws the current race total', 'AP_WumpaRaceCount(d)' in text('game/UI/UI_DrawNum.c'))
 for path, fn in (('game/UI/UI_RenderFrame.c', 'void UI_RenderFrame_AdvHub(void)'), ('game/232/AH_Map.c', None)):
     src = text(path) if fn is None else body(text(path), fn)
     check(f'{path}: the hub counters draw the Wumpa balance',
