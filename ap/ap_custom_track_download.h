@@ -40,6 +40,17 @@ int ap_custom_track_download_start_pinned(const char *tracks_dir,
 	                                      const char *lev_sha256, uint32_t lev_bytes,
 	                                      const char *vrm_sha256, uint32_t vrm_bytes);
 
+// Current Seed, row 10k: the same pinned install for a package the live
+// track registry located on Project Saphi (track id and the LEV and VRM
+// download ids). The registry is not trusted for the bytes: the Saphi listing
+// must name exactly those ids under that track, and the files must equal the
+// room's size and hash pins before anything is written, as above.
+int ap_custom_track_download_start_registry(const char *tracks_dir,
+	                                        const char *package_root,
+	                                        int saphi_track_id, int lev_download_id, int vrm_download_id,
+	                                        const char *lev_sha256, uint32_t lev_bytes,
+	                                        const char *vrm_sha256, uint32_t vrm_bytes);
+
 // Thread-safe snapshot for the game thread. Returns an AP_CT_DOWNLOAD_* value.
 int ap_custom_track_download_status(char *detail, int detail_bytes);
 

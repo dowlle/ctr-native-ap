@@ -288,7 +288,7 @@ if(CTR_AP)
     target_sources(ap_net PRIVATE ap/ap_solo.cpp)
     target_link_libraries(ap_net PRIVATE SDL3::SDL3)
     if(CTR_CUSTOM_TRACKS)
-        target_sources(ap_net PRIVATE ap/ap_custom_track_download.cpp)
+        target_sources(ap_net PRIVATE ap/ap_custom_track_download.cpp ap/ap_track_registry.cpp)
         target_compile_definitions(ap_net PRIVATE CTR_CUSTOM_TRACKS)
     endif()
     set_target_properties(ap_net PROPERTIES
