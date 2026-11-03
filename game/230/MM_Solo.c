@@ -551,19 +551,6 @@ static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
 		if (s_soloSel >= SOLO_ROWS) s_soloTop = s_soloSel - SOLO_ROWS + 1;
 	}
 	MM_Solo_Navigate(pad, count);
-	{
-		/* Rows take one or two lines: scroll until the selection's last line
-		   is within the nine list lines. */
-		int lines;
-		do
-		{
-			lines = 0;
-			for (i = s_soloTop; i <= s_soloSel && i < count; i++)
-				lines += MM_Solo_OptionRowLines(map, rows, i);
-			if (lines > SOLO_ROWS && s_soloTop < s_soloSel)
-				s_soloTop++;
-		} while (lines > SOLO_ROWS && s_soloTop < s_soloSel);
-	}
 	if (s_soloSel < rows && (pad->buttonsTapped & (BTN_LEFT | BTN_RIGHT)) != 0)
 	{
 		AP_Solo_OptionGet(map[s_soloSel], &info);
@@ -574,6 +561,19 @@ static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
 			AP_Solo_OptionStep(map[s_soloSel], (pad->buttonsTapped & BTN_RIGHT) ? 1 : -1);
 			OtherFX_Play(0, 1);
 		}
+	}
+	{
+		/* A changed value can grow its row: measure after stepping so the
+		   selection stays visible in the very same frame. */
+		int lines;
+		do
+		{
+			lines = 0;
+			for (i = s_soloTop; i <= s_soloSel && i < count; i++)
+				lines += MM_Solo_OptionRowLines(map, rows, i);
+			if (lines > SOLO_ROWS && s_soloTop < s_soloSel)
+				s_soloTop++;
+		} while (lines > SOLO_ROWS && s_soloTop < s_soloSel);
 	}
 	if (s_soloSel < rows && (pad->buttonsTapped & BTN_SQUARE) != 0)
 	{
@@ -787,7 +787,7 @@ static void MM_Solo_UpdateNameEdit(void)
 
 static void MM_Solo_PageReview(uint32_t *ot, struct GamepadBuffer *pad)
 {
-	char line[160];
+	char line[160], fit[160];
 	if (!s_soloEditing && !s_soloEditJustEnded)
 	{
 		MM_Solo_Navigate(pad, 2);
@@ -797,7 +797,7 @@ static void MM_Solo_PageReview(uint32_t *ot, struct GamepadBuffer *pad)
 			if (s_soloSel == 0)
 			{
 				snprintf(s_soloNameBackup, sizeof s_soloNameBackup, "%s", s_soloName);
-				NativeText_Begin(s_soloName, 16, CONN_ROW_X, SOLO_REVIEW_NAME_Y - 2, CONN_ROW_W, CONN_ROW_H, 0);
+				NativeText_Begin(s_soloName, sizeof s_soloName, CONN_ROW_X, SOLO_REVIEW_NAME_Y - 2, CONN_ROW_W, CONN_ROW_H, 0);
 				s_soloEditing = 1;
 			}
 			else if (AP_Solo_GenerateStart(s_soloStart.path, s_soloName,
@@ -818,8 +818,10 @@ static void MM_Solo_PageReview(uint32_t *ot, struct GamepadBuffer *pad)
 		         s_soloFromOptions ? "Options: as set on the previous page" : "Options: as in the YAML");
 	MM_Solo_DrawWrapped(line, SOLO_ROW_X, 0x50, SOLO_ROW_W, 2, WHITE, ot);
 	DecalFont_DrawLineOT("Slot name", SOLO_ROW_X, SOLO_REVIEW_NAME_Y, FONT_SMALL, ORANGE, ot);
-	snprintf(line, sizeof line, "%s%s", s_soloName, s_soloEditing ? "_" : "");
-	DecalFont_DrawLineOT(line, 0xB0, SOLO_REVIEW_NAME_Y, FONT_SMALL, WHITE, ot);
+	MM_Solo_Fit(s_soloName, line, sizeof line,
+	            SOLO_ROW_R - 0xB0 - (s_soloEditing ? DecalFont_GetLineWidth("_", FONT_SMALL) : 0));
+	snprintf(fit, sizeof fit, "%s%s", line, s_soloEditing ? "_" : "");
+	DecalFont_DrawLineOT(fit, 0xB0, SOLO_REVIEW_NAME_Y, FONT_SMALL, WHITE, ot);
 	DecalFont_DrawLineOT("Generate", SOLO_ROW_X, SOLO_REVIEW_NAME_Y + SOLO_ROW_H, FONT_SMALL, ORANGE, ot);
 	if (!s_soloEditing)
 		MM_Solo_Highlight(s_soloSel == 0 ? SOLO_REVIEW_NAME_Y : SOLO_REVIEW_NAME_Y + SOLO_ROW_H, ot);

@@ -35,6 +35,7 @@ void DecalFont_DrawLineOT(char *s, int x, int y, s16 f, int flags, uint32_t *ot)
 {
 	int w = DecalFont_GetLineWidth(s, f);
 	(void)ot;
+	CHECK(panels == 0); /* Later OT insertion puts the panel behind text. */
 	if (flags & JUSTIFY_CENTER) x -= w / 2;
 	else if (flags & JUSTIFY_RIGHT) x -= w;
 	CHECKM(x >= 0x18 && x + w <= 0x1E8, s);
@@ -57,17 +58,18 @@ void RECTMENU_DrawInnerRect(RECT *r, int t, uint32_t *ot)
 void CTR_Box_DrawClearBox(const RECT *r, const Color *c, int t, uint32_t *ot)
 {
 	(void)c; (void)t; (void)ot;
+	CHECK(panels == 0); /* Highlights also remain in front of the panel. */
 	CHECK(r->x >= 0x18 && r->x + r->w <= 0x1E8 && r->y >= 0x30 && r->y + r->h <= 0xC2);
 }
 int OtherFX_Play(u32 a, int b) { (void)a; (void)b; return 0; }
 int Platform_OpenURL(const char *u) { (void)u; return 1; }
 int Platform_InputRawGamepadButtons(void) { return 0; }
-static int textResult;
+static int textResult, textCap;
 int NativeText_Result(void) { return textResult; }
 void NativeText_Resolve(int r) { textResult = r; }
 void NativeText_End(void) { textResult = 0; }
 void NativeText_Begin(char *b, int c, int x, int y, int w, int h, int p)
-{ (void)b; (void)c; (void)w; (void)h; (void)p; CHECK(x >= 0x20 && y >= 0x30); }
+{ (void)b; textCap = c; (void)w; (void)h; (void)p; CHECK(x >= 0x20 && y >= 0x30); }
 #define CONN_PAD_COMMIT (RAW_BTN_CROSS | RAW_BTN_START)
 #define CONN_PAD_CANCEL RAW_BTN_TRIANGLE
 #define CONN_ROW_X 0x30
@@ -90,6 +92,7 @@ static const char *const optValue[] = {
 #define OPTS ((int)(sizeof optLabel / sizeof optLabel[0]))
 static char note[AP_SOLO_TEXT];
 static int rooms, tracks, needsLaps, picked, jobState = AP_SOLO_JOB_IDLE;
+static int shortLetters;
 static char inbox[512];
 int AP_Solo_RuntimePresent(void) { return 1; }
 int AP_Solo_ListStart(void) { return 0; }
@@ -135,12 +138,13 @@ int AP_Solo_OptionGet(int i, struct APSoloOptionInfo *o)
 	if (i < 0 || i >= OPTS) return 0;
 	snprintf(o->label, sizeof o->label, "%s", optLabel[i]);
 	snprintf(o->value, sizeof o->value, "%s", optValue[i]);
+	if (i == 14 && shortLetters) snprintf(o->value, sizeof o->value, "false");
 	snprintf(o->group, sizeof o->group, "%s", i < 4 ? "Goal" : i < 13 ? "Progression" : "Extras");
 	if (i == 1) snprintf(o->note, sizeof o->note, "%s", note);
 	o->visible = 1;
 	return 1;
 }
-void AP_Solo_OptionStep(int i, int d) { (void)i; (void)d; }
+void AP_Solo_OptionStep(int i, int d) { (void)d; if (i == 14) shortLetters = !shortLetters; }
 const char *AP_Solo_OptionHelp(int i)
 {
 	(void)i;
@@ -276,6 +280,14 @@ int main(void)
 		/* Continue: the AP-Pie line wraps, in full. */
 		s_soloSel = OPTS; frame(0, "options continue");
 		CHECK(strstr(drawn, "import it.") != NULL);
+		/* Lettersanity grows from one line to two at the list bottom. */
+		shortLetters = 1;
+		s_soloSel = 14; s_soloTop = 7;
+		frame(0, "short letters at bottom");
+		CHECK(full_once(optLabel[14], drawn));
+		frame(BTN_RIGHT, "growing selected value");
+		CHECK(full_once(optLabel[14], drawn));
+		CHECK(full_once(optValue[14], drawn));
 	}
 
 	/* An option's help page: a name too long for the big font is not cut. */
@@ -300,6 +312,22 @@ int main(void)
 	CHECK(strstr(drawn, "plus 1 custom") != NULL && strstr(drawn, "track\n") != NULL && !strstr(drawn, "..."));
 	AP_Solo_StartGet(0, &s_soloStart); s_soloFromOptions = 0; picked = 3;
 	frame(0, "review preset");
+	/* A configured name can be longer than the text editor's normal limit. */
+	memset(s_soloName, 'W', sizeof s_soloName - 1);
+	s_soloName[sizeof s_soloName - 1] = 0;
+	frame(0, "review long configured name");
+	CHECK(strstr(drawn, "...") != NULL);
+	{
+		struct GamepadBuffer editPad = {0};
+		s_soloSel = 0; s_soloEditJustEnded = 0;
+		editPad.buttonsTapped = BTN_CROSS;
+		MM_Solo_PageReview(NULL, &editPad);
+		CHECK(textCap == sizeof s_soloName);
+		CHECK(strlen(s_soloName) == sizeof s_soloName - 1);
+	}
+	frame(0, "review long editing name");
+	CHECK(strstr(drawn, "_\n") != NULL);
+	s_soloEditing = 0;
 
 	jobState = AP_SOLO_JOB_RUNNING; s_soloBusyJob = SOLO_JOB_TRACKS; s_soloPage = SOLO_BUSY;
 	frame(0, "busy");

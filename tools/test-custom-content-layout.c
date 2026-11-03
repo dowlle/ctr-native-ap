@@ -25,6 +25,7 @@ void DecalFont_DrawLineOT(char *s, int x, int y, s16 f, int flags, uint32_t *ot)
 {
 	int w = DecalFont_GetLineWidth(s, f);
 	(void)ot;
+	CHECK(panels == 0);
 	if (flags & JUSTIFY_CENTER) x -= w / 2;
 	else if (flags & JUSTIFY_RIGHT) x -= w;
 	CHECKM(x >= 0x18 && x + w <= 0x1E8 && y + 8 <= 0xCE, s);
@@ -46,6 +47,7 @@ static int highlights;
 void CTR_Box_DrawClearBox(const RECT *r, const Color *c, int t, uint32_t *ot)
 {
 	(void)c; (void)t; (void)ot;
+	CHECK(panels == 0);
 	CHECK(r->x >= 0x18 && r->x + r->w <= 0x1E8);
 	highlights++;
 }
