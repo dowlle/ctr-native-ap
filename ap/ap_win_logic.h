@@ -27,9 +27,10 @@ extern "C" {
 
 #define AP_WL_VERSION_KNOWN 2
 
-// Pool sizes. The apworld keeps the serialised block under 32 KiB and the spec
-// asks native to accept up to 64 KiB; even 64 KiB of the smallest term ("true,")
-// stays under these. A block that does not fit is refused as a whole.
+// Pool sizes. Version 1 retains its historical 32 KiB export budget. Version 2
+// includes hint-only checks and may exceed that budget; generated all-family
+// and wide-pool graphs are verified against these tables by native roundtrip.
+// A block that does not fit is refused as a whole, never partially evaluated.
 #define AP_WL_MAX_NODES    16384
 #define AP_WL_MAX_KIDS     16384
 #define AP_WL_MAX_IDS      16384
