@@ -18,6 +18,7 @@
 #include <stdio.h>
 
 #include "ap_win_logic.h"
+#include "ap_pad_hints_logic.h"
 #include "ap_hooks.h"   // AP_LogLine, AP_TrialTrackConfigured, AP_CortexTrackActive
 #include "ap_net.h"     // ap_net_location_checked
 #include "ap_seedcfg.h" // ctr_cfg, ctr_cfg_active
@@ -80,6 +81,12 @@ static AP_WinLogicEnv AP_WinEnvNow(void)
 	env.character_unlocks = ctr_cfg.character_unlocks ? 1 : 0;
 	env.unreliable = g_wl_tally.overflow;
 	return env;
+}
+
+int AP_LocationInLogic(long long code)
+{
+	AP_WinLogicEnv env = AP_WinEnvNow();
+	return AP_PadHint_InLogic(&ctr_win_logic, &env, code);
 }
 
 static long AP_WinBitCode(int bit)

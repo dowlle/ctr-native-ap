@@ -7,6 +7,7 @@
 // the transport is selected from the uri scheme passed to ap_net_init().
 
 #include "ap_editstat_bounds.h" // AP_NET_EDITSTAT_COUNT / _MIN / _MAX
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -331,6 +332,11 @@ int ap_net_wumpa_bought(long long code);
 int ap_net_wumpa_pending(void);
 int ap_net_wumpa_buy(long long code, int price, int unlock);
 void ap_net_wumpa_hint(const long long *codes, int n);
+// #124 Pad Approach Hints (ap_pad_hints_logic.h). Ready once connected and
+// the room's latch of hinted codes is read. ap_net_pad_approach_hint hints the
+// given open codes that are not latched yet and latches them; returns how many.
+int ap_net_pad_hints_ready(void);
+int ap_net_pad_approach_hint(int physLevelID, const int64_t *open, int n);
 
 #ifdef __cplusplus
 }

@@ -863,6 +863,8 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap);
 // legs' boxes and Wumpa exactly as the counts do. Buffers passed here must hold
 // AP_PAD_DISPLAY_BITS_MAX bits (worst case is a Gem Cup, 85).
 #define AP_PAD_DISPLAY_BITS_MAX 96
+// Pad Approach Hints (#124): call while the pad at levelID shows its name.
+void AP_PadApproachHints(int levelID);
 int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap);
 
 // ── Prize-slot layout (issue #59) ──
