@@ -37,8 +37,12 @@ static int g_starting_applied = 1;
 // reset) so a mid-cup receipt cannot leak into the next leg's load gap.
 static int g_countdown_seen = 0;
 
-// #249: the held-at-finish payout, armed when a new attempt's countdown is seen.
+// #249: the full-count finish payout, armed when a new attempt's countdown is seen.
 static AP_WumpaFinishLatch g_finish_latch = {0};
+// -1 until the attempt first needs the full count. Only the real kart's fruit
+// is capped; this count stays exposed to hits until a legitimate finish.
+static int g_race_wumpa = -1;
+static int g_wumpa_race_pending = 0;
 
 // #249: does this seed bank fruit? Never under the unlimited-fruit cheat.
 static int AP_WumpaBanking(void)
@@ -93,19 +97,52 @@ static void AP_WumpaBank(int n, const char *why)
 	AP_LogLine(msg);
 }
 
-void AP_WumpaBankKart(struct Driver *driver, int held, int delta)
+static int AP_WumpaRaceTracking(struct Driver *driver)
 {
 	struct GameTracker *gGT = sdata->gGT;
-	if (!AP_WumpaBanking() || gGT == 0 || driver == 0 || driver != gGT->drivers[0])
-		return;
+	if (!ctr_cfg_active() || ctr_cfg.schema_newer || gGT == 0 || driver == 0 || driver != gGT->drivers[0])
+		return 0;
+	if ((gGT->gameMode2 & CHEAT_WUMPA) != 0)
+		return 0;
 	if ((driver->actionsFlagSet & ACTION_BOT) != 0 || !AP_WumpaAdventureRace(gGT))
-		return;
-	AP_WumpaBank(AP_WumpaBankOverflow(held, delta), "past 10");
+		return 0;
+	return g_countdown_seen && LOAD_IsOpen_RacingOrBattle() && sdata->Loading.stage == LOAD_IDLE;
+}
+
+// Receipts run before the per-frame countdown observer. Classify a receipt
+// from the live scene, without requiring that observer to have run already.
+// A receipt during pause or on the way out belongs to this attempt as well.
+static int AP_WumpaReceiptInRace(void)
+{
+	struct GameTracker *gt = sdata->gGT;
+	struct Driver *d = gt ? gt->drivers[0] : 0;
+	return ctr_cfg_active() && !ctr_cfg.schema_newer && AP_WumpaAdventureRace(gt) &&
+	       !(gt->gameMode2 & CHEAT_WUMPA) && LOAD_IsOpen_RacingOrBattle() && d &&
+	       !(d->actionsFlagSet & (ACTION_BOT | ACTION_RACE_FINISHED)) &&
+	       !(gt->gameMode1 & (END_OF_RACE | MAIN_MENU | GAME_CUTSCENE));
+}
+
+int AP_WumpaRaceCount(struct Driver *driver)
+{
+	if (driver == 0) return 0;
+	return AP_WumpaRaceTracking(driver) && g_race_wumpa >= 0 ? g_race_wumpa : driver->numWumpas;
+}
+
+int AP_WumpaRaceModify(struct Driver *driver, int delta)
+{
+	long long next;
+	if (!AP_WumpaRaceTracking(driver)) return 0;
+	next = (long long)(g_race_wumpa >= 0 ? g_race_wumpa : driver->numWumpas) + delta;
+	if (next < 0) next = 0;
+	if (next > 2147483647) next = 2147483647;
+	g_race_wumpa = (int)next;
+	driver->numWumpas = next > AP_WUMPA_MAX ? AP_WUMPA_MAX : (int)next;
+	return 1;
 }
 
 // #249 hub counter (decision 20, 2026-10-28): the spendable balance and the
 // lifetime banked total, centred below the relic, key and trophy row in a 1P
-// hub. The race HUD keeps only the retail count of this race's fruit.
+// hub. The race HUD uses the full count of this race's fruit.
 void AP_WumpaDrawHub(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -128,10 +165,10 @@ void AP_WumpaOnRaceFinish(struct Driver *driver, int wasHuman, int held)
 	int pay;
 	if (gGT == 0 || driver == 0 || driver != gGT->drivers[0])
 		return;
-	pay = AP_WumpaFinishTake(&g_finish_latch, held, AP_RaceAttemptIsForcedLoss());
+	pay = AP_WumpaFinishTake(&g_finish_latch, g_race_wumpa >= 0 ? g_race_wumpa : held, AP_RaceAttemptIsForcedLoss());
 	if (!AP_WumpaBanking() || !wasHuman || !AP_WumpaAdventureRace(gGT))
 		return;
-	AP_WumpaBank(pay, "held at the finish");
+	AP_WumpaBank(pay, "collected at the finish");
 }
 
 // The local human player. Single-player Adventure: drivers[0]. Same convention as
@@ -151,6 +188,16 @@ void AP_WumpaReceive(int count)
 
 	if (count <= 0)
 		return;
+	// In-race receipts join the exposed race total, never the wallet. The
+	// normal tick applies them through ModifyWumpa, including past ten.
+	if (AP_WumpaReceiptInRace())
+	{
+		long long pending = (long long)g_wumpa_race_pending + count;
+		g_wumpa_race_pending = pending > 2147483647 ? 2147483647 : (int)pending;
+		snprintf(msg, sizeof msg, "[AP WUMPA] held for this race +%d (pending %d)\n", count, g_wumpa_race_pending);
+		AP_LogLine(msg);
+		return;
+	}
 
 	// #144: report what actually happened. The fruit is held for the kart
 	// (handed over at the next race start, or on the next frame mid-race); a
@@ -258,6 +305,8 @@ void AP_WumpaTick(struct GameTracker *gGT)
 	{
 		g_countdown_seen = 0;
 		g_starting_applied = 0;
+		g_race_wumpa = -1;
+		g_wumpa_race_pending = 0;
 	}
 	else if (gGT->trafficLightsTimer >= 1)
 	{
@@ -268,7 +317,7 @@ void AP_WumpaTick(struct GameTracker *gGT)
 		g_countdown_seen = 1;
 	}
 
-	if (g_wumpa_pending <= 0 && (g_wumpa_starting <= 0 || g_starting_applied))
+	if (g_wumpa_pending <= 0 && g_wumpa_race_pending <= 0 && (g_wumpa_starting <= 0 || g_starting_applied))
 		return;
 
 	// Race window: mid-race, countdown finished, not paused/menu/cutscene/EOR.
@@ -306,6 +355,11 @@ void AP_WumpaTick(struct GameTracker *gGT)
 		g_starting_applied = 1;
 	}
 
+	if (g_wumpa_race_pending > 0)
+	{
+		RB_Player_ModifyWumpa(local, g_wumpa_race_pending);
+		g_wumpa_race_pending = 0;
+	}
 	if (g_wumpa_pending <= 0)
 		return;
 
