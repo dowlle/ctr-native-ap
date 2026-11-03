@@ -703,6 +703,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				                   gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 30, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
 
 #ifdef CTR_AP
+				// Pad Approach Hints (#124, ruling of 2026-07-20): the name is on
+				// screen, so the pad hints its open checks (off by default).
+				AP_PadApproachHints(levelID);
 				int apBoxesLeft = 0;
 				// A trophy-complete pad can deliberately stay raceable while this
 				// destination still owns unchecked AP boxes (#232). Without an

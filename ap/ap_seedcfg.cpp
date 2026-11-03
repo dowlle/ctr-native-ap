@@ -1374,12 +1374,21 @@ struct WlParser
 		}
 		if (tag == "cap")
 		{
-			if (arity != 2)
+			if (arity != 2 && arity != 3)
 				return fail("cap has wrong arity"), -1;
 			if (!exact_int(t[1], 0, 3, &x))
 				return fail("cap boost is not an integer 0..3"), -1;
 			if (!exact_int(t[2], -1, 15, &y))
 				return fail("cap racer is not an integer -1..15"), -1;
+			if (arity == 3)
+			{
+				if (wl->version < 2)
+					return fail("cap stats requires version 2"), -1;
+				long long stats;
+				if (!exact_int(t[3], 0, 2, &stats))
+					return fail("cap stats mode is not an integer 0..2"), -1;
+				return new_node(AP_WL_T_STATCAP, (long)x, (long)y, (long)stats);
+			}
 			return new_node(AP_WL_T_CAP, (long)x, (long)y, 0);
 		}
 		if (tag == "ref")
@@ -1411,8 +1420,8 @@ struct WlParser
 	static int kind_from(const std::string &s)
 	{
 		static const char *names[] = {"trophy", "sapphire", "gold", "platinum", "ctr",
-		                              "boss", "gem", "crystal", "oxide", "oxide_final"};
-		for (int i = 0; i < 10; i++)
+		                              "boss", "gem", "crystal", "oxide", "oxide_final", "hint"};
+		for (int i = 0; i < 11; i++)
 			if (s == names[i])
 				return AP_WL_KIND_TROPHY + i;
 		return 0;
@@ -1484,6 +1493,8 @@ struct WlParser
 			auto rule = c.find("rule");
 			if (kind == c.end() || !kind->is_string() || kind_from(kind->get<std::string>()) == 0)
 				return fail("check " + it.key() + " kind is missing or unknown");
+			if (kind->get<std::string>() == "hint" && wl->version < 2)
+				return fail("hint kind requires version 2");
 			long long r;
 			if (region == c.end() || !exact_int(*region, 0, (long long)wl->region_count - 1, &r))
 				return fail("check " + it.key() + " region is missing or out of range");
@@ -1571,14 +1582,15 @@ static void ap_seedcfg_parse_win_logic(const nlohmann::json &j)
 			           "every race loss sends (0.2.3 rule)\n", ver, AP_WL_VERSION_KNOWN);
 			return;
 		}
-		if (v == b.end() || !WlParser::exact_int(*v, AP_WL_VERSION_KNOWN, AP_WL_VERSION_KNOWN, &ver))
+		if (v == b.end() || !WlParser::exact_int(*v, 1, AP_WL_VERSION_KNOWN, &ver))
 		{
 			wl->state = AP_WL_INVALID;
-			std::snprintf(wl->problem, sizeof wl->problem, "%s", "version is missing or not 1");
+			std::snprintf(wl->problem, sizeof wl->problem, "%s", "version is missing or not 1..2");
 			ap_cfg_log("[AP CFG] win_logic refused (%s): every race loss sends (0.2.3 rule)\n",
 			           wl->problem);
 			return;
 		}
+		wl->version = (int)ver;
 	}
 
 	WlParser p;
@@ -1604,7 +1616,6 @@ static void ap_seedcfg_parse_win_logic(const nlohmann::json &j)
 		           wl->problem);
 		return;
 	}
-	wl->version = AP_WL_VERSION_KNOWN;
 	wl->state = AP_WL_VALID;
 	ap_cfg_log("[AP CFG] win_logic v%d: %d win check(s), %d region(s), %d famil%s, %d term(s), "
 	           "%d start item id(s)\n",
@@ -2150,6 +2161,7 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.color_boxes_by_item = 0;
 	ctr_cfg.reserve_top_up = 0;
 	ctr_cfg.spoiler_items = 0;
+	ctr_cfg.pad_approach_hints = 0;
 	ctr_cfg.seed_box_locations = 0;
 	// Podium checks -> disabled + all rungs absent (-1) until parsed below.
 	ctr_cfg.podium_enabled = 0;
@@ -2186,7 +2198,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// from its input, then apply them only after that plan was admitted. A
 	// non-Boolean value stays in and the validator refuses it as before.
 	// Legacy options are read below.
-	static const char *const kAdditiveContentFields[] = {"reserve_top_up", "spoiler_items"};
+	// #124 adds "pad_approach_hints" the same way.
+	static const char *const kAdditiveContentFields[] = {"reserve_top_up", "spoiler_items", "pad_approach_hints"};
 	bool strip_additive = false;
 	if (j.is_object() && j.contains("content_plan") && j.contains("ctr_options") && j["ctr_options"].is_object())
 		for (const char *key : kAdditiveContentFields)
@@ -2208,6 +2221,9 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		{
 			ctr_cfg.reserve_top_up = json_int(j["ctr_options"], "reserve_top_up", 0) != 0;
 			ctr_cfg.spoiler_items = json_int(j["ctr_options"], "spoiler_items", 0) != 0;
+			ctr_cfg.pad_approach_hints = json_int(j["ctr_options"], "pad_approach_hints", 0) != 0;
+			if (ctr_cfg.pad_approach_hints)
+				ap_cfg_log("[AP CFG] pad_approach_hints=1 -> approaching an open pad hints its open checks once\n");
 		}
 	}
 	else

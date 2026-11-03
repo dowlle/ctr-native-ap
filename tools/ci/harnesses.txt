@@ -140,6 +140,8 @@ tools/test-cortex-track-seedcfg.cpp
 tools/test-cortex-music.c
 tools/test-cv-tracker-letters.c
 tools/test-pad-glow-items.c
+tools/test-pad-approach-hints.cpp
+tools/test-pad-approach-hints-production.py
 tools/test-picker-infoline.c
 tools/test-podium-seedcfg.cpp
 tools/test-podium-skip.c
