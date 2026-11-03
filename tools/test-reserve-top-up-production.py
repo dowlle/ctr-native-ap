@@ -100,9 +100,9 @@ parser = r'''
 extern "C" void AP_LogLine(const char *) {}
 int main(int argc,char **argv){
  ap_seedcfg_parse_json(nlohmann::json{{"ctr_options",{{"schema_version",18},{"reserve_top_up",true}}}});
- assert(ctr_cfg.reserve_top_up==1);
+ assert(!ctr_cfg_active()&&ctr_cfg.reserve_top_up==0);
  ap_seedcfg_parse_json(nlohmann::json{{"ctr_options",{{"schema_version",18},{"reserve_top_up",false}}}});
- assert(ctr_cfg.reserve_top_up==0);
+ assert(!ctr_cfg_active()&&ctr_cfg.reserve_top_up==0);
  assert(argc==2);
  std::ifstream input(argv[1]);nlohmann::json plan;input>>plan;
  plan["ctr_options"]["reserve_top_up"]=true;
@@ -117,9 +117,11 @@ int main(int argc,char **argv){
  plan["ctr_options"].erase("unrecognized_option");
  plan["content_plan"]["version"]=99;
  ap_seedcfg_parse_json(plan);assert(!ctr_cfg_active()&&ctr_cfg.reserve_top_up==0);
- ap_seedcfg_parse_json(nlohmann::json{{"ctr_options",{{"schema_version",18},{"reserve_top_up",true}}}});
+ std::ifstream reset_input(argv[1]);reset_input>>plan;
+ plan["ctr_options"]["reserve_top_up"]=true;
+ ap_seedcfg_parse_json(plan);assert(ctr_cfg_active()&&ctr_cfg.reserve_top_up==1);
  ap_seedcfg_parse_json(nlohmann::json{{"ctr_options",{{"schema_version",18}}}});
- assert(ctr_cfg.reserve_top_up==0);
+ assert(!ctr_cfg_active()&&ctr_cfg.reserve_top_up==0);
 }
 '''
 with tempfile.TemporaryDirectory(prefix="ctr-reserve-top-up-") as tmp:

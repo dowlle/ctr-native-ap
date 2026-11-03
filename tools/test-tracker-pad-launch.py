@@ -365,7 +365,7 @@ using J = nlohmann::json;
 int main(int argc, char **argv){
  // A room without a plan: the key is not read, whatever it says.
  J j={{"ctr_options",{{"schema_version",18},{"tracker_pad_launch",true},{"race_type_selector","productive"}}}};
- ap_seedcfg_parse_json(j);assert(ctr_cfg_active()&&!ap_content_plan_pad_client()->present);
+ ap_seedcfg_parse_json(j);assert(!ctr_cfg_active()&&!ap_content_plan_pad_client()->present);
  assert(argc==2);
  std::ifstream input(argv[1]);J plan;input>>plan;
  // A plan from before the record: nothing.
@@ -390,7 +390,7 @@ arrive = tick.index("AP_TrackerLaunchPadArrives(ctr_cfg_warp_phys(levelID), leve
 assert tick.index("dist = x * x + y * y + z * z;") < arrive
 for gate in ("if ((dist > 0x8fff) && (warppadObj->boolEnteredWarppad == 0))",
              "AP_PadState(ctr_cfg_warp_phys(warppadObj->levelID), warppadObj->levelID) == 5",
-             "if (!ctr_cfg_racer_lock_met(physLevelID))",
+             "!AP_ContentPadOpen(pad)) goto WarpPad_AnimateOpen;",
              "AP_ContentMenuRows(pad, &apRsRows);"):
     assert arrive < tick.index(gate), gate
 assert "dist = 0;" in tick[arrive:arrive + 1500] and "AP_TrackerLaunchTaken();" in tick[arrive:arrive + 1500]

@@ -104,6 +104,16 @@ static nlohmann::json seed18(const nlohmann::json &items)
 	return d;
 }
 
+// Parse the same production trap block through an admitted current plan.
+// Historical generated identities remain a frozen registry corpus.
+static void parse_current_traps(const nlohmann::json &old)
+{
+    nlohmann::json current = load("tools/fixtures/content-plan/global-checks.json");
+    current.erase("trap_identities");
+    if (old.contains("trap_identities")) current["trap_identities"] = old["trap_identities"];
+    ap_seedcfg_parse_json(current);
+}
+
 int main()
 {
 	const nlohmann::json fx = load("tools/fixtures/trap_identities.json");
@@ -135,7 +145,7 @@ int main()
 	const nlohmann::json sd = load("tools/fixtures/trap-identities/seed_slot_data.json");
 	const nlohmann::json placed = load("tools/fixtures/trap-identities/seed_placed_traps.json")["placed"];
 	log_lines = 0;
-	ap_seedcfg_parse_json(sd);
+	parse_current_traps(sd);
 	expect(ctr_cfg.schema_version == 18, "generated seed is schema 18 and admitted");
 	expect(ctr_cfg.schema_newer == 0, "schema 18 is not newer than this build");
 	expect(ctr_trap_identities.required == 1, "schema 18 requires the block");
@@ -158,7 +168,7 @@ int main()
                "older schema-18 seed resolves only its declared traps");
     }
     const auto clocked=load("tools/fixtures/trap-identities/clocked_out.json");
-    ap_seedcfg_parse_json(clocked["slot_data"]);
+    parse_current_traps(clocked["slot_data"]);
     for(size_t i=0;i<rows.size();++i)
         expect(resolve_id(rows[i]["item_id"])==(clocked["slot_data"]["trap_identities"]["items"].contains(
                    std::to_string(rows[i]["item_id"].get<long long>()))?(int)i:-1),
@@ -166,7 +176,7 @@ int main()
     expect(std::find(clocked["drawn_trap_ids"].begin(),clocked["drawn_trap_ids"].end(),35010206)!=clocked["drawn_trap_ids"].end(),
            "real generator drew the minted Clocked Out item");
     const auto reverse=load("tools/fixtures/trap-identities/reverse_camera.json");
-    ap_seedcfg_parse_json(reverse["slot_data"]);
+    parse_current_traps(reverse["slot_data"]);
     for(size_t i=0;i<rows.size();++i)
         expect(resolve_id(rows[i]["item_id"])==(int)i,"new generated seed resolves every trap identity");
     expect(std::find(reverse["drawn_trap_ids"].begin(),reverse["drawn_trap_ids"].end(),35010207)!=reverse["drawn_trap_ids"].end(),
@@ -189,26 +199,26 @@ int main()
 	nlohmann::json missing = sd;
 	missing.erase("trap_identities");
 	log_lines = 0;
-	ap_seedcfg_parse_json(missing);
-	expect(ctr_trap_identities.state == AP_TRAP_IDS_INVALID, "schema 18 without the block is refused");
-	expect(log_lines == 1, "a refused block logs one line");
-	expect(resolve_id(35010016) == -1 && resolve_id(35010193) == -1, "a refused block fires no trap");
+	parse_current_traps(missing);
+	expect(ctr_cfg_active() && ctr_trap_identities.required == 0, "plan without optional identities uses frozen table");
+
+	expect(resolve_id(35010016) == AP_TRAP_ICY, "optional block absence retains the frozen registry");
 
 	nlohmann::json newer = sd;
 	newer["trap_identities"]["version"] = 2;
-	ap_seedcfg_parse_json(newer);
+	parse_current_traps(newer);
 	expect(ctr_trap_identities.state == AP_TRAP_IDS_INVALID, "an unknown block version is refused");
 
 	nlohmann::json bad = sd;
 	bad["trap_identities"]["items"] = nlohmann::json::array();
-	ap_seedcfg_parse_json(bad);
+	parse_current_traps(bad);
 	expect(ctr_trap_identities.state == AP_TRAP_IDS_INVALID, "items that is not a map is refused");
 
 	// One contradiction (icy_road named for the Low Gravity item), one unknown
 	// key on a known item, one unknown item id, one non-numeric id; the rest
 	// stay usable.
 	log_lines = 0;
-	ap_seedcfg_parse_json(seed18({{"35010016", "icy_road"},
+	parse_current_traps(seed18({{"35010016", "icy_road"},
 	                              {"35010017", "icy_road"},
 	                              {"35010019", "clocked_out"},
 	                              {"35010194", "clocked_out"},

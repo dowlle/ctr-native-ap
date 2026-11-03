@@ -1,5 +1,5 @@
 // g++ -m32 -std=c++17 -DCTR_AP -I ap -I . -I include -I ap/vendor/json/include
-//     tools/test-hit-encounter-production.cpp ap/ap_seedcfg.cpp
+//     tools/test-hit-encounter-production.cpp
 //     -o /tmp/test-hit-encounter-production && /tmp/test-hit-encounter-production
 //
 // Production coverage for the Hit Character encounter GATHER (ticket 06). The
@@ -15,7 +15,7 @@
 // Build + run (from the repo root):
 //   g++ -m32 -std=c++17 -DCTR_AP -I ap -I . -I include \
 //       -I ap/vendor/json/include tools/test-hit-encounter-production.cpp \
-//       ap/ap_seedcfg.cpp -o /tmp/test-hit-encounter-production && \
+//       -o /tmp/test-hit-encounter-production && \
 //       /tmp/test-hit-encounter-production
 
 #include <cstdio>
@@ -26,7 +26,17 @@
 
 #include <nlohmann/json.hpp>
 
-#include "../ap/ap_seedcfg.h"
+#include "../ap/ap_seedcfg.cpp"
+
+// Runtime unit boundary: parse the real retained encounter block without
+// pretending a historical fixture is an admitted current room. Full plan and
+// network admission have separate production tests. No room path uses this seam.
+static void install_hit_runtime(const nlohmann::json &record)
+{
+    ap_seedcfg_parse_json(nlohmann::json::object());
+    if (parse_hit_character(record, true)) ctr_cfg.schema_version = 18;
+}
+
 
 // ── stubbed network / sink ─────────────────────────────────────────────────
 static std::set<long long> g_checked;
@@ -147,7 +157,7 @@ static bool field_has(const int *ids, int n, int id)
 
 static void test_activation_and_candidates(void)
 {
-	ap_seedcfg_parse_json(g_fixture);
+	install_hit_runtime(g_fixture);
 	expect(ap_seedcfg_hit_encounters() != NULL, "fixture activates encounters");
 	expect_eq(AP_HitEncounterEnabled(), 1, "feature enabled");
 	expect(AP_HitEncounterOrder(3) != NULL, "track 3 order");
@@ -193,7 +203,7 @@ static void test_trigger_to_next_load(void)
 	int ids[AP_HIT_FIELD_MAX];
 
 	reset_state();
-	ap_seedcfg_parse_json(g_fixture);
+	install_hit_runtime(g_fixture);
 
 	// Before either authoritative win: Fake Crash is not eligible, so Crash
 	// Cove's field is defaults only. Default racers are Hit targets, so a
@@ -241,7 +251,7 @@ static void test_three_guests_three_extras(void)
 	// Fake Crash, Penta and N. Tropy unlocked and unhit: all three seated, three
 	// extra models, at every supported destination.
 	reset_state();
-	ap_seedcfg_parse_json(g_fixture);
+	install_hit_runtime(g_fixture);
 	g_checked.insert(35011000);
 	g_checked.insert(35011008);
 	g_checked.insert(35016200);
@@ -258,7 +268,7 @@ static void test_three_guests_three_extras(void)
 
 	// Five unhit guests: three per race, rotating; two races cover all five.
 	reset_state();
-	ap_seedcfg_parse_json(g_fixture);
+	install_hit_runtime(g_fixture);
 	for (long code : {35011000L, 35011008L, 35016200L, 35011100L, 35011101L})
 		g_checked.insert(code);
 	{
@@ -285,7 +295,7 @@ static void test_race_snapshot(void)
 	int fresh = -1;
 
 	reset_state();
-	ap_seedcfg_parse_json(g_fixture);
+	install_hit_runtime(g_fixture);
 	for (long code : {35011000L, 35011008L, 35016200L, 35011100L, 35011101L})
 		g_checked.insert(code);
 
@@ -331,7 +341,7 @@ static void test_player_exclusion(void)
 	int ids[AP_HIT_FIELD_MAX];
 
 	reset_state();
-	ap_seedcfg_parse_json(g_fixture);
+	install_hit_runtime(g_fixture);
 	g_checked.insert(35011000); // Fake Crash eligible
 
 	// A player who is Fake Crash must not be seated as their own opponent.
@@ -354,7 +364,7 @@ static void test_player_exclusion(void)
 static void test_extras_for_all_players(void)
 {
 	reset_state();
-	ap_seedcfg_parse_json(g_fixture);
+	install_hit_runtime(g_fixture);
 	g_checked.insert(35011000); // Fake Crash eligible, unhit
 
 	for (int p = 0; p < 16; p++)
@@ -404,7 +414,7 @@ static void test_all_guest_extras(void)
 		for (int level = 0; level <= 17; level++)
 		{
 			reset_state();
-			ap_seedcfg_parse_json(g_fixture);
+			install_hit_runtime(g_fixture);
 			g_checked.insert(t->any_of[0]);
 			int ids[AP_HIT_FIELD_MAX];
 			int extras[3] = {-1, -1, -1};
@@ -421,7 +431,7 @@ static void test_all_guest_extras(void)
 static void test_generic_victim_dispatch(void)
 {
 	reset_state();
-	ap_seedcfg_parse_json(g_fixture);
+	install_hit_runtime(g_fixture);
 
 	// Generic dispatch maps ANY valid actual victim through the parsed sixteen
 	// locations, defaults included.
@@ -438,7 +448,7 @@ static void test_generic_victim_dispatch(void)
 static void test_negative_attribution(void)
 {
 	reset_state();
-	ap_seedcfg_parse_json(g_fixture);
+	install_hit_runtime(g_fixture);
 
 	struct Case
 	{
@@ -484,7 +494,7 @@ static void test_negative_attribution(void)
 static void test_repeat_and_reconnect_dedup(void)
 {
 	reset_state();
-	ap_seedcfg_parse_json(g_fixture);
+	install_hit_runtime(g_fixture);
 
 	g_emitCount = 0;
 	AP_HitEncounterOnDamage(14, 1, kAccepted);
@@ -511,7 +521,7 @@ static void test_repeat_and_reconnect_dedup(void)
 static void test_all_guest_eligibility(void)
 {
 	reset_state();
-	ap_seedcfg_parse_json(g_fixture);
+	install_hit_runtime(g_fixture);
 	const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
 	expect(h != NULL, "eligibility: encounters parsed");
 	if (!h)
@@ -527,7 +537,7 @@ static void test_all_guest_eligibility(void)
 		for (int i = 0; i < t->count; i++)
 		{
 			reset_state();
-			ap_seedcfg_parse_json(g_fixture);
+			install_hit_runtime(g_fixture);
 			g_checked.insert(t->any_of[i]);
 			expect_eq(AP_HitEncounterGuestEligible(g), 1,
 			          "any-of code unlocks the guest");
@@ -537,7 +547,7 @@ static void test_all_guest_eligibility(void)
 	// Growing checked sets on one guest's any-of list: each additional code keeps
 	// it eligible, and a code from another guest does not affect it.
 	reset_state();
-	ap_seedcfg_parse_json(g_fixture);
+	install_hit_runtime(g_fixture);
 	expect_eq(AP_HitEncounterGuestEligible(13), 0, "Penta ineligible initially");
 	g_checked.insert(35011000); // Fake Crash trigger only
 	expect_eq(AP_HitEncounterGuestEligible(13), 0, "unrelated code leaves Penta ineligible");
@@ -568,7 +578,7 @@ static void test_key_fallback_eligibility(void)
 	{
 		const nlohmann::json d = fallback_fixture(guests[i], counts[i]);
 		reset_state();
-		ap_seedcfg_parse_json(d);
+		install_hit_runtime(d);
 		expect(ap_seedcfg_hit_encounters() != NULL, "fallback: seed parsed");
 
 		for (int k = 0; k < counts[i]; k++)
@@ -591,7 +601,7 @@ static void test_key_fallback_eligibility(void)
 				          "Keys unlock only the fallback guest");
 		// A trigger win still unlocks the fallback guest at zero Keys.
 		reset_state();
-		ap_seedcfg_parse_json(d);
+		install_hit_runtime(d);
 		g_heldKeys = 0;
 		g_checked.insert(ap_seedcfg_hit_encounters()->triggers[guests[i] - 8].any_of[0]);
 		expect_eq(AP_HitEncounterGuestEligible(guests[i]), 1,
@@ -600,7 +610,7 @@ static void test_key_fallback_eligibility(void)
 
 	// Without a fallback, Keys change nothing (block schema 2 behaviour).
 	reset_state();
-	ap_seedcfg_parse_json(g_fixture);
+	install_hit_runtime(g_fixture);
 	g_heldKeys = 4;
 	for (int g = 8; g <= 15; g++)
 		expect_eq(AP_HitEncounterGuestEligible(g), 0,
@@ -611,7 +621,7 @@ static void test_key_fallback_eligibility(void)
 	// plan carries its model.
 	{
 		reset_state();
-		ap_seedcfg_parse_json(fallback_fixture(12, 3));
+		install_hit_runtime(fallback_fixture(12, 3));
 		unsigned char eligible[CTR_CFG_HIT_CHARACTER_COUNT];
 		unsigned char unchecked[CTR_CFG_HIT_CHARACTER_COUNT];
 		g_heldKeys = 3;
@@ -651,7 +661,7 @@ static void test_key_fallback_eligibility(void)
 static void test_seed_change_and_reconnect(void)
 {
 	reset_state();
-	ap_seedcfg_parse_json(g_fixture);
+	install_hit_runtime(g_fixture);
 	g_emitCount = 0;
 	AP_HitEncounterOnDamage(14, 1, kAccepted);
 	expect_eq(g_emitCount, 1, "seed A emits the check");
@@ -660,7 +670,7 @@ static void test_seed_change_and_reconnect(void)
 	// victim can be checked again under the new seed.
 	nlohmann::json other = g_fixture;
 	other["hit_character_encounters"]["policy"]["seed"] = 12345;
-	ap_seedcfg_parse_json(other);
+	install_hit_runtime(other);
 	AP_HitEncounterConnectReset();
 	g_emitCount = 0;
 	AP_HitEncounterOnDamage(14, 1, kAccepted);
@@ -678,7 +688,7 @@ static void test_seed_change_and_reconnect(void)
 static void test_default_target_opportunity(void)
 {
 	reset_state();
-	ap_seedcfg_parse_json(g_fixture);
+	install_hit_runtime(g_fixture);
 
 	expect_eq(AP_HitEncounterOpportunity(0, 0), 1, "lowest unchecked default");
 	g_checked.insert(35025001);
@@ -699,12 +709,12 @@ static void test_boss_race_feature_off(void)
 	nlohmann::json off = g_fixture;
 	off["ctr_options"]["hit_character"] = false;
 	off.erase("hit_character_encounters");
-	ap_seedcfg_parse_json(off);
+	install_hit_runtime(off);
 	g_emitCount = 0;
 	// Boss-race accepted flags (raceSupported bit included); feature off -> none.
 	AP_HitEncounterOnDamage(10, 1, kAccepted);
 	expect_eq(g_emitCount, 0, "boss race with feature off emits nothing");
-	ap_seedcfg_parse_json(g_fixture);
+	install_hit_runtime(g_fixture);
 }
 
 // The roster swap through the real gather (ap_roster_swap.h): the parsed boss
@@ -728,7 +738,7 @@ static void test_roster_swap(void)
 	int n;
 
 	// Hit on: Crash takes hub 1. He waits for that garage, a Collect counts.
-	ap_seedcfg_parse_json(g_fixture);
+	install_hit_runtime(g_fixture);
 	reset_state();
 	swap_bosses(0, 9, 11, 8, 0);
 	expect(!AP_HitEncounterGuestEligible(0), "Crash on hub 1 leaves the pool");
@@ -742,7 +752,7 @@ static void test_roster_swap(void)
 	// No Hit block: the same pool, with Roo in Crash's place.
 	off["ctr_options"]["hit_character"] = false;
 	off.erase("hit_character_encounters");
-	ap_seedcfg_parse_json(off);
+	install_hit_runtime(off);
 	expect(!AP_HitEncounterFieldOn(), "no swap and no gauntlet: the stock field stays");
 	expect(AP_HitEncounterOrder(3) == NULL, "no order to draw from");
 	reset_state();
@@ -795,7 +805,7 @@ static void test_roster_swap(void)
 	expect(!AP_HitEncounterShouldApply(1, 3, 0, 0, 0, 0, 0, 0, 1), "an ordinary race keeps the retail field");
 
 	std::memset(&ctr_boss_encounters, 0, sizeof ctr_boss_encounters);
-	ap_seedcfg_parse_json(g_fixture);
+	install_hit_runtime(g_fixture);
 	reset_state();
 }
 

@@ -8,86 +8,11 @@
 #include "ap_verify.h"
 #include "ap_box_map.h"
 #include "ap_verify_logic.h"
-#include "ap_verify_wumpa.h"
-#include "ap_verify_families.h"
 #include "ap_lettersanity.h"
 #include "ap_cup_box_policy.h" // AP_HubKeysForPad: the shared hub-spine Key table
 #include "ap_relic_goal.h"
 #include "ap_oxide_encounter.h" // the ONE Oxide encounter + gate decision (#320/#321)
 #include "ap_content_plan.h"    // the content-plan sweep (#133 PR 8)
-
-// ---------------------------------------------------------------------------
-// Static vanilla topology (native is the source of truth).
-//
-// The hub-spine Key table this sweep needs used to be a private copy here. It
-// now lives in ap_cup_box_policy.h, because the Gem Cup AP-box policy (WO-A3)
-// needs the SAME structural reachability predicate and two copies of a topology
-// table drift. AP_HubKeysForPad is that table's accessor: received Keys needed
-// to stand at a physical pad, -1 for a non-adventure pad. Values unchanged.
-// ---------------------------------------------------------------------------
-
-// Keys required to stand at each boss garage (garage hub). Oxide's own Key-4
-// requirement (boss_req[4]) subsumes his Gem Stone Valley hub cost.
-static const int ap_vf_boss_keys[4] = {
-	/* 0 roo (N. Sanity) */ 0, /* 1 papu (Lost Ruins) */ 1,
-	/* 2 komodo (Glacier) */ 2, /* 3 pinstripe (Citadel) */ 3,
-};
-
-// Crystal arena LevelID for each crystal AdvProgress bit 111..114 (the
-// ap_locations.h order: Skull Rock, Rampage Ruins, Rocky Road, Nitro Court).
-static const int ap_vf_crystal_lid[4] = { 21, 19, 23, 18 };
-
-// ---------------------------------------------------------------------------
-// Location worklist: every location family the seed can carry. The maximum
-// wire set is 101 static + 80 podium + 270 boxes + 48 letters + 22 itemsanity
-// + 19 Wumpa + 6 custom Trophy/podium + 18 Relic Race Perfect + 4 trial-track
-// races + 16 Hit Character = 584 today. Keep a small margin for a future family
-// addition, while deriving every variable block from its owner.
-// ---------------------------------------------------------------------------
-#define AP_VF_CUSTOM_LOCATION_COUNT (2 + CTR_CFG_PODIUM_RUNG_COUNT + CTR_CFG_LETTER_COUNT)
-#define AP_VF_SIM_ITEM_COUNT (AP_CUSTOM_LETTER_VERIFY_FIRST + AP_CUSTOM_LETTER_VERIFY_COUNT)
-#define AP_VF_MAX_WIRE_LOCS (AP_LOCATION_TABLE_LEN + \
-	CTR_CFG_PODIUM_STORAGE_COUNT * CTR_CFG_PODIUM_RUNG_COUNT + \
-	AP_BOX_LOCATION_COUNT + CTR_CFG_LETTER_TRACK_COUNT * CTR_CFG_LETTER_COUNT + \
-	AP_ITEMSANITY_WEAPON_COUNT * 2 + CTR_CFG_WUMPA_TRACK_COUNT + \
-	CTR_CFG_WUMPA_CUSTOM_MAX + AP_VF_CUSTOM_LOCATION_COUNT + AP_VF_FAMILY_MAX)
-#define AP_VF_LOCATION_SAFETY_MARGIN 8
-#define AP_VF_MAX_LOCS (AP_VF_MAX_WIRE_LOCS + AP_VF_LOCATION_SAFETY_MARGIN)
-
-typedef char ap_vf_worklist_holds_max_wire_set[
-	(AP_VF_MAX_LOCS >= AP_VF_MAX_WIRE_LOCS) ? 1 : -1];
-
-typedef enum
-{
-	AP_VF_TROPHY = 0, // trophy race (dest 0..15) -> pad stage 1
-	AP_VF_TIER2,      // relic TT / token challenge  -> pad stage 1 + stage 2
-	AP_VF_TRIAL_TT,   // Slide/Turbo relic TT (dest 16/17) -> pad stage 1
-	AP_VF_PODIUM,     // podium rung (dest 0..15) -> pad stage 1
-	AP_VF_CRYSTAL,    // crystal bonus (arena dest)  -> pad stage 1
-	AP_VF_GEMCUP,     // gem cup reward (dest 100..104) -> pad stage 1
-	AP_VF_BOSS,       // boss race 0..3 -> garage hub keys + garage gate
-	AP_VF_OXIDE,      // N. Oxide's Challenge -> boss_req[4]
-	AP_VF_OXIDE_FIN,  // N. Oxide's Final Challenge -> boss_req[4] + relic mode
-	AP_VF_BOX,        // authored AP item box on a race track
-	AP_VF_LETTER,     // C/T/R pickup inside a token challenge
-	AP_VF_ITEMSANITY, // global weapon-use check (plain/juiced share access)
-	AP_VF_WUMPA,      // global reach-10-Wumpa check
-	AP_VF_CUSTOM,     // generic custom Trophy or podium rung -> assigned surface
-	AP_VF_CUSTOM_LETTER,
-	AP_VF_CUSTOM_CTR,
-	AP_VF_RELIC_PERFECT, // Relic Race Perfect (dest 0..17) -> that track's Sapphire rule
-	AP_VF_TRIAL_TROPHY,  // Slide/Turbo Trophy Race (dest 16/17) -> pad stage 1
-	AP_VF_TRIAL_CTR,     // Slide/Turbo CTR Token Challenge -> pad stage 1 + stage 2
-	AP_VF_HIT,           // Hit <Character> (detail = target engine id)
-} ap_vf_kind;
-
-typedef struct
-{
-	long code;    // AP location code
-	int  kind;    // ap_vf_kind
-	int  track;   // destination LevelID (races/trials/arenas/cups) or bossIdx
-	int  detail;  // podium rung / box slot (1-based) / letter / weapon index
-} ap_vf_loc;
 
 // ---------------------------------------------------------------------------
 // Verdict state (recomputed by the sweep, read by the log/banner).

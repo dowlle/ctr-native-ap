@@ -107,7 +107,8 @@ check('the goal ANDs the Wumpa arm on the lifetime total',
 gates = text('ap/ap_hooks_gates.c')
 check('the Oxide companion arm reads the lifetime total',
       'in.wumpaShort = !AP_WumpaGoalMet(ctr_wumpa_shop.goal, ap_net_wumpa_lifetime());' in gates)
-check('the verifier sweep treats the Wumpa arm as met', 'in.wumpaShort = 0;' in text('ap/ap_verify.c'))
+check('the plan verifier Wumpa goal follows reachable income',
+      'case WUMPA: return income();' in text('ap/ap_content_verify.hpp'))
 
 save = text('game/232/AH_SaveObj.c')
 check('the save screen prepares the WUMPA SHOP row before showing the menu',

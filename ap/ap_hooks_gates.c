@@ -432,23 +432,12 @@ int AP_BossReqMet(const ctr_req *r)
 	return AP_ReqMetCounts(r, ap_recv_count);
 }
 
-// Per-mode boss-garage gate for the four boss hubs (bossIdx 0..3 = Roo, Papu,
-// Komodo, Pinstripe). bossgarage_mode 0 (Original4Tracks) / 1 (SameHubTracks):
-// the garage opens once the player has WON each required race track for that boss
-// (ctr_cfg.boss_tracks[bossIdx][0..n-1], emitted by the apworld -- vanilla
-// LevelIDs for mode 0, destination-remapped LevelIDs for mode 1). A track counts
-// as WON when its trophy-race AP location has been checked --
-// AP_LocationCheckedByBit(trackLevelID + ADV_REWARD_FIRST_TROPHY), NOT
-// CHECK_ADV_BIT: in AP the AdvProgress trophy bit reflects RECEIVED items, not the
-// races the player actually won, so only the checked-location signal is correct
-// here. mode 2 (Trophies) and any boss with no track list fall back to the flat
-// trophy-count requirement via AP_BossReqMet. Oxide (bossIdx 4) is a key gate and
-// is never routed through this function.
+// The plan's garage requirement and venue admission. No normal track lists.
 int AP_BossGarageOpen(int bossIdx)
 {
 	// A content plan's garages are empty unless the plan has its `bosses`
-	// record (#133 PR 6); with it the parser filled boss_req and the venues
-	// like a normal room's, so the normal path below decides.
+	// record (#133 PR 6); with it the parser fills the shared boss_req and
+	// venue records used below.
 	if (ap_content_plan_active() && !ap_content_plan_bosses()->present) return 0;
 	if (bossIdx < 0 || bossIdx >= CTR_CFG_BOSS_COUNT)
 		return 1;
@@ -458,23 +447,7 @@ int AP_BossGarageOpen(int bossIdx)
 	if (bossIdx < AP_BOSS_VENUE_GARAGES && AP_BossGarageVenue(bossIdx) < 0)
 		return 0;
 
-	int mode = ctr_cfg.bossgarage_mode;
-	int n = ctr_cfg.boss_n_tracks[bossIdx];
-
-	if ((mode == 0 || mode == 1) && n > 0)
-	{
-		for (int i = 0; i < n; i++)
-		{
-			int track = ctr_cfg.boss_tracks[bossIdx][i];
-			if (track < 0)
-				continue;
-			if (!AP_LocationCheckedByBit(track + ADV_REWARD_FIRST_TROPHY))
-				return 0;
-		}
-		return 1;
-	}
-
-	// mode 2 (Trophies) or no track list -> flat trophy-count requirement.
+	// The plan mirrors the garage requirement into the shared runtime record.
 	return AP_BossReqMet(&ctr_cfg.boss_req[bossIdx]);
 }
 
@@ -1590,13 +1563,7 @@ int AP_GoalAdvert(char *out, int cap)
 	return 0;
 }
 
-// Trophy-track warp pad LOAD gate. When a per-seed requirement applies use it;
-// otherwise fall back verbatim to the Phase-1 rule (received trophies vs the
-// per-track numTrophiesToOpen). levelID is the physical pad LevelID (retail
-// adventure numbering), valid for the 28-wide ctr_cfg arrays for trophy tracks.
-// Racer lock for a physical pad, or -1 when it has none (#54/#209). Dense pads
-// 0..27 via racer_lock, cup pads 100..104 via gem_cup_racer_lock -- the same
-// two-array routing warp_pad_unlock uses, for the same reason.
+// Racer lock mirrored from the physical content-plan pad by the parser.
 int ctr_cfg_racer_lock(int physPadLevelID)
 {
 	if (!ctr_cfg_active())
@@ -1620,74 +1587,24 @@ int ctr_cfg_racer_lock_met(int physPadLevelID)
 
 int ctr_cfg_warp_unlocked(int levelID)
 {
-	if (ctr_cfg_arena_pad_disabled(levelID))
+	if (ap_content_plan_active())
+		return AP_ContentPadOpen(ap_content_plan_pad(levelID));
+	if (ctr_cfg_active())
 		return 0;
-	// Racer lock (#54/#209): ANDed on top of whatever the pad already asks for,
-	// never in place of it -- the apworld's rule does exactly the same thing
-	// (Rules.add_racer_lock_rules captures the base rule and ANDs), and the two
-	// sides have to agree or the golden rule is broken. Checked first so a
-	// locked pad reads closed at every call site that goes through this gate:
-	// the load gate, the spawn visual and the map advert are all one source.
-	if (!ctr_cfg_racer_lock_met(levelID))
-		return 0;
-
-	if (ctr_cfg_active() && levelID >= 0 && levelID < CTR_CFG_PAD_COUNT &&
-	    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
-		return AP_BossReqMet(&ctr_cfg.warp_pad_unlock[levelID].stage1);
-
-	// Cup PHYSICAL pads (100..104) live outside the dense warp_pad_unlock array.
-	// Under `merged` destination shuffle a race destination can be hosted on a cup
-	// pad, so ThTick's load gate (AH_WarpPad.c:713) recovers physLevelID = a cup
-	// LevelID and calls this. Key by cup colour into gem_cup_unlock (randomized
-	// stage1) else the vanilla "4 tokens of the cup's colour" rule -- the SAME
-	// predicate AP_PadStage1Met's cup branch uses. MUST run before the trophy
-	// fallback below, which would read data.metaDataLEV[100] out of bounds.
 	if (levelID >= 100 && levelID <= 104)
-	{
-		int cupIdx = levelID - 100;
-		if (ctr_cfg_active() && ctr_cfg.gem_cup_unlock[cupIdx].stage1.type != 0)
-			return AP_BossReqMet(&ctr_cfg.gem_cup_unlock[cupIdx].stage1);
-		return AP_GateCountTokenColour(cupIdx) >= 4;
-	}
-
-	// Phase-1 fallback: received trophies >= per-track threshold.
+		return AP_GateCountTokenColour(levelID - 100) >= 4;
+	if (levelID < 0 || levelID >= CTR_CFG_PAD_COUNT)
+		return 0;
 	return AP_GateCount(AP_IDX_TROPHY) >= data.metaDataLEV[levelID].numTrophiesToOpen;
 }
 
-// Trophy-track warp pad STAGE-2 gate (open-rando two-stage). Mirrors
-// ctr_cfg_warp_unlocked but reads stage2: when active and the pad has a stage2
-// requirement (type != 0) it returns owned >= count via AP_BossReqMet
-// (colour-aware). type 0 (no stage2 / collapsed-to-stage1 / flat-v1 slot_data /
-// inactive) returns 1 (always open), so the relic-Time-Trial + CTR-Token
-// menu opens the moment stage1 is met -- identical to the pre-two-stage flow.
-// physPadLevelID is the PHYSICAL pad LevelID, the same key stage1 uses.
+// Diagnostic stage-2 item gate. Mode entry additionally requires the first win.
 int ctr_cfg_warp_stage2_unlocked(int physPadLevelID)
 {
-	const ctr_req *r = ctr_cfg_warp_stage2_req(physPadLevelID);
-	if (r != 0)
-		return AP_BossReqMet(r);
-
-	// No stage2 requirement -> tier 2 opens as soon as stage1 is satisfied.
-	return 1;
-}
-
-// The stage-2 requirement record for a physical pad, or NULL when it has none.
-// Cup PHYSICAL pads (100..104): under `merged` shuffle a cup pad hosting a
-// trophy-race destination carries a REAL stage2 (contract §2 stage-2 rule -- the
-// apworld emits it into gem_cup_unlock), so it resolves here too. Single source
-// for the stage-2 key logic; the load gate above and the LInB re-lock advert
-// (AH_WarpPad.c) both resolve through it so gate and display cannot diverge.
-const ctr_req *ctr_cfg_warp_stage2_req(int physPadLevelID)
-{
-	if (!ctr_cfg_active())
-		return 0;
-	if (physPadLevelID >= 0 && physPadLevelID < CTR_CFG_PAD_COUNT &&
-	    ctr_cfg.warp_pad_unlock[physPadLevelID].stage2.type != 0)
-		return &ctr_cfg.warp_pad_unlock[physPadLevelID].stage2;
-	if (physPadLevelID >= 100 && physPadLevelID <= 104 &&
-	    ctr_cfg.gem_cup_unlock[physPadLevelID - 100].stage2.type != 0)
-		return &ctr_cfg.gem_cup_unlock[physPadLevelID - 100].stage2;
-	return 0;
+	const ctr_content_pad *pad = ap_content_plan_active()
+	    ? ap_content_plan_pad(physPadLevelID) : 0;
+	return !pad || !pad->has_stage2 ||
+	       AP_ContentStage2Owned(pad) >= pad->stage2_count;
 }
 
 #endif // CTR_AP

@@ -28,7 +28,6 @@
 #include "../ap/ap_seedcfg.h"
 #include "../ap/ap_relic_perfect.h"
 #include "../ap/ap_verify_logic.h"
-#include "../ap/ap_verify_families.h"
 
 extern void ap_seedcfg_parse_json(const nlohmann::json &j);
 extern "C" void AP_LogLine(const char *) {}
@@ -58,119 +57,6 @@ static nlohmann::json load(const char *path)
 	return nlohmann::json::parse(in);
 }
 
-static bool is_family_code(long c)
-{
-	return (c >= 35012400L && c <= 35012417L) || (c >= 35016200L && c <= 35016201L) ||
-		(c >= 35016210L && c <= 35016211L) || (c >= 35025000L && c <= 35025015L);
-}
-
-static_assert(AP_VF_FAMILY_MAX == 38, "18 perfect + 4 trial + 16 Hit rows");
-
-// ---------------------------------------------------------------------------
-// 1. Coverage
-// ---------------------------------------------------------------------------
-static void test_coverage(void)
-{
-	const char *base = "tools/fixtures/verify-families/all_seed20260927";
-	nlohmann::json slot = load((std::string(base) + ".slot_data.json").c_str());
-	nlohmann::json server = load((std::string(base) + ".locations.json").c_str());
-	AP_VerifyFamilyLocation rows[AP_VF_FAMILY_MAX];
-	int truncated = 0, n, i, per_family[4] = {0, 0, 0, 0};
-	std::set<long> want, got;
-
-	ap_seedcfg_parse_json(slot);
-	ok(ctr_cfg.relic_perfect_enabled == 1, "fixture: relic_perfect_checks parsed");
-	ok(ctr_cfg.hit.enabled && ctr_cfg.hit.valid, "fixture: hit_character_encounters parsed");
-	ok(ctr_cfg.trial_track_valid[0] && ctr_cfg.trial_track_valid[1],
-	   "fixture: trial_track_checks parsed");
-
-	for (auto &c : server)
-		if (is_family_code(c.get<long>()))
-			want.insert(c.get<long>());
-	ok(want.size() == 38, "fixture: the apworld created 38 family locations");
-
-	n = AP_VerifyFamilyWorklist(&ctr_cfg, rows, AP_VF_FAMILY_MAX, &truncated);
-	ok(n == 38 && !truncated, "all three families enumerate 38 rows, no truncation");
-	for (i = 0; i < n; i++)
-	{
-		got.insert(rows[i].code);
-		if (rows[i].family >= 0 && rows[i].family < 4)
-			per_family[rows[i].family]++;
-		switch (rows[i].family)
-		{
-		case AP_VF_FAMILY_RELIC_PERFECT:
-			ok(rows[i].code == AP_RelicPerfectExpectedCode(rows[i].track),
-			   "perfect row carries its LevelID " + std::to_string(rows[i].track));
-			break;
-		case AP_VF_FAMILY_TRIAL_TROPHY:
-			ok(rows[i].code == 35016200L + (rows[i].track - 16),
-			   "trial Trophy row carries LevelID " + std::to_string(rows[i].track));
-			break;
-		case AP_VF_FAMILY_TRIAL_CTR:
-			ok(rows[i].code == 35016210L + (rows[i].track - 16),
-			   "trial CTR row carries LevelID " + std::to_string(rows[i].track));
-			break;
-		case AP_VF_FAMILY_HIT:
-			ok(rows[i].code == 35025000L + rows[i].detail,
-			   "Hit row carries engine id " + std::to_string(rows[i].detail));
-			break;
-		default:
-			ok(false, "unknown family");
-		}
-	}
-	ok(got == want, "worklist codes == the seed's family location codes");
-	ok(per_family[AP_VF_FAMILY_RELIC_PERFECT] == 18 &&
-	   per_family[AP_VF_FAMILY_TRIAL_TROPHY] == 2 &&
-	   per_family[AP_VF_FAMILY_TRIAL_CTR] == 2 && per_family[AP_VF_FAMILY_HIT] == 16,
-	   "18 perfect, 2 trial Trophy, 2 trial CTR, 16 Hit");
-
-	// The boss identity table the Hit rule reads is keyed in
-	// AP_VF_HIT_BOSS_CODES order; check it against the wire mapping.
-	{
-		const auto &bosses = slot["hit_character_encounters"]["bosses"];
-		for (i = 0; i < CTR_CFG_HIT_BOSS_COUNT; i++)
-		{
-			std::string key = std::to_string(AP_VF_HIT_BOSS_CODES[i]);
-			ok(bosses.contains(key) &&
-			   bosses[key].get<int>() == ctr_cfg.hit.boss_identity[i],
-			   "boss identity row " + key);
-		}
-	}
-
-	// Truncation: a short buffer raises the flag and never overruns.
-	truncated = 0;
-	n = AP_VerifyFamilyWorklist(&ctr_cfg, rows, 10, &truncated);
-	ok(n == 10 && truncated, "short buffer: 10 rows and the truncation flag");
-
-	// A refused trial row is not payable, so it is not modelled either.
-	{
-		nlohmann::json bad = slot;
-		bad["trial_track_checks"]["locations"]["17"] = {35016201, -1};
-		ap_seedcfg_parse_json(bad);
-		truncated = 0;
-		n = AP_VerifyFamilyWorklist(&ctr_cfg, rows, AP_VF_FAMILY_MAX, &truncated);
-		ok(n == 36 && !ctr_cfg.trial_track_valid[1],
-		   "Turbo Track row refused (mode 2 without a CTR code): its 2 rows leave");
-	}
-	// Families off: nothing enumerates.
-	{
-		nlohmann::json off = slot;
-		off.erase("relic_perfect_checks");
-		off.erase("trial_track_checks");
-		off.erase("hit_character_encounters");
-		off["ctr_options"]["hit_character"] = false;
-		off["ctr_options"]["relic_perfect_checks"] = false;
-		ap_seedcfg_parse_json(off);
-		truncated = 0;
-		n = AP_VerifyFamilyWorklist(&ctr_cfg, rows, AP_VF_FAMILY_MAX, &truncated);
-		ok(n == 0, "all three families off: no rows");
-	}
-	ap_seedcfg_parse_json(nlohmann::json::object());
-}
-
-// ---------------------------------------------------------------------------
-// 2. Rules
-// ---------------------------------------------------------------------------
 static AP_VerifyOptions opts(int boost_mode, int difficulty, int itemsanity)
 {
 	AP_VerifyOptions o;
@@ -406,7 +292,6 @@ static void test_hit(void)
 
 int main(void)
 {
-	test_coverage();
 	test_relic_perfect();
 	test_trial_trophy();
 	test_trial_ctr();

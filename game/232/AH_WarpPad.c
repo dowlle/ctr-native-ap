@@ -80,24 +80,6 @@ static int apEntryRefusedDest = -1;
 #endif
 
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
-static int apCustomRaceChoice = -2;
-static void AH_WarpPad_CustomRaceMenuProc(struct RectMenu *menu)
-{
-	apCustomRaceChoice = menu->rowSelected;
-	RECTMENU_Hide(menu);
-}
-static struct MenuRow apCustomRaceRows[] = {
-	{LNG_TROPHY_RACE, 0, 1, 0, 0},
-	{LNG_CTR_CHALLENGE_TITLE, 0, 1, 1, 1},
-	{-1, 0, 0, 0, 0}
-};
-static struct RectMenu apCustomRaceMenu = {
-	.stringIndexTitle = LNG_CHOOSE_RACE_TYPE,
-	.posX_curr = 0x100, .posY_curr = 0x6c,
-	.state = 0x100803, .rows = apCustomRaceRows,
-	.funcPtr = AH_WarpPad_CustomRaceMenuProc, .drawStyle = 4
-};
-
 // Race type menu of a plan pad (#208, one generator row 6). Rows come from
 // AP_ContentMenuRows: the races the pad has open now, in the pad's order. A row
 // with nothing left is grey but can still be chosen (a replay,
@@ -139,75 +121,6 @@ static void AH_WarpPad_RaceTypeRows(const ap_rs_rows *rows)
 }
 #endif
 
-#ifdef CTR_AP
-// ── Hit Character ordinary-race chooser (ticket 06) ──
-//
-// When an eligible unchecked Hit guest can appear at an ordinary pad AND a
-// CTR/Relic route still has an unchecked location, the normal tier-2 routing
-// would enter/offer only that route and hide the plain rerace that earns the
-// Hit. This AP-only menu offers Trophy (plain adventure rerace) first, then
-// whichever of CTR/Relic is still available. Rows are rebuilt on every entry,
-// so a checked or absent route is never offered.
-//
-// The frame-to-frame decisions (open/wait/apply/cancel/vanish, the no-reopen
-// latch and the pre-chooser snapshot) live in ap/ap_hit_chooser.h as pure C so
-// they can be host-tested; this file is only the menu/bit glue.
-static ap_hit_chooser apHitChooser;
-static int apHitRowChoice[4];
-static struct MenuRow apHitRaceRows[4];
-
-static void AH_WarpPad_HitRaceMenuProc(struct RectMenu *menu)
-{
-	int row = menu->rowSelected;
-	// -1 = cancel; else the row's route (0 Trophy, 1 CTR, 2 Relic).
-	AP_HitChooserSetChoice(&apHitChooser, (row < 0) ? -1 : apHitRowChoice[row]);
-	RECTMENU_Hide(menu);
-}
-
-static struct RectMenu apHitRaceMenu = {
-	.stringIndexTitle = LNG_CHOOSE_RACE_TYPE,
-	.posX_curr = 0x100, .posY_curr = 0x6c,
-	.state = 0x100803, .rows = apHitRaceRows,
-	.funcPtr = AH_WarpPad_HitRaceMenuProc, .drawStyle = 4
-};
-
-static void AH_WarpPad_HitRaceRows(int tokenLeft, int relicLeft)
-{
-	int n = 0;
-	int i;
-
-	apHitRaceRows[n].stringIndex = LNG_TROPHY_RACE;
-	apHitRowChoice[n] = 0;
-	n++;
-	if (tokenLeft)
-	{
-		apHitRaceRows[n].stringIndex = LNG_CTR_CHALLENGE_TITLE;
-		apHitRowChoice[n] = 1;
-		n++;
-	}
-	if (relicLeft)
-	{
-		apHitRaceRows[n].stringIndex = LNG_RELIC_RACE;
-		apHitRowChoice[n] = 2;
-		n++;
-	}
-
-	for (i = 0; i < n; i++)
-	{
-		apHitRaceRows[i].rowOnPressUp = 0;
-		apHitRaceRows[i].rowOnPressDown = (i + 1 < n) ? (char)(i + 1) : (char)i;
-		apHitRaceRows[i].rowOnPressLeft = 0;
-		apHitRaceRows[i].rowOnPressRight = 0;
-	}
-
-	apHitRaceRows[n].stringIndex = -1;
-	apHitRaceRows[n].rowOnPressUp = 0;
-	apHitRaceRows[n].rowOnPressDown = 0;
-	apHitRaceRows[n].rowOnPressLeft = 0;
-	apHitRaceRows[n].rowOnPressRight = 0;
-}
-#endif
-
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800abafc-0x800abbdc.
 s16 *AH_WarpPad_GetSpawnPosRot(s16 *posData)
 {
@@ -225,11 +138,6 @@ s16 *AH_WarpPad_GetSpawnPosRot(s16 *posData)
 	char returnedPad[32] = {0};
 	if (returned && returned->returnHub == gGT->levelID && returned->hostLevelID == exitedLevel)
 		snprintf(returnedPad, sizeof returnedPad, "warppad#%d", returned->physicalPad);
-	// Schema 15: returning from the Cortex Vortex pad track (host level 13)
-	// puts the kart back at the pad hosting destination 110, not at the pad
-	// hosting Oxide Station.
-	if (exitedLevel == 13 && CustomTrack_CortexTrackPrevServed())
-		exitedLevel = AP_CORTEX_DEST;
 #endif
 
 	// check all warppads
@@ -629,10 +537,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	if (
 	    // Trophy tracks (-16)
 	    ((levelID < AH_WP_SLIDE_COLISEUM) && (dist < 0x144000)) ||
-#ifdef CTR_AP
-	    // Cortex Vortex pad track (virtual destination 110): a race pad
-	    ((levelID == AP_CORTEX_DEST) && (dist < 0x144000)) ||
-#endif
+
 
 	    // Slide Col + Turbo Track (-16)
 	    ((((u16)(levelID - AH_WP_SLIDE_COLISEUM)) < 2) && (dist < 0x90000)) ||
@@ -669,13 +574,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				{
 					warppadLNG = sdata->lngStrings[data.metaDataLEV[levelID].name_LNG];
 				}
-#ifdef CTR_AP
-				// Schema 15: destination 110 has no metaDataLEV or AdvCups row.
-				else if (levelID == AP_CORTEX_DEST)
-				{
-					warppadLNG = (char *)"CORTEX VORTEX";
-				}
-#endif
+
 				// gem cups
 				else
 				{
@@ -713,9 +612,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				// Plan pads show this line and no other (ruled 2026-10-30).
 				if (ap_content_plan_active())
 					apBoxesLeft = AP_ContentBoxesLine(ap_content_plan_pad(levelID));
-				else if (levelID < AH_WP_SLIDE_COLISEUM &&
-				         AP_LocationCheckedByBit(levelID + ADV_REWARD_FIRST_TROPHY))
-					apBoxesLeft = AP_PadUncollectedBoxCount(levelID);
+
 
 				if (apBoxesLeft > 0)
 				{
@@ -1042,7 +939,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		const ctr_content_pad *pad = ap_content_plan_pad(levelID);
 		champID = pad && pad->retail_id >= 0 ? data.metaDataLEV[pad->retail_id].characterID_Champion : -1;
 	}
-	else champID = data.metaDataLEV[levelID == AP_CORTEX_DEST ? 13 : levelID].characterID_Champion;
+	else champID = data.metaDataLEV[levelID].characterID_Champion;
 #else
 	champID = data.metaDataLEV[levelID].characterID_Champion;
 #endif
@@ -1255,246 +1152,12 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	}
 #endif
 
-	// Racer lock: refuse entry outright while the demanded racer is not owned
-	// (ruled 2026-08-17: a lock means you cannot drive in without the racer).
-	// The trophy-track flow already refuses via ctr_cfg_warp_unlocked's
-	// embedded ctr_cfg_racer_lock_met, but the CUP, TRIAL and ARENA classes
-	// never consult that gate (their pads are born on stage requirements
-	// alone), and the trophy flow's relic/token menu continues past it -- so
-	// gate every class here, at the one point all entry paths cross. Review
-	// finding on this branch: without this, a racer-locked cup pad whose
-	// stage-1 requirement is met was enterable without the racer, and the
-	// enforcement below would then seat an UNOWNED racer whose wins check
-	// locations logic still holds behind the unlock item.
-	// AnimateOpen, never TrophyAnimateOnly: the latter captures the kart with
-	// no menu ever coming (the 2026-07-14 Dragon Mines softlock).
-	if (!ctr_cfg_racer_lock_met(physLevelID))
-		goto WarpPad_AnimateOpen;
-#ifdef CTR_CUSTOM_TRACKS
-	// A seed-selected package that is not Ready blocks every event entry, not
-	// only the displaced cup. This keeps AP gameplay behind the manager-light
-	// preflight even if a malformed descriptor could not name its destination.
-	if (AP_CustomContentRequired())
-		goto WarpPad_AnimateOpen;
-#endif
 #endif
 
-#ifdef CTR_AP
-	// Cortex Vortex pad track (schema 15, virtual destination 110). Like a
-	// retail trophy track on whatever physical pad hosts it: stage 1 is the
-	// Trophy Race; once the Trophy is checked, stage 2 (keyed by the PHYSICAL
-	// pad, like every other class) opens the shared Token/Relic picker, which
-	// only offers race types that can still produce a check. The physical pad's
-	// stage-1 requirement and racer lock were already enforced above (a closed
-	// pad never reaches this code). Destination identity is 110; loading
-	// resolves it to host level 13 in WarpPad_RequestLoad.
-	if (levelID == AP_CORTEX_DEST)
-	{
-		int cvTokenLeft, cvRelicLeft, cvRoute;
-
-		// Content gate before every path that captures the kart: the exact
-		// pair must be armed, and the first warp frame re-hashes it.
-#define AP_CV_ENTRY_GATE() \
-		if (!AP_CortexTrackEntryReady(warppadObj->framesWarping == 0)) \
-			goto WarpPad_AnimateOpen
-
-		if (!AP_CortexTrackChecked(AP_CV_SLOT_TROPHY))
-		{
-			// Phase 1: the Trophy Race loads directly, as a plain adventure race.
-			AP_CV_ENTRY_GATE();
-			goto WarpPad_BoxReRace;
-		}
-
-		// Phase 2 requirement, the physical pad's own stage 2.
-		if (!ctr_cfg_warp_stage2_unlocked(physLevelID))
-		{
-			if (AP_PadPhase1ReRaceable(physLevelID, levelID))
-			{
-				AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_S2LOCKED_PLAIN_RERACE);
-				AP_CV_ENTRY_GATE();
-				goto WarpPad_BoxReRace;
-			}
-			AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_S2LOCKED_INERT);
-			goto WarpPad_AnimateOpen;
-		}
-
-		AP_CV_ENTRY_GATE();
-#undef AP_CV_ENTRY_GATE
-		// Snapshot the kart the frame this warp begins, so the entry
-		// fail-safe below can put it back like the other pad classes.
-		if (warppadObj->framesWarping == 0 && warppadObj->boolEnteredWarppad == 0)
-		{
-			AH_WarpPad_WarpCapture(gGT);
-			AP_HitChooserWarpStart(&apHitChooser); // #133 PR 5c, as on a trial pad
-		}
-		warppadObj->boolEnteredWarppad = 1;
-		warppadObj->framesWarping++;
-		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
-		if (warppadObj->framesWarping < 61)
-			goto WarpPad_AnimateOpen;
-
-		{
-			int cvUnc[AP_CV_SLOT_COUNT];
-			int cvN = AP_PadUncollectedBits(levelID, cvUnc, AP_CV_SLOT_COUNT);
-			int k;
-			cvTokenLeft = 0;
-			cvRelicLeft = 0;
-			for (k = 0; k < cvN; k++)
-			{
-				if (cvUnc[k] == AP_CortexTrackBit(AP_CV_SLOT_TOKEN))
-					cvTokenLeft = 1;
-				else if (AP_CortexPseudoRelicTier(cvUnc[k]) >= 0)
-					cvRelicLeft = 1;
-			}
-		}
-		// Letters and Wumpa can fire in the CTR Challenge, exactly as on a
-		// retail pad. No AP boxes exist on this track.
-		cvTokenLeft = AP_PadTokenSideLeft(cvTokenLeft,
-		                                  AP_PadUncollectedLetterCount(levelID),
-		                                  AP_PadUncollectedWumpaCount(levelID));
-		// Hit Character (#133 PR 5c): the field is drawn on host 13 like a
-		// retail race, so a Hit opportunity takes the same chooser as a trial
-		// or retail pad: Trophy, CTR and Relic rows while a token or relic is
-		// left, else a plain re-race. A Relic Race seats no AI, so routing a
-		// Hit-only player into it would leave the Hit unearnable.
-		{
-			int apHitOpp = AP_HitPadOpportunity(physLevelID, levelID);
-			int apHitRoute = 0;
-			int apHitAction = AP_HitChooserFrame(
-			    &apHitChooser, apHitOpp, cvTokenLeft, cvRelicLeft,
-			    (int)gGT->gameMode1, (int)gGT->gameMode2,
-			    sdata->Loading.OnBegin.AddBitsConfig0,
-			    sdata->Loading.OnBegin.RemBitsConfig0,
-			    sdata->Loading.OnBegin.AddBitsConfig8,
-			    sdata->Loading.OnBegin.RemBitsConfig8,
-			    sdata->boolOpenTokenRelicMenu, &apHitRoute);
-			AP_HitLogChooser(physLevelID, levelID, apHitAction, apHitRoute,
-			                 cvTokenLeft, cvRelicLeft);
-			if (apHitAction == AP_HIT_CHOOSER_OPEN)
-			{
-				AH_WarpPad_HitRaceRows(cvTokenLeft, cvRelicLeft);
-				apHitRaceMenu.rowSelected = 0;
-				RECTMENU_Show(&apHitRaceMenu);
-				AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_MENU);
-				goto WarpPad_TrophyAnimateOnly;
-			}
-			if (apHitAction == AP_HIT_CHOOSER_WAIT)
-				goto WarpPad_TrophyAnimateOnly;
-			if (apHitAction == AP_HIT_CHOOSER_PLAIN)
-			{
-				// A tier that cleared while the menu was open lands here: close it
-				// before the load (#133 PR 5c review).
-				RECTMENU_Hide(&apHitRaceMenu);
-				AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_BOX_RERACE);
-				sdata->boolOpenTokenRelicMenu = 0;
-				warppadObj->boolEnteredWarppad = 0;
-				goto WarpPad_RequestLoad;
-			}
-			if (apHitAction == AP_HIT_CHOOSER_VANISH)
-			{
-				RECTMENU_Hide(&apHitRaceMenu);
-				// fall through to the normal tier-2 routing
-			}
-			else if (apHitAction == AP_HIT_CHOOSER_CANCEL)
-			{
-				AP_HitChooserRestoreBitsPure(
-				    (unsigned)TOKEN_RACE, (unsigned)RELIC_RACE,
-				    apHitChooser.savedGm1, apHitChooser.savedGm2,
-				    apHitChooser.savedAdd0, apHitChooser.savedRem0,
-				    apHitChooser.savedAdd8, apHitChooser.savedRem8,
-				    &gGT->gameMode1, &gGT->gameMode2,
-				    &sdata->Loading.OnBegin.AddBitsConfig0,
-				    &sdata->Loading.OnBegin.RemBitsConfig0,
-				    &sdata->Loading.OnBegin.AddBitsConfig8,
-				    &sdata->Loading.OnBegin.RemBitsConfig8);
-				sdata->boolOpenTokenRelicMenu = apHitChooser.savedMenuFlag;
-				warppadObj->boolEnteredWarppad = 0;
-				warppadObj->framesWarping = 0;
-				AH_WarpPad_WarpRestore(gGT);
-				gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
-				// Latch the pad until the kart leaves it, as WarpPad_RefuseEntry does,
-				// so the released kart is not grabbed again next frame (#133 PR 5c review).
-				apEntryRefusedDest = warppadObj->levelID;
-				goto WarpPad_AnimateOpen;
-			}
-			else if (apHitAction == AP_HIT_CHOOSER_APPLY)
-			{
-				unsigned apGm1, apGm2, apA0, apR0, apA8, apR8;
-				RECTMENU_Hide(&D232.menuTokenRelic);
-				AP_HitChooserApplyPure(apHitRoute,
-				                       (unsigned)TOKEN_RACE, (unsigned)RELIC_RACE,
-				                       (unsigned)gGT->gameMode1, (unsigned)gGT->gameMode2,
-				                       sdata->Loading.OnBegin.AddBitsConfig0,
-				                       sdata->Loading.OnBegin.RemBitsConfig0,
-				                       sdata->Loading.OnBegin.AddBitsConfig8,
-				                       sdata->Loading.OnBegin.RemBitsConfig8,
-				                       &apGm1, &apGm2, &apA0, &apR0, &apA8, &apR8);
-				gGT->gameMode1 = (int)apGm1;
-				gGT->gameMode2 = (int)apGm2;
-				sdata->Loading.OnBegin.AddBitsConfig0 = apA0;
-				sdata->Loading.OnBegin.RemBitsConfig0 = apR0;
-				sdata->Loading.OnBegin.AddBitsConfig8 = apA8;
-				sdata->Loading.OnBegin.RemBitsConfig8 = apR8;
-				sdata->boolOpenTokenRelicMenu = 0;
-				warppadObj->boolEnteredWarppad = 0;
-				goto WarpPad_RequestLoad;
-			}
-			// AP_HIT_CHOOSER_NONE: fall through to the normal routing.
-		}
-		cvRoute = AP_PadTier2RouteDecide(cvTokenLeft, cvRelicLeft, 0);
-		AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_TIER2_BASE + cvRoute);
-		if (cvRoute == AP_PAD_TIER2_TOKEN)
-		{
-			gGT->gameMode2 |= TOKEN_RACE;
-			RECTMENU_Hide(&D232.menuTokenRelic);
-		}
-		else if (cvRoute == AP_PAD_TIER2_RELIC)
-		{
-			gGT->gameMode1 |= RELIC_RACE;
-			RECTMENU_Hide(&D232.menuTokenRelic);
-		}
-		else if (cvRoute == AP_PAD_TIER2_MENU)
-		{
-			if (sdata->boolOpenTokenRelicMenu == 0)
-			{
-				D232.menuTokenRelic.rowSelected = cvTokenLeft ? 0 : 1;
-				RECTMENU_Show(&D232.menuTokenRelic);
-				sdata->boolOpenTokenRelicMenu = 1;
-			}
-			if ((RECTMENU_BoolHidden(&D232.menuTokenRelic) & 0xffff) == 0)
-				goto WarpPad_TrophyAnimateOnly;
-		}
-		else
-			goto WarpPad_RefuseEntry; // Done is hard-locked upstream; never trap
-		sdata->boolOpenTokenRelicMenu = 0;
-		warppadObj->boolEnteredWarppad = 0;
-		goto WarpPad_RequestLoad;
-	}
-#endif
 
 	// gem cups
 	if (levelID >= AH_WP_ADV_CUP)
 	{
-#ifdef CTR_AP
-		// Schema 15: a cup that legs Cortex Vortex is not enterable while the
-		// pad track is unavailable; its leg would otherwise have no bytes.
-		if (ctr_cfg_active() && AP_CupLegsCortexTrack(levelID - AH_WP_ADV_CUP) &&
-		    !AP_CortexTrackEntryReady(warppadObj->framesWarping == 0))
-			goto WarpPad_AnimateOpen;
-#endif
-#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
-		// A displaced destination is not enterable until the exact package this
-		// seed requires verifies. The gate re-hashes at event entry, so even a
-		// same-size file swap after connect is refused before loading begins.
-		if (ctr_cfg_active() && ctr_cfg_cup_displaced(levelID - AH_WP_ADV_CUP) &&
-		    !AP_CustomContentGateEventEntry(warppadObj->framesWarping == 60))
-			goto WarpPad_AnimateOpen;
-#endif
-#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
-		if (warppadObj->framesWarping == 0 && ctr_cfg_active() && ctr_cfg.custom_ctr_enabled &&
-		    levelID == ctr_cfg.custom_track.replaces_cup_level_id)
-			AH_WarpPad_WarpCapture(gGT);
-#endif
 		warppadObj->boolEnteredWarppad = 1;
 		warppadObj->framesWarping++;
 		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
@@ -1503,40 +1166,6 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			goto WarpPad_AnimateOpen;
 		}
 
-#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
-		if (ctr_cfg_active() && ctr_cfg.custom_ctr_enabled &&
-		    levelID == ctr_cfg.custom_track.replaces_cup_level_id)
-		{
-			if (warppadObj->framesWarping == 61)
-			{
-				apCustomRaceChoice = -2;
-				apCustomRaceMenu.rowSelected = AP_CustomTrackTrophyChecked() ? 1 : 0;
-				RECTMENU_Show(&apCustomRaceMenu);
-			}
-			if (apCustomRaceChoice == -2)
-				goto WarpPad_TrophyAnimateOnly;
-			if (apCustomRaceChoice < 0)
-			{
-				warppadObj->boolEnteredWarppad = 0;
-				warppadObj->framesWarping = 0;
-				AH_WarpPad_WarpRestore(gGT);
-				gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
-				goto WarpPad_AnimateOpen;
-			}
-			gGT->gameMode2 &= ~TOKEN_RACE;
-			gGT->gameMode1 &= ~RELIC_RACE;
-			sdata->Loading.OnBegin.AddBitsConfig0 &= ~RELIC_RACE;
-			sdata->Loading.OnBegin.RemBitsConfig0 |= RELIC_RACE;
-			sdata->Loading.OnBegin.AddBitsConfig8 &= ~TOKEN_RACE;
-			sdata->Loading.OnBegin.RemBitsConfig8 |= TOKEN_RACE;
-			if (apCustomRaceChoice == 1)
-			{
-				gGT->gameMode2 |= TOKEN_RACE;
-				sdata->Loading.OnBegin.RemBitsConfig8 &= ~TOKEN_RACE;
-				sdata->Loading.OnBegin.AddBitsConfig8 |= TOKEN_RACE;
-			}
-		}
-#endif
 		sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_CUP;
 
 		gGT->cup.cupID = levelID - AH_WP_ADV_CUP;
@@ -1546,35 +1175,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			gGT->cup.points[i] = 0;
 		}
 
-#ifdef CTR_AP
-		// Ticket 11: a pad entry is a NEW Gem Cup. Mark the roster snapshot so
-		// the first leg resolves it once; every later leg and same-session retry
-		// reuses it, and an unlock mid-cup waits for the next cup.
-		AP_HitCupSnapshotBegin(gGT->cup.cupID);
-#endif
 
-#ifdef CTR_AP
-		// Remember the physical hub this cup is entered FROM, before the cup's
-		// four track loads clobber gGT->prevLEV. The two ADVENTURE_CUP exit-to-map
-		// sites (UI_RaceFlow.c, MainFreeze.c) return here instead of the hard-coded
-		// GEM_STONE_VALLEY, so a gem cup hosted on a non-GV pad under destination
-		// shuffle no longer strands the player outside a still-locked Gemstone
-		// Valley on exit. gGT->levelID is still the entry hub at this point (the
-		// track load below overwrites it via LOAD_LevelFile).
-		if (ctr_cfg_active())
-			AP_CupEnterFromHub(gGT->levelID);
-
-		// AP QoL one-lap cups (#7), adventure half: MM_MenuProc_SingleCup (the
-		// arcade choke this option first landed on) never runs for a pad-entered
-		// cup, so a slot with one_lap_cups on still raced 3-lap gem cups in
-		// adventure (batch smoke 2026-07-17). Set it here, the adventure cup
-		// entry point; nothing between the four legs re-derives numLaps, so it
-		// holds for the whole cup. The hub-return restore lives in AP_OnFrame's
-		// levelID-transition watcher (ap_hooks.c), so trophy/boss/relic races
-		// entered after a cup are back on vanilla lap counts.
-		if (ctr_cfg_active() && ctr_cfg.one_lap_cups)
-			gGT->numLaps = 1;
-#endif
 
 #ifdef CTR_CUSTOM_TRACKS
 		// Baby T Park event destination (ruled 2026-08-28). When the loader is
@@ -1604,49 +1205,13 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		}
 #endif
 
-#ifdef CTR_AP
-		// #166: ctr_cfg_cup_leg is identity-safe (returns the vanilla
-		// data.advCupTrackIDs value when slot_data is inactive or this seed left
-		// the leg at its default), so this is a no-op pre-#166 and on an
-		// option-off / pre-0.2.0 seed.
-		levelID = ctr_cfg_cup_leg(gGT->cup.cupID, 0);
-#else
 		levelID = data.advCupTrackIDs[4 * gGT->cup.cupID];
-#endif
 		goto WarpPad_RequestLoad;
 	}
 
 	// Slide Col or Turbo Track
 	if (((u16)(levelID - AH_WP_SLIDE_COLISEUM)) < 2)
 	{
-#ifdef CTR_AP
-		// Stage 2 for a trial destination (2026-10-09). Under destination
-		// shuffle a race pad can load a trial track; the apworld then gates
-		// the trial relics and CTR Challenge on that physical pad's stage 2
-		// (Regions.py warp_pad_unlock_stage2_concrete, keyed by destination)
-		// and AP_PadState paints the pad Re-locked. A stage-2-locked pad is
-		// born closed; this is the backstop for the stale frame before a
-		// re-birth, and like the retail one it stays inert unless a check
-		// still needs the plain rerace. Unshuffled trial pads have no stage 2
-		// (ctr_cfg_warp_stage2_unlocked returns 1), so they never stop here.
-		int apTrialStage2Locked = ctr_cfg_active() &&
-		    ctr_cfg.trial_track_valid[levelID - AH_WP_SLIDE_COLISEUM] &&
-		    AP_TrialTrackLocationChecked(levelID, CTR_CFG_TRIAL_TROPHY) &&
-		    !ctr_cfg_warp_stage2_unlocked(physLevelID);
-		if (apTrialStage2Locked && warppadObj->boolEnteredWarppad == 0 &&
-		    !AP_PadPhase1ReRaceable(physLevelID, levelID))
-		{
-			AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_S2LOCKED_INERT);
-			goto WarpPad_AnimateOpen;
-		}
-		// Capture the pre-warp kart/camera state the frame this warp begins, so a
-		// cancelled AP menu can put the player back (ticket 06/10).
-		if (warppadObj->framesWarping == 0 && warppadObj->boolEnteredWarppad == 0)
-		{
-			AH_WarpPad_WarpCapture(gGT);
-			AP_HitChooserWarpStart(&apHitChooser);
-		}
-#endif
 		warppadObj->boolEnteredWarppad = 1;
 		warppadObj->framesWarping++;
 		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
@@ -1655,173 +1220,6 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			goto WarpPad_AnimateOpen;
 		}
 
-		#ifdef CTR_AP
-		if (ctr_cfg_active() && ctr_cfg.trial_track_valid[levelID - AH_WP_SLIDE_COLISEUM])
-		{
-			int tokenLeft, relicLeft, boxLeft, wumpaLeft, route;
-			int relicBits[3];
-			// Match ordinary AP pads: the unchecked Trophy is phase one and loads
-			// directly. Only phase two chooses among still-productive race types.
-			if (!AP_TrialTrackLocationChecked(levelID, CTR_CFG_TRIAL_TROPHY))
-				goto WarpPad_RequestLoad;
-			// Stage 2 locked: only the plain trial rerace (boxes, Wumpa, Hit),
-			// never the relic race or CTR Challenge stage 2 still gates.
-			if (apTrialStage2Locked)
-			{
-				if (AP_PadPhase1ReRaceable(physLevelID, levelID))
-				{
-					AP_PadLogRoute(physLevelID, levelID,
-					               AP_PAD_ROUTE_S2LOCKED_PLAIN_RERACE);
-					goto WarpPad_RequestLoad;
-				}
-				goto WarpPad_RefuseEntry;
-			}
-			// The CTR Challenge stays on offer while its location OR any of
-			// its letters is open, as on a retail pad. A Collect of the CTR
-			// Challenge with letters still open left this 0 while AP_PadState
-			// kept the pad open for the letters: Done route, kart held in the
-			// beam (2026-10-09). Servable = Trophy+CTR mode, placed location,
-			// retail letter assets; the pad lifecycle uses the same gate.
-			tokenLeft = AP_TrialTokenSideLeft(
-			    AP_TrialChallengeServable(levelID),
-			    !AP_TrialTrackLocationChecked(levelID, CTR_CFG_TRIAL_CTR),
-			    AP_PadUncollectedLetterCount(levelID));
-			relicLeft = AP_PadRelicSideLeft(
-			    AP_PadUncollectedBits(levelID, relicBits, 3) > 0,
-			    AP_PadUncollectedRelicPerfectCount(levelID));
-			boxLeft = AP_PadUncollectedBoxCount(levelID);
-			wumpaLeft = AP_PadUncollectedWumpaCount(levelID);
-			// Trial Wumpa checks can be earned in a plain rerace. Do not invent a
-			// CTR challenge when its location is absent or its retail assets failed.
-			boxLeft += wumpaLeft;
-
-			// Hit Character chooser (ticket 10): the same state machine as the
-			// ordinary pads. The Trophy route here is a plain trial rerace, so an
-			// APPLY just loads (Trophy clears the mode bits; CTR/Relic set one).
-			{
-				int apHitOpp = AP_HitPadOpportunity(physLevelID, levelID);
-				int apHitRoute = 0;
-				int apHitAction = AP_HitChooserFrame(
-				    &apHitChooser, apHitOpp, tokenLeft, relicLeft,
-				    (int)gGT->gameMode1, (int)gGT->gameMode2,
-				    sdata->Loading.OnBegin.AddBitsConfig0,
-				    sdata->Loading.OnBegin.RemBitsConfig0,
-				    sdata->Loading.OnBegin.AddBitsConfig8,
-				    sdata->Loading.OnBegin.RemBitsConfig8,
-				    sdata->boolOpenTokenRelicMenu, &apHitRoute);
-				AP_HitLogChooser(physLevelID, levelID, apHitAction, apHitRoute,
-				                 tokenLeft, relicLeft);
-				if (apHitAction == AP_HIT_CHOOSER_OPEN)
-				{
-					AH_WarpPad_HitRaceRows(tokenLeft, relicLeft);
-					apHitRaceMenu.rowSelected = 0;
-					RECTMENU_Show(&apHitRaceMenu);
-					AP_PadLogRoute(physLevelID, levelID,
-					               AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_MENU);
-					goto WarpPad_TrophyAnimateOnly;
-				}
-				if (apHitAction == AP_HIT_CHOOSER_WAIT)
-				{
-					goto WarpPad_TrophyAnimateOnly;
-				}
-				if (apHitAction == AP_HIT_CHOOSER_PLAIN)
-				{
-					// A tier that cleared while the menu was open lands here: close it
-					// before the load (#133 PR 5c review).
-					RECTMENU_Hide(&apHitRaceMenu);
-					AP_PadLogRoute(physLevelID, levelID,
-					               AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_BOX_RERACE);
-					goto WarpPad_RequestLoad;
-				}
-				if (apHitAction == AP_HIT_CHOOSER_VANISH)
-				{
-					RECTMENU_Hide(&apHitRaceMenu);
-					// fall through to the normal tier-2 routing
-				}
-				else if (apHitAction == AP_HIT_CHOOSER_CANCEL)
-				{
-					// Restore only the route bits the chooser owns, so unrelated
-					// bits the engine changed while the menu was open survive.
-					AP_HitChooserRestoreBitsPure(
-					    (unsigned)TOKEN_RACE, (unsigned)RELIC_RACE,
-					    apHitChooser.savedGm1, apHitChooser.savedGm2,
-					    apHitChooser.savedAdd0, apHitChooser.savedRem0,
-					    apHitChooser.savedAdd8, apHitChooser.savedRem8,
-					    &gGT->gameMode1, &gGT->gameMode2,
-					    &sdata->Loading.OnBegin.AddBitsConfig0,
-					    &sdata->Loading.OnBegin.RemBitsConfig0,
-					    &sdata->Loading.OnBegin.AddBitsConfig8,
-					    &sdata->Loading.OnBegin.RemBitsConfig8);
-					sdata->boolOpenTokenRelicMenu = apHitChooser.savedMenuFlag;
-					warppadObj->boolEnteredWarppad = 0;
-					warppadObj->framesWarping = 0;
-					AH_WarpPad_WarpRestore(gGT);
-					gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
-					// Latch the pad until the kart leaves it, as WarpPad_RefuseEntry does,
-					// so the released kart is not grabbed again next frame (#133 PR 5c review).
-					apEntryRefusedDest = warppadObj->levelID;
-					goto WarpPad_AnimateOpen;
-				}
-				else if (apHitAction == AP_HIT_CHOOSER_APPLY)
-				{
-					unsigned apGm1, apGm2, apA0, apR0, apA8, apR8;
-					RECTMENU_Hide(&D232.menuTokenRelic);
-					AP_HitChooserApplyPure(apHitRoute,
-					                       (unsigned)TOKEN_RACE, (unsigned)RELIC_RACE,
-					                       (unsigned)gGT->gameMode1, (unsigned)gGT->gameMode2,
-					                       sdata->Loading.OnBegin.AddBitsConfig0,
-					                       sdata->Loading.OnBegin.RemBitsConfig0,
-					                       sdata->Loading.OnBegin.AddBitsConfig8,
-					                       sdata->Loading.OnBegin.RemBitsConfig8,
-					                       &apGm1, &apGm2, &apA0, &apR0, &apA8, &apR8);
-					gGT->gameMode1 = (int)apGm1;
-					gGT->gameMode2 = (int)apGm2;
-					sdata->Loading.OnBegin.AddBitsConfig0 = apA0;
-					sdata->Loading.OnBegin.RemBitsConfig0 = apR0;
-					sdata->Loading.OnBegin.AddBitsConfig8 = apA8;
-					sdata->Loading.OnBegin.RemBitsConfig8 = apR8;
-					sdata->boolOpenTokenRelicMenu = 0;
-					warppadObj->boolEnteredWarppad = 0;
-					goto WarpPad_RequestLoad;
-				}
-				// AP_HIT_CHOOSER_NONE: fall through to the normal routing.
-			}
-
-			route = AP_PadTier2RouteDecide(tokenLeft, relicLeft, boxLeft);
-			AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_TIER2_BASE + route);
-			if (route == AP_PAD_TIER2_TOKEN)
-			{
-				gGT->gameMode2 |= TOKEN_RACE;
-				RECTMENU_Hide(&D232.menuTokenRelic);
-			}
-			else if (route == AP_PAD_TIER2_RELIC)
-			{
-				gGT->gameMode1 |= RELIC_RACE;
-				RECTMENU_Hide(&D232.menuTokenRelic);
-			}
-			else if (route == AP_PAD_TIER2_MENU)
-			{
-				if (sdata->boolOpenTokenRelicMenu == 0)
-				{
-					D232.menuTokenRelic.rowSelected = tokenLeft ? 0 : 1;
-					RECTMENU_Show(&D232.menuTokenRelic);
-					sdata->boolOpenTokenRelicMenu = 1;
-				}
-				if ((RECTMENU_BoolHidden(&D232.menuTokenRelic) & 0xffff) == 0)
-					goto WarpPad_TrophyAnimateOnly;
-			}
-			else if (route == AP_PAD_TIER2_BOX_RERACE)
-			{
-				RECTMENU_Hide(&D232.menuTokenRelic);
-				goto WarpPad_RequestLoad;
-			}
-			else
-				goto WarpPad_RefuseEntry; // nothing to load: release, never trap
-			sdata->boolOpenTokenRelicMenu = 0;
-			warppadObj->boolEnteredWarppad = 0;
-		}
-		else
-		#endif
 			sdata->Loading.OnBegin.AddBitsConfig0 |= RELIC_RACE;
 		goto WarpPad_RequestLoad;
 	}
@@ -1829,12 +1227,6 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// Battle Tracks
 	if ((((u16)(levelID - AH_WP_NITRO_COURT)) < 2) || (levelID == 21) || (levelID == 23))
 	{
-#ifdef CTR_AP
-		// The destination may be seated on an ordinary race pad. Refused
-		// crystal mappings must also block this final event-entry path.
-		if (ctr_cfg_arena_pad_disabled(levelID))
-			goto WarpPad_RefuseEntry;
-#endif
 		warppadObj->boolEnteredWarppad = 1;
 		warppadObj->framesWarping++;
 		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
@@ -1865,94 +1257,10 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 	if (levelID < AH_WP_SLIDE_COLISEUM)
 	{
-#ifdef CTR_AP
-		// Capture the pre-warp kart/camera state the frame this warp begins, so a
-		// cancelled AP menu can put the player back exactly where they were
-		// (ticket 06).
-		if (warppadObj->framesWarping == 0 && warppadObj->boolEnteredWarppad == 0)
-		{
-			AH_WarpPad_WarpCapture(gGT);
-			AP_HitChooserWarpStart(&apHitChooser);
-		}
-#endif
-#ifdef CTR_AP
-		// "Trophy race beaten?" decides first-pass (load the trophy race) vs
-		// already-won (open the relic-race / CTR-token-challenge menu). This MUST
-		// read AP checked-state, NOT the AdvProgress trophy bit: AP_ApplyItems
-		// clears any trophy bit not backed by a *received* Trophy item every frame,
-		// so a local win is wiped and the bit never means "raced this track" --
-		// which left the relic races + token challenges permanently unreachable
-		// (softlock: the seed's progression routes through those locations).
-		// Keyed by levelID = the DESTINATION track actually loaded/raced under
-		// destination shuffle (whose Trophy Race location the win checks). The
-		// unlock REQUIREMENT below stays keyed by physLevelID (a pad property).
-		if (AP_LocationCheckedByBit(levelID + ADV_REWARD_FIRST_TROPHY))
-#else
 		if (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_TROPHY) != 0)
-#endif
 		{
-#ifdef CTR_AP
-			// AP Phase 2: per-seed requirement when slot_data active, else the
-			// Phase-1 received-trophy rule. Keeps spawn visual + load gate in
-			// lockstep (both read ctr_cfg_warp_unlocked / the same requirement).
-			// Keyed by PHYSICAL pad (physLevelID) so the requirement matches the
-			// one LInB selected and rendered; under destination shuffle this
-			// differs from `levelID` (= the remapped track being loaded).
-			if (ctr_cfg_warp_unlocked(physLevelID))
-#else
 			if (gGT->currAdvProfile.numTrophies >= data.metaDataLEV[levelID].numTrophiesToOpen)
-#endif
 			{
-#ifdef CTR_AP
-				// AP Phase 2 (open-rando two-stage): STAGE 2 gates the relic Time
-				// Trials + CTR Token Challenge menu independently of stage 1 (which
-				// opened the trophy race above). Keyed by PHYSICAL pad (physLevelID),
-				// the same key stage 1 uses. type 0 / collapsed / flat-v1 ->
-				// ctr_cfg_warp_stage2_unlocked returns 1, so non-two-stage seeds
-				// reach the menu exactly as before.
-				//
-				// A stage-2-locked pad is normally born CLOSED (the LInB re-lock
-				// advert, all pad classes) and never reaches this code -- this gate
-				// is the backstop for the one stale frame before a live re-birth.
-				// It must NOT goto WarpPad_TrophyAnimateOnly: that label sets
-				// boolEnteredWarppad=1 + VehStuckProc_Warp_Init, which captures the
-				// kart with no menu ever coming (the 2026-07-14 Dragon Mines
-				// softlock) and permanently disables this pad's live re-birth
-				// (ThTick's refresh requires boolEnteredWarppad==0). AnimateOpen
-				// keeps the pad inert and the player free.
-				//
-				// Issue #232 plus per-track Wumpa: inert is WRONG while this
-				// destination still has an AP box or Wumpa check needing a plain
-				// race. AP_PadState holds such a pad at 2
-				// Raceable ("stays Raceable and enterable until they are gone")
-				// and the map paints it green, but the gate needs a matching path
-				// or a stage-2-locked pad strands those remaining checks
-				// -- another player's items among them -- for the whole window
-				// between the trophy check and stage 2. The apworld gates a box
-				// on its track region, i.e. on stage 1 alone (verified against
-				// worlds/ctr Rules.py/Regions.py), so generation considers those
-				// boxes reachable in exactly that window.
-				//
-				// Keep offering entry, as a PLAIN adventure re-race: skip the
-				// tier-2 menu below (stage 2 does still own the relic / token
-				// tier) and skip the vanilla re-race hub-key gate further down
-				// (state-2 entry never had one on the first pass either). The
-				// destination's Trophy Race location is already checked and
-				// AP_NotifyAdvReward gates its send on wasChecked, so winning
-				// the re-race sends no duplicate check. Boxes break and the
-				// Wumpa crossing can fire in this ordinary ADVENTURE_MODE race.
-				if (!ctr_cfg_warp_stage2_unlocked(physLevelID))
-				{
-					if (AP_PadPhase1ReRaceable(physLevelID, levelID))
-					{
-						AP_PadLogRoute(physLevelID, levelID,
-						               AP_PAD_ROUTE_S2LOCKED_PLAIN_RERACE);
-						goto WarpPad_BoxReRace;
-					}
-					AP_PadLogRoute(physLevelID, levelID, AP_PAD_ROUTE_S2LOCKED_INERT);
-					goto WarpPad_AnimateOpen;
-				}
-#endif
 
 				if (warppadObj->framesWarping < 61)
 				{
@@ -1960,218 +1268,12 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				}
 
 				int apHitHandled = 0;
-#ifdef CTR_AP
-				// Hit Character ordinary chooser (ticket 06). The frame-to-frame
-				// decisions live in ap/ap_hit_chooser.h; this is menu/bit glue.
-				int apHitOpp = 0;
-				int apHitTokenLeft = 0, apHitRelicLeft = 0;
-				if (ctr_cfg_active() && (gGT->gameMode1 & ADVENTURE_ARENA) != 0)
-					apHitOpp = AP_HitPadOpportunity(physLevelID, levelID);
-				if (apHitOpp)
-				{
-					int apHitUnc[5];
-					int apHitUncN = AP_PadUncollectedBits(levelID, apHitUnc, 5);
-					int apHitK;
-					for (apHitK = 0; apHitK < apHitUncN; apHitK++)
-					{
-						int apHitOff = apHitUnc[apHitK] - levelID;
-						if (apHitOff == ADV_REWARD_FIRST_CTR_TOKEN)
-							apHitTokenLeft = 1;
-						else if (apHitOff == ADV_REWARD_FIRST_SAPPHIRE_RELIC ||
-						         apHitOff == ADV_REWARD_FIRST_GOLD_RELIC ||
-						         apHitOff == ADV_REWARD_FIRST_PLATINUM_RELIC)
-							apHitRelicLeft = 1;
-					}
-					apHitTokenLeft = AP_PadTokenSideLeft(
-					    apHitTokenLeft, AP_PadUncollectedLetterCount(levelID),
-					    AP_PadUncollectedWumpaCount(levelID));
-					apHitRelicLeft = AP_PadRelicSideLeft(
-					    apHitRelicLeft, AP_PadUncollectedRelicPerfectCount(levelID));
-				}
-				{
-					int apHitRoute = 0;
-					int apHitAction = AP_HitChooserFrame(
-					    &apHitChooser, apHitOpp, apHitTokenLeft, apHitRelicLeft,
-					    (int)gGT->gameMode1, (int)gGT->gameMode2,
-					    sdata->Loading.OnBegin.AddBitsConfig0,
-					    sdata->Loading.OnBegin.RemBitsConfig0,
-					    sdata->Loading.OnBegin.AddBitsConfig8,
-					    sdata->Loading.OnBegin.RemBitsConfig8,
-					    sdata->boolOpenTokenRelicMenu, &apHitRoute);
-					AP_HitLogChooser(physLevelID, levelID, apHitAction, apHitRoute,
-					                 apHitTokenLeft, apHitRelicLeft);
-
-					if (apHitAction == AP_HIT_CHOOSER_OPEN)
-					{
-						AH_WarpPad_HitRaceRows(apHitTokenLeft, apHitRelicLeft);
-						apHitRaceMenu.rowSelected = 0;
-						RECTMENU_Show(&apHitRaceMenu);
-						AP_PadLogRoute(physLevelID, levelID,
-						               AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_MENU);
-						goto WarpPad_TrophyAnimateOnly;
-					}
-					if (apHitAction == AP_HIT_CHOOSER_WAIT)
-					{
-						goto WarpPad_TrophyAnimateOnly; // waiting for a choice
-					}
-					if (apHitAction == AP_HIT_CHOOSER_PLAIN)
-					{
-						// A tier that cleared while the menu was open lands here: close it
-						// before the load (#133 PR 5c review).
-						RECTMENU_Hide(&apHitRaceMenu);
-						// Only the Hit opportunity is left: plain adventure rerace.
-						AP_PadLogRoute(physLevelID, levelID,
-						               AP_PAD_ROUTE_TIER2_BASE + AP_PAD_TIER2_BOX_RERACE);
-						goto WarpPad_BoxReRace;
-					}
-					if (apHitAction == AP_HIT_CHOOSER_VANISH)
-					{
-						// The opportunity went away while the menu was open.
-						RECTMENU_Hide(&apHitRaceMenu);
-						// fall through to the normal tier-2 routing
-					}
-					else if (apHitAction == AP_HIT_CHOOSER_CANCEL)
-					{
-						// Restore only the route bits the chooser owns, so flags
-						// the engine changed while the menu was open survive.
-						AP_HitChooserRestoreBitsPure(
-						    (unsigned)TOKEN_RACE, (unsigned)RELIC_RACE,
-						    apHitChooser.savedGm1, apHitChooser.savedGm2,
-						    apHitChooser.savedAdd0, apHitChooser.savedRem0,
-						    apHitChooser.savedAdd8, apHitChooser.savedRem8,
-						    &gGT->gameMode1, &gGT->gameMode2,
-						    &sdata->Loading.OnBegin.AddBitsConfig0,
-						    &sdata->Loading.OnBegin.RemBitsConfig0,
-						    &sdata->Loading.OnBegin.AddBitsConfig8,
-						    &sdata->Loading.OnBegin.RemBitsConfig8);
-						sdata->boolOpenTokenRelicMenu = apHitChooser.savedMenuFlag;
-						warppadObj->boolEnteredWarppad = 0;
-						warppadObj->framesWarping = 0;
-						AH_WarpPad_WarpRestore(gGT);
-						gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
-						// Latch the pad until the kart leaves it, as WarpPad_RefuseEntry does,
-						// so the released kart is not grabbed again next frame (#133 PR 5c review).
-						apEntryRefusedDest = warppadObj->levelID;
-						goto WarpPad_AnimateOpen;
-					}
-					else if (apHitAction == AP_HIT_CHOOSER_APPLY)
-					{
-						unsigned apGm1, apGm2, apA0, apR0, apA8, apR8;
-						// Hide the token/relic menu so the post-chooser
-						// BoolHidden check below cannot stall the load.
-						RECTMENU_Hide(&D232.menuTokenRelic);
-						AP_HitChooserApplyPure(apHitRoute,
-						                       (unsigned)TOKEN_RACE, (unsigned)RELIC_RACE,
-						                       (unsigned)gGT->gameMode1, (unsigned)gGT->gameMode2,
-						                       sdata->Loading.OnBegin.AddBitsConfig0,
-						                       sdata->Loading.OnBegin.RemBitsConfig0,
-						                       sdata->Loading.OnBegin.AddBitsConfig8,
-						                       sdata->Loading.OnBegin.RemBitsConfig8,
-						                       &apGm1, &apGm2, &apA0, &apR0, &apA8, &apR8);
-						gGT->gameMode1 = (int)apGm1;
-						gGT->gameMode2 = (int)apGm2;
-						sdata->Loading.OnBegin.AddBitsConfig0 = apA0;
-						sdata->Loading.OnBegin.RemBitsConfig0 = apR0;
-						sdata->Loading.OnBegin.AddBitsConfig8 = apA8;
-						sdata->Loading.OnBegin.RemBitsConfig8 = apR8;
-						if (apHitRoute == 0)
-							goto WarpPad_BoxReRace; // Trophy: plain adventure rerace
-						apHitHandled = 1; // fall through to the ordinary load
-						sdata->boolOpenTokenRelicMenu = 1;
-					}
-					// AP_HIT_CHOOSER_NONE: fall through to the normal routing.
-				}
-#endif
 
 				// if never opened
 				if (!apHitHandled && sdata->boolOpenTokenRelicMenu == 0)
 				{
 					if ((gGT->gameMode1 & ADVENTURE_ARENA) != 0)
 					{
-#ifdef CTR_AP
-						// AP: the tier-2 choice menu hides an already-CHECKED race
-						// type, and when only ONE type still has an unchecked
-						// location it skips the menu and enters that mode directly.
-						// Which types remain is read from AP_PadUncollectedBits
-						// (keyed by DESTINATION track = levelID here), which skips
-						// tiers this seed never placed -- so a checked/absent option
-						// is never offered. Boxes live outside those tier bits: when
-						// they are the only checks left, route to a plain re-race.
-						if (ctr_cfg_active())
-						{
-							int apUncMenu[5];
-							int apUncMenuN = AP_PadUncollectedBits(levelID, apUncMenu, 5);
-							int apTokenLeft = 0, apRelicLeft = 0, apk;
-							int apTier2Route;
-							for (apk = 0; apk < apUncMenuN; apk++)
-							{
-								int off = apUncMenu[apk] - levelID;
-								if (off == ADV_REWARD_FIRST_CTR_TOKEN)
-									apTokenLeft = 1;
-								else if (off == ADV_REWARD_FIRST_SAPPHIRE_RELIC ||
-								         off == ADV_REWARD_FIRST_GOLD_RELIC ||
-								         off == ADV_REWARD_FIRST_PLATINUM_RELIC)
-									apRelicLeft = 1;
-							}
-							// Letters and per-track Wumpa can both fire in the CTR
-							// Challenge. A checked Token must not hide or hard-lock that
-							// race while either family remains.
-							apTokenLeft = AP_PadTokenSideLeft(
-							    apTokenLeft,
-							    AP_PadUncollectedLetterCount(levelID),
-							    AP_PadUncollectedWumpaCount(levelID));
-							// #439: an unchecked Relic Race Perfect keeps the relic
-							// race on offer after every relic tier is checked.
-							apRelicLeft = AP_PadRelicSideLeft(
-							    apRelicLeft, AP_PadUncollectedRelicPerfectCount(levelID));
-
-							// #452: a received weapon's unchecked use check also
-							// needs a race with item crates, so it rides the box
-							// re-race route once both tiers are checked.
-							apTier2Route = AP_PadTier2RouteDecide(
-							    apTokenLeft, apRelicLeft,
-							    AP_PadUncollectedBoxCount(levelID) +
-							        AP_ItemsanityPadOpportunity(levelID));
-
-							// Log the tier-2 decision once, before the branch, so
-							// the five routes cannot drift from what is reported.
-							AP_PadLogRoute(physLevelID, levelID,
-							               AP_PAD_ROUTE_TIER2_BASE + apTier2Route);
-
-							if (apTier2Route == AP_PAD_TIER2_TOKEN)
-							{
-								// only CTR Token challenge left -> enter directly
-								// (mirrors AH_WarpPad_MenuProc row 0); no menu shown.
-								gGT->gameMode2 |= TOKEN_RACE;
-								RECTMENU_Hide(&D232.menuTokenRelic);
-							}
-							else if (apTier2Route == AP_PAD_TIER2_RELIC)
-							{
-								// only Relic Race left -> enter directly (row 1).
-								gGT->gameMode1 |= RELIC_RACE;
-								RECTMENU_Hide(&D232.menuTokenRelic);
-							}
-							else if (apTier2Route == AP_PAD_TIER2_MENU)
-							{
-								// both types have an unchecked location -> show the
-								// menu, cursor on an available row.
-								D232.menuTokenRelic.rowSelected = apTokenLeft ? 0 : 1;
-								RECTMENU_Show(&D232.menuTokenRelic);
-							}
-							else if (apTier2Route == AP_PAD_TIER2_BOX_RERACE)
-							{
-								RECTMENU_Hide(&D232.menuTokenRelic);
-								goto WarpPad_BoxReRace;
-							}
-							else
-							{
-								// Defensive only: state 5 Done is hard-locked upstream.
-								// Release the kart rather than hold it in the beam.
-								goto WarpPad_RefuseEntry;
-							}
-						}
-						else
-#endif
 						{
 							D232.menuTokenRelic.rowSelected = (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_CTR_TOKEN) != 0);
 
@@ -2219,12 +1321,6 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				// Rem Adventure Arena
 				sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_ARENA;
 
-#ifdef CTR_AP
-				// Racer lock enforcement: seat the demanded racer before the
-				// load reads characterIDs[0] (menu-driven relic/token entry).
-				AP_RacerLock_ForceForWarp(physLevelID);
-				levelID = AP_CortexTrackPrepareLoad(levelID); // retail tier-2: explicit
-#endif
 
 				MainRaceTrack_RequestLoad(levelID);
 				goto WarpPad_TrophyAnimateOnly;
@@ -2232,21 +1328,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		}
 	}
 
-#ifdef CTR_AP
-	// AP: "trophy already won -> re-race needs the hub boss key" must read AP
-	// checked-state (keyed by the DESTINATION track actually raced), NOT the
-	// cosmetic AdvProgress trophy bit. AP_ApplyItems fills received-trophy bits
-	// from the HIGH END (ap_hooks.c reconcile), so with N received trophies the top
-	// N trophy bits are set regardless of which tracks were actually won. Under
-	// destination shuffle a pad whose destination is one of those top levelIDs
-	// (e.g. Roo's Tubes pad -> Tiny Arena = 15, with >=1 received trophy) would
-	// otherwise read "won" here, hit the hub-boss-key gate below with no key, and
-	// `goto WarpPad_AnimateOpen` -- the pad animates but never warps -> the player
-	// drives straight through a green pad. Mirrors the ThTick:601 f9fbfa7a0 fix.
-	if (AP_LocationCheckedByBit(levelID + ADV_REWARD_FIRST_TROPHY))
-#else
 	if (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_TROPHY) != 0)
-#endif
 	{
 		i = data.metaDataLEV[levelID].hubID + ADV_REWARD_BOSS_KEY_HUB_ID_BASE;
 
@@ -2256,13 +1338,6 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		}
 	}
 
-#ifdef CTR_AP
-	// Issue #232 box re-entry lands here, one label above the ordinary race
-	// entry, so a box re-race takes the SAME plain adventure load a first-pass
-	// trophy race takes -- no tier-2 mode bits, and jumping in below the
-	// hub-key re-race gate above on purpose (see the gate's own note).
-WarpPad_BoxReRace:
-#endif
 	warppadObj->boolEnteredWarppad = 1;
 	warppadObj->framesWarping++;
 	gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
@@ -2276,12 +1351,7 @@ WarpPad_RequestLoad:
 	// Rem Adventure Arena
 	sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_ARENA;
 
-#ifdef CTR_AP
-	// Schema 15: destination 110 (a pad, or a cup's first leg) loads host
-	// level 13 as the Cortex Vortex pad track; everything else is selected as
-	// retail explicitly.
-	if (!ap_content_plan_active()) levelID = AP_CortexTrackPrepareLoad(levelID);
-#endif
+
 
 #ifdef CTR_AP
 	// Racer lock enforcement: seat the demanded racer before the load reads
@@ -2467,11 +1537,12 @@ WarpPad_AnimateOpen:
 	int apUncN = -1;     // -1 = "not an AP glow destination" -> leave vanilla glow alone
 	int apSlotBit[3] = {-1, -1, -1}; // per-slot advertised bit, or -1 = hide slot
 	int apNeutral = 0;   // #459: slot 0 shows the neutral AP marker, the rest hide
-	if ((levelID >= 0 && levelID < AH_WP_SLIDE_COLISEUM) ||       // race 0..15
+	if (ap_content_plan_active() &&
+	    ((levelID >= 0 && levelID < AH_WP_SLIDE_COLISEUM) ||       // race 0..15
 	    (levelID == AH_WP_SLIDE_COLISEUM) || (levelID == AH_WP_TURBO_TRACK) || // trial 16/17
 	    (((u16)(levelID - AH_WP_NITRO_COURT)) < 2) || (levelID == 21) || (levelID == 23) || // arena
 	    (((u16)(levelID - AH_WP_ADV_CUP)) < 5) ||                 // cup 100..104
-	    (levelID == AP_CORTEX_DEST))                              // Cortex Vortex 110
+	    (levelID == AP_CORTEX_DEST)))                             // Cortex Vortex 110
 	{
 		apUncN = AP_PadUncollectedDisplayBits(warppadObj->levelID, apUncBits,
 		                                   (int)(sizeof apUncBits / sizeof apUncBits[0]));
@@ -2907,58 +1978,7 @@ static void AP_ContentMaskToReq(unsigned mask, int count, ctr_req *r)
 	else { r->type = bits == 1 ? 5 : 8; r->colour = bits == 1 ? first - 9 : -1; }
 }
 
-// AP stage-2 re-lock advert for NON-trophy-track physical pads (trial / arena /
-// cup) hosting a RACE destination under destination shuffle: destination trophy
-// checked + this pad's stage-2 unmet must render the pad CLOSED advertising the
-// stage-2 requirement -- design ruling 2026-07-15: state-3 behaves exactly like
-// a locked stage-1 pad. The trophy-track branch has carried this re-lock since
-// two-stage landed; the other pad classes never got it, so a race destination
-// hosted there (merged shuffle) was born plain-open while ThTick's stage-2 load
-// gate blocked the tier-2 menu -- the gate/display split behind the 2026-07-14
-// Dragon Mines-on-Skull-Rock-pad softlock. Fills the display triple and returns
-// 1 when the re-lock applies (caller then skips its stage-1 advert; the shared
-// owned>=needed decision below births the pad CLOSED, whose ThTick path never
-// reaches the warp code). Requirement resolved via ctr_cfg_warp_stage2_req --
-// the exact record the load gate evaluates, so gate and look cannot diverge.
-static int AP_Stage2RelockToUnlock(struct WarpPad *warppadObj, int physLevelID,
-                                   int *modelID, int *numOwned, int *numNeeded,
-                                   int *tint, int *gemColour, int *tokenColour)
-{
-	// same function-local idiom as ThTick/BuildInstances
-	enum
-	{
-		AH_WP_SLIDE_COLISEUM = 16,
-	};
-	const ctr_req *r;
-	if (!ctr_cfg_active())
-		return 0;
-	// Schema 15: Cortex Vortex (110) is a race destination with a direct
-	// Trophy code; every other race destination keys its trophy bit.
-	if (warppadObj->levelID == AP_CORTEX_DEST)
-	{
-		if (!AP_CortexTrackChecked(AP_CV_SLOT_TROPHY))
-			return 0;
-	}
-	else if (warppadObj->levelID >= AH_WP_SLIDE_COLISEUM ||
-	         !AP_LocationCheckedByBit(warppadObj->levelID + ADV_REWARD_FIRST_TROPHY))
-		return 0;
-	// Issue #232 plus per-track Wumpa: while a plain-race check remains the
-	// pad is NOT re-locked -- AP_PadState holds it at 2 Raceable and ThTick lets
-	// player in for a re-race -- so advertising a stage-2 requirement
-	// here would render a closed pad the gate is not actually closing. Decline
-	// the re-lock; the caller falls through to its stage-1 advert, which the pad
-	// satisfies (AP_PadPhase1ReRaceable implies stage 1 met), so it births OPEN.
-	if (AP_PadPhase1ReRaceable(physLevelID, warppadObj->levelID))
-		return 0;
-	r = ctr_cfg_warp_stage2_req(physLevelID);
-	if (r == 0 || AP_BossReqMet(r))
-		return 0;
-	AP_ReqToUnlock(r, modelID, numOwned, numNeeded);
-	*tint = AP_ReqRelicTintTier(r);
-	*gemColour = AP_ReqGemColour(r);
-	*tokenColour = AP_ReqTokenColour(r);
-	return 1;
-}
+
 #endif
 
 // Engine entry point: level-load birth. Births the pad thread, then builds its
@@ -3083,26 +2103,6 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 	warppadObj->levelID = levelID;
 
 #ifdef CTR_AP
-	// AP Phase 2 STRETCH: warp-pad destination shuffle. Override only the LOAD
-	// target (warppadObj->levelID, re-read by ThTick at the load gate); the local
-	// `levelID` stays the PHYSICAL pad ID so the unlock-requirement selection
-	// below still keys off the physical pad. ctr_cfg_warp_dest is identity-safe:
-	// returns the input unchanged when slot_data is inactive or warp_pad_map is
-	// identity (not shuffled), so this is a no-op for the non-shuffle MVP path.
-	warppadObj->levelID = ctr_cfg_warp_dest(levelID);
-
-	// Confirmation log: emit one line per pad whose destination was actually
-	// remapped (physical != loaded). Proves the warp_pad_map round-tripped and
-	// the native LInB remap is live; silent when the map is identity.
-	if (warppadObj->levelID != levelID)
-	{
-		char apwpmsg[96];
-		snprintf(apwpmsg, sizeof apwpmsg,
-		         "[AP WARP] pad phys=%d remapped -> loads track=%d\n",
-		         levelID, warppadObj->levelID);
-		AP_LogLine(apwpmsg);
-	}
-
 	// Record the AP_PadState these instances are being built for, so ThTick re-births
 	// only on an actual state change (not on every unrelated location check). levelID
 	// = physical pad; warppadObj->levelID = destination (the AP_PadState location key).
@@ -3206,164 +2206,15 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		// instead of data.metaDataLEV[levelID].hubID
 		// can we just do gGT->levelID-0x19?
 
-#ifdef CTR_AP
-		// AP two-stage RE-LOCK (open-rando): the trophy race is already WON
-		// (AP checked-state, keyed by the DESTINATION track) but this pad's
-		// STAGE 2 is not yet satisfied. Render the pad CLOSED, advertising the
-		// stage-2 requirement, so the player isn't pulled into a dead warp that
-		// ThTick blocks at the load gate (ctr_cfg_warp_stage2_unlocked). This is
-		// the missing visual half of the stage-2 gate: without it LInB would
-		// treat a stage1-met pad as fully unlocked. stage2 keyed by PHYSICAL pad
-		// (levelID), the same key ThTick's stage-2 gate uses; checked-state keyed
-		// by warppadObj->levelID (= destination track) to match ThTick:601.
-		// type 0 stage2 (no second gate / collapsed / flat-v1) -> _stage2_unlocked
-		// returns 1 -> this branch is skipped -> pre-two-stage behaviour.
-		//
-		// slot_data v3 (merged destination shuffle): this branch runs whenever the
-		// PHYSICAL pad is a trophy track, but the DESTINATION may now be a non-race
-		// (cup/arena/trial). The trophy-race two-stage lifecycle only exists for a
-		// RACE destination, and warppadObj->levelID + FIRST_TROPHY aliases an
-		// unrelated location bit for a non-race dest -- so gate the whole trophy
-		// lifecycle on "destination is a race track" (< AH_WP_SLIDE_COLISEUM). For a
-		// non-race dest this is already inert (the apworld emits stage2 type 0 -> the
-		// !unlocked term is false), but the guard makes it robust regardless of what
-		// the destination hosts. Matches ThTick's own dest-race gate at :654.
-		//
-		// Issue #232 plus per-track Wumpa: NOT while a plain-race check remains
-		// destination. AP_PadState keeps such a pad at 2 Raceable and ThTick
-		// admits a re-race, so a closed pad advertising a stage-2
-		// requirement would be advertising a gate that is not being applied --
-		// the same gate/display split in the other direction. The trial / arena
-		// / cup twin of this decline lives in AP_Stage2RelockToUnlock.
-		if (ctr_cfg_active() &&
-		    ((warppadObj->levelID < AH_WP_SLIDE_COLISEUM &&
-		      AP_LocationCheckedByBit(warppadObj->levelID + ADV_REWARD_FIRST_TROPHY)) ||
-		     (warppadObj->levelID == AP_CORTEX_DEST &&
-		      AP_CortexTrackChecked(AP_CV_SLOT_TROPHY))) &&
-		    !ctr_cfg_warp_stage2_unlocked(levelID) &&
-		    !AP_PadPhase1ReRaceable(levelID, warppadObj->levelID))
-		{
-			const ctr_req *r = &ctr_cfg.warp_pad_unlock[levelID].stage2;
-			reqRelicTint = AP_ReqRelicTintTier(r);
-			reqGemColour = AP_ReqGemColour(r);
-			reqTokenColour = AP_ReqTokenColour(r);
-			switch (r->type)
-			{
-			case 1: // trophies
-				unlockItem_modelID = STATIC_TROPHY;
-				unlockItem_numOwned = AP_GateCount(AP_IDX_TROPHY);
-				break;
-			case 2: // keys
-				unlockItem_modelID = STATIC_KEY;
-				unlockItem_numOwned = AP_GateCount(AP_IDX_KEY);
-				break;
-			case 3: // tokens (colour-aware)
-				unlockItem_modelID = STATIC_TOKEN;
-				unlockItem_numOwned = (r->colour >= 0)
-				    ? AP_GateCountTokenColour(r->colour)
-				    : AP_GateCount(AP_IDX_TOKEN_RED);
-				break;
-			case 4: // relic (tier by colour: 0=Sapphire, 1=Gold, 2=Platinum)
-				unlockItem_modelID = STATIC_RELIC;
-				unlockItem_numOwned = AP_GateCountRelicTier(r->colour);
-				break;
-			case 5: // gems (colour-aware)
-				unlockItem_modelID = STATIC_GEM;
-				unlockItem_numOwned =
-				    (r->colour >= 0) ? AP_GateCountGemColour(r->colour) : 0;
-				break;
-			case 6: // any token (all colours, summed)
-				unlockItem_modelID = STATIC_TOKEN;
-				unlockItem_numOwned = AP_GateCountTokenSum();
-				break;
-			case 7: // any relic (all tiers, summed)
-				unlockItem_modelID = STATIC_RELIC;
-				unlockItem_numOwned = AP_GateCountRelicSum();
-				break;
-			case 8: // any gem (all colours, summed)
-				unlockItem_modelID = STATIC_GEM;
-				unlockItem_numOwned = AP_GateCountGemSum();
-				break;
-			default:
-				unlockItem_modelID = STATIC_TROPHY;
-				unlockItem_numOwned = AP_GateCount(AP_IDX_TROPHY);
-				break;
-			}
-			unlockItem_numNeeded = r->count;
-		}
-		else
-#endif
-#ifdef CTR_AP
-		// AP: "trophy owned -> re-race needs hub keys" must read AP checked-state
-		// (the DESTINATION track's Trophy Race LOCATION), NOT the cosmetic AdvProgress
-		// trophy bit. AP_ApplyItems high-end-fills received-trophy bits, so a NOT-won pad
-		// whose levelID is among the top received-trophy bits would otherwise read "won"
-		// here and get routed into the vanilla hub-key re-race gate (GetKeysRequirement),
-		// silently REPLACING the seed's randomized stage-1 requirement (opening on the
-		// wrong item/count -> out-of-logic, or softlock in the harder direction). This is
-		// the LInB twin of the ThTick:601/682 f9fbfa7a0 fix; keyed by warppadObj->levelID
-		// (destination) for shuffle consistency.
-		//
-		// slot_data v3 (merged destination shuffle): guard on "destination is a race
-		// track" (< AH_WP_SLIDE_COLISEUM). This branch runs whenever the PHYSICAL pad
-		// is a trophy track, but under merged grouping the DESTINATION may be a
-		// cup/arena/trial, for which warppadObj->levelID + FIRST_TROPHY aliases an
-		// unrelated location bit (e.g. arena dest 18 -> bit 24 = track-2 sapphire).
-		// A coincidental set of that aliased bit would falsely read "trophy owned" and
-		// render the pad OPEN (stage2 type 0 -> the BUG-A clear below fires),
-		// bypassing the physical pad's stage-1 requirement -- a real gate/display
-		// split. When the dest is non-race there is no trophy race here at all, so
-		// fall straight to the "trophy not owned" branch below, which advertises the
-		// PHYSICAL pad's stage-1 requirement (the correct gate). No-op for a race
-		// dest (the normal case), where the guard is always true.
-		if ((warppadObj->levelID < AH_WP_SLIDE_COLISEUM &&
-		     AP_LocationCheckedByBit(warppadObj->levelID + ADV_REWARD_FIRST_TROPHY)) ||
-		    (ctr_cfg_active() && warppadObj->levelID == AP_CORTEX_DEST &&
-		     AP_CortexTrackChecked(AP_CV_SLOT_TROPHY)))
-#else
 		// if trophy owned
 		if (CHECK_ADV_BIT(sdata->advProgress.rewards, levelID + ADV_REWARD_FIRST_TROPHY) != 0)
-#endif
 		{
-#ifdef CTR_AP
-			// BUG A fix (phantom hub-key on a satisfied stage-2 pad): the trophy race
-			// is WON and this pad's stage-2 is SATISFIED -- ctr_cfg_warp_stage2_unlocked
-			// returns 1 for BOTH a type-0 "free" stage-2 AND a met non-free stage-2, so
-			// ThTick's load gate already lets the tier-2 menu open. Render the pad OPEN
-			// (0 >= 0 -> the "if unlocked" path below shows the stage-2 glow rewards)
-			// instead of falling through to the vanilla re-race GetKeysRequirement gate,
-			// which rendered a phantom "Key xN" lock the player reads as a softlock. The
-			// stage-2-NOT-satisfied case is caught by the re-lock branch above (renders
-			// the stage-2 requirement); vanilla / no-slot_data (ctr_cfg_active()==0)
-			// still uses the hub-key gate, unchanged.
-			//
-			// Issue #232 rides the same OPEN render: a pad whose stage 2 is unmet
-			// but whose destination still has unbroken item boxes declined the
-			// re-lock above, and must not fall to GetKeysRequirement instead --
-			// that is the very phantom "Key xN" BUG-A lock, now on a pad ThTick
-			// happily admits. Born open, it reads as what it is: enterable.
-			if (ctr_cfg_active() && (ctr_cfg_warp_stage2_unlocked(levelID) ||
-			                         AP_PadPhase1ReRaceable(levelID, warppadObj->levelID)))
-			{
-				unlockItem_modelID = 0;
-				unlockItem_numOwned = 0;
-				unlockItem_numNeeded = 0;
-			}
-			else
-#endif
 			{
 			GetKeysRequirement:
 
 				// keys needed to unlock track again
 				unlockItem_modelID = STATIC_KEY;
-#ifdef CTR_AP
-				// AP: owned-count from the authoritative received-Key tally, not the cosmetic
-				// currAdvProfile.numKeys (rebuilt from bits) -- the same source every other AP
-				// key gate uses (hub door + pad reqs + Oxide).
-				unlockItem_numOwned = AP_GateCount(AP_IDX_KEY);
-#else
 				unlockItem_numOwned = gGT->currAdvProfile.numKeys;
-#endif
 				unlockItem_numNeeded = D232.arrKeysNeeded[data.metaDataLEV[levelID].hubID];
 			}
 		}
@@ -3371,75 +2222,10 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		// if trophy not owned
 		else
 		{
-#ifdef CTR_AP
-			// AP Phase 2: a per-seed randomized requirement replaces the Phase-1
-			// trophy threshold for this pad when slot_data is active and the pad
-			// has a resolved requirement (type != 0). type 0 (fixed pads / vanilla
-			// mode / absent slot_data) falls through to the Phase-1 statics below.
-			if (ctr_cfg_active() && levelID >= 0 && levelID < CTR_CFG_PAD_COUNT &&
-			    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
-			{
-				// stage1 is the "open the trophy race" requirement shown on the pad
-				// here (the trophy-not-owned branch). The stage2 (tier-2) requirement
-				// is gated at the load site in AH_WarpPad_ThTick, not advertised here.
-				const ctr_req *r = &ctr_cfg.warp_pad_unlock[levelID].stage1;
-				reqRelicTint = AP_ReqRelicTintTier(r);
-				reqGemColour = AP_ReqGemColour(r);
-				reqTokenColour = AP_ReqTokenColour(r);
-				switch (r->type)
-				{
-				case 1: // trophies
-					unlockItem_modelID = STATIC_TROPHY;
-					unlockItem_numOwned = AP_GateCount(AP_IDX_TROPHY);
-					break;
-				case 2: // keys
-					unlockItem_modelID = STATIC_KEY;
-					unlockItem_numOwned = AP_GateCount(AP_IDX_KEY);
-					break;
-				case 3: // tokens (colour-aware)
-					unlockItem_modelID = STATIC_TOKEN;
-					unlockItem_numOwned = (r->colour >= 0)
-					    ? AP_GateCountTokenColour(r->colour)
-					    : AP_GateCount(AP_IDX_TOKEN_RED);
-					break;
-				case 4: // relic (tier by colour: 0=Sapphire, 1=Gold, 2=Platinum)
-					unlockItem_modelID = STATIC_RELIC;
-					unlockItem_numOwned = AP_GateCountRelicTier(r->colour);
-					break;
-				case 5: // gems (colour-aware)
-					unlockItem_modelID = STATIC_GEM;
-					unlockItem_numOwned =
-					    (r->colour >= 0) ? AP_GateCountGemColour(r->colour) : 0;
-					break;
-				case 6: // any token (all colours, summed)
-					unlockItem_modelID = STATIC_TOKEN;
-					unlockItem_numOwned = AP_GateCountTokenSum();
-					break;
-				case 7: // any relic (all tiers, summed)
-					unlockItem_modelID = STATIC_RELIC;
-					unlockItem_numOwned = AP_GateCountRelicSum();
-					break;
-				case 8: // any gem (all colours, summed)
-					unlockItem_modelID = STATIC_GEM;
-					unlockItem_numOwned = AP_GateCountGemSum();
-					break;
-				default:
-					unlockItem_modelID = STATIC_TROPHY;
-					unlockItem_numOwned = AP_GateCount(AP_IDX_TROPHY);
-					break;
-				}
-				unlockItem_numNeeded = r->count;
-			}
-			else
-#endif
 			{
 				// number trophies needed to open
 				unlockItem_modelID = STATIC_TROPHY;
-#ifdef CTR_AP
-				unlockItem_numOwned = AP_GateCount(AP_IDX_TROPHY);
-#else
 				unlockItem_numOwned = gGT->currAdvProfile.numTrophies;
-#endif
 				unlockItem_numNeeded = data.metaDataLEV[levelID].numTrophiesToOpen;
 			}
 		}
@@ -3448,67 +2234,17 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 	// Slide Col
 	else if (levelID == AH_WP_SLIDE_COLISEUM)
 	{
-#ifdef CTR_AP
-		// AP stage-2 re-lock first: a race destination hosted on this trial pad
-		// (merged shuffle) with its trophy checked + stage-2 unmet renders CLOSED
-		// advertising the stage-2 requirement (see AP_Stage2RelockToUnlock).
-		if (AP_Stage2RelockToUnlock(warppadObj, levelID, &unlockItem_modelID,
-		                            &unlockItem_numOwned, &unlockItem_numNeeded,
-		                            &reqRelicTint, &reqGemColour, &reqTokenColour))
-		{
-		}
-		// AP: Slide Coliseum carries an emitted single-stage requirement
-		// (warp_pad_unlock[16], same dense array as the trophy pads) in
-		// randomized modes, and in vanilla mode when the seed created fewer than
-		// 10 Sapphire Relics (2026-10-01: the pad opens at the Sapphires that
-		// exist). No entry / inactive falls back to the vanilla 10-Sapphire gate.
-		else if (ctr_cfg_slide_coliseum_req())
-		{
-			const ctr_req *slide = ctr_cfg_slide_coliseum_req();
-			AP_ReqToUnlock(slide,
-			               &unlockItem_modelID, &unlockItem_numOwned, &unlockItem_numNeeded);
-			reqRelicTint = AP_ReqRelicTintTier(slide);
-			reqGemColour = AP_ReqGemColour(slide);
-			reqTokenColour = AP_ReqTokenColour(slide);
-		}
-		else
-#endif
 		{
 			// number relics needed to open
 			unlockItem_modelID = STATIC_RELIC;
 			unlockItem_numNeeded = 10;
-#ifdef CTR_AP
-			// AP fallback (type 0 / vanilla): 10 received Sapphire Relics.
-			unlockItem_numOwned = AP_GateCount(AP_IDX_SAPPHIRE);
-#else
 			unlockItem_numOwned = gGT->currAdvProfile.numRelics;
-#endif
 		}
 	}
 
 	// Turbo Track
 	else if (levelID == AH_WP_TURBO_TRACK)
 	{
-#ifdef CTR_AP
-		// AP stage-2 re-lock first (see the Slide Coliseum branch above).
-		if (AP_Stage2RelockToUnlock(warppadObj, levelID, &unlockItem_modelID,
-		                            &unlockItem_numOwned, &unlockItem_numNeeded,
-		                            &reqRelicTint, &reqGemColour, &reqTokenColour))
-		{
-		}
-		// AP open two-stage: Turbo Track carries a per-seed randomized single-stage
-		// requirement (warp_pad_unlock[17]). type 0 / inactive falls back to vanilla 5 Gems.
-		else if (ctr_cfg_active() && levelID < CTR_CFG_PAD_COUNT &&
-		    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
-		{
-			AP_ReqToUnlock(&ctr_cfg.warp_pad_unlock[levelID].stage1,
-			               &unlockItem_modelID, &unlockItem_numOwned, &unlockItem_numNeeded);
-			reqRelicTint = AP_ReqRelicTintTier(&ctr_cfg.warp_pad_unlock[levelID].stage1);
-			reqGemColour = AP_ReqGemColour(&ctr_cfg.warp_pad_unlock[levelID].stage1);
-			reqTokenColour = AP_ReqTokenColour(&ctr_cfg.warp_pad_unlock[levelID].stage1);
-		}
-		else
-#endif
 		{
 			// number gems needed to open
 			unlockItem_modelID = STATIC_GEM;
@@ -3517,47 +2253,14 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 			// count number of gems owned
 			unlockItem_numOwned = 0;
 			for (i = 0; i < 5; i++)
-#ifdef CTR_AP
-				// AP fallback (type 0 / vanilla): all 5 received Gem colours.
-				if (AP_GateCountGemColour(i) >= 1)
-					unlockItem_numOwned++;
-#else
 				if (CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_FIRST_GEM + i) != 0)
 					unlockItem_numOwned++;
-#endif
 		}
 	}
 
 	// battle maps
 	else if ((((u16)(levelID - AH_WP_NITRO_COURT)) < 2) || (levelID == 21) || (levelID == 23))
 	{
-#ifdef CTR_AP
-		// AP open randomization: battle-arena pads carry a per-seed randomized
-		// single-stage requirement (warp_pad_unlock[18/19/21/23]); type 0 / inactive
-		// falls back to the vanilla hub-key gate (GetKeysRequirement). A FREE arena
-		// in a randomized seed arrives as the explicit always-true "0 trophies"
-		// ({type 1, count 0}) and therefore opens here (open-when-free); type 0 only
-		// occurs when the arenas are vanilla-gated by design (vanilla unlock mode /
-		// arenas not included in the seed).
-		// Stage-2 re-lock first (see the Slide Coliseum branch above): the
-		// 2026-07-14 softlock repro was exactly this case -- Dragon Mines (race
-		// dest) hosted on the Skull Rock arena pad with stage2 "any 2 Gem" unmet.
-		if (AP_Stage2RelockToUnlock(warppadObj, levelID, &unlockItem_modelID,
-		                            &unlockItem_numOwned, &unlockItem_numNeeded,
-		                            &reqRelicTint, &reqGemColour, &reqTokenColour))
-		{
-		}
-		else if (ctr_cfg_active() && levelID < CTR_CFG_PAD_COUNT &&
-		    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
-		{
-			AP_ReqToUnlock(&ctr_cfg.warp_pad_unlock[levelID].stage1,
-			               &unlockItem_modelID, &unlockItem_numOwned, &unlockItem_numNeeded);
-			reqRelicTint = AP_ReqRelicTintTier(&ctr_cfg.warp_pad_unlock[levelID].stage1);
-			reqGemColour = AP_ReqGemColour(&ctr_cfg.warp_pad_unlock[levelID].stage1);
-			reqTokenColour = AP_ReqTokenColour(&ctr_cfg.warp_pad_unlock[levelID].stage1);
-		}
-		else
-#endif
 			goto GetKeysRequirement;
 	}
 
@@ -3568,95 +2271,8 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		unlockItem_modelID = STATIC_TOKEN;
 		unlockItem_numNeeded = 4;
 
-#ifdef CTR_AP
-		// cup index (levelID - AH_WP_ADV_CUP) is 0..4 = R,G,B,Y,P. `levelID` here is
-		// the PHYSICAL cup pad (LInB keeps it physical; warppadObj->levelID holds the
-		// shuffled destination). Per the keying invariant the unlock REQUIREMENT is a
-		// property of the physical pad, so gem_cup_unlock is indexed by the physical
-		// cup colour -- correct even under slot_data v3 destination shuffle, where this
-		// cup pad may load a non-cup destination (its requirement still shows here).
-		{
-			int cupIdx = levelID - AH_WP_ADV_CUP;
-			// AP stage-2 re-lock first (see the Slide Coliseum branch above): a race
-			// destination hosted on this cup pad (merged shuffle) with its trophy
-			// checked + stage-2 unmet renders CLOSED advertising the stage-2
-			// requirement. ctr_cfg_warp_stage2_req resolves cup pads 100..104 via
-			// gem_cup_unlock, the same record the ThTick load gate evaluates.
-			if (AP_Stage2RelockToUnlock(warppadObj, levelID, &unlockItem_modelID,
-			                            &unlockItem_numOwned, &unlockItem_numNeeded,
-			                            &reqRelicTint, &reqGemColour, &reqTokenColour))
-			{
-			}
-			// AP Phase 2: a per-seed randomized stage-1 requirement replaces the
-			// Phase-1 "4 tokens of this colour" rule when slot_data is active and the
-			// cup has a resolved requirement (type != 0). type 0 (option off / vanilla
-			// / absent slot_data) falls back to the token rule. Uses the SAME colour-
-			// aware type switch the trophy pads use (~1224). NOTE: gem cups carry no
-			// pre-existing "2-key hub gate" in this branch, so there is nothing to AND
-			// the stage-1 requirement with here (the Cups Room hub door enforces the
-			// key gate structurally).
-			else if (ctr_cfg_active() && ctr_cfg.gem_cup_unlock[cupIdx].stage1.type != 0)
-			{
-				const ctr_req *r = &ctr_cfg.gem_cup_unlock[cupIdx].stage1;
-				reqRelicTint = AP_ReqRelicTintTier(r);
-				reqGemColour = AP_ReqGemColour(r);
-				reqTokenColour = AP_ReqTokenColour(r);
-				switch (r->type)
-				{
-				case 1: // trophies
-					unlockItem_modelID = STATIC_TROPHY;
-					unlockItem_numOwned = AP_GateCount(AP_IDX_TROPHY);
-					break;
-				case 2: // keys
-					unlockItem_modelID = STATIC_KEY;
-					unlockItem_numOwned = AP_GateCount(AP_IDX_KEY);
-					break;
-				case 3: // tokens (colour-aware)
-					unlockItem_modelID = STATIC_TOKEN;
-					unlockItem_numOwned = (r->colour >= 0)
-					    ? AP_GateCountTokenColour(r->colour)
-					    : AP_GateCount(AP_IDX_TOKEN_RED);
-					break;
-				case 4: // relic (tier by colour: 0=Sapphire, 1=Gold, 2=Platinum)
-					unlockItem_modelID = STATIC_RELIC;
-					unlockItem_numOwned = AP_GateCountRelicTier(r->colour);
-					break;
-				case 5: // gems (colour-aware)
-					unlockItem_modelID = STATIC_GEM;
-					unlockItem_numOwned =
-					    (r->colour >= 0) ? AP_GateCountGemColour(r->colour) : 0;
-					break;
-				case 6: // any token (all colours, summed)
-					unlockItem_modelID = STATIC_TOKEN;
-					unlockItem_numOwned = AP_GateCountTokenSum();
-					break;
-				case 7: // any relic (all tiers, summed)
-					unlockItem_modelID = STATIC_RELIC;
-					unlockItem_numOwned = AP_GateCountRelicSum();
-					break;
-				case 8: // any gem (all colours, summed)
-					unlockItem_modelID = STATIC_GEM;
-					unlockItem_numOwned = AP_GateCountGemSum();
-					break;
-				default:
-					unlockItem_modelID = STATIC_TOKEN;
-					unlockItem_numOwned = AP_GateCountTokenColour(cupIdx);
-					break;
-				}
-				unlockItem_numNeeded = r->count;
-			}
-			else
-			{
-				// AP Option B fallback: gate on 4 received Tokens of its colour.
-				unlockItem_modelID = STATIC_TOKEN;
-				unlockItem_numNeeded = 4;
-				unlockItem_numOwned = AP_GateCountTokenColour(cupIdx);
-			}
-		}
-#else
 		int *arrTokenCount = &gGT->currAdvProfile.numCtrTokens.red;
 		unlockItem_numOwned = arrTokenCount[levelID - AH_WP_ADV_CUP];
-#endif
 	}
 
 #ifdef CTR_AP

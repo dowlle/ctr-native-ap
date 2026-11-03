@@ -15,6 +15,7 @@
 // AP_ComposedBossesWon, collected -> ap_net_location_checked.
 
 #include <cstdio>
+#include <fstream>
 #include <cstring>
 #include <map>
 #include <set>
@@ -89,7 +90,9 @@ static void parse_block(const nlohmann::json &block)
 	nlohmann::json b = block;
 	if (b.is_object() && !b.contains("start"))
 		b["start"] = nlohmann::json::object();
-	nlohmann::json j = {{"ctr_options", {{"schema_version", 16}}}, {"win_logic", b}};
+	std::ifstream input("tools/fixtures/content-plan/global-checks.json");
+	nlohmann::json j; input >> j;
+	j["win_logic"] = b;
 	ap_seedcfg_parse_json(j);
 }
 
