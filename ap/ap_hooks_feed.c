@@ -105,6 +105,10 @@ static int ap_hub_feed_on = 1; // ap-config.txt "hub_feed=" (default on; governs
                                // BOTH feed surfaces since #192, key name kept)
 int AP_HubFeedOn(void)
 {
+	// Options > Archipelago > Item Feed (ruling of 2026-11-02), with the same
+	// config.ini-over-ap-config.txt precedence as AP_MapFlashOn.
+	if (NativeConfig_HasIni())
+		return g_config.itemFeed;
 	return ap_hub_feed_on;
 }
 
@@ -410,7 +414,7 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 // Adventure-hub surface: the shipped anchor, bottom-left, unchanged.
 void AP_FeedDrawHub(void)
 {
-	if (!ctr_cfg_active() || !ap_hub_feed_on)
+	if (!ctr_cfg_active() || !AP_HubFeedOn())
 		return;
 
 	AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_BASE_Y, 0);
@@ -434,7 +438,7 @@ void AP_FeedDrawRace(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
 
-	if (!ctr_cfg_active() || !ap_hub_feed_on)
+	if (!ctr_cfg_active() || !AP_HubFeedOn())
 		return;
 	if (gGT->numPlyrCurrGame != 1)
 		return;
@@ -450,7 +454,7 @@ void AP_FeedDrawResults(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
 
-	if (!ctr_cfg_active() || !ap_hub_feed_on)
+	if (!ctr_cfg_active() || !AP_HubFeedOn())
 		return;
 	if (gGT->numPlyrCurrGame != 1)
 		return;
