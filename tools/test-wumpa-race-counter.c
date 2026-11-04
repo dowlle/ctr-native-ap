@@ -128,6 +128,13 @@ int main(void)
 		CHECK("small shop and other receipts accumulate without a kart grant", g_wumpa_pending == 0 && g_wumpa_ap_credit == 4);
 		AP_WumpaCommitReceived();
 		CHECK("small outside-race receipts bank in full", credited == before + 24);
+		{
+			int i, b2 = credited;
+			for (i = 0; i < 12; i++)
+				AP_WumpaReceive(1);
+			AP_WumpaCommitReceived();
+			CHECK("A2-17 twelve single fruit outside a race all bank (no clamp at ten)", credited == b2 + 12 && g_wumpa_pending == 0);
+		}
 	}
 	{
 		// The Adventure counter rule is independent of a shop or Wumpa goal.
@@ -151,6 +158,13 @@ int main(void)
 		AP_WumpaReceive(3);
 		AP_WumpaTick(&gt);
 		CHECK("shop-off receipts join the race count", AP_WumpaRaceCount(&d) == 14 && d.numWumpas == 10 && g_wumpa_ap_credit == 0);
+		{
+			int i;
+			for (i = 0; i < 12; i++)
+				AP_WumpaReceive(1);
+			AP_WumpaTick(&gt);
+			CHECK("A2-17 twelve single fruit in a race raise the race count past ten", AP_WumpaRaceCount(&d) == 26 && d.numWumpas == 10);
+		}
 		AP_WumpaOnRaceFinish(&d, 1, d.numWumpas);
 		CHECK("shop and goal off never credits a wallet", credited == before && !AP_WumpaBanking());
 		onTrack = 0;
