@@ -398,6 +398,7 @@ struct GameTracker;
 const ctr_content_pad *AP_ContentCupPad(void);
 int AP_ContentCupLeg(void);
 const char *AP_ContentCupName(void);
+const char *AP_ContentCupTrackName(void);
 int AP_ContentCupPadLevel(void);
 int AP_ContentCupNextLeg(int leg, int *outLaps);
 void AP_ContentCupEnter(void);

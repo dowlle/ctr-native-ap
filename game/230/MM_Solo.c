@@ -85,6 +85,8 @@ static struct APSoloRoomInfo s_soloRoom;
 static struct APSoloStartInfo s_soloStart;
 static char s_soloName[64];
 static char s_soloNameBackup[64];
+static char s_soloPassword[64];
+static char s_soloPasswordBackup[64];
 static char s_soloMsg[256];
 
 static int s_soloPickKind;       /* SOLO_JOB_IMPORT_ROOM or SOLO_JOB_IMPORT_YAML */
@@ -404,15 +406,30 @@ static void MM_Solo_PageHome(uint32_t *ot, struct GamepadBuffer *pad)
 	MM_Solo_Footer("*: PLAY   [: DETAILS   ^: BACK", ot);
 }
 
+static void MM_Solo_EditPassword(int y)
+{
+	if (AP_Solo_SessionActive())
+	{
+		MM_Solo_Message("Stop the solo session before changing its password.");
+		return;
+	}
+	snprintf(s_soloPassword, sizeof s_soloPassword, "%s", AP_Solo_Password());
+	snprintf(s_soloPasswordBackup, sizeof s_soloPasswordBackup, "%s", s_soloPassword);
+	NativeText_Begin(s_soloPassword, sizeof s_soloPassword, CONN_ROW_X, y - 2, CONN_ROW_W, CONN_ROW_H, 0);
+	s_soloEditing = 2;
+}
+
 static void MM_Solo_PageDetails(uint32_t *ot, struct GamepadBuffer *pad)
 {
 	char line[160], fit[160];
-	MM_Solo_Navigate(pad, 2);
-	if ((pad->buttonsTapped & BTN_CROSS) != 0)
+	if (!s_soloEditing && !s_soloEditJustEnded) MM_Solo_Navigate(pad, 3);
+	if (!s_soloEditing && !s_soloEditJustEnded && (pad->buttonsTapped & BTN_CROSS) != 0)
 	{
 		OtherFX_Play(1, 1);
 		if (s_soloSel == 0)
 			MM_Solo_StartSession(s_soloRoom.roomId);
+		else if (s_soloSel == 2)
+			MM_Solo_EditPassword(0xA0);
 		else if (!s_soloDeleteArmed)
 			s_soloDeleteArmed = 1; /* Delete asks twice */
 		else
@@ -445,7 +462,11 @@ static void MM_Solo_PageDetails(uint32_t *ot, struct GamepadBuffer *pad)
 	DecalFont_DrawLineOT("Resume", SOLO_ROW_X, 0x84, FONT_SMALL, ORANGE, ot);
 	DecalFont_DrawLineOT(s_soloDeleteArmed ? "Press Cross again to delete" : "Delete", SOLO_ROW_X, 0x90, FONT_SMALL,
 	                     s_soloDeleteArmed ? RED : ORANGE, ot);
-	MM_Solo_Highlight(s_soloSel == 0 ? 0x84 : 0x90, ot);
+	snprintf(line, sizeof line, "Password: %s", s_soloEditing == 2 ? s_soloPassword :
+	         AP_Solo_Password()[0] ? AP_Solo_Password() : "None");
+	MM_Solo_Fit(line, fit, sizeof fit, SOLO_ROW_W);
+	DecalFont_DrawLineOT(fit, SOLO_ROW_X, 0xA0, FONT_SMALL, WHITE, ot);
+	if (!s_soloEditing) MM_Solo_Highlight(s_soloSel == 0 ? 0x84 : s_soloSel == 1 ? 0x90 : 0xA0, ot);
 	MM_Solo_Footer("*: SELECT   ^: BACK", ot);
 }
 
@@ -785,7 +806,14 @@ static void MM_Solo_UpdateNameEdit(void)
 	}
 	if (NativeText_Result() != 0)
 	{
-		if (NativeText_Result() == 2 || s_soloName[0] == '\0')
+		if (s_soloEditing == 2)
+		{
+			if (NativeText_Result() == 2)
+				snprintf(s_soloPassword, sizeof s_soloPassword, "%s", s_soloPasswordBackup);
+			else
+				AP_Solo_SetPassword(s_soloPassword); /* Empty deliberately removes it. */
+		}
+		else if (NativeText_Result() == 2 || s_soloName[0] == '\0')
 			snprintf(s_soloName, sizeof s_soloName, "%s", s_soloNameBackup);
 		NativeText_End();
 		s_soloEditing = 0;
@@ -799,7 +827,7 @@ static void MM_Solo_PageReview(uint32_t *ot, struct GamepadBuffer *pad)
 	char line[160], fit[160];
 	if (!s_soloEditing && !s_soloEditJustEnded)
 	{
-		MM_Solo_Navigate(pad, 2);
+		MM_Solo_Navigate(pad, 3);
 		if ((pad->buttonsTapped & BTN_CROSS) != 0)
 		{
 			OtherFX_Play(1, 1);
@@ -809,6 +837,8 @@ static void MM_Solo_PageReview(uint32_t *ot, struct GamepadBuffer *pad)
 				NativeText_Begin(s_soloName, sizeof s_soloName, CONN_ROW_X, SOLO_REVIEW_NAME_Y - 2, CONN_ROW_W, CONN_ROW_H, 0);
 				s_soloEditing = 1;
 			}
+			else if (s_soloSel == 1)
+				MM_Solo_EditPassword(SOLO_REVIEW_NAME_Y + SOLO_ROW_H);
 			else if (AP_Solo_GenerateStart(s_soloStart.path, s_soloName,
 			                               s_soloStart.isPreset ? s_soloStart.presetId : "", s_soloFromOptions))
 				MM_Solo_Busy(SOLO_JOB_GENERATE);
@@ -828,12 +858,16 @@ static void MM_Solo_PageReview(uint32_t *ot, struct GamepadBuffer *pad)
 	MM_Solo_DrawWrapped(line, SOLO_ROW_X, 0x50, SOLO_ROW_W, 2, WHITE, ot);
 	DecalFont_DrawLineOT("Slot name", SOLO_ROW_X, SOLO_REVIEW_NAME_Y, FONT_SMALL, ORANGE, ot);
 	MM_Solo_Fit(s_soloName, line, sizeof line,
-	            SOLO_ROW_R - 0xB0 - (s_soloEditing ? DecalFont_GetLineWidth("_", FONT_SMALL) : 0));
-	snprintf(fit, sizeof fit, "%s%s", line, s_soloEditing ? "_" : "");
+	            SOLO_ROW_R - 0xB0 - (s_soloEditing == 1 ? DecalFont_GetLineWidth("_", FONT_SMALL) : 0));
+	snprintf(fit, sizeof fit, "%s%s", line, s_soloEditing == 1 ? "_" : "");
 	DecalFont_DrawLineOT(fit, 0xB0, SOLO_REVIEW_NAME_Y, FONT_SMALL, WHITE, ot);
-	DecalFont_DrawLineOT("Generate", SOLO_ROW_X, SOLO_REVIEW_NAME_Y + SOLO_ROW_H, FONT_SMALL, ORANGE, ot);
+	snprintf(line, sizeof line, "Password: %s", s_soloEditing == 2 ? s_soloPassword :
+	         AP_Solo_Password()[0] ? AP_Solo_Password() : "None");
+	MM_Solo_Fit(line, fit, sizeof fit, SOLO_ROW_W);
+	DecalFont_DrawLineOT(fit, SOLO_ROW_X, SOLO_REVIEW_NAME_Y + SOLO_ROW_H, FONT_SMALL, WHITE, ot);
+	DecalFont_DrawLineOT("Generate", SOLO_ROW_X, SOLO_REVIEW_NAME_Y + 2 * SOLO_ROW_H, FONT_SMALL, ORANGE, ot);
 	if (!s_soloEditing)
-		MM_Solo_Highlight(s_soloSel == 0 ? SOLO_REVIEW_NAME_Y : SOLO_REVIEW_NAME_Y + SOLO_ROW_H, ot);
+		MM_Solo_Highlight(SOLO_REVIEW_NAME_Y + s_soloSel * SOLO_ROW_H, ot);
 	if (!s_soloStart.isPreset)
 		MM_Solo_Help("The YAML's own name is used unless you change it here.", GRAY, ot);
 	MM_Solo_Footer(s_soloEditing ? "* OR START: SAVE   ^: CANCEL" : "*: SELECT   ^: BACK", ot);

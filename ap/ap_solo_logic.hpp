@@ -22,6 +22,17 @@
 #include <string>
 #include <vector>
 
+// Package ids freeze the content key between the first and last slash. Two
+// revisions of that content cannot occupy one seed's track entry together.
+static inline bool AP_SoloTrackSameContent(const std::string &a, const std::string &b)
+{
+	if (a.compare(0, 8, "package/") != 0 || b.compare(0, 8, "package/") != 0)
+		return false;
+	const size_t endA = a.rfind('/'), endB = b.rfind('/');
+	return endA > 8 && endA == endB && endA + 1 < a.size() && endB + 1 < b.size() &&
+	       a.compare(0, endA, b, 0, endB) == 0;
+}
+
 enum APSoloEventKind
 {
 	AP_SOLO_EV_NONE = 0,   // garbage or unknown: ignore

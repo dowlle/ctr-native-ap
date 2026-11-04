@@ -199,6 +199,21 @@ void AP_WumpaReceive(int count)
 		return;
 	}
 
+	// 0.3.0-alpha2: outside an Adventure race, received fruit
+	// of any origin banks at once (balance and collected total) instead of
+	// waiting for the kart. The credit waits in g_wumpa_ap_credit only until the
+	// effect marker covering this item is written (AP_WumpaCommitReceived), the
+	// same crash guard as fruit past 10. In-race receipts (above) keep joining
+	// the race count; without banking the hold-for-kart rule below still applies.
+	// To go back to holding, change this one condition.
+	if (AP_WumpaBanking())
+	{
+		g_wumpa_ap_credit += count;
+		snprintf(msg, sizeof msg, "[AP WUMPA] received +%d banked at once\n", count);
+		AP_LogLine(msg);
+		return;
+	}
+
 	// #144: report what actually happened. The fruit is held for the kart
 	// (handed over at the next race start, or on the next frame mid-race); a
 	// receive that would push the held fruit past AP_WUMPA_MAX has the overflow
@@ -212,15 +227,7 @@ void AP_WumpaReceive(int count)
 		g_wumpa_pending = AP_WUMPA_MAX; // a kart can never hold more; no cross-race hoard
 	}
 	past = count - held;
-	// #249 (ruled 2026-10-16): with banking on, AP fruit past 10 goes into the
-	// Wumpa bank at once, in or out of a race, instead of being discarded.
-	if (past > 0 && AP_WumpaBanking())
-	{
-		g_wumpa_ap_credit += past; // committed by AP_WumpaCommitReceived
-		banked = past;
-		past = 0;
-	}
-
+	// Banking seeds returned above, so fruit past 10 is only discarded here.
 	AP_WumpaReceiveLine(msg, (int)sizeof msg, held, g_wumpa_pending, banked, past, AP_WUMPA_MAX);
 	AP_LogLine(msg);
 }

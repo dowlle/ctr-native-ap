@@ -322,7 +322,7 @@ LAB_800aec34:
 			char joined[192];
 			int c = AP_BossFinalGarageOpponent();
 			int used = snprintf(joined, sizeof joined, "Rival: %s",
-			                    sdata->lngStrings[data.MetaDataCharacters[c].name_LNG_short]);
+			                    sdata->lngStrings[data.MetaDataCharacters[c].name_LNG_long]);
 			if (advertVisible && used < (int)sizeof joined)
 				snprintf(joined + used, sizeof joined - used, "\r%s", advert);
 			memcpy(advert, joined, sizeof advert);
@@ -355,10 +355,17 @@ LAB_800aec34:
 	// if aku is not giving a hint
 	if (sdata->AkuAkuHintState == 0)
 	{
+		const char *challenge = sdata->lngStrings[data.lng_challenge[R232.bossIDs[hubID]]];
+#ifdef CTR_AP
+		char drawnChallenge[96];
+		if (levelID != GEM_STONE_VALLEY &&
+		    AP_BossChallengeTitle(hubID - 1, drawnChallenge, sizeof drawnChallenge))
+			challenge = drawnChallenge;
+#endif
 		// draw string, lng_challenge
 		DecalFont_DrawLine(
 
-		    sdata->lngStrings[data.lng_challenge[R232.bossIDs[hubID]]],
+		    (char *)challenge,
 
 		    (view.x + (view.w >> 1)), challengeY, 1, 0xffff8000);
 	}

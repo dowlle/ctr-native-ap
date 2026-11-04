@@ -22,8 +22,8 @@ the game runs:
 
 A source scan then checks the wiring that cannot be called out of engine: every
 path that ends a live box frees its seat, the pool-reset path drops seats
-without writing to old instances, a seated box spawns at the crate position
-without the ground lift, and a custom-bytes race never falls through to the
+without writing to old instances, a seated box uses the shared AP model lift
+at the crate anchor, and a custom-bytes race never falls through to the
 host's retail placements.
 
 Run: python3 tools/test-box-seat-production.py
@@ -276,9 +276,8 @@ forget = body("static void AP_BoxesForget(void)")
 assert "s_live[i].seated = 0" in forget and "seatInst = 0" in forget and "flags" not in forget, \
     "a pool reset drops the seats without writing to old instances"
 spawn = body("static void AP_BoxesSpawnOne(")
-seated = spawn[spawn.index("if (s_live[i].seated)"):]
-assert seated.index("pos.y = s_live[i].y;") < seated.index("else") < seated.index("AP_BoxModel_SpawnPos"), \
-    "a seated box spawns at the crate position, without the ground-anchor lift"
+assert "if (s_live[i].seated)" not in spawn and spawn.count("AP_BoxModel_SpawnPos") == 1, \
+    "custom seats and authored anchors share one measured AP model lift"
 rebuild = body("static void AP_BoxesRebuild(")
 branch = rebuild.index("CustomTrack_StandaloneContext(level)")
 assert branch < rebuild.index("AP_CortexTrackActive()") < rebuild.index("AP_BoxMap_BuildSet"), \

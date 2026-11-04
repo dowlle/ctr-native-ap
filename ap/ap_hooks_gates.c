@@ -533,7 +533,21 @@ int AP_BossRivalAdvert(int bossIdx, char *out, int cap)
 	c = AP_BossEncounterOpponent(&ctr_boss_encounters, bossIdx);
 	if (c < 0 || c >= 16)
 		return 0;
-	snprintf(out, (size_t)cap, "Rival: %s", sdata->lngStrings[data.MetaDataCharacters[c].name_LNG_short]);
+	snprintf(out, (size_t)cap, "Rival: %s", sdata->lngStrings[data.MetaDataCharacters[c].name_LNG_long]);
+	return 1;
+}
+
+int AP_BossChallengeTitle(int bossIdx, char *out, int cap)
+{
+	int c;
+	const char *name;
+	if (out == 0 || cap <= 0 || !ctr_cfg_active())
+		return 0;
+	c = AP_BossEncounterOpponent(&ctr_boss_encounters, bossIdx);
+	if (c < 0 || c >= 16)
+		return 0;
+	name = c == PENTA_PENGUIN ? "Penta" : sdata->lngStrings[data.MetaDataCharacters[c].name_LNG_long];
+	snprintf(out, (size_t)cap, "%s's Challenge", name);
 	return 1;
 }
 

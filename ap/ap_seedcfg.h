@@ -1076,6 +1076,7 @@ int AP_BossVenueAdvert(int bossIdx, char *out, int cap);
 // #169 tier 3: "Kit: <families>" for one with a composed kit. 0 otherwise.
 // IMPLEMENTED C-SIDE in ap_hooks_gates.c.
 int AP_BossRivalAdvert(int bossIdx, char *out, int cap);
+int AP_BossChallengeTitle(int bossIdx, char *out, int cap);
 int AP_BossKitAdvert(int bossIdx, char *out, int cap);
 
 // #169 tier 2: the engine character garage bossIdx races (the garage load

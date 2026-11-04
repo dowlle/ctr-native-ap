@@ -177,6 +177,10 @@ int AP_Solo_PickStart(int room);
 int AP_Solo_PickTake(char *out, int size);
 
 /* Session. */
+/* Empty by default. Set before starting/resuming; a running server keeps its
+   password until stopped. The setting lasts for this client process only. */
+const char *AP_Solo_Password(void);
+int AP_Solo_SetPassword(const char *password);
 int AP_Solo_SessionStart(const char *roomId);
 int AP_Solo_SessionState(void);
 const char *AP_Solo_SessionError(void);

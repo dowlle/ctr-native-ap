@@ -1975,6 +1975,20 @@ for index, extra in enumerate(row5_sets):
             cases.append((f"row5-{index}-{unlock}-{seed}", make_world(options, seed=seed).fill_slot_data(), True))
             row5_cases += 1
 assert row5_cases == 144, row5_cases
+# A2-6 (alpha1 room refusal): AP Box Colours over the whole matrix of
+# color_boxes_by_item, spoiler_items, ap_item_type_colors and box_locations.
+# Native wanted the item whenever the plan had boxes; the apworld creates it
+# only for coloured boxes, so `color_boxes_by_item: false` with Spoiler Items
+# and boxes on was refused by the client.
+for colours in (False, True):
+    for spoiler in (False, True):
+        for type_colours in (False, True):
+            for boxes in (False, True):
+                room = make_world(row5_options("randomized", dict(color_boxes_by_item=colours, spoiler_items=spoiler,
+                                                                  ap_item_type_colors=type_colours, box_locations=boxes)),
+                                  seed=1).fill_slot_data()
+                assert ("ap_box_colours" in room["content_plan"].get("item_packs", {})) == (colours and spoiler and boxes)
+                cases.append((f"a2-6 colours={colours} spoiler={spoiler} type={type_colours} boxes={boxes}", room, True))
 row5_cup = make_world(row5_options("randomized", row5_sets[6]), seed=1).fill_slot_data()
 row5_gauntlet = make_world(row5_options("randomized", row5_sets[7]), seed=1).fill_slot_data()
 row5_first = make_world(row5_options("randomized", row5_sets[0]), seed=1).fill_slot_data()

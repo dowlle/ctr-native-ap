@@ -16,10 +16,13 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -397,6 +400,10 @@ struct Session
 	bool reconnecting = false; // our own AP_Net_Reconnect call
 } g_session;
 
+// Deliberately session-local: empty means an ordinary loopback room without
+// a password. The player can set it before starting or resuming a room.
+std::string g_sessionPassword;
+
 void FinishJob()
 {
 	g_job.child.release();
@@ -503,9 +510,17 @@ void ParseList(const nlohmann::json &r)
 	addStarts(r.value("inbox", nlohmann::json()), false);
 }
 
+// Store verification runs separately from the SDL child job. Cancellation
+// discards its result without joining a worker on the frame thread.
+bool TrackPublicationBusy();
+bool TickTrackPublication();
+bool StartTrackPublication(const std::vector<std::string> &args);
+void CancelTrackPublication();
+void FinishTrackPublication();
+
 bool JobStart(JobKind kind, const std::vector<std::string> &args, uint64_t limitMs)
 {
-	if (g_job.state == AP_SOLO_JOB_RUNNING || !AP_Solo_RuntimePresent())
+	if (g_job.state == AP_SOLO_JOB_RUNNING || TrackPublicationBusy() || !AP_Solo_RuntimePresent())
 		return false;
 	if (SoloRootIsLink())
 	{
@@ -533,6 +548,8 @@ bool JobStart(JobKind kind, const std::vector<std::string> &args, uint64_t limit
 
 void TickJob()
 {
+	if (TickTrackPublication())
+		return;
 	if (g_job.state != AP_SOLO_JOB_RUNNING)
 		return;
 	for (const std::string &line : g_job.child.poll())
@@ -604,6 +621,11 @@ bool SessionSpawn()
 {
 	std::vector<std::string> args = {"serve", "--room", g_session.roomId, "--game-pid",
 	                                 std::to_string(AP_SOLO_GETPID())};
+	if (!g_sessionPassword.empty())
+	{
+		args.push_back("--password");
+		args.push_back(g_sessionPassword);
+	}
 	g_session.child.release();
 	if (!g_session.child.start(args, SoloPath("rooms/" + g_session.roomId + "/runtime.log")))
 		return false;
@@ -781,22 +803,13 @@ extern "C" int AP_Solo_ImportYamlStart(const char *path)
 
 extern "C" int AP_Solo_TracksStart(const char *yamlPath)
 {
-	if (g_job.state == AP_SOLO_JOB_RUNNING)
-		return 0;
-	char publicationError[256];
-	if (!AP_Solo_PublishInstalledStore(nullptr, publicationError, sizeof publicationError))
-	{
-		g_job.kind = JOB_TRACKS;
-		JobFail("publish", "Files installed, but Play Solo publication failed: " + std::string(publicationError), "");
-		return 1; // the menu shows the failure through its normal job message
-	}
 	std::vector<std::string> args = {"tracks", "--assets", AssetsDir()};
 	if (yamlPath && *yamlPath)
 	{
 		args.push_back("--yaml");
 		args.push_back(yamlPath);
 	}
-	return JobStart(JOB_TRACKS, args, kQuickLimitMs) ? 1 : 0;
+	return StartTrackPublication(args) ? 1 : 0;
 }
 
 extern "C" int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName, const char *presetId, int useOptions)
@@ -848,6 +861,7 @@ extern "C" void AP_Solo_JobCancel(void)
 	// so ending the child loses nothing.
 	if (g_job.state == AP_SOLO_JOB_RUNNING)
 	{
+		CancelTrackPublication();
 		g_job.child.kill();
 		g_job.child.release();
 		g_job.state = AP_SOLO_JOB_IDLE;
@@ -876,7 +890,13 @@ extern "C" int AP_Solo_TrackGet(int index, struct APSoloTrackInfo *out)
 extern "C" void AP_Solo_TrackCycle(int index)
 {
 	if (index >= 0 && index < (int)g_tracks.size() && !g_tracks[index].needsLaps)
+	{
 		g_tracks[index].pick = g_tracks[index].modes[0] ? AP_SoloTrackNextPick(g_tracks[index].pick) : AP_SOLO_TRACK_OFF;
+		if (g_tracks[index].pick != AP_SOLO_TRACK_OFF)
+			for (int other = 0; other < (int)g_tracks.size(); ++other)
+				if (other != index && AP_SoloTrackSameContent(g_tracks[index].id, g_tracks[other].id))
+					g_tracks[other].pick = AP_SOLO_TRACK_OFF;
+	}
 }
 
 extern "C" int AP_Solo_TracksPicked(void)
@@ -1149,14 +1169,20 @@ extern "C" int AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *r
 namespace {
 struct StorePublication
 {
+	struct Descriptor { int kind; std::string key, revision, json; };
+	std::vector<Descriptor> descriptors;
 	int failed = 0;
 	int published = 0;
+	std::string assets;
 	std::string pin;
 	std::string error;
+	const std::atomic<bool> *cancel = nullptr;
 };
 void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 {
 	auto &result = *static_cast<StorePublication *>(opaque);
+	if (result.cancel && result.cancel->load())
+		throw std::runtime_error("Track verification cancelled");
 	if (!result.pin.empty() && result.pin != entry->pin) return;
 	result.published++;
 	if (!entry->verified)
@@ -1189,38 +1215,28 @@ void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 				}
 		}
 	}
-	const int kind = CustomPackage_StoreDescriptor(AssetsDir().c_str(), entry->pin,
+	const int kind = CustomPackage_StoreDescriptor(result.assets.c_str(), entry->pin,
 		knownKey.empty() ? nullptr : knownKey.c_str(),
 		key, sizeof key, revision, sizeof revision, json, sizeof json, error, sizeof error);
-	if (kind == 1)
-	{
-		const std::string name = AP_SoloDescriptorFileName(key, revision);
-		const fs::path kept = fs::u8path(SoloPath("tracks")) / fs::u8path(name);
-		const auto old = nlohmann::json::parse(ReadSmallPlainFile(kept, kDescriptorMax), nullptr, false);
-		const auto fresh = nlohmann::json::parse(json, nullptr, false);
-		if (AP_SoloDescriptorUnchanged(old, fresh))
-			return;
-	}
-	if (!kind || !(kind == 2 ? AP_Solo_RecordTrackNeedsLaps(key, revision, json)
-	                         : AP_Solo_RecordTrackDescriptor(key, revision, json)))
+	if (!kind)
 	{
 		result.failed++;
-		if (result.error.empty()) result.error = kind ? "Could not publish the Play Solo descriptor" : error;
+		if (result.error.empty()) result.error = error;
 	}
+	else
+		result.descriptors.push_back({kind, key, revision, json});
 }
-}
-#endif
-
-extern "C" int AP_Solo_PublishInstalledStore(const char *pin, char *error, size_t errorSize)
+StorePublication CollectInstalledStore(const std::string &assets, const std::string &pin,
+                                      const std::atomic<bool> *cancel = nullptr)
 {
-	if (error && errorSize) error[0] = 0;
-#ifdef CTR_CUSTOM_PACKAGES
 	StorePublication result;
-	if (pin && *pin) result.pin = pin;
+	result.assets = assets;
+	result.pin = pin;
+	result.cancel = cancel;
 	{
-		const fs::path store = fs::u8path(AssetsDir()) / "tracks/packages";
+		const fs::path store = fs::u8path(assets) / "tracks/packages";
 		std::error_code ec;
-		if (!fs::exists(store, ec) && result.pin.empty()) return 1;
+		if (!fs::exists(store, ec) && result.pin.empty()) return result;
 		char scanError[256] = {};
 		if (!CustomPackage_ScanStore(store.u8string().c_str(), PublishStoreEntry, &result,
 		                             scanError, sizeof scanError))
@@ -1234,6 +1250,156 @@ extern "C" int AP_Solo_PublishInstalledStore(const char *pin, char *error, size_
 		result.failed++;
 		result.error = "Installed package was not found in the shared store";
 	}
+	return result;
+}
+
+bool ApplyStoreDescriptor(const StorePublication::Descriptor &d)
+{
+	return d.kind == 2 ? AP_Solo_RecordTrackNeedsLaps(d.key.c_str(), d.revision.c_str(), d.json.c_str())
+	                   : AP_Solo_RecordTrackDescriptor(d.key.c_str(), d.revision.c_str(), d.json.c_str());
+}
+
+std::future<StorePublication> g_trackPublication;
+std::atomic<bool> g_trackPublicationCancel{false};
+StorePublication g_trackPublicationResult;
+std::vector<std::string> g_trackPublicationArgs;
+size_t g_trackPublicationIndex = 0;
+bool g_trackPublishing = false;
+} // namespace
+#endif
+
+namespace {
+bool TrackPublicationBusy()
+{
+#ifdef CTR_CUSTOM_PACKAGES
+	return g_trackPublication.valid() || g_trackPublishing;
+#else
+	return false;
+#endif
+}
+
+bool StartTrackPublication(const std::vector<std::string> &args)
+{
+#ifdef CTR_CUSTOM_PACKAGES
+	if (g_job.state == AP_SOLO_JOB_RUNNING || TrackPublicationBusy() || !AP_Solo_RuntimePresent())
+		return false;
+	g_job.child.release();
+	g_job.kind = JOB_TRACKS;
+	g_job.state = AP_SOLO_JOB_RUNNING;
+	g_job.phase = "Verifying installed tracks";
+	g_job.errorText.clear(); g_job.errorOption.clear(); g_job.resultRoom.clear();
+	g_job.result = nlohmann::json();
+	if (SoloRootIsLink())
+	{
+		JobFail("link", "The solo folder is a link. Make it a normal folder inside the client folder.", "");
+		return true;
+	}
+	g_trackPublicationArgs = args;
+	g_trackPublicationCancel.store(false);
+	const std::string assets = AssetsDir();
+	try
+	{
+		g_trackPublication = std::async(std::launch::async, [assets] {
+			return CollectInstalledStore(assets, "", &g_trackPublicationCancel);
+		});
+	}
+	catch (const std::exception &e) { JobFail("publish", e.what(), ""); }
+	return true;
+#else
+	return JobStart(JOB_TRACKS, args, kQuickLimitMs);
+#endif
+}
+
+bool TickTrackPublication()
+{
+#ifdef CTR_CUSTOM_PACKAGES
+	if (g_trackPublication.valid())
+	{
+		if (g_trackPublication.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+			return true;
+		try { g_trackPublicationResult = g_trackPublication.get(); }
+		catch (const std::exception &e)
+		{
+			if (!g_trackPublicationCancel.load()) JobFail("publish", e.what(), "");
+			return true;
+		}
+		if (g_trackPublicationCancel.load())
+		{
+			g_trackPublicationResult = StorePublication();
+			return true;
+		}
+		if (g_trackPublicationResult.failed)
+		{
+			JobFail("publish", g_trackPublicationResult.error, "");
+			g_trackPublicationResult = StorePublication();
+			return true;
+		}
+		g_trackPublicationIndex = 0;
+		g_trackPublishing = true;
+		g_job.phase = "Publishing track entries";
+	}
+	if (g_trackPublishing)
+	{
+		if (g_trackPublicationIndex < g_trackPublicationResult.descriptors.size())
+		{
+			// One small descriptor per frame; package verification never runs here.
+			const auto &d = g_trackPublicationResult.descriptors[g_trackPublicationIndex++];
+			if (!ApplyStoreDescriptor(d))
+			{
+				g_trackPublishing = false;
+				JobFail("publish", "Could not publish the Play Solo descriptor", "");
+			}
+			return true;
+		}
+		g_trackPublishing = false;
+		g_trackPublicationResult = StorePublication();
+		g_job.state = AP_SOLO_JOB_IDLE;
+		if (!JobStart(JOB_TRACKS, g_trackPublicationArgs, kQuickLimitMs))
+		{
+			// The menu is already busy on this job; an idle state would read as success.
+			g_job.kind = JOB_TRACKS;
+			JobFail("start", "the runtime is missing", "");
+		}
+		return true;
+	}
+#endif
+	return false;
+}
+
+void CancelTrackPublication()
+{
+#ifdef CTR_CUSTOM_PACKAGES
+	g_trackPublicationCancel.store(true);
+	g_trackPublishing = false;
+	g_trackPublicationResult = StorePublication();
+#endif
+}
+
+void FinishTrackPublication()
+{
+#ifdef CTR_CUSTOM_PACKAGES
+	CancelTrackPublication();
+	if (g_trackPublication.valid())
+	{
+		try { g_trackPublication.get(); } catch (const std::exception &) {}
+	}
+#endif
+}
+} // namespace
+
+extern "C" int AP_Solo_PublishInstalledStore(const char *pin, char *error, size_t errorSize)
+{
+	if (error && errorSize) error[0] = 0;
+#ifdef CTR_CUSTOM_PACKAGES
+	auto result = CollectInstalledStore(AssetsDir(), pin ? pin : "");
+	if (!result.failed)
+		for (const auto &d : result.descriptors)
+			if (!ApplyStoreDescriptor(d))
+			{
+				result.failed++;
+				result.error = "Could not publish the Play Solo descriptor";
+				break;
+			}
 	if (result.failed)
 	{
 		if (error && errorSize) std::snprintf(error, errorSize, "%s", result.error.c_str());
@@ -1411,6 +1577,16 @@ extern "C" int AP_Solo_PickTake(char *out, int size)
 	return result;
 }
 
+extern "C" const char *AP_Solo_Password(void) { return g_sessionPassword.c_str(); }
+
+extern "C" int AP_Solo_SetPassword(const char *password)
+{
+	if (!password || std::strlen(password) >= 64 || AP_Solo_SessionActive())
+		return 0;
+	g_sessionPassword = password;
+	return 1;
+}
+
 extern "C" int AP_Solo_SessionStart(const char *roomId)
 {
 	if (!roomId || !AP_SoloRoomIdValid(roomId) || !AP_Solo_RuntimePresent())
@@ -1517,6 +1693,7 @@ extern "C" void AP_Solo_Shutdown(void)
 {
 	g_session.pendingRoom.clear();
 	AP_Solo_JobCancel();
+	FinishTrackPublication(); // Quit only: never join a verifier from a frame.
 	AP_Solo_SessionStop();
 	// Bounded wait for the server to save and exit.
 	while (g_session.state == AP_SOLO_SESSION_STOPPING)

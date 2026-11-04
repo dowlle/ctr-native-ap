@@ -869,6 +869,10 @@ static int ap_cs_safeToOpen(struct GameTracker *gGT)
 {
 	if (!ap_cs_hubTransitionIdle(gGT))
 		return 0;
+	// A save menu can be closed while its camera is still returning. The
+	// save object owns the kart until CAM clears the round-trip flag.
+	if ((gGT->cameraDC[0].flags & CAMERA_FLAG_TRANSITION_AWAY) != 0)
+		return 0;
 	if ((gGT->gameMode1 & (PAUSE_1 | LOADING | GAME_CUTSCENE)) != 0)
 		return 0;
 	if ((gGT->gameMode2 & GAME_MODE2_VEH_FREEZE_MASK) != 0)
