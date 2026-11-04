@@ -3,8 +3,7 @@ name: Build clients
 on:
   pull_request:
   push:
-    branches: [main, 'release/**', 'ci/**']
-    tags: ['v*']
+    branches: [main, 'dev/**', 'release/**', 'ci/**']
   workflow_dispatch:
 
 # Build artifacts only. No release uploads, credentials, signing or game assets.
@@ -12,8 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: clients-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: clients-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   linux:
@@ -69,7 +68,7 @@ jobs:
         with:
           msystem: MINGW32
           update: true
-          cache: false
+          cache: true
           install: >-
             git python
             mingw-w64-i686-gcc mingw-w64-i686-cmake
