@@ -47,26 +47,26 @@ def body(source, signature):
 
 rb = body(text('game/231/RB_Player.c'), 'void RB_Player_ModifyWumpa(')
 cheat = rb.index('CHEAT_WUMPA')
-bank = rb.find('AP_WumpaBankKart(driver, numWumpaOriginal, wumpaDelta)')
-check('ModifyWumpa banks the overflow after the cheat early return', bank > cheat)
-check('ModifyWumpa banks inside the human-driver branch', bank > rb.index('ACTION_BOT) == 0)'))
-check('ModifyWumpa banks before the count is capped', bank < rb.index('driver->numWumpas > 10'))
+bank = rb.find('AP_WumpaRaceModify(driver, wumpaDelta)')
+check('ModifyWumpa changes the full race count after cheat and mask protection', bank > cheat and bank > rb.index('ACTION_MASK_WEAPON'))
+check('the full race count handles losses as well as gains', bank > rb.index('driver->numTimesWumpa += wumpaDelta;'))
+check('the full race count is applied before the retail cap', bank < rb.index('driver->numWumpas > 10'))
 
 wumpa = text('ap/ap_wumpa.c')
 recv = body(wumpa, 'void AP_WumpaReceive(int count)')
 check('AP_WumpaReceive holds AP fruit past 10 for the bank when banking is on',
-      re.search(r'discarded > 0 && AP_WumpaBanking\(\)\)\s*\{\s*g_wumpa_ap_credit \+= discarded;', recv) is not None)
+      re.search(r'past > 0 && AP_WumpaBanking\(\)\)\s*\{\s*g_wumpa_ap_credit \+= past;', recv) is not None)
 fxwrite = body(text('ap/ap_hooks_received.c'), 'static void AP_FxWrite(')
 check('held AP credits are banked only after the effect marker write',
       fxwrite.index('ap_net_fx_store_write(') < fxwrite.index('AP_WumpaCommitReceived();'))
 banking = body(wumpa, 'static int AP_WumpaBanking(void)')
 check('the unlimited-fruit cheat banks nothing', 'CHEAT_WUMPA' in banking)
-kart = body(wumpa, 'void AP_WumpaBankKart(')
+kart = body(wumpa, 'static int AP_WumpaRaceTracking(')
 check('kart banking is the local human player',
-      'driver != gGT->drivers[0]' in kart and 'ACTION_BOT' in kart and 'AP_WumpaBanking()' in kart)
+      'driver != gGT->drivers[0]' in kart and 'ACTION_BOT' in kart and 'ctr_cfg_active()' in kart and 'CHEAT_WUMPA' in kart)
 fin = body(wumpa, 'void AP_WumpaOnRaceFinish(')
 check('finish banking takes the latch with the forced-loss predicate',
-      'AP_WumpaFinishTake(&g_finish_latch, held, AP_RaceAttemptIsForcedLoss())' in fin)
+      'AP_WumpaFinishTake(&g_finish_latch, g_race_wumpa >= 0 ? g_race_wumpa : held, AP_RaceAttemptIsForcedLoss())' in fin)
 adv = body(wumpa, 'static int AP_WumpaAdventureRace(')
 check('banking takes the Adventure race mode test', 'AP_WumpaBankRaceMode(gGT->gameMode1)' in adv)
 check('kart and finish banking bank only in an Adventure race',
@@ -107,19 +107,33 @@ check('the goal ANDs the Wumpa arm on the lifetime total',
 gates = text('ap/ap_hooks_gates.c')
 check('the Oxide companion arm reads the lifetime total',
       'in.wumpaShort = !AP_WumpaGoalMet(ctr_wumpa_shop.goal, ap_net_wumpa_lifetime());' in gates)
-check('the verifier sweep treats the Wumpa arm as met', 'in.wumpaShort = 0;' in text('ap/ap_verify.c'))
+check('the plan verifier Wumpa goal follows reachable income',
+      'case WUMPA: return income();' in text('ap/ap_content_verify.hpp'))
 
 save = text('game/232/AH_SaveObj.c')
 check('the save screen prepares the WUMPA SHOP row before showing the menu',
       re.search(r'AP_WumpaShopPrepareGreenMenu\(&data\.menuGreenLoadSave\);\s*#endif\s*RECTMENU_Show\(&data\.menuGreenLoadSave\);', save) is not None)
 proc = body(text('game/SelectProfile.c'), 'void SelectProfile_AdvPickMode_MenuProc(')
-check('the green menu procedure maps the shop and EXIT rows first',
+check('the green menu procedure maps the shop row and the retail rows first',
       proc.index('AP_WumpaShopGreenMenuRow(menu, row)') < proc.index('if ((row >= 0) && (row < 3))'))
+check('LOAD, SAVE and DELETE toggle the mapped retail row, not rowSelected',
+      re.search(r'#ifdef CTR_AP\s*//[^\n]*\n\s*SelectProfile_ToggleMode\(\(u16\)row \| 0x20\);\s*#else', proc) is not None)
+ui = text('ap/ap_wumpa_shop_ui.c')
+check('the shop rows come from the WUMPA SHOP first table',
+      'ap_wshop_green_rows[AP_WSHOP_GREEN_ROWS + 1] = AP_WSHOP_GREEN_ROWS_INIT;' in ui)
+prep = body(ui, 'void AP_WumpaShopPrepareGreenMenu(')
+check('the save screen cursor (retail SAVE) moves with the shop row on every visit',
+      'menu->rowSelected = (s16)AP_WumpaShopRetailToGreen(menu->rowSelected);' in prep and 'menu->rows != ap_wshop_green_rows' not in prep)
+check('the shop header reads COLLECTED',
+      'AP_WumpaShopHeaderLine(line, (int)sizeof line, ap_net_wumpa_balance(), ap_net_wumpa_lifetime());' in ui and
+      '"ON SALE AT %d COLLECTED"' in ui and 'BANKED' not in ui)
 rect = text('game/RECTMENU.c')
+check('the down arrow is beside the last row, clear of the footer',
+      'DecalFont_DrawLine("v", 0x1e0, 0xb0, FONT_SMALL,' in ui)
 state = body(rect, 'void RECTMENU_ProcessState()')
 check('the shop page owns input like the tracker', 'if (AP_WumpaShopMenuFrame()) return;' in state)
 check('the row label resolves', 'index == AP_LNG_WUMPA_SHOP' in rect)
-check('the race HUD draws no banked number', 'AP_Wumpa' not in text('game/UI/UI_DrawNum.c'))
+check('the race HUD draws the current race total', 'AP_WumpaRaceCount(d)' in text('game/UI/UI_DrawNum.c'))
 for path, fn in (('game/UI/UI_RenderFrame.c', 'void UI_RenderFrame_AdvHub(void)'), ('game/232/AH_Map.c', None)):
     src = text(path) if fn is None else body(text(path), fn)
     check(f'{path}: the hub counters draw the Wumpa balance',

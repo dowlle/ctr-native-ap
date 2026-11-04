@@ -64,7 +64,7 @@ void AP_ReserveTopUpTick(struct GameTracker *gGT)
 	if (!local || (local->actionsFlagSet & ACTION_BOT) || local->reserves <= 0)
 		return;
 	// Convert explicitly rather than relying on out-of-range signed narrowing.
-	// The only legal sum is 984..33750, so it crosses at most one signed rail
+	// The only legal sum is 8193..40959, so it crosses at most one signed rail
 	// and cannot wrap through zero. Negative Saffi reserves never reach here.
 	sum = (int)local->reserves + AP_RESERVE_TOP_UP_AMOUNT;
 	local->reserves = (short)(sum > 0x7fff ? sum - 0x10000 : sum);

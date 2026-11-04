@@ -1967,7 +1967,9 @@ row5_sets = [dict(adventure_structure="ctr_first"), dict(adventure_structure="ct
              dict(goal_wumpa=1000, oxide_goal="disabled"),
              dict(wumpa_shop_slots=10, wumpa_shop_progression="excluded", shuffle_keys=False, shuffle_gems=False),
              dict(goal_wumpa=500, oxide_goal="101_percent", oxide_1_optional="filler"),
-             dict(spoiler_items=True), dict(spoiler_items=True, box_locations=True)]
+             dict(spoiler_items=True), dict(spoiler_items=True, box_locations=True),
+             # #124: the additive envelope flag, with and without Spoiler Items.
+             dict(pad_approach_hints=True), dict(pad_approach_hints=True, spoiler_items=True, box_locations=True)]
 def row5_options(unlock, extra):
     extra = dict(extra)
     options = row3_options(unlock, "shuffle", "full", **{k: v for k, v in extra.items() if k != "cups"})
@@ -1980,7 +1982,7 @@ for index, extra in enumerate(row5_sets):
             options = row5_options(unlock, extra)
             cases.append((f"row5-{index}-{unlock}-{seed}", make_world(options, seed=seed).fill_slot_data(), True))
             row5_cases += 1
-assert row5_cases == 128, row5_cases
+assert row5_cases == 144, row5_cases
 row5_cup = make_world(row5_options("randomized", row5_sets[6]), seed=1).fill_slot_data()
 row5_gauntlet = make_world(row5_options("randomized", row5_sets[7]), seed=1).fill_slot_data()
 row5_first = make_world(row5_options("randomized", row5_sets[0]), seed=1).fill_slot_data()

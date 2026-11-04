@@ -64,6 +64,16 @@ static std::set<int64_t> reachable_set(Room &room, ap_content_verify_result &r) 
 static bool admit(const J &slot, const std::vector<int64_t> &locations) {
     ap_seedcfg_parse_json(slot);
     if (ap_seedcfg_rejected() || !ap_content_plan_present()) return false;
+    // The same current generated room must drive both runtime capability
+    // mirrors and the verifier's exported reachability. Keep this contract
+    // here for every checked-in fixture and every generated --probe row.
+    const J &options = slot.at("ctr_options");
+    expect(ctr_cfg.boost_mode == options.at("progressive_boost").get<int>(),
+           "admitted room mirrors boost_mode before reachability");
+    expect(ctr_cfg.starting_character == options.value("starting_character", 0),
+           "admitted room mirrors starting_character before reachability");
+    expect((ctr_cfg.character_unlocks != 0) == options.value("character_unlocks", false),
+           "admitted room mirrors character_unlocks before reachability");
     return ap_content_plan_bind("verify-seed", 0, 1, locations.data(), locations.size()) == 1;
 }
 static std::vector<int64_t> plan_locations(const J &slot) {

@@ -91,7 +91,6 @@ check('the tracker shop line has no content-plan gate',
 # 2 and 3 compiled: the pause goal line from production, the race modes through
 # the production decision.
 advert = body(gates, 'int AP_GoalAdvert(char *out, int cap)')
-advert = advert[:advert.index('\n\t// The Oxide segment is driven by goal_oxide alone')] + '\n\treturn -1;\n}\n'
 fixture = r'''
 #include <assert.h>
 #include <stdio.h>

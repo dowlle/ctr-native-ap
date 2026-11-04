@@ -1,5 +1,5 @@
 // g++ -m32 -std=c++17 -DCTR_AP -I ap -I . -I include -I ap/vendor/json/include
-//     tools/test-hit-boss-identity.cpp ap/ap_seedcfg.cpp
+//     tools/test-hit-boss-identity.cpp
 //     -o /tmp/test-hit-boss-identity && /tmp/test-hit-boss-identity
 //
 // Native half of ticket 12: the boss resolved-identity harness. Proves the
@@ -15,7 +15,7 @@
 // Build + run (from the repo root):
 //   g++ -m32 -std=c++17 -DCTR_AP -I ap -I . -I include \
 //       -I ap/vendor/json/include tools/test-hit-boss-identity.cpp \
-//       ap/ap_seedcfg.cpp -o /tmp/test-hit-boss-identity && \
+//       -o /tmp/test-hit-boss-identity && \
 //       /tmp/test-hit-boss-identity
 
 #include <cstdio>
@@ -26,7 +26,17 @@
 
 #include <nlohmann/json.hpp>
 
-#include "../ap/ap_seedcfg.h"
+#include "../ap/ap_seedcfg.cpp"
+
+// Runtime unit boundary: parse the real retained encounter block without
+// pretending a historical fixture is an admitted current room. Full plan and
+// network admission have separate production tests. No room path uses this seam.
+static void install_hit_runtime(const nlohmann::json &record)
+{
+    ap_seedcfg_parse_json(nlohmann::json::object());
+    if (parse_hit_character(record, true)) ctr_cfg.schema_version = 18;
+}
+
 
 // ── stubbed network / sink ─────────────────────────────────────────────────
 static std::set<long long> g_checked;
@@ -126,7 +136,7 @@ static void reset(void)
 static void test_retail_table(void)
 {
 	const ctr_hit_encounters *h;
-	ap_seedcfg_parse_json(g_seed);
+	install_hit_runtime(g_seed);
 	h = ap_seedcfg_hit_encounters();
 	expect(h != NULL, "encounters parsed");
 	if (!h)
@@ -148,7 +158,7 @@ static void test_retail_table(void)
 // so every retail boss sends its own Hit code.
 static void test_dispatch_follows_victim(void)
 {
-	ap_seedcfg_parse_json(g_seed);
+	install_hit_runtime(g_seed);
 	for (int i = 0; i < 6; i++)
 	{
 		std::string key = std::to_string(kKeys[i]);
@@ -173,7 +183,7 @@ static void test_substituted_identity(void)
 	int engine = g_boss["substituted_case"]["engine_id"].get<int>();
 	long hit = g_boss["substituted_case"]["hit_code"].get<long long>();
 
-	ap_seedcfg_parse_json(g_seed); // retail table (accepted)
+	install_hit_runtime(g_seed); // retail table (accepted)
 
 	// A future resolved boss seated as `engine` sends that identity's Hit.
 	reset();
@@ -195,7 +205,7 @@ static void test_substituted_identity(void)
 static void test_boss_before_clear(void)
 {
 	reset();
-	ap_seedcfg_parse_json(g_seed);
+	install_hit_runtime(g_seed);
 	g_checked.clear();
 	g_emitCount = 0;
 	g_lastEmit = -1;

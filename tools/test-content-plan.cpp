@@ -1143,7 +1143,7 @@ int main(int argc, char **argv) {
         J legacy = glob;
         legacy.erase("content_plan"); legacy["ctr_options"].erase("content_plan");
         ap_seedcfg_parse_json(legacy);
-        expect(ap_seedcfg_rejected(), "global checks: a normal room refuses the content-plan boss fallback");
+        expect(!ctr_cfg_active() && !ap_content_plan_present(), "global checks: a planless room stays inactive");
     }
     // Item Box Locations (#133 PR 4e): an apworld-emitted room at Shortcut
     // Knowledge hard with shared boost and stats, on N. Gin Labs (pad 15),
@@ -1453,8 +1453,8 @@ int main(int argc, char **argv) {
         legacy.erase("content_plan"); legacy["ctr_options"].erase("content_plan");
         for (auto &t : legacy["hit_character_encounters"]["unlock_triggers"]) t.erase("fallback_keys");
         ap_seedcfg_parse_json(legacy);
-        expect(ap_seedcfg_rejected() && std::string(ctr_cfg.seed_reject_reason).find("expected 7") != std::string::npos,
-               "cup hits: a normal room refuses content_cups");
+        expect(!ctr_cfg_active() && !ap_content_plan_present(),
+               "cup hits: deleting the old reader leaves a planless room inactive");
         expect(parse(cuphits), "cup hits: the room parses again after the forgeries");
         // Without content_cups and Hit Character the cups room keeps its PR 5 shape.
         expect(parse(cups) && !ap_seedcfg_hit_encounters(), "cup hits: the cups room has no encounter block");

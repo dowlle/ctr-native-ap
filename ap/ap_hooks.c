@@ -31,6 +31,7 @@
 #include "ap_class_check_policy.h" // freestanding class-check send/toast guards (#319)
 #include "ap_relic_perfect.h" // freestanding Relic Race perfect decision (#49)
 #include "ap_glow_slots_logic.h"
+#include "ap_pad_hints_logic.h" // #124 Pad Approach Hints
 #include "ap_pad_glow_items.h" // box / letter / Wumpa pad display identities
 #include "ap_trial_pad_glow.h" // SC/TT Trophy + CTR pad display identities (#343)
 #include "ap_trial_letters.h" // AP_TrialLetters_Prepare: can the SC/TT CTR Challenge be served

@@ -38,16 +38,8 @@ static struct
 	char hintedSeed[96]; // the seed and slot the hinted flags belong to
 } ap_wshop = {0, 0, 0, 0, 0, "", -1, {0}, ""};
 
-// The green load/save rows with WUMPA SHOP above EXIT. Same wiring as retail:
-// up and down step, left and right stay.
-static struct MenuRow ap_wshop_green_rows[AP_WSHOP_GREEN_ROWS + 1] = {
-	{0xCB, 0, 1, 0, 0},                     // LOAD
-	{0xCC, 0, 2, 1, 1},                     // SAVE
-	{0xCD, 1, 3, 2, 2},                     // DELETE
-	{AP_LNG_WUMPA_SHOP, 2, 4, 3, 3},        // WUMPA SHOP
-	{0xCE, 3, 4, 4, 4},                     // EXIT
-	{-1, 0, 0, 0, 0},
-};
+// The green load/save rows with WUMPA SHOP first (ap_wumpa_shop_menu.h).
+static struct MenuRow ap_wshop_green_rows[AP_WSHOP_GREEN_ROWS + 1] = AP_WSHOP_GREEN_ROWS_INIT;
 
 int AP_WumpaShopRowShown(void)
 {
@@ -55,22 +47,20 @@ int AP_WumpaShopRowShown(void)
 	       ctr_wumpa_shop.state != AP_WUMPA_SHOP_ABSENT;
 }
 
+// Called right after SelectProfile_GetTrackID set the retail cursor (SAVE),
+// so rowSelected is always a retail row here, also on a second visit with
+// the shop rows still in place.
 void AP_WumpaShopPrepareGreenMenu(struct RectMenu *menu)
 {
 	if (menu == 0)
 		return;
 	if (AP_WumpaShopRowShown())
 	{
-		if (menu->rows != ap_wshop_green_rows && menu->rowSelected == 3)
-			menu->rowSelected = AP_WSHOP_GREEN_EXIT;
+		menu->rowSelected = (s16)AP_WumpaShopRetailToGreen(menu->rowSelected);
 		menu->rows = ap_wshop_green_rows;
 	}
 	else
-	{
-		if (menu->rows == ap_wshop_green_rows && menu->rowSelected >= AP_WSHOP_GREEN_SHOP)
-			menu->rowSelected = 3;
 		menu->rows = &data.rowsGreenLoadSave[0];
-	}
 }
 
 int AP_WumpaShopGreenExitRow(const struct RectMenu *menu)
@@ -120,10 +110,8 @@ int AP_WumpaShopGreenMenuRow(struct RectMenu *menu, int row)
 	int hub;
 	if (menu == 0 || menu->rows != ap_wshop_green_rows)
 		return row;
-	if (row == AP_WSHOP_GREEN_EXIT)
-		return 3;
-	if (row != AP_WSHOP_GREEN_SHOP)
-		return row;
+	if (AP_WumpaShopGreenToRetail(row) != AP_WSHOP_GREEN_HANDLED)
+		return AP_WumpaShopGreenToRetail(row);
 	hub = gt ? AP_WumpaShopHubOfLevel(gt->levelID) : -1;
 	if (hub < 0)
 		return AP_WSHOP_GREEN_HANDLED;
@@ -192,7 +180,7 @@ static void AP_WShopBuy(void)
 		AP_WShopSay("PLEASE WAIT");
 		break;
 	case 3:
-		snprintf(line, sizeof line, "ON SALE AT %d BANKED", s->unlock);
+		snprintf(line, sizeof line, "ON SALE AT %d COLLECTED", s->unlock);
 		AP_WShopSay(line);
 		break;
 	case 4:
@@ -300,8 +288,7 @@ static void AP_WShopDraw(void)
 		else if (!ap_net_wumpa_ready())
 			snprintf(line, sizeof line, "LOADING YOUR WALLET");
 		else
-			snprintf(line, sizeof line, "BALANCE %lld   BANKED %lld",
-			         ap_net_wumpa_balance(), ap_net_wumpa_lifetime());
+			AP_WumpaShopHeaderLine(line, (int)sizeof line, ap_net_wumpa_balance(), ap_net_wumpa_lifetime());
 		DecalFont_DrawLine(line, 0x100, 0x36, FONT_SMALL, ORANGE | JUSTIFY_CENTER);
 
 		for (k = ap_wshop.top, y = 0x48; k < ctr_wumpa_shop.slots && k < ap_wshop.top + AP_WSHOP_VISIBLE;
@@ -321,7 +308,7 @@ static void AP_WShopDraw(void)
 		if (ap_wshop.top > 0)
 			DecalFont_DrawLine("^", 0x100, 0x40, FONT_SMALL, WHITE | JUSTIFY_CENTER);
 		if (ap_wshop.top + AP_WSHOP_VISIBLE < ctr_wumpa_shop.slots)
-			DecalFont_DrawLine("v", 0x100, 0x48 + AP_WSHOP_VISIBLE * AP_WSHOP_ROW_H, FONT_SMALL,
+			DecalFont_DrawLine("v", 0x1e0, 0xb0, FONT_SMALL,
 			                   WHITE | JUSTIFY_CENTER);
 	}
 

@@ -15,6 +15,7 @@
 // AP_ComposedBossesWon, collected -> ap_net_location_checked.
 
 #include <cstdio>
+#include <fstream>
 #include <cstring>
 #include <map>
 #include <set>
@@ -89,7 +90,9 @@ static void parse_block(const nlohmann::json &block)
 	nlohmann::json b = block;
 	if (b.is_object() && !b.contains("start"))
 		b["start"] = nlohmann::json::object();
-	nlohmann::json j = {{"ctr_options", {{"schema_version", 16}}}, {"win_logic", b}};
+	std::ifstream input("tools/fixtures/content-plan/global-checks.json");
+	nlohmann::json j; input >> j;
+	j["win_logic"] = b;
 	ap_seedcfg_parse_json(j);
 }
 
@@ -552,7 +555,7 @@ int main(void)
 		ap_seedcfg_parse_json(J{{"ctr_options", {{"schema_version", 16}}}});
 		AP_WinStakes s = AP_WinStakesDecide(&ctr_win_logic, &e, dm, 1);
 		expect(s.stakes && s.why == AP_WS_WHY_NO_BLOCK, "absent block -> sends even when collected");
-		parse_block(J{{"version", 2}});
+		parse_block(J{{"version", AP_WL_VERSION_KNOWN + 1}});
 		s = AP_WinStakesDecide(&ctr_win_logic, &e, dm, 1);
 		expect(s.stakes && s.why == AP_WS_WHY_NEWER, "newer block -> sends");
 		parse_block(J{{"version", 1}, {"families", J::array()}, {"regions", arr({true})},

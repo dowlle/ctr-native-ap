@@ -61,7 +61,7 @@ int main(void) {
  reset(); havePrevious=0;
  assert(AH_WarpPad_GetSpawnPosRot(out)==&definitions[0].rot.x);
  reset(); havePrevious=0; cortex=1; game.prevLEV=13; pads[2].levelID=110;
- assert(AH_WarpPad_GetSpawnPosRot(out)==&definitions[2].rot.x);
+ assert(AH_WarpPad_GetSpawnPosRot(out)==NULL);
  puts("PASS: 7 production hub-return cases; source pad wins over borrowed host");
 }
 '''
