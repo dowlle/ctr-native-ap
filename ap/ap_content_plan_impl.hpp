@@ -765,7 +765,12 @@ static void validate(const J &p, State &out) {
     out.wumpa = ctr_content_wumpa{};
     if (has_shop) {
         const J &w = p["wumpa_shop"];
-        fields(w, {"slots", "prices", "progression", "hints"});
+        J shape = w;
+        if (w.contains("logic_scale")) {
+            number(w["logic_scale"], 25, 400);
+            shape.erase("logic_scale");
+        }
+        fields(shape, {"slots", "prices", "progression", "hints"});
         out.wumpa.shop_slots = number(w["slots"], 1, AP_WUMPA_SHOP_MAX_SLOTS);
         out.wumpa.prices = number(w["prices"], 25, 400);
         need(w["progression"] == "allowed" || w["progression"] == "excluded", "wumpa_shop.progression must be allowed or excluded");
@@ -958,6 +963,7 @@ static void validate(const J &p, State &out) {
     if(out.bosses.extended)features.push_back("boss_opponents_v1");
     if(out.bosses.final_chaos)features.push_back("final_chaos_v1");
     if(has_shop)features.push_back("wumpa_shop_v1");
+    if(has_shop && p["wumpa_shop"].contains("logic_scale"))features.push_back("wumpa_shop_key_tiers_v1");
     if(wumpa_goal)features.push_back("wumpa_goal_v1");
     if(has_pad_client)features.push_back("pad_client_v1"); // one generator row 6
     if(plan_laps)features.push_back("lap_checks_v1");             // #344

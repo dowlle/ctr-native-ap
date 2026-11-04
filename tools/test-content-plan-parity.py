@@ -1774,6 +1774,18 @@ for name, source, change in [
 # the generator's validator must agree on each.
 for fixture in ("ctr-first", "wumpa-shop", "wumpa-goal-only", "boss-shuffle", "all-030", "chaos-final", "oxide-off-swap"):
     cases.append((fixture + "-fixture", json.loads((root / f"tools/fixtures/content-plan/{fixture}.json").read_text()), True))
+# Keep the published income-only fixtures as compatibility cases, and admit
+# the new versioned Key-budget record at both bounds and the default scale.
+for scale in (25, 100, 400, 24, 401, True, "100"):
+    case = copy.deepcopy(next(w for n, w, ok in cases if n == "wumpa-shop-fixture"))
+    p = case["content_plan"]
+    p["wumpa_shop"]["logic_scale"] = scale
+    index = p["required_features"].index("wumpa_shop_v1") + 1
+    p["required_features"].insert(index, "wumpa_shop_key_tiers_v1")
+    cases.append((f"shop-key-budget-{scale!r}", case, type(scale) is int and 25 <= scale <= 400))
+case = copy.deepcopy(next(w for n, w, ok in cases if n == "wumpa-shop-fixture"))
+case["content_plan"]["wumpa_shop"]["logic_scale"] = 100
+cases.append(("shop-key-budget-missing-feature", case, False))
 def j11_env(name, change, fixture):
     case = copy.deepcopy(next(w for n, w, ok in cases if n == fixture + "-fixture"))
     change(case)
