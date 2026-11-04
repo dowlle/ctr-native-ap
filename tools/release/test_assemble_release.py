@@ -181,6 +181,14 @@ class AssemblerFixtureTests(unittest.TestCase):
         self.assertFalse((unpacked / "BUILD-NOTICE.txt").exists())
         self.assertEqual(binary.stat().st_mode & 0o777, 0o755)
 
+    def test_vendor_license_members_are_accepted(self) -> None:
+        artifact, _ = self.write_build_archive(
+            "windows", extra={"LICENSE-xdelta3.txt": b"apache", "LICENSE-utf8proc.md": b"mit"}
+        )
+        archive = next(artifact.glob("ctr-ap-windows-x86-*.zip"))
+        binary, _, _ = ASSEMBLER.unpack_artifact(archive, "windows", self.root / "unpacked-licenses")
+        self.assertTrue(binary.is_file())
+
     def test_unexpected_nested_directory_is_rejected(self) -> None:
         artifact, _ = self.write_build_archive("windows", extra={"secrets/key.txt": b"nope"})
         archive = next(artifact.glob("ctr-ap-windows-x86-*.zip"))
