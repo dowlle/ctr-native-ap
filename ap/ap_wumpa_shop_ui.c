@@ -48,15 +48,16 @@ int AP_WumpaShopRowShown(void)
 }
 
 // Called right after SelectProfile_GetTrackID set the retail cursor (SAVE),
-// so rowSelected is always a retail row here, also on a second visit with
-// the shop rows still in place.
+// including on a second visit with the shop rows still in place.
 void AP_WumpaShopPrepareGreenMenu(struct RectMenu *menu)
 {
+	int showShop;
 	if (menu == 0)
 		return;
-	if (AP_WumpaShopRowShown())
+	showShop = AP_WumpaShopRowShown();
+	menu->rowSelected = (s16)AP_WumpaShopOpeningRow(menu->rowSelected, showShop);
+	if (showShop)
 	{
-		menu->rowSelected = (s16)AP_WumpaShopRetailToGreen(menu->rowSelected);
 		menu->rows = ap_wshop_green_rows;
 	}
 	else
