@@ -158,7 +158,16 @@ const char *AP_CortexTrackDisplayName(void)
 // Content-plan pad enumeration. openOnly hides the checks of a mode still locked
 // behind stage 2 (decision 26, review finding 11); the pad's glow asks for that,
 // while the pad state and the tracker count every open location, locked or not.
-static int AP_ContentPadGlowBits(int destLevelID, int *outBits, int cap, int openOnly)
+static int AP_GlowPush(int *outBits, int64_t *outCodes, int count, int bit, int64_t code)
+{
+	outBits[count] = bit;
+	if (outCodes) outCodes[count] = code;
+	return count + 1;
+}
+
+// outCodes, when not NULL, gets the location code of each listed bit at the
+// same index, so Pad Approach Hints (#124) hint exactly what the glow lists.
+static int AP_ContentPadGlowBits(int destLevelID, int *outBits, int64_t *outCodes, int cap, int openOnly)
 {
 		const ctr_content_pad *pad = ap_content_plan_pad(destLevelID);
         int count=0,n;
@@ -172,18 +181,21 @@ static int AP_ContentPadGlowBits(int destLevelID, int *outBits, int cap, int ope
             ap_content_cup_track_check rows[AP_CONTENT_CUP_TRACK_CHECKS];
             for(k=0;k<c && count<cap;++k)
                 if(!ap_net_location_checked((long)codes[k]))
-                    outBits[count++]=slots[k]<0 ? AP_CONTENT_BIT_TROPHY+pad->physical
-                                                : AP_CONTENT_BIT_CUP+pad->physical*AP_CONTENT_CUP_STRIDE+slots[k];
+                    count=AP_GlowPush(outBits,outCodes,count,
+                                      slots[k]<0 ? AP_CONTENT_BIT_TROPHY+pad->physical
+                                                 : AP_CONTENT_BIT_CUP+pad->physical*AP_CONTENT_CUP_STRIDE+slots[k],
+                                      codes[k]);
             c=ap_content_cup_track_checks(pad,ap_content_plan_pad,rows);
             for(k=0;k<c && count<cap;++k) {
                 if(ap_net_location_checked((long)rows[k].code))continue;
                 if(openOnly && rows[k].box_pad>=0 && !AP_ContentPadOpen(ap_content_plan_pad(rows[k].box_pad)))continue;
-                outBits[count++]=rows[k].bit;
+                count=AP_GlowPush(outBits,outCodes,count,rows[k].bit,rows[k].code);
             }
             return count;
         }
         if(pad->crystal) {
-            if(!ap_net_location_checked((long)pad->trophy_location))outBits[count++]=AP_CONTENT_BIT_TROPHY+pad->physical;
+            if(!ap_net_location_checked((long)pad->trophy_location))
+                count=AP_GlowPush(outBits,outCodes,count,AP_CONTENT_BIT_TROPHY+pad->physical,pad->trophy_location);
         }
         // Track modes (#133 PR 3): every unchecked check of every mode that is
         // open now, in the pad's mode order, as the glow ruling of 2026-09-30
@@ -196,16 +208,18 @@ static int AP_ContentPadGlowBits(int destLevelID, int *outBits, int cap, int ope
             c=ap_content_mode_codes(pad,pad->modes[n],codes);
             for(k=0;k<c && count<cap;++k) {
                 if(codes[k]<=0 || ap_net_location_checked((long)codes[k]))continue;
-                outBits[count++]=pad->modes[n]==AP_CONTENT_MODE_TROPHY ? AP_CONTENT_BIT_TROPHY+pad->physical :
-                                 pad->modes[n]==AP_CONTENT_MODE_CTR ? AP_CONTENT_BIT_CTR+pad->physical :
-                                 AP_CONTENT_BIT_RELIC+pad->physical*3+k;
+                count=AP_GlowPush(outBits,outCodes,count,
+                                  pad->modes[n]==AP_CONTENT_MODE_TROPHY ? AP_CONTENT_BIT_TROPHY+pad->physical :
+                                  pad->modes[n]==AP_CONTENT_MODE_CTR ? AP_CONTENT_BIT_CTR+pad->physical :
+                                  AP_CONTENT_BIT_RELIC+pad->physical*3+k,
+                                  codes[k]);
             }
             // ctr_first (J11): the CTR Challenge also pays the Trophy Race
             // check, so it glows under the CTR mode, right after the CTR.
             {
                 const int64_t paired=ap_content_mode_paired_trophy(pad,pad->modes[n]);
                 if(paired>0 && count<cap && !ap_net_location_checked((long)paired))
-                    outBits[count++]=AP_CONTENT_BIT_TROPHY+pad->physical;
+                    count=AP_GlowPush(outBits,outCodes,count,AP_CONTENT_BIT_TROPHY+pad->physical,paired);
             }
         }
         // Per-track families (#133 PR 3b): podium rungs, the track's Wumpa
@@ -222,23 +236,51 @@ static int AP_ContentPadGlowBits(int destLevelID, int *outBits, int cap, int ope
                 for(k=0;k<c && count<cap;++k) {
                     if((seen & (1u<<slots[k])) || ap_net_location_checked((long)codes[k]))continue;
                     seen|=1u<<slots[k];
-                    outBits[count++]=AP_CONTENT_BIT_FAMILY+pad->physical*AP_CONTENT_FAMILY_STRIDE+slots[k];
+                    count=AP_GlowPush(outBits,outCodes,count,
+                                      AP_CONTENT_BIT_FAMILY+pad->physical*AP_CONTENT_FAMILY_STRIDE+slots[k],codes[k]);
                 }
             }
         }
         // Item Box checks (#133 PR 4e): every unchecked box of the pad.
         for(n=0;!pad->crystal && n<pad->box_count && n<15 && count<cap;++n)
             if(pad->box_locations[n]>0 && !ap_net_location_checked((long)pad->box_locations[n]))
-                outBits[count++]=AP_CONTENT_BIT_BOX+pad->physical*AP_CONTENT_BOX_STRIDE+n;
+                count=AP_GlowPush(outBits,outCodes,count,AP_CONTENT_BIT_BOX+pad->physical*AP_CONTENT_BOX_STRIDE+n,
+                                  pad->box_locations[n]);
         for(n=0;n<pad->crystal_count && count<cap;++n)
-            if(!ap_net_location_checked((long)pad->crystal_locations[n]))outBits[count++]=60000+pad->physical*20+n;
+            if(!ap_net_location_checked((long)pad->crystal_locations[n]))
+                count=AP_GlowPush(outBits,outCodes,count,60000+pad->physical*20+n,pad->crystal_locations[n]);
         return count;
+}
+
+// Pad Approach Hints (#124, ap_pad_hints_logic.h). Called every frame the
+// pad's name shows. Filters the glow's open, unchecked locations through
+// each exported location rule on an open content-plan pad; the net side
+// drops codes the room latch already holds, so a standing kart sends nothing
+// after the first frame.
+void AP_PadApproachHints(int levelID)
+{
+	int bits[AP_PAD_DISPLAY_BITS_MAX];
+	int64_t codes[AP_PAD_DISPLAY_BITS_MAX];
+	const ctr_content_pad *pad;
+	int n, i, eligible = 0, contentReady = 1;
+	if (!ctr_cfg_active() || !ctr_cfg.pad_approach_hints || !ap_net_pad_hints_ready()) return;
+	pad = ap_content_plan_active() ? ap_content_plan_pad(levelID) : NULL;
+#ifdef CTR_CUSTOM_TRACKS
+	contentReady = AP_ContentPadReady(levelID);
+#endif
+	if (!AP_PadHint_Eligible(ctr_cfg.pad_approach_hints, 1, ap_content_plan_active(), pad && pad->occupied,
+	                         contentReady, pad && AP_ContentPadOpen(pad)))
+		return;
+	n = AP_ContentPadGlowBits(levelID, bits, codes, AP_PAD_DISPLAY_BITS_MAX, 1);
+	for (i = 0; i < n; ++i)
+		if (AP_LocationInLogic(codes[i])) codes[eligible++] = codes[i];
+	if (eligible > 0) ap_net_pad_approach_hint(levelID, codes, eligible);
 }
 
 int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 {
 	if (ap_content_plan_active())
-		return AP_ContentPadGlowBits(destLevelID, outBits, cap, 0);
+		return AP_ContentPadGlowBits(destLevelID, outBits, NULL, cap, 0);
 	return 0;
 }
 
@@ -289,7 +331,7 @@ int AP_PadUncollectedBoxCount(int destLevelID)
 int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap)
 {
 	if (ap_content_plan_active())
-		return AP_ContentPadGlowBits(destLevelID, outBits, cap, 1);
+		return AP_ContentPadGlowBits(destLevelID, outBits, NULL, cap, 1);
 	return 0;
 }
 
@@ -482,8 +524,14 @@ int AP_PadReplayable(int physLevelID, int destLevelID)
 {
 #ifdef CTR_CUSTOM_TRACKS
 	const ctr_content_pad *pad = ap_content_plan_active() ? ap_content_plan_pad(physLevelID) : NULL;
-	return pad && pad->occupied && !pad->crystal && AP_ContentPadReady(physLevelID) && AP_ContentPadOpen(pad) &&
-	       AP_PadState(physLevelID, destLevelID) == 5;
+	int state;
+	if (!pad || !pad->occupied || pad->crystal || !AP_ContentPadReady(physLevelID) || !AP_ContentPadOpen(pad))
+		return 0;
+	state = AP_PadState(physLevelID, destLevelID);
+	if (state == 5) return 1;
+	// A won stage-one Trophy/CTR race remains an income route while stage
+	// two is closed. Keep the pad's state and its remaining-check display.
+	return state == 3 && !pad->cup && ap_content_first_mode_replayable(pad, AP_ContentCodeChecked);
 #else
 	(void)physLevelID;
 	(void)destLevelID;

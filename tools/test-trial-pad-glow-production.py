@@ -136,7 +136,11 @@ int main(void){
 }
 '''
 signatures=['int AP_PadUncollectedBoxCount(int destLevelID)',
- 'static int AP_ContentPadGlowBits(int destLevelID, int *outBits, int cap, int openOnly)','int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)','int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap)','static int AP_GlowBitRewardGroup(int globalBit)']
+ 'static int AP_GlowPush(int *outBits, int64_t *outCodes, int count, int bit, int64_t code)',
+ 'static int AP_ContentPadGlowBits(int destLevelID, int *outBits, int64_t *outCodes, int cap, int openOnly)',
+ 'int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)',
+ 'int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap)',
+ 'static int AP_GlowBitRewardGroup(int globalBit)']
 with tempfile.TemporaryDirectory() as tmp:
  src=Path(tmp)/'fixture.c';exe=Path(tmp)/'fixture'
  src.write_text(fixture+'\n'.join(extract(s) for s in signatures)+tests)

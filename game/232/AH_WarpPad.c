@@ -602,6 +602,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				                   gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 30, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
 
 #ifdef CTR_AP
+				// Pad Approach Hints (#124, ruling of 2026-07-20): the name is on
+				// screen, so the pad hints its open checks (off by default).
+				AP_PadApproachHints(levelID);
 				int apBoxesLeft = 0;
 				// A trophy-complete pad can deliberately stay raceable while this
 				// destination still owns unchecked AP boxes (#232). Without an
@@ -1030,7 +1033,8 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		// Closed again after the first race, stage 2 not met (one generator
 		// row 6). The pad is born closed; this is the backstop for the stale
 		// frames before its re-birth. Inert, never a capture.
-		if (!warppadObj->boolEnteredWarppad && AP_PadState(physLevelID, levelID) == 3)
+		if (!warppadObj->boolEnteredWarppad && AP_PadState(physLevelID, levelID) == 3 &&
+		    !AP_PadReplayable(physLevelID, levelID))
 			goto WarpPad_AnimateOpen;
 		if (!warppadObj->boolEnteredWarppad) AH_WarpPad_WarpCapture(gGT);
 		warppadObj->boolEnteredWarppad = 1;
@@ -2279,7 +2283,11 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 ContentPad_BuildGate:
 #endif
 	// if unlocked
-	if (unlockItem_numOwned >= unlockItem_numNeeded)
+	if (unlockItem_numOwned >= unlockItem_numNeeded
+#ifdef CTR_AP
+	    || AP_PadReplayable(levelID, warppadObj->levelID)
+#endif
+	   )
 	{
 		warppadObj->digit1s = 0;
 		t->modelIndex = 1;

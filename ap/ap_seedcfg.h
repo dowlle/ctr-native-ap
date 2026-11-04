@@ -602,6 +602,10 @@ typedef struct
 	// wait for Warp Pad Preview and AP box colours wait for AP Box Colours
 	// (ap_spoiler_items_logic.h). Display only: no gate, location or item.
 	int spoiler_items;
+	// Pad Approach Hints (#124, ctr_options.pad_approach_hints, content-plan
+	// envelope, present only when true). Absent is off. On, approaching an open
+	// pad hints its open, unchecked locations once ever (ap_pad_hints_logic.h).
+	int pad_approach_hints;
 	// ctr_options.box_locations (always emitted on ordinary rooms, present on a
 	// content-plan envelope exactly with its item_boxes record). Absent is off.
 	// Read only so Spoiler Items knows the seed has AP boxes, and therefore an

@@ -114,6 +114,13 @@ static nlohmann::json with_rule(const nlohmann::json &rule)
 	return b;
 }
 
+static nlohmann::json with_hint_rule(const nlohmann::json &rule)
+{
+	auto b = with_rule(rule);
+	b["version"] = 2;
+	return b;
+}
+
 int main(void)
 {
 	// ── absent ──
@@ -159,6 +166,29 @@ int main(void)
 	expect(g_last_log.find("[AP CFG] win_logic v1: 5 win check(s)") != std::string::npos,
 	       "valid block logs its summary");
 	expect(g_last_log.find("2 start item id(s)") != std::string::npos, "summary names start ids");
+
+	parse_block(with_rule(nlohmann::json::array({"cap", 2, -1, 2})));
+	expect_int(ctr_win_logic.state, AP_WL_INVALID, "stat cap cannot silently extend version 1");
+	{
+		auto b = example();
+		b["checks"]["35011002"]["kind"] = "hint";
+		parse_block(b);
+		expect_int(ctr_win_logic.state, AP_WL_INVALID, "hint kind cannot silently extend version 1");
+		b["version"] = 2;
+		parse_block(b);
+		expect_int(ctr_win_logic.state, AP_WL_VALID, "hint kind accepted in version 2");
+	}
+	parse_block(with_hint_rule(nlohmann::json::array({"cap", 2, -1, 2})));
+	expect_int(ctr_win_logic.state, AP_WL_VALID, "hint stat cap accepted");
+	{
+		int i = AP_WinLogicFindCheck(&ctr_win_logic, 35011002L);
+		const auto &node = ctr_win_logic.nodes[ctr_win_logic.checks[i].rule];
+		expect(node.tag == AP_WL_T_STATCAP && node.a == 2 && node.b == -1 && node.c == 2, "hint stat cap retains all fields");
+	}
+	parse_block(with_hint_rule(nlohmann::json::array({"cap", 2, -1, 3})));
+	expect_int(ctr_win_logic.state, AP_WL_INVALID, "invalid stat cap mode refused");
+	parse_block(with_hint_rule(nlohmann::json::array({"cap", 2, -1, true})));
+	expect_int(ctr_win_logic.state, AP_WL_INVALID, "boolean stat cap mode refused");
 
 	// ── start (review B1): precollected progression counts by item id ──
 	{
@@ -235,10 +265,10 @@ int main(void)
 	// ── version ──
 	{
 		nlohmann::json b = example();
-		b["version"] = 2;
+		b["version"] = 3;
 		b["checks"] = "anything";
 		parse_block(b);
-		expect_int(ctr_win_logic.state, AP_WL_NEWER, "version 2 -> NEWER (treated as absent)");
+		expect_int(ctr_win_logic.state, AP_WL_NEWER, "version 3 -> NEWER (treated as absent)");
 		expect(g_last_log.find("newer than this client") != std::string::npos, "NEWER logged once");
 	}
 	{

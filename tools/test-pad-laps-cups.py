@@ -74,8 +74,13 @@ static int checkedFn(int64_t code) { return ap_net_location_checked((long)code);
 int AP_ContentModeOpen(const ctr_content_pad *p, int mode) { return ap_content_mode_open(p, mode, counts, checkedFn); }
 static int shut_b;
 int AP_ContentPadOpen(const ctr_content_pad *p) { return !(shut_b && p == &track_b); }
-""" + function(pads, "static int AP_ContentPadGlowBits(") + r"""
+""" + function(pads, "static int AP_GlowPush(") + function(pads, "static int AP_ContentPadGlowBits(") + r"""
 static int has(const int *bits, int n, int bit) { for (int i = 0; i < n; i++) if (bits[i] == bit) return 1; return 0; }
+static int64_t code_for(int bit, const int *bits, const int64_t *codes, int n)
+{
+    for (int i = 0; i < n; ++i) if (bits[i] == bit) return codes[i];
+    return -1;
+}
 static void track(ctr_content_pad *p, int physical, int64_t base)
 {
     memset(p, 0, sizeof *p);
@@ -94,13 +99,20 @@ static int count_of(int want_bit, const int *bits, int n) { int c = 0; for (int 
 int main(void)
 {
     int bits[96], n, physical, slot;
+    int64_t codes[96];
     char text[64], lines[2][112];
     track(&track_a, 3, 100); track(&track_b, 5, 200);
     /* Item 2: the first lap shows once, with the first race, and rides the race slot. */
-    n = AP_ContentPadGlowBits(3, bits, 96, 1);
+    n = AP_ContentPadGlowBits(3, bits, codes, 96, 1);
     assert(count_of(LAP_BIT(3), bits, n) == 1 && has(bits, n, AP_CONTENT_BIT_TROPHY + 3));
     assert(!has(bits, n, AP_CONTENT_BIT_CTR + 3));
-    n = AP_ContentPadGlowBits(3, bits, 96, 0);
+    /* The actual glow returns each bit's own location code for hint filtering. */
+    assert(code_for(AP_CONTENT_BIT_TROPHY + 3, bits, codes, n) == 100);
+    assert(code_for(LAP_BIT(3), bits, codes, n) == 102);
+    assert(code_for(WUMPA_BIT(3), bits, codes, n) == 103);
+    assert(code_for(BOX_BIT(3, 0), bits, codes, n) == 104);
+    assert(code_for(BOX_BIT(3, 1), bits, codes, n) == 105);
+    n = AP_ContentPadGlowBits(3, bits, NULL, 96, 0);
     assert(count_of(LAP_BIT(3), bits, n) == 1);
     assert(ap_content_family_bit_decode(LAP_BIT(3), &physical, &slot) && physical == 3 && slot == AP_CONTENT_FAMILY_LAP);
     assert(ap_content_family_bit_code(&track_a, slot) == 102 && ap_content_family_reward_group(slot) == 0);
@@ -108,7 +120,7 @@ int main(void)
       assert(ap_content_mode_family_codes(&track_a, AP_CONTENT_MODE_RELIC, codes, slots) == 1 && codes[0] == 102); }
     /* A checked lap leaves the glow. */
     done[doneCount++] = 102;
-    n = AP_ContentPadGlowBits(3, bits, 96, 0);
+    n = AP_ContentPadGlowBits(3, bits, NULL, 96, 0);
     assert(!has(bits, n, LAP_BIT(3)));
     doneCount = 0;
     /* Item 4: a cup lists each of its tracks once. */
@@ -118,8 +130,13 @@ int main(void)
     strcpy(cup.legs[1].track_id, "retail:1"); cup.legs[1].track_pad = 3; cup.legs[1].lap = 102;
     strcpy(cup.legs[2].track_id, "retail:2"); cup.legs[2].track_pad = 5; cup.legs[2].lap = 202;
     strcpy(cup.legs[3].track_id, "retail:3"); cup.legs[3].track_pad = -1; cup.legs[3].lap = 302;
-    n = AP_ContentPadGlowBits(100, bits, 96, 0);
+    n = AP_ContentPadGlowBits(100, bits, codes, 96, 0);
     assert(n == 1 + 3 + 2 + 4);
+    assert(code_for(AP_CONTENT_BIT_TROPHY + 100, bits, codes, n) == 300);
+    assert(code_for(CUP_LAP_BIT(0), bits, codes, n) == 102);
+    assert(code_for(CUP_LAP_BIT(3), bits, codes, n) == 302);
+    assert(code_for(WUMPA_BIT(5), bits, codes, n) == 203);
+    assert(code_for(BOX_BIT(5, 0), bits, codes, n) == 204);
     assert(has(bits, n, CUP_LAP_BIT(0)) && !has(bits, n, CUP_LAP_BIT(1)) && has(bits, n, CUP_LAP_BIT(2)) && has(bits, n, CUP_LAP_BIT(3)));
     assert(has(bits, n, WUMPA_BIT(3)) && has(bits, n, WUMPA_BIT(5)) && has(bits, n, BOX_BIT(3, 1)) && has(bits, n, BOX_BIT(5, 0)));
     assert(ap_content_cup_lap_bit_decode(CUP_LAP_BIT(3), &physical, &slot) && physical == 100 && slot == 3);
@@ -128,18 +145,18 @@ int main(void)
     assert(ap_content_family_bit_code(ap_content_plan_pad(5), 5) == 203);
     /* The pad state counts a shut pad's boxes; the glow keeps them hidden. */
     shut_b = 1;
-    n = AP_ContentPadGlowBits(100, bits, 96, 1);
+    n = AP_ContentPadGlowBits(100, bits, NULL, 96, 1);
     assert(!has(bits, n, BOX_BIT(5, 0)) && has(bits, n, BOX_BIT(3, 0)) && has(bits, n, WUMPA_BIT(5)));
-    n = AP_ContentPadGlowBits(100, bits, 96, 0);
+    n = AP_ContentPadGlowBits(100, bits, NULL, 96, 0);
     assert(has(bits, n, BOX_BIT(5, 0)));
     shut_b = 0;
     /* A cup with only a leg's box left still has a check: no grey X. */
     { int64_t all[] = {300, 102, 202, 302, 103, 203, 104, 105, 205};
       for (unsigned i = 0; i < sizeof all / sizeof all[0]; ++i) done[doneCount++] = all[i]; }
-    assert(AP_ContentPadGlowBits(100, bits, 96, 0) == 1);
+    assert(AP_ContentPadGlowBits(100, bits, NULL, 96, 0) == 1);
     assert(ap_content_cup_box_pending(&cup, ap_content_plan_pad, checkedFn) == 1);
     done[doneCount++] = 204;
-    assert(AP_ContentPadGlowBits(100, bits, 96, 0) == 0);
+    assert(AP_ContentPadGlowBits(100, bits, NULL, 96, 0) == 0);
     assert(ap_content_cup_box_pending(&cup, ap_content_plan_pad, checkedFn) == 0);
     doneCount = 0;
     /* The cup's tracker node: an open Wumpa check first, then a done one, none on a cup without one. */

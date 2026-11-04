@@ -46,9 +46,11 @@ static void reset(void){
 }
 static void countdown(void){gt.trafficLightsTimer=1;AP_ReserveTopUpTick(&gt);gt.trafficLightsTimer=0;}
 int main(void){
+ // Independent amount oracle: fixed 25%, rounded from 32767 / 4, not random.
+ assert(AP_RESERVE_TOP_UP_AMOUNT==8192);
  for(int r=1;r<=32767;r++){
   reset();local.reserves=r;AP_ReserveTopUpReceive();countdown();AP_ReserveTopUpTick(&gt);
-  int expected=r+983;if(expected>32767)expected-=65536;
+  int expected=r+8192;if(expected>32767)expected-=65536;
   assert(local.reserves==expected && local.fireCap==1234 && other.reserves==200);
   assert(stored==1&&writes==1);
   AP_ReserveTopUpTick(&gt);assert(stored==1&&writes==1&&local.reserves==expected);
@@ -56,8 +58,17 @@ int main(void){
  for(int r=-32768;r<=0;r++){
   reset();local.reserves=r;AP_ReserveTopUpReceive();countdown();AP_ReserveTopUpTick(&gt);
   assert(local.reserves==r&&writes==0);
-  local.reserves=1;AP_ReserveTopUpTick(&gt);assert(local.reserves==984&&stored==1);
+  local.reserves=1;AP_ReserveTopUpTick(&gt);assert(local.reserves==8193&&stored==1);
  }
+ // Rail edge and a second owed copy: entering Saffi must not consume it.
+ reset();local.reserves=24575;AP_ReserveTopUpReceive();countdown();AP_ReserveTopUpTick(&gt);
+ assert(local.reserves==32767&&stored==1&&writes==1);
+ reset();local.reserves=24576;AP_ReserveTopUpReceive();AP_ReserveTopUpReceive();
+ countdown();AP_ReserveTopUpTick(&gt);
+ assert(local.reserves==-32768&&stored==1&&writes==1&&local.fireCap==1234);
+ AP_ReserveTopUpTick(&gt);assert(local.reserves==-32768&&stored==1&&writes==1);
+ local.reserves=100;AP_ReserveTopUpTick(&gt);
+ assert(local.reserves==8292&&stored==2&&writes==2&&local.fireCap==1234);
  for(int gate=0;gate<13;gate++){
   reset();AP_ReserveTopUpReceive();countdown();
   switch(gate){
@@ -72,15 +83,15 @@ int main(void){
  }
  reset();AP_ReserveTopUpReceive();AP_ReserveTopUpReceive();state=AP_FXM_STORE_PENDING;
  countdown();AP_ReserveTopUpTick(&gt);assert(writes==0);
- state=AP_FXM_STORE_ABSENT;AP_ReserveTopUpTick(&gt);assert(writes==1&&local.reserves==1083);
- AP_ReserveTopUpTick(&gt);assert(writes==2&&local.reserves==2066);
+ state=AP_FXM_STORE_ABSENT;AP_ReserveTopUpTick(&gt);assert(writes==1&&local.reserves==8292);
+ AP_ReserveTopUpTick(&gt);assert(writes==2&&local.reserves==16484);
  // Reconnect/restart to the same room: replay does not spend applied copies.
  AP_ReserveTopUpReset();AP_ReserveTopUpReceive();AP_ReserveTopUpReceive();countdown();
- AP_ReserveTopUpTick(&gt);assert(writes==2&&local.reserves==2066);
+ AP_ReserveTopUpTick(&gt);assert(writes==2&&local.reserves==16484);
  AP_ReserveTopUpReceive();AP_ReserveTopUpReset(); // pending copy survives process via replay
  for(int i=0;i<3;i++)AP_ReserveTopUpReceive();
  countdown();AP_ReserveTopUpTick(&gt);
- assert(writes==3&&local.reserves==3049);
+ assert(writes==3&&local.reserves==24676);
  // Fresh room / slot: no inherited spent count.
  state=AP_FXM_STORE_ABSENT;stored=0;rev++;AP_ReserveTopUpReset();AP_ReserveTopUpReceive();
  countdown();AP_ReserveTopUpTick(&gt);assert(stored==1&&writes==4);

@@ -669,7 +669,8 @@ int AP_LetterTokenEarned(int track, int didWin, int collected);
 void AP_WumpaReachedTen(struct Driver *driver);
 // #249 banking (ap_wumpa.c): fruit past 10 for the local player, and the fruit
 // held at the race-finished edge, once per attempt.
-void AP_WumpaBankKart(struct Driver *driver, int held, int delta);
+int AP_WumpaRaceModify(struct Driver *driver, int delta);
+int AP_WumpaRaceCount(struct Driver *driver);
 void AP_WumpaOnRaceFinish(struct Driver *driver, int wasHuman, int held);
 // #249: bank AP fruit past 10 held since the last effect-marker write
 // (ap_hooks_received.c calls it right after that write).
@@ -680,9 +681,9 @@ void AP_WumpaDrawHub(void);
 int AP_WumpaShopHubTrackerLine(int level, char *out, int cap);
 // #249 shop page (ap_wumpa_shop_ui.c, rows in ap_wumpa_shop_menu.h).
 // PrepareGreenMenu picks the green load/save rows before the save screen
-// shows them; GreenMenuRow maps a chosen row (opening the shop returns
-// AP_WSHOP_GREEN_HANDLED); GreenExitRow is that menu's EXIT row;
-// MenuFrame owns input and drawing while the page is open.
+// shows them, WUMPA SHOP first; GreenMenuRow maps a chosen row to its retail
+// row (opening the shop returns AP_WSHOP_GREEN_HANDLED); GreenExitRow is that
+// menu's EXIT row; MenuFrame owns input and drawing while the page is open.
 struct RectMenu;
 int AP_WumpaShopRowShown(void);
 void AP_WumpaShopPrepareGreenMenu(struct RectMenu *menu);
@@ -831,6 +832,8 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap);
 // It does not alter state or tracker counts.
 
 #define AP_PAD_DISPLAY_BITS_MAX 96
+// Pad Approach Hints (#124): call while the pad at levelID shows its name.
+void AP_PadApproachHints(int levelID);
 int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap);
 
 // ── Prize-slot layout (issue #59) ──

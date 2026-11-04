@@ -130,6 +130,8 @@ tools/test-cortex-track.c
 tools/test-cortex-music.c
 tools/test-cv-tracker-letters.c
 tools/test-pad-glow-items.c
+tools/test-pad-approach-hints.cpp
+tools/test-pad-approach-hints-production.py
 tools/test-picker-infoline.c
 tools/test-podium-skip.c
 tools/test-podium-trophy-presentation.c
@@ -175,6 +177,7 @@ tools/test-content-cup-latch.c
 tools/test-content-capability.c
 tools/test-content-hooks-admission.py
 tools/test-content-modes.c
+tools/test-content-stage1-replay.c
 tools/test-content-relic-result.py
 tools/test-content-custom-scores.c
 tools/test-content-track-checks.c
@@ -214,9 +217,11 @@ tools/test-wumpa-production.c skip build-fail under the generic recipe; give it 
 tools/test-wumpa-residency.c
 tools/test-retail-asset-reader.c
 tools/test-wumpa-bank.c
+tools/test-wumpa-race-counter.c
 tools/test-wumpa-shop-seedcfg.cpp
 tools/test-wumpa-shop-ledger.cpp
 tools/test-wumpa-shop-production.py
+tools/test-wumpa-shop-menu.c
 tools/test-reconnect-catchup.cpp skip needs the fake AP server (tools/fake-ap-server.py) on a socket; run by hand, see its header
 tools/test-proc-hitbox-distance.c
 tools/test-spawn-null-guards.py

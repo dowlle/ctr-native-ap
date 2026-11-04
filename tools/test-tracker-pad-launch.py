@@ -34,7 +34,7 @@ enum { T = 0, C = 1, R = 2 };
 static int pad_takes(int state, int ready, int s1, int replay)
 {
  if (!ready || (state == 5 && !replay) || !s1) return 0;
- return state != 3;
+ return state != 3 || replay;
 }
 
 static void content_parity(void)

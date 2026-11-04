@@ -44,12 +44,13 @@ static int s_items(void *u, long id) { return AP_ItemIdTallyCount(&((State *)u)-
 static int s_bosses(void *u) { return ((const State *)u)->bosses; }
 static int s_collected(void *, long) { return 0; }
 
-int main(void)
+int main(int argc, char **argv)
 {
-	std::ifstream in(kFixture);
+	const char *fixture = argc > 1 ? argv[1] : kFixture;
+	std::ifstream in(fixture);
 	if (!in)
 	{
-		std::printf("FAIL cannot open %s (run from the repo root)\n", kFixture);
+		std::printf("FAIL cannot open %s (run from the repo root)\n", fixture);
 		return 1;
 	}
 	std::stringstream buf;
@@ -112,7 +113,7 @@ int main(void)
 			env.item_count = s_items;
 			env.bosses_won = s_bosses;
 			env.collected = s_collected;
-			env.boost_mode = opt.value("boost_mode", 0);
+			env.boost_mode = opt.value("boost_mode", opt.value("progressive_boost", 0));
 			env.starting_character = opt.value("starting_character", 0);
 			env.character_unlocks = opt.contains("character_unlocks") &&
 			                        (opt["character_unlocks"].is_boolean()

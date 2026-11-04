@@ -26,6 +26,8 @@
 #include "ap_boss_door_scene_seen.h" // #377 once-per-hub boss-door scene flag
 #include "ap_boss_won_flags.h" // #458 personally won boss races and Oxide's Challenge
 #include "ap_wumpa_ledger.h" // #249 Wumpa Shop wallet
+#include "ap_pad_hint_latch.h" // #124 Pad Approach Hints
+#include "ap_pad_hints_logic.h"
 #include "ap_hit_policy.h" // AP_HitFallbackConflictPure -- the block schema 3 check
 #include "ap_win_logic.h" // AP_WinStakesIdentHash: full-name identity for the race stakes latch
 #include "ap_deathlink_inbox.h" // inbound DeathLink bounces until the game thread drains them
@@ -42,6 +44,7 @@ static void ap_boss_door_scene_flush();
 static APBossWonFlags g_boss_won;
 static void ap_boss_won_flush();
 static APWumpaLedger g_wumpa;
+static APPadHintLatch g_pad_hints; // #124: codes already hinted by pad approach
 static void ap_wumpa_flush();
 static void ap_wumpa_resend_paid();
 static unsigned ap_boss_won_migration_bits();
@@ -726,6 +729,7 @@ static void ap_net_refuse_seed(const std::string &reason)
 	g_boss_door_scene.disconnected();
 	g_boss_won.disconnected();
 	g_wumpa.disconnected();
+	g_pad_hints.disconnected();
 	g_status = AP_NET_STATUS_ERROR;
 	g_last_error = reason;
 	char line[256];
@@ -1091,6 +1095,13 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			g_ap->SetNotify({g_wumpa.bankKey, g_wumpa.shopKey});
 			g_ap->Get({g_wumpa.bankKey, g_wumpa.shopKey});
 		}
+		// #124: the codes this slot hinted by pad approach. No hint is sent
+		// before this read arrives. Only when the seed has the option on.
+		g_pad_hints.connect(connectedSeed, g_ap->get_team_number(), g_ap->get_player_number());
+		if (ctr_cfg.pad_approach_hints) {
+			g_ap->SetNotify({g_pad_hints.key});
+			g_ap->Get({g_pad_hints.key});
+		}
 		APHeldCheckFlush heldFlush = g_held_checks.onConnected(
 		    connectedSeed, g_slot,
 		    [](int64_t code) {
@@ -1232,6 +1243,14 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			AP_LogLine(line);
 			ap_wumpa_flush();
 		}
+		auto padHints = keys.find(g_pad_hints.key);
+		if (g_connected && !g_pad_hints.key.empty() && padHints != keys.end()) {
+			g_pad_hints.retrieved(padHints->second);
+			char line[128];
+			std::snprintf(line, sizeof line, "[AP PAD HINTS] latch retrieved valid=%d hinted=%d\n",
+			              (int)g_pad_hints.valid, (int)g_pad_hints.codes.size());
+			AP_LogLine(line);
+		}
 		auto wShop = keys.find(g_wumpa.shopKey);
 		if (g_connected && !g_wumpa.shopKey.empty() && wShop != keys.end()) {
 			g_wumpa.shopRetrieved(wShop->second);
@@ -1323,6 +1342,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			if (wasOverspent && !g_wumpa.overspent())
 				ap_wumpa_resend_paid();
 		}
+		if (g_connected && !g_pad_hints.key.empty() && key == g_pad_hints.key)
+			g_pad_hints.reply(value);
 		if (g_connected && !g_wumpa.shopKey.empty() && key == g_wumpa.shopKey) {
 			long long code = g_wumpa.pendingCode;
 			int outcome = g_wumpa.shopReply(value, original);
@@ -1580,6 +1601,7 @@ static void ap_net_apply_seed_reject(void)
 	g_boss_door_scene.disconnected();
 	g_boss_won.disconnected();
 	g_wumpa.disconnected();
+	g_pad_hints.disconnected();
 	// Restore the visible refusal defensively, LAST (a handler fired by delete
 	// may have touched either field). The menu keeps showing why the seed was
 	// refused.
@@ -2268,6 +2290,43 @@ extern "C" void ap_net_wumpa_hint(const long long *codes, int n)
 	AP_NET_GUARD("wumpa_shop_hint", g_ap->LocationScouts(locs, 2));
 }
 
+// #124 Pad Approach Hints: hint the codes of open, unchecked locations of a
+// pad the player is standing at, minus those the room latch already holds
+// (ap_pad_hints_logic.h). LocationScouts with create_as_hint 2 creates the
+// hints and announces only new ones; the latch is updated in the same pass so
+// no code is sent twice. Returns how many codes were sent.
+static int ap_pad_hint_latched(int64_t code, void *) { return g_pad_hints.has(code) ? 1 : 0; }
+
+extern "C" int ap_net_pad_hints_ready(void)
+{
+	return g_ap && g_connected && !g_rejected && g_pad_hints.ready() ? 1 : 0;
+}
+
+extern "C" int ap_net_pad_approach_hint(int physLevelID, const int64_t *open, int n)
+{
+	if (!ap_net_pad_hints_ready() || open == nullptr || n <= 0) return 0;
+	std::vector<int64_t> pick((size_t)n);
+	int count = AP_PadHint_Select(open, n, ap_pad_hint_latched, nullptr, pick.data(), n);
+	if (count <= 0) return 0;
+	std::list<int64_t> locs(pick.begin(), pick.begin() + count);
+	bool sent = false;
+	AP_NET_GUARD("pad_approach_hint", {
+		// Create the permanent server hints before recording that they were
+		// sent. A send exception must never persist an unsent hint as done.
+		g_ap->LocationScouts(locs, 2);
+		APClient::DataStorageOperation op;
+		op.operation = "update";
+		op.value = g_pad_hints.mark(pick.data(), count);
+		g_ap->Set(g_pad_hints.key, nlohmann::json::object(), false, {op});
+		sent = true;
+	});
+	char line[128];
+	std::snprintf(line, sizeof line, "[AP PAD HINTS] pad %d: hinting %d location(s)%s\n", physLevelID, count,
+	              sent ? "" : " (send failed)");
+	AP_LogLine(line);
+	return sent ? count : 0;
+}
+
 extern "C" void ap_net_difficulty_subscribe(int slot_default)
 {
 	if (!g_ap || !g_connected)
@@ -2720,6 +2779,7 @@ extern "C" void ap_net_shutdown(void)
 	g_boss_door_scene.disconnected();
 	g_boss_won.disconnected();
 	g_wumpa.disconnected();
+	g_pad_hints.disconnected();
 	g_items_player.clear();
 	g_items_index.clear();
 	g_items_location.clear();

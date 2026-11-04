@@ -132,7 +132,7 @@ int main(void)
 		AP_WumpaShopTrackerLine(line, (int)sizeof line, AP_WumpaShopTallyStates(sold, 2));
 		CHECK("tracker line: sold out", strcmp(line, "WUMPA SHOP: SOLD OUT") == 0);
 		AP_WumpaHubLine(line, (int)sizeof line, 120, 340);
-		CHECK("hub line: balance and banked total", strcmp(line, "WUMPA 120   BANKED 340") == 0);
+		CHECK("hub line: balance and collected total", strcmp(line, "WUMPA 120  COLLECTED 340") == 0);
 	}
 
 	printf("%s\n", failures ? "FAILED" : "all passed");
