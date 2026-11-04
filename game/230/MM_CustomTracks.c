@@ -886,9 +886,14 @@ static void CT_Resolve(const struct AP_SeedContentRow *r)
 
 static void CT_Poll(void)
 {
+    static int saphiWasDownloading;
     char detail[128];
     MM_CustomLibrary_Tick(0);
     MM_CustomManager_Poll();
+    /* A finished Saphi install shows its outcome, a failure with its HTTP
+       status, in place of "Downloading and checking...". */
+    if (saphiWasDownloading && !s_saphiDownloading && s_saphiMessage[0]) CT_SetMessage(s_saphiMessage);
+    saphiWasDownloading = s_saphiDownloading;
     /* The catalogue loads once per session on the first visit, as on the
        Track Manager; Refresh catalogue loads it again. */
     if (!s_saphiLoaded && !s_saphiRefreshBusy)

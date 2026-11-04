@@ -54,6 +54,7 @@ static const struct CustomTrackLibraryEntry *MM_CustomSourceInstalled(const stru
 /* Drain the catalogue refresh and the Saphi download. Shared by this page
    and the player client's Custom Tracks screen (MM_CustomTracks.c). */
 static int s_saphiRefreshFailed; /* the last refresh failed; an older catalogue may remain */
+static int s_saphiFailed; /* s_saphiMessage holds a refresh or install failure, drawn in full */
 static void MM_CustomManager_Poll(void)
 {
     if (s_saphiRefreshBusy)
@@ -64,6 +65,8 @@ static void MM_CustomManager_Poll(void)
         {
             s_saphiRefreshBusy = 0;
             s_saphiRefreshFailed = result == -2;
+            s_saphiFailed = result == -2;
+            if (result == -2) fprintf(stderr, "[Saphi] refresh: %s\n", s_saphiMessage);
             if (result == 1)
             {
                 CustomSaphi_Free(&s_saphiCatalogue);
@@ -93,7 +96,7 @@ static void MM_CustomManager_Poll(void)
                 snprintf(s_saphiMessage, sizeof s_saphiMessage, "Installed. Files verified.");
 #endif
             }
-            else fprintf(stderr, "[Saphi] install: %s\n", s_saphiMessage);
+            else { s_saphiFailed = 1; fprintf(stderr, "[Saphi] install: %s\n", s_saphiMessage); }
         }
     }
 }
@@ -200,7 +203,7 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
     if (count && (tapped & (BTN_UP | BTN_DOWN)))
     {
         *selected = (*selected + ((tapped & BTN_UP) ? count - 1 : 1)) % count;
-        if (!s_saphiDownloading) s_saphiMessage[0] = 0;
+        if (!s_saphiDownloading) { s_saphiMessage[0] = 0; s_saphiFailed = 0; }
         OtherFX_Play(0,1);
     }
     if (count)
@@ -211,7 +214,7 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
     if(source && !s_saphiVersionTrack && (tapped & BTN_SQUARE))
     {
         enterVersions=source->trackID;
-        s_saphiMessage[0]=0;tapped=0;
+        s_saphiMessage[0]=0;s_saphiFailed=0;tapped=0;
     }
     int hasOlder=0;
     const struct CustomTrackLibraryEntry *sourceInstalled=source ? MM_CustomSourceInstalled(source,&hasOlder):NULL;
@@ -221,6 +224,7 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
         else if (source && !source->disabledReason[0])
         {
             s_saphiDownloading = CustomSaphi_StartInstall(source,NativeAssets_GetAssetDir());
+            s_saphiFailed = !s_saphiDownloading;
             snprintf(s_saphiMessage,sizeof s_saphiMessage,"%s",s_saphiDownloading ? "Downloading and checking selected revision..." : "Could not start download.");
         }
         else if (installed) { s_contentStoreWanted = 1; snprintf(s_saphiMessage,sizeof s_saphiMessage,"Checking installed files..."); }
@@ -251,11 +255,6 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
         MM_CustomText_Draw(source ? source->title : installed->title,305,70,176,2,ORANGE,ot);
         snprintf(line,sizeof line,"v%.32s",source ? source->version : installed->version);
         MM_CustomText_Draw(line,305,98,176,1,WHITE,ot);
-        /* Installed: which custom pages list the track as raceable. */
-        MM_CustomText_Draw(source ? ((source->modeTags&1) ? "Arcade tagged" : (source->modeTags&2) ? "Time Trial" : "Other modes") :
-            !installed->installed ? "Not installed" : installed->local.arcade ? "Arcade" : installed->local.timeTrial ? "Time Trial" : "No races",305,112,176,1,WHITE,ot);
-        MM_CustomText_Draw(s_saphiDownloading ? "Downloading..." : source ?
-            sourceInstalled ? "* Recheck" : source->disabledReason[0] ? "Unavailable" : hasOlder ? "* Update" : "* Download" : "* Recheck",305,130,176,1,ORANGE,ot);
         /* An installed track that is not on the Arcade pages says why, in up
            to two lines (native_custom_content_verify.h). */
         const char *why = installed && !installed->installed ? installed->disabledReason :
@@ -266,8 +265,20 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
             sourceInstalled ? "Installed" : hasOlder && !s_saphiVersionTrack ? "Update available" : s_saphiMessage[0] ? s_saphiMessage : source ?
             (source->modeTags & 1) ? "Arcade tagged" : (source->modeTags & 2) ? "Time Trial tagged" : "Other modes" :
             why[0] ? why : "Files verified";
-        MM_CustomText_Draw(status,305,144,176,source ? 1 : 2,WHITE,ot);
-        if(source) MM_CustomText_Draw(s_saphiVersionTrack ? "Back: Tracks" : "[ Versions",305,159,176,1,ORANGE,ot);
+        /* A failure takes the five lines under the version (about 60
+           characters), so its HTTP status shows; Up/Down clears it. */
+        if (s_saphiFailed && status == s_saphiMessage)
+            MM_CustomText_Draw(status,305,112,176,5,WHITE,ot);
+        else
+        {
+            /* Installed: which custom pages list the track as raceable. */
+            MM_CustomText_Draw(source ? ((source->modeTags&1) ? "Arcade tagged" : (source->modeTags&2) ? "Time Trial" : "Other modes") :
+                !installed->installed ? "Not installed" : installed->local.arcade ? "Arcade" : installed->local.timeTrial ? "Time Trial" : "No races",305,112,176,1,WHITE,ot);
+            MM_CustomText_Draw(s_saphiDownloading ? "Downloading..." : source ?
+                sourceInstalled ? "* Recheck" : source->disabledReason[0] ? "Unavailable" : hasOlder ? "* Update" : "* Download" : "* Recheck",305,130,176,1,ORANGE,ot);
+            MM_CustomText_Draw(status,305,144,176,source ? 1 : 2,WHITE,ot);
+            if(source) MM_CustomText_Draw(s_saphiVersionTrack ? "Back: Tracks" : "[ Versions",305,159,176,1,ORANGE,ot);
+        }
     }
     snprintf(line,sizeof line,"R2 Search: %s%s",s_saphiQuery,s_contentSearchEditing ? "_" : "");
     MM_CustomText_Draw(line,256,180,456,1,JUSTIFY_CENTER | WHITE,ot);
