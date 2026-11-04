@@ -36,10 +36,10 @@ All options are in `CMakeLists.txt`.
 
 With `CTR_AP=ON`, packages follow `CTR_CUSTOM_TRACKS` and Box Author Mode comes
 only from `CTR_AP_AUTHORING` (the box authoring download,
-`ctr_native_ap_authoring`). The Archipelago player client has the library on
-Options > Track Library and the custom pages for Single Race and Time Trial.
-Its Custom Content page and a room's tracks stay on the seed path; a library
-install never serves a room.
+`ctr_native_ap_authoring`). The Archipelago player client has one Options >
+Custom Tracks page (section 4a) and the custom pages for Single Race and Time
+Trial. Rooms, Play Solo and Arcade read the same installed copy in the shared
+track store.
 
 Every race outside Adventure drives vanilla kart stats, in a room or not:
 Arcade (retail and the custom pages), Time Trial, Versus and Battle. Adventure
@@ -160,10 +160,10 @@ known to crash or misbehave.
 
 ## 4. Track Manager and the library
 
-`Options > Custom Content` opens the Track Manager
-(`game/230/MM_CustomManager.c`, included by `game/230/MM_ConfigMenu.c:
-MM_ConfigProc_CustomContent`). It has a Saphi browse list and an Installed
-list, with search on R2.
+In the authoring builds, `Options > Custom Content` opens the Track Manager
+(`game/230/MM_CustomManager.c`, included by `game/230/MM_ConfigMenu.c`). It has
+a Saphi browse list and an Installed list, with search on R2. The player client
+uses the Custom Tracks page instead (section 4a); both read the store below.
 
 - **Store scan.** `CustomPackage_StartStoreScan` walks
   `assets/tracks/packages/` on a worker thread, re-acquires and re-verifies
@@ -178,6 +178,30 @@ list, with search on R2.
 - **Inbox.** A package copied to `assets/tracks/inbox/<pin>/` is verified and
   then published to `packages/<pin>/` (`CustomPackage_InstallInbox`). An
   install never overwrites an existing revision; it re-verifies it instead.
+
+## 4a. Custom Tracks page (player client)
+
+`Options > Custom Tracks` (`game/230/MM_CustomTracks.c`, 0.3.0-alpha2) replaces
+the player client's Custom Content and Track Library pages. Three tabs:
+
+- **Library**: installed revisions (folded by package uuid, newest shown) and
+  the Saphi catalogue (folded by track id), filter All / Installed / Browse,
+  Search, Refresh catalogue and Rescan local files. A track's actions:
+  Download, Update or Recheck files, Versions, Open source page, and for the
+  release-profile package (Baby T Park) Verify / Setup, Export YAML (Copy or
+  Save) and Relic times.
+- **This Seed**: the room's or Play Solo seed's required tracks
+  (`ap/ap_seed_content.h`) with Ready, Missing, Mismatch and the reason;
+  Install missing (an overview first), Rescan and Seed identity; per track
+  Resolve track, Verify / Setup, Open source page, Required files and
+  Installed copies.
+- **Import**: hosts the xdelta importer (`game/230/MM_CustomImport.c`). A
+  dropped patch and Select open it.
+
+The page opens on This Seed only when the loaded seed misses tracks, otherwise
+on Library. Left / Right or L1 / R1 change tabs on the tab strip; in a list,
+Back goes to the page controls, then the tab strip, then Options.
+`tools/test-custom-tracks-screen.c` drives the page.
 
 ## 5. Project Saphi catalogue and install
 

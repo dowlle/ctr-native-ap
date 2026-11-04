@@ -1368,7 +1368,7 @@ int AP_BossGateAdvert(int bossIdx, char *out, int cap)
 #endif
 		    )
 		{
-			snprintf(out, (size_t)cap, "Boss track files missing: see Current Seed");
+			snprintf(out, (size_t)cap, "Boss track files missing: see Custom Tracks");
 			return 1;
 		}
 		snprintf(out, (size_t)cap, "Boss track refused: %s",

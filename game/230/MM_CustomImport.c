@@ -1,8 +1,9 @@
 /* "Import track files" (xdelta importer, 0.3.0). Included once: by
-   MM_ConfigMenu.c next to Current Seed in the player client (MM_IMPORT_PLAYER),
+   MM_ConfigMenu.c in the player client (MM_IMPORT_PLAYER), hosted by the
+   Custom Tracks Import tab,
    by MM_CustomManager.c in the authoring builds (decision 35, 2026-10-28).
-   Select opens it on Options > Custom Content; the player client's Track
-   Library page does not offer it. The player picks a patch through the
+   Select opens it on Options > Custom Content (authoring builds) or Custom
+   Tracks (player client). The player picks a patch through the
    system dialog, from assets/tracks/import/ (Steam Deck Game Mode), or drops
    it on the client window; the patch is read on a worker against the mounted
    disc, and the review list shows one line per found item. Confirm installs
@@ -329,7 +330,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
 #ifndef MM_IMPORT_PLAYER
 #define IMPORT_DONE "X: Installed tracks"
 #else
-#define IMPORT_DONE "X: Custom Content"
+#define IMPORT_DONE "X: Done"
 #endif
     else snprintf(line, sizeof line, "%s", s_importStage == IMPORT_RESULT ? IMPORT_DONE :
                   s_importStage == IMPORT_SCANNING ? "Back: Cancel" : "Folder: assets/tracks/import");
