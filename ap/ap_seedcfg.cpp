@@ -1654,6 +1654,9 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.reserve_top_up = 0;
 	ctr_cfg.spoiler_items = 0;
 	ctr_cfg.pad_approach_hints = 0;
+	ctr_cfg.pad_hints_wait_for_spoiler = 0;
+	ctr_cfg.pad_hints_progression_only = 0;
+	ctr_cfg.shop_hints_progression_only = 0;
 	ctr_cfg.seed_box_locations = 0;
 	// Podium checks -> disabled + all rungs absent (-1) until parsed below.
 	ctr_cfg.podium_enabled = 0;
@@ -1691,7 +1694,9 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// non-Boolean value stays in and the validator refuses it as before.
 	// Legacy options are read below.
 	// #124 adds "pad_approach_hints" the same way.
-	static const char *const kAdditiveContentFields[] = {"reserve_top_up", "spoiler_items", "pad_approach_hints"};
+	static const char *const kAdditiveContentFields[] = {"reserve_top_up", "spoiler_items", "pad_hints_wait_for_spoiler",
+	                                                    "pad_hints_progression_only", "shop_hints_progression_only",
+	                                                    "pad_approach_hints"};
 	bool strip_additive = false;
 	if (j.is_object() && j.contains("content_plan") && j.contains("ctr_options") && j["ctr_options"].is_object())
 		for (const char *key : kAdditiveContentFields)
@@ -1714,6 +1719,14 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			ctr_cfg.reserve_top_up = json_int(j["ctr_options"], "reserve_top_up", 0) != 0;
 			ctr_cfg.spoiler_items = json_int(j["ctr_options"], "spoiler_items", 0) != 0;
 			ctr_cfg.pad_approach_hints = json_int(j["ctr_options"], "pad_approach_hints", 0) != 0;
+			ctr_cfg.pad_hints_wait_for_spoiler = json_int(j["ctr_options"], "pad_hints_wait_for_spoiler", 0) != 0;
+			ctr_cfg.pad_hints_progression_only = json_int(j["ctr_options"], "pad_hints_progression_only", 0) != 0;
+			ctr_cfg.shop_hints_progression_only = json_int(j["ctr_options"], "shop_hints_progression_only", 0) != 0;
+			if (ctr_cfg.pad_hints_wait_for_spoiler || ctr_cfg.pad_hints_progression_only ||
+			    ctr_cfg.shop_hints_progression_only)
+				ap_cfg_log("[AP CFG] hint filters: pad_wait_spoiler=%d pad_progression_only=%d shop_progression_only=%d\n",
+				           ctr_cfg.pad_hints_wait_for_spoiler, ctr_cfg.pad_hints_progression_only,
+				           ctr_cfg.shop_hints_progression_only);
 			if (ctr_cfg.pad_approach_hints)
 				ap_cfg_log("[AP CFG] pad_approach_hints=1 -> approaching an open pad hints its open checks once\n");
 		}

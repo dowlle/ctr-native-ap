@@ -97,7 +97,16 @@ static void AP_WShopHint(int hub)
 	for (k = 0; k < ctr_wumpa_shop.slots; k++)
 	{
 		long long code = ctr_wumpa_shop.slot[hub][k].code;
-		if (!ap_net_location_checked(code) && !ap_net_wumpa_bought(code))
+		unsigned flags = 0;
+		int keep;
+		if (ap_net_location_checked(code) || ap_net_wumpa_bought(code))
+			continue;
+		// A2-23: progression only. Items not scouted yet: try again next open.
+		keep = AP_HintFilter_Progression(ctr_cfg.shop_hints_progression_only,
+		                                 ap_net_scout_known(code, NULL, NULL, &flags), flags);
+		if (keep == AP_HINT_LATER)
+			return;
+		if (keep == AP_HINT_KEEP)
 			codes[n++] = code;
 	}
 	ap_wshop.hinted[hub] = 1;
