@@ -256,6 +256,33 @@ if(CTR_AP)
         set_target_properties(ctr_native PROPERTIES OUTPUT_NAME "ctr_native_ap")
     endif()
 
+    # The shipped Windows player has Explorer VERSIONINFO from the same header
+    # used by the client. RC is enabled only for this Windows executable.
+    if(WIN32 AND NOT CTR_AP_AUTHORING)
+        enable_language(RC)
+        set(_ap_version_header "${CMAKE_SOURCE_DIR}/ap/ap_version.h")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_ap_version_header}")
+        file(READ "${_ap_version_header}" _ap_version_header_text)
+        string(REGEX MATCH "#define CTR_AP_VERSION \"([^\"]+)\"" _ap_version_match "${_ap_version_header_text}")
+        if(NOT _ap_version_match)
+            message(FATAL_ERROR "Could not read CTR_AP_VERSION from ap/ap_version.h")
+        endif()
+        set(CTR_AP_FILE_VERSION_STRING "${CMAKE_MATCH_1}")
+        string(REGEX MATCH "#define CTR_AP_COMPAT_VERSION \"([^\"]+)\"" _ap_compat_match "${_ap_version_header_text}")
+        if(NOT _ap_compat_match)
+            message(FATAL_ERROR "Could not read CTR_AP_COMPAT_VERSION from ap/ap_version.h")
+        endif()
+        set(_ap_compat_version "${CMAKE_MATCH_1}")
+        string(REGEX MATCH "^v?([0-9]+)\\.([0-9]+)\\.([0-9]+)$" _ap_numeric_match "${_ap_compat_version}")
+        if(NOT _ap_numeric_match)
+            message(FATAL_ERROR "CTR_AP_COMPAT_VERSION must be vMAJOR.MINOR.PATCH for Windows VERSIONINFO")
+        endif()
+        set(CTR_AP_FILE_VERSION_NUMERIC "${CMAKE_MATCH_1},${CMAKE_MATCH_2},${CMAKE_MATCH_3},0")
+        configure_file("${CMAKE_SOURCE_DIR}/cmake/ctr_native_ap_version.rc.in"
+            "${CMAKE_CURRENT_BINARY_DIR}/ctr_native_ap_version.rc" @ONLY)
+        target_sources(ctr_native PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/ctr_native_ap_version.rc")
+    endif()
+
     # Archipelago networking (apclientpp). Compiled as an isolated C++17 static
     # library so the unity C build stays C; the only scope where exceptions /
     # RTTI / -mbig-obj live. wss:// (TLS) + permessage-deflate compression are
