@@ -298,7 +298,7 @@ def validate_build(
     package_client = load_package_client(source)
     if package_client is not None:
         try:
-            package_client.verify(platform, binary)
+            package_client.verify(platform, binary, variant)
         except Exception as error:
             fail(f"{platform} package-client validation failed: {error}")
 
