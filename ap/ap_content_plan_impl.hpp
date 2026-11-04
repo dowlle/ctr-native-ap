@@ -1539,8 +1539,8 @@ static void validate(const J &p, State &out) {
         }
         // Item Box Locations (#133 PR 4e), after the track's other checks: a
         // retail track's frozen slots its tier creates (registry `boxes`, one
-        // [code, tier] per placed slot), a named-block custom track's Item
-        // Box 1 to min(weapon_crates, 15); a route per mode in the pad's order.
+        // [code, tier] per placed slot), or a custom track's Item Box 1 to
+        // min(weapon_crates, 15); a route per mode in the pad's order.
         if (out.item_boxes.present) {
             int slots = 0;
             if (dest.retail_id >= 0) {
@@ -1551,11 +1551,13 @@ static void validate(const J &p, State &out) {
                         dest.box_locations[b] = rows[b][0].get<int64_t>();
                         slots = (int)b + 1;
                     }
-            } else if (dest.named_block >= 0 && dest.package_index >= 0) {
+            } else if (dest.package_index >= 0) {
                 slots = box_seats(out.packages[dest.package_index].weapon_crates);
                 dest.box_crates = slots ? out.packages[dest.package_index].weapon_crates : 0;
                 for (int b = 0; b < slots; ++b)
-                    dest.box_locations[b] = ap_named_location_code(dest.named_block, AP_NAMED_OFF_ITEM_BOX_1 + b);
+                    dest.box_locations[b] = dest.named_block >= 0
+                        ? ap_named_location_code(dest.named_block, AP_NAMED_OFF_ITEM_BOX_1 + b)
+                        : 35017000 + 15 * (dest.custom_slot - 1) + b;
             }
             dest.box_count = slots;
             for (int b = 0; b < slots; ++b) {
