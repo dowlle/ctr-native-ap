@@ -117,9 +117,10 @@ typedef struct ctr_content_pad {
     /* Item Box Locations (#133 PR 4e): the track's box checks, by 0-based
      * slot (the name is "Item Box <slot + 1>"), 0 where the slot has none.
      * Retail tracks keep their frozen codes (35014000 block), a named-block
-     * custom track uses offsets 20..34 for its first box_count slots, and a
-     * generic slot or Cortex Vortex has none. box_count is the highest slot
-     * with a code. A custom track's boxes stand on its own weapon crates
+     * custom track uses offsets 20..34 for its first box_count slots; a
+     * generic custom slot uses its reserved codes. Cortex Vortex has none.
+     * box_count is the highest slot with a code. A custom track's boxes stand
+     * on its own weapon crates
      * (ap_box_seat_logic.h); box_crates is the package's measured weapon
      * crate count those seats are taken from (0 when it has no boxes). */
     int box_count, box_crates;

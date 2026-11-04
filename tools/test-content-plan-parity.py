@@ -64,7 +64,7 @@ expected["cortex_vortex"] = dict(
     location=L[CV + ": Trophy Race"], ctr=L[CV + ": CTR Token Challenge"],
     relic=[L[f"{CV}: {t} Time Trial"] for t in cp.RELIC_TIERS], perfect=L[CV + ": Relic Race Perfect"],
     podium=[L[f"{CV}: {s}"] for s in RUNGS], wumpa=L[CV + ": Reach 10 Wumpa"],
-    letters=[L[f"{CV}: Letter {x}"] for x in cp.LETTERS], letter_items=list(cp.cortex_vortex_track.LETTER_ITEM_CODES))
+    letters=[L[f"{CV}: Letter {x}"] for x in cp.LETTERS], letter_items=list(cp.cortex_vortex.LETTER_ITEM_CODES))
 # Global check families (#133 PR 4d): codes and frozen names in class order.
 from worlds.ctr import itemsanity as cits, hit_character as chit
 expected["itemsanity"] = [dict(location=c, name=n) for n, c, _r in cits.ITEMSANITY_CLASS.all_locations()]
@@ -1170,15 +1170,6 @@ def bdrop_box(p, name):
     p["checks"].remove(bcheck(p, name))
     p["items"]["coded_checks"] -= 1
     p["items"]["filler_count"] -= 1
-def bgeneric_box(p):
-    extra = copy.deepcopy(bcheck(p, "Baby T Park: Item Box 1"))
-    extra.update(owner="custom/fixture-loop/2.1", location=35017000, display_name="Fixture Loop: Item Box 1")
-    extra["routes"] = [dict(r, entry_id="entry/custom/fixture-loop/2.1",
-                            own_pad_id=next(q["id"] for q in p["pads"] if q["entry_id"] == "entry/custom/fixture-loop/2.1"))
-                       for r in extra["routes"]]
-    p["checks"].append(extra)
-    p["items"]["coded_checks"] += 1
-    p["items"]["filler_count"] += 1
 for name, change, trusted in [
         ("unchanged copy", lambda p: None, False),
         ("record dropped, boxes kept", bdrop_record, False),
@@ -1192,7 +1183,8 @@ for name, change, trusted in [
         ("tier disagrees with the capability record", lambda p: p["capability"].__setitem__("shortcut_knowledge", 1), False),
         ("hard-tier box dropped", lambda p: bdrop_box(p, "Oxide Station: Item Box 6"), False),
         ("named box dropped", lambda p: bdrop_box(p, "Baby T Park: Item Box 8"), False),
-        ("box on the generic slot", bgeneric_box, False),
+        ("generic box dropped", lambda p: bdrop_box(p, "Fixture Loop: Item Box 1"), False),
+        ("generic box code", lambda p: bcheck(p, "Fixture Loop: Item Box 1").__setitem__("location", 35017000), False),
         ("box code", lambda p: bcheck(p, "N. Gin Labs: Item Box 1").__setitem__("location", 35014166), False),
         ("box route dropped", lambda p: bcheck(p, "N. Gin Labs: Item Box 1")["routes"].pop(), False),
         ("box routes reordered", lambda p: bcheck(p, "N. Gin Labs: Item Box 2")["routes"].reverse(), False),

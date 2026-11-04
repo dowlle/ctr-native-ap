@@ -1150,7 +1150,7 @@ int main(int argc, char **argv) {
     // Tiger Temple (pad 18), Papu's Pyramid (pad 11), Oxide Station (Gem Cup
     // seat 100), Cortex Vortex (pad 8, no boxes), Baby T Park (pad 21, 8
     // stated weapon crates), Acid Lake (pad 10, named, 20 crates: 15 boxes)
-    // and the B+ fixture-loop (pad 23, 12 crates, generic slot: no boxes).
+    // and the B+ fixture-loop (pad 23, 12 crates, generic slot).
     // Item Box Colours off in the seed.
     J boxes;
     std::ifstream("tools/fixtures/content-plan/item-boxes.json") >> boxes;
@@ -1180,7 +1180,10 @@ int main(int argc, char **argv) {
         expect(named, "boxes: Baby T Park takes Item Box 1 to 8 on its named block");
         expect(acid && acid->box_count == 15 && acid->box_crates == 20 && acid->box_locations[14] == 35200000 + 20 + 14,
                "boxes: twenty crates seat fifteen boxes");
-        expect(loop && loop->box_count == 0 && loop->box_locations[0] == 0, "boxes: a generic slot has none");
+        bool generic = loop && loop->box_count == 12 && loop->box_crates == 12;
+        for (int i = 0; generic && i < 15; ++i)
+            generic = loop->box_locations[i] == (i < 12 ? 35017030 + i : 0);
+        expect(generic, "boxes: a generic slot seats its twelve crates on reserved codes");
         expect(cv && cv->box_count == 0, "boxes: Cortex Vortex has none");
         expect(ap_content_plan_package(0) && ap_content_plan_package(0)->weapon_crates == 20, "boxes: the stated crate count is kept");
         expect(parse(caps) && ap_content_plan_item_boxes()->present == 0 && ctr_cfg.color_boxes_by_item == 0,
@@ -1253,11 +1256,12 @@ int main(int argc, char **argv) {
             auto &c = j["content_plan"]["checks"];
             for (size_t i = 0; i < c.size(); ++i) if (c[i]["display_name"] == "Baby T Park: Item Box 8") { c.erase(i); break; }
             shrink(j, 1); });
-        b_refuse("box on the generic slot", [&](J &j) {
-            J extra = box(j, "Baby T Park: Item Box 1");
-            extra["owner"] = "custom/fixture-loop/2.1"; extra["location"] = 35017000;
-            extra["display_name"] = "Fixture Loop: Item Box 1";
-            j["content_plan"]["checks"].push_back(extra); shrink(j, -1); });
+        b_refuse("generic box dropped", [&](J &j) {
+            auto &c = j["content_plan"]["checks"];
+            for (size_t i = 0; i < c.size(); ++i) if (c[i]["display_name"] == "Fixture Loop: Item Box 1") { c.erase(i); break; }
+            shrink(j, 1); });
+        b_refuse("generic box code", [&](J &j) { box(j, "Fixture Loop: Item Box 1")["location"] = 35017000; });
+        b_refuse("generic crate count", [&](J &j) { package(j, "fixture-loop")["capabilities"]["weapon_crates"] = 11; });
         b_refuse("weapon crates raised", [&](J &j) { package(j, "baby-t-park")["capabilities"]["weapon_crates"] = 9; });
         b_refuse("weapon crates lowered", [&](J &j) { package(j, "baby-t-park")["capabilities"]["weapon_crates"] = 7; });
         b_refuse("weapon crates unstated", [&](J &j) { package(j, "baby-t-park")["capabilities"].erase("weapon_crates"); });

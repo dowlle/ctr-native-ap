@@ -3406,6 +3406,306 @@
     "boost": 2
    },
    {
+    "location": 35017030,
+    "owner": "custom/fixture-loop/2.1",
+    "kind": "box",
+    "display_name": "Fixture Loop: Item Box 1",
+    "routes": [
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35017031,
+    "owner": "custom/fixture-loop/2.1",
+    "kind": "box",
+    "display_name": "Fixture Loop: Item Box 2",
+    "routes": [
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35017032,
+    "owner": "custom/fixture-loop/2.1",
+    "kind": "box",
+    "display_name": "Fixture Loop: Item Box 3",
+    "routes": [
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35017033,
+    "owner": "custom/fixture-loop/2.1",
+    "kind": "box",
+    "display_name": "Fixture Loop: Item Box 4",
+    "routes": [
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35017034,
+    "owner": "custom/fixture-loop/2.1",
+    "kind": "box",
+    "display_name": "Fixture Loop: Item Box 5",
+    "routes": [
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35017035,
+    "owner": "custom/fixture-loop/2.1",
+    "kind": "box",
+    "display_name": "Fixture Loop: Item Box 6",
+    "routes": [
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35017036,
+    "owner": "custom/fixture-loop/2.1",
+    "kind": "box",
+    "display_name": "Fixture Loop: Item Box 7",
+    "routes": [
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35017037,
+    "owner": "custom/fixture-loop/2.1",
+    "kind": "box",
+    "display_name": "Fixture Loop: Item Box 8",
+    "routes": [
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35017038,
+    "owner": "custom/fixture-loop/2.1",
+    "kind": "box",
+    "display_name": "Fixture Loop: Item Box 9",
+    "routes": [
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35017039,
+    "owner": "custom/fixture-loop/2.1",
+    "kind": "box",
+    "display_name": "Fixture Loop: Item Box 10",
+    "routes": [
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35017040,
+    "owner": "custom/fixture-loop/2.1",
+    "kind": "box",
+    "display_name": "Fixture Loop: Item Box 11",
+    "routes": [
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
+    "location": 35017041,
+    "owner": "custom/fixture-loop/2.1",
+    "kind": "box",
+    "display_name": "Fixture Loop: Item Box 12",
+    "routes": [
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "relic",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     },
+     {
+      "entry_id": "entry/custom/fixture-loop/2.1",
+      "mode": "trophy",
+      "leg_id": null,
+      "encounter_id": null,
+      "own_pad_id": "pad:23",
+      "award": "box"
+     }
+    ],
+    "boost": 2
+   },
+   {
     "location": 35026000,
     "owner": "cortex_vortex",
     "kind": "trophy",
@@ -3703,9 +4003,9 @@
      "requirement_ceiling": 4
     }
    ],
-   "coded_checks": 106,
+   "coded_checks": 118,
    "locked_checks": 0,
-   "filler_count": 54,
+   "filler_count": 66,
    "trap_count": 6
   },
   "goal": {
