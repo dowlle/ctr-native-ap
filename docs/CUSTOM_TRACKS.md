@@ -34,9 +34,21 @@ All options are in `CMakeLists.txt`.
 | `CTR_AI_LAP_RECORDER` | The AI lap recorder (always present when `CTR_AP` is on) | nothing |
 | `CTR_AUTHORING_CLIENT` | All four of the above, without Archipelago; exe `ctr_native_authoring`, window title `AUTHORING CLIENT (no Archipelago)` | `CTR_AP=OFF` |
 
-With `CTR_AP=ON`, packages and Box Author Mode come only from
-`CTR_AP_AUTHORING` (the box authoring download, `ctr_native_ap_authoring`).
-The Archipelago player client never contains them.
+With `CTR_AP=ON`, packages follow `CTR_CUSTOM_TRACKS` and Box Author Mode comes
+only from `CTR_AP_AUTHORING` (the box authoring download,
+`ctr_native_ap_authoring`). The Archipelago player client has the library on
+Options > Track Library and the custom pages for Single Race and Time Trial.
+Its Custom Content page and a room's tracks stay on the seed path; a library
+install never serves a room.
+
+Every race outside Adventure drives vanilla kart stats, in a room or not:
+Arcade (retail and the custom pages), Time Trial, Versus and Battle. Adventure
+keeps the room's stats (`ap/ap_race_stats_logic.h`).
+
+An Arcade custom race in a room holds that room (`AP_ArcadeHoldsRoom`): nothing
+the race does sends a check or a goal, received items stay queued, and their
+effects and a reconnect's reset wait until the race is left. Checks earned before
+the race can still go out through their own resend paths.
 
 Linux, from a checkout:
 
@@ -219,8 +231,9 @@ In order:
 3. **Begin.** The second Cross calls `CustomOffline_BeginRuntime` with the host
    slot and mode, sets the lap count from the package, and starts the normal
    race load for the host slot. In the Archipelago box authoring download this
-   is refused while a seed is loaded (`AP_CustomOfflineLaunchAllowed`); in the
-   authoring client it is always allowed (`ap/ap_authoring_host.c`).
+   is refused while a seed is loaded (`AP_CustomOfflineLaunchAllowed`), in the
+   player client only while a pad race owns the loader, and in the authoring
+   client it is always allowed (`ap/ap_authoring_host.c`).
 4. **Load request.** `game/MAIN/MainRaceTrack.c: MainRaceTrack_RequestLoad`
    tells the runtime a load was requested; a retry of the host slot keeps it.
 5. **Load start.** `MainRaceTrack_StartLoad` refuses the load (back to the
@@ -369,6 +382,18 @@ which hashes the two files named in `config.ini [CustomTracks]` and arms
 `CustomTrack_GetOverride`, the older sibling of the offline hook in
 `LOAD_ReadFile_ex`. A refusal is total: no custom bytes and the cup keeps its
 four retail legs. That path is not in the authoring client.
+
+Content-plan seeds (0.3.0 development) admit any complete package descriptor:
+track key, LEV and VRM pins, authored laps and measured capability flags
+(`time_trial`, `arcade`, `relic`, `ctr_tokens`, `wumpa`). The two compiled Baby
+T Park revisions keep their manager folders. Any other package is found by
+SHA-256 and size in `assets/tracks/<track key>/original/`, whatever the file
+names, so several revisions of one track can share the folder. On connect and
+again at pad entry the client runs the structural verifier on those exact
+bytes (`ap/ap_content_capability.h`) and refuses the package when a flag the
+descriptor sets to true is not there; the loader then hashes the files once
+more before it arms. These loads carry no navigation identity, so recorded AI
+lanes are blocked for them.
 
 ## 13. The authoring-client branch
 

@@ -58,6 +58,13 @@ void AP_WumpaConnectReset(void);
 // is the live GameTracker; no-op outside a race or with nothing pending.
 void AP_WumpaTick(struct GameTracker *gGT);
 
+// #249 banking. AP_WumpaRaceModify is called from RB_Player_ModifyWumpa for
+// gains and losses; it changes the full race count and caps the real kart at
+// ten. AP_WumpaOnRaceFinish is called on the player's race-finished edge and
+// banks the full count once per attempt,
+// never for a forced DeathLink loss.
+// Declared in ap_hooks.h, where RB_Player.c and the race listener see them.
+
 #endif // CTR_AP
 
 #endif // AP_WUMPA_H

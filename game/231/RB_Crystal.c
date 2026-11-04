@@ -39,6 +39,9 @@ int RB_Crystal_ThCollide(struct Thread *crystalTh, struct Thread *driverTh, void
 	{
 		// get driver object, get screen coords
 		driver = driverTh->object;
+#ifdef CTR_AP
+        AP_NotifyCrystalPickup(crystalInst, driver->driverID);
+#endif
 		pb = &sdata->gGT->pushBuffer[driver->driverID];
 		RB_Fruit_GetScreenCoords(pb, crystalInst, &posScreen[0]);
 

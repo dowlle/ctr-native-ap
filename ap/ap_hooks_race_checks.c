@@ -21,6 +21,10 @@ static void AP_EmitRung(int track, long code, int rungTag, int position,
 	// rung" in support bundles. A positive configured code can also disagree with
 	// the server's checked+missing location set; log that before preserving the
 	// existing send attempt so this patch changes evidence only, never behavior.
+	// A content-plan pad without this rung (#133 PR 3b): the seed's rung set
+	// leaves it out, which is not worth a diagnostic line.
+	if (code < 0 && track >= AP_CONTENT_PODIUM_LOGICAL_BASE)
+		return;
 	if (code < 0)
 	{
 		// Once per (track, rung, phase) per connect: the per-tick trophy
@@ -86,21 +90,28 @@ void AP_EmitBoxCheck(int levelID, int slot, long code)
 // covering a missed live capture and server /send_location grants -- and finishing
 // AT a position legitimately satisfies the held rungs at or below it. Sends dedup
 // against the checked-set, so the live listener + finish fan-out never double-send.
-// MUST be called only for AP_RACE_TROPHY finishes (incl. cup legs): relic / token /
-// crystal challenges run on the SAME levelIDs as the trophy tracks (only the mode
-// word differs), so gating on the levelID range alone would misfire.
+// MUST be called only for AP_RACE_TROPHY finishes (incl. cup legs), or a CTR
+// Challenge on a ctr_first track (#208, AP_RaceStructureRaceEarnsRungs): relic /
+// token / crystal challenges run on the SAME levelIDs as the trophy tracks (only
+// the mode word differs), so gating on the levelID range alone would misfire.
 static void AP_SendPodiumChecks(int track, int placement)
 {
 	// #286: the forced-loss attempt owns no finish rung, including the trophy
 	// backstop and the connect-time reconnect reconciliation.
 	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_PODIUM))
 		return;
-	if (!ctr_cfg_active() || !ctr_cfg.podium_enabled)
+	if (!ctr_cfg_active() || (!ctr_cfg.podium_enabled && !ap_content_plan_active()))
 		return;
 	if (placement < 1)
 		return; // -1 = placement unknown -> nothing to fan out
 
 	const ctr_podium_rungs *pr = NULL;
+#ifdef CTR_CUSTOM_TRACKS
+	ctr_podium_rungs content;
+	if (ap_content_plan_active())
+		pr = AP_ContentPodiumRungs(track, &content) ? &content : NULL; // #133 PR 3b
+	else
+#endif
 	if (track >= 0 && track < CTR_CFG_PODIUM_TRACK_COUNT)
 		pr = &ctr_cfg.podium[track];
 	else if (track >= AP_TRIAL_PODIUM_LOGICAL_BASE && track < AP_TRIAL_PODIUM_LOGICAL_BASE+2)
@@ -132,12 +143,18 @@ static void AP_SendPodiumChecks(int track, int placement)
 // final-position checks owned by AP_SendPodiumChecks. Dedup is automatic.
 static void AP_SendHeldChecks(int track, int position)
 {
-	if (!ctr_cfg_active() || !ctr_cfg.podium_enabled)
+	if (!ctr_cfg_active() || (!ctr_cfg.podium_enabled && !ap_content_plan_active()))
 		return;
 	if (position < 1)
 		return;
 
 	const ctr_podium_rungs *pr = NULL;
+#ifdef CTR_CUSTOM_TRACKS
+	ctr_podium_rungs content;
+	if (ap_content_plan_active())
+		pr = AP_ContentPodiumRungs(track, &content) ? &content : NULL; // #133 PR 3b
+	else
+#endif
 	if (track >= 0 && track < CTR_CFG_PODIUM_TRACK_COUNT)
 		pr = &ctr_cfg.podium[track];
 	else if (track >= AP_TRIAL_PODIUM_LOGICAL_BASE && track < AP_TRIAL_PODIUM_LOGICAL_BASE+2)
@@ -168,6 +185,37 @@ static void AP_SendHeldChecks(int track, int position)
 // races won in a prior session and finishes whose live capture was lost.
 static void AP_ReconcilePodiumFromTrophies(void)
 {
+#ifdef CTR_CUSTOM_TRACKS
+	// Content plans (#133 PR 3b): a checked Trophy Race of a pad with rungs
+	// was won, so all its rungs are earned. The legacy rows below are empty.
+	if (ap_content_plan_active())
+	{
+		int id;
+		for (id = 0; id <= 110; id++)
+		{
+			const ctr_content_pad *pad = ap_content_plan_pad(id);
+			ctr_podium_rungs rungs;
+			if (pad && pad->occupied && !pad->crystal && pad->trophy_location > 0 &&
+			    AP_ContentPodiumRungs(AP_CONTENT_PODIUM_LOGICAL_BASE + id, &rungs) &&
+			    ap_net_location_checked((long)pad->trophy_location))
+				AP_SendPodiumChecks(AP_CONTENT_PODIUM_LOGICAL_BASE + id, 1);
+			// cup_only_podium_rungs: a checked Cup Leg Victory was a first
+			// place on that track, so the leg's own rungs are earned too.
+			if (pad && pad->occupied && pad->cup && pad->physical < AP_CONTENT_GARAGE_CUP_PAD)
+			{
+				int leg;
+				for (leg = 0; leg < AP_CONTENT_CUP_LEGS; leg++)
+				{
+					const int track = AP_CONTENT_LEG_PODIUM_LOGICAL_BASE + id * AP_CONTENT_CUP_LEGS + leg;
+					if (pad->legs[leg].victory > 0 && AP_ContentPodiumRungs(track, &rungs) &&
+					    ap_net_location_checked((long)pad->legs[leg].victory))
+						AP_SendPodiumChecks(track, 1);
+				}
+			}
+		}
+		return;
+	}
+#endif
 	if (!ctr_cfg_active() || !ctr_cfg.podium_enabled)
 		return;
 	for (int lid = 0; lid < CTR_CFG_PODIUM_TRACK_COUNT; lid++)
@@ -246,8 +294,14 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 
 		// Native fan-out: only trophy races carry podium rungs (relic/token/
 		// crystal share the same levelIDs, so the type gate is load-bearing).
-		if (ap_last_race_mode == AP_RACE_TROPHY)
+		// #208 decision 14: on a ctr_first track the CTR Challenge is the
+		// first race and its finishing place earns the rungs, letters or not.
+		if (AP_RaceStructureRaceEarnsRungs(ap_last_race_mode == AP_RACE_TROPHY,
+		                                   ap_last_race_mode == AP_RACE_TOKEN,
+		                                   AP_RaceStructurePodiumCtrFirst(podiumTrack)))
 			AP_SendPodiumChecks(podiumTrack, ap_last_race_place);
+		if (ap_last_race_mode == AP_RACE_TOKEN && ap_last_race_place == 1)
+			AP_ContentCtrFirstPlace();
 	}
 	else if (!finishedNow && ap_finish_prev)
 	{
@@ -280,7 +334,8 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 	//       a live track, which can never happen inside the load gap;
 	//   (3) not START/END_OF_RACE / MAIN_MENU / GAME_CUTSCENE / PAUSE_ALL, lights out;
 	//   (4) AP_ClassifyRace == TROPHY -- trophy races AND cup legs (legs classify as
-	//       trophy), never relic/token/crystal/boss/arcade.
+	//       trophy), never relic/crystal/boss/arcade; token only on a ctr_first
+	//       track (#208).
 	// The debounce (position must hold AP_HELD_DEBOUNCE_MS) then rejects overtake
 	// flicker: any position change resets the stability timer, so a 1-2 frame swap
 	// at a pass never confirms.
@@ -305,7 +360,12 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 		     (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) == 0 &&
 		    gGT->trafficLightsTimer < 1 && onTrack && ap_held_countdown_seen;
 
-		if (heldWindow && AP_ClassifyRace(gGT) == AP_RACE_TROPHY &&
+		int raceType = AP_ClassifyRace(gGT);
+		// #208 decision 14: a CTR Challenge on a ctr_first track holds the
+		// rungs as a Trophy Race does.
+		if (heldWindow &&
+		    AP_RaceStructureRaceEarnsRungs(raceType == AP_RACE_TROPHY, raceType == AP_RACE_TOKEN,
+		                                   AP_RaceStructurePodiumCtrFirst(podiumTrack)) &&
 		    podiumTrack >= 0 && ap_live_position >= 1)
 		{
 			int elapsedMs = gGT->elapsedTimeMS;

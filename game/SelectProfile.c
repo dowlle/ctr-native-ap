@@ -369,9 +369,22 @@ void SelectProfile_AdvPickMode_MenuProc(struct RectMenu *menu)
 
 	s16 row = menu->rowSelected;
 
+#ifdef CTR_AP
+	// #249: WUMPA SHOP (first row) opens the shop page; the rows below it
+	// map back to their retail rows.
+	row = (s16)AP_WumpaShopGreenMenuRow(menu, row);
+	if (row == AP_WSHOP_GREEN_HANDLED)
+		return;
+#endif
+
 	if ((row >= 0) && (row < 3))
 	{
+#ifdef CTR_AP
+		// The retail row, not rowSelected: with the shop row first they differ.
+		SelectProfile_ToggleMode((u16)row | 0x20);
+#else
 		SelectProfile_ToggleMode((u16)menu->rowSelected | 0x20);
+#endif
 		sdata->ptrDesiredMenu = &data.menuFourAdvProfiles;
 		return;
 	}
@@ -1326,12 +1339,20 @@ static void SelectProfile_FinalizeAdventure(struct RectMenu *menu)
 			sdata->ptrDesiredMenu = &data.menuQueueLoadHub;
 			// NOTE(aalhendi): Retail 0x8004a8a0-0x8004a8c4 queues through currLEV.
 			gGT->currLEV = sdata->advProgress.HubLevYouSavedOn;
+#ifdef CTR_AP
+			data.menuGreenLoadSave.rowSelected = AP_WumpaShopGreenExitRow(&data.menuGreenLoadSave);
+#else
 			data.menuGreenLoadSave.rowSelected = 3;
+#endif
 		}
 		else
 		{
 			sdata->ptrDesiredMenu = &data.menuGreenLoadSave;
+#ifdef CTR_AP
+			data.menuGreenLoadSave.rowSelected = AP_WumpaShopGreenExitRow(&data.menuGreenLoadSave);
+#else
 			data.menuGreenLoadSave.rowSelected = 3;
+#endif
 		}
 		return;
 	}

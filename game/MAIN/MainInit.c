@@ -245,6 +245,8 @@ void MainInit_PrimMem(struct GameTracker *gGT)
 		              CustomTrack_ServingLoad((int)gGT->levelID, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID) ||
 		              CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID,
 	                                             (gGT->gameMode1 & ADVENTURE_BOSS) != 0) ||
+		              CustomTrack_GarageVenueServing((int)gGT->levelID, gGT->bossID,
+		                                             (gGT->gameMode1 & ADVENTURE_BOSS) != 0) >= 0 ||
 		              CustomTrack_CortexTrackServing((int)gGT->levelID,
 		                                             (gGT->gameMode1 & ADVENTURE_BOSS) != 0);
 		unsigned long chosen = CustomTrackPolicy_PrimArenaBytes(serving, gGT->numPlyrCurrGame, (unsigned long)size);
@@ -406,6 +408,7 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 		if ((gGT->levelID == SLIDE_COLISEUM || gGT->levelID == TURBO_TRACK) &&
 		    (gGT->gameMode2 & TOKEN_RACE))
 			apInstExtra = 6;
+        if(AP_ContentCrystalPad() && (gGT->levelID==20 || gGT->levelID==22 || gGT->levelID==24))apInstExtra+=20;
 		instanceCapacity = (renderBucketSize >> 5) + apInstExtra;
 #ifdef CTR_CUSTOM_TRACKS
 		int customServing =
@@ -416,6 +419,8 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 		    (gameMode & ADVENTURE_CUP) != 0, gGT->cup.cupID) ||
 		    CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID,
 		                                (gameMode & ADVENTURE_BOSS) != 0) ||
+		    CustomTrack_GarageVenueServing((int)gGT->levelID, gGT->bossID,
+		                                   (gameMode & ADVENTURE_BOSS) != 0) >= 0 ||
 		    CustomTrack_CortexTrackServing((int)gGT->levelID,
 		                                   (gameMode & ADVENTURE_BOSS) != 0);
 		if (gGT->level1 != NULL)
@@ -578,6 +583,12 @@ void MainInit_Drivers(struct GameTracker *gGT)
 		if (gameMode < 0)
 		{
 			numDrivers = numPlyrCurrGame + 1;
+#ifdef CTR_AP
+			if (AP_ChaosFinalNow())
+			{
+				numDrivers = numPlyrCurrGame + AP_ROSTER_CHAOS_RIVALS;
+			}
+#endif
 		}
 
 		// Purple Gem Cup
@@ -614,6 +625,16 @@ void MainInit_Drivers(struct GameTracker *gGT)
 		{
 			numDrivers = 6;
 		}
+
+#ifdef CTR_AP
+		// The roster swap: a field that could not fill without a racer held
+		// behind its garage races with fewer karts (ruled 2026-10-30,
+		// dispatcher 2026-11-02). Set by this race's load, else -1.
+		if (gameMode >= 0 && AP_HitFieldShortSeats() >= 0 && numPlyrCurrGame + AP_HitFieldShortSeats() < numDrivers)
+		{
+			numDrivers = numPlyrCurrGame + AP_HitFieldShortSeats();
+		}
+#endif
 
 		// Spawn AIs
 		for (i = numPlyrCurrGame; i < numDrivers; i++)
@@ -841,6 +862,7 @@ void MainInit_FinalizeInit(struct GameTracker *gGT)
 	INSTANCE_LevInitAll(lev1->ptrInstDefs, lev1->numInstances);
 #ifdef CTR_AP
 	AP_TrialLetters_Spawn(gGT);
+	AP_ArcadeCrystals_Spawn(gGT);
 #endif
 
 	// Debug_ToggleNormalSpawn == normal spawn
@@ -852,6 +874,10 @@ void MainInit_FinalizeInit(struct GameTracker *gGT)
 		// loaded level is an eligible racing level. Hub, menu, cutscene and battle
 		// loads reach this call too but leave the latch set.
 		AP_RaceAttempt_OnLevelStart(gGT);
+		AP_CupSweepOnLevelStart(gGT);
+#ifdef CTR_CUSTOM_TRACKS
+		AP_ContentCupOnLevelStart(); // #133 PR 5: content-plan cup sweep record
+#endif
 #endif
 
 		if (gGT->boolDemoMode != 0)

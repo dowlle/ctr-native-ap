@@ -11,6 +11,8 @@
 #include "ap_charname.h"   // portrait-fallback name choice, shared with the harness
 #include "ap_charseat.h"   // deterministic stored-racer seat state machine
 #include "ap_pickerline.h" // the picker's info line, width-budgeted by the harness
+#include "ap_stat_select_logic.h" // Progressive rank selector rows (ruling 2026-09-11)
+#include "ap_editstat_rank_logic.h" // editable stats pick a rank value (ruling 2026-10-29)
 #include "ap_charswap.h"
 #include "ap_hooks.h" // AP_LogLine, AP_DevKeysEnabled
 
@@ -267,7 +269,11 @@ static int ap_cs_vanillaValue(int statIndex, int characterID)
 // rule and drifting apart.
 //
 //   stat_source progressive -> label GLOBAL / PER-CHARACTER, values come from
-//                              received chains, READ ONLY, no edit control.
+//                              received chains. The edit control is the RANK
+//                              SELECTOR (ruling 2026-09-11, superseding the
+//                              2026-08-08 read-only rule): VERY LOW up to the
+//                              received rank, never above, owned by
+//                              ap_capability.c. Never free values.
 //   stat_source editable    -> label GLOBAL / PER-CHARACTER, values are the
 //                              player's own package, editable.
 //   stat_source vanilla     -> label VANILLA, read only.
@@ -468,23 +474,48 @@ static int ap_cs_progDelta(int statIndex, int characterID)
 	chain = ap_cs_progChainForStat(statIndex);
 	if (chain < 0)
 		return 0;
-	rank = (ap_cs_progMode == AP_CS_MODE_PERCHAR)
-	           ? AP_CapabilityStatRankForCharacter(chain, characterID)
-	           : AP_CapabilityStatRankFor(chain);
+	rank = AP_CapabilityAppliedRankForCharacter(chain, characterID);
 	if (rank <= 0)
 		return 0;
 	return ap_cs_stats[statIndex].step * rank;
 }
 
+// The five rank values of one stat, weakest first, from the same ladder the
+// Progressive Stats physics writes. 0 when the stat has no ladder row.
+static int ap_cs_rankValues(int statIndex, int out[AP_EDITRANK_COUNT])
+{
+	int rank;
+
+	for (rank = 0; rank < AP_EDITRANK_COUNT; rank++)
+	{
+		out[rank] = AP_CapabilityRankValueForOffset(ap_cs_stats[statIndex].driverOffset, rank);
+		if (out[rank] < 0)
+			return 0;
+	}
+	return 1;
+}
+
 static int ap_cs_editDelta(int statIndex, int characterID)
 {
+	int stored, base, ranks[AP_EDITRANK_COUNT];
+
 	if (ap_cs_progMode != AP_CS_MODE_OFF)
 		return 0; // progressive takes precedence; editor is inert
 	if (ap_cs_editMode == AP_CS_MODE_GLOBAL)
-		return ap_cs_editGlobal[statIndex];
-	if (ap_cs_editMode == AP_CS_MODE_PERCHAR)
-		return ap_cs_editPerChar[characterID][statIndex];
-	return 0;
+		stored = ap_cs_editGlobal[statIndex];
+	else if (ap_cs_editMode == AP_CS_MODE_PERCHAR)
+		stored = ap_cs_editPerChar[characterID][statIndex];
+	else
+		return 0;
+	// A stat the player edits is always one of its rank values: a package
+	// written before that rule snaps to the nearest one. A stat with no row on
+	// screen (ACCSPD) is never edited and stays as stored.
+	base = ap_cs_vanillaValue(statIndex, characterID);
+	if (base < 0 || !AP_CharStatRow_IsShown(statIndex) || !ap_cs_rankValues(statIndex, ranks))
+		return stored;
+	if (ap_cs_editMode == AP_CS_MODE_GLOBAL)
+		return AP_EditRank_GlobalValue(ranks, stored, base) - base;
+	return AP_EditRank_Snap(ranks, base + stored) - base;
 }
 
 static int ap_cs_clamp(int statIndex, int value)
@@ -517,9 +548,9 @@ static int ap_cs_effectiveValue(int statIndex, int characterID)
 		int chain = ap_cs_progChainForStat(statIndex);
 		if (chain >= 0)
 		{
-			int rank = (ap_cs_progMode == AP_CS_MODE_PERCHAR)
-			               ? AP_CapabilityStatRankForCharacter(chain, characterID)
-			               : AP_CapabilityStatRankFor(chain);
+			// The APPLIED rank (the player's selection under the received
+			// ceiling), the same value AP_CapabilityStats writes.
+			int rank = AP_CapabilityAppliedRankForCharacter(chain, characterID);
 			int v;
 			if (rank < 0)
 				rank = 0;
@@ -542,14 +573,22 @@ static int ap_cs_effectiveRank(int statIndex, int characterID)
 {
 	int chain, rank;
 
-	if (!ctr_cfg_active() || ap_cs_progMode == AP_CS_MODE_OFF)
+	if (ap_cs_progMode == AP_CS_MODE_OFF)
+	{
+		// Editable stats are rank values too, and the retail-spread bar cannot
+		// tell the two above vanilla from each other (#466).
+		int ranks[AP_EDITRANK_COUNT];
+		if (ap_cs_editMode == AP_CS_MODE_OFF || !ap_cs_rankValues(statIndex, ranks) ||
+		    !AP_CharStatRow_IsShown(statIndex))
+			return -1;
+		return AP_EditRank_Nearest(ranks, ap_cs_effectiveValue(statIndex, characterID));
+	}
+	if (!ctr_cfg_active())
 		return -1;
 	chain = ap_cs_progChainForStat(statIndex);
 	if (chain < 0)
 		return -1;
-	rank = (ap_cs_progMode == AP_CS_MODE_PERCHAR)
-	           ? AP_CapabilityStatRankForCharacter(chain, characterID)
-	           : AP_CapabilityStatRankFor(chain);
+	rank = AP_CapabilityAppliedRankForCharacter(chain, characterID);
 	if (rank < 0)
 		rank = 0;
 	if (AP_CapabilityRankValueForOffset(ap_cs_stats[statIndex].driverOffset, rank) < 0)
@@ -613,6 +652,10 @@ void AP_CharSwap_ApplyStatPackage(struct Driver *driver)
 	if ((driver == NULL) || (gGT == NULL))
 		return;
 	if (!ap_cs_packageActive())
+		return;
+	// Outside Adventure a race drives vanilla stats (ruling of 2026-11-02): no
+	// editable package, Penta MAX table or class override over VehBirth_SetConsts.
+	if (!AP_CapabilityRoomStatsRace())
 		return;
 	if (driver->driverID != 0)
 		return; // local player only
@@ -695,7 +738,9 @@ static void ap_cs_persistCharacter(int characterID);
 static int ap_cs_open = 0;
 static int ap_cs_cursor = 0;   // tile index
 static int ap_cs_editFocus = 0;// editing the stat panel rather than the grid
-static int ap_cs_statRow = 0;  // highlighted stat ROW (screen, 0..AP_CS_UI_ROWS-1)
+// Highlighted PANEL row while editing: 0 the boost line, 1..3 the SPEED / ACCEL
+// / TURN bars (ap_stat_select_logic.h). Bar row r is stat screen row r - 1.
+static int ap_cs_panelRow = 0;
 
 // The picker's own bar animation, the Garage's per-session state in miniature.
 // Centred on the screen the bars are drawn on rather than on the racer, so
@@ -848,6 +893,13 @@ static int ap_cs_safeToOpen(struct GameTracker *gGT)
 	if (sdata->ptrActiveMenu != NULL)
 		return 0;
 	return 1;
+}
+
+// #375: a tracker start waits for the same idle hub before it loads a hub or
+// lets a pad take the kart (ap_tracker_launch.c).
+int AP_HubSafeForRequest(struct GameTracker *gGT)
+{
+	return gGT != NULL && gGT->drivers[0] != NULL && ap_cs_safeToOpen(gGT);
 }
 
 // The engine half of the hold, in both directions. See ap/ap_charfreeze.h for
@@ -1093,7 +1145,7 @@ static int ap_cs_tryOpen(struct GameTracker *gGT)
 
 	ap_cs_open = 1;
 	ap_cs_editFocus = 0;
-	ap_cs_statRow = 0;
+	ap_cs_panelRow = 0;
 	ap_cs_cursor = ap_cs_tileForCharacter(data.characterIDs[0]);
 	ap_cs_barChar = -1; // grow the bars from empty, as a fresh Garage session does
 	ap_cs_setFreeze(gGT, 1);
@@ -1107,6 +1159,9 @@ static void ap_cs_close(struct GameTracker *gGT)
 	ap_cs_editFocus = 0;
 	ap_cs_setFreeze(gGT, 0);
 }
+
+static int ap_cs_editorAvailable(void); // defined with the panel rows below
+static void ap_cs_revalidateRow(void);  // likewise
 
 static void ap_cs_devKeys(struct GameTracker *gGT)
 {
@@ -1138,26 +1193,81 @@ static void ap_cs_devKeys(struct GameTracker *gGT)
 		else if (k == 1)
 		{
 			ap_cs_devProgMode = (ap_cs_devProgMode + 1) % 3;
-			if (ap_cs_progMode != AP_CS_MODE_OFF)
-				ap_cs_editFocus = 0; // ruled precedence: no edit control at all
+			if (!ap_cs_editorAvailable())
+				ap_cs_editFocus = 0; // ruled precedence: no free editor over progressive
+			ap_cs_revalidateRow();
 			ap_cs_reapplyLive(gGT);
 		}
 		else
 		{
 			ap_cs_devEditMode = (ap_cs_devEditMode + 1) % 3;
-			if (ap_cs_editMode == AP_CS_MODE_OFF)
+			if (!ap_cs_editorAvailable())
 				ap_cs_editFocus = 0;
+			ap_cs_revalidateRow();
 			ap_cs_reapplyLive(gGT);
 		}
 	}
 }
 
+// Panel row r drives capability chain r: 0 boost, 1 top speed, 2 acceleration,
+// 3 turning. The bars are drawn SPEED, ACCEL, TURN, which is chain order.
+typedef char ap_cs_panelRowsAreChains
+    [(AP_SS_PANEL_BOOST == AP_CAP_CHAIN_BOOST && AP_CAP_CHAIN_TOP_SPEED == 1 &&
+      AP_CAP_CHAIN_ACCEL == 2 && AP_CAP_CHAIN_TURNING == 3 &&
+      AP_SS_PANEL_ROWS == 1 + AP_CS_UI_ROWS)
+         ? 1
+         : -1];
+
+// Is panel row `row` a Progressive rank selector for this racer? The boost row
+// whenever Progressive Boost is live; a bar row whenever the Progressive Stats
+// pack is live -- keyed on the same pack test the physics uses, so the selector
+// exists exactly where AP_CapabilityStats writes ranks. Ruling 2026-09-11
+// (Boost added 2026-10-26): any rank from the bottom of the chain up to what
+// the received items unlock.
+static int ap_cs_rowIsSelector(int row, int characterID)
+{
+	if (!ctr_cfg_active() || row < 0 || row >= AP_SS_PANEL_ROWS)
+		return 0;
+	return AP_CapabilityCeilingForCharacter(row, characterID) >= 0;
+}
+
+// Which panel rows can be changed for this racer (bit r = row r). A bar row is
+// either the rank selector (Progressive Stats) or the free editor (Editable
+// Stats, and only while progressive stats are off -- the ruled matrix); the
+// boost row is only ever the selector.
+static unsigned ap_cs_panelRowsAvailable(int characterID)
+{
+	unsigned mask = 0;
+	int row;
+
+	for (row = 0; row < AP_SS_PANEL_ROWS; row++)
+	{
+		// A selector row is only worth focusing once there is something below
+		// the ceiling to pick: with no copies received it cannot move.
+		if (ap_cs_rowIsSelector(row, characterID))
+		{
+			if (AP_CapabilityCeilingForCharacter(row, characterID) > 0)
+				mask |= 1u << row;
+		}
+		else if (row != AP_SS_PANEL_BOOST && ap_cs_progMode == AP_CS_MODE_OFF &&
+		         ap_cs_editMode != AP_CS_MODE_OFF)
+			mask |= 1u << row;
+	}
+	return mask;
+}
+
 static int ap_cs_editorAvailable(void)
 {
-	// The ruled matrix in one line: the editor exists only when progressive
-	// stats are OFF and editable stats are not OFF. Progressive mode can never
-	// expose editing.
-	return (ap_cs_progMode == AP_CS_MODE_OFF) && (ap_cs_editMode != AP_CS_MODE_OFF);
+	return ap_cs_panelRowsAvailable(ap_cs_tiles[ap_cs_cursor].characterID) != 0;
+}
+
+// Keep the focused row on one that is still available after a mode change.
+static void ap_cs_revalidateRow(void)
+{
+	int row = AP_StatSel_ValidRow(ap_cs_panelRow,
+	                              ap_cs_panelRowsAvailable(ap_cs_tiles[ap_cs_cursor].characterID));
+	if (row >= 0)
+		ap_cs_panelRow = row;
 }
 
 static void ap_cs_adjust(struct GameTracker *gGT, int dir)
@@ -1165,25 +1275,42 @@ static void ap_cs_adjust(struct GameTracker *gGT, int dir)
 	int characterID = ap_cs_tiles[ap_cs_cursor].characterID;
 	short *slot;
 	int base, next;
+	int ranks[AP_EDITRANK_COUNT];
 	int stat;
+	int row;
 
-	if (!ap_cs_editorAvailable())
+	row = AP_StatSel_ValidRow(ap_cs_panelRow, ap_cs_panelRowsAvailable(characterID));
+	if (row < 0)
 		return;
+	ap_cs_panelRow = row;
+
+	// Progressive rank selector. ap_capability.c owns the selection, its clamp to
+	// the received ceiling and its persistence; the kart picks it up on the next
+	// frame (AP_CapabilityStats / AP_CapabilityFireGrant), so nothing is
+	// re-applied here. A press that cannot move (already at the floor or at the
+	// ceiling) changes nothing and stays silent.
+	if (ap_cs_rowIsSelector(row, characterID))
+	{
+		if (AP_CapabilitySelectStep(row, characterID, dir))
+			OtherFX_Play(0, 1);
+		return;
+	}
 
 	// The row on screen is NOT the slot in the package any more: the picker shows
 	// the Garage's three bars while the package still carries four stats
 	// (ap/ap_charstatrow.h). Every index below is the SLOT.
-	stat = AP_CharStatRow_ToStat(ap_cs_statRow);
+	stat = AP_CharStatRow_ToStat(row - 1);
 
 	slot = (ap_cs_editMode == AP_CS_MODE_GLOBAL) ? &ap_cs_editGlobal[stat] : &ap_cs_editPerChar[characterID][stat];
 
 	base = ap_cs_vanillaValue(stat, characterID);
-	if (base < 0)
+	if (base < 0 || !ap_cs_rankValues(stat, ranks))
 		return;
 
-	next = base + *slot + dir * ap_cs_stats[stat].step;
+	// One press moves to the next rank value, never to a free value.
+	next = AP_EditRank_Step(ranks, base + ap_cs_editDelta(stat, characterID), dir);
 	next = ap_cs_clamp(stat, next);
-	*slot = (short)(next - base);
+	*slot = (short)((ap_cs_editMode == AP_CS_MODE_GLOBAL) ? AP_EditRank_GlobalStore(ranks, next) : next - base);
 
 	// Only the character you are standing as can be applied live; the others
 	// take effect when you swap to them.
@@ -1258,10 +1385,11 @@ static void ap_cs_input(struct GameTracker *gGT)
 
 	if (ap_cs_editFocus)
 	{
+		unsigned avail = ap_cs_panelRowsAvailable(characterID);
 		if ((tap & BTN_UP) != 0)
-			ap_cs_statRow = AP_CharStatRow_Next(ap_cs_statRow, -1);
+			ap_cs_panelRow = AP_StatSel_NextRow(ap_cs_panelRow, -1, avail);
 		else if ((tap & BTN_DOWN) != 0)
-			ap_cs_statRow = AP_CharStatRow_Next(ap_cs_statRow, 1);
+			ap_cs_panelRow = AP_StatSel_NextRow(ap_cs_panelRow, 1, avail);
 		else if ((tap & BTN_LEFT) != 0)
 			ap_cs_adjust(gGT, -1);
 		else if ((tap & BTN_RIGHT) != 0)
@@ -1287,7 +1415,10 @@ static void ap_cs_input(struct GameTracker *gGT)
 	if ((tap & BTN_SQUARE_one) != 0)
 	{
 		if (ap_cs_editorAvailable())
+		{
 			ap_cs_editFocus = 1;
+			ap_cs_panelRow = AP_StatSel_ValidRow(ap_cs_panelRow, ap_cs_panelRowsAvailable(characterID));
+		}
 	}
 	else if ((tap & (BTN_CROSS_one | BTN_CIRCLE)) != 0)
 	{
@@ -1702,6 +1833,10 @@ void AP_CharSwap_Tick(struct GameTracker *gGT)
 	if (gGT == NULL)
 		return;
 
+	// Progressive rank selection that has arrived from the server. Ahead of the
+	// picker gate: it changes what the kart drives wherever the player is.
+	AP_CapabilitySelectRestore();
+
 	// Productionised gate (#54/#209). The picker is a real feature on any seed
 	// that carries the character phase, and on a phase-less old seed as the
 	// browse-only roster (see AP_CharSwap_RosterBrowseLive); the dev-key path
@@ -1950,6 +2085,36 @@ static const char *ap_cs_boostTierName(int tier)
 	}
 }
 
+// Progressive Stats rank words, the 2026-08-08 five-rank ladder.
+static const char *ap_cs_statRankName(int rank)
+{
+	static const char *const names[AP_CAP_STAT_RANK_COUNT] = {"VERY LOW", "LOW", "MEDIUM", "HIGH",
+	                                                          "VERY HIGH"};
+	if (rank < 0 || rank >= AP_CAP_STAT_RANK_COUNT)
+		return "?";
+	return names[rank];
+}
+
+// The Garage's blinking left/right arrow pair around an edited row, the same
+// icon and call the hub pause screen draws in this overlay (game/232/AH_Pause.c:63-77,
+// icon 0x38 of gGT->iconGroup[4]), so its residency in the hub is proven.
+static void ap_cs_drawRowArrows(struct GameTracker *gGT, int leftX, int rightX, int y)
+{
+	struct Icon **icons = ICONGROUP_GETICONS(gGT->iconGroup[4]);
+	u32 *arrowColors = data.ptrColor[((sdata->frameCounter & 4) == 0) ? RED : ORANGE];
+	int arrowX[2] = {leftX, rightX};
+	int arrowRot[2] = {0x800, 0};
+	int a;
+
+	for (a = 0; a < 2; a++)
+	{
+		DecalHUD_Arrow2D(icons[0x38], arrowX[a], y,
+		                 &gGT->backBuffer->primMem, gGT->pushBuffer_UI.ptrOT,
+		                 arrowColors[0], arrowColors[1], arrowColors[2], arrowColors[3],
+		                 0, 0x1000, arrowRot[a]);
+	}
+}
+
 void AP_CharPicker_Draw(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -1969,7 +2134,9 @@ void AP_CharPicker_Draw(void)
 	ot = gGT->backBuffer->otMem.uiOT;
 	live = gGT->drivers[0];
 	selectedChar = ap_cs_tiles[ap_cs_cursor].characterID;
-	boostTier = AP_CapabilityBoostTierForCharacter(selectedChar);
+	// The tier this racer DRIVES (the player's selection under the received
+	// ceiling); the ceiling itself is named on the line only when lowered.
+	boostTier = AP_CapabilityAppliedRankForCharacter(AP_CAP_CHAIN_BOOST, selectedChar);
 
 	// Cursor highlight: an OUTLINE on the tile border, never a filled box.
 	//
@@ -2141,12 +2308,23 @@ void AP_CharPicker_Draw(void)
 		int boostCeiling = ctr_cfg.boost_blue_fire
 		                       ? AP_CAP_BOOST_BLUEFIRE
 		                       : AP_CAP_BOOST_USF;
+		int boostFocused = ap_cs_editFocus && ap_cs_panelRow == AP_SS_PANEL_BOOST;
+		const char *maxName = AP_CapabilitySelectionLowered(AP_CAP_CHAIN_BOOST, selectedChar)
+		                          ? ap_cs_boostTierName(AP_CapabilityCeilingForCharacter(
+		                                AP_CAP_CHAIN_BOOST, selectedChar))
+		                          : NULL;
 		AP_PickerLine_Compose(line, sizeof line, boostTier, boostCeiling,
 		                      (boostTier >= 0) ? ap_cs_boostTierName(boostTier) : "",
-		                      ap_cs_isUnlocked(selectedChar));
+		                      maxName, ap_cs_isUnlocked(selectedChar));
+		DecalFont_DrawLine(line, 0x100, panelY + 20, FONT_SMALL,
+		                   (JUSTIFY_CENTER | (boostFocused ? WHITE
+		                                      : ap_cs_isUnlocked(selectedChar) ? ORANGE : RED)));
+		if (boostFocused)
+		{
+			int half = DecalFont_GetLineWidth(line, FONT_SMALL) / 2;
+			ap_cs_drawRowArrows(gGT, 0x100 - half - 16, 0x100 + half + 16, panelY + 23);
+		}
 	}
-	DecalFont_DrawLine(line, 0x100, panelY + 20, FONT_SMALL,
-	                   (JUSTIFY_CENTER | (ap_cs_isUnlocked(selectedChar) ? ORANGE : RED)));
 
 	// ------------------------------------------------------------------
 	// Three stat bars, drawn by the Garage's own renderer (#220 ruling).
@@ -2176,7 +2354,7 @@ void AP_CharPicker_Draw(void)
 		int want = ap_cs_effectiveValue(stat, selectedChar);
 		int barY = panelY + 34 + i * AP_STATBAR_ROW_PITCH;
 		int lo = 0, hi = 0, target;
-		int focused = (ap_cs_editFocus && (i == ap_cs_statRow));
+		int focused = (ap_cs_editFocus && (i + 1 == ap_cs_panelRow));
 
 		// The ladder the value is placed on, the same one the rank word reads.
 		ap_cs_statLadder(stat, &lo, &hi);
@@ -2200,21 +2378,7 @@ void AP_CharPicker_Draw(void)
 		// the retail arrow rather than a lookalike -- and its residency in the
 		// hub is proven by that existing call, not assumed.
 		if (focused)
-		{
-			struct Icon **icons = ICONGROUP_GETICONS(gGT->iconGroup[4]);
-			u32 *arrowColors = data.ptrColor[((sdata->frameCounter & 4) == 0) ? RED : ORANGE];
-			int arrowX[2] = {AP_CS_BAR_X - 22, AP_CS_BAR_X + AP_STATBAR_MAX_LEN + 22};
-			int arrowRot[2] = {0x800, 0};
-			int a;
-
-			for (a = 0; a < 2; a++)
-			{
-				DecalHUD_Arrow2D(icons[0x38], arrowX[a], barY + 3,
-				                 &gGT->backBuffer->primMem, gGT->pushBuffer_UI.ptrOT,
-				                 arrowColors[0], arrowColors[1], arrowColors[2], arrowColors[3],
-				                 0, 0x1000, arrowRot[a]);
-			}
-		}
+			ap_cs_drawRowArrows(gGT, AP_CS_BAR_X - 22, AP_CS_BAR_X + AP_STATBAR_MAX_LEN + 22, barY + 3);
 
 		// The live column stays a dev-key diagnostic: it is the swap proof (the
 		// racer you are standing as must match, any other portrait must not), and
@@ -2223,6 +2387,17 @@ void AP_CharPicker_Draw(void)
 		{
 			snprintf(line, sizeof line, "%6d %-9s live %6d", want, ap_cs_rankName(stat, want),
 			         ap_cs_liveValue(live, stat));
+			DecalFont_DrawLine(line, AP_CS_BAR_X + AP_STATBAR_MAX_LEN + 40, barY - 1,
+			                   FONT_SMALL, ORANGE);
+		}
+		// A lowered Progressive Stats rank names its ceiling beside the bar, so
+		// the player can see they are driving below what they unlocked. At the
+		// ceiling the bar alone says it. Same column as the dev diagnostic,
+		// which takes precedence on a dev build.
+		else if (AP_CapabilitySelectionLowered(i + 1, selectedChar))
+		{
+			snprintf(line, sizeof line, "MAX %s",
+			         ap_cs_statRankName(AP_CapabilityCeilingForCharacter(i + 1, selectedChar)));
 			DecalFont_DrawLine(line, AP_CS_BAR_X + AP_STATBAR_MAX_LEN + 40, barY - 1,
 			                   FONT_SMALL, ORANGE);
 		}

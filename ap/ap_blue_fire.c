@@ -47,7 +47,7 @@ void AP_BlueFireTick(struct GameTracker *gGT)
 	{
 		driver = gGT->drivers[0];
 		wantBlue = driver != 0 && driver->reserves > 0 &&
-		           AP_CapabilityBoostTier() == AP_CAP_BOOST_BLUEFIRE &&
+		           AP_CapabilityAppliedBoostTier() == AP_CAP_BOOST_BLUEFIRE &&
 		           (int)driver->fireSpeedCap > (int)driver->const_SacredFireSpeed;
 	}
 

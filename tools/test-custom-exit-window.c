@@ -115,6 +115,7 @@ int RaceFlag_IsFullyOffScreen(void) { return 0; }
 void RaceFlag_BeginTransition(int direction) { (void)direction; }
 void RaceFlag_ResetTextAnim(void) {}
 void CustomTrack_CortexTrackOnRequestLoad(int levelID) { (void)levelID; }
+void CustomTrack_OnRaceLoadRequested(int levelID) { (void)levelID; }
 
 // What the engine sees at the instant the level is replaced: the level still
 // resident is the old one until this call.
@@ -190,6 +191,7 @@ int main(void)
 	enter_arcade_menu();
 	start_custom_race();
 	CHECK(s_runtimeActiveAtLevelFile == 1);
+	CHECK(CustomOffline_RuntimeActive()); // AP_ArcadeHoldsRoom: the room is held
 	CHECK(s_gt.levelID == HOST);
 	CHECK(s_gt.numLaps == CTR_CUSTOM_DEFAULT_LAPS);
 	CHECK(MainRaceTrack_OfflineCustomLoad());

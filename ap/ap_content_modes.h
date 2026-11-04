@@ -1,0 +1,519 @@
+#ifndef AP_CONTENT_MODES_H
+#define AP_CONTENT_MODES_H
+// Track-mode decisions for content-plan pads (#133 PR 3), pure C so the host
+// harness tools/test-content-modes.c runs them without the engine. The pad
+// selector, pad state, glow and race results all read these, and every gate
+// question goes through ap_content_mode_open (ap_content_plan.h), so a row
+// the selector offers is a mode the race-start gate admits.
+#include "ap_content_plan.h"
+#include "ap_race_structure_logic.h"
+#include <stdio.h>
+#include <string.h>
+
+
+// Per-track check families (#133 PR 3b) a mode reaches on this pad, with their
+// display slot: podium rungs (slots 0..4) on the Trophy Race (on the CTR
+// Challenge of a ctr_first entry, J11), the track's own
+// Reach 10 Wumpa check (slot 5) on every mode with a Wumpa route, and the
+// letter checks (slots 6..8) on the CTR Challenge, and the Relic Race Perfect
+// check (slot 9, #133 PR 3c) on the Relic Race, and the track's Complete One
+// Lap check (slot 10, #344) on every mode. The `wumpa: global` check
+// belongs to no pad: AP_ContentPadPlainLeft keeps a first race open for it.
+#define AP_CONTENT_FAMILY_SLOTS 11
+#define AP_CONTENT_FAMILY_PERFECT 9
+#define AP_CONTENT_FAMILY_LAP 10
+// Content-plan podium identity of a pad's Trophy Race: logical podium track
+// AP_CONTENT_PODIUM_LOGICAL_BASE + physical pad, resolved through the pad's
+// own rung codes (ap_hooks_race.c AP_ContentPodiumRungs), never the engine
+// host's row.
+#define AP_CONTENT_PODIUM_LOGICAL_BASE 1000
+// A cup leg on a track with no rungs of its own, no pad or a pad without a
+// Trophy Race (cup_only_podium_rungs, rulings of 2026-11-02): logical podium track AP_CONTENT_LEG_PODIUM_LOGICAL_BASE + cup
+// pad * 4 + leg, resolved through the leg's own rung codes.
+#define AP_CONTENT_LEG_PODIUM_LOGICAL_BASE 2000
+// ctr_first (#208 on content plans, J11, decision 14): a track entry whose
+// plan runs ctr_first has no Trophy Race. Its CTR Challenge is the first race:
+// first place pays the Trophy Race check (trophy_location), first place with
+// the letters the CTR Challenge needs also pays the CTR check (ruled
+// 2026-10-29), and the podium rungs follow its finishing place, letters or
+// not. Only a track entry
+// with a CTR mode and no Trophy mode qualifies; a crystal or cup never does,
+// so a forged flag cannot move a check onto another race.
+static inline int ap_content_pad_ctr_first(const ctr_content_pad *pad)
+{
+    return pad && pad->ctr_first && pad->occupied && !pad->crystal && !pad->cup &&
+           ap_content_mode_slot(pad, AP_CONTENT_MODE_CTR) >= 0 &&
+           ap_content_mode_slot(pad, AP_CONTENT_MODE_TROPHY) < 0;
+}
+// The mode whose race earns the pad's podium rungs: the Trophy Race, or the
+// CTR Challenge of a ctr_first entry. -1 when the entry has neither.
+static inline int ap_content_rung_mode(const ctr_content_pad *pad)
+{
+    if (!pad || pad->crystal || pad->cup) return -1;
+    if (ap_content_pad_ctr_first(pad)) return AP_CONTENT_MODE_CTR;
+    return ap_content_mode_slot(pad, AP_CONTENT_MODE_TROPHY) >= 0 ? AP_CONTENT_MODE_TROPHY : -1;
+}
+// The Trophy Race code first place in `mode` pays, letters or not: the ctr_first
+// CTR Challenge's Trophy; 0 for every other race.
+static inline int64_t ap_content_mode_paired_trophy(const ctr_content_pad *pad, int mode)
+{
+    return mode == AP_CONTENT_MODE_CTR && ap_content_pad_ctr_first(pad) && pad->trophy_location > 0
+               ? pad->trophy_location : 0;
+}
+
+static inline int ap_content_mode_family_codes(const ctr_content_pad *pad, int mode,
+                                               int64_t out[AP_CONTENT_FAMILY_SLOTS], int slots[AP_CONTENT_FAMILY_SLOTS])
+{
+    int n = 0, k;
+    if (!pad || ap_content_mode_slot(pad, mode) < 0) return 0;
+    for (k = 0; mode == ap_content_rung_mode(pad) && k < 5; ++k)
+        if (pad->rung_locations[k] > 0) { out[n] = pad->rung_locations[k]; slots[n++] = k; }
+    if (pad->wumpa_location > 0 && (pad->wumpa_modes & (1u << mode))) { out[n] = pad->wumpa_location; slots[n++] = 5; }
+    for (k = 0; mode == AP_CONTENT_MODE_CTR && k < 3; ++k)
+        if (pad->letter_locations[k] > 0) { out[n] = pad->letter_locations[k]; slots[n++] = 6 + k; }
+    if (mode == AP_CONTENT_MODE_RELIC && pad->perfect_location > 0) {
+        out[n] = pad->perfect_location; slots[n++] = AP_CONTENT_FAMILY_PERFECT;
+    }
+    if (pad->lap_location > 0) { out[n] = pad->lap_location; slots[n++] = AP_CONTENT_FAMILY_LAP; }
+    return n;
+}
+
+// Item Box checks (#133 PR 4e) still unchecked on this pad. A box sits at a
+// place, not at a race type, so every mode of the pad reaches all of them.
+static inline int ap_content_box_pending(const ctr_content_pad *pad, ap_content_checked_fn checked)
+{
+    int b, left = 0;
+    for (b = 0; pad && b < pad->box_count && b < 15; ++b)
+        if (pad->box_locations[b] > 0 && !checked(pad->box_locations[b])) ++left;
+    return left;
+}
+
+// Unchecked codes a mode still owns on this pad, its family checks, the
+// pad's Item Box checks and a ctr_first CTR Challenge's Trophy (J11) included.
+static inline int ap_content_mode_pending(const ctr_content_pad *pad, int mode, ap_content_checked_fn checked)
+{
+    int64_t codes[3], family[AP_CONTENT_FAMILY_SLOTS];
+    int slots[AP_CONTENT_FAMILY_SLOTS];
+    int n = ap_content_mode_codes(pad, mode, codes), i, left = 0;
+    const int64_t paired = ap_content_mode_paired_trophy(pad, mode);
+    for (i = 0; i < n; ++i)
+        if (codes[i] > 0 && !checked(codes[i])) ++left;
+    if (paired > 0 && !checked(paired)) ++left;
+    n = ap_content_mode_family_codes(pad, mode, family, slots);
+    for (i = 0; i < n; ++i)
+        if (!checked(family[i])) ++left;
+    if (ap_content_mode_slot(pad, mode) >= 0)
+        left += ap_content_box_pending(pad, checked);
+    return left;
+}
+
+// The Reach 10 Wumpa check a race in `mode` on this pad sends, or -1: the
+// track's own check (`per_track`) or the one global check, only for a mode
+// with a Wumpa route. Never the engine host's retail code.
+static inline int64_t ap_content_wumpa_code(const ctr_content_checks *fam, const ctr_content_pad *pad, int mode)
+{
+    if (!fam || !pad || mode < 0 || mode >= AP_CONTENT_MODE_COUNT || !(pad->wumpa_modes & (1u << mode))) return -1;
+    if (fam->wumpa == 2) return pad->wumpa_location > 0 ? pad->wumpa_location : -1;
+    if (fam->wumpa == 1) return fam->wumpa_global > 0 ? fam->wumpa_global : -1;
+    return -1;
+}
+
+// Lettersanity on a content-plan CTR Challenge, in the legacy encoding of
+// ap_lettersanity.h: a letter's location code or -1 when it has none.
+static inline void ap_content_letter_codes(const ctr_content_pad *pad, long out[3])
+{
+    int l;
+    for (l = 0; l < 3; ++l) out[l] = pad && pad->letter_locations[l] > 0 ? (long)pad->letter_locations[l] : -1;
+}
+
+// One selector row per mode, in the pad's order, for the in-game tracker's
+// activity list: a locked row stays in that list, grey, with its reasons.
+typedef struct ap_content_selector {
+    int count, cursor;
+    int mode[AP_CONTENT_MODE_COUNT], open[AP_CONTENT_MODE_COUNT], pending[AP_CONTENT_MODE_COUNT];
+} ap_content_selector;
+
+// The cursor starts on the first open row with a check left, else on the
+// first open row. Returns the number of open rows.
+static inline int ap_content_selector_build(const ctr_content_pad *pad, const int *counts,
+                                            ap_content_checked_fn checked, ap_content_selector *out)
+{
+    int i, open = 0;
+    out->count = 0;
+    out->cursor = -1;
+    for (i = 0; pad && i < pad->mode_count && i < AP_CONTENT_MODE_COUNT; ++i) {
+        const int mode = pad->modes[i];
+        out->mode[i] = mode;
+        out->open[i] = ap_content_mode_open(pad, mode, counts, checked);
+        out->pending[i] = ap_content_mode_pending(pad, mode, checked);
+        out->count++;
+        if (out->open[i]) {
+            ++open;
+            if (out->cursor < 0 || (out->pending[i] && !out->pending[out->cursor])) out->cursor = i;
+        }
+    }
+    return open;
+}
+
+// Does a race in `mode` put weapons and other racers on the track? A Relic Race
+// is alone: a Hit Character or Itemsanity use cannot happen there.
+static inline int ap_content_mode_plain(int mode) { return mode != AP_CONTENT_MODE_RELIC; }
+
+// The race type menu of a track pad (#208 on plans, one generator row 6): a row
+// per race the pad has open now, in the pad's order; a race not open yet has no
+// row. A row with nothing left is grey and can still be chosen. `plainLeft` is
+// 1 while a Hit Character or Itemsanity use, or the global Wumpa check, can
+// still happen in a race here; they belong to no pad, so they are not in the
+// pending count.
+static inline void ap_content_menu_rows(const ctr_content_pad *pad, const int *counts, ap_content_checked_fn checked,
+                                        int plainLeft, ap_rs_rows *out)
+{
+    int i;
+    out->count = out->productiveCount = 0;
+    out->cursor = -1;
+    for (i = 0; pad && i < pad->mode_count && i < AP_CONTENT_MODE_COUNT; ++i) {
+        const int mode = pad->modes[i];
+        if (!ap_content_mode_open(pad, mode, counts, checked)) continue;
+        out->mode[out->count] = mode;
+        out->productive[out->count] = ap_content_mode_pending(pad, mode, checked) > 0 ||
+                                      (plainLeft && ap_content_mode_plain(mode));
+        if (out->productive[out->count]) {
+            if (out->cursor < 0) out->cursor = out->count;
+            out->productiveCount++;
+        }
+        out->count++;
+    }
+    if (out->cursor < 0) out->cursor = 0;
+}
+
+// A check says the pad's first race was won: one of its first mode's, or the
+// Trophy Race check a ctr_first CTR Challenge pays. 0 when it has none of its own.
+static inline int ap_content_first_mode_checked(const ctr_content_pad *pad, ap_content_checked_fn checked)
+{
+    int64_t codes[3] = {0, 0, 0};
+    int i, n;
+    if (ap_content_pad_ctr_first(pad)) return pad->trophy_location > 0 && checked(pad->trophy_location);
+    n = pad->mode_count ? ap_content_mode_codes(pad, pad->modes[0], codes) : 0;
+    for (i = 0; i < n; ++i)
+        if (codes[i] > 0 && checked(codes[i])) return 1;
+    return 0;
+}
+
+// A won first Trophy Race (or ctr_first CTR Challenge) remains selectable
+// for Wumpa income without opening any later mode. Stage-two rules do not
+// enter this predicate; pad entrance and racer gates are checked by callers.
+static inline int ap_content_first_mode_replayable(const ctr_content_pad *pad, ap_content_checked_fn checked)
+{
+    return pad && pad->occupied && !pad->cup && !pad->crystal && pad->mode_count > 0 &&
+           pad->stages[0] == 1 && ap_content_mode_plain(pad->modes[0]) &&
+           ap_content_first_mode_checked(pad, checked);
+}
+
+// Pad state codes of AP_PadState for a content-plan track pad, the model in
+// ap_pad_state.h: 1 locked, 2 raceable, 3 closed again after the first race
+// (nothing left in an open race, stage 2 not met), 4 stage 2 open with checks
+// left, 5 Done. `plainLeft` keeps the first race open, as on an ordinary pad, so
+// a closing pad never strands a check that belongs to no pad.
+static inline int ap_content_track_pad_state(const ctr_content_pad *pad, const int *counts,
+                                             ap_content_checked_fn checked, int plainLeft)
+{
+    int i, openLeft = 0, lockedLeft = 0;
+    if (!ap_content_pad_open(pad, counts)) return 1;
+    for (i = 0; i < pad->mode_count && i < AP_CONTENT_MODE_COUNT; ++i) {
+        const int left = ap_content_mode_pending(pad, pad->modes[i], checked) > 0 ||
+                         (plainLeft && ap_content_mode_plain(pad->modes[i]));
+        if (!left) continue;
+        if (ap_content_mode_open(pad, pad->modes[i], counts, checked)) openLeft = 1;
+        else lockedLeft = 1;
+    }
+    if (!openLeft && !lockedLeft) return 5;
+    if (!openLeft) return 3;
+    if (pad->mode_count < 2 || !ap_content_first_mode_checked(pad, checked)) return 2;
+    return ap_content_mode_open(pad, pad->modes[1], counts, checked) ? 4 : 2;
+}
+
+// `AP BOXES LEFT: <n>` under the pad's name: the unbroken AP item boxes of a
+// track pad whose first race is won, 0 before that.
+static inline int ap_content_boxes_line(const ctr_content_pad *pad, ap_content_checked_fn checked)
+{
+    if (!pad || !pad->occupied || pad->crystal || pad->cup || pad->mode_count < 1) return 0;
+    return ap_content_first_mode_checked(pad, checked) ? ap_content_box_pending(pad, checked) : 0;
+}
+
+// Relic tiers a finish reaches, bit t for Sapphire, Gold, Platinum: the time
+// (after the all-crates bonus) is at or under the tier's target, as in the
+// retail award loop (game/223.c). Targets are in race ticks (960 per second).
+static inline unsigned ap_content_relic_tiers(int raceTime, const int targets[3])
+{
+    unsigned mask = 0;
+    int t;
+    for (t = 0; t < 3; ++t)
+        if (targets[t] > 0 && raceTime <= targets[t]) mask |= 1u << t;
+    return mask;
+}
+
+// A CTR Challenge pays on first place with all three letters; a Trophy Race
+// on first place. A Relic Race pays only its tiers (ap_content_relic_tiers).
+static inline int ap_content_race_award(int mode, int rank, int letters)
+{
+    if (mode == AP_CONTENT_MODE_TROPHY) return rank == 0;
+    if (mode == AP_CONTENT_MODE_CTR) return rank == 0 && letters == 3;
+    return 0;
+}
+
+static inline const char *ap_content_mode_label(int mode)
+{
+    return mode == AP_CONTENT_MODE_TROPHY ? "Trophy" : mode == AP_CONTENT_MODE_CTR ? "CTR" :
+           mode == AP_CONTENT_MODE_RELIC ? "Relic" : "Race";
+}
+
+// Pad display identities of content-plan checks (AP_LookupLocationCode):
+// Trophy or Crystal completion 50000 + pad, CTR 50200 + pad, relic tiers
+// 50400 + pad * 3 + tier, crystal pickups 60000 + pad * 20 + n, and the
+// per-track families 56000 + pad * 16 + family slot (0..4 rungs, 5 Wumpa,
+// 6..8 letters, #133 PR 3b; 9 Relic Race Perfect, #133 PR 3c).
+#define AP_CONTENT_BIT_TROPHY 50000
+#define AP_CONTENT_BIT_CTR 50200
+#define AP_CONTENT_BIT_RELIC 50400
+#define AP_CONTENT_BIT_FAMILY 56000
+#define AP_CONTENT_FAMILY_STRIDE 16
+
+// The family check behind a family display bit, or -1.
+static inline int64_t ap_content_family_bit_code(const ctr_content_pad *pad, int slot)
+{
+    if (!pad || slot < 0 || slot >= AP_CONTENT_FAMILY_SLOTS) return -1;
+    if (slot < 5) return pad->rung_locations[slot] > 0 ? pad->rung_locations[slot] : -1;
+    if (slot == 5) return pad->wumpa_location > 0 ? pad->wumpa_location : -1;
+    if (slot == AP_CONTENT_FAMILY_PERFECT) return pad->perfect_location > 0 ? pad->perfect_location : -1;
+    if (slot == AP_CONTENT_FAMILY_LAP) return pad->lap_location > 0 ? pad->lap_location : -1;
+    return pad->letter_locations[slot - 6] > 0 ? pad->letter_locations[slot - 6] : -1;
+}
+// Glow prize slot of a family check under by_reward_type: rungs, Wumpa and the
+// first lap ride the race slot (0), letters the token slot (2), the Relic Race
+// Perfect the relic slot (1) beside the tiers, as on retail pads (#439).
+static inline int ap_content_family_reward_group(int slot)
+{
+    return slot == AP_CONTENT_FAMILY_PERFECT ? 1 : slot == AP_CONTENT_FAMILY_LAP ? 0 : slot >= 6 ? 2 : 0;
+}
+static inline int ap_content_family_bit_decode(int bit, int *physical, int *slot)
+{
+    if (bit < AP_CONTENT_BIT_FAMILY || bit >= AP_CONTENT_BIT_FAMILY + 111 * AP_CONTENT_FAMILY_STRIDE) return 0;
+    *physical = (bit - AP_CONTENT_BIT_FAMILY) / AP_CONTENT_FAMILY_STRIDE;
+    *slot = (bit - AP_CONTENT_BIT_FAMILY) % AP_CONTENT_FAMILY_STRIDE;
+    return *slot < AP_CONTENT_FAMILY_SLOTS;
+}
+// Item Box checks (#133 PR 4e): display bit 58000 + pad * 16 + slot (0..14).
+// Under by_reward_type they ride the race slot, as on retail pads (ruling
+// 2026-09-30).
+#define AP_CONTENT_BIT_BOX 58000
+#define AP_CONTENT_BOX_STRIDE 16
+static inline int ap_content_box_bit_decode(int bit, int *physical, int *slot)
+{
+    if (bit < AP_CONTENT_BIT_BOX || bit >= AP_CONTENT_BIT_BOX + 111 * AP_CONTENT_BOX_STRIDE) return 0;
+    *physical = (bit - AP_CONTENT_BIT_BOX) / AP_CONTENT_BOX_STRIDE;
+    *slot = (bit - AP_CONTENT_BIT_BOX) % AP_CONTENT_BOX_STRIDE;
+    return *slot < 15;
+}
+static inline int64_t ap_content_box_bit_code(const ctr_content_pad *pad, int slot)
+{
+    if (!pad || slot < 0 || slot >= 15 || slot >= pad->box_count) return -1;
+    return pad->box_locations[slot] > 0 ? pad->box_locations[slot] : -1;
+}
+// Cups (#133 PR 5): a cup pad's Win rides the Trophy display bit; its sweep
+// and its legs' Cup Leg Victory checks take 62200 + pad * 8 + slot (0 the
+// sweep, 1..4 the legs). They ride the race slot under by_reward_type.
+#define AP_CONTENT_BIT_CUP 62200
+#define AP_CONTENT_CUP_STRIDE 8
+static inline int ap_content_cup_bit_decode(int bit, int *physical, int *slot)
+{
+    if (bit < AP_CONTENT_BIT_CUP || bit >= AP_CONTENT_BIT_CUP + 111 * AP_CONTENT_CUP_STRIDE) return 0;
+    *physical = (bit - AP_CONTENT_BIT_CUP) / AP_CONTENT_CUP_STRIDE;
+    *slot = (bit - AP_CONTENT_BIT_CUP) % AP_CONTENT_CUP_STRIDE;
+    return *slot <= AP_CONTENT_CUP_LEGS;
+}
+static inline int64_t ap_content_cup_bit_code(const ctr_content_pad *pad, int slot)
+{
+    int64_t code;
+    if (!pad || !pad->cup || slot < 0 || slot > AP_CONTENT_CUP_LEGS) return -1;
+    code = slot ? pad->legs[slot - 1].victory : pad->sweep_location;
+    return code > 0 ? code : -1;
+}
+// The cup's distinct check codes: Win, sweep, then each leg's Cup Leg Victory
+// once (a repeated leg track shares its check). Returns the count (<= 6);
+// slots[i] is the display slot (-1 the Win, 0 the sweep, 1..4 a leg).
+static inline int ap_content_cup_codes(const ctr_content_pad *pad, int64_t out[6], int slots[6])
+{
+    int n = 0, k, j, seen;
+    if (!pad || !pad->cup) return 0;
+    if (pad->trophy_location > 0) { out[n] = pad->trophy_location; slots[n++] = -1; }
+    if (pad->sweep_location > 0) { out[n] = pad->sweep_location; slots[n++] = 0; }
+    for (k = 0; k < AP_CONTENT_CUP_LEGS; ++k) {
+        if (pad->legs[k].victory <= 0) continue;
+        for (j = 0, seen = 0; j < n; ++j) seen |= out[j] == pad->legs[k].victory;
+        if (!seen) { out[n] = pad->legs[k].victory; slots[n++] = k + 1; }
+    }
+    return n;
+}
+// A cup leg's Complete One Lap (#344): display bit 64000 + pad * 4 + leg. It
+// rides the race slot under by_reward_type.
+#define AP_CONTENT_BIT_CUP_LAP 64000
+#define AP_CONTENT_CUP_LAP_STRIDE 4
+static inline int ap_content_cup_lap_bit_decode(int bit, int *physical, int *leg)
+{
+    if (bit < AP_CONTENT_BIT_CUP_LAP || bit >= AP_CONTENT_BIT_CUP_LAP + 111 * AP_CONTENT_CUP_LAP_STRIDE) return 0;
+    *physical = (bit - AP_CONTENT_BIT_CUP_LAP) / AP_CONTENT_CUP_LAP_STRIDE;
+    *leg = (bit - AP_CONTENT_BIT_CUP_LAP) % AP_CONTENT_CUP_LAP_STRIDE;
+    return 1;
+}
+static inline int64_t ap_content_cup_lap_bit_code(const ctr_content_pad *pad, int leg)
+{
+    if (!pad || !pad->cup || leg < 0 || leg >= AP_CONTENT_CUP_LEGS) return -1;
+    return pad->legs[leg].lap > 0 ? pad->legs[leg].lap : -1;
+}
+// A cup leg's Reach 10 Wumpa check on a track with no Wumpa check of its pad
+// (row 10i): display bit 64500 + pad * 4 + leg, in the race slot.
+#define AP_CONTENT_BIT_CUP_WUMPA 64500
+static inline int ap_content_cup_wumpa_bit_decode(int bit, int *physical, int *leg)
+{
+    if (bit < AP_CONTENT_BIT_CUP_WUMPA || bit >= AP_CONTENT_BIT_CUP_WUMPA + 111 * AP_CONTENT_CUP_LAP_STRIDE) return 0;
+    *physical = (bit - AP_CONTENT_BIT_CUP_WUMPA) / AP_CONTENT_CUP_LAP_STRIDE;
+    *leg = (bit - AP_CONTENT_BIT_CUP_WUMPA) % AP_CONTENT_CUP_LAP_STRIDE;
+    return 1;
+}
+static inline int64_t ap_content_cup_wumpa_bit_code(const ctr_content_pad *pad, int leg)
+{
+    if (!pad || !pad->cup || leg < 0 || leg >= AP_CONTENT_CUP_LEGS) return -1;
+    return pad->legs[leg].wumpa > 0 ? pad->legs[leg].wumpa : -1;
+}
+// A Gem Cup leg's own podium rungs (cup_only_podium_rungs, ruling of 2026-11-02):
+// display bit 65000 + pad * 20 + leg * 5 + rung, in the race slot.
+#define AP_CONTENT_BIT_CUP_RUNG 65000
+#define AP_CONTENT_CUP_RUNG_STRIDE (AP_CONTENT_CUP_LEGS * 5)
+static inline int ap_content_cup_rung_bit_decode(int bit, int *physical, int *slot)
+{
+    if (bit < AP_CONTENT_BIT_CUP_RUNG || bit >= AP_CONTENT_BIT_CUP_RUNG + 111 * AP_CONTENT_CUP_RUNG_STRIDE) return 0;
+    *physical = (bit - AP_CONTENT_BIT_CUP_RUNG) / AP_CONTENT_CUP_RUNG_STRIDE;
+    *slot = (bit - AP_CONTENT_BIT_CUP_RUNG) % AP_CONTENT_CUP_RUNG_STRIDE;
+    return 1;
+}
+// `slot` is leg * 5 + rung.
+static inline int64_t ap_content_cup_rung_bit_code(const ctr_content_pad *pad, int slot)
+{
+    if (!pad || !pad->cup || slot < 0 || slot >= AP_CONTENT_CUP_RUNG_STRIDE) return -1;
+    return pad->legs[slot / 5].rungs[slot % 5] > 0 ? pad->legs[slot / 5].rungs[slot % 5] : -1;
+}
+// The checks of a cup's tracks, each track once: every leg's first lap, the
+// track's Reach 10 Wumpa check (row 10i: also on a track without a pad), and
+// the podium rungs (row 10i, a Gem Cup only; with cup_only_podium_rungs also
+// the leg's own on a track whose pad has none, or with no pad) and Item Boxes of the track's
+// standalone pad. `box_pad` is that pad on a box, whose check a leg can only
+// earn while the pad is open, else -1. A track raced only in cups owns no box.
+#define AP_CONTENT_CUP_TRACK_CHECKS (AP_CONTENT_CUP_LEGS * 22) // lap, Wumpa, 5 rungs, 15 boxes
+typedef struct ap_content_cup_track_check {
+    int64_t code;
+    int bit, box_pad;
+} ap_content_cup_track_check;
+typedef const ctr_content_pad *(*ap_content_pad_fn)(int physical);
+static inline int ap_content_cup_track_checks(const ctr_content_pad *pad, ap_content_pad_fn lookup,
+                                              ap_content_cup_track_check out[AP_CONTENT_CUP_TRACK_CHECKS])
+{
+    int k, b, j, n = 0;
+    if (!pad || !pad->cup) return 0;
+    for (k = 0; k < AP_CONTENT_CUP_LEGS; ++k) {
+        const ctr_content_leg *leg = &pad->legs[k];
+        const ctr_content_pad *own = leg->track_pad >= 0 && lookup ? lookup(leg->track_pad) : NULL;
+        int seen = 0;
+        for (j = 0; j < k; ++j) seen |= !strcmp(pad->legs[j].track_id, leg->track_id);
+        if (seen) continue;
+        if (leg->lap > 0 && pad->physical < AP_CONTENT_GARAGE_CUP_PAD) { // a garage has no glow
+            out[n].code = leg->lap; out[n].box_pad = -1;
+            out[n++].bit = AP_CONTENT_BIT_CUP_LAP + pad->physical * AP_CONTENT_CUP_LAP_STRIDE + k;
+        }
+        if (own && own->wumpa_location > 0) {
+            out[n].code = own->wumpa_location; out[n].box_pad = -1;
+            out[n++].bit = AP_CONTENT_BIT_FAMILY + own->physical * AP_CONTENT_FAMILY_STRIDE + 5;
+        } else if (leg->wumpa > 0 && pad->physical < AP_CONTENT_GARAGE_CUP_PAD) {
+            out[n].code = leg->wumpa; out[n].box_pad = -1;
+            out[n++].bit = AP_CONTENT_BIT_CUP_WUMPA + pad->physical * AP_CONTENT_CUP_LAP_STRIDE + k;
+        }
+        for (b = 0; pad->physical < AP_CONTENT_GARAGE_CUP_PAD && b < 5; ++b)
+            if (leg->rungs[b] > 0) {
+                out[n].code = leg->rungs[b]; out[n].box_pad = -1;
+                out[n++].bit = AP_CONTENT_BIT_CUP_RUNG + pad->physical * AP_CONTENT_CUP_RUNG_STRIDE + k * 5 + b;
+            }
+        if (!own) continue;
+        for (b = 0; pad->physical < AP_CONTENT_GARAGE_CUP_PAD && b < 5; ++b)
+            if (own->rung_locations[b] > 0) {
+                out[n].code = own->rung_locations[b]; out[n].box_pad = -1;
+                out[n++].bit = AP_CONTENT_BIT_FAMILY + own->physical * AP_CONTENT_FAMILY_STRIDE + b;
+            }
+        for (b = 0; b < own->box_count && b < 15; ++b)
+            if (own->box_locations[b] > 0) {
+                out[n].code = own->box_locations[b]; out[n].box_pad = own->physical;
+                out[n++].bit = AP_CONTENT_BIT_BOX + own->physical * AP_CONTENT_BOX_STRIDE + b;
+            }
+    }
+    return n;
+}
+// The per-track Wumpa check a cup's tracker node shows: an unchecked one, else
+// a checked one, else 0 when no track of the cup has one.
+static inline int64_t ap_content_cup_wumpa_code(const ctr_content_pad *pad, ap_content_pad_fn lookup,
+                                                ap_content_checked_fn checked)
+{
+    ap_content_cup_track_check rows[AP_CONTENT_CUP_TRACK_CHECKS];
+    int i, n = ap_content_cup_track_checks(pad, lookup, rows);
+    int64_t code = 0;
+    for (i = 0; i < n; ++i)
+        if ((rows[i].bit >= AP_CONTENT_BIT_FAMILY && rows[i].bit < AP_CONTENT_BIT_BOX &&
+             (rows[i].bit - AP_CONTENT_BIT_FAMILY) % AP_CONTENT_FAMILY_STRIDE == 5) ||
+            (rows[i].bit >= AP_CONTENT_BIT_CUP_WUMPA && rows[i].bit < AP_CONTENT_BIT_CUP_WUMPA + 111 * AP_CONTENT_CUP_LAP_STRIDE)) {
+            code = rows[i].code;
+            if (!checked(code)) return code;
+        }
+    return code;
+}
+// The Item Boxes still unchecked on a cup's tracks.
+static inline int ap_content_cup_box_pending(const ctr_content_pad *pad, ap_content_pad_fn lookup,
+                                             ap_content_checked_fn checked)
+{
+    ap_content_cup_track_check rows[AP_CONTENT_CUP_TRACK_CHECKS];
+    int i, left = 0, n = ap_content_cup_track_checks(pad, lookup, rows);
+    for (i = 0; i < n; ++i) left += rows[i].box_pad >= 0 && !checked(rows[i].code);
+    return left;
+}
+// What a requirement asks for, as the tracker row names it: `2 Red Gems`,
+// `1 Key`, or `3 Any Relics` for a whole family. Items are the ledger's 15
+// (0 Trophy, 1..3 relics, 4..8 CTR Tokens, 9..13 Gems, 14 Key). `Items` when the
+// mask spans families, which no draw makes. Returns the text's length.
+static inline int ap_content_requirement_text(unsigned mask, int count, char *out, size_t cap)
+{
+    static const char *const names[15] = {
+        "Trophy", "Sapphire Relic", "Gold Relic", "Platinum Relic", "Red CTR Token", "Green CTR Token", "Blue CTR Token",
+        "Yellow CTR Token", "Purple CTR Token", "Red Gem", "Green Gem", "Blue Gem", "Yellow Gem", "Purple Gem", "Key"};
+    const char *name = "Items", *plural = "";
+    int i, bits = 0, first = -1;
+    for (i = 0; i < 15; ++i)
+        if (mask & (1u << i)) { bits++; if (first < 0) first = i; }
+    if (bits == 1) { name = names[first]; plural = count == 1 ? "" : first == 0 ? "" : "s"; }
+    else if (!(mask & ~0x000eu)) { name = "Any Relic"; plural = count == 1 ? "" : "s"; }
+    else if (!(mask & ~0x01f0u)) { name = "Any CTR Token"; plural = count == 1 ? "" : "s"; }
+    else if (!(mask & ~0x3e00u)) { name = "Any Gem"; plural = count == 1 ? "" : "s"; }
+    if (bits == 1 && first == 0) name = count == 1 ? "Trophy" : "Trophies";
+    return snprintf(out, cap, "%d %s%s", count, name, plural);
+}
+static inline int ap_content_bit_decode(int bit, int *physical, int *mode, int *tier)
+{
+    if (bit >= AP_CONTENT_BIT_TROPHY && bit <= AP_CONTENT_BIT_TROPHY + 104) {
+        *physical = bit - AP_CONTENT_BIT_TROPHY; *mode = AP_CONTENT_MODE_TROPHY; *tier = 0; return 1;
+    }
+    if (bit >= AP_CONTENT_BIT_CTR && bit <= AP_CONTENT_BIT_CTR + 104) {
+        *physical = bit - AP_CONTENT_BIT_CTR; *mode = AP_CONTENT_MODE_CTR; *tier = 0; return 1;
+    }
+    if (bit >= AP_CONTENT_BIT_RELIC && bit < AP_CONTENT_BIT_RELIC + 105 * 3) {
+        *physical = (bit - AP_CONTENT_BIT_RELIC) / 3; *mode = AP_CONTENT_MODE_RELIC;
+        *tier = (bit - AP_CONTENT_BIT_RELIC) % 3; return 1;
+    }
+    return 0;
+}
+
+#endif

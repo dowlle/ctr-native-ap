@@ -9,7 +9,7 @@
 // unit; nothing here reimplements it.
 //
 // Build + run (from the repo root):
-//   g++ -m32 -std=c++17 -DCTR_AP \
+//   g++ -m32 -std=c++17 -DCTR_AP -DCTR_CUSTOM_TRACKS \
 //       -Itools/harness-support/apclient_mock -Iap/vendor/json/include \
 //       tools/test-net-admission.cpp ap/ap_seedcfg.cpp \
 //       -lssl -lcrypto -pthread -o /tmp/test-net-admission && /tmp/test-net-admission
@@ -28,17 +28,20 @@
 //   5. a successful reconnect after a refusal is not poisoned by the latch,
 //   6. the block schema 3 Key-fallback consistency check: a fallback next to an
 //      unlock win that EXISTS in the connected room is refused, a consistent
-//      fallback is admitted, and a block schema 2 room still loads,
+//      fallback is admitted, and the current plan fixture still loads,
 //   7. the #376 checked/missing snapshot behind ap_net_location_checked/exists
 //      follows own sends, RoomUpdate, a second Connected, shutdown and refusal,
 //      and steady-state probes copy neither set.
 
+// Admission uses a real content-plan fixture. The separate
+// test-net-planless-refusal.cpp covers refusal of old rooms without a plan.
 #include "../ap/ap_net.cpp"
 
 #include <cstdio>
 #include <cstring>
 #include <string>
 #include <fstream>
+#include <set>
 
 extern "C" void AP_LogLine(const char *line)
 {
@@ -46,6 +49,25 @@ extern "C" void AP_LogLine(const char *line)
 }
 
 static nlohmann::json g_fixture;
+
+// One generator: the client admits content plan rooms only, and a plan binds
+// only when the room has every plan check. The mock room therefore always
+// holds the fixture's checks next to whatever a test sets.
+static std::set<int64_t> plan_ids(void)
+{
+	std::set<int64_t> ids;
+	if (g_fixture.contains("content_plan"))
+		for (const auto &check : g_fixture["content_plan"]["checks"])
+			ids.insert(check["location"].get<int64_t>());
+	return ids;
+}
+
+static void room_missing(APClient *m, std::set<int64_t> extra)
+{
+	const std::set<int64_t> ids = plan_ids();
+	extra.insert(ids.begin(), ids.end());
+	m->test_set_missing(extra);
+}
 static int g_checks = 0;
 static int g_failures = 0;
 
@@ -67,6 +89,8 @@ static APClient *start(const std::string &seed)
 	if (ap_net_init("ctr-native", "Crash Team Racing", "ws://127.0.0.1:1") != 0)
 		return nullptr;
 	ap_net_connect_slot("Harness", "");
+	if (g_ap)
+		room_missing(g_ap, {});
 	return g_ap;
 }
 
@@ -99,7 +123,7 @@ static void test_rejected_zero_side_effects(void)
 		return;
 	// Raw server state says a Hit location is checked; admission must suppress it.
 	m->test_set_checked({35025000});
-	m->test_set_missing({35025001});
+	room_missing(m, {35025001});
 	m->calls.reset();
 
 	m->emit_slot_connected(rejected_seed());
@@ -144,7 +168,7 @@ static void test_accepted_side_effects(void)
 	if (!m)
 		return;
 	m->test_set_checked({35025000});
-	m->test_set_missing({35025001});
+	room_missing(m, {35025001});
 	m->calls.reset();
 
 	m->emit_slot_connected(g_fixture);
@@ -309,27 +333,27 @@ static nlohmann::json fallback_seed(void)
 {
 	nlohmann::json d = g_fixture;
 	d["hit_character_encounters"]["schema"] = 3;
-	// Guest 12 (N. Tropy) at its fixed count of 3 Keys.
-	d["hit_character_encounters"]["unlock_triggers"]["12"]["fallback_keys"] = 3;
+	// Guest 13 (Penta Penguin) has no unlock win in this plan and needs 2 Keys.
+	d["hit_character_encounters"]["unlock_triggers"]["13"]["fallback_keys"] = 2;
 	return d;
 }
 
 static void test_fallback_consistency(void)
 {
-	// Consistent: neither of N. Tropy's trial wins exists in the room.
+	// Consistent: neither of Penta Penguin's unlock wins exists in the room.
 	{
 		APClient *m = start("2101");
 		expect(m != nullptr, "fallback: client up");
 		if (!m)
 			return;
 		m->test_set_checked({35025000});
-		m->test_set_missing({35025001});
+		room_missing(m, {35025001});
 		m->calls.reset();
 		m->emit_slot_connected(fallback_seed());
 		expect(ap_net_is_connected() == 1, "fallback: consistent seed admitted");
 		expect(ap_net_status() == AP_NET_STATUS_CONNECTED, "fallback: status CONNECTED");
 		const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
-		expect(h != nullptr && h->triggers[12 - 8].fallback_keys == 3,
+		expect(h != nullptr && h->triggers[13 - 8].fallback_keys == 2,
 		       "fallback: count reached the gather");
 		ap_net_shutdown();
 	}
@@ -340,13 +364,13 @@ static void test_fallback_consistency(void)
 		if (!m)
 			return;
 		m->test_set_checked({35025000});
-		m->test_set_missing({35016200}); // N. Tropy's Slide Coliseum trial win
+		room_missing(m, {35011008}); // Penta Penguin unlock win, absent from the plan
 		m->calls.reset();
 		m->emit_slot_connected(fallback_seed());
 		expect(ap_net_is_connected() == 0, "conflict: not admitted");
 		expect(ap_net_status() == AP_NET_STATUS_ERROR, "conflict: ERROR");
-		expect(std::string(ap_net_last_error()).find("fallback_keys") != std::string::npos,
-		       "conflict: the visible error names fallback_keys");
+		expect(std::string(ap_net_last_error()).find("content plan") != std::string::npos,
+		       "conflict: extra unlock win is refused by exact plan binding");
 		expect(ap_seedcfg_hit_encounters() == nullptr,
 		       "conflict: no encounter data reachable");
 		expect(m->calls.location_scouts == 0, "conflict: no scout");
@@ -360,27 +384,28 @@ static void test_fallback_consistency(void)
 		expect(m != nullptr, "conflict2: client up");
 		if (!m)
 			return;
-		m->test_set_checked({35016201}); // the Turbo Track trial win, already won
-		m->test_set_missing({35025001});
+		m->test_set_checked({35011010}); // the other Penta Penguin unlock win, already won
+		room_missing(m, {35025001});
 		m->calls.reset();
 		m->emit_slot_connected(fallback_seed());
 		expect(ap_net_is_connected() == 0, "conflict2: not admitted");
 		expect(ap_net_status() == AP_NET_STATUS_ERROR, "conflict2: ERROR");
 		ap_net_poll();
 	}
-	// A block schema 2 room (alpha2) keeps loading on this client unchanged.
+	// The current plan fixture retains its supported encounter block schema.
 	{
 		APClient *m = start("2101");
 		expect(m != nullptr, "block2: client up");
 		if (!m)
 			return;
 		m->test_set_checked({35016200, 35025000});
-		m->test_set_missing({35025001});
+		room_missing(m, {35025001});
 		m->calls.reset();
 		m->emit_slot_connected(g_fixture);
-		expect(ap_net_is_connected() == 1, "block2: schema 2 seed still admitted");
+		expect(ap_net_is_connected() == 1, "current block: plan seed admitted");
 		const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
-		expect(h != nullptr && h->schema == 2, "block2: schema 2 parsed");
+		expect(h != nullptr && h->schema == g_fixture["hit_character_encounters"]["schema"].get<int>(),
+		       "current block: declared encounter schema parsed");
 		ap_net_shutdown();
 	}
 }
@@ -412,20 +437,22 @@ static void test_rejected_held_guard(void)
 // that steady-state probes do not copy.
 static void test_location_snapshot(void)
 {
+	// The plan owns a fixed location union. Reconnect replaces checked status,
+	// while every unchecked plan location remains in the missing set.
 	const long long A = 35025000, B = 35025001, C = 35025002, D = 35025003;
 	APClient *m = start("2101");
 	expect(m != nullptr, "snap: client up");
 	if (!m)
 		return;
 	m->test_set_checked({A});
-	m->test_set_missing({B, C});
+	room_missing(m, {B, C});
 	m->emit_slot_connected(g_fixture);
 	expect(ap_net_is_connected() == 1, "snap: admitted");
 	expect(ap_net_location_checked(A) == 1, "snap: A checked");
 	expect(ap_net_location_checked(B) == 0, "snap: B not checked");
 	expect(ap_net_location_exists(B) == 1, "snap: B exists (missing)");
 	expect(ap_net_location_exists(A) == 1, "snap: A exists (checked)");
-	expect(ap_net_location_exists(D) == 0, "snap: D does not exist");
+	expect(ap_net_location_exists(D) == 1, "snap: untouched plan D exists as missing");
 	// Held checks left over from earlier cases flush on this same-seed connect
 	// and land in the checked set, so counts are taken relative to a baseline.
 	const int baseTotal = ap_net_location_count();
@@ -458,12 +485,12 @@ static void test_location_snapshot(void)
 	// A second Connected on the same client (slot switch or reconnect with a
 	// different world state) replaces both sets.
 	m->test_set_checked({D});
-	m->test_set_missing({A});
+	room_missing(m, {A});
 	m->emit_slot_connected(g_fixture);
 	expect(ap_net_location_checked(A) == 0, "snap: reconnect drops old checked");
 	expect(ap_net_location_checked(D) == 1, "snap: reconnect reads new checked");
 	expect(ap_net_location_exists(A) == 1, "snap: reconnect reads new missing");
-	expect(ap_net_location_exists(C) == 0, "snap: reconnect drops old codes");
+	expect(ap_net_location_checked(C) == 0, "snap: reconnect drops old checked C");
 	expect(ap_net_location_count() >= 2, "snap: reconnect location_count");
 
 	// Shutdown: nothing readable, and a fresh client starts clean.
@@ -475,7 +502,7 @@ static void test_location_snapshot(void)
 	if (!m)
 		return;
 	m->test_set_checked({C});
-	m->test_set_missing({});
+	room_missing(m, {});
 	m->emit_slot_connected(g_fixture);
 	expect(ap_net_location_checked(D) == 0, "snap: new client has no stale D");
 	expect(ap_net_location_checked(C) == 1, "snap: new client reads its own C");
@@ -489,7 +516,7 @@ static void test_location_snapshot(void)
 	if (!m)
 		return;
 	m->test_set_checked({A});
-	m->test_set_missing({B});
+	room_missing(m, {B});
 	m->emit_slot_connected(g_fixture);
 	expect(ap_net_location_checked(A) == 1, "snap: accepted before refusal");
 	m->emit_slot_connected(rejected_seed());
@@ -502,7 +529,7 @@ static void test_location_snapshot(void)
 	if (m)
 	{
 		m->test_set_checked({D});
-		m->test_set_missing({C});
+		room_missing(m, {C});
 		m->emit_slot_connected(g_fixture);
 		expect(ap_net_location_checked(D) == 1, "snap: accepted after refusal reads D");
 		expect(ap_net_location_checked(A) == 0, "snap: accepted after refusal has no A");
@@ -512,7 +539,7 @@ static void test_location_snapshot(void)
 
 int main(int argc, char **argv)
 {
-	const char *path = argc > 1 ? argv[1] : "tools/fixtures/ctr_hit_character_seed2101.json";
+	const char *path = argc > 1 ? argv[1] : "tools/fixtures/content-plan/global-checks.json";
 	std::ifstream in(path);
 	if (!in)
 	{

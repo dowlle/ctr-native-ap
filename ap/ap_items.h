@@ -179,6 +179,9 @@ static AP_ItemCat AP_ItemCategory(long long id)
 		if (AP_CustomLetterItemToIdentityPure(id, &letterSlot, &letterIndex))
 			return AP_CAT_CRYSTAL;
 	}
+	// #133: a named custom track's letter items (named block item offsets 0..2).
+	if (ap_named_item_is_letter(id))
+		return AP_CAT_CRYSTAL;
 	if (idx == AP_GAS_PEDAL_ITEM_INDEX)
 		return AP_CAT_CRYSTAL;
 

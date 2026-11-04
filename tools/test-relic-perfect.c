@@ -36,7 +36,33 @@ static AP_RelicPerfectFacts race(int levelID, int broken, int total)
 	f.cortexActive = 0;
 	f.customServing = 0;
 	f.customCode = -1;
+	f.contentRoute = 0;
+	f.contentCode = -1;
 	return f;
+}
+
+// #133 PR 3c: a content-plan Relic Race pays its own pad's code only, after
+// the same crate test, whatever the borrowed host and legacy serving state.
+static void test_content_route(void)
+{
+	AP_RelicPerfectFacts f = race(13, 100, 100);
+	int i;
+	for (i = 0; i < AP_RELIC_PERFECT_TRACK_COUNT; i++)
+		table[i] = AP_RelicPerfectExpectedCode(i);
+	f.contentRoute = 1; f.contentCode = 35026005L;
+	expect(AP_RelicPerfectResolvePure(&f), 35026005L, "content: Cortex Vortex on host 13 pays 35026005, not Oxide Station");
+	f.cortexActive = 1; f.customServing = 1; f.customCode = 35024000L;
+	expect(AP_RelicPerfectResolvePure(&f), 35026005L, "content: legacy serving state does not redirect");
+	f.contentCode = -1;
+	expect(AP_RelicPerfectResolvePure(&f), -1, "content: no perfect this seed sends nothing, not the host's code");
+	f = race(6, 30, 30); f.contentRoute = 1; f.contentCode = 35024003L;
+	expect(AP_RelicPerfectResolvePure(&f), 35024003L, "content: generic slot code on host 6");
+	f.broken = 29;
+	expect(AP_RelicPerfectResolvePure(&f), -1, "content: a crate left");
+	f = race(6, 0, 0); f.contentRoute = 1; f.contentCode = 35024003L;
+	expect(AP_RelicPerfectResolvePure(&f), -1, "content: zero crates is no perfect");
+	f = race(3, 12, 12); f.contentRoute = 1; f.contentCode = 35012400L;
+	expect(AP_RelicPerfectResolvePure(&f), 35012400L, "content: a retail track's frozen code");
 }
 
 static void test_frozen_codes(void)
@@ -209,6 +235,7 @@ int main(void)
 	test_resolve();
 	test_forced_loss_guard();
 	test_pad_keeps_relic_race_open();
+	test_content_route();
 	printf("%s relic perfect (%d checks, %d failures)\n",
 	       failures ? "FAIL" : "PASS", checks, failures);
 	return failures ? 1 : 0;

@@ -15,6 +15,7 @@
 // AP_ComposedBossesWon, collected -> ap_net_location_checked.
 
 #include <cstdio>
+#include <fstream>
 #include <cstring>
 #include <map>
 #include <set>
@@ -89,7 +90,9 @@ static void parse_block(const nlohmann::json &block)
 	nlohmann::json b = block;
 	if (b.is_object() && !b.contains("start"))
 		b["start"] = nlohmann::json::object();
-	nlohmann::json j = {{"ctr_options", {{"schema_version", 16}}}, {"win_logic", b}};
+	std::ifstream input("tools/fixtures/content-plan/global-checks.json");
+	nlohmann::json j; input >> j;
+	j["win_logic"] = b;
 	ap_seedcfg_parse_json(j);
 }
 
@@ -440,6 +443,8 @@ int main(void)
 			expect(winset(f, &mode) == std::to_string(35011200 + c), "gem cup " + std::to_string(c));
 		}
 		expect_int(mode, AP_WS_MODE_GEM_CUP, "mode gem cup");
+        f.cupSweep=35028304;
+        expect(winset(f)=="35011204,35028304", "Cup sweep remains in the win set independently of its Gem");
 		f.cupCustom = 1;
 		f.customTrophy = 35016300;
 		f.customCtr = 35023000;
@@ -550,7 +555,7 @@ int main(void)
 		ap_seedcfg_parse_json(J{{"ctr_options", {{"schema_version", 16}}}});
 		AP_WinStakes s = AP_WinStakesDecide(&ctr_win_logic, &e, dm, 1);
 		expect(s.stakes && s.why == AP_WS_WHY_NO_BLOCK, "absent block -> sends even when collected");
-		parse_block(J{{"version", 2}});
+		parse_block(J{{"version", AP_WL_VERSION_KNOWN + 1}});
 		s = AP_WinStakesDecide(&ctr_win_logic, &e, dm, 1);
 		expect(s.stakes && s.why == AP_WS_WHY_NEWER, "newer block -> sends");
 		parse_block(J{{"version", 1}, {"families", J::array()}, {"regions", arr({true})},
@@ -827,9 +832,32 @@ int main(void)
 		std::string longSeed(400, 'x');
 		expect_int(AP_WinStakesConnect(&ses.latch, longSeed.c_str(), "AppieCTR"), 1, "long seed recorded");
 		expect_int(AP_WinStakesConnect(&ses.latch, longSeed.c_str(), "AppieCTR"), 0,
-		           "long seed: same identity kept (truncated consistently)");
+		           "long seed: same identity kept");
+		// Review finding 5: two long names that share a long prefix are different seeds.
+		std::string otherSeed = longSeed;
+		otherSeed[399] = 'y';
+		expect_int(AP_WinStakesConnect(&ses.latch, otherSeed.c_str(), "AppieCTR"), 1,
+		           "long seeds that differ only at the end forget");
+		std::string longSlot(400, 's'), otherSlot = longSlot;
+		otherSlot[399] = 't';
+		expect_int(AP_WinStakesConnect(&ses.latch, "seedA", longSlot.c_str()), 1, "long slot recorded");
+		expect_int(AP_WinStakesConnect(&ses.latch, "seedA", otherSlot.c_str()), 1,
+		           "long slots that differ only at the end forget");
+		expect_int(AP_WinStakesConnect(&ses.latch, "seedA", otherSlot.c_str()), 0, "long slot: same identity kept");
 	}
 
+    // #246: collecting the points-win Gem leaves an independent sweep stake.
+    {
+        World w;AP_WinLogicEnv e=env_for(w);
+        J b=one_rule(true);b["checks"]=J::object();
+        b["checks"]["35011200"]={{"kind","gem"},{"region",0},{"rule",true}};
+        b["checks"]["35028300"]={{"kind","gem"},{"region",0},{"rule",true}};
+        parse_block(b);w.collected.insert(35011200);
+        long wins[2]={35011200,35028300};
+        expect(AP_WinStakesDecide(&ctr_win_logic,&e,wins,2).stakes,"open sweep keeps Cup stakes after Gem collected");
+        w.collected.insert(35028300);
+        expect(!AP_WinStakesDecide(&ctr_win_logic,&e,wins,2).stakes,"both Cup wins collected removes stakes");
+    }
 	std::printf("%s: %d checks, %d failure(s)\n", failures ? "FAIL" : "PASS", checks, failures);
 	return failures ? 1 : 0;
 }

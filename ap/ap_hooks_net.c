@@ -11,6 +11,8 @@
 
 static void AP_NetTick(struct GameTracker *gGT)
 {
+	AP_Solo_Tick(); // #89: solo runtime jobs and the solo server session
+
 	if (!ap_net_started)
 	{
 		char uri[128] = "";
@@ -80,6 +82,12 @@ static void AP_NetTick(struct GameTracker *gGT)
 	ap_net_poll();
 	AP_PerfSectionEnd(AP_PERF_SEC_POLL);
 
+	// A custom Arcade race holds the room: received items stay in the net queue
+	// and a reconnect's reset waits with them, so the race never sees the room's
+	// state change, and the feed and tallies see ordinary late receipts after it.
+	if (AP_ArcadeHoldsRoom())
+		return;
+
 	// On a fresh slot-connect (new seed, reconnect, or server switch) the server
 	// resends the FULL ReceivedItems list from index 0. Zero the per-session
 	// tallies + goal/notify state FIRST so everything rebuilds from the
@@ -102,8 +110,11 @@ static void AP_NetTick(struct GameTracker *gGT)
 		AP_WinLogicTallyReset(); // #449: rebuilt from the resent ReceivedItems list
 		memset(ap_letter_received, 0, sizeof ap_letter_received);
 		memset(ap_custom_letter_received, 0, sizeof ap_custom_letter_received);
+		memset(ap_named_letter_received, 0, sizeof ap_named_letter_received);
 		memset(ap_cortex_letter_received, 0, sizeof ap_cortex_letter_received);
 		memset(ap_verify_custom_letter_foreign, 0, sizeof ap_verify_custom_letter_foreign);
+		ap_verify_sparse_foreign_n = 0;
+		ap_verify_sparse_foreign_overflow = 0;
 		for (k = 0; k < AP_CAT_COUNT; k++)
 			ap_item_count[k] = 0;
 		for (k = 0; k < AP_ITEMSANITY_WEAPON_COUNT; k++)
@@ -118,13 +129,12 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// authoritative replay, so a reconnect or a slot switch can never carry
 		// one slot's helper into another's session.
 		AP_TiziReset();
-		// Turbo Grant (#224): zero the session counters and reload this seed and
-		// slot's FIRED count (the room's AP_NET_FX_TURBO_FIRED key, #299).
-		// Deliberately not the effect-marker
-		// mechanism above -- that marks an item consumed when its batch drains,
-		// which would swallow a grant the player could not receive yet. See
-		// ap_turbogrant_logic.h.
+		// Turbo Grant (#224, per race since #487): zero the receipts and the
+		// per-race latch. The receipt is a switch rebuilt from the replay, not
+		// a one-shot effect, so the effect marker above does not apply to it.
 		AP_TurboGrantReset();
+		AP_ReserveTopUpReset();
+		AP_SpoilerItemsReset(); // #459: both reveal receipts come back with the replay
 		AP_WumpaConnectReset();
 		AP_UsefulConnectReset();
 		AP_HitEncounterConnectReset(); // ticket 06: re-arm the Hit-check session mask
@@ -190,6 +200,18 @@ static void AP_NetTick(struct GameTracker *gGT)
 			// Fetching it always keeps the two keys' lifecycles identical.
 			ap_net_editstats_subscribe();
 		}
+
+		// Progressive rank selection (ruling 2026-09-11, Boost 2026-10-26):
+		// reset unconditionally for the same reason as the stat package above,
+		// then fetch this slot's stored choice when a capability pack is live.
+		// Not gated on the character phase: Progressive Boost can be live on a
+		// seed without it, and the picker still opens there (browse mode).
+		AP_CapabilitySelectConnectReset();
+		if (ctr_cfg.boost_mode == AP_CAP_MODE_SHARED_GLOBAL ||
+		    ctr_cfg.boost_mode == AP_CAP_MODE_PER_CHARACTER ||
+		    ctr_cfg.stats_mode == AP_CAP_MODE_SHARED_GLOBAL ||
+		    ctr_cfg.stats_mode == AP_CAP_MODE_PER_CHARACTER)
+			ap_net_statselect_subscribe();
 
 		// DeathLink (issue #6): reset per-session send/receive state and, when this
 		// seed opted in, enable the DeathLink connection tag. slot_data was parsed in
@@ -259,11 +281,20 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// Sparse custom item addresses cannot index the legacy retail tally.
 		// Authoritative replay rebuilds this slot-owned set after reset above.
 		int customLetterSlot, customLetter;
-		if (AP_CustomLetterItemToIdentityPure(items[i], &customLetterSlot, &customLetter))
+		if (AP_CustomLetterItemToIdentityForTrackPure(items[i], AP_CustomLetterNamedBlock(),
+		                                              ctr_cfg.custom_track.slot,
+		                                              &customLetterSlot, &customLetter))
 		{
 			ap_custom_letter_received[customLetterSlot - 1][customLetter] = 1;
 			if (ap_net_recv_batch_player(i) != ap_net_self_slot() || ap_net_recv_batch_location(i) <= 0)
 				ap_verify_custom_letter_foreign[(customLetterSlot - 1) * 3 + customLetter] = 1;
+			ap_state_gen++;
+		}
+		// Named-block letter items (#133 PR 3b): content-plan CTR Challenges
+		// read them by block (AP_ContentLetterReceived).
+		if (ap_named_item_is_letter(items[i]))
+		{
+			AP_NamedLetterReceive(items[i]);
 			ap_state_gen++;
 		}
 		// Schema 15: Cortex Vortex letter items (idx 200..202). Booleans rebuilt
@@ -295,9 +326,14 @@ static void AP_NetTick(struct GameTracker *gGT)
 			    AP_LetterItemIndexIsLetterPure((int)idx))
 				ap_state_gen++;
 		}
+		else if (ap_net_recv_batch_player(i) != ap_net_self_slot() ||
+		         ap_net_recv_batch_location(i) <= 0)
+			ap_verify_sparse_foreign_add(items[i]);
 		if (idx >= 0 && idx < AP_ITEM_INDEX_COUNT)
 		{
-			ap_recv_count[idx]++;
+			const ctr_content_item *row = ap_content_plan_item(items[i]);
+			const int cap = row ? row->receipt_cap : 2147483647;
+			if (ap_recv_count[idx] < cap) ap_recv_count[idx]++;
 			// Split tally for the seed verifier (issue #85): count this receipt as
 			// FOREIGN unless it is an own-world location check (which the verifier
 			// banks from the scout cache synchronously with checked-state instead).
@@ -307,7 +343,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 			// how the server reports the sender slot.
 			int       pl  = ap_net_recv_batch_player(i);
 			long long loc = ap_net_recv_batch_location(i);
-			if (pl != ap_net_self_slot() || loc <= 0)
+			if ((pl != ap_net_self_slot() || loc <= 0) && ap_recv_count_foreign[idx] < cap)
 				ap_recv_count_foreign[idx]++;
 			ap_state_gen++; // a gate-relevant count changed -> pad states may shift
 			if (liveItemBatch && idx >= AP_IDX_GEM_RED &&
@@ -411,16 +447,24 @@ static void AP_NetTick(struct GameTracker *gGT)
 			AP_TiziReceiveHelper();
 		}
 
-		// Turbo Grant (#224, idx 189). A COUNT, not a boolean: every receipt is
-		// one more Turbo the player is owed, and duplicates are legitimate. It is
-		// rebuilt from zero on each fresh connect (AP_TurboGrantReset above), so
-		// the server's full replay reconstructs exactly the same total -- which
-		// is why this must NOT be filtered through the effect marker the way the
-		// trap and Wumpa arms are. A grant that has not been delivered yet is
-		// still owed, whatever index it arrived at.
+		// Turbo Grant (#224, idx 189; a Turbo every race since #487). Rebuilt
+		// from zero on each fresh connect (AP_TurboGrantReset above), so the
+		// server's full replay reconstructs it -- which is why this must NOT be
+		// filtered through the effect marker the way the trap and Wumpa arms
+		// are: a replayed receipt still switches the per-race Turbo on.
 		else if (idx == AP_TURBOGRANT_ITEM_INDEX)
 		{
 			AP_TurboGrantReceive();
+		}
+		else if (idx == AP_RESERVE_TOP_UP_ITEM_INDEX)
+		{
+			AP_ReserveTopUpReceive();
+		}
+		// Spoiler Items (#459, idx 204 and 205). Booleans rebuilt by the replay,
+		// so like Turbo Grant they are not filtered through the effect marker.
+		else if (idx == AP_WARP_PAD_PREVIEW_ITEM_INDEX || idx == AP_BOX_COLOURS_ITEM_INDEX)
+		{
+			AP_SpoilerItemsReceive((int)idx);
 		}
 		else if (idx == AP_WUMPA_SMALL_BUNDLE_ITEM_INDEX ||
 		         idx == AP_WUMPA_BIG_BUNDLE_ITEM_INDEX)
@@ -570,6 +614,7 @@ void AP_Net_Reconnect(const char *uri, const char *slot, const char *password)
 	         uri ? uri : "", slot ? slot : "");
 	AP_AppendLog(msg);
 
+	AP_Solo_BeforeReconnect(); // #89: any other connection ends a solo session
 	ap_net_shutdown();
 	if (ap_net_init("ctr-native", "Crash Team Racing", uri) == 0)
 		ap_net_connect_slot(slot, password);

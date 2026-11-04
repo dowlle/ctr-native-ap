@@ -95,6 +95,11 @@ struct Driver;
 // and author mode has already decided whether it owns the markers.
 void AP_Boxes_OnFrame(struct GameTracker *gGT);
 
+#if defined(CTR_NATIVE)
+// Project open AP box numbers into the single-player race HUD.
+void AP_Boxes_DrawNumbers(void);
+#endif
+
 // How many AP boxes are standing on the current level. Diagnostics only.
 int AP_Boxes_LiveCount(void);
 
@@ -125,7 +130,9 @@ int AP_Boxes_OnWeaponMove(struct GameTracker *gGT, struct Instance *weaponInst,
 // How the Options row "Item Box Colours" is shown right now:
 // AP_BOX_COLOUR_ROW_SEED_OFF (ap_box_colour_logic.h) when a loaded seed has
 // color_boxes_by_item off, so the row reads "OFF (SEED)" and cannot be changed;
-// AP_BOX_COLOUR_ROW_PLAYER otherwise.
+// AP_BOX_COLOUR_ROW_ITEM_LOCKED while Spoiler Items (#459) still holds the
+// colours behind AP Box Colours, so the row reads "LOCKED (ITEM)" and cannot be
+// changed; AP_BOX_COLOUR_ROW_PLAYER otherwise.
 int AP_Boxes_ColourRowState(void);
 
 #endif // CTR_AP

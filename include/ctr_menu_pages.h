@@ -39,8 +39,8 @@ static const char *const s_ctrMenuPageVideo[] = {
 	"disable_split_screen_lod", NULL,
 };
 static const char *const s_ctrMenuPageGameplay[] = {
-	"skip_intro", "skip_hints", "skip_podium", "skip_cutscenes", "ai_difficulty",
-	"mute_when_unfocused", NULL,
+	"skip_intro", "skip_hints", "race_type_selector", "skip_podium", "skip_cutscenes",
+	"ai_difficulty", "mute_when_unfocused", NULL,
 };
 static const char *const s_ctrMenuPageControls[] = {
 	NULL,
@@ -49,7 +49,7 @@ static const char *const s_ctrMenuPageConnection[] = {
 	"uri", "slot", "password", NULL,
 };
 static const char *const s_ctrMenuPageArchipelago[] = {
-	"map_flash", "item_box_colours", "death_link", "dl_send_fall", "dl_send_hit", "dl_send_loss", "trap_duration", "update_check",
+	"map_flash", "item_feed", "item_box_colours", "item_box_numbers", "death_link", "dl_send_fall", "dl_send_hit", "dl_send_loss", "trap_duration", "update_check",
 	"discord_status", NULL,
 };
 static const char *const s_ctrMenuPageAuthoring[] = {

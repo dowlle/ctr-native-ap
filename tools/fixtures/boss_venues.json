@@ -1,0 +1,150 @@
+{
+  "block_version": 1,
+  "source": "NTSC-U SCUS_944.26 1P LEV restart point counts (levtool, 2026-10-15); retail data.BossWeapon* segment starts",
+  "venues": [
+    {
+      "level_id": 0,
+      "name": "Dingo Canyon",
+      "restart_points": 103
+    },
+    {
+      "level_id": 1,
+      "name": "Dragon Mines",
+      "restart_points": 84
+    },
+    {
+      "level_id": 2,
+      "name": "Blizzard Bluff",
+      "restart_points": 90
+    },
+    {
+      "level_id": 3,
+      "name": "Crash Cove",
+      "restart_points": 72
+    },
+    {
+      "level_id": 4,
+      "name": "Tiger Temple",
+      "restart_points": 110
+    },
+    {
+      "level_id": 5,
+      "name": "Papu's Pyramid",
+      "restart_points": 102
+    },
+    {
+      "level_id": 6,
+      "name": "Roo's Tubes",
+      "restart_points": 78
+    },
+    {
+      "level_id": 7,
+      "name": "Hot Air Skyway",
+      "restart_points": 175
+    },
+    {
+      "level_id": 8,
+      "name": "Sewer Speedway",
+      "restart_points": 160
+    },
+    {
+      "level_id": 9,
+      "name": "Mystery Caves",
+      "restart_points": 123
+    },
+    {
+      "level_id": 10,
+      "name": "Cortex Castle",
+      "restart_points": 135
+    },
+    {
+      "level_id": 11,
+      "name": "N. Gin Labs",
+      "restart_points": 138
+    },
+    {
+      "level_id": 12,
+      "name": "Polar Pass",
+      "restart_points": 167
+    },
+    {
+      "level_id": 13,
+      "name": "Oxide Station",
+      "restart_points": 190
+    },
+    {
+      "level_id": 14,
+      "name": "Coco Park",
+      "restart_points": 83
+    },
+    {
+      "level_id": 15,
+      "name": "Tiny Arena",
+      "restart_points": 194
+    },
+    {
+      "level_id": 16,
+      "name": "Slide Coliseum",
+      "restart_points": 121
+    },
+    {
+      "level_id": 17,
+      "name": "Turbo Track",
+      "restart_points": 117
+    }
+  ],
+  "garages": [
+    {
+      "key": "ripper_roo",
+      "index": 0,
+      "location": 35011100,
+      "home_level_id": 6,
+      "attack_checkpoints": [
+        0,
+        16,
+        33,
+        47,
+        70
+      ]
+    },
+    {
+      "key": "papu_papu",
+      "index": 1,
+      "location": 35011101,
+      "home_level_id": 5,
+      "attack_checkpoints": [
+        0,
+        15,
+        34,
+        83,
+        93
+      ]
+    },
+    {
+      "key": "komodo_joe",
+      "index": 2,
+      "location": 35011102,
+      "home_level_id": 1,
+      "attack_checkpoints": [
+        0,
+        16,
+        42,
+        57,
+        70
+      ]
+    },
+    {
+      "key": "pinstripe",
+      "index": 3,
+      "location": 35011103,
+      "home_level_id": 7,
+      "attack_checkpoints": [
+        0,
+        16,
+        33,
+        47,
+        70
+      ]
+    }
+  ]
+}

@@ -7,6 +7,7 @@
 // the transport is selected from the uri scheme passed to ap_net_init().
 
 #include "ap_editstat_bounds.h" // AP_NET_EDITSTAT_COUNT / _MIN / _MAX
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,6 +28,10 @@ int  ap_net_is_connected(void);
 // Game -> server.
 void ap_net_send_location(long long location_code); // LocationChecks([code])
 void ap_net_send_goal(void);                         // StatusUpdate(GOAL)
+// While held, ap_net_send_location and ap_net_send_goal do nothing: a custom
+// Arcade race has no room identity, so nothing it does may reach the room. The
+// resend of checks earned earlier does not pass through these two.
+void ap_net_hold_checks(int hold);
 
 // Drain newly-received item ids into out (capacity max). Returns count copied.
 int  ap_net_drain_items(long long *out, int max);
@@ -39,6 +44,15 @@ int  ap_net_take_recv_reset(void);
 // Seed / slot name of the connected room, empty/0 until slot-connected.
 int  ap_net_seed_name(char *buf, int n);
 int  ap_net_slot_name(char *buf, int n);
+int  ap_net_identity_hash(unsigned long long *out); // FNV-1a of the full seed and slot names, 0 if unknown
+
+// #89 solo mode: what says a Play Solo session runs. DeathLink stays off the wire then.
+void ap_net_set_solo_session_query(int (*active)(void));
+
+// #89 solo mode: journal every check of the solo room to `path` and resend the
+// journalled checks the server still misses on each slot-connect to `seed`.
+// NULL path stops journalling.
+void ap_net_set_check_journal(const char *path, const char *seed);
 
 // ── Reward-glow / pad-state support (scouted on slot-connect) ──
 // 1 (and fills any non-null out params) if a scout result is known for
@@ -223,6 +237,19 @@ void ap_net_editstats_set(const int *values, int n);
 int  ap_net_editstats_known(int *out, int n);
 unsigned ap_net_editstats_revision(void);
 
+// ── Progressive rank selection sync (ruling 2026-09-11, Boost 2026-10-26) ──
+// AP_NET_STATSELECT_COUNT ints under "ctr_statselect_<slot>": the player's
+// chosen rank per capability chain, shared row then 16 roster rows (layout and
+// meaning owned by ap_capability.c / ap_stat_select_logic.h). Each value is -1
+// (follow the received ceiling) or an explicit rank 0..4. Same per-slot home and
+// the same untrusted-input rule as the editable package: exact length, integral,
+// every value in range, or the whole package is ignored.
+#define AP_NET_STATSELECT_COUNT 68
+void ap_net_statselect_subscribe(void);
+void ap_net_statselect_set(const int *values, int n);
+int  ap_net_statselect_known(int *out, int n);
+unsigned ap_net_statselect_revision(void);
+
 // ── DeathLink (issue #6) ──
 // Enable the "DeathLink" connection tag (ConnectUpdate) so the server relays
 // deaths to this client. Called by the game side after slot_data is parsed, only
@@ -237,11 +264,13 @@ void ap_net_deathlink_disable(void);
 // slot-connected.
 void ap_net_deathlink_send(const char *cause);
 
-// Drain the inbound death latch (network boundary only, one death per poll): returns
-// 1 and copies the cause and source-slot strings (truncated to their sizes, either
-// buffer may be NULL) if a DeathLink bounce was pending, then clears it; 0
-// otherwise. Own-slot echoes are already filtered out by the network handler.
+// Take the oldest inbound death not yet handed to the game thread: returns 1 and
+// copies the cause and source-slot strings (truncated to their sizes, either buffer
+// may be NULL), 0 when none is left. Call it until it returns 0: AP_DeathLinkTick
+// drains every death each frame (ap_deathlink_inbox.h). Own-slot echoes are
+// already filtered out by the network handler.
 int  ap_net_deathlink_take(char *cause_buf, int cause_n, char *source_buf, int source_n);
+int  ap_net_deathlink_take_dropped(void); // deaths a full inbox discarded since the last call
 
 void ap_net_shutdown(void);
 int ap_net_doors_ready(void);
@@ -254,7 +283,8 @@ void ap_net_doors_record(unsigned bit);
 // under team+slot keys so a fresh room starts empty. Rules: ap_fxmarker_logic.h.
 #define AP_NET_FX_EFFECT      0 // highest server item index whose effect was handled
 #define AP_NET_FX_TURBO_FIRED 1 // Turbo Grants fired by this slot
-#define AP_NET_FX_COUNT       2
+#define AP_NET_FX_RESERVE_SPENT 2 // Reserve Top-Up copies applied by this slot (#451)
+#define AP_NET_FX_COUNT       3
 // State of the connect-time Get reply for `which` (AP_FXM_STORE_*). Fills the
 // latest known integer value and a revision that moves on every reply.
 int  ap_net_fx_store(int which, long long *value, unsigned *rev);
@@ -288,6 +318,25 @@ void ap_net_boss_door_scene_record(int hub);
 int ap_net_boss_won_known(void);
 unsigned ap_net_boss_won_bits(void);
 void ap_net_boss_won_record(unsigned bit);
+// #249: the Wumpa Shop wallet (ap/ap_wumpa_ledger.h). `credit` banks n fruit
+// (kept while offline, flushed with "max"); `lifetime` is the banked total the
+// goal counts, `balance` lifetime minus the prices paid. `ready` is 1 once both
+// keys were read on this connection. `buy` returns an APWumpaLedger BuyResult
+// (0 = sent; the check follows the room's reply). `pending` is 1 while a
+// purchase or its undo is in flight.
+void ap_net_wumpa_credit(int n);
+long long ap_net_wumpa_lifetime(void);
+long long ap_net_wumpa_balance(void);
+int ap_net_wumpa_ready(void);
+int ap_net_wumpa_bought(long long code);
+int ap_net_wumpa_pending(void);
+int ap_net_wumpa_buy(long long code, int price, int unlock);
+void ap_net_wumpa_hint(const long long *codes, int n);
+// #124 Pad Approach Hints (ap_pad_hints_logic.h). Ready once connected and
+// the room's latch of hinted codes is read. ap_net_pad_approach_hint hints the
+// given open codes that are not latched yet and latches them; returns how many.
+int ap_net_pad_hints_ready(void);
+int ap_net_pad_approach_hint(int physLevelID, const int64_t *open, int n);
 
 #ifdef __cplusplus
 }

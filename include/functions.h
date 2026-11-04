@@ -466,9 +466,11 @@ struct HighScoreEntry *MainRaceTrack_CustomHighScores(void);
 void MainRaceTrack_CustomSaveHighScores(void);
 int MainRaceTrack_CustomLoadGhost(struct GhostHeader *dst);
 void MainRaceTrack_CustomSaveGhost(const struct GhostHeader *gh);
-// Custom-race music from the package's .sca (game/HOWL/HOWL_CustomMusic.c).
+// Custom-race music from the package's .sca, and Cortex Vortex's bundled .sca
+// (game/HOWL/HOWL_CustomMusic.c).
 void HOWL_CustomMusic_Reset(void);
 int HOWL_CustomMusic_LoadBank(struct Bank *thisBank);
+int HOWL_CustomMusic_CortexLoadBank(int level, struct Bank *thisBank);
 void HOWL_CustomMusic_BankDone(void);
 int HOWL_CustomMusic_ServeSectors(void *destination, int firstSector, int numSector);
 int HOWL_CustomMusic_SetSong(void);
@@ -596,6 +598,9 @@ void RECTMENU_GetHeight(struct RectMenu *m, s16 *height, b32 boolCheckSubmenu);
 void RECTMENU_GetWidth(struct RectMenu *m, s16 *width, b32 boolCheckSubmenu);
 void RECTMENU_Hide(struct RectMenu *m);
 void RECTMENU_Show(struct RectMenu *m);
+#ifdef CTR_AP
+void RECTMENU_APSetReplayRows(const struct RectMenu *m, unsigned rows);
+#endif
 
 int MixRNG_Scramble(void);
 int MixRNG_Particles(int param_1);
@@ -1228,7 +1233,6 @@ int VehCalc_MapToRange(int val, int oldMin, int oldMax, int newMin, int newMax);
 int VehPickupItem_MaskBoolGoodGuy(struct Driver *d);
 int RB_Hazard_HurtDriver(struct Driver *driverVictim, int damageType, struct Driver *driverAttacker, int reason);
 void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags);
-int VehPickupItem_TrapHazardAt(struct Driver *d, int weaponID, const SVec3 *target);
 int VehPickState_NewState(struct Driver *victimDriver, int damageType, struct Driver *attackDriver, int reason);
 void RB_Follower_Init(struct Driver *d, struct Thread *mineTh);
 void VehPhysForce_CounterSteer(struct Driver *driver);

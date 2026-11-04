@@ -8,6 +8,7 @@
 #include <platform/native_custom_track_manager.h>
 #include <platform/native_sha256.h> // NATIVE_SHA256_HEX_BYTES: the digest fields
 #include <platform/native_cortex_track_latch.h>
+#include <platform/native_custom_race_context.h>
 
 // Custom-track loader, engine-facing half, for the Baby T Park event spike.
 // Each decision's own heading in native_custom_tracks_policy.h carries its rung,
@@ -75,7 +76,29 @@ struct CustomTrackSeedDescriptor
 	int flagWumpaCollectible;
 	int flagSpawns;
 	int flagCheckpoints;
+	int standalone; // 1: content-plan race context, 0: legacy Gem Cup placement
 };
+
+// Stage only after applying a verified standalone descriptor. Entry sites
+// select retail explicitly; a same-host request without selection is restart.
+int CustomTrack_StageStandaloneRace(const struct CustomTrackRaceContext *context);
+// Content-plan cup legs (#133 PR 5): open the window in which the next leg's
+// package may be armed while the cup is running, stage that leg, close it.
+int CustomTrack_BeginCupLegSwitch(void);
+void CustomTrack_EndCupLegSwitch(void);
+int CustomTrack_StageCupLeg(const struct CustomTrackRaceContext *context);
+int CustomTrack_StandaloneBusy(void);
+void CustomTrack_SelectRetailRace(void);
+void CustomTrack_OnRaceLoadRequested(int levelID);
+const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int levelID);
+// A content-plan race on a custom package, not a retail track (#133 PR 3). It
+// keeps no high scores and never reads, writes or shows its engine host's.
+static inline int CustomTrack_KeepsNoScores(int levelID)
+{
+	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(levelID);
+	return race && !race->retail;
+}
+const struct CustomTrackRaceContext *CustomTrack_PreviousStandaloneContext(void);
 
 // The bundled Cortex Vortex pair. `enabled` arms it for N. Oxide's Final
 // Challenge (the Oxide 2 venue); `padTrackEnabled` arms the same bytes for the
@@ -98,6 +121,28 @@ int CustomTrack_ReverifyOxideFinalContent(void);
 int CustomTrack_OxideFinalReady(void);
 int CustomTrack_OxideFinalServing(int levelID, int bossID, int adventureBossActive);
 
+// ── Content-plan garage venues on custom bytes (#133 PR 6b) ──────────────────
+// An ordinary garage (bossID 0..3) whose Boss Track Shuffle venue is a custom
+// package or Cortex Vortex races those bytes on its home LevelID. Each garage
+// holds one descriptor: the verified LEV/VRM paths and their pins. Serving
+// is a boss race of that garage on that host, the same shape as the Oxide 2
+// venue above, so the boss flow stays retail.
+#define CUSTOM_TRACK_GARAGE_VENUES 4
+struct GarageVenueDescriptor
+{
+	int enabled;
+	int hostLevelID;
+	char levPath[1024];
+	char vrmPath[1024];
+	char levSha256[NATIVE_SHA256_HEX_BYTES];
+	char vrmSha256[NATIVE_SHA256_HEX_BYTES];
+};
+int CustomTrack_ApplyGarageVenueDescriptor(int garage, const struct GarageVenueDescriptor *d);
+void CustomTrack_ClearGarageVenueDescriptors(void);
+int CustomTrack_GarageVenueReady(int garage);
+// The garage whose custom venue this load serves, or -1.
+int CustomTrack_GarageVenueServing(int levelID, int bossID, int adventureBossActive);
+
 // ── Cortex Vortex pad track (schema 15) ──────────────────────────────────────
 // See platform/native_cortex_track_latch.h for the state machine. The entry
 // sites call CustomTrack_CortexTrackSelectNextLoad right before requesting the
@@ -112,6 +157,17 @@ int CustomTrack_CortexTrackServing(int levelID, int adventureBossActive);
 // The level being left (e.g. on a hub return) was Cortex Vortex.
 int CustomTrack_CortexTrackPrevServed(void);
 int CustomTrack_CortexTrackReady(void);
+// Cortex Vortex's bundled .sca music (the content-plan race, which arms the
+// bundled pair as a standalone package on host 13). CortexMusic gives the
+// verified bytes while that pair is armed, 0 when there are none (missing,
+// changed or unreadable), which leaves Oxide Station's music in place.
+// CortexMusicServing: this load is that race and the music is there.
+// Hold gives the same bytes and keeps them alive, even past a withdrawn seed,
+// until Release (the music player holds them from the bank to the song).
+int CustomTrack_CortexMusic(const void **data, size_t *size);
+int CustomTrack_CortexMusicServing(int levelID, int adventureCupActive, int cupID);
+int CustomTrack_CortexMusicHold(const void **data, size_t *size);
+void CustomTrack_CortexMusicRelease(void);
 
 // Read the [CustomTracks] section of config.ini, once, at startup. It carries
 // ONLY the two file paths now; the loader stays disarmed until a seed hands over
@@ -139,6 +195,11 @@ void CustomTrack_ClearSeedDescriptor(void);
 int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *package,
 	                              const struct CustomTrackManagerStatus *status);
 
+// Content-plan package outside the compiled registry (#133 PR 2): point the
+// loader at its located files. Same contract as UseManagedPackage, except the
+// load carries no navigation identity, so recorded AI lanes are blocked. The
+// next descriptor application hashes these paths against the seed's pins.
+int CustomTrack_UseContentFiles(const char *levPath, const char *vrmPath, const char *raceName);
 // Hash the armed LEV and VRM again immediately before an event entry. A failed
 // recheck disarms the custom race so same-size content replacement cannot slip
 // past the cheap serve-time stat check.

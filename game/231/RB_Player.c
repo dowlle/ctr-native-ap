@@ -170,6 +170,11 @@ void RB_Player_ModifyWumpa(struct Driver *driver, int wumpaDelta)
 		driver->numTimesWumpa += wumpaDelta;
 	}
 
+#ifdef CTR_AP
+	// Keep a separate full race count; the engine's held fruit stays at 10.
+	if (!AP_WumpaRaceModify(driver, wumpaDelta))
+#endif
+	{
 	// works for positive and negative delta
 	driver->numWumpas += wumpaDelta;
 
@@ -183,6 +188,7 @@ void RB_Player_ModifyWumpa(struct Driver *driver, int wumpaDelta)
 	if (driver->numWumpas > 10)
 	{
 		driver->numWumpas = 10;
+	}
 	}
 
 	if (

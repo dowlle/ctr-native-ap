@@ -1,8 +1,10 @@
 // cc -m32 -ffunction-sections -fdata-sections -Wl,--gc-sections -DCTR_NATIVE -DCTR_CUSTOM_TRACKS -DCTR_CUSTOM_PACKAGES -DBUILD=926 -I include -I . tools/test-custom-selector.c
 // platform/native_custom_track_library.c platform/native_custom_records.c -lm -o /tmp/test-custom-selector
-/* Exercise the Arcade custom pages (box authoring build) with renderer and
-   worker boundaries stubbed. This proves navigation and the handoff to the
-   offline loader on host slot 6, not rendered acceptance. */
+/* Exercise the Arcade custom pages with renderer and worker boundaries stubbed.
+   Built as is for the authoring builds, and with CTR_AP through
+   test-custom-selector-player.c for the player client. This proves navigation
+   and the handoff to the offline loader on host slot 6, not rendered
+   acceptance. */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,11 +28,23 @@ struct OverlayDATA_230 D230;
 static struct GameTracker tracker;
 static struct DB buffer;
 static struct CustomTrackLibrary s_contentLibrary;
-static int busy, allowed = 1, prepared, launched, checks, failures;
+static unsigned int s_contentStoreGeneration;
+static int busy, allowed = 1, prepared, launched, reloads, ticksSeen, checks, failures;
 #define CHECK(x) do { checks++; if (!(x)) { failures++; printf("FAIL %d: %s\n", __LINE__, #x); } } while (0)
-static void MM_CustomLibrary_Tick(int reload) { (void)reload; }
+static void MM_CustomLibrary_Tick(int reload) { reloads += reload; ticksSeen++; }
 static int MM_CustomLibrary_Busy(void) { return busy; }
 int AP_CustomOfflineLaunchAllowed(void) { return allowed; }
+static const char *roomNote = "";
+const char *AP_CustomOfflineRoomNote(void) { return roomNote; }
+static int rawPad, textResult, textActive;
+static char *textBuffer;
+int Platform_InputRawGamepadButtons(void) { return rawPad; }
+void NativeText_Begin(char *buf, int cap, int x, int y, int w, int h, int password)
+{ (void)cap; (void)x; (void)y; (void)w; (void)h; (void)password; textBuffer = buf; textActive = 1; textResult = 0; }
+void NativeText_End(void) { textActive = 0; textResult = 0; }
+int NativeText_Active(void) { return textActive; }
+int NativeText_Result(void) { return textResult; }
+void NativeText_Resolve(int result) { textResult = result; }
 const char *NativeAssets_GetAssetDir(void) { return "/unused"; }
 int OtherFX_Play(u32 sound, int flags) { (void)sound; (void)flags; return 0; }
 void RECTMENU_ClearInput(void) { memset(sdata->buttonTapPerPlayer, 0, sizeof sdata->buttonTapPerPlayer); }
@@ -93,12 +107,177 @@ int MainRaceTrack_CustomLoadGhost(struct GhostHeader *dst)
 char *RECTMENU_DrawTime(int time) { static char t[16]; snprintf(t, sizeof t, "T%d", time); return t; }
 #include "../game/230/MM_CustomTrackSelect.c"
 
+/* What a finished store scan leaves behind. */
+static void publish(const struct CustomTrackLibraryEntry *rows, size_t count)
+{
+    CHECK(CustomTrackLibrary_Replace(&s_contentLibrary, rows, count));
+    s_contentStoreGeneration++;
+}
+
 static int tick(int buttons)
 {
     while (s_arcadeMotion) { sdata->buttonTapPerPlayer[0] = 0; MM_CustomTrackSelect_Tick(&D230.menuTrackSelect); }
     sdata->buttonTapPerPlayer[0] = buttons;
     drawn[0] = 0;
     return MM_CustomTrackSelect_Tick(&D230.menuTrackSelect);
+}
+
+/* Empty, one, 18 and 100 tracks: pages, wrap, and the Vanilla page in front. */
+static void scale_scenarios(void)
+{
+    static struct CustomTrackLibraryEntry rows[100];
+    const size_t sizes[] = {0, 1, 18, 100};
+    memset(rows, 0, sizeof rows);
+    for (size_t i = 0; i < 100; i++)
+    {
+        snprintf(rows[i].manifestSha256, 65, "%064zx", i + 500);
+        snprintf(rows[i].title, sizeof rows[i].title, "Scale %03zu", i);
+        strcpy(rows[i].version, "1.0.0");
+        rows[i].installed = 1; rows[i].local.arcade = 1; rows[i].local.laps = 3;
+    }
+    for (size_t s = 0; s < 4; s++)
+    {
+        size_t count = sizes[s], pages = count ? (count + 7) / 8 + 1 : 2;
+        publish(rows, count);
+        memset(s_arcadeRows, 0, sizeof s_arcadeRows);
+        memset(s_arcadeLibrary.rememberedPin, 0, sizeof s_arcadeLibrary.rememberedPin);
+        MM_CustomTrackSelect_Init();
+        D230.trackSel_transitionState = IN_MENU;
+        CHECK(tick(0) == 0 && s_arcadePage == 0); /* Vanilla first, every size. */
+        CHECK(s_arcadeLibrary.visibleCount == count);
+        CHECK(tick(BTN_LEFT) == 1 && s_arcadePage == pages - 1);
+        tick(0);
+        CHECK(drawnHas(count ? "Ready\n" : "No tracks."));
+        CHECK(tick(BTN_RIGHT) == 0 && s_arcadePage == 0); /* Pages wrap. */
+        if (count)
+        {
+            tick(BTN_RIGHT);
+            size_t rowsOnPage = CustomTrackLibrary_PageRowCount(&s_arcadeLibrary, 0);
+            tick(BTN_UP); CHECK(s_arcadeRows[0] == rowsOnPage - 1); /* Rows wrap. */
+            tick(BTN_DOWN); CHECK(s_arcadeRows[0] == 0);
+            tick(BTN_LEFT);
+        }
+    }
+}
+
+static void generic_scenarios(const struct CustomTrackLibraryEntry *start)
+{
+    static struct CustomTrackLibraryEntry entries[17];
+    int before;
+    memcpy(entries, start, sizeof entries);
+    for (int i = 0; i < 17; i++)
+    {
+        entries[i].local.uuid[0] = 0; entries[i].local.arcade = 1; entries[i].local.timeTrial = 0;
+        entries[i].local.arcadeReason[0] = 0;
+    }
+    /* A menu entry keeps the cached rows and scans nothing. */
+    publish(entries, 17);
+    MM_CustomTrackSelect_Init(); D230.trackSel_transitionState = IN_MENU; tick(0);
+    {
+        unsigned int built = s_arcadeGeneration;
+        before = reloads;
+        MM_CustomTrackSelect_Init(); tick(0);
+        MM_CustomTrackSelect_Init(); tick(0);
+        CHECK(reloads == before && s_arcadeGeneration == built);
+    }
+    /* L2 asks for a scan, on a custom page only. */
+    tick(BTN_RIGHT); before = reloads;
+    tick(BTN_L2); CHECK(reloads == before + 1);
+    tick(BTN_LEFT);
+    tick(BTN_L2); CHECK(reloads == before + 1);
+
+    /* A new scan moves the rows but not the player: the pin stays selected. */
+    tick(BTN_RIGHT); tick(BTN_RIGHT); /* page 2 */
+    tick(BTN_DOWN); tick(BTN_DOWN); tick(0);
+    {
+        char pin[65];
+        struct CustomTrackLibraryEntry more[18];
+        const struct CustomTrackLibraryEntry *now;
+        memcpy(pin, s_arcadeLibrary.rememberedPin, sizeof pin);
+        memcpy(more, entries, 17 * sizeof *more);
+        more[17] = entries[0];
+        snprintf(more[17].manifestSha256, 65, "%064x", 99);
+        strcpy(more[17].title, "AAA first in the alphabet");
+        publish(more, 18);
+        tick(0);
+        now = CustomTrackLibrary_Row(&s_arcadeLibrary, (s_arcadePage - 1) * CTR_LIBRARY_PAGE_ROWS + s_arcadeRows[s_arcadePage - 1]);
+        CHECK(now && !strcmp(now->manifestSha256, pin));
+        /* The remembered revision left the store: the page stays valid. */
+        publish(more, 2);
+        tick(0); tick(0);
+        CHECK(s_arcadePage == 1);
+    }
+
+    /* Search: live on the page's rows, by title, author and version; Triangle
+       restores the old query; a query with no match says so. */
+    strcpy(entries[3].author, "Some Author");
+    strcpy(entries[4].version, "7.7.7");
+    publish(entries, 17);
+    MM_CustomTrackSelect_Init(); D230.trackSel_transitionState = IN_MENU; tick(0); tick(BTN_RIGHT);
+    CHECK(s_arcadeLibrary.visibleCount == 17);
+    tick(BTN_R2); CHECK(s_arcadeSearching && textActive);
+    strcpy(textBuffer, "some auth"); tick(0);
+    CHECK(s_arcadeLibrary.visibleCount == 1 && !strcmp(CustomTrackLibrary_Row(&s_arcadeLibrary, 0)->title, "Track 03"));
+    CHECK(tick(BTN_LEFT) == 1 && s_arcadePage == 1); /* Typing never navigates. */
+    /* The Cross that commits is also a menu tap on that frame: it picks nothing. */
+    before = prepared;
+    rawPad = RAW_BTN_CROSS; tick(BTN_CROSS_one); rawPad = 0;
+    CHECK(!s_arcadeSearching && !textActive && s_arcadeLibrary.visibleCount == 1);
+    CHECK(prepared == before && !s_arcadePrepareBusy);
+    tick(0); CHECK(drawnHas("Ready\n"));
+    tick(BTN_R2); strcpy(textBuffer, "7.7.7"); tick(0);
+    CHECK(s_arcadeLibrary.visibleCount == 1 && !strcmp(CustomTrackLibrary_Row(&s_arcadeLibrary, 0)->title, "Track 04"));
+    rawPad = RAW_BTN_TRIANGLE; tick(BTN_TRIANGLE); rawPad = 0;
+    CHECK(!s_arcadeSearching && !strcmp(s_arcadeQuery, "some auth") && s_arcadeLibrary.visibleCount == 1);
+    CHECK(D230.trackSel_transitionState == IN_MENU); /* Its Triangle stays on the page. */
+    tick(BTN_R2); strcpy(textBuffer, "nothing like it"); tick(0);
+    rawPad = RAW_BTN_START; tick(0); rawPad = 0; tick(0);
+    CHECK(s_arcadeLibrary.visibleCount == 0 && drawnHas("No search"));
+    /* A new entry starts with the whole list. */
+    MM_CustomTrackSelect_Init(); CHECK(s_arcadeLibrary.visibleCount == 17);
+    D230.trackSel_transitionState = IN_MENU; tick(0);
+
+    /* A revision that failed its checks stays visible, says why, and cannot
+       start; Ready is the only state that prepares a launch. */
+    {
+        struct CustomTrackLibraryEntry mixed[3];
+        memcpy(mixed, entries, sizeof mixed);
+        mixed[0].installed = 0; mixed[0].local.arcade = 0;
+        strcpy(mixed[0].disabledReason, "Hash mismatch");
+        mixed[1].local.arcade = 0; strcpy(mixed[1].local.arcadeReason, "No AI paths");
+        publish(mixed, 3);
+        MM_CustomTrackSelect_Init(); D230.trackSel_transitionState = IN_MENU; tick(0);
+        CHECK(s_arcadeLibrary.count == 3);
+        tick(BTN_RIGHT);
+        s_arcadeRows[0] = 0; tick(0); CHECK(drawnHas("Hash\nmismatch\n") || drawnHas("Hash mismatch\n"));
+        before = prepared;
+        tick(BTN_CROSS_one); CHECK(prepared == before && !s_arcadePrepareBusy && !strcmp(s_arcadeMessage, "Hash mismatch"));
+        tick(BTN_DOWN); tick(BTN_CROSS_one); CHECK(prepared == before && !s_arcadePrepareBusy);
+        tick(BTN_DOWN); tick(BTN_CROSS_one); CHECK(prepared == before + 1 && s_arcadePrepareBusy);
+        tick(0); CHECK(s_arcadeConfirm);
+        tick(BTN_TRIANGLE); CHECK(!s_arcadeConfirm);
+    }
+
+    /* Author and measured facts on the panel; a room adds its note at Start. */
+    {
+        struct CustomTrackLibraryEntry one = entries[0];
+        strcpy(one.author, "Author");
+        one.local.laps = 3; one.local.timeTrial = 1;
+        publish(&one, 1);
+        MM_CustomTrackSelect_Init(); D230.trackSel_transitionState = IN_MENU; tick(0);
+        tick(BTN_RIGHT); tick(0);
+        CHECK(drawnHas("Author\n") && drawnHas("3 laps TT\n") && drawnHas("Ready\n"));
+        tick(BTN_CROSS_one); tick(0); CHECK(s_arcadeConfirm && !drawnHas("Room:"));
+        roomNote = "Room: no checks here, items wait";
+        tick(0); CHECK(s_arcadeConfirm && drawnHas("Room:") && drawnHas("Start race\n"));
+        before = launched;
+        tick(BTN_CROSS_one); CHECK(launched == before + 1 && beganHost == 6); /* A room is no refusal. */
+        roomNote = "";
+        D230.trackSel_transitionState = IN_MENU;
+    }
+    scale_scenarios();
+    publish(start, 3);
+    MM_CustomTrackSelect_Init(); D230.trackSel_transitionState = IN_MENU; tick(0);
 }
 
 int main(void)
@@ -122,7 +301,7 @@ int main(void)
         strcpy(entries[i].version, "1.0.2");
         entries[i].installed = 1; entries[i].local.arcade = 1;
     }
-    CHECK(CustomTrackLibrary_Replace(&s_contentLibrary, entries, 17));
+    publish(entries, 17);
     MM_CustomTrackSelect_Init();
     D230.trackSel_transitionState = IN_MENU;
     CHECK(tick(0) == 0 && s_arcadePage == 0);
@@ -158,7 +337,7 @@ int main(void)
     strcpy(entries[0].local.arcadeReason,"No AI paths");
     strcpy(entries[1].local.uuid,"same-track");strcpy(entries[2].local.uuid,"same-track");
     strcpy(entries[1].version,"1.9.0");strcpy(entries[2].version,"1.10.0");
-    CHECK(CustomTrackLibrary_Replace(&s_contentLibrary,entries,3));
+    publish(entries,3);
     MM_CustomTrackSelect_Init();tick(0);
     CHECK(s_arcadeLibrary.count==2);
     CHECK(!strcmp(s_arcadeLibrary.entries[0].title,"Track 00") && !strcmp(s_arcadeLibrary.entries[1].version,"1.10.0"));
@@ -172,22 +351,24 @@ int main(void)
 
     /* A revision that can race beats a newer one that cannot. */
     entries[2].local.arcade=0; entries[2].local.timeTrial=1; strcpy(entries[2].local.arcadeReason,"No AI paths");
-    CHECK(CustomTrackLibrary_Replace(&s_contentLibrary,entries,3));
+    publish(entries,3);
     MM_CustomTrackSelect_Init();tick(0);
     CHECK(s_arcadeLibrary.count==2 && !strcmp(s_arcadeLibrary.entries[1].version,"1.9.0"));
     entries[2].local.arcade=1; entries[2].local.arcadeReason[0]=0;
 
-    /* Time Trial: the same pages, the Time Trial rule, the Time Trial runtime. */
+    generic_scenarios(entries);
+    /* Time Trial: the same pages, the Time Trial rule, the Time Trial runtime,
+       in the player client too (ruling of 2026-11-02). */
     tracker.gameMode1=TIME_TRIAL; tracker.numLaps=3;
     entries[1].local.timeTrial=0; strcpy(entries[1].local.timeTrialReason,"No lap checkpoints");
     entries[2].local.timeTrial=0; strcpy(entries[2].local.timeTrialReason,"No lap checkpoints");
     strcpy(entries[0].local.uuid,"0f8fad5b-d9cb-469f-a165-70867728950e");
-    CHECK(CustomTrackLibrary_Replace(&s_contentLibrary,entries,3));
+    publish(entries,3);
     MM_CustomTrackSelect_Init();D230.trackSel_transitionState=IN_MENU;tick(0);
     CHECK(s_arcadeLibrary.count==2);
     tick(BTN_RIGHT); CHECK(s_arcadePage==1);
     s_arcadeRows[0]=0; tick(0);
-    CHECK(drawnHas("Installed\n")); /* Time Trial runs Track 00 (no records file) */
+    CHECK(drawnHas("Ready\n")); /* Time Trial runs Track 00 (no records file) */
     launched=0; prepared=0; beganMode=0;
     tick(BTN_CROSS_one); tick(0); CHECK(s_arcadeConfirm && checkedMode == CTR_OFFLINE_MODE_TIME_TRIAL);
     tick(BTN_CROSS_one);

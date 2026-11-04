@@ -876,6 +876,24 @@ void MainFreeze_SafeAdvDestroy(void)
 	return;
 }
 
+#ifdef CTR_AP
+// #375: a start from the in-game tracker leaves the hub pause exactly as the
+// RESUME row does (the case below), so the pad that takes the kart next runs
+// on an unpaused hub with the game's own cooldown and audio state.
+void MainFreeze_APResumeFromTracker(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	gGT->cooldownFromUnpauseUntilPause = 5;
+	if (sdata->ptrActiveMenu != NULL)
+		RECTMENU_Hide(sdata->ptrActiveMenu);
+	MainFreeze_SafeAdvDestroy();
+	ElimBG_Deactivate(gGT);
+	gGT->gameMode1 &= ~PAUSE_1;
+	MainFrame_TogglePauseAudio(0);
+	OtherFX_Play(1, 1);
+}
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80039a44-0x80039dcc.
 void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 {
@@ -1149,6 +1167,12 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 
 			// set levID to level you were in previously
 			levID = gGT->prevLEV;
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+			{
+				const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(gGT->levelID);
+				if (race) levID = (s16)race->returnHub;
+			}
+#endif
 		}
 
 		// If you're in Adventure Cup
@@ -1175,11 +1199,22 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 			}
 #endif
 
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+			// A content-plan cup (#133 PR 5) returns to its own pad.
+			int apContentPad = AP_ContentCupPadLevel();
+			int apGarageCup = AP_ContentGarageCupRunning(); // #133 PR 6b
+#endif
 			// when loading is done remove bits for Adventure Cup, relic, and crystal challenge
 			sdata->Loading.OnBegin.RemBitsConfig0 |= ADVENTURE_CUP | RELIC_RACE | CRYSTAL_CHALLENGE;
 
 			// Level ID
 			gGT->levelID = gGT->cup.cupID + ADV_CUP;
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+			if (apContentPad >= 0)
+				gGT->levelID = (s16)apContentPad;
+			// A boss cup left from the pause menu returns to its garage.
+			AP_ContentGarageCupReturn(gGT, apGarageCup);
+#endif
 		}
 		break;
 	default:

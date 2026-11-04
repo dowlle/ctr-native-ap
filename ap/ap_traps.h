@@ -102,6 +102,9 @@ int AP_TrapConfigLine(const char *line);
 // Nonzero while the First Person trap owns cameraMode (see ap_democam.c).
 int AP_TrapOwnsCamera(void);
 
+// R2 look-back override at the retail camera decision, local driver only.
+int AP_TrapReverseCamera(struct Driver *driver);
+
 // Diagnostics only (ap-state.json `transition.diag`): how many scheduler slots
 // sit in ARMED, WARNING and ACTIVE, and how many ACTIVE slots are suspended by a
 // scripted sequence. Each out-pointer may be NULL.

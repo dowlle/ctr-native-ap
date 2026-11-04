@@ -1,0 +1,124 @@
+{
+  "description": "Schema-1 manifest admission cases shared by native and apworld tests. Apply JSON Pointer sets/erases to base, sort files by role and path, then SHA-256 canonical JSON for the expected package pin. The two checked-in copies must remain byte-identical. File bytes: lev=L*3000, vrm=V*2000, race_settings={}.",
+  "base": {
+    "schema_version": 1,
+    "package_uuid": "0f0e0d0c-0b0a-4908-8706-123456789abc",
+    "version": "1.0.0",
+    "title": "Fixture Track",
+    "compatibility": {
+      "native_contract": 1,
+      "apworld_contract": 1
+    },
+    "files": [
+      {
+        "role": "lev",
+        "path": "original/track.lev",
+        "sha256": "0a48dfc6481a38e34ef253572e404b250d902daebe657e0ca672e925b7eae7f3",
+        "bytes": 3000
+      },
+      {
+        "role": "vrm",
+        "path": "original/track.vrm",
+        "sha256": "1984a5f93b9c8e442ab3730dd7b830350aaaaa3e058c3ff21f38320fd4045f3c",
+        "bytes": 2000
+      },
+      {
+        "role": "race_settings",
+        "path": "metadata/race.json",
+        "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "bytes": 2
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "original paths",
+      "accept": true
+    },
+    {
+      "name": "safe data paths",
+      "accept": true,
+      "set": {
+        "/files/0/path": "data/track.lev",
+        "/files/1/path": "data/track.vrm"
+      }
+    },
+    {
+      "name": "unknown role",
+      "accept": false,
+      "set": {
+        "/files/2/role": "unknown"
+      }
+    },
+    {
+      "name": "missing compatibility",
+      "accept": false,
+      "erase": [
+        "/compatibility"
+      ]
+    },
+    {
+      "name": "wrong schema",
+      "accept": false,
+      "set": {
+        "/schema_version": 2
+      }
+    },
+    {
+      "name": "wrong contract",
+      "accept": false,
+      "set": {
+        "/compatibility/native_contract": 2
+      }
+    },
+    {
+      "name": "unsafe path",
+      "accept": false,
+      "set": {
+        "/files/0/path": "../track.lev"
+      }
+    },
+    {
+      "name": "path collision",
+      "accept": false,
+      "set": {
+        "/files/1/path": "ORIGINAL/track.lev"
+      }
+    },
+    {
+      "name": "zero bytes",
+      "accept": false,
+      "set": {
+        "/files/0/bytes": 0
+      }
+    },
+    {
+      "name": "duplicate role",
+      "accept": false,
+      "set": {
+        "/files/2/role": "lev"
+      }
+    },
+    {
+      "name": "extra manifest field",
+      "accept": false,
+      "set": {
+        "/surprise": 1
+      }
+    },
+    {
+      "name": "invalid version",
+      "accept": false,
+      "set": {
+        "/version": "01.0.0"
+      }
+    },
+    {
+      "name": "invalid UUID",
+      "accept": false,
+      "set": {
+        "/package_uuid": "00000000-0000-0000-0000-000000000000"
+      }
+    }
+  ]
+}

@@ -484,7 +484,12 @@ struct InstDrawPerPlayer
 
 	// 0xf4
 	SVec3 halfVector;
+#if defined(CTR_NATIVE) && defined(CTR_AP)
+	// Native-only cull metadata in retail padding. No layout/stride change.
+	s16 mirrorCullFlip;
+#else
 	s16 _pad_halfVector;
+#endif
 
 	// 0xfc = end of struct
 

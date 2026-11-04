@@ -1,82 +1,66 @@
 #ifndef AP_TURBOGRANT_LOGIC_H
 #define AP_TURBOGRANT_LOGIC_H
 
-// Pure, engine-independent rules for the #224 Turbo Grant. Kept in a header with
-// no engine, no network and no config dependency so the runtime module and the
-// host harness (tools/test-turbo-grant.c) exercise the exact same arithmetic.
+// Pure, engine-independent rules for the Turbo Grant (#224, per race since
+// #487). Kept in a header with no engine, no network and no config dependency so
+// the runtime module and the host harness (tools/test-turbo-grant.c) exercise
+// the exact same rules.
 //
-// WHY THE ACCOUNTING IS SHAPED LIKE THIS. Every other one-shot AP effect on this
-// client (traps, the Wumpa filler) dedups replays against the effect marker, the
-// highest server item index whose BATCH was drained. That mechanism is wrong for
-// this item and using it would lose grants: it advances when the batch drains,
-// so a grant that arrived while the player was in the hub -- and therefore could
-// not enter a weapon slot yet -- would be counted as consumed the moment the
-// batch was seen, and a reconnect would never hand it back. The issue's rule 4
-// is explicit that no received grant is silently discarded.
+// THE RULE SINCE #487 (ruling of 2026-10-23). Once the `Turbo Grant` item has been
+// received, a Turbo goes into the weapon slot at the start of every race. The
+// item is a switch, not a stack of one-shot grants: more copies do not give more
+// Turbos per race, and nothing is counted or persisted. The Itemsanity wait is
+// unchanged (AP_TurboGrantDeliverable below).
 //
-// So this item tracks three numbers instead of a high-water mark:
+// "Every race" is one Turbo per race ATTEMPT. The attempt boundary is the
+// starting countdown: every race start and every restart runs the traffic
+// lights, so observing them clears the per-race latch, and so does leaving the
+// track. A Turbo that leaves the slot before it is fired (an Item Reroll, a
+// Forced Use, the finish line) is not handed out again in the same attempt.
 //
-//   received   -- rebuilt from ZERO on every fresh connect out of the server's
-//                 authoritative full ReceivedItems replay. Idempotent by
-//                 construction: replaying the same list twice yields the same
-//                 number, and a slot switch replays a different list.
-//   fired      -- kept in the room's DataStorage per team and slot (#299), so a
-//                 fresh room starts at zero. Incremented ONLY when a delivered
-//                 grant is actually fired at the weapon choke point, which is the
-//                 only moment the player has provably had the thing.
-//   inFlight   -- session-only, 0 or 1: a delivered Turbo sitting in the weapon
-//                 slot, not yet fired. Never persisted, because a process that
-//                 exits with one in the slot did not deliver it in any sense the
-//                 player can use.
-//
-// pending = received - fired - inFlight, floored at zero. That single expression
-// is what makes every case in the issue's rule 7 fall out:
-//
-//   * RECONNECT / duplicate replay: received rebuilds to the same value, fired is
-//     read back from the room, pending is unchanged.
-//   * SLOT or SEED CHANGE: a different persistence row is read, so one identity's
-//     fired count can never suppress another's grants.
-//   * DEATH, RACE RESTART, or anything else that removes the Turbo from the slot
-//     before it is fired: the caller drops inFlight without touching fired, and
-//     pending goes back up by one on its own. Nothing has to remember that a
-//     requeue is owed.
-//   * A HOSTILE OR CORRUPT persisted fired count cannot manufacture grants,
-//     because the floor is zero, and cannot be made to overflow, because it is
-//     clamped to received before it is used.
+// The 0.2.x accounting (received, fired and in-flight counts, with the fired
+// count kept in the room's DataStorage under #299) existed to make sure each
+// one-shot grant was delivered exactly once. A per-race grant has no such debt,
+// so that accounting is gone.
 
-// Clamp a persisted fired count into the range the current session can justify.
-// A file that has been hand-edited, truncated, or written by a future build must
-// never be able to drive the arithmetic negative or past what the server has
-// actually sent this slot.
-static int AP_TurboGrantClampFired(int fired, int received)
+typedef struct AP_TurboGrantRace
 {
-	if (fired < 0)
-		return 0;
-	if (fired > received)
-		return received;
-	return fired;
+	int countdownSeen; // the lights of the current attempt were observed on track
+	int givenThisRace; // this attempt's Turbo has been put into the slot
+} AP_TurboGrantRace;
+
+// One frame of the attempt latch. `onTrack` is a race or battle level, `ended`
+// is END_OF_RACE, `countdown` is the traffic-light countdown still running.
+static void AP_TurboGrantRaceStep(AP_TurboGrantRace *r, int onTrack, int ended,
+                                  int countdown)
+{
+	if (!onTrack || ended)
+	{
+		r->countdownSeen = 0;
+		r->givenThisRace = 0;
+		return;
+	}
+	if (countdown)
+	{
+		// A new attempt (first start or a restart): its Turbo is still owed.
+		r->countdownSeen = 1;
+		r->givenThisRace = 0;
+	}
 }
 
-// Grants this slot is still owed. `inFlight` is 0 or 1; any other value is
-// treated as 1, so a corrupt caller cannot double-count a delivery.
-static int AP_TurboGrantPending(int received, int fired, int inFlight)
+// Is this attempt's Turbo still owed? Only after the item was received, only
+// once the countdown of this attempt was observed (the race-load gap, see
+// ap_wumpa.c), and only once per attempt.
+static int AP_TurboGrantOwedThisRace(const AP_TurboGrantRace *r, int received)
 {
-	int pending;
-
-	if (received < 0)
-		received = 0;
-	fired = AP_TurboGrantClampFired(fired, received);
-	if (inFlight != 0)
-		inFlight = 1;
-
-	pending = received - fired - inFlight;
-	return pending < 0 ? 0 : pending;
+	return received > 0 && r->countdownSeen && !r->givenThisRace;
 }
 
 // The ruled ownership gate (ruled 2026-08-11, restated in the #224 body).
 // Itemsanity off: no weapon-item gate applies. Itemsanity on: the separate
 // progression `Turbo` weapon item must have been received first. This decides
-// DELIVERABILITY only -- a grant that fails it stays queued, it is never lost.
+// DELIVERABILITY only: the race's Turbo waits for it, and is delivered in the
+// same race if the weapon item arrives before the race ends.
 static int AP_TurboGrantDeliverable(int itemsanityOn, int turboWeaponOwned)
 {
 	return itemsanityOn ? (turboWeaponOwned != 0) : 1;

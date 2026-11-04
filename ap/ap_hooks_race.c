@@ -155,6 +155,12 @@ static int AP_RetailPodiumTrack(struct GameTracker *gGT)
 	if (MainRaceTrack_OfflineCustomLoad())
 		return -1;
 #endif
+#ifdef CTR_CUSTOM_TRACKS
+	// A content-plan race owns its pad's rungs, and only its Trophy Race does
+	// (#133 PR 3b); the engine host's levelID never names them.
+	if (CustomTrack_StandaloneContext((int)gGT->levelID))
+		return AP_StandalonePodiumTrack();
+#endif
 	// Schema 15: a Cortex Vortex race (pad or cup leg) owns its own rungs.
 	// Checked first: its host LevelID 13 is Oxide Station's podium track.
 	if (AP_CortexTrackActive())
@@ -324,14 +330,22 @@ static int AP_RelicPerfectServingCustom(struct GameTracker *gGT)
 	return 0;
 }
 
+#ifdef CTR_CUSTOM_TRACKS
+static long AP_StandalonePerfectCode(int *outRoute);
+#endif
+
 void AP_NotifyRelicPerfect(void)
 {
 	struct GameTracker *gGT;
 	struct Driver *driver;
 	AP_RelicPerfectFacts facts;
 	long code;
+	int contentPlan = 0;
 
-	if (!ctr_cfg_active() || !ctr_cfg.relic_perfect_enabled)
+#ifdef CTR_CUSTOM_TRACKS
+	contentPlan = ap_content_plan_active();
+#endif
+	if (!ctr_cfg_active() || (!contentPlan && !ctr_cfg.relic_perfect_enabled))
 		return;
 	// #286: a forced-loss relic attempt pays no finish-class check.
 	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_RELIC_PERFECT))
@@ -341,6 +355,18 @@ void AP_NotifyRelicPerfect(void)
 	if (gGT == 0 || driver == 0 || (gGT->gameMode1 & RELIC_RACE) == 0)
 		return;
 
+	memset(&facts, 0, sizeof facts);
+#ifdef CTR_CUSTOM_TRACKS
+	// A content plan (#133 PR 3c): only the running Relic Race's own pad
+	// route can pay, with that pad's perfect code. Nothing else in a
+	// content-plan seed sends a perfect.
+	if (contentPlan)
+	{
+		facts.contentCode = AP_StandalonePerfectCode(&facts.contentRoute);
+		if (!facts.contentRoute)
+			return;
+	}
+#endif
 	facts.retail = ctr_cfg.relic_perfect;
 	facts.levelID = (int)gGT->levelID;
 	facts.broken = (int)driver->numTimeCrates;
@@ -453,6 +479,310 @@ void AP_CortexTrackRelicAward(int raceTime)
 }
 
 #ifdef CTR_CUSTOM_TRACKS
+int AP_StandaloneRaceActive(void)
+{
+	return sdata->gGT && CustomTrack_StandaloneContext(sdata->gGT->levelID) != NULL;
+}
+
+// The running standalone race still is its content-plan pad's route: same
+// seed epoch, pad, hub, laps, slot, host, entry, track and mode code. Shared
+// by the Trophy/CTR finish and the Relic Race result below.
+static const ctr_content_pad *AP_StandaloneRoutePad(const struct CustomTrackRaceContext *context)
+{
+	const ctr_content_pad *pad = ap_content_plan_pad(context->physicalPad);
+	int64_t codes[3] = {0, 0, 0};
+	if (!pad || !pad->occupied || pad->crystal || !context->seedEpoch ||
+	    context->seedEpoch != ap_content_plan_epoch() ||
+	    ap_content_mode_codes(pad, context->mode, codes) < 1 ||
+	    ap_content_mode_route(pad, context->mode) != context->trophyLocation ||
+	    pad->hub != context->returnHub || pad->laps != context->laps || pad->custom_slot != context->slot ||
+	    context->retail != (pad->retail_id >= 0) || context->cortex != pad->cortex ||
+	    context->hostLevelID != ap_content_pad_host(pad) ||
+	    strcmp(pad->entry_id, context->entryID) || strcmp(pad->track_id, context->trackID)) return NULL;
+	return pad;
+}
+
+// The running standalone race's content-plan podium identity, or -1: only a
+// Trophy Race on its pad's route (#133 PR 3b, AP_RetailPodiumTrack), or the
+// CTR Challenge of a ctr_first entry (J11, decision 14), whose finishing
+// place earns the rungs. A Gem Cup leg (row 10i) earns the rungs of its
+// track's own pad, when that pad has them; on a track with no rungs of its
+// own (no pad, or a pad without a Trophy Race), the leg's own rungs
+// (cup_only_podium_rungs, rulings of 2026-11-02). A boss cup leg earns none.
+int AP_StandalonePodiumTrack(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const struct CustomTrackRaceContext *context = gGT ? CustomTrack_StandaloneContext((int)gGT->levelID) : NULL;
+	const ctr_content_pad *pad;
+	if (context && context->cup)
+	{
+		const ctr_content_pad *cup = AP_ContentCupPad();
+		const int leg = AP_ContentCupLeg();
+		int k, own = 0;
+		if (!cup || cup->physical >= AP_CONTENT_GARAGE_CUP_PAD || IS_BOSS_RACE(gGT->gameMode1) ||
+		    leg < 0 || leg >= AP_CONTENT_CUP_LEGS)
+			return -1;
+		// The parser seats a leg's own rungs only when its track's pad has none.
+		for (k = 0; k < 5; ++k) own |= cup->legs[leg].rungs[k] > 0;
+		if (own)
+			return AP_CONTENT_LEG_PODIUM_LOGICAL_BASE + cup->physical * AP_CONTENT_CUP_LEGS + leg;
+		if (cup->legs[leg].track_pad < 0 ||
+		    !(pad = ap_content_plan_pad(cup->legs[leg].track_pad)) || !pad->occupied || pad->cup || pad->crystal ||
+		    ap_content_rung_mode(pad) < 0)
+			return -1;
+		return AP_CONTENT_PODIUM_LOGICAL_BASE + cup->legs[leg].track_pad;
+	}
+	if (!context || !(pad = AP_StandaloneRoutePad(context)) || context->mode != ap_content_rung_mode(pad) ||
+	    (!context->retail && !CustomTrack_ServingLoad((int)gGT->levelID, 0, 0)))
+		return -1;
+	return AP_CONTENT_PODIUM_LOGICAL_BASE + context->physicalPad;
+}
+
+// The content-plan pad's five rung codes as a podium row (#133 PR 3b), for
+// AP_SendPodiumChecks and AP_SendHeldChecks. 0 when the logical track is not a
+// content-plan Trophy Race pad with rungs.
+static int AP_ContentPodiumRungs(int track, ctr_podium_rungs *out)
+{
+	const ctr_content_pad *pad;
+	long codes[5];
+	int k, any = 0;
+	// A Gem Cup leg's own rungs (cup_only_podium_rungs).
+	if (track >= AP_CONTENT_LEG_PODIUM_LOGICAL_BASE &&
+	    track < AP_CONTENT_LEG_PODIUM_LOGICAL_BASE + 111 * AP_CONTENT_CUP_LEGS)
+	{
+		const int leg = (track - AP_CONTENT_LEG_PODIUM_LOGICAL_BASE) % AP_CONTENT_CUP_LEGS;
+		pad = ap_content_plan_pad((track - AP_CONTENT_LEG_PODIUM_LOGICAL_BASE) / AP_CONTENT_CUP_LEGS);
+		if (!pad || !pad->occupied || !pad->cup || pad->physical >= AP_CONTENT_GARAGE_CUP_PAD)
+			return 0;
+		for (k = 0; k < 5; ++k)
+		{
+			codes[k] = pad->legs[leg].rungs[k] > 0 && pad->legs[leg].rungs[k] <= 2147483647 ? (long)pad->legs[leg].rungs[k] : -1;
+			any |= codes[k] > 0;
+		}
+		out->held_1st = codes[0]; out->held_3rd = codes[1]; out->held_5th = codes[2];
+		out->finish_podium = codes[3]; out->finish_any = codes[4];
+		return any;
+	}
+	if (track < AP_CONTENT_PODIUM_LOGICAL_BASE || track > AP_CONTENT_PODIUM_LOGICAL_BASE + 110)
+		return 0;
+	pad = ap_content_plan_pad(track - AP_CONTENT_PODIUM_LOGICAL_BASE);
+	// The Trophy Race's rungs, or a ctr_first CTR Challenge's (J11).
+	if (!pad || !pad->occupied || pad->crystal || ap_content_rung_mode(pad) < 0)
+		return 0;
+	for (k = 0; k < 5; ++k)
+	{
+		codes[k] = pad->rung_locations[k] > 0 && pad->rung_locations[k] <= 2147483647 ? (long)pad->rung_locations[k] : -1;
+		any |= codes[k] > 0;
+	}
+	out->held_1st = codes[0]; out->held_3rd = codes[1]; out->held_5th = codes[2];
+	out->finish_podium = codes[3]; out->finish_any = codes[4];
+	return any;
+}
+
+// A content-plan podium track's rungs come from a CTR Challenge here: a
+// ctr_first entry, by finishing place, letters or not (decision 14).
+int AP_RaceStructurePodiumCtrFirst(int podiumTrack)
+{
+	return podiumTrack >= AP_CONTENT_PODIUM_LOGICAL_BASE && podiumTrack <= AP_CONTENT_PODIUM_LOGICAL_BASE + 110 &&
+	       ap_content_plan_active() &&
+	       ap_content_pad_ctr_first(ap_content_plan_pad(podiumTrack - AP_CONTENT_PODIUM_LOGICAL_BASE));
+}
+
+// Trophy Race and CTR Challenge finish of a standalone race. The context's
+// mode decides the award (ap_content_race_award): first place for a Trophy
+// route; for a CTR route first place with the letters the CTR Challenge needs
+// (all three, or the Lettersanity letters, AP_LetterTokenEarned), and only in
+// the CTR Challenge it was staged for. A Relic Race pays in AP_NotifyStandaloneRelic.
+int AP_NotifyStandaloneRace(void)
+{
+	const struct CustomTrackRaceContext *context;
+	struct GameTracker *gGT = sdata->gGT;
+	int token;
+	if (!gGT || !ctr_cfg_active() ||
+	    AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_CUSTOM_TROPHY) ||
+	    !(gGT->gameMode1 & ADVENTURE_MODE) ||
+	    (gGT->gameMode1 & (ARCADE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS | RELIC_RACE | CRYSTAL_CHALLENGE)) ||
+	    !gGT->drivers[0])
+		return 0;
+	context = CustomTrack_StandaloneContext(gGT->levelID);
+	token = (gGT->gameMode2 & TOKEN_RACE) != 0;
+	if (!context || token != (context->mode == AP_CONTENT_MODE_CTR) ||
+	    (context->mode == AP_CONTENT_MODE_CTR
+	         ? !(gGT->drivers[0]->driverRank == 0 &&
+	             AP_LetterTokenEarned(gGT->levelID, 1, gGT->drivers[0]->PickupLetterHUD.numCollected))
+	         : !ap_content_race_award(context->mode, gGT->drivers[0]->driverRank,
+	                                  gGT->drivers[0]->PickupLetterHUD.numCollected)))
+		return 0;
+	if (context->trophyLocation > 2147483647 ||
+	    (!context->retail && !CustomTrack_ServingLoad(gGT->levelID, 0, 0)) ||
+	    !ap_net_location_exists((long)context->trophyLocation))
+		return 0;
+	if ((context->seedEpoch || ap_content_plan_active()) && !AP_StandaloneRoutePad(context))
+		return 0;
+	{
+		int sent = AP_EmitClassCheck((long)context->trophyLocation, 0, -1, -1, 1,
+		                             "[AP CHECK] standalone entry=%s track=%s slot=%d mode=%d location=%ld\n",
+		                             context->entryID, context->trackID, context->slot, context->mode,
+		                             (long)context->trophyLocation);
+		return sent;
+	}
+}
+
+// The Reach 10 Wumpa check the running standalone race sends (#133 PR 3b):
+// its pad's own check or the global one, only from a Trophy Race or CTR
+// Challenge that can reach ten fruit; -1 otherwise. Never the host's code.
+static long AP_StandaloneWumpaCode(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const struct CustomTrackRaceContext *context = gGT ? CustomTrack_StandaloneContext(gGT->levelID) : NULL;
+	const ctr_content_pad *pad;
+	int64_t code;
+	// A cup leg, a Gem Cup's or a boss cup's, earns its track's own check,
+	// also while the track's pad is shut or the track has none (row 10i).
+	if (context && context->cup)
+	{
+		const ctr_content_pad *cup = AP_ContentCupPad();
+		const int leg = AP_ContentCupLeg();
+		code = cup && leg >= 0 && leg < AP_CONTENT_CUP_LEGS ? cup->legs[leg].wumpa : 0;
+		return code > 0 && code <= 2147483647 ? (long)code : -1;
+	}
+	if (!context || !ap_content_plan_active() ||
+	    (!context->retail && !CustomTrack_ServingLoad(gGT->levelID, 0, 0)) ||
+	    !(pad = AP_StandaloneRoutePad(context)))
+		return -1;
+	code = ap_content_wumpa_code(ap_content_plan_checks(), pad, context->mode);
+	return code > 0 && code <= 2147483647 ? (long)code : -1;
+}
+
+// The running content-plan CTR Challenge's pad, for the letter hooks (#133
+// PR 3b), or NULL. `track` is the loaded levelID the hooks pass.
+static const ctr_content_pad *AP_StandaloneLetterPad(int track)
+{
+	const struct CustomTrackRaceContext *context = CustomTrack_StandaloneContext(track);
+	if (!context || context->mode != AP_CONTENT_MODE_CTR || !ap_content_plan_active())
+		return NULL;
+	return AP_StandaloneRoutePad(context);
+}
+
+// A content-plan CTR Challenge's letters in the legacy Lettersanity encoding.
+static void AP_ContentLetterState(const ctr_content_pad *pad, long codes[3], unsigned char received[3])
+{
+	int l;
+	ap_content_letter_codes(pad, codes);
+	for (l = 0; l < 3; ++l)
+		received[l] = (unsigned char)AP_ContentLetterItemReceived(pad->letter_items[l]);
+}
+
+int AP_StandaloneCtrBit(void)
+{
+	const struct CustomTrackRaceContext *context =
+	    sdata->gGT ? CustomTrack_StandaloneContext(sdata->gGT->levelID) : NULL;
+	return context && context->mode == AP_CONTENT_MODE_CTR ? AP_CONTENT_BIT_CTR + context->physicalPad : -1;
+}
+
+// The running content-plan Relic Race's pad, or NULL.
+static const ctr_content_pad *AP_StandaloneRelicPad(void)
+{
+	const struct CustomTrackRaceContext *context =
+	    sdata->gGT ? CustomTrack_StandaloneContext(sdata->gGT->levelID) : NULL;
+	const ctr_content_pad *pad;
+	if (!context || context->mode != AP_CONTENT_MODE_RELIC) return NULL;
+	pad = ap_content_plan_pad(context->physicalPad);
+	return pad && ap_content_mode_slot(pad, AP_CONTENT_MODE_RELIC) >= 0 ? pad : NULL;
+}
+
+// Retail tracks keep their retail relic targets; a custom track uses its
+// package's targets, never the host slot's. Cortex Vortex uses the targets
+// its legacy pad track uses (AP_CortexRelicTime, placeholders until the
+// track author supplies real times).
+int AP_StandaloneRelicTarget(int tier)
+{
+	const ctr_content_pad *pad = AP_StandaloneRelicPad();
+	const ctr_content_package *pkg;
+	if (tier < 0 || tier > 2 || !pad) return -1;
+	if (pad->retail_id >= 0)
+		return pad->retail_id < 18 ? data.RelicTime[pad->retail_id * 3 + tier] : -1;
+	if (pad->cortex)
+		return AP_CortexRelicTime(tier);
+	pkg = ap_content_plan_package(pad->package_index);
+	return pkg && pkg->has_relic_targets ? pkg->relic_targets[tier] : -1;
+}
+
+// The running content-plan Relic Race's tier code, -2 when none is running.
+long AP_StandaloneRelicCode(int tier)
+{
+	const ctr_content_pad *pad = AP_StandaloneRelicPad();
+	if (!pad) return -2;
+	return tier >= 0 && tier < 3 ? (long)pad->relic_locations[tier] : -1;
+}
+
+// The running content-plan Relic Race's perfect code (#133 PR 3c). *outRoute
+// is 1 when a content-plan Relic Race is on its pad's route, serving its own
+// bytes; the code is then that pad's perfect check, or -1 when the seed has
+// none. Never the engine host's retail code.
+static long AP_StandalonePerfectCode(int *outRoute)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const struct CustomTrackRaceContext *context = gGT ? CustomTrack_StandaloneContext(gGT->levelID) : NULL;
+	const ctr_content_pad *pad;
+	*outRoute = 0;
+	if (!gGT || !context || context->mode != AP_CONTENT_MODE_RELIC || !(gGT->gameMode1 & ADVENTURE_MODE) ||
+	    (gGT->gameMode1 & (ARCADE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS | CRYSTAL_CHALLENGE)) ||
+	    (gGT->gameMode2 & TOKEN_RACE) ||
+	    (!context->retail && !CustomTrack_ServingLoad(gGT->levelID, 0, 0)) ||
+	    !(pad = AP_StandaloneRoutePad(context)))
+		return -1;
+	*outRoute = 1;
+	return ap_content_plan_checks()->relic_perfect && pad->perfect_location > 0 &&
+	       pad->perfect_location <= 2147483647 ? (long)pad->perfect_location : -1;
+}
+
+int AP_NotifyStandaloneRelic(int raceTime)
+{
+	const struct CustomTrackRaceContext *context;
+	const ctr_content_pad *pad;
+	struct GameTracker *gGT = sdata->gGT;
+	int targets[3], t, sent = 0;
+	unsigned tiers;
+	if (!gGT || !ctr_cfg_active() || !(gGT->gameMode1 & ADVENTURE_MODE) || !(gGT->gameMode1 & RELIC_RACE) ||
+	    (gGT->gameMode1 & (ARCADE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS | CRYSTAL_CHALLENGE)) ||
+	    (gGT->gameMode2 & TOKEN_RACE))
+		return 0;
+	context = CustomTrack_StandaloneContext(gGT->levelID);
+	if (!context || context->mode != AP_CONTENT_MODE_RELIC ||
+	    (!context->retail && !CustomTrack_ServingLoad(gGT->levelID, 0, 0)) ||
+	    !(pad = AP_StandaloneRoutePad(context)))
+		return 0;
+	for (t = 0; t < 3; ++t) targets[t] = AP_StandaloneRelicTarget(t);
+	tiers = ap_content_relic_tiers(raceTime, targets);
+	for (t = 0; t < 3; ++t)
+	{
+		long code = (long)pad->relic_locations[t];
+		// Same "already owned, check the next tier" rule as the retail loop,
+		// read from the server's checked set.
+		if (!(tiers & (1u << t)) || code <= 0 || !ap_net_location_exists(code) || ap_net_location_checked(code))
+			continue;
+		if (!AP_EmitClassCheck(code, 1, AP_CONTENT_BIT_RELIC + pad->physical * 3 + t, -1, 1,
+		                       "[AP CHECK] standalone relic entry=%s track=%s tier=%d location=%ld "
+		                       "(race time %d, target %d)\n",
+		                       context->entryID, context->trackID, t, code, raceTime, targets[t]))
+			continue;
+		++sent;
+		gGT->podiumRewardID = STATIC_RELIC;
+		gGT->gameModeEnd |= NEW_RELIC;
+		if (t > 0)
+		{
+			sdata->relicTime_1min = targets[t] / 0xe100;
+			sdata->relicTime_10sec = (targets[t] / 0x2580) % 6;
+			sdata->relicTime_1sec = (targets[t] / 0x3c0) % 10;
+			sdata->relicTime_10ms = (targets[t] / (0x3c0 / 10)) % 10;
+			sdata->relicTime_1ms = ((targets[t] * 100) / 0x3c0) % 10;
+		}
+	}
+	ap_state_gen++;
+	return sent;
+}
+
 int AP_CustomTrackTrophyChecked(void)
 {
 	return ctr_cfg_active() && ctr_cfg.custom_tracks_ok &&
@@ -495,10 +825,98 @@ void AP_NotifyCupAggregateCustomTrackTrophy(void)
 		return;
 	AP_NotifyCustomTrackTrophyImpl();
 }
+
+// One code joins a win set when the room has that check.
+static int AP_ContentWinAdd(long *set, int n, int64_t code)
+{
+	if (code > 0 && code <= 2147483647 && n < AP_WS_WINSET_MAX && ap_net_location_exists((long)code))
+		set[n++] = (long)code;
+	return n;
+}
+
+// The win set of the running content-plan race, the checks `win_logic` decides
+// its race-loss stakes from (DeathLink rulebook, "The win check per race type"):
+// a Trophy Race check; a CTR Token check, with the Trophy Race check a ctr_first
+// CTR Challenge pays on first place; a Relic Race's tier checks; a Crystal
+// Challenge's completion; a cup's Win and sweep, fixed at its first leg; a
+// garage's own completion check, a boss cup's included. Returns the count, 0 for
+// a race with no win check here, -1 when no content-plan race on its pad's route
+// is running.
+int AP_ContentWinSet(long set[AP_WS_WINSET_MAX])
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const struct CustomTrackRaceContext *context;
+	const ctr_content_pad *pad;
+	int k, n = 0;
+	if (!gGT || !ap_content_plan_active())
+		return -1;
+	if ((pad = AP_ContentCrystalPad()) != NULL)
+		return AP_ContentWinAdd(set, 0, pad->trophy_location);
+	if (AP_ContentGarageCupRunning() >= 0 && (pad = AP_ContentCupPad()) != NULL)
+		return AP_ContentWinAdd(set, 0, pad->trophy_location);
+	if ((pad = AP_ContentCupPad()) != NULL)
+		return AP_ContentWinAdd(set, AP_ContentWinAdd(set, 0, pad->trophy_location), pad->sweep_location);
+	// gGT->bossID stays the physical garage on every venue; 4 is N. Oxide's
+	// Challenge, 5 his Final Challenge.
+	if (ap_content_plan_bosses()->present && (gGT->gameMode1 & ADVENTURE_BOSS) &&
+	    !(gGT->gameMode1 & ADVENTURE_CUP) && gGT->bossID >= 0 && gGT->bossID <= 5)
+		return AP_ContentWinAdd(set, 0, AP_BOSS_VENUE_LOCATION_BASE + gGT->bossID);
+	context = CustomTrack_StandaloneContext(gGT->levelID);
+	if (!context || context->crystal || !(pad = AP_StandaloneRoutePad(context)))
+		return -1;
+	if (context->mode == AP_CONTENT_MODE_TROPHY)
+		n = AP_ContentWinAdd(set, n, pad->trophy_location);
+	else if (context->mode == AP_CONTENT_MODE_CTR)
+	{
+		n = AP_ContentWinAdd(set, n, pad->ctr_location);
+		n = AP_ContentWinAdd(set, n, ap_content_mode_paired_trophy(pad, context->mode));
+	}
+	else
+		for (k = 0; k < 3; ++k)
+			n = AP_ContentWinAdd(set, n, pad->relic_locations[k]);
+	return n;
+}
+
+// ctr_first (ruled 2026-10-29): first place in a CTR Challenge on a ctr_first
+// content pad pays its Trophy Race check, letters or not; first place with the
+// letters also pays the CTR check, in AP_NotifyStandaloneRace. Once: the emitter
+// skips a checked code, so a re-win after Collect sends only what is open.
+void AP_ContentCtrFirstPlace(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const struct CustomTrackRaceContext *context;
+	int64_t paired;
+	if (!gGT || !ctr_cfg_active() || !ap_content_plan_active() ||
+	    AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_CUSTOM_TROPHY) || !(gGT->gameMode1 & ADVENTURE_MODE) ||
+	    !(gGT->gameMode2 & TOKEN_RACE) ||
+	    (gGT->gameMode1 & (ARCADE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS | RELIC_RACE | CRYSTAL_CHALLENGE)))
+		return;
+	context = CustomTrack_StandaloneContext(gGT->levelID);
+	if (!context || context->mode != AP_CONTENT_MODE_CTR)
+		return;
+	paired = ap_content_mode_paired_trophy(AP_StandaloneRoutePad(context), context->mode);
+	if (paired > 0 && paired <= 2147483647 && ap_net_location_exists((long)paired))
+		AP_EmitClassCheck((long)paired, 0, -1, -1, 1,
+		                  "[AP CHECK] ctr_first: content-plan CTR Challenge entry=%s first place, "
+		                  "Trophy Race location %ld\n",
+		                  context->entryID, (long)paired);
+}
+
 #else
 int AP_CustomTrackTrophyChecked(void) { return 0; }
 void AP_NotifyCustomTrackTrophy(void) {}
 void AP_NotifyCupAggregateCustomTrackTrophy(void) {}
+int AP_ContentWinSet(long set[AP_WS_WINSET_MAX])
+{
+	(void)set;
+	return -1;
+}
+void AP_ContentCtrFirstPlace(void) {}
+int AP_RaceStructurePodiumCtrFirst(int podiumTrack)
+{
+	(void)podiumTrack;
+	return 0;
+}
 #endif
 
 static int AP_CustomLetterSlot(int track)
@@ -570,6 +988,18 @@ int AP_LetterAvailable(int track, int letter)
 {
 	int slot = AP_CustomLetterSlot(track);
 	if (letter < 0 || letter >= 3) return 1;
+#ifdef CTR_CUSTOM_TRACKS
+	{
+		const ctr_content_pad *pad = AP_StandaloneLetterPad(track);
+		if (pad)
+		{
+			long codes[3];
+			unsigned char received[3];
+			AP_ContentLetterState(pad, codes, received);
+			return AP_LetterAvailablePure(1, ap_content_plan_checks()->lettersanity, codes[letter], received[letter]);
+		}
+	}
+#endif
 	if (AP_CortexLetterTrack(track))
 		return !ctr_cfg_active() ||
 		       AP_LetterAvailablePure(1, ctr_cfg.lettersanity_mode,
@@ -601,6 +1031,17 @@ int AP_CortexLetterAvailableForTracker(int letter)
 
 long AP_LetterLocation(int track, int letter)
 {
+#ifdef CTR_CUSTOM_TRACKS
+	{
+		const ctr_content_pad *pad = AP_StandaloneLetterPad(track);
+		if (pad)
+		{
+			long codes[3];
+			ap_content_letter_codes(pad, codes);
+			return letter >= 0 && letter < 3 ? codes[letter] : -1;
+		}
+	}
+#endif
 	if (AP_CortexLetterTrack(track))
 		return letter >= 0 && letter < 3 ? AP_CortexTrackCode(AP_CV_SLOT_LETTER0 + letter) : -1;
 	if (AP_CustomLetterSlot(track))
@@ -667,6 +1108,21 @@ static void AP_WumpaGatherFacts(struct GameTracker *gGT,
 		facts->destLevelID = level;
 
 #ifdef CTR_CUSTOM_TRACKS
+	// Standalone routes never inherit the engine host's Wumpa identity or a
+	// legacy Gem Cup's Wumpa route. A content-plan Wumpa route is separate.
+	if (CustomTrack_StandaloneContext(level))
+	{
+		facts->destLevelID = -1;
+		return;
+	}
+	// A content-plan garage venue on custom bytes (#133 PR 6b) races on the
+	// home track's LevelID; content plans route no Wumpa from boss races, so
+	// it must not resolve to the home track's code.
+	if (CustomTrack_GarageVenueServing(level, gGT->bossID, (gGT->gameMode1 & ADVENTURE_BOSS) != 0) >= 0)
+	{
+		facts->destLevelID = -1;
+		return;
+	}
 	facts->servingOxideFinal = CustomTrack_OxideFinalServing(
 	    level, gGT->bossID, (gGT->gameMode1 & ADVENTURE_BOSS) != 0);
 	if (facts->servingOxideFinal)
@@ -706,6 +1162,50 @@ void AP_WumpaReachedTen(struct Driver *driver)
 	if (driver == 0 || sdata == 0 || sdata->gGT == 0 ||
 	    driver != sdata->gGT->drivers[0])
 		return;
+
+#ifdef CTR_CUSTOM_TRACKS
+	// A content-plan race (#133 PR 3b) sends its pad's own Reach 10 Wumpa
+	// check or the global one, never the engine host's retail code.
+	if (CustomTrack_StandaloneContext((int)sdata->gGT->levelID))
+	{
+		code = AP_StandaloneWumpaCode();
+		if (code < 0)
+		{
+			if (ap_content_plan_checks()->wumpa)
+			{
+				snprintf(msg, sizeof msg,
+				         "[AP WUMPA] reached 10 fruit, no check sent: no Wumpa route for this "
+				         "content-plan race (level=%d)\n", (int)sdata->gGT->levelID);
+				AP_AppendLog(msg);
+			}
+			return;
+		}
+		if (!ap_net_location_exists(code))
+			return;
+		AP_EmitClassCheck(code, 0, -1, 0, 1,
+		                  "[AP WUMPA] reached 10 fruit (content plan, location %ld)\n", code);
+		return;
+	}
+	// A content-plan boss race with per_track Wumpa (row 10i) sends its
+	// venue's own check, by gGT->bossID as the lap check does; a boss cup leg
+	// took the branch above. Global mode keeps the path below.
+	if (ap_content_plan_active() && ap_content_plan_checks()->wumpa == 2 && IS_BOSS_RACE(sdata->gGT->gameMode1))
+	{
+		const int boss = (int)sdata->gGT->bossID;
+		const int64_t venue = boss >= 0 && boss < 6 ? ap_content_plan_bosses()->wumpa[boss] : 0;
+		if (venue <= 0 || venue > 2147483647 || !ap_net_location_exists((long)venue))
+		{
+			snprintf(msg, sizeof msg,
+			         "[AP WUMPA] reached 10 fruit, no check sent: no Wumpa route for this "
+			         "boss race (boss=%d)\n", boss);
+			AP_AppendLog(msg);
+			return;
+		}
+		AP_EmitClassCheck((long)venue, 0, -1, 0, 1,
+		                  "[AP WUMPA] reached 10 fruit (content plan boss race, location %ld)\n", (long)venue);
+		return;
+	}
+#endif
 
 	AP_WumpaGatherFacts(sdata->gGT, &facts);
 	code = AP_WumpaResolveCode(&facts, &reason);
@@ -750,6 +1250,18 @@ static void AP_CortexLetterCodes(long codes[3])
 int AP_LettersRequiredMet(int track)
 {
 	int slot = AP_CustomLetterSlot(track);
+#ifdef CTR_CUSTOM_TRACKS
+	{
+		const ctr_content_pad *pad = AP_StandaloneLetterPad(track);
+		if (pad)
+		{
+			long codes[3];
+			unsigned char received[3];
+			AP_ContentLetterState(pad, codes, received);
+			return AP_LettersRequiredMetPure(1, ap_content_plan_checks()->lettersanity, codes, received);
+		}
+	}
+#endif
 	if (AP_CortexLetterTrack(track))
 	{
 		long codes[3];
@@ -771,6 +1283,17 @@ int AP_LettersRequiredMet(int track)
 
 int AP_LettersRequiredCount(int track)
 {
+#ifdef CTR_CUSTOM_TRACKS
+	{
+		const ctr_content_pad *pad = AP_StandaloneLetterPad(track);
+		if (pad)
+		{
+			long codes[3];
+			ap_content_letter_codes(pad, codes);
+			return AP_LettersRequiredCountPure(1, ap_content_plan_checks()->lettersanity, codes);
+		}
+	}
+#endif
 	if (AP_CortexLetterTrack(track))
 	{
 		long codes[3];
@@ -806,7 +1329,7 @@ static void AP_FeedLetterReadyUpdates(void)
 			AP_LettersRequiredMetPure(1, ctr_cfg.lettersanity_mode,
 			                        ctr_cfg.lettersanity_locations[track],
 			                        ap_letter_received[track]);
-		if (ready && !ap_feed_letters_ready[track] && ap_feed_primed && ap_hub_feed_on)
+		if (ready && !ap_feed_letters_ready[track] && ap_feed_primed && AP_HubFeedOn())
 		{
 			char line[128];
 			snprintf(line, sizeof line, "%s: Got CTR letters",
@@ -827,7 +1350,7 @@ static void AP_FeedOxideFinalOpenUpdate(void)
 {
 	int beatSecond;
 
-	if (!ctr_cfg_active() || !ap_feed_primed || !ap_hub_feed_on)
+	if (!ctr_cfg_active() || !ap_feed_primed || !AP_HubFeedOn())
 		return;
 	if (!ap_net_oxide_scene_known() || ap_net_oxide_open_msg_shown())
 		return;
@@ -845,6 +1368,21 @@ static void AP_FeedOxideFinalOpenUpdate(void)
 int AP_LetterTokenEarned(int track, int didWin, int collected)
 {
 	int slot = AP_CustomLetterSlot(track);
+#ifdef CTR_CUSTOM_TRACKS
+	{
+		// A content-plan CTR Challenge (#133 PR 3b): with Lettersanity off or
+		// in mode 1 this is the retail rule (a win with three letters).
+		const ctr_content_pad *pad = AP_StandaloneLetterPad(track);
+		if (pad)
+		{
+			long codes[3];
+			unsigned char received[3];
+			AP_ContentLetterState(pad, codes, received);
+			return AP_LetterTokenEarnedPure(didWin, collected, 1, ap_content_plan_checks()->lettersanity,
+			                                codes, received);
+		}
+	}
+#endif
 	if (AP_CortexLetterTrack(track))
 	{
 		long codes[3];

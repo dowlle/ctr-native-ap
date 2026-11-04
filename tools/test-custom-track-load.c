@@ -255,6 +255,9 @@ static void write_config(const char *text)
 // what lets one process exercise every scenario without re-exec.
 static void reset_loader(void)
 {
+	CustomTrack_ReleaseStandaloneBytes();
+	memset(&s_standaloneRace, 0, sizeof s_standaloneRace);
+	s_standaloneRace.lastRequested = -1;
 	s_customTracksLoaded = 0;
 	memset(&s_customTrackConfig, 0, sizeof(s_customTrackConfig));
 	memset(&s_customTrackVrm, 0, sizeof(s_customTrackVrm));
@@ -1993,6 +1996,101 @@ static void test_event_roster_uses_the_arcade_pack(void)
 	expect_int(data.characterIDs[1], RIPPER_ROO, "and the boss lineup with it");
 }
 
+static void test_standalone_context(void)
+{
+	struct CustomTrackSeedDescriptor d = good_descriptor();
+	struct CustomTrackRaceContext race = {0}, bad;
+	struct CustomTrackLoadContext load = {0};
+	const char *path = NULL;
+	u32 size = 0;
+	d.standalone = 1;
+	d.replacesCupLevelID = -1;
+	d.boxes = 0;
+	arm_with(d);
+	race.hostLevelID = TEST_HOST;
+	race.physicalPad = 3;
+	race.returnHub = 26;
+	race.slot = 1;
+	race.laps = d.laps;
+	race.trophyLocation = 35016300;
+	strcpy(race.entryID, "entry/custom-1");
+	strcpy(race.trackID, "custom/baby-t-park/1.0.2");
+	strcpy(race.levSha256, d.levSha256);
+	strcpy(race.vrmSha256, d.vrmSha256);
+	load.levelID = TEST_HOST;
+	expect_int(CustomTrack_CupRaceRedirectActive(TEST_CUP, 1), 0, "standalone never displaces a Gem Cup");
+	expect_int(CustomTrack_GetOverride(TEST_BASE+1, &load, &path, &size), 0, "verified package alone cannot serve a standalone load");
+	bad = race; bad.levSha256[0] = bad.levSha256[0] == '0' ? '1' : '0';
+	expect_int(CustomTrack_StageStandaloneRace(&bad), 0, "staging refuses another package hash");
+	bad = race; bad.physicalPad = 20;
+	expect_int(CustomTrack_StageStandaloneRace(&bad), 0, "staging refuses a non-Adventure pad");
+	write_blob("tracks/track.lev", 99, TEST_LEV_BYTES);
+	expect_int(CustomTrack_StageStandaloneRace(&race), 0, "same-size file replacement before entry is refused");
+	expect_int(s_standaloneLev.bytes == NULL && s_standaloneVrm.bytes == NULL, 1, "failed capture releases both roles");
+	expect_int(s_standaloneRace.pendingKind, 0, "failed capture stages no race");
+	write_blob("tracks/track.lev", 22, TEST_LEV_BYTES);
+	expect_int(CustomTrack_StageStandaloneRace(&race), 1, "verified standalone route staged");
+	write_blob("tracks/track.lev", 99, TEST_LEV_BYTES);
+	remove("tracks/track.vrm");
+	expect_int(CustomTrack_GetOverride(TEST_BASE+1, &load, &path, &size), 0, "pending route cannot serve before its load request");
+	CustomTrack_OnRaceLoadRequested(TEST_HOST);
+	expect_int(CustomTrack_GetOverride(TEST_BASE+1, &load, &path, &size), 1, "standalone request serves the verified LEV without a cup flag");
+	{
+		unsigned char buffer[TEST_LEV_BYTES + 1];
+		struct NativeSha256Ctx hash;
+		unsigned char digest[32];
+		char hex[65];
+		expect_int(CustomTrack_ReadFile(path, buffer, sizeof buffer, size), 1, "captured LEV survives a same-size disk replacement");
+		NativeSha256_Init(&hash);
+		NativeSha256_Update(&hash, buffer, TEST_LEV_BYTES);
+		NativeSha256_Final(&hash, digest);
+		NativeSha256_ToHex(digest, hex);
+		expect_str(hex, d.levSha256, "served retained bytes keep the original hash");
+		expect_int(buffer[TEST_LEV_BYTES], 0, "captured load zeroes sector padding");
+		expect_int(CustomTrack_ReadFile(path, buffer, 1, size), 0, "captured load refuses a truncated destination");
+		expect_int(CustomTrack_ReverifyArmedContent(), 1, "active preflight uses owned bytes despite removed disk files");
+		expect_int(CustomTrack_GetOverride(TEST_BASE, &load, &path, &size), 1, "captured VRM survives disk removal");
+		expect_int(CustomTrack_ReadFile(path, buffer, sizeof buffer, size), 1, "removed VRM is read from the retained package");
+	}
+	make_track_files();
+	expect_int(CustomTrack_EventFieldSize(TEST_HOST, 0, 0), 8, "standalone race uses measured eight-kart field");
+	expect_int(CustomTrack_RetailPodiumLevelID(TEST_HOST, 0, 0), -1, "standalone excludes retail host checks");
+	expect_int(CustomTrack_BoxVerdict(TEST_HOST, 0, 0), CTR_CT_BOX_DENY, "standalone cannot borrow retail AP boxes");
+	expect_int(CustomTrack_StageStandaloneRace(&race), 0, "cannot replace an active route");
+	{
+		struct CustomTrackSeedDescriptor replacement = d;
+		replacement.laps = 3;
+		expect_int(CustomTrack_ApplySeedDescriptor(&replacement), 0, "cannot replace the active package descriptor");
+		expect_int(CustomTrack_Config()->raceLaps, 7, "refused handoff preserves admitted laps");
+	}
+	race.trophyLocation = 123; // The pending/current route was copied, not borrowed.
+	expect_int((int)CustomTrack_StandaloneContext(TEST_HOST)->trophyLocation, 35016300, "active route retains immutable check identity");
+	CustomTrack_OnRaceLoadRequested(TEST_HOST);
+	expect_int((int)s_standaloneRace.generation, 1, "same-host restart keeps its entry generation");
+	expect_int(CustomTrack_GetOverride(TEST_BASE+1, &load, &path, &size), 1, "restart still serves custom content");
+	s_customTrackConfig.contentVerified = 0;
+	expect_int(CustomTrack_GetOverride(TEST_BASE+1, &load, &path, &size), 0, "failed verification stops bytes");
+	expect_int(CustomTrack_RetailPodiumLevelID(TEST_HOST, 0, 0), -1, "failed verification never reclassifies the custom identity as retail");
+	CustomTrack_OnRaceLoadRequested(26);
+	expect_int(s_standaloneLev.bytes == NULL && s_standaloneVrm.bytes == NULL, 1, "hub return releases package buffers");
+	expect_int(CustomTrack_StandaloneContext(TEST_HOST) == NULL, 1, "hub return ends active identity");
+	expect_int(CustomTrack_PreviousStandaloneContext()->physicalPad, 3, "hub return retains the physical source pad");
+	CustomTrack_OnRaceLoadRequested(26);
+	expect_int(CustomTrack_PreviousStandaloneContext()->physicalPad, 3, "duplicate hub request preserves return placement");
+	CustomTrack_OnRaceLoadRequested(TEST_HOST);
+	expect_int(CustomTrack_PreviousStandaloneContext() == NULL, 1, "subsequent retail race drops old return identity");
+	expect_int(CustomTrack_StandaloneContext(TEST_HOST) == NULL, 1, "returning to same retail host cannot resurrect custom identity");
+
+	race.trophyLocation = 35016300;
+	s_customTrackConfig.contentVerified = 1;
+	expect_int(CustomTrack_StageStandaloneRace(&race), 1, "a fresh custom entry may be prepared");
+	CustomTrack_OnRaceLoadRequested(TEST_HOST);
+	CustomTrack_SelectRetailRace();
+	CustomTrack_OnRaceLoadRequested(TEST_HOST);
+	expect_int(CustomTrack_StandaloneContext(TEST_HOST) == NULL, 1, "explicit same-host retail selection clears custom identity");
+	expect_int(CustomTrack_GetOverride(TEST_BASE+1, &load, &path, &size), 0, "explicit retail race cannot receive custom bytes");
+}
+
 int main(void)
 {
 	char tmpl[] = "/tmp/ctr-custom-track-test-XXXXXX";
@@ -2034,6 +2132,7 @@ int main(void)
 	test_display_name_from_config();
 	test_event_roster();
 	test_event_roster_uses_the_arcade_pack();
+	test_standalone_context();
 
 	if (g_failures != 0)
 	{

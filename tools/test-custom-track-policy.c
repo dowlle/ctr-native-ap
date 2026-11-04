@@ -253,7 +253,7 @@ static void test_pair_auto_expand(void)
 // taken over, Purple Gem Cup (4) becoming one 7-lap race.
 static struct CustomTrackFeatureConfig ruled_config(void)
 {
-	struct CustomTrackFeatureConfig cfg;
+	struct CustomTrackFeatureConfig cfg = {0};
 
 	cfg.mappedLevelID = 6;
 	cfg.contentVerified = 1;

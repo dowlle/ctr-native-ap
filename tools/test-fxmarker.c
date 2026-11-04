@@ -5,8 +5,8 @@
 // Covered: fresh room (key absent, no legacy row), same-room reconnect (key
 // present), one-time migration from a 0.2.1 local row, effects held while the
 // Get reply is pending and released after it, max-only merging of server
-// replies, the non-integer key case, and the Turbo Grant count on top of the
-// pending arithmetic.
+// replies, the non-integer key case, and the Turbo Grant fired-count key (no
+// reader since #487 made the grant per race; its marker rules stay pinned).
 //
 // Not covered here: the DataStorage round trip itself and the in-game effects.
 // Those are runtime checks on a real server.
@@ -15,7 +15,6 @@
 #include <string.h>
 
 #include "../ap/ap_fxmarker_logic.h"
-#include "../ap/ap_turbogrant_logic.h"
 
 static int checks;
 static int failures;
@@ -213,14 +212,14 @@ static void test_turbo_fired_count(void)
 	AP_FxMarkerResolve(&t, AP_FXM_STORE_ABSENT, 0, 0, 0);
 	expect("turbo fresh: fresh", t.source, AP_FXM_SRC_FRESH);
 	expect("turbo fresh: nothing to write", AP_FxMarkerFinishResolve(&t), 0);
-	expect("turbo fresh: 3 owed", AP_TurboGrantPending(3, (int)t.value, 0), 3);
+	expect("turbo fresh: starts at 0", t.value, 0);
 	expect("turbo fire: write due", AP_FxMarkerIncrement(&t), 1);
-	expect("turbo fire: 2 owed", AP_TurboGrantPending(3, (int)t.value, 0), 2);
+	expect("turbo fire: counts 1", t.value, 1);
 
 	// Same room reconnect: the room says 2 fired.
 	AP_FxMarkerReset(&t, 0);
 	AP_FxMarkerResolve(&t, AP_FXM_STORE_VALID, 2, 0, 0);
-	expect("turbo reconnect: 1 owed", AP_TurboGrantPending(3, (int)t.value, 0), 1);
+	expect("turbo reconnect: reads 2", t.value, 2);
 
 	// Migration from the seed+slot row.
 	AP_FxMarkerReset(&t, 0);
@@ -243,8 +242,6 @@ static void test_turbo_fired_count(void)
 
 int main(void)
 {
-	(void)AP_TurboGrantDeliverable; // shared header; only the pending rule is used here
-	(void)AP_TurboGrantClampReserves;
 	test_fresh_room();
 	test_same_room_reconnect();
 	test_reconnect_with_late_reply();

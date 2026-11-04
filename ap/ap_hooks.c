@@ -7,6 +7,7 @@
 
 #include <stdlib.h> // realloc: the #299 held-effect list
 #include "ap_hooks.h"
+#include "ap_content_plan.h"
 #include "ap_deathlink.h" // AP_RaceAttemptIsForcedLoss: #286 result-producer latch
 #include "ap_win_logic.h" // #449 received-items-by-id tally for the race stakes
 #ifdef CTR_CUSTOM_TRACKS
@@ -30,6 +31,7 @@
 #include "ap_class_check_policy.h" // freestanding class-check send/toast guards (#319)
 #include "ap_relic_perfect.h" // freestanding Relic Race perfect decision (#49)
 #include "ap_glow_slots_logic.h"
+#include "ap_pad_hints_logic.h" // #124 Pad Approach Hints
 #include "ap_pad_glow_items.h" // box / letter / Wumpa pad display identities
 #include "ap_trial_pad_glow.h" // SC/TT Trophy + CTR pad display identities (#343)
 #include "ap_trial_letters.h" // AP_TrialLetters_Prepare: can the SC/TT CTR Challenge be served
@@ -346,6 +348,62 @@ static long AP_TrialTrackLocation(int levelID, int challenge);
 
 static long AP_LookupLocationCode(int globalBit)
 {
+    if(globalBit>=60000 && globalBit<62100) {
+        int off=globalBit-60000;
+        const ctr_content_pad *pad=ap_content_plan_pad(off/20);
+        return pad && pad->crystal_count==20 ? (long)pad->crystal_locations[off%20] : -1;
+    }
+    if(globalBit>=AP_CUP_SWEEP_PSEUDO_BASE && globalBit<AP_CUP_SWEEP_PSEUDO_BASE+5)
+        return ctr_cfg_active()?AP_CupSweepCode(&ctr_cup_sweeps,globalBit-AP_CUP_SWEEP_PSEUDO_BASE):-1;
+    if (globalBit >= AP_CRYSTAL_PSEUDO_BASE && globalBit < AP_CRYSTAL_PSEUDO_BASE+80)
+        return ctr_cfg_active() ? AP_CrystalPseudoCode(&ctr_crystal_checks, globalBit) : -1;
+    {
+        // Content-plan pad identities (#133 PR 3): Trophy or Crystal Challenge
+        // completion, CTR Challenge and the three relic tiers of a pad.
+        int contentPad, contentMode, contentTier;
+        if (ap_content_bit_decode(globalBit, &contentPad, &contentMode, &contentTier)) {
+            const ctr_content_pad *pad = ap_content_plan_pad(contentPad);
+            int64_t codes[3] = {0, 0, 0};
+            if (!pad || !pad->occupied) return -1;
+            // A Crystal Challenge's completion, or a cup's Win (#133 PR 5).
+            if (pad->crystal || pad->cup) return contentMode == AP_CONTENT_MODE_TROPHY ? (long)pad->trophy_location : -1;
+            // ctr_first (J11): the Trophy Race check of an entry without a
+            // Trophy mode, paid by its CTR Challenge win.
+            if (contentMode == AP_CONTENT_MODE_TROPHY && ap_content_pad_ctr_first(pad))
+                return pad->trophy_location > 0 && pad->trophy_location <= 2147483647 ? (long)pad->trophy_location : -1;
+            return ap_content_mode_codes(pad, contentMode, codes) > contentTier && codes[contentTier] > 0
+                       ? (long)codes[contentTier] : -1;
+        }
+        // Per-track families (#133 PR 3b): rungs, Wumpa and letters.
+        if (ap_content_family_bit_decode(globalBit, &contentPad, &contentTier)) {
+            const int64_t code = ap_content_family_bit_code(ap_content_plan_pad(contentPad), contentTier);
+            return code > 0 ? (long)code : -1;
+        }
+        // A cup's sweep and Cup Leg Victory checks (#133 PR 5).
+        if (ap_content_cup_lap_bit_decode(globalBit, &contentPad, &contentTier)) {
+            const int64_t code = ap_content_cup_lap_bit_code(ap_content_plan_pad(contentPad), contentTier);
+            return code > 0 && code <= 2147483647 ? (long)code : -1;
+        }
+        // A cup leg's own Reach 10 Wumpa check (row 10i).
+        if (ap_content_cup_wumpa_bit_decode(globalBit, &contentPad, &contentTier)) {
+            const int64_t code = ap_content_cup_wumpa_bit_code(ap_content_plan_pad(contentPad), contentTier);
+            return code > 0 && code <= 2147483647 ? (long)code : -1;
+        }
+        // A Gem Cup leg's own podium rungs (cup_only_podium_rungs).
+        if (ap_content_cup_rung_bit_decode(globalBit, &contentPad, &contentTier)) {
+            const int64_t code = ap_content_cup_rung_bit_code(ap_content_plan_pad(contentPad), contentTier);
+            return code > 0 && code <= 2147483647 ? (long)code : -1;
+        }
+        if (ap_content_cup_bit_decode(globalBit, &contentPad, &contentTier)) {
+            const int64_t code = ap_content_cup_bit_code(ap_content_plan_pad(contentPad), contentTier);
+            return code > 0 ? (long)code : -1;
+        }
+        // Item Box checks (#133 PR 4e).
+        if (ap_content_box_bit_decode(globalBit, &contentPad, &contentTier)) {
+            const int64_t code = ap_content_box_bit_code(ap_content_plan_pad(contentPad), contentTier);
+            return code > 0 ? (long)code : -1;
+        }
+    }
 	int i;
 	int trialPseudo, trialChallenge;
 	int perfectLevel;

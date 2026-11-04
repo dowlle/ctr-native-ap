@@ -18,10 +18,12 @@
 #include <stdio.h>
 
 #include "ap_win_logic.h"
+#include "ap_pad_hints_logic.h"
 #include "ap_hooks.h"   // AP_LogLine, AP_TrialTrackConfigured, AP_CortexTrackActive
 #include "ap_net.h"     // ap_net_location_checked
 #include "ap_seedcfg.h" // ctr_cfg, ctr_cfg_active
 #include "ap_cortex_track.h" // AP_CortexSlotCode, AP_CV_SLOT_*
+#include "ap_content_plan.h" // ap_content_plan_start_count (#133 PR 4c)
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h> // CustomTrack_CupRaceRedirectActive
 #endif
@@ -31,13 +33,15 @@ static AP_WinStakesLatch g_wl_latch;
 
 void AP_WinLogicTallyReset(void)
 {
-	char seed[96], slot[96];
+	unsigned long long id = 0;
+	int known;
 	AP_ItemIdTallyReset(&g_wl_tally);
 	// Review minor 1: a decision made under another seed or slot never applies
 	// to a loss after this connect. A same-seed, same-slot reconnect keeps it.
-	(void)ap_net_seed_name(seed, (int)sizeof seed);
-	(void)ap_net_slot_name(slot, (int)sizeof slot);
-	if (AP_WinStakesConnect(&g_wl_latch, seed, slot))
+	// The hash covers the full names; the 96-byte copies elsewhere truncate.
+	// Hash first: C leaves the argument evaluation order open.
+	known = ap_net_identity_hash(&id);
+	if (AP_WinStakesConnectHash(&g_wl_latch, known, id))
 		AP_LogLine("[AP DEATH] race stakes forgotten: connected to another seed or slot\n");
 }
 
@@ -79,6 +83,12 @@ static AP_WinLogicEnv AP_WinEnvNow(void)
 	return env;
 }
 
+int AP_LocationInLogic(long long code)
+{
+	AP_WinLogicEnv env = AP_WinEnvNow();
+	return AP_PadHint_InLogic(&ctr_win_logic, &env, code);
+}
+
 static long AP_WinBitCode(int bit)
 {
 	return AP_LookupLocationCode(bit);
@@ -95,6 +105,7 @@ static void AP_WinFactsNow(struct GameTracker *gGT, AP_WinRaceFacts *f)
 	f->bossID = gGT->bossID;
 	f->cup = (gGT->gameMode1 & ADVENTURE_CUP) != 0;
 	f->cupID = gGT->cup.cupID;
+	f->cupSweep = ctr_cfg_active()?AP_CupSweepCode(&ctr_cup_sweeps,f->cupID):-1;
 	f->cupCustom = 0;
 #ifdef CTR_CUSTOM_TRACKS
 	if (f->cup && ctr_cfg_active() && ctr_cfg.custom_tracks_ok &&
@@ -124,6 +135,33 @@ static void AP_WinFactsNow(struct GameTracker *gGT, AP_WinRaceFacts *f)
 	}
 }
 
+// A content-plan race decides from the plan's exported logic (dispatcher ruling
+// of 2026-10-30, one generator row 6), as an ordinary race does. Only its win set
+// comes from the pad: its pads are not the legacy destinations AP_WinSetResolve
+// reads from the level ID. Returns 0 when the race is not a content-plan race on
+// its pad's route, and the legacy path decides.
+static int AP_WinDecideContent(struct GameTracker *gGT, const char *when, AP_WinStakes *out)
+{
+	long set[AP_WS_WINSET_MAX];
+	AP_WinLogicEnv env;
+	char wins[48];
+	char msg[192];
+	int n = AP_ContentWinSet(set), i, used;
+
+	if (n < 0)
+		return 0;
+	env = AP_WinEnvNow();
+	*out = AP_WinStakesDecide(&ctr_win_logic, &env, set, n);
+	wins[0] = '\0';
+	for (i = 0, used = 0; i < n; i++)
+		used += snprintf(wins + used, sizeof wins - (size_t)used, "%s%ld", i ? "," : "", set[i]);
+	snprintf(msg, sizeof msg, "[AP DEATH] race stakes %s: content-plan level=%d win=%s -> %s (%s)\n",
+	         when, (int)gGT->levelID, n > 0 ? wins : "none",
+	         out->stakes ? "a loss sends" : "exempt", AP_WinStakesWhyText(out->why));
+	AP_LogLine(msg);
+	return 1;
+}
+
 static AP_WinStakes AP_WinDecideNow(struct GameTracker *gGT, const char *when)
 {
 	AP_WinRaceFacts f;
@@ -134,6 +172,8 @@ static AP_WinStakes AP_WinDecideNow(struct GameTracker *gGT, const char *when)
 	char wins[48];
 	char msg[256];
 
+	if (AP_WinDecideContent(gGT, when, &s))
+		return s;
 	AP_WinFactsNow(gGT, &f);
 	n = AP_WinSetResolve(&f, AP_WinBitCode, set, &mode);
 	env = AP_WinEnvNow();

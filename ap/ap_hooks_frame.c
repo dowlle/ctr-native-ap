@@ -345,6 +345,75 @@ static void AP_DumpState(struct GameTracker *gGT)
 	}
 	AP_TextBufPuts(f, "  ],\n");
 
+	// Content-plan pads (#463): the hub Key floor and the manual stage-1 rule
+	// the pad text, pad state, capture and load gate all evaluate through
+	// AP_ContentPadOpen, with the owned count and the answer. Absent for a
+	// legacy seed, so a legacy ap-state.json is unchanged.
+	if (ap_content_plan_active())
+	{
+		int first = 1, id;
+		AP_TextBufPuts(f, "  \"content_pads\": [\n");
+		for (id = 0; id <= 110; id++)
+		{
+			const ctr_content_pad *pad = ap_content_plan_pad(id);
+			if (!pad || !pad->occupied)
+				continue;
+			// Track modes (#133 PR 3): the modes in pad order (0 Trophy, 1 CTR,
+			// 2 Relic) and the second-stage rule with its owned count and answer.
+			AP_TextBufPrintf(f,
+			        "%s    {\"pad\": %d, \"keys\": %d, \"rule_mask\": %u, "
+			        "\"rule_count\": %d, \"rule_owned\": %d, \"open\": %d, "
+			        "\"modes\": [%d, %d, %d], \"mode_count\": %d, \"stage2_mask\": %u, "
+			        "\"stage2_count\": %d, \"stage2_owned\": %d, \"stage2_open\": %d",
+			        first ? "" : ",\n", pad->physical, pad->keys,
+			        pad->has_rule ? pad->rule_mask : 0u,
+			        pad->has_rule ? pad->rule_count : 0,
+			        AP_ContentPadRuleOwned(pad), AP_ContentPadOpen(pad),
+			        pad->mode_count > 0 ? pad->modes[0] : -1, pad->mode_count > 1 ? pad->modes[1] : -1,
+			        pad->mode_count > 2 ? pad->modes[2] : -1, pad->mode_count,
+			        pad->has_stage2 ? pad->stage2_mask : 0u, pad->has_stage2 ? pad->stage2_count : 0,
+			        AP_ContentStage2Owned(pad),
+			        pad->mode_count > 1 ? AP_ContentModeOpen(pad, pad->modes[1]) : 0);
+			// Per-track families (#133 PR 3b): rung, Wumpa and letter codes
+			// (0 absent) and which pooled letter items have arrived.
+			AP_TextBufPrintf(f,
+			        ", \"rungs\": [%lld, %lld, %lld, %lld, %lld], \"wumpa\": %lld, \"wumpa_modes\": %u, "
+			        "\"letters\": [%lld, %lld, %lld], \"letter_items\": [%lld, %lld, %lld], "
+			        "\"letters_received\": [%d, %d, %d], \"perfect\": %lld, \"cortex\": %d, "
+			        "\"cup\": %d, \"cup_sweep\": %lld, \"cup_legs\": [%lld, %lld, %lld, %lld], "
+			        "\"cup_leg_wumpa\": [%lld, %lld, %lld, %lld]",
+			        (long long)pad->rung_locations[0], (long long)pad->rung_locations[1],
+			        (long long)pad->rung_locations[2], (long long)pad->rung_locations[3],
+			        (long long)pad->rung_locations[4], (long long)pad->wumpa_location, pad->wumpa_modes,
+			        (long long)pad->letter_locations[0], (long long)pad->letter_locations[1],
+			        (long long)pad->letter_locations[2], (long long)pad->letter_items[0],
+			        (long long)pad->letter_items[1], (long long)pad->letter_items[2],
+			        AP_ContentLetterItemReceived(pad->letter_items[0]),
+			        AP_ContentLetterItemReceived(pad->letter_items[1]),
+			        AP_ContentLetterItemReceived(pad->letter_items[2]),
+			        // Relic Race Perfect and Cortex Vortex (#133 PR 3c).
+			        (long long)pad->perfect_location, pad->cortex,
+			        // Cups (#133 PR 5): the Win is the Trophy code above
+			        // (trophy_location); the sweep and each leg's Cup Leg Victory.
+			        pad->cup, (long long)pad->sweep_location,
+			        (long long)pad->legs[0].victory, (long long)pad->legs[1].victory,
+			        (long long)pad->legs[2].victory, (long long)pad->legs[3].victory,
+			        // Row 10i: each leg's own Reach 10 Wumpa code (0 none).
+			        (long long)pad->legs[0].wumpa, (long long)pad->legs[1].wumpa,
+			        (long long)pad->legs[2].wumpa, (long long)pad->legs[3].wumpa);
+			// cup_only_podium_rungs: each leg's own rung codes (0 none).
+			AP_TextBufPuts(f, ", \"cup_leg_rungs\": [");
+			for (int leg = 0; leg < AP_CONTENT_CUP_LEGS; ++leg)
+				AP_TextBufPrintf(f, "%s[%lld, %lld, %lld, %lld, %lld]", leg ? ", " : "",
+				        (long long)pad->legs[leg].rungs[0], (long long)pad->legs[leg].rungs[1],
+				        (long long)pad->legs[leg].rungs[2], (long long)pad->legs[leg].rungs[3],
+				        (long long)pad->legs[leg].rungs[4]);
+			AP_TextBufPuts(f, "]}");
+			first = 0;
+		}
+		AP_TextBufPuts(f, "\n  ],\n");
+	}
+
 	// Boss garages: resolved requirement + met?
 	AP_TextBufPuts(f, "  \"bosses\": [\n");
 	for (i = 0; i < CTR_CFG_BOSS_COUNT; i++)
@@ -488,7 +557,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 			         sizeof ap_custom_content_status.detail, "%s", ctServeFault);
 			ap_custom_content_scanned = 1;
 		}
-		if (!AP_CustomPadContentReady(ap_custom_content_seed_selected,
+		if (!ap_content_plan_active() && !AP_CustomPadContentReady(ap_custom_content_seed_selected,
 		                              ap_custom_content_required, ctServeFault))
 		{
 			CustomTrack_ClearSeedDescriptor();
@@ -553,7 +622,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 			// on the levelID 26 -> 6 leg transition and the leg raced 3 laps).
 			// A transition's destination levelID cannot lie. Gated on the
 			// option so the write never fires on seeds without it.
-			if (ctr_cfg_active() && ctr_cfg.one_lap_cups &&
+			if (ctr_cfg_active() && (ctr_cfg.one_lap_cups || ap_content_plan_active()) &&
 			    (int)gGT->levelID >= GEM_STONE_VALLEY &&
 			    (int)gGT->levelID <= CITADEL_CITY && gGT->numLaps != 3)
 			{
@@ -592,25 +661,35 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// transition is never missed by the throttle below. Observation-only.
 	AP_RaceListenerTick(gGT);
 
+	// Custom Arcade race in a room: no check leaves until it ends.
+	ap_net_hold_checks(AP_ArcadeHoldsRoom());
+
 	// Network: connect once + pump every frame, in all game modes.
 	AP_NetTick(gGT);
 	// Room links (issue #334): claim handed-over requests, expire, notices.
 	AP_LinkTick(gGT);
+	AP_UpdateTick(gGT);
 
 	// Trap framework: advance prime->fire->clear lifecycle + apply the FP camera,
 	// and poll the Shortcutless debug keys. Runs every frame / all modes (the tick
 	// gates its own race-only logic). Physics effects apply at their engine sites.
-	AP_TrapTick(gGT);
+	// A custom Arcade race gets no item effects: they wait with the items.
+	if (!AP_ArcadeHoldsRoom())
+		AP_TrapTick(gGT);
 	// Demo Camera: holds or force-clears the cinematic-camera
 	// engagement. Shares AP_TrapTick's placement for the same reason -- it runs
 	// before the camera PROC ticks this frame, so a clear lands while the camera
 	// the snapshot describes is still the live one.
 	AP_DemoCamTick(gGT);
-	AP_WumpaTick(gGT); // Wumpa Fruit filler: drain banked fruit into drivers[0] in-race (#11)
-	AP_UsefulTick(gGT); // H-dossier: apply queued shield, mask and invisibility
-	AP_TiziTick(gGT);  // #223: expire a forced Mask whose item roll never resolved
-	AP_TurboGrantTick(gGT); // #224: requeue a lost in-flight Turbo, then deliver
-	                        // one pending grant into an empty in-race weapon slot
+	if (!AP_ArcadeHoldsRoom())
+	{
+		AP_WumpaTick(gGT); // Wumpa Fruit filler: drain banked fruit into drivers[0] in-race (#11)
+		AP_UsefulTick(gGT); // H-dossier: apply queued shield, mask and invisibility
+		AP_TiziTick(gGT);  // #223: expire a forced Mask whose item roll never resolved
+		AP_ReserveTopUpTick(gGT); // #451: apply one owed copy to positive live reserves
+		AP_TurboGrantTick(gGT); // #224: requeue a lost in-flight Turbo, then deliver
+		                        // one pending grant into an empty in-race weapon slot
+	}
 	AP_ShortcutKeys();
 	AP_NavRec_Tick(gGT);      // AI lap recorder; inert unless nav_record is on
 	AP_ShortcutSkipTick(gGT); // layer-2 checkpoint-% gap-skip detector (Shortcutless)
@@ -696,6 +775,9 @@ void AP_OnFrame(struct GameTracker *gGT)
 	AP_PerfFrameBegin((int)gGT->levelID, (int)sdata->Loading.stage,
 	                  (unsigned)gGT->timer);
 #endif
+	AP_ArcadeCrystals_OnFrame(gGT);
+	// #375: a tracker start waits for its pad's hub, then for the pad.
+	AP_TrackerLaunchFrame(gGT);
 	ap_onframe_body(gGT);
 	// Discord Rich Presence (#366): outside the body so its early returns do
 	// not skip it. Returns at once unless the option was ever switched on.

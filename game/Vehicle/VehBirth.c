@@ -331,7 +331,14 @@ void VehBirth_TeleportSelf(struct Driver *d, u8 spawnFlag, int spawnPosY)
 				{
 					rotY += 0x400;
 				}
+#ifdef CTR_AP
+				// #169: arriving from Pinstripe's race means his garage's
+				// venue, which boss track shuffle may have moved.
+				else if (!((gGT->levelID == GEM_STONE_VALLEY) && (gGT->bossID == 3) &&
+				           (gGT->prevLEV == AP_BossGarageVenue(3))))
+#else
 				else if (!((gGT->levelID == GEM_STONE_VALLEY) && (gGT->prevLEV == HOT_AIR_SKYWAY)))
+#endif
 				{
 					rotY += 0x800;
 				}
@@ -546,6 +553,10 @@ internal b32 VehBirth_ModelNameEquals(const struct Model *model, const char *nam
 	return true;
 }
 
+#ifdef CTR_AP
+struct Model *LOAD_ChaosSideModel(int i);
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80058948-0x80058a60.
 struct Model *VehBirth_GetModelByName(char *searchName)
 {
@@ -565,6 +576,17 @@ struct Model *VehBirth_GetModelByName(char *searchName)
 			return m;
 		}
 	}
+
+#ifdef CTR_AP
+	// The chaos Final Challenge's two extra rivals beyond the three slots.
+	for (i = 0; (m = LOAD_ChaosSideModel(i)) != NULL; i++)
+	{
+		if (VehBirth_ModelNameEquals(m, searchName))
+		{
+			return m;
+		}
+	}
+#endif
 
 	models = (struct Model **)sdata->PLYROBJECTLIST;
 

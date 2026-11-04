@@ -100,7 +100,13 @@ void AA_EndEvent_DrawMenu(void)
 	b32 didWin = (driver->driverRank == 0);
 	b32 didEarnCtrToken = didWin && (driver->PickupLetterHUD.numCollected == 3);
 #ifdef CTR_AP
-	if (ctr_cfg_active() && ctr_cfg.lettersanity_mode >= 2)
+	if (ctr_cfg_active() && (ctr_cfg.lettersanity_mode >= 2
+#ifdef CTR_CUSTOM_TRACKS
+	                         // A content-plan CTR Challenge reads its own
+	                         // Lettersanity letters (#133 PR 3b).
+	                         || AP_StandaloneRaceActive()
+#endif
+	                         ))
 		didEarnCtrToken = AP_LetterTokenEarned(
 			gGT->levelID, didWin, driver->PickupLetterHUD.numCollected);
 #endif
@@ -125,6 +131,12 @@ void AA_EndEvent_DrawMenu(void)
 			// never Oxide Station's token bit for LevelID 13.
 			if (AP_CortexTrackActive())
 				rewardBit = AP_CortexTrackBit(AP_CV_SLOT_TOKEN);
+#ifdef CTR_CUSTOM_TRACKS
+			// A content-plan CTR Challenge celebrates its pad's own check
+			// (#133 PR 3), never the engine host's token bit.
+			else if (AP_StandaloneCtrBit() >= 0)
+				rewardBit = AP_StandaloneCtrBit();
+#endif
 #endif
 			letterPos.x = hudCTR->x;
 			letterPos.y = hudCTR->y;
@@ -136,6 +148,10 @@ void AA_EndEvent_DrawMenu(void)
 #ifdef CTR_AP
 			    (AP_CortexTrackActive()
 			         ? !AP_CortexTrackChecked(AP_CV_SLOT_TOKEN)
+#ifdef CTR_CUSTOM_TRACKS
+			         : AP_StandaloneCtrBit() >= 0
+			         ? !AP_LocationCheckedByBit(rewardBit)
+#endif
 			         : AP_TrialTrackConfigured(gGT->levelID)
 			         ? !AP_TrialTrackLocationChecked(gGT->levelID, CTR_CFG_TRIAL_CTR)
 			         : (CHECK_ADV_BIT(adv->rewards, rewardBit) == 0))
@@ -473,6 +489,9 @@ void AA_EndEvent_DrawMenu(void)
 	// block above). The trophy check sends on the continue-press, so it is passed
 	// as the primary bit; podium rungs come from the ledger.
 	if (didWin && !didEarnCtrToken && !IS_BOSS_RACE(gGT->gameMode1) &&
+#if defined(CTR_CUSTOM_TRACKS)
+	    !AP_StandaloneRaceActive() &&
+#endif
 	    !AP_TrialTrackConfigured(gGT->levelID))
 		AP_CeremonyDraw(0x100, 0x40,
 		                AP_CortexTrackActive() ? AP_CortexTrackBit(AP_CV_SLOT_TROPHY)
@@ -506,6 +525,22 @@ void AA_EndEvent_DrawMenu(void)
 
 	// Load the levelID for Adventure Hub that you came from
 	s16 levSpawn = gGT->prevLEV;
+
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	if (AP_StandaloneRaceActive())
+	{
+		const struct CustomTrackRaceContext *context = CustomTrack_StandaloneContext(gGT->levelID);
+		// Report the logical route before any retail reward-bit computation.
+		// The source hub stays stable through same-track restart loads.
+		levSpawn = context->returnHub;
+		AP_NotifyStandaloneRace();
+		gGT->podiumRewardID = STATIC_TROPHY;
+		AP_SkipPodium(gGT->podiumRewardID);
+		sdata->Loading.OnBegin.RemBitsConfig8 |= TOKEN_RACE;
+		MainRaceTrack_RequestLoad(levSpawn);
+		return;
+	}
+#endif
 
 	if (IS_BOSS_RACE(gGT->gameMode1))
 	{
@@ -541,7 +576,13 @@ void AA_EndEvent_DrawMenu(void)
 				gGT->podiumRewardID = STATIC_KEY; // key
 
 				// hot air skyway
+#ifdef CTR_AP
+				// #169: "just beat Pinstripe" is the garage, not the track
+				// a shuffled seed raced him on.
+				if (AP_BossRetailRulesLevel(gGT->levelID) == HOT_AIR_SKYWAY)
+#else
 				if (gGT->levelID == HOT_AIR_SKYWAY)
+#endif
 				{
 					// If you just beat Pinstripe
 					// Load gemstone valley

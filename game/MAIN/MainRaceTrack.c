@@ -11,7 +11,7 @@
 #include <platform/native_custom_records.h>
 CTR_STATIC_ASSERT(sizeof(((struct GameTracker *)0)->lapTime) / sizeof(int) == CTR_OFFLINE_MAX_LAPS);
 
-// Box authoring build: a package chosen on the Arcade or Time Trial custom
+// A package chosen on the Arcade or Time Trial custom
 // pages races only as a one-player Arcade single race or a Time Trial on its
 // host slot, and only in the mode it was started for. Every other mode on that
 // slot loads retail bytes.
@@ -320,6 +320,12 @@ void MainRaceTrack_StartLoad(s16 levelID)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003cfc0-0x8003d024.
 void MainRaceTrack_RequestLoad(s16 levelID)
 {
+#ifdef CTR_AP
+    AP_CupSweepOnLoadRequested(levelID);
+#ifdef CTR_CUSTOM_TRACKS
+    AP_ContentCupOnLoadRequested(levelID); // #133 PR 5
+#endif
+#endif
 #ifdef CTR_CUSTOM_PACKAGES
 	// A retry keeps the custom race. Leaving the host slot ends it only when
 	// the load starts (MainRaceTrack_StartLoad).
@@ -342,6 +348,7 @@ void MainRaceTrack_RequestLoad(s16 levelID)
 	// explicit selection, or ends when anything other than LevelID 13 loads.
 	// See include/platform/native_cortex_track_latch.h.
 	CustomTrack_CortexTrackOnRequestLoad(levelID);
+	CustomTrack_OnRaceLoadRequested(levelID);
 #endif
 	return;
 }

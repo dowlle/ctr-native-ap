@@ -30,13 +30,22 @@
 // Characters, excluding the terminator. Held by tools/test-picker-infoline.c.
 #define AP_PICKERLINE_MAX 30
 
-// Compose the line. `tierName` is the caller's name for `tier` (the picker's
-// ap_cs_boostTierName); `tier < 0` means the seed gives this racer no boost
-// capability at all, in which case there is no BOOST clause to show and the
-// line is either "NOT UNLOCKED" or empty.
+// Compose the line. `tier` is the tier this racer DRIVES (the rank selector's
+// applied tier, ruling 2026-09-11 extended to Boost 2026-10-26) and `tierName`
+// the caller's name for it (the picker's ap_cs_boostTierName); `ceiling` is the
+// top of the seed's boost chain. `tier < 0` means the seed gives this racer no
+// boost capability at all, in which case there is no BOOST clause to show and
+// the line is either "NOT UNLOCKED" or empty.
+//
+// `maxName` is the name of the tier the received items unlock, passed only when
+// the player has LOWERED the selection below it (NULL otherwise); the line then
+// says "MAX <name>" so the choice is visible. A locked racer shows NOT UNLOCKED
+// instead: that is the fact the player needs on that tile, and both clauses
+// together would break the width budget.
 //
 // Returns the length written, so a caller or harness can check it.
-static int AP_PickerLine_Compose(char *out, unsigned long outSize, int tier, int ceiling, const char *tierName, int unlocked)
+static int AP_PickerLine_Compose(char *out, unsigned long outSize, int tier, int ceiling, const char *tierName,
+                                 const char *maxName, int unlocked)
 {
 	int n;
 
@@ -45,8 +54,17 @@ static int AP_PickerLine_Compose(char *out, unsigned long outSize, int tier, int
 
 	if (tier >= 0)
 	{
-		n = snprintf(out, (size_t)outSize, "BOOST %d/%d %s%s", tier, ceiling, (tierName != 0) ? tierName : "?",
-		             unlocked ? "" : "  NOT UNLOCKED");
+		const char *tail = "";
+		const char *tailName = "";
+		if (!unlocked)
+			tail = "  NOT UNLOCKED";
+		else if (maxName != 0 && maxName[0] != '\0')
+		{
+			tail = "  MAX ";
+			tailName = maxName;
+		}
+		n = snprintf(out, (size_t)outSize, "BOOST %d/%d %s%s%s", tier, ceiling, (tierName != 0) ? tierName : "?",
+		             tail, tailName);
 	}
 	else
 	{

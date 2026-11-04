@@ -92,15 +92,39 @@ static inline int AP_BoxColour_Enabled(int seedOn, int playerOn)
 	return seedOn && playerOn;
 }
 
+// The colour one box wears once every switch is read (ap_boxes.c). spoilerUnlocked
+// is AP_Spoiler_BoxColoursUnlocked (#459): 1 without Spoiler Items or once AP Box
+// Colours has arrived. It can only hold colours back, never add them.
+static inline int AP_BoxColour_Effective(int spoilerUnlocked, int seedOn, int playerOn, int scouted,
+                                         unsigned flags)
+{
+	if (!spoilerUnlocked || !AP_BoxColour_Enabled(seedOn, playerOn))
+		return AP_BOX_COLOUR_PINK;
+	return AP_BoxColour_Pick(1, scouted, flags);
+}
+
 // What the Options row shows. seedLoaded: a seed's slot_data is active.
 enum
 {
 	AP_BOX_COLOUR_ROW_PLAYER = 0, // the player's own ON/OFF, editable
-	AP_BOX_COLOUR_ROW_SEED_OFF    // "OFF (SEED)", greyed, not editable
+	AP_BOX_COLOUR_ROW_SEED_OFF,   // "OFF (SEED)", greyed, not editable
+	AP_BOX_COLOUR_ROW_ITEM_LOCKED // "ON (LOCKED)" / "OFF", editable (#459 ruling, 2026-10-28)
 };
 static inline int AP_BoxColour_RowState(int seedLoaded, int seedOn)
 {
 	return (seedLoaded && !seedOn) ? AP_BOX_COLOUR_ROW_SEED_OFF : AP_BOX_COLOUR_ROW_PLAYER;
+}
+// The same with Spoiler Items (#459): a seed that permits colours but still
+// holds them behind AP Box Colours is ITEM_LOCKED until the item arrives. The
+// player may still switch the row (#459 ruling, 2026-10-28); an OFF set early keeps
+// boxes pink after receipt, because AP_BoxColour_Effective still asks the
+// player. A seed with colours off keeps "OFF (SEED)"; the item cannot change it.
+static inline int AP_BoxColour_RowStateWithItem(int seedLoaded, int seedOn, int itemUnlocked)
+{
+	int state = AP_BoxColour_RowState(seedLoaded, seedOn);
+	if (state == AP_BOX_COLOUR_ROW_PLAYER && seedLoaded && !itemUnlocked)
+		return AP_BOX_COLOUR_ROW_ITEM_LOCKED;
+	return state;
 }
 
 // Top-left of a colour's slot in the atlas.

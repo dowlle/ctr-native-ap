@@ -20,7 +20,11 @@ void UI_DrawNumWumpa(s16 posX, s16 posY, struct Driver *d)
 		DecalFont_DrawLine(&sdata->s_x[0], (int)posX, posY + 4, FONT_SMALL, ORANGE);
 
 		// Draw number after the 'x'
+#ifdef CTR_AP
+		sprintf(message, &sdata->s_int[0], AP_WumpaRaceCount(d));
+#else
 		sprintf(message, &sdata->s_int[0], d->numWumpas);
+#endif
 		DecalFont_DrawLine(message, posX + 0xd, (int)posY, FONT_BIG, ORANGE);
 	}
 

@@ -13,7 +13,20 @@ int RB_Hazard_HurtDriver(struct Driver *driverVictim, int damageType, struct Dri
 	}
 	else
 	{
+#ifdef CTR_AP
+		// J03 (#169 full suite): a boss the adapter armed keeps the retail
+		// shield and mask protection a human gets in VehPickState.
+		if (PickupBots_AdapterProtect(driverVictim))
+		{
+			return 0;
+		}
+
+		// #169: Oxide's hazard reaction belongs to Oxide's encounter, not to
+		// a garage boss whose drawn venue is Oxide Station.
+		if ((AP_BossRetailRulesLevel(gGT->levelID) == OXIDE_STATION) && (IS_BOSS_RACE(gGT->gameMode1)))
+#else
 		if ((gGT->levelID == OXIDE_STATION) && (IS_BOSS_RACE(gGT->gameMode1)))
+#endif
 		{
 			damageType = 1;
 		}

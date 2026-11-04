@@ -8,10 +8,12 @@
 #include "../ap/ap_hooks.h"
 #include "../ap/ap_perf.h"      // whole-frame stall watchdog, bracketed in MainMain.c
 #include "../ap/ap_link.h"      // one-click-connect glue (#334 slice 3)
+#include "../ap/ap_update.h"    // signed in-game updater (#301)
 #include "../ap/ap_pad_state.h" // tier-2 pad routing is consumed by AH_WarpPad.c
 #include "../ap/ap_hit_policy.h"    // freestanding Hit Character encounter decisions (ticket 06)
 #include "../ap/ap_hit_chooser.h"   // freestanding ordinary chooser state machine (ticket 06)
 #include "../ap/ap_hit_encounter.h" // Hit Character gather: roster + dispatch (ticket 06)
+#include "../ap/ap_roster_swap.h"   // roster swap: guest racers, gauntlet seat, chaos field
 #include "../ap/ap_traps.h"    // trap-effect framework (declares the engine hooks)
 #include "../ap/ap_democam.h"  // Demo Camera trap: CAM.c skips the L2 zoom toggle while engaged (#454)
 #include "../ap/ap_shortcut.h" // Shortcutless mechanism
@@ -25,6 +27,9 @@
 #include "../ap/ap_charswap.h"   // character phase: hub picker + swap (#54/#209)
 #include "../ap/ap_tizi.h"       // Papu's Pyramid mask helper (#223)
 #include "../ap/ap_turbogrant.h" // in-race Turbo hand-out (#224)
+#include "../ap/ap_reserve_top_up.h"
+#include "../ap/ap_spoiler_items.h" // reveal items for pad previews and box colours (#459)
+#include "../ap/ap_spoiler_items_logic.h"
 #include "../ap/ap_useful.h"     // queued one-shot useful grants
 #include "../ap/ap_pauserow.h"   // hub pause menu SELECT CHARACTER / TRACKER row wiring (#238)
 #include "../ap/ap_tracker.h"    // hub pause menu TRACKER row
@@ -388,11 +393,15 @@
 #include "../ap/ap_hooks_gates.c"
 #include "../ap/ap_hooks_apply_items.c"
 #include "../ap/ap_hooks_custom_content.c"
+#include "../ap/ap_hooks_seed_content.c" // #133 PR 7 Current Seed
 #include "../ap/ap_hooks_net.c"
 #include "../ap/ap_hooks_race.c"
 #include "../ap/ap_hooks_itemsanity.c"
 #include "../ap/ap_hooks_race_checks.c"
 #include "../ap/ap_hooks_frame.c"
+#include "../ap/ap_hooks_cup_sweeps.c"
+#include "../ap/ap_hooks_content_cups.c" // #133 PR 5 content-plan cups
+#include "../ap/ap_hooks_laps.c" // #344 lap completion checks
 #include "../ap/ap_podium_skip.c"  // #285 podium-skip runtime (host-linkable)
 #include "../ap/ap_oxide_scene.c"  // #377 once-per-seed Oxide scene decision (host-linkable)
 #include "../ap/ap_boss_door_scene.c" // #377 once-per-hub boss-door scene decision (host-linkable)
@@ -407,6 +416,7 @@
 #include "../ap/ap_shortcut.c"
 #include "../ap/ap_surface.c"
 #include "../ap/ap_wumpa.c"
+#include "../ap/ap_wumpa_shop_ui.c" // #249 shop page (after ap_hooks_feed.c and ap_wumpa.c)
 #include "../ap/ap_deathlink.c"
 #include "../ap/ap_win_logic.c" // #449 race-loss DeathLink stakes (after ap_hooks.c: reads its statics)
 #include "../ap/ap_marker_model.c"
@@ -421,15 +431,20 @@
 #include "../ap/ap_charswap.c"
 #include "../ap/ap_tizi.c"
 #include "../ap/ap_turbogrant.c"
+#include "../ap/ap_reserve_top_up.c"
+#include "../ap/ap_spoiler_items.c"
 #include "../ap/ap_useful.c"
 #include "../ap/ap_statbar.c"
 #include "../ap/ap_spawn.c"
 #include "../ap/ap_trial_letters.c"
+#include "../ap/ap_arcade_crystals.c"
 #include "../ap/ap_author.c"
 #include "../ap/ap_boxes.c"
 #include "../ap/ap_navrec.c"
 #include "../ap/ap_tracker.c"
+#include "../ap/ap_tracker_launch.c" // #375 tracker pad start
 #include "../ap/ap_link.c"     // one-click-connect glue (#334 slice 3)
+#include "../ap/ap_update.c"   // signed in-game updater (#301)
 #else
 // The authoring client without Archipelago (see the header block above). Each
 // unit compiles to nothing unless its own option is on.

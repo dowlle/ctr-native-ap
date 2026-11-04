@@ -13,9 +13,16 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_assets.h>
 #include <platform/native_custom_track_manager.h>
+#include "../../ap/ap_seed_content.h" // Current Seed (#133 PR 7)
+#ifndef CTR_AP_AUTHORING
+// The player client: its xdelta importer opens on Custom Content and writes
+// only where rooms and Play Solo look, never into the Track Library store
+// (decision 35, ruled 2026-11-02).
+#define MM_IMPORT_PLAYER
+#endif
 #ifdef CTR_CUSTOM_PACKAGES
-// Box authoring build: the package library and Saphi Track Manager replace the
-// single-package Custom Content page (CMakeLists.txt, CTR_CUSTOM_PACKAGES).
+// The package library and Saphi Track Manager: the Custom Content page of the
+// box authoring download, a Track Library page of its own in the player client.
 #include <stdlib.h>
 #include <platform/native_custom_track_library.h>
 #include <platform/native_custom_package.h>
@@ -57,6 +64,39 @@
 // is appended last, after OPTIONS, reusing LNG_QUIT (0x003) -- already proven as
 // a MenuRow stringIndex elsewhere (e.g. game/225.c's battle pause row) rather
 // than a title-only string -- so no new label is minted.
+//
+// The AP player client adds PLAY SOLO (#89, decision 30) just above OPTIONS,
+// with its own string slot (AP_LNG_PLAY_SOLO). It opens the same Play Solo
+// pages as Options > Connection > Play Solo. The box authoring download and
+// the build without Archipelago keep the rows below.
+#if defined(CTR_AP) && !defined(CTR_AP_AUTHORING)
+struct MenuRow s_rowsMainMenuBasicConfig[] = {
+	{0x4C, 0, 1, 0, 0},
+	{0x4D, 0, 2, 1, 1},
+	{0x4E, 1, 3, 2, 2},
+	{0x4F, 2, 4, 3, 3},
+	{0x50, 3, 5, 4, 4},
+	{0x51, 4, 6, 5, 5},
+	{AP_LNG_PLAY_SOLO, 5, 7, 6, 6},
+	{0x0E, 6, 8, 7, 7},
+	{LNG_QUIT, 7, 8, 8, 8},
+	{-1},
+};
+
+struct MenuRow s_rowsMainMenuWithSBConfig[] = {
+	{0x4C, 0, 1, 0, 0},
+	{0x4D, 0, 2, 1, 1},
+	{0x4E, 1, 3, 2, 2},
+	{0x4F, 2, 4, 3, 3},
+	{0x50, 3, 5, 4, 4},
+	{0x51, 4, 6, 5, 5},
+	{0x234, 5, 7, 6, 6},
+	{AP_LNG_PLAY_SOLO, 6, 8, 7, 7},
+	{0x0E, 7, 9, 8, 8},
+	{LNG_QUIT, 8, 9, 9, 9},
+	{-1},
+};
+#else
 struct MenuRow s_rowsMainMenuBasicConfig[] = {
 	{0x4C, 0, 1, 0, 0},
 	{0x4D, 0, 2, 1, 1},
@@ -81,6 +121,7 @@ struct MenuRow s_rowsMainMenuWithSBConfig[] = {
 	{LNG_QUIT, 7, 8, 8, 8},
 	{-1},
 };
+#endif
 
 static void MM_MenuProc_Config(struct RectMenu *menu);
 
@@ -95,6 +136,9 @@ static int s_numSections = 0;
 #if (defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)) || defined(CTR_CUSTOM_PACKAGES)
 static int s_customContentSection = -1;
 #endif
+#ifdef CTR_CUSTOM_PACKAGES
+static int s_trackLibrarySection = -1;
+#endif
 
 static void BuildSectionMap(void)
 {
@@ -106,6 +150,15 @@ static void BuildSectionMap(void)
 	s_sectionName[s_numSections] = "Custom Content";
 	s_numSections++;
 #endif
+#if defined(CTR_CUSTOM_PACKAGES) && defined(CTR_AP) && !defined(CTR_AP_AUTHORING)
+	// The player client's Custom Content stays the room's page (Current Seed).
+	s_trackLibrarySection = s_numSections;
+	s_sectionCount[s_numSections] = 0;
+	s_sectionName[s_numSections] = "Track Library";
+	s_numSections++;
+#elif defined(CTR_CUSTOM_PACKAGES)
+	s_trackLibrarySection = s_customContentSection;
+#endif
 }
 
 // Row `row` of page `sec`.
@@ -115,6 +168,23 @@ static const ConfigEntry *Section_Entry(int sec, int row)
 }
 
 static int s_currentSection = -1; // -1 = section selector, 0+ = submenu
+
+// A page with more rows than fit above the two help lines (0xB8) scrolls: nine
+// rows from CONFIG_ROW_START_Y show at a time. The Archipelago page has eleven
+// config rows since Item Feed (2026-11-03), twelve with Room links.
+#define CONFIG_PAGE_WINDOW 9
+static int s_configTop;
+static void Config_KeepInView(int selected, int pageRows)
+{
+	if (selected < s_configTop)
+		s_configTop = selected;
+	if (selected >= s_configTop + CONFIG_PAGE_WINDOW)
+		s_configTop = selected - CONFIG_PAGE_WINDOW + 1;
+	if (s_configTop > pageRows - CONFIG_PAGE_WINDOW)
+		s_configTop = pageRows - CONFIG_PAGE_WINDOW;
+	if (s_configTop < 0)
+		s_configTop = 0;
+}
 
 // Row geometry and option-row helpers shared with the Controls page
 // (MM_ControlsConfig.c, ported from CTR Native Expanded by thecodingbob, PR 54
@@ -300,18 +370,34 @@ static void AiDiff_Step(int *value, int dir)
 
 #ifdef CTR_AP
 // DeathLink ladder (CFG_ENUM): follow the seed option / force off / force a
-// tier. 1/2/3 are the CTR_DL_MASK_RESET / CTR_DL_ANY_HIT / CTR_DL_RACE_LOSS tier
-// values themselves (ap_deathlink.h), so every in-game layer is directly
-// selectable. Edits apply live: ap_deathlink.c re-reads the preference every
+// tier. 1/2/3/4 are the CTR_DL_MASK_RESET / CTR_DL_ANY_HIT / CTR_DL_RACE_LOSS /
+// CTR_DL_WEAPON_HIT tier values themselves (ap_deathlink.h), so every in-game
+// layer is directly selectable. Edits apply live: ap_deathlink.c re-reads the preference every
 // frame and syncs the connection tag itself, so this row needs no menu-exit hook.
-static const int   s_dlinkValues[] = {-1, 0, 1, 2, 3};
-static const char *s_dlinkNames[]  = {"SEED", "OFF", "MASK RESET", "ANY HIT", "RACE LOSS"};
+static const int   s_dlinkValues[] = {-1, 0, 1, 2, 3, 4};
+static const char *s_dlinkNames[]  = {"SEED", "OFF", "MASK RESET", "ANY HIT", "RACE LOSS",
+	"WEAPON HIT"};
 #define DLINK_COUNT ((int)(sizeof(s_dlinkValues) / sizeof(s_dlinkValues[0])))
 
 // DeathLink send trigger rows (CFG_ENUM): follow the seed / force off / force on.
 static const int   s_dlSendValues[] = {-1, 0, 1};
 static const char *s_dlSendNames[]  = {"SEED", "OFF", "ON"};
 #define DLSEND_COUNT ((int)(sizeof(s_dlSendValues) / sizeof(s_dlSendValues[0])))
+
+// Race type menu (#208, decision 15): follow the seed / always / productive.
+// 1 and 0 are the AP_RS_SELECTOR_ALWAYS / AP_RS_SELECTOR_PRODUCTIVE values;
+// AP_RaceTypeSelectorSetting reads the row at every plan pad entry.
+static const int   s_raceMenuValues[] = {-1, 1, 0};
+static const char *s_raceMenuNames[]  = {"SEED", "ALWAYS", "PRODUCTIVE"};
+#define RACEMENU_COUNT ((int)(sizeof(s_raceMenuValues) / sizeof(s_raceMenuValues[0])))
+
+static int RaceMenu_Index(int value)
+{
+	for (int i = 0; i < RACEMENU_COUNT; i++)
+		if (s_raceMenuValues[i] == value)
+			return i;
+	return 0; // out-of-range persisted value renders and steps as SEED
+}
 
 // Sustained-trap comfort window. Zero is stored for Full race so config.ini
 // remains readable and the scheduler does not need a magic large duration.
@@ -363,11 +449,13 @@ static const char *Enum_Label(const ConfigEntry *e)
 		return s_vsyncNames[Vsync_Index(*(int *)e->valuePtr)];
 #ifdef CTR_AP
 	if (e->valuePtr == &g_config.deathLink)
-		return s_dlinkNames[Dlink_Index(*(int *)e->valuePtr)];
+		return s_dlinkNames[Dlink_Index(AP_DeathLinkRowValue(*(int *)e->valuePtr))];
 	if (IsDlSendField((const int *)e->valuePtr))
 		return s_dlSendNames[DlSend_Index(*(int *)e->valuePtr)];
 	if (e->valuePtr == &g_config.trapDuration)
 		return s_trapDurationNames[TrapDuration_Index(*(int *)e->valuePtr)];
+	if (e->valuePtr == &g_config.raceTypeSelector)
+		return s_raceMenuNames[RaceMenu_Index(*(int *)e->valuePtr)];
 #endif
 	return AiDiff_Label(*(int *)e->valuePtr);
 }
@@ -425,6 +513,16 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 		*(int *)e->valuePtr = s_dlSendValues[i];
 		return;
 	}
+	if (e->valuePtr == &g_config.raceTypeSelector)
+	{
+		int i = RaceMenu_Index(*(int *)e->valuePtr) + dir;
+		if (i < 0)
+			i = 0;
+		if (i > RACEMENU_COUNT - 1)
+			i = RACEMENU_COUNT - 1;
+		*(int *)e->valuePtr = s_raceMenuValues[i];
+		return;
+	}
 	if (e->valuePtr == &g_config.trapDuration)
 	{
 		int i = TrapDuration_Index(*(int *)e->valuePtr) + dir;
@@ -460,10 +558,25 @@ static void Enum_Advance(const ConfigEntry *e)
 #ifdef CTR_AP
 // The Item Box Colours row is the player's opt-out of the seed's item box
 // colours. While a loaded seed has them off, it reads "OFF (SEED)" in grey and
-// takes no input: a player can turn colours off, never on.
+// takes no input: a player can turn colours off, never on. While Spoiler Items
+// (#459) still holds the colours behind AP Box Colours, the row stays editable
+// (#459 ruling, 2026-10-28): it reads "ON (LOCKED)" or "OFF", and an OFF set early
+// keeps the boxes pink after the item arrives.
 static int Config_RowLockedBySeed(const ConfigEntry *e)
 {
 	return e->valuePtr == &g_config.itemBoxColours && AP_Boxes_ColourRowState() == AP_BOX_COLOUR_ROW_SEED_OFF;
+}
+
+// A Play Solo session has no other players: the DeathLink rows read "OFF (SOLO)" in
+// grey and take no input. Their saved values stay for multiworld rooms.
+static int Config_RowLockedBySolo(const ConfigEntry *e)
+{
+	return (e->valuePtr == &g_config.deathLink || IsDlSendField((const int *)e->valuePtr)) && AP_Solo_SessionOwnsConnection();
+}
+
+static int Config_RowLockedByItem(const ConfigEntry *e)
+{
+	return e->valuePtr == &g_config.itemBoxColours && AP_Boxes_ColourRowState() == AP_BOX_COLOUR_ROW_ITEM_LOCKED;
 }
 
 static void Config_DrawHelpLines(const char *first, const char *second, uint32_t *ot)
@@ -482,7 +595,12 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 
 	if (e->valuePtr == &g_config.itemBoxColours)
 	{
-		if (Config_RowLockedBySeed(e))
+		if (Config_RowLockedByItem(e))
+		{
+			first = "Pink until AP Box Colours.";
+			second = "Set OFF to keep them pink.";
+		}
+		else if (Config_RowLockedBySeed(e))
 		{
 			first = "This seed turned box colours off.";
 			second = "All AP item boxes stay pink.";
@@ -492,6 +610,21 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 			first = "Purple progression, blue useful,";
 			second = "cyan filler, salmon trap.";
 		}
+	}
+	if (Config_RowLockedBySolo(e))
+	{
+		first = "No other players in solo.";
+		second = "DeathLink stays off.";
+	}
+	if (e->valuePtr == &g_config.raceTypeSelector)
+	{
+		first = "When race pads ask which race.";
+		second = "SEED uses the seed's setting.";
+	}
+	if (e->valuePtr == &g_config.itemFeed)
+	{
+		first = "Items sent and received,";
+		second = "shown at the bottom left.";
 	}
 	if (first == 0)
 		return;
@@ -522,6 +655,16 @@ static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint
 	if (Config_RowLockedBySeed(e))
 	{
 		DecalFont_DrawLineOT("OFF (SEED)", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
+		return;
+	}
+	if (Config_RowLockedBySolo(e))
+	{
+		DecalFont_DrawLineOT("OFF (SOLO)", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
+		return;
+	}
+	if (Config_RowLockedByItem(e))
+	{
+		DecalFont_DrawLineOT(*(bool *)e->valuePtr ? "ON (LOCKED)" : "OFF", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 		return;
 	}
 #endif
@@ -619,6 +762,7 @@ static int  s_connPadPrev = 0;   // previous frame's physical-pad mask, for edge
 // panel at FONT_SMALL (13 px per character). Longer status text is moved to its
 // own centred line below the row.
 #define CONN_STATUS_INLINE_MAX 24
+#define CONN_STATUS_LINE_WIDTH 0x1B0
 
 // Render a CFG_STRING value into out: masked (one '*' per char) for the password,
 // plain otherwise, with a blinking trailing cursor while this row is being edited.
@@ -754,6 +898,49 @@ static void TextEdit_Begin(const ConfigEntry *e, int row, int rowY)
 	s_connEditing = 1;
 }
 
+// A long status: "Error:" stays beside the label and the reason takes up to two
+// centred rows, broken at spaces (the v0.2.x room refusal needs both). A word too
+// wide for the panel is cut, and text past the last row ends in "...". The second
+// row is the edit hint's while a row is being edited.
+static void Conn_DrawLongStatus(const char *status, int labelY, int valueX, int rowSpacing, uint32_t *ot)
+{
+	const int rows = s_connEditing ? 1 : 2;
+	int row;
+
+	if (strncmp(status, "Error: ", 7) == 0)
+	{
+		DecalFont_DrawLineOT((char *)"Error:", valueX, labelY, FONT_SMALL, WHITE, ot);
+		status += 7;
+	}
+	for (row = 0; row < rows && *status != '\0'; row++)
+	{
+		char line[128];
+		int end = 0;
+		int i;
+
+		for (i = 0; status[i] != '\0' && i < (int)sizeof line - 4; i++)
+		{
+			line[i] = status[i];
+			line[i + 1] = '\0';
+			if (DecalFont_GetLineWidth(line, FONT_SMALL) > CONN_STATUS_LINE_WIDTH)
+			{
+				if (end == 0)
+					end = i;
+				break;
+			}
+			if (status[i + 1] == ' ' || status[i + 1] == '\0')
+				end = i + 1;
+		}
+		line[end] = '\0';
+		status += end;
+		while (*status == ' ')
+			status++;
+		if (row == rows - 1 && *status != '\0')
+			memcpy(line + (end >= 3 ? end - 3 : end), "...", 4);
+		DecalFont_DrawLineOT(line, 0x100, labelY + (row + 1) * rowSpacing, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	}
+}
+
 // Pad hint while a row is being edited, so the controller exits are
 // discoverable. '*' and '^' are the font's own PSX face button glyphs (see
 // game/DecalFont.c).
@@ -763,12 +950,72 @@ static void TextEdit_DrawHint(int y, uint32_t *ot)
 		0x100, y, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 }
 
+#if !defined(CTR_AP_AUTHORING)
+#include "MM_Solo.c" // #89 Play Solo pages, opened from the Connection page
+#define CONN_SOLO_ROWS 1
+
+// Play Solo opened from the title screen's PLAY SOLO row (decision 30): the
+// options menu opens on the Connection page with Play Solo already open, and
+// leaving Play Solo goes straight back to the title screen.
+static int s_soloFromTitle;
+
+void MM_Solo_OpenFromTitle(void)
+{
+	int sec;
+	if (s_numSections == 0)
+		BuildSectionMap();
+	for (sec = 0; sec < s_numSections; sec++)
+		if (strcmp(s_sectionName[sec], "Connection") == 0)
+			break;
+	if (sec == s_numSections)
+		return; // no Connection page: the options menu opens as usual
+	s_currentSection = sec;
+	g_configMenu.rowSelected = s_sectionCount[sec] + 1; // the Play Solo row
+	s_soloFromTitle = 1;
+	MM_Solo_Open();
+}
+
+// Leaving the options menu the way Back does on the page list.
+static void MM_Solo_ReturnToTitle(struct RectMenu *menu)
+{
+	s_soloFromTitle = 0;
+	menu->rowSelected = 0;
+	s_currentSection = -1;
+	NativeRenderer_CaptureWindowGeometry();
+	NativeConfig_Save();
+	NativeControls_Save();
+	AP_AiDifficultyCommit();
+	sdata->ptrDesiredMenu = &D230.menuMainMenu;
+}
+#else
+#define CONN_SOLO_ROWS 0
+static int MM_Solo_ConsumesBack(void) { return 0; }
+#endif
+
 static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
 {
 	char buf[160];
 	const int sec = s_currentSection;
 	const int numStrings = s_sectionCount[sec]; // uri / slot / password
-	const int numRows = numStrings + 1;         // + Connect action row
+	const int numRows = numStrings + 1 + CONN_SOLO_ROWS; // + Connect (+ Play Solo)
+
+	int soloClosed = 0;
+#if !defined(CTR_AP_AUTHORING)
+	// Play Solo owns the whole page while one of its pages is open.
+	{
+		const int solo = MM_Solo_Frame(ot, pad);
+		if (solo == 1)
+			return;
+		soloClosed = (solo == 2);
+		// Opened from the title screen: closing Play Solo, by Back or after a
+		// message, goes back there instead of to this page.
+		if (s_soloFromTitle && s_soloPage == SOLO_OFF)
+		{
+			MM_Solo_ReturnToTitle(menu);
+			return;
+		}
+	}
+#endif
 
 	// The Room links row lives on Options > Archipelago; this page only keeps
 	// the one-time notice for when another program owns room links (#334).
@@ -778,7 +1025,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 
 	// While editing (or on the frame we just resolved) all menu navigation is
 	// suppressed: text mode owns input.
-	if (!s_connEditing && !justResolved)
+	if (!s_connEditing && !justResolved && !soloClosed)
 	{
 		if ((pad->buttonsTapped & BTN_UP) != 0)
 		{
@@ -798,11 +1045,19 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 				TextEdit_Begin(Section_Entry(sec, menu->rowSelected), menu->rowSelected,
 					CONN_ROW_START_Y + menu->rowSelected * CONN_ROW_SPACING - 2);
 			}
-			else
+			else if (menu->rowSelected == numStrings)
 			{
 				// Connect action: re-dial with the saved connection settings.
+				// A running solo session ends first (AP_Net_Reconnect).
 				AP_Net_Reconnect(g_config.uri, g_config.slot, g_config.password);
 			}
+#if !defined(CTR_AP_AUTHORING)
+			else
+			{
+				MM_Solo_Open(); // #89
+				return;
+			}
+#endif
 		}
 	}
 
@@ -845,6 +1100,20 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		}
 	}
 
+#if !defined(CTR_AP_AUTHORING)
+	// Play Solo row (#89), in the spare line between Connect and Status.
+	{
+		int y = startY + (numStrings + 1) * rowSpacing;
+		DecalFont_DrawLineOT(AP_Solo_SessionState() == AP_SOLO_SESSION_LIVE ? "Play Solo (connected)" : "Play Solo",
+			labelX, y, FONT_SMALL, ORANGE, ot);
+		if (menu->rowSelected == numStrings + 1)
+		{
+			RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
+			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
+		}
+	}
+#endif
+
 	// Read-only status row (one line below the Connect row). Short states sit
 	// beside the label; anything longer than fits there (the unreachable-host
 	// line, a wordy slot refusal) is centred on the next line instead, where the
@@ -854,8 +1123,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		const char *status = AP_Net_StatusLine();
 		DecalFont_DrawLineOT("Status", labelX, y, FONT_SMALL, ORANGE, ot);
 		if ((int)strlen(status) > CONN_STATUS_INLINE_MAX)
-			DecalFont_DrawLineOT((char *)status, 0x100, y + rowSpacing,
-				FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+			Conn_DrawLongStatus(status, y, valueX, rowSpacing, ot);
 		else
 			DecalFont_DrawLineOT((char *)status, valueX, y, FONT_SMALL, WHITE, ot);
 	}
@@ -898,8 +1166,12 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		TextEdit_DrawHint(startY + (numStrings + 4) * rowSpacing, ot);
 }
 
-#if defined(CTR_CUSTOM_TRACKS) && !defined(CTR_CUSTOM_PACKAGES)
-#define CUSTOM_CONTENT_ACTION_COUNT 6
+#if defined(CTR_CUSTOM_TRACKS) && !defined(CTR_AP_AUTHORING)
+#include "MM_CustomImport.c" // xdelta importer on Custom Content, not Track Library (decision 35)
+#include "MM_CurrentSeed.c" // content-plan rooms: the Current Seed tab (#133 PR 7)
+#include "MM_CustomContentView.c" // the package page's layout (Deck menu scan, 2026-11-03)
+#define CUSTOM_CONTENT_ACTION_COUNT 8
+#define CUSTOM_CONTENT_ACTION_ROWS 4
 static const char *const s_customContentActions[CUSTOM_CONTENT_ACTION_COUNT] = {
 	"Download Saphi",
 	"Rescan",
@@ -907,10 +1179,194 @@ static const char *const s_customContentActions[CUSTOM_CONTENT_ACTION_COUNT] = {
 	"Open Source",
 	"Copy YAML",
 	"Save YAML",
+	"Relic Times",
+	"Clear Relic Times",
 };
 static char s_customContentMessage[128] =
 	"Download from Saphi, or add the original LEV and VRM files, then Rescan.";
 static int s_customContentDownloadActive = 0;
+
+// The author's relic target times (row 10j). Up / Down change the selected
+// digit, Left / Right move between digits and on to the next tier, Cross
+// saves, Triangle cancels. The page keeps a copy of the stored times to show;
+// export always reads the file again.
+#define RELIC_EDIT_DIGITS 6 // M M : S S . C C
+static void CustomContent_SetMessage(const char *message);
+static const char *const s_relicTierNames[3] = {"Sapphire", "Gold", "Platinum"};
+static int s_relicEditOpen = 0;
+static int s_relicEditCursor = 0; // tier * RELIC_EDIT_DIGITS + digit
+static int s_relicEditCentis[3];
+static struct CustomTrackRelicTimes s_relicShown;
+static char s_relicShownFor[NATIVE_SHA256_HEX_BYTES + 8];
+// The package the open editor was opened for; another package closes it.
+static char s_relicEditFor[NATIVE_SHA256_HEX_BYTES];
+static unsigned int s_relicLastFrame;
+
+static int MM_CustomContent_ConsumesBack(int section)
+{
+	return section == s_customContentSection && s_relicEditOpen;
+}
+
+static void RelicTime_Format(int centis, char *dst, size_t dstSize)
+{
+	snprintf(dst, dstSize, "%d:%02d.%02d", centis / 6000, (centis / 100) % 60, centis % 100);
+}
+
+// Digit d of a time as the editor shows it, MM:SS.CC.
+static int RelicTime_Digit(int centis, int d)
+{
+	static const int place[RELIC_EDIT_DIGITS] = {60000, 6000, 1000, 100, 10, 1};
+	int minutes = centis / 6000, rest = centis % 6000;
+	if (d < 2)
+		return (d == 0 ? minutes / 10 : minutes % 10);
+	return (rest / place[d]) % (d == 2 ? 6 : 10);
+}
+
+static int RelicTime_StepDigit(int centis, int d, int up)
+{
+	static const int limit[RELIC_EDIT_DIGITS] = {6, 10, 6, 10, 10, 10};
+	int digits[RELIC_EDIT_DIGITS], i;
+	for (i = 0; i < RELIC_EDIT_DIGITS; i++)
+		digits[i] = RelicTime_Digit(centis, i);
+	digits[d] = (digits[d] + (up ? 1 : limit[d] - 1)) % limit[d];
+	return (digits[0] * 10 + digits[1]) * 6000 + (digits[2] * 10 + digits[3]) * 100 + digits[4] * 10 + digits[5];
+}
+
+static void RelicTimes_Refresh(const struct CustomTrackManagerPackage *package,
+	                           const struct CustomTrackManagerStatus *status, int force)
+{
+	char key[sizeof s_relicShownFor];
+	snprintf(key, sizeof key, "%d:%s", status->state, status->verifiedPackageSha256);
+	if (!force && strcmp(key, s_relicShownFor) == 0)
+		return;
+	snprintf(s_relicShownFor, sizeof s_relicShownFor, "%s", key);
+	CustomTrackManager_LoadRelicTimes(NativeAssets_GetAssetDir(), package, status, &s_relicShown);
+}
+
+static void RelicTimes_Open(const struct CustomTrackManagerPackage *package,
+	                        const struct CustomTrackManagerStatus *status)
+{
+	int t;
+	// No verified identity means the files on disk are not this page's
+	// package (a content-plan track without a compiled profile).
+	if (status->state != CTR_CT_MANAGER_READY || status->verifiedPackageSha256[0] == '\0')
+	{
+		CustomContent_SetMessage("Relic times need a Ready package.");
+		return;
+	}
+	if (!package->flagRelicCrates)
+	{
+		CustomContent_SetMessage("This track has no relic crates.");
+		return;
+	}
+	RelicTimes_Refresh(package, status, 1);
+	for (t = 0; t < 3; t++)
+		s_relicEditCentis[t] = s_relicShown.set ? CustomTrackManager_RelicCentisFromTicks(s_relicShown.ticks[t]) : 0;
+	s_relicEditCursor = 0;
+	snprintf(s_relicEditFor, sizeof s_relicEditFor, "%s", status->verifiedPackageSha256);
+	s_relicEditOpen = 1;
+	CustomContent_SetMessage("Up/Down digit, Left/Right move, X save, Triangle cancel.");
+}
+
+static void RelicTimes_Save(const struct CustomTrackManagerPackage *package,
+	                        const struct CustomTrackManagerStatus *status)
+{
+	int ticks[3], t;
+	for (t = 0; t < 3; t++)
+	{
+		ticks[t] = CustomTrackManager_RelicTicksFromCentis(s_relicEditCentis[t]);
+		if (ticks[t] < 0)
+		{
+			CustomContent_SetMessage("Enter all three times, 0:00.01 or longer.");
+			return;
+		}
+	}
+	if (!CustomTrackManager_RelicTimesValid(ticks))
+	{
+		CustomContent_SetMessage("Sapphire must be slower than Gold, Gold slower than Platinum.");
+		return;
+	}
+	if (!CustomTrackManager_SaveRelicTimes(NativeAssets_GetAssetDir(), package, status, ticks))
+	{
+		CustomContent_SetMessage("Could not save the relic times.");
+		return;
+	}
+	s_relicEditOpen = 0;
+	RelicTimes_Refresh(package, status, 1);
+	CustomContent_SetMessage("Relic times saved. Copy or Save YAML to export them.");
+}
+
+// The editor owns the page's input while it is open.
+static void RelicTimes_Input(const struct CustomTrackManagerPackage *package,
+	                         const struct CustomTrackManagerStatus *status, struct GamepadBuffer *pad)
+{
+	const int count = 3 * RELIC_EDIT_DIGITS;
+	int tier = s_relicEditCursor / RELIC_EDIT_DIGITS;
+	int digit = s_relicEditCursor % RELIC_EDIT_DIGITS;
+
+	if (status->state != CTR_CT_MANAGER_READY || s_relicEditFor[0] == '\0' ||
+	    strcmp(status->verifiedPackageSha256, s_relicEditFor) != 0)
+	{
+		// The package changed under the editor (a rescan or another room's
+		// package): its times were typed for other bytes, so nothing is saved.
+		s_relicEditOpen = 0;
+		CustomContent_SetMessage("The package changed. Relic times not saved.");
+		return;
+	}
+	if ((pad->buttonsTapped & (BTN_UP | BTN_DOWN)) != 0)
+	{
+		s_relicEditCentis[tier] = RelicTime_StepDigit(s_relicEditCentis[tier], digit,
+		                                              (pad->buttonsTapped & BTN_UP) != 0);
+		OtherFX_Play(0, 1);
+	}
+	if ((pad->buttonsTapped & BTN_LEFT) != 0)
+	{
+		s_relicEditCursor = (s_relicEditCursor + count - 1) % count;
+		OtherFX_Play(0, 1);
+	}
+	if ((pad->buttonsTapped & BTN_RIGHT) != 0)
+	{
+		s_relicEditCursor = (s_relicEditCursor + 1) % count;
+		OtherFX_Play(0, 1);
+	}
+	// Start is Back everywhere in Options, so it cancels here too.
+	if ((pad->buttonsTapped & (BTN_TRIANGLE | BTN_START)) != 0)
+	{
+		s_relicEditOpen = 0;
+		OtherFX_Play(2, 1);
+		CustomContent_SetMessage("Relic times not changed.");
+	}
+	else if ((pad->buttonsTapped & BTN_CROSS) != 0)
+	{
+		OtherFX_Play(1, 1);
+		RelicTimes_Save(package, status);
+	}
+}
+
+static void RelicTimes_DrawEditor(uint32_t *ot)
+{
+	int t, d;
+	char text[32];
+	for (t = 0; t < 3; t++)
+	{
+		int y = CC_VIEW_ACTION_Y + t * 0x10;
+		int centis = s_relicEditCentis[t];
+		DecalFont_DrawLineOT((char *)s_relicTierNames[t], 0xC8, y, FONT_SMALL, JUSTIFY_RIGHT | ORANGE, ot);
+		snprintf(text, sizeof text, "%d%d:%d%d.%d%d", RelicTime_Digit(centis, 0), RelicTime_Digit(centis, 1),
+		         RelicTime_Digit(centis, 2), RelicTime_Digit(centis, 3), RelicTime_Digit(centis, 4),
+		         RelicTime_Digit(centis, 5));
+		DecalFont_DrawLineOT(text, 0xE0, y, FONT_SMALL, WHITE, ot);
+		if (t == s_relicEditCursor / RELIC_EDIT_DIGITS)
+		{
+			// Digit columns in "MM:SS.CC" skip the ':' and '.' characters.
+			static const int column[RELIC_EDIT_DIGITS] = {0, 1, 3, 4, 6, 7};
+			d = s_relicEditCursor % RELIC_EDIT_DIGITS;
+			RECT sel = {0xE0 + DecalFont_GetLineWidthStrlen(text, column[d], FONT_SMALL) - 1, y - 2,
+			            DecalFont_GetLineWidthStrlen(text + column[d], 1, FONT_SMALL) + 2, 0x0C};
+			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
+		}
+	}
+}
 
 static void CustomContent_SetMessage(const char *message)
 {
@@ -921,58 +1377,50 @@ static void CustomContent_SetMessage(const char *message)
 	s_customContentMessage[len] = '\0';
 }
 
-static void CustomContent_DrawMessage(uint32_t *ot)
-{
-	char first[35];
-	char second[35];
-	const char *cursor = s_customContentMessage;
-	int line;
-
-	for (line = 0; line < 2 && *cursor != '\0'; line++)
-	{
-		char *out = line == 0 ? first : second;
-		int count = 0;
-		int lastSpace = -1;
-
-		while (cursor[count] != '\0' && count < 34)
-		{
-			out[count] = cursor[count];
-			if (cursor[count] == ' ')
-				lastSpace = count;
-			count++;
-		}
-		if (cursor[count] != '\0' && lastSpace > 0)
-			count = lastSpace;
-		out[count] = '\0';
-		cursor += count;
-		while (*cursor == ' ')
-			cursor++;
-	}
-	if (line == 2 && *cursor != '\0')
-	{
-		int len = (int)strlen(second);
-		if (len > 30)
-			len = 30;
-		memcpy(second + len, "...", 4);
-	}
-
-	DecalFont_DrawLineOT(first, 0x100, 0xB8, FONT_SMALL,
-	                   JUSTIFY_CENTER | (AP_CustomContentRequired() ? RED : WHITE), ot);
-	if (line > 1)
-		DecalFont_DrawLineOT(second, 0x100, 0xC6, FONT_SMALL,
-		                   JUSTIFY_CENTER | (AP_CustomContentRequired() ? RED : WHITE), ot);
-}
-
 static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
 {
 	const struct CustomTrackManagerPackage *package = AP_CustomContentPackage();
 	const struct CustomTrackManagerStatus *status = AP_CustomContentStatus();
 	struct CustomTrackManagerStatus exported;
+	struct CustomTrackRelicTimes relic;
 	char line[160];
 	char yaml[4096];
 	char downloadMessage[128];
 	int downloadState = AP_CustomContentDownloadStatus(downloadMessage, sizeof downloadMessage);
 	int i;
+
+	// Import track files (decision 35): Select opens it, a patch dropped on
+	// the window opens it with that patch. It owns the page while open.
+	if (!s_customContentDownloadActive && !AP_SeedContentInstallBusy())
+		MM_CustomImport_TakeDrop();
+	if (!MM_CustomImport_Active() && (pad->buttonsTapped & BTN_SELECT) && !s_customContentDownloadActive &&
+	    !AP_SeedContentInstallBusy())
+	{
+		MM_CustomImport_Open();
+		OtherFX_Play(1, 1);
+		return;
+	}
+	if (MM_CustomImport_Active())
+	{
+		MM_CustomImport_Proc(ot, pad);
+		return;
+	}
+
+	// A content-plan room opens on Current Seed; L1 / R1 reach this page.
+	if (MM_CurrentSeed_Page(ot, pad))
+	{
+		s_relicEditOpen = 0; // Back must never wait on an editor that is not shown
+		s_relicShownFor[0] = '\0'; // coming back reads the stored times again
+		return;
+	}
+
+	if (package == NULL)
+	{
+		DecalFont_DrawLineOT("Custom Content", 0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
+		DecalFont_DrawLineOT("This seed's package is unsupported.", 0x100, 0x48,
+		                   FONT_SMALL, JUSTIFY_CENTER | RED, ot);
+		return;
+	}
 
 	if (s_customContentDownloadActive)
 	{
@@ -988,21 +1436,32 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 			s_customContentDownloadActive = 0;
 	}
 
+	{
+		// A fresh visit reads the stored times again; within a visit the copy
+		// follows the scan, and every save, clear and export reads the file.
+		const unsigned int now = (unsigned int)sdata->gGT->timer;
+		RelicTimes_Refresh(package, status, now - s_relicLastFrame > 2);
+		s_relicLastFrame = now;
+	}
+	if (s_relicEditOpen)
+		RelicTimes_Input(package, status, pad);
+	else
+	{
 	if ((pad->buttonsTapped & BTN_UP) != 0)
 	{
-		int row = menu->rowSelected % 3;
-		menu->rowSelected += row > 0 ? -1 : 2;
+		int row = menu->rowSelected % CUSTOM_CONTENT_ACTION_ROWS;
+		menu->rowSelected += row > 0 ? -1 : CUSTOM_CONTENT_ACTION_ROWS - 1;
 		OtherFX_Play(0, 1);
 	}
 	if ((pad->buttonsTapped & BTN_DOWN) != 0)
 	{
-		int row = menu->rowSelected % 3;
-		menu->rowSelected += row < 2 ? 1 : -2;
+		int row = menu->rowSelected % CUSTOM_CONTENT_ACTION_ROWS;
+		menu->rowSelected += row < CUSTOM_CONTENT_ACTION_ROWS - 1 ? 1 : 1 - CUSTOM_CONTENT_ACTION_ROWS;
 		OtherFX_Play(0, 1);
 	}
 	if ((pad->buttonsTapped & (BTN_LEFT | BTN_RIGHT)) != 0)
 	{
-		menu->rowSelected = (menu->rowSelected + 3) % CUSTOM_CONTENT_ACTION_COUNT;
+		menu->rowSelected = (menu->rowSelected + CUSTOM_CONTENT_ACTION_ROWS) % CUSTOM_CONTENT_ACTION_COUNT;
 		OtherFX_Play(0, 1);
 	}
 
@@ -1039,14 +1498,17 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 			                        : "Could not open the official source page.");
 			break;
 		case 4:
-			if (CustomTrackManager_RenderYaml(package, status, yaml, sizeof yaml) &&
+			CustomTrackManager_LoadRelicTimes(NativeAssets_GetAssetDir(), package, status, &relic);
+			if (CustomTrackManager_RenderYaml(package, status, &relic, yaml, sizeof yaml) &&
 			    Platform_SetClipboardText(yaml))
-				CustomContent_SetMessage("Verified custom_tracks YAML copied.");
+				CustomContent_SetMessage(relic.set ? "Verified custom_tracks YAML copied, with relic times."
+				                                   : "Verified custom_tracks YAML copied.");
 			else
 				CustomContent_SetMessage("Copy YAML requires a Ready package.");
 			break;
 		case 5:
-			if (CustomTrackManager_SaveYaml(NativeAssets_GetAssetDir(), package, status,
+			CustomTrackManager_LoadRelicTimes(NativeAssets_GetAssetDir(), package, status, &relic);
+			if (CustomTrackManager_SaveYaml(NativeAssets_GetAssetDir(), package, status, &relic,
 			                                &exported))
 			{
 				char savedMessage[96];
@@ -1057,44 +1519,61 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 			else
 				CustomContent_SetMessage("Save YAML requires a Ready package.");
 			break;
+		case 6:
+			RelicTimes_Open(package, status);
+			break;
+		case 7:
+			if (CustomTrackManager_ClearRelicTimes(NativeAssets_GetAssetDir(), package))
+				CustomContent_SetMessage("Relic times cleared. Export writes no Relic Race.");
+			else
+				CustomContent_SetMessage("Could not clear the relic times.");
+			RelicTimes_Refresh(package, status, 1);
+			break;
 		}
+		// Rescan and Verify can change the scanned bytes, and with them the times.
+		RelicTimes_Refresh(package, AP_CustomContentStatus(), 1);
+	}
 	}
 
 	status = AP_CustomContentStatus();
-	DecalFont_DrawLineOT("Custom Content", 0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
-	DecalFont_DrawLineOT((char *)package->title, 0x100, 0x36,
-	                   FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-	snprintf(line, sizeof line, "v%s  |  %s  |  Project Saphi", package->version, package->author);
-	DecalFont_DrawLineOT(line, 0x100, 0x48, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-	snprintf(line, sizeof line, "Status: %s  |  Seed: %s",
-	         downloadState == AP_CT_DOWNLOAD_RUNNING ? "Downloading" : CustomTrackManager_StateText(status->state),
-	         AP_CustomContentSeedSelected()
-	             ? (AP_CustomContentRequired() ? "REQUIRED" : "READY")
-	             : "OPTIONAL");
-	DecalFont_DrawLineOT(line, 0x100, 0x5A, FONT_SMALL, JUSTIFY_CENTER |
-	                   (AP_CustomContentRequired() ? RED : ORANGE), ot);
-
-	for (i = 0; i < CUSTOM_CONTENT_ACTION_COUNT; i++)
+	if (!package->flagRelicCrates)
+		snprintf(line, sizeof line, "Relic times: no relic crates");
+	else if (!s_relicShown.set)
+		snprintf(line, sizeof line, "Relic times: not set, no Relic Race");
+	else
 	{
-		int column = i / 3;
-		int row = i % 3;
-		int x = column == 0 ? 0x38 : 0x118;
-		int y = 0x78 + row * 0x18;
-		DecalFont_DrawLineOT((char *)s_customContentActions[i], x, y, FONT_SMALL, ORANGE, ot);
-		if (i == menu->rowSelected)
-		{
-			RECT sel = {column == 0 ? 0x30 : 0x110, y - 2, 0xC0, 0x0C};
-			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
-		}
+		char times[3][16];
+		for (i = 0; i < 3; i++)
+			RelicTime_Format(CustomTrackManager_RelicCentisFromTicks(s_relicShown.ticks[i]), times[i],
+			                 sizeof times[i]);
+		/* "Relics:", not "Relic times:": three times only fit the page that way. */
+		snprintf(line, sizeof line, "Relics: %s / %s / %s", times[0], times[1], times[2]);
 	}
-
-	CustomContent_DrawMessage(ot);
+	{
+		struct CustomContentView view;
+		view.title = package->title;
+		view.version = package->version;
+		view.author = package->author;
+		view.state = downloadState == AP_CT_DOWNLOAD_RUNNING ? "Downloading" : CustomTrackManager_StateText(status->state);
+		view.seed = AP_CustomContentSeedSelected() ? (AP_CustomContentRequired() ? "REQUIRED" : "READY") : "OPTIONAL";
+		view.required = AP_CustomContentRequired();
+		view.relic = line;
+		view.message = s_customContentMessage;
+		view.actions = s_customContentActions;
+		view.actionCount = CUSTOM_CONTENT_ACTION_COUNT;
+		view.actionRows = CUSTOM_CONTENT_ACTION_ROWS;
+		view.selected = menu->rowSelected;
+		view.editing = s_relicEditOpen;
+		if (s_relicEditOpen)
+			RelicTimes_DrawEditor(ot);
+		CustomContentView_Draw(&view, ot);
+	}
 }
 #endif
 #endif // CTR_AP
 
-// The package library and Track Manager: the AP box authoring download and the
-// authoring client without Archipelago.
+// The package library and Track Manager: the AP clients and the authoring
+// client without Archipelago.
 #ifdef CTR_CUSTOM_PACKAGES
 static struct CustomTrackLibrary s_contentLibrary;
 static int s_contentLibraryLoaded;
@@ -1106,6 +1585,7 @@ static int s_contentInstallBusy;
 static char s_contentInstallPin[65];
 static char s_contentInstallMessage[512];
 static int s_contentStoreBusy, s_contentStoreWanted;
+static unsigned int s_contentStoreGeneration; /* Bumped by every finished scan. */
 static char s_contentStoreMessage[512];
 static struct CustomSaphiCatalogue *s_saphiCatalogue;
 static int s_saphiRefreshBusy, s_saphiLoaded, s_saphiDownloading;
@@ -1138,16 +1618,36 @@ static void MM_CustomLibrary_Tick(int reload)
             {
                 CustomTrackLibrary_MarkInstalled(&s_contentLibrary, s_contentInstallPin);
                 s_contentStoreWanted = 1;
+#ifdef CTR_AP
+                if (!AP_Solo_PublishInstalledStore(s_contentInstallPin, s_contentInstallMessage,
+                                                   sizeof s_contentInstallMessage))
+                    snprintf(s_contentInstallMessage, sizeof s_contentInstallMessage,
+                             "Files installed, but Play Solo publication failed.");
+                else
+#endif
                 snprintf(s_contentInstallMessage, sizeof s_contentInstallMessage,
-                         "Installed. Choose custom tracks from Arcade.");
+                         "Installed. Listed in Play Solo and Arcade.");
             }
         }
     }
     if (s_contentStoreBusy)
     {
         int result = CustomPackage_PollStoreScan(&s_contentLibrary, s_contentStoreMessage, sizeof s_contentStoreMessage);
-        if (result == 1 || result == -2) s_contentStoreBusy = 0;
-        if (result == 1) s_contentInstallPin[0] = 0; /* Fresh store evidence supersedes an old action message. */
+        if (result == 1 || result == -2)
+        {
+            s_contentStoreBusy = 0;
+            s_contentStoreGeneration++;
+        }
+        if (result == 1)
+        {
+#ifdef CTR_AP
+            char publicationError[256];
+            if (!AP_Solo_PublishInstalledStore(NULL, publicationError, sizeof publicationError))
+                snprintf(s_contentStoreMessage, sizeof s_contentStoreMessage,
+                         "Play Solo publication failed: %.170s", publicationError);
+#endif
+            s_contentInstallPin[0] = 0; /* Fresh store evidence supersedes an old action message. */
+        }
     }
     if (s_contentStoreWanted && !s_contentStoreBusy && !s_contentInstallBusy)
     {
@@ -1212,8 +1712,18 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 	if (!backHandled && (backTapped & (BTN_TRIANGLE | BTN_START)) != 0 && !NativeText_Active()
 #ifdef CTR_CUSTOM_PACKAGES
 	    // Drain a package or Saphi worker before leaving; Back first leaves
-	    // the Versions list of one track.
-	    && !MM_CustomLibrary_Busy() && !s_saphiVersionTrack
+	    // the Versions list of one track or the xdelta import screen.
+	    && !MM_CustomLibrary_Busy() && !s_saphiVersionTrack && !MM_CustomImport_Active()
+#endif
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS) && !defined(CTR_AP_AUTHORING)
+	    // Back first closes the Install missing content overview (#133 PR 7).
+	    && !MM_CurrentSeed_ConsumesBack(s_currentSection)
+	    // Back first closes the relic time editor (row 10j).
+	    && !MM_CustomContent_ConsumesBack(s_currentSection)
+#endif
+#ifdef CTR_AP
+	    // Back first steps out of the Play Solo pages (#89).
+	    && !MM_Solo_ConsumesBack()
 #endif
 	)
 	{
@@ -1252,11 +1762,18 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 #ifdef CTR_AP
 		// Connection and Custom Content have bespoke action/state surfaces.
 #ifdef CTR_CUSTOM_TRACKS
+		if (sec == s_trackLibrarySection)
+		{
+			MM_ConfigProc_TrackLibrary(menu, ot, pad);
+		}
+		else
+#ifndef CTR_AP_AUTHORING
 		if (sec == s_customContentSection)
 		{
 			MM_ConfigProc_CustomContent(menu, ot, pad);
 		}
 		else
+#endif
 #endif
 		if (strcmp(s_sectionName[sec], "Connection") == 0)
 		{
@@ -1275,9 +1792,9 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 #ifdef CTR_CUSTOM_PACKAGES
 		// The authoring client without Archipelago: Custom Content is the only
 		// bespoke page.
-		if (sec == s_customContentSection)
+		if (sec == s_trackLibrarySection)
 		{
-			MM_ConfigProc_CustomContent(menu, ot, pad);
+			MM_ConfigProc_TrackLibrary(menu, ot, pad);
 		}
 		else
 		{
@@ -1300,6 +1817,8 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			OtherFX_Play(0, 1);
 		}
 
+		Config_KeepInView(menu->rowSelected, pageRows);
+
 		// The selected config entry; NULL on the Room links action row.
 		const ConfigEntry *selEntry = (menu->rowSelected < numRows) ? Section_Entry(sec, menu->rowSelected) : NULL;
 
@@ -1314,6 +1833,8 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 				AP_LinkRegAction(); // Room links: use this client for ctr-ap:// links, or stop
 			else if (Config_RowLockedBySeed(e))
 				; // the seed has item box colours off: nothing to toggle
+			else if (Config_RowLockedBySolo(e))
+				; // no DeathLink in a solo session: nothing to toggle
 			else
 #endif
 			if (e->type == CFG_BOOL)
@@ -1323,7 +1844,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 #ifdef CTR_AP
 			else if (e->type == CFG_STRING)
 				TextEdit_Begin(e, menu->rowSelected,
-					CONN_ROW_START_Y + menu->rowSelected * CONN_ROW_SPACING - 2);
+					CONN_ROW_START_Y + (menu->rowSelected - s_configTop) * CONN_ROW_SPACING - 2);
 #endif
 		}
 
@@ -1353,7 +1874,11 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		// enum entries: tap left/right to step through the preset ladder
 		{
 			const ConfigEntry *e = selEntry;
+#ifdef CTR_AP
+			if (e != NULL && e->type == CFG_ENUM && !Config_RowLockedBySolo(e))
+#else
 			if (e != NULL && e->type == CFG_ENUM)
+#endif
 			{
 				if ((pad->buttonsTapped & BTN_LEFT) != 0)
 				{
@@ -1385,17 +1910,21 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		int startY = 0x3C;
 		int rowSpacing = 0x0E;
 
-		for (int j = 0; j < numRows; j++)
+		for (int j = s_configTop; j < numRows && j < s_configTop + CONFIG_PAGE_WINDOW; j++)
 		{
 			const ConfigEntry *e = Section_Entry(sec, j);
-			int y = startY + j * rowSpacing;
+			int y = startY + (j - s_configTop) * rowSpacing;
 #ifdef CTR_AP
 			const int editing = s_connEditing && s_connEditEntry == e;
 #else
 			const int editing = 0;
 #endif
 
+#ifdef CTR_AP
+			DecalFont_DrawLineOT((char *)e->label, labelX, y, FONT_SMALL, Config_RowLockedBySolo(e) ? GRAY : ORANGE, ot);
+#else
 			DecalFont_DrawLineOT((char *)e->label, labelX, y, FONT_SMALL, ORANGE, ot);
+#endif
 			Config_DrawValue(e, valueX, y, ot, buf, editing);
 
 			if (j == menu->rowSelected)
@@ -1405,9 +1934,9 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			}
 		}
 #ifdef CTR_AP
-		if (linkRow >= 0)
+		if (linkRow >= 0 && linkRow >= s_configTop && linkRow < s_configTop + CONFIG_PAGE_WINDOW)
 		{
-			int y = startY + linkRow * rowSpacing;
+			int y = startY + (linkRow - s_configTop) * rowSpacing;
 			Config_DrawLinkRow(y, labelX, valueX, ot);
 			if (menu->rowSelected == linkRow)
 			{

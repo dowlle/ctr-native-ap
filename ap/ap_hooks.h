@@ -11,9 +11,14 @@
 #ifdef CTR_AP
 
 #include "ap_seedcfg.h" // per-seed slot_data config (ctr_cfg + getters), Phase 2
+#include "ap_wumpa_shop_menu.h" // #249 green load/save menu row ids
+#include "ap_content_plan.h"
+#include "ap_content_modes.h"
+#include "ap_win_logic.h"
 #include "ap_lettersanity.h" // freestanding pickup and token-gate decisions
 #include "ap_cortex_track.h" // Cortex Vortex pad track slots + pseudo-bits (schema 15)
 #include "ap_podium_skip_logic.h" // local podium-skip policy + 0xd call-site gate (#285)
+#include "ap_solo.h" // #89 solo mode: bundled runtime jobs and the solo server
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_track_manager.h>
 #include "ap_custom_track_download.h"
@@ -67,6 +72,13 @@ void AP_NotifyCupAggregateCustomTrackCtr(int didWin, int collected);
 // event; whether it COMPLETES the seed depends on the composed goal (issue #152:
 // ctr_cfg.goal_oxide/goal_bosses/goal_gems, see AP_EvaluateGoal).
 void AP_NotifyGoal(int oxideSecond);
+void AP_NotifyCrystalPickup(struct Instance *inst, int driverID);
+int AP_ContentCrystalIntent(void);
+const ctr_content_pad *AP_ContentCrystalPad(void);
+void AP_ArcadeCrystals_Spawn(struct GameTracker *g);
+void AP_ArcadeCrystals_OnFrame(struct GameTracker *g);
+void AP_NotifyContentCrystalPickup(struct Instance *inst,int driverID);
+int AP_NotifyContentCrystalComplete(void);
 
 // Evaluate the composed per-seed goal (issue #152: ctr_cfg.goal_oxide/
 // goal_bosses/goal_gems, ANDed) against received items + game events and send
@@ -235,6 +247,7 @@ int AP_GateCountForeign(int itemType);   // #85: foreign-only split (multiworld 
 // item index space (0..189). Own-location items are deliberately excluded and
 // are banked synchronously from scout+checked state by ap_verify.c.
 int AP_VerifyForeignItemCount(int itemIndex);
+int AP_VerifyForeignItemCodeCount(long long code);
 // Useful grants call this before applying a weapon-backed effect. When
 // itemsanity is active, Shield and Mask remain queued until their weapon unlock
 // has arrived; ids outside the frozen itemsanity weapon set stay available.
@@ -312,6 +325,36 @@ int AP_ConnUpdateNoticeActive(void);
 // delegates here with the live tallies; the verify sweep passes simulated ones.
 int AP_ReqMetCounts(const ctr_req *r, const int *counts);
 
+// Content-plan pad entry (#463): the one live evaluator of a pad's hub Key floor
+// plus its manual stage-1 rule (ap_content_pad_open over the received tallies).
+// Pad state, the capture and final load gates, the tracker launch and the
+// pad text all call this, so they cannot disagree.
+int AP_ContentPadOpen(const ctr_content_pad *pad);
+int AP_ContentPadRacerMet(const ctr_content_pad *pad);
+// Owned count for the pad's manual rule (0 when it has none).
+int AP_ContentPadRuleOwned(const ctr_content_pad *pad);
+// Track modes (#133 PR 3): the pad is open and the mode's stage is met
+// (ap_content_mode_open over the received tallies). The mode selector, the
+// race-start gate, pad state and the pad text all call this.
+int AP_ContentModeOpen(const ctr_content_pad *pad, int mode);
+// Owned count for the pad's second-stage rule (0 when it has none).
+int AP_ContentStage2Owned(const ctr_content_pad *pad);
+// Server checked-state of one content-plan code (ap_content_checked_fn).
+int AP_ContentCodeChecked(int64_t code);
+// The pad's mode selector rows over the received tallies and the server's
+// checked set (ap_content_selector_build). Returns the number of open rows.
+int AP_ContentSelectorBuild(const ctr_content_pad *pad, ap_content_selector *out);
+// AP_PadState of an open or locked content-plan track pad (ap_content_track_pad_state).
+int AP_ContentTrackPadState(const ctr_content_pad *pad);
+// One generator row 6: the pad's race type menu, the selector setting in force,
+// the number on its AP BOXES LEFT line, and whether a race on this pad can still
+// serve a Hit Character or Itemsanity use (ap_hooks_pads.c).
+void AP_ContentMenuRows(const ctr_content_pad *pad, ap_rs_rows *rows);
+int AP_RaceTypeSelectorSetting(void);
+int AP_ContentBoxesLine(const ctr_content_pad *pad);
+int AP_ContentPadPlainLeft(const ctr_content_pad *pad);
+void AP_ContentLogMenu(const ctr_content_pad *pad, const ap_rs_rows *rows, int decision);
+
 // Per-frame verdict tick + the solo-seed "not completable" banner (drawn at the
 // AP_DrawSchemaWarning call sites). Full contract in ap_verify.h.
 void AP_VerifyOnFrame(void);
@@ -324,6 +367,55 @@ const struct CustomTrackManagerStatus *AP_CustomContentStatus(void);
 // The package the Custom Content page shows, downloads and exports: the
 // connected seed's exact profile, otherwise the current Baby T Park release.
 const struct CustomTrackManagerPackage *AP_CustomContentPackage(void);
+int AP_StandaloneRaceActive(void);
+// The win set of the running content-plan race (one generator row 6,
+// ap_hooks_race.c): the checks `win_logic` decides its stakes from. Returns -1
+// when no content-plan race on its pad's route is running.
+int AP_ContentWinSet(long set[AP_WS_WINSET_MAX]);
+// Content-plan podium identity of the running Trophy Race, or -1 (#133 PR 3b).
+int AP_StandalonePodiumTrack(void);
+int AP_NotifyStandaloneRace(void);
+// Relic Race result of a content-plan standalone race (#133 PR 3): sends the
+// tiers the time reaches against the track's own targets. Returns the number
+// of tiers sent.
+int AP_NotifyStandaloneRelic(int raceTime);
+// Pad display identity of the running standalone race's CTR Challenge, or -1.
+int AP_StandaloneCtrBit(void);
+// The running standalone Relic Race's target for a tier, or -1 when no
+// content-plan Relic Race is running.
+int AP_StandaloneRelicTarget(int tier);
+// The running content-plan Relic Race's tier code; -2 when none is running.
+long AP_StandaloneRelicCode(int tier);
+// Stage the content-plan race for one of the pad's modes (AP_CONTENT_MODE_*).
+// Returns the host LevelID to load, or -1 when the mode's gate or the
+// package refuses the entry.
+int AP_ContentPreparePad(int physicalPad, int mode);
+int AP_ContentPadReady(int physicalPad);
+// Content-plan cups (#133 PR 5, ap_hooks_custom_content.c): the running
+// cup's pad and leg, its standings name and hub-return pad, the next leg's
+// load, the leg results (Cup Leg Victory, sweep record) and the cup's end.
+struct GameTracker;
+const ctr_content_pad *AP_ContentCupPad(void);
+int AP_ContentCupLeg(void);
+const char *AP_ContentCupName(void);
+int AP_ContentCupPadLevel(void);
+int AP_ContentCupNextLeg(int leg, int *outLaps);
+void AP_ContentCupEnter(void);
+void AP_ContentCupOnLevelStart(void);
+void AP_ContentCupOnLoadRequested(int level);
+void AP_ContentCupLegResult(struct GameTracker *gGT);
+int AP_ContentCupFinish(struct GameTracker *gGT, int won);
+// Hit Character on content plans (#133 PR 5b): a content-plan cup draws its
+// frozen field from 200 + its name index (-1 when no content-plan cup runs).
+int AP_ContentCupHitDestination(void);
+// Boss cups (#133 PR 6b): the running boss cup's garage (-1 none), its leg's
+// certified restart point count, garage entry staging (-2 no cup, -1 refused,
+// else the level to load) and the return to the garage.
+int AP_ContentGarageCupRunning(void);
+int AP_ContentGarageCupReady(int garage);
+int AP_ContentGarageCupLegPoints(void);
+int AP_ContentGarageCupPrepare(int garage);
+int AP_ContentGarageCupReturn(struct GameTracker *gGT, int garage);
 int AP_CustomContentSeedSelected(void);
 int AP_CustomContentRequired(void);
 void AP_CustomContentRescan(void);
@@ -334,9 +426,18 @@ int AP_CustomContentGateEventEntry(int forceVerify);
 void AP_DrawCustomContentWarning(void);
 #endif
 #ifdef CTR_CUSTOM_PACKAGES
-// Box authoring build: may the Arcade custom pages start a package race? The
-// authoring build never joins a room (ap_net_init), so this is "no seed".
+// May the Arcade custom pages start a package race now? The box authoring
+// download never joins a room (ap_net_init), so there this is "no seed". The
+// player client may also start one in a room, see AP_ArcadeHoldsRoom.
 int AP_CustomOfflineLaunchAllowed(void);
+// A line for the start panel in a room, "" outside one.
+const char *AP_CustomOfflineRoomNote(void);
+// A custom Arcade race is running in this client. Nothing it does reaches the
+// room, and received items stay queued until it ends. Checks earned before the
+// race (held offline, a shop purchase) may still go out on their own paths.
+int AP_ArcadeHoldsRoom(void);
+#else
+#define AP_ArcadeHoldsRoom() 0
 #endif
 
 // Append a line to the AP debug log (forwards to the module's AP_AppendLog).
@@ -344,12 +445,6 @@ int AP_CustomOfflineLaunchAllowed(void);
 // lines -- e.g. AH_WarpPad_LInB logs each pad whose destination was remapped.
 void AP_LogLine(const char *msg);
 
-// #299 Turbo Grant fired count, kept in the room's DataStorage by ap_hooks.c
-// (AP_NET_FX_TURBO_FIRED). Unknown until the room answers the connect-time Get;
-// ap_turbogrant.c delivers nothing while it is unknown.
-int  AP_FxTurboFiredKnown(void);
-int  AP_FxTurboFired(void);
-void AP_FxTurboFiredIncrement(void);
 
 // Emit one AP item-box location check (#109). Lives here rather than in
 // ap_boxes.c so every optional location class routes through the one #176
@@ -542,6 +637,14 @@ int AP_WarpPadRewardGemColour(int globalBit);
 // back to the vanilla token group on -1 (unscouted placeholder).
 int AP_WarpPadRewardTokenColour(int globalBit);
 
+// Spoiler Items (#459 ruling, 2026-10-28): turn one warp pad prize slot into
+// the neutral Archipelago marker a pad shows while Warp Pad Preview is missing.
+// The marker wears the uniform surprise colour whatever the seed's
+// ap_item_type_colors says, so it names no item, class or count. Returns 0 and
+// leaves the instance alone when the marker model is not parked.
+int AP_WarpPadNeutralMarkerReady(void);
+int AP_WarpPadShowNeutralMarker(struct Instance *prize);
+
 // 1 if the AP location at `globalBit` (= word*32+bit) has been CHECKED on the
 // server for our own slot. Use this -- NOT CHECK_ADV_BIT on the AdvProgress bits
 // -- to ask "has the player completed this location" in AP mode: AP_ApplyItems
@@ -564,6 +667,29 @@ void AP_DoorHistoryReconcile(int level, int door);
 int AP_LettersRequiredCount(int track);
 int AP_LetterTokenEarned(int track, int didWin, int collected);
 void AP_WumpaReachedTen(struct Driver *driver);
+// #249 banking (ap_wumpa.c): fruit past 10 for the local player, and the fruit
+// held at the race-finished edge, once per attempt.
+int AP_WumpaRaceModify(struct Driver *driver, int delta);
+int AP_WumpaRaceCount(struct Driver *driver);
+void AP_WumpaOnRaceFinish(struct Driver *driver, int wasHuman, int held);
+// #249: bank AP fruit past 10 held since the last effect-marker write
+// (ap_hooks_received.c calls it right after that write).
+void AP_WumpaCommitReceived(void);
+// #249 hub counter: balance and lifetime banked total in a 1P hub (decision 20).
+void AP_WumpaDrawHub(void);
+// #249 tracker: the hub's "shop slots left" line (decision 21); 0 = none.
+int AP_WumpaShopHubTrackerLine(int level, char *out, int cap);
+// #249 shop page (ap_wumpa_shop_ui.c, rows in ap_wumpa_shop_menu.h).
+// PrepareGreenMenu picks the green load/save rows before the save screen
+// shows them, WUMPA SHOP first; GreenMenuRow maps a chosen row to its retail
+// row (opening the shop returns AP_WSHOP_GREEN_HANDLED); GreenExitRow is that
+// menu's EXIT row; MenuFrame owns input and drawing while the page is open.
+struct RectMenu;
+int AP_WumpaShopRowShown(void);
+void AP_WumpaShopPrepareGreenMenu(struct RectMenu *menu);
+int AP_WumpaShopGreenMenuRow(struct RectMenu *menu, int row);
+int AP_WumpaShopGreenExitRow(const struct RectMenu *menu);
+int AP_WumpaShopMenuFrame(void);
 
 // Hit Character encounters (schema 16, ticket 06): send one parsed Hit location
 // through the shared class-check path (per-seed membership + server-checked
@@ -650,14 +776,7 @@ int AP_RelicRewardOwnedByBit(int globalBit);
 // vanilla pad-state machine.
 int AP_WarpPadUncollectedBits(int destLevelID, int *outBits, int cap);
 
-// ── Unified pad state (Warp-Pad State Model v2) ──
-// Category-general uncollected-location enumerator: fills `outBits` (capacity
-// `cap`) with the still-unchecked AP reward locations of destination
-// `destLevelID` for ANY category (race 0..15 = 5 tiers; trial 16/17 = 3 relic
-// tiers; arena 18/19/21/23 = 1 crystal; cup 100..104 = 1 gem) and returns the
-// count. The category-general sibling of AP_WarpPadUncollectedBits (race-only).
-int AP_PadUncollectedBits(int destLevelID, int *outBits, int cap);
-
+// ── Content-plan pad state and display ──
 // Schema-10 standalone race identities for Slide Coliseum and Turbo Track.
 // These locations have no AdvProgress bit and must never use levelID arithmetic.
 int AP_TrialTrackConfigured(int levelID);
@@ -667,6 +786,12 @@ int AP_TrialTrackLocationChecked(int levelID, int challenge);
 // Pad lifecycle, glow and the trial entry route all key off this.
 int AP_TrialChallengeServable(int destLevelID);
 void AP_NotifyTrialTrackRace(int levelID, int challenge);
+#include "ap_race_structure_logic.h"
+// ctr_first on content plans (ap_hooks_race.c). PodiumCtrFirst: a CTR Challenge
+// on this podium track earns its rungs (decision 14). CtrFirstPlace: first place
+// in such a race pays the Trophy Race check.
+int AP_RaceStructurePodiumCtrFirst(int podiumTrack);
+void AP_ContentCtrFirstPlace(void);
 
 // ── Cortex Vortex pad track (schema 15, virtual destination 110) ──
 // AP_CortexTrackActive is THE identity question every LevelID-13 consumer asks
@@ -685,8 +810,6 @@ int AP_CortexTrackChecked(int slot);
 int AP_CortexTrackPrepareLoad(int destLevelID);
 // Entry gate for a pad or cup that leads to 110. forceVerify re-hashes the pair.
 int AP_CortexTrackEntryReady(int forceVerify);
-// Does cup 0..4 leg destination 110?
-int AP_CupLegsCortexTrack(int cup);
 // Results: trophy (token=0) or CTR token (token=1) race on the pad track, and
 // the relic award from a bonus-adjusted race time. Direct codes only.
 void AP_NotifyCortexTrackRace(int token);
@@ -697,40 +820,20 @@ int AP_RelicTimeFor(int levelID, int tier);
 // "CORTEX VORTEX" while active, else NULL (use the level's own name).
 const char *AP_CortexTrackDisplayName(void);
 
-// ── Podium rungs in the reward glow ──
-// Podium-ladder rungs carry no AdvProgress bit (absent from AP_LOCATION_TABLE),
-// so the bit-keyed glow pipeline addresses them via PSEUDO-BITS:
-// AP_PODIUM_PSEUDO_BASE + track*CTR_CFG_PODIUM_RUNG_COUNT + rung (schema >= 6:
-// 0 held_1st / 1 held_3rd / 2 held_5th / 3 finish_podium / 4 finish_any), safely
-// above the 192-bit AdvProgress space. Custom builds extend the logical track
-// range with the 32 frozen generic slots and reserve direct pseudo-bits for the
-// custom Trophy and per-destination Wumpa check. AP_LookupLocationCode translates
-// them to per-seed location codes, so every downstream bit-keyed helper (reward
-// model, tint, checked-state and scouts) works unchanged.
-//
-// AP_PadUncollectedGlowBits = AP_PadUncollectedBits PLUS the still-unchecked rung
-// pseudo-bits: for a RACE destination its own track's rungs; for a CUP destination
-// the rungs of all four leg tracks (advCupTrackIDs). A displaced custom cup uses
-// its generic Trophy, podium and per-destination Wumpa identities instead of the
-// absent retail Gem and leg identities. A configured trial (16/17) adds its
-// Trophy and CTR Challenge pseudo-bits (ap_trial_pad_glow.h, #343), which have
-// no AdvProgress bit. AP_PadState consumes this enumeration
-// together with the separate box, letter and retail Wumpa counts so Done can
-// never strand an attached check.
+// Plan-owned reward pseudo-bits, including each cup's track checks.
+// The state/tracker enumeration includes every unchecked location, even when
+// its mode is locked behind stage 2. IDs here are physical pad IDs.
 #ifndef CTR_CUSTOM_TRACKS
 #define AP_PODIUM_PSEUDO_BASE 0x100
 #endif
 int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap);
 
-// DISPLAY enumeration for the hub pad glow (ruling of 2026-09-30: the glow shows the
-// item of EVERY open location behind the pad). AP_PadUncollectedGlowBits plus the
-// still-open item boxes, CTR letters and per-track Wumpa, as the pseudo-bits of
-// ap_pad_glow_items.h. Display only: AP_PadState and the tracker keep using
-// AP_PadUncollectedGlowBits with the separate box/letter/Wumpa counts, so nothing
-// is counted twice and no lifecycle decision moves. A cup pad aggregates its four
-// legs' boxes and Wumpa exactly as the counts do. Buffers passed here must hold
-// AP_PAD_DISPLAY_BITS_MAX bits (worst case is a Gem Cup, 85).
+// Display enumeration includes only the plan modes currently open.
+// It does not alter state or tracker counts.
+
 #define AP_PAD_DISPLAY_BITS_MAX 96
+// Pad Approach Hints (#124): call while the pad at levelID shows its name.
+void AP_PadApproachHints(int levelID);
 int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap);
 
 // ── Prize-slot layout (issue #59) ──
@@ -759,33 +862,13 @@ unsigned AP_StateGen(void);
 // AH_Map_Warppads + AH_WarpPad_LInB/_ThTick (#ifdef CTR_AP).
 int AP_PadState(int physLevelID, int destLevelID);
 
-// Is the PHYSICAL pad's stage-1 (entry) requirement satisfied? The per-class
-// routing AP_PadState gathers with: race pads 0..15 through
-// ctr_cfg_warp_unlocked, trial pads 16/17, battle arenas 18/19/21/23 (their
-// vanilla branch is the hub-key gate) and cup pads 100..104. Randomized
-// slot_data requirements override every class fallback. Does NOT include the
-// racer lock for the non-race classes, so AND ctr_cfg_racer_lock_met when the
-// caller needs the full entry answer.
-//
-// Exposed for the Gem Cup AP-box policy (WO-A3, ap_boxes.c), which has to ask
-// this exact question about the pad hosting a cup leg's INDIVIDUAL race.
+// Physical plan pad entry, including its keys, manual rule and racer lock.
+// Shared with the Item Box spawn policy.
 int AP_PadStage1Met(int physLevelID);
 
-// Is this pad in the phase-1 re-entry window? The destination's Trophy Race is
-// checked, stage 2 is not met, and an AP box or per-track Wumpa check still
-// needs a plain adventure race. AP_PadState keeps it at 2 Raceable. The entry
-// gate offers that race and the pad is born OPEN instead of advertising a
-// stage-2 requirement it is not actually withholding entry on. Same keying as
-// AP_PadState. Returns 0 in vanilla mode and for any non-race destination.
-int AP_PadPhase1ReRaceable(int physLevelID, int destLevelID);
-
-// Is there a Hit Character opportunity behind this pad (block schema 2, the
-// pool draw)? True for a Hit-supported ordinary destination (0..17, trials only
-// with a valid trial row) while any eligible racer other than the effective
-// player (defaults always; guests once an unlock win is checked) has a Hit
-// location this seed carries and the server has not checked. Feeds both
-// AP_PadState and the tier-2 choosers in AH_WarpPad.c.
-int AP_HitPadOpportunity(int physLevelID, int destLevelID);
+// A Done plan pad whose entry is still met opens for a replay (one generator
+// row 6): its race type menu with every row grey, or its cup. 0 on other rooms.
+int AP_PadReplayable(int physLevelID, int destLevelID);
 
 // Is there an Itemsanity use opportunity behind this pad (#452)? True for a
 // retail race destination (0..15) while Itemsanity is on and a received weapon
@@ -794,49 +877,14 @@ int AP_HitPadOpportunity(int physLevelID, int destLevelID);
 // stranding the check, and it counts as a re-race reason in the tier-2 chooser.
 int AP_ItemsanityPadOpportunity(int destLevelID);
 
-// One [AP HIT] chooser line per chooser decision (OPEN, PLAIN, APPLY, CANCEL,
-// VANISH); NONE and WAIT are per-frame and never logged.
-void AP_HitLogChooser(int physLevelID, int destLevelID, int action, int route,
-                      int tokenLeft, int relicLeft);
-
 // Number of unchecked item-box locations owned by a race destination. This is
 // the same server-truth count used by AP_PadState, exposed so the warp-pad HUD
 // can explain why a trophy-complete pad remains raceable.
 int AP_PadUncollectedBoxCount(int destLevelID);
 
-// Number of unchecked per-track Reach 10 Wumpa locations genuinely served by
-// this destination: one for a retail race, or the deduplicated set owned by a
-// Gem Cup's four retail legs. Global mode does not hold individual pads open.
-// A displaced Alpha6 custom Cup already enumerates its custom Wumpa pseudo-bit
-// through AP_CustomPadAppendUnchecked and therefore returns zero here.
-int AP_PadUncollectedWumpaCount(int destLevelID);
-
-// Number of enabled Lettersanity locations still unchecked for a race
-// destination. These belong to the CTR Challenge race type and therefore keep
-// its side of the tier-2 route available even after the Token check itself.
-int AP_PadUncollectedLetterCount(int destLevelID);
-
-// 1 while this destination's Relic Race Perfect check exists in this seed and is
-// unchecked, else 0. Keeps the Relic Race side of the pad open (#439).
-int AP_PadUncollectedRelicPerfectCount(int destLevelID);
-
 // Fail-safe log for a pad whose entry route found nothing to load although the
 // pad was open: the warp is cancelled and the kart released (2026-10-09).
 void AP_PadLogEntryRefused(int physLevelID, int destLevelID);
-
-// ── Pad entry-route diagnostic (issues #232 / #265) ──
-// Emit ONE "[AP PAD]" line describing the entry route this pad just took, and
-// the state it was read out of. Deduplicated on the whole reported tuple, so an
-// unchanged pad decision logs once per TRANSITION rather than once per frame --
-// the gates below run every frame the player stands on a pad.
-//
-// Written for the #232 / #265 combined sequence: it makes "which branch did the
-// pad take, and what did it believe" readable from a plain log, which is the
-// one thing the two issues' live re-test otherwise has to infer from behaviour.
-// No-op in vanilla mode. Same keying as AP_PadState (physical pad = requirement,
-// destination = locations). `route` is an enum AP_PadRoute value, declared in
-// ap_pad_state.h beside the decision it labels.
-void AP_PadLogRoute(int physLevelID, int destLevelID, int route);
 
 // ── Gem-cup return hub (destination-shuffle correctness) ──
 // Vanilla returns the player to Gemstone Valley after EVERY gem cup, because a
@@ -853,6 +901,13 @@ void AP_PadLogRoute(int physLevelID, int destLevelID, int route);
 // GEM_STONE_VALLEY literal. AP_CupReturnHub returns -1 (AP inactive or unset) ->
 // caller keeps the vanilla GEM_STONE_VALLEY return.
 void AP_CupEnterFromHub(int hubLevelID);
+void AP_CupSweepEnterFromHub(void);
+void AP_CupSweepOnLoadRequested(int level);
+void AP_CupSweepOnLevelStart(struct GameTracker *g);
+void AP_CupSweepRecordLeg(struct GameTracker *g);
+void AP_CupSweepComplete(struct GameTracker *g,int legs);
+// #344: a driver crossed the finish line forwards and lapIndex advanced.
+void AP_LapOnCrossing(struct GameTracker *gGT, struct Driver *driver, int driverSlot);
 int  AP_CupReturnHub(void);
 
 #else

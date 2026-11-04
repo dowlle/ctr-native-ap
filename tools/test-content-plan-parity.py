@@ -1,0 +1,2213 @@
+#!/usr/bin/env python3
+"""Compare the production native parser with the paired generator, without a server.
+
+Run with the AP virtualenv and --apworld <paired checkout> --parser <host harness>.
+The C++ harness is also a standalone CI test using the checked-in real rooms.
+"""
+import argparse
+import copy
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+args = argparse.ArgumentParser()
+args.add_argument("--apworld", type=Path, required=True)
+args.add_argument("--parser", type=Path, required=True)
+args = args.parse_args()
+os.environ["SKIP_REQUIREMENTS_UPDATE"] = "1"
+sys.path.insert(0, str(args.apworld.resolve()))
+from worlds.ctr import content_plan as cp
+from worlds.ctr.test.test_content_plan import make_world, profile_options
+from worlds.ctr.test.test_warp_pad_rules import pool as manual_pool
+
+root = Path(__file__).resolve().parents[1]
+registry = json.loads(re.search(r'R"CTRREG\((.*)\)CTRREG"', (root / "ap/ap_content_registry.hpp").read_text(), re.S)[1])
+# Custom packages are not in the native registry: content plans admit any
+# complete descriptor (#133 PR 2) and native checks the bytes on load.
+L = cp.CTR_LOCATION_IDS
+expected = dict(retail=[dict(id=i, name=n, location=L[n + ": Trophy Race"], ctr=L[n + ": CTR Token Challenge"],
+                             relic=[L[f"{n}: {t} Time Trial"] for t in cp.RELIC_TIERS])
+                        for i, n in sorted(cp.RETAIL.items())],
+                pads=[dict(physical=p, hub=h, keys=k) for p, h, k in cp.pad_registry()],
+                custom_locations=[L[f"Custom Track {i}: Trophy Race"] for i in range(1, 133)],
+                # Track modes (#133 PR 3): generic-slot CTR and relic tier codes.
+                custom_ctr_locations=[L[f"Custom Track {i}: CTR Token Challenge"] for i in range(1, 133)],
+                custom_relic_locations=[[L[f"Custom Track {i}: {t} Time Trial"] for t in cp.RELIC_TIERS]
+                                        for i in range(1, 133)],
+                # The named-block table native binds track keys to (#133 PR 2
+                # review); tools/sync-content-registry.py rewrites it.
+                named_blocks=[dict(key=t.track_key, block=t.block_index, name=t.ap_name)
+                              for t in sorted(cp.destinations.NAMED_TRACKS, key=lambda t: t.track_key)])
+# Per-track check families (#133 PR 3b): rung, Wumpa and letter codes per
+# retail track and generic slot, and the one global Wumpa check.
+RUNGS = [cp.RUNG_SUFFIX[k] for k in cp.podium.SLOT_ORDER]
+for row in expected["retail"]:
+    n = row["name"]
+    row.update(podium=[L[f"{n}: {s}"] for s in RUNGS], wumpa=L[f"{n}: Reach 10 Wumpa"],
+               letters=[L[f"{n}: Letter {x}"] for x in cp.LETTERS],
+               letter_items=[cp.content_item_pool.ITEMS[f"Letter {x} ({n})"] for x in cp.LETTERS],
+               perfect=L[f"{n}: Relic Race Perfect"])
+expected.update(custom_podium_locations=[[L[f"Custom Track {i}: {s}"] for s in RUNGS] for i in range(1, 133)],
+                custom_wumpa_locations=[L[f"Custom Track {i}: Reach 10 Wumpa"] for i in range(1, 133)],
+                custom_letter_locations=[[L[f"Custom Track {i}: Letter {x}"] for x in cp.LETTERS] for i in range(1, 133)],
+                custom_letter_items=[[cp.custom_check_code("letter_item", i, j) for j in range(3)] for i in range(1, 133)],
+                # Relic Race Perfect per generic slot and Cortex Vortex as a
+                # track (#133 PR 3c).
+                custom_perfect_locations=[L[f"Custom Track {i}: Relic Race Perfect"] for i in range(1, 133)],
+                wumpa_global=L["Wumpa: Reach 10 Wumpa"])
+CV = cp.destinations.CORTEX_VORTEX
+expected["cortex_vortex"] = dict(
+    id=cp.CORTEX_TRACK_ID, package_id=cp.CORTEX_PACKAGE_ID, name=CV, laps=cp.CORTEX_LAPS,
+    location=L[CV + ": Trophy Race"], ctr=L[CV + ": CTR Token Challenge"],
+    relic=[L[f"{CV}: {t} Time Trial"] for t in cp.RELIC_TIERS], perfect=L[CV + ": Relic Race Perfect"],
+    podium=[L[f"{CV}: {s}"] for s in RUNGS], wumpa=L[CV + ": Reach 10 Wumpa"],
+    letters=[L[f"{CV}: Letter {x}"] for x in cp.LETTERS], letter_items=list(cp.cortex_vortex.LETTER_ITEM_CODES))
+# Global check families (#133 PR 4d): codes and frozen names in class order.
+from worlds.ctr import itemsanity as cits, hit_character as chit
+expected["itemsanity"] = [dict(location=c, name=n) for n, c, _r in cits.ITEMSANITY_CLASS.all_locations()]
+expected["hit_character"] = [dict(location=c, name=n) for n, c, _r in chit.HIT_CHARACTER_CLASS.all_locations()]
+# Item Box Locations (#133 PR 4e): each retail row's placed slots as
+# [code, Shortcut Knowledge tier], in slot order.
+from worlds.ctr.item_boxes import ITEM_BOX_CLASS as CBOX, PLACED_COUNTS as CBOX_PLACED, SK_REQUIRED_TIER as CBOX_TIER
+for row in expected["retail"]:
+    row["boxes"] = [[CBOX.slot_code(row["name"], s), CBOX_TIER.get((row["name"], s), 0)]
+                    for s in range(1, CBOX_PLACED[row["name"]] + 1)]
+# Cups (#133 PR 5): the 27-name pool with its Win and Win All Legs codes, and
+# every track's Cup Leg Victory code (retail rows, Cortex Vortex, generic slots).
+from worlds.ctr import cup_checks as ccup
+for row in expected["retail"]:
+    row["cup_leg"] = L[ccup.cup_leg_name(row["name"])]
+expected["cortex_vortex"]["cup_leg"] = ccup.CORTEX_VORTEX_CUP_LEG_CODE
+expected["cups"] = [dict(name=n, win=L[ccup.cup_win_name(n)], sweep=L[ccup.cup_sweep_name(n)]) for n in ccup.CUP_NAMES]
+expected["gem_cups"] = [dict(name=n, win=L[f"{n}: Gem"], sweep=L[ccup.cup_sweep_name(n)]) for n in ccup.GEM_CUPS]
+expected["custom_cup_leg_locations"] = [L[ccup.cup_leg_name(f"Custom Track {i}")] for i in range(1, 133)]
+# Lap completion (#344): every track's Complete One Lap code.
+for row in expected["retail"]:
+    row["lap"] = L[row["name"] + ": Complete One Lap"]
+expected["cortex_vortex"]["lap"] = L[CV + ": Complete One Lap"]
+expected["custom_lap_locations"] = [L[f"Custom Track {i}: Complete One Lap"] for i in range(1, 133)]
+expected["named_blocks"] = expected.pop("named_blocks")  # registry key order
+assert registry == expected, "native frozen registry differs from paired apworld; run tools/sync-content-registry.py"
+assert (root/'tools/fixtures/arcade-arenas-v1.json').read_bytes()==(args.apworld/'worlds/ctr/data/arcade_arenas_v1.json').read_bytes(), "arcade manifests differ across the pair"
+cases = []
+for fixture in ("baseline", "starts-extras"):
+    cases.append((fixture, json.loads((root / f"tools/fixtures/content-plan/{fixture}.json").read_text()), True))
+for seed in range(50):
+    options = profile_options()
+    if seed % 3 == 0:
+        options["content_pool"]["tracks"]["custom"] = [copy.deepcopy(cp.PACKAGES[1])]  # both revisions share one named block since #306
+    if seed % 3 == 1:
+        options["content_pool"]["tracks"]["custom"] = []
+        options["content_pool"]["required_entries"] = []
+    if seed % 2:
+        options["item_pool"]["base"]["gems"] = ["red", "blue"]
+        options["gems_required_goal"] = 2
+        options["item_pool"]["extra"] = {"keys": 2, "gems": {"green": 1}}
+        options["start_inventory_from_pool"] = {"Key": 2}
+        options["start_inventory"] = {"Trophy": 3}
+    world = make_world(options, seed=seed)
+    cases.append((f"generated-{seed}", world.fill_slot_data(), True))
+
+# Manual pad requirements (#463): plans the paired generator emits for random
+# rule maps (free, every concrete family, every Any family), at many seeds.
+manual_maps = [
+    {"Crash Cove": ("free", 0), "Red Cup": ("AnyGem", 2), "Dingo Canyon": ("AnyRelic", 4)},
+    {"Roo's Tubes": ("Trophy", 5), "Skull Rock": ("Gold Relic", 2), "Turbo Track": ("Sapphire Relic", 1)},
+    {"Tiger Temple": ("Key", 4), "Green Cup": ("Red Gem", 1), "Rocky Road": ("AnyGem", 5), "Sewer Speedway": ("free", 0)},
+    {"Polar Pass": ("Trophy", 1)},
+]
+manual_refused = 0
+for seed in range(40):
+    options = profile_options()
+    options["item_pool"] = manual_pool()
+    options["warp_pad_rules"] = {pad: dict(item=item, count=count)
+                                 for pad, (item, count) in manual_maps[seed % len(manual_maps)].items()}
+    if seed % 2:
+        options["start_inventory"] = {"Trophy": 1}
+    try:
+        world = make_world(options, seed=seed)
+    except cp.OptionError as exc:
+        # This 19-check pool is all progression: a rule that asks for every
+        # Trophy can leave the solo fill check nothing to place them on.
+        assert "warp_pad_rules" in str(exc), exc
+        manual_refused += 1
+        continue
+    cases.append((f"manual-generated-{seed}", world.fill_slot_data(), True))
+assert manual_refused <= 4, manual_refused
+cases.append(("manual-fixture", json.loads((root / "tools/fixtures/content-plan/manual-rules.json").read_text()), True))
+
+from worlds.ctr.test.test_content_plan_row3 import options as row3_options
+relic_wire = make_world(row3_options(warppad_unlock_requirements="vanilla", accessibility="minimal",
+                                     oxide_goal="disabled", gems_required_goal=1), seed=2).fill_slot_data()
+assert relic_wire["ctr_options"]["relic_progression"] == {
+    "Sapphire Relic": True, "Gold Relic": False, "Platinum Relic": False}
+cases.append(("relic-progression-generated", relic_wire, True))
+for name, value in (("missing tier", {"Sapphire Relic": True}),
+                    ("extra tier", {"Sapphire Relic": True, "Gold Relic": False,
+                                    "Platinum Relic": False, "Ruby Relic": True}),
+                    ("nonboolean", {"Sapphire Relic": True, "Gold Relic": 0, "Platinum Relic": False}),
+                    ("nonobject", [])):
+    case = copy.deepcopy(relic_wire)
+    case["ctr_options"]["relic_progression"] = value
+    try:
+        cp.check_relic_progression(case["ctr_options"])
+        accepted = True
+    except cp.OptionError:
+        accepted = False
+    cases.append(("relic-progression-" + name, case, accepted))
+
+# All arena subsets and both Crystalsanity modes exercise the real parser.
+from worlds.ctr.test.test_arcade_arenas import arena_options
+for count in range(1,8):
+    for pickups in (False,True):
+        for seed in range(5):
+            wire=make_world(arena_options(count,pickups),seed=seed).fill_slot_data()
+            cases.append((f"arena-{count}-{pickups}-{seed}",wire,True))
+
+# Open package admission (#133 PR 2): plans with packages outside any compiled
+# registry, on a named block and on a generic slot, at many seeds.
+from worlds.ctr.test.test_custom_packages import UNKNOWN, named_fixture, options_with
+for seed in range(30):
+    custom = [[named_fixture(), copy.deepcopy(UNKNOWN)], [copy.deepcopy(UNKNOWN)], [named_fixture()],
+              [copy.deepcopy(cp.PACKAGES[0]), copy.deepcopy(UNKNOWN)]][seed % 4]
+    cases.append((f"open-generated-{seed}", make_world(options_with(custom), seed=seed).fill_slot_data(), True))
+cases.append(("open-fixture", json.loads((root / "tools/fixtures/content-plan/open-packages.json").read_text()), True))
+
+# 132 custom tracks: generated plans on slots past 32 and past
+# the old 64 tracks. The forgeries are below.
+from worlds.ctr.test.test_custom_tracks_132 import fixtures, many_cups
+for seed in range(12):
+    last = fixtures(132)
+    required = [f"custom/{d['content_id']}/{d['revision']}" for d in last[-(seed % 5 + 1):]]
+    cases.append((f"high-slots-{seed}", make_world(options_with(last, required), seed=seed).fill_slot_data(), True))
+    cases.append((f"many-tracks-{seed}", make_world(many_cups(), seed=seed).fill_slot_data(), True))
+cases.append(("custom-132-fixture", json.loads((root / "tools/fixtures/content-plan/custom-132.json").read_text()), True))
+
+base = cases[0][1]
+def alter(name, change, source=None):
+    case = copy.deepcopy(source or base)
+    change(case["content_plan"])
+    try:
+        cp.validate(case["content_plan"])
+        accepted = True
+    except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
+        accepted = False
+    cases.append((name, case, accepted))
+
+high_base = next(w for name, w, ok in cases if name == "custom-132-fixture")
+def high_slot(p, slot):
+    for track in p["tracks"]:
+        if track.get("custom_slot") == 132:
+            track["custom_slot"] = slot
+alter("high slot 133", lambda p: high_slot(p, 133), high_base)
+alter("high slot 131 taken or moved", lambda p: high_slot(p, 131), high_base)
+alter("high too many packages", lambda p: p["packages"].extend(copy.deepcopy(p["packages"][0]) for _ in range(120)), high_base)
+
+manual_base = next(w for name,w,ok in cases if name=="manual-fixture")
+def manual_req(plan, rid):
+    return next(r for r in plan["requirements"] if r["id"] == rid)
+def manual_alter(name, change):
+    alter("manual-" + name, change, manual_base)
+manual_alter("count above supply", lambda p: manual_req(p, "manual:3")["predicate"].__setitem__("count", 6))
+manual_alter("count zero", lambda p: manual_req(p, "manual:3")["predicate"].__setitem__("count", 0))
+manual_alter("item outside counted", lambda p: manual_req(p, "manual:3")["predicate"].__setitem__("item", 35010015))
+manual_alter("item without supply", lambda p: manual_req(p, "manual:3")["predicate"].__setitem__("item", 35010003))
+manual_alter("sum drops a colour", lambda p: manual_req(p, "manual:100")["predicate"]["items"].pop(4))
+manual_alter("sum reordered", lambda p: manual_req(p, "manual:100")["predicate"]["items"].reverse())
+manual_alter("sum lists unsupplied item", lambda p: manual_req(p, "manual:0")["predicate"]["items"].append(35010003))
+manual_alter("sum mixes families", lambda p: manual_req(p, "manual:0")["predicate"].__setitem__("items", [35010001, 35010009]))
+manual_alter("sum count above supply", lambda p: manual_req(p, "manual:0")["predicate"].__setitem__("count", 5))
+manual_alter("unsupported predicate", lambda p: manual_req(p, "manual:3").__setitem__("predicate", dict(op="all", terms=[dict(op="always")])))
+manual_alter("feature missing", lambda p: p.__setitem__("required_features", ["content_plan_v1"]))
+manual_alter("feature unknown", lambda p: p.__setitem__("required_features", ["content_plan_v1", "manual_pad_requirements_v2"]))
+manual_alter("gate to free", lambda p: next(x for x in p["pads"] if x["id"] == "pad:3")["mode_gates"][0].__setitem__("requirement_id", "free"))
+manual_alter("gate to another pad", lambda p: next(x for x in p["pads"] if x["id"] == "pad:3")["mode_gates"][0].__setitem__("requirement_id", "manual:17"))
+manual_alter("record without pad", lambda p: manual_req(p, "manual:3").__setitem__("id", "manual:4"))
+manual_alter("record for unknown pad", lambda p: manual_req(p, "manual:3").__setitem__("id", "manual:99"))
+manual_alter("stray record", lambda p: p["requirements"].append(dict(id="extra", predicate=dict(op="always"))))
+
+open_base = next(w for name, w, ok in cases if name == "open-fixture")
+def open_alter(name, change):
+    alter("open-" + name, lambda p: change(p["packages"]), open_base)
+def setter(path, value):
+    def change(packages):
+        target = packages
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = value
+    return change
+for name, change in [
+        ("unsorted", lambda p: p.reverse()),
+        ("id", setter([0, "id"], "package/fixture-loop/9")),
+        ("key case", setter([0, "content_id"], "Fixture-loop")),
+        ("key underscore", setter([0, "content_id"], "fixture_loop")),
+        ("key double hyphen", setter([0, "content_id"], "fixture--loop")),
+        ("key trailing hyphen", setter([0, "content_id"], "fixture-loop-")),
+        ("key too long", setter([0, "content_id"], "k" * 56)),
+        ("revision dot", setter([0, "revision"], ".1")),
+        ("revision number", setter([0, "revision"], 21)),
+        ("revision space", setter([0, "revision"], "2 1")),
+        ("uuid case", setter([0, "uuid"], UNKNOWN["uuid"].upper())),
+        ("uuid short", setter([0, "uuid"], UNKNOWN["uuid"][:-1])),
+        ("title control", setter([0, "display_name"], "Fixture\x01Loop")),
+        ("title delete", setter([0, "display_name"], "Fixture\x7fLoop")),
+        ("title 129 bytes", setter([0, "display_name"], "x" * 129)),
+        ("title 128 bytes utf8", setter([0, "display_name"], "\u00e9" * 64)),
+        ("author empty", setter([0, "author"], "")),
+        ("laps 0", setter([0, "laps"], 0)),
+        ("laps 8", setter([0, "laps"], 8)),
+        ("laps text", setter([0, "laps"], "3")),
+        ("cap number", setter([0, "capabilities", "arcade"], 1)),
+        ("cap extra", setter([0, "capabilities", "boxes"], True)),
+        ("cap missing", lambda p: p[0]["capabilities"].pop("wumpa")),
+        ("cap list", setter([0, "capabilities"], ["arcade"])),
+        ("relic without targets", lambda p: p[0].pop("relic_targets")),
+        ("targets without relic", lambda p: p[1].__setitem__("relic_targets", copy.deepcopy(p[0]["relic_targets"]))),
+        ("targets equal", setter([0, "relic_targets", "gold"], 96000)),
+        ("targets zero", setter([0, "relic_targets", "platinum"], 0)),
+        ("targets hour", setter([0, "relic_targets", "sapphire"], 3456000)),
+        ("targets over hour", setter([0, "relic_targets", "sapphire"], 3456001)),
+        ("targets extra", setter([0, "relic_targets", "bronze"], 1)),
+        ("files reversed", lambda p: p[0]["files"].reverse()),
+        ("files three", lambda p: p[0]["files"].append(copy.deepcopy(p[0]["files"][1]))),
+        ("files one", lambda p: p[0]["files"].pop()),
+        ("hash case", setter([0, "files", 0, "sha256"], "A1" * 32)),
+        ("hash short", setter([0, "files", 1, "sha256"], "b2" * 31)),
+        ("lev max", setter([0, "files", 0, "bytes"], 16 * 1024 * 1024)),
+        ("lev over", setter([0, "files", 0, "bytes"], 16 * 1024 * 1024 + 1)),
+        ("vrm max", setter([0, "files", 1, "bytes"], 4 * 1024 * 1024)),
+        ("vrm over", setter([0, "files", 1, "bytes"], 4 * 1024 * 1024 + 1)),
+        ("bytes zero", setter([0, "files", 1, "bytes"], 0)),
+        ("format", setter([0, "files", 1, "format"], "ctr-lev")),
+        ("format version", setter([0, "files", 0, "format_version"], 2)),
+        ("file extra", setter([0, "files", 0, "path"], "x.lev")),
+        ("evidence ok", setter([0, "evidence"], [dict(capability="arcade", file_hashes=["a1" * 32, "b2" * 32],
+                                                      verifier="fixture", revision=1, level="runtime")])),
+        ("evidence unpinned", setter([0, "evidence"], [dict(capability="arcade", file_hashes=["e5" * 32],
+                                                             verifier="fixture", revision=1, level="runtime")])),
+        ("evidence repeated hash", setter([0, "evidence"], [dict(capability="arcade", file_hashes=["a1" * 32] * 2,
+                                                                  verifier="fixture", revision=1, level="runtime")])),
+        ("evidence level", setter([0, "evidence"], [dict(capability="arcade", file_hashes=["a1" * 32],
+                                                          verifier="fixture", revision=1, level="measured")])),
+        ("evidence 16", setter([0, "evidence"], [dict(capability="arcade", file_hashes=["a1" * 32],
+                                                       verifier="fixture", revision=1, level="runtime")] * 16)),
+        ("evidence 17", setter([0, "evidence"], [dict(capability="arcade", file_hashes=["a1" * 32],
+                                                       verifier="fixture", revision=1, level="runtime")] * 17)),
+        ("repeated key", lambda p: p[1].update(content_id="fixture-loop", id="package/fixture-loop/3", revision="3")),
+        ("repeated uuid", lambda p: p[1].__setitem__("uuid", p[0]["uuid"])),
+        ("repeated files", lambda p: p[1].__setitem__("files", copy.deepcopy(p[0]["files"]))),
+        ("no arcade", setter([1, "capabilities", "arcade"], False)),
+        ("claims less", setter([0, "capabilities", "time_trial"], False)),
+        ("extra field", setter([1, "source_url"], "https://example.invalid")),
+        ("locator ok", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1,
+                                                    patch_name="Pack.xdelta", source_url="https://example.invalid/p"))),
+        ("locator minimal", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=4095))),
+        ("locator kind", setter([0, "locator"], dict(kind="saphi", patch_sha256="5e" * 32, bigfile_index=1))),
+        ("locator hash case", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5E" * 32, bigfile_index=1))),
+        ("locator index over", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=4096))),
+        ("locator name unicode", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1,
+                                                              patch_name="caf\u00e9"))),
+        ("locator http", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1,
+                                                      source_url="http://example.invalid"))),
+        ("locator url 128", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1,
+                                                         source_url="https://" + "x" * 120))),
+        ("locator url 129", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1,
+                                                         source_url="https://" + "x" * 121))),
+        ("locator extra", setter([0, "locator"], dict(kind="xdelta", patch_sha256="5e" * 32, bigfile_index=1, x=1))),
+        ]:
+    open_alter(name, change)
+alter("open-track laps differ", lambda p: next(t for t in p["tracks"] if t.get("package_id") == "package/fixture-loop/2.1").__setitem__("laps", 4), open_base)
+
+# Track identity (#133 PR 2 review): both sides bind a track key to its named
+# block and recompute or check generic room titles.
+def open_track(plan, key):
+    return next(t for t in plan["tracks"] if t.get("package_id", "").startswith(f"package/{key}/"))
+def open_check(plan, track):
+    return next(c for c in plan["checks"] if c["owner"] == track["id"])
+def drop_named(p):
+    t = open_track(p, "tv-world"); t.pop("named_block")
+    open_check(p, t)["location"] = cp.CTR_LOCATION_IDS["Custom Track 2: Trophy Race"]
+    p["checks"].sort(key=lambda c: c["location"])
+def claim_north_pole(p):
+    north = cp.destinations.named_track("north-pole")
+    t = open_track(p, "fixture-loop"); t.update(named_block=north.block_index, room_title=north.ap_name)
+    open_check(p, t).update(location=cp.named_tracks.location_code(north.block_index, "trophy"),
+                            display_name=north.ap_name + ": Trophy Race")
+    p["checks"].sort(key=lambda c: c["location"])
+def retitle(title):
+    def change(p):
+        t = open_track(p, "fixture-loop"); t["room_title"] = title
+        open_check(p, t)["display_name"] = title + ": Trophy Race"
+    return change
+alter("identity: named key moved to a generic slot", drop_named, open_base)
+alter("identity: unnamed key claims North Pole's block, name and check", claim_north_pole, open_base)
+alter("identity: named key under another title", lambda p: (open_track(p, "tv-world").__setitem__("room_title", "TV World 2"),
+      open_check(p, open_track(p, "tv-world")).__setitem__("display_name", "TV World 2: Trophy Race")), open_base)
+# Clashes only: the apworld also refuses any other title that is not the one it
+# derives (for example a changed case), which native does not recompute.
+for title in ("Crash Cove", "TV World", "North Pole", "tv world", "Fixture Loop"):
+    alter(f"identity: generic room title {title}", retitle(title), open_base)
+def two_generic(title):
+    def change(p):
+        text = json.dumps(p).replace("tv-world", "tv-park")
+        p.clear(); p.update(json.loads(text))
+        t = open_track(p, "tv-park"); t.pop("named_block"); t.update(room_title=title, display_name=title)
+        next(x for x in p["packages"] if x["content_id"] == "tv-park")["display_name"] = title
+        open_check(p, t).update(location=cp.CTR_LOCATION_IDS["Custom Track 2: Trophy Race"], display_name=title + ": Trophy Race")
+        p["checks"].sort(key=lambda c: c["location"])
+    return change
+alter("identity: two generic tracks, distinct titles", two_generic("TV Park"), open_base)
+alter("identity: two generic tracks, one title", two_generic("Fixture Loop"), open_base)
+for seed in range(8):
+    # Generated clashes: a retail title and two tracks with one title.
+    twin = copy.deepcopy(UNKNOWN)
+    twin.update(id="package/fixture-twin/1", content_id="fixture-twin", revision="1", author="Other Author",
+                uuid="1f0e0d0c-0b0a-4908-8706-050403020100", display_name=["Crash Cove", "Fixture Loop", "TV World", "Baby T Park"][seed % 4])
+    twin["files"] = [dict(f, sha256=h * 32) for f, h in zip(twin["files"], ("e5", "f6"))]
+    custom = [copy.deepcopy(UNKNOWN), twin] + ([named_fixture()] if seed % 2 else [])
+    cases.append((f"identity-generated-{seed}", make_world(options_with(custom), seed=seed).fill_slot_data(), True))
+
+# Track modes, stages and mode orders (#133 PR 3): every nonempty mode subset
+# with both stage settings and all three orders, on retail tracks and on custom
+# packages whose capabilities allow different modes (a CTR-capable named
+# track, a Trophy and Relic B+ track, a Relic-only B+ track).
+import itertools
+from worlds.ctr.test.test_track_modes import mode_options, relic_only
+from worlds.ctr.test.test_content_item_pool import small_pool
+def mode_custom():
+    tv = named_fixture()
+    tv["capabilities"].update(ctr_tokens=True, relic=True)
+    tv["relic_targets"] = dict(sapphire=90000, gold=80000, platinum=70000)
+    return [tv, copy.deepcopy(UNKNOWN), relic_only()]
+# A CTR Challenge needs the Trophy Race in the same list (`track_modes`).
+subsets = [list(c) for n in (1, 2, 3) for c in itertools.combinations(cp.MODES, n) if "ctr" not in c or "trophy" in c]
+modes_refused = 0
+for index, (modes, stages, order) in enumerate(itertools.product(subsets, ("single", "two"), ("fixed", "per_seed", "per_pad"))):
+    custom = mode_custom() if index % 2 == 0 else [copy.deepcopy(cp.PACKAGES[1]), copy.deepcopy(UNKNOWN)]
+    # Keep only the custom tracks that can run one of the selected modes.
+    custom = [d for d in custom if set(modes) & set(cp.supported_modes("custom", d))]
+    for seed in range(2):
+        options = mode_options(modes, stages, order, custom=custom)
+        if "relic" not in modes:
+            options["item_pool"] = small_pool()  # relic checks follow the items, so no room for the larger pool
+        else:
+            options["item_pool"]["base"]["trophies"] = 2
+        if seed:
+            options["warp_pad_rules"] = {"Crash Cove": dict(item="Trophy", count=2)}
+            options["warppad_unlock_requirements"] = "randomized"
+        try:
+            cases.append((f"modes-{'+'.join(modes)}-{stages}-{order}-{seed}", make_world(options, seed=seed + index).fill_slot_data(), True))
+        except cp.OptionError as exc:
+            # Only Relic Races: a relic check for each relic item leaves no
+            # check for the Keys and Gems.
+            assert modes == ["relic"] or "at the start" in str(exc), exc
+            modes_refused += modes != ["relic"]
+assert modes_refused <= 6, f"{modes_refused} mode cases refused at the start"
+# `podium_rungs` has no parent switches: a set the five old switches could not make.
+for rungs in (["held_3rd"], ["held_5th"], ["finish_any"], ["held_5th", "finish_podium"]):
+    options = mode_options(("trophy",), "single", "fixed", custom=[])
+    options.pop("podium_placement_checks", None)
+    options["podium_rungs"] = ["finish_on_podium" if key == "finish_podium" else key for key in rungs]
+    options["item_pool"] = small_pool()
+    wire = make_world(options, seed=1).fill_slot_data()
+    assert wire["content_plan"]["track_checks"]["podium_rungs"] == rungs, rungs
+    cases.append(("rungs-" + "+".join(rungs), wire, True))
+assert sum(name.startswith("modes-") for name, _, _ in cases) >= 42  # 60 less the 12 relic-only and 6 refusals
+modes_base = make_world(mode_options(list(cp.MODES), "two", "per_pad", custom=mode_custom()), seed=3).fill_slot_data()
+cases.append(("modes-base", modes_base, True))
+def multi_pad(p):
+    return next(x for x in p["pads"] if len(x["mode_gates"]) == 3)
+def stage2_of(p, pad):
+    return next(r for r in p["requirements"] if r["id"] == pad["mode_gates"][1]["requirement_id"])
+def custom_track(p, key):
+    return next(t for t in p["tracks"] if t["id"].startswith(f"custom/{key}/"))
+def entry_for(p, track):
+    return next(e for e in p["entries"] if e.get("track_id") == track["id"])
+def pad_for(p, entry):
+    return next(x for x in p["pads"] if x["entry_id"] == entry["id"])
+def claim_mode(key, mode, location, suffix, award):
+    def change(p):
+        t = custom_track(p, key)
+        t["modes"] = t["capabilities"] = [m for m in cp.MODES if m in t["modes"] + [mode]]
+        e = entry_for(p, t); e["modes"].append(mode); pad = pad_for(p, e)
+        stage = pad["mode_gates"][-1]
+        pad["mode_gates"].append(dict(mode=mode, stage=stage["stage"] if len(pad["mode_gates"]) > 1 else 1,
+                                      requirement_id=stage["requirement_id"]))
+        p["checks"].append(dict(location=location, owner=t["id"], kind=mode, display_name=t.get("room_title", t["display_name"]) + ": " + suffix,
+                                routes=[dict(entry_id=e["id"], mode=mode, leg_id=None, encounter_id=None, own_pad_id=pad["id"], award=award)]))
+        p["items"]["coded_checks"] += 1; p["items"]["filler_count"] += 1
+    return change
+def modes_alter(name, change):
+    alter("modes-" + name, change, modes_base)
+modes_alter("later gate as stage one", lambda p: multi_pad(p)["mode_gates"][1].__setitem__("stage", 1))
+modes_alter("later gate on the entrance record", lambda p: multi_pad(p)["mode_gates"][2].__setitem__("requirement_id", "free"))
+modes_alter("later gate on another pad's record", lambda p: multi_pad(p)["mode_gates"][2].__setitem__(
+    "requirement_id", next(r["id"] for r in p["requirements"] if r["id"].startswith("stage2:") and r["id"] != multi_pad(p)["mode_gates"][2]["requirement_id"])))
+modes_alter("first gate as stage two", lambda p: multi_pad(p)["mode_gates"][0].__setitem__("stage", 2))
+modes_alter("stage two record dropped", lambda p: p["requirements"].remove(stage2_of(p, multi_pad(p))))
+modes_alter("stage two count above supply", lambda p: stage2_of(p, multi_pad(p))["predicate"].__setitem__("count", 99))
+modes_alter("stage two count zero", lambda p: stage2_of(p, multi_pad(p))["predicate"].__setitem__("count", 0))
+modes_alter("stage two item outside counted", lambda p: stage2_of(p, multi_pad(p)).__setitem__("predicate", dict(op="count", item=35010015, count=1)))
+modes_alter("stage two sum of mixed families", lambda p: stage2_of(p, multi_pad(p)).__setitem__("predicate", dict(op="sum", items=[35010001, 35010004], count=1)))
+modes_alter("stage two always", lambda p: stage2_of(p, multi_pad(p)).__setitem__("predicate", dict(op="always")))
+modes_alter("stage two record on an empty pad", lambda p: p["requirements"].append(
+    dict(id="stage2:" + next(x for x in p["pads"] if x["entry_id"] is None and x["kind"] == "normal")["id"].split(":")[1],
+         predicate=dict(op="count", item=35010000, count=1))))
+modes_alter("stage two record with a leading zero", lambda p: stage2_of(p, multi_pad(p)).__setitem__("id", "stage2:0" + multi_pad(p)["id"].split(":")[1]))
+modes_alter("entry mode missing", lambda p: next(e for e in p["entries"] if len(e["modes"]) == 3)["modes"].pop())
+def repeat_mode(p):
+    e = next(e for e in p["entries"] if len(e["modes"]) == 3)
+    e["modes"][2] = e["modes"][0]
+modes_alter("entry mode repeated", repeat_mode)
+# Allowed on both sides, as in manual rules; the generator never draws a Key.
+modes_alter("stage two Key gate within supply", lambda p: stage2_of(p, multi_pad(p)).__setitem__("predicate", dict(op="count", item=35010014, count=2)))
+modes_alter("entry mode unknown", lambda p: next(e for e in p["entries"] if len(e["modes"]) == 3)["modes"].__setitem__(2, "merged"))
+modes_alter("gate order differs from entry order", lambda p: multi_pad(p)["mode_gates"].reverse())
+modes_alter("track modes out of order", lambda p: next(t for t in p["tracks"] if t["origin"] == "retail").__setitem__("modes", ["ctr", "trophy", "relic"]))
+modes_alter("capabilities differ from modes", lambda p: next(t for t in p["tracks"] if t["origin"] == "retail").__setitem__("capabilities", ["trophy"]))
+modes_alter("feature dropped", lambda p: p["required_features"].remove("track_modes_v1"))
+modes_alter("feature repeated", lambda p: p["required_features"].append("track_modes_v1"))
+modes_alter("relic award swapped", lambda p: next(c for c in p["checks"] if c["kind"] == "relic" and c["routes"][0]["award"] == "gold")["routes"][0].__setitem__("award", "platinum"))
+modes_alter("ctr award as win", lambda p: next(c for c in p["checks"] if c["kind"] == "ctr")["routes"][0].__setitem__("award", "win"))
+modes_alter("relic check removed", lambda p: (p["checks"].remove(next(c for c in p["checks"] if c["kind"] == "relic")),
+                                                p["items"].__setitem__("coded_checks", p["items"]["coded_checks"] - 1),
+                                                p["items"].__setitem__("filler_count", p["items"]["filler_count"] - 1)))
+modes_alter("merged entry", lambda p: next(e for e in p["entries"] if e["kind"] == "track").__setitem__("merged", True))
+modes_alter("B+ track claims CTR without letters", claim_mode("fixture-loop", "ctr", L["Custom Track 1: CTR Token Challenge"], "CTR Token Challenge", "win_letters"))
+modes_alter("relic-only track claims Trophy without arcade", claim_mode("relic-loop", "trophy", L["Custom Track 2: Trophy Race"], "Trophy Race", "win"))
+def relic_without_lap_graph(p):
+    t = custom_track(p, "relic-loop")
+    next(x for x in p["packages"] if x["id"] == t["package_id"])["capabilities"]["time_trial"] = False
+modes_alter("relic track without a lap graph", relic_without_lap_graph)
+def relic_without_targets(p):
+    t = custom_track(p, "fixture-loop")
+    pkg = next(x for x in p["packages"] if x["id"] == t["package_id"])
+    pkg["capabilities"]["relic"] = False; pkg.pop("relic_targets")
+modes_alter("relic track whose package lost relic", relic_without_targets)
+modes_alter("unchanged modes copy", lambda p: None)
+
+# Per-track check families (#133 PR 3b): podium rung sets, both Wumpa modes and
+# every Lettersanity shape, on retail tracks, a named block and a B+ track with
+# letters and Wumpa, across the three mode orders; then forged family records.
+from Options import OptionError
+from worlds.ctr.test.test_track_checks import check_options
+fam_bplus = copy.deepcopy(UNKNOWN)
+fam_bplus["capabilities"].update(ctr_tokens=True, wumpa=True)
+fam_custom = [copy.deepcopy(cp.PACKAGES[1]), fam_bplus]
+rung_toggles = [dict(), dict(podium_held_fifth_rung=True), dict(podium_held_rungs=False),
+                dict(podium_finish_rungs=False), dict(podium_any_position_rung=False)]
+family_cases = 0
+for index, (wumpa, letters, order) in enumerate(itertools.product(("off", "global", "per_track"), (0, 1, 2, 3),
+                                                                  ("fixed", "per_seed", "per_pad"))):
+    for seed in range(2):
+        options = check_options(wumpa=wumpa, letters=letters, per_track=1 + (index + seed) % 3, order=order,
+                                custom=copy.deepcopy(fam_custom) if (index + seed) % 2 == 0 else [fam_bplus],
+                                stages=("two", "single")[seed])
+        options.update(rung_toggles[(index + seed) % len(rung_toggles)])
+        try:
+            wire = make_world(options, seed=seed + 7 * index).fill_slot_data()
+        except OptionError:
+            continue  # a narrow start (open question for PR 3b), not a plan
+        cases.append((f"families-{wumpa}-{letters}-{order}-{seed}", wire, True))
+        family_cases += 1
+assert family_cases >= 60, family_cases
+fam_base = make_world(check_options(wumpa="per_track", letters=2, per_track=2, custom=copy.deepcopy(fam_custom)),
+                      seed=20261017).fill_slot_data()
+cases.append(("families-base", fam_base, True))
+fam_global = next(w for name, w, ok in cases if name.startswith("families-global-3-"))
+def fam_alter(name, change, source=None):
+    alter("families-" + name, change, source or fam_base)
+def first_check(p, kind, owner=None):
+    return next(c for c in p["checks"] if c["kind"] == kind and (owner is None or c["owner"] == owner))
+def letter_row(p):
+    return next(r for r in p["items"]["rows"] if r["item"] > 35010014)
+def drop_letter_row(p):
+    p["items"]["rows"].remove(letter_row(p))
+def drop_feature(name):
+    return lambda p: p["required_features"].remove(name)
+def move_letter(p):
+    have = {c["location"] for c in p["checks"] if c["owner"] == "retail:3" and c["kind"] == "letter"}
+    c = first_check(p, "letter", "retail:3")
+    i = next(i for i in range(3) if 35012500 + i not in have)
+    c.update(location=35012500 + i, display_name=f"Crash Cove: Letter {cp.LETTERS[i]}")
+    c["routes"][0]["award"] = cp.LETTER_KEYS[i]
+def move_letter_and_item(p):
+    have = sorted(c["location"] for c in p["checks"] if c["owner"] == "retail:3" and c["kind"] == "letter")
+    c = first_check(p, "letter", "retail:3")
+    old = c["location"] - 35012500
+    i = next(i for i in range(3) if 35012500 + i not in have)
+    c.update(location=35012500 + i, display_name=f"Crash Cove: Letter {cp.LETTERS[i]}")
+    c["routes"][0]["award"] = cp.LETTER_KEYS[i]
+    next(r for r in p["items"]["rows"] if r["item"] == 35010139 + old)["item"] = 35010139 + i
+    p["items"]["rows"].sort(key=lambda r: r["item"])
+for name, change in [
+        ("letter check dropped", lambda p: p["checks"].remove(first_check(p, "letter"))),
+        ("rung dropped", lambda p: p["checks"].remove(first_check(p, "podium"))),
+        ("Wumpa dropped", lambda p: p["checks"].remove(first_check(p, "wumpa"))),
+        ("letter item row dropped", drop_letter_row),
+        ("letter item pooled twice", lambda p: letter_row(p).update(base=2, remaining=2, receipt_cap=2, requirement_ceiling=2)),
+        ("letter item with an extra copy", lambda p: letter_row(p).update(extra=1, remaining=2, receipt_cap=2)),
+        ("letter item started from the pool", lambda p: letter_row(p).update(start_from_pool=1, remaining=0)),
+        ("unknown item row", lambda p: letter_row(p).__setitem__("item", 35010187)),
+        ("rung list without its checks", lambda p: p["track_checks"].__setitem__("podium_rungs", ["held_3rd"])),
+        ("rung list without its checks, held 5th", lambda p: p["track_checks"].__setitem__("podium_rungs", ["held_5th"])),
+        ("rungs out of slot order", lambda p: p["track_checks"].__setitem__("podium_rungs", ["held_3rd", "held_1st", "finish_podium", "finish_any"])),
+        ("rung unknown", lambda p: p["track_checks"]["podium_rungs"].__setitem__(0, "held_2nd")),
+        ("rung repeated", lambda p: p["track_checks"]["podium_rungs"].__setitem__(1, "held_1st")),
+        ("wumpa mode unknown", lambda p: p["track_checks"].__setitem__("wumpa", "per_pad")),
+        ("per-track checks under global", lambda p: p["track_checks"].__setitem__("wumpa", "global")),
+        ("letters_per_track missing", lambda p: p["track_checks"].pop("letters_per_track")),
+        ("letters_per_track above the drawn letters", lambda p: p["track_checks"].__setitem__("letters_per_track", 3)),
+        ("letters_per_track zero", lambda p: p["track_checks"].__setitem__("letters_per_track", 0)),
+        ("mode 2 read as mode 1", lambda p: p["track_checks"].__setitem__("lettersanity", 1)),
+        ("lettersanity as Boolean", lambda p: p["track_checks"].__setitem__("lettersanity", True)),
+        ("lettersanity 4", lambda p: p["track_checks"].__setitem__("lettersanity", 4)),
+        ("empty record", lambda p: p.__setitem__("track_checks", {})),
+        ("unknown setting", lambda p: p["track_checks"].__setitem__("box_locations", True)),
+        ("record removed", lambda p: p.pop("track_checks")),
+        ("podium feature dropped", drop_feature("podium_rungs_v1")),
+        ("Wumpa feature dropped", drop_feature("wumpa_checks_v1")),
+        ("Lettersanity feature dropped", drop_feature("lettersanity_v1")),
+        ("Wumpa route from a Relic Race", lambda p: first_check(p, "wumpa")["routes"][0].__setitem__("mode", "relic")),
+        ("Wumpa routes reordered", lambda p: next(c for c in p["checks"] if c["kind"] == "wumpa" and len(c["routes"]) == 2)["routes"].reverse()),
+        ("Wumpa award changed", lambda p: first_check(p, "wumpa")["routes"][0].__setitem__("award", "win")),
+        ("rung on a CTR route", lambda p: first_check(p, "podium")["routes"][0].__setitem__("mode", "ctr")),
+        ("letter award swapped", lambda p: first_check(p, "letter")["routes"][0].__setitem__(
+            "award", "letter_t" if first_check(p, "letter")["routes"][0]["award"] == "letter_c" else "letter_c")),
+        ("rung display name changed", lambda p: first_check(p, "podium").__setitem__("display_name", "Crash Cove: Held 2nd")),
+        ("letter kind changed", lambda p: first_check(p, "letter").__setitem__("kind", "ctr")),
+        ("B+ package loses Wumpa", lambda p: next(x for x in p["packages"] if x["content_id"] == "fixture-loop")["capabilities"].__setitem__("wumpa", False)),
+        ("letter moved to an undrawn letter", move_letter),
+        ("unchanged copy", lambda p: None),
+        ]:
+    fam_alter(name, change)
+# Another draw for one track: both sides accept a letter that moves with its item.
+fam_alter("letter moved with its item", move_letter_and_item)
+for name, change in [
+        ("global Wumpa dropped", lambda p: p["checks"].remove(first_check(p, "wumpa"))),
+        ("global routes reversed", lambda p: first_check(p, "wumpa")["routes"].reverse()),
+        ("global route dropped", lambda p: first_check(p, "wumpa")["routes"].pop()),
+        ("global owner changed", lambda p: first_check(p, "wumpa").__setitem__("owner", "retail:3")),
+        ("global read as per-track", lambda p: p["track_checks"].__setitem__("wumpa", "per_track")),
+        ("mode 3 with letters_per_track", lambda p: p["track_checks"].__setitem__("letters_per_track", 3)),
+        ("mode 3 read as mode 2", lambda p: p["track_checks"].update(lettersanity=2, letters_per_track=3)),
+        ("global unchanged copy", lambda p: None),
+        ]:
+    fam_alter(name, change, fam_global)
+
+# Cortex Vortex as a track and Relic Race Perfect checks (#133 PR 3c): plans
+# with and without Cortex Vortex, every mode subset it can take, the perfect on
+# retail, Cortex Vortex, a named block and a generic slot, with the 3b families
+# and the three mode orders; then forged records.
+from worlds.ctr.test.test_cortex_relic_perfect import cv_options, relic_named
+cv_cases = 0
+for index, (perfect, letters, order) in enumerate(itertools.product((False, True), (0, 2, 3), ("fixed", "per_seed", "per_pad"))):
+    for seed in range(2):
+        options = cv_options(perfect=perfect, order=order, required=(index + seed) % 3 != 2,
+                             lettersanity=letters, letters_per_track=2,
+                             wumpa_check=("off", "global", "per_track")[(index + seed) % 3],
+                             podium_placement_checks=bool(seed))
+        if index % 4 == 1:
+            options["content_pool"]["tracks"]["overrides"] = {"cortex_vortex": [["relic"], ["trophy", "relic"], ["ctr"]][seed]}
+        try:
+            wire = make_world(options, seed=seed + 5 * index).fill_slot_data()
+        except OptionError:
+            continue
+        cases.append((f"cortex-{perfect}-{letters}-{order}-{seed}", wire, True))
+        cv_cases += 1
+for seed in range(6):
+    options = cv_options(cortex=False, order=("fixed", "per_pad")[seed % 2])
+    cases.append((f"perfect-no-cortex-{seed}", make_world(options, seed=seed).fill_slot_data(), True))
+    cv_cases += 1
+assert cv_cases >= 36, cv_cases
+cv_base = make_world(cv_options(lettersanity=2, letters_per_track=1, wumpa_check="per_track"), seed=20261017).fill_slot_data()
+cases.append(("cortex-base", cv_base, True))
+def cv_alter(name, change):
+    alter("cortex-" + name, change, cv_base)
+def cv_track(p):
+    return next(t for t in p["tracks"] if t["origin"] == "cortex_vortex")
+def cv_check(p, kind):
+    return next(c for c in p["checks"] if c["owner"] == "cortex_vortex" and c["kind"] == kind)
+def perfect_of(p, owner):
+    return next(c for c in p["checks"] if c["owner"] == owner and c["kind"] == "perfect")
+def drop_check(code_of):
+    def change(p):
+        p["checks"].remove(code_of(p))
+        p["items"]["coded_checks"] -= 1
+        p["items"]["filler_count"] -= 1
+    return change
+def perfect_on_btp(p):
+    entry = next(e for e in p["entries"] if e.get("track_id") == "custom/baby-t-park/1.0.2")
+    pad = next(x for x in p["pads"] if x["entry_id"] == entry["id"])
+    p["checks"].append(dict(location=35201610, owner=entry["track_id"], kind="perfect",
+                            display_name="Baby T Park: Relic Race Perfect",
+                            routes=[dict(entry_id=entry["id"], mode="relic", leg_id=None, encounter_id=None,
+                                         own_pad_id=pad["id"], award="perfect")]))
+    p["items"]["coded_checks"] += 1
+    p["items"]["filler_count"] += 1
+def cv_with_slot(p):
+    cv_track(p)["custom_slot"] = 9
+def cv_as_package(p):
+    t = cv_track(p)
+    t["origin"] = "custom"
+def cv_letter_item_swapped(p):
+    row = next(r for r in p["items"]["rows"] if r["item"] in (35010200, 35010201, 35010202))
+    row["item"] = 35010186
+    p["items"]["rows"].sort(key=lambda r: r["item"])
+def bplus_cortex_title(p):
+    t = next(t for t in p["tracks"] if t["id"] == "custom/fixture-loop/2.1")
+    old = t["room_title"]
+    t["room_title"] = "Cortex Vortex"
+    for c in p["checks"]:
+        if c["owner"] == t["id"]:
+            c["display_name"] = c["display_name"].replace(old, "Cortex Vortex", 1)
+for name, change in [
+        ("perfect dropped", drop_check(lambda p: perfect_of(p, "custom/fixture-loop/2.1"))),
+        ("Cortex perfect dropped", drop_check(lambda p: cv_check(p, "perfect"))),
+        ("perfect on a track without a Relic Race", perfect_on_btp),
+        ("perfect takes Oxide Station's code", lambda p: cv_check(p, "perfect").__setitem__("location", 35012415)),
+        ("perfect takes the generic slot of another", lambda p: perfect_of(p, "custom/fixture-loop/2.1").__setitem__("location", 35024031)),
+        ("named perfect off its block", lambda p: perfect_of(p, "custom/north-pole/1.1.0").__setitem__("location", 35024001)),
+        ("perfect award changed", lambda p: cv_check(p, "perfect")["routes"][0].__setitem__("award", "sapphire")),
+        ("perfect on the Trophy route", lambda p: cv_check(p, "perfect")["routes"][0].__setitem__("mode", "trophy")),
+        ("perfect kind changed", lambda p: cv_check(p, "perfect").__setitem__("kind", "relic")),
+        ("perfect name changed", lambda p: cv_check(p, "perfect").__setitem__("display_name", "Cortex Vortex: Perfect")),
+        ("perfect feature dropped", drop_feature("relic_perfect_v1")),
+        ("perfect setting false", lambda p: p["track_checks"].__setitem__("relic_perfect", False)),
+        ("perfect setting as integer", lambda p: p["track_checks"].__setitem__("relic_perfect", 1)),
+        ("perfect setting dropped", lambda p: p["track_checks"].pop("relic_perfect")),
+        ("Cortex laps", lambda p: cv_track(p).__setitem__("laps", 5)),
+        ("Cortex package", lambda p: cv_track(p).__setitem__("package_id", "package/cortex-vortex/1.1.2")),
+        ("Cortex name", lambda p: cv_track(p).__setitem__("display_name", "Oxide Station")),
+        ("Cortex id", lambda p: cv_track(p).__setitem__("id", "cortex-vortex")),
+        ("Cortex with a custom slot", cv_with_slot),
+        ("Cortex as a custom origin", cv_as_package),
+        ("Cortex Trophy takes Oxide Station's code", lambda p: cv_check(p, "trophy").__setitem__("location", 35011013)),
+        ("Cortex Wumpa takes Oxide Station's code", lambda p: cv_check(p, "wumpa").__setitem__("location", 35016114)),
+        ("Cortex letter item swapped", cv_letter_item_swapped),
+        ("B+ title takes Cortex Vortex", bplus_cortex_title),
+        ("unchanged copy", lambda p: None),
+        ]:
+    cv_alter(name, change)
+
+# Pool-only packs and the envelope (#133 PR 4a): generated plans with every
+# pack combination and envelope setting, then forged records, rows and
+# envelope values. The envelope's apworld side is content_plan.restore's check.
+from worlds.ctr.test.test_item_packs import pack_options
+pack_cases = 0
+for seed in range(24):
+    send = [None, [], ["mask_grab"], ["weapon_hit", "race_loss"]][seed % 4]
+    extra = dict(death_link=("off", "mask_reset", "any_hit", "race_loss", "weapon_hit")[seed % 5],
+                 warp_pad_item_display=("one_pile", "by_reward_type")[seed % 2], ap_item_type_colors=seed % 3 != 0)
+    if send is not None:
+        extra["death_link_send"] = send
+    options = pack_options(psw=seed % 11, turbo=bool(seed & 1), tizi=bool(seed & 2), **extra)
+    cases.append((f"packs-generated-{seed}", make_world(options, seed=seed).fill_slot_data(), True))
+    pack_cases += 1
+pack_base = make_world(pack_options(psw=3, death_link="race_loss", death_link_send=["weapon_hit"],
+                                    warp_pad_item_display="by_reward_type", ap_item_type_colors=False),
+                       seed=20261017).fill_slot_data()
+cases.append(("packs-base", pack_base, True))
+def pack_row(p, code):
+    return next(r for r in p["items"]["rows"] if r["item"] == code)
+def pack_more(p):
+    pack_row(p, 35010122).update(base=4, remaining=4, receipt_cap=4, requirement_ceiling=4)
+    p["items"]["filler_count"] -= 1
+def pack_drop_row(p):
+    p["items"]["rows"].remove(pack_row(p, 35010189))
+    p["items"]["filler_count"] += 1
+def pack_drop_record(p):
+    p.pop("item_packs")
+    p["required_features"].remove("item_packs_v1")
+for name, change in [
+        ("count disagrees with row", lambda p: p["item_packs"].__setitem__("progressive_starting_wumpa", 2)),
+        ("row disagrees with count", pack_more),
+        ("count as Boolean", lambda p: p["item_packs"].__setitem__("progressive_starting_wumpa", True)),
+        ("count 11", lambda p: p["item_packs"].__setitem__("progressive_starting_wumpa", 11)),
+        ("count 0", lambda p: p["item_packs"].__setitem__("progressive_starting_wumpa", 0)),
+        ("grant false", lambda p: p["item_packs"].__setitem__("turbo_grant", False)),
+        ("grant as integer", lambda p: p["item_packs"].__setitem__("tizi_helper", 1)),
+        ("unknown pack", lambda p: p["item_packs"].__setitem__("itemsanity", True)),
+        ("empty record", lambda p: p.__setitem__("item_packs", {})),
+        ("rows without record", pack_drop_record),
+        ("record without its row", pack_drop_row),
+        ("feature dropped", lambda p: p["required_features"].remove("item_packs_v1")),
+        ("extra copy", lambda p: pack_row(p, 35010188).update(extra=1, remaining=2, receipt_cap=2)),
+        ("reversed key order", lambda p: p.__setitem__("item_packs", dict(reversed(list(p["item_packs"].items()))))),
+        ("unchanged copy", lambda p: None),
+        ]:
+    alter("packs-" + name, change, pack_base)
+def env_alter(name, change):
+    case = copy.deepcopy(pack_base)
+    change(case)
+    try:
+        cp.validate(case["content_plan"])
+        cp.check_envelope_options(case["ctr_options"])
+        accepted = True
+    except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
+        accepted = False
+    cases.append(("envelope-" + name, case, accepted))
+for name, key, value in [("send 8", "death_link_send", 8), ("send -1", "death_link_send", -1),
+                         ("send Boolean", "death_link_send", True), ("send 0", "death_link_send", 0),
+                         ("send 7", "death_link_send", 7), ("display 2", "warp_pad_item_display", 2),
+                         ("display Boolean", "warp_pad_item_display", True), ("display 0", "warp_pad_item_display", 0),
+                         ("colours integer", "ap_item_type_colors", 1), ("colours true", "ap_item_type_colors", True)]:
+    env_alter(name, lambda c, key=key, value=value: c["ctr_options"].__setitem__(key, value))
+for key in ("death_link_send", "warp_pad_item_display", "ap_item_type_colors"):
+    env_alter("absent " + key, lambda c, key=key: c["ctr_options"].pop(key))
+env_alter("no trap block", lambda c: c.pop("trap_identities"))
+
+# Character packs (#133 PR 4b): the roster table native maps unlock items
+# with, generated plans with Character Unlocks, Remove Playable Oxide, racer
+# locks (also with manual rules met by starting items) and the stat keys, then
+# forged records, locks, rows and envelope values.
+impl = (root / "ap/ap_content_plan_impl.hpp").read_text()
+native_roster = [int(x) for x in re.search(r"kRosterCharacter\[16\] = \{([^}]*)\}", impl)[1].split(",")]
+assert native_roster == list(cp.characters.ROSTER_CHARACTER_ID.values()), "native roster table differs from the apworld's"
+assert list(cp.characters.ROSTER_CHARACTER_ID) == list(cp.characters.ROSTER), "apworld roster orders differ"
+assert [cp.content_item_pool.ITEMS[n] for n in cp.characters.ROSTER] == list(range(35010123, 35010139)), \
+    "unlock item codes are not 35010123 + roster slot"
+from worlds.ctr.test.test_character_packs import racer_options
+for seed in range(36):
+    options = racer_options(locks=(0, 1, 5, 12, 27, True)[seed % 6], oxide=seed % 4 == 1,
+                            start=("random_starter", "random_any", "penta_penguin")[seed % 3],
+                            starting_stat_class=("vanilla", "speed", "turning")[seed % 3],
+                            penta_stats=("ntsc", "pal")[seed % 2],
+                            editable_stats=("off", "global", "per_character")[seed % 3],
+                            wumpa_check=("off", "global", "per_track")[seed % 3])
+    if seed % 9 == 8:
+        options["character_unlocks"] = False
+    cases.append((f"racers-generated-{seed}", make_world(options, seed=seed).fill_slot_data(), True))
+for seed in range(12):
+    options = racer_options(locks=27)
+    options["warp_pad_rules"] = {pad: dict(item=item, count=count)
+                                 for pad, (item, count) in manual_maps[seed % len(manual_maps)].items()}
+    if seed % 2:
+        options["start_inventory"] = {"Trophy": 1}
+    try:
+        cases.append((f"racers-manual-{seed}", make_world(options, seed=seed).fill_slot_data(), True))
+    except cp.OptionError as exc:  # as for the manual-generated cases above
+        assert "warp_pad_rules" in str(exc), exc
+        manual_refused += 1
+assert manual_refused <= 8, manual_refused
+racer_base = make_world(racer_options(locks=6, oxide=True, starting_stat_class="speed", penta_stats="pal",
+                                      editable_stats="per_character"), seed=20261017).fill_slot_data()
+cases.append(("racers-base", racer_base, True))
+racer_plan = racer_base["content_plan"]
+racer_locks = {p["id"]: p["racer_lock"] for p in racer_plan["pads"] if p["racer_lock"] is not None}
+racer_locked = next(iter(racer_locks))
+racer_start = racer_plan["racers"]["starting_character"]
+racer_free = next(p["id"] for p in racer_plan["pads"] if p["entry_id"] and p["entrance_req"] == "free")
+racer_empty = next(p["id"] for p in racer_plan["pads"] if p["kind"] == "normal" and p["entry_id"] is None)
+racer_spare = next(p for p in cp.lock_eligible(racer_plan) if p not in racer_locks)
+racer_code = next(r["item"] for r in racer_plan["items"]["rows"] if 35010123 <= r["item"] <= 35010138)
+def rpad(p, pad_id):
+    return next(x for x in p["pads"] if x["id"] == pad_id)
+def rmove(p, target):
+    rpad(p, target)["racer_lock"] = rpad(p, racer_locked)["racer_lock"]
+    rpad(p, racer_locked)["racer_lock"] = None
+def rdrop_record(p):
+    p.pop("racers")
+    p["required_features"].remove("character_unlocks_v1")
+def rdrop_rows(p):
+    rdrop_record(p)
+    rows = [r for r in p["items"]["rows"] if not 35010123 <= r["item"] <= 35010138]
+    p["items"]["filler_count"] += len(p["items"]["rows"]) - len(rows)
+    p["items"]["rows"] = rows
+    for pad in p["pads"]:
+        pad["racer_lock"] = None
+def rdrop_row(p):
+    p["items"]["rows"] = [r for r in p["items"]["rows"] if r["item"] != racer_code]
+    p["items"]["filler_count"] += 1
+def rstart_row(p):
+    row = copy.deepcopy(next(r for r in p["items"]["rows"] if r["item"] == racer_code))
+    row["item"] = 35010123 + native_roster.index(racer_start)
+    p["items"]["rows"].append(row)
+    p["items"]["rows"].sort(key=lambda r: r["item"])
+    p["items"]["filler_count"] -= 1
+def rstart_open(p):
+    # Four Keys started from the pool open every hub at the start, so no pad
+    # may carry a lock any more.
+    row = next(r for r in p["items"]["rows"] if r["item"] == 35010014)
+    row.update(start_from_pool=4, remaining=0)
+    p["items"]["filler_count"] += 4
+for name, change in [
+        ("unchanged copy", lambda p: None),
+        ("lock without the record", rdrop_record),
+        ("lock on a free starting pad", lambda p: rmove(p, racer_free)),
+        ("lock on an empty pad", lambda p: rmove(p, racer_empty)),
+        ("lock on a garage", lambda p: rmove(p, "garage:0")),
+        ("lock moved to another eligible pad", lambda p: rmove(p, racer_spare)),
+        ("lock names the starting racer", lambda p: rpad(p, racer_locked).__setitem__("racer_lock", racer_start)),
+        ("lock names removed Oxide", lambda p: rpad(p, racer_locked).__setitem__("racer_lock", 15)),
+        ("lock names 16", lambda p: rpad(p, racer_locked).__setitem__("racer_lock", 16)),
+        ("lock as Boolean", lambda p: rpad(p, racer_locked).__setitem__("racer_lock", True)),
+        ("lock negative", lambda p: rpad(p, racer_locked).__setitem__("racer_lock", -1)),
+        ("one lock too many", lambda p: rpad(p, racer_spare).__setitem__("racer_lock", racer_locks[racer_locked])),
+        ("one lock dropped", lambda p: rpad(p, racer_locked).__setitem__("racer_lock", None)),
+        ("requested count 5", lambda p: p["racers"].__setitem__("requested_locks", 5)),
+        ("requested count 28", lambda p: p["racers"].__setitem__("requested_locks", 28)),
+        ("requested count as Boolean", lambda p: p["racers"].__setitem__("requested_locks", True)),
+        ("start changed", lambda p: p["racers"].__setitem__("starting_character", (racer_start + 1) % 15)),
+        ("start 16", lambda p: p["racers"].__setitem__("starting_character", 16)),
+        ("Oxide start with Oxide removed", lambda p: p["racers"].__setitem__("starting_character", 15)),
+        ("Oxide flag flipped", lambda p: p["racers"].__setitem__("remove_playable_oxide", False)),
+        ("Oxide flag as integer", lambda p: p["racers"].__setitem__("remove_playable_oxide", 1)),
+        ("unknown record field", lambda p: p["racers"].__setitem__("character_unlocks", True)),
+        ("record field missing", lambda p: p["racers"].pop("requested_locks")),
+        ("record not an object", lambda p: p.__setitem__("racers", [])),
+        ("feature dropped", lambda p: p["required_features"].remove("character_unlocks_v1")),
+        ("racer row missing", rdrop_row),
+        ("row for the starting racer", rstart_row),
+        ("racer row with an extra copy", lambda p: next(r for r in p["items"]["rows"] if r["item"] == racer_code).update(
+            extra=1, remaining=2, receipt_cap=2)),
+        ("racer row swapped for another item", lambda p: next(r for r in p["items"]["rows"] if r["item"] == racer_code).__setitem__(
+            "item", 35010187)),
+        ("Keys started from the pool open every lock", rstart_open),
+        ]:
+    alter("racers-" + name, change, racer_base)
+def racer_env(name, change):
+    case = copy.deepcopy(racer_base)
+    change(case)
+    try:
+        cp.validate(case["content_plan"])
+        cp.check_envelope_options(case["ctr_options"])
+        cp.check_racer_envelope(case["content_plan"], case["ctr_options"])
+        accepted = True
+    except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
+        accepted = False
+    cases.append(("racer-envelope-" + name, case, accepted))
+for name, key, value in [("unlocks false", "character_unlocks", False), ("unlocks integer", "character_unlocks", 1),
+                         ("start differs", "starting_character", (racer_start + 1) % 15),
+                         ("class 0", "starting_stat_class", 0), ("class 5", "starting_stat_class", 5),
+                         ("class Boolean", "starting_stat_class", True), ("class 1", "starting_stat_class", 1),
+                         ("penta 0", "penta_stats", 0), ("penta 2", "penta_stats", 2),
+                         ("source 1", "stat_source", 1), ("source 0", "stat_source", 0), ("owner 0", "stat_owner", 0),
+                         ("owner 3", "stat_owner", 3), ("owner 1", "stat_owner", 1),
+                         ("editing false", "stat_editing_allowed", False), ("editing integer", "stat_editing_allowed", 1)]:
+    racer_env(name, lambda c, key=key, value=value: c["ctr_options"].__setitem__(key, value))
+for key in ("starting_stat_class", "penta_stats", "stat_source", "stat_owner", "stat_editing_allowed"):
+    racer_env("absent " + key, lambda c, key=key: c["ctr_options"].pop(key))
+racer_env("record, rows and locks dropped, unlocks off", lambda c: (rdrop_rows(c["content_plan"]),
+                                                                     c["ctr_options"].__setitem__("character_unlocks", False)))
+racer_env("record, rows and locks dropped, unlocks still on", lambda c: rdrop_rows(c["content_plan"]))
+racer_env("absent stat trio", lambda c: [c["ctr_options"].pop(k) for k in ("stat_source", "stat_owner", "stat_editing_allowed")])
+case = copy.deepcopy(pack_base)
+case["ctr_options"]["character_unlocks"] = True
+cases.append(("racer-envelope-unlocks true without the record", case, False))
+
+# Capability packs (#133 PR 4c): the ledger rows native derives from the
+# `capability` record, generated plans with Progressive Boost, Blue Fire,
+# Progressive Stats, every Logic Difficulty and Shortcut Knowledge, custom
+# tracks with and without super turbo pads, then forged records, ranks, rows
+# and envelopes. A check's `boost` is the apworld's logic as data: native
+# checks its range and that the plan has Progressive Boost on, and does not
+# re-derive it (the win_logic rule), so a forged rank inside the chain is
+# refused by the generator's validator only. Those cases are listed in
+# `native_trusts` and must be refused by the apworld and accepted by native.
+from worlds.ctr import content_capability as ccap
+from worlds.ctr.test.test_capability_packs import cap_options, first_world
+for blue in (False, True):
+    for boost_mode in (1, 2):
+        for stats_mode in (0, 1, 2):
+            want = ccap.item_counts(dict(boost_mode=boost_mode, boost_blue_fire=blue, stats_mode=stats_mode))
+            got = {}
+            for slot in range(16):
+                for chain in range(4):
+                    mode = stats_mode if chain else boost_mode
+                    if mode == 1 and slot == 0:
+                        got[35010027 + chain] = 4 if chain else (3 if blue else 2)
+                    if mode == 2:
+                        got[35010031 + 4 * slot + chain] = 4 if chain else (3 if blue else 2)
+            assert {cp.content_item_pool.ITEMS[n]: c for n, c in want.items()} == got, "capability rows differ"
+for seed in range(36):
+    pads = (None, True, False)[seed % 3]
+    options = cap_options(boost=("shared_global", "per_character", "off")[seed % 3] if seed % 3 != 2 else "off",
+                          stats=("off", "shared_global")[seed % 2] if seed % 3 != 2 else "shared_global",
+                          difficulty=("easy", "medium", "hard")[(seed // 3) % 3], blue_fire=seed % 4 == 1,
+                          knowledge=("easy", "medium", "hard")[seed % 3], loop_pads=pads,
+                          relic_perfect_checks=seed % 2 == 0, lettersanity=(0, 2, 3)[seed % 3],
+                          wumpa_check=("off", "global", "per_track")[(seed // 2) % 3])
+    if seed % 6 == 1:
+        options.update(character_unlocks=True, racer_locked_pads=6)
+    cases.append((f"capability-generated-{seed}", first_world(options, seed=seed).fill_slot_data(), True))
+# Per-racer stat chains (192 copies) fit only with every check family on.
+for seed in range(4):
+    options = cap_options(boost=("off", "shared_global")[seed % 2], stats="per_character", relic_perfect_checks=True,
+                          lettersanity=1, letters_per_track=3, wumpa_check="per_track", podium_held_rungs=True,
+                          podium_held_fifth_rung=True, podium_finish_rungs=True, podium_any_position_rung=True)
+    cases.append((f"capability-per-racer-stats-{seed}", first_world(options, seed=seed).fill_slot_data(), True))
+cap_base = first_world(cap_options(stats="shared_global", difficulty="medium", relic_perfect_checks=True,
+                                   lettersanity=2, character_unlocks=True, racer_locked_pads=4), seed=20261018).fill_slot_data()
+cases.append(("capability-base", cap_base, True))
+cap_plan = cap_base["content_plan"]
+ranked = next(i for i, c in enumerate(cap_plan["checks"]) if c.get("boost") == 2)
+unranked = next(i for i, c in enumerate(cap_plan["checks"]) if "boost" not in c)
+loop_index = next(i for i, p in enumerate(cap_plan["packages"]) if p["content_id"] == "fixture-loop")
+def crow(p, item):
+    return next(r for r in p["items"]["rows"] if r["item"] == item)
+def cdrop_record(p):
+    p.pop("capability")
+    p["required_features"].remove("capability_packs_v1")
+def cdrop_all(p):
+    cdrop_record(p)
+    rows = [r for r in p["items"]["rows"] if not 35010027 <= r["item"] <= 35010094]
+    p["items"]["filler_count"] += sum(r["remaining"] for r in p["items"]["rows"]) - sum(r["remaining"] for r in rows)
+    p["items"]["rows"] = rows
+    for check in p["checks"]:
+        check.pop("boost", None)
+def cdrop_row(p):
+    p["items"]["rows"] = [r for r in p["items"]["rows"] if r["item"] != 35010028]
+    p["items"]["filler_count"] += 4
+native_trusts = set()
+for name, change, trusted in [
+        ("unchanged copy", lambda p: None, False),
+        ("record dropped, ranks kept", cdrop_record, False),
+        ("feature dropped", lambda p: p["required_features"].remove("capability_packs_v1"), False),
+        ("unknown record field", lambda p: p["capability"].__setitem__("itemsanity", 0), False),
+        ("record field missing", lambda p: p["capability"].pop("shortcut_knowledge"), False),
+        ("record not an object", lambda p: p.__setitem__("capability", []), False),
+        ("boost mode 3", lambda p: p["capability"].__setitem__("boost_mode", 3), False),
+        ("boost mode as Boolean", lambda p: p["capability"].__setitem__("boost_mode", True), False),
+        ("both modes off", lambda p: p["capability"].update(boost_mode=0, stats_mode=0), False),
+        ("boost mode per racer, shared rows", lambda p: p["capability"].__setitem__("boost_mode", 2), False),
+        ("stats off, stat rows kept", lambda p: p["capability"].__setitem__("stats_mode", 0), False),
+        ("Blue Fire on, two boost copies", lambda p: p["capability"].__setitem__("boost_blue_fire", True), False),
+        ("Blue Fire as integer", lambda p: p["capability"].__setitem__("boost_blue_fire", 0), False),
+        ("difficulty 3", lambda p: p["capability"].__setitem__("logic_difficulty", 3), False),
+        ("knowledge -1", lambda p: p["capability"].__setitem__("shortcut_knowledge", -1), False),
+        ("boost row with an extra copy", lambda p: crow(p, 35010027).update(base=3, remaining=3, receipt_cap=3,
+                                                                           requirement_ceiling=3), False),
+        ("stat row missing", cdrop_row, False),
+        ("rank above the chain", lambda p: p["checks"][ranked].__setitem__("boost", 3), False),
+        ("rank 0", lambda p: p["checks"][ranked].__setitem__("boost", 0), False),
+        ("rank as Boolean", lambda p: p["checks"][ranked].__setitem__("boost", True), False),
+        ("rank as text", lambda p: p["checks"][ranked].__setitem__("boost", "2"), False),
+        ("super turbo pads as integer", lambda p: p["packages"][loop_index]["capabilities"].__setitem__("super_turbo_pads", 1), False),
+        ("rank lowered", lambda p: p["checks"][ranked].__setitem__("boost", 1), True),
+        ("rank dropped", lambda p: p["checks"][ranked].pop("boost"), True),
+        ("rank added", lambda p: p["checks"][unranked].__setitem__("boost", 1), True),
+        ("difficulty changed, ranks kept", lambda p: p["capability"].__setitem__("logic_difficulty", 2), True),
+        ("knowledge changed, ranks kept", lambda p: p["capability"].__setitem__("shortcut_knowledge", 2), True),
+        ("super turbo pads stated false, ranks kept",
+         lambda p: p["packages"][loop_index]["capabilities"].__setitem__("super_turbo_pads", False), True),
+        ]:
+    alter("capability-" + name, change, cap_base)
+    if trusted:
+        native_trusts.add("capability-" + name)
+        assert cases[-1][2] is False, name + ": the apworld must refuse a forged rank"
+def cap_env(name, change, source=None):
+    case = copy.deepcopy(source or cap_base)
+    change(case)
+    try:
+        cp.validate(case["content_plan"])
+        cp.check_envelope_options(case["ctr_options"])
+        cp.check_racer_envelope(case["content_plan"], case["ctr_options"])
+        ccap.check_envelope(case["content_plan"].get("capability", {}), case["ctr_options"])
+        accepted = True
+    except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
+        accepted = False
+    cases.append(("capability-envelope-" + name, case, accepted))
+for name, key, value in [("boost 0", "progressive_boost", 0), ("boost 2", "progressive_boost", 2),
+                         ("boost Boolean", "progressive_boost", True), ("stats 0", "progressive_stats", 0),
+                         ("stats 2", "progressive_stats", 2), ("source 2", "stat_source", 2),
+                         ("owner 2", "stat_owner", 2), ("editing true", "stat_editing_allowed", True),
+                         ("editing integer", "stat_editing_allowed", 0)]:
+    cap_env(name, lambda c, key=key, value=value: c["ctr_options"].__setitem__(key, value))
+for key in ("stat_source", "stat_owner", "stat_editing_allowed"):
+    cap_env("absent " + key, lambda c, key=key: c["ctr_options"].pop(key))
+cap_env("editable stats trio on a Progressive Stats plan",
+        lambda c: c["ctr_options"].update(stat_source=2, stat_owner=1, stat_editing_allowed=True))
+cap_env("record, rows and ranks dropped, envelope off",
+        lambda c: (cdrop_all(c["content_plan"]), c["ctr_options"].update(progressive_boost=0, progressive_stats=0),
+                   [c["ctr_options"].pop(k) for k in ("stat_source", "stat_owner", "stat_editing_allowed")]))
+cap_env("record, rows and ranks dropped, envelope still on", lambda c: cdrop_all(c["content_plan"]))
+cap_env("Progressive Stats trio on a plan without the record", lambda c: c["ctr_options"].update(
+    stat_source=1, stat_owner=1, stat_editing_allowed=False), pack_base)
+
+# Itemsanity and Hit Character (#133 PR 4d): generated rooms over retail
+# subsets, modes, stages, racer locks and boost; then forged records, checks,
+# rows, envelopes and encounter blocks.
+from worlds.ctr import content_global_checks as cgc
+from worlds.ctr.test.test_global_checks import global_options
+for seed in range(30):
+    items, hits = ((True, True), (True, False), (False, True))[seed % 3]
+    retail = (None, [3, 16, 4], [0, 1, 2, 12], [9])[(seed // 3) % 4]
+    modes = (("trophy", "ctr", "relic"), ("trophy",), ("ctr", "relic"))[(seed // 2) % 3]
+    options = global_options(items=items, hits=hits, retail=retail, modes=modes,
+                             lettersanity=(0, 1, 2)[seed % 3], wumpa_check=("off", "global")[seed % 2],
+                             progressive_boost=("off", "shared_global", "per_character")[(seed // 5) % 3])
+    if seed % 4 == 1:
+        options.update(character_unlocks=True, racer_locked_pads=5)
+    if seed % 5 == 2:
+        options["content_pool"]["tracks"]["cortex_vortex"] = True
+    try:
+        world = first_world(options, seed=seed)
+    except OptionError as exc:
+        print(f"global-generated-{seed} refused by the generator: {str(exc)[:120]}")
+        continue
+    cases.append((f"global-generated-{seed}", world.fill_slot_data(), True))
+cases.append(("global-fixture", json.loads((root / "tools/fixtures/content-plan/global-checks.json").read_text()), True))
+glob_base = first_world(global_options(retail=[3, 16, 4], character_unlocks=True, racer_locked_pads=4), seed=5).fill_slot_data()
+cases.append(("global-base", glob_base, True))
+def gcheck(p, code):
+    return next(c for c in p["checks"] if c["location"] == code)
+def grow(p, item):
+    return next(r for r in p["items"]["rows"] if r["item"] == item)
+def gdrop_record(p):
+    p.pop("global_checks")
+    p["required_features"].remove(cgc.FEATURE)
+def gguest_custom(p):
+    # Since #133 PR 5b a guest routes from custom tracks too.
+    c = gcheck(p, 35025009)
+    c["routes"] = [r for r in c["routes"] if r["entry_id"] != "entry/custom/baby-t-park/1.0.2"]
+def gdefault_no_custom(p):
+    c = gcheck(p, 35025002)
+    c["routes"] = [r for r in c["routes"] if not r["entry_id"].startswith("entry/custom/")]
+def gweapon_dropped(p):
+    p["items"]["rows"] = [r for r in p["items"]["rows"] if r["item"] != 35010099]
+    p["items"]["filler_count"] += 1
+def gswap_order(p):
+    c = gcheck(p, 35016004)
+    c["routes"] = c["routes"][::-1]
+for name, change in [
+        ("unchanged copy", lambda p: None),
+        ("record dropped", gdrop_record),
+        ("feature dropped", lambda p: p["required_features"].remove(cgc.FEATURE)),
+        ("unknown record field", lambda p: p["global_checks"].__setitem__("box_locations", True)),
+        ("itemsanity false", lambda p: p["global_checks"].__setitem__("itemsanity", False)),
+        ("itemsanity integer", lambda p: p["global_checks"].__setitem__("itemsanity", 1)),
+        ("record not an object", lambda p: p.__setitem__("global_checks", [])),
+        ("use route dropped", lambda p: gcheck(p, 35016006)["routes"].pop()),
+        ("use routes reordered", gswap_order),
+        ("use award", lambda p: gcheck(p, 35016001)["routes"][0].__setitem__("award", "use")),
+        ("use owner", lambda p: gcheck(p, 35016001).__setitem__("owner", "retail:3")),
+        ("use name", lambda p: gcheck(p, 35016001).__setitem__("display_name", "Itemsanity: Turbo")),
+        ("use check with a boost rank", lambda p: gcheck(p, 35016000).__setitem__("boost", 1)),
+        ("guest without its custom track route", gguest_custom),
+        ("default racer without its custom routes", gdefault_no_custom),
+        ("hit kind", lambda p: gcheck(p, 35025004).__setitem__("kind", "itemsanity")),
+        ("weapon row dropped", gweapon_dropped),
+        ("weapon row with two copies", lambda p: grow(p, 35010101).update(base=2, remaining=2, receipt_cap=2,
+                                                                         requirement_ceiling=2)),
+        ]:
+    alter("global-" + name, change, glob_base)
+def glob_env(name, change, source=None):
+    case = copy.deepcopy(source or glob_base)
+    change(case)
+    try:
+        cp.validate(case["content_plan"])
+        cgc.check_encounter_block(case["content_plan"], case)
+        accepted = True
+    except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
+        accepted = False
+    cases.append(("global-envelope-" + name, case, accepted))
+def gtrigger(c, guest):
+    return c["hit_character_encounters"]["unlock_triggers"][str(guest)]
+glob_env("unchanged copy", lambda c: None)
+glob_env("Hit envelope off", lambda c: c["ctr_options"].__setitem__("hit_character", False))
+glob_env("Hit envelope integer", lambda c: c["ctr_options"].__setitem__("hit_character", 1))
+glob_env("Hit block dropped", lambda c: c.pop("hit_character_encounters"))
+glob_env("fallback on a guest with a win in the plan", lambda c: gtrigger(c, 14).__setitem__("fallback_keys", 1))
+glob_env("fallback missing on a guest without a win", lambda c: gtrigger(c, 13).pop("fallback_keys"))
+glob_env("boss guest fallback missing", lambda c: gtrigger(c, 10).pop("fallback_keys"))
+glob_env("boss guest fallback count", lambda c: gtrigger(c, 10).__setitem__("fallback_keys", 2))
+glob_env("Oxide fallback count", lambda c: gtrigger(c, 15).__setitem__("fallback_keys", 3))
+glob_env("block schema 2", lambda c: c["hit_character_encounters"].__setitem__("schema", 2))
+glob_env("Hit block on a plan without Hit Character",
+         lambda c: c.__setitem__("hit_character_encounters", copy.deepcopy(glob_base["hit_character_encounters"])),
+         next(w for name, w, ok in cases if name == "global-generated-1"))
+
+# Item Box Locations (#133 PR 4e): generated rooms over every tier, boost and
+# stats, retail subsets, named tracks with several stated crate counts, a
+# generic slot with crates, Cortex Vortex, racer locks and Itemsanity; then
+# forged records, box checks, crate counts and envelopes. A box's `boost` and
+# `stats` are read as given (like the 4c rank), so forged terms are refused by
+# the generator alone (`native_trusts`).
+from worlds.ctr import content_item_boxes as cbox
+from worlds.ctr.test.test_content_item_boxes import box_options, btp, unruled, first_world as box_world
+for seed in range(30):
+    crates = (8, 1, 15, 40, 0, None)[seed % 6]
+    loop = copy.deepcopy(UNKNOWN)
+    if seed % 2:
+        loop["capabilities"]["weapon_crates"] = 12
+    custom = [[btp(crates), unruled(20 + seed), loop], [btp(crates)], [unruled(3), loop]][seed % 3]
+    options = box_options(custom=custom, tier=("easy", "medium", "hard")[seed % 3],
+                          progressive_boost=("off", "shared_global", "per_character")[(seed // 3) % 3],
+                          progressive_stats=("off", "shared_global")[(seed // 2) % 2],
+                          color_boxes_by_item=seed % 4 != 1, itemsanity=seed % 5 == 2)
+    if seed % 4 == 3:
+        options["content_pool"]["tracks"]["retail"] = [4, 5, 11, 13, 7]
+    if seed % 5 == 1:
+        options["content_pool"]["tracks"]["cortex_vortex"] = True
+    if seed % 7 == 4:
+        options.update(character_unlocks=True, racer_locked_pads=5)
+    try:
+        world = box_world(options, seed=seed)
+    except OptionError as exc:
+        print(f"boxes-generated-{seed} refused by the generator: {str(exc)[:120]}")
+        continue
+    cases.append((f"boxes-generated-{seed}", world.fill_slot_data(), True))
+cases.append(("boxes-fixture", json.loads((root / "tools/fixtures/content-plan/item-boxes.json").read_text()), True))
+box_base = cases[-1][1]
+def bcheck(p, name):
+    return next(c for c in p["checks"] if c["display_name"] == name)
+def bpackage(p, key):
+    return next(d for d in p["packages"] if d["content_id"] == key)
+def bdrop_record(p):
+    p.pop("item_boxes")
+    p["required_features"].remove(cbox.FEATURE)
+def bdrop_all(p):
+    bdrop_record(p)
+    count = sum(1 for c in p["checks"] if c["kind"] == "box")
+    p["checks"] = [c for c in p["checks"] if c["kind"] != "box"]
+    p["items"]["coded_checks"] -= count
+    p["items"]["filler_count"] -= count
+def bdrop_box(p, name):
+    p["checks"].remove(bcheck(p, name))
+    p["items"]["coded_checks"] -= 1
+    p["items"]["filler_count"] -= 1
+for name, change, trusted in [
+        ("unchanged copy", lambda p: None, False),
+        ("record dropped, boxes kept", bdrop_record, False),
+        ("record and boxes dropped", bdrop_all, False),
+        ("feature dropped", lambda p: p["required_features"].remove(cbox.FEATURE), False),
+        ("unknown record field", lambda p: p["item_boxes"].__setitem__("color_boxes_by_item", True), False),
+        ("record not an object", lambda p: p.__setitem__("item_boxes", []), False),
+        ("tier lowered", lambda p: p["item_boxes"].__setitem__("shortcut_knowledge", 1), False),
+        ("tier 3", lambda p: p["item_boxes"].__setitem__("shortcut_knowledge", 3), False),
+        ("tier as Boolean", lambda p: p["item_boxes"].__setitem__("shortcut_knowledge", True), False),
+        ("tier disagrees with the capability record", lambda p: p["capability"].__setitem__("shortcut_knowledge", 1), False),
+        ("hard-tier box dropped", lambda p: bdrop_box(p, "Oxide Station: Item Box 6"), False),
+        ("named box dropped", lambda p: bdrop_box(p, "Baby T Park: Item Box 8"), False),
+        ("generic box dropped", lambda p: bdrop_box(p, "Fixture Loop: Item Box 1"), False),
+        ("generic box code", lambda p: bcheck(p, "Fixture Loop: Item Box 1").__setitem__("location", 35017000), False),
+        ("box code", lambda p: bcheck(p, "N. Gin Labs: Item Box 1").__setitem__("location", 35014166), False),
+        ("box route dropped", lambda p: bcheck(p, "N. Gin Labs: Item Box 1")["routes"].pop(), False),
+        ("box routes reordered", lambda p: bcheck(p, "N. Gin Labs: Item Box 2")["routes"].reverse(), False),
+        ("box award", lambda p: bcheck(p, "Tiger Temple: Item Box 5")["routes"][0].__setitem__("award", "win"), False),
+        ("box kind", lambda p: bcheck(p, "Tiger Temple: Item Box 5").__setitem__("kind", "trophy"), False),
+        ("box owner", lambda p: bcheck(p, "Tiger Temple: Item Box 5").__setitem__("owner", "retail:5"), False),
+        ("box name", lambda p: bcheck(p, "Tiger Temple: Item Box 5").__setitem__("display_name", "Item Box 5"), False),
+        ("weapon crates raised", lambda p: bpackage(p, "baby-t-park")["capabilities"].__setitem__("weapon_crates", 9), False),
+        ("weapon crates lowered", lambda p: bpackage(p, "baby-t-park")["capabilities"].__setitem__("weapon_crates", 7), False),
+        ("weapon crates unstated", lambda p: bpackage(p, "baby-t-park")["capabilities"].pop("weapon_crates"), False),
+        ("weapon crates Boolean", lambda p: bpackage(p, "acid-lake")["capabilities"].__setitem__("weapon_crates", True), False),
+        ("weapon crates text", lambda p: bpackage(p, "acid-lake")["capabilities"].__setitem__("weapon_crates", "20"), False),
+        ("weapon crates past the ceiling", lambda p: bpackage(p, "acid-lake")["capabilities"].__setitem__("weapon_crates", 65537), False),
+        ("weapon crates negative", lambda p: bpackage(p, "fixture-loop")["capabilities"].__setitem__("weapon_crates", -1), False),
+        ("generic slot crates changed", lambda p: bpackage(p, "fixture-loop")["capabilities"].__setitem__("weapon_crates", 30), False),
+        ("stats false", lambda p: bcheck(p, "Oxide Station: Item Box 6").__setitem__("stats", False), False),
+        ("stats as integer", lambda p: bcheck(p, "Oxide Station: Item Box 6").__setitem__("stats", 1), False),
+        ("stats on a race check", lambda p: bcheck(p, "Oxide Station: Trophy Race").__setitem__("stats", True), False),
+        ("box rank above the chain", lambda p: bcheck(p, "N. Gin Labs: Item Box 4").__setitem__("boost", 3), False),
+        ("stats dropped", lambda p: bcheck(p, "Oxide Station: Item Box 6").pop("stats"), True),
+        ("stats added", lambda p: bcheck(p, "Oxide Station: Item Box 1").__setitem__("stats", True), True),
+        ("box rank lowered", lambda p: bcheck(p, "N. Gin Labs: Item Box 4").__setitem__("boost", 1), True),
+        ("custom box rank dropped", lambda p: bcheck(p, "Acid Lake: Item Box 1").pop("boost"), True),
+        ]:
+    alter("boxes-" + name, change, box_base)
+    if trusted:
+        native_trusts.add("boxes-" + name)
+        assert cases[-1][2] is False, name + ": the apworld must refuse a forged box term"
+def box_env(name, change, source=None):
+    case = copy.deepcopy(source or box_base)
+    change(case)
+    try:
+        cp.validate(case["content_plan"])
+        cp.check_box_envelope(case["content_plan"], case["ctr_options"])
+        accepted = True
+    except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
+        accepted = False
+    cases.append(("boxes-envelope-" + name, case, accepted))
+box_env("unchanged copy", lambda c: None)
+box_env("box_locations false", lambda c: c["ctr_options"].__setitem__("box_locations", False))
+box_env("box_locations dropped", lambda c: c["ctr_options"].pop("box_locations"))
+box_env("box_locations integer", lambda c: c["ctr_options"].__setitem__("box_locations", 1))
+box_env("colours dropped", lambda c: c["ctr_options"].pop("color_boxes_by_item"))
+box_env("colours integer", lambda c: c["ctr_options"].__setitem__("color_boxes_by_item", 0))
+box_env("colours on", lambda c: c["ctr_options"].__setitem__("color_boxes_by_item", True))
+box_env("box keys on a plan without the record",
+        lambda c: c["ctr_options"].update(box_locations=True, color_boxes_by_item=True), cap_base)
+box_env("colours alone on a plan without the record",
+        lambda c: c["ctr_options"].update(color_boxes_by_item=False), cap_base)
+# A custom track whose package states no weapon crates is no Itemsanity or Hit
+# route (#133 PR 4e); with its routes kept the plan is refused on both sides.
+def gcrateless(p, keep_routes):
+    bpackage(p, "baby-t-park")["capabilities"]["weapon_crates"] = 0
+    if not keep_routes:
+        for c in p["checks"]:
+            if c["kind"] in ("itemsanity", "hit"):
+                c["routes"] = [r for r in c["routes"] if r["entry_id"] != "entry/custom/baby-t-park/1.0.2"]
+alter("crates-crateless track still routed", lambda p: gcrateless(p, True), glob_base)
+alter("crates-crateless track without its routes", lambda p: gcrateless(p, False), glob_base)
+
+alter("duplicate check", lambda p: p["checks"].append(copy.deepcopy(p["checks"][0])))
+alter("duplicate package", lambda p: p["packages"].append(copy.deepcopy(p["packages"][0])))
+alter("duplicate pad", lambda p: p["pads"].__setitem__(0, copy.deepcopy(p["pads"][1])))
+alter("foreign goal Gem", lambda p: p["goal"]["items"].__setitem__(0, 35010000))
+# Since open admission (#133 PR 2) other pins or evidence are simply another
+# package; both sides accept them and native checks the bytes on load. The
+# checked-in baseline predates the named block, so these use the open fixture.
+alter("changed pinned size", lambda p: p["packages"][0]["files"][0].__setitem__("bytes", 2558169), open_base)
+alter("runtime evidence row", lambda p: p["packages"][0]["evidence"].append(
+    dict(capability="trophy", file_hashes=[p["packages"][0]["files"][0]["sha256"]], verifier="x", revision=1, level="runtime")), open_base)
+alter("missing route", lambda p: p["checks"][0].__setitem__("routes", []))
+cases.append(("unchanged baseline copy", copy.deepcopy(base), True))
+for row in range(15):
+    for key in ("base", "extra", "start_from_pool", "start_additional", "remaining", "receipt_cap", "requirement_ceiling"):
+        alter(f"ledger-{row}-{key}", lambda p, row=row, key=key: p["items"]["rows"][row].__setitem__(key, p["items"]["rows"][row][key] + 1))
+for row in range(32):
+    alter(f"hub-{row}", lambda p, row=row: p["pads"][row].__setitem__("hub_id", "hub:99"))
+for key in ("tracks", "entries", "pads", "checks", "requirements", "items"):
+    alter("null-" + key, lambda p, key=key: p.__setitem__(key, None))
+
+# Cups (#133 PR 5): generated plans over counts, sources, repeats, laps,
+# sweeps, boost and racer locks, then forged cup records.
+from worlds.ctr.test.test_content_cups import cup_options
+cup_cases = []
+from Options import OptionError as CupOptionError
+for seed in range(80):
+    try:
+        wire = make_world(cup_options(seed), seed=seed).fill_slot_data()
+    except CupOptionError:
+        continue  # a narrow start the slot refuses before any plan is emitted
+    cup_cases.append(wire)
+    cases.append((f"cups-generated-{seed}", wire, True))
+cup_base = next(w for w in cup_cases if any(c["kind"] == "cup_leg" for c in w["content_plan"]["checks"])
+                and any(c["kind"] == "cup_sweep" for c in w["content_plan"]["checks"])
+                and any(t["id"] not in {e.get("track_id") for e in w["content_plan"]["entries"]}
+                        for t in w["content_plan"]["tracks"]))
+def cup_entry(p):
+    return next(e for e in p["entries"] if e["kind"] == "cup")
+def cup_check(kind):
+    return lambda p: next(c for c in p["checks"] if c["kind"] == kind)
+for name, change in [
+        ("name index", lambda p: cup_entry(p).__setitem__("id", "entry/cup:30")),
+        ("display name", lambda p: cup_entry(p).__setitem__("display_name", "Cup")),
+        ("three legs", lambda p: cup_entry(p)["legs"].pop()),
+        ("leg id", lambda p: cup_entry(p)["legs"][1].__setitem__("id", "x")),
+        ("leg unknown track", lambda p: cup_entry(p)["legs"][0].__setitem__("track_id", "retail:99")),
+        ("leg trial track", lambda p: cup_entry(p)["legs"][0].__setitem__("track_id", "retail:16")),
+        ("leg laps", lambda p: cup_entry(p)["legs"][0].__setitem__("laps", 2)),
+        ("leg laps 0", lambda p: cup_entry(p)["legs"][0].__setitem__("laps", 0)),
+        ("roster opponent", lambda p: cup_entry(p)["roster"].append(dict(role="opponent", slot=1, character_id=1,
+                                                                        driving_profile="a", attack_profile="b"))),
+        ("field size", lambda p: cup_entry(p).__setitem__("field_size", 4)),
+        ("gate mode", lambda p: next(x for x in p["pads"] if x["entry_id"] == cup_entry(p)["id"])["mode_gates"][0].__setitem__("mode", "trophy")),
+        ("gate stage", lambda p: next(x for x in p["pads"] if x["entry_id"] == cup_entry(p)["id"])["mode_gates"][0].__setitem__("stage", 2)),
+        ("win code", lambda p: cup_check("cup")(p).__setitem__("location", 35027026)),
+        ("win route award", lambda p: cup_check("cup")(p)["routes"][0].__setitem__("award", "win_letters")),
+        ("win leg id", lambda p: cup_check("cup")(p)["routes"][0].__setitem__("leg_id", "x")),
+        ("sweep dropped", lambda p: p["checks"].remove(cup_check("cup_sweep")(p))),
+        ("leg victory dropped", lambda p: p["checks"].remove(cup_check("cup_leg")(p))),
+        ("leg victory route dropped", lambda p: cup_check("cup_leg")(p)["routes"].pop()),
+        ("leg victory name", lambda p: cup_check("cup_leg")(p).__setitem__("display_name", "Leg")),
+        ("feature missing", lambda p: p["required_features"].remove("cup_entries_v1")),
+        ("cup-only track mode", lambda p: next(t for t in p["tracks"] if t["id"] not in
+                                              {e.get("track_id") for e in p["entries"]})["modes"].append("ctr")),
+        ("unused cup-only track", lambda p: p["tracks"].append(dict(p["tracks"][0], id="retail:15", retail_id=15,
+                                                                  display_name=cp.RETAIL[15]))),
+        ]:
+    alter("cup-" + name, change, cup_base)
+# Hit Character with cups (#133 PR 5b): generated plans over the cup profiles
+# with Hit Character on, then forged cup orders and cup-leg Hit routes.
+from worlds.ctr.test.test_content_cups import hit_cup_options
+hit_cup_cases = []
+for seed in range(40):
+    try:
+        options = hit_cup_options(seed, itemsanity=seed % 3 == 0)
+        wire = make_world(options, seed=seed).fill_slot_data()
+    except CupOptionError:
+        continue
+    hit_cup_cases.append(wire)
+    cases.append((f"cup-hits-generated-{seed}", wire, True))
+cases.append(("cup-hits-fixture", json.loads((root / "tools/fixtures/content-plan/cup-hits.json").read_text()), True))
+hit_cup_base = cases[-1][1]
+def hit_cup_env(name, change, source=None):
+    case = copy.deepcopy(source or hit_cup_base)
+    change(case)
+    try:
+        cp.validate(case["content_plan"])
+        cgc.check_encounter_block(case["content_plan"], case)
+        accepted = True
+    except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
+        accepted = False
+    cases.append(("cup-hits-" + name, case, accepted))
+def hc_orders(c):
+    return c["hit_character_encounters"]["content_cups"]
+def hc_one(c):
+    return sorted(hc_orders(c), key=int)[0]
+def hc_spare(c):
+    return str(next(i for i in range(27) if str(i) not in hc_orders(c)))
+def hc_hit(c, code):
+    return next(x for x in c["content_plan"]["checks"] if x["location"] == code)
+def hc_drop_cup_routes(c, code):
+    x = hc_hit(c, code)
+    x["routes"] = [r for r in x["routes"] if r["mode"] != "cup"]
+def hc_swap_legs(c):
+    routes = hc_hit(c, 35025002)["routes"]
+    i = next(i for i in range(len(routes) - 1) if routes[i]["mode"] == "cup" == routes[i + 1]["mode"])
+    routes[i], routes[i + 1] = routes[i + 1], routes[i]
+for name, change in [
+        ("unchanged copy", lambda c: None),
+        ("content_cups dropped", lambda c: c["hit_character_encounters"].pop("content_cups")),
+        ("content_cups empty", lambda c: c["hit_character_encounters"].__setitem__("content_cups", {})),
+        ("cup order dropped", lambda c: hc_orders(c).pop(hc_one(c))),
+        ("order for a missing cup", lambda c: hc_orders(c).__setitem__(hc_spare(c), copy.deepcopy(hc_orders(c)[hc_one(c)]))),
+        ("order with a repeated id", lambda c: hc_orders(c)[hc_one(c)]["order"].__setitem__(1, hc_orders(c)[hc_one(c)]["order"][0])),
+        ("order with fifteen ids", lambda c: hc_orders(c)[hc_one(c)]["order"].pop()),
+        ("order with an extra key", lambda c: hc_orders(c)[hc_one(c)].__setitem__("seed", 1)),
+        ("order shuffled", lambda c: hc_orders(c)[hc_one(c)]["order"].reverse()),
+        ("guest without its cup leg routes", lambda c: hc_drop_cup_routes(c, 35025013)),
+        ("default without its cup leg routes", lambda c: hc_drop_cup_routes(c, 35025004)),
+        ("cup leg routes out of order", hc_swap_legs),
+        ("cup leg route without its leg", lambda c: next(r for r in hc_hit(c, 35025006)["routes"] if r["mode"] == "cup").__setitem__("leg_id", None)),
+        ("cup leg route award", lambda c: next(r for r in hc_hit(c, 35025006)["routes"] if r["mode"] == "cup").__setitem__("award", "leg_win")),
+        ]:
+    hit_cup_env(name, change)
+hit_cup_env("content_cups on a Hit plan without cups",
+            lambda c: c["hit_character_encounters"].__setitem__("content_cups", copy.deepcopy(hit_cup_base["hit_character_encounters"]["content_cups"])),
+            glob_base)
+# Boss garages (#133 PR 6): generated plans over the goal arms, venue draws,
+# Final Challenge venues and relic modes, with cups, boost, racer locks,
+# Itemsanity and Hit Character in some, then forged boss records. A forgery
+# is judged by the generator's plan validation plus its envelope goal keys,
+# which native reads from the same plan.
+from worlds.ctr.test.test_content_bosses import varied as boss_varied
+for seed in range(60):
+    try:
+        wire = make_world(boss_varied(seed), seed=seed).fill_slot_data()
+    except CupOptionError:
+        continue
+    cases.append((f"bosses-generated-{seed}", wire, True))
+for fixture in ("bosses", "bosses-final", "bosses-custom", "bosses-cups"):
+    cases.append((fixture + "-fixture", json.loads((root / f"tools/fixtures/content-plan/{fixture}.json").read_text()), True))
+boss_base = next(w for name, w, ok in cases if name == "bosses-fixture")
+def boss_env(name, change, source=None):
+    case = copy.deepcopy(source or boss_base)
+    change(case)
+    try:
+        cp.validate(case["content_plan"])
+        cgc.check_encounter_block(case["content_plan"], case)
+        accepted = cp.goal_envelope(case["content_plan"]) == {k: case["ctr_options"][k] for k in
+                                                              ("goal_oxide", "goal_bosses", "goal_gems")}
+    except (ValueError, TypeError, KeyError, OverflowError, AttributeError, IndexError):
+        accepted = False
+    cases.append(("bosses-" + name, case, accepted))
+def b_entry(c, g, index=0):
+    return next(e for e in c["content_plan"]["entries"] if e["id"] == f"entry/boss:{g}/{index}")
+def b_req(c, rid):
+    return next(r for r in c["content_plan"]["requirements"] if r["id"] == rid)
+def b_check(c, code):
+    return next(x for x in c["content_plan"]["checks"] if x["location"] == code)
+def b_row(c, item):
+    return next(r for r in c["content_plan"]["items"]["rows"] if r["item"] == item)
+def b_pad(c, pid):
+    return next(x for x in c["content_plan"]["pads"] if x["id"] == pid)
+for name, change in [
+        ("unchanged copy", lambda c: None),
+        ("venue repeated", lambda c: b_entry(c, 0).__setitem__("track_id", b_entry(c, 1)["track_id"])),
+        ("venue uncertified", lambda c: b_entry(c, 1).__setitem__("track_id", "retail:18")),
+        ("venue home track", lambda c: b_entry(c, 0).__setitem__("track_id", "retail:6")),
+        ("Oxide 1 venue", lambda c: b_entry(c, 4).__setitem__("track_id", "cortex_vortex")),
+        ("Final venue retail", lambda c: b_entry(c, 4, 1).__setitem__("track_id", "retail:3")),
+        ("opponent", lambda c: b_entry(c, 0)["opponent"].__setitem__("character_id", 3)),
+        ("opponent slot", lambda c: b_entry(c, 0)["opponent"].__setitem__("slot", 2)),
+        ("driving profile", lambda c: b_entry(c, 1)["opponent"].__setitem__("driving_profile", "boss")),
+        ("attack kit", lambda c: b_entry(c, 1)["opponent"].__setitem__("attack_profile", "mixed")),
+        ("laps", lambda c: b_entry(c, 3).__setitem__("laps", 1)),
+        ("Trophy door", lambda c: b_req(c, "boss:2")["predicate"].__setitem__("count", 11)),
+        ("Trophy door item", lambda c: b_req(c, "boss:0")["predicate"].__setitem__("item", 35010014)),
+        # The garage roll (#133 PR 6b): accepted shapes and refused ones agree.
+        ("garage Trophy four", lambda c: b_req(c, "boss:1").__setitem__("predicate", dict(op="count", item=35010000, count=4))),
+        ("garage Trophy eight", lambda c: b_req(c, "boss:1").__setitem__("predicate", dict(op="count", item=35010000, count=8))),
+        ("garage Keys at hub gate", lambda c: b_req(c, "boss:3").__setitem__("predicate", dict(op="count", item=35010014, count=3))),
+        ("garage Keys above hub gate", lambda c: b_req(c, "boss:0").__setitem__("predicate", dict(op="count", item=35010014, count=2))),
+        ("garage free", lambda c: b_req(c, "boss:1").__setitem__("predicate", dict(op="always"))),
+        ("garage one Gold Relic", lambda c: b_req(c, "boss:2").__setitem__("predicate", dict(op="count", item=35010002, count=1))),
+        ("garage over supply", lambda c: b_req(c, "boss:2").__setitem__("predicate", dict(op="count", item=35010002, count=99))),
+        ("record level", lambda c: c["content_plan"]["bosses"].__setitem__("requirement_level", "chaotic")),
+        ("record level unknown", lambda c: c["content_plan"]["bosses"].__setitem__("requirement_level", "extreme")),
+        ("Oxide 1 companions dropped", lambda c: b_req(c, "oxide:first").__setitem__("predicate", b_req(c, "oxide:first")["predicate"]["terms"][0])),
+        ("Final relic count", lambda c: b_req(c, "oxide:final")["predicate"]["terms"][-1].__setitem__("count", 5)),
+        ("Final relic tier", lambda c: b_req(c, "oxide:final")["predicate"]["terms"][-1].__setitem__("item", 35010002)),
+        ("stray boss record", lambda c: c["content_plan"]["requirements"].append(dict(id="boss:9", predicate=dict(op="always")))),
+        ("garage gate", lambda c: b_pad(c, "garage:3").__setitem__("entrance_req", "keys:2")),
+        ("Oxide garage gate", lambda c: b_pad(c, "garage:4").__setitem__("entrance_req", "free")),
+        ("encounter requirement id", lambda c: c["content_plan"]["encounters"][4].__setitem__("requirement_id", "free")),
+        ("encounter index", lambda c: c["content_plan"]["encounters"][5].__setitem__("index", 0)),
+        ("encounter code", lambda c: c["content_plan"]["encounters"][0].__setitem__("completion_location", 35011101)),
+        ("encounter dropped", lambda c: c["content_plan"]["encounters"].pop()),
+        ("encounters swapped", lambda c: c["content_plan"]["encounters"].reverse()),
+        ("boss check award", lambda c: b_check(c, 35011100)["routes"][0].__setitem__("award", "hit")),
+        ("boss check owner", lambda c: b_check(c, 35011102).__setitem__("owner", "encounter/garage:0/0")),
+        ("boss check name", lambda c: b_check(c, 35011103).__setitem__("display_name", "Pinstripe")),
+        ("boss check dropped", lambda c: c["content_plan"]["checks"].remove(b_check(c, 35011101))),
+        ("boss Hit route dropped", lambda c: b_check(c, 35025010)["routes"].pop()),
+        ("boss Hit route elsewhere", lambda c: b_check(c, 35025001)["routes"].append(copy.deepcopy(b_check(c, 35025010)["routes"][-1]))),
+        ("goal boss count", lambda c: c["content_plan"]["goal"]["terms"][1].__setitem__("count", 3)),
+        ("goal Oxide arm", lambda c: c["content_plan"]["goal"]["terms"][0]["locations"].__setitem__(0, 35011105)),
+        ("goal arm order", lambda c: c["content_plan"]["goal"]["terms"].reverse()),
+        ("goal without arms", lambda c: c["content_plan"].__setitem__("goal", c["content_plan"]["goal"]["terms"][2])),
+        ("record oxide goal", lambda c: c["content_plan"]["bosses"].__setitem__("oxide_goal", 2)),
+        ("record boss count", lambda c: c["content_plan"]["bosses"].__setitem__("bosses_required", 3)),
+        ("record shuffle", lambda c: c["content_plan"]["bosses"].__setitem__("track_shuffle", False)),
+        ("record repeats", lambda c: c["content_plan"]["bosses"].__setitem__("repeats", True)),
+        ("record optional", lambda c: c["content_plan"]["bosses"].__setitem__("oxide_1_optional", True)),
+        ("record relic mode", lambda c: c["content_plan"]["bosses"].__setitem__("oxide_final_unlock", 1)),
+        ("record extra", lambda c: c["content_plan"]["bosses"].__setitem__("pairing", "retail_pairs")),
+        ("record dropped", lambda c: c["content_plan"].pop("bosses")),
+        ("feature dropped", lambda c: c["content_plan"]["required_features"].remove("boss_encounters_v1")),
+        ("envelope goal_oxide", lambda c: c["ctr_options"].__setitem__("goal_oxide", 3)),
+        ("envelope goal_bosses", lambda c: c["ctr_options"].__setitem__("goal_bosses", 0)),
+        ("envelope goal_gems", lambda c: c["ctr_options"].__setitem__("goal_gems", 0)),
+        ("boss-only venue mode", lambda c: next(t for t in c["content_plan"]["tracks"] if t["id"] == "cortex_vortex")["modes"].append("ctr")),
+        ("no filler for the Oxide goal check", lambda c: (b_row(c, 35010000).update(extra=75, remaining=91, receipt_cap=91),
+                                                          c["content_plan"]["items"].update(filler_count=0, trap_count=0))),
+        ("boss rank 0", lambda c: b_check(c, 35011105).__setitem__("boost", 0)),
+        ("boss rank above the chain", lambda c: b_check(c, 35011105).__setitem__("boost", 3)),
+        ]:
+    boss_env(name, change)
+# A boss check's `boost` is the apworld's logic as data, read as given like
+# every other check's rank (#133 PR 4c above): a forged rank inside the chain
+# is refused by the generator alone.
+for name, change in [
+        ("boss rank lowered", lambda c: b_check(c, 35011105).__setitem__("boost", 1)),
+        ("boss rank dropped", lambda c: b_check(c, 35011100).pop("boost")),
+        # #133 PR 6b: Cortex Vortex is a certified garage venue now; moved there
+        # without its USF rank, only the rank is forged.
+        ("venue Cortex Vortex on a garage", lambda c: b_entry(c, 2).__setitem__("track_id", "cortex_vortex")),
+        ]:
+    boss_env(name, change)
+    native_trusts.add("bosses-" + name)
+    assert cases[-1][2] is False, name + ": the apworld must refuse a forged rank"
+final_base = next(w for name, w, ok in cases if name == "bosses-final-fixture")
+for name, change in [
+        ("final unchanged copy", lambda c: None),
+        ("final retail pair moved", lambda c: b_entry(c, 0).__setitem__("track_id", "retail:3")),
+        ("final total relics over supply", lambda c: (c["content_plan"]["bosses"].__setitem__("oxide_final_count", 13),
+                                                      b_req(c, "oxide:final")["predicate"].__setitem__("count", 13))),
+        ("final optional without 101", lambda c: c["content_plan"]["bosses"].__setitem__("oxide_goal", 1)),
+        ("final gem arm added", lambda c: c["ctr_options"].__setitem__("goal_gems", 1)),
+        ("final venue Cortex Vortex", lambda c: b_entry(c, 4, 1).__setitem__("track_id", "cortex_vortex")),
+        ]:
+    boss_env(name, change, final_base)
+# Custom and Cortex Vortex garage venues (#133 PR 6b): forgeries on
+# bosses-custom.json, where Papu Papu races Cortex Vortex and Pinstripe Baby T Park.
+custom_base = next(w for name, w, ok in cases if name == "bosses-custom-fixture")
+def c_pkg(c):
+    return next(p for p in c["content_plan"]["packages"] if p["content_id"] == "baby-t-park")
+for name, change in [
+        ("custom unchanged copy", lambda c: None),
+        ("custom count too small", lambda c: c_pkg(c)["capabilities"].__setitem__("checkpoints", 3)),
+        ("custom count other", lambda c: c_pkg(c)["capabilities"].__setitem__("checkpoints", 60)),
+        ("custom no nav", lambda c: c_pkg(c)["capabilities"].__setitem__("ai_nav", False)),
+        ("custom no count", lambda c: c_pkg(c)["capabilities"].pop("checkpoints")),
+        ("custom shuffle off", lambda c: c["content_plan"]["bosses"].__setitem__("track_shuffle", False)),
+        ("custom repeats off", lambda c: c["content_plan"]["bosses"].__setitem__("repeats", False)),
+        ("Cortex Vortex on Roo", lambda c: b_entry(c, 0).__setitem__("track_id", "cortex_vortex")),
+        ("custom on Roo", lambda c: b_entry(c, 0).__setitem__("track_id", "custom/baby-t-park/1.0.2")),
+        ]:
+    boss_env(name, change, custom_base)
+# Boss cups (#133 PR 6b): forgeries on bosses-cups.json (cups in garages 0 and 1).
+cups_base = next(w for name, w, ok in cases if name == "bosses-cups-fixture")
+for name, change in [
+        ("cups unchanged copy", lambda c: None),
+        ("cups three legs", lambda c: b_entry(c, 0)["legs"].pop()),
+        ("cups repeated leg", lambda c: b_entry(c, 0)["legs"][1].__setitem__("track_id", b_entry(c, 0)["legs"][0]["track_id"])),
+        ("cups trial leg", lambda c: b_entry(c, 1)["legs"][2].__setitem__("track_id", "retail:16")),
+        ("cups leg laps", lambda c: b_entry(c, 0)["legs"][0].__setitem__("laps", 2)),
+        ("cups record short", lambda c: c["content_plan"]["bosses"].__setitem__("cups", [0])),
+        ("cups record long", lambda c: c["content_plan"]["bosses"].__setitem__("cups", [0, 1, 2])),
+        ("cups route mode", lambda c: b_check(c, 35011100)["routes"][0].__setitem__("mode", "boss_race")),
+        ("cups check kind", lambda c: b_check(c, 35011101).__setitem__("kind", "boss_race")),
+        ]:
+    boss_env(name, change, cups_base)
+# Lap completion checks (#344): generated plans with laps on over the base,
+# cup and track-mode profiles, custom tracks and Cortex Vortex, then forged
+# lap records.
+lap_cases = []
+for seed in range(40):
+    options = cup_options(seed) if seed % 2 else profile_options()
+    options["lap_completion_checks"] = True
+    if seed % 4 == 2:
+        options["content_pool"]["tracks"]["cortex_vortex"] = True
+        options["content_pool"]["tracks"]["modes"] = ["trophy", "ctr", "relic"]
+        options["pad_layout"]["stages"] = "two"
+    try:
+        wire = make_world(options, seed=seed).fill_slot_data()
+    except CupOptionError:
+        continue
+    assert any(c["kind"] == "lap" for c in wire["content_plan"]["checks"]), seed
+    lap_cases.append(wire)
+    cases.append((f"laps-generated-{seed}", wire, True))
+lap_base = next(w for w in lap_cases if any(len(c["routes"]) > 1 and c["kind"] == "lap" for c in w["content_plan"]["checks"])
+                and any(e["kind"] == "cup" for e in w["content_plan"]["entries"]))
+def lap_check(p, legs=False):
+    return next(c for c in p["checks"] if c["kind"] == "lap" and any((r["leg_id"] is not None) == legs for r in c["routes"]))
+def lap_env(name, change):
+    alter("lap-" + name, change, lap_base)
+for name, change in [
+        ("unchanged copy", lambda p: None),
+        ("dropped", lambda p: p["checks"].remove(lap_check(p))),
+        ("all dropped", lambda p: p.__setitem__("checks", [c for c in p["checks"] if c["kind"] != "lap"])),
+        ("code", lambda p: lap_check(p).__setitem__("location", lap_check(p)["location"] + 1)),
+        ("name", lambda p: lap_check(p).__setitem__("display_name", "Lap")),
+        ("owner", lambda p: lap_check(p).__setitem__("owner", "retail:15")),
+        ("route dropped", lambda p: lap_check(p)["routes"].pop()),
+        ("route award", lambda p: lap_check(p)["routes"][0].__setitem__("award", "win")),
+        ("route mode", lambda p: lap_check(p)["routes"][0].__setitem__("mode", "relic")),
+        ("route order", lambda p: lap_check(p)["routes"].reverse()),
+        ("cup route leg", lambda p: lap_check(p, True)["routes"][-1].__setitem__("leg_id", None)),
+        ("feature missing", lambda p: p["required_features"].remove("lap_checks_v1")),
+        ("feature without checks", lambda p: (p.__setitem__("checks", [c for c in p["checks"] if c["kind"] != "lap"]))),
+        ]:
+    lap_env(name, change)
+# Boss races earn the venue's lap check: every boss shape, then forged routes.
+from worlds.ctr.test.test_content_bosses import boss_options
+lap_boss_base = None
+for seed in range(12):
+    options = boss_options(lap_completion_checks=True, boss_track_shuffle=bool(seed % 3 == 1))
+    if seed % 2:
+        options["content_pool"]["bosses"]["cups"] = 1 + seed % 4
+    wire = make_world(options, seed=seed).fill_slot_data()
+    cases.append((f"laps-boss-{seed}", wire, True))
+    if seed == 0:
+        lap_boss_base = wire
+assert lap_boss_base is not None
+def lap_boss_check(p):
+    return next(c for c in p["checks"] if c["kind"] == "lap" and any(r["encounter_id"] for r in c["routes"]))
+def lap_boss_route(p):
+    return next(r for r in lap_boss_check(p)["routes"] if r["encounter_id"])
+for name, change in [
+        ("unchanged copy", lambda p: None),
+        ("route dropped", lambda p: lap_boss_check(p)["routes"].remove(lap_boss_route(p))),
+        ("encounter", lambda p: lap_boss_route(p).__setitem__("encounter_id", "encounter/garage:4/0")),
+        ("mode", lambda p: lap_boss_route(p).__setitem__("mode", "boss_cup")),
+        ("pad", lambda p: lap_boss_route(p).__setitem__("own_pad_id", "garage:1" if lap_boss_route(p)["own_pad_id"] != "garage:1" else "garage:2")),
+        ("award", lambda p: lap_boss_route(p).__setitem__("award", "win")),
+        ("venue check dropped", lambda p: p["checks"].remove(next(c for c in p["checks"] if c["kind"] == "lap" and all(r["encounter_id"] for r in c["routes"])))),
+        ]:
+    alter("lap-boss-" + name, change, lap_boss_base)
+# A plan with laps off that declares the feature.
+alter("lap-feature on a plan without laps", lambda p: p["required_features"].append("lap_checks_v1"))
+# One generator row 2: Gem Cups first, surface items and relic checks that
+# follow the item counts, then forgeries of each.
+from worlds.ctr.test.test_content_plan_row2 import plan_options, relic_options
+row2_base = None
+for count in (1, 3, 5, 7):
+    for tracks in ("off", "random", "random_no_repeats"):
+        for relics in (dict(sapphire=18, gold=18, platinum=0), dict(sapphire=6, gold=4, platinum=2)):
+            options = relic_options(relics)
+            options["content_pool"]["cups"] = dict(count=count, tracks=tracks)
+            options["cup_sweep_checks"] = count % 2 == 1
+            wire = json.loads(json.dumps(make_world(options, seed=count).fill_slot_data()))
+            cases.append((f"row2-{count}-{tracks}-{relics['platinum']}", wire, True))
+            row2_base = wire
+def row2_alter(name, change):
+    alter("row2-" + name, change, row2_base)
+def row2_row(p, code):
+    return next(r for r in p["items"]["rows"] if r["item"] == code)
+def row2_entry(p, colour):
+    return next(e for e in p["entries"] if e["id"] == f"entry/gem_cup:{colour}")
+def row2_rename(p, colour, new):
+    old = f"entry/gem_cup:{colour}"
+    text = json.dumps(p).replace(old, new)
+    p.clear()
+    p.update(json.loads(text))
+def row2_relic_check(p, tier):
+    return next(c for c in p["checks"] if c["kind"] == "relic" and c["routes"][0]["award"] == tier)
+def row2_drop_surface(p):
+    p["items"]["rows"].remove(row2_row(p, 35010021))
+    p["items"]["filler_count"] += 1
+def row2_drop_all_surface(p):
+    for code in range(35010021, 35010026):
+        p["items"]["rows"].remove(row2_row(p, code))
+    p["items"]["filler_count"] += 5
+    p["required_features"].remove("surface_items_v1")
+def row2_extra_relic_check(p):
+    check = row2_relic_check(p, "gold")
+    track = next(t for t in p["tracks"] if t["id"] == check["owner"])
+    p["checks"].remove(check)
+    p["items"]["coded_checks"] -= 1
+    p["items"]["filler_count"] -= 1
+for name, change in [
+        ("unchanged copy", lambda p: None),
+        ("Gem Cup name", lambda p: row2_entry(p, 0).__setitem__("display_name", "Green Gem Cup")),
+        ("Gem Cup colour past Purple", lambda p: row2_rename(p, 4, "entry/gem_cup:5")),
+        ("Gem Cup colour with a leading zero", lambda p: row2_rename(p, 1, "entry/gem_cup:01")),
+        ("Gem Cup feature dropped", lambda p: p["required_features"].remove("gem_cups_v1")),
+        ("Gem check name", lambda p: next(c for c in p["checks"] if c["location"] == 35011200).__setitem__("display_name", "Red Gem Cup: Win")),
+        ("Gem check code", lambda p: next(c for c in p["checks"] if c["location"] == 35011200).__setitem__("location", 35027000)),
+        ("surface row alone", row2_drop_surface),
+        ("surface pack dropped together", row2_drop_all_surface),
+        ("surface feature dropped", lambda p: p["required_features"].remove("surface_items_v1")),
+        ("surface extra copy", lambda p: row2_row(p, 35010021).update(extra=1, remaining=2, receipt_cap=2)),
+        ("relic feature dropped", lambda p: p["required_features"].remove("relic_tier_checks_v1")),
+        ("relic check dropped", row2_extra_relic_check),
+        ]:
+    row2_alter(name, change)
+# One generator row 3: every unlock mode, placement and stage density the
+# generator draws, then forged requirement records.
+row3_shape = dict(preset="mixed", tracks=dict(retail="all", modes=["trophy", "ctr", "relic"], custom=[]),
+                  cups=dict(count=5), crystals=dict(count=4), bosses=dict(enabled=True))
+def row3_options(unlock="randomized", placement="shuffle", density="full", **extra):
+    return {"content_pool": copy.deepcopy(row3_shape), "item_pool": {}, "warppad_unlock_requirements": unlock,
+            "two_stage_density": density, "pad_layout": dict(placement=placement, stages="two", mode_order="per_pad",
+                                                             merge_trophy_ctr=False), **extra}
+row3_cases = 0
+for unlock in ("vanilla", "randomized", "random_without_4_keys"):
+    for placement in ("vanilla", "shuffle_within_kind", "shuffle"):
+        for density in ("off", "light", "standard", "deep", "full"):
+            for seed in range(3):
+                wire = make_world(row3_options(unlock, placement, density), seed=seed).fill_slot_data()
+                cases.append((f"row3-{unlock}-{placement}-{density}-{seed}", wire, True))
+                row3_cases += 1
+assert row3_cases == 135, row3_cases
+row3_random = make_world(row3_options(), seed=1).fill_slot_data()
+row3_vanilla = make_world(row3_options("vanilla"), seed=1).fill_slot_data()
+row3_no4 = make_world(row3_options("random_without_4_keys"), seed=1).fill_slot_data()
+for name, source in (("row3-random", row3_random), ("row3-vanilla", row3_vanilla), ("row3-no4", row3_no4)):
+    cases.append((name, source, True))
+def row3_req(p, prefix):
+    return next(r for r in p["requirements"] if r["id"].startswith(prefix))
+def row3_count(prefix, count):
+    return lambda p: row3_req(p, prefix)["predicate"].update(count=count)
+def row3_key(prefix, count):
+    return lambda p: row3_req(p, prefix)["predicate"].__init__(op="count", item=35010014, count=count)
+def row3_unknown_id(p):
+    row3_req(p, "stage1:")["id"] = "stage3:9"
+def row3_both(p):
+    rid = row3_req(p, "stage1:")["id"]
+    pad = "pad:" + rid.split(":")[1]
+    p["requirements"].append(dict(id="manual:" + rid.split(":")[1], predicate=row3_req(p, "stage1:")["predicate"]))
+    p["required_features"].insert(1, "manual_pad_requirements_v1")
+def row3_stage2_echo(p):
+    first = {r["id"].split(":")[1]: r for r in p["requirements"] if r["id"].startswith("stage1:")}
+    second = next(r for r in p["requirements"] if r["id"].startswith("stage2:") and r["id"].split(":")[1] in first)
+    second["predicate"] = copy.deepcopy(first[second["id"].split(":")[1]]["predicate"])
+    second["predicate"]["count"] = min(second["predicate"]["count"], 4)
+def row3_manual_vanilla(p):
+    row = row3_req(p, "stage1:")
+    physical = row["id"].split(":")[1]
+    gate = row["id"]
+    row["id"] = "manual:" + physical
+    next(x for x in p["pads"] if x["id"] == "pad:" + physical)["mode_gates"][0]["requirement_id"] = row["id"]
+    for g in next(x for x in p["pads"] if x["id"] == "pad:" + physical)["mode_gates"]:
+        if g["requirement_id"] == gate:
+            g["requirement_id"] = row["id"]
+    p["required_features"].insert(1, "manual_pad_requirements_v1")
+def row3_garage_free_trophies(p):
+    next(r for r in p["requirements"] if r["id"] == "boss:1")["predicate"].__init__(op="count", item=35010000, count=4)
+for name, source, change in [
+        ("feature dropped", row3_random, lambda p: p["required_features"].remove("pad_requirements_v1")),
+        ("unknown mode", row3_random, lambda p: p["pad_requirements"].update(mode="sometimes")),
+        ("extra record field", row3_random, lambda p: p["pad_requirements"].update(placement="shuffle")),
+        ("unknown record id", row3_random, row3_unknown_id),
+        ("a manual rule beside a drawn one", row3_random, row3_both),
+        ("count above the base supply", row3_random, row3_count("stage1:", 999)),
+        ("stage 2 count above the base supply", row3_random, row3_count("stage2:", 999)),
+        ("drawn Keys above the supply", row3_random, row3_key("stage1:", 5)),
+        ("4 Keys at stage 1 without 4 Keys", row3_no4, row3_key("stage1:", 4)),
+        ("4 Keys at stage 2 without 4 Keys", row3_no4, row3_key("stage2:", 4)),
+        ("3 Keys at stage 2 without 4 Keys", row3_no4, row3_key("stage2:", 3)),
+        ("drawn stage 1 above the ceiling", row3_random, lambda p: row3_req(p, "stage1:")["predicate"].__init__(op="count", item=35010000, count=9)),
+        ("drawn stage 2 above the ceiling", row3_random, lambda p: row3_req(p, "stage2:")["predicate"].__init__(op="count", item=35010000, count=5)),
+        ("stage 2 met by its stage 1", row3_random, row3_stage2_echo),
+        ("vanilla record renamed manual", row3_vanilla, row3_manual_vanilla),
+        ("vanilla stage 1 count", row3_vanilla, row3_count("stage1:", 2)),
+        ("vanilla stage 2 count", row3_vanilla, row3_count("stage2:", 3)),
+        ("vanilla stage 2 item", row3_vanilla, lambda p: row3_req(p, "stage2:")["predicate"].__init__(op="count", item=35010000, count=1)),
+        ("vanilla garage below the table", row3_vanilla, row3_garage_free_trophies),
+        ]:
+    alter("row3 " + name, change, source)
+# One generator row 4: fixed Keys, Gems and the Oxide filler, on both pad
+# requirement families, with extras, starts and the relic guard.
+row4_cases = 0
+row4_sets = [dict(shuffle_keys=False), dict(shuffle_gems=False), dict(shuffle_keys=False, shuffle_gems=False),
+             dict(oxide_goal="101_percent", oxide_1_optional="filler"),
+             dict(oxide_goal="101_percent", oxide_1_optional="filler", shuffle_keys=False, shuffle_gems=False),
+             dict(shuffle_keys=False, shuffle_gems=False, item_pool=dict(extra=dict(keys=2, gems=dict(red=1)))),
+             dict(shuffle_keys=False, shuffle_gems=False, start_inventory_from_pool={"Key": 1, "Red Gem": 1}),
+             dict(shuffle_keys=False, shuffle_gems=False, item_pool=dict(extra=dict(keys=1)),
+                  start_inventory_from_pool={"Key": 2})]
+for index, extra in enumerate(row4_sets):
+    for unlock in ("randomized", "vanilla"):
+        for placement in ("vanilla", "shuffle_within_kind", "shuffle"):
+            for seed in range(4):
+                options = row3_options(unlock, placement, "full", **copy.deepcopy(extra))
+                cases.append((f"row4-{index}-{unlock}-{placement}-{seed}", make_world(options, seed=seed).fill_slot_data(), True))
+                row4_cases += 1
+assert row4_cases == 192, row4_cases
+from worlds.ctr import content_fixed as fixed_items
+row4_guarded = next(w for w in (make_world(row3_options("vanilla", shuffle_gems=False), seed=seed).fill_slot_data()
+                                for seed in range(40))
+                    if fixed_items.guarded_track("vanilla", w["content_plan"]["fixed_items"], w["content_plan"]["pads"], w["content_plan"]["entries"]))
+row4_both = make_world(row3_options(shuffle_keys=False, shuffle_gems=False, oxide_goal="101_percent", oxide_1_optional="filler"), seed=1).fill_slot_data()
+cases.append(("row4-guarded", row4_guarded, True))
+cases.append(("row4-both", row4_both, True))
+def row4_row(p, item):
+    return next(r for r in p["items"]["rows"] if r["item"] == item)
+for name, source, change in [
+        ("record dropped", row4_both, lambda p: p.pop("fixed_items")),
+        ("feature dropped", row4_both, lambda p: p["required_features"].remove("fixed_items_v1")),
+        ("empty record", row4_both, lambda p: p.update(fixed_items={})),
+        ("unknown field", row4_both, lambda p: p["fixed_items"].update(trophies=True)),
+        ("false value", row4_both, lambda p: p["fixed_items"].update(keys=False)),
+        ("locked checks", row4_both, lambda p: p["items"].update(locked_checks=9)),
+        ("Key left out", row4_both, lambda p: row4_row(p, 35010014).update(locked_selected=3, remaining=1)),
+        ("Gem left out", row4_both, lambda p: row4_row(p, 35010009).update(locked_selected=0, remaining=1)),
+        ("Gem pooled too", row4_both, lambda p: row4_row(p, 35010009).update(remaining=1)),
+        ("filler on a mandatory first race", row4_both, lambda p: p["bosses"].update(oxide_1_optional=False)),
+        ("filler on another goal", row3_random, lambda p: (p.__setitem__("fixed_items", dict(oxide_1_filler=True)),
+                                                           p["required_features"].append("fixed_items_v1"))),
+        ("Gems without the guard", row4_guarded, lambda p: p.pop("fixed_items")),
+        ("guarded race dropped from the record", row4_guarded, lambda p: p["required_features"].remove("relic_tier_checks_v1")),
+        ]:
+    alter("row4 " + name, change, source)
+# J11: ctr_first, the Wumpa Shop and goal, boss opponent and kit shuffle. The
+# paired apworld's own fixtures, then forgeries of every new field; native and
+# the generator's validator must agree on each.
+for fixture in ("ctr-first", "wumpa-shop", "wumpa-goal-only", "boss-shuffle", "all-030", "chaos-final", "oxide-off-swap"):
+    cases.append((fixture + "-fixture", json.loads((root / f"tools/fixtures/content-plan/{fixture}.json").read_text()), True))
+def j11_env(name, change, fixture):
+    case = copy.deepcopy(next(w for n, w, ok in cases if n == fixture + "-fixture"))
+    change(case)
+    try:
+        cp.validate(case["content_plan"])
+        cgc.check_encounter_block(case["content_plan"], case)
+        accepted = cp.goal_envelope(case["content_plan"]) == {k: case["ctr_options"][k] for k in
+                                                              ("goal_oxide", "goal_bosses", "goal_gems")}
+    except (ValueError, TypeError, KeyError, OverflowError, AttributeError, IndexError):
+        accepted = False
+    cases.append((f"j11-{fixture}-{name}", case, accepted))
+for name, change in (
+        ("false", lambda c: c["content_plan"]["bosses"].__setitem__("final_chaos", False)),
+        ("a number", lambda c: c["content_plan"]["bosses"].__setitem__("final_chaos", 1)),
+        ("without the feature", lambda c: c["content_plan"]["required_features"].remove("final_chaos_v1")),
+        ("Keys on a displaced boss", lambda c: c["hit_character_encounters"]["unlock_triggers"]["11"].__setitem__("fallback_keys", 3)),
+        ):
+    j11_env("chaos " + name, change, "chaos-final")
+# Fixes 2026-11-02: N. Oxide's races off on a random-boss seed race him from the start.
+for name, change in (
+        ("Keys back", lambda c: c["hit_character_encounters"]["unlock_triggers"]["15"].__setitem__("fallback_keys", 4)),
+        ("his races as wins", lambda c: c["hit_character_encounters"]["unlock_triggers"]["15"].__setitem__(
+            "any_of", [35011104, 35011105])),
+        ):
+    j11_env("oxide off " + name, change, "oxide-off-swap")
+def j_entry(c, eid):
+    return next(e for e in c["content_plan"]["entries"] if e["id"] == eid)
+def j_check(c, code):
+    return next(x for x in c["content_plan"]["checks"] if x["location"] == code)
+def j_pad(c, pid):
+    return next(x for x in c["content_plan"]["pads"] if x["id"] == pid)
+def j_drop_feature(c, name):
+    c["content_plan"]["required_features"].remove(name)
+def j_shop(c):
+    return [x for x in c["content_plan"]["checks"] if x["kind"] == "wumpa_shop"]
+def j_swap_last(c):
+    x = c["content_plan"]["checks"]
+    x[-1], x[-2] = x[-2], x[-1]
+def j_hit_to_retail(c):
+    c["hit_character_encounters"]["bosses"]["35011100"] = 10
+def j_garage_kit_row(c, g, seg, row):
+    j_entry(c, f"entry/boss:{g}/0")["opponent"]["schedule"][seg][1:4] = row[:3]
+    j_entry(c, f"entry/boss:{g}/0")["opponent"]["schedule"][seg][4:6] = row[3:]
+def j_oxide(c, key, value):
+    for i in (0, 1):
+        j_entry(c, f"entry/boss:4/{i}")["opponent"][key] = copy.deepcopy(value)
+for name, change in [
+        ("unchanged copy", lambda c: None),
+        ("Trophy mode kept", lambda c: j_entry(c, "entry/retail:3").__setitem__("modes", ["ctr", "trophy", "relic"])),
+        ("relic first", lambda c: j_entry(c, "entry/retail:3").__setitem__("modes", ["relic", "ctr"])),
+        ("relic dropped", lambda c: j_entry(c, "entry/retail:3").__setitem__("modes", ["ctr"])),
+        ("Trophy check from trophy", lambda c: j_check(c, 35011000)["routes"][0].__setitem__("mode", "trophy")),
+        ("Trophy check award win", lambda c: j_check(c, 35011000)["routes"][0].__setitem__("award", "win")),
+        ("rung from trophy", lambda c: j_check(c, 35015100)["routes"][0].__setitem__("mode", "trophy")),
+        ("Wumpa from trophy", lambda c: j_check(c, 35016101)["routes"][0].__setitem__("mode", "trophy")),
+        ("structure classic", lambda c: c["content_plan"].__setitem__("adventure_structure", "classic")),
+        ("structure dropped", lambda c: c["content_plan"].pop("adventure_structure")),
+        ("feature dropped", lambda c: j_drop_feature(c, "ctr_first_v1")),
+        ("CTR at stage 2", lambda c: j_pad(c, "pad:6")["mode_gates"][0].__setitem__("stage", 2)),
+        ("fallback track as ctr_first", lambda c: j_entry(c, "entry/retail:6").__setitem__("modes", ["relic"])),
+        ]:
+    j11_env(name, change, "ctr-first")
+for name, change in [
+        ("unchanged copy", lambda c: None),
+        ("unlock forged", lambda c: j_shop(c)[2].__setitem__("unlock_banked", j_shop(c)[2]["unlock_banked"] + 1)),
+        ("unlock on a starting shelf", lambda c: j_shop(c)[0].__setitem__("unlock_banked", 1)),
+        ("price above the ceiling", lambda c: j_shop(c)[0].__setitem__("price", 100001)),
+        ("price negative", lambda c: j_shop(c)[0].__setitem__("price", -1)),
+        ("price dropped", lambda c: j_shop(c)[0].pop("price")),
+        ("price a Boolean", lambda c: j_shop(c)[0].__setitem__("price", True)),
+        ("a route", lambda c: j_shop(c)[0].__setitem__("routes", copy.deepcopy(c["content_plan"]["checks"][0]["routes"]))),
+        ("owner", lambda c: j_shop(c)[3].__setitem__("owner", "hub:26")),
+        ("name", lambda c: j_shop(c)[6].__setitem__("display_name", "The Lost Ruins Shop: Slot 1")),
+        ("kind", lambda c: j_shop(c)[0].__setitem__("kind", "wumpa")),
+        ("order", j_swap_last),
+        ("record slots", lambda c: c["content_plan"]["wumpa_shop"].__setitem__("slots", 4)),
+        ("record prices", lambda c: c["content_plan"]["wumpa_shop"].__setitem__("prices", 100)),
+        ("record prices below 25", lambda c: c["content_plan"]["wumpa_shop"].__setitem__("prices", 24)),
+        ("record progression", lambda c: c["content_plan"]["wumpa_shop"].__setitem__("progression", "progression")),
+        ("record hints", lambda c: c["content_plan"]["wumpa_shop"].__setitem__("hints", 1)),
+        ("record extra", lambda c: c["content_plan"]["wumpa_shop"].__setitem__("version", 1)),
+        ("record dropped", lambda c: c["content_plan"].pop("wumpa_shop")),
+        ("shop feature dropped", lambda c: j_drop_feature(c, "wumpa_shop_v1")),
+        ("goal feature dropped", lambda c: j_drop_feature(c, "wumpa_goal_v1")),
+        ("features reordered", lambda c: c["content_plan"]["required_features"].reverse()),
+        ("goal count 0", lambda c: c["content_plan"]["goal"]["terms"][1].__setitem__("count", 0)),
+        ("goal count 5001", lambda c: c["content_plan"]["goal"]["terms"][1].__setitem__("count", 5001)),
+        ("goal arms reordered", lambda c: c["content_plan"]["goal"]["terms"].reverse()),
+        ("goal two Wumpa arms", lambda c: c["content_plan"]["goal"]["terms"].append(copy.deepcopy(c["content_plan"]["goal"]["terms"][1]))),
+        ("Wumpa arm in a requirement", lambda c: next(r for r in c["content_plan"]["requirements"] if r["id"] == "keys:1")
+                                                  .__setitem__("predicate", dict(op="wumpa_banked", count=1))),
+        ]:
+    j11_env(name, change, "wumpa-shop")
+for name, change in [
+        ("unchanged copy", lambda c: None),
+        ("count 0", lambda c: c["content_plan"]["goal"].__setitem__("count", 0)),
+        ("count 5001", lambda c: c["content_plan"]["goal"].__setitem__("count", 5001)),
+        ("wrapped alone", lambda c: c["content_plan"].__setitem__("goal", dict(op="all", terms=[c["content_plan"]["goal"]]))),
+        ("extra key", lambda c: c["content_plan"]["goal"].__setitem__("items", [])),
+        ("envelope Gem count", lambda c: c["ctr_options"].__setitem__("goal_gems", 1)),
+        ("feature dropped", lambda c: j_drop_feature(c, "wumpa_goal_v1")),
+        ]:
+    j11_env(name, change, "wumpa-goal-only")
+for name, change in [
+        ("unchanged copy", lambda c: None),
+        ("two garages one racer", lambda c: j_entry(c, "entry/boss:1/0")["opponent"].__setitem__("character_id", 7)),
+        ("garage seats the final racer", lambda c: j_entry(c, "entry/boss:2/0")["opponent"].__setitem__("character_id", 11)),
+        ("final racer N. Oxide with the pool", lambda c: j_oxide(c, "character_id", 15)),
+        ("Oxide encounters differ", lambda c: j_entry(c, "entry/boss:4/1")["opponent"].__setitem__("character_id", 6)),
+        ("racer id 16", lambda c: j_entry(c, "entry/boss:0/0")["opponent"].__setitem__("character_id", 16)),
+        ("oxide_in_pool off", lambda c: c["content_plan"]["bosses"].__setitem__("oxide_in_pool", False)),
+        ("opponent_shuffle off", lambda c: c["content_plan"]["bosses"].__setitem__("opponent_shuffle", False)),
+        ("kit row uncertified", lambda c: j_entry(c, "entry/boss:2/0")["opponent"]["schedule"][1].__setitem__(3, 0)),
+        ("kit cooldown 1", lambda c: j_entry(c, "entry/boss:2/0")["opponent"]["schedule"][0].__setitem__(4, 1)),
+        ("kit cooldown unscaled", lambda c: j_entry(c, "entry/boss:2/0")["opponent"]["schedule"][0].__setitem__(4, 200)),
+        ("two garages one kit", lambda c: j_entry(c, "entry/boss:3/0")["opponent"].__setitem__(
+            "schedule", [[x[0]] + y[1:] for x, y in zip(j_entry(c, "entry/boss:3/0")["opponent"]["schedule"],
+                                                     j_entry(c, "entry/boss:2/0")["opponent"]["schedule"])])),
+        ("Oxide cooldown unscaled", lambda c: [j_entry(c, f"entry/boss:4/{i}")["opponent"]["schedule"][0].__setitem__(4, 200) for i in (0, 1)]),
+        ("kit checkpoint moved", lambda c: j_entry(c, "entry/boss:2/0")["opponent"]["schedule"][2].__setitem__(
+            0, j_entry(c, "entry/boss:2/0")["opponent"]["schedule"][2][0] + 1)),
+        ("custom venue checkpoint moved", lambda c: j_entry(c, "entry/boss:1/0")["opponent"]["schedule"][1].__setitem__(0, 6)),
+        ("kit never attacks", lambda c: [j_garage_kit_row(c, 2, i, [3, 0x0F, 1, 11, 0]) for i in range(5)]),
+        ("super engine in a garage", lambda c: j_garage_kit_row(c, 2, 1, [3, 0x0D, 1, 9, 0])),
+        ("four segments", lambda c: j_entry(c, "entry/boss:2/0")["opponent"]["schedule"].pop()),
+        ("kit inherited", lambda c: (j_entry(c, "entry/boss:2/0")["opponent"].__setitem__("attack_profile", "inherited"),
+                                     j_entry(c, "entry/boss:2/0")["opponent"].pop("schedule"))),
+        ("Oxide twelve segments", lambda c: [j_entry(c, f"entry/boss:4/{i}")["opponent"]["schedule"].pop() for i in (0, 1)]),
+        ("Oxide off its checkpoints", lambda c: [j_entry(c, f"entry/boss:4/{i}")["opponent"]["schedule"][3].__setitem__(0, 48) for i in (0, 1)]),
+        ("driving profile", lambda c: j_entry(c, "entry/boss:0/0")["opponent"].__setitem__("driving_profile", "boss")),
+        ("slot 2", lambda c: j_entry(c, "entry/boss:0/0")["opponent"].__setitem__("slot", 2)),
+        ("kit intensity", lambda c: c["content_plan"]["bosses"]["kit"].__setitem__("intensity", "standard")),
+        ("kit loss_easing", lambda c: c["content_plan"]["bosses"]["kit"].__setitem__("loss_easing", 0)),
+        ("kit dropped", lambda c: c["content_plan"]["bosses"].__setitem__("kit", None)),
+        ("track_assignment home", lambda c: c["content_plan"]["bosses"].__setitem__("track_assignment", "character_home_track")),
+        ("Oxide profile retail", lambda c: c["content_plan"]["bosses"].__setitem__("oxide_attack_profile", "retail")),
+        ("repeats", lambda c: c["content_plan"]["bosses"].__setitem__("repeats", True)),
+        ("record keys dropped", lambda c: [c["content_plan"]["bosses"].pop(k) for k in
+                                           ("opponent_shuffle", "oxide_in_pool", "kit_shuffle", "kit", "oxide_attack_profile", "track_assignment")]),
+        ("feature dropped", lambda c: j_drop_feature(c, "boss_opponents_v1")),
+        ("Hit route kept by the retail boss", lambda c: j_check(c, 35025010)["routes"].append(copy.deepcopy(j_check(c, 35025007)["routes"][-1]))),
+        ("Hit route dropped from the drawn racer", lambda c: j_check(c, 35025007)["routes"].pop()),
+        ("Hit table retail", j_hit_to_retail),
+        ("Hit fallback on a boss raced nowhere", lambda c: c["hit_character_encounters"]["unlock_triggers"]["8"].__setitem__("fallback_keys", 4)),
+        ("Hit fallback on a drawn guest", lambda c: c["hit_character_encounters"]["unlock_triggers"]["13"].__setitem__("fallback_keys", 2)),
+        ("Hit trigger keeps the retail win", lambda c: c["hit_character_encounters"]["unlock_triggers"].__setitem__(
+            "10", dict(kind="boss", any_of=[35011100]))),
+        ]:
+    j11_env(name, change, "boss-shuffle")
+# Kit invariants: a mixed loadout is drawn from two to four families
+# (boss_encounters._mixed_rows), and a signature_profiles kit is a retail
+# garage profile. Both sides refuse both (content_bosses._check_kit_shape);
+# native_refuses stays for invariants only native checks, none today.
+native_refuses = set()
+for name, change in [
+        ("mixed kit of one family", lambda c: [j_garage_kit_row(c, 2, i, [3, 0x01, 1, 11, 0]) for i in range(5)]),
+        ("kit assignment", lambda c: c["content_plan"]["bosses"]["kit"].__setitem__("assignment", "signature_profiles")),
+        ]:
+    j11_env("native " + name, change, "boss-shuffle")
+for name, change in [
+        ("unchanged copy", lambda c: None),
+        ("home venue moved", lambda c: j_entry(c, "entry/boss:0/0").__setitem__("track_id", "retail:14")),
+        ("independent with home venues", lambda c: None if c["content_plan"]["bosses"].__setitem__("track_assignment", "independent_track") else None),
+        ("shop price forged high", lambda c: j_shop(c)[0].__setitem__("price", 100001)),
+        ("ctr_first dropped", lambda c: (c["content_plan"].pop("adventure_structure"), j_drop_feature(c, "ctr_first_v1"))),
+        ]:
+    j11_env(name, change, "all-030")
+# One generator row 5: bosses with every switch, boss cups, the gauntlet, the
+# shop, the Wumpa goal and Spoiler Items on the pad requirement shapes, each
+# plan through both validators, then forgeries of what the row added.
+row5_cases = 0
+row5_cups = dict(min=1, max=2)
+row5_sets = [dict(adventure_structure="ctr_first"), dict(adventure_structure="ctr_first", lettersanity="items_only"),
+             dict(adventure_structure="ctr_first", lettersanity="locations_and_items", progressive_boost="shared_global"),
+             dict(boss_opponent_shuffle=True), dict(boss_kit_shuffle=True, boss_attack_assignment="signature_profiles"),
+             dict(boss_track_shuffle=True, boss_opponent_shuffle=True, boss_kit_shuffle=True, boss_oxide_in_pool=True,
+                  oxide_attack_profile="all_compatible", hit_character=True),
+             dict(boss_opponent_shuffle=True, boss_kit_shuffle=True, cups=row5_cups, hit_character=True),
+             dict(boss_kit_shuffle=True, purple_cup_boss_gauntlet=True),
+             dict(boss_opponent_shuffle=True, boss_kit_shuffle=True, purple_cup_boss_gauntlet=True, cups=row5_cups),
+             dict(wumpa_shop_slots=10, wumpa_shop_progression="excluded"),
+             dict(wumpa_shop_slots=25, wumpa_shop_prices=400, goal_wumpa=1000),
+             dict(goal_wumpa=1000, oxide_goal="disabled"),
+             dict(wumpa_shop_slots=10, wumpa_shop_progression="excluded", shuffle_keys=False, shuffle_gems=False),
+             dict(goal_wumpa=500, oxide_goal="101_percent", oxide_1_optional="filler"),
+             dict(spoiler_items=True), dict(spoiler_items=True, box_locations=True),
+             # #124: the additive envelope flag, with and without Spoiler Items.
+             dict(pad_approach_hints=True), dict(pad_approach_hints=True, spoiler_items=True, box_locations=True)]
+def row5_options(unlock, extra):
+    extra = dict(extra)
+    options = row3_options(unlock, "shuffle", "full", **{k: v for k, v in extra.items() if k != "cups"})
+    if "cups" in extra:
+        options["content_pool"]["bosses"]["cups"] = extra["cups"]
+    return options
+for index, extra in enumerate(row5_sets):
+    for unlock in ("randomized", "vanilla"):
+        for seed in range(4):
+            options = row5_options(unlock, extra)
+            cases.append((f"row5-{index}-{unlock}-{seed}", make_world(options, seed=seed).fill_slot_data(), True))
+            row5_cases += 1
+assert row5_cases == 144, row5_cases
+row5_cup = make_world(row5_options("randomized", row5_sets[6]), seed=1).fill_slot_data()
+row5_gauntlet = make_world(row5_options("randomized", row5_sets[7]), seed=1).fill_slot_data()
+row5_first = make_world(row5_options("randomized", row5_sets[0]), seed=1).fill_slot_data()
+row5_shop = make_world(row5_options("randomized", row5_sets[9]), seed=1).fill_slot_data()
+def row5_kit(p, garage):
+    return next(e for e in p["entries"] if e["id"] == f"entry/boss:{garage}/0")["opponent"]
+def row5_trophy(p):
+    return next(c for c in p["checks"] if c["kind"] == "trophy" and c["routes"][0]["mode"] == "ctr")
+def row5_drop_purple(p):
+    text = json.dumps(p).replace("entry/gem_cup:4", "entry/gem_cup:9")
+    p.clear()
+    p.update(json.loads(text))
+for name, source, change in [
+        ("cup kit off the retail segments", row5_cup, lambda p: row5_kit(p, p["bosses"]["cups"][0])["schedule"][1].__setitem__(0, 200)),
+        ("cup racer repeated", row5_cup, lambda p: row5_kit(p, p["bosses"]["cups"][0]).__setitem__(
+            "character_id", row5_kit(p, next(g for g in range(4) if g != p["bosses"]["cups"][0]))["character_id"])),
+        ("gauntlet without a kit", row5_cup, lambda p: (p["bosses"].__setitem__("gauntlet", True), p["bosses"].__setitem__("kit_shuffle", False))),
+        ("gauntlet a number", row5_gauntlet, lambda p: p["bosses"].__setitem__("gauntlet", 1)),
+        ("gauntlet dropped", row5_gauntlet, lambda p: p["bosses"].pop("gauntlet")),
+        ("gauntlet without the Purple Gem Cup", row5_gauntlet, row5_drop_purple),
+        ("Trophy needs the letters", row5_first, lambda p: row5_trophy(p)["routes"][0].__setitem__("award", "win_letters")),
+        ("Trophy from the Trophy Race", row5_first, lambda p: row5_trophy(p)["routes"][0].__setitem__("mode", "trophy")),
+        ("excluded with too little filler", row5_shop, lambda p: p["items"].__setitem__("filler_count", 0)),
+        ]:
+    alter("row5 " + name, change, source)
+# One generator row 6: the plan's `pad_client` record on both validators. A plan
+# without the record stays valid; `win_logic` is no part of the plan.
+row6_room = make_world(row5_options("randomized", row5_sets[0]), seed=2).fill_slot_data()
+assert row6_room["content_plan"]["pad_client"] == dict(race_type_selector="always", tracker_pad_launch=True)
+assert row6_room["win_logic"]["checks"], "a plan room carries the exported logic"
+cases.append(("row6 room", row6_room, True))
+row6_off = make_world({**row5_options("randomized", row5_sets[0]), "race_type_selector": "productive",
+                       "tracker_pad_launch": False}, seed=2).fill_slot_data()
+cases.append(("row6 settings off", row6_off, True))
+for name, change in [
+        ("unknown menu value", lambda p: p["pad_client"].__setitem__("race_type_selector", "never")),
+        ("a number for the menu", lambda p: p["pad_client"].__setitem__("race_type_selector", 1)),
+        ("launch a number", lambda p: p["pad_client"].__setitem__("tracker_pad_launch", 1)),
+        ("extra key", lambda p: p["pad_client"].__setitem__("extra", True)),
+        ("missing key", lambda p: p["pad_client"].pop("tracker_pad_launch")),
+        ("feature dropped", lambda p: p["required_features"].remove("pad_client_v1")),
+        ("record dropped", lambda p: p.pop("pad_client")),
+        ]:
+    alter("row6 " + name, change, row6_room)
+def row6_old(p):
+    p.pop("pad_client")
+    p["required_features"].remove("pad_client_v1")
+alter("row6 plan from before the record", row6_old, row6_room)
+# Row 10f: Wumpa Income from a custom track with measured Wumpa capability
+# (ruling of 2026-11-02). Plans whose only income is such a track; without the
+# capability both validators refuse them, each for the missing income.
+from worlds.ctr.test.test_custom_tracks_132 import only_custom_income
+cases.append(("custom-income-fixture", json.loads((root / "tools/fixtures/content-plan/wumpa-custom-income.json").read_text()), True))
+for seed in (1, 2):
+    cases.append((f"custom-income-generated-{seed}", only_custom_income(True, seed=seed).fill_slot_data(), True))
+def lose_wumpa(p):
+    for package in p["packages"]:
+        package["capabilities"]["wumpa"] = False
+custom_income = next(w for name, w, ok in cases if name == "custom-income-fixture")
+for name, change in [
+        ("custom income loses its Wumpa capability", lose_wumpa),
+        ]:
+    alter("row10f " + name, change, custom_income)
+# The verifier's copy of the per-track USF finish rulings (#133 PR 8,
+# ap/ap_content_verify.hpp kUsfRulings) equals the apworld's table.
+from worlds.ctr import content_capability as ccap
+native_rulings = {k: v == "1" for k, v in re.findall(r'\{"([a-z0-9-]+)", ([01])\}',
+                  re.search(r"kUsfRulings\[\] = \{(.*?)\};", (root / "ap/ap_content_verify.hpp").read_text(), re.S)[1])}
+assert native_rulings == ccap.USF_FINISH_RULINGS, (native_rulings, ccap.USF_FINISH_RULINGS)
+# Row 10i parity fixes: Reach 10 Wumpa from cup legs and boss races, rungs
+# from cup legs, vanilla garages free without Trophies, Turbo Track's five Gem
+# colours. Generated on the vanilla-shape plan with many cups, so some tracks
+# are raced only in cups, plus forged routes and records.
+row10i = []
+for seed in range(12):
+    o = {"wumpa_check": ["per_track", "global", "off"][seed % 3], "cup_count": [5, 8, 10][seed % 3 if seed < 9 else 1],
+         "accessibility": "full", "lap_completion_checks": seed % 4 == 1}
+    if seed % 2:
+        o["warppad_unlock_requirements"] = "vanilla"
+    if seed % 6 == 5:
+        o["item_pool"] = {"base": {"trophies": 0}}
+    try:
+        world = make_world(o, seed=seed)
+    except cp.OptionError:
+        continue
+    row10i.append((seed, world.fill_slot_data()))
+    cases.append((f"row10i-generated-{seed}", row10i[-1][1], True))
+assert len(row10i) >= 9, len(row10i)
+r10_base = next(v for seed, v in row10i if seed % 3 == 0)
+def r10_drop_cup_route(p):
+    c = next(c for c in p["checks"] if c["kind"] == "wumpa" and any(r["mode"] == "cup" for r in c["routes"]))
+    c["routes"] = [r for r in c["routes"] if r["mode"] != "cup"] or c["routes"][:1]
+alter("row10i wumpa cup route dropped", r10_drop_cup_route, r10_base)
+def r10_drop_boss_route(p):
+    c = next(c for c in p["checks"] if c["kind"] == "wumpa" and any(r["mode"] == "boss_race" for r in c["routes"]))
+    c["routes"] = [r for r in c["routes"] if r["mode"] != "boss_race"] or c["routes"][:1]
+alter("row10i wumpa boss route dropped", r10_drop_boss_route, r10_base)
+def r10_reorder(p):
+    c = next(c for c in p["checks"] if c["kind"] == "wumpa" and len(c["routes"]) > 2)
+    c["routes"].reverse()
+alter("row10i wumpa routes reordered", r10_reorder, r10_base)
+def r10_rung_cup_dropped(p):
+    c = next(c for c in p["checks"] if c["kind"] == "podium" and any(r["mode"] == "cup" for r in c["routes"]))
+    c["routes"] = c["routes"][:1]
+alter("row10i rung cup route dropped", r10_rung_cup_dropped, r10_base)
+def r10_rung_boss(p):
+    c = next(c for c in p["checks"] if c["kind"] == "podium")
+    e = p["encounters"][0]
+    c["routes"].append(dict(entry_id=e["entry_id"], mode="boss_race", leg_id=None, encounter_id=e["id"],
+                            own_pad_id=e["pad_id"], award=c["routes"][0]["award"]))
+alter("row10i rung boss route added", r10_rung_boss, r10_base)
+r10_free = next((v for seed, v in row10i if seed % 6 == 5), None)
+if r10_free is not None:
+    def r10_garage_asks(p):
+        next(r for r in p["requirements"] if r["id"] == "boss:0")["predicate"] = dict(op="count", item=35010000, count=1)
+    alter("row10i free vanilla garage asks a Trophy", r10_garage_asks, r10_free)
+r10_vanilla = next(v for seed, v in row10i if seed % 2 and seed % 6 != 5)
+def r10_turbo_sum(p):
+    r = next(r for r in p["requirements"] if r["predicate"].get("op") == "distinct")
+    r["predicate"]["op"] = "sum"
+alter("row10i Turbo Track as a Gem sum", r10_turbo_sum, r10_vanilla)
+def r10_garage_free(p):
+    next(r for r in p["requirements"] if r["id"] == "boss:0")["predicate"] = dict(op="always")
+alter("row10i free vanilla garage with Trophies", r10_garage_free, r10_vanilla)
+# cup_only_podium_rungs (ruling of 2026-11-02): a track raced only in Gem Cup legs
+# takes the seed's rungs from those legs; no plan field, the routes say it.
+cup_rungs = []
+for seed in range(4):
+    o = {"cup_only_podium_rungs": True, "cup_count": [8, 10][seed % 2], "accessibility": "full",
+         "wumpa_check": ["off", "per_track"][seed % 2]}
+    if seed == 1:
+        o["progressive_boost"] = "shared_global"
+    if seed == 2:
+        o["podium_rungs"] = ["held_1st", "finish_any"]
+    world = make_world(o, seed=seed)
+    cup_rungs.append(world.fill_slot_data())
+    cases.append((f"cup-only-rungs-generated-{seed}", cup_rungs[-1], True))
+def cup_only_rungs(p):
+    own = {e["track_id"] for e in p["entries"] if e["kind"] == "track"}
+    return [c for c in p["checks"] if c["kind"] == "podium" and c["owner"] not in own]
+assert all(cup_only_rungs(v["content_plan"]) for v in cup_rungs)
+def cr_one_track_dropped(p):
+    gone = cup_only_rungs(p)[0]["owner"]
+    p["checks"] = [c for c in p["checks"] if not (c["kind"] == "podium" and c["owner"] == gone)]
+alter("cup-only rungs of one track dropped", cr_one_track_dropped, cup_rungs[0])
+def cr_one_rung_dropped(p):
+    gone = cup_only_rungs(p)[0]["location"]
+    p["checks"] = [c for c in p["checks"] if c["location"] != gone]
+alter("cup-only rung dropped", cr_one_rung_dropped, cup_rungs[0])
+def cr_leg_dropped(p):
+    c = next(c for c in cup_only_rungs(p) if len(c["routes"]) > 1)
+    c["routes"] = c["routes"][1:]
+alter("cup-only rung leg route dropped", cr_leg_dropped, cup_rungs[0])
+def cr_boss_route(p):
+    c = cup_only_rungs(p)[0]
+    e = p["encounters"][0]
+    c["routes"].append(dict(entry_id=e["entry_id"], mode="boss_race", leg_id=None, encounter_id=e["id"],
+                            own_pad_id=e["pad_id"], award=c["routes"][0]["award"]))
+alter("cup-only rung boss route added", cr_boss_route, cup_rungs[0])
+def cr_award(p):
+    c = cup_only_rungs(p)[0]
+    for r in c["routes"]:
+        r["award"] = "finish_any" if r["award"] != "finish_any" else "held_1st"
+alter("cup-only rung award swapped", cr_award, cup_rungs[2])
+def cr_extra_rung(p):
+    # A rung the seed's podium_rungs does not list.
+    c = copy.deepcopy(cup_only_rungs(p)[0])
+    c["location"] += 2
+    c["display_name"] = c["display_name"].rsplit(": ", 1)[0] + ": Held 5th"
+    for r in c["routes"]:
+        r["award"] = "held_5th"
+    p["checks"].insert(p["checks"].index(cup_only_rungs(p)[0]), c)
+alter("cup-only rung outside podium_rungs", cr_extra_rung, cup_rungs[2])
+assert not any(ok for name, _case, ok in cases if name.startswith("cup-only rung")), "a cup-only rung forgery validates"
+# Ruling of 2026-11-02: with cup_only_podium_rungs on, a track whose pad
+# has no Trophy Race, raced in a cup, takes the seed's rungs from its legs too.
+NO_TROPHY = {"default": ["trophy", "ctr", "relic"], "Crash Cove": ["relic"], "Roo's Tubes": ["relic"],
+             "Mystery Caves": ["relic"], "Sewer Speedway": ["relic"]}
+pad_rungs = []
+for seed, on in ((1, True), (2, True), (3, False)):
+    o = {"cup_only_podium_rungs": on, "cup_count": 8, "accessibility": "full", "track_modes": NO_TROPHY,
+         "wumpa_check": ["off", "per_track"][seed % 2]}
+    world = make_world(o, seed=seed)
+    pad_rungs.append(world.fill_slot_data())
+    cases.append((f"pad-no-trophy-rungs-generated-{seed}-{'on' if on else 'off'}", pad_rungs[-1], True))
+def pad_no_trophy_rungs(p):
+    pads = {pad["entry_id"] for pad in p["pads"] if pad["entry_id"]}
+    bare = {e["track_id"] for e in p["entries"] if e["kind"] == "track" and e["id"] in pads and "trophy" not in e["modes"]}
+    return [c for c in p["checks"] if c["kind"] == "podium" and c["owner"] in bare]
+assert all(pad_no_trophy_rungs(v["content_plan"]) for v in pad_rungs[:2])
+assert not pad_no_trophy_rungs(pad_rungs[2]["content_plan"])
+def pr_one_track_dropped(p):
+    gone = pad_no_trophy_rungs(p)[0]["owner"]
+    p["checks"] = [c for c in p["checks"] if not (c["kind"] == "podium" and c["owner"] == gone)]
+alter("pad-no-trophy rungs of one track dropped", pr_one_track_dropped, pad_rungs[0])
+def pr_own_pad_route(p):
+    c = pad_no_trophy_rungs(p)[0]
+    pad = next(pad for pad in p["pads"] if pad["entry_id"] == "entry/" + c["owner"])
+    c["routes"].insert(0, dict(entry_id=pad["entry_id"], mode="trophy", leg_id=None, encounter_id=None,
+                               own_pad_id=pad["id"], award=c["routes"][0]["award"]))
+alter("pad-no-trophy rung routed from its own pad", pr_own_pad_route, pad_rungs[0])
+def pr_leg_dropped(p):
+    c = next(c for c in pad_no_trophy_rungs(p) if len(c["routes"]) > 1)
+    c["routes"] = c["routes"][1:]
+alter("pad-no-trophy rung leg route dropped", pr_leg_dropped, pad_rungs[0])
+def pr_forged_on(p):
+    # The option off, then one such track's rungs added by hand.
+    src = pad_no_trophy_rungs(pad_rungs[0]["content_plan"])
+    owner = src[0]["owner"]
+    legs = [(e["id"], leg["id"], pad["id"]) for e in p["entries"] if e["kind"] == "cup"
+            for pad in p["pads"] if pad["entry_id"] == e["id"] for leg in e["legs"] if leg["track_id"] == owner]
+    assert legs
+    for c in src:
+        if c["owner"] != owner:
+            continue
+        key = c["routes"][0]["award"]
+        p["checks"].append(dict(c, routes=[dict(entry_id=e, mode="cup", leg_id=l, encounter_id=None, own_pad_id=pad,
+                                                award=key) for e, l, pad in legs]))
+alter("pad-no-trophy rungs forged onto an off seed", pr_forged_on, pad_rungs[2])
+assert not any(ok for name, _case, ok in cases if name.startswith("pad-no-trophy rung")), "a pad rung forgery validates"
+run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
+                     text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
+answers = run.stdout.splitlines()
+assert len(answers) == len(cases), (len(answers), len(cases), run.stderr[-1000:])
+disagreements = [name for (name, _, expected), actual in zip(cases, answers)
+                 if name not in native_trusts and name not in native_refuses and (actual == "ACCEPT") != expected]
+assert not disagreements, disagreements
+# Forged ranks inside the chain: the generator refuses, native trusts them.
+trusted = [name for (name, _, _), actual in zip(cases, answers) if name in native_trusts and actual != "ACCEPT"]
+assert not trusted, trusted
+# J11 kit invariants: native refuses them whatever the generator says.
+stricter = [name for (name, _, _), actual in zip(cases, answers) if name in native_refuses and actual == "ACCEPT"]
+assert not stricter, stricter
+print(f"PASS registry parity and {len(cases)} native/generator admission cases ({sum(x[2] for x in cases)} accepted, "
+      f"{len(native_trusts)} forged ranks and box terms the generator alone refuses, "
+      f"{len(native_refuses)} kit invariants native alone refuses)")

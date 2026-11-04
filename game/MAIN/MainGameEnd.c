@@ -1,4 +1,7 @@
 #include <common.h>
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+#include <platform/native_custom_tracks.h>
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80039fa8-0x8003a2b4
 void MainGameEnd_SoloRaceGetReward(int subtractTimeCrateBonus)
@@ -18,6 +21,18 @@ void MainGameEnd_SoloRaceGetReward(int subtractTimeCrateBonus)
 	}
 
 	int raceTime = driver->timeElapsedInRace - timeBonus;
+
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	// A content-plan custom track keeps no scores: no record, best lap or name
+	// entry, whatever the time. The all-crates bonus can push raceTime below
+	// zero, so its zeroed scratch table alone would still offer a record. The
+	// Time Trial part below would touch the engine host's save flags.
+	if (CustomTrack_KeepsNoScores(gGT->levelID))
+	{
+		gGT->bestLapTime = sdata->ptrActiveHighScoreEntry[0].time;
+		return;
+	}
+#endif
 
 	for (s16 i = 0; i < 5; i++)
 	{

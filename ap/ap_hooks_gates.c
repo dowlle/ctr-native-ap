@@ -10,6 +10,8 @@
 
 #ifdef CTR_AP
 
+#include "ap_boss_adapter.h" // J03 boss adapter decisions and glue prototypes
+
 int AP_GateCount(int itemType)
 {
 	if (itemType < 0 || itemType >= AP_ITEM_INDEX_COUNT)
@@ -65,6 +67,21 @@ int AP_VerifyForeignItemCount(int itemIndex)
 	if (itemIndex < 0 || itemIndex >= AP_VERIFY_ITEM_INDEX_COUNT)
 		return 0;
 	return ap_verify_recv_foreign[itemIndex];
+}
+
+// The same FOREIGN tally by raw item code, for the content-plan verifier
+// (#133 PR 8): the dense index above, else the sparse table. -1 when the
+// sparse table overflowed, so the caller can withhold its verdict.
+int AP_VerifyForeignItemCodeCount(long long code)
+{
+	long long idx = code - AP_ITEM_BASE;
+	int k;
+	if (idx >= 0 && idx < AP_VERIFY_ITEM_INDEX_COUNT)
+		return ap_verify_recv_foreign[idx];
+	for (k = 0; k < ap_verify_sparse_foreign_n; k++)
+		if (ap_verify_sparse_foreign_code[k] == code)
+			return ap_verify_sparse_foreign_count[k];
+	return ap_verify_sparse_foreign_overflow ? -1 : 0;
 }
 
 int AP_GateCountTokenColour(int colour)
@@ -277,6 +294,7 @@ static int ap_cup_return_hub = -1;
 void AP_CupEnterFromHub(int hubLevelID)
 {
 	ap_cup_return_hub = hubLevelID;
+	AP_CupSweepEnterFromHub();
 	AP_WinStakesOnCupEnter(); // #449: the cup's first leg fixes its stakes
 }
 
@@ -349,46 +367,708 @@ int AP_ReqMetCounts(const ctr_req *r, const int *counts)
 	}
 }
 
+int AP_ContentPadOpen(const ctr_content_pad *pad)
+{
+	// Racer lock (#133 PR 4b): ANDed onto the pad's own gates, never in place
+	// of them, like ctr_cfg_warp_unlocked on a normal room. Every content-plan
+	// consumer (pad state, glow, capture, the load gate, the pad text) asks
+	// this, so a locked pad reads closed until its racer is received.
+	return ap_content_pad_open(pad, ap_recv_count) &&
+	       (pad->racer_lock < 0 || AP_CharacterUnlocked(pad->racer_lock));
+}
+
+// The racer lock on its own, for the tracker's list of missing requirements (#375).
+int AP_ContentPadRacerMet(const ctr_content_pad *pad)
+{
+	return pad->racer_lock < 0 || AP_CharacterUnlocked(pad->racer_lock);
+}
+
+int AP_ContentPadRuleOwned(const ctr_content_pad *pad)
+{
+	return pad && pad->has_rule ? ap_content_rule_owned(pad, ap_recv_count) : 0;
+}
+
+int AP_ContentModeOpen(const ctr_content_pad *pad, int mode)
+{
+	return ap_content_mode_open(pad, mode, ap_recv_count, AP_ContentCodeChecked);
+}
+
+int AP_ContentStage2Owned(const ctr_content_pad *pad)
+{
+	return pad && pad->has_stage2 ? ap_content_stage2_owned(pad, ap_recv_count) : 0;
+}
+
+int AP_ContentSelectorBuild(const ctr_content_pad *pad, ap_content_selector *out)
+{
+	return ap_content_selector_build(pad, ap_recv_count, AP_ContentCodeChecked, out);
+}
+
+int AP_ContentTrackPadState(const ctr_content_pad *pad)
+{
+	return ap_content_track_pad_state(pad, ap_recv_count, AP_ContentCodeChecked, AP_ContentPadPlainLeft(pad));
+}
+
+// The race type menu of a plan pad (one generator row 6).
+void AP_ContentMenuRows(const ctr_content_pad *pad, ap_rs_rows *rows)
+{
+	ap_content_menu_rows(pad, ap_recv_count, AP_ContentCodeChecked, AP_ContentPadPlainLeft(pad), rows);
+}
+
+// The Options row over the seed's value, read at every pad entry (decision 15).
+int AP_RaceTypeSelectorSetting(void)
+{
+	const ctr_content_pad_client *client = ap_content_plan_pad_client();
+	return AP_RaceSelectorEffective(g_config.raceTypeSelector,
+	                                client->present ? client->race_type_selector : AP_RS_SELECTOR_ALWAYS);
+}
+
+int AP_ContentBoxesLine(const ctr_content_pad *pad)
+{
+	return ap_content_boxes_line(pad, AP_ContentCodeChecked);
+}
+
 int AP_BossReqMet(const ctr_req *r)
 {
 	return AP_ReqMetCounts(r, ap_recv_count);
 }
 
-// Per-mode boss-garage gate for the four boss hubs (bossIdx 0..3 = Roo, Papu,
-// Komodo, Pinstripe). bossgarage_mode 0 (Original4Tracks) / 1 (SameHubTracks):
-// the garage opens once the player has WON each required race track for that boss
-// (ctr_cfg.boss_tracks[bossIdx][0..n-1], emitted by the apworld -- vanilla
-// LevelIDs for mode 0, destination-remapped LevelIDs for mode 1). A track counts
-// as WON when its trophy-race AP location has been checked --
-// AP_LocationCheckedByBit(trackLevelID + ADV_REWARD_FIRST_TROPHY), NOT
-// CHECK_ADV_BIT: in AP the AdvProgress trophy bit reflects RECEIVED items, not the
-// races the player actually won, so only the checked-location signal is correct
-// here. mode 2 (Trophies) and any boss with no track list fall back to the flat
-// trophy-count requirement via AP_BossReqMet. Oxide (bossIdx 4) is a key gate and
-// is never routed through this function.
+// The plan's garage requirement and venue admission. No normal track lists.
 int AP_BossGarageOpen(int bossIdx)
 {
+	// A content plan's garages are empty unless the plan has its `bosses`
+	// record (#133 PR 6); with it the parser fills the shared boss_req and
+	// venue records used below.
+	if (ap_content_plan_active() && !ap_content_plan_bosses()->present) return 0;
 	if (bossIdx < 0 || bossIdx >= CTR_CFG_BOSS_COUNT)
 		return 1;
+	// #169: a seed whose boss_encounters record this build refused keeps the
+	// four garages shut (map icon, door, tracker and load alike) rather than
+	// racing the retail venue in its place.
+	if (bossIdx < AP_BOSS_VENUE_GARAGES && AP_BossGarageVenue(bossIdx) < 0)
+		return 0;
 
-	int mode = ctr_cfg.bossgarage_mode;
-	int n = ctr_cfg.boss_n_tracks[bossIdx];
+	// The plan mirrors the garage requirement into the shared runtime record.
+	return AP_BossReqMet(&ctr_cfg.boss_req[bossIdx]);
+}
 
-	if ((mode == 0 || mode == 1) && n > 0)
+// ── #169 tier 1: boss track shuffle ─────────────────────────────────────────
+// The decisions are ap/ap_boss_venue.h; these wrappers read the live seed and
+// GameTracker. gGT->bossID stays the physical garage on every venue, so the
+// Key, the Boss Race check, the loss counter, the driving table, music and
+// cutscenes are untouched; only the loaded level changes.
+
+int AP_BossGarageVenue(int bossIdx)
+{
+	if (bossIdx < 0 || bossIdx >= AP_BOSS_VENUE_GARAGES)
+		return -1;
+	if (!ctr_cfg_active())
+		return AP_BOSS_VENUE_GARAGE[bossIdx].homeLevel;
+#ifdef CTR_CUSTOM_TRACKS
+	// A custom venue (#133 PR 6b) races only once its verified bytes are
+	// armed for this garage; otherwise the garage stays shut.
+	if (ctr_boss_encounters.custom[bossIdx] && !CustomTrack_GarageVenueReady(bossIdx))
+		return -1;
+	// A boss cup races only once every leg's files are ready (#133 PR 6b).
+	if (AP_ContentGarageCupReady(bossIdx) == 0)
+		return -1;
+#else
+	if (ctr_boss_encounters.custom[bossIdx])
+		return -1;
+#endif
+	return AP_BossEncounterVenue(&ctr_boss_encounters, bossIdx);
+}
+
+// "Track: Crash Cove" for a garage whose seed drew its venue, open or shut.
+// Returns 0 for a retail seed (the garage races its own track, as the retail
+// panel already implies) and for a refused record (AP_BossGateAdvert says why).
+int AP_BossVenueAdvert(int bossIdx, char *out, int cap)
+{
+	int venue;
+
+	if (out == 0 || cap <= 0 || !ctr_cfg_active())
+		return 0;
+#ifdef CTR_CUSTOM_TRACKS
+	// #133 PR 6b: a garage holding a boss cup says so.
+	if (bossIdx >= 0 && bossIdx < 4 && ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + bossIdx))
 	{
-		for (int i = 0; i < n; i++)
-		{
-			int track = ctr_cfg.boss_tracks[bossIdx][i];
-			if (track < 0)
-				continue;
-			if (!AP_LocationCheckedByBit(track + ADV_REWARD_FIRST_TROPHY))
-				return 0;
-		}
+		snprintf(out, (size_t)cap, "Boss cup: four races, won on points");
 		return 1;
 	}
+#endif
+	if (ctr_boss_encounters.state != AP_BOSS_ENC_VALID)
+		return 0;
+#ifdef CTR_CUSTOM_TRACKS
+	// J11: a content-plan venue on custom bytes is served on the garage's
+	// home LevelID; name the track it really is, so the Rival and Kit lines
+	// that follow sit under the right venue.
+	if (bossIdx >= 0 && bossIdx < AP_BOSS_VENUE_GARAGES && ctr_boss_encounters.custom[bossIdx] &&
+	    ap_content_plan_active())
+	{
+		const ctr_content_bosses *b = ap_content_plan_bosses();
+		const ctr_content_package *pkg = b->venue_cortex[bossIdx] ? NULL : ap_content_plan_package(b->venue_package[bossIdx]);
+		if (b->venue_cortex[bossIdx])
+			snprintf(out, (size_t)cap, "Track: Cortex Vortex");
+		else if (pkg && pkg->display_name[0])
+			snprintf(out, (size_t)cap, "Track: %s", pkg->display_name);
+		else
+			snprintf(out, (size_t)cap, "Track: custom track");
+		return 1;
+	}
+#endif
+	venue = AP_BossGarageVenue(bossIdx);
+	if (!AP_BossVenueTrackKnown(venue))
+		return 0;
+	snprintf(out, (size_t)cap, "Track: %s", sdata->lngStrings[data.metaDataLEV[venue].name_LNG]);
+	return 1;
+}
 
-	// mode 2 (Trophies) or no track list -> flat trophy-count requirement.
-	return AP_BossReqMet(&ctr_cfg.boss_req[bossIdx]);
+// #169 tier 2: "Rival: <name>" for a garage whose seed drew its opponent,
+// open or shut; 0 otherwise.
+int AP_BossRivalAdvert(int bossIdx, char *out, int cap)
+{
+	int c;
+
+	if (out == 0 || cap <= 0 || !ctr_cfg_active())
+		return 0;
+	c = AP_BossEncounterOpponent(&ctr_boss_encounters, bossIdx);
+	if (c < 0 || c >= 16)
+		return 0;
+	snprintf(out, (size_t)cap, "Rival: %s", sdata->lngStrings[data.MetaDataCharacters[c].name_LNG_short]);
+	return 1;
+}
+
+// #169 tier 3: "Kit: TNT, potion" for a garage with a composed kit; 0
+// otherwise. The families in the order the schedule first uses them.
+int AP_BossKitAdvert(int bossIdx, char *out, int cap)
+{
+	// J03: every family a composed kit can carry, one name per family.
+	static const struct
+	{
+		int weapon;
+		int family;
+	} kCodes[] = {{0x01, 0}, {0x02, 1}, {0x03, 2}, {0x64, 2}, {0x04, 3}, {0x66, 3}, {0x00, 4},
+	              {0x06, 5}, {0x07, 6}, {0x08, 7}, {0x09, 8}, {0x0c, 9}};
+	static const char *const names[10] = {"bomb", "missile", "TNT",   "potion",   "turbo",
+	                                      "shield", "mask",   "clock", "warp orb", "invisibility"};
+	int seen[10] = {0};
+	int i, k, used, any = 0;
+
+	if (out == 0 || cap <= 0 || !ctr_cfg_active() || bossIdx < 0 || bossIdx >= AP_BOSS_VENUE_GARAGES ||
+	    ctr_boss_encounters.state != AP_BOSS_ENC_VALID || !ctr_boss_encounters.composed[bossIdx])
+		return 0;
+	used = snprintf(out, (size_t)cap, "Kit:");
+	for (i = 0; i < AP_BOSS_VENUE_SEGMENTS && used > 0 && used < cap; i++)
+	{
+		int w = ctr_boss_encounters.schedule[bossIdx][i].weapon;
+		int f = -1;
+		for (k = 0; k < (int)(sizeof kCodes / sizeof kCodes[0]); k++)
+			if (kCodes[k].weapon == w)
+				f = kCodes[k].family;
+		if (f < 0 || seen[f])
+			continue;
+		used += snprintf(out + used, (size_t)(cap - used), "%s %s", any ? "," : "", names[f]);
+		seen[f] = 1;
+		any = 1;
+	}
+	return 1;
+}
+
+// #169 tier 2: the character garage bossIdx races, for the garage load. -1
+// keeps the retail boss (no record, tier 1, refused, or a content plan).
+// 1 while garage `g`'s boss cup is running.
+static int AP_BossCupGarageNow(int g)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	return g >= 0 && g < AP_BOSS_VENUE_GARAGES && AP_ContentGarageCupRunning() == g;
+#else
+	(void)g;
+	return 0;
+#endif
+}
+
+// 1 when garage `g` holds a boss cup.
+static int AP_BossCupGarageHeld(int g)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	return g >= 0 && g < AP_BOSS_VENUE_GARAGES && AP_ContentGarageCupReady(g) >= 0;
+#else
+	(void)g;
+	return 0;
+#endif
+}
+
+int AP_BossGarageOpponent(int bossIdx)
+{
+	if (!ctr_cfg_active())
+		return -1;
+	return AP_BossEncounterOpponent(&ctr_boss_encounters, bossIdx);
+}
+
+// #169 tier 2: the models of the boss race being loaded. Returns the
+// time-trial pack character (the garage's own boss) and writes the extra hi
+// model's character to *extra (-1 for none), or returns -1 for every load
+// this does not own: the retail path then runs unchanged.
+int AP_BossRaceOpponentModels(int player, int *extra)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int g, opp;
+
+	*extra = -1;
+	if (gGT == NULL || !ctr_cfg_active() || (gGT->gameMode1 & ADVENTURE_BOSS) == 0)
+		return -1;
+	g = gGT->bossID;
+	// A boss cup seats the garage's drawn racer on every leg. This runs during
+	// the load, before the leg's race context answers AP_BossCupGarageNow.
+	if ((gGT->gameMode1 & ADVENTURE_CUP) != 0 && !AP_BossCupGarageHeld(g))
+		return -1;
+	opp = AP_BossEncounterOpponent(&ctr_boss_encounters, g);
+	if (opp < 0)
+		return -1;
+	return AP_BossOpponentModels(AP_BOSS_VENUE_GARAGE[g].character, opp, player, extra);
+}
+
+static int AP_BossKitGarageNow(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+
+	if (gGT == NULL || !ctr_cfg_active())
+		return -1;
+	// A boss cup carries the garage's one composed kit on every leg.
+	if (AP_BossCupGarageNow(gGT->bossID))
+		return (gGT->gameMode1 & ADVENTURE_BOSS) && ctr_boss_encounters.composed[(int)gGT->bossID] ? gGT->bossID : -1;
+	return AP_BossEncounterKitGarage(&ctr_boss_encounters, (gGT->gameMode1 & ADVENTURE_BOSS) != 0,
+	                                 (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->bossID, gGT->levelID);
+}
+
+// #169 tier 3: 0 when the running garage boss race has a composed kit with
+// boss_loss_easing off, so its cooldowns ignore the garage's loss count;
+// 1 (retail easing) for every other race.
+int AP_BossLossEasingNow(void)
+{
+	if (AP_BossKitGarageNow() < 0)
+		return 1;
+	return ctr_boss_encounters.lossEasing;
+}
+
+static int AP_BossShuffledGarageNow(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+
+	if (gGT == NULL || !ctr_cfg_active())
+		return -1;
+#ifdef CTR_CUSTOM_TRACKS
+	// A boss cup leg (#133 PR 6b) carries the garage's attack too; only a
+	// retail leg on the garage's own home track keeps the exact retail path.
+	{
+		int g = AP_ContentGarageCupRunning();
+		if (g >= 0 && (gGT->gameMode1 & ADVENTURE_BOSS) && gGT->bossID == g)
+		{
+			const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(gGT->levelID);
+			if (race && race->retail && gGT->levelID == AP_BOSS_VENUE_GARAGE[g].homeLevel)
+				return -1;
+			return g;
+		}
+	}
+#endif
+	return AP_BossEncounterShuffledGarage(&ctr_boss_encounters,
+	                                      (gGT->gameMode1 & ADVENTURE_BOSS) != 0,
+	                                      (gGT->gameMode1 & ADVENTURE_CUP) != 0,
+	                                      gGT->bossID, gGT->levelID);
+}
+
+int AP_BossRetailRulesLevel(int levelID)
+{
+	int g = AP_BossShuffledGarageNow();
+	return g < 0 ? levelID : AP_BOSS_VENUE_GARAGE[g].homeLevel;
+}
+
+// The per-race copy of a shuffled garage's retail schedule. Retail writes a
+// preserved throw flag back into whichever table is live, so the venue gets
+// its own copy: refilled from the garage's data.BossWeapon* rows at race init
+// (`fill`, from PickupBots_Init), and returned unchanged when the schedule
+// wraps to its first segment each lap (PickupBots_GetInitialBossMeta), the
+// same object identity retail keeps. The home track never takes this path.
+static struct MetaDataBOSS s_apBossVenueAttack[8];
+
+// The restart point count the running venue of garage `g` was certified on:
+// a boss cup leg's (#133 PR 6b), a custom venue's, or the retail table's.
+static int AP_BossVenueCertifiedNow(int g)
+{
+#ifdef CTR_CUSTOM_TRACKS
+	if (AP_ContentGarageCupRunning() == g)
+		return AP_ContentGarageCupLegPoints();
+#endif
+	return AP_BossEncounterCertifiedPoints(&ctr_boss_encounters, g, sdata->gGT->levelID);
+}
+
+// The restart point count a composed kit was written for: the running venue's,
+// or the garage's home track on a boss cup, whose kit keeps the retail segment
+// starts and maps them onto each leg (apworld content_bosses.kit_points).
+static int AP_BossKitCertifiedNow(int g)
+{
+	if (AP_BossCupGarageNow(g))
+		return AP_BOSS_VENUE_RESTART_POINTS[AP_BOSS_VENUE_GARAGE[g].homeLevel];
+	return AP_BossVenueCertifiedNow(g);
+}
+
+// J03 decision 8: a refused schedule is one inert row. The boss keeps its
+// timers and throws nothing that race.
+static struct MetaDataBOSS *AP_BossInertSchedule(struct MetaDataBOSS *dst, int rows)
+{
+	memset(dst, 0, sizeof *dst * (size_t)rows);
+	dst[0].throwFlag = BOSS_WEAPON_NORMAL;
+	dst[0].weaponType = BOSS_WEAPON_NONE;
+	dst[0].weaponCooldown = 0x0f;
+	return dst;
+}
+
+// Copy composed segments into a MetaDataBOSS table (row n stays zero, the
+// retail terminator), with the checkpoints in `cps`.
+static void AP_BossFillKit(struct MetaDataBOSS *dst, const AP_BossKitSegment *seg, int n, const unsigned char *cps)
+{
+	int i;
+	for (i = 0; i < n; i++)
+	{
+		dst[i].trackCheckpoint = cps[i];
+		dst[i].throwFlag = seg[i].throwFlag;
+		dst[i].weaponType = seg[i].weapon;
+		dst[i].pathChangeDisabled = seg[i].pathDisabled;
+		dst[i].weaponCooldown = seg[i].cooldown;
+		dst[i].juiceFlag = seg[i].juice;
+	}
+}
+
+// Decision 8: a composed five-segment schedule recorded for `certified`
+// restart points, raced on `loaded`. Same count: the recorded checkpoints.
+// Different count: the proportional remap (ap_boss_adapter.h), kept only when
+// it still rises strictly from 0 inside the loaded track. Returns 1 and fills
+// `dst`, or 0.
+static int AP_BossFitKit(struct MetaDataBOSS *dst, const AP_BossKitSegment *seg, int certified, int loaded,
+                         const char *what)
+{
+	unsigned char cps[AP_BOSS_VENUE_SEGMENTS], mapped[AP_BOSS_VENUE_SEGMENTS];
+	AP_BossKitSegment copy[AP_BOSS_VENUE_SEGMENTS];
+	int i;
+	char msg[192];
+
+	for (i = 0; i < AP_BOSS_VENUE_SEGMENTS; i++)
+		cps[i] = seg[i].checkpoint;
+	if (loaded == certified)
+	{
+		if (AP_BossKitScheduleProblem(seg, AP_BOSS_VENUE_SEGMENTS, loaded))
+			return 0;
+		AP_BossFillKit(dst, seg, AP_BOSS_VENUE_SEGMENTS, cps);
+		return 1;
+	}
+	if (!AP_BossAdapterRemap(cps, AP_BOSS_VENUE_SEGMENTS, certified, loaded, mapped))
+		return 0;
+	for (i = 0; i < AP_BOSS_VENUE_SEGMENTS; i++)
+	{
+		copy[i] = seg[i];
+		copy[i].checkpoint = mapped[i];
+	}
+	if (AP_BossKitScheduleProblem(copy, AP_BOSS_VENUE_SEGMENTS, loaded))
+		return 0;
+	AP_BossFillKit(dst, seg, AP_BOSS_VENUE_SEGMENTS, mapped);
+	snprintf(msg, sizeof msg, "[AP BOSS] checkpoint fallback: %s recorded for %d restart points, remapped to %d\n",
+	         what, certified, loaded);
+	AP_AppendLog(msg);
+	return 1;
+}
+
+// ── N. Oxide's composed final record (J03, decision 5 and 7) ───────────────
+// Both Oxide races (bossID 4 and 5) with oxide_attack_profile all_compatible.
+// The 13 segments keep the retail Oxide starts, so the venue mapping is the
+// retail one: as recorded on Oxide Station, AP_OxideWeaponCheckpoint on the
+// Cortex Vortex venue or any graph the 0x7f scale does not fit, exactly as
+// the inherited Cortex Vortex Oxide table.
+static struct MetaDataBOSS s_apBossFinalAttack[AP_BOSS_FINAL_SEGMENTS + 1];
+
+int AP_BossFinalComposedNow(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const AP_BossEncounters *e = &ctr_boss_encounters;
+
+	if (gGT == NULL || !ctr_cfg_active() || (gGT->gameMode1 & ADVENTURE_BOSS) == 0 ||
+	    (gGT->gameMode1 & ADVENTURE_CUP) != 0 || (gGT->bossID != 4 && gGT->bossID != 5))
+		return 0;
+	return e->state == AP_BOSS_ENC_VALID && e->finalPresent && e->finalComposed;
+}
+
+static struct MetaDataBOSS *AP_BossFinalAttackSchedule(int fill)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int i, points, remap;
+
+	if (!AP_BossFinalComposedNow() || gGT->level1 == NULL)
+		return NULL;
+	if (!fill)
+		return s_apBossFinalAttack;
+	points = gGT->level1->cnt_restart_points;
+	if (points < 2 || AP_BossFinalScheduleProblem(ctr_boss_encounters.finalSchedule, AP_BOSS_FINAL_SEGMENTS))
+	{
+		AP_AppendLog("[AP BOSS] final record schedule refused at race init\n");
+		return AP_BossInertSchedule(s_apBossFinalAttack, AP_BOSS_FINAL_SEGMENTS + 1);
+	}
+	remap = points <= 0x7f;
+#ifdef CTR_CUSTOM_TRACKS
+	if (CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID, 1))
+		remap = 1;
+#endif
+	{
+		unsigned char cps[AP_BOSS_FINAL_SEGMENTS];
+		for (i = 0; i < AP_BOSS_FINAL_SEGMENTS; i++)
+		{
+			int cp = ctr_boss_encounters.finalSchedule[i].checkpoint;
+			cps[i] = (unsigned char)(remap ? AP_OxideWeaponCheckpoint(cp, points - 1) : cp);
+			// Decision 8: a remap that reorders segments or starts outside the
+			// loaded track throws nothing (review round 1). Two neighbouring
+			// rows on one checkpoint are allowed, as the retail Cortex Vortex
+			// Oxide remap already does: the boss just passes through one.
+			if ((int)cps[i] >= points || (i > 0 && cps[i] < cps[i - 1]))
+			{
+				AP_AppendLog("[AP BOSS] final record does not fit the loaded track: no attacks\n");
+				return AP_BossInertSchedule(s_apBossFinalAttack, AP_BOSS_FINAL_SEGMENTS + 1);
+			}
+		}
+		memset(s_apBossFinalAttack, 0, sizeof s_apBossFinalAttack);
+		AP_BossFillKit(s_apBossFinalAttack, ctr_boss_encounters.finalSchedule, AP_BOSS_FINAL_SEGMENTS, cps);
+	}
+	return s_apBossFinalAttack;
+}
+
+// ── Purple Gem Cup gauntlet (J03, design answer 3, decision 5) ─────────────
+// Leg i of an adventure Purple Gem Cup arms gauntletSchedule[i] on the AI
+// that races gauntletAttacker[i]. Only on the leg's recorded retail track.
+static struct MetaDataBOSS s_apBossGauntletAttack[AP_BOSS_VENUE_SEGMENTS + 1];
+static int s_apBossGauntletLeg = -1; // leg whose schedule fitted at race init
+
+static int AP_BossGauntletLegNow(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const AP_BossEncounters *e = &ctr_boss_encounters;
+	int leg;
+
+	if (gGT == NULL || !ctr_cfg_active() || e->state != AP_BOSS_ENC_VALID || !e->gauntletOn)
+		return -1;
+	if ((gGT->gameMode1 & (ADVENTURE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS)) != (ADVENTURE_MODE | ADVENTURE_CUP))
+		return -1;
+#ifdef CTR_CUSTOM_TRACKS
+	// Plan cups run on engine cup 0, so the pad names the Purple Gem Cup.
+	{
+		const ctr_content_pad *pad = AP_ContentCupPad();
+		if (pad == NULL || pad->gem_cup != 104)
+			return -1;
+	}
+#else
+	if (gGT->cup.cupID != 4)
+		return -1;
+#endif
+	leg = gGT->cup.trackIndex;
+	if (leg < 0 || leg >= AP_BOSS_GAUNTLET_LEGS || !e->gauntletComposed[leg] || e->gauntletTrack[leg] < 0 ||
+	    e->gauntletTrack[leg] != gGT->levelID || !AP_BossVenueTrackKnown(e->gauntletTrack[leg]))
+		return -1;
+#ifdef CTR_CUSTOM_TRACKS
+	{
+		// A custom track served on the leg's host slot is not the recorded leg.
+		const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(gGT->levelID);
+		if (race && !race->retail)
+			return -1;
+	}
+#endif
+	return leg;
+}
+
+// The gauntlet's Purple Gem Cup is loading or running, any leg: the cup half
+// of AP_BossGauntletLegNow. With Hit Character off and the bosses in place
+// only these legs draw the field (fixes 2026-11-02).
+int AP_BossGauntletCupNow(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const AP_BossEncounters *e = &ctr_boss_encounters;
+
+	if (gGT == NULL || !ctr_cfg_active() || e->state != AP_BOSS_ENC_VALID || !e->gauntletOn)
+		return 0;
+	if ((gGT->gameMode1 & (ADVENTURE_MODE | ADVENTURE_CUP | ADVENTURE_BOSS)) != (ADVENTURE_MODE | ADVENTURE_CUP))
+		return 0;
+#ifdef CTR_CUSTOM_TRACKS
+	{
+		const ctr_content_pad *pad = AP_ContentCupPad();
+		if (pad == NULL || pad->gem_cup != 104)
+			return 0;
+	}
+#else
+	if (gGT->cup.cupID != 4)
+		return 0;
+#endif
+	return 1;
+}
+
+int AP_BossGauntletAttacker(void)
+{
+	int leg = AP_BossGauntletLegNow();
+	if (leg < 0 || leg != s_apBossGauntletLeg)
+		return -1;
+	return ctr_boss_encounters.gauntletAttacker[leg];
+}
+
+// The load comes before race init, so it asks the leg alone, not whether the
+// schedule fitted: a seat without a fitting schedule costs nothing.
+int AP_BossGauntletLoadAttacker(void)
+{
+	int leg = AP_BossGauntletLegNow();
+	return leg < 0 ? -1 : ctr_boss_encounters.gauntletAttacker[leg];
+}
+
+// ── The chaos Final Challenge (ruled 2026-10-30) ───────────────────────────
+// bossID 5 with `bosses.final_chaos`: the check, the goal and the attack
+// schedule stay the Final Challenge's; only the field grows. N. Oxide's
+// Challenge (bossID 4) is never chaos.
+int AP_ChaosFinalNow(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+
+	return gGT != NULL && ctr_cfg_active() && ctr_cfg.oxide_final_venue.valid && ctr_cfg.oxide_final_venue.chaos &&
+	       (gGT->gameMode1 & ADVENTURE_BOSS) != 0 && (gGT->gameMode1 & ADVENTURE_CUP) == 0 && gGT->bossID == 5;
+}
+
+int AP_ChaosFinalLineup(int out[5])
+{
+	int i;
+
+	if (!AP_ChaosFinalNow())
+		return 0;
+	for (i = 0; i < 5; i++)
+		out[i] = ctr_cfg.oxide_final_venue.chaos_lineup[i];
+	return 1;
+}
+
+int AP_ChaosFinalAdvert(char *out, int cap)
+{
+	if (out == 0 || cap <= 0 || !ctr_cfg_active() || !ctr_cfg.oxide_final_venue.valid ||
+	    !ctr_cfg.oxide_final_venue.chaos)
+		return 0;
+	snprintf(out, (size_t)cap, "Final Challenge: 5 rivals");
+	return 1;
+}
+
+static struct MetaDataBOSS *AP_BossGauntletAttackSchedule(int fill)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int leg = AP_BossGauntletLegNow();
+	char what[48];
+
+	if (leg < 0 || gGT->level1 == NULL)
+	{
+		if (fill)
+			s_apBossGauntletLeg = -1;
+		return NULL;
+	}
+	if (!fill)
+		return s_apBossGauntletLeg == leg ? s_apBossGauntletAttack : NULL;
+	memset(s_apBossGauntletAttack, 0, sizeof s_apBossGauntletAttack);
+	snprintf(what, sizeof what, "gauntlet leg %d", leg + 1);
+	if (!AP_BossFitKit(s_apBossGauntletAttack, ctr_boss_encounters.gauntletSchedule[leg],
+	                   AP_BOSS_VENUE_RESTART_POINTS[ctr_boss_encounters.gauntletTrack[leg]],
+	                   gGT->level1->cnt_restart_points, what))
+	{
+		char msg[160];
+		snprintf(msg, sizeof msg, "[AP BOSS] gauntlet leg %d on venue %d (%d restart points) refused\n", leg + 1,
+		         (int)gGT->levelID, gGT->level1->cnt_restart_points);
+		AP_AppendLog(msg);
+		s_apBossGauntletLeg = -1;
+		return NULL;
+	}
+	s_apBossGauntletLeg = leg;
+	sdata->bossWeaponCooldown = s_apBossGauntletAttack[0].weaponCooldown + 0x3c;
+	sdata->bossJuiceCounter = 0;
+	return s_apBossGauntletAttack;
+}
+
+struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int g = AP_BossShuffledGarageNow();
+	const struct MetaDataBOSS *src;
+	int venuePoints, homeLast, i;
+
+	int k = AP_BossKitGarageNow();
+
+	{
+		struct MetaDataBOSS *fin = AP_BossFinalAttackSchedule(fill);
+		if (fin != NULL)
+			return fin;
+	}
+	{
+		struct MetaDataBOSS *leg = AP_BossGauntletAttackSchedule(fill);
+		if (leg != NULL)
+			return leg;
+	}
+
+	// #169 tier 3: a composed kit replaces the garage's retail attack on any
+	// venue, the home track included. Its checkpoints were composed for the
+	// recorded venue's restart point count; a loaded graph that differs takes
+	// the decision 8 remap, or throws nothing when even that does not fit.
+	if (k >= 0 && gGT->level1 != NULL)
+	{
+		if (!fill)
+			return s_apBossVenueAttack;
+		venuePoints = gGT->level1->cnt_restart_points;
+		memset(s_apBossVenueAttack, 0, sizeof s_apBossVenueAttack);
+		if (!AP_BossFitKit(s_apBossVenueAttack, ctr_boss_encounters.schedule[k], AP_BossKitCertifiedNow(k),
+		                   venuePoints, "composed kit"))
+		{
+			char msg[160];
+			snprintf(msg, sizeof msg,
+			         "[AP BOSS] venue %d has %d restart points, certified %d: composed kit refused\n",
+			         (int)gGT->levelID, venuePoints, AP_BossKitCertifiedNow(k));
+			AP_AppendLog(msg);
+			return AP_BossInertSchedule(s_apBossVenueAttack, 8);
+		}
+		// Row 5 stays zero: the terminator retail tables end with.
+		return s_apBossVenueAttack;
+	}
+	if (g < 0 || gGT->level1 == NULL)
+		return NULL;
+	if (!fill)
+		return s_apBossVenueAttack;
+	venuePoints = gGT->level1->cnt_restart_points;
+	// The certification saw the retail LEV's restart point count, or a custom
+	// venue's measured one (#133 PR 6b). The inherited attack is mapped from
+	// the garage's home track, so a loaded graph with a different count
+	// (modified disc or files) only needs the same mapping onto the count it
+	// really has (decision 8). When even that does not rise strictly the
+	// boss keeps its timers but throws nothing. A room without a plan keeps its
+	// refusal of any other count.
+	if (!AP_BossVenueScheduleFits(g, venuePoints) ||
+	    (!ap_content_plan_active() && venuePoints != AP_BossVenueCertifiedNow(g)))
+	{
+		char msg[160];
+		snprintf(msg, sizeof msg,
+		         "[AP BOSS] venue %d has %d restart points, certified %d: inherited attack refused\n",
+		         (int)gGT->levelID, venuePoints, AP_BossVenueCertifiedNow(g));
+		AP_AppendLog(msg);
+		return AP_BossInertSchedule(s_apBossVenueAttack, 8);
+	}
+	if (venuePoints != AP_BossVenueCertifiedNow(g))
+	{
+		char msg[160];
+		snprintf(msg, sizeof msg,
+		         "[AP BOSS] checkpoint fallback: venue %d has %d restart points, certified %d: inherited attack remapped\n",
+		         (int)gGT->levelID, venuePoints, AP_BossVenueCertifiedNow(g));
+		AP_AppendLog(msg);
+	}
+	src = data.bossWeaponMetaPtr[g + 1];
+	homeLast = AP_BOSS_VENUE_RESTART_POINTS[AP_BOSS_VENUE_GARAGE[g].homeLevel] - 1;
+	for (i = 0; i < 8; i++)
+	{
+		s_apBossVenueAttack[i] = src[i];
+		if (src[i].throwFlag == 0)
+			break;
+		s_apBossVenueAttack[i].trackCheckpoint =
+		    (u8)AP_BossVenueCheckpoint(src[i].trackCheckpoint, homeLast, venuePoints - 1);
+	}
+	return s_apBossVenueAttack;
 }
 
 // Has the player personally cleared Oxide's FIRST challenge in this seed?
@@ -437,7 +1117,18 @@ static AP_OxideGarageInputs AP_OxideInputs(void)
 	in.bossesWon = AP_ComposedBossesWon();
 	in.goalGems = ctr_cfg.goal_gems;
 	in.gemsHeld = AP_GateCountGemSum();
+	// A content plan's Gem arm counts its distinct base Gem colours (#133 PR 6).
+	if (ap_content_plan_active())
+	{
+		int gems[5], i;
+		for (i = 0; i < 5; ++i) gems[i] = AP_GateCountGemColour(i);
+		in.gemsHeld = ap_content_plan_gems_held(gems);
+	}
 	in.firstOptional = ctr_cfg.oxide_1_optional;
+	// #249 decision 19: N. Oxide's garage waits for the Wumpa target, on
+	// content-plan rooms too (J11: the parser sets ctr_wumpa_shop.goal from
+	// the plan's `wumpa_banked` arm, 0 without one).
+	in.wumpaShort = !AP_WumpaGoalMet(ctr_wumpa_shop.goal, ap_net_wumpa_lifetime());
 	return in;
 }
 
@@ -667,6 +1358,24 @@ int AP_BossGateAdvert(int bossIdx, char *out, int cap)
 	if (bossIdx == 4)
 		return AP_OxideGateAdvert(out, cap);
 
+	// #169: a refused boss_encounters record is why the door is shut.
+	if (AP_BossGarageVenue(bossIdx) < 0)
+	{
+		// #133 PR 6b: a custom venue whose files are missing or changed.
+		if ((ctr_boss_encounters.state == AP_BOSS_ENC_VALID && ctr_boss_encounters.custom[bossIdx])
+#ifdef CTR_CUSTOM_TRACKS
+		    || AP_ContentGarageCupReady(bossIdx) == 0
+#endif
+		    )
+		{
+			snprintf(out, (size_t)cap, "Boss track files missing: see Current Seed");
+			return 1;
+		}
+		snprintf(out, (size_t)cap, "Boss track refused: %s",
+		         ctr_boss_encounters.reason[0] ? ctr_boss_encounters.reason : "update the client");
+		return 1;
+	}
+
 	// Modes 0/1 gate on RACES WON, not on items held (see AP_BossGarageOpen), so
 	// the advert has to speak in races or it would advertise a requirement that
 	// is not the one being enforced.
@@ -826,24 +1535,35 @@ int AP_GoalAdvert(char *out, int cap)
 		return 0;
 	if (!ctr_cfg_active())
 		return 0;
-
-	// The Oxide segment is driven by goal_oxide alone, so `optional` (0) and
-	// `disabled` (3) both omit it: neither is a completion condition. Whether
-	// the Oxide race has been BEATEN is deliberately not shown -- under the
-	// approved encounter flow the enabled arms gate the selected finale, so
-	// winning it completes the composed goal in the same moment.
-	return AP_GoalLineFormat(out, cap, ctr_cfg.goal_oxide,
-	                         ctr_cfg.goal_bosses, AP_ComposedBossesWon(),
-	                         ctr_cfg.goal_gems, AP_GateCountGemSum());
+	if (ap_content_plan_active())
+	{
+		int owned = 0, i;
+		for (i = 0; i < 5; ++i)
+		{
+			const ctr_content_item *row = ap_content_plan_item(AP_ITEM_BASE + AP_IDX_GEM_RED + i);
+			if (row && row->base && AP_GateCountGemColour(i) > 0) ++owned;
+		}
+		// J11: the plan's Wumpa arm follows the Gem arm; a Wumpa-only
+		// goal shows the Wumpa counter alone. Without a Wumpa arm the line
+		// is the one content plans always showed.
+		if (ctr_cfg.goal_gems > 0 || ctr_wumpa_shop.goal <= 0)
+		{
+			int n = snprintf(out, cap, "Goal: %d/%d selected Gem colours", owned, ctr_cfg.goal_gems);
+			if (ctr_wumpa_shop.goal > 0 && n > 0 && n < cap)
+				snprintf(out + n, (size_t)(cap - n), " - WUMPA %d/%d",
+				         ap_net_wumpa_lifetime() > ctr_wumpa_shop.goal ? ctr_wumpa_shop.goal
+				                                                       : (int)ap_net_wumpa_lifetime(),
+				         ctr_wumpa_shop.goal);
+			return 1;
+		}
+		return AP_GoalLineAppendWumpa(out, cap, 0, ap_net_wumpa_lifetime(), ctr_wumpa_shop.goal);
+	}
+	// One generator row 12: an active config is always a content plan; the
+	// normal-seed goal line was deleted.
+	return 0;
 }
 
-// Trophy-track warp pad LOAD gate. When a per-seed requirement applies use it;
-// otherwise fall back verbatim to the Phase-1 rule (received trophies vs the
-// per-track numTrophiesToOpen). levelID is the physical pad LevelID (retail
-// adventure numbering), valid for the 28-wide ctr_cfg arrays for trophy tracks.
-// Racer lock for a physical pad, or -1 when it has none (#54/#209). Dense pads
-// 0..27 via racer_lock, cup pads 100..104 via gem_cup_racer_lock -- the same
-// two-array routing warp_pad_unlock uses, for the same reason.
+// Racer lock mirrored from the physical content-plan pad by the parser.
 int ctr_cfg_racer_lock(int physPadLevelID)
 {
 	if (!ctr_cfg_active())
@@ -867,72 +1587,24 @@ int ctr_cfg_racer_lock_met(int physPadLevelID)
 
 int ctr_cfg_warp_unlocked(int levelID)
 {
-	// Racer lock (#54/#209): ANDed on top of whatever the pad already asks for,
-	// never in place of it -- the apworld's rule does exactly the same thing
-	// (Rules.add_racer_lock_rules captures the base rule and ANDs), and the two
-	// sides have to agree or the golden rule is broken. Checked first so a
-	// locked pad reads closed at every call site that goes through this gate:
-	// the load gate, the spawn visual and the map advert are all one source.
-	if (!ctr_cfg_racer_lock_met(levelID))
+	if (ap_content_plan_active())
+		return AP_ContentPadOpen(ap_content_plan_pad(levelID));
+	if (ctr_cfg_active())
 		return 0;
-
-	if (ctr_cfg_active() && levelID >= 0 && levelID < CTR_CFG_PAD_COUNT &&
-	    ctr_cfg.warp_pad_unlock[levelID].stage1.type != 0)
-		return AP_BossReqMet(&ctr_cfg.warp_pad_unlock[levelID].stage1);
-
-	// Cup PHYSICAL pads (100..104) live outside the dense warp_pad_unlock array.
-	// Under `merged` destination shuffle a race destination can be hosted on a cup
-	// pad, so ThTick's load gate (AH_WarpPad.c:713) recovers physLevelID = a cup
-	// LevelID and calls this. Key by cup colour into gem_cup_unlock (randomized
-	// stage1) else the vanilla "4 tokens of the cup's colour" rule -- the SAME
-	// predicate AP_PadStage1Met's cup branch uses. MUST run before the trophy
-	// fallback below, which would read data.metaDataLEV[100] out of bounds.
 	if (levelID >= 100 && levelID <= 104)
-	{
-		int cupIdx = levelID - 100;
-		if (ctr_cfg_active() && ctr_cfg.gem_cup_unlock[cupIdx].stage1.type != 0)
-			return AP_BossReqMet(&ctr_cfg.gem_cup_unlock[cupIdx].stage1);
-		return AP_GateCountTokenColour(cupIdx) >= 4;
-	}
-
-	// Phase-1 fallback: received trophies >= per-track threshold.
+		return AP_GateCountTokenColour(levelID - 100) >= 4;
+	if (levelID < 0 || levelID >= CTR_CFG_PAD_COUNT)
+		return 0;
 	return AP_GateCount(AP_IDX_TROPHY) >= data.metaDataLEV[levelID].numTrophiesToOpen;
 }
 
-// Trophy-track warp pad STAGE-2 gate (open-rando two-stage). Mirrors
-// ctr_cfg_warp_unlocked but reads stage2: when active and the pad has a stage2
-// requirement (type != 0) it returns owned >= count via AP_BossReqMet
-// (colour-aware). type 0 (no stage2 / collapsed-to-stage1 / flat-v1 slot_data /
-// inactive) returns 1 (always open), so the relic-Time-Trial + CTR-Token
-// menu opens the moment stage1 is met -- identical to the pre-two-stage flow.
-// physPadLevelID is the PHYSICAL pad LevelID, the same key stage1 uses.
+// Diagnostic stage-2 item gate. Mode entry additionally requires the first win.
 int ctr_cfg_warp_stage2_unlocked(int physPadLevelID)
 {
-	const ctr_req *r = ctr_cfg_warp_stage2_req(physPadLevelID);
-	if (r != 0)
-		return AP_BossReqMet(r);
-
-	// No stage2 requirement -> tier 2 opens as soon as stage1 is satisfied.
-	return 1;
-}
-
-// The stage-2 requirement record for a physical pad, or NULL when it has none.
-// Cup PHYSICAL pads (100..104): under `merged` shuffle a cup pad hosting a
-// trophy-race destination carries a REAL stage2 (contract §2 stage-2 rule -- the
-// apworld emits it into gem_cup_unlock), so it resolves here too. Single source
-// for the stage-2 key logic; the load gate above and the LInB re-lock advert
-// (AH_WarpPad.c) both resolve through it so gate and display cannot diverge.
-const ctr_req *ctr_cfg_warp_stage2_req(int physPadLevelID)
-{
-	if (!ctr_cfg_active())
-		return 0;
-	if (physPadLevelID >= 0 && physPadLevelID < CTR_CFG_PAD_COUNT &&
-	    ctr_cfg.warp_pad_unlock[physPadLevelID].stage2.type != 0)
-		return &ctr_cfg.warp_pad_unlock[physPadLevelID].stage2;
-	if (physPadLevelID >= 100 && physPadLevelID <= 104 &&
-	    ctr_cfg.gem_cup_unlock[physPadLevelID - 100].stage2.type != 0)
-		return &ctr_cfg.gem_cup_unlock[physPadLevelID - 100].stage2;
-	return 0;
+	const ctr_content_pad *pad = ap_content_plan_active()
+	    ? ap_content_plan_pad(physPadLevelID) : 0;
+	return !pad || !pad->has_stage2 ||
+	       AP_ContentStage2Owned(pad) >= pad->stage2_count;
 }
 
 #endif // CTR_AP

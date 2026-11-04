@@ -6,6 +6,7 @@
 
 #include "ap_hit_encounter.h"
 #include "ap_hit_policy.h"
+#include "ap_roster_swap.h"
 #include "ap_net.h"
 #include "ap_hooks.h" // AP_EmitHitCharacterCheck (wraps AP_EmitClassCheck), AP_GateCount
 
@@ -23,27 +24,79 @@ int AP_HitEncounterEnabled(void)
 	return (h != NULL && h->enabled) ? 1 : 0;
 }
 
+// Which boss win codes are checked, as a mask over AP_HIT_BOSS_WIN_CODES. The
+// checked state is the ruling: a garage check collected counts as beaten.
+static unsigned ap_hit_boss_checked_mask(void)
+{
+	unsigned mask = 0;
+	int k;
+	for (k = 0; k < AP_HIT_BOSS_CODES; k++)
+		if (ap_net_location_checked(AP_HIT_BOSS_WIN_CODES[k]))
+			mask |= 1u << k;
+	return mask;
+}
+
+// Who the seed's boss codes seat with the swap on, else 0. A code raced
+// nowhere seats nobody (AP_HitBossSeats).
+static int ap_hit_swap_identity(int ident[AP_HIT_BOSS_CODES])
+{
+	if (!AP_HitBossShuffleActive(&ctr_boss_encounters))
+		return 0;
+	AP_HitBossSeats(&ctr_boss_encounters, ident);
+	return 1;
+}
+
+int AP_HitEncounterFieldAll(void)
+{
+	int ident[AP_HIT_BOSS_CODES];
+	if (AP_HitEncounterEnabled())
+		return 1;
+	return ctr_cfg_active() && ap_hit_swap_identity(ident);
+}
+
+int AP_HitEncounterFieldOn(void)
+{
+	if (AP_HitEncounterFieldAll())
+		return 1;
+	return ctr_cfg_active() && ctr_boss_encounters.state == AP_BOSS_ENC_VALID && ctr_boss_encounters.gauntletOn;
+}
+
 // The destination key for cursors: tracks 0..17 map to 0..17, cups 100..104 to
-// 18..22; anything else is -1.
-#define AP_HIT_DEST_KEYS (CTR_CFG_HIT_TRACK_COUNT + CTR_CFG_HIT_CUP_COUNT)
+// 18..22, content-plan cups 200..226 (#133 PR 5b) to 23..49; anything else is
+// -1.
+#define AP_HIT_DEST_KEYS (CTR_CFG_HIT_TRACK_COUNT + CTR_CFG_HIT_CUP_COUNT + CTR_CFG_HIT_CONTENT_CUP_COUNT)
 static int ap_hit_dest_key(int destLevelID)
 {
 	if (destLevelID >= 0 && destLevelID < CTR_CFG_HIT_TRACK_COUNT)
 		return destLevelID;
 	if (destLevelID >= 100 && destLevelID < 100 + CTR_CFG_HIT_CUP_COUNT)
 		return CTR_CFG_HIT_TRACK_COUNT + (destLevelID - 100);
+	if (destLevelID >= CTR_CFG_HIT_CONTENT_CUP_DEST &&
+	    destLevelID < CTR_CFG_HIT_CONTENT_CUP_DEST + CTR_CFG_HIT_CONTENT_CUP_COUNT)
+		return CTR_CFG_HIT_TRACK_COUNT + CTR_CFG_HIT_CUP_COUNT + (destLevelID - CTR_CFG_HIT_CONTENT_CUP_DEST);
 	return -1;
 }
 
 const int *AP_HitEncounterOrder(int destLevelID)
 {
 	const ctr_hit_encounters *h = ap_seedcfg_hit_encounters();
-	if (h == NULL)
-		return NULL;
+	if (h == NULL || !h->enabled)
+	{
+		// No Hit block, so no seeded order: the swap walks the ids in turn.
+		static const int s_rosterOrder[CTR_CFG_HIT_CHARACTER_COUNT] = {0, 1, 2,  3,  4,  5,  6,  7,
+		                                                               8, 9, 10, 11, 12, 13, 14, 15};
+		return AP_HitEncounterFieldOn() && ap_hit_dest_key(destLevelID) >= 0 ? s_rosterOrder : NULL;
+	}
 	if (destLevelID >= 0 && destLevelID < CTR_CFG_HIT_TRACK_COUNT)
 		return h->tracks[destLevelID].ids;
 	if (destLevelID >= 100 && destLevelID < 100 + CTR_CFG_HIT_CUP_COUNT)
 		return h->cups[destLevelID - 100].ids;
+	if (destLevelID >= CTR_CFG_HIT_CONTENT_CUP_DEST &&
+	    destLevelID < CTR_CFG_HIT_CONTENT_CUP_DEST + CTR_CFG_HIT_CONTENT_CUP_COUNT)
+	{
+		const int i = destLevelID - CTR_CFG_HIT_CONTENT_CUP_DEST;
+		return h->content_cup_present[i] ? h->content_cups[i].ids : NULL;
+	}
 	return NULL;
 }
 
@@ -51,7 +104,9 @@ int AP_HitEncounterShouldApply(int isAdventure, int destLevelID, int isCup,
                                int isBoss, int isArcade, int isRelic,
                                int isToken, int isCrystal, int numPlayers)
 {
-	if (!AP_HitEncounterEnabled())
+	// A gauntlet alone draws only the Purple Gem Cup's legs (LOAD_Assets.c):
+	// every other race keeps the retail field (fixes 2026-11-02).
+	if (!AP_HitEncounterFieldAll())
 		return 0;
 	return AP_HitOrdinaryAppliesPure(isAdventure, destLevelID, isCup, isBoss, isArcade,
 	                                 isRelic, isToken, isCrystal, numPlayers);
@@ -67,7 +122,12 @@ int AP_HitEncounterGuestEligible(int guest)
 	if (guest < 0 || guest >= CTR_CFG_HIT_CHARACTER_COUNT)
 		return 0;
 	if (guest < 8)
-		return 1; // defaults always appear
+	{
+		// A default racer drawn as a boss waits for that boss race.
+		int ident[AP_HIT_BOSS_CODES];
+		return !ap_hit_swap_identity(ident) ||
+		       AP_RosterDefaultEligible(ident, guest, ap_hit_boss_checked_mask());
+	}
 	{
 		const ctr_hit_trigger *t = &h->triggers[guest - 8];
 		for (i = 0; i < t->count; i++)
@@ -79,7 +139,10 @@ int AP_HitEncounterGuestEligible(int guest)
 		// Held Keys are the RECEIVED item count (AP_GateCount), not the cosmetic
 		// currAdvProfile.numKeys rebuilt from reward bits: with shuffle_keys off a
 		// Key is still delivered as an item, and the apworld's fallback term is
-		// state.has("Key", n) over the same receipts.
+		// state.has("Key", n) over the same receipts. An original boss raced
+		// nowhere has neither: it swapped slots and races from the start.
+		if (t->count == 0 && t->fallback_keys == 0)
+			return 1;
 		return AP_HitGuestFallbackEligiblePure(triggerMet, t->fallback_keys,
 		                                       AP_GateCount(AP_IDX_KEY));
 	}
@@ -95,8 +158,24 @@ int AP_HitEncounterGather(unsigned char *eligible, unsigned char *unchecked)
 		eligible[i] = 0;
 		unchecked[i] = 0;
 	}
-	if (h == NULL)
-		return 0;
+	if (h == NULL || !h->enabled)
+	{
+		// The swap with no Hit block: the same pool, no Hit target to seat.
+		int ident[AP_HIT_BOSS_CODES];
+		unsigned checked;
+		if (!AP_HitEncounterFieldOn())
+			return 0;
+		if (!ap_hit_swap_identity(ident))
+		{
+			for (i = 0; i < 8; i++)
+				eligible[i] = 1;
+			return 1;
+		}
+		checked = ap_hit_boss_checked_mask();
+		for (i = 0; i < CTR_CFG_HIT_CHARACTER_COUNT; i++)
+			eligible[i] = (unsigned char)AP_RosterEligibleNoHit(ident, i, checked);
+		return 1;
+	}
 	for (i = 0; i < CTR_CFG_HIT_CHARACTER_COUNT; i++)
 	{
 		long code = h->locations[i];
@@ -232,10 +311,23 @@ static ap_hit_race_snapshot s_raceSnap;
 static int s_lastLoadWasRace; // set by an ordinary apply load
 static int s_raceArmed;       // latched at the next load's begin
 
+static int s_shortSeats = -1; // AI seats of a field that could not fill, else -1
+
 void AP_HitLoadBegin(void)
 {
 	s_raceArmed = s_lastLoadWasRace;
 	s_lastLoadWasRace = 0;
+	s_shortSeats = -1;
+}
+
+void AP_HitFieldSeated(int seated, int aiSeats)
+{
+	s_shortSeats = seated >= 0 && seated < aiSeats ? seated : -1;
+}
+
+int AP_HitFieldShortSeats(void)
+{
+	return s_shortSeats;
 }
 
 int AP_HitRaceField(int destLevelID, int player, int aiSeats, int *outIDs, int *outFresh)
@@ -300,23 +392,24 @@ void AP_HitEncounterResetDrawState(void)
 // Resolve/reuse the cup roster for this load. A NEW cup (pad entry, or an
 // invalid/mismatched snapshot) draws fresh with the cup's cursors; every
 // continuing leg and same-session retry copies the stored roster unchanged, so a
-// mid-cup unlock or hit cannot alter the active cup. Returns the AI seat count.
-int AP_HitCupSnapshotField(int cupID, int trackIndex, int player, int aiSeats,
-                           int *outIDs)
+// mid-cup unlock or hit cannot alter the active cup. `dest` is the wire
+// destination: 100 + cupID for a retail Gem Cup, 200 + name index for a
+// content-plan cup (#133 PR 5b). Returns the AI seat count.
+int AP_HitCupSnapshotFieldAt(int dest, int cupID, int trackIndex, int player, int aiSeats,
+                             int *outIDs)
 {
-	int kind = AP_HitCupLegKindPure(cupID, trackIndex, s_cupSnapshot.pending,
-	                                s_cupSnapshot.valid, s_cupSnapshot.cupID,
-	                                s_cupSnapshot.trackIndex);
+	int kind = AP_HitCupLegKindAtPure(dest, cupID, trackIndex, s_cupSnapshot.pending,
+	                                  s_cupSnapshot.valid, s_cupSnapshot.dest, s_cupSnapshot.cupID,
+	                                  s_cupSnapshot.trackIndex);
 	int i;
 
 	if (kind == AP_HIT_CUP_LEG_NEW)
 	{
-		// Wire cup keys are 100 + cupID.
-		int n = AP_HitEncounterDrawFresh(100 + cupID, player, aiSeats,
-		                                 s_cupSnapshot.ids);
+		int n = AP_HitEncounterDrawFresh(dest, player, aiSeats, s_cupSnapshot.ids);
 		s_cupSnapshot.count = n;
 		s_cupSnapshot.valid = 1;
 		s_cupSnapshot.cupID = cupID;
+		s_cupSnapshot.dest = dest;
 		s_cupSnapshot.pending = 0;
 	}
 	s_cupSnapshot.trackIndex = trackIndex;
@@ -324,6 +417,13 @@ int AP_HitCupSnapshotField(int cupID, int trackIndex, int player, int aiSeats,
 	for (i = 0; i < s_cupSnapshot.count; i++)
 		outIDs[i] = s_cupSnapshot.ids[i];
 	return s_cupSnapshot.count;
+}
+
+int AP_HitCupSnapshotField(int cupID, int trackIndex, int player, int aiSeats,
+                           int *outIDs)
+{
+	// Wire cup keys are 100 + cupID.
+	return AP_HitCupSnapshotFieldAt(100 + cupID, cupID, trackIndex, player, aiSeats, outIDs);
 }
 
 int AP_HitEncounterOnDamage(int victimEngineID, int damageType, unsigned flags)

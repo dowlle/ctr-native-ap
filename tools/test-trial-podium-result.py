@@ -40,6 +40,11 @@ static int race_attempt_latched;
 int AP_RaceAttempt_ProducerBlocked(int producerClass) {
  return AP_RaceAttempt_SuppressResultProducer(producerClass, race_attempt_latched);
 }
+/* #133 PR 3b: a legacy seed has no content plan, so the content-plan rung
+ * route never answers here (tools/test-content-track-checks-production.py
+ * runs it). */
+int ap_content_plan_active(void) { return 0; }
+static int AP_ContentPodiumRungs(int track, ctr_podium_rungs *out) { (void)track; (void)out; assert(0); return 0; }
 '''
 tests = r'''
 int main(void) {

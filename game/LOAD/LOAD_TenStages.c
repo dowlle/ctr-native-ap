@@ -4,6 +4,8 @@
 // Defined in LOAD_Assets.c (same unity translation unit). Refuses a required
 // Hit-encounter driver model that did not load, before any birth dereferences it.
 void LOAD_HitEncounterValidateExtras(void);
+void LOAD_BossOpponentValidateExtra(void);
+void LOAD_ChaosConvertSideSlots(void);
 #endif
 
 void (*mainMenuInit[])() = {MM_JumpTo_Title_FirstTime, MM_JumpTo_Characters, MM_JumpTo_TrackSelect, MM_JumpTo_BattleSetup, CS_Garage_Init, MM_JumpTo_Scrapbook};
@@ -416,8 +418,10 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 		// A Hit-encounter extra whose file never loaded has a NULL model. Refuse
 		// it explicitly now, before VehBirth resolves an AI by name and
 		// dereferences the result (ticket 06). Inert when the feature is off.
-		if (AP_HitEncounterEnabled())
+		LOAD_ChaosConvertSideSlots();
+		if (AP_HitEncounterFieldOn() || AP_ChaosFinalNow())
 			LOAD_HitEncounterValidateExtras();
+		LOAD_BossOpponentValidateExtra();
 #endif
 
 		// == banks are done parsing ===

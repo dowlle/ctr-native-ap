@@ -24,9 +24,19 @@ extern "C" {
 // was absent/disabled/refused, or the feature scalar was off.
 int AP_HitEncounterEnabled(void);
 
+// The roster swap draws the field too: on with the Hit block, or without it on
+// a seed whose bosses moved or whose Purple Gem Cup is a gauntlet.
+int AP_HitEncounterFieldOn(void);
+
+// Every Adventure race draws its field: the Hit block, or bosses that moved.
+// A gauntlet alone is FieldOn but not FieldAll: only its Purple Gem Cup legs
+// draw (AP_BossGauntletCupNow), every other race keeps the retail field.
+int AP_HitEncounterFieldAll(void);
+
 // The parsed draw order (16 engine ids) for a destination: ordinary tracks
-// 0..17 and cups 100..104. NULL when the feature is off or the destination is
-// unsupported.
+// 0..17, cups 100..104 and content-plan cups 200..226 (#133 PR 5b, present
+// only for the plan's cups). NULL when the feature is off or the destination
+// is unsupported.
 const int *AP_HitEncounterOrder(int destLevelID);
 
 // Should the ordinary roster be replaced by the encounter field for this load?
@@ -34,7 +44,8 @@ const int *AP_HitEncounterOrder(int destLevelID);
 // and the two trial Trophy tracks (16/17): the Trophy Race AND that track's CTR
 // Challenge (TOKEN_RACE), which is the same driver load with one extra mode bit.
 // Boss/cup/arcade/relic/crystal and multiplayer loads return 0. `isAdventure` is
-// ADVENTURE_MODE. Custom-served loads are excluded at the call site.
+// ADVENTURE_MODE. Custom-served loads apply like retail races (#133 PR 5b
+// content plans, PR 5c legacy rooms) and draw from their host's order.
 int AP_HitEncounterShouldApply(int isAdventure, int destLevelID, int isCup,
                                int isBoss, int isArcade, int isRelic,
                                int isToken, int isCrystal, int numPlayers);
@@ -74,6 +85,13 @@ void AP_HitEncounterResetDrawState(void);
 // or retry reuse its field.
 void AP_HitLoadBegin(void);
 
+// The field this load seated. A field the roster swap left short (racers held
+// behind their garages, three extra models) races with fewer karts:
+// AP_HitFieldShortSeats is then its AI count for MainInit_Drivers, else -1.
+// Cleared by AP_HitLoadBegin.
+void AP_HitFieldSeated(int seated, int aiSeats);
+int AP_HitFieldShortSeats(void);
+
 // The field for an ordinary apply load at `destLevelID`: reuses the stored
 // field when the immediately previous driver load was an ordinary apply for
 // the same level, player and seat count (a restart/retry), else draws fresh.
@@ -103,6 +121,12 @@ void AP_HitCupSnapshotReset(void);
 // into outIDs and returns the count.
 int AP_HitCupSnapshotField(int cupID, int trackIndex, int player, int aiSeats,
                            int *outIDs);
+
+// The same for an explicit wire destination `dest` (#133 PR 5b): a
+// content-plan cup runs on engine cup 0 and draws from 200 + its name index.
+// A stored roster from another destination counts as a new cup.
+int AP_HitCupSnapshotFieldAt(int dest, int cupID, int trackIndex, int player, int aiSeats,
+                             int *outIDs);
 
 // Dispatch decision for one accepted BOTS_ChangeState event. `flags`:
 //   bit0 victimIsAI, bit1 victimLive, bit2 victimIsGhost, bit3 victimIsPlayer,

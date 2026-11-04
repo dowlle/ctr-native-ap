@@ -182,7 +182,8 @@ inputs = extract(hooks, 'static AP_OxideGarageInputs AP_OxideInputs(void)\n{')
 assert 'in.firstCleared = AP_OxideFirstChallengeCleared();' in inputs
 assert 'in.bossesWon = AP_ComposedBossesWon();' in inputs
 assert 'int won = AP_ComposedBossesWon();' in extract(hooks, 'void AP_EvaluateGoal(void)\n{')
-assert 'AP_ComposedBossesWon()' in extract(hooks, 'int AP_GoalAdvert(char *out, int cap)\n{')
+# One generator row 12: AP_GoalAdvert lost its normal-seed goal line; the
+# plan line counts Gems and Wumpa only.
 for b in ('ADV_REWARD_FIRST_BOSS_KEY + b', 'AP_GOAL_BIT_OXIDE_FIRST)'):
     assert ('AP_LocationCheckedByBit(' + b) not in hooks, b
 door = (root / 'ap/ap_boss_door_scene.c').read_text()

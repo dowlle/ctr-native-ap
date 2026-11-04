@@ -24,8 +24,9 @@ and a CTR YAML file; see [Generating or hosting a multiworld](#generating-or-hos
 
 For a guided first setup, use the
 [CTR setup guide on AP-Pie](https://ap-pie.com/guides/ctr). To create a player
-file for stable 0.2.0, open the
-[0.2.0 CTR YAML Builder](https://ap-pie.com/yaml-builder/ctr?version=0.2.0).
+file, open the
+[AP-Pie CTR YAML Builder](https://ap-pie.com/yaml-builder/ctr) and pick the
+version that matches your client.
 
 **Choose your next step:** if your room is already generated, install the
 client and connect using the host's details. If the host is still collecting
@@ -227,10 +228,11 @@ through [Reporting a crash or a stuck seed](#reporting-a-crash-or-a-stuck-seed).
 ## Generating or hosting a multiworld
 
 Create your player file with the
-[0.2.0 CTR YAML Builder](https://ap-pie.com/yaml-builder/ctr?version=0.2.0).
-Download the resulting YAML and give it to the person generating the room. The
-Builder prepares and validates player configuration; it does not generate the
-seed or host the playable server.
+[AP-Pie YAML Builder](https://ap-pie.com/yaml-builder/ctr). Pick the version that
+matches your client, start from a preset or the defaults, change what you want,
+and download the YAML. Give it to the person generating the room. The Builder
+prepares and validates player configuration; it does not generate the seed or
+host the playable server.
 
 Only the person generating the room needs the `ctr.apworld`. Download it from
 the same release as the client and install it by double-clicking it or placing
@@ -245,7 +247,106 @@ generated Crash Team Racing YAML locally.
 The released client and apworld are a pair. Update both together, even when a
 release appears to change only one side.
 
-## Experimental custom content in 0.2.0
+### Choosing your options in 0.3.0
+
+From 0.3.0 there is one list of options and no separate content setup. A YAML
+that sets nothing gets the original game's shape: the 18 race tracks, the 5 Gem
+Cups and the 4 Crystal Challenges on the 27 warp pads, plus the five boss
+garages. Each option you set changes that seed. The options come in the order
+you would fill them in:
+
+- **Content:** `retail_tracks`, `track_modes`, `custom_tracks`,
+  `cortex_vortex_track`, `required_entries`, the cups and arenas, and the boss
+  garages and boss cups.
+- **Goal:** `oxide_goal` and what it needs.
+- **Pads and requirements:** where content lands (`pad_placement`), what each
+  pad asks for (`warppad_unlock_requirements`, `requirement_weights`,
+  `two_stage_density`, `warp_pad_rules`) and whether Keys and Gems are shuffled.
+- **Checks:** which extra checks exist (podium rungs, relic perfects, letters,
+  lap checks, item boxes, Itemsanity and more).
+- **Items and traps, characters and stats, boost, DeathLink, display.**
+
+Every option explains itself in the Builder and in the generated template. Three
+presets give you a start: **Quick** (a short goal with few locks), **Standard**
+(the defaults) and **Full Adventure** (everything on, every location
+reachable). They are the same three that Play Solo offers.
+
+Old YAMLs: option names that 0.3.0 no longer has are ignored without a message.
+That does not make a v0.2.x YAML safe to reuse: the defaults changed, and some
+old forms are refused (the `custom_tracks` mapping that put Baby T Park on the
+Purple Gem Cup, for one). Build a new YAML, or read the old one again before you
+rely on it. A room made with v0.2.x needs the v0.2.4 client; the 0.3.0
+client refuses it and says so. v0.2.4 stays downloadable on the
+[releases page](https://github.com/dowlle/ctr-native-ap/releases).
+
+### Updating from 0.2.x
+
+There is no in-game update from 0.2.x. Download the 0.3.0 archive from the
+releases page yourself and set it up with the steps above. Keep your old folder
+until the new one connects. Update the `ctr.apworld` on the generating side to
+the same release.
+
+### If an in-game update is interrupted
+
+The in-game updater (a prompt on the main menu appears when a newer stable
+release exists) installs `ctr.apworld`, the Cortex Vortex files (in the assets
+folder the game reads), the bundled solo runtime (`solo-runtime/`, replaced as
+a whole folder) and the client in one step. It keeps your previous files next
+to the new ones with a `.old` ending (`solo-runtime.old` for the runtime). If
+the game is closed, killed or loses power during that step, the next start
+restores the `.old` files by itself. Your solo seeds and saves in `solo/` are
+never touched. While Play Solo runs a session or makes a seed, the update
+waits: stop Play Solo first, then choose RESTART.
+
+On Linux and Steam Deck the client file is never missing during the update:
+the new one replaces it in a single step, and the previous one is kept as
+`ctr_native_ap.old`.
+
+On Windows one moment cannot be covered: the client is renamed to
+`ctr_native_ap.exe.old` just before the new one takes its place. If that is the
+moment the install was cut off, the game does not start because no
+`ctr_native_ap.exe` exists. Rename `ctr_native_ap.exe.old` back to
+`ctr_native_ap.exe` and start the game; it then restores the other files. The
+same step by hand works for any file whose `.old` copy is still there (for
+example `ctr.apworld.old` back to `ctr.apworld`, or the `solo-runtime.old`
+folder back to `solo-runtime` after removing the new one). Your `config.ini`,
+saves, solo seeds and the disc image are never touched by an update.
+
+## Playing solo, without a server
+
+From 0.3.0 the client can make and host a single-player seed itself. Choose
+**PLAY SOLO** on the title screen, or open **Options > Connection > Play Solo**:
+
+- **New solo seed** offers the bundled presets (Quick, Standard, Full
+  Adventure), any YAML you imported, and any YAML you drop into the `solo/inbox`
+  folder next to the game (the screen shows the path). A preset opens a short
+  options screen; Square shows what an option does. DeathLink is off in solo,
+  because nobody else is in the room.
+- When custom tracks are installed, a preset or a YAML then shows **Custom
+  Tracks**, with Cortex Vortex once its files are installed. Cross on a track
+  cycles: not used, **In pool** (the seed may use it) and **Own pad** (it gets
+  one of the race pads). The default seed has 18 race pads, 5 Gem Cups, 4
+  Crystal Challenges and the boss garages. Your picked tracks and the retail
+  tracks share one pool, so a custom track on a pad takes the place of a retail
+  track. A YAML keeps its own settings, and the tracks it lists start as picked.
+  If a pick does not fit the YAML, the screen says why and you can change the
+  picks. A track is listed
+  when its files are in `assets/tracks/<track>/original` and the client knows
+  its descriptor: from a room that used the track, or a descriptor file in the
+  `solo/tracks` folder.
+- **Import YAML file** takes a YAML you made with the YAML Builder.
+- **Import room file** takes a one-player CTR room (`.archipelago` or
+  `AP_*.zip`) generated elsewhere.
+- Your solo seeds are listed with their progress. Cross resumes one; Square shows
+  its details and lets you delete it.
+
+The client starts a private Archipelago server on your own computer
+(127.0.0.1, ports 38301 to 38320) and connects to it; nothing goes over the
+internet. Everything solo is stored in the `solo` folder next to the game, so
+back that folder up together with your memory cards. Multiplayer still uses
+**Connect** as before.
+
+## Experimental custom content
 
 The public archive contains no custom-track files. Version 0.2.0 recognizes one
 experimental Baby T Park package supplied by its creator. Open **OPTIONS →
@@ -253,10 +354,63 @@ Custom Content** to inspect it, follow the creator link and verify the installed
 files. **Ready** means the files are compatible; it does not make a generated
 seed use the track.
 
-To use the preview, export its YAML fragment from the manager and add that block
-to the player YAML before generating the room. Every player whose slot requires
-the track must install the same verified package. A missing or mismatched package
-fails closed instead of loading the displaced retail race.
+To use a package, copy or save its YAML from the Custom Content page and add
+that entry to the `custom_tracks` list of the player YAML before generating the
+room. The entry is the track's complete descriptor, including its file checks,
+the lap count and what it can do. A track with restart points and AI paths
+(`checkpoints` and `ai_nav`) can also race a boss.
+
+A Relic Race on a custom track needs the author's target times. On the Custom
+Content page choose **Relic Times** and enter Sapphire, Gold and Platinum as
+M:SS.CC: Up and Down change a digit, Left and Right move, Cross saves, Triangle
+cancels. Sapphire must be slower than Gold and Gold slower than Platinum. The
+times are kept beside the package's manifest, never in the track files, and
+only for those exact files: if the files change, enter the times again. With
+times saved, the exported entry has `relic: true` and `relic_targets`; without
+them it has no Relic Race. **Clear Relic Times** removes them. Every player whose slot
+requires the track must install the same verified package. A missing or
+mismatched package fails closed instead of loading the displaced retail race.
+
+In a room, **OPTIONS → Custom Content → Current Seed** lists the tracks the
+room needs. **Install missing content** downloads every missing track that is
+in the public [track registry](https://github.com/dowlle/ctr-track-registry)
+and on Project Saphi. The game reads the registry from GitHub when the room
+needs it, so a newly registered track can be downloaded without a new client.
+The registry only says where on Project Saphi a track is: the room fixes each
+track's exact files, and the download installs nothing unless the files match.
+The last registry copy is kept in `assets/track-registry-cache.json` and used
+when GitHub cannot be reached; the track then shows "cached registry". A track
+that is not registered, not on Project Saphi, or that the game cannot look up
+(offline with no saved copy) shows "No download" and the folder to copy its
+files into by hand. Rescan checks the registry again.
+
+## Importing custom tracks from an xdelta patch
+
+Some custom tracks come as an xdelta patch for the game disc (for example a
+custom adventure pack). The client can take the race tracks out of such a patch
+using your own disc; nothing from the patch is downloaded or shared.
+
+1. Open **OPTIONS → Custom Content** and press **Select** (Import track files).
+2. Choose the patch with the file dialog, drop the `.xdelta` file on the game
+   window, or put it in `assets/tracks/import/` (useful on Steam Deck in Game
+   Mode) and pick it from the list.
+3. Check the list of found tracks and press **Cross** to install.
+
+The tracks are saved in `assets/tracks/<track>/original/`, where rooms and solo
+seeds look for custom tracks. The Track Library page keeps its own packages,
+so imported tracks are not listed there. If a pack descriptor (`<patch name>.ctrpack.json`)
+sits next to the patch, it supplies the track names, laps and relic times.
+Every imported track is also listed on the Play Solo Custom Tracks page at
+once (a descriptor in `solo/tracks`). Its facts are measured from its files;
+laps, author and relic times come only from the pack descriptor. Without an
+author the page shows it as Unknown. Without laps (for example a patch with no
+pack descriptor) the page asks for them first: Left and Right pick 1 to 7 laps,
+starting at 3, and Cross keeps them with the track's Play Solo entry. Until
+then the track waits in `solo/needs-laps` and cannot be picked. Such a track
+has no relic, because relic times belong to the author's laps. The track files
+are never changed.
+Only race tracks are imported; arenas, game code and other changed files are
+listed but skipped.
 
 ## Optional: controllers and Steam Input
 

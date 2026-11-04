@@ -377,6 +377,71 @@ def write_checksum(path: Path) -> None:
     path.with_name(path.name + ".sha256").write_text(f"{sha256(path)}  {path.name}\n", encoding="utf-8")
 
 
+SOLO_RUNTIME_DIR = "solo-runtime"
+SOLO_INTERPRETER = {"windows": "python/python.exe", "linux": "python/bin/python3.12"}
+
+
+def read_runtime_manifest(text: str) -> dict[str, str]:
+    """RUNTIME.txt is `key: value` lines (tools/solo/build-runtime.py)."""
+    result = {}
+    for line in text.splitlines():
+        key, sep, value = line.partition(":")
+        if sep and not line.startswith("#"):
+            result[key.strip()] = value.strip()
+    return result
+
+
+SOLO_RUNTIME_FROM = (0, 3, 0)  # releases from 0.3.0 on must carry the solo runtime (#89)
+
+
+def solo_runtime_required(version: str) -> bool:
+    numbers = re.match(r"^v?(\d+)\.(\d+)\.(\d+)", version)
+    return bool(numbers) and tuple(int(n) for n in numbers.groups()) >= SOLO_RUNTIME_FROM
+
+
+def runtime_tree_sha256(files: list[tuple[str, str]]) -> str:
+    """Same digest as tools/solo/build-runtime.py: sorted (relative path,
+    file SHA-256) pairs of every file except RUNTIME.txt."""
+    import hashlib
+    digest = hashlib.sha256()
+    for rel, file_sha in sorted(files):
+        if rel == "RUNTIME.txt":
+            continue
+        digest.update(rel.encode() + b"\0" + file_sha.encode() + b"\n")
+    return digest.hexdigest()
+
+
+def solo_runtime_entries(runtime: Path, platform: str, apworld: Path) -> list[tuple[Path, str]]:
+    """Check a built solo runtime (#89) and return its archive entries."""
+    manifest_path = runtime / "RUNTIME.txt"
+    if not manifest_path.is_file():
+        fail(f"{platform} solo runtime has no RUNTIME.txt: {runtime}")
+    manifest = read_runtime_manifest(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("platform") != platform:
+        fail(f"solo runtime platform is {manifest.get('platform')!r}, expected {platform}")
+    if manifest.get("interpreter") != SOLO_INTERPRETER[platform]:
+        fail(f"{platform} solo runtime names interpreter {manifest.get('interpreter')!r}")
+    if manifest.get("ctr.apworld sha256") != sha256(apworld):
+        fail(f"{platform} solo runtime was built for another ctr.apworld")
+    entries = []
+    for path in sorted(runtime.rglob("*")):
+        if path.is_symlink():
+            fail(f"solo runtime contains a symlink: {path}")
+        if path.is_file():
+            entries.append((path, f"{SOLO_RUNTIME_DIR}/{path.relative_to(runtime).as_posix()}"))
+    names = {name for _, name in entries}
+    for needed in (SOLO_INTERPRETER[platform], "ctr_solo.py", "archipelago/MultiServer.py"):
+        if f"{SOLO_RUNTIME_DIR}/{needed}" not in names:
+            fail(f"{platform} solo runtime lacks {needed}")
+    # The files must be the ones RUNTIME.txt describes.
+    tree = runtime_tree_sha256([(path.relative_to(runtime).as_posix(), sha256(path)) for path, _ in entries])
+    if manifest.get("tree sha256") != tree:
+        fail(f"{platform} solo runtime files differ from its RUNTIME.txt (tree sha256)")
+    if manifest.get("ctr_solo.py sha256") != sha256(runtime / "ctr_solo.py"):
+        fail(f"{platform} solo runtime ctr_solo.py differs from its RUNTIME.txt")
+    return entries
+
+
 def create_archive(destination: Path, root_name: str, entries: list[tuple[Path, str]], linux: bool) -> None:
     """Write one release bundle from ``(source path, relative posix name)`` pairs."""
     ordered = sorted(entries, key=lambda item: item[1])
@@ -384,7 +449,8 @@ def create_archive(destination: Path, root_name: str, entries: list[tuple[Path, 
     if len(seen) != len(set(seen)):
         fail("duplicate member in release bundle")
     if linux:
-        executables = {"ctr_native_ap", AUTHORING_BINARY["linux"], "support-bundle.sh"}
+        executables = {"ctr_native_ap", AUTHORING_BINARY["linux"], "support-bundle.sh",
+                       f"{SOLO_RUNTIME_DIR}/{SOLO_INTERPRETER['linux']}"}
         with tarfile.open(destination, "w:gz") as bundle:
             written: set[str] = set()
 
@@ -545,6 +611,17 @@ def assemble(args: argparse.Namespace) -> list[Path]:
             (source / "support-bundle.sh", "support-bundle.sh"),
             *linux_assets,
         ]
+        # The solo runtime (#89) ships inside both client archives, so the
+        # signed manifest covers it. Both or neither.
+        solo_windows = getattr(args, "solo_runtime_windows", None)
+        solo_linux = getattr(args, "solo_runtime_linux", None)
+        if (solo_windows is None) != (solo_linux is None):
+            fail("give both --solo-runtime-windows and --solo-runtime-linux, or neither")
+        if solo_windows is None and solo_runtime_required(version):
+            fail(f"release {version} needs the solo runtime: give --solo-runtime-windows and --solo-runtime-linux")
+        if solo_windows is not None:
+            windows_files += solo_runtime_entries(solo_windows.resolve(), "windows", args.apworld.resolve())
+            linux_files += solo_runtime_entries(solo_linux.resolve(), "linux", args.apworld.resolve())
         windows_archive = output / f"ctr-archipelago-v{version}-windows-x86.zip"
         linux_archive = output / f"ctr-archipelago-v{version}-linux-x86.tar.gz"
         create_archive(windows_archive, root_name, windows_files, linux=False)
@@ -590,6 +667,10 @@ def parser() -> argparse.ArgumentParser:
         help="numeric semver, with optional prerelease and optional leading v",
     )
     result.add_argument("--output-dir", type=Path, required=True)
+    result.add_argument("--solo-runtime-windows", type=Path, default=None,
+                        help="solo-runtime folder from tools/solo/build-runtime.py --platform windows")
+    result.add_argument("--solo-runtime-linux", type=Path, default=None,
+                        help="solo-runtime folder from tools/solo/build-runtime.py --platform linux")
     result.add_argument(
         "--authoring",
         action="store_true",

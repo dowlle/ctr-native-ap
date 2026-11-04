@@ -105,6 +105,10 @@ static int ap_hub_feed_on = 1; // ap-config.txt "hub_feed=" (default on; governs
                                // BOTH feed surfaces since #192, key name kept)
 int AP_HubFeedOn(void)
 {
+	// Options > Archipelago > Item Feed (ruling of 2026-11-02), with the same
+	// config.ini-over-ap-config.txt precedence as AP_MapFlashOn.
+	if (NativeConfig_HasIni())
+		return g_config.itemFeed;
 	return ap_hub_feed_on;
 }
 
@@ -410,7 +414,7 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 // Adventure-hub surface: the shipped anchor, bottom-left, unchanged.
 void AP_FeedDrawHub(void)
 {
-	if (!ctr_cfg_active() || !ap_hub_feed_on)
+	if (!ctr_cfg_active() || !AP_HubFeedOn())
 		return;
 
 	AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_BASE_Y, 0);
@@ -434,7 +438,7 @@ void AP_FeedDrawRace(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
 
-	if (!ctr_cfg_active() || !ap_hub_feed_on)
+	if (!ctr_cfg_active() || !AP_HubFeedOn())
 		return;
 	if (gGT->numPlyrCurrGame != 1)
 		return;
@@ -450,7 +454,7 @@ void AP_FeedDrawResults(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
 
-	if (!ctr_cfg_active() || !ap_hub_feed_on)
+	if (!ctr_cfg_active() || !AP_HubFeedOn())
 		return;
 	if (gGT->numPlyrCurrGame != 1)
 		return;
@@ -468,6 +472,16 @@ void AP_FeedDrawResults(void)
 // normal session is byte-identical.
 void AP_DrawSchemaWarning(void)
 {
+	// Item-box slot numbering does not match this seed (Contract 7e): the
+	// affected tracks stand no boxes. Drawn below the schema lines (0x14) and
+	// the custom-content lines (0x30, 0x3c) so the three never overlap.
+	if (ctr_cfg.box_placement_refused)
+	{
+		static char boxWarn1[] = "!! ITEM BOX CHECKS OFF ON SOME TRACKS !!";
+		static char boxWarn2[] = "Box numbering does not match this seed.";
+		DecalFont_DrawLine(boxWarn1, AP_FEED_X, 0x48, FONT_SMALL, RED);
+		DecalFont_DrawLine(boxWarn2, AP_FEED_X, 0x48 + AP_FEED_LINE_H, FONT_SMALL, RED);
+	}
 	if (!ctr_cfg.schema_newer)
 		return;
 	// Static so the strings are not rebuilt per frame; DrawLine takes char*.

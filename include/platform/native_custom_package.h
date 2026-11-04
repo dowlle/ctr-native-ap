@@ -8,6 +8,10 @@ extern "C" {
 #define CTR_PACKAGE_FILE_MAX 32
 /* Unicode 15.0.0, NFC, 1..160 codepoints, no category-C or edge whitespace. */
 int CustomPackage_ValidateTitle(const char *utf8, size_t size);
+/* NFKD, then only the ASCII bytes kept (Python's
+   unicodedata.normalize("NFKD", text).encode("ascii", "ignore")). Writes at
+   most size - 1 bytes and a terminator; returns 0 for text that is not UTF-8. */
+int CustomPackage_AsciiFold(const char *utf8, size_t length, char *out, size_t size);
 struct CustomPackageFile
 {
     char role[24];
@@ -107,7 +111,7 @@ int CustomPackage_PollInboxInstall(int *result, char pin[65], char *error, size_
 /* Verified local metadata for UI grouping/admission hints, never Ready evidence. */
 struct CustomPackageLocalInfo
 {
-    char uuid[37], author[81];
+    char uuid[37], author[129];
     int trackID, levID, vrmID;
     int scaID; /* Saphi media id of the pinned .sca, zero when the package has none. */
     int arcade; /* Owned structural prerequisites and supported lap storage. */
@@ -115,6 +119,15 @@ struct CustomPackageLocalInfo
     unsigned int laps; /* Laps the package races, 0 when its race settings are invalid. */
     char arcadeReason[48], timeTrialReason[48]; /* Short menu text; "" when allowed. */
     char levSha256[65], vrmSha256[65]; /* With uuid and laps: the Time Trial records key. */
+    /* Capability flags measured on the installed bytes (xdelta importer design,
+       2026-10-15). relic: time crates, a pinned relic_targets sidecar and not
+       excluded by the pack descriptor. ctrChallenge: exactly one C, one T and
+       one R, not excluded. Reasons are short menu text, "" when allowed. */
+    int relic, ctrChallenge;
+    char relicReason[48], ctrChallengeReason[48];
+    /* Provenance of an imported package (metadata/xdelta-source.json). */
+    int xdelta, bigfileIndex;
+    char patchSha256[65];
 };
 struct CustomPackageStoreEntry
 {
@@ -131,6 +144,19 @@ typedef void (*CustomPackageStoreVisitor)(const struct CustomPackageStoreEntry *
    Discard accumulated rows if the overall scan fails. No mode certification. */
 int CustomPackage_ScanStore(const char *store, CustomPackageStoreVisitor visitor, void *context,
                            char *error, size_t errorSize);
+/* Resolve one verified installed revision by its exact seed pins. Both paths
+   always come from the same acquired package; the caller rechecks them when
+   arming the race. Returns 1 when found, 0 when absent or on scan failure. */
+int CustomPackage_FindPinnedFiles(const char *assets, const char *revision, const char *uuid,
+    const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
+    char *levPath, size_t levCapacity, char *vrmPath, size_t vrmCapacity);
+/* A descriptor derived from one verified store revision. Return 1 for a
+   complete descriptor, 2 when author laps must be picked, or 0 with a reason.
+   `key` is the seed key when known; otherwise source metadata or the title
+   supplies it. Facts and pins are always measured from the owned snapshot. */
+int CustomPackage_StoreDescriptor(const char *assets, const char *pin, const char *key,
+    char *contentId, size_t contentIdSize, char *revision, size_t revisionSize,
+    char *json, size_t jsonSize, char *error, size_t errorSize);
 struct CustomTrackLibrary;
 int CustomPackage_StartStoreScan(const char *store);
 /* -1 idle, 0 running, 1 applied, -2 failed (old library retained). */

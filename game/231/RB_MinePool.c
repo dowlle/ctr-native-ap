@@ -25,11 +25,17 @@ void RB_MinePool_Init(void)
 	// boss race
 	if ((gameMode & ADVENTURE_BOSS) != 0)
 	{
-		if (sdata->gGT->levelID == DRAGON_MINES)
+		int bossLevel = sdata->gGT->levelID;
+#ifdef CTR_AP
+		// #169: the pool size belongs to the boss's inherited attack, so a
+		// shuffled venue keeps its garage's home-track pool.
+		bossLevel = AP_BossRetailRulesLevel(bossLevel);
+#endif
+		if (bossLevel == DRAGON_MINES)
 		{
 			numMines = 3;
 		}
-		if (sdata->gGT->levelID == ROO_TUBES)
+		if (bossLevel == ROO_TUBES)
 		{
 			numMines = 7;
 		}

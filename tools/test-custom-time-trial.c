@@ -143,6 +143,7 @@ int RaceFlag_IsFullyOffScreen(void) { return 0; }
 void RaceFlag_BeginTransition(int direction) { (void)direction; }
 void RaceFlag_ResetTextAnim(void) {}
 void CustomTrack_CortexTrackOnRequestLoad(int levelID) { (void)levelID; }
+void CustomTrack_OnRaceLoadRequested(int levelID) { (void)levelID; }
 void RR_EndEvent_UnlockAward(void) {}
 void OtherFX_Stop2(int soundID_count) { (void)soundID_count; }
 void SubmitName_RestoreName(s16 param_1) { (void)param_1; }
