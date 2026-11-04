@@ -252,6 +252,8 @@ and upload steps are scoped to a complete two-platform release in section 7.
 
 ## 5. Tag
 
+- [ ] Tag only the exact native commit whose `Release rehearsal` check passed,
+      using the apworld commit selected by that rehearsal for the pair.
 - [ ] Same tag `vX.Y.Z` on BOTH repos at the exact release commits, pushed.
       The player-facing GitHub release lives on this repo only; the apworld
       tag exists for traceability.
