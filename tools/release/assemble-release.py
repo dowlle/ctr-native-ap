@@ -169,6 +169,9 @@ def unpack_artifact(
         "SETUP.md",
         "LICENSE",
         "THIRD_PARTY_NOTICES.md",
+        # Vendored code licenses shipped beside the client (package-client.py).
+        "LICENSE-xdelta3.txt",
+        "LICENSE-utf8proc.md",
         "default_controls.ini",
         "BUILD.json",
         "BUILD-NOTICE.txt",
@@ -591,6 +594,15 @@ def assemble(args: argparse.Namespace) -> list[Path]:
             fail("versions.txt does not carry the requested build identity")
         (temp / "versions.txt").write_text(versions, encoding="utf-8")
         bundle_common = [*common, temp / "versions.txt"]
+        # The player client vendors xdelta3 and utf8proc for the patch importer;
+        # their licenses ship beside it under the names package-client.py uses.
+        vendor_licenses = [
+            (source / "vendor" / "xdelta3" / "LICENSE", "LICENSE-xdelta3.txt"),
+            (source / "vendor" / "utf8proc" / "LICENSE.md", "LICENSE-utf8proc.md"),
+        ]
+        for path, _ in vendor_licenses:
+            if not path.is_file():
+                fail(f"missing release companion file: {path}")
         if not (source / "support-bundle.sh").is_file():
             fail("missing release companion file: support-bundle.sh")
         windows_assets = staged["windows"][2]
@@ -603,12 +615,14 @@ def assemble(args: argparse.Namespace) -> list[Path]:
         windows_files = [
             (staged["windows"][0], "ctr_native_ap.exe"),
             *((path, path.name) for path in [*bundle_common, *helper]),
+            *vendor_licenses,
             *windows_assets,
         ]
         linux_files = [
             (staged["linux"][0], "ctr_native_ap"),
             *((path, path.name) for path in bundle_common),
             (source / "support-bundle.sh", "support-bundle.sh"),
+            *vendor_licenses,
             *linux_assets,
         ]
         # The solo runtime (#89) ships inside both client archives, so the
