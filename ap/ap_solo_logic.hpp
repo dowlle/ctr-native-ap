@@ -14,6 +14,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
@@ -434,6 +435,7 @@ struct APSoloOption
 	std::string name, label, group, kind, doc;
 	std::vector<std::string> choices; // choice names, in value order
 	int lo = 0, hi = 0;               // range
+	int step = 1;                     // range: how far Left / Right move (overlay rule "step")
 	std::string value;                // shown and passed as --set name=value
 	std::string initial;              // the preset's value
 	std::string forced;               // non-empty: fixed to this value
@@ -452,6 +454,49 @@ static inline std::string AP_SoloValueText(const nlohmann::json &v)
 	if (v.is_string())
 		return v.get<std::string>();
 	return std::string();
+}
+
+// Option help as the apworld writes it is hard-wrapped Markdown. The help page
+// wraps by width, so single line breaks become spaces, a blank line or a list
+// item starts a new line, and the Markdown marks (** and `) are dropped.
+static inline std::string AP_SoloHelpText(const std::string &doc)
+{
+	std::string out;
+	size_t i = 0;
+	while (i < doc.size())
+	{
+		size_t end = doc.find('\n', i);
+		if (end == std::string::npos)
+			end = doc.size();
+		std::string line = doc.substr(i, end - i);
+		i = end + 1;
+		std::string clean;
+		for (size_t k = 0; k < line.size(); k++)
+		{
+			if (line[k] == '`' || (line[k] == '*' && k + 1 < line.size() && line[k + 1] == '*'))
+			{
+				if (line[k] == '*')
+					k++;
+				continue;
+			}
+			clean += line[k];
+		}
+		size_t b = clean.find_first_not_of(" \t"), e = clean.find_last_not_of(" \t\r");
+		if (b == std::string::npos)
+		{
+			if (!out.empty() && out.back() != '\n')
+				out += '\n';
+			continue;
+		}
+		clean = clean.substr(b, e - b + 1);
+		const bool item = clean.size() > 1 && (clean[0] == '-' || clean[0] == '*') && clean[1] == ' ';
+		if (!out.empty() && out.back() != '\n')
+			out += item ? '\n' : ' ';
+		out += clean;
+	}
+	while (!out.empty() && out.back() == '\n')
+		out.pop_back();
+	return out;
 }
 
 // Build the rows. Options the overlay names but the world lacks are skipped
@@ -491,7 +536,7 @@ static inline std::vector<APSoloOption> AP_SoloBuildOptions(const nlohmann::json
 			row.label = f.value("display_name", row.name);
 			row.group = group;
 			row.kind = f.value("kind", std::string());
-			row.doc = f.value("doc", std::string());
+			row.doc = AP_SoloHelpText(f.value("doc", std::string()));
 			if (row.kind == "named_range")
 				row.kind = "range";
 			if (row.kind == "text_choice")
@@ -521,6 +566,10 @@ static inline std::vector<APSoloOption> AP_SoloBuildOptions(const nlohmann::json
 					row.forcedReason = r.value("reason", std::string());
 					row.value = row.forced;
 				}
+				if (r.contains("label") && r["label"].is_string() && !r["label"].get<std::string>().empty())
+					row.label = r["label"].get<std::string>();
+				if (r.contains("step") && r["step"].is_number_integer())
+					row.step = std::max(1, r["step"].get<int>());
 				if (r.contains("visible_when"))
 					row.visibleWhen = r["visible_when"];
 				if (r.contains("warn_when"))
@@ -611,11 +660,14 @@ static inline void AP_SoloOptionStep(APSoloOption &row, int direction)
 	}
 	else if (row.kind == "range" && row.hi >= row.lo)
 	{
-		long long v = std::strtoll(row.value.c_str(), nullptr, 10) + (direction > 0 ? 1 : -1);
-		if (v > row.hi)
-			v = row.lo;
-		if (v < row.lo)
-			v = row.hi;
+		// Moves by `step`, stops at the ends of the range and wraps from one
+		// end to the other, so a value off the step grid still reaches both.
+		long long v = std::strtoll(row.value.c_str(), nullptr, 10);
+		const long long step = row.step > 0 ? row.step : 1;
+		if (direction > 0)
+			v = v >= row.hi ? row.lo : std::min<long long>(v + step, row.hi);
+		else
+			v = v <= row.lo ? row.hi : std::max<long long>(v - step, row.lo);
 		row.value = std::to_string(v);
 	}
 }

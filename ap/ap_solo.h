@@ -78,6 +78,7 @@ struct APSoloOptionInfo
 	int kind;
 	int visible;
 	int forced;                 /* greyed, value fixed */
+	int changed;                /* the value differs from the preset's */
 	char note[AP_SOLO_TEXT];    /* forced reason or a warning */
 };
 

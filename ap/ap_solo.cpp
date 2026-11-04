@@ -1330,6 +1330,7 @@ extern "C" int AP_Solo_OptionGet(int index, struct APSoloOptionInfo *out)
 	out->kind = o.kind == "toggle" ? AP_SOLO_OPT_TOGGLE : o.kind == "choice" ? AP_SOLO_OPT_CHOICE : AP_SOLO_OPT_RANGE;
 	out->visible = AP_SoloOptionVisible(g_options, o) ? 1 : 0;
 	out->forced = o.forced.empty() ? 0 : 1;
+	out->changed = o.value != o.initial ? 1 : 0;
 	if (!o.forced.empty())
 		CopyText(out->note, sizeof out->note, o.forcedReason);
 	else if (AP_SoloOptionWarns(g_options, o))
