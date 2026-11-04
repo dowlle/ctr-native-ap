@@ -29,11 +29,15 @@
 namespace content_verify {
 using J = nlohmann::json;
 
-// worlds/ctr/data/usf_finish_rulings.json, by package content id: 1 needs USF
-// to finish, 0 takes the generic terms only. tools/test-content-verify-parity.py
-// compares this table with the paired apworld's.
-static const struct { const char *content_id; int usf; } kUsfRulings[] = {
-    {"arabian-heights-night", 1}, {"baby-t-park", 0}, {"cortex-vortex", 1}, {"north-pole", 0}, {"tv-world", 0},
+// worlds/ctr/data/usf_finish_rulings.json: the finish rank (2 USF, 1 the
+// first boost, 0 the generic terms only) by package content id. A row with a
+// revision ("" for every revision) also names the LEV pin and covers only that
+// exact package; it wins over the row for every revision (A2-22).
+// tools/test-content-plan-parity.py compares this table with the paired
+// apworld's.
+static const struct { const char *content_id, *revision, *lev_sha256; int rank; } kUsfRulings[] = {
+    {"arabian-heights-night", "", "", 2}, {"baby-t-park", "", "", 0}, {"cortex-vortex", "", "", 2},
+    {"north-pole", "", "", 0}, {"tv-world", "", "", 0},
 };
 static const int64_t kItemBase = 35010000, kKeyItem = 35010014;
 static const int64_t kItemsanityFirst = 35016000, kItemsanityLast = 35016021;
@@ -123,8 +127,14 @@ static int finish_boost(const J &track, const std::map<std::string, const J *> &
     }
     const J *pkg = packages.count(track.value("package_id", "")) ? packages.at(track.value("package_id", "")) : nullptr;
     if (pkg) {
-        const std::string content = pkg->value("content_id", "");
-        for (const auto &r : kUsfRulings) if (content == r.content_id) return r.usf ? kUsf : 0;
+        const std::string content = pkg->value("content_id", ""), revision = pkg->value("revision", "");
+        std::string lev;
+        for (const auto &pin : pkg->at("files"))
+            if (pin.value("role", "") == "lev") lev = pin.value("sha256", "");
+        for (const auto &r : kUsfRulings)
+            if (*r.revision && !lev.empty() && content == r.content_id && revision == r.revision && lev == r.lev_sha256)
+                return r.rank;
+        for (const auto &r : kUsfRulings) if (!*r.revision && content == r.content_id) return r.rank;
         const J &caps = pkg->at("capabilities");
         // A package that does not state super_turbo_pads is treated as having one.
         if (caps.contains("super_turbo_pads") && caps["super_turbo_pads"] == false) return 0;

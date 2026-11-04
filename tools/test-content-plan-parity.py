@@ -2041,7 +2041,8 @@ for name, change in [
 # The verifier's copy of the per-track USF finish rulings (#133 PR 8,
 # ap/ap_content_verify.hpp kUsfRulings) equals the apworld's table.
 from worlds.ctr import content_capability as ccap
-native_rulings = {k: v == "1" for k, v in re.findall(r'\{"([a-z0-9-]+)", ([01])\}',
+native_rulings = {(k, r or None, h or None): int(v) for k, r, h, v in re.findall(
+                  r'\{"([a-z0-9-]+)", "([^"]*)", "([0-9a-f]*)", ([012])\}',
                   re.search(r"kUsfRulings\[\] = \{(.*?)\};", (root / "ap/ap_content_verify.hpp").read_text(), re.S)[1])}
 assert native_rulings == ccap.USF_FINISH_RULINGS, (native_rulings, ccap.USF_FINISH_RULINGS)
 # Row 10i parity fixes: Reach 10 Wumpa from cup legs and boss races, rungs
