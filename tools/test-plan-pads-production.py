@@ -83,7 +83,7 @@ assert "if(openOnly && !AP_ContentModeOpen(pad,pad->modes[n]))continue;" in body
 
 # Item 6, stakes through the exported logic on a plan room.
 parse = seedcfg[seedcfg.index("content_result = parse_content_plan(j);"):]
-parse = parse[:parse.index("if (content_result != 1)")]
+parse = parse[:parse.index("\n}\n")]
 assert "if (content_result == 2)\n\t\tap_seedcfg_parse_win_logic(j);" in parse
 decide = body(winlogic, "static int AP_WinDecideContent(")
 assert "AP_ContentWinSet(set)" in decide and "AP_WinStakesDecide(&ctr_win_logic, &env, set, n)" in decide

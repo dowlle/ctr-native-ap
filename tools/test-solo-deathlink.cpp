@@ -6,7 +6,7 @@
 // ap/ap_race_attempt_logic.h.
 //
 // Build + run (from the repo root):
-//   g++ -m32 -std=c++17 -DCTR_AP \
+//   g++ -m32 -std=c++17 -DCTR_AP -DCTR_CUSTOM_TRACKS \
 //       -Itools/harness-support/apclient_mock -Iap/vendor/json/include \
 //       tools/test-solo-deathlink.cpp ap/ap_seedcfg.cpp \
 //       -lssl -lcrypto -pthread -o /tmp/test-solo-deathlink && /tmp/test-solo-deathlink
@@ -18,7 +18,6 @@
 //      bounced death does not reach the game, and all three work outside one,
 //   3. the frame a session ends, the tag can be declared again.
 
-#define AP_NET_TEST_PLANLESS_ROOMS
 #include "../ap/ap_net.cpp"
 
 extern "C"
@@ -30,6 +29,7 @@ extern "C"
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -89,6 +89,22 @@ static APClient *start(void)
 	return g_ap;
 }
 
+// A content plan room (one generator: the client admits nothing else) with the
+// DeathLink envelope keys under test. The mock reports the plan's checks as the
+// room's locations, so the plan binds to the room.
+static nlohmann::json plan_room(APClient *m)
+{
+	std::ifstream in("tools/fixtures/content-plan/baseline.json");
+	nlohmann::json d = nlohmann::json::parse(in);
+	d["ctr_options"]["death_link"] = 3;
+	d["ctr_options"]["death_link_send"] = 7;
+	std::set<int64_t> ids;
+	for (const auto &check : d["content_plan"]["checks"])
+		ids.insert(check["location"].get<int64_t>());
+	m->test_set_missing(ids);
+	return d;
+}
+
 static int g_solo = 0;
 
 static int solo_query(void)
@@ -111,7 +127,7 @@ static void test_wire(int solo)
 		return;
 	m->emit_socket_connected();
 	m->emit_room_info();
-	m->emit_slot_connected(nlohmann::json{{"ctr_options", {{"death_link", 3}, {"death_link_send", 7}}}});
+	m->emit_slot_connected(plan_room(m));
 	m->calls.reset();
 
 	ap_net_deathlink_enable();

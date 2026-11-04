@@ -14,6 +14,7 @@
 //   * refs resolve to their check, a ref whose target itself has a ref refuses.
 
 #include <cstdio>
+#include <fstream>
 #include <cstring>
 #include <string>
 #include <nlohmann/json.hpp>
@@ -50,7 +51,9 @@ static void expect_int(long got, long want, const char *name)
 
 static nlohmann::json seed_with(const nlohmann::json *block)
 {
-	nlohmann::json j = {{"ctr_options", {{"schema_version", 16}, {"death_link", 3}}}};
+	std::ifstream input("tools/fixtures/content-plan/global-checks.json");
+	nlohmann::json j; input >> j;
+	j.erase("win_logic");
 	if (block)
 		j["win_logic"] = *block;
 	return j;

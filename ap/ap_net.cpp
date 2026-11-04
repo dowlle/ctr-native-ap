@@ -921,18 +921,15 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			ap_net_refuse_seed(ap_seedcfg_reject_reason());
 			return;
 		}
-#ifndef AP_NET_TEST_PLANLESS_ROOMS
-		// One generator row 7: every 0.3.0 room carries a content plan, so a room
-		// without one comes from v0.2.x. Row 12 deletes the reader behind this
-		// and the test define.
+		// One generator: every 0.3.0 room carries a content plan, so a room
+		// without one comes from v0.2.x. Its reader was deleted in row 12; the
+		// parser leaves such a room inactive and it is refused here.
 		if (!ap_content_plan_present())
 		{
 			ap_seedcfg_reject_late("This room was made with v0.2.x. Play it on the v0.2.4 client.");
 			ap_net_refuse_seed(ap_seedcfg_reject_reason());
 			return;
 		}
-#endif
-		if (ap_content_plan_present())
 		{
 			std::set<int64_t> locations = g_ap->get_checked_locations();
 			const std::set<int64_t> missing = g_ap->get_missing_locations();

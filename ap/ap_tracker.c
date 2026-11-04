@@ -790,7 +790,6 @@ static void AP_TrackerDraw(void)
 		const ctr_content_pad *plan=ap_content_plan_active()&&n->physical>=0?ap_content_plan_pad(n->physical):NULL;
 		int boxes=plan?(plan->cup?ap_content_cup_box_pending(plan,ap_content_plan_pad,AP_ContentCodeChecked):ap_content_box_pending(plan,AP_ContentCodeChecked)):AP_PadUncollectedBoxCount(n->destination), letters=0, k;
 		if(plan) { for(k=0;k<3;k++) letters+=plan->letter_locations[k]>0 && !AP_ContentCodeChecked(plan->letter_locations[k]); }
-		else letters=AP_PadUncollectedLetterCount(n->destination);
 		if(plan) remaining-=boxes+letters; /* the plan's list holds both */
 		snprintf(line,sizeof line,"%s: %d RACE CHECKS, %d BOXES, %d LETTERS LEFT",n->title,remaining,boxes,letters);
 	} else snprintf(line,sizeof line,"CHECK: O PENDING / TICK DONE    LETTER: ORANGE OWNED / LOCK NEEDED / - OFF%s",ap_net_is_connected()?"":"    OFFLINE");

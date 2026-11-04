@@ -940,21 +940,8 @@ static inline int AP_CustomLetterNamedBlock(void)
 	return ctr_cfg.custom_tracks_ok ? ctr_cfg.custom_track.named_block : -1;
 }
 
-// Is a warp pad's stage-1 LOAD gate satisfied? levelID is the PHYSICAL pad. When
-// active and the pad has a per-seed requirement (type != 0), compares owned >=
-// count for that requirement (colour-aware for tokens/gems). Otherwise falls back
-// to that pad class's Phase-1 rule. Accepts BOTH the dense-array pads (0..27,
-// vanilla fallback = received trophies >= numTrophiesToOpen) and cup pads
-// (100..104 -> gem_cup_unlock[phys-100], vanilla fallback = 4 tokens of the cup's
-// colour) -- required because under destination shuffle a race destination can be
-// hosted on a cup PHYSICAL pad, and ThTick's load gate then calls this with a
-// physical cup LevelID. Used by the load-time gate in AH_WarpPad_ThTick so the
-// spawn visual and the load gate read one source.
-//
-// IMPLEMENTED C-SIDE in ap_hooks.c (not ap_seedcfg.cpp): it needs AP_GateCount*
-// (received-item counters live in the C unity build) and the per-track
-// numTrophiesToOpen threshold from data.metaDataLEV[] for the Phase-1 fallback,
-// neither of which is reachable from the isolated C++ static lib.
+// Physical content-plan pad entry. Without an AP room, retains the retail
+// trophy/cup threshold for compatibility with inactive diagnostic callers.
 int ctr_cfg_warp_unlocked(int levelID);
 
 // The ENGINE character id a physical pad demands, or -1 when it carries no
@@ -968,25 +955,9 @@ int ctr_cfg_racer_lock(int physPadLevelID);
 // without re-deriving the rule. IMPLEMENTED C-SIDE in ap_hooks.c.
 int ctr_cfg_racer_lock_met(int physPadLevelID);
 
-// Is a trophy-track warp pad's STAGE-2 satisfied (open the relic Time Trials +
-// CTR Token Challenge menu)? When active and the pad has a stage2 requirement
-// (type != 0), compares owned >= count for stage2 (colour-aware for tokens/gems
-// via AP_BossReqMet). type 0 (no stage2 / collapsed / flat-v1 slot_data) returns
-// 1 (always open) so the tier-2 menu opens as soon as stage1 is met -- exactly
-// the pre-two-stage behaviour. physPadLevelID is the PHYSICAL pad LevelID, the
-// same key ctr_cfg_warp_unlocked uses. Accepts cup pads 100..104
-// (-> gem_cup_unlock[phys-100].stage2): under `merged` shuffle a cup PHYSICAL pad
-// can host a trophy-race destination, which per the contract §2 stage-2 rule
-// carries a real stage2, so the cup pad's stage2 must be honoured here.
-// IMPLEMENTED C-SIDE in ap_hooks.c.
+// Whether the physical plan pad's stage-2 item mask is satisfied. The mode
+// selector also requires the pad's first race check. No plan means no stage 2.
 int ctr_cfg_warp_stage2_unlocked(int physPadLevelID);
-
-// The stage-2 requirement record for a physical pad, or NULL when it has none
-// (type 0 / invalid id / slot_data inactive). Single source for the stage-2
-// key logic: dense pads 0..27 via warp_pad_unlock, cup pads 100..104 via
-// gem_cup_unlock. ctr_cfg_warp_stage2_unlocked and the LInB re-lock advert
-// both resolve through it. IMPLEMENTED C-SIDE in ap_hooks.c.
-const ctr_req *ctr_cfg_warp_stage2_req(int physPadLevelID);
 
 // Slide Coliseum (trial pad 16) stage-1 requirement. The retail gate is 10
 // Sapphire Relics (CTR_CFG_SLIDE_COLISEUM_RETAIL_SAPPHIRES), which native applies
