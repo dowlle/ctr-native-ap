@@ -16,6 +16,13 @@
 // AP_WumpaShopGreenMenuRow's answer when the row was the shop's own.
 #define AP_WSHOP_GREEN_HANDLED (-2)
 
+// A new visit starts on the first visible row. Without a shop, keep the
+// retail opening cursor (SAVE).
+static inline int AP_WumpaShopOpeningRow(int retailRow, int shopShown)
+{
+	return shopShown ? AP_WSHOP_GREEN_SHOP : retailRow;
+}
+
 // The rows as MenuRow initialisers {stringIndex, up, down, left, right}. Same
 // wiring as retail: up and down step, left and right stay.
 #define AP_WSHOP_GREEN_ROWS_INIT                                   \

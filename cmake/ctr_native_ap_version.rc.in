@@ -1,0 +1,30 @@
+// Explorer file properties for the shipped Archipelago player executable.
+// Both values are configured from ap/ap_version.h by CMake.
+1 VERSIONINFO
+FILEVERSION @CTR_AP_FILE_VERSION_NUMERIC@
+PRODUCTVERSION @CTR_AP_FILE_VERSION_NUMERIC@
+FILEFLAGSMASK 0x3fL
+FILEFLAGS 0x0L
+FILEOS 0x40004L
+FILETYPE 0x1L
+FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "Dowlle\0"
+            VALUE "ProductName", "CTR Archipelago\0"
+            VALUE "FileDescription", "CTR Archipelago client\0"
+            VALUE "OriginalFilename", "ctr_native_ap.exe\0"
+            VALUE "InternalName", "ctr_native_ap\0"
+            VALUE "LegalCopyright", "Copyright (C) CTR Archipelago contributors; GPL-3.0\0"
+            VALUE "ProductVersion", "@CTR_AP_FILE_VERSION_STRING@\0"
+            VALUE "FileVersion", "@CTR_AP_FILE_VERSION_STRING@\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

@@ -54,7 +54,10 @@ int main(void)
 		ok &= AP_WumpaShopGreenToRetail(k + 1) == k && AP_WumpaShopRetailToGreen(k) == k + 1;
 	CHECK("rows 1 to 4 are retail rows 0 to 3, both ways", ok);
 	CHECK("a backed-out row stays -1", AP_WumpaShopGreenToRetail(-1) == -1 && AP_WumpaShopRetailToGreen(-1) == -1);
-	CHECK("the retail cursor on SAVE lands on SAVE", rows[AP_WumpaShopRetailToGreen(1)].stringIndex == 0xCC);
+	CHECK("a shop visit opens on WUMPA SHOP", AP_WumpaShopOpeningRow(1, 1) == 0 &&
+	      rows[AP_WumpaShopOpeningRow(1, 1)].stringIndex == AP_LNG_WUMPA_SHOP);
+	CHECK("a second shop visit also opens on WUMPA SHOP", AP_WumpaShopOpeningRow(3, 1) == 0);
+	CHECK("without a shop, the retail opening cursor stays on SAVE", AP_WumpaShopOpeningRow(1, 0) == 1);
 
 	AP_WumpaHubLine(line, (int)sizeof line, 120, 340);
 	CHECK("hub line: WUMPA and COLLECTED", strcmp(line, "WUMPA 120  COLLECTED 340") == 0);

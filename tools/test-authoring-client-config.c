@@ -57,7 +57,7 @@ int main(void)
 		"box_author", "nav_record", "nav_use_recorded", "nav_driver_name", NULL};
 	static const char *const absent[] = {
 		"uri", "slot", "password", "skip_hints", "skip_podium", "skip_cutscenes",
-		"ai_difficulty", "map_flash", "item_box_colours", "death_link",
+		"ai_difficulty", "map_flash", "item_feed", "item_box_colours", "death_link",
 		"trap_duration", "update_check", "discord_status", NULL};
 	const int numPages = CTR_MenuBuildPages(g_configEntries, g_numConfigEntries,
 		s_names, s_rows, s_counts);

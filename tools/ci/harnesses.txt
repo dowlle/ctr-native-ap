@@ -31,6 +31,7 @@ tools/test-cup-box-policy.c
 tools/test-cup-sweeps.cpp
 tools/test-cup-sweeps-production.py
 tools/test-current-seed-page-production.py
+tools/test-custom-content-layout.c
 tools/test-custom-content-verify.c
 tools/test-custom-export-facts.c
 tools/test-custom-identity.c
@@ -158,6 +159,7 @@ tools/test-saphi-catalogue.cpp
 tools/test-seed-content.c
 tools/test-seed-content-download-production.py
 tools/test-seed-content-hooks-production.py
+tools/test-solo-layout.c
 tools/test-solo-logic.cpp
 tools/test-spu-memory.c
 tools/test-stat-ladder.c

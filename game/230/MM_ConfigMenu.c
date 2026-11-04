@@ -169,6 +169,23 @@ static const ConfigEntry *Section_Entry(int sec, int row)
 
 static int s_currentSection = -1; // -1 = section selector, 0+ = submenu
 
+// A page with more rows than fit above the two help lines (0xB8) scrolls: nine
+// rows from CONFIG_ROW_START_Y show at a time. The Archipelago page has eleven
+// config rows since Item Feed (2026-11-03), twelve with Room links.
+#define CONFIG_PAGE_WINDOW 9
+static int s_configTop;
+static void Config_KeepInView(int selected, int pageRows)
+{
+	if (selected < s_configTop)
+		s_configTop = selected;
+	if (selected >= s_configTop + CONFIG_PAGE_WINDOW)
+		s_configTop = selected - CONFIG_PAGE_WINDOW + 1;
+	if (s_configTop > pageRows - CONFIG_PAGE_WINDOW)
+		s_configTop = pageRows - CONFIG_PAGE_WINDOW;
+	if (s_configTop < 0)
+		s_configTop = 0;
+}
+
 // Row geometry and option-row helpers shared with the Controls page
 // (MM_ControlsConfig.c, ported from CTR Native Expanded by thecodingbob, PR 54
 // and PR 70). The values are the ones every page of this menu already uses.
@@ -603,6 +620,11 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 	{
 		first = "When race pads ask which race.";
 		second = "SEED uses the seed's setting.";
+	}
+	if (e->valuePtr == &g_config.itemFeed)
+	{
+		first = "Items sent and received,";
+		second = "shown at the bottom left.";
 	}
 	if (first == 0)
 		return;
@@ -1147,6 +1169,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 #if defined(CTR_CUSTOM_TRACKS) && !defined(CTR_AP_AUTHORING)
 #include "MM_CustomImport.c" // xdelta importer on Custom Content, not Track Library (decision 35)
 #include "MM_CurrentSeed.c" // content-plan rooms: the Current Seed tab (#133 PR 7)
+#include "MM_CustomContentView.c" // the package page's layout (Deck menu scan, 2026-11-03)
 #define CUSTOM_CONTENT_ACTION_COUNT 8
 #define CUSTOM_CONTENT_ACTION_ROWS 4
 static const char *const s_customContentActions[CUSTOM_CONTENT_ACTION_COUNT] = {
@@ -1326,7 +1349,7 @@ static void RelicTimes_DrawEditor(uint32_t *ot)
 	char text[32];
 	for (t = 0; t < 3; t++)
 	{
-		int y = 0x78 + t * 0x14;
+		int y = CC_VIEW_ACTION_Y + t * 0x10;
 		int centis = s_relicEditCentis[t];
 		DecalFont_DrawLineOT((char *)s_relicTierNames[t], 0xC8, y, FONT_SMALL, JUSTIFY_RIGHT | ORANGE, ot);
 		snprintf(text, sizeof text, "%d%d:%d%d.%d%d", RelicTime_Digit(centis, 0), RelicTime_Digit(centis, 1),
@@ -1352,48 +1375,6 @@ static void CustomContent_SetMessage(const char *message)
 		len = sizeof s_customContentMessage - 1;
 	memcpy(s_customContentMessage, message, len);
 	s_customContentMessage[len] = '\0';
-}
-
-static void CustomContent_DrawMessage(uint32_t *ot)
-{
-	char first[35];
-	char second[35];
-	const char *cursor = s_customContentMessage;
-	int line;
-
-	for (line = 0; line < 2 && *cursor != '\0'; line++)
-	{
-		char *out = line == 0 ? first : second;
-		int count = 0;
-		int lastSpace = -1;
-
-		while (cursor[count] != '\0' && count < 34)
-		{
-			out[count] = cursor[count];
-			if (cursor[count] == ' ')
-				lastSpace = count;
-			count++;
-		}
-		if (cursor[count] != '\0' && lastSpace > 0)
-			count = lastSpace;
-		out[count] = '\0';
-		cursor += count;
-		while (*cursor == ' ')
-			cursor++;
-	}
-	if (line == 2 && *cursor != '\0')
-	{
-		int len = (int)strlen(second);
-		if (len > 30)
-			len = 30;
-		memcpy(second + len, "...", 4);
-	}
-
-	DecalFont_DrawLineOT(first, 0x100, 0xB8, FONT_SMALL,
-	                   JUSTIFY_CENTER | (AP_CustomContentRequired() ? RED : WHITE), ot);
-	if (line > 1)
-		DecalFont_DrawLineOT(second, 0x100, 0xC6, FONT_SMALL,
-		                   JUSTIFY_CENTER | (AP_CustomContentRequired() ? RED : WHITE), ot);
 }
 
 static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
@@ -1555,18 +1536,6 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 	}
 
 	status = AP_CustomContentStatus();
-	DecalFont_DrawLineOT("Custom Content", 0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
-	DecalFont_DrawLineOT((char *)package->title, 0x100, 0x36,
-	                   FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-	snprintf(line, sizeof line, "v%s  |  %s  |  Project Saphi", package->version, package->author);
-	DecalFont_DrawLineOT(line, 0x100, 0x48, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-	snprintf(line, sizeof line, "Status: %s  |  Seed: %s",
-	         downloadState == AP_CT_DOWNLOAD_RUNNING ? "Downloading" : CustomTrackManager_StateText(status->state),
-	         AP_CustomContentSeedSelected()
-	             ? (AP_CustomContentRequired() ? "REQUIRED" : "READY")
-	             : "OPTIONAL");
-	DecalFont_DrawLineOT(line, 0x100, 0x5A, FONT_SMALL, JUSTIFY_CENTER |
-	                   (AP_CustomContentRequired() ? RED : ORANGE), ot);
 	if (!package->flagRelicCrates)
 		snprintf(line, sizeof line, "Relic times: no relic crates");
 	else if (!s_relicShown.set)
@@ -1577,32 +1546,28 @@ static void MM_ConfigProc_CustomContent(struct RectMenu *menu, uint32_t *ot, str
 		for (i = 0; i < 3; i++)
 			RelicTime_Format(CustomTrackManager_RelicCentisFromTicks(s_relicShown.ticks[i]), times[i],
 			                 sizeof times[i]);
-		snprintf(line, sizeof line, "Relic times: %s / %s / %s", times[0], times[1], times[2]);
+		/* "Relics:", not "Relic times:": three times only fit the page that way. */
+		snprintf(line, sizeof line, "Relics: %s / %s / %s", times[0], times[1], times[2]);
 	}
-	DecalFont_DrawLineOT(line, 0x100, 0x68, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-
-	if (s_relicEditOpen)
 	{
-		RelicTimes_DrawEditor(ot);
-		CustomContent_DrawMessage(ot);
-		return;
+		struct CustomContentView view;
+		view.title = package->title;
+		view.version = package->version;
+		view.author = package->author;
+		view.state = downloadState == AP_CT_DOWNLOAD_RUNNING ? "Downloading" : CustomTrackManager_StateText(status->state);
+		view.seed = AP_CustomContentSeedSelected() ? (AP_CustomContentRequired() ? "REQUIRED" : "READY") : "OPTIONAL";
+		view.required = AP_CustomContentRequired();
+		view.relic = line;
+		view.message = s_customContentMessage;
+		view.actions = s_customContentActions;
+		view.actionCount = CUSTOM_CONTENT_ACTION_COUNT;
+		view.actionRows = CUSTOM_CONTENT_ACTION_ROWS;
+		view.selected = menu->rowSelected;
+		view.editing = s_relicEditOpen;
+		if (s_relicEditOpen)
+			RelicTimes_DrawEditor(ot);
+		CustomContentView_Draw(&view, ot);
 	}
-	for (i = 0; i < CUSTOM_CONTENT_ACTION_COUNT; i++)
-	{
-		int column = i / CUSTOM_CONTENT_ACTION_ROWS;
-		int row = i % CUSTOM_CONTENT_ACTION_ROWS;
-		int x = column == 0 ? 0x38 : 0x118;
-		int y = 0x78 + row * 0x10;
-		DecalFont_DrawLineOT((char *)s_customContentActions[i], x, y, FONT_SMALL, ORANGE, ot);
-		if (i == menu->rowSelected)
-		{
-			RECT sel = {column == 0 ? 0x30 : 0x110, y - 2, 0xC0, 0x0C};
-			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
-		}
-	}
-
-	CustomContent_DrawMessage(ot);
-	DecalFont_DrawLineOT("Select: Import track files", 0x100, 0x68, FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
 }
 #endif
 #endif // CTR_AP
@@ -1852,6 +1817,8 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			OtherFX_Play(0, 1);
 		}
 
+		Config_KeepInView(menu->rowSelected, pageRows);
+
 		// The selected config entry; NULL on the Room links action row.
 		const ConfigEntry *selEntry = (menu->rowSelected < numRows) ? Section_Entry(sec, menu->rowSelected) : NULL;
 
@@ -1877,7 +1844,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 #ifdef CTR_AP
 			else if (e->type == CFG_STRING)
 				TextEdit_Begin(e, menu->rowSelected,
-					CONN_ROW_START_Y + menu->rowSelected * CONN_ROW_SPACING - 2);
+					CONN_ROW_START_Y + (menu->rowSelected - s_configTop) * CONN_ROW_SPACING - 2);
 #endif
 		}
 
@@ -1943,10 +1910,10 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		int startY = 0x3C;
 		int rowSpacing = 0x0E;
 
-		for (int j = 0; j < numRows; j++)
+		for (int j = s_configTop; j < numRows && j < s_configTop + CONFIG_PAGE_WINDOW; j++)
 		{
 			const ConfigEntry *e = Section_Entry(sec, j);
-			int y = startY + j * rowSpacing;
+			int y = startY + (j - s_configTop) * rowSpacing;
 #ifdef CTR_AP
 			const int editing = s_connEditing && s_connEditEntry == e;
 #else
@@ -1967,9 +1934,9 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			}
 		}
 #ifdef CTR_AP
-		if (linkRow >= 0)
+		if (linkRow >= 0 && linkRow >= s_configTop && linkRow < s_configTop + CONFIG_PAGE_WINDOW)
 		{
-			int y = startY + linkRow * rowSpacing;
+			int y = startY + (linkRow - s_configTop) * rowSpacing;
 			Config_DrawLinkRow(y, labelX, valueX, ot);
 			if (menu->rowSelected == linkRow)
 			{

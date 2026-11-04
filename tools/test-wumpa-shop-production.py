@@ -122,8 +122,19 @@ ui = text('ap/ap_wumpa_shop_ui.c')
 check('the shop rows come from the WUMPA SHOP first table',
       'ap_wshop_green_rows[AP_WSHOP_GREEN_ROWS + 1] = AP_WSHOP_GREEN_ROWS_INIT;' in ui)
 prep = body(ui, 'void AP_WumpaShopPrepareGreenMenu(')
-check('the save screen cursor (retail SAVE) moves with the shop row on every visit',
-      'menu->rowSelected = (s16)AP_WumpaShopRetailToGreen(menu->rowSelected);' in prep and 'menu->rows != ap_wshop_green_rows' not in prep)
+check('the save screen opens on its first visible row on every visit',
+      'menu->rowSelected = (s16)AP_WumpaShopOpeningRow(menu->rowSelected, showShop);' in prep and
+      'showShop = AP_WumpaShopRowShown();' in prep and
+      'menu->rows = ap_wshop_green_rows;' in prep and 'menu->rows = &data.rowsGreenLoadSave[0];' in prep)
+close = body(ui, 'static void AP_WShopClose(')
+frame = body(ui, 'int AP_WumpaShopMenuFrame(')
+check('leaving the shop keeps the cursor on WUMPA SHOP',
+      'rowSelected' not in close and 'rowSelected' not in frame and
+      re.search(r'if \(tap & \(BTN_TRIANGLE \| BTN_CIRCLE \| BTN_START\)\)\s*\{[^}]*AP_WShopClose\(\);\s*return 1;', frame) is not None)
+finalize = body(text('game/SelectProfile.c'), 'static void SelectProfile_FinalizeAdventure(')
+check('returning from a save selects the visible EXIT row',
+      finalize.count('data.menuGreenLoadSave.rowSelected = AP_WumpaShopGreenExitRow(&data.menuGreenLoadSave);') == 2 and
+      'return (menu != 0 && menu->rows == ap_wshop_green_rows) ? AP_WSHOP_GREEN_EXIT : 3;' in body(ui, 'int AP_WumpaShopGreenExitRow('))
 check('the shop header reads COLLECTED',
       'AP_WumpaShopHeaderLine(line, (int)sizeof line, ap_net_wumpa_balance(), ap_net_wumpa_lifetime());' in ui and
       '"ON SALE AT %d COLLECTED"' in ui and 'BANKED' not in ui)

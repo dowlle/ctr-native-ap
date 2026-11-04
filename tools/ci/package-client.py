@@ -35,7 +35,55 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def verify(platform, exe):
+def require_version_resource(pe):
+    """Require a nonempty RT_VERSION (16) in a PE32 executable's resource tree."""
+    try:
+        pe_header = struct.unpack_from('<I', pe, 0x3c)[0]
+        sections = struct.unpack_from('<H', pe, pe_header + 6)[0]
+        optional_size = struct.unpack_from('<H', pe, pe_header + 20)[0]
+        resource_rva = struct.unpack_from('<I', pe, pe_header + 24 + 96 + 16)[0]
+        if not resource_rva:
+            raise ValueError('Windows client has no VERSIONINFO resource')
+
+        def file_offset(rva):
+            for i in range(sections):
+                section = pe_header + 24 + optional_size + 40 * i
+                virtual_size, virtual_address, raw_size, raw_offset = struct.unpack_from('<IIII', pe, section + 8)
+                if virtual_address <= rva < virtual_address + max(virtual_size, raw_size):
+                    offset = raw_offset + rva - virtual_address
+                    if offset >= len(pe):
+                        break
+                    return offset
+            raise ValueError('Windows resource RVA is outside the executable')
+
+        base = file_offset(resource_rva)
+
+        def entries(relative):
+            directory = base + relative
+            named, numbered = struct.unpack_from('<HH', pe, directory + 12)
+            if named + numbered > 1024:
+                raise ValueError('Windows resource directory is malformed')
+            return [struct.unpack_from('<II', pe, directory + 16 + 8 * i)
+                    for i in range(named + numbered)]
+
+        for resource_type, child in entries(0):
+            if resource_type != 16 or not child & 0x80000000:
+                continue
+            for _, language_dir in entries(child & 0x7fffffff):
+                if not language_dir & 0x80000000:
+                    continue
+                for _, data_entry in entries(language_dir & 0x7fffffff):
+                    if data_entry & 0x80000000:
+                        continue
+                    data_rva, size = struct.unpack_from('<II', pe, base + data_entry)
+                    if size and file_offset(data_rva) + size <= len(pe):
+                        return
+    except (struct.error, IndexError) as error:
+        raise ValueError('Windows resource directory is malformed') from error
+    raise ValueError('Windows client has no VERSIONINFO resource')
+
+
+def verify(platform, exe, variant):
     debug = Path(str(exe) + '.debug')
     if not exe.is_file() or not debug.is_file():
         raise ValueError('Missing executable or exact debug sidecar')
@@ -69,6 +117,8 @@ def verify(platform, exe):
         flags = struct.unpack_from('<H', pe, offset + 24 + 70)[0]
         if flags & 0x140 != 0x140:
             raise ValueError('Windows ASLR/NX flags missing')
+        if variant == 'ap':
+            require_version_resource(pe)
         imports = re.findall(r'DLL Name:\s*(\S+)', output('objdump', '-p', str(exe)))
         system = {'advapi32.dll', 'bcrypt.dll', 'cfgmgr32.dll', 'crypt32.dll',
                   'dinput8.dll', 'dwmapi.dll', 'gdi32.dll', 'hid.dll', 'imm32.dll',
@@ -103,7 +153,7 @@ def main():
     if platform not in ('windows', 'linux') or variant not in ('ap', 'vanilla', 'authoring', 'authoring-client'):
         raise ValueError('Invalid platform/configuration')
     exe, out = Path(executable), Path(destination)
-    checks = verify(platform, exe)
+    checks = verify(platform, exe, variant)
     commit = output('git', 'rev-parse', 'HEAD').strip()
     if output('git', 'diff', '--name-only', 'HEAD').strip():
         raise ValueError('Tracked source differs from the recorded commit')

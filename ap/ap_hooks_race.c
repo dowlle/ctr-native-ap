@@ -1329,7 +1329,7 @@ static void AP_FeedLetterReadyUpdates(void)
 			AP_LettersRequiredMetPure(1, ctr_cfg.lettersanity_mode,
 			                        ctr_cfg.lettersanity_locations[track],
 			                        ap_letter_received[track]);
-		if (ready && !ap_feed_letters_ready[track] && ap_feed_primed && ap_hub_feed_on)
+		if (ready && !ap_feed_letters_ready[track] && ap_feed_primed && AP_HubFeedOn())
 		{
 			char line[128];
 			snprintf(line, sizeof line, "%s: Got CTR letters",
@@ -1350,7 +1350,7 @@ static void AP_FeedOxideFinalOpenUpdate(void)
 {
 	int beatSecond;
 
-	if (!ctr_cfg_active() || !ap_feed_primed || !ap_hub_feed_on)
+	if (!ctr_cfg_active() || !ap_feed_primed || !AP_HubFeedOn())
 		return;
 	if (!ap_net_oxide_scene_known() || ap_net_oxide_open_msg_shown())
 		return;
