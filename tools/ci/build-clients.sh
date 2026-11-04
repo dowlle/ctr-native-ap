@@ -52,7 +52,7 @@ for variant in ap vanilla authoring authoring-client; do
     -DCMAKE_C_FLAGS='-m32 -msse' -DCMAKE_CXX_FLAGS=-m32 \
     -DCTR_AP="$ap" -DCTR_CUSTOM_TRACKS="$custom" -DCTR_AP_AUTHORING="$authoring" \
     -DCTR_AUTHORING_CLIENT="$client" \
-    -DCTR_AP_VERIFY_VENDOR=ON
+    -DCTR_AP_VERIFY_VENDOR=ON -DCTR_RELEASE_BUILD=ON
   cmake --build "$build" --parallel "${CTR_BUILD_JOBS:-2}"
   exe="$build/$binary$suffix"
   if [ "$platform" = windows ]; then
