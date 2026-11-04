@@ -889,6 +889,14 @@ static void CT_Poll(void)
     char detail[128];
     MM_CustomLibrary_Tick(0);
     MM_CustomManager_Poll();
+    /* The catalogue loads once per session on the first visit, as on the
+       Track Manager; Refresh catalogue loads it again. */
+    if (!s_saphiLoaded && !s_saphiRefreshBusy)
+    {
+        s_saphiLoaded = 1;
+        s_saphiRefreshBusy = CustomSaphi_StartRefresh();
+        s_saphiRefreshFailed = !s_saphiRefreshBusy;
+    }
     AP_SeedContentInstallTick(s_ctMessage, sizeof s_ctMessage);
     /* A finished refresh: the page controls show the catalogue state instead. */
     if (!s_saphiRefreshBusy && !strncmp(s_ctMessage, "Refreshing", 10)) s_ctMessage[0] = 0;

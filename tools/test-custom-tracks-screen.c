@@ -365,7 +365,11 @@ int main(void)
     catrow(4, "Arcane Garden", "1.0.0", 150);
     strcpy(cat[4].disabledReason, "Files not hosted on Saphi");
     catCount = 5;
-    s_saphiCatalogue = (void *)2;
+
+    /* 0. The first visit loads the catalogue once. */
+    revisit(); frame(0, NULL); CHECK(refreshStarts == 1 && s_saphiRefreshBusy && s_saphiLoaded);
+    refreshResult = 1; frame(0, NULL); CHECK(!s_saphiRefreshBusy && s_saphiCatalogue == (void *)2);
+    refreshResult = -1; revisit(); frame(0, NULL); CHECK(refreshStarts == 1);
 
     /* 1. No seed: lands on Library, tab strip focused; Back there is Options'. */
     revisit(); frame(0, "library-tabs");
@@ -399,12 +403,12 @@ int main(void)
     frame(BTN_RIGHT, NULL); CHECK(s_ctFilter == CT_FILTER_ALL);
     /* Refresh catalogue and Rescan local files are separate controls. */
     frame(BTN_DOWN, NULL); frame(BTN_DOWN, NULL); CHECK(s_ctControlSel[0] == 2);
-    frame(BTN_CROSS, NULL); CHECK(refreshStarts == 1 && s_saphiRefreshBusy);
+    frame(BTN_CROSS, NULL); CHECK(refreshStarts == 2 && s_saphiRefreshBusy);
     refreshResult = -2; frame(0, NULL); CHECK(!s_saphiRefreshBusy && s_saphiCatalogue == (void *)2);
     frame(0, "library-offline"); CHECK(has("offline"));
     refreshResult = -1;
     s_contentStoreWanted = 0;
-    frame(BTN_DOWN, NULL); frame(BTN_CROSS, NULL); CHECK(s_contentStoreWanted == 1 && refreshStarts == 1);
+    frame(BTN_DOWN, NULL); frame(BTN_CROSS, NULL); CHECK(s_contentStoreWanted == 1 && refreshStarts == 2);
     s_contentStoreWanted = 0; s_ctMessage[0] = 0;
     /* Search: the keyboard opens; cancel restores the old query. */
     frame(BTN_UP, NULL); frame(BTN_UP, NULL); CHECK(s_ctControlSel[0] == 1);
