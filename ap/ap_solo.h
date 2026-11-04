@@ -14,6 +14,7 @@
    AP_NetTick. */
 #ifndef AP_SOLO_H
 #define AP_SOLO_H
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -95,6 +96,7 @@ struct APSoloTrackInfo
 	char revision[32];
 	char author[AP_SOLO_TEXT];
 	char modes[32];            /* "Trophy, CTR, Relic" */
+	int timeTrial;              /* installed package can run standalone Time Trial */
 	int pick;                  /* enum APSoloTrackPick */
 	int needsLaps;             /* 1: an imported track waiting for its laps */
 	int laps;                  /* the laps shown while needsLaps, 1 to 7 */
@@ -109,8 +111,8 @@ int AP_Solo_ListStart(void);
 int AP_Solo_DescribeStart(const char *yamlPath);
 int AP_Solo_ImportRoomStart(const char *path);
 int AP_Solo_ImportYamlStart(const char *path);
-/* Installed custom tracks (assets/tracks/<track key>/original) with a known
-   descriptor. Picks survive a new list for the tracks still listed. */
+/* Installed custom tracks from the shared package store or a legacy room
+   folder. Picks survive a new list for the tracks still listed. */
 int AP_Solo_TracksStart(const char *yamlPath);
 /* yamlPath: preset or saved/inbox YAML. Options from the options screen are
    passed only for presets (useOptions 1). The picked custom tracks are passed
@@ -152,13 +154,16 @@ int AP_Solo_TracksViaOptions(int isPreset);
 
 /* The client verified a content-plan package's files (#133): keep its
    descriptor in solo/tracks so the custom-track step can offer the track. */
-void AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, const char *json);
+int AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, const char *json);
 /* The xdelta importer installed a track whose laps nobody gave (ruling of
    2026-11-02): keep its descriptor, without laps, in solo/needs-laps. The
    custom-track step lists it and asks for the laps before it can be picked.
    An entry for the same track key and version in solo/tracks stays when it
-   pins the same files (its laps were picked before) and is replaced when not. */
-void AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *revision, const char *json);
+   pins the same files (its laps were picked before); conflicting pins fail. */
+int AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *revision, const char *json);
+/* Rebuild the descriptor index from verified package-store revisions. The
+   optional pin publishes just one install; an empty pin rescans all of them. */
+int AP_Solo_PublishInstalledStore(const char *pin, char *error, size_t errorSize);
 /* On a row waiting for its laps: Left/Right change the laps shown, Keep writes
    the descriptor with them to solo/tracks (1) and drops the waiting copy.
    List the tracks again afterwards. */

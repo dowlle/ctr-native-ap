@@ -1653,8 +1653,15 @@ static void MM_CustomLibrary_Tick(int reload)
             {
                 CustomTrackLibrary_MarkInstalled(&s_contentLibrary, s_contentInstallPin);
                 s_contentStoreWanted = 1;
+#ifdef CTR_AP
+                if (!AP_Solo_PublishInstalledStore(s_contentInstallPin, s_contentInstallMessage,
+                                                   sizeof s_contentInstallMessage))
+                    snprintf(s_contentInstallMessage, sizeof s_contentInstallMessage,
+                             "Files installed, but Play Solo publication failed.");
+                else
+#endif
                 snprintf(s_contentInstallMessage, sizeof s_contentInstallMessage,
-                         "Installed. Choose custom tracks from Arcade.");
+                         "Installed. Listed in Play Solo and Arcade.");
             }
         }
     }
@@ -1666,7 +1673,16 @@ static void MM_CustomLibrary_Tick(int reload)
             s_contentStoreBusy = 0;
             s_contentStoreGeneration++;
         }
-        if (result == 1) s_contentInstallPin[0] = 0; /* Fresh store evidence supersedes an old action message. */
+        if (result == 1)
+        {
+#ifdef CTR_AP
+            char publicationError[256];
+            if (!AP_Solo_PublishInstalledStore(NULL, publicationError, sizeof publicationError))
+                snprintf(s_contentStoreMessage, sizeof s_contentStoreMessage,
+                         "Play Solo publication failed: %.170s", publicationError);
+#endif
+            s_contentInstallPin[0] = 0; /* Fresh store evidence supersedes an old action message. */
+        }
     }
     if (s_contentStoreWanted && !s_contentStoreBusy && !s_contentInstallBusy)
     {

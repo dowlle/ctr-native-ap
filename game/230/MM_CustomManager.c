@@ -90,7 +90,18 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
             if (result == 1)
             {
                 s_contentStoreWanted = 1;
+#ifdef CTR_AP
+                {
+                    char publicationError[256];
+                    if (!AP_Solo_PublishInstalledStore(s_contentInstallPin, publicationError, sizeof publicationError))
+                        snprintf(s_saphiMessage, sizeof s_saphiMessage,
+                                 "Files installed, but Play Solo publication failed: %.170s", publicationError);
+                    else
+                        snprintf(s_saphiMessage, sizeof s_saphiMessage, "Installed. Files verified and listed in Play Solo.");
+                }
+#else
                 snprintf(s_saphiMessage, sizeof s_saphiMessage, "Installed. Files verified.");
+#endif
             }
             else fprintf(stderr, "[Saphi] install: %s\n", s_saphiMessage);
         }
@@ -240,6 +251,7 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
             installed && !installed->local.arcade ?
             (installed->local.timeTrial ? installed->local.arcadeReason : installed->local.timeTrialReason) : "";
         const char *status = source && source->disabledReason[0] ? source->disabledReason :
+            strstr(s_saphiMessage, "publication failed") ? s_saphiMessage :
             sourceInstalled ? "Installed" : hasOlder && !s_saphiVersionTrack ? "Update available" : s_saphiMessage[0] ? s_saphiMessage : source ?
             (source->modeTags & 1) ? "Arcade tagged" : (source->modeTags & 2) ? "Time Trial tagged" : "Other modes" :
             why[0] ? why : "Files verified";

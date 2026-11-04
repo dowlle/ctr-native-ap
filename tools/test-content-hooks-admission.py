@@ -67,10 +67,12 @@ const ctr_content_package *ap_content_plan_package(int index) { return index == 
 const char *ap_content_plan_package_json(int index) { return index == 0 && plan_has_package ? "{}" : ""; }
 /* Play Solo keeps the descriptor of a verified package (#89). */
 static int solo_descriptors_kept;
-void AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, const char *json)
+static int solo_publish_ok = 1;
+int AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, const char *json)
 {
 	(void)contentId; (void)revision; (void)json;
 	solo_descriptors_kept++;
+	return solo_publish_ok;
 }
 const ctr_content_pad *ap_content_plan_pad(int physical) { return physical == plan_pad.physical ? &plan_pad : NULL; }
 uint64_t ap_content_plan_epoch(void) { return 7; }
@@ -178,6 +180,13 @@ int main(void)
 	reset_calls();
 	expect(preflight() && AP_ContentPadReady(3) && !ap_custom_content_required, "honest claim is Ready at connect");
 	expect(solo_descriptors_kept > 0, "a verified package's descriptor is kept for Play Solo");
+	solo_publish_ok = 0;
+	expect(AP_ContentScanPackage(0, 0, &ap_custom_content_status) &&
+	       !ap_content_descriptor_publication[0] && ap_custom_content_status.state == CTR_CT_MANAGER_READY,
+	       "descriptor publication failure is reported separately from race-ready bytes");
+	solo_publish_ok = 1;
+	expect(AP_ContentScanPackage(0, 0, &ap_custom_content_status) && ap_content_descriptor_publication[0],
+	       "rescan recovers after publication succeeds");
 	expect(strcmp(ap_content_files[0].levPath, lev) == 0 && strcmp(ap_content_files[0].vrmPath, vrm) == 0,
 	       "open package located by digest under its track key");
 	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6, "honest claim enters on host level 6");

@@ -7,6 +7,11 @@
 #include "ap_solo.h"
 #include "ap_solo_logic.hpp"
 #include "ap_net.h"
+#ifdef CTR_CUSTOM_PACKAGES
+#include <platform/native_custom_package.h>
+#include "ap_track_registry.h"
+#include "ap_content_registry.hpp"
+#endif
 
 #include <SDL3/SDL.h>
 
@@ -425,6 +430,7 @@ void ParseTracks(const nlohmann::json &r)
 			CopyText(info.revision, sizeof info.revision, AP_SoloJsonString(t, "revision"));
 			CopyText(info.author, sizeof info.author, AP_SoloJsonString(t, "author"));
 			CopyText(info.modes, sizeof info.modes, AP_SoloTrackModes(t.value("modes", nlohmann::json())));
+			info.timeTrial = t.value("time_trial", false) ? 1 : 0;
 			info.pick = AP_SoloTrackStart(t);
 			for (const auto &old : g_tracks)
 				if (std::strcmp(old.id, info.id) == 0)
@@ -775,6 +781,15 @@ extern "C" int AP_Solo_ImportYamlStart(const char *path)
 
 extern "C" int AP_Solo_TracksStart(const char *yamlPath)
 {
+	if (g_job.state == AP_SOLO_JOB_RUNNING)
+		return 0;
+	char publicationError[256];
+	if (!AP_Solo_PublishInstalledStore(nullptr, publicationError, sizeof publicationError))
+	{
+		g_job.kind = JOB_TRACKS;
+		JobFail("publish", "Files installed, but Play Solo publication failed: " + std::string(publicationError), "");
+		return 1; // the menu shows the failure through its normal job message
+	}
 	std::vector<std::string> args = {"tracks", "--assets", AssetsDir()};
 	if (yamlPath && *yamlPath)
 	{
@@ -814,7 +829,7 @@ extern "C" int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName,
 	// new start is chosen.
 	std::vector<std::pair<std::string, int>> picks;
 	for (const APSoloTrackInfo &t : g_tracks)
-		if (!t.needsLaps) // not usable until its laps are kept
+		if (!t.needsLaps) // off rows still tell a YAML's track page to remove them
 			picks.emplace_back(t.id, t.pick);
 	for (const std::string &arg : AP_SoloTrackArgs(picks))
 		args.push_back(arg);
@@ -861,7 +876,7 @@ extern "C" int AP_Solo_TrackGet(int index, struct APSoloTrackInfo *out)
 extern "C" void AP_Solo_TrackCycle(int index)
 {
 	if (index >= 0 && index < (int)g_tracks.size() && !g_tracks[index].needsLaps)
-		g_tracks[index].pick = AP_SoloTrackNextPick(g_tracks[index].pick);
+		g_tracks[index].pick = g_tracks[index].modes[0] ? AP_SoloTrackNextPick(g_tracks[index].pick) : AP_SOLO_TRACK_OFF;
 }
 
 extern "C" int AP_Solo_TracksPicked(void)
@@ -1025,7 +1040,24 @@ void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows)
 			continue;
 		const auto files = d.find("files");
 		bool installed = files != d.end() && files->is_array() && files->size() == 2;
+		bool shared = false;
+#ifdef CTR_CUSTOM_PACKAGES
 		if (installed)
+		{
+			const auto &lev = (*files)[0], &vrm = (*files)[1];
+			const auto levHash = AP_SoloJsonString(lev, "sha256"), vrmHash = AP_SoloJsonString(vrm, "sha256");
+			if (lev.is_object() && vrm.is_object() && lev.value("role", "") == "lev" &&
+			    vrm.value("role", "") == "vrm" && lev.contains("bytes") && vrm.contains("bytes") &&
+			    lev["bytes"].is_number_unsigned() && vrm["bytes"].is_number_unsigned())
+			{
+				char levPath[4096], vrmPath[4096];
+				shared = CustomPackage_FindPinnedFiles(AssetsDir().c_str(), AP_SoloJsonString(d, "revision").c_str(), nullptr,
+					levHash.c_str(), lev["bytes"].get<unsigned long>(), vrmHash.c_str(), vrm["bytes"].get<unsigned long>(),
+					levPath, sizeof levPath, vrmPath, sizeof vrmPath) != 0;
+			}
+		}
+#endif
+		if (installed && !shared)
 			for (const auto &pin : *files)
 				installed = installed && PinnedFilePresent(AP_SoloJsonString(d, "content_id"), pin);
 		if (!installed)
@@ -1037,32 +1069,48 @@ void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows)
 }
 } // namespace
 
-extern "C" void AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, const char *json)
+extern "C" int AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, const char *json)
 {
 	if (!contentId || !revision || !json)
-		return;
+		return 0;
 	const std::string name = AP_SoloDescriptorFileName(contentId, revision);
+	const fs::path kept = fs::u8path(SoloPath("tracks")) / fs::u8path(name);
+	const auto old = nlohmann::json::parse(ReadSmallPlainFile(kept, kDescriptorMax), nullptr, false);
+	const auto fresh = nlohmann::json::parse(json, nullptr, false);
+	if (old.is_object() && fresh.is_object() && old.contains("files") && fresh.contains("files") &&
+	    old["files"] != fresh["files"])
+	{
+		Log("refused conflicting file pins for " + name);
+		return 0;
+	}
+	const auto pending = nlohmann::json::parse(ReadSmallPlainFile(fs::u8path(SoloPath("needs-laps")) /
+		fs::u8path(name), kDescriptorMax), nullptr, false);
+	if (pending.is_object() && fresh.is_object() && pending.contains("files") && fresh.contains("files") &&
+	    pending["files"] != fresh["files"])
+	{
+		Log("refused conflicting pending file pins for " + name);
+		return 0;
+	}
 	if (KeepDescriptorFile("tracks", name, json))
+	{
 		DropNeedsLaps(name);
+		return 1;
+	}
+	return 0;
 }
 
-extern "C" void AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *revision, const char *json)
+extern "C" int AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *revision, const char *json)
 {
 	if (!contentId || !revision || !json)
-		return;
+		return 0;
 	const std::string name = AP_SoloDescriptorFileName(contentId, revision);
 	const nlohmann::json fresh = nlohmann::json::parse(json, nullptr, false);
 	std::error_code ec;
 	const fs::path tracks = fs::u8path(SoloPath("tracks"));
 	if (name.empty() || !fresh.is_object() || SoloRootIsLink() || fs::is_symlink(tracks, ec))
-		return;
-	// The same track key and version already in solo/tracks: with the same
-	// files its laps were picked before and stay. With other files this import
-	// replaces it, as a complete descriptor would (the newest import wins), so
-	// the old entry cannot hide this track's laps picker.
-	// Only a descriptor the wrapper could read (a plain file of descriptor
-	// size that parses) is compared or removed; anything else there is left
-	// alone, and the wrapper does not list it either.
+		return 0;
+	// A chosen lap count stays with the same pins. A conflicting pair needs
+	// another revision instead of replacing an installed revision's identity.
 	const fs::path kept = tracks / fs::u8path(name);
 	const nlohmann::json old = fs::is_regular_file(fs::symlink_status(kept, ec))
 	                               ? nlohmann::json::parse(ReadSmallPlainFile(kept, kDescriptorMax), nullptr, false)
@@ -1070,18 +1118,124 @@ extern "C" void AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *
 	if (old.is_object() && old.contains("files") && old["files"] == fresh.value("files", nlohmann::json()))
 	{
 		DropNeedsLaps(name);
-		return;
+		return 1;
 	}
-	if (!KeepDescriptorFile("needs-laps", name, json) || !old.is_object())
-		return;
-	// Both entries must never stay: the old one would hide the laps picker.
-	if (!fs::remove(kept, ec) || ec)
+	if (old.is_object() && old.contains("files"))
 	{
-		DropNeedsLaps(name);
-		Log("could not replace " + name + " in solo/tracks: the old entry stays");
+		Log("refused conflicting file pins for " + name);
+		return 0;
+	}
+	const auto pending = nlohmann::json::parse(ReadSmallPlainFile(fs::u8path(SoloPath("needs-laps")) /
+		fs::u8path(name), kDescriptorMax), nullptr, false);
+	if (pending.is_object() && pending.contains("files") && pending["files"] != fresh.value("files", nlohmann::json()))
+	{
+		Log("refused conflicting pending file pins for " + name);
+		return 0;
+	}
+	if (!KeepDescriptorFile("needs-laps", name, json))
+		return 0;
+	return 1;
+}
+
+#ifdef CTR_CUSTOM_PACKAGES
+namespace {
+struct StorePublication
+{
+	int failed = 0;
+	int published = 0;
+	std::string pin;
+	std::string error;
+};
+void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
+{
+	auto &result = *static_cast<StorePublication *>(opaque);
+	if (!result.pin.empty() && result.pin != entry->pin) return;
+	result.published++;
+	if (!entry->verified)
+	{
+		result.failed++;
+		if (result.error.empty()) result.error = entry->error;
 		return;
 	}
-	Log("replaced " + name + " in solo/tracks: the new import waits for its laps");
+	char key[65], revision[65], json[16384], error[256];
+	std::string knownKey;
+	if (entry->local.trackID > 0)
+	{
+		const CustomPackageFile *lev = nullptr, *vrm = nullptr;
+		for (unsigned int i = 0; i < entry->manifest.count; i++)
+		{
+			if (!std::strcmp(entry->manifest.files[i].role, "lev")) lev = &entry->manifest.files[i];
+			if (!std::strcmp(entry->manifest.files[i].role, "vrm")) vrm = &entry->manifest.files[i];
+		}
+		ApTrackRegistryMatch match = {};
+		if (lev && vrm && ap_track_registry_lookup(lev->sha256, lev->bytes, vrm->sha256, vrm->bytes, &match) == AP_TRACK_REGISTRY_MATCH)
+			knownKey = match.track_key;
+		if (knownKey.empty())
+		{
+			static const auto named = nlohmann::json::parse(kContentRegistryJSON).at("named_blocks");
+			for (const auto &row : named)
+				if (row.value("name", "") == entry->manifest.title)
+				{
+					knownKey = row.value("key", "");
+					break;
+				}
+		}
+	}
+	const int kind = CustomPackage_StoreDescriptor(AssetsDir().c_str(), entry->pin,
+		knownKey.empty() ? nullptr : knownKey.c_str(),
+		key, sizeof key, revision, sizeof revision, json, sizeof json, error, sizeof error);
+	if (kind == 1)
+	{
+		const std::string name = AP_SoloDescriptorFileName(key, revision);
+		const fs::path kept = fs::u8path(SoloPath("tracks")) / fs::u8path(name);
+		const auto old = nlohmann::json::parse(ReadSmallPlainFile(kept, kDescriptorMax), nullptr, false);
+		const auto fresh = nlohmann::json::parse(json, nullptr, false);
+		if (AP_SoloDescriptorUnchanged(old, fresh))
+			return;
+	}
+	if (!kind || !(kind == 2 ? AP_Solo_RecordTrackNeedsLaps(key, revision, json)
+	                         : AP_Solo_RecordTrackDescriptor(key, revision, json)))
+	{
+		result.failed++;
+		if (result.error.empty()) result.error = kind ? "Could not publish the Play Solo descriptor" : error;
+	}
+}
+}
+#endif
+
+extern "C" int AP_Solo_PublishInstalledStore(const char *pin, char *error, size_t errorSize)
+{
+	if (error && errorSize) error[0] = 0;
+#ifdef CTR_CUSTOM_PACKAGES
+	StorePublication result;
+	if (pin && *pin) result.pin = pin;
+	{
+		const fs::path store = fs::u8path(AssetsDir()) / "tracks/packages";
+		std::error_code ec;
+		if (!fs::exists(store, ec) && result.pin.empty()) return 1;
+		char scanError[256] = {};
+		if (!CustomPackage_ScanStore(store.u8string().c_str(), PublishStoreEntry, &result,
+		                             scanError, sizeof scanError))
+		{
+			result.failed++;
+			if (result.error.empty()) result.error = scanError;
+		}
+	}
+	if (!result.pin.empty() && !result.published)
+	{
+		result.failed++;
+		result.error = "Installed package was not found in the shared store";
+	}
+	if (result.failed)
+	{
+		if (error && errorSize) std::snprintf(error, errorSize, "%s", result.error.c_str());
+		Log("package descriptor publication failed: " + result.error);
+		return 0;
+	}
+#else
+	(void)pin;
+#endif
+	return 1;
 }
 
 extern "C" void AP_Solo_TrackStepLaps(int index, int direction)

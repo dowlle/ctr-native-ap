@@ -2,7 +2,7 @@
 
 Compiles ap/ap_hooks_seed_content.c with the real track manager
 (platform/native_custom_track_manager.c, for the compiled release profiles,
-ResolvePaths and PrepareFolder) and the real decisions in
+ResolvePaths) and the real decisions in
 ap/ap_seed_content_logic.h. The content plan, the per-package scan results,
 the downloader and the rescan are stubs that record what the hooks do.
 
@@ -15,7 +15,7 @@ Cases:
      start; none starts a download or creates a folder,
   4. a clean queue: each download gets the room's exact pins and the profile's
      own folder under assets/tracks, nothing is created before the worker
-     reports success, PrepareFolder runs after it, then the next track,
+     reports success without preparing a second room folder, then the next track,
   5. a failure stops the queue: no further download, one rescan for what was
      installed, the failure in the message,
   6. a room change stops the queue after the running download,
@@ -67,11 +67,14 @@ const ctr_content_package *ap_content_plan_package(int i) { return plan_active &
 int ap_content_plan_cortex(void) { return plan_active && plan_cortex; }
 uint64_t ap_content_plan_epoch(void) { return plan_active ? plan_epoch : 0; }
 static int ap_content_package_scan[AP_CONTENT_MAX_PACKAGES];
+static int ap_content_descriptor_publication[AP_CONTENT_MAX_PACKAGES];
 static int ap_content_cortex_ready, ap_custom_content_scanned = 1;
 static const struct CustomTrackManagerPackage *compiled_for[4];
 static const struct CustomTrackManagerPackage *AP_ContentPackage(int i) { return i >= 0 && i < package_count ? compiled_for[i] : NULL; }
 static int dl_state = AP_CT_DOWNLOAD_IDLE, starts, refuse_start;
 static char dl_detail[200], start_tracks[512], start_root[512], start_version[80], start_lev[80], start_vrm[80];
+static char start_uuid[40], start_title[130], start_author[130];
+static unsigned int start_laps;
 static uint32_t start_lev_bytes, start_vrm_bytes;
 int ap_custom_track_download_start_pinned(const char *tracks, const char *rootDir, const char *api, const char *version,
                                           const char *lev, uint32_t levBytes, const char *vrm, uint32_t vrmBytes)
@@ -135,6 +138,23 @@ int ap_custom_track_download_start_registry(const char *tracks, const char *root
 	dl_state = AP_CT_DOWNLOAD_RUNNING;
 	return 1;
 }
+int ap_custom_track_download_start_shared(const char *tracks, const char *rootDir,
+    const char *api, const char *version, const char *uuid, const char *title, const char *author, unsigned int laps,
+    int sapphire, int gold, int platinum,
+    const char *lev, uint32_t levBytes, const char *vrm, uint32_t vrmBytes,
+    int track, int levId, int vrmId)
+{
+    (void)sapphire; (void)gold; (void)platinum;
+    snprintf(start_uuid, sizeof start_uuid, "%s", uuid);
+    snprintf(start_title, sizeof start_title, "%s", title);
+    snprintf(start_author, sizeof start_author, "%s", author);
+    start_laps = laps;
+    if (track)
+        return ap_custom_track_download_start_registry(tracks, rootDir, track, levId, vrmId,
+                                                       lev, levBytes, vrm, vrmBytes);
+    return ap_custom_track_download_start_pinned(tracks, rootDir, api, version,
+                                                  lev, levBytes, vrm, vrmBytes);
+}
 '''
 
 tests = r'''
@@ -166,6 +186,8 @@ static void package(int i, const char *key, const char *rev, const struct Custom
 	snprintf(p->lev_sha256, sizeof p->lev_sha256, "%s", compiled ? compiled->levSha256 : "11");
 	snprintf(p->vrm_sha256, sizeof p->vrm_sha256, "%s", compiled ? compiled->vrmSha256 : "22");
 	p->lev_bytes = lev; p->vrm_bytes = vrm;
+	snprintf(p->uuid, sizeof p->uuid, "%s", "0f0e0d0c-0b0a-4908-8706-111111111111");
+	p->laps = 3;
 	compiled_for[i] = compiled;
 	ap_content_package_scan[i] = scan + 1;
 }
@@ -251,7 +273,10 @@ int main(void)
 	snprintf(path, sizeof path, "%s/baby-t-park-1.0.2", tracks);
 	expect(!strcmp(start_tracks, tracks) && !strcmp(start_root, path) && !strcmp(start_version, "1.0.2") &&
 	       !strcmp(start_lev, current->levSha256) && !strcmp(start_vrm, current->vrmSha256) &&
-	       start_lev_bytes == 2470836 && start_vrm_bytes == 115732, "first download: the room's exact pins, the 1.0.2 folder");
+	       start_lev_bytes == 2470836 && start_vrm_bytes == 115732 &&
+	       !strcmp(start_uuid, packages[0].uuid) && !strcmp(start_title, packages[0].display_name) &&
+	       !strcmp(start_author, packages[0].author) && start_laps == 3,
+	       "first download carries the descriptor identity, author, laps and exact seed pins");
 	expect(strstr(message, "(1 of 2)") != NULL, "progress names the position");
 	expect(!AP_SeedContentInstallStart(message, sizeof message) && starts == 1, "a second start while one runs is refused");
 	expect(AP_SeedContentInstallTick(message, sizeof message) == 1 && strstr(message, "1 of 2:") && entries(tracks) == 0,
@@ -259,7 +284,7 @@ int main(void)
 	dl_state = AP_CT_DOWNLOAD_SUCCEEDED;
 	expect(AP_SeedContentInstallTick(message, sizeof message) == 1 && starts == 2, "success starts the next track");
 	snprintf(path, sizeof path, "%s/baby-t-park-1.0.2/extensions/navigation", tracks);
-	expect(entries(path) == 0, "PrepareFolder ran for the installed revision after its download");
+	expect(entries(path) == -1, "shared install does not prepare a second room folder");
 	snprintf(path, sizeof path, "%s/baby-t-park", tracks);
 	expect(!strcmp(start_root, path) && !strcmp(start_version, "1.0.0") && start_lev_bytes == 2470000,
 	       "second download: the 1.0.0 folder, its own pins; both revisions coexist");
@@ -407,6 +432,6 @@ with tempfile.TemporaryDirectory() as tmp:
                     "-I" + str(root), "-I" + str(root / "include"), "-I" + str(root / "ap"),
                     str(src), "-o", str(exe)], check=True, cwd=root)
     subprocess.run([str(exe)], check=True, cwd=root)
-print("PASS: Current Seed hooks: rows and sources, refusals before any download or folder, exact pins per "
-      "revision, folder setup only after success, failure and room-change stops, registry rows (live, cached, "
-      "offline, not listed) and the registry download with the room's pins")
+print("PASS: Current Seed hooks: rows and sources, refusals before download, exact pins and descriptor metadata per "
+      "revision, no second room folder, failure and room-change stops, registry rows (live, cached, "
+      "offline, not listed) and pinned registry downloads")

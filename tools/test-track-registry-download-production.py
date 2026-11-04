@@ -27,7 +27,7 @@ root = Path(__file__).resolve().parents[1]
 source = (root / "ap/ap_custom_track_download.cpp").read_text(encoding="utf-8")
 part_a = source[source.index("namespace\n{\n"):source.index("#ifdef _WIN32\nstd::wstring widen_ascii")]
 start_b = source.index("bool hash_matches(")
-part_b = source[start_b:source.index("#ifdef CTR_CUSTOM_PACKAGES", start_b)]
+part_b = source[start_b:source.index("#ifdef CTR_CUSTOM_PACKAGES\n// Track Manager", start_b)]
 
 prelude = r'''
 #include "ap_custom_track_download.h"

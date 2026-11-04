@@ -3,7 +3,9 @@
 #endif
 #include <platform/native_custom_package.h>
 #include <platform/native_custom_offline.h>
+extern "C" {
 #include <platform/native_custom_content_verify.h>
+}
 #include <nlohmann/json.hpp>
 #include <cstdio>
 #include <cstring>
@@ -514,13 +516,27 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
     for (unsigned int i = 0; i < entry.manifest.count; i++)
     {
         const auto &file = entry.manifest.files[i];
-        if (std::strcmp(file.role, "presentation") || std::strcmp(file.path, "metadata/xdelta-source.json") || file.bytes > 4096) continue;
+        if (std::strcmp(file.role, "presentation") || file.bytes > 4096 ||
+            (std::strcmp(file.path, "metadata/xdelta-source.json") &&
+             std::strcmp(file.path, "metadata/seed-source.json"))) continue;
         std::string bytes(file.bytes, '\0');
         if (!CustomPackage_CopyFile(package, "presentation", bytes.data(), bytes.size(), nullptr)) continue;
         try
         {
             auto source = nlohmann::json::parse(bytes);
-            if (source.at("provider") != "xdelta" || source.at("schema_version") != 1) continue;
+            if (source.at("schema_version") != 1) continue;
+            if (source.at("provider") == "ctr-seed")
+            {
+                if (source.contains("author") && source["author"].is_string())
+                {
+                    auto author = source["author"].get<std::string>();
+                    if (!author.empty() && author.size() < sizeof entry.local.author &&
+                        std::none_of(author.begin(), author.end(), [](unsigned char c) { return c < 32 || c == 127; }))
+                        std::memcpy(entry.local.author, author.c_str(), author.size() + 1);
+                }
+                continue;
+            }
+            if (source.at("provider") != "xdelta") continue;
             auto patch = source.at("patch_sha256").get<std::string>();
             int index = source.at("bigfile_index").get<int>();
             if (patch.size() != 64 || patch.find_first_not_of("0123456789abcdef") != std::string::npos || index < 0) continue;
@@ -620,6 +636,186 @@ extern "C" int CustomPackage_ScanStore(const char *path, CustomPackageStoreVisit
     catch (const std::exception &exception)
     {
         if (error && errorSize) std::snprintf(error, errorSize, "%s", exception.what());
+        return 0;
+    }
+}
+
+namespace {
+struct PinnedSearch
+{
+    const char *revision, *uuid, *levHash, *vrmHash;
+    unsigned long levBytes, vrmBytes;
+    std::string directory, lev, vrm;
+};
+void find_pinned(const CustomPackageStoreEntry *entry, void *opaque)
+{
+    auto &search = *static_cast<PinnedSearch *>(opaque);
+    if (!entry->verified || !search.lev.empty() ||
+        std::strcmp(entry->manifest.version, search.revision) ||
+        (search.uuid && *search.uuid && std::strcmp(entry->manifest.uuid, search.uuid))) return;
+    std::string lev, vrm;
+    for (unsigned int i = 0; i < entry->manifest.count; i++)
+    {
+        const auto &f = entry->manifest.files[i];
+        if (!std::strcmp(f.role, "lev") && !std::strcmp(f.sha256, search.levHash) && f.bytes == search.levBytes)
+            lev = f.path;
+        if (!std::strcmp(f.role, "vrm") && !std::strcmp(f.sha256, search.vrmHash) && f.bytes == search.vrmBytes)
+            vrm = f.path;
+    }
+    if (!lev.empty() && !vrm.empty())
+    {
+        search.lev = search.directory + "/" + entry->pin + "/" + lev;
+        search.vrm = search.directory + "/" + entry->pin + "/" + vrm;
+    }
+}
+}
+
+extern "C" int CustomPackage_FindPinnedFiles(const char *assets, const char *revision, const char *uuid,
+    const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
+    char *levPath, size_t levCapacity, char *vrmPath, size_t vrmCapacity)
+{
+    if (!assets || !revision || !levSha256 || !vrmSha256 || !levPath || !vrmPath ||
+        !levCapacity || !vrmCapacity) return 0;
+    PinnedSearch search{revision, uuid, levSha256, vrmSha256, levBytes, vrmBytes,
+                        std::string(assets) + "/tracks/packages", {}, {}};
+    char error[256];
+    if (!CustomPackage_ScanStore(search.directory.c_str(), find_pinned, &search, error, sizeof error) ||
+        search.lev.empty() || search.lev.size() >= levCapacity || search.vrm.size() >= vrmCapacity) return 0;
+    std::memcpy(levPath, search.lev.c_str(), search.lev.size() + 1);
+    std::memcpy(vrmPath, search.vrm.c_str(), search.vrm.size() + 1);
+    return 1;
+}
+
+namespace {
+bool descriptor_key(const std::string &key)
+{
+    if (key.empty() || key.size() > 64 || key.front() == '-' || key.back() == '-') return false;
+    bool dash = false;
+    for (unsigned char c : key)
+    {
+        if (c == '-') { if (dash) return false; dash = true; }
+        else if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) dash = false;
+        else return false;
+    }
+    return true;
+}
+std::string descriptor_title_key(const char *title)
+{
+    char folded[641];
+    if (!CustomPackage_AsciiFold(title, std::strlen(title), folded, sizeof folded)) return {};
+    std::string key;
+    bool dash = false;
+    for (const unsigned char *p = reinterpret_cast<const unsigned char *>(folded); *p; p++)
+    {
+        unsigned char c = *p;
+        if (c >= 'A' && c <= 'Z') c += 32;
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
+        {
+            if (dash && !key.empty()) key += '-';
+            key += c;
+            dash = false;
+        }
+        else dash = true;
+    }
+    if (key.size() > 48) key.resize(48);
+    while (!key.empty() && key.back() == '-') key.pop_back();
+    return key.empty() ? "track" : key;
+}
+std::string bounded_label(std::string value)
+{
+    if (value.size() > 128)
+    {
+        value.resize(128);
+        while (!value.empty() && (static_cast<unsigned char>(value.back()) & 0xc0) == 0x80) value.pop_back();
+        if (!value.empty() && static_cast<unsigned char>(value.back()) >= 0xc0) value.pop_back();
+    }
+    return value;
+}
+}
+
+extern "C" int CustomPackage_StoreDescriptor(const char *assets, const char *pin, const char *key,
+    char *contentId, size_t contentIdSize, char *revision, size_t revisionSize,
+    char *json, size_t jsonSize, char *error, size_t errorSize)
+{
+    CustomPackageOwned *owned = nullptr;
+    if (error && errorSize) error[0] = 0;
+    try
+    {
+        if (!assets || !pin || !revision_name(pin) || !contentId || !revision || !json ||
+            !contentIdSize || !revisionSize || !jsonSize)
+            throw std::runtime_error("Invalid installed revision request");
+        const std::string path = std::string(assets) + "/tracks/packages/" + pin;
+        if (!CustomPackage_AcquireDirectory(path.c_str(), pin, &owned, error, errorSize)) return 0;
+        CustomPackageManifest manifest;
+        CustomContentVerification report;
+        if (!CustomPackage_GetManifest(owned, &manifest) || !CustomPackage_GetPairReport(owned, &report) || !report.loadable)
+            throw std::runtime_error("Installed revision has no verified track pair");
+        CustomPackageStoreEntry entry = {};
+        entry.manifest = manifest;
+        package_capabilities(owned, entry);
+        std::string trackKey = key && *key ? key : descriptor_title_key(manifest.title);
+        for (unsigned int i = 0; i < manifest.count && (!key || !*key); i++)
+        {
+            const auto &f = manifest.files[i];
+            if (std::strcmp(f.role, "presentation") || f.bytes > 4096 ||
+                (std::strcmp(f.path, "metadata/xdelta-source.json") &&
+                 std::strcmp(f.path, "metadata/seed-source.json"))) continue;
+            std::string bytes(f.bytes, '\0');
+            if (!CustomPackage_CopyFile(owned, "presentation", bytes.data(), bytes.size(), nullptr)) continue;
+            auto source = nlohmann::json::parse(bytes, nullptr, false);
+            if (source.is_object() && source.contains("provider") && source["provider"].is_string() &&
+                (source["provider"] == "xdelta" || source["provider"] == "ctr-seed") &&
+                source.contains("track_key") && source["track_key"].is_string())
+                trackKey = source["track_key"].get<std::string>();
+        }
+        const std::string id = "package/" + trackKey + "/" + manifest.version;
+        if (!descriptor_key(trackKey) || id.size() > 64 || ("custom/" + trackKey + "/" + manifest.version).size() > 64)
+            throw std::runtime_error("Installed track key and revision do not fit a seed descriptor");
+        const CustomPackageFile *lev = nullptr, *vrm = nullptr;
+        for (unsigned int i = 0; i < manifest.count; i++)
+        {
+            if (!std::strcmp(manifest.files[i].role, "lev")) lev = &manifest.files[i];
+            if (!std::strcmp(manifest.files[i].role, "vrm")) vrm = &manifest.files[i];
+        }
+        if (!lev || !vrm) throw std::runtime_error("Installed revision has no track file pins");
+        unsigned int laps = 0;
+        const bool needsLaps = !CustomPackage_GetRaceLaps(owned, &laps, nullptr, 0) || laps < 1 || laps > 7;
+        const auto &m = report.measured;
+        const bool wumpa = m.fruitCrates <= 1000000ul && m.looseWumpa <= 1000000ul &&
+                           m.fruitCrates * 5 + m.looseWumpa >= 10;
+        nlohmann::json caps = {{"time_trial", CustomContentVerify_TimeTrialReason(&report, nullptr, 0) != 0},
+            {"arcade", CustomContentVerify_ArcadeRaceReason(&report, nullptr, 0) != 0},
+            {"relic", !needsLaps && entry.local.relic != 0}, {"ctr_tokens", entry.local.ctrChallenge != 0},
+            {"wumpa", wumpa}, {"super_turbo_pads", m.superTurboPads > 0},
+            {"weapon_crates", m.weaponCrates}, {"ai_nav", m.navPaths > 0}};
+        if (m.checkpoints >= 1 && m.checkpoints <= 255) caps["checkpoints"] = m.checkpoints;
+        nlohmann::json files = nlohmann::json::array({
+            {{"role", "lev"}, {"sha256", lev->sha256}, {"bytes", lev->bytes}, {"format", "ctr-lev"}, {"format_version", 1}},
+            {{"role", "vrm"}, {"sha256", vrm->sha256}, {"bytes", vrm->bytes}, {"format", "ctr-vrm"}, {"format_version", 1}}});
+        nlohmann::json descriptor = {{"id", id}, {"content_id", trackKey}, {"uuid", manifest.uuid},
+            {"revision", manifest.version}, {"display_name", bounded_label(manifest.title)},
+            {"author", entry.local.author[0] ? entry.local.author : "Unknown"},
+            {"capabilities", caps}, {"files", files}, {"evidence", nlohmann::json::array()}};
+        if (!needsLaps) descriptor["laps"] = laps;
+        CustomPackageRelicTargets targets = {};
+        if (!needsLaps && entry.local.relic && CustomPackage_GetRelicTargets(owned, &targets, nullptr, 0) &&
+            targets.ticks[0] > targets.ticks[1] && targets.ticks[1] > targets.ticks[2] && targets.ticks[2] > 0)
+            descriptor["relic_targets"] = {{"sapphire", targets.ticks[0]}, {"gold", targets.ticks[1]}, {"platinum", targets.ticks[2]}};
+        else caps["relic"] = false;
+        descriptor["capabilities"] = caps;
+        std::string serialized = descriptor.dump();
+        if (trackKey.size() >= contentIdSize || std::strlen(manifest.version) >= revisionSize || serialized.size() >= jsonSize)
+            throw std::runtime_error("Installed descriptor output is too small");
+        std::memcpy(contentId, trackKey.c_str(), trackKey.size() + 1);
+        std::memcpy(revision, manifest.version, std::strlen(manifest.version) + 1);
+        std::memcpy(json, serialized.c_str(), serialized.size() + 1);
+        CustomPackage_Free(&owned);
+        return needsLaps ? 2 : 1;
+    }
+    catch (const std::exception &e)
+    {
+        if (error && errorSize) std::snprintf(error, errorSize, "%s", e.what());
+        CustomPackage_Free(&owned);
         return 0;
     }
 }

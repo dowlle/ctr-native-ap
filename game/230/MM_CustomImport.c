@@ -6,20 +6,18 @@
    system dialog, from assets/tracks/import/ (Steam Deck Game Mode), or drops
    it on the client window; the patch is read on a worker against the mounted
    disc, and the review list shows one line per found item. Confirm installs
-   the selected race tracks where rooms and solo seeds find them
-   (assets/tracks/<track key>/original) and, in the authoring builds, as
-   packages too. The player client keeps the room store and the Track
-   Library store apart (ruled 2026-11-02). */
+   the selected race tracks in the shared package store. Rooms, Play Solo
+   and Arcade resolve that same installed revision. */
 #include <platform/native_xdelta_import.h>
 #include <platform/native_xdelta_pick.h>
 #include <platform/native_disc_image.h>
 
 #ifndef MM_IMPORT_PLAYER
-#define IMPORT_WHERE (CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM)
+#define IMPORT_WHERE CTR_XDELTA_INSTALL_PACKAGES
 #define IMPORT_HINT "Pick or drop an xdelta patch. Its race tracks become packages."
 #else
-#define IMPORT_WHERE CTR_XDELTA_INSTALL_ROOM
-#define IMPORT_HINT "Pick or drop an xdelta patch for rooms and solo seeds."
+#define IMPORT_WHERE CTR_XDELTA_INSTALL_PACKAGES
+#define IMPORT_HINT "Pick or drop an xdelta patch to install tracks."
 #endif
 
 #ifdef MM_IMPORT_PLAYER
@@ -27,19 +25,21 @@
    track with one goes into solo/tracks, so the Play Solo Custom Tracks page
    lists it at once. A track without laps goes into solo/needs-laps: the page
    lists it too and asks the player for its laps first. */
-static void MM_CustomImport_KeepSoloDescriptors(void)
+static int MM_CustomImport_KeepSoloDescriptors(void)
 {
     static char json[16384];
     char contentId[65], revision[65];
-    int i, needsLaps, count = XdeltaImport_InstalledDescriptorCount();
+    int i, needsLaps, count = XdeltaImport_InstalledDescriptorCount(), ok = 1;
     for (i = 0; i < count; i++)
         if (XdeltaImport_InstalledDescriptor(i, contentId, revision, json, sizeof json, &needsLaps))
         {
             if (needsLaps)
-                AP_Solo_RecordTrackNeedsLaps(contentId, revision, json);
+                ok &= AP_Solo_RecordTrackNeedsLaps(contentId, revision, json);
             else
-                AP_Solo_RecordTrackDescriptor(contentId, revision, json);
+                ok &= AP_Solo_RecordTrackDescriptor(contentId, revision, json);
         }
+        else ok = 0;
+    return ok && count > 0;
 }
 #endif
 
@@ -162,6 +162,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
     if (s_importStage == IMPORT_INSTALLING)
     {
         int installed = 0;
+        int published = 1;
         char error[512] = {0};
         int state = XdeltaImport_PollInstall(&installed, error, sizeof error);
         if (state == 1 || state == -2)
@@ -173,9 +174,12 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             /* Current Seed shows the new files at once, also after a
                failure part way through the list. */
             if (!AP_SeedContentInstallBusy()) AP_CustomContentRescan();
-            MM_CustomImport_KeepSoloDescriptors();
+            published = MM_CustomImport_KeepSoloDescriptors();
 #endif
-            if (state == 1) snprintf(s_importMessage, sizeof s_importMessage, "Installed %d track%s. Files verified.", installed, installed == 1 ? "" : "s");
+            if (state == 1 && !published)
+                snprintf(s_importMessage, sizeof s_importMessage, "Files installed, but Play Solo publication failed.");
+            else if (state == 1)
+                snprintf(s_importMessage, sizeof s_importMessage, "Installed %d track%s. Files verified.", installed, installed == 1 ? "" : "s");
             else snprintf(s_importMessage, sizeof s_importMessage, "%s", error);
 #ifdef MM_IMPORT_PLAYER
             if (state == 1)

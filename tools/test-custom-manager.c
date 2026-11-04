@@ -1,4 +1,4 @@
-// cc -m32 -ffunction-sections -fdata-sections -Wl,--gc-sections -DCTR_NATIVE -DCTR_CUSTOM_TRACKS -DCTR_CUSTOM_PACKAGES -DBUILD=926 -I include -I . tools/test-custom-manager.c -o /tmp/test-custom-manager
+// cc -m32 -ffunction-sections -fdata-sections -Wl,--gc-sections -DCTR_NATIVE -DCTR_AP -DCTR_CUSTOM_TRACKS -DCTR_CUSTOM_PACKAGES -DBUILD=926 -I include -I . tools/test-custom-manager.c -o /tmp/test-custom-manager
 /* Production manager input and font-bound checks; workers/rendering are stubbed. */
 #include <stdio.h>
 #include <string.h>
@@ -7,6 +7,7 @@
 #include <platform/native_assets.h>
 #include <platform/native_custom_track_library.h>
 #include <platform/native_saphi_catalogue.h>
+#include "../ap/ap_solo.h"
 struct sData sdata_static;
 struct Data data;
 #define DecalFont_DrawLineOT UnusedDraw
@@ -23,6 +24,7 @@ static int s_saphiRefreshBusy, s_saphiLoaded, s_saphiDownloading;
 static char s_saphiMessage[512], s_saphiQuery[81];
 static size_t s_saphiSelection[2];
 static int checks, failures, refreshResult, installResult, starts, textResult;
+static int publishOK=1, publishCalls;
 static struct CustomSaphiRevision rows[9];
 #define CHECK(x) do { checks++; if (!(x)) { failures++; printf("FAIL %d: %s\n",__LINE__,#x); } } while (0)
 static void MM_CustomLibrary_Tick(int reload) { (void)reload; }
@@ -46,6 +48,8 @@ int CustomSaphi_StartInstall(const struct CustomSaphiRevision *r,const char *a)
 { (void)r;(void)a;starts++;return 1; }
 int CustomSaphi_PollInstall(char pin[65],char *e,size_t n)
 { (void)e;(void)n;if(installResult==1)strcpy(pin,"fixture");return installResult; }
+int AP_Solo_PublishInstalledStore(const char *pin,char *error,size_t n)
+{ (void)pin;publishCalls++;if(!publishOK)snprintf(error,n,"Index unavailable");return publishOK; }
 static char drawn[4096];
 void DecalFont_DrawLineOT(char *s,int x,int y,s16 f,int flags,uint32_t *ot)
 { (void)ot; int w=DecalFont_GetLineWidth(s,f);if(flags&JUSTIFY_CENTER)x-=w/2;CHECK(x>=0&&x+w<=512&&y>=0&&y+8<=216);
@@ -91,7 +95,10 @@ int main(void)
  strcpy(rows[0].disabledReason,"Files not hosted");tick(BTN_CROSS);CHECK(starts==0);
  rows[0].disabledReason[0]=0;tick(BTN_CROSS);CHECK(starts==1&&s_saphiDownloading);
  tick(BTN_CROSS);CHECK(starts==1);
- installResult=1;tick(0);CHECK(!s_saphiDownloading&&s_contentStoreWanted);
+ installResult=1;tick(0);CHECK(!s_saphiDownloading&&s_contentStoreWanted&&publishCalls==1);
+ s_saphiDownloading=1;publishOK=0;installResult=1;tick(0);
+ CHECK(strstr(s_saphiMessage,"publication failed")!=NULL);
+ publishOK=1;
  tick(BTN_R1);CHECK(s_contentLibraryTab==1);
  struct CustomTrackLibraryEntry installed={0};installed.installed=1;strcpy(installed.title,"Installed track");
  s_contentLibrary.entries=&installed;s_contentLibrary.count=1;s_contentStoreWanted=0;
@@ -149,7 +156,7 @@ int main(void)
  scanState=1;tick(0);CHECK(strstr(drawn,"[x] Snowy Valley")&&strstr(drawn,"2 tracks"));
  tick(BTN_DOWN);tick(BTN_DOWN);tick(BTN_SQUARE);tick(0);CHECK(strstr(drawn,"Skipped")&&strstr(drawn,"Arena: not"));
  tick(BTN_UP);tick(BTN_SQUARE);tick(BTN_CROSS);CHECK(installStarts==1&&lastSelected[0]&&!lastSelected[1]&&!lastSelected[2]);
- CHECK(lastWhere==(CTR_XDELTA_INSTALL_PACKAGES|CTR_XDELTA_INSTALL_ROOM));
+ CHECK(lastWhere==CTR_XDELTA_INSTALL_PACKAGES);
  installState=1;s_contentStoreWanted=0;tick(0);CHECK(strstr(s_importMessage,"Installed 2 tracks")&&s_contentStoreWanted);
  s_contentLibraryTab=0;tick(BTN_CROSS);CHECK(!MM_CustomImport_Active()&&s_contentLibraryTab==1);
  tick(BTN_SELECT);scanState=-1;tick(BTN_CROSS);pickState=1;tick(0);scanState=-2;tick(0);

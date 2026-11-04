@@ -62,10 +62,8 @@ const struct XdeltaImportSummary *XdeltaImport_Summary(const struct XdeltaImport
 /* Owned manifest bytes of an offered item, for harnesses and the corpus tool. */
 int XdeltaImport_CopyManifest(const struct XdeltaImportScan *scan, unsigned int item, void *destination,
                               size_t capacity, size_t *written);
-/* Where Install writes (decision 35, 2026-10-28). PACKAGES: the package
-   store ASSETS/tracks/packages the Track Manager reads (authoring builds).
-   ROOM: the LEV and VRM in ASSETS/tracks/<track key>/original, where rooms
-   and solo seeds find a custom track by its hashes (every build). */
+/* PACKAGES is the shared installed store for rooms, Solo and Arcade. ROOM
+   remains for compatibility with older installs and harness fixtures. */
 #define CTR_XDELTA_INSTALL_PACKAGES 1
 #define CTR_XDELTA_INSTALL_ROOM 2
 /* Install the selected offered items. selected has summary.count entries.

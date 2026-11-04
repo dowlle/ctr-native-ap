@@ -342,6 +342,13 @@ static inline std::string AP_SoloDescriptorFileName(const std::string &key, cons
 	return key + "__" + revision + ".json";
 }
 
+// A store rescan may skip the atomic writer only when the complete descriptor
+// already matches. Authored race settings can change without changing LEV/VRM.
+static inline bool AP_SoloDescriptorUnchanged(const nlohmann::json &old, const nlohmann::json &fresh)
+{
+	return old.is_object() && fresh.is_object() && old == fresh;
+}
+
 // Laps the player picks for an imported track without them (ruling of
 // 2026-11-02): the xdelta importer keeps such a track's descriptor without
 // "laps" in solo/needs-laps, the Custom Tracks page lists it, and Left/Right

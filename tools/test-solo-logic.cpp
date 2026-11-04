@@ -336,6 +336,22 @@ static void test_needs_laps()
 	CHECK(AP_SoloDescriptorWithLaps(kept, 4).empty()); // never over laps it has
 }
 
+static void test_store_descriptor_rescan()
+{
+	nlohmann::json original = {{"files", {{{"role", "lev"}, {"sha256", "aa"}},
+	                                         {{"role", "vrm"}, {"sha256", "bb"}}}},
+	                           {"laps", 3}, {"author", "First"},
+	                           {"relic_targets", {{"gold", 500}}}};
+	CHECK(AP_SoloDescriptorUnchanged(original, original));
+	for (const char *field : {"laps", "author", "relic_targets"})
+	{
+		nlohmann::json changed = original;
+		changed[field] = "changed";
+		CHECK(!AP_SoloDescriptorUnchanged(original, changed));
+	}
+	CHECK(!AP_SoloDescriptorUnchanged(nlohmann::json(), original));
+}
+
 int main()
 {
 	test_parse_lines();
@@ -348,6 +364,7 @@ int main()
 	test_options();
 	test_tracks();
 	test_needs_laps();
+	test_store_descriptor_rescan();
 	if (g_fail)
 	{
 		std::printf("test-solo-logic: %d failure(s)\n", g_fail);

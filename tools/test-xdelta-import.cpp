@@ -719,6 +719,46 @@ int main()
             CHECK(laps, "descriptor laps reach race settings");
             CHECK(excluded, "descriptor exclusion clears CTR Challenge");
 
+            /* One store revision supplies the same exact pair to rooms and
+               Play Solo, including a track placed by hand then rescanned. */
+            for (const auto &e : rows)
+            {
+                char key[65], revision[65], plan[16384], reason[256];
+                int kind = CustomPackage_StoreDescriptor(assets.c_str(), e.pin, nullptr,
+                    key, sizeof key, revision, sizeof revision, plan, sizeof plan, reason, sizeof reason);
+                bool authoredLaps = false;
+                for (unsigned int i = 0; i < e.manifest.count; i++)
+                    authoredLaps |= !std::strcmp(e.manifest.files[i].role, "race_settings");
+                CHECK(kind == (authoredLaps ? 1 : 2), "store descriptor uses authored laps or needs-laps");
+                if (!kind) continue;
+                auto d = nlohmann::json::parse(plan);
+                CHECK(d["content_id"] == key && d["revision"] == revision && d["author"] == "Someone",
+                      "store descriptor keeps key, revision and author");
+                CHECK(d["files"].size() == 2 && d["files"][0]["sha256"] == e.local.levSha256,
+                      "store descriptor pins verified LEV and VRM");
+                char levPath[4096], vrmPath[4096];
+                CHECK(CustomPackage_FindPinnedFiles(assets.c_str(), revision, e.manifest.uuid,
+                    d["files"][0]["sha256"].get<std::string>().c_str(), d["files"][0]["bytes"],
+                    d["files"][1]["sha256"].get<std::string>().c_str(), d["files"][1]["bytes"],
+                    levPath, sizeof levPath, vrmPath, sizeof vrmPath), "shared resolver finds one verified pair");
+                CHECK(!CustomPackage_FindPinnedFiles(assets.c_str(), revision, e.manifest.uuid,
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", d["files"][0]["bytes"],
+                    d["files"][1]["sha256"].get<std::string>().c_str(), d["files"][1]["bytes"],
+                    levPath, sizeof levPath, vrmPath, sizeof vrmPath), "seed pin mismatch refuses shared pair");
+            }
+            const std::string sharedAssets = root + "/assets-shared";
+            mkdir(sharedAssets.c_str(), 0755);
+            CHECK(XdeltaImport_Install(c.scan, selected.data(), sharedAssets.c_str(),
+                                       CTR_XDELTA_INSTALL_PACKAGES, error, sizeof error) == 2,
+                  "xdelta installs directly into the shared store");
+            CHECK(stat((sharedAssets + "/tracks/snow-lane-key").c_str(), &info) != 0,
+                  "shared install does not create a second room copy");
+            std::vector<CustomPackageStoreEntry> sharedRows;
+            CustomPackage_ScanStore((sharedAssets + "/tracks/packages").c_str(),
+                [](const CustomPackageStoreEntry *e, void *c) { if (e->verified) ((std::vector<CustomPackageStoreEntry> *)c)->push_back(*e); },
+                &sharedRows, error, sizeof error);
+            CHECK(sharedRows.size() == 2, "shared store sees both installed xdelta revisions");
+
             /* The Play Solo descriptor (ruling of 2026-11-02): complete, and
                every fact measured on the installed room files. */
             char solo[16384], key[65], revision[65], why[160];
