@@ -1117,6 +1117,14 @@ extern "C" int AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *r
 	                               : nlohmann::json();
 	if (old.is_object() && old.contains("files") && old["files"] == fresh.value("files", nlohmann::json()))
 	{
+		// A reinstall may change title, author or capabilities. Preserve only
+		// the player's chosen laps; publish the rest of the fresh descriptor.
+		const auto merged = AP_SoloMergeNeedsLaps(old, fresh);
+		if (merged.is_null())
+			return 0;
+		if (!AP_SoloDescriptorUnchanged(old, merged) &&
+		    !KeepDescriptorFile("tracks", name, merged.dump()))
+			return 0;
 		DropNeedsLaps(name);
 		return 1;
 	}

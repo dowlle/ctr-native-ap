@@ -26,8 +26,10 @@ extern "C" {
 #include <nlohmann/json.hpp>
 
 #include <cstdio>
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <map>
 #include <string>
 #include <vector>
@@ -339,8 +341,44 @@ static bool scratch_clean()
     return std::system(cmd.c_str()) != 0;
 }
 
+static void test_manifest_fixture()
+{
+    std::ifstream input("tools/fixtures/package-manifests.json");
+    CHECK(input.good(), "shared manifest fixture exists");
+    if (!input.good()) return;
+    nlohmann::json fixture;
+    input >> fixture;
+    for (const auto &test : fixture["cases"])
+    {
+        auto manifest = fixture["base"];
+        if (test.contains("set"))
+            for (auto it = test["set"].begin(); it != test["set"].end(); ++it)
+                manifest[nlohmann::json::json_pointer(it.key())] = it.value();
+        if (test.contains("erase"))
+            for (const auto &path : test["erase"])
+                manifest.erase(path.get<std::string>().substr(1));
+        std::sort(manifest["files"].begin(), manifest["files"].end(), [](const auto &a, const auto &b) {
+            return a.value("role", "") == b.value("role", "") ? a.value("path", "") < b.value("path", "")
+                                                       : a.value("role", "") < b.value("role", "");
+        });
+        const std::string serialized = manifest.dump();
+        NativeSha256Ctx hash;
+        unsigned char bytes[32];
+        char pin[65], error[256];
+        NativeSha256_Init(&hash);
+        NativeSha256_Update(&hash, serialized.data(), serialized.size());
+        NativeSha256_Final(&hash, bytes);
+        NativeSha256_ToHex(bytes, pin);
+        CustomPackageManifest parsed;
+        const bool admitted = CustomPackage_ParseManifest(serialized.data(), serialized.size(), pin,
+                                                          &parsed, error, sizeof error) != 0;
+        CHECK(admitted == test["accept"].get<bool>(), test["name"].get<std::string>().c_str());
+    }
+}
+
 int main()
 {
+    test_manifest_fixture();
     char tmpl[] = "/tmp/ctr-xdelta-XXXXXX";
     if (!mkdtemp(tmpl)) return 2;
     root = tmpl;

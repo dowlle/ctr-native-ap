@@ -294,8 +294,9 @@ int main(void)
 	snprintf(dl_detail, sizeof dl_detail, "Saphi lists another file size than this seed pins. Nothing was changed.");
 	expect(AP_SeedContentInstallTick(message, sizeof message) == 0 && !AP_SeedContentInstallBusy() && starts == 2 && rescans == 1,
 	       "a failure stops: no third start, one rescan for the installed track");
-	expect(strstr(message, "Baby T Park: Saphi lists another file size") && strstr(message, "Installed 1 before it"),
-	       "the message names the failure and what was installed");
+	expect(strstr(message, "Baby T Park: Saphi lists another file size") && strstr(message, "Installed 1 before it") &&
+	       strstr(message, "Play Solo publication also failed"),
+	       "the message names the later failure and earlier publication failure");
 	expect(AP_SeedContentInstallTick(message, sizeof message) == 0 && starts == 2, "an idle tick does nothing");
 
 	/* A first-track failure installs nothing and does not rescan. */

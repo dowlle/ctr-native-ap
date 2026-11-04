@@ -350,6 +350,18 @@ static void test_store_descriptor_rescan()
 		CHECK(!AP_SoloDescriptorUnchanged(original, changed));
 	}
 	CHECK(!AP_SoloDescriptorUnchanged(nlohmann::json(), original));
+	nlohmann::json reinstall = original;
+	reinstall.erase("laps");
+	reinstall["author"] = "New author";
+	reinstall["display_name"] = "New title";
+	reinstall["capabilities"] = {{"arcade", true}};
+	auto merged = AP_SoloMergeNeedsLaps(original, reinstall);
+	CHECK(merged.is_object() && merged["laps"] == 3 && merged["author"] == "New author" &&
+	      merged["display_name"] == "New title" && merged["capabilities"]["arcade"] == true);
+	CHECK(!AP_SoloDescriptorUnchanged(original, merged));
+	CHECK(AP_SoloDescriptorUnchanged(merged, AP_SoloMergeNeedsLaps(merged, reinstall)));
+	reinstall["files"][0]["sha256"] = "other";
+	CHECK(AP_SoloMergeNeedsLaps(original, reinstall).is_null());
 }
 
 int main()

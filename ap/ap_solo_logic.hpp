@@ -358,6 +358,20 @@ static inline bool AP_SoloDescriptorUnchanged(const nlohmann::json &old, const n
 #define AP_SOLO_LAPS_MAX 7
 #define AP_SOLO_LAPS_DEFAULT 3
 
+// A needs-laps reinstall refreshes package metadata but leaves the player's
+// chosen lap count in the complete descriptor. Null means incompatible pins
+// or an invalid old choice; the caller must leave the old file alone.
+static inline nlohmann::json AP_SoloMergeNeedsLaps(const nlohmann::json &old, const nlohmann::json &fresh)
+{
+	if (!old.is_object() || !fresh.is_object() || !old.contains("files") || !fresh.contains("files") ||
+	    old["files"] != fresh["files"] || !old.contains("laps") || !old["laps"].is_number_integer() ||
+	    old["laps"] < AP_SOLO_LAPS_MIN || old["laps"] > AP_SOLO_LAPS_MAX)
+		return nullptr;
+	auto merged = fresh;
+	merged["laps"] = old["laps"];
+	return merged;
+}
+
 // Left (-1) or Right (+1) on the lap count: it stops at both ends.
 static inline int AP_SoloLapsStep(int laps, int direction)
 {

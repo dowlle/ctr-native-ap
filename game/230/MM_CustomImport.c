@@ -176,7 +176,9 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             if (!AP_SeedContentInstallBusy()) AP_CustomContentRescan();
             published = MM_CustomImport_KeepSoloDescriptors();
 #endif
-            if (state == 1 && !published)
+            if (state == -2 && installed && !published)
+                snprintf(s_importMessage, sizeof s_importMessage, "%.185s Play Solo publication also failed.", error);
+            else if (state == 1 && !published)
                 snprintf(s_importMessage, sizeof s_importMessage, "Files installed, but Play Solo publication failed.");
             else if (state == 1)
                 snprintf(s_importMessage, sizeof s_importMessage, "Installed %d track%s. Files verified.", installed, installed == 1 ? "" : "s");

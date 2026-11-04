@@ -390,7 +390,9 @@ static void AP_SeedInstallFinish(char *message, size_t messageSize, const char *
 			publicationFailed = 1;
 	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
 	ready = ap_seed_ready_count(rows, n);
-	if (failure && installed)
+	if (failure && installed && publicationFailed)
+		snprintf(message, messageSize, "%.100s Installed %d before it; verification or Play Solo publication also failed. Ready: %d / %d.", failure, installed, ready, n);
+	else if (failure && installed)
 		snprintf(message, messageSize, "%s Installed %d before it. Ready: %d / %d.", failure, installed, ready, n);
 	else if (failure)
 		snprintf(message, messageSize, "%s Ready: %d / %d.", failure, ready, n);
