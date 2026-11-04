@@ -241,11 +241,9 @@ int AP_SeedContentInstallPreview(int *plan, int *count, uint64_t *bytes, char *r
 	return ap_seed_install_plan(rows, n, AP_SeedDownloaderBusy(), plan, count, bytes, reason, reasonSize);
 }
 
-// Where package `index` installs, checked without touching the disk: the
-// compiled profile's own folder, or for a registry download (row 10k,
-// *profile NULL, *match filled) the room's track-key folder that the scan
-// reads (tracks/<content_id>/original). Exactly one safe folder below
-// assets/tracks either way.
+// A safe track key and source lookup for package `index`, checked before
+// download. The worker publishes into tracks/packages; these legacy paths
+// only supply the bounded track key and profile metadata.
 static int AP_SeedInstallTarget(int index, const struct CustomTrackManagerPackage **profile,
                                 struct ApTrackRegistryMatch *match,
                                 struct CustomTrackManagerStatus *paths, char *tracks, size_t tracksSize)
@@ -295,9 +293,13 @@ static int AP_SeedInstallBegin(int at, char *message, size_t messageSize)
 	if (pkg && AP_SeedInstallTarget(index, &profile, &match, &paths, tracks, sizeof tracks))
 	{
 		if (profile)
-			started = ap_custom_track_download_start_pinned(tracks, paths.packageRoot, profile->downloadApiUrl,
-			                                                pkg->revision, pkg->lev_sha256, pkg->lev_bytes,
-			                                                pkg->vrm_sha256, pkg->vrm_bytes);
+			started = ap_custom_track_download_start_shared(tracks, paths.packageRoot, profile->downloadApiUrl,
+			                                                pkg->revision, pkg->uuid, pkg->display_name, pkg->author, pkg->laps,
+			                                                pkg->has_relic_targets ? pkg->relic_targets[0] : 0,
+			                                                pkg->has_relic_targets ? pkg->relic_targets[1] : 0,
+			                                                pkg->has_relic_targets ? pkg->relic_targets[2] : 0,
+			                                                pkg->lev_sha256, pkg->lev_bytes,
+			                                                pkg->vrm_sha256, pkg->vrm_bytes, 0, 0, 0);
 		else
 		{
 			int source = AP_TRACK_REGISTRY_SOURCE_NONE;
@@ -308,10 +310,14 @@ static int AP_SeedInstallBegin(int at, char *message, size_t messageSize)
 			         ap_seed_install.title[at], source == AP_TRACK_REGISTRY_SOURCE_CACHED ? "cached" : "live",
 			         match.saphi_track_id, match.lev_download_id, match.vrm_download_id);
 			AP_AppendLog(line);
-			started = ap_custom_track_download_start_registry(tracks, paths.packageRoot, match.saphi_track_id,
-			                                                  match.lev_download_id, match.vrm_download_id,
-			                                                  pkg->lev_sha256, pkg->lev_bytes,
-			                                                  pkg->vrm_sha256, pkg->vrm_bytes);
+			started = ap_custom_track_download_start_shared(tracks, paths.packageRoot, NULL,
+			                                                pkg->revision, pkg->uuid, pkg->display_name, pkg->author, pkg->laps,
+			                                                pkg->has_relic_targets ? pkg->relic_targets[0] : 0,
+			                                                pkg->has_relic_targets ? pkg->relic_targets[1] : 0,
+			                                                pkg->has_relic_targets ? pkg->relic_targets[2] : 0,
+			                                                pkg->lev_sha256, pkg->lev_bytes,
+			                                                pkg->vrm_sha256, pkg->vrm_bytes, match.saphi_track_id,
+			                                                match.lev_download_id, match.vrm_download_id);
 		}
 	}
 	if (!started)
@@ -373,17 +379,25 @@ int AP_SeedContentInstallStart(char *message, size_t messageSize)
 static void AP_SeedInstallFinish(char *message, size_t messageSize, const char *failure)
 {
 	struct AP_SeedContentRow rows[AP_SEED_ROWS_MAX];
-	int n, ready;
+	int n, ready, publicationFailed = 0, i;
 	char line[512];
 	const int installed = ap_seed_install.installed;
 	AP_SeedInstallStop();
 	if (installed) AP_CustomContentRescan();
+	for (i = 0; i < installed; ++i)
+		if (ap_content_package_scan[ap_seed_install.queue[i]] != CTR_CT_MANAGER_READY + 1 ||
+		    !ap_content_descriptor_publication[ap_seed_install.queue[i]])
+			publicationFailed = 1;
 	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
 	ready = ap_seed_ready_count(rows, n);
-	if (failure && installed)
+	if (failure && installed && publicationFailed)
+		snprintf(message, messageSize, "%.100s Installed %d before it; verification or Play Solo publication also failed. Ready: %d / %d.", failure, installed, ready, n);
+	else if (failure && installed)
 		snprintf(message, messageSize, "%s Installed %d before it. Ready: %d / %d.", failure, installed, ready, n);
 	else if (failure)
 		snprintf(message, messageSize, "%s Ready: %d / %d.", failure, ready, n);
+	else if (publicationFailed)
+		snprintf(message, messageSize, "Files installed, but verification or Play Solo publication failed. Ready: %d / %d.", ready, n);
 	else
 		snprintf(message, messageSize, "Installed %d. Files verified. Ready: %d / %d.", installed, ready, n);
 	snprintf(line, sizeof line, "[CustomTracks] Current Seed: %s\n", message);
@@ -426,19 +440,6 @@ int AP_SeedContentInstallTick(char *message, size_t messageSize)
 		snprintf(failure, sizeof failure, "%s: %s", ap_seed_install.title[ap_seed_install.at], detail);
 		AP_SeedInstallFinish(message, messageSize, failure);
 		return 0;
-	}
-	{
-		// The verified files are in place: add the profile's folder skeleton
-		// (PrepareFolder never replaces a file) before the rescan finalizes.
-		// A registry download has no profile: the open scan reads the track-key
-		// folder as it is.
-		const struct CustomTrackManagerPackage *profile;
-		struct ApTrackRegistryMatch match;
-		struct CustomTrackManagerStatus paths;
-		char tracks[CTR_CT_MANAGER_PATH_MAX];
-		if (AP_SeedInstallTarget(ap_seed_install.queue[ap_seed_install.at], &profile, &match, &paths, tracks,
-		                         sizeof tracks) && profile)
-			CustomTrackManager_PrepareFolder(NativeAssets_GetAssetDir(), profile, &paths);
 	}
 	ap_seed_install.installed++;
 	ap_seed_install.at++;

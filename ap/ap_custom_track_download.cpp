@@ -738,16 +738,22 @@ void publish_pinned(const std::string &tracks, const std::string &folder,
 		                                    : done[0] || done[1] ? "" : " Nothing was installed."));
 }
 
-// `lev_bytes` / `vrm_bytes` are the room's size pins and `tracks` the folder
-// the package root must sit in (Current Seed, #133 PR 7); all zero / empty for
-// the legacy single-package download, which keeps its old behaviour.
+// `lev_bytes` / `vrm_bytes` are the seed's size pins. A seed UUID publishes
+// the verified pair in tracks/packages; old callers without one retain the
+// room-folder path for existing installs and compatibility harnesses.
 // `lev_id` / `vrm_id` are the Saphi download ids a registry lookup named
 // (row 10k), 0 to pick the files by `version`.
 void worker(std::string package_root, std::string api_url, std::string version,
 	        std::string lev_hash, std::string vrm_hash,
-	        uint32_t lev_pin, uint32_t vrm_pin, std::string tracks, int lev_id, int vrm_id)
+	        uint32_t lev_pin, uint32_t vrm_pin, std::string tracks, int lev_id, int vrm_id,
+	        std::string seed_uuid, std::string seed_title, std::string seed_author, unsigned int seed_laps,
+	        int relic_sapphire, int relic_gold, int relic_platinum)
 {
 	const bool pinned = !tracks.empty();
+#ifndef CTR_CUSTOM_PACKAGES
+	(void)seed_uuid; (void)seed_title; (void)seed_author; (void)seed_laps;
+	(void)relic_sapphire; (void)relic_gold; (void)relic_platinum;
+#endif
 	try
 	{
 		std::string api_path;
@@ -784,6 +790,74 @@ void worker(std::string package_root, std::string api_url, std::string version,
 			throw std::runtime_error("The downloaded VRM does not match the pinned file. Nothing was installed.");
 		if (!ap_seed_size_agrees(lev_pin, lev_bytes.size()) || !ap_seed_size_agrees(vrm_pin, vrm_bytes.size()))
 			throw std::runtime_error("The downloaded files are not the size this seed pins. Nothing was changed.");
+
+#ifdef CTR_CUSTOM_PACKAGES
+		if (pinned && !seed_uuid.empty())
+		{
+			const std::string key = package_root.substr(tracks.size() + 1);
+			const std::string assets = tracks.substr(0, tracks.size() - 7); // /tracks
+			if (tracks.size() < 8 || tracks.compare(tracks.size() - 7, 7, "/tracks"))
+				throw std::runtime_error("The shared package store path is invalid");
+			const std::string packageTitle = CustomPackage_ValidateTitle(seed_title.data(), seed_title.size()) ? seed_title : key;
+			nlohmann::json files = nlohmann::json::array({
+				{{"role", "lev"}, {"path", "original/track.lev"}, {"sha256", lev_hash}, {"bytes", lev_bytes.size()}},
+				{{"role", "vrm"}, {"path", "original/track.vrm"}, {"sha256", vrm_hash}, {"bytes", vrm_bytes.size()}}});
+			const std::string source = nlohmann::json({{"schema_version", 1}, {"provider", "ctr-seed"},
+				{"track_key", key}, {"author", seed_author}}).dump();
+			std::string settings;
+			std::string relicTargets;
+			if (seed_laps >= 1 && seed_laps <= 7)
+				settings = nlohmann::json({{"schema_version", 1}, {"laps", seed_laps},
+					{"lev_sha256", lev_hash}, {"vrm_sha256", vrm_hash}}).dump();
+			if (!settings.empty() && relic_sapphire > relic_gold && relic_gold > relic_platinum && relic_platinum > 0)
+				relicTargets = nlohmann::json({{"schema_version", 1}, {"laps", seed_laps},
+					{"lev_sha256", lev_hash}, {"vrm_sha256", vrm_hash}, {"ticks_per_second", 960},
+					{"sapphire", relic_sapphire}, {"gold", relic_gold}, {"platinum", relic_platinum}}).dump();
+			auto sha = [](const std::string &bytes) {
+				unsigned char hash[32]; unsigned int count = 0;
+				if (!EVP_Digest(bytes.data(), bytes.size(), hash, &count, EVP_sha256(), nullptr) || count != 32)
+					throw std::runtime_error("Could not hash shared package metadata");
+				static const char digits[] = "0123456789abcdef";
+				std::string out;
+				for (unsigned int i = 0; i < count; i++) { out += digits[hash[i] >> 4]; out += digits[hash[i] & 15]; }
+				return out;
+			};
+			files.insert(files.begin() + 1, {{"role", "presentation"}, {"path", "metadata/seed-source.json"},
+				{"sha256", sha(source)}, {"bytes", source.size()}});
+			if (!settings.empty())
+				files.insert(files.begin() + 2, {{"role", "race_settings"}, {"path", "metadata/race-settings.json"},
+					{"sha256", sha(settings)}, {"bytes", settings.size()}});
+			if (!relicTargets.empty())
+				files.insert(files.end() - 1, {{"role", "relic_targets"}, {"path", "metadata/relic-targets.json"},
+					{"sha256", sha(relicTargets)}, {"bytes", relicTargets.size()}});
+			const std::string manifest = nlohmann::json({{"schema_version", 1}, {"package_uuid", seed_uuid},
+				{"version", version}, {"title", packageTitle},
+				{"compatibility", {{"native_contract", 1}, {"apworld_contract", 1}}},
+				{"files", files}}).dump();
+			unsigned char digest[EVP_MAX_MD_SIZE];
+			unsigned int digestSize = 0;
+			if (!EVP_Digest(manifest.data(), manifest.size(), digest, &digestSize, EVP_sha256(), nullptr) || digestSize != 32)
+				throw std::runtime_error("Could not pin the downloaded package manifest");
+			static const char hex[] = "0123456789abcdef";
+			std::string pin;
+			for (unsigned int i = 0; i < digestSize; i++) { pin += hex[digest[i] >> 4]; pin += hex[digest[i] & 15]; }
+			CustomPackageOwned *owned = nullptr;
+			std::vector<CustomPackageInput> inputs = {{"lev", lev_bytes.data(), lev_bytes.size()},
+				{"presentation", source.data(), source.size()}};
+			if (!settings.empty()) inputs.push_back({"race_settings", settings.data(), settings.size()});
+			if (!relicTargets.empty()) inputs.push_back({"relic_targets", relicTargets.data(), relicTargets.size()});
+			inputs.push_back({"vrm", vrm_bytes.data(), vrm_bytes.size()});
+			char detail[512] = {};
+			if (!CustomPackage_AcquireBuffers(manifest.data(), manifest.size(), pin.c_str(), inputs.data(), inputs.size(),
+			                                   &owned, detail, sizeof detail))
+				throw std::runtime_error(detail);
+			const int installed = CustomPackage_InstallAssets(owned, assets.c_str(), detail, sizeof detail);
+			CustomPackage_Free(&owned);
+			if (!installed) throw std::runtime_error(detail);
+			set_state(AP_CT_DOWNLOAD_SUCCEEDED, "Download verified. Shared package installed.");
+			return;
+		}
+#endif
 
 		const std::string original = join_path(package_root, "original");
 		const std::string lev_temp = join_path(original, ".saphi-track.lev.part");
@@ -849,7 +923,10 @@ int existing_target(const std::string &path, const std::string &expected)
 
 int start_worker(const char *package_root, const char *download_api_url, const char *package_version,
 	             const char *lev_sha256, const char *vrm_sha256,
-	             uint32_t lev_bytes, uint32_t vrm_bytes, const char *tracks, int lev_id = 0, int vrm_id = 0)
+	             uint32_t lev_bytes, uint32_t vrm_bytes, const char *tracks, int lev_id = 0, int vrm_id = 0,
+	             const char *seed_uuid = nullptr, const char *seed_title = nullptr,
+	             const char *seed_author = nullptr, unsigned int seed_laps = 0,
+	             int relic_sapphire = 0, int relic_gold = 0, int relic_platinum = 0)
 {
 	DownloadState &shared = download_state();
 	{
@@ -863,7 +940,10 @@ int start_worker(const char *package_root, const char *download_api_url, const c
 	{
 		std::thread(worker, std::string(package_root), std::string(download_api_url), std::string(package_version),
 		            std::string(lev_sha256), std::string(vrm_sha256), lev_bytes, vrm_bytes,
-		            std::string(tracks ? tracks : ""), lev_id, vrm_id).detach();
+		            std::string(tracks ? tracks : ""), lev_id, vrm_id,
+		            std::string(seed_uuid ? seed_uuid : ""), std::string(seed_title ? seed_title : ""),
+		            std::string(seed_author ? seed_author : ""), seed_laps,
+		            relic_sapphire, relic_gold, relic_platinum).detach();
 		return 1;
 	}
 	catch (const std::exception &e)
@@ -917,6 +997,39 @@ extern "C" int ap_custom_track_download_start_registry(const char *tracks_dir,
 	// The version is unused when download ids are named.
 	return start_worker(package_root, api, "registry", lev_sha256, vrm_sha256, lev_bytes, vrm_bytes, tracks_dir,
 	                    lev_download_id, vrm_download_id);
+}
+
+extern "C" int ap_custom_track_download_start_shared(const char *tracks_dir, const char *package_root,
+    const char *download_api_url, const char *revision, const char *uuid,
+    const char *title, const char *author, unsigned int laps,
+    int relic_sapphire, int relic_gold, int relic_platinum,
+    const char *lev_sha256, uint32_t lev_bytes, const char *vrm_sha256, uint32_t vrm_bytes,
+    int saphi_track_id, int lev_download_id, int vrm_download_id)
+{
+#ifndef CTR_CUSTOM_PACKAGES
+    (void)tracks_dir; (void)package_root; (void)download_api_url; (void)revision; (void)uuid;
+    (void)title; (void)author; (void)laps; (void)relic_sapphire; (void)relic_gold; (void)relic_platinum;
+    (void)lev_sha256; (void)lev_bytes; (void)vrm_sha256; (void)vrm_bytes;
+    (void)saphi_track_id; (void)lev_download_id; (void)vrm_download_id;
+    return 0;
+#else
+    char api[96];
+    if (!tracks_dir || !package_root || !revision || !*revision || !uuid || !*uuid ||
+        !title || !*title || !author || !*author || laps < 1 || laps > 7 ||
+        !lev_sha256 || !vrm_sha256 || !lev_bytes || !vrm_bytes ||
+        !ap_seed_root_safe(tracks_dir, package_root)) return 0;
+    if (saphi_track_id)
+    {
+        if (saphi_track_id <= 0 || lev_download_id <= 0 || vrm_download_id <= 0 || lev_download_id == vrm_download_id)
+            return 0;
+        std::snprintf(api, sizeof api, "https://%s/api/v2/tracks/%d/downloads", kSaphiHost, saphi_track_id);
+        download_api_url = api;
+    }
+    if (!download_api_url || !*download_api_url) return 0;
+    return start_worker(package_root, download_api_url, revision, lev_sha256, vrm_sha256,
+                        lev_bytes, vrm_bytes, tracks_dir, lev_download_id, vrm_download_id,
+                        uuid, title, author, laps, relic_sapphire, relic_gold, relic_platinum);
+#endif
 }
 
 extern "C" int ap_custom_track_download_status(char *detail, int detail_bytes)

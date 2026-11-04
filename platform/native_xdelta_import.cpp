@@ -1920,11 +1920,11 @@ extern "C" int XdeltaImport_StartInstall(const unsigned char *selected, unsigned
             char error[512];
             std::vector<unsigned int> done;
             int n = install_items(state.scan, chosen.data(), root.c_str(), where, error, sizeof error, &done);
-            /* Every track now in a room folder, also before a failure part
-               way through the list, gets its Play Solo descriptor. */
+            /* Every installed package, including a partial batch, gets its
+               Play Solo descriptor from the same verified snapshot. */
             std::vector<KeptDescriptor> kept;
             std::string note;
-            if (where & CTR_XDELTA_INSTALL_ROOM) collect_descriptors(state.scan, done, kept, note);
+            collect_descriptors(state.scan, done, kept, note);
             std::lock_guard<std::mutex> lock(state.mutex);
             state.descriptors = std::move(kept);
             state.descriptorNote = note;

@@ -705,6 +705,8 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 				snprintf(line, sizeof line, "< %d lap%s >", info.laps, info.laps == 1 ? "" : "s");
 				DecalFont_DrawLineOT(line, SOLO_TRACK_PICK_X, y, FONT_SMALL, RED, ot);
 			}
+			else if (!info.modes[0])
+				DecalFont_DrawLineOT(info.timeTrial ? "Time Trial only" : "No pad races", 0x158, y, FONT_SMALL, GRAY, ot);
 			else
 				DecalFont_DrawLineOT((char *)picks[info.pick >= 0 && info.pick <= 2 ? info.pick : 0],
 				                     SOLO_TRACK_PICK_X, y, FONT_SMALL, info.pick ? WHITE : GRAY, ot);
@@ -729,10 +731,17 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 		}
 		else if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info))
 		{
-			if (info.author[0])
-				snprintf(line, sizeof line, "By %s. Modes: %s", info.author, info.modes[0] ? info.modes : "none");
+			if (!info.modes[0] && info.timeTrial && info.pick)
+				snprintf(line, sizeof line, "Time Trial only; press * to remove it from the YAML.");
+			else if (!info.modes[0] && info.timeTrial)
+				snprintf(line, sizeof line, "By %s. Time Trial only; no Adventure pad races.", info.author);
+			else if (!info.modes[0])
+				snprintf(line, sizeof line, "By %s. No supported races for Adventure pads.", info.author);
+			else if (info.author[0])
+				snprintf(line, sizeof line, "By %s. Modes: %s%s", info.author, info.modes,
+				         info.timeTrial ? ", Time Trial" : "");
 			else
-				snprintf(line, sizeof line, "Modes: %s", info.modes[0] ? info.modes : "none");
+				snprintf(line, sizeof line, "Modes: %s%s", info.modes, info.timeTrial ? ", Time Trial" : "");
 			MM_Solo_Fit(line, fit, sizeof fit, SOLO_TEXT_W);
 			DecalFont_DrawLineOT(fit, 0x100, helpY, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 		}

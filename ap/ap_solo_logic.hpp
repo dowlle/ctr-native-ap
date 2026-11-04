@@ -342,6 +342,13 @@ static inline std::string AP_SoloDescriptorFileName(const std::string &key, cons
 	return key + "__" + revision + ".json";
 }
 
+// A store rescan may skip the atomic writer only when the complete descriptor
+// already matches. Authored race settings can change without changing LEV/VRM.
+static inline bool AP_SoloDescriptorUnchanged(const nlohmann::json &old, const nlohmann::json &fresh)
+{
+	return old.is_object() && fresh.is_object() && old == fresh;
+}
+
 // Laps the player picks for an imported track without them (ruling of
 // 2026-11-02): the xdelta importer keeps such a track's descriptor without
 // "laps" in solo/needs-laps, the Custom Tracks page lists it, and Left/Right
@@ -350,6 +357,20 @@ static inline std::string AP_SoloDescriptorFileName(const std::string &key, cons
 #define AP_SOLO_LAPS_MIN 1
 #define AP_SOLO_LAPS_MAX 7
 #define AP_SOLO_LAPS_DEFAULT 3
+
+// A needs-laps reinstall refreshes package metadata but leaves the player's
+// chosen lap count in the complete descriptor. Null means incompatible pins
+// or an invalid old choice; the caller must leave the old file alone.
+static inline nlohmann::json AP_SoloMergeNeedsLaps(const nlohmann::json &old, const nlohmann::json &fresh)
+{
+	if (!old.is_object() || !fresh.is_object() || !old.contains("files") || !fresh.contains("files") ||
+	    old["files"] != fresh["files"] || !old.contains("laps") || !old["laps"].is_number_integer() ||
+	    old["laps"] < AP_SOLO_LAPS_MIN || old["laps"] > AP_SOLO_LAPS_MAX)
+		return nullptr;
+	auto merged = fresh;
+	merged["laps"] = old["laps"];
+	return merged;
+}
 
 // Left (-1) or Right (+1) on the lap count: it stops at both ends.
 static inline int AP_SoloLapsStep(int laps, int direction)

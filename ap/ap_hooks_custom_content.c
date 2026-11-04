@@ -15,6 +15,7 @@
 #include <platform/native_custom_content_verify.h>
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_offline.h>
+#include <platform/native_custom_package.h>
 #endif
 
 // Arms the bundled Cortex Vortex pair for whichever of its two roles this seed
@@ -86,10 +87,9 @@ static void AP_OxideFinalContentPreflight(void)
 static int ap_content_package_index;
 static int ap_content_package_ready[AP_CONTENT_MAX_PACKAGES];
 
-// Open admission (#133 PR 2): a package outside the compiled registry is found
-// by digest in assets/tracks/<track key>/original. Preflight records where its
-// verified files are and what they measured; the loader hashes them again
-// when it arms (CustomTrack_ApplySeedDescriptor) and retains the exact bytes.
+// Resolve an exact verified pair from tracks/packages, falling back to older
+// room folders. Preflight records the paths and measurements; the loader
+// hashes the pair again when it arms the race.
 struct AP_ContentFiles
 {
 	char levPath[CTR_CT_MANAGER_PATH_MAX];
@@ -126,6 +126,7 @@ static void AP_ContentRaceName(const char *title, char *out, size_t size)
 // Current Seed (#133 PR 7): what the last scan of each package found, as
 // manager state + 1 (0 = not scanned).
 static int ap_content_package_scan[AP_CONTENT_MAX_PACKAGES];
+static int ap_content_descriptor_publication[AP_CONTENT_MAX_PACKAGES];
 
 static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct CustomTrackManagerStatus *status);
 
@@ -146,9 +147,28 @@ static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct Custom
 	const struct CustomTrackManagerPackage *compiled = AP_ContentPackage(index);
 	struct CustomContentVerification report;
 	char error[160], why[320], line[640];
+	int shared = 0;
 	if (!pkg) return 0;
 	memset(&ap_content_files[index], 0, sizeof ap_content_files[index]);
-	if (compiled)
+	memset(status, 0, sizeof *status);
+	ap_content_descriptor_publication[index] = 0;
+#ifdef CTR_CUSTOM_PACKAGES
+	shared = CustomPackage_FindPinnedFiles(NativeAssets_GetAssetDir(), pkg->revision, NULL,
+	                                      pkg->lev_sha256, pkg->lev_bytes, pkg->vrm_sha256, pkg->vrm_bytes,
+	                                      status->levPath, sizeof status->levPath,
+	                                      status->vrmPath, sizeof status->vrmPath);
+#endif
+	if (shared)
+	{
+		status->state = CTR_CT_MANAGER_READY;
+		status->levBytes = pkg->lev_bytes;
+		status->vrmBytes = pkg->vrm_bytes;
+		snprintf(status->actualLevSha256, sizeof status->actualLevSha256, "%s", pkg->lev_sha256);
+		snprintf(status->actualVrmSha256, sizeof status->actualVrmSha256, "%s", pkg->vrm_sha256);
+		snprintf(status->detail, sizeof status->detail, "%.48s %.24s files match the seed.",
+		         pkg->display_name, pkg->revision);
+	}
+	else if (compiled)
 	{
 		CustomTrackManager_ScanPackage(NativeAssets_GetAssetDir(), compiled, status);
 		if (autoFinalize && (status->state == CTR_CT_MANAGER_MANIFEST_MISSING ||
@@ -187,7 +207,12 @@ static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct Custom
 	ap_content_files[index].measured = report.measured;
 #if !defined(CTR_AP_AUTHORING)
 	// Verified on disk: Play Solo's custom-track step may now offer it (#89).
-	AP_Solo_RecordTrackDescriptor(pkg->content_id, pkg->revision, ap_content_plan_package_json(index));
+	if (!AP_Solo_RecordTrackDescriptor(pkg->content_id, pkg->revision, ap_content_plan_package_json(index)))
+	{
+		snprintf(line, sizeof line, "[CustomTracks] %s files verified, but Play Solo descriptor publication failed.\n", pkg->id);
+		AP_AppendLog(line);
+	}
+	else ap_content_descriptor_publication[index] = 1;
 #endif
 	return 1;
 }

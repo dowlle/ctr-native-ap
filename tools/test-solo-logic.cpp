@@ -336,6 +336,34 @@ static void test_needs_laps()
 	CHECK(AP_SoloDescriptorWithLaps(kept, 4).empty()); // never over laps it has
 }
 
+static void test_store_descriptor_rescan()
+{
+	nlohmann::json original = {{"files", {{{"role", "lev"}, {"sha256", "aa"}},
+	                                         {{"role", "vrm"}, {"sha256", "bb"}}}},
+	                           {"laps", 3}, {"author", "First"},
+	                           {"relic_targets", {{"gold", 500}}}};
+	CHECK(AP_SoloDescriptorUnchanged(original, original));
+	for (const char *field : {"laps", "author", "relic_targets"})
+	{
+		nlohmann::json changed = original;
+		changed[field] = "changed";
+		CHECK(!AP_SoloDescriptorUnchanged(original, changed));
+	}
+	CHECK(!AP_SoloDescriptorUnchanged(nlohmann::json(), original));
+	nlohmann::json reinstall = original;
+	reinstall.erase("laps");
+	reinstall["author"] = "New author";
+	reinstall["display_name"] = "New title";
+	reinstall["capabilities"] = {{"arcade", true}};
+	auto merged = AP_SoloMergeNeedsLaps(original, reinstall);
+	CHECK(merged.is_object() && merged["laps"] == 3 && merged["author"] == "New author" &&
+	      merged["display_name"] == "New title" && merged["capabilities"]["arcade"] == true);
+	CHECK(!AP_SoloDescriptorUnchanged(original, merged));
+	CHECK(AP_SoloDescriptorUnchanged(merged, AP_SoloMergeNeedsLaps(merged, reinstall)));
+	reinstall["files"][0]["sha256"] = "other";
+	CHECK(AP_SoloMergeNeedsLaps(original, reinstall).is_null());
+}
+
 int main()
 {
 	test_parse_lines();
@@ -348,6 +376,7 @@ int main()
 	test_options();
 	test_tracks();
 	test_needs_laps();
+	test_store_descriptor_rescan();
 	if (g_fail)
 	{
 		std::printf("test-solo-logic: %d failure(s)\n", g_fail);
