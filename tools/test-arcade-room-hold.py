@@ -63,7 +63,8 @@ senders = {source.name for source in (root / 'ap').glob('*.c')
 assert senders == {'ap_arcade_crystals.c', 'ap_hooks_location_events.c', 'ap_hooks_race.c'}, senders
 
 frame = function((root / 'ap/ap_hooks_frame.c').read_text(), 'static void ap_onframe_body')
-assert frame.index('ap_net_hold_checks(AP_ArcadeHoldsRoom())') < frame.index('AP_NetTick(gGT);')
+# Box Author Mode holds checks on the same call (ap/ap_author_gate.h).
+assert frame.index('ap_net_hold_checks(AP_ArcadeHoldsRoom() || AP_Author_Enabled())') < frame.index('AP_NetTick(gGT);')
 assert re.search(r'if \(!AP_ArcadeHoldsRoom\(\)\)\n\s*AP_TrapTick\(gGT\);', frame)
 effects = re.search(r'if \(!AP_ArcadeHoldsRoom\(\)\)\n\s*\{(.*?)\n\s*\}', frame, re.S).group(1)
 for effect in ('AP_WumpaTick', 'AP_UsefulTick', 'AP_TiziTick', 'AP_ReserveTopUpTick', 'AP_TurboGrantTick'):
