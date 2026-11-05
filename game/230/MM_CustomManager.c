@@ -65,7 +65,9 @@ static void MM_CustomManager_Poll(void)
         {
             s_saphiRefreshBusy = 0;
             s_saphiRefreshFailed = result == -2;
+            /* A successful refresh empties s_saphiMessage, so no failure is left to show. */
             if (result == -2) { s_saphiFailed = 1; fprintf(stderr, "[Saphi] refresh: %s\n", s_saphiMessage); }
+            else s_saphiFailed = 0;
             if (result == 1)
             {
                 CustomSaphi_Free(&s_saphiCatalogue);

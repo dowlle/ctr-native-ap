@@ -245,6 +245,9 @@ int main()
 		expect(!decode("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n", missing, error) && missing.status == 404 &&
 		       missing.retry_after == -1 && !transfer_retryable(missing) &&
 		       error == "Project Saphi refused the file (HTTP 404).", "a 404 is named and not retried: " + error);
+		HttpOutcome later;
+		expect(!decode("HTTP/1.1 429 Too Many Requests\r\nRetry-After: 7200\r\n\r\n", later, error) &&
+		       transfer_retry_delay(later, 1) == 60, "a Retry-After past an hour still waits the 60 s cap");
 		HttpOutcome bare;
 		expect(decode("HTTP/1.1 200\r\nContent-Length: 2\r\n\r\nok", bare, error) && bare.status == 200,
 		       "a 200 without a reason phrase is read");

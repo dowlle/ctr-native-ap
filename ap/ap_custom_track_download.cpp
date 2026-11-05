@@ -231,8 +231,8 @@ bool decode_http_response(const std::vector<unsigned char> &raw, size_t max_byte
 		while (*value == ' ') value++;
 		char *end = nullptr;
 		const long seconds = std::strtol(value, &end, 10);
-		if (end != value && seconds >= 0 && seconds <= 3600)
-			result.retry_after = static_cast<int>(seconds);
+		if (end != value && seconds >= 0)
+			result.retry_after = static_cast<int>(std::min(seconds, 3600L));
 	}
 	if (result.status != 200)
 	{
@@ -363,8 +363,8 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 		DWORD retry_size = sizeof retry_after;
 		if (WinHttpQueryHeaders(request, WINHTTP_QUERY_RETRY_AFTER | WINHTTP_QUERY_FLAG_NUMBER,
 		                        WINHTTP_HEADER_NAME_BY_INDEX, &retry_after, &retry_size,
-		                        WINHTTP_NO_HEADER_INDEX) && retry_after <= 3600)
-			outcome.retry_after = static_cast<int>(retry_after);
+		                        WINHTTP_NO_HEADER_INDEX))
+			outcome.retry_after = static_cast<int>(std::min<DWORD>(retry_after, 3600));
 	}
 	while (ok)
 	{
