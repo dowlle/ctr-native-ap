@@ -32,6 +32,8 @@ assert "ap_net_scout_known(codes[i]" in hook
 sh = body(shop, "static void AP_WShopHint(int hub)")
 assert "AP_HintFilter_Progression(ctr_cfg.shop_hints_progression_only" in sh
 # An unscouted slot returns before the hub is marked hinted, so it is retried.
+assert "ap_net_scout_known(code, NULL, NULL, &flags), flags)" not in sh  # no argument-order dependence
+assert sh.index("known = ap_net_scout_known(") < sh.index("AP_HintFilter_Progression(")
 assert sh.index("AP_HINT_LATER") < sh.index("ap_wshop.hinted[hub] = 1;")
 
 for key in KEYS:
