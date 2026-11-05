@@ -254,7 +254,8 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             snprintf(s_importMessage, sizeof s_importMessage, "%s", error);
             XdeltaImport_DiscardScan();
         }
-        if (tapped & (BTN_TRIANGLE | BTN_START))
+        /* Only while still scanning: "Import all valid tracks" may have started the install this frame. */
+        if (s_importStage == IMPORT_SCANNING && (tapped & (BTN_TRIANGLE | BTN_START)))
         {
             XdeltaImport_DiscardScan();
             s_importAuto = 0;
@@ -355,7 +356,18 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         }
         if ((tapped & BTN_L1) && s_importStage == IMPORT_REVIEW && s_importRow < count && s_importSummary.items[s_importRow].offered)
         {
-            snprintf(s_importEditText, sizeof s_importEditText, "%.128s", s_importSummary.items[s_importRow].title);
+            {
+                /* A title over 128 bytes (a pack descriptor allows more) is cut at a character boundary. */
+                const char *title = s_importSummary.items[s_importRow].title;
+                size_t n = strlen(title);
+                if (n > sizeof s_importEditText - 1)
+                {
+                    n = sizeof s_importEditText - 1;
+                    while (n && ((unsigned char)title[n] & 0xC0) == 0x80) n--;
+                }
+                memcpy(s_importEditText, title, n);
+                s_importEditText[n] = 0;
+            }
             snprintf(s_importEditBackup, sizeof s_importEditBackup, "%s", s_importEditText);
             NativeText_Begin(s_importEditText, (int)sizeof s_importEditText, 28, 170, 456, 12, 0);
             s_importEditing = 1;

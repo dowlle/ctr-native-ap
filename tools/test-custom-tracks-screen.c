@@ -642,6 +642,16 @@ int main(void)
         CHECK(has("Installed 2 tracks") && has("Not imported: 1"));
         frame(BTN_CROSS, NULL); frame(BTN_TRIANGLE, NULL);
     }
+    /* Back on the frame the scan finishes must not hide the install Import all started. */
+    s_ctTab = CT_TAB_IMPORT; s_ctFocus = CT_FOCUS_TABS; scanState = -1;
+    frame(BTN_CROSS, NULL); frame(BTN_DOWN, NULL);
+    {
+        const int before = xdInstallStarts;
+        frame(BTN_R1, NULL); scanState = 1; frame(BTN_TRIANGLE, NULL);
+        CHECK(xdInstallStarts == before + 1 && s_importStage == IMPORT_INSTALLING);
+        installState = 1; frame(0, NULL); CHECK(s_importStage == IMPORT_RESULT);
+        frame(BTN_CROSS, NULL); frame(BTN_TRIANGLE, NULL);
+    }
     /* Review: type a name, a refused name, a cancelled name, then Import all. */
     s_ctTab = CT_TAB_IMPORT; s_ctFocus = CT_FOCUS_TABS; scanState = -1;
     frame(BTN_CROSS, NULL); frame(BTN_DOWN, NULL); frame(BTN_CROSS, NULL);

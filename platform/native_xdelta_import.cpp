@@ -2031,6 +2031,7 @@ bool save_records(const std::string &assets, const std::vector<PatchRecord> &lis
     const std::string text = json_dump({{"version", 1}, {"patches", patches}});
     fs_mkdir(assets + "/tracks");
     const std::string path = record_path(assets), temp = path + ".tmp";
+    fs_remove(temp); /* never write through a leftover link */
     {
         File out(fs_open(temp, "wb"));
         if (!out || std::fwrite(text.data(), 1, text.size(), out.get()) != text.size() || std::fflush(out.get())) return false;
