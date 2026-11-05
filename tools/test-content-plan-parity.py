@@ -2041,9 +2041,12 @@ for name, change in [
 # The verifier's copy of the per-track USF finish rulings (#133 PR 8,
 # ap/ap_content_verify.hpp kUsfRulings) equals the apworld's table.
 from worlds.ctr import content_capability as ccap
-native_rulings = {(k, r or None, h or None): int(v) for k, r, h, v in re.findall(
-                  r'\{"([a-z0-9-]+)", "([^"]*)", "([0-9a-f]*)", ([012])\}',
-                  re.search(r"kUsfRulings\[\] = \{(.*?)\};", (root / "ap/ap_content_verify.hpp").read_text(), re.S)[1])}
+native_rows = [((k, r or None, h or None), int(v)) for k, r, h, v in re.findall(
+               r'\{"([a-z0-9-]+)", "([^"]*)", "([0-9a-f]*)", ([012])\}',
+               re.search(r"kUsfRulings\[\] = \{(.*?)\};", (root / "ap/ap_content_verify.hpp").read_text(), re.S)[1])]
+native_rulings = dict(native_rows)
+# finish_boost returns the first matching row, so a repeated key would hide a mismatch.
+assert len(native_rulings) == len(native_rows), native_rows
 assert native_rulings == ccap.USF_FINISH_RULINGS, (native_rulings, ccap.USF_FINISH_RULINGS)
 # Row 10i parity fixes: Reach 10 Wumpa from cup legs and boss races, rungs
 # from cup legs, vanilla garages free without Trophies, Turbo Track's five Gem
