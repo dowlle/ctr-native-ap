@@ -44,23 +44,11 @@ jobs:
           sudo apt-get install -y -q gcc-multilib g++-multilib
           sudo dpkg --add-architecture i386
           sudo apt-get update -q
-          sudo apt-get install -y -q libssl-dev:i386 zlib1g-dev:i386 openssl ccache
-      # ccache keys every compile on the preprocessed source, the compiler and its
-      # flags, so a restored cache can only skip work that would give the same object.
-      - name: Compiler cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/ccache
-          key: ccache-harness-${{ matrix.shard }}-${{ github.sha }}
-          restore-keys: ccache-harness-${{ matrix.shard }}-
+          sudo apt-get install -y -q libssl-dev:i386 zlib1g-dev:i386 openssl
       - name: Vendor headers (pinned by ap/vendor/versions.lock)
         run: bash ap/vendor/fetch-deps.sh
       - name: Build and run this shard's harnesses, Python harnesses and boundary checks
-        run: |
-          export PATH="/usr/lib/ccache:$PATH"
-          ccache --max-size=300M
-          python3 tools/ci/run-harnesses.py --shard ${{ matrix.shard }}/4 --results shard-results
-          ccache --show-stats
+        run: python3 tools/ci/run-harnesses.py --shard ${{ matrix.shard }}/4 --results shard-results
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

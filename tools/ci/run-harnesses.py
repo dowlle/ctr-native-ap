@@ -225,6 +225,8 @@ def summarize(results_dir):
     problems = []
     if "--count" in sys.argv and shards != set(range(int(flag_value("--count")))):
         problems.append(f"expected shards 0..{int(flag_value('--count')) - 1}, found {sorted(shards)}")
+    for name in sorted(p for p in listed if p not in all_rel):
+        problems.append(f"listed but missing from tools/: {name}")
     for name in sorted(({p for p in all_rel if p in listed} | set(cmds)) - seen):
         problems.append(f"not run by any shard: {name}")
     unlisted = [r for r in all_rel if r not in listed and r not in skipped]
