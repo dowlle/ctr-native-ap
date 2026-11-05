@@ -9,7 +9,7 @@
                 catalogue, Rescan local files. Confirm on a track opens its
                 actions: download, update or recheck, versions, source page,
                 and for a track with a release profile also Verify / Finish
-                setup, Export YAML and Relic times (Stef, 2026-11-04: export
+                setup, Export YAML and Relic times (ruled 2026-11-04: export
                 and relic times only inside a track's details).
      This Seed  the tracks the connected room or Play Solo seed needs, Ready,
                 Missing, Wrong version and so on, against the same store.
@@ -20,7 +20,7 @@
                 drop on the window opens it here.
 
    The screen opens on This Seed only when the loaded seed misses tracks,
-   otherwise on Library (Stef, 2026-11-04 19:38 CET). Two panels as on the
+   otherwise on Library (ruled 2026-11-04 19:38 CET). Two panels as on the
    Track Manager: list (20,64,268,108) with seven rows, details (297,64,190,
    108). Navigation (controller map in the proposal): Left / Right or L1 / R1
    change tabs on the tab strip, Down or Confirm enters the tab. In a list,
@@ -1535,7 +1535,7 @@ static void MM_ConfigProc_CustomTracks(struct RectMenu *menu, uint32_t *ot, stru
     CT_Poll();
     CT_BuildSeed();
     /* A fresh visit: This Seed when the loaded seed misses tracks, otherwise
-       Library (Stef, 2026-11-04 19:38 CET). */
+       Library (ruled 2026-11-04 19:38 CET). */
     if (now - s_ctLastFrame > 2 && !MM_CustomImport_Active() && !s_contentSearchEditing)
     {
         s_ctTab = s_ctSeedCount && CT_SeedReady() < s_ctSeedCount ? CT_TAB_SEED : CT_TAB_LIBRARY;
