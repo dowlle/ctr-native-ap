@@ -132,9 +132,9 @@ int main() {
     assert(!TrackPublicationBusy() && applied == 2 && !spawned);
     assert(!TickTrackPublication()); // No later writes or stale child handoff.
 
-    reset(); verifierFailure = 1;
+    reset(); verifierFailure = 1; // A damaged package does not stop the others; it is named.
     assert(AP_Solo_TracksStart(nullptr)); enter(); releaseWorker = true; retire();
-    assert(!applied && !spawned && g_job.state == AP_SOLO_JOB_FAILED);
+    assert(applied == 118 && !spawned && g_job.state == AP_SOLO_JOB_FAILED);
     assert(g_job.errorText == "damaged package");
 
     reset(); publishFailure = true; // A refused track does not stop the others; the first is named.

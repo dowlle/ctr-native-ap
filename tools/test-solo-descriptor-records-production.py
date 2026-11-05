@@ -48,6 +48,7 @@ fixture = r'''
 namespace fs = std::filesystem;
 #define AP_SOLO_GETPID() getpid()
 static const size_t kDescriptorMax = 64 * 1024;
+static const size_t kMenuMessageMax = 170;
 static std::string base, assets;
 static std::vector<std::string> logged;
 static void Log(const std::string &line) { logged.push_back(line); }
@@ -198,7 +199,7 @@ int main(int, char **argv) {
     two.descriptors = {entry(1, "Nina B", newB, "b"), entry(1, "Nina A", oldA, "a")};
     KeepOneCopyPerEntry(two);
     assert(two.descriptors.size() == 1 && two.descriptors[0].title == "Nina A"); // owns the entry now
-    assert(loggedFile("left Nina B (package bbbbbbbbbbbb) out of Play Solo"));
+    assert(two.notes.size() == 1 && two.notes[0].rfind("left Nina B (package bbbbbbbbbbbb) out of Play Solo", 0) == 0);
     clean();
     for (const char *p : {"a", "b"}) fs::create_directories(assets + "/tracks/packages/" + std::string(64, p[0]));
     std::ofstream(assets + "/tracks/packages/" + std::string(64, 'a') + "/manifest.json") << "{}";
@@ -222,6 +223,13 @@ int main(int, char **argv) {
     assert(StoreSignature(m) == sig("ba", "bb"));
     assert(StoreSignature(m) == PinSignature("1.0.0", nlohmann::json::parse(pins("ba", "bb"))));
 
+    // A refused package is named by title, else by its pin.
+    CustomPackageStoreEntry e = {};
+    std::strcpy(e.pin, std::string(64, 'c').c_str());
+    assert(PackageLabel(e) == "package cccccccccccc");
+    std::strcpy(e.manifest.title, "Space Labs");
+    assert(PackageLabel(e) == "Space Labs");
+
     // 13. A long title is cut so the whole message fits the 170-character menus.
     clean(); write(std::string("tracks/") + name, oldA); scan.live = liveAB;
     assert(!ApplyStoreDescriptor(entry(1, "A Very Long Custom Track Title From Saphi Number Nine", newB, "b"), scan, message));
@@ -231,6 +239,14 @@ int main(int, char **argv) {
     assert(!ApplyStoreDescriptor(entry(1, "", newB, "b"), scan, message) && message.rfind("nina 1.0.0: ", 0) == 0);
     assert(!ApplyStoreDescriptor(entry(1, accents.c_str(), newB, "b"), scan, message));
     assert(message.rfind(accents.substr(0, 36) + "... 1.0.0: ", 0) == 0);
+    // 14. A long version and reason still fit the menu, cut on a UTF-8 boundary.
+    clean(); write(std::string("tracks/") + name, oldA); scan.live = liveAB;
+    StorePublication::Descriptor longRev = entry(1, accents.c_str(), newB, "b");
+    longRev.revision = "1.0.0-" + std::string(58, 'r');
+    write("tracks/nina__" + longRev.revision + ".json", oldA);
+    scan.live.insert(longRev.revision + "|lev:aa:100|vrm:ab:200");
+    assert(!ApplyStoreDescriptor(longRev, scan, message)); // the live copy keeps the entry
+    assert(message.size() <= 170 && message.find("1.0.0-rrrrrrr...: ") != std::string::npos);
     puts("PASS: stale descriptors are replaced, live ones are named and kept, every refusal logs its file");
 }
 '''

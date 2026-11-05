@@ -68,6 +68,7 @@ const uint64_t kQuickLimitMs = 60000;   // list, describe, imports
 const uint64_t kReadyLimitMs = 30000;
 const uint64_t kConnectLimitMs = 20000;
 const size_t kDescriptorMax = 64 * 1024; // the wrapper reads no larger descriptor
+const size_t kMenuMessageMax = 170;       // the menus print "%.170s" of a publication error
 
 void Log(const std::string &line)
 {
@@ -1297,11 +1298,26 @@ std::string StoreSignature(const CustomPackageManifest &m)
 	       "|vrm:" + vrm->sha256 + ":" + std::to_string((std::uintmax_t)vrm->bytes);
 }
 
+// A short name for a store package in a menu message: its title, else its pin.
+std::string PackageLabel(const CustomPackageStoreEntry &entry)
+{
+	std::string title = entry.manifest.title[0] ? entry.manifest.title : "package " + std::string(entry.pin).substr(0, 12);
+	if (title.size() > 40)
+	{
+		size_t cut = 37; // never inside a UTF-8 sequence
+		while (cut > 0 && ((unsigned char)title[cut] & 0xc0) == 0x80)
+			cut--;
+		title = title.substr(0, cut) + "...";
+	}
+	return title;
+}
+
 struct StorePublication
 {
 	struct Descriptor { int kind; std::string key, revision, json, title, pin; };
 	std::vector<Descriptor> descriptors;
 	std::set<std::string> live; // StoreSignature of every verified package
+	std::vector<std::string> notes; // log lines from the worker, written on the game thread
 	int failed = 0;
 	int published = 0;
 	std::string assets;
@@ -1321,7 +1337,9 @@ void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 	if (!entry->verified)
 	{
 		result.failed++;
-		if (result.error.empty()) result.error = entry->error;
+		const std::string named = PackageLabel(*entry) + ": " + entry->error + "; reinstall or remove this track";
+		result.notes.push_back("package " + std::string(entry->pin) + " not published: " + named);
+		if (result.error.empty()) result.error = named;
 		return;
 	}
 	char key[65], revision[65], json[16384], error[256];
@@ -1354,7 +1372,9 @@ void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 	if (!kind)
 	{
 		result.failed++;
-		if (result.error.empty()) result.error = error;
+		const std::string named = PackageLabel(*entry) + ": " + error;
+		result.notes.push_back("package " + std::string(entry->pin) + " not published: " + named);
+		if (result.error.empty()) result.error = named;
 	}
 	else
 		result.descriptors.push_back({kind, key, revision, json, entry->manifest.title, entry->pin});
@@ -1419,7 +1439,7 @@ void KeepOneCopyPerEntry(StorePublication &result)
 			if (files(all[j]) != kept)
 			{
 				skip[j] = true;
-				Log("left " + all[j].title + " (package " + all[j].pin.substr(0, 12) + ") out of Play Solo: " + name +
+				result.notes.push_back("left " + all[j].title + " (package " + all[j].pin.substr(0, 12) + ") out of Play Solo: " + name +
 				    " belongs to " + all[keep].title + " (package " + all[keep].pin.substr(0, 12) + "), " +
 				    (current ? "which owns it now" : "the newest install") + "; same id and version, other files");
 			}
@@ -1454,7 +1474,7 @@ StorePublication CollectInstalledStore(const std::string &assets, const std::str
 		result.failed++;
 		result.error = "Installed package was not found in the shared store";
 	}
-	if (result.pin.empty() && !result.failed)
+	if (result.pin.empty())
 		KeepOneCopyPerEntry(result);
 	return result;
 }
@@ -1477,8 +1497,15 @@ bool ApplyStoreDescriptor(const StorePublication::Descriptor &d, const StorePubl
 			cut--;
 		title = title.substr(0, cut) + "...";
 	}
-	message = title + " " + d.revision + ": " + why;
-	Log("package descriptor not published: " + message);
+	Log("package descriptor not published: " + title + " " + d.revision + ": " + why);
+	message = title + " " + (d.revision.size() > 16 ? d.revision.substr(0, 13) + "..." : d.revision) + ": " + why;
+	if (message.size() > kMenuMessageMax)
+	{
+		size_t cut = kMenuMessageMax; // never inside a UTF-8 sequence
+		while (cut > 0 && ((unsigned char)message[cut] & 0xc0) == 0x80)
+			cut--;
+		message.resize(cut);
+	}
 	return false;
 }
 
@@ -1552,14 +1579,11 @@ bool TickTrackPublication()
 			g_trackPublicationResult = StorePublication();
 			return true;
 		}
-		if (g_trackPublicationResult.failed)
-		{
-			JobFail("publish", g_trackPublicationResult.error, "");
-			g_trackPublicationResult = StorePublication();
-			return true;
-		}
+		for (const std::string &note : g_trackPublicationResult.notes)
+			Log(note);
+		// A refused package does not stop the others; the first is named at the end.
 		g_trackPublicationIndex = 0;
-		g_trackPublicationFailure.clear();
+		g_trackPublicationFailure = g_trackPublicationResult.failed ? g_trackPublicationResult.error : std::string();
 		g_trackPublishing = true;
 		g_job.phase = "Publishing track entries";
 	}
@@ -1621,13 +1645,14 @@ extern "C" int AP_Solo_PublishInstalledStore(const char *pin, char *error, size_
 	if (error && errorSize) error[0] = 0;
 #ifdef CTR_CUSTOM_PACKAGES
 	auto result = CollectInstalledStore(AssetsDir(), pin ? pin : "");
-	if (!result.failed)
-		for (const auto &d : result.descriptors)
-		{
-			std::string message;
-			if (!ApplyStoreDescriptor(d, result, message) && !result.failed++)
-				result.error = message;
-		}
+	for (const std::string &note : result.notes)
+		Log(note);
+	for (const auto &d : result.descriptors)
+	{
+		std::string message;
+		if (!ApplyStoreDescriptor(d, result, message) && !result.failed++)
+			result.error = message;
+	}
 	if (result.failed)
 	{
 		if (error && errorSize) std::snprintf(error, errorSize, "%s", result.error.c_str());

@@ -1619,10 +1619,10 @@ static void MM_CustomLibrary_Tick(int reload)
                 CustomTrackLibrary_MarkInstalled(&s_contentLibrary, s_contentInstallPin);
                 s_contentStoreWanted = 1;
 #ifdef CTR_AP
-                if (!AP_Solo_PublishInstalledStore(s_contentInstallPin, s_contentInstallMessage,
-                                                   sizeof s_contentInstallMessage))
+                char publicationError[256];
+                if (!AP_Solo_PublishInstalledStore(s_contentInstallPin, publicationError, sizeof publicationError))
                     snprintf(s_contentInstallMessage, sizeof s_contentInstallMessage,
-                             "Files installed, but Play Solo publication failed.");
+                             "Files installed, but Play Solo publication failed: %.170s", publicationError);
                 else
 #endif
                 snprintf(s_contentInstallMessage, sizeof s_contentInstallMessage,
