@@ -173,6 +173,12 @@ assert 'AP_PadReplayable(levelID, warppadObj->levelID)' in done
 assert 'INSTANCE_Birth3D(gGT->modelPtr[STATIC_BEAM], "beam", t);' in done
 assert 'warppadObj->inst[WPIS_OPEN_BEAM] = newInst;' in done
 assert 'colorRGBA' not in done and 'AP_PAD_BEAM_ALPHA' not in done, 'retail colour, no tint'
+# The rebuild key follows enterability, so a Done pad that stops being enterable
+# while its state stays 5 loses the beam on the next rebuild.
+rebirth = body(warp, 'static int AH_WarpPad_RebirthKey(int physLevelID, int destLevelID)')
+assert 'state == 5 && AP_PadReplayable(physLevelID, destLevelID)' in rebirth
+assert warp.count('AH_WarpPad_RebirthKey(') == 3 and 'int rbState = AH_WarpPad_RebirthKey(' in warp
+assert 's_padRebirthState[levelID] = ctr_cfg_active() ? AH_WarpPad_RebirthKey(' in warp
 guard = warp[warp.index('AP_PadState(ctr_cfg_warp_phys(warppadObj->levelID), warppadObj->levelID) == 5 &&'):]
 assert '!AP_PadReplayable(ctr_cfg_warp_phys(warppadObj->levelID), warppadObj->levelID)' in guard[:300], 'same condition as the Done guard'
 
