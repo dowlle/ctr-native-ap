@@ -168,6 +168,11 @@ void UI_RaceStart_IntroText1P(void)
 				// not about to race. Same redirect predicate as the leg counter
 				// below, so the banner's two halves cannot disagree.
 				ctCupName = CustomTrack_CupDisplayName(gGT->cup.cupID, 1);
+#ifdef CTR_AP
+				// A boss cup is named for its boss, as its standings are (A2-47).
+				if (AP_ContentGarageCupRunning() >= 0 && AP_ContentCupName() != NULL)
+					ctCupName = AP_ContentCupName();
+#endif
 #endif
 			}
 
