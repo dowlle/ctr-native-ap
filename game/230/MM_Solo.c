@@ -8,8 +8,10 @@
               New solo seed, Import room file, Import YAML file, and the
               AP-Pie YAML builder. Triangle leaves Play Solo.
      New      bundled presets, saved YAMLs, then YAMLs in solo/inbox.
-     Options  the curated options of a preset: Left / Right change, Square
-              shows the help text. A row is one line when the full name and
+     Options  every option of the world (alpha2), in groups. The first level
+              lists the groups with how many options each has changed from
+              the preset; Cross opens one and Triangle returns. Inside a
+              group Left / Right change a value, Square shows the help text. A row is one line when the full name and
               value fit, otherwise the value takes a second line, right
               aligned: names and values are never cut (Deck menu scan,
               2026-11-03). DeathLink is off in solo and has no row.
@@ -78,6 +80,10 @@ static int s_soloFromOptions;   /* the Review page came from the Options page */
 static int s_soloFromTracks;    /* ... by way of the Tracks page */
 static int s_soloHighlight = -1; /* option row to highlight after an option error */
 static int s_soloHelpRow;
+static int s_soloHelpTop;       /* first help line shown (Up / Down scroll) */
+static int s_soloGroup = -1;    /* open option group, -1 the group list */
+static int s_soloGroupSel;      /* the group list's selection, kept while a group is open */
+static int s_soloGroupTop;
 static int s_soloEditing;
 static int s_soloEditJustEnded;  /* the frame an edit resolved: no navigation */
 static int s_soloPadPrev;
@@ -90,15 +96,18 @@ static char s_soloMsg[256];
 static int s_soloPickKind;       /* SOLO_JOB_IMPORT_ROOM or SOLO_JOB_IMPORT_YAML */
 static int s_soloLapsFailed;     /* the Tracks page could not keep a track's laps */
 
-/* Word-wrapped FONT_SMALL text, `lines` lines at most; text that does not
-   fit ends the last line with "...". `flags` is the colour, optionally with
-   JUSTIFY_CENTER (x is then the centre). */
-static void MM_Solo_DrawWrapped(const char *text, int x, int y, int width, int lines, int flags, uint32_t *ot)
+/* Word-wrapped FONT_SMALL text: lines `skip` to `skip + lines - 1` are drawn
+   (none when `lines` is 0, which only counts); with `ellipsis`, text that does not fit ends the
+   last drawn line with "...". `flags` is the colour, optionally
+   with JUSTIFY_CENTER (x is then the centre). Returns how many lines the whole
+   text wraps to. */
+static int MM_Solo_WrapLines(const char *text, int x, int y, int width, int lines, int skip, int ellipsis, int flags,
+                              uint32_t *ot)
 {
 	char line[200];
 	const char *cursor = text;
 	int i;
-	for (i = 0; i < lines && *cursor; i++)
+	for (i = 0; *cursor; i++)
 	{
 		size_t n = 0, cut = 0;
 		while (cursor[n] && cursor[n] != '\n' && n + 4 < sizeof line)
@@ -112,20 +121,30 @@ static void MM_Solo_DrawWrapped(const char *text, int x, int y, int width, int l
 		/* Break at the last space, unless that leaves most of the line empty
 		   (a long file name): then break inside the word. */
 		if (cursor[n] && cursor[n] != '\n' && cut > 0 && cut >= n / 2) n = cut;
+		if (n == 0 && *cursor != '\n' && *cursor != ' ') n = 1; /* a glyph wider than the line still advances */
 		line[n] = '\0';
 		cursor += n;
 		while (*cursor == ' ' || *cursor == '\n') cursor++;
-		if (*cursor && i + 1 == lines)
+		if (lines > 0 && i >= skip && i < skip + lines)
 		{
-			for (;;)
+			if (ellipsis && *cursor && i + 1 == skip + lines)
 			{
-				memcpy(line + n, "...", 4);
-				if (DecalFont_GetLineWidth(line, FONT_SMALL) <= width || n == 0) break;
-				n--;
+				for (;;)
+				{
+					memcpy(line + n, "...", 4);
+					if (DecalFont_GetLineWidth(line, FONT_SMALL) <= width || n == 0) break;
+					n--;
+				}
 			}
+			DecalFont_DrawLineOT(line, x, y + (i - skip) * SOLO_ROW_H, FONT_SMALL, flags, ot);
 		}
-		DecalFont_DrawLineOT(line, x, y + i * SOLO_ROW_H, FONT_SMALL, flags, ot);
 	}
+	return i;
+}
+
+static void MM_Solo_DrawWrapped(const char *text, int x, int y, int width, int lines, int flags, uint32_t *ot)
+{
+	MM_Solo_WrapLines(text, x, y, width, lines, 0, 1, flags, ot);
 }
 
 static void MM_Solo_FitFont(const char *text, char *out, size_t size, int width, int font)
@@ -245,6 +264,8 @@ static void MM_Solo_Go(int page)
 	s_soloSel = 0;
 	s_soloTop = 0;
 	s_soloDeleteArmed = 0;
+	if (page == SOLO_OPTIONS)
+		s_soloGroup = -1;
 }
 
 static void MM_Solo_Message(const char *text)
@@ -503,15 +524,48 @@ static void MM_Solo_PageNew(uint32_t *ot, struct GamepadBuffer *pad)
 	MM_Solo_Footer("*: CHOOSE   ^: BACK", ot);
 }
 
-/* Visible option rows plus the Continue row. */
-static int MM_Solo_VisibleOptions(int *map, int cap)
+#define SOLO_OPTION_CAP 160
+#define SOLO_GROUP_CAP 24
+
+/* The option groups in the order the overlay lists them (a group is the label
+   its options carry). Returns how many. */
+static int MM_Solo_Groups(char labels[][32], int cap)
+{
+	int n = 0, i, k;
+	struct APSoloOptionInfo info;
+	for (i = 0; i < AP_Solo_OptionCount() && n < cap; i++)
+	{
+		if (!AP_Solo_OptionGet(i, &info))
+			continue;
+		for (k = 0; k < n; k++)
+			if (strcmp(labels[k], info.group) == 0)
+				break;
+		if (k == n)
+			snprintf(labels[n++], 32, "%s", info.group);
+	}
+	return n;
+}
+
+/* Visible option rows of `group` (-1: all groups). */
+static int MM_Solo_VisibleOptions(int *map, int cap, const char *group)
 {
 	int n = 0, i;
 	struct APSoloOptionInfo info;
 	for (i = 0; i < AP_Solo_OptionCount() && n < cap; i++)
-		if (AP_Solo_OptionGet(i, &info) && info.visible)
+		if (AP_Solo_OptionGet(i, &info) && info.visible && (!group || strcmp(info.group, group) == 0))
 			map[n++] = i;
 	return n;
+}
+
+/* Back on the options screen from Tracks, Review or an error: the group list
+   with Continue selected. */
+static void MM_Solo_ToOptions(void)
+{
+	char labels[SOLO_GROUP_CAP][32];
+	s_soloPage = SOLO_OPTIONS;
+	s_soloGroup = -1;
+	s_soloSel = MM_Solo_Groups(labels, SOLO_GROUP_CAP);
+	s_soloTop = 0;
 }
 
 /* Lines an option row takes: one when the full name and value fit side by
@@ -529,60 +583,47 @@ static int MM_Solo_OptionRowLines(const int *map, int rows, int i)
 {
 	struct APSoloOptionInfo info;
 	if (i >= rows || !AP_Solo_OptionGet(map[i], &info))
-		return 1; /* Continue */
+		return 1;
 	return MM_Solo_OptionLines(&info);
 }
 
-static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
+/* Groups changed from the preset: "3 changed", else "9 options". */
+static void MM_Solo_GroupCounts(const char *group, int *shown, int *changed)
 {
-	int map[64];
-	const int rows = MM_Solo_VisibleOptions(map, 64);
-	const int count = rows + 1;
+	int i;
 	struct APSoloOptionInfo info;
+	*shown = 0;
+	*changed = 0;
+	for (i = 0; i < AP_Solo_OptionCount(); i++)
+		if (AP_Solo_OptionGet(i, &info) && info.visible && strcmp(info.group, group) == 0)
+		{
+			(*shown)++;
+			if (info.changed)
+				(*changed)++;
+		}
+}
+
+/* First level: the groups, then Continue. */
+static void MM_Solo_PageOptionGroups(uint32_t *ot, struct GamepadBuffer *pad)
+{
+	char labels[SOLO_GROUP_CAP][32];
+	const int groups = MM_Solo_Groups(labels, SOLO_GROUP_CAP);
+	const int count = groups + 1;
 	char line[160], fit[160];
 	int i;
 
-	if (s_soloHighlight >= 0)
-	{
-		for (i = 0; i < rows; i++)
-			if (map[i] == s_soloHighlight)
-				s_soloSel = i;
-		s_soloHighlight = -1;
-		if (s_soloSel >= SOLO_ROWS) s_soloTop = s_soloSel - SOLO_ROWS + 1;
-	}
 	MM_Solo_Navigate(pad, count);
-	if (s_soloSel < rows && (pad->buttonsTapped & (BTN_LEFT | BTN_RIGHT)) != 0)
+	if (s_soloSel < groups && (pad->buttonsTapped & BTN_CROSS) != 0)
 	{
-		AP_Solo_OptionGet(map[s_soloSel], &info);
-		if (info.forced)
-			OtherFX_Play(5, 1);
-		else
-		{
-			AP_Solo_OptionStep(map[s_soloSel], (pad->buttonsTapped & BTN_RIGHT) ? 1 : -1);
-			OtherFX_Play(0, 1);
-		}
-	}
-	{
-		/* A changed value can grow its row: measure after stepping so the
-		   selection stays visible in the very same frame. */
-		int lines;
-		do
-		{
-			lines = 0;
-			for (i = s_soloTop; i <= s_soloSel && i < count; i++)
-				lines += MM_Solo_OptionRowLines(map, rows, i);
-			if (lines > SOLO_ROWS && s_soloTop < s_soloSel)
-				s_soloTop++;
-		} while (lines > SOLO_ROWS && s_soloTop < s_soloSel);
-	}
-	if (s_soloSel < rows && (pad->buttonsTapped & BTN_SQUARE) != 0)
-	{
-		s_soloHelpRow = map[s_soloSel];
 		OtherFX_Play(1, 1);
-		s_soloPage = SOLO_HELP;
+		s_soloGroupSel = s_soloSel;
+		s_soloGroupTop = s_soloTop;
+		s_soloGroup = s_soloSel;
+		s_soloSel = 0;
+		s_soloTop = 0;
 		return;
 	}
-	if (s_soloSel == rows && (pad->buttonsTapped & BTN_CROSS) != 0)
+	if (s_soloSel == groups && (pad->buttonsTapped & BTN_CROSS) != 0)
 	{
 		OtherFX_Play(1, 1);
 		s_soloFromOptions = 1;
@@ -598,6 +639,128 @@ static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
 	snprintf(line, sizeof line, "%s Options", s_soloStart.label);
 	MM_Solo_FitFont(line, fit, sizeof fit, SOLO_TEXT_W, FONT_BIG);
 	DecalFont_DrawLineOT(fit, 0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
+	for (i = s_soloTop; i < count && i - s_soloTop < SOLO_ROWS; i++)
+	{
+		const int y = SOLO_LIST_Y + (i - s_soloTop) * SOLO_ROW_H;
+		if (i == groups)
+			DecalFont_DrawLineOT("Continue", SOLO_ROW_X, y, FONT_SMALL, ORANGE, ot);
+		else
+		{
+			int shown, changed;
+			MM_Solo_GroupCounts(labels[i], &shown, &changed);
+			MM_Solo_Fit(labels[i], fit, sizeof fit, SOLO_ROW_W - 0x90);
+			DecalFont_DrawLineOT(fit, SOLO_ROW_X, y, FONT_SMALL, ORANGE, ot);
+			if (changed)
+				snprintf(line, sizeof line, "%d changed", changed);
+			else
+				snprintf(line, sizeof line, "%d option%s", shown, shown == 1 ? "" : "s");
+			DecalFont_DrawLineOT(line, SOLO_ROW_R, y, FONT_SMALL, JUSTIFY_RIGHT | (changed ? WHITE : GRAY), ot);
+		}
+		if (i == s_soloSel)
+			MM_Solo_Highlight(y, ot);
+	}
+	if (s_soloSel < groups)
+		MM_Solo_Help("Open a group to change its options.", GRAY, ot);
+	else
+		MM_Solo_Help("Continue to the custom tracks and the review.", GRAY, ot);
+	MM_Solo_Footer(s_soloSel < groups ? "*: OPEN  ^: BACK" : "*: CONTINUE  ^: BACK", ot);
+}
+
+/* Second level: the options of one group. */
+static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
+{
+	char labels[SOLO_GROUP_CAP][32];
+	int map[SOLO_OPTION_CAP];
+	int rows, count;
+	struct APSoloOptionInfo info;
+	char fit[160];
+	int i;
+
+	if (s_soloHighlight >= 0 && AP_Solo_OptionGet(s_soloHighlight, &info))
+	{
+		/* An option error: open the group of the refused option. */
+		const int groups = MM_Solo_Groups(labels, SOLO_GROUP_CAP);
+		for (i = 0; i < groups; i++)
+			if (strcmp(labels[i], info.group) == 0)
+			{
+				s_soloGroup = i;
+				s_soloGroupSel = i;
+				s_soloGroupTop = i >= SOLO_ROWS ? i - SOLO_ROWS + 1 : 0;
+			}
+	}
+	else if (s_soloHighlight >= 0)
+		s_soloHighlight = -1;
+	if (s_soloGroup < 0)
+	{
+		MM_Solo_PageOptionGroups(ot, pad);
+		return;
+	}
+	if (s_soloGroup >= MM_Solo_Groups(labels, SOLO_GROUP_CAP))
+	{
+		s_soloGroup = -1;
+		return;
+	}
+	rows = MM_Solo_VisibleOptions(map, SOLO_OPTION_CAP, labels[s_soloGroup]);
+	count = rows;
+	if (s_soloHighlight >= 0)
+	{
+		s_soloSel = 0;
+		for (i = 0; i < rows; i++)
+			if (map[i] == s_soloHighlight)
+				s_soloSel = i;
+		s_soloTop = 0;
+		s_soloHighlight = -1;
+	}
+	if (count == 0)
+	{
+		/* Every row of the group is hidden by another option. */
+		MM_Solo_FitFont(labels[s_soloGroup], fit, sizeof fit, SOLO_TEXT_W, FONT_BIG);
+		DecalFont_DrawLineOT(fit, 0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
+		MM_Solo_Help("Nothing to set here with the current choices.", GRAY, ot);
+		MM_Solo_Footer("^: BACK", ot);
+		return;
+	}
+	MM_Solo_Navigate(pad, count);
+	if ((pad->buttonsTapped & (BTN_LEFT | BTN_RIGHT)) != 0)
+	{
+		AP_Solo_OptionGet(map[s_soloSel], &info);
+		if (info.forced)
+			OtherFX_Play(5, 1);
+		else
+		{
+			AP_Solo_OptionStep(map[s_soloSel], (pad->buttonsTapped & BTN_RIGHT) ? 1 : -1);
+			OtherFX_Play(0, 1);
+		}
+		/* A changed value can show or hide other rows of this group. */
+		rows = MM_Solo_VisibleOptions(map, SOLO_OPTION_CAP, labels[s_soloGroup]);
+		count = rows;
+		if (s_soloSel >= count)
+			s_soloSel = count > 0 ? count - 1 : 0;
+	}
+	{
+		/* A changed value can grow its row: measure after stepping so the
+		   selection stays visible in the very same frame. */
+		int lines;
+		do
+		{
+			lines = 0;
+			for (i = s_soloTop; i <= s_soloSel && i < count; i++)
+				lines += MM_Solo_OptionRowLines(map, rows, i);
+			if (lines > SOLO_ROWS && s_soloTop < s_soloSel)
+				s_soloTop++;
+		} while (lines > SOLO_ROWS && s_soloTop < s_soloSel);
+	}
+	if ((pad->buttonsTapped & BTN_SQUARE) != 0)
+	{
+		s_soloHelpRow = map[s_soloSel];
+		s_soloHelpTop = 0;
+		OtherFX_Play(1, 1);
+		s_soloPage = SOLO_HELP;
+		return;
+	}
+
+	MM_Solo_FitFont(labels[s_soloGroup], fit, sizeof fit, SOLO_TEXT_W, FONT_BIG);
+	DecalFont_DrawLineOT(fit, 0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
 	{
 		int used = 0; /* list lines drawn */
 		for (i = s_soloTop; i < count; i++)
@@ -606,31 +769,22 @@ static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
 			const int lines = MM_Solo_OptionRowLines(map, rows, i);
 			if (used + lines > SOLO_ROWS)
 				break;
-			if (i == rows)
-				DecalFont_DrawLineOT("Continue", SOLO_ROW_X, y, FONT_SMALL, ORANGE, ot);
-			else
-			{
-				AP_Solo_OptionGet(map[i], &info);
-				/* Names fit the row (the longest overlay name is 30 characters);
-				   the fit only guards a future longer one. */
-				MM_Solo_Fit(info.label, fit, sizeof fit, SOLO_ROW_W);
-				DecalFont_DrawLineOT(fit, SOLO_ROW_X, y, FONT_SMALL, info.forced ? GRAY : ORANGE, ot);
-				MM_Solo_Fit(info.value, fit, sizeof fit, SOLO_ROW_W - SOLO_OPTION_GAP);
-				DecalFont_DrawLineOT(fit, SOLO_ROW_R, y + (lines - 1) * SOLO_ROW_H, FONT_SMALL,
-				                     JUSTIFY_RIGHT | (info.forced ? GRAY : (info.note[0] ? RED : WHITE)), ot);
-			}
+			AP_Solo_OptionGet(map[i], &info);
+			/* Names fit the row or take a second line for the value; the fit
+			   only guards a name longer than the row. */
+			MM_Solo_Fit(info.label, fit, sizeof fit, SOLO_ROW_W);
+			DecalFont_DrawLineOT(fit, SOLO_ROW_X, y, FONT_SMALL, info.forced ? GRAY : ORANGE, ot);
+			MM_Solo_Fit(info.value, fit, sizeof fit, SOLO_ROW_W - SOLO_OPTION_GAP);
+			DecalFont_DrawLineOT(fit, SOLO_ROW_R, y + (lines - 1) * SOLO_ROW_H, FONT_SMALL,
+			                     JUSTIFY_RIGHT | (info.forced ? GRAY : (info.note[0] ? RED : WHITE)), ot);
 			if (i == s_soloSel)
 				MM_Solo_HighlightLines(y, lines, ot);
 			used += lines;
 		}
 	}
-	if (s_soloSel < rows && AP_Solo_OptionGet(map[s_soloSel], &info))
-	{
-		/* A forced reason or warning replaces the group name: it needs both lines. */
-		MM_Solo_Help(info.note[0] ? info.note : info.group, info.note[0] ? RED : GRAY, ot);
-	}
-	else
-		MM_Solo_Help("More options: build a YAML on AP-Pie and import it.", GRAY, ot);
+	if (AP_Solo_OptionGet(map[s_soloSel], &info))
+		/* A forced reason or warning needs both lines; otherwise the hint. */
+		MM_Solo_Help(info.note[0] ? info.note : "Square: what this option does.", info.note[0] ? RED : GRAY, ot);
 	MM_Solo_Footer("LEFT/RIGHT: CHANGE  [: HELP  ^: BACK", ot);
 }
 
@@ -758,14 +912,25 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 		MM_Solo_Footer("*: CHANGE   ^: BACK", ot);
 }
 
+#define SOLO_HELP_LINES 11
+
 static void MM_Solo_PageHelp(uint32_t *ot, struct GamepadBuffer *pad)
 {
 	struct APSoloOptionInfo info;
-	(void)pad;
+	const char *text = AP_Solo_OptionHelp(s_soloHelpRow);
+	/* Long help scrolls: Up / Down move by a line. */
+	const int total = MM_Solo_WrapLines(text, 0x30, SOLO_LIST_Y, 0x1A0, 0, 0, 0, WHITE, NULL);
+	const int last = total > SOLO_HELP_LINES ? total - SOLO_HELP_LINES : 0;
+	if ((pad->buttonsTapped & BTN_DOWN) != 0 && s_soloHelpTop < last)
+		s_soloHelpTop++;
+	if ((pad->buttonsTapped & BTN_UP) != 0 && s_soloHelpTop > 0)
+		s_soloHelpTop--;
+	if (s_soloHelpTop > last)
+		s_soloHelpTop = last;
 	AP_Solo_OptionGet(s_soloHelpRow, &info);
 	MM_Solo_Title(info.label, ot);
-	MM_Solo_DrawWrapped(AP_Solo_OptionHelp(s_soloHelpRow), 0x30, SOLO_LIST_Y, 0x1A0, 11, WHITE, ot);
-	MM_Solo_Footer("^: BACK", ot);
+	MM_Solo_WrapLines(text, 0x30, SOLO_LIST_Y, 0x1A0, SOLO_HELP_LINES, s_soloHelpTop, 0, WHITE, ot);
+	MM_Solo_Footer(last ? "UP/DOWN: SCROLL  ^: BACK" : "^: BACK", ot);
 }
 
 /* The slot name text entry, with pad commit / cancel like the Connection page. */
@@ -946,9 +1111,7 @@ static void MM_Solo_PageMessage(uint32_t *ot, struct GamepadBuffer *pad)
 		else if (s_soloFromOptions == 2)
 		{
 			s_soloFromOptions = 1;
-			s_soloPage = SOLO_OPTIONS;
-			s_soloSel = 0;
-			s_soloTop = 0;
+			MM_Solo_ToOptions();
 		}
 		else if (s_soloFromOptions == 3)
 		{
@@ -975,13 +1138,20 @@ static void MM_Solo_Back(void)
 	{
 	case SOLO_HOME: s_soloPage = SOLO_OFF; break;
 	case SOLO_DETAILS: case SOLO_NEW: case SOLO_SESSION: MM_Solo_Refresh(); break;
-	case SOLO_OPTIONS: MM_Solo_Go(SOLO_NEW); break;
+	case SOLO_OPTIONS:
+		if (s_soloGroup >= 0)
+		{
+			s_soloGroup = -1;
+			s_soloSel = s_soloGroupSel;
+			s_soloTop = s_soloGroupTop;
+		}
+		else
+			MM_Solo_Go(SOLO_NEW);
+		break;
 	case SOLO_TRACKS:
 		if (AP_Solo_TracksViaOptions(s_soloStart.isPreset))
 		{
-			s_soloPage = SOLO_OPTIONS;
-			s_soloSel = 0;
-			s_soloTop = 0;
+			MM_Solo_ToOptions();
 		}
 		else
 			MM_Solo_Go(SOLO_NEW);
@@ -992,9 +1162,7 @@ static void MM_Solo_Back(void)
 			MM_Solo_Go(SOLO_TRACKS);
 		else if (s_soloFromOptions)
 		{
-			s_soloPage = SOLO_OPTIONS;
-			s_soloSel = 0;
-			s_soloTop = 0;
+			MM_Solo_ToOptions();
 		}
 		else
 			MM_Solo_Go(SOLO_NEW);
