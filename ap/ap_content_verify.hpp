@@ -38,6 +38,15 @@ using J = nlohmann::json;
 static const struct { const char *content_id, *revision, *lev_sha256; int rank; } kUsfRulings[] = {
     {"arabian-heights-night", "", "", 2}, {"baby-t-park", "", "", 0}, {"cortex-vortex", "", "", 2},
     {"north-pole", "", "", 0}, {"tv-world", "", "", 0},
+    // Project rulings of 2026-11-05 07:19 CET (A2-27), per registry revision and LEV pin.
+    {"ancient-lake", "1.0.0", "7e5b776f312f500112061b3b95a1f371571fd7dfe7fbd1dc404e7b3d3a3a1e78", 0},
+    {"ancient-lake", "1.0.1", "2fc45ad5edaf735426b99229cc561293d02badc6a578ef53f328ad3fc2f85360", 0},
+    {"ancient-lake", "1.0.2", "c4497a621a97a8df1c763e0b6a2dc75cd9f3a57b217b0cefa6a938fc83ee6c70", 0},
+    {"bowser-castle-1", "1.0.0", "0b59b54ac3d902d43ee7b798d45dd4979aa5859520460282d22fb6bc85dcbcd9", 0},
+    {"drive-thru-danger", "1.0.0", "77706a3b5d46cdd75ffa05e4da316cf5dc400d6e17aad7ccdf0c3f5cd62eee79", 0},
+    {"lights-out", "1.0.0", "5ebdb9f235ba0c07ba5c72b715c949afdd6062fcf3208f45a1c13936ffb529c6", 1},
+    {"neon-paradise", "1.0.0", "665d19819c437ab9ab6cbccac7c0202979405f16e1af39e06d9ea1d3286be9d0", 0},
+    {"neon-paradise", "1.1.0", "639434d84fe6de4ba88a31a1dd5a11291d640617ab25af9c7bfbd5d383b53d5d", 0},
 };
 static const int64_t kItemBase = 35010000, kKeyItem = 35010014;
 static const int64_t kItemsanityFirst = 35016000, kItemsanityLast = 35016021;
