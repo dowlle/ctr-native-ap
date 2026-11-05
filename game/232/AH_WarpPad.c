@@ -201,6 +201,13 @@ static void AH_WarpPad_BuildInstances(struct Thread *t);
 //   s_padRebirthState[phys] = AP_PadState the pad's instances were last BUILT for
 static unsigned s_padRebirthGen[128];
 static int      s_padRebirthState[128];
+// A2-45: the rebuild key is the pad state plus whether a Done pad is enterable,
+// because that decides the Done beam; entry can change while the state stays 5.
+static int AH_WarpPad_RebirthKey(int physLevelID, int destLevelID)
+{
+	int state = AP_PadState(physLevelID, destLevelID);
+	return state | ((state == 5 && AP_PadReplayable(physLevelID, destLevelID)) ? 0x10 : 0);
+}
 #endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800abbdc-0x800abd80.
@@ -437,7 +444,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			unsigned rbGen = AP_StateGen();
 			if (s_padRebirthGen[rbPhys] != rbGen)
 			{
-				int rbState = AP_PadState(rbPhys, warppadObj->levelID);
+				int rbState = AH_WarpPad_RebirthKey(rbPhys, warppadObj->levelID);
 				s_padRebirthGen[rbPhys] = rbGen;
 				if (rbState != s_padRebirthState[rbPhys])
 				{
@@ -2111,7 +2118,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 	// only on an actual state change (not on every unrelated location check). levelID
 	// = physical pad; warppadObj->levelID = destination (the AP_PadState location key).
 	if (levelID >= 0 && levelID < 128)
-		s_padRebirthState[levelID] = ctr_cfg_active() ? AP_PadState(levelID, warppadObj->levelID) : 0;
+		s_padRebirthState[levelID] = ctr_cfg_active() ? AH_WarpPad_RebirthKey(levelID, warppadObj->levelID) : 0;
 #endif
 
 	unlockItem_modelID = 0;
@@ -2161,6 +2168,34 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		newInst->model->headers[0].flags |= 1;
 
 		warppadObj->inst[WPIS_CLOSED_X] = newInst;
+
+		// A2-45 (ruled 2026-11-05): a Done pad the player can still enter for a
+		// replay shows the retail light blue beam, so it no longer looks locked.
+		// Same condition as ThTick's Done guard; no tint (AP_PadLookBeamTint is 0
+		// for Done). The glow, the number and the grey map dot are unchanged.
+		if (AP_PadDoneBeam(AP_PadLook(levelID, warppadObj->levelID),
+		                   AP_PadReplayable(levelID, warppadObj->levelID)) &&
+		    gGT->modelPtr[STATIC_BEAM] != 0)
+		{
+			newInst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_BEAM], "beam", t);
+
+			// the pool can be full after the X: no beam then, never a crash
+			if (newInst != 0)
+			{
+				*(int *)((int)&newInst->matrix + 0x0) = *(int *)((int)&inst->matrix + 0x0);
+				*(int *)((int)&newInst->matrix + 0x4) = *(int *)((int)&inst->matrix + 0x4);
+				*(int *)((int)&newInst->matrix + 0x8) = *(int *)((int)&inst->matrix + 0x8);
+				*(int *)((int)&newInst->matrix + 0xC) = *(int *)((int)&inst->matrix + 0xC);
+				*(s16 *)((int)&newInst->matrix + 0x10) = *(s16 *)((int)&inst->matrix + 0x10);
+				newInst->matrix.t[0] = inst->matrix.t[0];
+				newInst->matrix.t[1] = inst->matrix.t[1];
+				newInst->matrix.t[2] = inst->matrix.t[2];
+
+				newInst->alphaScale = 0xc00;
+
+				warppadObj->inst[WPIS_OPEN_BEAM] = newInst;
+			}
+		}
 		return;
 	}
 #endif

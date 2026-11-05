@@ -106,6 +106,18 @@ int main(void)
 			EXPECT(AP_PadLookRGB(familiar[j].look) != rgb, why);
 		}
 	}
+	/* A2-45: a Done pad births the retail light blue beam only while it can be
+	 * entered for a replay. Stage 2 waiting and every other state are untouched
+	 * (their beam comes from the unlocked or replayable build path, not this). */
+	EXPECT(AP_PadDoneBeam(AP_PAD_LOOK_DONE, 1) == 1, "Done and enterable: beam");
+	EXPECT(AP_PadDoneBeam(AP_PAD_LOOK_DONE, 0) == 0, "Done and not enterable: no beam");
+	for (i = 0; i < AP_PAD_LOOK_COUNT; i++)
+		if (i != AP_PAD_LOOK_DONE)
+			EXPECT(AP_PadDoneBeam(i, 1) == 0 && AP_PadDoneBeam(i, 0) == 0, "only a Done pad takes the Done beam");
+	EXPECT(AP_PadLookBeamTint(AP_PAD_LOOK_DONE) == 0 && AP_PadLookHasBeamColour(AP_PAD_LOOK_DONE) == 0,
+	       "the Done beam keeps the retail colour, no tint");
+	EXPECT(AP_PadLookBeamTint(AP_PAD_LOOK_STAGE2_WAITING) == 0, "stage 2 waiting beam stays retail light blue");
+	EXPECT(AP_PadLookRGB(AP_PAD_LOOK_DONE) == 0x9AA4AEu, "the Done map dot stays grey");
 	EXPECT(AP_PadLookRGB(AP_PAD_LOOK_NONE) == 0 && AP_PadLookBeamTint(AP_PAD_LOOK_NONE) == 0,
 	       "no state: no colour, retail beam");
 	EXPECT(AP_TrackerNodeColour(AP_PAD_LOOK_NONE) == AP_PAD_LOOK_OPEN, "a node with no state draws open, as before");
@@ -146,11 +158,29 @@ assert 'AP_PadLookFromState(state, racerMissing)' in look
 
 # Beam: the one beam birth takes the table's tint for its pad, full strength.
 build = warp[warp.index('void AH_WarpPad_LInB(struct Instance *inst)'):]
-beam_at = build.index('INSTANCE_Birth3D(gGT->modelPtr[STATIC_BEAM], "beam", t);')
+beam_at = build.rindex('INSTANCE_Birth3D(gGT->modelPtr[STATIC_BEAM], "beam", t);')
 beam = build[beam_at:build.index('warppadObj->inst[WPIS_OPEN_BEAM] = newInst;', beam_at)]
 assert 'AP_PadLookBeamTint(AP_PadLook(levelID, warppadObj->levelID))' in beam
 assert 'newInst->colorRGBA = apBeamTint;' in beam and 'newInst->alphaScale = AP_PAD_BEAM_ALPHA;' in beam
-assert warp.count('INSTANCE_Birth3D(gGT->modelPtr[STATIC_BEAM]') == 1, 'one beam birth'
+assert warp.count('INSTANCE_Birth3D(gGT->modelPtr[STATIC_BEAM]') == 2, 'open beam birth and the Done replay beam'
+
+# A2-45: the Done branch births the beam only for AP_PadDoneBeam (Done look and
+# AP_PadReplayable, the ThTick Done guard's condition), then returns; no tint.
+done_at = build.index('WPIS_CLOSED_X] = newInst;')
+done = build[done_at:build.index('\t\treturn;\n\t}', done_at)]
+assert 'AP_PadDoneBeam(AP_PadLook(levelID, warppadObj->levelID),' in done
+assert 'AP_PadReplayable(levelID, warppadObj->levelID)' in done
+assert 'INSTANCE_Birth3D(gGT->modelPtr[STATIC_BEAM], "beam", t);' in done
+assert 'warppadObj->inst[WPIS_OPEN_BEAM] = newInst;' in done
+assert 'colorRGBA' not in done and 'AP_PAD_BEAM_ALPHA' not in done, 'retail colour, no tint'
+# The rebuild key follows enterability, so a Done pad that stops being enterable
+# while its state stays 5 loses the beam on the next rebuild.
+rebirth = body(warp, 'static int AH_WarpPad_RebirthKey(int physLevelID, int destLevelID)')
+assert 'state == 5 && AP_PadReplayable(physLevelID, destLevelID)' in rebirth
+assert warp.count('AH_WarpPad_RebirthKey(') == 3 and 'int rbState = AH_WarpPad_RebirthKey(' in warp
+assert 's_padRebirthState[levelID] = ctr_cfg_active() ? AH_WarpPad_RebirthKey(' in warp
+guard = warp[warp.index('AP_PadState(ctr_cfg_warp_phys(warppadObj->levelID), warppadObj->levelID) == 5 &&'):]
+assert '!AP_PadReplayable(ctr_cfg_warp_phys(warppadObj->levelID), warppadObj->levelID)' in guard[:300], 'same condition as the Done guard'
 
 # Map: the AP block draws the table colour, not a font palette slot.
 warppads = body(amap, 'void AH_Map_Warppads(s16 *ptrMap, struct Thread *warppadThread, s16 *param_3)')

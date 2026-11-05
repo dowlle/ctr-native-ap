@@ -73,7 +73,8 @@ static inline unsigned AP_PadLookB(uint32_t rgb) { return rgb & 0xffu; }
 
 // ── Warp pad beam ──
 // Which pads birth a beam is unchanged (AH_WarpPad.c): an open pad, and a pad
-// kept open for a fruit replay (AP_PadReplayable). This only answers which
+// kept open for a fruit replay (AP_PadReplayable), Done included (AP_PadDoneBeam).
+// This only answers which
 // colour a beam that exists wears. Only the two actionable states, open and
 // stage 2 open, recolour it; a beam kept for a replay (stage 2 waiting, Done)
 // or a racer-locked pad keeps the retail light blue, so no new beam appears and
@@ -92,6 +93,15 @@ static inline unsigned AP_PadLookB(uint32_t rgb) { return rgb & 0xffu; }
 static inline int AP_PadLookHasBeamColour(int look)
 {
 	return look == AP_PAD_LOOK_OPEN || look == AP_PAD_LOOK_STAGE2_OPEN;
+}
+
+// A Done pad shows the retail light blue beam only while the player can still
+// enter it for a replay (AP_PadReplayable), so it no longer looks locked
+// (ruled 2026-11-05, A2-45). A Done pad that cannot be entered keeps no beam. The
+// beam keeps the retail colour: AP_PadLookBeamTint is 0 for Done, no tint.
+static inline int AP_PadDoneBeam(int look, int replayable)
+{
+	return look == AP_PAD_LOOK_DONE && replayable != 0;
 }
 
 // Instance colorRGBA packing: (R << 20) | (G << 12) | (B << 4), the layout
