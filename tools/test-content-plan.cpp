@@ -1,5 +1,5 @@
 // Production content-plan admission and retained room identity.
-// g++ -m32 -std=c++17 -DCTR_AP -fsanitize=undefined -fno-sanitize-recover=all -Iap -Iap/vendor/json/include tools/test-content-plan.cpp ap/ap_seedcfg.cpp -o /tmp/test-content-plan
+// g++ -m32 -std=c++17 -O2 -DCTR_AP -fsanitize=undefined -fno-sanitize-recover=all -Iap -Iap/vendor/json/include tools/test-content-plan.cpp ap/ap_seedcfg.cpp -o /tmp/test-content-plan
 #include "ap_seedcfg.h"
 #include "ap_content_plan.h"
 #include "ap_content_modes.h"
