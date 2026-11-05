@@ -141,6 +141,11 @@ int main(void)
 	EXPECT(AP_PadBeamHueWord(0x00520000u, 0xFFFFFFu) == 0x00525252u, "brightness is the strongest channel");
 	EXPECT(AP_PadBeamHueWord(0x7F000000u, 0x70E860u) == 0x7F000000u, "the top byte is kept");
 	EXPECT(AP_PAD_BEAM_STATE_ALPHA > 0xC00 && AP_PAD_BEAM_STATE_ALPHA < 0x1000, "softer than the retail beam, still visible");
+	/* ruled 2026-11-05: green 60% plus filter 31%, stage 2 the same way */
+	EXPECT(AP_PAD_BEAM_STATE_ALPHA == 0xD9A, "state beams at 60% of the retail strength");
+	EXPECT(AP_PAD_BEAM_FILTER_ALPHA == 0xB00, "filter at 31% of its colours");
+	EXPECT(AP_PAD_BEAM_GREEN == 0x20FF20u && AP_PAD_BEAM_FILTER == 0x6000FFu, "open beam green and its filter");
+	EXPECT(AP_PAD_BEAM_VIOLET == 0x6A4CFFu && AP_PAD_BEAM_VIOLET_FILTER == 0xA0FF00u, "stage 2 beam violet and its filter");
 	EXPECT(AP_PAD_BEAM_FILTER_ALPHA > 0 && AP_PAD_BEAM_FILTER_ALPHA < 0x1000, "the filter is partial, still visible");
 	EXPECT(((AP_PAD_BEAM_GREEN >> 8) & 0xff) == 0xff && (AP_PAD_BEAM_GREEN >> 16) < 0x40 && (AP_PAD_BEAM_GREEN & 0xff) < 0x40,
 	       "beam green is a pure green");
@@ -202,6 +207,10 @@ filt = build[build.rindex('#ifdef CTR_AP', 0, filt_at):filt_at + 400]
 assert 'int apFilterLook = AP_PadLook(levelID, warppadObj->levelID);' in filt
 assert 'AP_PadLookBeamFilter(apFilterLook)' in filt and 'AH_WarpPad_ApCopySlot(AP_BEAM_USE_FILTER, apFilterLook), 1);' in filt
 assert 'AH_WarpPad_ApFilterOf(t) == 0' in filt and 'if (f != 0)' in filt
+# The filter leaves room in the pool for the prizes born after it (their
+# births are not null-checked).
+assert 'gGT->JitPools.instance.free.count > AP_BEAM_FILTER_POOL_RESERVE' in filt
+assert '#define AP_BEAM_FILTER_POOL_RESERVE 3' in warp
 assert 'f->matrix = warppadObj->inst[WPIS_OPEN_BEAM]->matrix;' in filt and 'f->alphaScale = AP_PAD_BEAM_FILTER_ALPHA;' in filt
 assert warp.count('"beamFilter", t);') == 1, 'one filter birth'
 # No pointer to it outside the instance pool: it is found by thread and name.
@@ -212,6 +221,13 @@ assert 'JitPools.instance.taken.first' in finder and 'it->thread == t' in finder
 tick_spin = warp[warp.index('ConvertRotToMatrix(&instArr[WPIS_OPEN_BEAM]->matrix, &warppadObj->spinRot_Beam);'):]
 tick_spin = tick_spin[:tick_spin.index('wispRiseRate = 0x20;')]
 assert 'AH_WarpPad_ApFilterOf(t)' in tick_spin and 'ConvertRotToMatrix(&apFilter->matrix, &warppadObj->spinRot_Beam);' in tick_spin
+# A savestate restore can bring back instances that point at copies built
+# later from another hub's models: a pad with a state beam rebuilds stale copies.
+assert 'AH_WarpPad_ApRefreshCopies(sdata->gGT);' in tick_spin
+refresh = body(warp, 'static void AH_WarpPad_ApRefreshCopies(struct GameTracker *gGT)\n{')
+assert 's_apBeamHueSource[slot][0] == (uintptr_t)retail' in refresh and 'retail->headers[0].ptrCommandList' in refresh
+assert 'AH_WarpPad_ApHueModel(retail, rgb, slot, use == AP_BEAM_USE_FILTER)' in refresh
+assert 's_apBeamHueModel[slot].numHeaders = 0;' in refresh
 destroy = body(warp, 'void AH_WarpPad_ThDestroy(struct Thread *t)')
 beam_death = destroy[destroy.index('INSTANCE_Death(instArr[WPIS_OPEN_BEAM]);'):]
 beam_death = beam_death[:beam_death.index('for (i = WPIS_OPEN_RING1')]

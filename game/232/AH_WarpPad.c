@@ -189,6 +189,7 @@ CTR_STATIC_ASSERT(offsetof(struct WarpPad, levelID) == 0x6c);
 static void AH_WarpPad_BuildInstances(struct Thread *t);
 #ifdef CTR_AP
 static struct Instance *AH_WarpPad_ApFilterOf(struct Thread *t);
+static void AH_WarpPad_ApRefreshCopies(struct GameTracker *gGT);
 #endif
 
 #ifdef CTR_AP
@@ -1430,6 +1431,10 @@ WarpPad_AnimateOpen:
 		// the state beam's subtractive copy turns with it (ap_pad_colour.h)
 		{
 			struct Instance *apFilter = AH_WarpPad_ApFilterOf(t);
+			struct Instance *apBeam = instArr[WPIS_OPEN_BEAM];
+			// after a savestate restore the copies may be stale
+			if (apBeam->model != sdata->gGT->modelPtr[STATIC_BEAM] || apFilter != 0)
+				AH_WarpPad_ApRefreshCopies(sdata->gGT);
 			if (apFilter != 0)
 				ConvertRotToMatrix(&apFilter->matrix, &warppadObj->spinRot_Beam);
 		}
@@ -2029,6 +2034,8 @@ enum { AP_BEAM_USE_BEAM, AP_BEAM_USE_WISP, AP_BEAM_USE_FILTER, AP_BEAM_USES };
 #define AP_BEAM_HUE_HEADERS 2
 #define AP_BEAM_HUE_COLOURS 32
 #define AP_BEAM_HUE_TEXTURES 48
+// Free instances the filter leaves for the prizes born after it.
+#define AP_BEAM_FILTER_POOL_RESERVE 3
 static struct Model s_apBeamHueModel[AP_BEAM_COPIES];
 static struct ModelHeader s_apBeamHueHeaders[AP_BEAM_COPIES][AP_BEAM_HUE_HEADERS];
 static u32 s_apBeamHueColours[AP_BEAM_COPIES][AP_BEAM_HUE_HEADERS][AP_BEAM_HUE_COLOURS];
@@ -2036,6 +2043,11 @@ static u32 s_apBeamHueColours[AP_BEAM_COPIES][AP_BEAM_HUE_HEADERS][AP_BEAM_HUE_C
 // one subtractive table.
 static struct TextureLayout *s_apBeamFilterTexPtrs[AP_BEAM_HUE_HEADERS][AP_BEAM_HUE_TEXTURES];
 static struct TextureLayout s_apBeamFilterTex[AP_BEAM_HUE_HEADERS][AP_BEAM_HUE_TEXTURES];
+// What each copy was built from. A savestate restore puts back the instance
+// pool, so a restored instance can point at a copy built later from another
+// hub's model (or never built, in a new process); AH_WarpPad_ApRefreshCopies
+// rebuilds any copy whose source no longer matches the loaded model.
+static uintptr_t s_apBeamHueSource[AP_BEAM_COPIES][3];
 
 // Copy slot of one use for one look: open and stage 2 open never share.
 static int AH_WarpPad_ApCopySlot(int use, int look)
@@ -2090,7 +2102,40 @@ static struct Model *AH_WarpPad_ApHueModel(struct Model *retail, u32 rgb, int sl
 	}
 	s_apBeamHueModel[slot] = *retail;
 	s_apBeamHueModel[slot].headers = s_apBeamHueHeaders[slot];
+	s_apBeamHueSource[slot][0] = (uintptr_t)retail;
+	s_apBeamHueSource[slot][1] = (uintptr_t)retail->headers[0].ptrCommandList;
+	s_apBeamHueSource[slot][2] = (uintptr_t)retail->headers[0].ptrColors;
 	return &s_apBeamHueModel[slot];
+}
+
+// Rebuild every copy that no longer matches the loaded retail model. Called
+// each frame by a pad with a state beam; cheap when nothing changed.
+static void AH_WarpPad_ApRefreshCopies(struct GameTracker *gGT)
+{
+	int slot;
+	for (slot = 0; slot < AP_BEAM_COPIES; slot++)
+	{
+		int use = slot / 2;
+		int look = (slot & 1) ? AP_PAD_LOOK_STAGE2_OPEN : AP_PAD_LOOK_OPEN;
+		struct Model *retail = gGT->modelPtr[use == AP_BEAM_USE_WISP ? STATIC_BOTTOMRING : STATIC_BEAM];
+		u32 rgb = use == AP_BEAM_USE_FILTER ? AP_PadLookBeamFilter(look)
+		        : use == AP_BEAM_USE_WISP   ? AP_PadLookWispHue(look)
+		                                    : AP_PadLookBeamHue(look);
+		if (retail == 0 || retail->headers == 0)
+			continue;
+		if (s_apBeamHueSource[slot][0] == (uintptr_t)retail &&
+		    s_apBeamHueSource[slot][1] == (uintptr_t)retail->headers[0].ptrCommandList &&
+		    s_apBeamHueSource[slot][2] == (uintptr_t)retail->headers[0].ptrColors)
+			continue;
+		if (AH_WarpPad_ApHueModel(retail, rgb, slot, use == AP_BEAM_USE_FILTER) == 0)
+		{
+			// does not fit: an instance still using the copy draws nothing
+			s_apBeamHueModel[slot].numHeaders = 0;
+			s_apBeamHueSource[slot][0] = (uintptr_t)retail;
+			s_apBeamHueSource[slot][1] = (uintptr_t)retail->headers[0].ptrCommandList;
+			s_apBeamHueSource[slot][2] = (uintptr_t)retail->headers[0].ptrColors;
+		}
+	}
 }
 
 static struct Model *AH_WarpPad_ApBeamModel(struct Model *retail, int look)
@@ -2523,9 +2568,11 @@ ContentPad_BuildGate:
 		// the state beam's subtractive copy: same place and turn as the beam,
 		// it takes out of what is behind the column the channels the state
 		// hue lacks, so the hue reads true over the blue sky (ap_pad_colour.h).
-		// Born after the retail children, so a full instance pool drops only
-		// this copy.
-		if (warppadObj->inst[WPIS_OPEN_BEAM] != 0 && ctr_cfg_active())
+		// Born only while the pool keeps room for the up to three prizes born
+		// below, whose births are not null-checked, so a full instance pool
+		// drops only this copy.
+		if (warppadObj->inst[WPIS_OPEN_BEAM] != 0 && ctr_cfg_active() &&
+		    gGT->JitPools.instance.free.count > AP_BEAM_FILTER_POOL_RESERVE)
 		{
 			int apFilterLook = AP_PadLook(levelID, warppadObj->levelID);
 			struct Model *filterModel = AH_WarpPad_ApHueModel(gGT->modelPtr[STATIC_BEAM],
