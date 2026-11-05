@@ -254,8 +254,8 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             snprintf(s_importMessage, sizeof s_importMessage, "%s", error);
             XdeltaImport_DiscardScan();
         }
-        /* Only while still scanning: "Import all valid tracks" may have started the install this frame. */
-        if (s_importStage == IMPORT_SCANNING && (tapped & (BTN_TRIANGLE | BTN_START)))
+        /* Not once an install has started: "Import all valid tracks" may have started it this frame. */
+        if ((s_importStage == IMPORT_SCANNING || s_importStage == IMPORT_REVIEW) && (tapped & (BTN_TRIANGLE | BTN_START)))
         {
             XdeltaImport_DiscardScan();
             s_importAuto = 0;
@@ -467,8 +467,8 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
                                                 "Placeholder name: L1 to change it") : item->reason, 305, 112, 176, 2, WHITE, ot);
         }
         MM_CustomText_Draw(s_importStage == IMPORT_INSTALLING ? "Installing..." :
-                           s_importMessage[0] ? s_importMessage : s_importSummary.history[0] ? s_importSummary.history :
-                           s_importSummary.descriptorNote[0] ? s_importSummary.descriptorNote :
+                           s_importMessage[0] ? s_importMessage : s_importSummary.descriptorNote[0] ? s_importSummary.descriptorNote :
+                           s_importSummary.history[0] ? s_importSummary.history :
                            "[ Select  L1 Name  R1 Import all  X Install", 305, 144, 176, 2, ORANGE, ot);
     }
     else

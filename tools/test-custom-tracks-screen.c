@@ -652,6 +652,12 @@ int main(void)
         installState = 1; frame(0, NULL); CHECK(s_importStage == IMPORT_RESULT);
         frame(BTN_CROSS, NULL); frame(BTN_TRIANGLE, NULL);
     }
+    /* Back on the frame a normal scan finishes returns to the picker, as before. */
+    s_ctTab = CT_TAB_IMPORT; s_ctFocus = CT_FOCUS_TABS; scanState = -1;
+    frame(BTN_CROSS, NULL); frame(BTN_DOWN, NULL); frame(BTN_CROSS, NULL);
+    scanState = 1; frame(BTN_TRIANGLE, NULL); CHECK(s_importStage == IMPORT_CHOOSE);
+    scanState = -1;
+    frame(BTN_TRIANGLE, NULL);
     /* Review: type a name, a refused name, a cancelled name, then Import all. */
     s_ctTab = CT_TAB_IMPORT; s_ctFocus = CT_FOCUS_TABS; scanState = -1;
     frame(BTN_CROSS, NULL); frame(BTN_DOWN, NULL); frame(BTN_CROSS, NULL);

@@ -2047,7 +2047,7 @@ void fill_state(XdeltaPatchState *state, const PatchRecord &r)
     state->offered = (int)r.offered;
     state->imported = (int)r.tracks.size();
     state->state = r.tracks.empty() ? (r.failed.empty() ? XDELTA_STATE_NEW : XDELTA_STATE_FAILED)
-                 : (r.offered && r.tracks.size() >= r.offered && r.failed.empty()) ? XDELTA_STATE_IMPORTED
+                 : (r.offered && r.tracks.size() >= r.offered) ? XDELTA_STATE_IMPORTED
                  : XDELTA_STATE_PARTLY;
     set_text(state->reason, sizeof state->reason, r.failed);
 }

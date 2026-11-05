@@ -1050,7 +1050,7 @@ int main()
             CHECK(st[2].state == XDELTA_STATE_IMPORTED && st[2].imported == (int)offered.size(), "every offered track installed is imported");
             XdeltaImport_RecordResult(assets.c_str(), "Pack.xdelta", s, nullptr, 0, "Disk full");
             XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr);
-            CHECK(st[2].state == XDELTA_STATE_PARTLY && !std::strcmp(st[2].reason, "Disk full"), "a later failure keeps the tracks already installed");
+            CHECK(st[2].state == XDELTA_STATE_IMPORTED && !std::strcmp(st[2].reason, "Disk full"), "a later failed retry does not undo a complete import");
             /* A scan that failed before its hash was known is found by name and size. */
             XdeltaImportSummary none = {}; none.patchBytes = 100;
             XdeltaImport_RecordResult(assets.c_str(), "Failed.xdelta", &none, nullptr, 0, "Not an xdelta patch");
@@ -1061,13 +1061,17 @@ int main()
             XdeltaPatchState polled[CTR_XDELTA_FOLDER_MAX];
             int pollState = 0;
             for (int i = 0; i < 2000 && (pollState = XdeltaImport_PollPatchStates(polled, CTR_XDELTA_FOLDER_MAX)) == 0; i++) usleep(5000);
-            CHECK(pollState == 1 && polled[0].state == XDELTA_STATE_FAILED && polled[2].state == XDELTA_STATE_PARTLY, "the worker reports the same states");
+            CHECK(pollState == 1 && polled[0].state == XDELTA_STATE_FAILED && polled[2].state == XDELTA_STATE_IMPORTED, "the worker reports the same states");
             /* A corrupt record is ignored, not fatal. */
             write_path(assets + "/tracks/import-record.json", Bytes(20, '{'));
             CHECK(XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr) && st[2].state == XDELTA_STATE_NEW, "a damaged record reads as empty");
             XdeltaImport_RecordResult(assets.c_str(), "Pack.xdelta", s, offered.data(), 1, "");
             XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr);
             CHECK(st[2].state == XDELTA_STATE_PARTLY, "the record is rewritten after damage");
+            XdeltaImport_RecordResult(assets.c_str(), "Pack.xdelta", s, nullptr, 0, "Disk full");
+            XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr);
+            CHECK(st[2].state == XDELTA_STATE_PARTLY && st[2].imported == 1 && !std::strcmp(st[2].reason, "Disk full"),
+                  "a failure after some tracks keeps them and says why");
         }
         XdeltaImport_Free(&r.scan);
     }
