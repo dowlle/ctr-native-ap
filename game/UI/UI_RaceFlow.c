@@ -76,6 +76,9 @@ void UI_RaceStart_IntroText1P(void)
 	int textID;
 	int transition;
 	char trackText[24];
+#ifdef CTR_AP
+	char apBossTitle[96];
+#endif
 	RECT rect;
 	int colors[2];
 
@@ -215,6 +218,13 @@ LAB_80055930:
 
 			// string of top title bar
 			pcVar6 = sdata->lngStrings[textID];
+#ifdef CTR_AP
+			// #169 tier 2: a garage racing a drawn racer is that racer's
+			// challenge here too, as the garage title says (A2-44).
+			if ((gameMode & ADVENTURE_BOSS) != 0 &&
+			    AP_BossChallengeTitle(gGT->bossID, apBossTitle, (int)sizeof apBossTitle))
+				pcVar6 = apBossTitle;
+#endif
 
 			// Y-value that transitions title text to off-screen
 			sVar7 = gGT->pushBuffer[0].rect.y - (windowHeight + -7);

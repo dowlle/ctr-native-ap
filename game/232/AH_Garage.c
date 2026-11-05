@@ -554,6 +554,18 @@ LAB_800aede8:
 		// slipped past it, and never substitutes the retail venue.
 		if (hubID >= 1 && hubID <= 4)
 		{
+			// #169 tier 2: the seed's drawn racer replaces the garage's boss
+			// as P2, in a boss race and through all four races of a boss cup.
+			// bossID stays physical; LOAD_DriverMPK keeps the boss's own pack
+			// and sideloads the racer's hi model. Seated here, before any
+			// branch: this block runs again on every frame until the load
+			// starts, and each pass first writes the retail boss above. A boss
+			// cup returns early once its first leg is staged, so a seat inside
+			// the cup branch was overwritten and the cup raced the retail boss
+			// under a garage naming the drawn racer (A2-44).
+			int opponent = AP_BossGarageOpponent(hubID - 1);
+			if (opponent >= 0)
+				data.characterIDs[1] = (s16)opponent;
 #ifdef CTR_CUSTOM_TRACKS
 			// #133 PR 6b: a content-plan garage holding a boss cup runs it on
 			// the Adventure Cup machinery (engine cup 0) with boss mode kept:
@@ -570,12 +582,8 @@ LAB_800aede8:
 			{
 				int i;
 				const ctr_content_pad *cupPad = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + hubID - 1);
-				int cupOpponent = AP_BossGarageOpponent(hubID - 1);
 				sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_CUP;
 				sdata->Loading.OnBegin.RemBitsConfig0 &= ~ADVENTURE_CUP;
-				// One drawn racer through all four races, as in a boss race.
-				if (cupOpponent >= 0)
-					data.characterIDs[1] = (s16)cupOpponent;
 				gGT->cup.cupID = 0;
 				gGT->cup.trackIndex = 0;
 				for (i = 0; i < 8; i++)
@@ -589,7 +597,6 @@ LAB_800aede8:
 			}
 #endif
 			int venue = AP_BossGarageVenue(hubID - 1);
-			int opponent;
 			if (venue < 0)
 			{
 				gGT->pushBuffer_UI.fadeFromBlack_desiredResult = 0x1000;
@@ -597,12 +604,6 @@ LAB_800aede8:
 				return;
 			}
 			levelID = venue;
-			// #169 tier 2: the seed's drawn racer replaces the garage's boss
-			// as P2. bossID stays physical; LOAD_DriverMPK keeps the boss's
-			// own pack and sideloads the racer's hi model.
-			opponent = AP_BossGarageOpponent(hubID - 1);
-			if (opponent >= 0)
-				data.characterIDs[1] = (s16)opponent;
 #ifdef CTR_CUSTOM_TRACKS
 			// The venue may be a custom track's host slot; this load is retail.
 			CustomTrack_SelectRetailRace();

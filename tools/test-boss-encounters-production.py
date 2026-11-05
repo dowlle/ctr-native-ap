@@ -215,10 +215,19 @@ def require(path, *needles):
 
 garage = text('game/232/AH_Garage.c')
 load = garage[garage.index('// new levelID'):garage.index('MainRaceTrack_RequestLoad(levelID);')]
-# The drawn racer replaces the home track's boss only after the venue check,
-# and bossID stays the physical garage.
-assert load.index('characterID_Boss') < load.index('AP_BossGarageVenue(hubID - 1)') \
-    < load.index('opponent = AP_BossGarageOpponent(hubID - 1)') < load.index('data.characterIDs[1] = (s16)opponent;')
+# The drawn racer replaces the home track's boss, and bossID stays the
+# physical garage. This block runs again on every frame until the load starts
+# and each pass first writes the retail boss, so the seat comes before every
+# early return and every load request of the four garages: a boss cup returns
+# early once its first leg is staged, and a seat behind that return left the
+# retail boss in the cup (A2-44).
+hub = load[load.index('if (hubID >= 1 && hubID <= 4)'):load.index('else if (hubID == 0)')]
+seat = hub.index('data.characterIDs[1] = (s16)opponent;')
+assert load.index('characterID_Boss') < load.index('if (hubID >= 1 && hubID <= 4)')
+assert hub.index('int opponent = AP_BossGarageOpponent(hubID - 1);') < seat
+assert hub.count('data.characterIDs[1] =') == 1, 'one seat for the boss race and the boss cup'
+for stop in ('return;', 'MainRaceTrack_RequestLoad(', 'AP_ContentGarageCupPrepare(', 'AP_BossGarageVenue(hubID - 1)'):
+    assert seat < hub.index(stop), f'the drawn racer is seated before {stop!r}'
 assert 'gGT->bossID = R232.bossIDs[hubID];' in garage
 require('game/232/AH_Garage.c', 'AP_BossRivalAdvert(advertBoss, rivalLine', 'AP_BossKitAdvert(advertBoss, kitLine',
         'char advert[192];')
