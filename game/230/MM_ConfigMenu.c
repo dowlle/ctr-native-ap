@@ -647,6 +647,26 @@ static void Config_DrawLinkRow(int y, int labelX, int valueX, uint32_t *ot)
 	DecalFont_DrawLineOT("Room links", labelX, y, FONT_SMALL, ORANGE, ot);
 	DecalFont_DrawLineOT((char *)AP_LinkRegStatusText(), valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 }
+
+// Box Author Mode in the player client (ap/ap_author_gate.h): an action row
+// after the Authoring page's config rows. Not a config entry: it is a switch
+// for this session only, and turning it on can be refused.
+static int Config_AuthorRow(int sec, int numRows)
+{
+#ifdef AP_AUTHOR_SESSION_SWITCH
+	if (strcmp(s_sectionName[sec], "Authoring") == 0)
+		return numRows;
+#endif
+	(void)sec;
+	(void)numRows;
+	return -1;
+}
+
+static void Config_DrawAuthorRow(int y, int labelX, int valueX, uint32_t *ot)
+{
+	DecalFont_DrawLineOT("Box Author Mode", labelX, y, FONT_SMALL, ORANGE, ot);
+	DecalFont_DrawLineOT(AP_Author_Enabled() ? "ON" : "OFF", valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
+}
 #endif
 
 static void Config_DrawValue(const ConfigEntry *e, const int valueX, int y, uint32_t *ot, char *buf, int editing)
@@ -1052,7 +1072,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 				AP_Net_Reconnect(g_config.uri, g_config.slot, g_config.password);
 			}
 #if !defined(CTR_AP_AUTHORING)
-			else
+			else if (!ap_net_dial_blocked()) // Box Author Mode on: the status row says why
 			{
 				MM_Solo_Open(); // #89
 				return;
@@ -1786,6 +1806,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		// host keyboard is mapped onto a pad slot, so typing would navigate.
 		const int textBusy = TextEdit_Update() || s_connEditing;
 		const int linkRow = Config_LinkRow(sec, numRows);
+		const int authorRow = Config_AuthorRow(sec, numRows);
 		if (linkRow >= 0)
 			AP_LinkRegPageFrame();
 #else
@@ -1801,8 +1822,9 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 #endif
 		const int textBusy = 0;
 		const int linkRow = -1;
+		const int authorRow = -1;
 #endif
-		const int pageRows = numRows + (linkRow >= 0 ? 1 : 0);
+		const int pageRows = numRows + (linkRow >= 0 ? 1 : 0) + (authorRow >= 0 ? 1 : 0);
 
 		if (!textBusy)
 		{
@@ -1819,8 +1841,27 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 
 		Config_KeepInView(menu->rowSelected, pageRows);
 
-		// The selected config entry; NULL on the Room links action row.
+		// The selected config entry; NULL on the Room links and Box Author Mode
+		// action rows.
 		const ConfigEntry *selEntry = (menu->rowSelected < numRows) ? Section_Entry(sec, menu->rowSelected) : NULL;
+#ifdef AP_AUTHOR_SESSION_SWITCH
+		// A refusal on the Box Author Mode row lasts while the row keeps focus.
+		if (menu->rowSelected != authorRow)
+			AP_Author_MenuLeave();
+		if (menu->rowSelected == authorRow)
+		{
+			if ((pad->buttonsTapped & BTN_LEFT) != 0)
+			{
+				AP_Author_MenuPress(0);
+				OtherFX_Play(0, 1);
+			}
+			if ((pad->buttonsTapped & BTN_RIGHT) != 0)
+			{
+				AP_Author_MenuPress(1);
+				OtherFX_Play(0, 1);
+			}
+		}
+#endif
 
 		// Cross/Circle acts on every row type: a boolean toggles, an enum moves to
 		// its next value (wrapping), a text row opens the editor.
@@ -1829,7 +1870,9 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			OtherFX_Play(1, 1);
 			const ConfigEntry *e = selEntry;
 #ifdef CTR_AP
-			if (e == NULL)
+			if (e == NULL && menu->rowSelected == authorRow)
+				AP_Author_MenuPress(!AP_Author_Enabled());
+			else if (e == NULL)
 				AP_LinkRegAction(); // Room links: use this client for ctr-ap:// links, or stop
 			else if (Config_RowLockedBySeed(e))
 				; // the seed has item box colours off: nothing to toggle
@@ -1945,8 +1988,27 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			}
 		}
 
+		if (authorRow >= 0 && authorRow >= s_configTop && authorRow < s_configTop + CONFIG_PAGE_WINDOW)
+		{
+			int y = startY + (authorRow - s_configTop) * rowSpacing;
+			Config_DrawAuthorRow(y, labelX, valueX, ot);
+			if (menu->rowSelected == authorRow)
+			{
+				RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
+				CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
+			}
+		}
+
 		if (s_connEditing)
 			TextEdit_DrawHint(0xC0, ot);
+#ifdef AP_AUTHOR_SESSION_SWITCH
+		else if (menu->rowSelected == authorRow)
+		{
+			const char *first, *second;
+			AP_Author_MenuHelp(&first, &second);
+			Config_DrawHelpLines(first, second, ot);
+		}
+#endif
 		else if (menu->rowSelected == linkRow)
 			Config_DrawHelpLines("Which program opens room links.", AP_LinkRegActionHint(), ot);
 		else if (numRows > 0 && menu->rowSelected < numRows)
@@ -1974,6 +2036,9 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			OtherFX_Play(1, 1);
 			s_currentSection = menu->rowSelected;
 			menu->rowSelected = 0;
+#ifdef AP_AUTHOR_SESSION_SWITCH
+			AP_Author_MenuLeave(); // a refusal from an earlier visit never carries over
+#endif
 		}
 
 		DecalFont_DrawLineOT(sdata->lngStrings[LNG_OPTIONS],

@@ -5,7 +5,7 @@
 //
 // The client carries TWO placement tables and exactly one of them is live at a
 // time: the FINAL authored set compiled into the executable
-// (ap_placements_data.h), and an external AP_AUTHOR_FILE next to the executable.
+// (ap_placements_data.h), and an external AP_PLACEMENT_FILE (ap_author_gate.h) next to the executable.
 // This header owns the rule that decides between them and the read-only view
 // over the winner.
 //

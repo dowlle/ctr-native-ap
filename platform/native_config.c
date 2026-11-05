@@ -194,11 +194,12 @@ const ConfigEntry g_configEntries[] = {
 	// the main-menu offer only, never by a menu row.
 	{"State",       "update_declined_version",  "Update Declined Version",      CFG_STRING, g_config.updateDeclined, 0, (int)sizeof(g_config.updateDeclined), 0},
 #endif
-	// Box placement editing is absent from ordinary public builds. Keeping the
-	// row out of g_configEntries means NativeConfig_Load cannot revive it from a
-	// stale box_author=true, while ap_author.c independently forces the runtime
-	// gate off as defence in depth. Dedicated authoring builds opt in explicitly
-	// (CTR_BOX_AUTHORING: the AP box authoring download and the authoring client).
+	// Box Author Mode is a saved option only in the dedicated authoring builds
+	// (CTR_BOX_AUTHORING: the AP box authoring download and the authoring
+	// client). The player client has it as a session switch on the Authoring
+	// page instead (ap/ap_author_gate.h): keeping the row out of
+	// g_configEntries there means NativeConfig_Load cannot revive it from a
+	// stale box_author=true and every launch starts with it off.
 #ifdef CTR_BOX_AUTHORING
 	{"Authoring",   "box_author",               "Box Author Mode",              CFG_BOOL, &g_config.boxAuthor},
 #endif

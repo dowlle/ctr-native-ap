@@ -13,12 +13,18 @@
 #include "ap_placement_table.h" // the two tables, the precedence rule, the row shape
 #include "ap_version.h"       // CTR_AP_VERSION, stamped into the exported file
 #include "ap_hooks.h"         // AP_LogLine
-#ifdef CTR_BOX_AUTHORING
-#include "ap_author_pad.h"     // controller keys: Select, Select+L1, Select+R1
+#include "ap_author_pad.h"     // controller keys: Select and its chords
+#include "ap_author_export.h"  // submission files, one per track
+#ifdef AP_AUTHOR_SESSION_SWITCH
+#include "ap_net.h"            // the room the mode never shares a session with
+#include "ap_solo.h"
 #endif
-// Box placements on custom tracks: the player client has packages but no Box
-// Author Mode.
-#if defined(CTR_CUSTOM_PACKAGES) && defined(CTR_BOX_AUTHORING)
+#if !defined(_WIN32)
+#include <errno.h>
+#include <sys/stat.h>
+#endif
+// Box placements on custom tracks, in every build with the package library.
+#if defined(CTR_CUSTOM_PACKAGES)
 #define AP_AUTHOR_CUSTOM
 #endif
 #ifdef AP_AUTHOR_CUSTOM
@@ -70,6 +76,18 @@ static int s_markerGen;        // AP_Spawn_Generation() the handles were taken a
 static int s_markerTableFull;  // the loader refused a marker for this level
 static int s_lastDropIndex = -1;
 static int s_bossPauseLogged;  // one log line per boss race, not per frame (#194)
+static int s_authorTable;      // author mode holds the table: it was read from AP_AUTHOR_FILE
+static int s_sel = -1;         // selected row on this track (index into s_place), -1 = the newest
+
+// Controller keys (ap_author_pad.h): the gesture state, and the action the pad
+// filter took for the next AP_Author_OnFrame.
+static AP_AuthorPadState s_pad;
+static int               s_padAction;
+
+// The HUD's export line: what the last Export wrote, for a few seconds.
+#define AP_AUTHOR_NOTE_FRAMES 300
+static char s_note[64];
+static int  s_noteFrames;
 
 // Instance name. A char[16] rather than a string literal because INSTANCE_Birth
 // copies a fixed 15 characters out of whatever it is handed (INSTANCE.c:24-27).
@@ -77,7 +95,9 @@ static char s_markerName[16] = "apbox";
 
 #ifdef AP_AUTHOR_CUSTOM
 static void AP_AuthorCustomForgetMarkers(void); // custom-track markers, further down
+static void AP_AuthorCustomClearMarkers(void);
 #endif
+static void AP_AuthorExport(void); // submission files, further down
 
 // Levels a placement may be authored on: the 18 race tracks plus the 7 battle
 // arenas (enum LevelID, namespace_Level.h:4-28). Beyond LAB_BASEMENT the ids are
@@ -120,12 +140,14 @@ int AP_Author_Enabled(void)
 	// boxes consume it, but the placement editor itself is a developer tool.
 	// Compile it live only in an explicit authoring build. This also neutralises
 	// a stale box_author=true from an older public config.ini.
-#ifndef CTR_BOX_AUTHORING
+#if !defined(CTR_BOX_AUTHORING) && !defined(AP_AUTHOR_SESSION_SWITCH)
 	return 0;
 #else
 	// The menu toggle mutates g_config in place, so this follows it live. Without
 	// a config.ini the field holds its compiled default (off), which is the right
-	// answer for a player who never opened the menu.
+	// answer for a player who never opened the menu. In the player client the
+	// field is not a config entry (platform/native_config.c), so only the
+	// session switch on Options > Authoring sets it and every launch starts off.
 	return g_config.boxAuthor ? 1 : 0;
 #endif
 }
@@ -230,6 +252,8 @@ static void AP_AuthorRebuildMarkers(struct GameTracker *gGT, int level)
 	AP_AuthorClearMarkers();
 	s_markerLevel = level;
 	s_markerTableFull = 0;
+	s_sel = -1; // a selection belongs to the track it was made on
+	AP_AuthorPad_SetMoving(&s_pad, 0);
 
 	if (!AP_AuthorLevelIsAuthorable(level))
 		return;
@@ -248,7 +272,8 @@ static void AP_AuthorSave(void)
 	FILE *f;
 	int   i;
 
-	f = fopen(AP_AUTHOR_FILE, "w");
+	// AP_AuthorGate_WriteFile, never the player's AP_PLACEMENT_FILE.
+	f = fopen(AP_AuthorGate_WriteFile(), "w");
 	if (f == 0)
 	{
 		AP_LogLine("[AP AUTHOR] could not write " AP_AUTHOR_FILE "\n");
@@ -358,12 +383,17 @@ static void AP_AuthorLoad(void)
 	FILE *f;
 	char  line[256];
 	char  msg[256]; // sized for the desync-guard lines below, the longest we emit
+	// The authoring file while author mode holds the table, else the runtime's
+	// own (the same file in the box authoring builds, ap_author_gate.h).
+	const char *file = AP_AuthorGate_ReadFile(s_authorTable);
 
 	s_loaded = 1;
 	s_placeCount = 0;
+	s_sel = -1;
+	s_lastDropIndex = -1;
 	AP_AuthorForgetMarkers();
 
-	f = fopen(AP_AUTHOR_FILE, "r");
+	f = fopen(file, "r");
 	if (f == 0)
 	{
 		// The normal shipped case, and not an error: no external file, so the
@@ -372,7 +402,7 @@ static void AP_AuthorLoad(void)
 		s_placeGen++;
 		snprintf(msg, sizeof msg,
 		         "[AP AUTHOR] placements: built-in default, %d placement(s) (no %s next to the exe)\n",
-		         AP_EMBEDDED_PLACEMENT_COUNT, AP_AUTHOR_FILE);
+		         AP_EMBEDDED_PLACEMENT_COUNT, file);
 		AP_LogLine(msg);
 		return;
 	}
@@ -417,7 +447,7 @@ static void AP_AuthorLoad(void)
 	// this player actually running" without a second question.
 	snprintf(msg, sizeof msg,
 	         "[AP AUTHOR] placements: external %s OVERRIDES the built-in default, %d placement(s) (built-in has %d)\n",
-	         AP_AUTHOR_FILE, s_placeCount, AP_EMBEDDED_PLACEMENT_COUNT);
+	         file, s_placeCount, AP_EMBEDDED_PLACEMENT_COUNT);
 	AP_LogLine(msg);
 
 	// DESYNC GUARD. An external file is an override, not a patch: it replaces the
@@ -432,7 +462,7 @@ static void AP_AuthorLoad(void)
 		snprintf(msg, sizeof msg,
 		         "[AP BOX] WARNING: %s is present but holds ZERO placements -- NO boxes will spawn anywhere. "
 		         "Delete the file to fall back to the built-in %d.\n",
-		         AP_AUTHOR_FILE, AP_EMBEDDED_PLACEMENT_COUNT);
+		         file, AP_EMBEDDED_PLACEMENT_COUNT);
 		AP_LogLine(msg);
 	}
 	else if (s_placeCount != AP_EMBEDDED_PLACEMENT_COUNT)
@@ -481,6 +511,117 @@ static void AP_AuthorSeedFileFromEmbedded(void)
 
 	AP_AuthorSave(); // flips the live source to the file
 }
+
+// ── the player client's session switch (ap_author_gate.h) ───────────────────
+
+// Author mode takes the table over from the runtime: from here on it is read
+// from, and saved to, AP_AUTHOR_FILE only. A no-op in the box authoring
+// builds, where the two are one file.
+static void AP_AuthorTakeTable(void)
+{
+#ifdef AP_AUTHOR_SESSION_SWITCH
+	if (s_authorTable)
+		return;
+	s_authorTable = 1;
+	AP_AuthorLoad();
+	AP_LogLine("[AP AUTHOR] author mode holds the table: edits go to " AP_AUTHOR_FILE ", never to "
+	           AP_PLACEMENT_FILE "\n");
+#endif
+}
+
+#ifdef AP_AUTHOR_SESSION_SWITCH
+// The runtime gets its own table back: reread from AP_PLACEMENT_FILE (or the
+// built-in set), with a new generation so the runtime boxes rebuild from it.
+// Called when the mode goes off, from the menu or the next frame.
+static void AP_AuthorReleaseTable(void)
+{
+	if (!s_authorTable)
+		return;
+	// Handles from an older pool generation were already dropped by the pool;
+	// removing one of those could delete somebody else's spawn.
+	if (AP_Spawn_Generation() == s_markerGen)
+	{
+		AP_AuthorClearMarkers();
+#ifdef AP_AUTHOR_CUSTOM
+		AP_AuthorCustomClearMarkers();
+#endif
+	}
+	s_markerLevel = -1;
+	s_authorTable = 0;
+	AP_AuthorLoad();
+	AP_AuthorPad_Reset(&s_pad);
+	s_padAction = AP_AUTHOR_PAD_NONE;
+}
+
+// While the mode is on, every dial is refused with this reason (ap_net.cpp).
+static const char *AP_AuthorDialBlock(void)
+{
+	return AP_AuthorGate_DialRefusal(AP_Author_Enabled());
+}
+
+static int s_menuRefusal; // the refusal shown on this visit to the row, AP_AUTHOR_GATE_*
+
+void AP_Author_MenuPress(int wantOn)
+{
+	int gate;
+
+	if (!wantOn)
+	{
+		s_menuRefusal = AP_AUTHOR_GATE_OK;
+		if (!g_config.boxAuthor)
+			return;
+		g_config.boxAuthor = 0;
+		AP_AuthorReleaseTable();
+		AP_LogLine("[AP AUTHOR] Box Author Mode off: rooms can connect again\n");
+		return;
+	}
+	if (g_config.boxAuthor)
+		return;
+
+	gate = AP_AuthorGate_Enter(ap_net_status(), AP_Solo_SessionOwnsConnection());
+	if (gate != AP_AUTHOR_GATE_OK)
+	{
+		if (s_menuRefusal != gate)
+		{
+			// First press: say why, change nothing.
+			s_menuRefusal = gate;
+			AP_LogLine(gate == AP_AUTHOR_GATE_SOLO
+			               ? "[AP AUTHOR] refused: a Play Solo game holds the connection\n"
+			               : "[AP AUTHOR] refused: connected to a room\n");
+			return;
+		}
+		// Second press on the same visit: the player chose to leave. The
+		// same teardown a Connect press starts with (AP_Net_Reconnect).
+		AP_LogLine("[AP AUTHOR] leaving the room to author boxes\n");
+		AP_Solo_BeforeReconnect();
+		ap_net_shutdown();
+		gate = AP_AuthorGate_Enter(ap_net_status(), AP_Solo_SessionOwnsConnection());
+		if (gate != AP_AUTHOR_GATE_OK)
+		{
+			s_menuRefusal = gate;
+			return;
+		}
+	}
+	else if (AP_AuthorGate_CloseOnEnter(ap_net_status()))
+		ap_net_shutdown(); // a refused or stopped dial: nothing of it stays under the mode
+
+	s_menuRefusal = AP_AUTHOR_GATE_OK;
+	ap_net_set_dial_block_query(AP_AuthorDialBlock);
+	g_config.boxAuthor = 1;
+	AP_AuthorTakeTable();
+	AP_LogLine("[AP AUTHOR] Box Author Mode on: no room can connect until it is off\n");
+}
+
+void AP_Author_MenuLeave(void)
+{
+	s_menuRefusal = AP_AUTHOR_GATE_OK;
+}
+
+void AP_Author_MenuHelp(const char **first, const char **second)
+{
+	AP_AuthorGate_Help(AP_Author_Enabled(), s_menuRefusal, first, second);
+}
+#endif // AP_AUTHOR_SESSION_SWITCH
 
 // ── the actions ─────────────────────────────────────────────────────────────
 
@@ -554,6 +695,11 @@ static void AP_AuthorUndo(struct GameTracker *gGT)
 		if (s_place[i].level == (s16)level)
 			last = i;
 	}
+	// The selected box when there is one on this track (Select + Square or
+	// Circle), else the newest, as before.
+	if (s_sel >= 0 && s_sel < s_placeCount && s_place[s_sel].level == (s16)level)
+		last = s_sel;
+	s_sel = -1;
 
 	if (last < 0)
 	{
@@ -612,14 +758,84 @@ static void AP_AuthorList(struct GameTracker *gGT)
 	AP_AuthorSave();
 }
 
-#ifdef CTR_BOX_AUTHORING
-// The controller keys, on the HUD line under the count and the last drop.
+// The controller legend, on the HUD lines under the count and the selection,
+// then the last export for a few seconds.
 static void AP_AuthorDrawPadHint(void)
 {
-	DecalFont_DrawLine("SELECT DROP  +L1 UNDO  +R1 SAVE", AP_AUTHOR_HUD_X, AP_AUTHOR_HUD_Y + 2 * AP_AUTHOR_HUD_LINE_H,
-	                   FONT_SMALL, WHITE);
+	int y = AP_AUTHOR_HUD_Y + 2 * AP_AUTHOR_HUD_LINE_H;
+
+	if (s_pad.moving)
+	{
+		DecalFont_DrawLine("MOVING  DPAD SLIDE  L1 R1 HEIGHT", AP_AUTHOR_HUD_X, y, FONT_SMALL, WHITE);
+		DecalFont_DrawLine("SELECT DONE", AP_AUTHOR_HUD_X, y + AP_AUTHOR_HUD_LINE_H, FONT_SMALL, WHITE);
+	}
+	else
+	{
+		DecalFont_DrawLine("SELECT DROP  +L1 DELETE  +R1 SAVE", AP_AUTHOR_HUD_X, y, FONT_SMALL, WHITE);
+		DecalFont_DrawLine("+SQ +O PICK  +X MOVE  +TRI EXPORT", AP_AUTHOR_HUD_X, y + AP_AUTHOR_HUD_LINE_H,
+		                   FONT_SMALL, WHITE);
+	}
+	if (s_noteFrames > 0)
+	{
+		s_noteFrames--;
+		DecalFont_DrawLine(s_note, AP_AUTHOR_HUD_X, y + 2 * AP_AUTHOR_HUD_LINE_H, FONT_SMALL, WHITE);
+		DecalFont_DrawLine("IN BOX-SUBMISSIONS BY THE GAME", AP_AUTHOR_HUD_X, y + 3 * AP_AUTHOR_HUD_LINE_H,
+		                   FONT_SMALL, WHITE);
+	}
 }
-#endif
+
+// The selected row's index list on a track, for the shared selection rule.
+static int AP_AuthorRetailRows(int level, int *idx)
+{
+	int i, n = 0;
+
+	for (i = 0; i < s_placeCount; i++)
+		if (s_place[i].level == (s16)level)
+			idx[n++] = i;
+	return n;
+}
+
+static void AP_AuthorRetailPick(struct GameTracker *gGT, int dir)
+{
+	static int idx[AP_AUTHOR_MAX_PLACEMENTS];
+	int  n = AP_AuthorRetailRows((int)gGT->levelID, idx);
+	char msg[128];
+
+	s_sel = AP_AuthorSel_Step(idx, n, s_sel, dir);
+	if (s_sel < 0)
+		return;
+	snprintf(msg, sizeof msg, "[AP AUTHOR] %s: selected box %d of %d at %d %d %d\n",
+	         AP_AuthorLevelName((int)gGT->levelID), AP_AuthorSel_Ordinal(idx, n, s_sel), n,
+	         (int)s_place[s_sel].x, (int)s_place[s_sel].y, (int)s_place[s_sel].z);
+	AP_LogLine(msg);
+}
+
+// Move mode needs a box: the selected one, else the newest on this track.
+static int AP_AuthorRetailMoveBegin(struct GameTracker *gGT)
+{
+	static int idx[AP_AUTHOR_MAX_PLACEMENTS];
+	int n = AP_AuthorRetailRows((int)gGT->levelID, idx);
+
+	if (AP_AuthorSel_Ordinal(idx, n, s_sel) == 0)
+		s_sel = n > 0 ? idx[n - 1] : -1;
+	return s_sel >= 0;
+}
+
+static void AP_AuthorRetailNudge(struct GameTracker *gGT, int dx, int dy, int dz)
+{
+	if (s_sel < 0 || s_sel >= s_placeCount || s_place[s_sel].level != (s16)gGT->levelID)
+		return;
+	AP_AuthorNudge_Apply(&s_place[s_sel].x, &s_place[s_sel].y, &s_place[s_sel].z, dx, dy, dz);
+	if (s_marker[s_sel] != AP_SPAWN_INVALID)
+	{
+		AP_Spawn_Remove(s_marker[s_sel]);
+		s_marker[s_sel] = AP_SPAWN_INVALID;
+	}
+	s_markerTableFull = 0;
+	AP_AuthorSpawnMarker(gGT, s_sel);
+	s_placeGen++;
+	AP_AuthorSave(); // every step, as every drop: the file is always current
+}
 
 #ifdef AP_AUTHOR_CUSTOM
 // ============================================================================
@@ -639,6 +855,7 @@ static AP_SpawnHandle  s_cmarker[AP_AUTHOR_MAX_PLACEMENTS];
 static int             s_cplaceCount;
 static int             s_cloaded;
 static int             s_clastDropIndex = -1;
+static int             s_csel = -1;     // selected custom row, -1 = the newest of the track
 static AP_CustomBoxKey s_cmarkerKey;    // the track the custom marker set was built for
 static int             s_cpauseLogged;  // one line per "custom track did not load"
 
@@ -818,6 +1035,10 @@ static void AP_AuthorCustomUndo(const AP_CustomBoxKey *key, const char *title)
 {
 	int  last = AP_CustomBox_LastIndexFor(s_cplace, s_cplaceCount, key);
 	int  i;
+
+	if (s_csel >= 0 && s_csel < s_cplaceCount && AP_CustomBoxKey_Equal(&s_cplace[s_csel].key, key))
+		last = s_csel;
+	s_csel = -1;
 	char msg[192];
 	char name[48];
 
@@ -864,6 +1085,60 @@ static void AP_AuthorCustomList(const AP_CustomBoxKey *key, const char *title)
 	         s_cplaceCount, AP_CUSTOM_BOX_FILE);
 	AP_LogLine(msg);
 	AP_AuthorCustomSave();
+}
+
+static int AP_AuthorCustomRows(const AP_CustomBoxKey *key, int *idx)
+{
+	int i, n = 0;
+
+	for (i = 0; i < s_cplaceCount; i++)
+		if (AP_CustomBoxKey_Equal(&s_cplace[i].key, key))
+			idx[n++] = i;
+	return n;
+}
+
+// Select, move and nudge on a custom track: the retail rules over the rows of
+// this package identity.
+static void AP_AuthorCustomEdit(struct GameTracker *gGT, const AP_CustomBoxKey *key, int padAction)
+{
+	static int idx[AP_AUTHOR_MAX_PLACEMENTS];
+	int  n = AP_AuthorCustomRows(key, idx);
+	int  dx, dy, dz;
+	char msg[160];
+
+	if (padAction == AP_AUTHOR_PAD_PREV || padAction == AP_AUTHOR_PAD_NEXT)
+	{
+		s_csel = AP_AuthorSel_Step(idx, n, s_csel, padAction == AP_AUTHOR_PAD_PREV ? -1 : 1);
+		if (s_csel >= 0)
+		{
+			snprintf(msg, sizeof msg, "[AP AUTHOR] custom %s: selected box %d of %d at %d %d %d\n", key->uuid,
+			         AP_AuthorSel_Ordinal(idx, n, s_csel), n, (int)s_cplace[s_csel].x, (int)s_cplace[s_csel].y,
+			         (int)s_cplace[s_csel].z);
+			AP_LogLine(msg);
+		}
+	}
+	else if (padAction == AP_AUTHOR_PAD_MOVE)
+	{
+		if (AP_AuthorSel_Ordinal(idx, n, s_csel) == 0)
+			s_csel = n > 0 ? idx[n - 1] : -1;
+		AP_AuthorPad_SetMoving(&s_pad, s_csel >= 0);
+	}
+	else if (padAction == AP_AUTHOR_PAD_MOVE_DONE)
+		AP_AuthorCustomSave();
+	else if (AP_AuthorNudge_Delta(padAction, &dx, &dy, &dz) && AP_AuthorSel_Ordinal(idx, n, s_csel) != 0)
+	{
+		AP_AuthorNudge_Apply(&s_cplace[s_csel].x, &s_cplace[s_csel].y, &s_cplace[s_csel].z, dx, dy, dz);
+		if (s_cmarker[s_csel] != AP_SPAWN_INVALID)
+		{
+			AP_Spawn_Remove(s_cmarker[s_csel]);
+			s_cmarker[s_csel] = AP_SPAWN_INVALID;
+		}
+		s_markerTableFull = 0;
+		AP_AuthorCustomSpawnMarker(gGT, s_csel);
+		AP_AuthorCustomSave();
+	}
+	if (s_pad.moving && AP_AuthorSel_Ordinal(idx, n, s_csel) == 0)
+		AP_AuthorPad_SetMoving(&s_pad, 0); // the box went away
 }
 
 // The custom-track half of AP_Author_OnFrame. Returns 1 when it owned the
@@ -921,6 +1196,8 @@ static int AP_AuthorCustomOnFrame(struct GameTracker *gGT, int padAction)
 		s_cmarkerKey = key;
 		s_markerTableFull = 0;
 		s_clastDropIndex = -1;
+		s_csel = -1;
+		AP_AuthorPad_SetMoving(&s_pad, 0);
 	}
 	for (i = 0; i < s_cplaceCount; i++)
 	{
@@ -937,6 +1214,9 @@ static int AP_AuthorCustomOnFrame(struct GameTracker *gGT, int padAction)
 		AP_AuthorCustomUndo(&key, title);
 	if ((list && !prevList) || padAction == AP_AUTHOR_PAD_LIST)
 		AP_AuthorCustomList(&key, title);
+	if (padAction == AP_AUTHOR_PAD_EXPORT)
+		AP_AuthorExport();
+	AP_AuthorCustomEdit(gGT, &key, padAction);
 	prevDrop = drop;
 	prevUndo = undo;
 	prevList = list;
@@ -971,7 +1251,15 @@ static int AP_AuthorCustomDrawHud(void)
 	snprintf(line1, sizeof line1, "BOX AUTHOR  %s  %d HERE", name,
 	         AP_CustomBox_CountFor(s_cplace, s_cplaceCount, &key));
 	DecalFont_DrawLine(line1, AP_AUTHOR_HUD_X, AP_AUTHOR_HUD_Y, FONT_SMALL, WHITE);
-	if (s_clastDropIndex >= 0 && s_clastDropIndex < s_cplaceCount &&
+	if (s_csel >= 0 && s_csel < s_cplaceCount && AP_CustomBoxKey_Equal(&s_cplace[s_csel].key, &key))
+	{
+		static int idx[AP_AUTHOR_MAX_PLACEMENTS];
+		int n = AP_AuthorCustomRows(&key, idx);
+		snprintf(line2, sizeof line2, "BOX %d OF %d  %d %d %d", AP_AuthorSel_Ordinal(idx, n, s_csel), n,
+		         (int)s_cplace[s_csel].x, (int)s_cplace[s_csel].y, (int)s_cplace[s_csel].z);
+		DecalFont_DrawLine(line2, AP_AUTHOR_HUD_X, AP_AUTHOR_HUD_Y + AP_AUTHOR_HUD_LINE_H, FONT_SMALL, WHITE);
+	}
+	else if (s_clastDropIndex >= 0 && s_clastDropIndex < s_cplaceCount &&
 	    AP_CustomBoxKey_Equal(&s_cplace[s_clastDropIndex].key, &key))
 	{
 		snprintf(line2, sizeof line2, "LAST %d %d %d", (int)s_cplace[s_clastDropIndex].x,
@@ -983,16 +1271,12 @@ static int AP_AuthorCustomDrawHud(void)
 }
 #endif // AP_AUTHOR_CUSTOM
 
-#ifdef CTR_BOX_AUTHORING
 // ── controller keys (ap_author_pad.h) ──────────────────────────────────────
-
-static AP_AuthorPadState s_pad;
-static int               s_padAction; // for the next AP_Author_OnFrame
 
 // The numpad keys' gates (AP_Author_OnFrame: mode on, level loaded and the
 // kart born, not a boss race, a custom track loaded and identified), plus two
 // of the controller's own: not paused, and a track author mode can file a box
-// for. Outside those Select, L1 and R1 are left alone for the game.
+// for. Outside those Select and the chord buttons are left alone for the game.
 static int AP_AuthorPadLive(struct GameTracker *gGT)
 {
 	if (!AP_Author_Enabled() || sdata == 0 || gGT == 0)
@@ -1015,7 +1299,8 @@ static int AP_AuthorPadLive(struct GameTracker *gGT)
 
 void AP_Author_FilterPad(struct GamepadSystem *gGS)
 {
-	static const AP_AuthorPadButtons buttons = {BTN_SELECT, BTN_L1, BTN_R1};
+	static const AP_AuthorPadButtons buttons = {BTN_SELECT, BTN_L1, BTN_R1, BTN_SQUARE, BTN_CIRCLE, BTN_CROSS,
+	                                            BTN_TRIANGLE, BTN_UP, BTN_DOWN, BTN_LEFT, BTN_RIGHT};
 	struct GamepadBuffer *pad;
 	unsigned int strip = 0;
 	int action, i;
@@ -1042,7 +1327,118 @@ void AP_Author_FilterPad(struct GamepadSystem *gGS)
 		gGS->anyoneHeldPrev |= gGS->gamepad[i].buttonsHeldPrevFrame;
 	}
 }
-#endif // CTR_BOX_AUTHORING
+
+// ── export (ap_author_export.h) ─────────────────────────────────────────────
+
+// Same portable shape ap_navrec.c uses for its own directory.
+static int AP_AuthorMakeDir(const char *path)
+{
+#if defined(_WIN32)
+	if (CreateDirectoryA(path, NULL) != 0)
+		return 1;
+	return GetLastError() == ERROR_ALREADY_EXISTS;
+#else
+	if (mkdir(path, 0777) == 0)
+		return 1;
+	return errno == EEXIST;
+#endif
+}
+
+static void AP_AuthorNote(const char *text)
+{
+	snprintf(s_note, sizeof s_note, "%s", text);
+	s_noteFrames = AP_AUTHOR_NOTE_FRAMES;
+}
+
+// One file per track into AP_BOX_EXPORT_DIR: every retail track whose boxes
+// differ from the built-in set, every custom track with a box. Reads only
+// the tables author mode already holds; the placement files are not touched.
+static void AP_AuthorExport(void)
+{
+	char path[192];
+	char msg[256];
+	int  level, files = 0, failed = 0;
+	FILE *f;
+
+	if (!AP_AuthorMakeDir(AP_BOX_EXPORT_DIR))
+	{
+		AP_LogLine("[AP AUTHOR] export: could not create the " AP_BOX_EXPORT_DIR " folder\n");
+		AP_AuthorNote("EXPORT FAILED, SEE CTR-AP.LOG");
+		return;
+	}
+	for (level = 0; level < AP_AUTHOR_LEVEL_COUNT && s_source == AP_PLACEMENT_SRC_FILE; level++)
+	{
+		if (!AP_BoxExport_RetailChanged(s_place, s_placeCount, level))
+			continue;
+		if (!AP_BoxExport_RetailName(path, sizeof path, AP_AuthorLevelName(level)) || (f = fopen(path, "w")) == 0)
+		{
+			failed++;
+			continue;
+		}
+		if (!AP_BoxExport_WriteRetail(f, s_place, s_placeCount, level, AP_AuthorLevelName(level), CTR_AP_VERSION))
+			failed++;
+		else
+			files++;
+		if (fclose(f) != 0)
+			failed++;
+		snprintf(msg, sizeof msg, "[AP AUTHOR] export: %s\n", path);
+		AP_LogLine(msg);
+	}
+#ifdef AP_AUTHOR_CUSTOM
+	{
+		int i;
+		AP_AuthorCustomEnsureLoaded();
+		for (i = 0; i < s_cplaceCount; i++)
+		{
+			if (!AP_BoxExport_FirstOfKey(s_cplace, i))
+				continue;
+			if (!AP_BoxExport_CustomName(path, sizeof path, &s_cplace[i].key) || (f = fopen(path, "w")) == 0)
+			{
+				failed++;
+				continue;
+			}
+			if (!AP_BoxExport_WriteCustom(f, s_cplace, s_cplaceCount, &s_cplace[i].key, CTR_AP_VERSION))
+				failed++;
+			else
+				files++;
+			if (fclose(f) != 0)
+				failed++;
+			snprintf(msg, sizeof msg, "[AP AUTHOR] export: %s\n", path);
+			AP_LogLine(msg);
+		}
+	}
+#endif
+	snprintf(msg, sizeof msg, "[AP AUTHOR] export: %d file(s) in the %s folder next to the game%s\n", files,
+	         AP_BOX_EXPORT_DIR, failed ? ", some could not be written" : "");
+	AP_LogLine(msg);
+	if (failed)
+		AP_AuthorNote("EXPORT INCOMPLETE, SEE CTR-AP.LOG");
+	else if (files == 0)
+		AP_AuthorNote("NOTHING TO EXPORT YET");
+	else
+	{
+		char note[64];
+		snprintf(note, sizeof note, "EXPORTED %d TRACK%s", files, files == 1 ? "" : "S");
+		AP_AuthorNote(note);
+	}
+}
+
+// The retail half of the edit actions.
+static void AP_AuthorRetailEdit(struct GameTracker *gGT, int padAction)
+{
+	int dx, dy, dz;
+
+	if (padAction == AP_AUTHOR_PAD_PREV || padAction == AP_AUTHOR_PAD_NEXT)
+		AP_AuthorRetailPick(gGT, padAction == AP_AUTHOR_PAD_PREV ? -1 : 1);
+	else if (padAction == AP_AUTHOR_PAD_MOVE)
+		AP_AuthorPad_SetMoving(&s_pad, AP_AuthorRetailMoveBegin(gGT));
+	else if (padAction == AP_AUTHOR_PAD_EXPORT)
+		AP_AuthorExport();
+	else if (AP_AuthorNudge_Delta(padAction, &dx, &dy, &dz))
+		AP_AuthorRetailNudge(gGT, dx, dy, dz);
+	if (s_pad.moving && (s_sel < 0 || s_sel >= s_placeCount || s_place[s_sel].level != (s16)gGT->levelID))
+		AP_AuthorPad_SetMoving(&s_pad, 0); // the box went away
+}
 
 // ── per-frame ───────────────────────────────────────────────────────────────
 
@@ -1052,11 +1448,9 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 	int        drop, undo, list;
 	int        enabled;
 	int        level;
-#ifdef CTR_BOX_AUTHORING
 	// Taken once: an action that meets a closed gate below is dropped, not kept.
 	int        padAction = s_padAction;
 	s_padAction = AP_AUTHOR_PAD_NONE;
-#endif
 
 	if (gGT == 0)
 		return;
@@ -1087,6 +1481,9 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 			s_markerLevel = -1;
 			s_enabledPrev = 0;
 			AP_LogLine("[AP AUTHOR] mode off\n");
+#ifdef AP_AUTHOR_SESSION_SWITCH
+			AP_AuthorReleaseTable(); // already done when the menu turned it off
+#endif
 		}
 		return;
 	}
@@ -1130,13 +1527,10 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 	{
 		s_enabledPrev = 1;
 		s_markerLevel = -1; // force a rebuild for whatever level is loaded
-#ifdef CTR_BOX_AUTHORING
-		AP_LogLine("[AP AUTHOR] mode ON -- Numpad 9 or Select drop, Numpad 0 or Select+L1 delete last, "
-		           "Numpad . or Select+R1 list + save\n");
-#else
-		AP_LogLine("[AP AUTHOR] mode ON -- Numpad 9 drop, Numpad 0 delete last, "
-		           "Numpad . list + save\n");
-#endif
+		AP_LogLine("[AP AUTHOR] mode ON -- Numpad 9 or Select drop, Numpad 0 or Select+L1 delete, "
+		           "Numpad . or Select+R1 list + save, Select+Square/Circle pick, Select+Cross move, "
+		           "Select+Triangle export\n");
+		AP_AuthorTakeTable();
 
 		// Author mode reads and writes the EXTERNAL FILE ONLY (packaging item 5),
 		// so switching it on with no file present would otherwise show an empty
@@ -1173,21 +1567,15 @@ void AP_Author_OnFrame(struct GameTracker *gGT)
 	undo = Platform_InputRawKeyDown(AP_AUTHOR_KEY_UNDO);
 	list = Platform_InputRawKeyDown(AP_AUTHOR_KEY_LIST);
 
-#ifdef CTR_BOX_AUTHORING
 	if ((drop && !prevDrop) || padAction == AP_AUTHOR_PAD_DROP)
 		AP_AuthorDrop(gGT);
 	if ((undo && !prevUndo) || padAction == AP_AUTHOR_PAD_UNDO)
 		AP_AuthorUndo(gGT);
 	if ((list && !prevList) || padAction == AP_AUTHOR_PAD_LIST)
 		AP_AuthorList(gGT);
-#else
-	if (drop && !prevDrop)
-		AP_AuthorDrop(gGT);
-	if (undo && !prevUndo)
-		AP_AuthorUndo(gGT);
-	if (list && !prevList)
-		AP_AuthorList(gGT);
-#endif
+	if (padAction == AP_AUTHOR_PAD_MOVE_DONE)
+		AP_AuthorSave();
+	AP_AuthorRetailEdit(gGT, padAction);
 
 	prevDrop = drop;
 	prevUndo = undo;
@@ -1233,7 +1621,16 @@ void AP_Author_DrawHud(void)
 
 	// The stored value, not the live one: the point of showing it is to author
 	// against the number the file will actually hold.
-	if (s_lastDropIndex >= 0 && s_lastDropIndex < s_placeCount)
+	if (s_sel >= 0 && s_sel < s_placeCount && s_place[s_sel].level == (s16)level)
+	{
+		static int idx[AP_AUTHOR_MAX_PLACEMENTS];
+		int k = AP_AuthorRetailRows(level, idx);
+		snprintf(line2, sizeof line2, "BOX %d OF %d  %d %d %d", AP_AuthorSel_Ordinal(idx, k, s_sel), k,
+		         (int)s_place[s_sel].x, (int)s_place[s_sel].y, (int)s_place[s_sel].z);
+		DecalFont_DrawLine(line2, AP_AUTHOR_HUD_X, AP_AUTHOR_HUD_Y + AP_AUTHOR_HUD_LINE_H,
+		                   FONT_SMALL, WHITE);
+	}
+	else if (s_lastDropIndex >= 0 && s_lastDropIndex < s_placeCount)
 	{
 		snprintf(line2, sizeof line2, "LAST %d %d %d",
 		         (int)s_place[s_lastDropIndex].x, (int)s_place[s_lastDropIndex].y,
@@ -1241,9 +1638,7 @@ void AP_Author_DrawHud(void)
 		DecalFont_DrawLine(line2, AP_AUTHOR_HUD_X, AP_AUTHOR_HUD_Y + AP_AUTHOR_HUD_LINE_H,
 		                   FONT_SMALL, WHITE);
 	}
-#ifdef CTR_BOX_AUTHORING
 	AP_AuthorDrawPadHint();
-#endif
 }
 
 // ── the shared placement table ──────────────────────────────────────────────

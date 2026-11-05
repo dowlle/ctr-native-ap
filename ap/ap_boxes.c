@@ -753,7 +753,7 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 	         "[AP BOX] level %d (ap track %d): %d of %d placement(s) standing, placements from %s, seed %s\n",
 	         level, AP_BoxMap_ApTrack(level), s_liveCount, here,
 	         AP_Author_PlacementSource() == AP_PLACEMENT_SRC_FILE
-	             ? "the external " AP_AUTHOR_FILE
+	             ? "the external " AP_PLACEMENT_FILE
 	             : "the built-in default",
 	         s_seedHasBoxClass ? "carries the item_boxes class"
 	                           : "carries NO box locations");

@@ -767,6 +767,10 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	AP_LogLine("[AP NET] box authoring build: not connecting to Archipelago\n");
 	return -1;
 #endif
+	// Box Author Mode in the player client (ap_author_gate.h): no room joins
+	// while it is on. Same choke point, same visible reason.
+	if (ap_net_dial_blocked())
+		return -1;
 	// Resolve the trust store before the client exists: apclientpp takes it as a
 	// constructor argument and hands it to every socket it later builds (#170).
 	ap_tls_resolve_cert_store();
@@ -2628,6 +2632,30 @@ extern "C" int ap_net_item_text(long long item_id, int sender_slot, char *item_b
 extern "C" void ap_net_set_solo_session_query(int (*active)(void))
 {
 	g_solo_session = active;
+}
+
+// Box Author Mode (ap/ap_author.c) registers a reason while it is on; every
+// dial asks it first. A call, like the solo query, so the answer is never a
+// stale copy of the switch.
+static const char *(*g_dial_block)(void) = nullptr;
+
+extern "C" void ap_net_set_dial_block_query(const char *(*reason)(void))
+{
+	g_dial_block = reason;
+}
+
+extern "C" int ap_net_dial_blocked(void)
+{
+	const char *why = g_dial_block ? g_dial_block() : nullptr;
+	char line[160];
+
+	if (why == nullptr)
+		return 0;
+	g_status = AP_NET_STATUS_ERROR;
+	g_last_error = why;
+	std::snprintf(line, sizeof line, "[AP NET] not connecting: %s\n", why);
+	AP_LogLine(line);
+	return 1;
 }
 
 // Add the "DeathLink" connection tag on top of the base "AP" tag so the server
