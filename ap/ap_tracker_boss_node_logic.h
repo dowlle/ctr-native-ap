@@ -8,8 +8,8 @@
 //
 // A boss node has no physical pad, so it cannot go through AP_PadState. It
 // returns the state codes of ap/ap_pad_state.h where they mean the same, plus
-// its own code for a beaten garage, so the tracker's one colour mapping
-// (AP_TrackerNodeColour) draws it:
+// its own code for a beaten garage, which ap_pad_colour.h turns into the
+// shared boss-beaten colour:
 //   6 GOLD   the boss check on the node's bit is checked (boss beaten; for
 //            N. Oxide the first challenge, the node's AP_GOAL_BIT_OXIDE_FIRST)
 //   2 GREEN  the garage is open under this seed's rules
@@ -20,7 +20,9 @@
 // bitState is AP_TrackerBitState(node bit): 0 no such location, 1 unchecked,
 // 2 checked. garageOpen is AP_BossGarageOpen(hub - 1) for the four boss hubs
 // and AP_OxideGarageOpen() for N. Oxide.
-#define AP_TRACKER_NODE_BEATEN 6
+#include "ap_pad_colour.h"
+
+#define AP_TRACKER_NODE_BEATEN AP_PAD_LOOK_STATE_BEATEN
 
 static inline int AP_TrackerBossNodeState(int bitState, int garageOpen)
 {
@@ -29,28 +31,13 @@ static inline int AP_TrackerBossNodeState(int bitState, int garageOpen)
 	return garageOpen ? 2 : 1;
 }
 
-// The tracker map colour of a node state: pad states 1 to 5 of
-// ap/ap_pad_state.h and AP_TRACKER_NODE_BEATEN above.
-enum
+// The tracker map colour of a node: its display state of ap_pad_colour.h
+// (AP_PadLookFromState of a pad state 1 to 5 or AP_TRACKER_NODE_BEATEN above),
+// looked up in the shared pad colour table by the caller. A node with no state
+// draws as open, as it always has.
+static inline int AP_TrackerNodeColour(int look)
 {
-	AP_TRACKER_COLOUR_GREEN = 0,
-	AP_TRACKER_COLOUR_RED,
-	AP_TRACKER_COLOUR_ORANGE,
-	AP_TRACKER_COLOUR_PERIWINKLE,
-	AP_TRACKER_COLOUR_GRAY,
-	AP_TRACKER_COLOUR_GOLD,
-};
-static inline int AP_TrackerNodeColour(int state)
-{
-	switch (state)
-	{
-	case 1: return AP_TRACKER_COLOUR_RED;
-	case 3: return AP_TRACKER_COLOUR_ORANGE;
-	case 4: return AP_TRACKER_COLOUR_PERIWINKLE;
-	case 5: return AP_TRACKER_COLOUR_GRAY;
-	case AP_TRACKER_NODE_BEATEN: return AP_TRACKER_COLOUR_GOLD;
-	default: return AP_TRACKER_COLOUR_GREEN;
-	}
+	return look == AP_PAD_LOOK_NONE ? AP_PAD_LOOK_OPEN : look;
 }
 
 #endif
