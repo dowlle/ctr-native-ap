@@ -1,6 +1,7 @@
-/* Track Manager: Options > Track Library in the player client, Options >
-   Custom Content in the authoring builds. Included by MM_ConfigMenu.c inside
-   CTR_CUSTOM_PACKAGES only. */
+/* Track Manager: Options > Custom Content in the authoring builds. Included
+   by MM_ConfigMenu.c inside CTR_CUSTOM_PACKAGES only. The player client uses
+   its helpers and MM_CustomManager_Poll from the Custom Tracks page
+   (MM_CustomTracks.c) instead of the page below. */
 #include <platform/native_custom_revision.h>
 #ifndef MM_IMPORT_PLAYER // the player client imports on Custom Content instead
 #include "MM_CustomImport.c"
@@ -50,23 +51,11 @@ static const struct CustomTrackLibraryEntry *MM_CustomSourceInstalled(const stru
     return exact;
 }
 
-static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
+/* Drain the catalogue refresh and the Saphi download. Shared by this page
+   and the player client's Custom Tracks screen (MM_CustomTracks.c). */
+static int s_saphiRefreshFailed; /* the last refresh failed; an older catalogue may remain */
+static void MM_CustomManager_Poll(void)
 {
-    size_t visible[CTR_LIBRARY_MAX], count = 0, first;
-    const struct CustomSaphiRevision *source = NULL;
-    const struct CustomTrackLibraryEntry *installed = NULL;
-    int tapped = pad->buttonsTapped;
-    int enterVersions = 0;
-    int rawPad = Platform_InputRawGamepadButtons();
-    int rawTapped = rawPad & ~s_contentSearchPadPrev;
-    char line[256];
-    (void)menu;
-    s_contentSearchPadPrev = rawPad;
-    MM_CustomLibrary_Tick(0);
-#ifndef MM_IMPORT_PLAYER
-    if (!s_contentSearchEditing && !MM_CustomLibrary_Busy() && !s_saphiDownloading) MM_CustomImport_TakeDrop();
-    if (MM_CustomImport_Active()) { MM_CustomImport_Proc(ot, pad); return; }
-#endif
     if (s_saphiRefreshBusy)
     {
         struct CustomSaphiCatalogue *fresh = NULL;
@@ -74,6 +63,7 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
         if (result == 1 || result == -2)
         {
             s_saphiRefreshBusy = 0;
+            s_saphiRefreshFailed = result == -2;
             if (result == 1)
             {
                 CustomSaphi_Free(&s_saphiCatalogue);
@@ -106,6 +96,27 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
             else fprintf(stderr, "[Saphi] install: %s\n", s_saphiMessage);
         }
     }
+}
+
+#ifndef MM_CUSTOM_TRACKS_SCREEN /* the player client's Options page is Custom Tracks */
+static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, struct GamepadBuffer *pad)
+{
+    size_t visible[CTR_LIBRARY_MAX], count = 0, first;
+    const struct CustomSaphiRevision *source = NULL;
+    const struct CustomTrackLibraryEntry *installed = NULL;
+    int tapped = pad->buttonsTapped;
+    int enterVersions = 0;
+    int rawPad = Platform_InputRawGamepadButtons();
+    int rawTapped = rawPad & ~s_contentSearchPadPrev;
+    char line[256];
+    (void)menu;
+    s_contentSearchPadPrev = rawPad;
+    MM_CustomLibrary_Tick(0);
+#ifndef MM_IMPORT_PLAYER
+    if (!s_contentSearchEditing && !MM_CustomLibrary_Busy() && !s_saphiDownloading) MM_CustomImport_TakeDrop();
+    if (MM_CustomImport_Active()) { MM_CustomImport_Proc(ot, pad); return; }
+#endif
+    MM_CustomManager_Poll();
     if (s_contentSearchEditing)
     {
         if (!NativeText_Result())
@@ -269,3 +280,4 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
     RECTMENU_DrawInnerRect(&listBox,0,ot);RECTMENU_DrawInnerRect(&detailBox,0,ot);
     if(enterVersions) { s_saphiVersionTrack=enterVersions;s_saphiBrowseSelection=*selected;*selected=0; }
 }
+#endif /* MM_CUSTOM_TRACKS_SCREEN */

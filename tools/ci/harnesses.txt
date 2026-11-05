@@ -31,14 +31,12 @@ tools/test-checkdiag-once.c
 tools/test-cup-box-policy.c
 tools/test-cup-sweeps.cpp
 tools/test-cup-sweeps-production.py
-tools/test-current-seed-page-production.py
-tools/test-custom-content-layout.c
 tools/test-custom-content-verify.c
 tools/test-custom-export-facts.c
 tools/test-custom-identity.c
 tools/test-custom-exit-window.c
 tools/test-custom-manager.c
-cmd Track Library page in the player client, without the xdelta importer :: d=$(mktemp -d) && cc -m32 -ffunction-sections -fdata-sections -Wl,--gc-sections -DCTR_NATIVE -DCTR_AP -DCTR_CUSTOM_TRACKS -DCTR_CUSTOM_PACKAGES -DMM_IMPORT_PLAYER -DBUILD=926 -I include -I . tools/test-custom-manager.c -o $d/t && $d/t
+tools/test-custom-tracks-screen.c
 tools/test-custom-music.c
 tools/test-custom-pad-lifecycle.c
 tools/test-custom-records.c
