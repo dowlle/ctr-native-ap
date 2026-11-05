@@ -187,6 +187,9 @@ CTR_STATIC_ASSERT(offsetof(struct WarpPad, levelID) == 0x6c);
 // re-birth caller, CTR_AP) is defined before it. Declared in both builds since
 // AH_WarpPad_LInB calls it unconditionally.
 static void AH_WarpPad_BuildInstances(struct Thread *t);
+#ifdef CTR_AP
+static struct Instance *AH_WarpPad_ApFilterOf(struct Thread *t);
+#endif
 
 #ifdef CTR_AP
 // ── AP live pad re-birth (Warp-Pad State Model v2) ──
@@ -1423,6 +1426,14 @@ WarpPad_AnimateOpen:
 
 		// converted to TEST in rebuildPS1
 		ConvertRotToMatrix(&instArr[WPIS_OPEN_BEAM]->matrix, &warppadObj->spinRot_Beam);
+#ifdef CTR_AP
+		// the state beam's subtractive copy turns with it (ap_pad_colour.h)
+		{
+			struct Instance *apFilter = AH_WarpPad_ApFilterOf(t);
+			if (apFilter != 0)
+				ConvertRotToMatrix(&apFilter->matrix, &warppadObj->spinRot_Beam);
+		}
+#endif
 	}
 
 	wispRiseRate = 0x20;
@@ -1916,6 +1927,13 @@ void AH_WarpPad_ThDestroy(struct Thread *t)
 	{
 		INSTANCE_Death(instArr[WPIS_OPEN_BEAM]);
 		instArr[WPIS_OPEN_BEAM] = 0;
+#ifdef CTR_AP
+		{
+			struct Instance *apFilter = AH_WarpPad_ApFilterOf(t);
+			if (apFilter != 0)
+				INSTANCE_Death(apFilter);
+		}
+#endif
 	}
 
 	for (i = WPIS_OPEN_RING1; i < WPIS_OPEN_PRIZE1; i++)
@@ -1996,6 +2014,114 @@ static void AP_ContentMaskToReq(unsigned mask, int count, ctr_req *r)
 // child instances for the current state. The instance-building body lives in
 // AH_WarpPad_BuildInstances so the AP live-refresh path can reuse it (see
 // AH_WarpPad_ThTick).
+#ifdef CTR_AP
+// Shaped state beam (ap_pad_colour.h): copies of the retail beam and wisp
+// models whose colour tables carry the state hue, and a subtractive copy of
+// the beam (the filter). Open and stage 2 open each have a beam, a wisp and a
+// filter copy, shared by every pad with that look. Rebuilt from the loaded
+// retail model at every birth (a hub load may move it). The colour count is
+// the first word of the command list, as RenderBucket reads it; the texture
+// count is the highest texture index in the command list (its low 9 bits,
+// 0 = untextured). Any model that does not fit keeps the retail model, and a
+// filter that does not fit is left out.
+enum { AP_BEAM_USE_BEAM, AP_BEAM_USE_WISP, AP_BEAM_USE_FILTER, AP_BEAM_USES };
+#define AP_BEAM_COPIES (AP_BEAM_USES * 2)
+#define AP_BEAM_HUE_HEADERS 2
+#define AP_BEAM_HUE_COLOURS 32
+#define AP_BEAM_HUE_TEXTURES 48
+static struct Model s_apBeamHueModel[AP_BEAM_COPIES];
+static struct ModelHeader s_apBeamHueHeaders[AP_BEAM_COPIES][AP_BEAM_HUE_HEADERS];
+static u32 s_apBeamHueColours[AP_BEAM_COPIES][AP_BEAM_HUE_HEADERS][AP_BEAM_HUE_COLOURS];
+// Both filters copy the same retail layouts with the same blend, so they share
+// one subtractive table.
+static struct TextureLayout *s_apBeamFilterTexPtrs[AP_BEAM_HUE_HEADERS][AP_BEAM_HUE_TEXTURES];
+static struct TextureLayout s_apBeamFilterTex[AP_BEAM_HUE_HEADERS][AP_BEAM_HUE_TEXTURES];
+
+// Copy slot of one use for one look: open and stage 2 open never share.
+static int AH_WarpPad_ApCopySlot(int use, int look)
+{
+	return use * 2 + (look == AP_PAD_LOOK_STAGE2_OPEN ? 1 : 0);
+}
+
+// The copy in `slot` of `retail` with every colour at `rgb`; with `subtract`,
+// its texture layouts draw subtractive. 0 if it does not fit.
+static struct Model *AH_WarpPad_ApHueModel(struct Model *retail, u32 rgb, int slot, int subtract)
+{
+	int h, i;
+
+	if (rgb == 0 || retail == 0 || retail->headers == 0 ||
+	    retail->numHeaders < 1 || retail->numHeaders > AP_BEAM_HUE_HEADERS)
+		return 0;
+	for (h = 0; h < retail->numHeaders; h++)
+	{
+		const struct ModelHeader *mh = &retail->headers[h];
+		const u32 *cmd = (const u32 *)mh->ptrCommandList;
+		u32 count;
+		if (mh->ptrColors == 0 || cmd == 0)
+			return 0;
+		count = cmd[0];
+		if (count > AP_BEAM_HUE_COLOURS)
+			return 0;
+		s_apBeamHueHeaders[slot][h] = *mh;
+		for (i = 0; i < (int)count; i++)
+			s_apBeamHueColours[slot][h][i] = AP_PadBeamHueWord(mh->ptrColors[i], rgb);
+		s_apBeamHueHeaders[slot][h].ptrColors = s_apBeamHueColours[slot][h];
+		if (subtract)
+		{
+			int textures = 0;
+			if (mh->ptrTexLayout == 0)
+				return 0;
+			for (i = 1; cmd[i] != 0xffffffffu; i++)
+				if ((cmd[i] >> 16) != 0 && (int)(cmd[i] & 0x1ffu) > textures) // not a colour-only command
+					textures = (int)(cmd[i] & 0x1ffu);
+			if (textures > AP_BEAM_HUE_TEXTURES)
+				return 0;
+			for (i = 0; i < textures; i++)
+			{
+				s_apBeamFilterTexPtrs[h][i] = 0;
+				if (mh->ptrTexLayout[i] == 0)
+					continue;
+				s_apBeamFilterTex[h][i] = *mh->ptrTexLayout[i];
+				s_apBeamFilterTex[h][i].tpage = AP_PadTpageBlend(s_apBeamFilterTex[h][i].tpage, 2);
+				s_apBeamFilterTexPtrs[h][i] = &s_apBeamFilterTex[h][i];
+			}
+			s_apBeamHueHeaders[slot][h].ptrTexLayout = s_apBeamFilterTexPtrs[h];
+		}
+	}
+	s_apBeamHueModel[slot] = *retail;
+	s_apBeamHueModel[slot].headers = s_apBeamHueHeaders[slot];
+	return &s_apBeamHueModel[slot];
+}
+
+static struct Model *AH_WarpPad_ApBeamModel(struct Model *retail, int look)
+{
+	struct Model *m = AH_WarpPad_ApHueModel(retail, AP_PadLookBeamHue(look),
+	                                        AH_WarpPad_ApCopySlot(AP_BEAM_USE_BEAM, look), 0);
+	return m ? m : retail;
+}
+
+static struct Model *AH_WarpPad_ApWispModel(struct Model *retail, int look)
+{
+	struct Model *m = AH_WarpPad_ApHueModel(retail, AP_PadLookWispHue(look),
+	                                        AH_WarpPad_ApCopySlot(AP_BEAM_USE_WISP, look), 0);
+	return m ? m : retail;
+}
+
+// The pad's subtractive beam copy, or 0. struct WarpPad keeps its retail size
+// (0x78), so the copy is found by its thread and name among the live
+// instances instead of a slot of its own. Nothing outside the instance pool
+// remembers it, so a savestate restore, which puts the pool back, cannot leave
+// a stale pointer behind.
+static struct Instance *AH_WarpPad_ApFilterOf(struct Thread *t)
+{
+	struct Instance *it;
+	for (it = (struct Instance *)sdata->gGT->JitPools.instance.taken.first; it != 0; it = it->next)
+		if (it->thread == t && strncmp(it->name, "beamFilter", sizeof(it->name)) == 0)
+			return it;
+	return 0;
+}
+#endif
+
 void AH_WarpPad_LInB(struct Instance *inst)
 {
 	struct Thread *t;
@@ -2171,8 +2297,9 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 
 		// A2-45 (ruled 2026-11-05): a Done pad the player can still enter for a
 		// replay shows the retail light blue beam, so it no longer looks locked.
-		// Same condition as ThTick's Done guard; no tint (AP_PadLookBeamTint is 0
-		// for Done). The glow, the number and the grey map dot are unchanged.
+		// Same condition as ThTick's Done guard. The retail model, no hue and
+		// no filter (Done has none, ap_pad_colour.h). The glow, the number and
+		// the grey map dot are unchanged.
 		if (AP_PadDoneBeam(AP_PadLook(levelID, warppadObj->levelID),
 		                   AP_PadReplayable(levelID, warppadObj->levelID)) &&
 		    gGT->modelPtr[STATIC_BEAM] != 0)
@@ -2330,7 +2457,12 @@ ContentPad_BuildGate:
 		// if beam model exists
 		if (gGT->modelPtr[STATIC_BEAM] != 0)
 		{
-			newInst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_BEAM], "beam", t);
+			struct Model *beamModel = gGT->modelPtr[STATIC_BEAM];
+#ifdef CTR_AP
+			int apBeamLook = ctr_cfg_active() ? AP_PadLook(levelID, warppadObj->levelID) : AP_PAD_LOOK_NONE;
+			beamModel = AH_WarpPad_ApBeamModel(beamModel, apBeamLook);
+#endif
+			newInst = INSTANCE_Birth3D(beamModel, "beam", t);
 
 			// copy matrix
 			*(int *)((int)&newInst->matrix + 0x0) = *(int *)((int)&inst->matrix + 0x0);
@@ -2345,19 +2477,13 @@ ContentPad_BuildGate:
 			newInst->alphaScale = 0xc00;
 
 #ifdef CTR_AP
-			// alpha2 pad colours: the beam wears its pad's state colour, the
-			// same one as the hub map dot and the tracker node (ap_pad_colour.h).
-			// A pad is rebuilt when its state changes, so the colour set here
-			// follows the state. No AP state keeps the retail light blue.
-			if (ctr_cfg_active())
-			{
-				u32 apBeamTint = AP_PadLookBeamTint(AP_PadLook(levelID, warppadObj->levelID));
-				if (apBeamTint != 0)
-				{
-					newInst->colorRGBA = apBeamTint;
-					newInst->alphaScale = AP_PAD_BEAM_ALPHA;
-				}
-			}
+			// alpha2 pad colours: the open and stage 2 open beams wear their
+			// state hue in the retail beam's shape (ap_pad_colour.h). A pad is
+			// rebuilt when its state changes, so the model chosen above follows
+			// the state. Every other look keeps the retail light blue.
+			if (beamModel != gGT->modelPtr[STATIC_BEAM])
+				newInst->alphaScale = (s16)AP_PadLookBeamAlpha(apBeamLook);
+
 #endif
 
 			warppadObj->inst[WPIS_OPEN_BEAM] = newInst;
@@ -2366,9 +2492,16 @@ ContentPad_BuildGate:
 		// if spiral ring exists
 		if (gGT->modelPtr[STATIC_BOTTOMRING] != 0)
 		{
+			struct Model *wispModel = gGT->modelPtr[STATIC_BOTTOMRING];
+#ifdef CTR_AP
+			// the wisps take the beam hue: they are the bright bands and
+			// sparkles of the beam (ap_pad_colour.h)
+			if (ctr_cfg_active())
+				wispModel = AH_WarpPad_ApWispModel(wispModel, AP_PadLook(levelID, warppadObj->levelID));
+#endif
 			for (i = 0; i < 2; i++)
 			{
-				newInst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_BOTTOMRING], "bottomRing", t);
+				newInst = INSTANCE_Birth3D(wispModel, "bottomRing", t);
 
 				// copy matrix
 				*(int *)((int)&newInst->matrix + 0x0) = *(int *)((int)&inst->matrix + 0x0);
@@ -2385,6 +2518,30 @@ ContentPad_BuildGate:
 				warppadObj->inst[WPIS_OPEN_RING1 + i] = newInst;
 			}
 		}
+
+#ifdef CTR_AP
+		// the state beam's subtractive copy: same place and turn as the beam,
+		// it takes out of what is behind the column the channels the state
+		// hue lacks, so the hue reads true over the blue sky (ap_pad_colour.h).
+		// Born after the retail children, so a full instance pool drops only
+		// this copy.
+		if (warppadObj->inst[WPIS_OPEN_BEAM] != 0 && ctr_cfg_active())
+		{
+			int apFilterLook = AP_PadLook(levelID, warppadObj->levelID);
+			struct Model *filterModel = AH_WarpPad_ApHueModel(gGT->modelPtr[STATIC_BEAM],
+			                                                  AP_PadLookBeamFilter(apFilterLook),
+			                                                  AH_WarpPad_ApCopySlot(AP_BEAM_USE_FILTER, apFilterLook), 1);
+			if (filterModel != 0 && AH_WarpPad_ApFilterOf(t) == 0)
+			{
+				struct Instance *f = INSTANCE_Birth3D(filterModel, "beamFilter", t);
+				if (f != 0)
+				{
+					f->matrix = warppadObj->inst[WPIS_OPEN_BEAM]->matrix;
+					f->alphaScale = AP_PAD_BEAM_FILTER_ALPHA;
+				}
+			}
+		}
+#endif
 
 		for (i = 0; i < 3; i++)
 		{
