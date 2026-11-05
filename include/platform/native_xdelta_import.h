@@ -18,10 +18,17 @@ extern "C" {
 #define CTR_XDELTA_TITLE_MAX 641
 #define CTR_XDELTA_REASON_MAX 96
 
+/* Where an item's title came from (XdeltaImportItem.nameSource). */
+#define XDELTA_NAME_LABEL 0      /* A plain label, e.g. "Lego Adventure track 3"; the player edits it. */
+#define XDELTA_NAME_DESCRIPTOR 1 /* The pack descriptor (<patch>.ctrpack.json). */
+#define XDELTA_NAME_KNOWN 2      /* The table of tracks whose names were read from pack code. */
+#define XDELTA_NAME_EDITED 3     /* The player typed it at import. */
+
 struct XdeltaImportItem
 {
     int bigfileIndex;  /* -1 for a grouped line (code, other content). */
     int offered;       /* 1: an installable race track. */
+    int nameSource;    /* XDELTA_NAME_*; offered items only. */
     char title[CTR_XDELTA_TITLE_MAX];
     char tags[48];     /* "Race TT Arcade Relic CTR", offered items only. */
     char reason[CTR_XDELTA_REASON_MAX]; /* Skip reason; "" when offered. */
@@ -37,6 +44,7 @@ struct XdeltaImportSummary
     char discSha256[65];
     char descriptorSha256[65]; /* "" when no descriptor was used. */
     char descriptorNote[CTR_XDELTA_REASON_MAX]; /* Why a descriptor was not used, or "". */
+    char history[CTR_XDELTA_REASON_MAX]; /* "Imported before: 3 of 5 tracks", or ""; set by StartScan's job. */
     unsigned int passes;
     unsigned int count;
     struct XdeltaImportItem items[CTR_XDELTA_ITEM_MAX];
@@ -115,6 +123,37 @@ int XdeltaImport_StartInstall(const unsigned char *selected, unsigned int count,
 /* -1 idle, 0 running, 1 done (installed set), -2 failed (error set). Drops the scan. */
 int XdeltaImport_PollInstall(int *installed, char *error, size_t errorSize);
 void XdeltaImport_DiscardScan(void);
+/* Names. The review list's titles are prefilled from the name sources
+   (see XDELTA_NAME_*); the player may change one before installing.
+   RenameItem rebuilds an offered item's package under the new title (1, or 0
+   with a short reason and nothing changed). SetItemTitle only remembers the
+   name for a review row; StartInstall applies it on the worker, and an
+   install whose name cannot be applied fails before it writes anything. */
+int XdeltaImport_RenameItem(struct XdeltaImportScan *scan, unsigned int item, const char *title, char *why, size_t whySize);
+int XdeltaImport_SetItemTitle(unsigned int item, const char *title);
+
+/* The record of applied patches (assets/tracks/import-record.json): what each
+   patch file in the folder has done before. A patch is found by its SHA-256, so
+   a renamed copy counts; only files whose size matches a record are hashed. */
+#define XDELTA_STATE_NEW 0      /* Not imported. */
+#define XDELTA_STATE_IMPORTED 1 /* Every offered track installed. */
+#define XDELTA_STATE_PARTLY 2   /* Some offered tracks installed. */
+#define XDELTA_STATE_FAILED 3   /* Scan or install failed; reason says why. */
+struct XdeltaPatchState
+{
+    int state, imported, offered;
+    char reason[CTR_XDELTA_REASON_MAX];
+};
+/* Synchronous: states for the folder files `names`; returns 0 when cancelled. */
+int XdeltaImport_PatchStates(const char *assets, char names[][CTR_XDELTA_NAME_MAX], int count,
+                             struct XdeltaPatchState *out, const volatile int *cancel);
+/* Worker version for the picker: Start, then Poll each frame (-1 idle, 0 running, 1 ready, out filled). */
+int XdeltaImport_StartPatchStates(const char *assets, char names[][CTR_XDELTA_NAME_MAX], int count);
+int XdeltaImport_PollPatchStates(struct XdeltaPatchState *out, int max);
+/* Harnesses: note an outcome the way an install does. */
+void XdeltaImport_RecordResult(const char *assets, const char *patchName, const struct XdeltaImportSummary *summary,
+                               const int *installedIndexes, int installedCount, const char *failure);
+
 /* After PollInstall reported done or failed: the Play Solo descriptors of the
    tracks that install wrote to the room folders (CTR_XDELTA_INSTALL_ROOM), in
    list order, kept until the next install starts. *needsLaps (may be NULL)

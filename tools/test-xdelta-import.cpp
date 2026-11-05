@@ -44,6 +44,9 @@ extern "C" int g_xdeltaTestFailRoomVrm;
 extern "C" int XdeltaImportTest_InstallDescriptors(const XdeltaImportScan *scan, const unsigned char *selected,
                                                    const char *assets, int *kept, int *needsLaps, char *note,
                                                    size_t noteSize);
+extern "C" const char *XdeltaImportTest_KnownName(const char *levSha256);
+extern "C" void XdeltaImportTest_History(const char *assets, const char *sha, char *out, size_t size);
+extern "C" void XdeltaImportTest_PackLabel(const char *stem, char *out, size_t size);
 using Bytes = std::vector<unsigned char>;
 static int checks, failures;
 #define CHECK(cond, name) do { checks++; if (!(cond)) { failures++; std::printf("FAIL %s (line %d)\n", name, __LINE__); } } while (0)
@@ -446,7 +449,7 @@ int main()
         CHECK(s->passes == 1, "directory before data needs one pass");
         const XdeltaImportItem *t1 = item_for(s, 1);
         CHECK(t1 && t1->offered, "changed race LEV is offered");
-        CHECK(t1 && !std::strcmp(t1->title, "Pack slot 1"), "no descriptor: slot name from the patch name");
+        CHECK(t1 && !std::strcmp(t1->title, "Pack track 1"), "no descriptor: placeholder name from the patch name");
         CHECK(t1 && !std::strcmp(t1->tags, "Race TT Arcade CTR"), "tags: no Relic without descriptor times");
         Bytes cutLev = make_lev(race); cutLev.resize(cutLev.size() - race.junk);
         CHECK(XdeltaImport_CutLev(make_lev(race).data(), make_lev(race).size()) == cutLev.size(), "LEV cut at the end of its pointer map");
@@ -458,7 +461,7 @@ int main()
         const XdeltaImportItem *t5 = item_for(s, 5);
         CHECK(t5 && !t5->offered && !std::strcmp(t5->reason, "Not a race track (no lap checkpoints)"), "menu scene skipped with its text");
         const XdeltaImportItem *t7 = item_for(s, 7);
-        CHECK(t7 && !t7->offered && !std::strcmp(t7->reason, "Same track as Pack slot 1"), "duplicate pair deduplicated");
+        CHECK(t7 && !t7->offered && !std::strcmp(t7->reason, "Same track as Pack track 1"), "duplicate pair deduplicated");
         const XdeltaImportItem *t9 = item_for(s, 9);
         CHECK(t9 && t9->offered && !std::strcmp(t9->tags, "Race TT Arcade"), "grown entry offered; moved entries are not changes");
         CHECK(!item_for(s, 11), "unchanged LEV after a moved entry is not offered");
@@ -519,8 +522,8 @@ int main()
                   "no pack descriptor: a descriptor that waits for laps");
             auto pd = nlohmann::json::parse(solo);
             CHECK(!pd.contains("laps") && pd["author"] == "Unknown", "laps left out, never guessed; author Unknown");
-            CHECK(pd["display_name"] == "Pack slot 1" && pd["capabilities"]["relic"] == false && !pd.contains("relic_targets"),
-                  "slot name as title, no relic without the author's laps");
+            CHECK(pd["display_name"] == "Pack track 1" && pd["capabilities"]["relic"] == false && !pd.contains("relic_targets"),
+                  "placeholder name as title, no relic without the author's laps");
             CHECK(pd["files"][0]["sha256"] == t1->levSha256 && pd["files"][1]["sha256"] == t1->vrmSha256,
                   "files pinned as installed");
             const std::string name = AP_SoloDescriptorFileName(key, revision);
@@ -546,19 +549,19 @@ int main()
             mkdir(jobAssets.c_str(), 0755);
             CHECK(XdeltaImportTest_InstallDescriptors(a.scan, selected.data(), jobAssets.c_str(), &kept, &waiting, note,
                                                       sizeof note) == 2 &&
-                      kept == 2 && waiting == 2 && !std::strcmp(note, "Pack slot 1: pick its laps in Play Solo"),
+                      kept == 2 && waiting == 2 && !std::strcmp(note, "Pack track 1: pick its laps in Play Solo"),
                   "install keeps both, waiting for laps, and the note says where to pick them");
         }
         struct stat info;
         /* Decision 35: the room folder rooms and solo seeds read. */
-        CHECK(!std::strcmp(t1->trackKey, "pack-slot-1"), "no descriptor: room folder from the title (registry key rule)");
+        CHECK(!std::strcmp(t1->trackKey, "pack-track-1"), "no descriptor: room folder from the title (registry key rule)");
         const std::string stem = "xdelta-" + std::string(s->patchSha256).substr(0, 12) + "-1";
-        const std::string original = assets + "/tracks/pack-slot-1/original/";
+        const std::string original = assets + "/tracks/pack-track-1/original/";
         CHECK(read_file(original + stem + ".lev") == cutLev, "room folder holds the cut LEV");
         CHECK(sha_hex(read_file(original + stem + ".vrm")) == t1->vrmSha256, "room folder holds the cut VRM");
         {
             struct CustomTrackManagerStatus status;
-            CustomTrackManager_LocateContentFiles(assets.c_str(), "pack-slot-1", "Pack slot 1", "1.0.0", t1->levSha256,
+            CustomTrackManager_LocateContentFiles(assets.c_str(), "pack-track-1", "Pack track 1", "1.0.0", t1->levSha256,
                                                   (unsigned long)cutLev.size(), t1->vrmSha256,
                                                   (unsigned long)read_file(original + stem + ".vrm").size(), &status);
             CHECK(status.state == CTR_CT_MANAGER_READY, "a room pinning these hashes finds the imported track");
@@ -571,7 +574,7 @@ int main()
                   "room-only install");
             CHECK(stat((roomOnly + "/tracks/packages").c_str(), &info) != 0, "room-only install writes no package store");
             /* A different file under the same name is never replaced. */
-            std::string clash = roomOnly + "/tracks/pack-slot-1/original/" + stem + ".vrm";
+            std::string clash = roomOnly + "/tracks/pack-track-1/original/" + stem + ".vrm";
             write_path(clash, Bytes(16, 7));
             CHECK(XdeltaImport_Install(a.scan, selected.data(), roomOnly.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == -1 &&
                   std::strstr(error, "in the way"), "a different file in the way fails the install");
@@ -584,7 +587,7 @@ int main()
             mkdir(linked.c_str(), 0755);
             mkdir((linked + "/tracks").c_str(), 0755);
             mkdir((root + "/elsewhere").c_str(), 0755);
-            symlink((root + "/elsewhere").c_str(), (linked + "/tracks/pack-slot-1").c_str());
+            symlink((root + "/elsewhere").c_str(), (linked + "/tracks/pack-track-1").c_str());
             CHECK(XdeltaImport_Install(a.scan, selected.data(), linked.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == -1 &&
                   std::strstr(error, "is a link"), "a linked track folder is refused");
             CHECK(stat((root + "/elsewhere/original").c_str(), &info) != 0, "nothing written through the link");
@@ -593,12 +596,12 @@ int main()
             std::string pair = root + "/assets-pair";
             mkdir(pair.c_str(), 0755);
             mkdir((pair + "/tracks").c_str(), 0755);
-            mkdir((pair + "/tracks/pack-slot-1").c_str(), 0755);
-            mkdir((pair + "/tracks/pack-slot-1/original").c_str(), 0755);
-            write_path(pair + "/tracks/pack-slot-1/original/" + stem + ".vrm", Bytes(16, 9));
+            mkdir((pair + "/tracks/pack-track-1").c_str(), 0755);
+            mkdir((pair + "/tracks/pack-track-1/original").c_str(), 0755);
+            write_path(pair + "/tracks/pack-track-1/original/" + stem + ".vrm", Bytes(16, 9));
             CHECK(XdeltaImport_Install(a.scan, selected.data(), pair.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == -1 &&
                   std::strstr(error, "in the way"), "a VRM in the way fails the pair");
-            CHECK(stat((pair + "/tracks/pack-slot-1/original/" + stem + ".lev").c_str(), &info) != 0, "no lone LEV left behind");
+            CHECK(stat((pair + "/tracks/pack-track-1/original/" + stem + ".lev").c_str(), &info) != 0, "no lone LEV left behind");
             /* The VRM fails after the LEV was placed: the verified LEV stays (as for
                Saphi installs), the error says so, and importing again adds the VRM. */
             std::string rollback = root + "/assets-rollback";
@@ -607,11 +610,11 @@ int main()
             CHECK(XdeltaImport_Install(a.scan, selected.data(), rollback.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == -1 &&
                   std::strstr(error, "Test failure") && std::strstr(error, "new LEV stays in place"), "VRM failure after the LEV is reported");
             g_xdeltaTestFailRoomVrm = 0;
-            CHECK(read_file(rollback + "/tracks/pack-slot-1/original/" + stem + ".lev") == cutLev, "the verified LEV stays");
-            CHECK(stat((rollback + "/tracks/pack-slot-1/original/" + stem + ".vrm").c_str(), &info) != 0, "no VRM was placed");
+            CHECK(read_file(rollback + "/tracks/pack-track-1/original/" + stem + ".lev") == cutLev, "the verified LEV stays");
+            CHECK(stat((rollback + "/tracks/pack-track-1/original/" + stem + ".vrm").c_str(), &info) != 0, "no VRM was placed");
             {
                 int leftovers = 0;
-                if (DIR *d = opendir((rollback + "/tracks/pack-slot-1/original").c_str()))
+                if (DIR *d = opendir((rollback + "/tracks/pack-track-1/original").c_str()))
                 {
                     while (dirent *e = readdir(d)) if (std::strncmp(e->d_name, ".xdelta", 7) == 0) leftovers++;
                     closedir(d);
@@ -619,7 +622,7 @@ int main()
                 CHECK(leftovers == 0, "no temp names left");
             }
             CHECK(XdeltaImport_Install(a.scan, selected.data(), rollback.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == 2 &&
-                  sha_hex(read_file(rollback + "/tracks/pack-slot-1/original/" + stem + ".vrm")) == t1->vrmSha256,
+                  sha_hex(read_file(rollback + "/tracks/pack-track-1/original/" + stem + ".vrm")) == t1->vrmSha256,
                   "importing again keeps the LEV and adds the VRM");
             /* The tracks folder itself may be a link (player configuration, as for Saphi installs). */
             std::string viaLink = root + "/assets-tracks-link";
@@ -627,7 +630,7 @@ int main()
             mkdir((root + "/shared-tracks").c_str(), 0755);
             symlink((root + "/shared-tracks").c_str(), (viaLink + "/tracks").c_str());
             CHECK(XdeltaImport_Install(a.scan, selected.data(), viaLink.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == 2 &&
-                  !stat((root + "/shared-tracks/pack-slot-1/original/" + stem + ".lev").c_str(), &info), "a linked tracks folder is followed");
+                  !stat((root + "/shared-tracks/pack-track-1/original/" + stem + ".lev").c_str(), &info), "a linked tracks folder is followed");
         }
         {
             char key[65];
@@ -906,7 +909,7 @@ int main()
         {
             const XdeltaImportSummary *s4 = XdeltaImport_Summary(w.scan);
             CHECK(!std::strcmp(s4->descriptorNote, "Pack descriptor not used: Descriptor is for another patch"), "descriptor note");
-            CHECK(item_for(s4, 1) && !std::strcmp(item_for(s4, 1)->title, "Pack slot 1"), "slot name without a usable descriptor");
+            CHECK(item_for(s4, 1) && !std::strcmp(item_for(s4, 1)->title, "Pack track 1"), "placeholder name without a usable descriptor");
         }
         XdeltaImport_Free(&w.scan);
         std::remove((root + "/Pack.ctrpack.json").c_str());
@@ -944,6 +947,132 @@ int main()
         Bytes cut(full.begin(), full.begin() + (long)((bigSector + 1) * 2352));
         ScanResult r = scan(write_file("Cut.xdelta", encode(baseDisc, cut)), discPath);
         CHECK(!r.ok, "a disc cut inside its BIGFILE table is refused, not read past the table");
+        XdeltaImport_Free(&r.scan);
+    }
+
+
+    /* A2-19: track names, the editable name, and the record of applied patches. */
+    {
+        char label[160];
+        const char *stems[][2] = {{"Lego_Adventure_v1.1", "Lego Adventure"}, {"crash-30anniversary-adventure", "Crash 30anniversary adventure"},
+                                  {"Ninas_Nightmare_99", "Ninas Nightmare 99"}, {"__x__", "X"}, {"track_v2", "Track"}, {"", ""}};
+        for (auto &pair : stems)
+        {
+            XdeltaImportTest_PackLabel(pair[0], label, sizeof label);
+            CHECK(!std::strcmp(label, pair[1]), (std::string("pack label ") + pair[0]).c_str());
+        }
+        CHECK(!std::strcmp(XdeltaImportTest_KnownName("83406e87505616994f5b539666f1327597212058506c29d66396aac15448529e"), "Snowy Valley"),
+              "a known LEV hash has its name");
+        CHECK(!XdeltaImportTest_KnownName("00") && !XdeltaImportTest_KnownName(nullptr), "an unknown hash has no name");
+
+        ScanResult r = scan(write_file("Lego_Adventure_v1.1.xdelta", encode(baseDisc, patchedDisc)), discPath);
+        CHECK(r.ok, "scan of a patch with a version in its name");
+        if (r.ok)
+        {
+            const XdeltaImportSummary *s = XdeltaImport_Summary(r.scan);
+            const XdeltaImportItem *t1 = item_for(s, 1);
+            CHECK(t1 && !std::strcmp(t1->title, "Lego Adventure track 1") && t1->nameSource == XDELTA_NAME_LABEL,
+                  "no descriptor, no known hash: a clean label with the track number");
+            unsigned index = 0;
+            for (unsigned i = 0; i < s->count; i++) if (s->items[i].bigfileIndex == 1) index = i;
+            char why[96], oldPin[65];
+            std::snprintf(oldPin, sizeof oldPin, "%s", t1->pin);
+            XdeltaImportScan *scanned = r.scan;
+            CHECK(!XdeltaImport_RenameItem(scanned, index, "", why, sizeof why) && why[0], "an empty name is refused with a reason");
+            CHECK(!XdeltaImport_RenameItem(scanned, index, std::string(129, 'a').c_str(), why, sizeof why), "a 129 byte name is refused");
+            CHECK(!XdeltaImport_RenameItem(scanned, index, "Bad\nName", why, sizeof why), "a name with a control character is refused");
+            CHECK(!std::strcmp(item_for(XdeltaImport_Summary(scanned), 1)->title, "Lego Adventure track 1") &&
+                  !std::strcmp(item_for(XdeltaImport_Summary(scanned), 1)->pin, oldPin), "a refused name changes nothing");
+            const XdeltaImportItem *skipped = item_for(s, 3);
+            CHECK(skipped && !XdeltaImport_RenameItem(scanned, (unsigned)(skipped - s->items), "Arena", why, sizeof why),
+                  "a skipped item cannot be renamed");
+            CHECK(XdeltaImport_RenameItem(scanned, index, "Sunset Raceway", why, sizeof why), "a valid name is applied");
+            const XdeltaImportItem *renamed = item_for(XdeltaImport_Summary(scanned), 1);
+            CHECK(!std::strcmp(renamed->title, "Sunset Raceway") && renamed->nameSource == XDELTA_NAME_EDITED &&
+                  !std::strcmp(renamed->trackKey, "sunset-raceway") && std::strcmp(renamed->pin, oldPin), "title, source, room folder and pin follow the name");
+            char manifest[4096];
+            size_t written = 0;
+            CHECK(XdeltaImport_CopyManifest(scanned, index, manifest, sizeof manifest - 1, &written), "the rebuilt package has a manifest");
+            manifest[written] = 0;
+            CHECK(std::strstr(manifest, "\"title\":\"Sunset Raceway\"") != nullptr, "the manifest carries the typed title");
+            std::vector<unsigned char> chosen(s->count, 0);
+            chosen[index] = 1;
+            const std::string installed = root + "/rename-assets";
+            mkdir(installed.c_str(), 0755);
+            char error[256];
+            CHECK(XdeltaImport_Install(scanned, chosen.data(), installed.c_str(), CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == 1,
+                  "the renamed track installs");
+            struct stat info;
+            CHECK(!stat((installed + "/tracks/sunset-raceway/original").c_str(), &info), "its room folder uses the new name");
+            CHECK(XdeltaImport_RenameItem(scanned, index, "Sunset Raceway", why, sizeof why), "the same name again is a no-op");
+        }
+        XdeltaImport_Free(&r.scan);
+    }
+    {
+        const std::string assets = root + "/record-assets";
+        mkdir(assets.c_str(), 0755);
+        mkdir((assets + "/tracks").c_str(), 0755);
+        mkdir((assets + "/tracks/import").c_str(), 0755);
+        const Bytes patchBytes = encode(baseDisc, patchedDisc);
+        write_path(assets + "/tracks/import/Pack.xdelta", patchBytes);
+        write_path(assets + "/tracks/import/Renamed copy.xdelta", patchBytes);
+        Bytes other = patchBytes;
+        other.push_back(0);
+        write_path(assets + "/tracks/import/Other.xdelta", other);
+        write_path(assets + "/tracks/import/Failed.xdelta", Bytes(100, 'x'));
+        char names[CTR_XDELTA_FOLDER_MAX][CTR_XDELTA_NAME_MAX] = {};
+        std::snprintf(names[0], CTR_XDELTA_NAME_MAX, "%s", "Failed.xdelta");
+        std::snprintf(names[1], CTR_XDELTA_NAME_MAX, "%s", "Other.xdelta");
+        std::snprintf(names[2], CTR_XDELTA_NAME_MAX, "%s", "Pack.xdelta");
+        std::snprintf(names[3], CTR_XDELTA_NAME_MAX, "%s", "Renamed copy.xdelta");
+        XdeltaPatchState st[4];
+        CHECK(XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr), "states without a record");
+        CHECK(st[0].state == XDELTA_STATE_NEW && st[2].state == XDELTA_STATE_NEW, "nothing is imported before a record exists");
+
+        ScanResult r = scan(patchPath, discPath);
+        CHECK(r.ok, "scan for the record");
+        if (r.ok)
+        {
+            const XdeltaImportSummary *s = XdeltaImport_Summary(r.scan);
+            std::vector<int> offered;
+            for (unsigned i = 0; i < s->count; i++) if (s->items[i].offered) offered.push_back(s->items[i].bigfileIndex);
+            CHECK(offered.size() >= 2, "the fixture offers two or more tracks");
+            XdeltaImport_RecordResult(assets.c_str(), "Pack.xdelta", s, offered.data(), 1, "");
+            XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr);
+            CHECK(st[2].state == XDELTA_STATE_PARTLY && st[2].imported == 1 && st[2].offered == (int)offered.size(), "one of several tracks is partly imported");
+            CHECK(st[3].state == XDELTA_STATE_PARTLY, "a renamed copy of the same bytes counts, found by hash");
+            CHECK(st[1].state == XDELTA_STATE_NEW, "a different file of the same name or size does not");
+            char note[96];
+            XdeltaImportTest_History(assets.c_str(), s->patchSha256, note, sizeof note);
+            CHECK(std::strstr(note, "Imported before: 1 of") != nullptr, "the review shows what was imported before");
+            XdeltaImport_RecordResult(assets.c_str(), "Pack.xdelta", s, offered.data(), (int)offered.size(), "");
+            XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr);
+            CHECK(st[2].state == XDELTA_STATE_IMPORTED && st[2].imported == (int)offered.size(), "every offered track installed is imported");
+            XdeltaImport_RecordResult(assets.c_str(), "Pack.xdelta", s, nullptr, 0, "Disk full");
+            XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr);
+            CHECK(st[2].state == XDELTA_STATE_IMPORTED && !std::strcmp(st[2].reason, "Disk full"), "a later failed retry does not undo a complete import");
+            /* A scan that failed before its hash was known is found by name and size. */
+            XdeltaImportSummary none = {}; none.patchBytes = 100;
+            XdeltaImport_RecordResult(assets.c_str(), "Failed.xdelta", &none, nullptr, 0, "Not an xdelta patch");
+            XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr);
+            CHECK(st[0].state == XDELTA_STATE_FAILED && !std::strcmp(st[0].reason, "Not an xdelta patch"), "a failed scan shows its reason");
+            /* The worker returns the same states. */
+            CHECK(XdeltaImport_StartPatchStates(assets.c_str(), names, 4), "the state job starts");
+            XdeltaPatchState polled[CTR_XDELTA_FOLDER_MAX];
+            int pollState = 0;
+            for (int i = 0; i < 2000 && (pollState = XdeltaImport_PollPatchStates(polled, CTR_XDELTA_FOLDER_MAX)) == 0; i++) usleep(5000);
+            CHECK(pollState == 1 && polled[0].state == XDELTA_STATE_FAILED && polled[2].state == XDELTA_STATE_IMPORTED, "the worker reports the same states");
+            /* A corrupt record is ignored, not fatal. */
+            write_path(assets + "/tracks/import-record.json", Bytes(20, '{'));
+            CHECK(XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr) && st[2].state == XDELTA_STATE_NEW, "a damaged record reads as empty");
+            XdeltaImport_RecordResult(assets.c_str(), "Pack.xdelta", s, offered.data(), 1, "");
+            XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr);
+            CHECK(st[2].state == XDELTA_STATE_PARTLY, "the record is rewritten after damage");
+            XdeltaImport_RecordResult(assets.c_str(), "Pack.xdelta", s, nullptr, 0, "Disk full");
+            XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr);
+            CHECK(st[2].state == XDELTA_STATE_PARTLY && st[2].imported == 1 && !std::strcmp(st[2].reason, "Disk full"),
+                  "a failure after some tracks keeps them and says why");
+        }
         XdeltaImport_Free(&r.scan);
     }
 

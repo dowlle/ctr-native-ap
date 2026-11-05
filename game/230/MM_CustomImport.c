@@ -51,6 +51,11 @@ static char s_importFiles[CTR_XDELTA_FOLDER_MAX][CTR_XDELTA_NAME_MAX];
 static struct XdeltaImportSummary s_importSummary;
 static unsigned char s_importSelected[CTR_XDELTA_ITEM_MAX];
 static char s_importMessage[256], s_importPath[4096];
+/* The picker's per-file states (hashed on a worker), "Import all valid
+   tracks" (scan, then install without the review step) and the name edit. */
+static struct XdeltaPatchState s_importStates[CTR_XDELTA_FOLDER_MAX];
+static int s_importStatesWait, s_importAuto, s_importEditing, s_importPadPrev;
+static char s_importEditText[129], s_importEditBackup[129];
 
 static int MM_CustomImport_Active(void) { return s_importOpen; }
 
@@ -58,6 +63,37 @@ static void MM_CustomImport_Rescan(void)
 {
     s_importFileCount = XdeltaImport_ListFolder(NativeAssets_GetAssetDir(), s_importFiles, CTR_XDELTA_FOLDER_MAX);
     if (s_importRow > (size_t)s_importFileCount) s_importRow = 0;
+    memset(s_importStates, 0, sizeof s_importStates);
+    s_importStatesWait = s_importFileCount > 0 &&
+                         XdeltaImport_StartPatchStates(NativeAssets_GetAssetDir(), s_importFiles, s_importFileCount);
+}
+
+/* What a folder file has done before, for the list tag and the detail panel. */
+static const char *MM_CustomImport_StateTag(int row)
+{
+    if (row < 0 || row >= s_importFileCount || s_importStatesWait) return "";
+    switch (s_importStates[row].state)
+    {
+    case XDELTA_STATE_IMPORTED: return "Done";
+    case XDELTA_STATE_PARTLY: return "Part";
+    case XDELTA_STATE_FAILED: return "Fail";
+    }
+    return "";
+}
+
+static void MM_CustomImport_StateText(int row, char *out, size_t size)
+{
+    const struct XdeltaPatchState *st;
+    if (row < 0 || row >= s_importFileCount) { out[0] = 0; return; }
+    st = &s_importStates[row];
+    if (s_importStatesWait) snprintf(out, size, "Checking what this patch did before...");
+    else if (st->state == XDELTA_STATE_IMPORTED)
+        snprintf(out, size, "Imported: %d track%s.", st->imported, st->imported == 1 ? "" : "s");
+    else if (st->state == XDELTA_STATE_PARTLY)
+        snprintf(out, size, "Partly imported: %d of %d tracks.%s%s", st->imported, st->offered, st->reason[0] ? " Last error: " : "", st->reason);
+    else if (st->state == XDELTA_STATE_FAILED)
+        snprintf(out, size, "Failed: %s", st->reason[0] ? st->reason : "unknown reason");
+    else snprintf(out, size, "Not imported yet.");
 }
 
 static void MM_CustomImport_Open(void)
@@ -99,21 +135,79 @@ static void MM_CustomImport_StartScan(const char *path)
 {
     const char *disc = NativeDiscImage_GetPath();
     snprintf(s_importPath, sizeof s_importPath, "%s", path);
-    if (!disc || !*disc) { snprintf(s_importMessage, sizeof s_importMessage, "No game disc is mounted."); return; }
+    if (!disc || !*disc) { s_importAuto = 0; snprintf(s_importMessage, sizeof s_importMessage, "No game disc is mounted."); return; }
     if (XdeltaImport_StartScan(s_importPath, disc, NativeAssets_GetAssetDir()))
     {
         s_importStage = IMPORT_SCANNING;
         s_importProgress = 0;
         s_importMessage[0] = 0;
     }
-    else snprintf(s_importMessage, sizeof s_importMessage, "Could not start the import.");
+    else { s_importAuto = 0; snprintf(s_importMessage, sizeof s_importMessage, "Could not start the import."); }
+}
+
+/* Start the install of what is selected. Returns 0 with the reason in the message. */
+static int MM_CustomImport_StartInstallSelected(void)
+{
+    unsigned i, chosen = 0;
+    for (i = 0; i < s_importSummary.count; i++) chosen += s_importSelected[i] != 0;
+    if (!chosen) { snprintf(s_importMessage, sizeof s_importMessage, "Nothing selected."); return 0; }
+    if (XdeltaImport_StartInstall(s_importSelected, s_importSummary.count, NativeAssets_GetAssetDir(), IMPORT_WHERE))
+    {
+        s_importStage = IMPORT_INSTALLING;
+        return 1;
+    }
+    snprintf(s_importMessage, sizeof s_importMessage, "Could not start the install.");
+    return 0;
+}
+
+/* Tracks the scan listed but could not offer (not a race track, same track
+   twice, failed checks); the review list names each reason. */
+static unsigned MM_CustomImport_SkippedTracks(void)
+{
+    unsigned i, n = 0;
+    for (i = 0; i < s_importSummary.count; i++) n += s_importSummary.items[i].bigfileIndex >= 0 && !s_importSummary.items[i].offered;
+    return n;
 }
 
 static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
 {
     int tapped = pad->buttonsTapped;
+    int rawPad = Platform_InputRawGamepadButtons();
+    int rawTapped = rawPad & ~s_importPadPrev;
     char line[256];
     size_t count = 0, first;
+    s_importPadPrev = rawPad;
+    if (s_importStatesWait && XdeltaImport_PollPatchStates(s_importStates, CTR_XDELTA_FOLDER_MAX) != 0) s_importStatesWait = 0;
+    /* Name entry (review list): the physical pad commits or cancels, as on
+       the Library search; typing never reaches the pad buffer. */
+    if (s_importEditing)
+    {
+        if (!NativeText_Result())
+        {
+            if (rawTapped & CONN_PAD_CANCEL) NativeText_Resolve(2);
+            else if (rawTapped & CONN_PAD_COMMIT) NativeText_Resolve(1);
+        }
+        if (NativeText_Result())
+        {
+            const int committed = NativeText_Result() == 1;
+            NativeText_End();
+            s_importEditing = 0;
+            if (committed)
+            {
+                char *text = s_importEditText;
+                while (*text == ' ') text++;
+                if (!XdeltaImport_SetItemTitle((unsigned)s_importRow, text))
+                    snprintf(s_importMessage, sizeof s_importMessage, "Name refused.");
+                else
+                {
+                    snprintf(s_importSummary.items[s_importRow].title, sizeof s_importSummary.items[s_importRow].title, "%s", text);
+                    s_importSummary.items[s_importRow].nameSource = XDELTA_NAME_EDITED;
+                    s_importMessage[0] = 0;
+                }
+            }
+        }
+        tapped = 0;
+    }
     if (s_importStage == IMPORT_PICKING)
     {
         char picked[4096];
@@ -121,6 +215,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         if (state == 1) MM_CustomImport_StartScan(picked);
         else if (state == 2 || state == -1)
         {
+            s_importAuto = 0;
             s_importStage = IMPORT_CHOOSE;
             snprintf(s_importMessage, sizeof s_importMessage, "No file chosen.");
         }
@@ -128,6 +223,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         {
             /* The dialog may never show (Steam Deck Game Mode): stop waiting. */
             XdeltaPick_Abandon();
+            s_importAuto = 0;
             s_importStage = IMPORT_CHOOSE;
             snprintf(s_importMessage, sizeof s_importMessage, "No file chosen.");
             OtherFX_Play(2, 1);
@@ -144,16 +240,25 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             s_importRow = 0;
             for (unsigned i = 0; i < CTR_XDELTA_ITEM_MAX; i++)
                 s_importSelected[i] = i < s_importSummary.count && s_importSummary.items[i].offered;
+            /* "Import all valid tracks" skips the review when something is offered. */
+            if (s_importAuto)
+            {
+                s_importAuto = 0;
+                if (MM_CustomImport_StartInstallSelected()) { s_importMessage[0] = 0; OtherFX_Play(1, 1); }
+            }
         }
         else if (state == -2)
         {
+            s_importAuto = 0;
             s_importStage = IMPORT_RESULT;
             snprintf(s_importMessage, sizeof s_importMessage, "%s", error);
             XdeltaImport_DiscardScan();
         }
-        if (tapped & (BTN_TRIANGLE | BTN_START))
+        /* Not once an install has started: "Import all valid tracks" may have started it this frame. */
+        if ((s_importStage == IMPORT_SCANNING || s_importStage == IMPORT_REVIEW) && (tapped & (BTN_TRIANGLE | BTN_START)))
         {
             XdeltaImport_DiscardScan();
+            s_importAuto = 0;
             s_importStage = IMPORT_CHOOSE;
             snprintf(s_importMessage, sizeof s_importMessage, "Import cancelled.");
             OtherFX_Play(2, 1);
@@ -182,7 +287,15 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             else if (state == 1 && !published)
                 snprintf(s_importMessage, sizeof s_importMessage, "Files installed, but Play Solo publication failed.");
             else if (state == 1)
+            {
+                const unsigned skipped = MM_CustomImport_SkippedTracks();
                 snprintf(s_importMessage, sizeof s_importMessage, "Installed %d track%s. Files verified.", installed, installed == 1 ? "" : "s");
+                if (skipped)
+                {
+                    size_t used = strlen(s_importMessage);
+                    snprintf(s_importMessage + used, sizeof s_importMessage - used, " Not imported: %u (not a race track, the same track twice, or failed checks).", skipped);
+                }
+            }
             else snprintf(s_importMessage, sizeof s_importMessage, "%s", error);
 #ifdef MM_IMPORT_PLAYER
             if (state == 1)
@@ -206,12 +319,14 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         count = 1 + (size_t)s_importFileCount;
         if (tapped & (BTN_TRIANGLE | BTN_START)) { s_importOpen = 0; OtherFX_Play(2, 1); return; }
         if (tapped & BTN_SQUARE) { MM_CustomImport_Rescan(); count = 1 + (size_t)s_importFileCount; s_importMessage[0] = 0; }
-        if (tapped & (BTN_CROSS | BTN_CIRCLE))
+        if (tapped & (BTN_CROSS | BTN_CIRCLE | BTN_R1))
         {
+            /* R1 is "Import all valid tracks": the same pick, then no review step. */
+            s_importAuto = (tapped & BTN_R1) != 0;
             if (s_importRow == 0)
             {
                 if (XdeltaPick_Start()) s_importStage = IMPORT_PICKING;
-                else snprintf(s_importMessage, sizeof s_importMessage, "No file dialog. Use the folder.");
+                else { s_importAuto = 0; snprintf(s_importMessage, sizeof s_importMessage, "No file dialog. Use the folder."); }
             }
             else
             {
@@ -239,14 +354,37 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             s_importSelected[s_importRow] = !s_importSelected[s_importRow];
             OtherFX_Play(0, 1);
         }
-        if (tapped & (BTN_CROSS | BTN_CIRCLE))
+        if ((tapped & BTN_L1) && s_importStage == IMPORT_REVIEW && s_importRow < count && s_importSummary.items[s_importRow].offered)
         {
-            unsigned chosen = 0;
-            for (unsigned i = 0; i < count; i++) chosen += s_importSelected[i] != 0;
-            if (!chosen) snprintf(s_importMessage, sizeof s_importMessage, "Nothing selected.");
-            else if (XdeltaImport_StartInstall(s_importSelected, (unsigned)count, NativeAssets_GetAssetDir(), IMPORT_WHERE))
-                s_importStage = IMPORT_INSTALLING;
-            else snprintf(s_importMessage, sizeof s_importMessage, "Could not start the install.");
+            {
+                /* A title over 128 bytes (a pack descriptor allows more) is cut at a character boundary. */
+                const char *title = s_importSummary.items[s_importRow].title;
+                size_t n = strlen(title);
+                if (n > sizeof s_importEditText - 1)
+                {
+                    n = sizeof s_importEditText - 1;
+                    while (n && ((unsigned char)title[n] & 0xC0) == 0x80) n--;
+                }
+                memcpy(s_importEditText, title, n);
+                s_importEditText[n] = 0;
+            }
+            snprintf(s_importEditBackup, sizeof s_importEditBackup, "%s", s_importEditText);
+            NativeText_Begin(s_importEditText, (int)sizeof s_importEditText, 28, 170, 456, 12, 0);
+            s_importEditing = 1;
+            s_importMessage[0] = 0;
+            OtherFX_Play(1, 1);
+        }
+        if (tapped & BTN_R1)
+        {
+            /* Import all valid tracks: every offered track, under the names shown. */
+            for (unsigned i = 0; i < CTR_XDELTA_ITEM_MAX; i++)
+                s_importSelected[i] = i < s_importSummary.count && s_importSummary.items[i].offered;
+            MM_CustomImport_StartInstallSelected();
+            OtherFX_Play(1, 1);
+        }
+        else if (tapped & (BTN_CROSS | BTN_CIRCLE))
+        {
+            MM_CustomImport_StartInstallSelected();
             OtherFX_Play(1, 1);
         }
     }
@@ -277,15 +415,28 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         for (size_t row = first; row < first + 7 && row < count; row++)
         {
             RECT box = {24, 68 + (int)(row - first) * 15, 260, 14};
-            MM_CustomText_Draw(row == 0 ? "Choose a file" : s_importFiles[row - 1], 32, box.y + 2, 244, 1,
-                               row == s_importRow ? ORANGE : WHITE, ot);
+            if (row == 0) MM_CustomText_Draw("Choose a file", 32, box.y + 2, 244, 1, row == s_importRow ? ORANGE : WHITE, ot);
+            else
+            {
+                /* A short state tag, then the name (the detail panel shows it whole). */
+                MM_CustomText_Draw(MM_CustomImport_StateTag((int)row - 1), 32, box.y + 2, 56, 1, row == s_importRow ? ORANGE : GRAY, ot);
+                MM_CustomText_Draw(s_importFiles[row - 1], 92, box.y + 2, 184, 1, row == s_importRow ? ORANGE : WHITE, ot);
+            }
             if (row == s_importRow) CTR_Box_DrawClearBox(&box, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
         }
-        MM_CustomText_Draw(s_importStage == IMPORT_PICKING ? "Waiting for the file dialog. Back: stop waiting" :
-                           s_importMessage[0] ? s_importMessage :
-                           IMPORT_HINT,
-                           305, 70, 176, 6, WHITE, ot);
-        MM_CustomText_Draw("[ Rescan folder", 305, 159, 176, 1, ORANGE, ot);
+        if (s_importStage == IMPORT_CHOOSE && s_importRow > 0)
+        {
+            /* The full file name and what this patch did before. */
+            MM_CustomText_Draw(s_importFiles[s_importRow - 1], 305, 68, 176, 3, ORANGE, ot);
+            MM_CustomImport_StateText((int)s_importRow - 1, line, sizeof line);
+            MM_CustomText_Draw(line, 305, 108, 176, 3, WHITE, ot);
+            if (s_importMessage[0]) MM_CustomText_Draw(s_importMessage, 305, 146, 176, 1, WHITE, ot);
+        }
+        else
+            MM_CustomText_Draw(s_importStage == IMPORT_PICKING ? "Waiting for the file dialog. Back: stop waiting" :
+                               s_importMessage[0] ? s_importMessage :
+                               IMPORT_HINT " Or copy patches into assets/tracks/import.",
+                               305, 70, 176, 6, WHITE, ot);
     }
     else if (s_importStage == IMPORT_SCANNING)
     {
@@ -310,17 +461,28 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         {
             MM_CustomText_Draw(item->title, 305, 70, 176, 2, ORANGE, ot);
             MM_CustomText_Draw(item->offered ? item->tags : "Skipped", 305, 98, 176, 1, WHITE, ot);
-            MM_CustomText_Draw(item->offered ? "" : item->reason, 305, 112, 176, 2, WHITE, ot);
+            MM_CustomText_Draw(item->offered ? (item->nameSource == XDELTA_NAME_DESCRIPTOR ? "Name from the pack" :
+                                                item->nameSource == XDELTA_NAME_KNOWN ? "Name of a known track" :
+                                                item->nameSource == XDELTA_NAME_EDITED ? "Name typed by you" :
+                                                "Placeholder name: L1 to change it") : item->reason, 305, 112, 176, 2, WHITE, ot);
         }
         MM_CustomText_Draw(s_importStage == IMPORT_INSTALLING ? "Installing..." :
                            s_importMessage[0] ? s_importMessage : s_importSummary.descriptorNote[0] ? s_importSummary.descriptorNote :
-                           "[ Select   X Install", 305, 144, 176, 2, ORANGE, ot);
+                           s_importSummary.history[0] ? s_importSummary.history :
+                           "[ Select  L1 Name  R1 Import all  X Install", 305, 144, 176, 2, ORANGE, ot);
     }
     else
     {
         MM_CustomText_Draw(s_importMessage, 32, 84, 452, 3, WHITE, ot);
     }
-    if (s_importStage == IMPORT_REVIEW || s_importStage == IMPORT_INSTALLING)
+    if (s_importEditing)
+    {
+        char name[160];
+        snprintf(name, sizeof name, "Name: %s", s_importEditText);
+        MM_CustomText_Draw(name, 28, 172, 456, 1, ORANGE, ot);
+        snprintf(line, sizeof line, "X: Keep this name   ^: Cancel");
+    }
+    else if (s_importStage == IMPORT_REVIEW || s_importStage == IMPORT_INSTALLING)
     {
         unsigned offered = 0;
         for (unsigned i = 0; i < s_importSummary.count; i++) offered += s_importSummary.items[i].offered != 0;
@@ -333,7 +495,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
 #define IMPORT_DONE "X: Done"
 #endif
     else snprintf(line, sizeof line, "%s", s_importStage == IMPORT_RESULT ? IMPORT_DONE :
-                  s_importStage == IMPORT_SCANNING ? "Back: Cancel" : "Folder: assets/tracks/import");
+                  s_importStage == IMPORT_SCANNING ? "Back: Cancel" : "[ Rescan   R1 Import all valid");
     MM_CustomText_Draw(line, 256, 196, 456, 1, JUSTIFY_CENTER | WHITE, ot);
     {
         RECT listBox = {20, 64, 268, 108}, detailBox = {297, 64, 190, 108};

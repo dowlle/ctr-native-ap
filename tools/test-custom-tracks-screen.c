@@ -153,6 +153,12 @@ void XdeltaImport_DiscardScan(void) { discards++; scanState = -1; }
 int XdeltaImport_StartInstall(const unsigned char *sel, unsigned count, const char *a, int where) { (void)sel; (void)count; (void)a; (void)where; xdInstallStarts++; installState = 0; return 1; }
 int XdeltaPick_TakeDrop(char *path, size_t size) { int s = dropState; if (s == 1) snprintf(path, size, "/drop/LRG2.xdelta"); dropState = 0; return s; }
 int XdeltaImport_PollInstall(int *installed, char *e, size_t n) { (void)e; (void)n; int s = installState; if (s == 1) { *installed = 2; installState = -1; } return s; }
+static struct XdeltaPatchState fakeStates[CTR_XDELTA_FOLDER_MAX];
+static int stateStarts, setTitleCalls, setTitleOk = 1;
+static char lastTitle[129];
+int XdeltaImport_StartPatchStates(const char *a, char names[][CTR_XDELTA_NAME_MAX], int count) { (void)a; (void)names; (void)count; stateStarts++; return 1; }
+int XdeltaImport_PollPatchStates(struct XdeltaPatchState *out, int max) { memcpy(out, fakeStates, sizeof(fakeStates[0]) * (size_t)max); return 1; }
+int XdeltaImport_SetItemTitle(unsigned item, const char *title) { (void)item; setTitleCalls++; snprintf(lastTitle, sizeof lastTitle, "%s", title); return setTitleOk; }
 int XdeltaImport_InstalledDescriptorCount(void) { return 1; }
 int XdeltaImport_InstalledDescriptor(int i, char c[65], char r[65], char *j, size_t n, int *laps) { (void)i; strcpy(c, "x"); strcpy(r, "1"); snprintf(j, n, "{}"); *laps = 0; return 1; }
 void XdeltaImport_InstalledDescriptorNote(char *note, size_t size) { snprintf(note, size, "%s", ""); }
@@ -589,7 +595,7 @@ int main(void)
     folderCount = 2;
     frame(0, "import-tabs"); CHECK(has("xdelta") && !MM_CustomImport_Active());
     frame(BTN_DOWN, NULL); CHECK(MM_CustomImport_Active() && consumed == 0);
-    frame(0, "import-choose"); CHECK(consumed && has("Choose a file") && has("CRASH-30ANNIV"));
+    frame(0, "import-choose"); CHECK(consumed && has("Choose a file") && has("CRASH-30"));
     frame(BTN_TRIANGLE, NULL); CHECK(!MM_CustomImport_Active() && s_ctFocus == CT_FOCUS_TABS);
     /* A full import, then the follow-up choices. */
     frame(BTN_CROSS, NULL); frame(BTN_DOWN, NULL); frame(BTN_CROSS, NULL); CHECK(scanStarts == 1);
@@ -615,6 +621,61 @@ int main(void)
     s_ctTab = CT_TAB_LIBRARY; s_ctFocus = CT_FOCUS_LIST;
     frame(BTN_SELECT, NULL); CHECK(s_ctTab == CT_TAB_IMPORT && MM_CustomImport_Active());
     frame(BTN_TRIANGLE, NULL);
+
+
+    /* 15. A2-19: the picker shows what each patch did before, names can be typed, Import all skips the review. */
+    revisit(); frame(0, NULL); s_ctTab = CT_TAB_IMPORT; s_ctFocus = CT_FOCUS_TABS; scanState = -1; installState = -1;
+    folderCount = 2;
+    fakeStates[0].state = XDELTA_STATE_IMPORTED; fakeStates[0].imported = 14; fakeStates[0].offered = 14;
+    fakeStates[1].state = XDELTA_STATE_FAILED; strcpy(fakeStates[1].reason, "Not an xdelta patch");
+    frame(BTN_CROSS, NULL); frame(BTN_DOWN, NULL);
+    CHECK(stateStarts > 0);
+    frame(0, "import-picker-done"); CHECK(has("Done") && has("Fail") && has("Imported: 14 tracks"));
+    frame(BTN_DOWN, NULL); frame(0, "import-picker-failed"); CHECK(has("Failed: Not an xdelta patch") && has("patch-two.xdel") && has("R1 Import all valid"));
+    {
+        const int before = xdInstallStarts, scans = scanStarts;
+        frame(BTN_R1, NULL); CHECK(scanStarts == scans + 1);
+        fakeSummary.count = 2;
+        scanState = 1; frame(0, NULL);
+        CHECK(xdInstallStarts == before + 1);   /* no review step */
+        installState = 1; frame(0, "import-all-result");
+        CHECK(has("Installed 2 tracks") && has("Not imported: 1"));
+        frame(BTN_CROSS, NULL); frame(BTN_TRIANGLE, NULL);
+    }
+    /* Back on the frame the scan finishes must not hide the install Import all started. */
+    s_ctTab = CT_TAB_IMPORT; s_ctFocus = CT_FOCUS_TABS; scanState = -1;
+    frame(BTN_CROSS, NULL); frame(BTN_DOWN, NULL);
+    {
+        const int before = xdInstallStarts;
+        frame(BTN_R1, NULL); scanState = 1; frame(BTN_TRIANGLE, NULL);
+        CHECK(xdInstallStarts == before + 1 && s_importStage == IMPORT_INSTALLING);
+        installState = 1; frame(0, NULL); CHECK(s_importStage == IMPORT_RESULT);
+        frame(BTN_CROSS, NULL); frame(BTN_TRIANGLE, NULL);
+    }
+    /* Back on the frame a normal scan finishes returns to the picker, as before. */
+    s_ctTab = CT_TAB_IMPORT; s_ctFocus = CT_FOCUS_TABS; scanState = -1;
+    frame(BTN_CROSS, NULL); frame(BTN_DOWN, NULL); frame(BTN_CROSS, NULL);
+    scanState = 1; frame(BTN_TRIANGLE, NULL); CHECK(s_importStage == IMPORT_CHOOSE);
+    scanState = -1;
+    frame(BTN_TRIANGLE, NULL);
+    /* Review: type a name, a refused name, a cancelled name, then Import all. */
+    s_ctTab = CT_TAB_IMPORT; s_ctFocus = CT_FOCUS_TABS; scanState = -1;
+    frame(BTN_CROSS, NULL); frame(BTN_DOWN, NULL); frame(BTN_CROSS, NULL);
+    scanState = 1; frame(0, NULL); frame(0, "import-review-names");
+    CHECK(has("Placeholder name") || has("Name from") || has("Name of"));
+    {
+        const int begins = textBegins, calls = setTitleCalls, before = xdInstallStarts;
+        frame(BTN_L1, NULL); CHECK(textBegins == begins + 1);
+        strcpy(s_importEditText, "Sunset Raceway"); textResult = 1; frame(0, "import-name-commit");
+        CHECK(setTitleCalls == calls + 1 && !strcmp(lastTitle, "Sunset Raceway") && has("Sunset Raceway") && has("typed by you"));
+        setTitleOk = 0; frame(BTN_L1, NULL); strcpy(s_importEditText, "Bad"); textResult = 1; frame(0, "import-name-refused");
+        CHECK(has("Name refused")); setTitleOk = 1;
+        frame(BTN_L1, NULL); frame(0, "import-name-editing"); CHECK(has("Name: ") && has("Keep this name"));
+        textResult = 2; frame(0, NULL); CHECK(setTitleCalls == calls + 2);
+        frame(BTN_R1, NULL); CHECK(xdInstallStarts == before + 1);
+        installState = 1; frame(0, NULL); frame(BTN_CROSS, NULL); frame(BTN_TRIANGLE, NULL);
+    }
+    scanState = -1; installState = -1;
 
     printf("custom tracks screen: %d checks, %d failures\n", checks, failures);
     return failures != 0;

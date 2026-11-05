@@ -196,7 +196,13 @@ the player client's Custom Content and Track Library pages. Three tabs:
   Resolve track, Verify / Setup, Open source page, Required files and
   Installed copies.
 - **Import**: hosts the xdelta importer (`game/230/MM_CustomImport.c`). A
-  dropped patch and Select open it.
+  dropped patch and Select open it. The folder list tags each patch file Done,
+  Part or Fail from `assets/tracks/import-record.json` (found by the patch's
+  SHA-256, so a renamed copy counts) and the detail panel shows the full file
+  name. R1 on a file, or in the review list, is Import all valid tracks. Track
+  names come from the pack descriptor, then the known-track table
+  (`known_track_name` in `platform/native_xdelta_import.cpp`), then a label
+  such as "Lego Adventure track 3"; L1 in the review list types a name.
 
 The page opens on This Seed only when the loaded seed misses tracks, otherwise
 on Library. Left / Right or L1 / R1 change tabs on the tab strip; in a list,
