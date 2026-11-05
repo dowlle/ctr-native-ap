@@ -13,6 +13,6 @@
 
 // Tester-visible build identity. Prerelease labels belong here because the
 // Archipelago world manifest only accepts numeric major.minor.patch versions.
-#define CTR_AP_VERSION "v0.3.0-alpha1"
+#define CTR_AP_VERSION "v0.3.0-alpha2"
 
 #endif // AP_VERSION_H
