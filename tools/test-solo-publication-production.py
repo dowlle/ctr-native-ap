@@ -21,6 +21,7 @@ fixture = r'''
 #include <chrono>
 #include <cstdio>
 #include <future>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -69,12 +70,14 @@ static StorePublication CollectInstalledStore(const std::string& assets, const s
     entered.store(true);
     while (!releaseWorker.load() && !cancel->load()) std::this_thread::yield();
     StorePublication r; r.failed = verifierFailure; r.error = "damaged package";
-    for (int i = 0; i < 118; i++) r.descriptors.push_back({1, std::to_string(i), "1", "{}"});
+    for (int i = 0; i < 118; i++) r.descriptors.push_back({1, std::to_string(i), "1", "{}", "Track " + std::to_string(i), ""});
     return r;
 }
-static bool ApplyStoreDescriptor(const StorePublication::Descriptor&) {
+static bool ApplyStoreDescriptor(const StorePublication::Descriptor& d, const StorePublication&, std::string& message) {
     assert(std::this_thread::get_id() == frameThread);
-    applied++; return !publishFailure;
+    applied++;
+    if (publishFailure && applied % 2) message = "Track " + d.key + " 1: solo/tracks is read-only";
+    return !(publishFailure && applied % 2);
 }
 '''
 for signature in ("bool TrackPublicationBusy()", "bool StartTrackPublication(const std::vector<std::string> &args)",
@@ -134,9 +137,10 @@ int main() {
     assert(!applied && !spawned && g_job.state == AP_SOLO_JOB_FAILED);
     assert(g_job.errorText == "damaged package");
 
-    reset(); publishFailure = true;
+    reset(); publishFailure = true; // A refused track does not stop the others; the first is named.
     assert(AP_Solo_TracksStart(nullptr)); enter(); releaseWorker = true; retire();
-    assert(applied == 1 && !spawned && g_job.state == AP_SOLO_JOB_FAILED);
+    assert(applied == 118 && !spawned && g_job.state == AP_SOLO_JOB_FAILED);
+    assert(g_job.errorText == "Track 0 1: solo/tracks is read-only");
 
     reset(); assert(AP_Solo_TracksStart(nullptr)); enter();
     FinishTrackPublication(); // Quit joins a cancelled worker and retains no future.
@@ -146,7 +150,7 @@ int main() {
     assert(!TrackPublicationBusy());
     runtime = true; link = true; assert(AP_Solo_TracksStart(nullptr));
     assert(g_job.state == AP_SOLO_JOB_FAILED && !TrackPublicationBusy());
-    puts("PASS: start/poll/cancel return during verification; 118 entries publish one per frame; failures never spawn the child");
+    puts("PASS: start/poll/cancel return during verification; 118 entries publish one per frame; a refusal is named and never spawns the child");
 }
 '''
 # The frame dispatcher must service the verifier before polling a child that
