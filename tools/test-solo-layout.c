@@ -102,6 +102,7 @@ static int rooms, tracks, needsLaps, picked, jobState = AP_SOLO_JOB_IDLE;
 static int shortLetters;
 static char inbox[512];
 int AP_Solo_RuntimePresent(void) { return 1; }
+int ap_net_dial_blocked(void) { return 0; } // Box Author Mode off (ap/ap_author_gate.h)
 int AP_Solo_ListStart(void) { return 0; }
 int AP_Solo_DescribeStart(const char *y) { (void)y; return 0; }
 int AP_Solo_ImportRoomStart(const char *p) { (void)p; return 0; }

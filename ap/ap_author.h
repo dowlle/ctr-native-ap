@@ -25,19 +25,26 @@
 
 struct GameTracker;
 
-// Where placements are written, next to the executable / working directory,
-// alongside ap-state.json and ctr-ap.log. Read once at first use, rewritten on
-// every change.
+// Where placements are read and written, next to the executable /
+// working directory, alongside ap-state.json and ctr-ap.log. Read once at
+// first use, rewritten on every change.
 //
-// The box authoring builds (CTR_BOX_AUTHORING: the AP box authoring download
-// and the authoring client without Archipelago) use their own file name. Their
-// file holds a whole edited table, and a normal client that found it next to
-// its exe would use it as a wholesale override. With a distinct name, an
-// authoring zip unpacked into a player folder by mistake changes nothing there.
-#ifdef CTR_BOX_AUTHORING
-#define AP_AUTHOR_FILE "ap-box-placements-authoring.json"
-#else
-#define AP_AUTHOR_FILE "ap-box-placements.json"
+// Author mode writes AP_AUTHOR_FILE ("ap-box-placements-authoring.json") in
+// every build. Its file holds a whole edited table, and a normal client that
+// found it under its own name would use it as a wholesale override. With a
+// distinct name, an authoring file next to a player's exe changes nothing
+// there. The runtime reads AP_PLACEMENT_FILE: the player's
+// "ap-box-placements.json" in the player client, the authoring file itself in
+// the box authoring builds (CTR_BOX_AUTHORING). ap_author_gate.h owns both
+// names and the rule that keeps them apart.
+#include "ap_author_gate.h"
+
+// The player client (CTR_AP without CTR_BOX_AUTHORING) has Box Author Mode
+// too, as a session switch on Options > Authoring that never shares a
+// session with a room (ap_author_gate.h). The box authoring builds keep the
+// saved "Box Author Mode" option.
+#if defined(CTR_AP) && !defined(CTR_BOX_AUTHORING)
+#define AP_AUTHOR_SESSION_SWITCH
 #endif
 
 // Total placements held across ALL tracks. The file is the durable store; this
@@ -69,15 +76,25 @@ void AP_Author_DrawHud(void);
 // 1 while the mode is on. For call sites that want to skip work entirely.
 int AP_Author_Enabled(void);
 
-#ifdef CTR_BOX_AUTHORING
-// Controller keys for the same three actions (ap_author_pad.h): Select drops,
-// hold Select + L1 removes the newest box, hold Select + R1 saves and lists.
-// Called from MainMain.c right after the pads are processed, so it can take
-// Select, and L1/R1 during the chord, out of player 1's pad before anything
-// else reads it this frame. Live under the numpad keys' gates, not paused, on
-// an authorable track; the action runs in the next AP_Author_OnFrame.
+// Controller keys for every authoring action (ap_author_pad.h): Select drops,
+// hold Select + L1 deletes, + R1 saves and lists, + Square / Circle select a
+// box, + Cross moves it, + Triangle exports. Called from MainMain.c right
+// after the pads are processed, so it can take Select and the chord buttons
+// out of player 1's pad before anything else reads it this frame. Live under
+// the numpad keys' gates, not paused, on an authorable track; the action runs
+// in the next AP_Author_OnFrame. With the mode off it changes nothing.
 struct GamepadSystem;
 void AP_Author_FilterPad(struct GamepadSystem *gGS);
+
+#ifdef AP_AUTHOR_SESSION_SWITCH
+// The Box Author Mode row on Options > Authoring (game/230/MM_ConfigMenu.c).
+// Press: turn the mode on or off (wantOn). On is refused while a room or a
+// Play Solo game holds the connection; a second press on the same visit
+// leaves that room and turns the mode on. Leave: the row lost focus, so a
+// pending refusal is forgotten. Help: the two lines under the row.
+void AP_Author_MenuPress(int wantOn);
+void AP_Author_MenuLeave(void);
+void AP_Author_MenuHelp(const char **first, const char **second);
 #endif
 
 // ── the placement table, shared with the runtime box module ─────────────────
@@ -92,7 +109,7 @@ void AP_Author_FilterPad(struct GamepadSystem *gGS);
 //
 // The shipped client carries the FINAL authored set COMPILED IN
 // (ap_placements_data.h), so a player installs one executable and the boxes are
-// simply there. An external AP_AUTHOR_FILE next to the executable OVERRIDES it
+// simply there. An external AP_PLACEMENT_FILE next to the executable OVERRIDES it
 // wholesale, which is what keeps authoring, private sets and a hotfix possible
 // without a rebuild.
 //
