@@ -56,13 +56,14 @@ fixture += function(boxes, "static void AP_BoxesSpawnOne(struct GameTracker *gGT
 fixture += r'''
 static ctr_content_pad pad;
 static ctr_content_package package;
-static int havePad=1, leg, active=1;
+static int havePad=1, leg, active=1, garageRunning=-1;
+static int AP_ContentGarageCupRunning(void) { return garageRunning; }
 static const ctr_content_pad *AP_ContentCupPad(void) { return havePad ? &pad : NULL; }
 static int AP_ContentCupLeg(void) { return leg; }
 const ctr_content_package *ap_content_plan_package(int i) { return i == 2 ? &package : NULL; }
 static const char *AP_CortexTrackDisplayName(void) { return "Cortex Vortex"; }
 static struct {
-    struct { int name_LNG; } metaDataLEV[18];
+    struct { int name_LNG, characterID_Boss; } metaDataLEV[18];
     struct { int lngIndex_CupName; } AdvCups[5],ArcadeCups[5];
     struct { int name_LNG_short,name_LNG_long; } MetaDataCharacters[16];
 } data;
@@ -72,6 +73,7 @@ static int ctr_cfg_active(void) { return active; }
 static const char *CustomTrack_CupDisplayName(int cup, int adv) { (void)cup; (void)adv; return NULL; }
 '''
 cups = source("ap/ap_hooks_content_cups.c")
+fixture += function(source("ap/ap_hooks_gates.c"), "int AP_BossGarageOpponent(int bossIdx)")
 fixture += function(cups, "const char *AP_ContentCupName(void)")
 fixture += function(cups, "const char *AP_ContentCupTrackName(void)")
 ui = source("game/UI/UI_CupStandings.c")
@@ -111,6 +113,27 @@ int main(void) {
     havePad=0; assert(!AP_ContentCupTrackName()); havePad=1;
     leg=-1; assert(!AP_ContentCupTrackName()); leg=4; assert(!AP_ContentCupTrackName()); leg=0;
 
+    // A boss cup is named for its boss (A2-47): the drawn racer the garage
+    // names, else the garage's own boss; any other cup keeps its plan name.
+    for(int c=0;c<16;c++) data.MetaDataCharacters[c].name_LNG_long=5;
+    state.lngStrings[5]="RACER"; state.lngStrings[6]="DINGODILE"; state.lngStrings[7]="RIPPER ROO";
+    data.MetaDataCharacters[3].name_LNG_long=6; data.metaDataLEV[6].characterID_Boss=2;
+    data.MetaDataCharacters[2].name_LNG_long=7;
+    ctr_boss_encounters.state=AP_BOSS_ENC_VALID;
+    ctr_boss_encounters.version=AP_BOSS_ENCOUNTERS_VERSION_2;
+    ctr_boss_encounters.opponent[0]=-1;
+    assert(!strcmp(AP_ContentCupName(),"Mixed Cup"));
+    garageRunning=0; assert(!strcmp(AP_ContentCupName(),"RIPPER ROO's Cup"));
+    ctr_boss_encounters.opponent[0]=3; assert(!strcmp(AP_ContentCupName(),"DINGODILE's Cup"));
+    ctr_boss_encounters.opponent[0]=13; assert(!strcmp(AP_ContentCupName(),"Penta's Cup"));
+    active=0; ctr_boss_encounters.opponent[0]=3; assert(!strcmp(AP_ContentCupName(),"RIPPER ROO's Cup")); active=1;
+    garageRunning=-1; assert(!strcmp(AP_ContentCupName(),"Mixed Cup"));
+    havePad=0; assert(!AP_ContentCupName()); havePad=1;
+    // The standings title takes the boss cup name through the same call.
+    garageRunning=0; ctr_boss_encounters.opponent[0]=3; state.menuReadyToPass=4; tracker.cup.trackIndex=1;
+    assert(!strcmp(heading(),"DINGODILE's Cup"));
+    state.menuReadyToPass=0; garageRunning=-1; tracker.cup.trackIndex=0;
+
     ctr_boss_encounters.state=AP_BOSS_ENC_VALID;
     ctr_boss_encounters.version=AP_BOSS_ENCOUNTERS_VERSION_2;
     for(int c=0;c<16;c++) {
@@ -141,6 +164,11 @@ flow = source("game/UI/UI_RaceFlow.c")
 banner = flow[flow.index("pcVar6 = sdata->lngStrings[textID];"):flow.index("sVar7 = gGT->pushBuffer[0].rect.y - (windowHeight + -7);")]
 assert "AP_BossChallengeTitle(gGT->bossID, apBossTitle" in banner and "ADVENTURE_BOSS" in banner
 assert flow.count("AP_BossChallengeTitle(") == 1
+# The cup banner of a boss cup names its boss through the one cup-name call the
+# standings use (A2-47); only a running garage cup, only on the adventure-cup branch.
+cupBanner = flow[flow.index("ctCupName = CustomTrack_CupDisplayName(gGT->cup.cupID, 1);"):flow.index("textID = txtArray[iVar2];")]
+assert "AP_ContentGarageCupRunning() >= 0" in cupBanner and "ctCupName = AP_ContentCupName();" in cupBanner
+assert flow.count("AP_ContentCupName()") == 2
 with tempfile.TemporaryDirectory() as directory:
     path = Path(directory)
     (path / "presentation.c").write_text(fixture)

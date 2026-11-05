@@ -112,11 +112,23 @@ int AP_ContentCupLeg(void)
 	return AP_ContentCupPad() ? CustomTrack_StandaloneContext(gGT->levelID)->leg : -1;
 }
 
-// The running cup's name for the standings title, or NULL.
+// The running cup's name for the banner and the standings title, or NULL. A
+// boss cup is named for its boss, "<racer>'s Cup": the drawn racer the garage
+// names, else the garage's own boss (A2-47, ruled 2026-11-05). Every
+// other content-plan cup shows its plan name.
 const char *AP_ContentCupName(void)
 {
+	static char bossCup[96];
 	const ctr_content_pad *pad = AP_ContentCupPad();
-	return pad ? pad->display_name : NULL;
+	int g = AP_ContentGarageCupRunning(), c;
+	if (!pad) return NULL;
+	if (g < 0) return pad->display_name;
+	c = AP_BossGarageOpponent(g);
+	if (c < 0) c = data.metaDataLEV[AP_BOSS_VENUE_GARAGE[g].homeLevel].characterID_Boss;
+	if (c < 0 || c >= 16) return pad->display_name;
+	snprintf(bossCup, sizeof bossCup, "%s's Cup",
+	         c == PENTA_PENGUIN ? "Penta" : sdata->lngStrings[data.MetaDataCharacters[c].name_LNG_long]);
+	return bossCup;
 }
 
 // The per-race heading names the current leg, separately from the cup title.
