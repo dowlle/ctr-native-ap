@@ -49,6 +49,13 @@ int  ap_net_identity_hash(unsigned long long *out); // FNV-1a of the full seed a
 // #89 solo mode: what says a Play Solo session runs. DeathLink stays off the wire then.
 void ap_net_set_solo_session_query(int (*active)(void));
 
+// Box Author Mode (ap/ap_author_gate.h): `reason` returns why no room may be
+// dialled right now, or NULL. ap_net_dial_blocked asks it; when it refuses,
+// the status turns ERROR with that reason (shown on the Connection page) and
+// it returns 1. ap_net_init asks it on every dial.
+void ap_net_set_dial_block_query(const char *(*reason)(void));
+int  ap_net_dial_blocked(void);
+
 // #89 solo mode: journal every check of the solo room to `path` and resend the
 // journalled checks the server still misses on each slot-connect to `seed`.
 // NULL path stops journalling.

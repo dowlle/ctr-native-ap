@@ -162,6 +162,25 @@ int main(int argc,char **argv){
  p=plan;p["content_plan"]["item_packs"].erase("ap_box_colours");drop_row(p,35010205);
  p["content_plan"]["items"]["filler_count"]=p["content_plan"]["items"]["filler_count"].get<int>()+1;
  ap_seedcfg_parse_json(p);assert(!ctr_cfg_active());
+ // A2-6 (alpha1 room refusal): `color_boxes_by_item` false with Spoiler Items
+ // and boxes on. The apworld creates no AP Box Colours then (pink boxes all
+ // game), so the plan without it is admitted and one with it is refused.
+ auto pink=[&](J j){
+  j["ctr_options"]["color_boxes_by_item"]=false;
+  j["content_plan"]["item_packs"].erase("ap_box_colours");drop_row(j,35010205);
+  j["content_plan"]["items"]["filler_count"]=j["content_plan"]["items"]["filler_count"].get<int>()+1;
+  return j;
+ };
+ p=pink(plan);
+ ap_seedcfg_parse_json(p);
+ assert(ctr_cfg_active()&&ctr_cfg.spoiler_items==1&&ctr_cfg.seed_box_locations==1&&ctr_cfg.color_boxes_by_item==0);
+ p=plan;p["ctr_options"]["color_boxes_by_item"]=false;
+ ap_seedcfg_parse_json(p);assert(!ctr_cfg_active());
+ // Coloured boxes still need the item, and the colours flag stays a Boolean.
+ p=pink(plan);p["ctr_options"]["color_boxes_by_item"]=true;
+ ap_seedcfg_parse_json(p);assert(!ctr_cfg_active());
+ p=pink(plan);p["ctr_options"]["color_boxes_by_item"]=0;
+ ap_seedcfg_parse_json(p);assert(!ctr_cfg_active());
  p=plan;p["content_plan"]["item_packs"]["warp_pad_preview"]=1;
  ap_seedcfg_parse_json(p);assert(!ctr_cfg_active());
  p=plan;p["content_plan"]["item_packs"]["spoiler_extra"]=true;

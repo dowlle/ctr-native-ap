@@ -319,9 +319,12 @@ From 0.3.0 the client can make and host a single-player seed itself. Choose
 
 - **New solo seed** offers the bundled presets (Quick, Standard, Full
   Adventure), any YAML you imported, and any YAML you drop into the `solo/inbox`
-  folder next to the game (the screen shows the path). A preset opens a short
-  options screen; Square shows what an option does. DeathLink is off in solo,
-  because nobody else is in the room.
+  folder next to the game (the screen shows the path). A preset opens an
+  options screen with every setting of the world, in groups (Goal, Cups and
+  Arenas, Bosses and so on). Cross opens a group, Left and Right change a
+  value, Square shows what an option does, and Continue goes on. Settings that
+  are lists, such as the track and weapon pools, are not on the screen; set
+  them in a YAML. DeathLink is off in solo, because nobody else is in the room.
 - When custom tracks are installed, a preset or a YAML then shows **Custom
   Tracks**, with Cortex Vortex once its files are installed. Cross on a track
   cycles: not used, **In pool** (the seed may use it) and **Own pad** (it gets

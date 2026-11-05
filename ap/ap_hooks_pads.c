@@ -511,6 +511,20 @@ int AP_PadState(int physLevelID, int destLevelID)
 	return 0; // No AP pad state outside a content plan.
 }
 
+// AP_PadState plus the racer fact, as the shared colour table's display state
+// (ap_pad_colour.h). Only a closed plan pad can be racer-locked.
+int AP_PadLook(int physLevelID, int destLevelID)
+{
+	int state = AP_PadState(physLevelID, destLevelID);
+	int racerMissing = 0;
+	if (state == 1 && ap_content_plan_active())
+	{
+		const ctr_content_pad *pad = ap_content_plan_pad(physLevelID);
+		racerMissing = pad && !AP_ContentPadRacerMet(pad);
+	}
+	return AP_PadLookFromState(state, racerMissing);
+}
+
 // A Hit Character or Itemsanity use, or the `wumpa: global` check, a race on this
 // plan pad can still serve (one generator row 6). They belong to no pad, so a
 // closing pad would strand them, and logic counts every first race as a route:

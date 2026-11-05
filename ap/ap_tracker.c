@@ -19,7 +19,6 @@ extern SDL_Window *g_window;
 #define TRACKER_GOLD AP_TrackerRGBA(255, 161, 24, 255)
 #define TRACKER_GRAY AP_TrackerRGBA(132, 140, 147, 255)
 #define TRACKER_GREEN AP_TrackerRGBA(83, 246, 121, 255)
-#define TRACKER_PAD_ORANGE AP_TrackerRGBA(255, 96, 16, 255)
 
 typedef struct { int w, h; uint32_t *pixels; } AP_TrackerSprite;
 typedef struct {
@@ -760,14 +759,13 @@ static void AP_TrackerDraw(void)
 	AP_TrackerBlit(h->pixels,h->width,h->height,ap_tracker.map_x,ap_tracker.map_y,ap_tracker.map_w,ap_tracker.map_h,TRACKER_WHITE);
 	for(i=0;i<ap_tracker.count;i++) {
 		AP_TrackerNode *n=&ap_tracker.nodes[i]; int edge=n->cx<640?n->cx+n->cw:n->cx;
-		int st=n->physical>=0?AP_PadState(n->physical,n->destination):0;
-		if(n->kind==3) st=AP_TrackerBossNodeState(AP_TrackerBitState(n->bit),
-			ap_tracker.hub?AP_BossGarageOpen(ap_tracker.hub-1):AP_OxideGarageOpen());
-		/* Gold only for a beaten garage; a pad waiting on its second stage is
-		   orange, like the hub map (ruling of 2026-11-02). */
-		const uint32_t colours[]={TRACKER_GREEN,AP_TrackerRGBA(255,57,43,255),TRACKER_PAD_ORANGE,
-			AP_TrackerRGBA(140,160,255,255),TRACKER_GRAY,TRACKER_GOLD};
-		uint32_t color=colours[AP_TrackerNodeColour(st)];
+		int look=n->physical>=0?AP_PadLook(n->physical,n->destination):AP_PAD_LOOK_NONE;
+		if(n->kind==3) look=AP_PadLookFromState(AP_TrackerBossNodeState(AP_TrackerBitState(n->bit),
+			ap_tracker.hub?AP_BossGarageOpen(ap_tracker.hub-1):AP_OxideGarageOpen()),0);
+		/* The shared pad colour table (ap_pad_colour.h), the same colours as
+		   the hub map dot and the warp pad beam. Gold only for a beaten garage. */
+		uint32_t rgb=AP_PadLookRGB(AP_TrackerNodeColour(look));
+		uint32_t color=AP_TrackerRGBA(AP_PadLookR(rgb),AP_PadLookG(rgb),AP_PadLookB(rgb),255);
 		AP_TrackerLine(n->x,n->y,edge,n->cy+24,TRACKER_MINT,2);
 		AP_TrackerCircle(n->x,n->y,12,AP_TrackerRGBA(0,0,0,255),0);
 		AP_TrackerCircle(n->x,n->y,8,color,0);

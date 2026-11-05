@@ -57,8 +57,8 @@ struct ApBoxLive
 	int            ghostTouched; // #354: drove through this ghost box, logged once
 	int            colour;       // AP_BOX_COLOUR_*: what the spawned model wears
 	// #133 PR 4e: a box seated on a custom track's own weapon crate. x/y/z are
-	// then that crate's position, the crate model's own origin, so the box
-	// spawns there without the ground-anchor lift. seatInst is the crate's
+	// then that crate's placement anchor. The AP model still needs its own
+	// base lift at that anchor. seatInst is the crate's
 	// instance, hidden while the box stands; seatFlags its draw and collision
 	// bits to give back, valid only while the pool generation is seatGen.
 	int              seated;
@@ -508,17 +508,9 @@ static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i)
 	// centre, so the row is passed through the shared spawn transform rather than
 	// copied into the matrix. Author-mode markers call the same helper, which is
 	// what makes a dropped box preview the height it will really stand at.
-	if (s_live[i].seated)
-	{
-		// A seat is the weapon crate's own position, and the AP box wears the
-		// same crate model on an ordinary level, so it stands exactly where the
-		// crate stood (#133 PR 4e).
-		pos.x = s_live[i].x;
-		pos.y = s_live[i].y;
-		pos.z = s_live[i].z;
-	}
-	else
-		AP_BoxModel_SpawnPos(model, s_live[i].x, s_live[i].y, s_live[i].z, &pos);
+	// Custom seats supply the track crate's anchor, not the AP model's
+	// centre. Apply the same measured model lift as an authored placement.
+	AP_BoxModel_SpawnPos(model, s_live[i].x, s_live[i].y, s_live[i].z, &pos);
 #if defined(CTR_NATIVE)
 	s_live[i].labelY = pos.y + AP_BoxModel_BaseOffsetY(model) + 28;
 #endif
@@ -753,7 +745,7 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 	         "[AP BOX] level %d (ap track %d): %d of %d placement(s) standing, placements from %s, seed %s\n",
 	         level, AP_BoxMap_ApTrack(level), s_liveCount, here,
 	         AP_Author_PlacementSource() == AP_PLACEMENT_SRC_FILE
-	             ? "the external " AP_AUTHOR_FILE
+	             ? "the external " AP_PLACEMENT_FILE
 	             : "the built-in default",
 	         s_seedHasBoxClass ? "carries the item_boxes class"
 	                           : "carries NO box locations");

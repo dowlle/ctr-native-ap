@@ -1,5 +1,5 @@
 name: Box placement submission
-description: Send item box spots you placed with the box authoring download.
+description: Send item box spots you placed with Box Author Mode.
 title: "[Boxes] "
 labels: ["help wanted"]
 body:
@@ -13,9 +13,9 @@ body:
   - type: textarea
     id: file
     attributes:
-      label: Your placement file
+      label: Your placement files
       description: |
-        Drag `ap-box-placements-authoring.json` from the authoring folder into this box. If you placed boxes on custom tracks, also drag in `ap-box-placements-custom-authoring.json`. If GitHub refuses a file, put it in a zip first.
+        In a race, hold Select and press Triangle to export. Then drag the files from the `box-submissions` folder next to the game into this box, one per track. If you cannot export, drag in `ap-box-placements-authoring.json` (and `ap-box-placements-custom-authoring.json` for custom tracks) from the same folder instead. If GitHub refuses a file, put it in a zip first.
     validations:
       required: true
 
@@ -41,8 +41,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: Authoring download version
-      description: The version in the zip name or in versions.txt.
+      label: Client version
+      description: The version in the zip name or in versions.txt, and whether you used the normal client or the box authoring download.
       placeholder: v0.2.1
     validations:
       required: false

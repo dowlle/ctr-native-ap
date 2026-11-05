@@ -547,7 +547,8 @@ void AP_PodiumExitReset(void)
 
 // Issue #235. CS_Podium_Prize_ThTick3 is the code that raises overlayTransition
 // to 2, clears VEH_FREEZE_PODIUM and plays the completion FX (0x67) when the
-// ceremony ends. The AP ordinary-Trophy presentation skips that prize thread,
+// ceremony ends; CS_Podium_Prize_ThTick1 stops the looping dance sounds just
+// before (issue #484). The AP ordinary-Trophy presentation skips that prize thread,
 // so nothing performs the terminal work and the player can be left frozen after
 // pressing continue. CS_Camera_ThTick_Podium calls this right after
 // CS_DestroyPodium_StartDriving() to reproduce exactly that work at the
@@ -564,6 +565,12 @@ void AP_PodiumExitTerminalWork(void)
 	work = AP_PodiumExitWork(ctr_cfg_active(), (int)sdata->gGT->podiumRewardID,
 	                         AP_PodiumSpecialTrack(), &ap_podium_exit);
 
+	// Issue #484: retail CS_Podium_Prize_ThTick1 stops these first.
+	if (work.stopDanceLoops)
+	{
+		OtherFX_Stop2(AP_PODIUM_DANCE_LOOP_FX_A);
+		OtherFX_Stop2(AP_PODIUM_DANCE_LOOP_FX_B);
+	}
 	if (work.overlayTransition != 0)
 		sdata->gGT->overlayTransition = (u8)work.overlayTransition;
 	if (work.releaseFreeze)

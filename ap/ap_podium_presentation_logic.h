@@ -45,16 +45,28 @@ static inline int AP_PodiumShouldBirthPrize(int apActive, int rewardId,
 }
 
 // Terminal work the retail prize thread performs when the ceremony ends
-// (CS_Podium_Prize_ThTick3, game/233/CS_Podium.c): raise overlayTransition to 2,
-// clear VEH_FREEZE_PODIUM, and play the completion FX (0x67). The AP ordinary
-// Trophy presentation births no prize thread, so the podium exit must reproduce
-// exactly that work itself or the player is left frozen. Zero means "do
-// nothing"; the engine applies only the effects that are set.
+// (CS_Podium_Prize_ThTick1 and CS_Podium_Prize_ThTick3, game/233/CS_Podium.c):
+// stop the two looping podium dance sounds, raise overlayTransition to 2, clear
+// VEH_FREEZE_PODIUM, and play the completion FX (0x67). The AP ordinary Trophy
+// presentation births no prize thread, so the podium exit must reproduce that
+// work itself or the player is left frozen (#235) and a dance loop keeps
+// playing in the hub (#484). Zero means "do nothing"; the engine applies only
+// the effects that are set.
+//
+// The dance loops: N. Gin's podium dance scripts (game/233/R233.c) play sound
+// 0xae, and as a runner-up also 0xaf. Both are the only podium sounds whose
+// retail KART.HWL entry carries the play-until-stopped flag (OtherFX flags & 2);
+// 0xae is a looped, noise-like hiss. Retail stops both with OtherFX_Stop2 in
+// CS_Podium_Prize_ThTick1 the moment the cutscene is over. The prize's
+// fly-to-HUD whoosh (0x9a) is left out on purpose: no prize flies.
+#define AP_PODIUM_DANCE_LOOP_FX_A 0xaf
+#define AP_PODIUM_DANCE_LOOP_FX_B 0xae
 typedef struct
 {
 	int overlayTransition; // 2 -> request the normal podium-exit overlay
 	int releaseFreeze;     // 1 -> clear VEH_FREEZE_PODIUM
 	int completionSound;   // 1 -> play the retail completion FX (0x67)
+	int stopDanceLoops;    // 1 -> OtherFX_Stop2 both podium dance loops
 } ap_podium_exit_work;
 
 // One-shot latch for the terminal work, scoped to a single podium lifetime.
@@ -71,7 +83,7 @@ static inline void AP_PodiumExitStateReset(ap_podium_exit_state *state)
 }
 
 // The production decision used at podium exit. Returns the terminal work the
-// exit must perform: all three effects exactly once for an AP ordinary-Trophy
+// exit must perform: all four effects exactly once for an AP ordinary-Trophy
 // presentation, and nothing for every other podium (non-AP Trophy, AP relic,
 // trial/Cortex, custom, and every other reward), whose retail prize thread
 // still performs its own terminal work.
@@ -83,6 +95,7 @@ static inline ap_podium_exit_work AP_PodiumExitWork(
 	work.overlayTransition = 0;
 	work.releaseFreeze = 0;
 	work.completionSound = 0;
+	work.stopDanceLoops = 0;
 
 	if (!AP_PodiumIsApTrophyPresentation(apActive, rewardId, specialTrack))
 		return work;
@@ -93,6 +106,7 @@ static inline ap_podium_exit_work AP_PodiumExitWork(
 	work.overlayTransition = 2;
 	work.releaseFreeze = 1;
 	work.completionSound = 1;
+	work.stopDanceLoops = 1;
 	return work;
 }
 

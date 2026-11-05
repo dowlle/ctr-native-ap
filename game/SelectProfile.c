@@ -1,5 +1,20 @@
 #include <common.h>
 
+#ifdef CTR_AP
+#include "../ap/ap_charswap.h"
+// A profile belongs to the memory card, not necessarily the connected slot.
+// Apply the same authoritative racer as a new Adventure before loading its
+// models. The per-frame seat may already have consumed this server revision.
+static void SelectProfile_ApplyApRacer(void)
+{
+	int racer = AP_CharSwap_GarageRacer();
+	if (racer < 0)
+		return;
+	sdata->advProgress.characterID = (s16)racer;
+	data.characterIDs[0] = (s16)racer;
+}
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80047da8-0x80047dfc.
 void SelectProfile_QueueLoadHub_MenuProc(struct RectMenu *menu)
 {
@@ -9,6 +24,9 @@ void SelectProfile_QueueLoadHub_MenuProc(struct RectMenu *menu)
 	gGT->levelID = MAIN_MENU_LEVEL;
 
 	data.characterIDs[0] = sdata->advProgress.characterID;
+#ifdef CTR_AP
+	SelectProfile_ApplyApRacer();
+#endif
 	MainRaceTrack_RequestLoad(gGT->currLEV);
 	RECTMENU_Hide(menu);
 	return;
@@ -682,6 +700,9 @@ static void SelectProfile_LoadAdvProfile(int slot)
 	GAMEPROG_SyncGameAndCard(&memcard->gameProgress, &sdata->gameProgress);
 	sdata->advProgress = memcard->advProgress[slot];
 	data.characterIDs[0] = sdata->advProgress.characterID;
+#ifdef CTR_AP
+	SelectProfile_ApplyApRacer();
+#endif
 	memmove(gGT->prevNameEntered, sdata->advProgress.name, sizeof(gGT->prevNameEntered));
 }
 

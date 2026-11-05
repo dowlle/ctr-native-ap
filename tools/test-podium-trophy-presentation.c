@@ -16,7 +16,8 @@
  *   - The same policy's exit teardown (AP_PodiumExitWork) reproduces exactly
  *     the work the missing prize thread performed in CS_Podium_Prize_ThTick3:
  *     request overlay transition 2, clear VEH_FREEZE_PODIUM, play the completion
- *     FX, once per AP Trophy podium, and none of it for a non-AP Trophy, an AP
+ *     FX, and (from CS_Podium_Prize_ThTick1, #484) stop the two looping podium
+ *     dance sounds 0xaf and 0xae, once per AP Trophy podium, and none of it for a non-AP Trophy, an AP
  *     relic, or an AP trial/Cortex Trophy that keeps its prize.
  *   - The shared #330 formatter (ap/ap_reward_text.h) that the podium caller
  *     uses still builds the own, foreign, unknown-fallback and long-recipient
@@ -76,6 +77,7 @@ typedef struct
 	int overlayTransition;
 	int freezePodium;
 	int completionSounds;
+	int danceLoopsPlaying; // 0xaf / 0xae still looping (N. Gin's dance)
 } exit_effects;
 
 static void apply_exit_work(const ap_podium_exit_work *work, exit_effects *fx)
@@ -86,10 +88,16 @@ static void apply_exit_work(const ap_podium_exit_work *work, exit_effects *fx)
 		fx->freezePodium = 0;
 	if (work->completionSound)
 		fx->completionSounds++;
+	if (work->stopDanceLoops)
+		fx->danceLoopsPlaying = 0;
 }
 
 int main(void)
 {
+	// The two ids retail CS_Podium_Prize_ThTick1 stops (game/233/CS_Podium.c).
+	expect(AP_PODIUM_DANCE_LOOP_FX_A, 0xaf, "dance loop A is retail 0xaf");
+	expect(AP_PODIUM_DANCE_LOOP_FX_B, 0xae, "dance loop B is retail 0xae");
+
 	// ── The AP Trophy presentation owns the podium ──────────────────────────
 	// AP active + ordinary retail Trophy -> no retail prize, so no INC_TROPHY
 	// count-up.
@@ -139,12 +147,15 @@ int main(void)
 		fx.overlayTransition = 0;
 		fx.freezePodium = 1; // as CS_Podium_FullScene_Init sets VEH_FREEZE_PODIUM
 		fx.completionSounds = 0;
+		fx.danceLoopsPlaying = 1; // N. Gin's podium dance started 0xae
 
 		work = AP_PodiumExitWork(1, AP_PODIUM_TROPHY_MODEL, 0, &state);
 		expect(work.overlayTransition, 2, "AP Trophy exit requests overlay 2");
 		expect(work.releaseFreeze, 1, "AP Trophy exit releases the freeze");
 		expect(work.completionSound, 1, "AP Trophy exit plays the completion FX");
+		expect(work.stopDanceLoops, 1, "AP Trophy exit stops the dance loops (#484)");
 		apply_exit_work(&work, &fx);
+		expect(fx.danceLoopsPlaying, 0, "no podium dance loop survives into the hub (#484)");
 		expect(fx.freezePodium, 0, "AP Trophy exit cannot strand the player");
 		expect(fx.overlayTransition, 2, "AP Trophy exit ends at transition 2");
 
@@ -154,6 +165,7 @@ int main(void)
 		expect(work.overlayTransition, 0, "AP Trophy exit is one-shot (overlay)");
 		expect(work.releaseFreeze, 0, "AP Trophy exit is one-shot (freeze)");
 		expect(work.completionSound, 0, "AP Trophy exit is one-shot (sound)");
+		expect(work.stopDanceLoops, 0, "AP Trophy exit is one-shot (dance loops)");
 		apply_exit_work(&work, &fx);
 		expect(fx.completionSounds, 1, "completion FX plays exactly once");
 		expect(fx.overlayTransition, 2, "second drive does not re-transition");
@@ -171,15 +183,18 @@ int main(void)
 		work = AP_PodiumExitWork(0, AP_PODIUM_TROPHY_MODEL, 0, &state);
 		expect(work.overlayTransition, 0, "non-AP Trophy does no exit work");
 		expect(work.releaseFreeze, 0, "non-AP Trophy keeps its prize thread work");
+		expect(work.stopDanceLoops, 0, "non-AP Trophy leaves the stops to its prize thread");
 
 		work = AP_PodiumExitWork(1, TEST_STATIC_RELIC, 0, &state);
 		expect(work.overlayTransition, 0, "AP relic does no exit work");
 		expect(work.releaseFreeze, 0, "AP relic keeps its prize thread work");
 		expect(work.completionSound, 0, "AP relic plays no extra FX");
+		expect(work.stopDanceLoops, 0, "AP relic leaves the stops to its prize thread");
 
 		work = AP_PodiumExitWork(1, AP_PODIUM_TROPHY_MODEL, 1, &state);
 		expect(work.overlayTransition, 0, "AP special-track Trophy does no exit work");
 		expect(work.releaseFreeze, 0, "AP special-track Trophy keeps its prize");
+		expect(work.stopDanceLoops, 0, "AP special-track Trophy keeps its prize stops");
 	}
 
 	// ── Shared #330 formatter integration on the podium caller path ──────────

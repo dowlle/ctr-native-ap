@@ -1774,6 +1774,18 @@ for name, source, change in [
 # the generator's validator must agree on each.
 for fixture in ("ctr-first", "wumpa-shop", "wumpa-goal-only", "boss-shuffle", "all-030", "chaos-final", "oxide-off-swap"):
     cases.append((fixture + "-fixture", json.loads((root / f"tools/fixtures/content-plan/{fixture}.json").read_text()), True))
+# Keep the published income-only fixtures as compatibility cases, and admit
+# the new versioned Key-budget record at both bounds and the default scale.
+for scale in (25, 100, 400, 24, 401, True, "100"):
+    case = copy.deepcopy(next(w for n, w, ok in cases if n == "wumpa-shop-fixture"))
+    p = case["content_plan"]
+    p["wumpa_shop"]["logic_scale"] = scale
+    index = p["required_features"].index("wumpa_shop_v1") + 1
+    p["required_features"].insert(index, "wumpa_shop_key_tiers_v1")
+    cases.append((f"shop-key-budget-{scale!r}", case, type(scale) is int and 25 <= scale <= 400))
+case = copy.deepcopy(next(w for n, w, ok in cases if n == "wumpa-shop-fixture"))
+case["content_plan"]["wumpa_shop"]["logic_scale"] = 100
+cases.append(("shop-key-budget-missing-feature", case, False))
 def j11_env(name, change, fixture):
     case = copy.deepcopy(next(w for n, w, ok in cases if n == fixture + "-fixture"))
     change(case)
@@ -1975,6 +1987,20 @@ for index, extra in enumerate(row5_sets):
             cases.append((f"row5-{index}-{unlock}-{seed}", make_world(options, seed=seed).fill_slot_data(), True))
             row5_cases += 1
 assert row5_cases == 144, row5_cases
+# A2-6 (alpha1 room refusal): AP Box Colours over the whole matrix of
+# color_boxes_by_item, spoiler_items, ap_item_type_colors and box_locations.
+# Native wanted the item whenever the plan had boxes; the apworld creates it
+# only for coloured boxes, so `color_boxes_by_item: false` with Spoiler Items
+# and boxes on was refused by the client.
+for colours in (False, True):
+    for spoiler in (False, True):
+        for type_colours in (False, True):
+            for boxes in (False, True):
+                room = make_world(row5_options("randomized", dict(color_boxes_by_item=colours, spoiler_items=spoiler,
+                                                                  ap_item_type_colors=type_colours, box_locations=boxes)),
+                                  seed=1).fill_slot_data()
+                assert ("ap_box_colours" in room["content_plan"].get("item_packs", {})) == (colours and spoiler and boxes)
+                cases.append((f"a2-6 colours={colours} spoiler={spoiler} type={type_colours} boxes={boxes}", room, True))
 row5_cup = make_world(row5_options("randomized", row5_sets[6]), seed=1).fill_slot_data()
 row5_gauntlet = make_world(row5_options("randomized", row5_sets[7]), seed=1).fill_slot_data()
 row5_first = make_world(row5_options("randomized", row5_sets[0]), seed=1).fill_slot_data()
@@ -2041,8 +2067,12 @@ for name, change in [
 # The verifier's copy of the per-track USF finish rulings (#133 PR 8,
 # ap/ap_content_verify.hpp kUsfRulings) equals the apworld's table.
 from worlds.ctr import content_capability as ccap
-native_rulings = {k: v == "1" for k, v in re.findall(r'\{"([a-z0-9-]+)", ([01])\}',
-                  re.search(r"kUsfRulings\[\] = \{(.*?)\};", (root / "ap/ap_content_verify.hpp").read_text(), re.S)[1])}
+native_rows = [((k, r or None, h or None), int(v)) for k, r, h, v in re.findall(
+               r'\{"([a-z0-9-]+)", "([^"]*)", "([0-9a-f]*)", ([012])\}',
+               re.search(r"kUsfRulings\[\] = \{(.*?)\};", (root / "ap/ap_content_verify.hpp").read_text(), re.S)[1])]
+native_rulings = dict(native_rows)
+# finish_boost returns the first matching row, so a repeated key would hide a mismatch.
+assert len(native_rulings) == len(native_rows), native_rows
 assert native_rulings == ccap.USF_FINISH_RULINGS, (native_rulings, ccap.USF_FINISH_RULINGS)
 # Row 10i parity fixes: Reach 10 Wumpa from cup legs and boss races, rungs
 # from cup legs, vanilla garages free without Trophies, Turbo Track's five Gem

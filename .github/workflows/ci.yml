@@ -22,10 +22,18 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  harnesses:
-    name: host harnesses
+  # The list is split into four shards by a hash of each harness name (see the
+  # header of tools/ci/run-harnesses.py). Each shard writes a result file; the
+  # `host harnesses` job below collects them, repeats the unlisted check over the
+  # whole tree and fails if any shard failed or did not run.
+  harness-shard:
+    name: host harnesses shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -39,8 +47,37 @@ jobs:
           sudo apt-get install -y -q libssl-dev:i386 zlib1g-dev:i386 openssl
       - name: Vendor headers (pinned by ap/vendor/versions.lock)
         run: bash ap/vendor/fetch-deps.sh
-      - name: Build and run every host harness, Python harness and boundary check
-        run: python3 tools/ci/run-harnesses.py
+      - name: Build and run this shard's harnesses, Python harnesses and boundary checks
+        run: python3 tools/ci/run-harnesses.py --shard ${{ matrix.shard }}/4 --results shard-results
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: harness-shard-${{ matrix.shard }}
+          path: shard-results/shard-${{ matrix.shard }}.txt
+          retention-days: 3
+          if-no-files-found: warn
+
+  harnesses:
+    name: host harnesses
+    needs: harness-shard
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: harness-shard-*
+          path: shard-results
+      - name: Whole-list summary (unlisted detection stays global)
+        run: python3 tools/ci/run-harnesses.py --summary shard-results --count 4
+      - name: Shard job results
+        if: always()
+        run: |
+          echo "shard jobs: ${{ needs.harness-shard.result }}"
+          test "${{ needs.harness-shard.result }}" = "success"
 
   release-trust:
     name: release trust tests

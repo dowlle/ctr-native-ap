@@ -89,6 +89,10 @@ For 0.2.0, the maintainer has approved a community-tested baseline. The in-game 
       the version string is compiled in, so the commit must be final first.
 - [ ] Verify the version string is embedded in the binary and both build
       targets (vanilla + AP) compile.
+- [ ] The CI release build (`tools/ci/build-clients.sh`, `-DCTR_RELEASE_BUILD=ON`)
+      shows the plain version in the window title (`Crash Team Racing - CTR-AP
+      vX.Y.Z`). `package-client.py` fails the build if the binary still contains
+      the ` | Internal` dev marker. Local builds keep the marker.
 - [ ] Configure the AP build from a FRESH build dir (a stale CMake cache can
       skip the vendor gate). Configure must pass `APVendorCheck` with tree
       hashing ON (the default; never pass `-DCTR_AP_VERIFY_VENDOR=OFF` for a
@@ -252,6 +256,8 @@ and upload steps are scoped to a complete two-platform release in section 7.
 
 ## 5. Tag
 
+- [ ] Tag only the exact native commit whose `Release rehearsal` check passed,
+      using the apworld commit selected by that rehearsal for the pair.
 - [ ] Same tag `vX.Y.Z` on BOTH repos at the exact release commits, pushed.
       The player-facing GitHub release lives on this repo only; the apworld
       tag exists for traceability.

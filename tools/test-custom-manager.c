@@ -75,6 +75,9 @@ int XdeltaImport_StartScan(const char *p,const char *d,const char *a) { (void)p;
 int XdeltaImport_PollScan(int *progress,struct XdeltaImportSummary *s,char *e,size_t n)
 { *progress=37; if(scanState==1) *s=fakeSummary; if(scanState==-2) snprintf(e,n,"Patch does not match this disc"); return scanState; }
 void XdeltaImport_DiscardScan(void) { discards++; scanState=-1; }
+int XdeltaImport_StartPatchStates(const char *a,char names[][CTR_XDELTA_NAME_MAX],int count) { (void)a;(void)names;(void)count; return 1; }
+int XdeltaImport_PollPatchStates(struct XdeltaPatchState *out,int max) { memset(out,0,sizeof(*out)*(size_t)max); return 1; }
+int XdeltaImport_SetItemTitle(unsigned item,const char *title) { (void)item;(void)title; return 1; }
 static int lastWhere, dropState;
 int XdeltaImport_StartInstall(const unsigned char *sel,unsigned count,const char *a,int where)
 { (void)a; memcpy(lastSelected,sel,count); lastWhere=where; installStarts++; installState=0; return 1; }

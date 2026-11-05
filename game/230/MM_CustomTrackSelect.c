@@ -19,6 +19,7 @@
    (native_custom_records.h), never the memory card. */
 #include <platform/native_custom_track_library.h>
 #include <platform/native_custom_offline.h>
+#include <platform/native_custom_music.h>
 #include <platform/native_assets.h>
 #include <platform/native_custom_revision.h>
 #include <platform/native_input.h> // Platform_InputRawGamepadButtons
@@ -305,6 +306,16 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
                    Arcade. Only the selected content and authored laps change. */
                 gGT->currLEV = host;
                 gGT->numLaps = CustomOffline_RuntimeLaps();
+                /* No .sca: an imported track plays the retail music of the
+                   track it replaces, any other plays Crash Cove's. */
+                {
+                    const struct CustomTrackLibraryEntry *chosen = rows ? CustomTrackLibrary_Row(&s_arcadeLibrary, first + row) : NULL;
+                    struct CustomPackageManifest running;
+                    /* Only for the entry that was prepared (same pin). */
+                    CustomOffline_SetMusicFallbackLevel(chosen && chosen->local.xdelta &&
+                        CustomOffline_RuntimeManifest(&running) && !strcmp(running.sha256, chosen->manifestSha256) ?
+                        CustomMusic_ReplacedLevel(chosen->local.bigfileIndex) : -1);
+                }
                 D230.trackSel_StartRaceAfterFadeOut = 1;
                 D230.trackSel_transitionState = EXITING_MENU;
                 s_customTimeTrialPending = mode == CTR_OFFLINE_MODE_TIME_TRIAL;

@@ -20,9 +20,12 @@
 
 #include "ap_wumpa_shop.h"
 #include "ap_wumpa_shop_menu.h"
+#include "ap_text_clip.h"
 
 #define AP_WSHOP_VISIBLE 9
 #define AP_WSHOP_ROW_H 0xd
+#define AP_WSHOP_NAME_X 0x44
+#define AP_WSHOP_RIGHT_X 0x1d0
 #define AP_WSHOP_MSG_FRAMES 150
 
 static struct
@@ -32,11 +35,12 @@ static struct
 	int cursor;
 	int top;
 	int msgFrames;
+	int marqueeFrame; // frames the selected row has been shown, restarts on a move
 	char msg[48];
 	long long buying;     // code of the purchase in flight, -1 none
 	int hinted[AP_WUMPA_SHOP_HUBS];
 	char hintedSeed[96]; // the seed and slot the hinted flags belong to
-} ap_wshop = {0, 0, 0, 0, 0, "", -1, {0}, ""};
+} ap_wshop = {0, 0, 0, 0, 0, 0, "", -1, {0}, ""};
 
 // The green load/save rows with WUMPA SHOP first (ap_wumpa_shop_menu.h).
 static struct MenuRow ap_wshop_green_rows[AP_WSHOP_GREEN_ROWS + 1] = AP_WSHOP_GREEN_ROWS_INIT;
@@ -130,6 +134,7 @@ int AP_WumpaShopGreenMenuRow(struct RectMenu *menu, int row)
 	ap_wshop.hub = hub;
 	ap_wshop.cursor = 0;
 	ap_wshop.top = 0;
+	ap_wshop.marqueeFrame = 0;
 	ap_wshop.msg[0] = '\0';
 	ap_wshop.msgFrames = 0;
 	AP_LogLine("[AP WUMPA SHOP] page opened\n");
@@ -210,10 +215,18 @@ static void AP_WShopClose(void)
 	ap_wshop.buying = -1;
 }
 
+// Width of `len` characters of `s` (the whole string for len < 0) in the shop's
+// font, from the font's own tables.
+static int AP_WShopTextWidth(const char *s, int len, void *ctx)
+{
+	(void)ctx;
+	return DecalFont_GetLineWidthStrlen((char *)s, len, FONT_SMALL);
+}
+
 static void AP_WShopDrawRow(int hub, int k, int y, int selected)
 {
 	const AP_WumpaShopSlot *s = &ctr_wumpa_shop.slot[hub][k];
-	char itemRaw[64], playerRaw[64], itemS[40], playerS[24], name[64], right[24];
+	char itemRaw[64], playerRaw[64], itemS[40], playerS[24], name[72], right[24];
 	long long item = 0;
 	int player = -1, state, color;
 	unsigned flags = 0;
@@ -240,12 +253,6 @@ static void AP_WShopDrawRow(int hub, int k, int y, int selected)
 		snprintf(name, sizeof name, "%s (%s)", itemS, playerS);
 	else
 		snprintf(name, sizeof name, "%s", itemS);
-	if ((int)strlen(name) > 34)
-	{
-		name[33] = '.';
-		name[34] = '\0';
-	}
-
 	state = AP_WShopSlotState(hub, k);
 	color = known ? AP_ClassFontColor(flags) : WHITE;
 	switch (state)
@@ -271,8 +278,30 @@ static void AP_WShopDrawRow(int hub, int k, int y, int selected)
 		snprintf(num, sizeof num, "%d", k + 1);
 		DecalFont_DrawLine(num, 0x3c, y, FONT_SMALL, (selected ? WHITE : ORANGE) | JUSTIFY_RIGHT);
 	}
-	DecalFont_DrawLine(name, 0x44, y, FONT_SMALL, color);
-	DecalFont_DrawLine(right, 0x1d0, y, FONT_SMALL,
+	{
+		// The name column ends one character cell before the price column, so
+		// the name never prints over the price or SOLD. Unselected rows clip;
+		// the selected row scrolls its whole name.
+		int avail = AP_WSHOP_RIGHT_X - AP_WSHOP_NAME_X - AP_WShopTextWidth(right, -1, 0) -
+		            AP_WShopTextWidth(" ", 1, 0);
+		int len = (int)strlen(name), start = 0, shown, marked = 0;
+		char cut[72];
+		if (selected)
+		{
+			AP_TextMarquee(AP_WShopTextWidth, 0, name, len, avail, ap_wshop.marqueeFrame++, &start, &shown);
+		}
+		else
+			shown = AP_TextClipLen(AP_WShopTextWidth, 0, name, len, avail, &marked);
+		memcpy(cut, name + start, (size_t)shown);
+		cut[shown] = '\0';
+		if (marked && shown + 1 < (int)sizeof cut)
+		{
+			cut[shown] = '.';
+			cut[shown + 1] = '\0';
+		}
+		DecalFont_DrawLine(cut, AP_WSHOP_NAME_X, y, FONT_SMALL, color);
+	}
+	DecalFont_DrawLine(right, AP_WSHOP_RIGHT_X, y, FONT_SMALL,
 	                   (state == AP_WUMPA_SLOT_TOO_POOR ? RED : selected ? WHITE : ORANGE) | JUSTIFY_RIGHT);
 }
 
@@ -383,6 +412,7 @@ int AP_WumpaShopMenuFrame(void)
 			ap_wshop.top = ap_wshop.cursor;
 		if (ap_wshop.cursor >= ap_wshop.top + AP_WSHOP_VISIBLE)
 			ap_wshop.top = ap_wshop.cursor - AP_WSHOP_VISIBLE + 1;
+		ap_wshop.marqueeFrame = 0;
 		OtherFX_Play(0, 1);
 	}
 	if (tap & BTN_CROSS)

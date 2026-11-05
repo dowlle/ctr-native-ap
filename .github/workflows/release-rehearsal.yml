@@ -1,0 +1,40 @@
+name: Release rehearsal
+
+on:
+  schedule:
+    - cron: '47 3 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - tools/ci/package-client.py
+      - tools/release/**
+      - tools/solo/**
+      - tools/verify-release.py
+      - CMakeLists.txt
+      - .github/workflows/**
+
+# This workflow assembles temporary assets only. It has no tag, release or
+# signing permissions; the artifact expires after one day.
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rehearsal-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  rehearse:
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: ${{ fromJSON(github.event_name == 'schedule' && '["main","dev/custom-pad-0.3.0"]' || format('["{0}"]', github.ref_name)) }}
+    uses: ./.github/workflows/release-assembly.yml
+    with:
+      mode: rehearsal
+      version: 0.0.0-rehearsal
+      rehearsal_label: ${{ (matrix.branch == 'main' || github.base_ref == 'main') && 'main' || 'dev' }}
+      native_ref: ${{ github.event_name == 'pull_request' && github.sha || matrix.branch }}
+      apworld_branch: ${{ (matrix.branch == 'main' || (github.event_name == 'pull_request' && github.base_ref == 'main')) && 'main' || 'dev/custom-pad-0.3.0' }}
+      pr_number: ${{ github.event_name == 'pull_request' && format('{0}', github.event.pull_request.number) || '' }}
+      pr_head_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}

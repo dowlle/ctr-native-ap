@@ -245,6 +245,71 @@ static void test_options()
 	CHECK(AP_SoloBuildOptions(nlohmann::json::parse("{\"overlay\": 5}")).empty());
 }
 
+// Alpha2: every option is a row. Large ranges move by the overlay's step and
+// stop at both ends; help text drops its Markdown and hard line breaks.
+static void test_option_steps_and_help()
+{
+	const nlohmann::json d = nlohmann::json::parse(R"({
+	  "options": [
+	    {"name": "goal_wumpa", "display_name": "Goal Wumpa", "kind": "range", "default": 0, "range_start": 0, "range_end": 5000,
+	     "doc": "Bank this many Wumpa Fruit\nover the whole seed.\n\nUse `1000` for a **long** goal:\n- first item\n- second item\n\nLast line."},
+	    {"name": "wumpa_shop_prices", "display_name": "Prices", "kind": "range", "default": 100, "range_start": 25, "range_end": 400},
+	    {"name": "relic_count", "display_name": "Relics", "kind": "named_range", "default": 18, "range_start": 1, "range_end": 54},
+	    {"name": "plando", "display_name": "Plando", "kind": "list", "default": []},
+	    {"name": "tags", "display_name": "Tags", "kind": "set", "default": []}
+	  ],
+	  "overlay": {"groups": [{"label": "A", "options": ["goal_wumpa", "plando"]},
+	                         {"label": "B", "options": ["wumpa_shop_prices", "relic_count", "tags"]}],
+	              "rules": [{"option": "goal_wumpa", "step": 50}, {"option": "wumpa_shop_prices", "step": 25},
+	                        {"option": "relic_count", "label": "Short Relic Name"}]},
+	  "values": {"goal_wumpa": 0, "wumpa_shop_prices": 100, "relic_count": 18}
+	})");
+	std::vector<APSoloOption> rows = AP_SoloBuildOptions(d);
+	CHECK(rows.size() == 3); // lists and sets are never rows
+	APSoloOption *gw = find(rows, "goal_wumpa"), *pr = find(rows, "wumpa_shop_prices"), *rc = find(rows, "relic_count");
+	CHECK(gw && pr && rc);
+	if (!(gw && pr && rc))
+		return;
+	CHECK(gw->step == 50 && pr->step == 25 && rc->step == 1);
+	CHECK(rc->kind == "range" && rc->lo == 1 && rc->hi == 54);
+	CHECK(rc->label == "Short Relic Name" && gw->label == "Goal Wumpa"); // a rule may shorten a row name
+	AP_SoloOptionStep(*gw, 1);
+	CHECK(gw->value == "50");
+	for (int i = 0; i < 99; i++)
+		AP_SoloOptionStep(*gw, 1);
+	CHECK(gw->value == "5000");
+	AP_SoloOptionStep(*gw, 1); // past the top wraps to the bottom
+	CHECK(gw->value == "0");
+	AP_SoloOptionStep(*gw, -1);
+	CHECK(gw->value == "5000");
+	// A value off the grid still reaches the end instead of overshooting it.
+	gw->value = "4990";
+	AP_SoloOptionStep(*gw, 1);
+	CHECK(gw->value == "5000");
+	gw->value = "20";
+	AP_SoloOptionStep(*gw, -1);
+	CHECK(gw->value == "0");
+	// Prices: 25 to 400 in steps of 25, always inside the range.
+	pr->value = "25";
+	AP_SoloOptionStep(*pr, -1);
+	CHECK(pr->value == "400");
+	AP_SoloOptionStep(*pr, 1);
+	CHECK(pr->value == "25");
+	for (int i = 0; i < 40; i++)
+	{
+		AP_SoloOptionStep(*pr, 1);
+		const int v = atoi(pr->value.c_str());
+		CHECK(v >= 25 && v <= 400);
+	}
+	// A named range without a step moves by one.
+	AP_SoloOptionStep(*rc, 1);
+	CHECK(rc->value == "19");
+	// Help text.
+	CHECK(gw->doc == "Bank this many Wumpa Fruit over the whole seed.\nUse 1000 for a long goal:\n- first item\n- second item\nLast line.");
+	CHECK(AP_SoloHelpText("").empty());
+	CHECK(AP_SoloHelpText("\n\n  one  \n  two\n\n") == "one two");
+}
+
 // The custom-track step (decision 32): mode labels, the pick cycle and the
 // descriptor file name the client keeps in solo/tracks.
 static void test_tracks()
@@ -374,6 +439,7 @@ int main()
 	test_stop_and_timeout();
 	test_error_text();
 	test_options();
+	test_option_steps_and_help();
 	test_tracks();
 	test_needs_laps();
 	test_store_descriptor_rescan();

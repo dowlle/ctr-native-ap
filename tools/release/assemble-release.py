@@ -537,12 +537,13 @@ def assemble(args: argparse.Namespace) -> list[Path]:
         fail(f"native source checkout is not clean: {detail}")
     validate_tracked_companions(source)
     source_compat, source_build = read_source_identity(source)
-    if source_build != version:
+    rehearsal = getattr(args, "rehearsal", False)
+    if not rehearsal and source_build != version:
         fail(f"native source CTR_AP_VERSION is {source_build!r}, requested {version!r}")
-    if source_compat != version.split("-", 1)[0]:
+    if source_compat != source_build.split("-", 1)[0]:
         fail("native source compatibility version does not match requested release")
-    validate_apworld(args.apworld.resolve(), version, source_compat)
-    validate_template(args.template.resolve(), version, source_compat)
+    validate_apworld(args.apworld.resolve(), source_build, source_compat)
+    validate_template(args.template.resolve(), source_build, source_compat)
     output.mkdir(parents=True, exist_ok=True)
     expected_assets = standard_asset_names(version)
     authoring_assets = release_policy.authoring_asset_names(version) if getattr(args, "authoring", False) else []
@@ -590,7 +591,8 @@ def assemble(args: argparse.Namespace) -> list[Path]:
         versions = subprocess.check_output(
             ["bash", str(source / "tools" / "release-versions.sh")], cwd=source, text=True
         )
-        if f"CTR-AP build: v{version}" not in versions and f"CTR-AP build: {version}" not in versions:
+        identity_version = source_build if rehearsal else version
+        if f"CTR-AP build: v{identity_version}" not in versions and f"CTR-AP build: {identity_version}" not in versions:
             fail("versions.txt does not carry the requested build identity")
         (temp / "versions.txt").write_text(versions, encoding="utf-8")
         bundle_common = [*common, temp / "versions.txt"]
@@ -689,6 +691,10 @@ def parser() -> argparse.ArgumentParser:
         "--authoring",
         action="store_true",
         help="also emit the separate box authoring download (both platforms)",
+    )
+    result.add_argument(
+        "--rehearsal", action="store_true",
+        help="label temporary output with --version while checking embedded identities against source",
     )
     return result
 

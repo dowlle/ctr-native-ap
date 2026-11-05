@@ -11,6 +11,8 @@
 struct CustomOfflineRequest { struct CustomPackageOwned *package; };
 static struct CustomOfflineRequest *activeRequest;
 static int activeHost = -1;
+/* Retail arcade track the active package replaces (xdelta import), or -1. */
+static int musicFallbackLevel = -1;
 static int activeMode;
 static int activeLaps;
 static uint64_t runtimeGeneration;
@@ -204,6 +206,7 @@ void CustomOffline_EndRuntime(void)
 {
     release_runtime_audio();
     CustomOffline_Free(&activeRequest);
+    musicFallbackLevel = -1;
     activeHost = -1;
     activeMode = 0;
     activeLaps = 0;
@@ -211,6 +214,8 @@ void CustomOffline_EndRuntime(void)
 }
 
 int CustomOffline_RuntimeActive(void) { return activeRequest != NULL; }
+int CustomOffline_MusicFallbackLevel(void) { return musicFallbackLevel; }
+void CustomOffline_SetMusicFallbackLevel(int level) { musicFallbackLevel = activeRequest && level >= 0 && level < 18 ? level : -1; }
 uint64_t CustomOffline_RuntimeGeneration(void) { return runtimeGeneration; }
 int CustomOffline_RuntimeLaps(void) { return activeLaps; }
 

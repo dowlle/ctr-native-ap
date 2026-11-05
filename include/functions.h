@@ -474,6 +474,8 @@ int HOWL_CustomMusic_CortexLoadBank(int level, struct Bank *thisBank);
 void HOWL_CustomMusic_BankDone(void);
 int HOWL_CustomMusic_ServeSectors(void *destination, int firstSector, int numSector);
 int HOWL_CustomMusic_SetSong(void);
+int HOWL_CustomMusic_FallbackFXBank(void);
+int HOWL_CustomMusic_FallbackSongBank(void);
 #endif
 
 int MATH_Sin(u32 angle);

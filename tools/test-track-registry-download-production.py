@@ -17,7 +17,10 @@ Cases, each checked against the file system afterwards:
      lists twice, refuses before any file is fetched,
   5. Saphi listing another size than the room pins refuses before any file,
   6. the transport allow-list takes Project Saphi and GitHub raw only, and the
-     HTTP decoder refuses a body past its cap.
+     HTTP decoder refuses a body past its cap,
+  7. a failed transfer keeps its HTTP status and Retry-After, names the status
+     in its message, and only a 429, 502-504 or a cut-off 200 is retried, after
+     the server's Retry-After (A2-20: Saphi rate-limits rapid downloads).
 """
 from pathlib import Path
 import subprocess
@@ -226,6 +229,67 @@ int main()
 		expect(!decode_http_response(redirect, 100, body, error, "the track registry"), "a redirect is not followed");
 	}
 
+	// 7. Status, Retry-After and the retry policy.
+	{
+		auto decode = [](const std::string &raw, HttpOutcome &outcome, std::string &error) {
+			std::vector<unsigned char> bytes(raw.begin(), raw.end()), body;
+			error.clear();
+			return decode_http_response(bytes, 100, body, error, "Project Saphi", &outcome);
+		};
+		HttpOutcome limited;
+		std::string error;
+		expect(!decode("HTTP/1.1 429 Too Many Requests\r\nRetry-After: 3\r\nContent-Length: 2\r\n\r\n{}", limited, error) &&
+		       limited.status == 429 && limited.retry_after == 3 && transfer_retryable(limited) &&
+		       error == "Project Saphi is busy (HTTP 429). Retry in a minute.", "a 429 keeps status and Retry-After: " + error);
+		HttpOutcome missing;
+		expect(!decode("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n", missing, error) && missing.status == 404 &&
+		       missing.retry_after == -1 && !transfer_retryable(missing) &&
+		       error == "Project Saphi refused the file (HTTP 404).", "a 404 is named and not retried: " + error);
+		HttpOutcome later;
+		expect(!decode("HTTP/1.1 429 Too Many Requests\r\nRetry-After: 7200\r\n\r\n", later, error) &&
+		       transfer_retry_delay(later, 1) == 60, "a Retry-After past an hour still waits the 60 s cap");
+		HttpOutcome bare;
+		expect(decode("HTTP/1.1 200\r\nContent-Length: 2\r\n\r\nok", bare, error) && bare.status == 200,
+		       "a 200 without a reason phrase is read");
+		HttpOutcome cut;
+		expect(!decode("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n10\r\nabc", cut, error) &&
+		       cut.status == 200 && cut.interrupted && transfer_retryable(cut), "a cut-off chunked 200 is retried");
+		HttpOutcome shortened;
+		expect(!decode("HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nabcde", shortened, error) &&
+		       shortened.status == 200 && shortened.interrupted && transfer_retryable(shortened) &&
+		       error.find("incomplete") != std::string::npos, "a 200 shorter than its Content-Length is retried");
+		HttpOutcome garbage;
+		expect(!decode("XTTP/1.1 200 OK\r\n\r\n", garbage, error) && garbage.status == 0 &&
+		       error.find("invalid HTTP response") != std::string::npos, "a status line that is not HTTP is refused");
+		HttpOutcome slow;
+		slow.status = 503; slow.retry_after = 100;
+		expect(transfer_retry_delay(slow, 1) == 60 && transfer_retry_delay(HttpOutcome{}, 2) == 4,
+		       "Retry-After is capped at 60 s; without one the wait grows 2, 4, 6");
+
+		auto run = [](std::vector<HttpOutcome> answers, std::vector<int> &waits, int &calls, std::string &error) {
+			waits.clear(); calls = 0; error.clear();
+			return transfer_with_retries("www.projectsaphi.com", "/api/v3/tracks/21/downloads/717",
+				[&](HttpOutcome &outcome, std::string &failure) {
+					outcome = answers[std::min<size_t>(calls, answers.size() - 1)];
+					calls++;
+					if (outcome.status == 200 && !outcome.interrupted) return true;
+					failure = transfer_error("Project Saphi", outcome);
+					return false;
+				},
+				[&](int seconds) { waits.push_back(seconds); }, error);
+		};
+		HttpOutcome ok; ok.status = 200;
+		HttpOutcome busy; busy.status = 429; busy.retry_after = 3;
+		HttpOutcome down; down.status = 503;
+		std::vector<int> waits; int calls = 0;
+		expect(run({busy, down, ok}, waits, calls, error) && calls == 3 && waits == std::vector<int>({3, 4}) && error.empty(),
+		       "429 then 503 then 200 succeeds after waits of 3 and 4 s");
+		expect(!run({missing}, waits, calls, error) && calls == 1 && waits.empty() &&
+		       error == "Project Saphi refused the file (HTTP 404).", "a 404 is asked once");
+		expect(!run({busy}, waits, calls, error) && calls == kTransferAttempts && (int)waits.size() == kTransferAttempts - 1 &&
+		       error.find("HTTP 429") != std::string::npos, "a lasting 429 gives up after the last attempt: " + error);
+	}
+
 	rmdir(tracks.c_str()); rmdir(tmpl);
 	std::printf("%d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
@@ -241,4 +305,4 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run([str(exe)], check=True, cwd=root)
 print("PASS: registry download: start refusals, clean install of the named Saphi ids, tampered or foreign bytes, "
       "ids outside the track, unlisted or doubled, and a listed size off the pin all refuse with no folder; host "
-      "allow-list; HTTP body cap; no redirect")
+      "allow-list; HTTP body cap; no redirect; HTTP status, Retry-After and the 429/5xx retry policy")

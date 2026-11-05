@@ -47,5 +47,14 @@ class VersionResourceGateTests(unittest.TestCase):
             PACKAGE.require_version_resource(sample_pe(data_size=0))
 
 
+class ReleaseTitleGateTests(unittest.TestCase):
+    def test_plain_title_passes(self):
+        PACKAGE.require_release_title(b"\0Crash Team Racing - CTR-AP v0.3.0-alpha2\0")
+
+    def test_internal_title_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "Internal"):
+            PACKAGE.require_release_title(b"\0%s | Internal\0")
+
+
 if __name__ == "__main__":
     unittest.main()

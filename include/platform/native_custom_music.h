@@ -35,6 +35,15 @@ extern "C" {
 #include <platform/native_spu_memory.h>
 #define CTR_SCA_SPU_LIMIT CTR_SPU_WIDE_CEILING
 
+// The retail arcade track an xdelta-imported package replaces, from the BIGFILE
+// index of its LEV (BI_ARCADETRACKS + levelID * 8 + file, 18 tracks; arenas and
+// the rest are not race music). -1 when the index is none of those. A package
+// without its own .sca plays that track's retail bank and song.
+static inline int CustomMusic_ReplacedLevel(int bigfileIndex)
+{
+	return bigfileIndex >= 0 && bigfileIndex < 18 * 8 ? bigfileIndex / 8 : -1;
+}
+
 struct CustomMusicSca
 {
 	const unsigned char *bank; // BANK chunk data: header sector, then samples
