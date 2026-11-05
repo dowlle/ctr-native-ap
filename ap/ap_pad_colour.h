@@ -80,15 +80,44 @@ static inline unsigned AP_PadLookB(uint32_t rgb) { return rgb & 0xffu; }
 // or a racer-locked pad keeps the retail light blue, so no new beam appears and
 // none is dressed up as a state it does not signal.
 //
-// The beam is untextured: the renderer lerps each vertex colour toward the
-// instance's far colour (colorRGBA) by alphaScale/4096 (GTE DPCT), and the
-// result is drawn additively. The retail beam keeps its own light blue with
-// colorRGBA 0 at alphaScale 0xC00. A state beam replaces the hue fully
-// (alphaScale 0x1000) with the state colour scaled to the retail beam's
-// brightness, so it reads as the same column of light in a new colour.
-#define AP_PAD_BEAM_ALPHA 0x1000
-// Scale of the state colour, in 1/256, against the retail beam's strength.
-#define AP_PAD_BEAM_LEVEL 160
+// The beam (STATIC_BEAM, model 123) and the two rising spiral wisps
+// (STATIC_BOTTOMRING, model 124, two instances) are textured and drawn
+// additively (texture page blend mode 1). Their vertex colours run from black
+// (the fade at the top and edges) through deep blue to near white, and the
+// renderer lerps each vertex colour toward the instance's far colour
+// (colorRGBA) by alphaScale/4096 (GTE DPCT). The retail beam keeps colorRGBA 0
+// at alphaScale 0xC00, so it shows 25% of its vertex colours.
+//
+// A state beam keeps that shape: it is drawn from copies of the models whose
+// colours carry the state hue at each vertex's own brightness
+// (AP_PadBeamHueWord), with colorRGBA 0 like retail (A3-4 render study,
+// 2026-11-05: a flat far colour filled the whole column and read as a pale
+// block).
+//
+// The open beam is green, and that needs three parts (A3-4b render study,
+// 2026-11-05). The bright blue bands and sparkles players see are the wisps,
+// not the beam, so the wisps take the hue too. And additive light over the
+// blue hub sky (about #5E6FFB) can only add, so green on its own reads cyan:
+// the sky's blue stays. A third copy of the beam, drawn subtractive (blend
+// mode 2), takes red and blue out of what is behind the column, in the beam's
+// own fade, so the green on top reads green. The beam green is a purer green
+// than the map dot's #70E860, whose red and blue turn the wisps white.
+//
+// Stage 2 open takes the same three parts in its own blue-violet (ruled
+// 2026-11-05, A2-46), so it reads apart from both the open green and the
+// retail light blue. Its table colour #93ADFA, used the same way, read pale
+// and close to retail; with a filter taking out only green it read magenta.
+// The violet takes out red and green behind the column and adds a deep
+// blue-violet, so the column reads indigo against sky and cliff. The map dot
+// and the tracker keep #93ADFA.
+#define AP_PAD_BEAM_GREEN 0x20FF20u
+#define AP_PAD_BEAM_FILTER 0x6000FFu // channels the open filter removes
+#define AP_PAD_BEAM_VIOLET 0x6A4CFFu
+#define AP_PAD_BEAM_VIOLET_FILTER 0xA0FF00u // channels the stage 2 filter removes
+// Both state beams at 60% of the retail strength:
+// 0x1000 - 0.6 * (0x1000 - 0xC00) = 0xD9A.
+#define AP_PAD_BEAM_STATE_ALPHA 0xD9A
+#define AP_PAD_BEAM_FILTER_ALPHA 0xB00 // subtractive copy at 31% of its colours
 
 static inline int AP_PadLookHasBeamColour(int look)
 {
@@ -97,25 +126,63 @@ static inline int AP_PadLookHasBeamColour(int look)
 
 // A Done pad shows the retail light blue beam only while the player can still
 // enter it for a replay (AP_PadReplayable), so it no longer looks locked
-// (ruled 2026-11-05, A2-45). A Done pad that cannot be entered keeps no beam. The
-// beam keeps the retail colour: AP_PadLookBeamTint is 0 for Done, no tint.
+// (ruled 2026-11-05, A2-45). A Done pad that cannot be entered keeps no beam.
+// The beam keeps the retail colour: Done has no beam hue, wisp hue or filter.
 static inline int AP_PadDoneBeam(int look, int replayable)
 {
 	return look == AP_PAD_LOOK_DONE && replayable != 0;
 }
 
-// Instance colorRGBA packing: (R << 20) | (G << 12) | (B << 4), the layout
-// RenderBucket_SetFarColorFromInstance reads. 0 for a look with no beam
-// colour, which leaves the retail beam untouched.
-static inline uint32_t AP_PadLookBeamTint(int look)
+// Hue of the beam and of its two wisps (0xRRGGBB), 0 for a look that keeps
+// the retail beam.
+static inline uint32_t AP_PadLookBeamHue(int look)
 {
-	uint32_t rgb;
-	if (!AP_PadLookHasBeamColour(look))
-		return 0u;
-	rgb = AP_PadLookRGB(look);
-	return ((AP_PadLookR(rgb) * AP_PAD_BEAM_LEVEL / 256u) << 20) |
-	       ((AP_PadLookG(rgb) * AP_PAD_BEAM_LEVEL / 256u) << 12) |
-	       ((AP_PadLookB(rgb) * AP_PAD_BEAM_LEVEL / 256u) << 4);
+	if (look == AP_PAD_LOOK_OPEN)
+		return AP_PAD_BEAM_GREEN;
+	if (look == AP_PAD_LOOK_STAGE2_OPEN)
+		return AP_PAD_BEAM_VIOLET;
+	return 0u;
+}
+
+static inline uint32_t AP_PadLookWispHue(int look)
+{
+	return AP_PadLookBeamHue(look);
+}
+
+// Channels the subtractive beam copy takes out, 0 for no copy.
+static inline uint32_t AP_PadLookBeamFilter(int look)
+{
+	if (look == AP_PAD_LOOK_OPEN)
+		return AP_PAD_BEAM_FILTER;
+	if (look == AP_PAD_LOOK_STAGE2_OPEN)
+		return AP_PAD_BEAM_VIOLET_FILTER;
+	return 0u;
+}
+
+// alphaScale of a recoloured beam.
+static inline int AP_PadLookBeamAlpha(int look)
+{
+	return AP_PadLookHasBeamColour(look) ? AP_PAD_BEAM_STATE_ALPHA : 0xC00;
+}
+
+// One model colour word (0xCCBBGGRR) recoloured to `rgb` (0xRRGGBB) at the
+// word's own brightness, its strongest channel. Black stays black, so the
+// fade survives; the top byte is kept.
+static inline uint32_t AP_PadBeamHueWord(uint32_t word, uint32_t rgb)
+{
+	unsigned r = word & 0xffu, g = (word >> 8) & 0xffu, b = (word >> 16) & 0xffu;
+	unsigned v = r > g ? r : g;
+	if (b > v)
+		v = b;
+	return (word & 0xff000000u) | ((v * AP_PadLookB(rgb) / 255u) << 16) |
+	       ((v * AP_PadLookG(rgb) / 255u) << 8) | (v * AP_PadLookR(rgb) / 255u);
+}
+
+// Texture page with its blend mode (bits 5 and 6) set to `abr`: 1 additive,
+// 2 subtractive.
+static inline uint16_t AP_PadTpageBlend(uint16_t tpage, unsigned abr)
+{
+	return (uint16_t)((tpage & ~0x60u) | ((abr & 3u) << 5));
 }
 
 // ── Hub map dot ──
