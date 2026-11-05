@@ -84,6 +84,20 @@ static size_t s_cortexMusicSize;
 // keeps pointers into them from the bank until the song, so a seed withdrawn
 // in between only drops them once the load lets go.
 static unsigned char *s_cortexMusicHeld;
+// A content-plan package's own music (its pinned .sca in the shared package
+// store) goes through the same holder: s_cortexMusic then holds the package's
+// bytes and s_musicIsPackage says so. The pending pin is what the arm step
+// handed over for the next descriptor, bound to that package's LEV digest so
+// it can never be read for another track. Read by each descriptor application
+// until the next UseContentFiles forgets it.
+static int s_musicIsPackage;
+static struct
+{
+	char path[CUSTOM_TRACK_PATH_MAX];
+	char scaSha256[NATIVE_SHA256_HEX_BYTES];
+	char levSha256[NATIVE_SHA256_HEX_BYTES];
+	unsigned long bytes;
+} s_pendingMusic;
 static int s_customTracksLoaded = 0;
 static struct CustomTrackRaceLatch s_standaloneRace = {.lastRequested = -1};
 // Content-plan cup (#133 PR 5): set while the next leg's package is armed
@@ -184,6 +198,7 @@ static void CustomTrack_ClearCortexMusic(void)
 		free(s_cortexMusic);
 	s_cortexMusic = NULL;
 	s_cortexMusicSize = 0;
+	s_musicIsPackage = 0;
 }
 
 static void CustomTrack_ResetArmedState(void)
@@ -385,13 +400,86 @@ static void CustomTrack_LoadCortexMusic(const char *levPath)
 	CustomTrack_Log("[CortexVortex] music verified (%u bytes)\n", (unsigned)s_cortexMusicSize);
 }
 
+// Read the pending package .sca whole and keep it only when its size and sha256
+// are the package's pin and the descriptor's LEV is the one the pin was made
+// for. Anything else costs the music only: the host slot's own music plays.
+static void CustomTrack_LoadPackageMusic(void)
+{
+	struct NativeSha256Ctx ctx;
+	unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
+	char hex[NATIVE_SHA256_HEX_BYTES];
+	unsigned char *bytes;
+	FILE *f;
+	long length;
+
+	CustomTrack_ClearCortexMusic();
+	if (s_pendingMusic.path[0] == '\0')
+		return;
+	if (!NativeSha256_HexEquals(s_pendingMusic.levSha256, s_descriptor.levSha256) || s_pendingMusic.bytes == 0 ||
+	    s_pendingMusic.bytes > CORTEX_SCA_MAX_BYTES)
+	{
+		CustomTrack_Log("[CustomTracks] track music not used: it belongs to another package\n");
+		memset(&s_pendingMusic, 0, sizeof s_pendingMusic);
+		return;
+	}
+	bytes = (unsigned char *)malloc((size_t)s_pendingMusic.bytes);
+	f = bytes ? fopen(s_pendingMusic.path, "rb") : NULL;
+	if (f == NULL || fseek(f, 0, SEEK_END) != 0 || (length = ftell(f)) != (long)s_pendingMusic.bytes ||
+	    fseek(f, 0, SEEK_SET) != 0 || fread(bytes, 1, (size_t)length, f) != (size_t)length)
+	{
+		if (f)
+			fclose(f);
+		free(bytes);
+		CustomTrack_Log("[CustomTracks] track music could not be read, the host slot's music plays\n");
+		return;
+	}
+	fclose(f);
+	NativeSha256_Init(&ctx);
+	NativeSha256_Update(&ctx, bytes, (size_t)length);
+	NativeSha256_Final(&ctx, digest);
+	NativeSha256_ToHex(digest, hex);
+	if (!NativeSha256_HexEquals(s_pendingMusic.scaSha256, hex))
+	{
+		free(bytes);
+		CustomTrack_Log("[CustomTracks] track music REFUSED: sha256 mismatch, the host slot's music plays\n");
+		return;
+	}
+	s_cortexMusic = bytes;
+	s_cortexMusicSize = (size_t)length;
+	s_musicIsPackage = 1;
+	CustomTrack_Log("[CustomTracks] track music verified (%u bytes)\n", (unsigned)s_cortexMusicSize);
+}
+
+static void CustomTrack_ForgetContentMusic(void)
+{
+	memset(&s_pendingMusic, 0, sizeof s_pendingMusic);
+}
+
+int CustomTrack_UseContentMusic(const char *scaPath, const char *scaSha256, unsigned long scaBytes,
+	                            const char *levSha256)
+{
+	if (CustomTrack_LatchHoldsPackage())
+		return 0;
+	CustomTrack_ForgetContentMusic();
+	if (scaPath == NULL || scaSha256 == NULL || levSha256 == NULL || scaBytes == 0 ||
+	    strlen(scaPath) >= sizeof s_pendingMusic.path || strlen(scaSha256) != NATIVE_SHA256_HEX_BYTES - 1 ||
+	    strlen(levSha256) != NATIVE_SHA256_HEX_BYTES - 1)
+		return 0;
+	CustomTrack_CopyField(s_pendingMusic.path, sizeof s_pendingMusic.path, scaPath);
+	CustomTrack_CopyField(s_pendingMusic.scaSha256, sizeof s_pendingMusic.scaSha256, scaSha256);
+	CustomTrack_CopyField(s_pendingMusic.levSha256, sizeof s_pendingMusic.levSha256, levSha256);
+	s_pendingMusic.bytes = scaBytes;
+	return 1;
+}
+
 int CustomTrack_CortexMusic(const void **data, size_t *size)
 {
 	if (data)
 		*data = NULL;
 	if (size)
 		*size = 0;
-	if (!data || !size || !s_cortexMusic || !s_customTrackConfig.contentVerified || !CustomTrack_DescriptorIsCortex())
+	if (!data || !size || !s_cortexMusic || !s_customTrackConfig.contentVerified ||
+	    (!s_musicIsPackage && !CustomTrack_DescriptorIsCortex()))
 		return 0;
 	*data = s_cortexMusic;
 	*size = s_cortexMusicSize;
@@ -421,8 +509,14 @@ int CustomTrack_CortexMusicServing(int levelID, int adventureCupActive, int cupI
 {
 	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(levelID);
 
-	return levelID == 13 && race != NULL && race->cortex && !race->retail && CustomTrack_DescriptorIsCortex() &&
-	       s_cortexMusic != NULL && CustomTrack_ServingLoad(levelID, adventureCupActive, cupID);
+	if (race == NULL || race->retail || s_cortexMusic == NULL)
+		return 0;
+	// A package's own music plays on the slot that package is served on; the
+	// Cortex Vortex music only for its own entry on host 13.
+	if (s_musicIsPackage ? (race->cortex || levelID != race->hostLevelID)
+	                     : !(levelID == 13 && race->cortex && CustomTrack_DescriptorIsCortex()))
+		return 0;
+	return CustomTrack_ServingLoad(levelID, adventureCupActive, cupID);
 }
 
 void CustomTrack_ClearOxideFinalDescriptor(void)
@@ -793,6 +887,7 @@ int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *packag
 		return 0;
 	}
 
+	CustomTrack_ForgetContentMusic();
 	CustomTrack_CopyField(s_customTrackLev.path, sizeof s_customTrackLev.path, status->levPath);
 	CustomTrack_CopyField(s_customTrackVrm.path, sizeof s_customTrackVrm.path, status->vrmPath);
 	CustomTrack_CopyField(s_customTrackConfig.raceName, sizeof s_customTrackConfig.raceName, package->title);
@@ -823,6 +918,7 @@ int CustomTrack_UseContentFiles(const char *levPath, const char *vrmPath, const 
 		CustomTrack_Log("[CustomTracks] REFUSED content-plan package: paths or race name do not fit\n");
 		return 0;
 	}
+	CustomTrack_ForgetContentMusic();
 	CustomTrack_CopyField(s_customTrackLev.path, sizeof s_customTrackLev.path, levPath);
 	CustomTrack_CopyField(s_customTrackVrm.path, sizeof s_customTrackVrm.path, vrmPath);
 	CustomTrack_CopyField(s_customTrackConfig.raceName, sizeof s_customTrackConfig.raceName, raceName);
@@ -989,6 +1085,8 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 	s_customTrackServeFault[0] = '\0';
 	if (CustomTrack_DescriptorIsCortex())
 		CustomTrack_LoadCortexMusic(s_customTrackLev.path);
+	else
+		CustomTrack_LoadPackageMusic();
 	if (d->standalone)
 		CustomTrack_Log("[CustomTracks] standalone package verified: %d laps on host slot %d; awaiting entry context\n",
 		                d->laps, d->hostLevelID);

@@ -95,6 +95,10 @@ int CustomOffline_BeginRuntime(struct CustomOfflineRequest **r, int host, int se
     launched++; *r = NULL; beganHost = host; beganMode = mode; return 1;
 }
 int CustomOffline_RuntimeMode(void) { return beganMode; }
+static char runningPin[65];
+static int fallbackSet = -2;
+int CustomOffline_RuntimeManifest(struct CustomPackageManifest *m) { memset(m, 0, sizeof *m); memcpy(m->sha256, runningPin, 65); return 1; }
+void CustomOffline_SetMusicFallbackLevel(int level) { fallbackSet = level; }
 static unsigned char highMem[0x3e00];
 void *MEMPACK_AllocHighMem(int size) { CHECK(size == 0x3e00); memset(highMem, 0xee, sizeof highMem); return highMem; }
 int MainRaceTrack_CustomLoadGhost(struct GhostHeader *dst)
@@ -322,6 +326,7 @@ int main(void)
     tracker.numPlyrNextGame = 1;
     tick(BTN_CROSS_one); tick(0); tick(BTN_CROSS_one);
     CHECK(launched == 1 && beganHost == 6 && tracker.currLEV == 6 && tracker.numLaps == 7);
+    CHECK(fallbackSet == -1); /* not an imported track: Crash Cove's music */
     CHECK(tracker.arcadeDifficulty == 123 && tracker.numPlyrNextGame == 1);
     CHECK(D230.trackSel_transitionState == EXITING_MENU && D230.trackSel_StartRaceAfterFadeOut == 1);
     tracker.gameMode1 = TIME_TRIAL | ARCADE_MODE; /* not a mode the pages know */
@@ -381,9 +386,22 @@ int main(void)
     CHECK(ghostLoads == 1 && sdata->boolReplayHumanGhost == 1 && data.characterIDs[1] == COCO_BANDICOOT);
     CHECK(sdata->ptrDesiredMenu == &data.menuQueueLoadTrack && sdata->ptrGhostTapePlaying == (void *)highMem);
     CHECK(!MM_CustomTrackSelect_TimeTrialStart()); /* once per launch */
-    /* Without a ghost file: an empty playing ghost, no replay, P2 model id 0. */
+    /* Without a ghost file: an empty playing ghost, no replay, P2 model id 0.
+       The track is an xdelta import of BIGFILE group 5: with no .sca it plays
+       that retail track's music, but only while the running package is the
+       entry that was chosen. */
+    entries[0].local.xdelta = 1; entries[0].local.bigfileIndex = 5 * 8 + 2;
+    publish(entries,3);
+    memcpy(runningPin, entries[0].manifestSha256, 65);
     MM_CustomTrackSelect_Init();D230.trackSel_transitionState=IN_MENU;tick(0);tick(BTN_RIGHT);s_arcadeRows[0]=0;
     tick(BTN_CROSS_one); tick(0); tick(BTN_CROSS_one); CHECK(launched == 2);
+    CHECK(fallbackSet == 5);
+    entries[0].local.bigfileIndex = 30 * 8; publish(entries,3);
+    MM_CustomTrackSelect_Init();D230.trackSel_transitionState=IN_MENU;tick(0);tick(BTN_RIGHT);s_arcadeRows[0]=0;
+    tick(BTN_CROSS_one); tick(0); tick(BTN_CROSS_one); CHECK(launched == 3 && fallbackSet == -1);
+    entries[0].local.bigfileIndex = 5 * 8; publish(entries,3); runningPin[0] ^= 1;
+    MM_CustomTrackSelect_Init();D230.trackSel_transitionState=IN_MENU;tick(0);tick(BTN_RIGHT);s_arcadeRows[0]=0;
+    tick(BTN_CROSS_one); tick(0); tick(BTN_CROSS_one); CHECK(launched == 4 && fallbackSet == -1);
     ghostOnFile = 0; sdata->boolReplayHumanGhost = 1;
     CHECK(MM_CustomTrackSelect_TimeTrialStart());
     CHECK(sdata->boolReplayHumanGhost == 0 && sdata->ptrGhostTapePlaying->characterID == 0 && data.characterIDs[1] == 0);

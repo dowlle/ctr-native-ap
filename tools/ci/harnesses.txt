@@ -42,6 +42,7 @@ tools/test-custom-exit-window.c
 tools/test-custom-manager.c
 tools/test-custom-tracks-screen.c
 tools/test-custom-music.c
+tools/test-custom-music-routes-production.py
 tools/test-custom-pad-lifecycle.c
 tools/test-custom-records.c
 tools/test-custom-selector.c

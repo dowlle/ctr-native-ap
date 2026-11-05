@@ -94,6 +94,12 @@ int CustomOffline_RuntimeObservation(struct CustomOfflineObservation *out);
    or the package has no .sca. The pointer stays valid until the next run
    begins or EndRuntime; callers must not keep it across a level load. */
 int CustomOffline_RuntimeAudio(const void **data, size_t *size);
+/* The retail arcade level (0..17) the active package replaces when it is an
+   xdelta import, -1 otherwise or when inactive. A package without its own
+   .sca plays that level's retail music; with -1 it plays Crash Cove's. */
+int CustomOffline_MusicFallbackLevel(void);
+/* Set by the custom page right after BeginRuntime succeeds (-1 clears it). */
+void CustomOffline_SetMusicFallbackLevel(int level);
 /* BIGFILE group mapping: returns 1 VRM / 2 LEV / 0 unrelated. */
 int CustomOffline_RuntimeFile(int subfile, int levelID, int singleRace, size_t *size);
 int CustomOffline_ReadRuntimeFile(int role, void *destination, size_t capacity, size_t expectedSize);

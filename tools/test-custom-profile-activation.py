@@ -67,6 +67,7 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d) {
 '''
 fixture += function("ap/ap_hooks_custom_content.c", "static const struct CustomTrackManagerPackage *AP_CustomContentSelectedPackage(void)")
 fixture += function("ap/ap_hooks_custom_content.c", "const struct CustomTrackManagerPackage *AP_CustomContentPackage(void)")
+fixture += "static void CustomTrack_ForgetContentMusic(void) {}\n"
 fixture += function("platform/native_custom_tracks.c", "int CustomTrack_UseManagedPackage(")
 fixture += function("ap/ap_hooks_custom_content.c", "static int AP_CustomContentActivateReady(void)")
 fixture += r'''
