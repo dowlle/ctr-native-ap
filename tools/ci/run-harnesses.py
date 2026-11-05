@@ -25,7 +25,9 @@ Sharding (CI runs the list as parallel matrix jobs):
   tools/ci/run-harnesses.py --shard K/N --results DIR   run only shard K of N (K from 0), write DIR/shard-K.txt
   tools/ci/run-harnesses.py --summary DIR [--count N]   read every shard file, check the whole list, print the totals
 
-A harness or `cmd` step belongs to shard sha1(name) % N, so the partition depends on the name alone.
+Partition: a harness or `cmd` step named in tools/ci/harness-weights.txt (the slow ones, with measured
+seconds) is placed longest first on the least loaded shard; every other name goes to shard sha1(name) % N.
+The result depends only on the list and the weights file, so every shard and the summary agree.
 The summary redoes the unlisted check over the whole tree and fails when a shard file or a listed
 entry is missing, so a shard that never ran cannot pass silently.
 """
@@ -121,19 +123,21 @@ def run_one(src):
     if src.endswith(".py"):
         return run_py(src)
     cmd, out = build_command(src)
+    t0 = time.time()
     try:
         b = subprocess.run(shlex.split(cmd), cwd=ROOT, capture_output=True, text=True, timeout=600)
     except Exception as e:  # noqa: BLE001
         return "build-error", cmd, str(e)
     if b.returncode != 0:
         return "build-fail", cmd, (b.stderr or b.stdout)[-1500:]
+    built = time.time() - t0
     try:
         r = subprocess.run([out], cwd=ROOT, capture_output=True, text=True, timeout=600)
     except Exception as e:  # noqa: BLE001
         return "run-error", cmd, str(e)
     if r.returncode != 0:
         return "run-fail", cmd, (r.stdout + r.stderr)[-1500:]
-    return "pass", cmd, ""
+    return "pass", cmd, f"build {built:.1f}s run {time.time() - t0 - built:.1f}s"
 
 
 def read_list():
@@ -156,8 +160,37 @@ def read_list():
     return listed, skipped, cmds
 
 
-def shard_of(name, count):
-    return int(hashlib.sha1(name.encode()).hexdigest(), 16) % count
+WEIGHTS = os.path.join(ROOT, "tools", "ci", "harness-weights.txt")
+DEFAULT_WEIGHT = 0.7
+
+
+def read_weights():
+    weights = {}
+    if os.path.exists(WEIGHTS):
+        for ln in open(WEIGHTS):
+            ln = ln.strip()
+            if ln and not ln.startswith("#"):
+                name, _, secs = ln.rpartition("::")
+                weights[name.strip()] = float(secs)
+    return weights
+
+
+def shard_of(name, count, _cache={}):
+    key = count
+    if key not in _cache:
+        listed, _skipped, cmds = read_list()
+        names = [n for n in discover() if n in listed] + list(cmds)
+        weights = read_weights()
+        plan, load = {}, [0.0] * count
+        for n in names:
+            if n not in weights:
+                plan[n] = int(hashlib.sha1(n.encode()).hexdigest(), 16) % count
+                load[plan[n]] += DEFAULT_WEIGHT
+        for n in sorted((n for n in names if n in weights), key=lambda n: (-weights[n], n)):
+            plan[n] = min(range(count), key=lambda i: (load[i], i))
+            load[plan[n]] += weights[n]
+        _cache[key] = plan
+    return _cache[key].get(name, int(hashlib.sha1(name.encode()).hexdigest(), 16) % count)
 
 
 def flag_value(flag):
@@ -226,7 +259,7 @@ def main():
         status, cmd, detail = run_one(rel)
         times[rel] = time.time() - t0
         results[rel] = (status, cmd, detail)
-        print(f"{status:11s} {times[rel]:6.1f}s {rel}")
+        print(f"{status:11s} {times[rel]:6.1f}s {rel}" + (f"  ({detail})" if status == "pass" and detail else ""))
         if status != "pass" and mode == "ci":
             print("  cmd: " + cmd)
             print("  " + detail.replace("\n", "\n  "))

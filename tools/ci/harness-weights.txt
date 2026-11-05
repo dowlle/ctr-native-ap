@@ -1,0 +1,22 @@
+# Measured seconds for the slow harnesses, used only to balance the CI shards (tools/ci/run-harnesses.py).
+# Anything not listed counts as 0.7 s. Stale numbers only cost balance, never coverage.
+tools/test-content-plan.cpp :: 498
+tools/test-content-features.cpp :: 50
+Controls page module (native_controls, ported from CTR Native Expanded) :: 46
+tools/test-content-verify.cpp :: 27
+tools/test-named-blocks.cpp :: 23
+tools/test-xdelta-import.cpp :: 18
+tools/test-win-logic-seedcfg.cpp :: 15
+TLS and cache boundary regressions :: 14
+tools/test-net-admission.cpp :: 12
+tools/test-tracker-pad-launch.py :: 12
+tools/test-verify-families.cpp :: 11
+tools/test-reserve-top-up-production.py :: 11
+tools/test-boss-venue.cpp :: 11
+tools/test-win-logic-roundtrip.cpp :: 11
+tools/test-solo-deathlink.cpp :: 11
+tools/test-win-logic-stakes.cpp :: 11
+tools/test-net-planless-refusal.cpp :: 11
+tools/test-hit-content-cups.cpp :: 10
+tools/test-spoiler-items-production.py :: 10
+tools/test-hit-roster-fixture.cpp :: 10
