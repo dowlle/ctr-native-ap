@@ -13,8 +13,8 @@
 // Vanilla is what VehBirth_SetConsts writes from the racer's own engine class,
 // so outside Adventure nothing of the room is written over it.
 //
-// Not stats, so not changed here: Progressive Boost, traps, items and the
-// rest of the room's rules.
+// The same Adventure/event boundary also isolates applied boost, terrain
+// items and received-item processing outside Adventure (alpha2).
 //
 // Freestanding on purpose: no engine or AP headers, so
 // tools/test-race-stats.c compiles exactly the code production runs.

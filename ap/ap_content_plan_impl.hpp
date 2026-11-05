@@ -701,6 +701,9 @@ static void vanilla_pads(const State &out)
 }
 // The flag ap_seedcfg strips from the envelope before admission.
 static bool envelope_spoiler_items = false;
+// The envelope's `color_boxes_by_item`, set by parse_content_plan before
+// validate(): AP Box Colours exists only when the plan's boxes are coloured.
+static bool envelope_box_colours = false;
 static const int64_t kWarpPadPreviewItem = 35010204, kApBoxColoursItem = 35010205;
 static const int64_t kFirstSurfaceItem = 35010021, kLastSurfaceItem = 35010025; // the useful surface items
 static const int kPurpleGemCup = 104;     // the Purple Gem Cup's engine LevelID
@@ -790,10 +793,11 @@ static void validate(const J &p, State &out) {
     if (has_families) family_settings(p["track_checks"], fam);
     const std::map<int64_t, int> packs = has_packs ? item_packs(p["item_packs"], has_boxes) : std::map<int64_t, int>{};
     // Spoiler Items: the envelope flag agrees with the reveal items, and AP Box
-    // Colours exists exactly with AP item boxes (apworld check_spoiler_envelope).
+    // Colours exists exactly with coloured AP item boxes, so not with
+    // `color_boxes_by_item` false (apworld check_spoiler_envelope).
     need(envelope_spoiler_items == (packs.count(kWarpPadPreviewItem) != 0), "spoiler_items envelope disagrees with the plan's item_packs");
-    need((packs.count(kApBoxColoursItem) != 0) == (envelope_spoiler_items && has_boxes),
-         "item_packs.ap_box_colours disagrees with the plan's item boxes");
+    need((packs.count(kApBoxColoursItem) != 0) == (envelope_spoiler_items && has_boxes && envelope_box_colours),
+         "item_packs.ap_box_colours disagrees with the plan's coloured item boxes");
     // Character unlocks (#133 PR 4b): one ledger row per unlock racer.
     std::map<int64_t, int> racer_rows;
     if (has_racers) {
@@ -2579,6 +2583,7 @@ static int parse_content_plan(const nlohmann::json &j) {
         const int boost_mode = number(co["progressive_boost"], 0, 2), stats_mode = number(co["progressive_stats"], 0, 2);
         size_t nodes = 0, bytes = 0; budget(co, 0, nodes, bytes);
         State candidate;
+        envelope_box_colours = box_colours && co["color_boxes_by_item"] == true;
         validate(j["content_plan"], candidate);
         bool arenas=false,arcade=false,pickups=false;
         for(const auto &pad:candidate.pads)if(pad.occupied && pad.crystal) {

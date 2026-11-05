@@ -119,6 +119,20 @@ const char *AP_ContentCupName(void)
 	return pad ? pad->display_name : NULL;
 }
 
+// The per-race heading names the current leg, separately from the cup title.
+const char *AP_ContentCupTrackName(void)
+{
+	const ctr_content_pad *pad = AP_ContentCupPad();
+	int leg = AP_ContentCupLeg();
+	const ctr_content_package *pkg;
+	if (!pad || leg < 0 || leg >= AP_CONTENT_CUP_LEGS || pad->legs[leg].retail_id >= 0)
+		return NULL;
+	if (pad->legs[leg].cortex)
+		return AP_CortexTrackDisplayName();
+	pkg = ap_content_plan_package(pad->legs[leg].package_index);
+	return pkg && pkg->display_name[0] ? pkg->display_name : "Custom track";
+}
+
 // The pad the hub return puts the kart on after the cup, or -1.
 int AP_ContentCupPadLevel(void)
 {

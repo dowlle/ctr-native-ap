@@ -118,9 +118,23 @@ int main(void)
 		forcedLoss = 0;
 		onTrack = 0;
 		AP_WumpaReceive(20);
-		CHECK("outside a race the waiting allowance remains ten", g_wumpa_pending == 10 && g_wumpa_ap_credit == 10);
+		CHECK("outside-race receipts wait only for their effect marker", g_wumpa_pending == 0 && g_wumpa_ap_credit == 20 && credited == before);
 		AP_WumpaCommitReceived();
-		CHECK("outside-race received overflow still banks after its marker", credited == before + 10);
+		CHECK("the whole outside-race receipt banks after its marker", credited == before + 20 && g_wumpa_ap_credit == 0);
+		AP_WumpaCommitReceived();
+		CHECK("a repeated marker commit never credits twice", credited == before + 20);
+		AP_WumpaReceive(1);
+		AP_WumpaReceive(3);
+		CHECK("small shop and other receipts accumulate without a kart grant", g_wumpa_pending == 0 && g_wumpa_ap_credit == 4);
+		AP_WumpaCommitReceived();
+		CHECK("small outside-race receipts bank in full", credited == before + 24);
+		{
+			int i, b2 = credited;
+			for (i = 0; i < 12; i++)
+				AP_WumpaReceive(1);
+			AP_WumpaCommitReceived();
+			CHECK("A2-17 twelve single fruit outside a race all bank (no clamp at ten)", credited == b2 + 12 && g_wumpa_pending == 0);
+		}
 	}
 	{
 		// The Adventure counter rule is independent of a shop or Wumpa goal.
@@ -144,8 +158,20 @@ int main(void)
 		AP_WumpaReceive(3);
 		AP_WumpaTick(&gt);
 		CHECK("shop-off receipts join the race count", AP_WumpaRaceCount(&d) == 14 && d.numWumpas == 10 && g_wumpa_ap_credit == 0);
+		{
+			int i;
+			for (i = 0; i < 12; i++)
+				AP_WumpaReceive(1);
+			AP_WumpaTick(&gt);
+			CHECK("A2-17 twelve single fruit in a race raise the race count past ten", AP_WumpaRaceCount(&d) == 26 && d.numWumpas == 10);
+		}
 		AP_WumpaOnRaceFinish(&d, 1, d.numWumpas);
 		CHECK("shop and goal off never credits a wallet", credited == before && !AP_WumpaBanking());
+		onTrack = 0;
+		AP_WumpaReceive(20);
+		CHECK("without banking outside-race receipts still wait for the kart", g_wumpa_pending == 10 && g_wumpa_ap_credit == 0);
+		AP_WumpaCommitReceived();
+		CHECK("without banking a marker never creates wallet credit", credited == before);
 	}
 	printf("%s Wumpa full race counter\n", failures ? "FAIL" : "PASS");
 	return failures != 0;

@@ -23,6 +23,7 @@ tools/test-box-number.c
 tools/test-box-offset.c
 tools/test-box-seat.c
 tools/test-box-seat-production.py
+tools/test-alpha2-presentation-production.py
 tools/test-ceremony-banner.c
 tools/test-clocked-out-production.py
 tools/test-character-persistence.cpp skip build-fail under the generic recipe; give it a build line in its header comment
@@ -138,6 +139,10 @@ tools/test-podium-skip.c
 tools/test-podium-trophy-presentation.c
 tools/test-race-attempt-lifecycle.c
 tools/test-race-stats.c
+tools/test-room-effects-production.c
+tools/test-profile-racer-production.py
+tools/test-wipeout-production.py
+tools/test-trap-mode-production.py
 tools/test-received-backlog.cpp
 tools/test-relic-goal.c
 tools/test-relic-perfect.c
@@ -157,9 +162,12 @@ tools/test-retry-budget.cpp
 tools/test-reward-policy.c
 tools/test-saphi-catalogue.cpp
 tools/test-seed-content.c
+tools/test-save-camera-production.py
 tools/test-seed-content-download-production.py
 tools/test-seed-content-hooks-production.py
 tools/test-solo-layout.c
+tools/test-solo-selection-production.py
+tools/test-solo-publication-production.py
 tools/test-solo-logic.cpp
 tools/test-spu-memory.c
 tools/test-stat-ladder.c
@@ -167,6 +175,7 @@ tools/test-editstat-rank.c
 tools/test-stat-select.c
 tools/test-surface-items.c skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-text-buf.c
+tools/test-text-clip.c
 tools/test-title-ring.c
 tools/test-tizi-helper.c
 tools/test-transition-diag.c

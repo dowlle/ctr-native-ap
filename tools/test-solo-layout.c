@@ -191,6 +191,13 @@ int AP_Solo_PickTake(char *p, int n) { (void)p; (void)n; return 0; }
 int AP_Solo_SessionStart(const char *r) { (void)r; return 1; }
 void AP_Solo_SessionStop(void) {}
 int AP_Solo_SessionActive(void) { return 0; }
+static char testPassword[64];
+const char *AP_Solo_Password(void) { return testPassword; }
+int AP_Solo_SetPassword(const char *p)
+{
+	snprintf(testPassword, sizeof testPassword, "%s", p);
+	return 1;
+}
 const char *AP_Solo_SessionRoom(void) { return ""; }
 int AP_Solo_SessionState(void) { return AP_SOLO_SESSION_FAILED; }
 const char *AP_Solo_SessionError(void)
@@ -390,6 +397,19 @@ int main(void)
 	frame(0, "review long editing name");
 	CHECK(strstr(drawn, "_\n") != NULL);
 	s_soloEditing = 0;
+	MM_Solo_EditPassword(SOLO_REVIEW_NAME_Y + SOLO_ROW_H);
+	CHECK(textCap == sizeof s_soloPassword && s_soloEditing == 2);
+	snprintf(s_soloPassword, sizeof s_soloPassword, "chosen password");
+	NativeText_Resolve(1); MM_Solo_UpdateNameEdit();
+	CHECK(!s_soloEditing && !strcmp(AP_Solo_Password(), "chosen password"));
+	MM_Solo_EditPassword(SOLO_REVIEW_NAME_Y + SOLO_ROW_H);
+	snprintf(s_soloPassword, sizeof s_soloPassword, "discarded edit");
+	NativeText_Resolve(2); MM_Solo_UpdateNameEdit();
+	CHECK(!strcmp(AP_Solo_Password(), "chosen password"));
+	MM_Solo_EditPassword(SOLO_REVIEW_NAME_Y + SOLO_ROW_H);
+	s_soloPassword[0] = 0;
+	NativeText_Resolve(1); MM_Solo_UpdateNameEdit();
+	CHECK(!AP_Solo_Password()[0]);
 
 	jobState = AP_SOLO_JOB_RUNNING; s_soloBusyJob = SOLO_JOB_TRACKS; s_soloPage = SOLO_BUSY;
 	frame(0, "busy");

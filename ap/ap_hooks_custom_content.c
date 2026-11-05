@@ -685,7 +685,11 @@ const char *AP_CustomOfflineRoomNote(void)
 
 int AP_ArcadeHoldsRoom(void)
 {
-	return CustomOffline_RuntimeActive();
+	// Retail Arcade and Time Trial need the same isolation as custom pages.
+	// Menus and hubs still drain receipts; a non-Adventure race holds them
+	// and cannot send checks or apply queued item effects.
+	return CustomOffline_RuntimeActive() ||
+	       (sdata->gGT && LOAD_IsOpen_RacingOrBattle() && !AP_CapabilityRoomStatsRace());
 }
 #endif
 
