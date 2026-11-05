@@ -310,6 +310,103 @@ static void test_option_steps_and_help()
 	CHECK(AP_SoloHelpText("\n\n  one  \n  two\n\n") == "one two");
 }
 
+// A2-41: a set option with a checklist is a row; its value is a JSON array in
+// row order; guards refuse what the world refuses.
+static void test_checklists_and_guards()
+{
+	const nlohmann::json d = nlohmann::json::parse(R"({
+	  "options": [
+	    {"name": "crystal_challenge_count", "display_name": "Crystal Challenge Count", "kind": "range", "default": 4,
+	     "range_start": 0, "range_end": 7},
+	    {"name": "crystal_arenas", "display_name": "Crystal Arenas", "kind": "set",
+	     "default": ["Nitro Court", "Rampage Ruins", "Rocky Road", "Skull Rock"]},
+	    {"name": "boss_opponent_shuffle", "display_name": "Boss Opponent Shuffle", "kind": "toggle", "default": false},
+	    {"name": "boss_track_pool", "display_name": "Boss Track Pool", "kind": "set", "default": []},
+	    {"name": "boss_weapon_pool", "display_name": "Boss Weapon Pool", "kind": "set", "default": ["bomb", "potion", "tnt"]},
+	    {"name": "start_hints", "display_name": "Start Hints", "kind": "set", "default": []}
+	  ],
+	  "overlay": {"groups": [{"label": "Cups", "options": ["crystal_challenge_count", "crystal_arenas"]},
+	                         {"label": "Bosses", "options": ["boss_opponent_shuffle", "boss_track_pool", "boss_weapon_pool",
+	                                                         "start_hints"]}],
+	              "rules": [],
+	              "checklists": {
+	                "crystal_arenas": [["Rocky Road"], ["Rampage Ruins"], ["Skull Rock"], ["Nitro Court"], ["Parking Lot"],
+	                                   ["The North Bowl"], ["Lab Basement"]],
+	                "boss_track_pool": [["Crash Cove"], ["Roo's Tubes"]],
+	                "boss_weapon_pool": [["tnt", "TNT"], ["potion", "Potion"], ["bomb", "Bomb"]]},
+	              "guards": [
+	                {"option": "crystal_challenge_count", "at_most_count_of": "crystal_arenas", "reason": "count"},
+	                {"option": "boss_weapon_pool", "when": {"boss_opponent_shuffle": [true]}, "at_least": 2, "reason": "two"},
+	                {"option": "boss_weapon_pool", "when": {"boss_opponent_shuffle": [true]}, "has": "tnt",
+	                 "needs_all": ["potion"], "reason": "potion"}]},
+	  "values": {"crystal_challenge_count": 4, "crystal_arenas": ["Rocky Road", "Rampage Ruins", "Skull Rock", "Nitro Court"],
+	             "boss_opponent_shuffle": false, "boss_track_pool": ["Crash Cove", "custom/my-track"],
+	             "boss_weapon_pool": ["tnt", "potion", "bomb"]}
+	})");
+	std::vector<APSoloOption> rows = AP_SoloBuildOptions(d);
+	CHECK(rows.size() == 5); // a set without a checklist is not a row
+	APSoloOption *count = find(rows, "crystal_challenge_count"), *arenas = find(rows, "crystal_arenas");
+	APSoloOption *shuffle = find(rows, "boss_opponent_shuffle"), *tracks = find(rows, "boss_track_pool");
+	APSoloOption *weapons = find(rows, "boss_weapon_pool");
+	CHECK(count && arenas && shuffle && tracks && weapons && !find(rows, "start_hints"));
+	if (!(count && arenas && shuffle && tracks && weapons))
+		return;
+	CHECK(arenas->kind == "set" && arenas->keys.size() == 7 && arenas->keyLabels[0] == "Rocky Road");
+	CHECK(weapons->keyLabels[0] == "TNT" && weapons->keys[0] == "tnt");
+	CHECK(arenas->value == R"(["Rocky Road","Rampage Ruins","Skull Rock","Nitro Court"])");
+	CHECK(AP_SoloSetSummary(*arenas) == "4 of 7");
+	// The default rows are marked.
+	CHECK(arenas->keyDefault.size() == 7 && arenas->keyDefault[0] && arenas->keyDefault[3] && !arenas->keyDefault[4]);
+	// A YAML entry without a row is kept as a row of its own.
+	CHECK(tracks->keys.size() == 3 && tracks->keys[2] == "custom/my-track" && tracks->keyLabels[2] == "custom/my-track");
+	CHECK(AP_SoloSetSummary(*tracks) == "2 of 3");
+	// Left / Right never change a set.
+	AP_SoloOptionStep(*arenas, 1);
+	CHECK(AP_SoloSetSummary(*arenas) == "4 of 7");
+
+	// Seven Crystal Challenges with four arenas: the count guard refuses, on
+	// the count row and on the arena row.
+	count->value = "7";
+	CHECK(AP_SoloGuardReason(rows, *count) == "count" && AP_SoloGuardReason(rows, *arenas) == "count");
+	CHECK(AP_SoloFirstBlocked(rows) == 0);
+	for (int i = 4; i < 7; i++)
+		AP_SoloSetToggle(*arenas, i);
+	CHECK(AP_SoloSetSummary(*arenas) == "All 7");
+	CHECK(AP_SoloGuardReason(rows, *count).empty() && AP_SoloFirstBlocked(rows) == -1);
+	// Checking in any order keeps row order; unchecking removes the key.
+	AP_SoloSetToggle(*arenas, 0);
+	CHECK(arenas->value == R"(["Rampage Ruins","Skull Rock","Nitro Court","Parking Lot","The North Bowl","Lab Basement"])");
+	CHECK(!AP_SoloGuardReason(rows, *count).empty()); // 7 > 6
+	AP_SoloSetToggle(*arenas, 0);
+	AP_SoloSetToggle(*arenas, 99); // out of range: nothing
+	CHECK(AP_SoloSetSummary(*arenas) == "All 7");
+
+	// Guards with `when`: only while the switch is on.
+	weapons->value = R"(["bomb"])";
+	CHECK(AP_SoloGuardReason(rows, *weapons).empty());
+	shuffle->value = "true";
+	CHECK(AP_SoloGuardReason(rows, *weapons) == "two");
+	weapons->value = R"(["tnt","bomb"])";
+	CHECK(AP_SoloGuardReason(rows, *weapons) == "potion"); // has tnt, misses potion
+	weapons->value = R"(["potion","bomb"])";
+	CHECK(AP_SoloGuardReason(rows, *weapons).empty()); // no tnt: the needs_all guard is off
+	weapons->value = "[]";
+	CHECK(AP_SoloSetSummary(*weapons) == "None" && AP_SoloGuardReason(rows, *weapons) == "two");
+	shuffle->value = "false";
+
+	// --set passes a changed set as its JSON array; unchanged sets stay out.
+	std::vector<std::string> sets = AP_SoloSetArgs(rows);
+	std::set<std::string> got(sets.begin(), sets.end());
+	CHECK(got.count("crystal_challenge_count=7") == 1);
+	CHECK(got.count(R"(crystal_arenas=["Rocky Road","Rampage Ruins","Skull Rock","Nitro Court","Parking Lot","The North Bowl","Lab Basement"])") == 1);
+	CHECK(got.count("boss_weapon_pool=[]") == 1);
+	CHECK(sets.size() == 3);
+	// Back to the preset's arenas: nothing to send for it.
+	for (int i = 4; i < 7; i++)
+		AP_SoloSetToggle(*arenas, i);
+	CHECK(arenas->value == arenas->initial);
+}
+
 // The custom-track step (decision 32): mode labels, the pick cycle and the
 // descriptor file name the client keeps in solo/tracks.
 static void test_tracks()
@@ -440,6 +537,7 @@ int main()
 	test_error_text();
 	test_options();
 	test_option_steps_and_help();
+	test_checklists_and_guards();
 	test_tracks();
 	test_needs_laps();
 	test_store_descriptor_rescan();

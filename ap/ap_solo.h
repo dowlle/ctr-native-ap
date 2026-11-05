@@ -67,6 +67,7 @@ enum APSoloOptionKind
 	AP_SOLO_OPT_TOGGLE = 0,
 	AP_SOLO_OPT_CHOICE,
 	AP_SOLO_OPT_RANGE,
+	AP_SOLO_OPT_SET, /* a checklist page (A2-41); value is "4 of 7" */
 };
 
 struct APSoloOptionInfo
@@ -79,7 +80,16 @@ struct APSoloOptionInfo
 	int visible;
 	int forced;                 /* greyed, value fixed */
 	int changed;                /* the value differs from the preset's */
-	char note[AP_SOLO_TEXT];    /* forced reason or a warning */
+	int blocked;                /* a guard refuses this value: Continue is held */
+	char note[AP_SOLO_TEXT];    /* forced reason, guard reason or a warning */
+};
+
+/* One row of a set option's checklist. */
+struct APSoloItemInfo
+{
+	char label[64];
+	int on;
+	int isDefault;              /* the option's default checks this row */
 };
 
 /* An installed custom track the new-seed flow can include (decision 32). */
@@ -142,6 +152,12 @@ void AP_Solo_OptionStep(int index, int direction);
 const char *AP_Solo_OptionHelp(int index);
 int AP_Solo_OptionIndex(const char *name);
 void AP_Solo_OptionsReset(void);          /* back to the preset's values */
+/* A set option's checklist rows. */
+int AP_Solo_OptionItemCount(int index);
+int AP_Solo_OptionItemGet(int index, int item, struct APSoloItemInfo *out);
+void AP_Solo_OptionItemToggle(int index, int item);
+/* The first option a guard refuses (Continue opens it), or -1. */
+int AP_Solo_OptionsBlocked(void);
 
 /* Custom-track step. Cycle: off, in the pool, guaranteed a pad, off. */
 int AP_Solo_TrackCount(void);

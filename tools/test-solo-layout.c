@@ -9,7 +9,10 @@
         option is drawn, never cut ("PROGRESSIVE BO..." against
         "PROGRESSIVE ST..."), scrolling through every row,
      4. the inbox path is shortened from the left and keeps its end,
-     5. every page draws the dimmed panel behind its text. */
+     5. every page draws the dimmed panel behind its text,
+     6. a set option's checklist (A2-41): every row name drawn in full with
+        its "default" mark and On / Off, Cross toggles, help and back return
+        to the right level, and a guard holds Continue and opens its row. */
 #include <stdio.h>
 #include <string.h>
 #include <common.h>
@@ -89,14 +92,29 @@ static const char *const optLabel[] = {
 	"Final Challenge Relic Count", "Wumpa Shop Prices", "Boss Attack Intensity", "Cup Custom Legs",
 	"Goal Wumpa", "Starting Stat Class", "Warp Pad Item Display", "Pad Approach Hints", "Race Type Selector",
 	"Progressive Starting Wumpa", "Shortcut Knowledge", "Garage Requirement Level", "Wumpa Check",
-	"Editable Stats"};
+	"Editable Stats",
+	/* A2-41: a set option, a checklist row. */
+	"Crystal Arenas"};
 static const char *const optValue[] = {
 	"101_percent", "4", "5", "18_sapphire_relics", "true", "false", "random_without_4_keys", "standard",
 	"16", "false", "shared_global", "per_character", "medium", "false", "locations_and_items", "false",
 	"100", "true",
 	"54", "400", "very_strong_attacks", "4", "5000", "per_character_ranking", "one_pile", "false", "always",
-	"10", "easy", "very_high", "per_track", "per_character"};
+	"10", "easy", "very_high", "per_track", "per_character", "4 of 7"};
 #define OPTS ((int)(sizeof optLabel / sizeof optLabel[0]))
+#define SET_OPT (OPTS - 1)
+/* The longest checklist labels of the overlay, and more rows than the list
+   holds (Boss Track Pool has 19). */
+static const char *const itemLabel[] = {
+	"Rocky Road", "Rampage Ruins", "Skull Rock", "Nitro Court", "Parking Lot", "The North Bowl", "Lab Basement",
+	"Finish on Podium", "Finish Any Place", "Crash Bandicoot", "Penta Penguin", "Hot Air Skyway",
+	"Papu's Pyramid", "Sewer Speedway", "Slide Coliseum", "Invisibility", "Super Engine", "Nitros Oxide",
+	"Cortex Vortex"};
+#define ITEMS ((int)(sizeof itemLabel / sizeof itemLabel[0]))
+static int itemOn[ITEMS] = {1, 1, 1, 1};
+static int blockedOpt = -1;
+static const char *const guardReason =
+	"Signature profiles need TNT, Potion and Bomb checked."; /* the longest guard reason */
 static char note[AP_SOLO_TEXT];
 static int rooms, tracks, needsLaps, picked, jobState = AP_SOLO_JOB_IDLE;
 static int shortLetters;
@@ -150,9 +168,27 @@ int AP_Solo_OptionGet(int i, struct APSoloOptionInfo *o)
 	o->changed = i == 12 && shortLetters;
 	snprintf(o->group, sizeof o->group, "%s", i < 4 ? "Goal" : i < 13 ? "Progression" : i < 18 ? "Extras" : "More Options");
 	if (i == 1) snprintf(o->note, sizeof o->note, "%s", note);
+	if (i == SET_OPT) o->kind = AP_SOLO_OPT_SET;
+	if (i == blockedOpt)
+	{
+		o->blocked = 1;
+		snprintf(o->note, sizeof o->note, "%s", guardReason);
+	}
 	o->visible = 1;
 	return 1;
 }
+int AP_Solo_OptionItemCount(int i) { return i == SET_OPT ? ITEMS : 0; }
+int AP_Solo_OptionItemGet(int i, int k, struct APSoloItemInfo *o)
+{
+	memset(o, 0, sizeof *o);
+	if (i != SET_OPT || k < 0 || k >= ITEMS) return 0;
+	snprintf(o->label, sizeof o->label, "%s", itemLabel[k]);
+	o->on = itemOn[k];
+	o->isDefault = k < 4;
+	return 1;
+}
+void AP_Solo_OptionItemToggle(int i, int k) { if (i == SET_OPT && k >= 0 && k < ITEMS) itemOn[k] = !itemOn[k]; }
+int AP_Solo_OptionsBlocked(void) { return blockedOpt; }
 void AP_Solo_OptionStep(int i, int d) { (void)d; if (i == 12) shortLetters = !shortLetters; }
 const char *AP_Solo_OptionHelp(int i)
 {
@@ -281,7 +317,7 @@ int main(void)
 		MM_Solo_Go(SOLO_OPTIONS);
 		frame(0, "option groups");
 		CHECK(full_once("Goal", drawn) && full_once("More Options", drawn) && full_once("Continue", drawn));
-		CHECK(full_once("4 options", drawn) && full_once("14 options", drawn));
+		CHECK(full_once("4 options", drawn) && full_once("15 options", drawn));
 		CHECK(strstr(drawn, "DeathLink") == NULL && strstr(drawn, "...") == NULL);
 		for (int g = 0; g < 4; g++)
 		{
@@ -349,6 +385,68 @@ int main(void)
 		s_soloGroup = -1; s_soloSel = 4; s_soloHighlight = 14;
 		frame(0, "option error");
 		CHECK(s_soloGroup == 2 && full_once(optLabel[14], drawn));
+
+		/* A2-41: the set row opens its checklist. */
+		{
+			static char seenItems[16384];
+			const int setRow = SET_OPT - groupFirst[3];
+			s_soloPage = SOLO_OPTIONS; s_soloGroup = 3; s_soloList = -1; s_soloSel = setRow; s_soloTop = 0;
+			frame(0, "set row");
+			CHECK(full_once("Crystal Arenas", drawn) && full_once("4 of 7", drawn));
+			CHECK(strstr(drawn, "*: OPEN LIST") != NULL);
+			tap(BTN_CROSS);
+			CHECK(s_soloList == SET_OPT && s_soloSel == 0 && s_soloTop == 0);
+			frame(0, "checklist");
+			CHECK(full_once("Crystal Arenas", drawn)); /* the title */
+			CHECK(full_once("default", drawn) && full_once("On", drawn) && full_once("Off", drawn));
+			CHECK(strstr(drawn, "4 of 19 on.") != NULL && strstr(drawn, "*: ON/OFF") != NULL);
+			seenItems[0] = '\n'; seenItems[1] = 0;
+			strcat(seenItems, drawn);
+			for (int i = 0; i < ITEMS + 1; i++)
+			{
+				frame(BTN_DOWN, "checklist down");
+				strcat(seenItems, drawn);
+				CHECKM(full_once(itemLabel[s_soloSel], drawn), itemLabel[s_soloSel]);
+			}
+			for (int i = 0; i < ITEMS; i++)
+				CHECKM(full_once(itemLabel[i], seenItems), itemLabel[i]);
+			CHECK(strstr(seenItems, "...") == NULL);
+			/* Cross toggles the selected row (Down past the end wrapped to row 1). */
+			CHECK(s_soloSel == 1 && itemOn[1]);
+			frame(BTN_CROSS, "checklist toggle");
+			CHECK(!itemOn[1] && strstr(drawn, "3 of 19 on.") != NULL);
+			frame(BTN_RIGHT, "checklist toggle right");
+			CHECK(itemOn[1]);
+			/* Help and back: the checklist again, then the group with the row. */
+			tap(BTN_SQUARE);
+			CHECK(s_soloPage == SOLO_HELP && s_soloHelpRow == SET_OPT);
+			tap(BTN_TRIANGLE);
+			CHECK(s_soloPage == SOLO_OPTIONS && s_soloList == SET_OPT);
+			frame(0, "checklist after help");
+			tap(BTN_TRIANGLE);
+			CHECK(s_soloPage == SOLO_OPTIONS && s_soloList == -1 && s_soloGroup == 3 && s_soloSel == setRow);
+			/* A guard holds Continue: the group shows "1 to fix" and Continue
+			   opens the refused row with its reason in red. */
+			blockedOpt = SET_OPT;
+			tap(BTN_TRIANGLE);
+			s_soloSel = 4; s_soloTop = 0;
+			frame(0, "blocked groups");
+			CHECK(full_once("1 to fix", drawn) && strstr(drawn, "Continue opens it.") != NULL);
+			tap(BTN_CROSS);
+			CHECK(s_soloPage == SOLO_OPTIONS && s_soloHighlight == SET_OPT);
+			frame(0, "blocked row");
+			CHECK(s_soloGroup == 3 && s_soloSel == setRow && s_soloList == -1);
+			CHECK(strstr(drawn, "Bomb checked.\n") != NULL);
+			tap(BTN_CROSS);
+			frame(0, "blocked checklist");
+			CHECK(s_soloList == SET_OPT && strstr(drawn, "Bomb checked.\n") != NULL);
+			blockedOpt = -1;
+			tap(BTN_TRIANGLE);
+			tap(BTN_TRIANGLE);
+			s_soloSel = 4; s_soloTop = 0;
+			tap(BTN_CROSS);
+			CHECK(s_soloPage == SOLO_REVIEW);
+		}
 	}
 
 	/* An option's help page: a name too long for the big font is not cut. */
