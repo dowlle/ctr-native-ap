@@ -89,7 +89,7 @@ int main(void)
 		/* beam: only the states that can carry a beam get a colour, and it
 		 * is the table colour at the beam level */
 		beam = AP_PadLookBeamTint(look);
-		if (look == AP_PAD_LOOK_OPEN || look == AP_PAD_LOOK_STAGE2_OPEN || look == AP_PAD_LOOK_STAGE2_WAITING) {
+		if (look == AP_PAD_LOOK_OPEN || look == AP_PAD_LOOK_STAGE2_OPEN) {
 			unsigned b = beam_rgb(beam);
 			snprintf(why, sizeof why, "beam %s is its table colour at the beam level", familiar[i].name);
 			EXPECT(beam != 0 && (beam & 0xf000000fu) == 0 &&

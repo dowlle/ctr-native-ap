@@ -72,10 +72,12 @@ static inline unsigned AP_PadLookG(uint32_t rgb) { return (rgb >> 8) & 0xffu; }
 static inline unsigned AP_PadLookB(uint32_t rgb) { return rgb & 0xffu; }
 
 // ── Warp pad beam ──
-// The beam stays where it is today: only an open pad births one (and a
-// stage-2-waiting pad that is still open for a fruit replay, AP_PadReplayable).
-// Closed, racer-locked and Done pads never get one. This only answers which
-// colour a beam that exists wears.
+// Which pads birth a beam is unchanged (AH_WarpPad.c): an open pad, and a pad
+// kept open for a fruit replay (AP_PadReplayable). This only answers which
+// colour a beam that exists wears. Only the two actionable states, open and
+// stage 2 open, recolour it; a beam kept for a replay (stage 2 waiting, Done)
+// or a racer-locked pad keeps the retail light blue, so no new beam appears and
+// none is dressed up as a state it does not signal.
 //
 // The beam is untextured: the renderer lerps each vertex colour toward the
 // instance's far colour (colorRGBA) by alphaScale/4096 (GTE DPCT), and the
@@ -89,8 +91,7 @@ static inline unsigned AP_PadLookB(uint32_t rgb) { return rgb & 0xffu; }
 
 static inline int AP_PadLookHasBeamColour(int look)
 {
-	return look == AP_PAD_LOOK_OPEN || look == AP_PAD_LOOK_STAGE2_OPEN ||
-	       look == AP_PAD_LOOK_STAGE2_WAITING;
+	return look == AP_PAD_LOOK_OPEN || look == AP_PAD_LOOK_STAGE2_OPEN;
 }
 
 // Instance colorRGBA packing: (R << 20) | (G << 12) | (B << 4), the layout
