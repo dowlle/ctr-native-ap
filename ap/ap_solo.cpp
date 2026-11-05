@@ -953,7 +953,7 @@ bool KeepDescriptorFile(const char *folder, const std::string &name, const std::
 	if (fs::exists(st))
 	{
 		if (!fs::is_regular_file(st) || fs::file_size(target, ec) > kDescriptorMax || ec)
-			return refuse(where + " is not a plain file; delete it", "not a plain descriptor file, left alone");
+			return refuse(std::string("its file in solo/") + folder + " is not a plain file; delete it", "not a plain descriptor file, left alone");
 		if (ReadSmallPlainFile(target, kDescriptorMax) == json)
 			return true;
 	}
@@ -1000,7 +1000,8 @@ bool KeepDescriptorFile(const char *folder, const std::string &name, const std::
 	{
 		const std::string detail = ec.message();
 		fs::remove(tmp, ec);
-		return refuse(where + " is read-only or in use (antivirus?)", "replace failed: " + detail);
+		return refuse(std::string("its file in solo/") + folder + " is read-only or in use (antivirus?)",
+		              "replace failed: " + detail);
 	}
 	Log(std::string("kept the descriptor of ") + name + " in solo/" + folder);
 	return true;
@@ -1238,6 +1239,13 @@ bool RecordDescriptor(int kind, const char *contentId, const char *revision, con
 		Log(std::string("replacing ") + folder + "/" + name + ": " +
 		    (scope.fresh ? "a copy with other files was just installed" : "its files are no longer installed"));
 	}
+	// A replaced entry for other files goes first, so a file that cannot be
+	// removed (in use, antivirus) leaves one state, not both.
+	std::string detail;
+	if (pendingOther && !RemoveDescriptorFile(fs::u8path(SoloPath("needs-laps")) / fs::u8path(name), detail))
+		return refuse("its file in solo/needs-laps is read-only or in use (antivirus?)", "stale entry kept: " + detail);
+	if (kind == 2 && keptOther && !RemoveDescriptorFile(tracks / fs::u8path(name), detail))
+		return refuse("its file in solo/tracks is read-only or in use (antivirus?)", "stale entry kept: " + detail);
 	if (kind != 2)
 	{
 		if (!KeepDescriptorFile("tracks", name, json, &why))
@@ -1251,21 +1259,14 @@ bool RecordDescriptor(int kind, const char *contentId, const char *revision, con
 	{
 		const auto merged = AP_SoloMergeNeedsLaps(kept, fresh);
 		if (merged.is_null())
-			return refuse("its lap count in solo/tracks/" + name + " is not 1 to 7; delete that file",
+			return refuse("its kept lap count is not 1 to 7; delete its file in solo/tracks",
 			              "kept laps are missing or out of range");
 		if (!AP_SoloDescriptorUnchanged(kept, merged) && !KeepDescriptorFile("tracks", name, merged.dump(), &why))
 			return false;
 		DropNeedsLaps(name);
 		return true;
 	}
-	if (!KeepDescriptorFile("needs-laps", name, json, &why))
-		return false;
-	// The stale complete descriptor goes last, so a failed write above
-	// leaves the old state whole.
-	std::string detail;
-	if (keptOther && !RemoveDescriptorFile(tracks / fs::u8path(name), detail))
-		return refuse("solo/tracks/" + name + " is read-only or in use (antivirus?)", "stale descriptor kept: " + detail);
-	return true;
+	return KeepDescriptorFile("needs-laps", name, json, &why);
 }
 } // namespace
 

@@ -162,12 +162,23 @@ int main(int, char **argv) {
     assert(nlohmann::json::parse(read(std::string("tracks/") + name)) == nlohmann::json::parse(descriptor("Nina", pins("ba", "bb"), 5)));
     write(std::string("tracks/") + name, descriptor("Old", pins("ba", "bb"), 9));
     assert(!ApplyStoreDescriptor(entry(2, "Nina", waitB, "b"), scan, message));
-    assert(message.find("is not 1 to 7; delete that file") != std::string::npos);
+    assert(message.find("its kept lap count is not 1 to 7; delete its file in solo/tracks") != std::string::npos);
 
     // 7. A pending entry for stale files is replaced too.
     clean(); write(std::string("needs-laps/") + name, descriptor("Nina", pins("aa", "ab"), 0));
     assert(ApplyStoreDescriptor(entry(1, "Nina", newB, "b"), scan, why));
     assert(read(std::string("tracks/") + name) == newB && !fs::exists(base + "/solo/needs-laps/" + name));
+
+    // 7b. A stale entry that cannot be removed: refused before anything is
+    // written, so only one state is left.
+    clean(); write(std::string("tracks/") + name, oldA);
+    fs::permissions(base + "/solo/tracks", fs::perms::owner_read | fs::perms::owner_exec);
+    if (geteuid() != 0) {
+        assert(!ApplyStoreDescriptor(entry(2, "Nina", waitB, "b"), scan, message));
+        assert(message == "Nina 1.0.0: its file in solo/tracks is read-only or in use (antivirus?)");
+        assert(!fs::exists(base + "/solo/needs-laps/" + name) && loggedFile(name));
+    }
+    fs::permissions(base + "/solo/tracks", fs::perms::owner_all, fs::perm_options::add);
 
     // 8. A read-only solo/tracks folder: refused with the reason and file name.
     clean(); fs::create_directories(base + "/solo/tracks");
