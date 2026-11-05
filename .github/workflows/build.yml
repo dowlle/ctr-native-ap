@@ -40,6 +40,7 @@ jobs:
         shell: bash
         env:
           PKG_CONFIG_LIBDIR: /usr/lib/i386-linux-gnu/pkgconfig:/usr/share/pkgconfig
+          CTR_BUILD_JOBS: 4
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           bash tools/ci/build-clients.sh linux
@@ -75,6 +76,8 @@ jobs:
             mingw-w64-i686-ninja mingw-w64-i686-openssl
             mingw-w64-i686-zlib
       - name: Build and verify both configurations
+        env:
+          CTR_BUILD_JOBS: 4
         run: bash tools/ci/build-clients.sh windows
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
