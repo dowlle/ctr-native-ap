@@ -11,6 +11,8 @@ tools/test-blue-fire.c
 tools/test-boss-adapter.c
 tools/test-boss-assist.c
 tools/test-boss-encounters-production.py
+tools/test-boss-lane-ahead.c
+tools/test-boss-lane-production.py
 tools/test-boss-venue.cpp
 tools/test-boss-venue-production.py
 tools/test-box-colour-config.c
