@@ -19,7 +19,9 @@
 #include "ap_net.h"            // the room the mode never shares a session with
 #include "ap_solo.h"
 #endif
-#if !defined(_WIN32)
+#if defined(_WIN32)
+#include "platform/native_win32.h" // CreateDirectoryA for the export folder
+#else
 #include <errno.h>
 #include <sys/stat.h>
 #endif
@@ -1353,6 +1355,57 @@ static void AP_AuthorNote(const char *text)
 // One file per track into AP_BOX_EXPORT_DIR: every retail track whose boxes
 // differ from the built-in set, every custom track with a box. Reads only
 // the tables author mode already holds; the placement files are not touched.
+#define AP_AUTHOR_EXPORT_MAX 256 // files one Export can name: every retail track plus custom ones
+static char s_exportNames[AP_AUTHOR_EXPORT_MAX][192];
+static int  s_exportCount;
+
+// Write one track's file and remember its name for the index.
+static int AP_AuthorExportOpen(const char *path, FILE **f)
+{
+	if (s_exportCount >= AP_AUTHOR_EXPORT_MAX || (*f = fopen(path, "w")) == 0)
+		return 0;
+	snprintf(s_exportNames[s_exportCount++], sizeof s_exportNames[0], "%s", path);
+	return 1;
+}
+
+// Remove the files the previous Export listed and this one did not write,
+// then list this one's. Only names the exporter itself makes are removed.
+static void AP_AuthorExportIndex(void)
+{
+	char line[256];
+	char msg[256];
+	FILE *f = fopen(AP_BOX_EXPORT_INDEX, "r");
+	int  i;
+
+	if (f != 0)
+	{
+		while (fgets(line, sizeof line, f) != 0)
+		{
+			int keep = 0;
+			line[strcspn(line, "\r\n")] = '\0';
+			if (!AP_BoxExport_IsOwnName(line))
+				continue;
+			for (i = 0; i < s_exportCount && !keep; i++)
+				keep = strcmp(s_exportNames[i], line) == 0;
+			if (!keep && remove(line) == 0)
+			{
+				snprintf(msg, sizeof msg, "[AP AUTHOR] export: removed %s, no longer current\n", line);
+				AP_LogLine(msg);
+			}
+		}
+		fclose(f);
+	}
+	f = fopen(AP_BOX_EXPORT_INDEX, "w");
+	if (f == 0)
+		return;
+	for (i = 0; i < s_exportCount; i++)
+		fprintf(f, "%s\n", s_exportNames[i]);
+	fclose(f);
+}
+
+// One file per track into AP_BOX_EXPORT_DIR: every retail track whose boxes
+// differ from the built-in set, every custom track with a box. Reads only
+// the tables author mode already holds; the placement files are not touched.
 static void AP_AuthorExport(void)
 {
 	char path[192];
@@ -1366,11 +1419,12 @@ static void AP_AuthorExport(void)
 		AP_AuthorNote("EXPORT FAILED, SEE CTR-AP.LOG");
 		return;
 	}
+	s_exportCount = 0;
 	for (level = 0; level < AP_AUTHOR_LEVEL_COUNT && s_source == AP_PLACEMENT_SRC_FILE; level++)
 	{
 		if (!AP_BoxExport_RetailChanged(s_place, s_placeCount, level))
 			continue;
-		if (!AP_BoxExport_RetailName(path, sizeof path, AP_AuthorLevelName(level)) || (f = fopen(path, "w")) == 0)
+		if (!AP_BoxExport_RetailName(path, sizeof path, AP_AuthorLevelName(level)) || !AP_AuthorExportOpen(path, &f))
 		{
 			failed++;
 			continue;
@@ -1392,7 +1446,7 @@ static void AP_AuthorExport(void)
 		{
 			if (!AP_BoxExport_FirstOfKey(s_cplace, i))
 				continue;
-			if (!AP_BoxExport_CustomName(path, sizeof path, &s_cplace[i].key) || (f = fopen(path, "w")) == 0)
+			if (!AP_BoxExport_CustomName(path, sizeof path, &s_cplace[i].key) || !AP_AuthorExportOpen(path, &f))
 			{
 				failed++;
 				continue;
@@ -1408,6 +1462,7 @@ static void AP_AuthorExport(void)
 		}
 	}
 #endif
+	AP_AuthorExportIndex();
 	snprintf(msg, sizeof msg, "[AP AUTHOR] export: %d file(s) in the %s folder next to the game%s\n", files,
 	         AP_BOX_EXPORT_DIR, failed ? ", some could not be written" : "");
 	AP_LogLine(msg);

@@ -1848,14 +1848,16 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		// A refusal on the Box Author Mode row lasts while the row keeps focus.
 		if (menu->rowSelected != authorRow)
 			AP_Author_MenuLeave();
-		if (menu->rowSelected == authorRow)
+		// One action per frame on the row: Cross (below) wins over Left/Right,
+		// so a single frame can never be the refusal and the second press.
+		if (menu->rowSelected == authorRow && (pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) == 0)
 		{
 			if ((pad->buttonsTapped & BTN_LEFT) != 0)
 			{
 				AP_Author_MenuPress(0);
 				OtherFX_Play(0, 1);
 			}
-			if ((pad->buttonsTapped & BTN_RIGHT) != 0)
+			else if ((pad->buttonsTapped & BTN_RIGHT) != 0)
 			{
 				AP_Author_MenuPress(1);
 				OtherFX_Play(0, 1);

@@ -154,7 +154,7 @@ into the `box-submissions` folder next to the game (the folder with
 custom track with a box gets a file, and every normal track whose boxes differ
 from the release. A file holds the track's name, which version of the track it
 is (for a custom track: its package id, version and file checksums), and its
-boxes. Export again after more changes: the files are written again.
+boxes. Export again after more changes: the files are written again, and a file for a track that no longer differs (or a custom track with no boxes left) is removed. The folder also holds `exported.txt`, the list of what the last export wrote; you do not need to send it.
 
 Nothing is uploaded. To send them, open a
 [Box placement submission](https://github.com/dowlle/ctr-native-ap/issues/new?template=box_placement.yaml)

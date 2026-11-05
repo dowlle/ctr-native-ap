@@ -90,6 +90,19 @@ int main(void)
 	}
 	CHECK(!AP_BoxExport_RetailName(name, 10, "CRASH_COVE")); // does not fit: refused, not cut
 
+	// The exporter's own names, the only files a later Export may remove.
+	CHECK(AP_BoxExport_RetailName(name, sizeof name, "CRASH_COVE") && AP_BoxExport_IsOwnName(name));
+	CHECK(AP_BoxExport_CustomName(name, sizeof name, &keyA) && AP_BoxExport_IsOwnName(name));
+	CHECK(!AP_BoxExport_IsOwnName("ap-box-placements.json"));
+	CHECK(!AP_BoxExport_IsOwnName("box-submissions/../ap-box-placements.json"));
+	CHECK(!AP_BoxExport_IsOwnName("box-submissions/retail-../x.json"));
+	CHECK(!AP_BoxExport_IsOwnName("box-submissions/retail-A/B.json"));
+	CHECK(!AP_BoxExport_IsOwnName("box-submissions/retail-A\\B.json"));
+	CHECK(!AP_BoxExport_IsOwnName("box-submissions/exported.txt"));
+	CHECK(!AP_BoxExport_IsOwnName("box-submissions/notes-A.json"));
+	CHECK(!AP_BoxExport_IsOwnName("box-submissions/retail-.json"));
+	CHECK(!AP_BoxExport_IsOwnName(""));
+
 	// ── retail file text ────────────────────────────────────────────────────
 	rrow[0].level = 3; rrow[0].x = 10; rrow[0].y = -20; rrow[0].z = 30; rrow[0].rotY = 1024;
 	rrow[1].level = 4; rrow[1].x = 1; rrow[1].y = 2; rrow[1].z = 3; rrow[1].rotY = 0;

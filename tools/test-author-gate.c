@@ -123,11 +123,19 @@ int main(void)
 	}
 
 	// Every write in ap_author.c opens one of: the authoring table, the custom
-	// authoring file, or an export path. None names the player's file.
+	// authoring file, an export path or the export index. None names the
+	// player's file, and the only removal is of names the exporter makes.
 	CHECK(count(author, "\"w\")") == 4);
 	CHECK(count(author, "fopen(AP_AuthorGate_WriteFile(), \"w\")") == 1);
 	CHECK(count(author, "fopen(AP_CUSTOM_BOX_FILE, \"w\")") == 1);
-	CHECK(count(author, "fopen(path, \"w\")") == 2);
+	CHECK(count(author, "fopen(path, \"w\")") == 1);
+	CHECK(count(author, "fopen(AP_BOX_EXPORT_INDEX, \"w\")") == 1);
+	CHECK(count(author, "remove(") == 1);
+	{
+		const char *rm = strstr(author, "remove(line)");
+		const char *own = strstr(author, "if (!AP_BoxExport_IsOwnName(line))");
+		CHECK(rm != NULL && own != NULL && own < rm);
+	}
 	CHECK(strstr(author, "AP_PLACEMENT_FILE, \"w\"") == NULL);
 	CHECK(strstr(author, "\"ap-box-placements.json\"") == NULL);
 	// The table is read through the gate, so the mode's own reads follow it.
@@ -176,6 +184,8 @@ int main(void)
 	CHECK(strstr(frame, "== 0 && !AP_Author_Enabled())") != NULL);
 	// The menu row's press exists only where the switch does.
 	CHECK(strstr(menu, "#ifdef AP_AUTHOR_SESSION_SWITCH\n\t\t\tif (e == NULL && menu->rowSelected == authorRow)") != NULL);
+	// One row action per frame: Left/Right only when Cross/Circle did not fire.
+	CHECK(strstr(menu, "menu->rowSelected == authorRow && (pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) == 0") != NULL);
 
 	free(author);
 	free(boxes);

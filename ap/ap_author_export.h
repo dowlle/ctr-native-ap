@@ -42,6 +42,10 @@
 #include "ap_placement_table.h"
 
 #define AP_BOX_EXPORT_DIR "box-submissions"
+// The files the last Export wrote, one per line. The next Export removes the
+// ones it no longer writes (a track put back to the built-in set, a custom
+// track whose last box went), so the folder only ever holds current files.
+#define AP_BOX_EXPORT_INDEX AP_BOX_EXPORT_DIR "/exported.txt"
 #define AP_BOX_EXPORT_FORMAT "ctr-ap-box-submission"
 #define AP_BOX_EXPORT_UNITS "pos is LEV InstDef world units (signed 16-bit); rot_y is an engine angle, 0x1000 = one full turn"
 
@@ -60,6 +64,35 @@ static inline int AP_BoxExport_CustomName(char *dst, size_t cap, const AP_Custom
 	int n = snprintf(dst, cap, AP_BOX_EXPORT_DIR "/custom-%s-%.12s-%.12s.json", key->uuid, key->levSha256,
 	                 key->vrmSha256);
 	return n > 0 && (size_t)n < cap;
+}
+
+// 1 when `name` is a file this exporter could have written: inside
+// AP_BOX_EXPORT_DIR, "retail-" or "custom-", ".json", and nothing but
+// letters, digits, '_' and '-' between. Only such names are ever removed,
+// whatever an edited index says.
+static inline int AP_BoxExport_IsOwnName(const char *name)
+{
+	const char *dir = AP_BOX_EXPORT_DIR "/";
+	size_t n, dirLen = strlen(dir), i, start;
+
+	if (name == NULL || strncmp(name, dir, dirLen) != 0)
+		return 0;
+	n = strlen(name);
+	if (strncmp(name + dirLen, "retail-", 7) == 0)
+		start = dirLen + 7;
+	else if (strncmp(name + dirLen, "custom-", 7) == 0)
+		start = dirLen + 7;
+	else
+		return 0;
+	if (n < start + 6 || strcmp(name + n - 5, ".json") != 0)
+		return 0;
+	for (i = start; i < n - 5; i++)
+	{
+		char c = name[i];
+		if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-'))
+			return 0;
+	}
+	return 1;
 }
 
 static inline void AP_BoxExport_Head(FILE *f, const char *client, const char *track, const char *kind)
