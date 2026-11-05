@@ -1,8 +1,9 @@
 // gcc -m32 -std=c99 -Wall -Wextra -DCTR_AP -I ap -o /tmp/test-wumpa-bank tools/test-wumpa-bank.c && /tmp/test-wumpa-bank
 //
 // #249 banking decisions (ap/ap_wumpa_shop.h): fruit past 10 banks, the held
-// fruit banks once per finished attempt and never for a forced DeathLink loss,
-// quit and restart bank nothing held, the goal arm counts the lifetime total,
+// fruit banks once per finished attempt; a forced DeathLink loss, a quit and a
+// restart bank the fruit picked up minus hits once (ruled 2026-11-04), the goal
+// arm counts the lifetime total,
 // the shelf states, the hub ids and codes the apworld mints, the race modes
 // that bank (Adventure only), and the tracker and hub lines. The engine
 // wiring is checked by tools/test-wumpa-shop-production.py.
@@ -40,6 +41,20 @@ int main(void)
 	                                                    AP_WumpaFinishTake(&l, 10, 0) == 0);
 	AP_WumpaFinishArm(&l);
 	CHECK("finish: zero held pays nothing", AP_WumpaFinishTake(&l, 0, 0) == 0);
+
+	CHECK("leave: no attempt armed pays nothing", AP_WumpaLeaveTake(&l, 12, 2) == 0);
+	AP_WumpaFinishArm(&l);
+	CHECK("leave: pays the count minus the starting fruit", AP_WumpaLeaveTake(&l, 12, 2) == 10);
+	CHECK("leave: a second boundary in the same attempt pays nothing", AP_WumpaLeaveTake(&l, 12, 2) == 0);
+	AP_WumpaFinishArm(&l);
+	CHECK("leave: only starting fruit pays nothing", AP_WumpaLeaveTake(&l, 3, 3) == 0);
+	AP_WumpaFinishArm(&l);
+	CHECK("leave: hits below the start pay nothing", AP_WumpaLeaveTake(&l, 1, 3) == 0);
+	AP_WumpaFinishArm(&l);
+	CHECK("leave: an untouched count pays nothing", AP_WumpaLeaveTake(&l, -1, 0) == 0);
+	AP_WumpaFinishArm(&l);
+	CHECK("leave: a finish then a leave pays once", AP_WumpaFinishTake(&l, 8, 0) == 8 &&
+	                                                AP_WumpaLeaveTake(&l, 8, 0) == 0);
 
 	CHECK("goal: off is met", AP_WumpaGoalMet(0, 0));
 	CHECK("goal: short", !AP_WumpaGoalMet(1000, 999));
