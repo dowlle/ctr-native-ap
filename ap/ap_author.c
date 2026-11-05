@@ -578,7 +578,7 @@ void AP_Author_MenuPress(int wantOn)
 	if (g_config.boxAuthor)
 		return;
 
-	gate = AP_AuthorGate_Enter(ap_net_status(), AP_Solo_SessionOwnsConnection());
+	gate = AP_AuthorGate_Enter(ap_net_status(), AP_Solo_SessionActive());
 	if (gate != AP_AUTHOR_GATE_OK)
 	{
 		if (s_menuRefusal != gate)
@@ -595,7 +595,7 @@ void AP_Author_MenuPress(int wantOn)
 		AP_LogLine("[AP AUTHOR] leaving the room to author boxes\n");
 		AP_Solo_BeforeReconnect();
 		ap_net_shutdown();
-		gate = AP_AuthorGate_Enter(ap_net_status(), AP_Solo_SessionOwnsConnection());
+		gate = AP_AuthorGate_Enter(ap_net_status(), AP_Solo_SessionActive());
 		if (gate != AP_AUTHOR_GATE_OK)
 		{
 			s_menuRefusal = gate;

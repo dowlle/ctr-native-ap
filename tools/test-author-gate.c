@@ -57,7 +57,7 @@ int main(void)
 {
 	const char *a, *b;
 	int st, solo;
-	char *author, *boxes, *net, *menu, *config;
+	char *author, *boxes, *net, *menu, *config, *soloSrc, *frame;
 
 	// The status values this header repeats match ap_net.h.
 	CHECK(AP_AUTHOR_GATE_NET_IDLE == AP_NET_STATUS_IDLE);
@@ -111,8 +111,12 @@ int main(void)
 	net = slurp("ap/ap_net.cpp");
 	menu = slurp("game/230/MM_ConfigMenu.c");
 	config = slurp("platform/native_config.c");
-	CHECK(author != NULL && boxes != NULL && net != NULL && menu != NULL && config != NULL);
-	if (author == NULL || boxes == NULL || net == NULL || menu == NULL || config == NULL)
+	soloSrc = slurp("game/230/MM_Solo.c");
+	frame = slurp("ap/ap_hooks_frame.c");
+	CHECK(author != NULL && boxes != NULL && net != NULL && menu != NULL && config != NULL && soloSrc != NULL &&
+	      frame != NULL);
+	if (author == NULL || boxes == NULL || net == NULL || menu == NULL || config == NULL || soloSrc == NULL ||
+	    frame == NULL)
 	{
 		printf("author gate: %d checks, %d failures (run from the repo root)\n", checks, failures);
 		return 1;
@@ -144,7 +148,14 @@ int main(void)
 		const char *make = init ? strstr(init, "new APClient(") : NULL;
 		CHECK(init != NULL && ask != NULL && make != NULL && ask < make);
 	}
-	CHECK(strstr(menu, "else if (!ap_net_dial_blocked())") != NULL);
+	{
+		const char *open = soloSrc ? strstr(soloSrc, "static void MM_Solo_Open(void)") : NULL;
+		const char *ask = open ? strstr(open, "ap_net_dial_blocked()") : NULL;
+		const char *body = open ? strstr(open, "AP_Solo_RuntimePresent()") : NULL;
+		CHECK(open != NULL && ask != NULL && body != NULL && ask < body);
+		// Every way into Play Solo goes through MM_Solo_Open.
+		CHECK(count(menu, "MM_Solo_Open();") == 2 && count(menu, "AP_Solo_SessionStart") == 0);
+	}
 
 	// The player client keeps box_author out of its config entries: the row
 	// is a session switch, so config.ini is written exactly as before.
@@ -159,11 +170,20 @@ int main(void)
 		CHECK(count(config, "\"box_author\"") == 1);
 	}
 
+	// No check or goal leaves, or is kept, while the mode is on, and the
+	// seed's state dump stops.
+	CHECK(strstr(frame, "ap_net_hold_checks(AP_ArcadeHoldsRoom() || AP_Author_Enabled());") != NULL);
+	CHECK(strstr(frame, "== 0 && !AP_Author_Enabled())") != NULL);
+	// The menu row's press exists only where the switch does.
+	CHECK(strstr(menu, "#ifdef AP_AUTHOR_SESSION_SWITCH\n\t\t\tif (e == NULL && menu->rowSelected == authorRow)") != NULL);
+
 	free(author);
 	free(boxes);
 	free(net);
 	free(menu);
 	free(config);
+	free(soloSrc);
+	free(frame);
 	printf("author gate: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

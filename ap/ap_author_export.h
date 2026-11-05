@@ -46,8 +46,9 @@
 #define AP_BOX_EXPORT_UNITS "pos is LEV InstDef world units (signed 16-bit); rot_y is an engine angle, 0x1000 = one full turn"
 
 // File name inside AP_BOX_EXPORT_DIR. Retail: "retail-<LEVEL>.json". Custom:
-// "custom-<uuid>-<first 12 of the LEV digest>.json", so two revisions of one
-// package never overwrite each other. Returns 0 when it does not fit.
+// "custom-<uuid>-<first 12 of the LEV digest>-<first 12 of the VRM digest>.json",
+// so two revisions of one package, a texture-only one included, never
+// overwrite each other. Returns 0 when it does not fit.
 static inline int AP_BoxExport_RetailName(char *dst, size_t cap, const char *levelName)
 {
 	int n = snprintf(dst, cap, AP_BOX_EXPORT_DIR "/retail-%s.json", levelName != NULL ? levelName : "?");
@@ -56,7 +57,8 @@ static inline int AP_BoxExport_RetailName(char *dst, size_t cap, const char *lev
 
 static inline int AP_BoxExport_CustomName(char *dst, size_t cap, const AP_CustomBoxKey *key)
 {
-	int n = snprintf(dst, cap, AP_BOX_EXPORT_DIR "/custom-%s-%.12s.json", key->uuid, key->levSha256);
+	int n = snprintf(dst, cap, AP_BOX_EXPORT_DIR "/custom-%s-%.12s-%.12s.json", key->uuid, key->levSha256,
+	                 key->vrmSha256);
 	return n > 0 && (size_t)n < cap;
 }
 

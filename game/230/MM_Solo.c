@@ -296,6 +296,14 @@ static int MM_Solo_ConsumesBack(void)
 
 static void MM_Solo_Open(void)
 {
+	// Box Author Mode is on (ap/ap_author_gate.h): no solo room starts. The
+	// message and the Connection page status both say why. Every entry, the
+	// Connection page row and the title screen's PLAY SOLO, comes through here.
+	if (ap_net_dial_blocked())
+	{
+		MM_Solo_Message("Box Author Mode is on. Turn it off in Options > Authoring.");
+		return;
+	}
 	if (!AP_Solo_RuntimePresent())
 	{
 		MM_Solo_Message("Solo runtime is missing. Reinstall or update the client.");

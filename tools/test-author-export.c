@@ -77,11 +77,16 @@ int main(void)
 	CHECK(AP_CustomBoxKey_Make(&keyA, k_uuid, k_levA, k_vrm));
 	CHECK(AP_CustomBoxKey_Make(&keyB, k_uuid, k_levB, k_vrm));
 	CHECK(AP_BoxExport_CustomName(name, sizeof name, &keyA));
-	CHECK(strcmp(name, "box-submissions/custom-0f8e2c1a-1234-4abc-9def-00112233aabb-aaaaaaaaaaaa.json") == 0);
+	CHECK(strcmp(name, "box-submissions/custom-0f8e2c1a-1234-4abc-9def-00112233aabb-aaaaaaaaaaaa-cccccccccccc.json") == 0);
 	{
 		char other[192];
+		AP_CustomBoxKey keyC;
 		CHECK(AP_BoxExport_CustomName(other, sizeof other, &keyB));
 		CHECK(strcmp(name, other) != 0); // a new revision never overwrites the old file
+		// A texture-only revision (same LEV, other VRM) gets its own file too.
+		CHECK(AP_CustomBoxKey_Make(&keyC, k_uuid, k_levA, "dddddddddddd2222222222222222222222222222222222222222222222222222"));
+		CHECK(AP_BoxExport_CustomName(other, sizeof other, &keyC));
+		CHECK(strcmp(name, other) != 0);
 	}
 	CHECK(!AP_BoxExport_RetailName(name, 10, "CRASH_COVE")); // does not fit: refused, not cut
 

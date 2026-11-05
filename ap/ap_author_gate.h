@@ -56,7 +56,7 @@ enum
 {
 	AP_AUTHOR_GATE_OK = 0,
 	AP_AUTHOR_GATE_ROOM = 1, // a room is connecting, connected or retrying
-	AP_AUTHOR_GATE_SOLO = 2, // a Play Solo session
+	AP_AUTHOR_GATE_SOLO = 2, // a Play Solo session, also while it is still stopping
 };
 
 // May the mode go on now? A refused or stopped dial (ERROR, RETRY_STOPPED)

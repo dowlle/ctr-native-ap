@@ -1072,7 +1072,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 				AP_Net_Reconnect(g_config.uri, g_config.slot, g_config.password);
 			}
 #if !defined(CTR_AP_AUTHORING)
-			else if (!ap_net_dial_blocked()) // Box Author Mode on: the status row says why
+			else
 			{
 				MM_Solo_Open(); // #89
 				return;
@@ -1870,9 +1870,12 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			OtherFX_Play(1, 1);
 			const ConfigEntry *e = selEntry;
 #ifdef CTR_AP
+#ifdef AP_AUTHOR_SESSION_SWITCH
 			if (e == NULL && menu->rowSelected == authorRow)
 				AP_Author_MenuPress(!AP_Author_Enabled());
-			else if (e == NULL)
+			else
+#endif
+			if (e == NULL)
 				AP_LinkRegAction(); // Room links: use this client for ctr-ap:// links, or stop
 			else if (Config_RowLockedBySeed(e))
 				; // the seed has item box colours off: nothing to toggle
