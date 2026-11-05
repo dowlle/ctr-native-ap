@@ -310,7 +310,17 @@ static Model build() {
             // Wumpa Income.
             static const std::map<std::string, int> floors = {{"hub:26", 0}, {"hub:25", 1}, {"hub:27", 1}, {"hub:28", 2}, {"hub:29", 3}};
             L.kind = SHOP;
-            L.target = floors.at(c.at("owner").get<std::string>());
+            // Logical farming budget (paired with wumpa_shop.logic_key_floor).
+            // Native affordability stays wallet/lifetime-based, so farming
+            // ahead remains possible without making it expected early logic.
+            const int amount = std::max(c.at("price").get<int>(), c.at("unlock_banked").get<int>());
+            int budget_floor = 0; // Old rooms retain their original income-only logic.
+            if (p.at("wumpa_shop").contains("logic_scale")) {
+                const int scale = p.at("wumpa_shop").at("logic_scale").get<int>();
+                budget_floor = amount * 100 <= 100 * scale ? 0 : amount * 100 <= 300 * scale ? 1
+                    : amount * 100 <= 600 * scale ? 2 : amount * 100 <= 900 * scale ? 3 : 4;
+            }
+            L.target = std::max(floors.at(c.at("owner").get<std::string>()), budget_floor);
             m.locs.push_back(L);
             continue;
         }
@@ -688,4 +698,3 @@ extern "C" int ap_content_plan_verify(const ap_content_verify_io *io, ap_content
         return 0;
     }
 }
-

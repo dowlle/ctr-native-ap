@@ -301,9 +301,49 @@ static void first_race_won() {
         if (!before.count(code)) expect(later.count(code) != 0, "only a later race closes: " + std::to_string(code));
 }
 
+// A 200-fruit beach shelf is early physically, but its logical budget moves
+// with the configured scale. Preserve the published income-only room too.
+static void shop_key_budgets() {
+    std::ifstream in("tools/fixtures/content-plan/wumpa-shop.json");
+    const J original = J::parse(in);
+    for (const auto &setting : std::vector<std::pair<int, int>>{{0, 0}, {25, 3}, {50, 2}, {100, 1}, {400, 0}}) {
+        J slot = original;
+        J &p = slot["content_plan"];
+        p["wumpa_shop"]["prices"] = 400;
+        const std::map<std::string, int> prices = {{"hub:26", 40}, {"hub:25", 80}, {"hub:27", 80}, {"hub:28", 120}, {"hub:29", 160}};
+        for (auto &c : p["checks"]) if (c["kind"] == "wumpa_shop") {
+            c["price"] = prices.at(c["owner"].get<std::string>());
+            c["unlock_banked"] = c["unlock_banked"].get<int>() ? 200 : 0;
+        }
+        if (setting.first) {
+            p["wumpa_shop"]["logic_scale"] = setting.first;
+            auto &features = p["required_features"];
+            auto pos = std::find(features.begin(), features.end(), J("wumpa_shop_v1"));
+            features.insert(pos + 1, "wumpa_shop_key_tiers_v1");
+        }
+        const auto ids = plan_locations(slot);
+        expect(admit(slot, ids), "shop budget fixture admitted");
+        for (int keys = 0; keys <= 4; ++keys) {
+            Room room;
+            for (auto id : ids) room.present.insert(id);
+            for (int64_t code = 35010000; code < 35010210; ++code)
+                if (code != 35010014) room.foreign[code] = 99;
+            for (const auto &row : p["items"]["rows"])
+                if (row["item"] != 35010014) room.foreign[row["item"].get<int64_t>()] = 99;
+            room.foreign[35010014] = keys;
+            ap_content_verify_result r;
+            const auto reached = reachable_set(room, r);
+            expect((reached.count(35028602) != 0) == (keys >= setting.second),
+                   "200-fruit beach shelf follows received Keys at scale " + std::to_string(setting.first));
+            expect((reached.count(35028762) != 0) == (keys >= std::max(3, setting.second)),
+                   "shop budget keeps Citadel's hub floor");
+        }
+    }
+}
+
 int main(int argc, char **argv) {
     if (argc > 2 && std::string(argv[1]) == "--probe") probe(argv[2]);
-    else { fixtures(); chain(); checked_is_not_reached(); first_race_won(); }
+    else { fixtures(); chain(); checked_is_not_reached(); first_race_won(); shop_key_budgets(); }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;
 }
