@@ -89,6 +89,10 @@ For 0.2.0, the maintainer has approved a community-tested baseline. The in-game 
       the version string is compiled in, so the commit must be final first.
 - [ ] Verify the version string is embedded in the binary and both build
       targets (vanilla + AP) compile.
+- [ ] The CI release build (`tools/ci/build-clients.sh`, `-DCTR_RELEASE_BUILD=ON`)
+      shows the plain version in the window title (`Crash Team Racing - CTR-AP
+      vX.Y.Z`). `package-client.py` fails the build if the binary still contains
+      the ` | Internal` dev marker. Local builds keep the marker.
 - [ ] Configure the AP build from a FRESH build dir (a stale CMake cache can
       skip the vendor gate). Configure must pass `APVendorCheck` with tree
       hashing ON (the default; never pass `-DCTR_AP_VERIFY_VENDOR=OFF` for a

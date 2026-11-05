@@ -101,7 +101,10 @@ internal void Platform_GetWindowName(const char *appName, char *buffer, size_t b
 	snprintf(buffer, bufferSize, "%s | BOX AUTHORING BUILD (no Archipelago)", appName);
 #elif defined(CTR_AUTHORING_CLIENT)
 	snprintf(buffer, bufferSize, "%s | AUTHORING CLIENT (no Archipelago)", appName);
-#elif defined(CTR_INTERNAL)
+#elif defined(CTR_INTERNAL) && !defined(CTR_RELEASE_BUILD)
+	// Dev marker for local builds. CI release builds define CTR_RELEASE_BUILD
+	// and show the plain title; package-client.py fails a release binary that
+	// still contains this string.
 	snprintf(buffer, bufferSize, "%s | Internal", appName);
 #else
 	snprintf(buffer, bufferSize, "%s", appName);

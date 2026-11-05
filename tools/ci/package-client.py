@@ -83,6 +83,15 @@ def require_version_resource(pe):
     raise ValueError('Windows client has no VERSIONINFO resource')
 
 
+INTERNAL_TITLE_MARKER = b' | Internal'
+
+
+def require_release_title(binary):
+    """A CI release build must not carry the dev-only window title suffix."""
+    if INTERNAL_TITLE_MARKER in binary:
+        raise ValueError('Release build window title still contains the Internal dev marker')
+
+
 def verify(platform, exe, variant):
     debug = Path(str(exe) + '.debug')
     if not exe.is_file() or not debug.is_file():
@@ -104,6 +113,7 @@ def verify(platform, exe, variant):
         raise ValueError('Debuglink name/size mismatch')
     if struct.unpack_from('<I', data, crc_at)[0] != zlib.crc32(debug.read_bytes()):
         raise ValueError('Debuglink CRC does not match the exact sidecar')
+    require_release_title(exe.read_bytes())
     result = {}
     if platform == 'windows':
         pe = exe.read_bytes()
