@@ -93,7 +93,7 @@ static int lev_map(const unsigned char*f,size_t n,struct LevView*l,char*e,size_t
 	if((nb&3)||nb/4>l->map/4){seterr(e,en,"invalid LEV pointer-map byte count");return 0;}end=l->map+4+(size_t)nb;
 	if(end!=l->n){seterr(e,en,"truncated pointer map or trailing LEV bytes");return 0;}l->slots=l->p+l->map+4;l->slotCount=nb/4;
 	seen=(unsigned char*)calloc((l->map+3)/4,1);if(!seen){seterr(e,en,"pointer-map validation allocation failed");return 0;}
-	for(i=0;i<l->slotCount;i++){uint32_t raw=rd32(l->slots+4*i);size_t s=((size_t)raw>>2)<<2;uint32_t t;if(raw&3u){free(seen);seterr(e,en,"unaligned pointer-map slot");return 0;}if(!fits(s,4,l->map)){free(seen);seterr(e,en,"pointer-map slot outside retained payload");return 0;}if(seen[s/4]){free(seen);seterr(e,en,"duplicate pointer-map slot");return 0;}seen[s/4]=1;t=rd32(l->p+s);if((t&0xf0000000u)||t>=l->map){free(seen);seterr(e,en,"patched or out-of-range pointer target");return 0;}}
+	for(i=0;i<l->slotCount;i++){uint32_t raw=rd32(l->slots+4*i);size_t s=((size_t)raw>>2)<<2;uint32_t t;if(raw&3u){free(seen);seterr(e,en,"unaligned pointer-map slot");return 0;}if(!fits(s,4,l->map)){free(seen);seterr(e,en,"pointer-map slot outside retained payload");return 0;}if(seen[s/4]){free(seen);seterr(e,en,"duplicate pointer-map slot");return 0;}seen[s/4]=1;t=rd32(l->p+s);if((t&0xf0000000u)||t>=l->map){free(seen);if(e&&en)snprintf(e,en,"patched or out-of-range pointer target (slot 0x%lx)",(unsigned long)s);return 0;}}
 	free(seen);
 	return 1;
 }

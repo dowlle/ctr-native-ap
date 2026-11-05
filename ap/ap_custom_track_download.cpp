@@ -10,7 +10,6 @@
 #include <platform/native_saphi_catalogue.h>
 #include <platform/native_custom_package.h>
 #include <zlib.h>
-#include <chrono>
 #include <future>
 #endif
 
@@ -19,6 +18,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -43,6 +43,12 @@
 #endif
 #ifndef WINHTTP_OPTION_REDIRECT_POLICY_NEVER
 #define WINHTTP_OPTION_REDIRECT_POLICY_NEVER 0
+#endif
+#ifndef WINHTTP_QUERY_RETRY_AFTER
+#define WINHTTP_QUERY_RETRY_AFTER 36
+#endif
+#ifndef ERROR_WINHTTP_TIMEOUT
+#define ERROR_WINHTTP_TIMEOUT 12002
 #endif
 #include <direct.h>
 #else
@@ -110,10 +116,93 @@ std::string lower_ascii(std::string value)
 	return value;
 }
 
+// What one HTTPS GET learned besides its body: the HTTP status (0 when no
+// response arrived), the server's Retry-After in seconds (-1 when absent),
+// and whether a 200 body was cut off. Saphi answers 429 with a Retry-After
+// of a few seconds once a client asks for files faster than its download
+// limit, which a seed install of several tracks reaches.
+struct HttpOutcome
+{
+	int status = 0;
+	int retry_after = -1;
+	bool interrupted = false;
+};
+
+// The player-facing text for a failed transfer. The HTTP status is always
+// named; the log line of the request has the path and request number.
+std::string transfer_error(const std::string &label, const HttpOutcome &outcome)
+{
+	const std::string http = "(HTTP " + std::to_string(outcome.status) + ")";
+	if (outcome.status == 429)
+		return label + " is busy " + http + ". Retry in a minute.";
+	if (outcome.status >= 500)
+		return label + " is unavailable " + http + ". Retry later.";
+	if (outcome.interrupted)
+		return label + " stopped sending the file " + http + ". Retry.";
+	return label + " refused the file " + http + ".";
+}
+
+// Only a busy or briefly unavailable server, or a 200 cut off mid-file, is
+// asked again; a refusal, a timeout or a file that fails its checks is not.
+constexpr int kTransferAttempts = 4;
+bool transfer_retryable(const HttpOutcome &outcome)
+{
+	return outcome.status == 429 || outcome.status == 502 || outcome.status == 503 ||
+	       outcome.status == 504 || outcome.interrupted;
+}
+
+// Seconds before attempt `attempt` + 1: the server's Retry-After when given,
+// else 2, 4, 6; never under 1 or over 60. An HTTP-date Retry-After is not
+// read and falls back to 2, 4, 6 (Saphi sends seconds).
+int transfer_retry_delay(const HttpOutcome &outcome, int attempt)
+{
+	const int seconds = outcome.retry_after >= 0 ? outcome.retry_after : 2 * attempt;
+	return std::max(1, std::min(60, seconds));
+}
+
+// Runs `fetch` (one GET into a cleared body) up to kTransferAttempts times.
+// Every failed attempt is logged with a client request number, the host and
+// path, the HTTP status and Retry-After, so a tester's log tells a rate
+// limit from a missing file or a network failure. Saphi sends no request id
+// of its own.
+template <typename Fetch, typename Wait>
+bool transfer_with_retries(const std::string &host, const std::string &path, Fetch fetch, Wait wait,
+	                       std::string &error)
+{
+	static std::mutex request_mutex;
+	static unsigned next_request = 0;
+	for (int attempt = 1;; attempt++)
+	{
+		unsigned request;
+		{
+			std::lock_guard<std::mutex> lock(request_mutex);
+			request = ++next_request;
+		}
+		HttpOutcome outcome;
+		std::string failure;
+		if (fetch(outcome, failure))
+			return true;
+		const bool again = attempt < kTransferAttempts && transfer_retryable(outcome);
+		const int delay = again ? transfer_retry_delay(outcome, attempt) : 0;
+		std::fprintf(stderr, "[Saphi] request %u failed: GET %s%s http=%d retry_after=%d attempt=%d/%d: %s%s\n",
+		             request, host.c_str(), path.c_str(), outcome.status, outcome.retry_after, attempt,
+		             kTransferAttempts, failure.c_str(),
+		             again ? (" Retrying in " + std::to_string(delay) + " s.").c_str() : "");
+		if (!again)
+		{
+			error = failure;
+			return false;
+		}
+		wait(delay);
+	}
+}
+
 bool decode_http_response(const std::vector<unsigned char> &raw, size_t max_bytes,
 	                      std::vector<unsigned char> &body, std::string &error,
-	                      const std::string &label = "Project Saphi")
+	                      const std::string &label = "Project Saphi", HttpOutcome *outcome = nullptr)
 {
+	HttpOutcome ignored;
+	HttpOutcome &result = outcome ? *outcome : ignored;
 	const std::string marker = "\r\n\r\n";
 	auto header_end = std::search(raw.begin(), raw.end(), marker.begin(), marker.end());
 	if (header_end == raw.end())
@@ -124,13 +213,33 @@ bool decode_http_response(const std::vector<unsigned char> &raw, size_t max_byte
 	const size_t header_bytes = static_cast<size_t>(header_end - raw.begin());
 	const std::string headers(reinterpret_cast<const char *>(raw.data()), header_bytes);
 	const size_t line_end = headers.find("\r\n");
-	if (line_end == std::string::npos || headers.substr(0, line_end).find(" 200 ") == std::string::npos)
+	const std::string status_line = headers.substr(0, line_end == std::string::npos ? headers.size() : line_end);
+	const size_t status_at = status_line.find(' ');
+	if (status_at != std::string::npos && status_line.compare(0, 5, "HTTP/") == 0)
 	{
-		error = label + " did not return the requested file.";
+		char *end = nullptr;
+		const long status = std::strtol(status_line.c_str() + status_at + 1, &end, 10);
+		if (end && end != status_line.c_str() + status_at + 1 && status >= 100 && status <= 999 &&
+		    (*end == ' ' || *end == '\0'))
+			result.status = static_cast<int>(status);
+	}
+	const std::string lower = lower_ascii(headers);
+	const size_t retry_at = lower.find("\r\nretry-after:");
+	if (retry_at != std::string::npos)
+	{
+		const char *value = lower.c_str() + retry_at + 14;
+		while (*value == ' ') value++;
+		char *end = nullptr;
+		const long seconds = std::strtol(value, &end, 10);
+		if (end != value && seconds >= 0)
+			result.retry_after = static_cast<int>(std::min(seconds, 3600L));
+	}
+	if (result.status != 200)
+	{
+		error = result.status ? transfer_error(label, result) : label + " returned an invalid HTTP response.";
 		return false;
 	}
 
-	const std::string lower = lower_ascii(headers);
 	const size_t body_start = header_bytes + marker.size();
 	if (body_start > raw.size())
 		return false;
@@ -140,6 +249,19 @@ bool decode_http_response(const std::vector<unsigned char> &raw, size_t max_byte
 		{
 			error = label + " returned a file larger than this client accepts.";
 			return false;
+		}
+		// A connection closed before Content-Length is a cut-off file.
+		const size_t length_at = lower.find("\r\ncontent-length:");
+		if (length_at != std::string::npos)
+		{
+			char *end = nullptr;
+			const unsigned long long length = std::strtoull(lower.c_str() + length_at + 17, &end, 10);
+			if (end != lower.c_str() + length_at + 17 && length != raw.size() - body_start)
+			{
+				result.interrupted = length > raw.size() - body_start;
+				error = label + (result.interrupted ? " returned an incomplete download." : " returned an invalid HTTP response.");
+				return false;
+			}
 		}
 		body.assign(raw.begin() + body_start, raw.end());
 		return true;
@@ -172,6 +294,7 @@ bool decode_http_response(const std::vector<unsigned char> &raw, size_t max_byte
 			break;
 		cursor += 2;
 	}
+	result.interrupted = true;
 	error = label + " returned an incomplete download.";
 	return false;
 }
@@ -183,7 +306,7 @@ std::wstring widen_ascii(const std::string &text)
 }
 
 bool https_get_host(const std::string &host, const std::string &path, size_t max_bytes,
-	                std::vector<unsigned char> &body, std::string &error)
+	                std::vector<unsigned char> &body, std::string &error, HttpOutcome &outcome)
 {
 	if (!host_allowed(host))
 	{
@@ -231,9 +354,18 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 	DWORD status = 0;
 	DWORD status_size = sizeof status;
 	if (ok)
+	{
 		ok = WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
 		                         WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size,
 		                         WINHTTP_NO_HEADER_INDEX) && status == 200;
+		outcome.status = static_cast<int>(status);
+		DWORD retry_after = 0;
+		DWORD retry_size = sizeof retry_after;
+		if (WinHttpQueryHeaders(request, WINHTTP_QUERY_RETRY_AFTER | WINHTTP_QUERY_FLAG_NUMBER,
+		                        WINHTTP_HEADER_NAME_BY_INDEX, &retry_after, &retry_size,
+		                        WINHTTP_NO_HEADER_INDEX))
+			outcome.retry_after = static_cast<int>(std::min<DWORD>(retry_after, 3600));
+	}
 	while (ok)
 	{
 		DWORD available = 0;
@@ -245,6 +377,7 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 		}
 		if (!WinHttpQueryDataAvailable(request, &available))
 		{
+			outcome.interrupted = GetLastError() != ERROR_WINHTTP_TIMEOUT;
 			ok = false;
 			break;
 		}
@@ -261,13 +394,24 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 		DWORD read = 0;
 		if (!WinHttpReadData(request, body.data() + old_size, available, &read))
 		{
+			outcome.interrupted = GetLastError() != ERROR_WINHTTP_TIMEOUT;
 			ok = false;
 			break;
 		}
 		body.resize(old_size + read);
 	}
+	// A body shorter than its Content-Length is a cut-off file.
+	DWORD length = 0;
+	DWORD length_size = sizeof length;
+	if (ok && WinHttpQueryHeaders(request, WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER,
+	                              WINHTTP_HEADER_NAME_BY_INDEX, &length, &length_size,
+	                              WINHTTP_NO_HEADER_INDEX) && body.size() != length)
+	{
+		outcome.interrupted = body.size() < length;
+		ok = false;
+	}
 	if (!ok && error.empty())
-		error = status == 0 ? "Could not reach " + label + "." : label + " did not return the requested file.";
+		error = status == 0 ? "Could not reach " + label + "." : transfer_error(label, outcome);
 	if (request) WinHttpCloseHandle(request);
 	if (connection) WinHttpCloseHandle(connection);
 	WinHttpCloseHandle(session);
@@ -372,7 +516,7 @@ bool load_ca_store(asio::ssl::context &context)
 #endif
 
 bool https_get_host(const std::string &host, const std::string &path, size_t max_bytes,
-	                std::vector<unsigned char> &body, std::string &error)
+	                std::vector<unsigned char> &body, std::string &error, HttpOutcome &outcome)
 {
 	if (!host_allowed(host))
 	{
@@ -436,7 +580,7 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 			if (ec)
 				throw asio::system_error(ec);
 		}
-		return decode_http_response(raw, max_bytes, body, error, label);
+		return decode_http_response(raw, max_bytes, body, error, label, &outcome);
 	}
 	catch (const std::exception &e)
 	{
@@ -446,10 +590,22 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 }
 #endif
 
+// One allow-listed GET with the retry and logging policy above.
+bool https_get_retrying(const std::string &host, const std::string &path, size_t max_bytes,
+	                    std::vector<unsigned char> &body, std::string &error)
+{
+	return transfer_with_retries(host, path,
+		[&](HttpOutcome &outcome, std::string &failure) {
+			body.clear();
+			return https_get_host(host, path, max_bytes, body, failure, outcome);
+		},
+		[](int seconds) { std::this_thread::sleep_for(std::chrono::seconds(seconds)); }, error);
+}
+
 bool https_get(const std::string &path, size_t max_bytes,
 	           std::vector<unsigned char> &body, std::string &error)
 {
-	return https_get_host(kSaphiHost, path, max_bytes, body, error);
+	return https_get_retrying(kSaphiHost, path, max_bytes, body, error);
 }
 
 bool hash_matches(const std::vector<unsigned char> &bytes, const std::string &expected)
@@ -1253,5 +1409,5 @@ bool ap_https_get(const char *host, const std::string &path, size_t max_bytes,
                   std::vector<unsigned char> &body, std::string &error)
 {
 	body.clear();
-	return host && https_get_host(host, path, max_bytes, body, error);
+	return host && https_get_retrying(host, path, max_bytes, body, error);
 }
