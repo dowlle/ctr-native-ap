@@ -1,6 +1,6 @@
 # Measured seconds for the slow harnesses, used only to balance the CI shards (tools/ci/run-harnesses.py).
 # Anything not listed counts as 0.7 s. Stale numbers only cost balance, never coverage.
-tools/test-content-plan.cpp :: 498
+tools/test-content-plan.cpp :: 190
 tools/test-content-features.cpp :: 50
 Controls page module (native_controls, ported from CTR Native Expanded) :: 46
 tools/test-content-verify.cpp :: 27
