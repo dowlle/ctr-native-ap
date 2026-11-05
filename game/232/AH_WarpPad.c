@@ -2161,6 +2161,30 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		newInst->model->headers[0].flags |= 1;
 
 		warppadObj->inst[WPIS_CLOSED_X] = newInst;
+
+		// A2-45 (ruled 2026-11-05): a Done pad the player can still enter for a
+		// replay shows the retail light blue beam, so it no longer looks locked.
+		// Same condition as ThTick's Done guard; no tint (AP_PadLookBeamTint is 0
+		// for Done). The glow, the number and the grey map dot are unchanged.
+		if (AP_PadDoneBeam(AP_PadLook(levelID, warppadObj->levelID),
+		                   AP_PadReplayable(levelID, warppadObj->levelID)) &&
+		    gGT->modelPtr[STATIC_BEAM] != 0)
+		{
+			newInst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_BEAM], "beam", t);
+
+			*(int *)((int)&newInst->matrix + 0x0) = *(int *)((int)&inst->matrix + 0x0);
+			*(int *)((int)&newInst->matrix + 0x4) = *(int *)((int)&inst->matrix + 0x4);
+			*(int *)((int)&newInst->matrix + 0x8) = *(int *)((int)&inst->matrix + 0x8);
+			*(int *)((int)&newInst->matrix + 0xC) = *(int *)((int)&inst->matrix + 0xC);
+			*(s16 *)((int)&newInst->matrix + 0x10) = *(s16 *)((int)&inst->matrix + 0x10);
+			newInst->matrix.t[0] = inst->matrix.t[0];
+			newInst->matrix.t[1] = inst->matrix.t[1];
+			newInst->matrix.t[2] = inst->matrix.t[2];
+
+			newInst->alphaScale = 0xc00;
+
+			warppadObj->inst[WPIS_OPEN_BEAM] = newInst;
+		}
 		return;
 	}
 #endif
