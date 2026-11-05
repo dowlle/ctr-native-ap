@@ -165,14 +165,66 @@ static void test_exit_and_restart_bank(void)
 	CHECK("A2-42 a DeathLink loss then the reload banks once", credited == before + 8);
 	forcedLoss = 0;
 
-	// Relic Race: the received race_loss leaves through the EXIT TO MAP route.
+	// Relic Race: the received race_loss finishes the player
+	// (AP_DeathLinkApplyRelicLoss sets ACTION_RACE_FINISHED, then the end
+	// sequence), and the attempt leaves through the EXIT TO MAP route.
 	before = credited;
 	rc_attempt(RELIC_RACE, 0);
 	RB_Player_ModifyWumpa(d, 7);
 	forcedLoss = 1;
+	d->actionsFlagSet |= ACTION_RACE_FINISHED;
+	AP_WumpaTick(gt);
+	CHECK("A2-42 a Relic Race DeathLink loss banks picked up fruit", credited == before + 7);
+	gt->gameMode1 |= END_OF_RACE;
+	AP_WumpaTick(gt);
+	gt->gameMode1 &= ~END_OF_RACE;
 	rc_leave(1);
-	CHECK("A2-42 a Relic Race DeathLink exit banks picked up fruit", credited == before + 7);
+	CHECK("A2-42 a Relic Race DeathLink loss then its exit banks once", credited == before + 7);
 	forcedLoss = 0;
+
+	// A pickup on the lights-out frame, before the tick applies the ladder.
+	before = credited;
+	onTrack = 1;
+	rc_boundary(LOAD_RESTART);
+	sdata->Loading.stage = LOAD_IDLE;
+	gt->gameMode1 = ADVENTURE_MODE;
+	d->actionsFlagSet = 0;
+	d->numWumpas = 1;
+	gt->trafficLightsTimer = 5;
+	AP_WumpaTick(gt);
+	gt->trafficLightsTimer = -1;
+	RB_Player_ModifyWumpa(d, 2);
+	AP_WumpaTick(gt);
+	CHECK("A2-42 a pickup before the ladder keeps the kart start and the ladder as starting fruit",
+	      AP_WumpaRaceCount(d) == 6 && g_race_start == 4);
+	rc_leave(0);
+	CHECK("A2-42 that attempt banks only the pickup", credited == before + 2);
+
+	// Gem Cup: each leg finishes and banks once; the next leg's load pays nothing more.
+	before = credited;
+	for (i = 0; i < 2; i++)
+	{
+		rc_attempt(ADVENTURE_MODE | ADVENTURE_CUP, 0);
+		RB_Player_ModifyWumpa(d, 4);
+		d->actionsFlagSet |= ACTION_RACE_FINISHED;
+		AP_WumpaTick(gt);
+		gt->gameMode1 |= END_OF_RACE;
+		AP_WumpaTick(gt);
+		rc_boundary(LOAD_REQUESTED);
+	}
+	CHECK("A2-42 cup legs bank their whole count once each", credited == before + 2 * 7);
+
+	// A mid-race reconnect keeps this attempt's count and its starting fruit.
+	before = credited;
+	rc_attempt(ADVENTURE_MODE, 0);
+	RB_Player_ModifyWumpa(d, 5);
+	AP_WumpaConnectReset();
+	for (i = 0; i < 3; i++)
+		AP_WumpaReceiveStarting();
+	AP_WumpaTick(gt);
+	CHECK("A2-42 a reconnect mid-race never reapplies the ladder", AP_WumpaRaceCount(d) == 8 && g_race_start == 3);
+	rc_leave(1);
+	CHECK("A2-42 an exit after a reconnect banks only the pickups", credited == before + 5);
 
 	{
 		const unsigned modes[] = {ARCADE_MODE, TIME_TRIAL, BATTLE_MODE};
