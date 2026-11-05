@@ -47,6 +47,9 @@
 #ifndef WINHTTP_QUERY_RETRY_AFTER
 #define WINHTTP_QUERY_RETRY_AFTER 36
 #endif
+#ifndef ERROR_WINHTTP_TIMEOUT
+#define ERROR_WINHTTP_TIMEOUT 12002
+#endif
 #include <direct.h>
 #else
 #include <asio.hpp>
@@ -149,11 +152,12 @@ bool transfer_retryable(const HttpOutcome &outcome)
 }
 
 // Seconds before attempt `attempt` + 1: the server's Retry-After when given,
-// else 2, 4, 6; never under 1 or over 20.
+// else 2, 4, 6; never under 1 or over 60. An HTTP-date Retry-After is not
+// read and falls back to 2, 4, 6 (Saphi sends seconds).
 int transfer_retry_delay(const HttpOutcome &outcome, int attempt)
 {
 	const int seconds = outcome.retry_after >= 0 ? outcome.retry_after : 2 * attempt;
-	return std::max(1, std::min(20, seconds));
+	return std::max(1, std::min(60, seconds));
 }
 
 // Runs `fetch` (one GET into a cleared body) up to kTransferAttempts times.
@@ -245,6 +249,19 @@ bool decode_http_response(const std::vector<unsigned char> &raw, size_t max_byte
 		{
 			error = label + " returned a file larger than this client accepts.";
 			return false;
+		}
+		// A connection closed before Content-Length is a cut-off file.
+		const size_t length_at = lower.find("\r\ncontent-length:");
+		if (length_at != std::string::npos)
+		{
+			char *end = nullptr;
+			const unsigned long long length = std::strtoull(lower.c_str() + length_at + 17, &end, 10);
+			if (end != lower.c_str() + length_at + 17 && length != raw.size() - body_start)
+			{
+				result.interrupted = length > raw.size() - body_start;
+				error = label + (result.interrupted ? " returned an incomplete download." : " returned an invalid HTTP response.");
+				return false;
+			}
 		}
 		body.assign(raw.begin() + body_start, raw.end());
 		return true;
@@ -360,7 +377,7 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 		}
 		if (!WinHttpQueryDataAvailable(request, &available))
 		{
-			outcome.interrupted = true;
+			outcome.interrupted = GetLastError() != ERROR_WINHTTP_TIMEOUT;
 			ok = false;
 			break;
 		}
@@ -377,11 +394,21 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 		DWORD read = 0;
 		if (!WinHttpReadData(request, body.data() + old_size, available, &read))
 		{
-			outcome.interrupted = true;
+			outcome.interrupted = GetLastError() != ERROR_WINHTTP_TIMEOUT;
 			ok = false;
 			break;
 		}
 		body.resize(old_size + read);
+	}
+	// A body shorter than its Content-Length is a cut-off file.
+	DWORD length = 0;
+	DWORD length_size = sizeof length;
+	if (ok && WinHttpQueryHeaders(request, WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER,
+	                              WINHTTP_HEADER_NAME_BY_INDEX, &length, &length_size,
+	                              WINHTTP_NO_HEADER_INDEX) && body.size() != length)
+	{
+		outcome.interrupted = body.size() < length;
+		ok = false;
 	}
 	if (!ok && error.empty())
 		error = status == 0 ? "Could not reach " + label + "." : transfer_error(label, outcome);

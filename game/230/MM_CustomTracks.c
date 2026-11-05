@@ -884,15 +884,17 @@ static void CT_Resolve(const struct AP_SeedContentRow *r)
 
 /* ---- per-frame jobs ----------------------------------------------------- */
 
+/* A Saphi install finished since the last frame: its outcome, a failure with
+   its HTTP status, replaces "Downloading and checking..." once the frame's
+   fresh-visit reset has run. */
+static int s_ctSaphiOutcome;
 static void CT_Poll(void)
 {
     static int saphiWasDownloading;
     char detail[128];
     MM_CustomLibrary_Tick(0);
     MM_CustomManager_Poll();
-    /* A finished Saphi install shows its outcome, a failure with its HTTP
-       status, in place of "Downloading and checking...". */
-    if (saphiWasDownloading && !s_saphiDownloading && s_saphiMessage[0]) CT_SetMessage(s_saphiMessage);
+    if (saphiWasDownloading && !s_saphiDownloading && s_saphiMessage[0]) s_ctSaphiOutcome = 1;
     saphiWasDownloading = s_saphiDownloading;
     /* The catalogue loads once per session on the first visit, as on the
        Track Manager; Refresh catalogue loads it again. */
@@ -1542,6 +1544,7 @@ static void MM_ConfigProc_CustomTracks(struct RectMenu *menu, uint32_t *ot, stru
         if (!AP_SeedContentInstallBusy() && !s_ctLegacyDownload) s_ctMessage[0] = 0;
     }
     s_ctLastFrame = now;
+    if (s_ctSaphiOutcome) { CT_SetMessage(s_saphiMessage); s_ctSaphiOutcome = 0; }
 
     /* Search text entry (Library page controls): physical-pad commit/cancel,
        the old query back on cancel. */

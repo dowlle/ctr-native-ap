@@ -251,13 +251,17 @@ int main()
 		HttpOutcome cut;
 		expect(!decode("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n10\r\nabc", cut, error) &&
 		       cut.status == 200 && cut.interrupted && transfer_retryable(cut), "a cut-off chunked 200 is retried");
+		HttpOutcome shortened;
+		expect(!decode("HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nabcde", shortened, error) &&
+		       shortened.status == 200 && shortened.interrupted && transfer_retryable(shortened) &&
+		       error.find("incomplete") != std::string::npos, "a 200 shorter than its Content-Length is retried");
 		HttpOutcome garbage;
 		expect(!decode("XTTP/1.1 200 OK\r\n\r\n", garbage, error) && garbage.status == 0 &&
 		       error.find("invalid HTTP response") != std::string::npos, "a status line that is not HTTP is refused");
 		HttpOutcome slow;
 		slow.status = 503; slow.retry_after = 100;
-		expect(transfer_retry_delay(slow, 1) == 20 && transfer_retry_delay(HttpOutcome{}, 2) == 4,
-		       "Retry-After is capped at 20 s; without one the wait grows 2, 4, 6");
+		expect(transfer_retry_delay(slow, 1) == 60 && transfer_retry_delay(HttpOutcome{}, 2) == 4,
+		       "Retry-After is capped at 60 s; without one the wait grows 2, 4, 6");
 
 		auto run = [](std::vector<HttpOutcome> answers, std::vector<int> &waits, int &calls, std::string &error) {
 			waits.clear(); calls = 0; error.clear();

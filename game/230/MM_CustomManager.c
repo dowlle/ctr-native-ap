@@ -65,8 +65,7 @@ static void MM_CustomManager_Poll(void)
         {
             s_saphiRefreshBusy = 0;
             s_saphiRefreshFailed = result == -2;
-            s_saphiFailed = result == -2;
-            if (result == -2) fprintf(stderr, "[Saphi] refresh: %s\n", s_saphiMessage);
+            if (result == -2) { s_saphiFailed = 1; fprintf(stderr, "[Saphi] refresh: %s\n", s_saphiMessage); }
             if (result == 1)
             {
                 CustomSaphi_Free(&s_saphiCatalogue);
@@ -80,6 +79,7 @@ static void MM_CustomManager_Poll(void)
         if (result == 1 || result == -2)
         {
             s_saphiDownloading = 0;
+            s_saphiFailed = result == -2;
             if (result == 1)
             {
                 s_contentStoreWanted = 1;
@@ -96,7 +96,7 @@ static void MM_CustomManager_Poll(void)
                 snprintf(s_saphiMessage, sizeof s_saphiMessage, "Installed. Files verified.");
 #endif
             }
-            else { s_saphiFailed = 1; fprintf(stderr, "[Saphi] install: %s\n", s_saphiMessage); }
+            else fprintf(stderr, "[Saphi] install: %s\n", s_saphiMessage);
         }
     }
 }
@@ -261,7 +261,7 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
             installed && !installed->local.arcade ?
             (installed->local.timeTrial ? installed->local.arcadeReason : installed->local.timeTrialReason) : "";
         const char *status = source && source->disabledReason[0] ? source->disabledReason :
-            strstr(s_saphiMessage, "publication failed") ? s_saphiMessage :
+            s_saphiFailed || strstr(s_saphiMessage, "publication failed") ? s_saphiMessage :
             sourceInstalled ? "Installed" : hasOlder && !s_saphiVersionTrack ? "Update available" : s_saphiMessage[0] ? s_saphiMessage : source ?
             (source->modeTags & 1) ? "Arcade tagged" : (source->modeTags & 2) ? "Time Trial tagged" : "Other modes" :
             why[0] ? why : "Files verified";
