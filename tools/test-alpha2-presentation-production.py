@@ -125,6 +125,8 @@ int main(void) {
     }
     char title[96]; active=0; assert(!AP_BossChallengeTitle(0,title,sizeof title));
     active=1; assert(!AP_BossChallengeTitle(-1,title,sizeof title));
+    // N. Oxide's two races (bossID 4 and 5) keep their own banner (A2-44).
+    assert(!AP_BossChallengeTitle(4,title,sizeof title) && !AP_BossChallengeTitle(5,title,sizeof title));
     assert(!AP_BossChallengeTitle(0,NULL,1) && !AP_BossRivalAdvert(0,title,0));
     puts("PASS: seated boxes receive model lift; custom leg and cup/final titles stay distinct; rivals use full names and Penta's Challenge");
 }
@@ -133,6 +135,12 @@ int main(void) {
 garage = source("game/232/AH_Garage.c")
 assert "AP_BossChallengeTitle(hubID - 1" in garage
 assert "data.MetaDataCharacters[c].name_LNG_short" not in garage
+# The race-start banner of a garage boss race names the same racer as the
+# garage title (A2-44): only the single-race banner, after its retail string.
+flow = source("game/UI/UI_RaceFlow.c")
+banner = flow[flow.index("pcVar6 = sdata->lngStrings[textID];"):flow.index("sVar7 = gGT->pushBuffer[0].rect.y - (windowHeight + -7);")]
+assert "AP_BossChallengeTitle(gGT->bossID, apBossTitle" in banner and "ADVENTURE_BOSS" in banner
+assert flow.count("AP_BossChallengeTitle(") == 1
 with tempfile.TemporaryDirectory() as directory:
     path = Path(directory)
     (path / "presentation.c").write_text(fixture)
