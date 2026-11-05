@@ -1746,17 +1746,51 @@ extern "C" int AP_Solo_OptionGet(int index, struct APSoloOptionInfo *out)
 	CopyText(out->name, sizeof out->name, o.name);
 	CopyText(out->label, sizeof out->label, o.label);
 	CopyText(out->group, sizeof out->group, o.group);
-	CopyText(out->value, sizeof out->value, o.value);
-	out->kind = o.kind == "toggle" ? AP_SOLO_OPT_TOGGLE : o.kind == "choice" ? AP_SOLO_OPT_CHOICE : AP_SOLO_OPT_RANGE;
+	CopyText(out->value, sizeof out->value, o.kind == "set" ? AP_SoloSetSummary(o) : o.value);
+	out->kind = o.kind == "toggle"   ? AP_SOLO_OPT_TOGGLE
+	            : o.kind == "choice" ? AP_SOLO_OPT_CHOICE
+	            : o.kind == "set"    ? AP_SOLO_OPT_SET
+	                                 : AP_SOLO_OPT_RANGE;
 	out->visible = AP_SoloOptionVisible(g_options, o) ? 1 : 0;
 	out->forced = o.forced.empty() ? 0 : 1;
 	out->changed = o.value != o.initial ? 1 : 0;
+	const std::string guard = AP_SoloGuardReason(g_options, o);
+	out->blocked = guard.empty() ? 0 : 1;
 	if (!o.forced.empty())
 		CopyText(out->note, sizeof out->note, o.forcedReason);
+	else if (!guard.empty())
+		CopyText(out->note, sizeof out->note, guard);
 	else if (AP_SoloOptionWarns(g_options, o))
 		CopyText(out->note, sizeof out->note, o.warnReason);
 	return 1;
 }
+
+extern "C" int AP_Solo_OptionItemCount(int index)
+{
+	if (index < 0 || index >= (int)g_options.size() || g_options[index].kind != "set")
+		return 0;
+	return (int)g_options[index].keys.size();
+}
+
+extern "C" int AP_Solo_OptionItemGet(int index, int item, struct APSoloItemInfo *out)
+{
+	if (!out || item < 0 || item >= AP_Solo_OptionItemCount(index))
+		return 0;
+	const APSoloOption &o = g_options[index];
+	std::memset(out, 0, sizeof *out);
+	CopyText(out->label, sizeof out->label, o.keyLabels[item]);
+	out->on = AP_SoloSetHas(o, o.keys[item]) ? 1 : 0;
+	out->isDefault = item < (int)o.keyDefault.size() && o.keyDefault[item] ? 1 : 0;
+	return 1;
+}
+
+extern "C" void AP_Solo_OptionItemToggle(int index, int item)
+{
+	if (index >= 0 && index < (int)g_options.size())
+		AP_SoloSetToggle(g_options[index], item);
+}
+
+extern "C" int AP_Solo_OptionsBlocked(void) { return AP_SoloFirstBlocked(g_options); }
 
 extern "C" void AP_Solo_OptionStep(int index, int direction)
 {
