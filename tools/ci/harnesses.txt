@@ -137,6 +137,8 @@ tools/test-cv-tracker-letters.c
 tools/test-pad-glow-items.c
 tools/test-pad-approach-hints.cpp
 tools/test-pad-approach-hints-production.py
+tools/test-hint-filters.cpp
+tools/test-hint-filters-production.py
 tools/test-pad-colour.py
 tools/test-picker-infoline.c
 tools/test-podium-skip.c
