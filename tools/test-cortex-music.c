@@ -198,6 +198,169 @@ static void loader(void)
 	CustomTrack_ClearSeedDescriptor();
 }
 
+
+// A content-plan package's own music (A2-30): any package whose shared store
+// entry pins a Saphi .sca plays it on its own host slot. The pair here is a
+// byte-changed copy of the bundled pair (so it is not Cortex Vortex), the .sca
+// is the bundled one standing in for a Saphi file.
+#define PKG_HOST 5
+static char s_pkgLev[512], s_pkgVrm[512], s_pkgSca[512], s_pkgLevSha[65], s_pkgScaSha[65];
+
+static void sha_of(const char *path, char out[65])
+{
+	char cmd[1200], line[200] = "";
+	FILE *p;
+	snprintf(cmd, sizeof cmd, "sha256sum '%s'", path);
+	p = popen(cmd, "r");
+	if (p && fgets(line, sizeof line, p))
+		snprintf(out, 65, "%.64s", line);
+	if (p)
+		pclose(p);
+}
+
+static int arm_package(int withMusic, const char *musicLevSha)
+{
+	struct CustomTrackSeedDescriptor d = cortex_descriptor();
+	char vrmSha[65];
+	sha_of(s_pkgVrm, vrmSha);
+	d.hostLevelID = PKG_HOST;
+	snprintf(d.levSha256, sizeof d.levSha256, "%s", s_pkgLevSha);
+	snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", vrmSha);
+	if (!CustomTrack_UseContentFiles(s_pkgLev, s_pkgVrm, "ACID LAKE"))
+		return 0;
+	if (withMusic)
+		CustomTrack_UseContentMusic(s_pkgSca, s_pkgScaSha, SCA_BYTES, musicLevSha);
+	return CustomTrack_ApplySeedDescriptor(&d);
+}
+
+static void serve_package_race(int expectMusic, const char *what)
+{
+	struct CustomTrackRaceContext race = pad_race();
+	char label[160];
+	race.hostLevelID = PKG_HOST;
+	race.cortex = 0;
+	race.slot = 1;
+	strcpy(race.trackID, "custom/acid-lake/1.0.0");
+	strcpy(race.levSha256, s_pkgLevSha);
+	sha_of(s_pkgVrm, race.vrmSha256);
+	snprintf(label, sizeof label, "%s: stages", what);
+	EXPECT(CustomTrack_StageStandaloneRace(&race) == 1, label);
+	CustomTrack_OnRaceLoadRequested(PKG_HOST);
+	snprintf(label, sizeof label, "%s: the track is served", what);
+	EXPECT(CustomTrack_ServingLoad(PKG_HOST, 0, 0) == 1, label);
+	snprintf(label, sizeof label, "%s: music %s", what, expectMusic ? "plays on its host slot" : "falls back");
+	EXPECT(CustomTrack_CortexMusicServing(PKG_HOST, 0, 0) == expectMusic, label);
+	snprintf(label, sizeof label, "%s: not on another level", what);
+	EXPECT(CustomTrack_CortexMusicServing(3, 0, 0) == 0 && CustomTrack_CortexMusicServing(HOST, 0, 0) == 0, label);
+	CustomTrack_OnRaceLoadRequested(26);
+	snprintf(label, sizeof label, "%s: hub return ends it", what);
+	EXPECT(CustomTrack_CortexMusicServing(PKG_HOST, 0, 0) == 0, label);
+}
+
+static void package_music(void)
+{
+	const void *bytes;
+	size_t size;
+	char cmd[2400];
+
+	snprintf(s_pkgLev, sizeof s_pkgLev, "%s/pkg.lev", s_dir);
+	snprintf(s_pkgVrm, sizeof s_pkgVrm, "%s/pkg.vrm", s_dir);
+	snprintf(s_pkgSca, sizeof s_pkgSca, "%s/pkg.sca", s_dir);
+	snprintf(cmd, sizeof cmd, "cp 'assets/tracks/cortex-vortex/CVortex Arcade All.lev' '%s' && printf 'Z' >> '%s' && "
+	         "cp 'assets/tracks/cortex-vortex/CVortex Arcade All.vrm' '%s' && cp 'assets/tracks/cortex-vortex/CVortex Arcade All.sca' '%s'",
+	         s_pkgLev, s_pkgLev, s_pkgVrm, s_pkgSca);
+	EXPECT(run(cmd) == 0, "package fixture");
+	sha_of(s_pkgLev, s_pkgLevSha);
+	sha_of(s_pkgSca, s_pkgScaSha);
+
+	// Pinned music of an ordinary package: verified at arm, served on its slot.
+	EXPECT(arm_package(1, s_pkgLevSha) == 1, "package arms with music");
+	EXPECT(CustomTrack_CortexMusic(&bytes, &size) == 1 && size == SCA_BYTES && s_musicIsPackage == 1, "package music is held");
+	serve_package_race(1, "package music");
+	{
+		const void *held;
+		size_t heldSize;
+		EXPECT(CustomTrack_CortexMusicHold(&held, &heldSize) == 1 && heldSize == SCA_BYTES, "package music can be held");
+		CustomTrack_CortexMusicRelease();
+	}
+	// The Cortex Vortex entry never takes it, and a package race on host 13 is
+	// not the Cortex race either.
+	CustomTrack_ClearSeedDescriptor();
+	EXPECT(CustomTrack_CortexMusic(&bytes, &size) == 0 && s_musicIsPackage == 0, "withdrawn seed drops the package music");
+
+	// No pin: the host slot's music plays.
+	EXPECT(arm_package(0, NULL) == 1, "package arms without a pin");
+	EXPECT(CustomTrack_CortexMusic(&bytes, &size) == 0, "no pin, no music");
+	serve_package_race(0, "no pin");
+	CustomTrack_ClearSeedDescriptor();
+
+	// A pin made for another LEV is never read for this track.
+	EXPECT(arm_package(1, s_pkgScaSha) == 1, "package arms with a pin for another LEV");
+	EXPECT(CustomTrack_CortexMusic(&bytes, &size) == 0, "a pin bound to another LEV is refused");
+	CustomTrack_ClearSeedDescriptor();
+
+	// The pin is forgotten by the next package.
+	EXPECT(arm_package(1, s_pkgLevSha) == 1 && CustomTrack_CortexMusic(&bytes, &size) == 1, "armed with music again");
+	CustomTrack_ClearSeedDescriptor();
+	{
+		struct CustomTrackSeedDescriptor d = cortex_descriptor();
+		char vrmSha[65];
+		sha_of(s_pkgVrm, vrmSha);
+		d.hostLevelID = PKG_HOST;
+		snprintf(d.levSha256, sizeof d.levSha256, "%s", s_pkgLevSha);
+		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", vrmSha);
+		EXPECT(CustomTrack_UseContentMusic(s_pkgSca, s_pkgScaSha, SCA_BYTES, s_pkgLevSha) == 1, "pin handed over");
+		EXPECT(CustomTrack_UseContentFiles(s_pkgLev, s_pkgVrm, "ACID LAKE") == 1, "next package selected");
+		EXPECT(CustomTrack_ApplySeedDescriptor(&d) == 1 && CustomTrack_CortexMusic(&bytes, &size) == 0,
+		       "a later Use call forgets the pin");
+	}
+	CustomTrack_ClearSeedDescriptor();
+
+	// A changed or missing file costs the music only.
+	snprintf(cmd, sizeof cmd, "printf 'x' | dd of='%s' bs=1 seek=100 conv=notrunc 2>/dev/null", s_pkgSca);
+	run(cmd);
+	EXPECT(arm_package(1, s_pkgLevSha) == 1, "package arms with changed music");
+	EXPECT(CustomTrack_CortexMusic(&bytes, &size) == 0, "changed package music is refused");
+	serve_package_race(0, "changed music");
+	CustomTrack_ClearSeedDescriptor();
+	unlink(s_pkgSca);
+	EXPECT(arm_package(1, s_pkgLevSha) == 1 && CustomTrack_CortexMusic(&bytes, &size) == 0, "missing package music: no music");
+	CustomTrack_ClearSeedDescriptor();
+
+	// A managed-package handoff forgets the pin of the package before it.
+	{
+		struct CustomTrackManagerPackage managed;
+		struct CustomTrackManagerStatus status;
+		struct CustomTrackSeedDescriptor d = cortex_descriptor();
+		char vrmSha[65];
+		memset(&managed, 0, sizeof managed);
+		memset(&status, 0, sizeof status);
+		managed.title = "MANAGED";
+		managed.navigationUuid = "0f8fad5b-d9cb-469f-a165-70867728950e";
+		managed.navigationRevision = 1;
+		status.state = CTR_CT_MANAGER_READY;
+		snprintf(status.levPath, sizeof status.levPath, "%s", s_pkgLev);
+		snprintf(status.vrmPath, sizeof status.vrmPath, "%s", s_pkgVrm);
+		sha_of(s_pkgVrm, vrmSha);
+		d.hostLevelID = PKG_HOST;
+		snprintf(d.levSha256, sizeof d.levSha256, "%s", s_pkgLevSha);
+		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", vrmSha);
+		// Restore the file the changed-music case removed.
+		snprintf(cmd, sizeof cmd, "cp 'assets/tracks/cortex-vortex/CVortex Arcade All.sca' '%s'", s_pkgSca);
+		run(cmd);
+		EXPECT(CustomTrack_UseContentMusic(s_pkgSca, s_pkgScaSha, SCA_BYTES, s_pkgLevSha) == 1, "pin handed over for a shared package");
+		EXPECT(CustomTrack_UseManagedPackage(&managed, &status) == 1, "managed package selected next");
+		EXPECT(CustomTrack_ApplySeedDescriptor(&d) == 1 && CustomTrack_CortexMusic(&bytes, &size) == 0,
+		       "the managed package does not play the earlier package's music");
+		CustomTrack_ClearSeedDescriptor();
+	}
+
+	// Refused pins.
+	EXPECT(CustomTrack_UseContentMusic(NULL, s_pkgScaSha, 10, s_pkgLevSha) == 0, "no path");
+	EXPECT(CustomTrack_UseContentMusic(s_pkgSca, "short", 10, s_pkgLevSha) == 0, "short digest");
+	EXPECT(CustomTrack_UseContentMusic(s_pkgSca, s_pkgScaSha, 0, s_pkgLevSha) == 0, "zero size");
+}
+
 static void pins(void)
 {
 	char line[512];
@@ -269,6 +432,7 @@ int main(void)
 	snprintf(s_sca, sizeof s_sca, "%s/tracks/cortex-vortex/CVortex Arcade All.sca", s_dir);
 
 	loader();
+	package_music();
 	pins();
 	selection();
 

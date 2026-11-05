@@ -360,7 +360,34 @@ sectors from the package (`game/HOWL/HOWL_CustomMusic.c:
 HOWL_CustomMusic_ServeSectors`), and `game/HOWL/HOWL_Music.c:
 Music_AsyncParseBanks` takes the level bank and song from the `.sca`
 (`HOWL_CustomMusic_LoadBank`, `HOWL_CustomMusic_SetSong`). A missing or refused `.sca` keeps the
-default: Crash Cove's song and sound bank.
+default: Crash Cove's song and sound bank. A package imported from an xdelta
+patch has no `.sca`; it falls back to the retail bank and song of the arcade
+track whose BIGFILE group holds the patched LEV
+(`CustomMusic_ReplacedLevel`, set by the custom page), or Crash Cove's when
+that is not one of the 18 arcade tracks.
+
+**Where the `.sca` comes from.** The Track Manager install stores it with the
+package (role `sca`, section 5). A Current Seed or This Seed install into the
+shared package store (`ap_custom_track_download_start_shared`) also fetches the
+one current `.sca` Saphi lists for the same version as the LEV, up to 1 MiB, and
+pins it in the package manifest as `original/sca-<id>.sca`. Music is optional:
+a missing, ambiguous, oversized or failed `.sca` installs the track without it.
+A seed does not pin the `.sca`; the package manifest does, and the race reads
+the file only when its size and SHA-256 match that pin
+(`CustomTrack_UseContentMusic`). Tracks installed before this change have no
+`.sca` in the store; install them again to add it.
+
+**Which races play it.** The Arcade and Time Trial custom pages, and a
+content-plan race (a Current Seed pad or cup leg) on the package's own host
+slot. Cortex Vortex keeps its bundled music. A content-plan package without a
+pinned `.sca` plays its host slot's own music, as before.
+
+**Sound memory.** Builds with `CTR_CUSTOM_PACKAGES`, which includes the
+player client built with `CTR_CUSTOM_TRACKS`, have 1 MiB of SPU memory
+(`include/platform/native_spu_memory.h`). Before a `.sca` replaces the level
+bank, `CustomMusic_Admit` checks that it fits next to bank 0, bank 54 and the
+character banks; if not, the race keeps the default music and logs
+`[CUSTOM MUSIC] track music refused, default music`.
 
 ## 11. Box Author Mode and the AI lap recorder
 

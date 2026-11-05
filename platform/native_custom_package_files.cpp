@@ -687,6 +687,54 @@ extern "C" int CustomPackage_FindPinnedFiles(const char *assets, const char *rev
 }
 
 namespace {
+struct MusicSearch
+{
+    const char *revision, *uuid, *levHash, *vrmHash;
+    unsigned long levBytes, vrmBytes;
+    std::string directory, sca, scaSha;
+    unsigned long scaBytes;
+};
+/* The first verified revision with the seed's LEV and VRM that also pins a
+   .sca. A copy of the same pair installed without music is skipped. */
+void find_pinned_music(const CustomPackageStoreEntry *entry, void *opaque)
+{
+    auto &search = *static_cast<MusicSearch *>(opaque);
+    if (!entry->verified || !search.sca.empty() ||
+        std::strcmp(entry->manifest.version, search.revision) ||
+        (search.uuid && *search.uuid && std::strcmp(entry->manifest.uuid, search.uuid))) return;
+    bool lev = false, vrm = false;
+    const CustomPackageFile *sca = nullptr;
+    for (unsigned int i = 0; i < entry->manifest.count; i++)
+    {
+        const auto &f = entry->manifest.files[i];
+        if (!std::strcmp(f.role, "lev") && !std::strcmp(f.sha256, search.levHash) && f.bytes == search.levBytes) lev = true;
+        if (!std::strcmp(f.role, "vrm") && !std::strcmp(f.sha256, search.vrmHash) && f.bytes == search.vrmBytes) vrm = true;
+        if (!std::strcmp(f.role, "sca") && f.bytes) sca = &f;
+    }
+    if (!lev || !vrm || !sca) return;
+    search.sca = search.directory + "/" + entry->pin + "/" + sca->path;
+    search.scaSha = sca->sha256;
+    search.scaBytes = static_cast<unsigned long>(sca->bytes);
+}
+}
+
+extern "C" int CustomPackage_FindPinnedMusic(const char *assets, const char *revision, const char *uuid,
+    const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
+    char *scaPath, size_t scaCapacity, char scaSha256[65], unsigned long *scaBytes)
+{
+    if (!assets || !revision || !levSha256 || !vrmSha256 || !scaPath || !scaCapacity || !scaSha256 || !scaBytes) return 0;
+    MusicSearch search{revision, uuid, levSha256, vrmSha256, levBytes, vrmBytes,
+                       std::string(assets) + "/tracks/packages", {}, {}, 0};
+    char error[256];
+    if (!CustomPackage_ScanStore(search.directory.c_str(), find_pinned_music, &search, error, sizeof error) ||
+        search.sca.empty() || search.sca.size() >= scaCapacity || search.scaSha.size() != 64) return 0;
+    std::memcpy(scaPath, search.sca.c_str(), search.sca.size() + 1);
+    std::memcpy(scaSha256, search.scaSha.c_str(), 65);
+    *scaBytes = search.scaBytes;
+    return 1;
+}
+
+namespace {
 bool descriptor_key(const std::string &key)
 {
     if (key.empty() || key.size() > 64 || key.front() == '-' || key.back() == '-') return false;

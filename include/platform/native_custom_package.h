@@ -150,6 +150,13 @@ int CustomPackage_ScanStore(const char *store, CustomPackageStoreVisitor visitor
 int CustomPackage_FindPinnedFiles(const char *assets, const char *revision, const char *uuid,
     const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
     char *levPath, size_t levCapacity, char *vrmPath, size_t vrmCapacity);
+/* The same lookup for the track's own music: the .sca path, its pinned sha256
+   and size, from the first verified revision of this pair that pins one. The
+   caller verifies the file against the sha256 before use. Returns 0 when no
+   such revision exists. */
+int CustomPackage_FindPinnedMusic(const char *assets, const char *revision, const char *uuid,
+    const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
+    char *scaPath, size_t scaCapacity, char scaSha256[65], unsigned long *scaBytes);
 /* A descriptor derived from one verified store revision. Return 1 for a
    complete descriptor, 2 when author laps must be picked, or 0 with a reason.
    `key` is the seed key when known; otherwise source metadata or the title

@@ -712,7 +712,7 @@ bool find_media(const nlohmann::json &root, const std::string &prefix, const std
 	int matches = 0;
 	for (const auto &row : root["data"])
 	{
-		if (!row.is_object() || row.value("type", "") != type)
+		if (!row.is_object() || !row.contains("type") || !row["type"].is_string() || row["type"] != type)
 			continue;
 		if (download_id > 0)
 		{
@@ -732,6 +732,58 @@ bool find_media(const nlohmann::json &root, const std::string &prefix, const std
 	}
 	return matches == 1;
 }
+
+#ifdef CTR_CUSTOM_PACKAGES
+// The track's own music for the LEV just picked: Saphi's one current .sca whose
+// version is the LEV's. More than one, none, another version or a file past the
+// .sca cap means no music, never an error: the race plays its fallback music.
+// `lev_id` is the registry's LEV download id, 0 to take the LEV by `version`.
+constexpr size_t kScaMax = 1024 * 1024;
+bool find_music(const nlohmann::json &root, const std::string &prefix, const std::string &version,
+	            int lev_id, MediaFile &media, int &media_id)
+{
+	std::string lev_version = version;
+	if (!root.contains("data") || !root["data"].is_array())
+		return false;
+	if (lev_id > 0)
+	{
+		lev_version.clear();
+		for (const auto &row : root["data"])
+			if (row.is_object() && row.contains("type") && row["type"] == "lev" && row.contains("id") &&
+			    row["id"].is_number_integer() && row["id"].get<long long>() == lev_id && row.contains("version") &&
+			    row["version"].is_string())
+				lev_version = row["version"].get<std::string>();
+		if (lev_version.empty())
+			return false;
+	}
+	int matches = 0;
+	for (const auto &row : root["data"])
+	{
+		if (!row.is_object() || !row.contains("type") || !row["type"].is_string() || row["type"] != "sca" ||
+		    !row.contains("is_current") ||
+		    row["is_current"] != true || !row.contains("version") || !row["version"].is_string() ||
+		    row["version"].get<std::string>() != lev_version || !row.contains("id") ||
+		    !row["id"].is_number_integer())
+			continue;
+		const long long id = row["id"].get<long long>();
+		const bool typed = row.contains("download_url") && row["download_url"].is_string() &&
+		                   row.contains("file_size") && row["file_size"].is_number_integer();
+		const std::string path = typed ? row["download_url"].get<std::string>() : std::string();
+		const long long size = typed ? row["file_size"].get<long long>() : 0LL;
+		matches++;
+		if (!typed || id <= 0 || id > 2147483647LL || path != prefix + std::to_string(id) || size <= 0 ||
+		    size > static_cast<long long>(kScaMax))
+		{
+			matches = 2; // a row that cannot be taken counts as ambiguous
+			break;
+		}
+		media.path = path;
+		media.size = static_cast<size_t>(size);
+		media_id = static_cast<int>(id);
+	}
+	return matches == 1;
+}
+#endif
 
 // Publish a verified pinned install (Current Seed, #133 PR 7). It never
 // writes through a link, never replaces or removes a file it did not write,
@@ -955,6 +1007,26 @@ void worker(std::string package_root, std::string api_url, std::string version,
 			if (tracks.size() < 8 || tracks.compare(tracks.size() - 7, 7, "/tracks"))
 				throw std::runtime_error("The shared package store path is invalid");
 			const std::string packageTitle = CustomPackage_ValidateTitle(seed_title.data(), seed_title.size()) ? seed_title : key;
+			// The track's own music rides along when Saphi lists one for this
+			// LEV. Music is optional: a missing, odd or failed .sca installs
+			// the track without it (the race then plays its fallback music).
+			std::vector<unsigned char> sca_bytes;
+			int sca_id = 0;
+			try
+			{
+				MediaFile sca;
+				std::string sca_error;
+				if (find_music(root, api_path + "/", version, lev_id, sca, sca_id))
+				{
+					set_state(AP_CT_DOWNLOAD_RUNNING, "Downloading the track's music from Project Saphi...");
+					if (!https_get(sca.path, kScaMax, sca_bytes, sca_error) || sca_bytes.size() != sca.size)
+						sca_bytes.clear();
+				}
+			}
+			catch (const std::exception &)
+			{
+				sca_bytes.clear(); // a malformed music row costs the music only
+			}
 			nlohmann::json files = nlohmann::json::array({
 				{{"role", "lev"}, {"path", "original/track.lev"}, {"sha256", lev_hash}, {"bytes", lev_bytes.size()}},
 				{{"role", "vrm"}, {"path", "original/track.vrm"}, {"sha256", vrm_hash}, {"bytes", vrm_bytes.size()}}});
@@ -978,14 +1050,20 @@ void worker(std::string package_root, std::string api_url, std::string version,
 				for (unsigned int i = 0; i < count; i++) { out += digits[hash[i] >> 4]; out += digits[hash[i] & 15]; }
 				return out;
 			};
-			files.insert(files.begin() + 1, {{"role", "presentation"}, {"path", "metadata/seed-source.json"},
+			// A bare braced list in files.insert would add each pair as its own
+			// array element; build each entry as one json object.
+			files.insert(files.begin() + 1, nlohmann::json{{"role", "presentation"}, {"path", "metadata/seed-source.json"},
 				{"sha256", sha(source)}, {"bytes", source.size()}});
 			if (!settings.empty())
-				files.insert(files.begin() + 2, {{"role", "race_settings"}, {"path", "metadata/race-settings.json"},
+				files.insert(files.begin() + 2, nlohmann::json{{"role", "race_settings"}, {"path", "metadata/race-settings.json"},
 					{"sha256", sha(settings)}, {"bytes", settings.size()}});
 			if (!relicTargets.empty())
-				files.insert(files.end() - 1, {{"role", "relic_targets"}, {"path", "metadata/relic-targets.json"},
+				files.insert(files.end() - 1, nlohmann::json{{"role", "relic_targets"}, {"path", "metadata/relic-targets.json"},
 					{"sha256", sha(relicTargets)}, {"bytes", relicTargets.size()}});
+			if (!sca_bytes.empty())
+				files.insert(files.end() - 1, nlohmann::json{{"role", "sca"},
+					{"path", "original/sca-" + std::to_string(sca_id) + ".sca"},
+					{"sha256", sha(std::string(sca_bytes.begin(), sca_bytes.end()))}, {"bytes", sca_bytes.size()}});
 			const std::string manifest = nlohmann::json({{"schema_version", 1}, {"package_uuid", seed_uuid},
 				{"version", version}, {"title", packageTitle},
 				{"compatibility", {{"native_contract", 1}, {"apworld_contract", 1}}},
@@ -1002,6 +1080,7 @@ void worker(std::string package_root, std::string api_url, std::string version,
 				{"presentation", source.data(), source.size()}};
 			if (!settings.empty()) inputs.push_back({"race_settings", settings.data(), settings.size()});
 			if (!relicTargets.empty()) inputs.push_back({"relic_targets", relicTargets.data(), relicTargets.size()});
+			if (!sca_bytes.empty()) inputs.push_back({"sca", sca_bytes.data(), sca_bytes.size()});
 			inputs.push_back({"vrm", vrm_bytes.data(), vrm_bytes.size()});
 			char detail[512] = {};
 			if (!CustomPackage_AcquireBuffers(manifest.data(), manifest.size(), pin.c_str(), inputs.data(), inputs.size(),
