@@ -2309,6 +2309,22 @@ ContentPad_BuildGate:
 
 			newInst->alphaScale = 0xc00;
 
+#ifdef CTR_AP
+			// alpha2 pad colours: the beam wears its pad's state colour, the
+			// same one as the hub map dot and the tracker node (ap_pad_colour.h).
+			// A pad is rebuilt when its state changes, so the colour set here
+			// follows the state. No AP state keeps the retail light blue.
+			if (ctr_cfg_active())
+			{
+				u32 apBeamTint = AP_PadLookBeamTint(AP_PadLook(levelID, warppadObj->levelID));
+				if (apBeamTint != 0)
+				{
+					newInst->colorRGBA = apBeamTint;
+					newInst->alphaScale = AP_PAD_BEAM_ALPHA;
+				}
+			}
+#endif
+
 			warppadObj->inst[WPIS_OPEN_BEAM] = newInst;
 		}
 

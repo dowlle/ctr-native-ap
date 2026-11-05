@@ -26,17 +26,21 @@ int main(void)
 	EXPECT(AP_TrackerBossNodeState(0, 1) == 2, "no boss location, open garage is green");
 	EXPECT(AP_TrackerBossNodeState(0, 0) == 1, "no boss location, locked garage is red");
 
-	/* Colours: gold only for a beaten garage; pad state 3 (Trophy won, second
-	 * stage not met) is orange like the hub map (ruling of 2026-11-02). */
-	EXPECT(AP_TrackerNodeColour(AP_TrackerBossNodeState(2, 0)) == AP_TRACKER_COLOUR_GOLD, "beaten garage is gold");
-	EXPECT(AP_TrackerNodeColour(3) == AP_TRACKER_COLOUR_ORANGE, "pad waiting on stage 2 is orange");
-	EXPECT(AP_TrackerNodeColour(1) == AP_TRACKER_COLOUR_RED, "locked is red");
-	EXPECT(AP_TrackerNodeColour(2) == AP_TRACKER_COLOUR_GREEN, "raceable is green");
-	EXPECT(AP_TrackerNodeColour(4) == AP_TRACKER_COLOUR_PERIWINKLE, "tier 2 open is periwinkle");
-	EXPECT(AP_TrackerNodeColour(5) == AP_TRACKER_COLOUR_GRAY, "done is gray");
-	EXPECT(AP_TrackerNodeColour(0) == AP_TRACKER_COLOUR_GREEN, "no state draws green, as before");
+	/* Colours go through the shared pad colour table (ap_pad_colour.h, pinned by
+	 * tools/test-pad-colour.py): gold only for a beaten garage; pad state 3
+	 * (Trophy won, second stage not met) is orange like the hub map. */
+#define NODE(state) AP_TrackerNodeColour(AP_PadLookFromState((state), 0))
+	EXPECT(NODE(AP_TrackerBossNodeState(2, 0)) == AP_PAD_LOOK_BOSS_BEATEN, "beaten garage is gold");
+	EXPECT(NODE(3) == AP_PAD_LOOK_STAGE2_WAITING, "pad waiting on stage 2 is orange");
+	EXPECT(NODE(1) == AP_PAD_LOOK_CLOSED, "locked is red");
+	EXPECT(NODE(2) == AP_PAD_LOOK_OPEN, "raceable is green");
+	EXPECT(NODE(4) == AP_PAD_LOOK_STAGE2_OPEN, "tier 2 open is periwinkle");
+	EXPECT(NODE(5) == AP_PAD_LOOK_DONE, "done is gray");
+	EXPECT(NODE(0) == AP_PAD_LOOK_OPEN, "no state draws green, as before");
+	EXPECT(NODE(AP_TrackerBossNodeState(1, 1)) == AP_PAD_LOOK_OPEN, "open garage is green");
+	EXPECT(NODE(AP_TrackerBossNodeState(1, 0)) == AP_PAD_LOOK_CLOSED, "locked garage is red");
 	for (open = 0; open < 7; open++)
-		EXPECT(open == AP_TRACKER_NODE_BEATEN || AP_TrackerNodeColour(open) != AP_TRACKER_COLOUR_GOLD,
+		EXPECT(open == AP_TRACKER_NODE_BEATEN || NODE(open) != AP_PAD_LOOK_BOSS_BEATEN,
 		       "no pad state is gold");
 
 	printf("%d checks, %d failures\n", checks, failures);
