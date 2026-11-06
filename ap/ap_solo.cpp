@@ -1746,10 +1746,13 @@ extern "C" int AP_Solo_OptionGet(int index, struct APSoloOptionInfo *out)
 	CopyText(out->name, sizeof out->name, o.name);
 	CopyText(out->label, sizeof out->label, o.label);
 	CopyText(out->group, sizeof out->group, o.group);
-	CopyText(out->value, sizeof out->value, o.kind == "set" ? AP_SoloSetSummary(o) : o.value);
+	CopyText(out->value, sizeof out->value, o.kind == "set"      ? AP_SoloSetSummary(o)
+	                                        : o.kind == "weights" ? AP_SoloWeightsSummary(o)
+	                                                              : o.value);
 	out->kind = o.kind == "toggle"   ? AP_SOLO_OPT_TOGGLE
 	            : o.kind == "choice" ? AP_SOLO_OPT_CHOICE
 	            : o.kind == "set"    ? AP_SOLO_OPT_SET
+	            : o.kind == "weights" ? AP_SOLO_OPT_WEIGHTS
 	                                 : AP_SOLO_OPT_RANGE;
 	out->visible = AP_SoloOptionVisible(g_options, o) ? 1 : 0;
 	out->forced = o.forced.empty() ? 0 : 1;
@@ -1767,7 +1770,8 @@ extern "C" int AP_Solo_OptionGet(int index, struct APSoloOptionInfo *out)
 
 extern "C" int AP_Solo_OptionItemCount(int index)
 {
-	if (index < 0 || index >= (int)g_options.size() || g_options[index].kind != "set")
+	if (index < 0 || index >= (int)g_options.size() ||
+	    (g_options[index].kind != "set" && g_options[index].kind != "weights"))
 		return 0;
 	return (int)g_options[index].keys.size();
 }
@@ -1779,6 +1783,14 @@ extern "C" int AP_Solo_OptionItemGet(int index, int item, struct APSoloItemInfo 
 	const APSoloOption &o = g_options[index];
 	std::memset(out, 0, sizeof *out);
 	CopyText(out->label, sizeof out->label, o.keyLabels[item]);
+	if (o.kind == "weights")
+	{
+		out->weight = item < (int)o.keyWeights.size() ? o.keyWeights[item] : 0;
+		out->defaultWeight = item < (int)o.keyDefaultWeights.size() ? o.keyDefaultWeights[item] : 0;
+		out->on = out->weight > 0 ? 1 : 0;
+		out->isDefault = out->weight == out->defaultWeight ? 1 : 0;
+		return 1;
+	}
 	out->on = AP_SoloSetHas(o, o.keys[item]) ? 1 : 0;
 	out->isDefault = item < (int)o.keyDefault.size() && o.keyDefault[item] ? 1 : 0;
 	return 1;
@@ -1788,6 +1800,18 @@ extern "C" void AP_Solo_OptionItemToggle(int index, int item)
 {
 	if (index >= 0 && index < (int)g_options.size())
 		AP_SoloSetToggle(g_options[index], item);
+}
+
+extern "C" void AP_Solo_OptionItemStep(int index, int item, int direction)
+{
+	if (index >= 0 && index < (int)g_options.size())
+		AP_SoloWeightStep(g_options[index], item, direction);
+}
+
+extern "C" void AP_Solo_OptionItemReset(int index, int item)
+{
+	if (index >= 0 && index < (int)g_options.size())
+		AP_SoloWeightReset(g_options[index], item);
 }
 
 extern "C" int AP_Solo_OptionsBlocked(void) { return AP_SoloFirstBlocked(g_options); }

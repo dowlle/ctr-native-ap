@@ -459,6 +459,13 @@ struct APSoloOption
 	// in row order, which is also what --set passes.
 	std::vector<std::string> keys, keyLabels;
 	std::vector<bool> keyDefault;
+	// kind "weights" (a dict of per-key numbers, A3-22): one number row per
+	// key, 0 to weightMax. `value` is the whole table as a JSON object in row
+	// order, which is also what --set passes when a weight changed. Written
+	// whole, never per key: apply_overrides replaces the option, and a partial
+	// table would drop weights a YAML set and the player left alone.
+	std::vector<int> keyWeights, keyDefaultWeights;
+	int weightMax = 0;
 	// Overlay guards on this row (also on the set a count guard names): each
 	// one refuses generation on the screen, as the world would refuse it.
 	std::vector<nlohmann::json> guards;
@@ -574,6 +581,51 @@ static inline std::string AP_SoloSetSummary(const APSoloOption &row)
 	return std::to_string(on) + " of " + std::to_string(all);
 }
 
+// The weights table as a JSON object in row order, so the same choice always
+// gives the same text (changed is a plain compare) and --set passes it as is.
+static inline std::string AP_SoloWeightsValue(const APSoloOption &row)
+{
+	nlohmann::json out = nlohmann::json::object();
+	for (size_t i = 0; i < row.keys.size(); i++)
+		out[row.keys[i]] = i < row.keyWeights.size() ? row.keyWeights[i] : 0;
+	return out.dump();
+}
+
+// Left (-1) / Right (+1) on weight row `item`: wraps between 0 and the
+// option's per-trap maximum, like a range row wraps.
+static inline void AP_SoloWeightStep(APSoloOption &row, int item, int direction)
+{
+	if (row.kind != "weights" || !row.forced.empty() || direction == 0 || item < 0 ||
+	    item >= (int)row.keyWeights.size())
+		return;
+	int &w = row.keyWeights[item];
+	if (direction > 0)
+		w = w >= row.weightMax ? 0 : w + 1;
+	else
+		w = w <= 0 ? row.weightMax : w - 1;
+	row.value = AP_SoloWeightsValue(row);
+}
+
+// Cross on weight row `item`: back to the option's default weight.
+static inline void AP_SoloWeightReset(APSoloOption &row, int item)
+{
+	if (row.kind != "weights" || !row.forced.empty() || item < 0 || item >= (int)row.keyWeights.size() ||
+	    item >= (int)row.keyDefaultWeights.size())
+		return;
+	row.keyWeights[item] = row.keyDefaultWeights[item];
+	row.value = AP_SoloWeightsValue(row);
+}
+
+// "Defaults" or "2 custom": the weights row's value on the group page.
+static inline std::string AP_SoloWeightsSummary(const APSoloOption &row)
+{
+	int custom = 0;
+	for (size_t i = 0; i < row.keyWeights.size(); i++)
+		if (i >= row.keyDefaultWeights.size() || row.keyWeights[i] != row.keyDefaultWeights[i])
+			custom++;
+	return custom ? std::to_string(custom) + " custom" : "Defaults";
+}
+
 // Build the rows. Options the overlay names but the world lacks are skipped
 // (the apworld test fails on that anyway). Toggle, choice and range rows, and
 // set rows the overlay gives a checklist.
@@ -629,6 +681,25 @@ static inline std::vector<APSoloOption> AP_SoloBuildOptions(const nlohmann::json
 						                                                          : r[0].get<std::string>());
 					}
 			}
+			else if (row.kind == "dict" && f.contains("weight_rows") && f["weight_rows"].is_array() &&
+			         !f["weight_rows"].empty())
+			{
+				// A3-22: a dict the screen edits as one number row per key
+				// (trap weights). The runtime lists the rows from the world's
+				// own registry, so a new trap appears without a change here.
+				row.kind = "weights";
+				for (const auto &r : f["weight_rows"])
+					if (r.is_object() && r.contains("key") && r["key"].is_string())
+					{
+						row.keys.push_back(r["key"].get<std::string>());
+						row.keyLabels.push_back(r.contains("label") && r["label"].is_string()
+						                            ? r["label"].get<std::string>()
+						                            : row.keys.back());
+					}
+				row.weightMax = std::max(1, f.value("weight_max", 100));
+				if (row.keys.empty())
+					continue;
+			}
 			else if (row.kind != "toggle" && row.kind != "choice" && row.kind != "range")
 				continue;
 			if (row.kind == "choice" && f.contains("choices") && f["choices"].is_array())
@@ -641,7 +712,27 @@ static inline std::vector<APSoloOption> AP_SoloBuildOptions(const nlohmann::json
 				row.hi = f.value("range_end", 0);
 			}
 			nlohmann::json v = values.contains(row.name) ? values[row.name] : f.value("default", nlohmann::json());
-			if (row.kind == "set")
+			if (row.kind == "weights")
+			{
+				// Every row shows a number: the YAML's table overlaid on the
+				// option's default table (the runtime sends it merged). Values
+				// outside 0..max are clamped to what the world accepts.
+				const nlohmann::json d = f.value("default", nlohmann::json::object());
+				for (const std::string &k : row.keys)
+				{
+					int def = 0;
+					if (d.is_object() && d.contains(k) && d[k].is_number())
+						def = d[k].get<int>();
+					def = std::max(0, std::min(row.weightMax, def));
+					row.keyDefaultWeights.push_back(def);
+					int w = def;
+					if (v.is_object() && v.contains(k) && v[k].is_number())
+						w = std::max(0, std::min(row.weightMax, v[k].get<int>()));
+					row.keyWeights.push_back(w);
+				}
+				row.value = AP_SoloWeightsValue(row);
+			}
+			else if (row.kind == "set")
 			{
 				// A YAML entry without a row (a custom track in the boss track
 				// pool) becomes a row of its own, so it is kept and shown.

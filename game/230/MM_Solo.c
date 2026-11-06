@@ -18,7 +18,12 @@
               A set option (Crystal Arenas, the boss pools, Podium Rungs) is
               a row with "4 of 7"; Cross opens its checklist, one row per
               entry: Cross checks or unchecks, the option's default rows are
-              marked. A guard the world would refuse (more Crystal
+              marked. Trap Weights is a row with "Defaults" or "2 custom";
+              Cross opens its page, one number row per trap from the world's
+              trap registry (A3-22): Left / Right move a weight from 0 to the
+              option's maximum, Cross returns a row to the default weight and
+              the grey number shows what that default is. A guard the world
+              would refuse (more Crystal
               Challenges than arenas checked, a pool too small) shows its
               reason in red, and Continue opens that row instead (A2-41).
      Tracks   installed custom tracks for a preset (decision 32) or an
@@ -90,7 +95,7 @@ static int s_soloHelpTop;       /* first help line shown (Up / Down scroll) */
 static int s_soloGroup = -1;    /* open option group, -1 the group list */
 static int s_soloGroupSel;      /* the group list's selection, kept while a group is open */
 static int s_soloGroupTop;
-static int s_soloList = -1;     /* open checklist: the set option's index, -1 none */
+static int s_soloList = -1;     /* open checklist or weights page: the option's index, -1 none */
 static int s_soloListSel;       /* the group page's selection, kept while a checklist is open */
 static int s_soloListTop;
 static int s_soloEditing;
@@ -728,7 +733,8 @@ static void MM_Solo_PageOptionGroups(uint32_t *ot, struct GamepadBuffer *pad)
 
 #define SOLO_CHECK_DEFAULT_R (SOLO_ROW_R - 0x30) /* right edge of the "default" mark */
 
-/* Third level: the checklist of the set option s_soloList. */
+/* Third level: the checklist of the set option s_soloList, or the number
+   page of the weights option s_soloList (A3-22). */
 static void MM_Solo_PageChecklist(uint32_t *ot, struct GamepadBuffer *pad)
 {
 	struct APSoloOptionInfo info;
@@ -738,8 +744,24 @@ static void MM_Solo_PageChecklist(uint32_t *ot, struct GamepadBuffer *pad)
 	char line[160], fit[160];
 	int i, on = 0;
 
+	AP_Solo_OptionGet(s_soloList, &info);
 	MM_Solo_Navigate(pad, count);
-	if (count > 0 && (pad->buttonsTapped & (BTN_CROSS | BTN_LEFT | BTN_RIGHT)) != 0)
+	if (count > 0 && info.kind == AP_SOLO_OPT_WEIGHTS)
+	{
+		/* Trap weights: Left / Right move the row's weight, Cross returns it
+		   to the option's default weight. */
+		if ((pad->buttonsTapped & (BTN_LEFT | BTN_RIGHT)) != 0)
+		{
+			AP_Solo_OptionItemStep(s_soloList, s_soloSel, (pad->buttonsTapped & BTN_RIGHT) != 0 ? 1 : -1);
+			OtherFX_Play(0, 1);
+		}
+		else if ((pad->buttonsTapped & BTN_CROSS) != 0)
+		{
+			AP_Solo_OptionItemReset(s_soloList, s_soloSel);
+			OtherFX_Play(0, 1);
+		}
+	}
+	else if (count > 0 && (pad->buttonsTapped & (BTN_CROSS | BTN_LEFT | BTN_RIGHT)) != 0)
 	{
 		AP_Solo_OptionItemToggle(s_soloList, s_soloSel);
 		OtherFX_Play(0, 1);
@@ -752,7 +774,6 @@ static void MM_Solo_PageChecklist(uint32_t *ot, struct GamepadBuffer *pad)
 		s_soloPage = SOLO_HELP;
 		return;
 	}
-	AP_Solo_OptionGet(s_soloList, &info);
 	MM_Solo_Title(info.label, ot);
 	for (i = 0; i < count; i++)
 		if (AP_Solo_OptionItemGet(s_soloList, i, &item) && item.on)
@@ -763,21 +784,40 @@ static void MM_Solo_PageChecklist(uint32_t *ot, struct GamepadBuffer *pad)
 		AP_Solo_OptionItemGet(s_soloList, i, &item);
 		MM_Solo_Fit(item.label, fit, sizeof fit, labelW);
 		DecalFont_DrawLineOT(fit, SOLO_ROW_X, y, FONT_SMALL, ORANGE, ot);
-		if (item.isDefault)
-			DecalFont_DrawLineOT((char *)"default", SOLO_CHECK_DEFAULT_R, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
-		DecalFont_DrawLineOT((char *)(item.on ? "On" : "Off"), SOLO_ROW_R, y, FONT_SMALL, JUSTIFY_RIGHT | (item.on ? WHITE : GRAY),
-		                     ot);
+		if (info.kind == AP_SOLO_OPT_WEIGHTS)
+		{
+			/* The grey number is the option's default weight. */
+			snprintf(line, sizeof line, "%d", item.defaultWeight);
+			DecalFont_DrawLineOT(line, SOLO_CHECK_DEFAULT_R, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
+			snprintf(line, sizeof line, "%d", item.weight);
+			DecalFont_DrawLineOT(line, SOLO_ROW_R, y, FONT_SMALL,
+			                     JUSTIFY_RIGHT | (item.weight != item.defaultWeight ? ORANGE : item.weight ? WHITE : GRAY), ot);
+		}
+		else
+		{
+			if (item.isDefault)
+				DecalFont_DrawLineOT((char *)"default", SOLO_CHECK_DEFAULT_R, y, FONT_SMALL, JUSTIFY_RIGHT | GRAY, ot);
+			DecalFont_DrawLineOT((char *)(item.on ? "On" : "Off"), SOLO_ROW_R, y, FONT_SMALL,
+			                     JUSTIFY_RIGHT | (item.on ? WHITE : GRAY), ot);
+		}
 		if (i == s_soloSel)
 			MM_Solo_Highlight(y, ot);
 	}
 	if (info.note[0])
 		MM_Solo_Help(info.note, RED, ot);
+	else if (info.kind == AP_SOLO_OPT_WEIGHTS)
+	{
+		snprintf(line, sizeof line, "%d of %d above 0. Cross resets to the grey weight.", on, count);
+		MM_Solo_Help(line, GRAY, ot);
+	}
 	else
 	{
 		snprintf(line, sizeof line, "%d of %d on. Square: what this option does.", on, count);
 		MM_Solo_Help(line, GRAY, ot);
 	}
-	MM_Solo_Footer("*: ON/OFF  [: HELP  ^: BACK", ot);
+	MM_Solo_Footer(info.kind == AP_SOLO_OPT_WEIGHTS ? "LEFT/RIGHT: CHANGE  [: HELP  ^: BACK"
+	                                                : "*: ON/OFF  [: HELP  ^: BACK",
+	               ot);
 }
 
 /* Second level: the options of one group. */
@@ -843,9 +883,11 @@ static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
 	}
 	MM_Solo_Navigate(pad, count);
 	AP_Solo_OptionGet(map[s_soloSel], &info);
-	if (info.kind == AP_SOLO_OPT_SET && !info.forced && (pad->buttonsTapped & (BTN_CROSS | BTN_LEFT | BTN_RIGHT)) != 0)
+	if (info.kind != AP_SOLO_OPT_RANGE && info.kind != AP_SOLO_OPT_TOGGLE && info.kind != AP_SOLO_OPT_CHOICE &&
+	    !info.forced && (pad->buttonsTapped & (BTN_CROSS | BTN_LEFT | BTN_RIGHT)) != 0)
 	{
-		/* A set opens its checklist; Triangle comes back to this row. */
+		/* A set opens its checklist, a weights option its number page (A3-22);
+		   Triangle comes back to this row. */
 		OtherFX_Play(1, 1);
 		s_soloList = map[s_soloSel];
 		s_soloListSel = s_soloSel;
@@ -917,7 +959,9 @@ static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
 	if (AP_Solo_OptionGet(map[s_soloSel], &info))
 		/* A forced reason or warning needs both lines; otherwise the hint. */
 		MM_Solo_Help(info.note[0] ? info.note : "Square: what this option does.", info.note[0] ? RED : GRAY, ot);
-	MM_Solo_Footer(info.kind == AP_SOLO_OPT_SET ? "*: OPEN LIST  [: HELP  ^: BACK" : "LEFT/RIGHT: CHANGE  [: HELP  ^: BACK",
+	MM_Solo_Footer(info.kind == AP_SOLO_OPT_SET     ? "*: OPEN LIST  [: HELP  ^: BACK"
+	               : info.kind == AP_SOLO_OPT_WEIGHTS ? "*: OPEN WEIGHTS  [: HELP  ^: BACK"
+	                                                  : "LEFT/RIGHT: CHANGE  [: HELP  ^: BACK",
 	               ot);
 }
 
