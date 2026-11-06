@@ -12,6 +12,7 @@
 #include "ap_content_plan.h"
 #include "ap_content_registry.hpp"
 #include "ap_named_blocks.h"
+#include "ap_box_spot_logic.h"
 #include "ap_arena_content.h"
 #include "ap_wumpa_shop.h"
 #include <array>
@@ -48,6 +49,12 @@ struct State {
     // checks that carry the hard-tier stat term (`stats`).
     ctr_content_item_boxes item_boxes{};
     std::set<int64_t> stat_checks;
+    // Hand-placed box spots (A3-14): `item_boxes.spot_sets` by track id, and
+    // each spot box's number and position by location code (`spot`).
+    struct SpotSet { int pool = 0; std::vector<int> picked; std::string lev_sha256; bool used = false; };
+    std::map<std::string, SpotSet> spot_sets;
+    struct BoxSpot { int number = 0; bool seen = false; short x = 0, y = 0, z = 0, rot_y = 0; };
+    std::map<int64_t, BoxSpot> box_spots;
     // Boss garages (#133 PR 6): the `bosses` record and the venues its
     // encounters race (engine LevelIDs; the Final Challenge on Cortex Vortex
     // or Oxide Station). goal_count is 0 when the goal has no Gem arm.
@@ -439,10 +446,36 @@ static std::map<int64_t, int> capability_rows(const ctr_content_capability &c) {
 // Item Box Locations (#133 PR 4e), apworld content_item_boxes.check_settings:
 // exactly `shortcut_knowledge` 0 to 2, equal to the capability record's when
 // that is present (checked by the caller once both are read).
+// Hand-placed box spots (A3-14, apworld content_item_boxes.check_spot_sets):
+// with `spot_sets`, one record per pad track that has a spot file. Which
+// numbers are eligible only the apworld knows, so the client checks the shape
+// (ap_box_spot_logic.h) and that each named track exists with a box identity.
 static void item_box_settings(const J &t, State &out) {
-    fields(t, {"shortcut_knowledge"});
+    need(t.is_object() && t.contains("shortcut_knowledge") && t.size() == (t.contains("spot_sets") ? 2u : 1u),
+         "unsupported or incomplete record fields");
     out.item_boxes.present = 1;
     out.item_boxes.shortcut_knowledge = number(t["shortcut_knowledge"], 0, 2);
+    if (!t.contains("spot_sets")) return;
+    const J &sets = t["spot_sets"];
+    need(sets.is_array() && !sets.empty() && sets.size() <= 160, "item_boxes.spot_sets must be a nonempty list");
+    for (const auto &set : sets) {
+        need(set.is_object() && set.contains("track_id") && set.contains("file_sha256") && set.contains("pool") &&
+             set.contains("picked") && set.size() == (set.contains("lev_sha256") ? 5u : 4u),
+             "a box spot set holds track_id, file_sha256, pool, picked and a custom track's lev_sha256");
+        need(set["track_id"].is_string() && set["file_sha256"].is_string() && lower_hex(set["file_sha256"].get<std::string>(), 64),
+             "a box spot set names its track and spot file digest");
+        State::SpotSet spots;
+        spots.pool = number(set["pool"], 0, AP_BOX_SPOT_MAX_NUMBER);
+        need(set["picked"].is_array(), "box spot picks must be a list");
+        for (const auto &n : set["picked"]) spots.picked.push_back(number(n, 1, AP_BOX_SPOT_MAX_NUMBER));
+        need(AP_BoxSpot_PickShape(spots.pool, spots.picked.data(), (int)spots.picked.size()) != 0,
+             "box spot picks are not a sorted pick of 15, or of the whole pool when smaller");
+        if (set.contains("lev_sha256")) {
+            need(set["lev_sha256"].is_string() && lower_hex(set["lev_sha256"].get<std::string>(), 64), "a box spot LEV pin is a SHA-256");
+            spots.lev_sha256 = set["lev_sha256"].get<std::string>();
+        }
+        need(out.spot_sets.emplace(set["track_id"].get<std::string>(), spots).second, "two box spot sets for one track");
+    }
 }
 // The seats a custom track's boxes take: min(crates, 15), spread over the
 // crate table (ap_box_seat_logic.h computes which).
@@ -955,6 +988,7 @@ static void validate(const J &p, State &out) {
     if(has_capability)features.push_back("capability_packs_v1");
     if(has_global)features.push_back("global_checks_v1");
     if(has_boxes)features.push_back("item_boxes_v1"); // #133 PR 4e
+    if(has_boxes&&p["item_boxes"].is_object()&&p["item_boxes"].contains("spot_sets"))features.push_back("box_spots_v1"); // A3-14
     if(cups)features.push_back("cup_entries_v1");      // #133 PR 5
     if(has_bosses)features.push_back("boss_encounters_v1"); // #133 PR 6
     if(gem_cups)features.push_back("gem_cups_v1");          // one generator row 2
@@ -1553,7 +1587,36 @@ static void validate(const J &p, State &out) {
         // min(weapon_crates, 15); a route per mode in the pad's order.
         if (out.item_boxes.present) {
             int slots = 0;
-            if (dest.retail_id >= 0) {
+            const auto spots = out.spot_sets.find(dest.track_id);
+            if (spots != out.spot_sets.end()) {
+                // Hand-placed spots (A3-14): the picked numbers, each code
+                // re-derived from the track and number; no crate seats.
+                const bool custom = dest.retail_id < 0;
+                need(dest.retail_id >= 0 || (dest.package_index >= 0 && dest.named_block >= 0),
+                     "box spots need a retail track or a named custom track");
+                need(custom == !spots->second.lev_sha256.empty() &&
+                     (!custom || spots->second.lev_sha256 == out.packages[dest.package_index].lev_sha256),
+                     "a box spot set's LEV pin does not match its custom track");
+                int track = -1;
+                if (!custom) {
+                    const J &rows = registry["retail"][dest.retail_id]["boxes"];
+                    need(rows.is_array() && !rows.empty(), "a retail track with box spots has no frozen box block");
+                    track = (int)((rows[0][0].get<int64_t>() - AP_BOX_SPOT_RETAIL_BASE) / AP_BOX_SPOT_RETAIL_STRIDE);
+                }
+                for (int n : spots->second.picked) {
+                    const int64_t code = custom ? ap_named_location_code(dest.named_block, AP_BoxSpot_NamedOffset(n))
+                                                : (int64_t)AP_BoxSpot_RetailCode(track, n);
+                    need(code > 0 && slots < AP_NAMED_ITEM_BOX_SLOTS, "a box spot number has no location code");
+                    dest.box_locations[slots] = code;
+                    dest.box_number[slots] = n;
+                    State::BoxSpot spot;
+                    spot.number = n;
+                    need(out.box_spots.emplace(code, spot).second, "two box spots share a location");
+                    ++slots;
+                }
+                dest.box_spots = 1;
+                spots->second.used = true;
+            } else if (dest.retail_id >= 0) {
                 const J &rows = registry["retail"][dest.retail_id]["boxes"];
                 need(rows.is_array() && rows.size() <= AP_NAMED_ITEM_BOX_SLOTS, "registry box rows exceed the slot ceiling");
                 for (size_t b = 0; b < rows.size(); ++b)
@@ -1574,7 +1637,8 @@ static void validate(const J &p, State &out) {
                 if (!dest.box_locations[b]) continue;
                 J routes = J::array();
                 for (int k = 0; k < dest.mode_count; ++k) routes.push_back(route_record(entry_id, mode_names[dest.modes[k]], id, "box"));
-                family_check(dest.box_locations[b], "box", "Item Box " + std::to_string(b + 1), routes);
+                family_check(dest.box_locations[b], "box",
+                             "Item Box " + std::to_string(dest.box_spots ? dest.box_number[b] : b + 1), routes);
             }
         }
         // Complete One Lap (#344): every mode of the pad has laps.
@@ -2172,6 +2236,24 @@ static void validate(const J &p, State &out) {
             out.boosts[id] = number(bare["boost"], 1, boost_ceiling);
             bare.erase("boost");
         }
+        // A hand-placed box's spot (A3-14): exactly on the box checks of a
+        // track with a spot set, its number the one the code was derived
+        // from; the position is read as given (LEV width checks only).
+        if (bare.is_object() && bare.contains("spot")) {
+            const auto found = out.box_spots.find(id);
+            const J &spot = bare["spot"];
+            need(found != out.box_spots.end() && !found->second.seen && bare.contains("kind") && bare["kind"] == "box",
+                 "a box spot on a check that is not a spot box");
+            fields(spot, {"number", "pos", "rot_y"});
+            need(number(spot["number"], 1, AP_BOX_SPOT_MAX_NUMBER) == found->second.number, "a box spot's number differs from its location");
+            need(spot["pos"].is_array() && spot["pos"].size() == 3, "a box spot position is three LEV units");
+            found->second.x = (short)number(spot["pos"][0], -32768, 32767);
+            found->second.y = (short)number(spot["pos"][1], -32768, 32767);
+            found->second.z = (short)number(spot["pos"][2], -32768, 32767);
+            found->second.rot_y = (short)number(spot["rot_y"], -32768, 32767);
+            found->second.seen = true;
+            bare.erase("spot");
+        }
         // An Item Box check's stat term (#133 PR 4e): true only, only on a box
         // check, only with Progressive Stats on. Read as given, like `boost`.
         if (bare.is_object() && bare.contains("stats")) {
@@ -2181,6 +2263,18 @@ static void validate(const J &p, State &out) {
             bare.erase("stats");
         }
         need(out.checks.insert(id).second && expected_checks.count(id) && bare == expected_checks.at(id), "check identity or route ownership mismatch");
+    }
+    // Hand-placed box spots (A3-14): every set names a pad track, every spot
+    // box carried its spot, and the pads take the positions.
+    for (const auto &pair : out.spot_sets) need(pair.second.used, "a box spot set names no pad track");
+    for (const auto &pair : out.box_spots) need(pair.second.seen, "a box spot check carries no spot");
+    for (auto &pad : out.pads) {
+        if (!pad.box_spots) continue;
+        for (int b = 0; b < pad.box_count && b < 15; ++b) {
+            const auto &spot = out.box_spots.at(pad.box_locations[b]);
+            pad.box_pos[b][0] = spot.x; pad.box_pos[b][1] = spot.y; pad.box_pos[b][2] = spot.z;
+            pad.box_rot_y[b] = spot.rot_y;
+        }
     }
     for (auto &pad : out.pads) {
         if (!pad.occupied) continue;

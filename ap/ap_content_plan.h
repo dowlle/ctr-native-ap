@@ -125,6 +125,14 @@ typedef struct ctr_content_pad {
      * crate count those seats are taken from (0 when it has no boxes). */
     int box_count, box_crates;
     int64_t box_locations[15];
+    /* Hand-placed box spots (A3-14): 1 when the track's boxes come from its
+     * spot file. box_locations then lists the picked spots in number order,
+     * box_number their permanent numbers (1 to 50, the name is
+     * "Item Box <number>"), box_pos and box_rot_y where each stands (LEV
+     * world units, engine angle). No weapon crate is hidden on such a track. */
+    int box_spots;
+    int box_number[15];
+    short box_pos[15][3], box_rot_y[15];
     char entry_id[65], track_id[65], display_name[129];
     char room_title[129]; /* what the room and Universal Tracker call this track */
     /* Cups (#133 PR 5): a four-leg cup entry. cup_index is its name in the
