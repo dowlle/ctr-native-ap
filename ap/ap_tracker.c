@@ -1,3 +1,4 @@
+#include <platform/native_menu.h>
 /* Adventure map tracker. A read-only native overlay, drawn after presentation
  * so its text and pins are not reduced through the PS1 framebuffer. */
 #include "ap_tracker.h"
@@ -742,7 +743,7 @@ static void AP_TrackerDrawActivities(void)
 			}
 		}
 	}
-	AP_TrackerText("* START   ^ BACK", x + 16, y + h - 26, 14, TRACKER_WHITE, w - 32);
+	AP_TrackerText(NativeMenu_Labels("* START   ^ BACK"), x + 16, y + h - 26, 14, TRACKER_WHITE, w - 32);
 }
 static void AP_TrackerDraw(void)
 {
@@ -750,8 +751,8 @@ static void AP_TrackerDraw(void)
 	if (ap_tracker.tab == AP_TRACKER_TAB_RACERS) AP_TrackerDrawRacers();
 	else if (ap_tracker.tab == AP_TRACKER_TAB_ITEMS) AP_TrackerDrawItems();
 	if (ap_tracker.tab >= AP_TRACKER_TAB_HUBS) {
-		AP_TrackerText(AP_TrackerTabShown(AP_TRACKER_TAB_RACERS) ? "L1/R1 HUBS, RACERS, ITEMS   MOUSE < > TABS   ^ BACK"
-			: "L1/R1 HUBS, ITEMS   MOUSE < > TABS   ^ BACK", 32, 744, 16, TRACKER_WHITE, 1210);
+		AP_TrackerText(AP_TrackerTabShown(AP_TRACKER_TAB_RACERS) ? NativeMenu_Labels("L1/R1 HUBS, RACERS, ITEMS   MOUSE < > TABS   ^ BACK")
+			: NativeMenu_Labels("L1/R1 HUBS, ITEMS   MOUSE < > TABS   ^ BACK"), 32, 744, 16, TRACKER_WHITE, 1210);
 		return;
 	}
 	AP_TrackerFrame(sdata->lngStrings[data.metaDataLEV[GEM_STONE_VALLEY+ap_tracker.hub].name_LNG]);
@@ -801,8 +802,8 @@ static void AP_TrackerDraw(void)
 		/* #375: Cross opens the activity list when the seed allows starts. */
 		int launch = AP_TrackerLaunchEnabled();
 		AP_TrackerText(AP_TrackerTabShown(AP_TRACKER_TAB_RACERS)
-			? (launch ? "L1/R1 HUBS, RACERS, ITEMS   D-PAD FOCUS   * ACTIVITIES   ^ BACK" : "L1/R1 HUBS, RACERS, ITEMS   D-PAD FOCUS   * INSPECT   ^ BACK")
-			: (launch ? "L1/R1 HUBS, ITEMS   D-PAD FOCUS   * ACTIVITIES   ^ BACK" : "L1/R1 HUBS, ITEMS   D-PAD FOCUS   * INSPECT   ^ BACK"),
+			? (launch ? NativeMenu_Labels("L1/R1 HUBS, RACERS, ITEMS   D-PAD FOCUS   * ACTIVITIES   ^ BACK") : NativeMenu_Labels("L1/R1 HUBS, RACERS, ITEMS   D-PAD FOCUS   * INSPECT   ^ BACK"))
+			: (launch ? NativeMenu_Labels("L1/R1 HUBS, ITEMS   D-PAD FOCUS   * ACTIVITIES   ^ BACK") : NativeMenu_Labels("L1/R1 HUBS, ITEMS   D-PAD FOCUS   * INSPECT   ^ BACK")),
 			32,744,16,TRACKER_WHITE,1210);
 	}
 	if (ap_tracker.acts_open && ap_tracker.count) AP_TrackerDrawActivities();
@@ -848,11 +849,10 @@ int AP_TrackerMenuFrame(void)
 		AP_TrackerNode *n=&ap_tracker.nodes[ap_tracker.focus];
 		AP_TrackerActivitiesBuild(); /* live: a received item updates the rows */
 		if(ap_tracker.acts_cursor>=ap_tracker.acts.count) ap_tracker.acts_cursor=0;
-		if(tap&BTN_START) { AP_TrackerClose(); return 1; }
-		if(tap&(BTN_TRIANGLE|BTN_CIRCLE|BTN_SQUARE) || !AP_TrackerLaunchEnabled() || ap_tracker.count<=0) ap_tracker.acts_open=0;
+		if(tap&(BTN_TRIANGLE|BTN_START) || !AP_TrackerLaunchEnabled() || ap_tracker.count<=0) ap_tracker.acts_open=0;
 		else if(tap&(BTN_UP|BTN_DOWN) && ap_tracker.acts.count)
 			ap_tracker.acts_cursor=(ap_tracker.acts_cursor+((tap&BTN_UP)?ap_tracker.acts.count-1:1))%ap_tracker.acts.count;
-		else if((tap&BTN_CROSS) && ap_tracker.acts.count && ap_tracker.acts.reason[ap_tracker.acts_cursor]==AP_PADACT_OPEN) {
+		else if((tap&(BTN_CROSS|BTN_CIRCLE)) && ap_tracker.acts.count && ap_tracker.acts.reason[ap_tracker.acts_cursor]==AP_PADACT_OPEN) {
 			int row=ap_tracker.acts_cursor;
 			if(AP_TrackerLaunchBegin(ap_tracker.hub,n->kind==3?-1:n->physical,n->kind==3?-1:n->destination,
 			                         ap_tracker.acts.activity[row],ap_tracker.acts.launchMode[row])) {
@@ -860,7 +860,7 @@ int AP_TrackerMenuFrame(void)
 			}
 		}
 	} else {
-		if(tap&(BTN_TRIANGLE|BTN_CIRCLE|BTN_START|BTN_SQUARE)) { AP_TrackerClose(); return 1; }
+		if(tap&(BTN_TRIANGLE|BTN_START)) { AP_TrackerClose(); return 1; }
 		int racersOn=AP_TrackerRacersOn(), step=0;
 		/* A seed swap while open can take the RACERS tab away; land on the map. */
 		ap_tracker.tab=AP_TrackerTabSettlePure(ap_tracker.tab,ap_tracker.hub,racersOn,1);
@@ -885,13 +885,13 @@ int AP_TrackerMenuFrame(void)
 			if(tap&(BTN_UP|BTN_DOWN|BTN_LEFT|BTN_RIGHT)) {
 				ap_tracker.focus=(ap_tracker.focus+((tap&(BTN_UP|BTN_LEFT))?ap_tracker.count-1:1))%ap_tracker.count; ap_tracker.pinned=0;
 			}
-			if((tap&BTN_CROSS) && AP_TrackerLaunchEnabled() && ap_tracker.count) {
+			if((tap&(BTN_CROSS|BTN_CIRCLE)) && AP_TrackerLaunchEnabled() && ap_tracker.count) {
 				/* #375: open the focused node's activities; the summary line
 				 * below the map shows its counts meanwhile. */
 				ap_tracker.pinned=1; ap_tracker.acts_open=1; AP_TrackerActivitiesBuild();
 				ap_tracker.acts_cursor=AP_PadActivityCursor(&ap_tracker.acts);
 			}
-			else if(tap&BTN_CROSS) ap_tracker.pinned=!ap_tracker.pinned;
+			else if(tap&(BTN_CROSS|BTN_CIRCLE)) ap_tracker.pinned=!ap_tracker.pinned;
 			if(mx!=ap_tracker.mouse_x || my!=ap_tracker.mouse_y || (buttons&SDL_BUTTON_LMASK)) {
 				int vx,vy,vw,vh;
 				if(NativeRenderer_DisplayRectToWindow(0,0,activeDispEnv.disp.w,activeDispEnv.disp.h,&vx,&vy,&vw,&vh) && vw>0 && vh>0) {

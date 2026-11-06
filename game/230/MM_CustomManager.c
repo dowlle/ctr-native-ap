@@ -1,3 +1,4 @@
+#include <platform/native_menu.h>
 /* Track Manager: Options > Custom Content in the authoring builds. Included
    by MM_ConfigMenu.c inside CTR_CUSTOM_PACKAGES only. The player client uses
    its helpers and MM_CustomManager_Poll from the Custom Tracks page
@@ -277,14 +278,14 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
             MM_CustomText_Draw(source ? ((source->modeTags&1) ? "Arcade tagged" : (source->modeTags&2) ? "Time Trial" : "Other modes") :
                 !installed->installed ? "Not installed" : installed->local.arcade ? "Arcade" : installed->local.timeTrial ? "Time Trial" : "No races",305,112,176,1,WHITE,ot);
             MM_CustomText_Draw(s_saphiDownloading ? "Downloading..." : source ?
-                sourceInstalled ? "* Recheck" : source->disabledReason[0] ? "Unavailable" : hasOlder ? "* Update" : "* Download" : "* Recheck",305,130,176,1,ORANGE,ot);
+                sourceInstalled ? NativeMenu_Labels("* Recheck") : source->disabledReason[0] ? "Unavailable" : hasOlder ? NativeMenu_Labels("* Update") : NativeMenu_Labels("* Download") : NativeMenu_Labels("* Recheck"),305,130,176,1,ORANGE,ot);
             MM_CustomText_Draw(status,305,144,176,source ? 1 : 2,WHITE,ot);
-            if(source) MM_CustomText_Draw(s_saphiVersionTrack ? "Back: Tracks" : "[ Versions",305,159,176,1,ORANGE,ot);
+            if(source) MM_CustomText_Draw(s_saphiVersionTrack ? NativeMenu_Labels("^: Tracks") : NativeMenu_Labels("[ Versions"),305,159,176,1,ORANGE,ot);
         }
     }
     snprintf(line,sizeof line,"R2 Search: %s%s",s_saphiQuery,s_contentSearchEditing ? "_" : "");
     MM_CustomText_Draw(line,256,180,456,1,JUSTIFY_CENTER | WHITE,ot);
-    snprintf(line,sizeof line,"%u/%u   L2 Refresh   Back: Options",count ? (unsigned)*selected+1 : 0,(unsigned)count);
+    snprintf(line,sizeof line,NativeMenu_Labels("%u/%u  [: Versions  L2 Refresh  ^: Back"),count ? (unsigned)*selected+1 : 0,(unsigned)count);
     MM_CustomText_Draw(line,256,196,456,1,JUSTIFY_CENTER | WHITE,ot);
 #ifndef MM_IMPORT_PLAYER
     MM_CustomText_Draw("Select: Import track files",256,188,456,1,JUSTIFY_CENTER | ORANGE,ot);

@@ -1,3 +1,4 @@
+#include <platform/native_menu.h>
 // Signed in-game updater, game-thread glue (issue #301). Part of the AP unity
 // build (game/game_unity.h), after ap_link.c, so it uses the log, feed, menu
 // and room-link helpers defined there.
@@ -200,8 +201,8 @@ int AP_UpdateMenuFrame(void)
 		ap_upd_prompting = 1;
 		gGT->demoCountdownTimer = 900;
 		AP_UpdateDraw("UPDATE INSTALLED", "Start the game again",
-		              ap_upd_steam ? "from Steam to use it." : "to use it.", NULL, "*: QUIT");
-		if (tap & BTN_CROSS)
+		              ap_upd_steam ? "from Steam to use it." : "to use it.", NULL, NativeMenu_Labels("*: QUIT"));
+		if (tap & (BTN_CROSS | BTN_CIRCLE))
 			AP_UpdateQuit();
 		return 1;
 	}
@@ -218,13 +219,13 @@ int AP_UpdateMenuFrame(void)
 		ap_upd_prompting = 1;
 		gGT->demoCountdownTimer = 900;
 		AP_UpdateDraw(title, line, "Updates this game client.", "Hosts need the new apworld.",
-		              "*: DOWNLOAD   ^: SKIP VERSION");
-		if (tap & BTN_CROSS)
+		              NativeMenu_Labels("*: DOWNLOAD   ^: SKIP VERSION"));
+		if (tap & (BTN_CROSS | BTN_CIRCLE))
 		{
 			AP_UpdateLog("player confirmed the download");
 			ap_update_download_start();
 		}
-		else if (tap & BTN_TRIANGLE)
+		else if (tap & (BTN_TRIANGLE | BTN_START))
 		{
 			snprintf(g_config.updateDeclined, sizeof g_config.updateDeclined, "%s", tag);
 			NativeConfig_Save();
@@ -244,8 +245,8 @@ int AP_UpdateMenuFrame(void)
 			snprintf(line, sizeof line, "Connecting.");
 		ap_upd_prompting = 1;
 		gGT->demoCountdownTimer = 900;
-		AP_UpdateDraw(title, line, NULL, NULL, "^: CANCEL");
-		if (tap & BTN_TRIANGLE)
+		AP_UpdateDraw(title, line, NULL, NULL, NativeMenu_Labels("^: CANCEL"));
+		if (tap & (BTN_TRIANGLE | BTN_START))
 		{
 			ap_update_cancel();
 			AP_AppendLog("[AP UPDATE] player cancelled the download\n");
@@ -260,15 +261,15 @@ int AP_UpdateMenuFrame(void)
 		gGT->demoCountdownTimer = 900;
 		if (soloBusy)
 		{
-			AP_UpdateDraw(title, "Play Solo is running.", "Stop it to install the update.", NULL, "^: LATER");
-			if (tap & BTN_TRIANGLE)
+			AP_UpdateDraw(title, "Play Solo is running.", "Stop it to install the update.", NULL, NativeMenu_Labels("^: LATER"));
+			if (tap & (BTN_TRIANGLE | BTN_START))
 				ap_upd_snoozed = 1;
 			return 1;
 		}
-		AP_UpdateDraw(title, "Verified and ready.", "Restart to install it.", NULL, "*: RESTART   ^: LATER");
-		if (tap & BTN_CROSS)
+		AP_UpdateDraw(title, "Verified and ready.", "Restart to install it.", NULL, NativeMenu_Labels("*: RESTART   ^: LATER"));
+		if (tap & (BTN_CROSS | BTN_CIRCLE))
 			AP_UpdateRestart();
-		else if (tap & BTN_TRIANGLE)
+		else if (tap & (BTN_TRIANGLE | BTN_START))
 			ap_upd_snoozed = 1;
 		return 1;
 
@@ -281,13 +282,13 @@ int AP_UpdateMenuFrame(void)
 		if (status == AP_UPD_FAILED_RESTORE)
 			AP_UpdateDraw("UPDATE FAILED HALFWAY", "Some files could not be put back.",
 			              "Copies of your old files end in .old.", "Next start tries again; see SETUP.md.",
-			              "*: OK");
+			              NativeMenu_Labels("*: OK"));
 		else
 			AP_UpdateDraw(status == AP_UPD_FAILED_VERIFY     ? "update failed verification"
 			              : status == AP_UPD_FAILED_DOWNLOAD ? "UPDATE DOWNLOAD FAILED"
 			                                                 : "UPDATE NOT INSTALLED",
-			              "Nothing was changed.", NULL, NULL, "*: OK");
-		if (tap & BTN_CROSS)
+			              "Nothing was changed.", NULL, NULL, NativeMenu_Labels("*: OK"));
+		if (tap & (BTN_CROSS | BTN_CIRCLE))
 			ap_update_dismiss();
 		return 1;
 

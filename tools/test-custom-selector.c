@@ -6,6 +6,7 @@
    and the handoff to the offline loader on host slot 6, not rendered
    acceptance. */
 #include <math.h>
+#include "menu-label-stub.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -235,7 +236,7 @@ static void generic_scenarios(const struct CustomTrackLibraryEntry *start)
     CHECK(!s_arcadeSearching && !strcmp(s_arcadeQuery, "some auth") && s_arcadeLibrary.visibleCount == 1);
     CHECK(D230.trackSel_transitionState == IN_MENU); /* Its Triangle stays on the page. */
     tick(BTN_R2); strcpy(textBuffer, "nothing like it"); tick(0);
-    rawPad = RAW_BTN_START; tick(0); rawPad = 0; tick(0);
+    rawPad = RAW_BTN_CIRCLE; tick(0); rawPad = 0; tick(0);
     CHECK(s_arcadeLibrary.visibleCount == 0 && drawnHas("No search"));
     /* A new entry starts with the whole list. */
     MM_CustomTrackSelect_Init(); CHECK(s_arcadeLibrary.visibleCount == 17);
@@ -318,13 +319,14 @@ int main(void)
     tick(BTN_LEFT); CHECK(s_arcadeRows[0] == 7);
     tick(BTN_CROSS_one); CHECK(prepared == 1 && s_arcadePrepareBusy);
     tick(BTN_TRIANGLE); CHECK(s_arcadeConfirm && !s_arcadePrepareBusy); /* Drain worker before Back. */
-    tick(BTN_TRIANGLE); CHECK(!s_arcadeConfirm && !s_arcadeRequest);
+    tick(BTN_SQUARE_one); CHECK(s_arcadeConfirm); /* Utility is never Back. */
+    tick(BTN_START); CHECK(!s_arcadeConfirm && !s_arcadeRequest);
     CHECK(D230.trackSel_transitionState == IN_MENU);
     allowed = 0; tick(BTN_CROSS_one); CHECK(prepared == 1);
     allowed = 1; tracker.numPlyrNextGame = 2;
     tick(BTN_CROSS_one); CHECK(prepared == 1);
     tracker.numPlyrNextGame = 1;
-    tick(BTN_CROSS_one); tick(0); tick(BTN_CROSS_one);
+    tick(BTN_CIRCLE); tick(0); tick(BTN_CIRCLE);
     CHECK(launched == 1 && beganHost == 6 && tracker.currLEV == 6 && tracker.numLaps == 7);
     CHECK(fallbackSet == -1); /* not an imported track: Crash Cove's music */
     CHECK(tracker.arcadeDifficulty == 123 && tracker.numPlyrNextGame == 1);

@@ -1795,7 +1795,9 @@ int NativeControls_PollCapture(void)
 
 	if (s_capturePhase == NATIVE_CONTROLS_CAPTURE_CONFIRM)
 	{
-		if (!NativeControls_IsCrossHeld(s_captureDevice))
+		if (!NativeControls_IsCrossHeld(s_captureDevice) &&
+		    !NativeControls_IsValueHeld(s_captureDevice,
+		        NativeControls_GetBinding(s_captureDevice, NATIVE_CONTROLS_BIND_CIRCLE)))
 		{
 			return 0;
 		}

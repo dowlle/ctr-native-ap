@@ -13,6 +13,7 @@
 // - a Steam launch never relaunches, a direct launch does;
 // - the rollback copy is confirmed only when the new build reaches the menu.
 #include <stdio.h>
+#include "menu-label-stub.h"
 #include <stdlib.h>
 #include <string.h>
 #include <common.h>
@@ -376,6 +377,11 @@ int main(void)
 	test_failures();
 	test_restart();
 	test_first_start();
+	reset_all(); fake_status = AP_UPD_OFFER;
+	frame(BTN_CIRCLE); expect(downloads == 1, "Circle starts the download");
+	frame(BTN_START); expect(cancels == 1, "Start cancels the download");
+	reset_all(); fake_status = AP_UPD_OFFER;
+	frame(BTN_START); expect(downloads == 0 && g_config.updateDeclined[0] != 0, "Start skips the version");
 	printf("%d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

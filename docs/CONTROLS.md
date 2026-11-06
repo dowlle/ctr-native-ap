@@ -12,6 +12,10 @@ by thecodingbob (PR 54 and PR 70, GPL-3.0). This page is adapted from its
 
 Options → **Controls**. The page lists Player 1 to Player 4 with the device each
 one has, and below them **AP Shortcuts** (see [AP shortcuts](#ap-shortcuts)).
+In AP screens, `Cross` and `Circle` confirm, and `Triangle` and `Start` go back one level or cancel text entry. Retail menus keep their original controls. `Square` is a screen utility, named in the footer, and L1/R1 only change pages or tabs. In the importer, Select renames and the final review row imports all valid tracks. On Play Solo's Trap Weights page, press Square twice on the same unchanged row to reset it. Moving, changing a value or leaving the page cancels the armed reset.
+
+Options > Gameplay > Device-aware Button Labels is on by default. AP hints follow player 1's assigned pad: A/B/X/Y for Xbox pads and Steam Deck through Steam Input, PlayStation symbols for PS pads. Turn it off to keep PlayStation symbols. Keyboard and unknown pad types also use PlayStation symbols. A and B both confirm on Xbox/Deck; Y goes back and X is the utility button.
+
 Press `Cross` on a player to open that player's screen. Its title reads
 `CONTROLS P1` through `CONTROLS P4`, so you always know whose controls you are
 looking at. `Triangle` or `Start` goes back to the player list, and from there
@@ -152,8 +156,8 @@ Shortcuts never fire while a text field (for example on the Connection page) is
 being edited, so typing a port on the number pad is safe, and never while a
 rebind is listening.
 
-On a pad, the Connection page takes `Cross` or `Start` to save a text field and
-`Triangle` to cancel it, read through that pad's own bindings.
+On a pad, text entry takes `Cross` or `Circle` to save a field and
+`Triangle` or `Start` to cancel it, read through that pad's own bindings.
 
 `M` is not a shortcut today. It was the old map overlay toggle and is kept free
 for a planned map zoom; nothing reads it in this version.

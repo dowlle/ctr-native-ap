@@ -1,3 +1,4 @@
+#include <platform/native_menu.h>
 /* Custom Tracks (0.3.0-alpha2, A2-4): Options > Custom Tracks in the player
    client, one screen with three tabs. It replaces the old Custom Content page
    (Current Seed tab and package page) and the Track Library page; every
@@ -1034,7 +1035,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
             OtherFX_Play(1, 1); tapped = 0;
         }
         else if (tapped & (BTN_TRIANGLE | BTN_START)) { s_ctFocus = CT_FOCUS_CONTROLS; OtherFX_Play(2, 1); tapped = 0; }
-        else if (tapped & BTN_SQUARE) { s_ctFocus = CT_FOCUS_CONTROLS; s_ctControlSel[CT_TAB_LIBRARY] = 1; tapped = BTN_CROSS; }
+        else if (tapped & BTN_SQUARE) { s_ctFocus = CT_FOCUS_CONTROLS; tapped = 0; }
     }
     if (s_ctItemCount) { item = &s_ctItems[*sel]; CT_View(item, &v); nActions = CT_LibraryActions(item, &v, actions); }
     else if (s_ctFocus == CT_FOCUS_ACTIONS || s_ctFocus == CT_FOCUS_SUB) { s_ctFocus = CT_FOCUS_LIST; s_ctSub = CT_SUB_NONE; }
@@ -1249,7 +1250,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
                                 (item->kind == CT_ITEM_PACKAGE && AP_CustomContentStatus()->state != CTR_CT_MANAGER_READY);
                 CT_DrawPaged(status[0] ? status : line, CT_DETAIL_X, 132, CT_DETAIL_W, 2, status[0] && bad ? RED : WHITE, ot);
             }
-            MM_CustomText_Draw("*: Actions", CT_DETAIL_X, 159 + 2, CT_DETAIL_W, 1, ORANGE, ot);
+            MM_CustomText_Draw(NativeMenu_Labels("*: Actions"), CT_DETAIL_X, 159 + 2, CT_DETAIL_W, 1, ORANGE, ot);
         }
     }
 
@@ -1259,10 +1260,10 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
                  s_saphiQuery[0] ? s_saphiQuery : "none", s_ctItemCount ? *sel + 1 : 0, s_ctItemCount);
         CT_Footer(line, NULL, ot);
     }
-    CT_Footer(NULL, s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? "*: Actions   ^: Page controls" :
-                    s_ctFocus == CT_FOCUS_CONTROLS ? "*: Select   [: Tracks   ^: Tabs" :
-                    s_ctFocus == CT_FOCUS_ACTIONS ? "*: Select   ^: Tracks" :
-                    s_ctSub == CT_SUB_RELIC ? "Left/Right: Move   ^: Cancel" : "*: Select   ^: Back", ot);
+    CT_Footer(NULL, s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? NativeMenu_Labels("*: Actions   [: Controls   ^: Page controls") :
+                    s_ctFocus == CT_FOCUS_CONTROLS ? NativeMenu_Labels("*: Select   [: Tracks   ^: Tabs") :
+                    s_ctFocus == CT_FOCUS_ACTIONS ? NativeMenu_Labels("*: Select   ^: Tracks") :
+                    s_ctSub == CT_SUB_RELIC ? NativeMenu_Labels("Left/Right: Move   ^: Cancel") : NativeMenu_Labels("*: Select   ^: Back"), ot);
 }
 
 /* ---- This Seed tab ------------------------------------------------------ */
@@ -1441,7 +1442,7 @@ static void CT_SeedFrame(int tapped, uint32_t *ot)
             else snprintf(about, sizeof about, "%s%s%s. %s", r->lev_bytes ? size : "", r->lev_bytes ? ", " : "",
                           ap_seed_source_text(r), instruction);
             CT_DrawPaged(about, CT_DETAIL_X, 132, CT_DETAIL_W, 2, WHITE, ot);
-            MM_CustomText_Draw("*: Actions", CT_DETAIL_X, 161, CT_DETAIL_W, 1, ORANGE, ot);
+            MM_CustomText_Draw(NativeMenu_Labels("*: Actions"), CT_DETAIL_X, 161, CT_DETAIL_W, 1, ORANGE, ot);
         }
     }
 
@@ -1455,10 +1456,10 @@ static void CT_SeedFrame(int tapped, uint32_t *ot)
     }
     else snprintf(line, sizeof line, "%s", seed[0] ? "This seed needs no custom tracks" : "No seed loaded");
     if (AP_SeedContentInstallBusy() || s_ctLegacyDownload) snprintf(line, sizeof line, "Installing...");
-    CT_Footer(line, s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? "*: Actions   ^: Page controls" :
-                    s_ctFocus == CT_FOCUS_CONTROLS ? (s_ctSeedCount ? "*: Select   [: Tracks   ^: Tabs" : "*: Select   ^: Tabs") :
-                    s_ctFocus == CT_FOCUS_ACTIONS ? "*: Select   ^: Tracks" :
-                    s_ctSub == CT_SUB_INSTALL ? "*: Install   ^: Cancel" : "^: Back", ot);
+    CT_Footer(line, s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? NativeMenu_Labels("*: Actions   [: Controls   ^: Page controls") :
+                    s_ctFocus == CT_FOCUS_CONTROLS ? (s_ctSeedCount ? NativeMenu_Labels("*: Select   [: Tracks   ^: Tabs") : NativeMenu_Labels("*: Select   ^: Tabs")) :
+                    s_ctFocus == CT_FOCUS_ACTIONS ? NativeMenu_Labels("*: Select   ^: Tracks") :
+                    s_ctSub == CT_SUB_INSTALL ? NativeMenu_Labels("*: Install   ^: Cancel") : NativeMenu_Labels("^: Back"), ot);
 }
 
 /* ---- Import tab --------------------------------------------------------- */
@@ -1471,7 +1472,7 @@ static void CT_ImportFrame(int tapped, uint32_t *ot, struct GamepadBuffer *pad)
            result screen closing leads to the next steps below. */
         const int fromResult = s_importStage == IMPORT_RESULT;
         if (s_importStage == IMPORT_CHOOSE)
-            MM_CustomText_Draw("^: Tabs", 256, CT_STATUS_Y, 456, 1, JUSTIFY_CENTER | WHITE, ot);
+            MM_CustomText_Draw(NativeMenu_Labels("^: Tabs"), 256, CT_STATUS_Y, 456, 1, JUSTIFY_CENTER | WHITE, ot);
         MM_CustomImport_Proc(ot, pad);
         if (!MM_CustomImport_Active())
         {
@@ -1509,7 +1510,7 @@ static void CT_ImportFrame(int tapped, uint32_t *ot, struct GamepadBuffer *pad)
         for (int i = 0; i < 3; i++) CT_Row(i, rows[i], i == s_ctSubSel, WHITE, ot);
         CT_DrawPaged("Import done", CT_DETAIL_X, 70, CT_DETAIL_W, 1, ORANGE, ot);
         CT_DrawPaged(s_importMessage, CT_DETAIL_X, 86, CT_DETAIL_W, 7, WHITE, ot);
-        CT_Footer(NULL, "*: Select   ^: Tabs", ot);
+        CT_Footer(NULL, NativeMenu_Labels("*: Select   ^: Tabs"), ot);
         return;
     }
     if (s_ctFocus == CT_FOCUS_LIST || s_ctFocus == CT_FOCUS_CONTROLS) CT_OpenImport();
@@ -1621,7 +1622,7 @@ static void MM_ConfigProc_CustomTracks(struct RectMenu *menu, uint32_t *ot, stru
             MM_CustomText_Draw(s_ctInfoTitle, 32, 70, 452, 1, ORANGE, ot);
             for (i = 0; i < 7 && s_ctInfoTop + i < lines; i++)
                 DecalFont_DrawLineOT(wrapped[s_ctInfoTop + i], 32, 84 + i * CT_LINE_H, FONT_SMALL, WHITE, ot);
-            CT_Footer(lines > 7 ? "Up/Down: Scroll" : NULL, "^: Back", ot);
+            CT_Footer(lines > 7 ? "Up/Down: Scroll" : NULL, NativeMenu_Labels("^: Back"), ot);
             {
                 RECT box = {20, 64, 467, 108};
                 RECTMENU_DrawInnerRect(&box, 0, ot);
@@ -1641,9 +1642,9 @@ static void MM_ConfigProc_CustomTracks(struct RectMenu *menu, uint32_t *ot, stru
         const int importing = MM_CustomImport_Active();
         CT_ImportFrame(tapped, ot, pad);
         if (importing) return; /* the importer draws its own panels */
-        if (s_ctFocus == CT_FOCUS_TABS) CT_Footer(NULL, "*: Open   ^: Options", ot);
+        if (s_ctFocus == CT_FOCUS_TABS) CT_Footer(NULL, NativeMenu_Labels("*: Open   ^: Options"), ot);
     }
     if (s_ctFocus == CT_FOCUS_TABS && s_ctTab != CT_TAB_IMPORT)
-        CT_Footer(NULL, CT_JobsBusy() ? "Working...   *: Open" : "*: Open   ^: Options", ot);
+        CT_Footer(NULL, CT_JobsBusy() ? NativeMenu_Labels("Working...   *: Open") : NativeMenu_Labels("*: Open   ^: Options"), ot);
     CT_DrawPanels(ot);
 }

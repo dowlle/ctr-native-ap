@@ -1,3 +1,4 @@
+#include <platform/native_menu.h>
 /* "Import track files" (xdelta importer, 0.3.0). Included once: by
    MM_ConfigMenu.c in the player client (MM_IMPORT_PLAYER), hosted by the
    Custom Tracks Import tab,
@@ -319,10 +320,10 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         count = 1 + (size_t)s_importFileCount;
         if (tapped & (BTN_TRIANGLE | BTN_START)) { s_importOpen = 0; OtherFX_Play(2, 1); return; }
         if (tapped & BTN_SQUARE) { MM_CustomImport_Rescan(); count = 1 + (size_t)s_importFileCount; s_importMessage[0] = 0; }
-        if (tapped & (BTN_CROSS | BTN_CIRCLE | BTN_R1))
+        if (tapped & (BTN_CROSS | BTN_CIRCLE))
         {
-            /* R1 is "Import all valid tracks": the same pick, then no review step. */
-            s_importAuto = (tapped & BTN_R1) != 0;
+            /* Confirm always scans and opens review. */
+            s_importAuto = 0;
             if (s_importRow == 0)
             {
                 if (XdeltaPick_Start()) s_importStage = IMPORT_PICKING;
@@ -339,7 +340,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
     }
     else if (s_importStage == IMPORT_REVIEW)
     {
-        count = s_importSummary.count;
+        count = s_importSummary.count + 1; /* Last row imports all. */
         if (tapped & (BTN_TRIANGLE | BTN_START))
         {
             XdeltaImport_DiscardScan();
@@ -349,12 +350,12 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             OtherFX_Play(2, 1);
             return;
         }
-        if ((tapped & BTN_SQUARE) && s_importRow < count && s_importSummary.items[s_importRow].offered)
+        if ((tapped & BTN_SQUARE) && s_importRow < s_importSummary.count && s_importSummary.items[s_importRow].offered)
         {
             s_importSelected[s_importRow] = !s_importSelected[s_importRow];
             OtherFX_Play(0, 1);
         }
-        if ((tapped & BTN_L1) && s_importStage == IMPORT_REVIEW && s_importRow < count && s_importSummary.items[s_importRow].offered)
+        if ((tapped & BTN_SELECT) && s_importStage == IMPORT_REVIEW && s_importRow < s_importSummary.count && s_importSummary.items[s_importRow].offered)
         {
             {
                 /* A title over 128 bytes (a pack descriptor allows more) is cut at a character boundary. */
@@ -374,7 +375,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             s_importMessage[0] = 0;
             OtherFX_Play(1, 1);
         }
-        if (tapped & BTN_R1)
+        if ((tapped & (BTN_CROSS | BTN_CIRCLE)) && s_importRow == s_importSummary.count)
         {
             /* Import all valid tracks: every offered track, under the names shown. */
             for (unsigned i = 0; i < CTR_XDELTA_ITEM_MAX; i++)
@@ -433,7 +434,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             if (s_importMessage[0]) MM_CustomText_Draw(s_importMessage, 305, 146, 176, 1, WHITE, ot);
         }
         else
-            MM_CustomText_Draw(s_importStage == IMPORT_PICKING ? "Waiting for the file dialog. Back: stop waiting" :
+            MM_CustomText_Draw(s_importStage == IMPORT_PICKING ? NativeMenu_Labels("Waiting for the file dialog. ^: stop waiting") :
                                s_importMessage[0] ? s_importMessage :
                                IMPORT_HINT " Or copy patches into assets/tracks/import.",
                                305, 70, 176, 6, WHITE, ot);
@@ -446,12 +447,17 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
     }
     else if (s_importStage == IMPORT_REVIEW || s_importStage == IMPORT_INSTALLING)
     {
-        const struct XdeltaImportItem *item = count ? &s_importSummary.items[s_importRow] : NULL;
+        const struct XdeltaImportItem *item = s_importRow < s_importSummary.count ? &s_importSummary.items[s_importRow] : NULL;
         first = (s_importRow / 7) * 7;
         for (size_t row = first; row < first + 7 && row < count; row++)
         {
-            const struct XdeltaImportItem *r = &s_importSummary.items[row];
             RECT box = {24, 68 + (int)(row - first) * 15, 260, 14};
+            if (row == s_importSummary.count) {
+                MM_CustomText_Draw("Import all valid tracks", 32, box.y + 2, 244, 1, row == s_importRow ? ORANGE : WHITE, ot);
+                if (row == s_importRow) CTR_Box_DrawClearBox(&box, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
+                continue;
+            }
+            const struct XdeltaImportItem *r = &s_importSummary.items[row];
             snprintf(line, sizeof line, "%s %s", r->offered ? (s_importSelected[row] ? "[x]" : "[ ]") : " - ", r->title);
             MM_CustomText_Draw(line, 32, box.y + 2, 244, 1, row == s_importRow ? ORANGE : r->offered ? WHITE : GRAY, ot);
             if (row == s_importRow) CTR_Box_DrawClearBox(&box, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
@@ -464,12 +470,12 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             MM_CustomText_Draw(item->offered ? (item->nameSource == XDELTA_NAME_DESCRIPTOR ? "Name from the pack" :
                                                 item->nameSource == XDELTA_NAME_KNOWN ? "Name of a known track" :
                                                 item->nameSource == XDELTA_NAME_EDITED ? "Name typed by you" :
-                                                "Placeholder name: L1 to change it") : item->reason, 305, 112, 176, 2, WHITE, ot);
+                                                "Placeholder name: SELECT to rename") : item->reason, 305, 112, 176, 2, WHITE, ot);
         }
         MM_CustomText_Draw(s_importStage == IMPORT_INSTALLING ? "Installing..." :
                            s_importMessage[0] ? s_importMessage : s_importSummary.descriptorNote[0] ? s_importSummary.descriptorNote :
                            s_importSummary.history[0] ? s_importSummary.history :
-                           "[ Select  L1 Name  R1 Import all  X Install", 305, 144, 176, 2, ORANGE, ot);
+                           "SELECT: Rename", 305, 144, 176, 2, ORANGE, ot);
     }
     else
     {
@@ -480,22 +486,22 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         char name[160];
         snprintf(name, sizeof name, "Name: %s", s_importEditText);
         MM_CustomText_Draw(name, 28, 172, 456, 1, ORANGE, ot);
-        snprintf(line, sizeof line, "X: Keep this name   ^: Cancel");
+        snprintf(line, sizeof line, NativeMenu_Labels("*: Keep this name   ^: Cancel"));
     }
     else if (s_importStage == IMPORT_REVIEW || s_importStage == IMPORT_INSTALLING)
     {
         unsigned offered = 0;
         for (unsigned i = 0; i < s_importSummary.count; i++) offered += s_importSummary.items[i].offered != 0;
-        snprintf(line, sizeof line, "%u/%u  %u track%s  Back: Cancel", count ? (unsigned)s_importRow + 1 : 0,
+        snprintf(line, sizeof line, NativeMenu_Labels("%u/%u %u track%s  [: Select  *: Install  ^: Back"), count ? (unsigned)s_importRow + 1 : 0,
                  (unsigned)count, offered, offered == 1 ? "" : "s");
     }
 #ifndef MM_IMPORT_PLAYER
-#define IMPORT_DONE "X: Installed tracks"
+#define IMPORT_DONE NativeMenu_Labels("*: Installed tracks")
 #else
-#define IMPORT_DONE "X: Done"
+#define IMPORT_DONE NativeMenu_Labels("*: Done")
 #endif
     else snprintf(line, sizeof line, "%s", s_importStage == IMPORT_RESULT ? IMPORT_DONE :
-                  s_importStage == IMPORT_SCANNING ? "Back: Cancel" : "[ Rescan   R1 Import all valid");
+                  s_importStage == IMPORT_SCANNING ? NativeMenu_Labels("^: Cancel") : NativeMenu_Labels("*: Open   [: Rescan   ^: Back"));
     MM_CustomText_Draw(line, 256, 196, 456, 1, JUSTIFY_CENTER | WHITE, ot);
     {
         RECT listBox = {20, 64, 268, 108}, detailBox = {297, 64, 190, 108};
