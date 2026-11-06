@@ -56,27 +56,27 @@ int main(void) {
     assert(!AP_FTBegin(&r, 3, 2, 1));
     assert(AP_FTBegin(&r, 3, 2, 0));
     assert(!AP_FTBegin(&r, 1, 0, 0)); /* a trip in flight takes no second */
-    assert(AP_FTFrame(&r, 1, 1, 2, 0, &wantLoad) == AP_FT_DROP_NONE && !wantLoad);
+    assert(AP_FTFrame(&r, 1, 1, 2, 1, 0, 0, &wantLoad) == AP_FT_DROP_NONE && !wantLoad);
 
     /* safe hub: the load is asked exactly once */
-    assert(AP_FTFrame(&r, 1, 0, 2, 0, &wantLoad) == AP_FT_DROP_NONE && wantLoad);
-    assert(AP_FTFrame(&r, 1, 1, 2, 0, &wantLoad) == AP_FT_DROP_NONE && !wantLoad);
+    assert(AP_FTFrame(&r, 1, 0, 2, 1, 0, 0, &wantLoad) == AP_FT_DROP_NONE && wantLoad);
+    assert(AP_FTFrame(&r, 1, 1, 2, 1, 0, 0, &wantLoad) == AP_FT_DROP_NONE && !wantLoad);
     /* the destination's birth placed the kart: the trip is done */
-    assert(AP_FTFrame(&r, 3, 1, 2, 1, &wantLoad) == AP_FT_DROP_NONE && r.stage == AP_FT_IDLE);
+    assert(AP_FTFrame(&r, 3, 1, 2, 1, 1, 0, &wantLoad) == AP_FT_DROP_NONE && r.stage == AP_FT_IDLE);
 
     /* a gate that closes on the way cancels the trip */
     AP_FTReset(&r);
     assert(AP_FTBegin(&r, 2, 1, 0));
-    assert(AP_FTFrame(&r, 1, 0, 1, 0, &wantLoad) == AP_FT_DROP_NONE && wantLoad);
-    assert(AP_FTFrame(&r, 1, 1, 0, 0, &wantLoad) == AP_FT_DROP_GATE && r.stage == AP_FT_IDLE);
+    assert(AP_FTFrame(&r, 1, 0, 1, 1, 0, 0, &wantLoad) == AP_FT_DROP_NONE && wantLoad);
+    assert(AP_FTFrame(&r, 1, 1, 0, 1, 0, 0, &wantLoad) == AP_FT_DROP_GATE && r.stage == AP_FT_IDLE);
 
     /* the destination loaded but never spawned: dropped, normal spawn kept */
     AP_FTReset(&r);
     assert(AP_FTBegin(&r, 1, 0, 0));
-    assert(AP_FTFrame(&r, 1, 0, 0, 0, &wantLoad) == AP_FT_DROP_NONE && wantLoad);
+    assert(AP_FTFrame(&r, 1, 0, 0, 1, 0, 0, &wantLoad) == AP_FT_DROP_NONE && wantLoad);
     drop = AP_FT_DROP_NONE;
     for (int i = 0; i < AP_FT_NOSPAWN_FRAMES + 2 && !drop; i++)
-        drop = AP_FTFrame(&r, 1, 0, 0, 0, &wantLoad);
+        drop = AP_FTFrame(&r, 1, 0, 0, 1, 0, 0, &wantLoad);
     assert(drop == AP_FT_DROP_NOSPAWN && r.stage == AP_FT_IDLE);
 
     /* a trip that never gets a safe hub times out instead of waiting forever */
@@ -84,12 +84,27 @@ int main(void) {
     assert(AP_FTBegin(&r, 0, 1, 0));
     drop = AP_FT_DROP_NONE;
     for (int i = 0; i < AP_FT_TIMEOUT_FRAMES + 2 && !drop; i++)
-        drop = AP_FTFrame(&r, -1, 1, 1, 0, &wantLoad);
+        drop = AP_FTFrame(&r, -1, 1, 1, 1, 0, 0, &wantLoad);
     assert(drop == AP_FT_DROP_TIMEOUT);
+
+    /* the birth kept its door or boss-scene spawn: the trip ends there */
+    AP_FTReset(&r);
+    assert(AP_FTBegin(&r, 3, 2, 0));
+    assert(AP_FTFrame(&r, 3, 1, 2, 1, 0, 1, &wantLoad) == AP_FT_DROP_YIELD && r.stage == AP_FT_IDLE);
+
+    /* the seed going away mid-trip cancels it */
+    AP_FTReset(&r);
+    assert(AP_FTBegin(&r, 3, 2, 0));
+    assert(AP_FTFrame(&r, 3, 1, 2, 0, 0, 0, &wantLoad) == AP_FT_DROP_SEED && r.stage == AP_FT_IDLE);
+
+    /* spawn wins over both: a placed kart ends the trip even without a seed */
+    AP_FTReset(&r);
+    assert(AP_FTBegin(&r, 3, 2, 0));
+    assert(AP_FTFrame(&r, 3, 1, 2, 0, 1, 1, &wantLoad) == AP_FT_DROP_NONE && r.stage == AP_FT_IDLE);
 
     /* idle: no opinion, no load */
     AP_FTReset(&r);
-    assert(AP_FTFrame(&r, 1, 0, 9, 0, &wantLoad) == AP_FT_DROP_NONE && !wantLoad);
+    assert(AP_FTFrame(&r, 1, 0, 9, 1, 0, 0, &wantLoad) == AP_FT_DROP_NONE && !wantLoad);
 
     puts("fixture OK");
     return 0;
@@ -141,8 +156,11 @@ birth = (root / "game/Vehicle/VehBirth.c").read_text()
 tele = birth[birth.index("void VehBirth_TeleportSelf("):]
 check("AP_FastTravelSpawnAt(level1, (int)gGT->levelID, &apTravelPos, &apTravelRot)" in tele,
       "the birth asks the trip for its save-screen spawn")
-check("ctr_cfg_active() && d == gGT->drivers[0] && doorInst == NULL && !spawnOutsideBoss" in tele,
-      "only the player, only in a seed, and the door and boss-scene spawns win first")
+check("ctr_cfg_active() && d == gGT->drivers[0]" in tele, "only the player, only in a seed")
+check("if (doorInst == NULL && !spawnOutsideBoss)" in tele,
+      "the door and boss-scene spawns win first")
+check("AP_FastTravelSpawnYield((int)gGT->levelID);" in tele,
+      "a scene or door spawn disarms the armed trip instead of leaving it armed")
 poschain = tele[tele.index("if (doorInst != NULL)"):]
 check(poschain.index("else if (apTravel)") > poschain.index("else if (spawnOutsideBoss != 0)"),
       "the travel spawn follows the door and boss rules in the spawn chain")
@@ -159,8 +177,12 @@ check("AP_FT_Landing(pos, MATH_Cos(a), -MATH_Sin(a), out);" in travel,
       "the landing walks the save camera's approach direction")
 check("instDef->modelID == STATIC_SAVEOBJ" in travel, "the anchor is the hub's save object instance")
 check("ap_ft_spawnHub = -1;" in travel, "one trip arms one spawn")
-check("a dropped trip keeps no armed spawn" in travel and travel.count("ap_ft_spawnHub = -1;") == 3,
-      "a dropped trip disarms its spawn too")
+check("a dropped trip keeps no armed spawn" in travel and travel.count("ap_ft_spawnHub = -1;") == 4,
+      "every end of a trip disarms its spawn (drop, claim, gate recheck, scene yield)")
+check("AP_FT_HubOpen(i, AP_GateCount(AP_IDX_KEY))" in travel,
+      "the Key gate is asked once more at the spawn handoff")
+check("!ctr_cfg_active() ||" in travel, "a stale selector cannot confirm a trip without a seed")
+check("ctr_cfg_active(), spawned, yielded" in travel, "the trip ends when the seed goes away")
 check("MainRaceTrack_RequestLoad((s16)(GEM_STONE_VALLEY + r->hub));" in travel,
       "every destination takes the hub's own reload")
 

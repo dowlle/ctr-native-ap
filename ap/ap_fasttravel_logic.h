@@ -38,7 +38,9 @@ enum
 	AP_FT_DROP_NONE = 0,
 	AP_FT_DROP_TIMEOUT = 1, // the whole trip took too long
 	AP_FT_DROP_GATE = 2,    // the hub's Keys went away on the way (a reconnect)
-	AP_FT_DROP_NOSPAWN = 3  // the destination loaded but had no save screen spawn
+	AP_FT_DROP_NOSPAWN = 3, // the destination loaded but had no save screen spawn
+	AP_FT_DROP_YIELD = 4,   // the birth's door or boss-scene spawn kept its entry
+	AP_FT_DROP_SEED = 5     // the seed went away (disconnect, slot switch)
 };
 
 // Bounds the whole trip, as AP_TL_LOAD_FRAMES bounds a tracker start.
@@ -106,10 +108,12 @@ static inline int AP_FTBegin(ap_ft_request *r, int hub, int keysHave, int otherT
 
 // Once per frame. levelHub is the running hub (0..4) or -1; hold is a load in
 // flight or a hub that is not yet safe for a request; keysNow is the received
-// Key count now; spawned is the destination's birth having placed the kart
-// this frame or earlier. *wantLoad: request the destination hub now. Returns a
-// drop reason, or AP_FT_DROP_NONE while the trip is alive or idle.
-static inline int AP_FTFrame(ap_ft_request *r, int levelHub, int hold, int keysNow, int spawned, int *wantLoad)
+// Key count now; spawned is the destination's birth having placed the kart,
+// yielded is the birth having kept its door or boss-scene spawn instead, and
+// seedLive is the AP configuration still owning the game. *wantLoad: request
+// the destination hub now. Returns a drop reason, or AP_FT_DROP_NONE while the
+// trip is alive or idle.
+static inline int AP_FTFrame(ap_ft_request *r, int levelHub, int hold, int keysNow, int seedLive, int spawned, int yielded, int *wantLoad)
 {
 	int drop;
 	*wantLoad = 0;
@@ -120,6 +124,19 @@ static inline int AP_FTFrame(ap_ft_request *r, int levelHub, int hold, int keysN
 	{
 		AP_FTReset(r);
 		return AP_FT_DROP_NONE;
+	}
+	// The destination's birth kept its door or boss-scene spawn: the trip ends
+	// there, at the normal spawn, with the scene intact.
+	if (yielded)
+	{
+		drop = AP_FT_DROP_YIELD;
+		goto drop;
+	}
+	// No seed, no trip: a disconnect or slot switch mid-wait cancels.
+	if (!seedLive)
+	{
+		drop = AP_FT_DROP_SEED;
+		goto drop;
 	}
 	if (++r->frames > AP_FT_TIMEOUT_FRAMES)
 	{

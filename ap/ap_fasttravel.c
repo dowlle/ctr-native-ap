@@ -15,6 +15,7 @@ static ap_ft_request ap_ft;
 static int ap_ft_ready;
 static int ap_ft_spawnHub = -1; /* armed destination for the next hub birth */
 static int ap_ft_spawned;       /* the birth placed the kart */
+static int ap_ft_yielded;       /* the birth kept its door or boss-scene spawn */
 
 static ap_ft_request *AP_FTState(void)
 {
@@ -85,7 +86,7 @@ static void AP_FastTravelMenuProc(struct RectMenu *menu)
 	row = menu->rowSelected;
 	/* Back, or a begin that refused (the gate closed since the menu was
 	 * drawn): return to the pause menu. */
-	if (row < 0 || row >= AP_FT_HUBS ||
+	if (row < 0 || row >= AP_FT_HUBS || !ctr_cfg_active() ||
 	    !AP_FTBegin(AP_FTState(), row, AP_GateCount(AP_IDX_KEY), AP_TrackerLaunchPending()))
 	{
 		sdata->ptrDesiredMenu = MainFreeze_GetMenuPtr();
@@ -124,12 +125,14 @@ void AP_FastTravelShowMenu(void)
 void AP_FastTravelFrame(struct GameTracker *gt)
 {
 	static const char *const why[] = {"", "dropped (timeout)", "dropped (gate closed)",
-		"dropped (no save screen spawn)"};
+		"dropped (no save screen spawn)", "the boss scene or door spawn kept its entry",
+		"dropped (seed ended)"};
 	ap_ft_request *r = AP_FTState(), copy = *r;
-	int levelHub, hold, wantLoad, drop, spawned;
+	int levelHub, hold, wantLoad, drop, spawned, yielded;
 	if (r->stage == AP_FT_IDLE)
 	{
 		ap_ft_spawned = 0; /* a stale spawn flag dies with the trip that armed it */
+		ap_ft_yielded = 0;
 		return;
 	}
 	levelHub = AP_FTLevelHub();
@@ -139,7 +142,9 @@ void AP_FastTravelFrame(struct GameTracker *gt)
 	       AP_CharSwap_PickerOpen();
 	spawned = ap_ft_spawned;
 	ap_ft_spawned = 0;
-	drop = AP_FTFrame(r, levelHub, hold, AP_GateCount(AP_IDX_KEY), spawned, &wantLoad);
+	yielded = ap_ft_yielded;
+	ap_ft_yielded = 0;
+	drop = AP_FTFrame(r, levelHub, hold, AP_GateCount(AP_IDX_KEY), ctr_cfg_active(), spawned, yielded, &wantLoad);
 	if (drop != AP_FT_DROP_NONE)
 	{
 		/* a dropped trip keeps no armed spawn: the next ordinary hub load
@@ -171,7 +176,15 @@ int AP_FastTravelSpawnAt(struct Level *level1, int levelID, SVec3 *posBottom, s1
 	if (ap_ft_spawnHub < 0 || levelID != GEM_STONE_VALLEY + ap_ft_spawnHub)
 		return 0;
 	/* One trip arms one spawn: disarm whatever happens below. */
+	i = ap_ft_spawnHub;
 	ap_ft_spawnHub = -1;
+	/* The Key gate once more at the handoff: a reconnect that landed between
+	 * the last frame check and this birth must not place the kart. */
+	if (!AP_FT_HubOpen(i, AP_GateCount(AP_IDX_KEY)))
+	{
+		AP_LogLine("[AP TRAVEL] the Keys went away during the load; the kart keeps its normal spawn\n");
+		return 0;
+	}
 	if (level1 == NULL)
 		return 0;
 	for (i = 0, instDef = level1->ptrInstDefs; i < (int)level1->numInstances; i++, instDef++)
@@ -199,4 +212,13 @@ int AP_FastTravelSpawnAt(struct Level *level1, int levelID, SVec3 *posBottom, s1
 		AP_LogLine(line);
 	}
 	return 1;
+}
+
+void AP_FastTravelSpawnYield(int levelID)
+{
+	if (ap_ft_spawnHub < 0 || levelID != GEM_STONE_VALLEY + ap_ft_spawnHub)
+		return;
+	ap_ft_spawnHub = -1;
+	ap_ft_yielded = 1;
+	AP_LogLine("[AP TRAVEL] the birth kept its door or boss-scene spawn; the trip ends at the normal spawn\n");
 }

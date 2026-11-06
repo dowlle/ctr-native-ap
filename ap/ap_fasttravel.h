@@ -23,4 +23,9 @@ void AP_FastTravelFrame(struct GameTracker *gGT);
  * spawn rules. Always disarms the trip's spawn for this levelID. */
 int AP_FastTravelSpawnAt(struct Level *level1, int levelID, union SVec3 *posBottom, s16 *rotY);
 
+/* VehBirth: the door or boss-scene spawn won this hub's birth while a trip
+ * was armed for it. Disarm and end the trip; the kart keeps the scene's own
+ * spawn. */
+void AP_FastTravelSpawnYield(int levelID);
+
 #endif

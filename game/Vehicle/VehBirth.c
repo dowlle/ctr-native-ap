@@ -224,9 +224,16 @@ void VehBirth_TeleportSelf(struct Driver *d, u8 spawnFlag, int spawnPosY)
 		}
 
 #ifdef CTR_AP
-		if (ctr_cfg_active() && d == gGT->drivers[0] && doorInst == NULL && !spawnOutsideBoss)
+		if (ctr_cfg_active() && d == gGT->drivers[0])
 		{
-			apTravel = AP_FastTravelSpawnAt(level1, (int)gGT->levelID, &apTravelPos, &apTravelRot);
+			if (doorInst == NULL && !spawnOutsideBoss)
+			{
+				apTravel = AP_FastTravelSpawnAt(level1, (int)gGT->levelID, &apTravelPos, &apTravelRot);
+			}
+			else
+			{
+				AP_FastTravelSpawnYield((int)gGT->levelID);
+			}
 		}
 #endif
 
