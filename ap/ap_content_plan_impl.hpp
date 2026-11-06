@@ -1617,6 +1617,9 @@ static void validate(const J &p, State &out) {
                 dest.box_spots = 1;
                 spots->second.used = true;
             } else if (dest.retail_id >= 0) {
+                // Every retail track ships a spot file, so a plan with spot
+                // sets names all of its retail pad tracks (A3-14).
+                need(out.spot_sets.empty(), "a retail pad track has no box spot set");
                 const J &rows = registry["retail"][dest.retail_id]["boxes"];
                 need(rows.is_array() && rows.size() <= AP_NAMED_ITEM_BOX_SLOTS, "registry box rows exceed the slot ceiling");
                 for (size_t b = 0; b < rows.size(); ++b)

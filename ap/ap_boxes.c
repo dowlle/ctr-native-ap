@@ -578,7 +578,7 @@ static void AP_BoxesStandSpots(struct GameTracker *gGT, const ctr_content_pad *p
 	         "[AP BOX] level %d: %d of %d Item Box(es) standing at hand-placed spots from the seed%s\n",
 	         s_level, s_liveCount, pad->box_count,
 	         AP_Author_PlacementSource() == AP_PLACEMENT_SRC_FILE
-	             ? "; the external " AP_PLACEMENT_FILE " is not used for them"
+	             ? "; the external " AP_PLACEMENT_FILE " is loaded for Box Author Mode but not used for them"
 	             : "");
 	AP_LogLine(msg);
 }
@@ -776,6 +776,15 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 	}
 
 #ifdef CTR_CUSTOM_TRACKS
+	// A3-14: a boss race on a custom garage venue or a custom Oxide final runs
+	// custom bytes on a retail host LevelID; the host's boxes do not belong
+	// there, so none stand.
+	if (CustomTrack_OxideFinalServing(level, gGT->bossID, IS_BOSS_RACE(gGT->gameMode1)) ||
+	    CustomTrack_GarageVenueServing(level, gGT->bossID, IS_BOSS_RACE(gGT->gameMode1)) >= 0)
+	{
+		AP_LogLine("[AP BOX] boss race on a custom venue: no AP boxes from the retail host track\n");
+		return;
+	}
 	// A3-14: a plan's retail track takes its boxes from its spot set when it
 	// has one (every retail track on an alpha3 seed with boxes).
 	{

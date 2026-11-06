@@ -266,7 +266,7 @@ int main(void) {
            s_live[1].z == 600 && s_live[1].rotY == 2048 && !s_live[1].seated, "spot 50 stands at its spot, slot 49");
     expect(g_spawned[0] == 1 && g_spawned[1] == 1 && g_spawned[2] == 0, "each standing spot box is spawned once");
     expect(strstr(g_log, "2 of 3 Item Box(es) standing at hand-placed spots") != 0 &&
-           strstr(g_log, "is not used for them") != 0, "one log line, naming the unused placement file");
+           strstr(g_log, "not used for them") != 0, "one log line, naming the unused placement file");
     g_placement_source = 0;
     (void)n;
     printf("%s: %d checks, %d failures\n", failures ? "FAIL" : "PASS", checks, failures);
@@ -314,6 +314,8 @@ assert re.search(r"race != 0 && !race->retail\)\s*\{\s*AP_BoxesSeatCustom\(gGT, 
     "a custom-bytes race returns after seating, never falling through to the host identity"
 print("PASS wiring: break, server-checked removal, clear and pool reset free seats; seated spawn; custom branch first")
 rebuild = body("static void AP_BoxesRebuild(")
+assert rebuild.index("CustomTrack_GarageVenueServing(level") < rebuild.index("AP_BoxesPlanRetailPad(level)"), \
+    "a custom boss venue never stands the retail host's boxes"
 assert rebuild.index("AP_BoxesPlanRetailPad(level)") < rebuild.index("AP_BoxesSnapshotPlacements()"), \
     "a plan retail track with spots stands them before the placement table is read"
 seat = body("static void AP_BoxesSeatCustom(")

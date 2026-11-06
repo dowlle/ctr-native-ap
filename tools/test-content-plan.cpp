@@ -1382,6 +1382,11 @@ int main(int argc, char **argv) {
         s_refuse("spot set for a track without a pad", [&](J &j) {
             J extra = set_of(j, "retail:3"); extra["track_id"] = "retail:99"; j["content_plan"]["item_boxes"]["spot_sets"].push_back(extra);
         });
+        s_refuse("a retail set dropped, its boxes rewritten to the frozen rows", [&](J &j) {
+            auto &v = j["content_plan"]["item_boxes"]["spot_sets"];
+            for (size_t i = 0; i < v.size(); ++i) if (v[i]["track_id"] == "retail:4") { v.erase(i); break; }
+            for (auto &c : j["content_plan"]["checks"]) if (c["owner"] == "retail:4") c.erase("spot");
+        });
         s_refuse("LEV pin of another revision", [&](J &j) { set_of(j, "custom/baby-t-park/1.0.2")["lev_sha256"] = std::string(64, 'a'); });
         s_refuse("LEV pin on a retail set", [&](J &j) { set_of(j, "retail:3")["lev_sha256"] = std::string(64, 'a'); });
         s_refuse("unknown spot set field", [&](J &j) { set_of(j, "retail:3")["credit"] = "x"; });
