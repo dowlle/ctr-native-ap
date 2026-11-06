@@ -544,7 +544,7 @@ int main(void)
     /* Refresh failure stays visible with local/package rows present. */
     s_ctTab = CT_TAB_LIBRARY; s_ctFocus = CT_FOCUS_TABS;
     s_saphiRefreshFailed = 1;
-    frame(0, "library-offline"); CHECK(has("Saphi refresh failed"));
+    frame(0, "library-offline"); CHECK(has("Saphi refresh failed. Retry Refresh."));
     s_ctFocus = CT_FOCUS_LIST;
     frame(0, NULL); CHECK(has("Saphi refresh failed"));
     s_saphiRefreshFailed = 0;

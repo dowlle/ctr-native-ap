@@ -1270,8 +1270,8 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
     {
         snprintf(line, sizeof line, "Filter: %s   Search: %.24s   %d/%d", s_ctFilterNames[s_ctFilter],
                  s_saphiQuery[0] ? s_saphiQuery : "none", s_ctItemCount ? *sel + 1 : 0, s_ctItemCount);
-        if (s_saphiRefreshBusy) snprintf(line, sizeof line, "Loading Project Saphi catalogue. Local tracks stay available.");
-        else if (s_saphiRefreshFailed) snprintf(line, sizeof line, "Saphi refresh failed. Page controls > Refresh catalogue to retry.");
+        if (s_saphiRefreshBusy) snprintf(line, sizeof line, "Loading Saphi catalogue...");
+        else if (s_saphiRefreshFailed) snprintf(line, sizeof line, "Saphi refresh failed. Retry Refresh.");
         CT_Footer(line, NULL, ot);
     }
     CT_Footer(NULL, s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? NativeMenu_Labels("*: Actions  [: Controls  ^: Back") :
