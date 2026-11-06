@@ -1197,14 +1197,14 @@ bool RemoveDescriptorFile(const fs::path &target, std::string &detail)
 // package that happens to use the key is left alone. Laps the player picked
 // for the old key move to the new one when it still waits for its laps and
 // pins the same files.
-void RetireDescriptor(const std::string &key, const std::string &revision, const std::string &uuid,
-                      const std::string &keeperKey)
+bool RetireDescriptor(const std::string &key, const std::string &revision, const std::string &uuid,
+                      const std::string &keeperKey, std::string &why)
 {
 	const std::string name = AP_SoloDescriptorFileName(key, revision);
 	const std::string keeperName = AP_SoloDescriptorFileName(keeperKey, revision);
 	std::error_code ec;
 	if (name.empty() || keeperName.empty() || uuid.empty() || SoloRootIsLink())
-		return;
+		return true;
 	for (const char *folder : {"tracks", "needs-laps"})
 	{
 		const fs::path dir = fs::u8path(SoloPath(folder));
@@ -1220,14 +1220,24 @@ void RetireDescriptor(const std::string &key, const std::string &revision, const
 			const auto pending = nlohmann::json::parse(
 			    ReadSmallPlainFile(fs::u8path(SoloPath("needs-laps")) / fs::u8path(keeperName), kDescriptorMax), nullptr, false);
 			const auto merged = AP_SoloMergeNeedsLaps(d, pending);
-			if (!merged.is_null() && KeepDescriptorFile("tracks", keeperName, merged.dump()))
+			if (!merged.is_null())
+			{
+				// The old file holds the player's laps until they are safe in the new one.
+				if (!KeepDescriptorFile("tracks", keeperName, merged.dump()))
+				{
+					why = "its laps could not be moved to solo/tracks/" + keeperName;
+					Log("kept solo/tracks/" + name + ": " + why);
+					return false;
+				}
 				DropNeedsLaps(keeperName);
+			}
 		}
 		if (RemoveDescriptorFile(target, detail))
 			Log(std::string("retired solo/") + folder + "/" + name + ": a newer install of the same package lists the track under another key");
 		else
 			Log(std::string("could not retire solo/") + folder + "/" + name + ": " + detail);
 	}
+	return true;
 }
 
 // The one writer behind both C entry points and the store publication: kind 1
@@ -1566,8 +1576,12 @@ bool ApplyStoreDescriptor(const StorePublication::Descriptor &d, const StorePubl
 	if (d.kind == 0)
 	{
 		// Only once the copy that replaces it is listed: a failed write must not leave no row at all.
-		if (from.listed.count(d.keeper))
-			RetireDescriptor(d.key, d.revision, d.json, d.keeperKey);
+		std::string why;
+		if (from.listed.count(d.keeper) && !RetireDescriptor(d.key, d.revision, d.json, d.keeperKey, why))
+		{
+			message = (d.title.empty() ? d.key : d.title) + " " + d.revision + ": " + why;
+			return false;
+		}
 		return true;
 	}
 	DescriptorScope scope;

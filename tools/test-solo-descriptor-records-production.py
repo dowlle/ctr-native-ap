@@ -296,6 +296,14 @@ int main(int, char **argv) {
         assert(ApplyStoreDescriptor(keeper, live, why) && ApplyStoreDescriptor(retire, live, why));
         assert(!read("tracks/" + oldName).empty() && read("tracks/" + newName).empty());
 
+        // The laps cannot be moved (the new key's file is blocked): the old file keeps them and the failure is named.
+        clean(); write("tracks/" + oldName, copy("generic-slot", "Generic", true, "u1"));
+        fs::create_directories(base + "/solo/tracks/" + newName);
+        assert(ApplyStoreDescriptor(keeper, live, why));
+        std::string moveFailure;
+        assert(!ApplyStoreDescriptor(retire, live, moveFailure) && moveFailure.find("laps could not be moved") != std::string::npos);
+        assert(!read("tracks/" + oldName).empty());
+
         // A track still waiting for laps under the old key is retired too.
         clean(); write("needs-laps/" + oldName, copy("generic-slot", "Generic", false, "u1"));
         assert(ApplyStoreDescriptor(keeper, live, why) && ApplyStoreDescriptor(retire, live, why));
