@@ -282,13 +282,13 @@ int AP_UpdateMenuFrame(void)
 		if (status == AP_UPD_FAILED_RESTORE)
 			AP_UpdateDraw("UPDATE FAILED HALFWAY", "Some files could not be put back.",
 			              "Copies of your old files end in .old.", "Next start tries again; see SETUP.md.",
-			              NativeMenu_Labels("*: OK"));
+			              NativeMenu_Labels("*: OK   ^: BACK"));
 		else
 			AP_UpdateDraw(status == AP_UPD_FAILED_VERIFY     ? "update failed verification"
 			              : status == AP_UPD_FAILED_DOWNLOAD ? "UPDATE DOWNLOAD FAILED"
 			                                                 : "UPDATE NOT INSTALLED",
-			              "Nothing was changed.", NULL, NULL, NativeMenu_Labels("*: OK"));
-		if (tap & (BTN_CROSS | BTN_CIRCLE))
+			              "Nothing was changed.", NULL, NULL, NativeMenu_Labels("*: OK   ^: BACK"));
+		if (tap & (BTN_CROSS | BTN_CIRCLE | BTN_TRIANGLE | BTN_START))
 			ap_update_dismiss();
 		return 1;
 

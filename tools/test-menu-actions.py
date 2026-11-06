@@ -125,8 +125,12 @@ static void tracker_tests(void) {
     for (int b=0; b<2; b++) {
         ap_tracker.open=1; ap_tracker.acts_open=1; ap_tracker.count=1;
         sdata->buttonTapPerPlayer[0]=backs[b];
+        sdata->AnyPlayerTap=backs[b]; /* The later retail unpause consumer reads this. */
         assert(AP_TrackerMenuFrame() && ap_tracker.open && !ap_tracker.acts_open);
+        assert(!(sdata->AnyPlayerTap & BTN_START));
+        sdata->AnyPlayerTap=backs[b];
         assert(AP_TrackerMenuFrame() && !ap_tracker.open);
+        assert(!(sdata->AnyPlayerTap & BTN_START));
     }
     ap_tracker.open=1; sdata->buttonTapPerPlayer[0]=BTN_SQUARE;
     assert(AP_TrackerMenuFrame() && ap_tracker.open);
@@ -134,6 +138,8 @@ static void tracker_tests(void) {
     assert(AP_TrackerMenuFrame() && ap_tracker.tab==1);
     sdata->buttonTapPerPlayer[0]=BTN_L1;
     assert(AP_TrackerMenuFrame() && ap_tracker.tab==0);
+    ap_tracker.open=0; sdata->buttonTapPerPlayer[0]=BTN_START; sdata->AnyPlayerTap=BTN_START;
+    assert(!AP_TrackerMenuFrame() && (sdata->AnyPlayerTap & BTN_START)); /* Retail keeps its Start. */
 }
 '''
 

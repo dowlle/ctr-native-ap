@@ -833,6 +833,9 @@ int AP_TrackerMenuFrame(void)
 		sdata->ptrActiveMenu->funcPtr==MainFreeze_MenuPtrDefault && !sdata->ptrDesiredMenu;
 	float mx,my; unsigned buttons;
 	if(!context) { ap_tracker_request=0; if(ap_tracker.open) AP_TrackerClose(); return 0; }
+	/* MainFrame reads this aggregate after the overlay. An owned Start must
+	 * not also unpause the retail menu after going back one tracker level. */
+	if(ap_tracker.open) sdata->AnyPlayerTap &= ~BTN_START;
 	buttons=SDL_GetMouseState(&mx,&my);
 	if(!ap_tracker.open) {
 		/* Square in the hub pause menu, or its TRACKER row. */
