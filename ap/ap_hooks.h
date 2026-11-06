@@ -221,6 +221,13 @@ void AP_FeedNoticeLine(const char *text);
 // ignored picks the softer colour. The DeathLink module owns the wording. Lines are
 // cut at 28 characters so they stay clear of the minimap.
 void AP_FeedDeathLinkLine(const char *text, int ignored);
+// A3-17 unlock reasons: one feed line naming what a received item opened (a
+// pad, a stage 2, a hub door, a shop shelf, a boss garage). AP_UnlockReasonsAfterItem
+// runs at the end of each drained item in the received-item drain loop;
+// AP_UnlockReasonsEndDrain runs once per frame after AP_FeedEndDrain and also
+// owns the Wumpa Shop shelf watch (its lifetime credit lands after the loop).
+void AP_UnlockReasonsAfterItem(void);
+void AP_UnlockReasonsEndDrain(void);
 
 // ── AP gate counters (received-item model, Option B) ──
 // Adventure gates read these received-item-TYPE counts instead of AdvProgress

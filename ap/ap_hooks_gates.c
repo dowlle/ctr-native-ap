@@ -11,6 +11,7 @@
 #ifdef CTR_AP
 
 #include "ap_boss_adapter.h" // J03 boss adapter decisions and glue prototypes
+#include "ap_unlock_reasons_logic.h" // A3-17 unlock-reason watch, diff and wording
 
 int AP_GateCount(int itemType)
 {
@@ -1619,6 +1620,180 @@ int ctr_cfg_warp_stage2_unlocked(int physPadLevelID)
 	    ? ap_content_plan_pad(physPadLevelID) : 0;
 	return !pad || !pad->has_stage2 ||
 	       AP_ContentStage2Owned(pad) >= pad->stage2_count;
+}
+
+// ── A3-17: unlock reasons in the AP log feed ────────────────────────────────
+// The engine half of ap_unlock_reasons_logic.h: snapshot what is open (pads,
+// stage 2, hub doors, Wumpa Shop shelves, boss garages), diff against the last
+// snapshot, and queue at most one reason line per call. Runs after each
+// drained received item (AP_UnlockReasonsAfterItem, from the drain loop in
+// ap_hooks_net.c) and once per frame after AP_FeedEndDrain
+// (AP_UnlockReasonsEndDrain), so the reason line lands directly behind the
+// receipt line of the item that caused it. Everything the watch reads is a
+// received-item tally (ap_recv_count, the character unlocks, the Wumpa
+// lifetime), so a change between two snapshots is always the item just
+// drained -- the one exception is the shop shelf, whose lifetime also rises
+// from race finishes and whose AP-fruit credit lands after the loop
+// (AP_WumpaCommitReceived); shelves are therefore only diffed in the
+// per-frame call. While the feed is unprimed (initial inventory absorb) the
+// snapshot is rebased silently, so a reconnect's replay never re-toasts.
+
+static AP_UnlockWatch ap_unlock_watch;
+static int ap_unlock_watch_valid = 0;
+
+// What a pad leads to this seed, same naming as the tracker's map nodes: the
+// plan's room title, the shuffled destination's track or cup name, then the
+// physical pad's own name as the fallback. Never returns NULL.
+static const char *AP_UnlockPadName(int physLevelID)
+{
+	int dest;
+
+	if (ap_content_plan_active())
+	{
+		const ctr_content_pad *pad = ap_content_plan_pad(physLevelID);
+		if (pad && pad->occupied)
+			return pad->room_title[0] ? pad->room_title : pad->display_name;
+	}
+	dest = ctr_cfg_warp_dest(physLevelID);
+	if (dest >= 100 && dest < 105)
+	{
+		const char *custom = NULL;
+#ifdef CTR_CUSTOM_TRACKS
+		custom = CustomTrack_CupDisplayName(dest - 100, 1);
+#endif
+		if (custom)
+			return custom;
+		return sdata->lngStrings[data.AdvCups[dest - 100].lngIndex_CupName];
+	}
+	if (dest == AP_CORTEX_DEST)
+		return "CORTEX VORTEX";
+	if (dest >= 0 && dest < 65)
+		return sdata->lngStrings[data.metaDataLEV[dest].name_LNG];
+	if (physLevelID >= 0 && physLevelID < 65)
+		return sdata->lngStrings[data.metaDataLEV[physLevelID].name_LNG];
+	return "?";
+}
+
+// The hub a door leads to, in door-bit order (AP_DoorBitPure bits 1, 2, 4, 8).
+static const char *const ap_unlock_door_names[AP_UNLOCK_DOOR_COUNT] = {
+	"Gem Stone Valley", // beach -> Gem Stone Valley, 1 Key
+	"Glacier Park",     // beach and Lost Ruins -> Glacier Park, 2 Keys
+	"Citadel City",     // Glacier Park -> Citadel City, 3 Keys
+	"Cup Room",         // Gem Stone Valley -> the gem cup room, 2 Keys
+};
+
+static const char *const ap_unlock_garage_names[AP_UNLOCK_GARAGE_COUNT] = {
+	"Ripper Roo", "Papu Papu", "Komodo Joe", "Pinstripe", "Oxide",
+};
+
+// Shop hubs in the apworld's hub order (ap_wumpa_shop.h).
+static const char *const ap_unlock_shop_hub_names[AP_UNLOCK_SHOP_HUBS] = {
+	"N. Sanity Beach", "Gem Stone Valley", "The Lost Ruins", "Glacier Park",
+	"Citadel City",
+};
+
+static const char *AP_UnlockEventName(const AP_UnlockEvent *ev)
+{
+	switch (ev->kind)
+	{
+	case AP_UNLOCK_PAD:
+	case AP_UNLOCK_STAGE2:
+		return AP_UnlockPadName(AP_UnlockSlotPad(ev->index));
+	case AP_UNLOCK_DOOR:
+		return ap_unlock_door_names[ev->index];
+	case AP_UNLOCK_GARAGE:
+		return ap_unlock_garage_names[ev->index];
+	case AP_UNLOCK_SHOP:
+		return ap_unlock_shop_hub_names[ev->index];
+	}
+	return "?";
+}
+
+static void AP_UnlockWatchCapture(AP_UnlockWatch *w)
+{
+	int slot, d, g, h, s;
+	long long lifetime;
+
+	memset(w, 0, sizeof *w);
+	if (!ctr_cfg_active())
+		return;
+
+	for (slot = 0; slot < AP_UNLOCK_PAD_COUNT; slot++)
+	{
+		int phys = AP_UnlockSlotPad(slot);
+		if (ctr_cfg_warp_unlocked(phys) && ctr_cfg_racer_lock_met(phys))
+			w->padOpen |= 1u << slot;
+		if (ctr_cfg_warp_stage2_unlocked(phys))
+			w->padStage2 |= 1u << slot;
+	}
+
+	for (d = 0; d < AP_UNLOCK_DOOR_COUNT; d++)
+		if (AP_GateCount(AP_IDX_KEY) >= AP_DoorKeysPure(1u << d))
+			w->doorsReady |= 1u << d;
+
+	for (g = 0; g < AP_BOSS_VENUE_GARAGES && g < 4; g++)
+		if (AP_BossGarageOpen(g))
+			w->garagesOpen |= 1u << g;
+	if (AP_OxideGarageOpen())
+		w->garagesOpen |= 1u << 4;
+
+	// The lifetime total lives in room storage; until its Get reply lands the
+	// shop watch stays unknown so the first resolved read becomes the silent
+	// baseline rather than a burst of false "stock open" lines.
+	if (ap_net_wumpa_ready() && AP_WumpaShopUsable(&ctr_wumpa_shop))
+	{
+		w->shopKnown = 1;
+		lifetime = ap_net_wumpa_lifetime();
+		for (h = 0; h < AP_UNLOCK_SHOP_HUBS; h++)
+			for (s = 0; s < ctr_wumpa_shop.slots && s < AP_WUMPA_SHOP_MAX_SLOTS; s++)
+				if (ctr_wumpa_shop.slot[h][s].code != 0 &&
+				    lifetime >= ctr_wumpa_shop.slot[h][s].unlock)
+					w->shopOpen[h]++;
+	}
+}
+
+// Capture, diff against the last snapshot, queue the one reason line when
+// something newly opened, and adopt the new snapshot either way. `withShop`
+// gates the Wumpa Shop half: the per-item call runs before the batch's fruit
+// credit is committed, so shelves are diffed only in the per-frame call.
+static void AP_UnlockReasonsUpdate(int withShop)
+{
+	AP_UnlockWatch now;
+	AP_UnlockEvent ev[AP_UNLOCK_GARAGE_COUNT + AP_UNLOCK_DOOR_COUNT +
+	                  2 * AP_UNLOCK_PAD_COUNT + AP_UNLOCK_SHOP_HUBS];
+	int count;
+
+	AP_UnlockWatchCapture(&now);
+	if (!withShop)
+	{
+		now.shopKnown = ap_unlock_watch.shopKnown;
+		memcpy(now.shopOpen, ap_unlock_watch.shopOpen, sizeof now.shopOpen);
+	}
+
+	count = ap_unlock_watch_valid
+	        ? AP_UnlockDiff(&ap_unlock_watch, &now, ev,
+	                        (int)(sizeof ev / sizeof ev[0]))
+	        : 0;
+	if (count > 0 && ap_feed_primed && AP_HubFeedOn())
+	{
+		char line[AP_FEED_TEXT_CAP];
+		AP_UnlockReasonLine(line, (int)sizeof line, ev[0].kind,
+		                    AP_UnlockEventName(&ev[0]), count - 1);
+		AP_FeedEnqueue(line, LIGHT_GREEN, 1);
+	}
+
+	ap_unlock_watch = now;
+	ap_unlock_watch_valid = 1;
+}
+
+void AP_UnlockReasonsAfterItem(void)
+{
+	AP_UnlockReasonsUpdate(0);
+}
+
+void AP_UnlockReasonsEndDrain(void)
+{
+	AP_UnlockReasonsUpdate(1);
 }
 
 #endif // CTR_AP
