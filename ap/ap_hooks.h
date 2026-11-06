@@ -223,11 +223,13 @@ void AP_FeedNoticeLine(const char *text);
 void AP_FeedDeathLinkLine(const char *text, int ignored);
 // A3-17 unlock reasons: one feed line naming what a received item opened (a
 // pad, a stage 2, a hub door, a shop shelf, a boss garage). AP_UnlockReasonsAfterItem
-// runs at the end of each drained item in the received-item drain loop;
-// AP_UnlockReasonsEndDrain runs once per frame after AP_FeedEndDrain and also
-// owns the Wumpa Shop shelf watch (its lifetime credit lands after the loop).
+// runs at the end of each drained item in the received-item drain loop.
+// AP_UnlockReasonsEndDrain(n) runs right before the drain (pass 0) and again
+// after AP_FeedEndDrain (pass the drained count): the quiet variant announces
+// shop shelves only and silently rebases non-item changes; the post-drain
+// variant also announces what the batch's deferred Wumpa credit opened.
 void AP_UnlockReasonsAfterItem(void);
-void AP_UnlockReasonsEndDrain(void);
+void AP_UnlockReasonsEndDrain(int drainedThisFrame);
 
 // ── AP gate counters (received-item model, Option B) ──
 // Adventure gates read these received-item-TYPE counts instead of AdvProgress

@@ -155,9 +155,10 @@ static inline int AP_UnlockDiff(const AP_UnlockWatch *before, const AP_UnlockWat
 }
 
 // Keep only the events of one kind, compacting in place; returns the new
-// count. The per-frame call announces shop shelves only: everything else the
+// count. The quiet per-frame call (before the drain, and after it when
+// nothing was drained) announces shop shelves only: everything else the
 // watch reads is a received-item tally whose transitions are caught by the
-// per-item call, so a per-frame diff of those kinds can only be a non-item
+// per-item call, so a quiet-frame diff of those kinds can only be a non-item
 // change (a boss win, a venue download finishing), which is adopted silently
 // rather than announced behind an unrelated receipt.
 static inline int AP_UnlockEventsOnly(AP_UnlockEvent *ev, int n, int kind)

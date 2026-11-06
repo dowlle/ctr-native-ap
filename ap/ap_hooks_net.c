@@ -254,6 +254,9 @@ static void AP_NetTick(struct GameTracker *gGT)
 	// #299: resolve the room's effect markers (releasing held effects) before
 	// this frame's items are offered against them.
 	AP_FxStorageTick();
+	// A3-17: rebase non-item changes the poll or a reconcile resolved since
+	// the last frame, before the first receipt can take credit for them.
+	AP_UnlockReasonsEndDrain(0);
 	long long items[32];
 	int n = ap_net_drain_items(items, 32);
 	AP_PerfNoteItemsReceived(n, n > 0 ? items[n - 1] : 0); // frame stall line context
@@ -603,7 +606,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 	}
 
 	AP_FeedEndDrain(n); // hub feed: prime once the initial inventory dump goes quiet
-	AP_UnlockReasonsEndDrain(); // A3-17: per-frame watch (shop shelves included)
+	AP_UnlockReasonsEndDrain(n); // A3-17: batch-end watch (deferred Wumpa credit)
 
 	AP_PerfSectionEnd(AP_PERF_SEC_ITEM_APPLY);
 }

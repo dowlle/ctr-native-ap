@@ -1760,15 +1760,32 @@ static void AP_UnlockWatchCapture(AP_UnlockWatch *w)
 }
 
 // Capture, diff against the last snapshot, queue the one reason line when
-// something newly opened, and adopt the new snapshot either way. The per-item
-// call (`perFrame` 0) reports pads, stage 2, doors and garages behind the
-// receipt that caused them; the shop half is held back there because the
-// batch's fruit credit is committed only after the loop. The per-frame call
-// (`perFrame` 1) reports shop shelves only and silently adopts every other
-// change: those are the transitions no received item caused (a boss win, a
-// garage venue download finishing), which must not surface behind an
-// unrelated receipt.
-static void AP_UnlockReasonsUpdate(int perFrame)
+// something newly opened, and adopt the new snapshot either way. Three modes:
+//
+//   ITEM (after each drained receipt): reports pads, stage 2, doors and
+//   garages behind the receipt that caused them. The shop half is held back
+//   (the batch's fruit credit is committed only after the loop), so a
+//   per-item diff can only contain item-caused transitions.
+//
+//   FRAME_QUIET (before the drain, and after it when nothing was drained):
+//   reports shop shelves only (race-finish banking is the one announced
+//   non-item opening) and silently adopts every other change. Running it
+//   right BEFORE the drain rebases whatever the poll or a reconcile resolved
+//   since the last frame (a boss win, a venue download finishing), so it can
+//   never surface behind an unrelated receipt.
+//
+//   FRAME_ITEMS (after a drain that drained items): reports every kind. What
+//   is left after the per-item calls is exactly the batch's deferred fruit
+//   credit, which is item-caused too: the shelves it opened, and Oxide's
+//   garage when the Wumpa goal arm was its last requirement.
+enum
+{
+	AP_UNLOCK_MODE_ITEM,
+	AP_UNLOCK_MODE_FRAME_QUIET,
+	AP_UNLOCK_MODE_FRAME_ITEMS
+};
+
+static void AP_UnlockReasonsUpdate(int mode)
 {
 	AP_UnlockWatch now;
 	AP_UnlockEvent ev[AP_UNLOCK_GARAGE_COUNT + AP_UNLOCK_DOOR_COUNT +
@@ -1776,7 +1793,7 @@ static void AP_UnlockReasonsUpdate(int perFrame)
 	int count;
 
 	AP_UnlockWatchCapture(&now);
-	if (!perFrame)
+	if (mode == AP_UNLOCK_MODE_ITEM)
 	{
 		now.shopKnown = ap_unlock_watch.shopKnown;
 		memcpy(now.shopOpen, ap_unlock_watch.shopOpen, sizeof now.shopOpen);
@@ -1786,7 +1803,7 @@ static void AP_UnlockReasonsUpdate(int perFrame)
 	        ? AP_UnlockDiff(&ap_unlock_watch, &now, ev,
 	                        (int)(sizeof ev / sizeof ev[0]))
 	        : 0;
-	if (perFrame)
+	if (mode == AP_UNLOCK_MODE_FRAME_QUIET)
 		count = AP_UnlockEventsOnly(ev, count, AP_UNLOCK_SHOP);
 	if (count > 0 && ap_feed_primed && AP_HubFeedOn())
 	{
@@ -1802,12 +1819,13 @@ static void AP_UnlockReasonsUpdate(int perFrame)
 
 void AP_UnlockReasonsAfterItem(void)
 {
-	AP_UnlockReasonsUpdate(0);
+	AP_UnlockReasonsUpdate(AP_UNLOCK_MODE_ITEM);
 }
 
-void AP_UnlockReasonsEndDrain(void)
+void AP_UnlockReasonsEndDrain(int drainedThisFrame)
 {
-	AP_UnlockReasonsUpdate(1);
+	AP_UnlockReasonsUpdate(drainedThisFrame > 0 ? AP_UNLOCK_MODE_FRAME_ITEMS
+	                                            : AP_UNLOCK_MODE_FRAME_QUIET);
 }
 
 #endif // CTR_AP
