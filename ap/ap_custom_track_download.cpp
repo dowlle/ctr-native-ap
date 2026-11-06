@@ -23,6 +23,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <map>
+#include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -168,8 +170,8 @@ int transfer_retry_delay(const HttpOutcome &outcome, int attempt)
 }
 
 // The earliest time any request to Saphi may start. Every transfer thread
-// (catalogue refresh, Track Manager install, Current Seed install) shares the
-// server's one limit, so a 429 for one holds the others back instead of each
+// (catalogue refresh, Track Manager install, Current Seed install) to one host
+// shares that server's limit, so a 429 for one holds the others back instead of each
 // spending its attempts on it.
 struct RateGate
 {
@@ -193,9 +195,14 @@ struct RateGate
 		until_ms = std::max(until_ms, now() + 1000LL * seconds);
 	}
 };
-RateGate &saphi_gate()
+// One gate per host: the track registry's host has its own limits.
+RateGate &gate_for(const std::string &host)
 {
-	static auto *gate = new RateGate();
+	static std::mutex mutex;
+	static auto *gates = new std::map<std::string, std::unique_ptr<RateGate>>();
+	std::lock_guard<std::mutex> lock(mutex);
+	auto &gate = (*gates)[host];
+	if (!gate) gate.reset(new RateGate());
 	return *gate;
 }
 
@@ -206,15 +213,30 @@ RateGate &saphi_gate()
 // sends no request id of its own.
 template <typename Fetch, typename Wait>
 bool transfer_with_retries(const std::string &host, const std::string &path, Fetch fetch, Wait wait,
-	                       std::string &error, RateGate &gate = saphi_gate())
+	                       std::string &error, RateGate *shared = nullptr)
 {
+	RateGate &gate = shared ? *shared : gate_for(host);
 	static std::mutex request_mutex;
 	static unsigned next_request = 0;
 	int rate_limited = 0, rate_waited = 0, other = 0;
 	for (int attempt = 1;; attempt++)
 	{
+		// Time spent behind the gate counts against the same budget, so threads
+		// that keep extending it cannot hold this transfer past kRateLimitBudget.
 		while (const int hold = gate.pending_seconds())
+		{
+			if (rate_waited + hold > kRateLimitBudget)
+			{
+				HttpOutcome busy;
+				busy.status = 429;
+				error = transfer_error(host_label(host), busy);
+				std::fprintf(stderr, "[Saphi] GET %s%s waited %d s behind the rate limit pause: %s\n",
+				             host.c_str(), path.c_str(), rate_waited, error.c_str());
+				return false;
+			}
+			rate_waited += hold;
 			wait(hold);
+		}
 		unsigned request;
 		{
 			std::lock_guard<std::mutex> lock(request_mutex);
@@ -227,6 +249,7 @@ bool transfer_with_retries(const std::string &host, const std::string &path, Fet
 		const bool limited = outcome.status == 429;
 		const int delay = transfer_retryable(outcome) ? transfer_retry_delay(outcome, attempt) : 0;
 		if (limited) rate_limited++; else other++;
+		if (outcome.status == 429 || outcome.status == 503) gate.hold(delay);
 		const bool again = transfer_retryable(outcome) &&
 		    (limited ? rate_limited < kRateLimitAttempts && rate_waited + delay <= kRateLimitBudget
 		             : other < kTransferAttempts);
@@ -239,9 +262,8 @@ bool transfer_with_retries(const std::string &host, const std::string &path, Fet
 			error = failure;
 			return false;
 		}
-		if (limited) rate_waited += delay;
-		if (outcome.status == 429 || outcome.status == 503) gate.hold(delay);
-		else wait(delay);
+		// A 429 or 503 already holds the gate, which the next pass waits out.
+		if (outcome.status != 429 && outcome.status != 503) wait(delay);
 	}
 }
 

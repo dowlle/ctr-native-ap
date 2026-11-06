@@ -49,6 +49,7 @@ prelude = r'''
 #include <cstring>
 #include <fstream>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -280,7 +281,7 @@ int main()
 					failure = transfer_error("Project Saphi", outcome);
 					return false;
 				},
-				[&](int seconds) { waits.push_back(seconds); fake_ms += 1000LL * seconds; }, error, gate);
+				[&](int seconds) { waits.push_back(seconds); fake_ms += 1000LL * seconds; }, error, &gate);
 		};
 		HttpOutcome ok; ok.status = 200;
 		HttpOutcome busy; busy.status = 429; busy.retry_after = 3;
@@ -316,9 +317,30 @@ int main()
 			std::vector<int> second_waits; int second_calls = 0;
 			bool done = transfer_with_retries("www.projectsaphi.com", "/api/v3/tracks/21/downloads/718",
 				[&](HttpOutcome &outcome, std::string &) { outcome = ok; second_calls++; return true; },
-				[&](int seconds) { second_waits.push_back(seconds); fake_ms += 1000LL * seconds; }, error, gate);
+				[&](int seconds) { second_waits.push_back(seconds); fake_ms += 1000LL * seconds; }, error, &gate);
 			expect(done && second_calls == 1 && second_waits == std::vector<int>({5}),
 			       "a transfer waits for the shared 429 hold before it asks");
+			// An exhausted transfer still publishes its last Retry-After to the next one.
+			fake_ms = 0; gate.until_ms = 0;
+			HttpOutcome last; last.status = 429; last.retry_after = 7;
+			run({last}, waits, calls, error);
+			const long long after = fake_ms;
+			gate.hold(0);
+			expect(gate.until_ms > after, "the final 429 of an exhausted transfer leaves the gate held");
+			// Other threads extending the gate cannot hold one transfer past the budget.
+			fake_ms = 0; gate.until_ms = 0; gate.hold(60);
+			int extended = 0;
+			std::vector<int> third_waits;
+			bool third = transfer_with_retries("www.projectsaphi.com", "/api/v3/tracks/21/downloads/723",
+				[&](HttpOutcome &outcome, std::string &) { outcome = ok; return true; },
+				[&](int seconds) { third_waits.push_back(seconds); fake_ms += 1000LL * seconds; if (++extended < 10) gate.hold(60); },
+				error, &gate);
+			int total = 0; for (int w : third_waits) total += w;
+			expect(!third && total == kRateLimitBudget && error.find("HTTP 429") != std::string::npos,
+			       "gate waits are bounded by the budget: " + std::to_string(total));
+			// Another host keeps its own gate.
+			RateGate &other_gate = gate_for("raw.githubusercontent.com");
+			expect(&other_gate != &gate_for("www.projectsaphi.com"), "each host has its own gate");
 		}
 	}
 
