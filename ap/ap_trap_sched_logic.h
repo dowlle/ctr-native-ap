@@ -328,6 +328,7 @@ typedef struct
 	unsigned char kind;
 	unsigned char effect;
 	unsigned char slot;
+	unsigned seq; // the slot copy's receipt sequence: one trap instance's identity
 } AP_TrapEvent;
 
 typedef struct
@@ -385,6 +386,10 @@ static inline void AP_TrapSchedEmit(AP_TrapSched *s, int kind, int effect, int s
 	s->events[at].kind = (unsigned char)kind;
 	s->events[at].effect = (unsigned char)effect;
 	s->events[at].slot = (unsigned char)slot;
+	// The feed keys a trap line by slot AND seq (A3-21): a slot is reused once
+	// its copy is over, and only the pair tells the new copy from the old one's
+	// still-visible line. A DROPPED event has no slot; its seq is unused.
+	s->events[at].seq = (slot >= 0 && slot < AP_TRAP_SCHED_CAP) ? s->slots[slot].seq : 0;
 	s->eventCount++;
 }
 

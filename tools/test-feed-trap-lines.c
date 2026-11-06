@@ -91,15 +91,15 @@ static void pump(AP_TrapSched *s)
 		{
 		case AP_TRAP_EV_ARMED:
 			snprintf(msg, sizeof msg, "%s ARMED", name);
-			AP_FeedLinesTrapState(&feed, ev.slot, AP_FEED_TRAP_ARMED, msg, SALMON);
+			AP_FeedLinesTrapState(&feed, ev.slot, ev.seq, AP_FEED_TRAP_ARMED, msg, SALMON);
 			break;
 		case AP_TRAP_EV_WARN:
 			snprintf(msg, sizeof msg, "%s INCOMING", name);
-			AP_FeedLinesTrapState(&feed, ev.slot, AP_FEED_TRAP_INCOMING, msg, SALMON);
+			AP_FeedLinesTrapState(&feed, ev.slot, ev.seq, AP_FEED_TRAP_INCOMING, msg, SALMON);
 			break;
 		case AP_TRAP_EV_FIRE:
 			snprintf(msg, sizeof msg, "%s", name);
-			AP_FeedLinesTrapState(&feed, ev.slot, AP_FEED_TRAP_FIRED, msg, SALMON);
+			AP_FeedLinesTrapState(&feed, ev.slot, ev.seq, AP_FEED_TRAP_FIRED, msg, SALMON);
 			break;
 		default:
 			break;
@@ -166,9 +166,9 @@ static void case_one_trap_one_line(void)
 static void case_no_warning_trap(void)
 {
 	fresh();
-	AP_FeedLinesTrapState(&feed, 3, AP_FEED_TRAP_ARMED, "Flatten ARMED", SALMON);
+	AP_FeedLinesTrapState(&feed, 3, 1, AP_FEED_TRAP_ARMED, "Flatten ARMED", SALMON);
 	feed_frames(1);
-	AP_FeedLinesTrapState(&feed, 3, AP_FEED_TRAP_FIRED, "Flatten", SALMON);
+	AP_FeedLinesTrapState(&feed, 3, 1, AP_FEED_TRAP_FIRED, "Flatten", SALMON);
 	feed_frames(1);
 	expect("armed to name is one line", feed.vcount, 1);
 	expect_text("armed to name text", feed.vis[0].text, "Flatten");
@@ -205,10 +205,10 @@ static void case_several_traps(void)
 static void case_scrolled_out(void)
 {
 	fresh();
-	AP_FeedLinesTrapState(&feed, 0, AP_FEED_TRAP_ARMED, "Icy Road ARMED", SALMON);
+	AP_FeedLinesTrapState(&feed, 0, 1, AP_FEED_TRAP_ARMED, "Icy Road ARMED", SALMON);
 	feed_frames(AP_FEED_LIFETIME_FRAMES + 20);
 	expect("armed line expired", feed.vcount, 0);
-	AP_FeedLinesTrapState(&feed, 0, AP_FEED_TRAP_FIRED, "Icy Road", SALMON);
+	AP_FeedLinesTrapState(&feed, 0, 1, AP_FEED_TRAP_FIRED, "Icy Road", SALMON);
 	feed_frames(AP_FEED_STAGGER_FRAMES + 1);
 	expect("late fire adds one fresh line", feed.vcount, 1);
 	expect_text("late fire text", feed.vis[0].text, "Icy Road");
@@ -218,10 +218,10 @@ static void case_scrolled_out(void)
 static void case_display_time_restarts(void)
 {
 	fresh();
-	AP_FeedLinesTrapState(&feed, 1, AP_FEED_TRAP_ARMED, "Low Gravity ARMED", SALMON);
+	AP_FeedLinesTrapState(&feed, 1, 1, AP_FEED_TRAP_ARMED, "Low Gravity ARMED", SALMON);
 	feed_frames(AP_FEED_LIFETIME_FRAMES - 30);
 	expect("armed line still up near its end", feed.vcount, 1);
-	AP_FeedLinesTrapState(&feed, 1, AP_FEED_TRAP_INCOMING, "Low Gravity INCOMING", SALMON);
+	AP_FeedLinesTrapState(&feed, 1, 1, AP_FEED_TRAP_INCOMING, "Low Gravity INCOMING", SALMON);
 	feed_frames(AP_FEED_LIFETIME_FRAMES - 30);
 	expect("replaced line outlives the old deadline", feed.vcount, 1);
 	feed_frames(40);
@@ -272,15 +272,15 @@ static void case_armed_across_restart(void)
 static void case_slot_reuse(void)
 {
 	fresh();
-	AP_FeedLinesTrapState(&feed, 0, AP_FEED_TRAP_ARMED, "Flatten ARMED", SALMON);
-	AP_FeedLinesTrapState(&feed, 0, AP_FEED_TRAP_FIRED, "Flatten", SALMON);
+	AP_FeedLinesTrapState(&feed, 0, 1, AP_FEED_TRAP_ARMED, "Flatten ARMED", SALMON);
+	AP_FeedLinesTrapState(&feed, 0, 1, AP_FEED_TRAP_FIRED, "Flatten", SALMON);
 	feed_frames(30);
-	AP_FeedLinesTrapState(&feed, 0, AP_FEED_TRAP_ARMED, "Nitro Drop ARMED", SALMON);
+	AP_FeedLinesTrapState(&feed, 0, 2, AP_FEED_TRAP_ARMED, "Nitro Drop ARMED", SALMON);
 	feed_frames(30);
 	expect("old fired line and new armed line are separate", feed.vcount, 2);
 	expect("old line kept its text", vis_find("Flatten") >= 0, 1);
 	expect("new line shows armed", vis_find("Nitro Drop ARMED") >= 0, 1);
-	AP_FeedLinesTrapState(&feed, 0, AP_FEED_TRAP_FIRED, "Nitro Drop", SALMON);
+	AP_FeedLinesTrapState(&feed, 0, 2, AP_FEED_TRAP_FIRED, "Nitro Drop", SALMON);
 	expect("new trap's fire updates the new line only", vis_find("Flatten") >= 0, 1);
 	expect("new line now the name", vis_find("Nitro Drop") >= 0, 1);
 	expect("still two lines", feed.vcount, 2);
@@ -308,6 +308,30 @@ static void case_slot_reuse_warn_first(void)
 	expect("both lines are up", feed.vcount, 2);
 }
 
+// A refreshing duplicate is consumed when the copy ahead of it fires: its slot
+// empties without its ARMED line ever firing. A new trap on that slot must not
+// take over the consumed copy's line (Codex review round 2).
+static void case_refresh_consumed_slot(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE, 1);
+
+	fresh();
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_BOOST);
+	AP_TrapSchedReceive(&s, AP_TRAP_BOOST); // duplicate waits its turn
+	step(&s, &race, 3);
+	expect("first copy warns", vis_find("Forced Boost INCOMING") >= 0, 1);
+	expect("duplicate shows armed", vis_find("Forced Boost ARMED") >= 0, 1);
+	step(&s, &race, 12); // the first fires; the duplicate refreshes it and empties
+	expect("first copy fired", vis_find("Forced Boost") >= 0, 1);
+	AP_TrapSchedReceive(&s, AP_TRAP_NITRO); // takes the freed slot
+	step(&s, &race, 4);
+	expect("consumed copy's line kept its text", vis_find("Forced Boost ARMED") >= 0, 1);
+	expect("new trap gets its own line", vis_find("Nitro Drop INCOMING") >= 0, 1);
+	expect("fired, consumed and new lines are separate", feed.vcount, 3);
+}
+
 // A trap line still waiting in the ring takes the newer state there.
 static void case_replaced_while_queued(void)
 {
@@ -319,12 +343,12 @@ static void case_replaced_while_queued(void)
 		snprintf(buf, sizeof buf, "ITEM %d", i);
 		AP_FeedLinesEnqueue(&feed, buf, SALMON, 1);
 	}
-	AP_FeedLinesTrapState(&feed, 5, AP_FEED_TRAP_ARMED, "Wireframe ARMED", SALMON);
+	AP_FeedLinesTrapState(&feed, 5, 1, AP_FEED_TRAP_ARMED, "Wireframe ARMED", SALMON);
 	expect("trap line queued behind receipts", feed.qcount, 9);
-	AP_FeedLinesTrapState(&feed, 5, AP_FEED_TRAP_INCOMING, "Wireframe INCOMING", SALMON);
-	AP_FeedLinesTrapState(&feed, 5, AP_FEED_TRAP_FIRED, "Wireframe", SALMON);
+	AP_FeedLinesTrapState(&feed, 5, 1, AP_FEED_TRAP_INCOMING, "Wireframe INCOMING", SALMON);
+	AP_FeedLinesTrapState(&feed, 5, 1, AP_FEED_TRAP_FIRED, "Wireframe", SALMON);
 	expect("queued trap line was replaced, not appended", feed.qcount, 9);
-	AP_FeedLinesTrapState(&feed, 6, AP_FEED_TRAP_ARMED, "Icy Road ARMED", SALMON);
+	AP_FeedLinesTrapState(&feed, 6, 1, AP_FEED_TRAP_ARMED, "Icy Road ARMED", SALMON);
 	expect("another trap still appends", feed.qcount, 10);
 	// Let the queue surface: the screen holds five lines, then one more promotes
 	// each time an old line expires. Watch until the trap line shows.
@@ -351,7 +375,7 @@ static void case_limits_unchanged(void)
 	expect("five lines visible at most", feed.vcount, 5);
 	expect("lifetime is about 4 s", AP_FEED_LIFETIME_FRAMES, 240);
 	for (i = 0; i < 8; i++)
-		AP_FeedLinesTrapState(&feed, i, AP_FEED_TRAP_ARMED, "Trap ARMED", SALMON);
+		AP_FeedLinesTrapState(&feed, i, 1, AP_FEED_TRAP_ARMED, "Trap ARMED", SALMON);
 	expect("trap lines share the same 24 ring", feed.qcount <= 24, 1);
 }
 
@@ -365,6 +389,7 @@ int main(void)
 	case_armed_across_restart();
 	case_slot_reuse();
 	case_slot_reuse_warn_first();
+	case_refresh_consumed_slot();
 	case_replaced_while_queued();
 	case_limits_unchanged();
 	printf("\n%d checks, %d failures\n", checks, failures);

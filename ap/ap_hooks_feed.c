@@ -204,7 +204,7 @@ void AP_FeedOnItemReceived(long long item, int player, long long index, unsigned
 // Coloured as a trap so a warning reads the same as the receipt that produced it.
 // Deliberately outside the initial-inventory absorb window that gates the received
 // feed: an armed trap is live gameplay state, not a replayed receipt.
-void AP_FeedTrapLine(int trapSlot, int stage, const char *text)
+void AP_FeedTrapLine(int trapSlot, unsigned int trapSeq, int stage, const char *text)
 {
 	char line[AP_FEED_TEXT_CAP];
 	if (!ctr_cfg_active() || text == 0)
@@ -212,7 +212,7 @@ void AP_FeedTrapLine(int trapSlot, int stage, const char *text)
 	AP_CeremonySanitize(text, line, (int)sizeof line);
 	if (line[0] == '\0')
 		return;
-	AP_FeedLinesTrapState(&ap_feed, trapSlot, stage, line, CORTEX_RED);
+	AP_FeedLinesTrapState(&ap_feed, trapSlot, trapSeq, stage, line, CORTEX_RED);
 }
 
 // One received-DeathLink line: a death applied (red) or ignored because it did not

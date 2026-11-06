@@ -8,18 +8,20 @@
 //
 // TRAP LINES (A3-21, ruled 2026-11-06: trap notices were too spammy).
 // A trap owns ONE line that changes in place: NAME ARMED, then NAME INCOMING, then
-// NAME. The line carries the trap's scheduler slot as its identity (trapSlot, or
-// AP_FEED_NO_TRAP for every other line). A later state of the same trap replaces
-// the text of that trap's line and restarts its display time instead of appending.
-// A line that is still waiting in the ring is replaced there, so it never shows an
-// older state. If the line already scrolled out, the new state adds a fresh line.
+// NAME. The line carries the trap copy's identity (scheduler slot plus its receipt
+// sequence, or AP_FEED_NO_TRAP for every other line). A later state of the same
+// trap replaces the text of that trap's line and restarts its display time instead
+// of appending. A line that is still waiting in the ring is replaced there, so it
+// never shows an older state. If the line already scrolled out, the new state adds
+// a fresh line.
 //
-// Slot reuse: a slot only empties after its trap fired, so any notice for a slot
-// whose line is already in the FIRED stage belongs to a NEW trap and starts a new
-// line. That includes a trap that was eligible on receipt and opens with INCOMING,
-// skipping ARMED. An ARMED notice over an ARMED or INCOMING line is the scheduler
-// announcing the same waiting trap again (a race restart re-arms it), and replaces
-// in place.
+// Slot reuse: a slot only empties after its trap is over, and a refreshed
+// duplicate's slot empties without its line ever reaching the fired state, so the
+// slot alone cannot tell a new copy from the old one's still-visible line. The
+// receipt sequence can: a reused slot's next copy announces with a newer seq, the
+// old line no longer matches and the notice starts a new line. A re-announced
+// ARMED over an ARMED or INCOMING line (a race restart re-arms the same waiting
+// copy, seq unchanged) replaces in place.
 
 #include <stdio.h>
 #include <string.h>
@@ -47,6 +49,7 @@ typedef struct
 	int  playCue;    // received-item cue, consumed only when promoted in a race
 	int  trapSlot;   // scheduler slot of the trap this line belongs to, or AP_FEED_NO_TRAP
 	int  trapStage;  // AP_FEED_TRAP_* while trapSlot is set
+	unsigned trapSeq; // receipt sequence of the trap copy, while trapSlot is set
 } AP_FeedLine;
 
 typedef struct
@@ -86,37 +89,35 @@ static inline AP_FeedLine *AP_FeedLinesEnqueue(AP_FeedLines *f, const char *text
 	q->playCue = playCue;
 	q->trapSlot = AP_FEED_NO_TRAP;
 	q->trapStage = 0;
+	q->trapSeq = 0;
 	f->qcount++;
 	return q;
 }
 
-// Newest line (queued first, then visible) that belongs to this trap slot.
-static inline AP_FeedLine *AP_FeedLinesFindTrap(AP_FeedLines *f, int trapSlot)
+// Newest line (queued first, then visible) that belongs to this trap copy.
+static inline AP_FeedLine *AP_FeedLinesFindTrap(AP_FeedLines *f, int trapSlot,
+                                                unsigned trapSeq)
 {
 	int i;
 	for (i = f->qcount - 1; i >= 0; i--)
 	{
 		AP_FeedLine *q = &f->queue[(f->qhead + i) % AP_FEED_QUEUE_MAX];
-		if (q->trapSlot == trapSlot)
+		if (q->trapSlot == trapSlot && q->trapSeq == trapSeq)
 			return q;
 	}
 	for (i = f->vcount - 1; i >= 0; i--)
-		if (f->vis[i].trapSlot == trapSlot)
+		if (f->vis[i].trapSlot == trapSlot && f->vis[i].trapSeq == trapSeq)
 			return &f->vis[i];
 	return 0;
 }
 
-// One trap state for one trap slot. Returns 1 when an existing line was updated in
+// One trap state for one trap copy. Returns 1 when an existing line was updated in
 // place, 0 when a new line was added.
-static inline int AP_FeedLinesTrapState(AP_FeedLines *f, int trapSlot, int stage,
+static inline int AP_FeedLinesTrapState(AP_FeedLines *f, int trapSlot,
+                                        unsigned trapSeq, int stage,
                                         const char *text, int color)
 {
-	AP_FeedLine *l = AP_FeedLinesFindTrap(f, trapSlot);
-	if (l != 0 && l->trapStage == AP_FEED_TRAP_FIRED)
-	{
-		l->trapSlot = AP_FEED_NO_TRAP; // that trap is over; the slot now holds a new one
-		l = 0;
-	}
+	AP_FeedLine *l = AP_FeedLinesFindTrap(f, trapSlot, trapSeq);
 	if (l != 0)
 	{
 		snprintf(l->text, AP_FEED_TEXT_CAP, "%s", text);
@@ -128,6 +129,7 @@ static inline int AP_FeedLinesTrapState(AP_FeedLines *f, int trapSlot, int stage
 	}
 	l = AP_FeedLinesEnqueue(f, text, color, 1);
 	l->trapSlot = trapSlot;
+	l->trapSeq = trapSeq;
 	l->trapStage = stage;
 	return 0;
 }
