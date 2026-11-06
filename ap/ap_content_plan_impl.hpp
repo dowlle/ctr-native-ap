@@ -1060,8 +1060,11 @@ static void validate(const J &p, State &out) {
         lt.title = title;
         if (track.at("origin") == "retail") {
             fields(track, {"id", "origin", "retail_id", "display_name", "laps", "modes", "capabilities", "field_size"});
+            // Every retail race track 0..17 can be a leg, Slide Coliseum (16)
+            // and Turbo Track (17) too (ruled 2026-11-05); a boss cup still
+            // races the 16 Trophy tracks only (checked with its legs below).
             const int rid = number(track["retail_id"], 0, 17);
-            need(rid < 16 && track_id == "retail:" + std::to_string(rid) && title == registry["retail"][rid]["name"] &&
+            need(track_id == "retail:" + std::to_string(rid) && title == registry["retail"][rid]["name"] &&
                  track["laps"] == AP_CONTENT_RETAIL_LAPS, "a retail cup leg is not a race track or its metadata differs");
             leg.retail_id = rid;
             leg.victory = registry["retail"][rid]["cup_leg"].get<int64_t>();
@@ -1710,6 +1713,7 @@ static void validate(const J &p, State &out) {
                              (digits.size() == 1 || digits[0] != '0'), "unknown boss venue");
                         const int lv = std::stoi(digits);
                         need(lv < 18 && AP_BossVenueTrackKnown(lv), "unknown boss venue");
+                        need(lv < 16, "a boss cup leg is not a Trophy track");
                         points = AP_BOSS_VENUE_RESTART_POINTS[lv];
                     } else need(false, "unknown boss venue");
                     need(points >= 1 && AP_BossVenueScheduleFits(g, points), "a boss cup leg that cannot carry the boss's attack");

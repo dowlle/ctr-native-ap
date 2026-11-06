@@ -19,7 +19,7 @@ extern "C" {
 /* One leg of a content-plan cup (#133 PR 5). */
 #define AP_CONTENT_CUP_LEGS 4
 typedef struct ctr_content_leg {
-    int retail_id;     /* engine track 0..15, or -1 */
+    int retail_id;     /* engine track 0..17, or -1 */
     int cortex;        /* 1 for Cortex Vortex */
     int package_index; /* custom package, or -1 */
     int custom_slot, named_block, laps;
