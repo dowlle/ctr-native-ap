@@ -244,3 +244,9 @@ the cup legs. `test-content-plan.cpp` checks the routes and refuses forged
 ones, `test-content-verify.cpp` sweeps it and `test-content-plan-parity.py`
 compares both validators on generated 27-cup rooms and on a cup leg route
 forged beside a race.
+
+`one-race-pad.json` (A3-7) is slot data the same paired apworld emitted (seed
+20261106) with `cup_count: 26`, no Crystal Challenges, Itemsanity and Hit
+Character on: one Trophy pad among 26 cups, so every Itemsanity route is on
+that one pad. `test-content-verify.cpp` checks that the Beaker use check still
+needs Beaker there.

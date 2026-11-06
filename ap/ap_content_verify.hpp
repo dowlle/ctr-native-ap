@@ -454,7 +454,9 @@ static Model build() {
         }
         std::set<std::string> pads_of;
         for (const auto &r : routes) pads_of.insert(r.at("own_pad_id").get<std::string>());
-        if (pads_of.size() == 1) {
+        // Itemsanity and Hit checks keep their own rule also when every route
+        // is on one pad (apworld content_plan.create_regions, A3-7).
+        if (pads_of.size() == 1 && kind != "itemsanity" && kind != "hit") {
             L.kind = PAD;
             const J &pad = *pads.at(*pads_of.begin());
             L.region = pad.at("entry_id").is_null() ? -1 : region_of(pad["entry_id"].get<std::string>());
