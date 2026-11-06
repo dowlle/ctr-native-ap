@@ -15,11 +15,21 @@ fixture = r'''
 #include <cstring>
 #include <string>
 #include <vector>
+#include <filesystem>
+#include <fstream>
+#include <fcntl.h>
+#include <unistd.h>
 #include "ap/ap_solo.h"
 #include "ap/ap_solo_logic.hpp"
 static std::vector<APSoloTrackInfo> g_tracks;
 static std::map<std::string, int> g_trackStarts;
 static std::vector<APSoloOption> g_options;
+namespace fs = std::filesystem;
+static std::string g_optionOverridesFile;
+static struct { int state = AP_SOLO_JOB_IDLE; } g_job;
+static bool TrackPublicationBusy() { return false; }
+static bool SoloRootIsLink() { return false; }
+static void JobFail(const char*, const char*, const char*) { assert(false); }
 static const int JOB_GENERATE = 1, kGenerateLimitMs = 120000;
 static std::string g_sessionPassword;
 static bool active;
@@ -40,7 +50,8 @@ static struct { std::string roomId; Child child; int state, phaseStart; } g_sess
 static int SDL_GetTicks() { return 42; }
 static std::string SoloPath(const std::string& s) { return s; }
 '''
-for signature in ('extern "C" void AP_Solo_TrackCycle(int index)',
+for signature in ('int WriteNewFile(', 'void ClearOptionOverrides()', 'bool AddOptionOverrides(',
+                  'extern "C" void AP_Solo_TrackCycle(int index)',
                   'extern "C" int AP_Solo_GenerateStart(',
                   'extern "C" int AP_Solo_SetPassword(const char *password)',
                   'bool SessionSpawn()'):
@@ -110,6 +121,19 @@ int main() {
     g_options[0].value = g_options[0].initial;
     assert(AP_Solo_GenerateStart("imported.yaml", "ImportedPlayer", "", 1));
     assert(childArgs.size() == 7);
+    // Unedited imported names, including weighted expressions, are not sent.
+    assert(AP_Solo_GenerateStart("imported.yaml", "", "", 1));
+    assert(childArgs.size() == 5);
+    // A selection larger than OS argument limits travels as a JSON sidecar.
+    g_options[0].value = std::string(250000, 'x');
+    assert(AP_Solo_GenerateStart("imported.yaml", "", "", 1));
+    assert(childArgs.size() == 7 && childArgs[5] == "--set-file");
+    const std::string sidecar = childArgs[6];
+    std::ifstream input(sidecar);
+    nlohmann::json saved; input >> saved;
+    assert(saved == nlohmann::json(AP_SoloSetArgs(g_options)));
+    ClearOptionOverrides();
+    assert(!fs::exists(sidecar));
 }
 '''
 with tempfile.TemporaryDirectory() as directory:
@@ -118,5 +142,5 @@ with tempfile.TemporaryDirectory() as directory:
     subprocess.run(["g++", "-std=c++17", "-Wall", "-Wextra", "-Werror", "-I", str(root),
                     "-I", str(root / "ap/vendor/json/include"), str(path / "solo.cpp"),
                     "-o", str(path / "solo")], check=True)
-    subprocess.run([str(path / "solo")], check=True)
+    subprocess.run([str(path / "solo")], check=True, cwd=directory)
 print("PASS: selection replaces revisions; password is optional, editable and passed intact")

@@ -107,6 +107,7 @@ static struct APSoloRoomInfo s_soloRoom;
 static struct APSoloStartInfo s_soloStart;
 static char s_soloName[AP_SOLO_TEXT];
 static char s_soloNameBackup[AP_SOLO_TEXT];
+static char s_soloNameInitial[AP_SOLO_TEXT];
 static char s_soloPassword[64];
 static char s_soloPasswordBackup[64];
 static char s_soloMsg[256];
@@ -539,6 +540,9 @@ static void MM_Solo_PageNew(uint32_t *ot, struct GamepadBuffer *pad)
 		/* Presets, saved and inbox YAMLs all start with their own values. */
 		if (!s_soloStart.isPreset && s_soloStart.name[0])
 			snprintf(s_soloName, sizeof s_soloName, "%s", s_soloStart.name);
+		else if (s_soloStart.isPreset)
+			snprintf(s_soloName, sizeof s_soloName, "%s", g_config.slot[0] ? g_config.slot : "Player");
+		snprintf(s_soloNameInitial, sizeof s_soloNameInitial, "%s", s_soloName);
 		s_soloHighlight = -1;
 		s_soloFromOptions = 0;
 		s_soloFromTracks = 0;
@@ -1174,7 +1178,8 @@ static void MM_Solo_PageReview(uint32_t *ot, struct GamepadBuffer *pad)
 			}
 			else if (s_soloSel == 1)
 				MM_Solo_EditPassword(SOLO_REVIEW_NAME_Y + SOLO_ROW_H);
-			else if (AP_Solo_GenerateStart(s_soloStart.path, s_soloName,
+			else if (AP_Solo_GenerateStart(s_soloStart.path,
+			                               !s_soloStart.isPreset && !strcmp(s_soloName, s_soloNameInitial) ? "" : s_soloName,
 			                               s_soloStart.isPreset ? s_soloStart.presetId : "", s_soloFromOptions))
 				MM_Solo_Busy(SOLO_JOB_GENERATE);
 			return;

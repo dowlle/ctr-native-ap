@@ -378,6 +378,40 @@ struct Lists
 std::vector<APSoloOption> g_options;
 std::vector<APSoloTrackInfo> g_tracks; // the custom-track step (decision 32)
 std::map<std::string, int> g_trackStarts; // original YAML picks, before edits
+std::string g_optionOverridesFile;
+
+void ClearOptionOverrides()
+{
+	if (!g_optionOverridesFile.empty())
+	{
+		std::error_code ec;
+		fs::remove(fs::u8path(g_optionOverridesFile), ec);
+		g_optionOverridesFile.clear();
+	}
+}
+
+bool AddOptionOverrides(const std::vector<std::string> &sets, std::vector<std::string> &args)
+{
+	const std::string data = nlohmann::json(sets).dump();
+	if (data.size() <= 4096)
+	{
+		for (const auto &set : sets) { args.push_back("--set"); args.push_back(set); }
+		return true;
+	}
+	if (SoloRootIsLink()) return false;
+	static unsigned serial = 0;
+	for (int tries = 0; tries < 16; ++tries)
+	{
+		const std::string path = SoloPath("options-" + std::to_string(AP_SOLO_GETPID()) + "-" + std::to_string(++serial) + ".json");
+		const int wrote = WriteNewFile(fs::u8path(path), data);
+		if (!wrote) continue; // never replace someone else's file
+		g_optionOverridesFile = path;
+		if (wrote != 1) { ClearOptionOverrides(); return false; }
+		args.push_back("--set-file"); args.push_back(path);
+		return true;
+	}
+	return false;
+}
 
 // The folder the client loads custom tracks from (assets/tracks/<key>/original).
 std::string AssetsDir()
@@ -412,6 +446,7 @@ std::string g_sessionPassword;
 void FinishJob()
 {
 	g_job.child.release();
+	ClearOptionOverrides();
 }
 
 void JobFail(const std::string &kind, const std::string &message, const std::string &option)
@@ -508,8 +543,7 @@ void ParseList(const nlohmann::json &r)
 			if (!CopyText(s.path, sizeof s.path, AP_SoloJsonString(e, "path")))
 				CopyText(s.error, sizeof s.error, "The path of this file is too long.");
 			CopyText(s.presetId, sizeof s.presetId, AP_SoloJsonString(e, "id"));
-			if (!CopyText(s.name, sizeof s.name, AP_SoloJsonString(e, "name")))
-				CopyText(s.error, sizeof s.error, "The player name in this YAML is too long.");
+			CopyText(s.name, sizeof s.name, AP_SoloJsonString(e, "name"));
 			g_lists.starts.push_back(s);
 		}
 	};
@@ -822,7 +856,7 @@ extern "C" int AP_Solo_TracksStart(const char *yamlPath)
 
 extern "C" int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName, const char *presetId, int useOptions)
 {
-	if (!yamlPath || !*yamlPath)
+	if (!yamlPath || !*yamlPath || g_job.state == AP_SOLO_JOB_RUNNING || TrackPublicationBusy())
 		return 0;
 	std::vector<std::string> args = {"generate", "--yaml", yamlPath, "--assets", AssetsDir()};
 	if (slotName && *slotName)
@@ -839,10 +873,10 @@ extern "C" int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName,
 	}
 	if (useOptions)
 	{
-		for (const std::string &set : AP_SoloSetArgs(g_options))
+		if (!AddOptionOverrides(AP_SoloSetArgs(g_options), args))
 		{
-			args.push_back("--set");
-			args.push_back(set);
+			JobFail("option", "Could not save the selected options. Check free space and folder permissions.", "");
+			return 1;
 		}
 	}
 	// Picked custom tracks go with a preset's options and with an imported or
@@ -859,7 +893,9 @@ extern "C" int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName,
 	if (tracksChanged)
 		for (const std::string &arg : AP_SoloTrackArgs(picks))
 			args.push_back(arg);
-	return JobStart(JOB_GENERATE, args, kGenerateLimitMs) ? 1 : 0;
+	const bool started = JobStart(JOB_GENERATE, args, kGenerateLimitMs);
+	if (!started) ClearOptionOverrides();
+	return started ? 1 : 0;
 }
 
 extern "C" int AP_Solo_JobState(void) { return g_job.state; }
@@ -878,6 +914,7 @@ extern "C" void AP_Solo_JobCancel(void)
 		g_job.child.kill();
 		g_job.child.release();
 		g_job.state = AP_SOLO_JOB_IDLE;
+		ClearOptionOverrides();
 		Log("job cancelled");
 	}
 }
@@ -885,7 +922,10 @@ extern "C" void AP_Solo_JobCancel(void)
 extern "C" void AP_Solo_JobClear(void)
 {
 	if (g_job.state != AP_SOLO_JOB_RUNNING)
+	{
 		g_job.state = AP_SOLO_JOB_IDLE;
+		ClearOptionOverrides();
+	}
 }
 
 extern "C" int AP_Solo_TracksViaOptions(int isPreset) { return AP_SoloTracksViaOptions(isPreset != 0) ? 1 : 0; }
@@ -1775,6 +1815,8 @@ extern "C" int AP_Solo_OptionGet(int index, struct APSoloOptionInfo *out)
 		CopyText(out->note, sizeof out->note, guard);
 	else if (AP_SoloOptionWarns(g_options, o))
 		CopyText(out->note, sizeof out->note, o.warnReason);
+	else if (o.previewOnly && o.value == o.initial)
+		CopyText(out->note, sizeof out->note, "YAML may roll or change this value; kept until edited.");
 	return 1;
 }
 

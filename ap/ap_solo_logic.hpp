@@ -448,6 +448,7 @@ struct APSoloOption
 	int step = 1;                     // range: how far Left / Right move (overlay rule "step")
 	std::string value;                // shown and passed as --set name=value
 	std::string initial;              // the preset's value
+	bool previewOnly = false;        // untouched weighted/random expression
 	std::string forced;               // non-empty: fixed to this value
 	std::string forcedReason;
 	nlohmann::json visibleWhen;       // {"other": ["v1", "v2"]}
@@ -674,6 +675,9 @@ static inline std::vector<APSoloOption> AP_SoloBuildOptions(const nlohmann::json
 			const nlohmann::json &f = facts[n.get<std::string>()];
 			APSoloOption row;
 			row.name = n.get<std::string>();
+			if (describe.contains("unresolved") && describe["unresolved"].is_array())
+				for (const auto &name : describe["unresolved"])
+					row.previewOnly = row.previewOnly || (name.is_string() && name.get<std::string>() == row.name);
 			row.label = f.value("display_name", row.name);
 			row.group = group;
 			row.kind = f.value("kind", std::string());
@@ -848,6 +852,13 @@ static inline bool AP_SoloConditionHolds(const std::vector<APSoloOption> &rows, 
 
 static inline bool AP_SoloOptionVisible(const std::vector<APSoloOption> &rows, const APSoloOption &row)
 {
+	if (row.visibleWhen.is_object())
+		for (auto it = row.visibleWhen.begin(); it != row.visibleWhen.end(); ++it)
+		{
+			const APSoloOption *other = AP_SoloFindOption(rows, it.key());
+			if (other && other->previewOnly && other->value == other->initial)
+				return true; // the roll may enable this row
+		}
 	return row.visibleWhen.is_null() || AP_SoloConditionHolds(rows, row.visibleWhen);
 }
 
@@ -884,6 +895,20 @@ static inline bool AP_SoloGuardActive(const std::vector<APSoloOption> &rows, con
 {
 	if (!guard.is_object() || !guard.contains("option") || !guard["option"].is_string())
 		return false;
+	// A preview is not a rolled value. Defer only guards that depend on an
+	// untouched expression to generation; edited concrete values still guard.
+	std::vector<std::string> dependencies = {guard["option"].get<std::string>()};
+	if (guard.contains("at_most_count_of") && guard["at_most_count_of"].is_string())
+		dependencies.push_back(guard["at_most_count_of"].get<std::string>());
+	if (guard.contains("when") && guard["when"].is_object())
+		for (auto it = guard["when"].begin(); it != guard["when"].end(); ++it)
+			dependencies.push_back(it.key());
+	for (const auto &name : dependencies)
+	{
+		const APSoloOption *dependency = AP_SoloFindOption(rows, name);
+		if (dependency && dependency->previewOnly && dependency->value == dependency->initial)
+			return false;
+	}
 	if (guard.contains("when") && !AP_SoloConditionHolds(rows, guard["when"]))
 		return false;
 	const APSoloOption *row = AP_SoloFindOption(rows, guard["option"].get<std::string>());

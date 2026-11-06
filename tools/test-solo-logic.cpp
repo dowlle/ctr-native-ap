@@ -345,6 +345,23 @@ static void test_checklists_and_guards()
 	})");
 	std::vector<APSoloOption> rows = AP_SoloBuildOptions(d);
 	CHECK(rows.size() == 5); // a set without a checklist is not a row
+	{
+		auto weighted = d;
+		weighted["unresolved"] = {"crystal_challenge_count"};
+		weighted["values"]["crystal_arenas"] = {"Rocky Road"};
+		auto preview = AP_SoloBuildOptions(weighted);
+		APSoloOption *number = find(preview, "crystal_challenge_count");
+		CHECK(number && number->previewOnly);
+		CHECK(AP_SoloFirstBlocked(preview) == -1); // default preview 4 is not the weighted count
+		if (number)
+		{
+			number->value = "2";
+			CHECK(AP_SoloFirstBlocked(preview) >= 0); // explicitly edited concrete count
+			number->value = number->initial;
+			CHECK(AP_SoloFirstBlocked(preview) == -1);
+			CHECK(AP_SoloSetArgs(preview).empty());
+		}
+	}
 	APSoloOption *count = find(rows, "crystal_challenge_count"), *arenas = find(rows, "crystal_arenas");
 	APSoloOption *shuffle = find(rows, "boss_opponent_shuffle"), *tracks = find(rows, "boss_track_pool");
 	APSoloOption *weapons = find(rows, "boss_weapon_pool");

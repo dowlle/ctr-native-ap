@@ -122,6 +122,7 @@ static const char *const guardReason =
 	"Signature profiles need TNT, Potion and Bomb checked."; /* the longest guard reason */
 static char note[AP_SOLO_TEXT];
 static int rooms, tracks, needsLaps, picked, jobState = AP_SOLO_JOB_IDLE, cancels, describes;
+static char generatedName[AP_SOLO_TEXT];
 static int shortLetters;
 static char inbox[512];
 int AP_Solo_RuntimePresent(void) { return 1; }
@@ -131,7 +132,7 @@ int AP_Solo_DescribeStart(const char *y) { (void)y; describes++; return 1; }
 int AP_Solo_ImportRoomStart(const char *p) { (void)p; return 0; }
 int AP_Solo_ImportYamlStart(const char *p) { (void)p; return 0; }
 int AP_Solo_TracksStart(const char *y) { (void)y; return 0; }
-int AP_Solo_GenerateStart(const char *a, const char *b, const char *c, int d) { (void)a; (void)b; (void)c; (void)d; return 0; }
+int AP_Solo_GenerateStart(const char *a, const char *b, const char *c, int d) { (void)a; (void)c; (void)d; snprintf(generatedName, sizeof generatedName, "%s", b); return 0; }
 int AP_Solo_JobState(void) { return jobState; }
 const char *AP_Solo_JobPhase(void) { return "Filling the multiworld with items, this takes a few seconds"; }
 const char *AP_Solo_JobErrorText(void) { return ""; }
@@ -338,6 +339,12 @@ int main(void)
 	tap(BTN_CROSS);
 	CHECK(describes == 1 && s_soloPage == SOLO_BUSY && s_soloBusyJob == SOLO_JOB_DESCRIBE);
 	CHECK(strcmp(s_soloName, "ImportedPlayer") == 0);
+	MM_Solo_Go(SOLO_REVIEW); s_soloSel = 2;
+	tap(BTN_CROSS);
+	CHECK(generatedName[0] == 0); /* preserve the source name expression */
+	snprintf(s_soloName, sizeof s_soloName, "RenamedPlayer");
+	tap(BTN_CROSS);
+	CHECK(strcmp(generatedName, "RenamedPlayer") == 0);
 	MM_Solo_Go(SOLO_NEW);
 
 	/* Options, first level: the groups and Continue. */
