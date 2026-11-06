@@ -308,6 +308,12 @@ int main()
 		}
 		// Five 503 answers are not a queue: the other retries still stop at kTransferAttempts.
 		expect(!run({down}, waits, calls, error) && calls == kTransferAttempts, "a lasting 503 gives up after four attempts");
+		// 503 waits stay outside the 429 budget: three 503 with Retry-After 60, then the file.
+		{
+			HttpOutcome slow503; slow503.status = 503; slow503.retry_after = 60;
+			expect(run({slow503, slow503, slow503, ok}, waits, calls, error) && calls == 4 && waits == std::vector<int>({60, 60, 60}),
+			       "a slow 503 keeps its four attempts and is not charged to the 429 budget");
+		}
 		// A second transfer starting while the first holds the gate waits for it before its first request.
 		{
 			run({ok}, waits, calls, error);

@@ -249,7 +249,7 @@ bool transfer_with_retries(const std::string &host, const std::string &path, Fet
 		const bool limited = outcome.status == 429;
 		const int delay = transfer_retryable(outcome) ? transfer_retry_delay(outcome, attempt) : 0;
 		if (limited) rate_limited++; else other++;
-		if (outcome.status == 429 || outcome.status == 503) gate.hold(delay);
+		if (limited) gate.hold(delay);
 		const bool again = transfer_retryable(outcome) &&
 		    (limited ? rate_limited < kRateLimitAttempts && rate_waited + delay <= kRateLimitBudget
 		             : other < kTransferAttempts);
@@ -262,8 +262,8 @@ bool transfer_with_retries(const std::string &host, const std::string &path, Fet
 			error = failure;
 			return false;
 		}
-		// A 429 or 503 already holds the gate, which the next pass waits out.
-		if (outcome.status != 429 && outcome.status != 503) wait(delay);
+		// A 429 already holds the gate, which the next pass waits out and budgets.
+		if (!limited) wait(delay);
 	}
 }
 
