@@ -266,8 +266,12 @@ int main()
 		expect(transfer_retry_delay(slow, 1) == 60 && transfer_retry_delay(HttpOutcome{}, 2) == 4,
 		       "Retry-After is capped at 60 s; without one the wait grows 2, 4, 6");
 
-		auto run = [](std::vector<HttpOutcome> answers, std::vector<int> &waits, int &calls, std::string &error) {
-			waits.clear(); calls = 0; error.clear();
+		// A fresh gate on a fake clock that the fake wait advances.
+		static long long fake_ms = 0;
+		RateGate gate;
+		gate.clock = [] { return fake_ms; };
+		auto run = [&](std::vector<HttpOutcome> answers, std::vector<int> &waits, int &calls, std::string &error) {
+			waits.clear(); calls = 0; error.clear(); fake_ms = 0; gate.until_ms = 0;
 			return transfer_with_retries("www.projectsaphi.com", "/api/v3/tracks/21/downloads/717",
 				[&](HttpOutcome &outcome, std::string &failure) {
 					outcome = answers[std::min<size_t>(calls, answers.size() - 1)];
@@ -276,7 +280,7 @@ int main()
 					failure = transfer_error("Project Saphi", outcome);
 					return false;
 				},
-				[&](int seconds) { waits.push_back(seconds); }, error);
+				[&](int seconds) { waits.push_back(seconds); fake_ms += 1000LL * seconds; }, error, gate);
 		};
 		HttpOutcome ok; ok.status = 200;
 		HttpOutcome busy; busy.status = 429; busy.retry_after = 3;
@@ -286,8 +290,36 @@ int main()
 		       "429 then 503 then 200 succeeds after waits of 3 and 4 s");
 		expect(!run({missing}, waits, calls, error) && calls == 1 && waits.empty() &&
 		       error == "Project Saphi refused the file (HTTP 404).", "a 404 is asked once");
-		expect(!run({busy}, waits, calls, error) && calls == kTransferAttempts && (int)waits.size() == kTransferAttempts - 1 &&
+		expect(!run({busy}, waits, calls, error) && calls == kRateLimitAttempts && (int)waits.size() == kRateLimitAttempts - 1 &&
 		       error.find("HTTP 429") != std::string::npos, "a lasting 429 gives up after the last attempt: " + error);
+		// A 429 is a queue: ten of them in a row (the live limit after a burst) still end in the file.
+		{
+			std::vector<HttpOutcome> queue(10, busy);
+			queue.push_back(ok);
+			expect(run(queue, waits, calls, error) && calls == 11 && error.empty(),
+			       "ten 429 answers in a row still end in the file");
+		}
+		// Waiting on 429 is bounded: Retry-After 60 twice spends the 120 s budget, a third would pass it.
+		{
+			HttpOutcome minute; minute.status = 429; minute.retry_after = 60;
+			expect(!run({minute}, waits, calls, error) && calls == 3 && waits == std::vector<int>({60, 60}),
+			       "a 429 stops once the next wait would pass the budget");
+		}
+		// Five 503 answers are not a queue: the other retries still stop at kTransferAttempts.
+		expect(!run({down}, waits, calls, error) && calls == kTransferAttempts, "a lasting 503 gives up after four attempts");
+		// A second transfer starting while the first holds the gate waits for it before its first request.
+		{
+			run({ok}, waits, calls, error);
+			gate.hold(5);
+			expect(run({ok}, waits, calls, error) && calls == 1 && waits.empty(), "reset clears the hold in the test rig");
+			fake_ms = 0; gate.until_ms = 0; gate.hold(5);
+			std::vector<int> second_waits; int second_calls = 0;
+			bool done = transfer_with_retries("www.projectsaphi.com", "/api/v3/tracks/21/downloads/718",
+				[&](HttpOutcome &outcome, std::string &) { outcome = ok; second_calls++; return true; },
+				[&](int seconds) { second_waits.push_back(seconds); fake_ms += 1000LL * seconds; }, error, gate);
+			expect(done && second_calls == 1 && second_waits == std::vector<int>({5}),
+			       "a transfer waits for the shared 429 hold before it asks");
+		}
 	}
 
 	rmdir(tracks.c_str()); rmdir(tmpl);

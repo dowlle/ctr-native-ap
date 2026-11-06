@@ -142,9 +142,16 @@ std::string transfer_error(const std::string &label, const HttpOutcome &outcome)
 	return label + " refused the file " + http + ".";
 }
 
-// Only a busy or briefly unavailable server, or a 200 cut off mid-file, is
-// asked again; a refusal, a timeout or a file that fails its checks is not.
+// A briefly unavailable server, or a 200 cut off mid-file, is asked again up
+// to kTransferAttempts times; a refusal, a timeout or a file that fails its
+// checks is not. A 429 is the server's queue, not a failure: live, Saphi
+// serves about 20 files at once and then one per 6 s, and answers 429 with
+// the seconds until the next one is free (1 to 5). It is asked again up to
+// kRateLimitAttempts times within kRateLimitBudget seconds of waiting, so a
+// seed install of many tracks finishes slowly instead of stopping.
 constexpr int kTransferAttempts = 4;
+constexpr int kRateLimitAttempts = 12;
+constexpr int kRateLimitBudget = 120;
 bool transfer_retryable(const HttpOutcome &outcome)
 {
 	return outcome.status == 429 || outcome.status == 502 || outcome.status == 503 ||
@@ -160,19 +167,54 @@ int transfer_retry_delay(const HttpOutcome &outcome, int attempt)
 	return std::max(1, std::min(60, seconds));
 }
 
-// Runs `fetch` (one GET into a cleared body) up to kTransferAttempts times.
-// Every failed attempt is logged with a client request number, the host and
-// path, the HTTP status and Retry-After, so a tester's log tells a rate
-// limit from a missing file or a network failure. Saphi sends no request id
-// of its own.
+// The earliest time any request to Saphi may start. Every transfer thread
+// (catalogue refresh, Track Manager install, Current Seed install) shares the
+// server's one limit, so a 429 for one holds the others back instead of each
+// spending its attempts on it.
+struct RateGate
+{
+	std::mutex mutex;
+	long long until_ms = 0;
+	long long (*clock)() = nullptr;
+	long long now() const
+	{
+		return clock ? clock() : std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now().time_since_epoch()).count();
+	}
+	int pending_seconds()
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		const long long left = until_ms - now();
+		return left > 0 ? static_cast<int>((left + 999) / 1000) : 0;
+	}
+	void hold(int seconds)
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		until_ms = std::max(until_ms, now() + 1000LL * seconds);
+	}
+};
+RateGate &saphi_gate()
+{
+	static auto *gate = new RateGate();
+	return *gate;
+}
+
+// Runs `fetch` (one GET into a cleared body) until it succeeds or the retry
+// policy above is spent. Every failed attempt is logged with a client request
+// number, the host and path, the HTTP status and Retry-After, so a tester's
+// log tells a rate limit from a missing file or a network failure. Saphi
+// sends no request id of its own.
 template <typename Fetch, typename Wait>
 bool transfer_with_retries(const std::string &host, const std::string &path, Fetch fetch, Wait wait,
-	                       std::string &error)
+	                       std::string &error, RateGate &gate = saphi_gate())
 {
 	static std::mutex request_mutex;
 	static unsigned next_request = 0;
+	int rate_limited = 0, rate_waited = 0, other = 0;
 	for (int attempt = 1;; attempt++)
 	{
+		while (const int hold = gate.pending_seconds())
+			wait(hold);
 		unsigned request;
 		{
 			std::lock_guard<std::mutex> lock(request_mutex);
@@ -182,18 +224,24 @@ bool transfer_with_retries(const std::string &host, const std::string &path, Fet
 		std::string failure;
 		if (fetch(outcome, failure))
 			return true;
-		const bool again = attempt < kTransferAttempts && transfer_retryable(outcome);
-		const int delay = again ? transfer_retry_delay(outcome, attempt) : 0;
-		std::fprintf(stderr, "[Saphi] request %u failed: GET %s%s http=%d retry_after=%d attempt=%d/%d: %s%s\n",
+		const bool limited = outcome.status == 429;
+		const int delay = transfer_retryable(outcome) ? transfer_retry_delay(outcome, attempt) : 0;
+		if (limited) rate_limited++; else other++;
+		const bool again = transfer_retryable(outcome) &&
+		    (limited ? rate_limited < kRateLimitAttempts && rate_waited + delay <= kRateLimitBudget
+		             : other < kTransferAttempts);
+		std::fprintf(stderr, "[Saphi] request %u failed: GET %s%s http=%d retry_after=%d attempt=%d: %s%s\n",
 		             request, host.c_str(), path.c_str(), outcome.status, outcome.retry_after, attempt,
-		             kTransferAttempts, failure.c_str(),
+		             failure.c_str(),
 		             again ? (" Retrying in " + std::to_string(delay) + " s.").c_str() : "");
 		if (!again)
 		{
 			error = failure;
 			return false;
 		}
-		wait(delay);
+		if (limited) rate_waited += delay;
+		if (outcome.status == 429 || outcome.status == 503) gate.hold(delay);
+		else wait(delay);
 	}
 }
 
