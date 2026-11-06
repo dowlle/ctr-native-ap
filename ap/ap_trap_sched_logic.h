@@ -314,8 +314,9 @@ static const AP_TrapDescriptor AP_TRAP_DESC[AP_TRAP_EFFECT_COUNT] = {
 	{"Rival Surge", AP_TRAP_CTX_AI_RACE, AP_TRAP_TIMING_SUSTAINED_TIMED,
 	 AP_TRAP_DURATION_FIXED_MS, AP_TRAP_DUP_REFRESH, AP_TRAP_FAMILY_NONE,
 	 AP_TRAP_COND_NONE, 1, 15000, AP_TRAP_WARNING_MS},
-	// Like Icy Road: the rest of the map, under Trap Duration; a second copy
-	// waits for the next map. Ignore Dirt blocks it (decision D6 A).
+	// Like Icy Road, with the same descriptor policy: the rest of the map, or
+	// the client Trap Duration when one is set; a second copy waits while the
+	// first runs. Ignore Dirt blocks it (decision D6 A).
 	{"Mud Season", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_SUSTAINED_MAP,
 	 AP_TRAP_DURATION_MAP_LIFETIME, AP_TRAP_DUP_QUEUE_LATER_MAP, AP_TRAP_FAMILY_NONE,
 	 AP_TRAP_COND_NONE, 1, 0, AP_TRAP_WARNING_MS},

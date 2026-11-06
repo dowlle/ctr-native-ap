@@ -1725,6 +1725,13 @@ int AP_TrapRivalProgress(int deltaPos)
 	return AP_TrapRivalSurgeDelta(deltaPos);
 }
 
+// No Drifting for the engine's own pad reads (VehPhysProc.c: slide start, the
+// turbo tap during a slide, and slide end), which do not see the masked copy.
+int AP_TrapNoDrift(struct Driver *driver)
+{
+	return g_active[AP_TRAP_NO_DRIFTING] && AP_TrapIsLocal(driver);
+}
+
 // Mud Season for the surface lookup (ap_surface.c).
 int AP_TrapMudSeason(struct Driver *driver)
 {

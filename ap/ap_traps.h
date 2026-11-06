@@ -192,6 +192,8 @@ int AP_TrapRerollExcludedItem(void);
 int AP_TrapLimpSpeed(struct Driver *driver, int speed);
 // BOTS.c, an AI's nav progress before the remainder is added (Rival Surge).
 int AP_TrapRivalProgress(int deltaPos);
+// VehPhysProc.c: No Drifting at the slide start, turbo tap and slide end checks.
+int AP_TrapNoDrift(struct Driver *driver);
 // ap_surface.c: Mud Season makes every natural surface dirt for the local kart.
 int AP_TrapMudSeason(struct Driver *driver);
 // VehPhysGeneral_JumpAndFriction, before the ordinary jump gate (Always Jumping).

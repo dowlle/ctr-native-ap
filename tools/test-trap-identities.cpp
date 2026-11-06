@@ -181,9 +181,21 @@ int main()
     const auto reverse=load("tools/fixtures/trap-identities/reverse_camera.json");
     parse_current_traps(reverse["slot_data"]);
     for(size_t i=0;i<rows.size();++i)
-        expect(resolve_id(rows[i]["item_id"])==(int)i,"new generated seed resolves every trap identity");
+        expect(resolve_id(rows[i]["item_id"])==(reverse["slot_data"]["trap_identities"]["items"].contains(
+                   std::to_string(rows[i]["item_id"].get<long long>()))?(int)i:-1),
+               "Reverse Camera seed resolves exactly its declared identities");
     expect(std::find(reverse["drawn_trap_ids"].begin(),reverse["drawn_trap_ids"].end(),35010207)!=reverse["drawn_trap_ids"].end(),
            "real generator drew the minted Reverse Camera item");
+    // The alpha3 data package (ruled 2026-11-06): a generated seed that draws
+    // only the seven new traps declares all 29 and resolves every one.
+    const auto alpha3=load("tools/fixtures/trap-identities/alpha3.json");
+    parse_current_traps(alpha3["slot_data"]);
+    expect(alpha3["slot_data"]["trap_identities"]["items"].size()==rows.size(),"alpha3 seed declares every trap");
+    for(size_t i=0;i<rows.size();++i)
+        expect(resolve_id(rows[i]["item_id"])==(int)i,"new generated seed resolves every trap identity");
+    for(long long id=35010208;id<=35010214;++id)
+        expect(std::find(alpha3["drawn_trap_ids"].begin(),alpha3["drawn_trap_ids"].end(),id)!=alpha3["drawn_trap_ids"].end(),
+               "real generator drew each alpha3 trap item");
 
 	// ── 3. refusals and the legacy path ──
 	nlohmann::json legacy = sd;
