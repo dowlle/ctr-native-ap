@@ -268,3 +268,4 @@ tools/test-reverse-camera-production.py
 tools/test-xdelta-import.cpp
 tools/test-track-registry.cpp
 tools/test-track-registry-download-production.py
+tools/test-feed-trap-lines.c

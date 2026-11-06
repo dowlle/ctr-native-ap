@@ -211,10 +211,12 @@ void AP_FeedDrawRace(void);
 // higher so it clears the "PRESS X TO CONTINUE" prompt. Same 1P / unpaused gates.
 void AP_FeedDrawResults(void);
 int  AP_HubFeedOn(void);
-// One trap-state line (armed, incoming, active) on the same two surfaces, in the
+// One trap-state notice (armed, incoming, active) on the same two surfaces, in the
 // trap class colour. The trap scheduler owns the wording; this is only delivery,
-// so trap presentation cannot drift from the item feed's look.
-void AP_FeedTrapLine(const char *text);
+// so trap presentation cannot drift from the item feed's look. trapSlot is the
+// scheduler slot and stage an AP_FEED_TRAP_* value (ap_feed_lines_logic.h): a trap
+// keeps one feed line that changes in place instead of adding a line per state.
+void AP_FeedTrapLine(int trapSlot, int stage, const char *text);
 // One-off client notice line in the received-item feed (orange).
 void AP_FeedNoticeLine(const char *text);
 // One DeathLink line (a received death applied, or ignored) on the same surfaces.

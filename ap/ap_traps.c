@@ -7,6 +7,7 @@
 #include "ap_wumpa.h"
 #include "ap_capability.h"
 #include "ap_democam.h"
+#include "ap_feed_lines_logic.h" // AP_FEED_TRAP_* stages
 #include "ap_hooks.h" // AP_LogLine, AP_FeedTrapLine, AP_DevKeysEnabled
 #include "ap_deathlink.h" // AP_DeathLinkSuppressSelfInflicted, for Flatten's ruled
                           // self-inflicted attribution
@@ -959,7 +960,7 @@ static void AP_TrapDrainEvents(struct GameTracker *gGT, struct Driver *local)
 		{
 		case AP_TRAP_EV_ARMED:
 			snprintf(msg, sizeof msg, "%s ARMED", name);
-			AP_FeedTrapLine(msg);
+			AP_FeedTrapLine(ev.slot, AP_FEED_TRAP_ARMED, msg);
 			snprintf(msg, sizeof msg, "[AP TRAP] armed: %s (slot %d)\n", name, ev.slot);
 			AP_LogLine(msg);
 			break;
@@ -973,13 +974,13 @@ static void AP_TrapDrainEvents(struct GameTracker *gGT, struct Driver *local)
 			break;
 		case AP_TRAP_EV_WARN:
 			snprintf(msg, sizeof msg, "%s INCOMING", name);
-			AP_FeedTrapLine(msg);
+			AP_FeedTrapLine(ev.slot, AP_FEED_TRAP_INCOMING, msg);
 			snprintf(msg, sizeof msg, "[AP TRAP] warning: %s (slot %d)\n", name, ev.slot);
 			AP_LogLine(msg);
 			break;
 		case AP_TRAP_EV_FIRE:
 			snprintf(msg, sizeof msg, "%s", name);
-			AP_FeedTrapLine(msg);
+			AP_FeedTrapLine(ev.slot, AP_FEED_TRAP_FIRED, msg);
 			snprintf(msg, sizeof msg, "[AP TRAP] active: %s (slot %d)\n", name, ev.slot);
 			AP_LogLine(msg);
 			break;
