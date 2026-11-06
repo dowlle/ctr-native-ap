@@ -5,11 +5,12 @@
 // The adventure-hub pause menu's AP row sets (#238, tracker row 2026-09-25).
 //
 // The retail hub pause menu has four rows: RESUME, hints, QUIT, OPTIONS
-// (data.rowsAdvHub, game/zGlobal_DATA.c:4377-4384). An AP seed adds up to two
+// (data.rowsAdvHub, game/zGlobal_DATA.c:4377-4384). An AP seed adds up to three
 // rows directly below RESUME, in this order:
 //   SELECT CHARACTER  when the character phase is live
 //   TRACKER           whenever the enlarged tracker is available
-// so the menu has four, five or six rows.
+//   TRAVEL            whenever an AP seed is live in a hub (A3-16 hub fast travel)
+// so the menu has four to seven rows.
 //
 // Two things live here rather than in MainFreeze.c, because both are the kind of
 // small index arithmetic that reads as obviously correct and is not:
@@ -32,10 +33,11 @@
 #define AP_PAUSEROW_RESUME    0
 #define AP_PAUSEROW_CHARACTER 1
 #define AP_PAUSEROW_TRACKER   2
-#define AP_PAUSEROW_HINTS     3
-#define AP_PAUSEROW_QUIT      4
-#define AP_PAUSEROW_OPTIONS   5
-#define AP_PAUSEROW_KINDS     6
+#define AP_PAUSEROW_TRAVEL    3
+#define AP_PAUSEROW_HINTS     4
+#define AP_PAUSEROW_QUIT      5
+#define AP_PAUSEROW_OPTIONS   6
+#define AP_PAUSEROW_KINDS     7
 
 // The TRACKER row has no retail string. MenuRow.stringIndex indexes
 // sdata->lngStrings (masked with 0x7fff), so the row carries this AP-owned
@@ -47,9 +49,12 @@
 // either. Same rule: an AP-owned index, resolved to "PLAY SOLO" by RECTMENU.c.
 #define AP_LNG_PLAY_SOLO 0x7f02
 
-// Rows in order for the given AP rows. Returns the row count (4, 5 or 6).
-// (0, 0) is the retail set.
-static inline int AP_PauseRow_Build(int character, int tracker, signed char kinds[AP_PAUSEROW_KINDS])
+// The TRAVEL row (A3-16 hub fast travel), resolved to "TRAVEL" by RECTMENU.c.
+#define AP_LNG_TRAVEL 0x7f03
+
+// Rows in order for the given AP rows. Returns the row count (4 to 7).
+// (0, 0, 0) is the retail set.
+static inline int AP_PauseRow_Build(int character, int tracker, int travel, signed char kinds[AP_PAUSEROW_KINDS])
 {
 	int n = 0;
 	kinds[n++] = AP_PAUSEROW_RESUME;
@@ -57,6 +62,8 @@ static inline int AP_PauseRow_Build(int character, int tracker, signed char kind
 		kinds[n++] = AP_PAUSEROW_CHARACTER;
 	if (tracker)
 		kinds[n++] = AP_PAUSEROW_TRACKER;
+	if (travel)
+		kinds[n++] = AP_PAUSEROW_TRAVEL;
 	kinds[n++] = AP_PAUSEROW_HINTS;
 	kinds[n++] = AP_PAUSEROW_QUIT;
 	kinds[n++] = AP_PAUSEROW_OPTIONS;

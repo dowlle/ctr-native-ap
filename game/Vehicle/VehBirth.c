@@ -1,6 +1,7 @@
 #include <common.h>
 #ifdef CTR_AP
 #include "../../ap/ap_firstkey_freeze.h"
+#include "../../ap/ap_fasttravel.h"
 #endif
 
 static int VehBirth_IsDoor5InstDef(struct InstDef *instDef)
@@ -159,6 +160,14 @@ void VehBirth_TeleportSelf(struct Driver *d, u8 spawnFlag, int spawnPosY)
 	s16 *warppadRot = NULL;
 	int spawnAtBoss;
 	int spawnOutsideBoss = 0;
+#ifdef CTR_AP
+	/* A3-16 hub fast travel: the armed trip claims this spawn, ahead of the
+	 * door, boss and pad rules (it was armed from an idle hub with no podium
+	 * or door event in play). */
+	SVec3 apTravelPos;
+	s16 apTravelRot = 0;
+	int apTravel = 0;
+#endif
 
 	if ((level1 == NULL) || (level1->ptr_mesh_info == NULL))
 	{
@@ -187,6 +196,19 @@ void VehBirth_TeleportSelf(struct Driver *d, u8 spawnFlag, int spawnPosY)
 	}
 	else
 	{
+#ifdef CTR_AP
+		if (ctr_cfg_active() && d == gGT->drivers[0])
+		{
+			apTravel = AP_FastTravelSpawnAt(level1, (int)gGT->levelID, &apTravelPos, &apTravelRot);
+		}
+
+		if (apTravel)
+		{
+			posBottom = apTravelPos;
+		}
+		else
+		{
+#endif
 		if ((gGT->podiumRewardID == STATIC_KEY) &&
 #ifdef CTR_AP
 		    AP_FirstKeyFreezeShouldArm((int)gGT->currAdvProfile.numKeys,
@@ -278,6 +300,9 @@ void VehBirth_TeleportSelf(struct Driver *d, u8 spawnFlag, int spawnPosY)
 			advSpawn = VehBirth_SpawnType2PosRot(level1);
 			VehBirth_SetBottomFromPos(&posBottom, &advSpawn[0].pos);
 		}
+#ifdef CTR_AP
+		}
+#endif
 	}
 
 	posTop.x = posBottom.x;
@@ -310,6 +335,14 @@ void VehBirth_TeleportSelf(struct Driver *d, u8 spawnFlag, int spawnPosY)
 
 	if ((spawnFlag & VEH_BIRTH_SPAWN_USE_LEVEL_POSITION) != 0)
 	{
+#ifdef CTR_AP
+		/* A3-16: the fast-travel landing faces its save screen. */
+		if (apTravel)
+		{
+			d->rotCurr.y = apTravelRot;
+		}
+		else
+#endif
 		if (doorInst != NULL)
 		{
 			d->rotCurr.y = (doorInst->rot.y + 0x800) & 0xfff;
