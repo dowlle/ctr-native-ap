@@ -139,6 +139,8 @@ tools/test-pad-approach-hints.cpp
 tools/test-pad-approach-hints-production.py
 tools/test-hint-filters.cpp
 tools/test-hint-filters-production.py
+tools/test-hub-hint-hold.c
+tools/test-hub-hint-hold-production.py
 tools/test-pad-colour.py
 tools/test-pad-rebuild-production.py
 tools/test-picker-infoline.c

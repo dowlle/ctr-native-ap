@@ -869,6 +869,8 @@ int AP_PadState(int physLevelID, int destLevelID);
 #include "ap_pad_colour.h"
 // The birth key of a plan pad: what decides that ThTick rebuilds it (A3-12).
 #include "ap_pad_birth.h"
+// Hub streaming waits for a running mask hint (A3-12).
+#include "ap_hub_hint_hold.h"
 int AP_PadLook(int physLevelID, int destLevelID);
 
 // Physical plan pad entry, including its keys, manual rule and racer lock.
