@@ -132,6 +132,13 @@ static void tracker_tests(void) {
         assert(AP_TrackerMenuFrame() && !ap_tracker.open);
         assert(!(sdata->AnyPlayerTap & BTN_START));
     }
+    for (int requested=0; requested<2; requested++) {
+        ap_tracker.open=0; ap_tracker_request=requested;
+        sdata->buttonTapPerPlayer[0]=requested ? BTN_START : (BTN_SQUARE|BTN_START);
+        sdata->AnyPlayerTap=sdata->buttonTapPerPlayer[0];
+        assert(AP_TrackerMenuFrame() && ap_tracker.open && !(sdata->AnyPlayerTap & BTN_START));
+        assert(!ap_tracker_request);
+    }
     ap_tracker.open=1; sdata->buttonTapPerPlayer[0]=BTN_SQUARE;
     assert(AP_TrackerMenuFrame() && ap_tracker.open);
     ap_tracker.tab=0; sdata->buttonTapPerPlayer[0]=BTN_R1;

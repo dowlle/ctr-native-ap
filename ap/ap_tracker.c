@@ -843,6 +843,7 @@ int AP_TrackerMenuFrame(void)
 		if(!(tap&BTN_SQUARE) && !requested) return 0;
 		if(!AP_TrackerLoadAssets()) { AP_TrackerShutdown(); return 0; }
 		AH_Pause_Destroy(); ap_tracker.open=1; ap_tracker.hub=gt->levelID-GEM_STONE_VALLEY;
+		sdata->AnyPlayerTap &= ~BTN_START; /* The successful opening frame owns it too. */
 		if(ap_tracker.hub<0 || ap_tracker.hub>=5) ap_tracker.hub=0;
 		ap_tracker.tab=ap_tracker.hub;
 		ap_tracker.focus=0; ap_tracker.pinned=0; ap_tracker.acts_open=0; AP_TrackerBuildNodes();
