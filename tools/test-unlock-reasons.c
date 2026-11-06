@@ -136,12 +136,34 @@ int main(void)
 	memset(&a, 0, sizeof a);
 	memset(&b, 0, sizeof b);
 	b.shopOpen[0] = 4;
+	expect("unknown -> unknown is silent", AP_UnlockDiff(&a, &b, ev, 64), 0);
+	b.shopKnown = 1;
 	expect("unknown -> known baseline is silent", AP_UnlockDiff(&a, &b, ev, 64), 0);
 	a.shopKnown = 1;
 	a.shopOpen[0] = 4;
+	expect("baseline adopted, equal counts silent", AP_UnlockDiff(&a, &b, ev, 64), 0);
+	b.shopOpen[0] = 5;
+	n = AP_UnlockDiff(&a, &b, ev, 64);
+	expect("known increase fires", n, 1);
+	expect("known increase is the shop", ev[0].kind, AP_UNLOCK_SHOP);
+	b.shopKnown = 0;
 	expect("known -> unknown is silent", AP_UnlockDiff(&a, &b, ev, 64), 0);
-	b.shopKnown = 1;
-	expect("known counts diff", AP_UnlockDiff(&a, &b, ev, 64), 0);
+
+	// ── per-frame filter: shop shelves only ──
+	{
+		AP_UnlockEvent mixed[5] = {
+			{AP_UNLOCK_GARAGE, 0}, {AP_UNLOCK_DOOR, 1}, {AP_UNLOCK_PAD, 2},
+			{AP_UNLOCK_SHOP, 3}, {AP_UNLOCK_STAGE2, 4}
+		};
+		n = AP_UnlockEventsOnly(mixed, 5, AP_UNLOCK_SHOP);
+		expect("filter keeps one", n, 1);
+		expect("filter keeps the shop", mixed[0].kind, AP_UNLOCK_SHOP);
+		expect("filter keeps the index", mixed[0].index, 3);
+		n = AP_UnlockEventsOnly(mixed, 1, AP_UNLOCK_PAD);
+		expect("filter can empty", n, 0);
+		n = AP_UnlockEventsOnly(mixed, 0, AP_UNLOCK_SHOP);
+		expect("filter on empty is empty", n, 0);
+	}
 
 	// ── diff: event cap ──
 	memset(&a, 0, sizeof a);
@@ -183,6 +205,6 @@ int main(void)
 	AP_UnlockReasonLine(line, (int)sizeof line, 99, "Odd Kind", 0);
 	expect_str("unknown kind falls back", line, "Odd Kind OPEN");
 
-	printf("%s: 62 checks\n", failures ? "FAIL" : "PASS");
+	printf("%s: 70 checks\n", failures ? "FAIL" : "PASS");
 	return failures != 0;
 }

@@ -1721,9 +1721,16 @@ static void AP_UnlockWatchCapture(AP_UnlockWatch *w)
 	for (slot = 0; slot < AP_UNLOCK_PAD_COUNT; slot++)
 	{
 		int phys = AP_UnlockSlotPad(slot);
-		if (ctr_cfg_warp_unlocked(phys) && ctr_cfg_racer_lock_met(phys))
+		const ctr_content_pad *pad = ap_content_plan_active()
+		                             ? ap_content_plan_pad(phys) : 0;
+		int open = ctr_cfg_warp_unlocked(phys) && ctr_cfg_racer_lock_met(phys);
+		if (open)
 			w->padOpen |= 1u << slot;
-		if (ctr_cfg_warp_stage2_unlocked(phys))
+		// Stage 2 counts as open only once the pad itself is open and the
+		// plan pad really has a second stage: receiving the stage-2 items
+		// while the pad is still locked announces nothing, and the later
+		// pad-opening item then raises both (the pad line reads "(+1 MORE)").
+		if (open && pad && pad->has_stage2 && ctr_cfg_warp_stage2_unlocked(phys))
 			w->padStage2 |= 1u << slot;
 	}
 
@@ -1753,10 +1760,15 @@ static void AP_UnlockWatchCapture(AP_UnlockWatch *w)
 }
 
 // Capture, diff against the last snapshot, queue the one reason line when
-// something newly opened, and adopt the new snapshot either way. `withShop`
-// gates the Wumpa Shop half: the per-item call runs before the batch's fruit
-// credit is committed, so shelves are diffed only in the per-frame call.
-static void AP_UnlockReasonsUpdate(int withShop)
+// something newly opened, and adopt the new snapshot either way. The per-item
+// call (`perFrame` 0) reports pads, stage 2, doors and garages behind the
+// receipt that caused them; the shop half is held back there because the
+// batch's fruit credit is committed only after the loop. The per-frame call
+// (`perFrame` 1) reports shop shelves only and silently adopts every other
+// change: those are the transitions no received item caused (a boss win, a
+// garage venue download finishing), which must not surface behind an
+// unrelated receipt.
+static void AP_UnlockReasonsUpdate(int perFrame)
 {
 	AP_UnlockWatch now;
 	AP_UnlockEvent ev[AP_UNLOCK_GARAGE_COUNT + AP_UNLOCK_DOOR_COUNT +
@@ -1764,7 +1776,7 @@ static void AP_UnlockReasonsUpdate(int withShop)
 	int count;
 
 	AP_UnlockWatchCapture(&now);
-	if (!withShop)
+	if (!perFrame)
 	{
 		now.shopKnown = ap_unlock_watch.shopKnown;
 		memcpy(now.shopOpen, ap_unlock_watch.shopOpen, sizeof now.shopOpen);
@@ -1774,6 +1786,8 @@ static void AP_UnlockReasonsUpdate(int withShop)
 	        ? AP_UnlockDiff(&ap_unlock_watch, &now, ev,
 	                        (int)(sizeof ev / sizeof ev[0]))
 	        : 0;
+	if (perFrame)
+		count = AP_UnlockEventsOnly(ev, count, AP_UNLOCK_SHOP);
 	if (count > 0 && ap_feed_primed && AP_HubFeedOn())
 	{
 		char line[AP_FEED_TEXT_CAP];

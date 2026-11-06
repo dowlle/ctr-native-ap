@@ -154,6 +154,22 @@ static inline int AP_UnlockDiff(const AP_UnlockWatch *before, const AP_UnlockWat
 	return n;
 }
 
+// Keep only the events of one kind, compacting in place; returns the new
+// count. The per-frame call announces shop shelves only: everything else the
+// watch reads is a received-item tally whose transitions are caught by the
+// per-item call, so a per-frame diff of those kinds can only be a non-item
+// change (a boss win, a venue download finishing), which is adopted silently
+// rather than announced behind an unrelated receipt.
+static inline int AP_UnlockEventsOnly(AP_UnlockEvent *ev, int n, int kind)
+{
+	int w = 0;
+	int i;
+	for (i = 0; i < n; i++)
+		if (ev[i].kind == kind)
+			ev[w++] = ev[i];
+	return w;
+}
+
 // The one feed line for an event, naming what opened. `name` is the
 // destination track, hub, boss or shop hub, trimmed to 24 characters so the
 // kind suffix and the " (+N MORE)" summary always fit the feed's small font.
