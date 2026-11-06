@@ -465,6 +465,9 @@ struct APSoloOption
 	// whole, never per key: apply_overrides replaces the option, and a partial
 	// table would drop weights a YAML set and the player left alone.
 	std::vector<int> keyWeights, keyDefaultWeights;
+	// The weights the screen started with (the preset's or the YAML's table):
+	// OptionsReset returns to these, not to the option's defaults.
+	std::vector<int> keyInitialWeights;
 	int weightMax = 0;
 	// Overlay guards on this row (also on the set a count guard names): each
 	// one refuses generation on the screen, as the world would refuse it.
@@ -585,10 +588,21 @@ static inline std::string AP_SoloSetSummary(const APSoloOption &row)
 // gives the same text (changed is a plain compare) and --set passes it as is.
 static inline std::string AP_SoloWeightsValue(const APSoloOption &row)
 {
-	nlohmann::json out = nlohmann::json::object();
+	nlohmann::ordered_json out = nlohmann::ordered_json::object();
 	for (size_t i = 0; i < row.keys.size(); i++)
 		out[row.keys[i]] = i < row.keyWeights.size() ? row.keyWeights[i] : 0;
 	return out.dump();
+}
+
+// A JSON number as a weight: clamp before narrowing, so a huge value lands on
+// the maximum instead of wrapping to the wrong end. 0, negatives and NaN are 0.
+static inline int AP_SoloClampWeight(double w, int weightMax)
+{
+	if (!(w > 0))
+		return 0;
+	if (w >= weightMax)
+		return weightMax;
+	return (int)w;
 }
 
 // Left (-1) / Right (+1) on weight row `item`: wraps between 0 and the
@@ -722,14 +736,14 @@ static inline std::vector<APSoloOption> AP_SoloBuildOptions(const nlohmann::json
 				{
 					int def = 0;
 					if (d.is_object() && d.contains(k) && d[k].is_number())
-						def = d[k].get<int>();
-					def = std::max(0, std::min(row.weightMax, def));
+						def = AP_SoloClampWeight(d[k].get<double>(), row.weightMax);
 					row.keyDefaultWeights.push_back(def);
 					int w = def;
 					if (v.is_object() && v.contains(k) && v[k].is_number())
-						w = std::max(0, std::min(row.weightMax, v[k].get<int>()));
+						w = AP_SoloClampWeight(v[k].get<double>(), row.weightMax);
 					row.keyWeights.push_back(w);
 				}
+				row.keyInitialWeights = row.keyWeights;
 				row.value = AP_SoloWeightsValue(row);
 			}
 			else if (row.kind == "set")

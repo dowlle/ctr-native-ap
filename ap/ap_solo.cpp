@@ -1840,7 +1840,10 @@ extern "C" int AP_Solo_OptionIndex(const char *name)
 extern "C" void AP_Solo_OptionsReset(void)
 {
 	for (auto &o : g_options)
+	{
 		o.value = o.initial;
+		o.keyWeights = o.keyInitialWeights; // weights rows: the start table, empty for other kinds
+	}
 }
 
 namespace {

@@ -604,13 +604,32 @@ static void test_trap_weights()
 	sets = AP_SoloSetArgs(rows);
 	CHECK(sets.size() == 1 && sets[0] == R"(trap_weights={"icy_road":5,"low_gravity":5,"upside_down":0})");
 
-	// Values outside 0..max from a YAML are clamped to what the world accepts.
+	// Values outside 0..max from a YAML are clamped to what the world accepts,
+	// clamped before narrowing: huge values land on the right end, never wrap.
 	nlohmann::json clamped = d;
 	clamped["values"]["trap_weights"] = {{"icy_road", 900}, {"low_gravity", -3}, {"upside_down", 2}};
 	rows = AP_SoloBuildOptions(clamped);
 	weights = find(rows, "trap_weights");
 	CHECK(weights && weights->keyWeights[0] == 100 && weights->keyWeights[1] == 0 &&
 	      weights->keyWeights[2] == 2);
+	clamped["values"]["trap_weights"] = {{"icy_road", 2147483648.0}, {"low_gravity", -2147483649.0}, {"upside_down", 2}};
+	rows = AP_SoloBuildOptions(clamped);
+	weights = find(rows, "trap_weights");
+	CHECK(weights && weights->keyWeights[0] == 100 && weights->keyWeights[1] == 0 &&
+	      weights->keyWeights[2] == 2);
+
+	// The table keeps row order, also for keys that are not alphabetical.
+	const nlohmann::json orderD = nlohmann::json::parse(R"({
+	  "options": [{"name": "trap_weights", "display_name": "Trap Weights", "kind": "dict",
+	               "default": {"zeta_trap": 5, "alpha_trap": 2},
+	               "weight_rows": [{"key": "zeta_trap", "label": "Zeta"}, {"key": "alpha_trap", "label": "Alpha"}],
+	               "weight_max": 100}],
+	  "overlay": {"groups": [{"label": "Items and Traps", "options": ["trap_weights"]}], "rules": []},
+	  "values": {"trap_weights": {"zeta_trap": 5, "alpha_trap": 2}}
+	})");
+	rows = AP_SoloBuildOptions(orderD);
+	weights = find(rows, "trap_weights");
+	CHECK(weights && weights->value == R"({"zeta_trap":5,"alpha_trap":2})");
 
 	// Without the values block the option's default table is the start.
 	nlohmann::json noValues = d;
