@@ -216,6 +216,8 @@ tools/test-trap-identities.cpp
 tools/test-crystal-checks.cpp
 tools/test-crystal-pickup-production.py
 tools/test-trap-scheduler.c
+tools/test-trap-alpha3.c
+tools/test-trap-display.c
 tools/test-mirror-model-cull.c
 tools/test-turbo-grant.c
 tools/test-update-core.cpp

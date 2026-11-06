@@ -66,6 +66,14 @@ enum AP_TrapEffectId
 	AP_TRAP_DEMO_CAMERA,
 	AP_TRAP_CLOCKED_OUT,
 	AP_TRAP_REVERSE_CAMERA,
+	// The alpha3 data package (ruled 2026-11-06), items 35010208..35010214.
+	AP_TRAP_ALWAYS_JUMPING,
+	AP_TRAP_NO_DRIFTING,
+	AP_TRAP_RIVAL_SURGE,
+	AP_TRAP_MUD_SEASON,
+	AP_TRAP_LIMP_MODE,
+	AP_TRAP_STUCK_STEERING,
+	AP_TRAP_WUMPA_LEAK,
 	AP_TRAP_EFFECT_COUNT
 };
 
@@ -91,7 +99,10 @@ enum AP_TrapDurationPolicy
 {
 	AP_TRAP_DURATION_MAP_LIFETIME = 0, // cleared only at a map boundary
 	AP_TRAP_DURATION_FIXED_MS,         // cleared when durationMs elapses
-	AP_TRAP_DURATION_ENGINE_NATURAL    // cleared when the runtime reports it done
+	AP_TRAP_DURATION_ENGINE_NATURAL,   // cleared when the runtime reports it done
+	// Cleared when durationMs elapses, whatever the client Trap Duration says.
+	// Stuck Steering only: always 7 seconds (ruled 2026-11-06, decision D3 B).
+	AP_TRAP_DURATION_FIXED_RULED
 };
 
 // ── Duplicate policy ──
@@ -114,7 +125,9 @@ enum AP_TrapConflictFamily
 {
 	AP_TRAP_FAMILY_NONE = 0,
 	AP_TRAP_FAMILY_CAMERA_TRANSFORM,
-	AP_TRAP_FAMILY_BOOST_CONTROL
+	AP_TRAP_FAMILY_BOOST_CONTROL,
+	// Always Jumping and No Drifting: one forces hops, the other forbids them.
+	AP_TRAP_FAMILY_HOP_CONTROL
 };
 
 // ── Activation contexts ──
@@ -158,7 +171,8 @@ enum AP_TrapCondition
 	AP_TRAP_COND_ELIGIBLE_CRATES = 1 << 3, // this map has weapon or Wumpa crates
 	AP_TRAP_COND_AI_LEAD = 1 << 4,         // 15 continuous seconds in first, valid AI
 	// 1 << 5 was the projected-hazard ground probe, retired by #486.
-	AP_TRAP_COND_DEMO_CAMERA = 1 << 6      // retail cinematic camera has a safe owner
+	AP_TRAP_COND_DEMO_CAMERA = 1 << 6,     // retail cinematic camera has a safe owner
+	AP_TRAP_COND_TWO_WUMPA = 1 << 7        // at least 2 race fruit, nothing protecting it
 };
 
 // One second, the ruled warning for every effect that takes one.
@@ -186,6 +200,8 @@ typedef struct
 // notebook explicitly lists as still open for a shipped effect.
 #define AP_TRAP_USF_DURATION_MS 15000 // PROVISIONAL, matches Forced Boost
 #define AP_TRAP_BOOST_DURATION_MS 15000
+// Stuck Steering's own length (ruled 2026-11-06, decision D3 B).
+#define AP_TRAP_STUCK_STEERING_MS 7000
 
 static const AP_TrapDescriptor AP_TRAP_DESC[AP_TRAP_EFFECT_COUNT] = {
 	// ── Wave 1: implemented ──
@@ -284,6 +300,34 @@ static const AP_TrapDescriptor AP_TRAP_DESC[AP_TRAP_EFFECT_COUNT] = {
 	 AP_TRAP_TIMING_SUSTAINED_TIMED, AP_TRAP_DURATION_FIXED_MS, AP_TRAP_DUP_REFRESH,
 	 AP_TRAP_FAMILY_CAMERA_TRANSFORM, AP_TRAP_COND_NONE, 1, 15000,
 	 AP_TRAP_WARNING_MS},
+
+	// ── The alpha3 data package (ruled 2026-11-06) ──
+	// Every lasting one follows the client Trap Duration (decision D3 B) except
+	// Stuck Steering; the 15000 is the legacy value for callers without the
+	// client policy.
+	{"Always Jumping", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_SUSTAINED_TIMED,
+	 AP_TRAP_DURATION_FIXED_MS, AP_TRAP_DUP_REFRESH, AP_TRAP_FAMILY_HOP_CONTROL,
+	 AP_TRAP_COND_NONE, 1, 15000, AP_TRAP_WARNING_MS},
+	{"No Drifting", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_SUSTAINED_TIMED,
+	 AP_TRAP_DURATION_FIXED_MS, AP_TRAP_DUP_REFRESH, AP_TRAP_FAMILY_HOP_CONTROL,
+	 AP_TRAP_COND_NONE, 1, 15000, AP_TRAP_WARNING_MS},
+	{"Rival Surge", AP_TRAP_CTX_AI_RACE, AP_TRAP_TIMING_SUSTAINED_TIMED,
+	 AP_TRAP_DURATION_FIXED_MS, AP_TRAP_DUP_REFRESH, AP_TRAP_FAMILY_NONE,
+	 AP_TRAP_COND_NONE, 1, 15000, AP_TRAP_WARNING_MS},
+	// Like Icy Road: the rest of the map, under Trap Duration; a second copy
+	// waits for the next map. Ignore Dirt blocks it (decision D6 A).
+	{"Mud Season", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_SUSTAINED_MAP,
+	 AP_TRAP_DURATION_MAP_LIFETIME, AP_TRAP_DUP_QUEUE_LATER_MAP, AP_TRAP_FAMILY_NONE,
+	 AP_TRAP_COND_NONE, 1, 0, AP_TRAP_WARNING_MS},
+	{"Limp Mode", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_SUSTAINED_TIMED,
+	 AP_TRAP_DURATION_FIXED_MS, AP_TRAP_DUP_REFRESH, AP_TRAP_FAMILY_NONE,
+	 AP_TRAP_COND_NONE, 1, 15000, AP_TRAP_WARNING_MS},
+	{"Stuck Steering", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_SUSTAINED_TIMED,
+	 AP_TRAP_DURATION_FIXED_RULED, AP_TRAP_DUP_REFRESH, AP_TRAP_FAMILY_NONE,
+	 AP_TRAP_COND_NONE, 1, AP_TRAP_STUCK_STEERING_MS, AP_TRAP_WARNING_MS},
+	{"Wumpa Leak", AP_TRAP_CTX_ALL_NO_HUB, AP_TRAP_TIMING_INSTANT,
+	 AP_TRAP_DURATION_ENGINE_NATURAL, AP_TRAP_DUP_SERIALIZE, AP_TRAP_FAMILY_NONE,
+	 AP_TRAP_COND_TWO_WUMPA, 1, 0, AP_TRAP_WARNING_MS},
 };
 
 // ── Registry ──
@@ -771,12 +815,19 @@ static inline int AP_TrapSchedUsesClientDuration(const AP_TrapDescriptor *d)
 	       d->duration == AP_TRAP_DURATION_MAP_LIFETIME;
 }
 
+// A timed effect whose window a refreshing duplicate restarts.
+static inline int AP_TrapSchedHasTimer(const AP_TrapDescriptor *d)
+{
+	return AP_TrapSchedUsesClientDuration(d) || d->duration == AP_TRAP_DURATION_FIXED_RULED;
+}
+
 static inline int AP_TrapSchedEffectiveDuration(const AP_TrapSched *s,
 	                                             const AP_TrapDescriptor *d)
 {
 	if (s->durationOverrideMs >= 0 && AP_TrapSchedUsesClientDuration(d))
 		return s->durationOverrideMs == 0 ? -1 : s->durationOverrideMs;
-	return d->duration == AP_TRAP_DURATION_FIXED_MS ? d->durationMs : -1;
+	return (d->duration == AP_TRAP_DURATION_FIXED_MS ||
+	        d->duration == AP_TRAP_DURATION_FIXED_RULED) ? d->durationMs : -1;
 }
 
 static inline void AP_TrapSchedFire(AP_TrapSched *s, int i)
@@ -996,7 +1047,7 @@ static inline void AP_TrapSchedStep(AP_TrapSched *s, const AP_TrapWorld *w)
 					running = i;
 			if (running >= 0)
 			{
-				if (AP_TrapSchedUsesClientDuration(d))
+				if (AP_TrapSchedHasTimer(d))
 					s->slots[running].remainMs = AP_TrapSchedEffectiveDuration(s, d);
 				AP_TrapSchedEmit(s, AP_TRAP_EV_REFRESH, effect, running);
 				s->slots[best].state = AP_TRAP_SLOT_EMPTY;

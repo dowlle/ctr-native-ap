@@ -786,6 +786,13 @@ static const TrapIdRow TRAP_IDS[] = {
 	{35010193, AP_TRAP_DEMO_CAMERA, 1},
 	{35010206, AP_TRAP_CLOCKED_OUT, 1},
 	{35010207, AP_TRAP_REVERSE_CAMERA, 1},
+	{35010208, AP_TRAP_ALWAYS_JUMPING, 1},
+	{35010209, AP_TRAP_NO_DRIFTING, 1},
+	{35010210, AP_TRAP_RIVAL_SURGE, 1},
+	{35010211, AP_TRAP_MUD_SEASON, 1},
+	{35010212, AP_TRAP_LIMP_MODE, 1},
+	{35010213, AP_TRAP_STUCK_STEERING, 1},
+	{35010214, AP_TRAP_WUMPA_LEAK, 1},
 };
 #define TRAP_ID_COUNT ((int)(sizeof TRAP_IDS / sizeof TRAP_IDS[0]))
 
@@ -822,7 +829,7 @@ static void case_item_id_map(void)
 {
 	int i, idx;
 
-	expect("the table holds all trap identities", AP_TRAP_ITEM_MAP_COUNT, 22);
+	expect("the table holds all trap identities", AP_TRAP_ITEM_MAP_COUNT, 29);
 
 	for (i = 0; i < TRAP_ID_COUNT; i++)
 	{
@@ -851,7 +858,7 @@ static void case_item_id_map(void)
 		int buildable = 0;
 		for (i = 0; i < TRAP_ID_COUNT; i++)
 			buildable += AP_TrapItemIsBuildable(TRAP_IDS[i].effect);
-		expect("all identities are buildable", buildable, 22);
+		expect("all identities are buildable", buildable, 29);
 	}
 
 	// No two identities share an effect, which a copy-paste slip in the table would
@@ -888,7 +895,7 @@ static void case_item_id_map(void)
 			traps += AP_TrapItemIndexIsTrap(idx);
 		}
 		expect("no index in 0..193 is misclassified", wrong, 0);
-		expect("exactly 22 indices are traps", traps, 22);
+		expect("exactly 29 indices are traps", traps, 29);
 	}
 }
 
@@ -909,7 +916,7 @@ static void case_shipped_identity_receipt(void)
 		expect("every identity is accepted by the registry",
 		       AP_TrapSchedReceive(&s, effect) >= 0, 1);
 	}
-	expect("all 22 fit in the registry", slots_used(&s), 22);
+	expect("all 29 fit in the registry", slots_used(&s), 29);
 
 	run_ms(&s, &w, 2000);
 	drain(&s);
@@ -936,11 +943,13 @@ static void case_shipped_identity_receipt(void)
 	// waits for a boost event and the three inventory and fruit traps wait for a
 	// held item or ten Wumpa, leaving Icy Road, Low Gravity, Forced Boost, First
 	// Person, Reverse Steering and Flatten to run, plus Nitro Drop and Red
-	// Potion, which need no ground probe since #486.
+	// Potion, which need no ground probe since #486. Of the seven alpha3
+	// traps, Wumpa Leak waits for two race fruit and No Drifting waits behind
+	// Always Jumping in the hop_control family, so five more run.
 	for (i = 0; i < TRAP_ID_COUNT; i++)
 		if (TRAP_IDS[i].buildable)
 			fired += count_ev(AP_TRAP_EV_FIRE, TRAP_IDS[i].effect);
-	expect("buildable identities still run in the same batch", fired, 11);
+	expect("buildable identities still run in the same batch", fired, 16);
 	expect("Icy Road from its real item id is applied",
 	       AP_TrapSchedActive(&s, AP_TRAP_ICY), 1);
 	expect("Forced USF stays armed without its boost event",
@@ -1116,6 +1125,10 @@ static void case_complete_roster(void)
 		AP_TRAP_NITRO, AP_TRAP_RED_POTION,
 		AP_TRAP_DEMO_CAMERA, AP_TRAP_CLOCKED_OUT,
 		AP_TRAP_REVERSE_CAMERA,
+		// The alpha3 data package (ruled 2026-11-06).
+		AP_TRAP_ALWAYS_JUMPING, AP_TRAP_NO_DRIFTING, AP_TRAP_RIVAL_SURGE,
+		AP_TRAP_MUD_SEASON, AP_TRAP_LIMP_MODE, AP_TRAP_STUCK_STEERING,
+		AP_TRAP_WUMPA_LEAK,
 	};
 	int i;
 

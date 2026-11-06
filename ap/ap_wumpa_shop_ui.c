@@ -21,6 +21,7 @@
 #include "ap_wumpa_shop.h"
 #include "ap_wumpa_shop_menu.h"
 #include "ap_text_clip.h"
+#include "ap_trap_display_logic.h" // Trap Display: how a trap location looks
 
 #define AP_WSHOP_VISIBLE 9
 #define AP_WSHOP_ROW_H 0xd
@@ -254,7 +255,9 @@ static void AP_WShopDrawRow(int hub, int k, int y, int selected)
 	else
 		snprintf(name, sizeof name, "%s", itemS);
 	state = AP_WShopSlotState(hub, k);
-	color = known ? AP_ClassFontColor(flags) : WHITE;
+	color = known ? AP_ClassFontColor(AP_TrapDisplayFlags(ctr_cfg.trap_display, ctr_cfg.trap_display_salt,
+	                                                      s->code, flags))
+	              : WHITE;
 	switch (state)
 	{
 	case AP_WUMPA_SLOT_SOLD:

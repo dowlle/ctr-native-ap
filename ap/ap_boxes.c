@@ -20,6 +20,7 @@
 #include <platform/native_custom_tracks.h> // the event race's own box verdict
 #include "ap_content_plan.h"      // #133 PR 4e: a content-plan custom track's box codes
 #include "ap_box_seat_logic.h"    // ... and which weapon crates they are seated on
+#include "ap_trap_display_logic.h" // Trap Display: how a trap location looks
 #endif
 
 // ============================================================================
@@ -452,6 +453,7 @@ static int AP_BoxesColourFor(long code)
 	if (!unlocked || !AP_BoxColour_Enabled(ctr_cfg.color_boxes_by_item, g_config.itemBoxColours))
 		return AP_BOX_COLOUR_PINK;
 	scouted = ap_net_scout_known((long long)code, 0, 0, &flags);
+	flags = AP_TrapDisplayFlags(ctr_cfg.trap_display, ctr_cfg.trap_display_salt, (long long)code, flags);
 	return AP_BoxColour_Effective(unlocked, ctr_cfg.color_boxes_by_item, g_config.itemBoxColours, scouted, flags);
 }
 
