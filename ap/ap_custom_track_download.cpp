@@ -206,8 +206,17 @@ RateGate &gate_for(const std::string &host)
 	return *gate;
 }
 
-std::mutex busy_mutex;
-std::map<RateGate *, unsigned> busy_waits;
+struct BusyState
+{
+	std::mutex mutex;
+	std::map<RateGate *, unsigned> waits;
+};
+BusyState &busy_state()
+{
+	// Detached download workers may still be sleeping when the game exits.
+	static auto *state = new BusyState();
+	return *state;
+}
 
 // Register only the sleep itself, not an unused hold left by a failed worker.
 // Counts keep simultaneous waits on the same gate visible until both leave.
@@ -216,13 +225,17 @@ struct SaphiWait
 	RateGate *gate;
 	explicit SaphiWait(RateGate *value) : gate(value)
 	{
-		if (gate) { std::lock_guard<std::mutex> lock(busy_mutex); busy_waits[gate]++; }
+		if (!gate) return;
+		auto &state = busy_state();
+		std::lock_guard<std::mutex> lock(state.mutex);
+		state.waits[gate]++;
 	}
 	~SaphiWait()
 	{
 		if (!gate) return;
-		std::lock_guard<std::mutex> lock(busy_mutex);
-		if (--busy_waits[gate] == 0) busy_waits.erase(gate);
+		auto &state = busy_state();
+		std::lock_guard<std::mutex> lock(state.mutex);
+		if (--state.waits[gate] == 0) state.waits.erase(gate);
 	}
 };
 
@@ -1282,9 +1295,10 @@ int start_worker(const char *package_root, const char *download_api_url, const c
 
 extern "C" int ap_custom_track_download_busy(char *detail, int detail_bytes)
 {
-	std::lock_guard<std::mutex> lock(busy_mutex);
+	auto &state = busy_state();
+	std::lock_guard<std::mutex> lock(state.mutex);
 	int seconds = 0;
-	for (const auto &entry : busy_waits)
+	for (const auto &entry : state.waits)
 		seconds = std::max(seconds, std::max(1, entry.first->pending_seconds()));
 	if (detail && detail_bytes > 0)
 	{
