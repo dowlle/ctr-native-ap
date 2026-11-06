@@ -1193,13 +1193,17 @@ bool RemoveDescriptorFile(const fs::path &target, std::string &detail)
 
 // Removes the solo/tracks and solo/needs-laps files of a track key that an
 // older import of the same package (same uuid) used, once a newer install of
-// that package lists the track under another key. A file of a different
-// package that happens to use the key is left alone.
-void RetireDescriptor(const std::string &key, const std::string &revision, const std::string &uuid)
+// that package lists the track under `keeperKey`. A file of a different
+// package that happens to use the key is left alone. Laps the player picked
+// for the old key move to the new one when it still waits for its laps and
+// pins the same files.
+void RetireDescriptor(const std::string &key, const std::string &revision, const std::string &uuid,
+                      const std::string &keeperKey)
 {
 	const std::string name = AP_SoloDescriptorFileName(key, revision);
+	const std::string keeperName = AP_SoloDescriptorFileName(keeperKey, revision);
 	std::error_code ec;
-	if (name.empty() || uuid.empty() || SoloRootIsLink())
+	if (name.empty() || keeperName.empty() || uuid.empty() || SoloRootIsLink())
 		return;
 	for (const char *folder : {"tracks", "needs-laps"})
 	{
@@ -1211,6 +1215,14 @@ void RetireDescriptor(const std::string &key, const std::string &revision, const
 		std::string detail;
 		if (!d.is_object() || AP_SoloJsonString(d, "uuid") != uuid)
 			continue;
+		if (std::strcmp(folder, "tracks") == 0 && d.contains("laps"))
+		{
+			const auto pending = nlohmann::json::parse(
+			    ReadSmallPlainFile(fs::u8path(SoloPath("needs-laps")) / fs::u8path(keeperName), kDescriptorMax), nullptr, false);
+			const auto merged = AP_SoloMergeNeedsLaps(d, pending);
+			if (!merged.is_null() && KeepDescriptorFile("tracks", keeperName, merged.dump()))
+				DropNeedsLaps(keeperName);
+		}
 		if (RemoveDescriptorFile(target, detail))
 			Log(std::string("retired solo/") + folder + "/" + name + ": a newer install of the same package lists the track under another key");
 		else
@@ -1342,9 +1354,20 @@ std::string PackageLabel(const CustomPackageStoreEntry &entry)
 
 struct StorePublication
 {
-	struct Descriptor { int kind; std::string key, revision, json, title, pin; };
+	// kind 0 retires `key` (json holds the package uuid) once the copy `keeper`
+	// (pin, under keeperKey) is published.
+	struct Descriptor
+	{
+		int kind;
+		std::string key, revision, json, title, pin, keeper, keeperKey;
+		Descriptor(int k, std::string key_, std::string revision_, std::string json_, std::string title_, std::string pin_,
+		           std::string keeper_ = std::string(), std::string keeperKey_ = std::string())
+		    : kind(k), key(std::move(key_)), revision(std::move(revision_)), json(std::move(json_)), title(std::move(title_)),
+		      pin(std::move(pin_)), keeper(std::move(keeper_)), keeperKey(std::move(keeperKey_)) {}
+	};
 	std::vector<Descriptor> descriptors;
 	std::set<std::string> live; // StoreSignature of every verified package
+	mutable std::set<std::string> listed; // pins whose descriptor was written
 	std::vector<std::string> notes; // log lines from the worker, written on the game thread
 	int failed = 0;
 	int published = 0;
@@ -1453,7 +1476,8 @@ void KeepOneCopyPerEntry(StorePublication &result)
 			result.notes.push_back("left " + all[i].title + " (package " + all[i].pin.substr(0, 12) + ") out of Play Solo: " +
 			    all[into[i]].title + " (package " + all[into[i]].pin.substr(0, 12) + ") is the newest install of the same track");
 			if (all[i].key != all[into[i]].key)
-				retired.push_back({0, all[i].key, all[i].revision, copies[i].uuid, all[i].title, all[i].pin});
+				retired.push_back({0, all[i].key, all[i].revision, copies[i].uuid, all[i].title, all[i].pin,
+				                   all[into[i]].pin, all[into[i]].key});
 		}
 	}
 	for (size_t i = 0; i < all.size(); i++)
@@ -1541,7 +1565,9 @@ bool ApplyStoreDescriptor(const StorePublication::Descriptor &d, const StorePubl
 {
 	if (d.kind == 0)
 	{
-		RetireDescriptor(d.key, d.revision, d.json);
+		// Only once the copy that replaces it is listed: a failed write must not leave no row at all.
+		if (from.listed.count(d.keeper))
+			RetireDescriptor(d.key, d.revision, d.json, d.keeperKey);
 		return true;
 	}
 	DescriptorScope scope;
@@ -1549,7 +1575,10 @@ bool ApplyStoreDescriptor(const StorePublication::Descriptor &d, const StorePubl
 	scope.fresh = !from.pin.empty();
 	std::string why;
 	if (RecordDescriptor(d.kind, d.key.c_str(), d.revision.c_str(), d.json.c_str(), scope, why))
+	{
+		from.listed.insert(d.pin);
 		return true;
+	}
 	std::string title = d.title.empty() ? d.key : d.title;
 	if (title.size() > 40)
 	{
