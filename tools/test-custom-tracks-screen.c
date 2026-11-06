@@ -392,6 +392,7 @@ int main(void)
     frame(BTN_RIGHT, "saphi-busy-seed"); CHECK(has("Project Saphi is busy, waiting 60s"));
     frame(BTN_RIGHT, "saphi-busy-import"); CHECK(has("Project Saphi is busy, waiting 60s"));
     frame(BTN_DOWN, "saphi-busy-import-open"); CHECK(has("Project Saphi is busy, waiting 60s"));
+    frame(0, "saphi-busy-import-active"); CHECK(has("Project Saphi is busy, waiting 60s"));
     frame(BTN_TRIANGLE, NULL);
     saphiBusy = 0; frame(0, NULL); CHECK(!has("Project Saphi is busy"));
     revisit(); frame(0, NULL);
