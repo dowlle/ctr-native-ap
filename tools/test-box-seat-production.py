@@ -18,7 +18,9 @@ the game runs:
   5. freeing a seat gives the crate its bits back, but never after a pool reset;
   6. a crate whose instance pointer is not a pool instance pointing back at it
      (a raw LEV value left when INSTANCE_LevInitAll ran out of pool) still
-     stands its box but is never written.
+     stands its box but is never written;
+  7. a pad with hand-placed spots (A3-14) stands its boxes at the spots, by
+     spot number, whatever the crate table holds, and never touches a crate.
 
 A source scan then checks the wiring that cannot be called out of engine: every
 path that ends a live box frees its seat, the pool-reset path drops seats
@@ -46,6 +48,7 @@ record = boxes[boxes.index("struct ApBoxLive\n{"): boxes.index("};", boxes.index
 units = "\n".join(lift(s) for s in (
     "static struct InstDef *AP_BoxesCrateDef(",
     "static void AP_BoxesFreeSeat(int i)",
+    "static void AP_BoxesStandSpots(",
     "static void AP_BoxesSeatCustom(",
 ))
 
@@ -84,6 +87,10 @@ const ctr_content_pad *ap_content_plan_pad(int p) { return p == g_pad.physical ?
 static int AP_BoxInSeed(long code, void *ctx) { int i; (void)ctx; for (i = 0; i < g_rooms; i++) if (g_room[i] == code) return 1; return 0; }
 static int AP_BoxChecked(long code, void *ctx) { int i; (void)ctx; for (i = 0; i < g_checks; i++) if (g_checked[i] == code) return 1; return 0; }
 static void AP_BoxProbeSeedClass(void) {}
+#define AP_PLACEMENT_SRC_FILE 1
+#define AP_PLACEMENT_FILE "ap-box-placements.json"
+static int g_placement_source;
+static int AP_Author_PlacementSource(void) { return g_placement_source; }
 """
 
 after_record = r"""
@@ -240,6 +247,27 @@ int main(void) {
     n = table(8); reset(8, 8); lev.ptrInstDefs = 0;
     AP_BoxesSeatCustom(&gGT, &race);
     expect(s_liveCount == 0 && untouched(n), "no instance table stands nothing");
+    /* 7. Hand-placed spots (A3-14): boxes at the spots, numbered by spot,
+       no crate touched, even with a crate count the seed did not state. */
+    n = table(9); reset(0, 3);
+    g_pad.box_spots = 1;
+    for (i = 0; i < 3; i++) {
+        g_pad.box_number[i] = (int[]){2, 16, 50}[i];
+        g_pad.box_pos[i][0] = (short)(1000 + i); g_pad.box_pos[i][1] = (short)(-20 - i); g_pad.box_pos[i][2] = (short)(300 * i);
+        g_pad.box_rot_y[i] = (short)(1024 * i);
+    }
+    g_checked[g_checks++] = 35201621; /* the second spot box is already checked */
+    g_placement_source = AP_PLACEMENT_SRC_FILE;
+    AP_BoxesSeatCustom(&gGT, &race);
+    expect(s_liveCount == 2 && untouched(n), "two spot boxes stand and no crate is touched");
+    expect(s_live[0].used && s_live[0].slot == 1 && s_live[0].code == 35201620 && s_live[0].x == 1000 &&
+           s_live[0].y == -20 && s_live[0].z == 0 && s_live[0].rotY == 0 && !s_live[0].seated, "spot 2 stands at its spot");
+    expect(s_live[1].used && s_live[1].slot == 49 && s_live[1].code == 35201622 && s_live[1].x == 1002 &&
+           s_live[1].z == 600 && s_live[1].rotY == 2048 && !s_live[1].seated, "spot 50 stands at its spot, slot 49");
+    expect(g_spawned[0] == 1 && g_spawned[1] == 1 && g_spawned[2] == 0, "each standing spot box is spawned once");
+    expect(strstr(g_log, "2 of 3 Item Box(es) standing at hand-placed spots") != 0 &&
+           strstr(g_log, "is not used for them") != 0, "one log line, naming the unused placement file");
+    g_placement_source = 0;
     (void)n;
     printf("%s: %d checks, %d failures\n", failures ? "FAIL" : "PASS", checks, failures);
     return failures ? 1 : 0;
@@ -285,3 +313,9 @@ assert branch < rebuild.index("AP_CortexTrackActive()") < rebuild.index("AP_BoxM
 assert re.search(r"race != 0 && !race->retail\)\s*\{\s*AP_BoxesSeatCustom\(gGT, race\);\s*return;", rebuild), \
     "a custom-bytes race returns after seating, never falling through to the host identity"
 print("PASS wiring: break, server-checked removal, clear and pool reset free seats; seated spawn; custom branch first")
+rebuild = body("static void AP_BoxesRebuild(")
+assert rebuild.index("AP_BoxesPlanRetailPad(level)") < rebuild.index("AP_BoxesSnapshotPlacements()"), \
+    "a plan retail track with spots stands them before the placement table is read"
+seat = body("static void AP_BoxesSeatCustom(")
+assert seat.index("pad->box_spots") < seat.index("AP_BoxSeat_Count(crates)"), \
+    "a custom track with spots never counts or hides crates"
