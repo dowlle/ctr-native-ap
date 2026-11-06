@@ -459,6 +459,9 @@ struct APSoloOption
 	// in row order, which is also what --set passes.
 	std::vector<std::string> keys, keyLabels;
 	std::vector<bool> keyDefault;
+	mutable std::string setCacheValue;
+	mutable std::vector<std::string> setCacheEntries;
+	mutable std::set<std::string> setCacheMembers;
 	// kind "weights" (a dict of per-key numbers, A3-22): one number row per
 	// key, 0 to weightMax. `value` is the whole table as a JSON object in row
 	// order, which is also what --set passes when a weight changed. Written
@@ -529,23 +532,29 @@ static inline std::string AP_SoloHelpText(const std::string &doc)
 }
 
 // The checked keys of a set row, in row order.
-static inline std::vector<std::string> AP_SoloSetEntries(const APSoloOption &row)
+static inline const std::vector<std::string> &AP_SoloSetEntries(const APSoloOption &row)
 {
-	std::vector<std::string> out;
-	const nlohmann::json v = nlohmann::json::parse(row.value, nullptr, false);
-	if (v.is_array())
-		for (const auto &e : v)
-			if (e.is_string())
-				out.push_back(e.get<std::string>());
-	return out;
+	if (row.setCacheValue != row.value)
+	{
+		row.setCacheEntries.clear();
+		row.setCacheMembers.clear();
+		const nlohmann::json v = nlohmann::json::parse(row.value, nullptr, false);
+		if (v.is_array())
+			for (const auto &e : v)
+				if (e.is_string())
+				{
+					row.setCacheEntries.push_back(e.get<std::string>());
+					row.setCacheMembers.insert(row.setCacheEntries.back());
+				}
+		row.setCacheValue = row.value;
+	}
+	return row.setCacheEntries;
 }
 
 static inline bool AP_SoloSetHas(const APSoloOption &row, const std::string &key)
 {
-	for (const std::string &e : AP_SoloSetEntries(row))
-		if (e == key)
-			return true;
-	return false;
+	AP_SoloSetEntries(row);
+	return row.setCacheMembers.count(key) != 0;
 }
 
 // The set's value from checked keys: a JSON array in row order, so the same
@@ -553,8 +562,9 @@ static inline bool AP_SoloSetHas(const APSoloOption &row, const std::string &key
 static inline std::string AP_SoloSetValue(const APSoloOption &row, const std::vector<std::string> &checked)
 {
 	nlohmann::json out = nlohmann::json::array();
+	const std::set<std::string> members(checked.begin(), checked.end());
 	for (const std::string &k : row.keys)
-		if (std::find(checked.begin(), checked.end(), k) != checked.end())
+		if (members.count(k))
 			out.push_back(k);
 	return out.dump();
 }
@@ -754,12 +764,13 @@ static inline std::vector<APSoloOption> AP_SoloBuildOptions(const nlohmann::json
 				// A YAML entry without a row (a custom track in the boss track
 				// pool) becomes a row of its own, so it is kept and shown.
 				std::vector<std::string> checked;
+				std::set<std::string> available(row.keys.begin(), row.keys.end());
 				if (v.is_array())
 					for (const auto &e : v)
 						if (e.is_string())
 						{
 							checked.push_back(e.get<std::string>());
-							if (std::find(row.keys.begin(), row.keys.end(), checked.back()) == row.keys.end())
+							if (available.insert(checked.back()).second)
 							{
 								row.keys.push_back(checked.back());
 								row.keyLabels.push_back(checked.back());

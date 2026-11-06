@@ -657,6 +657,28 @@ static void test_trap_weights()
 	CHECK(weights->value == weights->initial && AP_SoloSetArgs(rows).empty());
 }
 
+static void test_large_hint_checklists()
+{
+	APSoloOption row;
+	row.kind = "set";
+	std::vector<std::string> checked;
+	for (int i = 0; i < 9000; ++i)
+	{
+		row.keys.push_back("Location " + std::to_string(i));
+		checked.push_back(row.keys.back());
+	}
+	row.value = row.initial = AP_SoloSetValue(row, checked);
+	CHECK(AP_SoloSetEntries(row).size() == 9000);
+	CHECK(AP_SoloSetHas(row, row.keys.front()) && AP_SoloSetHas(row, row.keys.back()));
+	AP_SoloSetToggle(row, 4499);
+	CHECK(!AP_SoloSetHas(row, row.keys[4499]) && AP_SoloSetEntries(row).size() == 8999);
+	CHECK(AP_SoloSetHas(row, row.keys[4500]));
+	AP_SoloSetToggle(row, 4499);
+	CHECK(row.value == row.initial && AP_SoloSetEntries(row).size() == 9000);
+	row.value = "[]"; // reset/import paths must invalidate cached membership too
+	CHECK(AP_SoloSetEntries(row).empty() && !AP_SoloSetHas(row, row.keys.front()));
+}
+
 int main()
 {
 	test_parse_lines();
@@ -669,6 +691,7 @@ int main()
 	test_options();
 	test_option_steps_and_help();
 	test_checklists_and_guards();
+	test_large_hint_checklists();
 	test_trap_weights();
 	test_tracks();
 	test_needs_laps();

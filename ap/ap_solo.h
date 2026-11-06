@@ -161,6 +161,7 @@ int AP_Solo_OptionIndex(const char *name);
 void AP_Solo_OptionsReset(void);          /* back to the preset's values */
 /* A set option's checklist rows. */
 int AP_Solo_OptionItemCount(int index);
+int AP_Solo_OptionItemOnCount(int index); /* cached for large hint checklists */
 int AP_Solo_OptionItemGet(int index, int item, struct APSoloItemInfo *out);
 void AP_Solo_OptionItemToggle(int index, int item);
 /* A weights option's number page (A3-22): step wraps 0 to the maximum,

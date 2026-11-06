@@ -1848,6 +1848,14 @@ extern "C" int AP_Solo_OptionItemGet(int index, int item, struct APSoloItemInfo 
 	return 1;
 }
 
+extern "C" int AP_Solo_OptionItemOnCount(int index)
+{
+	if (index < 0 || index >= (int)g_options.size()) return 0;
+	const auto &row = g_options[index];
+	if (row.kind == "set") return (int)AP_SoloSetEntries(row).size();
+	return (int)std::count_if(row.keyWeights.begin(), row.keyWeights.end(), [](int w) { return w > 0; });
+}
+
 extern "C" void AP_Solo_OptionItemToggle(int index, int item)
 {
 	if (index >= 0 && index < (int)g_options.size())

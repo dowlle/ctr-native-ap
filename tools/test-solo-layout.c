@@ -123,6 +123,7 @@ static const char *const guardReason =
 static char note[AP_SOLO_TEXT];
 static int rooms, tracks, needsLaps, picked, jobState = AP_SOLO_JOB_IDLE, cancels, describes;
 static char generatedName[AP_SOLO_TEXT];
+static int itemGets;
 static int shortLetters;
 static char inbox[512];
 int AP_Solo_RuntimePresent(void) { return 1; }
@@ -186,8 +187,15 @@ int AP_Solo_OptionGet(int i, struct APSoloOptionInfo *o)
 	return 1;
 }
 int AP_Solo_OptionItemCount(int i) { return i == SET_OPT || i == WEIGHTS_OPT ? ITEMS : 0; }
+int AP_Solo_OptionItemOnCount(int i)
+{
+	int n = 0;
+	for (int k = 0; k < ITEMS; k++) n += i == WEIGHTS_OPT ? itemWeight[k] > 0 : itemOn[k] != 0;
+	return n;
+}
 int AP_Solo_OptionItemGet(int i, int k, struct APSoloItemInfo *o)
 {
+	itemGets++;
 	memset(o, 0, sizeof *o);
 	if ((i != SET_OPT && i != WEIGHTS_OPT) || k < 0 || k >= ITEMS) return 0;
 	snprintf(o->label, sizeof o->label, "%s", itemLabel[k]);
@@ -435,7 +443,9 @@ int main(void)
 			CHECK(strstr(drawn, "*: LIST") != NULL);
 			tap(BTN_CROSS);
 			CHECK(s_soloList == SET_OPT && s_soloSel == 0 && s_soloTop == 0);
+			itemGets = 0;
 			frame(0, "checklist");
+			CHECK(itemGets <= SOLO_ROWS); /* hidden rows are never queried to count checks */
 			CHECK(full_once("Crystal Arenas", drawn)); /* the title */
 			CHECK(full_once("default", drawn) && full_once("On", drawn) && full_once("Off", drawn));
 			CHECK(strstr(drawn, "4 of 19 on.") != NULL && strstr(drawn, "*: ON/OFF") != NULL);

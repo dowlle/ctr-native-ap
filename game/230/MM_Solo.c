@@ -785,9 +785,7 @@ static void MM_Solo_PageChecklist(uint32_t *ot, struct GamepadBuffer *pad)
 	}
 	AP_Solo_OptionGet(s_soloList, &info); /* refresh after an edit: guard notes are current */
 	MM_Solo_Title(info.label, ot);
-	for (i = 0; i < count; i++)
-		if (AP_Solo_OptionItemGet(s_soloList, i, &item) && item.on)
-			on++;
+	on = AP_Solo_OptionItemOnCount(s_soloList);
 	for (i = s_soloTop; i < count && i < s_soloTop + SOLO_ROWS; i++)
 	{
 		const int y = SOLO_LIST_Y + (i - s_soloTop) * SOLO_ROW_H;
