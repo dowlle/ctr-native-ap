@@ -119,7 +119,7 @@ static int g_trap_steer_mirrored = 0;
 
 // ── The alpha3 data package traps (ruled 2026-11-06) ──
 // Stuck Steering's dead side for the running copy: -1 left, +1 right. Picked
-// when a copy fires; a refreshing copy keeps the side.
+// for every copy: when it fires and when it refreshes a running one.
 static int g_trap_stuck_side = 1;
 static unsigned g_trap_stuck_picks = 0;
 // Always Jumping owns at most one jump buffer at a time. The flag says the
@@ -907,6 +907,14 @@ static void AP_TrapPollFlatten(struct Driver *local, int elapsedMs)
 
 // Apply one instant effect at the moment the scheduler fires it. Called from the
 // event drain, which is the only place that sees the FIRE edge exactly once.
+// Stuck Steering: a copy picks its dead side. Not the seed's random stream:
+// this is presentation of one received item, so the frame timer is enough.
+static void AP_TrapStuckPickSide(struct GameTracker *gGT)
+{
+	g_trap_stuck_picks++;
+	g_trap_stuck_side = AP_TrapStuckSidePick(gGT != 0 ? (unsigned)gGT->timer : 0u, g_trap_stuck_picks);
+}
+
 static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, int effect)
 {
 	if (gGT == 0 || local == 0)
@@ -947,10 +955,7 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, i
 		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_WUMPA_LEAK);
 		break;
 	case AP_TRAP_STUCK_STEERING:
-		// A new copy picks its dead side. Not the seed's random stream: this is
-		// presentation of one received item, so the frame timer is enough.
-		g_trap_stuck_picks++;
-		g_trap_stuck_side = AP_TrapStuckSidePick((unsigned)gGT->timer, g_trap_stuck_picks);
+		AP_TrapStuckPickSide(gGT);
 		break;
 	case AP_TRAP_FLATTEN:
 		// Try immediately, so an ordinary flatten lands on the frame the warning
@@ -985,6 +990,9 @@ static void AP_TrapDrainEvents(struct GameTracker *gGT, struct Driver *local)
 		// effect needs: it has no ACTIVE frames of its own to act on.
 		if (ev.kind == AP_TRAP_EV_FIRE)
 			AP_TrapApplyInstant(gGT, local, ev.effect);
+		// A copy that refreshes a running Stuck Steering picks its side too.
+		if (ev.kind == AP_TRAP_EV_REFRESH && ev.effect == AP_TRAP_STUCK_STEERING)
+			AP_TrapStuckPickSide(gGT);
 		switch (ev.kind)
 		{
 		case AP_TRAP_EV_ARMED:
@@ -1428,7 +1436,9 @@ void AP_TrapTick(struct GameTracker *gGT)
 	for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 		g_active[e] = (unsigned char)AP_TrapSchedActive(&g_sched, e);
 
-	AP_TrapTrackRecovery(local, w.elapsedMs);
+	// Paused time is not still time: pausing freezes every trap, its recovery
+	// guard included.
+	AP_TrapTrackRecovery(local, w.paused ? 0 : w.elapsedMs);
 	// First Person and Wireframe force presentation every frame while active, so
 	// pause suppresses each the same way the map-boundary reset above already
 	// does: call the apply function with 0, which restores ordinary chase/debug
