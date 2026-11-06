@@ -14,9 +14,10 @@
 // A line that is still waiting in the ring is replaced there, so it never shows an
 // older state. If the line already scrolled out, the new state adds a fresh line.
 //
-// Slot reuse: a slot only empties after its trap fired, so an ARMED notice for a
-// slot whose line is already in the FIRED stage belongs to a NEW trap and starts a
-// new line. An ARMED notice over an ARMED or INCOMING line is the scheduler
+// Slot reuse: a slot only empties after its trap fired, so any notice for a slot
+// whose line is already in the FIRED stage belongs to a NEW trap and starts a new
+// line. That includes a trap that was eligible on receipt and opens with INCOMING,
+// skipping ARMED. An ARMED notice over an ARMED or INCOMING line is the scheduler
 // announcing the same waiting trap again (a race restart re-arms it), and replaces
 // in place.
 
@@ -111,7 +112,7 @@ static inline int AP_FeedLinesTrapState(AP_FeedLines *f, int trapSlot, int stage
                                         const char *text, int color)
 {
 	AP_FeedLine *l = AP_FeedLinesFindTrap(f, trapSlot);
-	if (l != 0 && stage == AP_FEED_TRAP_ARMED && l->trapStage == AP_FEED_TRAP_FIRED)
+	if (l != 0 && l->trapStage == AP_FEED_TRAP_FIRED)
 	{
 		l->trapSlot = AP_FEED_NO_TRAP; // that trap is over; the slot now holds a new one
 		l = 0;

@@ -255,8 +255,13 @@ static void case_armed_across_restart(void)
 	step(&s, &race, 3); // warning running
 	expect("warning line", vis_find("Forced Boost INCOMING") >= 0, 1);
 	AP_TrapSchedMapChange(&s);
+	step(&s, &hub, 2); // back to armed: the restart lands in a hub
+	expect("restart returns the line to armed", vis_find("Forced Boost ARMED") >= 0, 1);
+	expect("armed replaced the warning, still one line", feed.vcount, 1);
+	expect("warning text is gone", vis_find("Forced Boost INCOMING"), -1);
 	step(&s, &again, 1);
-	expect("restart keeps one line", feed.vcount, 1);
+	expect("warning again on the same line", feed.vcount, 1);
+	expect("warning text back", vis_find("Forced Boost INCOMING") >= 0, 1);
 	step(&s, &again, 12);
 	expect("fires after the restart on that same line", feed.vcount, 1);
 	expect_text("fired text", feed.vis[0].text, "Forced Boost");
@@ -281,6 +286,28 @@ static void case_slot_reuse(void)
 	expect("still two lines", feed.vcount, 2);
 }
 
+// A trap received while eligible opens with INCOMING, skipping ARMED. On a slot
+// whose previous trap just finished, that first notice must still start a new
+// line, not overwrite the old trap's fired line (Codex review round 1).
+static void case_slot_reuse_warn_first(void)
+{
+	AP_TrapSched s;
+	AP_TrapWorld race = world_in(AP_TRAP_CTX_RACE, 1);
+
+	fresh();
+	AP_TrapSchedReset(&s);
+	AP_TrapSchedReceive(&s, AP_TRAP_FLATTEN);
+	step(&s, &race, 12); // warns and fires in the race
+	expect("flatten fired", vis_find("Flatten") >= 0, 1);
+	AP_TrapSchedEffectDone(&s, AP_TRAP_FLATTEN); // the slot empties
+	AP_TrapSchedReceive(&s, AP_TRAP_NITRO);      // takes that slot
+	step(&s, &race, 4); // warns at once; a few frames to surface past the stagger
+	expect("old fired line kept its text", vis_find("Flatten") >= 0, 1);
+	expect("new trap opens with its own incoming line",
+	       vis_find("Nitro Drop INCOMING") >= 0, 1);
+	expect("both lines are up", feed.vcount, 2);
+}
+
 // A trap line still waiting in the ring takes the newer state there.
 static void case_replaced_while_queued(void)
 {
@@ -299,9 +326,13 @@ static void case_replaced_while_queued(void)
 	expect("queued trap line was replaced, not appended", feed.qcount, 9);
 	AP_FeedLinesTrapState(&feed, 6, AP_FEED_TRAP_ARMED, "Icy Road ARMED", SALMON);
 	expect("another trap still appends", feed.qcount, 10);
-	feed_frames(600);
-	expect("queued line surfaced with the newest text", vis_find("Wireframe") >= 0 ||
-	       feed.vcount == 0, 1);
+	// Let the queue surface: the screen holds five lines, then one more promotes
+	// each time an old line expires. Watch until the trap line shows.
+	for (i = 0; i < 600 && vis_find("Wireframe") < 0; i++)
+		feed_frames(1);
+	expect("queued line surfaced with the newest text", vis_find("Wireframe") >= 0, 1);
+	expect("older queued states never showed",
+	       vis_find("Wireframe ARMED") + vis_find("Wireframe INCOMING"), -2);
 }
 
 // Five visible, 24 waiting and the stagger are unchanged by trap lines.
@@ -333,6 +364,7 @@ int main(void)
 	case_display_time_restarts();
 	case_armed_across_restart();
 	case_slot_reuse();
+	case_slot_reuse_warn_first();
 	case_replaced_while_queued();
 	case_limits_unchanged();
 	printf("\n%d checks, %d failures\n", checks, failures);
