@@ -1191,6 +1191,33 @@ bool RemoveDescriptorFile(const fs::path &target, std::string &detail)
 	return false;
 }
 
+// Removes the solo/tracks and solo/needs-laps files of a track key that an
+// older import of the same package (same uuid) used, once a newer install of
+// that package lists the track under another key. A file of a different
+// package that happens to use the key is left alone.
+void RetireDescriptor(const std::string &key, const std::string &revision, const std::string &uuid)
+{
+	const std::string name = AP_SoloDescriptorFileName(key, revision);
+	std::error_code ec;
+	if (name.empty() || uuid.empty() || SoloRootIsLink())
+		return;
+	for (const char *folder : {"tracks", "needs-laps"})
+	{
+		const fs::path dir = fs::u8path(SoloPath(folder));
+		if (fs::is_symlink(dir, ec))
+			continue;
+		const fs::path target = dir / fs::u8path(name);
+		const auto d = nlohmann::json::parse(ReadSmallPlainFile(target, kDescriptorMax), nullptr, false);
+		std::string detail;
+		if (!d.is_object() || AP_SoloJsonString(d, "uuid") != uuid)
+			continue;
+		if (RemoveDescriptorFile(target, detail))
+			Log(std::string("retired solo/") + folder + "/" + name + ": a newer install of the same package lists the track under another key");
+		else
+			Log(std::string("could not retire solo/") + folder + "/" + name + ": " + detail);
+	}
+}
+
 // The one writer behind both C entry points and the store publication: kind 1
 // is a complete descriptor for solo/tracks, kind 2 one that waits for its laps
 // in solo/needs-laps. Every refusal is logged with its file name and gives
@@ -1403,6 +1430,32 @@ void KeepOneCopyPerEntry(StorePublication &result)
 		const auto t = fs::last_write_time(fs::u8path(result.assets) / "tracks/packages" / d.pin / "manifest.json", ec);
 		return ec ? fs::file_time_type::min() : t;
 	};
+	// One track imported again under another name has one package uuid and
+	// revision but two packages and, when the name sets the key, two keys. Only
+	// the newest install keeps a row; the key an older copy used is retired so
+	// its descriptor file stops listing the same files a second time (A3-29).
+	std::vector<Descriptor> retired;
+	{
+		std::vector<APSoloStoreCopy> copies;
+		for (const Descriptor &d : all)
+		{
+			const auto parsed = nlohmann::json::parse(d.json, nullptr, false);
+			const auto stamp = installed(d).time_since_epoch().count();
+			copies.push_back({d.key, d.revision, parsed.is_object() ? AP_SoloJsonString(parsed, "uuid") : std::string(),
+			                  d.pin, static_cast<long long>(stamp)});
+		}
+		const std::vector<size_t> into = AP_SoloFoldStoreCopies(copies);
+		for (size_t i = 0; i < all.size(); i++)
+		{
+			if (into[i] == i)
+				continue;
+			skip[i] = true;
+			result.notes.push_back("left " + all[i].title + " (package " + all[i].pin.substr(0, 12) + ") out of Play Solo: " +
+			    all[into[i]].title + " (package " + all[into[i]].pin.substr(0, 12) + ") is the newest install of the same track");
+			if (all[i].key != all[into[i]].key)
+				retired.push_back({0, all[i].key, all[i].revision, copies[i].uuid, all[i].title, all[i].pin});
+		}
+	}
 	for (size_t i = 0; i < all.size(); i++)
 	{
 		if (skip[i])
@@ -1449,6 +1502,8 @@ void KeepOneCopyPerEntry(StorePublication &result)
 	for (size_t i = 0; i < all.size(); i++)
 		if (!skip[i])
 			out.push_back(std::move(all[i]));
+	for (Descriptor &d : retired)
+		out.push_back(std::move(d));
 	all = std::move(out);
 }
 StorePublication CollectInstalledStore(const std::string &assets, const std::string &pin,
@@ -1484,6 +1539,11 @@ StorePublication CollectInstalledStore(const std::string &assets, const std::str
 // says what to do (the menus show at most 170 characters of it).
 bool ApplyStoreDescriptor(const StorePublication::Descriptor &d, const StorePublication &from, std::string &message)
 {
+	if (d.kind == 0)
+	{
+		RetireDescriptor(d.key, d.revision, d.json);
+		return true;
+	}
 	DescriptorScope scope;
 	scope.live = &from.live;
 	scope.fresh = !from.pin.empty();

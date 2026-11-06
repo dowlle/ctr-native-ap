@@ -28,6 +28,7 @@ extern "C" {
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <future>
 #include <map>
 #include <memory>
@@ -1684,6 +1685,17 @@ std::vector<unsigned char> package_file(const CustomPackageOwned *package, const
 }
 
 /* XdeltaImport_Install, noting in `done` each item it installed. */
+/* An import marks its package as the newest install of that track, also when
+   the package was already there: the same patch track imported again under
+   another name (or back under an earlier one) lists as one Play Solo row, the
+   newest install's (A3-29). A package that cannot be marked stays listed. */
+void mark_newest_install(const std::string &assets, const std::string &pin)
+{
+    std::error_code ec;
+    const auto manifest = std::filesystem::u8path(assets) / "tracks" / "packages" / std::filesystem::u8path(pin) / "manifest.json";
+    std::filesystem::last_write_time(manifest, std::filesystem::file_time_type::clock::now(), ec);
+}
+
 int install_items(const XdeltaImportScan *scan, const unsigned char *selected, const char *assets, int where,
                   char *error, size_t errorSize, std::vector<unsigned int> *done)
 {
@@ -1705,6 +1717,7 @@ int install_items(const XdeltaImportScan *scan, const unsigned char *selected, c
             }
             return -1;
         }
+        if (where & CTR_XDELTA_INSTALL_PACKAGES) mark_newest_install(assets, scan->built[i].pin);
         if (where & CTR_XDELTA_INSTALL_ROOM)
         {
             try

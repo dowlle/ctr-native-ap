@@ -1008,6 +1008,101 @@ int main()
         }
         XdeltaImport_Free(&r.scan);
     }
+    /* A3-29: a track imported under the player's own name is one installed
+       package, one room folder and one Play Solo entry, whatever descriptor
+       (curated track key or none) the pack came with. */
+    for (int curated = 0; curated < 2; curated++)
+    {
+        const std::string tag = curated ? "curated" : "plain";
+        const Bytes patchBytes = encode(baseDisc, patchedDisc);
+        const std::string patch = write_file("Anniv-" + tag + ".xdelta", patchBytes);
+        nlohmann::json d = {{"descriptor_version", 1}, {"patch_sha256", sha_hex(patchBytes)}, {"pack_title", "Anniv"},
+                            {"tracks", {{"1", {{"title", "Generic Slot One"}, {"laps", 3}}}}}};
+        if (curated) d["tracks"]["1"]["track_key"] = "crash-cove";
+        const std::string text = d.dump();
+        const std::string descriptorPath = write_file("Anniv-" + tag + ".ctrpack.json", Bytes(text.begin(), text.end()));
+        ScanResult r = scan(patch, discPath, descriptorPath.c_str());
+        CHECK(r.ok, ("A3-29 scan " + tag).c_str());
+        if (!r.ok) continue;
+        const XdeltaImportSummary *s = XdeltaImport_Summary(r.scan);
+        const XdeltaImportItem *t1 = item_for(s, 1);
+        unsigned index = (unsigned)(t1 - s->items);
+        char why[96];
+        CHECK(XdeltaImport_RenameItem(r.scan, index, "My Custom Name", why, sizeof why), "A3-29 rename applies");
+        std::vector<unsigned char> chosen(s->count, 0);
+        chosen[index] = 1;
+        const std::string assets = root + "/a329-" + tag;
+        mkdir(assets.c_str(), 0755);
+        char error[256];
+        CHECK(XdeltaImport_Install(r.scan, chosen.data(), assets.c_str(), CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == 1,
+              "A3-29 renamed track installs");
+        std::vector<CustomPackageStoreEntry> rows;
+        CustomPackage_ScanStore((assets + "/tracks/packages").c_str(),
+            [](const CustomPackageStoreEntry *e, void *c) { if (e->verified) ((std::vector<CustomPackageStoreEntry> *)c)->push_back(*e); },
+            &rows, error, sizeof error);
+        char planKey[65], planRev[65], plan[16384], reason[256];
+        int planKind = XdeltaImport_PlanDescriptor(r.scan, index, plan, sizeof plan, planKey, planRev, reason, sizeof reason);
+        CHECK(rows.size() == 1, "A3-29 a renamed import is one installed package");
+        for (const auto &e : rows)
+        {
+            char key[65], revision[65], json[16384];
+            int kind = CustomPackage_StoreDescriptor(assets.c_str(), e.pin, nullptr, key, sizeof key, revision, sizeof revision,
+                                                     json, sizeof json, reason, sizeof reason);
+            CHECK(kind == planKind && !std::strcmp(key, planKey) && !std::strcmp(revision, planRev),
+                  "A3-29 the store and the importer name one Play Solo entry");
+        }
+        XdeltaImport_Free(&r.scan);
+    }
+    /* The same patch track imported again under another name: two packages of
+       one uuid, and the newest import is the one marked newest, also when it
+       is an earlier name coming back. */
+    {
+        const Bytes patchBytes = encode(baseDisc, patchedDisc);
+        const std::string patch = write_file("Again.xdelta", patchBytes);
+        const std::string assets = root + "/a329-again";
+        mkdir(assets.c_str(), 0755);
+        auto importAs = [&](const char *name, char pin[65], char uuid[37]) {
+            ScanResult r = scan(patch, discPath);
+            CHECK(r.ok, "A3-29 scan for a second import");
+            if (!r.ok) return;
+            const XdeltaImportSummary *s = XdeltaImport_Summary(r.scan);
+            unsigned index = (unsigned)(item_for(s, 1) - s->items);
+            char why[96], error[256];
+            if (name) CHECK(XdeltaImport_RenameItem(r.scan, index, name, why, sizeof why), "A3-29 rename for a second import");
+            std::vector<unsigned char> chosen(s->count, 0);
+            chosen[index] = 1;
+            CHECK(XdeltaImport_Install(r.scan, chosen.data(), assets.c_str(), CTR_XDELTA_INSTALL_PACKAGES, error, sizeof error) >= 1,
+                  "A3-29 second import installs");
+            std::snprintf(pin, 65, "%s", s->items[index].pin);
+            XdeltaImport_PackageUuid(s->patchSha256, 1, uuid);
+            XdeltaImport_Free(&r.scan);
+        };
+        auto mtime = [&](const char *pin) {
+            struct stat info;
+            return stat((assets + "/tracks/packages/" + pin + "/manifest.json").c_str(), &info) ? 0 : (long long)info.st_mtime;
+        };
+        auto age = [&](const char *pin) {
+            struct timeval times[2] = {{time(nullptr) - 7200, 0}, {time(nullptr) - 7200, 0}};
+            utimes((assets + "/tracks/packages/" + pin + "/manifest.json").c_str(), times);
+        };
+        char firstPin[65] = {}, secondPin[65] = {}, againPin[65] = {}, uuid[37] = {};
+        importAs(nullptr, firstPin, uuid);
+        importAs("Second Name", secondPin, uuid);
+        CHECK(std::strcmp(firstPin, secondPin) != 0, "A3-29 a new name is a new package");
+        age(firstPin);
+        age(secondPin);
+        importAs(nullptr, againPin, uuid);
+        CHECK(!std::strcmp(againPin, firstPin), "A3-29 the first name again is the first package");
+        CHECK(mtime(firstPin) > mtime(secondPin) + 3600, "A3-29 importing an earlier name again makes it the newest install");
+        std::vector<CustomPackageStoreEntry> rows;
+        char error[256];
+        CustomPackage_ScanStore((assets + "/tracks/packages").c_str(),
+            [](const CustomPackageStoreEntry *e, void *c) { if (e->verified) ((std::vector<CustomPackageStoreEntry> *)c)->push_back(*e); },
+            &rows, error, sizeof error);
+        int sameUuid = 0;
+        for (const auto &e : rows) sameUuid += !std::strcmp(e.manifest.uuid, uuid);
+        CHECK(sameUuid == 2, "A3-29 the two names are two packages of one uuid, which Play Solo folds to the newest");
+    }
     {
         const std::string assets = root + "/record-assets";
         mkdir(assets.c_str(), 0755);
