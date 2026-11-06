@@ -255,9 +255,10 @@ assert 'warppadObj->inst[WPIS_OPEN_BEAM] = newInst;' in done
 assert 'colorRGBA' not in done and 'ApBeamModel' not in done and 'ApWispModel' not in done, 'retail colour, no tint'
 assert 'beamFilter' not in done and 'alphaScale = 0xc00;' in done, 'retail strength, no filter'
 # The rebuild key follows enterability, so a Done pad that stops being enterable
-# while its state stays 5 loses the beam on the next rebuild.
+# while its state stays 5 loses the beam on the next rebuild (A2-45; the A3-12
+# birth key in ap_pad_birth.h keeps the replay bit, tools/test-pad-rebuild-production.py).
 rebirth = body(warp, 'static int AH_WarpPad_RebirthKey(int physLevelID, int destLevelID)')
-assert 'state == 5 && AP_PadReplayable(physLevelID, destLevelID)' in rebirth
+assert 'AP_PadReplayable(physLevelID, destLevelID));' in rebirth and 'ap_pad_birth_key(' in rebirth
 assert warp.count('AH_WarpPad_RebirthKey(') == 3 and 'int rbState = AH_WarpPad_RebirthKey(' in warp
 assert 's_padRebirthState[levelID] = ctr_cfg_active() ? AH_WarpPad_RebirthKey(' in warp
 guard = warp[warp.index('AP_PadState(ctr_cfg_warp_phys(warppadObj->levelID), warppadObj->levelID) == 5 &&'):]

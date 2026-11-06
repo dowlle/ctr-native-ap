@@ -847,12 +847,12 @@ int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap);
 // Display only -- reads no gate and moves no state.
 void AP_PadGlowSlots(const int *bits, int n, int phase, int *outSlot3);
 
-// AP state-generation counter (foundation for live in-hub pad re-birth). Bumped
-// on fresh slot-connect, on a received item that changes a gate count, and on a
-// location-checked notification -- i.e. whenever a pad's AP_PadState may change.
-// A future re-birth consumer tags each pad at birth and rebuilds it on mismatch.
-// Not yet consumed for re-birth (AH_WarpPad_LInB is level-load-only; see the
-// note in ap_hooks.c). The map + gates already recompute AP_PadState live.
+// AP state-generation counter, read by the live in-hub pad rebuild. Bumped on
+// fresh slot-connect, on a received item that changes a gate count, and on a
+// location-checked notification -- i.e. whenever what a pad's birth draws may
+// change. AH_WarpPad_ThTick recomputes each pad's birth key (ap_pad_birth.h)
+// on a bump and rebuilds the pad when it differs from the key it was built
+// for. The map + gates recompute AP_PadState live every frame.
 unsigned AP_StateGen(void);
 
 // The single pad-state function driving map colour, in-hub look, and the gate.
@@ -867,6 +867,8 @@ int AP_PadState(int physLevelID, int destLevelID);
 // enum AP_PadLook of ap_pad_colour.h: AP_PadState plus whether a closed pad is
 // waiting on its racer. Display only; no gate reads it.
 #include "ap_pad_colour.h"
+// The birth key of a plan pad: what decides that ThTick rebuilds it (A3-12).
+#include "ap_pad_birth.h"
 int AP_PadLook(int physLevelID, int destLevelID);
 
 // Physical plan pad entry, including its keys, manual rule and racer lock.
