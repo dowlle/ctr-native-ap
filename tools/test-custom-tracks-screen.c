@@ -537,7 +537,7 @@ int main(void)
     seedConnected = 1;
     s_ctTab = CT_TAB_SEED; s_ctFocus = CT_FOCUS_TABS;
     frame(0, "seed-retail-only");
-    CHECK(!has("No seed loaded") && has("no custom tracks") && has("AP_RetailOnly"));
+    CHECK(!has("No seed loaded") && has("no custom tracks") && has("AP_RetailOnly") && has("seed."));
     soloActive = 1; seedName[0] = 0; seedConnected = 0;
     frame(0, "seed-solo-starting");
     CHECK(has("Waiting for seed data") && !has("no custom tracks") && !has("Ready 0/0"));

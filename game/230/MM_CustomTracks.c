@@ -1445,7 +1445,7 @@ static void CT_SeedFrame(int tapped, uint32_t *ot)
                                "Seed data is not loaded yet. Wait for the room connection." :
                                "No seed loaded. Connect to a room or start a Play Solo seed to see its tracks.",
                                CT_LIST_X, 72, CT_LIST_W, 7, WHITE, ot);
-            CT_DrawPaged("This Seed lists required custom tracks. Library and Import also work without a seed.", CT_DETAIL_X, 70, CT_DETAIL_W, 7, WHITE, ot);
+            CT_DrawPaged("Only required custom tracks. Library and Import need no seed.", CT_DETAIL_X, 70, CT_DETAIL_W, 7, WHITE, ot);
         }
         if (r)
         {
