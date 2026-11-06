@@ -1376,7 +1376,8 @@ int main(int argc, char **argv) {
     // to [relic]. Slide Coliseum (16) has its own Trophy pad and races four
     // legs; Turbo Track (17) has no pad and races one leg, so it carries its
     // frozen Cup Leg Victory (35016817). Legs run on their own LevelID, at the
-    // shortened one lap, and box, Wumpa and lap codes follow the retail rows.
+    // shortened one lap. The room has no box, Wumpa or lap checks, so those
+    // codes are not checked here.
     J trials;
     std::ifstream("tools/fixtures/content-plan/cups-trial-legs.json") >> trials;
     expect(parse(trials) && bind_room(trials) && ap_content_plan_active(), "trial legs: room binds");
