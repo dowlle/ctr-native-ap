@@ -445,7 +445,7 @@ static void test_tracks()
 		CHECK(AP_SoloTrackStart(nlohmann::json{{"id", "x"}}) == 0);
 		// A preset's Custom Tracks page sits behind its options screen; a YAML's follows the start list.
 		CHECK(AP_SoloTracksViaOptions(true));
-		CHECK(!AP_SoloTracksViaOptions(false));
+		CHECK(AP_SoloTracksViaOptions(false));
 	}
 
 	CHECK(AP_SoloDescriptorFileName("baby-t-park", "1.0.2") == "baby-t-park__1.0.2.json");

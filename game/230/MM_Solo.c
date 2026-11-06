@@ -105,8 +105,8 @@ static int s_soloEditJustEnded;  /* the frame an edit resolved: no navigation */
 static int s_soloPadPrev;
 static struct APSoloRoomInfo s_soloRoom;
 static struct APSoloStartInfo s_soloStart;
-static char s_soloName[64];
-static char s_soloNameBackup[64];
+static char s_soloName[AP_SOLO_TEXT];
+static char s_soloNameBackup[AP_SOLO_TEXT];
 static char s_soloPassword[64];
 static char s_soloPasswordBackup[64];
 static char s_soloMsg[256];
@@ -536,25 +536,15 @@ static void MM_Solo_PageNew(uint32_t *ot, struct GamepadBuffer *pad)
 			return;
 		}
 		OtherFX_Play(1, 1);
-		if (s_soloStart.isPreset)
-		{
-			s_soloHighlight = -1;
-			AP_Solo_TracksClear(); /* a new start: no custom tracks picked */
-			if (AP_Solo_DescribeStart(s_soloStart.path))
-				MM_Solo_Busy(SOLO_JOB_DESCRIBE);
-		}
-		else
-		{
-			/* An imported or inbox YAML generates as it is, but may still
-			   take custom tracks (round 2 decision 5): list them first. */
-			s_soloFromOptions = 0;
-			s_soloFromTracks = 0;
-			AP_Solo_TracksClear();
-			if (AP_Solo_TracksStart(s_soloStart.path))
-				MM_Solo_Busy(SOLO_JOB_TRACKS);
-			else
-				MM_Solo_Go(SOLO_REVIEW);
-		}
+		/* Presets, saved and inbox YAMLs all start with their own values. */
+		if (!s_soloStart.isPreset && s_soloStart.name[0])
+			snprintf(s_soloName, sizeof s_soloName, "%s", s_soloStart.name);
+		s_soloHighlight = -1;
+		s_soloFromOptions = 0;
+		s_soloFromTracks = 0;
+		AP_Solo_TracksClear();
+		if (AP_Solo_DescribeStart(s_soloStart.path))
+			MM_Solo_Busy(SOLO_JOB_DESCRIBE);
 		return;
 	}
 	MM_Solo_Title("New Solo Seed", ot);
@@ -749,6 +739,15 @@ static void MM_Solo_PageChecklist(uint32_t *ot, struct GamepadBuffer *pad)
 	int i, on = 0;
 
 	AP_Solo_OptionGet(s_soloList, &info);
+	/* Long hint lists page with the shoulders; directions still select one
+	   row or toggle it. Clamp at either end, without changing any check. */
+	if (count > SOLO_ROWS && (pad->buttonsTapped & (BTN_L1 | BTN_R1)) != 0)
+	{
+		s_soloSel += (pad->buttonsTapped & BTN_R1) != 0 ? SOLO_ROWS : -SOLO_ROWS;
+		if (s_soloSel < 0) s_soloSel = 0;
+		if (s_soloSel >= count) s_soloSel = count - 1;
+		OtherFX_Play(0, 1);
+	}
 	MM_Solo_Navigate(pad, count);
 	if (count > 0 && info.kind == AP_SOLO_OPT_WEIGHTS)
 	{
@@ -819,7 +818,8 @@ static void MM_Solo_PageChecklist(uint32_t *ot, struct GamepadBuffer *pad)
 	}
 	else
 	{
-		snprintf(line, sizeof line, NativeMenu_Labels("%d of %d on. [: what this option does."), on, count);
+		snprintf(line, sizeof line, count > SOLO_ROWS ? "%d of %d on. L1/R1: page. Row %d/%d."
+		                                            : "%d of %d on.", on, count, s_soloSel + 1, count);
 		MM_Solo_Help(line, GRAY, ot);
 	}
 	MM_Solo_Footer(s_soloResetRow >= 0 ? NativeMenu_Labels("[: AGAIN TO RESET  ^: BACK") : info.kind == AP_SOLO_OPT_WEIGHTS ? NativeMenu_Labels("LEFT/RIGHT  [: RESET  ^: BACK")
@@ -1101,7 +1101,14 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 static void MM_Solo_PageHelp(uint32_t *ot, struct GamepadBuffer *pad)
 {
 	struct APSoloOptionInfo info;
+	struct APSoloItemInfo item;
+	char checklistHelp[2048];
 	const char *text = AP_Solo_OptionHelp(s_soloHelpRow);
+	if (s_soloList == s_soloHelpRow && AP_Solo_OptionItemGet(s_soloList, s_soloSel, &item))
+	{
+		snprintf(checklistHelp, sizeof checklistHelp, "%s\n\n%s", item.label, text);
+		text = checklistHelp;
+	}
 	/* Long help scrolls: Up / Down move by a line. */
 	const int total = MM_Solo_WrapLines(text, 0x30, SOLO_LIST_Y, 0x1A0, 0, 0, 0, WHITE, NULL);
 	const int last = total > SOLO_HELP_LINES ? total - SOLO_HELP_LINES : 0;

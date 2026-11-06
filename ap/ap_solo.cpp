@@ -377,6 +377,7 @@ struct Lists
 
 std::vector<APSoloOption> g_options;
 std::vector<APSoloTrackInfo> g_tracks; // the custom-track step (decision 32)
+std::map<std::string, int> g_trackStarts; // original YAML picks, before edits
 
 // The folder the client loads custom tracks from (assets/tracks/<key>/original).
 std::string AssetsDir()
@@ -443,6 +444,7 @@ void ParseTracks(const nlohmann::json &r)
 			CopyText(info.modes, sizeof info.modes, AP_SoloTrackModes(t.value("modes", nlohmann::json())));
 			info.timeTrial = t.value("time_trial", false) ? 1 : 0;
 			info.pick = AP_SoloTrackStart(t);
+			g_trackStarts[info.id] = info.pick;
 			for (const auto &old : g_tracks)
 				if (std::strcmp(old.id, info.id) == 0)
 					info.pick = old.pick;
@@ -506,6 +508,8 @@ void ParseList(const nlohmann::json &r)
 			if (!CopyText(s.path, sizeof s.path, AP_SoloJsonString(e, "path")))
 				CopyText(s.error, sizeof s.error, "The path of this file is too long.");
 			CopyText(s.presetId, sizeof s.presetId, AP_SoloJsonString(e, "id"));
+			if (!CopyText(s.name, sizeof s.name, AP_SoloJsonString(e, "name")))
+				CopyText(s.error, sizeof s.error, "The player name in this YAML is too long.");
 			g_lists.starts.push_back(s);
 		}
 	};
@@ -845,11 +849,16 @@ extern "C" int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName,
 	// inbox YAML alike (round 2 decision 5); the picks are cleared whenever a
 	// new start is chosen.
 	std::vector<std::pair<std::string, int>> picks;
+	bool tracksChanged = false;
 	for (const APSoloTrackInfo &t : g_tracks)
 		if (!t.needsLaps) // off rows still tell a YAML's track page to remove them
+		{
 			picks.emplace_back(t.id, t.pick);
-	for (const std::string &arg : AP_SoloTrackArgs(picks))
-		args.push_back(arg);
+			tracksChanged = tracksChanged || t.pick != g_trackStarts[t.id];
+		}
+	if (tracksChanged)
+		for (const std::string &arg : AP_SoloTrackArgs(picks))
+			args.push_back(arg);
 	return JobStart(JOB_GENERATE, args, kGenerateLimitMs) ? 1 : 0;
 }
 
@@ -914,6 +923,7 @@ extern "C" int AP_Solo_TracksPicked(void)
 extern "C" void AP_Solo_TracksClear(void)
 {
 	g_tracks.clear();
+	g_trackStarts.clear();
 }
 
 namespace

@@ -18,10 +18,17 @@ fixture = r'''
 #include "ap/ap_solo.h"
 #include "ap/ap_solo_logic.hpp"
 static std::vector<APSoloTrackInfo> g_tracks;
+static std::map<std::string, int> g_trackStarts;
+static std::vector<APSoloOption> g_options;
+static const int JOB_GENERATE = 1, kGenerateLimitMs = 120000;
 static std::string g_sessionPassword;
 static bool active;
 extern "C" int AP_Solo_SessionActive(void) { return active; }
 static std::vector<std::string> childArgs;
+static std::string AssetsDir() { return "assets"; }
+static bool JobStart(int, const std::vector<std::string>& args, int) {
+    childArgs = args; return true;
+}
 struct Child {
     void release() {}
     bool start(const std::vector<std::string>& a, const std::string&) {
@@ -34,6 +41,7 @@ static int SDL_GetTicks() { return 42; }
 static std::string SoloPath(const std::string& s) { return s; }
 '''
 for signature in ('extern "C" void AP_Solo_TrackCycle(int index)',
+                  'extern "C" int AP_Solo_GenerateStart(',
                   'extern "C" int AP_Solo_SetPassword(const char *password)',
                   'bool SessionSpawn()'):
     fixture += function(signature)
@@ -77,6 +85,31 @@ int main() {
     assert(!AP_Solo_SetPassword(std::string(64, 'x').c_str()));
     assert(AP_Solo_SetPassword(""));
     assert(SessionSpawn() && childArgs.size() == 5);
+    // An imported YAML's unchanged options and track page send no overrides,
+    // including tracks selected by the YAML and unavailable extra fields.
+    g_tracks = {track("package/baby-t/1.0"), track("package/other/1.0")};
+    g_tracks[0].pick = AP_SOLO_TRACK_POOL;
+    g_trackStarts = {{g_tracks[0].id, AP_SOLO_TRACK_POOL}, {g_tracks[1].id, 0}};
+    APSoloOption option;
+    option.name = "goal_wumpa"; option.kind = "range";
+    option.value = option.initial = "150";
+    g_options = {option};
+    assert(AP_Solo_GenerateStart("imported.yaml", "ImportedPlayer", "", 1));
+    assert((childArgs == std::vector<std::string>{"generate", "--yaml", "imported.yaml",
+        "--assets", "assets", "--name", "ImportedPlayer"}));
+    // A changed row goes alone, leaving weighted and unsupported values alone.
+    g_options[0].value = "200";
+    assert(AP_Solo_GenerateStart("imported.yaml", "ImportedPlayer", "", 1));
+    assert(childArgs.size() == 9 && childArgs[7] == "--set" && childArgs[8] == "goal_wumpa=200");
+    // Explicitly turning off a track still sends the track page, even empty.
+    g_tracks[0].pick = AP_SOLO_TRACK_OFF;
+    assert(AP_Solo_GenerateStart("imported.yaml", "ImportedPlayer", "", 1));
+    assert(childArgs.back() == "--tracks-page");
+    // Returning every row to its initial pick restores the untouched path.
+    g_tracks[0].pick = AP_SOLO_TRACK_POOL;
+    g_options[0].value = g_options[0].initial;
+    assert(AP_Solo_GenerateStart("imported.yaml", "ImportedPlayer", "", 1));
+    assert(childArgs.size() == 7);
 }
 '''
 with tempfile.TemporaryDirectory() as directory:

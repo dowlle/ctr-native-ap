@@ -121,13 +121,13 @@ static int blockedOpt = -1;
 static const char *const guardReason =
 	"Signature profiles need TNT, Potion and Bomb checked."; /* the longest guard reason */
 static char note[AP_SOLO_TEXT];
-static int rooms, tracks, needsLaps, picked, jobState = AP_SOLO_JOB_IDLE, cancels;
+static int rooms, tracks, needsLaps, picked, jobState = AP_SOLO_JOB_IDLE, cancels, describes;
 static int shortLetters;
 static char inbox[512];
 int AP_Solo_RuntimePresent(void) { return 1; }
 int ap_net_dial_blocked(void) { return 0; } // Box Author Mode off (ap/ap_author_gate.h)
 int AP_Solo_ListStart(void) { return 0; }
-int AP_Solo_DescribeStart(const char *y) { (void)y; return 0; }
+int AP_Solo_DescribeStart(const char *y) { (void)y; describes++; return 1; }
 int AP_Solo_ImportRoomStart(const char *p) { (void)p; return 0; }
 int AP_Solo_ImportYamlStart(const char *p) { (void)p; return 0; }
 int AP_Solo_TracksStart(const char *y) { (void)y; return 0; }
@@ -158,6 +158,7 @@ int AP_Solo_StartGet(int i, struct APSoloStartInfo *o)
 	memset(o, 0, sizeof *o);
 	snprintf(o->label, sizeof o->label, "%s", i == 0 ? "Full Adventure" : i == 1 ? "Standard" : "my-imported-yaml-with-a-long-name.yaml");
 	o->isPreset = i < 2;
+	if (!o->isPreset) snprintf(o->name, sizeof o->name, "ImportedPlayer");
 	return 1;
 }
 const char *AP_Solo_InboxPath(void) { return inbox; }
@@ -245,7 +246,7 @@ int AP_Solo_TrackGet(int i, struct APSoloTrackInfo *o)
 void AP_Solo_TrackCycle(int i) { (void)i; }
 int AP_Solo_TracksPicked(void) { return picked; }
 void AP_Solo_TracksClear(void) {}
-int AP_Solo_TracksViaOptions(int p) { return p; }
+int AP_Solo_TracksViaOptions(int p) { (void)p; return 1; }
 void AP_Solo_TrackStepLaps(int i, int d) { (void)i; (void)d; }
 int AP_Solo_TrackKeepLaps(int i) { (void)i; return 1; }
 int AP_Solo_PickStart(int r) { (void)r; return 0; }
@@ -332,6 +333,12 @@ int main(void)
 	frame(0, "details");
 	MM_Solo_Go(SOLO_NEW);
 	frame(0, "new");
+	/* An imported YAML opens describe with its name, just like a preset. */
+	s_soloSel = 2;
+	tap(BTN_CROSS);
+	CHECK(describes == 1 && s_soloPage == SOLO_BUSY && s_soloBusyJob == SOLO_JOB_DESCRIBE);
+	CHECK(strcmp(s_soloName, "ImportedPlayer") == 0);
+	MM_Solo_Go(SOLO_NEW);
 
 	/* Options, first level: the groups and Continue. */
 	{
@@ -425,6 +432,15 @@ int main(void)
 			CHECK(full_once("Crystal Arenas", drawn)); /* the title */
 			CHECK(full_once("default", drawn) && full_once("On", drawn) && full_once("Off", drawn));
 			CHECK(strstr(drawn, "4 of 19 on.") != NULL && strstr(drawn, "*: ON/OFF") != NULL);
+			frame(BTN_R1, "checklist page down");
+			CHECK(s_soloSel == SOLO_ROWS && itemOn[0]);
+			frame(BTN_R1, "checklist page down again");
+			CHECK(s_soloSel == ITEMS - 1);
+			frame(BTN_R1, "checklist page end");
+			CHECK(s_soloSel == ITEMS - 1);
+			frame(BTN_L1, "checklist page up");
+			CHECK(s_soloSel == ITEMS - 1 - SOLO_ROWS);
+			s_soloSel = 0; s_soloTop = 0;
 			seenItems[0] = '\n'; seenItems[1] = 0;
 			strcat(seenItems, drawn);
 			for (int i = 0; i < ITEMS + 1; i++)

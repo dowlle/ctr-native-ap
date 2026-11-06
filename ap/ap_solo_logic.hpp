@@ -324,11 +324,10 @@ static inline std::vector<std::string> AP_SoloTrackArgs(const std::vector<std::p
 }
 
 // Back from Custom Tracks, a refused pick's message and the Review page's
-// "options as set" line follow the start: a preset came by way of its
-// options screen, a YAML straight from the start list.
-static inline bool AP_SoloTracksViaOptions(bool isPreset)
+// "options as set" line: every YAML now comes through its options screen.
+static inline bool AP_SoloTracksViaOptions(bool /*isPreset*/)
 {
-	return isPreset;
+	return true;
 }
 
 // solo/tracks/<track key>__<revision>.json, or "" when either part is not

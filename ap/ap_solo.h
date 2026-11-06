@@ -60,6 +60,7 @@ struct APSoloStartInfo
 	char error[AP_SOLO_TEXT];   /* non-empty: refused, shown greyed */
 	int isPreset;
 	char presetId[32];
+	char name[AP_SOLO_TEXT];    /* imported YAML's own player name */
 };
 
 enum APSoloOptionKind
@@ -90,7 +91,7 @@ struct APSoloOptionInfo
    isDefault only describe a checklist row). */
 struct APSoloItemInfo
 {
-	char label[64];
+	char label[256];             /* full hint names are readable on the help page */
 	int on;
 	int isDefault;              /* the option's default checks this row */
 	int weight;                 /* weights page: the row's weight, 0 to the maximum */
@@ -123,7 +124,7 @@ int AP_Solo_RuntimePresent(void);
 
 /* Jobs. Start returns 0 when another job runs or the runtime is missing. */
 int AP_Solo_ListStart(void);
-/* The options screen's rows and their values in yamlPath (a preset). */
+/* The options screen's rows and their values in a preset or imported YAML. */
 int AP_Solo_DescribeStart(const char *yamlPath);
 int AP_Solo_ImportRoomStart(const char *path);
 int AP_Solo_ImportYamlStart(const char *path);
@@ -131,7 +132,8 @@ int AP_Solo_ImportYamlStart(const char *path);
    folder. Picks survive a new list for the tracks still listed. */
 int AP_Solo_TracksStart(const char *yamlPath);
 /* yamlPath: preset or saved/inbox YAML. Options from the options screen are
-   passed only for presets (useOptions 1). The picked custom tracks are passed
+   passed for every YAML opened on the options screen (useOptions 1).
+   The picked custom tracks are passed
    for both; a YAML keeps its own settings and gets the tracks added. */
 int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName, const char *presetId, int useOptions);
 int AP_Solo_JobState(void);
@@ -174,8 +176,7 @@ int AP_Solo_TrackGet(int index, struct APSoloTrackInfo *out);
 void AP_Solo_TrackCycle(int index);
 int AP_Solo_TracksPicked(void);
 void AP_Solo_TracksClear(void);           /* a new start: the next list sets the picks */
-/* 1 when the Custom Tracks step of this start sits behind the options screen
-   (a preset), 0 when it follows the start list (an imported or inbox YAML). */
+/* Every YAML's Custom Tracks step sits behind its options screen. */
 int AP_Solo_TracksViaOptions(int isPreset);
 
 /* The client verified a content-plan package's files (#133): keep its
