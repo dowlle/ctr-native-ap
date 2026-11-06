@@ -418,7 +418,7 @@ int main(void)
 			s_soloPage = SOLO_OPTIONS; s_soloGroup = 3; s_soloList = -1; s_soloSel = setRow; s_soloTop = 0;
 			frame(0, "set row");
 			CHECK(full_once("Crystal Arenas", drawn) && full_once("4 of 7", drawn));
-			CHECK(strstr(drawn, "*: OPEN LIST") != NULL);
+			CHECK(strstr(drawn, "*: LIST") != NULL);
 			tap(BTN_CROSS);
 			CHECK(s_soloList == SET_OPT && s_soloSel == 0 && s_soloTop == 0);
 			frame(0, "checklist");
@@ -480,13 +480,13 @@ int main(void)
 			s_soloPage = SOLO_OPTIONS; s_soloGroup = 3; s_soloList = -1; s_soloSel = weightsRow; s_soloTop = 0;
 			frame(0, "weights row");
 			CHECK(full_once("Trap Weights", drawn) && full_once("2 custom", drawn));
-			CHECK(strstr(drawn, "*: OPEN WEIGHTS") != NULL);
+			CHECK(strstr(drawn, "*: OPEN") != NULL);
 			tap(BTN_CROSS);
 			CHECK(s_soloList == WEIGHTS_OPT && s_soloSel == 0 && s_soloTop == 0);
 			frame(0, "weights page");
 			CHECK(full_once("Trap Weights", drawn)); /* the title */
 			CHECK(strstr(drawn, "of 19 above 0. SELECT: help.") != NULL);
-			CHECK(strstr(drawn, "LEFT/RIGHT: CHANGE") != NULL && strstr(drawn, "[: RESET") != NULL);
+			CHECK(strstr(drawn, "LEFT/RIGHT") != NULL && strstr(drawn, "[: RESET") != NULL);
 			/* The grey default weight and the row's own weight are drawn. */
 			CHECK(full_once("5", drawn) && full_once("0", drawn));
 			seenWeights[0] = '\n'; seenWeights[1] = 0;
@@ -602,7 +602,7 @@ int main(void)
 		jobState = AP_SOLO_JOB_RUNNING; s_soloBusyJob = SOLO_JOB_GENERATE; s_soloPage = SOLO_BUSY;
 		int before = cancels;
 		frame(BTN_CIRCLE, "busy confirm does not cancel"); CHECK(cancels == before && s_soloPage == SOLO_BUSY);
-		frame(backs[i], "busy cancel"); CHECK(cancels == before + 1 && s_soloPage == SOLO_REVIEW);
+		tap(backs[i]); CHECK(cancels == before + 1 && s_soloPage == SOLO_REVIEW);
 	}
 	jobState = AP_SOLO_JOB_IDLE;
 	s_soloPage = SOLO_SESSION; frame(0, "session");

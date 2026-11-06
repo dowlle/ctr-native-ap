@@ -92,7 +92,7 @@ void SDL_ShowCursor(void) {}
 void AH_Pause_Destroy(void) {}
 void MainFreeze_MenuPtrDefault(struct RectMenu *menu) {}
 int AP_TrackerLoadAssets(void) { return 1; }
-void AP_TrackerClose(void) { ap_tracker.open=0; ap_tracker.acts_open=0; }
+void AP_TrackerClose(void) { ap_tracker.open=0; ap_tracker.acts_open=0; ap_tracker.pinned=0; }
 void AP_TrackerShutdown(void) {}
 void AP_TrackerBuildNodes(void) {}
 void AP_TrackerDraw(void) {}

@@ -410,6 +410,13 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
     if (count && s_importRow >= count) s_importRow = 0;
 
     DecalFont_DrawLineOT("IMPORT TRACK FILES", 256, 24, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
+    if (s_importStage == IMPORT_REVIEW || s_importStage == IMPORT_INSTALLING)
+    {
+        unsigned offered = 0;
+        for (unsigned i = 0; i < s_importSummary.count; i++) offered += s_importSummary.items[i].offered != 0;
+        snprintf(line, sizeof line, s_importStage == IMPORT_REVIEW ? "%u track%s   SELECT: Rename" : "%u track%s", offered, offered == 1 ? "" : "s");
+        MM_CustomText_Draw(line, 256, 50, 456, 1, JUSTIFY_CENTER | WHITE, ot);
+    }
     if (s_importStage == IMPORT_CHOOSE || s_importStage == IMPORT_PICKING)
     {
         first = (s_importRow / 7) * 7;
@@ -486,14 +493,16 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         char name[160];
         snprintf(name, sizeof name, "Name: %s", s_importEditText);
         MM_CustomText_Draw(name, 28, 172, 456, 1, ORANGE, ot);
-        snprintf(line, sizeof line, NativeMenu_Labels("*: Keep this name   ^: Cancel"));
+        snprintf(line, sizeof line, "%s", NativeMenu_Labels("*: Keep this name   ^: Cancel"));
     }
-    else if (s_importStage == IMPORT_REVIEW || s_importStage == IMPORT_INSTALLING)
+    else if (s_importStage == IMPORT_INSTALLING)
     {
-        unsigned offered = 0;
-        for (unsigned i = 0; i < s_importSummary.count; i++) offered += s_importSummary.items[i].offered != 0;
-        snprintf(line, sizeof line, NativeMenu_Labels("%u/%u %u track%s  [: Select  *: Install  ^: Back"), count ? (unsigned)s_importRow + 1 : 0,
-                 (unsigned)count, offered, offered == 1 ? "" : "s");
+        snprintf(line, sizeof line, "Installing...");
+    }
+    else if (s_importStage == IMPORT_REVIEW)
+    {
+        snprintf(line, sizeof line, "%s", s_importRow == s_importSummary.count ?
+                 NativeMenu_Labels("*: Import all  ^: Back") : NativeMenu_Labels("[: Pick  *: Install  ^: Back"));
     }
 #ifndef MM_IMPORT_PLAYER
 #define IMPORT_DONE NativeMenu_Labels("*: Installed tracks")
@@ -501,7 +510,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
 #define IMPORT_DONE NativeMenu_Labels("*: Done")
 #endif
     else snprintf(line, sizeof line, "%s", s_importStage == IMPORT_RESULT ? IMPORT_DONE :
-                  s_importStage == IMPORT_SCANNING ? NativeMenu_Labels("^: Cancel") : NativeMenu_Labels("*: Open   [: Rescan   ^: Back"));
+                  s_importStage == IMPORT_SCANNING || s_importStage == IMPORT_PICKING ? NativeMenu_Labels("^: Cancel") : NativeMenu_Labels("*: Open   [: Rescan   ^: Back"));
     MM_CustomText_Draw(line, 256, 196, 456, 1, JUSTIFY_CENTER | WHITE, ot);
     {
         RECT listBox = {20, 64, 268, 108}, detailBox = {297, 64, 190, 108};

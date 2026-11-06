@@ -2408,8 +2408,11 @@ void AP_CharPicker_Draw(void)
 		}
 	}
 
-	snprintf(line, sizeof line, NativeMenu_Labels("*: CONFIRM   %s   ^: BACK"),
-	         ap_cs_editFocus ? "LEFT/RIGHT: CHANGE" : ap_cs_editorAvailable() ? NativeMenu_Labels("[: EDIT") : "");
+	if (ap_cs_editFocus)
+		snprintf(line, sizeof line, "%s", NativeMenu_Labels("LEFT/RIGHT: CHANGE   ^: BACK"));
+	else
+		snprintf(line, sizeof line, NativeMenu_Labels("*: CONFIRM   %s   ^: BACK"),
+		         ap_cs_editorAvailable() ? NativeMenu_Labels("[: EDIT") : "");
 	DecalFont_DrawLine(line, 0x100, panelY + 76, FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
 }
 

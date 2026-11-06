@@ -283,9 +283,10 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
             if(source) MM_CustomText_Draw(s_saphiVersionTrack ? NativeMenu_Labels("^: Tracks") : NativeMenu_Labels("[ Versions"),305,159,176,1,ORANGE,ot);
         }
     }
-    snprintf(line,sizeof line,"R2 Search: %s%s",s_saphiQuery,s_contentSearchEditing ? "_" : "");
+    snprintf(line,sizeof line,"L2 Refresh  R2 Search: %s%s",s_saphiQuery,s_contentSearchEditing ? "_" : "");
     MM_CustomText_Draw(line,256,180,456,1,JUSTIFY_CENTER | WHITE,ot);
-    snprintf(line,sizeof line,NativeMenu_Labels("%u/%u  [: Versions  L2 Refresh  ^: Back"),count ? (unsigned)*selected+1 : 0,(unsigned)count);
+    snprintf(line,sizeof line,source && !s_saphiVersionTrack ? NativeMenu_Labels("%u/%u  [: Versions  ^: Back") :
+             NativeMenu_Labels("%u/%u  ^: Back"),count ? (unsigned)*selected+1 : 0,(unsigned)count);
     MM_CustomText_Draw(line,256,196,456,1,JUSTIFY_CENTER | WHITE,ot);
 #ifndef MM_IMPORT_PLAYER
     MM_CustomText_Draw("Select: Import track files",256,188,456,1,JUSTIFY_CENTER | ORANGE,ot);

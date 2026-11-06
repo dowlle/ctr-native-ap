@@ -822,7 +822,7 @@ static void MM_Solo_PageChecklist(uint32_t *ot, struct GamepadBuffer *pad)
 		snprintf(line, sizeof line, NativeMenu_Labels("%d of %d on. [: what this option does."), on, count);
 		MM_Solo_Help(line, GRAY, ot);
 	}
-	MM_Solo_Footer(s_soloResetRow >= 0 ? NativeMenu_Labels("[: AGAIN TO RESET  ^: BACK") : info.kind == AP_SOLO_OPT_WEIGHTS ? NativeMenu_Labels("LEFT/RIGHT: CHANGE  [: RESET  ^: BACK")
+	MM_Solo_Footer(s_soloResetRow >= 0 ? NativeMenu_Labels("[: AGAIN TO RESET  ^: BACK") : info.kind == AP_SOLO_OPT_WEIGHTS ? NativeMenu_Labels("LEFT/RIGHT  [: RESET  ^: BACK")
 	                                                : NativeMenu_Labels("*: ON/OFF  [: HELP  ^: BACK"),
 	               ot);
 }
@@ -966,9 +966,9 @@ static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
 	if (AP_Solo_OptionGet(map[s_soloSel], &info))
 		/* A forced reason or warning needs both lines; otherwise the hint. */
 		MM_Solo_Help(info.note[0] ? info.note : NativeMenu_Labels("[: what this option does."), info.note[0] ? RED : GRAY, ot);
-	MM_Solo_Footer(info.kind == AP_SOLO_OPT_SET     ? NativeMenu_Labels("*: OPEN LIST  [: HELP  ^: BACK")
-	               : info.kind == AP_SOLO_OPT_WEIGHTS ? NativeMenu_Labels("*: OPEN WEIGHTS  [: HELP  ^: BACK")
-	                                                  : NativeMenu_Labels("LEFT/RIGHT: CHANGE  [: HELP  ^: BACK"),
+	MM_Solo_Footer(info.kind == AP_SOLO_OPT_SET     ? NativeMenu_Labels("*: LIST  [: HELP  ^: BACK")
+	               : info.kind == AP_SOLO_OPT_WEIGHTS ? NativeMenu_Labels("*: OPEN  [: HELP  ^: BACK")
+	                                                  : NativeMenu_Labels("LEFT/RIGHT  [: HELP  ^: BACK"),
 	               ot);
 }
 
@@ -1070,7 +1070,7 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 		else if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info))
 		{
 			if (!info.modes[0] && info.timeTrial && info.pick)
-				snprintf(line, sizeof line, NativeMenu_Labels("Time Trial only; press * to remove it from the YAML."));
+				snprintf(line, sizeof line, "%s", NativeMenu_Labels("Time Trial only; press * to remove it from the YAML."));
 			else if (!info.modes[0] && info.timeTrial)
 				snprintf(line, sizeof line, "By %s. Time Trial only; no Adventure pad races.", info.author);
 			else if (!info.modes[0])

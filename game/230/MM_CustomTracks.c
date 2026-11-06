@@ -1260,7 +1260,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
                  s_saphiQuery[0] ? s_saphiQuery : "none", s_ctItemCount ? *sel + 1 : 0, s_ctItemCount);
         CT_Footer(line, NULL, ot);
     }
-    CT_Footer(NULL, s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? NativeMenu_Labels("*: Actions   [: Controls   ^: Page controls") :
+    CT_Footer(NULL, s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? NativeMenu_Labels("*: Actions  [: Controls  ^: Back") :
                     s_ctFocus == CT_FOCUS_CONTROLS ? NativeMenu_Labels("*: Select   [: Tracks   ^: Tabs") :
                     s_ctFocus == CT_FOCUS_ACTIONS ? NativeMenu_Labels("*: Select   ^: Tracks") :
                     s_ctSub == CT_SUB_RELIC ? NativeMenu_Labels("Left/Right: Move   ^: Cancel") : NativeMenu_Labels("*: Select   ^: Back"), ot);
@@ -1456,7 +1456,7 @@ static void CT_SeedFrame(int tapped, uint32_t *ot)
     }
     else snprintf(line, sizeof line, "%s", seed[0] ? "This seed needs no custom tracks" : "No seed loaded");
     if (AP_SeedContentInstallBusy() || s_ctLegacyDownload) snprintf(line, sizeof line, "Installing...");
-    CT_Footer(line, s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? NativeMenu_Labels("*: Actions   [: Controls   ^: Page controls") :
+    CT_Footer(line, s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? NativeMenu_Labels("*: Actions   ^: Page controls") :
                     s_ctFocus == CT_FOCUS_CONTROLS ? (s_ctSeedCount ? NativeMenu_Labels("*: Select   [: Tracks   ^: Tabs") : NativeMenu_Labels("*: Select   ^: Tabs")) :
                     s_ctFocus == CT_FOCUS_ACTIONS ? NativeMenu_Labels("*: Select   ^: Tracks") :
                     s_ctSub == CT_SUB_INSTALL ? NativeMenu_Labels("*: Install   ^: Cancel") : NativeMenu_Labels("^: Back"), ot);
