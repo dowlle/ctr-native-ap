@@ -1664,8 +1664,11 @@ for count in (1, 2, 4, 5):
     cases.append((f"gauntlet-cups-{count}", wire, True))
     if count == 2:
         gauntlet_base = wire
-alter("gauntlet-lineup-skips-red", lambda p: row2_rename(p, 0, "entry/gem_cup:1"), gauntlet_base)
-alter("gauntlet-lineup-without-purple-and-gap", lambda p: row2_rename(p, 4, "entry/gem_cup:2"), gauntlet_base)
+# These forgeries rename ids only, so native also refuses them on the display name
+# before the lineup check; the lineup predicate itself is covered by the generator
+# test and the review of all 32 colour subsets.
+alter("gauntlet-renamed-colour-1", lambda p: row2_rename(p, 0, "entry/gem_cup:1"), gauntlet_base)
+alter("gauntlet-renamed-purple-to-2", lambda p: row2_rename(p, 4, "entry/gem_cup:2"), gauntlet_base)
 # One generator row 3: every unlock mode, placement and stage density the
 # generator draws, then forged requirement records.
 row3_shape = dict(preset="mixed", tracks=dict(retail="all", modes=["trophy", "ctr", "relic"], custom=[]),
