@@ -106,7 +106,9 @@ static void fixtures() {
                                   // J11: ctr_first, the Wumpa Shop and goal, boss opponent and kit shuffle
                                   "ctr-first", "wumpa-shop", "wumpa-goal-only", "boss-shuffle", "all-030", "boss-cups-gauntlet",
                                   // Row 10f: the only Wumpa Income is a custom track with measured Wumpa
-                                  "wumpa-custom-income"};
+                                  "wumpa-custom-income",
+                                  // A3-7: 27 cups, no Trophy Race: Itemsanity and Wumpa Income from the cup legs
+                                  "twenty-seven-cups"};
     for (const char *name : names) {
         std::ifstream in(std::string("tools/fixtures/content-plan/") + name + ".json");
         if (!in) { expect(false, std::string("fixture missing: ") + name); continue; }
