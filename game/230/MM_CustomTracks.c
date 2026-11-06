@@ -1232,7 +1232,8 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
                                s_ctFilter == CT_FILTER_BROWSE ? "Catalogue unavailable. Refresh it from the page controls." :
                                "No tracks yet. Refresh the catalogue or import a patch.",
                                CT_LIST_X, 84, CT_LIST_W, 3, WHITE, ot);
-        if (s_ctFocus == CT_FOCUS_TABS)
+        if (s_ctFocus == CT_FOCUS_TABS && !s_saphiDownloading && !s_ctLegacyDownload &&
+            !strstr(s_saphiMessage, "publication failed"))
         {
             CT_DrawPaged("Library: local tracks and the Project Saphi catalogue.", CT_DETAIL_X, 70, CT_DETAIL_W, 4, WHITE, ot);
             CT_DrawPaged(s_saphiRefreshBusy ? "Loading Project Saphi..." :

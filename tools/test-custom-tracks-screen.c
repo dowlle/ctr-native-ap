@@ -548,6 +548,11 @@ int main(void)
     s_ctFocus = CT_FOCUS_LIST;
     frame(0, NULL); CHECK(has("Saphi refresh failed"));
     s_saphiRefreshFailed = 0;
+    s_ctFocus = CT_FOCUS_TABS; s_saphiDownloading = 1;
+    strcpy(s_saphiMessage, "Downloading 40%");
+    frame(0, "library-downloading"); CHECK(has("Downloading 40%"));
+    s_saphiDownloading = 0; s_saphiMessage[0] = 0;
+    s_ctFocus = CT_FOCUS_LIST;
     pkgStatus.state = CTR_CT_MANAGER_MANIFEST_MISSING;
     select_track("Baby T Park");
     frame(0, NULL); CHECK(has("Installed") && !has("Needs setup"));
