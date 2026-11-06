@@ -1644,6 +1644,7 @@ static void MM_ConfigProc_CustomTracks(struct RectMenu *menu, uint32_t *ot, stru
         CT_ImportFrame(tapped, ot, pad);
         if (importing) return; /* the importer draws its own panels */
         if (s_ctFocus == CT_FOCUS_TABS) CT_Footer(NULL, "*: Open   ^: Options", ot);
+        else if (MM_CustomImport_Active()) CT_Footer(NULL, "^: Tabs", ot);
     }
     if (s_ctFocus == CT_FOCUS_TABS && s_ctTab != CT_TAB_IMPORT)
         CT_Footer(NULL, CT_JobsBusy() ? "Working...   *: Open" : "*: Open   ^: Options", ot);
