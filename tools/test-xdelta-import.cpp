@@ -422,6 +422,58 @@ int main()
 
     const std::string discPath = write_file("base.bin", baseDisc);
 
+    /* Alternate pointer maps get diagnostic rows, never installable packages.
+       Keep ordinary track numbering independent of these diagnostic entries. */
+    {
+        DiscSpec alternate = base;
+        LevSpec normal; normal.seed = 42;
+        alternate.bigfile[1] = make_lev(normal);
+        Bytes encoded = make_lev(normal);
+        put32(encoded, 4, 0x1f0); /* plausible mesh info before the instance table */
+        put32(encoded, 4 + BODY_PTRMAP, 0x80000020u);
+        alternate.bigfile[3] = encoded;
+        put32(encoded, 4 + BODY_PTRMAP, 0x20000020u);
+        alternate.bigfile[5] = encoded; /* another high-bit encoding */
+        put32(encoded, 4 + 0x10, BODY_PTRMAP - 4); /* instance table crosses the map */
+        alternate.bigfile[7] = encoded;
+        encoded.resize(0x200); /* truncated before its map header */
+        alternate.bigfile[9] = encoded;
+        encoded = make_lev(normal);
+        put32(encoded, 4 + BODY_PTRMAP, 0x80000020u); /* no mesh shape */
+        alternate.bigfile[11] = encoded;
+        CHECK(XdeltaImport_CutLev(alternate.bigfile[3].data(), alternate.bigfile[3].size()) == 0,
+              "alternate map cannot be cut as an ordinary LEV");
+        ScanResult r = scan(write_file("Alternate.xdelta", encode(baseDisc, make_disc(alternate))), discPath);
+        CHECK(r.ok, "alternate-map scan succeeds");
+        if (r.ok)
+        {
+            const auto *s = XdeltaImport_Summary(r.scan);
+            for (int slot : {3, 5})
+            {
+                const auto *it = item_for(s, slot);
+                CHECK(it && !it->offered && !it->pin[0] && !it->levSha256[0] && !it->tags[0] &&
+                      !std::strcmp(it->reason, "Uses a level format this client cannot read yet"),
+                      "alternate map has its own non-importable diagnostic");
+                CHECK(it && std::string(it->title) == "Unsupported level (BIGFILE " + std::to_string(slot) + ")",
+                      "diagnostic identifies the BIGFILE entry");
+            }
+            const auto *ordinary = item_for(s, 1);
+            CHECK(ordinary && ordinary->offered && !std::strcmp(ordinary->title, "Alternate track 1"),
+                  "normal entry remains offered with its original ordinal");
+            CHECK(!item_for(s, 7) && !item_for(s, 9) && !item_for(s, 11),
+                  "flagged arbitrary or truncated data is not diagnosed as a level");
+            CHECK(line_with(s, "Other changed files (3)"), "only diagnosed entries leave the other count");
+            std::vector<unsigned char> selected(s->count, 0);
+            for (unsigned i = 0; i < s->count; i++)
+                if (s->items[i].bigfileIndex == 3 || s->items[i].bigfileIndex == 5) selected[i] = 1;
+            char error[256];
+            CHECK(XdeltaImport_Install(r.scan, selected.data(), (root + "/alternate-assets").c_str(),
+                                      CTR_XDELTA_INSTALL_PACKAGES, error, sizeof error) == 0,
+                  "selecting only unsupported rows installs nothing");
+        }
+        XdeltaImport_Free(&r.scan);
+    }
+
     /* Decoder: windows, copy with a source window larger than the target, adler32. */
     {
         EncodeOptions o; o.window = 8192; o.sourceSlack = 20000;
