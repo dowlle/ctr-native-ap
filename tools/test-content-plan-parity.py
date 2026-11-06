@@ -1225,8 +1225,9 @@ def box_env(name, change, source=None):
     cases.append(("boxes-envelope-" + name, case, accepted))
 # Hand-placed box spots (A3-14): seeds generated with the apworld's test spot
 # files (Crash Cove with 18 spots, Baby T Park with 18 from 1) are admitted by
-# both; forged spot sets and spot fields are refused by both, except a moved
-# position or another file digest, which native reads as given.
+# both; forged spot sets and spot fields are refused by both, except what
+# only the shipped file can tell (a moved position, another file digest, a pool
+# count that still fits the pick), which native reads as given.
 from worlds.ctr import box_spots as bspots
 from worlds.ctr.test.test_box_spots import spot_files
 with spot_files(retail=["CRASH_COVE"], custom=["baby-t-park"]):
@@ -1254,7 +1255,7 @@ with spot_files(retail=["CRASH_COVE"], custom=["baby-t-park"]):
             ("all sets dropped", lambda p: p["item_boxes"].pop("spot_sets"), False),
             ("picks one short", lambda p: sset(p, "retail:3")["picked"].pop(), False),
             ("picks reversed", lambda p: sset(p, "retail:3")["picked"].reverse(), False),
-            ("pool lowered", lambda p: sset(p, "retail:3").__setitem__("pool", 15), False),
+            ("pool lowered", lambda p: sset(p, "retail:3").__setitem__("pool", 15), True),
             ("custom LEV pin changed", lambda p: sset(p, "custom/baby-t-park/1.0.2").__setitem__("lev_sha256", "a" * 64), False),
             ("spot dropped", lambda p: sbox(p, "retail:3").pop("spot"), False),
             ("spot number changed", lambda p: sbox(p, "retail:3")["spot"].__setitem__("number", 49), False),
