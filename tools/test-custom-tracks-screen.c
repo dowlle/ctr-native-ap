@@ -544,7 +544,7 @@ int main(void)
     /* Refresh failure stays visible with local/package rows present. */
     s_ctTab = CT_TAB_LIBRARY; s_ctFocus = CT_FOCUS_TABS;
     s_saphiRefreshFailed = 1;
-    frame(0, "library-offline"); CHECK(has("Saphi refresh failed. Retry Refresh."));
+    frame(0, "library-offline"); CHECK(has("Saphi refresh failed. Retry Refresh.") && has("refresh."));
     s_ctFocus = CT_FOCUS_LIST;
     frame(0, NULL); CHECK(has("Saphi refresh failed"));
     s_saphiRefreshFailed = 0;
@@ -562,7 +562,7 @@ int main(void)
     lib[0].installed = lib[1].installed = 1;
     pkgStatus.state = CTR_CT_MANAGER_READY;
     s_ctTab = CT_TAB_IMPORT; s_ctFocus = CT_FOCUS_TABS;
-    frame(0, "import-help"); CHECK(!has("...") && has("Open to choose"));
+    frame(0, "import-help"); CHECK(!has("...") && has("Open to choose") && has("review."));
     s_ctTab = CT_TAB_LIBRARY; s_ctFocus = CT_FOCUS_TABS;
 
     /* 11. A room that misses tracks: the screen opens on This Seed. */

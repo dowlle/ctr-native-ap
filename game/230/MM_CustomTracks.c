@@ -1235,10 +1235,10 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
         if (s_ctFocus == CT_FOCUS_TABS && !s_saphiDownloading && !s_ctLegacyDownload &&
             !strstr(s_saphiMessage, "publication failed"))
         {
-            CT_DrawPaged("Library: local tracks and the Project Saphi catalogue.", CT_DETAIL_X, 70, CT_DETAIL_W, 4, WHITE, ot);
+            CT_DrawPaged("Local tracks and Saphi catalogue.", CT_DETAIL_X, 70, CT_DETAIL_W, 4, WHITE, ot);
             CT_DrawPaged(s_saphiRefreshBusy ? "Loading Project Saphi..." :
-                         s_saphiRefreshFailed ? "Catalogue unavailable. Open, then Page controls > Refresh catalogue." :
-                         "Open to select a track. Page controls: filter, search, refresh and rescan.",
+                         s_saphiRefreshFailed ? "Catalogue failed. Use controls to refresh." :
+                         "Open for tracks. Controls to browse.",
                          CT_DETAIL_X, 122, CT_DETAIL_W, 4, ORANGE, ot);
         }
         else if (item)
@@ -1535,7 +1535,7 @@ static void CT_ImportFrame(int tapped, uint32_t *ot, struct GamepadBuffer *pad)
     /* The tab strip shows what the tab does. */
     MM_CustomText_Draw("Import an xdelta patch using your own game disc. Open to choose a patch file.", CT_LIST_X, 72, CT_LIST_W, 7, WHITE, ot);
     CT_DrawPaged(s_ctMessage[0] ? s_ctMessage :
-                 "Choose a file, scan assets/tracks/import, or drop a patch here. Review tracks before confirming import.",
+                 "Choose a file, scan assets/tracks/import, or drop a patch. Confirm after review.",
                  CT_DETAIL_X, 70, CT_DETAIL_W, 8, WHITE, ot);
 }
 
