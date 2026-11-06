@@ -90,12 +90,13 @@ int AP_Solo_RecordTrackDescriptor(const char *a, const char *b, const char *c) {
 int AP_Solo_SessionActive(void) { return soloActive; }
 
 /* ---- the room ---- */
-static int seedActive, seedSelected, seedBusy, seedStarts, seedRescans, registryRetries, verifies, legacyStarts;
+static int seedActive, seedConnected, seedSelected, seedBusy, seedStarts, seedRescans, registryRetries, verifies, legacyStarts;
 static int planResult = AP_SEED_PLAN_OK, legacyState = AP_CT_DOWNLOAD_IDLE;
 static struct AP_SeedContentRow room[AP_SEED_ROWS_MAX];
 static int roomCount;
 static char seedName[64] = "";
 int AP_SeedContentActive(void) { return seedActive; }
+int ap_net_is_connected(void) { return seedConnected; }
 int AP_SeedContentRows(struct AP_SeedContentRow *rows, int max) { int i; for (i = 0; i < roomCount && i < max; i++) rows[i] = room[i]; return i; }
 int AP_SeedContentInstallPreview(int *plan, int *count, uint64_t *bytes, char *reason, size_t reasonSize)
 {
@@ -533,10 +534,19 @@ int main(void)
 
     /* A connected retail-only seed is loaded even with no custom rows. */
     strcpy(seedName, "AP_RetailOnly");
+    seedConnected = 1;
     s_ctTab = CT_TAB_SEED; s_ctFocus = CT_FOCUS_TABS;
     frame(0, "seed-retail-only");
     CHECK(!has("No seed loaded") && has("no custom tracks") && has("AP_RetailOnly"));
-    soloActive = 1; seedName[0] = 0;
+    soloActive = 1; seedName[0] = 0; seedConnected = 0;
+    frame(0, "seed-solo-starting");
+    CHECK(has("Waiting for seed data") && !has("no custom tracks") && !has("Ready 0/0"));
+    strcpy(seedName, "AP_SoloPending"); /* RoomInfo precedes admitted slot data. */
+    frame(0, "seed-solo-connecting");
+    CHECK(has("Waiting for seed data") && !has("no custom tracks") && !has("Ready 0/0"));
+    CT_SeedIdentity(); CHECK(strstr(s_ctInfo, "not loaded yet"));
+    s_ctSub = CT_SUB_NONE; s_ctFocus = CT_FOCUS_TABS;
+    seedConnected = 1;
     frame(0, "seed-solo-retail-only");
     CHECK(!has("No seed loaded") && has("Play Solo"));
     soloActive = 0;

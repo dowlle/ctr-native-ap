@@ -822,8 +822,10 @@ static void CT_SeedIdentity(void)
     char seed[96] = "", slot[64] = "", text[512];
     ap_net_seed_name(seed, sizeof seed);
     ap_net_slot_name(slot, sizeof slot);
-    if (!s_ctSeedCount && !seed[0] && !AP_Solo_SessionActive())
-        snprintf(text, sizeof text, "No room or Play Solo seed is loaded.");
+    if (!s_ctSeedCount && !ap_net_is_connected())
+        snprintf(text, sizeof text, "%s", seed[0] || AP_Solo_SessionActive() ?
+                 "Seed data is not loaded yet. Wait for the room connection." :
+                 "No room or Play Solo seed is loaded.");
     else
         snprintf(text, sizeof text, "%s. Seed %s. Slot %s. Needs %d custom track%s, %d ready.",
                  AP_Solo_SessionActive() ? "Play Solo seed" : "Connected room", seed[0] ? seed : "unknown",
@@ -1437,8 +1439,10 @@ static void CT_SeedFrame(int tapped, uint32_t *ot)
         if (!s_ctSeedCount)
         {
             ap_net_seed_name(seed, sizeof seed);
-            MM_CustomText_Draw(seed[0] || AP_Solo_SessionActive() ?
+            MM_CustomText_Draw(ap_net_is_connected() ?
                                "This seed needs no custom tracks. Retail tracks are ready to play." :
+                               seed[0] || AP_Solo_SessionActive() ?
+                               "Seed data is not loaded yet. Wait for the room connection." :
                                "No seed loaded. Connect to a room or start a Play Solo seed to see its tracks.",
                                CT_LIST_X, 72, CT_LIST_W, 7, WHITE, ot);
             CT_DrawPaged("This Seed lists required custom tracks. Library and Import also work without a seed.", CT_DETAIL_X, 70, CT_DETAIL_W, 7, WHITE, ot);
@@ -1465,7 +1469,9 @@ static void CT_SeedFrame(int tapped, uint32_t *ot)
     }
 
     ap_net_seed_name(seed, sizeof seed);
-    if (s_ctSeedCount || seed[0] || AP_Solo_SessionActive())
+    if (!s_ctSeedCount && !ap_net_is_connected() && (seed[0] || AP_Solo_SessionActive()))
+        snprintf(line, sizeof line, "Waiting for seed data");
+    else if (s_ctSeedCount || ap_net_is_connected())
     {
         char full[256];
         snprintf(full, sizeof full, "Ready %d/%d   %s %s", CT_SeedReady(), s_ctSeedCount,
