@@ -141,10 +141,12 @@ birth = (root / "game/Vehicle/VehBirth.c").read_text()
 tele = birth[birth.index("void VehBirth_TeleportSelf("):]
 check("AP_FastTravelSpawnAt(level1, (int)gGT->levelID, &apTravelPos, &apTravelRot)" in tele,
       "the birth asks the trip for its save-screen spawn")
-check(tele.index("AP_FastTravelSpawnAt(level1") < tele.index("VehBirth_FindDoor5(level1)"),
-      "the travel spawn wins over the door and podium rules")
+check("ctr_cfg_active() && d == gGT->drivers[0] && doorInst == NULL && !spawnOutsideBoss" in tele,
+      "only the player, only in a seed, and the door and boss-scene spawns win first")
+poschain = tele[tele.index("if (doorInst != NULL)"):]
+check(poschain.index("else if (apTravel)") > poschain.index("else if (spawnOutsideBoss != 0)"),
+      "the travel spawn follows the door and boss rules in the spawn chain")
 check("d->rotCurr.y = apTravelRot;" in tele, "the landing faces the save screen")
-check("ctr_cfg_active() && d == gGT->drivers[0]" in tele, "only the player, only in a seed")
 
 launch = (root / "ap/ap_tracker_launch.c").read_text()
 begin = launch[launch.index("int AP_TrackerLaunchBegin("):]

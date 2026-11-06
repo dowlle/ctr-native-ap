@@ -197,17 +197,10 @@ void VehBirth_TeleportSelf(struct Driver *d, u8 spawnFlag, int spawnPosY)
 	else
 	{
 #ifdef CTR_AP
-		if (ctr_cfg_active() && d == gGT->drivers[0])
-		{
-			apTravel = AP_FastTravelSpawnAt(level1, (int)gGT->levelID, &apTravelPos, &apTravelRot);
-		}
-
-		if (apTravel)
-		{
-			posBottom = apTravelPos;
-		}
-		else
-		{
+		/* A3-16 hub fast travel: claimed after the door and boss-scene rules
+		 * below win their spawn, so a first-Key door freeze or a pending boss
+		 * intro keeps its retail entry and the trip ends with the normal
+		 * spawn instead of skipping the scene. */
 #endif
 		if ((gGT->podiumRewardID == STATIC_KEY) &&
 #ifdef CTR_AP
@@ -229,6 +222,13 @@ void VehBirth_TeleportSelf(struct Driver *d, u8 spawnFlag, int spawnPosY)
 		{
 			spawnOutsideBoss = 1;
 		}
+
+#ifdef CTR_AP
+		if (ctr_cfg_active() && d == gGT->drivers[0] && doorInst == NULL && !spawnOutsideBoss)
+		{
+			apTravel = AP_FastTravelSpawnAt(level1, (int)gGT->levelID, &apTravelPos, &apTravelRot);
+		}
+#endif
 
 		if (doorInst != NULL)
 		{
@@ -260,6 +260,12 @@ void VehBirth_TeleportSelf(struct Driver *d, u8 spawnFlag, int spawnPosY)
 			advSpawn = VehBirth_SpawnType2PosRot(level1);
 			VehBirth_SetBottomFromPos(&posBottom, &advSpawn[1].pos);
 		}
+#ifdef CTR_AP
+		else if (apTravel)
+		{
+			posBottom = apTravelPos;
+		}
+#endif
 		else if ((gGT->gameMode1 & ADVENTURE_ARENA) == 0)
 		{
 			VehBirth_SetStartlinePosition(d, level1, &posBottom);
@@ -300,9 +306,6 @@ void VehBirth_TeleportSelf(struct Driver *d, u8 spawnFlag, int spawnPosY)
 			advSpawn = VehBirth_SpawnType2PosRot(level1);
 			VehBirth_SetBottomFromPos(&posBottom, &advSpawn[0].pos);
 		}
-#ifdef CTR_AP
-		}
-#endif
 	}
 
 	posTop.x = posBottom.x;
