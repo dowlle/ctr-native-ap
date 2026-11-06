@@ -22,7 +22,7 @@ assert 'return "FINISH";' in reason_source
 assert 'AP_FeedOnRungSent(code, rungTag);' in source
 assert 'AP_FeedRememberSelfRung(item);' in source
 assert 'if (AP_FeedConsumeSelfRung(item))' in source
-assert 'if (playableRace && q->playCue)' in source
+assert 'if (AP_FeedLinesPromote(&ap_feed) && playableRace)' in source
 assert 'OtherFX_Play(0x41, 1);' in source
 assert 'AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_BASE_Y, 0);' in source
 assert 'AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_BASE_Y, 1);' in source
