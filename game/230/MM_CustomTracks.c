@@ -152,6 +152,8 @@ static void CT_RowState(int row, const char *title, const char *state, int selec
 
 static void CT_Footer(const char *status, const char *hint, uint32_t *ot)
 {
+    char busy[80];
+    if (hint && ap_custom_track_download_busy(busy, sizeof busy)) hint = busy;
     if (status && *status) MM_CustomText_Draw(status, 256, CT_STATUS_Y, 456, 1, JUSTIFY_CENTER | WHITE, ot);
     if (hint && *hint) MM_CustomText_Draw(hint, 256, CT_HINT_Y, 456, 1, JUSTIFY_CENTER | WHITE, ot);
 }

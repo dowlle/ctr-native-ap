@@ -83,6 +83,9 @@ int XdeltaImport_StartInstall(const unsigned char *sel,unsigned count,const char
 { (void)a; memcpy(lastSelected,sel,count); lastWhere=where; installStarts++; installState=0; return 1; }
 int XdeltaPick_TakeDrop(char *path,size_t size) { int s=dropState; if(s==1) snprintf(path,size,"/drop/LRG2.xdelta"); dropState=0; return s; }
 int XdeltaImport_PollInstall(int *installed,char *e,size_t n) { (void)e;(void)n; int s=installState; if(s==1){*installed=2;installState=-1;} return s; }
+static int saphiBusy;
+int ap_custom_track_download_busy(char *text, int size)
+{ if (text && size > 0) snprintf(text, size, "%s", saphiBusy ? "Project Saphi is busy, waiting 60s" : ""); return saphiBusy; }
 #include "../game/230/MM_CustomManager.c"
 static void tick(int buttons) { struct GamepadBuffer pad={0};pad.buttonsTapped=buttons;drawn[0]=0;MM_ConfigProc_TrackLibrary(NULL,NULL,&pad); }
 int main(void)
@@ -92,6 +95,8 @@ int main(void)
  data.font_buttonPixWidth[FONT_SMALL]=2;data.font_buttonPixWidth[FONT_BIG]=16;
  for(int i=0;i<9;i++){rows[i].trackID=i+1;memset(rows[i].title,'W',640);strcpy(rows[i].version,"1.0.0");strcpy(rows[i].author,"Very long author display name");}
  tick(0);CHECK(s_saphiRefreshBusy);
+ saphiBusy=60;tick(0);CHECK(strstr(drawn,"Project Saphi is busy, waiting 60s"));
+ saphiBusy=0;tick(0);CHECK(!strstr(drawn,"Project Saphi is busy"));
  refreshResult=1;tick(0);CHECK(s_saphiCatalogue==(void*)2);
  tick(BTN_UP);CHECK(s_saphiSelection[0]==8);tick(BTN_DOWN);CHECK(s_saphiSelection[0]==0);
  tick(BTN_L2);refreshResult=-2;tick(0);CHECK(s_saphiCatalogue==(void*)2&&!s_saphiRefreshBusy);
