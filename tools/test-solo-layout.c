@@ -55,8 +55,9 @@ void DecalFont_DrawLineOT(char *s, int x, int y, s16 f, int flags, uint32_t *ot)
 }
 void RECTMENU_DrawInnerRect(RECT *r, int t, uint32_t *ot)
 {
-	(void)t; (void)ot;
-	CHECK(r->x >= 0x10 && r->x + r->w <= 0x1F0 && r->y >= 0x2E && r->y + r->h <= 0xC2);
+	(void)ot;
+	CHECK(t == 5); /* Opaque fill, including title, help and footer. */
+	CHECK(r->x == 0x10 && r->y == 4 && r->w == 0x1E0 && r->h == 0xCE);
 	panels++;
 }
 void CTR_Box_DrawClearBox(const RECT *r, const Color *c, int t, uint32_t *ot)
@@ -289,6 +290,19 @@ static void frame(int buttons, const char *where)
 	no_overlap(where);
 	CHECKM(panels == 1, where);
 	CHECKM(s_soloPage == SOLO_BUSY || strstr(drawn, "BACK") || strstr(drawn, "OK") || strstr(drawn, "CANCEL"), where);
+	/* Same draw-record format as the Custom Tracks screen harness. */
+	if (getenv("CT_SHOT_DIR") && !strcmp(where, "home empty"))
+	{
+		char path[1024];
+		snprintf(path, sizeof path, "%s/solo-home.txt", getenv("CT_SHOT_DIR"));
+		FILE *f = fopen(path, "w");
+		if (f)
+		{
+			for (int i = 0; i < nboxes; i++)
+				fprintf(f, "T\t%d\t%d\t%d\t%d\twhite\t%s\n", boxes[i].x, boxes[i].y, boxes[i].w, boxes[i].h, boxes[i].text);
+			fclose(f);
+		}
+	}
 }
 
 /* A key press that changes the page: the frame draws nothing (Back and page

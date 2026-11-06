@@ -334,7 +334,11 @@ static const char *CT_ModesText(const struct CT_LibView *v)
 static void CT_Badges(const struct CT_LibView *v, int kind, char *out, size_t size)
 {
     const struct CustomTrackManagerStatus *status = AP_CustomContentStatus();
-    if (kind == CT_ITEM_PACKAGE)
+    if ((!v->installed || !v->installed->installed) && v->package &&
+        !strcmp(v->version, AP_CustomContentPackage()->version) &&
+        status->state == CTR_CT_MANAGER_MANIFEST_MISSING)
+        snprintf(out, size, "Needs setup");
+    else if (kind == CT_ITEM_PACKAGE)
         snprintf(out, size, "%s", CustomTrackManager_StateText(status->state));
     else if (v->installed && v->installed->installed)
         snprintf(out, size, "%s", v->installed->local.xdelta ? "Imported" : "Installed");
@@ -818,7 +822,7 @@ static void CT_SeedIdentity(void)
     char seed[96] = "", slot[64] = "", text[512];
     ap_net_seed_name(seed, sizeof seed);
     ap_net_slot_name(slot, sizeof slot);
-    if (!s_ctSeedCount && !seed[0])
+    if (!s_ctSeedCount && !seed[0] && !AP_Solo_SessionActive())
         snprintf(text, sizeof text, "No room or Play Solo seed is loaded.");
     else
         snprintf(text, sizeof text, "%s. Seed %s. Slot %s. Needs %d custom track%s, %d ready.",
@@ -1228,7 +1232,15 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
                                s_ctFilter == CT_FILTER_BROWSE ? "Catalogue unavailable. Refresh it from the page controls." :
                                "No tracks yet. Refresh the catalogue or import a patch.",
                                CT_LIST_X, 84, CT_LIST_W, 3, WHITE, ot);
-        if (item)
+        if (s_ctFocus == CT_FOCUS_TABS)
+        {
+            CT_DrawPaged("Library: local tracks and the Project Saphi catalogue.", CT_DETAIL_X, 70, CT_DETAIL_W, 4, WHITE, ot);
+            CT_DrawPaged(s_saphiRefreshBusy ? "Loading Project Saphi..." :
+                         s_saphiRefreshFailed ? "Catalogue unavailable. Open, then Page controls > Refresh catalogue." :
+                         "Open to select a track. Page controls: filter, search, refresh and rescan.",
+                         CT_DETAIL_X, 122, CT_DETAIL_W, 4, ORANGE, ot);
+        }
+        else if (item)
         {
             CT_DrawPaged(v.title, CT_DETAIL_X, 70, CT_DETAIL_W, 2, ORANGE, ot);
             snprintf(line, sizeof line, "v%.32s", v.version);
@@ -1258,6 +1270,8 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
     {
         snprintf(line, sizeof line, "Filter: %s   Search: %.24s   %d/%d", s_ctFilterNames[s_ctFilter],
                  s_saphiQuery[0] ? s_saphiQuery : "none", s_ctItemCount ? *sel + 1 : 0, s_ctItemCount);
+        if (s_saphiRefreshBusy) snprintf(line, sizeof line, "Loading Project Saphi catalogue. Local tracks stay available.");
+        else if (s_saphiRefreshFailed) snprintf(line, sizeof line, "Saphi refresh failed. Page controls > Refresh catalogue to retry.");
         CT_Footer(line, NULL, ot);
     }
     CT_Footer(NULL, s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? NativeMenu_Labels("*: Actions  [: Controls  ^: Back") :
@@ -1421,9 +1435,12 @@ static void CT_SeedFrame(int tapped, uint32_t *ot)
         }
         if (!s_ctSeedCount)
         {
-            MM_CustomText_Draw("No seed loaded. Connect to a room or start a Play Solo seed to see its tracks.",
+            ap_net_seed_name(seed, sizeof seed);
+            MM_CustomText_Draw(seed[0] || AP_Solo_SessionActive() ?
+                               "This seed needs no custom tracks. Retail tracks are ready to play." :
+                               "No seed loaded. Connect to a room or start a Play Solo seed to see its tracks.",
                                CT_LIST_X, 72, CT_LIST_W, 7, WHITE, ot);
-            CT_DrawPaged("Library lists every installed track.", CT_DETAIL_X, 70, CT_DETAIL_W, 4, WHITE, ot);
+            CT_DrawPaged("This Seed lists required custom tracks. Library and Import also work without a seed.", CT_DETAIL_X, 70, CT_DETAIL_W, 7, WHITE, ot);
         }
         if (r)
         {
@@ -1447,14 +1464,14 @@ static void CT_SeedFrame(int tapped, uint32_t *ot)
     }
 
     ap_net_seed_name(seed, sizeof seed);
-    if (s_ctSeedCount)
+    if (s_ctSeedCount || seed[0] || AP_Solo_SessionActive())
     {
         char full[256];
         snprintf(full, sizeof full, "Ready %d/%d   %s %s", CT_SeedReady(), s_ctSeedCount,
                  AP_Solo_SessionActive() ? "Play Solo" : "Room", seed[0] ? seed : "connected");
         CT_Fit(full, line, sizeof line, 456);
     }
-    else snprintf(line, sizeof line, "%s", seed[0] ? "This seed needs no custom tracks" : "No seed loaded");
+    else snprintf(line, sizeof line, "No seed loaded");
     if (AP_SeedContentInstallBusy() || s_ctLegacyDownload) snprintf(line, sizeof line, "Installing...");
     CT_Footer(line, s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? NativeMenu_Labels("*: Actions   ^: Page controls") :
                     s_ctFocus == CT_FOCUS_CONTROLS ? (s_ctSeedCount ? NativeMenu_Labels("*: Select   [: Tracks   ^: Tabs") : NativeMenu_Labels("*: Select   ^: Tabs")) :
@@ -1515,10 +1532,10 @@ static void CT_ImportFrame(int tapped, uint32_t *ot, struct GamepadBuffer *pad)
     }
     if (s_ctFocus == CT_FOCUS_LIST || s_ctFocus == CT_FOCUS_CONTROLS) CT_OpenImport();
     /* The tab strip shows what the tab does. */
-    MM_CustomText_Draw("Import track files from an xdelta patch and your own game disc.", CT_LIST_X, 72, CT_LIST_W, 4, WHITE, ot);
-    MM_CustomText_Draw("Patches in assets/tracks/import are listed. A patch dropped on the window opens here.",
-                       CT_LIST_X, 126, CT_LIST_W, 3, WHITE, ot);
-    CT_DrawPaged(s_ctMessage[0] ? s_ctMessage : "Nothing changes until you confirm the import.", CT_DETAIL_X, 70, CT_DETAIL_W, 7, WHITE, ot);
+    MM_CustomText_Draw("Import an xdelta patch using your own game disc. Open to choose a patch file.", CT_LIST_X, 72, CT_LIST_W, 7, WHITE, ot);
+    CT_DrawPaged(s_ctMessage[0] ? s_ctMessage :
+                 "Choose a file, scan assets/tracks/import, or drop a patch here. Review tracks before confirming import.",
+                 CT_DETAIL_X, 70, CT_DETAIL_W, 8, WHITE, ot);
 }
 
 /* ---- the page ----------------------------------------------------------- */

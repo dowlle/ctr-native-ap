@@ -385,7 +385,7 @@ int main(void)
     CHECK(has("CUSTOM TRACKS") && has("Library") && has("This Seed") && has("Import"));
     /* Union: Baby T Park once, Coco Park once (installed), Android Alley and Arcane Garden from Saphi. */
     CHECK(s_ctItemCount == 6);
-    CHECK(has("Android Alley Remix") && has("Nightmare Fueled"));
+    CHECK(!strcmp(CT_ItemTitle(&s_ctItems[0]), "Android Alley Remix") && has("Nightmare Fueled"));
     frame(BTN_RIGHT, NULL); CHECK(s_ctTab == CT_TAB_SEED);
     frame(BTN_R1, NULL); CHECK(s_ctTab == CT_TAB_IMPORT);
     frame(BTN_RIGHT, NULL); CHECK(s_ctTab == CT_TAB_LIBRARY);
@@ -530,6 +530,35 @@ int main(void)
     frame(BTN_DOWN, NULL); frame(BTN_DOWN, NULL); frame(BTN_CROSS, NULL); frame(0, "seed-none-identity"); CHECK(s_ctSub == CT_SUB_INFO && has("No room"));
     frame(BTN_TRIANGLE, NULL); CHECK(s_ctFocus == CT_FOCUS_CONTROLS);
     frame(BTN_TRIANGLE, NULL); frame(BTN_LEFT, NULL);
+
+    /* A connected retail-only seed is loaded even with no custom rows. */
+    strcpy(seedName, "AP_RetailOnly");
+    s_ctTab = CT_TAB_SEED; s_ctFocus = CT_FOCUS_TABS;
+    frame(0, "seed-retail-only");
+    CHECK(!has("No seed loaded") && has("no custom tracks") && has("AP_RetailOnly"));
+    soloActive = 1; seedName[0] = 0;
+    frame(0, "seed-solo-retail-only");
+    CHECK(!has("No seed loaded") && has("Play Solo"));
+    soloActive = 0;
+
+    /* Refresh failure stays visible with local/package rows present. */
+    s_ctTab = CT_TAB_LIBRARY; s_ctFocus = CT_FOCUS_TABS;
+    s_saphiRefreshFailed = 1;
+    frame(0, "library-offline"); CHECK(has("Saphi refresh failed"));
+    s_ctFocus = CT_FOCUS_LIST;
+    frame(0, NULL); CHECK(has("Saphi refresh failed"));
+    s_saphiRefreshFailed = 0;
+    pkgStatus.state = CTR_CT_MANAGER_MANIFEST_MISSING;
+    select_track("Baby T Park");
+    frame(0, NULL); CHECK(has("Installed") && !has("Needs setup"));
+    lib[0].installed = lib[1].installed = 0;
+    select_track("Baby T Park");
+    frame(0, "library-needs-setup"); CHECK(has("Needs setup"));
+    lib[0].installed = lib[1].installed = 1;
+    pkgStatus.state = CTR_CT_MANAGER_READY;
+    s_ctTab = CT_TAB_IMPORT; s_ctFocus = CT_FOCUS_TABS;
+    frame(0, "import-help"); CHECK(!has("...") && has("Open to choose"));
+    s_ctTab = CT_TAB_LIBRARY; s_ctFocus = CT_FOCUS_TABS;
 
     /* 11. A room that misses tracks: the screen opens on This Seed. */
     seedActive = 1; strcpy(seedName, "AP_93412345678901234567");
