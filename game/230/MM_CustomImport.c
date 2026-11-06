@@ -414,8 +414,8 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
     {
         unsigned offered = 0;
         for (unsigned i = 0; i < s_importSummary.count; i++) offered += s_importSummary.items[i].offered != 0;
-        snprintf(line, sizeof line, s_importStage == IMPORT_REVIEW ? "%u track%s   SELECT: Rename" : "%u track%s", offered, offered == 1 ? "" : "s");
-        MM_CustomText_Draw(line, 256, 50, 456, 1, JUSTIFY_CENTER | WHITE, ot);
+        snprintf(line, sizeof line, s_importStage == IMPORT_REVIEW && !s_importEditing ? "%u track%s   SELECT: Rename" : "%u track%s", offered, offered == 1 ? "" : "s");
+        MM_CustomText_Draw(line, 256, 180, 456, 1, JUSTIFY_CENTER | WHITE, ot);
     }
     if (s_importStage == IMPORT_CHOOSE || s_importStage == IMPORT_PICKING)
     {
