@@ -253,10 +253,12 @@ static void AP_NetTick(struct GameTracker *gGT)
 	// fresh connect (above), so the resent full list rebuilds counts exactly.
 	// #299: resolve the room's effect markers (releasing held effects) before
 	// this frame's items are offered against them.
-	AP_FxStorageTick();
+	int fxReleased = AP_FxStorageTick();
 	// A3-17: rebase non-item changes the poll or a reconcile resolved since
-	// the last frame, before the first receipt can take credit for them.
-	AP_UnlockReasonsEndDrain(0);
+	// the last frame, before the first receipt can take credit for them. A
+	// tick that released held effect items counts as a receipt window: those
+	// releases are item-caused (review round 3).
+	AP_UnlockReasonsEndDrain(fxReleased);
 	long long items[32];
 	int n = ap_net_drain_items(items, 32);
 	AP_PerfNoteItemsReceived(n, n > 0 ? items[n - 1] : 0); // frame stall line context
