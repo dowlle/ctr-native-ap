@@ -1504,7 +1504,26 @@ int main(int argc, char **argv) {
         k_refuse("three legs", [&](J &j) { cup(j, 0)["legs"].erase(3); });
         k_refuse("a repeated leg", [&](J &j) { cup(j, 0)["legs"][1]["track_id"] = cup(j, 0)["legs"][0]["track_id"]; });
         k_refuse("a leg on a trial track", [&](J &j) { cup(j, 1)["legs"][2]["track_id"] = "retail:16"; });
-        k_refuse("a leg with other laps", [&](J &j) { cup(j, 0)["legs"][0]["laps"] = 1; });
+        // A3-6 (ruled 2026-11-06): a boss cup follows one_lap_cups. Off, the
+        // fixture's legs race three laps (checked above); on, every leg races
+        // one; the switch is plan-wide, so a mix refuses.
+        {
+            J short_room = cuproom;
+            for (int g = 0; g < 2; ++g)
+                for (auto &leg : cup(short_room, g)["legs"]) leg["laps"] = 1;
+            expect(parse(short_room) && bind_room(short_room) && ap_content_plan_active(), "bosses-cups: one-lap legs bind");
+            const ctr_content_pad *sroo = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + 0);
+            const ctr_content_pad *spapu = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + 1);
+            bool one = sroo && spapu;
+            for (int n = 0; one && n < AP_CONTENT_CUP_LEGS; ++n)
+                one = sroo->legs[n].laps == 1 && spapu->legs[n].laps == 1;
+            expect(one, "bosses-cups: one_lap_cups races every boss cup leg one lap");
+        }
+        k_refuse("one leg shortened, the others not", [&](J &j) { cup(j, 0)["legs"][0]["laps"] = 1; });
+        k_refuse("one cup shortened, the other not", [&](J &j) { for (auto &leg : cup(j, 1)["legs"]) leg["laps"] = 1; });
+        k_refuse("a leg with two laps", [&](J &j) { cup(j, 0)["legs"][0]["laps"] = 2; });
+        k_refuse("a leg with the custom track's own laps", [&](J &j) {
+            for (auto &leg : cup(j, 0)["legs"]) if (leg["track_id"] == "custom/baby-t-park/1.0.2") leg["laps"] = 7; });
         k_refuse("a cup garage missing from the record", [](J &j) { j["content_plan"]["bosses"]["cups"] = J::array({0}); });
         k_refuse("a race garage listed as a cup", [](J &j) { j["content_plan"]["bosses"]["cups"] = J::array({0, 1, 2}); });
         k_refuse("the cup check as a boss race", [&](J &j) {

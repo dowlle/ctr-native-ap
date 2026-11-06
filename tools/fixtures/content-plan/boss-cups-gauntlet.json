@@ -857,22 +857,22 @@
      {
       "id": "entry/boss:2/0/leg:0",
       "track_id": "retail:4",
-      "laps": 3
+      "laps": 1
      },
      {
       "id": "entry/boss:2/0/leg:1",
       "track_id": "retail:7",
-      "laps": 3
+      "laps": 1
      },
      {
       "id": "entry/boss:2/0/leg:2",
       "track_id": "retail:11",
-      "laps": 3
+      "laps": 1
      },
      {
       "id": "entry/boss:2/0/leg:3",
       "track_id": "retail:9",
-      "laps": 3
+      "laps": 1
      }
     ],
     "opponent": {
@@ -932,22 +932,22 @@
      {
       "id": "entry/boss:3/0/leg:0",
       "track_id": "retail:4",
-      "laps": 3
+      "laps": 1
      },
      {
       "id": "entry/boss:3/0/leg:1",
       "track_id": "retail:1",
-      "laps": 3
+      "laps": 1
      },
      {
       "id": "entry/boss:3/0/leg:2",
       "track_id": "retail:15",
-      "laps": 3
+      "laps": 1
      },
      {
       "id": "entry/boss:3/0/leg:3",
       "track_id": "retail:10",
-      "laps": 3
+      "laps": 1
      }
     ],
     "opponent": {

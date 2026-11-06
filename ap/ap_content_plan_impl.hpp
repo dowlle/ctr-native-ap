@@ -1659,7 +1659,10 @@ static void validate(const J &p, State &out) {
             // Boss cups (#133 PR 6b): four legs against the garage's own boss
             // alone, boss AI on every leg; a points win completes the garage.
             // Each leg is a certified venue for this garage (as a Boss Track
-            // Shuffle venue), the four are different, three laps each. The
+            // Shuffle venue), the four are different, three laps each, or one
+            // each with one_lap_cups (A3-6, ruled 2026-11-06: a boss cup
+            // follows the same lap setting as other cups, on its own three
+            // laps; the same plan-wide switch as the ordinary cup legs). The
             // garage's cup pad (ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD
             // + g)) carries the legs into the content-cup machinery.
             const bool cup_garage = g < 4 && out.bosses.cup[g];
@@ -1695,8 +1698,16 @@ static void validate(const J &p, State &out) {
                     fields(leg, {"id", "track_id", "laps"});
                     const std::string lid = nid + "/leg:" + std::to_string(n);
                     const std::string ltrack = text(leg["track_id"]);
-                    need(leg["id"] == lid && leg["laps"] == AP_CONTENT_RETAIL_LAPS && seen_legs.insert(ltrack).second,
-                         "a boss cup leg is not its garage's leg, three laps, or repeats a track");
+                    need(leg["id"] == lid && seen_legs.insert(ltrack).second,
+                         "a boss cup leg is not its garage's leg, or repeats a track");
+                    const int leg_laps = number(leg["laps"], 1, 7);
+                    need(leg_laps == AP_CONTENT_RETAIL_LAPS || leg_laps == AP_CONTENT_BOSS_CUP_SHORT_LAPS,
+                         "a boss cup leg races neither three laps nor the shortened-cup lap");
+                    {
+                        const int now = leg_laps == AP_CONTENT_BOSS_CUP_SHORT_LAPS ? 1 : 0;
+                        need(shortened < 0 || shortened == now, "cup legs shorten their laps in some legs and not in others");
+                        shortened = now;
+                    }
                     int points = -1;
                     if (ltrack == "cortex_vortex") points = kCortexRestartPoints;
                     else if (ltrack.rfind("custom/", 0) == 0) {
@@ -1735,7 +1746,7 @@ static void validate(const J &p, State &out) {
                     }
                     if (ltrack == "cortex_vortex") out.cortex = true;
                     ctr_content_leg l = leg_track(ltrack).leg;
-                    l.victory = 0; l.laps = AP_CONTENT_RETAIL_LAPS;
+                    l.victory = 0; l.laps = leg_laps;
                     copy(l.leg_id, J(lid));
                     if (plan_laps) {
                         std::string title;
