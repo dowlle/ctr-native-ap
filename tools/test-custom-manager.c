@@ -33,6 +33,9 @@ int Platform_InputRawGamepadButtons(void) { return 0; }
 int NativeText_Result(void) { return textResult; }
 void NativeText_Resolve(int result) { textResult=result; }
 void NativeText_End(void) { textResult=0; }
+int NativeText_Cursor(void) { return 0; }
+void NativeText_MoveCursor(int dir) { (void)dir; }
+void NativeText_EnableCursor(void) { }
 void NativeText_Begin(char *b,int c,int x,int y,int w,int h,int p)
 { (void)b;(void)c;(void)x;(void)y;(void)w;(void)h;(void)p; }
 const char *NativeAssets_GetAssetDir(void) { return "/test"; }

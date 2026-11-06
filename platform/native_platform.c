@@ -549,14 +549,20 @@ void Platform_PinVRAMDisplayRect(int x, int y, int w, int h, int frameCount)
 
 // ---- In-game text entry (native connection manager) ---------------------
 // While a NativeText session is active, host keyboard input is captured into the
-// caller's buffer instead of reaching the game: SDL_EVENT_TEXT_INPUT appends
-// printable ASCII, Backspace deletes, Enter commits, Escape cancels, and Ctrl+V
-// pastes the host clipboard. The keys are consumed in Platform_PollHostEvents so
-// gameplay / menu input is suppressed while typing. Length is tracked here to
-// avoid a <string.h> dependency in this file.
+// caller's buffer instead of reaching the game: SDL_EVENT_TEXT_INPUT inserts
+// printable ASCII at the cursor, Left/Right/Home/End move it, Backspace deletes
+// before it, Delete deletes under it, Enter commits, Escape cancels, and Ctrl+V
+// pastes the host clipboard at the cursor. The keys are consumed in
+// Platform_PollHostEvents so gameplay / menu input is suppressed while typing.
+// The cursor is a byte offset on a codepoint boundary; the editing rules are
+// pure and shared with the host harness through native_text_edit_logic.h.
+// Length is tracked here to avoid a <string.h> dependency in this file.
+#include "platform/native_text_edit_logic.h"
 global_variable char *s_textBuf = NULL;
 global_variable int s_textCap = 0;
 global_variable int s_textLen = 0;
+global_variable int s_textCursor = 0;
+global_variable int s_textCursorNav = 0; // the hosting menu draws the cursor, so arrows may move it
 global_variable int s_textActive = 0;
 global_variable int s_textResult = 0; // 0 none, 1 commit (Enter), 2 cancel (Escape)
 
@@ -593,6 +599,9 @@ void NativeText_Begin(char *buf, int cap, int fieldX, int fieldY, int fieldW, in
 	{
 		s_textLen++;
 	}
+	// The cursor opens at the end, where the old append-only path typed.
+	s_textCursor = s_textLen;
+	s_textCursorNav = 0;
 	s_textActive = 1;
 	s_textResult = 0;
 	if (g_window != NULL)
@@ -633,6 +642,8 @@ void NativeText_End(void)
 	s_textBuf = NULL;
 	s_textCap = 0;
 	s_textLen = 0;
+	s_textCursor = 0;
+	s_textCursorNav = 0;
 	s_textActive = 0;
 	s_textResult = 0;
 }
@@ -645,6 +656,47 @@ int NativeText_Active(void)
 int NativeText_Result(void)
 {
 	return s_textResult;
+}
+
+// Byte offset of the cursor, always on a codepoint boundary. Menus use it to
+// draw the cursor; meaningful only while a session is active and unresolved.
+int NativeText_Cursor(void)
+{
+	return s_textCursor;
+}
+
+// Opt the session into cursor navigation (keyboard arrows, Home/End, Delete).
+// A menu calls this only when it draws the cursor at NativeText_Cursor: the
+// other text rows keep the original append-only field with a trailing cursor,
+// where an invisible moved cursor would surprise. Without the opt-in the
+// cursor never leaves the end, so insert and backspace behave exactly as the
+// old append/delete path.
+void NativeText_EnableCursor(void)
+{
+	if (s_textActive != 0)
+	{
+		s_textCursorNav = 1;
+	}
+}
+
+// Move the cursor one codepoint from a menu (controller Left/Right; the
+// keyboard arrows reach the same rules through Platform_PollHostEvents).
+// A resolved session (Enter/Escape already pressed) ignores movement, the way
+// NativeText_Resolve ignores a stray pad press.
+void NativeText_MoveCursor(int dir)
+{
+	if ((s_textActive == 0) || (s_textResult != 0) || (s_textBuf == NULL))
+	{
+		return;
+	}
+	if (dir < 0)
+	{
+		s_textCursor = NativeTextEdit_CursorLeft(s_textBuf, s_textCursor);
+	}
+	else if (dir > 0)
+	{
+		s_textCursor = NativeTextEdit_CursorRight(s_textBuf, s_textLen, s_textCursor);
+	}
 }
 
 // Resolve an active session from outside the keyboard path, with the same result
@@ -693,9 +745,8 @@ internal void Platform_HandleTextInput(const char *utf8)
 		{
 			break;
 		}
-		s_textBuf[s_textLen++] = (char)c;
+		s_textLen = NativeTextEdit_Insert(s_textBuf, s_textCap, s_textLen, &s_textCursor, (char)c);
 	}
-	s_textBuf[s_textLen] = '\0';
 }
 
 // Paste path (Ctrl+V while a text-entry session is active and unresolved -- the
@@ -803,10 +854,27 @@ void Platform_PollHostEvents(void)
 				{
 					if (key == SDL_SCANCODE_BACKSPACE)
 					{
-						if (s_textLen > 0)
-						{
-							s_textBuf[--s_textLen] = '\0';
-						}
+						s_textLen = NativeTextEdit_Backspace(s_textBuf, s_textLen, &s_textCursor);
+					}
+					else if ((key == SDL_SCANCODE_DELETE) && (s_textCursorNav != 0))
+					{
+						s_textLen = NativeTextEdit_Delete(s_textBuf, s_textLen, s_textCursor);
+					}
+					else if ((key == SDL_SCANCODE_LEFT) && (s_textCursorNav != 0))
+					{
+						s_textCursor = NativeTextEdit_CursorLeft(s_textBuf, s_textCursor);
+					}
+					else if ((key == SDL_SCANCODE_RIGHT) && (s_textCursorNav != 0))
+					{
+						s_textCursor = NativeTextEdit_CursorRight(s_textBuf, s_textLen, s_textCursor);
+					}
+					else if ((key == SDL_SCANCODE_HOME) && (s_textCursorNav != 0))
+					{
+						s_textCursor = 0;
+					}
+					else if ((key == SDL_SCANCODE_END) && (s_textCursorNav != 0))
+					{
+						s_textCursor = s_textLen;
 					}
 					else if ((key == SDL_SCANCODE_RETURN) || (key == SDL_SCANCODE_KP_ENTER))
 					{

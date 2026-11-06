@@ -28,6 +28,7 @@
 #include "../ap/ap_solo.h"
 #include "../ap/ap_seed_content.h"
 #include "../ap/ap_custom_track_download.h"
+#include "../include/platform/native_text_edit_logic.h"
 struct sData sdata_static;
 struct Data data;
 #define DecalFont_DrawLineOT UnusedDraw
@@ -58,11 +59,33 @@ static int MM_CustomLibrary_Busy(void) { return libraryBusy || s_saphiDownloadin
 static struct GameTracker gt;
 static int textResult, textBegins, clipboardSets, urlOpens;
 static char lastURL[160];
-int Platform_InputRawGamepadButtons(void) { return 0; }
+/* The text-entry stub mirrors the platform contract: Begin opens the cursor
+   at the end of the starting text, MoveCursor walks whole codepoints through
+   the same pure rules the platform uses. rawPadMask is the physical pad. */
+static char *textBuf;
+static int textCap, textLen, textCursor, rawPadMask;
+int Platform_InputRawGamepadButtons(void) { return rawPadMask; }
 int NativeText_Result(void) { return textResult; }
 void NativeText_Resolve(int result) { textResult = result; }
-void NativeText_End(void) { textResult = 0; }
-void NativeText_Begin(char *b, int c, int x, int y, int w, int h, int p) { (void)b; (void)c; (void)x; (void)y; (void)w; (void)h; (void)p; textBegins++; }
+void NativeText_End(void) { textResult = 0; textBuf = 0; }
+int NativeText_Cursor(void) { return textCursor; }
+void NativeText_EnableCursor(void) { }
+void NativeText_MoveCursor(int dir)
+{
+    if (!textBuf || textResult) return;
+    if (dir < 0) textCursor = NativeTextEdit_CursorLeft(textBuf, textCursor);
+    else if (dir > 0) textCursor = NativeTextEdit_CursorRight(textBuf, textLen, textCursor);
+}
+void NativeText_Begin(char *b, int c, int x, int y, int w, int h, int p)
+{
+    (void)x; (void)y; (void)w; (void)h; (void)p;
+    textBuf = b; textCap = c; textLen = (int)strlen(b); textCursor = textLen; textBegins++;
+}
+/* What SDL_EVENT_TEXT_INPUT does on the platform side: insert at the cursor. */
+static void text_type(const char *s)
+{
+    while (*s) textLen = NativeTextEdit_Insert(textBuf, textCap, textLen, &textCursor, *s++);
+}
 const char *NativeAssets_GetAssetDir(void) { return "/test"; }
 int OtherFX_Play(u32 a, int b) { (void)a; (void)b; return 0; }
 int Platform_OpenURL(const char *url) { urlOpens++; snprintf(lastURL, sizeof lastURL, "%s", url); return 1; }
@@ -670,8 +693,36 @@ int main(void)
         CHECK(setTitleCalls == calls + 1 && !strcmp(lastTitle, "Sunset Raceway") && has("Sunset Raceway") && has("typed by you"));
         setTitleOk = 0; frame(BTN_L1, NULL); strcpy(s_importEditText, "Bad"); textResult = 1; frame(0, "import-name-refused");
         CHECK(has("Name refused")); setTitleOk = 1;
-        frame(BTN_L1, NULL); frame(0, "import-name-editing"); CHECK(has("Name: ") && has("Keep this name"));
+        frame(BTN_L1, NULL); frame(0, "import-name-editing"); CHECK(has("Name: ") && has("X: Keep") && has("D-pad Cursor"));
         textResult = 2; frame(0, NULL); CHECK(setTitleCalls == calls + 2);
+        /* A3-24: Left/Right on the pad move the text cursor, a tap steps one
+           character, a hold scrolls; confirm saves the name edited there. */
+        frame(BTN_L1, NULL);
+        {
+            const int end = textCursor;
+            rawPadMask = RAW_BTN_LEFT; frame(0, "import-name-cursor-left");
+            CHECK(textCursor == end - 1);
+            { int i; for (i = 0; i < 20; i++) frame(0, NULL); }
+            CHECK(textCursor < end - 1); /* holding scrolls */
+            rawPadMask = RAW_BTN_RIGHT; frame(0, "import-name-cursor-right");
+            { int i; for (i = 0; i < 20; i++) frame(0, NULL); }
+            CHECK(textCursor == end); /* back at the end, clamped */
+            rawPadMask = 0;
+            textResult = 2; frame(0, NULL);
+        }
+        frame(BTN_L1, NULL);
+        {
+            int i;
+            strcpy(s_importEditText, "Sunse Raceway");
+            textLen = (int)strlen(s_importEditText); textCursor = textLen;
+            for (i = 0; i < 8; i++) { rawPadMask = RAW_BTN_LEFT; frame(0, NULL); rawPadMask = 0; frame(0, NULL); }
+            CHECK(textCursor == 5); /* the gap after "Sunse" */
+            sdata->frameCounter |= 0x10; frame(0, "import-name-cursor-shown");
+            CHECK(has("Sunse_ Raceway")); /* the blink phase draws the cursor */
+            sdata->frameCounter &= ~0x10;
+            text_type("t"); textResult = 1; frame(0, "import-name-cursor-commit");
+            CHECK(setTitleCalls == calls + 3 && !strcmp(lastTitle, "Sunset Raceway"));
+        }
         frame(BTN_R1, NULL); CHECK(xdInstallStarts == before + 1);
         installState = 1; frame(0, NULL); frame(BTN_CROSS, NULL); frame(BTN_TRIANGLE, NULL);
     }
