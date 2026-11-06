@@ -36,10 +36,10 @@ All options are in `CMakeLists.txt`.
 
 With `CTR_AP=ON`, packages follow `CTR_CUSTOM_TRACKS` and Box Author Mode comes
 only from `CTR_AP_AUTHORING` (the box authoring download,
-`ctr_native_ap_authoring`). The Archipelago player client has the library on
-Options > Track Library and the custom pages for Single Race and Time Trial.
-Its Custom Content page and a room's tracks stay on the seed path; a library
-install never serves a room.
+`ctr_native_ap_authoring`). The Archipelago player client has one Options >
+Custom Tracks page (section 4a) and the custom pages for Single Race and Time
+Trial. Rooms, Play Solo and Arcade read the same installed copy in the shared
+track store.
 
 Every race outside Adventure drives vanilla kart stats, in a room or not:
 Arcade (retail and the custom pages), Time Trial, Versus and Battle. Adventure
@@ -160,10 +160,10 @@ known to crash or misbehave.
 
 ## 4. Track Manager and the library
 
-`Options > Custom Content` opens the Track Manager
-(`game/230/MM_CustomManager.c`, included by `game/230/MM_ConfigMenu.c:
-MM_ConfigProc_CustomContent`). It has a Saphi browse list and an Installed
-list, with search on R2.
+In the authoring builds, `Options > Custom Content` opens the Track Manager
+(`game/230/MM_CustomManager.c`, included by `game/230/MM_ConfigMenu.c`). It has
+a Saphi browse list and an Installed list, with search on R2. The player client
+uses the Custom Tracks page instead (section 4a); both read the store below.
 
 - **Store scan.** `CustomPackage_StartStoreScan` walks
   `assets/tracks/packages/` on a worker thread, re-acquires and re-verifies
@@ -178,6 +178,36 @@ list, with search on R2.
 - **Inbox.** A package copied to `assets/tracks/inbox/<pin>/` is verified and
   then published to `packages/<pin>/` (`CustomPackage_InstallInbox`). An
   install never overwrites an existing revision; it re-verifies it instead.
+
+## 4a. Custom Tracks page (player client)
+
+`Options > Custom Tracks` (`game/230/MM_CustomTracks.c`, 0.3.0-alpha2) replaces
+the player client's Custom Content and Track Library pages. Three tabs:
+
+- **Library**: installed revisions (folded by package uuid, newest shown) and
+  the Saphi catalogue (folded by track id), filter All / Installed / Browse,
+  Search, Refresh catalogue and Rescan local files. A track's actions:
+  Download, Update or Recheck files, Versions, Open source page, and for the
+  release-profile package (Baby T Park) Verify / Setup, Export YAML (Copy or
+  Save) and Relic times.
+- **This Seed**: the room's or Play Solo seed's required tracks
+  (`ap/ap_seed_content.h`) with Ready, Missing, Mismatch and the reason;
+  Install missing (an overview first), Rescan and Seed identity; per track
+  Resolve track, Verify / Setup, Open source page, Required files and
+  Installed copies.
+- **Import**: hosts the xdelta importer (`game/230/MM_CustomImport.c`). A
+  dropped patch and Select open it. The folder list tags each patch file Done,
+  Part or Fail from `assets/tracks/import-record.json` (found by the patch's
+  SHA-256, so a renamed copy counts) and the detail panel shows the full file
+  name. R1 on a file, or in the review list, is Import all valid tracks. Track
+  names come from the pack descriptor, then the known-track table
+  (`known_track_name` in `platform/native_xdelta_import.cpp`), then a label
+  such as "Lego Adventure track 3"; L1 in the review list types a name.
+
+The page opens on This Seed only when the loaded seed misses tracks, otherwise
+on Library. Left / Right or L1 / R1 change tabs on the tab strip; in a list,
+Back goes to the page controls, then the tab strip, then Options.
+`tools/test-custom-tracks-screen.c` drives the page.
 
 ## 5. Project Saphi catalogue and install
 
@@ -336,7 +366,34 @@ sectors from the package (`game/HOWL/HOWL_CustomMusic.c:
 HOWL_CustomMusic_ServeSectors`), and `game/HOWL/HOWL_Music.c:
 Music_AsyncParseBanks` takes the level bank and song from the `.sca`
 (`HOWL_CustomMusic_LoadBank`, `HOWL_CustomMusic_SetSong`). A missing or refused `.sca` keeps the
-default: Crash Cove's song and sound bank.
+default: Crash Cove's song and sound bank. A package imported from an xdelta
+patch has no `.sca`; it falls back to the retail bank and song of the arcade
+track whose BIGFILE group holds the patched LEV
+(`CustomMusic_ReplacedLevel`, set by the custom page), or Crash Cove's when
+that is not one of the 18 arcade tracks.
+
+**Where the `.sca` comes from.** The Track Manager install stores it with the
+package (role `sca`, section 5). A Current Seed or This Seed install into the
+shared package store (`ap_custom_track_download_start_shared`) also fetches the
+one current `.sca` Saphi lists for the same version as the LEV, up to 1 MiB, and
+pins it in the package manifest as `original/sca-<id>.sca`. Music is optional:
+a missing, ambiguous, oversized or failed `.sca` installs the track without it.
+A seed does not pin the `.sca`; the package manifest does, and the race reads
+the file only when its size and SHA-256 match that pin
+(`CustomTrack_UseContentMusic`). Tracks installed before this change have no
+`.sca` in the store; install them again to add it.
+
+**Which races play it.** The Arcade and Time Trial custom pages, and a
+content-plan race (a Current Seed pad or cup leg) on the package's own host
+slot. Cortex Vortex keeps its bundled music. A content-plan package without a
+pinned `.sca` plays its host slot's own music, as before.
+
+**Sound memory.** Builds with `CTR_CUSTOM_PACKAGES`, which includes the
+player client built with `CTR_CUSTOM_TRACKS`, have 1 MiB of SPU memory
+(`include/platform/native_spu_memory.h`). Before a `.sca` replaces the level
+bank, `CustomMusic_Admit` checks that it fits next to bank 0, bank 54 and the
+character banks; if not, the race keeps the default music and logs
+`[CUSTOM MUSIC] track music refused, default music`.
 
 ## 11. Box Author Mode and the AI lap recorder
 

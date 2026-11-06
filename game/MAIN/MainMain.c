@@ -363,9 +363,10 @@ u32 main(void)
 			}
 #endif
 			GAMEPAD_ProcessAnyoneVars(gGS);
-#ifdef CTR_BOX_AUTHORING
+#if defined(CTR_AP) || defined(CTR_BOX_AUTHORING)
 			// Box Author Mode's controller keys (ap/ap_author_pad.h): read, and
 			// taken out of player 1's pad, before anything reads it this frame.
+			// With the mode off it leaves the pad as it is.
 			AP_Author_FilterPad(gGS);
 #endif
 

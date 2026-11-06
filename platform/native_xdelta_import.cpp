@@ -164,6 +164,11 @@ FILE *fs_open(const std::string &path, const char *mode)
     return p.empty() ? nullptr : _wfopen(p.c_str(), m.c_str());
 }
 bool fs_mkdir(const std::string &path) { std::wstring p = wide(path); return !p.empty() && !_wmkdir(p.c_str()); }
+bool fs_replace(const std::string &from, const std::string &to)
+{
+    std::wstring a = wide(from), b = wide(to);
+    return !a.empty() && !b.empty() && MoveFileExW(a.c_str(), b.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+}
 void fs_rmdir(const std::string &path) { std::wstring p = wide(path); if (!p.empty()) _wrmdir(p.c_str()); }
 void fs_remove(const std::string &path) { std::wstring p = wide(path); if (!p.empty()) _wremove(p.c_str()); }
 bool fs_stat(const std::string &path, long long *size, long long *mtime)
@@ -177,6 +182,7 @@ bool fs_stat(const std::string &path, long long *size, long long *mtime)
 #else
 FILE *fs_open(const std::string &path, const char *mode) { return std::fopen(path.c_str(), mode); }
 bool fs_mkdir(const std::string &path) { return !mkdir(path.c_str(), 0700); }
+bool fs_replace(const std::string &from, const std::string &to) { return !std::rename(from.c_str(), to.c_str()); }
 void fs_rmdir(const std::string &path) { rmdir(path.c_str()); }
 void fs_remove(const std::string &path) { std::remove(path.c_str()); }
 bool fs_stat(const std::string &path, long long *size, long long *mtime)
@@ -492,6 +498,12 @@ Descriptor parse_descriptor(const std::vector<unsigned char> &bytes, const std::
         d.tracks[std::stoi(key)] = m;
     }
     return d;
+}
+
+std::string path_basename(const std::string &path)
+{
+    size_t slash = path.find_last_of("/\\");
+    return slash == std::string::npos ? path : path.substr(slash + 1);
 }
 
 std::string path_stem(const std::string &path)
@@ -852,6 +864,10 @@ struct Built
     /* From the pack descriptor, for the Play Solo descriptor. */
     std::string author;
     bool excludeRelic = false, excludeTokens = false;
+    /* For XdeltaImport_RenameItem: what build_package needs again. */
+    TrackMeta meta;
+    bool hasMeta = false;
+    std::string version;
 };
 
 void set_text(char *destination, size_t capacity, const std::string &text)
@@ -906,6 +922,89 @@ extern "C" size_t XdeltaImport_CutLev(const unsigned char *bytes, size_t size) {
 extern "C" size_t XdeltaImport_CutVrm(const unsigned char *bytes, size_t size) { return bytes ? cut_vrm(bytes, size) : 0; }
 
 namespace {
+
+/* Known custom track names, keyed by the SHA-256 of the cut LEV the importer builds.
+   Source: names that two packs load from their own code, matched to the LEV hashes of
+   their patched discs (LRG2Pancho overlay table, nightmarefueled loader slot table;
+   Opus handoff 2026-11-04). The four adventure-template packs are left out on
+   purpose: their template readings disagree on 11 shared hashes. BOSSn is shown as
+   "Boss race n". */
+const struct { const char *lev; const char *name; } kKnownTracks[] = {
+    {"001a3a3a18c74e0b1b11ddf5f1167e767381ce97af3e6cea971e3b047af749eb", "Dark Ruins"},
+    {"14ab262ac2aaf3f0157b8d2d39b27bcfe510657fbe7136b42921e49a8ad98e80", "Luigis Mansion"},
+    {"256d1ed4597aacd081d2806130c28969681ce35df5a5ba53200545cbd1835eb8", "Ancient Lake"},
+    {"27e41e0e9c429c500ec9197fb18f66418e395d8d50731c72ba525547a39c59b6", "Neonstadion"},
+    {"29e821ce632c9f483d3e0711e41cc077ab087a8a6044b7a70db826b7b40e71d0", "Pepsi City"},
+    {"407d6c9b388d96017bd3e45ee0c713a2319cc8103b1bdd6249cebe5c141b6d11", "Haunted Hovel"},
+    {"4232d4396e59df560678f3d0a370ce874649821ad614139b067250494af8f44c", "Sewer Baby Park"},
+    {"4242e1c377f56d2d7bfe51ae447b5a5fceb6cc55005712c7ac1d657c1b892b31", "Knightmare A Thon"},
+    {"52f446ecde445dcd686afa7ae946349175902ac169399d7c33bf0c568a669e9a", "Boss race 3"},
+    {"557d952a537b9c481c3153dae1db936d06b3b184968d7024b08fef62e4766ba1", "Lunatic Laboratory"},
+    {"6598755fd3d9b3172bc7a27af250bcf3cb99dd8b709ee5a6e9a2409ee7ef54ec", "Big Forest"},
+    {"727508b8e1f5d6c3ae401a4979bdb690054b7c52ed69bbec1a3f2376d8e95eb8", "Boss race 1"},
+    {"72bf846cd1932a058f5a379f577dd50624fa94527150a1d6fc3e29cdd73013f8", "Dracula's Castle"},
+    {"7dd312574cda7a61b0dc216b9667a29d9a65d09bde64a18b8830d8b895b8b103", "Tomb Temple"},
+    {"82a6d81942050ad29370033ccabc111b1731f24cf42e103afab12fd42a79f14c", "Boss race 2"},
+    {"83406e87505616994f5b539666f1327597212058506c29d66396aac15448529e", "Snowy Valley"},
+    {"8403e3f99ff4927accd15d6bb413181883316d2f1902b9e14bf2ab4eb3b1f0fa", "Toasty Terrace"},
+    {"8e040bd120bd964134730cce2a9fa2869922e75bbe71f703b863a16c38b730c4", "Diwali"},
+    {"9471beda2e86cbde461aa79ff8e9fec358cfdd1ae86760872a82f4a19202ca1f", "Dark Forest Dash"},
+    {"985663bf855f45fd8b71fe23ada322effb738c5fcf55cbd6c2710f95c631b112", "Sid's House"},
+    {"9bba2b381dc77f8dbe208ef140446c77f4119b3f9b713916c0e11f5b7ade3d8a", "Chasqui Rally"},
+    {"a24c255c87d062b907dfd052a5691ff1b13875adac3515764ad8e64234705fd0", "Garden Speedway"},
+    {"a4cfe29c0e3fc7e309d7cfb7c2eeb1fb38bf9359b343d236b46b0c2aedd709e2", "The Dairy Track"},
+    {"abd0f1efa42350fe95727e06bb18c5616d8a9bf41a5cb4fd253effe09b62b1ad", "Acid Lake"},
+    {"afe36db1745f65290c551090515bd742d1ecb0e84d97d7267ae330be9d3160e9", "Country Speedway"},
+    {"b29fe06e98a103ae27a7b8fb1f34571e9ebfb8f59e913fa4f837d7b62ba0df00", "N64 Bowser Castle"},
+    {"c7cb55dd24a5fdd2a868968a14e1881866e7e97c9cc9cefb208dd394298ebd17", "Specter Station"},
+    {"e06ce795c969106e8e7fbd87b0c7025a65aacaafd6c71161f9af390f37e2e54a", "Boss race 4"},
+    {"e22b87a73009b94251f5216424cf07875a02e076eb8461b902624c2b5277ad45", "Tizi Challenge"},
+    {"fb7119f056178beff7b48ca13c63a5893b0146ef527973f71b5fc57b3cf80766", "Mario Circuit 1"},
+    {"fe6a1495be36eef29724c17653211779e26acf85d730d22d6d015a0cbfb626c8", "Crow Forest"},
+};
+
+const char *known_track_name(const std::string &levSha256)
+{
+    for (const auto &k : kKnownTracks)
+        if (levSha256 == k.lev) return k.name;
+    return nullptr;
+}
+
+/* A readable pack label from a patch file name: separators become spaces,
+   a trailing version like "v1.1" or "_2.0" is dropped, the first letter is
+   capitalised. Empty when nothing readable is left. */
+std::string pack_label(const std::string &stem)
+{
+    std::string out;
+    for (unsigned char c : stem)
+    {
+        if (c < 32 || c == 127) continue;
+        out += (c == '_' || c == '-') ? ' ' : (char)c;
+    }
+    size_t cut = out.rfind(' ');
+    if (cut != std::string::npos && cut + 1 < out.size())
+    {
+        size_t i = cut + 1;
+        const bool v = out[i] == 'v' || out[i] == 'V';
+        if (v) i++;
+        size_t digits = 0, dots = 0;
+        bool only = i < out.size();
+        for (size_t k = i; k < out.size(); k++)
+        {
+            if (std::isdigit((unsigned char)out[k])) digits++;
+            else if (out[k] == '.') dots++;
+            else only = false;
+        }
+        /* "v2", "1.1" and "v1.1" are versions; a bare number like "99" is part of the name. */
+        if (only && digits && (v || dots)) out.resize(cut);
+    }
+    std::string squeezed;
+    for (char c : out)
+        if (!(c == ' ' && (squeezed.empty() || squeezed.back() == ' '))) squeezed += c;
+    while (!squeezed.empty() && squeezed.back() == ' ') squeezed.pop_back();
+    if (!squeezed.empty() && squeezed[0] >= 'a' && squeezed[0] <= 'z') squeezed[0] = (char)(squeezed[0] - 32);
+    return squeezed;
+}
 
 struct Candidate
 {
@@ -1125,6 +1224,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             return bytes;
         };
         std::set<uint32_t> consumed;
+        unsigned ordinal = 0;
         size_t offeredBytes = 0;
         std::map<std::pair<std::string, std::string>, std::string> seen;
         const std::string stem = limit_codepoints(path_stem(patchPath), 100);
@@ -1145,14 +1245,34 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             consumed.insert(c.index);
             const TrackMeta *meta = nullptr;
             if (haveDescriptor && descriptor.tracks.count((int)c.index)) meta = &descriptor.tracks[(int)c.index];
-            std::string title = meta && !meta->title.empty() ? meta->title : stem + " slot " + std::to_string(c.index);
-            if (!CustomPackage_ValidateTitle(title.data(), title.size())) title = "Imported track slot " + std::to_string(c.index);
+            ordinal++;
             if (byIndex.count(c.index - 1)) consumed.insert(c.index - 1);
             Candidate candidate{c.index, std::vector<unsigned char>(lev.begin(), lev.begin() + (long)levCut),
                                 std::vector<unsigned char>(vrm.begin(), vrm.begin() + (long)vrmCut)};
             lev.clear(); lev.shrink_to_fit(); vrm.clear(); vrm.shrink_to_fit();
             const std::string levHash = hex_sha256(candidate.lev.data(), candidate.lev.size());
             const std::string vrmHash = hex_sha256(candidate.vrm.data(), candidate.vrm.size());
+            /* Name sources in order: the pack descriptor, the known-track table,
+               then a plain label the player can edit before installing. */
+            std::string title;
+            int nameSource = XDELTA_NAME_LABEL;
+            if (meta && !meta->title.empty() && CustomPackage_ValidateTitle(meta->title.data(), meta->title.size()))
+            {
+                title = meta->title;
+                nameSource = XDELTA_NAME_DESCRIPTOR;
+            }
+            else if (const char *known = known_track_name(levHash))
+            {
+                title = known;
+                nameSource = XDELTA_NAME_KNOWN;
+            }
+            if (title.empty())
+            {
+                std::string base = !descriptor.packTitle.empty() && haveDescriptor ? descriptor.packTitle : pack_label(stem);
+                if (base.empty()) base = "Imported";
+                title = limit_codepoints(base, 100) + " track " + std::to_string(ordinal);
+                if (!CustomPackage_ValidateTitle(title.data(), title.size())) title = "Imported track " + std::to_string(ordinal);
+            }
             auto duplicate = seen.find({levHash, vrmHash});
             if (duplicate != seen.end())
             {
@@ -1167,18 +1287,22 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             std::string version = meta && !meta->version.empty() ? meta->version : "1.0.0";
             std::string author = meta && !meta->author.empty() ? meta->author : descriptor.packAuthor;
             std::string failure;
+            bool retried = false;
             Built built = build_package(candidate, title, version, meta, summary, author, failure);
             if (!built.owned && meta && (meta->relic || meta->laps || !meta->version.empty()))
             {
                 /* A descriptor value the package rules refuse never costs the track. */
                 std::string retry;
                 built = build_package(candidate, title, "1.0.0", nullptr, summary, author, retry);
-                if (built.owned) failure.clear();
+                if (built.owned) { failure.clear(); retried = true; }
             }
             built.author = author;
+            built.version = retried ? "1.0.0" : version;
+            if (meta && !retried) { built.meta = *meta; built.hasMeta = true; }
             built.excludeRelic = meta && meta->excludeRelic;
             built.excludeTokens = meta && meta->excludeTokens;
             XdeltaImportItem item = skip_item((int)c.index, title, "");
+            item.nameSource = nameSource;
             set_text(item.levSha256, sizeof item.levSha256, levHash);
             set_text(item.vrmSha256, sizeof item.vrmSha256, vrmHash);
             if (!built.owned)
@@ -1844,6 +1968,152 @@ void collect_descriptors(const XdeltaImportScan *scan, const std::vector<unsigne
         note = lapsNote;
 }
 
+
+/* ---- The record of applied patches (assets/tracks/import-record.json).
+   One entry per patch, found by the patch file's SHA-256 so a renamed copy
+   still counts; a scan that failed before the hash was known is found by
+   file name and size. "tracks" holds the BIGFILE indexes already installed. */
+struct PatchRecord
+{
+    std::string sha256, file;
+    unsigned long long bytes = 0;
+    unsigned offered = 0;
+    std::set<int> tracks;
+    std::string failed;
+};
+
+std::mutex &record_mutex() { static auto *m = new std::mutex(); return *m; }
+std::string record_path(const std::string &assets) { return assets + "/tracks/import-record.json"; }
+
+std::vector<PatchRecord> load_records(const std::string &assets)
+{
+    std::vector<PatchRecord> list;
+    File file(fs_open(record_path(assets), "rb"));
+    if (!file) return list;
+    try
+    {
+        unsigned long long size = file_size(file.get());
+        if (size > (1u << 20)) return list;
+        std::vector<unsigned char> bytes((size_t)size);
+        if (size && std::fread(bytes.data(), 1, bytes.size(), file.get()) != bytes.size()) return list;
+        const json doc = json::parse(bytes.begin(), bytes.end());
+        if (!doc.is_object() || !doc.contains("patches") || !doc["patches"].is_array()) return list;
+        for (const auto &e : doc["patches"])
+        {
+            if (!e.is_object() || list.size() >= 512) continue;
+            PatchRecord r;
+            if (e.contains("sha256") && e["sha256"].is_string()) r.sha256 = e["sha256"].get<std::string>();
+            if (e.contains("file") && e["file"].is_string()) r.file = e["file"].get<std::string>().substr(0, 200);
+            if (e.contains("bytes") && e["bytes"].is_number_unsigned()) r.bytes = e["bytes"].get<unsigned long long>();
+            if (e.contains("offered") && e["offered"].is_number_unsigned()) r.offered = e["offered"].get<unsigned>();
+            if (e.contains("failed") && e["failed"].is_string()) r.failed = e["failed"].get<std::string>().substr(0, 90);
+            if (e.contains("tracks") && e["tracks"].is_array())
+                for (const auto &t : e["tracks"])
+                    if (t.is_number_integer() && r.tracks.size() < 256) r.tracks.insert(t.get<int>());
+            if (r.sha256.size() != 64 && !r.sha256.empty()) continue;
+            list.push_back(std::move(r));
+        }
+    }
+    catch (const std::exception &) { list.clear(); }
+    return list;
+}
+
+bool save_records(const std::string &assets, const std::vector<PatchRecord> &list)
+{
+    json patches = json::array();
+    for (const auto &r : list)
+    {
+        json e = {{"sha256", r.sha256}, {"file", r.file}, {"bytes", r.bytes}, {"offered", r.offered},
+                  {"tracks", std::vector<int>(r.tracks.begin(), r.tracks.end())}};
+        if (!r.failed.empty()) e["failed"] = r.failed;
+        patches.push_back(std::move(e));
+    }
+    const std::string text = json_dump({{"version", 1}, {"patches", patches}});
+    fs_mkdir(assets + "/tracks");
+    const std::string path = record_path(assets), temp = path + ".tmp";
+    fs_remove(temp); /* never write through a leftover link */
+    {
+        File out(fs_open(temp, "wb"));
+        if (!out || std::fwrite(text.data(), 1, text.size(), out.get()) != text.size() || std::fflush(out.get())) return false;
+    }
+    if (fs_replace(temp, path)) return true;
+    fs_remove(temp);
+    return false;
+}
+
+void fill_state(XdeltaPatchState *state, const PatchRecord &r)
+{
+    *state = {};
+    state->offered = (int)r.offered;
+    state->imported = (int)r.tracks.size();
+    state->state = r.tracks.empty() ? (r.failed.empty() ? XDELTA_STATE_NEW : XDELTA_STATE_FAILED)
+                 : (r.offered && r.tracks.size() >= r.offered) ? XDELTA_STATE_IMPORTED
+                 : XDELTA_STATE_PARTLY;
+    set_text(state->reason, sizeof state->reason, r.failed);
+}
+
+/* The record entry that belongs to this patch, or null. */
+PatchRecord *find_record(std::vector<PatchRecord> &list, const std::string &sha, const std::string &file, unsigned long long bytes)
+{
+    if (!sha.empty())
+        for (auto &r : list)
+            if (r.sha256 == sha) return &r;
+    for (auto &r : list)
+        if (r.sha256.empty() && r.file == file && r.bytes == bytes) return &r;
+    return nullptr;
+}
+
+/* Note the outcome of a scan or install. `installed` are BIGFILE indexes this
+   install wrote; `offered` is the review list's count (0 keeps the old one);
+   `failure` is "" on success. Never throws. */
+void record_outcome(const std::string &assets, const std::string &sha, const std::string &file, unsigned long long bytes,
+                    unsigned offered, const std::vector<int> &installed, const std::string &failure)
+{
+    try
+    {
+        std::lock_guard<std::mutex> lock(record_mutex());
+        auto list = load_records(assets);
+        PatchRecord *r = find_record(list, sha, file, bytes);
+        if (!r)
+        {
+            list.emplace_back();
+            r = &list.back();
+        }
+        if (r->sha256.empty() && !sha.empty())
+        {
+            r->sha256 = sha;
+            /* The hash is known now: an older entry kept by name and size is superseded. */
+            for (size_t i = 0; i < list.size(); i++)
+                if (&list[i] != r && list[i].sha256.empty() && list[i].file == file && list[i].bytes == bytes)
+                {
+                    const size_t at = (size_t)(r - list.data());
+                    list.erase(list.begin() + (long)i);
+                    r = &list[at > i ? at - 1 : at];
+                    break;
+                }
+        }
+        r->file = file.substr(0, 200);
+        r->bytes = bytes;
+        if (offered) r->offered = offered;
+        for (int i : installed) r->tracks.insert(i);
+        r->failed = limit_codepoints(failure, 90);
+        if (list.size() > 256) list.erase(list.begin(), list.begin() + (long)(list.size() - 256));
+        save_records(assets, list);
+    }
+    catch (const std::exception &) {}
+}
+
+/* "Imported before: 3 of 5 tracks" for a scanned patch, or "". */
+std::string history_note(const std::string &assets, const std::string &sha)
+{
+    std::lock_guard<std::mutex> lock(record_mutex());
+    auto list = load_records(assets);
+    PatchRecord *r = find_record(list, sha, "", 0);
+    if (!r || r->sha256 != sha || r->tracks.empty()) return "";
+    return "Imported before: " + std::to_string(r->tracks.size()) + (r->offered ? " of " + std::to_string(r->offered) : std::string()) +
+           " track" + (r->tracks.size() == 1 && !r->offered ? "" : "s");
+}
+
 struct JobState
 {
     std::mutex mutex;
@@ -1858,6 +2128,16 @@ struct JobState
     /* The last install's Play Solo descriptors, and why a track got none. */
     std::vector<KeptDescriptor> descriptors;
     std::string descriptorNote;
+    /* The patch being imported, for the record of applied patches. */
+    std::string patchName, assetsRoot;
+    unsigned long long patchBytes = 0;
+    /* Names the player typed, by review row, applied when the install starts. */
+    std::map<unsigned, std::string> titles;
+    /* The picker's per-file states. */
+    std::future<void> folderJob;
+    volatile int folderCancel = 0;
+    int folderState = -1; /* -1 idle, 0 running, 1 ready */
+    std::vector<XdeltaPatchState> folderResult;
 };
 JobState &job() { static auto *s = new JobState(); return *s; }
 }
@@ -1870,6 +2150,13 @@ extern "C" int XdeltaImport_StartScan(const char *patchPath, const char *discPat
         std::strlen(patchPath) > 4096 || std::strlen(assets) > 4096) return 0;
     XdeltaImport_Free(&s.scan);
     s.scanState = 0; store_flag(&s.progress, 0); store_flag(&s.cancel, 0); s.error.clear();
+    s.titles.clear();
+    s.patchName = path_basename(patchPath);
+    s.assetsRoot = assets;
+    {
+        long long size = 0, mtime = 0;
+        s.patchBytes = fs_stat(patchPath, &size, &mtime) ? (unsigned long long)size : 0;
+    }
     try
     {
         std::string patch(patchPath), disc(discPath), root(assets);
@@ -1881,6 +2168,20 @@ extern "C" int XdeltaImport_StartScan(const char *patchPath, const char *discPat
             XdeltaImportScan *result = nullptr;
             char error[256];
             int ok = XdeltaImport_Scan(&request, &result, &state.progress, &state.cancel, error, sizeof error);
+            std::string name, sha;
+            unsigned long long bytes;
+            {
+                std::lock_guard<std::mutex> lock(state.mutex);
+                name = state.patchName;
+                bytes = state.patchBytes;
+            }
+            if (ok && result)
+            {
+                sha = result->summary.patchSha256;
+                set_text(result->summary.history, sizeof result->summary.history, history_note(root, sha));
+            }
+            else if (std::strcmp(error, "Cancelled"))
+                record_outcome(root, "", name, bytes, 0, {}, error);
             std::lock_guard<std::mutex> lock(state.mutex);
             state.scan = result;
             state.error = ok ? "" : error;
@@ -1915,11 +2216,41 @@ extern "C" int XdeltaImport_StartInstall(const unsigned char *selected, unsigned
     {
         std::vector<unsigned char> chosen(selected, selected + count);
         std::string root(assets);
-        s.installJob = std::async(std::launch::async, [chosen, root, where] {
+        std::map<unsigned, std::string> titles = s.titles;
+        s.installJob = std::async(std::launch::async, [chosen, root, where, titles] {
             auto &state = job();
             char error[512];
             std::vector<unsigned int> done;
-            int n = install_items(state.scan, chosen.data(), root.c_str(), where, error, sizeof error, &done);
+            int n = 0;
+            /* A name the player typed rebuilds that package under the new title first. */
+            for (const auto &t : titles)
+            {
+                char why[96];
+                if (t.first < chosen.size() && chosen[t.first] && !XdeltaImport_RenameItem(state.scan, t.first, t.second.c_str(), why, sizeof why))
+                {
+                    std::snprintf(error, sizeof error, "Name \"%.40s\": %s", t.second.c_str(), why);
+                    n = -1;
+                    break;
+                }
+            }
+            if (n == 0) n = install_items(state.scan, chosen.data(), root.c_str(), where, error, sizeof error, &done);
+            {
+                std::string name, sha = state.scan ? state.scan->summary.patchSha256 : "";
+                unsigned long long bytes;
+                unsigned offered = 0;
+                std::vector<int> indexes;
+                {
+                    std::lock_guard<std::mutex> lock(state.mutex);
+                    name = state.patchName;
+                    bytes = state.patchBytes;
+                }
+                if (state.scan)
+                {
+                    for (unsigned i = 0; i < state.scan->summary.count; i++) offered += state.scan->summary.items[i].offered != 0;
+                    for (unsigned i : done) indexes.push_back(state.scan->summary.items[i].bigfileIndex);
+                }
+                record_outcome(root, sha, name, bytes, offered, indexes, n < 0 ? error : "");
+            }
             /* Every installed package, including a partial batch, gets its
                Play Solo descriptor from the same verified snapshot. */
             std::vector<KeptDescriptor> kept;
@@ -1953,9 +2284,169 @@ extern "C" int XdeltaImport_PollInstall(int *installed, char *error, size_t erro
     return state;
 }
 
+
+/* Replace one offered item's title: rebuild its package under the new name
+   and recompute its pin and room folder. Returns 1, or 0 with a short why and
+   nothing changed. */
+extern "C" int XdeltaImport_RenameItem(XdeltaImportScan *scan, unsigned int item, const char *title, char *why, size_t whySize)
+{
+    auto refuse = [&](const char *text) {
+        if (why && whySize) std::snprintf(why, whySize, "%s", text);
+        return 0;
+    };
+    if (why && whySize) why[0] = 0;
+    if (!scan || item >= scan->summary.count || !scan->summary.items[item].offered || !scan->built[item].owned || !title)
+        return refuse("No such track");
+    const std::string name(title);
+    if (name.empty() || name.size() > 128) return refuse("Use 1 to 128 characters");
+    if (!CustomPackage_ValidateTitle(name.data(), name.size())) return refuse("This name cannot be used");
+    XdeltaImportItem &row = scan->summary.items[item];
+    Built &old = scan->built[item];
+    if (name == row.title) return 1;
+    try
+    {
+        Candidate candidate{(uint32_t)row.bigfileIndex, package_file(old.owned, "lev"), package_file(old.owned, "vrm")};
+        std::string key = old.hasMeta && !old.meta.trackKey.empty() ? old.meta.trackKey : title_track_key(name);
+        if (!track_key_valid(key)) return refuse("No folder name fits this name");
+        std::string failure;
+        Built rebuilt = build_package(candidate, name, old.version.empty() ? "1.0.0" : old.version, old.hasMeta ? &old.meta : nullptr,
+                                      scan->summary, old.author, failure);
+        if (!rebuilt.owned) return refuse(limit_codepoints("Files failed checks: " + failure, 80).c_str());
+        rebuilt.author = old.author;
+        rebuilt.version = old.version;
+        rebuilt.meta = old.meta;
+        rebuilt.hasMeta = old.hasMeta;
+        rebuilt.excludeRelic = old.excludeRelic;
+        rebuilt.excludeTokens = old.excludeTokens;
+        CustomPackage_Free(&old.owned);
+        old = std::move(rebuilt);
+        set_text(row.title, sizeof row.title, name);
+        set_text(row.pin, sizeof row.pin, old.pin);
+        set_text(row.trackKey, sizeof row.trackKey, key);
+        row.nameSource = XDELTA_NAME_EDITED;
+        return 1;
+    }
+    catch (const std::exception &) { return refuse("Could not rebuild the track"); }
+}
+
+/* Remember a name for a review row; applied when the install starts. */
+extern "C" int XdeltaImport_SetItemTitle(unsigned int item, const char *title)
+{
+    auto &s = job();
+    std::lock_guard<std::mutex> guard(s.mutex);
+    if (s.scanState != 1 || !s.scan || s.installState == 0 || item >= s.scan->summary.count || !title) return 0;
+    const std::string name(title);
+    if (name.empty() || name.size() > 128 || !CustomPackage_ValidateTitle(name.data(), name.size())) return 0;
+    if (name == s.scan->summary.items[item].title) s.titles.erase(item);
+    else s.titles[item] = name;
+    return 1;
+}
+
+extern "C" int XdeltaImport_PatchStates(const char *assets, char names[][CTR_XDELTA_NAME_MAX], int count,
+                                        struct XdeltaPatchState *out, const volatile int *cancel)
+{
+    if (!assets || !names || !out || count <= 0) return 0;
+    const std::string root(assets), folder = root + "/tracks/import";
+    std::vector<PatchRecord> list;
+    {
+        std::lock_guard<std::mutex> lock(record_mutex());
+        list = load_records(root);
+    }
+    for (int i = 0; i < count; i++)
+    {
+        out[i] = {};
+        if (load_flag(cancel)) return 0;
+        long long size = 0, mtime = 0;
+        if (!fs_stat(folder + "/" + names[i], &size, &mtime)) continue;
+        /* A record is a candidate when its size matches; the hash settles a renamed copy. */
+        bool hashed = false, byName = false;
+        std::string sha;
+        for (const auto &r : list)
+        {
+            if (r.bytes != (unsigned long long)size) continue;
+            if (r.sha256.empty()) { byName |= r.file == names[i]; continue; }
+            if (!hashed)
+            {
+                try { sha = hash_file(folder + "/" + names[i], nullptr, cancel); }
+                catch (const std::exception &) { sha.clear(); }
+                hashed = true;
+            }
+            if (sha == r.sha256) { fill_state(&out[i], r); break; }
+        }
+        if (!out[i].state && !out[i].imported && byName)
+            for (const auto &r : list)
+                if (r.sha256.empty() && r.file == names[i] && r.bytes == (unsigned long long)size) fill_state(&out[i], r);
+    }
+    return 1;
+}
+
+extern "C" int XdeltaImport_StartPatchStates(const char *assets, char names[][CTR_XDELTA_NAME_MAX], int count)
+{
+    auto &s = job();
+    if (!assets || !names || count <= 0 || count > CTR_XDELTA_FOLDER_MAX) return 0;
+    store_flag(&s.folderCancel, 1);
+    if (s.folderJob.valid()) s.folderJob.wait();
+    std::lock_guard<std::mutex> guard(s.mutex);
+    store_flag(&s.folderCancel, 0);
+    s.folderState = 0;
+    s.folderResult.clear();
+    try
+    {
+        std::string root(assets);
+        std::vector<std::string> list(names, names + count);
+        s.folderJob = std::async(std::launch::async, [root, list] {
+            auto &state = job();
+            std::vector<char> flat(list.size() * CTR_XDELTA_NAME_MAX, 0);
+            for (size_t i = 0; i < list.size(); i++) std::snprintf(&flat[i * CTR_XDELTA_NAME_MAX], CTR_XDELTA_NAME_MAX, "%s", list[i].c_str());
+            std::vector<XdeltaPatchState> out(list.size());
+            int ok = XdeltaImport_PatchStates(root.c_str(), (char (*)[CTR_XDELTA_NAME_MAX])flat.data(), (int)list.size(),
+                                              out.data(), &state.folderCancel);
+            std::lock_guard<std::mutex> lock(state.mutex);
+            if (ok && !load_flag(&state.folderCancel))
+            {
+                state.folderResult = std::move(out);
+                state.folderState = 1;
+            }
+            else state.folderState = -1;
+        });
+        return 1;
+    }
+    catch (const std::exception &) { s.folderState = -1; return 0; }
+}
+
+extern "C" int XdeltaImport_PollPatchStates(struct XdeltaPatchState *out, int max)
+{
+    auto &s = job();
+    std::lock_guard<std::mutex> guard(s.mutex);
+    if (s.folderState == 1 && out)
+        for (int i = 0; i < max && i < (int)s.folderResult.size(); i++) out[i] = s.folderResult[(size_t)i];
+    return s.folderState;
+}
+
+extern "C" void XdeltaImport_RecordResult(const char *assets, const char *patchName, const struct XdeltaImportSummary *summary,
+                                          const int *installedIndexes, int installedCount, const char *failure)
+{
+    if (!assets || !summary) return;
+    unsigned offered = 0;
+    for (unsigned i = 0; i < summary->count; i++) offered += summary->items[i].offered != 0;
+    std::vector<int> installed;
+    for (int i = 0; installedIndexes && i < installedCount; i++) installed.push_back(installedIndexes[i]);
+    record_outcome(assets, summary->patchSha256, patchName ? patchName : "", summary->patchBytes, offered, installed, failure ? failure : "");
+}
+
 #ifdef CTR_XDELTA_TESTING
 /* Harness view of the install job's descriptor step: Install, then the
    descriptors it would keep. Returns the install result; *kept and note. */
+extern "C" const char *XdeltaImportTest_KnownName(const char *levSha256) { return levSha256 ? known_track_name(levSha256) : nullptr; }
+extern "C" void XdeltaImportTest_History(const char *assets, const char *sha, char *out, size_t size)
+{
+    std::snprintf(out, size, "%s", history_note(assets, sha).c_str());
+}
+extern "C" void XdeltaImportTest_PackLabel(const char *stem, char *out, size_t size)
+{
+    std::snprintf(out, size, "%s", pack_label(stem).c_str());
+}
+
 extern "C" int XdeltaImportTest_InstallDescriptors(const XdeltaImportScan *scan, const unsigned char *selected,
                                                    const char *assets, int *kept, int *needsLaps, char *note,
                                                    size_t noteSize)

@@ -5,12 +5,16 @@ tools/test-138-camera-flyin.c
 tools/test-author-ready.c
 tools/test-author-custom.c
 tools/test-author-pad.c
+tools/test-author-gate.c
+tools/test-author-export.c
 tools/test-authoring-client-config.c
 tools/test-trial-letter-identity.cpp
 tools/test-blue-fire.c
 tools/test-boss-adapter.c
 tools/test-boss-assist.c
 tools/test-boss-encounters-production.py
+tools/test-boss-lane-ahead.c
+tools/test-boss-lane-production.py
 tools/test-boss-venue.cpp
 tools/test-boss-venue-production.py
 tools/test-box-colour-config.c
@@ -23,6 +27,7 @@ tools/test-box-number.c
 tools/test-box-offset.c
 tools/test-box-seat.c
 tools/test-box-seat-production.py
+tools/test-alpha2-presentation-production.py
 tools/test-ceremony-banner.c
 tools/test-clocked-out-production.py
 tools/test-character-persistence.cpp skip build-fail under the generic recipe; give it a build line in its header comment
@@ -30,15 +35,14 @@ tools/test-checkdiag-once.c
 tools/test-cup-box-policy.c
 tools/test-cup-sweeps.cpp
 tools/test-cup-sweeps-production.py
-tools/test-current-seed-page-production.py
-tools/test-custom-content-layout.c
 tools/test-custom-content-verify.c
 tools/test-custom-export-facts.c
 tools/test-custom-identity.c
 tools/test-custom-exit-window.c
 tools/test-custom-manager.c
-cmd Track Library page in the player client, without the xdelta importer :: d=$(mktemp -d) && cc -m32 -ffunction-sections -fdata-sections -Wl,--gc-sections -DCTR_NATIVE -DCTR_AP -DCTR_CUSTOM_TRACKS -DCTR_CUSTOM_PACKAGES -DMM_IMPORT_PLAYER -DBUILD=926 -I include -I . tools/test-custom-manager.c -o $d/t && $d/t
+tools/test-custom-tracks-screen.c
 tools/test-custom-music.c
+tools/test-custom-music-routes-production.py
 tools/test-custom-pad-lifecycle.c
 tools/test-custom-records.c
 tools/test-custom-selector.c
@@ -133,11 +137,18 @@ tools/test-cv-tracker-letters.c
 tools/test-pad-glow-items.c
 tools/test-pad-approach-hints.cpp
 tools/test-pad-approach-hints-production.py
+tools/test-hint-filters.cpp
+tools/test-hint-filters-production.py
+tools/test-pad-colour.py
 tools/test-picker-infoline.c
 tools/test-podium-skip.c
 tools/test-podium-trophy-presentation.c
 tools/test-race-attempt-lifecycle.c
 tools/test-race-stats.c
+tools/test-room-effects-production.c
+tools/test-profile-racer-production.py
+tools/test-wipeout-production.py
+tools/test-trap-mode-production.py
 tools/test-received-backlog.cpp
 tools/test-relic-goal.c
 tools/test-relic-perfect.c
@@ -157,9 +168,13 @@ tools/test-retry-budget.cpp
 tools/test-reward-policy.c
 tools/test-saphi-catalogue.cpp
 tools/test-seed-content.c
+tools/test-save-camera-production.py
 tools/test-seed-content-download-production.py
 tools/test-seed-content-hooks-production.py
 tools/test-solo-layout.c
+tools/test-solo-selection-production.py
+tools/test-solo-publication-production.py
+tools/test-solo-descriptor-records-production.py
 tools/test-solo-logic.cpp
 tools/test-spu-memory.c
 tools/test-stat-ladder.c
@@ -167,6 +182,7 @@ tools/test-editstat-rank.c
 tools/test-stat-select.c
 tools/test-surface-items.c skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-text-buf.c
+tools/test-text-clip.c
 tools/test-title-ring.c
 tools/test-tizi-helper.c
 tools/test-transition-diag.c

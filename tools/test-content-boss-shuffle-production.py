@@ -216,8 +216,9 @@ assert 'custom' not in kitg.split('{', 1)[1], 'a composed kit must run on a cont
 garage = text('game/232/AH_Garage.c')
 load = garage[garage.index('if (hubID >= 1 && hubID <= 4)'):garage.index('RaceFlag_SetDrawOrder(1);\n\t\tMainRaceTrack_RequestLoad(levelID);')]
 # The garage load seats the drawn racer on every room: no content-plan gate
-# between the boss cup branch and the seat, and the final racer for hub 0.
-seat = load[load.index('int venue = AP_BossGarageVenue(hubID - 1);'):]
+# before the seat, which comes ahead of the boss cup branch (A2-44), and the
+# final racer for hub 0.
+seat = load[:load.index('AP_ContentGarageCupPrepare(hubID - 1)')]
 assert 'ap_content_plan' not in seat and 'data.characterIDs[1] = (s16)opponent;' in seat
 assert 'data.characterIDs[1] = (s16)finalOpponent;' in load
 gates = text('ap/ap_hooks_gates.c')

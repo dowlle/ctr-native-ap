@@ -164,6 +164,14 @@ int CustomTrack_CortexTrackReady(void);
 // CortexMusicServing: this load is that race and the music is there.
 // Hold gives the same bytes and keeps them alive, even past a withdrawn seed,
 // until Release (the music player holds them from the bank to the song).
+// A content-plan package's own music (its pinned .sca) takes the same path:
+// CustomTrack_UseContentMusic, called right after UseContentFiles for the same
+// package, hands over the .sca's path, sha256, size and the package's LEV
+// sha256. The next descriptor application reads the file, keeps it only when
+// the digest matches, and CortexMusic/Serving/Hold then answer for that package
+// on its own host slot. Any later Use* call forgets it. Returns 0 when refused.
+int CustomTrack_UseContentMusic(const char *scaPath, const char *scaSha256, unsigned long scaBytes,
+                                const char *levSha256);
 int CustomTrack_CortexMusic(const void **data, size_t *size);
 int CustomTrack_CortexMusicServing(int levelID, int adventureCupActive, int cupID);
 int CustomTrack_CortexMusicHold(const void **data, size_t *size);

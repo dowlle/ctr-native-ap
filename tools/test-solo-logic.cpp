@@ -245,6 +245,168 @@ static void test_options()
 	CHECK(AP_SoloBuildOptions(nlohmann::json::parse("{\"overlay\": 5}")).empty());
 }
 
+// Alpha2: every option is a row. Large ranges move by the overlay's step and
+// stop at both ends; help text drops its Markdown and hard line breaks.
+static void test_option_steps_and_help()
+{
+	const nlohmann::json d = nlohmann::json::parse(R"({
+	  "options": [
+	    {"name": "goal_wumpa", "display_name": "Goal Wumpa", "kind": "range", "default": 0, "range_start": 0, "range_end": 5000,
+	     "doc": "Bank this many Wumpa Fruit\nover the whole seed.\n\nUse `1000` for a **long** goal:\n- first item\n- second item\n\nLast line."},
+	    {"name": "wumpa_shop_prices", "display_name": "Prices", "kind": "range", "default": 100, "range_start": 25, "range_end": 400},
+	    {"name": "relic_count", "display_name": "Relics", "kind": "named_range", "default": 18, "range_start": 1, "range_end": 54},
+	    {"name": "plando", "display_name": "Plando", "kind": "list", "default": []},
+	    {"name": "tags", "display_name": "Tags", "kind": "set", "default": []}
+	  ],
+	  "overlay": {"groups": [{"label": "A", "options": ["goal_wumpa", "plando"]},
+	                         {"label": "B", "options": ["wumpa_shop_prices", "relic_count", "tags"]}],
+	              "rules": [{"option": "goal_wumpa", "step": 50}, {"option": "wumpa_shop_prices", "step": 25},
+	                        {"option": "relic_count", "label": "Short Relic Name"}]},
+	  "values": {"goal_wumpa": 0, "wumpa_shop_prices": 100, "relic_count": 18}
+	})");
+	std::vector<APSoloOption> rows = AP_SoloBuildOptions(d);
+	CHECK(rows.size() == 3); // lists and sets are never rows
+	APSoloOption *gw = find(rows, "goal_wumpa"), *pr = find(rows, "wumpa_shop_prices"), *rc = find(rows, "relic_count");
+	CHECK(gw && pr && rc);
+	if (!(gw && pr && rc))
+		return;
+	CHECK(gw->step == 50 && pr->step == 25 && rc->step == 1);
+	CHECK(rc->kind == "range" && rc->lo == 1 && rc->hi == 54);
+	CHECK(rc->label == "Short Relic Name" && gw->label == "Goal Wumpa"); // a rule may shorten a row name
+	AP_SoloOptionStep(*gw, 1);
+	CHECK(gw->value == "50");
+	for (int i = 0; i < 99; i++)
+		AP_SoloOptionStep(*gw, 1);
+	CHECK(gw->value == "5000");
+	AP_SoloOptionStep(*gw, 1); // past the top wraps to the bottom
+	CHECK(gw->value == "0");
+	AP_SoloOptionStep(*gw, -1);
+	CHECK(gw->value == "5000");
+	// A value off the grid still reaches the end instead of overshooting it.
+	gw->value = "4990";
+	AP_SoloOptionStep(*gw, 1);
+	CHECK(gw->value == "5000");
+	gw->value = "20";
+	AP_SoloOptionStep(*gw, -1);
+	CHECK(gw->value == "0");
+	// Prices: 25 to 400 in steps of 25, always inside the range.
+	pr->value = "25";
+	AP_SoloOptionStep(*pr, -1);
+	CHECK(pr->value == "400");
+	AP_SoloOptionStep(*pr, 1);
+	CHECK(pr->value == "25");
+	for (int i = 0; i < 40; i++)
+	{
+		AP_SoloOptionStep(*pr, 1);
+		const int v = atoi(pr->value.c_str());
+		CHECK(v >= 25 && v <= 400);
+	}
+	// A named range without a step moves by one.
+	AP_SoloOptionStep(*rc, 1);
+	CHECK(rc->value == "19");
+	// Help text.
+	CHECK(gw->doc == "Bank this many Wumpa Fruit over the whole seed.\nUse 1000 for a long goal:\n- first item\n- second item\nLast line.");
+	CHECK(AP_SoloHelpText("").empty());
+	CHECK(AP_SoloHelpText("\n\n  one  \n  two\n\n") == "one two");
+}
+
+// A2-41: a set option with a checklist is a row; its value is a JSON array in
+// row order; guards refuse what the world refuses.
+static void test_checklists_and_guards()
+{
+	const nlohmann::json d = nlohmann::json::parse(R"({
+	  "options": [
+	    {"name": "crystal_challenge_count", "display_name": "Crystal Challenge Count", "kind": "range", "default": 4,
+	     "range_start": 0, "range_end": 7},
+	    {"name": "crystal_arenas", "display_name": "Crystal Arenas", "kind": "set",
+	     "default": ["Nitro Court", "Rampage Ruins", "Rocky Road", "Skull Rock"]},
+	    {"name": "boss_opponent_shuffle", "display_name": "Boss Opponent Shuffle", "kind": "toggle", "default": false},
+	    {"name": "boss_track_pool", "display_name": "Boss Track Pool", "kind": "set", "default": []},
+	    {"name": "boss_weapon_pool", "display_name": "Boss Weapon Pool", "kind": "set", "default": ["bomb", "potion", "tnt"]},
+	    {"name": "start_hints", "display_name": "Start Hints", "kind": "set", "default": []}
+	  ],
+	  "overlay": {"groups": [{"label": "Cups", "options": ["crystal_challenge_count", "crystal_arenas"]},
+	                         {"label": "Bosses", "options": ["boss_opponent_shuffle", "boss_track_pool", "boss_weapon_pool",
+	                                                         "start_hints"]}],
+	              "rules": [],
+	              "checklists": {
+	                "crystal_arenas": [["Rocky Road"], ["Rampage Ruins"], ["Skull Rock"], ["Nitro Court"], ["Parking Lot"],
+	                                   ["The North Bowl"], ["Lab Basement"]],
+	                "boss_track_pool": [["Crash Cove"], ["Roo's Tubes"]],
+	                "boss_weapon_pool": [["tnt", "TNT"], ["potion", "Potion"], ["bomb", "Bomb"]]},
+	              "guards": [
+	                {"option": "crystal_challenge_count", "at_most_count_of": "crystal_arenas", "reason": "count"},
+	                {"option": "boss_weapon_pool", "when": {"boss_opponent_shuffle": [true]}, "at_least": 2, "reason": "two"},
+	                {"option": "boss_weapon_pool", "when": {"boss_opponent_shuffle": [true]}, "has": "tnt",
+	                 "needs_all": ["potion"], "reason": "potion"}]},
+	  "values": {"crystal_challenge_count": 4, "crystal_arenas": ["Rocky Road", "Rampage Ruins", "Skull Rock", "Nitro Court"],
+	             "boss_opponent_shuffle": false, "boss_track_pool": ["Crash Cove", "custom/my-track"],
+	             "boss_weapon_pool": ["tnt", "potion", "bomb"]}
+	})");
+	std::vector<APSoloOption> rows = AP_SoloBuildOptions(d);
+	CHECK(rows.size() == 5); // a set without a checklist is not a row
+	APSoloOption *count = find(rows, "crystal_challenge_count"), *arenas = find(rows, "crystal_arenas");
+	APSoloOption *shuffle = find(rows, "boss_opponent_shuffle"), *tracks = find(rows, "boss_track_pool");
+	APSoloOption *weapons = find(rows, "boss_weapon_pool");
+	CHECK(count && arenas && shuffle && tracks && weapons && !find(rows, "start_hints"));
+	if (!(count && arenas && shuffle && tracks && weapons))
+		return;
+	CHECK(arenas->kind == "set" && arenas->keys.size() == 7 && arenas->keyLabels[0] == "Rocky Road");
+	CHECK(weapons->keyLabels[0] == "TNT" && weapons->keys[0] == "tnt");
+	CHECK(arenas->value == R"(["Rocky Road","Rampage Ruins","Skull Rock","Nitro Court"])");
+	CHECK(AP_SoloSetSummary(*arenas) == "4 of 7");
+	// The default rows are marked.
+	CHECK(arenas->keyDefault.size() == 7 && arenas->keyDefault[0] && arenas->keyDefault[3] && !arenas->keyDefault[4]);
+	// A YAML entry without a row is kept as a row of its own.
+	CHECK(tracks->keys.size() == 3 && tracks->keys[2] == "custom/my-track" && tracks->keyLabels[2] == "custom/my-track");
+	CHECK(AP_SoloSetSummary(*tracks) == "2 of 3");
+	// Left / Right never change a set.
+	AP_SoloOptionStep(*arenas, 1);
+	CHECK(AP_SoloSetSummary(*arenas) == "4 of 7");
+
+	// Seven Crystal Challenges with four arenas: the count guard refuses, on
+	// the count row and on the arena row.
+	count->value = "7";
+	CHECK(AP_SoloGuardReason(rows, *count) == "count" && AP_SoloGuardReason(rows, *arenas) == "count");
+	CHECK(AP_SoloFirstBlocked(rows) == 0);
+	for (int i = 4; i < 7; i++)
+		AP_SoloSetToggle(*arenas, i);
+	CHECK(AP_SoloSetSummary(*arenas) == "All 7");
+	CHECK(AP_SoloGuardReason(rows, *count).empty() && AP_SoloFirstBlocked(rows) == -1);
+	// Checking in any order keeps row order; unchecking removes the key.
+	AP_SoloSetToggle(*arenas, 0);
+	CHECK(arenas->value == R"(["Rampage Ruins","Skull Rock","Nitro Court","Parking Lot","The North Bowl","Lab Basement"])");
+	CHECK(!AP_SoloGuardReason(rows, *count).empty()); // 7 > 6
+	AP_SoloSetToggle(*arenas, 0);
+	AP_SoloSetToggle(*arenas, 99); // out of range: nothing
+	CHECK(AP_SoloSetSummary(*arenas) == "All 7");
+
+	// Guards with `when`: only while the switch is on.
+	weapons->value = R"(["bomb"])";
+	CHECK(AP_SoloGuardReason(rows, *weapons).empty());
+	shuffle->value = "true";
+	CHECK(AP_SoloGuardReason(rows, *weapons) == "two");
+	weapons->value = R"(["tnt","bomb"])";
+	CHECK(AP_SoloGuardReason(rows, *weapons) == "potion"); // has tnt, misses potion
+	weapons->value = R"(["potion","bomb"])";
+	CHECK(AP_SoloGuardReason(rows, *weapons).empty()); // no tnt: the needs_all guard is off
+	weapons->value = "[]";
+	CHECK(AP_SoloSetSummary(*weapons) == "None" && AP_SoloGuardReason(rows, *weapons) == "two");
+	shuffle->value = "false";
+
+	// --set passes a changed set as its JSON array; unchanged sets stay out.
+	std::vector<std::string> sets = AP_SoloSetArgs(rows);
+	std::set<std::string> got(sets.begin(), sets.end());
+	CHECK(got.count("crystal_challenge_count=7") == 1);
+	CHECK(got.count(R"(crystal_arenas=["Rocky Road","Rampage Ruins","Skull Rock","Nitro Court","Parking Lot","The North Bowl","Lab Basement"])") == 1);
+	CHECK(got.count("boss_weapon_pool=[]") == 1);
+	CHECK(sets.size() == 3);
+	// Back to the preset's arenas: nothing to send for it.
+	for (int i = 4; i < 7; i++)
+		AP_SoloSetToggle(*arenas, i);
+	CHECK(arenas->value == arenas->initial);
+}
+
 // The custom-track step (decision 32): mode labels, the pick cycle and the
 // descriptor file name the client keeps in solo/tracks.
 static void test_tracks()
@@ -374,6 +536,8 @@ int main()
 	test_stop_and_timeout();
 	test_error_text();
 	test_options();
+	test_option_steps_and_help();
+	test_checklists_and_guards();
 	test_tracks();
 	test_needs_laps();
 	test_store_descriptor_rescan();

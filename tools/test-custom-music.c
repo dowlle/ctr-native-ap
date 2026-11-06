@@ -239,6 +239,28 @@ int main(int argc, char **argv)
 	later[0] = NULL;
 	CHECK(!CustomMusic_Admit(&sca, table, SLOTS, 0x1000, later, 1, &needed, error, sizeof error));
 
+	// SPU budget of the player build (the 0.3.0 player client builds with
+	// CTR_CUSTOM_PACKAGES, so it has the 1 MiB memory; a build without it has no
+	// packages and so no .sca). The largest load a real Saphi file makes (bank 0,
+	// the .sca bank, bank 54 and a character bank; research note 2026-09-25, 48
+	// files) ends at 0x87b30: past the retail ceiling, well inside the wide one.
+	CHECK(CTR_SPU_WIDE_CEILING == 0xfe000 && CTR_SPU_RETAIL_CEILING == 0x7e000);
+	CHECK(0x87b30 >= CTR_SPU_RETAIL_CEILING && 0x87b30 < CTR_SCA_SPU_LIMIT);
+	CHECK(CustomMusic_SpuFits(0, 0x87b30 / 8) && !CustomMusic_SpuFits(0, CTR_SCA_SPU_LIMIT / 8));
+#ifdef CTR_CUSTOM_PACKAGES
+	CHECK(CTR_SPU_CEILING == CTR_SCA_SPU_LIMIT && CTR_SPU_BYTES == CTR_SPU_WIDE_BYTES);
+#else
+	CHECK(CTR_SPU_CEILING == CTR_SPU_RETAIL_CEILING && CTR_SPU_BYTES == CTR_SPU_RETAIL_BYTES);
+#endif
+
+	// The retail music an imported package falls back to: the arcade track whose
+	// BIGFILE group (8 files per track) holds the patched LEV.
+	CHECK(CustomMusic_ReplacedLevel(0) == 0 && CustomMusic_ReplacedLevel(7) == 0);
+	CHECK(CustomMusic_ReplacedLevel(8) == 1 && CustomMusic_ReplacedLevel(13 * 8 + 3) == 13);
+	CHECK(CustomMusic_ReplacedLevel(17 * 8 + 7) == 17);
+	CHECK(CustomMusic_ReplacedLevel(18 * 8) == -1 && CustomMusic_ReplacedLevel(-1) == -1);
+	CHECK(CustomMusic_ReplacedLevel(4095) == -1);
+
 	printf("custom music: %d checks, %d failures\n", checks, failures);
 	return failures != 0;
 }

@@ -54,8 +54,12 @@ check('the full race count is applied before the retail cap', bank < rb.index('d
 
 wumpa = text('ap/ap_wumpa.c')
 recv = body(wumpa, 'void AP_WumpaReceive(int count)')
-check('AP_WumpaReceive holds AP fruit past 10 for the bank when banking is on',
-      re.search(r'past > 0 && AP_WumpaBanking\(\)\)\s*\{\s*g_wumpa_ap_credit \+= past;', recv) is not None)
+inrace = recv.index('AP_WumpaReceiptInRace()')
+atonce = re.search(r'if \(AP_WumpaBanking\(\)\)\s*\{\s*g_wumpa_ap_credit \+= count;', recv)
+check('outside a race, received fruit banks at once when banking is on (after the in-race branch, before the kart hold)',
+      atonce is not None and inrace < atonce.start() < recv.index('g_wumpa_pending += count;'))
+check('the in-race receipt still joins the race count, not the bank',
+      'g_wumpa_race_pending' in recv[inrace:atonce.start()])
 fxwrite = body(text('ap/ap_hooks_received.c'), 'static void AP_FxWrite(')
 check('held AP credits are banked only after the effect marker write',
       fxwrite.index('ap_net_fx_store_write(') < fxwrite.index('AP_WumpaCommitReceived();'))
@@ -65,14 +69,22 @@ kart = body(wumpa, 'static int AP_WumpaRaceTracking(')
 check('kart banking is the local human player',
       'driver != gGT->drivers[0]' in kart and 'ACTION_BOT' in kart and 'ctr_cfg_active()' in kart and 'CHEAT_WUMPA' in kart)
 fin = body(wumpa, 'void AP_WumpaOnRaceFinish(')
-check('finish banking takes the latch with the forced-loss predicate',
-      'AP_WumpaFinishTake(&g_finish_latch, g_race_wumpa >= 0 ? g_race_wumpa : held, AP_RaceAttemptIsForcedLoss())' in fin)
+check('finish banking takes the latch; a forced DeathLink loss takes the abandoned payout',
+      'forced = AP_RaceAttemptIsForcedLoss();' in fin and
+      'AP_WumpaLeaveTake(&g_finish_latch, g_race_wumpa, g_race_start)' in fin and
+      'AP_WumpaFinishTake(&g_finish_latch, g_race_wumpa >= 0 ? g_race_wumpa : held, 0)' in fin)
 adv = body(wumpa, 'static int AP_WumpaAdventureRace(')
 check('banking takes the Adventure race mode test', 'AP_WumpaBankRaceMode(gGT->gameMode1)' in adv)
 check('kart and finish banking bank only in an Adventure race',
       '!AP_WumpaAdventureRace(gGT)' in fin and '!AP_WumpaAdventureRace(gGT)' in kart and
       'BATTLE_MODE) != 0' not in fin and 'BATTLE_MODE) != 0' not in kart)
 tick = body(wumpa, 'void AP_WumpaTick(')
+leave = body(wumpa, 'static void AP_WumpaOnRaceLeave(void)')
+check('an abandoned attempt banks through the same latch, minus the starting fruit',
+      'AP_WumpaLeaveTake(&g_finish_latch, g_race_wumpa, g_race_start)' in leave and 'AP_WumpaBanking()' in leave and
+      'g_wumpa_race_pending' in leave)
+check('the tick takes the abandoned payout on the boundary before clearing the race state',
+      re.search(r'END_OF_RACE\) != 0\)\s*\{\s*AP_WumpaOnRaceLeave\(\);\s*g_countdown_seen = 0;', tick) is not None)
 check('a newly seen countdown arms the finish payout',
       re.search(r'if \(!g_countdown_seen\)\s*AP_WumpaFinishArm\(&g_finish_latch\);\s*g_countdown_seen = 1;', tick) is not None)
 check('the Wumpa tick banks on the rising finish edge with the previous frame\'s human state',
@@ -167,6 +179,19 @@ check('the plan fills the shop through the block parser',
 check('the shop page is a unity member after ap_wumpa.c',
       text('game/game_unity.h').index('ap_wumpa_shop_ui.c') > text('game/game_unity.h').index('ap_wumpa.c"'))
 check('the shared wire fixture is present', (root / 'tools/fixtures/wumpa_shop.json').is_file())
+
+
+ui = text('ap/ap_wumpa_shop_ui.c')
+row = body(ui, 'static void AP_WShopDrawRow(')
+check('the shop name column ends one font-measured character cell before the price column',
+      'AP_WSHOP_RIGHT_X - AP_WSHOP_NAME_X - AP_WShopTextWidth(right, -1, 0) -' in row and
+      'AP_WShopTextWidth(" ", 1, 0)' in row)
+check('shop widths come from the engine font function, not a character count',
+      'DecalFont_GetLineWidthStrlen((char *)s, len, FONT_SMALL)' in ui and 'strlen(name) > 34' not in row)
+check('the selected row scrolls and the others clip',
+      'AP_TextMarquee(' in row and 'AP_TextClipLen(' in row and row.index('if (selected)') < row.index('AP_TextClipLen('))
+check('the marquee restarts when the cursor moves or the page opens',
+      ui.count('ap_wshop.marqueeFrame = 0;') >= 2)
 
 print('FAILED' if failures else 'all passed')
 sys.exit(1 if failures else 0)

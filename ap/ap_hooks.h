@@ -398,6 +398,7 @@ struct GameTracker;
 const ctr_content_pad *AP_ContentCupPad(void);
 int AP_ContentCupLeg(void);
 const char *AP_ContentCupName(void);
+const char *AP_ContentCupTrackName(void);
 int AP_ContentCupPadLevel(void);
 int AP_ContentCupNextLeg(int leg, int *outLaps);
 void AP_ContentCupEnter(void);
@@ -861,6 +862,12 @@ unsigned AP_StateGen(void);
 // the location + lifecycle category (loaded destination track). Consumed by
 // AH_Map_Warppads + AH_WarpPad_LInB/_ThTick (#ifdef CTR_AP).
 int AP_PadState(int physLevelID, int destLevelID);
+
+// The pad's display state for its beam, hub map dot and tracker node, an
+// enum AP_PadLook of ap_pad_colour.h: AP_PadState plus whether a closed pad is
+// waiting on its racer. Display only; no gate reads it.
+#include "ap_pad_colour.h"
+int AP_PadLook(int physLevelID, int destLevelID);
 
 // Physical plan pad entry, including its keys, manual rule and racer lock.
 // Shared with the Item Box spawn policy.

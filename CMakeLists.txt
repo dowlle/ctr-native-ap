@@ -11,6 +11,10 @@ set(CTR_NATIVE_VERSION "0.1.0-beta.6.1")
 # Build clean:  cmake -S . -B build
 # Build mod:    cmake -S . -B build-ap -DCTR_AP=ON   (outputs ctr_native_ap.exe)
 option(CTR_AP "Build with Archipelago integration" OFF)
+# CI release packaging (tools/ci/build-clients.sh) sets this ON so the window
+# title is the plain version. Local builds leave it OFF and keep the dev
+# marker "| Internal" in the title. Title only; no other behaviour changes.
+option(CTR_RELEASE_BUILD "Release flavour: window title without the Internal dev marker" OFF)
 option(CTR_AP_AUTHORING "Expose Archipelago authoring tools (developer builds only)" OFF)
 
 # Custom-track loader (Baby T Park event spike, rung 1): OFF = retail behaviour;
@@ -147,6 +151,9 @@ add_subdirectory(externals/SDL)
 # CTR Native
 add_executable(ctr_native main.c)
 target_include_directories(ctr_native PRIVATE ${CMAKE_SOURCE_DIR}/include)
+if(CTR_RELEASE_BUILD)
+    target_compile_definitions(ctr_native PRIVATE CTR_RELEASE_BUILD)
+endif()
 target_compile_definitions(ctr_native PRIVATE
     CTR_NATIVE
     BUILD=926

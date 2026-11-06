@@ -16,13 +16,19 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <atomic>
+#include <cerrno>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <mutex>
+#include <set>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #ifdef _WIN32
@@ -62,6 +68,7 @@ const uint64_t kQuickLimitMs = 60000;   // list, describe, imports
 const uint64_t kReadyLimitMs = 30000;
 const uint64_t kConnectLimitMs = 20000;
 const size_t kDescriptorMax = 64 * 1024; // the wrapper reads no larger descriptor
+const size_t kMenuMessageMax = 170;       // the menus print "%.170s" of a publication error
 
 void Log(const std::string &line)
 {
@@ -397,6 +404,10 @@ struct Session
 	bool reconnecting = false; // our own AP_Net_Reconnect call
 } g_session;
 
+// Deliberately session-local: empty means an ordinary loopback room without
+// a password. The player can set it before starting or resuming a room.
+std::string g_sessionPassword;
+
 void FinishJob()
 {
 	g_job.child.release();
@@ -503,9 +514,17 @@ void ParseList(const nlohmann::json &r)
 	addStarts(r.value("inbox", nlohmann::json()), false);
 }
 
+// Store verification runs separately from the SDL child job. Cancellation
+// discards its result without joining a worker on the frame thread.
+bool TrackPublicationBusy();
+bool TickTrackPublication();
+bool StartTrackPublication(const std::vector<std::string> &args);
+void CancelTrackPublication();
+void FinishTrackPublication();
+
 bool JobStart(JobKind kind, const std::vector<std::string> &args, uint64_t limitMs)
 {
-	if (g_job.state == AP_SOLO_JOB_RUNNING || !AP_Solo_RuntimePresent())
+	if (g_job.state == AP_SOLO_JOB_RUNNING || TrackPublicationBusy() || !AP_Solo_RuntimePresent())
 		return false;
 	if (SoloRootIsLink())
 	{
@@ -533,6 +552,8 @@ bool JobStart(JobKind kind, const std::vector<std::string> &args, uint64_t limit
 
 void TickJob()
 {
+	if (TickTrackPublication())
+		return;
 	if (g_job.state != AP_SOLO_JOB_RUNNING)
 		return;
 	for (const std::string &line : g_job.child.poll())
@@ -604,6 +625,11 @@ bool SessionSpawn()
 {
 	std::vector<std::string> args = {"serve", "--room", g_session.roomId, "--game-pid",
 	                                 std::to_string(AP_SOLO_GETPID())};
+	if (!g_sessionPassword.empty())
+	{
+		args.push_back("--password");
+		args.push_back(g_sessionPassword);
+	}
 	g_session.child.release();
 	if (!g_session.child.start(args, SoloPath("rooms/" + g_session.roomId + "/runtime.log")))
 		return false;
@@ -781,22 +807,13 @@ extern "C" int AP_Solo_ImportYamlStart(const char *path)
 
 extern "C" int AP_Solo_TracksStart(const char *yamlPath)
 {
-	if (g_job.state == AP_SOLO_JOB_RUNNING)
-		return 0;
-	char publicationError[256];
-	if (!AP_Solo_PublishInstalledStore(nullptr, publicationError, sizeof publicationError))
-	{
-		g_job.kind = JOB_TRACKS;
-		JobFail("publish", "Files installed, but Play Solo publication failed: " + std::string(publicationError), "");
-		return 1; // the menu shows the failure through its normal job message
-	}
 	std::vector<std::string> args = {"tracks", "--assets", AssetsDir()};
 	if (yamlPath && *yamlPath)
 	{
 		args.push_back("--yaml");
 		args.push_back(yamlPath);
 	}
-	return JobStart(JOB_TRACKS, args, kQuickLimitMs) ? 1 : 0;
+	return StartTrackPublication(args) ? 1 : 0;
 }
 
 extern "C" int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName, const char *presetId, int useOptions)
@@ -848,6 +865,7 @@ extern "C" void AP_Solo_JobCancel(void)
 	// so ending the child loses nothing.
 	if (g_job.state == AP_SOLO_JOB_RUNNING)
 	{
+		CancelTrackPublication();
 		g_job.child.kill();
 		g_job.child.release();
 		g_job.state = AP_SOLO_JOB_IDLE;
@@ -876,7 +894,13 @@ extern "C" int AP_Solo_TrackGet(int index, struct APSoloTrackInfo *out)
 extern "C" void AP_Solo_TrackCycle(int index)
 {
 	if (index >= 0 && index < (int)g_tracks.size() && !g_tracks[index].needsLaps)
+	{
 		g_tracks[index].pick = g_tracks[index].modes[0] ? AP_SoloTrackNextPick(g_tracks[index].pick) : AP_SOLO_TRACK_OFF;
+		if (g_tracks[index].pick != AP_SOLO_TRACK_OFF)
+			for (int other = 0; other < (int)g_tracks.size(); ++other)
+				if (other != index && AP_SoloTrackSameContent(g_tracks[index].id, g_tracks[other].id))
+					g_tracks[other].pick = AP_SOLO_TRACK_OFF;
+	}
 }
 
 extern "C" int AP_Solo_TracksPicked(void)
@@ -894,16 +918,33 @@ extern "C" void AP_Solo_TracksClear(void)
 
 namespace
 {
-// Keeps `json` as solo/<folder>/<name>; true once the file holds it.
-bool KeepDescriptorFile(const char *folder, const std::string &name, const std::string &json)
+// Keeps `json` as solo/<folder>/<name>; true once the file holds it. On a
+// refusal `why` (when given) gets a short reason a player can act on, and the
+// log gets the file name and the system's error.
+bool KeepDescriptorFile(const char *folder, const std::string &name, const std::string &json,
+                        std::string *why = nullptr)
 {
-	if (json.empty() || json.size() > kDescriptorMax || name.empty() || SoloRootIsLink())
+	const std::string where = std::string("solo/") + folder + "/" + name;
+	auto refuse = [&](const std::string &reason, const std::string &detail) {
+		if (why)
+			*why = reason;
+		Log("could not keep " + (name.empty() ? std::string("a descriptor") : where) + ": " + detail);
 		return false;
+	};
+	if (name.empty())
+		return refuse("its id or version is not a valid file name", "no valid descriptor file name");
+	if (json.empty() || json.size() > kDescriptorMax)
+		return refuse("its descriptor is empty or too large", "descriptor of " + std::to_string(json.size()) + " bytes");
+	if (SoloRootIsLink())
+		return refuse("the solo folder is a link; make it a normal folder", "solo is a link");
 	std::error_code ec;
 	const fs::path dir = fs::u8path(SoloPath(folder));
 	if (fs::is_symlink(dir, ec))
-		return false;
+		return refuse(std::string("solo/") + folder + " is a link; make it a normal folder",
+		              std::string("solo/") + folder + " is a link");
 	fs::create_directories(dir, ec);
+	if (ec)
+		return refuse(std::string("solo/") + folder + " could not be created", ec.message());
 	const fs::path target = dir / fs::u8path(name);
 	// Only a plain file of descriptor size is read or replaced: a link, a
 	// FIFO or a huge file there is left alone (reading one could block or
@@ -912,10 +953,7 @@ bool KeepDescriptorFile(const char *folder, const std::string &name, const std::
 	if (fs::exists(st))
 	{
 		if (!fs::is_regular_file(st) || fs::file_size(target, ec) > kDescriptorMax || ec)
-		{
-			Log("left " + name + " alone: not a plain descriptor file");
-			return false;
-		}
+			return refuse(std::string("its file in solo/") + folder + " is not a plain file; delete it", "not a plain descriptor file, left alone");
 		if (ReadSmallPlainFile(target, kDescriptorMax) == json)
 			return true;
 	}
@@ -923,28 +961,47 @@ bool KeepDescriptorFile(const char *folder, const std::string &name, const std::
 	// there). A name someone else holds is skipped, never removed.
 	static unsigned serial = 0;
 	fs::path tmp;
-	int wrote = 0;
+	int wrote = 0, err = 0;
 	for (int tries = 0; tries < 16 && wrote == 0; tries++)
 	{
 		tmp = dir / fs::u8path(name + ".tmp-" + std::to_string(AP_SOLO_GETPID()) + "-" + std::to_string(++serial));
+		errno = 0;
 		wrote = WriteNewFile(tmp, json);
+		err = errno;
 	}
 	if (wrote != 1)
 	{
 		if (wrote == -1)
 			fs::remove(tmp, ec); // ours: created by this call
-		Log("could not keep the descriptor of " + name);
-		return false;
+		return refuse("could not write in solo/" + std::string(folder) +
+		                  " (read-only, full disk or blocked by antivirus)",
+		              "temp file " + tmp.filename().u8string() + ": " + (err ? std::strerror(err) : "write failed"));
 	}
 	// rename replaces the old file in one step (MoveFileExW with
 	// MOVEFILE_REPLACE_EXISTING under MinGW libstdc++, rename(2) on Linux).
-	// If it fails, the old descriptor stays.
+	// If it fails, the old descriptor stays. Windows refuses to replace a
+	// read-only file: our own descriptor gets its write bit back once.
 	fs::rename(tmp, target, ec);
 	if (ec)
 	{
+		std::error_code pe;
+		const fs::file_status ts = fs::symlink_status(target, pe);
+		if (!pe && fs::is_regular_file(ts) && (ts.permissions() & fs::perms::owner_write) == fs::perms::none)
+		{
+			fs::permissions(target, fs::perms::owner_write, fs::perm_options::add, pe);
+			if (!pe)
+			{
+				Log("made " + where + " writable again");
+				fs::rename(tmp, target, ec);
+			}
+		}
+	}
+	if (ec)
+	{
+		const std::string detail = ec.message();
 		fs::remove(tmp, ec);
-		Log("could not keep the descriptor of " + name);
-		return false;
+		return refuse(std::string("its file in solo/") + folder + " is read-only or in use (antivirus?)",
+		              "replace failed: " + detail);
 	}
 	Log(std::string("kept the descriptor of ") + name + " in solo/" + folder);
 	return true;
@@ -1069,100 +1126,221 @@ void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows)
 }
 } // namespace
 
-extern "C" int AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, const char *json)
+namespace
+{
+// "<revision>|lev:<sha256>:<bytes>|vrm:<sha256>:<bytes>" of a descriptor's
+// file pins, or "" when they are not in that shape.
+std::string PinSignature(const std::string &revision, const nlohmann::json &files)
+{
+	if (!files.is_array())
+		return std::string();
+	std::string out = revision;
+	for (const auto &pin : files)
+	{
+		if (!pin.is_object() || !pin.contains("bytes") || !pin["bytes"].is_number_unsigned())
+			return std::string();
+		out += "|" + AP_SoloJsonString(pin, "role") + ":" + AP_SoloJsonString(pin, "sha256") + ":" +
+		       std::to_string(pin["bytes"].get<std::uintmax_t>());
+	}
+	return out;
+}
+
+// What a descriptor write may replace. A kept descriptor for the same track
+// id and version with other file pins is refused unless the caller knows the
+// shared store: `live` holds the pin signature of every verified package in
+// it. A kept descriptor whose files are no longer installed (in the store or
+// in assets/tracks/<key>/original) is stale and is replaced. `fresh` is a
+// package the player just installed: it takes over the entry from another
+// installed copy. The new descriptor pins exactly the verified files of the
+// package it came from, so no pin check is skipped.
+struct DescriptorScope
+{
+	const std::set<std::string> *live = nullptr;
+	bool fresh = false;
+};
+
+bool MayReplace(const nlohmann::json &kept, const std::string &key, const std::string &revision,
+                const DescriptorScope &scope)
+{
+	if (!scope.live)
+		return false;
+	if (scope.fresh)
+		return true;
+	const nlohmann::json files = kept.value("files", nlohmann::json());
+	if (scope.live->count(PinSignature(revision, files)))
+		return false;
+	bool loose = files.is_array() && !files.empty();
+	if (loose)
+		for (const auto &pin : files)
+			loose = loose && PinnedFilePresent(key, pin);
+	return !loose;
+}
+
+// Removes our own plain descriptor file, clearing a read-only bit once.
+bool RemoveDescriptorFile(const fs::path &target, std::string &detail)
+{
+	std::error_code ec;
+	if (!fs::is_regular_file(fs::symlink_status(target, ec)))
+		return true;
+	if (fs::remove(target, ec) || !fs::exists(fs::symlink_status(target, ec)))
+		return true;
+	fs::permissions(target, fs::perms::owner_write, fs::perm_options::add, ec);
+	if (!ec && fs::remove(target, ec))
+		return true;
+	detail = ec ? ec.message() : std::string("remove failed");
+	return false;
+}
+
+// The one writer behind both C entry points and the store publication: kind 1
+// is a complete descriptor for solo/tracks, kind 2 one that waits for its laps
+// in solo/needs-laps. Every refusal is logged with its file name and gives
+// `why` a short reason the player can act on.
+bool RecordDescriptor(int kind, const char *contentId, const char *revision, const char *json,
+                      const DescriptorScope &scope, std::string &why)
 {
 	if (!contentId || !revision || !json)
-		return 0;
+	{
+		why = "internal error";
+		Log("refused a descriptor without id, revision or body");
+		return false;
+	}
 	const std::string name = AP_SoloDescriptorFileName(contentId, revision);
-	const fs::path kept = fs::u8path(SoloPath("tracks")) / fs::u8path(name);
-	const auto old = nlohmann::json::parse(ReadSmallPlainFile(kept, kDescriptorMax), nullptr, false);
-	const auto fresh = nlohmann::json::parse(json, nullptr, false);
-	if (old.is_object() && fresh.is_object() && old.contains("files") && fresh.contains("files") &&
-	    old["files"] != fresh["files"])
+	auto refuse = [&](const std::string &reason, const std::string &detail) {
+		why = reason;
+		Log("refused " + (name.empty() ? std::string(contentId) + " " + revision : name) + ": " + detail);
+		return false;
+	};
+	if (name.empty())
+		return refuse("its id or version is not a valid file name", "not a valid descriptor file name");
+	const nlohmann::json fresh = nlohmann::json::parse(json, nullptr, false);
+	if (!fresh.is_object() || !fresh.contains("files"))
+		return refuse("its descriptor is not valid", "descriptor is not an object with file pins");
+	if (SoloRootIsLink())
+		return refuse("the solo folder is a link; make it a normal folder", "solo is a link");
+	std::error_code ec;
+	const fs::path tracks = fs::u8path(SoloPath("tracks"));
+	if (fs::is_symlink(tracks, ec))
+		return refuse("solo/tracks is a link; make it a normal folder", "solo/tracks is a link");
+	const nlohmann::json kept = nlohmann::json::parse(ReadSmallPlainFile(tracks / fs::u8path(name), kDescriptorMax),
+	                                                  nullptr, false);
+	const nlohmann::json pending = nlohmann::json::parse(
+	    ReadSmallPlainFile(fs::u8path(SoloPath("needs-laps")) / fs::u8path(name), kDescriptorMax), nullptr, false);
+	const bool keptOther = kept.is_object() && kept.contains("files") && kept["files"] != fresh["files"];
+	const bool pendingOther = pending.is_object() && pending.contains("files") && pending["files"] != fresh["files"];
+	for (const auto &[other, d, folder] : {std::make_tuple(keptOther, &kept, "solo/tracks"),
+	                                       std::make_tuple(pendingOther, &pending, "solo/needs-laps")})
 	{
-		Log("refused conflicting file pins for " + name);
-		return 0;
+		if (!other)
+			continue;
+		if (!MayReplace(*d, contentId, revision, scope))
+			return refuse("another installed copy has the same name and version but other files; "
+			              "reinstall the copy you want to play",
+			              std::string(folder) + " holds other file pins of a copy that is still installed");
+		Log(std::string("replacing ") + folder + "/" + name + ": " +
+		    (scope.fresh ? "a copy with other files was just installed" : "its files are no longer installed"));
 	}
-	const auto pending = nlohmann::json::parse(ReadSmallPlainFile(fs::u8path(SoloPath("needs-laps")) /
-		fs::u8path(name), kDescriptorMax), nullptr, false);
-	if (pending.is_object() && fresh.is_object() && pending.contains("files") && fresh.contains("files") &&
-	    pending["files"] != fresh["files"])
+	// A replaced entry for other files goes first, so a file that cannot be
+	// removed (in use, antivirus) leaves one state, not both.
+	std::string detail;
+	if (pendingOther && !RemoveDescriptorFile(fs::u8path(SoloPath("needs-laps")) / fs::u8path(name), detail))
+		return refuse("its file in solo/needs-laps is read-only or in use (antivirus?)", "stale entry kept: " + detail);
+	if (kind == 2 && keptOther && !RemoveDescriptorFile(tracks / fs::u8path(name), detail))
+		return refuse("its file in solo/tracks is read-only or in use (antivirus?)", "stale entry kept: " + detail);
+	if (kind != 2)
 	{
-		Log("refused conflicting pending file pins for " + name);
-		return 0;
-	}
-	if (KeepDescriptorFile("tracks", name, json))
-	{
+		if (!KeepDescriptorFile("tracks", name, json, &why))
+			return false;
 		DropNeedsLaps(name);
-		return 1;
+		return true;
 	}
-	return 0;
+	// A chosen lap count stays with the same pins. A reinstall may change
+	// title, author or capabilities: publish those, keep the player's laps.
+	if (kept.is_object() && kept.contains("files") && !keptOther)
+	{
+		const auto merged = AP_SoloMergeNeedsLaps(kept, fresh);
+		if (merged.is_null())
+			return refuse("its kept lap count is not 1 to 7; delete its file in solo/tracks",
+			              "kept laps are missing or out of range");
+		if (!AP_SoloDescriptorUnchanged(kept, merged) && !KeepDescriptorFile("tracks", name, merged.dump(), &why))
+			return false;
+		DropNeedsLaps(name);
+		return true;
+	}
+	return KeepDescriptorFile("needs-laps", name, json, &why);
+}
+} // namespace
+
+extern "C" int AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, const char *json)
+{
+	std::string why;
+	return RecordDescriptor(1, contentId, revision, json, DescriptorScope(), why) ? 1 : 0;
 }
 
 extern "C" int AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *revision, const char *json)
 {
-	if (!contentId || !revision || !json)
-		return 0;
-	const std::string name = AP_SoloDescriptorFileName(contentId, revision);
-	const nlohmann::json fresh = nlohmann::json::parse(json, nullptr, false);
-	std::error_code ec;
-	const fs::path tracks = fs::u8path(SoloPath("tracks"));
-	if (name.empty() || !fresh.is_object() || SoloRootIsLink() || fs::is_symlink(tracks, ec))
-		return 0;
-	// A chosen lap count stays with the same pins. A conflicting pair needs
-	// another revision instead of replacing an installed revision's identity.
-	const fs::path kept = tracks / fs::u8path(name);
-	const nlohmann::json old = fs::is_regular_file(fs::symlink_status(kept, ec))
-	                               ? nlohmann::json::parse(ReadSmallPlainFile(kept, kDescriptorMax), nullptr, false)
-	                               : nlohmann::json();
-	if (old.is_object() && old.contains("files") && old["files"] == fresh.value("files", nlohmann::json()))
-	{
-		// A reinstall may change title, author or capabilities. Preserve only
-		// the player's chosen laps; publish the rest of the fresh descriptor.
-		const auto merged = AP_SoloMergeNeedsLaps(old, fresh);
-		if (merged.is_null())
-			return 0;
-		if (!AP_SoloDescriptorUnchanged(old, merged) &&
-		    !KeepDescriptorFile("tracks", name, merged.dump()))
-			return 0;
-		DropNeedsLaps(name);
-		return 1;
-	}
-	if (old.is_object() && old.contains("files"))
-	{
-		Log("refused conflicting file pins for " + name);
-		return 0;
-	}
-	const auto pending = nlohmann::json::parse(ReadSmallPlainFile(fs::u8path(SoloPath("needs-laps")) /
-		fs::u8path(name), kDescriptorMax), nullptr, false);
-	if (pending.is_object() && pending.contains("files") && pending["files"] != fresh.value("files", nlohmann::json()))
-	{
-		Log("refused conflicting pending file pins for " + name);
-		return 0;
-	}
-	if (!KeepDescriptorFile("needs-laps", name, json))
-		return 0;
-	return 1;
+	std::string why;
+	return RecordDescriptor(2, contentId, revision, json, DescriptorScope(), why) ? 1 : 0;
 }
 
 #ifdef CTR_CUSTOM_PACKAGES
 namespace {
+// PinSignature of a verified store package's LEV and VRM, or "".
+std::string StoreSignature(const CustomPackageManifest &m)
+{
+	const CustomPackageFile *lev = nullptr, *vrm = nullptr;
+	for (unsigned int i = 0; i < m.count; i++)
+	{
+		if (!std::strcmp(m.files[i].role, "lev")) lev = &m.files[i];
+		if (!std::strcmp(m.files[i].role, "vrm")) vrm = &m.files[i];
+	}
+	if (!lev || !vrm)
+		return std::string();
+	return std::string(m.version) + "|lev:" + lev->sha256 + ":" + std::to_string((std::uintmax_t)lev->bytes) +
+	       "|vrm:" + vrm->sha256 + ":" + std::to_string((std::uintmax_t)vrm->bytes);
+}
+
+// A short name for a store package in a menu message: its title, else its pin.
+std::string PackageLabel(const CustomPackageStoreEntry &entry)
+{
+	std::string title = entry.manifest.title[0] ? entry.manifest.title : "package " + std::string(entry.pin).substr(0, 12);
+	if (title.size() > 40)
+	{
+		size_t cut = 37; // never inside a UTF-8 sequence
+		while (cut > 0 && ((unsigned char)title[cut] & 0xc0) == 0x80)
+			cut--;
+		title = title.substr(0, cut) + "...";
+	}
+	return title;
+}
+
 struct StorePublication
 {
+	struct Descriptor { int kind; std::string key, revision, json, title, pin; };
+	std::vector<Descriptor> descriptors;
+	std::set<std::string> live; // StoreSignature of every verified package
+	std::vector<std::string> notes; // log lines from the worker, written on the game thread
 	int failed = 0;
 	int published = 0;
+	std::string assets;
 	std::string pin;
 	std::string error;
+	const std::atomic<bool> *cancel = nullptr;
 };
 void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 {
 	auto &result = *static_cast<StorePublication *>(opaque);
+	if (result.cancel && result.cancel->load())
+		throw std::runtime_error("Track verification cancelled");
+	if (entry->verified)
+		result.live.insert(StoreSignature(entry->manifest));
 	if (!result.pin.empty() && result.pin != entry->pin) return;
 	result.published++;
 	if (!entry->verified)
 	{
 		result.failed++;
-		if (result.error.empty()) result.error = entry->error;
+		const std::string named = PackageLabel(*entry) + ": " + entry->error + "; reinstall or remove this track";
+		result.notes.push_back("package " + std::string(entry->pin) + " not published: " + named);
+		if (result.error.empty()) result.error = named;
 		return;
 	}
 	char key[65], revision[65], json[16384], error[256];
@@ -1189,38 +1367,101 @@ void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 				}
 		}
 	}
-	const int kind = CustomPackage_StoreDescriptor(AssetsDir().c_str(), entry->pin,
+	const int kind = CustomPackage_StoreDescriptor(result.assets.c_str(), entry->pin,
 		knownKey.empty() ? nullptr : knownKey.c_str(),
 		key, sizeof key, revision, sizeof revision, json, sizeof json, error, sizeof error);
-	if (kind == 1)
-	{
-		const std::string name = AP_SoloDescriptorFileName(key, revision);
-		const fs::path kept = fs::u8path(SoloPath("tracks")) / fs::u8path(name);
-		const auto old = nlohmann::json::parse(ReadSmallPlainFile(kept, kDescriptorMax), nullptr, false);
-		const auto fresh = nlohmann::json::parse(json, nullptr, false);
-		if (AP_SoloDescriptorUnchanged(old, fresh))
-			return;
-	}
-	if (!kind || !(kind == 2 ? AP_Solo_RecordTrackNeedsLaps(key, revision, json)
-	                         : AP_Solo_RecordTrackDescriptor(key, revision, json)))
+	if (!kind)
 	{
 		result.failed++;
-		if (result.error.empty()) result.error = kind ? "Could not publish the Play Solo descriptor" : error;
+		const std::string named = PackageLabel(*entry) + ": " + error;
+		result.notes.push_back("package " + std::string(entry->pin) + " not published: " + named);
+		if (result.error.empty()) result.error = named;
 	}
+	else
+		result.descriptors.push_back({kind, key, revision, json, entry->manifest.title, entry->pin});
 }
-}
-#endif
 
-extern "C" int AP_Solo_PublishInstalledStore(const char *pin, char *error, size_t errorSize)
+// Two installed packages can resolve to one Play Solo entry (same track key
+// and version) with different files: a track reinstalled after its files
+// changed without a new version, or two copies whose titles fold to the same
+// key. Only one can own solo/tracks/<key>__<version>.json: the copy that owns
+// it now while it is still installed, otherwise the newest install. The others
+// stay installed, so seeds that pin them still load; Play Solo leaves them out
+// and the log says which and why.
+void KeepOneCopyPerEntry(StorePublication &result)
 {
-	if (error && errorSize) error[0] = 0;
-#ifdef CTR_CUSTOM_PACKAGES
-	StorePublication result;
-	if (pin && *pin) result.pin = pin;
-	{
-		const fs::path store = fs::u8path(AssetsDir()) / "tracks/packages";
+	using Descriptor = StorePublication::Descriptor;
+	std::vector<Descriptor> &all = result.descriptors;
+	std::vector<bool> skip(all.size(), false);
+	auto pins = [](const std::string &json) {
+		const auto d = nlohmann::json::parse(json, nullptr, false);
+		return d.is_object() ? d.value("files", nlohmann::json()) : nlohmann::json();
+	};
+	auto files = [&](const Descriptor &d) { return pins(d.json); };
+	auto installed = [&](const Descriptor &d) {
 		std::error_code ec;
-		if (!fs::exists(store, ec) && result.pin.empty()) return 1;
+		const auto t = fs::last_write_time(fs::u8path(result.assets) / "tracks/packages" / d.pin / "manifest.json", ec);
+		return ec ? fs::file_time_type::min() : t;
+	};
+	for (size_t i = 0; i < all.size(); i++)
+	{
+		if (skip[i])
+			continue;
+		const std::string name = AP_SoloDescriptorFileName(all[i].key, all[i].revision);
+		std::vector<size_t> same;
+		bool differ = false;
+		for (size_t j = i; j < all.size(); j++)
+			if (!skip[j] && AP_SoloDescriptorFileName(all[j].key, all[j].revision) == name)
+			{
+				same.push_back(j);
+				differ = differ || files(all[j]) != files(all[i]);
+			}
+		if (!differ || name.empty())
+			continue;
+		nlohmann::json owner;
+		for (const char *folder : {"tracks", "needs-laps"})
+			if (owner.is_null())
+				owner = pins(ReadSmallPlainFile(fs::u8path(SoloPath(folder)) / fs::u8path(name), kDescriptorMax));
+		size_t keep = same[0];
+		bool current = false;
+		for (size_t j : same)
+			if (!current && !owner.is_null() && files(all[j]) == owner)
+			{
+				keep = j;
+				current = true;
+			}
+		if (!current)
+			for (size_t j : same)
+				if (installed(all[j]) > installed(all[keep]) ||
+				    (installed(all[j]) == installed(all[keep]) && all[j].pin > all[keep].pin))
+					keep = j;
+		const nlohmann::json kept = files(all[keep]);
+		for (size_t j : same)
+			if (files(all[j]) != kept)
+			{
+				skip[j] = true;
+				result.notes.push_back("left " + all[j].title + " (package " + all[j].pin.substr(0, 12) + ") out of Play Solo: " + name +
+				    " belongs to " + all[keep].title + " (package " + all[keep].pin.substr(0, 12) + "), " +
+				    (current ? "which owns it now" : "the newest install") + "; same id and version, other files");
+			}
+	}
+	std::vector<Descriptor> out;
+	for (size_t i = 0; i < all.size(); i++)
+		if (!skip[i])
+			out.push_back(std::move(all[i]));
+	all = std::move(out);
+}
+StorePublication CollectInstalledStore(const std::string &assets, const std::string &pin,
+                                      const std::atomic<bool> *cancel = nullptr)
+{
+	StorePublication result;
+	result.assets = assets;
+	result.pin = pin;
+	result.cancel = cancel;
+	{
+		const fs::path store = fs::u8path(assets) / "tracks/packages";
+		std::error_code ec;
+		if (!fs::exists(store, ec) && result.pin.empty()) return result;
 		char scanError[256] = {};
 		if (!CustomPackage_ScanStore(store.u8string().c_str(), PublishStoreEntry, &result,
 		                             scanError, sizeof scanError))
@@ -1233,6 +1474,185 @@ extern "C" int AP_Solo_PublishInstalledStore(const char *pin, char *error, size_
 	{
 		result.failed++;
 		result.error = "Installed package was not found in the shared store";
+	}
+	if (result.pin.empty())
+		KeepOneCopyPerEntry(result);
+	return result;
+}
+
+// Writes one collected descriptor. On a refusal `message` names the track and
+// says what to do (the menus show at most 170 characters of it).
+bool ApplyStoreDescriptor(const StorePublication::Descriptor &d, const StorePublication &from, std::string &message)
+{
+	DescriptorScope scope;
+	scope.live = &from.live;
+	scope.fresh = !from.pin.empty();
+	std::string why;
+	if (RecordDescriptor(d.kind, d.key.c_str(), d.revision.c_str(), d.json.c_str(), scope, why))
+		return true;
+	std::string title = d.title.empty() ? d.key : d.title;
+	if (title.size() > 40)
+	{
+		size_t cut = 37; // never inside a UTF-8 sequence
+		while (cut > 0 && ((unsigned char)title[cut] & 0xc0) == 0x80)
+			cut--;
+		title = title.substr(0, cut) + "...";
+	}
+	Log("package descriptor not published: " + title + " " + d.revision + ": " + why);
+	message = title + " " + (d.revision.size() > 16 ? d.revision.substr(0, 13) + "..." : d.revision) + ": " + why;
+	if (message.size() > kMenuMessageMax)
+	{
+		size_t cut = kMenuMessageMax; // never inside a UTF-8 sequence
+		while (cut > 0 && ((unsigned char)message[cut] & 0xc0) == 0x80)
+			cut--;
+		message.resize(cut);
+	}
+	return false;
+}
+
+std::future<StorePublication> g_trackPublication;
+std::atomic<bool> g_trackPublicationCancel{false};
+StorePublication g_trackPublicationResult;
+std::vector<std::string> g_trackPublicationArgs;
+std::string g_trackPublicationFailure; // the first refused track, for the menu
+size_t g_trackPublicationIndex = 0;
+bool g_trackPublishing = false;
+} // namespace
+#endif
+
+namespace {
+bool TrackPublicationBusy()
+{
+#ifdef CTR_CUSTOM_PACKAGES
+	return g_trackPublication.valid() || g_trackPublishing;
+#else
+	return false;
+#endif
+}
+
+bool StartTrackPublication(const std::vector<std::string> &args)
+{
+#ifdef CTR_CUSTOM_PACKAGES
+	if (g_job.state == AP_SOLO_JOB_RUNNING || TrackPublicationBusy() || !AP_Solo_RuntimePresent())
+		return false;
+	g_job.child.release();
+	g_job.kind = JOB_TRACKS;
+	g_job.state = AP_SOLO_JOB_RUNNING;
+	g_job.phase = "Verifying installed tracks";
+	g_job.errorText.clear(); g_job.errorOption.clear(); g_job.resultRoom.clear();
+	g_job.result = nlohmann::json();
+	if (SoloRootIsLink())
+	{
+		JobFail("link", "The solo folder is a link. Make it a normal folder inside the client folder.", "");
+		return true;
+	}
+	g_trackPublicationArgs = args;
+	g_trackPublicationCancel.store(false);
+	const std::string assets = AssetsDir();
+	try
+	{
+		g_trackPublication = std::async(std::launch::async, [assets] {
+			return CollectInstalledStore(assets, "", &g_trackPublicationCancel);
+		});
+	}
+	catch (const std::exception &e) { JobFail("publish", e.what(), ""); }
+	return true;
+#else
+	return JobStart(JOB_TRACKS, args, kQuickLimitMs);
+#endif
+}
+
+bool TickTrackPublication()
+{
+#ifdef CTR_CUSTOM_PACKAGES
+	if (g_trackPublication.valid())
+	{
+		if (g_trackPublication.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+			return true;
+		try { g_trackPublicationResult = g_trackPublication.get(); }
+		catch (const std::exception &e)
+		{
+			if (!g_trackPublicationCancel.load()) JobFail("publish", e.what(), "");
+			return true;
+		}
+		if (g_trackPublicationCancel.load())
+		{
+			g_trackPublicationResult = StorePublication();
+			return true;
+		}
+		for (const std::string &note : g_trackPublicationResult.notes)
+			Log(note);
+		// A refused package does not stop the others; the first is named at the end.
+		g_trackPublicationIndex = 0;
+		g_trackPublicationFailure = g_trackPublicationResult.failed ? g_trackPublicationResult.error : std::string();
+		g_trackPublishing = true;
+		g_job.phase = "Publishing track entries";
+	}
+	if (g_trackPublishing)
+	{
+		if (g_trackPublicationIndex < g_trackPublicationResult.descriptors.size())
+		{
+			// One small descriptor per frame; package verification never runs here.
+			// A refused track does not stop the others.
+			const auto &d = g_trackPublicationResult.descriptors[g_trackPublicationIndex++];
+			std::string message;
+			if (!ApplyStoreDescriptor(d, g_trackPublicationResult, message) && g_trackPublicationFailure.empty())
+				g_trackPublicationFailure = message;
+			return true;
+		}
+		g_trackPublishing = false;
+		g_trackPublicationResult = StorePublication();
+		if (!g_trackPublicationFailure.empty())
+		{
+			JobFail("publish", g_trackPublicationFailure, "");
+			return true;
+		}
+		g_job.state = AP_SOLO_JOB_IDLE;
+		if (!JobStart(JOB_TRACKS, g_trackPublicationArgs, kQuickLimitMs))
+		{
+			// The menu is already busy on this job; an idle state would read as success.
+			g_job.kind = JOB_TRACKS;
+			JobFail("start", "the runtime is missing", "");
+		}
+		return true;
+	}
+#endif
+	return false;
+}
+
+void CancelTrackPublication()
+{
+#ifdef CTR_CUSTOM_PACKAGES
+	g_trackPublicationCancel.store(true);
+	g_trackPublishing = false;
+	g_trackPublicationResult = StorePublication();
+#endif
+}
+
+void FinishTrackPublication()
+{
+#ifdef CTR_CUSTOM_PACKAGES
+	CancelTrackPublication();
+	if (g_trackPublication.valid())
+	{
+		try { g_trackPublication.get(); } catch (const std::exception &) {}
+	}
+#endif
+}
+} // namespace
+
+extern "C" int AP_Solo_PublishInstalledStore(const char *pin, char *error, size_t errorSize)
+{
+	if (error && errorSize) error[0] = 0;
+#ifdef CTR_CUSTOM_PACKAGES
+	auto result = CollectInstalledStore(AssetsDir(), pin ? pin : "");
+	for (const std::string &note : result.notes)
+		Log(note);
+	for (const auto &d : result.descriptors)
+	{
+		std::string message;
+		if (!ApplyStoreDescriptor(d, result, message) && !result.failed++)
+			result.error = message;
 	}
 	if (result.failed)
 	{
@@ -1326,16 +1746,51 @@ extern "C" int AP_Solo_OptionGet(int index, struct APSoloOptionInfo *out)
 	CopyText(out->name, sizeof out->name, o.name);
 	CopyText(out->label, sizeof out->label, o.label);
 	CopyText(out->group, sizeof out->group, o.group);
-	CopyText(out->value, sizeof out->value, o.value);
-	out->kind = o.kind == "toggle" ? AP_SOLO_OPT_TOGGLE : o.kind == "choice" ? AP_SOLO_OPT_CHOICE : AP_SOLO_OPT_RANGE;
+	CopyText(out->value, sizeof out->value, o.kind == "set" ? AP_SoloSetSummary(o) : o.value);
+	out->kind = o.kind == "toggle"   ? AP_SOLO_OPT_TOGGLE
+	            : o.kind == "choice" ? AP_SOLO_OPT_CHOICE
+	            : o.kind == "set"    ? AP_SOLO_OPT_SET
+	                                 : AP_SOLO_OPT_RANGE;
 	out->visible = AP_SoloOptionVisible(g_options, o) ? 1 : 0;
 	out->forced = o.forced.empty() ? 0 : 1;
+	out->changed = o.value != o.initial ? 1 : 0;
+	const std::string guard = AP_SoloGuardReason(g_options, o);
+	out->blocked = guard.empty() ? 0 : 1;
 	if (!o.forced.empty())
 		CopyText(out->note, sizeof out->note, o.forcedReason);
+	else if (!guard.empty())
+		CopyText(out->note, sizeof out->note, guard);
 	else if (AP_SoloOptionWarns(g_options, o))
 		CopyText(out->note, sizeof out->note, o.warnReason);
 	return 1;
 }
+
+extern "C" int AP_Solo_OptionItemCount(int index)
+{
+	if (index < 0 || index >= (int)g_options.size() || g_options[index].kind != "set")
+		return 0;
+	return (int)g_options[index].keys.size();
+}
+
+extern "C" int AP_Solo_OptionItemGet(int index, int item, struct APSoloItemInfo *out)
+{
+	if (!out || item < 0 || item >= AP_Solo_OptionItemCount(index))
+		return 0;
+	const APSoloOption &o = g_options[index];
+	std::memset(out, 0, sizeof *out);
+	CopyText(out->label, sizeof out->label, o.keyLabels[item]);
+	out->on = AP_SoloSetHas(o, o.keys[item]) ? 1 : 0;
+	out->isDefault = item < (int)o.keyDefault.size() && o.keyDefault[item] ? 1 : 0;
+	return 1;
+}
+
+extern "C" void AP_Solo_OptionItemToggle(int index, int item)
+{
+	if (index >= 0 && index < (int)g_options.size())
+		AP_SoloSetToggle(g_options[index], item);
+}
+
+extern "C" int AP_Solo_OptionsBlocked(void) { return AP_SoloFirstBlocked(g_options); }
 
 extern "C" void AP_Solo_OptionStep(int index, int direction)
 {
@@ -1409,6 +1864,16 @@ extern "C" int AP_Solo_PickTake(char *out, int size)
 	g_pickState = 0;
 	g_pickPath.clear();
 	return result;
+}
+
+extern "C" const char *AP_Solo_Password(void) { return g_sessionPassword.c_str(); }
+
+extern "C" int AP_Solo_SetPassword(const char *password)
+{
+	if (!password || std::strlen(password) >= 64 || AP_Solo_SessionActive())
+		return 0;
+	g_sessionPassword = password;
+	return 1;
 }
 
 extern "C" int AP_Solo_SessionStart(const char *roomId)
@@ -1517,6 +1982,7 @@ extern "C" void AP_Solo_Shutdown(void)
 {
 	g_session.pendingRoom.clear();
 	AP_Solo_JobCancel();
+	FinishTrackPublication(); // Quit only: never join a verifier from a frame.
 	AP_Solo_SessionStop();
 	// Bounded wait for the server to save and exit.
 	while (g_session.state == AP_SOLO_SESSION_STOPPING)

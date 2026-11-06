@@ -4,6 +4,8 @@
 #include <stdio.h>
 
 #include "ap_traps.h"
+#include "ap_wumpa.h"
+#include "ap_capability.h"
 #include "ap_democam.h"
 #include "ap_hooks.h" // AP_LogLine, AP_FeedTrapLine, AP_DevKeysEnabled
 #include "ap_deathlink.h" // AP_DeathLinkSuppressSelfInflicted, for Flatten's ruled
@@ -133,7 +135,7 @@ static struct Driver *AP_TrapLocalDriver(void)
 
 static int AP_TrapIsLocal(struct Driver *driver)
 {
-	return driver != 0 && driver == AP_TrapLocalDriver();
+	return driver != 0 && driver == AP_TrapLocalDriver() && AP_CapabilityRoomStatsRace();
 }
 
 int AP_TrapSuppressCrateReward(struct Driver *driver)
@@ -157,6 +159,8 @@ int AP_TrapWeakenedActive(struct Driver *driver)
 
 int AP_TrapWeakenBoostTier(int permanentTier)
 {
+	if (!AP_CapabilityRoomStatsRace())
+		return permanentTier;
 	return AP_TrapWeakenedBoostTier(g_active[AP_TRAP_WEAKENED_KART],
 	                                permanentTier, AP_CAP_BOOST_USF);
 }
@@ -590,7 +594,7 @@ static void AP_TrapPollReroll(struct GameTracker *gGT, struct Driver *local)
 // resolves; -1 means no reroll is in flight and the filter is inert.
 int AP_TrapRerollExcludedItem(void)
 {
-	return g_trap_reroll_excluded;
+	return AP_CapabilityRoomStatsRace() ? g_trap_reroll_excluded : -1;
 }
 
 // Forced Use: remember what has to leave the slot. The button injection itself
@@ -898,7 +902,7 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, i
 		// bookkeeping and the mask veto all behave exactly as they do for a
 		// normal hit. The predicate has already established that nothing is
 		// protecting the fruit, so this genuinely takes it.
-		RB_Player_ModifyWumpa(local, -AP_TRAP_JUICED_WUMPA);
+		RB_Player_ModifyWumpa(local, -AP_WumpaRaceCount(local));
 		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_WUMPA_WIPEOUT);
 		break;
 	case AP_TRAP_ITEM_REROLL:
@@ -1406,7 +1410,8 @@ void AP_TrapTick(struct GameTracker *gGT)
 // the applied latch lags one frame behind the scheduler on the arming edge.
 int AP_TrapOwnsCamera(void)
 {
-	return g_fp_applied || AP_TrapSchedActive(&g_sched, AP_TRAP_FIRSTPERSON);
+	return AP_CapabilityRoomStatsRace() &&
+	       (g_fp_applied || AP_TrapSchedActive(&g_sched, AP_TRAP_FIRSTPERSON));
 }
 
 int AP_TrapReverseCamera(struct Driver *driver)
@@ -1446,7 +1451,8 @@ void AP_TrapDiagCounts(int *armed, int *warning, int *active, int *suspended)
 void AP_TrapRenderTransform(struct PushBuffer *pb)
 {
 	int x;
-	if (pb == 0 || sdata == 0 || sdata->gGT == 0 || pb != &sdata->gGT->pushBuffer[0])
+	if (pb == 0 || sdata == 0 || sdata->gGT == 0 || pb != &sdata->gGT->pushBuffer[0] ||
+	    !AP_CapabilityRoomStatsRace())
 		return;
 
 	// Negating the projection X row mirrors only camera-projected geometry.
@@ -1476,7 +1482,8 @@ void AP_TrapRenderTransform(struct PushBuffer *pb)
 
 int AP_TrapMirrorCullFlip(void)
 {
-	return AP_TrapEffectVisible(g_active[AP_TRAP_MIRROR_MODE], g_trap_paused);
+	return AP_CapabilityRoomStatsRace() &&
+	       AP_TrapEffectVisible(g_active[AP_TRAP_MIRROR_MODE], g_trap_paused);
 }
 
 int AP_TrapGravity(struct Driver *driver, int gravityY)

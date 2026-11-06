@@ -14,6 +14,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
@@ -21,6 +22,17 @@
 #include <set>
 #include <string>
 #include <vector>
+
+// Package ids freeze the content key between the first and last slash. Two
+// revisions of that content cannot occupy one seed's track entry together.
+static inline bool AP_SoloTrackSameContent(const std::string &a, const std::string &b)
+{
+	if (a.compare(0, 8, "package/") != 0 || b.compare(0, 8, "package/") != 0)
+		return false;
+	const size_t endA = a.rfind('/'), endB = b.rfind('/');
+	return endA > 8 && endA == endB && endA + 1 < a.size() && endB + 1 < b.size() &&
+	       a.compare(0, endA, b, 0, endB) == 0;
+}
 
 enum APSoloEventKind
 {
@@ -434,6 +446,7 @@ struct APSoloOption
 	std::string name, label, group, kind, doc;
 	std::vector<std::string> choices; // choice names, in value order
 	int lo = 0, hi = 0;               // range
+	int step = 1;                     // range: how far Left / Right move (overlay rule "step")
 	std::string value;                // shown and passed as --set name=value
 	std::string initial;              // the preset's value
 	std::string forced;               // non-empty: fixed to this value
@@ -441,6 +454,14 @@ struct APSoloOption
 	nlohmann::json visibleWhen;       // {"other": ["v1", "v2"]}
 	nlohmann::json warnWhen;
 	std::string warnReason;
+	// kind "set" (a checklist, A2-41): the rows, their labels and which rows
+	// the option's default checks. `value` is the checked keys as a JSON array
+	// in row order, which is also what --set passes.
+	std::vector<std::string> keys, keyLabels;
+	std::vector<bool> keyDefault;
+	// Overlay guards on this row (also on the set a count guard names): each
+	// one refuses generation on the screen, as the world would refuse it.
+	std::vector<nlohmann::json> guards;
 };
 
 static inline std::string AP_SoloValueText(const nlohmann::json &v)
@@ -454,8 +475,108 @@ static inline std::string AP_SoloValueText(const nlohmann::json &v)
 	return std::string();
 }
 
+// Option help as the apworld writes it is hard-wrapped Markdown. The help page
+// wraps by width, so single line breaks become spaces, a blank line or a list
+// item starts a new line, and the Markdown marks (** and `) are dropped.
+static inline std::string AP_SoloHelpText(const std::string &doc)
+{
+	std::string out;
+	size_t i = 0;
+	while (i < doc.size())
+	{
+		size_t end = doc.find('\n', i);
+		if (end == std::string::npos)
+			end = doc.size();
+		std::string line = doc.substr(i, end - i);
+		i = end + 1;
+		std::string clean;
+		for (size_t k = 0; k < line.size(); k++)
+		{
+			if (line[k] == '`' || (line[k] == '*' && k + 1 < line.size() && line[k + 1] == '*'))
+			{
+				if (line[k] == '*')
+					k++;
+				continue;
+			}
+			clean += line[k];
+		}
+		size_t b = clean.find_first_not_of(" \t"), e = clean.find_last_not_of(" \t\r");
+		if (b == std::string::npos)
+		{
+			if (!out.empty() && out.back() != '\n')
+				out += '\n';
+			continue;
+		}
+		clean = clean.substr(b, e - b + 1);
+		const bool item = clean.size() > 1 && (clean[0] == '-' || clean[0] == '*') && clean[1] == ' ';
+		if (!out.empty() && out.back() != '\n')
+			out += item ? '\n' : ' ';
+		out += clean;
+	}
+	while (!out.empty() && out.back() == '\n')
+		out.pop_back();
+	return out;
+}
+
+// The checked keys of a set row, in row order.
+static inline std::vector<std::string> AP_SoloSetEntries(const APSoloOption &row)
+{
+	std::vector<std::string> out;
+	const nlohmann::json v = nlohmann::json::parse(row.value, nullptr, false);
+	if (v.is_array())
+		for (const auto &e : v)
+			if (e.is_string())
+				out.push_back(e.get<std::string>());
+	return out;
+}
+
+static inline bool AP_SoloSetHas(const APSoloOption &row, const std::string &key)
+{
+	for (const std::string &e : AP_SoloSetEntries(row))
+		if (e == key)
+			return true;
+	return false;
+}
+
+// The set's value from checked keys: a JSON array in row order, so the same
+// choice always gives the same text (changed is a plain compare).
+static inline std::string AP_SoloSetValue(const APSoloOption &row, const std::vector<std::string> &checked)
+{
+	nlohmann::json out = nlohmann::json::array();
+	for (const std::string &k : row.keys)
+		if (std::find(checked.begin(), checked.end(), k) != checked.end())
+			out.push_back(k);
+	return out.dump();
+}
+
+// Cross on checklist row `item`: check or uncheck it.
+static inline void AP_SoloSetToggle(APSoloOption &row, int item)
+{
+	if (row.kind != "set" || !row.forced.empty() || item < 0 || item >= (int)row.keys.size())
+		return;
+	std::vector<std::string> checked = AP_SoloSetEntries(row);
+	auto at = std::find(checked.begin(), checked.end(), row.keys[item]);
+	if (at != checked.end())
+		checked.erase(at);
+	else
+		checked.push_back(row.keys[item]);
+	row.value = AP_SoloSetValue(row, checked);
+}
+
+// "All 7", "None" or "4 of 7": the set row's value on the group page.
+static inline std::string AP_SoloSetSummary(const APSoloOption &row)
+{
+	const size_t on = AP_SoloSetEntries(row).size(), all = row.keys.size();
+	if (on == 0)
+		return "None";
+	if (on == all)
+		return "All " + std::to_string(all);
+	return std::to_string(on) + " of " + std::to_string(all);
+}
+
 // Build the rows. Options the overlay names but the world lacks are skipped
-// (the apworld test fails on that anyway). Only toggle, choice and range rows.
+// (the apworld test fails on that anyway). Toggle, choice and range rows, and
+// set rows the overlay gives a checklist.
 static inline std::vector<APSoloOption> AP_SoloBuildOptions(const nlohmann::json &describe)
 {
 	std::vector<APSoloOption> rows;
@@ -491,12 +612,24 @@ static inline std::vector<APSoloOption> AP_SoloBuildOptions(const nlohmann::json
 			row.label = f.value("display_name", row.name);
 			row.group = group;
 			row.kind = f.value("kind", std::string());
-			row.doc = f.value("doc", std::string());
+			row.doc = AP_SoloHelpText(f.value("doc", std::string()));
 			if (row.kind == "named_range")
 				row.kind = "range";
 			if (row.kind == "text_choice")
 				row.kind = "choice";
-			if (row.kind != "toggle" && row.kind != "choice" && row.kind != "range")
+			const nlohmann::json checklists = overlay.value("checklists", nlohmann::json::object());
+			if (row.kind == "set" && checklists.is_object() && checklists.contains(row.name) &&
+			    checklists[row.name].is_array())
+			{
+				for (const auto &r : checklists[row.name])
+					if (r.is_array() && !r.empty() && r[0].is_string())
+					{
+						row.keys.push_back(r[0].get<std::string>());
+						row.keyLabels.push_back(r.size() > 1 && r[1].is_string() ? r[1].get<std::string>()
+						                                                          : r[0].get<std::string>());
+					}
+			}
+			else if (row.kind != "toggle" && row.kind != "choice" && row.kind != "range")
 				continue;
 			if (row.kind == "choice" && f.contains("choices") && f["choices"].is_array())
 				for (const auto &c : f["choices"])
@@ -508,7 +641,35 @@ static inline std::vector<APSoloOption> AP_SoloBuildOptions(const nlohmann::json
 				row.hi = f.value("range_end", 0);
 			}
 			nlohmann::json v = values.contains(row.name) ? values[row.name] : f.value("default", nlohmann::json());
-			row.value = AP_SoloValueText(v);
+			if (row.kind == "set")
+			{
+				// A YAML entry without a row (a custom track in the boss track
+				// pool) becomes a row of its own, so it is kept and shown.
+				std::vector<std::string> checked;
+				if (v.is_array())
+					for (const auto &e : v)
+						if (e.is_string())
+						{
+							checked.push_back(e.get<std::string>());
+							if (std::find(row.keys.begin(), row.keys.end(), checked.back()) == row.keys.end())
+							{
+								row.keys.push_back(checked.back());
+								row.keyLabels.push_back(checked.back());
+							}
+						}
+				const nlohmann::json d = f.value("default", nlohmann::json::array());
+				for (const std::string &k : row.keys)
+				{
+					bool on = false;
+					if (d.is_array())
+						for (const auto &e : d)
+							on = on || (e.is_string() && e.get<std::string>() == k);
+					row.keyDefault.push_back(on);
+				}
+				row.value = AP_SoloSetValue(row, checked);
+			}
+			else
+				row.value = AP_SoloValueText(v);
 			if (row.kind == "toggle" && row.value != "true")
 				row.value = "false";
 			auto rule = rules.find(row.name);
@@ -521,6 +682,10 @@ static inline std::vector<APSoloOption> AP_SoloBuildOptions(const nlohmann::json
 					row.forcedReason = r.value("reason", std::string());
 					row.value = row.forced;
 				}
+				if (r.contains("label") && r["label"].is_string() && !r["label"].get<std::string>().empty())
+					row.label = r["label"].get<std::string>();
+				if (r.contains("step") && r["step"].is_number_integer())
+					row.step = std::max(1, r["step"].get<int>());
 				if (r.contains("visible_when"))
 					row.visibleWhen = r["visible_when"];
 				if (r.contains("warn_when"))
@@ -533,6 +698,18 @@ static inline std::vector<APSoloOption> AP_SoloBuildOptions(const nlohmann::json
 			rows.push_back(std::move(row));
 		}
 	}
+	// Guards: on their own row, and a count guard also on the set it counts.
+	if (overlay.contains("guards") && overlay["guards"].is_array())
+		for (const auto &g : overlay["guards"])
+		{
+			if (!g.is_object() || !g.contains("option") || !g["option"].is_string())
+				continue;
+			for (auto &row : rows)
+				if (row.name == g["option"].get<std::string>() ||
+				    (g.contains("at_most_count_of") && g["at_most_count_of"].is_string() &&
+				     row.name == g["at_most_count_of"].get<std::string>()))
+					row.guards.push_back(g);
+		}
 	return rows;
 }
 
@@ -593,6 +770,57 @@ static inline bool AP_SoloOptionWarns(const std::vector<APSoloOption> &rows, con
 	return true;
 }
 
+// An overlay guard (A2-41), with the world's own limits:
+//   {"option": O, "when": {"other": [values]}, "has": K, "at_least": N,
+//    "needs_all": [keys], "at_most_count_of": S, "reason": "..."}
+// Holds (refuses) when every `when` condition holds, set O has K (if named),
+// and O has fewer than N entries, misses a needs_all key, or (a range) is
+// above the number of entries in set S.
+static inline bool AP_SoloGuardActive(const std::vector<APSoloOption> &rows, const nlohmann::json &guard)
+{
+	if (!guard.is_object() || !guard.contains("option") || !guard["option"].is_string())
+		return false;
+	if (guard.contains("when") && !AP_SoloConditionHolds(rows, guard["when"]))
+		return false;
+	const APSoloOption *row = AP_SoloFindOption(rows, guard["option"].get<std::string>());
+	if (!row)
+		return false;
+	if (guard.contains("has") && guard["has"].is_string() && !AP_SoloSetHas(*row, guard["has"].get<std::string>()))
+		return false;
+	if (guard.contains("at_most_count_of") && guard["at_most_count_of"].is_string())
+	{
+		const APSoloOption *set = AP_SoloFindOption(rows, guard["at_most_count_of"].get<std::string>());
+		return set && std::strtoll(row->value.c_str(), nullptr, 10) > (long long)AP_SoloSetEntries(*set).size();
+	}
+	const std::vector<std::string> entries = AP_SoloSetEntries(*row);
+	if (guard.contains("at_least") && guard["at_least"].is_number_integer() &&
+	    (long long)entries.size() < guard["at_least"].get<long long>())
+		return true;
+	if (guard.contains("needs_all") && guard["needs_all"].is_array())
+		for (const auto &k : guard["needs_all"])
+			if (k.is_string() && std::find(entries.begin(), entries.end(), k.get<std::string>()) == entries.end())
+				return true;
+	return false;
+}
+
+// The reason of the first guard on this row that refuses, or "".
+static inline std::string AP_SoloGuardReason(const std::vector<APSoloOption> &rows, const APSoloOption &row)
+{
+	for (const auto &g : row.guards)
+		if (AP_SoloGuardActive(rows, g))
+			return g.value("reason", std::string("The world refuses this value."));
+	return std::string();
+}
+
+// The first row a guard refuses (Continue opens it), or -1.
+static inline int AP_SoloFirstBlocked(const std::vector<APSoloOption> &rows)
+{
+	for (size_t i = 0; i < rows.size(); i++)
+		if (!AP_SoloGuardReason(rows, rows[i]).empty())
+			return (int)i;
+	return -1;
+}
+
 // Left (-1) / Right (+1) on a row. Forced rows never change. Wraps.
 static inline void AP_SoloOptionStep(APSoloOption &row, int direction)
 {
@@ -611,11 +839,14 @@ static inline void AP_SoloOptionStep(APSoloOption &row, int direction)
 	}
 	else if (row.kind == "range" && row.hi >= row.lo)
 	{
-		long long v = std::strtoll(row.value.c_str(), nullptr, 10) + (direction > 0 ? 1 : -1);
-		if (v > row.hi)
-			v = row.lo;
-		if (v < row.lo)
-			v = row.hi;
+		// Moves by `step`, stops at the ends of the range and wraps from one
+		// end to the other, so a value off the step grid still reaches both.
+		long long v = std::strtoll(row.value.c_str(), nullptr, 10);
+		const long long step = row.step > 0 ? row.step : 1;
+		if (direction > 0)
+			v = v >= row.hi ? row.lo : std::min<long long>(v + step, row.hi);
+		else
+			v = v <= row.lo ? row.hi : std::max<long long>(v - step, row.lo);
 		row.value = std::to_string(v);
 	}
 }
@@ -629,7 +860,8 @@ static inline std::vector<std::string> AP_SoloSetArgs(const std::vector<APSoloOp
 	{
 		if (!r.forced.empty() || (AP_SoloOptionVisible(rows, r) && r.value != r.initial))
 		{
-			// Quote choice names so YAML reads "off" as a string, not false.
+			// Quote choice names so YAML reads "off" as a string, not false. A
+			// set is a JSON array, which YAML reads as the list it is.
 			const std::string v = r.kind == "choice" ? "\"" + r.value + "\"" : r.value;
 			out.push_back(r.name + "=" + v);
 		}

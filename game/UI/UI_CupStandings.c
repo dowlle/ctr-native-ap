@@ -214,9 +214,7 @@ void UI_CupStandings_InputAndDraw(void)
 	int cupID = gGT->cup.cupID;
 
 #ifdef CTR_CUSTOM_TRACKS
-	// What a displaced cup is called, or NULL for the retail name. Assigned only
-	// on the adventure-cup branch below, so it can never displace the two other
-	// strings that reach the same draw: the level name and the arcade cup name.
+	// The current custom leg or cup title, or NULL for the retail heading.
 	const char *ctCupName = NULL;
 #endif
 
@@ -224,6 +222,9 @@ void UI_CupStandings_InputAndDraw(void)
 	{
 		// Level ID
 		index = data.metaDataLEV[gGT->levelID].name_LNG;
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+		ctCupName = AP_ContentCupTrackName();
+#endif
 	}
 
 	else if (gGT->cup.trackIndex != 3)

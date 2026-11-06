@@ -118,8 +118,9 @@ static inline int AP_WumpaBankOverflow(int held, int delta)
 
 // The held-at-finish payout, once per race attempt. A new attempt (observed
 // countdown, which a pause-menu restart also produces) arms it; the finish
-// edge takes it. A forced DeathLink loss, a quit or a restart pays nothing:
-// the first is refused here, the other two never reach a finish edge.
+// edge or the attempt's abandonment takes it, whichever comes first. A forced
+// DeathLink loss, an exit to the map and a restart take the abandoned payout
+// below instead of the full count (ruled 2026-11-04).
 typedef struct AP_WumpaFinishLatch
 {
 	int armed;
@@ -134,6 +135,23 @@ static inline int AP_WumpaFinishTake(AP_WumpaFinishLatch *l, int held, int force
 	if (!armed || forcedLoss || held <= 0)
 		return 0;
 	return held;
+}
+
+// The abandoned-attempt payout (ruled 2026-11-04): the fruit picked up in the
+// race minus hits taken, which is the surviving count minus the fruit the
+// attempt started with (the kart's own start plus Progressive Starting Wumpa),
+// so a restart loop can never bank starting fruit. count < 0 means the attempt
+// never touched its fruit. Takes the same latch, so an exit followed by the
+// forced reload, or a finish followed by RETRY, pays once.
+static inline int AP_WumpaLeaveTake(AP_WumpaFinishLatch *l, int count, int start)
+{
+	int armed = l->armed;
+	l->armed = 0;
+	if (!armed || count < 0)
+		return 0;
+	if (start < 0)
+		start = 0;
+	return count > start ? count - start : 0;
 }
 
 // What a shop row shows and whether Cross buys it.

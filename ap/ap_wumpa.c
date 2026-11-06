@@ -43,6 +43,10 @@ static AP_WumpaFinishLatch g_finish_latch = {0};
 // is capped; this count stays exposed to hits until a legitimate finish.
 static int g_race_wumpa = -1;
 static int g_wumpa_race_pending = 0;
+// The fruit this attempt started with: the kart's own start, captured when the
+// full count first opens, plus the Progressive Starting Wumpa applied to it.
+// An abandoned attempt never banks it (ruled 2026-11-04).
+static int g_race_start = 0;
 
 // #249: does this seed bank fruit? Never under the unlimited-fruit cheat.
 static int AP_WumpaBanking(void)
@@ -132,6 +136,7 @@ int AP_WumpaRaceModify(struct Driver *driver, int delta)
 {
 	long long next;
 	if (!AP_WumpaRaceTracking(driver)) return 0;
+	if (g_race_wumpa < 0) g_race_start = driver->numWumpas;
 	next = (long long)(g_race_wumpa >= 0 ? g_race_wumpa : driver->numWumpas) + delta;
 	if (next < 0) next = 0;
 	if (next > 2147483647) next = 2147483647;
@@ -162,13 +167,36 @@ void AP_WumpaDrawHub(void)
 void AP_WumpaOnRaceFinish(struct Driver *driver, int wasHuman, int held)
 {
 	struct GameTracker *gGT = sdata->gGT;
-	int pay;
+	int pay, forced;
 	if (gGT == 0 || driver == 0 || driver != gGT->drivers[0])
 		return;
-	pay = AP_WumpaFinishTake(&g_finish_latch, g_race_wumpa >= 0 ? g_race_wumpa : held, AP_RaceAttemptIsForcedLoss());
+	// A race lost to a received DeathLink banks like an exit to the map: the
+	// fruit picked up minus hits, never the starting fruit (ruled 2026-11-04).
+	forced = AP_RaceAttemptIsForcedLoss();
+	pay = forced ? AP_WumpaLeaveTake(&g_finish_latch, g_race_wumpa, g_race_start)
+	             : AP_WumpaFinishTake(&g_finish_latch, g_race_wumpa >= 0 ? g_race_wumpa : held, 0);
 	if (!AP_WumpaBanking() || !wasHuman || !AP_WumpaAdventureRace(gGT))
 		return;
-	AP_WumpaBank(pay, "collected at the finish");
+	AP_WumpaBank(pay, forced ? "picked up before a DeathLink loss" : "collected at the finish");
+}
+
+// The attempt ends without a finish edge: an exit to the map or a restart from
+// the pause menu (both set a load stage), or a DeathLink loss that leaves the
+// same way. Called on every boundary frame of the tick, before the race state
+// is cleared; the finish latch makes the payout once per attempt, so the
+// forced reload after an exit and a RETRY after a finish pay nothing more.
+// The full count only opens in a tracked Adventure race, so Arcade, Time Trial
+// and Battle bank nothing here. AP fruit received during this attempt that the
+// race never applied (a paused receipt) banks in full: received fruit is
+// limited, so it is never lost with the attempt.
+static void AP_WumpaOnRaceLeave(void)
+{
+	int pay = AP_WumpaLeaveTake(&g_finish_latch, g_race_wumpa, g_race_start);
+	int received = g_wumpa_race_pending;
+	if (!AP_WumpaBanking())
+		return;
+	AP_WumpaBank(pay, "picked up before leaving the race");
+	AP_WumpaBank(received, "AP fruit received in the left race");
 }
 
 // The local human player. Single-player Adventure: drivers[0]. Same convention as
@@ -199,6 +227,21 @@ void AP_WumpaReceive(int count)
 		return;
 	}
 
+	// 0.3.0-alpha2: outside an Adventure race, received fruit
+	// of any origin banks at once (balance and collected total) instead of
+	// waiting for the kart. The credit waits in g_wumpa_ap_credit only until the
+	// effect marker covering this item is written (AP_WumpaCommitReceived), the
+	// same crash guard as fruit past 10. In-race receipts (above) keep joining
+	// the race count; without banking the hold-for-kart rule below still applies.
+	// To go back to holding, change this one condition.
+	if (AP_WumpaBanking())
+	{
+		g_wumpa_ap_credit += count;
+		snprintf(msg, sizeof msg, "[AP WUMPA] received +%d banked at once\n", count);
+		AP_LogLine(msg);
+		return;
+	}
+
 	// #144: report what actually happened. The fruit is held for the kart
 	// (handed over at the next race start, or on the next frame mid-race); a
 	// receive that would push the held fruit past AP_WUMPA_MAX has the overflow
@@ -212,15 +255,7 @@ void AP_WumpaReceive(int count)
 		g_wumpa_pending = AP_WUMPA_MAX; // a kart can never hold more; no cross-race hoard
 	}
 	past = count - held;
-	// #249 (ruled 2026-10-16): with banking on, AP fruit past 10 goes into the
-	// Wumpa bank at once, in or out of a race, instead of being discarded.
-	if (past > 0 && AP_WumpaBanking())
-	{
-		g_wumpa_ap_credit += past; // committed by AP_WumpaCommitReceived
-		banked = past;
-		past = 0;
-	}
-
+	// Banking seeds returned above, so fruit past 10 is only discarded here.
 	AP_WumpaReceiveLine(msg, (int)sizeof msg, held, g_wumpa_pending, banked, past, AP_WUMPA_MAX);
 	AP_LogLine(msg);
 }
@@ -303,9 +338,11 @@ void AP_WumpaTick(struct GameTracker *gGT)
 	}
 	if (!onTrack || loading || (gGT->gameMode1 & END_OF_RACE) != 0)
 	{
+		AP_WumpaOnRaceLeave();
 		g_countdown_seen = 0;
 		g_starting_applied = 0;
 		g_race_wumpa = -1;
+		g_race_start = 0;
 		g_wumpa_race_pending = 0;
 	}
 	else if (gGT->trafficLightsTimer >= 1)
@@ -347,7 +384,12 @@ void AP_WumpaTick(struct GameTracker *gGT)
 	{
 		if (g_wumpa_starting > 0)
 		{
+			int before = g_race_wumpa >= 0 ? g_race_wumpa : local->numWumpas;
 			RB_Player_ModifyWumpa(local, g_wumpa_starting);
+			// Starting fruit joins the full count but is never banked by an
+			// abandoned attempt.
+			if (g_race_wumpa >= 0)
+				g_race_start += g_race_wumpa - before;
 			snprintf(msg, sizeof msg, "[AP WUMPA] applied %d starting fruit (now %d)\n",
 			         g_wumpa_starting, (int)local->numWumpas);
 			AP_LogLine(msg);

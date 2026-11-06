@@ -538,6 +538,10 @@ static int AP_CapabilityCurrentCharacter(void)
 // rule and its one-shot log are unchanged; only the selection is layered on.
 int AP_CapabilityAppliedBoostTier(void)
 {
+	// Inventory ceilings remain available to the tracker and pad logic, but
+	// Arcade, Time Trial, Versus and Battle drive with retail boost physics.
+	if (!AP_CapabilityRoomStatsRace())
+		return -1;
 	int ceiling = AP_CapabilityBoostTier();
 	int idx;
 

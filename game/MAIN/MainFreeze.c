@@ -1365,6 +1365,11 @@ void MainFreeze_IfPressStart(void)
 	}
 
 #ifdef CTR_AP
+	// Closing the save menu does not finish its round-trip camera move. Do
+	// not open another modal while the hub save object still owns the kart.
+	if (LOAD_IsOpen_AdvHub() &&
+	    (gGT->cameraDC[0].flags & CAMERA_FLAG_TRANSITION_AWAY) != 0)
+		return;
 	// The character picker is a modal surface of its own: it holds VEH_FREEZE_DOOR
 	// and reads the pad directly, so letting Start raise the pause menu on top of
 	// it would give two surfaces the same input and the same freeze bit. That is

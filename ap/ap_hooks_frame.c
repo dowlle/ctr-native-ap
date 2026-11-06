@@ -661,8 +661,11 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// transition is never missed by the throttle below. Observation-only.
 	AP_RaceListenerTick(gGT);
 
-	// Custom Arcade race in a room: no check leaves until it ends.
-	ap_net_hold_checks(AP_ArcadeHoldsRoom());
+	// Custom Arcade race in a room: no check leaves until it ends. Box Author
+	// Mode (ap/ap_author_gate.h): no check or goal leaves, or is kept for a
+	// later reconnect, while it is on, even with a seed from a room the
+	// player left still loaded.
+	ap_net_hold_checks(AP_ArcadeHoldsRoom() || AP_Author_Enabled());
 
 	// Network: connect once + pump every frame, in all game modes.
 	AP_NetTick(gGT);
@@ -711,7 +714,9 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// write itself runs on the background writer (ap_file_writer.h), so a slow disk
 	// no longer shows up here. One frame in 60 pays for it.
 	static int dumpTick = 0;
-	if ((++dumpTick % 60) == 0)
+	// Not while Box Author Mode is on: the dump is the seed's state, and the
+	// mode never writes AP state.
+	if ((++dumpTick % 60) == 0 && !AP_Author_Enabled())
 	{
 		AP_PerfSectionBegin(AP_PERF_SEC_STATE_DUMP);
 		AP_DumpState(gGT);

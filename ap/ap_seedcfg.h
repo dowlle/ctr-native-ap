@@ -606,6 +606,12 @@ typedef struct
 	// envelope, present only when true). Absent is off. On, approaching an open
 	// pad hints its open, unchecked locations once ever (ap_pad_hints_logic.h).
 	int pad_approach_hints;
+	// Hint filters (A2-23, ctr_options.<name>, content-plan envelope, present only
+	// when true, absent is off; ap_hint_filters_logic.h). Policy only: they narrow
+	// which locations the auto hints name and never change a location or item.
+	int pad_hints_wait_for_spoiler;
+	int pad_hints_progression_only;
+	int shop_hints_progression_only;
 	// ctr_options.box_locations (always emitted on ordinary rooms, present on a
 	// content-plan envelope exactly with its item_boxes record). Absent is off.
 	// Read only so Spoiler Items knows the seed has AP boxes, and therefore an
@@ -1076,6 +1082,7 @@ int AP_BossVenueAdvert(int bossIdx, char *out, int cap);
 // #169 tier 3: "Kit: <families>" for one with a composed kit. 0 otherwise.
 // IMPLEMENTED C-SIDE in ap_hooks_gates.c.
 int AP_BossRivalAdvert(int bossIdx, char *out, int cap);
+int AP_BossChallengeTitle(int bossIdx, char *out, int cap);
 int AP_BossKitAdvert(int bossIdx, char *out, int cap);
 
 // #169 tier 2: the engine character garage bossIdx races (the garage load

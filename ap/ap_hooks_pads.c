@@ -264,6 +264,9 @@ void AP_PadApproachHints(int levelID)
 	const ctr_content_pad *pad;
 	int n, i, eligible = 0, contentReady = 1;
 	if (!ctr_cfg_active() || !ctr_cfg.pad_approach_hints || !ap_net_pad_hints_ready()) return;
+	// A2-23: held back until Warp Pad Preview, when asked. Nothing is latched.
+	if (AP_HintFilter_PadWaits(ctr_cfg.pad_hints_wait_for_spoiler, ctr_cfg.spoiler_items, AP_SpoilerPadPreviewShown()))
+		return;
 	pad = ap_content_plan_active() ? ap_content_plan_pad(levelID) : NULL;
 #ifdef CTR_CUSTOM_TRACKS
 	contentReady = AP_ContentPadReady(levelID);
@@ -273,7 +276,14 @@ void AP_PadApproachHints(int levelID)
 		return;
 	n = AP_ContentPadGlowBits(levelID, bits, codes, AP_PAD_DISPLAY_BITS_MAX, 1);
 	for (i = 0; i < n; ++i)
+	{
+		unsigned flags = 0;
+		int known = ap_net_scout_known(codes[i], NULL, NULL, &flags);
+		// A2-23: a skipped location is not latched, so it stays hintable. One
+		// whose item is still unknown waits for the connect-time scouts.
+		if (AP_HintFilter_Progression(ctr_cfg.pad_hints_progression_only, known, flags) != AP_HINT_KEEP) continue;
 		if (AP_LocationInLogic(codes[i])) codes[eligible++] = codes[i];
+	}
 	if (eligible > 0) ap_net_pad_approach_hint(levelID, codes, eligible);
 }
 
@@ -499,6 +509,20 @@ int AP_PadState(int physLevelID, int destLevelID)
 		return AP_ContentTrackPadState(pad);
 	}
 	return 0; // No AP pad state outside a content plan.
+}
+
+// AP_PadState plus the racer fact, as the shared colour table's display state
+// (ap_pad_colour.h). Only a closed plan pad can be racer-locked.
+int AP_PadLook(int physLevelID, int destLevelID)
+{
+	int state = AP_PadState(physLevelID, destLevelID);
+	int racerMissing = 0;
+	if (state == 1 && ap_content_plan_active())
+	{
+		const ctr_content_pad *pad = ap_content_plan_pad(physLevelID);
+		racerMissing = pad && !AP_ContentPadRacerMet(pad);
+	}
+	return AP_PadLookFromState(state, racerMissing);
 }
 
 // A Hit Character or Itemsanity use, or the `wumpa: global` check, a race on this

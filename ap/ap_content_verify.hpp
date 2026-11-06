@@ -29,11 +29,24 @@
 namespace content_verify {
 using J = nlohmann::json;
 
-// worlds/ctr/data/usf_finish_rulings.json, by package content id: 1 needs USF
-// to finish, 0 takes the generic terms only. tools/test-content-verify-parity.py
-// compares this table with the paired apworld's.
-static const struct { const char *content_id; int usf; } kUsfRulings[] = {
-    {"arabian-heights-night", 1}, {"baby-t-park", 0}, {"cortex-vortex", 1}, {"north-pole", 0}, {"tv-world", 0},
+// worlds/ctr/data/usf_finish_rulings.json: the finish rank (2 USF, 1 the
+// first boost, 0 the generic terms only) by package content id. A row with a
+// revision ("" for every revision) also names the LEV pin and covers only that
+// exact package; it wins over the row for every revision (A2-22).
+// tools/test-content-plan-parity.py compares this table with the paired
+// apworld's.
+static const struct { const char *content_id, *revision, *lev_sha256; int rank; } kUsfRulings[] = {
+    {"arabian-heights-night", "", "", 2}, {"baby-t-park", "", "", 0}, {"cortex-vortex", "", "", 2},
+    {"north-pole", "", "", 0}, {"tv-world", "", "", 0},
+    // Project rulings of 2026-11-05 07:19 CET (A2-27), per registry revision and LEV pin.
+    {"ancient-lake", "1.0.0", "7e5b776f312f500112061b3b95a1f371571fd7dfe7fbd1dc404e7b3d3a3a1e78", 0},
+    {"ancient-lake", "1.0.1", "2fc45ad5edaf735426b99229cc561293d02badc6a578ef53f328ad3fc2f85360", 0},
+    {"ancient-lake", "1.0.2", "c4497a621a97a8df1c763e0b6a2dc75cd9f3a57b217b0cefa6a938fc83ee6c70", 0},
+    {"bowser-castle-1", "1.0.0", "0b59b54ac3d902d43ee7b798d45dd4979aa5859520460282d22fb6bc85dcbcd9", 0},
+    {"drive-thru-danger", "1.0.0", "77706a3b5d46cdd75ffa05e4da316cf5dc400d6e17aad7ccdf0c3f5cd62eee79", 0},
+    {"lights-out", "1.0.0", "5ebdb9f235ba0c07ba5c72b715c949afdd6062fcf3208f45a1c13936ffb529c6", 1},
+    {"neon-paradise", "1.0.0", "665d19819c437ab9ab6cbccac7c0202979405f16e1af39e06d9ea1d3286be9d0", 0},
+    {"neon-paradise", "1.1.0", "639434d84fe6de4ba88a31a1dd5a11291d640617ab25af9c7bfbd5d383b53d5d", 0},
 };
 static const int64_t kItemBase = 35010000, kKeyItem = 35010014;
 static const int64_t kItemsanityFirst = 35016000, kItemsanityLast = 35016021;
@@ -123,8 +136,14 @@ static int finish_boost(const J &track, const std::map<std::string, const J *> &
     }
     const J *pkg = packages.count(track.value("package_id", "")) ? packages.at(track.value("package_id", "")) : nullptr;
     if (pkg) {
-        const std::string content = pkg->value("content_id", "");
-        for (const auto &r : kUsfRulings) if (content == r.content_id) return r.usf ? kUsf : 0;
+        const std::string content = pkg->value("content_id", ""), revision = pkg->value("revision", "");
+        std::string lev;
+        for (const auto &pin : pkg->at("files"))
+            if (pin.value("role", "") == "lev") lev = pin.value("sha256", "");
+        for (const auto &r : kUsfRulings)
+            if (*r.revision && !lev.empty() && content == r.content_id && revision == r.revision && lev == r.lev_sha256)
+                return r.rank;
+        for (const auto &r : kUsfRulings) if (!*r.revision && content == r.content_id) return r.rank;
         const J &caps = pkg->at("capabilities");
         // A package that does not state super_turbo_pads is treated as having one.
         if (caps.contains("super_turbo_pads") && caps["super_turbo_pads"] == false) return 0;
@@ -310,7 +329,17 @@ static Model build() {
             // Wumpa Income.
             static const std::map<std::string, int> floors = {{"hub:26", 0}, {"hub:25", 1}, {"hub:27", 1}, {"hub:28", 2}, {"hub:29", 3}};
             L.kind = SHOP;
-            L.target = floors.at(c.at("owner").get<std::string>());
+            // Logical farming budget (paired with wumpa_shop.logic_key_floor).
+            // Native affordability stays wallet/lifetime-based, so farming
+            // ahead remains possible without making it expected early logic.
+            const int amount = std::max(c.at("price").get<int>(), c.at("unlock_banked").get<int>());
+            int budget_floor = 0; // Old rooms retain their original income-only logic.
+            if (p.at("wumpa_shop").contains("logic_scale")) {
+                const int scale = p.at("wumpa_shop").at("logic_scale").get<int>();
+                budget_floor = amount * 100 <= 100 * scale ? 0 : amount * 100 <= 300 * scale ? 1
+                    : amount * 100 <= 600 * scale ? 2 : amount * 100 <= 900 * scale ? 3 : 4;
+            }
+            L.target = std::max(floors.at(c.at("owner").get<std::string>()), budget_floor);
             m.locs.push_back(L);
             continue;
         }
@@ -688,4 +717,3 @@ extern "C" int ap_content_plan_verify(const ap_content_verify_io *io, ap_content
         return 0;
     }
 }
-

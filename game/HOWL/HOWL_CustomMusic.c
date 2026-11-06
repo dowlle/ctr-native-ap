@@ -14,13 +14,20 @@
 //               place of howl_SetSong/howl_LoadSong
 //
 // Without an .sca, or when it is refused, the race keeps the fixed default
-// (Crash Cove's bank and song, native_custom_identity.h).
+// (Crash Cove's bank and song, native_custom_identity.h), or the retail bank
+// and song of the track an xdelta-imported package replaces
+// (CustomOffline_MusicFallbackLevel).
 //
 // The Cortex Vortex race of a content plan (a pad or a cup leg, on host level 13)
 // uses the same path with the .sca that ships with the project
 // (CustomTrack_CortexMusic). Whenever the bundled file is missing,
 // changed or refused, or the race is one this file does not size (below), the
 // host level's (Oxide Station's) bank and song play as before, with no error.
+//
+// Any other content-plan package whose shared store entry pins a Saphi .sca
+// takes the same path on its own host slot (CustomTrack_UseContentMusic, set
+// when the race is armed). Without one, or when it is refused, the host slot's
+// own bank and song play as before.
 
 #include <platform/native_custom_music.h>
 #include <platform/native_custom_offline.h>
@@ -109,6 +116,21 @@ void HOWL_CustomMusic_Reset(void)
 	s_customBankServing = 0;
 	s_customBankLoaded = 0;
 	HOWL_CustomMusic_ReleaseCortex();
+}
+
+// The music of a custom-page race that plays no .sca: the retail bank and song
+// of the track an imported package replaces, Crash Cove's when that is not
+// known. Bank and song always come from the same level.
+int HOWL_CustomMusic_FallbackFXBank(void)
+{
+	int level = CustomOffline_MusicFallbackLevel();
+	return level >= 0 ? data.levBank_FX[level] : CTR_CUSTOM_FX_BANK;
+}
+
+int HOWL_CustomMusic_FallbackSongBank(void)
+{
+	int level = CustomOffline_MusicFallbackLevel();
+	return level >= 0 ? data.levBank_Song[level] : CTR_CUSTOM_SONG_BANK;
 }
 
 // Read one retail bank's header sector for the admission check.
