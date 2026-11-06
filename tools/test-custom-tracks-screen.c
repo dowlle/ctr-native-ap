@@ -723,6 +723,21 @@ int main(void)
             text_type("t"); textResult = 1; frame(0, "import-name-cursor-commit");
             CHECK(setTitleCalls == calls + 3 && !strcmp(lastTitle, "Sunset Raceway"));
         }
+        /* A long space-free name keeps the cursor and the text in view at the
+           window's left edge too (Codex round 1: word wrap collapsed the line
+           to "Name..." with the cursor hidden). */
+        frame(BTN_L1, NULL);
+        {
+            int i;
+            memset(s_importEditText, 'A', 60); s_importEditText[60] = 0;
+            textLen = 60; textCursor = 60;
+            for (i = 0; i < 60; i++) { rawPadMask = RAW_BTN_LEFT; frame(0, NULL); rawPadMask = 0; frame(0, NULL); }
+            CHECK(textCursor == 0);
+            sdata->frameCounter |= 0x10; frame(0, "import-name-cursor-long");
+            CHECK(has("Name: _") && !has("Name..."));
+            sdata->frameCounter &= ~0x10;
+            textResult = 2; frame(0, NULL);
+        }
         frame(BTN_R1, NULL); CHECK(xdInstallStarts == before + 1);
         installState = 1; frame(0, NULL); frame(BTN_CROSS, NULL); frame(BTN_TRIANGLE, NULL);
     }

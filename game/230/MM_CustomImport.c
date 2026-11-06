@@ -499,26 +499,38 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         /* The cursor is a blinking "_" at its byte offset, the same glyph the
            Connection page shows at the end of the row. A name too long for
            the panel is shown through a window that keeps the cursor in view,
-           like the Config string rows show the tail while editing. */
+           like the Config string rows show the tail while editing. Both ends
+           of the window are trimmed here, whole codepoints at a time: letting
+           the draw helper wrap a long space-free run instead would collapse
+           the line to "Name..." with the cursor hidden. */
         char name[160];
-        size_t tn = strlen(s_importEditText), start = 0;
+        size_t tn = strlen(s_importEditText), start = 0, end, at, n;
         int cursor = NativeText_Cursor();
         if (cursor < 0) cursor = 0;
         if ((size_t)cursor > tn) cursor = (int)tn;
+        end = tn;
         for (;;)
         {
-            size_t at, n = 6;
+            n = 6;
             memcpy(name, "Name: ", 6);
-            for (at = start; at < tn && n + 2 < sizeof name; at++)
+            for (at = start; at < end && n + 2 < sizeof name; at++)
             {
                 if ((int)at == cursor && (sdata->frameCounter & 0x10)) name[n++] = '_';
                 name[n++] = s_importEditText[at];
             }
             if ((int)at == cursor && (sdata->frameCounter & 0x10)) name[n++] = '_';
             name[n] = 0;
-            if (DecalFont_GetLineWidth(name, FONT_SMALL) <= 456 || start >= (size_t)cursor) break;
-            start++;
-            while (start < tn && ((unsigned char)s_importEditText[start] & 0xC0) == 0x80) start++;
+            if (DecalFont_GetLineWidth(name, FONT_SMALL) <= 456) break;
+            if (start < (size_t)cursor)
+            {
+                start++;
+                while (start < end && ((unsigned char)s_importEditText[start] & 0xC0) == 0x80) start++;
+            }
+            else
+            {
+                end--;
+                while (end > start && ((unsigned char)s_importEditText[end] & 0xC0) == 0x80) end--;
+            }
         }
         MM_CustomText_Draw(name, 28, 172, 456, 1, ORANGE, ot);
         snprintf(line, sizeof line, "D-pad Cursor  X: Keep  ^: Cancel");
