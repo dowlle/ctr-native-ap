@@ -72,7 +72,8 @@ def main():
         parser.error("supply LEV files or --corpus")
     results, seen, errors = [], set(), 0
     for track in inputs:
-        row = dict(path=track["path"], vrm=track.get("vrm", str(Path(track["path"]).with_suffix(".vrm"))))
+        row = dict(name=track.get("name", Path(track["path"]).stem), path=track["path"],
+                   vrm=track.get("vrm", str(Path(track["path"]).with_suffix(".vrm"))))
         try:
             digest = hashlib.sha256(Path(row["path"]).read_bytes()).hexdigest()
             if track.get("sha256", digest) != digest:
@@ -106,7 +107,7 @@ def main():
     (args.out / "report.json").write_text(json.dumps(report, indent=2, allow_nan=False))
     lines = ["# Crates flagged for review", "", "512-unit geometry rule. Pictures are editor views; reachability needs review.", ""]
     for row in results:
-        lines += ["## " + row.get("sha256", "Unreadable LEV"), ""]
+        lines += ["## " + row["name"], "", "LEV SHA-256: " + row.get("sha256", "unreadable"), ""]
         if "error" in row:
             lines += ["Error: " + row["error"], ""]
         for crate in row.get("crates", []):
