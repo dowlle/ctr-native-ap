@@ -1668,7 +1668,7 @@ static void validate(const J &p, State &out) {
                     ex.used = true;
                 }
                 slots = box_seats(pkg.weapon_crates - dest.box_excluded_count);
-                dest.box_crates = pkg.weapon_crates;
+                dest.box_crates = slots ? pkg.weapon_crates : 0;
                 for (int b = 0; b < slots; ++b)
                     dest.box_locations[b] = dest.named_block >= 0
                         ? ap_named_location_code(dest.named_block, AP_NAMED_OFF_ITEM_BOX_1 + b)
