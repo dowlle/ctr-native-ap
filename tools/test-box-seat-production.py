@@ -164,6 +164,18 @@ int main(void) {
         expect(s_live[i].code == 35201620 + i && s_live[i].seatInst == &insts[k],
                "spread uses remaining crates and preserves original ordinals and contiguous box names");
     }
+    /* A3-35c: North Pole's origin crate, 29 crates, 28 eligible. */
+    n = table(29); reset(29, 15);
+    defs[0].pos.x = defs[0].pos.y = defs[0].pos.z = 0;
+    g_pad.box_excluded_count = 1; g_pad.box_excluded[0] = 1;
+    AP_BoxesSeatCustom(&gGT, &race);
+    expect(s_liveCount == 15 && insts[0].flags == (0x7u | 0x100u), "north pole: excluded origin crate remains ordinary");
+    for (i = 0; i < 15; ++i) {
+        int original = 1 + i * 28 / 15;
+        int k = crate_index(original, n);
+        expect(s_live[i].code == 35201620 + i && s_live[i].seatInst == &insts[k] && s_live[i].seatInst != &insts[crate_index(0, n)],
+               "north pole: seating skips ordinal 1, keeps the other ordinals and contiguous box names");
+    }
     n = table(17); reset(17, 15);
     g_pad.box_excluded_count = 1; g_pad.box_excluded[0] = 1;
     AP_BoxesSeatCustom(&gGT, &race);
