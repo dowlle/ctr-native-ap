@@ -10,6 +10,7 @@
    the selected race tracks in the shared package store. Rooms, Play Solo
    and Arcade resolve that same installed revision. */
 #include <platform/native_xdelta_import.h>
+#include <platform/native_xdelta_review_layout.h>
 #include <platform/native_xdelta_pick.h>
 #include <platform/native_disc_image.h>
 
@@ -176,6 +177,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
     int rawTapped = rawPad & ~s_importPadPrev;
     char line[256];
     size_t count = 0, first;
+    int detailHeight = 108;
     s_importPadPrev = rawPad;
     if (s_importStatesWait && XdeltaImport_PollPatchStates(s_importStates, CTR_XDELTA_FOLDER_MAX) != 0) s_importStatesWait = 0;
     /* Name entry (review list): the physical pad commits or cancels, as on
@@ -403,7 +405,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
     if (count && (tapped & (BTN_UP | BTN_DOWN)))
     {
         s_importRow = (s_importRow + ((tapped & BTN_UP) ? count - 1 : 1)) % count;
-        if (s_importStage == IMPORT_CHOOSE) s_importMessage[0] = 0;
+        if (s_importStage == IMPORT_CHOOSE || s_importStage == IMPORT_REVIEW) s_importMessage[0] = 0;
         OtherFX_Play(0, 1);
     }
     if (count && s_importRow >= count) s_importRow = 0;
@@ -447,7 +449,9 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
     else if (s_importStage == IMPORT_REVIEW || s_importStage == IMPORT_INSTALLING)
     {
         const struct XdeltaImportItem *item = count ? &s_importSummary.items[s_importRow] : NULL;
-        const int showStatus = s_importStage == IMPORT_INSTALLING || s_importMessage[0] || !item || item->offered;
+        const struct XdeltaReviewLayout layout = XdeltaReview_Layout(!item || item->offered,
+            s_importStage == IMPORT_INSTALLING, s_importMessage[0] != 0);
+        detailHeight = layout.panelHeight;
         first = (s_importRow / 7) * 7;
         for (size_t row = first; row < first + 7 && row < count; row++)
         {
@@ -461,15 +465,15 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         if (item)
         {
             MM_CustomText_Draw(item->title, 305, 70, 176, 2, ORANGE, ot);
-            MM_CustomText_Draw(item->offered ? item->tags : "Skipped", 305, 98, 176, 1, WHITE, ot);
+            if (layout.showStatus) MM_CustomText_Draw(item->offered ? item->tags : "Skipped", 305, 98, 176, 1, WHITE, ot);
             MM_CustomText_Draw(item->offered ? (item->nameSource == XDELTA_NAME_DESCRIPTOR ? "Name from the pack" :
                                                 item->nameSource == XDELTA_NAME_KNOWN ? "Name of a known track" :
                                                 item->nameSource == XDELTA_NAME_EDITED ? "Name typed by you" :
-                                                "Placeholder name: L1 to change it") : item->reason, 305, 112, 176,
-                               showStatus ? 2 : 7, WHITE, ot);
+                                                "Placeholder name: L1 to change it") : item->reason, 305, layout.reasonY, 176,
+                               layout.reasonLines, WHITE, ot);
         }
         /* Refusal details can use the hint space when no job or message needs it. */
-        if (showStatus) MM_CustomText_Draw(s_importStage == IMPORT_INSTALLING ? "Installing..." :
+        if (layout.showStatus) MM_CustomText_Draw(s_importStage == IMPORT_INSTALLING ? "Installing..." :
                            s_importMessage[0] ? s_importMessage : s_importSummary.descriptorNote[0] ? s_importSummary.descriptorNote :
                            s_importSummary.history[0] ? s_importSummary.history :
                            "[ Select  L1 Name  R1 Import all  X Install", 305, 144, 176, 2, ORANGE, ot);
@@ -501,7 +505,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
                   s_importStage == IMPORT_SCANNING ? "Back: Cancel" : "[ Rescan   R1 Import all valid");
     MM_CustomText_Draw(line, 256, 196, 456, 1, JUSTIFY_CENTER | WHITE, ot);
     {
-        RECT listBox = {20, 64, 268, 108}, detailBox = {297, 64, 190, 108};
+        RECT listBox = {20, 64, 268, 108}, detailBox = {297, 64, 190, detailHeight};
         RECTMENU_DrawInnerRect(&listBox, 0, ot);
         RECTMENU_DrawInnerRect(&detailBox, 0, ot);
     }

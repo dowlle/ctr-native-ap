@@ -18,6 +18,7 @@
 #include <platform/native_xdelta_import.h>
 #include <platform/native_xdelta_decode.h>
 #include <platform/native_lev_normalize.hpp>
+#include <platform/native_xdelta_review_layout.h>
 #include <platform/native_custom_package.h>
 extern "C" {
 #include <platform/native_custom_track_manager.h>
@@ -56,8 +57,9 @@ static int checks, failures;
 namespace diagnostic_layout {
 enum { FONT_SMALL, FONT_BIG };
 static std::vector<std::string> lines;
+static int bottom;
 static int DecalFont_GetLineWidth(const char *s, int) { return (int)std::strlen(s) * 13; }
-static void DecalFont_DrawLineOT(const char *s, int, int, int, int, uint32_t *) { lines.push_back(s); }
+static void DecalFont_DrawLineOT(const char *s, int, int y, int, int, uint32_t *) { lines.push_back(s); bottom = std::max(bottom, y + 12); }
 #include "../game/230/MM_CustomText.c"
 static void check(const XdeltaImportItem &item)
 {
@@ -66,10 +68,17 @@ static void check(const XdeltaImportItem &item)
     MM_CustomText_Draw(title.c_str(), 32, 90, 244, 1, 0, nullptr);
     CHECK(lines == std::vector<std::string>{title}, "diagnostic title and index fit the review row");
     lines.clear();
-    MM_CustomText_Draw(item.reason, 305, 112, 176, 7, 0, nullptr);
+    bottom = 0;
+    const auto layout = XdeltaReview_Layout(0, 0, 0);
+    MM_CustomText_Draw(item.reason, 305, layout.reasonY, 176, layout.reasonLines, 0, nullptr);
     std::string joined;
     for (const auto &line : lines) { if (!joined.empty()) joined += ' '; joined += line; }
     CHECK(joined == item.reason, "complete diagnostic reason fits the detail panel without ellipsis");
+    CHECK(bottom <= 64 + layout.panelHeight - 4 && 64 + layout.panelHeight <= 188,
+          "refusal text stays inside its panel and above the footer");
+    for (const auto state : {XdeltaReview_Layout(1, 0, 0), XdeltaReview_Layout(0, 1, 0), XdeltaReview_Layout(0, 0, 1)})
+        CHECK(state.showStatus && state.reasonLines == 2 && state.panelHeight == 108,
+              "offered rows, installing and transient feedback retain their status space");
 }
 }
 
