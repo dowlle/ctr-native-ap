@@ -513,6 +513,32 @@ int AP_PadState(int physLevelID, int destLevelID)
 
 // AP_PadState plus the racer fact, as the shared colour table's display state
 // (ap_pad_colour.h). Only a closed plan pad can be racer-locked.
+// A3-37: how a plan pad's open checks stand against the exported logic, as the
+// counts ap_pad_logic_look.h decides from. The open set is the pad's display
+// set, the checks a player can act on now (a mode still locked behind stage 2
+// stays out, like the glow). Asked fresh each call, so map, beam and tracker
+// cannot read an old answer; the rebuild redraws the pad when the answer moves
+// (AP_PadRedrawGen, read through the birth key's look).
+static int AP_PadLogicLook(int physLevelID, int look)
+{
+	int bits[AP_PAD_DISPLAY_BITS_MAX];
+	int64_t codes[AP_PAD_DISPLAY_BITS_MAX];
+	int n, i, in = 0, unknown = 0;
+
+	if (look != AP_PAD_LOOK_OPEN && look != AP_PAD_LOOK_STAGE2_OPEN)
+		return look;
+	if (!ap_content_plan_active())
+		return look;
+	n = AP_ContentPadGlowBits(physLevelID, bits, codes, AP_PAD_DISPLAY_BITS_MAX, 1);
+	for (i = 0; i < n; i++)
+	{
+		int st = AP_LocationLogicState((long long)codes[i]);
+		if (st == AP_PAD_LOGIC_IN) in++;
+		else if (st == AP_PAD_LOGIC_UNKNOWN) unknown++;
+	}
+	return AP_PadLookByLogic(look, n, in, unknown);
+}
+
 int AP_PadLook(int physLevelID, int destLevelID)
 {
 	int state = AP_PadState(physLevelID, destLevelID);
@@ -522,7 +548,7 @@ int AP_PadLook(int physLevelID, int destLevelID)
 		const ctr_content_pad *pad = ap_content_plan_pad(physLevelID);
 		racerMissing = pad && !AP_ContentPadRacerMet(pad);
 	}
-	return AP_PadLookFromState(state, racerMissing);
+	return AP_PadLogicLook(physLevelID, AP_PadLookFromState(state, racerMissing));
 }
 
 // A Hit Character or Itemsanity use, or the `wumpa: global` check, a race on this

@@ -101,6 +101,8 @@ int  ap_net_item_text(long long item_id, int sender_slot, char *item_buf,
 // 1 if location_code has already been checked on the server (own slot). Drives
 // the "done / chill" warp-pad colouring vs the "new / available" glow.
 int  ap_net_location_checked(long long location_code);
+// Moves whenever the checked sets change, a server update included.
+unsigned ap_net_locations_revision(void);
 
 // 1 if location_code is a REAL location for our own slot this seed -- present in
 // either the server's checked_locations or missing_locations set (their union is

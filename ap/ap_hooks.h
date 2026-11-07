@@ -866,6 +866,8 @@ void AP_PadGlowSlots(const int *bits, int n, int phase, int *outSlot3);
 // on a bump and rebuilds the pad when it differs from the key it was built
 // for. The map + gates recompute AP_PadState live every frame.
 unsigned AP_StateGen(void);
+// AP_StateGen plus the logic inputs no local event announces; the rebuild watches this.
+unsigned AP_PadRedrawGen(void);
 
 // The single pad-state function driving map colour, in-hub look, and the gate.
 // Returns 1 Locked / 2 Raceable / 3 Re-locked / 4 Tier-2-open / 5 Done, or 0 for
@@ -879,6 +881,8 @@ int AP_PadState(int physLevelID, int destLevelID);
 // enum AP_PadLook of ap_pad_colour.h: AP_PadState plus whether a closed pad is
 // waiting on its racer. Display only; no gate reads it.
 #include "ap_pad_colour.h"
+// Green only for checks in logic: the look a pad with nothing in logic gets (A3-37).
+#include "ap_pad_logic_look.h"
 // The birth key of a plan pad: what decides that ThTick rebuilds it (A3-12).
 #include "ap_pad_birth.h"
 // Hub streaming waits for a running mask hint (A3-12).

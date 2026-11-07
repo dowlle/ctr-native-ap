@@ -19,6 +19,7 @@
 
 #include "ap_win_logic.h"
 #include "ap_pad_hints_logic.h"
+#include "ap_pad_logic_look.h"
 #include "ap_hooks.h"   // AP_LogLine, AP_TrialTrackConfigured, AP_CortexTrackActive
 #include "ap_net.h"     // ap_net_location_checked
 #include "ap_seedcfg.h" // ctr_cfg, ctr_cfg_active
@@ -87,6 +88,12 @@ int AP_LocationInLogic(long long code)
 {
 	AP_WinLogicEnv env = AP_WinEnvNow();
 	return AP_PadHint_InLogic(&ctr_win_logic, &env, code);
+}
+
+int AP_LocationLogicState(long long code)
+{
+	AP_WinLogicEnv env = AP_WinEnvNow();
+	return AP_PadLogicStateOf(&ctr_win_logic, &env, (long)code);
 }
 
 static long AP_WinBitCode(int bit)

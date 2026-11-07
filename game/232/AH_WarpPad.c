@@ -469,7 +469,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		int rbPhys = AH_WarpPad_PhysOf(t);
 		if (rbPhys >= 0 && rbPhys < 128)
 		{
-			unsigned rbGen = AP_StateGen();
+			unsigned rbGen = AP_PadRedrawGen();
 			if (s_padRebirthGen[rbPhys] != rbGen)
 			{
 				int rbState = AH_WarpPad_RebirthKey(rbPhys, warppadObj->levelID);

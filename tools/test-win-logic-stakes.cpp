@@ -858,6 +858,26 @@ int main(void)
         w.collected.insert(35028300);
         expect(!AP_WinStakesDecide(&ctr_win_logic,&e,wins,2).stakes,"both Cup wins collected removes stakes");
     }
+    // A3-37b: every seed exports a hint row for each non-win location. A hint
+    // row is never a win, so a win set code that has only a hint row stakes
+    // nothing, the same as no row, and the real win beside it still decides.
+    {
+        World w;AP_WinLogicEnv e=env_for(w);
+        J b=one_rule(true);b["version"]=2;b["checks"]=J::object();
+        b["checks"]["35011000"]={{"kind","trophy"},{"region",0},{"rule",true}};
+        b["checks"]["35028300"]={{"kind","hint"},{"region",0},{"rule",true}};
+        parse_block(b);
+        expect_int(ctr_win_logic.state, AP_WL_VALID, "version 2 block with a hint row -> VALID");
+        long hintOnly[1]={35028300};
+        AP_WinStakes s=AP_WinStakesDecide(&ctr_win_logic,&e,hintOnly,1);
+        expect(!s.stakes && s.why==AP_WS_WHY_NO_ENTRY,"an open in-logic hint row is no win: no stakes");
+        long both[2]={35028300,35011000};
+        s=AP_WinStakesDecide(&ctr_win_logic,&e,both,2);
+        expect(s.stakes && s.code==35011000,"the real win decides, not the hint row");
+        w.collected.insert(35011000);
+        s=AP_WinStakesDecide(&ctr_win_logic,&e,both,2);
+        expect(!s.stakes && s.why==AP_WS_WHY_COLLECTED,"win collected: the open hint row adds no stakes");
+    }
 	std::printf("%s: %d checks, %d failure(s)\n", failures ? "FAIL" : "PASS", checks, failures);
 	return failures ? 1 : 0;
 }
