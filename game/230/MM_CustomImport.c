@@ -447,6 +447,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
     else if (s_importStage == IMPORT_REVIEW || s_importStage == IMPORT_INSTALLING)
     {
         const struct XdeltaImportItem *item = count ? &s_importSummary.items[s_importRow] : NULL;
+        const int showStatus = s_importStage == IMPORT_INSTALLING || s_importMessage[0] || !item || item->offered;
         first = (s_importRow / 7) * 7;
         for (size_t row = first; row < first + 7 && row < count; row++)
         {
@@ -465,10 +466,10 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
                                                 item->nameSource == XDELTA_NAME_KNOWN ? "Name of a known track" :
                                                 item->nameSource == XDELTA_NAME_EDITED ? "Name typed by you" :
                                                 "Placeholder name: L1 to change it") : item->reason, 305, 112, 176,
-                               item->offered ? 2 : 7, WHITE, ot);
+                               showStatus ? 2 : 7, WHITE, ot);
         }
-        /* A refused entry has no actions. Use that space for its full reason. */
-        if (!item || item->offered) MM_CustomText_Draw(s_importStage == IMPORT_INSTALLING ? "Installing..." :
+        /* Refusal details can use the hint space when no job or message needs it. */
+        if (showStatus) MM_CustomText_Draw(s_importStage == IMPORT_INSTALLING ? "Installing..." :
                            s_importMessage[0] ? s_importMessage : s_importSummary.descriptorNote[0] ? s_importSummary.descriptorNote :
                            s_importSummary.history[0] ? s_importSummary.history :
                            "[ Select  L1 Name  R1 Import all  X Install", 305, 144, 176, 2, ORANGE, ot);
