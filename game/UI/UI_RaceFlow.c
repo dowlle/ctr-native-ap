@@ -169,8 +169,9 @@ void UI_RaceStart_IntroText1P(void)
 				// below, so the banner's two halves cannot disagree.
 				ctCupName = CustomTrack_CupDisplayName(gGT->cup.cupID, 1);
 #ifdef CTR_AP
-				// A boss cup is named for its boss, as its standings are (A2-47).
-				if (AP_ContentGarageCupRunning() >= 0 && AP_ContentCupName() != NULL)
+				// A content-plan cup shows its plan name, and a boss cup is named
+				// for its boss (A2-47), through the call the standings use (A3-5).
+				if (AP_ContentCupName() != NULL)
 					ctCupName = AP_ContentCupName();
 #endif
 #endif

@@ -31,8 +31,9 @@
 #include "../ap/ap_spoiler_items.h" // reveal items for pad previews and box colours (#459)
 #include "../ap/ap_spoiler_items_logic.h"
 #include "../ap/ap_useful.h"     // queued one-shot useful grants
-#include "../ap/ap_pauserow.h"   // hub pause menu SELECT CHARACTER / TRACKER row wiring (#238)
+#include "../ap/ap_pauserow.h"   // hub pause menu SELECT CHARACTER / TRACKER / TRAVEL row wiring (#238, A3-16)
 #include "../ap/ap_tracker.h"    // hub pause menu TRACKER row
+#include "../ap/ap_fasttravel.h" // hub fast travel (A3-16)
 #include "../ap/ap_garageskip.h" // adventure-start garage skip session latch (#54/#209)
 #include "../ap/ap_oxide_cutscene.h" // Oxide Final-Challenge presentation readiness (WO-A4)
 #include "../ap/ap_oxide_weapon_schedule.h"
@@ -443,6 +444,7 @@
 #include "../ap/ap_navrec.c"
 #include "../ap/ap_tracker.c"
 #include "../ap/ap_tracker_launch.c" // #375 tracker pad start
+#include "../ap/ap_fasttravel.c"     // A3-16 hub fast travel (after the tracker: refuses while a start is pending)
 #include "../ap/ap_link.c"     // one-click-connect glue (#334 slice 3)
 #include "../ap/ap_update.c"   // signed in-game updater (#301)
 #else

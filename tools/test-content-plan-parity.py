@@ -1223,6 +1223,51 @@ def box_env(name, change, source=None):
     except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
         accepted = False
     cases.append(("boxes-envelope-" + name, case, accepted))
+# Hand-placed box spots (A3-14): seeds generated with the apworld's test spot
+# files (Crash Cove with 18 spots, Baby T Park with 18 from 1) are admitted by
+# both; forged spot sets and spot fields are refused by both, except what
+# only the shipped file can tell (a moved position, another file digest, a pool
+# count that still fits the pick), which native reads as given.
+from worlds.ctr import box_spots as bspots
+from worlds.ctr.test.test_box_spots import spot_files
+with spot_files(retail=["CRASH_COVE"], custom=["baby-t-park"]):
+    spot_base = None
+    for seed in range(12):
+        options = box_options(custom=[btp()], tier=("easy", "medium", "hard")[seed % 3],
+                              progressive_boost=("off", "shared_global", "per_character")[(seed // 3) % 3],
+                              progressive_stats=("off", "shared_global")[seed % 2], itemsanity=seed % 4 == 1)
+        try:
+            world = box_world(options, seed=100 + seed)
+        except OptionError as exc:
+            print(f"spots-generated-{seed} refused by the generator: {str(exc)[:120]}")
+            continue
+        cases.append((f"spots-generated-{seed}", world.fill_slot_data(), True))
+        spot_base = spot_base or cases[-1][1]
+    assert spot_base is not None
+    def sset(p, track_id):
+        return next(s for s in p["item_boxes"]["spot_sets"] if s["track_id"] == track_id)
+    def sbox(p, track_id):
+        return next(c for c in p["checks"] if c["owner"] == track_id and "spot" in c)
+    for name, change, trusted in [
+            ("unchanged copy", lambda p: None, False),
+            ("feature dropped", lambda p: p["required_features"].remove(bspots.FEATURE), False),
+            ("set dropped", lambda p: p["item_boxes"]["spot_sets"].remove(sset(p, "retail:3")), False),
+            ("all sets dropped", lambda p: p["item_boxes"].pop("spot_sets"), False),
+            ("picks one short", lambda p: sset(p, "retail:3")["picked"].pop(), False),
+            ("picks reversed", lambda p: sset(p, "retail:3")["picked"].reverse(), False),
+            ("pool lowered", lambda p: sset(p, "retail:3").__setitem__("pool", 15), True),
+            ("custom LEV pin changed", lambda p: sset(p, "custom/baby-t-park/1.0.2").__setitem__("lev_sha256", "a" * 64), False),
+            ("spot dropped", lambda p: sbox(p, "retail:3").pop("spot"), False),
+            ("spot number changed", lambda p: sbox(p, "retail:3")["spot"].__setitem__("number", 49), False),
+            ("spot on a named box changed", lambda p: sbox(p, "custom/baby-t-park/1.0.2")["spot"].__setitem__("number", 50), False),
+            ("spot position moved", lambda p: sbox(p, "retail:3")["spot"]["pos"].__setitem__(1, 999), True),
+            ("spot angle changed", lambda p: sbox(p, "custom/baby-t-park/1.0.2")["spot"].__setitem__("rot_y", 7), True),
+            ("spot file digest changed", lambda p: sset(p, "retail:3").__setitem__("file_sha256", "0" * 64), True),
+            ]:
+        alter("spots-" + name, change, spot_base)
+        if trusted:
+            native_trusts.add("spots-" + name)
+            assert cases[-1][2] is False, name + ": the apworld must refuse a forged spot"
 box_env("unchanged copy", lambda c: None)
 box_env("box_locations false", lambda c: c["ctr_options"].__setitem__("box_locations", False))
 box_env("box_locations dropped", lambda c: c["ctr_options"].pop("box_locations"))
@@ -1651,6 +1696,24 @@ for name, change in [
         ("relic check dropped", row2_extra_relic_check),
         ]:
     row2_alter(name, change)
+# A3-25: with the boss gauntlet a seed short of five Gem Cups holds the Purple
+# Gem Cup first and then Red onward; a lineup that skips Red is still refused.
+gauntlet_base = None
+for count in (1, 2, 4, 5):
+    options = relic_options(dict(sapphire=18, gold=18, platinum=0))
+    options["content_pool"]["cups"] = dict(count=count, tracks="random")
+    options["content_pool"]["bosses"] = dict(enabled=True)
+    options["boss_kit_shuffle"] = True
+    options["purple_cup_boss_gauntlet"] = True
+    wire = json.loads(json.dumps(make_world(options, seed=count).fill_slot_data()))
+    cases.append((f"gauntlet-cups-{count}", wire, True))
+    if count == 2:
+        gauntlet_base = wire
+# These forgeries rename ids only, so native also refuses them on the display name
+# before the lineup check; the lineup predicate itself is covered by the generator
+# test and the review of all 32 colour subsets.
+alter("gauntlet-renamed-colour-1", lambda p: row2_rename(p, 0, "entry/gem_cup:1"), gauntlet_base)
+alter("gauntlet-renamed-purple-to-2", lambda p: row2_rename(p, 4, "entry/gem_cup:2"), gauntlet_base)
 # One generator row 3: every unlock mode, placement and stage density the
 # generator draws, then forged requirement records.
 row3_shape = dict(preset="mixed", tracks=dict(retail="all", modes=["trophy", "ctr", "relic"], custom=[]),
@@ -2225,6 +2288,33 @@ def pr_forged_on(p):
                                                 award=key) for e, l, pad in legs]))
 alter("pad-no-trophy rungs forged onto an off seed", pr_forged_on, pad_rungs[2])
 assert not any(ok for name, _case, ok in cases if name.startswith("pad-no-trophy rung")), "a pad rung forgery validates"
+# 27 cups (A3-7): no Trophy Race or CTR Challenge, so Itemsanity routes from
+# every cup leg and the shop and goal bank in the legs. A plan with a race
+# keeps its race routes: a cup leg route forged onto one is refused.
+all_cups = []
+for seed, extra in ((1, {}), (2, {"hit_character": True}), (3, {"goal_wumpa": 300, "hit_character": True}),
+                    (4, {"progressive_boost": "shared_global", "logic_difficulty": "hard", "racer_locked_pads": 4,
+                         "character_unlocks": True})):
+    o = dict({"cup_count": 27, "crystal_challenge_count": 0, "accessibility": "full", "itemsanity": True}, **extra)
+    all_cups.append(make_world(o, seed=seed).fill_slot_data())
+    cases.append((f"27-cups-generated-{seed}", all_cups[-1], True))
+cases.append(("27-cups-fixture", json.loads((root / "tools/fixtures/content-plan/twenty-seven-cups.json").read_text()), True))
+one_race = make_world({"cup_count": 26, "crystal_challenge_count": 0, "accessibility": "full", "itemsanity": True},
+                      seed=5).fill_slot_data()
+cases.append(("26-cups-generated", one_race, True))
+def ac_leg_dropped(p):
+    c = next(c for c in p["checks"] if c["kind"] == "itemsanity")
+    c["routes"] = c["routes"][1:]
+alter("27 cups itemsanity leg route dropped", ac_leg_dropped, all_cups[0])
+def ac_forged_on_race(p):
+    cup = next(e for e in p["entries"] if e["kind"] == "cup")
+    pad = next(pad for pad in p["pads"] if pad["entry_id"] == cup["id"])
+    c = next(c for c in p["checks"] if c["kind"] == "itemsanity")
+    c["routes"].append(dict(entry_id=cup["id"], mode="cup", leg_id=cup["legs"][0]["id"], encounter_id=None,
+                            own_pad_id=pad["id"], award=c["routes"][0]["award"]))
+alter("26 cups itemsanity cup leg route forged beside its race", ac_forged_on_race, one_race)
+assert not any(ok for name, _case, ok in cases if name.startswith(("27 cups itemsanity", "26 cups itemsanity"))), \
+    "an itemsanity route forgery validates"
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()

@@ -29,6 +29,7 @@ extern "C" {
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <future>
 #include <map>
 #include <memory>
@@ -37,6 +38,7 @@ extern "C" {
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <vector>
 #include <sys/stat.h>
 #ifdef _WIN32
@@ -984,6 +986,68 @@ const struct { const char *lev; const char *name; } kKnownTracks[] = {
     {"fe6a1495be36eef29724c17653211779e26acf85d730d22d6d015a0cbfb626c8", "Crow Forest"},
 };
 
+/* Curated names for adventure patches, keyed by the SHA-256 of the patch file and the
+   BIGFILE index of the track (the "slot"). The patch hash is a stable identity: a
+   renamed copy still matches, and the same LEV bytes in another pack do not (the
+   LEV table above leaves these packs out because their shared hashes disagree).
+   Source: tester feedback, entered by hand from the Arcade track list of each
+   patch. Boss slots whose real name is not known are left out on purpose, as is
+   every slot nobody listed; both keep the generic label. */
+const struct { const char *patch; int slot; const char *name; } kCuratedTracks[] = {
+    /* 30th Anniversary Adventure */
+    {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 7, "Crazy In Kartmandu"},
+    {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 15, "N-Gage Android Alley"},
+    {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 23, "Tomb Temple"},
+    {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 39, "Skull Cave"},
+    {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 41, "Arctic Alleyway"},
+    {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 47, "N-Gage Deep Sea Driving"},
+    {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 49, "Wumpa World"},
+    {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 57, "Drive-Thru Danger"},
+    {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 79, "Crystal Caves"},
+    {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 119, "Dark Ruins"},
+    {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 127, "N-Gage Assembly Lane"},
+    {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 135, "N-Gage Out of Time"},
+    /* Nightmare Fueled */
+    {"1e8a796f019c23f7de70c21a00d9fb20ba4c7be0d819c21de3bd84ffcd8397a1", 7, "Haunted Hovel"},
+    {"1e8a796f019c23f7de70c21a00d9fb20ba4c7be0d819c21de3bd84ffcd8397a1", 23, "Dracula's Castle"},
+    {"1e8a796f019c23f7de70c21a00d9fb20ba4c7be0d819c21de3bd84ffcd8397a1", 39, "Lunatic Laboratory"},
+    {"1e8a796f019c23f7de70c21a00d9fb20ba4c7be0d819c21de3bd84ffcd8397a1", 55, "Sid's House"},
+    {"1e8a796f019c23f7de70c21a00d9fb20ba4c7be0d819c21de3bd84ffcd8397a1", 79, "DS Luigi's Mansion"},
+    {"1e8a796f019c23f7de70c21a00d9fb20ba4c7be0d819c21de3bd84ffcd8397a1", 119, "LEGO Knightmare-A-Thon"},
+    {"1e8a796f019c23f7de70c21a00d9fb20ba4c7be0d819c21de3bd84ffcd8397a1", 135, "LEGO Dark Forest Dash"},
+    /* Lockbox Adventure */
+    {"836d551d5d213d0aa704083f3c75ed8c0cfe58c9a6c01ef81b4d8a15fdf67180", 9, "Matsuri"},
+    {"836d551d5d213d0aa704083f3c75ed8c0cfe58c9a6c01ef81b4d8a15fdf67180", 31, "DK Shipwreck Shore"},
+    {"836d551d5d213d0aa704083f3c75ed8c0cfe58c9a6c01ef81b4d8a15fdf67180", 39, "Kong Dungeon"},
+    {"836d551d5d213d0aa704083f3c75ed8c0cfe58c9a6c01ef81b4d8a15fdf67180", 41, "Breeze Harbor"},
+    {"836d551d5d213d0aa704083f3c75ed8c0cfe58c9a6c01ef81b4d8a15fdf67180", 47, "Dreamy Heights"},
+    {"836d551d5d213d0aa704083f3c75ed8c0cfe58c9a6c01ef81b4d8a15fdf67180", 55, "Haven Stadium"},
+    {"836d551d5d213d0aa704083f3c75ed8c0cfe58c9a6c01ef81b4d8a15fdf67180", 71, "Skater's Retreat"},
+    {"836d551d5d213d0aa704083f3c75ed8c0cfe58c9a6c01ef81b4d8a15fdf67180", 103, "Neon Paradise"},
+    {"836d551d5d213d0aa704083f3c75ed8c0cfe58c9a6c01ef81b4d8a15fdf67180", 135, "Redrock Ravine"},
+    {"836d551d5d213d0aa704083f3c75ed8c0cfe58c9a6c01ef81b4d8a15fdf67180", 169, "Tribal Trials"},
+    /* St. Patrick's Day Racing */
+    {"748a18082ca0dbc6ff31321e7a75bfa58c3afac80102363fb1385b32e50196df", 31, "Hasty Hedges"},
+    {"748a18082ca0dbc6ff31321e7a75bfa58c3afac80102363fb1385b32e50196df", 39, "Holland"},
+    {"748a18082ca0dbc6ff31321e7a75bfa58c3afac80102363fb1385b32e50196df", 47, "Motor Sports Land"},
+    {"748a18082ca0dbc6ff31321e7a75bfa58c3afac80102363fb1385b32e50196df", 135, "N-Gage Jungle Boogie"},
+};
+
+#ifdef CTR_XDELTA_TESTING
+std::vector<std::tuple<std::string, int, std::string>> g_testCurated; /* Harness-only extra rows. */
+#endif
+
+const char *curated_track_name(const std::string &patchSha256, int bigfileIndex)
+{
+    for (const auto &k : kCuratedTracks)
+        if (k.slot == bigfileIndex && patchSha256 == k.patch) return k.name;
+#ifdef CTR_XDELTA_TESTING
+    for (const auto &k : g_testCurated)
+        if (std::get<1>(k) == bigfileIndex && std::get<0>(k) == patchSha256) return std::get<2>(k).c_str();
+#endif
+    return nullptr;
+}
+
 const char *known_track_name(const std::string &levSha256)
 {
     for (const auto &k : kKnownTracks)
@@ -1321,7 +1385,8 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             lev.clear(); lev.shrink_to_fit(); vrm.clear(); vrm.shrink_to_fit();
             const std::string levHash = hex_sha256(candidate.lev.data(), candidate.lev.size());
             const std::string vrmHash = hex_sha256(candidate.vrm.data(), candidate.vrm.size());
-            /* Name sources in order: the pack descriptor, the known-track table,
+            /* Name sources in order: the pack descriptor, the curated table of
+               tester names (patch hash and slot), the known-track table,
                then a plain label the player can edit before installing. */
             std::string title;
             int nameSource = XDELTA_NAME_LABEL;
@@ -1329,6 +1394,11 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             {
                 title = meta->title;
                 nameSource = XDELTA_NAME_DESCRIPTOR;
+            }
+            else if (const char *curated = curated_track_name(summary.patchSha256, (int)c.index))
+            {
+                title = curated;
+                nameSource = XDELTA_NAME_TESTER;
             }
             else if (const char *known = known_track_name(levHash))
             {
@@ -1756,6 +1826,17 @@ std::vector<unsigned char> package_file(const CustomPackageOwned *package, const
 }
 
 /* XdeltaImport_Install, noting in `done` each item it installed. */
+/* An import marks its package as the newest install of that track, also when
+   the package was already there: the same patch track imported again under
+   another name (or back under an earlier one) lists as one Play Solo row, the
+   newest install's (A3-29). A package that cannot be marked stays listed. */
+void mark_newest_install(const std::string &assets, const std::string &pin)
+{
+    std::error_code ec;
+    const auto manifest = std::filesystem::u8path(assets) / "tracks" / "packages" / std::filesystem::u8path(pin) / "manifest.json";
+    std::filesystem::last_write_time(manifest, std::filesystem::file_time_type::clock::now(), ec);
+}
+
 int install_items(const XdeltaImportScan *scan, const unsigned char *selected, const char *assets, int where,
                   char *error, size_t errorSize, std::vector<unsigned int> *done)
 {
@@ -1777,6 +1858,7 @@ int install_items(const XdeltaImportScan *scan, const unsigned char *selected, c
             }
             return -1;
         }
+        if (where & CTR_XDELTA_INSTALL_PACKAGES) mark_newest_install(assets, scan->built[i].pin);
         if (where & CTR_XDELTA_INSTALL_ROOM)
         {
             try
@@ -2510,6 +2592,14 @@ extern "C" void XdeltaImport_RecordResult(const char *assets, const char *patchN
 #ifdef CTR_XDELTA_TESTING
 /* Harness view of the install job's descriptor step: Install, then the
    descriptors it would keep. Returns the install result; *kept and note. */
+extern "C" const char *XdeltaImportTest_CuratedName(const char *patchSha256, int bigfileIndex)
+{
+    return patchSha256 ? curated_track_name(patchSha256, bigfileIndex) : nullptr;
+}
+extern "C" void XdeltaImportTest_AddCurated(const char *patchSha256, int bigfileIndex, const char *name)
+{
+    g_testCurated.emplace_back(patchSha256, bigfileIndex, name);
+}
 extern "C" const char *XdeltaImportTest_KnownName(const char *levSha256) { return levSha256 ? known_track_name(levSha256) : nullptr; }
 extern "C" void XdeltaImportTest_History(const char *assets, const char *sha, char *out, size_t size)
 {

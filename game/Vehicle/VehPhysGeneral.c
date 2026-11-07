@@ -685,6 +685,11 @@ CHECK_FOR_ANY_JUMP:
 		d->noItemTimer = 0;
 	}
 
+#ifdef CTR_AP
+	// Always Jumping: a one-frame buffer the ordinary gate below turns into a hop.
+	AP_TrapAlwaysJump(d);
+#endif
+
 	if (d->forcedJumpType == FORCED_JUMP_NONE)
 	{
 		if ((d->jump_CoyoteTimerMS == 0) || (d->jump_TenBuffer == 0) || (d->jump_CooldownMS != 0))

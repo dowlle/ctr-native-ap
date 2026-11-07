@@ -1191,6 +1191,55 @@ bool RemoveDescriptorFile(const fs::path &target, std::string &detail)
 	return false;
 }
 
+// Removes the solo/tracks and solo/needs-laps files of a track key that an
+// older import of the same package (same uuid) used, once a newer install of
+// that package lists the track under `keeperKey`. A file of a different
+// package that happens to use the key is left alone. Laps the player picked
+// for the old key move to the new one when it still waits for its laps and
+// pins the same files.
+bool RetireDescriptor(const std::string &key, const std::string &revision, const std::string &uuid,
+                      const std::string &keeperKey, std::string &why)
+{
+	const std::string name = AP_SoloDescriptorFileName(key, revision);
+	const std::string keeperName = AP_SoloDescriptorFileName(keeperKey, revision);
+	std::error_code ec;
+	if (name.empty() || keeperName.empty() || uuid.empty() || SoloRootIsLink())
+		return true;
+	for (const char *folder : {"tracks", "needs-laps"})
+	{
+		const fs::path dir = fs::u8path(SoloPath(folder));
+		if (fs::is_symlink(dir, ec))
+			continue;
+		const fs::path target = dir / fs::u8path(name);
+		const auto d = nlohmann::json::parse(ReadSmallPlainFile(target, kDescriptorMax), nullptr, false);
+		std::string detail;
+		if (!d.is_object() || AP_SoloJsonString(d, "uuid") != uuid)
+			continue;
+		if (std::strcmp(folder, "tracks") == 0 && d.contains("laps"))
+		{
+			const auto pending = nlohmann::json::parse(
+			    ReadSmallPlainFile(fs::u8path(SoloPath("needs-laps")) / fs::u8path(keeperName), kDescriptorMax), nullptr, false);
+			const auto merged = AP_SoloMergeNeedsLaps(d, pending);
+			if (!merged.is_null())
+			{
+				// The old file holds the player's laps until they are safe in the new one.
+				if (!KeepDescriptorFile("tracks", keeperName, merged.dump()))
+				{
+					why = "its laps could not be moved to solo/tracks/" + keeperName;
+					Log("kept solo/tracks/" + name + ": " + why);
+					return false;
+				}
+				DropNeedsLaps(keeperName);
+			}
+		}
+		if (RemoveDescriptorFile(target, detail))
+			Log(std::string("retired solo/") + folder + "/" + name + ": a newer install of the same package lists the track under another key");
+		else
+			Log(std::string("could not retire solo/") + folder + "/" + name + ": " + detail);
+	}
+	return true;
+}
+
 // The one writer behind both C entry points and the store publication: kind 1
 // is a complete descriptor for solo/tracks, kind 2 one that waits for its laps
 // in solo/needs-laps. Every refusal is logged with its file name and gives
@@ -1315,9 +1364,20 @@ std::string PackageLabel(const CustomPackageStoreEntry &entry)
 
 struct StorePublication
 {
-	struct Descriptor { int kind; std::string key, revision, json, title, pin; };
+	// kind 0 retires `key` (json holds the package uuid) once the copy `keeper`
+	// (pin, under keeperKey) is published.
+	struct Descriptor
+	{
+		int kind;
+		std::string key, revision, json, title, pin, keeper, keeperKey;
+		Descriptor(int k, std::string key_, std::string revision_, std::string json_, std::string title_, std::string pin_,
+		           std::string keeper_ = std::string(), std::string keeperKey_ = std::string())
+		    : kind(k), key(std::move(key_)), revision(std::move(revision_)), json(std::move(json_)), title(std::move(title_)),
+		      pin(std::move(pin_)), keeper(std::move(keeper_)), keeperKey(std::move(keeperKey_)) {}
+	};
 	std::vector<Descriptor> descriptors;
 	std::set<std::string> live; // StoreSignature of every verified package
+	mutable std::set<std::string> listed; // pins whose descriptor was written
 	std::vector<std::string> notes; // log lines from the worker, written on the game thread
 	int failed = 0;
 	int published = 0;
@@ -1403,6 +1463,33 @@ void KeepOneCopyPerEntry(StorePublication &result)
 		const auto t = fs::last_write_time(fs::u8path(result.assets) / "tracks/packages" / d.pin / "manifest.json", ec);
 		return ec ? fs::file_time_type::min() : t;
 	};
+	// One track imported again under another name has one package uuid and
+	// revision but two packages and, when the name sets the key, two keys. Only
+	// the newest install keeps a row; the key an older copy used is retired so
+	// its descriptor file stops listing the same files a second time (A3-29).
+	std::vector<Descriptor> retired;
+	{
+		std::vector<APSoloStoreCopy> copies;
+		for (const Descriptor &d : all)
+		{
+			const auto parsed = nlohmann::json::parse(d.json, nullptr, false);
+			const auto stamp = installed(d).time_since_epoch().count();
+			copies.push_back({d.key, d.revision, parsed.is_object() ? AP_SoloJsonString(parsed, "uuid") : std::string(),
+			                  d.pin, static_cast<long long>(stamp)});
+		}
+		const std::vector<size_t> into = AP_SoloFoldStoreCopies(copies);
+		for (size_t i = 0; i < all.size(); i++)
+		{
+			if (into[i] == i)
+				continue;
+			skip[i] = true;
+			result.notes.push_back("left " + all[i].title + " (package " + all[i].pin.substr(0, 12) + ") out of Play Solo: " +
+			    all[into[i]].title + " (package " + all[into[i]].pin.substr(0, 12) + ") is the newest install of the same track");
+			if (all[i].key != all[into[i]].key)
+				retired.push_back({0, all[i].key, all[i].revision, copies[i].uuid, all[i].title, all[i].pin,
+				                   all[into[i]].pin, all[into[i]].key});
+		}
+	}
 	for (size_t i = 0; i < all.size(); i++)
 	{
 		if (skip[i])
@@ -1449,6 +1536,8 @@ void KeepOneCopyPerEntry(StorePublication &result)
 	for (size_t i = 0; i < all.size(); i++)
 		if (!skip[i])
 			out.push_back(std::move(all[i]));
+	for (Descriptor &d : retired)
+		out.push_back(std::move(d));
 	all = std::move(out);
 }
 StorePublication CollectInstalledStore(const std::string &assets, const std::string &pin,
@@ -1484,12 +1573,26 @@ StorePublication CollectInstalledStore(const std::string &assets, const std::str
 // says what to do (the menus show at most 170 characters of it).
 bool ApplyStoreDescriptor(const StorePublication::Descriptor &d, const StorePublication &from, std::string &message)
 {
+	if (d.kind == 0)
+	{
+		// Only once the copy that replaces it is listed: a failed write must not leave no row at all.
+		std::string why;
+		if (from.listed.count(d.keeper) && !RetireDescriptor(d.key, d.revision, d.json, d.keeperKey, why))
+		{
+			message = (d.title.empty() ? d.key : d.title) + " " + d.revision + ": " + why;
+			return false;
+		}
+		return true;
+	}
 	DescriptorScope scope;
 	scope.live = &from.live;
 	scope.fresh = !from.pin.empty();
 	std::string why;
 	if (RecordDescriptor(d.kind, d.key.c_str(), d.revision.c_str(), d.json.c_str(), scope, why))
+	{
+		from.listed.insert(d.pin);
 		return true;
+	}
 	std::string title = d.title.empty() ? d.key : d.title;
 	if (title.size() > 40)
 	{
@@ -1746,10 +1849,13 @@ extern "C" int AP_Solo_OptionGet(int index, struct APSoloOptionInfo *out)
 	CopyText(out->name, sizeof out->name, o.name);
 	CopyText(out->label, sizeof out->label, o.label);
 	CopyText(out->group, sizeof out->group, o.group);
-	CopyText(out->value, sizeof out->value, o.kind == "set" ? AP_SoloSetSummary(o) : o.value);
+	CopyText(out->value, sizeof out->value, o.kind == "set"      ? AP_SoloSetSummary(o)
+	                                        : o.kind == "weights" ? AP_SoloWeightsSummary(o)
+	                                                              : o.value);
 	out->kind = o.kind == "toggle"   ? AP_SOLO_OPT_TOGGLE
 	            : o.kind == "choice" ? AP_SOLO_OPT_CHOICE
 	            : o.kind == "set"    ? AP_SOLO_OPT_SET
+	            : o.kind == "weights" ? AP_SOLO_OPT_WEIGHTS
 	                                 : AP_SOLO_OPT_RANGE;
 	out->visible = AP_SoloOptionVisible(g_options, o) ? 1 : 0;
 	out->forced = o.forced.empty() ? 0 : 1;
@@ -1767,7 +1873,8 @@ extern "C" int AP_Solo_OptionGet(int index, struct APSoloOptionInfo *out)
 
 extern "C" int AP_Solo_OptionItemCount(int index)
 {
-	if (index < 0 || index >= (int)g_options.size() || g_options[index].kind != "set")
+	if (index < 0 || index >= (int)g_options.size() ||
+	    (g_options[index].kind != "set" && g_options[index].kind != "weights"))
 		return 0;
 	return (int)g_options[index].keys.size();
 }
@@ -1779,6 +1886,14 @@ extern "C" int AP_Solo_OptionItemGet(int index, int item, struct APSoloItemInfo 
 	const APSoloOption &o = g_options[index];
 	std::memset(out, 0, sizeof *out);
 	CopyText(out->label, sizeof out->label, o.keyLabels[item]);
+	if (o.kind == "weights")
+	{
+		out->weight = item < (int)o.keyWeights.size() ? o.keyWeights[item] : 0;
+		out->defaultWeight = item < (int)o.keyDefaultWeights.size() ? o.keyDefaultWeights[item] : 0;
+		out->on = out->weight > 0 ? 1 : 0;
+		out->isDefault = out->weight == out->defaultWeight ? 1 : 0;
+		return 1;
+	}
 	out->on = AP_SoloSetHas(o, o.keys[item]) ? 1 : 0;
 	out->isDefault = item < (int)o.keyDefault.size() && o.keyDefault[item] ? 1 : 0;
 	return 1;
@@ -1788,6 +1903,18 @@ extern "C" void AP_Solo_OptionItemToggle(int index, int item)
 {
 	if (index >= 0 && index < (int)g_options.size())
 		AP_SoloSetToggle(g_options[index], item);
+}
+
+extern "C" void AP_Solo_OptionItemStep(int index, int item, int direction)
+{
+	if (index >= 0 && index < (int)g_options.size())
+		AP_SoloWeightStep(g_options[index], item, direction);
+}
+
+extern "C" void AP_Solo_OptionItemReset(int index, int item)
+{
+	if (index >= 0 && index < (int)g_options.size())
+		AP_SoloWeightReset(g_options[index], item);
 }
 
 extern "C" int AP_Solo_OptionsBlocked(void) { return AP_SoloFirstBlocked(g_options); }
@@ -1816,7 +1943,10 @@ extern "C" int AP_Solo_OptionIndex(const char *name)
 extern "C" void AP_Solo_OptionsReset(void)
 {
 	for (auto &o : g_options)
+	{
 		o.value = o.initial;
+		o.keyWeights = o.keyInitialWeights; // weights rows: the start table, empty for other kinds
+	}
 }
 
 namespace {

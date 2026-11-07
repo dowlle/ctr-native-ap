@@ -1725,6 +1725,10 @@ UpdateTireColorTimer:
 		{
 			deltaPosThisFrame = 0;
 		}
+#ifdef CTR_AP
+		// Rival Surge: AI racers move 50% faster while the trap runs.
+		deltaPosThisFrame = AP_TrapRivalProgress(deltaPosThisFrame);
+#endif
 		deltaPosThisFrame = CTR_MipsAddLo(deltaPosThisFrame, botDriver->botData.navProgressRemainder);
 	}
 	else

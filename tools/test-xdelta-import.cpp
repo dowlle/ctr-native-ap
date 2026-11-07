@@ -47,6 +47,8 @@ extern "C" int XdeltaImportTest_InstallDescriptors(const XdeltaImportScan *scan,
                                                    const char *assets, int *kept, int *needsLaps, char *note,
                                                    size_t noteSize);
 extern "C" const char *XdeltaImportTest_KnownName(const char *levSha256);
+extern "C" const char *XdeltaImportTest_CuratedName(const char *patchSha256, int bigfileIndex);
+extern "C" void XdeltaImportTest_AddCurated(const char *patchSha256, int bigfileIndex, const char *name);
 extern "C" void XdeltaImportTest_History(const char *assets, const char *sha, char *out, size_t size);
 extern "C" void XdeltaImportTest_PackLabel(const char *stem, char *out, size_t size);
 using Bytes = std::vector<unsigned char>;
@@ -1256,6 +1258,208 @@ int main()
             CHECK(XdeltaImport_RenameItem(scanned, index, "Sunset Raceway", why, sizeof why), "the same name again is a no-op");
         }
         XdeltaImport_Free(&r.scan);
+    }
+    /* A3-29: a track imported under the player's own name is one installed
+       package, one room folder and one Play Solo entry, whatever descriptor
+       (curated track key or none) the pack came with. */
+    for (int curated = 0; curated < 2; curated++)
+    {
+        const std::string tag = curated ? "curated" : "plain";
+        const Bytes patchBytes = encode(baseDisc, patchedDisc);
+        const std::string patch = write_file("Anniv-" + tag + ".xdelta", patchBytes);
+        nlohmann::json d = {{"descriptor_version", 1}, {"patch_sha256", sha_hex(patchBytes)}, {"pack_title", "Anniv"},
+                            {"tracks", {{"1", {{"title", "Generic Slot One"}, {"laps", 3}}}}}};
+        if (curated) d["tracks"]["1"]["track_key"] = "crash-cove";
+        const std::string text = d.dump();
+        const std::string descriptorPath = write_file("Anniv-" + tag + ".ctrpack.json", Bytes(text.begin(), text.end()));
+        ScanResult r = scan(patch, discPath, descriptorPath.c_str());
+        CHECK(r.ok, ("A3-29 scan " + tag).c_str());
+        if (!r.ok) continue;
+        const XdeltaImportSummary *s = XdeltaImport_Summary(r.scan);
+        const XdeltaImportItem *t1 = item_for(s, 1);
+        unsigned index = (unsigned)(t1 - s->items);
+        char why[96];
+        CHECK(XdeltaImport_RenameItem(r.scan, index, "My Custom Name", why, sizeof why), "A3-29 rename applies");
+        std::vector<unsigned char> chosen(s->count, 0);
+        chosen[index] = 1;
+        const std::string assets = root + "/a329-" + tag;
+        mkdir(assets.c_str(), 0755);
+        char error[256];
+        CHECK(XdeltaImport_Install(r.scan, chosen.data(), assets.c_str(), CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == 1,
+              "A3-29 renamed track installs");
+        std::vector<CustomPackageStoreEntry> rows;
+        CustomPackage_ScanStore((assets + "/tracks/packages").c_str(),
+            [](const CustomPackageStoreEntry *e, void *c) { if (e->verified) ((std::vector<CustomPackageStoreEntry> *)c)->push_back(*e); },
+            &rows, error, sizeof error);
+        char planKey[65], planRev[65], plan[16384], reason[256];
+        int planKind = XdeltaImport_PlanDescriptor(r.scan, index, plan, sizeof plan, planKey, planRev, reason, sizeof reason);
+        CHECK(rows.size() == 1, "A3-29 a renamed import is one installed package");
+        for (const auto &e : rows)
+        {
+            char key[65], revision[65], json[16384];
+            int kind = CustomPackage_StoreDescriptor(assets.c_str(), e.pin, nullptr, key, sizeof key, revision, sizeof revision,
+                                                     json, sizeof json, reason, sizeof reason);
+            CHECK(kind == planKind && !std::strcmp(key, planKey) && !std::strcmp(revision, planRev),
+                  "A3-29 the store and the importer name one Play Solo entry");
+        }
+        XdeltaImport_Free(&r.scan);
+    }
+    /* The same patch track imported again under another name: two packages of
+       one uuid, and the newest import is the one marked newest, also when it
+       is an earlier name coming back. */
+    {
+        const Bytes patchBytes = encode(baseDisc, patchedDisc);
+        const std::string patch = write_file("Again.xdelta", patchBytes);
+        const std::string assets = root + "/a329-again";
+        mkdir(assets.c_str(), 0755);
+        auto importAs = [&](const char *name, char pin[65], char uuid[37]) {
+            ScanResult r = scan(patch, discPath);
+            CHECK(r.ok, "A3-29 scan for a second import");
+            if (!r.ok) return;
+            const XdeltaImportSummary *s = XdeltaImport_Summary(r.scan);
+            unsigned index = (unsigned)(item_for(s, 1) - s->items);
+            char why[96], error[256];
+            if (name) CHECK(XdeltaImport_RenameItem(r.scan, index, name, why, sizeof why), "A3-29 rename for a second import");
+            std::vector<unsigned char> chosen(s->count, 0);
+            chosen[index] = 1;
+            CHECK(XdeltaImport_Install(r.scan, chosen.data(), assets.c_str(), CTR_XDELTA_INSTALL_PACKAGES, error, sizeof error) >= 1,
+                  "A3-29 second import installs");
+            std::snprintf(pin, 65, "%s", s->items[index].pin);
+            XdeltaImport_PackageUuid(s->patchSha256, 1, uuid);
+            XdeltaImport_Free(&r.scan);
+        };
+        auto mtime = [&](const char *pin) {
+            struct stat info;
+            return stat((assets + "/tracks/packages/" + pin + "/manifest.json").c_str(), &info) ? 0 : (long long)info.st_mtime;
+        };
+        auto age = [&](const char *pin) {
+            struct timeval times[2] = {{time(nullptr) - 7200, 0}, {time(nullptr) - 7200, 0}};
+            utimes((assets + "/tracks/packages/" + pin + "/manifest.json").c_str(), times);
+        };
+        char firstPin[65] = {}, secondPin[65] = {}, againPin[65] = {}, uuid[37] = {};
+        importAs(nullptr, firstPin, uuid);
+        importAs("Second Name", secondPin, uuid);
+        CHECK(std::strcmp(firstPin, secondPin) != 0, "A3-29 a new name is a new package");
+        age(firstPin);
+        age(secondPin);
+        importAs(nullptr, againPin, uuid);
+        CHECK(!std::strcmp(againPin, firstPin), "A3-29 the first name again is the first package");
+        CHECK(mtime(firstPin) > mtime(secondPin) + 3600, "A3-29 importing an earlier name again makes it the newest install");
+        std::vector<CustomPackageStoreEntry> rows;
+        char error[256];
+        CustomPackage_ScanStore((assets + "/tracks/packages").c_str(),
+            [](const CustomPackageStoreEntry *e, void *c) { if (e->verified) ((std::vector<CustomPackageStoreEntry> *)c)->push_back(*e); },
+            &rows, error, sizeof error);
+        int sameUuid = 0;
+        for (const auto &e : rows) sameUuid += !std::strcmp(e.manifest.uuid, uuid);
+        CHECK(sameUuid == 2, "A3-29 the two names are two packages of one uuid, which Play Solo folds to the newest");
+    }
+    /* A3-15: the curated table of tester names, keyed by patch hash and slot. */
+    {
+        const char *patches[4] = {
+            "92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2",
+            "1e8a796f019c23f7de70c21a00d9fb20ba4c7be0d819c21de3bd84ffcd8397a1",
+            "836d551d5d213d0aa704083f3c75ed8c0cfe58c9a6c01ef81b4d8a15fdf67180",
+            "748a18082ca0dbc6ff31321e7a75bfa58c3afac80102363fb1385b32e50196df"};
+        struct Row { int patch, slot; const char *name; }; /* name nullptr: a boss slot, generic. */
+        const Row rows[] = {
+            {0, 7, "Crazy In Kartmandu"},
+            {0, 15, "N-Gage Android Alley"},
+            {0, 23, "Tomb Temple"},
+            {0, 39, "Skull Cave"},
+            {0, 41, "Arctic Alleyway"},
+            {0, 47, "N-Gage Deep Sea Driving"},
+            {0, 49, "Wumpa World"},
+            {0, 57, "Drive-Thru Danger"},
+            {0, 79, "Crystal Caves"},
+            {0, 119, "Dark Ruins"},
+            {0, 127, "N-Gage Assembly Lane"},
+            {0, 135, "N-Gage Out of Time"},
+            {1, 7, "Haunted Hovel"},
+            {1, 9, nullptr},
+            {1, 23, "Dracula's Castle"},
+            {1, 39, "Lunatic Laboratory"},
+            {1, 49, nullptr},
+            {1, 55, "Sid's House"},
+            {1, 79, "DS Luigi's Mansion"},
+            {1, 119, "LEGO Knightmare-A-Thon"},
+            {1, 135, "LEGO Dark Forest Dash"},
+            {1, 153, nullptr},
+            {1, 169, nullptr},
+            {2, 9, "Matsuri"},
+            {2, 31, "DK Shipwreck Shore"},
+            {2, 39, "Kong Dungeon"},
+            {2, 41, "Breeze Harbor"},
+            {2, 47, "Dreamy Heights"},
+            {2, 55, "Haven Stadium"},
+            {2, 71, "Skater's Retreat"},
+            {2, 103, "Neon Paradise"},
+            {2, 135, "Redrock Ravine"},
+            {2, 169, "Tribal Trials"},
+            {3, 31, "Hasty Hedges"},
+            {3, 39, "Holland"},
+            {3, 47, "Motor Sports Land"},
+            {3, 135, "N-Gage Jungle Boogie"},
+        };
+        for (const Row &row : rows)
+        {
+            const char *got = XdeltaImportTest_CuratedName(patches[row.patch], row.slot);
+            const std::string label = "curated slot " + std::to_string(row.patch) + ":" + std::to_string(row.slot);
+            CHECK(row.name ? (got && !std::strcmp(got, row.name)) : !got, label.c_str());
+        }
+        CHECK(sizeof rows / sizeof rows[0] == 37, "the tester table has 37 rows");
+        for (int patch = 0; patch < 4; patch++)
+        {
+            int listed = 0;
+            for (int slot = 0; slot < 256; slot++)
+            {
+                bool inTable = false;
+                for (const Row &row : rows) inTable = inTable || (row.patch == patch && row.slot == slot && row.name);
+                const char *got = XdeltaImportTest_CuratedName(patches[patch], slot);
+                CHECK(inTable == (got != nullptr), "only listed, named slots have a curated name");
+                listed += got != nullptr;
+            }
+            CHECK(listed > 0, "each of the four patches maps slots");
+        }
+        CHECK(!XdeltaImportTest_CuratedName("00", 7) && !XdeltaImportTest_CuratedName(nullptr, 7), "an unknown patch has no curated names");
+
+        /* End to end on the synthetic patch: its hash is registered for slot 1 only. */
+        ScanResult plain = scan(patchPath, discPath);
+        CHECK(plain.ok, "scan before registering the curated row");
+        if (plain.ok)
+        {
+            char sha[65];
+            std::snprintf(sha, sizeof sha, "%s", XdeltaImport_Summary(plain.scan)->patchSha256);
+            XdeltaImportTest_AddCurated(sha, 1, "Curated Raceway");
+            ScanResult r = scan(patchPath, discPath);
+            CHECK(r.ok, "scan with a curated row");
+            if (r.ok)
+            {
+                const XdeltaImportSummary *s = XdeltaImport_Summary(r.scan);
+                const XdeltaImportItem *t1 = item_for(s, 1), *t9 = item_for(s, 9);
+                CHECK(t1 && !std::strcmp(t1->title, "Curated Raceway") && t1->nameSource == XDELTA_NAME_TESTER,
+                      "a listed slot takes its curated name");
+                CHECK(t9 && item_for(XdeltaImport_Summary(plain.scan), 9) &&
+                          !std::strcmp(t9->title, item_for(XdeltaImport_Summary(plain.scan), 9)->title) &&
+                          std::strstr(t9->title, "Pack track ") == t9->title && t9->nameSource == XDELTA_NAME_LABEL,
+                      "an unlisted slot keeps the generic name");
+                unsigned index = 0;
+                for (unsigned i = 0; i < s->count; i++) if (s->items[i].bigfileIndex == 1) index = i;
+                char why[96];
+                CHECK(XdeltaImport_RenameItem(r.scan, index, "My Own Name", why, sizeof why), "the player renames a curated track");
+                const XdeltaImportItem *renamed = item_for(XdeltaImport_Summary(r.scan), 1);
+                CHECK(renamed && !std::strcmp(renamed->title, "My Own Name") && renamed->nameSource == XDELTA_NAME_EDITED,
+                      "the player's name wins over the curated name");
+                char manifest[4096];
+                size_t written = 0;
+                CHECK(XdeltaImport_CopyManifest(r.scan, index, manifest, sizeof manifest - 1, &written), "the renamed package has a manifest");
+                manifest[written] = 0;
+                CHECK(std::strstr(manifest, "\"title\":\"My Own Name\"") != nullptr && !std::strstr(manifest, "Curated Raceway"),
+                      "the manifest keeps the player's name");
+            }
+            XdeltaImport_Free(&r.scan);
+        }
+        XdeltaImport_Free(&plain.scan);
     }
     {
         const std::string assets = root + "/record-assets";

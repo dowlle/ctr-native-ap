@@ -65,7 +65,10 @@ int main(void)
 	check(AP_BoxNumber_Text(8, number) && strcmp(number, "9") == 0, "ninth slot is 9");
 	check(AP_BoxNumber_Text(9, number) && strcmp(number, "10") == 0, "tenth slot is 10");
 	check(AP_BoxNumber_Text(14, number) && strcmp(number, "15") == 0, "last slot is 15");
-	check(!AP_BoxNumber_Text(-1, number) && !AP_BoxNumber_Text(15, number), "invalid slots hidden");
+	check(AP_BoxNumber_Text(15, number) && strcmp(number, "16") == 0, "first community spot is 16");
+	check(AP_BoxNumber_Text(19, number) && strcmp(number, "20") == 0, "spot 20 is two digits");
+	check(AP_BoxNumber_Text(49, number) && strcmp(number, "50") == 0, "last spot is 50");
+	check(!AP_BoxNumber_Text(-1, number) && !AP_BoxNumber_Text(50, number), "invalid slots hidden");
 	check(AP_BoxNumber_Standing(1, 1, 0), "open spawned box is labelled");
 	check(!AP_BoxNumber_Standing(1, 1, 1), "checked box is hidden");
 	check(!AP_BoxNumber_Standing(1, 0, 0), "box without an instance is hidden");

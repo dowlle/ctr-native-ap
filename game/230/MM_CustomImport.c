@@ -13,6 +13,7 @@
 #include <platform/native_xdelta_review_layout.h>
 #include <platform/native_xdelta_pick.h>
 #include <platform/native_disc_image.h>
+#include "../../ap/ap_custom_track_download.h"
 
 #ifndef MM_IMPORT_PLAYER
 #define IMPORT_WHERE CTR_XDELTA_INSTALL_PACKAGES
@@ -56,6 +57,9 @@ static char s_importMessage[256], s_importPath[4096];
    tracks" (scan, then install without the review step) and the name edit. */
 static struct XdeltaPatchState s_importStates[CTR_XDELTA_FOLDER_MAX];
 static int s_importStatesWait, s_importAuto, s_importEditing, s_importPadPrev;
+/* Name-edit cursor (A3-24): the held direction and its repeat counter, so a
+   tap steps one character and a hold scrolls after a short settle. */
+static int s_importCursorDir, s_importCursorHold;
 static char s_importEditText[129], s_importEditBackup[129];
 
 static int MM_CustomImport_Active(void) { return s_importOpen; }
@@ -181,11 +185,22 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
     s_importPadPrev = rawPad;
     if (s_importStatesWait && XdeltaImport_PollPatchStates(s_importStates, CTR_XDELTA_FOLDER_MAX) != 0) s_importStatesWait = 0;
     /* Name entry (review list): the physical pad commits or cancels, as on
-       the Library search; typing never reaches the pad buffer. */
+       the Library search; typing never reaches the pad buffer. Left/Right
+       move the text cursor inside the name instead of navigating (the list
+       cursor is frozen for the whole edit). */
     if (s_importEditing)
     {
         if (!NativeText_Result())
         {
+            int dir = (rawPad & RAW_BTN_LEFT) ? -1 : (rawPad & RAW_BTN_RIGHT) ? 1 : 0;
+            if (dir != s_importCursorDir)
+            {
+                s_importCursorDir = dir;
+                s_importCursorHold = 0;
+                if (dir) NativeText_MoveCursor(dir);
+            }
+            else if (dir && ++s_importCursorHold > 15 && (s_importCursorHold % 3) == 0)
+                NativeText_MoveCursor(dir);
             if (rawTapped & CONN_PAD_CANCEL) NativeText_Resolve(2);
             else if (rawTapped & CONN_PAD_COMMIT) NativeText_Resolve(1);
         }
@@ -194,6 +209,8 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             const int committed = NativeText_Result() == 1;
             NativeText_End();
             s_importEditing = 0;
+            s_importCursorDir = 0;
+            s_importCursorHold = 0;
             if (committed)
             {
                 char *text = s_importEditText;
@@ -372,7 +389,10 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             }
             snprintf(s_importEditBackup, sizeof s_importEditBackup, "%s", s_importEditText);
             NativeText_Begin(s_importEditText, (int)sizeof s_importEditText, 28, 170, 456, 12, 0);
+            NativeText_EnableCursor(); /* this screen draws the cursor */
             s_importEditing = 1;
+            s_importCursorDir = 0;
+            s_importCursorHold = 0;
             s_importMessage[0] = 0;
             OtherFX_Play(1, 1);
         }
@@ -469,6 +489,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             MM_CustomText_Draw(item->offered ? item->tags : "Skipped", 305, layout.tagY, 176, 1, WHITE, ot);
             MM_CustomText_Draw(item->offered ? (item->nameSource == XDELTA_NAME_DESCRIPTOR ? "Name from the pack" :
                                                 item->nameSource == XDELTA_NAME_KNOWN ? "Name of a known track" :
+                                                item->nameSource == XDELTA_NAME_TESTER ? "Name from tester feedback" :
                                                 item->nameSource == XDELTA_NAME_EDITED ? "Name typed by you" :
                                                 "Placeholder name: L1 to change it") : item->reason, 305, layout.reasonY, 176,
                                layout.reasonLines, WHITE, ot);
@@ -485,10 +506,44 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
     }
     if (s_importEditing)
     {
+        /* The cursor is a blinking "_" at its byte offset, the same glyph the
+           Connection page shows at the end of the row. A name too long for
+           the panel is shown through a window that keeps the cursor in view,
+           like the Config string rows show the tail while editing. Both ends
+           of the window are trimmed here, whole codepoints at a time: letting
+           the draw helper wrap a long space-free run instead would collapse
+           the line to "Name..." with the cursor hidden. */
         char name[160];
-        snprintf(name, sizeof name, "Name: %s", s_importEditText);
+        size_t tn = strlen(s_importEditText), start = 0, end, at, n;
+        int cursor = NativeText_Cursor();
+        if (cursor < 0) cursor = 0;
+        if ((size_t)cursor > tn) cursor = (int)tn;
+        end = tn;
+        for (;;)
+        {
+            n = 6;
+            memcpy(name, "Name: ", 6);
+            for (at = start; at < end && n + 2 < sizeof name; at++)
+            {
+                if ((int)at == cursor && (sdata->frameCounter & 0x10)) name[n++] = '_';
+                name[n++] = s_importEditText[at];
+            }
+            if ((int)at == cursor && (sdata->frameCounter & 0x10)) name[n++] = '_';
+            name[n] = 0;
+            if (DecalFont_GetLineWidth(name, FONT_SMALL) <= 456) break;
+            if (start < (size_t)cursor)
+            {
+                start++;
+                while (start < end && ((unsigned char)s_importEditText[start] & 0xC0) == 0x80) start++;
+            }
+            else
+            {
+                end--;
+                while (end > start && ((unsigned char)s_importEditText[end] & 0xC0) == 0x80) end--;
+            }
+        }
         MM_CustomText_Draw(name, 28, 172, 456, 1, ORANGE, ot);
-        snprintf(line, sizeof line, "X: Keep this name   ^: Cancel");
+        snprintf(line, sizeof line, "D-pad Cursor  X: Keep  ^: Cancel");
     }
     else if (s_importStage == IMPORT_REVIEW || s_importStage == IMPORT_INSTALLING)
     {
@@ -504,6 +559,10 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
 #endif
     else snprintf(line, sizeof line, "%s", s_importStage == IMPORT_RESULT ? IMPORT_DONE :
                   s_importStage == IMPORT_SCANNING ? "Back: Cancel" : "[ Rescan   R1 Import all valid");
+    {
+        char busy[80];
+        if (ap_custom_track_download_busy(busy, sizeof busy)) snprintf(line, sizeof line, "%s", busy);
+    }
     MM_CustomText_Draw(line, 256, 196, 456, 1, JUSTIFY_CENTER | WHITE, ot);
     {
         RECT listBox = {20, 64, 268, 108}, detailBox = {297, 64, 190, detailHeight};

@@ -106,7 +106,9 @@ static void fixtures() {
                                   // J11: ctr_first, the Wumpa Shop and goal, boss opponent and kit shuffle
                                   "ctr-first", "wumpa-shop", "wumpa-goal-only", "boss-shuffle", "all-030", "boss-cups-gauntlet",
                                   // Row 10f: the only Wumpa Income is a custom track with measured Wumpa
-                                  "wumpa-custom-income"};
+                                  "wumpa-custom-income",
+                                  // A3-7: 27 cups, no Trophy Race: Itemsanity and Wumpa Income from the cup legs
+                                  "twenty-seven-cups", "one-race-pad"};
     for (const char *name : names) {
         std::ifstream in(std::string("tools/fixtures/content-plan/") + name + ".json");
         if (!in) { expect(false, std::string("fixture missing: ") + name); continue; }
@@ -116,7 +118,7 @@ static void fixtures() {
         if (!ap_content_plan_active()) continue;
         Room all;
         for (auto id : ids) all.present.insert(id);
-        for (int64_t code = 35010000; code < 35010210; ++code) all.foreign[code] = 99;
+        for (int64_t code = 35010000; code < 35010215; ++code) all.foreign[code] = 99;
         for (const auto &row : slot["content_plan"]["items"]["rows"]) all.foreign[row["item"].get<int64_t>()] = 99;
         auto r = run(all);
         expect(r.goal && r.total == (int)ids.size() && r.reachable == r.total,
@@ -212,7 +214,7 @@ static void checked_is_not_reached() {
     expect(boss && hit, "bosses has a Hit check routed through a keyed garage");
     Room room;
     for (auto id : ids) room.present.insert(id);
-    for (int64_t code = 35010000; code < 35010210; ++code) room.foreign[code] = 99;
+    for (int64_t code = 35010000; code < 35010215; ++code) room.foreign[code] = 99;
     room.foreign.erase(35010014);
     room.checked.insert(boss);
     std::set<int64_t> miss;
@@ -272,6 +274,26 @@ static void probe(const char *path) {
 // One generator row 3: with `pad_requirements_v1` a later race counts only once
 // the pad's first race is reached. The capability fixture has first races that
 // need a boost rank and later checks that do not.
+// One race pad among cups (A3-7): every Itemsanity route is on that pad, and
+// the check still needs its weapon, as in the apworld. Before, the sweep took
+// it for a pad check and reached it without the weapon.
+static void one_race_pad() {
+    std::ifstream in("tools/fixtures/content-plan/one-race-pad.json");
+    const J slot = J::parse(in);
+    const auto ids = plan_locations(slot);
+    expect(admit(slot, ids), "one race pad: admitted");
+    const int64_t beaker_use = 35016008, beaker = 35010099;
+    Room all;
+    for (auto id : ids) all.present.insert(id);
+    for (int64_t code = 35010000; code < 35010210; ++code) all.foreign[code] = 99;
+    for (const auto &row : slot["content_plan"]["items"]["rows"]) all.foreign[row["item"].get<int64_t>()] = 99;
+    Room without = all;
+    without.foreign.erase(beaker);
+    ap_content_verify_result r;
+    expect(reachable_set(all, r).count(beaker_use) != 0, "one race pad: the Beaker use check with Beaker");
+    expect(reachable_set(without, r).count(beaker_use) == 0, "one race pad: no Beaker use check without Beaker");
+}
+
 static void first_race_won() {
     std::ifstream in("tools/fixtures/content-plan/capability.json");
     J slot = J::parse(in);
@@ -326,7 +348,7 @@ static void shop_key_budgets() {
         for (int keys = 0; keys <= 4; ++keys) {
             Room room;
             for (auto id : ids) room.present.insert(id);
-            for (int64_t code = 35010000; code < 35010210; ++code)
+            for (int64_t code = 35010000; code < 35010215; ++code)
                 if (code != 35010014) room.foreign[code] = 99;
             for (const auto &row : p["items"]["rows"])
                 if (row["item"] != 35010014) room.foreign[row["item"].get<int64_t>()] = 99;
@@ -343,7 +365,7 @@ static void shop_key_budgets() {
 
 int main(int argc, char **argv) {
     if (argc > 2 && std::string(argv[1]) == "--probe") probe(argv[2]);
-    else { fixtures(); chain(); checked_is_not_reached(); first_race_won(); shop_key_budgets(); }
+    else { fixtures(); chain(); checked_is_not_reached(); first_race_won(); shop_key_budgets(); one_race_pad(); }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;
 }

@@ -205,12 +205,36 @@ static void AH_WarpPad_ApRefreshCopies(struct GameTracker *gGT);
 //   s_padRebirthState[phys] = AP_PadState the pad's instances were last BUILT for
 static unsigned s_padRebirthGen[128];
 static int      s_padRebirthState[128];
-// A2-45: the rebuild key is the pad state plus whether a Done pad is enterable,
-// because that decides the Done beam; entry can change while the state stays 5.
+// The rebuild key is everything the birth branches on, not the pad state alone
+// (A3-12, ap_pad_birth.h): a Locked pad floats its hub Key floor, then its
+// stage 1 rule, at the same state 1. A2-45 added the replay entry of a Done
+// pad (the Done beam); the key keeps it. Read by the birth, which records it,
+// and by ThTick, which rebuilds on a difference, so the two cannot disagree.
 static int AH_WarpPad_RebirthKey(int physLevelID, int destLevelID)
 {
 	int state = AP_PadState(physLevelID, destLevelID);
-	return state | ((state == 5 && AP_PadReplayable(physLevelID, destLevelID)) ? 0x10 : 0);
+	int counts[15];
+	int i;
+	if (!ap_content_plan_active())
+		return state;
+	for (i = 0; i < 15; i++)
+		counts[i] = AP_GateCount(i);
+	return ap_pad_birth_key(ap_content_plan_pad(physLevelID), counts, state,
+	                        AP_PadLook(physLevelID, destLevelID),
+	                        AP_PadReplayable(physLevelID, destLevelID));
+}
+
+// The physical pad of a pad thread, from its instance name ("warppad#NN"), as
+// AH_WarpPad_BuildInstances reads it. ThTick keys the rebuild tables by this,
+// the index the birth wrote, instead of mapping the destination back.
+static int AH_WarpPad_PhysOf(struct Thread *t)
+{
+	int i, levelID = 0;
+	if (!t->inst)
+		return -1;
+	for (i = 8; t->inst->name[i] != 0; i++)
+		levelID = levelID * 10 + t->inst->name[i] - '0';
+	return levelID;
 }
 #endif
 
@@ -442,7 +466,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// a gen change, so the steady-state cost is one integer compare per pad per frame.
 	if (ctr_cfg_active() && warppadObj->boolEnteredWarppad == 0)
 	{
-		int rbPhys = ctr_cfg_warp_phys(warppadObj->levelID);
+		int rbPhys = AH_WarpPad_PhysOf(t);
 		if (rbPhys >= 0 && rbPhys < 128)
 		{
 			unsigned rbGen = AP_StateGen();
@@ -2379,10 +2403,13 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		unlockItem_modelID = STATIC_KEY;
 		unlockItem_numOwned = AP_GateCount(AP_IDX_KEY);
 		unlockItem_numNeeded = pad ? pad->keys : 2147483647;
+		// Which requirement the pad floats: the floor, its rule or its stage 2.
+		// The rebuild key reads the same choice (ap_pad_birth.h, A3-12).
+		int apGateLayer = ap_pad_gate_layer(pad, unlockItem_numOwned, AP_PadState(levelID, warppadObj->levelID));
 		// Manual rule (#463): once the hub Key floor is met, the pad advertises
 		// its own rule with the owned count, the same answer AP_ContentPadOpen
 		// gives the load gate.
-		if (pad && pad->has_rule && unlockItem_numOwned >= unlockItem_numNeeded)
+		if (apGateLayer == AP_PAD_GATE_RULE)
 		{
 			ctr_req rule;
 			AP_ContentMaskToReq(pad->rule_mask, pad->rule_count, &rule);
@@ -2395,7 +2422,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 		}
 		// One generator row 6: closed again after the first race, the pad
 		// floats its stage 2 requirement, as a retail pad does.
-		if (pad && AP_PadState(levelID, warppadObj->levelID) == 3)
+		if (apGateLayer == AP_PAD_GATE_STAGE2)
 		{
 			ctr_req rule;
 			AP_ContentMaskToReq(pad->stage2_mask, pad->stage2_count, &rule);

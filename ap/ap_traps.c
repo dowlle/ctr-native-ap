@@ -7,6 +7,8 @@
 #include "ap_wumpa.h"
 #include "ap_capability.h"
 #include "ap_democam.h"
+#include "ap_feed_lines_logic.h" // AP_FEED_TRAP_* stages
+#include "ap_surface.h" // AP_SurfaceHeld, for Mud Season blocked by Ignore Dirt
 #include "ap_hooks.h" // AP_LogLine, AP_FeedTrapLine, AP_DevKeysEnabled
 #include "ap_deathlink.h" // AP_DeathLinkSuppressSelfInflicted, for Flatten's ruled
                           // self-inflicted attribution
@@ -115,6 +117,16 @@ static int g_recover_ms = 0;
 // Cleared once per frame in AP_TrapTick; see AP_TrapDriveInput for why a mirror
 // cannot simply be reapplied the way the boost-control writes can.
 static int g_trap_steer_mirrored = 0;
+
+// ── The alpha3 data package traps (ruled 2026-11-06) ──
+// Stuck Steering's dead side for the running copy: -1 left, +1 right. Picked
+// for every copy: when it fires and when it refreshes a running one.
+static int g_trap_stuck_side = 1;
+static unsigned g_trap_stuck_picks = 0;
+// Always Jumping owns at most one jump buffer at a time. The flag says the
+// buffer value 1 now in the driver was written by the trap, so it can be taken
+// back when it was not used, and a buffer the player set is never touched.
+static int g_trap_jump_owned = 0;
 
 static void AP_TrapEnsureReady(void)
 {
@@ -427,6 +439,12 @@ static unsigned AP_TrapConditions(struct GameTracker *gGT, struct Driver *local,
 
 	if (AP_TrapHeldItemResolved(local))
 		bits |= AP_TRAP_COND_HELD_ITEM;
+
+	// Wumpa Leak: something to halve, and the same protection Wumpa Wipeout
+	// respects.
+	if (local != 0 && AP_TrapWumpaLeakAmount(AP_WumpaRaceCount(local)) > 0 &&
+	    !AP_TrapFruitProtected(gGT, local))
+		bits |= AP_TRAP_COND_TWO_WUMPA;
 
 	if (AP_TrapEligibleCrates(epoch))
 		bits |= AP_TRAP_COND_ELIGIBLE_CRATES;
@@ -890,6 +908,14 @@ static void AP_TrapPollFlatten(struct Driver *local, int elapsedMs)
 
 // Apply one instant effect at the moment the scheduler fires it. Called from the
 // event drain, which is the only place that sees the FIRE edge exactly once.
+// Stuck Steering: a copy picks its dead side. Not the seed's random stream:
+// this is presentation of one received item, so the frame timer is enough.
+static void AP_TrapStuckPickSide(struct GameTracker *gGT)
+{
+	g_trap_stuck_picks++;
+	g_trap_stuck_side = AP_TrapStuckSidePick(gGT != 0 ? (unsigned)gGT->timer : 0u, g_trap_stuck_picks);
+}
+
 static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, int effect)
 {
 	if (gGT == 0 || local == 0)
@@ -921,6 +947,16 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, i
 		break;
 	case AP_TRAP_CLOCKED_OUT:
 		AP_TrapStartClockedOut(gGT, local);
+		break;
+	case AP_TRAP_WUMPA_LEAK:
+		// Same engine helper as Wumpa Wipeout, so the clamp, the juiced state
+		// and the mask veto behave as for a normal hit. Half, rounded down: 11
+		// fruit leave 6.
+		RB_Player_ModifyWumpa(local, -AP_TrapWumpaLeakAmount(AP_WumpaRaceCount(local)));
+		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_WUMPA_LEAK);
+		break;
+	case AP_TRAP_STUCK_STEERING:
+		AP_TrapStuckPickSide(gGT);
 		break;
 	case AP_TRAP_FLATTEN:
 		// Try immediately, so an ordinary flatten lands on the frame the warning
@@ -955,11 +991,14 @@ static void AP_TrapDrainEvents(struct GameTracker *gGT, struct Driver *local)
 		// effect needs: it has no ACTIVE frames of its own to act on.
 		if (ev.kind == AP_TRAP_EV_FIRE)
 			AP_TrapApplyInstant(gGT, local, ev.effect);
+		// A copy that refreshes a running Stuck Steering picks its side too.
+		if (ev.kind == AP_TRAP_EV_REFRESH && ev.effect == AP_TRAP_STUCK_STEERING)
+			AP_TrapStuckPickSide(gGT);
 		switch (ev.kind)
 		{
 		case AP_TRAP_EV_ARMED:
 			snprintf(msg, sizeof msg, "%s ARMED", name);
-			AP_FeedTrapLine(msg);
+			AP_FeedTrapLine(ev.slot, ev.seq, AP_FEED_TRAP_ARMED, msg);
 			snprintf(msg, sizeof msg, "[AP TRAP] armed: %s (slot %d)\n", name, ev.slot);
 			AP_LogLine(msg);
 			break;
@@ -973,13 +1012,14 @@ static void AP_TrapDrainEvents(struct GameTracker *gGT, struct Driver *local)
 			break;
 		case AP_TRAP_EV_WARN:
 			snprintf(msg, sizeof msg, "%s INCOMING", name);
-			AP_FeedTrapLine(msg);
+			AP_FeedTrapLine(ev.slot, ev.seq, AP_FEED_TRAP_INCOMING, msg);
 			snprintf(msg, sizeof msg, "[AP TRAP] warning: %s (slot %d)\n", name, ev.slot);
 			AP_LogLine(msg);
 			break;
 		case AP_TRAP_EV_FIRE:
-			snprintf(msg, sizeof msg, "%s", name);
-			AP_FeedTrapLine(msg);
+			snprintf(msg, sizeof msg, AP_TrapMudSeasonBlocked(ev.effect, AP_SurfaceHeld(AP_SURFACE_DIRT))
+			                              ? "%s BLOCKED" : "%s", name);
+			AP_FeedTrapLine(ev.slot, ev.seq, AP_FEED_TRAP_FIRED, msg);
 			snprintf(msg, sizeof msg, "[AP TRAP] active: %s (slot %d)\n", name, ev.slot);
 			AP_LogLine(msg);
 			break;
@@ -1053,6 +1093,7 @@ void AP_Trap_ConnectReset(void)
 	g_trap_use_pending = 0;
 	g_trap_use_wait = 0;
 	g_trap_steer_mirrored = 0;
+	g_trap_jump_owned = 0;
 	AP_TrapClockedOutReset(AP_TrapLocalDriver());
 	AP_TrapFlattenStageClear(&g_trap_flatten);
 	for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
@@ -1090,6 +1131,13 @@ int AP_TrapConfigLine(const char *line)
 	else if (!strcmp(v, "democam"))   AP_TrapReceive(AP_TRAP_DEMO_CAMERA);
 	else if (!strcmp(v, "clocked_out")) AP_TrapReceive(AP_TRAP_CLOCKED_OUT);
 	else if (!strcmp(v, "reverse_camera")) AP_TrapReceive(AP_TRAP_REVERSE_CAMERA);
+	else if (!strcmp(v, "always_jumping")) AP_TrapReceive(AP_TRAP_ALWAYS_JUMPING);
+	else if (!strcmp(v, "no_drifting"))    AP_TrapReceive(AP_TRAP_NO_DRIFTING);
+	else if (!strcmp(v, "rival_surge"))    AP_TrapReceive(AP_TRAP_RIVAL_SURGE);
+	else if (!strcmp(v, "mud_season"))     AP_TrapReceive(AP_TRAP_MUD_SEASON);
+	else if (!strcmp(v, "limp_mode"))      AP_TrapReceive(AP_TRAP_LIMP_MODE);
+	else if (!strcmp(v, "stuck_steering")) AP_TrapReceive(AP_TRAP_STUCK_STEERING);
+	else if (!strcmp(v, "wumpa_leak"))     AP_TrapReceive(AP_TRAP_WUMPA_LEAK);
 	else if (!strcmp(v, "all"))
 	{
 		// Every effect this build can actually perform, which is no longer the
@@ -1226,7 +1274,8 @@ static void AP_TrapTrackRecovery(struct Driver *local, int elapsedMs)
 {
 	int speed, limit;
 
-	if (local == 0 || !(g_active[AP_TRAP_USF_NOBRAKE] || g_active[AP_TRAP_BOOST]))
+	if (local == 0 || !(g_active[AP_TRAP_USF_NOBRAKE] || g_active[AP_TRAP_BOOST] ||
+	                    g_active[AP_TRAP_STUCK_STEERING]))
 	{
 		g_recover_ms = 0;
 		return;
@@ -1343,6 +1392,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 		g_trap_reroll_wait = 0;
 		g_trap_use_pending = 0;
 		g_trap_use_wait = 0;
+		g_trap_jump_owned = 0;
 		// Flatten's stage machine does not survive the load either. A copy that
 		// fired but never got its squish away is re-armed below for the same
 		// reason Forced Use is; one that already landed has delivered its harm,
@@ -1387,7 +1437,9 @@ void AP_TrapTick(struct GameTracker *gGT)
 	for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 		g_active[e] = (unsigned char)AP_TrapSchedActive(&g_sched, e);
 
-	AP_TrapTrackRecovery(local, w.elapsedMs);
+	// Paused time is not still time: pausing freezes every trap, its recovery
+	// guard included.
+	AP_TrapTrackRecovery(local, w.paused ? 0 : w.elapsedMs);
 	// First Person and Wireframe force presentation every frame while active, so
 	// pause suppresses each the same way the map-boundary reset above already
 	// does: call the apply function with 0, which restores ordinary chase/debug
@@ -1605,6 +1657,28 @@ void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
 	if (g_trap_use_pending && g_active[AP_TRAP_FORCED_USE] && buttonsTapped != 0)
 		*buttonsTapped |= BTN_CIRCLE;
 
+	// No Drifting. L1 and R1 are the hop and power-slide buttons, read from
+	// these two words further down this same call (VehPhysProc.c, the jump
+	// block after CheckJumpButtons). Without them there is no hop and no slide,
+	// and a running slide ends as if the button was released.
+	if (g_active[AP_TRAP_NO_DRIFTING])
+	{
+		*buttonsHeld = AP_TrapNoDriftButtons(*buttonsHeld);
+		if (buttonsTapped != 0)
+			*buttonsTapped = AP_TrapNoDriftButtons(*buttonsTapped);
+	}
+
+	// Stuck Steering. One side of the steering axis is held at the centre the
+	// engine measures from (wheel included, as for Reverse Steering). A clamp is
+	// its own fixed point, so a second call in one frame changes nothing. The
+	// same nearly-still guard as the boost traps hands steering back to a kart
+	// wedged against a wall.
+	if (g_active[AP_TRAP_STUCK_STEERING] && pad != 0 && !AP_TrapReverseRestored())
+	{
+		int centre = pad->rwd != 0 ? (int)pad->rwd->gamepadCenter : AP_STICK_NEUTRAL;
+		pad->stickLX = (s16)AP_TrapStuckStick((int)pad->stickLX, centre, g_trap_stuck_side);
+	}
+
 	if (!usf && !boost)
 		return;
 
@@ -1641,6 +1715,66 @@ void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
 	{
 		pad->stickLY = AP_STICK_NEUTRAL;
 		pad->stickRY = AP_STICK_NEUTRAL;
+	}
+}
+
+// Limp Mode: the local kart's speed is held to half its class top speed, boosts
+// included (VehPhysForce_OnApplyForces, right after the engine's own clamp).
+int AP_TrapLimpSpeed(struct Driver *driver, int speed)
+{
+	if (!g_active[AP_TRAP_LIMP_MODE] || !AP_TrapIsLocal(driver))
+		return speed;
+	return AP_TrapLimpClamp(speed, driver->const_Speed_ClassStat);
+}
+
+// Rival Surge: an AI racer's nav-path progress this frame, 50% more while the
+// trap runs (BOTS.c, before the carried remainder is added).
+int AP_TrapRivalProgress(int deltaPos)
+{
+	if (!g_active[AP_TRAP_RIVAL_SURGE])
+		return deltaPos;
+	return AP_TrapRivalSurgeDelta(deltaPos);
+}
+
+// No Drifting for the engine's own pad reads (VehPhysProc.c: slide start, the
+// turbo tap during a slide, and slide end), which do not see the masked copy.
+int AP_TrapNoDrift(struct Driver *driver)
+{
+	return g_active[AP_TRAP_NO_DRIFTING] && AP_TrapIsLocal(driver);
+}
+
+// Mud Season for the surface lookup (ap_surface.c).
+int AP_TrapMudSeason(struct Driver *driver)
+{
+	return g_active[AP_TRAP_MUD_SEASON] && AP_TrapIsLocal(driver);
+}
+
+// Always Jumping (VehPhysGeneral_JumpAndFriction, just before the ordinary jump
+// gate). A one-frame jump buffer is written for the local kart when it is on
+// the ground and could hop, so the engine's own gate makes the hop: one hop per
+// chance, with its sound, cooldown and coyote rules. Not through the input
+// hook: the input block clears the buffer later in the frame.
+void AP_TrapAlwaysJump(struct Driver *d)
+{
+	int active;
+
+	if (!AP_TrapIsLocal(d))
+		return;
+	// Take back an owned buffer the engine did not use, so nothing hops after
+	// the trap ends. A buffer that is no longer 1 was used or replaced.
+	if (g_trap_jump_owned)
+	{
+		if (d->jump_TenBuffer == 1)
+			d->jump_TenBuffer = 0;
+		g_trap_jump_owned = 0;
+	}
+	active = g_active[AP_TRAP_ALWAYS_JUMPING] && !g_trap_paused;
+	if (AP_TrapAlwaysJumpWants(active, d->kartState == KS_NORMAL, d->jump_TenBuffer,
+	                           d->jump_CoyoteTimerMS, d->jump_CooldownMS,
+	                           d->rainCloudEffect == RAIN_CLOUD_EFFECT_JUMP_LOCKOUT))
+	{
+		d->jump_TenBuffer = 1;
+		g_trap_jump_owned = 1;
 	}
 }
 

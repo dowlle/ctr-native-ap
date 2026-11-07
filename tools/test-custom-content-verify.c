@@ -314,6 +314,14 @@ int main(void)
 	build_lev(image, 1); put32(image, 4 + INST_P, BODY_PTRMAP + 4);
 	write_bytes(lev, image, IMAGE_BYTES);
 	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "pointer target beyond payload refused");
+	/* Space Labs 1.2.4 (Saphi LEV 717): a mapped slot holds 0x0031002d, two small
+	   numbers, where its 63 siblings hold level offsets. The loader would add the
+	   level base to it, so the refusal stands and names the slot. */
+	build_lev(image, 1); put32(image, 4 + INST_P, 0x0031002d);
+	write_bytes(lev, image, IMAGE_BYTES);
+	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error) &&
+	       strstr(error, "patched or out-of-range pointer target (slot 0x10)") != NULL,
+	       "a mapped slot holding a non-pointer value is refused and named");
 	build_lev(image, 1); put32(image, 4 + BODY_CHECK + 8, 250);
 	write_bytes(lev, image, IMAGE_BYTES);
 	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "checkpoint edge beyond count refused");
