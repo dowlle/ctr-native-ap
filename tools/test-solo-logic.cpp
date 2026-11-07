@@ -345,6 +345,23 @@ static void test_checklists_and_guards()
 	})");
 	std::vector<APSoloOption> rows = AP_SoloBuildOptions(d);
 	CHECK(rows.size() == 5); // a set without a checklist is not a row
+	{
+		auto weighted = d;
+		weighted["unresolved"] = {"crystal_challenge_count"};
+		weighted["values"]["crystal_arenas"] = {"Rocky Road"};
+		auto preview = AP_SoloBuildOptions(weighted);
+		APSoloOption *number = find(preview, "crystal_challenge_count");
+		CHECK(number && number->previewOnly);
+		CHECK(AP_SoloFirstBlocked(preview) == -1); // default preview 4 is not the weighted count
+		if (number)
+		{
+			number->value = "2";
+			CHECK(AP_SoloFirstBlocked(preview) >= 0); // explicitly edited concrete count
+			number->value = number->initial;
+			CHECK(AP_SoloFirstBlocked(preview) == -1);
+			CHECK(AP_SoloSetArgs(preview).empty());
+		}
+	}
 	APSoloOption *count = find(rows, "crystal_challenge_count"), *arenas = find(rows, "crystal_arenas");
 	APSoloOption *shuffle = find(rows, "boss_opponent_shuffle"), *tracks = find(rows, "boss_track_pool");
 	APSoloOption *weapons = find(rows, "boss_weapon_pool");
@@ -445,7 +462,7 @@ static void test_tracks()
 		CHECK(AP_SoloTrackStart(nlohmann::json{{"id", "x"}}) == 0);
 		// A preset's Custom Tracks page sits behind its options screen; a YAML's follows the start list.
 		CHECK(AP_SoloTracksViaOptions(true));
-		CHECK(!AP_SoloTracksViaOptions(false));
+		CHECK(AP_SoloTracksViaOptions(false));
 	}
 
 	CHECK(AP_SoloDescriptorFileName("baby-t-park", "1.0.2") == "baby-t-park__1.0.2.json");
@@ -666,6 +683,28 @@ static void test_trap_weights()
 	CHECK(weights->value == weights->initial && AP_SoloSetArgs(rows).empty());
 }
 
+static void test_large_hint_checklists()
+{
+	APSoloOption row;
+	row.kind = "set";
+	std::vector<std::string> checked;
+	for (int i = 0; i < 9000; ++i)
+	{
+		row.keys.push_back("Location " + std::to_string(i));
+		checked.push_back(row.keys.back());
+	}
+	row.value = row.initial = AP_SoloSetValue(row, checked);
+	CHECK(AP_SoloSetEntries(row).size() == 9000);
+	CHECK(AP_SoloSetHas(row, row.keys.front()) && AP_SoloSetHas(row, row.keys.back()));
+	AP_SoloSetToggle(row, 4499);
+	CHECK(!AP_SoloSetHas(row, row.keys[4499]) && AP_SoloSetEntries(row).size() == 8999);
+	CHECK(AP_SoloSetHas(row, row.keys[4500]));
+	AP_SoloSetToggle(row, 4499);
+	CHECK(row.value == row.initial && AP_SoloSetEntries(row).size() == 9000);
+	row.value = "[]"; // reset/import paths must invalidate cached membership too
+	CHECK(AP_SoloSetEntries(row).empty() && !AP_SoloSetHas(row, row.keys.front()));
+}
+
 int main()
 {
 	test_parse_lines();
@@ -678,6 +717,7 @@ int main()
 	test_options();
 	test_option_steps_and_help();
 	test_checklists_and_guards();
+	test_large_hint_checklists();
 	test_trap_weights();
 	test_tracks();
 	test_needs_laps();
