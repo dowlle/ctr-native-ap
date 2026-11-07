@@ -21,20 +21,25 @@
 //   The pack is marked empty, but the hub's level pointer stays, so a swap
 //   without a fresh read swaps in the mask's memory (the #17 door crash).
 //
-// The hold: while a hint runs, a hub read is remembered instead of done, and
-// a hub the mask evicts is remembered for a re-read. A swap waits while a
-// hint runs or a remembered read is still to be issued. Once the hint has
-// ended, the remembered read is issued if the player is still in the hub it
-// was meant for, and the swap follows once that read is queued (the swap
-// itself stalls until the queued read lands, as retail's does). Without a
-// hint nothing changes.
+// The hold: while a hint runs, a corridor read is remembered instead of done,
+// a hub the mask evicts is remembered for a re-read, and a corridor swap is
+// remembered with the hub it was asked in. Once the hint has ended the
+// remembered read goes first (only while the player is still in the hub it was
+// meant for), and the remembered swap follows on a later tick, again only in
+// that hub and only when the second pack holds a hub read or being read, so
+// LOAD_Hub_SwapNow never waits on an empty pack. Anything stale is dropped.
+// The hold keeps its own swap request instead of retail's
+// bool_AdvHub_NeedToSwapLEV, which the cutscene thread owns and which nothing
+// would ever clear after a full level load. Without a hint nothing changes.
 //
 // Freestanding on purpose: tools/test-hub-hint-hold.c drives it on the host.
 
 typedef struct
 {
-	int lev;  // hub to read into the second pack once the hint ends, -1 none
-	int from; // the hub the player was in when it was remembered
+	int lev;      // hub to read into the second pack once the hint ends, -1 none
+	int from;     // the hub the player was in when it was remembered
+	int swap;     // a corridor swap was asked during the hint
+	int swapFrom; // the hub it was asked in
 } ap_hub_hint_hold;
 
 // Adventure hubs, Gem Stone Valley (25) to Citadel City (29).
@@ -64,8 +69,8 @@ static inline void ap_hub_hint_hold_evict(ap_hub_hint_hold *h, int packLev, int 
 	}
 }
 
-// Once per hub stream tick. Returns the hub to read now, or -1. A read meant
-// for a hub the player has left is dropped.
+// Once per hub stream tick, before the corridor. Returns the hub to read now,
+// or -1. A read meant for a hub the player has left is dropped.
 static inline int ap_hub_hint_hold_release(ap_hub_hint_hold *h, int hintState, int currLevel)
 {
 	int lev = h->lev;
@@ -75,10 +80,27 @@ static inline int ap_hub_hint_hold_release(ap_hub_hint_hold *h, int hintState, i
 	return h->from == currLevel ? lev : -1;
 }
 
-// Must a requested pack swap wait?
-static inline int ap_hub_hint_hold_swap_waits(const ap_hub_hint_hold *h, int hintState)
+// A corridor swap is asked. Returns 1 when it must wait; it is remembered then.
+static inline int ap_hub_hint_hold_swap(ap_hub_hint_hold *h, int hintState, int currLevel)
 {
-	return hintState != 0 || h->lev >= 0;
+	if (hintState == 0 && h->lev < 0)
+		return 0;
+	h->swap = 1;
+	h->swapFrom = currLevel;
+	return 1;
+}
+
+// Once per hub stream tick, after a held read was issued on an earlier tick.
+// Returns 1 when the remembered swap is to be done now: the hint is over, no
+// read is still held, the player is in the hub it was asked in, and the second
+// pack holds a hub (`packLev`, levID_in_each_mempack of that pack). A stale
+// swap is dropped.
+static inline int ap_hub_hint_hold_swap_release(ap_hub_hint_hold *h, int hintState, int currLevel, int packLev)
+{
+	if (!h->swap || hintState != 0 || h->lev >= 0)
+		return 0;
+	h->swap = 0;
+	return h->swapFrom == currLevel && ap_hub_hint_hold_is_hub(packLev);
 }
 
 #endif

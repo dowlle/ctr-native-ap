@@ -2,7 +2,7 @@
 
 #ifdef CTR_AP
 // A3-12: hub streaming waits for a running mask hint (ap/ap_hub_hint_hold.h).
-static ap_hub_hint_hold s_apHubHintHold = {-1, -1};
+static ap_hub_hint_hold s_apHubHintHold = {-1, -1, 0, -1};
 
 // LOAD_TalkingMask is about to load the mask over the second pack's hub.
 void LOAD_Hub_ApMaskEvicts(int packID)
@@ -182,12 +182,20 @@ void LOAD_Hub_Main(struct BigHeader *bigfilePtr)
 
 #ifdef CTR_AP
 	// A read held for a mask hint goes first once the hint is over; a held
-	// swap follows on a later tick, after the read is queued.
+	// swap follows on a later tick, after the read is queued, and only into a
+	// hub (ap/ap_hub_hint_hold.h).
 	{
 		int heldLev = ap_hub_hint_hold_release(&s_apHubHintHold, sdata->AkuAkuHintState, gGT->levelID);
 		if (heldLev >= 0)
 		{
 			LOAD_Hub_ReadFile(bigfilePtr, heldLev, 3 - gGT->activeMempackIndex);
+			return;
+		}
+		if (ap_hub_hint_hold_swap_release(&s_apHubHintHold, sdata->AkuAkuHintState, gGT->levelID,
+		                                  gGT->levID_in_each_mempack[3 - gGT->activeMempackIndex]))
+		{
+			gGT->bool_AdvHub_NeedToSwapLEV = 0;
+			LOAD_Hub_SwapNow();
 			return;
 		}
 	}
@@ -206,11 +214,8 @@ void LOAD_Hub_Main(struct BigHeader *bigfilePtr)
 			{
 #ifdef CTR_AP
 				// The second pack may hold the mask, or a hub the mask evicted.
-				if (ap_hub_hint_hold_swap_waits(&s_apHubHintHold, sdata->AkuAkuHintState))
-				{
-					gGT->bool_AdvHub_NeedToSwapLEV = 1;
+				if (ap_hub_hint_hold_swap(&s_apHubHintHold, sdata->AkuAkuHintState, gGT->levelID))
 					continue;
-				}
 #endif
 				gGT->bool_AdvHub_NeedToSwapLEV = 0;
 				LOAD_Hub_SwapNow();

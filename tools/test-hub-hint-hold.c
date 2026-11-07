@@ -31,6 +31,8 @@ typedef struct
 	int maskModel;    // modelMaskHints3D set
 	int needSwap;     // bool_AdvHub_NeedToSwapLEV
 	int swappedTo;    // hub the last swap brought in (-1 none), MASK if broken
+	int swaps;        // swaps done
+	int stalled;      // LOAD_Hub_SwapNow would wait forever (level2 0, nothing queued)
 	int maskWiped;    // a read cleared the mask while the hint ran
 } Model;
 
@@ -39,6 +41,8 @@ static void Init(Model *m, int useHold)
 	m->useHold = useHold;
 	m->hold.lev = -1;
 	m->hold.from = -1;
+	m->hold.swap = 0;
+	m->hold.swapFrom = -1;
 	m->level = NSB;
 	m->packLev = -1;
 	m->packContent = -1;
@@ -48,6 +52,8 @@ static void Init(Model *m, int useHold)
 	m->maskModel = 0;
 	m->needSwap = 0;
 	m->swappedTo = -1;
+	m->swaps = 0;
+	m->stalled = 0;
 	m->maskWiped = 0;
 }
 
@@ -76,16 +82,25 @@ static void LandQueue(Model *m)
 	}
 }
 
-// LOAD_Hub_SwapNow: stalls until level2 is set, then takes the second pack.
+// LOAD_Hub_SwapNow: stalls until level2 is set, loading queued files; with
+// nothing queued it would wait forever. Then the packs trade places: the hub
+// left behind becomes the second pack, as LOAD_HubSwapPtrs does.
 static void SwapNow(Model *m)
 {
+	int out = m->level;
 	while (m->level2 == 0 && m->queued >= 0)
 		LandQueue(m);
+	if (m->level2 == 0)
+	{
+		m->stalled = 1;
+		return;
+	}
 	m->swappedTo = m->packContent == m->level2 ? m->level2 : MASK;
+	m->swaps++;
 	m->level = m->level2;
-	m->packLev = -1;
-	m->packContent = -1;
-	m->level2 = 0;
+	m->packLev = out;
+	m->packContent = out;
+	m->level2 = out;
 }
 
 // LOAD_TalkingMask, at AH_MaskHint_Start
@@ -109,16 +124,19 @@ static void HubMain(Model *m, int readLev, int swapQuad)
 			ReadFile(m, held);
 			return;
 		}
+		if (ap_hub_hint_hold_swap_release(&m->hold, m->hint, m->level, m->packLev))
+		{
+			m->needSwap = 0;
+			SwapNow(m);
+			return;
+		}
 	}
 	if (readLev < 0)
 	{
 		if (swapQuad || m->needSwap)
 		{
-			if (m->useHold && ap_hub_hint_hold_swap_waits(&m->hold, m->hint))
-			{
-				m->needSwap = 1;
+			if (m->useHold && ap_hub_hint_hold_swap(&m->hold, m->hint, m->level))
 				return;
-			}
 			m->needSwap = 0;
 			SwapNow(m);
 		}
@@ -127,6 +145,16 @@ static void HubMain(Model *m, int readLev, int swapQuad)
 	if (m->useHold && ap_hub_hint_hold_read(&m->hold, m->hint, readLev, m->level))
 		return;
 	ReadFile(m, readLev);
+}
+
+// A full level load (a warp pad race, a boss, a menu) leaves the hub stream.
+static void FullLoad(Model *m, int level)
+{
+	m->level = level;
+	m->packLev = -1;
+	m->packContent = -1;
+	m->level2 = 0;
+	m->queued = -1;
 }
 
 int main(void)
@@ -176,14 +204,16 @@ int main(void)
 			assert(m.swappedTo == MASK); // retail: the swap takes the mask's memory
 		else
 		{
-			assert(m.swappedTo == -1 && m.needSwap == 1 && m.level == NSB);
+			assert(m.swappedTo == -1 && m.needSwap == 0 && m.hold.swap && m.level == NSB);
 			HubMain(&m, -1, 0); // still running: nothing moves
 			assert(m.swappedTo == -1 && m.queued == -1);
 			m.hint = 0;
 			HubMain(&m, -1, 0); // held re-read first
 			assert(m.queued == GSV && m.swappedTo == -1);
 			HubMain(&m, -1, 0); // then the held swap, which waits for the read to land
-			assert(m.swappedTo == GSV && m.level == GSV && m.needSwap == 0);
+			assert(m.swappedTo == GSV && m.level == GSV && m.swaps == 1 && !m.hold.swap);
+			HubMain(&m, -1, 0); // and only once
+			assert(m.swaps == 1 && m.packLev == NSB);
 		}
 		checks++;
 	}
@@ -207,6 +237,45 @@ int main(void)
 	m.packLev = 3;
 	MaskStart(&m);
 	assert(m.hold.lev == -1);
+	checks++;
+
+	// A swap asked during a hint with nothing read: retail would wait forever in
+	// LOAD_Hub_SwapNow; the hold drops it once the hint is over.
+	for (useHold = 0; useHold < 2; useHold++)
+	{
+		Init(&m, useHold);
+		m.hint = 4;
+		MaskStart(&m);
+		HubMain(&m, -1, 1);
+		m.hint = 0;
+		HubMain(&m, -1, 0);
+		HubMain(&m, -1, 0);
+		if (!useHold)
+			assert(m.stalled);
+		else
+			assert(!m.stalled && m.swaps == 0 && !m.hold.swap && m.level == NSB);
+		checks++;
+	}
+
+	// A held swap and a held read, then a full level load before the hint ends
+	// (or a hint that ends in another level): both are dropped, nothing swaps or
+	// stalls later.
+	Init(&m, 1);
+	HubMain(&m, GSV, 0);
+	LandQueue(&m);
+	m.hint = 4;
+	MaskStart(&m);
+	HubMain(&m, -1, 1);
+	assert(m.hold.swap && m.hold.lev == GSV);
+	FullLoad(&m, 3);
+	m.hint = 0;
+	HubMain(&m, -1, 0);
+	HubMain(&m, -1, 0);
+	HubMain(&m, -1, 0);
+	assert(m.swaps == 0 && !m.stalled && !m.hold.swap && m.hold.lev == -1 && m.queued == -1);
+	FullLoad(&m, NSB); // back in a hub later: an idle tick does nothing
+	HubMain(&m, -1, 0);
+	assert(m.swaps == 0 && !m.stalled);
 	checks++;
 
 	printf("PASS: hub streaming waits for a mask hint (%d scenarios)\n", checks);
