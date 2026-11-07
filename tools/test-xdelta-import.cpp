@@ -496,14 +496,15 @@ int main()
                 it = item_for(s, 1);
                 std::vector<unsigned char> selected(s->count, 0); selected[index] = 1;
                 const std::string assets = root + "/normalized-assets";
+                mkdir(assets.c_str(), 0755);
                 CHECK(XdeltaImport_Install(r.scan, selected.data(), assets.c_str(),
                                           CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM,
                                           error, sizeof error) == 1, "normalized package installs");
                 const std::string folder = assets + "/tracks/packages/" + it->pin;
                 CHECK(read_file(folder + "/original/bigfile-1.lev") == ordinary, "installed output equals ordinary reference");
                 const Bytes source = read_file(folder + "/metadata/xdelta-source.json");
-                const auto provenance = nlohmann::json::parse(source.begin(), source.end());
-                CHECK(provenance["original_lev_sha256"] == sha_hex(alt) && provenance["original_lev_bytes"] == alt.size() &&
+                const auto provenance = nlohmann::json::parse(source.begin(), source.end(), nullptr, false);
+                CHECK(!provenance.is_discarded() && provenance["original_lev_sha256"] == sha_hex(alt) && provenance["original_lev_bytes"] == alt.size() &&
                       provenance["normalized_lev_sha256"] == sha_hex(ordinary) && provenance["normalized_lev_bytes"] == ordinary.size() &&
                       provenance["lev_normalizer_version"] == 1, "original and installed provenance are distinct");
                 std::vector<CustomPackageStoreEntry> rows;
