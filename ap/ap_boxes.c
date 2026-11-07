@@ -659,8 +659,20 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 	for (k = 0; k < count; k++)
 		if (defs[k].model != 0 && defs[k].model->id == PU_RANDOM_CRATE)
 			crates++;
-	seats = AP_BoxSeat_Count(crates);
-	if (!AP_BoxSeat_Agrees(crates, pad->box_crates, pad->box_count))
+	// Validate every original ordinal and position before hiding ANY crate.
+	for (i = 0; i < pad->box_excluded_count; ++i)
+	{
+		struct InstDef *def = AP_BoxesCrateDef(defs, count, pad->box_excluded[i] - 1);
+		if (def == 0 || def->pos.x != pad->box_excluded_pos[i][0] ||
+		    def->pos.y != pad->box_excluded_pos[i][1] || def->pos.z != pad->box_excluded_pos[i][2])
+		{
+			AP_LogLine("[AP BOX] WARNING: excluded crate position disagrees with seed; no Item Box stands\n");
+			return;
+		}
+	}
+	seats = AP_BoxSeat_Count(crates - pad->box_excluded_count);
+	if (crates != pad->box_crates || !AP_BoxSeat_Agrees(crates - pad->box_excluded_count,
+	    pad->box_crates - pad->box_excluded_count, pad->box_count))
 	{
 		snprintf(msg, sizeof msg,
 		         "[AP BOX] WARNING: custom track on pad %d has %ld weapon crate(s), the seed was built for %d "
@@ -679,7 +691,8 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 
 		if (code <= 0 || !AP_BoxInSeed(code, 0) || AP_BoxChecked(code, 0))
 			continue;
-		def = AP_BoxesCrateDef(defs, count, AP_BoxSeat_Ordinal(i, crates));
+		def = AP_BoxesCrateDef(defs, count, AP_BoxSeat_Original(
+		    AP_BoxSeat_Ordinal(i, crates - pad->box_excluded_count), pad->box_excluded, pad->box_excluded_count));
 		if (def == 0)
 			continue;
 		s_live[i].used = 1;

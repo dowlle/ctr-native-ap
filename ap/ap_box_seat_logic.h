@@ -27,6 +27,18 @@
 // (native_custom_content_verify.c), so a count above it is never real.
 #define AP_BOX_SEAT_CRATES_MAX 65536L
 
+// Map a spread seat among the remaining crates back to its ORIGINAL table
+// ordinal. Exclusions are sorted one-based ordinals; other crates retain their
+// original identities. The box numbers remain contiguous 1 to seat count.
+static inline long AP_BoxSeat_Original(long eligible, const int *excluded, int count)
+{
+	int i;
+	long original = eligible;
+	for (i = 0; i < count; ++i)
+		if (excluded[i] - 1 <= original) ++original;
+	return original;
+}
+
 // How many seats a track with `crates` weapon crates has: min(crates, 15), 0
 // for no crates or a count outside the measurable range.
 static inline int AP_BoxSeat_Count(long crates)

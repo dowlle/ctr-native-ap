@@ -124,6 +124,11 @@ typedef struct ctr_content_pad {
      * (ap_box_seat_logic.h); box_crates is the package's measured weapon
      * crate count those seats are taken from (0 when it has no boxes). */
     int box_count, box_crates;
+    /* Reviewed fallback exclusions carried by the world, one-based original
+     * crate ordinals. Authored spots bypass these entirely. */
+    int box_excluded_count;
+    int box_excluded[16];
+    short box_excluded_pos[16][3];
     int64_t box_locations[15];
     /* Hand-placed box spots (A3-14): 1 when the track's boxes come from its
      * spot file. box_locations then lists the picked spots in number order,

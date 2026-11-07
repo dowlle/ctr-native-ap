@@ -151,6 +151,28 @@ static int untouched(int n) {
 
 int main(void) {
     int n, i;
+    /* A3-35: Ancient Lake's original crate 1 stays ordinary. Spread among
+       the 16 eligible crates, then map back to original table ordinals. */
+    n = table(17); reset(17, 15);
+    defs[0].pos.x = defs[0].pos.y = defs[0].pos.z = 0;
+    g_pad.box_excluded_count = 1; g_pad.box_excluded[0] = 1;
+    AP_BoxesSeatCustom(&gGT, &race);
+    expect(s_liveCount == 15 && insts[0].flags == (0x7u | 0x100u), "excluded origin crate remains ordinary");
+    for (i = 0; i < 15; ++i) {
+        int original = 1 + i * 16 / 15;
+        int k = crate_index(original, n);
+        expect(s_live[i].code == 35201620 + i && s_live[i].seatInst == &insts[k],
+               "spread uses remaining crates and preserves original ordinals and contiguous box names");
+    }
+    n = table(17); reset(17, 15);
+    g_pad.box_excluded_count = 1; g_pad.box_excluded[0] = 1;
+    AP_BoxesSeatCustom(&gGT, &race);
+    expect(!s_liveCount && untouched(n), "excluded position mismatch refuses before hiding any crate");
+    n = table(3); reset(3, 2);
+    g_pad.box_excluded_count = 1; g_pad.box_excluded[0] = 2;
+    for (i = 0; i < 3; ++i) g_pad.box_excluded_pos[0][i] = defs[crate_index(1, n)].pos.v[i];
+    AP_BoxesSeatCustom(&gGT, &race);
+    expect(s_liveCount == 2 && s_live[1].seatInst == &insts[crate_index(2, n)], "interior exclusion maps back to original ordinal");
     /* 1. Eight crates, eight boxes: every crate seated, in order. */
     n = table(8); reset(8, 8);
     AP_BoxesSeatCustom(&gGT, &race);
@@ -319,5 +341,5 @@ assert rebuild.index("CustomTrack_GarageVenueServing(level") < rebuild.index("AP
 assert rebuild.index("AP_BoxesPlanRetailPad(level)") < rebuild.index("AP_BoxesSnapshotPlacements()"), \
     "a plan retail track with spots stands them before the placement table is read"
 seat = body("static void AP_BoxesSeatCustom(")
-assert seat.index("pad->box_spots") < seat.index("AP_BoxSeat_Count(crates)"), \
+assert seat.index("pad->box_spots") < seat.index("pad->box_excluded_count"), \
     "a custom track with spots never counts or hides crates"
