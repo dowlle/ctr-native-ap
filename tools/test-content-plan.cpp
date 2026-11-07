@@ -1465,6 +1465,47 @@ int main(int argc, char **argv) {
             if (e["kind"] == "cup") { e["legs"][0]["laps"] = 6; break; }
         expect(!parse(forged), "cups: a leg with neither its laps nor the shortened laps (6) refuses");
     }
+    // Trial tracks in cups (A3-9, ruled 2026-11-05): cups-trial-legs.json is a
+    // room the paired apworld generated with nine cups and Turbo Track narrowed
+    // to [relic]. Slide Coliseum (16) has its own Trophy pad and races four
+    // legs; Turbo Track (17) has no pad and races one leg, so it carries its
+    // frozen Cup Leg Victory (35016817). Legs run on their own LevelID, at the
+    // shortened one lap. The room has no box, Wumpa or lap checks, so those
+    // codes are not checked here.
+    J trials;
+    std::ifstream("tools/fixtures/content-plan/cups-trial-legs.json") >> trials;
+    expect(parse(trials) && bind_room(trials) && ap_content_plan_active(), "trial legs: room binds");
+    {
+        int on[18]{}, pad16 = -1, pad17 = -1;
+        for (int phys = 0; phys < 200; ++phys) {
+            const ctr_content_pad *p = ap_content_plan_pad(phys);
+            if (!p || !p->occupied) continue;
+            if (!p->cup && p->retail_id == 16) pad16 = p->physical;
+            if (!p->cup && p->retail_id == 17) pad17 = p->physical;
+            for (int n = 0; p->cup && n < AP_CONTENT_CUP_LEGS; ++n) {
+                const ctr_content_leg &l = p->legs[n];
+                if (l.retail_id < 16) continue;
+                ++on[l.retail_id];
+                expect(ap_content_leg_host(&l) == l.retail_id && l.laps == 1 && !l.cortex && l.package_index < 0,
+                       "trial legs: a trial leg runs on its own LevelID at one lap");
+                expect(std::string(l.track_id) == "retail:" + std::to_string(l.retail_id), "trial legs: leg track identity");
+            }
+        }
+        expect(on[16] == 4 && on[17] == 1, "trial legs: Slide Coliseum four legs, Turbo Track one");
+        expect(pad16 >= 0 && pad17 < 0, "trial legs: Slide Coliseum has a pad, Turbo Track only cup legs");
+        for (int phys = 0; phys < 200; ++phys) {
+            const ctr_content_pad *p = ap_content_plan_pad(phys);
+            for (int n = 0; p && p->occupied && p->cup && n < AP_CONTENT_CUP_LEGS; ++n) {
+                const ctr_content_leg &l = p->legs[n];
+                if (l.retail_id == 16)
+                    expect(l.victory == 0 && l.track_pad == pad16, "trial legs: Slide Coliseum has its Trophy Race, no Cup Leg Victory");
+                if (l.retail_id == 17)
+                    expect(l.victory == 35016817 && l.track_pad == -1, "trial legs: Turbo Track's frozen Cup Leg Victory");
+            }
+        }
+        // A boss cup still races the 16 Trophy tracks only: bosses-cups below
+        // refuses "a leg on a trial track".
+    }
     // One generator row 2: forged Gem Cups, surface rows and relic checks.
     {
         const auto rows = [](J &j) -> J & { return j["content_plan"]["items"]["rows"]; };
