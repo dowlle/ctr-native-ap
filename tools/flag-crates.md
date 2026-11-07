@@ -35,6 +35,6 @@ list, packages, player data or seeds. It is not shipped in the player client.
 The world owns `data/crate_exclusions.json` and carries applicable entries in
 the seed under `item_boxes.crate_exclusions`, with required feature
 `crate_exclusions_v1`. Native validates their LEV pins, ordinal bounds and
-positions before seating. North Pole remains a flag for review.
+positions before seating. North Pole crate 1 (LEV 1.1.0) joined the list by owner decision; Roo's Tubes crate 9 remains a flag for review.
 
 Saved rooms without this feature retain their original crate seating. This tool does not migrate rooms or rewrite their checks.
