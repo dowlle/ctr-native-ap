@@ -1292,8 +1292,8 @@ int main(void)
 		char                     key[AP_NAVREC_NAME_FIELD + 1];
 
 		// Keys: case and repeated spaces do not make a new person.
-		AP_NavRecPool_Key("BEXUS", key);
-		check(strcmp(key, "bexus") == 0, "a contributor key is lower case");
+		AP_NavRecPool_Key("RACER", key);
+		check(strcmp(key, "racer") == 0, "a contributor key is lower case");
 		AP_NavRecPool_Key("Big   Norm", key);
 		check(strcmp(key, "big norm") == 0, "a contributor key folds repeated spaces");
 		AP_NavRecPool_Key("", key);
@@ -1329,7 +1329,7 @@ int main(void)
 		FakeReset(3);
 		FakeAdd(1, "Dex", 1, 0);
 		FakeAdd(2, "Appie", 2, 0);
-		FakeAdd(3, "BEXUS", 3, 0);
+		FakeAdd(3, "RACER", 3, 0);
 		{
 			int allThree = 1;
 
@@ -1337,7 +1337,7 @@ int main(void)
 			{
 				n = FakePick(seed, picks, &opened, &contributors);
 				if ((n != 3u) || !PicksDistinct(picks, n) || !PicksHave(picks, n, "Dex") || !PicksHave(picks, n, "Appie") ||
-				    !PicksHave(picks, n, "BEXUS"))
+				    !PicksHave(picks, n, "RACER"))
 					allThree = 0;
 			}
 			check(allThree, "three contributors race all three, one lane each, under every seed");
@@ -1401,16 +1401,16 @@ int main(void)
 
 		// An old unique contributor behind 20 newer files by one author.
 		FakeReset(3);
-		FakeAdd(1, "Stroodly", 1, 0);
+		FakeAdd(1, "Oldtimer", 1, 0);
 		for (seed = 0; seed < 20u; seed++)
-			FakeAdd(10u + seed, "BEUTD", 1, 0);
+			FakeAdd(10u + seed, "Prolific", 1, 0);
 		{
 			int bothAlways = 1;
 
 			for (seed = 1; seed <= 200u; seed++)
 			{
 				n = FakePick(seed, picks, &opened, &contributors);
-				if ((n != 2u) || !PicksHave(picks, n, "Stroodly") || !PicksHave(picks, n, "BEUTD"))
+				if ((n != 2u) || !PicksHave(picks, n, "Oldtimer") || !PicksHave(picks, n, "Prolific"))
 					bothAlways = 0;
 			}
 			check(bothAlways, "an old unique contributor behind 20 newer files by one author races every time");
@@ -1419,11 +1419,11 @@ int main(void)
 
 		// Case variants are one person.
 		FakeReset(3);
-		FakeAdd(1, "BEXUS", 1, 0);
-		FakeAdd(2, "bexus", 1, 0);
-		FakeAdd(3, "Bexus", 1, 0);
+		FakeAdd(1, "RACER", 1, 0);
+		FakeAdd(2, "racer", 1, 0);
+		FakeAdd(3, "Racer", 1, 0);
 		n = FakePick(7u, picks, &opened, &contributors);
-		check(n == 1u && contributors == 1u, "BEXUS, bexus and Bexus are one contributor");
+		check(n == 1u && contributors == 1u, "RACER, racer and Racer are one contributor");
 
 		// Unnamed files are one group, so at most one unnamed lane.
 		FakeReset(3);
@@ -1458,14 +1458,14 @@ int main(void)
 		FakeAdd(1, "Appie", 1, 1);
 		FakeAdd(2, "Appie", 1, 0);
 		FakeAdd(3, "Dex", 1, 1);
-		FakeAdd(4, "BEXUS", 1, 0);
+		FakeAdd(4, "RACER", 1, 0);
 		{
 			int ok = 1;
 
 			for (seed = 1; seed <= 200u; seed++)
 			{
 				n = FakePick(seed, picks, &opened, &contributors);
-				if ((n != 2u) || !PicksHave(picks, n, "Appie") || !PicksHave(picks, n, "BEXUS") || PicksHave(picks, n, "Dex"))
+				if ((n != 2u) || !PicksHave(picks, n, "Appie") || !PicksHave(picks, n, "RACER") || PicksHave(picks, n, "Dex"))
 					ok = 0;
 				if ((n >= 1u) && PicksHave(picks, n, "Appie"))
 				{
