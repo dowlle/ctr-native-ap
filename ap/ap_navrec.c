@@ -1610,8 +1610,37 @@ static void AP_NavRec_RebindBots(int force)
 			continue;
 		hdr = sdata->NavPath_ptrHeader[lane];
 		frames = sdata->NavPath_ptrNavFrameArray[lane];
+
+		// The bot's lane may have no line any more: a recorded lap filled a lane
+		// the track itself has none for, and the restore went back to the
+		// track's lanes. Move the bot to the next lane that has a line, in the
+		// order BOTS_Driver_Init seats a bot (downward, wrapping), and move its
+		// list membership with it.
 		if ((hdr == NULL) || (frames == NULL) || (hdr->numPoints < 2))
-			continue;
+		{
+			int from = lane;
+			int to = lane;
+			int tries;
+
+			for (tries = 0; tries < AP_NAVREC_LANES - 1; tries++)
+			{
+				to = (to == 0) ? (AP_NAVREC_LANES - 1) : (to - 1);
+				if ((sdata->NavPath_ptrHeader[to] != NULL) && (sdata->NavPath_ptrNavFrameArray[to] != NULL) &&
+				    (sdata->NavPath_ptrHeader[to]->numPoints >= 2))
+					break;
+			}
+			if (to == from)
+				continue;
+			hdr = sdata->NavPath_ptrHeader[to];
+			frames = sdata->NavPath_ptrNavFrameArray[to];
+			if ((hdr == NULL) || (frames == NULL) || (hdr->numPoints < 2))
+				continue; // no lane has a line; the level has no AI at all
+
+			LIST_RemoveMember(&sdata->navBotList[from], &d->botData.item);
+			LIST_AddFront(&sdata->navBotList[to], &d->botData.item);
+			d->botData.botPath = (s16)to;
+			lane = to;
+		}
 		count = (int)hdr->numPoints;
 
 		cur = (uintptr_t)d->botData.botNavFrame;

@@ -72,6 +72,8 @@ check(restore.count("AP_NavRec_RebindBots(1)") >= 2, "both lane-publishing resto
 check("s_navrecLaneHeader[0]" in restore and "if (!ours && !s_navrecLanesLive)" in restore,
       "a restore detects this module's lanes from the restored slots, not only from the session flag")
 rebind = body("AP_NavRec_RebindBots")
+check("LIST_RemoveMember(&sdata->navBotList[from]" in rebind and "d->botData.botPath = (s16)to" in rebind,
+      "a bot whose lane has no line any more is moved to a lane that has one")
 check("botData.botNavFrame = &frames[best]" in rebind, "a rebound bot lands on a node of the lane it drives")
 check("AP_NavRecPool_EntryCompatible(" in pool and "pool: skipping" in pool, "an identity mismatch is logged per file")
 
