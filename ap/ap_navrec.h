@@ -11,13 +11,14 @@
 //   nav_record        writes files under ap-navpaths/. Nothing else in this
 //                     build creates files on a player's disk unasked, and this
 //                     option is the whole consent surface for that.
-//   nav_use_recorded  reads them back and points the AI at them. Up to three
-//                     containers fill the three engine lanes, preferring a
-//                     different contributor per lane. Names can still repeat:
-//                     lanes are shared, and duplicate-author files can fill
-//                     spare lanes. Reading only, so
-//                     someone who wants recorded lines never has to switch on
-//                     the half that writes.
+//   nav_use_recorded  reads them back and points the AI at them. Every file for
+//                     the track is in a pool (header read); up to three
+//                     contributors are picked at random every race, one file
+//                     and one lap each, one recorded lane per contributor. The
+//                     other lanes keep the track's own AI lines, and each
+//                     recorded lane names one bot, so no name repeats. Reading
+//                     only, so someone who wants recorded lines never has to
+//                     switch on the half that writes.
 //   nav_driver_name   the name stamped into the file. Empty falls back to the
 //                     configured Archipelago slot name.
 //
@@ -28,8 +29,10 @@
 // freestanding ap/ap_navrec_format.h, which tools/test-navrec.c compiles
 // directly.
 //
-// Labels currently identify shared lanes. Independent named racers, the widened
-// lane table, the pace controller and the 1 to 7 field are later work.
+// Playback copies are prepared at load (ap_navrec_playback_logic.h): the finish
+// seam is blended, the crate collision bit is borrowed from the track's lanes.
+// Independent named racers (a line per bot), the pace controller and the 1 to 7
+// field are later work.
 // ============================================================================
 
 // The load-identity rule game/BOTS.c arms this module with, freestanding and
@@ -55,16 +58,15 @@ void AP_NavRec_NoteItemFire(struct Driver *d, int weaponID);
 // Called at the end of NativeCheckpoint_RelocateSDataPointers. Relocation cannot
 // repair a state restored into a fresh process, where these lanes are zeroed, so
 // this reassembles the same lane set for the level and republishes it, and falls
-// back to the level's own nav data when it cannot. Selection is deterministic,
-// so an unchanged folder restores the field the race started with.
+// back to the level's own nav data when it cannot. The race's seed is kept for
+// the session, so an unchanged folder restores the field the race started with;
+// a restore into a fresh process draws a new field and logs it.
 void AP_NavRec_AfterCheckpointRestore(void);
 
-// Draw the sanitized contributor name above every bot currently driving a
-// recorded lane. The loader fills the three engine lanes from up to three
-// different people's containers, so the name is per lane: a bot carries the name
-// on the file feeding the lane it is following, read from botData.botPath each
-// frame. A lane whose file carries no name draws no label and leaves the other
-// lanes drawing theirs.
+// Draw the sanitized contributor name above one bot per recorded lane: the
+// first bot seen driving it, while it stays on it. Bots on the track's own lines
+// and further bots on a recorded lane carry no name. A lane whose file carries
+// no name draws no label and leaves the other lanes drawing theirs.
 void AP_NavRec_DrawBotNames(void);
 
 // Custom-track loader seam. A package owns a permanent 16-byte UUID and a

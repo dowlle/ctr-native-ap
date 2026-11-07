@@ -25,6 +25,14 @@
 // which is the yardstick a closure has to be judged against: a wrap segment far
 // above maxSeg is a discontinuity the recorded line itself never contains.
 //
+// Every closed lap also prints one SEAM line: what the client's load-time finish
+// seam blend (ap/ap_navrec_playback_logic.h) does to it, run on a copy:
+//
+//   SEAM file=... lap=. result=smoothed|refused-wide|refused-short window=.
+//        lat=. along=. height=. maxShift=. wrapBefore=. wrapAfter=. moved=.
+//
+// moved counts nodes whose position changed; it is at most twice the window.
+//
 // A rejected file prints one REJECT line with the reader's reason. Exit 0 when
 // every named file was at least parseable enough to report on; 1 on I/O errors.
 
@@ -33,6 +41,7 @@
 #include <string.h>
 
 #include "../ap/ap_navrec_format.h"
+#include "../ap/ap_navrec_playback_logic.h"
 
 static struct AP_NavRecNode g_nodes[AP_NAVREC_MAX_LAPS][AP_NAVREC_MAX_NODES];
 static unsigned int         g_stamps[AP_NAVREC_MAX_LAPS][AP_NAVREC_MAX_NODES];
@@ -175,6 +184,29 @@ static void InspectFile(const char *path)
 		       SegXZ(last, first), SegXYZ(last, first), last->distToNextNavXZ, last->distToNextNavXYZ, yawFirst, yawLast, yawDelta,
 		       first->goBackCount, last->goBackCount, gbDistinct, g_stamps[i][count - 1u], maxSeg, maxSegAt,
 		       segs[(count - 1u) / 2u]);
+
+		if (AP_NavRecFormat_LapClosed(nodes, count))
+		{
+			static struct AP_NavRecNode copy[AP_NAVREC_MAX_NODES];
+			struct AP_NavRecSeamReport  rep;
+			unsigned int                moved = 0;
+			const char                 *result;
+
+			memcpy(copy, nodes, sizeof(struct AP_NavRecNode) * count);
+			AP_NavRecSeam_Process(copy, count, 1, &rep);
+			for (n = 0; n < count; n++)
+			{
+				if ((copy[n].posX != nodes[n].posX) || (copy[n].posY != nodes[n].posY) || (copy[n].posZ != nodes[n].posZ))
+					moved++;
+			}
+			result = (rep.result == AP_NAVREC_SEAM_SMOOTH) ? "smoothed"
+			         : (rep.result == AP_NAVREC_SEAM_TOO_WIDE) ? "refused-wide"
+			                                                    : "refused-short";
+			printf("SEAM file=%s lap=%u result=%s window=%u lat=%.1f along=%.1f height=%.1f maxShift=%.1f wrapBefore=%.1f "
+			       "wrapAfter=%.1f moved=%u\n",
+			       path, i, result, rep.window, rep.errorLat, rep.errorAlong, rep.errorY, rep.maxShift, rep.wrapBefore, rep.wrapAfter,
+			       moved);
+		}
 	}
 }
 

@@ -19,6 +19,7 @@
 #include "../ap/ap_navrec_format.h"
 #include "../ap/ap_navrec_identity_logic.h"
 #include "../ap/ap_navrec_lane_logic.h"
+#include "../ap/ap_navrec_playback_logic.h"
 
 static int g_failures = 0;
 
@@ -87,7 +88,7 @@ static unsigned char           g_file[AP_NAVREC_MAX_FILE_BYTES];
 // ---------------------------------------------------------------------------
 // A folder of recordings, held in memory.
 //
-// AP_NavRecLane_Select reaches candidates through a fetch callback precisely so
+// AP_NavRecPool_Pick reaches candidates through a fetch callback precisely so
 // that the loader's file IO is not in the way here. FakeFetch below does exactly
 // what AP_NavRec_FetchCandidate does in ap/ap_navrec.c: it validates one
 // container with the real reader, applies the real identity rule, and reports
@@ -95,7 +96,7 @@ static unsigned char           g_file[AP_NAVREC_MAX_FILE_BYTES];
 // shipped selection rule, not a description of it.
 // ---------------------------------------------------------------------------
 
-#define FAKE_MAX_FILES 12
+#define FAKE_MAX_FILES 32
 #define FAKE_FILE_CAP  20000u
 
 struct FakeFolder
@@ -274,9 +275,10 @@ static int FakeFetch(void *ctx, unsigned int fileIndex, struct AP_NavRecLaneCand
 		if (!AP_NavRecFormat_IdentityMatches(&info, f->levelId, f->identityKind, f->uuid, f->navRevision))
 			return 1;
 
-		// Same rule as the loader: only closed laps count, and a file with
-		// none fills no lane, exactly like any other rejected candidate.
-		closedCount = AP_NavRecFormat_ClosedLaps(&info, g_fetchNodes, closed);
+		// Same rule as the loader: only closed laps with a smooth finish seam
+		// count, and a file with none fills no lane, exactly like any other
+		// rejected candidate.
+		closedCount = AP_NavRecPlayback_EligibleLaps(&info, g_fetchNodes, closed);
 		if (closedCount == 0)
 			return 1;
 
@@ -289,20 +291,87 @@ static int FakeFetch(void *ctx, unsigned int fileIndex, struct AP_NavRecLaneCand
 	return 0; // a gap in the numbering, which costs nothing
 }
 
-// Highest index present, the same starting point AP_NavRec_HighestIndex gives
-// the loader.
-static unsigned int FakeHighest(void)
+// The pool index the loader builds, built the same way from the folder in
+// memory: one AP_NavRecFormat_Peek per file, kept when the header matches the
+// load's identity, in index order. AP_NavRec_BuildPool in ap/ap_navrec.c does
+// exactly this with a file read in place of the array.
+static struct AP_NavRecPoolEntry g_pool[FAKE_MAX_FILES];
+static unsigned int              g_poolWork[2 * FAKE_MAX_FILES];
+
+static unsigned int FakePool(void)
 {
-	unsigned int highest = 0;
+	unsigned int count = 0;
+	unsigned int index;
+
+	for (index = 1; index <= 999u; index++)
+	{
+		unsigned int i;
+
+		for (i = 0; i < g_folder.count; i++)
+		{
+			struct AP_NavRecFileInfo peeked;
+			unsigned int             len = g_folder.size[i] < AP_NAVREC_PEEK_BYTES ? g_folder.size[i] : AP_NAVREC_PEEK_BYTES;
+
+			if (g_folder.index[i] != index)
+				continue;
+			if (AP_NavRecFormat_Peek(g_folder.bytes[i], len, g_folder.size[i], &peeked) != AP_NAVREC_OK)
+				continue;
+			if (!AP_NavRecPool_EntryCompatible(&peeked, g_folder.levelId, g_folder.identityKind, g_folder.uuid, g_folder.navRevision))
+				continue;
+
+			g_pool[count].fileIndex = index;
+			AP_NavRecPool_Key(peeked.driverName, g_pool[count].key);
+			count++;
+		}
+	}
+
+	return count;
+}
+
+static unsigned int FakePick(unsigned int seed, struct AP_NavRecPoolPick picks[AP_NAVREC_LANES], unsigned int *opened,
+                             unsigned int *contributors)
+{
+	unsigned int poolCount = FakePool();
+
+	memset(picks, 0, sizeof(struct AP_NavRecPoolPick) * AP_NAVREC_LANES);
+	g_folder.opened = 0;
+	return AP_NavRecPool_Pick(g_pool, poolCount, seed, AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, g_poolWork, picks, opened,
+	                          contributors);
+}
+
+static int PicksDistinct(const struct AP_NavRecPoolPick *picks, unsigned int n)
+{
+	unsigned int i;
+	unsigned int j;
+
+	for (i = 0; i < n; i++)
+	{
+		for (j = i + 1u; j < n; j++)
+		{
+			char a[AP_NAVREC_NAME_FIELD + 1];
+			char b[AP_NAVREC_NAME_FIELD + 1];
+
+			AP_NavRecPool_Key(picks[i].driverName, a);
+			AP_NavRecPool_Key(picks[j].driverName, b);
+			if (strcmp(a, b) == 0)
+				return 0;
+		}
+	}
+	return 1;
+}
+
+static int PicksHave(const struct AP_NavRecPoolPick *picks, unsigned int n, const char *name)
+{
 	unsigned int i;
 
-	for (i = 0; i < g_folder.count; i++)
+	for (i = 0; i < n; i++)
 	{
-		if (g_folder.index[i] > highest)
-			highest = g_folder.index[i];
+		if (strcmp(picks[i].driverName, name) == 0)
+			return 1;
 	}
-	return highest;
+	return 0;
 }
+
 
 int main(void)
 {
@@ -840,40 +909,6 @@ int main(void)
 		check(info.lapCount == 1, "a one-lap container reports one lap");
 		check(info.driverName[0] == '\0', "an anonymous recording is a valid file");
 		check(info.characterId == -1, "an unknown character id round trips as -1");
-
-		AP_NavRecFormat_SynthLane(g_back[0], info.laps[0].nodeCount, AP_NAVREC_FALLBACK_LANE_OFFSET, g_back[1]);
-		AP_NavRecFormat_SynthLane(g_back[0], info.laps[0].nodeCount, -AP_NAVREC_FALLBACK_LANE_OFFSET, g_back[2]);
-
-		{
-			int displaced = 1;
-			int distancesSane = 1;
-
-			for (i = 0; i < info.laps[0].nodeCount; i++)
-			{
-				int dx1 = g_back[1][i].posX - g_back[0][i].posX;
-				int dz1 = g_back[1][i].posZ - g_back[0][i].posZ;
-				int dx2 = g_back[2][i].posX - g_back[0][i].posX;
-				int dz2 = g_back[2][i].posZ - g_back[0][i].posZ;
-
-				double r1 = sqrt((double)(dx1 * dx1) + (double)(dz1 * dz1));
-				double r2 = sqrt((double)(dx2 * dx2) + (double)(dz2 * dz2));
-
-				// Within a unit of the requested offset, allowing for the s16
-				// rounding at each node.
-				if ((r1 < (AP_NAVREC_FALLBACK_LANE_OFFSET - 2)) || (r1 > (AP_NAVREC_FALLBACK_LANE_OFFSET + 2)))
-					displaced = 0;
-				if ((r2 < (AP_NAVREC_FALLBACK_LANE_OFFSET - 2)) || (r2 > (AP_NAVREC_FALLBACK_LANE_OFFSET + 2)))
-					displaced = 0;
-				if ((dx1 * dx2) + (dz1 * dz2) > 0)
-					displaced = 0; // the two lanes must land on opposite sides
-
-				if ((g_back[1][i].distToNextNavXZ <= 0) || (g_back[1][i].distToNextNavXZ >= 32767))
-					distancesSane = 0;
-			}
-
-			check(displaced, "a synthesised lane sits the documented lateral offset away, on the opposite side to its partner");
-			check(distancesSane, "a synthesised lane has its own true distToNextNav, not the source lane's");
-		}
 	}
 
 	// ---------------------------------------------------------------
@@ -1240,272 +1275,480 @@ int main(void)
 	}
 
 	// ---------------------------------------------------------------
-	// Which recordings feed the three engine lanes.
+	// Which recordings race (A3-19 finish plan step 1).
 	//
-	// The loader used to take ONE container and fill all three lanes from
-	// it, so a race showed one person's lines under one name however many
-	// bots were on track, and a newest-index community file permanently
-	// shadowed the player's own older recordings. These cases hold the
-	// replacement rule: up to three distinct files, a different author
-	// preferred for each, newest index first, no randomness anywhere.
+	// Every compatible file is in the pool, grouped by contributor; up to
+	// three contributors are picked at random, one file and one lap each.
+	// The cases run the real pick over files written and read by the real
+	// format code.
 	// ---------------------------------------------------------------
 	{
-		unsigned int chosen[AP_NAVREC_LANES];
-		char         author[AP_NAVREC_LANES][AP_NAVREC_NAME_FIELD + 1];
-		unsigned int laneFile[AP_NAVREC_LANES];
-		unsigned int laneLap[AP_NAVREC_LANES];
-		unsigned int opened;
-		unsigned int n;
+		struct AP_NavRecPoolPick picks[AP_NAVREC_LANES];
+		struct AP_NavRecPoolPick again[AP_NAVREC_LANES];
+		unsigned int             opened;
+		unsigned int             contributors;
+		unsigned int             n;
+		unsigned int             seed;
+		char                     key[AP_NAVREC_NAME_FIELD + 1];
 
-		// Three files, three authors: three lanes, three names.
+		// Keys: case and repeated spaces do not make a new person.
+		AP_NavRecPool_Key("BEXUS", key);
+		check(strcmp(key, "bexus") == 0, "a contributor key is lower case");
+		AP_NavRecPool_Key("Big   Norm", key);
+		check(strcmp(key, "big norm") == 0, "a contributor key folds repeated spaces");
+		AP_NavRecPool_Key("", key);
+		check(key[0] == '\0', "an unnamed file has the empty key");
+
+		// Pool of 0.
 		FakeReset(3);
-		FakeAdd(1, "Appie", 1, 0);
-		FakeAdd(2, "BEXUS", 1, 0);
-		FakeAdd(3, "Cara", 1, 0);
+		n = FakePick(1u, picks, &opened, &contributors);
+		check(n == 0u && opened == 0u, "an empty pool picks nothing and reads nothing");
 
-		memset(author, 0, sizeof author);
-		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
-		AP_NavRecLane_Plan(n, laneFile, laneLap);
-
-		check(n == 3u, "three usable files by three authors fill the three lanes from three files");
-		check((chosen[0] == 3u) && (chosen[1] == 2u) && (chosen[2] == 1u), "candidates are taken newest index first");
-		check((strcmp(author[0], "Cara") == 0) && (strcmp(author[1], "BEXUS") == 0) && (strcmp(author[2], "Appie") == 0),
-		      "each lane carries the name on the file feeding it");
-		check((laneFile[0] == 0u) && (laneFile[1] == 1u) && (laneFile[2] == 2u), "with three files no lane reuses another lane's file");
-		check((laneLap[0] == 0u) && (laneLap[1] == 0u) && (laneLap[2] == 0u), "each contributor's first lap is the one that races");
-
-		// Selection does not depend on anything but the folder.
+		// Pool of 1 contributor with several files: one lane, never two.
+		FakeReset(3);
+		FakeAdd(1, "Appie", 3, 0);
+		FakeAdd(2, "Appie", 3, 0);
+		FakeAdd(5, "appie", 2, 0);
 		{
-			unsigned int again[AP_NAVREC_LANES];
-			char         againAuthor[AP_NAVREC_LANES][AP_NAVREC_NAME_FIELD + 1];
-			unsigned int m;
+			int alwaysOne = 1;
+			int lapInRange = 1;
 
-			memset(againAuthor, 0, sizeof againAuthor);
-			g_folder.opened = 0;
-			m = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, again, againAuthor, &opened);
-			check((m == n) && (memcmp(again, chosen, sizeof chosen) == 0),
-			      "the same folder always produces the same field, which is what a savestate restore relies on");
+			for (seed = 1; seed <= 200u; seed++)
+			{
+				n = FakePick(seed, picks, &opened, &contributors);
+				if ((n != 1u) || (contributors != 1u))
+					alwaysOne = 0;
+				if ((n == 1u) && (picks[0].lapOrdinal >= 3u))
+					lapInRange = 0;
+			}
+			check(alwaysOne, "one contributor with three files races on one lane only");
+			check(lapInRange, "the picked lap is one of the file's eligible laps");
+		}
+
+		// Pool of 3: all three, each once.
+		FakeReset(3);
+		FakeAdd(1, "Dex", 1, 0);
+		FakeAdd(2, "Appie", 2, 0);
+		FakeAdd(3, "BEXUS", 3, 0);
+		{
+			int allThree = 1;
+
+			for (seed = 1; seed <= 200u; seed++)
+			{
+				n = FakePick(seed, picks, &opened, &contributors);
+				if ((n != 3u) || !PicksDistinct(picks, n) || !PicksHave(picks, n, "Dex") || !PicksHave(picks, n, "Appie") ||
+				    !PicksHave(picks, n, "BEXUS"))
+					allThree = 0;
+			}
+			check(allThree, "three contributors race all three, one lane each, under every seed");
+		}
+
+		// Pool of 7: three distinct per race, and over many races everyone races.
+		FakeReset(3);
+		FakeAdd(1, "A", 1, 0);
+		FakeAdd(2, "B", 1, 0);
+		FakeAdd(3, "C", 1, 0);
+		FakeAdd(4, "D", 1, 0);
+		FakeAdd(5, "E", 1, 0);
+		FakeAdd(6, "F", 1, 0);
+		FakeAdd(7, "G", 1, 0);
+		{
+			static const char *names[7] = {"A", "B", "C", "D", "E", "F", "G"};
+			unsigned int        seen[7] = {0, 0, 0, 0, 0, 0, 0};
+			int                 threeDistinct = 1;
+			int                 everyone = 1;
+			int                 fieldsDiffer = 0;
+			unsigned int        k;
+
+			for (seed = 1; seed <= 300u; seed++)
+			{
+				n = FakePick(seed, picks, &opened, &contributors);
+				if ((n != 3u) || !PicksDistinct(picks, n) || (contributors != 7u))
+					threeDistinct = 0;
+				for (k = 0; k < 7u; k++)
+				{
+					if (PicksHave(picks, n, names[k]))
+						seen[k]++;
+				}
+				if ((seed > 1u) && (strcmp(picks[0].driverName, again[0].driverName) != 0))
+					fieldsDiffer = 1;
+				memcpy(again, picks, sizeof again);
+			}
+			for (k = 0; k < 7u; k++)
+			{
+				if (seen[k] < 60u)
+					everyone = 0;
+			}
+			check(threeDistinct, "seven contributors race three distinct names per race");
+			check(everyone, "over 300 races every one of seven contributors races often (at least 60 times)");
+			check(fieldsDiffer, "the field changes from race to race");
+		}
+
+		// Same seed, same pool: the same field, which a restore relies on.
+		n = FakePick(0x1234u, picks, &opened, &contributors);
+		{
+			unsigned int m = FakePick(0x1234u, again, &opened, &contributors);
+			unsigned int k;
+			int          same = (m == n);
+
+			for (k = 0; same && (k < n); k++)
+			{
+				if ((picks[k].fileIndex != again[k].fileIndex) || (picks[k].lapOrdinal != again[k].lapOrdinal))
+					same = 0;
+			}
+			check(same, "the same seed over the same pool restores the same field");
+		}
+
+		// An old unique contributor behind 20 newer files by one author.
+		FakeReset(3);
+		FakeAdd(1, "Stroodly", 1, 0);
+		for (seed = 0; seed < 20u; seed++)
+			FakeAdd(10u + seed, "BEUTD", 1, 0);
+		{
+			int bothAlways = 1;
+
+			for (seed = 1; seed <= 200u; seed++)
+			{
+				n = FakePick(seed, picks, &opened, &contributors);
+				if ((n != 2u) || !PicksHave(picks, n, "Stroodly") || !PicksHave(picks, n, "BEUTD"))
+					bothAlways = 0;
+			}
+			check(bothAlways, "an old unique contributor behind 20 newer files by one author races every time");
+			check(opened <= 2u, "and finding both costs one full read each");
+		}
+
+		// Case variants are one person.
+		FakeReset(3);
+		FakeAdd(1, "BEXUS", 1, 0);
+		FakeAdd(2, "bexus", 1, 0);
+		FakeAdd(3, "Bexus", 1, 0);
+		n = FakePick(7u, picks, &opened, &contributors);
+		check(n == 1u && contributors == 1u, "BEXUS, bexus and Bexus are one contributor");
+
+		// Unnamed files are one group, so at most one unnamed lane.
+		FakeReset(3);
+		FakeAdd(1, "", 1, 0);
+		FakeAdd(2, "", 1, 0);
+		FakeAdd(3, "Dex", 1, 0);
+		{
+			int ok = 1;
+
+			for (seed = 1; seed <= 100u; seed++)
+			{
+				n = FakePick(seed, picks, &opened, &contributors);
+				if ((n != 2u) || !PicksHave(picks, n, "") || !PicksHave(picks, n, "Dex"))
+					ok = 0;
+			}
+			check(ok, "unnamed files share one lane at most");
+		}
+
+		// Byte-identical duplicates by one author: one lane.
+		FakeReset(3);
+		FakeAdd(1, "Dex", 1, 0);
+		memcpy(g_folder.bytes[1], g_folder.bytes[0], g_folder.size[0]);
+		g_folder.size[1] = g_folder.size[0];
+		g_folder.index[1] = 2;
+		g_folder.count = 2;
+		n = FakePick(9u, picks, &opened, &contributors);
+		check(n == 1u, "a duplicated file races once");
+
+		// Corrupt: a contributor with one corrupt and one good file keeps their
+		// lane; one with only a corrupt file is skipped.
+		FakeReset(3);
+		FakeAdd(1, "Appie", 1, 1);
+		FakeAdd(2, "Appie", 1, 0);
+		FakeAdd(3, "Dex", 1, 1);
+		FakeAdd(4, "BEXUS", 1, 0);
+		{
+			int ok = 1;
+
+			for (seed = 1; seed <= 200u; seed++)
+			{
+				n = FakePick(seed, picks, &opened, &contributors);
+				if ((n != 2u) || !PicksHave(picks, n, "Appie") || !PicksHave(picks, n, "BEXUS") || PicksHave(picks, n, "Dex"))
+					ok = 0;
+				if ((n >= 1u) && PicksHave(picks, n, "Appie"))
+				{
+					unsigned int k;
+
+					for (k = 0; k < n; k++)
+					{
+						if ((strcmp(picks[k].driverName, "Appie") == 0) && (picks[k].fileIndex != 2u))
+							ok = 0;
+					}
+				}
+			}
+			check(ok, "a corrupt file costs its contributor nothing while they have a good one, and alone it races nowhere");
+		}
+
+		// Incompatible files never enter the pool: another level, a custom
+		// identity on a retail load, and a non-container.
+		FakeReset(3);
+		FakeAdd(1, "Dex", 1, 0);
+		g_folder.levelId = 4;
+		FakeAdd(2, "Other", 1, 0);
+		g_folder.levelId = 3;
+		{
+			static const unsigned char u[AP_NAVREC_TRACK_UUID_BYTES] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+			FakeAddCustom(3, "Custom", u, 1);
+		}
+		FakeAdd(4, "Junk", 1, 0);
+		memcpy(g_folder.bytes[3], "XXXX", 4);
+		check(FakePool() == 1u, "the pool holds only files for this track's identity");
+		n = FakePick(3u, picks, &opened, &contributors);
+		check(n == 1u && strcmp(picks[0].driverName, "Dex") == 0 && opened == 1u,
+		      "and the pick reads only those");
+
+		// A folder of corrupt files costs a bounded number of full reads.
+		FakeReset(3);
+		for (seed = 0; seed < 30u; seed++)
+		{
+			char name[8];
+			snprintf(name, sizeof name, "P%u", seed);
+			FakeAdd(1u + seed, name, 1, 1);
+		}
+		n = FakePick(5u, picks, &opened, &contributors);
+		check(n == 0u, "a folder of corrupt files races nothing");
+		check(opened == (unsigned int)AP_NAVREC_MAX_LOAD_ATTEMPTS, "and stops after the full-read budget");
+	}
+
+	// ---------------------------------------------------------------
+	// Finish seam smoothing (A3-19 finish plan step 4).
+	// ---------------------------------------------------------------
+	{
+		struct AP_NavRecSeamReport rep;
+		unsigned int               n;
+		unsigned int               k;
+		unsigned int               stampsBefore[AP_NAVREC_MAX_NODES];
+		unsigned char              goBefore[AP_NAVREC_MAX_NODES];
+		int                        bulkSame = 1;
+		int                        goSame = 1;
+
+		n = AP_NavRecFormat_Decimate(g_samples, MakeCircleLap(g_samples, 900, 10000 * 256, 0, 0), AP_NAVREC_TARGET_NODES, g_nodes[0],
+		                             g_stamps[0]);
+		check(AP_NavRecSeam_Process(g_nodes[0], n, 1, &rep) == AP_NAVREC_SEAM_SMOOTH && rep.maxShift < 40.0,
+		      "a clean closed lap passes the seam with almost no change");
+
+		// Push the last six nodes 300 units outward: a lap that crossed the line
+		// wider than it started.
+		n = AP_NavRecFormat_Decimate(g_samples, MakeCircleLap(g_samples, 900, 10000 * 256, 0, 0), AP_NAVREC_TARGET_NODES, g_nodes[0],
+		                             g_stamps[0]);
+		for (k = n - 6u; k < n; k++)
+		{
+			double x = (double)g_nodes[0][k].posX;
+			double z = (double)g_nodes[0][k].posZ;
+			double len = sqrt((x * x) + (z * z));
+			g_nodes[0][k].posX = (short)(x + (300.0 * x / len));
+			g_nodes[0][k].posZ = (short)(z + (300.0 * z / len));
+		}
+		g_nodes[0][n - 1u].posY = (short)(g_nodes[0][n - 1u].posY + 60);
+		memcpy(g_back[0], g_nodes[0], sizeof(struct AP_NavRecNode) * n);
+		memcpy(stampsBefore, g_stamps[0], sizeof(unsigned int) * n);
+		for (k = 0; k < n; k++)
+			goBefore[k] = g_nodes[0][k].goBackCount;
+
+		check(AP_NavRecSeam_Process(g_nodes[0], n, 1, &rep) == AP_NAVREC_SEAM_SMOOTH, "a 300-unit sideways seam is blended");
+		check(fabs(rep.errorLat) > 200.0, "the report names the sideways error");
+		check(rep.wrapAfter < rep.wrapBefore, "the wrap is shorter after the blend");
+		{
+			struct AP_NavRecSeamReport after;
+			AP_NavRecSeam_Process(g_nodes[0], n, 0, &after);
+			// What is left is the ramp's own slope, one window's share of the
+			// error, the same bend every node inside the window now has.
+			check(fabs(after.errorLat) <= (fabs(rep.errorLat) / (double)rep.window) + 5.0 &&
+			          fabs(after.errorY) <= (fabs(rep.errorY) / (double)rep.window) + 5.0,
+			      "after the blend the wrap bends no more than any other node in the window");
+		}
+		for (k = rep.window; k < n - rep.window; k++)
+		{
+			if ((g_nodes[0][k].posX != g_back[0][k].posX) || (g_nodes[0][k].posZ != g_back[0][k].posZ) ||
+			    (g_nodes[0][k].posY != g_back[0][k].posY))
+				bulkSame = 0;
+		}
+		for (k = 0; k < n; k++)
+		{
+			if (g_nodes[0][k].goBackCount != goBefore[k])
+				goSame = 0;
+		}
+		check(bulkSame, "nodes outside the window are untouched");
+		check(goSame && memcmp(stampsBefore, g_stamps[0], sizeof(unsigned int) * n) == 0,
+		      "goBackCount and timestamps are untouched");
+		check(AP_NavRecFormat_LapClosed(g_nodes[0], n), "the blended lap is still a closed loop");
+		{
+			int distOk = 1;
+			for (k = 0; k < n; k++)
+			{
+				if (g_nodes[0][k].distToNextNavXZ <= 0)
+					distOk = 0;
+			}
+			check(distOk, "distances are recomputed over the blended loop");
+		}
+
+		// A seam past the bound is refused, and the probe changes nothing.
+		n = AP_NavRecFormat_Decimate(g_samples, MakeCircleLap(g_samples, 900, 10000 * 256, 0, 0), AP_NAVREC_TARGET_NODES, g_nodes[0],
+		                             g_stamps[0]);
+		for (k = n - 6u; k < n; k++)
+		{
+			double x = (double)g_nodes[0][k].posX;
+			double z = (double)g_nodes[0][k].posZ;
+			double len = sqrt((x * x) + (z * z));
+			g_nodes[0][k].posX = (short)(x + (1200.0 * x / len));
+			g_nodes[0][k].posZ = (short)(z + (1200.0 * z / len));
+		}
+		memcpy(g_back[0], g_nodes[0], sizeof(struct AP_NavRecNode) * n);
+		check(AP_NavRecSeam_Process(g_nodes[0], n, 1, &rep) == AP_NAVREC_SEAM_TOO_WIDE, "a 1200-unit seam is refused, not bridged");
+		check(strcmp(AP_NavRecSeam_ResultText(rep.result), "finish seam is wider than the blend bound") == 0,
+		      "and the log names why");
+		check(memcmp(g_back[0], g_nodes[0], sizeof(struct AP_NavRecNode) * n) == 0, "a refused seam leaves the lap as it was");
+
+		// Eligibility through the real reader: a file with one clean lap and one
+		// over-wide seam offers only the clean lap.
+		{
+			struct AP_NavRecLapInfo     laps[2];
+			const struct AP_NavRecNode *nodePtrs[2];
+			const unsigned int         *stampPtrs[2];
+			struct AP_NavRecMeta        meta;
+			struct AP_NavRecFileInfo    info2;
+			unsigned int                size = 0;
+			unsigned int                eligible[AP_NAVREC_MAX_LAPS];
+			unsigned int                m;
+
+			m = AP_NavRecFormat_Decimate(g_samples, MakeCircleLap(g_samples, 900, 10000 * 256, 0, 0), AP_NAVREC_TARGET_NODES, g_nodes[1],
+			                             g_stamps[1]);
+			memset(laps, 0, sizeof laps);
+			laps[0].nodeCount = n;
+			laps[0].lapFrames = 900;
+			laps[0].sampleCount = 900;
+			laps[1].nodeCount = m;
+			laps[1].lapFrames = 900;
+			laps[1].sampleCount = 900;
+			nodePtrs[0] = g_nodes[0];
+			nodePtrs[1] = g_nodes[1];
+			stampPtrs[0] = g_stamps[0];
+			stampPtrs[1] = g_stamps[1];
+			memset(&meta, 0, sizeof meta);
+			meta.levelId = 3;
+			meta.clientVersion = "seam-test";
+			meta.driverName = "Dex";
+			check(AP_NavRecFormat_Write(g_file, sizeof g_file, &meta, laps, 2, nodePtrs, stampPtrs, &size) == AP_NAVREC_OK &&
+			          AP_NavRecFormat_Read(g_file, size, &info2, g_back, g_backStamps) == AP_NAVREC_OK,
+			      "a two-lap file with a wide seam on lap 0 round trips");
+			check(AP_NavRecPlayback_EligibleLaps(&info2, g_back, eligible) == 1u && eligible[0] == 1u,
+			      "only the lap with a smooth seam is eligible");
 		}
 	}
 
-	// Two files: the accepted files repeat in order and the repeat steps to
-	// the next lap, so no lane duplicates a line another lane drives.
+	// ---------------------------------------------------------------
+	// Crate collision bit (A3-19 finish plan step 3, load-time half).
+	// ---------------------------------------------------------------
 	{
-		unsigned int chosen[AP_NAVREC_LANES];
-		char         author[AP_NAVREC_LANES][AP_NAVREC_NAME_FIELD + 1];
-		unsigned int laneFile[AP_NAVREC_LANES];
-		unsigned int laneLap[AP_NAVREC_LANES];
-		unsigned int opened;
-		unsigned int n;
+		static struct AP_NavRecNode ref[3][64];
+		static struct AP_NavRecNode rec[64];
+		const struct AP_NavRecNode *refLanes[3];
+		unsigned int                refCounts[3] = {64, 64, 0};
+		unsigned int                k;
+		unsigned int                marked;
+		int                         ok = 1;
 
-		FakeReset(3);
-		FakeAdd(1, "Appie", 1, 0);
-		FakeAdd(2, "BEXUS", 3, 0);
+		memset(ref, 0, sizeof ref);
+		memset(rec, 0, sizeof rec);
+		for (k = 0; k < 64u; k++)
+		{
+			ref[0][k].posX = (short)(k * 300);
+			ref[0][k].posZ = 0;
+			ref[1][k].posX = (short)(k * 300);
+			ref[1][k].posZ = 500;
+			// Lane 0 marks nodes 10..19 for instance collision, lane 1 carries
+			// only a ramp-physics bit on 30..39.
+			if ((k >= 10u) && (k < 20u))
+				ref[0][k].specialBits = 0x40;
+			if ((k >= 30u) && (k < 40u))
+				ref[1][k].specialBits = 0x13;
+			rec[k].posX = (short)(k * 300 + 40);
+			rec[k].posZ = (k < 50u) ? 100 : 3000; // the last nodes drift far off the road
+		}
+		ref[0][55].specialBits = 0x40; // marked, but nowhere near the recorded line there
+		refLanes[0] = ref[0];
+		refLanes[1] = ref[1];
+		refLanes[2] = NULL;
 
-		memset(author, 0, sizeof author);
-		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
-		AP_NavRecLane_Plan(n, laneFile, laneLap);
-
-		check(n == 2u, "two usable files are both used");
-		check((chosen[0] == 2u) && (chosen[1] == 1u), "two files are still taken newest first");
-		check((laneFile[0] == 0u) && (laneFile[1] == 1u) && (laneFile[2] == 0u), "the third lane falls back to the first file");
-		check((laneLap[0] == 0u) && (laneLap[1] == 0u) && (laneLap[2] == 1u), "a reused file gives its next lap, not the same one twice");
+		marked = AP_NavRecCrate_Annotate(rec, 64, refLanes, refCounts, 3);
+		for (k = 0; k < 64u; k++)
+		{
+			int want = (k >= 10u) && (k < 20u);
+			if (((rec[k].specialBits & 0x40) != 0) != want)
+				ok = 0;
+			if ((rec[k].specialBits & 0x13) != 0)
+				ok = 0;
+		}
+		check(ok, "recorded nodes take 0x40 only from the nearest level node, and only that bit");
+		check(marked == 10u, "the count names the marked nodes");
 	}
 
-	// One file: exactly what the loader did before mixed fields existed.
+	// ---------------------------------------------------------------
+	// Lane-change guard on level lanes kept beside recorded ones.
+	// ---------------------------------------------------------------
 	{
-		unsigned int                  chosen[AP_NAVREC_LANES];
-		char                          author[AP_NAVREC_LANES][AP_NAVREC_NAME_FIELD + 1];
-		unsigned int                  laneFile[AP_NAVREC_LANES];
-		unsigned int                  laneLap[AP_NAVREC_LANES];
-		struct AP_NavRecLaneCandidate cand;
-		unsigned int                  opened;
-		unsigned int                  n;
+		struct AP_NavRecNode lane[6];
 
-		FakeReset(3);
-		FakeAdd(1, "Appie", 3, 0);
+		memset(lane, 0, sizeof lane);
+		lane[0].pathChangeOpcode = (short)((0 << 10) | 17); // to lane 0, recorded
+		lane[1].pathChangeOpcode = (short)((1 << 10) | 17); // to lane 1, level
+		lane[2].pathChangeOpcode = (short)((2 << 10) | 900); // to lane 2, level
+		lane[3].pathChangeOpcode = (short)AP_NAVREC_NO_LANE_CHANGE;
+		lane[4].pathChangeOpcode = (short)-1;
+		lane[5].pathChangeOpcode = (short)((0 << 10) | 0);
 
-		memset(author, 0, sizeof author);
-		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
-		AP_NavRecLane_Plan(n, laneFile, laneLap);
-
-		check(n == 1u, "one usable file is the single-file case, unchanged");
-		check((laneFile[0] == 0u) && (laneFile[1] == 0u) && (laneFile[2] == 0u), "one file feeds every lane");
-		check((laneLap[0] == 0u) && (laneLap[1] == 1u) && (laneLap[2] == 2u), "one file still gives lane i lap i");
-
-		// And with one lap in that file, the two lanes it cannot fill are the
-		// ones the lateral-offset fallback has always synthesised.
-		FakeReset(3);
-		FakeAdd(1, "Appie", 1, 0);
-
-		memset(author, 0, sizeof author);
-		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
-		AP_NavRecLane_Plan(n, laneFile, laneLap);
-
-		memset(&cand, 0, sizeof cand);
-		FakeFetch(&g_folder, 1, &cand);
-
-		check(cand.lapCount == 1u, "the one-lap file reports one lap");
-		check((laneLap[1] >= cand.lapCount) && (laneLap[2] >= cand.lapCount),
-		      "a one-lap file leaves lanes 1 and 2 to the lateral-offset fallback, as before");
+		check(AP_NavRecLane_GuardOpcodes(lane, 6, 0x1u) == 2u, "two opcodes pointed at the recorded lane");
+		check(lane[0].pathChangeOpcode == (short)AP_NAVREC_NO_LANE_CHANGE && lane[5].pathChangeOpcode == (short)AP_NAVREC_NO_LANE_CHANGE,
+		      "both are off");
+		check(lane[1].pathChangeOpcode == (short)((1 << 10) | 17) && lane[2].pathChangeOpcode == (short)((2 << 10) | 900),
+		      "jumps between two level lanes stay exactly as the level has them");
+		check(lane[4].pathChangeOpcode == (short)-1, "an opcode outside the engine's range is left alone");
 	}
 
-	// A different author beats another file by an author already racing.
+	// ---------------------------------------------------------------
+	// One name per recorded lane (A3-19 finish plan step 2).
+	// ---------------------------------------------------------------
 	{
-		unsigned int chosen[AP_NAVREC_LANES];
-		char         author[AP_NAVREC_LANES][AP_NAVREC_NAME_FIELD + 1];
-		unsigned int opened;
-		unsigned int n;
+		int owner[AP_NAVREC_LANES] = {-1, -1, -1};
+		int botLane[8] = {0, 0, 1, 2, 0, 1, 2, 0};
+		int drawn[AP_NAVREC_LANES] = {0, 0, 0};
+		int i;
+		int frame;
+		int ok = 1;
 
-		FakeReset(3);
-		FakeAdd(1, "BEXUS", 1, 0);
-		FakeAdd(2, "Appie", 1, 0);
-		FakeAdd(3, "Appie", 1, 0);
-		FakeAdd(4, "Appie", 1, 0);
+		// Lanes 0 and 1 recorded, lane 2 the track's own.
+		for (frame = 0; frame < 3; frame++)
+		{
+			memset(drawn, 0, sizeof drawn);
+			for (i = 1; i < 8; i++)
+			{
+				int l = AP_NavRecLabel_LaneFor(owner, 0x3u, i, botLane[i]);
+				if (l >= 0)
+					drawn[l]++;
+				if ((l >= 0) && (botLane[i] == 2))
+					ok = 0;
+			}
+			if ((drawn[0] != 1) || (drawn[1] != 1) || (drawn[2] != 0))
+				ok = 0;
+		}
+		check(ok, "each recorded lane names exactly one bot and a track lane names none");
+		check(owner[0] == 1 && owner[1] == 2, "the first bot on a lane owns its name");
 
-		memset(author, 0, sizeof author);
-		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
+		// The owner leaves its lane: it loses the name and nobody takes it over.
+		botLane[1] = 1;
+		check(AP_NavRecLabel_LaneFor(owner, 0x3u, 1, 1) == -1, "a bot cannot carry a second lane's name");
+		check(AP_NavRecLabel_LaneFor(owner, 0x3u, 4, 0) == -1, "a later bot on the owner's old lane stays unnamed");
+		botLane[1] = 0;
+		check(AP_NavRecLabel_LaneFor(owner, 0x3u, 1, 0) == 0, "the owner back on its lane carries the name again");
 
-		check(n == 3u, "three same-author files and one other still fill three lanes");
-		check((chosen[0] == 4u) && (chosen[1] == 1u), "the older different author is taken ahead of two newer files by the same one");
-		check(strcmp(author[1], "BEXUS") == 0, "the second lane belongs to the other contributor");
-		check(chosen[2] == 3u, "a held-back file fills the lane no third author could");
-		check(strcmp(author[2], "Appie") == 0, "a held-back file is labelled with its own author, not the first lane's");
-	}
-
-	// A held-back file may match a later lane's author, not the first one.
-	{
-		unsigned int chosen[AP_NAVREC_LANES];
-		char         author[AP_NAVREC_LANES][AP_NAVREC_NAME_FIELD + 1];
-		unsigned int opened;
-		unsigned int n;
-
-		FakeReset(3);
-		FakeAdd(1, "Appie", 1, 0);
-		FakeAdd(2, "Appie", 1, 0);
-		FakeAdd(3, "Cara", 1, 0);
-
-		memset(author, 0, sizeof author);
-		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
-
-		check(n == 3u, "two authors across three files still fill three lanes");
-		check((chosen[0] == 3u) && (chosen[1] == 2u) && (chosen[2] == 1u), "the held-back oldest file takes the last lane");
-		check((strcmp(author[0], "Cara") == 0) && (strcmp(author[1], "Appie") == 0) && (strcmp(author[2], "Appie") == 0),
-		      "a held-back file carries the author it actually matched");
-	}
-
-	// A rejected file is rejected whole, and hides nothing older.
-	{
-		unsigned int chosen[AP_NAVREC_LANES];
-		char         author[AP_NAVREC_LANES][AP_NAVREC_NAME_FIELD + 1];
-		unsigned int opened;
-		unsigned int n;
-
-		FakeReset(3);
-		FakeAdd(1, "BEXUS", 1, 0);
-		FakeAdd(2, "Appie", 1, 0);
-		FakeAdd(3, "Appie", 1, 1); // newest, and corrupt
-
-		memset(author, 0, sizeof author);
-		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
-
-		check(n == 2u, "a corrupt newest file fills no lane");
-		check((chosen[0] == 2u) && (chosen[1] == 1u), "a corrupt newest file does not hide the good older ones");
-		check(opened == 3u, "a rejected file still costs one open");
-	}
-
-	// Custom-track identity is applied per file, exactly as before.
-	{
-		static const unsigned char babyUuid[AP_NAVREC_TRACK_UUID_BYTES] = {
-			0x89, 0x8a, 0x93, 0x15, 0x69, 0x3f, 0x4e, 0xd3,
-			0xb6, 0xa0, 0xfb, 0xe5, 0x0d, 0xb8, 0xbc, 0x40};
-		unsigned int chosen[AP_NAVREC_LANES];
-		char         author[AP_NAVREC_LANES][AP_NAVREC_NAME_FIELD + 1];
-		unsigned int opened;
-		unsigned int n;
-
-		FakeReset(6); // the physical slot a custom track is served from
-		g_folder.identityKind = AP_NAVREC_IDENTITY_CUSTOM;
-		memcpy(g_folder.uuid, babyUuid, sizeof babyUuid);
-		g_folder.navRevision = 1;
-
-		FakeAddCustom(1, "Appie", babyUuid, 1);
-		FakeAdd(2, "Legacy", 1, 0);             // a retail line in the same slot
-		FakeAddCustom(3, "Stale", babyUuid, 2); // right track, superseded revision
-
-		memset(author, 0, sizeof author);
-		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
-
-		check(n == 1u, "only the container matching the active track identity fills a lane");
-		check(chosen[0] == 1u, "a legacy retail line in the same physical slot is rejected per file");
-		check(strcmp(author[0], "Appie") == 0, "the matching contributor is the one on the grid");
-		check(opened == 3u, "every candidate was still examined, one identity rule at a time");
-	}
-
-	// A folder of corrupt containers costs a bounded number of reads.
-	{
-		unsigned int chosen[AP_NAVREC_LANES];
-		char         author[AP_NAVREC_LANES][AP_NAVREC_NAME_FIELD + 1];
-		unsigned int opened;
-		unsigned int n;
-
-		FakeReset(3);
-		for (i = 1; i <= 10u; i++)
-			FakeAdd(i, "Appie", 1, 1);
-
-		memset(author, 0, sizeof author);
-		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
-
-		check(n == 0u, "a folder with nothing usable in it fills no lane");
-		check(opened == AP_NAVREC_MAX_LOAD_ATTEMPTS, "the scan gives up at the open budget rather than reading the whole folder");
-	}
-
-	// One person's whole folder: three distinct files, one name, bounded reads.
-	{
-		unsigned int chosen[AP_NAVREC_LANES];
-		char         author[AP_NAVREC_LANES][AP_NAVREC_NAME_FIELD + 1];
-		unsigned int opened;
-		unsigned int n;
-
-		FakeReset(3);
-		for (i = 1; i <= 10u; i++)
-			FakeAdd(i, "Appie", 1, 0);
-
-		memset(author, 0, sizeof author);
-		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
-
-		check(n == 3u, "one person's folder still fills three lanes from three distinct files");
-		check((chosen[0] == 10u) && (chosen[1] == 9u) && (chosen[2] == 8u), "the three newest of one author's files are the ones used");
-		check(opened == AP_NAVREC_MAX_LOAD_ATTEMPTS, "the search for a second author stops at the open budget");
-	}
-
-	// Gaps are free: a player who deletes files out of the middle is not
-	// charged for the holes.
-	{
-		unsigned int chosen[AP_NAVREC_LANES];
-		char         author[AP_NAVREC_LANES][AP_NAVREC_NAME_FIELD + 1];
-		unsigned int laneFile[AP_NAVREC_LANES];
-		unsigned int laneLap[AP_NAVREC_LANES];
-		unsigned int opened;
-		unsigned int n;
-
-		FakeReset(3);
-		FakeAdd(1, "Appie", 1, 0);
-		FakeAdd(100, "BEXUS", 1, 0);
-
-		memset(author, 0, sizeof author);
-		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
-
-		check(n == 2u, "two files separated by ninety-eight gaps are both found");
-		check((chosen[0] == 100u) && (chosen[1] == 1u), "the newest index is still first across a gap");
-		check(opened == 2u, "gaps in the numbering do not consume the open budget");
-
-		// A plan for no files at all leaves the caller's arrays alone rather
-		// than dividing by zero.
-		laneFile[0] = 0xEEu;
-		laneLap[0] = 0xEEu;
-		AP_NavRecLane_Plan(0, laneFile, laneLap);
-		check((laneFile[0] == 0xEEu) && (laneLap[0] == 0xEEu), "planning lanes for no files touches nothing");
+		// A lane nobody drove at the start is claimed by the first bot to reach it.
+		owner[0] = -1;
+		owner[1] = -1;
+		owner[2] = -1;
+		check(AP_NavRecLabel_LaneFor(owner, 0x4u, 3, 2) == 2, "a lane's first bot can be a late arrival");
+		check(AP_NavRecLabel_LaneFor(owner, 0x4u, 3, 7) == -1, "a lane outside the three is never named");
 	}
 
 	// ---------------------------------------------------------------
@@ -1639,40 +1882,32 @@ int main(void)
 	// ---------------------------------------------------------------
 	{
 		struct AP_NavRecLaneCandidate cand;
-		unsigned int                  chosen[AP_NAVREC_LANES];
-		char                          author[AP_NAVREC_LANES][AP_NAVREC_NAME_FIELD + 1];
-		unsigned int                  laneFile[AP_NAVREC_LANES];
-		unsigned int                  laneLap[AP_NAVREC_LANES];
+		struct AP_NavRecPoolPick      picks[AP_NAVREC_LANES];
 		unsigned int                  closed[AP_NAVREC_MAX_LAPS];
 		unsigned int                  closedCount;
 		unsigned int                  opened;
+		unsigned int                  contributors;
 		unsigned int                  n;
-		int                           lane;
+		unsigned int                  seed;
 		int                           openLapDrives = 0;
 
 		FakeReset(0);
 		FakeAddMixed(7, "Appie", 3, 0x1u);
 
-		memset(author, 0, sizeof author);
 		memset(&cand, 0, sizeof cand);
 		check(FakeFetch(&g_folder, 7, &cand) == 1 && cand.usable == 1 && cand.lapCount == 2u,
 		      "a candidate reports its CLOSED lap count, not its raw one");
 
-		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
-		AP_NavRecLane_Plan(n, laneFile, laneLap);
-		check(n == 1u, "the mixed file is still chosen");
-
 		check(AP_NavRecFormat_Read(g_folder.bytes[0], g_folder.size[0], &info, g_back, g_backStamps) == AP_NAVREC_OK,
 		      "the placement pass reads the mixed file");
-		closedCount = AP_NavRecFormat_ClosedLaps(&info, g_back, closed);
-		for (lane = 0; lane < AP_NAVREC_LANES; lane++)
+		closedCount = AP_NavRecPlayback_EligibleLaps(&info, g_back, closed);
+		for (seed = 1; seed <= 100u; seed++)
 		{
-			if (laneLap[lane] >= closedCount)
-				continue; // the loader synthesises this lane laterally, as ever
-			if (closed[laneLap[lane]] == 0u)
+			n = FakePick(seed, picks, &opened, &contributors);
+			if ((n == 1u) && ((picks[0].lapOrdinal >= closedCount) || (closed[picks[0].lapOrdinal] == 0u)))
 				openLapDrives = 1;
 		}
-		check(!openLapDrives, "no lane ever drives the open lap");
+		check(!openLapDrives, "no pick ever drives the open lap");
 
 		// Newest file has no closed lap at all: it fills nothing and hides
 		// nothing older.
@@ -1680,12 +1915,11 @@ int main(void)
 		FakeAdd(1, "BEXUS", 3, 0);
 		FakeAddMixed(2, "Appie", 1, 0x1u);
 
-		memset(author, 0, sizeof author);
-		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
+		n = FakePick(11u, picks, &opened, &contributors);
 		check(n == 1u, "a file with no closed lap fills no lane");
-		check(chosen[0] == 1u, "the older good file races instead");
-		check(strcmp(author[0], "BEXUS") == 0, "the older file's contributor is the one on the grid");
-		check(opened == 2u, "the no-closed-lap file still cost one open");
+		check(picks[0].fileIndex == 1u, "the older good file races instead");
+		check(strcmp(picks[0].driverName, "BEXUS") == 0, "the older file's contributor is the one on the grid");
+		check(opened == 2u, "the no-closed-lap file still cost one full read");
 	}
 
 	// ---------------------------------------------------------------
@@ -1708,9 +1942,9 @@ int main(void)
 			0x2f, 0x1c, 0x44, 0x90, 0xa7, 0x0b, 0x4d, 0x12,
 			0x8e, 0x63, 0x55, 0xcd, 0x01, 0x7a, 0x9f, 0x30};
 		struct AP_NavRecLoadFacts facts;
-		unsigned int              chosen[AP_NAVREC_LANES];
-		char                      author[AP_NAVREC_LANES][AP_NAVREC_NAME_FIELD + 1];
+		struct AP_NavRecPoolPick  picks[AP_NAVREC_LANES];
 		unsigned int              opened;
+		unsigned int              contributors;
 		unsigned int              n;
 
 		// The decision table, one row per load the client can be in.
@@ -1768,11 +2002,10 @@ int main(void)
 		check(AP_NavRecIdentity_ForLoad(&facts) == AP_NAVREC_LOAD_RETAIL,
 		      "slot 13 with nothing served is a retail Oxide Station load");
 
-		memset(author, 0, sizeof author);
-		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
+		n = FakePick(13u, picks, &opened, &contributors);
 		check(n == 3u, "retail slot 13 still fills all three lanes from its recordings");
-		check((chosen[0] == 8u) && (chosen[1] == 7u) && (chosen[2] == 1u),
-		      "and still newest index first, one file per contributor");
+		check(PicksDistinct(picks, n) && PicksHave(picks, n, "Dex") && PicksHave(picks, n, "Appie") && PicksHave(picks, n, "BEXUS"),
+		      "one file per contributor");
 
 		// Same folder, same slot, with the pad track served: the arm blocks,
 		// so the loader never scans and none of those files reaches a lane.
@@ -1788,18 +2021,17 @@ int main(void)
 		memcpy(g_folder.uuid, packUuid, sizeof packUuid);
 		g_folder.navRevision = 4;
 
-		memset(author, 0, sizeof author);
-		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
+		check(FakePool() == 0u, "a custom load's pool holds none of the host slot's retail recordings");
+		n = FakePick(13u, picks, &opened, &contributors);
 		check(n == 0u, "a custom load fills no lane from the host slot's retail recordings");
 
 		// A lap recorded ON the custom track carries the UUID, so it is the
 		// one file in that folder the custom load will take.
 		FakeAddCustom(9, "Appie", packUuid, 4);
 
-		memset(author, 0, sizeof author);
-		n = AP_NavRecLane_Select(FakeHighest(), AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, chosen, author, &opened);
+		n = FakePick(13u, picks, &opened, &contributors);
 		check(n == 1u, "a recording made on the custom track does race there");
-		check((chosen[0] == 9u) && (strcmp(author[0], "Appie") == 0),
+		check((picks[0].fileIndex == 9u) && (strcmp(picks[0].driverName, "Appie") == 0),
 		      "and it is the custom-identity file, not a host-slot retail one");
 	}
 
