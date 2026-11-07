@@ -35,6 +35,7 @@ NativeConfig g_config = {
 	-1,    // volVoice
 	-1,    // stereo
 #ifdef CTR_AP
+	true,  // deviceAwareLabels (off forces PlayStation symbols)
 	false, // skipHints
 	false, // skipPodium (default off: ceremonies play unless the player opts out)
 	false, // skipCutscenes (default off: boss and Oxide scenes play unless the player opts out)
@@ -74,6 +75,9 @@ NativeConfig g_config = {
 };
 
 const ConfigEntry g_configEntries[] = {
+#ifdef CTR_AP
+	{"Video & QoL", "device_aware_labels", "Device-aware Button Labels", CFG_BOOL, &g_config.deviceAwareLabels},
+#endif
 	{"Video & QoL", "skip_intro",               "Skip Intros",                  CFG_BOOL, &g_config.skipIntro},
 	{"Video & QoL", "increase_draw_distance",   "Increase Draw Distance",       CFG_BOOL, &g_config.increaseDrawDistance},
 	{"Video & QoL", "disable_split_screen_lod", "Hi-Res Models in Multiplayer", CFG_BOOL, &g_config.disableSplitScreenLod},

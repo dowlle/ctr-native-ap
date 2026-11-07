@@ -1,3 +1,4 @@
+#include <platform/native_menu.h>
 // One-click-connect glue for the running client (issue #334, slice 3). See
 // ap_link.h. Part of the AP unity build (game/game_unity.h), after ap_hooks.c,
 // so it uses the feed and log helpers defined there.
@@ -312,7 +313,7 @@ static void AP_LinkDrawPrompt(const NativeLinkRecord *shown)
 	DecalFont_DrawLineOT(line, 0x100, 0x6E, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 	AP_LinkDisplayText(line, sizeof line, "slot ", shown->request.slot, "?");
 	DecalFont_DrawLineOT(line, 0x100, 0x7C, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-	DecalFont_DrawLineOT("*: CONNECT   ^: KEEP CURRENT", 0x100, 0x96, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	DecalFont_DrawLineOT(NativeMenu_Labels("*: CONNECT   ^: KEEP CURRENT"), 0x100, 0x96, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 
 	RECTMENU_DrawInnerRect(&bg, 4, ot);
 }
@@ -335,8 +336,8 @@ int AP_LinkMenuFrame(void)
 	tap = sdata->buttonTapPerPlayer[0];
 	memset(&in, 0, sizeof in);
 	in.safe = AP_LinkSafe(gGT);
-	in.acceptTapped = (tap & BTN_CROSS) != 0;
-	in.declineTapped = (tap & BTN_TRIANGLE) != 0;
+	in.acceptTapped = (tap & (BTN_CROSS | BTN_CIRCLE)) != 0;
+	in.declineTapped = (tap & (BTN_TRIANGLE | BTN_START)) != 0;
 
 	// A newer link replaces the one on screen: check before the prompt first
 	// appears and before an answer counts. A replacement re-arms the prompt, so
@@ -507,8 +508,8 @@ const char *AP_LinkRegActionHint(void)
 {
 	if (ap_link_reg_message != NULL)
 		return ap_link_reg_message;
-	return (ap_link_reg_status == NATIVE_LINK_REG_THIS_CLIENT) ? "*: STOP USING THIS CLIENT FOR LINKS"
-	                                                           : "*: USE THIS CLIENT FOR ROOM LINKS";
+	return (ap_link_reg_status == NATIVE_LINK_REG_THIS_CLIENT) ? NativeMenu_Labels("*: STOP USING THIS CLIENT FOR LINKS")
+	                                                           : NativeMenu_Labels("*: USE THIS CLIENT FOR ROOM LINKS");
 }
 
 int AP_LinkRegNotice(const char **first, const char **second)

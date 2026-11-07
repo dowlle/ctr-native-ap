@@ -1,6 +1,7 @@
 // cc -m32 -ffunction-sections -fdata-sections -Wl,--gc-sections -DCTR_NATIVE -DCTR_AP -DCTR_CUSTOM_TRACKS -DCTR_CUSTOM_PACKAGES -DBUILD=926 -I include -I . tools/test-custom-manager.c -o /tmp/test-custom-manager
 /* Production manager input and font-bound checks; workers/rendering are stubbed. */
 #include <stdio.h>
+#include "menu-label-stub.h"
 #include <string.h>
 #include <common.h>
 #include <platform/native_input.h>
@@ -14,8 +15,8 @@ struct Data data;
 #include "../game/DecalFont.c"
 #undef DecalFont_DrawLineOT
 #include "../game/230/MM_CustomText.c"
-#define CONN_PAD_COMMIT (RAW_BTN_CROSS | RAW_BTN_START)
-#define CONN_PAD_CANCEL RAW_BTN_TRIANGLE
+#define CONN_PAD_COMMIT (RAW_BTN_CROSS | RAW_BTN_CIRCLE)
+#define CONN_PAD_CANCEL (RAW_BTN_TRIANGLE | RAW_BTN_START)
 static struct CustomTrackLibrary s_contentLibrary;
 static int s_contentLibraryTab, s_contentSearchEditing, s_contentSearchPadPrev, s_contentStoreWanted;
 static char s_contentSearchBackup[81], s_contentInstallPin[65];

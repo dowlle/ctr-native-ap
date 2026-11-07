@@ -1,3 +1,4 @@
+#include <platform/native_menu.h>
 /* Custom pages at the normal track selector. Arcade and Time Trial in every
    client with packages (MM_CUSTOM_TIME_TRIAL).
    Included by MM_TrackSelect.c inside CTR_CUSTOM_PACKAGES. Custom pages use owned library metadata, never indices
@@ -170,8 +171,8 @@ static void MM_CustomTrackSelect_SearchTick(void)
     if (!s_arcadeSearching) return;
     if (!NativeText_Result())
     {
-        if (rawTapped & RAW_BTN_TRIANGLE) NativeText_Resolve(2);
-        else if (rawTapped & (RAW_BTN_CROSS | RAW_BTN_START)) NativeText_Resolve(1);
+        if (rawTapped & (RAW_BTN_TRIANGLE | RAW_BTN_START)) NativeText_Resolve(2);
+        else if (rawTapped & (RAW_BTN_CROSS | RAW_BTN_CIRCLE)) NativeText_Resolve(1);
     }
     if (NativeText_Result())
     {
@@ -289,7 +290,7 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
     first = (s_arcadePage - 1) * CTR_LIBRARY_PAGE_ROWS;
     if (s_arcadeConfirm)
     {
-        if (tapped & (BTN_TRIANGLE | BTN_SQUARE_one))
+        if (tapped & (BTN_TRIANGLE | BTN_START))
         {
             s_arcadeConfirm = 0;
             CustomOffline_Free(&s_arcadeRequest);
@@ -354,7 +355,7 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
             MM_CustomLibrary_Tick(1);
             s_arcadeMessage[0] = 0;
         }
-        if (!MM_CustomLibrary_Busy() && (tapped & (BTN_TRIANGLE | BTN_SQUARE_one)))
+        if (!MM_CustomLibrary_Busy() && (tapped & (BTN_TRIANGLE | BTN_START)))
         {
             D230.trackSel_StartRaceAfterFadeOut = 0;
             D230.trackSel_transitionState = EXITING_MENU;
@@ -453,11 +454,11 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
     RECTMENU_DrawInnerRect(&details, 0, ot);
     if (D230.trackSel_transitionState == IN_MENU)
     {
-        MM_CustomText_Draw(s_arcadeConfirm ? "Cross: Start  Back: Track list" :
+        MM_CustomText_Draw(s_arcadeConfirm ? NativeMenu_Labels("*: Start  ^: Track list") :
             "Left/Right: Pages  Up/Down: Tracks", 256, 181, 464, 1, JUSTIFY_CENTER | WHITE, ot);
         if (!s_arcadeConfirm)
         {
-            MM_CustomText_Draw("Cross: Select  Back: Characters", 256, 194, 464, 1, JUSTIFY_CENTER | WHITE, ot);
+            MM_CustomText_Draw(NativeMenu_Labels("*: Select  ^: Characters"), 256, 194, 464, 1, JUSTIFY_CENTER | WHITE, ot);
             snprintf(line, sizeof line, "R2 Search: %s%s  L2 Rescan", s_arcadeQuery, s_arcadeSearching ? "_" : "");
             MM_CustomText_Draw(line, 256, 206, 464, 1, JUSTIFY_CENTER | WHITE, ot);
         }

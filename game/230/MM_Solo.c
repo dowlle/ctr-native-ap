@@ -1,3 +1,4 @@
+#include <platform/native_menu.h>
 /* Play Solo (#89): Options > Connection > Play Solo, and the title screen's
    PLAY SOLO row (decision 30), which opens the same pages.
    Included by MM_ConfigMenu.c in the AP player client (CTR_AP, not
@@ -21,7 +22,7 @@
               marked. Trap Weights is a row with "Defaults" or "2 custom";
               Cross opens its page, one number row per trap from the world's
               trap registry (A3-22): Left / Right move a weight from 0 to the
-              option's maximum, Cross returns a row to the default weight and
+              option's maximum, Square resets a row after two presses and
               the grey number shows what that default is. A guard the world
               would refuse (more Crystal
               Challenges than arenas checked, a pool too small) shows its
@@ -32,7 +33,7 @@
               An imported track without laps asks for them first: Left /
               Right pick 1 to 7, Cross keeps them (ruling of 2026-11-02).
      Review   slot name (Cross edits it) and Generate.
-     Busy     a runtime job with its phase; Circle cancels generation.
+     Busy     a runtime job with its phase; Triangle/Start cancels generation.
      Session  starting, connecting, connected or the reason it failed.
    The runtime, jobs and session live in ap/ap_solo.cpp; the option rules in
    ap/ap_solo_logic.hpp.
@@ -95,6 +96,7 @@ static int s_soloHelpTop;       /* first help line shown (Up / Down scroll) */
 static int s_soloGroup = -1;    /* open option group, -1 the group list */
 static int s_soloGroupSel;      /* the group list's selection, kept while a group is open */
 static int s_soloGroupTop;
+static int s_soloResetRow = -1;
 static int s_soloList = -1;     /* open checklist or weights page: the option's index, -1 none */
 static int s_soloListSel;       /* the group page's selection, kept while a checklist is open */
 static int s_soloListTop;
@@ -272,6 +274,7 @@ static void MM_Solo_Navigate(struct GamepadBuffer *pad, int count)
 
 static void MM_Solo_Go(int page)
 {
+	s_soloResetRow = -1;
 	/* A message that was to return to Options or Custom Tracks is gone once
 	   any page is chosen another way (for example Back to the seed list). */
 	if (s_soloFromOptions > 1)
@@ -379,7 +382,7 @@ static void MM_Solo_PageHome(uint32_t *ot, struct GamepadBuffer *pad)
 
 	s_soloRowsShown = rooms == 0 ? SOLO_ROWS - 1 : SOLO_ROWS;
 	MM_Solo_Navigate(pad, count);
-	if ((pad->buttonsTapped & BTN_CROSS) != 0)
+	if ((pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
 	{
 		const int row = s_soloSel - stopRow;
 		OtherFX_Play(1, 1);
@@ -449,7 +452,7 @@ static void MM_Solo_PageHome(uint32_t *ot, struct GamepadBuffer *pad)
 		MM_Solo_FitLeft("Inbox: ", AP_Solo_InboxPath(), fit, sizeof fit, SOLO_TEXT_W);
 		DecalFont_DrawLineOT(fit, 0x100, SOLO_HELP_Y + SOLO_ROW_H, FONT_SMALL, JUSTIFY_CENTER | GRAY, ot);
 	}
-	MM_Solo_Footer("*: PLAY   [: DETAILS   ^: BACK", ot);
+	MM_Solo_Footer(NativeMenu_Labels("*: PLAY   [: DETAILS   ^: BACK"), ot);
 }
 
 static void MM_Solo_EditPassword(int y)
@@ -469,7 +472,7 @@ static void MM_Solo_PageDetails(uint32_t *ot, struct GamepadBuffer *pad)
 {
 	char line[160], fit[160];
 	if (!s_soloEditing && !s_soloEditJustEnded) MM_Solo_Navigate(pad, 3);
-	if (!s_soloEditing && !s_soloEditJustEnded && (pad->buttonsTapped & BTN_CROSS) != 0)
+	if (!s_soloEditing && !s_soloEditJustEnded && (pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
 	{
 		OtherFX_Play(1, 1);
 		if (s_soloSel == 0)
@@ -506,14 +509,14 @@ static void MM_Solo_PageDetails(uint32_t *ot, struct GamepadBuffer *pad)
 	         s_soloRoom.versionMatches ? "" : " (not this client's)");
 	MM_Solo_DrawWrapped(line, SOLO_ROW_X, 0x68, SOLO_ROW_W, 2, s_soloRoom.versionMatches ? WHITE : RED, ot);
 	DecalFont_DrawLineOT("Resume", SOLO_ROW_X, 0x84, FONT_SMALL, ORANGE, ot);
-	DecalFont_DrawLineOT(s_soloDeleteArmed ? "Press Cross again to delete" : "Delete", SOLO_ROW_X, 0x90, FONT_SMALL,
+	DecalFont_DrawLineOT(s_soloDeleteArmed ? NativeMenu_Labels("Press * again to delete") : "Delete", SOLO_ROW_X, 0x90, FONT_SMALL,
 	                     s_soloDeleteArmed ? RED : ORANGE, ot);
 	snprintf(line, sizeof line, "Password: %s", s_soloEditing == 2 ? s_soloPassword :
 	         AP_Solo_Password()[0] ? AP_Solo_Password() : "None");
 	MM_Solo_Fit(line, fit, sizeof fit, SOLO_ROW_W);
 	DecalFont_DrawLineOT(fit, SOLO_ROW_X, 0xA0, FONT_SMALL, WHITE, ot);
 	if (!s_soloEditing) MM_Solo_Highlight(s_soloSel == 0 ? 0x84 : s_soloSel == 1 ? 0x90 : 0xA0, ot);
-	MM_Solo_Footer("*: SELECT   ^: BACK", ot);
+	MM_Solo_Footer(NativeMenu_Labels("*: SELECT   ^: BACK"), ot);
 }
 
 static void MM_Solo_PageNew(uint32_t *ot, struct GamepadBuffer *pad)
@@ -522,7 +525,7 @@ static void MM_Solo_PageNew(uint32_t *ot, struct GamepadBuffer *pad)
 	char fit[160];
 	int i;
 	MM_Solo_Navigate(pad, count);
-	if ((pad->buttonsTapped & BTN_CROSS) != 0 && count > 0)
+	if ((pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0 && count > 0)
 	{
 		if (!AP_Solo_StartGet(s_soloSel, &s_soloStart))
 			return;
@@ -567,7 +570,7 @@ static void MM_Solo_PageNew(uint32_t *ot, struct GamepadBuffer *pad)
 		if (i == s_soloSel)
 			MM_Solo_Highlight(y, ot);
 	}
-	MM_Solo_Footer("*: CHOOSE   ^: BACK", ot);
+	MM_Solo_Footer(NativeMenu_Labels("*: CHOOSE   ^: BACK"), ot);
 }
 
 #define SOLO_OPTION_CAP 160
@@ -666,7 +669,7 @@ static void MM_Solo_PageOptionGroups(uint32_t *ot, struct GamepadBuffer *pad)
 	int i;
 
 	MM_Solo_Navigate(pad, count);
-	if (s_soloSel < groups && (pad->buttonsTapped & BTN_CROSS) != 0)
+	if (s_soloSel < groups && (pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
 	{
 		OtherFX_Play(1, 1);
 		s_soloGroupSel = s_soloSel;
@@ -676,14 +679,14 @@ static void MM_Solo_PageOptionGroups(uint32_t *ot, struct GamepadBuffer *pad)
 		s_soloTop = 0;
 		return;
 	}
-	if (s_soloSel == groups && (pad->buttonsTapped & BTN_CROSS) != 0 && AP_Solo_OptionsBlocked() >= 0)
+	if (s_soloSel == groups && (pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0 && AP_Solo_OptionsBlocked() >= 0)
 	{
 		/* The world would refuse a value: open its row, its reason in red. */
 		OtherFX_Play(5, 1);
 		s_soloHighlight = AP_Solo_OptionsBlocked();
 		return;
 	}
-	if (s_soloSel == groups && (pad->buttonsTapped & BTN_CROSS) != 0)
+	if (s_soloSel == groups && (pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
 	{
 		OtherFX_Play(1, 1);
 		s_soloFromOptions = 1;
@@ -728,7 +731,7 @@ static void MM_Solo_PageOptionGroups(uint32_t *ot, struct GamepadBuffer *pad)
 		MM_Solo_Help("A group has a value to fix first. Continue opens it.", RED, ot);
 	else
 		MM_Solo_Help("Continue to the custom tracks and the review.", GRAY, ot);
-	MM_Solo_Footer(s_soloSel < groups ? "*: OPEN  ^: BACK" : "*: CONTINUE  ^: BACK", ot);
+	MM_Solo_Footer(s_soloSel < groups ? NativeMenu_Labels("*: OPEN  ^: BACK") : NativeMenu_Labels("*: CONTINUE  ^: BACK"), ot);
 }
 
 #define SOLO_CHECK_DEFAULT_R (SOLO_ROW_R - 0x30) /* right edge of the "default" mark */
@@ -740,6 +743,7 @@ static void MM_Solo_PageChecklist(uint32_t *ot, struct GamepadBuffer *pad)
 	struct APSoloOptionInfo info;
 	struct APSoloItemInfo item;
 	const int count = AP_Solo_OptionItemCount(s_soloList);
+	const int previousRow = s_soloSel;
 	const int labelW = SOLO_CHECK_DEFAULT_R - DecalFont_GetLineWidth((char *)"default", FONT_SMALL) - 0x08 - SOLO_ROW_X;
 	char line[160], fit[160];
 	int i, on = 0;
@@ -748,26 +752,28 @@ static void MM_Solo_PageChecklist(uint32_t *ot, struct GamepadBuffer *pad)
 	MM_Solo_Navigate(pad, count);
 	if (count > 0 && info.kind == AP_SOLO_OPT_WEIGHTS)
 	{
-		/* Trap weights: Left / Right move the row's weight, Cross returns it
-		   to the option's default weight. */
+		/* Reset requires two utility presses on the same unchanged row. */
 		if ((pad->buttonsTapped & (BTN_LEFT | BTN_RIGHT)) != 0)
 		{
 			AP_Solo_OptionItemStep(s_soloList, s_soloSel, (pad->buttonsTapped & BTN_RIGHT) != 0 ? 1 : -1);
 			OtherFX_Play(0, 1);
 		}
-		else if ((pad->buttonsTapped & BTN_CROSS) != 0)
+		if (NativeMenu_ResetPress(&s_soloResetRow, s_soloSel,
+		        (pad->buttonsTapped & BTN_SQUARE) != 0,
+		        previousRow != s_soloSel || (pad->buttonsTapped & ~BTN_SQUARE) != 0))
 		{
 			AP_Solo_OptionItemReset(s_soloList, s_soloSel);
 			OtherFX_Play(0, 1);
 		}
 	}
-	else if (count > 0 && (pad->buttonsTapped & (BTN_CROSS | BTN_LEFT | BTN_RIGHT)) != 0)
+	else if (count > 0 && (pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE | BTN_LEFT | BTN_RIGHT)) != 0)
 	{
 		AP_Solo_OptionItemToggle(s_soloList, s_soloSel);
 		OtherFX_Play(0, 1);
 	}
-	if ((pad->buttonsTapped & BTN_SQUARE) != 0)
+	if ((pad->buttonsTapped & (info.kind == AP_SOLO_OPT_WEIGHTS ? BTN_SELECT : BTN_SQUARE)) != 0)
 	{
+		s_soloResetRow = -1;
 		s_soloHelpRow = s_soloList;
 		s_soloHelpTop = 0;
 		OtherFX_Play(1, 1);
@@ -808,16 +814,16 @@ static void MM_Solo_PageChecklist(uint32_t *ot, struct GamepadBuffer *pad)
 		MM_Solo_Help(info.note, RED, ot);
 	else if (info.kind == AP_SOLO_OPT_WEIGHTS)
 	{
-		snprintf(line, sizeof line, "%d of %d above 0. Cross resets to the grey weight.", on, count);
+		snprintf(line, sizeof line, "%d of %d above 0. SELECT: help.", on, count);
 		MM_Solo_Help(line, GRAY, ot);
 	}
 	else
 	{
-		snprintf(line, sizeof line, "%d of %d on. Square: what this option does.", on, count);
+		snprintf(line, sizeof line, NativeMenu_Labels("%d of %d on. [: what this option does."), on, count);
 		MM_Solo_Help(line, GRAY, ot);
 	}
-	MM_Solo_Footer(info.kind == AP_SOLO_OPT_WEIGHTS ? "LEFT/RIGHT: CHANGE  [: HELP  ^: BACK"
-	                                                : "*: ON/OFF  [: HELP  ^: BACK",
+	MM_Solo_Footer(s_soloResetRow >= 0 ? NativeMenu_Labels("[: AGAIN TO RESET  ^: BACK") : info.kind == AP_SOLO_OPT_WEIGHTS ? NativeMenu_Labels("LEFT/RIGHT  [: RESET  ^: BACK")
+	                                                : NativeMenu_Labels("*: ON/OFF  [: HELP  ^: BACK"),
 	               ot);
 }
 
@@ -879,13 +885,13 @@ static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
 		MM_Solo_FitFont(labels[s_soloGroup], fit, sizeof fit, SOLO_TEXT_W, FONT_BIG);
 		DecalFont_DrawLineOT(fit, 0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
 		MM_Solo_Help("Nothing to set here with the current choices.", GRAY, ot);
-		MM_Solo_Footer("^: BACK", ot);
+		MM_Solo_Footer(NativeMenu_Labels("^: BACK"), ot);
 		return;
 	}
 	MM_Solo_Navigate(pad, count);
 	AP_Solo_OptionGet(map[s_soloSel], &info);
 	if (info.kind != AP_SOLO_OPT_RANGE && info.kind != AP_SOLO_OPT_TOGGLE && info.kind != AP_SOLO_OPT_CHOICE &&
-	    !info.forced && (pad->buttonsTapped & (BTN_CROSS | BTN_LEFT | BTN_RIGHT)) != 0)
+	    !info.forced && (pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE | BTN_LEFT | BTN_RIGHT)) != 0)
 	{
 		/* A set opens its checklist, a weights option its number page (A3-22);
 		   Triangle comes back to this row. */
@@ -959,10 +965,10 @@ static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
 	}
 	if (AP_Solo_OptionGet(map[s_soloSel], &info))
 		/* A forced reason or warning needs both lines; otherwise the hint. */
-		MM_Solo_Help(info.note[0] ? info.note : "Square: what this option does.", info.note[0] ? RED : GRAY, ot);
-	MM_Solo_Footer(info.kind == AP_SOLO_OPT_SET     ? "*: OPEN LIST  [: HELP  ^: BACK"
-	               : info.kind == AP_SOLO_OPT_WEIGHTS ? "*: OPEN WEIGHTS  [: HELP  ^: BACK"
-	                                                  : "LEFT/RIGHT: CHANGE  [: HELP  ^: BACK",
+		MM_Solo_Help(info.note[0] ? info.note : NativeMenu_Labels("[: what this option does."), info.note[0] ? RED : GRAY, ot);
+	MM_Solo_Footer(info.kind == AP_SOLO_OPT_SET     ? NativeMenu_Labels("*: LIST  [: HELP  ^: BACK")
+	               : info.kind == AP_SOLO_OPT_WEIGHTS ? NativeMenu_Labels("*: OPEN  [: HELP  ^: BACK")
+	                                                  : NativeMenu_Labels("LEFT/RIGHT  [: HELP  ^: BACK"),
 	               ot);
 }
 
@@ -991,7 +997,7 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 			AP_Solo_TrackStepLaps(s_soloSel, (pad->buttonsTapped & BTN_LEFT) != 0 ? -1 : 1);
 			OtherFX_Play(0, 1);
 		}
-		else if ((pad->buttonsTapped & BTN_CROSS) != 0)
+		else if ((pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
 		{
 			if (AP_Solo_TrackKeepLaps(s_soloSel) && AP_Solo_TracksStart(s_soloStart.path))
 			{
@@ -1004,7 +1010,7 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 			s_soloLapsFailed = 1;
 		}
 	}
-	else if (s_soloSel < rows && (pad->buttonsTapped & (BTN_CROSS | BTN_LEFT | BTN_RIGHT)) != 0)
+	else if (s_soloSel < rows && (pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE | BTN_LEFT | BTN_RIGHT)) != 0)
 	{
 		/* Left steps back through the cycle: two steps forward of three. */
 		AP_Solo_TrackCycle(s_soloSel);
@@ -1012,7 +1018,7 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 			AP_Solo_TrackCycle(s_soloSel);
 		OtherFX_Play(0, 1);
 	}
-	else if (s_soloSel == rows && (pad->buttonsTapped & BTN_CROSS) != 0)
+	else if (s_soloSel == rows && (pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
 	{
 		OtherFX_Play(1, 1);
 		s_soloFromTracks = 1;
@@ -1056,7 +1062,7 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 			if (s_soloLapsFailed)
 				snprintf(line, sizeof line, "Could not keep the laps. See the client log.");
 			else
-				snprintf(line, sizeof line, "By %s. Pick its laps, then press * to use it.", info.author);
+				snprintf(line, sizeof line, NativeMenu_Labels("By %s. Pick its laps, then press * to use it."), info.author);
 			MM_Solo_DrawWrapped(line, 0x100, helpY, SOLO_TEXT_W, 3, JUSTIFY_CENTER | (s_soloLapsFailed ? RED : GRAY),
 			                    ot);
 			legendLines = 0;
@@ -1064,7 +1070,7 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 		else if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info))
 		{
 			if (!info.modes[0] && info.timeTrial && info.pick)
-				snprintf(line, sizeof line, "Time Trial only; press * to remove it from the YAML.");
+				snprintf(line, sizeof line, "%s", NativeMenu_Labels("Time Trial only; press * to remove it from the YAML."));
 			else if (!info.modes[0] && info.timeTrial)
 				snprintf(line, sizeof line, "By %s. Time Trial only; no Adventure pad races.", info.author);
 			else if (!info.modes[0])
@@ -1085,9 +1091,9 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 			                    SOLO_TEXT_W, legendLines, JUSTIFY_CENTER | GRAY, ot);
 	}
 	if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info) && info.needsLaps)
-		MM_Solo_Footer("LEFT/RIGHT: LAPS  *: KEEP  ^: BACK", ot);
+		MM_Solo_Footer(NativeMenu_Labels("LEFT/RIGHT: LAPS  *: KEEP  ^: BACK"), ot);
 	else
-		MM_Solo_Footer("*: CHANGE   ^: BACK", ot);
+		MM_Solo_Footer(NativeMenu_Labels("*: CHANGE   ^: BACK"), ot);
 }
 
 #define SOLO_HELP_LINES 11
@@ -1108,7 +1114,7 @@ static void MM_Solo_PageHelp(uint32_t *ot, struct GamepadBuffer *pad)
 	AP_Solo_OptionGet(s_soloHelpRow, &info);
 	MM_Solo_Title(info.label, ot);
 	MM_Solo_WrapLines(text, 0x30, SOLO_LIST_Y, 0x1A0, SOLO_HELP_LINES, s_soloHelpTop, 0, WHITE, ot);
-	MM_Solo_Footer(last ? "UP/DOWN: SCROLL  ^: BACK" : "^: BACK", ot);
+	MM_Solo_Footer(last ? NativeMenu_Labels("UP/DOWN: SCROLL  ^: BACK") : NativeMenu_Labels("^: BACK"), ot);
 }
 
 /* The slot name text entry, with pad commit / cancel like the Connection page. */
@@ -1150,7 +1156,7 @@ static void MM_Solo_PageReview(uint32_t *ot, struct GamepadBuffer *pad)
 	if (!s_soloEditing && !s_soloEditJustEnded)
 	{
 		MM_Solo_Navigate(pad, 3);
-		if ((pad->buttonsTapped & BTN_CROSS) != 0)
+		if ((pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
 		{
 			OtherFX_Play(1, 1);
 			if (s_soloSel == 0)
@@ -1192,7 +1198,7 @@ static void MM_Solo_PageReview(uint32_t *ot, struct GamepadBuffer *pad)
 		MM_Solo_Highlight(SOLO_REVIEW_NAME_Y + s_soloSel * SOLO_ROW_H, ot);
 	if (!s_soloStart.isPreset)
 		MM_Solo_Help("The YAML's own name is used unless you change it here.", GRAY, ot);
-	MM_Solo_Footer(s_soloEditing ? "* OR START: SAVE   ^: CANCEL" : "*: SELECT   ^: BACK", ot);
+	MM_Solo_Footer(s_soloEditing ? NativeMenu_Labels("*: SAVE   ^: CANCEL") : NativeMenu_Labels("*: SELECT   ^: BACK"), ot);
 }
 
 static void MM_Solo_PageBusy(uint32_t *ot, struct GamepadBuffer *pad)
@@ -1202,7 +1208,7 @@ static void MM_Solo_PageBusy(uint32_t *ot, struct GamepadBuffer *pad)
 	                                     "Importing YAML", "Finding Custom Tracks"};
 	if (state == AP_SOLO_JOB_RUNNING)
 	{
-		if (s_soloBusyJob == SOLO_JOB_GENERATE && (pad->buttonsTapped & BTN_CIRCLE) != 0)
+		if (s_soloBusyJob == SOLO_JOB_GENERATE && (pad->buttonsTapped & (BTN_TRIANGLE | BTN_START)) != 0)
 		{
 			OtherFX_Play(2, 1);
 			AP_Solo_JobCancel();
@@ -1212,7 +1218,7 @@ static void MM_Solo_PageBusy(uint32_t *ot, struct GamepadBuffer *pad)
 		MM_Solo_Title(titles[s_soloBusyJob], ot);
 		MM_Solo_DrawWrapped(AP_Solo_JobPhase(), 0x100, 0x60, SOLO_TEXT_W, 2, JUSTIFY_CENTER | WHITE, ot);
 		if (s_soloBusyJob == SOLO_JOB_GENERATE)
-			MM_Solo_Footer("CIRCLE: CANCEL", ot);
+			MM_Solo_Footer(NativeMenu_Labels("^: CANCEL"), ot);
 		return;
 	}
 	if (state == AP_SOLO_JOB_FAILED)
@@ -1289,12 +1295,12 @@ static void MM_Solo_PageSession(uint32_t *ot, struct GamepadBuffer *pad)
 	}
 	MM_Solo_Title("Play Solo", ot);
 	MM_Solo_DrawWrapped(text, 0x40, 0x58, 0x180, 4, color, ot);
-	MM_Solo_Footer("^: BACK", ot);
+	MM_Solo_Footer(NativeMenu_Labels("^: BACK"), ot);
 }
 
 static void MM_Solo_PageMessage(uint32_t *ot, struct GamepadBuffer *pad)
 {
-	if ((pad->buttonsTapped & BTN_CROSS) != 0)
+	if ((pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
 	{
 		OtherFX_Play(2, 1);
 		if (s_soloFromOptions == 2 && !AP_Solo_TracksViaOptions(s_soloStart.isPreset))
@@ -1318,12 +1324,13 @@ static void MM_Solo_PageMessage(uint32_t *ot, struct GamepadBuffer *pad)
 	}
 	MM_Solo_Title("Play Solo", ot);
 	MM_Solo_DrawWrapped(s_soloMsg, 0x40, 0x48, 0x180, 7, WHITE, ot);
-	MM_Solo_Footer("*: OK", ot);
+	MM_Solo_Footer(NativeMenu_Labels("*: OK"), ot);
 }
 
 /* Triangle or Start inside Play Solo: one page back. */
 static void MM_Solo_Back(void)
 {
+	s_soloResetRow = -1;
 	OtherFX_Play(2, 1);
 	switch (s_soloPage)
 	{
@@ -1365,7 +1372,7 @@ static void MM_Solo_Back(void)
 			MM_Solo_Go(SOLO_NEW);
 		break;
 	case SOLO_MESSAGE: MM_Solo_Go(AP_Solo_RuntimePresent() ? SOLO_HOME : SOLO_OFF); break;
-	default: break; /* Busy: Circle cancels generation; other jobs finish quickly */
+	default: break; /* Busy: Triangle/Start cancels generation. */
 	}
 }
 

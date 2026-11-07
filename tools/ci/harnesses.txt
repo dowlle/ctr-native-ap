@@ -179,6 +179,8 @@ tools/test-save-camera-production.py
 tools/test-seed-content-download-production.py
 tools/test-seed-content-hooks-production.py
 tools/test-solo-layout.c
+tools/test-menu-labels.c
+tools/test-menu-actions.py
 tools/test-solo-selection-production.py
 tools/test-solo-publication-production.py
 tools/test-solo-descriptor-records-production.py
