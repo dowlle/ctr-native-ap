@@ -65,11 +65,12 @@ check("AP_NavRecLane_Select" not in src and "AP_NavRecLane_Plan" not in src, "th
 check(re.search(r"seed %08x", load) is not None, "the pool log line carries the seed")
 check(re.search(r'lane %d: \\"%s\\" driver', load) is not None, "each recorded lane logs its file and driver")
 check("AP_NavRec_NewSeed()" in init and "s_navrecSeedLevel = levelID" in init, "every race start draws a new seed for its level")
-check("sameField = (s_navrecSeedLevel == levelID)" in restore and "AP_NavRec_LoadForLevel(levelID, s_navrecSeed)" in restore,
+check("s_navrecSeedLevel != levelID" in restore and "AP_NavRec_LoadForLevel(levelID, s_navrecSeed)" in restore,
       "a restore reuses the race's seed when it has one")
 
-check(restore.count("AP_NavRec_RebindBots(") >= 3, "every restore branch rebinds bot nav frames")
-check("AP_NavRec_RebindBots(!sameField)" in restore, "a restore with a new seed rebinds every bot")
+check(restore.count("AP_NavRec_RebindBots(1)") >= 2, "both lane-publishing restore branches rebind every bot")
+check("s_navrecLaneHeader[0]" in restore and "if (!ours && !s_navrecLanesLive)" in restore,
+      "a restore detects this module's lanes from the restored slots, not only from the session flag")
 rebind = body("AP_NavRec_RebindBots")
 check("botData.botNavFrame = &frames[best]" in rebind, "a rebound bot lands on a node of the lane it drives")
 check("AP_NavRecPool_EntryCompatible(" in pool and "pool: skipping" in pool, "an identity mismatch is logged per file")

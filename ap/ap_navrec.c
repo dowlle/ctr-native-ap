@@ -1649,7 +1649,7 @@ void AP_NavRec_AfterCheckpointRestore(void)
 {
 	int levelID;
 	int lane;
-	int sameField;
+	int ours;
 
 	if ((sdata == NULL) || (sdata->gGT == NULL))
 		return;
@@ -1669,12 +1669,10 @@ void AP_NavRec_AfterCheckpointRestore(void)
 	// into a fresh process has no seed for this level and draws a new one; the
 	// log names the new field.
 	//
-	// Even with the same seed this is a best effort: the restored state may come
-	// from an earlier race on this track with another seed. So bots are only
-	// trusted to keep their frame when it lies inside their lane; with a new
-	// seed every bot is rebound.
-	sameField = (s_navrecSeedLevel == levelID);
-	if (!sameField)
+	// The restored state may come from an earlier race on this track with
+	// another seed, so a bot's saved frame cannot be trusted to mean the same
+	// point of the lane it is on now. Every bot is put on the nearest node.
+	if (s_navrecSeedLevel != levelID)
 	{
 		s_navrecSeed = AP_NavRec_NewSeed();
 		s_navrecSeedLevel = levelID;
@@ -1683,19 +1681,25 @@ void AP_NavRec_AfterCheckpointRestore(void)
 	if (g_config.navUseRecorded && AP_NavRec_LoadForLevel(levelID, s_navrecSeed))
 	{
 		AP_NavRec_PointEngineAtLanes(levelID);
-		AP_NavRec_RebindBots(!sameField);
+		AP_NavRec_RebindBots(1);
 		AP_NavRec_LogLaneSummary(levelID, "reloaded after a savestate restore");
 		return;
 	}
 
-	// Nothing recorded now. A state saved while recorded lanes were live (in
-	// this process or another) can still hold bot frames in this module's
-	// statics, so any bot outside its lane is rebound even on this path.
-	if (!s_navrecLanesLive && !g_config.navUseRecorded)
+	// Nothing recorded now. Whether this module's lanes are in the engine is
+	// read from the restored slots themselves, not from s_navrecLanesLive: a
+	// state saved with recorded lanes live and restored into a freshly started
+	// game points at this process's (empty) lane statics while the flag is 0.
+	ours = 0;
+	for (lane = 0; lane < AP_NAVREC_LANES; lane++)
 	{
-		AP_NavRec_RebindBots(0);
-		return;
+		uintptr_t h = (uintptr_t)sdata->NavPath_ptrHeader[lane];
+
+		if ((h >= (uintptr_t)&s_navrecLaneHeader[0]) && (h < (uintptr_t)&s_navrecLaneHeader[AP_NAVREC_LANES]))
+			ours = 1;
 	}
+	if (!ours && !s_navrecLanesLive)
+		return; // nothing of ours was ever in those slots
 
 	// Either the option is off now, or the file is gone or no longer valid. Put
 	// the engine back on the level's own nav data rather than leaving it pointed
