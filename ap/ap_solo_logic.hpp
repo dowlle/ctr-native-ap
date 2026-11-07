@@ -353,6 +353,38 @@ static inline std::string AP_SoloDescriptorFileName(const std::string &key, cons
 	return key + "__" + revision + ".json";
 }
 
+// One verified store package as the Custom Tracks publication sees it: the
+// track key its Play Solo descriptor would take, the package uuid and
+// revision, the pin and when it was installed.
+struct APSoloStoreCopy
+{
+	std::string key, revision, uuid, pin;
+	long long installed = 0;
+};
+
+// Installed packages that share a package uuid and revision are one track
+// imported again, for example under another name (A3-29). Play Solo lists one
+// row per descriptor file, so every such copy but one would be a second row
+// for the same files. The copy that stays is the newest install (the pin
+// breaks a tie); the result gives, per copy, the index of the copy it folds
+// into (its own index when it stays). A copy without a uuid never folds.
+static inline std::vector<size_t> AP_SoloFoldStoreCopies(const std::vector<APSoloStoreCopy> &copies)
+{
+	std::vector<size_t> into(copies.size());
+	for (size_t i = 0; i < copies.size(); i++)
+	{
+		into[i] = i;
+		if (copies[i].uuid.empty())
+			continue;
+		for (size_t j = 0; j < copies.size(); j++)
+			if (copies[j].uuid == copies[i].uuid && copies[j].revision == copies[i].revision &&
+			    (copies[j].installed > copies[into[i]].installed ||
+			     (copies[j].installed == copies[into[i]].installed && copies[j].pin > copies[into[i]].pin)))
+				into[i] = j;
+	}
+	return into;
+}
+
 // A store rescan may skip the atomic writer only when the complete descriptor
 // already matches. Authored race settings can change without changing LEV/VRM.
 static inline bool AP_SoloDescriptorUnchanged(const nlohmann::json &old, const nlohmann::json &fresh)

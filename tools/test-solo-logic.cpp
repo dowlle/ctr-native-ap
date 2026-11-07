@@ -543,6 +543,32 @@ static void test_store_descriptor_rescan()
 	CHECK(AP_SoloMergeNeedsLaps(original, reinstall).is_null());
 }
 
+// A3-29: one track installed again under another name is one Play Solo row.
+static void test_fold_store_copies()
+{
+	using Copy = APSoloStoreCopy;
+	// Two names of one track: the newest install stays, whatever the pin order.
+	std::vector<Copy> copies = {{"generic-slot", "1.0.0", "u1", "aa", 100}, {"my-name", "1.0.0", "u1", "bb", 200}};
+	auto into = AP_SoloFoldStoreCopies(copies);
+	CHECK(into[0] == 1 && into[1] == 1);
+	// Importing the earlier name again makes it the newest.
+	copies[0].installed = 300;
+	into = AP_SoloFoldStoreCopies(copies);
+	CHECK(into[0] == 0 && into[1] == 0);
+	// Same time: the larger pin stays, the same on every pass.
+	copies[0].installed = copies[1].installed = 5;
+	into = AP_SoloFoldStoreCopies(copies);
+	CHECK(into[0] == 1 && into[1] == 1);
+	// Three copies fold to one; another revision, another uuid and a copy without a uuid stay.
+	copies = {{"a", "1.0.0", "u1", "p1", 1}, {"b", "1.0.0", "u1", "p2", 3}, {"c", "1.0.0", "u1", "p3", 2},
+	          {"a", "1.1.0", "u1", "p4", 1}, {"d", "1.0.0", "u2", "p5", 1}, {"e", "1.0.0", "", "p6", 1},
+	          {"f", "1.0.0", "", "p7", 9}};
+	into = AP_SoloFoldStoreCopies(copies);
+	CHECK(into[0] == 1 && into[1] == 1 && into[2] == 1);
+	CHECK(into[3] == 3 && into[4] == 4 && into[5] == 5 && into[6] == 6);
+	CHECK(AP_SoloFoldStoreCopies({}).empty());
+}
+
 // A3-22: a dict option with weight_rows is one number row per trap. The rows
 // come from the runtime (the world's trap registry), start at the preset's or
 // the YAML's weights, and an untouched screen passes nothing to the runtime.
@@ -696,6 +722,7 @@ int main()
 	test_tracks();
 	test_needs_laps();
 	test_store_descriptor_rescan();
+	test_fold_store_copies();
 	if (g_fail)
 	{
 		std::printf("test-solo-logic: %d failure(s)\n", g_fail);

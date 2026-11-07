@@ -41,6 +41,8 @@ struct PushBuffer;
 // Pure observation predicates: held-item slot classification, engine-natural
 // completion for the two inventory traps, and the Warpball Ambush lead timer.
 #include "ap_trap_observe_logic.h"
+// The seven alpha3 data package traps' arithmetic (ruled 2026-11-06).
+#include "ap_trap_alpha3_logic.h"
 
 // ── AP item pipeline seam ──
 // Arm one trap by EFFECT id. The apworld owns the item id space; ap_hooks.c
@@ -183,6 +185,19 @@ int AP_TrapMirrorCullFlip(void);
 // VehPhysGeneral_SetHeldItem settles a roll. Returns the held id the trap threw
 // away, or -1 when no reroll is in flight and the filter is inert.
 int AP_TrapRerollExcludedItem(void);
+
+// ── The alpha3 data package traps (ruled 2026-11-06) ──
+// VehPhysForce_OnApplyForces, after the engine's speed clamp:
+//   driver->speed = (s16)AP_TrapLimpSpeed(driver, driver->speed);
+int AP_TrapLimpSpeed(struct Driver *driver, int speed);
+// BOTS.c, an AI's nav progress before the remainder is added (Rival Surge).
+int AP_TrapRivalProgress(int deltaPos);
+// VehPhysProc.c: No Drifting at the slide start, turbo tap and slide end checks.
+int AP_TrapNoDrift(struct Driver *driver);
+// ap_surface.c: Mud Season makes every natural surface dirt for the local kart.
+int AP_TrapMudSeason(struct Driver *driver);
+// VehPhysGeneral_JumpAndFriction, before the ordinary jump gate (Always Jumping).
+void AP_TrapAlwaysJump(struct Driver *driver);
 
 #endif // CTR_AP
 

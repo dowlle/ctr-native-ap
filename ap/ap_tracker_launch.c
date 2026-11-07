@@ -8,6 +8,7 @@
  * its own entry path. The request's lifecycle is ap_tracker_launch_logic.h. */
 #include "ap_tracker.h"
 #include "ap_tracker_launch_logic.h"
+#include "ap_fasttravel.h" /* A3-16: a travel in flight refuses a tracker start */
 
 static ap_tl_request ap_tl;
 static int ap_tl_ready;
@@ -142,7 +143,9 @@ int AP_TrackerLaunchBegin(int hub, int physical, int dest, int activity, int mod
 	ap_tl_request *r = AP_TLState();
 	int here = AP_TLLevelHub(), begin;
 	ap_tl_request probe;
-	if (!AP_TrackerLaunchEnabled() || here < 0)
+	/* A3-16: one hub move at a time; a hub fast travel in flight refuses a
+	 * tracker start, as the travel refuses a pending start. */
+	if (!AP_TrackerLaunchEnabled() || here < 0 || AP_FastTravelPending())
 		return 0;
 	AP_TLReset(&probe);
 	probe.hub = hub; probe.physical = physical; probe.dest = dest;

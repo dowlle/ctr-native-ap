@@ -504,6 +504,10 @@ void VehPhysForce_OnApplyForces(struct Thread *thread, struct Driver *driver)
 	const int maxMudSinkYLevel = FP(-1);
 	const int maxSpeed = FP8(100);
 	driver->speed = min(driver->speed, maxSpeed);
+#ifdef CTR_AP
+	// Limp Mode: half the class top speed for the local kart, boosts included.
+	driver->speed = (s16)AP_TrapLimpSpeed(driver, driver->speed);
+#endif
 
 	/* origin of driver model is center-bottom of kart,
 	use orientation matrix, and half-radius {0, 25, 0},

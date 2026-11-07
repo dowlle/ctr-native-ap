@@ -10,24 +10,19 @@
 #ifdef CTR_AP
 
 // ---------------------------------------------------------------------------
-// AP STATE GENERATION (Warp-Pad State Model v2, foundation for live re-birth).
-// A monotonically increasing counter bumped whenever something that can change a
-// pad's AP_PadState happens: a fresh slot-connect (slot_data activation), a
-// received item that changes a gate count, or a location-checked notification.
-// A future in-hub re-birth consumer tags each pad with the generation it was
-// born at and, on mismatch, rebuilds the pad's in-hub instances so the 3D look
-// tracks state changes in real time (item arrives / check completes elsewhere
-// while standing in the hub) -- and re-remaps a pad born before a late connect.
+// AP STATE GENERATION (Warp-Pad State Model v2, live in-hub pad rebuild).
+// A monotonically increasing counter bumped whenever something that can change
+// what a pad's birth draws happens: a fresh slot-connect (slot_data activation),
+// a received item that changes a gate count, or a location-checked notification.
 //
-// NOT yet consumed for re-birth: AH_WarpPad_LInB is a LEVEL-LOAD one-shot (see
-// INSTANCE_LevLInBs), and the only teardown pattern the codebase proves is
-// destruction (inst->thread=0 + THREAD_FLAG_DEAD, e.g. RB_Crate). A safe in-hub
-// re-birth needs a lifecycle this code does not yet establish, so that consumer
-// is deferred to a focused, in-game-verified change rather than inferred blind
-// (crew verify-first rule). The MAP colour and every gate already recompute
-// AP_PadState live each frame, so those two surfaces are honest in real time
-// today; only the in-hub 3D structural look and a late-connect pad's destination
-// remap wait on this re-birth.
+// Consumer: AH_WarpPad_ThTick (since 2026-07-08). On a bump it recomputes the
+// pad's birth key (ap_pad_birth.h: state, look, replay entry, the requirement
+// the pad floats and whether it is drawn open) and, when the key differs from
+// the one the pad was built for, tears its child instances down
+// (AH_WarpPad_ThDestroy) and runs the level-load birth body again
+// (AH_WarpPad_BuildInstances). A pad born before a late connect is rebuilt the
+// same way: its vanilla birth recorded key 0, which no plan pad has.
+// The MAP colour and every gate recompute AP_PadState live each frame.
 // ---------------------------------------------------------------------------
 static unsigned ap_state_gen = 0;
 

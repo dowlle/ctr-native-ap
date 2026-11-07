@@ -1,5 +1,17 @@
 #include <common.h>
 
+#ifdef CTR_AP
+// A3-12: hub streaming waits for a running mask hint (ap/ap_hub_hint_hold.h).
+static ap_hub_hint_hold s_apHubHintHold = {-1, -1, 0, -1};
+
+// LOAD_TalkingMask is about to load the mask over the second pack's hub.
+void LOAD_Hub_ApMaskEvicts(int packID)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	ap_hub_hint_hold_evict(&s_apHubHintHold, gGT->levID_in_each_mempack[packID], gGT->levelID);
+}
+#endif
+
 // NOTE(aalhendi): ASM-audited NTSC-U 926 0x80032ffc-0x80033108.
 // packID will always be 3-gGT->activeMempackIndex
 void LOAD_Hub_ReadFile(struct BigHeader *bigfile, int levID, int packID)
@@ -168,6 +180,27 @@ void LOAD_Hub_Main(struct BigHeader *bigfilePtr)
 
 	gGT = sdata->gGT;
 
+#ifdef CTR_AP
+	// A read held for a mask hint goes first once the hint is over; a held
+	// swap follows on a later tick, after the read is queued, and only into a
+	// hub (ap/ap_hub_hint_hold.h).
+	{
+		int heldLev = ap_hub_hint_hold_release(&s_apHubHintHold, sdata->AkuAkuHintState, gGT->levelID);
+		if (heldLev >= 0)
+		{
+			LOAD_Hub_ReadFile(bigfilePtr, heldLev, 3 - gGT->activeMempackIndex);
+			return;
+		}
+		if (ap_hub_hint_hold_swap_release(&s_apHubHintHold, sdata->AkuAkuHintState, gGT->levelID,
+		                                  gGT->levID_in_each_mempack[3 - gGT->activeMempackIndex]))
+		{
+			gGT->bool_AdvHub_NeedToSwapLEV = 0;
+			LOAD_Hub_SwapNow();
+			return;
+		}
+	}
+#endif
+
 	for (int i = 0; i < gGT->numPlyrCurrGame; i++)
 	{
 		CollStepFlags stepFlagSet = gGT->drivers[i]->stepFlagSet;
@@ -179,6 +212,13 @@ void LOAD_Hub_Main(struct BigHeader *bigfilePtr)
 		{
 			if ((needSwapNow != 0) || (gGT->bool_AdvHub_NeedToSwapLEV != 0))
 			{
+#ifdef CTR_AP
+				// The second pack may hold the mask, a hub the mask evicted, or
+				// nothing after a dropped hold.
+				if (ap_hub_hint_hold_swap(&s_apHubHintHold, sdata->AkuAkuHintState, gGT->levelID,
+				                          gGT->levID_in_each_mempack[3 - gGT->activeMempackIndex]))
+					continue;
+#endif
 				gGT->bool_AdvHub_NeedToSwapLEV = 0;
 				LOAD_Hub_SwapNow();
 			}
@@ -197,6 +237,12 @@ void LOAD_Hub_Main(struct BigHeader *bigfilePtr)
 				return;
 			}
 
+#ifdef CTR_AP
+			// Reading into the second pack now would wipe a running hint's mask.
+			if (ap_hub_hint_hold_read(&s_apHubHintHold, sdata->AkuAkuHintState,
+			                          LOAD_HUB_CONNECTED_LEV(currLevelID, nextLevelID - 1), gGT->levelID))
+				continue;
+#endif
 			LOAD_Hub_ReadFile(bigfilePtr, LOAD_HUB_CONNECTED_LEV(currLevelID, nextLevelID - 1), 3 - gGT->activeMempackIndex);
 		}
 	}
