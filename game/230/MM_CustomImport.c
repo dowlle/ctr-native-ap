@@ -43,7 +43,15 @@ static int MM_CustomImport_KeepSoloDescriptors(void)
                 ok &= AP_Solo_RecordTrackDescriptor(contentId, revision, json);
         }
         else ok = 0;
-    return ok && count > 0;
+    /* An old slot-titled copy the install replaced (A3-20) stops listing its track. */
+    count = XdeltaImport_ReplacedCount();
+    for (i = 0; i < count; i++)
+    {
+        char oldKey[65], newKey[65], uuid[37];
+        if (XdeltaImport_ReplacedCopy(i, oldKey, revision, uuid, newKey))
+            ok &= AP_Solo_RetireReplacedTrack(oldKey, revision, uuid, newKey);
+    }
+    return ok && XdeltaImport_InstalledDescriptorCount() > 0;
 }
 #endif
 
@@ -142,6 +150,11 @@ static void MM_CustomImport_StartScan(const char *path)
     const char *disc = NativeDiscImage_GetPath();
     snprintf(s_importPath, sizeof s_importPath, "%s", path);
     if (!disc || !*disc) { s_importAuto = 0; snprintf(s_importMessage, sizeof s_importMessage, "No game disc is mounted."); return; }
+    {
+        char solo[4200];
+        snprintf(solo, sizeof solo, "%s/solo", NativeAssets_GetBaseDir());
+        XdeltaImport_SetSoloRoot(solo);
+    }
     if (XdeltaImport_StartScan(s_importPath, disc, NativeAssets_GetAssetDir()))
     {
         s_importStage = IMPORT_SCANNING;
@@ -314,6 +327,15 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
                 {
                     size_t used = strlen(s_importMessage);
                     snprintf(s_importMessage + used, sizeof s_importMessage - used, " Not imported: %u (not a race track, the same track twice, or failed checks).", skipped);
+                }
+                {
+                    const int replaced = XdeltaImport_ReplacedCount(), kept = XdeltaImport_KeptOldCopies();
+                    size_t used = strlen(s_importMessage);
+                    if (replaced)
+                        snprintf(s_importMessage + used, sizeof s_importMessage - used, " Replaced %d old cop%s.", replaced, replaced == 1 ? "y" : "ies");
+                    used = strlen(s_importMessage);
+                    if (kept)
+                        snprintf(s_importMessage + used, sizeof s_importMessage - used, " Kept %d old cop%s a room uses.", kept, kept == 1 ? "y" : "ies");
                 }
             }
             else snprintf(s_importMessage, sizeof s_importMessage, "%s", error);
@@ -509,7 +531,10 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         }
         /* Refusal details can use the hint space when no job or message needs it. */
         if (layout.showStatus) MM_CustomText_Draw(s_importStage == IMPORT_INSTALLING ? "Installing..." :
-                           s_importMessage[0] ? s_importMessage : s_importSummary.descriptorNote[0] ? s_importSummary.descriptorNote :
+                           s_importMessage[0] ? s_importMessage :
+                           item && item->oldCopy == XDELTA_OLD_REPLACE ? "Replaces your old copy of this track" :
+                           item && item->oldCopy == XDELTA_OLD_KEEP ? "Old copy kept: a room uses it" :
+                           s_importSummary.descriptorNote[0] ? s_importSummary.descriptorNote :
                            s_importSummary.history[0] ? s_importSummary.history :
                            "SELECT: Rename", 305, 144, 176, 2, ORANGE, ot);
     }

@@ -1381,6 +1381,19 @@ extern "C" int AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *r
 	return RecordDescriptor(2, contentId, revision, json, DescriptorScope(), why) ? 1 : 0;
 }
 
+// The importer replaced an old copy of a track (A3-20): its Play Solo
+// descriptor key stops listing the track once the new copy lists it. Laps the
+// player picked move to the new key. 1 when nothing is left to retire.
+extern "C" int AP_Solo_RetireReplacedTrack(const char *oldKey, const char *revision, const char *uuid, const char *newKey)
+{
+	std::string why;
+	if (!oldKey || !revision || !uuid || !newKey)
+		return 0;
+	if (std::strcmp(oldKey, newKey) == 0)
+		return 1;
+	return RetireDescriptor(oldKey, revision, uuid, newKey, why) ? 1 : 0;
+}
+
 #ifdef CTR_CUSTOM_PACKAGES
 namespace {
 // PinSignature of a verified store package's LEV and VRM, or "".

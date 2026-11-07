@@ -189,6 +189,10 @@ int AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, c
    An entry for the same track key and version in solo/tracks stays when it
    pins the same files (its laps were picked before); conflicting pins fail. */
 int AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *revision, const char *json);
+/* The importer replaced an old copy of a track (A3-20): drop the descriptor
+   files its track key used, keeping the laps the player picked on the key of
+   the copy that took its place. 1 when nothing is left to retire. */
+int AP_Solo_RetireReplacedTrack(const char *oldKey, const char *revision, const char *uuid, const char *newKey);
 /* Rebuild the descriptor index from verified package-store revisions. The
    optional pin publishes just one install; an empty pin rescans all of them. */
 int AP_Solo_PublishInstalledStore(const char *pin, char *error, size_t errorSize);

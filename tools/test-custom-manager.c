@@ -40,6 +40,11 @@ void NativeText_EnableCursor(void) { }
 void NativeText_Begin(char *b,int c,int x,int y,int w,int h,int p)
 { (void)b;(void)c;(void)x;(void)y;(void)w;(void)h;(void)p; }
 const char *NativeAssets_GetAssetDir(void) { return "/test"; }
+const char *NativeAssets_GetBaseDir(void) { return "/test"; }
+void XdeltaImport_SetSoloRoot(const char *dir) { (void)dir; }
+int XdeltaImport_ReplacedCount(void) { return 0; }
+int XdeltaImport_ReplacedCopy(int i,char a[65],char b[65],char c[37],char d[65]) { (void)i;(void)a;(void)b;(void)c;(void)d; return 0; }
+int XdeltaImport_KeptOldCopies(void) { return 0; }
 int OtherFX_Play(u32 a,int b) { (void)a;(void)b;return 0; }
 int CustomSaphi_StartRefresh(void) { return 1; }
 int CustomSaphi_PollRefresh(struct CustomSaphiCatalogue **out,char *error,size_t n)

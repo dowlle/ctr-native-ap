@@ -94,6 +94,7 @@ static void text_type(const char *s)
     while (*s) textLen = NativeTextEdit_Insert(textBuf, textCap, textLen, &textCursor, *s++);
 }
 const char *NativeAssets_GetAssetDir(void) { return "/test"; }
+const char *NativeAssets_GetBaseDir(void) { return "/test"; }
 int OtherFX_Play(u32 a, int b) { (void)a; (void)b; return 0; }
 int Platform_OpenURL(const char *url) { urlOpens++; snprintf(lastURL, sizeof lastURL, "%s", url); return 1; }
 int Platform_SetClipboardText(const char *text) { (void)text; clipboardSets++; return 1; }
@@ -115,6 +116,7 @@ int CustomSaphi_PollInstall(char pin[65], char *e, size_t n) { (void)e; (void)n;
 static int publishOK = 1, soloActive;
 int AP_Solo_PublishInstalledStore(const char *pin, char *error, size_t n) { (void)pin; if (!publishOK) snprintf(error, n, "Index unavailable"); return publishOK; }
 int AP_Solo_RecordTrackNeedsLaps(const char *a, const char *b, const char *c) { (void)a; (void)b; (void)c; return 1; }
+int AP_Solo_RetireReplacedTrack(const char *a, const char *b, const char *c, const char *d) { (void)a; (void)b; (void)c; (void)d; return 1; }
 int AP_Solo_RecordTrackDescriptor(const char *a, const char *b, const char *c) { (void)a; (void)b; (void)c; return 1; }
 int AP_Solo_SessionActive(void) { return soloActive; }
 
@@ -193,6 +195,10 @@ int XdeltaImport_SetItemTitle(unsigned item, const char *title) { (void)item; se
 int XdeltaImport_InstalledDescriptorCount(void) { return 1; }
 int XdeltaImport_InstalledDescriptor(int i, char c[65], char r[65], char *j, size_t n, int *laps) { (void)i; strcpy(c, "x"); strcpy(r, "1"); snprintf(j, n, "{}"); *laps = 0; return 1; }
 void XdeltaImport_InstalledDescriptorNote(char *note, size_t size) { snprintf(note, size, "%s", ""); }
+void XdeltaImport_SetSoloRoot(const char *dir) { (void)dir; }
+int XdeltaImport_ReplacedCount(void) { return 0; }
+int XdeltaImport_ReplacedCopy(int i, char a[65], char b[65], char c[37], char d[65]) { (void)i; (void)a; (void)b; (void)c; (void)d; return 0; }
+int XdeltaImport_KeptOldCopies(void) { return 0; }
 
 /* ---- drawing, with bounds and overlap checks ---- */
 struct Box { int x, y, w, h, flags; char text[200]; };
