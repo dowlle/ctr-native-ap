@@ -237,12 +237,12 @@ static void MM_Solo_Highlight(int y, uint32_t *ot)
 	MM_Solo_HighlightLines(y, 1, ot);
 }
 
-/* The dimmed panel behind the list and help lines, drawn after the text so it
-   sits behind it (Track Manager does the same). */
+/* Draw after the text so the opaque menu backing sits behind every line,
+   including the title and footer, hiding the animated title logo. */
 static void MM_Solo_Panel(uint32_t *ot)
 {
-	RECT panel = {0x14, 0x32, 0x1D8, 0x8E};
-	RECTMENU_DrawInnerRect(&panel, 0, ot);
+	RECT panel = {0x10, 4, 0x1E0, 0xCE};
+	RECTMENU_DrawInnerRect(&panel, 5, ot);
 }
 
 static int s_soloRowsShown = SOLO_ROWS; /* list rows of the current page */

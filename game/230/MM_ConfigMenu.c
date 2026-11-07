@@ -1694,5 +1694,6 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 	}
 
 	RECT bg = {0x10, 4, 0x1E0, 0xCE};
-	RECTMENU_DrawInnerRect(&bg, 4, ot);
+	// Opaque backing keeps the animated title logo out of the menu text.
+	RECTMENU_DrawInnerRect(&bg, 5, ot);
 }

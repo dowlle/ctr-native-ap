@@ -119,12 +119,13 @@ int AP_Solo_RecordTrackDescriptor(const char *a, const char *b, const char *c) {
 int AP_Solo_SessionActive(void) { return soloActive; }
 
 /* ---- the room ---- */
-static int seedActive, seedSelected, seedBusy, seedStarts, seedRescans, registryRetries, verifies, legacyStarts;
+static int seedActive, seedConnected, seedSelected, seedBusy, seedStarts, seedRescans, registryRetries, verifies, legacyStarts;
 static int planResult = AP_SEED_PLAN_OK, legacyState = AP_CT_DOWNLOAD_IDLE;
 static struct AP_SeedContentRow room[AP_SEED_ROWS_MAX];
 static int roomCount;
 static char seedName[64] = "";
 int AP_SeedContentActive(void) { return seedActive; }
+int ap_net_is_connected(void) { return seedConnected; }
 int AP_SeedContentRows(struct AP_SeedContentRow *rows, int max) { int i; for (i = 0; i < roomCount && i < max; i++) rows[i] = room[i]; return i; }
 int AP_SeedContentInstallPreview(int *plan, int *count, uint64_t *bytes, char *reason, size_t reasonSize)
 {
@@ -422,7 +423,7 @@ int main(void)
     revisit(); frame(0, NULL);
     /* Union: Baby T Park once, Coco Park once (installed), Android Alley and Arcane Garden from Saphi. */
     CHECK(s_ctItemCount == 6);
-    CHECK(has("Android Alley Remix") && has("Nightmare Fueled"));
+    CHECK(!strcmp(CT_ItemTitle(&s_ctItems[0]), "Android Alley Remix") && has("Nightmare Fueled"));
     frame(BTN_RIGHT, NULL); CHECK(s_ctTab == CT_TAB_SEED);
     frame(BTN_R1, NULL); CHECK(s_ctTab == CT_TAB_IMPORT);
     frame(BTN_RIGHT, NULL); CHECK(s_ctTab == CT_TAB_LIBRARY);
@@ -567,6 +568,49 @@ int main(void)
     frame(BTN_DOWN, NULL); frame(BTN_DOWN, NULL); frame(BTN_CROSS, NULL); frame(0, "seed-none-identity"); CHECK(s_ctSub == CT_SUB_INFO && has("No room"));
     frame(BTN_TRIANGLE, NULL); CHECK(s_ctFocus == CT_FOCUS_CONTROLS);
     frame(BTN_TRIANGLE, NULL); frame(BTN_LEFT, NULL);
+
+    /* A connected retail-only seed is loaded even with no custom rows. */
+    strcpy(seedName, "AP_RetailOnly");
+    seedConnected = 1;
+    s_ctTab = CT_TAB_SEED; s_ctFocus = CT_FOCUS_TABS;
+    frame(0, "seed-retail-only");
+    CHECK(!has("No seed loaded") && has("no custom tracks") && has("AP_RetailOnly") && has("seed."));
+    soloActive = 1; seedName[0] = 0; seedConnected = 0;
+    frame(0, "seed-solo-starting");
+    CHECK(has("Waiting for seed data") && !has("no custom tracks") && !has("Ready 0/0"));
+    strcpy(seedName, "AP_SoloPending"); /* RoomInfo precedes admitted slot data. */
+    frame(0, "seed-solo-connecting");
+    CHECK(has("Waiting for seed data") && !has("no custom tracks") && !has("Ready 0/0"));
+    CT_SeedIdentity(); CHECK(strstr(s_ctInfo, "not loaded yet"));
+    s_ctSub = CT_SUB_NONE; s_ctFocus = CT_FOCUS_TABS;
+    seedConnected = 1;
+    frame(0, "seed-solo-retail-only");
+    CHECK(!has("No seed loaded") && has("Play Solo"));
+    soloActive = 0;
+
+    /* Refresh failure stays visible with local/package rows present. */
+    s_ctTab = CT_TAB_LIBRARY; s_ctFocus = CT_FOCUS_TABS;
+    s_saphiRefreshFailed = 1;
+    frame(0, "library-offline"); CHECK(has("Saphi refresh failed. Retry Refresh.") && has("refresh."));
+    s_ctFocus = CT_FOCUS_LIST;
+    frame(0, NULL); CHECK(has("Saphi refresh failed"));
+    s_saphiRefreshFailed = 0;
+    s_ctFocus = CT_FOCUS_TABS; s_saphiDownloading = 1;
+    strcpy(s_saphiMessage, "Downloading 40%");
+    frame(0, "library-downloading"); CHECK(has("Downloading 40%"));
+    s_saphiDownloading = 0; s_saphiMessage[0] = 0;
+    s_ctFocus = CT_FOCUS_LIST;
+    pkgStatus.state = CTR_CT_MANAGER_MANIFEST_MISSING;
+    select_track("Baby T Park");
+    frame(0, NULL); CHECK(has("Installed") && !has("Needs setup"));
+    lib[0].installed = lib[1].installed = 0;
+    select_track("Baby T Park");
+    frame(0, "library-needs-setup"); CHECK(has("Needs setup"));
+    lib[0].installed = lib[1].installed = 1;
+    pkgStatus.state = CTR_CT_MANAGER_READY;
+    s_ctTab = CT_TAB_IMPORT; s_ctFocus = CT_FOCUS_TABS;
+    frame(0, "import-help"); CHECK(!has("...") && has("Open to choose") && has("review."));
+    s_ctTab = CT_TAB_LIBRARY; s_ctFocus = CT_FOCUS_TABS;
 
     /* 11. A room that misses tracks: the screen opens on This Seed. */
     seedActive = 1; strcpy(seedName, "AP_93412345678901234567");
