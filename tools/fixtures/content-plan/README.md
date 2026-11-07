@@ -232,3 +232,21 @@ retail tracks that bank no fruit (16 and 17), five shop slots per hub with
 tracks. `test-content-verify.cpp` sweeps it and
 `test-content-plan-parity.py` compares both validators on it and on forgeries
 that take the income away.
+
+27 cups (0.3.0-alpha3 job A3-7): `twenty-seven-cups.json` is slot data the
+paired apworld emitted (`worlds/ctr/test/test_content_plan.py` `make_world`,
+seed 20261106) with `cup_count: 27`, `crystal_challenge_count: 0`, Itemsanity
+and Hit Character on, the default shop, `goal_wumpa: 300`, shared Progressive
+Boost at hard difficulty, three racer-locked pads and character unlocks. Every
+normal pad is a cup, so the plan has no Trophy Race or CTR Challenge: its 22
+Itemsanity checks route from every cup leg, and its Wumpa Income comes from
+the cup legs. `test-content-plan.cpp` checks the routes and refuses forged
+ones, `test-content-verify.cpp` sweeps it and `test-content-plan-parity.py`
+compares both validators on generated 27-cup rooms and on a cup leg route
+forged beside a race.
+
+`one-race-pad.json` (A3-7) is slot data the same paired apworld emitted (seed
+20261106) with `cup_count: 26`, no Crystal Challenges, Itemsanity and Hit
+Character on: one Trophy pad among 26 cups, so every Itemsanity route is on
+that one pad. `test-content-verify.cpp` checks that the Beaker use check still
+needs Beaker there.

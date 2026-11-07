@@ -1557,6 +1557,49 @@ int main(int argc, char **argv) {
         // Without content_cups and Hit Character the cups room keeps its PR 5 shape.
         expect(parse(cups) && !ap_seedcfg_hit_encounters(), "cup hits: the cups room has no encounter block");
     }
+    // 27 cups (A3-7): twenty-seven-cups.json fills every normal pad with a
+    // cup, so the plan has no Trophy Race or CTR Challenge. Itemsanity then
+    // routes from every cup leg, the Hit routes with the use award, and the
+    // Wumpa Shop and goal bank in the cup legs.
+    J allcups;
+    std::ifstream("tools/fixtures/content-plan/twenty-seven-cups.json") >> allcups;
+    expect(parse(allcups) && bind_room(allcups) && ap_content_plan_active(), "27 cups: room binds");
+    {
+        const J &plan = allcups["content_plan"];
+        int cups = 0, tracks = 0;
+        for (const auto &e : plan["entries"]) { cups += e["kind"] == "cup"; tracks += e["kind"] == "track"; }
+        expect(cups == 27 && tracks == 0, "27 cups: every pad a cup, no track entry");
+        const J *hit = nullptr;
+        int items = 0;
+        for (const auto &c : plan["checks"]) if (c["kind"] == "hit") { hit = &c; break; }
+        expect(hit != nullptr, "27 cups: Hit Character on");
+        for (const auto &c : plan["checks"]) {
+            if (c["kind"] != "itemsanity" || !hit) continue;
+            ++items;
+            bool same = c["routes"].size() == (*hit)["routes"].size();
+            for (size_t i = 0; same && i < c["routes"].size(); ++i) {
+                J use = (*hit)["routes"][i];
+                use["award"] = c["location"].get<int64_t>() % 2 ? "use_juiced" : "use";
+                same = c["routes"][i] == use && use["mode"] == "cup";
+            }
+            expect(same, "27 cups: an Itemsanity check routes from every cup leg, in leg order");
+        }
+        expect(items == 22, "27 cups: all 22 Itemsanity checks");
+        auto a_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J bad = allcups; change(bad); refuse(bad, "27 cups: " + why);
+        };
+        auto check = [](J &j, int64_t code) -> J & {
+            for (auto &c : j["content_plan"]["checks"]) if (c["location"] == code) return c;
+            throw std::runtime_error("no check");
+        };
+        a_refuse("an Itemsanity cup leg route dropped", [&](J &j) { check(j, 35016000)["routes"].erase(0); });
+        a_refuse("an Itemsanity cup leg route with the hit award", [&](J &j) { check(j, 35016001)["routes"][0]["award"] = "use"; });
+        a_refuse("an Itemsanity cup leg route without its leg", [&](J &j) { check(j, 35016002)["routes"][1]["leg_id"] = nullptr; });
+        // The race fallback is for a plan with no Trophy Race or CTR
+        // Challenge only (tools/test-content-plan-parity.py forges a cup leg
+        // route onto a plan that has one).
+        expect(parse(allcups), "27 cups: the room parses again after the forgeries");
+    }
     // Boss garages (#133 PR 6): bosses.json (Boss Track Shuffle, any_percent
     // with the Boss and Gem companions, the Final Challenge on Cortex Vortex,
     // Progressive Boost and Hit Character on) and bosses-final.json (retail

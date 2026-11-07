@@ -2270,6 +2270,33 @@ def pr_forged_on(p):
                                                 award=key) for e, l, pad in legs]))
 alter("pad-no-trophy rungs forged onto an off seed", pr_forged_on, pad_rungs[2])
 assert not any(ok for name, _case, ok in cases if name.startswith("pad-no-trophy rung")), "a pad rung forgery validates"
+# 27 cups (A3-7): no Trophy Race or CTR Challenge, so Itemsanity routes from
+# every cup leg and the shop and goal bank in the legs. A plan with a race
+# keeps its race routes: a cup leg route forged onto one is refused.
+all_cups = []
+for seed, extra in ((1, {}), (2, {"hit_character": True}), (3, {"goal_wumpa": 300, "hit_character": True}),
+                    (4, {"progressive_boost": "shared_global", "logic_difficulty": "hard", "racer_locked_pads": 4,
+                         "character_unlocks": True})):
+    o = dict({"cup_count": 27, "crystal_challenge_count": 0, "accessibility": "full", "itemsanity": True}, **extra)
+    all_cups.append(make_world(o, seed=seed).fill_slot_data())
+    cases.append((f"27-cups-generated-{seed}", all_cups[-1], True))
+cases.append(("27-cups-fixture", json.loads((root / "tools/fixtures/content-plan/twenty-seven-cups.json").read_text()), True))
+one_race = make_world({"cup_count": 26, "crystal_challenge_count": 0, "accessibility": "full", "itemsanity": True},
+                      seed=5).fill_slot_data()
+cases.append(("26-cups-generated", one_race, True))
+def ac_leg_dropped(p):
+    c = next(c for c in p["checks"] if c["kind"] == "itemsanity")
+    c["routes"] = c["routes"][1:]
+alter("27 cups itemsanity leg route dropped", ac_leg_dropped, all_cups[0])
+def ac_forged_on_race(p):
+    cup = next(e for e in p["entries"] if e["kind"] == "cup")
+    pad = next(pad for pad in p["pads"] if pad["entry_id"] == cup["id"])
+    c = next(c for c in p["checks"] if c["kind"] == "itemsanity")
+    c["routes"].append(dict(entry_id=cup["id"], mode="cup", leg_id=cup["legs"][0]["id"], encounter_id=None,
+                            own_pad_id=pad["id"], award=c["routes"][0]["award"]))
+alter("26 cups itemsanity cup leg route forged beside its race", ac_forged_on_race, one_race)
+assert not any(ok for name, _case, ok in cases if name.startswith(("27 cups itemsanity", "26 cups itemsanity"))), \
+    "an itemsanity route forgery validates"
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()

@@ -2129,8 +2129,11 @@ static void validate(const J &p, State &out) {
     // Itemsanity and Hit Character (#133 PR 4d): global checks with a route
     // per Trophy Race and CTR Challenge, in physical pad order, then mode
     // order. A Hit check also routes from every cup leg (#133 PR 5b), in leg
-    // order on its pad, and every Hit target has the same routes. The codes
-    // and names are the registry's (the apworld's frozen class order).
+    // order on its pad, and every Hit target has the same routes. A plan with
+    // no Trophy Race or CTR Challenge routes Itemsanity from every cup leg
+    // instead (A3-7, a 27-cup seed; apworld content_global_checks.checks).
+    // The codes and names are the registry's (the apworld's frozen class
+    // order).
     std::sort(race_routes.begin(), race_routes.end(),
               [](const RaceRoute &a, const RaceRoute &b) { return a.physical < b.physical; });
     std::vector<std::pair<int, J>> hit_route_list;
@@ -2156,6 +2159,11 @@ static void validate(const J &p, State &out) {
             for (const auto &r : race_routes)
                 for (int m = 0; m < 2; ++m)
                     if (r.modes & (1u << m)) routes.push_back(route_record(r.entry, m ? "ctr" : "trophy", r.pad, award));
+        if (!hit && routes.empty())
+            for (const auto &r : hit_route_list) {
+                J use = r.second; use["award"] = award;
+                routes.push_back(use);
+            }
         need(!routes.empty(), std::string("global check without a race to earn it: ") + row["name"].get<std::string>());
         const int64_t code = row["location"].get<int64_t>();
         need(expected_checks.emplace(code, J{{"location", code}, {"owner", "global"}, {"kind", kind},
@@ -2193,15 +2201,24 @@ static void validate(const J &p, State &out) {
     // Banking (J11): the shop and the Wumpa goal need Wumpa Income, a Trophy
     // Race or CTR Challenge on a retail race track 0..15 or on a custom track
     // whose package has measured Wumpa capability (ruling of 2026-11-02; apworld
-    // content_wumpa.check_income refuses a seed without one).
+    // content_wumpa.check_income refuses a seed without one). A plan with no
+    // such race banks in a cup leg on such a track instead (A3-7, apworld
+    // content_wumpa.cup_income_routes).
     if (out.wumpa.shop_slots || wumpa_goal) {
         bool income = false;
-        for (const auto &pad : out.pads)
+        for (const auto &pad : out.pads) {
             income |= pad.occupied && !pad.crystal && !pad.cup && !pad.cortex &&
                       ((pad.retail_id >= 0 && pad.retail_id <= 15) ||
                        (pad.package_index >= 0 && (record_caps(out, pad) & AP_CONTENT_CAP_WUMPA))) &&
                       (ap_content_mode_slot(&pad, AP_CONTENT_MODE_TROPHY) >= 0 || ap_content_mode_slot(&pad, AP_CONTENT_MODE_CTR) >= 0);
-        need(income, "the Wumpa Shop and the Wumpa goal need a retail or Wumpa-capable custom race to bank fruit");
+            if (pad.occupied && pad.cup)
+                for (int n = 0; n < AP_CONTENT_CUP_LEGS; ++n) {
+                    const ctr_content_leg &leg = pad.legs[n];
+                    income |= (leg.retail_id >= 0 && leg.retail_id <= 15) ||
+                              (leg.package_index >= 0 && (out.packages[leg.package_index].capabilities & AP_CONTENT_CAP_WUMPA));
+                }
+        }
+        need(income, "the Wumpa Shop and the Wumpa goal need a retail or Wumpa-capable custom race or cup leg to bank fruit");
     }
     // Two checks never share a name, so a room cannot show two identical rows.
     std::set<std::string> check_names;
