@@ -12,6 +12,7 @@
 #include <platform/native_xdelta_import.h>
 #include <platform/native_xdelta_pick.h>
 #include <platform/native_disc_image.h>
+#include "../../ap/ap_custom_track_download.h"
 
 #ifndef MM_IMPORT_PLAYER
 #define IMPORT_WHERE CTR_XDELTA_INSTALL_PACKAGES
@@ -550,6 +551,10 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
 #endif
     else snprintf(line, sizeof line, "%s", s_importStage == IMPORT_RESULT ? IMPORT_DONE :
                   s_importStage == IMPORT_SCANNING ? "Back: Cancel" : "[ Rescan   R1 Import all valid");
+    {
+        char busy[80];
+        if (ap_custom_track_download_busy(busy, sizeof busy)) snprintf(line, sizeof line, "%s", busy);
+    }
     MM_CustomText_Draw(line, 256, 196, 456, 1, JUSTIFY_CENTER | WHITE, ot);
     {
         RECT listBox = {20, 64, 268, 108}, detailBox = {297, 64, 190, 108};

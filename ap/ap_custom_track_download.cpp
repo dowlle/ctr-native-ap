@@ -206,6 +206,39 @@ RateGate &gate_for(const std::string &host)
 	return *gate;
 }
 
+struct BusyState
+{
+	std::mutex mutex;
+	std::map<RateGate *, unsigned> waits;
+};
+BusyState &busy_state()
+{
+	// Detached download workers may still be sleeping when the game exits.
+	static auto *state = new BusyState();
+	return *state;
+}
+
+// Register only the sleep itself, not an unused hold left by a failed worker.
+// Counts keep simultaneous waits on the same gate visible until both leave.
+struct SaphiWait
+{
+	RateGate *gate;
+	explicit SaphiWait(RateGate *value) : gate(value)
+	{
+		if (!gate) return;
+		auto &state = busy_state();
+		std::lock_guard<std::mutex> lock(state.mutex);
+		state.waits[gate]++;
+	}
+	~SaphiWait()
+	{
+		if (!gate) return;
+		auto &state = busy_state();
+		std::lock_guard<std::mutex> lock(state.mutex);
+		if (--state.waits[gate] == 0) state.waits.erase(gate);
+	}
+};
+
 // Runs `fetch` (one GET into a cleared body) until it succeeds or the retry
 // policy above is spent. Every failed attempt is logged with a client request
 // number, the host and path, the HTTP status and Retry-After, so a tester's
@@ -235,6 +268,7 @@ bool transfer_with_retries(const std::string &host, const std::string &path, Fet
 				return false;
 			}
 			rate_waited += hold;
+			SaphiWait busy(host == kSaphiHost ? &gate : nullptr);
 			wait(hold);
 		}
 		unsigned request;
@@ -1258,6 +1292,21 @@ int start_worker(const char *package_root, const char *download_api_url, const c
 	}
 }
 } // namespace
+
+extern "C" int ap_custom_track_download_busy(char *detail, int detail_bytes)
+{
+	auto &state = busy_state();
+	std::lock_guard<std::mutex> lock(state.mutex);
+	int seconds = 0;
+	for (const auto &entry : state.waits)
+		seconds = std::max(seconds, std::max(1, entry.first->pending_seconds()));
+	if (detail && detail_bytes > 0)
+	{
+		if (seconds) std::snprintf(detail, detail_bytes, "Project Saphi is busy, waiting %ds", seconds);
+		else detail[0] = 0;
+	}
+	return seconds;
+}
 
 extern "C" int ap_custom_track_download_start(const char *package_root,
 	                                           const char *download_api_url,

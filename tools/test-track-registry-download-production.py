@@ -281,7 +281,15 @@ int main()
 					failure = transfer_error("Project Saphi", outcome);
 					return false;
 				},
-				[&](int seconds) { waits.push_back(seconds); fake_ms += 1000LL * seconds; }, error, &gate);
+				[&](int seconds) {
+					char text[80];
+					const int left = ap_custom_track_download_busy(text, sizeof text);
+					if (gate.pending_seconds())
+						expect(left == seconds && std::string(text) == "Project Saphi is busy, waiting " + std::to_string(seconds) + "s",
+						       "429 wait publishes busy state and countdown text");
+					else expect(left == 0 && !text[0], "503 wait is not a Saphi rate-limit wait");
+					waits.push_back(seconds); fake_ms += 1000LL * seconds;
+				}, error, &gate);
 		};
 		HttpOutcome ok; ok.status = 200;
 		HttpOutcome busy; busy.status = 429; busy.retry_after = 3;
@@ -289,6 +297,13 @@ int main()
 		std::vector<int> waits; int calls = 0;
 		expect(run({busy, down, ok}, waits, calls, error) && calls == 3 && waits == std::vector<int>({3, 4}) && error.empty(),
 		       "429 then 503 then 200 succeeds after waits of 3 and 4 s");
+		{
+			char text[80] = "stale";
+			expect(ap_custom_track_download_busy(text, sizeof text) == 0 && !text[0], "busy state and text clear after retry");
+			SaphiWait first(&gate);
+			{ SaphiWait second(&gate); }
+			expect(ap_custom_track_download_busy(nullptr, 0) > 0, "one wait ending does not hide another wait");
+		}
 		expect(!run({missing}, waits, calls, error) && calls == 1 && waits.empty() &&
 		       error == "Project Saphi refused the file (HTTP 404).", "a 404 is asked once");
 		expect(!run({busy}, waits, calls, error) && calls == kRateLimitAttempts && (int)waits.size() == kRateLimitAttempts - 1 &&

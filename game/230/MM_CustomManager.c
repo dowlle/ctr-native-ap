@@ -3,6 +3,7 @@
    its helpers and MM_CustomManager_Poll from the Custom Tracks page
    (MM_CustomTracks.c) instead of the page below. */
 #include <platform/native_custom_revision.h>
+#include "../../ap/ap_custom_track_download.h"
 #ifndef MM_IMPORT_PLAYER // the player client imports on Custom Content instead
 #include "MM_CustomImport.c"
 #endif
@@ -282,7 +283,8 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
             if(source) MM_CustomText_Draw(s_saphiVersionTrack ? "Back: Tracks" : "[ Versions",305,159,176,1,ORANGE,ot);
         }
     }
-    snprintf(line,sizeof line,"R2 Search: %s%s",s_saphiQuery,s_contentSearchEditing ? "_" : "");
+    if (!ap_custom_track_download_busy(line, sizeof line))
+        snprintf(line,sizeof line,"R2 Search: %s%s",s_saphiQuery,s_contentSearchEditing ? "_" : "");
     MM_CustomText_Draw(line,256,180,456,1,JUSTIFY_CENTER | WHITE,ot);
     snprintf(line,sizeof line,"%u/%u   L2 Refresh   Back: Options",count ? (unsigned)*selected+1 : 0,(unsigned)count);
     MM_CustomText_Draw(line,256,196,456,1,JUSTIFY_CENTER | WHITE,ot);
