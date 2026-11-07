@@ -128,6 +128,10 @@ int main(void) {
     ctr_boss_encounters.opponent[0]=13; assert(!strcmp(AP_ContentCupName(),"Penta's Cup"));
     active=0; ctr_boss_encounters.opponent[0]=3; assert(!strcmp(AP_ContentCupName(),"RIPPER ROO's Cup")); active=1;
     garageRunning=-1; assert(!strcmp(AP_ContentCupName(),"Mixed Cup"));
+    // A content-plan Gem Cup (A3-5) is named by its plan name, not the engine cup's retail name
+    // (data.AdvCups[0] is "Retail Cup"); the banner takes this same call.
+    strcpy(pad.display_name,"Purple Gem Cup"); assert(!strcmp(AP_ContentCupName(),"Purple Gem Cup"));
+    strcpy(pad.display_name,"Mixed Cup");
     havePad=0; assert(!AP_ContentCupName()); havePad=1;
     // The standings title takes the boss cup name through the same call.
     garageRunning=0; ctr_boss_encounters.opponent[0]=3; state.menuReadyToPass=4; tracker.cup.trackIndex=1;
@@ -164,10 +168,13 @@ flow = source("game/UI/UI_RaceFlow.c")
 banner = flow[flow.index("pcVar6 = sdata->lngStrings[textID];"):flow.index("sVar7 = gGT->pushBuffer[0].rect.y - (windowHeight + -7);")]
 assert "AP_BossChallengeTitle(gGT->bossID, apBossTitle" in banner and "ADVENTURE_BOSS" in banner
 assert flow.count("AP_BossChallengeTitle(") == 1
-# The cup banner of a boss cup names its boss through the one cup-name call the
-# standings use (A2-47); only a running garage cup, only on the adventure-cup branch.
+# The cup banner of a content-plan cup (a boss cup: its boss) names itself through the one cup-name call the
+# standings use (A2-47), only on the adventure-cup branch.
 cupBanner = flow[flow.index("ctCupName = CustomTrack_CupDisplayName(gGT->cup.cupID, 1);"):flow.index("textID = txtArray[iVar2];")]
-assert "AP_ContentGarageCupRunning() >= 0" in cupBanner and "ctCupName = AP_ContentCupName();" in cupBanner
+# Every content-plan cup, Gem Cups included (A3-5), takes the plan name; the banner no longer
+# gates on a running garage cup.
+assert "ctCupName = AP_ContentCupName();" in cupBanner and "AP_ContentGarageCupRunning" not in cupBanner
+assert "if (AP_ContentCupName() != NULL)" in cupBanner
 assert flow.count("AP_ContentCupName()") == 2
 with tempfile.TemporaryDirectory() as directory:
     path = Path(directory)

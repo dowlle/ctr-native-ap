@@ -153,6 +153,8 @@ static void CT_RowState(int row, const char *title, const char *state, int selec
 
 static void CT_Footer(const char *status, const char *hint, uint32_t *ot)
 {
+    char busy[80];
+    if (hint && ap_custom_track_download_busy(busy, sizeof busy)) hint = busy;
     if (status && *status) MM_CustomText_Draw(status, 256, CT_STATUS_Y, 456, 1, JUSTIFY_CENTER | WHITE, ot);
     if (hint && *hint) MM_CustomText_Draw(hint, 256, CT_HINT_Y, 456, 1, JUSTIFY_CENTER | WHITE, ot);
 }
@@ -1667,6 +1669,7 @@ static void MM_ConfigProc_CustomTracks(struct RectMenu *menu, uint32_t *ot, stru
         CT_ImportFrame(tapped, ot, pad);
         if (importing) return; /* the importer draws its own panels */
         if (s_ctFocus == CT_FOCUS_TABS) CT_Footer(NULL, NativeMenu_Labels("*: Open   ^: Options"), ot);
+        else if (MM_CustomImport_Active()) CT_Footer(NULL, NativeMenu_Labels("^: Tabs"), ot);
     }
     if (s_ctFocus == CT_FOCUS_TABS && s_ctTab != CT_TAB_IMPORT)
         CT_Footer(NULL, CT_JobsBusy() ? NativeMenu_Labels("Working...   *: Open") : NativeMenu_Labels("*: Open   ^: Options"), ot);

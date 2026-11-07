@@ -987,6 +987,17 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 #endif
 
 #ifdef CTR_AP
+	// A3-16: TRAVEL opens the hub selector, a menu of its own in the pause
+	// menu's place (the QUIT row's pattern). The trip itself starts only when
+	// a hub row is confirmed there.
+	if (stringID == AP_LNG_TRAVEL)
+	{
+		AP_FastTravelShowMenu();
+		return;
+	}
+#endif
+
+#ifdef CTR_AP
 	// #238: SELECT CHARACTER, only present on the AP row set built in
 	// MainFreeze_GetMenuPtr.
 	//
@@ -1268,8 +1279,9 @@ struct RectMenu *MainFreeze_GetMenuPtr(void)
 			static struct MenuRow apRowsAdvHub[AP_PAUSEROW_KINDS + 1];
 			signed char kinds[AP_PAUSEROW_KINDS];
 			int character = AP_CharSwap_PauseRowLive(), tracker = AP_TrackerAvailable();
-			int retailCount = AP_PauseRow_Build(0, 0, retailKinds);
-			int count = AP_PauseRow_Build(character, tracker, kinds);
+			int travel = AP_FastTravelAvailable();
+			int retailCount = AP_PauseRow_Build(0, 0, 0, retailKinds);
+			int count = AP_PauseRow_Build(character, tracker, travel, kinds);
 			int onAp = data.menuAdvHub.rows == &apRowsAdvHub[0];
 
 			if (count != retailCount)
@@ -1283,6 +1295,7 @@ struct RectMenu *MainFreeze_GetMenuPtr(void)
 					s16 string = kinds[r] == AP_PAUSEROW_RESUME      ? LNG_RESUME
 					             : kinds[r] == AP_PAUSEROW_CHARACTER ? LNG_SELECT_CHARACTER
 					             : kinds[r] == AP_PAUSEROW_TRACKER   ? AP_LNG_TRACKER
+					             : kinds[r] == AP_PAUSEROW_TRAVEL    ? AP_LNG_TRAVEL
 					             : kinds[r] == AP_PAUSEROW_HINTS     ? (s16)hintString
 					             : kinds[r] == AP_PAUSEROW_QUIT      ? LNG_QUIT
 					                                                 : LNG_OPTIONS;
