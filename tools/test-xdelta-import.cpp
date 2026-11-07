@@ -427,6 +427,10 @@ static void test_manifest_fixture()
 int main()
 {
     test_manifest_fixture();
+    XdeltaImportItem longestReason = {};
+    std::strcpy(longestReason.title, "Level 4095");
+    std::strcpy(longestReason.reason, "Level format not supported: pointer slot overlaps map or exceeds payload");
+    diagnostic_layout::check(longestReason);
     char tmpl[] = "/tmp/ctr-xdelta-XXXXXX";
     if (!mkdtemp(tmpl)) return 2;
     root = tmpl;
