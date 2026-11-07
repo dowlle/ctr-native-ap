@@ -1481,6 +1481,41 @@ int main()
             const std::string newPin = importAs(assets, patch, nullptr, XDELTA_OLD_KEEP);
             CHECK(packages(assets).size() == 2 && exists(assets, oldPin), "A3-20 a room that cannot be read keeps the old copy");
         }
+        /* A room that names the old copy by its descriptor's track key keeps it. */
+        {
+            const std::string assets = fresh();
+            nlohmann::json d = {{"descriptor_version", 1}, {"patch_sha256", sha_hex(patchBytes)},
+                                {"tracks", {{"1", {{"title", "Replace slot 1"}, {"laps", 3}, {"track_key", "chosen-by-pack"}}}}}};
+            const std::string text = d.dump();
+            const std::string descriptorPath = write_file("Replace.ctrpack.json", Bytes(text.begin(), text.end()));
+            ScanResult r = scan(patch, discPath, descriptorPath.c_str());
+            CHECK(r.ok, "A3-20 scan with a track key");
+            if (r.ok)
+            {
+                const XdeltaImportSummary *s = XdeltaImport_Summary(r.scan);
+                std::vector<unsigned char> chosen(s->count, 0);
+                chosen[(unsigned)(item_for(s, 1) - s->items)] = 1;
+                char error[256];
+                CHECK(XdeltaImport_Install(r.scan, chosen.data(), assets.c_str(), CTR_XDELTA_INSTALL_PACKAGES, error, sizeof error) == 1,
+                      "A3-20 install with a track key");
+                XdeltaImport_Free(&r.scan);
+            }
+            std::remove(descriptorPath.c_str());
+            room(assets, "ffff", std::string("{\"x\":\"chosen-by-pack\",\"u\":\"") + uuid + "\"}");
+            const std::string newPin = importAs(assets, patch, nullptr, XDELTA_OLD_KEEP);
+            CHECK(packages(assets).size() == 2 && exists(assets, newPin), "A3-20 a room naming the descriptor's track key keeps the old copy");
+        }
+        /* A damaged manifest in the store neither stops the scan nor is touched. */
+        {
+            const std::string assets = fresh();
+            importAs(assets, patch, "Replace slot 1");
+            const std::string text = "{\"package_uuid\": 5, \"title\": 7}";
+            const std::string bad = sha_hex(Bytes(text.begin(), text.end()));
+            mkdir((assets + "/tracks/packages/" + bad).c_str(), 0755);
+            write_path(assets + "/tracks/packages/" + bad + "/manifest.json", Bytes(text.begin(), text.end()));
+            const std::string newPin = importAs(assets, patch, nullptr, XDELTA_OLD_REPLACE);
+            CHECK(exists(assets, newPin) && exists(assets, bad), "A3-20 a damaged manifest in the store is skipped");
+        }
         /* A different patch is untouched, even with the same slot and a slot title. */
         {
             const std::string assets = fresh();

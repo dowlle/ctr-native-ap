@@ -1942,25 +1942,31 @@ std::vector<OldCopy> generic_old_copies(const std::string &assets, const std::st
         if (!read_plain_file(it->path() / "manifest.json", 1u << 20, manifestText) ||
             hex_sha256(manifestText.data(), manifestText.size()) != pin)
             continue;
-        const json m = json::parse(manifestText, nullptr, false);
-        if (!m.is_object() || m.value("package_uuid", std::string()) != uuid) continue;
-        const std::string title = m.value("title", std::string());
-        if (!generic_slot_title(title, bigfileIndex, patchStem)) continue;
-        if (!read_plain_file(it->path() / "metadata" / "xdelta-source.json", 1u << 20, sourceText)) continue;
-        const json src = json::parse(sourceText, nullptr, false);
-        if (!src.is_object() || src.value("patch_sha256", std::string()) != patchSha256 ||
-            src.value("bigfile_index", -1) != bigfileIndex)
-            continue;
         OldCopy c;
-        c.pin = pin;
-        c.key = title_track_key(title);
-        c.revision = m.value("version", std::string());
-        if (m.contains("files") && m["files"].is_array())
-            for (const auto &f : m["files"])
-            {
-                if (f.value("role", std::string()) == "lev") c.lev = f.value("sha256", std::string());
-                if (f.value("role", std::string()) == "vrm") c.vrm = f.value("sha256", std::string());
-            }
+        try
+        {
+            const json m = json::parse(manifestText, nullptr, false);
+            if (!m.is_object() || m.value("package_uuid", std::string()) != uuid) continue;
+            const std::string title = m.value("title", std::string());
+            if (!generic_slot_title(title, bigfileIndex, patchStem)) continue;
+            if (!read_plain_file(it->path() / "metadata" / "xdelta-source.json", 1u << 20, sourceText)) continue;
+            const json src = json::parse(sourceText, nullptr, false);
+            if (!src.is_object() || src.value("patch_sha256", std::string()) != patchSha256 ||
+                src.value("bigfile_index", -1) != bigfileIndex)
+                continue;
+            c.pin = pin;
+            /* The room folder key: a pack descriptor's track_key, otherwise the title's. */
+            c.key = src.value("track_key", std::string());
+            if (c.key.empty() || !track_key_valid(c.key)) c.key = title_track_key(title);
+            c.revision = m.value("version", std::string());
+            if (m.contains("files") && m["files"].is_array())
+                for (const auto &f : m["files"])
+                {
+                    if (f.value("role", std::string()) == "lev") c.lev = f.value("sha256", std::string());
+                    if (f.value("role", std::string()) == "vrm") c.vrm = f.value("sha256", std::string());
+                }
+        }
+        catch (const std::exception &) { continue; }
         /* The new copy answers the same pins when key, version and both files agree. */
         const bool answers = c.key == newKey && c.revision == newRevision && c.lev == newLev && c.vrm == newVrm;
         c.pinned = !answers && room_refers_to(assets, uuid, c.key);
@@ -1996,8 +2002,21 @@ void replace_old_copies(const std::string &assets, const XdeltaImportSummary &su
     char uuid[37];
     XdeltaImport_PackageUuid(summary.patchSha256, item.bigfileIndex, uuid);
     const std::filesystem::path store = std::filesystem::u8path(assets) / "tracks" / "packages";
-    for (const OldCopy &c : generic_old_copies(assets, summary.patchSha256, patchStem, item.bigfileIndex, item.pin, item.trackKey,
-                                               b.version, item.levSha256, item.vrmSha256))
+    const std::vector<OldCopy> copies = generic_old_copies(assets, summary.patchSha256, patchStem, item.bigfileIndex, item.pin,
+                                                           item.trackKey, b.version, item.levSha256, item.vrmSha256);
+    if (std::any_of(copies.begin(), copies.end(), [](const OldCopy &c) { return !c.pinned; }))
+    {
+        /* Folders of this feature's own name left by a removal that failed part way. */
+        std::error_code sweep;
+        for (std::filesystem::directory_iterator it(store, sweep), end; !sweep && it != end; it.increment(sweep))
+        {
+            std::error_code de;
+            if (it->path().filename().string().compare(0, 10, ".replaced-") == 0 &&
+                std::filesystem::is_directory(it->symlink_status(de)))
+                std::filesystem::remove_all(it->path(), de);
+        }
+    }
+    for (const OldCopy &c : copies)
     {
         if (c.pinned) { out.kept++; continue; }
         std::error_code ec;
@@ -2524,7 +2543,10 @@ extern "C" int XdeltaImport_StartScan(const char *patchPath, const char *discPat
                 sha = result->summary.patchSha256;
                 set_text(result->summary.history, sizeof result->summary.history, history_note(root, sha));
                 for (unsigned i = 0; i < result->summary.count && i < result->built.size(); i++)
-                    result->summary.items[i].oldCopy = old_copy_state(root, result->summary, result->patchStem, result->summary.items[i], result->built[i]);
+                {
+                    try { result->summary.items[i].oldCopy = old_copy_state(root, result->summary, result->patchStem, result->summary.items[i], result->built[i]); }
+                    catch (const std::exception &) {}
+                }
             }
             else if (std::strcmp(error, "Cancelled"))
                 record_outcome(root, "", name, bytes, 0, {}, error);
