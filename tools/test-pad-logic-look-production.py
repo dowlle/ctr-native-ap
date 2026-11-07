@@ -31,8 +31,15 @@ assert "ap_content_plan_active()" in glow
 assert "AP_ContentPadGlowBits(physLevelID, bits, codes, AP_PAD_DISPLAY_BITS_MAX, 1)" in glow
 assert "AP_LocationLogicState((long long)codes[i])" in glow
 assert "AP_PadLookByLogic(look, n, in, unknown)" in glow
-# Cached until the state generation moves, the same counter the rebuild reads.
-assert "AP_StateGen()" in glow
+# Asked fresh, never cached: a server update or boss-win reply moves no local
+# counter, so a cached answer could stay green.
+assert "static" not in glow.split("{", 1)[1] and "AP_StateGen" not in glow
+# The rebuild watches the state generation plus those two inputs.
+redraw = body((root / "ap/ap_hooks_goal.c").read_text(encoding="utf-8"), "unsigned AP_PadRedrawGen(void)")
+assert "ap_state_gen" in redraw and "ap_net_locations_revision()" in redraw and "ap_net_boss_won_bits()" in redraw
+assert "unsigned rbGen = AP_PadRedrawGen();" in warp and "unsigned rbGen = AP_StateGen();" not in warp
+net = (root / "ap/ap_net.cpp").read_text(encoding="utf-8")
+assert "g_locs_revision++;" in body(net, "static void ap_locs_invalidate(void)")
 
 # The pad state, the gates and the glow never read the logic look.
 state = body(pads, "int AP_PadState(int physLevelID")

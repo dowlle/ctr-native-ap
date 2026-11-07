@@ -516,25 +516,19 @@ int AP_PadState(int physLevelID, int destLevelID)
 // A3-37: how a plan pad's open checks stand against the exported logic, as the
 // counts ap_pad_logic_look.h decides from. The open set is the pad's display
 // set, the checks a player can act on now (a mode still locked behind stage 2
-// stays out, like the glow). Cached per pad until AP_StateGen moves: a received
-// item, a checked location or a reconnect, which is also when the rebuild key
-// is read again, so the beam redraws on the same tick the look changes.
+// stays out, like the glow). Asked fresh each call, so map, beam and tracker
+// cannot read an old answer; the rebuild redraws the pad when the answer moves
+// (AP_PadRedrawGen, read through the birth key's look).
 static int AP_PadLogicLook(int physLevelID, int look)
 {
-	static unsigned cacheGen[128];
-	static unsigned char cacheIn[128], cacheOut[128]; // 0 = empty, else look + 1
-	unsigned gen;
 	int bits[AP_PAD_DISPLAY_BITS_MAX];
 	int64_t codes[AP_PAD_DISPLAY_BITS_MAX];
-	int n, i, in = 0, unknown = 0, slot = physLevelID, out;
+	int n, i, in = 0, unknown = 0;
 
 	if (look != AP_PAD_LOOK_OPEN && look != AP_PAD_LOOK_STAGE2_OPEN)
 		return look;
 	if (!ap_content_plan_active())
 		return look;
-	gen = AP_StateGen();
-	if (slot >= 0 && slot < 128 && cacheOut[slot] && cacheGen[slot] == gen && cacheIn[slot] == look + 1)
-		return cacheOut[slot] - 1;
 	n = AP_ContentPadGlowBits(physLevelID, bits, codes, AP_PAD_DISPLAY_BITS_MAX, 1);
 	for (i = 0; i < n; i++)
 	{
@@ -542,14 +536,7 @@ static int AP_PadLogicLook(int physLevelID, int look)
 		if (st == AP_PAD_LOGIC_IN) in++;
 		else if (st == AP_PAD_LOGIC_UNKNOWN) unknown++;
 	}
-	out = AP_PadLookByLogic(look, n, in, unknown);
-	if (slot >= 0 && slot < 128)
-	{
-		cacheGen[slot] = gen;
-		cacheIn[slot] = (unsigned char)(look + 1);
-		cacheOut[slot] = (unsigned char)(out + 1);
-	}
-	return out;
+	return AP_PadLookByLogic(look, n, in, unknown);
 }
 
 int AP_PadLook(int physLevelID, int destLevelID)

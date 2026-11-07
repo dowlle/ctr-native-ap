@@ -118,9 +118,19 @@ static std::set<int64_t>     g_locs_chk;
 static std::set<int64_t>     g_locs_miss;
 static bool                  g_locs_stale = true;
 
+static unsigned              g_locs_revision = 0;
+
 static void ap_locs_invalidate(void)
 {
 	g_locs_stale = true;
+	g_locs_revision++;
+}
+
+// Moves with every change to the checked sets, including a RoomUpdate from the
+// server that no local event announces (A3-37: the pad's logic look reads it).
+extern "C" unsigned ap_net_locations_revision(void)
+{
+	return g_locs_revision;
 }
 
 // Only called with g_ap non-null; the public readers keep their own

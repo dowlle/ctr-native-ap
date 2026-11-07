@@ -31,6 +31,14 @@ unsigned AP_StateGen(void)
 	return ap_state_gen;
 }
 
+// What the in-hub pad rebuild watches: the state generation plus two logic
+// inputs that change without a local event, a checked-location update from the
+// server and a boss-win reply (A3-37: a pad's logic look reads both).
+unsigned AP_PadRedrawGen(void)
+{
+	return ap_state_gen + 0x9E3779B1u * ap_net_locations_revision() + 0x85EBCA6Bu * ap_net_boss_won_bits();
+}
+
 // ---------------------------------------------------------------------------
 // LOCATION EVENTS (option A) -- authoritative. Called from the game's reward
 // grant sites; logs the check and sends it to the server.

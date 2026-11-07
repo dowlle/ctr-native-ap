@@ -854,6 +854,8 @@ void AP_PadGlowSlots(const int *bits, int n, int phase, int *outSlot3);
 // on a bump and rebuilds the pad when it differs from the key it was built
 // for. The map + gates recompute AP_PadState live every frame.
 unsigned AP_StateGen(void);
+// AP_StateGen plus the logic inputs no local event announces; the rebuild watches this.
+unsigned AP_PadRedrawGen(void);
 
 // The single pad-state function driving map colour, in-hub look, and the gate.
 // Returns 1 Locked / 2 Raceable / 3 Re-locked / 4 Tier-2-open / 5 Done, or 0 for
