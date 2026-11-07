@@ -13,10 +13,12 @@
 // route, count or glow reads this.
 //
 // A check the client has no logic for is counted as in logic, which keeps the
-// look it had before this rule. The exported win_logic block covers every win
-// check, and every other pad location only when pad_approach_hints is on
-// (SCHEMA.md, version 2), so a pad that still holds a box, a Wumpa check, a
-// letter or a podium rung on a seed without that option stays green.
+// look it had before this rule. Since A3-37b (ruled 2026-11-07 12:35 CET, "Yes,
+// export all") the apworld exports a row for every location on every seed
+// (SCHEMA.md, version 2, kind "hint" for the non-wins), so a pad that only holds
+// boxes, Wumpa checks, letters or podium rungs goes orange when they are all
+// out of logic. A seed generated before that has rows for those only with
+// pad_approach_hints on; without it such a pad keeps its green.
 //
 // Freestanding so tools/test-pad-logic-look.c can pin it on the host.
 

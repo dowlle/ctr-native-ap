@@ -18,6 +18,12 @@
 // must agree on every row. Seeds with a start inventory (YAML, the
 // start_inventory_from_pool mechanism, the tight-fill backstop) are included. The win sets native resolves for each race are
 // also checked to have an entry in every block where the location exists.
+//
+// A3-37b fixture: tools/fixtures/win-logic/roundtrip-2026-11-07.json, seeds
+// generated WITHOUT pad_approach_hints by the apworld that exports a row for
+// every addressed location (block version 2, kind "hint" for the non-wins).
+// Each seed's own slot_data goes through the parser whole, and can_reach covers
+// every addressed location, so a location without a row fails.
 
 #include <cstdio>
 #include <fstream>
@@ -33,6 +39,7 @@ extern void ap_seedcfg_parse_json(const nlohmann::json &j);
 extern "C" void AP_LogLine(const char *) {}
 
 static const char *kFixture = "tools/fixtures/win-logic/roundtrip-2026-10-02.json";
+static const char *kEveryRowFixture = "tools/fixtures/win-logic/roundtrip-2026-11-07.json";
 
 struct State
 {
@@ -44,9 +51,21 @@ static int s_items(void *u, long id) { return AP_ItemIdTallyCount(&((State *)u)-
 static int s_bosses(void *u) { return ((const State *)u)->bosses; }
 static int s_collected(void *, long) { return 0; }
 
+static int run_fixture(const char *fixture, bool everyRow);
+
 int main(int argc, char **argv)
 {
-	const char *fixture = argc > 1 ? argv[1] : kFixture;
+	if (argc > 1)
+		return run_fixture(argv[1], false);
+	int failed = run_fixture(kFixture, false);
+	failed |= run_fixture(kEveryRowFixture, true);
+	return failed;
+}
+
+// everyRow: the A3-37b fixture. Its seeds are parsed whole (current schema),
+// every block is version 2 with hint rows, and every addressed location has a row.
+static int run_fixture(const char *fixture, bool everyRow)
+{
 	std::ifstream in(fixture);
 	if (!in)
 	{
@@ -58,6 +77,7 @@ int main(int argc, char **argv)
 	nlohmann::json fx = nlohmann::json::parse(buf.str());
 
 	int seeds = 0, rows = 0, agree = 0, failures = 0, trueRows = 0, startSeeds = 0;
+	int hintRows = 0, hintTrue = 0;
 	static State s; // the tally is large: keep it off the stack
 	for (const auto &seed : fx["seeds"])
 	{
@@ -67,11 +87,22 @@ int main(int argc, char **argv)
 		// Retain the historical exported-rule corpus, but admit the block through
 		// a current plan. Its environment remains the corpus' explicit input;
 		// current capability-envelope parsing has its own content-plan tests.
-		std::ifstream current_input("tools/fixtures/content-plan/global-checks.json");
-		nlohmann::json current; current_input >> current;
-		current["win_logic"] = sd["win_logic"];
-		ap_seedcfg_parse_json(current);
+		if (everyRow)
+			ap_seedcfg_parse_json(sd);
+		else
+		{
+			std::ifstream current_input("tools/fixtures/content-plan/global-checks.json");
+			nlohmann::json current; current_input >> current;
+			current["win_logic"] = sd["win_logic"];
+			ap_seedcfg_parse_json(current);
+		}
 		seeds++;
+		if (everyRow && (ctr_win_logic.version != 2 || ctr_cfg.pad_approach_hints))
+		{
+			std::printf("FAIL %s: want a version 2 block without pad_approach_hints (version %d, hints %d)\n",
+			            label.c_str(), ctr_win_logic.version, ctr_cfg.pad_approach_hints);
+			failures++;
+		}
 		if (ctr_win_logic.state != AP_WL_VALID)
 		{
 			std::printf("FAIL %s: block not VALID (state %d, %s)\n", label.c_str(),
@@ -119,6 +150,14 @@ int main(int argc, char **argv)
 			                        (opt["character_unlocks"].is_boolean()
 			                             ? opt["character_unlocks"].get<bool>()
 			                             : opt["character_unlocks"].get<int>() != 0);
+			if (everyRow)
+			{
+				// A current seed: the cap inputs as production reads them
+				// (AP_WinEnvNow), from the parsed config.
+				env.boost_mode = ctr_cfg.boost_mode;
+				env.starting_character = ctr_cfg.starting_character;
+				env.character_unlocks = ctr_cfg.character_unlocks ? 1 : 0;
+			}
 			env.unreliable = 0;
 			for (auto it = st["can_reach"].begin(); it != st["can_reach"].end(); ++it)
 			{
@@ -128,6 +167,11 @@ int main(int argc, char **argv)
 				int got = idx >= 0 ? AP_WinLogicInLogic(&ctr_win_logic, &env, idx, 0) : -1;
 				rows++;
 				trueRows += want;
+				if (idx >= 0 && ctr_win_logic.checks[idx].kind == AP_WL_KIND_HINT)
+				{
+					hintRows++;
+					hintTrue += want;
+				}
 				if (got == want)
 					agree++;
 				else if (failures++ < 20)
@@ -137,9 +181,10 @@ int main(int argc, char **argv)
 		}
 	}
 
-	std::printf("%d seed(s) (%d with a start table), %d row(s) (%d in logic), %d agree\n", seeds,
-	            startSeeds, rows, trueRows, agree);
-	if (seeds < 10 || rows < 5000 || trueRows == 0 || trueRows == rows || startSeeds < 8)
+	std::printf("%s: %d seed(s) (%d with a start table), %d row(s) (%d in logic, %d hint rows, %d in logic), %d agree\n",
+	            fixture, seeds, startSeeds, rows, trueRows, hintRows, hintTrue, agree);
+	if (everyRow ? (seeds < 5 || rows < 10000 || hintRows < 5000 || hintTrue == 0 || hintTrue == hintRows)
+	             : (seeds < 10 || rows < 5000 || trueRows == 0 || trueRows == rows || startSeeds < 8))
 	{
 		std::printf("FAIL fixture too small or one-sided to prove anything\n");
 		failures++;

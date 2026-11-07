@@ -20,19 +20,26 @@ static int held_relics; // received Sapphire Relics (id 35010001)
 static int item_count(void *u, long id) { (void)u; return id == 35010001L ? held_relics : 0; }
 
 // Two relic checks: 201 needs one Sapphire Relic, 202 needs two. 301 is a
-// check with no row (a box on a seed without pad_approach_hints).
+// check with no row (a box on a seed generated before A3-37b without
+// pad_approach_hints). A3-37b hint rows: 401 a box and 402 a Wumpa check that
+// need two Sapphire Relics, 403 a letter and 404 a podium rung that need one.
 static AP_WinLogic *make_logic(void)
 {
 	AP_WinLogic *l = calloc(1, sizeof *l);
 	l->state = AP_WL_VALID;
+	l->version = 2;
 	l->node_count = 4;
 	l->nodes[0].tag = AP_WL_T_TRUE;
 	l->nodes[1].tag = AP_WL_T_REQ; l->nodes[1].a = 4; l->nodes[1].b = 1; l->nodes[1].c = 0;
 	l->nodes[2].tag = AP_WL_T_REQ; l->nodes[2].a = 4; l->nodes[2].b = 2; l->nodes[2].c = 0;
 	l->region_count = 1; l->region_root[0] = 0;
-	l->check_count = 2;
+	l->check_count = 6;
 	l->checks[0].code = 201; l->checks[0].kind = AP_WL_KIND_SAPPHIRE; l->checks[0].region = 0; l->checks[0].rule = 1;
 	l->checks[1].code = 202; l->checks[1].kind = AP_WL_KIND_GOLD; l->checks[1].region = 0; l->checks[1].rule = 2;
+	l->checks[2].code = 401; l->checks[2].kind = AP_WL_KIND_HINT; l->checks[2].region = 0; l->checks[2].rule = 2;
+	l->checks[3].code = 402; l->checks[3].kind = AP_WL_KIND_HINT; l->checks[3].region = 0; l->checks[3].rule = 2;
+	l->checks[4].code = 403; l->checks[4].kind = AP_WL_KIND_HINT; l->checks[4].region = 0; l->checks[4].rule = 1;
+	l->checks[5].code = 404; l->checks[5].kind = AP_WL_KIND_HINT; l->checks[5].region = 0; l->checks[5].rule = 1;
 	return l;
 }
 
@@ -106,6 +113,31 @@ int main(void)
 	held_relics = 0;
 	EXPECT(look_of(l, &env, boxOnly, 1, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_OPEN, "an open check with no row keeps green (fallback)");
 	EXPECT(look_of(l, &env, boxAndRelic, 2, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_OPEN, "unknown plus out of logic keeps green (fallback)");
+
+	// A3-37b: boxes, Wumpa, letters and rungs carry hint rows on every new
+	// seed, so a pad holding only those goes orange when all are out of logic.
+	{
+		long boxWumpa[] = {401, 402};
+		long letterRung[] = {403, 404};
+		long boxAndLetter[] = {401, 403};
+		held_relics = 0;
+		EXPECT(AP_PadLogicStateOf(l, &env, 401) == AP_PAD_LOGIC_OUT, "a hint row is read like any row");
+		EXPECT(look_of(l, &env, boxWumpa, 2, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_STAGE2_WAITING,
+		       "only out-of-logic boxes and Wumpa: not green");
+		EXPECT(look_of(l, &env, letterRung, 2, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_STAGE2_WAITING,
+		       "only out-of-logic letters and rungs: not green");
+		EXPECT(look_of(l, &env, boxWumpa, 2, AP_PAD_LOOK_STAGE2_OPEN) == AP_PAD_LOOK_STAGE2_WAITING,
+		       "stage 2 pad, only out-of-logic boxes and Wumpa: not blue-violet");
+		held_relics = 1;
+		EXPECT(look_of(l, &env, boxAndLetter, 2, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_OPEN,
+		       "a letter in logic beside an out-of-logic box keeps green");
+		EXPECT(look_of(l, &env, boxWumpa, 2, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_STAGE2_WAITING,
+		       "boxes and Wumpa needing more relics stay orange");
+		held_relics = 2;
+		EXPECT(look_of(l, &env, boxWumpa, 2, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_OPEN,
+		       "the relics arrive: boxes and Wumpa in logic, green again");
+		held_relics = 0;
+	}
 
 	// No usable block: nothing is guessed, the look stays.
 	l->state = AP_WL_ABSENT;

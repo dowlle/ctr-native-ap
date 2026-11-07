@@ -81,7 +81,7 @@ enum
 	AP_WL_KIND_CRYSTAL,
 	AP_WL_KIND_OXIDE,
 	AP_WL_KIND_OXIDE_FINAL,
-	AP_WL_KIND_HINT // non-win location exported only for Pad Approach Hints
+	AP_WL_KIND_HINT // non-win location (every seed since A3-37b; before, Pad Approach Hints only)
 };
 
 typedef struct
@@ -562,7 +562,10 @@ static inline AP_WinStakes AP_WinStakesDecide(const AP_WinLogic *wl, const AP_Wi
 	for (i = 0; i < n; i++)
 	{
 		int idx = AP_WinLogicFindCheck(wl, winSet[i]);
-		if (idx < 0)
+		// A hint row is never a win (SCHEMA.md 2026-11-03): since A3-37b every
+		// seed exports one for every non-win location, and a race whose win
+		// code has only a hint row keeps the stakes it had without that row.
+		if (idx < 0 || wl->checks[idx].kind == AP_WL_KIND_HINT)
 			continue;
 		entries++;
 		if (env->collected(env->user, winSet[i]))
