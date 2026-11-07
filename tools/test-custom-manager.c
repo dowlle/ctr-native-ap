@@ -167,6 +167,14 @@ int main(void)
  strcpy(fakeSummary.items[2].title,"LRG2Pancho slot 169");strcpy(fakeSummary.items[2].reason,"Arena: not supported yet");
  scanState=1;tick(0);CHECK(strstr(drawn,"[x] Snowy Valley")&&strstr(drawn,"2 tracks"));
  tick(BTN_DOWN);tick(BTN_DOWN);tick(BTN_SQUARE);tick(0);CHECK(strstr(drawn,"Skipped")&&strstr(drawn,"Arena: not"));
+ {
+  unsigned char selection[sizeof s_importSelected];
+  memcpy(selection,s_importSelected,sizeof selection);memset(s_importSelected,0,sizeof s_importSelected);
+  tick(BTN_CROSS);CHECK(strstr(s_importMessage,"Nothing selected")&&strstr(drawn,"Nothing")&&strstr(drawn,"selected."));
+  tick(BTN_UP);CHECK(!s_importMessage[0]);
+  tick(BTN_DOWN);CHECK(!s_importMessage[0]&&strstr(drawn,"Skipped")&&strstr(drawn,"Arena: not"));
+  memcpy(s_importSelected,selection,sizeof selection);
+ }
  tick(BTN_UP);tick(BTN_SQUARE);tick(BTN_CROSS);CHECK(installStarts==1&&lastSelected[0]&&!lastSelected[1]&&!lastSelected[2]);
  CHECK(lastWhere==CTR_XDELTA_INSTALL_PACKAGES);
  installState=1;s_contentStoreWanted=0;tick(0);CHECK(strstr(s_importMessage,"Installed 2 tracks")&&s_contentStoreWanted);
