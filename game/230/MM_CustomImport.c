@@ -450,7 +450,8 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
     {
         const struct XdeltaImportItem *item = count ? &s_importSummary.items[s_importRow] : NULL;
         const struct XdeltaReviewLayout layout = XdeltaReview_Layout(!item || item->offered,
-            s_importStage == IMPORT_INSTALLING, s_importMessage[0] != 0);
+            s_importStage == IMPORT_INSTALLING, s_importMessage[0] != 0,
+            item && DecalFont_GetLineWidth(item->title, FONT_SMALL) <= 176);
         detailHeight = layout.panelHeight;
         first = (s_importRow / 7) * 7;
         for (size_t row = first; row < first + 7 && row < count; row++)
@@ -464,8 +465,8 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         if (!count) MM_CustomText_Draw("The patch changes no track files.", 32, 84, 244, 2, WHITE, ot);
         if (item)
         {
-            MM_CustomText_Draw(item->title, 305, 70, 176, 2, ORANGE, ot);
-            if (layout.showStatus) MM_CustomText_Draw(item->offered ? item->tags : "Skipped", 305, 98, 176, 1, WHITE, ot);
+            MM_CustomText_Draw(item->title, 305, 70, 176, layout.titleLines, ORANGE, ot);
+            MM_CustomText_Draw(item->offered ? item->tags : "Skipped", 305, layout.tagY, 176, 1, WHITE, ot);
             MM_CustomText_Draw(item->offered ? (item->nameSource == XDELTA_NAME_DESCRIPTOR ? "Name from the pack" :
                                                 item->nameSource == XDELTA_NAME_KNOWN ? "Name of a known track" :
                                                 item->nameSource == XDELTA_NAME_EDITED ? "Name typed by you" :

@@ -69,14 +69,16 @@ static void check(const XdeltaImportItem &item)
     CHECK(lines == std::vector<std::string>{title}, "diagnostic title and index fit the review row");
     lines.clear();
     bottom = 0;
-    const auto layout = XdeltaReview_Layout(0, 0, 0);
+    const auto layout = XdeltaReview_Layout(0, 0, 0, DecalFont_GetLineWidth(item.title, FONT_SMALL) <= 176);
     MM_CustomText_Draw(item.reason, 305, layout.reasonY, 176, layout.reasonLines, 0, nullptr);
     std::string joined;
     for (const auto &line : lines) { if (!joined.empty()) joined += ' '; joined += line; }
     CHECK(joined == item.reason, "complete diagnostic reason fits the detail panel without ellipsis");
     CHECK(bottom <= 64 + layout.panelHeight - 4 && 64 + layout.panelHeight <= 188,
           "refusal text stays inside its panel and above the footer");
-    for (const auto state : {XdeltaReview_Layout(1, 0, 0), XdeltaReview_Layout(0, 1, 0), XdeltaReview_Layout(0, 0, 1)})
+    CHECK(70 + layout.titleLines * 12 <= layout.tagY && layout.tagY + 12 <= layout.reasonY,
+          "title and Skipped label have their own space above the reason");
+    for (const auto state : {XdeltaReview_Layout(1, 0, 0, 1), XdeltaReview_Layout(0, 1, 0, 1), XdeltaReview_Layout(0, 0, 1, 1)})
         CHECK(state.showStatus && state.reasonLines == 2 && state.panelHeight == 108,
               "offered rows, installing and transient feedback retain their status space");
 }
