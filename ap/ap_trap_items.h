@@ -30,7 +30,7 @@
 // Highest registered trap item index. The verifier's
 // inventory projection is sized from this, so the table growing at the top does
 // not need a second edit somewhere else.
-#define AP_TRAP_ITEM_INDEX_MAX 207
+#define AP_TRAP_ITEM_INDEX_MAX 214
 
 typedef struct
 {
@@ -65,6 +65,14 @@ static const AP_TrapItemRow AP_TRAP_ITEM_MAP[] = {
 	{193, AP_TRAP_DEMO_CAMERA},
 	{206, AP_TRAP_CLOCKED_OUT}, // #455, already minted in the 0.3.0 datapackage
 	{207, AP_TRAP_REVERSE_CAMERA}, // #248, already minted in the 0.3.0 datapackage
+	// The alpha3 data package (ruled 2026-11-06), ids 35010208..35010214.
+	{208, AP_TRAP_ALWAYS_JUMPING},
+	{209, AP_TRAP_NO_DRIFTING},
+	{210, AP_TRAP_RIVAL_SURGE},
+	{211, AP_TRAP_MUD_SEASON},
+	{212, AP_TRAP_LIMP_MODE},
+	{213, AP_TRAP_STUCK_STEERING},
+	{214, AP_TRAP_WUMPA_LEAK},
 };
 
 #define AP_TRAP_ITEM_MAP_COUNT \
@@ -142,6 +150,13 @@ static const char *const AP_TRAP_EFFECT_KEY[AP_TRAP_EFFECT_COUNT] = {
 	"demo_camera",
 	"clocked_out",
 	"reverse_camera",
+	"always_jumping",
+	"no_drifting",
+	"rival_surge",
+	"mud_season",
+	"limp_mode",
+	"stuck_steering",
+	"wumpa_leak",
 };
 
 // First slot_data schema whose seeds carry `trap_identities` and must be read

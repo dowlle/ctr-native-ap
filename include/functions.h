@@ -317,6 +317,9 @@ void LOAD_AppendQueue(struct BigHeader *bigfile, int type, int fileIndex, void *
 int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(struct LoadQueueSlot *));
 void LOAD_Hub_Main(struct BigHeader *bigfilePtr);
 void LOAD_Hub_ReadFile(struct BigHeader *bigfile, int levID, int packID);
+#ifdef CTR_AP
+void LOAD_Hub_ApMaskEvicts(int packID);
+#endif
 void LIST_Init(struct LinkedList *L, struct Item *item, int itemSize, int numItems);
 struct Item *LIST_RemoveBack(struct LinkedList *L);
 struct Item *LIST_RemoveFront(struct LinkedList *L);

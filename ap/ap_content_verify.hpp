@@ -318,6 +318,29 @@ static Model build() {
             m.income.push_back(R);
         }
     }
+    // A plan with no such race banks in its cup legs (A3-7, apworld
+    // content_wumpa.cup_income_routes): every leg on a track that banks, in
+    // its cup's region, needing the finish of every leg up to its own.
+    if (m.income.empty())
+        for (const auto &pad : p.at("pads")) {
+            if (pad.at("entry_id").is_null() || pad.at("kind") != "normal") continue;
+            const J &entry = *entries.at(pad["entry_id"].get<std::string>());
+            if (entry.at("kind") != "cup") continue;
+            for (const auto &leg : entry.at("legs")) {
+                const J &track = *tracks.at(leg.at("track_id").get<std::string>());
+                const std::string origin = track.at("origin").get<std::string>();
+                const J *pkg = packages.count(track.value("package_id", "")) ? packages.at(track.value("package_id", "")) : nullptr;
+                const bool banks = origin == "retail" ? track.at("retail_id").get<int>() <= 15
+                                                      : origin == "custom" && pkg && pkg->at("capabilities").value("wumpa", false);
+                if (!banks) continue;
+                Route R;
+                R.region = region_of(entry.at("id").get<std::string>());
+                R.lock = lock_of(pad);
+                R.need = std::max(finish_boost(track, packages, o),
+                                  leg_boost(entry, leg.at("id").get<std::string>(), false, tracks, packages, o));
+                m.income.push_back(R);
+            }
+        }
     for (const auto &c : p.at("checks")) {
         Loc L;
         L.code = c.at("location").get<int64_t>();
@@ -431,7 +454,9 @@ static Model build() {
         }
         std::set<std::string> pads_of;
         for (const auto &r : routes) pads_of.insert(r.at("own_pad_id").get<std::string>());
-        if (pads_of.size() == 1) {
+        // Itemsanity and Hit checks keep their own rule also when every route
+        // is on one pad (apworld content_plan.create_regions, A3-7).
+        if (pads_of.size() == 1 && kind != "itemsanity" && kind != "hit") {
             L.kind = PAD;
             const J &pad = *pads.at(*pads_of.begin());
             L.region = pad.at("entry_id").is_null() ? -1 : region_of(pad["entry_id"].get<std::string>());
@@ -455,7 +480,7 @@ static Model build() {
             const std::string mode = r.at("mode").get<std::string>();
             R.boss = mode == "boss_race" || mode == "boss_cup";
             if (R.boss) R.encounter = encounter.at(r.at("encounter_id").get<std::string>());
-            if (L.kind == HIT && mode == "cup")
+            if ((L.kind == HIT || L.kind == ITEMSANITY) && mode == "cup")
                 R.need = leg_boost(*entries.at(r["entry_id"].get<std::string>()), r.at("leg_id").get<std::string>(), false,
                                    tracks, packages, o);
             L.routes.push_back(R);
@@ -633,7 +658,10 @@ struct Sweep {
                  (L.weapon != kTurbo || !o.boost_mode || AP_VerifyCapabilityGate(&o, dense, -1, 1, 0));
             if (ok) {
                 bool any = false;
-                for (const auto &r : L.routes) any = any || route(r);
+                // A cup leg route (A3-7) needs the finish of every earlier
+                // leg, bound to the cup pad's racer lock.
+                for (const auto &r : L.routes)
+                    any = any || (route(r) && (!r.need || AP_VerifyCapabilityGate(&o, dense, r.lock, r.need, 0)));
                 ok = any;
             }
             break;
