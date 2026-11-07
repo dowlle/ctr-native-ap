@@ -170,6 +170,8 @@ typedef struct ctr_content_pad {
  * native measures the bytes and refuses a stated value they disagree with. */
 #define AP_CONTENT_SUPER_PADS_UNSTATED (-1)
 #define AP_CONTENT_RETAIL_LAPS 3 /* retail tracks race their authored three laps */
+/* A boss cup leg with one_lap_cups (A3-6): max(1, 3 / 2), the cup rule on a boss leg's three laps */
+#define AP_CONTENT_BOSS_CUP_SHORT_LAPS 1
 /* Engine hosts of non-retail track entries: a custom package borrows Roo's
  * Tubes; Cortex Vortex keeps the Oxide Station slot its bundled pair is
  * served on by the legacy pad track and the Oxide 2 venue. */
