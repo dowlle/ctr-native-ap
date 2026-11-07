@@ -526,6 +526,120 @@ static void test_store_descriptor_rescan()
 	CHECK(AP_SoloMergeNeedsLaps(original, reinstall).is_null());
 }
 
+// A3-22: a dict option with weight_rows is one number row per trap. The rows
+// come from the runtime (the world's trap registry), start at the preset's or
+// the YAML's weights, and an untouched screen passes nothing to the runtime.
+static void test_trap_weights()
+{
+	const nlohmann::json d = nlohmann::json::parse(R"({
+	  "options": [
+	    {"name": "trap_fill_percentage", "display_name": "Trap Fill Percentage", "kind": "range", "default": 10,
+	     "range_start": 0, "range_end": 100},
+	    {"name": "trap_weights", "display_name": "Trap Weights", "kind": "dict",
+	     "default": {"icy_road": 5, "low_gravity": 5, "upside_down": 0},
+	     "weight_rows": [{"key": "icy_road", "label": "Icy Road"}, {"key": "low_gravity", "label": "Low Gravity"},
+	                     {"key": "upside_down", "label": "Upside Down"}],
+	     "weight_max": 100,
+	     "doc": "How often each trap is picked."},
+	    {"name": "item_pool", "display_name": "Item Pool", "kind": "dict", "default": {}}
+	  ],
+	  "overlay": {"groups": [{"label": "Items and Traps",
+	                          "options": ["trap_fill_percentage", "trap_weights", "item_pool"]}],
+	              "rules": []},
+	  "values": {"trap_fill_percentage": 10,
+	             "trap_weights": {"icy_road": 9, "low_gravity": 5, "upside_down": 0}}
+	})");
+	std::vector<APSoloOption> rows = AP_SoloBuildOptions(d);
+	// A dict without weight_rows is not a row.
+	CHECK(rows.size() == 2 && !find(rows, "item_pool"));
+	APSoloOption *weights = find(rows, "trap_weights");
+	CHECK(weights);
+	if (!weights)
+		return;
+	// One number row per trap, in registry order, with the labels and maximum.
+	CHECK(weights->kind == "weights" && weights->keys.size() == 3);
+	CHECK(weights->keys[0] == "icy_road" && weights->keyLabels[0] == "Icy Road");
+	CHECK(weights->keys[2] == "upside_down" && weights->keyLabels[2] == "Upside Down");
+	CHECK(weights->weightMax == 100);
+	// The rows start at the YAML's weights, overlaid on the option's defaults.
+	CHECK(weights->keyWeights.size() == 3 && weights->keyWeights[0] == 9 && weights->keyWeights[1] == 5 &&
+	      weights->keyWeights[2] == 0);
+	CHECK(weights->keyDefaultWeights.size() == 3 && weights->keyDefaultWeights[0] == 5 &&
+	      weights->keyDefaultWeights[2] == 0);
+	CHECK(weights->value == R"({"icy_road":9,"low_gravity":5,"upside_down":0})");
+	CHECK(weights->value == weights->initial);
+	CHECK(AP_SoloWeightsSummary(*weights) == "1 custom");
+
+	// An untouched screen passes nothing: the preset's YAML goes to the
+	// runtime exactly as it is, so the seed is the preset's (round trip).
+	CHECK(AP_SoloSetArgs(rows).empty());
+
+	// Left / Right move one weight and wrap between 0 and the maximum.
+	AP_SoloWeightStep(*weights, 1, -1);
+	CHECK(weights->keyWeights[1] == 4);
+	AP_SoloWeightStep(*weights, 2, -1);
+	CHECK(weights->keyWeights[2] == 100); // 0 wraps to the maximum
+	AP_SoloWeightStep(*weights, 2, 1);
+	CHECK(weights->keyWeights[2] == 0);
+	AP_SoloWeightStep(*weights, 99, 1); // out of range: nothing
+	CHECK(weights->value == R"({"icy_road":9,"low_gravity":4,"upside_down":0})");
+
+	// --set: the whole table goes, only while a weight differs from the start.
+	// (A partial table would drop weights a YAML set and the player left
+	// alone: apply_overrides replaces the option.)
+	std::vector<std::string> sets = AP_SoloSetArgs(rows);
+	CHECK(sets.size() == 1);
+	CHECK(sets[0] == R"(trap_weights={"icy_road":9,"low_gravity":4,"upside_down":0})");
+	// Back at the start: nothing is sent again.
+	AP_SoloWeightReset(*weights, 1); // low_gravity's default is its start here
+	CHECK(weights->value == weights->initial);
+	CHECK(AP_SoloSetArgs(rows).empty());
+	// Cross returns a row to the option's default weight, not to the YAML's:
+	// icy_road back to 5 still differs from the YAML's 9 and goes to the
+	// runtime, as it must (the YAML's 9 would otherwise stay).
+	AP_SoloWeightReset(*weights, 0);
+	CHECK(weights->keyWeights[0] == 5);
+	CHECK(weights->value != weights->initial);
+	CHECK(AP_SoloWeightsSummary(*weights) == "Defaults");
+	sets = AP_SoloSetArgs(rows);
+	CHECK(sets.size() == 1 && sets[0] == R"(trap_weights={"icy_road":5,"low_gravity":5,"upside_down":0})");
+
+	// Values outside 0..max from a YAML are clamped to what the world accepts,
+	// clamped before narrowing: huge values land on the right end, never wrap.
+	nlohmann::json clamped = d;
+	clamped["values"]["trap_weights"] = {{"icy_road", 900}, {"low_gravity", -3}, {"upside_down", 2}};
+	rows = AP_SoloBuildOptions(clamped);
+	weights = find(rows, "trap_weights");
+	CHECK(weights && weights->keyWeights[0] == 100 && weights->keyWeights[1] == 0 &&
+	      weights->keyWeights[2] == 2);
+	clamped["values"]["trap_weights"] = {{"icy_road", 2147483648.0}, {"low_gravity", -2147483649.0}, {"upside_down", 2}};
+	rows = AP_SoloBuildOptions(clamped);
+	weights = find(rows, "trap_weights");
+	CHECK(weights && weights->keyWeights[0] == 100 && weights->keyWeights[1] == 0 &&
+	      weights->keyWeights[2] == 2);
+
+	// The table keeps row order, also for keys that are not alphabetical.
+	const nlohmann::json orderD = nlohmann::json::parse(R"({
+	  "options": [{"name": "trap_weights", "display_name": "Trap Weights", "kind": "dict",
+	               "default": {"zeta_trap": 5, "alpha_trap": 2},
+	               "weight_rows": [{"key": "zeta_trap", "label": "Zeta"}, {"key": "alpha_trap", "label": "Alpha"}],
+	               "weight_max": 100}],
+	  "overlay": {"groups": [{"label": "Items and Traps", "options": ["trap_weights"]}], "rules": []},
+	  "values": {"trap_weights": {"zeta_trap": 5, "alpha_trap": 2}}
+	})");
+	rows = AP_SoloBuildOptions(orderD);
+	weights = find(rows, "trap_weights");
+	CHECK(weights && weights->value == R"({"zeta_trap":5,"alpha_trap":2})");
+
+	// Without the values block the option's default table is the start.
+	nlohmann::json noValues = d;
+	noValues.erase("values");
+	rows = AP_SoloBuildOptions(noValues);
+	weights = find(rows, "trap_weights");
+	CHECK(weights && weights->value == R"({"icy_road":5,"low_gravity":5,"upside_down":0})");
+	CHECK(weights->value == weights->initial && AP_SoloSetArgs(rows).empty());
+}
+
 int main()
 {
 	test_parse_lines();
@@ -538,6 +652,7 @@ int main()
 	test_options();
 	test_option_steps_and_help();
 	test_checklists_and_guards();
+	test_trap_weights();
 	test_tracks();
 	test_needs_laps();
 	test_store_descriptor_rescan();
