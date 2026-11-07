@@ -135,7 +135,7 @@ static void HubMain(Model *m, int readLev, int swapQuad)
 	{
 		if (swapQuad || m->needSwap)
 		{
-			if (m->useHold && ap_hub_hint_hold_swap(&m->hold, m->hint, m->level))
+			if (m->useHold && ap_hub_hint_hold_swap(&m->hold, m->hint, m->level, m->packLev))
 				return;
 			m->needSwap = 0;
 			SwapNow(m);
@@ -243,13 +243,15 @@ int main(void)
 	// LOAD_Hub_SwapNow; the hold drops it once the hint is over.
 	for (useHold = 0; useHold < 2; useHold++)
 	{
+		// The kart is still on the swap quad when the hint ends.
 		Init(&m, useHold);
 		m.hint = 4;
 		MaskStart(&m);
 		HubMain(&m, -1, 1);
 		m.hint = 0;
-		HubMain(&m, -1, 0);
-		HubMain(&m, -1, 0);
+		HubMain(&m, -1, 1);
+		HubMain(&m, -1, 1);
+		HubMain(&m, -1, 1);
 		if (!useHold)
 			assert(m.stalled);
 		else

@@ -80,11 +80,14 @@ static inline int ap_hub_hint_hold_release(ap_hub_hint_hold *h, int hintState, i
 	return h->from == currLevel ? lev : -1;
 }
 
-// A corridor swap is asked. Returns 1 when it must wait; it is remembered then.
-static inline int ap_hub_hint_hold_swap(ap_hub_hint_hold *h, int hintState, int currLevel)
+// A corridor swap is asked; `packLev` is levID_in_each_mempack of the second
+// pack. Returns 1 when it must not run now: during a hint or with a read still
+// held it is remembered; with no hub in the second pack it is skipped, because
+// LOAD_Hub_SwapNow would wait forever on it (only a hint can lead there).
+static inline int ap_hub_hint_hold_swap(ap_hub_hint_hold *h, int hintState, int currLevel, int packLev)
 {
 	if (hintState == 0 && h->lev < 0)
-		return 0;
+		return !ap_hub_hint_hold_is_hub(packLev);
 	h->swap = 1;
 	h->swapFrom = currLevel;
 	return 1;

@@ -213,8 +213,10 @@ void LOAD_Hub_Main(struct BigHeader *bigfilePtr)
 			if ((needSwapNow != 0) || (gGT->bool_AdvHub_NeedToSwapLEV != 0))
 			{
 #ifdef CTR_AP
-				// The second pack may hold the mask, or a hub the mask evicted.
-				if (ap_hub_hint_hold_swap(&s_apHubHintHold, sdata->AkuAkuHintState, gGT->levelID))
+				// The second pack may hold the mask, a hub the mask evicted, or
+				// nothing after a dropped hold.
+				if (ap_hub_hint_hold_swap(&s_apHubHintHold, sdata->AkuAkuHintState, gGT->levelID,
+				                          gGT->levID_in_each_mempack[3 - gGT->activeMempackIndex]))
 					continue;
 #endif
 				gGT->bool_AdvHub_NeedToSwapLEV = 0;

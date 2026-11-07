@@ -45,7 +45,7 @@ swap_release = main.index("ap_hub_hint_hold_swap_release(&s_apHubHintHold, sdata
 assert release < swap_release < main.index("for (int i = 0; i < gGT->numPlyrCurrGame; i++)")
 assert "gGT->levID_in_each_mempack[3 - gGT->activeMempackIndex]))" in main[swap_release:swap_release + 200]
 assert "gGT->bool_AdvHub_NeedToSwapLEV = 0;\n\t\t\tLOAD_Hub_SwapNow();\n\t\t\treturn;" in main[swap_release:swap_release + 300]
-swap = main.index("if (ap_hub_hint_hold_swap(&s_apHubHintHold, sdata->AkuAkuHintState, gGT->levelID))\n\t\t\t\t\tcontinue;")
+swap = main.index("if (ap_hub_hint_hold_swap(&s_apHubHintHold, sdata->AkuAkuHintState, gGT->levelID,\n\t\t\t\t                          gGT->levID_in_each_mempack[3 - gGT->activeMempackIndex]))\n\t\t\t\t\tcontinue;")
 assert swap < main.index("gGT->bool_AdvHub_NeedToSwapLEV = 0;\n\t\t\t\tLOAD_Hub_SwapNow();")
 assert main.count("bool_AdvHub_NeedToSwapLEV = 1") == 0
 held = main.index("if (ap_hub_hint_hold_read(&s_apHubHintHold, sdata->AkuAkuHintState,")
@@ -54,6 +54,6 @@ assert main.index("if (currLevelID >= 5)") < held < main.index("LOAD_Hub_ReadFil
 # Only the corridor path holds: LOAD_Hub_ReadFile itself is unchanged, so the
 # cutscene thread and the character swap keep their own read handshakes.
 assert "ap_hub_hint_hold" not in read and "AkuAkuHintState" not in read
-for gate in (main[max(0, release - 400):release], main[swap - 120:swap], main[held - 120:held]):
+for gate in (main[max(0, release - 400):release], main[swap - 200:swap], main[held - 120:held]):
     assert "#ifdef CTR_AP" in gate
 print("PASS: hub stream hint hold production text")
