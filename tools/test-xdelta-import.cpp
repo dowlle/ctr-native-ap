@@ -17,6 +17,7 @@
 // and hashes; install and reinstall; the package UUID recipe.
 #include <platform/native_xdelta_import.h>
 #include <platform/native_xdelta_decode.h>
+#include <platform/native_lev_normalize.hpp>
 #include <platform/native_custom_package.h>
 extern "C" {
 #include <platform/native_custom_track_manager.h>
@@ -65,7 +66,7 @@ static void check(const XdeltaImportItem &item)
     MM_CustomText_Draw(title.c_str(), 32, 90, 244, 1, 0, nullptr);
     CHECK(lines == std::vector<std::string>{title}, "diagnostic title and index fit the review row");
     lines.clear();
-    MM_CustomText_Draw(item.reason, 305, 112, 176, 2, 0, nullptr);
+    MM_CustomText_Draw("Level format not supported", 305, 112, 176, 2, 0, nullptr);
     CHECK((lines == std::vector<std::string>{"Level format", "not supported"}),
           "complete diagnostic reason fits the detail panel without ellipsis");
 }
@@ -136,6 +137,29 @@ static Bytes make_vrm(unsigned seed, size_t junk)
     b.insert(b.end(), 4, 0);
     for (size_t i = 0; i < junk; i++) b.push_back((unsigned char)(0x5a + i));
     return b;
+}
+
+static Bytes alternate_lev(Bytes &ordinary)
+{
+    put32(ordinary, 4, 0x1f0);
+    std::vector<uint32_t> slots{0};
+    for (size_t at = BODY_PTRMAP + 8; at < ordinary.size(); at += 4)
+        slots.push_back(NativeLev::word(ordinary.data() + at));
+    std::sort(slots.begin(), slots.end());
+    ordinary.resize(BODY_PTRMAP + 4);
+    NativeLev::append(ordinary, uint32_t(slots.size() * 4));
+    for (auto s : slots) NativeLev::append(ordinary, s);
+    Bytes alt(ordinary.begin(), ordinary.begin() + BODY_PTRMAP + 4);
+    NativeLev::append(alt, 0x80000000u | uint32_t(slots.size() * 4));
+    uint32_t previous = 0;
+    for (auto s : slots)
+    {
+        uint32_t d = s - previous;
+        alt.push_back(static_cast<unsigned char>(d));
+        alt.push_back(static_cast<unsigned char>(d >> 8));
+        previous = s;
+    }
+    return alt;
 }
 
 /* ---- Synthetic raw MODE2/2352 disc. */
@@ -442,7 +466,92 @@ int main()
 
     const std::string discPath = write_file("base.bin", baseDisc);
 
-    /* Alternate pointer maps get diagnostic rows, never installable packages.
+    /* A normalized course uses the ordinary checks, hashes and install path. */
+    {
+        DiscSpec changed = base;
+        LevSpec spec; spec.seed = 43;
+        Bytes ordinary = make_lev(spec);
+        const Bytes alt = alternate_lev(ordinary);
+        changed.bigfile[1] = alt;
+        ScanResult r = scan(write_file("Normalized.xdelta", encode(baseDisc, make_disc(changed))), discPath);
+        CHECK(r.ok, "valid alternate course scans");
+        if (r.ok)
+        {
+            const auto *s = XdeltaImport_Summary(r.scan);
+            const auto *it = item_for(s, 1);
+            CHECK(it && it->offered && sha_hex(ordinary) == it->levSha256,
+                  "verifier and identity use normalized bytes");
+            if (it && it->offered)
+            {
+                const unsigned index = unsigned(it - s->items);
+                char error[256];
+                CHECK(XdeltaImport_RenameItem(r.scan, index, "Normalized course", error, sizeof error),
+                      "normalizer provenance survives rename");
+                s = XdeltaImport_Summary(r.scan);
+                it = item_for(s, 1);
+                std::vector<unsigned char> selected(s->count, 0); selected[index] = 1;
+                const std::string assets = root + "/normalized-assets";
+                CHECK(XdeltaImport_Install(r.scan, selected.data(), assets.c_str(),
+                                          CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM,
+                                          error, sizeof error) == 1, "normalized package installs");
+                const std::string folder = assets + "/tracks/packages/" + it->pin;
+                CHECK(read_file(folder + "/original/bigfile-1.lev") == ordinary, "installed output equals ordinary reference");
+                const Bytes source = read_file(folder + "/metadata/xdelta-source.json");
+                const auto provenance = nlohmann::json::parse(source.begin(), source.end());
+                CHECK(provenance["original_lev_sha256"] == sha_hex(alt) && provenance["original_lev_bytes"] == alt.size() &&
+                      provenance["normalized_lev_sha256"] == sha_hex(ordinary) && provenance["normalized_lev_bytes"] == ordinary.size() &&
+                      provenance["lev_normalizer_version"] == 1, "original and installed provenance are distinct");
+                std::vector<CustomPackageStoreEntry> rows;
+                CustomPackage_ScanStore((assets + "/tracks/packages").c_str(),
+                    [](const CustomPackageStoreEntry *e, void *c) { if (e->verified) static_cast<std::vector<CustomPackageStoreEntry> *>(c)->push_back(*e); },
+                    &rows, error, sizeof error);
+                CHECK(rows.size() == 1 && rows[0].local.xdelta, "normalized package reloads and verifies");
+            }
+        }
+        XdeltaImport_Free(&r.scan);
+    }
+
+    /* Normalization grants no mode capability and cannot repair bad payloads. */
+    {
+        DiscSpec changed = base;
+        LevSpec spec; spec.seed = 44;
+        Bytes ordinary = make_lev(spec);
+        put32(ordinary, 4 + 0x188, 0); /* No AI table, TT remains allowed. */
+        changed.bigfile[1] = alternate_lev(ordinary);
+        spec.seed = 45; spec.race = false;
+        ordinary = make_lev(spec);
+        changed.bigfile[3] = alternate_lev(ordinary);
+        spec.seed = 46; spec.race = true;
+        ordinary = make_lev(spec);
+        /* A null mapped model passes format checks but fails structure checks. */
+        put32(ordinary, 4 + BODY_INST + 0x10, 0);
+        changed.bigfile[5] = alternate_lev(ordinary);
+        spec.seed = 47;
+        ordinary = make_lev(spec);
+        changed.bigfile[7] = alternate_lev(ordinary);
+        changed.bigfile[6] = Bytes(20, 0); /* No preceding VRM. */
+        ScanResult r = scan(write_file("NormalChecks.xdelta", encode(baseDisc, make_disc(changed))), discPath);
+        CHECK(r.ok, "normalized refusal cases scan");
+        if (r.ok)
+        {
+            const auto *s = XdeltaImport_Summary(r.scan);
+            const auto *tt = item_for(s, 1);
+            const auto *norace = item_for(s, 3);
+            const auto *badmodel = item_for(s, 5);
+            const auto *novrm = item_for(s, 7);
+            CHECK(tt && tt->offered && std::strstr(tt->tags, "Race TT") && !std::strstr(tt->tags, "Arcade"),
+                  "no AI remains TT-only under unchanged mode rules");
+            CHECK(norace && !norace->offered && !std::strcmp(norace->reason, "Not a race track (no lap checkpoints)"),
+                  "normal checks refuse absent lap graph");
+            CHECK(badmodel && !badmodel->offered && std::strstr(badmodel->reason, "invalid instance model pointer"),
+                  "normal verifier refuses invalid payload after normalization");
+            CHECK(novrm && !novrm->offered && !std::strcmp(novrm->reason, "No valid preceding texture file"),
+                  "normalization never guesses a following texture pair");
+        }
+        XdeltaImport_Free(&r.scan);
+    }
+
+    /* Invalid alternate pointer maps get diagnostic rows, never packages.
        Keep ordinary track numbering independent of these diagnostic entries. */
     {
         DiscSpec alternate = base;
@@ -472,7 +581,7 @@ int main()
             {
                 const auto *it = item_for(s, slot);
                 CHECK(it && !it->offered && !it->pin[0] && !it->levSha256[0] && !it->tags[0] &&
-                      !std::strcmp(it->reason, "Level format not supported"),
+                      !std::strncmp(it->reason, "Level format not supported: ", std::strlen("Level format not supported: ")),
                       "alternate map has its own non-importable diagnostic");
                 CHECK(it && std::string(it->title) == "Level " + std::to_string(slot),
                       "diagnostic identifies the BIGFILE entry");

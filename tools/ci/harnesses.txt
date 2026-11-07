@@ -266,5 +266,6 @@ tools/test-arcade-crystals-production.py
 tools/test-arcade-room-hold.py
 tools/test-reverse-camera-production.py
 tools/test-xdelta-import.cpp
+tools/test-lev-normalize.cpp
 tools/test-track-registry.cpp
 tools/test-track-registry-download-production.py

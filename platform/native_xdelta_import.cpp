@@ -14,6 +14,7 @@
 #define _FILE_OFFSET_BITS 64
 #endif
 #include <platform/native_xdelta_import.h>
+#include <platform/native_lev_normalize.hpp>
 #include <platform/native_xdelta_decode.h>
 #include <platform/native_custom_package.h>
 extern "C" {
@@ -337,8 +338,7 @@ bool unsupported_lev_map(const unsigned char *p, size_t size)
     const uint32_t map = rd32(p);
     if ((map & 3) || map < 0x190 || 8ull + map > size) return false;
     if (!(rd32(p + 4 + map) & 0xe0000000u)) return false;
-    /* Only a diagnostic: the encoded map is never decoded or passed to the
-       package builder. Require bounded level structures as well as flag bits,
+    /* Require bounded level structures as well as flag bits,
        since arbitrary BIGFILE data can contain a high-bit word too. Offsets
        here are relative to the level body, which starts after the size word. */
     const uint32_t mesh = rd32(p + 4);
@@ -879,6 +879,8 @@ bool code_file(const std::string &path)
 struct Built
 {
     std::string manifest, pin;
+    std::string originalLevHash;
+    size_t originalLevBytes = 0;
     CustomPackageOwned *owned = nullptr;
     /* From the pack descriptor, for the Play Solo descriptor. */
     std::string author;
@@ -1029,6 +1031,8 @@ struct Candidate
 {
     uint32_t index;
     std::vector<unsigned char> lev, vrm;
+    std::string originalLevHash;
+    size_t originalLevBytes = 0;
 };
 
 std::string json_dump(const json &value) { return value.dump(-1, ' ', false, json::error_handler_t::strict); }
@@ -1038,12 +1042,22 @@ Built build_package(const Candidate &c, const std::string &title, const std::str
                     const XdeltaImportSummary &summary, const std::string &author, std::string &failure)
 {
     Built b;
+    b.originalLevHash = c.originalLevHash;
+    b.originalLevBytes = c.originalLevBytes;
     const std::string levHash = hex_sha256(c.lev.data(), c.lev.size());
     const std::string vrmHash = hex_sha256(c.vrm.data(), c.vrm.size());
     json source = {{"schema_version", 1}, {"provider", "xdelta"}, {"patch_sha256", summary.patchSha256},
                    {"patch_bytes", summary.patchBytes}, {"base_disc_sha256", summary.discSha256},
                    {"bigfile_index", c.index}, {"cutter_version", CTR_XDELTA_CUTTER_VERSION}};
     if (summary.descriptorSha256[0]) source["descriptor_sha256"] = summary.descriptorSha256;
+    if (!c.originalLevHash.empty())
+    {
+        source["lev_normalizer_version"] = 1;
+        source["original_lev_sha256"] = c.originalLevHash;
+        source["original_lev_bytes"] = c.originalLevBytes;
+        source["normalized_lev_sha256"] = levHash;
+        source["normalized_lev_bytes"] = c.lev.size();
+    }
     if (!author.empty()) source["author"] = author;
     if (meta && meta->excludeRelic) source["excluded"].push_back("relic");
     if (meta && meta->excludeTokens) source["excluded"].push_back("ctr_tokens");
@@ -1253,12 +1267,22 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             if (load_flag(cancel)) throw std::runtime_error("Cancelled");
             if (c.scratch < 0) continue;
             auto lev = entry_bytes(c.index);
+            std::string originalLevHash;
+            size_t originalLevBytes = 0;
+            bool normalized = false;
             if (unsupported_lev_map(lev.data(), lev.size()))
             {
-                consumed.insert(c.index);
-                unsupportedLevels.push_back(skip_item((int)c.index, "Level " + std::to_string(c.index),
-                                                     "Level format not supported"));
-                continue;
+                originalLevHash = hex_sha256(lev.data(), lev.size());
+                originalLevBytes = lev.size();
+                std::string why;
+                normalized = NativeLev::normalize(lev, why) == NativeLev::Result::Normalized;
+                if (!normalized)
+                {
+                    consumed.insert(c.index);
+                    unsupportedLevels.push_back(skip_item((int)c.index, "Level " + std::to_string(c.index),
+                                                         "Level format not supported: " + why));
+                    continue;
+                }
             }
             size_t levCut = cut_lev(lev.data(), lev.size());
             if (!levCut) continue;
@@ -1268,14 +1292,24 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             if (c.index == 0) continue;
             auto vrm = entry_bytes(c.index - 1);
             size_t vrmCut = cut_vrm(vrm.data(), vrm.size());
-            if (!vrmCut) continue;
+            if (!vrmCut)
+            {
+                if (normalized)
+                {
+                    consumed.insert(c.index);
+                    unsupportedLevels.push_back(skip_item((int)c.index, "Level " + std::to_string(c.index),
+                                                         "No valid preceding texture file"));
+                }
+                continue;
+            }
             consumed.insert(c.index);
             const TrackMeta *meta = nullptr;
             if (haveDescriptor && descriptor.tracks.count((int)c.index)) meta = &descriptor.tracks[(int)c.index];
             ordinal++;
             if (byIndex.count(c.index - 1)) consumed.insert(c.index - 1);
             Candidate candidate{c.index, std::vector<unsigned char>(lev.begin(), lev.begin() + (long)levCut),
-                                std::vector<unsigned char>(vrm.begin(), vrm.begin() + (long)vrmCut)};
+                                std::vector<unsigned char>(vrm.begin(), vrm.begin() + (long)vrmCut),
+                                originalLevHash, originalLevBytes};
             lev.clear(); lev.shrink_to_fit(); vrm.clear(); vrm.shrink_to_fit();
             const std::string levHash = hex_sha256(candidate.lev.data(), candidate.lev.size());
             const std::string vrmHash = hex_sha256(candidate.vrm.data(), candidate.vrm.size());
@@ -2335,7 +2369,8 @@ extern "C" int XdeltaImport_RenameItem(XdeltaImportScan *scan, unsigned int item
     if (name == row.title) return 1;
     try
     {
-        Candidate candidate{(uint32_t)row.bigfileIndex, package_file(old.owned, "lev"), package_file(old.owned, "vrm")};
+        Candidate candidate{(uint32_t)row.bigfileIndex, package_file(old.owned, "lev"), package_file(old.owned, "vrm"),
+                            old.originalLevHash, old.originalLevBytes};
         std::string key = old.hasMeta && !old.meta.trackKey.empty() ? old.meta.trackKey : title_track_key(name);
         if (!track_key_valid(key)) return refuse("No folder name fits this name");
         std::string failure;
