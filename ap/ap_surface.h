@@ -28,5 +28,8 @@ void AP_SurfaceReceive(int item);
 // must pass naturalTerrain=0 and remains untouched.
 int AP_SurfaceTerrain(struct Driver *driver, int terrain, int naturalTerrain);
 
+// Is this surface item held? Mud Season's feed line reads Ignore Dirt.
+int AP_SurfaceHeld(int item);
+
 #endif // CTR_AP
 #endif // AP_SURFACE_H

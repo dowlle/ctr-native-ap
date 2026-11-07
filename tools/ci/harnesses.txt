@@ -27,6 +27,7 @@ tools/test-box-number.c
 tools/test-box-offset.c
 tools/test-box-seat.c
 tools/test-box-seat-production.py
+tools/test-box-spots.cpp
 tools/test-alpha2-presentation-production.py
 tools/test-ceremony-banner.c
 tools/test-clocked-out-production.py
@@ -216,6 +217,8 @@ tools/test-trap-identities.cpp
 tools/test-crystal-checks.cpp
 tools/test-crystal-pickup-production.py
 tools/test-trap-scheduler.c
+tools/test-trap-alpha3.c
+tools/test-trap-display.c
 tools/test-mirror-model-cull.c
 tools/test-turbo-grant.c
 tools/test-update-core.cpp

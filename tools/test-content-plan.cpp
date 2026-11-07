@@ -1312,6 +1312,100 @@ int main(int argc, char **argv) {
             }
         expect(parse(crateless), "crates: without its routes the crateless track is admitted");
     }
+    // Hand-placed box spots (A3-14): a room generated with the A3-14 test spot
+    // files, Crash Cove with its 10 built-in spots plus 8 test spots 16 to 23
+    // and Baby T Park (named block 8) with 18 spots from 1, both picking 15;
+    // every other retail track takes its built-in spots.
+    J spots;
+    std::ifstream("tools/fixtures/content-plan/box-spots.json") >> spots;
+    expect(parse(spots) && bind_room(spots) && ap_content_plan_active(), "box-spots room binds");
+    {
+        std::map<std::string, J> sets;
+        for (const auto &set : spots["content_plan"]["item_boxes"]["spot_sets"]) sets[set["track_id"]] = set;
+        std::map<int64_t, J> checks;
+        for (const auto &c : spots["content_plan"]["checks"]) if (c.contains("spot")) checks[c["location"]] = c;
+        int spot_pads = 0, crash = 0, btp = 0;
+        bool fields_ok = true;
+        for (int p = 0; p < 111; ++p) {
+            const ctr_content_pad *pad = ap_content_plan_pad(p);
+            if (!pad || !pad->occupied || !pad->box_spots) continue;
+            ++spot_pads;
+            const J &set = sets.at(pad->track_id);
+            fields_ok &= pad->box_count == (int)set["picked"].size() && pad->box_crates == 0;
+            for (int b = 0; b < pad->box_count; ++b) {
+                const J &c = checks.at(pad->box_locations[b]);
+                fields_ok &= pad->box_number[b] == set["picked"][b].get<int>() && c["spot"]["number"] == pad->box_number[b] &&
+                             c["spot"]["pos"][0] == pad->box_pos[b][0] && c["spot"]["pos"][1] == pad->box_pos[b][1] &&
+                             c["spot"]["pos"][2] == pad->box_pos[b][2] && c["spot"]["rot_y"] == pad->box_rot_y[b];
+                if (pad->retail_id == 3) {
+                    ++crash;
+                    const int n = pad->box_number[b];
+                    fields_ok &= pad->box_locations[b] == (n <= 15 ? 35014000 + 15 * 0 + n - 1 : 35014300 + 35 * 0 + n - 16);
+                } else if (pad->named_block == 8) {
+                    ++btp;
+                    fields_ok &= pad->box_locations[b] == 35200000 + 200 * 8 + 19 + pad->box_number[b];
+                }
+            }
+        }
+        expect(spot_pads == (int)sets.size() && spot_pads > 2, "spots: every spot set stands on its pad");
+        expect(crash == 15 && btp == 15, "spots: Crash Cove and Baby T Park each pick 15");
+        expect(fields_ok, "spots: codes, numbers and positions match the room's checks");
+        auto set_of = [](J &j, const std::string &id) -> J & {
+            for (auto &s : j["content_plan"]["item_boxes"]["spot_sets"]) if (s["track_id"] == id) return s;
+            throw std::runtime_error("no spot set " + id);
+        };
+        auto spot_check = [](J &j, int64_t code) -> J & {
+            for (auto &c : j["content_plan"]["checks"]) if (c["location"] == code) return c;
+            throw std::runtime_error("no check");
+        };
+        const ctr_content_pad *cc = 0;
+        for (int p = 0; p < 111 && !cc; ++p) {
+            const ctr_content_pad *pad = ap_content_plan_pad(p);
+            if (pad && pad->occupied && pad->retail_id == 3 && !pad->cup) cc = pad;
+        }
+        const int64_t first = cc ? cc->box_locations[0] : 0;
+        auto s_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J bad = spots; change(bad); refuse(bad, "spots: " + why);
+        };
+        s_refuse("feature dropped", [](J &j) {
+            auto &f = j["content_plan"]["required_features"];
+            for (size_t i = 0; i < f.size(); ++i) if (f[i] == "box_spots_v1") { f.erase(i); break; }
+        });
+        s_refuse("spot set dropped", [&](J &j) {
+            auto &v = j["content_plan"]["item_boxes"]["spot_sets"];
+            for (size_t i = 0; i < v.size(); ++i) if (v[i]["track_id"] == "retail:3") { v.erase(i); break; }
+        });
+        s_refuse("picks one short", [&](J &j) { set_of(j, "retail:3")["picked"].erase(14); });
+        s_refuse("picks not ascending", [&](J &j) { std::swap(set_of(j, "retail:3")["picked"][0], set_of(j, "retail:3")["picked"][1]); });
+        s_refuse("number past 50", [&](J &j) { set_of(j, "retail:3")["picked"][14] = 51; });
+        s_refuse("pool smaller than the pick", [&](J &j) { set_of(j, "retail:3")["pool"] = 10; });
+        s_refuse("spot set for a track without a pad", [&](J &j) {
+            J extra = set_of(j, "retail:3"); extra["track_id"] = "retail:99"; j["content_plan"]["item_boxes"]["spot_sets"].push_back(extra);
+        });
+        s_refuse("a retail set dropped, its boxes rewritten to the frozen rows", [&](J &j) {
+            auto &v = j["content_plan"]["item_boxes"]["spot_sets"];
+            for (size_t i = 0; i < v.size(); ++i) if (v[i]["track_id"] == "retail:4") { v.erase(i); break; }
+            for (auto &c : j["content_plan"]["checks"]) if (c["owner"] == "retail:4") c.erase("spot");
+        });
+        s_refuse("LEV pin of another revision", [&](J &j) { set_of(j, "custom/baby-t-park/1.0.2")["lev_sha256"] = std::string(64, 'a'); });
+        s_refuse("LEV pin on a retail set", [&](J &j) { set_of(j, "retail:3")["lev_sha256"] = std::string(64, 'a'); });
+        s_refuse("unknown spot set field", [&](J &j) { set_of(j, "retail:3")["credit"] = "x"; });
+        s_refuse("spot dropped from a box", [&](J &j) { spot_check(j, first).erase("spot"); });
+        s_refuse("spot number differs from its code", [&](J &j) { spot_check(j, first)["spot"]["number"] = 24; });
+        s_refuse("spot position outside 16 bits", [&](J &j) { spot_check(j, first)["spot"]["pos"][0] = 40000; });
+        s_refuse("unknown spot field", [&](J &j) { spot_check(j, first)["spot"]["needs"] = "boost"; });
+        s_refuse("spot on a check that is not a box", [&](J &j) {
+            for (auto &c : j["content_plan"]["checks"]) if (c["kind"] == "trophy") { c["spot"] = spot_check(j, first)["spot"]; break; }
+        });
+        // The pre-A3-14 shape of the same room stays readable: no spot sets,
+        // no spot fields, the feature gone; boxes come from the registry rows.
+        J legacy = spots;
+        legacy["content_plan"]["item_boxes"].erase("spot_sets");
+        auto &f = legacy["content_plan"]["required_features"];
+        for (size_t i = 0; i < f.size(); ++i) if (f[i] == "box_spots_v1") { f.erase(i); break; }
+        for (auto &c : legacy["content_plan"]["checks"]) c.erase("spot");
+        expect(!parse(legacy), "spots: a picked community number has no registry slot without its spot set");
+    }
     // Cups (#133 PR 5): nine cups over retail, custom (named and generic) and
     // Cortex Vortex legs, shortened laps, sweeps and Cup Leg Victory checks.
     // Every cup pad is checked against the room's own records.

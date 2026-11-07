@@ -116,7 +116,7 @@ static void fixtures() {
         if (!ap_content_plan_active()) continue;
         Room all;
         for (auto id : ids) all.present.insert(id);
-        for (int64_t code = 35010000; code < 35010210; ++code) all.foreign[code] = 99;
+        for (int64_t code = 35010000; code < 35010215; ++code) all.foreign[code] = 99;
         for (const auto &row : slot["content_plan"]["items"]["rows"]) all.foreign[row["item"].get<int64_t>()] = 99;
         auto r = run(all);
         expect(r.goal && r.total == (int)ids.size() && r.reachable == r.total,
@@ -212,7 +212,7 @@ static void checked_is_not_reached() {
     expect(boss && hit, "bosses has a Hit check routed through a keyed garage");
     Room room;
     for (auto id : ids) room.present.insert(id);
-    for (int64_t code = 35010000; code < 35010210; ++code) room.foreign[code] = 99;
+    for (int64_t code = 35010000; code < 35010215; ++code) room.foreign[code] = 99;
     room.foreign.erase(35010014);
     room.checked.insert(boss);
     std::set<int64_t> miss;
@@ -326,7 +326,7 @@ static void shop_key_budgets() {
         for (int keys = 0; keys <= 4; ++keys) {
             Room room;
             for (auto id : ids) room.present.insert(id);
-            for (int64_t code = 35010000; code < 35010210; ++code)
+            for (int64_t code = 35010000; code < 35010215; ++code)
                 if (code != 35010014) room.foreign[code] = 99;
             for (const auto &row : p["items"]["rows"])
                 if (row["item"] != 35010014) room.foreign[row["item"].get<int64_t>()] = 99;

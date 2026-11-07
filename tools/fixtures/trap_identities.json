@@ -23,6 +23,13 @@
     {"item_id": 35010192, "key": "warpball_ambush", "name": "Warpball Ambush", "native_effect": "AP_TRAP_WARPBALL_AMBUSH"},
     {"item_id": 35010193, "key": "demo_camera", "name": "Demo Camera", "native_effect": "AP_TRAP_DEMO_CAMERA"},
     {"item_id": 35010206, "key": "clocked_out", "name": "Clocked Out", "native_effect": "AP_TRAP_CLOCKED_OUT"},
-    {"item_id": 35010207, "key": "reverse_camera", "name": "Reverse Camera", "native_effect": "AP_TRAP_REVERSE_CAMERA"}
+    {"item_id": 35010207, "key": "reverse_camera", "name": "Reverse Camera", "native_effect": "AP_TRAP_REVERSE_CAMERA"},
+    {"item_id": 35010208, "key": "always_jumping", "name": "Always Jumping", "native_effect": "AP_TRAP_ALWAYS_JUMPING"},
+    {"item_id": 35010209, "key": "no_drifting", "name": "No Drifting", "native_effect": "AP_TRAP_NO_DRIFTING"},
+    {"item_id": 35010210, "key": "rival_surge", "name": "Rival Surge", "native_effect": "AP_TRAP_RIVAL_SURGE"},
+    {"item_id": 35010211, "key": "mud_season", "name": "Mud Season", "native_effect": "AP_TRAP_MUD_SEASON"},
+    {"item_id": 35010212, "key": "limp_mode", "name": "Limp Mode", "native_effect": "AP_TRAP_LIMP_MODE"},
+    {"item_id": 35010213, "key": "stuck_steering", "name": "Stuck Steering", "native_effect": "AP_TRAP_STUCK_STEERING"},
+    {"item_id": 35010214, "key": "wumpa_leak", "name": "Wumpa Leak", "native_effect": "AP_TRAP_WUMPA_LEAK"}
   ]
 }
