@@ -200,7 +200,9 @@ the player client's Custom Content and Track Library pages. Three tabs:
   Part or Fail from `assets/tracks/import-record.json` (found by the patch's
   SHA-256, so a renamed copy counts) and the detail panel shows the full file
   name. R1 on a file, or in the review list, is Import all valid tracks. Track
-  names come from the pack descriptor, then the known-track table
+  names come from the pack descriptor, then the curated table of names from
+  tester feedback (`curated_track_name`, keyed by the patch's SHA-256 and the
+  track's BIGFILE index), then the known-track table
   (`known_track_name` in `platform/native_xdelta_import.cpp`), then a label
   such as "Lego Adventure track 3"; L1 in the review list types a name. While
   naming, Left / Right on the pad (or the arrow keys) move a text cursor
