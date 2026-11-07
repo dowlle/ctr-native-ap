@@ -556,6 +556,22 @@ int main()
         XdeltaImport_Free(&r.scan);
     }
 
+    {
+        DiscSpec changed = base;
+        LevSpec spec; spec.seed = 48;
+        Bytes ordinary = make_lev(spec);
+        changed.bigfile[0] = alternate_lev(ordinary);
+        ScanResult r = scan(write_file("FirstEntry.xdelta", encode(baseDisc, make_disc(changed))), discPath);
+        CHECK(r.ok, "normalized first-entry scan succeeds");
+        if (r.ok)
+        {
+            const auto *it = item_for(XdeltaImport_Summary(r.scan), 0);
+            CHECK(it && !it->offered && !std::strcmp(it->reason, "No preceding texture file"),
+                  "normalized first entry keeps a specific refusal row");
+        }
+        XdeltaImport_Free(&r.scan);
+    }
+
     /* Invalid alternate pointer maps get diagnostic rows, never packages.
        Keep ordinary track numbering independent of these diagnostic entries. */
     {

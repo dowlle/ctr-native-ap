@@ -1285,11 +1285,19 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                 }
             }
             size_t levCut = cut_lev(lev.data(), lev.size());
-            if (!levCut) continue;
+            if (!levCut || c.index == 0)
+            {
+                if (normalized)
+                {
+                    consumed.insert(c.index);
+                    unsupportedLevels.push_back(skip_item((int)c.index, "Level " + std::to_string(c.index),
+                        !levCut ? "Files failed checks: normalized level cutter" : "No preceding texture file"));
+                }
+                continue;
+            }
             /* A LEV pairs with the VRM before it in its BIGFILE group. A
                LEV-shaped entry without one (racer models and the like) is
                not a track and lands in the grouped "other" line. */
-            if (c.index == 0) continue;
             auto vrm = entry_bytes(c.index - 1);
             size_t vrmCut = cut_vrm(vrm.data(), vrm.size());
             if (!vrmCut)
