@@ -333,12 +333,31 @@ std::string hash_file(const std::string &path, unsigned long long *bytes, const 
 }
 
 /* ---- Cutter version 1 (the 2026-09-28 and 2026-10-15 research scripts). */
+bool unsupported_lev_map(const unsigned char *p, size_t size)
+{
+    if (size < 0x200) return false;
+    const uint32_t map = rd32(p);
+    if ((map & 3) || map < 0x190 || 8ull + map > size) return false;
+    if (!(rd32(p + 4 + map) & 0xe0000000u)) return false;
+    /* Only a diagnostic: the encoded map is never decoded or passed to the
+       package builder. Require bounded level structures as well as flag bits,
+       since arbitrary BIGFILE data can contain a high-bit word too. Offsets
+       here are relative to the level body, which starts after the size word. */
+    const uint32_t mesh = rd32(p + 4);
+    const uint32_t count = rd32(p + 4 + 0x0c);
+    const uint32_t instances = rd32(p + 4 + 0x10);
+    return mesh >= 0x190 && !(mesh & 3) && (unsigned long long)mesh + 0x10 <= map &&
+           count > 0 && count <= 65536 && instances >= 0x190 && !(instances & 3) &&
+           (unsigned long long)instances + (unsigned long long)count * 0x40 <= map;
+}
+
 size_t cut_lev(const unsigned char *p, size_t size)
 {
     if (size < 0x200) return 0;
     const uint32_t map = rd32(p);
     if (map & 3 || map < 0x190 || (unsigned long long)map + 8 > size) return 0;
     const uint32_t mapBytes = rd32(p + 4 + map);
+    if (mapBytes & 0xe0000000u) return 0;
     if (mapBytes & 3) return 0;
     const unsigned long long end = 4ull + map + 4 + mapBytes;
     return end <= size ? (size_t)end : 0;
@@ -1288,6 +1307,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             return bytes;
         };
         std::set<uint32_t> consumed;
+        std::vector<XdeltaImportItem> unsupportedLevels;
         unsigned ordinal = 0;
         size_t offeredBytes = 0;
         std::map<std::pair<std::string, std::string>, std::string> seen;
@@ -1297,6 +1317,13 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             if (load_flag(cancel)) throw std::runtime_error("Cancelled");
             if (c.scratch < 0) continue;
             auto lev = entry_bytes(c.index);
+            if (unsupported_lev_map(lev.data(), lev.size()))
+            {
+                consumed.insert(c.index);
+                unsupportedLevels.push_back(skip_item((int)c.index, "Level " + std::to_string(c.index),
+                                                     "Level format not supported"));
+                continue;
+            }
             size_t levCut = cut_lev(lev.data(), lev.size());
             if (!levCut) continue;
             /* A LEV pairs with the VRM before it in its BIGFILE group. A
@@ -1446,6 +1473,9 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
         }
         if (other)
             add_item(*scan, skip_item(-1, "Other changed files (" + std::to_string(other) + ")", "Not track content"));
+        /* Extra diagnostics must not displace existing rows, especially a
+           later importable track when the review list reaches its limit. */
+        for (const auto &item : unsupportedLevels) add_item(*scan, item);
         if (scan->dropped)
         {
             XdeltaImportItem more = skip_item(-1, std::to_string(scan->dropped) + " more items", "Too many items for one list");

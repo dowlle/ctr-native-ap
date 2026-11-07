@@ -39,6 +39,12 @@ struct Data data;
 #define CONN_PAD_CANCEL RAW_BTN_TRIANGLE
 
 static int checks, failures;
+static int saphiBusy;
+int ap_custom_track_download_busy(char *text, int size)
+{
+    if (text && size > 0) snprintf(text, size, "%s", saphiBusy ? "Project Saphi is busy, waiting 60s" : "");
+    return saphiBusy;
+}
 #define CHECK(x) do { checks++; if (!(x)) { failures++; printf("FAIL %d: %s\n", __LINE__, #x); } } while (0)
 #define CHECKM(x, m) do { checks++; if (!(x)) { failures++; printf("FAIL %d: %s (%s)\n", __LINE__, #x, m); } } while (0)
 
@@ -405,6 +411,14 @@ int main(void)
     CHECK(s_ctTab == CT_TAB_LIBRARY && s_ctFocus == CT_FOCUS_TABS && !consumed);
     frame(0, NULL); CHECK(!consumed);
     CHECK(has("CUSTOM TRACKS") && has("Library") && has("This Seed") && has("Import"));
+    saphiBusy = 60; frame(0, "saphi-busy-library"); CHECK(has("Project Saphi is busy, waiting 60s"));
+    frame(BTN_RIGHT, "saphi-busy-seed"); CHECK(has("Project Saphi is busy, waiting 60s"));
+    frame(BTN_RIGHT, "saphi-busy-import"); CHECK(has("Project Saphi is busy, waiting 60s"));
+    frame(BTN_DOWN, "saphi-busy-import-open"); CHECK(has("Project Saphi is busy, waiting 60s"));
+    frame(0, "saphi-busy-import-active"); CHECK(has("Project Saphi is busy, waiting 60s"));
+    frame(BTN_TRIANGLE, NULL);
+    saphiBusy = 0; frame(0, NULL); CHECK(!has("Project Saphi is busy"));
+    revisit(); frame(0, NULL);
     /* Union: Baby T Park once, Coco Park once (installed), Android Alley and Arcane Garden from Saphi. */
     CHECK(s_ctItemCount == 6);
     CHECK(has("Android Alley Remix") && has("Nightmare Fueled"));
