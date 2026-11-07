@@ -1181,6 +1181,10 @@ void VehPhysProc_Driving_Update(struct Thread *t, struct Driver *d)
 
 		     // player has jump buttons held
 		     ((sdata->gGamepads->gamepad[d->driverID].buttonsHeldCurrFrame) & d->buttonUsedToStartDrift) != 0) &&
+#ifdef CTR_AP
+		    // No Drifting: this check reads the pad itself, not the masked copy.
+		    !AP_TrapNoDrift(d) &&
+#endif
 
 		    // player is not in accel prevention or braking and
 		    ((d->actionsFlagSet & ACTION_ACCEL_PREVENTION) == 0) && (CTR_MipsSra(d->const_Speed_ClassStat, 1) <= d->speedApprox))
@@ -1860,7 +1864,12 @@ void VehPhysProc_PowerSlide_Update(struct Thread *t, struct Driver *d)
 	// This is the distance remaining that can be filled
 	meterLeft = d->turbo_MeterRoomLeft;
 
+#ifdef CTR_AP
+	// No Drifting: a shoulder tap during a slide gives no turbo either.
+	if ((pad->buttonsTapped & (BTN_R1 | BTN_L1)) == 0 || AP_TrapNoDrift(d))
+#else
 	if ((pad->buttonsTapped & (BTN_R1 | BTN_L1)) == 0)
+#endif
 	{
 		// If there is no room in the turbo meter left to fill
 		if (meterLeft == 0)
@@ -2003,7 +2012,12 @@ void VehPhysProc_PowerSlide_Update(struct Thread *t, struct Driver *d)
 		      ((pad->buttonsHeldCurrFrame &
 
 		        // does not include the jump button that you used to start drifting
-		        d->buttonUsedToStartDrift) == 0))))
+		        d->buttonUsedToStartDrift) == 0)
+#ifdef CTR_AP
+		      // No Drifting: a running slide ends as if the button was released.
+		      || AP_TrapNoDrift(d)
+#endif
+		      )))
 		{
 			// Stop drifting, just drive
 			VehPhysProc_PowerSlide_Finalize(d);

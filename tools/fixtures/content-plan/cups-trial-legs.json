@@ -1,0 +1,6243 @@
+{
+ "content_plan": {
+  "bosses": {
+   "bosses_required": 0,
+   "cups": [],
+   "oxide_1_optional": false,
+   "oxide_final_count": 18,
+   "oxide_final_unlock": 0,
+   "oxide_goal": 1,
+   "repeats": false,
+   "requirement_level": "high",
+   "track_shuffle": false
+  },
+  "checks": [
+   {
+    "display_name": "Red Gem Cup: Gem",
+    "kind": "cup",
+    "location": 35011200,
+    "owner": "gem_cup:0",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": null,
+      "mode": "cup",
+      "own_pad_id": "pad:10"
+     }
+    ]
+   },
+   {
+    "display_name": "Red Gem Cup: Win All Legs",
+    "kind": "cup_sweep",
+    "location": 35028300,
+    "owner": "gem_cup:0",
+    "routes": [
+     {
+      "award": "win_all_legs",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": null,
+      "mode": "cup",
+      "own_pad_id": "pad:10"
+     }
+    ]
+   },
+   {
+    "display_name": "Oxide Station: Trophy Race",
+    "kind": "trophy",
+    "location": 35011015,
+    "owner": "retail:13",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/retail:13",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:15"
+     }
+    ]
+   },
+   {
+    "display_name": "Oxide Station: Held 1st",
+    "kind": "podium",
+    "location": 35015160,
+    "owner": "retail:13",
+    "routes": [
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/retail:13",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:15"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:3",
+      "leg_id": "entry/gem_cup:3/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:18"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:1",
+      "leg_id": "entry/gem_cup:1/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:9"
+     }
+    ]
+   },
+   {
+    "display_name": "Oxide Station: Held 3rd",
+    "kind": "podium",
+    "location": 35015161,
+    "owner": "retail:13",
+    "routes": [
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/retail:13",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:15"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:3",
+      "leg_id": "entry/gem_cup:3/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:18"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:1",
+      "leg_id": "entry/gem_cup:1/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:9"
+     }
+    ]
+   },
+   {
+    "display_name": "Oxide Station: Finish on Podium",
+    "kind": "podium",
+    "location": 35015163,
+    "owner": "retail:13",
+    "routes": [
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/retail:13",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:15"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:3",
+      "leg_id": "entry/gem_cup:3/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:18"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:1",
+      "leg_id": "entry/gem_cup:1/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:9"
+     }
+    ]
+   },
+   {
+    "display_name": "Oxide Station: Finish (Any Position)",
+    "kind": "podium",
+    "location": 35015047,
+    "owner": "retail:13",
+    "routes": [
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/retail:13",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:15"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:3",
+      "leg_id": "entry/gem_cup:3/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:18"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:1",
+      "leg_id": "entry/gem_cup:1/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:9"
+     }
+    ]
+   },
+   {
+    "display_name": "Oxide Station: CTR Token Challenge",
+    "kind": "ctr",
+    "location": 35012315,
+    "owner": "retail:13",
+    "routes": [
+     {
+      "award": "win_letters",
+      "encounter_id": null,
+      "entry_id": "entry/retail:13",
+      "leg_id": null,
+      "mode": "ctr",
+      "own_pad_id": "pad:15"
+     }
+    ]
+   },
+   {
+    "display_name": "Oxide Station: Sapphire Time Trial",
+    "kind": "relic",
+    "location": 35012015,
+    "owner": "retail:13",
+    "routes": [
+     {
+      "award": "sapphire",
+      "encounter_id": null,
+      "entry_id": "entry/retail:13",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:15"
+     }
+    ]
+   },
+   {
+    "display_name": "Oxide Station: Gold Time Trial",
+    "kind": "relic",
+    "location": 35012115,
+    "owner": "retail:13",
+    "routes": [
+     {
+      "award": "gold",
+      "encounter_id": null,
+      "entry_id": "entry/retail:13",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:15"
+     }
+    ]
+   },
+   {
+    "display_name": "Hot Air Skyway: Trophy Race",
+    "kind": "trophy",
+    "location": 35011012,
+    "owner": "retail:7",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/retail:7",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:6"
+     }
+    ]
+   },
+   {
+    "display_name": "Hot Air Skyway: Held 1st",
+    "kind": "podium",
+    "location": 35015148,
+    "owner": "retail:7",
+    "routes": [
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/retail:7",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:6"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/cup:3",
+      "leg_id": "entry/cup:3/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:3"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/cup:26",
+      "leg_id": "entry/cup:26/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Hot Air Skyway: Held 3rd",
+    "kind": "podium",
+    "location": 35015149,
+    "owner": "retail:7",
+    "routes": [
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/retail:7",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:6"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/cup:3",
+      "leg_id": "entry/cup:3/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:3"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/cup:26",
+      "leg_id": "entry/cup:26/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Hot Air Skyway: Finish on Podium",
+    "kind": "podium",
+    "location": 35015151,
+    "owner": "retail:7",
+    "routes": [
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/retail:7",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:6"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/cup:3",
+      "leg_id": "entry/cup:3/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:3"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/cup:26",
+      "leg_id": "entry/cup:26/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Hot Air Skyway: Finish (Any Position)",
+    "kind": "podium",
+    "location": 35015038,
+    "owner": "retail:7",
+    "routes": [
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/retail:7",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:6"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/cup:3",
+      "leg_id": "entry/cup:3/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:3"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/cup:26",
+      "leg_id": "entry/cup:26/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Hot Air Skyway: CTR Token Challenge",
+    "kind": "ctr",
+    "location": 35012312,
+    "owner": "retail:7",
+    "routes": [
+     {
+      "award": "win_letters",
+      "encounter_id": null,
+      "entry_id": "entry/retail:7",
+      "leg_id": null,
+      "mode": "ctr",
+      "own_pad_id": "pad:6"
+     }
+    ]
+   },
+   {
+    "display_name": "Hot Air Skyway: Sapphire Time Trial",
+    "kind": "relic",
+    "location": 35012012,
+    "owner": "retail:7",
+    "routes": [
+     {
+      "award": "sapphire",
+      "encounter_id": null,
+      "entry_id": "entry/retail:7",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:6"
+     }
+    ]
+   },
+   {
+    "display_name": "Hot Air Skyway: Gold Time Trial",
+    "kind": "relic",
+    "location": 35012112,
+    "owner": "retail:7",
+    "routes": [
+     {
+      "award": "gold",
+      "encounter_id": null,
+      "entry_id": "entry/retail:7",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:6"
+     }
+    ]
+   },
+   {
+    "display_name": "Taor Cup: Win",
+    "kind": "cup",
+    "location": 35027002,
+    "owner": "cup:2",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/cup:2",
+      "leg_id": null,
+      "mode": "cup",
+      "own_pad_id": "pad:104"
+     }
+    ]
+   },
+   {
+    "display_name": "Taor Cup: Win All Legs",
+    "kind": "cup_sweep",
+    "location": 35027202,
+    "owner": "cup:2",
+    "routes": [
+     {
+      "award": "win_all_legs",
+      "encounter_id": null,
+      "entry_id": "entry/cup:2",
+      "leg_id": null,
+      "mode": "cup",
+      "own_pad_id": "pad:104"
+     }
+    ]
+   },
+   {
+    "display_name": "Rampage Ruins: Crystal Challenge",
+    "kind": "crystal",
+    "location": 35013001,
+    "owner": "arena:19",
+    "routes": [
+     {
+      "award": "complete",
+      "encounter_id": null,
+      "entry_id": "entry/arena:19",
+      "leg_id": null,
+      "mode": "crystal",
+      "own_pad_id": "pad:1"
+     }
+    ]
+   },
+   {
+    "display_name": "Superstarxalien Cup: Win",
+    "kind": "cup",
+    "location": 35027008,
+    "owner": "cup:8",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/cup:8",
+      "leg_id": null,
+      "mode": "cup",
+      "own_pad_id": "pad:17"
+     }
+    ]
+   },
+   {
+    "display_name": "Superstarxalien Cup: Win All Legs",
+    "kind": "cup_sweep",
+    "location": 35027208,
+    "owner": "cup:8",
+    "routes": [
+     {
+      "award": "win_all_legs",
+      "encounter_id": null,
+      "entry_id": "entry/cup:8",
+      "leg_id": null,
+      "mode": "cup",
+      "own_pad_id": "pad:17"
+     }
+    ]
+   },
+   {
+    "display_name": "Blizzard Bluff: Trophy Race",
+    "kind": "trophy",
+    "location": 35011008,
+    "owner": "retail:2",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/retail:2",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:11"
+     }
+    ]
+   },
+   {
+    "display_name": "Blizzard Bluff: Held 1st",
+    "kind": "podium",
+    "location": 35015132,
+    "owner": "retail:2",
+    "routes": [
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/retail:2",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:11"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": "entry/gem_cup:4/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:21"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:2",
+      "leg_id": "entry/gem_cup:2/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:13"
+     }
+    ]
+   },
+   {
+    "display_name": "Blizzard Bluff: Held 3rd",
+    "kind": "podium",
+    "location": 35015133,
+    "owner": "retail:2",
+    "routes": [
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/retail:2",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:11"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": "entry/gem_cup:4/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:21"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:2",
+      "leg_id": "entry/gem_cup:2/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:13"
+     }
+    ]
+   },
+   {
+    "display_name": "Blizzard Bluff: Finish on Podium",
+    "kind": "podium",
+    "location": 35015135,
+    "owner": "retail:2",
+    "routes": [
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/retail:2",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:11"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": "entry/gem_cup:4/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:21"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:2",
+      "leg_id": "entry/gem_cup:2/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:13"
+     }
+    ]
+   },
+   {
+    "display_name": "Blizzard Bluff: Finish (Any Position)",
+    "kind": "podium",
+    "location": 35015026,
+    "owner": "retail:2",
+    "routes": [
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/retail:2",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:11"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": "entry/gem_cup:4/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:21"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:2",
+      "leg_id": "entry/gem_cup:2/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:13"
+     }
+    ]
+   },
+   {
+    "display_name": "Blizzard Bluff: CTR Token Challenge",
+    "kind": "ctr",
+    "location": 35012308,
+    "owner": "retail:2",
+    "routes": [
+     {
+      "award": "win_letters",
+      "encounter_id": null,
+      "entry_id": "entry/retail:2",
+      "leg_id": null,
+      "mode": "ctr",
+      "own_pad_id": "pad:11"
+     }
+    ]
+   },
+   {
+    "display_name": "Blizzard Bluff: Sapphire Time Trial",
+    "kind": "relic",
+    "location": 35012008,
+    "owner": "retail:2",
+    "routes": [
+     {
+      "award": "sapphire",
+      "encounter_id": null,
+      "entry_id": "entry/retail:2",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:11"
+     }
+    ]
+   },
+   {
+    "display_name": "Blizzard Bluff: Gold Time Trial",
+    "kind": "relic",
+    "location": 35012108,
+    "owner": "retail:2",
+    "routes": [
+     {
+      "award": "gold",
+      "encounter_id": null,
+      "entry_id": "entry/retail:2",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:11"
+     }
+    ]
+   },
+   {
+    "display_name": "Papu's Pyramid: Trophy Race",
+    "kind": "trophy",
+    "location": 35011006,
+    "owner": "retail:5",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/retail:5",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:8"
+     }
+    ]
+   },
+   {
+    "display_name": "Papu's Pyramid: Held 1st",
+    "kind": "podium",
+    "location": 35015124,
+    "owner": "retail:5",
+    "routes": [
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/retail:5",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:8"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/cup:26",
+      "leg_id": "entry/cup:26/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Papu's Pyramid: Held 3rd",
+    "kind": "podium",
+    "location": 35015125,
+    "owner": "retail:5",
+    "routes": [
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/retail:5",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:8"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/cup:26",
+      "leg_id": "entry/cup:26/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Papu's Pyramid: Finish on Podium",
+    "kind": "podium",
+    "location": 35015127,
+    "owner": "retail:5",
+    "routes": [
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/retail:5",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:8"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/cup:26",
+      "leg_id": "entry/cup:26/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Papu's Pyramid: Finish (Any Position)",
+    "kind": "podium",
+    "location": 35015020,
+    "owner": "retail:5",
+    "routes": [
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/retail:5",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:8"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/cup:26",
+      "leg_id": "entry/cup:26/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Papu's Pyramid: CTR Token Challenge",
+    "kind": "ctr",
+    "location": 35012306,
+    "owner": "retail:5",
+    "routes": [
+     {
+      "award": "win_letters",
+      "encounter_id": null,
+      "entry_id": "entry/retail:5",
+      "leg_id": null,
+      "mode": "ctr",
+      "own_pad_id": "pad:8"
+     }
+    ]
+   },
+   {
+    "display_name": "Papu's Pyramid: Sapphire Time Trial",
+    "kind": "relic",
+    "location": 35012006,
+    "owner": "retail:5",
+    "routes": [
+     {
+      "award": "sapphire",
+      "encounter_id": null,
+      "entry_id": "entry/retail:5",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:8"
+     }
+    ]
+   },
+   {
+    "display_name": "Papu's Pyramid: Gold Time Trial",
+    "kind": "relic",
+    "location": 35012106,
+    "owner": "retail:5",
+    "routes": [
+     {
+      "award": "gold",
+      "encounter_id": null,
+      "entry_id": "entry/retail:5",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:8"
+     }
+    ]
+   },
+   {
+    "display_name": "Dragon Mines: Trophy Race",
+    "kind": "trophy",
+    "location": 35011009,
+    "owner": "retail:1",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/retail:1",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:0"
+     }
+    ]
+   },
+   {
+    "display_name": "Dragon Mines: Held 1st",
+    "kind": "podium",
+    "location": 35015136,
+    "owner": "retail:1",
+    "routes": [
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/retail:1",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:0"
+     }
+    ]
+   },
+   {
+    "display_name": "Dragon Mines: Held 3rd",
+    "kind": "podium",
+    "location": 35015137,
+    "owner": "retail:1",
+    "routes": [
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/retail:1",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:0"
+     }
+    ]
+   },
+   {
+    "display_name": "Dragon Mines: Finish on Podium",
+    "kind": "podium",
+    "location": 35015139,
+    "owner": "retail:1",
+    "routes": [
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/retail:1",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:0"
+     }
+    ]
+   },
+   {
+    "display_name": "Dragon Mines: Finish (Any Position)",
+    "kind": "podium",
+    "location": 35015029,
+    "owner": "retail:1",
+    "routes": [
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/retail:1",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:0"
+     }
+    ]
+   },
+   {
+    "display_name": "Dragon Mines: CTR Token Challenge",
+    "kind": "ctr",
+    "location": 35012309,
+    "owner": "retail:1",
+    "routes": [
+     {
+      "award": "win_letters",
+      "encounter_id": null,
+      "entry_id": "entry/retail:1",
+      "leg_id": null,
+      "mode": "ctr",
+      "own_pad_id": "pad:0"
+     }
+    ]
+   },
+   {
+    "display_name": "Dragon Mines: Sapphire Time Trial",
+    "kind": "relic",
+    "location": 35012009,
+    "owner": "retail:1",
+    "routes": [
+     {
+      "award": "sapphire",
+      "encounter_id": null,
+      "entry_id": "entry/retail:1",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:0"
+     }
+    ]
+   },
+   {
+    "display_name": "Dragon Mines: Gold Time Trial",
+    "kind": "relic",
+    "location": 35012109,
+    "owner": "retail:1",
+    "routes": [
+     {
+      "award": "gold",
+      "encounter_id": null,
+      "entry_id": "entry/retail:1",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:0"
+     }
+    ]
+   },
+   {
+    "display_name": "N. Gin Labs: Trophy Race",
+    "kind": "trophy",
+    "location": 35011014,
+    "owner": "retail:11",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/retail:11",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:102"
+     }
+    ]
+   },
+   {
+    "display_name": "N. Gin Labs: Held 1st",
+    "kind": "podium",
+    "location": 35015156,
+    "owner": "retail:11",
+    "routes": [
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/retail:11",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:102"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:3",
+      "leg_id": "entry/gem_cup:3/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:18"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:2",
+      "leg_id": "entry/gem_cup:2/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:13"
+     }
+    ]
+   },
+   {
+    "display_name": "N. Gin Labs: Held 3rd",
+    "kind": "podium",
+    "location": 35015157,
+    "owner": "retail:11",
+    "routes": [
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/retail:11",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:102"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:3",
+      "leg_id": "entry/gem_cup:3/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:18"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:2",
+      "leg_id": "entry/gem_cup:2/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:13"
+     }
+    ]
+   },
+   {
+    "display_name": "N. Gin Labs: Finish on Podium",
+    "kind": "podium",
+    "location": 35015159,
+    "owner": "retail:11",
+    "routes": [
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/retail:11",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:102"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:3",
+      "leg_id": "entry/gem_cup:3/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:18"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:2",
+      "leg_id": "entry/gem_cup:2/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:13"
+     }
+    ]
+   },
+   {
+    "display_name": "N. Gin Labs: Finish (Any Position)",
+    "kind": "podium",
+    "location": 35015044,
+    "owner": "retail:11",
+    "routes": [
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/retail:11",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:102"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:3",
+      "leg_id": "entry/gem_cup:3/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:18"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:2",
+      "leg_id": "entry/gem_cup:2/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:13"
+     }
+    ]
+   },
+   {
+    "display_name": "N. Gin Labs: CTR Token Challenge",
+    "kind": "ctr",
+    "location": 35012314,
+    "owner": "retail:11",
+    "routes": [
+     {
+      "award": "win_letters",
+      "encounter_id": null,
+      "entry_id": "entry/retail:11",
+      "leg_id": null,
+      "mode": "ctr",
+      "own_pad_id": "pad:102"
+     }
+    ]
+   },
+   {
+    "display_name": "N. Gin Labs: Sapphire Time Trial",
+    "kind": "relic",
+    "location": 35012014,
+    "owner": "retail:11",
+    "routes": [
+     {
+      "award": "sapphire",
+      "encounter_id": null,
+      "entry_id": "entry/retail:11",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:102"
+     }
+    ]
+   },
+   {
+    "display_name": "N. Gin Labs: Gold Time Trial",
+    "kind": "relic",
+    "location": 35012114,
+    "owner": "retail:11",
+    "routes": [
+     {
+      "award": "gold",
+      "encounter_id": null,
+      "entry_id": "entry/retail:11",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:102"
+     }
+    ]
+   },
+   {
+    "display_name": "Rocky Road: Crystal Challenge",
+    "kind": "crystal",
+    "location": 35013002,
+    "owner": "arena:23",
+    "routes": [
+     {
+      "award": "complete",
+      "encounter_id": null,
+      "entry_id": "entry/arena:23",
+      "leg_id": null,
+      "mode": "crystal",
+      "own_pad_id": "pad:5"
+     }
+    ]
+   },
+   {
+    "display_name": "Purple Gem Cup: Gem",
+    "kind": "cup",
+    "location": 35011204,
+    "owner": "gem_cup:4",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": null,
+      "mode": "cup",
+      "own_pad_id": "pad:21"
+     }
+    ]
+   },
+   {
+    "display_name": "Purple Gem Cup: Win All Legs",
+    "kind": "cup_sweep",
+    "location": 35028304,
+    "owner": "gem_cup:4",
+    "routes": [
+     {
+      "award": "win_all_legs",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": null,
+      "mode": "cup",
+      "own_pad_id": "pad:21"
+     }
+    ]
+   },
+   {
+    "display_name": "Mystery Caves: Trophy Race",
+    "kind": "trophy",
+    "location": 35011002,
+    "owner": "retail:9",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/retail:9",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:19"
+     }
+    ]
+   },
+   {
+    "display_name": "Mystery Caves: Held 1st",
+    "kind": "podium",
+    "location": 35015108,
+    "owner": "retail:9",
+    "routes": [
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/retail:9",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:19"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/cup:2",
+      "leg_id": "entry/cup:2/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:104"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/cup:8",
+      "leg_id": "entry/cup:8/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:17"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/cup:3",
+      "leg_id": "entry/cup:3/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:3"
+     }
+    ]
+   },
+   {
+    "display_name": "Mystery Caves: Held 3rd",
+    "kind": "podium",
+    "location": 35015109,
+    "owner": "retail:9",
+    "routes": [
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/retail:9",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:19"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/cup:2",
+      "leg_id": "entry/cup:2/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:104"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/cup:8",
+      "leg_id": "entry/cup:8/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:17"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/cup:3",
+      "leg_id": "entry/cup:3/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:3"
+     }
+    ]
+   },
+   {
+    "display_name": "Mystery Caves: Finish on Podium",
+    "kind": "podium",
+    "location": 35015111,
+    "owner": "retail:9",
+    "routes": [
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/retail:9",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:19"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/cup:2",
+      "leg_id": "entry/cup:2/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:104"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/cup:8",
+      "leg_id": "entry/cup:8/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:17"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/cup:3",
+      "leg_id": "entry/cup:3/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:3"
+     }
+    ]
+   },
+   {
+    "display_name": "Mystery Caves: Finish (Any Position)",
+    "kind": "podium",
+    "location": 35015008,
+    "owner": "retail:9",
+    "routes": [
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/retail:9",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:19"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/cup:2",
+      "leg_id": "entry/cup:2/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:104"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/cup:8",
+      "leg_id": "entry/cup:8/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:17"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/cup:3",
+      "leg_id": "entry/cup:3/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:3"
+     }
+    ]
+   },
+   {
+    "display_name": "Mystery Caves: CTR Token Challenge",
+    "kind": "ctr",
+    "location": 35012302,
+    "owner": "retail:9",
+    "routes": [
+     {
+      "award": "win_letters",
+      "encounter_id": null,
+      "entry_id": "entry/retail:9",
+      "leg_id": null,
+      "mode": "ctr",
+      "own_pad_id": "pad:19"
+     }
+    ]
+   },
+   {
+    "display_name": "Mystery Caves: Sapphire Time Trial",
+    "kind": "relic",
+    "location": 35012002,
+    "owner": "retail:9",
+    "routes": [
+     {
+      "award": "sapphire",
+      "encounter_id": null,
+      "entry_id": "entry/retail:9",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:19"
+     }
+    ]
+   },
+   {
+    "display_name": "Mystery Caves: Gold Time Trial",
+    "kind": "relic",
+    "location": 35012102,
+    "owner": "retail:9",
+    "routes": [
+     {
+      "award": "gold",
+      "encounter_id": null,
+      "entry_id": "entry/retail:9",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:19"
+     }
+    ]
+   },
+   {
+    "display_name": "Polar Pass: Trophy Race",
+    "kind": "trophy",
+    "location": 35011010,
+    "owner": "retail:12",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/retail:12",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:7"
+     }
+    ]
+   },
+   {
+    "display_name": "Polar Pass: Held 1st",
+    "kind": "podium",
+    "location": 35015140,
+    "owner": "retail:12",
+    "routes": [
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/retail:12",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:7"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": "entry/gem_cup:0/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:10"
+     }
+    ]
+   },
+   {
+    "display_name": "Polar Pass: Held 3rd",
+    "kind": "podium",
+    "location": 35015141,
+    "owner": "retail:12",
+    "routes": [
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/retail:12",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:7"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": "entry/gem_cup:0/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:10"
+     }
+    ]
+   },
+   {
+    "display_name": "Polar Pass: Finish on Podium",
+    "kind": "podium",
+    "location": 35015143,
+    "owner": "retail:12",
+    "routes": [
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/retail:12",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:7"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": "entry/gem_cup:0/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:10"
+     }
+    ]
+   },
+   {
+    "display_name": "Polar Pass: Finish (Any Position)",
+    "kind": "podium",
+    "location": 35015032,
+    "owner": "retail:12",
+    "routes": [
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/retail:12",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:7"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": "entry/gem_cup:0/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:10"
+     }
+    ]
+   },
+   {
+    "display_name": "Polar Pass: CTR Token Challenge",
+    "kind": "ctr",
+    "location": 35012310,
+    "owner": "retail:12",
+    "routes": [
+     {
+      "award": "win_letters",
+      "encounter_id": null,
+      "entry_id": "entry/retail:12",
+      "leg_id": null,
+      "mode": "ctr",
+      "own_pad_id": "pad:7"
+     }
+    ]
+   },
+   {
+    "display_name": "Polar Pass: Sapphire Time Trial",
+    "kind": "relic",
+    "location": 35012010,
+    "owner": "retail:12",
+    "routes": [
+     {
+      "award": "sapphire",
+      "encounter_id": null,
+      "entry_id": "entry/retail:12",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:7"
+     }
+    ]
+   },
+   {
+    "display_name": "Polar Pass: Gold Time Trial",
+    "kind": "relic",
+    "location": 35012110,
+    "owner": "retail:12",
+    "routes": [
+     {
+      "award": "gold",
+      "encounter_id": null,
+      "entry_id": "entry/retail:12",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:7"
+     }
+    ]
+   },
+   {
+    "display_name": "Roo's Tubes: Trophy Race",
+    "kind": "trophy",
+    "location": 35011001,
+    "owner": "retail:6",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/retail:6",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:23"
+     }
+    ]
+   },
+   {
+    "display_name": "Roo's Tubes: Held 1st",
+    "kind": "podium",
+    "location": 35015104,
+    "owner": "retail:6",
+    "routes": [
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/retail:6",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:23"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": "entry/gem_cup:0/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:10"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/cup:2",
+      "leg_id": "entry/cup:2/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:104"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": "entry/gem_cup:4/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:21"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/cup:26",
+      "leg_id": "entry/cup:26/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Roo's Tubes: Held 3rd",
+    "kind": "podium",
+    "location": 35015105,
+    "owner": "retail:6",
+    "routes": [
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/retail:6",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:23"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": "entry/gem_cup:0/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:10"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/cup:2",
+      "leg_id": "entry/cup:2/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:104"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": "entry/gem_cup:4/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:21"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/cup:26",
+      "leg_id": "entry/cup:26/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Roo's Tubes: Finish on Podium",
+    "kind": "podium",
+    "location": 35015107,
+    "owner": "retail:6",
+    "routes": [
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/retail:6",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:23"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": "entry/gem_cup:0/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:10"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/cup:2",
+      "leg_id": "entry/cup:2/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:104"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": "entry/gem_cup:4/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:21"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/cup:26",
+      "leg_id": "entry/cup:26/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Roo's Tubes: Finish (Any Position)",
+    "kind": "podium",
+    "location": 35015005,
+    "owner": "retail:6",
+    "routes": [
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/retail:6",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:23"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": "entry/gem_cup:0/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:10"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/cup:2",
+      "leg_id": "entry/cup:2/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:104"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": "entry/gem_cup:4/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:21"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/cup:26",
+      "leg_id": "entry/cup:26/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Roo's Tubes: CTR Token Challenge",
+    "kind": "ctr",
+    "location": 35012301,
+    "owner": "retail:6",
+    "routes": [
+     {
+      "award": "win_letters",
+      "encounter_id": null,
+      "entry_id": "entry/retail:6",
+      "leg_id": null,
+      "mode": "ctr",
+      "own_pad_id": "pad:23"
+     }
+    ]
+   },
+   {
+    "display_name": "Roo's Tubes: Sapphire Time Trial",
+    "kind": "relic",
+    "location": 35012001,
+    "owner": "retail:6",
+    "routes": [
+     {
+      "award": "sapphire",
+      "encounter_id": null,
+      "entry_id": "entry/retail:6",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:23"
+     }
+    ]
+   },
+   {
+    "display_name": "Roo's Tubes: Gold Time Trial",
+    "kind": "relic",
+    "location": 35012101,
+    "owner": "retail:6",
+    "routes": [
+     {
+      "award": "gold",
+      "encounter_id": null,
+      "entry_id": "entry/retail:6",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:23"
+     }
+    ]
+   },
+   {
+    "display_name": "JurnthReinal Cup: Win",
+    "kind": "cup",
+    "location": 35027003,
+    "owner": "cup:3",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/cup:3",
+      "leg_id": null,
+      "mode": "cup",
+      "own_pad_id": "pad:3"
+     }
+    ]
+   },
+   {
+    "display_name": "JurnthReinal Cup: Win All Legs",
+    "kind": "cup_sweep",
+    "location": 35027203,
+    "owner": "cup:3",
+    "routes": [
+     {
+      "award": "win_all_legs",
+      "encounter_id": null,
+      "entry_id": "entry/cup:3",
+      "leg_id": null,
+      "mode": "cup",
+      "own_pad_id": "pad:3"
+     }
+    ]
+   },
+   {
+    "display_name": "Crash Cove: Trophy Race",
+    "kind": "trophy",
+    "location": 35011000,
+    "owner": "retail:3",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/retail:3",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:4"
+     }
+    ]
+   },
+   {
+    "display_name": "Crash Cove: Held 1st",
+    "kind": "podium",
+    "location": 35015100,
+    "owner": "retail:3",
+    "routes": [
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/retail:3",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:4"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": "entry/gem_cup:0/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:10"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/cup:3",
+      "leg_id": "entry/cup:3/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:3"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:3",
+      "leg_id": "entry/gem_cup:3/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:18"
+     }
+    ]
+   },
+   {
+    "display_name": "Crash Cove: Held 3rd",
+    "kind": "podium",
+    "location": 35015101,
+    "owner": "retail:3",
+    "routes": [
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/retail:3",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:4"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": "entry/gem_cup:0/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:10"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/cup:3",
+      "leg_id": "entry/cup:3/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:3"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:3",
+      "leg_id": "entry/gem_cup:3/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:18"
+     }
+    ]
+   },
+   {
+    "display_name": "Crash Cove: Finish on Podium",
+    "kind": "podium",
+    "location": 35015103,
+    "owner": "retail:3",
+    "routes": [
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/retail:3",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:4"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": "entry/gem_cup:0/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:10"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/cup:3",
+      "leg_id": "entry/cup:3/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:3"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:3",
+      "leg_id": "entry/gem_cup:3/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:18"
+     }
+    ]
+   },
+   {
+    "display_name": "Crash Cove: Finish (Any Position)",
+    "kind": "podium",
+    "location": 35015002,
+    "owner": "retail:3",
+    "routes": [
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/retail:3",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:4"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": "entry/gem_cup:0/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:10"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/cup:3",
+      "leg_id": "entry/cup:3/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:3"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:3",
+      "leg_id": "entry/gem_cup:3/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:18"
+     }
+    ]
+   },
+   {
+    "display_name": "Crash Cove: CTR Token Challenge",
+    "kind": "ctr",
+    "location": 35012300,
+    "owner": "retail:3",
+    "routes": [
+     {
+      "award": "win_letters",
+      "encounter_id": null,
+      "entry_id": "entry/retail:3",
+      "leg_id": null,
+      "mode": "ctr",
+      "own_pad_id": "pad:4"
+     }
+    ]
+   },
+   {
+    "display_name": "Crash Cove: Sapphire Time Trial",
+    "kind": "relic",
+    "location": 35012000,
+    "owner": "retail:3",
+    "routes": [
+     {
+      "award": "sapphire",
+      "encounter_id": null,
+      "entry_id": "entry/retail:3",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:4"
+     }
+    ]
+   },
+   {
+    "display_name": "Crash Cove: Gold Time Trial",
+    "kind": "relic",
+    "location": 35012100,
+    "owner": "retail:3",
+    "routes": [
+     {
+      "award": "gold",
+      "encounter_id": null,
+      "entry_id": "entry/retail:3",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:4"
+     }
+    ]
+   },
+   {
+    "display_name": "Cortex Castle: Trophy Race",
+    "kind": "trophy",
+    "location": 35011013,
+    "owner": "retail:10",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/retail:10",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:103"
+     }
+    ]
+   },
+   {
+    "display_name": "Cortex Castle: Held 1st",
+    "kind": "podium",
+    "location": 35015152,
+    "owner": "retail:10",
+    "routes": [
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/retail:10",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:103"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/cup:2",
+      "leg_id": "entry/cup:2/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:104"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:2",
+      "leg_id": "entry/gem_cup:2/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:13"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:1",
+      "leg_id": "entry/gem_cup:1/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:9"
+     }
+    ]
+   },
+   {
+    "display_name": "Cortex Castle: Held 3rd",
+    "kind": "podium",
+    "location": 35015153,
+    "owner": "retail:10",
+    "routes": [
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/retail:10",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:103"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/cup:2",
+      "leg_id": "entry/cup:2/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:104"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:2",
+      "leg_id": "entry/gem_cup:2/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:13"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:1",
+      "leg_id": "entry/gem_cup:1/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:9"
+     }
+    ]
+   },
+   {
+    "display_name": "Cortex Castle: Finish on Podium",
+    "kind": "podium",
+    "location": 35015155,
+    "owner": "retail:10",
+    "routes": [
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/retail:10",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:103"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/cup:2",
+      "leg_id": "entry/cup:2/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:104"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:2",
+      "leg_id": "entry/gem_cup:2/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:13"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:1",
+      "leg_id": "entry/gem_cup:1/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:9"
+     }
+    ]
+   },
+   {
+    "display_name": "Cortex Castle: Finish (Any Position)",
+    "kind": "podium",
+    "location": 35015041,
+    "owner": "retail:10",
+    "routes": [
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/retail:10",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:103"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/cup:2",
+      "leg_id": "entry/cup:2/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:104"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:2",
+      "leg_id": "entry/gem_cup:2/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:13"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:1",
+      "leg_id": "entry/gem_cup:1/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:9"
+     }
+    ]
+   },
+   {
+    "display_name": "Cortex Castle: CTR Token Challenge",
+    "kind": "ctr",
+    "location": 35012313,
+    "owner": "retail:10",
+    "routes": [
+     {
+      "award": "win_letters",
+      "encounter_id": null,
+      "entry_id": "entry/retail:10",
+      "leg_id": null,
+      "mode": "ctr",
+      "own_pad_id": "pad:103"
+     }
+    ]
+   },
+   {
+    "display_name": "Cortex Castle: Sapphire Time Trial",
+    "kind": "relic",
+    "location": 35012013,
+    "owner": "retail:10",
+    "routes": [
+     {
+      "award": "sapphire",
+      "encounter_id": null,
+      "entry_id": "entry/retail:10",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:103"
+     }
+    ]
+   },
+   {
+    "display_name": "Cortex Castle: Gold Time Trial",
+    "kind": "relic",
+    "location": 35012113,
+    "owner": "retail:10",
+    "routes": [
+     {
+      "award": "gold",
+      "encounter_id": null,
+      "entry_id": "entry/retail:10",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:103"
+     }
+    ]
+   },
+   {
+    "display_name": "Skull Rock: Crystal Challenge",
+    "kind": "crystal",
+    "location": 35013000,
+    "owner": "arena:21",
+    "routes": [
+     {
+      "award": "complete",
+      "encounter_id": null,
+      "entry_id": "entry/arena:21",
+      "leg_id": null,
+      "mode": "crystal",
+      "own_pad_id": "pad:12"
+     }
+    ]
+   },
+   {
+    "display_name": "Slide Coliseum: Trophy Race",
+    "kind": "trophy",
+    "location": 35016200,
+    "owner": "retail:16",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/retail:16",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:100"
+     }
+    ]
+   },
+   {
+    "display_name": "Slide Coliseum: Held 1st",
+    "kind": "podium",
+    "location": 35015200,
+    "owner": "retail:16",
+    "routes": [
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/retail:16",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:100"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": "entry/gem_cup:0/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:10"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": "entry/gem_cup:4/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:21"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:3",
+      "leg_id": "entry/gem_cup:3/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:18"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/cup:26",
+      "leg_id": "entry/cup:26/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Slide Coliseum: Held 3rd",
+    "kind": "podium",
+    "location": 35015201,
+    "owner": "retail:16",
+    "routes": [
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/retail:16",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:100"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": "entry/gem_cup:0/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:10"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": "entry/gem_cup:4/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:21"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:3",
+      "leg_id": "entry/gem_cup:3/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:18"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/cup:26",
+      "leg_id": "entry/cup:26/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Slide Coliseum: Finish on Podium",
+    "kind": "podium",
+    "location": 35015203,
+    "owner": "retail:16",
+    "routes": [
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/retail:16",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:100"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": "entry/gem_cup:0/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:10"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": "entry/gem_cup:4/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:21"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:3",
+      "leg_id": "entry/gem_cup:3/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:18"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/cup:26",
+      "leg_id": "entry/cup:26/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Slide Coliseum: Finish (Any Position)",
+    "kind": "podium",
+    "location": 35015204,
+    "owner": "retail:16",
+    "routes": [
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/retail:16",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:100"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:0",
+      "leg_id": "entry/gem_cup:0/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:10"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": "entry/gem_cup:4/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:21"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:3",
+      "leg_id": "entry/gem_cup:3/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:18"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/cup:26",
+      "leg_id": "entry/cup:26/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Slide Coliseum: CTR Token Challenge",
+    "kind": "ctr",
+    "location": 35016210,
+    "owner": "retail:16",
+    "routes": [
+     {
+      "award": "win_letters",
+      "encounter_id": null,
+      "entry_id": "entry/retail:16",
+      "leg_id": null,
+      "mode": "ctr",
+      "own_pad_id": "pad:100"
+     }
+    ]
+   },
+   {
+    "display_name": "Slide Coliseum: Sapphire Time Trial",
+    "kind": "relic",
+    "location": 35012016,
+    "owner": "retail:16",
+    "routes": [
+     {
+      "award": "sapphire",
+      "encounter_id": null,
+      "entry_id": "entry/retail:16",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:100"
+     }
+    ]
+   },
+   {
+    "display_name": "Slide Coliseum: Gold Time Trial",
+    "kind": "relic",
+    "location": 35012116,
+    "owner": "retail:16",
+    "routes": [
+     {
+      "award": "gold",
+      "encounter_id": null,
+      "entry_id": "entry/retail:16",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:100"
+     }
+    ]
+   },
+   {
+    "display_name": "Sewer Speedway: Trophy Race",
+    "kind": "trophy",
+    "location": 35011003,
+    "owner": "retail:8",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/retail:8",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:14"
+     }
+    ]
+   },
+   {
+    "display_name": "Sewer Speedway: Held 1st",
+    "kind": "podium",
+    "location": 35015112,
+    "owner": "retail:8",
+    "routes": [
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/retail:8",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:14"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": "entry/gem_cup:4/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:21"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:2",
+      "leg_id": "entry/gem_cup:2/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:13"
+     }
+    ]
+   },
+   {
+    "display_name": "Sewer Speedway: Held 3rd",
+    "kind": "podium",
+    "location": 35015113,
+    "owner": "retail:8",
+    "routes": [
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/retail:8",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:14"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": "entry/gem_cup:4/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:21"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:2",
+      "leg_id": "entry/gem_cup:2/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:13"
+     }
+    ]
+   },
+   {
+    "display_name": "Sewer Speedway: Finish on Podium",
+    "kind": "podium",
+    "location": 35015115,
+    "owner": "retail:8",
+    "routes": [
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/retail:8",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:14"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": "entry/gem_cup:4/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:21"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:2",
+      "leg_id": "entry/gem_cup:2/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:13"
+     }
+    ]
+   },
+   {
+    "display_name": "Sewer Speedway: Finish (Any Position)",
+    "kind": "podium",
+    "location": 35015011,
+    "owner": "retail:8",
+    "routes": [
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/retail:8",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:14"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:4",
+      "leg_id": "entry/gem_cup:4/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:21"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:2",
+      "leg_id": "entry/gem_cup:2/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:13"
+     }
+    ]
+   },
+   {
+    "display_name": "Sewer Speedway: CTR Token Challenge",
+    "kind": "ctr",
+    "location": 35012303,
+    "owner": "retail:8",
+    "routes": [
+     {
+      "award": "win_letters",
+      "encounter_id": null,
+      "entry_id": "entry/retail:8",
+      "leg_id": null,
+      "mode": "ctr",
+      "own_pad_id": "pad:14"
+     }
+    ]
+   },
+   {
+    "display_name": "Sewer Speedway: Sapphire Time Trial",
+    "kind": "relic",
+    "location": 35012003,
+    "owner": "retail:8",
+    "routes": [
+     {
+      "award": "sapphire",
+      "encounter_id": null,
+      "entry_id": "entry/retail:8",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:14"
+     }
+    ]
+   },
+   {
+    "display_name": "Sewer Speedway: Gold Time Trial",
+    "kind": "relic",
+    "location": 35012103,
+    "owner": "retail:8",
+    "routes": [
+     {
+      "award": "gold",
+      "encounter_id": null,
+      "entry_id": "entry/retail:8",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:14"
+     }
+    ]
+   },
+   {
+    "display_name": "Nitro Court: Crystal Challenge",
+    "kind": "crystal",
+    "location": 35013003,
+    "owner": "arena:18",
+    "routes": [
+     {
+      "award": "complete",
+      "encounter_id": null,
+      "entry_id": "entry/arena:18",
+      "leg_id": null,
+      "mode": "crystal",
+      "own_pad_id": "pad:101"
+     }
+    ]
+   },
+   {
+    "display_name": "Dingo Canyon: Trophy Race",
+    "kind": "trophy",
+    "location": 35011007,
+    "owner": "retail:0",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/retail:0",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:16"
+     }
+    ]
+   },
+   {
+    "display_name": "Dingo Canyon: Held 1st",
+    "kind": "podium",
+    "location": 35015128,
+    "owner": "retail:0",
+    "routes": [
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/retail:0",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:16"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/cup:2",
+      "leg_id": "entry/cup:2/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:104"
+     },
+     {
+      "award": "held_1st",
+      "encounter_id": null,
+      "entry_id": "entry/cup:8",
+      "leg_id": "entry/cup:8/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:17"
+     }
+    ]
+   },
+   {
+    "display_name": "Dingo Canyon: Held 3rd",
+    "kind": "podium",
+    "location": 35015129,
+    "owner": "retail:0",
+    "routes": [
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/retail:0",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:16"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/cup:2",
+      "leg_id": "entry/cup:2/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:104"
+     },
+     {
+      "award": "held_3rd",
+      "encounter_id": null,
+      "entry_id": "entry/cup:8",
+      "leg_id": "entry/cup:8/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:17"
+     }
+    ]
+   },
+   {
+    "display_name": "Dingo Canyon: Finish on Podium",
+    "kind": "podium",
+    "location": 35015131,
+    "owner": "retail:0",
+    "routes": [
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/retail:0",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:16"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/cup:2",
+      "leg_id": "entry/cup:2/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:104"
+     },
+     {
+      "award": "finish_podium",
+      "encounter_id": null,
+      "entry_id": "entry/cup:8",
+      "leg_id": "entry/cup:8/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:17"
+     }
+    ]
+   },
+   {
+    "display_name": "Dingo Canyon: Finish (Any Position)",
+    "kind": "podium",
+    "location": 35015023,
+    "owner": "retail:0",
+    "routes": [
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/retail:0",
+      "leg_id": null,
+      "mode": "trophy",
+      "own_pad_id": "pad:16"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/cup:2",
+      "leg_id": "entry/cup:2/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:104"
+     },
+     {
+      "award": "finish_any",
+      "encounter_id": null,
+      "entry_id": "entry/cup:8",
+      "leg_id": "entry/cup:8/leg:2",
+      "mode": "cup",
+      "own_pad_id": "pad:17"
+     }
+    ]
+   },
+   {
+    "display_name": "Dingo Canyon: CTR Token Challenge",
+    "kind": "ctr",
+    "location": 35012307,
+    "owner": "retail:0",
+    "routes": [
+     {
+      "award": "win_letters",
+      "encounter_id": null,
+      "entry_id": "entry/retail:0",
+      "leg_id": null,
+      "mode": "ctr",
+      "own_pad_id": "pad:16"
+     }
+    ]
+   },
+   {
+    "display_name": "Dingo Canyon: Sapphire Time Trial",
+    "kind": "relic",
+    "location": 35012007,
+    "owner": "retail:0",
+    "routes": [
+     {
+      "award": "sapphire",
+      "encounter_id": null,
+      "entry_id": "entry/retail:0",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:16"
+     }
+    ]
+   },
+   {
+    "display_name": "Dingo Canyon: Gold Time Trial",
+    "kind": "relic",
+    "location": 35012107,
+    "owner": "retail:0",
+    "routes": [
+     {
+      "award": "gold",
+      "encounter_id": null,
+      "entry_id": "entry/retail:0",
+      "leg_id": null,
+      "mode": "relic",
+      "own_pad_id": "pad:16"
+     }
+    ]
+   },
+   {
+    "display_name": "Yellow Gem Cup: Gem",
+    "kind": "cup",
+    "location": 35011203,
+    "owner": "gem_cup:3",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:3",
+      "leg_id": null,
+      "mode": "cup",
+      "own_pad_id": "pad:18"
+     }
+    ]
+   },
+   {
+    "display_name": "Yellow Gem Cup: Win All Legs",
+    "kind": "cup_sweep",
+    "location": 35028303,
+    "owner": "gem_cup:3",
+    "routes": [
+     {
+      "award": "win_all_legs",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:3",
+      "leg_id": null,
+      "mode": "cup",
+      "own_pad_id": "pad:18"
+     }
+    ]
+   },
+   {
+    "display_name": "Sphere Cup: Win",
+    "kind": "cup",
+    "location": 35027026,
+    "owner": "cup:26",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/cup:26",
+      "leg_id": null,
+      "mode": "cup",
+      "own_pad_id": "pad:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Sphere Cup: Win All Legs",
+    "kind": "cup_sweep",
+    "location": 35027226,
+    "owner": "cup:26",
+    "routes": [
+     {
+      "award": "win_all_legs",
+      "encounter_id": null,
+      "entry_id": "entry/cup:26",
+      "leg_id": null,
+      "mode": "cup",
+      "own_pad_id": "pad:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Blue Gem Cup: Gem",
+    "kind": "cup",
+    "location": 35011202,
+    "owner": "gem_cup:2",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:2",
+      "leg_id": null,
+      "mode": "cup",
+      "own_pad_id": "pad:13"
+     }
+    ]
+   },
+   {
+    "display_name": "Blue Gem Cup: Win All Legs",
+    "kind": "cup_sweep",
+    "location": 35028302,
+    "owner": "gem_cup:2",
+    "routes": [
+     {
+      "award": "win_all_legs",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:2",
+      "leg_id": null,
+      "mode": "cup",
+      "own_pad_id": "pad:13"
+     }
+    ]
+   },
+   {
+    "display_name": "Green Gem Cup: Gem",
+    "kind": "cup",
+    "location": 35011201,
+    "owner": "gem_cup:1",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:1",
+      "leg_id": null,
+      "mode": "cup",
+      "own_pad_id": "pad:9"
+     }
+    ]
+   },
+   {
+    "display_name": "Green Gem Cup: Win All Legs",
+    "kind": "cup_sweep",
+    "location": 35028301,
+    "owner": "gem_cup:1",
+    "routes": [
+     {
+      "award": "win_all_legs",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:1",
+      "leg_id": null,
+      "mode": "cup",
+      "own_pad_id": "pad:9"
+     }
+    ]
+   },
+   {
+    "display_name": "Tiger Temple: Cup Leg Victory",
+    "kind": "cup_leg",
+    "location": 35016805,
+    "owner": "retail:4",
+    "routes": [
+     {
+      "award": "leg_win",
+      "encounter_id": null,
+      "entry_id": "entry/cup:8",
+      "leg_id": "entry/cup:8/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:17"
+     },
+     {
+      "award": "leg_win",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:1",
+      "leg_id": "entry/gem_cup:1/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:9"
+     }
+    ]
+   },
+   {
+    "display_name": "Tiny Arena: Cup Leg Victory",
+    "kind": "cup_leg",
+    "location": 35016811,
+    "owner": "retail:15",
+    "routes": [
+     {
+      "award": "leg_win",
+      "encounter_id": null,
+      "entry_id": "entry/cup:8",
+      "leg_id": "entry/cup:8/leg:3",
+      "mode": "cup",
+      "own_pad_id": "pad:17"
+     }
+    ]
+   },
+   {
+    "display_name": "Turbo Track: Cup Leg Victory",
+    "kind": "cup_leg",
+    "location": 35016817,
+    "owner": "retail:17",
+    "routes": [
+     {
+      "award": "leg_win",
+      "encounter_id": null,
+      "entry_id": "entry/cup:3",
+      "leg_id": "entry/cup:3/leg:1",
+      "mode": "cup",
+      "own_pad_id": "pad:3"
+     }
+    ]
+   },
+   {
+    "display_name": "Coco Park: Cup Leg Victory",
+    "kind": "cup_leg",
+    "location": 35016804,
+    "owner": "retail:14",
+    "routes": [
+     {
+      "award": "leg_win",
+      "encounter_id": null,
+      "entry_id": "entry/gem_cup:1",
+      "leg_id": "entry/gem_cup:1/leg:0",
+      "mode": "cup",
+      "own_pad_id": "pad:9"
+     }
+    ]
+   },
+   {
+    "display_name": "Ripper Roo Garage: Boss Race",
+    "kind": "boss_race",
+    "location": 35011100,
+    "owner": "encounter/garage:0/0",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": "encounter/garage:0/0",
+      "entry_id": "entry/boss:0/0",
+      "leg_id": null,
+      "mode": "boss_race",
+      "own_pad_id": "garage:0"
+     }
+    ]
+   },
+   {
+    "display_name": "Papu Papu Garage: Boss Race",
+    "kind": "boss_race",
+    "location": 35011101,
+    "owner": "encounter/garage:1/0",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": "encounter/garage:1/0",
+      "entry_id": "entry/boss:1/0",
+      "leg_id": null,
+      "mode": "boss_race",
+      "own_pad_id": "garage:1"
+     }
+    ]
+   },
+   {
+    "display_name": "Komodo Joe Garage: Boss Race",
+    "kind": "boss_race",
+    "location": 35011102,
+    "owner": "encounter/garage:2/0",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": "encounter/garage:2/0",
+      "entry_id": "entry/boss:2/0",
+      "leg_id": null,
+      "mode": "boss_race",
+      "own_pad_id": "garage:2"
+     }
+    ]
+   },
+   {
+    "display_name": "Pinstripe Garage: Boss Race",
+    "kind": "boss_race",
+    "location": 35011103,
+    "owner": "encounter/garage:3/0",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": "encounter/garage:3/0",
+      "entry_id": "entry/boss:3/0",
+      "leg_id": null,
+      "mode": "boss_race",
+      "own_pad_id": "garage:3"
+     }
+    ]
+   },
+   {
+    "display_name": "N. Oxide Garage: N. Oxide's Challenge",
+    "kind": "boss_race",
+    "location": 35011104,
+    "owner": "encounter/garage:4/0",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": "encounter/garage:4/0",
+      "entry_id": "entry/boss:4/0",
+      "leg_id": null,
+      "mode": "boss_race",
+      "own_pad_id": "garage:4"
+     }
+    ]
+   },
+   {
+    "display_name": "N. Oxide Garage: N. Oxide's Final Challenge",
+    "kind": "boss_race",
+    "location": 35011105,
+    "owner": "encounter/garage:4/1",
+    "routes": [
+     {
+      "award": "win",
+      "encounter_id": "encounter/garage:4/1",
+      "entry_id": "entry/boss:4/1",
+      "leg_id": null,
+      "mode": "boss_race",
+      "own_pad_id": "garage:4"
+     }
+    ]
+   },
+   {
+    "display_name": "N. Sanity Beach Shop: Slot 1",
+    "kind": "wumpa_shop",
+    "location": 35028600,
+    "owner": "hub:26",
+    "price": 25,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "N. Sanity Beach Shop: Slot 2",
+    "kind": "wumpa_shop",
+    "location": 35028601,
+    "owner": "hub:26",
+    "price": 22,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "N. Sanity Beach Shop: Slot 3",
+    "kind": "wumpa_shop",
+    "location": 35028602,
+    "owner": "hub:26",
+    "price": 14,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "N. Sanity Beach Shop: Slot 4",
+    "kind": "wumpa_shop",
+    "location": 35028603,
+    "owner": "hub:26",
+    "price": 24,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "N. Sanity Beach Shop: Slot 5",
+    "kind": "wumpa_shop",
+    "location": 35028604,
+    "owner": "hub:26",
+    "price": 15,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "N. Sanity Beach Shop: Slot 6",
+    "kind": "wumpa_shop",
+    "location": 35028605,
+    "owner": "hub:26",
+    "price": 30,
+    "routes": [],
+    "unlock_banked": 50
+   },
+   {
+    "display_name": "N. Sanity Beach Shop: Slot 7",
+    "kind": "wumpa_shop",
+    "location": 35028606,
+    "owner": "hub:26",
+    "price": 13,
+    "routes": [],
+    "unlock_banked": 100
+   },
+   {
+    "display_name": "N. Sanity Beach Shop: Slot 8",
+    "kind": "wumpa_shop",
+    "location": 35028607,
+    "owner": "hub:26",
+    "price": 14,
+    "routes": [],
+    "unlock_banked": 150
+   },
+   {
+    "display_name": "N. Sanity Beach Shop: Slot 9",
+    "kind": "wumpa_shop",
+    "location": 35028608,
+    "owner": "hub:26",
+    "price": 23,
+    "routes": [],
+    "unlock_banked": 200
+   },
+   {
+    "display_name": "N. Sanity Beach Shop: Slot 10",
+    "kind": "wumpa_shop",
+    "location": 35028609,
+    "owner": "hub:26",
+    "price": 13,
+    "routes": [],
+    "unlock_banked": 250
+   },
+   {
+    "display_name": "Gem Stone Valley Shop: Slot 1",
+    "kind": "wumpa_shop",
+    "location": 35028640,
+    "owner": "hub:25",
+    "price": 25,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Gem Stone Valley Shop: Slot 2",
+    "kind": "wumpa_shop",
+    "location": 35028641,
+    "owner": "hub:25",
+    "price": 31,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Gem Stone Valley Shop: Slot 3",
+    "kind": "wumpa_shop",
+    "location": 35028642,
+    "owner": "hub:25",
+    "price": 41,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Gem Stone Valley Shop: Slot 4",
+    "kind": "wumpa_shop",
+    "location": 35028643,
+    "owner": "hub:25",
+    "price": 34,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Gem Stone Valley Shop: Slot 5",
+    "kind": "wumpa_shop",
+    "location": 35028644,
+    "owner": "hub:25",
+    "price": 42,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Gem Stone Valley Shop: Slot 6",
+    "kind": "wumpa_shop",
+    "location": 35028645,
+    "owner": "hub:25",
+    "price": 26,
+    "routes": [],
+    "unlock_banked": 50
+   },
+   {
+    "display_name": "Gem Stone Valley Shop: Slot 7",
+    "kind": "wumpa_shop",
+    "location": 35028646,
+    "owner": "hub:25",
+    "price": 32,
+    "routes": [],
+    "unlock_banked": 100
+   },
+   {
+    "display_name": "Gem Stone Valley Shop: Slot 8",
+    "kind": "wumpa_shop",
+    "location": 35028647,
+    "owner": "hub:25",
+    "price": 29,
+    "routes": [],
+    "unlock_banked": 150
+   },
+   {
+    "display_name": "Gem Stone Valley Shop: Slot 9",
+    "kind": "wumpa_shop",
+    "location": 35028648,
+    "owner": "hub:25",
+    "price": 26,
+    "routes": [],
+    "unlock_banked": 200
+   },
+   {
+    "display_name": "Gem Stone Valley Shop: Slot 10",
+    "kind": "wumpa_shop",
+    "location": 35028649,
+    "owner": "hub:25",
+    "price": 24,
+    "routes": [],
+    "unlock_banked": 250
+   },
+   {
+    "display_name": "Lost Ruins Shop: Slot 1",
+    "kind": "wumpa_shop",
+    "location": 35028680,
+    "owner": "hub:27",
+    "price": 40,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Lost Ruins Shop: Slot 2",
+    "kind": "wumpa_shop",
+    "location": 35028681,
+    "owner": "hub:27",
+    "price": 20,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Lost Ruins Shop: Slot 3",
+    "kind": "wumpa_shop",
+    "location": 35028682,
+    "owner": "hub:27",
+    "price": 25,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Lost Ruins Shop: Slot 4",
+    "kind": "wumpa_shop",
+    "location": 35028683,
+    "owner": "hub:27",
+    "price": 26,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Lost Ruins Shop: Slot 5",
+    "kind": "wumpa_shop",
+    "location": 35028684,
+    "owner": "hub:27",
+    "price": 29,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Lost Ruins Shop: Slot 6",
+    "kind": "wumpa_shop",
+    "location": 35028685,
+    "owner": "hub:27",
+    "price": 43,
+    "routes": [],
+    "unlock_banked": 50
+   },
+   {
+    "display_name": "Lost Ruins Shop: Slot 7",
+    "kind": "wumpa_shop",
+    "location": 35028686,
+    "owner": "hub:27",
+    "price": 22,
+    "routes": [],
+    "unlock_banked": 100
+   },
+   {
+    "display_name": "Lost Ruins Shop: Slot 8",
+    "kind": "wumpa_shop",
+    "location": 35028687,
+    "owner": "hub:27",
+    "price": 30,
+    "routes": [],
+    "unlock_banked": 150
+   },
+   {
+    "display_name": "Lost Ruins Shop: Slot 9",
+    "kind": "wumpa_shop",
+    "location": 35028688,
+    "owner": "hub:27",
+    "price": 25,
+    "routes": [],
+    "unlock_banked": 200
+   },
+   {
+    "display_name": "Lost Ruins Shop: Slot 10",
+    "kind": "wumpa_shop",
+    "location": 35028689,
+    "owner": "hub:27",
+    "price": 32,
+    "routes": [],
+    "unlock_banked": 250
+   },
+   {
+    "display_name": "Glacier Park Shop: Slot 1",
+    "kind": "wumpa_shop",
+    "location": 35028720,
+    "owner": "hub:28",
+    "price": 41,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Glacier Park Shop: Slot 2",
+    "kind": "wumpa_shop",
+    "location": 35028721,
+    "owner": "hub:28",
+    "price": 38,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Glacier Park Shop: Slot 3",
+    "kind": "wumpa_shop",
+    "location": 35028722,
+    "owner": "hub:28",
+    "price": 49,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Glacier Park Shop: Slot 4",
+    "kind": "wumpa_shop",
+    "location": 35028723,
+    "owner": "hub:28",
+    "price": 59,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Glacier Park Shop: Slot 5",
+    "kind": "wumpa_shop",
+    "location": 35028724,
+    "owner": "hub:28",
+    "price": 39,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Glacier Park Shop: Slot 6",
+    "kind": "wumpa_shop",
+    "location": 35028725,
+    "owner": "hub:28",
+    "price": 35,
+    "routes": [],
+    "unlock_banked": 50
+   },
+   {
+    "display_name": "Glacier Park Shop: Slot 7",
+    "kind": "wumpa_shop",
+    "location": 35028726,
+    "owner": "hub:28",
+    "price": 58,
+    "routes": [],
+    "unlock_banked": 100
+   },
+   {
+    "display_name": "Glacier Park Shop: Slot 8",
+    "kind": "wumpa_shop",
+    "location": 35028727,
+    "owner": "hub:28",
+    "price": 57,
+    "routes": [],
+    "unlock_banked": 150
+   },
+   {
+    "display_name": "Glacier Park Shop: Slot 9",
+    "kind": "wumpa_shop",
+    "location": 35028728,
+    "owner": "hub:28",
+    "price": 53,
+    "routes": [],
+    "unlock_banked": 200
+   },
+   {
+    "display_name": "Glacier Park Shop: Slot 10",
+    "kind": "wumpa_shop",
+    "location": 35028729,
+    "owner": "hub:28",
+    "price": 35,
+    "routes": [],
+    "unlock_banked": 250
+   },
+   {
+    "display_name": "Citadel City Shop: Slot 1",
+    "kind": "wumpa_shop",
+    "location": 35028760,
+    "owner": "hub:29",
+    "price": 57,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Citadel City Shop: Slot 2",
+    "kind": "wumpa_shop",
+    "location": 35028761,
+    "owner": "hub:29",
+    "price": 42,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Citadel City Shop: Slot 3",
+    "kind": "wumpa_shop",
+    "location": 35028762,
+    "owner": "hub:29",
+    "price": 57,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Citadel City Shop: Slot 4",
+    "kind": "wumpa_shop",
+    "location": 35028763,
+    "owner": "hub:29",
+    "price": 57,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Citadel City Shop: Slot 5",
+    "kind": "wumpa_shop",
+    "location": 35028764,
+    "owner": "hub:29",
+    "price": 47,
+    "routes": [],
+    "unlock_banked": 0
+   },
+   {
+    "display_name": "Citadel City Shop: Slot 6",
+    "kind": "wumpa_shop",
+    "location": 35028765,
+    "owner": "hub:29",
+    "price": 70,
+    "routes": [],
+    "unlock_banked": 50
+   },
+   {
+    "display_name": "Citadel City Shop: Slot 7",
+    "kind": "wumpa_shop",
+    "location": 35028766,
+    "owner": "hub:29",
+    "price": 54,
+    "routes": [],
+    "unlock_banked": 100
+   },
+   {
+    "display_name": "Citadel City Shop: Slot 8",
+    "kind": "wumpa_shop",
+    "location": 35028767,
+    "owner": "hub:29",
+    "price": 68,
+    "routes": [],
+    "unlock_banked": 150
+   },
+   {
+    "display_name": "Citadel City Shop: Slot 9",
+    "kind": "wumpa_shop",
+    "location": 35028768,
+    "owner": "hub:29",
+    "price": 72,
+    "routes": [],
+    "unlock_banked": 200
+   },
+   {
+    "display_name": "Citadel City Shop: Slot 10",
+    "kind": "wumpa_shop",
+    "location": 35028769,
+    "owner": "hub:29",
+    "price": 65,
+    "routes": [],
+    "unlock_banked": 250
+   }
+  ],
+  "encounters": [
+   {
+    "completion_location": 35011100,
+    "entry_id": "entry/boss:0/0",
+    "id": "encounter/garage:0/0",
+    "index": 0,
+    "pad_id": "garage:0",
+    "requirement_id": "boss:0"
+   },
+   {
+    "completion_location": 35011101,
+    "entry_id": "entry/boss:1/0",
+    "id": "encounter/garage:1/0",
+    "index": 0,
+    "pad_id": "garage:1",
+    "requirement_id": "boss:1"
+   },
+   {
+    "completion_location": 35011102,
+    "entry_id": "entry/boss:2/0",
+    "id": "encounter/garage:2/0",
+    "index": 0,
+    "pad_id": "garage:2",
+    "requirement_id": "boss:2"
+   },
+   {
+    "completion_location": 35011103,
+    "entry_id": "entry/boss:3/0",
+    "id": "encounter/garage:3/0",
+    "index": 0,
+    "pad_id": "garage:3",
+    "requirement_id": "boss:3"
+   },
+   {
+    "completion_location": 35011104,
+    "entry_id": "entry/boss:4/0",
+    "id": "encounter/garage:4/0",
+    "index": 0,
+    "pad_id": "garage:4",
+    "requirement_id": "free"
+   },
+   {
+    "completion_location": 35011105,
+    "entry_id": "entry/boss:4/1",
+    "id": "encounter/garage:4/1",
+    "index": 1,
+    "pad_id": "garage:4",
+    "requirement_id": "oxide:final"
+   }
+  ],
+  "entries": [
+   {
+    "display_name": "Red Gem Cup",
+    "field_size": 8,
+    "id": "entry/gem_cup:0",
+    "kind": "cup",
+    "legs": [
+     {
+      "id": "entry/gem_cup:0/leg:0",
+      "laps": 1,
+      "track_id": "retail:6"
+     },
+     {
+      "id": "entry/gem_cup:0/leg:1",
+      "laps": 1,
+      "track_id": "retail:16"
+     },
+     {
+      "id": "entry/gem_cup:0/leg:2",
+      "laps": 1,
+      "track_id": "retail:3"
+     },
+     {
+      "id": "entry/gem_cup:0/leg:3",
+      "laps": 1,
+      "track_id": "retail:12"
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ]
+   },
+   {
+    "id": "entry/retail:13",
+    "kind": "track",
+    "merged": false,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "track_id": "retail:13"
+   },
+   {
+    "id": "entry/retail:7",
+    "kind": "track",
+    "merged": false,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "track_id": "retail:7"
+   },
+   {
+    "display_name": "Taor Cup",
+    "field_size": 8,
+    "id": "entry/cup:2",
+    "kind": "cup",
+    "legs": [
+     {
+      "id": "entry/cup:2/leg:0",
+      "laps": 1,
+      "track_id": "retail:10"
+     },
+     {
+      "id": "entry/cup:2/leg:1",
+      "laps": 1,
+      "track_id": "retail:0"
+     },
+     {
+      "id": "entry/cup:2/leg:2",
+      "laps": 1,
+      "track_id": "retail:6"
+     },
+     {
+      "id": "entry/cup:2/leg:3",
+      "laps": 1,
+      "track_id": "retail:9"
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ]
+   },
+   {
+    "arena_id": 19,
+    "id": "entry/arena:19",
+    "kind": "crystal",
+    "target": 20,
+    "time_limit_ticks": 81600
+   },
+   {
+    "display_name": "Superstarxalien Cup",
+    "field_size": 8,
+    "id": "entry/cup:8",
+    "kind": "cup",
+    "legs": [
+     {
+      "id": "entry/cup:8/leg:0",
+      "laps": 1,
+      "track_id": "retail:4"
+     },
+     {
+      "id": "entry/cup:8/leg:1",
+      "laps": 1,
+      "track_id": "retail:9"
+     },
+     {
+      "id": "entry/cup:8/leg:2",
+      "laps": 1,
+      "track_id": "retail:0"
+     },
+     {
+      "id": "entry/cup:8/leg:3",
+      "laps": 1,
+      "track_id": "retail:15"
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ]
+   },
+   {
+    "id": "entry/retail:2",
+    "kind": "track",
+    "merged": false,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "track_id": "retail:2"
+   },
+   {
+    "id": "entry/retail:5",
+    "kind": "track",
+    "merged": false,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "track_id": "retail:5"
+   },
+   {
+    "id": "entry/retail:1",
+    "kind": "track",
+    "merged": false,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "track_id": "retail:1"
+   },
+   {
+    "id": "entry/retail:11",
+    "kind": "track",
+    "merged": false,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "track_id": "retail:11"
+   },
+   {
+    "arena_id": 23,
+    "id": "entry/arena:23",
+    "kind": "crystal",
+    "target": 20,
+    "time_limit_ticks": 76800
+   },
+   {
+    "display_name": "Purple Gem Cup",
+    "field_size": 8,
+    "id": "entry/gem_cup:4",
+    "kind": "cup",
+    "legs": [
+     {
+      "id": "entry/gem_cup:4/leg:0",
+      "laps": 1,
+      "track_id": "retail:16"
+     },
+     {
+      "id": "entry/gem_cup:4/leg:1",
+      "laps": 1,
+      "track_id": "retail:8"
+     },
+     {
+      "id": "entry/gem_cup:4/leg:2",
+      "laps": 1,
+      "track_id": "retail:6"
+     },
+     {
+      "id": "entry/gem_cup:4/leg:3",
+      "laps": 1,
+      "track_id": "retail:2"
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ]
+   },
+   {
+    "id": "entry/retail:9",
+    "kind": "track",
+    "merged": false,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "track_id": "retail:9"
+   },
+   {
+    "id": "entry/retail:12",
+    "kind": "track",
+    "merged": false,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "track_id": "retail:12"
+   },
+   {
+    "id": "entry/retail:6",
+    "kind": "track",
+    "merged": false,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "track_id": "retail:6"
+   },
+   {
+    "display_name": "JurnthReinal Cup",
+    "field_size": 8,
+    "id": "entry/cup:3",
+    "kind": "cup",
+    "legs": [
+     {
+      "id": "entry/cup:3/leg:0",
+      "laps": 1,
+      "track_id": "retail:3"
+     },
+     {
+      "id": "entry/cup:3/leg:1",
+      "laps": 1,
+      "track_id": "retail:17"
+     },
+     {
+      "id": "entry/cup:3/leg:2",
+      "laps": 1,
+      "track_id": "retail:9"
+     },
+     {
+      "id": "entry/cup:3/leg:3",
+      "laps": 1,
+      "track_id": "retail:7"
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ]
+   },
+   {
+    "id": "entry/retail:3",
+    "kind": "track",
+    "merged": false,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "track_id": "retail:3"
+   },
+   {
+    "id": "entry/retail:10",
+    "kind": "track",
+    "merged": false,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "track_id": "retail:10"
+   },
+   {
+    "arena_id": 21,
+    "id": "entry/arena:21",
+    "kind": "crystal",
+    "target": 20,
+    "time_limit_ticks": 79680
+   },
+   {
+    "id": "entry/retail:16",
+    "kind": "track",
+    "merged": false,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "track_id": "retail:16"
+   },
+   {
+    "id": "entry/retail:8",
+    "kind": "track",
+    "merged": false,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "track_id": "retail:8"
+   },
+   {
+    "arena_id": 18,
+    "id": "entry/arena:18",
+    "kind": "crystal",
+    "target": 20,
+    "time_limit_ticks": 115200
+   },
+   {
+    "id": "entry/retail:0",
+    "kind": "track",
+    "merged": false,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "track_id": "retail:0"
+   },
+   {
+    "display_name": "Yellow Gem Cup",
+    "field_size": 8,
+    "id": "entry/gem_cup:3",
+    "kind": "cup",
+    "legs": [
+     {
+      "id": "entry/gem_cup:3/leg:0",
+      "laps": 1,
+      "track_id": "retail:16"
+     },
+     {
+      "id": "entry/gem_cup:3/leg:1",
+      "laps": 1,
+      "track_id": "retail:3"
+     },
+     {
+      "id": "entry/gem_cup:3/leg:2",
+      "laps": 1,
+      "track_id": "retail:13"
+     },
+     {
+      "id": "entry/gem_cup:3/leg:3",
+      "laps": 1,
+      "track_id": "retail:11"
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ]
+   },
+   {
+    "display_name": "Sphere Cup",
+    "field_size": 8,
+    "id": "entry/cup:26",
+    "kind": "cup",
+    "legs": [
+     {
+      "id": "entry/cup:26/leg:0",
+      "laps": 1,
+      "track_id": "retail:16"
+     },
+     {
+      "id": "entry/cup:26/leg:1",
+      "laps": 1,
+      "track_id": "retail:7"
+     },
+     {
+      "id": "entry/cup:26/leg:2",
+      "laps": 1,
+      "track_id": "retail:5"
+     },
+     {
+      "id": "entry/cup:26/leg:3",
+      "laps": 1,
+      "track_id": "retail:6"
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ]
+   },
+   {
+    "display_name": "Blue Gem Cup",
+    "field_size": 8,
+    "id": "entry/gem_cup:2",
+    "kind": "cup",
+    "legs": [
+     {
+      "id": "entry/gem_cup:2/leg:0",
+      "laps": 1,
+      "track_id": "retail:10"
+     },
+     {
+      "id": "entry/gem_cup:2/leg:1",
+      "laps": 1,
+      "track_id": "retail:2"
+     },
+     {
+      "id": "entry/gem_cup:2/leg:2",
+      "laps": 1,
+      "track_id": "retail:8"
+     },
+     {
+      "id": "entry/gem_cup:2/leg:3",
+      "laps": 1,
+      "track_id": "retail:11"
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ]
+   },
+   {
+    "display_name": "Green Gem Cup",
+    "field_size": 8,
+    "id": "entry/gem_cup:1",
+    "kind": "cup",
+    "legs": [
+     {
+      "id": "entry/gem_cup:1/leg:0",
+      "laps": 1,
+      "track_id": "retail:14"
+     },
+     {
+      "id": "entry/gem_cup:1/leg:1",
+      "laps": 1,
+      "track_id": "retail:13"
+     },
+     {
+      "id": "entry/gem_cup:1/leg:2",
+      "laps": 1,
+      "track_id": "retail:10"
+     },
+     {
+      "id": "entry/gem_cup:1/leg:3",
+      "laps": 1,
+      "track_id": "retail:4"
+     }
+    ],
+    "roster": [
+     {
+      "role": "player",
+      "slot": 0
+     }
+    ]
+   },
+   {
+    "id": "entry/boss:0/0",
+    "kind": "boss_race",
+    "laps": 3,
+    "opponent": {
+     "attack_profile": "inherited",
+     "character_id": 10,
+     "driving_profile": "retail",
+     "role": "opponent",
+     "slot": 1
+    },
+    "track_id": "retail:6"
+   },
+   {
+    "id": "entry/boss:1/0",
+    "kind": "boss_race",
+    "laps": 3,
+    "opponent": {
+     "attack_profile": "inherited",
+     "character_id": 9,
+     "driving_profile": "retail",
+     "role": "opponent",
+     "slot": 1
+    },
+    "track_id": "retail:5"
+   },
+   {
+    "id": "entry/boss:2/0",
+    "kind": "boss_race",
+    "laps": 3,
+    "opponent": {
+     "attack_profile": "inherited",
+     "character_id": 11,
+     "driving_profile": "retail",
+     "role": "opponent",
+     "slot": 1
+    },
+    "track_id": "retail:1"
+   },
+   {
+    "id": "entry/boss:3/0",
+    "kind": "boss_race",
+    "laps": 3,
+    "opponent": {
+     "attack_profile": "inherited",
+     "character_id": 8,
+     "driving_profile": "retail",
+     "role": "opponent",
+     "slot": 1
+    },
+    "track_id": "retail:7"
+   },
+   {
+    "id": "entry/boss:4/0",
+    "kind": "boss_race",
+    "laps": 3,
+    "opponent": {
+     "attack_profile": "inherited",
+     "character_id": 15,
+     "driving_profile": "retail",
+     "role": "opponent",
+     "slot": 1
+    },
+    "track_id": "retail:13"
+   },
+   {
+    "id": "entry/boss:4/1",
+    "kind": "boss_race",
+    "laps": 3,
+    "opponent": {
+     "attack_profile": "inherited",
+     "character_id": 15,
+     "driving_profile": "retail",
+     "role": "opponent",
+     "slot": 1
+    },
+    "track_id": "cortex_vortex"
+   }
+  ],
+  "goal": {
+   "count": 1,
+   "locations": [
+    35011104
+   ],
+   "op": "checked"
+  },
+  "items": {
+   "coded_checks": 194,
+   "filler_count": 93,
+   "locked_checks": 0,
+   "rows": [
+    {
+     "base": 16,
+     "extra": 0,
+     "item": 35010000,
+     "locked_selected": 0,
+     "receipt_cap": 16,
+     "remaining": 16,
+     "requirement_ceiling": 16,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 18,
+     "extra": 0,
+     "item": 35010001,
+     "locked_selected": 0,
+     "receipt_cap": 18,
+     "remaining": 18,
+     "requirement_ceiling": 18,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 18,
+     "extra": 0,
+     "item": 35010002,
+     "locked_selected": 0,
+     "receipt_cap": 18,
+     "remaining": 18,
+     "requirement_ceiling": 18,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 0,
+     "extra": 0,
+     "item": 35010003,
+     "locked_selected": 0,
+     "receipt_cap": 0,
+     "remaining": 0,
+     "requirement_ceiling": 0,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 4,
+     "extra": 0,
+     "item": 35010004,
+     "locked_selected": 0,
+     "receipt_cap": 4,
+     "remaining": 4,
+     "requirement_ceiling": 4,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 4,
+     "extra": 0,
+     "item": 35010005,
+     "locked_selected": 0,
+     "receipt_cap": 4,
+     "remaining": 4,
+     "requirement_ceiling": 4,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 4,
+     "extra": 0,
+     "item": 35010006,
+     "locked_selected": 0,
+     "receipt_cap": 4,
+     "remaining": 4,
+     "requirement_ceiling": 4,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 4,
+     "extra": 0,
+     "item": 35010007,
+     "locked_selected": 0,
+     "receipt_cap": 4,
+     "remaining": 4,
+     "requirement_ceiling": 4,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 4,
+     "extra": 0,
+     "item": 35010008,
+     "locked_selected": 0,
+     "receipt_cap": 4,
+     "remaining": 4,
+     "requirement_ceiling": 4,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010009,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010010,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010011,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010012,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010013,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 4,
+     "extra": 0,
+     "item": 35010014,
+     "locked_selected": 0,
+     "receipt_cap": 4,
+     "remaining": 4,
+     "requirement_ceiling": 4,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010021,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010022,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010023,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010024,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010025,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010124,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010125,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010126,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010127,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010128,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010129,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010130,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010131,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010132,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010133,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010134,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010135,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010136,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010137,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    },
+    {
+     "base": 1,
+     "extra": 0,
+     "item": 35010138,
+     "locked_selected": 0,
+     "receipt_cap": 1,
+     "remaining": 1,
+     "requirement_ceiling": 1,
+     "start_additional": 0,
+     "start_from_pool": 0
+    }
+   ],
+   "trap_count": 9
+  },
+  "packages": [],
+  "pad_client": {
+   "race_type_selector": "always",
+   "tracker_pad_launch": true
+  },
+  "pad_requirements": {
+   "mode": "randomized"
+  },
+  "pads": [
+   {
+    "entrance_req": "keys:3",
+    "entry_id": "entry/gem_cup:0",
+    "hub_id": "hub:29",
+    "id": "pad:10",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "requirement_id": "stage1:10",
+      "stage": 1
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:2",
+    "entry_id": "entry/retail:13",
+    "hub_id": "hub:28",
+    "id": "pad:15",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "requirement_id": "stage1:15",
+      "stage": 1
+     },
+     {
+      "mode": "ctr",
+      "requirement_id": "stage2:15",
+      "stage": 2
+     },
+     {
+      "mode": "relic",
+      "requirement_id": "stage2:15",
+      "stage": 2
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "free",
+    "entry_id": "entry/retail:7",
+    "hub_id": "hub:26",
+    "id": "pad:6",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "requirement_id": "free",
+      "stage": 1
+     },
+     {
+      "mode": "ctr",
+      "requirement_id": "stage2:6",
+      "stage": 2
+     },
+     {
+      "mode": "relic",
+      "requirement_id": "stage2:6",
+      "stage": 2
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:2",
+    "entry_id": "entry/cup:2",
+    "hub_id": "hub:25",
+    "id": "pad:104",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "requirement_id": "stage1:104",
+      "stage": 1
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:2",
+    "entry_id": "entry/arena:19",
+    "hub_id": "hub:28",
+    "id": "pad:1",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "crystal",
+      "requirement_id": "stage1:1",
+      "stage": 1
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:1",
+    "entry_id": "entry/cup:8",
+    "hub_id": "hub:25",
+    "id": "pad:17",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "requirement_id": "stage1:17",
+      "stage": 1
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:3",
+    "entry_id": "entry/retail:2",
+    "hub_id": "hub:29",
+    "id": "pad:11",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "requirement_id": "stage1:11",
+      "stage": 1
+     },
+     {
+      "mode": "ctr",
+      "requirement_id": "stage2:11",
+      "stage": 2
+     },
+     {
+      "mode": "relic",
+      "requirement_id": "stage2:11",
+      "stage": 2
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "free",
+    "entry_id": "entry/retail:5",
+    "hub_id": "hub:26",
+    "id": "pad:8",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "requirement_id": "stage1:8",
+      "stage": 1
+     },
+     {
+      "mode": "ctr",
+      "requirement_id": "stage2:8",
+      "stage": 2
+     },
+     {
+      "mode": "relic",
+      "requirement_id": "stage2:8",
+      "stage": 2
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:1",
+    "entry_id": "entry/retail:1",
+    "hub_id": "hub:27",
+    "id": "pad:0",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "requirement_id": "stage1:0",
+      "stage": 1
+     },
+     {
+      "mode": "ctr",
+      "requirement_id": "stage2:0",
+      "stage": 2
+     },
+     {
+      "mode": "relic",
+      "requirement_id": "stage2:0",
+      "stage": 2
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:2",
+    "entry_id": "entry/retail:11",
+    "hub_id": "hub:25",
+    "id": "pad:102",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "requirement_id": "stage1:102",
+      "stage": 1
+     },
+     {
+      "mode": "ctr",
+      "requirement_id": "stage2:102",
+      "stage": 2
+     },
+     {
+      "mode": "relic",
+      "requirement_id": "stage2:102",
+      "stage": 2
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:1",
+    "entry_id": "entry/arena:23",
+    "hub_id": "hub:27",
+    "id": "pad:5",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "crystal",
+      "requirement_id": "stage1:5",
+      "stage": 1
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "free",
+    "entry_id": "entry/gem_cup:4",
+    "hub_id": "hub:26",
+    "id": "pad:21",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "requirement_id": "stage1:21",
+      "stage": 1
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:1",
+    "entry_id": "entry/retail:9",
+    "hub_id": "hub:27",
+    "id": "pad:19",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "requirement_id": "stage1:19",
+      "stage": 1
+     },
+     {
+      "mode": "ctr",
+      "requirement_id": "stage2:19",
+      "stage": 2
+     },
+     {
+      "mode": "relic",
+      "requirement_id": "stage2:19",
+      "stage": 2
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:3",
+    "entry_id": "entry/retail:12",
+    "hub_id": "hub:29",
+    "id": "pad:7",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "requirement_id": "stage1:7",
+      "stage": 1
+     },
+     {
+      "mode": "ctr",
+      "requirement_id": "stage2:7",
+      "stage": 2
+     },
+     {
+      "mode": "relic",
+      "requirement_id": "stage2:7",
+      "stage": 2
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:2",
+    "entry_id": "entry/retail:6",
+    "hub_id": "hub:28",
+    "id": "pad:23",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "requirement_id": "stage1:23",
+      "stage": 1
+     },
+     {
+      "mode": "ctr",
+      "requirement_id": "stage2:23",
+      "stage": 2
+     },
+     {
+      "mode": "relic",
+      "requirement_id": "stage2:23",
+      "stage": 2
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "free",
+    "entry_id": "entry/cup:3",
+    "hub_id": "hub:26",
+    "id": "pad:3",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "requirement_id": "free",
+      "stage": 1
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:1",
+    "entry_id": "entry/retail:3",
+    "hub_id": "hub:27",
+    "id": "pad:4",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "requirement_id": "stage1:4",
+      "stage": 1
+     },
+     {
+      "mode": "ctr",
+      "requirement_id": "stage2:4",
+      "stage": 2
+     },
+     {
+      "mode": "relic",
+      "requirement_id": "stage2:4",
+      "stage": 2
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:2",
+    "entry_id": "entry/retail:10",
+    "hub_id": "hub:25",
+    "id": "pad:103",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "requirement_id": "stage1:103",
+      "stage": 1
+     },
+     {
+      "mode": "ctr",
+      "requirement_id": "stage2:103",
+      "stage": 2
+     },
+     {
+      "mode": "relic",
+      "requirement_id": "stage2:103",
+      "stage": 2
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:2",
+    "entry_id": "entry/arena:21",
+    "hub_id": "hub:28",
+    "id": "pad:12",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "crystal",
+      "requirement_id": "stage1:12",
+      "stage": 1
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:2",
+    "entry_id": "entry/retail:16",
+    "hub_id": "hub:25",
+    "id": "pad:100",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "requirement_id": "stage1:100",
+      "stage": 1
+     },
+     {
+      "mode": "ctr",
+      "requirement_id": "stage2:100",
+      "stage": 2
+     },
+     {
+      "mode": "relic",
+      "requirement_id": "stage2:100",
+      "stage": 2
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:1",
+    "entry_id": "entry/retail:8",
+    "hub_id": "hub:27",
+    "id": "pad:14",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "requirement_id": "stage1:14",
+      "stage": 1
+     },
+     {
+      "mode": "ctr",
+      "requirement_id": "stage2:14",
+      "stage": 2
+     },
+     {
+      "mode": "relic",
+      "requirement_id": "stage2:14",
+      "stage": 2
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:2",
+    "entry_id": "entry/arena:18",
+    "hub_id": "hub:25",
+    "id": "pad:101",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "crystal",
+      "requirement_id": "stage1:101",
+      "stage": 1
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:1",
+    "entry_id": "entry/retail:0",
+    "hub_id": "hub:25",
+    "id": "pad:16",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "trophy",
+      "requirement_id": "stage1:16",
+      "stage": 1
+     },
+     {
+      "mode": "ctr",
+      "requirement_id": "stage2:16",
+      "stage": 2
+     },
+     {
+      "mode": "relic",
+      "requirement_id": "stage2:16",
+      "stage": 2
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:3",
+    "entry_id": "entry/gem_cup:3",
+    "hub_id": "hub:29",
+    "id": "pad:18",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "requirement_id": "stage1:18",
+      "stage": 1
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:2",
+    "entry_id": "entry/cup:26",
+    "hub_id": "hub:28",
+    "id": "pad:2",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "requirement_id": "stage1:2",
+      "stage": 1
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:3",
+    "entry_id": "entry/gem_cup:2",
+    "hub_id": "hub:29",
+    "id": "pad:13",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "requirement_id": "stage1:13",
+      "stage": 1
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "free",
+    "entry_id": "entry/gem_cup:1",
+    "hub_id": "hub:26",
+    "id": "pad:9",
+    "kind": "normal",
+    "mode_gates": [
+     {
+      "mode": "cup",
+      "requirement_id": "free",
+      "stage": 1
+     }
+    ],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "free",
+    "entry_id": null,
+    "hub_id": "hub:26",
+    "id": "garage:0",
+    "kind": "garage",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:1",
+    "entry_id": null,
+    "hub_id": "hub:27",
+    "id": "garage:1",
+    "kind": "garage",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:2",
+    "entry_id": null,
+    "hub_id": "hub:28",
+    "id": "garage:2",
+    "kind": "garage",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:3",
+    "entry_id": null,
+    "hub_id": "hub:29",
+    "id": "garage:3",
+    "kind": "garage",
+    "mode_gates": [],
+    "racer_lock": null
+   },
+   {
+    "entrance_req": "keys:4",
+    "entry_id": null,
+    "hub_id": "hub:25",
+    "id": "garage:4",
+    "kind": "garage",
+    "mode_gates": [],
+    "racer_lock": null
+   }
+  ],
+  "racers": {
+   "remove_playable_oxide": false,
+   "requested_locks": 0,
+   "starting_character": 0
+  },
+  "required_features": [
+   "content_plan_v1",
+   "crystal_entries_v1",
+   "track_modes_v1",
+   "podium_rungs_v1",
+   "character_unlocks_v1",
+   "cup_entries_v1",
+   "boss_encounters_v1",
+   "gem_cups_v1",
+   "surface_items_v1",
+   "relic_tier_checks_v1",
+   "pad_requirements_v1",
+   "wumpa_shop_v1",
+   "wumpa_shop_key_tiers_v1",
+   "pad_client_v1"
+  ],
+  "requirements": [
+   {
+    "id": "free",
+    "predicate": {
+     "op": "always"
+    }
+   },
+   {
+    "id": "keys:1",
+    "predicate": {
+     "count": 1,
+     "item": 35010014,
+     "op": "count"
+    }
+   },
+   {
+    "id": "keys:2",
+    "predicate": {
+     "count": 2,
+     "item": 35010014,
+     "op": "count"
+    }
+   },
+   {
+    "id": "keys:3",
+    "predicate": {
+     "count": 3,
+     "item": 35010014,
+     "op": "count"
+    }
+   },
+   {
+    "id": "keys:4",
+    "predicate": {
+     "count": 4,
+     "item": 35010014,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:0",
+    "predicate": {
+     "count": 1,
+     "item": 35010000,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:1",
+    "predicate": {
+     "count": 1,
+     "item": 35010008,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:2",
+    "predicate": {
+     "count": 6,
+     "items": [
+      35010001,
+      35010002
+     ],
+     "op": "sum"
+    }
+   },
+   {
+    "id": "stage1:4",
+    "predicate": {
+     "count": 5,
+     "item": 35010002,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:5",
+    "predicate": {
+     "count": 1,
+     "item": 35010012,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:7",
+    "predicate": {
+     "count": 6,
+     "item": 35010001,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:8",
+    "predicate": {
+     "count": 8,
+     "item": 35010001,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:10",
+    "predicate": {
+     "count": 7,
+     "item": 35010000,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:11",
+    "predicate": {
+     "count": 8,
+     "item": 35010000,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:12",
+    "predicate": {
+     "count": 3,
+     "item": 35010014,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:13",
+    "predicate": {
+     "count": 8,
+     "item": 35010000,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:14",
+    "predicate": {
+     "count": 1,
+     "items": [
+      35010009,
+      35010010,
+      35010011,
+      35010012,
+      35010013
+     ],
+     "op": "sum"
+    }
+   },
+   {
+    "id": "stage1:15",
+    "predicate": {
+     "count": 8,
+     "item": 35010000,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:16",
+    "predicate": {
+     "count": 3,
+     "item": 35010014,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:17",
+    "predicate": {
+     "count": 2,
+     "item": 35010000,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:18",
+    "predicate": {
+     "count": 6,
+     "items": [
+      35010004,
+      35010005,
+      35010006,
+      35010007,
+      35010008
+     ],
+     "op": "sum"
+    }
+   },
+   {
+    "id": "stage1:19",
+    "predicate": {
+     "count": 2,
+     "items": [
+      35010009,
+      35010010,
+      35010011,
+      35010012,
+      35010013
+     ],
+     "op": "sum"
+    }
+   },
+   {
+    "id": "stage1:21",
+    "predicate": {
+     "count": 3,
+     "item": 35010014,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:23",
+    "predicate": {
+     "count": 1,
+     "item": 35010005,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:100",
+    "predicate": {
+     "count": 8,
+     "item": 35010000,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:101",
+    "predicate": {
+     "count": 2,
+     "item": 35010014,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:102",
+    "predicate": {
+     "count": 3,
+     "item": 35010000,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage1:103",
+    "predicate": {
+     "count": 8,
+     "items": [
+      35010004,
+      35010005,
+      35010006,
+      35010007,
+      35010008
+     ],
+     "op": "sum"
+    }
+   },
+   {
+    "id": "stage1:104",
+    "predicate": {
+     "count": 8,
+     "item": 35010001,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage2:0",
+    "predicate": {
+     "count": 2,
+     "item": 35010000,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage2:4",
+    "predicate": {
+     "count": 4,
+     "item": 35010000,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage2:6",
+    "predicate": {
+     "count": 1,
+     "item": 35010000,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage2:7",
+    "predicate": {
+     "count": 4,
+     "items": [
+      35010004,
+      35010005,
+      35010006,
+      35010007,
+      35010008
+     ],
+     "op": "sum"
+    }
+   },
+   {
+    "id": "stage2:8",
+    "predicate": {
+     "count": 4,
+     "items": [
+      35010004,
+      35010005,
+      35010006,
+      35010007,
+      35010008
+     ],
+     "op": "sum"
+    }
+   },
+   {
+    "id": "stage2:11",
+    "predicate": {
+     "count": 2,
+     "item": 35010004,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage2:14",
+    "predicate": {
+     "count": 2,
+     "item": 35010000,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage2:15",
+    "predicate": {
+     "count": 4,
+     "item": 35010002,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage2:16",
+    "predicate": {
+     "count": 4,
+     "item": 35010000,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage2:19",
+    "predicate": {
+     "count": 4,
+     "items": [
+      35010004,
+      35010005,
+      35010006,
+      35010007,
+      35010008
+     ],
+     "op": "sum"
+    }
+   },
+   {
+    "id": "stage2:23",
+    "predicate": {
+     "count": 4,
+     "items": [
+      35010001,
+      35010002
+     ],
+     "op": "sum"
+    }
+   },
+   {
+    "id": "stage2:100",
+    "predicate": {
+     "count": 3,
+     "item": 35010005,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage2:102",
+    "predicate": {
+     "count": 2,
+     "item": 35010014,
+     "op": "count"
+    }
+   },
+   {
+    "id": "stage2:103",
+    "predicate": {
+     "count": 4,
+     "items": [
+      35010001,
+      35010002
+     ],
+     "op": "sum"
+    }
+   },
+   {
+    "id": "boss:0",
+    "predicate": {
+     "count": 1,
+     "items": [
+      35010001,
+      35010002
+     ],
+     "op": "sum"
+    }
+   },
+   {
+    "id": "boss:1",
+    "predicate": {
+     "count": 1,
+     "item": 35010012,
+     "op": "count"
+    }
+   },
+   {
+    "id": "boss:2",
+    "predicate": {
+     "count": 3,
+     "item": 35010014,
+     "op": "count"
+    }
+   },
+   {
+    "id": "boss:3",
+    "predicate": {
+     "count": 9,
+     "items": [
+      35010004,
+      35010005,
+      35010006,
+      35010007,
+      35010008
+     ],
+     "op": "sum"
+    }
+   },
+   {
+    "id": "oxide:final",
+    "predicate": {
+     "count": 18,
+     "item": 35010001,
+     "op": "count"
+    }
+   }
+  ],
+  "track_checks": {
+   "podium_rungs": [
+    "held_1st",
+    "held_3rd",
+    "finish_podium",
+    "finish_any"
+   ]
+  },
+  "tracks": [
+   {
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "display_name": "Oxide Station",
+    "field_size": 8,
+    "id": "retail:13",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "origin": "retail",
+    "retail_id": 13
+   },
+   {
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "display_name": "Hot Air Skyway",
+    "field_size": 8,
+    "id": "retail:7",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "origin": "retail",
+    "retail_id": 7
+   },
+   {
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "display_name": "Blizzard Bluff",
+    "field_size": 8,
+    "id": "retail:2",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "origin": "retail",
+    "retail_id": 2
+   },
+   {
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "display_name": "Papu's Pyramid",
+    "field_size": 8,
+    "id": "retail:5",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "origin": "retail",
+    "retail_id": 5
+   },
+   {
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "display_name": "Dragon Mines",
+    "field_size": 8,
+    "id": "retail:1",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "origin": "retail",
+    "retail_id": 1
+   },
+   {
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "display_name": "N. Gin Labs",
+    "field_size": 8,
+    "id": "retail:11",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "origin": "retail",
+    "retail_id": 11
+   },
+   {
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "display_name": "Mystery Caves",
+    "field_size": 8,
+    "id": "retail:9",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "origin": "retail",
+    "retail_id": 9
+   },
+   {
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "display_name": "Polar Pass",
+    "field_size": 8,
+    "id": "retail:12",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "origin": "retail",
+    "retail_id": 12
+   },
+   {
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "display_name": "Roo's Tubes",
+    "field_size": 8,
+    "id": "retail:6",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "origin": "retail",
+    "retail_id": 6
+   },
+   {
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "display_name": "Crash Cove",
+    "field_size": 8,
+    "id": "retail:3",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "origin": "retail",
+    "retail_id": 3
+   },
+   {
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "display_name": "Cortex Castle",
+    "field_size": 8,
+    "id": "retail:10",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "origin": "retail",
+    "retail_id": 10
+   },
+   {
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "display_name": "Slide Coliseum",
+    "field_size": 8,
+    "id": "retail:16",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "origin": "retail",
+    "retail_id": 16
+   },
+   {
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "display_name": "Sewer Speedway",
+    "field_size": 8,
+    "id": "retail:8",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "origin": "retail",
+    "retail_id": 8
+   },
+   {
+    "capabilities": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "display_name": "Dingo Canyon",
+    "field_size": 8,
+    "id": "retail:0",
+    "laps": 3,
+    "modes": [
+     "trophy",
+     "ctr",
+     "relic"
+    ],
+    "origin": "retail",
+    "retail_id": 0
+   },
+   {
+    "capabilities": [
+     "trophy"
+    ],
+    "display_name": "Tiger Temple",
+    "field_size": 8,
+    "id": "retail:4",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "origin": "retail",
+    "retail_id": 4
+   },
+   {
+    "capabilities": [
+     "trophy"
+    ],
+    "display_name": "Tiny Arena",
+    "field_size": 8,
+    "id": "retail:15",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "origin": "retail",
+    "retail_id": 15
+   },
+   {
+    "capabilities": [
+     "trophy"
+    ],
+    "display_name": "Turbo Track",
+    "field_size": 8,
+    "id": "retail:17",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "origin": "retail",
+    "retail_id": 17
+   },
+   {
+    "capabilities": [
+     "trophy"
+    ],
+    "display_name": "Coco Park",
+    "field_size": 8,
+    "id": "retail:14",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "origin": "retail",
+    "retail_id": 14
+   },
+   {
+    "capabilities": [
+     "trophy"
+    ],
+    "display_name": "Cortex Vortex",
+    "field_size": 8,
+    "id": "cortex_vortex",
+    "laps": 3,
+    "modes": [
+     "trophy"
+    ],
+    "origin": "cortex_vortex",
+    "package_id": "bundled/cortex-vortex"
+   }
+  ],
+  "version": 1,
+  "wumpa_shop": {
+   "hints": true,
+   "logic_scale": 100,
+   "prices": 100,
+   "progression": "allowed",
+   "slots": 10
+  }
+ },
+ "ctr_options": {
+  "character_unlocks": true,
+  "content_plan": true,
+  "crystalsanity": false,
+  "death_link": 0,
+  "deathlink_amnesty": 1,
+  "goal": -1,
+  "goal_bosses": 0,
+  "goal_gems": 0,
+  "goal_oxide": 1,
+  "hit_character": false,
+  "include_arcade_arenas": false,
+  "include_battle_arenas": true,
+  "progressive_boost": 0,
+  "progressive_stats": 0,
+  "reserve_top_up": true,
+  "schema_version": 18,
+  "spoiler_items": false,
+  "starting_character": 0,
+  "world_version": "0.3.0"
+ },
+ "schema_version": 18,
+ "trap_identities": {
+  "items": {
+   "35010016": "icy_road",
+   "35010017": "low_gravity",
+   "35010018": "forced_usf",
+   "35010019": "forced_boost",
+   "35010020": "first_person",
+   "35010106": "wumpa_wipeout",
+   "35010107": "flatten",
+   "35010108": "item_reroll",
+   "35010109": "forced_use",
+   "35010110": "empty_crates",
+   "35010111": "weakened_kart",
+   "35010112": "boost_blocker",
+   "35010113": "wireframe",
+   "35010114": "nitro",
+   "35010115": "reverse_steering",
+   "35010116": "red_potion",
+   "35010190": "upside_down",
+   "35010191": "mirror_mode",
+   "35010192": "warpball_ambush",
+   "35010193": "demo_camera",
+   "35010206": "clocked_out",
+   "35010207": "reverse_camera"
+  },
+  "version": 1
+ }
+}

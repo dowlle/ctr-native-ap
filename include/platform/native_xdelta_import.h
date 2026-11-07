@@ -23,6 +23,7 @@ extern "C" {
 #define XDELTA_NAME_DESCRIPTOR 1 /* The pack descriptor (<patch>.ctrpack.json). */
 #define XDELTA_NAME_KNOWN 2      /* The table of tracks whose names were read from pack code. */
 #define XDELTA_NAME_EDITED 3     /* The player typed it at import. */
+#define XDELTA_NAME_TESTER 4     /* The curated table (patch hash and slot), from tester feedback. */
 
 struct XdeltaImportItem
 {

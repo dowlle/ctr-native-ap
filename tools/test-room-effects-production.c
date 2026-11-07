@@ -13,6 +13,7 @@ ctr_seed_config ctr_cfg;
 int ctr_cfg_active(void) { return ctr_cfg.schema_version > 0; }
 void AP_LogLine(const char *line) { (void)line; }
 int AP_TrapWeakenBoostTier(int tier) { return tier; }
+int AP_TrapMudSeason(struct Driver *driver) { (void)driver; return 0; }
 
 int main(void)
 {
