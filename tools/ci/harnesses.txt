@@ -167,6 +167,7 @@ tools/test-tracker-markers.c
 tools/test-tracker-progress.c
 tools/test-tracker-tabs.c
 tools/test-tracker-pad-launch.py
+tools/test-fast-travel.py
 tools/test-plan-pads.c
 tools/test-plan-pads-production.py
 tools/test-retro-fueled.c

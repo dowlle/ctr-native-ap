@@ -446,6 +446,8 @@ static char *RECTMENU_RowString(int index)
 #ifdef CTR_AP
 	if (index == AP_LNG_TRACKER)
 		return (char *)"TRACKER";
+	if (index == AP_LNG_TRAVEL)
+		return (char *)"TRAVEL";
 	if (index == AP_LNG_PLAY_SOLO)
 		return (char *)"PLAY SOLO";
 	if (index == AP_LNG_WUMPA_SHOP)
