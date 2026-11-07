@@ -202,7 +202,9 @@ the player client's Custom Content and Track Library pages. Three tabs:
   name. R1 on a file, or in the review list, is Import all valid tracks. Track
   names come from the pack descriptor, then the known-track table
   (`known_track_name` in `platform/native_xdelta_import.cpp`), then a label
-  such as "Lego Adventure track 3"; L1 in the review list types a name.
+  such as "Lego Adventure track 3"; L1 in the review list types a name. While
+  naming, Left / Right on the pad (or the arrow keys) move a text cursor
+  through the name, so the start can be edited without deleting back to it.
 
 The page opens on This Seed only when the loaded seed misses tracks, otherwise
 on Library. Left / Right or L1 / R1 change tabs on the tab strip; in a list,
