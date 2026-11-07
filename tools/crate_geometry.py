@@ -70,4 +70,3 @@ def measure(p, ts, ids):
     si,sj=np.unravel_index(np.argmin(horizontal),horizontal.shape)
     return dict(distance=float(np.sqrt(ds[ii,jj])), horizontal=float(horizontal[si,sj]) if np.isfinite(horizontal[si,sj]) else 1e9,
                 dy=float(dy[si,sj]),quad=int(ids[sj]),nearest=candidates[si,sj].tolist(),nearest_3d=pt.tolist(),quad_3d=int(ids[jj]))
-
