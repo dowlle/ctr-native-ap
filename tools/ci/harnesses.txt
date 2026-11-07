@@ -230,6 +230,7 @@ tools/test-trap-alpha3.c
 tools/test-trap-display.c
 tools/test-mirror-model-cull.c
 tools/test-turbo-grant.c
+tools/test-unlock-reasons.c
 tools/test-update-core.cpp
 tools/test-update-menu.c
 tools/test-update-solo-gate.cpp
@@ -280,3 +281,4 @@ tools/test-reverse-camera-production.py
 tools/test-xdelta-import.cpp
 tools/test-track-registry.cpp
 tools/test-track-registry-download-production.py
+tools/test-feed-trap-lines.c

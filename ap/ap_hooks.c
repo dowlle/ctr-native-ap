@@ -17,6 +17,7 @@
 #include "ap_custom_trophy_ceremony_logic.h"
 #endif
 #include "ap_ceremony_logic.h"
+#include "ap_feed_lines_logic.h" // feed line store, trap lines change in place (A3-21)
 #include "ap_version.h"     // CTR_AP_VERSION -- this build's half of the shipped pair
 #include "ap_version_cmp.h" // freestanding pair-version comparator (#150)
 #include <ctr_menu_ux.h>     // connection-menu error guidance
