@@ -39,7 +39,7 @@ def block(source, first, last):
 # ap_net.cpp must hand every bounce through the inbox (no single latch left).
 assert 'AP_DeathLinkInboxPush(&g_dl_inbox' in net, 'bounced handler no longer pushes into the inbox'
 # The cap must leave room for the overflow summary in the feed's pending ring.
-feed_src = (root / 'ap/ap_hooks_feed.c').read_text()
+feed_src = (root / 'ap/ap_feed_lines_logic.h').read_text()
 ring = int(re.search(r'#define AP_FEED_QUEUE_MAX\s+(\d+)', feed_src).group(1))
 cap = int(re.search(r'#define AP_DL_INBOX_CAP\s+(\d+)', (root / 'ap/ap_deathlink_inbox.h').read_text()).group(1))
 assert 2 + 2 * cap <= ring, 'inbox cap too big: the overflow summary would evict a retained death from the feed ring'
