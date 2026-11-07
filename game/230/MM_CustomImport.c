@@ -464,9 +464,11 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             MM_CustomText_Draw(item->offered ? (item->nameSource == XDELTA_NAME_DESCRIPTOR ? "Name from the pack" :
                                                 item->nameSource == XDELTA_NAME_KNOWN ? "Name of a known track" :
                                                 item->nameSource == XDELTA_NAME_EDITED ? "Name typed by you" :
-                                                "Placeholder name: L1 to change it") : item->reason, 305, 112, 176, 2, WHITE, ot);
+                                                "Placeholder name: L1 to change it") : item->reason, 305, 112, 176,
+                               item->offered ? 2 : 7, WHITE, ot);
         }
-        MM_CustomText_Draw(s_importStage == IMPORT_INSTALLING ? "Installing..." :
+        /* A refused entry has no actions. Use that space for its full reason. */
+        if (!item || item->offered) MM_CustomText_Draw(s_importStage == IMPORT_INSTALLING ? "Installing..." :
                            s_importMessage[0] ? s_importMessage : s_importSummary.descriptorNote[0] ? s_importSummary.descriptorNote :
                            s_importSummary.history[0] ? s_importSummary.history :
                            "[ Select  L1 Name  R1 Import all  X Install", 305, 144, 176, 2, ORANGE, ot);

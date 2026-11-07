@@ -66,9 +66,10 @@ static void check(const XdeltaImportItem &item)
     MM_CustomText_Draw(title.c_str(), 32, 90, 244, 1, 0, nullptr);
     CHECK(lines == std::vector<std::string>{title}, "diagnostic title and index fit the review row");
     lines.clear();
-    MM_CustomText_Draw("Level format not supported", 305, 112, 176, 2, 0, nullptr);
-    CHECK((lines == std::vector<std::string>{"Level format", "not supported"}),
-          "complete diagnostic reason fits the detail panel without ellipsis");
+    MM_CustomText_Draw(item.reason, 305, 112, 176, 7, 0, nullptr);
+    std::string joined;
+    for (const auto &line : lines) { if (!joined.empty()) joined += ' '; joined += line; }
+    CHECK(joined == item.reason, "complete diagnostic reason fits the detail panel without ellipsis");
 }
 }
 
