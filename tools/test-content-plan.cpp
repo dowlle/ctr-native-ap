@@ -1154,6 +1154,38 @@ int main(int argc, char **argv) {
     // Item Box Colours off in the seed.
     J boxes;
     std::ifstream("tools/fixtures/content-plan/item-boxes.json") >> boxes;
+    {
+        // A3-35: list comes from the world. Existing 20-crate fixture stays
+        // at 15 boxes after one exclusion, but native must retain the entry.
+        J ex = boxes;
+        auto &plan = ex["content_plan"];
+        const auto &packages = plan["packages"];
+        std::string hash, track;
+        for (const auto &p : packages) if (p["content_id"] == "acid-lake") {
+            hash = p["files"][0]["sha256"].get<std::string>();
+            for (const auto &t : plan["tracks"]) if (t.value("package_id", "") == p["id"].get<std::string>()) track = t["id"].get<std::string>();
+        }
+        plan["item_boxes"]["crate_exclusions"] = J::array({{{"track_id", track}, {"lev_sha256", hash},
+            {"crates", J::array({{{"ordinal", 1}, {"pos", J::array({0, 0, 0})}}})}}});
+        auto &features = plan["required_features"];
+        for (auto it = features.begin(); it != features.end(); ++it) if (*it == "item_boxes_v1") {
+            features.insert(it + 1, "crate_exclusions_v1"); break;
+        }
+        expect(parse(ex) && bind_room(ex), "exclusions: valid world list binds");
+        const auto *p = ap_content_plan_pad(10);
+        expect(p && p->box_count == 15 && p->box_crates == 20 && p->box_excluded_count == 1 && p->box_excluded[0] == 1,
+               "exclusions: parser carries original ordinal and raw count to seating");
+        auto bad = [&](const std::string &why, std::function<void(J &)> change) {
+            J j = ex; change(j["content_plan"]); refuse(j, "exclusions: " + why);
+        };
+        bad("mismatched LEV", [](J &p) { p["item_boxes"]["crate_exclusions"][0]["lev_sha256"] = std::string(64, '0'); });
+        bad("ordinal outside crate count", [](J &p) { p["item_boxes"]["crate_exclusions"][0]["crates"][0]["ordinal"] = 21; });
+        bad("duplicate ordinal", [](J &p) { auto &c = p["item_boxes"]["crate_exclusions"][0]["crates"]; c.push_back(c[0]); });
+        bad("bad position", [](J &p) { p["item_boxes"]["crate_exclusions"][0]["crates"][0]["pos"][0] = 32768; });
+        bad("unknown track", [](J &p) { p["item_boxes"]["crate_exclusions"][0]["track_id"] = "absent"; });
+        bad("missing feature", [](J &p) { auto &fs = p["required_features"]; for (auto i = fs.begin(); i != fs.end(); ++i) if (*i == "crate_exclusions_v1") { fs.erase(i); break; } });
+        bad("extra field", [](J &p) { p["item_boxes"]["crate_exclusions"][0]["unexpected"] = true; });
+    }
     expect(parse(boxes) && bind_room(boxes) && ap_content_plan_active(), "item-boxes room binds");
     {
         const ctr_content_item_boxes *b = ap_content_plan_item_boxes();

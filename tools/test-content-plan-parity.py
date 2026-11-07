@@ -1268,6 +1268,29 @@ with spot_files(retail=["CRASH_COVE"], custom=["baby-t-park"]):
         if trusted:
             native_trusts.add("spots-" + name)
             assert cases[-1][2] is False, name + ": the apworld must refuse a forged spot"
+# A3-35: actual generated Ancient Lake rooms, both measured LEV pins and a
+# small count fixture that crosses the 15-seat ceiling. No track bytes shipped.
+from worlds.ctr import crate_exclusions
+from unittest import mock
+from worlds.ctr.test.test_crate_exclusions import ancient
+from worlds.ctr.test.test_content_item_boxes import box_options, first_world
+for digest in list(crate_exclusions.EXCLUSIONS):
+    for count in (3, 17):
+        world = first_world(box_options(custom=[ancient(count, digest)]))
+        wire = world.fill_slot_data()
+        cases.append((f"excluded-{digest[:8]}-{count}", wire, True))
+        with mock.patch.dict(crate_exclusions.EXCLUSIONS, {}, clear=True):
+            legacy = first_world(box_options(custom=[ancient(count, digest)]))
+            legacy_wire = legacy.fill_slot_data()
+        cases.append((f"excluded-legacy-{digest[:8]}-{count}", legacy_wire, True))
+        for label, change in (
+            ("feature", lambda p: p["required_features"].remove(crate_exclusions.FEATURE)),
+            ("pin", lambda p: p["item_boxes"]["crate_exclusions"][0].__setitem__("lev_sha256", "0" * 64)),
+            ("ordinal", lambda p: p["item_boxes"]["crate_exclusions"][0]["crates"][0].__setitem__("ordinal", 0)),
+            ("position", lambda p: p["item_boxes"]["crate_exclusions"][0]["crates"][0]["pos"].__setitem__(0, 32768)),
+        ):
+            alter(f"excluded-{digest[:8]}-{count}-{label}", change, wire)
+
 box_env("unchanged copy", lambda c: None)
 box_env("box_locations false", lambda c: c["ctr_options"].__setitem__("box_locations", False))
 box_env("box_locations dropped", lambda c: c["ctr_options"].pop("box_locations"))

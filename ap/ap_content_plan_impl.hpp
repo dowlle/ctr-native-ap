@@ -53,6 +53,8 @@ struct State {
     // each spot box's number and position by location code (`spot`).
     struct SpotSet { int pool = 0; std::vector<int> picked; std::string lev_sha256; bool used = false; };
     std::map<std::string, SpotSet> spot_sets;
+    struct CrateExclusions { std::string lev; std::vector<int> ordinals; std::vector<std::array<short, 3>> positions; bool used = false; };
+    std::map<std::string, CrateExclusions> crate_exclusions;
     struct BoxSpot { int number = 0; bool seen = false; short x = 0, y = 0, z = 0, rot_y = 0; };
     std::map<int64_t, BoxSpot> box_spots;
     // Boss garages (#133 PR 6): the `bosses` record and the venues its
@@ -451,10 +453,34 @@ static std::map<int64_t, int> capability_rows(const ctr_content_capability &c) {
 // numbers are eligible only the apworld knows, so the client checks the shape
 // (ap_box_spot_logic.h) and that each named track exists with a box identity.
 static void item_box_settings(const J &t, State &out) {
-    need(t.is_object() && t.contains("shortcut_knowledge") && t.size() == (t.contains("spot_sets") ? 2u : 1u),
+    need(t.is_object() && t.contains("shortcut_knowledge") && t.size() == 1u + t.count("spot_sets") + t.count("crate_exclusions"),
          "unsupported or incomplete record fields");
     out.item_boxes.present = 1;
     out.item_boxes.shortcut_knowledge = number(t["shortcut_knowledge"], 0, 2);
+    if (t.contains("crate_exclusions")) {
+        const auto &sets = t["crate_exclusions"];
+        need(sets.is_array() && !sets.empty() && sets.size() <= AP_CONTENT_MAX_PACKAGES, "crate exclusions must be a nonempty list");
+        for (const auto &set : sets) {
+            fields(set, {"track_id", "lev_sha256", "crates"});
+            need(set["track_id"].is_string() && set["lev_sha256"].is_string() &&
+                 lower_hex(set["lev_sha256"].get<std::string>(), 64), "crate exclusions need a track and LEV digest");
+            State::CrateExclusions ex;
+            ex.lev = set["lev_sha256"].get<std::string>();
+            need(set["crates"].is_array() && !set["crates"].empty() && set["crates"].size() <= 16, "crate exclusions need 1 to 16 crates");
+            int previous = 0;
+            for (const auto &crate : set["crates"]) {
+                fields(crate, {"ordinal", "pos"});
+                int n = number(crate["ordinal"], 1, 65536);
+                need(n > previous, "excluded crate ordinals must be strictly increasing");
+                previous = n;
+                need(crate["pos"].is_array() && crate["pos"].size() == 3, "excluded crate needs three coordinates");
+                std::array<short, 3> pos;
+                for (int axis = 0; axis < 3; ++axis) pos[axis] = (short)number(crate["pos"][axis], -32768, 32767);
+                ex.ordinals.push_back(n); ex.positions.push_back(pos);
+            }
+            need(out.crate_exclusions.emplace(set["track_id"].get<std::string>(), ex).second, "duplicate excluded track");
+        }
+    }
     if (!t.contains("spot_sets")) return;
     const J &sets = t["spot_sets"];
     need(sets.is_array() && !sets.empty() && sets.size() <= 160, "item_boxes.spot_sets must be a nonempty list");
@@ -989,6 +1015,7 @@ static void validate(const J &p, State &out) {
     if(has_global)features.push_back("global_checks_v1");
     if(has_boxes)features.push_back("item_boxes_v1"); // #133 PR 4e
     if(has_boxes&&p["item_boxes"].is_object()&&p["item_boxes"].contains("spot_sets"))features.push_back("box_spots_v1"); // A3-14
+    if(has_boxes&&p["item_boxes"].is_object()&&p["item_boxes"].contains("crate_exclusions"))features.push_back("crate_exclusions_v1");
     if(cups)features.push_back("cup_entries_v1");      // #133 PR 5
     if(has_bosses)features.push_back("boss_encounters_v1"); // #133 PR 6
     if(gem_cups)features.push_back("gem_cups_v1");          // one generator row 2
@@ -1631,8 +1658,20 @@ static void validate(const J &p, State &out) {
                         slots = (int)b + 1;
                     }
             } else if (dest.package_index >= 0) {
-                slots = box_seats(out.packages[dest.package_index].weapon_crates);
-                dest.box_crates = slots ? out.packages[dest.package_index].weapon_crates : 0;
+                const auto &pkg = out.packages[dest.package_index];
+                const auto excluded = out.crate_exclusions.find(dest.track_id);
+                if (excluded != out.crate_exclusions.end()) {
+                    auto &ex = excluded->second;
+                    need(ex.lev == pkg.lev_sha256 && pkg.weapon_crates >= ex.ordinals.back(), "crate exclusions disagree with package");
+                    dest.box_excluded_count = (int)ex.ordinals.size();
+                    for (int n = 0; n < dest.box_excluded_count; ++n) {
+                        dest.box_excluded[n] = ex.ordinals[n];
+                        for (int axis = 0; axis < 3; ++axis) dest.box_excluded_pos[n][axis] = ex.positions[n][axis];
+                    }
+                    ex.used = true;
+                }
+                slots = box_seats(pkg.weapon_crates - dest.box_excluded_count);
+                dest.box_crates = slots ? pkg.weapon_crates : 0;
                 for (int b = 0; b < slots; ++b)
                     dest.box_locations[b] = dest.named_block >= 0
                         ? ap_named_location_code(dest.named_block, AP_NAMED_OFF_ITEM_BOX_1 + b)
@@ -2310,6 +2349,7 @@ static void validate(const J &p, State &out) {
     // Hand-placed box spots (A3-14): every set names a pad track, every spot
     // box carried its spot, and the pads take the positions.
     for (const auto &pair : out.spot_sets) need(pair.second.used, "a box spot set names no pad track");
+    for (const auto &pair : out.crate_exclusions) need(pair.second.used, "crate exclusions name no fallback pad track");
     for (const auto &pair : out.box_spots) need(pair.second.seen, "a box spot check carries no spot");
     for (auto &pad : out.pads) {
         if (!pad.box_spots) continue;
