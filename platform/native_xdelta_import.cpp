@@ -1990,8 +1990,17 @@ int old_copy_state(const std::string &assets, const XdeltaImportSummary &summary
     return state;
 }
 
-struct ReplacedCopy { std::string oldKey, revision, uuid, newKey; };
+struct ReplacedCopy { std::string oldKey, revision, uuid, newKey, newRevision; };
 struct ReplaceOutcome { std::vector<ReplacedCopy> replaced; int kept = 0; };
+
+/* ".replaced-<16 hex of the pin>-<8 hex>": the only folder names this feature stages. */
+bool staged_name(const std::string &name)
+{
+    if (name.size() != 35 || name.compare(0, 10, ".replaced-") != 0 || name[26] != '-') return false;
+    for (size_t i = 10; i < name.size(); i++)
+        if (i != 26 && !std::isxdigit((unsigned char)name[i])) return false;
+    return true;
+}
 
 /* Take the replaceable old copies of one installed item out of the store: the
    directory is renamed to a name the store scan ignores, then removed. A copy
@@ -2011,8 +2020,7 @@ void replace_old_copies(const std::string &assets, const XdeltaImportSummary &su
         for (std::filesystem::directory_iterator it(store, sweep), end; !sweep && it != end; it.increment(sweep))
         {
             std::error_code de;
-            if (it->path().filename().string().compare(0, 10, ".replaced-") == 0 &&
-                std::filesystem::is_directory(it->symlink_status(de)))
+            if (staged_name(it->path().filename().string()) && std::filesystem::is_directory(it->symlink_status(de)))
                 std::filesystem::remove_all(it->path(), de);
         }
     }
@@ -2035,7 +2043,7 @@ void replace_old_copies(const std::string &assets, const XdeltaImportSummary &su
         std::filesystem::rename(store / c.pin, staged, ec);
         if (ec) continue;
         std::filesystem::remove_all(staged, ec);
-        out.replaced.push_back({c.key, c.revision, uuid, item.trackKey});
+        out.replaced.push_back({c.key, c.revision, uuid, item.trackKey, b.version});
     }
 }
 
@@ -2895,17 +2903,18 @@ extern "C" int XdeltaImport_ReplacedCount(void)
     return s.installState == 0 ? 0 : (int)s.replaceOutcome.replaced.size();
 }
 
-extern "C" int XdeltaImport_ReplacedCopy(int index, char oldKey[65], char revision[65], char uuid[37], char newKey[65])
+extern "C" int XdeltaImport_ReplacedCopy(int index, char oldKey[65], char revision[65], char uuid[37], char newKey[65], char newRevision[65])
 {
     auto &s = job();
     std::lock_guard<std::mutex> guard(s.mutex);
-    if (s.installState == 0 || index < 0 || index >= (int)s.replaceOutcome.replaced.size() || !oldKey || !revision || !uuid || !newKey)
+    if (s.installState == 0 || index < 0 || index >= (int)s.replaceOutcome.replaced.size() || !oldKey || !revision || !uuid || !newKey || !newRevision)
         return 0;
     const auto &r = s.replaceOutcome.replaced[(size_t)index];
     std::snprintf(oldKey, 65, "%s", r.oldKey.c_str());
     std::snprintf(revision, 65, "%s", r.revision.c_str());
     std::snprintf(uuid, 37, "%s", r.uuid.c_str());
     std::snprintf(newKey, 65, "%s", r.newKey.c_str());
+    std::snprintf(newRevision, 65, "%s", r.newRevision.c_str());
     return 1;
 }
 

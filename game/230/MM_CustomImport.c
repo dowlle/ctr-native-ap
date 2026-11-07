@@ -48,11 +48,11 @@ static int MM_CustomImport_KeepSoloDescriptors(void)
     count = XdeltaImport_ReplacedCount();
     for (i = 0; i < count; i++)
     {
-        char oldKey[65], newKey[65], uuid[37];
-        if (!XdeltaImport_ReplacedCopy(i, oldKey, revision, uuid, newKey)) continue;
+        char oldKey[65], newKey[65], newRevision[65], uuid[37];
+        if (!XdeltaImport_ReplacedCopy(i, oldKey, revision, uuid, newKey, newRevision)) continue;
         /* The old key lists the track until the new one does. */
         for (j = 0; j < keptCount; j++)
-            if (!strcmp(kept[j], newKey)) { ok &= AP_Solo_RetireReplacedTrack(oldKey, revision, uuid, newKey); break; }
+            if (!strcmp(kept[j], newKey)) { ok &= AP_Solo_RetireReplacedTrack(oldKey, revision, uuid, newKey, newRevision); break; }
         if (j == keptCount) ok = 0;
     }
     return ok && XdeltaImport_InstalledDescriptorCount() > 0;

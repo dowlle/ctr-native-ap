@@ -179,12 +179,12 @@ void XdeltaImport_InstalledDescriptorNote(char *note, size_t size);
    a solo room refers to (its room.json names the uuid and the copy's track
    key), which the review shows as XDELTA_OLD_KEEP. After PollInstall: the
    copies removed, each with the track key and revision its Play Solo
-   descriptor used and the key of the copy that took its place, and the number
+   descriptor used and the key and revision of the copy that took its place, and the number
    kept. SetSoloRoot names the solo folder (default: "solo" beside the assets
    folder). */
 void XdeltaImport_SetSoloRoot(const char *dir);
 int XdeltaImport_ReplacedCount(void);
-int XdeltaImport_ReplacedCopy(int index, char oldKey[65], char revision[65], char uuid[37], char newKey[65]);
+int XdeltaImport_ReplacedCopy(int index, char oldKey[65], char revision[65], char uuid[37], char newKey[65], char newRevision[65]);
 int XdeltaImport_KeptOldCopies(void);
 
 #ifdef __cplusplus

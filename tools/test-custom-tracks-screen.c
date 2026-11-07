@@ -116,7 +116,7 @@ int CustomSaphi_PollInstall(char pin[65], char *e, size_t n) { (void)e; (void)n;
 static int publishOK = 1, soloActive;
 int AP_Solo_PublishInstalledStore(const char *pin, char *error, size_t n) { (void)pin; if (!publishOK) snprintf(error, n, "Index unavailable"); return publishOK; }
 int AP_Solo_RecordTrackNeedsLaps(const char *a, const char *b, const char *c) { (void)a; (void)b; (void)c; return 1; }
-int AP_Solo_RetireReplacedTrack(const char *a, const char *b, const char *c, const char *d) { (void)a; (void)b; (void)c; (void)d; return 1; }
+int AP_Solo_RetireReplacedTrack(const char *a, const char *b, const char *c, const char *d, const char *e) { (void)a; (void)b; (void)c; (void)d; (void)e; return 1; }
 int AP_Solo_RecordTrackDescriptor(const char *a, const char *b, const char *c) { (void)a; (void)b; (void)c; return 1; }
 int AP_Solo_SessionActive(void) { return soloActive; }
 
@@ -197,7 +197,7 @@ int XdeltaImport_InstalledDescriptor(int i, char c[65], char r[65], char *j, siz
 void XdeltaImport_InstalledDescriptorNote(char *note, size_t size) { snprintf(note, size, "%s", ""); }
 void XdeltaImport_SetSoloRoot(const char *dir) { (void)dir; }
 int XdeltaImport_ReplacedCount(void) { return 0; }
-int XdeltaImport_ReplacedCopy(int i, char a[65], char b[65], char c[37], char d[65]) { (void)i; (void)a; (void)b; (void)c; (void)d; return 0; }
+int XdeltaImport_ReplacedCopy(int i, char a[65], char b[65], char c[37], char d[65], char e[65]) { (void)i; (void)a; (void)b; (void)c; (void)d; (void)e; return 0; }
 int XdeltaImport_KeptOldCopies(void) { return 0; }
 
 /* ---- drawing, with bounds and overlap checks ---- */

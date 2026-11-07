@@ -1426,7 +1426,11 @@ int main()
             const std::string assets = fresh();
             const std::string oldPin = importAs(assets, patch, "Replace slot 1");
             CHECK(packages(assets).size() == 1, "A3-20 the old copy is installed");
+            mkdir((assets + "/tracks/packages/.replaced-archive").c_str(), 0755);
+            write_path(assets + "/tracks/packages/.replaced-archive/keep.txt", Bytes(3, 'x'));
             const std::string newPin = importAs(assets, patch, nullptr, XDELTA_OLD_REPLACE);
+            struct stat kept;
+            CHECK(!stat((assets + "/tracks/packages/.replaced-archive/keep.txt").c_str(), &kept), "A3-20 a folder of the player's with a similar name is left alone");
             const auto titles = packages(assets);
             CHECK(titles.size() == 1 && titles[0] != "Replace slot 1" && !exists(assets, oldPin) && exists(assets, newPin),
                   "A3-20 an alpha1-titled copy is replaced by the new one");
