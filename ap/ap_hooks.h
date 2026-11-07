@@ -867,6 +867,8 @@ int AP_PadState(int physLevelID, int destLevelID);
 // enum AP_PadLook of ap_pad_colour.h: AP_PadState plus whether a closed pad is
 // waiting on its racer. Display only; no gate reads it.
 #include "ap_pad_colour.h"
+// Green only for checks in logic: the look a pad with nothing in logic gets (A3-37).
+#include "ap_pad_logic_look.h"
 // The birth key of a plan pad: what decides that ThTick rebuilds it (A3-12).
 #include "ap_pad_birth.h"
 // Hub streaming waits for a running mask hint (A3-12).

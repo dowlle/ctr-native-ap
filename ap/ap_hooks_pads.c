@@ -513,6 +513,45 @@ int AP_PadState(int physLevelID, int destLevelID)
 
 // AP_PadState plus the racer fact, as the shared colour table's display state
 // (ap_pad_colour.h). Only a closed plan pad can be racer-locked.
+// A3-37: how a plan pad's open checks stand against the exported logic, as the
+// counts ap_pad_logic_look.h decides from. The open set is the pad's display
+// set, the checks a player can act on now (a mode still locked behind stage 2
+// stays out, like the glow). Cached per pad until AP_StateGen moves: a received
+// item, a checked location or a reconnect, which is also when the rebuild key
+// is read again, so the beam redraws on the same tick the look changes.
+static int AP_PadLogicLook(int physLevelID, int look)
+{
+	static unsigned cacheGen[128];
+	static unsigned char cacheIn[128], cacheOut[128]; // 0 = empty, else look + 1
+	unsigned gen;
+	int bits[AP_PAD_DISPLAY_BITS_MAX];
+	int64_t codes[AP_PAD_DISPLAY_BITS_MAX];
+	int n, i, in = 0, unknown = 0, slot = physLevelID, out;
+
+	if (look != AP_PAD_LOOK_OPEN && look != AP_PAD_LOOK_STAGE2_OPEN)
+		return look;
+	if (!ap_content_plan_active())
+		return look;
+	gen = AP_StateGen();
+	if (slot >= 0 && slot < 128 && cacheOut[slot] && cacheGen[slot] == gen && cacheIn[slot] == look + 1)
+		return cacheOut[slot] - 1;
+	n = AP_ContentPadGlowBits(physLevelID, bits, codes, AP_PAD_DISPLAY_BITS_MAX, 1);
+	for (i = 0; i < n; i++)
+	{
+		int st = AP_LocationLogicState((long long)codes[i]);
+		if (st == AP_PAD_LOGIC_IN) in++;
+		else if (st == AP_PAD_LOGIC_UNKNOWN) unknown++;
+	}
+	out = AP_PadLookByLogic(look, n, in, unknown);
+	if (slot >= 0 && slot < 128)
+	{
+		cacheGen[slot] = gen;
+		cacheIn[slot] = (unsigned char)(look + 1);
+		cacheOut[slot] = (unsigned char)(out + 1);
+	}
+	return out;
+}
+
 int AP_PadLook(int physLevelID, int destLevelID)
 {
 	int state = AP_PadState(physLevelID, destLevelID);
@@ -522,7 +561,7 @@ int AP_PadLook(int physLevelID, int destLevelID)
 		const ctr_content_pad *pad = ap_content_plan_pad(physLevelID);
 		racerMissing = pad && !AP_ContentPadRacerMet(pad);
 	}
-	return AP_PadLookFromState(state, racerMissing);
+	return AP_PadLogicLook(physLevelID, AP_PadLookFromState(state, racerMissing));
 }
 
 // A Hit Character or Itemsanity use, or the `wumpa: global` check, a race on this

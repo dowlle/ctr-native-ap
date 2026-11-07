@@ -876,6 +876,9 @@ void AP_WinLogicTallyReset(void);
 void AP_WinLogicTallyItem(long long itemId, long long location, unsigned flags);
 // Current exported reachability, including the region and location rule.
 int AP_LocationInLogic(long long code);
+// The same question as three answers (AP_PAD_LOGIC_*, ap_pad_logic_look.h): in
+// logic, out of logic, or no usable logic entry for the code.
+int AP_LocationLogicState(long long code);
 // Cup entry from the hub (AP_CupEnterFromHub) arms the cup decision.
 void AP_WinStakesOnCupEnter(void);
 // Every level start (AP_RaceAttempt_OnLevelStart): decide the race's stakes.
