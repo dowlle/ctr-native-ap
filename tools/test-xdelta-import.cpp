@@ -51,6 +51,26 @@ using Bytes = std::vector<unsigned char>;
 static int checks, failures;
 #define CHECK(cond, name) do { checks++; if (!(cond)) { failures++; std::printf("FAIL %s (line %d)\n", name, __LINE__); } } while (0)
 
+/* Exercise the production wrapper with the retail small-font advance. */
+namespace diagnostic_layout {
+enum { FONT_SMALL, FONT_BIG };
+static std::vector<std::string> lines;
+static int DecalFont_GetLineWidth(const char *s, int) { return (int)std::strlen(s) * 13; }
+static void DecalFont_DrawLineOT(const char *s, int, int, int, int, uint32_t *) { lines.push_back(s); }
+#include "../game/230/MM_CustomText.c"
+static void check(const XdeltaImportItem &item)
+{
+    const std::string title = " -  " + std::string(item.title);
+    lines.clear();
+    MM_CustomText_Draw(title.c_str(), 32, 90, 244, 1, 0, nullptr);
+    CHECK(lines == std::vector<std::string>{title}, "diagnostic title and index fit the review row");
+    lines.clear();
+    MM_CustomText_Draw(item.reason, 305, 112, 176, 2, 0, nullptr);
+    CHECK((lines == std::vector<std::string>{"Level format", "not supported"}),
+          "complete diagnostic reason fits the detail panel without ellipsis");
+}
+}
+
 static void put32(Bytes &b, size_t o, uint32_t v) { for (int i = 0; i < 4; i++) b[o + i] = (unsigned char)(v >> (8 * i)); }
 static void put16(Bytes &b, size_t o, uint32_t v) { b[o] = (unsigned char)v; b[o + 1] = (unsigned char)(v >> 8); }
 static void put32be(Bytes &b, size_t o, uint32_t v) { for (int i = 0; i < 4; i++) b[o + i] = (unsigned char)(v >> (24 - 8 * i)); }
@@ -452,10 +472,11 @@ int main()
             {
                 const auto *it = item_for(s, slot);
                 CHECK(it && !it->offered && !it->pin[0] && !it->levSha256[0] && !it->tags[0] &&
-                      !std::strcmp(it->reason, "Uses a level format this client cannot read yet"),
+                      !std::strcmp(it->reason, "Level format not supported"),
                       "alternate map has its own non-importable diagnostic");
-                CHECK(it && std::string(it->title) == "Unsupported level (BIGFILE " + std::to_string(slot) + ")",
+                CHECK(it && std::string(it->title) == "Level " + std::to_string(slot),
                       "diagnostic identifies the BIGFILE entry");
+                if (it) diagnostic_layout::check(*it);
             }
             const auto *ordinary = item_for(s, 1);
             CHECK(ordinary && ordinary->offered && !std::strcmp(ordinary->title, "Alternate track 1"),
@@ -470,6 +491,40 @@ int main()
             CHECK(XdeltaImport_Install(r.scan, selected.data(), (root + "/alternate-assets").c_str(),
                                       CTR_XDELTA_INSTALL_PACKAGES, error, sizeof error) == 0,
                   "selecting only unsupported rows installs nothing");
+        }
+        XdeltaImport_Free(&r.scan);
+    }
+
+    /* The last ordinary candidate must keep its row when diagnostics overflow. */
+    {
+        DiscSpec many;
+        for (unsigned i = 0; i < 96; i++)
+        {
+            many.bigfile.push_back(make_vrm(i, 0));
+            LevSpec spec; spec.seed = 1000 + i;
+            many.bigfile.push_back(make_lev(spec));
+        }
+        Bytes before = make_disc(many);
+        for (unsigned i = 0; i < 96; i++)
+        {
+            LevSpec spec; spec.seed = 2000 + i;
+            many.bigfile[i * 2 + 1] = make_lev(spec);
+        }
+        put32(many.bigfile[189], 4, 0x1f0);
+        put32(many.bigfile[189], 4 + BODY_PTRMAP, 0x80000020u);
+        ScanResult r = scan(write_file("Capacity.xdelta", encode(before, make_disc(many))),
+                            write_file("capacity-base.bin", before));
+        CHECK(r.ok, "capacity-boundary scan succeeds");
+        if (r.ok)
+        {
+            const auto *s = XdeltaImport_Summary(r.scan);
+            unsigned offered = 0;
+            for (unsigned i = 0; i < s->count; i++) offered += s->items[i].offered != 0;
+            CHECK(offered == 95, "diagnostics never displace ordinary offered tracks");
+            const auto *last = item_for(s, 191);
+            CHECK(last && last->offered && !std::strcmp(last->title, "Capacity track 95"),
+                  "ordinary track after an alternate map keeps its row and ordinal");
+            CHECK(!item_for(s, 189) && line_with(s, "1 more items"), "overflow diagnostic uses the existing overflow row");
         }
         XdeltaImport_Free(&r.scan);
     }

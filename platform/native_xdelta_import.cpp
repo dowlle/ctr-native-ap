@@ -1243,6 +1243,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             return bytes;
         };
         std::set<uint32_t> consumed;
+        std::vector<XdeltaImportItem> unsupportedLevels;
         unsigned ordinal = 0;
         size_t offeredBytes = 0;
         std::map<std::pair<std::string, std::string>, std::string> seen;
@@ -1255,8 +1256,8 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             if (unsupported_lev_map(lev.data(), lev.size()))
             {
                 consumed.insert(c.index);
-                add_item(*scan, skip_item((int)c.index, "Unsupported level (BIGFILE " + std::to_string(c.index) + ")",
-                                         "Uses a level format this client cannot read yet"));
+                unsupportedLevels.push_back(skip_item((int)c.index, "Level " + std::to_string(c.index),
+                                                     "Level format not supported"));
                 continue;
             }
             size_t levCut = cut_lev(lev.data(), lev.size());
@@ -1402,6 +1403,9 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
         }
         if (other)
             add_item(*scan, skip_item(-1, "Other changed files (" + std::to_string(other) + ")", "Not track content"));
+        /* Extra diagnostics must not displace existing rows, especially a
+           later importable track when the review list reaches its limit. */
+        for (const auto &item : unsupportedLevels) add_item(*scan, item);
         if (scan->dropped)
         {
             XdeltaImportItem more = skip_item(-1, std::to_string(scan->dropped) + " more items", "Too many items for one list");
