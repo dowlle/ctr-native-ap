@@ -1446,9 +1446,10 @@ int main()
             const std::string assets = fresh();
             const std::string mine = importAs(assets, patch, "My Hand Named Copy");
             const std::string wrongSlot = importAs(assets, patch, "Replace slot 7");
+            const std::string typed = importAs(assets, patch, "My Favorite slot 1");
             const std::string newPin = importAs(assets, patch, nullptr, XDELTA_OLD_NONE);
-            CHECK(packages(assets).size() == 3 && exists(assets, mine) && exists(assets, wrongSlot) && exists(assets, newPin),
-                  "A3-20 a renamed copy is never replaced");
+            CHECK(packages(assets).size() == 4 && exists(assets, mine) && exists(assets, wrongSlot) && exists(assets, typed) && exists(assets, newPin),
+                  "A3-20 a renamed copy is never replaced, also one that ends in the matching slot");
         }
         /* A room that names the old copy keeps it. */
         {

@@ -33,14 +33,15 @@ static int MM_CustomImport_KeepSoloDescriptors(void)
 {
     static char json[16384];
     char contentId[65], revision[65];
-    int i, needsLaps, count = XdeltaImport_InstalledDescriptorCount(), ok = 1;
+    static char kept[CTR_XDELTA_ITEM_MAX][65];
+    int i, j, needsLaps, count = XdeltaImport_InstalledDescriptorCount(), ok = 1, keptCount = 0;
     for (i = 0; i < count; i++)
         if (XdeltaImport_InstalledDescriptor(i, contentId, revision, json, sizeof json, &needsLaps))
         {
-            if (needsLaps)
-                ok &= AP_Solo_RecordTrackNeedsLaps(contentId, revision, json);
-            else
-                ok &= AP_Solo_RecordTrackDescriptor(contentId, revision, json);
+            int recorded = needsLaps ? AP_Solo_RecordTrackNeedsLaps(contentId, revision, json)
+                                     : AP_Solo_RecordTrackDescriptor(contentId, revision, json);
+            ok &= recorded;
+            if (recorded && keptCount < CTR_XDELTA_ITEM_MAX) snprintf(kept[keptCount++], 65, "%s", contentId);
         }
         else ok = 0;
     /* An old slot-titled copy the install replaced (A3-20) stops listing its track. */
@@ -48,8 +49,11 @@ static int MM_CustomImport_KeepSoloDescriptors(void)
     for (i = 0; i < count; i++)
     {
         char oldKey[65], newKey[65], uuid[37];
-        if (XdeltaImport_ReplacedCopy(i, oldKey, revision, uuid, newKey))
-            ok &= AP_Solo_RetireReplacedTrack(oldKey, revision, uuid, newKey);
+        if (!XdeltaImport_ReplacedCopy(i, oldKey, revision, uuid, newKey)) continue;
+        /* The old key lists the track until the new one does. */
+        for (j = 0; j < keptCount; j++)
+            if (!strcmp(kept[j], newKey)) { ok &= AP_Solo_RetireReplacedTrack(oldKey, revision, uuid, newKey); break; }
+        if (j == keptCount) ok = 0;
     }
     return ok && XdeltaImport_InstalledDescriptorCount() > 0;
 }
@@ -235,6 +239,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
                 {
                     snprintf(s_importSummary.items[s_importRow].title, sizeof s_importSummary.items[s_importRow].title, "%s", text);
                     s_importSummary.items[s_importRow].nameSource = XDELTA_NAME_EDITED;
+                    s_importSummary.items[s_importRow].oldCopy = XDELTA_OLD_NONE; /* decided again at install */
                     s_importMessage[0] = 0;
                 }
             }

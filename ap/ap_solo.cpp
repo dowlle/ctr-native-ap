@@ -1248,8 +1248,9 @@ bool RemoveDescriptorFile(const fs::path &target, std::string &detail)
 // for the old key move to the new one when it still waits for its laps and
 // pins the same files.
 bool RetireDescriptor(const std::string &key, const std::string &revision, const std::string &uuid,
-                      const std::string &keeperKey, std::string &why)
+                      const std::string &keeperKey, std::string &why, bool strict = false)
 {
+	bool removedAll = true;
 	const std::string name = AP_SoloDescriptorFileName(key, revision);
 	const std::string keeperName = AP_SoloDescriptorFileName(keeperKey, revision);
 	std::error_code ec;
@@ -1285,9 +1286,13 @@ bool RetireDescriptor(const std::string &key, const std::string &revision, const
 		if (RemoveDescriptorFile(target, detail))
 			Log(std::string("retired solo/") + folder + "/" + name + ": a newer install of the same package lists the track under another key");
 		else
+		{
 			Log(std::string("could not retire solo/") + folder + "/" + name + ": " + detail);
+			removedAll = false;
+			why = "could not remove solo/" + std::string(folder) + "/" + name;
+		}
 	}
-	return true;
+	return removedAll || !strict;
 }
 
 // The one writer behind both C entry points and the store publication: kind 1
@@ -1391,7 +1396,7 @@ extern "C" int AP_Solo_RetireReplacedTrack(const char *oldKey, const char *revis
 		return 0;
 	if (std::strcmp(oldKey, newKey) == 0)
 		return 1;
-	return RetireDescriptor(oldKey, revision, uuid, newKey, why) ? 1 : 0;
+	return RetireDescriptor(oldKey, revision, uuid, newKey, why, true) ? 1 : 0;
 }
 
 #ifdef CTR_CUSTOM_PACKAGES
