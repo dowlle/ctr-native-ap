@@ -1696,6 +1696,24 @@ for name, change in [
         ("relic check dropped", row2_extra_relic_check),
         ]:
     row2_alter(name, change)
+# A3-25: with the boss gauntlet a seed short of five Gem Cups holds the Purple
+# Gem Cup first and then Red onward; a lineup that skips Red is still refused.
+gauntlet_base = None
+for count in (1, 2, 4, 5):
+    options = relic_options(dict(sapphire=18, gold=18, platinum=0))
+    options["content_pool"]["cups"] = dict(count=count, tracks="random")
+    options["content_pool"]["bosses"] = dict(enabled=True)
+    options["boss_kit_shuffle"] = True
+    options["purple_cup_boss_gauntlet"] = True
+    wire = json.loads(json.dumps(make_world(options, seed=count).fill_slot_data()))
+    cases.append((f"gauntlet-cups-{count}", wire, True))
+    if count == 2:
+        gauntlet_base = wire
+# These forgeries rename ids only, so native also refuses them on the display name
+# before the lineup check; the lineup predicate itself is covered by the generator
+# test and the review of all 32 colour subsets.
+alter("gauntlet-renamed-colour-1", lambda p: row2_rename(p, 0, "entry/gem_cup:1"), gauntlet_base)
+alter("gauntlet-renamed-purple-to-2", lambda p: row2_rename(p, 4, "entry/gem_cup:2"), gauntlet_base)
 # One generator row 3: every unlock mode, placement and stage density the
 # generator draws, then forged requirement records.
 row3_shape = dict(preset="mixed", tracks=dict(retail="all", modes=["trophy", "ctr", "relic"], custom=[]),

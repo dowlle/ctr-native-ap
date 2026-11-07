@@ -1676,8 +1676,16 @@ static void validate(const J &p, State &out) {
     for (const auto &pair : leg_tracks)
         if (pair.second.leg.package_index >= 0) used_packages.insert(out.packages[pair.second.leg.package_index].id);
     // The first five cups are the Gem Cups, Red first (one generator row 2).
-    need((gem_colours.empty() || *gem_colours.rbegin() == (int)gem_colours.size() - 1) &&
-         (cup_names.empty() || gem_colours.size() == 5), "a plan's first five cups are the Gem Cups, Red first");
+    // A seed with fewer than five may hold the Purple Gem Cup first and then
+    // Red onward (A3-25, the boss gauntlet); the pads are per colour, so the
+    // order of the colours changes nothing else here.
+    {
+        std::set<int> rest = gem_colours;
+        const bool purple_first = gem_colours.size() < 5 && rest.erase(4) != 0 &&
+                                  (rest.empty() || *rest.rbegin() == (int)rest.size() - 1);
+        need((gem_colours.empty() || *gem_colours.rbegin() == (int)gem_colours.size() - 1 || purple_first) &&
+             (cup_names.empty() || gem_colours.size() == 5), "a plan's first five cups are the Gem Cups, Red first");
+    }
     // `Cup Leg Victory`: a route per occurrence, in the plan's entry order,
     // then leg order (apworld content_cups.leg_victories).
     {
