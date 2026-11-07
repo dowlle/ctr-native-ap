@@ -142,7 +142,7 @@ close = body(ui, 'static void AP_WShopClose(')
 frame = body(ui, 'int AP_WumpaShopMenuFrame(')
 check('leaving the shop keeps the cursor on WUMPA SHOP',
       'rowSelected' not in close and 'rowSelected' not in frame and
-      re.search(r'if \(tap & \(BTN_TRIANGLE \| BTN_CIRCLE \| BTN_START\)\)\s*\{[^}]*AP_WShopClose\(\);\s*return 1;', frame) is not None)
+      re.search(r'if \(tap & \(BTN_TRIANGLE \| BTN_START\)\)\s*\{[^}]*AP_WShopClose\(\);\s*return 1;', frame) is not None)
 finalize = body(text('game/SelectProfile.c'), 'static void SelectProfile_FinalizeAdventure(')
 check('returning from a save selects the visible EXIT row',
       finalize.count('data.menuGreenLoadSave.rowSelected = AP_WumpaShopGreenExitRow(&data.menuGreenLoadSave);') == 2 and

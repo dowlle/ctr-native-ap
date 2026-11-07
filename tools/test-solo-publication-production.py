@@ -21,6 +21,8 @@ fixture = r'''
 #include <chrono>
 #include <cstdio>
 #include <future>
+#include <filesystem>
+#include <fstream>
 #include <set>
 #include <string>
 #include <thread>
@@ -37,6 +39,8 @@ static struct {
     nlohmann::json result;
 } g_job;
 static bool runtime = true, link = false;
+namespace fs = std::filesystem;
+static std::string g_optionOverridesFile;
 extern "C" int AP_Solo_RuntimePresent(void) { return runtime; }
 static bool SoloRootIsLink() { return link; }
 static std::string AssetsDir() { return "test-assets"; }
@@ -80,7 +84,7 @@ static bool ApplyStoreDescriptor(const StorePublication::Descriptor& d, const St
     return !(publishFailure && applied % 2);
 }
 '''
-for signature in ("bool TrackPublicationBusy()", "bool StartTrackPublication(const std::vector<std::string> &args)",
+for signature in ("void ClearOptionOverrides()", "bool TrackPublicationBusy()", "bool StartTrackPublication(const std::vector<std::string> &args)",
                   "bool TickTrackPublication()", "void CancelTrackPublication()", "void FinishTrackPublication()",
                   'extern "C" int AP_Solo_TracksStart(const char *yamlPath)',
                   'extern "C" void AP_Solo_JobCancel(void)'):
@@ -117,7 +121,10 @@ int main() {
     for (int i = 0; i < 100; i++) assert(TickTrackPublication());
     assert(!spawned && !applied); // Frame has control while verifier is held.
     assert(!AP_Solo_TracksStart("other.yaml"));
+    g_optionOverridesFile = "cancel-options.json";
+    std::ofstream(g_optionOverridesFile) << "[]";
     AP_Solo_JobCancel(); // Must return while the verifier is still held.
+    assert(g_optionOverridesFile.empty() && !fs::exists("cancel-options.json"));
     assert(g_job.state == AP_SOLO_JOB_IDLE);
     retire(); assert(!spawned && !applied);
 

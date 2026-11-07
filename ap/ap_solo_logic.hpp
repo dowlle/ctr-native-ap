@@ -324,11 +324,10 @@ static inline std::vector<std::string> AP_SoloTrackArgs(const std::vector<std::p
 }
 
 // Back from Custom Tracks, a refused pick's message and the Review page's
-// "options as set" line follow the start: a preset came by way of its
-// options screen, a YAML straight from the start list.
-static inline bool AP_SoloTracksViaOptions(bool isPreset)
+// "options as set" line: every YAML now comes through its options screen.
+static inline bool AP_SoloTracksViaOptions(bool /*isPreset*/)
 {
-	return isPreset;
+	return true;
 }
 
 // solo/tracks/<track key>__<revision>.json, or "" when either part is not
@@ -481,6 +480,7 @@ struct APSoloOption
 	int step = 1;                     // range: how far Left / Right move (overlay rule "step")
 	std::string value;                // shown and passed as --set name=value
 	std::string initial;              // the preset's value
+	bool previewOnly = false;        // untouched weighted/random expression
 	std::string forced;               // non-empty: fixed to this value
 	std::string forcedReason;
 	nlohmann::json visibleWhen;       // {"other": ["v1", "v2"]}
@@ -491,6 +491,9 @@ struct APSoloOption
 	// in row order, which is also what --set passes.
 	std::vector<std::string> keys, keyLabels;
 	std::vector<bool> keyDefault;
+	mutable std::string setCacheValue;
+	mutable std::vector<std::string> setCacheEntries;
+	mutable std::set<std::string> setCacheMembers;
 	// kind "weights" (a dict of per-key numbers, A3-22): one number row per
 	// key, 0 to weightMax. `value` is the whole table as a JSON object in row
 	// order, which is also what --set passes when a weight changed. Written
@@ -561,23 +564,29 @@ static inline std::string AP_SoloHelpText(const std::string &doc)
 }
 
 // The checked keys of a set row, in row order.
-static inline std::vector<std::string> AP_SoloSetEntries(const APSoloOption &row)
+static inline const std::vector<std::string> &AP_SoloSetEntries(const APSoloOption &row)
 {
-	std::vector<std::string> out;
-	const nlohmann::json v = nlohmann::json::parse(row.value, nullptr, false);
-	if (v.is_array())
-		for (const auto &e : v)
-			if (e.is_string())
-				out.push_back(e.get<std::string>());
-	return out;
+	if (row.setCacheValue != row.value)
+	{
+		row.setCacheEntries.clear();
+		row.setCacheMembers.clear();
+		const nlohmann::json v = nlohmann::json::parse(row.value, nullptr, false);
+		if (v.is_array())
+			for (const auto &e : v)
+				if (e.is_string())
+				{
+					row.setCacheEntries.push_back(e.get<std::string>());
+					row.setCacheMembers.insert(row.setCacheEntries.back());
+				}
+		row.setCacheValue = row.value;
+	}
+	return row.setCacheEntries;
 }
 
 static inline bool AP_SoloSetHas(const APSoloOption &row, const std::string &key)
 {
-	for (const std::string &e : AP_SoloSetEntries(row))
-		if (e == key)
-			return true;
-	return false;
+	AP_SoloSetEntries(row);
+	return row.setCacheMembers.count(key) != 0;
 }
 
 // The set's value from checked keys: a JSON array in row order, so the same
@@ -585,8 +594,9 @@ static inline bool AP_SoloSetHas(const APSoloOption &row, const std::string &key
 static inline std::string AP_SoloSetValue(const APSoloOption &row, const std::vector<std::string> &checked)
 {
 	nlohmann::json out = nlohmann::json::array();
+	const std::set<std::string> members(checked.begin(), checked.end());
 	for (const std::string &k : row.keys)
-		if (std::find(checked.begin(), checked.end(), k) != checked.end())
+		if (members.count(k))
 			out.push_back(k);
 	return out.dump();
 }
@@ -707,6 +717,9 @@ static inline std::vector<APSoloOption> AP_SoloBuildOptions(const nlohmann::json
 			const nlohmann::json &f = facts[n.get<std::string>()];
 			APSoloOption row;
 			row.name = n.get<std::string>();
+			if (describe.contains("unresolved") && describe["unresolved"].is_array())
+				for (const auto &name : describe["unresolved"])
+					row.previewOnly = row.previewOnly || (name.is_string() && name.get<std::string>() == row.name);
 			row.label = f.value("display_name", row.name);
 			row.group = group;
 			row.kind = f.value("kind", std::string());
@@ -783,12 +796,13 @@ static inline std::vector<APSoloOption> AP_SoloBuildOptions(const nlohmann::json
 				// A YAML entry without a row (a custom track in the boss track
 				// pool) becomes a row of its own, so it is kept and shown.
 				std::vector<std::string> checked;
+				std::set<std::string> available(row.keys.begin(), row.keys.end());
 				if (v.is_array())
 					for (const auto &e : v)
 						if (e.is_string())
 						{
 							checked.push_back(e.get<std::string>());
-							if (std::find(row.keys.begin(), row.keys.end(), checked.back()) == row.keys.end())
+							if (available.insert(checked.back()).second)
 							{
 								row.keys.push_back(checked.back());
 								row.keyLabels.push_back(checked.back());
@@ -881,6 +895,13 @@ static inline bool AP_SoloConditionHolds(const std::vector<APSoloOption> &rows, 
 
 static inline bool AP_SoloOptionVisible(const std::vector<APSoloOption> &rows, const APSoloOption &row)
 {
+	if (row.visibleWhen.is_object())
+		for (auto it = row.visibleWhen.begin(); it != row.visibleWhen.end(); ++it)
+		{
+			const APSoloOption *other = AP_SoloFindOption(rows, it.key());
+			if (other && other->previewOnly && other->value == other->initial)
+				return true; // the roll may enable this row
+		}
 	return row.visibleWhen.is_null() || AP_SoloConditionHolds(rows, row.visibleWhen);
 }
 
@@ -917,6 +938,20 @@ static inline bool AP_SoloGuardActive(const std::vector<APSoloOption> &rows, con
 {
 	if (!guard.is_object() || !guard.contains("option") || !guard["option"].is_string())
 		return false;
+	// A preview is not a rolled value. Defer only guards that depend on an
+	// untouched expression to generation; edited concrete values still guard.
+	std::vector<std::string> dependencies = {guard["option"].get<std::string>()};
+	if (guard.contains("at_most_count_of") && guard["at_most_count_of"].is_string())
+		dependencies.push_back(guard["at_most_count_of"].get<std::string>());
+	if (guard.contains("when") && guard["when"].is_object())
+		for (auto it = guard["when"].begin(); it != guard["when"].end(); ++it)
+			dependencies.push_back(it.key());
+	for (const auto &name : dependencies)
+	{
+		const APSoloOption *dependency = AP_SoloFindOption(rows, name);
+		if (dependency && dependency->previewOnly && dependency->value == dependency->initial)
+			return false;
+	}
 	if (guard.contains("when") && !AP_SoloConditionHolds(rows, guard["when"]))
 		return false;
 	const APSoloOption *row = AP_SoloFindOption(rows, guard["option"].get<std::string>());

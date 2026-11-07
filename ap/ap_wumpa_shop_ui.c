@@ -1,10 +1,11 @@
+#include <platform/native_menu.h>
 #ifdef CTR_AP
 
 // ============================================================================
 // The Wumpa Shop page (#249). Opened from the WUMPA SHOP row of a hub's green
 // load/save menu. While open it owns input and drawing the way the enlarged
 // tracker does (RECTMENU_ProcessState returns early), so the load/save menu
-// underneath neither runs nor sees a press. Triangle or Circle goes back to
+// underneath neither runs nor sees a press. Triangle or Start goes back to
 // that menu.
 //
 // One line per slot of this hub: slot number, the item and its owner when it
@@ -358,7 +359,7 @@ static void AP_WShopDraw(void)
 	if (ap_wshop.msgFrames > 0)
 		DecalFont_DrawLine(ap_wshop.msg, 0x100, 0xc0, FONT_SMALL, WHITE | JUSTIFY_CENTER);
 	else
-		DecalFont_DrawLine("X BUY   TRIANGLE BACK", 0x100, 0xc0, FONT_SMALL, ORANGE | JUSTIFY_CENTER);
+		DecalFont_DrawLine(NativeMenu_Labels("*: BUY   ^: BACK"), 0x100, 0xc0, FONT_SMALL, ORANGE | JUSTIFY_CENTER);
 
 	if (gt != 0)
 	{
@@ -401,7 +402,7 @@ int AP_WumpaShopMenuFrame(void)
 	if (ap_wshop.msgFrames > 0)
 		ap_wshop.msgFrames--;
 
-	if (tap & (BTN_TRIANGLE | BTN_CIRCLE | BTN_START))
+	if (tap & (BTN_TRIANGLE | BTN_START))
 	{
 		OtherFX_Play(2, 1);
 		AP_WShopClose();
@@ -418,7 +419,7 @@ int AP_WumpaShopMenuFrame(void)
 		ap_wshop.marqueeFrame = 0;
 		OtherFX_Play(0, 1);
 	}
-	if (tap & BTN_CROSS)
+	if (tap & (BTN_CROSS | BTN_CIRCLE))
 		AP_WShopBuy();
 
 	AP_WShopDraw();

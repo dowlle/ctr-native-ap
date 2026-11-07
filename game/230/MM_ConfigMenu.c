@@ -1,6 +1,7 @@
 #include <common.h>
 #include <stdio.h>
 #include <ctr_menu_ux.h>
+#include <platform/native_menu.h>
 #include <ctr_menu_pages.h>
 #include <platform/native_renderer.h> // NativeRenderer_CaptureWindowGeometry, ahead of the NativeConfig_Save calls below
 #include <platform/native_controls.h> // the Controls page (MM_ControlsConfig.c)
@@ -53,8 +54,8 @@
 // connection manager (AP) and the Track Manager search box (packages). Why the
 // pad buffer cannot be used is explained above MM_ConfigProc_Connection.
 #if defined(CTR_AP) || defined(CTR_CUSTOM_PACKAGES)
-#define CONN_PAD_COMMIT (RAW_BTN_CROSS | RAW_BTN_START)
-#define CONN_PAD_CANCEL (RAW_BTN_TRIANGLE)
+#define CONN_PAD_COMMIT (RAW_BTN_CROSS | RAW_BTN_CIRCLE)
+#define CONN_PAD_CANCEL (RAW_BTN_TRIANGLE | RAW_BTN_START)
 #endif
 
 // In-game options menu. Ported from thecodingbob/ctr-native (branch
@@ -971,7 +972,7 @@ static void Conn_DrawLongStatus(const char *status, int labelY, int valueX, int 
 // game/DecalFont.c).
 static void TextEdit_DrawHint(int y, uint32_t *ot)
 {
-	DecalFont_DrawLineOT("* OR START: SAVE   ^: CANCEL",
+	DecalFont_DrawLineOT(NativeMenu_Labels("*: SAVE   ^: CANCEL"),
 		0x100, y, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 }
 
@@ -1693,5 +1694,6 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 	}
 
 	RECT bg = {0x10, 4, 0x1E0, 0xCE};
-	RECTMENU_DrawInnerRect(&bg, 4, ot);
+	// Opaque backing keeps the animated title logo out of the menu text.
+	RECTMENU_DrawInnerRect(&bg, 5, ot);
 }

@@ -13,6 +13,7 @@
 // - a Steam launch never relaunches, a direct launch does;
 // - the rollback copy is confirmed only when the new build reaches the menu.
 #include <stdio.h>
+#include "menu-label-stub.h"
 #include <stdlib.h>
 #include <string.h>
 #include <common.h>
@@ -287,13 +288,18 @@ static void test_failures(void)
 	};
 	for (size_t i = 0; i < sizeof rows / sizeof rows[0]; ++i)
 	{
-		reset_all();
-		fake_status = rows[i].status;
-		expect(frame(0) == 1 && shown(rows[i].text), rows[i].text);
-		expect(rows[i].status == AP_UPD_FAILED_RESTORE ? shown(".old") : shown("Nothing was changed."),
-		       "the failure says what happened to the files");
-		frame(BTN_CROSS);
-		expect(dismissals == 1 && frame(0) == 0, "the failure can be dismissed");
+		const int buttons[] = {BTN_CROSS, BTN_CIRCLE, BTN_TRIANGLE, BTN_START};
+		for (size_t j = 0; j < sizeof buttons / sizeof buttons[0]; ++j)
+		{
+			reset_all();
+			fake_status = rows[i].status;
+			expect(frame(0) == 1 && shown(rows[i].text), rows[i].text);
+			expect(rows[i].status == AP_UPD_FAILED_RESTORE ? shown(".old") : shown("Nothing was changed."),
+			       "the failure says what happened to the files");
+			expect(shown("^: BACK"), "failure dialogs name Back");
+			frame(buttons[j]);
+			expect(dismissals == 1 && frame(0) == 0, "confirm or Back dismisses every failure");
+		}
 	}
 	reset_all();
 	fake_status = AP_UPD_CHECKING;
@@ -376,6 +382,11 @@ int main(void)
 	test_failures();
 	test_restart();
 	test_first_start();
+	reset_all(); fake_status = AP_UPD_OFFER;
+	frame(BTN_CIRCLE); expect(downloads == 1, "Circle starts the download");
+	frame(BTN_START); expect(cancels == 1, "Start cancels the download");
+	reset_all(); fake_status = AP_UPD_OFFER;
+	frame(BTN_START); expect(downloads == 0 && g_config.updateDeclined[0] != 0, "Start skips the version");
 	printf("%d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

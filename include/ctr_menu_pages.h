@@ -40,7 +40,7 @@ static const char *const s_ctrMenuPageVideo[] = {
 };
 static const char *const s_ctrMenuPageGameplay[] = {
 	"skip_intro", "skip_hints", "race_type_selector", "skip_podium", "skip_cutscenes",
-	"ai_difficulty", "mute_when_unfocused", NULL,
+	"ai_difficulty", "mute_when_unfocused", "device_aware_labels", NULL,
 };
 static const char *const s_ctrMenuPageControls[] = {
 	NULL,

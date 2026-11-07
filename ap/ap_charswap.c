@@ -1,3 +1,4 @@
+#include <platform/native_menu.h>
 #ifdef CTR_AP
 
 #include <common.h> // struct Driver / GameTracker / Level, sdata, data, LevelID, BTN_*
@@ -1398,7 +1399,7 @@ static void ap_cs_input(struct GameTracker *gGT)
 			ap_cs_adjust(gGT, -1);
 		else if ((tap & BTN_RIGHT) != 0)
 			ap_cs_adjust(gGT, 1);
-		else if ((tap & (BTN_SQUARE_one | BTN_TRIANGLE)) != 0)
+		else if ((tap & (BTN_TRIANGLE | BTN_START)) != 0)
 			ap_cs_editFocus = 0;
 
 		return;
@@ -1443,7 +1444,7 @@ static void ap_cs_input(struct GameTracker *gGT)
 			OtherFX_Play(2, 1); // locked: name + stats visible, confirm refused
 		}
 	}
-	else if ((tap & BTN_TRIANGLE) != 0)
+	else if ((tap & (BTN_TRIANGLE | BTN_START)) != 0)
 	{
 		ap_cs_open = 0;
 		ap_cs_setFreeze(gGT, 0);
@@ -2407,8 +2408,11 @@ void AP_CharPicker_Draw(void)
 		}
 	}
 
-	snprintf(line, sizeof line, "X CONFIRM   %s   TRIANGLE CLOSE",
-	         ap_cs_editorAvailable() ? "SQUARE EDIT" : "----");
+	if (ap_cs_editFocus)
+		snprintf(line, sizeof line, "%s", NativeMenu_Labels("LEFT/RIGHT: CHANGE   ^: BACK"));
+	else
+		snprintf(line, sizeof line, NativeMenu_Labels("*: CONFIRM   %s   ^: BACK"),
+		         ap_cs_editorAvailable() ? NativeMenu_Labels("[: EDIT") : "");
 	DecalFont_DrawLine(line, 0x100, panelY + 76, FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
 }
 

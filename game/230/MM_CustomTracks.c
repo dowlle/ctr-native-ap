@@ -1,3 +1,4 @@
+#include <platform/native_menu.h>
 /* Custom Tracks (0.3.0-alpha2, A2-4): Options > Custom Tracks in the player
    client, one screen with three tabs. It replaces the old Custom Content page
    (Current Seed tab and package page) and the Track Library page; every
@@ -335,7 +336,11 @@ static const char *CT_ModesText(const struct CT_LibView *v)
 static void CT_Badges(const struct CT_LibView *v, int kind, char *out, size_t size)
 {
     const struct CustomTrackManagerStatus *status = AP_CustomContentStatus();
-    if (kind == CT_ITEM_PACKAGE)
+    if ((!v->installed || !v->installed->installed) && v->package &&
+        !strcmp(v->version, AP_CustomContentPackage()->version) &&
+        status->state == CTR_CT_MANAGER_MANIFEST_MISSING)
+        snprintf(out, size, "Needs setup");
+    else if (kind == CT_ITEM_PACKAGE)
         snprintf(out, size, "%s", CustomTrackManager_StateText(status->state));
     else if (v->installed && v->installed->installed)
         snprintf(out, size, "%s", v->installed->local.xdelta ? "Imported" : "Installed");
@@ -819,8 +824,10 @@ static void CT_SeedIdentity(void)
     char seed[96] = "", slot[64] = "", text[512];
     ap_net_seed_name(seed, sizeof seed);
     ap_net_slot_name(slot, sizeof slot);
-    if (!s_ctSeedCount && !seed[0])
-        snprintf(text, sizeof text, "No room or Play Solo seed is loaded.");
+    if (!s_ctSeedCount && !ap_net_is_connected())
+        snprintf(text, sizeof text, "%s", seed[0] || AP_Solo_SessionActive() ?
+                 "Seed data is not loaded yet. Wait for the room connection." :
+                 "No room or Play Solo seed is loaded.");
     else
         snprintf(text, sizeof text, "%s. Seed %s. Slot %s. Needs %d custom track%s, %d ready.",
                  AP_Solo_SessionActive() ? "Play Solo seed" : "Connected room", seed[0] ? seed : "unknown",
@@ -1036,7 +1043,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
             OtherFX_Play(1, 1); tapped = 0;
         }
         else if (tapped & (BTN_TRIANGLE | BTN_START)) { s_ctFocus = CT_FOCUS_CONTROLS; OtherFX_Play(2, 1); tapped = 0; }
-        else if (tapped & BTN_SQUARE) { s_ctFocus = CT_FOCUS_CONTROLS; s_ctControlSel[CT_TAB_LIBRARY] = 1; tapped = BTN_CROSS; }
+        else if (tapped & BTN_SQUARE) { s_ctFocus = CT_FOCUS_CONTROLS; tapped = 0; }
     }
     if (s_ctItemCount) { item = &s_ctItems[*sel]; CT_View(item, &v); nActions = CT_LibraryActions(item, &v, actions); }
     else if (s_ctFocus == CT_FOCUS_ACTIONS || s_ctFocus == CT_FOCUS_SUB) { s_ctFocus = CT_FOCUS_LIST; s_ctSub = CT_SUB_NONE; }
@@ -1229,7 +1236,16 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
                                s_ctFilter == CT_FILTER_BROWSE ? "Catalogue unavailable. Refresh it from the page controls." :
                                "No tracks yet. Refresh the catalogue or import a patch.",
                                CT_LIST_X, 84, CT_LIST_W, 3, WHITE, ot);
-        if (item)
+        if (s_ctFocus == CT_FOCUS_TABS && !s_saphiDownloading && !s_ctLegacyDownload &&
+            !strstr(s_saphiMessage, "publication failed"))
+        {
+            CT_DrawPaged("Local tracks and Saphi catalogue.", CT_DETAIL_X, 70, CT_DETAIL_W, 4, WHITE, ot);
+            CT_DrawPaged(s_saphiRefreshBusy ? "Loading Project Saphi..." :
+                         s_saphiRefreshFailed ? "Catalogue failed. Use controls to refresh." :
+                         "Open for tracks. Controls to browse.",
+                         CT_DETAIL_X, 122, CT_DETAIL_W, 4, ORANGE, ot);
+        }
+        else if (item)
         {
             CT_DrawPaged(v.title, CT_DETAIL_X, 70, CT_DETAIL_W, 2, ORANGE, ot);
             snprintf(line, sizeof line, "v%.32s", v.version);
@@ -1251,7 +1267,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
                                 (item->kind == CT_ITEM_PACKAGE && AP_CustomContentStatus()->state != CTR_CT_MANAGER_READY);
                 CT_DrawPaged(status[0] ? status : line, CT_DETAIL_X, 132, CT_DETAIL_W, 2, status[0] && bad ? RED : WHITE, ot);
             }
-            MM_CustomText_Draw("*: Actions", CT_DETAIL_X, 159 + 2, CT_DETAIL_W, 1, ORANGE, ot);
+            MM_CustomText_Draw(NativeMenu_Labels("*: Actions"), CT_DETAIL_X, 159 + 2, CT_DETAIL_W, 1, ORANGE, ot);
         }
     }
 
@@ -1259,12 +1275,14 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
     {
         snprintf(line, sizeof line, "Filter: %s   Search: %.24s   %d/%d", s_ctFilterNames[s_ctFilter],
                  s_saphiQuery[0] ? s_saphiQuery : "none", s_ctItemCount ? *sel + 1 : 0, s_ctItemCount);
+        if (s_saphiRefreshBusy) snprintf(line, sizeof line, "Loading Saphi catalogue...");
+        else if (s_saphiRefreshFailed) snprintf(line, sizeof line, "Saphi refresh failed. Retry Refresh.");
         CT_Footer(line, NULL, ot);
     }
-    CT_Footer(NULL, s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? "*: Actions   ^: Page controls" :
-                    s_ctFocus == CT_FOCUS_CONTROLS ? "*: Select   [: Tracks   ^: Tabs" :
-                    s_ctFocus == CT_FOCUS_ACTIONS ? "*: Select   ^: Tracks" :
-                    s_ctSub == CT_SUB_RELIC ? "Left/Right: Move   ^: Cancel" : "*: Select   ^: Back", ot);
+    CT_Footer(NULL, s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? NativeMenu_Labels("*: Actions  [: Controls  ^: Back") :
+                    s_ctFocus == CT_FOCUS_CONTROLS ? NativeMenu_Labels("*: Select   [: Tracks   ^: Tabs") :
+                    s_ctFocus == CT_FOCUS_ACTIONS ? NativeMenu_Labels("*: Select   ^: Tracks") :
+                    s_ctSub == CT_SUB_RELIC ? NativeMenu_Labels("Left/Right: Move   ^: Cancel") : NativeMenu_Labels("*: Select   ^: Back"), ot);
 }
 
 /* ---- This Seed tab ------------------------------------------------------ */
@@ -1422,9 +1440,14 @@ static void CT_SeedFrame(int tapped, uint32_t *ot)
         }
         if (!s_ctSeedCount)
         {
-            MM_CustomText_Draw("No seed loaded. Connect to a room or start a Play Solo seed to see its tracks.",
+            ap_net_seed_name(seed, sizeof seed);
+            MM_CustomText_Draw(ap_net_is_connected() ?
+                               "This seed needs no custom tracks. Retail tracks are ready to play." :
+                               seed[0] || AP_Solo_SessionActive() ?
+                               "Seed data is not loaded yet. Wait for the room connection." :
+                               "No seed loaded. Connect to a room or start a Play Solo seed to see its tracks.",
                                CT_LIST_X, 72, CT_LIST_W, 7, WHITE, ot);
-            CT_DrawPaged("Library lists every installed track.", CT_DETAIL_X, 70, CT_DETAIL_W, 4, WHITE, ot);
+            CT_DrawPaged("Only required custom tracks. Library and Import need no seed.", CT_DETAIL_X, 70, CT_DETAIL_W, 7, WHITE, ot);
         }
         if (r)
         {
@@ -1443,24 +1466,26 @@ static void CT_SeedFrame(int tapped, uint32_t *ot)
             else snprintf(about, sizeof about, "%s%s%s. %s", r->lev_bytes ? size : "", r->lev_bytes ? ", " : "",
                           ap_seed_source_text(r), instruction);
             CT_DrawPaged(about, CT_DETAIL_X, 132, CT_DETAIL_W, 2, WHITE, ot);
-            MM_CustomText_Draw("*: Actions", CT_DETAIL_X, 161, CT_DETAIL_W, 1, ORANGE, ot);
+            MM_CustomText_Draw(NativeMenu_Labels("*: Actions"), CT_DETAIL_X, 161, CT_DETAIL_W, 1, ORANGE, ot);
         }
     }
 
     ap_net_seed_name(seed, sizeof seed);
-    if (s_ctSeedCount)
+    if (!s_ctSeedCount && !ap_net_is_connected() && (seed[0] || AP_Solo_SessionActive()))
+        snprintf(line, sizeof line, "Waiting for seed data");
+    else if (s_ctSeedCount || ap_net_is_connected())
     {
         char full[256];
         snprintf(full, sizeof full, "Ready %d/%d   %s %s", CT_SeedReady(), s_ctSeedCount,
                  AP_Solo_SessionActive() ? "Play Solo" : "Room", seed[0] ? seed : "connected");
         CT_Fit(full, line, sizeof line, 456);
     }
-    else snprintf(line, sizeof line, "%s", seed[0] ? "This seed needs no custom tracks" : "No seed loaded");
+    else snprintf(line, sizeof line, "No seed loaded");
     if (AP_SeedContentInstallBusy() || s_ctLegacyDownload) snprintf(line, sizeof line, "Installing...");
-    CT_Footer(line, s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? "*: Actions   ^: Page controls" :
-                    s_ctFocus == CT_FOCUS_CONTROLS ? (s_ctSeedCount ? "*: Select   [: Tracks   ^: Tabs" : "*: Select   ^: Tabs") :
-                    s_ctFocus == CT_FOCUS_ACTIONS ? "*: Select   ^: Tracks" :
-                    s_ctSub == CT_SUB_INSTALL ? "*: Install   ^: Cancel" : "^: Back", ot);
+    CT_Footer(line, s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? NativeMenu_Labels("*: Actions   ^: Page controls") :
+                    s_ctFocus == CT_FOCUS_CONTROLS ? (s_ctSeedCount ? NativeMenu_Labels("*: Select   [: Tracks   ^: Tabs") : NativeMenu_Labels("*: Select   ^: Tabs")) :
+                    s_ctFocus == CT_FOCUS_ACTIONS ? NativeMenu_Labels("*: Select   ^: Tracks") :
+                    s_ctSub == CT_SUB_INSTALL ? NativeMenu_Labels("*: Install   ^: Cancel") : NativeMenu_Labels("^: Back"), ot);
 }
 
 /* ---- Import tab --------------------------------------------------------- */
@@ -1473,7 +1498,7 @@ static void CT_ImportFrame(int tapped, uint32_t *ot, struct GamepadBuffer *pad)
            result screen closing leads to the next steps below. */
         const int fromResult = s_importStage == IMPORT_RESULT;
         if (s_importStage == IMPORT_CHOOSE)
-            MM_CustomText_Draw("^: Tabs", 256, CT_STATUS_Y, 456, 1, JUSTIFY_CENTER | WHITE, ot);
+            MM_CustomText_Draw(NativeMenu_Labels("^: Tabs"), 256, CT_STATUS_Y, 456, 1, JUSTIFY_CENTER | WHITE, ot);
         MM_CustomImport_Proc(ot, pad);
         if (!MM_CustomImport_Active())
         {
@@ -1511,15 +1536,15 @@ static void CT_ImportFrame(int tapped, uint32_t *ot, struct GamepadBuffer *pad)
         for (int i = 0; i < 3; i++) CT_Row(i, rows[i], i == s_ctSubSel, WHITE, ot);
         CT_DrawPaged("Import done", CT_DETAIL_X, 70, CT_DETAIL_W, 1, ORANGE, ot);
         CT_DrawPaged(s_importMessage, CT_DETAIL_X, 86, CT_DETAIL_W, 7, WHITE, ot);
-        CT_Footer(NULL, "*: Select   ^: Tabs", ot);
+        CT_Footer(NULL, NativeMenu_Labels("*: Select   ^: Tabs"), ot);
         return;
     }
     if (s_ctFocus == CT_FOCUS_LIST || s_ctFocus == CT_FOCUS_CONTROLS) CT_OpenImport();
     /* The tab strip shows what the tab does. */
-    MM_CustomText_Draw("Import track files from an xdelta patch and your own game disc.", CT_LIST_X, 72, CT_LIST_W, 4, WHITE, ot);
-    MM_CustomText_Draw("Patches in assets/tracks/import are listed. A patch dropped on the window opens here.",
-                       CT_LIST_X, 126, CT_LIST_W, 3, WHITE, ot);
-    CT_DrawPaged(s_ctMessage[0] ? s_ctMessage : "Nothing changes until you confirm the import.", CT_DETAIL_X, 70, CT_DETAIL_W, 7, WHITE, ot);
+    MM_CustomText_Draw("Import an xdelta patch using your own game disc. Open to choose a patch file.", CT_LIST_X, 72, CT_LIST_W, 7, WHITE, ot);
+    CT_DrawPaged(s_ctMessage[0] ? s_ctMessage :
+                 "Choose a file, scan assets/tracks/import, or drop a patch. Confirm after review.",
+                 CT_DETAIL_X, 70, CT_DETAIL_W, 8, WHITE, ot);
 }
 
 /* ---- the page ----------------------------------------------------------- */
@@ -1623,7 +1648,7 @@ static void MM_ConfigProc_CustomTracks(struct RectMenu *menu, uint32_t *ot, stru
             MM_CustomText_Draw(s_ctInfoTitle, 32, 70, 452, 1, ORANGE, ot);
             for (i = 0; i < 7 && s_ctInfoTop + i < lines; i++)
                 DecalFont_DrawLineOT(wrapped[s_ctInfoTop + i], 32, 84 + i * CT_LINE_H, FONT_SMALL, WHITE, ot);
-            CT_Footer(lines > 7 ? "Up/Down: Scroll" : NULL, "^: Back", ot);
+            CT_Footer(lines > 7 ? "Up/Down: Scroll" : NULL, NativeMenu_Labels("^: Back"), ot);
             {
                 RECT box = {20, 64, 467, 108};
                 RECTMENU_DrawInnerRect(&box, 0, ot);
@@ -1643,10 +1668,10 @@ static void MM_ConfigProc_CustomTracks(struct RectMenu *menu, uint32_t *ot, stru
         const int importing = MM_CustomImport_Active();
         CT_ImportFrame(tapped, ot, pad);
         if (importing) return; /* the importer draws its own panels */
-        if (s_ctFocus == CT_FOCUS_TABS) CT_Footer(NULL, "*: Open   ^: Options", ot);
-        else if (MM_CustomImport_Active()) CT_Footer(NULL, "^: Tabs", ot);
+        if (s_ctFocus == CT_FOCUS_TABS) CT_Footer(NULL, NativeMenu_Labels("*: Open   ^: Options"), ot);
+        else if (MM_CustomImport_Active()) CT_Footer(NULL, NativeMenu_Labels("^: Tabs"), ot);
     }
     if (s_ctFocus == CT_FOCUS_TABS && s_ctTab != CT_TAB_IMPORT)
-        CT_Footer(NULL, CT_JobsBusy() ? "Working...   *: Open" : "*: Open   ^: Options", ot);
+        CT_Footer(NULL, CT_JobsBusy() ? NativeMenu_Labels("Working...   *: Open") : NativeMenu_Labels("*: Open   ^: Options"), ot);
     CT_DrawPanels(ot);
 }

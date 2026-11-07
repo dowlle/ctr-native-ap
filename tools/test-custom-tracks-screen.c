@@ -16,6 +16,7 @@
    With CT_SHOT_DIR set, named frames are written there as text records for
    the screenshot renderer (draw position, width, colour, text). */
 #include <stdio.h>
+#include "menu-label-stub.h"
 #include <stdlib.h>
 #include <string.h>
 #include <common.h>
@@ -35,8 +36,8 @@ struct Data data;
 #include "../game/DecalFont.c"
 #undef DecalFont_DrawLineOT
 #include "../game/230/MM_CustomText.c"
-#define CONN_PAD_COMMIT (RAW_BTN_CROSS | RAW_BTN_START)
-#define CONN_PAD_CANCEL RAW_BTN_TRIANGLE
+#define CONN_PAD_COMMIT (RAW_BTN_CROSS | RAW_BTN_CIRCLE)
+#define CONN_PAD_CANCEL (RAW_BTN_TRIANGLE | RAW_BTN_START)
 
 static int checks, failures;
 static int saphiBusy;
@@ -118,12 +119,13 @@ int AP_Solo_RecordTrackDescriptor(const char *a, const char *b, const char *c) {
 int AP_Solo_SessionActive(void) { return soloActive; }
 
 /* ---- the room ---- */
-static int seedActive, seedSelected, seedBusy, seedStarts, seedRescans, registryRetries, verifies, legacyStarts;
+static int seedActive, seedConnected, seedSelected, seedBusy, seedStarts, seedRescans, registryRetries, verifies, legacyStarts;
 static int planResult = AP_SEED_PLAN_OK, legacyState = AP_CT_DOWNLOAD_IDLE;
 static struct AP_SeedContentRow room[AP_SEED_ROWS_MAX];
 static int roomCount;
 static char seedName[64] = "";
 int AP_SeedContentActive(void) { return seedActive; }
+int ap_net_is_connected(void) { return seedConnected; }
 int AP_SeedContentRows(struct AP_SeedContentRow *rows, int max) { int i; for (i = 0; i < roomCount && i < max; i++) rows[i] = room[i]; return i; }
 int AP_SeedContentInstallPreview(int *plan, int *count, uint64_t *bytes, char *reason, size_t reasonSize)
 {
@@ -421,7 +423,7 @@ int main(void)
     revisit(); frame(0, NULL);
     /* Union: Baby T Park once, Coco Park once (installed), Android Alley and Arcane Garden from Saphi. */
     CHECK(s_ctItemCount == 6);
-    CHECK(has("Android Alley Remix") && has("Nightmare Fueled"));
+    CHECK(!strcmp(CT_ItemTitle(&s_ctItems[0]), "Android Alley Remix") && has("Nightmare Fueled"));
     frame(BTN_RIGHT, NULL); CHECK(s_ctTab == CT_TAB_SEED);
     frame(BTN_R1, NULL); CHECK(s_ctTab == CT_TAB_IMPORT);
     frame(BTN_RIGHT, NULL); CHECK(s_ctTab == CT_TAB_LIBRARY);
@@ -567,6 +569,49 @@ int main(void)
     frame(BTN_TRIANGLE, NULL); CHECK(s_ctFocus == CT_FOCUS_CONTROLS);
     frame(BTN_TRIANGLE, NULL); frame(BTN_LEFT, NULL);
 
+    /* A connected retail-only seed is loaded even with no custom rows. */
+    strcpy(seedName, "AP_RetailOnly");
+    seedConnected = 1;
+    s_ctTab = CT_TAB_SEED; s_ctFocus = CT_FOCUS_TABS;
+    frame(0, "seed-retail-only");
+    CHECK(!has("No seed loaded") && has("no custom tracks") && has("AP_RetailOnly") && has("seed."));
+    soloActive = 1; seedName[0] = 0; seedConnected = 0;
+    frame(0, "seed-solo-starting");
+    CHECK(has("Waiting for seed data") && !has("no custom tracks") && !has("Ready 0/0"));
+    strcpy(seedName, "AP_SoloPending"); /* RoomInfo precedes admitted slot data. */
+    frame(0, "seed-solo-connecting");
+    CHECK(has("Waiting for seed data") && !has("no custom tracks") && !has("Ready 0/0"));
+    CT_SeedIdentity(); CHECK(strstr(s_ctInfo, "not loaded yet"));
+    s_ctSub = CT_SUB_NONE; s_ctFocus = CT_FOCUS_TABS;
+    seedConnected = 1;
+    frame(0, "seed-solo-retail-only");
+    CHECK(!has("No seed loaded") && has("Play Solo"));
+    soloActive = 0;
+
+    /* Refresh failure stays visible with local/package rows present. */
+    s_ctTab = CT_TAB_LIBRARY; s_ctFocus = CT_FOCUS_TABS;
+    s_saphiRefreshFailed = 1;
+    frame(0, "library-offline"); CHECK(has("Saphi refresh failed. Retry Refresh.") && has("refresh."));
+    s_ctFocus = CT_FOCUS_LIST;
+    frame(0, NULL); CHECK(has("Saphi refresh failed"));
+    s_saphiRefreshFailed = 0;
+    s_ctFocus = CT_FOCUS_TABS; s_saphiDownloading = 1;
+    strcpy(s_saphiMessage, "Downloading 40%");
+    frame(0, "library-downloading"); CHECK(has("Downloading 40%"));
+    s_saphiDownloading = 0; s_saphiMessage[0] = 0;
+    s_ctFocus = CT_FOCUS_LIST;
+    pkgStatus.state = CTR_CT_MANAGER_MANIFEST_MISSING;
+    select_track("Baby T Park");
+    frame(0, NULL); CHECK(has("Installed") && !has("Needs setup"));
+    lib[0].installed = lib[1].installed = 0;
+    select_track("Baby T Park");
+    frame(0, "library-needs-setup"); CHECK(has("Needs setup"));
+    lib[0].installed = lib[1].installed = 1;
+    pkgStatus.state = CTR_CT_MANAGER_READY;
+    s_ctTab = CT_TAB_IMPORT; s_ctFocus = CT_FOCUS_TABS;
+    frame(0, "import-help"); CHECK(!has("...") && has("Open to choose") && has("review."));
+    s_ctTab = CT_TAB_LIBRARY; s_ctFocus = CT_FOCUS_TABS;
+
     /* 11. A room that misses tracks: the screen opens on This Seed. */
     seedActive = 1; strcpy(seedName, "AP_93412345678901234567");
     row(0, "Baby T Park", "1.0.2", AP_SEED_SCAN_READY, AP_SEED_SOURCE_SAPHI);
@@ -660,7 +705,7 @@ int main(void)
     frame(BTN_TRIANGLE, NULL);
 
 
-    /* 15. A2-19: the picker shows what each patch did before, names can be typed, Import all skips the review. */
+    /* 15. A2-19: the picker shows what each patch did before, names can be typed, Import all is an explicit review row. */
     revisit(); frame(0, NULL); s_ctTab = CT_TAB_IMPORT; s_ctFocus = CT_FOCUS_TABS; scanState = -1; installState = -1;
     folderCount = 2;
     fakeStates[0].state = XDELTA_STATE_IMPORTED; fakeStates[0].imported = 14; fakeStates[0].offered = 14;
@@ -668,26 +713,28 @@ int main(void)
     frame(BTN_CROSS, NULL); frame(BTN_DOWN, NULL);
     CHECK(stateStarts > 0);
     frame(0, "import-picker-done"); CHECK(has("Done") && has("Fail") && has("Imported: 14 tracks"));
-    frame(BTN_DOWN, NULL); frame(0, "import-picker-failed"); CHECK(has("Failed: Not an xdelta patch") && has("patch-two.xdel") && has("R1 Import all valid"));
+    frame(BTN_DOWN, NULL); frame(0, "import-picker-failed"); CHECK(has("Failed: Not an xdelta patch") && has("patch-two.xdel") && has("Rescan"));
     {
         const int before = xdInstallStarts, scans = scanStarts;
-        frame(BTN_R1, NULL); CHECK(scanStarts == scans + 1);
+        frame(BTN_R1, NULL); CHECK(scanStarts == scans);
+        frame(BTN_CIRCLE, NULL); CHECK(scanStarts == scans + 1);
         fakeSummary.count = 2;
         scanState = 1; frame(0, NULL);
-        CHECK(xdInstallStarts == before + 1);   /* no review step */
+        CHECK(xdInstallStarts == before && s_importStage == IMPORT_REVIEW);
+        s_importRow = fakeSummary.count; frame(BTN_CIRCLE, NULL);
+        CHECK(xdInstallStarts == before + 1);
         installState = 1; frame(0, "import-all-result");
         CHECK(has("Installed 2 tracks") && has("Not imported: 1"));
         frame(BTN_CROSS, NULL); frame(BTN_TRIANGLE, NULL);
     }
-    /* Back on the frame the scan finishes must not hide the install Import all started. */
+    /* Start on scan completion cancels before an install can start. */
     s_ctTab = CT_TAB_IMPORT; s_ctFocus = CT_FOCUS_TABS; scanState = -1;
     frame(BTN_CROSS, NULL); frame(BTN_DOWN, NULL);
     {
         const int before = xdInstallStarts;
-        frame(BTN_R1, NULL); scanState = 1; frame(BTN_TRIANGLE, NULL);
-        CHECK(xdInstallStarts == before + 1 && s_importStage == IMPORT_INSTALLING);
-        installState = 1; frame(0, NULL); CHECK(s_importStage == IMPORT_RESULT);
-        frame(BTN_CROSS, NULL); frame(BTN_TRIANGLE, NULL);
+        frame(BTN_CROSS, NULL); scanState = 1; frame(BTN_START, NULL);
+        CHECK(xdInstallStarts == before && s_importStage == IMPORT_CHOOSE);
+        frame(BTN_TRIANGLE, NULL); frame(BTN_TRIANGLE, NULL);
     }
     /* Back on the frame a normal scan finishes returns to the picker, as before. */
     s_ctTab = CT_TAB_IMPORT; s_ctFocus = CT_FOCUS_TABS; scanState = -1;
@@ -702,16 +749,17 @@ int main(void)
     CHECK(has("Placeholder name") || has("Name from") || has("Name of"));
     {
         const int begins = textBegins, calls = setTitleCalls, before = xdInstallStarts;
-        frame(BTN_L1, NULL); CHECK(textBegins == begins + 1);
+        frame(BTN_L1, NULL); CHECK(textBegins == begins);
+        frame(BTN_SELECT, NULL); CHECK(textBegins == begins + 1);
         strcpy(s_importEditText, "Sunset Raceway"); textResult = 1; frame(0, "import-name-commit");
         CHECK(setTitleCalls == calls + 1 && !strcmp(lastTitle, "Sunset Raceway") && has("Sunset Raceway") && has("typed by you"));
-        setTitleOk = 0; frame(BTN_L1, NULL); strcpy(s_importEditText, "Bad"); textResult = 1; frame(0, "import-name-refused");
+        setTitleOk = 0; frame(BTN_SELECT, NULL); strcpy(s_importEditText, "Bad"); textResult = 1; frame(0, "import-name-refused");
         CHECK(has("Name refused")); setTitleOk = 1;
-        frame(BTN_L1, NULL); frame(0, "import-name-editing"); CHECK(has("Name: ") && has("X: Keep") && has("D-pad Cursor"));
+        frame(BTN_SELECT, NULL); frame(0, "import-name-editing"); CHECK(has("Name: ") && has("Keep") && has("Cursor"));
         textResult = 2; frame(0, NULL); CHECK(setTitleCalls == calls + 2);
         /* A3-24: Left/Right on the pad move the text cursor, a tap steps one
            character, a hold scrolls; confirm saves the name edited there. */
-        frame(BTN_L1, NULL);
+        frame(BTN_SELECT, NULL);
         {
             const int end = textCursor;
             rawPadMask = RAW_BTN_LEFT; frame(0, "import-name-cursor-left");
@@ -724,7 +772,7 @@ int main(void)
             rawPadMask = 0;
             textResult = 2; frame(0, NULL);
         }
-        frame(BTN_L1, NULL);
+        frame(BTN_SELECT, NULL);
         {
             int i;
             strcpy(s_importEditText, "Sunse Raceway");
@@ -740,7 +788,7 @@ int main(void)
         /* A long space-free name keeps the cursor and the text in view at the
            window's left edge too (Codex round 1: word wrap collapsed the line
            to "Name..." with the cursor hidden). */
-        frame(BTN_L1, NULL);
+        frame(BTN_SELECT, NULL);
         {
             int i;
             memset(s_importEditText, 'A', 60); s_importEditText[60] = 0;
@@ -752,7 +800,8 @@ int main(void)
             sdata->frameCounter &= ~0x10;
             textResult = 2; frame(0, NULL);
         }
-        frame(BTN_R1, NULL); CHECK(xdInstallStarts == before + 1);
+        frame(BTN_R1, NULL); CHECK(xdInstallStarts == before);
+        s_importRow = fakeSummary.count; frame(BTN_CROSS, NULL); CHECK(xdInstallStarts == before + 1);
         installState = 1; frame(0, NULL); frame(BTN_CROSS, NULL); frame(BTN_TRIANGLE, NULL);
     }
     scanState = -1; installState = -1;
