@@ -783,6 +783,9 @@ void AP_OnFrame(struct GameTracker *gGT)
 	AP_ArcadeCrystals_OnFrame(gGT);
 	// #375: a tracker start waits for its pad's hub, then for the pad.
 	AP_TrackerLaunchFrame(gGT);
+	// A3-16: a hub fast travel waits for an idle hub, then the destination's
+	// own birth places the kart at its save screen.
+	AP_FastTravelFrame(gGT);
 	ap_onframe_body(gGT);
 	// Discord Rich Presence (#366): outside the body so its early returns do
 	// not skip it. Returns at once unless the option was ever switched on.

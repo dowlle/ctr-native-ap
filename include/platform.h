@@ -55,6 +55,9 @@ void NativeText_End(void);
 int NativeText_Active(void); // 1 while capturing
 int NativeText_Result(void); // 0 = active/none, 1 = committed (Enter), 2 = cancelled (Escape)
 void NativeText_Resolve(int result); // resolve from outside the keyboard (1 commit, 2 cancel)
+int NativeText_Cursor(void); // byte offset of the text cursor, on a codepoint boundary
+void NativeText_MoveCursor(int dir); // one codepoint left (dir < 0) or right (dir > 0)
+void NativeText_EnableCursor(void); // opt the session into cursor keys; call only when the menu draws the cursor
 int NativeText_ScreenKeyboardAvailable(void); // 1 when the host can raise an on-screen keyboard
 #endif
 

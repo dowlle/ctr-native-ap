@@ -612,6 +612,11 @@ typedef struct
 	int pad_hints_wait_for_spoiler;
 	int pad_hints_progression_only;
 	int shop_hints_progression_only;
+	// Trap Display (ruled 2026-11-06; ctr_options.trap_display, content-plan
+	// envelope, present only when not `shown`; ap_trap_display_logic.h). 0 shown,
+	// 1 as_progression, 2 mixed with trap_display_salt. Display only.
+	int trap_display;
+	unsigned trap_display_salt;
 	// ctr_options.box_locations (always emitted on ordinary rooms, present on a
 	// content-plan envelope exactly with its item_boxes record). Absent is off.
 	// Read only so Spoiler Items knows the seed has AP boxes, and therefore an

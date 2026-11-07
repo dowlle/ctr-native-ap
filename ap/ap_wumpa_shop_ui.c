@@ -1,10 +1,11 @@
+#include <platform/native_menu.h>
 #ifdef CTR_AP
 
 // ============================================================================
 // The Wumpa Shop page (#249). Opened from the WUMPA SHOP row of a hub's green
 // load/save menu. While open it owns input and drawing the way the enlarged
 // tracker does (RECTMENU_ProcessState returns early), so the load/save menu
-// underneath neither runs nor sees a press. Triangle or Circle goes back to
+// underneath neither runs nor sees a press. Triangle or Start goes back to
 // that menu.
 //
 // One line per slot of this hub: slot number, the item and its owner when it
@@ -21,6 +22,7 @@
 #include "ap_wumpa_shop.h"
 #include "ap_wumpa_shop_menu.h"
 #include "ap_text_clip.h"
+#include "ap_trap_display_logic.h" // Trap Display: how a trap location looks
 
 #define AP_WSHOP_VISIBLE 9
 #define AP_WSHOP_ROW_H 0xd
@@ -254,7 +256,9 @@ static void AP_WShopDrawRow(int hub, int k, int y, int selected)
 	else
 		snprintf(name, sizeof name, "%s", itemS);
 	state = AP_WShopSlotState(hub, k);
-	color = known ? AP_ClassFontColor(flags) : WHITE;
+	color = known ? AP_ClassFontColor(AP_TrapDisplayFlags(ctr_cfg.trap_display, ctr_cfg.trap_display_salt,
+	                                                      s->code, flags))
+	              : WHITE;
 	switch (state)
 	{
 	case AP_WUMPA_SLOT_SOLD:
@@ -355,7 +359,7 @@ static void AP_WShopDraw(void)
 	if (ap_wshop.msgFrames > 0)
 		DecalFont_DrawLine(ap_wshop.msg, 0x100, 0xc0, FONT_SMALL, WHITE | JUSTIFY_CENTER);
 	else
-		DecalFont_DrawLine("X BUY   TRIANGLE BACK", 0x100, 0xc0, FONT_SMALL, ORANGE | JUSTIFY_CENTER);
+		DecalFont_DrawLine(NativeMenu_Labels("*: BUY   ^: BACK"), 0x100, 0xc0, FONT_SMALL, ORANGE | JUSTIFY_CENTER);
 
 	if (gt != 0)
 	{
@@ -398,7 +402,7 @@ int AP_WumpaShopMenuFrame(void)
 	if (ap_wshop.msgFrames > 0)
 		ap_wshop.msgFrames--;
 
-	if (tap & (BTN_TRIANGLE | BTN_CIRCLE | BTN_START))
+	if (tap & (BTN_TRIANGLE | BTN_START))
 	{
 		OtherFX_Play(2, 1);
 		AP_WShopClose();
@@ -415,7 +419,7 @@ int AP_WumpaShopMenuFrame(void)
 		ap_wshop.marqueeFrame = 0;
 		OtherFX_Play(0, 1);
 	}
-	if (tap & BTN_CROSS)
+	if (tap & (BTN_CROSS | BTN_CIRCLE))
 		AP_WShopBuy();
 
 	AP_WShopDraw();

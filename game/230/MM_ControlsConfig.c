@@ -1,3 +1,4 @@
+#include <platform/native_menu.h>
 // Options -> Controls: the player list, and for each player the device picker,
 // the rebinding rows, the stick deadzone and Restore Defaults.
 //
@@ -445,7 +446,7 @@ static u32 MM_Controls_MenuHeld(void)
 }
 
 // Handles input while the picker is up. Cross applies the highlighted choice,
-// Circle and Triangle/Start back out without changing anything.
+// Triangle/Start back out without changing anything.
 static void Controls_UpdatePicker(u32 tapped)
 {
 	if ((tapped & BTN_UP) != 0)
@@ -467,14 +468,7 @@ static void Controls_UpdatePicker(u32 tapped)
 		return;
 	}
 
-	if ((tapped & BTN_CIRCLE) != 0)
-	{
-		Controls_ClosePicker();
-		OtherFX_Play(2, 1);
-		return;
-	}
-
-	if ((tapped & BTN_CROSS) != 0)
+	if ((tapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
 	{
 		Controls_ApplyChoice();
 		Controls_ClosePicker();
@@ -718,7 +712,7 @@ static void Controls_DrawRows(struct RectMenu *menu, uint32_t *ot, int device)
 		// Deliberately not filtered: this column is the one place the four button
 		// characters are meant to reach the font, and every other label here is a fixed
 		// string that needs no cleaning.
-		DecalFont_DrawLineOT((char *)label, CONFIG_LABEL_X, y, FONT_SMALL, ORANGE, ot);
+		DecalFont_DrawLineOT(row->kind == CONTROLS_ROW_BINDING && s_bindingGlyphs[row->binding] ? NativeMenu_Labels(label) : (char *)label, CONFIG_LABEL_X, y, FONT_SMALL, ORANGE, ot);
 
 		if (capturing && ((row->kind == CONTROLS_ROW_BINDING) || (row->kind == CONTROLS_ROW_SHORTCUT)) &&
 		    (i == menu->rowSelected))
@@ -731,7 +725,7 @@ static void Controls_DrawRows(struct RectMenu *menu, uint32_t *ot, int device)
 
 			if (NativeControls_IsConfirming())
 			{
-				prompt = conflict ? "* to replace" : "* to confirm";
+				prompt = conflict ? NativeMenu_Labels("* to replace") : NativeMenu_Labels("* to confirm");
 			}
 
 			snprintf(s_valueBuffer, sizeof(s_valueBuffer), "%s", prompt);
@@ -870,7 +864,7 @@ static void Controls_HandleInput(struct RectMenu *menu, u32 tapped, u32 held, in
 		Controls_AdjustDeadzone(device, held);
 	}
 
-	if ((tapped & BTN_CROSS) != 0)
+	if ((tapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
 	{
 		Controls_HandleConfirm(device, &s_rows[menu->rowSelected]);
 	}

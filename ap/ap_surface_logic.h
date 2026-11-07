@@ -46,4 +46,18 @@ static inline int AP_SurfaceResolveTerrain(int terrain, int naturalTerrain,
 	return terrain;
 }
 
+// Mud Season (ruled 2026-11-06): every natural surface is dirt for the local
+// kart, before the held items are applied, so a held Ignore Dirt turns it into
+// asphalt and the trap changes nothing (decision D6 A). Weapon, cheat and Icy
+// Road ice (naturalTerrain 0) stay as they are.
+static inline int AP_SurfaceResolveTerrainMud(int terrain, int naturalTerrain,
+	                                           int localDriver,
+	                                           const int held[AP_SURFACE_ITEM_COUNT],
+	                                           int mudSeason)
+{
+	if (mudSeason && naturalTerrain && localDriver)
+		terrain = TERRAIN_DIRT;
+	return AP_SurfaceResolveTerrain(terrain, naturalTerrain, localDriver, held);
+}
+
 #endif

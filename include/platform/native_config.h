@@ -78,6 +78,7 @@ typedef struct
 	int volVoice;
 	int stereo;
 #ifdef CTR_AP
+	bool deviceAwareLabels;     // Local AP hints follow the assigned P1 controller.
 	bool skipHints;             // Archipelago: suppress Aku Aku mask hints
 	bool skipPodium;            // Archipelago: local "Skip Podium Ceremonies"
 	                            // (issue #285, default off). On, an ordinary

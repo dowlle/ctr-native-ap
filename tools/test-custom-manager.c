@@ -1,6 +1,7 @@
 // cc -m32 -ffunction-sections -fdata-sections -Wl,--gc-sections -DCTR_NATIVE -DCTR_AP -DCTR_CUSTOM_TRACKS -DCTR_CUSTOM_PACKAGES -DBUILD=926 -I include -I . tools/test-custom-manager.c -o /tmp/test-custom-manager
 /* Production manager input and font-bound checks; workers/rendering are stubbed. */
 #include <stdio.h>
+#include "menu-label-stub.h"
 #include <string.h>
 #include <common.h>
 #include <platform/native_input.h>
@@ -14,8 +15,8 @@ struct Data data;
 #include "../game/DecalFont.c"
 #undef DecalFont_DrawLineOT
 #include "../game/230/MM_CustomText.c"
-#define CONN_PAD_COMMIT (RAW_BTN_CROSS | RAW_BTN_START)
-#define CONN_PAD_CANCEL RAW_BTN_TRIANGLE
+#define CONN_PAD_COMMIT (RAW_BTN_CROSS | RAW_BTN_CIRCLE)
+#define CONN_PAD_CANCEL (RAW_BTN_TRIANGLE | RAW_BTN_START)
 static struct CustomTrackLibrary s_contentLibrary;
 static int s_contentLibraryTab, s_contentSearchEditing, s_contentSearchPadPrev, s_contentStoreWanted;
 static char s_contentSearchBackup[81], s_contentInstallPin[65];
@@ -33,6 +34,9 @@ int Platform_InputRawGamepadButtons(void) { return 0; }
 int NativeText_Result(void) { return textResult; }
 void NativeText_Resolve(int result) { textResult=result; }
 void NativeText_End(void) { textResult=0; }
+int NativeText_Cursor(void) { return 0; }
+void NativeText_MoveCursor(int dir) { (void)dir; }
+void NativeText_EnableCursor(void) { }
 void NativeText_Begin(char *b,int c,int x,int y,int w,int h,int p)
 { (void)b;(void)c;(void)x;(void)y;(void)w;(void)h;(void)p; }
 const char *NativeAssets_GetAssetDir(void) { return "/test"; }
@@ -83,6 +87,9 @@ int XdeltaImport_StartInstall(const unsigned char *sel,unsigned count,const char
 { (void)a; memcpy(lastSelected,sel,count); lastWhere=where; installStarts++; installState=0; return 1; }
 int XdeltaPick_TakeDrop(char *path,size_t size) { int s=dropState; if(s==1) snprintf(path,size,"/drop/LRG2.xdelta"); dropState=0; return s; }
 int XdeltaImport_PollInstall(int *installed,char *e,size_t n) { (void)e;(void)n; int s=installState; if(s==1){*installed=2;installState=-1;} return s; }
+static int saphiBusy;
+int ap_custom_track_download_busy(char *text, int size)
+{ if (text && size > 0) snprintf(text, size, "%s", saphiBusy ? "Project Saphi is busy, waiting 60s" : ""); return saphiBusy; }
 #include "../game/230/MM_CustomManager.c"
 static void tick(int buttons) { struct GamepadBuffer pad={0};pad.buttonsTapped=buttons;drawn[0]=0;MM_ConfigProc_TrackLibrary(NULL,NULL,&pad); }
 int main(void)
@@ -92,6 +99,8 @@ int main(void)
  data.font_buttonPixWidth[FONT_SMALL]=2;data.font_buttonPixWidth[FONT_BIG]=16;
  for(int i=0;i<9;i++){rows[i].trackID=i+1;memset(rows[i].title,'W',640);strcpy(rows[i].version,"1.0.0");strcpy(rows[i].author,"Very long author display name");}
  tick(0);CHECK(s_saphiRefreshBusy);
+ saphiBusy=60;tick(0);CHECK(strstr(drawn,"Project Saphi is busy, waiting 60s"));
+ saphiBusy=0;tick(0);CHECK(!strstr(drawn,"Project Saphi is busy"));
  refreshResult=1;tick(0);CHECK(s_saphiCatalogue==(void*)2);
  tick(BTN_UP);CHECK(s_saphiSelection[0]==8);tick(BTN_DOWN);CHECK(s_saphiSelection[0]==0);
  tick(BTN_L2);refreshResult=-2;tick(0);CHECK(s_saphiCatalogue==(void*)2&&!s_saphiRefreshBusy);

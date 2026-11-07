@@ -14,6 +14,7 @@
         its "default" mark and On / Off, Cross toggles, help and back return
         to the right level, and a guard holds Continue and opens its row. */
 #include <stdio.h>
+#include "menu-label-stub.h"
 #include <string.h>
 #include <common.h>
 #include <platform/native_input.h>
@@ -54,8 +55,9 @@ void DecalFont_DrawLineOT(char *s, int x, int y, s16 f, int flags, uint32_t *ot)
 }
 void RECTMENU_DrawInnerRect(RECT *r, int t, uint32_t *ot)
 {
-	(void)t; (void)ot;
-	CHECK(r->x >= 0x10 && r->x + r->w <= 0x1F0 && r->y >= 0x2E && r->y + r->h <= 0xC2);
+	(void)ot;
+	CHECK(t == 5); /* Opaque fill, including title, help and footer. */
+	CHECK(r->x == 0x10 && r->y == 4 && r->w == 0x1E0 && r->h == 0xCE);
 	panels++;
 }
 void CTR_Box_DrawClearBox(const RECT *r, const Color *c, int t, uint32_t *ot)
@@ -73,8 +75,8 @@ void NativeText_Resolve(int r) { textResult = r; }
 void NativeText_End(void) { textResult = 0; }
 void NativeText_Begin(char *b, int c, int x, int y, int w, int h, int p)
 { (void)b; textCap = c; (void)w; (void)h; (void)p; CHECK(x >= 0x20 && y >= 0x30); }
-#define CONN_PAD_COMMIT (RAW_BTN_CROSS | RAW_BTN_START)
-#define CONN_PAD_CANCEL RAW_BTN_TRIANGLE
+#define CONN_PAD_COMMIT (RAW_BTN_CROSS | RAW_BTN_CIRCLE)
+#define CONN_PAD_CANCEL (RAW_BTN_TRIANGLE | RAW_BTN_START)
 #define CONN_ROW_X 0x30
 #define CONN_ROW_W 0x1B0
 #define CONN_ROW_H 0x0C
@@ -93,18 +95,20 @@ static const char *const optLabel[] = {
 	"Goal Wumpa", "Starting Stat Class", "Warp Pad Item Display", "Pad Approach Hints", "Race Type Selector",
 	"Progressive Starting Wumpa", "Shortcut Knowledge", "Garage Requirement Level", "Wumpa Check",
 	"Editable Stats",
-	/* A2-41: a set option, a checklist row. */
-	"Crystal Arenas"};
+	/* A2-41: a set option, a checklist row. A3-22: a weights option, a number
+	   page with one row per trap. */
+	"Crystal Arenas", "Trap Weights"};
 static const char *const optValue[] = {
 	"101_percent", "4", "5", "18_sapphire_relics", "true", "false", "random_without_4_keys", "standard",
 	"16", "false", "shared_global", "per_character", "medium", "false", "locations_and_items", "false",
 	"100", "true",
 	"54", "400", "very_strong_attacks", "4", "5000", "per_character_ranking", "one_pile", "false", "always",
-	"10", "easy", "very_high", "per_track", "per_character", "4 of 7"};
+	"10", "easy", "very_high", "per_track", "per_character", "4 of 7", "2 custom"};
 #define OPTS ((int)(sizeof optLabel / sizeof optLabel[0]))
-#define SET_OPT (OPTS - 1)
+#define SET_OPT (OPTS - 2)
+#define WEIGHTS_OPT (OPTS - 1)
 /* The longest checklist labels of the overlay, and more rows than the list
-   holds (Boss Track Pool has 19). */
+   holds (Boss Track Pool has 19). The trap rows reuse them. */
 static const char *const itemLabel[] = {
 	"Rocky Road", "Rampage Ruins", "Skull Rock", "Nitro Court", "Parking Lot", "The North Bowl", "Lab Basement",
 	"Finish on Podium", "Finish Any Place", "Crash Bandicoot", "Penta Penguin", "Hot Air Skyway",
@@ -112,11 +116,13 @@ static const char *const itemLabel[] = {
 	"Cortex Vortex"};
 #define ITEMS ((int)(sizeof itemLabel / sizeof itemLabel[0]))
 static int itemOn[ITEMS] = {1, 1, 1, 1};
+static int itemWeight[ITEMS] = {5, 0, 3, 4, 2, 6, 5, 3, 2, 0, 4, 3, 5, 4, 3, 2, 3, 1, 2};
+static int itemDefaultWeight[ITEMS] = {5, 5, 2, 4, 3, 6, 4, 5, 4, 3, 3, 3, 2, 5, 4, 3, 0, 3, 3};
 static int blockedOpt = -1;
 static const char *const guardReason =
 	"Signature profiles need TNT, Potion and Bomb checked."; /* the longest guard reason */
 static char note[AP_SOLO_TEXT];
-static int rooms, tracks, needsLaps, picked, jobState = AP_SOLO_JOB_IDLE;
+static int rooms, tracks, needsLaps, picked, jobState = AP_SOLO_JOB_IDLE, cancels;
 static int shortLetters;
 static char inbox[512];
 int AP_Solo_RuntimePresent(void) { return 1; }
@@ -132,7 +138,7 @@ const char *AP_Solo_JobPhase(void) { return "Filling the multiworld with items, 
 const char *AP_Solo_JobErrorText(void) { return ""; }
 const char *AP_Solo_JobErrorOption(void) { return ""; }
 const char *AP_Solo_JobResultRoom(void) { return ""; }
-void AP_Solo_JobCancel(void) {}
+void AP_Solo_JobCancel(void) { cancels++; }
 void AP_Solo_JobClear(void) {}
 int AP_Solo_RoomCount(void) { return rooms; }
 int AP_Solo_RoomGet(int i, struct APSoloRoomInfo *o)
@@ -169,6 +175,7 @@ int AP_Solo_OptionGet(int i, struct APSoloOptionInfo *o)
 	snprintf(o->group, sizeof o->group, "%s", i < 4 ? "Goal" : i < 13 ? "Progression" : i < 18 ? "Extras" : "More Options");
 	if (i == 1) snprintf(o->note, sizeof o->note, "%s", note);
 	if (i == SET_OPT) o->kind = AP_SOLO_OPT_SET;
+	if (i == WEIGHTS_OPT) o->kind = AP_SOLO_OPT_WEIGHTS;
 	if (i == blockedOpt)
 	{
 		o->blocked = 1;
@@ -177,17 +184,36 @@ int AP_Solo_OptionGet(int i, struct APSoloOptionInfo *o)
 	o->visible = 1;
 	return 1;
 }
-int AP_Solo_OptionItemCount(int i) { return i == SET_OPT ? ITEMS : 0; }
+int AP_Solo_OptionItemCount(int i) { return i == SET_OPT || i == WEIGHTS_OPT ? ITEMS : 0; }
 int AP_Solo_OptionItemGet(int i, int k, struct APSoloItemInfo *o)
 {
 	memset(o, 0, sizeof *o);
-	if (i != SET_OPT || k < 0 || k >= ITEMS) return 0;
+	if ((i != SET_OPT && i != WEIGHTS_OPT) || k < 0 || k >= ITEMS) return 0;
 	snprintf(o->label, sizeof o->label, "%s", itemLabel[k]);
+	if (i == WEIGHTS_OPT)
+	{
+		o->weight = itemWeight[k];
+		o->defaultWeight = itemDefaultWeight[k];
+		o->on = itemWeight[k] > 0;
+		o->isDefault = itemWeight[k] == itemDefaultWeight[k];
+		return 1;
+	}
 	o->on = itemOn[k];
 	o->isDefault = k < 4;
 	return 1;
 }
 void AP_Solo_OptionItemToggle(int i, int k) { if (i == SET_OPT && k >= 0 && k < ITEMS) itemOn[k] = !itemOn[k]; }
+void AP_Solo_OptionItemStep(int i, int k, int d)
+{
+	if (i != WEIGHTS_OPT || k < 0 || k >= ITEMS) return;
+	itemWeight[k] += d > 0 ? 1 : -1;
+	if (itemWeight[k] < 0) itemWeight[k] = 100;
+	if (itemWeight[k] > 100) itemWeight[k] = 0;
+}
+void AP_Solo_OptionItemReset(int i, int k)
+{
+	if (i == WEIGHTS_OPT && k >= 0 && k < ITEMS) itemWeight[k] = itemDefaultWeight[k];
+}
 int AP_Solo_OptionsBlocked(void) { return blockedOpt; }
 void AP_Solo_OptionStep(int i, int d) { (void)d; if (i == 12) shortLetters = !shortLetters; }
 const char *AP_Solo_OptionHelp(int i)
@@ -264,6 +290,19 @@ static void frame(int buttons, const char *where)
 	no_overlap(where);
 	CHECKM(panels == 1, where);
 	CHECKM(s_soloPage == SOLO_BUSY || strstr(drawn, "BACK") || strstr(drawn, "OK") || strstr(drawn, "CANCEL"), where);
+	/* Same draw-record format as the Custom Tracks screen harness. */
+	if (getenv("CT_SHOT_DIR") && !strcmp(where, "home empty"))
+	{
+		char path[1024];
+		snprintf(path, sizeof path, "%s/solo-home.txt", getenv("CT_SHOT_DIR"));
+		FILE *f = fopen(path, "w");
+		if (f)
+		{
+			for (int i = 0; i < nboxes; i++)
+				fprintf(f, "T\t%d\t%d\t%d\t%d\twhite\t%s\n", boxes[i].x, boxes[i].y, boxes[i].w, boxes[i].h, boxes[i].text);
+			fclose(f);
+		}
+	}
 }
 
 /* A key press that changes the page: the frame draws nothing (Back and page
@@ -317,7 +356,7 @@ int main(void)
 		MM_Solo_Go(SOLO_OPTIONS);
 		frame(0, "option groups");
 		CHECK(full_once("Goal", drawn) && full_once("More Options", drawn) && full_once("Continue", drawn));
-		CHECK(full_once("4 options", drawn) && full_once("15 options", drawn));
+		CHECK(full_once("4 options", drawn) && full_once("16 options", drawn));
 		CHECK(strstr(drawn, "DeathLink") == NULL && strstr(drawn, "...") == NULL);
 		for (int g = 0; g < 4; g++)
 		{
@@ -393,7 +432,7 @@ int main(void)
 			s_soloPage = SOLO_OPTIONS; s_soloGroup = 3; s_soloList = -1; s_soloSel = setRow; s_soloTop = 0;
 			frame(0, "set row");
 			CHECK(full_once("Crystal Arenas", drawn) && full_once("4 of 7", drawn));
-			CHECK(strstr(drawn, "*: OPEN LIST") != NULL);
+			CHECK(strstr(drawn, "*: LIST") != NULL);
 			tap(BTN_CROSS);
 			CHECK(s_soloList == SET_OPT && s_soloSel == 0 && s_soloTop == 0);
 			frame(0, "checklist");
@@ -446,6 +485,65 @@ int main(void)
 			s_soloSel = 4; s_soloTop = 0;
 			tap(BTN_CROSS);
 			CHECK(s_soloPage == SOLO_REVIEW);
+		}
+
+		/* A3-22: the weights row opens its number page, one row per trap. */
+		{
+			static char seenWeights[16384];
+			const int weightsRow = WEIGHTS_OPT - groupFirst[3];
+			s_soloPage = SOLO_OPTIONS; s_soloGroup = 3; s_soloList = -1; s_soloSel = weightsRow; s_soloTop = 0;
+			frame(0, "weights row");
+			CHECK(full_once("Trap Weights", drawn) && full_once("2 custom", drawn));
+			CHECK(strstr(drawn, "*: OPEN") != NULL);
+			tap(BTN_CROSS);
+			CHECK(s_soloList == WEIGHTS_OPT && s_soloSel == 0 && s_soloTop == 0);
+			frame(0, "weights page");
+			CHECK(full_once("Trap Weights", drawn)); /* the title */
+			CHECK(strstr(drawn, "of 19 above 0. SELECT: help.") != NULL);
+			CHECK(strstr(drawn, "LEFT/RIGHT") != NULL && strstr(drawn, "[: RESET") != NULL);
+			/* The grey default weight and the row's own weight are drawn. */
+			CHECK(full_once("5", drawn) && full_once("0", drawn));
+			seenWeights[0] = '\n'; seenWeights[1] = 0;
+			strcat(seenWeights, drawn);
+			for (int i = 0; i < ITEMS + 1; i++)
+			{
+				frame(BTN_DOWN, "weights down");
+				strcat(seenWeights, drawn);
+				CHECKM(full_once(itemLabel[s_soloSel], drawn), itemLabel[s_soloSel]);
+			}
+			for (int i = 0; i < ITEMS; i++)
+				CHECKM(full_once(itemLabel[i], seenWeights), itemLabel[i]);
+			CHECK(strstr(seenWeights, "...") == NULL);
+			/* Left and Right step the selected weight (Down past the end wrapped to row 1). */
+			CHECK(s_soloSel == 1 && itemWeight[1] == 0);
+			frame(BTN_LEFT, "weight wraps to the maximum");
+			CHECK(itemWeight[1] == 100);
+			frame(BTN_RIGHT, "weight wraps to zero");
+			CHECK(itemWeight[1] == 0);
+			/* Confirm never resets. Square needs two presses on the same row. */
+			itemWeight[1] = 77;
+			frame(BTN_CROSS, "weight confirm"); CHECK(itemWeight[1] == 77);
+			frame(BTN_CIRCLE, "weight confirm alias"); CHECK(itemWeight[1] == 77);
+			frame(BTN_SQUARE, "weight reset armed"); CHECK(itemWeight[1] == 77);
+			CHECK(strstr(drawn, "AGAIN TO RESET") != NULL);
+			frame(0, "weight reset release");
+			frame(BTN_SQUARE, "weight reset");
+			CHECK(itemWeight[1] == itemDefaultWeight[1]);
+			frame(BTN_SQUARE, "arm before change");
+			frame(BTN_RIGHT, "disarm on value change");
+			int changedWeight = itemWeight[1];
+			frame(BTN_SQUARE, "arm again"); CHECK(itemWeight[1] == changedWeight);
+			frame(BTN_DOWN, "disarm on row change");
+			frame(BTN_UP, "return to row");
+			frame(BTN_SQUARE, "arm after navigation"); CHECK(itemWeight[1] == changedWeight);
+			/* Help and back: the page again, then the group with the row. */
+			tap(BTN_SELECT);
+			CHECK(s_soloPage == SOLO_HELP && s_soloHelpRow == WEIGHTS_OPT);
+			tap(BTN_TRIANGLE);
+			CHECK(s_soloPage == SOLO_OPTIONS && s_soloList == WEIGHTS_OPT);
+			frame(0, "weights after help");
+			tap(BTN_TRIANGLE);
+			CHECK(s_soloPage == SOLO_OPTIONS && s_soloList == -1 && s_soloGroup == 3 && s_soloSel == weightsRow);
 		}
 	}
 
@@ -513,10 +611,21 @@ int main(void)
 	jobState = AP_SOLO_JOB_RUNNING; s_soloBusyJob = SOLO_JOB_TRACKS; s_soloPage = SOLO_BUSY;
 	frame(0, "busy");
 	jobState = AP_SOLO_JOB_IDLE;
+	for (int i = 0; i < 2; ++i) {
+		const int backs[] = {BTN_TRIANGLE, BTN_START};
+		jobState = AP_SOLO_JOB_RUNNING; s_soloBusyJob = SOLO_JOB_GENERATE; s_soloPage = SOLO_BUSY;
+		int before = cancels;
+		frame(BTN_CIRCLE, "busy confirm does not cancel"); CHECK(cancels == before && s_soloPage == SOLO_BUSY);
+		tap(backs[i]); CHECK(cancels == before + 1 && s_soloPage == SOLO_REVIEW);
+	}
+	jobState = AP_SOLO_JOB_IDLE;
 	s_soloPage = SOLO_SESSION; frame(0, "session");
 	snprintf(s_soloMsg, sizeof s_soloMsg, "The path of that file is too long. Move it to a shorter folder, or use the inbox.");
 	s_soloPage = SOLO_MESSAGE; frame(0, "message");
 
+	menuTestLetters = true;
+	MM_Solo_Go(SOLO_HOME); frame(0, "Xbox home hints");
+	CHECK(strstr(drawn, "A: PLAY") && strstr(drawn, "X: DETAILS") && strstr(drawn, "Y: BACK"));
 	printf("%d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_lap_progress_logic.h"
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005ca24-0x8005cd1c
 void VehLap_UpdateProgress(struct Driver *driver)
@@ -32,6 +35,19 @@ void VehLap_UpdateProgress(struct Driver *driver)
 	}
 
 	struct CheckpointNode *nodes = level->ptr_restart_points;
+#ifdef CTR_AP
+	// A3-26: a bot off its nav line takes the checkpoint of the quad under it,
+	// and retail does not skip a quad without one (0xff) for a bot as it does
+	// for a human. Restart point 255 is read from past the array; on N. Gin
+	// Labs' barrel ramp that looks like the finish line and the next quad with
+	// a checkpoint counts a lap. Keep the last progress, as a human does.
+	if (!AP_LapProgress_IndexUsable(checkpointIndex, level->cnt_restart_points) ||
+	    !AP_LapProgress_IndexUsable(nodes[checkpointIndex].nextIndex_forward, level->cnt_restart_points) ||
+	    !AP_LapProgress_IndexUsable(nodes[nodes[checkpointIndex].nextIndex_forward].nextIndex_forward, level->cnt_restart_points))
+	{
+		return;
+	}
+#endif
 	struct CheckpointNode *checkpointNode = &nodes[checkpointIndex];
 	struct CheckpointNode *progressNode = &nodes[checkpointNode->nextIndex_forward];
 	struct CheckpointNode *nextNode = &nodes[progressNode->nextIndex_forward];

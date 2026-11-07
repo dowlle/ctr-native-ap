@@ -211,16 +211,28 @@ void AP_FeedDrawRace(void);
 // higher so it clears the "PRESS X TO CONTINUE" prompt. Same 1P / unpaused gates.
 void AP_FeedDrawResults(void);
 int  AP_HubFeedOn(void);
-// One trap-state line (armed, incoming, active) on the same two surfaces, in the
+// One trap-state notice (armed, incoming, active) on the same two surfaces, in the
 // trap class colour. The trap scheduler owns the wording; this is only delivery,
-// so trap presentation cannot drift from the item feed's look.
-void AP_FeedTrapLine(const char *text);
+// so trap presentation cannot drift from the item feed's look. trapSlot and
+// trapSeq identify the trap copy (ev.slot and ev.seq of the scheduler event) and
+// stage is an AP_FEED_TRAP_* value (ap_feed_lines_logic.h): a trap keeps one feed
+// line that changes in place instead of adding a line per state.
+void AP_FeedTrapLine(int trapSlot, unsigned int trapSeq, int stage, const char *text);
 // One-off client notice line in the received-item feed (orange).
 void AP_FeedNoticeLine(const char *text);
 // One DeathLink line (a received death applied, or ignored) on the same surfaces.
 // ignored picks the softer colour. The DeathLink module owns the wording. Lines are
 // cut at 28 characters so they stay clear of the minimap.
 void AP_FeedDeathLinkLine(const char *text, int ignored);
+// A3-17 unlock reasons: one feed line naming what a received item opened (a
+// pad, a stage 2, a hub door, a shop shelf, a boss garage). AP_UnlockReasonsAfterItem
+// runs at the end of each drained item in the received-item drain loop.
+// AP_UnlockReasonsEndDrain(n) runs right before the drain (pass 0) and again
+// after AP_FeedEndDrain (pass the drained count): the quiet variant announces
+// shop shelves only and silently rebases non-item changes; the post-drain
+// variant also announces what the batch's deferred Wumpa credit opened.
+void AP_UnlockReasonsAfterItem(void);
+void AP_UnlockReasonsEndDrain(int drainedThisFrame);
 
 // ── AP gate counters (received-item model, Option B) ──
 // Adventure gates read these received-item-TYPE counts instead of AdvProgress

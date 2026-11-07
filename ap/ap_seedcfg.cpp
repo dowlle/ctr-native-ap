@@ -1657,6 +1657,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	ctr_cfg.pad_hints_wait_for_spoiler = 0;
 	ctr_cfg.pad_hints_progression_only = 0;
 	ctr_cfg.shop_hints_progression_only = 0;
+	ctr_cfg.trap_display = 0;
+	ctr_cfg.trap_display_salt = 0;
 	ctr_cfg.seed_box_locations = 0;
 	// Podium checks -> disabled + all rungs absent (-1) until parsed below.
 	ctr_cfg.podium_enabled = 0;
@@ -1697,16 +1699,25 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	static const char *const kAdditiveContentFields[] = {"reserve_top_up", "spoiler_items", "pad_hints_wait_for_spoiler",
 	                                                    "pad_hints_progression_only", "shop_hints_progression_only",
 	                                                    "pad_approach_hints"};
+	// Trap Display (ruled 2026-11-06) adds two integer fields the same way.
+	static const char *const kAdditiveIntFields[] = {"trap_display", "trap_display_salt"};
 	bool strip_additive = false;
 	if (j.is_object() && j.contains("content_plan") && j.contains("ctr_options") && j["ctr_options"].is_object())
+	{
 		for (const char *key : kAdditiveContentFields)
 			strip_additive |= j["ctr_options"].contains(key) && j["ctr_options"][key].is_boolean();
+		for (const char *key : kAdditiveIntFields)
+			strip_additive |= j["ctr_options"].contains(key) && j["ctr_options"][key].is_number_integer();
+	}
 	int content_result;
 	if (strip_additive)
 	{
 		nlohmann::json content_input = j;
 		for (const char *key : kAdditiveContentFields)
 			if (content_input["ctr_options"].contains(key) && content_input["ctr_options"][key].is_boolean())
+				content_input["ctr_options"].erase(key);
+		for (const char *key : kAdditiveIntFields)
+			if (content_input["ctr_options"].contains(key) && content_input["ctr_options"][key].is_number_integer())
 				content_input["ctr_options"].erase(key);
 		// The stripped flag still has to agree with the plan's reveal items.
 		content_plan::envelope_spoiler_items =
@@ -1729,6 +1740,21 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 				           ctr_cfg.shop_hints_progression_only);
 			if (ctr_cfg.pad_approach_hints)
 				ap_cfg_log("[AP CFG] pad_approach_hints=1 -> approaching an open pad hints its open checks once\n");
+			{
+				// Display only, so a value this build does not know shows traps
+				// as traps instead of refusing the room.
+				long long mode = json_int(j["ctr_options"], "trap_display", 0);
+				long long salt = json_int(j["ctr_options"], "trap_display_salt", -1);
+				if (mode == 1 || (mode == 2 && salt >= 0 && salt <= 0x7fffffffLL))
+				{
+					ctr_cfg.trap_display = (int)mode;
+					ctr_cfg.trap_display_salt = mode == 2 ? (unsigned)salt : 0u;
+					ap_cfg_log("[AP CFG] trap_display=%d -> trap locations look like %s\n", ctr_cfg.trap_display,
+					           mode == 1 ? "progression" : "progression or filler");
+				}
+				else if (mode != 0)
+					ap_cfg_log("[AP CFG] trap_display=%lld not understood -> traps look like traps\n", mode);
+			}
 		}
 	}
 	else

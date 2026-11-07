@@ -258,6 +258,57 @@ int main(int, char **argv) {
     scan.live.insert(longRev.revision + "|lev:aa:100|vrm:ab:200");
     assert(!ApplyStoreDescriptor(longRev, scan, message)); // the live copy keeps the entry
     assert(message.size() <= 170 && message.find("1.0.0-rrrrrrr...: ") != std::string::npos);
+    // 15. A3-29: the same package installed again under another name. The newer
+    // copy lists the track under its key, then the older key's files go and the
+    // laps the player picked for it move to the new key.
+    {
+        const std::string files = pins("ca", "cb");
+        auto copy = [&](const char *key, const char *title, bool laps, const char *uuid) {
+            std::string d = std::string("{\"id\":\"package/") + key + "/1.0.0\",\"content_id\":\"" + key +
+                            "\",\"revision\":\"1.0.0\",\"display_name\":\"" + title + "\",\"author\":\"A\",\"uuid\":\"" +
+                            uuid + "\",\"files\":" + files;
+            if (laps) d += ",\"laps\":4";
+            return d + "}";
+        };
+        const std::string oldName = "generic-slot__1.0.0.json", newName = "my-name__1.0.0.json";
+        const std::string newWaiting = copy("my-name", "My Name", false, "u1");
+        StorePublication::Descriptor keeper = {2, "my-name", "1.0.0", newWaiting, "My Name", std::string(64, 'n')};
+        StorePublication::Descriptor retire = {0, "generic-slot", "1.0.0", "u1", "Generic", std::string(64, 'o'),
+                                               std::string(64, 'n'), "my-name"};
+        StorePublication live;
+        live.live = {sig("ca", "cb")};
+        clean(); write("tracks/" + oldName, copy("generic-slot", "Generic", true, "u1"));
+        assert(ApplyStoreDescriptor(keeper, live, why) && ApplyStoreDescriptor(retire, live, why));
+        assert(read("tracks/" + oldName).empty() && read("needs-laps/" + oldName).empty());
+        assert(read("needs-laps/" + newName).empty());
+        const auto moved = nlohmann::json::parse(read("tracks/" + newName), nullptr, false);
+        assert(moved.is_object() && moved["laps"] == 4 && moved["display_name"] == "My Name");
+        assert(loggedFile(oldName.c_str()));
+
+        // The replacement was never listed (its write failed): the old row stays.
+        clean(); write("tracks/" + oldName, copy("generic-slot", "Generic", true, "u1"));
+        StorePublication none;
+        assert(ApplyStoreDescriptor(retire, none, why));
+        assert(!read("tracks/" + oldName).empty());
+
+        // A file of another package under the old key is not ours to retire.
+        clean(); write("tracks/" + oldName, copy("generic-slot", "Other pack", true, "u2"));
+        assert(ApplyStoreDescriptor(keeper, live, why) && ApplyStoreDescriptor(retire, live, why));
+        assert(!read("tracks/" + oldName).empty() && read("tracks/" + newName).empty());
+
+        // The laps cannot be moved (the new key's file is blocked): the old file keeps them and the failure is named.
+        clean(); write("tracks/" + oldName, copy("generic-slot", "Generic", true, "u1"));
+        fs::create_directories(base + "/solo/tracks/" + newName);
+        assert(ApplyStoreDescriptor(keeper, live, why));
+        std::string moveFailure;
+        assert(!ApplyStoreDescriptor(retire, live, moveFailure) && moveFailure.find("laps could not be moved") != std::string::npos);
+        assert(!read("tracks/" + oldName).empty());
+
+        // A track still waiting for laps under the old key is retired too.
+        clean(); write("needs-laps/" + oldName, copy("generic-slot", "Generic", false, "u1"));
+        assert(ApplyStoreDescriptor(keeper, live, why) && ApplyStoreDescriptor(retire, live, why));
+        assert(read("needs-laps/" + oldName).empty() && !read("needs-laps/" + newName).empty());
+    }
     puts("PASS: stale descriptors are replaced, live ones are named and kept, every refusal logs its file");
 }
 '''

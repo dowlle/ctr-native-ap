@@ -27,6 +27,7 @@ tools/test-box-number.c
 tools/test-box-offset.c
 tools/test-box-seat.c
 tools/test-box-seat-production.py
+tools/test-box-spots.cpp
 tools/test-alpha2-presentation-production.py
 tools/test-ceremony-banner.c
 tools/test-clocked-out-production.py
@@ -98,6 +99,8 @@ tools/test-item-aliases.c
 tools/test-itemsanity.c
 tools/test-lap-checks.cpp
 tools/test-lap-checks-production.py
+tools/test-lap-progress.c
+tools/test-lap-progress-production.py
 tools/test-pad-laps-cups.py
 tools/test-launch-request.c
 tools/test-link-handoff.c
@@ -166,6 +169,7 @@ tools/test-tracker-markers.c
 tools/test-tracker-progress.c
 tools/test-tracker-tabs.c
 tools/test-tracker-pad-launch.py
+tools/test-fast-travel.py
 tools/test-plan-pads.c
 tools/test-plan-pads-production.py
 tools/test-retro-fueled.c
@@ -177,6 +181,8 @@ tools/test-save-camera-production.py
 tools/test-seed-content-download-production.py
 tools/test-seed-content-hooks-production.py
 tools/test-solo-layout.c
+tools/test-menu-labels.c
+tools/test-menu-actions.py
 tools/test-solo-selection-production.py
 tools/test-solo-publication-production.py
 tools/test-solo-descriptor-records-production.py
@@ -188,6 +194,7 @@ tools/test-stat-select.c
 tools/test-surface-items.c skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-text-buf.c
 tools/test-text-clip.c
+tools/test-text-cursor.c
 tools/test-title-ring.c
 tools/test-tizi-helper.c
 tools/test-transition-diag.c
@@ -221,8 +228,11 @@ tools/test-trap-identities.cpp
 tools/test-crystal-checks.cpp
 tools/test-crystal-pickup-production.py
 tools/test-trap-scheduler.c
+tools/test-trap-alpha3.c
+tools/test-trap-display.c
 tools/test-mirror-model-cull.c
 tools/test-turbo-grant.c
+tools/test-unlock-reasons.c
 tools/test-update-core.cpp
 tools/test-update-menu.c
 tools/test-update-solo-gate.cpp
@@ -273,3 +283,4 @@ tools/test-reverse-camera-production.py
 tools/test-xdelta-import.cpp
 tools/test-track-registry.cpp
 tools/test-track-registry-download-production.py
+tools/test-feed-trap-lines.c
