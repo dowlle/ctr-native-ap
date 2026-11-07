@@ -67,7 +67,8 @@ enum APSoloOptionKind
 	AP_SOLO_OPT_TOGGLE = 0,
 	AP_SOLO_OPT_CHOICE,
 	AP_SOLO_OPT_RANGE,
-	AP_SOLO_OPT_SET, /* a checklist page (A2-41); value is "4 of 7" */
+	AP_SOLO_OPT_SET,     /* a checklist page (A2-41); value is "4 of 7" */
+	AP_SOLO_OPT_WEIGHTS, /* a number page, one row per trap (A3-22); value is "2 custom" */
 };
 
 struct APSoloOptionInfo
@@ -84,12 +85,16 @@ struct APSoloOptionInfo
 	char note[AP_SOLO_TEXT];    /* forced reason, guard reason or a warning */
 };
 
-/* One row of a set option's checklist. */
+/* One row of a set option's checklist, or of a weights option's number page
+   (A3-22): weight and defaultWeight are the row's numbers then (on and
+   isDefault only describe a checklist row). */
 struct APSoloItemInfo
 {
 	char label[64];
 	int on;
 	int isDefault;              /* the option's default checks this row */
+	int weight;                 /* weights page: the row's weight, 0 to the maximum */
+	int defaultWeight;          /* weights page: the option's default weight */
 };
 
 /* An installed custom track the new-seed flow can include (decision 32). */
@@ -156,6 +161,10 @@ void AP_Solo_OptionsReset(void);          /* back to the preset's values */
 int AP_Solo_OptionItemCount(int index);
 int AP_Solo_OptionItemGet(int index, int item, struct APSoloItemInfo *out);
 void AP_Solo_OptionItemToggle(int index, int item);
+/* A weights option's number page (A3-22): step wraps 0 to the maximum,
+   reset returns the row to the option's default weight. */
+void AP_Solo_OptionItemStep(int index, int item, int direction);
+void AP_Solo_OptionItemReset(int index, int item);
 /* The first option a guard refuses (Continue opens it), or -1. */
 int AP_Solo_OptionsBlocked(void);
 

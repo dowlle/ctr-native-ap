@@ -19,7 +19,7 @@ extern "C" {
 /* One leg of a content-plan cup (#133 PR 5). */
 #define AP_CONTENT_CUP_LEGS 4
 typedef struct ctr_content_leg {
-    int retail_id;     /* engine track 0..15, or -1 */
+    int retail_id;     /* engine track 0..17, or -1 */
     int cortex;        /* 1 for Cortex Vortex */
     int package_index; /* custom package, or -1 */
     int custom_slot, named_block, laps;
@@ -175,6 +175,8 @@ typedef struct ctr_content_pad {
  * native measures the bytes and refuses a stated value they disagree with. */
 #define AP_CONTENT_SUPER_PADS_UNSTATED (-1)
 #define AP_CONTENT_RETAIL_LAPS 3 /* retail tracks race their authored three laps */
+/* A boss cup leg with one_lap_cups (A3-6): max(1, 3 / 2), the cup rule on a boss leg's three laps */
+#define AP_CONTENT_BOSS_CUP_SHORT_LAPS 1
 /* Engine hosts of non-retail track entries: a custom package borrows Roo's
  * Tubes; Cortex Vortex keeps the Oxide Station slot its bundled pair is
  * served on by the legacy pad track and the Oxide 2 venue. */

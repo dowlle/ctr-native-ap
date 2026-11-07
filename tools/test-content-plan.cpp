@@ -1497,6 +1497,47 @@ int main(int argc, char **argv) {
             if (e["kind"] == "cup") { e["legs"][0]["laps"] = 6; break; }
         expect(!parse(forged), "cups: a leg with neither its laps nor the shortened laps (6) refuses");
     }
+    // Trial tracks in cups (A3-9, ruled 2026-11-05): cups-trial-legs.json is a
+    // room the paired apworld generated with nine cups and Turbo Track narrowed
+    // to [relic]. Slide Coliseum (16) has its own Trophy pad and races four
+    // legs; Turbo Track (17) has no pad and races one leg, so it carries its
+    // frozen Cup Leg Victory (35016817). Legs run on their own LevelID, at the
+    // shortened one lap. The room has no box, Wumpa or lap checks, so those
+    // codes are not checked here.
+    J trials;
+    std::ifstream("tools/fixtures/content-plan/cups-trial-legs.json") >> trials;
+    expect(parse(trials) && bind_room(trials) && ap_content_plan_active(), "trial legs: room binds");
+    {
+        int on[18]{}, pad16 = -1, pad17 = -1;
+        for (int phys = 0; phys < 200; ++phys) {
+            const ctr_content_pad *p = ap_content_plan_pad(phys);
+            if (!p || !p->occupied) continue;
+            if (!p->cup && p->retail_id == 16) pad16 = p->physical;
+            if (!p->cup && p->retail_id == 17) pad17 = p->physical;
+            for (int n = 0; p->cup && n < AP_CONTENT_CUP_LEGS; ++n) {
+                const ctr_content_leg &l = p->legs[n];
+                if (l.retail_id < 16) continue;
+                ++on[l.retail_id];
+                expect(ap_content_leg_host(&l) == l.retail_id && l.laps == 1 && !l.cortex && l.package_index < 0,
+                       "trial legs: a trial leg runs on its own LevelID at one lap");
+                expect(std::string(l.track_id) == "retail:" + std::to_string(l.retail_id), "trial legs: leg track identity");
+            }
+        }
+        expect(on[16] == 4 && on[17] == 1, "trial legs: Slide Coliseum four legs, Turbo Track one");
+        expect(pad16 >= 0 && pad17 < 0, "trial legs: Slide Coliseum has a pad, Turbo Track only cup legs");
+        for (int phys = 0; phys < 200; ++phys) {
+            const ctr_content_pad *p = ap_content_plan_pad(phys);
+            for (int n = 0; p && p->occupied && p->cup && n < AP_CONTENT_CUP_LEGS; ++n) {
+                const ctr_content_leg &l = p->legs[n];
+                if (l.retail_id == 16)
+                    expect(l.victory == 0 && l.track_pad == pad16, "trial legs: Slide Coliseum has its Trophy Race, no Cup Leg Victory");
+                if (l.retail_id == 17)
+                    expect(l.victory == 35016817 && l.track_pad == -1, "trial legs: Turbo Track's frozen Cup Leg Victory");
+            }
+        }
+        // A boss cup still races the 16 Trophy tracks only: bosses-cups below
+        // refuses "a leg on a trial track".
+    }
     // One generator row 2: forged Gem Cups, surface rows and relic checks.
     {
         const auto rows = [](J &j) -> J & { return j["content_plan"]["items"]["rows"]; };
@@ -1589,6 +1630,49 @@ int main(int argc, char **argv) {
         // Without content_cups and Hit Character the cups room keeps its PR 5 shape.
         expect(parse(cups) && !ap_seedcfg_hit_encounters(), "cup hits: the cups room has no encounter block");
     }
+    // 27 cups (A3-7): twenty-seven-cups.json fills every normal pad with a
+    // cup, so the plan has no Trophy Race or CTR Challenge. Itemsanity then
+    // routes from every cup leg, the Hit routes with the use award, and the
+    // Wumpa Shop and goal bank in the cup legs.
+    J allcups;
+    std::ifstream("tools/fixtures/content-plan/twenty-seven-cups.json") >> allcups;
+    expect(parse(allcups) && bind_room(allcups) && ap_content_plan_active(), "27 cups: room binds");
+    {
+        const J &plan = allcups["content_plan"];
+        int cups = 0, tracks = 0;
+        for (const auto &e : plan["entries"]) { cups += e["kind"] == "cup"; tracks += e["kind"] == "track"; }
+        expect(cups == 27 && tracks == 0, "27 cups: every pad a cup, no track entry");
+        const J *hit = nullptr;
+        int items = 0;
+        for (const auto &c : plan["checks"]) if (c["kind"] == "hit") { hit = &c; break; }
+        expect(hit != nullptr, "27 cups: Hit Character on");
+        for (const auto &c : plan["checks"]) {
+            if (c["kind"] != "itemsanity" || !hit) continue;
+            ++items;
+            bool same = c["routes"].size() == (*hit)["routes"].size();
+            for (size_t i = 0; same && i < c["routes"].size(); ++i) {
+                J use = (*hit)["routes"][i];
+                use["award"] = c["location"].get<int64_t>() % 2 ? "use_juiced" : "use";
+                same = c["routes"][i] == use && use["mode"] == "cup";
+            }
+            expect(same, "27 cups: an Itemsanity check routes from every cup leg, in leg order");
+        }
+        expect(items == 22, "27 cups: all 22 Itemsanity checks");
+        auto a_refuse = [&](const std::string &why, const std::function<void(J &)> &change) {
+            J bad = allcups; change(bad); refuse(bad, "27 cups: " + why);
+        };
+        auto check = [](J &j, int64_t code) -> J & {
+            for (auto &c : j["content_plan"]["checks"]) if (c["location"] == code) return c;
+            throw std::runtime_error("no check");
+        };
+        a_refuse("an Itemsanity cup leg route dropped", [&](J &j) { check(j, 35016000)["routes"].erase(0); });
+        a_refuse("an Itemsanity cup leg route with the hit award", [&](J &j) { check(j, 35016001)["routes"][0]["award"] = "use"; });
+        a_refuse("an Itemsanity cup leg route without its leg", [&](J &j) { check(j, 35016002)["routes"][1]["leg_id"] = nullptr; });
+        // The race fallback is for a plan with no Trophy Race or CTR
+        // Challenge only (tools/test-content-plan-parity.py forges a cup leg
+        // route onto a plan that has one).
+        expect(parse(allcups), "27 cups: the room parses again after the forgeries");
+    }
     // Boss garages (#133 PR 6): bosses.json (Boss Track Shuffle, any_percent
     // with the Boss and Gem companions, the Final Challenge on Cortex Vortex,
     // Progressive Boost and Hit Character on) and bosses-final.json (retail
@@ -1630,7 +1714,26 @@ int main(int argc, char **argv) {
         k_refuse("three legs", [&](J &j) { cup(j, 0)["legs"].erase(3); });
         k_refuse("a repeated leg", [&](J &j) { cup(j, 0)["legs"][1]["track_id"] = cup(j, 0)["legs"][0]["track_id"]; });
         k_refuse("a leg on a trial track", [&](J &j) { cup(j, 1)["legs"][2]["track_id"] = "retail:16"; });
-        k_refuse("a leg with other laps", [&](J &j) { cup(j, 0)["legs"][0]["laps"] = 1; });
+        // A3-6 (ruled 2026-11-06): a boss cup follows one_lap_cups. Off, the
+        // fixture's legs race three laps (checked above); on, every leg races
+        // one; the switch is plan-wide, so a mix refuses.
+        {
+            J short_room = cuproom;
+            for (int g = 0; g < 2; ++g)
+                for (auto &leg : cup(short_room, g)["legs"]) leg["laps"] = 1;
+            expect(parse(short_room) && bind_room(short_room) && ap_content_plan_active(), "bosses-cups: one-lap legs bind");
+            const ctr_content_pad *sroo = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + 0);
+            const ctr_content_pad *spapu = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + 1);
+            bool one = sroo && spapu;
+            for (int n = 0; one && n < AP_CONTENT_CUP_LEGS; ++n)
+                one = sroo->legs[n].laps == 1 && spapu->legs[n].laps == 1;
+            expect(one, "bosses-cups: one_lap_cups races every boss cup leg one lap");
+        }
+        k_refuse("one leg shortened, the others not", [&](J &j) { cup(j, 0)["legs"][0]["laps"] = 1; });
+        k_refuse("one cup shortened, the other not", [&](J &j) { for (auto &leg : cup(j, 1)["legs"]) leg["laps"] = 1; });
+        k_refuse("a leg with two laps", [&](J &j) { cup(j, 0)["legs"][0]["laps"] = 2; });
+        k_refuse("a leg with the custom track's own laps", [&](J &j) {
+            for (auto &leg : cup(j, 0)["legs"]) if (leg["track_id"] == "custom/baby-t-park/1.0.2") leg["laps"] = 7; });
         k_refuse("a cup garage missing from the record", [](J &j) { j["content_plan"]["bosses"]["cups"] = J::array({0}); });
         k_refuse("a race garage listed as a cup", [](J &j) { j["content_plan"]["bosses"]["cups"] = J::array({0, 1, 2}); });
         k_refuse("the cup check as a boss race", [&](J &j) {

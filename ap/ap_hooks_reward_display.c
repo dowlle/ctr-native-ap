@@ -10,6 +10,8 @@
 
 #ifdef CTR_AP
 
+#include "ap_trap_display_logic.h" // Trap Display: how a trap location looks
+
 // ---------------------------------------------------------------------------
 // MAP overlay retirement: the old debug-era per-pad map state
 // (AP_BitIsUsefulUnchecked / AP_PadUsefulness / AP_BitUnchecked / AP_PadMapState)
@@ -234,7 +236,8 @@ static int AP_PadDisplayForBit(int globalBit, AP_ItemCat *outCat, unsigned *outF
 		return AP_PAD_DISP_NONE; // not scouted yet (not connected / pre-scout)
 
 	if (outFlags)
-		*outFlags = flags;
+		*outFlags = AP_TrapDisplayFlags(ctr_cfg.trap_display, ctr_cfg.trap_display_salt,
+		                                (long long)code, flags);
 	return AP_PadDisplayKind(item, player, outCat);
 }
 

@@ -1121,8 +1121,11 @@ static void validate(const J &p, State &out) {
         lt.title = title;
         if (track.at("origin") == "retail") {
             fields(track, {"id", "origin", "retail_id", "display_name", "laps", "modes", "capabilities", "field_size"});
+            // Every retail race track 0..17 can be a leg, Slide Coliseum (16)
+            // and Turbo Track (17) too (ruled 2026-11-05); a boss cup still
+            // races the 16 Trophy tracks only (checked with its legs below).
             const int rid = number(track["retail_id"], 0, 17);
-            need(rid < 16 && track_id == "retail:" + std::to_string(rid) && title == registry["retail"][rid]["name"] &&
+            need(track_id == "retail:" + std::to_string(rid) && title == registry["retail"][rid]["name"] &&
                  track["laps"] == AP_CONTENT_RETAIL_LAPS, "a retail cup leg is not a race track or its metadata differs");
             leg.retail_id = rid;
             leg.victory = registry["retail"][rid]["cup_leg"].get<int64_t>();
@@ -1712,8 +1715,16 @@ static void validate(const J &p, State &out) {
     for (const auto &pair : leg_tracks)
         if (pair.second.leg.package_index >= 0) used_packages.insert(out.packages[pair.second.leg.package_index].id);
     // The first five cups are the Gem Cups, Red first (one generator row 2).
-    need((gem_colours.empty() || *gem_colours.rbegin() == (int)gem_colours.size() - 1) &&
-         (cup_names.empty() || gem_colours.size() == 5), "a plan's first five cups are the Gem Cups, Red first");
+    // A seed with fewer than five may hold the Purple Gem Cup first and then
+    // Red onward (A3-25, the boss gauntlet); the pads are per colour, so the
+    // order of the colours changes nothing else here.
+    {
+        std::set<int> rest = gem_colours;
+        const bool purple_first = gem_colours.size() < 5 && rest.erase(4) != 0 &&
+                                  (rest.empty() || *rest.rbegin() == (int)rest.size() - 1);
+        need((gem_colours.empty() || *gem_colours.rbegin() == (int)gem_colours.size() - 1 || purple_first) &&
+             (cup_names.empty() || gem_colours.size() == 5), "a plan's first five cups are the Gem Cups, Red first");
+    }
     // `Cup Leg Victory`: a route per occurrence, in the plan's entry order,
     // then leg order (apworld content_cups.leg_victories).
     {
@@ -1765,7 +1776,10 @@ static void validate(const J &p, State &out) {
             // Boss cups (#133 PR 6b): four legs against the garage's own boss
             // alone, boss AI on every leg; a points win completes the garage.
             // Each leg is a certified venue for this garage (as a Boss Track
-            // Shuffle venue), the four are different, three laps each. The
+            // Shuffle venue), the four are different, three laps each, or one
+            // each with one_lap_cups (A3-6, ruled 2026-11-06: a boss cup
+            // follows the same lap setting as other cups, on its own three
+            // laps; the same plan-wide switch as the ordinary cup legs). The
             // garage's cup pad (ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD
             // + g)) carries the legs into the content-cup machinery.
             const bool cup_garage = g < 4 && out.bosses.cup[g];
@@ -1801,8 +1815,16 @@ static void validate(const J &p, State &out) {
                     fields(leg, {"id", "track_id", "laps"});
                     const std::string lid = nid + "/leg:" + std::to_string(n);
                     const std::string ltrack = text(leg["track_id"]);
-                    need(leg["id"] == lid && leg["laps"] == AP_CONTENT_RETAIL_LAPS && seen_legs.insert(ltrack).second,
-                         "a boss cup leg is not its garage's leg, three laps, or repeats a track");
+                    need(leg["id"] == lid && seen_legs.insert(ltrack).second,
+                         "a boss cup leg is not its garage's leg, or repeats a track");
+                    const int leg_laps = number(leg["laps"], 1, 7);
+                    need(leg_laps == AP_CONTENT_RETAIL_LAPS || leg_laps == AP_CONTENT_BOSS_CUP_SHORT_LAPS,
+                         "a boss cup leg races neither three laps nor the shortened-cup lap");
+                    {
+                        const int now = leg_laps == AP_CONTENT_BOSS_CUP_SHORT_LAPS ? 1 : 0;
+                        need(shortened < 0 || shortened == now, "cup legs shorten their laps in some legs and not in others");
+                        shortened = now;
+                    }
                     int points = -1;
                     if (ltrack == "cortex_vortex") points = kCortexRestartPoints;
                     else if (ltrack.rfind("custom/", 0) == 0) {
@@ -1816,6 +1838,7 @@ static void validate(const J &p, State &out) {
                              (digits.size() == 1 || digits[0] != '0'), "unknown boss venue");
                         const int lv = std::stoi(digits);
                         need(lv < 18 && AP_BossVenueTrackKnown(lv), "unknown boss venue");
+                        need(lv < 16, "a boss cup leg is not a Trophy track");
                         points = AP_BOSS_VENUE_RESTART_POINTS[lv];
                     } else need(false, "unknown boss venue");
                     need(points >= 1 && AP_BossVenueScheduleFits(g, points), "a boss cup leg that cannot carry the boss's attack");
@@ -1841,7 +1864,7 @@ static void validate(const J &p, State &out) {
                     }
                     if (ltrack == "cortex_vortex") out.cortex = true;
                     ctr_content_leg l = leg_track(ltrack).leg;
-                    l.victory = 0; l.laps = AP_CONTENT_RETAIL_LAPS;
+                    l.victory = 0; l.laps = leg_laps;
                     copy(l.leg_id, J(lid));
                     if (plan_laps) {
                         std::string title;
@@ -2157,8 +2180,11 @@ static void validate(const J &p, State &out) {
     // Itemsanity and Hit Character (#133 PR 4d): global checks with a route
     // per Trophy Race and CTR Challenge, in physical pad order, then mode
     // order. A Hit check also routes from every cup leg (#133 PR 5b), in leg
-    // order on its pad, and every Hit target has the same routes. The codes
-    // and names are the registry's (the apworld's frozen class order).
+    // order on its pad, and every Hit target has the same routes. A plan with
+    // no Trophy Race or CTR Challenge routes Itemsanity from every cup leg
+    // instead (A3-7, a 27-cup seed; apworld content_global_checks.checks).
+    // The codes and names are the registry's (the apworld's frozen class
+    // order).
     std::sort(race_routes.begin(), race_routes.end(),
               [](const RaceRoute &a, const RaceRoute &b) { return a.physical < b.physical; });
     std::vector<std::pair<int, J>> hit_route_list;
@@ -2184,6 +2210,11 @@ static void validate(const J &p, State &out) {
             for (const auto &r : race_routes)
                 for (int m = 0; m < 2; ++m)
                     if (r.modes & (1u << m)) routes.push_back(route_record(r.entry, m ? "ctr" : "trophy", r.pad, award));
+        if (!hit && routes.empty())
+            for (const auto &r : hit_route_list) {
+                J use = r.second; use["award"] = award;
+                routes.push_back(use);
+            }
         need(!routes.empty(), std::string("global check without a race to earn it: ") + row["name"].get<std::string>());
         const int64_t code = row["location"].get<int64_t>();
         need(expected_checks.emplace(code, J{{"location", code}, {"owner", "global"}, {"kind", kind},
@@ -2221,15 +2252,24 @@ static void validate(const J &p, State &out) {
     // Banking (J11): the shop and the Wumpa goal need Wumpa Income, a Trophy
     // Race or CTR Challenge on a retail race track 0..15 or on a custom track
     // whose package has measured Wumpa capability (ruling of 2026-11-02; apworld
-    // content_wumpa.check_income refuses a seed without one).
+    // content_wumpa.check_income refuses a seed without one). A plan with no
+    // such race banks in a cup leg on such a track instead (A3-7, apworld
+    // content_wumpa.cup_income_routes).
     if (out.wumpa.shop_slots || wumpa_goal) {
         bool income = false;
-        for (const auto &pad : out.pads)
+        for (const auto &pad : out.pads) {
             income |= pad.occupied && !pad.crystal && !pad.cup && !pad.cortex &&
                       ((pad.retail_id >= 0 && pad.retail_id <= 15) ||
                        (pad.package_index >= 0 && (record_caps(out, pad) & AP_CONTENT_CAP_WUMPA))) &&
                       (ap_content_mode_slot(&pad, AP_CONTENT_MODE_TROPHY) >= 0 || ap_content_mode_slot(&pad, AP_CONTENT_MODE_CTR) >= 0);
-        need(income, "the Wumpa Shop and the Wumpa goal need a retail or Wumpa-capable custom race to bank fruit");
+            if (pad.occupied && pad.cup)
+                for (int n = 0; n < AP_CONTENT_CUP_LEGS; ++n) {
+                    const ctr_content_leg &leg = pad.legs[n];
+                    income |= (leg.retail_id >= 0 && leg.retail_id <= 15) ||
+                              (leg.package_index >= 0 && (out.packages[leg.package_index].capabilities & AP_CONTENT_CAP_WUMPA));
+                }
+        }
+        need(income, "the Wumpa Shop and the Wumpa goal need a retail or Wumpa-capable custom race or cup leg to bank fruit");
     }
     // Two checks never share a name, so a room cannot show two identical rows.
     std::set<std::string> check_names;

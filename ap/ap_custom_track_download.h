@@ -56,6 +56,10 @@ int ap_custom_track_download_start_shared(const char *tracks_dir, const char *pa
 // Thread-safe snapshot for the game thread. Returns an AP_CT_DOWNLOAD_* value.
 int ap_custom_track_download_status(char *detail, int detail_bytes);
 
+// Any active Saphi rate-limit wait, across all transfer workers. Returns the
+// seconds remaining (rounded up), or 0 and empty text when transfers resume.
+int ap_custom_track_download_busy(char *detail, int detail_bytes);
+
 #ifdef __cplusplus
 }
 #endif

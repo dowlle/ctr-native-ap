@@ -325,7 +325,7 @@ static void verify(const J &room, const std::string &name) {
     if (!ap_content_plan_active()) return;
     Room all;
     for (auto id : locations(room)) all.present.insert(id);
-    for (int64_t code = 35010000; code < 35010210; ++code) all.foreign[code] = 99;
+    for (int64_t code = 35010000; code < 35010215; ++code) all.foreign[code] = 99;
     for (const auto &row : room["content_plan"]["items"]["rows"]) all.foreign[row["item"].get<int64_t>()] = 99;
     auto r = sweep(all);
     expect(r.goal && r.reachable == r.total && r.total == (int)all.present.size(),
@@ -488,7 +488,7 @@ int main() {
             // Beach's slots are reachable and Citadel City's are not.
             Room room;
             for (auto id : locations(shop)) room.present.insert(id);
-            for (int64_t code = 35010000; code < 35010210; ++code) room.foreign[code] = 99;
+            for (int64_t code = 35010000; code < 35010215; ++code) room.foreign[code] = 99;
             for (const auto &row : shop["content_plan"]["items"]["rows"]) room.foreign[row["item"].get<int64_t>()] = 99;
             room.foreign[35010014] = 0;
             std::set<int64_t> miss;

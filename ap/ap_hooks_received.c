@@ -162,6 +162,9 @@ typedef struct AP_FxHeld
 static AP_FxHeld *ap_fx_held = NULL;
 static int        ap_fx_held_n = 0;
 static int        ap_fx_held_cap = 0;
+// Held effect items released by this tick's marker resolution (A3-17: their
+// application is item-caused state arriving outside the drain).
+static int        ap_fx_released_tick = 0;
 
 // Legacy 0.2.1 row for this room (endpoint+seed+slot). Game thread, read only,
 // and only reached when the room has no key. A removal still queued on the
@@ -419,7 +422,10 @@ static int AP_FxResolveOne(int which, AP_FxMarker *m)
 		int k;
 		for (k = 0; k < ap_fx_held_n; k++)
 			if (AP_FxMarkerDecide(m, ap_fx_held[k].srvIdx) == AP_FXM_DECIDE_APPLY)
+			{
 				AP_FxApply(ap_fx_held[k].item);
+				ap_fx_released_tick++;
+			}
 		ap_fx_held_n = 0;
 	}
 	if (AP_FxMarkerFinishResolve(m))
@@ -444,13 +450,17 @@ static void AP_FxSyncOne(int which, AP_FxMarker *m)
 		AP_FxLegacyRemove(which == AP_NET_FX_TURBO_FIRED);
 }
 
-// Per tick, after the connect reset and before the item drain.
-static void AP_FxStorageTick(void)
+// Per tick, after the connect reset and before the item drain. Returns the
+// number of held effect items released this tick: those releases are
+// item-caused state changes landing outside the drain (A3-17's unlock watch
+// treats the tick as a receipt window, like a drained batch).
+static int AP_FxStorageTick(void)
 {
 	int fxNow, tgNow;
 
+	ap_fx_released_tick = 0;
 	if (!ap_net_is_connected())
-		return;
+		return 0;
 	fxNow = AP_FxResolveOne(AP_NET_FX_EFFECT, &ap_fx_marker);
 	tgNow = AP_FxResolveOne(AP_NET_FX_TURBO_FIRED, &ap_tg_marker);
 	if (fxNow || tgNow)
@@ -474,6 +484,7 @@ static void AP_FxStorageTick(void)
 			           "traps, Wumpa and Turbo Grants stay held until it does "
 			           "(nothing is lost: a reconnect offers them again)\n");
 	}
+	return ap_fx_released_tick;
 }
 
 // End of a drained batch: raise the effect marker past everything drained and
