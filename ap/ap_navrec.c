@@ -1171,7 +1171,7 @@ static unsigned int AP_NavRec_BuildPool(int levelID, unsigned int highest, struc
 	unsigned int               skipped = 0;
 	unsigned int               index;
 	char                       path[160];
-	char                       msg[256];
+	char                       msg[448];
 
 	*outEntries = NULL;
 	*outSkipped = 0;
@@ -1221,6 +1221,15 @@ static unsigned int AP_NavRec_BuildPool(int levelID, unsigned int highest, struc
 		if (!AP_NavRecPool_EntryCompatible(&peeked, levelID, s_navrecActiveIdentityKind, s_navrecActiveTrackUuid,
 		                                   s_navrecActiveNavRevision))
 		{
+			char fileIdent[80];
+			char activeIdent[80];
+
+			AP_NavRec_DescribeIdentity(peeked.identityKind, peeked.trackUuid, peeked.navRevision, fileIdent, sizeof fileIdent);
+			AP_NavRec_DescribeIdentity(s_navrecActiveIdentityKind, s_navrecActiveTrackUuid, s_navrecActiveNavRevision, activeIdent,
+			                           sizeof activeIdent);
+			snprintf(msg, sizeof msg, "[AP NAVREC] pool: skipping \"%s\": level %d %s, this load is level %d %s\n", path,
+			         peeked.levelId, fileIdent, levelID, activeIdent);
+			AP_LogLine(msg);
 			skipped++;
 			continue;
 		}
@@ -1566,10 +1575,81 @@ static void AP_NavRec_RederiveLoadIdentity(struct GameTracker *gGT)
 }
 #endif
 
+// Bots carry a pointer to the nav frame they are on (botData.botNavFrame), and
+// a savestate relocates it as checkpoint memory. Lanes this module publishes
+// (recorded ones and the kept copies of the track's lines) live in this
+// executable's statics, so after a restore that pointer can be stale: from
+// another process, or into a lane whose content changed because a new field
+// was drawn. Each bot whose pointer is outside its lane, or every bot when the
+// field may differ (`force`), is put on the nearest node of the lane it drives.
+static void AP_NavRec_RebindBots(int force)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int                 i;
+	int                 rebound = 0;
+	char                msg[160];
+
+	for (i = 0; i < 8; i++)
+	{
+		struct Driver    *d = gGT->drivers[i];
+		struct NavHeader *hdr;
+		struct NavFrame  *frames;
+		uintptr_t         cur;
+		uintptr_t         lo;
+		uintptr_t         hi;
+		int               lane;
+		int               count;
+		int               k;
+		int               best = 0;
+		double            bestD = -1.0;
+
+		if ((d == NULL) || ((d->actionsFlagSet & ACTION_BOT) == 0))
+			continue;
+		lane = (int)d->botData.botPath;
+		if ((lane < 0) || (lane >= AP_NAVREC_LANES))
+			continue;
+		hdr = sdata->NavPath_ptrHeader[lane];
+		frames = sdata->NavPath_ptrNavFrameArray[lane];
+		if ((hdr == NULL) || (frames == NULL) || (hdr->numPoints < 2))
+			continue;
+		count = (int)hdr->numPoints;
+
+		cur = (uintptr_t)d->botData.botNavFrame;
+		lo = (uintptr_t)frames;
+		hi = (uintptr_t)(frames + count);
+		if (!force && (cur >= lo) && (cur < hi) && (((cur - lo) % sizeof(struct NavFrame)) == 0u))
+			continue;
+
+		for (k = 0; k < count; k++)
+		{
+			double dx = (double)frames[k].pos.x - (double)(d->posCurr.x >> 8);
+			double dy = (double)frames[k].pos.y - (double)(d->posCurr.y >> 8);
+			double dz = (double)frames[k].pos.z - (double)(d->posCurr.z >> 8);
+			double dd = (dx * dx) + (dy * dy) + (dz * dz);
+
+			if ((bestD < 0.0) || (dd < bestD))
+			{
+				bestD = dd;
+				best = k;
+			}
+		}
+
+		d->botData.botNavFrame = &frames[best];
+		rebound++;
+	}
+
+	if (rebound > 0)
+	{
+		snprintf(msg, sizeof msg, "[AP NAVREC] restore: %d bot(s) put on the nearest node of their lane\n", rebound);
+		AP_LogLine(msg);
+	}
+}
+
 void AP_NavRec_AfterCheckpointRestore(void)
 {
 	int levelID;
 	int lane;
+	int sameField;
 
 	if ((sdata == NULL) || (sdata->gGT == NULL))
 		return;
@@ -1588,7 +1668,13 @@ void AP_NavRec_AfterCheckpointRestore(void)
 	// the race started with unless the files changed underneath it. A restore
 	// into a fresh process has no seed for this level and draws a new one; the
 	// log names the new field.
-	if (s_navrecSeedLevel != levelID)
+	//
+	// Even with the same seed this is a best effort: the restored state may come
+	// from an earlier race on this track with another seed. So bots are only
+	// trusted to keep their frame when it lies inside their lane; with a new
+	// seed every bot is rebound.
+	sameField = (s_navrecSeedLevel == levelID);
+	if (!sameField)
 	{
 		s_navrecSeed = AP_NavRec_NewSeed();
 		s_navrecSeedLevel = levelID;
@@ -1597,12 +1683,19 @@ void AP_NavRec_AfterCheckpointRestore(void)
 	if (g_config.navUseRecorded && AP_NavRec_LoadForLevel(levelID, s_navrecSeed))
 	{
 		AP_NavRec_PointEngineAtLanes(levelID);
+		AP_NavRec_RebindBots(!sameField);
 		AP_NavRec_LogLaneSummary(levelID, "reloaded after a savestate restore");
 		return;
 	}
 
+	// Nothing recorded now. A state saved while recorded lanes were live (in
+	// this process or another) can still hold bot frames in this module's
+	// statics, so any bot outside its lane is rebound even on this path.
 	if (!s_navrecLanesLive && !g_config.navUseRecorded)
-		return; // nothing of ours was ever in those slots
+	{
+		AP_NavRec_RebindBots(0);
+		return;
+	}
 
 	// Either the option is off now, or the file is gone or no longer valid. Put
 	// the engine back on the level's own nav data rather than leaving it pointed
@@ -1620,6 +1713,7 @@ void AP_NavRec_AfterCheckpointRestore(void)
 	for (lane = 0; lane < AP_NAVREC_LANES; lane++)
 		BOTS_InitNavPath(sdata->gGT, (s16)lane);
 	BOTS_SetGlobalNavData(0);
+	AP_NavRec_RebindBots(1);
 
 	AP_LogLine("[AP NAVREC] restore: no usable recording, nav pointers rebuilt from the level\n");
 }

@@ -33,6 +33,11 @@
 // pool where every pick turns out corrupt still costs a bounded race start.
 #define AP_NAVREC_MAX_LOAD_ATTEMPTS 24
 
+// Full reads one contributor may spend before the pick moves on. Without it, a
+// person whose many files all fail the full read could use the whole budget
+// above before anyone else is tried.
+#define AP_NAVREC_MAX_READS_PER_CONTRIBUTOR 3
+
 // What a full read tells the pick about one file. `usable` is 0 when the file was
 // rejected whole or holds no eligible lap; it is then passed over like a gap.
 struct AP_NavRecLaneCandidate
@@ -143,7 +148,8 @@ static void AP_NavRecPool_Shuffle(unsigned int *items, unsigned int count, unsig
 // for each, that person's files are tried in a random order until one reads as
 // usable, and a random eligible lap of it is taken. A contributor whose files
 // all fail is skipped, so one broken file never costs a person their lane while
-// they have another good one. At most `maxOpened` full reads are spent.
+// they have another good one. At most `maxOpened` full reads are spent, and at
+// most AP_NAVREC_MAX_READS_PER_CONTRIBUTOR on one person.
 //
 // The same pool and the same seed always give the same picks, which is what a
 // savestate restore in the same session relies on.
@@ -200,6 +206,7 @@ static unsigned int AP_NavRecPool_Pick(const struct AP_NavRecPoolEntry *entries,
 	{
 		const char  *key = entries[reps[r]].key;
 		unsigned int fileCount = 0;
+		unsigned int spent;
 		unsigned int f;
 
 		for (i = 0; i < count; i++)
@@ -210,7 +217,7 @@ static unsigned int AP_NavRecPool_Pick(const struct AP_NavRecPoolEntry *entries,
 
 		AP_NavRecPool_Shuffle(files, fileCount, &state);
 
-		for (f = 0; (f < fileCount) && (opened < maxOpened); f++)
+		for (f = 0, spent = 0; (f < fileCount) && (opened < maxOpened) && (spent < AP_NAVREC_MAX_READS_PER_CONTRIBUTOR); f++)
 		{
 			struct AP_NavRecLaneCandidate cand;
 
@@ -219,6 +226,7 @@ static unsigned int AP_NavRecPool_Pick(const struct AP_NavRecPoolEntry *entries,
 				continue;
 
 			opened++;
+			spent++;
 			if (!cand.usable || (cand.lapCount == 0u))
 				continue;
 

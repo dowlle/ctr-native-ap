@@ -1499,6 +1499,25 @@ int main(void)
 		check(n == 1u && strcmp(picks[0].driverName, "Dex") == 0 && opened == 1u,
 		      "and the pick reads only those");
 
+		// One person with many corrupt files cannot spend the whole budget
+		// before a good contributor is tried.
+		FakeReset(3);
+		for (seed = 0; seed < 28u; seed++)
+			FakeAdd(1u + seed, "Broken", 1, 1);
+		FakeAdd(30, "Good", 1, 0);
+		{
+			int ok = 1;
+
+			for (seed = 1; seed <= 100u; seed++)
+			{
+				n = FakePick(seed, picks, &opened, &contributors);
+				if ((n != 1u) || (strcmp(picks[0].driverName, "Good") != 0) ||
+				    (opened > (unsigned int)AP_NAVREC_MAX_READS_PER_CONTRIBUTOR + 1u))
+					ok = 0;
+			}
+			check(ok, "a contributor with 28 corrupt files costs at most three reads, and the good contributor still races");
+		}
+
 		// A folder of corrupt files costs a bounded number of full reads.
 		FakeReset(3);
 		for (seed = 0; seed < 30u; seed++)
