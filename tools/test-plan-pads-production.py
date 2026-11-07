@@ -60,7 +60,7 @@ assert "AP BOXES LEFT: %d" in draw
 closed = plan.index("AP_PadState(physLevelID, levelID) == 3")
 assert closed < plan.index("AH_WarpPad_WarpCapture(gGT)") and "!AP_PadReplayable(physLevelID, levelID)" in plan[closed:closed + 160]
 build = body(warp, "static void AH_WarpPad_BuildInstances(struct Thread *t)")
-gate = warp[warp.index("if (pad && AP_PadState(levelID, warppadObj->levelID) == 3)"):]
+gate = warp[warp.index("if (apGateLayer == AP_PAD_GATE_STAGE2)"):]
 gate = gate[:gate.index("goto ContentPad_BuildGate;")]
 assert "AP_ContentMaskToReq(pad->stage2_mask, pad->stage2_count, &rule);" in gate
 assert "unlockItem_numNeeded = pad->stage2_count;" in gate and "AP_ContentStage2Owned(pad)" in gate
