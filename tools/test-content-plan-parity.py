@@ -1223,6 +1223,51 @@ def box_env(name, change, source=None):
     except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
         accepted = False
     cases.append(("boxes-envelope-" + name, case, accepted))
+# Hand-placed box spots (A3-14): seeds generated with the apworld's test spot
+# files (Crash Cove with 18 spots, Baby T Park with 18 from 1) are admitted by
+# both; forged spot sets and spot fields are refused by both, except what
+# only the shipped file can tell (a moved position, another file digest, a pool
+# count that still fits the pick), which native reads as given.
+from worlds.ctr import box_spots as bspots
+from worlds.ctr.test.test_box_spots import spot_files
+with spot_files(retail=["CRASH_COVE"], custom=["baby-t-park"]):
+    spot_base = None
+    for seed in range(12):
+        options = box_options(custom=[btp()], tier=("easy", "medium", "hard")[seed % 3],
+                              progressive_boost=("off", "shared_global", "per_character")[(seed // 3) % 3],
+                              progressive_stats=("off", "shared_global")[seed % 2], itemsanity=seed % 4 == 1)
+        try:
+            world = box_world(options, seed=100 + seed)
+        except OptionError as exc:
+            print(f"spots-generated-{seed} refused by the generator: {str(exc)[:120]}")
+            continue
+        cases.append((f"spots-generated-{seed}", world.fill_slot_data(), True))
+        spot_base = spot_base or cases[-1][1]
+    assert spot_base is not None
+    def sset(p, track_id):
+        return next(s for s in p["item_boxes"]["spot_sets"] if s["track_id"] == track_id)
+    def sbox(p, track_id):
+        return next(c for c in p["checks"] if c["owner"] == track_id and "spot" in c)
+    for name, change, trusted in [
+            ("unchanged copy", lambda p: None, False),
+            ("feature dropped", lambda p: p["required_features"].remove(bspots.FEATURE), False),
+            ("set dropped", lambda p: p["item_boxes"]["spot_sets"].remove(sset(p, "retail:3")), False),
+            ("all sets dropped", lambda p: p["item_boxes"].pop("spot_sets"), False),
+            ("picks one short", lambda p: sset(p, "retail:3")["picked"].pop(), False),
+            ("picks reversed", lambda p: sset(p, "retail:3")["picked"].reverse(), False),
+            ("pool lowered", lambda p: sset(p, "retail:3").__setitem__("pool", 15), True),
+            ("custom LEV pin changed", lambda p: sset(p, "custom/baby-t-park/1.0.2").__setitem__("lev_sha256", "a" * 64), False),
+            ("spot dropped", lambda p: sbox(p, "retail:3").pop("spot"), False),
+            ("spot number changed", lambda p: sbox(p, "retail:3")["spot"].__setitem__("number", 49), False),
+            ("spot on a named box changed", lambda p: sbox(p, "custom/baby-t-park/1.0.2")["spot"].__setitem__("number", 50), False),
+            ("spot position moved", lambda p: sbox(p, "retail:3")["spot"]["pos"].__setitem__(1, 999), True),
+            ("spot angle changed", lambda p: sbox(p, "custom/baby-t-park/1.0.2")["spot"].__setitem__("rot_y", 7), True),
+            ("spot file digest changed", lambda p: sset(p, "retail:3").__setitem__("file_sha256", "0" * 64), True),
+            ]:
+        alter("spots-" + name, change, spot_base)
+        if trusted:
+            native_trusts.add("spots-" + name)
+            assert cases[-1][2] is False, name + ": the apworld must refuse a forged spot"
 box_env("unchanged copy", lambda c: None)
 box_env("box_locations false", lambda c: c["ctr_options"].__setitem__("box_locations", False))
 box_env("box_locations dropped", lambda c: c["ctr_options"].pop("box_locations"))

@@ -27,6 +27,7 @@ tools/test-box-number.c
 tools/test-box-offset.c
 tools/test-box-seat.c
 tools/test-box-seat-production.py
+tools/test-box-spots.cpp
 tools/test-alpha2-presentation-production.py
 tools/test-ceremony-banner.c
 tools/test-clocked-out-production.py

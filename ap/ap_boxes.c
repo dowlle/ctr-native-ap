@@ -543,6 +543,64 @@ static int AP_BoxesGeometryHere(const AP_BoxPlacement *scratch, int count, int l
 }
 
 #ifdef CTR_CUSTOM_TRACKS
+// A3-14: stand a track's boxes at its hand-placed spots, the plan's `spot`
+// fields (box_spots.py in the apworld). Retail and named custom tracks alike;
+// no weapon crate is seated or hidden (ruled 2026-11-06). The spots travel in
+// the seed, so the external placement file, which only Box Author Mode needs,
+// is not read for such a track.
+static void AP_BoxesStandSpots(struct GameTracker *gGT, const ctr_content_pad *pad)
+{
+	int i, n = 0;
+	char msg[224];
+
+	AP_BoxProbeSeedClass();
+	for (i = 0; i < pad->box_count && i < AP_BOX_SLOTS_PER_TRACK; i++)
+	{
+		const long code = (long)pad->box_locations[i];
+
+		if (code <= 0 || !AP_BoxInSeed(code, 0) || AP_BoxChecked(code, 0))
+			continue;
+		s_live[n].used = 1;
+		s_live[n].slot = pad->box_number[i] - 1;
+		s_live[n].code = code;
+		s_live[n].spawn = AP_SPAWN_INVALID;
+		s_live[n].x = pad->box_pos[i][0];
+		s_live[n].y = pad->box_pos[i][1];
+		s_live[n].z = pad->box_pos[i][2];
+		s_live[n].rotY = pad->box_rot_y[i];
+		s_live[n].ghostTouched = 0;
+		s_live[n].seated = 0;
+		s_liveCount++;
+		n++;
+	}
+	for (i = 0; i < n; i++)
+		AP_BoxesSpawnOne(gGT, i);
+
+	snprintf(msg, sizeof msg,
+	         "[AP BOX] level %d: %d of %d Item Box(es) standing at hand-placed spots from the seed%s\n",
+	         s_level, s_liveCount, pad->box_count,
+	         AP_Author_PlacementSource() == AP_PLACEMENT_SRC_FILE
+	             ? "; the external " AP_PLACEMENT_FILE " is loaded for Box Author Mode but not used for them"
+	             : "");
+	AP_LogLine(msg);
+}
+
+// The retail pad of a content plan that holds `level`'s boxes, or 0.
+static const ctr_content_pad *AP_BoxesPlanRetailPad(int level)
+{
+	int p;
+
+	if (!ap_content_plan_active())
+		return 0;
+	for (p = 0; p < 105; p++)
+	{
+		const ctr_content_pad *pad = ap_content_plan_pad(p);
+		if (pad && pad->occupied && !pad->cup && !pad->crystal && pad->retail_id == level)
+			return pad;
+	}
+	return 0;
+}
+
 // The LEV entry of the `ordinal`-th weapon crate in instance-table order, or 0.
 static struct InstDef *AP_BoxesCrateDef(struct InstDef *defs, long count, long ordinal)
 {
@@ -583,6 +641,13 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 		         "this track, or none in this seed) -- nothing spawned\n",
 		         s_level, race->physicalPad);
 		AP_LogLine(msg);
+		return;
+	}
+	// A3-14: a named track with a spot file stands its boxes there and keeps
+	// every weapon crate.
+	if (pad->box_spots)
+	{
+		AP_BoxesStandSpots(gGT, pad);
 		return;
 	}
 	if (lev == 0 || lev->ptrInstDefs == 0 || lev->numInstances == 0 ||
@@ -711,6 +776,28 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 		AP_LogLine(msg);
 		return;
 	}
+
+#ifdef CTR_CUSTOM_TRACKS
+	// A3-14: a boss race on a custom garage venue or a custom Oxide final runs
+	// custom bytes on a retail host LevelID; the host's boxes do not belong
+	// there, so none stand.
+	if (CustomTrack_OxideFinalServing(level, gGT->bossID, IS_BOSS_RACE(gGT->gameMode1)) ||
+	    CustomTrack_GarageVenueServing(level, gGT->bossID, IS_BOSS_RACE(gGT->gameMode1)) >= 0)
+	{
+		AP_LogLine("[AP BOX] boss race on a custom venue: no AP boxes from the retail host track\n");
+		return;
+	}
+	// A3-14: a plan's retail track takes its boxes from its spot set when it
+	// has one (every retail track on an alpha3 seed with boxes).
+	{
+		const ctr_content_pad *pad = AP_BoxesPlanRetailPad(level);
+		if (pad != 0 && pad->box_spots)
+		{
+			AP_BoxesStandSpots(gGT, pad);
+			return;
+		}
+	}
+#endif
 
 	AP_BoxProbeSeedClass();
 	placements = AP_BoxesSnapshotPlacements();
