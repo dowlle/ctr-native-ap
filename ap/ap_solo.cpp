@@ -1248,10 +1248,12 @@ bool RemoveDescriptorFile(const fs::path &target, std::string &detail)
 // for the old key move to the new one when it still waits for its laps and
 // pins the same files.
 bool RetireDescriptor(const std::string &key, const std::string &revision, const std::string &uuid,
-                      const std::string &keeperKey, std::string &why)
+                      const std::string &keeperKey, std::string &why, bool strict = false,
+                      const std::string &keeperRevision = std::string())
 {
+	bool removedAll = true;
 	const std::string name = AP_SoloDescriptorFileName(key, revision);
-	const std::string keeperName = AP_SoloDescriptorFileName(keeperKey, revision);
+	const std::string keeperName = AP_SoloDescriptorFileName(keeperKey, keeperRevision.empty() ? revision : keeperRevision);
 	std::error_code ec;
 	if (name.empty() || keeperName.empty() || uuid.empty() || SoloRootIsLink())
 		return true;
@@ -1285,9 +1287,13 @@ bool RetireDescriptor(const std::string &key, const std::string &revision, const
 		if (RemoveDescriptorFile(target, detail))
 			Log(std::string("retired solo/") + folder + "/" + name + ": a newer install of the same package lists the track under another key");
 		else
+		{
 			Log(std::string("could not retire solo/") + folder + "/" + name + ": " + detail);
+			removedAll = false;
+			why = "could not remove solo/" + std::string(folder) + "/" + name;
+		}
 	}
-	return true;
+	return removedAll || !strict;
 }
 
 // The one writer behind both C entry points and the store publication: kind 1
@@ -1379,6 +1385,20 @@ extern "C" int AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *r
 {
 	std::string why;
 	return RecordDescriptor(2, contentId, revision, json, DescriptorScope(), why) ? 1 : 0;
+}
+
+// The importer replaced an old copy of a track (A3-20): its Play Solo
+// descriptor key stops listing the track once the new copy lists it. Laps the
+// player picked move to the new key. 1 when nothing is left to retire.
+extern "C" int AP_Solo_RetireReplacedTrack(const char *oldKey, const char *revision, const char *uuid, const char *newKey,
+                                            const char *newRevision)
+{
+	std::string why;
+	if (!oldKey || !revision || !uuid || !newKey || !newRevision)
+		return 0;
+	if (std::strcmp(oldKey, newKey) == 0 && std::strcmp(revision, newRevision) == 0)
+		return 1;
+	return RetireDescriptor(oldKey, revision, uuid, newKey, why, true, newRevision) ? 1 : 0;
 }
 
 #ifdef CTR_CUSTOM_PACKAGES

@@ -25,11 +25,18 @@ extern "C" {
 #define XDELTA_NAME_EDITED 3     /* The player typed it at import. */
 #define XDELTA_NAME_TESTER 4     /* The curated table (patch hash and slot), from tester feedback. */
 
+/* What installing an item does to an older copy of the same patch track that
+   still has alpha1's generic "slot" title (XdeltaImportItem.oldCopy, A3-20). */
+#define XDELTA_OLD_NONE 0    /* No such copy. */
+#define XDELTA_OLD_REPLACE 1 /* The old copy is replaced by the new one. */
+#define XDELTA_OLD_KEEP 2    /* A room refers to the old copy: it stays. */
+
 struct XdeltaImportItem
 {
     int bigfileIndex;  /* -1 for a grouped line (code, other content). */
     int offered;       /* 1: an installable race track. */
     int nameSource;    /* XDELTA_NAME_*; offered items only. */
+    int oldCopy;       /* XDELTA_OLD_*; set by the scan job for offered items. */
     char title[CTR_XDELTA_TITLE_MAX];
     char tags[48];     /* "Race TT Arcade Relic CTR", offered items only. */
     char reason[CTR_XDELTA_REASON_MAX]; /* Skip reason; "" when offered. */
@@ -165,6 +172,20 @@ int XdeltaImport_InstalledDescriptorCount(void);
 int XdeltaImport_InstalledDescriptor(int index, char contentId[65], char revision[65], char *json, size_t capacity,
                                      int *needsLaps);
 void XdeltaImport_InstalledDescriptorNote(char *note, size_t size);
+
+/* A re-import replaces the old copy of the same patch track (same package
+   uuid, patch SHA-256 and slot) whose title is still alpha1's generic
+   "<name> slot <index>"; a copy with any other title stays, and so does a copy
+   a solo room refers to (its room.json names the uuid and the copy's track
+   key), which the review shows as XDELTA_OLD_KEEP. After PollInstall: the
+   copies removed, each with the track key and revision its Play Solo
+   descriptor used and the key and revision of the copy that took its place, and the number
+   kept. SetSoloRoot names the solo folder (default: "solo" beside the assets
+   folder). */
+void XdeltaImport_SetSoloRoot(const char *dir);
+int XdeltaImport_ReplacedCount(void);
+int XdeltaImport_ReplacedCopy(int index, char oldKey[65], char revision[65], char uuid[37], char newKey[65], char newRevision[65]);
+int XdeltaImport_KeptOldCopies(void);
 
 #ifdef __cplusplus
 }

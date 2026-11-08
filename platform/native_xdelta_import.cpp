@@ -918,6 +918,7 @@ struct XdeltaImportScan
     XdeltaImportSummary summary = {};
     unsigned dropped = 0; /* Items past CTR_XDELTA_ITEM_MAX. */
     std::vector<Built> built; /* Parallel to summary.items. */
+    std::string patchStem;    /* The patch file's name without its extension (A3-20). */
     ~XdeltaImportScan() { for (auto &b : built) CustomPackage_Free(&b.owned); }
 };
 
@@ -1326,6 +1327,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
         size_t offeredBytes = 0;
         std::map<std::pair<std::string, std::string>, std::string> seen;
         const std::string stem = limit_codepoints(path_stem(patchPath), 100);
+        scan->patchStem = path_stem(patchPath);
         for (const auto &c : ex.changed)
         {
             if (load_flag(cancel)) throw std::runtime_error("Cancelled");
@@ -1837,8 +1839,216 @@ void mark_newest_install(const std::string &assets, const std::string &pin)
     std::filesystem::last_write_time(manifest, std::filesystem::file_time_type::clock::now(), ec);
 }
 
+/* ---- A re-import replaces the old copy that still has alpha1's generic title
+   (A3-20). Alpha1 titled a track without a name "<patch name> slot <BIGFILE
+   index>" ("Imported track slot N" when that was no title). Only a copy of the
+   same patch track (same package uuid, patch SHA-256 and slot) with such a
+   title is replaced; a copy the player named is never touched. A copy a solo
+   room still refers to stays, and the import review says so. */
+std::string g_soloRoot;
+std::mutex &solo_root_mutex() { static auto *m = new std::mutex(); return *m; }
+
+std::string solo_root(const std::string &assets)
+{
+    {
+        std::lock_guard<std::mutex> lock(solo_root_mutex());
+        if (!g_soloRoot.empty()) return g_soloRoot;
+    }
+    size_t cut = assets.find_last_of("/\\");
+    if (cut == std::string::npos) return "solo";
+    return assets.substr(0, cut) + "/solo";
+}
+
+/* Alpha1's title of a track without a name: "<patch file name> slot <index>",
+   or "Imported track slot <index>" when that was no valid title. A name the
+   player typed that only ends in a slot number does not match. */
+bool generic_slot_title(const std::string &title, int bigfileIndex, const std::string &patchStem)
+{
+    const std::string tail = " slot " + std::to_string(bigfileIndex);
+    return title == "Imported track" + tail || title == patchStem + tail || title == limit_codepoints(patchStem, 100) + tail;
+}
+
+bool read_plain_file(const std::filesystem::path &path, size_t max, std::string &out)
+{
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(std::filesystem::symlink_status(path, ec)) || ec) return false;
+    const auto size = std::filesystem::file_size(path, ec);
+    if (ec || size > max) return false;
+    FILE *f = std::fopen(path.string().c_str(), "rb");
+    if (!f) return false;
+    out.assign((size_t)size, '\0');
+    const bool ok = out.empty() || std::fread(&out[0], 1, out.size(), f) == out.size();
+    std::fclose(f);
+    return ok;
+}
+
+struct OldCopy
+{
+    std::string pin, key, revision, lev, vrm;
+    bool pinned = false; /* A room refers to it: it stays. */
+};
+
+/* A room refers to a copy when its room.json names the package uuid and the
+   copy's track key. A room that cannot be read counts as referring to it. */
+bool room_refers_to(const std::string &assets, const std::string &uuid, const std::string &key)
+{
+    std::error_code ec;
+    const std::filesystem::path rooms = std::filesystem::u8path(solo_root(assets)) / "rooms";
+    const auto roomsStatus = std::filesystem::symlink_status(rooms, ec);
+    if (roomsStatus.type() == std::filesystem::file_type::not_found) return false;
+    if (ec || !std::filesystem::is_directory(roomsStatus)) return true;
+    int seen = 0;
+    for (std::filesystem::directory_iterator it(rooms, ec), end; !ec && it != end; it.increment(ec), seen++)
+    {
+        if (seen >= 4096) return true;
+        std::error_code de;
+        const auto roomStatus = it->symlink_status(de);
+        if (de) return true;
+        if (!std::filesystem::is_directory(roomStatus)) continue;
+        const std::filesystem::path file = it->path() / "room.json";
+        const auto fileStatus = std::filesystem::symlink_status(file, de);
+        if (fileStatus.type() == std::filesystem::file_type::not_found) continue;
+        if (de) return true;
+        std::string text;
+        if (!read_plain_file(file, 16u << 20, text)) return true;
+        if (text.find(uuid) != std::string::npos &&
+            (text.find("\"" + key + "\"") != std::string::npos || text.find("package/" + key + "/") != std::string::npos))
+            return true;
+    }
+    return !!ec;
+}
+
+/* The installed copies of this patch track other than `newPin` that still have
+   the generic slot title. */
+std::vector<OldCopy> generic_old_copies(const std::string &assets, const std::string &patchSha256, const std::string &patchStem, int bigfileIndex,
+                                        const std::string &newPin, const std::string &newKey,
+                                        const std::string &newRevision, const std::string &newLev, const std::string &newVrm)
+{
+    std::vector<OldCopy> found;
+    char uuidText[37];
+    XdeltaImport_PackageUuid(patchSha256.c_str(), bigfileIndex, uuidText);
+    const std::string uuid = uuidText;
+    std::error_code ec;
+    const std::filesystem::path store = std::filesystem::u8path(assets) / "tracks" / "packages";
+    int seen = 0;
+    for (std::filesystem::directory_iterator it(store, ec), end; !ec && it != end && seen < 4096; it.increment(ec), seen++)
+    {
+        const std::string pin = it->path().filename().string();
+        std::error_code de;
+        if (pin.size() != 64 || pin == newPin || !std::filesystem::is_directory(it->symlink_status(de)) ||
+            pin.find_first_not_of("0123456789abcdef") != std::string::npos)
+            continue;
+        std::string manifestText, sourceText;
+        if (!read_plain_file(it->path() / "manifest.json", 1u << 20, manifestText) ||
+            hex_sha256(manifestText.data(), manifestText.size()) != pin)
+            continue;
+        OldCopy c;
+        try
+        {
+            const json m = json::parse(manifestText, nullptr, false);
+            if (!m.is_object() || m.value("package_uuid", std::string()) != uuid) continue;
+            const std::string title = m.value("title", std::string());
+            if (!generic_slot_title(title, bigfileIndex, patchStem)) continue;
+            if (!read_plain_file(it->path() / "metadata" / "xdelta-source.json", 1u << 20, sourceText)) continue;
+            const json src = json::parse(sourceText, nullptr, false);
+            if (!src.is_object() || src.value("patch_sha256", std::string()) != patchSha256 ||
+                src.value("bigfile_index", -1) != bigfileIndex)
+                continue;
+            c.pin = pin;
+            /* The room folder key: a pack descriptor's track_key, otherwise the title's. */
+            c.key = src.value("track_key", std::string());
+            if (c.key.empty() || !track_key_valid(c.key)) c.key = title_track_key(title);
+            c.revision = m.value("version", std::string());
+            if (m.contains("files") && m["files"].is_array())
+                for (const auto &f : m["files"])
+                {
+                    if (f.value("role", std::string()) == "lev") c.lev = f.value("sha256", std::string());
+                    if (f.value("role", std::string()) == "vrm") c.vrm = f.value("sha256", std::string());
+                }
+        }
+        catch (const std::exception &) { continue; }
+        /* The new copy answers the same pins when key, version and both files agree. */
+        const bool answers = c.key == newKey && c.revision == newRevision && c.lev == newLev && c.vrm == newVrm;
+        c.pinned = !answers && room_refers_to(assets, uuid, c.key);
+        found.push_back(c);
+    }
+    return found;
+}
+
+/* XDELTA_OLD_* of an offered item: what installing it does to an old copy. */
+int old_copy_state(const std::string &assets, const XdeltaImportSummary &summary, const std::string &patchStem,
+                   const XdeltaImportItem &item, const Built &b)
+{
+    if (!item.offered || !b.owned || assets.empty()) return XDELTA_OLD_NONE;
+    int state = XDELTA_OLD_NONE;
+    for (const OldCopy &c : generic_old_copies(assets, summary.patchSha256, patchStem, item.bigfileIndex, item.pin, item.trackKey,
+                                               b.version, item.levSha256, item.vrmSha256))
+    {
+        if (c.pinned) return XDELTA_OLD_KEEP;
+        state = XDELTA_OLD_REPLACE;
+    }
+    return state;
+}
+
+struct ReplacedCopy { std::string oldKey, revision, uuid, newKey, newRevision; };
+struct ReplaceOutcome { std::vector<ReplacedCopy> replaced; int kept = 0; };
+
+/* ".replaced-<16 hex of the pin>-<8 hex>": the only folder names this feature stages. */
+bool staged_name(const std::string &name)
+{
+    if (name.size() != 35 || name.compare(0, 10, ".replaced-") != 0 || name[26] != '-') return false;
+    for (size_t i = 10; i < name.size(); i++)
+        if (i != 26 && !std::isxdigit((unsigned char)name[i])) return false;
+    return true;
+}
+
+/* Take the replaceable old copies of one installed item out of the store: the
+   directory is renamed to a name the store scan ignores, then removed. A copy
+   that cannot be taken out stays installed. */
+void replace_old_copies(const std::string &assets, const XdeltaImportSummary &summary, const std::string &patchStem,
+                        const XdeltaImportItem &item, const Built &b, ReplaceOutcome &out)
+{
+    char uuid[37];
+    XdeltaImport_PackageUuid(summary.patchSha256, item.bigfileIndex, uuid);
+    const std::filesystem::path store = std::filesystem::u8path(assets) / "tracks" / "packages";
+    const std::vector<OldCopy> copies = generic_old_copies(assets, summary.patchSha256, patchStem, item.bigfileIndex, item.pin,
+                                                           item.trackKey, b.version, item.levSha256, item.vrmSha256);
+    if (std::any_of(copies.begin(), copies.end(), [](const OldCopy &c) { return !c.pinned; }))
+    {
+        /* Folders of this feature's own name left by a removal that failed part way. */
+        std::error_code sweep;
+        for (std::filesystem::directory_iterator it(store, sweep), end; !sweep && it != end; it.increment(sweep))
+        {
+            std::error_code de;
+            if (staged_name(it->path().filename().string()) && std::filesystem::is_directory(it->symlink_status(de)))
+                std::filesystem::remove_all(it->path(), de);
+        }
+    }
+    for (const OldCopy &c : copies)
+    {
+        if (c.pinned) { out.kept++; continue; }
+        std::error_code ec;
+        /* A name nothing else uses: the rename fails rather than merge into a folder that exists. */
+        std::random_device device;
+        std::filesystem::path staged;
+        for (int attempt = 0; attempt < 8; attempt++)
+        {
+            char suffix[16];
+            std::snprintf(suffix, sizeof suffix, "%08x", (unsigned)device());
+            staged = store / (".replaced-" + c.pin.substr(0, 16) + "-" + suffix);
+            if (!std::filesystem::exists(std::filesystem::symlink_status(staged, ec))) break;
+            staged.clear();
+        }
+        if (staged.empty()) continue;
+        std::filesystem::rename(store / c.pin, staged, ec);
+        if (ec) continue;
+        std::filesystem::remove_all(staged, ec);
+        out.replaced.push_back({c.key, c.revision, uuid, item.trackKey, b.version});
+    }
+}
+
 int install_items(const XdeltaImportScan *scan, const unsigned char *selected, const char *assets, int where,
-                  char *error, size_t errorSize, std::vector<unsigned int> *done)
+                  char *error, size_t errorSize, std::vector<unsigned int> *done, ReplaceOutcome *replaced = nullptr)
 {
     if (error && errorSize) error[0] = 0;
     if (!scan || !selected || !assets || !(where & (CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM))) return -1;
@@ -1858,7 +2068,12 @@ int install_items(const XdeltaImportScan *scan, const unsigned char *selected, c
             }
             return -1;
         }
-        if (where & CTR_XDELTA_INSTALL_PACKAGES) mark_newest_install(assets, scan->built[i].pin);
+        if (where & CTR_XDELTA_INSTALL_PACKAGES)
+        {
+            mark_newest_install(assets, scan->built[i].pin);
+            ReplaceOutcome local;
+            replace_old_copies(assets, scan->summary, scan->patchStem, item, scan->built[i], replaced ? *replaced : local);
+        }
         if (where & CTR_XDELTA_INSTALL_ROOM)
         {
             try
@@ -2282,6 +2497,8 @@ struct JobState
     /* The last install's Play Solo descriptors, and why a track got none. */
     std::vector<KeptDescriptor> descriptors;
     std::string descriptorNote;
+    /* The old slot-titled copies the last install replaced or kept (A3-20). */
+    ReplaceOutcome replaceOutcome;
     /* The patch being imported, for the record of applied patches. */
     std::string patchName, assetsRoot;
     unsigned long long patchBytes = 0;
@@ -2333,6 +2550,11 @@ extern "C" int XdeltaImport_StartScan(const char *patchPath, const char *discPat
             {
                 sha = result->summary.patchSha256;
                 set_text(result->summary.history, sizeof result->summary.history, history_note(root, sha));
+                for (unsigned i = 0; i < result->summary.count && i < result->built.size(); i++)
+                {
+                    try { result->summary.items[i].oldCopy = old_copy_state(root, result->summary, result->patchStem, result->summary.items[i], result->built[i]); }
+                    catch (const std::exception &) {}
+                }
             }
             else if (std::strcmp(error, "Cancelled"))
                 record_outcome(root, "", name, bytes, 0, {}, error);
@@ -2366,6 +2588,7 @@ extern "C" int XdeltaImport_StartInstall(const unsigned char *selected, unsigned
     s.installState = 0;
     s.descriptors.clear();
     s.descriptorNote.clear();
+    s.replaceOutcome = ReplaceOutcome();
     try
     {
         std::vector<unsigned char> chosen(selected, selected + count);
@@ -2375,6 +2598,7 @@ extern "C" int XdeltaImport_StartInstall(const unsigned char *selected, unsigned
             auto &state = job();
             char error[512];
             std::vector<unsigned int> done;
+            ReplaceOutcome outcome;
             int n = 0;
             /* A name the player typed rebuilds that package under the new title first. */
             for (const auto &t : titles)
@@ -2387,7 +2611,7 @@ extern "C" int XdeltaImport_StartInstall(const unsigned char *selected, unsigned
                     break;
                 }
             }
-            if (n == 0) n = install_items(state.scan, chosen.data(), root.c_str(), where, error, sizeof error, &done);
+            if (n == 0) n = install_items(state.scan, chosen.data(), root.c_str(), where, error, sizeof error, &done, &outcome);
             {
                 std::string name, sha = state.scan ? state.scan->summary.patchSha256 : "";
                 unsigned long long bytes;
@@ -2413,6 +2637,7 @@ extern "C" int XdeltaImport_StartInstall(const unsigned char *selected, unsigned
             std::lock_guard<std::mutex> lock(state.mutex);
             state.descriptors = std::move(kept);
             state.descriptorNote = note;
+            state.replaceOutcome = std::move(outcome);
             state.installed = n < 0 ? 0 : n;
             state.error = n < 0 ? error : "";
             state.installState = n < 0 ? -2 : 1;
@@ -2652,6 +2877,52 @@ extern "C" int XdeltaImport_InstalledDescriptor(int index, char contentId[65], c
     std::memcpy(json, d.json.c_str(), d.json.size() + 1);
     if (needsLaps) *needsLaps = d.needsLaps ? 1 : 0;
     return 1;
+}
+
+#ifdef CTR_XDELTA_TESTING
+/* Harness only: the XDELTA_OLD_* state the scan job gives an item. */
+extern "C" int XdeltaImport_TestOldCopyState(const XdeltaImportScan *scan, unsigned int item, const char *assets)
+{
+    if (!scan || item >= scan->summary.count || item >= scan->built.size() || !assets) return -1;
+    return old_copy_state(assets, scan->summary, scan->patchStem, scan->summary.items[item], scan->built[item]);
+}
+#endif
+
+extern "C" void XdeltaImport_SetSoloRoot(const char *dir)
+{
+    std::string root = dir ? dir : "";
+    while (root.size() > 1 && (root.back() == '/' || root.back() == '\\')) root.pop_back();
+    std::lock_guard<std::mutex> lock(solo_root_mutex());
+    g_soloRoot = root;
+}
+
+extern "C" int XdeltaImport_ReplacedCount(void)
+{
+    auto &s = job();
+    std::lock_guard<std::mutex> guard(s.mutex);
+    return s.installState == 0 ? 0 : (int)s.replaceOutcome.replaced.size();
+}
+
+extern "C" int XdeltaImport_ReplacedCopy(int index, char oldKey[65], char revision[65], char uuid[37], char newKey[65], char newRevision[65])
+{
+    auto &s = job();
+    std::lock_guard<std::mutex> guard(s.mutex);
+    if (s.installState == 0 || index < 0 || index >= (int)s.replaceOutcome.replaced.size() || !oldKey || !revision || !uuid || !newKey || !newRevision)
+        return 0;
+    const auto &r = s.replaceOutcome.replaced[(size_t)index];
+    std::snprintf(oldKey, 65, "%s", r.oldKey.c_str());
+    std::snprintf(revision, 65, "%s", r.revision.c_str());
+    std::snprintf(uuid, 37, "%s", r.uuid.c_str());
+    std::snprintf(newKey, 65, "%s", r.newKey.c_str());
+    std::snprintf(newRevision, 65, "%s", r.newRevision.c_str());
+    return 1;
+}
+
+extern "C" int XdeltaImport_KeptOldCopies(void)
+{
+    auto &s = job();
+    std::lock_guard<std::mutex> guard(s.mutex);
+    return s.installState == 0 ? 0 : s.replaceOutcome.kept;
 }
 
 extern "C" void XdeltaImport_InstalledDescriptorNote(char *note, size_t size)

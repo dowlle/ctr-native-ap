@@ -48,6 +48,7 @@ extern "C" int XdeltaImportTest_InstallDescriptors(const XdeltaImportScan *scan,
                                                    size_t noteSize);
 extern "C" const char *XdeltaImportTest_KnownName(const char *levSha256);
 extern "C" const char *XdeltaImportTest_CuratedName(const char *patchSha256, int bigfileIndex);
+extern "C" int XdeltaImport_TestOldCopyState(const XdeltaImportScan *scan, unsigned int item, const char *assets);
 extern "C" void XdeltaImportTest_AddCurated(const char *patchSha256, int bigfileIndex, const char *name);
 extern "C" void XdeltaImportTest_History(const char *assets, const char *sha, char *out, size_t size);
 extern "C" void XdeltaImportTest_PackLabel(const char *stem, char *out, size_t size);
@@ -1353,6 +1354,195 @@ int main()
         int sameUuid = 0;
         for (const auto &e : rows) sameUuid += !std::strcmp(e.manifest.uuid, uuid);
         CHECK(sameUuid == 2, "A3-29 the two names are two packages of one uuid, which Play Solo folds to the newest");
+    }
+    /* A3-20: a re-import replaces the old copy that still has alpha1's
+       generic "slot" title, and nothing else. */
+    {
+        const Bytes patchBytes = encode(baseDisc, patchedDisc);
+        const std::string patch = write_file("Replace.xdelta", patchBytes);
+        DiscSpec changed = base;
+        LevSpec otherSpec; otherSpec.seed = 77;
+        changed.bigfile[1] = make_lev(otherSpec);
+        const Bytes otherBytes = encode(baseDisc, make_disc(changed));
+        const std::string otherPatch = write_file("Different.xdelta", otherBytes);
+        int serial = 0;
+        auto fresh = [&]() {
+            const std::string home = root + "/a320-" + std::to_string(++serial);
+            mkdir(home.c_str(), 0755);
+            const std::string assets = home + "/assets";
+            mkdir(assets.c_str(), 0755);
+            return assets;
+        };
+        /* Installs the patch's track 1 under `name` (default label when null); returns its pin. */
+        auto importAs = [&](const std::string &assets, const std::string &patchFile, const char *name, int expectState = -1) {
+            std::string pin;
+            ScanResult r = scan(patchFile, discPath);
+            CHECK(r.ok, "A3-20 scan");
+            if (!r.ok) return pin;
+            const XdeltaImportSummary *s = XdeltaImport_Summary(r.scan);
+            unsigned index = (unsigned)(item_for(s, 1) - s->items);
+            char why[96], error[256];
+            if (name) CHECK(XdeltaImport_RenameItem(r.scan, index, name, why, sizeof why), "A3-20 rename");
+            if (expectState >= 0)
+                CHECK(XdeltaImport_TestOldCopyState(r.scan, index, assets.c_str()) == expectState, "A3-20 the review state of the item");
+            std::vector<unsigned char> chosen(s->count, 0);
+            chosen[index] = 1;
+            CHECK(XdeltaImport_Install(r.scan, chosen.data(), assets.c_str(), CTR_XDELTA_INSTALL_PACKAGES, error, sizeof error) == 1,
+                  "A3-20 install");
+            pin = s->items[index].pin;
+            XdeltaImport_Free(&r.scan);
+            return pin;
+        };
+        auto packages = [&](const std::string &assets) {
+            std::vector<std::string> titles;
+            std::vector<CustomPackageStoreEntry> rows;
+            char error[256];
+            CustomPackage_ScanStore((assets + "/tracks/packages").c_str(),
+                [](const CustomPackageStoreEntry *e, void *c) { if (e->verified) ((std::vector<CustomPackageStoreEntry> *)c)->push_back(*e); },
+                &rows, error, sizeof error);
+            for (const auto &e : rows) titles.push_back(e.manifest.title);
+            return titles;
+        };
+        auto exists = [&](const std::string &assets, const std::string &pin) {
+            struct stat info;
+            return !stat((assets + "/tracks/packages/" + pin + "/manifest.json").c_str(), &info);
+        };
+        auto room = [&](const std::string &assets, const char *id, const std::string &text) {
+            const std::string solo = assets.substr(0, assets.rfind('/')) + "/solo";
+            mkdir(solo.c_str(), 0755);
+            mkdir((solo + "/rooms").c_str(), 0755);
+            mkdir((solo + "/rooms/" + id).c_str(), 0755);
+            write_path(solo + "/rooms/" + id + "/room.json", Bytes(text.begin(), text.end()));
+        };
+        char uuid[37];
+        {
+            ScanResult probe = scan(patch, discPath);
+            if (probe.ok) XdeltaImport_PackageUuid(XdeltaImport_Summary(probe.scan)->patchSha256, 1, uuid);
+            XdeltaImport_Free(&probe.scan);
+        }
+
+        /* An alpha1-titled copy is replaced: one package, with the new name. */
+        {
+            const std::string assets = fresh();
+            const std::string oldPin = importAs(assets, patch, "Replace slot 1");
+            CHECK(packages(assets).size() == 1, "A3-20 the old copy is installed");
+            mkdir((assets + "/tracks/packages/.replaced-archive").c_str(), 0755);
+            write_path(assets + "/tracks/packages/.replaced-archive/keep.txt", Bytes(3, 'x'));
+            const std::string newPin = importAs(assets, patch, nullptr, XDELTA_OLD_REPLACE);
+            struct stat kept;
+            CHECK(!stat((assets + "/tracks/packages/.replaced-archive/keep.txt").c_str(), &kept), "A3-20 a folder of the player's with a similar name is left alone");
+            const auto titles = packages(assets);
+            CHECK(titles.size() == 1 && titles[0] != "Replace slot 1" && !exists(assets, oldPin) && exists(assets, newPin),
+                  "A3-20 an alpha1-titled copy is replaced by the new one");
+            const std::string again = importAs(assets, patch, nullptr, XDELTA_OLD_NONE);
+            CHECK(again == newPin && packages(assets).size() == 1, "A3-20 importing the new copy again changes nothing");
+        }
+        /* "Imported track slot 1" is alpha1's title when the patch name gave none. */
+        {
+            const std::string assets = fresh();
+            const std::string oldPin = importAs(assets, patch, "Imported track slot 1");
+            const std::string newPin = importAs(assets, patch, "Brand New Name");
+            CHECK(packages(assets).size() == 1 && !exists(assets, oldPin) && exists(assets, newPin),
+                  "A3-20 the generic title without a patch name is replaced too");
+        }
+        /* A copy the player named is kept; so is one whose slot number is another track's. */
+        {
+            const std::string assets = fresh();
+            const std::string mine = importAs(assets, patch, "My Hand Named Copy");
+            const std::string wrongSlot = importAs(assets, patch, "Replace slot 7");
+            const std::string typed = importAs(assets, patch, "My Favorite slot 1");
+            const std::string newPin = importAs(assets, patch, nullptr, XDELTA_OLD_NONE);
+            CHECK(packages(assets).size() == 4 && exists(assets, mine) && exists(assets, wrongSlot) && exists(assets, typed) && exists(assets, newPin),
+                  "A3-20 a renamed copy is never replaced, also one that ends in the matching slot");
+        }
+        /* A room that names the old copy keeps it. */
+        {
+            const std::string assets = fresh();
+            const std::string oldPin = importAs(assets, patch, "Replace slot 1");
+            room(assets, "aaaa", std::string("{\"custom_tracks\":[{\"id\":\"package/replace-slot-1/1.0.0\",\"content_id\":\"replace-slot-1\",\"uuid\":\"") + uuid + "\"}]}");
+            const std::string newPin = importAs(assets, patch, nullptr, XDELTA_OLD_KEEP);
+            CHECK(packages(assets).size() == 2 && exists(assets, oldPin) && exists(assets, newPin),
+                  "A3-20 a copy a room refers to is kept");
+        }
+        /* A room about another track, or an unreadable room.json, decides correctly. */
+        {
+            const std::string assets = fresh();
+            const std::string oldPin = importAs(assets, patch, "Replace slot 1");
+            room(assets, "bbbb", std::string("{\"custom_tracks\":[{\"content_id\":\"somebody-else\",\"uuid\":\"") + uuid + "\"}]}");
+            room(assets, "cccc", "{\"custom_tracks\":[{\"content_id\":\"replace-slot-1\",\"uuid\":\"00000000-0000-5000-8000-000000000000\"}]}");
+            const std::string newPin = importAs(assets, patch, nullptr, XDELTA_OLD_REPLACE);
+            CHECK(packages(assets).size() == 1 && !exists(assets, oldPin) && exists(assets, newPin),
+                  "A3-20 a room about other tracks does not hold the old copy");
+        }
+        {
+            const std::string assets = fresh();
+            const std::string oldPin = importAs(assets, patch, "Replace slot 1");
+            const std::string home = assets.substr(0, assets.rfind('/'));
+            mkdir((home + "/solo").c_str(), 0755);
+            mkdir((home + "/solo/rooms").c_str(), 0755);
+            mkdir((home + "/solo/rooms/dddd").c_str(), 0755);
+            mkdir((home + "/solo/rooms/dddd/room.json").c_str(), 0755);
+            const std::string newPin = importAs(assets, patch, nullptr, XDELTA_OLD_KEEP);
+            CHECK(packages(assets).size() == 2 && exists(assets, oldPin), "A3-20 a room that cannot be read keeps the old copy");
+        }
+        /* A room that names the old copy by its descriptor's track key keeps it. */
+        {
+            const std::string assets = fresh();
+            nlohmann::json d = {{"descriptor_version", 1}, {"patch_sha256", sha_hex(patchBytes)},
+                                {"tracks", {{"1", {{"title", "Replace slot 1"}, {"laps", 3}, {"track_key", "chosen-by-pack"}}}}}};
+            const std::string text = d.dump();
+            const std::string descriptorPath = write_file("Replace.ctrpack.json", Bytes(text.begin(), text.end()));
+            ScanResult r = scan(patch, discPath, descriptorPath.c_str());
+            CHECK(r.ok, "A3-20 scan with a track key");
+            if (r.ok)
+            {
+                const XdeltaImportSummary *s = XdeltaImport_Summary(r.scan);
+                std::vector<unsigned char> chosen(s->count, 0);
+                chosen[(unsigned)(item_for(s, 1) - s->items)] = 1;
+                char error[256];
+                CHECK(XdeltaImport_Install(r.scan, chosen.data(), assets.c_str(), CTR_XDELTA_INSTALL_PACKAGES, error, sizeof error) == 1,
+                      "A3-20 install with a track key");
+                XdeltaImport_Free(&r.scan);
+            }
+            std::remove(descriptorPath.c_str());
+            room(assets, "ffff", std::string("{\"x\":\"chosen-by-pack\",\"u\":\"") + uuid + "\"}");
+            const std::string newPin = importAs(assets, patch, nullptr, XDELTA_OLD_KEEP);
+            CHECK(packages(assets).size() == 2 && exists(assets, newPin), "A3-20 a room naming the descriptor's track key keeps the old copy");
+        }
+        /* A damaged manifest in the store neither stops the scan nor is touched. */
+        {
+            const std::string assets = fresh();
+            importAs(assets, patch, "Replace slot 1");
+            const std::string text = "{\"package_uuid\": 5, \"title\": 7}";
+            const std::string bad = sha_hex(Bytes(text.begin(), text.end()));
+            mkdir((assets + "/tracks/packages/" + bad).c_str(), 0755);
+            write_path(assets + "/tracks/packages/" + bad + "/manifest.json", Bytes(text.begin(), text.end()));
+            const std::string newPin = importAs(assets, patch, nullptr, XDELTA_OLD_REPLACE);
+            CHECK(exists(assets, newPin) && exists(assets, bad), "A3-20 a damaged manifest in the store is skipped");
+        }
+        /* A different patch is untouched, even with the same slot and a slot title. */
+        {
+            const std::string assets = fresh();
+            const std::string other = importAs(assets, otherPatch, "Different slot 1");
+            const std::string mine = importAs(assets, patch, nullptr, XDELTA_OLD_NONE);
+            CHECK(packages(assets).size() == 2 && exists(assets, other) && exists(assets, mine),
+                  "A3-20 a different patch's slot-titled copy is untouched");
+        }
+        /* The solo folder named by the client is the one read. */
+        {
+            const std::string assets = fresh();
+            const std::string elsewhere = root + "/a320-solo-elsewhere";
+            mkdir(elsewhere.c_str(), 0755);
+            mkdir((elsewhere + "/rooms").c_str(), 0755);
+            mkdir((elsewhere + "/rooms/eeee").c_str(), 0755);
+            const std::string text = std::string("{\"x\":\"replace-slot-1\",\"u\":\"") + uuid + "\"}";
+            write_path(elsewhere + "/rooms/eeee/room.json", Bytes(text.begin(), text.end()));
+            XdeltaImport_SetSoloRoot(elsewhere.c_str());
+            const std::string oldPin = importAs(assets, patch, "Replace slot 1");
+            const std::string newPin = importAs(assets, patch, nullptr, XDELTA_OLD_KEEP);
+            XdeltaImport_SetSoloRoot(nullptr);
+            CHECK(packages(assets).size() == 2 && exists(assets, oldPin) && exists(assets, newPin), "A3-20 SetSoloRoot names the folder read for rooms");
+        }
     }
     /* A3-15: the curated table of tester names, keyed by patch hash and slot. */
     {
