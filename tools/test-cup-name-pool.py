@@ -78,11 +78,19 @@ def width(text):
 cups = registry["cups"]
 names = [c["name"] for c in cups]
 FROZEN = 27
+FROZEN_NAMES = [
+    "Patries Cup", "Icebound Cup", "Taor Cup", "JurnthReinal Cup", "Lockheart Cup",
+    "Hypnoshark Cup", "Appie Cup", "TheCodingBob Cup", "Superstarxalien Cup",
+    "TheRedhotbr Cup", "Avery Cup", "MarioSpore Cup", "Venusyprime Cup", "BEXUS99 Cup",
+    "Bethany Cup", "Niko1Point0 Cup", "Aalhendi Cup", "MateusFavarin Cup",
+    "TheUbMunster Cup", "Kabarakh Cup", "DragRedSim Cup", "Stroodlydoodles Cup",
+    "Bob90 Cup", "Turbo Cup", "Relic Cup", "Multiworld Cup", "Sphere Cup",
+]
 NEW = ["Cristichi Cup", "FruitLion8 Cup", "TayWoodz Cup", "MeD Cup", "Lionboy Cup",
        "MisterShaokahn Cup", "Sturg Cup", "Prototyp_002 Cup", "Em Cup"]
 
 check("pool has the 27 frozen names and the nine alpha3 names", len(cups) == FROZEN + len(NEW))
-check("names 0 and 26 are Patries Cup and Sphere Cup", names[0] == "Patries Cup" and names[26] == "Sphere Cup")
+check("the 27 frozen names are unchanged and in order", names[:FROZEN] == FROZEN_NAMES)
 check("the nine alpha3 names follow Sphere Cup in order", names[FROZEN:] == NEW)
 check("names are unique", len(set(names)) == len(names))
 check("frozen names keep 35027000 + i and 35027200 + i",

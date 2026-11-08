@@ -16,8 +16,8 @@ tools/test-content-plan-parity.py runs the same comparison through the
 apworld's own loader.
 """
 import argparse
+import ast
 import json
-import os
 from pathlib import Path
 import re
 import sys
@@ -34,14 +34,24 @@ def named_blocks(apworld: Path):
 
 
 def cup_pool(apworld: Path):
-    """The apworld's CUP_NAMES with their location codes, read from the live world
-    the way tools/test-content-plan-parity.py does."""
-    os.environ.setdefault("SKIP_REQUIREMENTS_UPDATE", "1")
-    sys.path.insert(0, str(apworld.resolve()))
-    from worlds.ctr import cup_checks, ctrAPWorld
-    ids = ctrAPWorld.location_name_to_id
-    return [dict(name=n, win=ids[cup_checks.cup_win_name(n)], sweep=ids[cup_checks.cup_sweep_name(n)])
-            for n in cup_checks.CUP_NAMES]
+    """The apworld's CUP_NAMES with their location codes, read from worlds/ctr/cup_checks.py
+    as source (no import, so no Archipelago environment is needed). Index i < 27 owns
+    base + i; a later name takes the growth range, base + 100 + (i - 27), because
+    35027027 is Cortex Vortex's Cup Leg Victory (cup_checks._pool_code).
+    tools/test-content-plan-parity.py checks the result against the live world."""
+    tree = ast.parse((apworld / "worlds/ctr/cup_checks.py").read_text(encoding="utf-8"))
+    consts = {}
+    for node in tree.body:
+        target = node.target if isinstance(node, ast.AnnAssign) else node.targets[0] if isinstance(node, ast.Assign) else None
+        if isinstance(target, ast.Name) and target.id in ("CUP_NAMES", "CUP_WIN_CODE_BASE", "CUP_WIN_GROWTH_BASE",
+                                                          "CUP_SWEEP_CODE_BASE", "CUP_SWEEP_GROWTH_BASE"):
+            consts[target.id] = ast.literal_eval(node.value)
+
+    def code(base, growth, i):
+        return base + i if i < 27 else growth + i - 27
+    return [dict(name=n, win=code(consts["CUP_WIN_CODE_BASE"], consts["CUP_WIN_GROWTH_BASE"], i),
+                 sweep=code(consts["CUP_SWEEP_CODE_BASE"], consts["CUP_SWEEP_GROWTH_BASE"], i))
+            for i, n in enumerate(consts["CUP_NAMES"])]
 
 
 def main():
