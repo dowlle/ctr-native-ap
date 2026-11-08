@@ -351,6 +351,14 @@ bool unsupported_lev_map(const unsigned char *p, size_t size)
            (unsigned long long)instances + (unsigned long long)count * 0x40 <= map;
 }
 
+size_t cut_lev(const unsigned char *p, size_t size);
+
+/* Either level map form, as the scan below recognizes it. */
+bool lev_shaped(const std::vector<unsigned char> &b)
+{
+    return cut_lev(b.data(), b.size()) || unsupported_lev_map(b.data(), b.size());
+}
+
 size_t cut_lev(const unsigned char *p, size_t size)
 {
     if (size < 0x200) return 0;
@@ -883,6 +891,8 @@ struct Built
     std::string manifest, pin;
     std::string originalLevHash;
     size_t originalLevBytes = 0;
+    /* The BIGFILE entry the VRM came from, when it is not the entry before the LEV. */
+    uint32_t followingVrm = 0;
     CustomPackageOwned *owned = nullptr;
     /* From the pack descriptor, for the Play Solo descriptor. */
     std::string author;
@@ -1098,6 +1108,7 @@ struct Candidate
     std::vector<unsigned char> lev, vrm;
     std::string originalLevHash;
     size_t originalLevBytes = 0;
+    uint32_t followingVrm = 0;
 };
 
 std::string json_dump(const json &value) { return value.dump(-1, ' ', false, json::error_handler_t::strict); }
@@ -1109,6 +1120,7 @@ Built build_package(const Candidate &c, const std::string &title, const std::str
     Built b;
     b.originalLevHash = c.originalLevHash;
     b.originalLevBytes = c.originalLevBytes;
+    b.followingVrm = c.followingVrm;
     const std::string levHash = hex_sha256(c.lev.data(), c.lev.size());
     const std::string vrmHash = hex_sha256(c.vrm.data(), c.vrm.size());
     json source = {{"schema_version", 1}, {"provider", "xdelta"}, {"patch_sha256", summary.patchSha256},
@@ -1123,6 +1135,7 @@ Built build_package(const Candidate &c, const std::string &title, const std::str
         source["normalized_lev_sha256"] = levHash;
         source["normalized_lev_bytes"] = c.lev.size();
     }
+    if (c.followingVrm) source["vrm_bigfile_index"] = c.followingVrm;
     if (!author.empty()) source["author"] = author;
     if (meta && meta->excludeRelic) source["excluded"].push_back("relic");
     if (meta && meta->excludeTokens) source["excluded"].push_back("ctr_tokens");
@@ -1321,6 +1334,12 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                 throw std::runtime_error("Cannot read the import scratch file");
             return bytes;
         };
+        /* Patched-table bytes for a neighbour: an entry the patch removed or
+           emptied is empty, never the retail bytes it replaced. */
+        auto patched_entry = [&](uint32_t index) -> std::vector<unsigned char> {
+            if (index >= ex.entries.size() || !ex.entries[index].second) return {};
+            return entry_bytes(index);
+        };
         std::set<uint32_t> consumed;
         std::vector<XdeltaImportItem> unsupportedLevels;
         unsigned ordinal = 0;
@@ -1328,10 +1347,12 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
         std::map<std::pair<std::string, std::string>, std::string> seen;
         const std::string stem = limit_codepoints(path_stem(patchPath), 100);
         scan->patchStem = path_stem(patchPath);
-        for (const auto &c : ex.changed)
-        {
+        std::vector<std::pair<const ChangedEntry *, size_t>> deferred;
+        bool deferredPass = false;
+        size_t refusalSlot = 0, refusalsInserted = 0;
+        auto consider = [&](const ChangedEntry &c) {
             if (load_flag(cancel)) throw std::runtime_error("Cancelled");
-            if (c.scratch < 0) continue;
+            if (c.scratch < 0) return;
             auto lev = entry_bytes(c.index);
             std::string originalLevHash;
             size_t originalLevBytes = 0;
@@ -1347,7 +1368,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                     consumed.insert(c.index);
                     unsupportedLevels.push_back(skip_item((int)c.index, "Level " + std::to_string(c.index),
                                                          "Level format not supported: " + why));
-                    continue;
+                    return;
                 }
             }
             size_t levCut = cut_lev(lev.data(), lev.size());
@@ -1359,31 +1380,61 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                     unsupportedLevels.push_back(skip_item((int)c.index, "Level " + std::to_string(c.index),
                         !levCut ? "Files failed checks: normalized level cutter" : "No preceding texture file"));
                 }
-                continue;
+                return;
             }
             /* A LEV pairs with the VRM before it in its BIGFILE group. A
                LEV-shaped entry without one (racer models and the like) is
                not a track and lands in the grouped "other" line. */
             auto vrm = entry_bytes(c.index - 1);
             size_t vrmCut = cut_vrm(vrm.data(), vrm.size());
+            /* Some packs append a level and then its VRM. The entry after is
+               tried only when the one before is not a texture file, the patch
+               wrote it, it is exactly one VRM, and it does not already lead
+               the next level. That pair is kept only when it is offered as a
+               race; anything short of that keeps the original refusal. */
+            const bool following = !vrmCut && byIndex.count(c.index + 1) && !lev_shaped(patched_entry(c.index + 2));
+            /* Following pairs come after every ordinary pair, so they never
+               renumber, rename or re-pin a track offered before this rule. */
+            if (following && !deferredPass)
+            {
+                deferred.push_back({&c, unsupportedLevels.size()});
+                return;
+            }
+            if (following)
+            {
+                vrm = patched_entry(c.index + 1);
+                vrmCut = cut_vrm(vrm.data(), vrm.size());
+                if (vrmCut != vrm.size() || lev_shaped(vrm)) vrmCut = 0;
+            }
+            auto refuse_texture = [&]() {
+                if (!normalized) return;
+                consumed.insert(c.index);
+                XdeltaImportItem refusal = skip_item((int)c.index, "Level " + std::to_string(c.index), "No valid preceding texture file");
+                /* A deferred refusal keeps the diagnostic position it always had. */
+                if (deferredPass) unsupportedLevels.insert(unsupportedLevels.begin() + (long)(refusalSlot + refusalsInserted++), refusal);
+                else unsupportedLevels.push_back(refusal);
+            };
             if (!vrmCut)
             {
-                if (normalized)
-                {
-                    consumed.insert(c.index);
-                    unsupportedLevels.push_back(skip_item((int)c.index, "Level " + std::to_string(c.index),
-                                                         "No valid preceding texture file"));
-                }
-                continue;
+                refuse_texture();
+                return;
             }
+            const uint32_t vrmIndex = following ? c.index + 1 : c.index - 1;
             consumed.insert(c.index);
             const TrackMeta *meta = nullptr;
             if (haveDescriptor && descriptor.tracks.count((int)c.index)) meta = &descriptor.tracks[(int)c.index];
             ordinal++;
-            if (byIndex.count(c.index - 1)) consumed.insert(c.index - 1);
+            if (byIndex.count(vrmIndex)) consumed.insert(vrmIndex);
+            /* A following pair that is not offered leaves no trace but the original refusal. */
+            auto undo_following = [&]() {
+                ordinal--;
+                consumed.erase(c.index);
+                consumed.erase(vrmIndex);
+                refuse_texture();
+            };
             Candidate candidate{c.index, std::vector<unsigned char>(lev.begin(), lev.begin() + (long)levCut),
                                 std::vector<unsigned char>(vrm.begin(), vrm.begin() + (long)vrmCut),
-                                originalLevHash, originalLevBytes};
+                                originalLevHash, originalLevBytes, following ? vrmIndex : 0};
             lev.clear(); lev.shrink_to_fit(); vrm.clear(); vrm.shrink_to_fit();
             const std::string levHash = hex_sha256(candidate.lev.data(), candidate.lev.size());
             const std::string vrmHash = hex_sha256(candidate.vrm.data(), candidate.vrm.size());
@@ -1417,13 +1468,15 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             auto duplicate = seen.find({levHash, vrmHash});
             if (duplicate != seen.end())
             {
+                if (following) { undo_following(); return; }
                 add_item(*scan, skip_item((int)c.index, title, "Same track as " + duplicate->second));
-                continue;
+                return;
             }
             if (offeredBytes + candidate.lev.size() + candidate.vrm.size() > kOfferedBytesMax)
             {
+                if (following) { undo_following(); return; }
                 add_item(*scan, skip_item((int)c.index, title, "Too much for one import"));
-                continue;
+                return;
             }
             std::string version = meta && !meta->version.empty() ? meta->version : "1.0.0";
             std::string author = meta && !meta->author.empty() ? meta->author : descriptor.packAuthor;
@@ -1448,9 +1501,10 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             set_text(item.vrmSha256, sizeof item.vrmSha256, vrmHash);
             if (!built.owned)
             {
+                if (following) { undo_following(); return; }
                 set_text(item.reason, sizeof item.reason, limit_codepoints("Files failed checks: " + failure, 90));
                 add_item(*scan, item);
-                continue;
+                return;
             }
             CustomContentVerification report;
             CustomPackage_GetPairReport(built.owned, &report);
@@ -1460,6 +1514,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             const auto &m = report.measured;
             if (!timeTrial)
             {
+                if (following) { CustomPackage_Free(&built.owned); undo_following(); return; }
                 bool arena = !m.checkpoints && (m.crystals > 0 || (m.spawns >= 2 && m.spawns <= 4 && m.weaponCrates > 0));
                 std::string reason = arena ? "Arena: not supported yet"
                                    : !m.checkpoints ? "Not a race track (no lap checkpoints)"
@@ -1467,7 +1522,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                 set_text(item.reason, sizeof item.reason, reason);
                 CustomPackage_Free(&built.owned);
                 add_item(*scan, item);
-                continue;
+                return;
             }
             std::string tags = "Race TT";
             if (arcade) tags += " Arcade";
@@ -1480,15 +1535,30 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             set_text(item.trackKey, sizeof item.trackKey, meta && !meta->trackKey.empty() ? meta->trackKey : title_track_key(title));
             if (!track_key_valid(item.trackKey))
             {
+                if (following) { CustomPackage_Free(&built.owned); undo_following(); return; }
                 set_text(item.reason, sizeof item.reason, "No folder name fits this title");
                 CustomPackage_Free(&built.owned);
                 add_item(*scan, item);
-                continue;
+                return;
+            }
+            if (following && scan->summary.count >= CTR_XDELTA_ITEM_MAX - 1)
+            {
+                /* No room for its row: a following pair is then never counted. */
+                CustomPackage_Free(&built.owned);
+                undo_following();
+                return;
             }
             item.offered = 1;
             offeredBytes += candidate.lev.size() + candidate.vrm.size();
             seen[{levHash, vrmHash}] = title;
             add_item(*scan, item, std::move(built));
+        };
+        for (const auto &c : ex.changed) consider(c);
+        deferredPass = true;
+        for (const auto &d : deferred)
+        {
+            refusalSlot = d.second;
+            consider(*d.first);
         }
 
         /* 5. Grouped lines for everything that is not a track. */
@@ -2685,7 +2755,7 @@ extern "C" int XdeltaImport_RenameItem(XdeltaImportScan *scan, unsigned int item
     try
     {
         Candidate candidate{(uint32_t)row.bigfileIndex, package_file(old.owned, "lev"), package_file(old.owned, "vrm"),
-                            old.originalLevHash, old.originalLevBytes};
+                            old.originalLevHash, old.originalLevBytes, old.followingVrm};
         std::string key = old.hasMeta && !old.meta.trackKey.empty() ? old.meta.trackKey : title_track_key(name);
         if (!track_key_valid(key)) return refuse("No folder name fits this name");
         std::string failure;
