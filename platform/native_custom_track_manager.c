@@ -18,6 +18,7 @@
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_content_verify.h>
 #endif
+#include <platform/native_track_sources.h>
 
 #define CTR_CT_MANAGER_HASH_CHUNK 65536
 #define CTR_CT_MANAGER_TEXT_MAX 4096
@@ -764,9 +765,18 @@ int CustomTrackManager_LocateContentFiles(const char *assetsRoot, const char *tr
 	}
 	if (levCandidates == 0 && vrmCandidates == 0)
 	{
-		Manager_SetDetail(outStatus, CTR_CT_MANAGER_NOT_INSTALLED,
-		                  "Put the LEV and VRM of %.64s %.32s in tracks/%.64s/original, then Rescan.",
-		                  shownTitle, shownRevision, trackKey);
+		char source[160];
+		TrackSources_Hint(levSha256, vrmSha256, source, sizeof source);
+		if (strlen(source) > 110)
+			Manager_SetDetail(outStatus, CTR_CT_MANAGER_NOT_INSTALLED, "%s Then Rescan.", source);
+		else if (source[0])
+			Manager_SetDetail(outStatus, CTR_CT_MANAGER_NOT_INSTALLED,
+			                  "%s Or put the LEV and VRM of %.48s %.24s in tracks/%.48s/original, then Rescan.",
+			                  source, shownTitle, shownRevision, trackKey);
+		else
+			Manager_SetDetail(outStatus, CTR_CT_MANAGER_NOT_INSTALLED,
+			                  "Put the LEV and VRM of %.64s %.32s in tracks/%.64s/original, then Rescan.",
+			                  shownTitle, shownRevision, trackKey);
 		return outStatus->state;
 	}
 	if (levCandidates == 0 || vrmCandidates == 0)

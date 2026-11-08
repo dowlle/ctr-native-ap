@@ -798,6 +798,19 @@ int main(void)
 		           (unsigned long)s_fixtureLevLen, vrmSha, 3, &open), CTR_CT_MANAGER_NOT_INSTALLED, "absent open package");
 		expect_contains(open.detail, "tracks/open-key/original", "absent open package names its folder");
 		expect_contains(open.detail, "Open Track 2.1", "absent open package names title and revision");
+		// A4-2: a LEV the source table knows names where it comes from; an unknown one keeps today's text.
+		{
+			const char *lockboxLev = "f59b5f953babac7b781916ef8aa0d5e9c1553d6056a8d760d46434c3c3c3ac86";
+			const char *sunkenLev = "286d6574d87e158d78cc89986f16b8b51e5b94f1b153574ea9358582e32c6ba1";
+			expect_int(CustomTrackManager_LocateContentFiles(root, "open-key", "Lockbox track", "1.0.0", lockboxLev,
+			           (unsigned long)s_fixtureLevLen, vrmSha, 3, &open), CTR_CT_MANAGER_NOT_INSTALLED, "absent xdelta track");
+			expect_contains(open.detail, "Import Lockbox_Adventure.xdelta (slot 7) from ctrcustomtracks.com/lockbox-adventure/.",
+			                "an xdelta track names its patch, slot and page");
+			expect_contains(open.detail, "tracks/open-key/original", "an xdelta track still names its folder");
+			expect_int(CustomTrackManager_LocateContentFiles(root, "open-key", "Sunken Sprint", "1.0.0", sunkenLev,
+			           (unsigned long)s_fixtureLevLen, vrmSha, 3, &open), CTR_CT_MANAGER_NOT_INSTALLED, "absent Saphi track");
+			expect_contains(open.detail, "Download from Project Saphi.", "a Saphi track says so");
+		}
 		if (!Manager_CreateDirectory(root) || !Manager_CreateDirectory(tracks) || !Manager_CreateDirectory(keyDir) ||
 		    !Manager_CreateDirectory(original))
 			return 2;
