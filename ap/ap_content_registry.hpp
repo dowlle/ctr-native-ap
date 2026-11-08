@@ -19,7 +19,7 @@
 // hit_character.py): the 22 weapon use checks and the 16 Hit checks.
 // Gem Cups (one generator row 2): `gem_cups` is the five original cups, Red
 // first, with their frozen Gem and sweep codes.
-// Cups (#133 PR 5): `cups` is the 27-name pool in code order with each name's
+// Cups (#133 PR 5): `cups` is the named cup pool in code order with each name's
 // `win` and `sweep` codes; `cup_leg` on the retail rows and Cortex Vortex and
 // `custom_cup_leg_locations` per generic slot are the Cup Leg Victory codes.
 // Lap completion (#344): `lap` on the retail rows and Cortex Vortex and
@@ -5522,6 +5522,51 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       "name": "Sphere Cup",
       "win": 35027026,
       "sweep": 35027226
+    },
+    {
+      "name": "Cristichi Cup",
+      "win": 35027100,
+      "sweep": 35027300
+    },
+    {
+      "name": "FruitLion8 Cup",
+      "win": 35027101,
+      "sweep": 35027301
+    },
+    {
+      "name": "TayWoodz Cup",
+      "win": 35027102,
+      "sweep": 35027302
+    },
+    {
+      "name": "MeD Cup",
+      "win": 35027103,
+      "sweep": 35027303
+    },
+    {
+      "name": "Lionboy Cup",
+      "win": 35027104,
+      "sweep": 35027304
+    },
+    {
+      "name": "MisterShaokahn Cup",
+      "win": 35027105,
+      "sweep": 35027305
+    },
+    {
+      "name": "Sturg Cup",
+      "win": 35027106,
+      "sweep": 35027306
+    },
+    {
+      "name": "Prototyp_002 Cup",
+      "win": 35027107,
+      "sweep": 35027307
+    },
+    {
+      "name": "Em Cup",
+      "win": 35027108,
+      "sweep": 35027308
     }
   ],
   "gem_cups": [
