@@ -114,10 +114,11 @@ int ap_track_registry_status(int *source, char *detail, int n)
 uint32_t ap_track_registry_generation(void) { return reg_generation; }
 /* The registry's one entry: LEV reg_lev, VRM REG_VRM, sizes 810876 and 458808. */
 #define REG_VRM "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+static const char *reg_vrm = REG_VRM;
 int ap_track_registry_lookup(const char *lev, uint32_t lb, const char *vrm, uint32_t vb, struct ApTrackRegistryMatch *m)
 {
 	if (reg_result == AP_TRACK_REGISTRY_NO_INDEX) return reg_result;
-	if (strcmp(lev, reg_lev) || strcmp(vrm, REG_VRM)) return AP_TRACK_REGISTRY_NOT_LISTED;
+	if (strcmp(lev, reg_lev) || strcmp(vrm, reg_vrm)) return AP_TRACK_REGISTRY_NOT_LISTED;
 	if (lb != 810876 || vb != 458808) return AP_TRACK_REGISTRY_PIN_CONFLICT;
 	if (reg_result == AP_TRACK_REGISTRY_MATCH && m)
 	{
@@ -406,6 +407,47 @@ int main(void)
 	reg_starts = 0;
 	expect(!AP_SeedContentInstallStart(message, sizeof message) && reg_starts == 0, "an unsafe key refuses the install");
 	snprintf(packages[1].content_id, sizeof packages[1].content_id, "%s", "acid-lake");
+	/* A4-2: the built-in source table, for a package the registry does not list. */
+	snprintf(reg_lev, sizeof reg_lev, "other"); reg_result = AP_TRACK_REGISTRY_MATCH; reg_generation++;
+	snprintf(packages[1].lev_sha256, sizeof packages[1].lev_sha256, "%s",
+	         "286d6574d87e158d78cc89986f16b8b51e5b94f1b153574ea9358582e32c6ba1");
+	snprintf(packages[1].vrm_sha256, sizeof packages[1].vrm_sha256, "%s",
+	         "bc19e0e64c89c4c6b7afbf3e33225bc640aeb10cf64f58a0cde7089620b016c4");
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(rows[1].source == AP_SEED_SOURCE_SAPHI && rows[1].registry == AP_SEED_REGISTRY_TABLE &&
+	       !strcmp(ap_seed_source_text(&rows[1]), "Project Saphi (built-in list)") && rows[1].source_hint[0] == '\0',
+	       "a Saphi hit in the table is a Saphi download when the registry does not list it");
+	reg_starts = 0; dl_state = AP_CT_DOWNLOAD_IDLE;
+	expect(AP_SeedContentInstallStart(message, sizeof message) && reg_starts == 1 && reg_track == 123 &&
+	       reg_lev_id == 885 && reg_vrm_id == 886 && !strcmp(reg_pin_lev, packages[1].lev_sha256) &&
+	       reg_lev_bytes == 810876 && reg_vrm_bytes == 458808,
+	       "the install uses the table's Saphi ids with the room's own pins");
+	dl_state = AP_CT_DOWNLOAD_SUCCEEDED;
+	AP_SeedContentInstallTick(message, sizeof message);
+	dl_state = AP_CT_DOWNLOAD_IDLE;
+	snprintf(reg_lev, sizeof reg_lev, "%s", packages[1].lev_sha256); reg_vrm = packages[1].vrm_sha256;
+	packages[1].vrm_bytes = 458809; reg_generation++;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(rows[1].registry == AP_SEED_REGISTRY_CONFLICT && rows[1].source == AP_SEED_SOURCE_MANUAL,
+	       "a size the registry disagrees with is never overridden by the table");
+	packages[1].vrm_bytes = 458808; reg_vrm = REG_VRM; reg_generation++;
+	reg_result = AP_TRACK_REGISTRY_NOT_ON_SAPHI; snprintf(reg_lev, sizeof reg_lev, "%s", packages[1].lev_sha256);
+	reg_vrm = packages[1].vrm_sha256; reg_generation++;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(rows[1].registry == AP_SEED_REGISTRY_NOT_ON_SAPHI && rows[1].source == AP_SEED_SOURCE_MANUAL,
+	       "a live \"not on Saphi\" answer is never overridden by the table");
+	reg_vrm = REG_VRM; reg_result = AP_TRACK_REGISTRY_MATCH; snprintf(reg_lev, sizeof reg_lev, "other"); reg_generation++;
+	snprintf(packages[1].lev_sha256, sizeof packages[1].lev_sha256, "%s",
+	         "f59b5f953babac7b781916ef8aa0d5e9c1553d6056a8d760d46434c3c3c3ac86");
+	snprintf(packages[1].vrm_sha256, sizeof packages[1].vrm_sha256, "%s",
+	         "759df093516ba90ac36565a3529b634cfa77923cbaba7a122153ba027bac29c6");
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(rows[1].source == AP_SEED_SOURCE_MANUAL && !strcmp(rows[1].source_hint,
+	       "Import Lockbox_Adventure.xdelta (slot 7) from ctrcustomtracks.com/lockbox-adventure/."),
+	       "an xdelta hit stays manual and carries the import sentence");
+	snprintf(packages[1].lev_sha256, sizeof packages[1].lev_sha256, "%s", REG_LEV);
+	snprintf(packages[1].vrm_sha256, sizeof packages[1].vrm_sha256, "%s", REG_VRM);
+	snprintf(reg_lev, sizeof reg_lev, REG_LEV); reg_generation++;
 	/* Live this session and a new room: no new fetch; all open packages Ready: none either. */
 	reg_source = AP_TRACK_REGISTRY_SOURCE_LIVE; plan_epoch = 21; reg_refreshes = 0;
 	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);

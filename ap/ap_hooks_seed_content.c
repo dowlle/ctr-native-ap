@@ -22,6 +22,7 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include "ap_seed_content.h"
 #include "ap_track_registry.h"
+#include <platform/native_track_sources.h>
 
 static int AP_SeedScanFromManager(int stored)
 {
@@ -157,6 +158,30 @@ static int AP_SeedRegistryRow(int index, const ctr_content_package *pkg, struct 
 	}
 }
 
+// A4-2: the built-in source table as a fallback for the live registry, only when
+// the registry is unreachable or does not list the track (never when it lists the
+// revision and says it is not on Saphi, or disagrees on size). A Saphi
+// row whose LEV and VRM both equal the room's pins gives the same match the
+// registry would; the download still installs nothing unless the bytes equal
+// the pins.
+static int AP_SeedTableMatch(const ctr_content_package *pkg, struct ApTrackRegistryMatch *match)
+{
+	struct TrackSource found;
+	if (!TrackSources_Find(pkg->lev_sha256, pkg->vrm_sha256, &found) || found.kind != TRACK_SOURCE_SAPHI ||
+	    !TrackSources_HexEqual(found.vrm, pkg->vrm_sha256) || found.saphiTrack <= 0 || found.levDownload <= 0 ||
+	    found.vrmDownload <= 0) return 0;
+	if (match)
+	{
+		memset(match, 0, sizeof *match);
+		match->saphi_track_id = found.saphiTrack;
+		match->lev_download_id = found.levDownload;
+		match->vrm_download_id = found.vrmDownload;
+		snprintf(match->track_key, sizeof match->track_key, "%s", pkg->content_id);
+		snprintf(match->revision, sizeof match->revision, "%s", pkg->revision);
+	}
+	return 1;
+}
+
 void AP_SeedContentRegistryRetry(void)
 {
 	AP_SeedRegistryEnsure(1);
@@ -190,6 +215,18 @@ int AP_SeedContentRows(struct AP_SeedContentRow *rows, int max)
 			row->registry = AP_SeedRegistryRow(i, pkg, NULL);
 			if (row->registry == AP_SEED_REGISTRY_LIVE || row->registry == AP_SEED_REGISTRY_CACHED)
 				row->source = AP_SEED_SOURCE_SAPHI;
+			else if ((row->registry == AP_SEED_REGISTRY_OFFLINE || row->registry == AP_SEED_REGISTRY_NOT_LISTED) &&
+			         AP_SeedTableMatch(pkg, NULL))
+			{
+				row->registry = AP_SEED_REGISTRY_TABLE;
+				row->source = AP_SEED_SOURCE_SAPHI;
+			}
+			else if (row->scan != AP_SEED_SCAN_READY)
+			{
+				struct TrackSource found;
+				if (TrackSources_Find(pkg->lev_sha256, pkg->vrm_sha256, &found) && found.kind == TRACK_SOURCE_PATCH)
+					TrackSources_Hint(pkg->lev_sha256, pkg->vrm_sha256, row->source_hint, sizeof row->source_hint);
+			}
 		}
 		row->index = i;
 		// The xdelta patch an imported track comes from, when the room's
@@ -265,7 +302,9 @@ static int AP_SeedInstallTarget(int index, const struct CustomTrackManagerPackag
 	else
 	{
 		const int registry = AP_SeedRegistryRow(index, pkg, match);
-		if (registry != AP_SEED_REGISTRY_LIVE && registry != AP_SEED_REGISTRY_CACHED) return 0;
+		if (registry != AP_SEED_REGISTRY_LIVE && registry != AP_SEED_REGISTRY_CACHED &&
+		    !((registry == AP_SEED_REGISTRY_OFFLINE || registry == AP_SEED_REGISTRY_NOT_LISTED) && AP_SeedTableMatch(pkg, match)))
+			return 0;
 		if (!ap_seed_folder_safe(pkg->content_id)) return 0;
 		memset(paths, 0, sizeof *paths);
 		if (snprintf(paths->packageRoot, sizeof paths->packageRoot, "%s/%s", tracks, pkg->content_id) >=

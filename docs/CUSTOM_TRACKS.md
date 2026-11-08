@@ -456,6 +456,10 @@ descriptor sets to true is not there; the loader then hashes the files once
 more before it arms. These loads carry no navigation identity, so recorded AI
 lanes are blocked for them.
 
+### Where a missing track comes from
+
+`include/platform/native_track_sources.inc` lists, by LEV SHA-256, the Project Saphi download or the xdelta patch (file name, patch SHA-256, slot, public page) each known track was published in. `include/platform/native_track_sources.h` reads it. The Current Seed tab and the seed preflight use it to say "Download from Project Saphi" (and to offer the existing download when the live registry does not list the track) or "Import <patch file> (slot N) from <page>". The first row for a LEV wins: Saphi rows come first, and a LEV that two patches share names the pack players most likely have, with the other pack after "Also in". The table holds no track bytes, rehosts nothing, and never decides what installs: the room's pinned hashes still do. A LEV that is not listed keeps the plain "put the LEV and VRM in tracks/<key>/original" text.
+
 ## 13. The authoring-client branch
 
 `tools/authoring-branch/make-branch.py <release tag>` produces a branch that
