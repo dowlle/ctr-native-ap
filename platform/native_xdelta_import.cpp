@@ -1334,6 +1334,12 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                 throw std::runtime_error("Cannot read the import scratch file");
             return bytes;
         };
+        /* Patched-table bytes for a neighbour: an entry the patch removed or
+           emptied is empty, never the retail bytes it replaced. */
+        auto patched_entry = [&](uint32_t index) -> std::vector<unsigned char> {
+            if (index >= ex.entries.size() || !ex.entries[index].second) return {};
+            return entry_bytes(index);
+        };
         std::set<uint32_t> consumed;
         std::vector<XdeltaImportItem> unsupportedLevels;
         unsigned ordinal = 0;
@@ -1386,7 +1392,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                wrote it, it is exactly one VRM, and it does not already lead
                the next level. That pair is kept only when it is offered as a
                race; anything short of that keeps the original refusal. */
-            const bool following = !vrmCut && byIndex.count(c.index + 1) && !lev_shaped(entry_bytes(c.index + 2));
+            const bool following = !vrmCut && byIndex.count(c.index + 1) && !lev_shaped(patched_entry(c.index + 2));
             /* Following pairs come after every ordinary pair, so they never
                renumber, rename or re-pin a track offered before this rule. */
             if (following && !deferredPass)
@@ -1396,7 +1402,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             }
             if (following)
             {
-                vrm = entry_bytes(c.index + 1);
+                vrm = patched_entry(c.index + 1);
                 vrmCut = cut_vrm(vrm.data(), vrm.size());
                 if (vrmCut != vrm.size() || lev_shaped(vrm)) vrmCut = 0;
             }
@@ -1533,6 +1539,13 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                 set_text(item.reason, sizeof item.reason, "No folder name fits this title");
                 CustomPackage_Free(&built.owned);
                 add_item(*scan, item);
+                return;
+            }
+            if (following && scan->summary.count >= CTR_XDELTA_ITEM_MAX - 1)
+            {
+                /* No room for its row: a following pair is then never counted. */
+                CustomPackage_Free(&built.owned);
+                undo_following();
                 return;
             }
             item.offered = 1;

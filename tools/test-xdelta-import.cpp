@@ -627,6 +627,18 @@ int main()
         changed.bigfile.push_back(make_lev(spec));             /* 248: ordinary, not a race: stays silent */
         changed.bigfile.push_back(make_vrm(57, 0));            /* 249 */
         changed.bigfile.push_back(filler);                     /* 250 */
+        spec.seed = 58; spec.race = true; spec.letters = true; spec.relic = true;
+        changed.bigfile.push_back(alt(spec));                  /* 251: next VRM leads normalized level 253 */
+        changed.bigfile.push_back(make_vrm(58, 0));            /* 252 */
+        spec.seed = 59;
+        changed.bigfile.push_back(alt(spec));                  /* 253: normalized pair with 252 */
+        changed.bigfile.push_back(changed.bigfile[230]);       /* 254: same files as 230 and 231 */
+        changed.bigfile.push_back(make_vrm(50, 0));            /* 255 */
+        changed.bigfile.push_back(filler);                     /* 256 */
+        spec.seed = 61;
+        changed.bigfile.push_back(alt(spec));                  /* 257: offered after the refused pairs */
+        changed.bigfile.push_back(make_vrm(61, 0));            /* 258 */
+        changed.bigfile.push_back(filler);                     /* 259 */
         CHECK(XdeltaImport_CutVrm(changed.bigfile[237].data(), changed.bigfile[237].size()) != changed.bigfile[237].size(),
               "fixture: VRM with trailing bytes cuts short");
         ScanResult r = scan(write_file("Following.xdelta", encode(baseDisc, make_disc(changed))), discPath);
@@ -644,14 +656,21 @@ int main()
                   "ordinary level pairs with the VRM after it");
             CHECK(leader && leader->offered && sha_hex(changed.bigfile[240]) == leader->vrmSha256,
                   "a VRM that leads the next level stays with that level");
-            CHECK(leader && !std::strcmp(leader->title, "Following track 1") && normalized && ordinary &&
-                  !std::strcmp(normalized->title, "Following track 2") && !std::strcmp(ordinary->title, "Following track 3"),
+            const auto *normalLeader = item_for(s, 253);
+            const auto *last = item_for(s, 257);
+            CHECK(normalLeader && normalLeader->offered && sha_hex(changed.bigfile[252]) == normalLeader->vrmSha256,
+                  "a VRM that leads a normalized level stays with that level");
+            CHECK(leader && !std::strcmp(leader->title, "Following track 1") && normalLeader && !std::strcmp(normalLeader->title, "Following track 2") &&
+                  normalized && !std::strcmp(normalized->title, "Following track 3") && ordinary && !std::strcmp(ordinary->title, "Following track 4"),
                   "following pairs are numbered after every ordinary pair");
+            CHECK(last && last->offered && !std::strcmp(last->title, "Following track 5") && !std::strcmp(last->trackKey, "following-track-5"),
+                  "a following pair after refused ones takes the next number");
             std::vector<int> refusals;
             for (unsigned i = 0; i < s->count; i++)
                 if (!std::strcmp(s->items[i].reason, "No valid preceding texture file")) refusals.push_back(s->items[i].bigfileIndex);
-            CHECK(refusals == std::vector<int>({236, 239, 242, 245}), "deferred refusals keep their diagnostic order");
-            for (int slot : {236, 239, 242, 245})
+            CHECK(refusals == std::vector<int>({236, 239, 242, 245, 251, 254}), "deferred refusals keep their diagnostic order");
+            CHECK(line_with(s, "Following track 3") == normalized, "a duplicate following pair is refused, not listed as the same track");
+            for (int slot : {236, 239, 242, 245, 251, 254})
             {
                 const auto *it = item_for(s, slot);
                 CHECK(it && !it->offered && !it->pin[0] && !std::strcmp(it->reason, "No valid preceding texture file") &&
@@ -659,17 +678,18 @@ int main()
                       "a following pair short of an offered race keeps the original refusal");
             }
             CHECK(!item_for(s, 248), "ordinary non-race level with a following VRM stays out of the list");
-            for (int slot : {231, 234, 237, 240, 243, 246, 249})
+            for (int slot : {231, 234, 237, 240, 243, 246, 249, 252, 255, 258})
                 CHECK(!item_for(s, slot), "a VRM entry never gets its own row");
             std::set<std::string> titles;
             unsigned offered = 0;
             for (unsigned i = 0; i < s->count; i++)
                 if (s->items[i].offered) { offered++; titles.insert(s->items[i].title); }
-            CHECK(offered == 3 && titles == std::set<std::string>({"Following track 1", "Following track 2", "Following track 3"}),
+            CHECK(offered == 5 && titles == std::set<std::string>({"Following track 1", "Following track 2", "Following track 3",
+                                                                    "Following track 4", "Following track 5"}),
                   "refused following pairs use no track number");
-            /* 237, 243, 246, 248, 249 and five fillers (232 is in the overlay range):
+            /* 237, 243, 246, 248, 249, 255 and seven fillers (232 is in the overlay range):
                refused pairs give their VRM back. */
-            CHECK(line_with(s, "Other changed files (10)"), "refused following VRMs stay in the other count");
+            CHECK(line_with(s, "Other changed files (13)"), "refused following VRMs stay in the other count");
             if (normalized && normalized->offered)
             {
                 const unsigned index = unsigned(normalized - s->items);
@@ -698,6 +718,79 @@ int main()
                     &rows, error, sizeof error);
                 CHECK(rows.size() == 1 && rows[0].local.xdelta, "following pair reloads and verifies");
             }
+        }
+        XdeltaImport_Free(&r.scan);
+    }
+
+    /* The entry after must be written by the patch, and a level the patch
+       removed two entries on no longer blocks the pair. */
+    {
+        DiscSpec before = base;
+        const Bytes filler(500, 0x77);
+        LevSpec spec; spec.seed = 72;
+        before.bigfile.push_back(filler);                      /* 230 */
+        before.bigfile.push_back(make_vrm(70, 0));             /* 231: retail-side VRM, unchanged */
+        before.bigfile.push_back(filler);                      /* 232 */
+        before.bigfile.push_back(filler);                      /* 233 */
+        before.bigfile.push_back(filler);                      /* 234 */
+        before.bigfile.push_back(make_lev(spec));              /* 235: a level the patch empties */
+        const Bytes beforeDisc = make_disc(before);
+        DiscSpec after = before;
+        spec.seed = 71;
+        Bytes ordinary = make_lev(spec);
+        after.bigfile[230] = alternate_lev(ordinary);
+        spec.seed = 73;
+        ordinary = make_lev(spec);
+        after.bigfile[233] = alternate_lev(ordinary);
+        after.bigfile[234] = make_vrm(73, 0);
+        after.bigfile[235] = Bytes();
+        ScanResult r = scan(write_file("FollowingNeighbours.xdelta", encode(beforeDisc, make_disc(after))),
+                            write_file("following-base.bin", beforeDisc));
+        CHECK(r.ok, "following neighbour scan succeeds");
+        if (r.ok)
+        {
+            const auto *s = XdeltaImport_Summary(r.scan);
+            const auto *unchanged = item_for(s, 230);
+            const auto *emptied = item_for(s, 233);
+            CHECK(unchanged && !unchanged->offered && !std::strcmp(unchanged->reason, "No valid preceding texture file"),
+                  "a VRM the patch did not write is never paired");
+            CHECK(emptied && emptied->offered && sha_hex(after.bigfile[234]) == emptied->vrmSha256,
+                  "a removed level two entries on does not block the pair");
+        }
+        XdeltaImport_Free(&r.scan);
+    }
+
+    /* A following pair with no room for its row leaves the overflow count as before. */
+    {
+        DiscSpec many;
+        for (unsigned i = 0; i < 96; i++)
+        {
+            many.bigfile.push_back(make_vrm(i, 0));
+            LevSpec spec; spec.seed = 1000 + i;
+            many.bigfile.push_back(make_lev(spec));
+        }
+        Bytes before = make_disc(many);
+        for (unsigned i = 0; i < 96; i++)
+        {
+            LevSpec spec; spec.seed = 2000 + i;
+            many.bigfile[i * 2 + 1] = make_lev(spec);
+        }
+        LevSpec spec; spec.seed = 3000;
+        many.bigfile.push_back(Bytes(500, 0x77));               /* 192 */
+        many.bigfile.push_back(make_lev(spec));                 /* 193: ordinary map, VRM after it */
+        many.bigfile.push_back(make_vrm(3000, 0));              /* 194 */
+        many.bigfile.push_back(Bytes(500, 0x77));               /* 195 */
+        ScanResult r = scan(write_file("CapacityFollowing.xdelta", encode(before, make_disc(many))),
+                            write_file("capacity-base.bin", before));
+        CHECK(r.ok, "following capacity scan succeeds");
+        if (r.ok)
+        {
+            const auto *s = XdeltaImport_Summary(r.scan);
+            unsigned offered = 0;
+            for (unsigned i = 0; i < s->count; i++) offered += s->items[i].offered != 0;
+            /* As on main: the 96th track and the other-files line overflow. */
+            CHECK(offered == 95 && !item_for(s, 193) && line_with(s, "2 more items"),
+                  "a following pair that cannot be listed is not counted as dropped");
         }
         XdeltaImport_Free(&r.scan);
     }
