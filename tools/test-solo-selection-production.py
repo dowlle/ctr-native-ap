@@ -28,6 +28,7 @@ namespace fs = std::filesystem;
 static std::string g_optionOverridesFile;
 static struct { int state = AP_SOLO_JOB_IDLE; } g_job;
 static bool TrackPublicationBusy() { return false; }
+static bool StorePublicationBusy() { return false; }
 static bool SoloRootIsLink() { return false; }
 static void JobFail(const char*, const char*, const char*) { assert(false); }
 static const int JOB_GENERATE = 1, kGenerateLimitMs = 120000;
