@@ -83,6 +83,9 @@
 
 // Lateral offset used to synthesise the lanes a file did not supply, in
 // NavFrame units. Matches the measured retail lane separation.
+// One retail lane separation in NavFrame units. It was the step the old
+// synthesised offset lanes used; since A3-19 there are none, and it remains the
+// yardstick the closure rule and the seam bound are measured against.
 #define AP_NAVREC_FALLBACK_LANE_OFFSET 500
 
 // Cyclic-closure acceptance for one lap. The engine treats every lane as a
@@ -105,8 +108,8 @@
 // whose spacing is tiny (a fragment) must not pass because 2x tiny is tiny,
 // and a big-track lap with 550-unit spacing must not fail for a wrap the
 // engine's own synthesised lanes already exceed. One retail lane separation,
-// the same 500 units SynthLane displaces a whole lane by, is the displacement
-// this codebase already ships as acceptable.
+// the same 500 units the old offset lanes were displaced by, is the displacement
+// this codebase already shipped as acceptable.
 #define AP_NAVREC_CLOSURE_SLACK_UNITS 500
 
 // Shortest credible closed lap, total XZ arc length in NavFrame units. Guards
@@ -910,50 +913,6 @@ static int AP_NavRecFormat_ClassifyShortcut(const struct AP_NavRecNode *nodes, u
 }
 
 // ---------------------------------------------------------------------------
-// Synthetic lane fallback
-// ---------------------------------------------------------------------------
-
-// Displace a recorded line perpendicular to its own direction of travel. This is
-// what fills the engine lanes a file did not supply, so a one-lap file still
-// yields three usable lanes. It is deliberately NOT a median or an envelope
-// across laps: each lap in a version 2 file is one person's real line and
-// averaging them would destroy the thing the format exists to preserve.
-//
-// goBackCount and flags come across untouched, so the synthesised lane keeps the
-// checkpoint progression that makes the killplane rewind terminate.
-static void AP_NavRecFormat_SynthLane(const struct AP_NavRecNode *src, unsigned int count, int lateral, struct AP_NavRecNode *dst)
-{
-	unsigned int n;
-
-	if ((src == NULL) || (dst == NULL) || (count == 0u))
-		return;
-
-	for (n = 0; n < count; n++)
-	{
-		const struct AP_NavRecNode *cur = &src[n];
-		const struct AP_NavRecNode *nxt = &src[(n + 1u) % count];
-
-		double dirX = (double)(nxt->posX - cur->posX);
-		double dirZ = (double)(nxt->posZ - cur->posZ);
-		double len = sqrt((dirX * dirX) + (dirZ * dirZ));
-		double perpX = 0.0;
-		double perpZ = 0.0;
-
-		if (len > 0.0001)
-		{
-			perpX = -dirZ / len;
-			perpZ = dirX / len;
-		}
-
-		dst[n] = *cur;
-		dst[n].posX = (short)((double)cur->posX + (perpX * (double)lateral));
-		dst[n].posZ = (short)((double)cur->posZ + (perpZ * (double)lateral));
-	}
-
-	AP_NavRecFormat_FillDistances(dst, count);
-}
-
-// ---------------------------------------------------------------------------
 // Writer
 // ---------------------------------------------------------------------------
 
@@ -1332,6 +1291,70 @@ static int AP_NavRecFormat_Read(const void *buf, unsigned int size, struct AP_Na
 		AP_NavRecFormat_SanitizeName(info->driverName, clean, sizeof clean);
 		memset(info->driverName, 0, sizeof info->driverName);
 		memcpy(info->driverName, clean, strlen(clean));
+	}
+
+	return AP_NAVREC_OK;
+}
+
+// What a pool index needs from a file without decoding it: the header only.
+//
+// `prefix` holds the first `prefixLen` bytes of a file whose full length is
+// `fileSize`. No hash is checked and no lap is read, so this is a SHAPE check,
+// not acceptance: a file that peeks fine can still be rejected whole by
+// AP_NavRecFormat_Read when it is chosen. Fills levelId, identity, lapCount and
+// the sanitized driverName of `info`; nothing else.
+#define AP_NAVREC_PEEK_BYTES AP_NAVREC_HEADER_BYTES_V3
+
+static int AP_NavRecFormat_Peek(const void *prefix, unsigned int prefixLen, unsigned int fileSize, struct AP_NavRecFileInfo *info)
+{
+	const unsigned char *p = (const unsigned char *)prefix;
+	unsigned int         version;
+	unsigned int         headerBytes;
+	unsigned int         lapCount;
+
+	if ((p == NULL) || (info == NULL))
+		return AP_NAVREC_ERR_CAPACITY;
+	if ((fileSize < (unsigned int)(AP_NAVREC_HEADER_BYTES + AP_NAVREC_LAPDIR_BYTES + AP_NAVREC_TRAILER_BYTES)) ||
+	    (prefixLen < (unsigned int)AP_NAVREC_HEADER_BYTES))
+		return AP_NAVREC_ERR_TOO_SMALL;
+	if ((p[0] != 'N') || (p[1] != 'A') || (p[2] != 'V') || (p[3] != '2'))
+		return AP_NAVREC_ERR_MAGIC;
+
+	version = AP_NavRecFormat_GetU16(p + 0x04);
+	if ((version != AP_NAVREC_FORMAT_VERSION_V2) && (version != AP_NAVREC_FORMAT_VERSION_V3))
+		return AP_NAVREC_ERR_VERSION;
+	headerBytes = AP_NavRecFormat_GetU16(p + 0x06);
+	if (((version == AP_NAVREC_FORMAT_VERSION_V2) && (headerBytes != AP_NAVREC_HEADER_BYTES)) ||
+	    ((version == AP_NAVREC_FORMAT_VERSION_V3) && (headerBytes != AP_NAVREC_HEADER_BYTES_V3)) || (prefixLen < headerBytes))
+		return AP_NAVREC_ERR_HEADER_SHAPE;
+	if (p[0x56] != AP_NAVREC_NODE_BYTES)
+		return AP_NAVREC_ERR_HEADER_SHAPE;
+	if ((AP_NavRecFormat_GetU32(p + 0x08) != fileSize) || (fileSize > AP_NAVREC_MAX_FILE_BYTES))
+		return AP_NAVREC_ERR_SIZE;
+	lapCount = p[0x55];
+	if ((lapCount == 0u) || (lapCount > AP_NAVREC_MAX_LAPS))
+		return AP_NAVREC_ERR_LAPCOUNT;
+
+	memset(info, 0, sizeof *info);
+	info->formatVersion = version;
+	info->totalSize = fileSize;
+	info->levelId = (int)AP_NavRecFormat_GetU32(p + 0x0C);
+	info->lapCount = lapCount;
+	if (version == AP_NAVREC_FORMAT_VERSION_V3)
+	{
+		if (p[0x60] != AP_NAVREC_IDENTITY_CUSTOM)
+			return AP_NAVREC_ERR_HEADER_SHAPE;
+		info->identityKind = AP_NAVREC_IDENTITY_CUSTOM;
+		memcpy(info->trackUuid, p + 0x64, AP_NAVREC_TRACK_UUID_BYTES);
+		info->navRevision = AP_NavRecFormat_GetU32(p + 0x74);
+	}
+
+	{
+		char raw[AP_NAVREC_NAME_FIELD + 1];
+
+		memcpy(raw, p + 0x30, AP_NAVREC_NAME_FIELD);
+		raw[AP_NAVREC_NAME_FIELD] = '\0';
+		AP_NavRecFormat_SanitizeName(raw, info->driverName, AP_NAVREC_NAME_CHARS + 1);
 	}
 
 	return AP_NAVREC_OK;

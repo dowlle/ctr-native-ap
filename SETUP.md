@@ -209,20 +209,25 @@ You can leave **Save AI Lap Recordings** off. To return to the track's normal
 AI lines, turn **Use Recorded AI Laps** off and start a new race. Your recordings
 remain on disk.
 
-**Current playback is experimental.** The loader searches newest files first,
-opens at most eight candidates and chooses up to three usable recordings,
-preferring different contributor names. Those recordings fill three shared AI
-lines. Names can repeat across opponents; fewer recordings can also produce
-offset copies of a line. The field is not randomly selected, and each racer
-does not yet own a distinct recording with vanilla AI filling the remaining
-places. If no usable recording loads, the track's own navigation remains in use.
+**Current playback is experimental.** Every recording for the track is in the
+pool. Each race picks up to three different contributors at random, one
+recording and one lap each. The engine still has three AI lines shared by the
+opponents: each picked recording replaces one of them, and the lines without a
+recording keep the track's own AI. Only the first opponent on a recorded line
+shows its contributor's name, so a name never appears twice. The finish line
+of each lap is blended so the line does not jump there, and recorded lines
+break crates where the track's own lines do. If no usable recording loads, the
+track's own navigation remains in use.
 
-Recorded lines do not guarantee the original lap time. Finish-line movement
-and ordinary-crate interactions still need improvement and gameplay testing.
-Independent racer assignment and vanilla fallback are planned corrections.
-For troubleshooting, search `ctr-ap.log` for `[AP NAVREC]`: it lists selected
-files, lane assignments and reasons recordings were skipped. Include that log,
-your client version, track and relevant recording when reporting a problem
+Recorded lines do not guarantee the original lap time. Crate contact and the
+finish blend still need gameplay testing. A separate recorded line for every
+opponent is planned for a later release. In 2P only player 1's laps are saved,
+and no names are shown.
+
+For troubleshooting, search `ctr-ap.log` for `[AP NAVREC]`: it lists the pool,
+the random seed, the picked file and lap for each line, and reasons recordings
+were skipped. Include that log, your client version, track and relevant
+recording when reporting a problem
 through [Reporting a crash or a stuck seed](#reporting-a-crash-or-a-stuck-seed).
 
 ## Generating or hosting a multiworld

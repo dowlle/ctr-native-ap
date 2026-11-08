@@ -308,8 +308,9 @@ A lap is eligible to feed a lane only if:
   500)`. A genuine line-to-line lap closes within one decimation step plus one
   frame of travel; measured across a 162-file community corpus, real laps stay
   under 1.8x their median spacing and every failure sits at 2.0x or above. The
-  500-unit floor is one retail lane separation, the same displacement the
-  synthetic-lane fallback already ships.
+  500-unit floor is one retail lane separation, the displacement the old
+  synthetic offset lanes used.
+- its finish seam is within the blend bound (see "Finish seam blend" below).
 - its total XZ arc length, wrap included, is at least 4000 units, which
   excludes a tight closed orbit (a spin at the line) no real track can produce.
 
@@ -320,6 +321,47 @@ an older one exactly like a corrupt file. The writer applies the same rule, so
 a client never publishes a lap it would itself refuse to drive; upstream of
 both, the recorder only banks a lap that both started and ended with a forward
 line crossing, so neither open shape is captured in the first place.
+
+## Finish seam blend
+
+A closed lap still rarely ends exactly on its own start line: a driver crosses
+the line wider, tighter or higher at the end of the lap than at its start, and a
+bot following the lap would make that sideways hop at every finish line. The
+reader therefore prepares a PLAYBACK copy of each lap it races
+(`ap/ap_navrec_playback_logic.h`, `AP_NavRecSeam_Process`); the file is never
+changed.
+
+- The expected wrap is the mean of the two steps either side of it. The error is
+  the wrap minus that expectation: its sideways part, its height part, and its
+  along-track part only when the wrap is under half or over one and a half
+  times the expected step.
+- Half the error is removed on each side of the seam, ramping linearly to zero
+  over 8 nodes per side (an eighth of the nodes on a short lap). Yaw is blended
+  the same way. Distances are recomputed over the loop. Timestamps and
+  `goBackCount` are not touched, so timing stays monotonic and the checkpoint
+  walk is the one recorded.
+- A lap whose blend would move any node more than 500 units (one lane
+  separation) is refused rather than bridged through scenery. A refused lap is
+  not eligible, exactly like an unclosed one.
+
+Measured with `tools/navrec-inspect` (its `SEAM` lines run the same blend) over
+the 284 closed laps of the 2026-08-30 community intake: 283 blend within the
+bound, moving at most 16 nodes (largest single move 434 units), and 1 is refused
+(a 1081-unit sideways seam).
+
+## Crate contact
+
+`BOTS_ThTick_Drive` runs the bot's level-instance contact test
+(`BOTS_LevInstColl`, what breaks crates) only on a node whose `specialBits`
+carries 0x40, or while the bot is off its line. The recorder writes
+`specialBits` 0, so bots on recorded lanes drove through crates untouched. At
+load the reader sets 0x40 on each recorded node whose nearest node in any of the
+level's own lanes carries it and lies within 1200 units. Only that bit is
+borrowed. This fixes every existing file without rewriting it. AP check boxes
+keep their own rule that the AI cannot collect them.
+
+The mechanism is read from source; a runtime comparison of a recorded and a
+level-line bot at the same crates is still open.
 
 ## Driver name
 
@@ -438,11 +480,10 @@ Dirty laps are never written. A lap with a respawn or a blast is not a line
 worth copying, and a container full of them would make the future submission
 pipeline's job harder rather than easier.
 
-On the playback side, when a file carries fewer than three laps the remaining
-engine lanes are filled by the synthetic lane-offset generation the spike branch
-already used: each missing lane is lane 0 displaced perpendicular to its own
-direction of travel by a fixed lateral offset, alternating side. One recorded
-lap therefore still yields three usable lanes, with two of them offset copies.
+On the playback side, a race takes one lap from each picked file, never more,
+so the number of laps in a file does not change how many lanes are recorded.
+The synthetic lane-offset copies earlier readers built from one lap are gone
+(A3-19): a lane without a recording keeps the track's own line.
 
 What the 0.2.0 reader does not keep from the spike branch is the cross-lap
 median line and the clamped lateral envelope built from it. That machinery
@@ -450,10 +491,7 @@ averaged a corpus of laps into one line and then spread lanes across the width
 humans had actually driven. It was the right answer when every lap was raw
 material for one synthetic line. It is the wrong answer now: the ruling is that
 each named bot drives one real person's real line, and a median destroys exactly
-the thing the format exists to preserve. The perpendicular offset generation is
-kept because it is the honest degradation for a one-lap or two-lap file; the
-median is dropped because it would silently replace real lines with an average
-of them.
+the thing the format exists to preserve.
 
 ## What makes a lap dirty
 
@@ -547,18 +585,28 @@ once-per-race cost at a moment when nothing is being driven.
   and says so rather than overwriting anything.
 - The recorder stamps the configured driver name into each file; the folder can
   also contain manually imported recordings from other contributors.
-- Under `nav_use_recorded`, the reader searches newest-first and selects up to
-  three usable containers, preferring different contributor names. It opens at
-  most eight files, including rejected files and repeated authors. Gaps in file
-  numbering do not consume that budget. Older unique authors can be missed
-  when newer files exhaust it. Selection is deterministic, not randomized.
-- Duplicate-author files can fill spare lanes after the distinct-author scan.
-  With fewer selected files, the lane plan reuses their laps; missing lanes are
-  synthesized as lateral offsets. Names belong to the three shared lanes,
-  not independently to each racer. This is not per-racer vanilla fallback.
-- Only closed-loop laps from compatible containers feed playback. A file with
-  no eligible lap is skipped; filtering does not smooth accepted lap seams.
-  If nothing usable loads, the track's own navigation remains in place.
+- Under `nav_use_recorded`, the reader builds a pool of every file for the
+  track: one header read per file (`AP_NavRecFormat_Peek`), kept when its level
+  and track identity match the load. Files are grouped by contributor, the
+  driver name compared without case or repeated spaces; unnamed files are one
+  group.
+- Every race picks up to three contributors at random, then one of each
+  person's files and one eligible lap of it at random ("Random every race",
+  ruled 2026-11-07). A picked file that fails the full read is passed over
+  for another file by the same person. At most 24 full reads are spent. The
+  log line names the seed, and each lane line names the file, driver, lap,
+  seam result and crate-bit count, so a report can be reproduced.
+- With k contributors, lanes 0 to k-1 are recorded and the other lanes keep the
+  track's own line. Lane changes between a recorded lane and a track lane are
+  off in both directions, so a recorded lane keeps its bots. Each recorded lane
+  names one bot, the first one seen driving it; no name appears twice. This is
+  still three shared lanes, not one line per racer.
+- Only closed laps with a blendable seam from compatible containers feed
+  playback. If nothing usable loads, the track's own navigation remains in
+  place.
+- A savestate restore in the same session reuses the race's seed and gets the
+  same field back. A restore into a freshly started game draws a new field,
+  and logs it.
 - The highest file number is cached per level and refreshed on a level change
   or a recorder write. Restart the game after importing files so a cached scan
   cannot hide them. Rejections and lane assignments are logged.

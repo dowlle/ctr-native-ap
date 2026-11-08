@@ -114,6 +114,7 @@ tools/test-native-spawn-pools.c
 tools/test-native-ptr-scratch.c
 tools/test-navrec-label.c
 tools/test-navrec.c
+tools/test-navrec-production.py
 tools/test-net-admission.cpp
 tools/test-net-planless-refusal.cpp
 tools/test-solo-deathlink.cpp
