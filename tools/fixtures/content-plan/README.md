@@ -259,3 +259,12 @@ forged beside a race.
 Character on: one Trophy pad among 26 cups, so every Itemsanity route is on
 that one pad. `test-content-verify.cpp` checks that the Beaker use check still
 needs Beaker there.
+
+`box-spots-community.json` (A3-45) is slot data the paired apworld emitted
+(seed 3, Shortcut Knowledge hard, progressive boost and stats on) with its
+first two shipped community spot files, using the DK Pass 1.0.0 and Ancient
+Lake 1.1.0 package records of a shared player YAML. Each file has 15 spots,
+so both tracks stand all 15 at their spots, hide no crate and carry no crate
+exclusion. `test-content-plan.cpp` checks codes, numbers and positions, two
+refusals, and that the same room without the DK Pass set (a room from before
+the file shipped) keeps crate seating there.
