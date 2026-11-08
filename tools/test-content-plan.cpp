@@ -1438,6 +1438,63 @@ int main(int argc, char **argv) {
         for (auto &c : legacy["content_plan"]["checks"]) c.erase("spot");
         expect(!parse(legacy), "spots: a picked community number has no registry slot without its spot set");
     }
+    // The first community spot files (A3-45): a room from the paired apworld
+    // with DK Pass 1.0.0 (named block 25) and Ancient Lake 1.1.0 (named block
+    // 1) from the shared YAML package records. Each file has 15 spots, so all
+    // 15 stand and no crate is hidden or excluded on either track.
+    J community;
+    std::ifstream("tools/fixtures/content-plan/box-spots-community.json") >> community;
+    expect(parse(community) && bind_room(community) && ap_content_plan_active(), "community spots room binds");
+    {
+        std::map<std::string, J> sets;
+        for (const auto &set : community["content_plan"]["item_boxes"]["spot_sets"]) sets[set["track_id"]] = set;
+        std::map<int64_t, J> checks;
+        for (const auto &c : community["content_plan"]["checks"]) if (c.contains("spot")) checks[c["location"]] = c;
+        expect(!community["content_plan"]["item_boxes"].contains("crate_exclusions"),
+               "community spots: Ancient Lake 1.1.0 carries no crate exclusion");
+        std::map<int, int> stood;
+        bool fields_ok = true;
+        for (int p = 0; p < 111; ++p) {
+            const ctr_content_pad *pad = ap_content_plan_pad(p);
+            if (!pad || !pad->occupied || (pad->named_block != 1 && pad->named_block != 25)) continue;
+            const J &set = sets.at(pad->track_id);
+            fields_ok &= pad->box_spots && pad->box_crates == 0 && pad->box_count == 15 && set["pool"] == 15;
+            for (int b = 0; b < pad->box_count; ++b) {
+                const J &c = checks.at(pad->box_locations[b]);
+                fields_ok &= pad->box_number[b] == b + 1 && c["spot"]["number"] == b + 1 &&
+                             pad->box_locations[b] == 35200000 + 200 * pad->named_block + 19 + b + 1 &&
+                             c["spot"]["pos"][0] == pad->box_pos[b][0] && c["spot"]["pos"][1] == pad->box_pos[b][1] &&
+                             c["spot"]["pos"][2] == pad->box_pos[b][2] && c["spot"]["rot_y"] == pad->box_rot_y[b];
+                ++stood[pad->named_block];
+            }
+        }
+        expect(stood[1] == 15 && stood[25] == 15, "community spots: Ancient Lake and DK Pass stand all 15");
+        expect(fields_ok, "community spots: codes, numbers and positions match the room's checks");
+        auto set_of = [](J &j, const std::string &id) -> J & {
+            for (auto &s : j["content_plan"]["item_boxes"]["spot_sets"]) if (s["track_id"] == id) return s;
+            throw std::runtime_error("no spot set " + id);
+        };
+        J bad = community;
+        set_of(bad, "custom/dk-pass/1.0.0")["lev_sha256"] = std::string(64, 'a');
+        refuse(bad, "community spots: DK Pass set pinned to another LEV");
+        bad = community;
+        set_of(bad, "custom/ancient-lake/1.1.0")["picked"].erase(0);
+        refuse(bad, "community spots: Ancient Lake picks one short");
+        // A room from before DK Pass's file shipped: no set, no spot fields;
+        // the same Item Box 1 to 15 codes are crate seats there (D1).
+        J before = community;
+        auto &v = before["content_plan"]["item_boxes"]["spot_sets"];
+        for (size_t i = 0; i < v.size(); ++i) if (v[i]["track_id"] == "custom/dk-pass/1.0.0") { v.erase(i); break; }
+        for (auto &c : before["content_plan"]["checks"]) if (c["owner"] == "custom/dk-pass/1.0.0") c.erase("spot");
+        expect(parse(before) && bind_room(before), "community spots: a room from before the DK Pass file binds");
+        bool crates = false;
+        for (int p = 0; p < 111; ++p) {
+            const ctr_content_pad *pad = ap_content_plan_pad(p);
+            if (pad && pad->occupied && pad->named_block == 25)
+                crates = !pad->box_spots && pad->box_crates > 0 && pad->box_count == 15;
+        }
+        expect(crates, "community spots: without its set DK Pass keeps crate seating");
+    }
     // Cups (#133 PR 5): nine cups over retail, custom (named and generic) and
     // Cortex Vortex legs, shortened laps, sweeps and Cup Leg Victory checks.
     // Every cup pad is checked against the room's own records.
