@@ -1210,6 +1210,7 @@ static int s_contentInstallBusy;
 static char s_contentInstallPin[65];
 static char s_contentInstallMessage[512];
 static int s_contentStoreBusy, s_contentStoreWanted;
+static int s_contentPublishBusy; /* Play Solo publication after a store scan, on a worker */
 static unsigned int s_contentStoreGeneration; /* Bumped by every finished scan. */
 static char s_contentStoreMessage[512];
 static struct CustomSaphiCatalogue *s_saphiCatalogue;
@@ -1266,14 +1267,24 @@ static void MM_CustomLibrary_Tick(int reload)
         if (result == 1)
         {
 #ifdef CTR_AP
-            char publicationError[256];
-            if (!AP_Solo_PublishInstalledStore(NULL, publicationError, sizeof publicationError))
-                snprintf(s_contentStoreMessage, sizeof s_contentStoreMessage,
-                         "Play Solo publication failed: %.170s", publicationError);
+            /* Verified on a worker, one descriptor per frame (A3-46): with 100+
+               packages a synchronous run froze the screen for over a second. */
+            s_contentPublishBusy = AP_Solo_PublishInstalledStoreStart();
 #endif
             s_contentInstallPin[0] = 0; /* Fresh store evidence supersedes an old action message. */
         }
     }
+#ifdef CTR_AP
+    if (s_contentPublishBusy)
+    {
+        char publicationError[256];
+        int published = AP_Solo_PublishInstalledStorePoll(publicationError, sizeof publicationError);
+        if (published != 0) s_contentPublishBusy = 0;
+        if (published == -2 && !s_contentStoreMessage[0])
+            snprintf(s_contentStoreMessage, sizeof s_contentStoreMessage,
+                     "Play Solo publication failed: %.170s", publicationError);
+    }
+#endif
     if (s_contentStoreWanted && !s_contentStoreBusy && !s_contentInstallBusy)
     {
         int length = snprintf(path, sizeof path, "%s/tracks/packages", NativeAssets_GetAssetDir());

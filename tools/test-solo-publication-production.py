@@ -62,6 +62,8 @@ start = source.index("struct StorePublication\n{")
 fixture += source[start:source.index("void PublishStoreEntry(", start)]
 start = source.index("std::future<StorePublication> g_trackPublication;")
 fixture += source[start:source.index("} // namespace", start)]
+start = source.index("int g_storePublicationOutcome")
+fixture += source[start:source.index("} // namespace", start)]
 fixture += r'''
 static std::atomic<bool> entered{false}, releaseWorker{false};
 static int verifierFailure;
@@ -84,10 +86,14 @@ static bool ApplyStoreDescriptor(const StorePublication::Descriptor& d, const St
     return !(publishFailure && applied % 2);
 }
 '''
-for signature in ("void ClearOptionOverrides()", "bool TrackPublicationBusy()", "bool StartTrackPublication(const std::vector<std::string> &args)",
+for signature in ("void ClearOptionOverrides()", "bool StorePublicationBusy()", "void StartStoreWorker()",
+                  "void SupersedeStorePublication(bool owe = false)", "void TickStorePublication()",
+                  "bool TrackPublicationBusy()", "bool StartTrackPublication(const std::vector<std::string> &args)",
                   "bool TickTrackPublication()", "void CancelTrackPublication()", "void FinishTrackPublication()",
                   'extern "C" int AP_Solo_TracksStart(const char *yamlPath)',
-                  'extern "C" void AP_Solo_JobCancel(void)'):
+                  'extern "C" void AP_Solo_JobCancel(void)',
+                  'extern "C" int AP_Solo_PublishInstalledStoreStart(void)',
+                  'extern "C" int AP_Solo_PublishInstalledStorePoll(char *error, size_t errorSize)'):
     fixture += function(signature)
 fixture += r'''
 static void enter() {
@@ -103,6 +109,21 @@ static void retire() {
         int before = applied;
         TickTrackPublication();
         assert(applied - before <= 1);
+        assert(std::chrono::steady_clock::now() < end);
+        std::this_thread::yield();
+    }
+}
+// The Library's publication (A3-46): ticks until Poll reports, at most one
+// descriptor per tick, and returns what Poll said.
+static int libraryRetire(std::string *error = nullptr) {
+    auto end = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    char text[256];
+    for (;;) {
+        int before = applied;
+        TickStorePublication();
+        assert(applied - before <= 1);
+        int outcome = AP_Solo_PublishInstalledStorePoll(text, sizeof text);
+        if (outcome != 0) { if (error) *error = text; return outcome; }
         assert(std::chrono::steady_clock::now() < end);
         std::this_thread::yield();
     }
@@ -153,11 +174,76 @@ int main() {
     FinishTrackPublication(); // Quit joins a cancelled worker and retains no future.
     assert(!TrackPublicationBusy() && !applied && !spawned);
 
+    // A3-46: the Library's full publication verifies on a worker and writes
+    // one descriptor per frame, never on the start call.
+    reset(); assert(AP_Solo_PublishInstalledStoreStart()); enter();
+    char error[256];
+    for (int i = 0; i < 100; i++) { TickStorePublication(); assert(AP_Solo_PublishInstalledStorePoll(error, sizeof error) == 0); }
+    assert(!applied && StorePublicationBusy() && !TrackPublicationBusy());
+    releaseWorker = true;
+    assert(libraryRetire() == 1 && applied == 118 && !spawned && !StorePublicationBusy());
+    assert(AP_Solo_PublishInstalledStorePoll(error, sizeof error) == -1); // reported once
+
+    reset(); publishFailure = true; // the first refused track is named
+    assert(AP_Solo_PublishInstalledStoreStart()); enter(); releaseWorker = true;
+    std::string refused;
+    assert(libraryRetire(&refused) == -2 && applied == 118 && refused == "Track 0 1: solo/tracks is read-only");
+
+    // Play Solo's track step publishes everything itself: it replaces the
+    // Library's run, whose result is dropped, and the step is never refused.
+    reset(); assert(AP_Solo_PublishInstalledStoreStart()); enter();
+    assert(AP_Solo_TracksStart(nullptr));
+    assert(AP_Solo_PublishInstalledStorePoll(error, sizeof error) == 1);
+    releaseWorker = true; retire();
+    while (StorePublicationBusy()) { TickStorePublication(); std::this_thread::yield(); }
+    assert(applied == 118 && spawned == 1);
+    g_job.state = AP_SOLO_JOB_IDLE;
+
+    // Play Solo cancelled before it wrote everything: the Library's run that
+    // it replaced starts again once Play Solo's worker is gone.
+    reset(); assert(AP_Solo_PublishInstalledStoreStart()); enter();
+    assert(AP_Solo_TracksStart(nullptr));
+    AP_Solo_JobCancel();
+    assert(StorePublicationBusy());
+    releaseWorker = true;
+    {
+        auto end = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (TrackPublicationBusy() || StorePublicationBusy()) {
+            int before = applied;
+            TickTrackPublication(); TickStorePublication();
+            assert(applied - before <= 1);
+            assert(std::chrono::steady_clock::now() < end);
+            std::this_thread::yield();
+        }
+    }
+    assert(applied == 118 && !spawned);
+    AP_Solo_PublishInstalledStorePoll(error, sizeof error);
+    g_job.state = AP_SOLO_JOB_IDLE;
+
+    // While Play Solo publishes, a Library start reports done at once.
+    reset(); assert(AP_Solo_TracksStart(nullptr)); enter();
+    assert(AP_Solo_PublishInstalledStoreStart() && AP_Solo_PublishInstalledStorePoll(error, sizeof error) == 1);
+    assert(!StorePublicationBusy());
+    releaseWorker = true; retire(); assert(applied == 118 && spawned == 1);
+    g_job.state = AP_SOLO_JOB_IDLE;
+
+    // A newer scan while the worker is still verifying: verified again after it.
+    reset(); assert(AP_Solo_PublishInstalledStoreStart()); enter();
+    assert(AP_Solo_PublishInstalledStoreStart() && StorePublicationBusy());
+    releaseWorker = true;
+    assert(libraryRetire() == 1 && applied == 118 && !StorePublicationBusy());
+
+    // Quit joins the Library's worker too.
+    reset(); assert(AP_Solo_PublishInstalledStoreStart()); enter();
+    FinishTrackPublication();
+    assert(!StorePublicationBusy() && !applied);
+    AP_Solo_PublishInstalledStorePoll(error, sizeof error);
+
     reset(); runtime = false; assert(!AP_Solo_TracksStart(nullptr));
     assert(!TrackPublicationBusy());
     runtime = true; link = true; assert(AP_Solo_TracksStart(nullptr));
     assert(g_job.state == AP_SOLO_JOB_FAILED && !TrackPublicationBusy());
-    puts("PASS: start/poll/cancel return during verification; 118 entries publish one per frame; a refusal is named and never spawns the child");
+    puts("PASS: start/poll/cancel return during verification; 118 entries publish one per frame; a refusal is named and never spawns the child; the Library's publication runs on a worker and yields to Play Solo");
 }
 '''
 # The frame dispatcher must service the verifier before polling a child that
