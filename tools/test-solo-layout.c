@@ -56,8 +56,8 @@ void DecalFont_DrawLineOT(char *s, int x, int y, s16 f, int flags, uint32_t *ot)
 void RECTMENU_DrawInnerRect(RECT *r, int t, uint32_t *ot)
 {
 	(void)ot;
-	CHECK(t == 5); /* Opaque fill, including title, help and footer. */
-	CHECK(r->x == 0x10 && r->y == 4 && r->w == 0x1E0 && r->h == 0xCE);
+	CHECK(t == 0); /* Alpha2 dimmed list and help panel. */
+	CHECK(r->x == 0x14 && r->y == 0x32 && r->w == 0x1D8 && r->h == 0x8E);
 	panels++;
 }
 void CTR_Box_DrawClearBox(const RECT *r, const Color *c, int t, uint32_t *ot)
