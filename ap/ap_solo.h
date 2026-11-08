@@ -197,6 +197,14 @@ int AP_Solo_RetireReplacedTrack(const char *oldKey, const char *revision, const 
 /* Rebuild the descriptor index from verified package-store revisions. The
    optional pin publishes just one install; an empty pin rescans all of them. */
 int AP_Solo_PublishInstalledStore(const char *pin, char *error, size_t errorSize);
+/* The same for every installed revision, as a background job (A3-46): the
+   store is verified on a worker and the descriptors are written one per frame
+   from AP_Solo_Tick. A newer start replaces a running one; Play Solo's own
+   track step replaces it too (that step publishes everything itself). Poll
+   returns -1 when nothing was asked, 0 while running, then once 1 when done
+   or -2 with the first refused track in `error`. */
+int AP_Solo_PublishInstalledStoreStart(void);
+int AP_Solo_PublishInstalledStorePoll(char *error, size_t errorSize);
 /* On a row waiting for its laps: Left/Right change the laps shown, Keep writes
    the descriptor with them to solo/tracks (1) and drops the waiting copy.
    List the tracks again afterwards. */

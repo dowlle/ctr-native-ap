@@ -1052,6 +1052,81 @@ int main()
                 &sharedRows, error, sizeof error);
             CHECK(sharedRows.size() == 2, "shared store sees both installed xdelta revisions");
 
+            /* A3-46: a filtered walk reads each manifest alone and acquires only
+               what the filter accepts; an accepted revision is the same entry the
+               full scan reports, and the pinned lookups keep their answers. */
+            {
+                struct Walk { std::vector<std::string> seen; std::string only; std::vector<CustomPackageStoreEntry> rows; } w;
+                const std::string store = sharedAssets + "/tracks/packages";
+                auto want = [](const char *pin, const CustomPackageManifest *m, void *c) -> int {
+                    auto &walk = *static_cast<Walk *>(c);
+                    walk.seen.push_back(m && !std::strcmp(m->sha256, pin) ? pin : "");
+                    return walk.only == pin;
+                };
+                auto keep = [](const CustomPackageStoreEntry *e, void *c) { static_cast<Walk *>(c)->rows.push_back(*e); };
+                CHECK(CustomPackage_ScanStoreMatching(store.c_str(), want, keep, &w, error, sizeof error) &&
+                      w.seen.size() == 2 && !w.seen[0].empty() && !w.seen[1].empty() && w.rows.empty(),
+                      "A3-46 a filtered walk sees every parsed manifest and acquires nothing it refuses");
+                w = Walk(); w.only = sharedRows[1].pin;
+                CHECK(CustomPackage_ScanStoreMatching(store.c_str(), want, keep, &w, error, sizeof error) &&
+                      w.rows.size() == 1 && w.rows[0].verified && !std::strcmp(w.rows[0].pin, sharedRows[1].pin) &&
+                      !std::memcmp(&w.rows[0].manifest, &sharedRows[1].manifest, sizeof w.rows[0].manifest) &&
+                      !std::memcmp(&w.rows[0].local, &sharedRows[1].local, sizeof w.rows[0].local),
+                      "A3-46 an accepted revision is the entry the full scan reports");
+                CHECK(CustomPackage_ScanStoreMatching(store.c_str(), nullptr, keep, &w, error, sizeof error) && w.rows.size() == 3,
+                      "A3-46 no filter is the full scan");
+
+                /* Two copies of one pair: same version and pins, other manifest.
+                   The first verified one in pin order answers, and a damaged
+                   matching copy is passed over exactly as the full scan did. */
+                const CustomPackageStoreEntry &base = sharedRows[0];
+                const std::string from = store + "/" + base.pin;
+                std::ifstream in(from + "/manifest.json");
+                auto m = nlohmann::json::parse(in);
+                m["title"] = std::string(base.manifest.title) + " copy";
+                m["package_uuid"] = "00000000-0000-5000-8000-0000000a3046";
+                const std::string text = m.dump(-1, ' ', false, nlohmann::json::error_handler_t::strict);
+                NativeSha256Ctx ctx; unsigned char digest[NATIVE_SHA256_DIGEST_BYTES]; char copyPin[NATIVE_SHA256_HEX_BYTES];
+                NativeSha256_Init(&ctx); NativeSha256_Update(&ctx, text.data(), text.size());
+                NativeSha256_Final(&ctx, digest); NativeSha256_ToHex(digest, copyPin);
+                const std::string to = store + "/" + copyPin;
+                CHECK(std::system(("cp -r '" + from + "' '" + to + "'").c_str()) == 0, "A3-46 copy of a verified revision");
+                std::ofstream(to + "/manifest.json", std::ios::binary | std::ios::trunc) << text;
+                const CustomPackageFile *lev = nullptr, *vrm = nullptr;
+                for (unsigned int i = 0; i < base.manifest.count; i++)
+                {
+                    if (!std::strcmp(base.manifest.files[i].role, "lev")) lev = &base.manifest.files[i];
+                    if (!std::strcmp(base.manifest.files[i].role, "vrm")) vrm = &base.manifest.files[i];
+                }
+                const std::string first = std::min<std::string>(base.pin, copyPin), second = std::max<std::string>(base.pin, copyPin);
+                auto find = [&](const char *uuid, std::string &found) {
+                    char levPath[4096], vrmPath[4096];
+                    if (!CustomPackage_FindPinnedFiles(sharedAssets.c_str(), base.manifest.version, uuid, lev->sha256, lev->bytes,
+                                                       vrm->sha256, vrm->bytes, levPath, sizeof levPath, vrmPath, sizeof vrmPath))
+                        return false;
+                    found = std::string(levPath).substr(store.size() + 1, 64);
+                    return std::string(vrmPath).substr(store.size() + 1, 64) == found;
+                };
+                std::string found;
+                CHECK(lev && vrm && find(nullptr, found) && found == first, "A3-46 the first verified copy in pin order answers");
+                CHECK(find("00000000-0000-5000-8000-0000000a3046", found) && found == copyPin, "A3-46 a seed uuid picks its own copy");
+                const std::string damaged = store + "/" + first + "/" + lev->path;
+                char original = 0;
+                {
+                    std::fstream file(damaged, std::ios::in | std::ios::out | std::ios::binary);
+                    file.get(original); file.seekp(0); file.put((char)(original ^ 0x5a));
+                }
+                CHECK(find(nullptr, found) && found == second, "A3-46 a damaged matching copy is passed over");
+                CHECK(!find(first == base.pin ? base.manifest.uuid : "00000000-0000-5000-8000-0000000a3046", found),
+                      "A3-46 a seed uuid whose only copy is damaged finds nothing");
+                {
+                    std::fstream file(damaged, std::ios::in | std::ios::out | std::ios::binary);
+                    file.seekp(0); file.put(original);
+                }
+                std::system(("rm -rf '" + to + "'").c_str());
+                CHECK(find(nullptr, found) && found == base.pin, "A3-46 the store is whole again");
+            }
+
             /* The Play Solo descriptor (ruling of 2026-11-02): complete, and
                every fact measured on the installed room files. */
             char solo[16384], key[65], revision[65], why[160];

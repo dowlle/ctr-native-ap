@@ -555,6 +555,7 @@ void ParseList(const nlohmann::json &r)
 // Store verification runs separately from the SDL child job. Cancellation
 // discards its result without joining a worker on the frame thread.
 bool TrackPublicationBusy();
+bool StorePublicationBusy();
 bool TickTrackPublication();
 bool StartTrackPublication(const std::vector<std::string> &args);
 void CancelTrackPublication();
@@ -856,7 +857,8 @@ extern "C" int AP_Solo_TracksStart(const char *yamlPath)
 
 extern "C" int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName, const char *presetId, int useOptions)
 {
-	if (!yamlPath || !*yamlPath || g_job.state == AP_SOLO_JOB_RUNNING || TrackPublicationBusy())
+	if (!yamlPath || !*yamlPath || g_job.state == AP_SOLO_JOB_RUNNING || TrackPublicationBusy() ||
+	    StorePublicationBusy())
 		return 0;
 	std::vector<std::string> args = {"generate", "--yaml", yamlPath, "--assets", AssetsDir()};
 	if (slotName && *slotName)
@@ -1622,8 +1624,14 @@ StorePublication CollectInstalledStore(const std::string &assets, const std::str
 		std::error_code ec;
 		if (!fs::exists(store, ec) && result.pin.empty()) return result;
 		char scanError[256] = {};
-		if (!CustomPackage_ScanStore(store.u8string().c_str(), PublishStoreEntry, &result,
-		                             scanError, sizeof scanError))
+		// One install publishes only its own revision: no other package is
+		// read or hashed for it (A3-46). `live` is not needed then: a fresh
+		// install may replace another copy's entry.
+		const auto onlyPin = [](const char *pin, const CustomPackageManifest *, void *opaque) -> int {
+			return static_cast<StorePublication *>(opaque)->pin == pin;
+		};
+		if (!CustomPackage_ScanStoreMatching(store.u8string().c_str(), result.pin.empty() ? nullptr : +onlyPin,
+		                                     PublishStoreEntry, &result, scanError, sizeof scanError))
 		{
 			result.failed++;
 			if (result.error.empty()) result.error = scanError;
@@ -1690,10 +1698,116 @@ std::vector<std::string> g_trackPublicationArgs;
 std::string g_trackPublicationFailure; // the first refused track, for the menu
 size_t g_trackPublicationIndex = 0;
 bool g_trackPublishing = false;
+
+// The Library's publication after a store scan (A3-46): the same collection on
+// a worker and one descriptor per frame from AP_Solo_Tick, so a store of 100+
+// packages is never verified on a frame. Play Solo's own publication covers
+// every installed package before it lists them, so it supersedes this one.
+std::future<StorePublication> g_storePublication;
+std::atomic<bool> g_storePublicationCancel{false};
+StorePublication g_storePublicationResult;
+size_t g_storePublicationIndex = 0;
+bool g_storePublishing = false;
+bool g_storePublicationAgain = false; // asked for while a cancelled worker drains
+int g_storePublicationOutcome = -1;   // AP_Solo_PublishInstalledStorePoll's value
+std::string g_storePublicationError;
 } // namespace
 #endif
 
 namespace {
+bool StorePublicationBusy()
+{
+#ifdef CTR_CUSTOM_PACKAGES
+	return g_storePublication.valid() || g_storePublishing || g_storePublicationAgain;
+#else
+	return false;
+#endif
+}
+
+#ifdef CTR_CUSTOM_PACKAGES
+void StartStoreWorker()
+{
+	g_storePublicationAgain = false;
+	g_storePublicationCancel.store(false);
+	const std::string assets = AssetsDir();
+	try
+	{
+		g_storePublication = std::async(std::launch::async, [assets] {
+			return CollectInstalledStore(assets, "", &g_storePublicationCancel);
+		});
+	}
+	catch (const std::exception &e)
+	{
+		g_storePublicationOutcome = -2;
+		g_storePublicationError = e.what();
+	}
+}
+
+// Play Solo publishes everything itself: the Library's run stops writing. A
+// worker still verifying is left to finish and its result is dropped.
+void SupersedeStorePublication()
+{
+	g_storePublicationCancel.store(true);
+	g_storePublicationAgain = false;
+	g_storePublishing = false;
+	g_storePublicationResult = StorePublication();
+	if (g_storePublicationOutcome == 0)
+		g_storePublicationOutcome = 1;
+}
+
+void TickStorePublication()
+{
+	if (g_storePublication.valid())
+	{
+		if (g_storePublication.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+			return;
+		const bool cancelled = g_storePublicationCancel.load();
+		try { g_storePublicationResult = g_storePublication.get(); }
+		catch (const std::exception &e)
+		{
+			if (!cancelled)
+			{
+				g_storePublicationOutcome = -2;
+				g_storePublicationError = e.what();
+				Log("package descriptor publication failed: " + g_storePublicationError);
+			}
+			g_storePublicationResult = StorePublication();
+		}
+		if (cancelled)
+		{
+			g_storePublicationResult = StorePublication();
+			if (g_storePublicationAgain && !TrackPublicationBusy())
+				StartStoreWorker();
+			return;
+		}
+		if (g_storePublicationOutcome == -2)
+			return;
+		for (const std::string &note : g_storePublicationResult.notes)
+			Log(note);
+		g_storePublicationIndex = 0;
+		g_storePublicationError = g_storePublicationResult.failed ? g_storePublicationResult.error : std::string();
+		g_storePublishing = true;
+		return;
+	}
+	if (!g_storePublishing)
+		return;
+	if (g_storePublicationIndex < g_storePublicationResult.descriptors.size())
+	{
+		// One small descriptor per frame, as Play Solo's publication does.
+		const auto &d = g_storePublicationResult.descriptors[g_storePublicationIndex++];
+		std::string message;
+		if (!ApplyStoreDescriptor(d, g_storePublicationResult, message) && g_storePublicationError.empty())
+			g_storePublicationError = message;
+		return;
+	}
+	g_storePublishing = false;
+	g_storePublicationResult = StorePublication();
+	g_storePublicationOutcome = g_storePublicationError.empty() ? 1 : -2;
+	if (!g_storePublicationError.empty())
+		Log("package descriptor publication failed: " + g_storePublicationError);
+}
+#endif
+
 bool TrackPublicationBusy()
 {
 #ifdef CTR_CUSTOM_PACKAGES
@@ -1719,6 +1833,7 @@ bool StartTrackPublication(const std::vector<std::string> &args)
 		JobFail("link", "The solo folder is a link. Make it a normal folder inside the client folder.", "");
 		return true;
 	}
+	SupersedeStorePublication();
 	g_trackPublicationArgs = args;
 	g_trackPublicationCancel.store(false);
 	const std::string assets = AssetsDir();
@@ -1810,6 +1925,11 @@ void FinishTrackPublication()
 	{
 		try { g_trackPublication.get(); } catch (const std::exception &) {}
 	}
+	SupersedeStorePublication();
+	if (g_storePublication.valid())
+	{
+		try { g_storePublication.get(); } catch (const std::exception &) {}
+	}
 #endif
 }
 } // namespace
@@ -1837,6 +1957,41 @@ extern "C" int AP_Solo_PublishInstalledStore(const char *pin, char *error, size_
 	(void)pin;
 #endif
 	return 1;
+}
+
+extern "C" int AP_Solo_PublishInstalledStoreStart(void)
+{
+#ifdef CTR_CUSTOM_PACKAGES
+	g_storePublicationError.clear();
+	if (TrackPublicationBusy())
+	{
+		// Play Solo is publishing every installed package already.
+		g_storePublicationOutcome = 1;
+		return 1;
+	}
+	// A newer scan replaces an older run: its writes stop, and a worker still
+	// verifying is dropped when done and the store is verified again.
+	SupersedeStorePublication();
+	g_storePublicationOutcome = 0;
+	if (g_storePublication.valid())
+		g_storePublicationAgain = true;
+	else
+		StartStoreWorker();
+#else
+	g_storePublicationOutcome = 1;
+#endif
+	return 1;
+}
+
+extern "C" int AP_Solo_PublishInstalledStorePoll(char *error, size_t errorSize)
+{
+	if (error && errorSize) error[0] = 0;
+	const int outcome = g_storePublicationOutcome;
+	if (outcome == -2 && error && errorSize)
+		std::snprintf(error, errorSize, "%s", g_storePublicationError.c_str());
+	if (outcome != 0)
+		g_storePublicationOutcome = -1;
+	return outcome;
 }
 
 extern "C" void AP_Solo_TrackStepLaps(int index, int direction)
@@ -2178,6 +2333,9 @@ extern "C" void AP_Solo_BeforeReconnect(void)
 extern "C" void AP_Solo_Tick(void)
 {
 	ap_net_set_solo_session_query(AP_Solo_SessionOwnsConnection);
+#ifdef CTR_CUSTOM_PACKAGES
+	TickStorePublication();
+#endif
 	TickJob();
 	TickSession();
 	if (!g_session.pendingRoom.empty() && !AP_Solo_SessionActive())

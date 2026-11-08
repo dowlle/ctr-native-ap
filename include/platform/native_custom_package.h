@@ -144,6 +144,16 @@ typedef void (*CustomPackageStoreVisitor)(const struct CustomPackageStoreEntry *
    Discard accumulated rows if the overall scan fails. No mode certification. */
 int CustomPackage_ScanStore(const char *store, CustomPackageStoreVisitor visitor, void *context,
                            char *error, size_t errorSize);
+/* CustomPackage_ScanStore restricted to the revisions `want` accepts. `want`
+   sees each revision's pin and its manifest, read alone and checked against
+   the pin (NULL when it cannot be read or does not match); no payload is read
+   or hashed for a revision it refuses. Accepted revisions are fully
+   re-acquired and visited exactly as ScanStore visits them. `want` runs before
+   every revision, so it can stop the walk once it has what it needs. */
+typedef int (*CustomPackageStoreFilter)(const char *pin, const struct CustomPackageManifest *manifest, void *context);
+int CustomPackage_ScanStoreMatching(const char *store, CustomPackageStoreFilter want,
+                                    CustomPackageStoreVisitor visitor, void *context,
+                                    char *error, size_t errorSize);
 /* Resolve one verified installed revision by its exact seed pins. Both paths
    always come from the same acquired package; the caller rechecks them when
    arming the race. Returns 1 when found, 0 when absent or on scan failure. */
