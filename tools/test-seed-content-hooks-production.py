@@ -431,6 +431,12 @@ int main(void)
 	expect(rows[1].registry == AP_SEED_REGISTRY_CONFLICT && rows[1].source == AP_SEED_SOURCE_MANUAL,
 	       "a size the registry disagrees with is never overridden by the table");
 	packages[1].vrm_bytes = 458808; reg_vrm = REG_VRM; reg_generation++;
+	reg_result = AP_TRACK_REGISTRY_NOT_ON_SAPHI; snprintf(reg_lev, sizeof reg_lev, "%s", packages[1].lev_sha256);
+	reg_vrm = packages[1].vrm_sha256; reg_generation++;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(rows[1].registry == AP_SEED_REGISTRY_NOT_ON_SAPHI && rows[1].source == AP_SEED_SOURCE_MANUAL,
+	       "a live \"not on Saphi\" answer is never overridden by the table");
+	reg_vrm = REG_VRM; reg_result = AP_TRACK_REGISTRY_MATCH; snprintf(reg_lev, sizeof reg_lev, "other"); reg_generation++;
 	snprintf(packages[1].lev_sha256, sizeof packages[1].lev_sha256, "%s",
 	         "f59b5f953babac7b781916ef8aa0d5e9c1553d6056a8d760d46434c3c3c3ac86");
 	snprintf(packages[1].vrm_sha256, sizeof packages[1].vrm_sha256, "%s",

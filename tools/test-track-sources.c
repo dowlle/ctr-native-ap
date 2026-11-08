@@ -81,6 +81,9 @@ int main(void)
 	TrackSources_Hint(NULL, NULL, hint, sizeof hint);
 	expect(hint[0] == '\0', "null hash gives no sentence");
 	expect(!TrackSources_Find("abc", NULL, &s), "a short hash never matches");
+	expect(!TrackSources_Find(LOCKBOX7_LEV, UNKNOWN_LEV, &s), "a known LEV with another VRM is another track, not a hit");
+	TrackSources_Hint(LOCKBOX7_LEV, UNKNOWN_LEV, hint, sizeof hint);
+	expect(hint[0] == '\0', "a known LEV with another VRM gives no sentence");
 
 	/* 4. Two packs share a LEV: Lockbox Adventure over the 30th Anniversary
 	 * Adventure (both tester-known, Lockbox was reported first), and nightmarefueled

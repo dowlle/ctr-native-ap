@@ -802,14 +802,30 @@ int main(void)
 		{
 			const char *lockboxLev = "f59b5f953babac7b781916ef8aa0d5e9c1553d6056a8d760d46434c3c3c3ac86";
 			const char *sunkenLev = "286d6574d87e158d78cc89986f16b8b51e5b94f1b153574ea9358582e32c6ba1";
+			const char *lockboxVrm = "759df093516ba90ac36565a3529b634cfa77923cbaba7a122153ba027bac29c6";
+			const char *sunkenVrm = "bc19e0e64c89c4c6b7afbf3e33225bc640aeb10cf64f58a0cde7089620b016c4";
 			expect_int(CustomTrackManager_LocateContentFiles(root, "open-key", "Lockbox track", "1.0.0", lockboxLev,
-			           (unsigned long)s_fixtureLevLen, vrmSha, 3, &open), CTR_CT_MANAGER_NOT_INSTALLED, "absent xdelta track");
+			           (unsigned long)s_fixtureLevLen, lockboxVrm, 3, &open), CTR_CT_MANAGER_NOT_INSTALLED, "absent xdelta track");
 			expect_contains(open.detail, "Import Lockbox_Adventure.xdelta (slot 7) from ctrcustomtracks.com/lockbox-adventure/.",
 			                "an xdelta track names its patch, slot and page");
 			expect_contains(open.detail, "tracks/open-key/original", "an xdelta track still names its folder");
 			expect_int(CustomTrackManager_LocateContentFiles(root, "open-key", "Sunken Sprint", "1.0.0", sunkenLev,
-			           (unsigned long)s_fixtureLevLen, vrmSha, 3, &open), CTR_CT_MANAGER_NOT_INSTALLED, "absent Saphi track");
+			           (unsigned long)s_fixtureLevLen, sunkenVrm, 3, &open), CTR_CT_MANAGER_NOT_INSTALLED, "absent Saphi track");
 			expect_contains(open.detail, "Download from Project Saphi.", "a Saphi track says so");
+			// A known LEV with another VRM is another track: today's text.
+			expect_int(CustomTrackManager_LocateContentFiles(root, "open-key", "Lockbox track", "1.0.0", lockboxLev,
+			           (unsigned long)s_fixtureLevLen, vrmSha, 3, &open), CTR_CT_MANAGER_NOT_INSTALLED, "known LEV, other VRM");
+			expect_contains(open.detail, "Put the LEV and VRM of Lockbox track 1.0.0", "a known LEV with another VRM keeps today's text");
+			// The longest hint with the longest permitted names: never cut mid-sentence, always ends in Rescan.
+			expect_int(CustomTrackManager_LocateContentFiles(root, "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+			           "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT", "RRRRRRRRRRRRRRRRRRRRRRRR",
+			           "2ac59189d36c51c18dc02c59071f3e7019f0d8084d7d0136481c37d463b1a26e",
+			           (unsigned long)s_fixtureLevLen, "1c068f883d9a5eff33f8dda3318f60064ede78cae7e568dc668843e66a5e65d2", 3, &open),
+			           CTR_CT_MANAGER_NOT_INSTALLED, "absent St. Patrick track");
+			expect_contains(open.detail, "Import RELEASE_ST_PATRICK_ADVENTURE.xdelta (slot 7) from ctrcustomtracks.com/st-patricks-day-racing/.",
+			                "the long hint stays whole");
+			expect_contains(open.detail, "Then Rescan.", "the long message keeps its closing instruction");
+			expect_int(strlen(open.detail) < sizeof open.detail, 1, "the long message fits the detail buffer");
 		}
 		if (!Manager_CreateDirectory(root) || !Manager_CreateDirectory(tracks) || !Manager_CreateDirectory(keyDir) ||
 		    !Manager_CreateDirectory(original))

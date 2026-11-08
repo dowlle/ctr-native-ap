@@ -51,26 +51,27 @@ static inline int TrackSources_HexEqual(const char *a, const char *b)
 	return a[64] == '\0' && b[64] == '\0';
 }
 
-/* The first row for this LEV, preferring a row whose VRM also matches when a
-   VRM is given. Rows are ordered so Saphi wins, then the likeliest patch; out
-   gets a copy with alsoPatch set when a later row names another patch. NULL
-   out only tests for a hit. Returns 0 for an unknown LEV. */
+/* The first row for this LEV. When a VRM is given the row must carry that VRM
+   too: a known LEV with another VRM is a different track and is not a hit. Rows
+   are ordered so Saphi wins, then the likeliest patch; out gets a copy with
+   alsoPatch set when a later row names another patch. NULL out only tests for
+   a hit. Returns 0 for an unknown LEV or VRM. */
 static inline int TrackSources_Find(const char *levSha256, const char *vrmSha256, struct TrackSource *out)
 {
-	int i, first = -1, exact = -1, also = -1;
+	int i, first = -1, also = -1;
 	for (i = 0; i < TRACK_SOURCE_COUNT; i++)
 	{
 		if (!TrackSources_HexEqual(g_trackSources[i].lev, levSha256)) continue;
+		if (vrmSha256 && !TrackSources_HexEqual(g_trackSources[i].vrm, vrmSha256)) continue;
 		if (first < 0) first = i;
-		else if (also < 0 && g_trackSources[i].kind == TRACK_SOURCE_PATCH &&
+		else if (also < 0 && g_trackSources[first].kind == TRACK_SOURCE_PATCH && g_trackSources[i].kind == TRACK_SOURCE_PATCH &&
 		         strcmp(g_trackSources[i].patchSha256, g_trackSources[first].patchSha256) != 0) also = i;
-		if (exact < 0 && vrmSha256 && TrackSources_HexEqual(g_trackSources[i].vrm, vrmSha256)) exact = i;
 	}
 	if (first < 0) return 0;
 	if (out)
 	{
-		*out = g_trackSources[exact >= 0 ? exact : first];
-		out->alsoPatch = also >= 0 && g_trackSources[first].kind == TRACK_SOURCE_PATCH ? g_trackSources[also].patchFile : NULL;
+		*out = g_trackSources[first];
+		out->alsoPatch = also >= 0 ? g_trackSources[also].patchFile : NULL;
 	}
 	return 1;
 }

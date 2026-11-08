@@ -158,7 +158,9 @@ static int AP_SeedRegistryRow(int index, const ctr_content_package *pkg, struct 
 	}
 }
 
-// A4-2: the built-in source table as a fallback for the live registry. A Saphi
+// A4-2: the built-in source table as a fallback for the live registry, only when
+// the registry is unreachable or does not list the track (never when it lists the
+// revision and says it is not on Saphi, or disagrees on size). A Saphi
 // row whose LEV and VRM both equal the room's pins gives the same match the
 // registry would; the download still installs nothing unless the bytes equal
 // the pins.
@@ -213,7 +215,7 @@ int AP_SeedContentRows(struct AP_SeedContentRow *rows, int max)
 			row->registry = AP_SeedRegistryRow(i, pkg, NULL);
 			if (row->registry == AP_SEED_REGISTRY_LIVE || row->registry == AP_SEED_REGISTRY_CACHED)
 				row->source = AP_SEED_SOURCE_SAPHI;
-			else if (row->registry != AP_SEED_REGISTRY_CONFLICT && row->registry != AP_SEED_REGISTRY_CHECKING &&
+			else if ((row->registry == AP_SEED_REGISTRY_OFFLINE || row->registry == AP_SEED_REGISTRY_NOT_LISTED) &&
 			         AP_SeedTableMatch(pkg, NULL))
 			{
 				row->registry = AP_SEED_REGISTRY_TABLE;
@@ -301,7 +303,7 @@ static int AP_SeedInstallTarget(int index, const struct CustomTrackManagerPackag
 	{
 		const int registry = AP_SeedRegistryRow(index, pkg, match);
 		if (registry != AP_SEED_REGISTRY_LIVE && registry != AP_SEED_REGISTRY_CACHED &&
-		    !(registry != AP_SEED_REGISTRY_CONFLICT && registry != AP_SEED_REGISTRY_CHECKING && AP_SeedTableMatch(pkg, match)))
+		    !((registry == AP_SEED_REGISTRY_OFFLINE || registry == AP_SEED_REGISTRY_NOT_LISTED) && AP_SeedTableMatch(pkg, match)))
 			return 0;
 		if (!ap_seed_folder_safe(pkg->content_id)) return 0;
 		memset(paths, 0, sizeof *paths);
