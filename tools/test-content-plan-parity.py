@@ -75,7 +75,7 @@ from worlds.ctr.item_boxes import ITEM_BOX_CLASS as CBOX, PLACED_COUNTS as CBOX_
 for row in expected["retail"]:
     row["boxes"] = [[CBOX.slot_code(row["name"], s), CBOX_TIER.get((row["name"], s), 0)]
                     for s in range(1, CBOX_PLACED[row["name"]] + 1)]
-# Cups (#133 PR 5): the 27-name pool with its Win and Win All Legs codes, and
+# Cups (#133 PR 5): the named cup pool with its Win and Win All Legs codes, and
 # every track's Cup Leg Victory code (retail rows, Cortex Vortex, generic slots).
 from worlds.ctr import cup_checks as ccup
 for row in expected["retail"]:

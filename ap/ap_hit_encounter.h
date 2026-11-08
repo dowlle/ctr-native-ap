@@ -34,7 +34,7 @@ int AP_HitEncounterFieldOn(void);
 int AP_HitEncounterFieldAll(void);
 
 // The parsed draw order (16 engine ids) for a destination: ordinary tracks
-// 0..17, cups 100..104 and content-plan cups 200..226 (#133 PR 5b, present
+// 0..17, cups 100..104 and content-plan cups 200..235 (#133 PR 5b, present
 // only for the plan's cups). NULL when the feature is off or the destination
 // is unsupported.
 const int *AP_HitEncounterOrder(int destLevelID);

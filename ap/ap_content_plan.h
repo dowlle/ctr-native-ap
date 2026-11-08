@@ -141,7 +141,7 @@ typedef struct ctr_content_pad {
     char entry_id[65], track_id[65], display_name[129];
     char room_title[129]; /* what the room and Universal Tracker call this track */
     /* Cups (#133 PR 5): a four-leg cup entry. cup_index is its name in the
-     * 27-name pool; trophy_location is then `<Cup>: Win` (trophy_boost its
+     * named cup pool; trophy_location is then `<Cup>: Win` (trophy_boost its
      * rank), sweep_location `<Cup>: Win All Legs` or 0, and track_id the
      * check owner `cup:<index>`. mode_count is 0. Each leg names the track it
      * races (as a standalone pad would: retail_id, cortex, or package_index
