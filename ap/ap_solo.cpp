@@ -1708,11 +1708,15 @@ std::atomic<bool> g_storePublicationCancel{false};
 StorePublication g_storePublicationResult;
 size_t g_storePublicationIndex = 0;
 bool g_storePublishing = false;
-bool g_storePublicationAgain = false; // asked for while a cancelled worker drains
-int g_storePublicationOutcome = -1;   // AP_Solo_PublishInstalledStorePoll's value
-std::string g_storePublicationError;
+bool g_storePublicationAgain = false; // start a worker once no other publication runs
+bool g_storePublicationOwed = false;  // superseded by a Play Solo step that has not finished
 } // namespace
 #endif
+
+namespace {
+int g_storePublicationOutcome = -1; // AP_Solo_PublishInstalledStorePoll's value
+std::string g_storePublicationError;
+} // namespace
 
 namespace {
 bool StorePublicationBusy()
@@ -1744,9 +1748,15 @@ void StartStoreWorker()
 }
 
 // Play Solo publishes everything itself: the Library's run stops writing. A
-// worker still verifying is left to finish and its result is dropped.
-void SupersedeStorePublication()
+// worker still verifying is left to finish and its result is dropped. `owe`:
+// the step that supersedes it now owes the Library that publication; if the
+// step is cancelled before it has written every descriptor, the Library's run
+// starts again (CancelTrackPublication).
+void SupersedeStorePublication(bool owe = false)
 {
+	if (owe && (g_storePublication.valid() || g_storePublishing || g_storePublicationAgain ||
+	            g_storePublicationOutcome == 0))
+		g_storePublicationOwed = true;
 	g_storePublicationCancel.store(true);
 	g_storePublicationAgain = false;
 	g_storePublishing = false;
@@ -1757,6 +1767,8 @@ void SupersedeStorePublication()
 
 void TickStorePublication()
 {
+	if (!g_storePublication.valid() && g_storePublicationAgain && !TrackPublicationBusy())
+		StartStoreWorker();
 	if (g_storePublication.valid())
 	{
 		if (g_storePublication.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
@@ -1776,9 +1788,7 @@ void TickStorePublication()
 		if (cancelled)
 		{
 			g_storePublicationResult = StorePublication();
-			if (g_storePublicationAgain && !TrackPublicationBusy())
-				StartStoreWorker();
-			return;
+			return; // a run asked for since starts on a later tick
 		}
 		if (g_storePublicationOutcome == -2)
 			return;
@@ -1833,7 +1843,7 @@ bool StartTrackPublication(const std::vector<std::string> &args)
 		JobFail("link", "The solo folder is a link. Make it a normal folder inside the client folder.", "");
 		return true;
 	}
-	SupersedeStorePublication();
+	SupersedeStorePublication(true);
 	g_trackPublicationArgs = args;
 	g_trackPublicationCancel.store(false);
 	const std::string assets = AssetsDir();
@@ -1860,7 +1870,16 @@ bool TickTrackPublication()
 		try { g_trackPublicationResult = g_trackPublication.get(); }
 		catch (const std::exception &e)
 		{
-			if (!g_trackPublicationCancel.load()) JobFail("publish", e.what(), "");
+			if (!g_trackPublicationCancel.load())
+			{
+				JobFail("publish", e.what(), "");
+				if (g_storePublicationOwed)
+				{
+					// Nothing was published: the Library's run starts again.
+					g_storePublicationOwed = false;
+					g_storePublicationAgain = true;
+				}
+			}
 			return true;
 		}
 		if (g_trackPublicationCancel.load())
@@ -1890,6 +1909,7 @@ bool TickTrackPublication()
 		}
 		g_trackPublishing = false;
 		g_trackPublicationResult = StorePublication();
+		g_storePublicationOwed = false; // every installed package was published
 		if (!g_trackPublicationFailure.empty())
 		{
 			JobFail("publish", g_trackPublicationFailure, "");
@@ -1914,12 +1934,19 @@ void CancelTrackPublication()
 	g_trackPublicationCancel.store(true);
 	g_trackPublishing = false;
 	g_trackPublicationResult = StorePublication();
+	if (g_storePublicationOwed)
+	{
+		// The Library's run this step replaced is started again.
+		g_storePublicationOwed = false;
+		g_storePublicationAgain = true;
+	}
 #endif
 }
 
 void FinishTrackPublication()
 {
 #ifdef CTR_CUSTOM_PACKAGES
+	g_storePublicationOwed = false; // quit: nothing starts again
 	CancelTrackPublication();
 	if (g_trackPublication.valid())
 	{

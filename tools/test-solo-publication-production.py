@@ -62,6 +62,8 @@ start = source.index("struct StorePublication\n{")
 fixture += source[start:source.index("void PublishStoreEntry(", start)]
 start = source.index("std::future<StorePublication> g_trackPublication;")
 fixture += source[start:source.index("} // namespace", start)]
+start = source.index("int g_storePublicationOutcome")
+fixture += source[start:source.index("} // namespace", start)]
 fixture += r'''
 static std::atomic<bool> entered{false}, releaseWorker{false};
 static int verifierFailure;
@@ -85,7 +87,7 @@ static bool ApplyStoreDescriptor(const StorePublication::Descriptor& d, const St
 }
 '''
 for signature in ("void ClearOptionOverrides()", "bool StorePublicationBusy()", "void StartStoreWorker()",
-                  "void SupersedeStorePublication()", "void TickStorePublication()",
+                  "void SupersedeStorePublication(bool owe = false)", "void TickStorePublication()",
                   "bool TrackPublicationBusy()", "bool StartTrackPublication(const std::vector<std::string> &args)",
                   "bool TickTrackPublication()", "void CancelTrackPublication()", "void FinishTrackPublication()",
                   'extern "C" int AP_Solo_TracksStart(const char *yamlPath)',
@@ -195,6 +197,27 @@ int main() {
     releaseWorker = true; retire();
     while (StorePublicationBusy()) { TickStorePublication(); std::this_thread::yield(); }
     assert(applied == 118 && spawned == 1);
+    g_job.state = AP_SOLO_JOB_IDLE;
+
+    // Play Solo cancelled before it wrote everything: the Library's run that
+    // it replaced starts again once Play Solo's worker is gone.
+    reset(); assert(AP_Solo_PublishInstalledStoreStart()); enter();
+    assert(AP_Solo_TracksStart(nullptr));
+    AP_Solo_JobCancel();
+    assert(StorePublicationBusy());
+    releaseWorker = true;
+    {
+        auto end = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (TrackPublicationBusy() || StorePublicationBusy()) {
+            int before = applied;
+            TickTrackPublication(); TickStorePublication();
+            assert(applied - before <= 1);
+            assert(std::chrono::steady_clock::now() < end);
+            std::this_thread::yield();
+        }
+    }
+    assert(applied == 118 && !spawned);
+    AP_Solo_PublishInstalledStorePoll(error, sizeof error);
     g_job.state = AP_SOLO_JOB_IDLE;
 
     // While Play Solo publishes, a Library start reports done at once.
