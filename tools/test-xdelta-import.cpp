@@ -33,6 +33,7 @@ extern "C" {
 #include <cstring>
 #include <fstream>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 #include <sys/stat.h>
@@ -583,6 +584,150 @@ int main()
             const auto *it = item_for(XdeltaImport_Summary(r.scan), 0);
             CHECK(it && !it->offered && !std::strcmp(it->reason, "No preceding texture file"),
                   "normalized first entry keeps a specific refusal row");
+        }
+        XdeltaImport_Free(&r.scan);
+    }
+
+    /* Appended level then VRM: the following entry pairs only when the one
+       before is no texture, it is exactly one VRM the patch wrote, it does
+       not lead the next level, and the pair is offered as a race. */
+    {
+        DiscSpec changed = base;
+        const Bytes filler(500, 0x77);
+        auto alt = [](LevSpec spec) { Bytes ordinary = make_lev(spec); return alternate_lev(ordinary); };
+        LevSpec spec; spec.seed = 50;
+        Bytes followOrdinary = make_lev(spec);
+        changed.bigfile.push_back(alternate_lev(followOrdinary)); /* 230: normalized level, 229 is filler */
+        changed.bigfile.push_back(make_vrm(50, 0));            /* 231: its VRM */
+        changed.bigfile.push_back(filler);                     /* 232 */
+        spec.seed = 51;
+        changed.bigfile.push_back(make_lev(spec));             /* 233: ordinary map, same rule */
+        changed.bigfile.push_back(make_vrm(51, 0));            /* 234 */
+        changed.bigfile.push_back(filler);                     /* 235 */
+        spec.seed = 52;
+        changed.bigfile.push_back(alt(spec));                  /* 236: VRM with bytes after it */
+        changed.bigfile.push_back(make_vrm(52, 10));           /* 237 */
+        changed.bigfile.push_back(filler);                     /* 238 */
+        spec.seed = 53;
+        changed.bigfile.push_back(alt(spec));                  /* 239: next VRM leads level 241 */
+        changed.bigfile.push_back(make_vrm(53, 0));            /* 240 */
+        spec.seed = 54;
+        changed.bigfile.push_back(make_lev(spec));             /* 241: ordinary pair with 240 */
+        spec.seed = 55;
+        Bytes badModel = make_lev(spec);
+        put32(badModel, 4 + BODY_INST + 0x10, 0);
+        changed.bigfile.push_back(alternate_lev(badModel));    /* 242: fails the package verifier */
+        changed.bigfile.push_back(make_vrm(55, 0));            /* 243 */
+        changed.bigfile.push_back(filler);                     /* 244 */
+        spec.seed = 56; spec.race = false;
+        changed.bigfile.push_back(alt(spec));                  /* 245: verifies, no lap checkpoints */
+        changed.bigfile.push_back(make_vrm(56, 0));            /* 246 */
+        changed.bigfile.push_back(filler);                     /* 247 */
+        spec.seed = 57; spec.letters = false; spec.relic = false;
+        changed.bigfile.push_back(make_lev(spec));             /* 248: ordinary, not a race: stays silent */
+        changed.bigfile.push_back(make_vrm(57, 0));            /* 249 */
+        changed.bigfile.push_back(filler);                     /* 250 */
+        CHECK(XdeltaImport_CutVrm(changed.bigfile[237].data(), changed.bigfile[237].size()) != changed.bigfile[237].size(),
+              "fixture: VRM with trailing bytes cuts short");
+        ScanResult r = scan(write_file("Following.xdelta", encode(baseDisc, make_disc(changed))), discPath);
+        CHECK(r.ok, "following-texture scan succeeds");
+        if (r.ok)
+        {
+            const auto *s = XdeltaImport_Summary(r.scan);
+            const auto *normalized = item_for(s, 230);
+            const auto *ordinary = item_for(s, 233);
+            const auto *leader = item_for(s, 241);
+            CHECK(normalized && normalized->offered && sha_hex(followOrdinary) == normalized->levSha256 &&
+                  sha_hex(changed.bigfile[231]) == normalized->vrmSha256 && std::strstr(normalized->tags, "Race TT Arcade"),
+                  "normalized level pairs with the VRM after it");
+            CHECK(ordinary && ordinary->offered && sha_hex(changed.bigfile[234]) == ordinary->vrmSha256,
+                  "ordinary level pairs with the VRM after it");
+            CHECK(leader && leader->offered && sha_hex(changed.bigfile[240]) == leader->vrmSha256,
+                  "a VRM that leads the next level stays with that level");
+            CHECK(leader && !std::strcmp(leader->title, "Following track 1") && normalized && ordinary &&
+                  !std::strcmp(normalized->title, "Following track 2") && !std::strcmp(ordinary->title, "Following track 3"),
+                  "following pairs are numbered after every ordinary pair");
+            std::vector<int> refusals;
+            for (unsigned i = 0; i < s->count; i++)
+                if (!std::strcmp(s->items[i].reason, "No valid preceding texture file")) refusals.push_back(s->items[i].bigfileIndex);
+            CHECK(refusals == std::vector<int>({236, 239, 242, 245}), "deferred refusals keep their diagnostic order");
+            for (int slot : {236, 239, 242, 245})
+            {
+                const auto *it = item_for(s, slot);
+                CHECK(it && !it->offered && !it->pin[0] && !std::strcmp(it->reason, "No valid preceding texture file") &&
+                      std::string(it->title) == "Level " + std::to_string(slot),
+                      "a following pair short of an offered race keeps the original refusal");
+            }
+            CHECK(!item_for(s, 248), "ordinary non-race level with a following VRM stays out of the list");
+            for (int slot : {231, 234, 237, 240, 243, 246, 249})
+                CHECK(!item_for(s, slot), "a VRM entry never gets its own row");
+            std::set<std::string> titles;
+            unsigned offered = 0;
+            for (unsigned i = 0; i < s->count; i++)
+                if (s->items[i].offered) { offered++; titles.insert(s->items[i].title); }
+            CHECK(offered == 3 && titles == std::set<std::string>({"Following track 1", "Following track 2", "Following track 3"}),
+                  "refused following pairs use no track number");
+            /* 237, 243, 246, 248, 249 and five fillers (232 is in the overlay range):
+               refused pairs give their VRM back. */
+            CHECK(line_with(s, "Other changed files (10)"), "refused following VRMs stay in the other count");
+            if (normalized && normalized->offered)
+            {
+                const unsigned index = unsigned(normalized - s->items);
+                char error[256];
+                CHECK(XdeltaImport_RenameItem(r.scan, index, "Following course", error, sizeof error),
+                      "following pair survives rename");
+                s = XdeltaImport_Summary(r.scan);
+                normalized = item_for(s, 230);
+                std::vector<unsigned char> selected(s->count, 0); selected[index] = 1;
+                const std::string assets = root + "/following-assets";
+                mkdir(assets.c_str(), 0755);
+                CHECK(XdeltaImport_Install(r.scan, selected.data(), assets.c_str(),
+                                          CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM,
+                                          error, sizeof error) == 1, "following pair installs");
+                const std::string folder = assets + "/tracks/packages/" + normalized->pin;
+                CHECK(read_file(folder + "/original/bigfile-230.lev") == followOrdinary &&
+                      read_file(folder + "/original/bigfile-230.vrm") == changed.bigfile[231],
+                      "installed files are the level and the VRM after it");
+                const Bytes source = read_file(folder + "/metadata/xdelta-source.json");
+                const auto provenance = nlohmann::json::parse(source.begin(), source.end(), nullptr, false);
+                CHECK(!provenance.is_discarded() && provenance["bigfile_index"] == 230 && provenance["vrm_bigfile_index"] == 231 &&
+                      provenance["lev_normalizer_version"] == 1, "provenance names the VRM entry after a rename");
+                std::vector<CustomPackageStoreEntry> rows;
+                CustomPackage_ScanStore((assets + "/tracks/packages").c_str(),
+                    [](const CustomPackageStoreEntry *e, void *c) { if (e->verified) static_cast<std::vector<CustomPackageStoreEntry> *>(c)->push_back(*e); },
+                    &rows, error, sizeof error);
+                CHECK(rows.size() == 1 && rows[0].local.xdelta, "following pair reloads and verifies");
+            }
+        }
+        XdeltaImport_Free(&r.scan);
+    }
+
+    /* Ordinary pairs never gain the following-entry provenance key. */
+    {
+        DiscSpec changed = base;
+        LevSpec spec; spec.seed = 60;
+        changed.bigfile[0] = make_vrm(60, 0);
+        changed.bigfile[1] = make_lev(spec);
+        ScanResult r = scan(write_file("Preceding.xdelta", encode(baseDisc, make_disc(changed))), discPath);
+        CHECK(r.ok, "preceding-texture scan succeeds");
+        if (r.ok)
+        {
+            const auto *s = XdeltaImport_Summary(r.scan);
+            const auto *it = item_for(s, 1);
+            CHECK(it && it->offered, "preceding pair is offered");
+            if (it && it->offered)
+            {
+                std::vector<unsigned char> selected(s->count, 0); selected[unsigned(it - s->items)] = 1;
+                const std::string assets = root + "/preceding-assets";
+                mkdir(assets.c_str(), 0755);
+                char error[256];
+                CHECK(XdeltaImport_Install(r.scan, selected.data(), assets.c_str(), CTR_XDELTA_INSTALL_PACKAGES, error, sizeof error) == 1,
+                      "preceding pair installs");
+                const Bytes source = read_file(assets + "/tracks/packages/" + it->pin + "/metadata/xdelta-source.json");
+                const auto provenance = nlohmann::json::parse(source.begin(), source.end(), nullptr, false);
+                CHECK(!provenance.is_discarded() && !provenance.contains("vrm_bigfile_index"),
+                      "preceding pair metadata is unchanged");
+            }
         }
         XdeltaImport_Free(&r.scan);
     }
