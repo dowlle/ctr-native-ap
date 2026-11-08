@@ -14808,7 +14808,7 @@
     },
     {
      "track_id": "custom/ancient-lake/1.1.0",
-     "file_sha256": "1f100ba7444cf8d1fc0e2b1077b99f1cb4bb92c2c01c375843990a063ced1e46",
+     "file_sha256": "7b421e1a0151080a6390da626d4d78f68c6e125a870633796002372c0a355ee6",
      "pool": 15,
      "picked": [
       1,
@@ -14831,7 +14831,7 @@
     },
     {
      "track_id": "custom/dk-pass/1.0.0",
-     "file_sha256": "81942ca86fccec2645fa56540b7e1906e96109aae8b40c74f48629fa69346e14",
+     "file_sha256": "a9ced97b94b964c8e6882537e8313f5a52677e1aebfd4a7c72bf235e58967254",
      "pool": 15,
      "picked": [
       1,
