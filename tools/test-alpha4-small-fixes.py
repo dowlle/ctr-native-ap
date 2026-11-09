@@ -78,7 +78,7 @@ int main(void) {
     game.gameMode2=INC_TROPHY;UI_DrawNumTrophy(10,20);assert(!strcmp(lastText,"15"));
     for(active=0;active<2;active++)for(hidden=0;hidden<2;hidden++)for(enabled=0;enabled<2;enabled++) {
         draws=0;AP_FeedDrawHub();assert(draws==(active&&!hidden&&enabled));
-        if(draws) assert(lastY<=150); // last line clears the pad title at y=186
+        if(draws) assert(lastY<=120); // last line clears the racer portrait at y=134
     }
     for(int count=0;count<=9;count++) { draws=0;Config_DrawScrollIndicator(0,count,NULL);assert(!draws); }
     Config_DrawScrollIndicator(0,12,NULL);assert(!strcmp(lastText,"1-9/12  DOWN: MORE")&&lastY==48);

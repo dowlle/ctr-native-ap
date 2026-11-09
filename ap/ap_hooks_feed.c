@@ -356,7 +356,7 @@ void AP_FeedDrawHub(void)
 	if (!ctr_cfg_active() || !AP_HubFeedOn() || AP_CharSwap_HubHudHidden())
 		return;
 
-	AP_FeedTickAndDraw(AP_FEED_X, 150, 0);
+	AP_FeedTickAndDraw(AP_FEED_X, 120, 0);
 }
 
 // In-race surface (issue #192): the same feed, on the race HUD, so an item sent
