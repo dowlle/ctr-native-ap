@@ -334,6 +334,14 @@ int main(void)
 	expect(CustomContentVerify_Files(lev, vrm, &v, error, sizeof error) && v.measured.finishGap == 23744 &&
 	       v.measured.finishGap > CTR_CCV_FINISH_GAP_MAX, "Tizi-shaped finish gap measured over the limit");
 	expect(v.measured.checkpoints == 35, "a far finish keeps the checkpoint graph (diagnostic, not a parse failure)");
+	/* Review round 1: the fixture's 35 nodes are in a 35-entry table; give the
+	   table a 36th node, off the loop, beside node 0 and linking to it. It must
+	   not hide the far finish. */
+	put32(image, 4 + CHECK_N, 36); memset(image + 4 + BODY_CHECK + 35 * 12, 0, 12);
+	memset(image + 4 + BODY_CHECK + 35 * 12 + 8, 0xff, 4); image[4 + BODY_CHECK + 35 * 12 + 8] = 0;
+	write_bytes(lev, image, IMAGE_BYTES);
+	expect(CustomContentVerify_Files(lev, vrm, &v, error, sizeof error) && v.measured.checkpoints == 36 &&
+	       v.measured.finishGap == 23744, "an orphan node beside the start does not hide the far finish");
 	build_lev(image, 1); put32(image, 4 + BODY_CHECK + 8, 250);
 	write_bytes(lev, image, IMAGE_BYTES);
 	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "checkpoint edge beyond count refused");
