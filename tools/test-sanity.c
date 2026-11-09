@@ -45,7 +45,6 @@ static const ctr_content_pad *AP_ContentCupPad(void) { return &pad; }
 static const ctr_content_pad *AP_StandaloneRoutePad(const struct CustomTrackRaceContext *c) { (void)c; return route_valid ? &pad : NULL; }
 static int CustomTrack_ServingLoad(int a, int b, int c) { (void)a; (void)b; (void)c; return 1; }
 static int ap_net_location_checked(long code) { (void)code; return checked; }
-static int ap_net_location_exists(long code) { return code > 0; }
 static int AP_ContentCodeChecked(int64_t code) { (void)code; return checked; }
 static void AP_AppendLog(const char *line) { (void)line; }
 static void AP_FeedNoticeLine(const char *line) { assert(strstr(line, "CHECKED")); ++notices; }
