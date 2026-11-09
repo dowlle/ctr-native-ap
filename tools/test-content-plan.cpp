@@ -782,6 +782,9 @@ int main(int argc, char **argv) {
         cv_refuse("Cortex Vortex laps", [&](J &p) { cv_track(p)["laps"] = 5; });
         cv_refuse("Cortex Vortex standalone laps above 7", [&](J &p) { cv_track(p)["standalone_laps"] = 8; });
         cv_refuse("Cortex Vortex standalone laps below 1", [&](J &p) { cv_track(p)["standalone_laps"] = 0; });
+        cv_refuse("Cortex Vortex standalone laps one", [&](J &p) { cv_track(p)["standalone_laps"] = 1; });
+        cv_refuse("Cortex Vortex standalone laps three", [&](J &p) { cv_track(p)["standalone_laps"] = 3; });
+        cv_refuse("Cortex Vortex standalone laps seven", [&](J &p) { cv_track(p)["standalone_laps"] = 7; });
         cv_refuse("Cortex Vortex standalone laps not an integer", [&](J &p) { cv_track(p)["standalone_laps"] = 2.5; });
         cv_refuse("standalone laps on a retail track", [&](J &p) {
             for (auto &t : p["tracks"]) if (t["origin"] == "retail") { t["standalone_laps"] = 2; return; } });

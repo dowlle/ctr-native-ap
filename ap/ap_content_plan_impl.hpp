@@ -1135,7 +1135,7 @@ static void validate(const J &p, State &out) {
             // Accept it bounds-checked, then set it aside.
             J held = track;
             if (held.contains("standalone_laps")) {
-                number(held["standalone_laps"], 1, 7);
+                number(held["standalone_laps"], 2, 2);
                 held.erase("standalone_laps");
             }
             fields(held, {"id", "origin", "package_id", "display_name", "laps", "modes", "capabilities", "field_size"});
@@ -1446,7 +1446,7 @@ static void validate(const J &p, State &out) {
             // races the authored three, as it did.
             J held = track;
             if (held.contains("standalone_laps")) {
-                standalone_laps = number(held["standalone_laps"], 1, 7);
+                standalone_laps = number(held["standalone_laps"], 2, 2);
                 held.erase("standalone_laps");
             }
             fields(held, {"id", "origin", "package_id", "display_name", "laps", "modes", "capabilities", "field_size"});
@@ -1869,7 +1869,7 @@ static void validate(const J &p, State &out) {
                             // nowhere else; accept it bounds-checked, then compare.
                             J held = track;
                             if (held.contains("standalone_laps")) {
-                                number(held["standalone_laps"], 1, 7);
+                                number(held["standalone_laps"], 2, 2);
                                 held.erase("standalone_laps");
                             }
                             need(!cortex_seen && held == J{{"id", row["id"]}, {"origin", "cortex_vortex"}, {"package_id", row["package_id"]},
@@ -2004,7 +2004,7 @@ static void validate(const J &p, State &out) {
                     // nowhere else; accept it bounds-checked, then compare.
                     J held = track;
                     if (held.contains("standalone_laps")) {
-                        number(held["standalone_laps"], 1, 7);
+                        number(held["standalone_laps"], 2, 2);
                         held.erase("standalone_laps");
                     }
                     need(!cortex_seen && held == J{{"id", row["id"]}, {"origin", "cortex_vortex"}, {"package_id", row["package_id"]},
