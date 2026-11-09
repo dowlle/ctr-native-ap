@@ -894,7 +894,8 @@ int AP_PadLook(int physLevelID, int destLevelID);
 int AP_PadStage1Met(int physLevelID);
 
 // A Done plan pad whose entry is still met opens for a replay (one generator
-// row 6): its race type menu with every row grey, or its cup. 0 on other rooms.
+// row 6): its race type menu with every row grey, its cup, or its Crystal
+// Challenge (alpha4). 0 on other rooms.
 int AP_PadReplayable(int physLevelID, int destLevelID);
 
 // Is there an Itemsanity use opportunity behind this pad (#452)? True for a
