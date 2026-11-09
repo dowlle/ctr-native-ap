@@ -575,9 +575,11 @@ int AP_PadReplayable(int physLevelID, int destLevelID)
 #ifdef CTR_CUSTOM_TRACKS
 	const ctr_content_pad *pad = ap_content_plan_active() ? ap_content_plan_pad(physLevelID) : NULL;
 	int state;
-	if (!pad || !pad->occupied || pad->crystal || !AP_ContentPadReady(physLevelID) || !AP_ContentPadOpen(pad))
+	if (!pad || !pad->occupied || !AP_ContentPadReady(physLevelID) || !AP_ContentPadOpen(pad))
 		return 0;
 	state = AP_PadState(physLevelID, destLevelID);
+	// Finished Crystal Challenges replay through their normal single-activity
+	// route, like finished races and cups. Collected checks remain collected.
 	if (state == 5) return 1;
 	// A won stage-one Trophy/CTR race remains an income route while stage
 	// two is closed. Keep the pad's state and its remaining-check display.

@@ -42,7 +42,7 @@ assert "apContentModeMenu" not in warp and "AP_PadUsesSelector" not in warp
 ordinary = tick[tick.index("goto WarpPad_RequestLoad;"):]
 assert "apRaceTypeMenu" not in ordinary and "AP_ContentMenuRows" not in ordinary
 replay = body(pads, "int AP_PadReplayable(")
-assert "ap_content_plan_active() ? ap_content_plan_pad(physLevelID) : NULL" in replay and "pad->crystal" in replay
+assert "ap_content_plan_active() ? ap_content_plan_pad(physLevelID) : NULL" in replay
 assert "state == 3 && !pad->cup && ap_content_first_mode_replayable(pad, AP_ContentCodeChecked)" in replay
 sel = body(gates, "int AP_RaceTypeSelectorSetting(void)")
 assert "AP_RaceSelectorEffective(g_config.raceTypeSelector" in sel and "client->present ?" in sel
@@ -65,8 +65,8 @@ gate = gate[:gate.index("goto ContentPad_BuildGate;")]
 assert "AP_ContentMaskToReq(pad->stage2_mask, pad->stage2_count, &rule);" in gate
 assert "unlockItem_numNeeded = pad->stage2_count;" in gate and "AP_ContentStage2Owned(pad)" in gate
 assert "|| AP_PadReplayable(levelID, warppadObj->levelID)" in warp
-# A Done pad wears its grey X; a replayable one still takes the kart, a spare or
-# finished Crystal pad does not.
+# A Done pad wears its grey X; a replayable one still takes the kart, an empty
+# pad does not. Finished Crystal Challenges can replay too.
 assert "AP_PadState(levelID, warppadObj->levelID) == 5)\n\t{\n\t\twarppadObj->digit1s = 0;" in warp
 assert "!AP_PadReplayable(ctr_cfg_warp_phys(warppadObj->levelID), warppadObj->levelID)" in tick
 assert body(gates, "int AP_ContentTrackPadState(").count("AP_ContentPadPlainLeft(pad)") == 1

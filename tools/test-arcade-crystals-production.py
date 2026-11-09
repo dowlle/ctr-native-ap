@@ -106,6 +106,15 @@ int main(void){
   }
   assert(!AP_NotifyContentCrystalComplete());driver.numCrystals=20;blocked=1;assert(!AP_NotifyContentCrystalComplete());blocked=0;
   assert(AP_NotifyContentCrystalComplete());assert(lastCode==AP_ArenaCompletionCode(g.levelID));assert(!AP_NotifyContentCrystalComplete());
+  /* A new attempt spawns every crystal again but keeps this room's checks.
+   * Cover a lost replay and a later successful retry. */
+  {int saved[256],before=sent;memcpy(saved,checked,sizeof saved);
+   setup(&g,20+2*a);memcpy(checked,saved,sizeof saved);AP_ArcadeCrystals_Spawn(&g);assert(born==20);
+   for(int n=0;n<20;n++)AP_NotifyContentCrystalPickup(&instances[n],0);
+   assert(sent==before&&!AP_NotifyContentCrystalComplete());
+   driver.numCrystals=20;assert(!AP_NotifyContentCrystalComplete()&&sent==before);
+   assert(!memcmp(checked,saved,sizeof saved));
+  }
  }
  assert(collided==60&&perf==60&&feed==60&&ap_state_gen==60);
  for(int phase=0;phase<2;phase++)for(int fail=0;fail<20;fail++){
@@ -128,6 +137,13 @@ int main(void){
   int levels[]={21,19,23,18};struct InstDef defs[80]={0};struct Level lev={80,defs};struct Instance crystal={0};
   setup(&g,levels[a]);g.level1=&lev;g.numCrystalsInLEV=20;
   for(int n=0;n<20;n++){int before=sent;crystal.instDef=&defs[AP_CrystalInstanceBase(a,1)+n];AP_NotifyContentCrystalPickup(&crystal,0);assert(sent==before+1&&lastCode==AP_ArenaPickupCode(levels[a],n));}
+  driver.numCrystals=20;assert(AP_NotifyContentCrystalComplete());
+  {int saved[256],before=sent;memcpy(saved,checked,sizeof saved);
+   setup(&g,levels[a]);g.level1=&lev;g.numCrystalsInLEV=20;memcpy(checked,saved,sizeof saved);
+   for(int n=0;n<20;n++){crystal.instDef=&defs[AP_CrystalInstanceBase(a,1)+n];AP_NotifyContentCrystalPickup(&crystal,0);}
+   assert(!AP_NotifyContentCrystalComplete());driver.numCrystals=20;
+   assert(!AP_NotifyContentCrystalComplete()&&sent==before&&!memcmp(checked,saved,sizeof saved));
+  }
  }
  return 0;
 }
