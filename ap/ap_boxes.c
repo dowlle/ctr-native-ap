@@ -69,6 +69,7 @@ struct ApBoxLive
 };
 
 #define AP_BOX_LIVE_MAX 50
+CTR_STATIC_ASSERT(AP_SPAWN_MAX >= AP_BOX_LIVE_MAX + CTR_CFG_LETTER_COUNT);
 static struct ApBoxLive s_live[AP_BOX_LIVE_MAX];
 static int              s_liveCount;
 
