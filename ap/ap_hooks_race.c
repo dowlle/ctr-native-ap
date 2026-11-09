@@ -694,7 +694,9 @@ static const ctr_content_pad *AP_StandaloneRelicPad(void)
 // Retail tracks keep their retail relic targets; a custom track uses its
 // package's targets, never the host slot's. Cortex Vortex uses the targets
 // its legacy pad track uses (AP_CortexRelicTime, placeholders until the
-// track author supplies real times).
+// track author supplies real times), scaled to the pad's laps: standalone
+// races are two laps since 2026-11-09 (A4-13); a plan from before the ruling
+// carries no `standalone_laps` and races three, so its targets are unchanged.
 int AP_StandaloneRelicTarget(int tier)
 {
 	const ctr_content_pad *pad = AP_StandaloneRelicPad();
@@ -703,7 +705,7 @@ int AP_StandaloneRelicTarget(int tier)
 	if (pad->retail_id >= 0)
 		return pad->retail_id < 18 ? data.RelicTime[pad->retail_id * 3 + tier] : -1;
 	if (pad->cortex)
-		return AP_CortexRelicTime(tier);
+		return AP_CortexRelicTimeForLaps(tier, pad->laps);
 	pkg = ap_content_plan_package(pad->package_index);
 	return pkg && pkg->has_relic_targets ? pkg->relic_targets[tier] : -1;
 }

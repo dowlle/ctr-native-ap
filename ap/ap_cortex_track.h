@@ -179,7 +179,10 @@ static inline int AP_CortexOpenCount(const ctr_cortex_track *cv, int firstSlot, 
 // no published target times (not in the LEV, the VRM or the Saphi API as of
 // 2026-09-13), so until Lockheart supplies them these are PLACEHOLDERS: Oxide
 // Station's retail Sapphire / Gold / Platinum targets, data.RelicTime[39..41]
-// (3:17.00 / 2:56.00 / 2:34.00, in 1/960 s race-clock units).
+// (3:17.00 / 2:56.00 / 2:34.00, in 1/960 s race-clock units), authored for the
+// three laps that race then ran. Standalone races are two laps since the
+// ruling of 2026-11-09 (A4-13); AP_CortexRelicTimeForLaps scales these to the
+// laps raced, so the per-lap pace asked of the player is unchanged.
 // tools/test-cortex-track.c pins them against game/zGlobal_DATA.c. Replace the
 // row, not the mechanism, when real times arrive.
 struct AP_CortexRelicTargets
@@ -202,16 +205,40 @@ static inline int AP_CortexRelicTime(int tier)
 	return AP_CORTEX_RELIC_TARGETS.time[tier];
 }
 
+// The placeholder targets are authored for the track's three laps, like the
+// Oxide Station race they were copied from. Standalone races are two laps
+// (ruling of 2026-11-09, A4-13), so a standalone Relic Race compares against
+// the targets scaled by the laps actually raced. Every placeholder divides
+// by three exactly, so the scaled times are exact. Cup legs carry no relic
+// tiers and never reach this. A legacy room (schema 15) always races three
+// laps, so its scale is 1 and its targets are unchanged.
+#define AP_CORTEX_RELIC_LAPS 3
+
+static inline int AP_CortexRelicTimeForLaps(int tier, int laps)
+{
+	if (laps < 1)
+		laps = 1;
+	if (laps > 7)
+		laps = 7;
+	return AP_CortexRelicTime(tier) * laps / AP_CORTEX_RELIC_LAPS;
+}
+
 // The relic tiers a finished run beat, as a 3-bit mask (bit t = tier t), from
 // a race time already reduced by any all-crates bonus. Retail rule: every tier
 // is compared independently, so beating Platinum also beats Gold and Sapphire.
-static inline int AP_CortexRelicTiersBeaten(int raceTime)
+static inline int AP_CortexRelicTiersBeatenForLaps(int raceTime, int laps)
 {
 	int t, mask = 0;
 	for (t = 0; t < 3; t++)
-		if (raceTime <= AP_CortexRelicTime(t))
+		if (raceTime <= AP_CortexRelicTimeForLaps(t, laps))
 			mask |= 1 << t;
 	return mask;
+}
+
+// The three-lap form: legacy rooms and old plans.
+static inline int AP_CortexRelicTiersBeaten(int raceTime)
+{
+	return AP_CortexRelicTiersBeatenForLaps(raceTime, AP_CORTEX_RELIC_LAPS);
 }
 
 // ── results ─────────────────────────────────────────────────────────────────
