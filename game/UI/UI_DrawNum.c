@@ -26,6 +26,9 @@ void UI_DrawNumWumpa(s16 posX, s16 posY, struct Driver *d)
 		sprintf(message, &sdata->s_int[0], d->numWumpas);
 #endif
 		DecalFont_DrawLine(message, posX + 0xd, (int)posY, FONT_BIG, ORANGE);
+#ifdef CTR_AP
+		AP_WumpaDrawRaceBank(d, posX, posY);
+#endif
 	}
 
 	// if numPlyrCurrGame is 3 or 4

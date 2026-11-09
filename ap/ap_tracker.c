@@ -786,6 +786,14 @@ static void AP_TrackerDraw(void)
 		AP_TrackerArrow(x,y,sdata->gGT->drivers[0]->rotCurr.y+0x800,10,TRACKER_GOLD);
 	}
 	for(i=0;i<ap_tracker.count;i++) AP_TrackerDrawNode(i);
+	/* M08: always show the configured Wumpa target, also without a shop.
+	   A dedicated line cannot be clipped off a composed pause-menu goal. */
+	if (ctr_wumpa_shop.goal > 0) {
+		long long have = ap_net_wumpa_lifetime();
+		snprintf(line, sizeof line, "WUMPA GOAL: %lld/%d COLLECTED",
+			have > ctr_wumpa_shop.goal ? ctr_wumpa_shop.goal : have, ctr_wumpa_shop.goal);
+		AP_TrackerText(line,32,668,14,TRACKER_GOLD,1210);
+	}
 	/* #249: this hub's Wumpa Shop slots left, open and affordable (decision 21). */
 	if(AP_WumpaShopHubTrackerLine(GEM_STONE_VALLEY+ap_tracker.hub,line,(int)sizeof line))
 		AP_TrackerText(line,32,692,14,TRACKER_GOLD,1210);

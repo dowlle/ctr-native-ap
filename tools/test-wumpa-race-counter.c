@@ -139,11 +139,11 @@ static void test_exit_and_restart_bank(void)
 	RB_Player_ModifyWumpa(d, 6);
 	AP_WumpaReceive(4);
 	AP_WumpaTick(gt);
-	CHECK("A2-42 received fruit joins the race count", AP_WumpaRaceCount(d) == 13);
+	CHECK("A2-42 received fruit joins the race count", AP_WumpaRaceCount(d) == 10);
 	gt->gameMode1 |= PAUSE_1;
 	AP_WumpaReceive(5);
 	AP_WumpaTick(gt);
-	CHECK("A2-42 a paused receipt waits for the race", g_wumpa_race_pending == 5 && credited == before);
+	CHECK("A2-42 a paused receipt waits for the race", g_wumpa_race_pending == 5 && credited == before + 3);
 	rc_leave(1);
 	AP_WumpaCommitReceived();
 	CHECK("A2-42 a paused exit banks picked-up and received fruit, paused receipt in full",
@@ -239,7 +239,52 @@ static void test_exit_and_restart_bank(void)
 		}
 	}
 
+	// Starting fruit fills the kart, but cannot generate bank overflow.
+	before = credited;
+	g_wumpa_starting = 10;
+	for (i = 0; i < 6; i++)
+	{
+		rc_attempt(ADVENTURE_MODE, 4);
+		CHECK("full starting ladder fills free kart space only", d->numWumpas == 10 && g_race_start == 10);
+		rc_leave(0);
+	}
+	CHECK("starting ladder cannot mint overflow on restart", credited == before);
 	g_wumpa_starting = 0;
+	// Conservation through many pickups, hits and reconnects: every fruit is
+	// held, banked or lost to a hit. No finish may pay the overflow again.
+	before = credited;
+	rc_attempt(ADVENTURE_MODE, 0);
+	{
+		unsigned rng = 249;
+		int picked = 0, lost = 0;
+		for (i = 0; i < 10000; i++)
+		{
+			int delta, held = d->numWumpas;
+			rng = rng * 1664525u + 1013904223u;
+			delta = (int)(rng % 25u) - 7;
+			if (delta > 0) picked += delta;
+			else lost += -delta < held ? -delta : held;
+			RB_Player_ModifyWumpa(d, delta);
+			if (i % 41 == 0) AP_WumpaConnectReset();
+			CHECK("fruit conservation with hits, overflow and reconnects",
+			      credited - before + d->numWumpas + lost == picked && d->numWumpas <= 10);
+		}
+		AP_WumpaOnRaceFinish(d, 1, d->numWumpas);
+		CHECK("finish conserves fruit without repaying overflow", credited - before + lost == picked);
+		rc_leave(1);
+		CHECK("reload conserves fruit without a second payout", credited - before + lost == picked);
+	}
+	// The goal is independent of shop purchases and its target stays unchanged.
+	ctr_wumpa_shop.state = AP_WUMPA_SHOP_ABSENT;
+	ctr_wumpa_shop.goal = 3900;
+	before = credited;
+	rc_attempt(ADVENTURE_MODE, 0);
+	RB_Player_ModifyWumpa(d, 15);
+	CHECK("goal-only seeds bank overflow", credited == before + 5 && ctr_wumpa_shop.goal == 3900);
+	AP_WumpaOnRaceFinish(d, 1, d->numWumpas);
+	CHECK("goal-only finish counts all fruit once", credited == before + 15);
+	ctr_wumpa_shop.goal = 0;
+	ctr_wumpa_shop.state = AP_WUMPA_SHOP_VALID;
 	onTrack = 1;
 	rc_boundary(LOAD_RESTART);
 	sdata->Loading.stage = LOAD_IDLE;
@@ -271,18 +316,18 @@ int main(void)
 	AP_WumpaTick(&gt);
 	gt.trafficLightsTimer = -1;
 	RB_Player_ModifyWumpa(&d, 15);
-	CHECK("past ten stays in the race, real kart is juiced", AP_WumpaRaceCount(&d) == 15 && d.numWumpas == 10 && credited == b0);
+	CHECK("past ten banks immediately, held counter is ten", AP_WumpaRaceCount(&d) == 10 && d.numWumpas == 10 && credited == b0 + 5);
 	RB_Player_ModifyWumpa(&d, -3);
-	CHECK("a hit takes from the whole total", AP_WumpaRaceCount(&d) == 12 && d.numWumpas == 10);
+	CHECK("a hit takes three held fruit, bank is protected", AP_WumpaRaceCount(&d) == 7 && d.numWumpas == 7);
 	RB_Player_ModifyWumpa(&d, -3);
-	CHECK("juiced ends when the whole count drops below ten", AP_WumpaRaceCount(&d) == 9 && d.numWumpas == 9);
+	CHECK("a second hit leaves four held fruit", AP_WumpaRaceCount(&d) == 4 && d.numWumpas == 4);
 	AP_WumpaReceive(20);
 	AP_WumpaTick(&gt);
-	CHECK("received fruit joins this race without banking", AP_WumpaRaceCount(&d) == 29 && d.numWumpas == 10 && credited == b0 && g_wumpa_ap_credit == 0);
+	CHECK("received fruit fills the kart and banks overflow", AP_WumpaRaceCount(&d) == 10 && d.numWumpas == 10 && credited == b0 + 19 && g_wumpa_ap_credit == 0);
 	RB_Player_ModifyWumpa(&d, 100);
-	CHECK("three digits are represented", AP_WumpaRaceCount(&d) == 129);
+	CHECK("large grants bank overflow and keep the held counter at ten", AP_WumpaRaceCount(&d) == 10 && credited == b0 + 119);
 	AP_WumpaOnRaceFinish(&d, 1, d.numWumpas);
-	CHECK("the whole count banks once at finish", credited == b0 + 129);
+	CHECK("finish banks held fruit once, overflow was already credited", credited == b0 + 129);
 	AP_WumpaOnRaceFinish(&d, 1, d.numWumpas);
 	CHECK("duplicate finish pays nothing", credited == b0 + 129);
 	sdata->Loading.stage = LOAD_RESTART;
@@ -298,7 +343,7 @@ int main(void)
 	gt.gameMode1 |= PAUSE_1;
 	AP_WumpaReceive(20);
 	AP_WumpaTick(&gt);
-	CHECK("a paused receipt waits in this attempt", g_wumpa_race_pending == 20 && AP_WumpaRaceCount(&d) == 15);
+	CHECK("a paused receipt waits in this attempt", g_wumpa_race_pending == 20 && AP_WumpaRaceCount(&d) == 10);
 	sdata->Loading.stage = LOAD_RESTART;
 	AP_WumpaTick(&gt);
 	CHECK("A2-42 restart banks picked-up fruit and the paused receipt", credited == b0 + 129 + 15 + 20 && g_race_wumpa == -1 && g_wumpa_race_pending == 0);
@@ -331,7 +376,7 @@ int main(void)
 			AP_WumpaTick(&gt);
 			gt.trafficLightsTimer = -1;
 			RB_Player_ModifyWumpa(&d, 11);
-			CHECK("income stays exposed until any Adventure route finishes", credited == before);
+			CHECK("overflow banks before any Adventure route finishes", credited == before + 5);
 			AP_WumpaOnRaceFinish(&d, 1, d.numWumpas);
 			CHECK("every finished Adventure income route banks the full count", credited == before + 15);
 		}
@@ -347,7 +392,7 @@ int main(void)
 		forcedLoss = 1;
 		int before = credited;
 		AP_WumpaOnRaceFinish(&d, 1, d.numWumpas);
-		CHECK("A2-42 a forced DeathLink loss banks the fruit picked up, never the kart's start", credited == before + 11);
+		CHECK("DeathLink banks held pickups only; five overflow fruit already banked", credited == before + 6);
 		forcedLoss = 0;
 		before = credited;
 		onTrack = 0;
@@ -388,18 +433,18 @@ int main(void)
 		AP_WumpaTick(&gt);
 		gt.trafficLightsTimer = -1;
 		RB_Player_ModifyWumpa(&d, 14);
-		CHECK("shop-off Adventure still counts past ten", AP_WumpaRaceCount(&d) == 14 && d.numWumpas == 10);
+		CHECK("shop-off Adventure caps at ten", AP_WumpaRaceCount(&d) == 10 && d.numWumpas == 10);
 		RB_Player_ModifyWumpa(&d, -3);
-		CHECK("shop-off hits use the same full count", AP_WumpaRaceCount(&d) == 11 && d.numWumpas == 10);
+		CHECK("shop-off hits use retail held count", AP_WumpaRaceCount(&d) == 7 && d.numWumpas == 7);
 		AP_WumpaReceive(3);
 		AP_WumpaTick(&gt);
-		CHECK("shop-off receipts join the race count", AP_WumpaRaceCount(&d) == 14 && d.numWumpas == 10 && g_wumpa_ap_credit == 0);
+		CHECK("shop-off receipts fill the held count", AP_WumpaRaceCount(&d) == 10 && d.numWumpas == 10 && g_wumpa_ap_credit == 0);
 		{
 			int i;
 			for (i = 0; i < 12; i++)
 				AP_WumpaReceive(1);
 			AP_WumpaTick(&gt);
-			CHECK("A2-17 twelve single fruit in a race raise the race count past ten", AP_WumpaRaceCount(&d) == 26 && d.numWumpas == 10);
+			CHECK("twelve single fruit still cap the held count at ten", AP_WumpaRaceCount(&d) == 10 && d.numWumpas == 10);
 		}
 		gt.gameMode1 |= PAUSE_1;
 		AP_WumpaReceive(2);
@@ -421,6 +466,6 @@ int main(void)
 		CHECK("without banking a marker never creates wallet credit", credited == before);
 	}
 	test_exit_and_restart_bank();
-	printf("%s Wumpa full race counter\n", failures ? "FAIL" : "PASS");
+	printf("%s Wumpa ten-fruit counter\n", failures ? "FAIL" : "PASS");
 	return failures != 0;
 }

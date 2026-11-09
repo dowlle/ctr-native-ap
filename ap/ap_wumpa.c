@@ -37,14 +37,14 @@ static int g_starting_applied = 1;
 // reset) so a mid-cup receipt cannot leak into the next leg's load gap.
 static int g_countdown_seen = 0;
 
-// #249: the full-count finish payout, armed when a new attempt's countdown is seen.
+// Held-fruit payout, armed when a new attempt's countdown is seen.
 static AP_WumpaFinishLatch g_finish_latch = {0};
-// -1 until the attempt first needs the full count. Only the real kart's fruit
-// is capped; this count stays exposed to hits until a legitimate finish.
+// -1 until the attempt first changes its held fruit. Both counts cap at ten;
+// overflow is already in the wallet and must never enter a finish payout.
 static int g_race_wumpa = -1;
 static int g_wumpa_race_pending = 0;
 // The fruit this attempt started with: the kart's own start, captured when the
-// full count first opens, plus the Progressive Starting Wumpa applied to it.
+// held count first opens, plus the Progressive Starting Wumpa applied to it.
 // An abandoned attempt never banks it (ruled 2026-11-04).
 static int g_race_start = 0;
 
@@ -139,15 +139,40 @@ int AP_WumpaRaceModify(struct Driver *driver, int delta)
 	if (g_race_wumpa < 0) g_race_start = driver->numWumpas;
 	next = (long long)(g_race_wumpa >= 0 ? g_race_wumpa : driver->numWumpas) + delta;
 	if (next < 0) next = 0;
-	if (next > 2147483647) next = 2147483647;
+	if (next > AP_WUMPA_MAX)
+	{
+		if (AP_WumpaBanking() && g_finish_latch.armed)
+			AP_WumpaBank((int)(next - AP_WUMPA_MAX), "overflow above ten");
+		next = AP_WUMPA_MAX;
+	}
 	g_race_wumpa = (int)next;
-	driver->numWumpas = next > AP_WUMPA_MAX ? AP_WUMPA_MAX : (int)next;
+	driver->numWumpas = (int)next;
 	return 1;
+}
+
+// The spendable bank is smaller than the regular counter, directly below it.
+void AP_WumpaDrawRaceBank(struct Driver *driver, int x, int y)
+{
+	char line[48];
+	if (!AP_WumpaBanking() || !AP_WumpaRaceTracking(driver) ||
+	    sdata->gGT->numPlyrCurrGame != 1)
+		return;
+	if (ap_net_wumpa_ready())
+	{
+		long long balance = ap_net_wumpa_balance();
+		if (balance >= -999999 && balance <= 9999999)
+			snprintf(line, sizeof line, "BANK %lld", balance);
+		else
+			snprintf(line, sizeof line, "BANK %.4g", (double)balance);
+	}
+	else
+		snprintf(line, sizeof line, "BANK ...");
+	DecalFont_DrawLine(line, x, y + 18, FONT_SMALL, ORANGE);
 }
 
 // #249 hub counter (decision 20, 2026-10-28): the spendable balance and the
 // lifetime banked total, centred below the relic, key and trophy row in a 1P
-// hub. The race HUD uses the full count of this race's fruit.
+// hub. The race HUD uses the held count of this race's fruit.
 void AP_WumpaDrawHub(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -185,7 +210,7 @@ void AP_WumpaOnRaceFinish(struct Driver *driver, int wasHuman, int held)
 // same way. Called on every boundary frame of the tick, before the race state
 // is cleared; the finish latch makes the payout once per attempt, so the
 // forced reload after an exit and a RETRY after a finish pay nothing more.
-// The full count only opens in a tracked Adventure race, so Arcade, Time Trial
+// The held count only opens in a tracked Adventure race, so Arcade, Time Trial
 // and Battle bank nothing here. AP fruit received during this attempt that the
 // race never applied (a paused receipt) banks in full: received fruit is
 // limited, so it is never lost with the attempt.
@@ -216,8 +241,8 @@ void AP_WumpaReceive(int count)
 
 	if (count <= 0)
 		return;
-	// In-race receipts join the exposed race total, never the wallet. The
-	// normal tick applies them through ModifyWumpa, including past ten.
+	// In-race receipts fill the held counter, with overflow banked on grant. The
+	// normal tick applies them through ModifyWumpa, banking fruit past ten.
 	if (AP_WumpaReceiptInRace())
 	{
 		long long pending = (long long)g_wumpa_race_pending + count;
@@ -385,8 +410,13 @@ void AP_WumpaTick(struct GameTracker *gGT)
 		if (g_wumpa_starting > 0)
 		{
 			int before = g_race_wumpa >= 0 ? g_race_wumpa : local->numWumpas;
-			RB_Player_ModifyWumpa(local, g_wumpa_starting);
-			// Starting fruit joins the full count but is never banked by an
+			int grant = AP_WUMPA_MAX - before;
+			if (grant > g_wumpa_starting) grant = g_wumpa_starting;
+			if (grant < 0) grant = 0;
+			// Starting fruit fills the kart only. It must never produce
+			// overflow credit, including a pickup before this tick.
+			RB_Player_ModifyWumpa(local, grant);
+			// Starting fruit joins the held count but is never banked by an
 			// abandoned attempt.
 			if (g_race_wumpa >= 0)
 				g_race_start += g_race_wumpa - before;

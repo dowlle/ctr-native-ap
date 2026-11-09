@@ -3,10 +3,10 @@
 
 // The Wumpa Shop and the Wumpa goal (#249): pure state and decisions.
 //
-// BANKING. In an Adventure race, the full count, including fruit past ten,
-// banks only at a legitimate finish (2026-11-03 ruling). Hits reduce the whole
-// count; quit and restart forfeit it. Outside the race, received AP fruit
-// that would pass ten waiting still banks at once. A banked
+// BANKING. In an Adventure race, hold ten and bank overflow immediately.
+// Hits reduce only held fruit. A finish banks remaining held fruit once;
+// exit, restart and a received DeathLink loss exclude the starting fruit.
+// Outside a race, all received AP fruit banks at once. A banked
 // fruit adds once to the LIFETIME total, which the Wumpa goal counts and which
 // never goes down. The wallet balance is lifetime minus the prices of the
 // distinct purchases (design note, "Wallet accounting"). Banking runs when

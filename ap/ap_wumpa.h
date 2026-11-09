@@ -59,9 +59,9 @@ void AP_WumpaConnectReset(void);
 void AP_WumpaTick(struct GameTracker *gGT);
 
 // #249 banking. AP_WumpaRaceModify is called from RB_Player_ModifyWumpa for
-// gains and losses; it changes the full race count and caps the real kart at
+// gains and losses; it changes the held race count, banks overflow immediately, and caps the kart at
 // ten. AP_WumpaOnRaceFinish is called on the player's race-finished edge and
-// banks the full count once per attempt. An exit to the map, a restart and a
+// banks only the remaining held fruit once per attempt. An exit to the map, a restart and a
 // forced DeathLink loss bank the fruit picked up minus hits instead, never the
 // starting fruit (ruled 2026-11-04); the tick takes that payout at the load
 // boundary through the same once-per-attempt latch.
