@@ -22,6 +22,7 @@ void NativeConfig_Save(void) { saved++; }
 void AP_AiDifficultyCommit(void) { committed++; }
 void MainFreeze_SafeAdvDestroy(void) { destroyed++; }
 struct RectMenu *MainFreeze_GetMenuPtr(void) { return &pause_menu; }
+char *NativeMenu_Labels(const char *text) { return (char *)text; }
 void DecalFont_DrawLine(char *text, int x, int y, s16 font, int flags) {}
 '''
 fixture += source[start:end]

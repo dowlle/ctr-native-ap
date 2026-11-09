@@ -3,6 +3,7 @@
 #ifdef CTR_AP
 #include "../../ap/ap_ai_difficulty.h"
 #include "../../ap/ap_pauserow.h"
+#include <platform/native_menu.h>
 
 // A4-14: a separate selector keeps title-only Options actions out of a live
 // adventure. Confirm saves the existing comfort setting; Back changes nothing.
@@ -14,6 +15,7 @@ static void MainFreeze_AiDifficultyProc(struct RectMenu *menu)
 	{
 		MainFreeze_SafeAdvDestroy();
 		DecalFont_DrawLine("AI DIFFICULTY: NEXT RACE", 256, 40, FONT_SMALL, ORANGE | JUSTIFY_CENTER);
+		DecalFont_DrawLine(NativeMenu_Labels("* @ SELECT   ^ START BACK"), 256, 160, FONT_SMALL, WHITE | JUSTIFY_CENTER);
 		return;
 	}
 	if (menu->rowSelected >= 0 && menu->rowSelected < AI_DIFF_COUNT && AP_FastTravelAvailable())
