@@ -308,7 +308,7 @@ int CustomTrack_RaceFeatureEnabled(void);
 // whichever track is about to load and cannot wait for a subfile read to say so.
 int CustomTrack_ServingLoad(int levelID, int adventureCupActive, int cupID);
 /* Authored one-lap finish terrain, or -1 for ordinary circuit racing. */
-int CustomTrack_FinishTerrain(int levelID, int adventureCupActive, int cupID);
+int CustomTrack_FinishTerrain(const struct CustomTrackLoadContext *ctx);
 
 // The retail trophy-track identity eligible for podium checks on this load, or
 // -1 while custom bytes are being served. A borrowed host levelID is a loading

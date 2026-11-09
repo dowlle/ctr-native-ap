@@ -2091,6 +2091,36 @@ static void test_standalone_context(void)
 	expect_int(CustomTrack_GetOverride(TEST_BASE+1, &load, &path, &size), 0, "explicit retail race cannot receive custom bytes");
 }
 
+static void test_finish_terrain_boss_venue(void)
+{
+	struct CustomTrackLoadContext ctx = {0};
+	reset_loader();
+	s_customTracksLoaded = 1;
+	CustomTrack_ClearGarageVenueDescriptors();
+	ctx.levelID = TEST_HOST;
+	ctx.bossID = 0;
+	ctx.adventureBossActive = 1;
+	s_garageVenue[0].enabled = 1;
+	s_garageVenue[0].hostLevelID = TEST_HOST;
+	strcpy(s_garageVenue[0].levSha256, "e22b87a73009b94251f5216424cf07875a02e076eb8461b902624c2b5277ad45");
+	strcpy(s_garageVenue[0].vrmSha256, "5de0e46152d8fdce3e0cbe7cdd860516d98d98105106f5d81c043b39df9f0753");
+	/* Simulate the verified pair, without including third-party level bytes. */
+	s_garageVenueVerified[0] = 1;
+	expect_int(CustomTrack_FinishTerrain(&ctx), 4, "verified Tizi boss venue uses its finish surface");
+	ctx.adventureBossActive = 0;
+	expect_int(CustomTrack_FinishTerrain(&ctx), -1, "same-host retail race does not inherit a boss finish");
+	ctx.adventureBossActive = 1;
+	ctx.levelID++;
+	expect_int(CustomTrack_FinishTerrain(&ctx), -1, "wrong boss host does not inherit a finish");
+	ctx.levelID = TEST_HOST;
+	s_garageVenueVerified[0] = 0;
+	expect_int(CustomTrack_FinishTerrain(&ctx), -1, "unverified boss venue cannot enable a finish");
+	s_garageVenueVerified[0] = 1;
+	s_garageVenue[0].vrmSha256[0] = '0';
+	expect_int(CustomTrack_FinishTerrain(&ctx), -1, "mismatched boss texture hash cannot enable a finish");
+	CustomTrack_ClearGarageVenueDescriptors();
+}
+
 int main(void)
 {
 	char tmpl[] = "/tmp/ctr-custom-track-test-XXXXXX";
@@ -2133,6 +2163,7 @@ int main(void)
 	test_event_roster();
 	test_event_roster_uses_the_arcade_pack();
 	test_standalone_context();
+	test_finish_terrain_boss_venue();
 
 	if (g_failures != 0)
 	{

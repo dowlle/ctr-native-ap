@@ -24,8 +24,13 @@ void PlayLevel_UpdateLapStats(void)
 	struct GameTracker *gGT = sdata->gGT;
 	int finishTerrain = -1;
 #ifdef CTR_CUSTOM_TRACKS
-	finishTerrain = CustomTrack_FinishTerrain(gGT->levelID, (gGT->gameMode1 & ADVENTURE_CUP) != 0,
-	                                        gGT->cup.cupID);
+	struct CustomTrackLoadContext finishContext;
+	finishContext.levelID = gGT->levelID;
+	finishContext.adventureCupActive = (gGT->gameMode1 & ADVENTURE_CUP) != 0;
+	finishContext.cupID = gGT->cup.cupID;
+	finishContext.bossID = gGT->bossID;
+	finishContext.adventureBossActive = (gGT->gameMode1 & ADVENTURE_BOSS) != 0;
+	finishTerrain = CustomTrack_FinishTerrain(&finishContext);
 #endif
 #ifdef CTR_CUSTOM_PACKAGES
 	if (MainRaceTrack_OfflineCustomLoad()) finishTerrain = CustomOffline_RuntimeFinishTerrain();

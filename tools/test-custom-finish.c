@@ -16,7 +16,7 @@ static struct CheckpointNode node;
 static struct Instance instance;
 static struct Thread thread;
 static int terrain, nextProgress, laps, finishes, ends;
-int CustomTrack_FinishTerrain(int level, int cup, int id) {(void)level;(void)cup;(void)id; return terrain;}
+int CustomTrack_FinishTerrain(const struct CustomTrackLoadContext *ctx) {(void)ctx; return terrain;}
 int MainRaceTrack_OfflineCustomLoad(void) {return 0;}
 int CustomOffline_RuntimeFinishTerrain(void) {return -1;}
 void VehLap_UpdateProgress(struct Driver *d) {d->distanceToFinish_curr = nextProgress;}
