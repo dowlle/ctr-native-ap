@@ -83,6 +83,31 @@ int main(void) {
         local.driverRank = mode == 1 ? -1 : 1;
         VehPhysGeneral_SetHeldItem(&local); assert(local.heldItemID == 2);
     }
+    // A downstream cap must not restore the item the trap discarded.
+    memset(ap_itemsanity_owned, 0, sizeof ap_itemsanity_owned);
+    ap_itemsanity_owned[0] = ap_itemsanity_owned[8] = ap_itemsanity_owned[10] = 1;
+    rerollExcluded = 11;
+    for (int mode = 0; mode < 3; mode++) {
+        gt.gameMode1 = ADVENTURE_MODE | WARPBALL_HELD |
+                       (mode ? ADVENTURE_BOSS : CRYSTAL_CHALLENGE);
+        local.driverRank = mode == 1 ? -1 : 1;
+        rng = mode == 1 ? 1 : 8; // select Warpball, capped to discarded Missile x3
+        VehPhysGeneral_SetHeldItem(&local); assert(local.heldItemID == 0);
+    }
+    memset(ap_itemsanity_owned, 0, sizeof ap_itemsanity_owned);
+    ap_itemsanity_owned[0] = ap_itemsanity_owned[2] = ap_itemsanity_owned[10] = 1;
+    rerollExcluded = 2;
+    gt.numPlyrCurrGame = 4; gt.numBotsNextGame = 0; gt.numPlayersWith3Missiles = 2;
+    for (int mode = 0; mode < 3; mode++) {
+        gt.gameMode1 = ADVENTURE_MODE | (mode ? ADVENTURE_BOSS : CRYSTAL_CHALLENGE);
+        local.driverRank = mode == 1 ? -1 : 1;
+        rng = mode == 1 ? 2 : 16; // select Missile x3, capped to discarded Missile
+        VehPhysGeneral_SetHeldItem(&local); assert(local.heldItemID == 0);
+    }
+    gt.numPlyrCurrGame = 1; gt.numBotsNextGame = 1;
+    rng = 0; rerollExcluded = 0;
+    memset(ap_itemsanity_owned, 0, sizeof ap_itemsanity_owned);
+    ap_itemsanity_owned[0] = ap_itemsanity_owned[2] = 1;
     // A sole unlock may repeat, and an inactive trap does not narrow the pool.
     ap_itemsanity_owned[2] = 0;
     gt.gameMode1 = ADVENTURE_MODE | CRYSTAL_CHALLENGE;

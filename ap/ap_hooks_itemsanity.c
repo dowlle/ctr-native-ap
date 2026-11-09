@@ -157,7 +157,8 @@ int AP_ItemsanityFilterRoll(struct Driver *driver, int rolled, unsigned roll,
 //
 // No RNG draw is consumed: the roll that produced `rolled` is reused, so a given
 // seed and roll still produce one deterministic answer.
-int AP_TrapRerollFilter(struct Driver *driver, int rolled, unsigned roll)
+static int AP_TrapRerollFilterPool(struct Driver *driver, int rolled, unsigned roll,
+	unsigned excludedMask)
 {
 	static const unsigned char apTrapRerollAllOwned[AP_ITEMSANITY_WEAPON_COUNT] =
 		{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
@@ -187,7 +188,8 @@ int AP_TrapRerollFilter(struct Driver *driver, int rolled, unsigned roll)
 	    (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0)
 	        ? ap_itemsanity_owned : apTrapRerollAllOwned;
 
-	alternative = AP_ItemsanitySelectOwned(roll, AP_ITEMSANITY_ID_BIT((unsigned)excluded),
+	alternative = AP_ItemsanitySelectOwned(roll,
+	                                       excludedMask | AP_ITEMSANITY_ID_BIT((unsigned)excluded),
 	                                       AP_ITEMSANITY_FULL_POOL,
 	                                       AP_ITEMSANITY_FULL_POOL_SIZE, owned);
 	if (alternative == AP_ITEMSANITY_NO_ITEM)
@@ -199,6 +201,11 @@ int AP_TrapRerollFilter(struct Driver *driver, int rolled, unsigned roll)
 		return rolled;
 	}
 	return alternative;
+}
+
+int AP_TrapRerollFilter(struct Driver *driver, int rolled, unsigned roll)
+{
+	return AP_TrapRerollFilterPool(driver, rolled, roll, 0);
 }
 
 // Arena grants bypass the ordinary roulette filter. Under Itemsanity, A4-12
@@ -238,6 +245,14 @@ int AP_ItemsanitySubstituteOwned(struct Driver *driver, int proposed,
 
 	filtered = AP_ItemsanitySubstituteDownstream(proposed, roll, table,
 	                                            tableCount, ap_itemsanity_owned);
+	if (AP_ItemsanityUnlockedPool(driver))
+	{
+		// A cap may rewrite a safe draw back into Item Reroll's discarded
+		// weapon. Reapply its guard without reissuing either capped weapon:
+		// their bookkeeping has already run by this point.
+		filtered = AP_TrapRerollFilterPool(driver, filtered, roll,
+		                                  AP_ITEMSANITY_CAPPED_IDS);
+	}
 	if (filtered == AP_ITEMSANITY_NO_ITEM)
 	{
 		// Same ruled Empty Crates shape as the draw filter.
