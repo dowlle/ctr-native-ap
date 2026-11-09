@@ -2,6 +2,7 @@
 
 #include <platform/native_custom_tracks.h>
 #include <platform/native_sha256.h>
+#include <platform/native_custom_finish.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1431,6 +1432,12 @@ int CustomTrack_ServingLoad(int levelID, int adventureCupActive, int cupID)
 
 	CustomTrack_Config();
 	return CustomTrack_LoadServes(&ctx);
+}
+
+int CustomTrack_FinishTerrain(int levelID, int adventureCupActive, int cupID)
+{
+	return CustomTrack_ServingLoad(levelID, adventureCupActive, cupID) ?
+	       CustomFinish_Terrain(s_descriptor.levSha256, s_descriptor.vrmSha256) : -1;
 }
 
 int CustomTrack_RetailPodiumLevelID(int levelID, int adventureCupActive, int cupID)

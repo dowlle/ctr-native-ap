@@ -40,6 +40,8 @@ struct XdeltaImportItem
     char title[CTR_XDELTA_TITLE_MAX];
     char tags[48];     /* "Race TT Arcade Relic CTR", offered items only. */
     char reason[CTR_XDELTA_REASON_MAX]; /* Skip reason; "" when offered. */
+    unsigned long finishGap; /* Measured warning only, never an admission limit. */
+    char warning[CTR_XDELTA_REASON_MAX];
     char levSha256[65], vrmSha256[65];
     char pin[65];      /* Manifest pin of the built package, offered items only. */
     char trackKey[65]; /* Room folder: assets/tracks/<trackKey>/original, offered items only. */

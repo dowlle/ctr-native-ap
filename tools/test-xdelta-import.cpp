@@ -595,8 +595,8 @@ int main()
             const auto *s = XdeltaImport_Summary(r.scan);
             const auto *farItem = item_for(s, 1);
             const auto *nearItem = item_for(s, 3);
-            CHECK(farItem && !farItem->offered && !std::strcmp(farItem->reason, "Finish line not reachable: laps never count"),
-                  "far finish is refused with its own reason");
+            CHECK(farItem && farItem->offered && farItem->finishGap > CTR_CCV_FINISH_GAP_MAX && farItem->warning[0],
+                  "unknown far finish is offered with a measured warning");
             CHECK(nearItem && nearItem->offered, "retail-sized finish gap is still offered");
         }
         XdeltaImport_Free(&r.scan);

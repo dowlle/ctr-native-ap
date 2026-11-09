@@ -44,6 +44,7 @@ int CustomOffline_RuntimeMode(void); /* CTR_OFFLINE_MODE_*, zero when inactive. 
 void CustomOffline_EndRuntime(void);
 int CustomOffline_RuntimeActive(void);
 int CustomOffline_RuntimeLaps(void); /* Authored standalone laps, zero when inactive. */
+int CustomOffline_RuntimeFinishTerrain(void);
 /* Monotonic run identity; survives teardown, increments only on BeginRuntime. */
 uint64_t CustomOffline_RuntimeGeneration(void);
 /* A load request keeps the runtime: the host slot's geometry stays resident,

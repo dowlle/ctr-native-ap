@@ -290,3 +290,4 @@ tools/test-track-registry.cpp
 tools/test-track-registry-download-production.py
 tools/test-feed-trap-lines.c
 tools/test-track-sources.c
+tools/test-custom-finish.c
