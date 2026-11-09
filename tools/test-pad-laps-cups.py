@@ -49,7 +49,7 @@ assert "cup->legs[race->leg].track_pad" in policy and "return AP_BOX_PRESENT_NON
 seat = function(boxes, "static void AP_BoxesSeatCustom(")
 assert "pad->legs[race->leg].track_pad" in seat
 footer = tracker[tracker.index("if(ap_tracker.pinned && ap_tracker.count) {"):]
-assert "ap_content_cup_box_pending(plan,ap_content_plan_pad,AP_ContentCodeChecked)" in footer and "int bits[96]" in footer
+assert "ap_content_cup_box_pending(plan,ap_content_plan_pad,AP_ContentCodeChecked)" in footer and "int bits[AP_PAD_DISPLAY_BITS_MAX]" in footer
 # Every cup pad knows its legs' track pads, boss cups too: 0 would be a real pad.
 parser = (root / "ap/ap_content_plan_impl.hpp").read_text(encoding="utf-8")
 assert "for (auto &cup : out.pads) seat_track_pads(cup);" in parser and "for (auto &cup : out.garage_cups) seat_track_pads(cup);" in parser
@@ -173,10 +173,13 @@ int main(void)
     cup.physical = AP_CONTENT_GARAGE_CUP_PAD;
     { ap_content_cup_track_check rows[AP_CONTENT_CUP_TRACK_CHECKS];
       int c = ap_content_cup_track_checks(&cup, ap_content_plan_pad, rows);
-      for (int i = 0; i < c; ++i) assert(rows[i].bit < AP_CONTENT_BIT_CUP_LAP); }
+      for (int i = 0; i < c; ++i) {
+          int physical, leg;
+          assert(!ap_content_cup_lap_bit_decode(rows[i].bit, &physical, &leg));
+      } }
     cup.physical = 100;
     /* The worst cup fits the state's list and the glow. */
-    assert(AP_CONTENT_CUP_TRACK_CHECKS + 6 <= 96);
+    assert(AP_CONTENT_CUP_TRACK_CHECKS + 6 <= 256);
     /* Item 3: the row names stage 2. */
     { static const struct { unsigned mask; int count; const char *want; } cases[] = {
           {1u << 11, 2, "2 Blue Gems"}, {1u << 9, 2, "2 Red Gems"}, {1u << 9, 1, "1 Red Gem"},

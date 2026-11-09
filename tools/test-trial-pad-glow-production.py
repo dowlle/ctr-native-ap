@@ -51,7 +51,7 @@ static void AP_AppendTrackRungGlow(int t,int *out,int cap,int *n){(void)t;if(run
 #define AP_CV_APPEND_RUNGS 2
 #define AP_CV_APPEND_LETTERS 4
 #define AP_CV_APPEND_WUMPA 8
-#define AP_PAD_DISPLAY_BITS_MAX 96
+#define AP_PAD_DISPLAY_BITS_MAX 256
 #define AP_CV_PSEUDO_BASE 0x220
 static int AP_PadBoxLive(long code,void *ctx){(void)code;(void)ctx;return 1;}
 static int cortexValid=0;
@@ -157,4 +157,4 @@ assert 'int apUncBits[AP_PAD_DISPLAY_BITS_MAX];' in warp
 assert 'AP_PadUncollectedDisplayBits' not in tracker and 'AP_PadUncollectedDisplayBits' not in state
 assert 'AP_PadUncollectedGlowBits(physLevelID,' in state and 'AP_ContentTrackPadState(pad)' in state
 header=(root/'ap/ap_hooks.h').read_text()
-assert '#define AP_PAD_DISPLAY_BITS_MAX 96' in header
+assert '#define AP_PAD_DISPLAY_BITS_MAX 256' in header
