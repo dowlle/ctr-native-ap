@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The named cup pool in native (A3-42, nine tester cup names appended).
+"""The named cup pool in native (A3-42, nine tester cup names appended; A4-16, Dex Cup appended).
 
 Reads ap/ap_content_registry.hpp (the registry the apworld's CUP_NAMES is synced
 into by tools/sync-content-registry.py) and the engine's own font tables in
@@ -7,7 +7,7 @@ game/zGlobal_DATA.c, and pins four things:
 
 1. The pool is append-only: the first 27 names and codes are the frozen 0.3.0
    ones, names 27 and up take the growth ranges 35027100 / 35027300, and the
-   nine alpha3 names follow in order.
+   nine alpha3 names plus Dex Cup follow in order.
 2. Every glyph of every name has an icon in data.font_characterIconID (0xFF is
    "not drawn"), underscore included.
 3. The cup banner (UI_RaceFlow.c) and the standings title (UI_CupStandings.c)
@@ -87,11 +87,11 @@ FROZEN_NAMES = [
     "Bob90 Cup", "Turbo Cup", "Relic Cup", "Multiworld Cup", "Sphere Cup",
 ]
 NEW = ["Cristichi Cup", "FruitLion8 Cup", "TayWoodz Cup", "MeD Cup", "Lionboy Cup",
-       "MisterShaokahn Cup", "Sturg Cup", "Prototyp_002 Cup", "Em Cup"]
+       "MisterShaokahn Cup", "Sturg Cup", "Prototyp_002 Cup", "Em Cup", "Dex Cup"]
 
-check("pool has the 27 frozen names and the nine alpha3 names", len(cups) == FROZEN + len(NEW))
+check("pool has the 27 frozen names and the ten later names", len(cups) == FROZEN + len(NEW))
 check("the 27 frozen names are unchanged and in order", names[:FROZEN] == FROZEN_NAMES)
-check("the nine alpha3 names follow Sphere Cup in order", names[FROZEN:] == NEW)
+check("the nine alpha3 names and Dex Cup follow Sphere Cup in order", names[FROZEN:] == NEW)
 check("names are unique", len(set(names)) == len(names))
 check("frozen names keep 35027000 + i and 35027200 + i",
       all(c["win"] == 35027000 + i and c["sweep"] == 35027200 + i for i, c in enumerate(cups[:FROZEN])))
