@@ -1541,6 +1541,17 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		int startY = 0x3C;
 		int rowSpacing = 0x0E;
 
+		if (pageRows > CONFIG_PAGE_WINDOW)
+		{
+			char range[64];
+			int last = s_configTop + CONFIG_PAGE_WINDOW;
+			if (last > pageRows) last = pageRows;
+			snprintf(range, sizeof range, "%d-%d/%d  %s", s_configTop + 1, last, pageRows,
+			         s_configTop == 0 ? "DOWN: MORE" :
+			         last == pageRows ? "UP: MORE" : "UP/DOWN: MORE");
+			DecalFont_DrawLineOT(range, 0x100, 0x30, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+		}
+
 		for (int j = s_configTop; j < numRows && j < s_configTop + CONFIG_PAGE_WINDOW; j++)
 		{
 			const ConfigEntry *e = Section_Entry(sec, j);

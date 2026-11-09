@@ -348,13 +348,15 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 	}
 }
 
-// Adventure-hub surface: the shipped anchor, bottom-left, unchanged.
+// Leave the bottom title/racer block clear, including while approaching a pad.
+// The picker owns the screen: keep both pending and visible feed lines until it
+// closes, just as the race feed waits while paused.
 void AP_FeedDrawHub(void)
 {
-	if (!ctr_cfg_active() || !AP_HubFeedOn())
+	if (!ctr_cfg_active() || !AP_HubFeedOn() || AP_CharSwap_HubHudHidden())
 		return;
 
-	AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_BASE_Y, 0);
+	AP_FeedTickAndDraw(AP_FEED_X, 150, 0);
 }
 
 // In-race surface (issue #192): the same feed, on the race HUD, so an item sent

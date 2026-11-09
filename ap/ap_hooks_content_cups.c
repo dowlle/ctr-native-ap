@@ -140,7 +140,15 @@ const char *AP_ContentCupTrackName(void)
 	if (!pad || leg < 0 || leg >= AP_CONTENT_CUP_LEGS || pad->legs[leg].retail_id >= 0)
 		return NULL;
 	if (pad->legs[leg].cortex)
-		return AP_CortexTrackDisplayName();
+	{
+		// A content-plan Cortex Vortex leg carries its identity in the cup race
+		// context, not in the schema-15 pad-track latch, so the legacy helper
+		// answers NULL here and the standings heading fell back to the host
+		// slot's name (OXIDE STATION over a Cortex Vortex leg, alpha3
+		// playthrough F47). The bundled track's name is a constant either way.
+		const char *legacy = AP_CortexTrackDisplayName();
+		return legacy != NULL ? legacy : "CORTEX VORTEX";
+	}
 	pkg = ap_content_plan_package(pad->legs[leg].package_index);
 	return pkg && pkg->display_name[0] ? pkg->display_name : "Custom track";
 }

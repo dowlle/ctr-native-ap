@@ -155,10 +155,23 @@ void UI_DrawNumTrophy(s16 posX, s16 posY)
 	DecalFont_DrawLine(&sdata->s_x[0], posX, posY + 4, FONT_SMALL, ORANGE);
 
 	gGT = sdata->gGT;
-	num = gGT->currAdvProfile.numTrophies;
-	if ((gGT->gameMode2 & INC_TROPHY) != 0)
+#ifdef CTR_AP
+	// AP: Trophies are a received currency, so a seed with extra Trophies in
+	// the pool must count past the 16 retail reward bits the profile mirror
+	// saturates at (Discord M06: the counter stayed at 16). Same AP truth the
+	// relic counter above and the podium (ap_hooks_ceremony.c) already read.
+	if (ctr_cfg_active())
 	{
-		num--;
+		num = AP_GateCount(AP_IDX_TROPHY);
+	}
+	else
+#endif
+	{
+		num = gGT->currAdvProfile.numTrophies;
+		if ((gGT->gameMode2 & INC_TROPHY) != 0)
+		{
+			num--;
+		}
 	}
 
 	sprintf(&string[0], &sdata->s_longInt[0], num);
