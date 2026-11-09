@@ -49,6 +49,18 @@ int AP_ItemsanityWeaponAvailable(int heldItemID)
 	       AP_ItemsanityUseIsOwned(heldItemID, ap_itemsanity_owned);
 }
 
+// A4-12: local Adventure players draw from every unlocked weapon in these
+// modes. The boss's attack adapter and all non-Itemsanity games stay retail.
+int AP_ItemsanityUnlockedPool(struct Driver *driver)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	return gGT && AP_ItemsanityShouldFilter(AP_ItemsanityActive(),
+	    driver == gGT->drivers[0], (gGT->gameMode1 & ADVENTURE_MODE) != 0,
+	    (gGT->gameMode1 & BATTLE_MODE) != 0,
+	    (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0) &&
+	    (gGT->gameMode1 & (ADVENTURE_BOSS | CRYSTAL_CHALLENGE)) != 0;
+}
+
 // Called from VehPickupItem_ShootOnCirclePress with the driver's own held id,
 // before vanilla folds Bomb/Bomb x3/Missile x3 into the shared Missile branch.
 // That press is the committed-use edge: VehPhysProc has already spent the item
@@ -65,11 +77,8 @@ void AP_ItemsanityOnUse(struct Driver *driver, int heldItemID)
 
 	// Ownership precondition, ruled 2026-08-20. Every path the itemsanity filters
 	// actually cover arrives here holding a weapon the player received, so this
-	// is inert for ADVENTURE races and for boss assistance. It is NOT inert for
-	// the ruled Crystal Challenge exception: the arena hardcode grants its Bomb
-	// or Turbo without consulting the received set, and firing that used to bank
-	// the weapon's itemsanity check. The grant stays, because the challenge is
-	// unwinnable without it; the check does not.
+	// is inert for Adventure races, bosses and Crystal Challenges. Keep it as
+	// defence in depth for any future grant path that forgets its own gate.
 	//
 	// It is not inert OUTSIDE Adventure either, and that is deliberate rather
 	// than incidental. Arcade, VS, Time Trial and Battle are all excluded by
@@ -116,8 +125,11 @@ int AP_ItemsanityFilterRoll(struct Driver *driver, int rolled, unsigned roll,
 	    (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0))
 		return rolled;
 
-	filtered = AP_ItemsanitySubstituteRoll(rolled, roll, table, tableCount,
-	                                      ap_itemsanity_owned);
+	filtered = AP_ItemsanityUnlockedPool(driver)
+	    ? AP_ItemsanitySelectOwned(roll, 0, AP_ITEMSANITY_FULL_POOL,
+	                              AP_ITEMSANITY_FULL_POOL_SIZE, ap_itemsanity_owned)
+	    : AP_ItemsanitySubstituteRoll(rolled, roll, table, tableCount,
+	                                 ap_itemsanity_owned);
 	if (filtered == AP_ITEMSANITY_NO_ITEM)
 	{
 		// Ruled Empty Crates shape: keep the box/roulette acquisition path, hold
@@ -141,8 +153,7 @@ int AP_ItemsanityFilterRoll(struct Driver *driver, int rolled, unsigned roll,
 //
 // When itemsanity is not filtering this roll the player owns everything by
 // definition, so the pool is the whole weapon list. Reusing the real ownership
-// gate rather than testing AP_ItemsanityActive alone keeps the Crystal Challenge
-// and battle exceptions identical to every other filter here.
+// gate keeps the local Adventure and battle policy identical to the other filters.
 //
 // No RNG draw is consumed: the roll that produced `rolled` is reused, so a given
 // seed and roll still produce one deterministic answer.
@@ -190,26 +201,10 @@ int AP_TrapRerollFilter(struct Driver *driver, int rolled, unsigned roll)
 	return alternative;
 }
 
-// Ownership guard for the Crystal Challenge arena hardcode.
-//
-// RULED 2026-08-20: "The weapon should not arrive in the arenas at all,
-// itemsanity also applies to arenas." The arena grant is not a roll and does not
-// route through any of the filters here: VehPhysGeneral_SetHeldItem selects
-// ITEMSET_CrystalChallenge unconditionally and hands out Bomb or Turbo keyed on
-// level id alone. So the gate has to live at that hardcode, and this is it.
-//
-// Unowned means the arena hands over nothing, and ONLY nothing. RULED
-// 2026-08-21 (posting-pack fixing pass): the Empty Crates fruit does NOT apply
-// here, unlike every race-context refusal above. Wumpa has no function inside a
-// Crystal Challenge arena -- there is no roulette to juice and no reach-10
-// standing -- so the consolation fruit was a functionally pointless side
-// effect, not a compensation. The empty slot alone is the correct result.
-//
-// Uses AP_ItemsanityShouldFilter, the same predicate as every other gate in this
-// file, so the arena cannot drift away from the rest of itemsanity. That only
-// works because the ruling removed the `!isCrystal` term: before it, this call
-// would have been inert.
-int AP_ItemsanityFilterCrystalGrant(struct Driver *driver, int proposed)
+// Arena grants bypass the ordinary roulette filter. Under Itemsanity, A4-12
+// draws from all received weapons instead of the arena's fixed Bomb/Turbo.
+// No unlocks means an empty slot with no fruit, retaining the 2026-08-21 rule.
+int AP_ItemsanityFilterCrystalGrant(struct Driver *driver, int proposed, unsigned roll)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	if (!gGT || !AP_ItemsanityShouldFilter(AP_ItemsanityActive(),
@@ -218,11 +213,11 @@ int AP_ItemsanityFilterCrystalGrant(struct Driver *driver, int proposed)
 	    (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0))
 		return proposed;
 
-	if (AP_ItemsanityRollAllowed(proposed, ap_itemsanity_owned))
-		return proposed;
-
-	AP_AppendLog("[AP ITEMSANITY] arena weapon not received; slot left empty\n");
-	return AP_ITEMSANITY_NO_ITEM;
+	// A4-12 supersedes the fixed Bomb/Turbo grant under Itemsanity. Reuse the
+	// existing crate roll, before the engine's Warpball and Missile x3 caps.
+	// No received weapon still means an empty slot without consolation fruit.
+	return AP_ItemsanitySelectOwned(roll, 0, AP_ITEMSANITY_FULL_POOL,
+	                                AP_ITEMSANITY_FULL_POOL_SIZE, ap_itemsanity_owned);
 }
 
 // Ownership guard for vanilla's downstream item rewrites. The draw filter above
