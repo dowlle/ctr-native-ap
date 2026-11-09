@@ -28,6 +28,7 @@ struct CustomTrackRaceContext { uint64_t seedEpoch; int cup, leg, retail; char t
 static struct GameTracker gt;
 static struct { struct GameTracker *gGT; } globals = { &gt }, *sdata = &globals;
 static ctr_content_sanity record;
+static ctr_content_sanity boss_record;
 static ctr_content_pad pad;
 static struct CustomTrackRaceContext context;
 static uint64_t epoch = 1;
@@ -36,7 +37,7 @@ int ctr_cfg_active(void) { return 1; }
 int ap_content_plan_active(void) { return 1; }
 uint64_t ap_content_plan_epoch(void) { return epoch; }
 const ctr_content_sanity *ap_content_plan_sanity(const char *id) { return strcmp(id, "retail:3") ? NULL : &record; }
-const ctr_content_sanity *ap_content_plan_sanity_boss(int boss) { return boss == 0 ? &record : NULL; }
+const ctr_content_sanity *ap_content_plan_sanity_boss(int boss) { return boss == 0 ? &boss_record : NULL; }
 int ap_content_plan_sanity_pad(int physical, int family, int64_t *out, int capacity) {
     (void)physical; (void)family; if (capacity && out) out[0] = 123; return capacity > 0;
 }
@@ -79,6 +80,9 @@ int main(void) {
     route_valid = 1; AP_SanityPickup(&objects[2], &player); assert(sent == 3);
     for (i = 0; i < 121; ++i) AP_SanityTick(&gt);
     assert(notices == 3);
+    gt.gameMode1 = ADVENTURE_MODE | 128; gt.bossID = 0;
+    assert(AP_SanityRoute(&gt) == &boss_record); /* Boss identity wins over a standalone host context. */
+    gt.gameMode1 = ADVENTURE_MODE;
     ++epoch; context.seedEpoch = epoch; record.counts[0] = 3;
     AP_SanityLevelInstances(defs, 4); AP_SanityPickup(&objects[2], &player); assert(sent == 3 && ap_sanity_ready == -1);
     AP_SanityLevelInstances(defs, 513); AP_SanityPickup(&objects[2], &player); assert(sent == 3);

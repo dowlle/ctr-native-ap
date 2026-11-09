@@ -33,17 +33,20 @@ static const ctr_content_sanity *AP_SanityRoute(struct GameTracker *gt)
     if (MainRaceTrack_OfflineCustomLoad()) return 0;
 #endif
     c = CustomTrack_StandaloneContext(gt->levelID);
+    if (c && c->cup) {
+        if (c->seedEpoch != ap_content_plan_epoch()) return 0;
+        cup = AP_ContentCupPad();
+        if (!cup || c->leg < 0 || c->leg >= 4) return 0;
+        return ap_content_plan_sanity(cup->legs[c->leg].track_id);
+    }
+    // A boss venue owns its pickups even when a standalone context exists
+    // on the same borrowed host, as for the shared lap and Wumpa routes.
+    if (IS_BOSS_RACE(gt->gameMode1)) return ap_content_plan_sanity_boss(gt->bossID);
     if (c && c->seedEpoch == ap_content_plan_epoch()) {
-        if (c->cup) {
-            cup = AP_ContentCupPad();
-            if (!cup || c->leg < 0 || c->leg >= 4) return 0;
-            return ap_content_plan_sanity(cup->legs[c->leg].track_id);
-        }
         if (AP_StandaloneRoutePad(c) && (c->retail || CustomTrack_ServingLoad(gt->levelID, 0, 0)))
             return ap_content_plan_sanity(c->trackID);
         return 0;
     }
-    if (IS_BOSS_RACE(gt->gameMode1)) return ap_content_plan_sanity_boss(gt->bossID);
 #else
     (void)gt;
 #endif
