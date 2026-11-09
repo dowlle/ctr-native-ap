@@ -86,9 +86,10 @@ int main(void)
 	held_relics = 0;
 	look = look_of(l, &env, relics, 1, AP_PAD_LOOK_OPEN);
 	EXPECT(look == AP_PAD_LOOK_STAGE2_WAITING, "out-of-logic relic only: not green");
-	EXPECT(AP_PadLookHasBeamColour(look) == 0 && AP_PadLookBeamHue(look) == 0 && AP_PadLookBeamFilter(look) == 0,
-	       "the demoted pad keeps the retail light blue beam, no tint and no filter");
-	EXPECT(AP_PadLookRGB(look) == 0xF49228u, "the demoted pad's dot and node use the waiting orange");
+	EXPECT(AP_PadLookHasBeamColour(look) && AP_PadLookBeamHue(look) == AP_PAD_BEAM_RED &&
+	       AP_PadLookWispHue(look) == AP_PAD_BEAM_RED && AP_PadLookBeamFilter(look) == AP_PAD_BEAM_RED_FILTER,
+	       "the demoted pad uses the red beam and wisps with cyan filter");
+	EXPECT(AP_PadLookRGB(look) == 0xDA4230u, "the demoted pad's dot and node use red");
 
 	// A received item changes the logic: the look and the birth key follow.
 	{
