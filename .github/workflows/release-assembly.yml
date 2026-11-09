@@ -181,7 +181,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ArchipelagoMW/Archipelago
-          ref: debe4cf035c7c15efe6fb95f72343af0d420c68c # 0.6.7
+          ref: 54803be064fc7e80c4628777ed0b46a9390f255f # 0.6.8
           fetch-depth: 1
           path: archipelago
           persist-credentials: false

@@ -4,7 +4,7 @@ description: Verifier sweep candidate 08. A partial start_inventory (2 Keys, 8 T
 
 game: Crash Team Racing
 requires:
-  version: 0.6.7
+  version: 0.6.8
   game:
     Crash Team Racing: 0.1.0
 

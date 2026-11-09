@@ -112,8 +112,9 @@ int AP_Boxes_LiveCount(void)
 // without box locations it SENT checks for location ids that do not exist in that
 // world (observed live from the Bandi slot on Coco Park: 35014060/66/68/69).
 // MultiServer 0.6.x silently discarded them there, but 0.6.7 hard-drops the
-// connection on invalid ids in the scout path, so this was a coin flip across
-// server versions, not a harmless diagnostic.
+// connection on invalid ids in the scout path (the LocationScouts handler is
+// unchanged through 0.6.8, verified for the 0.6.8 solo runtime move), so this
+// was a coin flip across server versions, not a harmless diagnostic.
 //
 // The sole surviving exception is box_author=true, which is EXPLICIT-ON and shows
 // the full authored set as author-mode MARKERS (AP_Boxes_OnFrame stands the

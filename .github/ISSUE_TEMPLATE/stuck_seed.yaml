@@ -43,7 +43,7 @@ body:
     attributes:
       label: APWorld version
       description: The `ctr.apworld` file you generated with, and the Archipelago version.
-      placeholder: ctr 0.1.4 on Archipelago 0.6.7
+      placeholder: ctr 0.1.4 on Archipelago 0.6.8
     validations:
       required: false
 

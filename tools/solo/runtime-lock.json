@@ -14,9 +14,9 @@
     }
   },
   "archipelago": {
-    "version": "0.6.7",
+    "version": "0.6.8",
     "repository": "https://github.com/ArchipelagoMW/Archipelago",
-    "commit": "debe4cf035c7c15efe6fb95f72343af0d420c68c"
+    "commit": "54803be064fc7e80c4628777ed0b46a9390f255f"
   },
   "wheels": {
     "bsdiff4": {
@@ -80,11 +80,11 @@
       }
     },
     "platformdirs": {
-      "version": "4.9.4",
+      "version": "4.10.1",
       "license": "MIT",
       "any": {
-        "url": "https://files.pythonhosted.org/packages/63/d7/97f7e3a6abb67d8080dd406fd4df842c2be0efaf712d1c899c32a075027c/platformdirs-4.9.4-py3-none-any.whl",
-        "sha256": "68a9a4619a666ea6439f2ff250c12a853cd1cbd5158d258bd824a7df6be2f868"
+        "url": "https://files.pythonhosted.org/packages/ec/73/6fd0bb9ce84138c3857f12e9de63bc901852975a092d545f18087a204aa2/platformdirs-4.10.1-py3-none-any.whl",
+        "sha256": "0e4eff26be2d75293977f7cddc153fd9b8eaa7fb0c7b64ffe4076cb443117443"
       }
     },
     "PyYAML": {
