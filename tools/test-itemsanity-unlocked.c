@@ -14,14 +14,14 @@ struct Driver { int numWumpas; };
 struct GameTracker { struct Driver *drivers[2]; int gameMode1; };
 static struct { struct GameTracker *gGT; } state, *sdata = &state;
 static unsigned char ap_itemsanity_owned[AP_ITEMSANITY_WEAPON_COUNT];
-static int active = 1, exists = 1, fruit;
+static int active = 1, exists = 1, fruit, rerollExcluded = -1;
 static int ctr_cfg_active(void) { return active; }
 static int ap_net_location_exists(long code) { (void)code; return exists; }
 static int ap_net_location_checked(long code) { (void)code; return 0; }
 static void AP_AppendLog(const char *line) { (void)line; }
 static void RB_Player_ModifyWumpa(struct Driver *d, int n) { (void)d; fruit += n; }
 static void AP_EmitClassCheck(long code, ...) { (void)code; }
-static int AP_TrapRerollExcludedItem(void) { return -1; }
+static int AP_TrapRerollExcludedItem(void) { return rerollExcluded; }
 #include "../ap/ap_hooks_itemsanity.c"
 
 int main(void)

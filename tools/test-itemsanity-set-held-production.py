@@ -73,8 +73,28 @@ int main(void) {
         VehPhysGeneral_SetHeldItem(&local);
         assert(local.heldItemID == AP_ITEMSANITY_NO_ITEM && fruit == 1);
     }
+    // Item Reroll must not repeat the discarded weapon when another unlock
+    // exists, in the arena, default boss arm and normal boss table arm.
+    ap_itemsanity_owned[0] = 1;
+    ap_itemsanity_owned[2] = 1;
+    rerollExcluded = 0;
+    for (int mode = 0; mode < 3; mode++) {
+        gt.gameMode1 = ADVENTURE_MODE | (mode ? ADVENTURE_BOSS : CRYSTAL_CHALLENGE);
+        local.driverRank = mode == 1 ? -1 : 1;
+        VehPhysGeneral_SetHeldItem(&local); assert(local.heldItemID == 2);
+    }
+    // A sole unlock may repeat, and an inactive trap does not narrow the pool.
+    ap_itemsanity_owned[2] = 0;
+    gt.gameMode1 = ADVENTURE_MODE | CRYSTAL_CHALLENGE;
+    VehPhysGeneral_SetHeldItem(&local); assert(local.heldItemID == 0);
+    ap_itemsanity_owned[2] = 1; rerollExcluded = -1;
+    VehPhysGeneral_SetHeldItem(&local); assert(local.heldItemID == 0);
     // Inactive controls keep the retail fixed arena grant and boss rewrites.
     active = 0;
+    gt.levelID = SKULL_ROCK; rerollExcluded = 0;
+    gt.gameMode1 = ADVENTURE_MODE | CRYSTAL_CHALLENGE;
+    VehPhysGeneral_SetHeldItem(&local); assert(local.heldItemID == 0);
+    rerollExcluded = -1;
     gt.levelID = 21; gt.gameMode1 = ADVENTURE_MODE | CRYSTAL_CHALLENGE;
     VehPhysGeneral_SetHeldItem(&local); assert(local.heldItemID == 1);
     memset(table, 7, sizeof table); local.driverRank = 1;

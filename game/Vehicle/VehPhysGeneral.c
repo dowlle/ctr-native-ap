@@ -1090,6 +1090,9 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 	{
 		driver->heldItemID =
 			(u8)AP_ItemsanityFilterCrystalGrant(driver, driver->heldItemID, (unsigned)rng);
+		if (AP_ItemsanityUnlockedPool(driver))
+			driver->heldItemID = (u8)AP_TrapRerollFilter(driver, driver->heldItemID,
+			                                            (unsigned)rng);
 	}
 	else if (itemSet == -1 && AP_ItemsanityUnlockedPool(driver))
 	{
@@ -1098,6 +1101,8 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 		// catch-up ownership guard below is skipped for this player.
 		driver->heldItemID = (u8)AP_ItemsanityFilterRoll(driver, driver->heldItemID,
 		                                               (unsigned)rng, 0, 0);
+		driver->heldItemID = (u8)AP_TrapRerollFilter(driver, driver->heldItemID,
+		                                            (unsigned)rng);
 	}
 #endif
 
