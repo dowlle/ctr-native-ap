@@ -2046,15 +2046,16 @@ static void AP_ContentMaskToReq(unsigned mask, int count, ctr_req *r)
 #ifdef CTR_AP
 // Shaped state beam (ap_pad_colour.h): copies of the retail beam and wisp
 // models whose colour tables carry the state hue, and a subtractive copy of
-// the beam (the filter). Open and stage 2 open each have a beam, a wisp and a
-// filter copy, shared by every pad with that look. Rebuilt from the loaded
+// the beam (the filter). Green, red and grey have separate copy slots,
+// shared by every pad with that colour. Rebuilt from the loaded
 // retail model at every birth (a hub load may move it). The colour count is
 // the first word of the command list, as RenderBucket reads it; the texture
 // count is the highest texture index in the command list (its low 9 bits,
 // 0 = untextured). Any model that does not fit keeps the retail model, and a
 // filter that does not fit is left out.
 enum { AP_BEAM_USE_BEAM, AP_BEAM_USE_WISP, AP_BEAM_USE_FILTER, AP_BEAM_USES };
-#define AP_BEAM_COPIES (AP_BEAM_USES * 2)
+#define AP_BEAM_PALETTES 3
+#define AP_BEAM_COPIES (AP_BEAM_USES * AP_BEAM_PALETTES)
 #define AP_BEAM_HUE_HEADERS 2
 #define AP_BEAM_HUE_COLOURS 32
 #define AP_BEAM_HUE_TEXTURES 48
@@ -2073,10 +2074,12 @@ static struct TextureLayout s_apBeamFilterTex[AP_BEAM_HUE_HEADERS][AP_BEAM_HUE_T
 // rebuilds any copy whose source no longer matches the loaded model.
 static uintptr_t s_apBeamHueSource[AP_BEAM_COPIES][3];
 
-// Copy slot of one use for one look: open and stage 2 open never share.
+// Copy slot by progress colour. Different lifecycle states may share a hue.
 static int AH_WarpPad_ApCopySlot(int use, int look)
 {
-	return use * 2 + (look == AP_PAD_LOOK_STAGE2_OPEN ? 1 : 0);
+	int palette = look == AP_PAD_LOOK_DONE ? 2 :
+	              (look == AP_PAD_LOOK_OPEN || look == AP_PAD_LOOK_STAGE2_OPEN) ? 0 : 1;
+	return use * AP_BEAM_PALETTES + palette;
 }
 
 // The copy in `slot` of `retail` with every colour at `rgb`; with `subtract`,
@@ -2139,8 +2142,9 @@ static void AH_WarpPad_ApRefreshCopies(struct GameTracker *gGT)
 	int slot;
 	for (slot = 0; slot < AP_BEAM_COPIES; slot++)
 	{
-		int use = slot / 2;
-		int look = (slot & 1) ? AP_PAD_LOOK_STAGE2_OPEN : AP_PAD_LOOK_OPEN;
+		int use = slot / AP_BEAM_PALETTES;
+		int palette = slot % AP_BEAM_PALETTES;
+		int look = palette == 2 ? AP_PAD_LOOK_DONE : palette == 1 ? AP_PAD_LOOK_CLOSED : AP_PAD_LOOK_OPEN;
 		struct Model *retail = gGT->modelPtr[use == AP_BEAM_USE_WISP ? STATIC_BOTTOMRING : STATIC_BEAM];
 		u32 rgb = use == AP_BEAM_USE_FILTER ? AP_PadLookBeamFilter(look)
 		        : use == AP_BEAM_USE_WISP   ? AP_PadLookWispHue(look)
@@ -2364,16 +2368,14 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 
 		warppadObj->inst[WPIS_CLOSED_X] = newInst;
 
-		// A2-45 (ruled 2026-11-05): a Done pad the player can still enter for a
-		// replay shows the retail light blue beam, so it no longer looks locked.
-		// Same condition as ThTick's Done guard. The retail model, no hue and
-		// no filter (Done has none, ap_pad_colour.h). The glow, the number and
-		// the grey map dot are unchanged.
+		// Replay availability is unchanged. Alpha4 makes this beam grey,
+		// matching the Done map dot and tracker, with no item glow or wisps.
 		if (AP_PadDoneBeam(AP_PadLook(levelID, warppadObj->levelID),
 		                   AP_PadReplayable(levelID, warppadObj->levelID)) &&
 		    gGT->modelPtr[STATIC_BEAM] != 0)
 		{
-			newInst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_BEAM], "beam", t);
+			struct Model *doneBeam = AH_WarpPad_ApBeamModel(gGT->modelPtr[STATIC_BEAM], AP_PAD_LOOK_DONE);
+			newInst = INSTANCE_Birth3D(doneBeam, "beam", t);
 
 			// the pool can be full after the X: no beam then, never a crash
 			if (newInst != 0)
@@ -2387,7 +2389,7 @@ static void AH_WarpPad_BuildInstances(struct Thread *t)
 				newInst->matrix.t[1] = inst->matrix.t[1];
 				newInst->matrix.t[2] = inst->matrix.t[2];
 
-				newInst->alphaScale = 0xc00;
+				newInst->alphaScale = (s16)AP_PadLookBeamAlpha(AP_PAD_LOOK_DONE);
 
 				warppadObj->inst[WPIS_OPEN_BEAM] = newInst;
 			}
@@ -2549,10 +2551,10 @@ ContentPad_BuildGate:
 			newInst->alphaScale = 0xc00;
 
 #ifdef CTR_AP
-			// alpha2 pad colours: the open and stage 2 open beams wear their
+			// Alpha4 pad colours: every existing beam wears its
 			// state hue in the retail beam's shape (ap_pad_colour.h). A pad is
 			// rebuilt when its state changes, so the model chosen above follows
-			// the state. Every other look keeps the retail light blue.
+			// the state. Vanilla keeps the retail model.
 			if (beamModel != gGT->modelPtr[STATIC_BEAM])
 				newInst->alphaScale = (s16)AP_PadLookBeamAlpha(apBeamLook);
 

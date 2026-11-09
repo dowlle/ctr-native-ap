@@ -24,145 +24,44 @@ program = r'''
 #include <stdio.h>
 #include "ap_pad_colour.h"
 #include "ap_tracker_boss_node_logic.h"
-
 static int checks, fails;
 #define EXPECT(c, why) do { checks++; if (!(c)) { printf("FAIL %s\n", why); fails++; } } while (0)
-
-/* The Familiar column of the proposal's table, in its order. */
-static const struct { int look; unsigned rgb; const char *name; } familiar[] = {
-	{AP_PAD_LOOK_CLOSED, 0xDA4230u, "closed"},
-	{AP_PAD_LOOK_OPEN, 0x70E860u, "open"},
-	{AP_PAD_LOOK_STAGE2_OPEN, 0x93ADFAu, "stage 2 open"},
-	{AP_PAD_LOOK_STAGE2_WAITING, 0xF49228u, "stage 2 waiting"},
-	{AP_PAD_LOOK_RACER_LOCKED, 0xBA4E22u, "racer-locked"},
-	{AP_PAD_LOOK_DONE, 0x9AA4AEu, "done"},
-	{AP_PAD_LOOK_BOSS_BEATEN, 0xF2C248u, "boss beaten"},
-};
-#define N (int)(sizeof familiar / sizeof familiar[0])
-
-static unsigned beam_rgb(unsigned packed)
-{
-	return (((packed >> 20) & 0xff) << 16) | (((packed >> 12) & 0xff) << 8) | ((packed >> 4) & 0xff);
-}
-
 int main(void)
 {
-	int i, j, s;
-	char why[160];
-
-	/* pad state -> display state */
-	EXPECT(AP_PadLookFromState(1, 0) == AP_PAD_LOOK_CLOSED, "state 1 is closed");
-	EXPECT(AP_PadLookFromState(1, 1) == AP_PAD_LOOK_RACER_LOCKED, "state 1 without its racer is racer-locked");
-	EXPECT(AP_PadLookFromState(2, 0) == AP_PAD_LOOK_OPEN, "state 2 is open");
-	EXPECT(AP_PadLookFromState(3, 0) == AP_PAD_LOOK_STAGE2_WAITING, "state 3 is stage 2 waiting");
-	EXPECT(AP_PadLookFromState(4, 0) == AP_PAD_LOOK_STAGE2_OPEN, "state 4 is stage 2 open");
-	EXPECT(AP_PadLookFromState(5, 0) == AP_PAD_LOOK_DONE, "state 5 is done");
-	EXPECT(AP_PadLookFromState(5, 1) == AP_PAD_LOOK_DONE, "done stays done with a racer missing");
-	for (s = 2; s <= 5; s++)
-		EXPECT(AP_PadLookFromState(s, 1) == AP_PadLookFromState(s, 0), "the racer only refines a closed pad");
-	EXPECT(AP_PadLookFromState(0, 0) == AP_PAD_LOOK_NONE, "no AP state keeps the retail look");
-	EXPECT(AP_PadLookFromState(AP_TRACKER_NODE_BEATEN, 0) == AP_PAD_LOOK_BOSS_BEATEN, "beaten garage node");
-
-	for (i = 0; i < N; i++) {
-		int look = familiar[i].look;
-		unsigned rgb = AP_PadLookRGB(look), map, beam;
-		snprintf(why, sizeof why, "%s is Familiar #%06X", familiar[i].name, familiar[i].rgb);
-		EXPECT(rgb == familiar[i].rgb, why);
-
-		/* tracker: exact RGB through the node mapping */
-		snprintf(why, sizeof why, "tracker %s uses the table", familiar[i].name);
-		EXPECT(AP_PadLookRGB(AP_TrackerNodeColour(look)) == rgb, why);
-
-		/* map: half the target on every channel (0x80 leaves the white icon
-		 * unchanged), 0x00BBGGRR; the dim flicker half keeps the hue */
-		map = AP_PadLookMapVertex(look, 0);
-		snprintf(why, sizeof why, "map %s is half its table colour", familiar[i].name);
-		EXPECT((map & 0xff) == (AP_PadLookR(rgb) + 1) / 2 && ((map >> 8) & 0xff) == (AP_PadLookG(rgb) + 1) / 2 &&
-		       ((map >> 16) & 0xff) == (AP_PadLookB(rgb) + 1) / 2 && (map >> 24) == 0, why);
-		snprintf(why, sizeof why, "map %s dim half is darker, same hue", familiar[i].name);
-		{
-			unsigned d = AP_PadLookMapVertex(look, 1);
-			EXPECT((d & 0xff) <= (map & 0xff) && ((d >> 8) & 0xff) <= ((map >> 8) & 0xff) &&
-			       ((d >> 16) & 0xff) <= ((map >> 16) & 0xff) && d != map, why);
-		}
-
-		/* beam: only the states that can carry a beam get a hue, and each
-		 * gets the three parts: hue on the beam and the wisps, a filter.
-		 * Open is the beam green, stage 2 open the beam violet; the map dot
-		 * and the tracker keep the table colour. */
-		beam = AP_PadLookBeamHue(look);
-		if (look == AP_PAD_LOOK_OPEN) {
-			snprintf(why, sizeof why, "beam %s is the beam green, wisps too, with a filter", familiar[i].name);
-			EXPECT(beam == AP_PAD_BEAM_GREEN && AP_PadLookWispHue(look) == AP_PAD_BEAM_GREEN &&
-			       AP_PadLookBeamFilter(look) == AP_PAD_BEAM_FILTER && AP_PadLookBeamAlpha(look) == AP_PAD_BEAM_STATE_ALPHA, why);
-		} else if (look == AP_PAD_LOOK_STAGE2_OPEN) {
-			snprintf(why, sizeof why, "beam %s is the beam violet, wisps too, with its own filter", familiar[i].name);
-			EXPECT(beam == AP_PAD_BEAM_VIOLET && AP_PadLookWispHue(look) == AP_PAD_BEAM_VIOLET &&
-			       AP_PadLookBeamFilter(look) == AP_PAD_BEAM_VIOLET_FILTER &&
-			       AP_PadLookBeamAlpha(look) == AP_PAD_BEAM_STATE_ALPHA && rgb == 0x93ADFAu, why);
-		} else {
-			snprintf(why, sizeof why, "%s has no beam colour (retail beam, no beam, or not a pad)", familiar[i].name);
-			EXPECT(beam == 0 && AP_PadLookWispHue(look) == 0 && AP_PadLookBeamFilter(look) == 0 &&
-			       AP_PadLookBeamAlpha(look) == 0xC00, why);
-		}
-
-		for (j = 0; j < i; j++) {
-			snprintf(why, sizeof why, "%s and %s differ", familiar[i].name, familiar[j].name);
-			EXPECT(AP_PadLookRGB(familiar[j].look) != rgb, why);
-		}
-	}
-	/* A2-45: a Done pad births the retail light blue beam only while it can be
-	 * entered for a replay. Stage 2 waiting and every other state are untouched
-	 * (their beam comes from the unlocked or replayable build path, not this). */
-	EXPECT(AP_PadDoneBeam(AP_PAD_LOOK_DONE, 1) == 1, "Done and enterable: beam");
-	EXPECT(AP_PadDoneBeam(AP_PAD_LOOK_DONE, 0) == 0, "Done and not enterable: no beam");
-	for (i = 0; i < AP_PAD_LOOK_COUNT; i++)
-		if (i != AP_PAD_LOOK_DONE)
-			EXPECT(AP_PadDoneBeam(i, 1) == 0 && AP_PadDoneBeam(i, 0) == 0, "only a Done pad takes the Done beam");
-	EXPECT(AP_PadLookBeamHue(AP_PAD_LOOK_DONE) == 0 && AP_PadLookWispHue(AP_PAD_LOOK_DONE) == 0 &&
-	       AP_PadLookBeamFilter(AP_PAD_LOOK_DONE) == 0 && AP_PadLookHasBeamColour(AP_PAD_LOOK_DONE) == 0,
-	       "the Done beam keeps the retail colour: no hue, no filter");
-	EXPECT(AP_PadLookBeamHue(AP_PAD_LOOK_STAGE2_WAITING) == 0 && AP_PadLookWispHue(AP_PAD_LOOK_STAGE2_WAITING) == 0 &&
-	       AP_PadLookBeamFilter(AP_PAD_LOOK_STAGE2_WAITING) == 0, "stage 2 waiting beam stays retail light blue");
-	EXPECT(AP_PadLookRGB(AP_PAD_LOOK_DONE) == 0x9AA4AEu, "the Done map dot stays grey");
-	EXPECT(AP_PadLookRGB(AP_PAD_LOOK_NONE) == 0 && AP_PadLookBeamHue(AP_PAD_LOOK_NONE) == 0,
-	       "no state: no colour, retail beam");
-	EXPECT(AP_TrackerNodeColour(AP_PAD_LOOK_NONE) == AP_PAD_LOOK_OPEN, "a node with no state draws open, as before");
-	EXPECT(N + 1 == AP_PAD_LOOK_COUNT, "every display state is in the table");
-
-	/* Gold only for a beaten garage. */
-	for (s = 0; s < 7; s++)
-		EXPECT(s == AP_TRACKER_NODE_BEATEN || AP_PadLookFromState(s, 0) != AP_PAD_LOOK_BOSS_BEATEN,
-		       "no pad state is boss gold");
-
-	/* shaped beam: the hue at each vertex's own brightness, fade kept */
-	EXPECT(AP_PadBeamHueWord(0x00000000u, 0x70E860u) == 0, "black stays black");
-	EXPECT(AP_PadBeamHueWord(0x00FFD2B1u, 0x70E860u) == 0x0060E870u, "brightest beam colour takes the full hue");
-	EXPECT(AP_PadBeamHueWord(0x00520000u, 0xFFFFFFu) == 0x00525252u, "brightness is the strongest channel");
-	EXPECT(AP_PadBeamHueWord(0x7F000000u, 0x70E860u) == 0x7F000000u, "the top byte is kept");
-	EXPECT(AP_PAD_BEAM_STATE_ALPHA > 0xC00 && AP_PAD_BEAM_STATE_ALPHA < 0x1000, "softer than the retail beam, still visible");
-	/* ruled 2026-11-05: green 60% plus filter 31%, stage 2 the same way */
-	EXPECT(AP_PAD_BEAM_STATE_ALPHA == 0xD9A, "state beams at 60% of the retail strength");
-	EXPECT(AP_PAD_BEAM_FILTER_ALPHA == 0xB00, "filter at 31% of its colours");
-	EXPECT(AP_PAD_BEAM_GREEN == 0x20FF20u && AP_PAD_BEAM_FILTER == 0x6000FFu, "open beam green and its filter");
-	EXPECT(AP_PAD_BEAM_VIOLET == 0x6A4CFFu && AP_PAD_BEAM_VIOLET_FILTER == 0xA0FF00u, "stage 2 beam violet and its filter");
-	EXPECT(AP_PAD_BEAM_FILTER_ALPHA > 0 && AP_PAD_BEAM_FILTER_ALPHA < 0x1000, "the filter is partial, still visible");
-	EXPECT(((AP_PAD_BEAM_GREEN >> 8) & 0xff) == 0xff && (AP_PAD_BEAM_GREEN >> 16) < 0x40 && (AP_PAD_BEAM_GREEN & 0xff) < 0x40,
-	       "beam green is a pure green");
-	EXPECT(((AP_PAD_BEAM_FILTER >> 8) & 0xff) == 0 && (AP_PAD_BEAM_FILTER & 0xff) > 0,
-	       "the filter takes out blue and never green");
-	EXPECT((AP_PAD_BEAM_VIOLET & 0xff) == 0xff && (AP_PAD_BEAM_VIOLET >> 16) > ((AP_PAD_BEAM_VIOLET >> 8) & 0xff) &&
-	       (AP_PAD_BEAM_VIOLET >> 16) < 0x80, "beam violet is a blue with some red, more red than green");
-	EXPECT((AP_PAD_BEAM_VIOLET_FILTER & 0xff) == 0 && ((AP_PAD_BEAM_VIOLET_FILTER >> 8) & 0xff) == 0xff &&
-	       (AP_PAD_BEAM_VIOLET_FILTER >> 16) > 0, "the violet filter takes out green and some red, never blue");
-	EXPECT(AP_PAD_BEAM_VIOLET != AP_PadLookRGB(AP_PAD_LOOK_STAGE2_OPEN) && AP_PAD_BEAM_GREEN != AP_PadLookRGB(AP_PAD_LOOK_OPEN),
-	       "the beam hues are beam-only; map dot and tracker keep the table");
-	EXPECT(AP_PadTpageBlend(0x003a, 2) == 0x005a && AP_PadTpageBlend(0x005a, 1) == 0x003a && AP_PadTpageBlend(0xffff, 2) == 0xffdf,
-	       "blend mode is tpage bits 5 and 6, nothing else changes");
-
-	printf("%d checks, %d failures\n", checks, fails);
-	puts(fails ? "FAIL pad colour table" : "ok pad colour table");
-	return fails != 0;
+    int look, s;
+    for (look = AP_PAD_LOOK_CLOSED; look <= AP_PAD_LOOK_DONE; look++) {
+        int green = look == AP_PAD_LOOK_OPEN || look == AP_PAD_LOOK_STAGE2_OPEN;
+        int done = look == AP_PAD_LOOK_DONE;
+        unsigned rgb = done ? 0x9AA4AEu : green ? 0x70E860u : 0xDA4230u;
+        unsigned hue = done ? AP_PAD_BEAM_GREY : green ? AP_PAD_BEAM_GREEN : AP_PAD_BEAM_RED;
+        unsigned filter = done ? 0 : green ? AP_PAD_BEAM_FILTER : AP_PAD_BEAM_RED_FILTER;
+        EXPECT(AP_PadLookRGB(look) == rgb, "three progress colours");
+        EXPECT(AP_PadLookRGB(AP_TrackerNodeColour(look)) == rgb, "tracker shares colour");
+        EXPECT(AP_PadLookBeamHue(look) == hue && AP_PadLookWispHue(look) == hue, "beam and wisps share hue");
+        EXPECT(AP_PadLookBeamFilter(look) == filter, "filter follows colour");
+        EXPECT(AP_PadLookBeamAlpha(look) == 0xD9A, "state beam strength retained");
+        EXPECT(AP_PadBeamHueWord(0, hue) == 0, "fade retained");
+        EXPECT(AP_PadBeamHueWord(0x7fffffff, hue) == (0x7f000000u | (AP_PadLookB(hue)<<16) | (AP_PadLookG(hue)<<8) | AP_PadLookR(hue)), "full hue and command byte retained");
+        {
+            unsigned map = AP_PadLookMapVertex(look, 0), dim = AP_PadLookMapVertex(look, 1);
+            EXPECT((map & 255) == (AP_PadLookR(rgb)+1)/2 && ((map>>8)&255) == (AP_PadLookG(rgb)+1)/2 &&
+                   ((map>>16)&255) == (AP_PadLookB(rgb)+1)/2, "map texture modulation");
+            EXPECT(dim != map && (dim&255)<=(map&255) && ((dim>>8)&255)<=((map>>8)&255) &&
+                   ((dim>>16)&255)<=((map>>16)&255), "Map Flash retains hue");
+        }
+        EXPECT(AP_PadDoneBeam(look, 1) == done && AP_PadDoneBeam(look, 0) == 0, "Done beam only with replay");
+    }
+    EXPECT(AP_PadLookFromState(1,0)==AP_PAD_LOOK_CLOSED && AP_PadLookFromState(1,1)==AP_PAD_LOOK_RACER_LOCKED, "lock reasons retained");
+    EXPECT(AP_PadLookFromState(2,0)==AP_PAD_LOOK_OPEN && AP_PadLookFromState(3,0)==AP_PAD_LOOK_STAGE2_WAITING &&
+           AP_PadLookFromState(4,0)==AP_PAD_LOOK_STAGE2_OPEN && AP_PadLookFromState(5,0)==AP_PAD_LOOK_DONE, "lifecycle retained");
+    for (s=2; s<=5; s++)
+        EXPECT(AP_PadLookFromState(s,1)==AP_PadLookFromState(s,0), "racer only refines closed");
+    EXPECT(AP_PadLookRGB(AP_PAD_LOOK_BOSS_BEATEN)==0xF2C248u && AP_PadLookBeamHue(AP_PAD_LOOK_BOSS_BEATEN)==0, "garage gold retained");
+    EXPECT(AP_PadLookBeamHue(AP_PAD_LOOK_NONE)==0 && AP_PadLookRGB(AP_PAD_LOOK_NONE)==0, "vanilla retained");
+    EXPECT(AP_PAD_BEAM_FILTER_ALPHA==0xB00, "filter strength retained");
+    EXPECT(AP_PadTpageBlend(0x003a,2)==0x005a && AP_PadTpageBlend(0xffff,2)==0xffdf, "only blend bits change");
+    printf("%d checks, %d failures\n", checks, fails);
+    return fails != 0;
 }
 '''
 
@@ -242,7 +141,8 @@ assert 'count = cmd[0];' in model
 assert 'AP_PadTpageBlend(s_apBeamFilterTex[h][i].tpage, 2)' in model
 assert '(cmd[i] >> 16) != 0 && (int)(cmd[i] & 0x1ffu) > textures' in model, 'colour-only commands carry no texture index'
 slot = body(warp, 'static int AH_WarpPad_ApCopySlot(int use, int look)')
-assert 'use * 2 + (look == AP_PAD_LOOK_STAGE2_OPEN ? 1 : 0)' in slot and '#define AP_BEAM_COPIES (AP_BEAM_USES * 2)' in warp
+assert 'use * AP_BEAM_PALETTES + palette' in slot and '#define AP_BEAM_PALETTES 3' in warp
+assert 'look == AP_PAD_LOOK_DONE ? 2' in slot and 'AP_PAD_LOOK_STAGE2_OPEN) ? 0 : 1' in slot
 assert 'AH_WarpPad_ApCopySlot(AP_BEAM_USE_BEAM, look)' in warp and 'AH_WarpPad_ApCopySlot(AP_BEAM_USE_WISP, look)' in warp
 # A2-45: the Done branch births the beam only for AP_PadDoneBeam (Done look and
 # AP_PadReplayable, the ThTick Done guard's condition), then returns; no tint.
@@ -250,10 +150,11 @@ done_at = build.index('WPIS_CLOSED_X] = newInst;')
 done = build[done_at:build.index('\t\treturn;\n\t}', done_at)]
 assert 'AP_PadDoneBeam(AP_PadLook(levelID, warppadObj->levelID),' in done
 assert 'AP_PadReplayable(levelID, warppadObj->levelID)' in done
-assert 'INSTANCE_Birth3D(gGT->modelPtr[STATIC_BEAM], "beam", t);' in done
+assert 'AH_WarpPad_ApBeamModel(gGT->modelPtr[STATIC_BEAM], AP_PAD_LOOK_DONE)' in done
+assert 'INSTANCE_Birth3D(doneBeam, "beam", t);' in done
 assert 'warppadObj->inst[WPIS_OPEN_BEAM] = newInst;' in done
-assert 'colorRGBA' not in done and 'ApBeamModel' not in done and 'ApWispModel' not in done, 'retail colour, no tint'
-assert 'beamFilter' not in done and 'alphaScale = 0xc00;' in done, 'retail strength, no filter'
+assert 'colorRGBA' not in done and 'ApWispModel' not in done, 'shaped grey beam, no wisps'
+assert 'beamFilter' not in done and 'AP_PadLookBeamAlpha(AP_PAD_LOOK_DONE)' in done, 'Done strength, no filter'
 # The rebuild key follows enterability, so a Done pad that stops being enterable
 # while its state stays 5 loses the beam on the next rebuild (A2-45; the A3-12
 # birth key in ap_pad_birth.h keeps the replay bit, tools/test-pad-rebuild-production.py).

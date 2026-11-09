@@ -2,11 +2,11 @@
 #define AP_PAD_LOGIC_LOOK_H
 
 // Green only for checks in logic (A3-37, ruled 2026-11-07 08:07 CET: "Only
-// checks in logic"). The open and stage 2 open looks (green and blue-violet
+// checks in logic"). The open and stage 2 open looks (both green
 // beam, map dot, tracker node) mean "at least one open check behind this pad
 // is in logic now". A pad whose open checks are all out of logic shows the
-// stage 2 waiting look instead: static orange dot, and the retail light blue
-// beam on the pad that can still be entered. An existing look is reused, so
+// stage 2 waiting look instead: red dot, tracker node and any existing beam
+// (alpha4, 2026-11-09). An existing look is reused, so
 // the beam, map and tracker need no new colour.
 //
 // Display only. The pad state (ap_pad_state.h) is untouched: no gate, entry
