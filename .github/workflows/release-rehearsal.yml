@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '47 3 * * *'
   workflow_dispatch:
+    inputs:
+      apworld_branch:
+        description: Companion apworld branch (empty uses the normal base)
+        type: string
+        default: ''
   pull_request:
     paths:
       - tools/ci/package-client.py
@@ -35,6 +40,7 @@ jobs:
       version: 0.0.0-rehearsal
       rehearsal_label: ${{ (matrix.branch == 'main' || github.base_ref == 'main') && 'main' || 'dev' }}
       native_ref: ${{ github.event_name == 'pull_request' && github.sha || matrix.branch }}
-      apworld_branch: ${{ (matrix.branch == 'main' || (github.event_name == 'pull_request' && github.base_ref == 'main')) && 'main' || 'dev/custom-pad-0.3.0' }}
+      apworld_branch: ${{ inputs.apworld_branch || ((matrix.branch == 'main' || (github.event_name == 'pull_request' && github.base_ref == 'main')) && 'main' || 'dev/custom-pad-0.3.0') }}
+      apworld_companion_branch: ${{ github.event_name == 'pull_request' && github.head_ref || '' }}
       pr_number: ${{ github.event_name == 'pull_request' && format('{0}', github.event.pull_request.number) || '' }}
       pr_head_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}

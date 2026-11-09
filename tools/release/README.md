@@ -71,6 +71,13 @@ release. The owner signs the exact downloaded `manifest.json` outside CI, then
 a clean download of the published release must pass default-mode verification
 with the committed public key.
 
+Release rehearsal can test paired changes before merging. On a native PR,
+an apworld branch with the same head branch name is preferred when present;
+it must have a successful manual or push CTR world run at its current head
+with an unexpired `ctr.apworld` artifact. A missing companion branch uses the
+normal base branch. An inaccessible branch or stale companion run fails the
+rehearsal. Manual rehearsal also accepts an explicit `apworld_branch` input.
+
 Build archive members may be nested. Anything directly under the archive root
 must be one of the known package-client outputs, and the only permitted
 subtree is `assets/`, which is copied into both bundles with its relative

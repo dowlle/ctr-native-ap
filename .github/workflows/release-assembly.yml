@@ -30,6 +30,9 @@ on:
       apworld_branch:
         type: string
         default: ''
+      apworld_companion_branch:
+        type: string
+        default: ''
       apworld_artifact_name:
         type: string
         default: ctr.apworld
@@ -70,6 +73,7 @@ jobs:
           APWORLD_SOURCE_COMMIT: ${{ inputs.apworld_source_commit }}
           APWORLD_REPO: ${{ inputs.apworld_repo }}
           APWORLD_BRANCH: ${{ inputs.apworld_branch }}
+          APWORLD_COMPANION_BRANCH: ${{ inputs.apworld_companion_branch }}
           PR_NUMBER: ${{ inputs.pr_number }}
           PR_HEAD_SHA: ${{ inputs.pr_head_sha }}
         run: |
