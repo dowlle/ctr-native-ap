@@ -163,7 +163,7 @@ void AP_WumpaDrawRaceBank(struct Driver *driver, int x, int y)
 		if (balance >= -999999 && balance <= 9999999)
 			snprintf(line, sizeof line, "BANK %lld", balance);
 		else
-			snprintf(line, sizeof line, "BANK %.4g", (double)balance);
+			snprintf(line, sizeof line, balance < 0 ? "BANK %.1g" : "BANK %.2g", (double)balance);
 	}
 	else
 		snprintf(line, sizeof line, "BANK ...");
