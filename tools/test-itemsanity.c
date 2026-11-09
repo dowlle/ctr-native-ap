@@ -201,22 +201,17 @@ static int model_crystal_item(int isSkullRockOrRampage)
 // ap_hooks.c AP_ItemsanityFilterCrystalGrant, called from VehPhysGeneral.c
 // immediately after the itemset switch.
 //
-// RULED 2026-08-20: "The weapon should not arrive in the arenas at all,
-// itemsanity also applies to arenas." The former ruled bypass is gone.
-// RULED 2026-08-21 (posting-pack fixing pass): unowned means the empty slot and
-// nothing else -- no Empty Crates fruit. Wumpa has no function inside a Crystal
-// Challenge arena, so the consolation grant was a pointless side effect. The
-// wumpaGrants counter stays in the model so the tests can pin that it is NEVER
-// incremented on this path.
+// A4-12: the arena uses all unlocked weapons. Keep the no-fruit rule when no
+// weapons are received. Production hooks and all 200 rolls are covered by
+// test-itemsanity-unlocked.c; this legacy mirror uses roll zero.
 static int model_crystal_grant(int filterActive, int hardcoded,
 	const unsigned char *owned, int *wumpaGrants)
 {
 	(void)wumpaGrants;
 	if (!filterActive)
 		return hardcoded;
-	if (AP_ItemsanityRollAllowed(hardcoded, owned))
-		return hardcoded;
-	return AP_ITEMSANITY_NO_ITEM;
+	return AP_ItemsanitySelectOwned(0, 0, AP_ITEMSANITY_FULL_POOL,
+	                                AP_ITEMSANITY_FULL_POOL_SIZE, owned);
 }
 
 static void owned_clear(unsigned char *owned)
@@ -833,7 +828,7 @@ static void test_crystal_arena_grant_and_check_gates(void)
 		assert(wumpa == 0);
 	}
 
-	// --- Grant gate: owning the OTHER arena's weapon is not enough -----------
+	// A4-12: any unlocked weapon is enough, including the other arena's weapon.
 	for (a = 0; a < 4; a++)
 	{
 		int hardcoded = model_crystal_item(arenas[a].skullRockOrRampage);
@@ -841,8 +836,7 @@ static void test_crystal_arena_grant_and_check_gates(void)
 		owned_clear(owned);
 		owned[AP_ItemsanityWeaponIndex(other)] = 1;
 		wumpa = 0;
-		assert(model_crystal_grant(1, hardcoded, owned, &wumpa) ==
-		       AP_ITEMSANITY_NO_ITEM);
+		assert(model_crystal_grant(1, hardcoded, owned, &wumpa) == other);
 		assert(wumpa == 0);
 	}
 

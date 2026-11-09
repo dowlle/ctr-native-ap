@@ -876,12 +876,8 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 		{
 			// 7th Itemset (Crystal Challenge)
 			//
-			// CONSTRAINT (#145 itemsanity): selecting this itemset routes the
-			// draw to the hardcode below instead of a rank-weighted table, so
-			// the AP draw filter's call site is never reached at all. The ruled
-			// ownership exception therefore depends on this branch staying
-			// unconditional; a Crystal Challenge that fell through to a race
-			// itemset would start gating the arena's own item.
+			// This bypasses rank tables. The AP grant hook after the switch
+			// replaces the fixed item with an unlocked weapon under Itemsanity.
 			itemSet = ITEMSET_CrystalChallenge;
 		}
 		else
@@ -1063,13 +1059,7 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 		// Item is bomb at Rocky Road, Nitro Court
 		// Item is turbo at Skull Rock and Rampage Ruins
 		//
-		// The #145 itemsanity ruled exception that used to live here is
-		// SUPERSEDED (2026-08-20): "The weapon should not arrive in the arenas at
-		// all, itemsanity also applies to arenas." The vanilla pick below is
-		// unchanged, but it is no longer exempt from ownership. The gate runs
-		// immediately after this switch rather than inside this case, at the one
-		// point both arena arms have converged on driver->heldItemID, so the
-		// vanilla `goto SetItem` control flow stays exactly as retail wrote it.
+		// The AP hook after the switch covers both fixed-item paths.
 		item = 0x1;
 		if (gGT->levelID != SKULL_ROCK && gGT->levelID != RAMPAGE_RUINS)
 		{
@@ -1087,7 +1077,7 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 	}
 
 #ifdef CTR_AP
-	// Crystal Challenge grant gate (ruled 2026-08-20). Placed here, not in the
+	// Crystal Challenge unlocked pool (A4-12). Placed here, not in the
 	// case above, because the arena reaches driver->heldItemID by two paths: the
 	// Turbo arm assigns directly and breaks, the Bomb arm jumps to SetItem. One
 	// call after the switch covers both without touching vanilla's control flow.
@@ -1099,12 +1089,31 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 	if (itemSet == ITEMSET_CrystalChallenge)
 	{
 		driver->heldItemID =
-			(u8)AP_ItemsanityFilterCrystalGrant(driver, driver->heldItemID);
+			(u8)AP_ItemsanityFilterCrystalGrant(driver, driver->heldItemID, (unsigned)rng);
+		if (AP_ItemsanityUnlockedPool(driver))
+			driver->heldItemID = (u8)AP_TrapRerollFilter(driver, driver->heldItemID,
+			                                            (unsigned)rng);
+	}
+	else if (itemSet == -1 && AP_ItemsanityUnlockedPool(driver))
+	{
+		// Undecided ranks and unusual field sizes take the default draw rather
+		// than a table. They still need the same unlocked boss pool, since the
+		// catch-up ownership guard below is skipped for this player.
+		driver->heldItemID = (u8)AP_ItemsanityFilterRoll(driver, driver->heldItemID,
+		                                               (unsigned)rng, 0, 0);
+		driver->heldItemID = (u8)AP_TrapRerollFilter(driver, driver->heldItemID,
+		                                            (unsigned)rng);
 	}
 #endif
 
 	// In Boss race
-	if (gGT->gameMode1 & ADVENTURE_BOSS)
+	if ((gGT->gameMode1 & ADVENTURE_BOSS)
+#ifdef CTR_AP
+	    // A4-12: an unlocked player weapon survives the retail catch-up rewrites,
+	    // including Komodo Joe's single-missile override. Boss attacks are separate.
+	    && !AP_ItemsanityUnlockedPool(driver)
+#endif
+	   )
 	{
 #ifdef CTR_AP
 		// #145 itemsanity: the draw that the catch-up rewrites below start from.

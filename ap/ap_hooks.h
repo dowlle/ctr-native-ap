@@ -739,16 +739,16 @@ int AP_LocationExistsByBit(int globalBit);
 // keeps vanilla's downstream item rewrites inside the received set, and never
 // re-issues Warpball or Missile x3, whose one-at-a-time and two-holder caps are
 // the rewrites it is standing inside.
-// AP_ItemsanityBossAssist guards the boss-race rewrite block the same way, but
-// walks a fixed strength ladder instead of a substitution pool, because retail
-// catch-up assistance is a deliberate escalation rather than a draw.
-// AP_ItemsanityFilterCrystalGrant gates the Crystal Challenge arena hardcode,
-// which reaches none of the filters above because its itemset routing skips the
-// roulette table entirely (ruled 2026-08-20: itemsanity applies to arenas too).
+// AP_ItemsanityUnlockedPool selects local active Adventure boss/crystal rolls:
+// A4-12 uses every received weapon and skips the retail player catch-up block.
+// AP_ItemsanityFilterCrystalGrant replaces the fixed arena item with that pool,
+// without the empty-crate fruit. AP_ItemsanityBossAssist retains the legacy
+// ownership guard for callers outside the unlocked-pool path.
 void AP_ItemsanityOnUse(struct Driver *driver, int heldItemID);
 int AP_ItemsanityFilterRoll(struct Driver *driver, int rolled, unsigned roll,
                             const unsigned char *table, int tableCount);
-int AP_ItemsanityFilterCrystalGrant(struct Driver *driver, int proposed);
+int AP_ItemsanityUnlockedPool(struct Driver *driver);
+int AP_ItemsanityFilterCrystalGrant(struct Driver *driver, int proposed, unsigned roll);
 int AP_ItemsanitySubstituteOwned(struct Driver *driver, int proposed,
                                  unsigned roll, const unsigned char *table,
                                  int tableCount);
