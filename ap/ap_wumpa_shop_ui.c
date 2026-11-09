@@ -249,13 +249,20 @@ static void AP_WShopDrawRow(int hub, int k, int y, int selected)
 		if (known && AP_ItemDisplayAlias(item, alias, (int)sizeof alias))
 			AP_CeremonySanitize(alias, itemS, (int)sizeof itemS);
 	}
+	state = AP_WShopSlotState(hub, k);
+	if (known)
+	{
+		const char *disguise = AP_TrapDisplayName(ctr_cfg.trap_display, ctr_cfg.trap_display_salt,
+		                                        s->code, flags, state == AP_WUMPA_SLOT_SOLD);
+		if (disguise)
+			snprintf(itemS, sizeof itemS, "%s", disguise);
+	}
 	if (AP_CeremonyNameIsBlank(itemS))
 		snprintf(itemS, sizeof itemS, "%s", "UNKNOWN ITEM");
 	if (known && player != ap_net_self_slot() && playerS[0] != '\0')
 		snprintf(name, sizeof name, "%s (%s)", itemS, playerS);
 	else
 		snprintf(name, sizeof name, "%s", itemS);
-	state = AP_WShopSlotState(hub, k);
 	color = known ? AP_ClassFontColor(AP_TrapDisplayFlags(ctr_cfg.trap_display, ctr_cfg.trap_display_salt,
 	                                                      s->code, flags))
 	              : WHITE;
