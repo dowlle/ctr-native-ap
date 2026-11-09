@@ -500,6 +500,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// it does), and the loader has not run yet, so a box added this frame is born
 	// this frame rather than next.
 	AP_Boxes_OnFrame(gGT);
+	AP_SanityTick(gGT);
 	AP_Spawn_OnFrame(gGT);
 	// Seed completability verification: recomputes only when the AP state
 	// generation moved (connect / received item / location check), so this is a

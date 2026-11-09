@@ -2270,6 +2270,8 @@ bool plan_descriptor(const XdeltaImportSummary &summary, const XdeltaImportItem 
                  {"wumpa", wumpa},
                  {"super_turbo_pads", m.superTurboPads > 0},
                  {"weapon_crates", m.weaponCrates},
+                 {"fruit_crates", m.fruitCrates},
+                 {"loose_fruit", m.looseWumpa},
                  {"ai_nav", m.navPaths > 0}};
     if (m.checkpoints >= 1 && m.checkpoints <= 255) caps["checkpoints"] = m.checkpoints;
     json files = json::array();

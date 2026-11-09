@@ -803,7 +803,10 @@ static void AP_TrackerDraw(void)
 		int boxes=plan?(plan->cup?ap_content_cup_box_pending(plan,ap_content_plan_pad,AP_ContentCodeChecked):ap_content_box_pending(plan,AP_ContentCodeChecked)):AP_PadUncollectedBoxCount(n->destination), letters=0, k;
 		if(plan) { for(k=0;k<3;k++) letters+=plan->letter_locations[k]>0 && !AP_ContentCodeChecked(plan->letter_locations[k]); }
 		if(plan) remaining-=boxes+letters; /* the plan's list holds both */
-		snprintf(line,sizeof line,"%s: %d RACE CHECKS, %d BOXES, %d LETTERS LEFT",n->title,remaining,boxes,letters);
+		if (plan && (ap_content_plan_sanity_pad(n->physical,0,NULL,320) || ap_content_plan_sanity_pad(n->physical,1,NULL,320) || ap_content_plan_sanity_pad(n->physical,2,NULL,320)))
+			snprintf(line,sizeof line,"LEFT: %d RACE, %d BOX, %d LETTER | %d WEAPON CRATES, %d WUMPA CRATES, %d FRUIT",remaining,boxes,letters,
+			         AP_SanityPadPending(n->physical,0),AP_SanityPadPending(n->physical,1),AP_SanityPadPending(n->physical,2));
+		else snprintf(line,sizeof line,"%s: %d RACE CHECKS, %d BOXES, %d LETTERS LEFT",n->title,remaining,boxes,letters);
 	} else snprintf(line,sizeof line,"CHECK: O PENDING / TICK DONE    LETTER: ORANGE OWNED / LOCK NEEDED / - OFF%s",ap_net_is_connected()?"":"    OFFLINE");
 	AP_TrackerText(line,32,718,14,TRACKER_WHITE,1210);
 	{

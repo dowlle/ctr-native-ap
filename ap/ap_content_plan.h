@@ -16,6 +16,15 @@ extern "C" {
 #define AP_CONTENT_MODE_CTR 1
 #define AP_CONTENT_MODE_RELIC 2
 #define AP_CONTENT_MODE_COUNT 3
+/* Ordinary pickup checks, resolved from the room's exact LEV revision. */
+typedef struct ctr_content_sanity {
+    char track_id[65], lev_sha256[65];
+    int counts[3];
+    int64_t locations[3][80];
+} ctr_content_sanity;
+const ctr_content_sanity *ap_content_plan_sanity(const char *track_id);
+const ctr_content_sanity *ap_content_plan_sanity_boss(int boss);
+int ap_content_plan_sanity_pad(int physical, int family, int64_t *out, int capacity);
 /* One leg of a content-plan cup (#133 PR 5). */
 #define AP_CONTENT_CUP_LEGS 4
 typedef struct ctr_content_leg {
@@ -201,6 +210,7 @@ typedef struct ctr_content_package {
      * AP_CONTENT_WEAPON_CRATES_UNSTATED. Native counts them on load and
      * refuses a stated count the bytes disagree with. */
     int weapon_crates;
+    int fruit_crates, loose_fruit; /* optional measured sanity counts, -1 unstated */
     /* Optional measured `checkpoints` and `ai_nav` (#133 PR 6b): the LEV's
      * restart point count (1..255) and whether it has AI navigation paths,
      * or AP_CONTENT_UNSTATED. Native measures both on load and refuses a
