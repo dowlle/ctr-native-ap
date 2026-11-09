@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""One pad state, one colour, on all three surfaces (alpha2 pad colours).
+"""Three pad progress colours on beam, map and tracker (alpha4).
 
 The warp pad beam (game/232/AH_WarpPad.c), the hub map dot (game/232/AH_Map.c)
 and the Adventure tracker node (ap/ap_tracker.c) read one table,
-ap/ap_pad_colour.h. The Familiar palette was chosen on 2026-11-04.
+ap/ap_pad_colour.h. Green, red and grey were chosen on 2026-11-09.
 
 1. Compile the freestanding header and pin the table: each pad state maps to
-   one display state, each display state to its Familiar RGB, and the beam tint,
+   one display state, each display state to its progress RGB, and the beam tint,
    the map vertex colour and the tracker colour are all derived from that RGB.
 2. Check the wiring, so a surface cannot go back to a private colour list.
 
@@ -56,6 +56,17 @@ int main(void)
            AP_PadLookFromState(4,0)==AP_PAD_LOOK_STAGE2_OPEN && AP_PadLookFromState(5,0)==AP_PAD_LOOK_DONE, "lifecycle retained");
     for (s=2; s<=5; s++)
         EXPECT(AP_PadLookFromState(s,1)==AP_PadLookFromState(s,0), "racer only refines closed");
+    for (s=0; s<AP_BEAM_USES; s++) {
+        int green=AH_WarpPad_ApCopySlot(s,AP_PAD_LOOK_OPEN);
+        int red=AH_WarpPad_ApCopySlot(s,AP_PAD_LOOK_CLOSED);
+        int grey=AH_WarpPad_ApCopySlot(s,AP_PAD_LOOK_DONE);
+        EXPECT(green==AH_WarpPad_ApCopySlot(s,AP_PAD_LOOK_STAGE2_OPEN), "both open phases share green model");
+        EXPECT(red==AH_WarpPad_ApCopySlot(s,AP_PAD_LOOK_STAGE2_WAITING) &&
+               red==AH_WarpPad_ApCopySlot(s,AP_PAD_LOOK_RACER_LOCKED), "blocked states share red model");
+        EXPECT(green!=red && green!=grey && red!=grey, "simultaneous colours never overwrite each other");
+        EXPECT(green==s*AP_BEAM_PALETTES && red==green+1 && grey==green+2 && grey<AP_BEAM_COPIES,
+               "model uses and palettes occupy separate in-range slots");
+    }
     EXPECT(AP_PadLookRGB(AP_PAD_LOOK_BOSS_BEATEN)==0xF2C248u && AP_PadLookBeamHue(AP_PAD_LOOK_BOSS_BEATEN)==0, "garage gold retained");
     EXPECT(AP_PadLookBeamHue(AP_PAD_LOOK_NONE)==0 && AP_PadLookRGB(AP_PAD_LOOK_NONE)==0, "vanilla retained");
     EXPECT(AP_PAD_BEAM_FILTER_ALPHA==0xB00, "filter strength retained");
@@ -64,6 +75,16 @@ int main(void)
     return fails != 0;
 }
 '''
+
+# Compile the production slot selector, so a hub with mixed colours cannot
+# silently share mutable model storage between green, red and grey pads.
+warp_source = (root / 'game/232/AH_WarpPad.c').read_text(encoding='utf-8')
+copy_start = warp_source.index('enum { AP_BEAM_USE_BEAM,')
+copy_end = warp_source.index('#define AP_BEAM_HUE_HEADERS', copy_start)
+slot_start = warp_source.index('static int AH_WarpPad_ApCopySlot(int use, int look)')
+slot_end = warp_source.index('\n}\n', slot_start) + 3
+program = program.replace('int main(void)', warp_source[copy_start:copy_end] +
+                          warp_source[slot_start:slot_end] + '\nint main(void)')
 
 with tempfile.TemporaryDirectory() as tmp:
     tmp = Path(tmp)
@@ -144,8 +165,7 @@ slot = body(warp, 'static int AH_WarpPad_ApCopySlot(int use, int look)')
 assert 'use * AP_BEAM_PALETTES + palette' in slot and '#define AP_BEAM_PALETTES 3' in warp
 assert 'look == AP_PAD_LOOK_DONE ? 2' in slot and 'AP_PAD_LOOK_STAGE2_OPEN) ? 0 : 1' in slot
 assert 'AH_WarpPad_ApCopySlot(AP_BEAM_USE_BEAM, look)' in warp and 'AH_WarpPad_ApCopySlot(AP_BEAM_USE_WISP, look)' in warp
-# A2-45: the Done branch births the beam only for AP_PadDoneBeam (Done look and
-# AP_PadReplayable, the ThTick Done guard's condition), then returns; no tint.
+# The Done branch retains the replay condition and now uses a grey model.
 done_at = build.index('WPIS_CLOSED_X] = newInst;')
 done = build[done_at:build.index('\t\treturn;\n\t}', done_at)]
 assert 'AP_PadDoneBeam(AP_PadLook(levelID, warppadObj->levelID),' in done
