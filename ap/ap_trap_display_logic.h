@@ -50,4 +50,16 @@ static inline unsigned AP_TrapDisplayFlags(int mode, unsigned salt, long long lo
 	}
 }
 
+// A pre-collection name must agree with the disguised colour. Keep the real
+// scout and item id intact for hints, receipt messages and collected rewards.
+// NULL means the caller should use the item's ordinary name and aliases.
+static inline const char *AP_TrapDisplayName(int mode, unsigned salt, long long location,
+                                            unsigned flags, int collected)
+{
+	unsigned display = AP_TrapDisplayFlags(mode, salt, location, flags);
+	if (collected || display == flags)
+		return 0;
+	return (display & AP_ITEM_FLAG_PROGRESSION) ? "PROGRESSION ITEM" : "FILLER ITEM";
+}
+
 #endif // AP_TRAP_DISPLAY_LOGIC_H

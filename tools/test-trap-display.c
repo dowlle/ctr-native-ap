@@ -3,6 +3,7 @@
 //   cc -std=c99 -Wall -Wextra -o /tmp/tdisp tools/test-trap-display.c && /tmp/tdisp
 
 #include <stdio.h>
+#include <string.h>
 
 #include "../ap/ap_trap_display_logic.h"
 
@@ -50,6 +51,24 @@ int main(void)
 	expect("mixed: one location always looks the same",
 	       (int)AP_TrapDisplayFlags(2, 99u, 35014007, T), (int)AP_TrapDisplayFlags(2, 99u, 35014007, T));
 	expect("mixed: filler untouched", (int)AP_TrapDisplayFlags(2, 99u, 35014007, 0), 0);
+	expect("shown keeps the ordinary name", AP_TrapDisplayName(0, 0, 35014000, T, 0) == NULL, 1);
+	expect("unknown mode keeps the ordinary name", AP_TrapDisplayName(7, 0, 35014000, T, 0) == NULL, 1);
+	expect("as_progression hides the trap name",
+	       strcmp(AP_TrapDisplayName(1, 0, 35014000, T, 0), "PROGRESSION ITEM"), 0);
+	expect("collected trap keeps the ordinary name", AP_TrapDisplayName(1, 0, 35014000, T, 1) == NULL, 1);
+	expect("ordinary progression keeps its name", AP_TrapDisplayName(1, 0, 35014000, P, 0) == NULL, 1);
+	expect("ordinary filler keeps its name", AP_TrapDisplayName(1, 0, 35014000, 0, 0) == NULL, 1);
+	expect("useful trap keeps its ordinary name", AP_TrapDisplayName(1, 0, 35014000, U | T, 0) == NULL, 1);
+	for (loc = 35014000; loc < 35014200; loc++)
+	{
+		const char *name = AP_TrapDisplayName(2, 12345u, loc, T, 0);
+		unsigned display = AP_TrapDisplayFlags(2, 12345u, loc, T);
+		if (!name || strcmp(name, display & P ? "PROGRESSION ITEM" : "FILLER ITEM"))
+			failures++;
+		if (AP_TrapDisplayName(2, 12345u, loc, T, 1) != NULL)
+			failures++;
+	}
+	checks += 400;
 	{
 		int differ = 0;
 		for (loc = 35014000; loc < 35014064; loc++)

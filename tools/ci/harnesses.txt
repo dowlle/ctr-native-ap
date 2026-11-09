@@ -234,6 +234,7 @@ tools/test-crystal-replay-production.py
 tools/test-trap-scheduler.c
 tools/test-trap-alpha3.c
 tools/test-trap-display.c
+tools/test-trap-display-shop.py
 tools/test-mirror-model-cull.c
 tools/test-turbo-grant.c
 tools/test-unlock-reasons.c
