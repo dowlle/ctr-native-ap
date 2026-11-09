@@ -184,11 +184,15 @@ int main(void)
 		auto b = example();
 		b["version"] = 2;
 		b["checks"] = nlohmann::json::object();
+		const auto rule = nlohmann::json::array({"all", nlohmann::json::array({"cap", 2, -1}),
+		    nlohmann::json::array({"req", 2, 1, -1}), nlohmann::json::array({"req", 3, 1, 0}), true, false});
 		for (int i = 0; i < 5000; ++i)
-			b["checks"][std::to_string(37200000 + i)] = {{"kind", "hint"}, {"region", 0}, {"rule", true}};
+			b["checks"][std::to_string(37200000 + i)] = {{"kind", "hint"}, {"region", 0}, {"rule", rule}};
 		parse_block(b);
 		expect_int(ctr_win_logic.state, AP_WL_VALID, "sanity hint graph exceeds historical 4096 rows");
 		expect_int(ctr_win_logic.check_count, 5000, "all sanity hint rows retained");
+		expect(ctr_win_logic.node_count > 16384 && ctr_win_logic.kid_count > 16384,
+		       "sanity rules exceed historical node and child tables");
 		expect(AP_WinLogicFindCheck(&ctr_win_logic, 37204999) >= 0, "last sanity hint retained");
 	}
 	parse_block(with_hint_rule(nlohmann::json::array({"cap", 2, -1, 2})));
