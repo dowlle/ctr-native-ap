@@ -572,10 +572,10 @@ int main()
         XdeltaImport_Free(&r.scan);
     }
 
-    /* A4-8 M04: a road that ends far from the start never counts a lap. The
+    /* A4-25: a far finish gap warns but never blocks an unknown package. The
        checkpoint whose forward link is node 0 sits 23744 units away, the shape
        of the LRG2 Tizi Challenge; a 1575-unit gap (the largest retail one)
-       is still offered. */
+       is also offered. */
     {
         DiscSpec changed = base;
         LevSpec spec; spec.seed = 49;

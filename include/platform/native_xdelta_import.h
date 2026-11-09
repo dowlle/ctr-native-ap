@@ -95,7 +95,8 @@ int XdeltaImport_Install(const struct XdeltaImportScan *scan, const unsigned cha
    optional super_turbo_pads, weapon_crates, checkpoints and ai_nav included,
    is measured on the item's verified files with the rules the client checks
    a descriptor against on load. Laps, author and relic times come from the
-   pack descriptor and are never guessed; the pack descriptor may also take
+   pack descriptor, except verified one-lap hash capabilities; they are never
+   guessed. The pack descriptor may also take
    relic and ctr_tokens away. No author: "Unknown". Returns 1 with the JSON,
    its track key and revision; 2 when the pack descriptor gives no laps (or
    there is none): the JSON then has no "laps" and no relic, and the player
