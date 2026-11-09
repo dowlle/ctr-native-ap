@@ -14,6 +14,7 @@
 #define _FILE_OFFSET_BITS 64
 #endif
 #include <platform/native_xdelta_import.h>
+#include <platform/native_custom_finish.h>
 #include <platform/native_lev_normalize.hpp>
 #include <platform/native_xdelta_decode.h>
 #include <platform/native_custom_package.h>
@@ -1524,16 +1525,18 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                 add_item(*scan, item);
                 return;
             }
-            if (m.finishGap > CTR_CCV_FINISH_GAP_MAX)
+            if (const char *blocked = CustomFinish_ImportBlock(item.levSha256, item.vrmSha256))
             {
-                // A4-8 M04: the road ends far from the start line (the LRG2 Tizi
-                // Challenge: 23737 units), so this client never counts a lap.
                 if (following) { CustomPackage_Free(&built.owned); undo_following(); return; }
-                set_text(item.reason, sizeof item.reason, "Finish line not reachable: laps never count");
+                set_text(item.reason, sizeof item.reason, blocked);
                 CustomPackage_Free(&built.owned);
                 add_item(*scan, item);
                 return;
             }
+            item.finishGap = m.finishGap;
+            if (m.finishGap > CTR_CCV_FINISH_GAP_MAX)
+                std::snprintf(item.warning, sizeof item.warning, "Gap: %lu\n%s", m.finishGap,
+                              CustomFinish_Terrain(item.levSha256, item.vrmSha256) >= 0 ? "1-lap finish" : "Check finish");
             std::string tags = "Race TT";
             if (arcade) tags += " Arcade";
             CustomPackageRelicTargets targets;
@@ -2225,6 +2228,13 @@ bool plan_descriptor(const XdeltaImportSummary &summary, const XdeltaImportItem 
     {
         laps = 0;
         needsLaps = true;
+    }
+    /* These exact packages have an authored one-lap finish in the patch
+       code. It is known even when no race-settings sidecar was imported. */
+    if (CustomFinish_Terrain(item.levSha256, item.vrmSha256) >= 0)
+    {
+        laps = 1;
+        needsLaps = false;
     }
     const std::string author = b.author.empty() ? std::string(kUnknownAuthor) : b.author;
     if (author.size() > 128)

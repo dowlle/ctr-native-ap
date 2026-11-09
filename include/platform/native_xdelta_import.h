@@ -40,6 +40,8 @@ struct XdeltaImportItem
     char title[CTR_XDELTA_TITLE_MAX];
     char tags[48];     /* "Race TT Arcade Relic CTR", offered items only. */
     char reason[CTR_XDELTA_REASON_MAX]; /* Skip reason; "" when offered. */
+    unsigned long finishGap; /* Measured warning only, never an admission limit. */
+    char warning[CTR_XDELTA_REASON_MAX];
     char levSha256[65], vrmSha256[65];
     char pin[65];      /* Manifest pin of the built package, offered items only. */
     char trackKey[65]; /* Room folder: assets/tracks/<trackKey>/original, offered items only. */
@@ -93,7 +95,8 @@ int XdeltaImport_Install(const struct XdeltaImportScan *scan, const unsigned cha
    optional super_turbo_pads, weapon_crates, checkpoints and ai_nav included,
    is measured on the item's verified files with the rules the client checks
    a descriptor against on load. Laps, author and relic times come from the
-   pack descriptor and are never guessed; the pack descriptor may also take
+   pack descriptor, except verified one-lap hash capabilities; they are never
+   guessed. The pack descriptor may also take
    relic and ctr_tokens away. No author: "Unknown". Returns 1 with the JSON,
    its track key and revision; 2 when the pack descriptor gives no laps (or
    there is none): the JSON then has no "laps" and no relic, and the player

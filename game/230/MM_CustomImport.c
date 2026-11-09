@@ -527,7 +527,8 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
         {
             MM_CustomText_Draw(item->title, 305, 70, 176, layout.titleLines, ORANGE, ot);
             MM_CustomText_Draw(item->offered ? item->tags : "Skipped", 305, layout.tagY, 176, 1, WHITE, ot);
-            MM_CustomText_Draw(item->offered ? (item->nameSource == XDELTA_NAME_DESCRIPTOR ? "Name from the pack" :
+            MM_CustomText_Draw(item->offered ? (item->warning[0] ? item->warning :
+                                                item->nameSource == XDELTA_NAME_DESCRIPTOR ? "Name from the pack" :
                                                 item->nameSource == XDELTA_NAME_KNOWN ? "Name of a known track" :
                                                 item->nameSource == XDELTA_NAME_TESTER ? "Name from tester feedback" :
                                                 item->nameSource == XDELTA_NAME_EDITED ? "Name typed by you" :

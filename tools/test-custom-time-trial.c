@@ -72,6 +72,7 @@ static int checks, failures;
 // s_arcadeCapable turns it into a track with AI paths and a full grid.
 struct CustomPackageOwned { int live; };
 static int s_arcadeCapable;
+static int s_tiziPair;
 
 int CustomPackage_GetManifest(const struct CustomPackageOwned *package, struct CustomPackageManifest *out)
 {
@@ -88,6 +89,11 @@ int CustomPackage_GetManifest(const struct CustomPackageOwned *package, struct C
 	strcpy(out->files[1].role, "vrm");
 	strcpy(out->files[1].sha256, VRM_SHA);
 	out->files[1].bytes = 2048;
+	if (s_tiziPair)
+	{
+		strcpy(out->files[0].sha256, "e22b87a73009b94251f5216424cf07875a02e076eb8461b902624c2b5277ad45");
+		strcpy(out->files[1].sha256, "5de0e46152d8fdce3e0cbe7cdd860516d98d98105106f5d81c043b39df9f0753");
+	}
 	return 1;
 }
 
@@ -587,7 +593,27 @@ int main(void)
 		s_arcadeCapable = 0;
 	}
 
-	// ── control: a retail Time Trial on the same slot writes retail data ──
+	// Exact Tizi bytes without race settings still arm one lap. Ending the
+	// runtime clears the capability before the next unrelated package.
+	{
+		struct CustomPackageOwned *package = calloc(1, sizeof *package);
+		struct CustomOfflineRequest *request = NULL;
+		char error[128];
+		unsigned int laps = 0;
+		s_tiziPair = 1;
+		CHECK(CustomOffline_PackageLaps(package, &laps, error, sizeof error) && laps == 1);
+		CHECK(CustomOffline_Prepare(&package, PIN, &request, error, sizeof error));
+		CHECK(CustomOffline_BeginRuntime(&request, HOST, 0, CTR_OFFLINE_MODE_TIME_TRIAL));
+		CHECK(CustomOffline_RuntimeLaps() == 1 && CustomOffline_RuntimeFinishTerrain() == 4);
+		CustomOffline_EndRuntime();
+		CHECK(CustomOffline_RuntimeFinishTerrain() == -1);
+		s_tiziPair = 0;
+		package = calloc(1, sizeof *package);
+		CHECK(CustomOffline_PackageLaps(package, &laps, error, sizeof error) && laps == 3);
+		CustomPackage_Free(&package);
+	}
+
+	// Control: a retail Time Trial on the same slot writes retail data.
 	s_gt.levelID = HOST;
 	s_gt.numPlyrCurrGame = 1;
 	s_gt.gameMode1 = TIME_TRIAL;

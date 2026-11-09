@@ -2,6 +2,7 @@
 
 #include <platform/native_custom_tracks.h>
 #include <platform/native_sha256.h>
+#include <platform/native_custom_finish.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1431,6 +1432,22 @@ int CustomTrack_ServingLoad(int levelID, int adventureCupActive, int cupID)
 
 	CustomTrack_Config();
 	return CustomTrack_LoadServes(&ctx);
+}
+
+int CustomTrack_FinishTerrain(const struct CustomTrackLoadContext *ctx)
+{
+	int garage;
+	if (!ctx) return -1;
+	CustomTrack_Config();
+	/* Match GetOverride's precedence, including its separate boss venues. */
+	garage = CustomTrack_GarageVenueServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive);
+	if (garage >= 0)
+		return CustomFinish_Terrain(s_garageVenue[garage].levSha256, s_garageVenue[garage].vrmSha256);
+	if (CustomTrack_OxideFinalServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive) ||
+	    CustomTrack_CortexTrackServing(ctx->levelID, ctx->adventureBossActive))
+		return CustomFinish_Terrain(s_oxideFinalDescriptor.levSha256, s_oxideFinalDescriptor.vrmSha256);
+	return CustomTrack_LoadServes(ctx) ?
+	       CustomFinish_Terrain(s_descriptor.levSha256, s_descriptor.vrmSha256) : -1;
 }
 
 int CustomTrack_RetailPodiumLevelID(int levelID, int adventureCupActive, int cupID)

@@ -67,8 +67,9 @@ struct CustomContentMeasurements
 	unsigned long finishGap;
 };
 
-/* A4-8 M04: retail tracks measure at most 1575 units and the custom corpus
-   at most 1988; the LRG2 Tizi Challenge measures 23737. */
+/* Import-review warning threshold only. Admission uses exact hash blocks.
+   Retail tracks measure at most 1575 units and the custom corpus at most
+   1988; the LRG2 Tizi Challenge measures 23737. */
 #define CTR_CCV_FINISH_GAP_MAX 8192ul
 
 struct CustomContentVerification

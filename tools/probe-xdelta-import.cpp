@@ -47,6 +47,13 @@ int main(int argc, char **argv)
         {
             offered++;
             std::printf("OFFER %3d %-28s %-26s key %s lev %s vrm %s pin %s\n", it.bigfileIndex, it.title, it.tags, it.trackKey, it.levSha256, it.vrmSha256, it.pin);
+            if (it.warning[0])
+            {
+                std::printf("  WARNING %s\n", it.warning);
+                char descriptor[16384], key[65], revision[65], why[256];
+                int rc = XdeltaImport_PlanDescriptor(scan, i, descriptor, sizeof descriptor, key, revision, why, sizeof why);
+                std::printf("  PLAN %d %s\n", rc, rc ? descriptor : why);
+            }
         }
         else std::printf("SKIP  %3d %-28s %s\n", it.bigfileIndex, it.title, it.reason);
     }

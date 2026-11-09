@@ -86,6 +86,17 @@ static void check(const XdeltaImportItem &item)
         CHECK(state.showStatus && state.reasonLines == 2 && state.panelHeight == 108,
               "offered rows, installing and transient feedback retain their status space");
 }
+static void check_warning(const char *warning)
+{
+    lines.clear();
+    bottom = 0;
+    const auto layout = XdeltaReview_Layout(1, 0, 0, 0);
+    MM_CustomText_Draw(warning, 305, layout.reasonY, 176, layout.reasonLines, 0, nullptr);
+    std::string joined;
+    for (const auto &line : lines) { if (!joined.empty()) joined += '\n'; joined += line; }
+    CHECK(joined == warning, "complete finish gap and explanation fit two offered-row lines");
+    CHECK(bottom <= 64 + layout.panelHeight, "finish warning remains above the status line");
+}
 }
 
 static void put32(Bytes &b, size_t o, uint32_t v) { for (int i = 0; i < 4; i++) b[o + i] = (unsigned char)(v >> (8 * i)); }
@@ -572,10 +583,10 @@ int main()
         XdeltaImport_Free(&r.scan);
     }
 
-    /* A4-8 M04: a road that ends far from the start never counts a lap. The
+    /* A4-25: a far finish gap warns but never blocks an unknown package. The
        checkpoint whose forward link is node 0 sits 23744 units away, the shape
        of the LRG2 Tizi Challenge; a 1575-unit gap (the largest retail one)
-       is still offered. */
+       is also offered. */
     {
         DiscSpec changed = base;
         LevSpec spec; spec.seed = 49;
@@ -595,8 +606,11 @@ int main()
             const auto *s = XdeltaImport_Summary(r.scan);
             const auto *farItem = item_for(s, 1);
             const auto *nearItem = item_for(s, 3);
-            CHECK(farItem && !farItem->offered && !std::strcmp(farItem->reason, "Finish line not reachable: laps never count"),
-                  "far finish is refused with its own reason");
+            CHECK(farItem && farItem->offered && farItem->finishGap > CTR_CCV_FINISH_GAP_MAX && farItem->warning[0],
+                  "unknown far finish is offered with a measured warning");
+            if (farItem) diagnostic_layout::check_warning(farItem->warning);
+            /* Largest possible gap between signed-16-bit checkpoint positions. */
+            diagnostic_layout::check_warning("Gap: 113510\n1-lap finish");
             CHECK(nearItem && nearItem->offered, "retail-sized finish gap is still offered");
         }
         XdeltaImport_Free(&r.scan);
