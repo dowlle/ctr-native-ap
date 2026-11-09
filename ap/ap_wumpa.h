@@ -1,47 +1,33 @@
 #ifndef AP_WUMPA_H
 #define AP_WUMPA_H
 
-// Archipelago Wumpa Fruit filler grant for CTR Native. Issue #11.
+// Archipelago Wumpa Fruit, starting fruit and the Wumpa Shop wallet.
 //
-// Compiled ONLY when CTR_AP is defined, same as the rest of the AP layer. The
-// apworld pool includes a "Wumpa Fruit" filler item (item index 15). On the rando
-// ROM it did nothing native-side; this module makes a received Wumpa Fruit actually
-// hand the local player fruit in a race, so even filler feels like getting
-// something. Purely cosmetic/QoL: the fruit is the vanilla speed pickup, capped at
-// the vanilla max of 10, wiped at race end like any race's fruit. It touches no
-// AdvProgress bit, no gate, no location -- zero randomizer logic impact.
+// With a shop or Wumpa goal active, Adventure pickups and in-race AP receipts
+// fill the kart to ten, then bank overflow immediately. Hits remove held fruit
+// only. Outside-race AP receipts bank in full after their effect marker write.
+// Without banking, the fallback received-fruit grant waits for a race and caps
+// at ten. Arcade, Time Trial, Battle and the unlimited-fruit cheat cannot farm
+// race fruit into the wallet.
 //
-// ── Design: bank-then-grant ── (mirrors the trap framework's receive/tick split)
-//   AP_WumpaReceive(n) -> add n to a pending bank (does NOT touch the driver).
-//   AP_WumpaTick()     -> per frame: once we are in an ACTIVE race (post-countdown)
-//                         with a valid local driver and pending > 0, hand the fruit
-//                         to drivers[0] via the engine's own RB_Player_ModifyWumpa
-//                         (which caps at 10, plays the "juiced up" jingle at 10, and
-//                         respects the unlimited-wumpa cheat), then clear the bank.
+// AP_WumpaReceive queues in-race fruit without touching the driver. The tick
+// grants it on an active, unpaused post-countdown frame through the engine's
+// RB_Player_ModifyWumpa, preserving its Juiced jingle and mask protection.
+// Pending paused/countdown receipts bank in full if that attempt is left.
 //
-// TIMING SEMANTICS (documented for the PR):
-//   - Received while NOT racing (hub/menus): banked, then granted at the start of
-//     the next race (the first frame the race is active, after the countdown and
-//     after VehBirth has zeroed the kart's fruit).
-//   - Received DURING a race: granted live on the next frame.
-//   - A pause-menu RESTART (and the end-of-race RETRY) counts as a race
-//     boundary like any other: the starting ladder is applied again in the
-//     restarted race, and a bank that was still pending when the restart began
-//     is held for it rather than spent on the race being torn down. The engine
-//     reinitializes the world in place there, so neither the off-track test nor
-//     END_OF_RACE sees it; the tick watches the load stage for that reason.
-// A single bank drains in one RB_Player_ModifyWumpa call, so N banked fruit is one
-// grant of +N (still capped at 10). The bank itself is capped at 10 since a kart
-// can never hold more, and it resets each race with the fruit, so there is no
-// cross-race hoard.
+// A finish banks the remaining held fruit once. Exit, restart and a received
+// DeathLink loss bank held fruit minus the attempt's starting fruit, never
+// below zero. Overflow is already paid and never enters those payouts.
+// Progressive Starting Wumpa fills free kart space only and cannot create
+// overflow. Each restart observes a fresh countdown and reapplies that ladder.
+// Load stages are boundaries even when the race overlay stays loaded.
 
 #ifdef CTR_AP
 
 struct GameTracker;
 
-// A Wumpa Fruit filler item was received (count >= 1). Adds to the pending bank;
-// the actual grant happens in AP_WumpaTick during an active race. Called from the
-// received-item drain loop in ap_hooks.c (AP_NetTick).
+// A Wumpa Fruit filler item was received (count >= 1). Queues an in-race grant
+// or an outside-race wallet credit; called by the received-item effect pipeline.
 void AP_WumpaReceive(int count);
 
 // Rebuild the persistent starting-fruit ladder from ReceivedItems. Called once
@@ -54,17 +40,15 @@ void AP_WumpaReceiveStarting(void);
 void AP_WumpaConnectReset(void);
 
 // Per-frame driver. Called once per frame from AP_OnFrame (ap_hooks.c), alongside
-// AP_TrapTick. Drains the pending bank into drivers[0] when a race is active. gGT
-// is the live GameTracker; no-op outside a race or with nothing pending.
+// AP_TrapTick. Grants pending race fruit to drivers[0] in the active window and
+// handles countdown, finish and leave edges.
 void AP_WumpaTick(struct GameTracker *gGT);
 
 // #249 banking. AP_WumpaRaceModify is called from RB_Player_ModifyWumpa for
-// gains and losses; it changes the full race count and caps the real kart at
-// ten. AP_WumpaOnRaceFinish is called on the player's race-finished edge and
-// banks the full count once per attempt. An exit to the map, a restart and a
-// forced DeathLink loss bank the fruit picked up minus hits instead, never the
-// starting fruit (ruled 2026-11-04); the tick takes that payout at the load
-// boundary through the same once-per-attempt latch.
+// gains and losses; it updates held fruit and immediately banks overflow above
+// ten. The finish edge banks only remaining held fruit. Exit, restart and a
+// forced DeathLink loss take held fruit minus starting fruit through the same
+// once-per-attempt latch. See the contract above.
 // Declared in ap_hooks.h, where RB_Player.c and the race listener see them.
 
 #endif // CTR_AP

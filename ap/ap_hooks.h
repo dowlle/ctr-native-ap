@@ -684,8 +684,9 @@ void AP_WumpaReachedTen(struct Driver *driver);
 // held at the race-finished edge, once per attempt.
 int AP_WumpaRaceModify(struct Driver *driver, int delta);
 int AP_WumpaRaceCount(struct Driver *driver);
+void AP_WumpaDrawRaceBank(struct Driver *driver, int x, int y);
 void AP_WumpaOnRaceFinish(struct Driver *driver, int wasHuman, int held);
-// #249: bank AP fruit past 10 held since the last effect-marker write
+// #249: bank outside-race AP fruit covered by the last effect-marker write
 // (ap_hooks_received.c calls it right after that write).
 void AP_WumpaCommitReceived(void);
 // #249 hub counter: balance and lifetime banked total in a 1P hub (decision 20).

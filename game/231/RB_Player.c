@@ -171,7 +171,7 @@ void RB_Player_ModifyWumpa(struct Driver *driver, int wumpaDelta)
 	}
 
 #ifdef CTR_AP
-	// Keep a separate full race count; the engine's held fruit stays at 10.
+	// Keep ten held fruit and bank overflow in Adventure races.
 	if (!AP_WumpaRaceModify(driver, wumpaDelta))
 #endif
 	{
