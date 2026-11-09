@@ -16,7 +16,7 @@
 // look it had before this rule. Since A3-37b (ruled 2026-11-07 12:35 CET, "Yes,
 // export all") the apworld exports a row for every location on every seed
 // (SCHEMA.md, version 2, kind "hint" for the non-wins), so a pad that only holds
-// boxes, Wumpa checks, letters or podium rungs goes orange when they are all
+// boxes, Wumpa checks, letters or podium rungs goes red when they are all
 // out of logic. A seed generated before that has rows for those only with
 // pad_approach_hints on; without it such a pad keeps its green.
 //
