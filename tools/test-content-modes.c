@@ -40,6 +40,31 @@ static ctr_content_pad pad3(int first, int second, int third, int need)
 /* Row 10i: a Gem Cup over a track with a pad (rungs and Wumpa there) and a
  * track raced only in cups (its own leg Wumpa code). */
 static ctr_content_pad cup_own;
+static ctr_content_pad capacity_pads[4];
+static const ctr_content_pad *capacity_lookup(int physical) { return physical >= 0 && physical < 4 ? &capacity_pads[physical] : NULL; }
+static void cup_capacity_case(void)
+{
+    ctr_content_pad cup = {0};
+    ap_content_cup_track_check rows[AP_CONTENT_CUP_TRACK_CHECKS];
+    int k, b, n;
+    cup.cup = cup.occupied = 1; cup.physical = 101;
+    memset(capacity_pads, 0, sizeof capacity_pads);
+    for (k = 0; k < 4; ++k) {
+        ctr_content_pad *own = &capacity_pads[k];
+        own->physical = k; own->occupied = 1; own->box_count = 50;
+        own->wumpa_location = 1000 + k;
+        cup.legs[k].track_pad = k; cup.legs[k].lap = 2000 + k;
+        snprintf(cup.legs[k].track_id, sizeof cup.legs[k].track_id, "capacity%d", k);
+        for (b = 0; b < 5; ++b) {
+            own->rung_locations[b] = 3000 + 10 * k + b;
+            cup.legs[k].rungs[b] = 4000 + 10 * k + b;
+        }
+        for (b = 0; b < 50; ++b) own->box_locations[b] = 5000 + 50 * k + b;
+    }
+    n = ap_content_cup_track_checks(&cup, capacity_lookup, rows);
+    expect(n == 248 && rows[247].code == 5199, "four full legs fit all 248 track checks");
+    expect(ap_content_cup_box_pending(&cup, capacity_lookup, checked) == 200, "tracker counts all 200 cup boxes");
+}
 static const ctr_content_pad *cup_lookup(int physical) { return physical == 3 ? &cup_own : NULL; }
 static void cup_track_checks_case(void)
 {
@@ -140,6 +165,7 @@ int main(void)
     expect(ap_content_mode_open(&p, AP_CONTENT_MODE_RELIC, counts, checked), "manual rule and stage-2 rule both met");
     p.has_rule = 0; p.keys = 0;
     cup_track_checks_case();
+    cup_capacity_case();
     // Row 10i: Turbo Track's vanilla five Gems count one of each colour, so
     // five Red Gems do not open it; a sum rule over the same Gems would.
     {

@@ -68,7 +68,8 @@ struct ApBoxLive
 	int              seatGen;
 };
 
-static struct ApBoxLive s_live[AP_BOX_SLOTS_PER_TRACK];
+#define AP_BOX_LIVE_MAX 50
+static struct ApBoxLive s_live[AP_BOX_LIVE_MAX];
 static int              s_liveCount;
 
 static int s_level = -1;    // level the live set was built for
@@ -363,7 +364,7 @@ static void AP_BoxesForget(void)
 
 	// Every handle is void after a pool reset -- the slot may already belong to
 	// somebody else -- so drop them WITHOUT calling AP_Spawn_Remove.
-	for (i = 0; i < AP_BOX_SLOTS_PER_TRACK; i++)
+	for (i = 0; i < AP_BOX_LIVE_MAX; i++)
 	{
 		s_live[i].used = 0;
 		s_live[i].spawn = AP_SPAWN_INVALID;
@@ -396,7 +397,7 @@ static void AP_BoxesClear(void)
 {
 	int i;
 
-	for (i = 0; i < AP_BOX_SLOTS_PER_TRACK; i++)
+	for (i = 0; i < AP_BOX_LIVE_MAX; i++)
 	{
 		AP_BoxesFreeSeat(i);
 		if (s_live[i].used && s_live[i].spawn != AP_SPAWN_INVALID)
@@ -554,7 +555,7 @@ static void AP_BoxesStandSpots(struct GameTracker *gGT, const ctr_content_pad *p
 	char msg[224];
 
 	AP_BoxProbeSeedClass();
-	for (i = 0; i < pad->box_count && i < AP_BOX_SLOTS_PER_TRACK; i++)
+	for (i = 0; i < pad->box_count && i < AP_BOX_LIVE_MAX; i++)
 	{
 		const long code = (long)pad->box_locations[i];
 
@@ -672,9 +673,8 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 			return;
 		}
 	}
-	seats = AP_BoxSeat_Count(crates - pad->box_excluded_count);
-	if (crates != pad->box_crates || !AP_BoxSeat_Agrees(crates - pad->box_excluded_count,
-	    pad->box_crates - pad->box_excluded_count, pad->box_count))
+	seats = pad->box_count;
+	if (crates != pad->box_crates || seats <= 0 || seats > AP_BoxSeat_Count(crates - pad->box_excluded_count))
 	{
 		snprintf(msg, sizeof msg,
 		         "[AP BOX] WARNING: custom track on pad %d has %ld weapon crate(s), the seed was built for %d "
@@ -685,7 +685,7 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 	}
 
 	AP_BoxProbeSeedClass();
-	for (i = 0; i < seats && i < AP_BOX_SLOTS_PER_TRACK; i++)
+	for (i = 0; i < seats && i < AP_BOX_LIVE_MAX; i++)
 	{
 		const long code = (long)pad->box_locations[i];
 		struct InstDef *def;
@@ -694,7 +694,7 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 		if (code <= 0 || !AP_BoxInSeed(code, 0) || AP_BoxChecked(code, 0))
 			continue;
 		def = AP_BoxesCrateDef(defs, count, AP_BoxSeat_Original(
-		    AP_BoxSeat_Ordinal(i, crates - pad->box_excluded_count), pad->box_excluded, pad->box_excluded_count));
+		    (long)(((long long)i * (crates - pad->box_excluded_count)) / seats), pad->box_excluded, pad->box_excluded_count));
 		if (def == 0)
 			continue;
 		s_live[i].used = 1;
@@ -724,7 +724,7 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 			crate->flags &= ~DRAW_COLLISION_MASK; // hidden and not collectable while its box stands
 		s_liveCount++;
 	}
-	for (i = 0; i < AP_BOX_SLOTS_PER_TRACK; i++)
+	for (i = 0; i < AP_BOX_LIVE_MAX; i++)
 		if (s_live[i].used)
 			AP_BoxesSpawnOne(gGT, i);
 
@@ -912,7 +912,7 @@ static void AP_BoxesRebuild(struct GameTracker *gGT, int level)
 	{
 		snprintf(msg, sizeof msg,
 		         "[AP BOX] level %d: %d placement(s) past the %d-slot ceiling, no name, not spawned\n",
-		         level, overflow, AP_BOX_SLOTS_PER_TRACK);
+		         level, overflow, AP_BOX_LIVE_MAX);
 		AP_LogLine(msg);
 	}
 }
@@ -1025,7 +1025,7 @@ static void AP_BoxesTick(struct GameTracker *gGT)
 {
 	int i;
 
-	for (i = 0; i < AP_BOX_SLOTS_PER_TRACK; i++)
+	for (i = 0; i < AP_BOX_LIVE_MAX; i++)
 	{
 		struct Instance *inst;
 		struct Instance *hit;
@@ -1133,7 +1133,7 @@ int AP_Boxes_OnWeaponMove(struct GameTracker *gGT, struct Instance *weaponInst,
 	if (!AP_BoxOwnedByLocalPlayer(gGT, attacker))
 		return 0;
 
-	for (i = 0; i < AP_BOX_SLOTS_PER_TRACK; i++)
+	for (i = 0; i < AP_BOX_LIVE_MAX; i++)
 	{
 		struct Instance *inst;
 
@@ -1186,7 +1186,7 @@ void AP_Boxes_OnWeaponExplode(struct GameTracker *gGT, struct Instance *weaponIn
 	if (!AP_BoxOwnedByLocalPlayer(gGT, attacker))
 		return;
 
-	for (i = 0; i < AP_BOX_SLOTS_PER_TRACK; i++)
+	for (i = 0; i < AP_BOX_LIVE_MAX; i++)
 	{
 		struct Instance *inst;
 
@@ -1316,7 +1316,7 @@ void AP_Boxes_DrawNumbers(void)
 	oldWidth = data.font_charPixWidth[FONT_SMALL];
 	gte_SetRotMatrix(view);
 	gte_SetTransMatrix(view);
-	for (i = 0; i < AP_BOX_SLOTS_PER_TRACK; i++)
+	for (i = 0; i < AP_BOX_LIVE_MAX; i++)
 	{
 		struct Instance *inst;
 		SVECTOR world;

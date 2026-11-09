@@ -242,7 +242,7 @@ static int AP_ContentPadGlowBits(int destLevelID, int *outBits, int64_t *outCode
             }
         }
         // Item Box checks (#133 PR 4e): every unchecked box of the pad.
-        for(n=0;!pad->crystal && n<pad->box_count && n<15 && count<cap;++n)
+        for(n=0;!pad->crystal && n<pad->box_count && n<50 && count<cap;++n)
             if(pad->box_locations[n]>0 && !ap_net_location_checked((long)pad->box_locations[n]))
                 count=AP_GlowPush(outBits,outCodes,count,AP_CONTENT_BIT_BOX+pad->physical*AP_CONTENT_BOX_STRIDE+n,
                                   pad->box_locations[n]);
@@ -327,7 +327,7 @@ int AP_PadUncollectedBoxCount(int destLevelID)
 	{
 		const ctr_content_pad *pad = ap_content_plan_pad(destLevelID);
 		int b;
-		for (b = 0; pad && pad->occupied && b < pad->box_count && b < 15; b++)
+		for (b = 0; pad && pad->occupied && b < pad->box_count && b < 50; b++)
 			if (pad->box_locations[b] > 0 && AP_PadBoxLive((long)pad->box_locations[b], 0) &&
 			    !AP_PadBoxChecked((long)pad->box_locations[b], 0))
 				n++;
@@ -348,7 +348,7 @@ int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap)
 // The display buffer must hold a Gem Cup's four legs and the busiest single pad.
 CTR_STATIC_ASSERT(AP_PAD_DISPLAY_BITS_MAX >= AP_PADGLOW_WORST_CASE_BITS);
 CTR_STATIC_ASSERT(AP_PAD_DISPLAY_BITS_MAX >=
-                  5 + 1 + 2 + CTR_CFG_PODIUM_RUNG_COUNT + AP_BOX_SLOTS_PER_TRACK +
+                  5 + 1 + 2 + CTR_CFG_PODIUM_RUNG_COUNT + 50 +
                   CTR_CFG_LETTER_COUNT + 1);
 
 // Reward-type group of a glow bit -> the prize slot that owns it under

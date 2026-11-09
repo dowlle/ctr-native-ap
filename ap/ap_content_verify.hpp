@@ -288,7 +288,9 @@ static Model build() {
             if (pad.ctr_location > 0 && present.count(pad.ctr_location) &&
                 (state.families.lettersanity != 2 || (letter_r > 0 && present.count(letter_r))))
                 door.insert(pad.ctr_location);
-            if (pad.box_locations[4] > 0 && present.count(pad.box_locations[4])) door.insert(pad.box_locations[4]);
+            for (int b = 0; b < pad.box_count; ++b)
+                if ((pad.box_spots ? pad.box_number[b] == 5 : b == 4) &&
+                    pad.box_locations[b] > 0 && present.count(pad.box_locations[b])) door.insert(pad.box_locations[b]);
         }
 
     // Wumpa Income routes (J11): every Trophy Race and CTR Challenge of a
