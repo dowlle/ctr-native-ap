@@ -253,6 +253,7 @@ int main(void)
 	{ int ok = CustomContentVerify_Files(lev, vrm, &v, error, sizeof error); if (!ok) printf("fixture error: %s\n", error); expect(ok, "full fixture verifies"); }
 	expect(v.measured.instances == 9, "instance count");
 	expect(v.measured.checkpoints == 35, "checkpoint count");
+	expect(v.measured.finishGap == 0, "A4-8 M04: fixture checkpoints share one point, finish gap 0");
 	expect(v.measured.spawns == 8, "spawn count");
 	expect(v.measured.navPaths == 3, "nav path count");
 	expect(v.measured.ordinaryCrates == 1, "ordinary crate count");
@@ -322,6 +323,17 @@ int main(void)
 	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error) &&
 	       strstr(error, "patched or out-of-range pointer target (slot 0x10)") != NULL,
 	       "a mapped slot holding a non-pointer value is refused and named");
+	/* A4-8 M04: node 34 links forward to node 0; its distance to node 0 is the
+	   finish gap. 1575 is the largest retail gap, 23737 the LRG2 Tizi Challenge. */
+	build_lev(image, 1); put16(image, 4 + BODY_CHECK + 34 * 12, 1575); write_bytes(lev, image, IMAGE_BYTES);
+	expect(CustomContentVerify_Files(lev, vrm, &v, error, sizeof error) && v.measured.finishGap == 1575 &&
+	       v.measured.finishGap <= CTR_CCV_FINISH_GAP_MAX, "retail-sized finish gap measured and allowed");
+	build_lev(image, 1); put16(image, 4 + BODY_CHECK + 34 * 12 + 2, (unsigned)-18289 & 0xffff);
+	put16(image, 4 + BODY_CHECK + 34 * 12, (unsigned)-7844 & 0xffff); put16(image, 4 + BODY_CHECK + 34 * 12 + 4, 12954);
+	write_bytes(lev, image, IMAGE_BYTES);
+	expect(CustomContentVerify_Files(lev, vrm, &v, error, sizeof error) && v.measured.finishGap == 23744 &&
+	       v.measured.finishGap > CTR_CCV_FINISH_GAP_MAX, "Tizi-shaped finish gap measured over the limit");
+	expect(v.measured.checkpoints == 35, "a far finish keeps the checkpoint graph (diagnostic, not a parse failure)");
 	build_lev(image, 1); put32(image, 4 + BODY_CHECK + 8, 250);
 	write_bytes(lev, image, IMAGE_BYTES);
 	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "checkpoint edge beyond count refused");
