@@ -181,6 +181,18 @@ int main(void)
 	parse_block(with_hint_rule(nlohmann::json::array({"cap", 2, -1, 2})));
 	expect_int(ctr_win_logic.state, AP_WL_VALID, "hint stat cap accepted");
 	{
+		auto b = example();
+		b["version"] = 2;
+		b["checks"] = nlohmann::json::object();
+		for (int i = 0; i < 5000; ++i)
+			b["checks"][std::to_string(37200000 + i)] = {{"kind", "hint"}, {"region", 0}, {"rule", true}};
+		parse_block(b);
+		expect_int(ctr_win_logic.state, AP_WL_VALID, "sanity hint graph exceeds historical 4096 rows");
+		expect_int(ctr_win_logic.check_count, 5000, "all sanity hint rows retained");
+		expect(AP_WinLogicFindCheck(&ctr_win_logic, 37204999) >= 0, "last sanity hint retained");
+	}
+	parse_block(with_hint_rule(nlohmann::json::array({"cap", 2, -1, 2})));
+	{
 		int i = AP_WinLogicFindCheck(&ctr_win_logic, 35011002L);
 		const auto &node = ctr_win_logic.nodes[ctr_win_logic.checks[i].rule];
 		expect(node.tag == AP_WL_T_STATCAP && node.a == 2 && node.b == -1 && node.c == 2, "hint stat cap retains all fields");

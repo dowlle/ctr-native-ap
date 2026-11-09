@@ -34,7 +34,7 @@ extern "C" {
 #define AP_WL_MAX_NODES    16384
 #define AP_WL_MAX_KIDS     16384
 #define AP_WL_MAX_IDS      16384
-#define AP_WL_MAX_CHECKS   4096 // full admitted content-plan check bound, including hint-only checks
+#define AP_WL_MAX_CHECKS   16384 // content-plan check bound, including sanity hint-only checks
 #define AP_WL_MAX_REGIONS  1024
 #define AP_WL_MAX_FAMILIES 256
 #define AP_WL_MAX_START    512 // distinct precollected progression ids
