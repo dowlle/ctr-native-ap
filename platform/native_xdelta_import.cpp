@@ -1524,6 +1524,16 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                 add_item(*scan, item);
                 return;
             }
+            if (m.finishGap > CTR_CCV_FINISH_GAP_MAX)
+            {
+                // A4-8 M04: the road ends far from the start line (the LRG2 Tizi
+                // Challenge: 23737 units), so this client never counts a lap.
+                if (following) { CustomPackage_Free(&built.owned); undo_following(); return; }
+                set_text(item.reason, sizeof item.reason, "Finish line not reachable: laps never count");
+                CustomPackage_Free(&built.owned);
+                add_item(*scan, item);
+                return;
+            }
             std::string tags = "Race TT";
             if (arcade) tags += " Arcade";
             CustomPackageRelicTargets targets;

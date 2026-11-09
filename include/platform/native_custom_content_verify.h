@@ -59,7 +59,17 @@ struct CustomContentMeasurements
 	   ordinaryCrates. A named custom track's Item Box checks take their seats
 	   from them. */
 	unsigned long weaponCrates;
+	/* A4-8 M04: straight-line distance, in LEV units, from the checkpoint
+	   whose forward link is node 0 to node 0. The engine counts a lap only
+	   when progress jumps across that link (PlayLevel_UpdateLapStats), so a
+	   road that ends far from the start never counts a lap. 0 without a
+	   checkpoint graph. */
+	unsigned long finishGap;
 };
+
+/* A4-8 M04: retail tracks measure at most 1575 units and the custom corpus
+   at most 1988; the LRG2 Tizi Challenge measures 23737. */
+#define CTR_CCV_FINISH_GAP_MAX 8192ul
 
 struct CustomContentVerification
 {

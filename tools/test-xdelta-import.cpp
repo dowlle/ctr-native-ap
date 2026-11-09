@@ -572,6 +572,36 @@ int main()
         XdeltaImport_Free(&r.scan);
     }
 
+    /* A4-8 M04: a road that ends far from the start never counts a lap. The
+       checkpoint whose forward link is node 0 sits 23744 units away, the shape
+       of the LRG2 Tizi Challenge; a 1575-unit gap (the largest retail one)
+       is still offered. */
+    {
+        DiscSpec changed = base;
+        LevSpec spec; spec.seed = 49;
+        Bytes far = make_lev(spec);
+        put16(far, 4 + BODY_CHECK + 34 * 12, (unsigned)-7844 & 0xffff);
+        put16(far, 4 + BODY_CHECK + 34 * 12 + 2, (unsigned)-18289 & 0xffff);
+        put16(far, 4 + BODY_CHECK + 34 * 12 + 4, 12954);
+        changed.bigfile[1] = far;
+        spec.seed = 50;
+        Bytes near = make_lev(spec);
+        put16(near, 4 + BODY_CHECK + 34 * 12, 1575);
+        changed.bigfile[3] = near;
+        ScanResult r = scan(write_file("FinishGap.xdelta", encode(baseDisc, make_disc(changed))), discPath);
+        CHECK(r.ok, "finish gap scan succeeds");
+        if (r.ok)
+        {
+            const auto *s = XdeltaImport_Summary(r.scan);
+            const auto *farItem = item_for(s, 1);
+            const auto *nearItem = item_for(s, 3);
+            CHECK(farItem && !farItem->offered && !std::strcmp(farItem->reason, "Finish line not reachable: laps never count"),
+                  "far finish is refused with its own reason");
+            CHECK(nearItem && nearItem->offered, "retail-sized finish gap is still offered");
+        }
+        XdeltaImport_Free(&r.scan);
+    }
+
     {
         DiscSpec changed = base;
         LevSpec spec; spec.seed = 48;
