@@ -524,7 +524,7 @@ static int AP_PadLogicLook(int physLevelID, int look)
 {
 	int bits[AP_PAD_DISPLAY_BITS_MAX];
 	int64_t codes[AP_PAD_DISPLAY_BITS_MAX];
-	int n, i, in = 0, unknown = 0;
+	int n, i, family, in = 0, unknown = 0;
 
 	if (look != AP_PAD_LOOK_OPEN && look != AP_PAD_LOOK_STAGE2_OPEN)
 		return look;
@@ -536,6 +536,21 @@ static int AP_PadLogicLook(int physLevelID, int look)
 		int st = AP_LocationLogicState((long long)codes[i]);
 		if (st == AP_PAD_LOGIC_IN) in++;
 		else if (st == AP_PAD_LOGIC_UNKNOWN) unknown++;
+	}
+	// Ordinary pickup checks affect the colour but deliberately have no glow
+	// entry. Count only their open codes, using the same exported logic.
+	for (family = 0; family < 3; ++family)
+	{
+		int count = ap_content_plan_sanity_pad(physLevelID, family, codes, AP_PAD_DISPLAY_BITS_MAX);
+		for (i = 0; i < count; ++i)
+		{
+			int st;
+			if (AP_ContentCodeChecked(codes[i])) continue;
+			++n;
+			st = AP_LocationLogicState((long long)codes[i]);
+			if (st == AP_PAD_LOGIC_IN) in++;
+			else if (st == AP_PAD_LOGIC_UNKNOWN) unknown++;
+		}
 	}
 	return AP_PadLookByLogic(look, n, in, unknown);
 }

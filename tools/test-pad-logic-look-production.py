@@ -5,6 +5,8 @@ and that the beam, map dot, tracker and rebuild key all read the one look.
 It cannot run the engine. Run from the repository root.
 """
 from pathlib import Path
+import subprocess
+import tempfile
 
 root = Path(__file__).resolve().parents[1]
 pads = (root / "ap/ap_hooks_pads.c").read_text(encoding="utf-8")
@@ -57,4 +59,57 @@ rk = body(warp, "static int AH_WarpPad_RebirthKey(")
 assert "AP_PadLook(physLevelID, destLevelID)" in rk
 birth = (root / "ap/ap_pad_birth.h").read_text(encoding="utf-8")
 assert "((look & 15) << 4)" in birth
+
+# Compile the production collector as well as checking its engine wiring. A
+# pad holding only blocked sanity checks must not stay green merely because
+# those checks intentionally have no glow entries.
+program = r'''
+#include <assert.h>
+#include <stdint.h>
+#include "ap_pad_logic_look.h"
+#define AP_PAD_DISPLAY_BITS_MAX 256
+static int active = 1, glow_count, states[104], checked[104];
+static int ap_content_plan_active(void) { return active; }
+static int AP_ContentPadGlowBits(int physical, int *bits, int64_t *codes, int cap, int open) {
+    (void)physical; (void)bits; (void)cap; assert(open == 1);
+    codes[0] = 1; return glow_count;
+}
+static int ap_content_plan_sanity_pad(int physical, int family, int64_t *codes, int cap) {
+    (void)physical; assert(cap >= 1); codes[0] = 101 + family; return 1;
+}
+static int AP_ContentCodeChecked(int64_t code) { return checked[code]; }
+static int AP_LocationLogicState(long long code) { return states[code]; }
+'''
+program += glow + '\n}\n'
+program += r'''
+int main(void) {
+    assert(AP_PadLogicLook(3, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_STAGE2_WAITING);
+    assert(AP_PadLogicLook(3, AP_PAD_LOOK_STAGE2_OPEN) == AP_PAD_LOOK_STAGE2_WAITING);
+    for (int family = 0; family < 3; ++family) {
+        states[101 + family] = AP_PAD_LOGIC_IN;
+        assert(AP_PadLogicLook(3, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_OPEN);
+        checked[101 + family] = 1;
+        assert(AP_PadLogicLook(3, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_STAGE2_WAITING);
+        checked[101 + family] = 0; states[101 + family] = AP_PAD_LOGIC_OUT;
+    }
+    states[103] = AP_PAD_LOGIC_UNKNOWN;
+    assert(AP_PadLogicLook(3, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_OPEN);
+    checked[101] = checked[102] = checked[103] = 1;
+    assert(AP_PadLogicLook(3, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_OPEN);
+    glow_count = 1;
+    assert(AP_PadLogicLook(3, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_STAGE2_WAITING);
+    states[1] = AP_PAD_LOGIC_IN;
+    assert(AP_PadLogicLook(3, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_OPEN);
+    assert(AP_PadLogicLook(3, AP_PAD_LOOK_CLOSED) == AP_PAD_LOOK_CLOSED);
+    active = 0; states[1] = AP_PAD_LOGIC_OUT;
+    assert(AP_PadLogicLook(3, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_OPEN);
+    return 0;
+}
+'''
+with tempfile.TemporaryDirectory(prefix='ctr-pad-sanity-') as folder:
+    source, executable = Path(folder) / 'test.c', Path(folder) / 'test'
+    source.write_text(program)
+    subprocess.run(['cc', '-std=gnu99', '-Wall', '-Wextra', '-I', str(root / 'ap'),
+                    str(source), '-o', str(executable)], check=True)
+    subprocess.run([str(executable)], check=True)
 print("pad logic look production wiring: ok")
