@@ -1091,6 +1091,14 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 		driver->heldItemID =
 			(u8)AP_ItemsanityFilterCrystalGrant(driver, driver->heldItemID, (unsigned)rng);
 	}
+	else if (itemSet == -1 && AP_ItemsanityUnlockedPool(driver))
+	{
+		// Undecided ranks and unusual field sizes take the default draw rather
+		// than a table. They still need the same unlocked boss pool, since the
+		// catch-up ownership guard below is skipped for this player.
+		driver->heldItemID = (u8)AP_ItemsanityFilterRoll(driver, driver->heldItemID,
+		                                               (unsigned)rng, 0, 0);
+	}
 #endif
 
 	// In Boss race
