@@ -180,6 +180,19 @@ static int s_currentSection = -1; // -1 = section selector, 0+ = submenu
 // config rows since Item Feed (2026-11-03), twelve with Room links.
 #define CONFIG_PAGE_WINDOW 9
 static int s_configTop;
+static void Config_DrawScrollIndicator(int top, int pageRows, uint32_t *ot)
+{
+	if (pageRows > CONFIG_PAGE_WINDOW)
+	{
+		char range[64];
+		int last = top + CONFIG_PAGE_WINDOW;
+		if (last > pageRows) last = pageRows;
+		snprintf(range, sizeof range, "%d-%d/%d  %s", top + 1, last, pageRows,
+		         top == 0 ? "DOWN: MORE" : last == pageRows ? "UP: MORE" : "UP/DOWN: MORE");
+		DecalFont_DrawLineOT(range, 0x100, 0x30, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+	}
+}
+
 static void Config_KeepInView(int selected, int pageRows)
 {
 	if (selected < s_configTop)
@@ -1541,16 +1554,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		int startY = 0x3C;
 		int rowSpacing = 0x0E;
 
-		if (pageRows > CONFIG_PAGE_WINDOW)
-		{
-			char range[64];
-			int last = s_configTop + CONFIG_PAGE_WINDOW;
-			if (last > pageRows) last = pageRows;
-			snprintf(range, sizeof range, "%d-%d/%d  %s", s_configTop + 1, last, pageRows,
-			         s_configTop == 0 ? "DOWN: MORE" :
-			         last == pageRows ? "UP: MORE" : "UP/DOWN: MORE");
-			DecalFont_DrawLineOT(range, 0x100, 0x30, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-		}
+		Config_DrawScrollIndicator(s_configTop, pageRows, ot);
 
 		for (int j = s_configTop; j < numRows && j < s_configTop + CONFIG_PAGE_WINDOW; j++)
 		{
