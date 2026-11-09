@@ -2363,6 +2363,30 @@ with fifty_spots(custom=True):
             forged = copy.deepcopy(wire)
             forged["content_plan"]["required_features"].remove("box_count_v1")
             cases.append((f"box-count-{count}-feature", forged, False))
+for count, mode in ((5, "off"), (50, "both")):
+    wire = make_world(dict(profile_options(), itemboxsanity=count, wumpasanity=mode), seed=3).fill_slot_data()
+    assert cp.validate(wire["content_plan"])
+    cases.append((f"sanity-{count}-{mode}", wire, True))
+    for mutation in ("ordinal", "counts", "hash", "route", "feature"):
+        bad = copy.deepcopy(wire)
+        plan = bad["content_plan"]
+        if mutation == "ordinal":
+            plan["sanity"]["tracks"][0]["weapon_crate"][0] = 81
+        elif mutation == "counts":
+            plan["sanity"]["tracks"][0]["counts"][0] = True
+        elif mutation == "hash":
+            plan["sanity"]["tracks"][0]["lev_sha256"] = "0" * 64
+        elif mutation == "route":
+            next(c for c in plan["checks"] if c["kind"] == "weapon_crate")["routes"][0]["award"] = "box"
+        else:
+            plan["required_features"].remove("itemboxsanity_v1")
+        try:
+            cp.validate(plan)
+            expected_admit = True
+        except Exception:
+            expected_admit = False
+        assert not expected_admit, mutation
+        cases.append((f"sanity-{count}-{mode}-{mutation}", bad, False))
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()

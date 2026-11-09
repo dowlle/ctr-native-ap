@@ -26,6 +26,8 @@ fixture = r'''
 #define AP_IDX_KEY 14
 static ctr_content_pad p;
 static int active = 1, ready = 1, racer = 1, left, ap_recv_count[200];
+static int sanity_left;
+int AP_SanityPadPending(int physical, int family) { (void)physical; return family == 0 ? sanity_left : 0; }
 int ap_content_plan_active(void) { return active; }
 const ctr_content_pad *ap_content_plan_pad(int physical) {
     return active && physical == p.physical ? &p : NULL;
@@ -99,7 +101,13 @@ int main(void) {
         active = 1;
         assert(!AP_PadReplayable(p.physical + 1, p.retail_id));
     }
-    printf("PASS: %d Crystal Challenge replay/tracker gate cases across seven arenas\n", cases);
+    memset(&p, 0, sizeof p);
+    p.physical = 3; p.occupied = p.cup = ready = active = 1; p.racer_lock = -1; left = 0;
+    sanity_left = 1;
+    assert(AP_PadState(3, 0) == 2); /* Sanity keeps a cup open outside the glow cycle. */
+    sanity_left = 0;
+    assert(AP_PadState(3, 0) == 5);
+    printf("PASS: %d Crystal Challenge replay/tracker gate cases across seven arenas, plus cup sanity state\n", cases);
     return 0;
 }
 '''

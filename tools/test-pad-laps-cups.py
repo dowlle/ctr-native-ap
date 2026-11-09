@@ -31,7 +31,8 @@ def function(text, signature):
 # The state counts every entry the enumerator can list, the display bits resolve.
 state = function(pads, "int AP_PadState(int physLevelID, int destLevelID)")
 assert "int bits[6+AP_CONTENT_CUP_TRACK_CHECKS];" in state
-assert "AP_PadUncollectedGlowBits(physLevelID,bits,6+AP_CONTENT_CUP_TRACK_CHECKS) ? 2 : 5" in state
+assert "AP_PadUncollectedGlowBits(physLevelID,bits,6+AP_CONTENT_CUP_TRACK_CHECKS)" in state
+assert "AP_SanityPadPending(physLevelID,0)" in state  # Sanity counts for state, separately from glow.
 assert "ap_content_cup_lap_bit_code(ap_content_plan_pad(contentPad), contentTier)" in hooks
 assert "if(ap_content_cup_lap_bit_decode(globalBit,&contentPad,&contentTier))\n            return 0;" in pads
 # The tracker names stage 2 and a cup's node counts its tracks.
