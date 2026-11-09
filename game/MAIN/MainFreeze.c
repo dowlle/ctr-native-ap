@@ -1,8 +1,8 @@
 #include <common.h>
 
 #ifdef CTR_AP
-#include "ap/ap_ai_difficulty.h"
-#include "ap/ap_pauserow.h"
+#include "../../ap/ap_ai_difficulty.h"
+#include "../../ap/ap_pauserow.h"
 
 // A4-14: a separate selector keeps title-only Options actions out of a live
 // adventure. Confirm saves the existing comfort setting; Back changes nothing.

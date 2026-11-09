@@ -285,7 +285,7 @@ static void Config_UpdateSlider(const struct GamepadBuffer *pad, const int rowSe
 // the fixed presets from the reference difficulty menu. The raw value is what gets
 // stored + synced, so an out-of-ladder value from slot_data still applies as-is;
 // the menu only snaps to the nearest entry for display and left/right stepping.
-#include "ap/ap_ai_difficulty.h"
+#include "../../ap/ap_ai_difficulty.h"
 
 // Aspect-ratio preset ladder (CFG_ENUM), ported from thecodingbob/ctr-native
 // (branch widescreen-option). 0 = 4:3 (vanilla), 1 = 16:9, 2 = 16:10,

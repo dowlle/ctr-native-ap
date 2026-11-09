@@ -1,8 +1,8 @@
 #include <common.h>
 
 #ifdef CTR_AP
-#include "ap/ap_ai_difficulty.h"
-#include "ap/ap_pauserow.h"
+#include "../ap/ap_ai_difficulty.h"
+#include "../ap/ap_pauserow.h"
 #endif
 
 
