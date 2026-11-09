@@ -1,5 +1,10 @@
 #include <common.h>
 
+#ifdef CTR_AP
+#include "ap/ap_ai_difficulty.h"
+#include "ap/ap_pauserow.h"
+#endif
+
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80044ef8-0x80044f90.
 void RECTMENU_DrawPolyGT4(struct Icon *icon, s16 posX, s16 posY, struct PrimMem *primMem, uint32_t *ot, u32 color0, u32 color1, u32 color2, u32 color3,
@@ -448,6 +453,10 @@ static char *RECTMENU_RowString(int index)
 		return (char *)"TRACKER";
 	if (index == AP_LNG_TRAVEL)
 		return (char *)"TRAVEL";
+	if (index == AP_LNG_AI_DIFFICULTY)
+		return (char *)"AI DIFFICULTY";
+	if (index >= AP_LNG_AI_PRESET && index < AP_LNG_AI_PRESET + AI_DIFF_COUNT)
+		return (char *)s_aiDiffNames[index - AP_LNG_AI_PRESET];
 	if (index == AP_LNG_PLAY_SOLO)
 		return (char *)"PLAY SOLO";
 	if (index == AP_LNG_WUMPA_SHOP)
