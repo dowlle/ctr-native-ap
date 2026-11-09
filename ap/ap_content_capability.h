@@ -151,9 +151,13 @@ static inline int AP_ContentWeaponCratesHold(int stated, const struct CustomCont
 static inline int AP_ContentSanityCountsHold(const ctr_content_package *pkg, const struct CustomContentVerification *report,
                                               char *why, size_t whySize)
 {
-	if (!pkg || !report || !report->loadable) return 0;
-	if ((pkg->fruit_crates >= 0 && (unsigned long)pkg->fruit_crates != report->measured.fruitCrates) ||
-	    (pkg->loose_fruit >= 0 && (unsigned long)pkg->loose_fruit != report->measured.looseWumpa)) {
+	if (why && whySize) why[0] = '\0';
+	if (!pkg || !report || !report->loadable) {
+		if (why && whySize) snprintf(why, whySize, "the track files failed the structural check");
+		return 0;
+	}
+	if ((pkg->fruit_crates != AP_CONTENT_WEAPON_CRATES_UNSTATED && (pkg->fruit_crates < 0 || (unsigned long)pkg->fruit_crates != report->measured.fruitCrates)) ||
+	    (pkg->loose_fruit != AP_CONTENT_WEAPON_CRATES_UNSTATED && (pkg->loose_fruit < 0 || (unsigned long)pkg->loose_fruit != report->measured.looseWumpa))) {
 		if (why && whySize) snprintf(why, whySize, "sanity pickup counts disagree with the track files");
 		return 0;
 	}

@@ -17,6 +17,7 @@
 #define CRYSTAL_CHALLENGE 16
 #define MAIN_MENU 32
 #define RELIC_RACE 64
+#define TIME_TRIAL 256
 #define IS_BOSS_RACE(m) ((m) & 128)
 struct Model { int id; };
 struct Instance { unsigned colorRGBA; short alphaScale; };
@@ -74,6 +75,7 @@ int main(void) {
     assert(AP_SanityPickup(&objects[3], &bot) == 1);
     AP_SanityLevelInstances(defs, 4); AP_SanityPickup(&objects[1], &player); assert(sent == 2);
     gt.gameMode1 |= RELIC_RACE; AP_SanityPickup(&objects[2], &player); assert(sent == 2);
+    gt.gameMode1 = ADVENTURE_MODE | TIME_TRIAL; AP_SanityPickup(&objects[2], &player); assert(sent == 2);
     gt.gameMode1 = ADVENTURE_MODE; route_valid = 0; AP_SanityPickup(&objects[2], &player); assert(sent == 2);
     route_valid = 1; AP_SanityPickup(&objects[2], &player); assert(sent == 3);
     for (i = 0; i < 121; ++i) AP_SanityTick(&gt);

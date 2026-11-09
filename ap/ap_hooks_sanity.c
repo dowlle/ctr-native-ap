@@ -27,7 +27,7 @@ static const ctr_content_sanity *AP_SanityRoute(struct GameTracker *gt)
     const struct CustomTrackRaceContext *c;
     const ctr_content_pad *cup;
     if (!gt || !ctr_cfg_active() || !ap_content_plan_active() || !(gt->gameMode1 & ADVENTURE_MODE) ||
-        gt->boolDemoMode || (gt->gameMode1 & (ADVENTURE_ARENA | ARCADE_MODE | BATTLE_MODE | CRYSTAL_CHALLENGE | MAIN_MENU | RELIC_RACE)))
+        gt->boolDemoMode || (gt->gameMode1 & (ADVENTURE_ARENA | ARCADE_MODE | BATTLE_MODE | CRYSTAL_CHALLENGE | MAIN_MENU | RELIC_RACE | TIME_TRIAL)))
         return 0;
 #ifdef CTR_CUSTOM_PACKAGES
     if (MainRaceTrack_OfflineCustomLoad()) return 0;
