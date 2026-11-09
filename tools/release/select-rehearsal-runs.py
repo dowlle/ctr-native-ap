@@ -54,11 +54,12 @@ def choose_native(repo: str, source: str, pr_number: str, pr_head: str) -> int |
     return None
 
 
-def choose_apworld(repo: str, branch: str, companion: str = '') -> tuple[int, str]:
+def choose_apworld(repo: str, branch: str, companion: str = '', required: bool = False) -> tuple[int, str]:
     expected_sha = None
     if companion:
         # Paired PRs can rehearse together before either side merges. Only a
-        # missing branch falls back to the base; API errors must fail closed.
+        # missing implicit companion falls back; explicit selections and API
+        # errors must fail closed.
         result = subprocess.run(
             ["gh", "api", f"repos/{repo}/git/ref/heads/{quote(companion, safe='')}"],
             text=True, capture_output=True,
@@ -68,7 +69,7 @@ def choose_apworld(repo: str, branch: str, companion: str = '') -> tuple[int, st
         except ValueError:
             raise RuntimeError(f"could not resolve companion branch on {repo}")
         if result.returncode:
-            if ref.get('status') != '404':
+            if required or ref.get('status') != '404':
                 raise RuntimeError(f"could not resolve companion branch on {repo}: {ref}")
         else:
             branch, expected_sha = companion, ref['object']['sha']
@@ -101,6 +102,7 @@ def main() -> None:
         world_id, world_sha = choose_apworld(
             apworld_repo, os.environ["APWORLD_BRANCH"],
             os.environ.get("APWORLD_COMPANION_BRANCH", ""),
+            os.environ.get("APWORLD_COMPANION_REQUIRED", "false").lower() == "true",
         )
         deadline = time.monotonic() + 55 * 60
         native_id = None
