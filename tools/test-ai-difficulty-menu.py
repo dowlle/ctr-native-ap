@@ -16,9 +16,10 @@ fixture = r'''
 struct sData sdata_static;
 NativeConfig g_config;
 static struct RectMenu pause_menu;
-static int live = 1, saved, committed, destroyed;
+static int live = 1, saved, committed, destroyed, captured;
 int AP_FastTravelAvailable(void) { return live; }
 void NativeConfig_Save(void) { saved++; }
+void NativeRenderer_CaptureWindowGeometry(void) { captured++; }
 void AP_AiDifficultyCommit(void) { committed++; }
 void MainFreeze_SafeAdvDestroy(void) { destroyed++; }
 struct RectMenu *MainFreeze_GetMenuPtr(void) { return &pause_menu; }
@@ -46,7 +47,7 @@ int main(void) {
         g_config.aiDifficulty = -1;
         MainFreeze_AiDifficultyProc(&ap_difficultyMenu);
         assert(g_config.aiDifficulty == s_aiDiffValues[i]);
-        assert(saved == i + 1 && committed == i + 1);
+        assert(saved == i + 1 && committed == i + 1 && captured == i + 1);
         assert(sdata->ptrDesiredMenu == &pause_menu);
     }
     int before = saved;
@@ -55,7 +56,7 @@ int main(void) {
     assert(g_config.aiDifficulty == 123);
     ap_difficultyMenu.rowSelected = -1;
     MainFreeze_AiDifficultyProc(&ap_difficultyMenu);
-    assert(saved == before && committed == before && g_config.aiDifficulty == 123);
+    assert(saved == before && committed == before && captured == before && g_config.aiDifficulty == 123);
     ap_difficultyMenu.rowSelected = AI_DIFF_COUNT;
     MainFreeze_AiDifficultyProc(&ap_difficultyMenu);
     live = 0;

@@ -4,6 +4,7 @@
 #include "../../ap/ap_ai_difficulty.h"
 #include "../../ap/ap_pauserow.h"
 #include <platform/native_menu.h>
+#include <platform/native_renderer.h>
 
 // A4-14: a separate selector keeps title-only Options actions out of a live
 // adventure. Confirm saves the existing comfort setting; Back changes nothing.
@@ -21,6 +22,7 @@ static void MainFreeze_AiDifficultyProc(struct RectMenu *menu)
 	if (menu->rowSelected >= 0 && menu->rowSelected < AI_DIFF_COUNT && AP_FastTravelAvailable())
 	{
 		g_config.aiDifficulty = s_aiDiffValues[menu->rowSelected];
+		NativeRenderer_CaptureWindowGeometry();
 		NativeConfig_Save();
 		AP_AiDifficultyCommit();
 	}
