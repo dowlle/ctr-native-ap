@@ -5567,6 +5567,11 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       "name": "Em Cup",
       "win": 35027108,
       "sweep": 35027308
+    },
+    {
+      "name": "Dex Cup",
+      "win": 35027109,
+      "sweep": 35027309
     }
   ],
   "gem_cups": [

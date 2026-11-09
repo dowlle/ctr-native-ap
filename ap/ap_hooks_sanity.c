@@ -1,5 +1,6 @@
 // Ordinary pickup checks. Included by game_unity after the race route helpers.
 #ifdef CTR_AP
+
 static struct InstDef *ap_sanity_defs;
 static int ap_sanity_defs_count, ap_sanity_ready, ap_sanity_size;
 static uint64_t ap_sanity_epoch;
@@ -163,4 +164,4 @@ int AP_SanityPadPending(int physical, int family)
     for (i = 0; i < n; ++i) pending += !AP_ContentCodeChecked(codes[i]);
     return pending;
 }
-#endif
+#endif // CTR_AP
