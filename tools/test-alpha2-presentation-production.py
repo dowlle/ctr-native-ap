@@ -61,7 +61,8 @@ static int AP_ContentGarageCupRunning(void) { return garageRunning; }
 static const ctr_content_pad *AP_ContentCupPad(void) { return havePad ? &pad : NULL; }
 static int AP_ContentCupLeg(void) { return leg; }
 const ctr_content_package *ap_content_plan_package(int i) { return i == 2 ? &package : NULL; }
-static const char *AP_CortexTrackDisplayName(void) { return "Cortex Vortex"; }
+static int legacyCortex=1;
+static const char *AP_CortexTrackDisplayName(void) { return legacyCortex ? "Cortex Vortex" : NULL; }
 static struct {
     struct { int name_LNG, characterID_Boss; } metaDataLEV[18];
     struct { int lngIndex_CupName; } AdvCups[5],ArcadeCups[5];
@@ -110,6 +111,8 @@ int main(void) {
     assert(!strcmp(heading(),"Roo's Tubes"));
     pad.legs[0].retail_id=-1; pad.legs[0].cortex=1;
     assert(!strcmp(heading(),"Cortex Vortex"));
+    legacyCortex=0; assert(!strcmp(heading(),"CORTEX VORTEX"));
+    legacyCortex=1;
     havePad=0; assert(!AP_ContentCupTrackName()); havePad=1;
     leg=-1; assert(!AP_ContentCupTrackName()); leg=4; assert(!AP_ContentCupTrackName()); leg=0;
 

@@ -328,10 +328,17 @@ void AP_FeedEndDrain(int drainedThisFrame)
 // most once per frame (see the block comment above).
 static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 {
+	// The hub's persistent box warning occupies y=72 and y=84. Keep the
+	// newest three lines at 96..120 while it is present; new lines wait in
+	// the queue rather than being promoted into the warning's band.
+	const int visibleLimit = !playableRace && ctr_cfg.box_placement_refused ? 3 : AP_FEED_MAX_VISIBLE;
 	// Promote a pending line into a free slot, rate-limited so a deep queue
 	// cascades in rather than snapping full in one frame.
-	if (AP_FeedLinesPromote(&ap_feed) && playableRace)
-		OtherFX_Play(0x41, 1); // retail 10-Wumpa / juiced-up pickup cue
+	if (ap_feed.vcount < visibleLimit)
+	{
+		if (AP_FeedLinesPromote(&ap_feed) && playableRace)
+			OtherFX_Play(0x41, 1); // retail 10-Wumpa / juiced-up pickup cue
+	}
 
 	// Age, then compact out expired lines (oldest reach 0 first).
 	AP_FeedLinesAge(&ap_feed);
@@ -339,7 +346,8 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 	// Draw: newest (last) at the bottom anchor, older lines stacked upward.
 	// Each line renders in its stored classification colour (issue #195); the
 	// old own/foreign orange-vs-white mapping is gone.
-	for (int i = 0; i < ap_feed.vcount; i++)
+	int first = ap_feed.vcount > visibleLimit ? ap_feed.vcount - visibleLimit : 0;
+	for (int i = first; i < ap_feed.vcount; i++)
 	{
 		int fromBottom = ap_feed.vcount - 1 - i;
 		int y = baseY - fromBottom * AP_FEED_LINE_H;
@@ -348,13 +356,15 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 	}
 }
 
-// Adventure-hub surface: the shipped anchor, bottom-left, unchanged.
+// Leave the bottom title/racer block clear, including while approaching a pad.
+// The picker owns the screen: keep both pending and visible feed lines until it
+// closes, just as the race feed waits while paused.
 void AP_FeedDrawHub(void)
 {
-	if (!ctr_cfg_active() || !AP_HubFeedOn())
+	if (!ctr_cfg_active() || !AP_HubFeedOn() || AP_CharSwap_HubHudHidden())
 		return;
 
-	AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_BASE_Y, 0);
+	AP_FeedTickAndDraw(AP_FEED_X, 120, 0);
 }
 
 // In-race surface (issue #192): the same feed, on the race HUD, so an item sent

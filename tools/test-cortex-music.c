@@ -122,6 +122,17 @@ static void loader(void)
 	EXPECT(arm() == 1, "cortex pair arms");
 	EXPECT(CustomTrack_CortexMusic(&bytes, &size) == 1 && size == SCA_BYTES && bytes != NULL, "pinned music is served");
 	enter_and_leave("pinned music");
+	// The reported alpha3 race was a cup leg. Its identity is the content
+	// context, with no legacy Cortex pad latch, just like a standalone race.
+	{
+		struct CustomTrackRaceContext race = pad_race();
+		race.cup = 1; race.leg = 0;
+		EXPECT(CustomTrack_StageStandaloneRace(&race) == 1, "Cortex cup leg stages");
+		CustomTrack_OnRaceLoadRequested(HOST);
+		EXPECT(CustomTrack_CortexMusicServing(HOST, 1, 4) == 1, "Cortex cup leg serves its pinned music");
+		CustomTrack_OnRaceLoadRequested(26);
+		EXPECT(CustomTrack_CortexMusicServing(HOST, 1, 4) == 0, "leaving the cup stops its music");
+	}
 
 	// A withdrawn seed: nothing is served.
 	CustomTrack_ClearSeedDescriptor();

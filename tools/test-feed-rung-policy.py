@@ -24,7 +24,8 @@ assert 'AP_FeedRememberSelfRung(item);' in source
 assert 'if (AP_FeedConsumeSelfRung(item))' in source
 assert 'if (AP_FeedLinesPromote(&ap_feed) && playableRace)' in source
 assert 'OtherFX_Play(0x41, 1);' in source
-assert 'AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_BASE_Y, 0);' in source
+# Alpha4 lifts only the hub feed above pad portraits and titles.
+assert 'AP_FeedTickAndDraw(AP_FEED_X, 120, 0);' in source
 assert 'AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_BASE_Y, 1);' in source
 
 print("AP rung feed and race cue policy: PASS")

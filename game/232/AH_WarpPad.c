@@ -97,7 +97,12 @@ static void AH_WarpPad_RaceTypeMenuProc(struct RectMenu *menu)
 static struct RectMenu apRaceTypeMenu = {
 	.stringIndexTitle = LNG_CHOOSE_RACE_TYPE,
 	.posX_curr = 0x100, .posY_curr = 0x6c,
-	.state = 0x100803, .rows = apRaceTypeRows,
+	// No MENU_CANT_GO_BACK (alpha4, M09): Triangle backs out of the selector
+	// after a wrong-pad entry. The cancel path is the menu proc's row -1, which
+	// lands in the same kart-release as an empty menu (WarpPad_RefuseEntry,
+	// covered by tools/test-custom-race-picker.py). The retail token/relic
+	// menu in D232.c keeps the retail no-cancel behaviour.
+	.state = 0x803, .rows = apRaceTypeRows,
 	.funcPtr = AH_WarpPad_RaceTypeMenuProc, .drawStyle = 4
 };
 static void AH_WarpPad_RaceTypeRows(const ap_rs_rows *rows)
@@ -593,8 +598,15 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			D232.levelID = levelID;
 
 
-			// if not giving Aku Hint
-			if (sdata->AkuAkuHintState == 0)
+			// if not giving Aku Hint, and the hub character picker does not own
+			// the screen (alpha4: the pad title, racer line and portrait drew
+			// through the picker; the counters already stand down for it,
+			// UI_RenderFrame.c)
+			if (sdata->AkuAkuHintState == 0
+#ifdef CTR_AP
+			    && !AP_CharSwap_HubHudHidden()
+#endif
+			)
 			{
 				// default
 #ifdef CTR_AP
