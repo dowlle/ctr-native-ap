@@ -241,7 +241,8 @@ static inline int AP_BoxMap_CountStanding(int levelID, int slots,
 // v2 retest: 5 of 12 boxes fed the other slot, none toasted).
 //
 // ONLY codes this world actually created may be listed. MultiServer 0.6.7 hard
-// drops a connection on an invalid id in the scout path, so pushing the whole
+// drops a connection on an invalid id in the scout path (handler unchanged
+// through 0.6.8, verified for the 0.6.8 solo runtime move), so pushing the whole
 // 270-code block blind is a disconnect and not a diagnostic; a seed without the
 // box class contributes nothing at all. `inWorldFn` is the same checked+missing
 // membership test ap_net_location_exists uses (#217).

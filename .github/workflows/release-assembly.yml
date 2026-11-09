@@ -30,6 +30,12 @@ on:
       apworld_branch:
         type: string
         default: ''
+      apworld_companion_branch:
+        type: string
+        default: ''
+      apworld_companion_required:
+        type: boolean
+        default: false
       apworld_artifact_name:
         type: string
         default: ctr.apworld
@@ -70,6 +76,8 @@ jobs:
           APWORLD_SOURCE_COMMIT: ${{ inputs.apworld_source_commit }}
           APWORLD_REPO: ${{ inputs.apworld_repo }}
           APWORLD_BRANCH: ${{ inputs.apworld_branch }}
+          APWORLD_COMPANION_BRANCH: ${{ inputs.apworld_companion_branch }}
+          APWORLD_COMPANION_REQUIRED: ${{ inputs.apworld_companion_required }}
           PR_NUMBER: ${{ inputs.pr_number }}
           PR_HEAD_SHA: ${{ inputs.pr_head_sha }}
         run: |
@@ -181,7 +189,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ArchipelagoMW/Archipelago
-          ref: debe4cf035c7c15efe6fb95f72343af0d420c68c # 0.6.7
+          ref: 54803be064fc7e80c4628777ed0b46a9390f255f # 0.6.8
           fetch-depth: 1
           path: archipelago
           persist-credentials: false

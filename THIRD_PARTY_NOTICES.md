@@ -348,13 +348,13 @@ Python parts ship as unmodified source files (plus precompiled bytecode).
   under their own licenses; see
   https://github.com/astral-sh/python-build-standalone and the CPython
   `LICENSE.txt` shipped beside the interpreter.
-- Archipelago 0.6.7 core (trimmed: core modules, Generic world, rule_builder),
+- Archipelago 0.6.8 core (trimmed: core modules, Generic world, rule_builder),
   MIT License, Copyright (c) 2017 LLCoolDave, Copyright (c) 2025 Berserker66,
   Copyright (c) 2022 CaitSith2, Copyright (c) 2021 LegendaryLinux and
   contributors. https://github.com/ArchipelagoMW/Archipelago
 - PyYAML 6.0.3, MIT. websockets 13.1, BSD-3-Clause. jellyfish 1.2.1, MIT.
   Jinja2 3.1.6 and MarkupSafe 3.0.3, BSD-3-Clause. schema 0.7.8, MIT.
-  typing_extensions 4.15.0, PSF-2.0. platformdirs 4.9.4, MIT.
+  typing_extensions 4.15.0, PSF-2.0. platformdirs 4.10.1, MIT.
   colorama 0.4.6, BSD-3-Clause. bsdiff4 1.2.6, BSD-2-Clause.
 - pathspec 1.0.4, Mozilla Public License 2.0. The files are unmodified; the
   source is the shipped `.py` files and https://github.com/cpburnz/python-pathspec.

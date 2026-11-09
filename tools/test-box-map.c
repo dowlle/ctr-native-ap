@@ -648,7 +648,8 @@ static void test_scout_codes(void)
 
 	// A seed WITHOUT the box class contributes nothing. This is the safety half:
 	// MultiServer 0.6.7 hard-drops the connection on an invalid id in the scout
-	// path, so a blind push of the 270-code block would be a disconnect.
+	// path (handler unchanged through 0.6.8, verified for the 0.6.8 solo runtime
+	// move), so a blind push of the 270-code block would be a disconnect.
 	n = AP_BoxMap_ScoutCodes(fake_created, &w, out, AP_BOX_LOCATION_COUNT);
 	expect_int(n, 0, "a seed with no box locations scouts no box codes");
 

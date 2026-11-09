@@ -4,7 +4,7 @@ description: Verifier sweep candidate 02. Vanilla unlock mode crossed with desti
 
 game: Crash Team Racing
 requires:
-  version: 0.6.7
+  version: 0.6.8
   game:
     Crash Team Racing: 0.1.0
 

@@ -63,13 +63,21 @@ python3 tools/verify-release.py /path/to/assembly --version vX.Y.Z --pre-sign
 `.github/workflows/release-prepare.yml` is a manual, read-only preparation
 workflow. It requires exact successful native and companion run IDs plus their
 full source commits, downloads both hosted build outputs with `GH_TOKEN`,
-generates the template from Archipelago 0.6.7 and the downloaded apworld,
+generates the template from Archipelago 0.6.8 and the downloaded apworld,
 assembles the eleven standard assets and the unsigned manifest, verifies that
 assembly with `--pre-sign`, and uploads the twelve files as one workflow
 artifact. It deliberately stops before signing, tagging or creating a GitHub
 release. The owner signs the exact downloaded `manifest.json` outside CI, then
 a clean download of the published release must pass default-mode verification
 with the committed public key.
+
+Release rehearsal can test paired changes before merging. On a native PR,
+an apworld branch with the same head branch name is preferred when present;
+it must have a successful manual or push CTR world run at its current head
+with an unexpired `ctr.apworld` artifact. A missing companion branch uses the
+normal base branch. An inaccessible branch or stale companion run fails the
+rehearsal. Manual rehearsal also accepts an explicit `apworld_branch` input;
+that branch must exist and have a successful current-head run and artifact.
 
 Build archive members may be nested. Anything directly under the archive root
 must be one of the known package-client outputs, and the only permitted
