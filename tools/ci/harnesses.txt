@@ -100,6 +100,7 @@ tools/test-instance-birth-production.c skip build-fail under the generic recipe;
 tools/test-item-aliases.c
 tools/test-itemsanity.c
 tools/test-itemsanity-unlocked.c
+tools/test-itemsanity-set-held-production.py
 tools/test-lap-checks.cpp
 tools/test-lap-checks-production.py
 tools/test-lap-progress.c
