@@ -780,6 +780,11 @@ int main(int argc, char **argv) {
             auto &f = p["required_features"];
             for (size_t i = 0; i < f.size(); ++i) if (f[i] == "relic_perfect_v1") { f.erase(i); return; } });
         cv_refuse("Cortex Vortex laps", [&](J &p) { cv_track(p)["laps"] = 5; });
+        cv_refuse("Cortex Vortex standalone laps above 7", [&](J &p) { cv_track(p)["standalone_laps"] = 8; });
+        cv_refuse("Cortex Vortex standalone laps below 1", [&](J &p) { cv_track(p)["standalone_laps"] = 0; });
+        cv_refuse("Cortex Vortex standalone laps not an integer", [&](J &p) { cv_track(p)["standalone_laps"] = 2.5; });
+        cv_refuse("standalone laps on a retail track", [&](J &p) {
+            for (auto &t : p["tracks"]) if (t["origin"] == "retail") { t["standalone_laps"] = 2; return; } });
         cv_refuse("Cortex Vortex package", [&](J &p) { cv_track(p)["package_id"] = "package/cortex-vortex/1.1.2"; });
         cv_refuse("Cortex Vortex name", [&](J &p) { cv_track(p)["display_name"] = "Oxide Station"; });
         cv_refuse("Cortex Vortex with a custom slot", [&](J &p) { cv_track(p)["custom_slot"] = 9; });
@@ -797,6 +802,26 @@ int main(int argc, char **argv) {
                     c["display_name"] = "Cortex Vortex" + name.substr(old.size());
                 }
             } });
+    }
+    // A4-13 (ruled 2026-11-09): a plan whose Cortex Vortex record carries
+    // standalone_laps races the pad at that count, its relic targets scaled
+    // (the production tests). A plan without the key, every room from before
+    // the ruling, keeps the authored three (the pin above).
+    {
+        J two = cvp;
+        for (auto &t : two["content_plan"]["tracks"])
+            if (t["origin"] == "cortex_vortex") t["standalone_laps"] = 2;
+        expect(parse(two) && bind_room(two, "seed-C") && ap_content_plan_active() && ap_content_plan_cortex(),
+               "two-lap Cortex Vortex plan binds");
+        bool found = false;
+        for (int id = 0; id <= 110; ++id) {
+            const auto *p = ap_content_plan_pad(id);
+            if (p && p->occupied && p->cortex) {
+                found = true;
+                expect(p->laps == 2, "standalone_laps sets the Cortex Vortex pad's laps");
+            }
+        }
+        expect(found, "the two-lap plan keeps its Cortex Vortex pad");
     }
     // Pool-only packs and the content-plan envelope (#133 PR 4a): an apworld-
     // emitted room with Progressive Starting Wumpa 3, Turbo Grant, Tizi
@@ -1788,6 +1813,30 @@ int main(int argc, char **argv) {
         }
         k_refuse("one leg shortened, the others not", [&](J &j) { cup(j, 0)["legs"][0]["laps"] = 1; });
         k_refuse("one cup shortened, the other not", [&](J &j) { for (auto &leg : cup(j, 1)["legs"]) leg["laps"] = 1; });
+        // A4-13 (ruled 2026-11-09): standalone_laps on the shared Cortex
+        // Vortex record moves its standalone pad to two laps; every cup and
+        // boss cup leg keeps its own laps, and the Final Challenge keeps its
+        // entry's three.
+        {
+            J keyed = cuproom;
+            for (auto &t : keyed["content_plan"]["tracks"])
+                if (t["origin"] == "cortex_vortex") t["standalone_laps"] = 2;
+            expect(parse(keyed) && bind_room(keyed) && ap_content_plan_active(), "bosses-cups: standalone_laps binds");
+            const ctr_content_pad *kroo = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + 0);
+            const ctr_content_pad *kpapu = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + 1);
+            bool legs3 = kroo && kpapu;
+            for (int n = 0; legs3 && n < AP_CONTENT_CUP_LEGS; ++n)
+                legs3 = kroo->legs[n].laps == 3 && kpapu->legs[n].laps == 3;
+            expect(legs3, "bosses-cups: standalone_laps leaves the boss cup legs at three laps");
+            // The boss race entry's laps are pinned to three by the parser,
+            // so the bound room proves the Final Challenge is untouched.
+            bool pad2 = false;
+            for (int id = 0; id <= 110; ++id) {
+                const auto *p = ap_content_plan_pad(id);
+                if (p && p->occupied && p->cortex) pad2 = p->laps == 2;
+            }
+            expect(pad2, "bosses-cups: the standalone Cortex Vortex pad races two laps");
+        }
         k_refuse("a leg with two laps", [&](J &j) { cup(j, 0)["legs"][0]["laps"] = 2; });
         k_refuse("a leg with the custom track's own laps", [&](J &j) {
             for (auto &leg : cup(j, 0)["legs"]) if (leg["track_id"] == "custom/baby-t-park/1.0.2") leg["laps"] = 7; });
@@ -1999,6 +2048,21 @@ int main(int argc, char **argv) {
         started["content_plan"]["items"]["filler_count"] = started["content_plan"]["items"]["filler_count"].get<int>() + 1;
         expect(parse(started), "fixed items: a started Key is not pinned again");
         expect(parse(bosses), "bosses: the room parses again after the forgeries");
+    }
+    // A4-13 (ruled 2026-11-09): a venue-only Cortex Vortex record (the Final
+    // Challenge venue here) may carry standalone_laps, bounds-checked; a venue
+    // races its boss entry's laps, so the room is unaffected.
+    {
+        J venue2 = bosses;
+        for (auto &t : venue2["content_plan"]["tracks"])
+            if (t["origin"] == "cortex_vortex") t["standalone_laps"] = 2;
+        expect(parse(venue2) && bind_room(venue2) && ap_content_plan_active() &&
+               ap_content_plan_bosses()->final_track == CTR_CFG_OXIDE_FINAL_CORTEX_VORTEX,
+               "bosses: standalone_laps on a venue-only Cortex Vortex binds");
+        J venue9 = bosses;
+        for (auto &t : venue9["content_plan"]["tracks"])
+            if (t["origin"] == "cortex_vortex") t["standalone_laps"] = 9;
+        refuse(venue9, "bosses: standalone_laps out of range on a venue");
     }
     {
         // `oxide_1_optional: filler`: a Wumpa Fruit on N. Oxide's Challenge takes a

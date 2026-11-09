@@ -266,6 +266,22 @@ static void test_relic_targets(void)
 	EXPECT_EQ(AP_CortexRelicTiersBeaten(AP_CortexRelicTime(2)), 7, "exact platinum beats all tiers");
 	EXPECT_EQ(AP_CortexRelicTiersBeaten(AP_CortexRelicTime(1)), 3, "exact gold");
 	EXPECT_EQ(AP_CortexRelicTiersBeaten(AP_CortexRelicTime(0) + 1), 0, "too slow");
+	// A4-13 (ruled 2026-11-09): standalone races are two laps, so the targets
+	// scale by the laps raced. Every placeholder divides by three exactly.
+	EXPECT_EQ(AP_CortexRelicTime(0) % 3, 0, "sapphire divides by three exactly");
+	EXPECT_EQ(AP_CortexRelicTime(1) % 3, 0, "gold divides by three exactly");
+	EXPECT_EQ(AP_CortexRelicTime(2) % 3, 0, "platinum divides by three exactly");
+	EXPECT_EQ(AP_CortexRelicTimeForLaps(0, 2), 126080, "two-lap sapphire (2:11.33)");
+	EXPECT_EQ(AP_CortexRelicTimeForLaps(1, 2), 112640, "two-lap gold (1:57.33)");
+	EXPECT_EQ(AP_CortexRelicTimeForLaps(2, 2), 98560, "two-lap platinum (1:42.67)");
+	for (t = 0; t < 3; t++)
+		EXPECT_EQ(AP_CortexRelicTimeForLaps(t, 3), AP_CortexRelicTime(t),
+		          "three laps keeps the placeholder, so legacy and old-plan rooms are unchanged");
+	EXPECT_EQ(AP_CortexRelicTimeForLaps(0, 0), AP_CortexRelicTime(0) / 3, "laps clamp from below");
+	EXPECT_EQ(AP_CortexRelicTimeForLaps(0, 9), AP_CortexRelicTime(0) * 7 / 3, "laps clamp from above");
+	EXPECT_EQ(AP_CortexRelicTiersBeatenForLaps(AP_CortexRelicTimeForLaps(2, 2), 2), 7,
+	          "exact two-lap platinum beats all tiers");
+	EXPECT_EQ(AP_CortexRelicTiersBeatenForLaps(AP_CortexRelicTimeForLaps(0, 2) + 1, 2), 0, "too slow on two laps");
 	EXPECT_EQ(AP_CortexLetterItemIndexPure(199), -1, "trial letter item is not Cortex Vortex");
 	EXPECT_EQ(AP_CortexLetterItemIndexPure(200), 0, "C");
 	EXPECT_EQ(AP_CortexLetterItemIndexPure(202), 2, "R");

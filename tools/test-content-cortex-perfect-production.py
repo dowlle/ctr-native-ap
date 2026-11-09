@@ -197,6 +197,11 @@ int main(void) {
  for (int t=0;t<3;t++) assert(AP_StandaloneRelicTarget(t)==AP_CORTEX_RELIC_TARGETS.time[t] && AP_StandaloneRelicTarget(t)!=data.RelicTime[13*3+t]);
  assert(AP_NotifyStandaloneRelic(AP_CORTEX_RELIC_TARGETS.time[1])==2 && sent(35026001) && sent(35026002) && !sent(35026003)); cases++;
  reset(CORTEX); assert(AP_NotifyStandaloneRelic(AP_CORTEX_RELIC_TARGETS.time[0]+1)==0); cases++;
+ /* A4-13: a two-lap standalone pad scales the targets; three laps is the old plan, unchanged. */
+ reset(CORTEX); pad.laps=2;
+ for (int t=0;t<3;t++) assert(AP_StandaloneRelicTarget(t)==AP_CORTEX_RELIC_TARGETS.time[t]*2/3);
+ assert(AP_NotifyStandaloneRelic(AP_CORTEX_RELIC_TARGETS.time[1]*2/3)==2 && sent(35026001) && sent(35026002) && !sent(35026003)); cases++;
+ reset(CORTEX); pad.laps=2; assert(AP_NotifyStandaloneRelic(AP_CORTEX_RELIC_TARGETS.time[0]*2/3+1)==0); cases++;
  reset(CUSTOM); assert(AP_StandaloneRelicTarget(2)==76800); cases++;
  /* Cortex Vortex letter items 35010200..202 read their own receipts. */
  reset(CORTEX);

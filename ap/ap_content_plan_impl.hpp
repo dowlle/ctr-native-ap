@@ -1130,7 +1130,15 @@ static void validate(const J &p, State &out) {
             leg.retail_id = rid;
             leg.victory = registry["retail"][rid]["cup_leg"].get<int64_t>();
         } else if (track.at("origin") == "cortex_vortex") {
-            fields(track, {"id", "origin", "package_id", "display_name", "laps", "modes", "capabilities", "field_size"});
+            // `standalone_laps` (A4-13) is inert for a cup leg: a leg races
+            // the track's authored laps, shortened by one_lap_cups as before.
+            // Accept it bounds-checked, then set it aside.
+            J held = track;
+            if (held.contains("standalone_laps")) {
+                number(held["standalone_laps"], 1, 7);
+                held.erase("standalone_laps");
+            }
+            fields(held, {"id", "origin", "package_id", "display_name", "laps", "modes", "capabilities", "field_size"});
             const J &row = registry["cortex_vortex"];
             need(track_id == row["id"].get<std::string>() && track["package_id"] == row["package_id"] &&
                  title == row["name"].get<std::string>() && track["laps"] == row["laps"], "Cortex Vortex metadata mismatch");
@@ -1418,6 +1426,7 @@ static void validate(const J &p, State &out) {
         std::string check_title = title;
         int64_t codes[AP_CONTENT_MODE_COUNT][3] = {};
         unsigned supported = 0;
+        int standalone_laps = -1; // `standalone_laps` of a Cortex Vortex record (A4-13), -1 when absent
         if (track.at("origin") == "retail") {
             fields(track, {"id", "origin", "retail_id", "display_name", "laps", "modes", "capabilities", "field_size"});
             const int rid = number(track["retail_id"], 0, 17);
@@ -1432,7 +1441,15 @@ static void validate(const J &p, State &out) {
             // Cortex Vortex (#133 PR 3c): the bundled Lockheart pair under its
             // own frozen identity, with no package row and no custom slot. Its
             // bytes are located and hashed on load (ap_hooks_custom_content.c).
-            fields(track, {"id", "origin", "package_id", "display_name", "laps", "modes", "capabilities", "field_size"});
+            // `standalone_laps` (A4-13, ruled 2026-11-09): this pad's races run
+            // that many laps. A plan from before the ruling carries no key and
+            // races the authored three, as it did.
+            J held = track;
+            if (held.contains("standalone_laps")) {
+                standalone_laps = number(held["standalone_laps"], 1, 7);
+                held.erase("standalone_laps");
+            }
+            fields(held, {"id", "origin", "package_id", "display_name", "laps", "modes", "capabilities", "field_size"});
             const J &row = registry["cortex_vortex"];
             need(!cortex_seen && track_id == row["id"].get<std::string>() && track["package_id"] == row["package_id"] &&
                  title == row["name"].get<std::string>() && track["laps"] == row["laps"] && row["laps"] == AP_CONTENT_CORTEX_LAPS,
@@ -1494,7 +1511,8 @@ static void validate(const J &p, State &out) {
             }
         }
         need((track_bits & ~supported) == 0, "a track mode its capabilities do not allow");
-        dest.occupied = 1; dest.laps = number(track["laps"], 1, 7);
+        dest.occupied = 1;
+        dest.laps = standalone_laps > 0 ? standalone_laps : number(track["laps"], 1, 7);
         copy(dest.entry_id, entry["id"]); copy(dest.track_id, track["id"]); copy(dest.display_name, track["display_name"]);
         copy(dest.room_title, J(check_title));
         dest.trophy_location = (track_bits & (1u << AP_CONTENT_MODE_TROPHY)) ? codes[AP_CONTENT_MODE_TROPHY][0] : 0;
@@ -1847,7 +1865,14 @@ static void validate(const J &p, State &out) {
                         const J &track = *tracks.at(ltrack);
                         if (ltrack == "cortex_vortex") {
                             const J &row = registry["cortex_vortex"];
-                            need(!cortex_seen && track == J{{"id", row["id"]}, {"origin", "cortex_vortex"}, {"package_id", row["package_id"]},
+                            // `standalone_laps` (A4-13) is inert on a venue raced
+                            // nowhere else; accept it bounds-checked, then compare.
+                            J held = track;
+                            if (held.contains("standalone_laps")) {
+                                number(held["standalone_laps"], 1, 7);
+                                held.erase("standalone_laps");
+                            }
+                            need(!cortex_seen && held == J{{"id", row["id"]}, {"origin", "cortex_vortex"}, {"package_id", row["package_id"]},
                                                             {"display_name", row["name"]}, {"laps", row["laps"]}, {"modes", J::array({"trophy"})},
                                                             {"capabilities", J::array({"trophy"})}, {"field_size", 8}},
                                  "a boss venue raced nowhere else is not its trophy-only record");
@@ -1975,7 +2000,14 @@ static void validate(const J &p, State &out) {
                 const J &track = *tracks.at(track_id);
                 if (level == kCortexVenue) {
                     const J &row = registry["cortex_vortex"];
-                    need(!cortex_seen && track == J{{"id", row["id"]}, {"origin", "cortex_vortex"}, {"package_id", row["package_id"]},
+                    // `standalone_laps` (A4-13) is inert on a venue raced
+                    // nowhere else; accept it bounds-checked, then compare.
+                    J held = track;
+                    if (held.contains("standalone_laps")) {
+                        number(held["standalone_laps"], 1, 7);
+                        held.erase("standalone_laps");
+                    }
+                    need(!cortex_seen && held == J{{"id", row["id"]}, {"origin", "cortex_vortex"}, {"package_id", row["package_id"]},
                                                     {"display_name", row["name"]}, {"laps", row["laps"]}, {"modes", J::array({"trophy"})},
                                                     {"capabilities", J::array({"trophy"})}, {"field_size", 8}},
                          "a boss venue raced nowhere else is not its trophy-only record");
