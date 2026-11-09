@@ -1274,22 +1274,24 @@ from worlds.ctr import crate_exclusions
 from unittest import mock
 from worlds.ctr.test.test_crate_exclusions import ancient
 from worlds.ctr.test.test_content_item_boxes import box_options, first_world
-for digest in list(crate_exclusions.EXCLUSIONS):
-    for count in (3, 17):
-        world = first_world(box_options(custom=[ancient(count, digest)]))
-        wire = world.fill_slot_data()
-        cases.append((f"excluded-{digest[:8]}-{count}", wire, True))
-        with mock.patch.dict(crate_exclusions.EXCLUSIONS, {}, clear=True):
-            legacy = first_world(box_options(custom=[ancient(count, digest)]))
-            legacy_wire = legacy.fill_slot_data()
-        cases.append((f"excluded-legacy-{digest[:8]}-{count}", legacy_wire, True))
-        for label, change in (
-            ("feature", lambda p: p["required_features"].remove(crate_exclusions.FEATURE)),
-            ("pin", lambda p: p["item_boxes"]["crate_exclusions"][0].__setitem__("lev_sha256", "0" * 64)),
-            ("ordinal", lambda p: p["item_boxes"]["crate_exclusions"][0]["crates"][0].__setitem__("ordinal", 0)),
-            ("position", lambda p: p["item_boxes"]["crate_exclusions"][0]["crates"][0]["pos"].__setitem__(0, 32768)),
-        ):
-            alter(f"excluded-{digest[:8]}-{count}-{label}", change, wire)
+# Test fallback exclusions without the later community spot override.
+with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):
+    for digest in list(crate_exclusions.EXCLUSIONS):
+        for count in (3, 17):
+            world = first_world(box_options(custom=[ancient(count, digest)]))
+            wire = world.fill_slot_data()
+            cases.append((f"excluded-{digest[:8]}-{count}", wire, True))
+            with mock.patch.dict(crate_exclusions.EXCLUSIONS, {}, clear=True):
+                legacy = first_world(box_options(custom=[ancient(count, digest)]))
+                legacy_wire = legacy.fill_slot_data()
+            cases.append((f"excluded-legacy-{digest[:8]}-{count}", legacy_wire, True))
+            for label, change in (
+                ("feature", lambda p: p["required_features"].remove(crate_exclusions.FEATURE)),
+                ("pin", lambda p: p["item_boxes"]["crate_exclusions"][0].__setitem__("lev_sha256", "0" * 64)),
+                ("ordinal", lambda p: p["item_boxes"]["crate_exclusions"][0]["crates"][0].__setitem__("ordinal", 0)),
+                ("position", lambda p: p["item_boxes"]["crate_exclusions"][0]["crates"][0]["pos"].__setitem__(0, 32768)),
+            ):
+                alter(f"excluded-{digest[:8]}-{count}-{label}", change, wire)
 
 box_env("unchanged copy", lambda c: None)
 box_env("box_locations false", lambda c: c["ctr_options"].__setitem__("box_locations", False))
@@ -2338,6 +2340,23 @@ def ac_forged_on_race(p):
 alter("26 cups itemsanity cup leg route forged beside its race", ac_forged_on_race, one_race)
 assert not any(ok for name, _case, ok in cases if name.startswith(("27 cups itemsanity", "26 cups itemsanity"))), \
     "an itemsanity route forgery validates"
+from worlds.ctr.test.test_item_box_count import fifty_spots, count_world
+with fifty_spots(custom=True):
+    for count in (0, 1, 15, 50):
+        wire = count_world(count).fill_slot_data()
+        assert make_world({}, passthrough=wire).fill_slot_data() == wire
+        cases.append((f"box-count-{count}", wire, True))
+        if count in (1, 50):
+            for bad in (0, 15, 51, True, "50"):
+                forged = copy.deepcopy(wire)
+                forged["content_plan"]["item_boxes"]["box_count"] = bad
+                cases.append((f"box-count-{count}-invalid-{bad}", forged, False))
+            forged = copy.deepcopy(wire)
+            forged["ctr_options"]["item_box_count"] = 50 if count == 1 else 1
+            cases.append((f"box-count-{count}-envelope", forged, False))
+            forged = copy.deepcopy(wire)
+            forged["content_plan"]["required_features"].remove("box_count_v1")
+            cases.append((f"box-count-{count}-feature", forged, False))
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()

@@ -49,12 +49,12 @@ static inline int AP_BoxSpot_NamedOffset(int number)
 // strictly ascending numbers 1 to 50, all of the pool when it holds 15 or
 // fewer, else exactly 15. Which numbers are eligible only the apworld knows
 // (the files ship there); the client checks the shape.
-static inline int AP_BoxSpot_PickShape(int pool, const int *picked, int count)
+static inline int AP_BoxSpot_PickShapeCount(int pool, const int *picked, int count, int limit)
 {
 	int i;
-	int want = pool < AP_BOX_SPOT_PICK ? pool : AP_BOX_SPOT_PICK;
+	int want = pool < limit ? pool : limit;
 
-	if (pool < 0 || pool > AP_BOX_SPOT_MAX_NUMBER || count != want || (count > 0 && picked == 0))
+	if (limit < 1 || limit > AP_BOX_SPOT_MAX_NUMBER || pool < 0 || pool > AP_BOX_SPOT_MAX_NUMBER || count != want || (count > 0 && picked == 0))
 		return 0;
 	for (i = 0; i < count; i++)
 	{
@@ -64,6 +64,11 @@ static inline int AP_BoxSpot_PickShape(int pool, const int *picked, int count)
 			return 0;
 	}
 	return 1;
+}
+
+static inline int AP_BoxSpot_PickShape(int pool, const int *picked, int count)
+{
+	return AP_BoxSpot_PickShapeCount(pool, picked, count, AP_BOX_SPOT_PICK);
 }
 
 #endif // AP_BOX_SPOT_LOGIC_H

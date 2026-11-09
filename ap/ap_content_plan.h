@@ -129,15 +129,15 @@ typedef struct ctr_content_pad {
     int box_excluded_count;
     int box_excluded[16];
     short box_excluded_pos[16][3];
-    int64_t box_locations[15];
+    int64_t box_locations[50];
     /* Hand-placed box spots (A3-14): 1 when the track's boxes come from its
      * spot file. box_locations then lists the picked spots in number order,
      * box_number their permanent numbers (1 to 50, the name is
      * "Item Box <number>"), box_pos and box_rot_y where each stands (LEV
      * world units, engine angle). No weapon crate is hidden on such a track. */
     int box_spots;
-    int box_number[15];
-    short box_pos[15][3], box_rot_y[15];
+    int box_number[50];
+    short box_pos[50][3], box_rot_y[50];
     char entry_id[65], track_id[65], display_name[129];
     char room_title[129]; /* what the room and Universal Tracker call this track */
     /* Cups (#133 PR 5): a four-leg cup entry. cup_index is its name in the
@@ -229,7 +229,7 @@ typedef struct ctr_content_capability {
  * is 0 when they are off; `shortcut_knowledge` (0 easy to 2 hard) decides
  * which retail box slots exist. */
 typedef struct ctr_content_item_boxes {
-    int present, shortcut_knowledge;
+    int present, shortcut_knowledge, box_count;
 } ctr_content_item_boxes;
 
 /* Boss garages (#133 PR 6): the plan's `bosses` record. `present` is 0 when

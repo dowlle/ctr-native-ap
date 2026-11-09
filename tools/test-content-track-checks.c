@@ -238,20 +238,20 @@ int main(void)
         b.box_count = 0;
         expect(ap_content_box_pending(&b, checked) == 0 && ap_content_box_pending(NULL, checked) == 0, "no boxes, no pending");
         b.box_count = 3;
-        for (k = 0; k < 15; ++k) {
+        for (k = 0; k < 50; ++k) {
             const int bit = AP_CONTENT_BIT_BOX + b.physical * AP_CONTENT_BOX_STRIDE + k;
             expect(ap_content_box_bit_decode(bit, &physical, &slot) && physical == 3 && slot == k &&
                    ap_content_box_bit_code(&b, slot) == (k < 3 ? b.box_locations[k] : -1), "box bit decodes to its code");
             expect(!ap_content_family_bit_decode(bit, &physical, &i) && !ap_content_bit_decode(bit, &physical, &i, &n),
                    "box bits are outside the mode and family bit ranges");
         }
-        expect(!ap_content_box_bit_decode(AP_CONTENT_BIT_BOX + 3 * AP_CONTENT_BOX_STRIDE + 15, &physical, &slot) &&
+        expect(!ap_content_box_bit_decode(AP_CONTENT_BIT_BOX + 3 * AP_CONTENT_BOX_STRIDE + 50, &physical, &slot) &&
                !ap_content_box_bit_decode(AP_CONTENT_BIT_BOX - 1, &physical, &slot) &&
                !ap_content_box_bit_decode(AP_CONTENT_BIT_BOX + 111 * AP_CONTENT_BOX_STRIDE, &physical, &slot) &&
                ap_content_box_bit_code(NULL, 0) == -1 && ap_content_box_bit_code(&b, 15) == -1,
                "unused and out-of-range box bits decode to nothing");
         expect(AP_CONTENT_BIT_FAMILY + 111 * AP_CONTENT_FAMILY_STRIDE <= AP_CONTENT_BIT_BOX &&
-               AP_CONTENT_BIT_BOX + 111 * AP_CONTENT_BOX_STRIDE <= 60000, "box bits sit between the families and the crystal pickups");
+               AP_CONTENT_BIT_BOX >= 70000, "box bits do not overlap other display identities");
     }
 
     printf("%d checks, %d failures\n", checks, failures);

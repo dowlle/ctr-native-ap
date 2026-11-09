@@ -83,7 +83,7 @@ static inline int ap_content_mode_family_codes(const ctr_content_pad *pad, int m
 static inline int ap_content_box_pending(const ctr_content_pad *pad, ap_content_checked_fn checked)
 {
     int b, left = 0;
-    for (b = 0; pad && b < pad->box_count && b < 15; ++b)
+    for (b = 0; pad && b < pad->box_count && b < 50; ++b)
         if (pad->box_locations[b] > 0 && !checked(pad->box_locations[b])) ++left;
     return left;
 }
@@ -302,21 +302,21 @@ static inline int ap_content_family_bit_decode(int bit, int *physical, int *slot
     *slot = (bit - AP_CONTENT_BIT_FAMILY) % AP_CONTENT_FAMILY_STRIDE;
     return *slot < AP_CONTENT_FAMILY_SLOTS;
 }
-// Item Box checks (#133 PR 4e): display bit 58000 + pad * 16 + slot (0..14).
+// Item Box checks: process-local display bit 70000 + pad * 64 + slot (0..49).
 // Under by_reward_type they ride the race slot, as on retail pads (ruling
 // 2026-09-30).
-#define AP_CONTENT_BIT_BOX 58000
-#define AP_CONTENT_BOX_STRIDE 16
+#define AP_CONTENT_BIT_BOX 70000
+#define AP_CONTENT_BOX_STRIDE 64
 static inline int ap_content_box_bit_decode(int bit, int *physical, int *slot)
 {
     if (bit < AP_CONTENT_BIT_BOX || bit >= AP_CONTENT_BIT_BOX + 111 * AP_CONTENT_BOX_STRIDE) return 0;
     *physical = (bit - AP_CONTENT_BIT_BOX) / AP_CONTENT_BOX_STRIDE;
     *slot = (bit - AP_CONTENT_BIT_BOX) % AP_CONTENT_BOX_STRIDE;
-    return *slot < 15;
+    return *slot < 50;
 }
 static inline int64_t ap_content_box_bit_code(const ctr_content_pad *pad, int slot)
 {
-    if (!pad || slot < 0 || slot >= 15 || slot >= pad->box_count) return -1;
+    if (!pad || slot < 0 || slot >= 50 || slot >= pad->box_count) return -1;
     return pad->box_locations[slot] > 0 ? pad->box_locations[slot] : -1;
 }
 // Cups (#133 PR 5): a cup pad's Win rides the Trophy display bit; its sweep
@@ -408,7 +408,7 @@ static inline int64_t ap_content_cup_rung_bit_code(const ctr_content_pad *pad, i
 // the leg's own on a track whose pad has none, or with no pad) and Item Boxes of the track's
 // standalone pad. `box_pad` is that pad on a box, whose check a leg can only
 // earn while the pad is open, else -1. A track raced only in cups owns no box.
-#define AP_CONTENT_CUP_TRACK_CHECKS (AP_CONTENT_CUP_LEGS * 22) // lap, Wumpa, 5 rungs, 15 boxes
+#define AP_CONTENT_CUP_TRACK_CHECKS (AP_CONTENT_CUP_LEGS * 62) // lap, Wumpa, both 5-rung sources, 50 boxes
 typedef struct ap_content_cup_track_check {
     int64_t code;
     int bit, box_pad;
@@ -447,7 +447,7 @@ static inline int ap_content_cup_track_checks(const ctr_content_pad *pad, ap_con
                 out[n].code = own->rung_locations[b]; out[n].box_pad = -1;
                 out[n++].bit = AP_CONTENT_BIT_FAMILY + own->physical * AP_CONTENT_FAMILY_STRIDE + b;
             }
-        for (b = 0; b < own->box_count && b < 15; ++b)
+        for (b = 0; b < own->box_count && b < 50; ++b)
             if (own->box_locations[b] > 0) {
                 out[n].code = own->box_locations[b]; out[n].box_pad = own->physical;
                 out[n++].bit = AP_CONTENT_BIT_BOX + own->physical * AP_CONTENT_BOX_STRIDE + b;
@@ -464,7 +464,7 @@ static inline int64_t ap_content_cup_wumpa_code(const ctr_content_pad *pad, ap_c
     int i, n = ap_content_cup_track_checks(pad, lookup, rows);
     int64_t code = 0;
     for (i = 0; i < n; ++i)
-        if ((rows[i].bit >= AP_CONTENT_BIT_FAMILY && rows[i].bit < AP_CONTENT_BIT_BOX &&
+        if ((rows[i].bit >= AP_CONTENT_BIT_FAMILY && rows[i].bit < AP_CONTENT_BIT_FAMILY + 111 * AP_CONTENT_FAMILY_STRIDE &&
              (rows[i].bit - AP_CONTENT_BIT_FAMILY) % AP_CONTENT_FAMILY_STRIDE == 5) ||
             (rows[i].bit >= AP_CONTENT_BIT_CUP_WUMPA && rows[i].bit < AP_CONTENT_BIT_CUP_WUMPA + 111 * AP_CONTENT_CUP_LAP_STRIDE)) {
             code = rows[i].code;

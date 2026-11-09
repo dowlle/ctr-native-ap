@@ -35,12 +35,11 @@
 // Buffer size for a pad's DISPLAY enumeration is AP_PAD_DISPLAY_BITS_MAX in
 // ap_hooks.h; AP_PADGLOW_WORST_CASE_BITS below is the worst case it must cover,
 // pinned by a static assert in ap_hooks.c and by tools/test-pad-glow-items.c.
-// Worst case is a Gem Cup: its gem, plus per leg track up to 5 podium rungs,
-// 15 boxes and 1 Wumpa (a Cortex Vortex leg has 5 rungs and 1 Wumpa) = 1 + 4 * 21
-// = 85. A single race or trial pad tops out at 5 tiers + 1 perfect + 2 trial
-// checks + 5 rungs + 15 boxes + 3 letters + 1 Wumpa = 32.
+// Conservative structural bound: gem plus four legs, each with 50 boxes,
+// a lap, Wumpa and both possible five-rung sources. Canonical plans use at
+// most one rung source, but the gather buffer can hold both safely.
 #define AP_PADGLOW_WORST_CASE_BITS \
-	(1 + 4 * (CTR_CFG_PODIUM_RUNG_COUNT + AP_BOX_SLOTS_PER_TRACK + 1))
+	(1 + 4 * (2 * CTR_CFG_PODIUM_RUNG_COUNT + 50 + 2))
 
 typedef int (*ap_pad_glow_query)(long code, void *ctx);
 

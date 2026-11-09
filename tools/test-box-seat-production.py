@@ -60,6 +60,7 @@ typedef unsigned int u32;
 typedef int AP_SpawnHandle;
 #define AP_SPAWN_INVALID (-1)
 #define AP_BOX_SLOTS_PER_TRACK 15
+#define AP_BOX_LIVE_MAX 50
 #define PU_RANDOM_CRATE 8
 #define DRAW_COLLISION_MASK 0xf
 struct Model { short id; };
@@ -74,10 +75,10 @@ struct CustomTrackRaceContext { int physicalPad; int retail; int leg; };
 #include "ap/ap_content_plan.h"
 #include "ap/ap_box_seat_logic.h"
 
-static int g_gen, g_active = 1, g_spawned[15];
+static int g_gen, g_active = 1, g_spawned[50];
 static char g_log[8192];
 static ctr_content_pad g_pad;
-static long g_room[32], g_checked[32];
+static long g_room[50], g_checked[50];
 static int g_rooms, g_checks;
 static int s_level = 6, s_liveCount;
 int AP_Spawn_Generation(void) { return g_gen; }
@@ -94,7 +95,7 @@ static int AP_Author_PlacementSource(void) { return g_placement_source; }
 """
 
 after_record = r"""
-static struct ApBoxLive s_live[AP_BOX_SLOTS_PER_TRACK];
+static struct ApBoxLive s_live[AP_BOX_LIVE_MAX];
 static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i) { (void)gGT; g_spawned[i]++; }
 """
 
@@ -141,7 +142,7 @@ static void reset(int crates, int boxes_in_plan) {
     g_pad.physical = 12; g_pad.occupied = 1; g_pad.box_count = boxes_in_plan; g_pad.box_crates = crates;
     g_rooms = g_checks = 0;
     for (b = 0; b < boxes_in_plan; b++) { g_pad.box_locations[b] = 35201620 + b; g_room[g_rooms++] = 35201620 + b; }
-    for (b = 0; b < AP_BOX_SLOTS_PER_TRACK; b++) s_live[b].spawn = AP_SPAWN_INVALID;
+    for (b = 0; b < AP_BOX_LIVE_MAX; b++) s_live[b].spawn = AP_SPAWN_INVALID;
 }
 static int untouched(int n) {
     int k;
@@ -151,6 +152,19 @@ static int untouched(int n) {
 
 int main(void) {
     int n, i;
+    n = table(30); reset(30, 1);
+    AP_BoxesSeatCustom(&gGT, &race);
+    expect(s_liveCount == 1 && s_live[0].seatInst == &insts[crate_index(0, n)], "count one seats one crate");
+    n = table(30); reset(30, 5);
+    AP_BoxesSeatCustom(&gGT, &race);
+    expect(s_liveCount == 5, "count below fifteen reduces crate seating");
+    for (i = 0; i < 5; ++i)
+        expect(s_live[i].seatInst == &insts[crate_index(i * 30 / 5, n)], "reduced seats spread over the whole table");
+    n = table(8); reset(8, 50); g_pad.box_spots = 1;
+    for (i = 0; i < 50; ++i) { g_pad.box_number[i] = i + 1; g_pad.box_pos[i][0] = i + 100; }
+    AP_BoxesStandSpots(&gGT, &g_pad);
+    expect(s_liveCount == 50 && g_spawned[49] == 1 && s_live[49].slot == 49 && untouched(n),
+           "fifty spot boxes stand without replacing any crate");
     /* A3-35: Ancient Lake's original crate 1 stays ordinary. Spread among
        the 16 eligible crates, then map back to original table ordinals. */
     n = table(17); reset(17, 15);

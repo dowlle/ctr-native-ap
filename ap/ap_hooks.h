@@ -844,7 +844,7 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap);
 // Display enumeration includes only the plan modes currently open.
 // It does not alter state or tracker counts.
 
-#define AP_PAD_DISPLAY_BITS_MAX 96
+#define AP_PAD_DISPLAY_BITS_MAX 256
 // Pad Approach Hints (#124): call while the pad at levelID shows its name.
 void AP_PadApproachHints(int levelID);
 int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap);

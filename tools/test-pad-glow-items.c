@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define AP_PAD_DISPLAY_BITS_MAX 96 /* mirrors ap_hooks.h */
+#define AP_PAD_DISPLAY_BITS_MAX 256 /* mirrors ap_hooks.h */
 #include "ap_pad_glow_items.h"
 #include "ap_glow_slots_logic.h"
 #include "ap_relic_perfect.h"
@@ -210,7 +210,7 @@ static void test_worst_case_fits(void)
 		n = AP_PadGlowAppendWumpa(35016100L + level, level, buf, AP_PAD_DISPLAY_BITS_MAX, n, isLive, isDone, 0);
 	}
 	expect(n, 1 + 4 * (5 + 15 + 1), "four-leg cup is 85 bits");
-	expect(n, AP_PADGLOW_WORST_CASE_BITS, "cup worst case equals the documented bound");
+	expect(AP_PADGLOW_WORST_CASE_BITS, 249, "50 boxes, laps and both rung sources per cup leg fit the bound");
 	expect(n <= AP_PAD_DISPLAY_BITS_MAX, 1, "cup fits the display buffer");
 }
 

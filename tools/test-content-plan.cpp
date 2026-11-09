@@ -2077,6 +2077,44 @@ int main(int argc, char **argv) {
         pad.first_race_rule = 0; pad.modes[0] = AP_CONTENT_MODE_TROPHY; pad.trophy_location = 5001;
         expect(ap_content_mode_open(&pad, AP_CONTENT_MODE_CTR, counts, won_check), "a plan without the feature keeps its gates");
     }
+    // Paired real generation with synthetic 50-spot retail and named tracks.
+    for (int count : {0, 1, 15, 50}) {
+        J room;
+        std::ifstream("tools/fixtures/content-plan/box-count-" + std::to_string(count) + ".json") >> room;
+        expect(parse(room) && bind_room(room), "box count fixture parses and binds");
+        int capacity_tracks = 0;
+        for (int physical = 0; physical < 111; ++physical) {
+            const auto *pad = ap_content_plan_pad(physical);
+            if (!pad || !pad->occupied || (pad->retail_id != 3 && pad->named_block != 8)) continue;
+            ++capacity_tracks;
+            expect(pad->box_count == count, "retail and named pads carry every picked box");
+            for (int b = 0; b < count; ++b)
+                expect(pad->box_number[b] >= 1 && pad->box_number[b] <= 50 && pad->box_pos[b][0] != 0,
+                       "all fifty spot numbers and coordinates survive binding");
+        }
+        expect(capacity_tracks == 2, "both capacity tracks are present");
+        if (count && count != 15) {
+            J forged = room;
+            forged["ctr_options"]["item_box_count"] = count == 1 ? 50 : 1;
+            expect(!parse(forged), "count envelope mismatch refused");
+            for (const J &bad : {J(0), J(15), J(51), J(true), J("50")}) {
+                forged = room; forged["content_plan"]["item_boxes"]["box_count"] = bad;
+                expect(!parse(forged), "invalid count refused");
+            }
+            forged = room;
+            auto &features = forged["content_plan"]["required_features"];
+            for (size_t i = 0; i < features.size(); ++i)
+                if (features[i] == "box_count_v1") { features.erase(i); break; }
+            expect(!parse(forged), "count without feature refused");
+            forged = room;
+            forged["content_plan"]["item_boxes"].erase("box_count");
+            expect(!parse(forged), "feature without count refused");
+            forged = room;
+            auto &picked = forged["content_plan"]["item_boxes"]["spot_sets"][0]["picked"];
+            picked.erase(picked.size() - 1);
+            expect(!parse(forged), "short count pick refused");
+        }
+    }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;
 }

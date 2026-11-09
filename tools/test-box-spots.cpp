@@ -111,6 +111,13 @@ int main()
 	expect(!AP_BoxSpot_PickShape(3, down, 3) && !AP_BoxSpot_PickShape(3, dup, 3), "picks are strictly ascending");
 	expect(!AP_BoxSpot_PickShape(1, high, 1) && !AP_BoxSpot_PickShape(51, fifteen, 15), "numbers and pool stay within 50");
 	expect(AP_BoxSpot_PickShape(0, nullptr, 0), "an empty pool picks nothing");
+	int fifty[50];
+	for (int i = 0; i < 50; ++i) fifty[i] = i + 1;
+	expect(AP_BoxSpot_PickShapeCount(50, fifty, 50, 50), "50 picks fit the permanent-number ceiling");
+	expect(AP_BoxSpot_PickShapeCount(50, fifty, 1, 1), "one box from a full pool");
+	expect(AP_BoxSpot_PickShapeCount(10, ten, 10, 50), "small pools use every spot");
+	expect(!AP_BoxSpot_PickShapeCount(50, fifty, 49, 50), "forged short full pick refused");
+	expect(!AP_BoxSpot_PickShapeCount(50, fifty, 50, 51), "count above ceiling refused");
 
 	std::printf("%d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;

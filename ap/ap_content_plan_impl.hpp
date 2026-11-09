@@ -453,9 +453,11 @@ static std::map<int64_t, int> capability_rows(const ctr_content_capability &c) {
 // numbers are eligible only the apworld knows, so the client checks the shape
 // (ap_box_spot_logic.h) and that each named track exists with a box identity.
 static void item_box_settings(const J &t, State &out) {
-    need(t.is_object() && t.contains("shortcut_knowledge") && t.size() == 1u + t.count("spot_sets") + t.count("crate_exclusions"),
+    need(t.is_object() && t.contains("shortcut_knowledge") && t.size() == 1u + t.count("spot_sets") + t.count("crate_exclusions") + t.count("box_count"),
          "unsupported or incomplete record fields");
     out.item_boxes.present = 1;
+    out.item_boxes.box_count = t.contains("box_count") ? number(t["box_count"], 1, 50) : 15;
+    need(!t.contains("box_count") || out.item_boxes.box_count != 15, "default box_count must be omitted");
     out.item_boxes.shortcut_knowledge = number(t["shortcut_knowledge"], 0, 2);
     if (t.contains("crate_exclusions")) {
         const auto &sets = t["crate_exclusions"];
@@ -494,8 +496,8 @@ static void item_box_settings(const J &t, State &out) {
         spots.pool = number(set["pool"], 0, AP_BOX_SPOT_MAX_NUMBER);
         need(set["picked"].is_array(), "box spot picks must be a list");
         for (const auto &n : set["picked"]) spots.picked.push_back(number(n, 1, AP_BOX_SPOT_MAX_NUMBER));
-        need(AP_BoxSpot_PickShape(spots.pool, spots.picked.data(), (int)spots.picked.size()) != 0,
-             "box spot picks are not a sorted pick of 15, or of the whole pool when smaller");
+        need(AP_BoxSpot_PickShapeCount(spots.pool, spots.picked.data(), (int)spots.picked.size(), out.item_boxes.box_count) != 0,
+             "box spot picks disagree with box_count or the pool");
         if (set.contains("lev_sha256")) {
             need(set["lev_sha256"].is_string() && lower_hex(set["lev_sha256"].get<std::string>(), 64), "a box spot LEV pin is a SHA-256");
             spots.lev_sha256 = set["lev_sha256"].get<std::string>();
@@ -1016,6 +1018,7 @@ static void validate(const J &p, State &out) {
     if(has_boxes)features.push_back("item_boxes_v1"); // #133 PR 4e
     if(has_boxes&&p["item_boxes"].is_object()&&p["item_boxes"].contains("spot_sets"))features.push_back("box_spots_v1"); // A3-14
     if(has_boxes&&p["item_boxes"].is_object()&&p["item_boxes"].contains("crate_exclusions"))features.push_back("crate_exclusions_v1");
+    if(has_boxes&&p["item_boxes"].is_object()&&p["item_boxes"].contains("box_count"))features.push_back("box_count_v1");
     if(cups)features.push_back("cup_entries_v1");      // #133 PR 5
     if(has_bosses)features.push_back("boss_encounters_v1"); // #133 PR 6
     if(gem_cups)features.push_back("gem_cups_v1");          // one generator row 2
@@ -1636,7 +1639,7 @@ static void validate(const J &p, State &out) {
                 for (int n : spots->second.picked) {
                     const int64_t code = custom ? ap_named_location_code(dest.named_block, AP_BoxSpot_NamedOffset(n))
                                                 : (int64_t)AP_BoxSpot_RetailCode(track, n);
-                    need(code > 0 && slots < AP_NAMED_ITEM_BOX_SLOTS, "a box spot number has no location code");
+                    need(code > 0 && slots < AP_BOX_SPOT_MAX_NUMBER, "a box spot number has no location code");
                     dest.box_locations[slots] = code;
                     dest.box_number[slots] = n;
                     State::BoxSpot spot;
@@ -1671,6 +1674,7 @@ static void validate(const J &p, State &out) {
                     ex.used = true;
                 }
                 slots = box_seats(pkg.weapon_crates - dest.box_excluded_count);
+                slots = std::min(slots, out.item_boxes.box_count);
                 dest.box_crates = slots ? pkg.weapon_crates : 0;
                 for (int b = 0; b < slots; ++b)
                     dest.box_locations[b] = dest.named_block >= 0
@@ -2353,7 +2357,7 @@ static void validate(const J &p, State &out) {
     for (const auto &pair : out.box_spots) need(pair.second.seen, "a box spot check carries no spot");
     for (auto &pad : out.pads) {
         if (!pad.box_spots) continue;
-        for (int b = 0; b < pad.box_count && b < 15; ++b) {
+        for (int b = 0; b < pad.box_count && b < AP_BOX_SPOT_MAX_NUMBER; ++b) {
             const auto &spot = out.box_spots.at(pad.box_locations[b]);
             pad.box_pos[b][0] = spot.x; pad.box_pos[b][1] = spot.y; pad.box_pos[b][2] = spot.z;
             pad.box_rot_y[b] = spot.rot_y;
@@ -2749,7 +2753,9 @@ static int parse_content_plan(const nlohmann::json &j) {
         const bool box_flag = co.contains("box_locations"), box_colours = co.contains("color_boxes_by_item");
         need(!box_flag || co["box_locations"] == true, "box_locations must be true when present");
         need(!box_colours || co["color_boxes_by_item"].is_boolean(), "color_boxes_by_item must be true or false");
-        for(const char *key:{"box_locations","color_boxes_by_item"})base.erase(key);
+        const bool has_box_count = co.contains("item_box_count");
+        const int box_count = has_box_count ? number(co["item_box_count"], 1, 50) : 15;
+        for(const char *key:{"box_locations","color_boxes_by_item","item_box_count"})base.erase(key);
         const bool relic_progression = co.contains("relic_progression");
         if(relic_progression) {
             const J &map = co["relic_progression"];
@@ -2790,9 +2796,11 @@ static int parse_content_plan(const nlohmann::json &j) {
              "a Progressive Stats plan must send stat_source 1 with its mode as stat_owner");
         need(box_flag == (candidate.item_boxes.present != 0) && box_colours == box_flag,
              "box envelope disagrees with the plan's item_boxes record");
+        need(has_box_count == (candidate.item_boxes.present && candidate.item_boxes.box_count != 15) &&
+             (!has_box_count || box_count == candidate.item_boxes.box_count), "item_box_count envelope disagrees with plan");
         const size_t optional = (send ? 1u : 0u) + (display ? 1u : 0u) + (colors ? 1u : 0u) +
                                 (stat_class ? 1u : 0u) + (penta ? 1u : 0u) + (trio ? 3u : 0u) +
-                                (box_flag ? 2u : 0u) + (relic_progression ? 1u : 0u);
+                                (box_flag ? 2u : 0u) + (has_box_count ? 1u : 0u) + (relic_progression ? 1u : 0u);
         if(arenas) {
             need(co.size()==base.size()+3+optional && co.at("include_battle_arenas")==true &&
                  co.at("include_arcade_arenas")==arcade && co.at("crystalsanity")==pickups,"arena options disagree with plan");

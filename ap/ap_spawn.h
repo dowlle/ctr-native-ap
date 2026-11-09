@@ -42,7 +42,7 @@ typedef int AP_SpawnHandle;
 // levels for pads and pause gems); 64 is a table cap that cannot on its own
 // exhaust a race level's pool, and a full table degrades to "no spawn" plus a
 // log line rather than to a crash.
-#define AP_SPAWN_MAX 64
+#define AP_SPAWN_MAX 96
 
 // Lifetime. Every level load (and every race restart) re-inits the instance
 // pool, so a spawned instance does not survive one -- the memory is handed back
