@@ -650,16 +650,16 @@ void AH_Map_Warppads(s16 *ptrMap, struct Thread *warppadThread, s16 *param_3)
 		// Pure colour override -- no geometry change, and skipDistance still
 		// governs the proximity-sound distance check below (gameplay untouched).
 		//
-		// alpha2 (2026-11-04): the colours are the shared Familiar table of
+		// Alpha4: the colours are the shared green/red/grey table of
 		// ap_pad_colour.h, the same as the warp pad beam and the tracker node, so
 		// they are drawn as exact vertex colours rather than font palette slots.
-		// Closed red, racer-locked rust, open green, stage 2 waiting orange,
-		// stage 2 open periwinkle, Done grey.
+		// Closed and waiting red, both open phases green while a displayed
+		// check is in logic, Done grey.
 		//
 		// Animated-cue vocabulary (issue #60 -- keep these distinct):
 		//   static colour        = nothing actionable here right now
 		//   GREEN fast flicker    = trophy check is open (race it)
-		//   PERIWINKLE slow pulse = trophy done, but tier-2 checks (relic/CTR)
+		//   GREEN slow pulse     = trophy done, but tier-2 checks (relic/CTR)
 		//                           remain -- pad stays "alive" instead of going
 		//                           quiet the moment the trophy is checked
 		// The flicker alternates the state colour with a darker shade of the same

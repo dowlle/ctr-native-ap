@@ -15,7 +15,7 @@
 //   2 GREEN  the garage is open under this seed's rules
 //   1 RED    the garage is locked
 // Gold is only for beaten garages (ruling of 2026-11-02): pad state 3 (Trophy
-// won, second stage not met) is ORANGE on the tracker, as on the hub map.
+// won, second stage not met) is RED on the tracker and hub map from alpha4.
 //
 // bitState is AP_TrackerBitState(node bit): 0 no such location, 1 unchecked,
 // 2 checked. garageOpen is AP_BossGarageOpen(hub - 1) for the four boss hubs

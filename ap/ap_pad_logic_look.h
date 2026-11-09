@@ -2,11 +2,11 @@
 #define AP_PAD_LOGIC_LOOK_H
 
 // Green only for checks in logic (A3-37, ruled 2026-11-07 08:07 CET: "Only
-// checks in logic"). The open and stage 2 open looks (green and blue-violet
+// checks in logic"). The open and stage 2 open looks (both green
 // beam, map dot, tracker node) mean "at least one open check behind this pad
 // is in logic now". A pad whose open checks are all out of logic shows the
-// stage 2 waiting look instead: static orange dot, and the retail light blue
-// beam on the pad that can still be entered. An existing look is reused, so
+// stage 2 waiting look instead: red dot, tracker node and any existing beam
+// (alpha4, 2026-11-09). An existing look is reused, so
 // the beam, map and tracker need no new colour.
 //
 // Display only. The pad state (ap_pad_state.h) is untouched: no gate, entry
@@ -16,7 +16,7 @@
 // look it had before this rule. Since A3-37b (ruled 2026-11-07 12:35 CET, "Yes,
 // export all") the apworld exports a row for every location on every seed
 // (SCHEMA.md, version 2, kind "hint" for the non-wins), so a pad that only holds
-// boxes, Wumpa checks, letters or podium rungs goes orange when they are all
+// boxes, Wumpa checks, letters or podium rungs goes red when they are all
 // out of logic. A seed generated before that has rows for those only with
 // pad_approach_hints on; without it such a pad keeps its green.
 //

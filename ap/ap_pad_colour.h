@@ -1,9 +1,9 @@
 #ifndef AP_PAD_COLOUR_H
 #define AP_PAD_COLOUR_H
 
-// One colour per pad state, shared by the warp pad beam, the hub map dot and
-// the Adventure tracker's node (alpha2, decided 2026-11-04: the
-// "Familiar" palette of the one colour language proposal, no symbols yet).
+// Three pad colours shared by beam, map and tracker (alpha4, 2026-11-09):
+// green with an open check in logic, red with only blocked checks, grey done.
+// Lifecycle looks stay distinct for gates, redraws and Map Flash timing.
 //
 // Freestanding on purpose: AH_WarpPad.c, AH_Map.c and ap_tracker.c all read
 // this table, and tools/test-pad-colour.c pins it on the host, so the three
@@ -50,7 +50,7 @@ static inline int AP_PadLookFromState(int padState, int racerMissing)
 	}
 }
 
-// The Familiar palette, sRGB 0xRRGGBB, as the proposal's table gives it.
+// Pad progress palette, sRGB 0xRRGGBB. Boss completion keeps its own gold.
 // AP_PAD_LOOK_NONE has no colour of its own (0); callers keep the retail look.
 static inline uint32_t AP_PadLookRGB(int look)
 {
@@ -58,9 +58,9 @@ static inline uint32_t AP_PadLookRGB(int look)
 	{
 	case AP_PAD_LOOK_CLOSED: return 0xDA4230u;
 	case AP_PAD_LOOK_OPEN: return 0x70E860u;
-	case AP_PAD_LOOK_STAGE2_OPEN: return 0x93ADFAu;
-	case AP_PAD_LOOK_STAGE2_WAITING: return 0xF49228u;
-	case AP_PAD_LOOK_RACER_LOCKED: return 0xBA4E22u;
+	case AP_PAD_LOOK_STAGE2_OPEN: return 0x70E860u;
+	case AP_PAD_LOOK_STAGE2_WAITING: return 0xDA4230u;
+	case AP_PAD_LOOK_RACER_LOCKED: return 0xDA4230u;
 	case AP_PAD_LOOK_DONE: return 0x9AA4AEu;
 	case AP_PAD_LOOK_BOSS_BEATEN: return 0xF2C248u;
 	default: return 0u;
@@ -74,11 +74,9 @@ static inline unsigned AP_PadLookB(uint32_t rgb) { return rgb & 0xffu; }
 // ── Warp pad beam ──
 // Which pads birth a beam is unchanged (AH_WarpPad.c): an open pad, and a pad
 // kept open for a fruit replay (AP_PadReplayable), Done included (AP_PadDoneBeam).
-// This only answers which
-// colour a beam that exists wears. Only the two actionable states, open and
-// stage 2 open, recolour it; a beam kept for a replay (stage 2 waiting, Done)
-// or a racer-locked pad keeps the retail light blue, so no new beam appears and
-// none is dressed up as a state it does not signal.
+// This only answers which colour an existing beam wears. Both open phases
+// use green, blocked checks use red, and replayable Done uses grey. No new
+// entry route or beam is created by the palette.
 //
 // The beam (STATIC_BEAM, model 123) and the two rising spiral wisps
 // (STATIC_BOTTOMRING, model 124, two instances) are textured and drawn
@@ -103,17 +101,13 @@ static inline unsigned AP_PadLookB(uint32_t rgb) { return rgb & 0xffu; }
 // own fade, so the green on top reads green. The beam green is a purer green
 // than the map dot's #70E860, whose red and blue turn the wisps white.
 //
-// Stage 2 open takes the same three parts in its own blue-violet (ruled
-// 2026-11-05, A2-46), so it reads apart from both the open green and the
-// retail light blue. Its table colour #93ADFA, used the same way, read pale
-// and close to retail; with a filter taking out only green it read magenta.
-// The violet takes out red and green behind the column and adds a deep
-// blue-violet, so the column reads indigo against sky and cliff. The map dot
-// and the tracker keep #93ADFA.
+// Red uses the same shaped colour and removes cyan behind the column.
+// Done uses a neutral grey model, with no coloured filter or rising wisps.
 #define AP_PAD_BEAM_GREEN 0x20FF20u
 #define AP_PAD_BEAM_FILTER 0x6000FFu // channels the open filter removes
-#define AP_PAD_BEAM_VIOLET 0x6A4CFFu
-#define AP_PAD_BEAM_VIOLET_FILTER 0xA0FF00u // channels the stage 2 filter removes
+#define AP_PAD_BEAM_RED 0xFF2020u
+#define AP_PAD_BEAM_RED_FILTER 0x00FFFFu
+#define AP_PAD_BEAM_GREY 0xA0A0A0u
 // Both state beams at 60% of the retail strength:
 // 0x1000 - 0.6 * (0x1000 - 0xC00) = 0xD9A.
 #define AP_PAD_BEAM_STATE_ALPHA 0xD9A
@@ -121,13 +115,13 @@ static inline unsigned AP_PadLookB(uint32_t rgb) { return rgb & 0xffu; }
 
 static inline int AP_PadLookHasBeamColour(int look)
 {
-	return look == AP_PAD_LOOK_OPEN || look == AP_PAD_LOOK_STAGE2_OPEN;
+	return look >= AP_PAD_LOOK_CLOSED && look <= AP_PAD_LOOK_DONE;
 }
 
-// A Done pad shows the retail light blue beam only while the player can still
+// A Done pad shows a grey beam only while the player can still
 // enter it for a replay (AP_PadReplayable), so it no longer looks locked
 // (ruled 2026-11-05, A2-45). A Done pad that cannot be entered keeps no beam.
-// The beam keeps the retail colour: Done has no beam hue, wisp hue or filter.
+// It retains the grey X and has no prize glow, wisps or filter.
 static inline int AP_PadDoneBeam(int look, int replayable)
 {
 	return look == AP_PAD_LOOK_DONE && replayable != 0;
@@ -137,10 +131,12 @@ static inline int AP_PadDoneBeam(int look, int replayable)
 // the retail beam.
 static inline uint32_t AP_PadLookBeamHue(int look)
 {
-	if (look == AP_PAD_LOOK_OPEN)
+	if (look == AP_PAD_LOOK_OPEN || look == AP_PAD_LOOK_STAGE2_OPEN)
 		return AP_PAD_BEAM_GREEN;
-	if (look == AP_PAD_LOOK_STAGE2_OPEN)
-		return AP_PAD_BEAM_VIOLET;
+	if (look == AP_PAD_LOOK_DONE)
+		return AP_PAD_BEAM_GREY;
+	if (AP_PadLookHasBeamColour(look))
+		return AP_PAD_BEAM_RED;
 	return 0u;
 }
 
@@ -152,10 +148,10 @@ static inline uint32_t AP_PadLookWispHue(int look)
 // Channels the subtractive beam copy takes out, 0 for no copy.
 static inline uint32_t AP_PadLookBeamFilter(int look)
 {
-	if (look == AP_PAD_LOOK_OPEN)
+	if (look == AP_PAD_LOOK_OPEN || look == AP_PAD_LOOK_STAGE2_OPEN)
 		return AP_PAD_BEAM_FILTER;
-	if (look == AP_PAD_LOOK_STAGE2_OPEN)
-		return AP_PAD_BEAM_VIOLET_FILTER;
+	if (AP_PadLookHasBeamColour(look) && look != AP_PAD_LOOK_DONE)
+		return AP_PAD_BEAM_RED_FILTER;
 	return 0u;
 }
 
