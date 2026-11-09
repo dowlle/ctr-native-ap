@@ -83,6 +83,11 @@ int main(void) {
     gt.gameMode1 = ADVENTURE_MODE | 128; gt.bossID = 0;
     assert(AP_SanityRoute(&gt) == &boss_record); /* Boss identity wins over a standalone host context. */
     gt.gameMode1 = ADVENTURE_MODE;
+    ++epoch; context.seedEpoch = epoch; checked = 1;
+    AP_SanityLevelInstances(defs, 4); AP_SanityTick(&gt);
+    checked = 0; /* The socket's checked-state cache disappeared after a retry stop. */
+    assert(AP_SanityPickup(&objects[3], &bot) == 1);
+    AP_SanityPickup(&objects[1], &player); assert(sent == 3);
     ++epoch; context.seedEpoch = epoch; record.counts[0] = 3;
     AP_SanityLevelInstances(defs, 4); AP_SanityPickup(&objects[2], &player); assert(sent == 3 && ap_sanity_ready == -1);
     AP_SanityLevelInstances(defs, 513); AP_SanityPickup(&objects[2], &player); assert(sent == 3);

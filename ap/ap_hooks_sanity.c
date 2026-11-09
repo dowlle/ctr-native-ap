@@ -66,8 +66,16 @@ static int AP_SanitySentIndex(long code)
 static int AP_SanityAlreadySent(long code)
 {
     int i = AP_SanitySentIndex(code);
-    if (ap_net_location_checked(code)) return 1;
-    return i < ap_sanity_sent_count && ap_sanity_sent[i] == code;
+    if (i < ap_sanity_sent_count && ap_sanity_sent[i] == code) return 1;
+    if (!ap_net_location_checked(code)) return 0;
+    // Keep observed server checks for this seed too. A stopped retry cycle
+    // discards network caches, but must not make a checked object open again.
+    if (ap_sanity_sent_count < 16384) {
+        memmove(&ap_sanity_sent[i + 1], &ap_sanity_sent[i], (ap_sanity_sent_count - i) * sizeof(long));
+        ap_sanity_sent[i] = code;
+        ++ap_sanity_sent_count;
+    }
+    return 1;
 }
 
 static int AP_SanityEnsure(struct GameTracker *gt)
