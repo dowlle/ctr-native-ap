@@ -265,6 +265,8 @@ cmd adventure-results :: python3 tools/test-adventure-checks-production.py resul
 cmd adventure-perfect :: python3 tools/test-adventure-checks-production.py perfect
 cmd adventure-custom :: python3 tools/test-adventure-checks-production.py custom
 cmd adventure-cup :: python3 tools/test-adventure-checks-production.py cup
+cmd adventure-cortex :: python3 tools/test-adventure-checks-production.py cortex
+cmd adventure-podium :: python3 tools/test-adventure-checks-production.py podium
 cmd adventure-shop :: python3 tools/test-adventure-checks-production.py shop
 tools/test-wumpa-production.c skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-wumpa-residency.c

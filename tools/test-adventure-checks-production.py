@@ -30,6 +30,9 @@ fixture = r'''
 #include "ap/ap_boss_won_flags.h"
 #include "ap/ap_relic_perfect.h"
 #include "ap/ap_content_plan.h"
+#include "ap/ap_content_modes.h"
+#include "ap/ap_cortex_track.h"
+#include "ap/ap_checkdiag_once.h"
 struct Driver { int numWumpas,numTimeCrates; };
 struct GameTracker { unsigned gameMode1,gameMode2; int levelID,numPlyrCurrGame,timeCratesInLEV,podiumRewardID; struct Driver *drivers[1]; };
 static struct { struct GameTracker *gGT; } data, *sdata=&data;
@@ -41,7 +44,10 @@ static unsigned ap_notified_mask[6];
 static unsigned char ap_itemsanity_owned[AP_ITEMSANITY_WEAPON_COUNT];
 static int ap_oxide_first_beaten, ap_oxide_final_beaten;
 static int goalEvents;
+static int cortexActive;
+static ap_checkdiag_once_state ap_checkdiag_once;
 int ctr_cfg_active(void) { return 1; }
+int ap_net_is_connected(void) { return 1; }
 int ap_net_location_checked(long long code) { (void)code; return 0; }
 int ap_net_location_exists(long long code) { return code > 0; }
 void ap_net_send_location(long long code) { assert(code > 0); sent++; }
@@ -62,7 +68,8 @@ long AP_LetterLocation(int track,int letter) { (void)track;(void)letter;return 3
 static int AP_CortexLetterTrack(int track) { (void)track;return 0; }
 static int AP_CustomLetterSlot(int track) { (void)track;return 1; }
 int AP_LetterTokenEarned(int track,int win,int collected) { (void)track;return win && collected==3; }
-int AP_CortexTrackActive(void) { return 0; }
+int AP_CortexTrackActive(void) { return cortexActive; }
+long AP_CortexTrackCode(int slot) { return AP_CortexSlotCode(&ctr_cfg.cortex_track,slot); }
 static int AP_RelicPerfectServingCustom(struct GameTracker *g) { (void)g;return 0; }
 static long AP_RelicPerfectCustomCode(int slot) { (void)slot;return -1; }
 long AP_TrialTrackLocation(int level,int challenge) { (void)level;(void)challenge;return 35000100; }
@@ -82,6 +89,7 @@ static void AP_WumpaGatherFacts(struct GameTracker *g, struct AP_WumpaDispatchFa
 #define AP_TRIAL_PODIUM_LOGICAL_BASE 48
 #define TOKEN_RACE 8
 #define AP_RESULT_PRODUCER_CUP_AGGREGATE 5
+#define AP_RESULT_PRODUCER_CORTEX_RACE 6
 #define STATIC_TROPHY 62
 '''
 modes = (root/'include/namespace_Main.h').read_text()
@@ -102,6 +110,8 @@ calls = {
     'perfect': ('void AP_NotifyRelicPerfect(', 'AP_NotifyRelicPerfect();'),
     'custom': ('static void AP_NotifyCustomTrackCtrImpl(', 'AP_NotifyCustomTrackCtrImpl(1,3);'),
     'cup': ('int AP_ContentCupFinish(', 'AP_ContentCupFinish(&gt,1);'),
+    'cortex': ('void AP_NotifyCortexTrackRace(', 'AP_NotifyCortexTrackRace(0);AP_NotifyCortexTrackRace(1);'),
+    'podium': ('static void AP_EmitRung(', 'AP_EmitRung(3,35000100,0,1,"held");AP_EmitRung(3,35000101,3,1,"finish");'),
 }
 if family == 'itemsanity':
     fixture += 'static int AP_ItemsanityActive(void) { return 1; }\n'
@@ -122,7 +132,6 @@ if family == 'shop':
 static struct { int hub,cursor; long long buying; } ap_wshop;
 AP_WumpaShopConfig ctr_wumpa_shop;
 static void AP_WShopSay(const char *s) { (void)s; }
-int ap_net_is_connected(void) { return 1; }
 int ap_net_wumpa_buy(long long code,int price,int unlock) { (void)code;(void)price;(void)unlock;sent++;return 0; }
 void OtherFX_Play(unsigned int id,int flags) { (void)id;(void)flags; }
 '''
@@ -150,6 +159,8 @@ if family == 'shop':
     fixture += 'ctr_wumpa_shop.state=AP_WUMPA_SHOP_VALID;ctr_wumpa_shop.slots=1;\n'
 if family == 'cup':
     fixture += 'pad.trophy_location=35000100;pad.sweep_location=35000101;\n'
+if family == 'cortex':
+    fixture += 'cortexActive=1;ctr_cfg.cortex_track.valid=1;ctr_cfg.cortex_track.trophy=35000100;ctr_cfg.cortex_track.ctr_token=35000101;\n'
 fixture += 'for (unsigned i=0;i<sizeof rejected/sizeof *rejected;i++) {\n'
 fixture += 'gt.gameMode1=rejected[i];' + call
 fixture += r'''
