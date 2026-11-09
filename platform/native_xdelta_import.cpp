@@ -2229,6 +2229,13 @@ bool plan_descriptor(const XdeltaImportSummary &summary, const XdeltaImportItem 
         laps = 0;
         needsLaps = true;
     }
+    /* These exact packages have an authored one-lap finish in the patch
+       code. It is known even when no race-settings sidecar was imported. */
+    if (CustomFinish_Terrain(item.levSha256, item.vrmSha256) >= 0)
+    {
+        laps = 1;
+        needsLaps = false;
+    }
     const std::string author = b.author.empty() ? std::string(kUnknownAuthor) : b.author;
     if (author.size() > 128)
     {
