@@ -21,6 +21,7 @@ static int ap_net_location_checked(long code) { (void)code; return 0; }
 static void AP_AppendLog(const char *line) { (void)line; }
 static void RB_Player_ModifyWumpa(struct Driver *d, int n) { (void)d; fruit += n; }
 static void AP_EmitClassCheck(long code, ...) { (void)code; }
+static int AP_LocationChecksAllowed(void) { return 1; }
 static int AP_TrapRerollExcludedItem(void) { return rerollExcluded; }
 #include "../ap/ap_hooks_itemsanity.c"
 

@@ -42,7 +42,7 @@ fixture = r"""
 #define ADVENTURE_BOSS 0x80000000u
 #define IS_BOSS_RACE(gm) ((int)(gm) < 0)
 struct Driver {int actionsFlagSet, lapIndex;};
-struct GameTracker {unsigned gameMode1; int levelID; int bossID; char boolDemoMode;};
+struct GameTracker {unsigned gameMode1; int levelID; int bossID; char boolDemoMode; int numPlyrCurrGame;};
 struct CustomTrackRaceContext {int cup, retail;};
 static int active = 1, plan = 1, offline, serving, exists = 1, checked, sent, cup_leg = -1;
 static long last;
@@ -76,7 +76,7 @@ static void reset(void)
     memset(&context, 0, sizeof context); memset(&pad, 0, sizeof pad); memset(&cup_pad, 0, sizeof cup_pad);
     memset(&bosses, 0, sizeof bosses);
     driver.actionsFlagSet = 0; driver.lapIndex = 1;
-    g.gameMode1 = ADVENTURE_MODE; g.levelID = 3; g.bossID = 0; g.boolDemoMode = 0;
+    g.gameMode1 = ADVENTURE_MODE; g.levelID = 3; g.bossID = 0; g.boolDemoMode = 0; g.numPlyrCurrGame = 1;
     context.retail = 1; pad.lap_location = 35028003;
 }
 static void standalone(void) { context_on = &context; route_pad = &pad; }
@@ -129,6 +129,17 @@ int main(void)
     reset(); standalone(); offline = 1; assert(cross(0) == -1);
     reset(); standalone(); plan = 0; assert(cross(0) == -1);
     // Membership and checked state.
+    { unsigned modes[] = {0, ARCADE_MODE, TIME_TRIAL, BATTLE_MODE,
+        ARCADE_MODE|RELIC_RACE, TIME_TRIAL|RELIC_RACE, BATTLE_MODE|RELIC_RACE,
+        ARCADE_MODE|ADVENTURE_MODE, TIME_TRIAL|ADVENTURE_MODE, BATTLE_MODE|ADVENTURE_MODE};
+      for (unsigned i=0;i<sizeof modes/sizeof *modes;i++) {
+        reset(); standalone(); g.gameMode1=modes[i]; assert(cross(0)==-1);
+      }
+      reset(); standalone(); g.gameMode1=RELIC_RACE; assert(cross(0)==35028003);
+      for(int players=2;players<=4;players++) {
+        reset(); standalone(); g.gameMode1=RELIC_RACE; g.numPlyrCurrGame=players; assert(cross(0)==-1);
+      }
+    }
     reset(); standalone(); exists = 0; assert(cross(0) == -1);
     reset(); standalone(); checked = 1; assert(cross(0) == -1);
     puts("Production lap dispatch: plan pads, cup legs, boss races, boss cup legs and every refusal passed");

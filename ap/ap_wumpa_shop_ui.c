@@ -169,6 +169,8 @@ int AP_WumpaShopHubTrackerLine(int level, char *out, int cap)
 
 static void AP_WShopBuy(void)
 {
+	if (!AP_LocationChecksAllowed() || !(sdata->gGT->gameMode1 & ADVENTURE_ARENA))
+		return;
 	int hub = ap_wshop.hub, k = ap_wshop.cursor, r;
 	const AP_WumpaShopSlot *s;
 	char line[48];

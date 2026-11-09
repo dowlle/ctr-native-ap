@@ -27,6 +27,8 @@ def function(signature):
 
 fixture = r'''
 #include <assert.h>
+/* Mode policy is exercised separately by test-adventure-checks-production.py. */
+int AP_LocationChecksAllowed(void) { return 1; }
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>

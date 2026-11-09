@@ -13,6 +13,8 @@
 
 #ifdef CTR_AP
 
+#include "ap_wumpa_shop.h"
+
 // The lap check of the running race, or -1. The plan names it on its pad, cup
 // leg or boss encounter, never by the engine host's LevelID.
 static long AP_LapCode(struct GameTracker *gGT)
@@ -50,7 +52,7 @@ static long AP_LapCode(struct GameTracker *gGT)
 // Battle, the main menu or the demo.
 static int AP_LapRaceMode(const struct GameTracker *gGT)
 {
-	return (gGT->gameMode1 & ADVENTURE_MODE) && !gGT->boolDemoMode &&
+	return gGT->numPlyrCurrGame == 1 && AP_WumpaBankRaceMode(gGT->gameMode1) && !gGT->boolDemoMode &&
 	       !(gGT->gameMode1 & (ADVENTURE_ARENA | ARCADE_MODE | BATTLE_MODE | CRYSTAL_CHALLENGE | MAIN_MENU));
 }
 

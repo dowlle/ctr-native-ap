@@ -51,6 +51,8 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_shortcut.h"  // Shortcutless mechanism (key poll + config trigger)
 #include "ap_wumpa.h"     // Wumpa Fruit filler grant (bank-on-receive, grant in-race)
 #include "ap_wumpa_dispatch.h" // freestanding "which Wumpa code does this crossing send"
+#include "ap_wumpa_shop.h" // shared Adventure/relic mode policy
+
 #include "ap_cup_box_policy.h" // AP_BoxPadAccessible: the shared individual-pad rule
 #include "ap_crash.h"     // crash reporter (support-bundle feature)
 #include "ap_perf.h"      // always-on frame-stall watchdog ([AP PERF] log lines)
@@ -86,6 +88,16 @@ static ap_checkdiag_once_state ap_checkdiag_once; // [AP CHECK DIAG] once-per-co
 #include "ap_oxide_cutscene.h" // Oxide Final-Challenge presentation readiness (WO-A4)
 #include "ap_goal_line.h"       // pure compact pause-menu goal checklist (#322)
 #include "ap_oxide_garage_advert.h" // pure multi-line garage panel (#322 repair, 2026-09-03)
+
+// Apply this before earning checks or changing producer dedup state. Network
+// retries and paid-shop recovery replay checks earned earlier and stay mode-free.
+int AP_LocationChecksAllowed(void)
+{
+	// Versus sets no mode bit of its own. The menu can retain RELIC_RACE,
+	// so its two-to-four-player races also need an explicit player-count guard.
+	return sdata && sdata->gGT && sdata->gGT->numPlyrCurrGame == 1 &&
+	       AP_WumpaBankRaceMode(sdata->gGT->gameMode1);
+}
 
 // ap_reward_policy.h stays freestanding by mirroring the engine's model ids
 // rather than including namespace_Instance.h. ap_trap_items.h mirrors AP_ITEM_BASE

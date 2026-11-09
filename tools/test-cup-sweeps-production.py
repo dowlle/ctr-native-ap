@@ -73,6 +73,17 @@ int main(void){
   setup(&g,0);int before=sent;
   for(int l=0;l<4;l++){blocked=l==f;leg(&g,l,1);}blocked=0;finish(&g);assert(sent==before);
  }
+ {unsigned modes[]={0,ARCADE_MODE,TIME_TRIAL,BATTLE_MODE,
+    ARCADE_MODE|RELIC_RACE,TIME_TRIAL|RELIC_RACE,BATTLE_MODE|RELIC_RACE,
+    ADVENTURE_MODE|ADVENTURE_CUP|ARCADE_MODE,
+    ADVENTURE_MODE|ADVENTURE_CUP|TIME_TRIAL,
+    ADVENTURE_MODE|ADVENTURE_CUP|BATTLE_MODE};
+  for(unsigned i=0;i<sizeof modes/sizeof *modes;i++){
+   setup(&g,0);g.gameMode1=modes[i];int before=sent;
+   for(int l=0;l<4;l++)leg(&g,l,1);
+   finish(&g);assert(sent==before);
+  }
+ }
  for(int mutation=0;mutation<15;mutation++){
   setup(&g,0);leg(&g,0,1);int before=sent;
   switch(mutation){

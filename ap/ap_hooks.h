@@ -664,6 +664,8 @@ int AP_WarpPadShowNeutralMarker(struct Instance *prize);
 // clears any location bit not backed by a received item every frame, so the raw
 // bit can't reflect a local win. Returns 0 if not a checkable bit / not connected.
 int AP_LocationCheckedByBit(int globalBit);
+// Checks can be earned in Adventure and relic races, with the banking mode gate.
+int AP_LocationChecksAllowed(void);
 int AP_LetterAvailable(int track, int letter);
 // Cortex Vortex letter availability for a caller outside the race, such as the
 // hub tracker: AP_LetterAvailable only reads that track while it is loaded.

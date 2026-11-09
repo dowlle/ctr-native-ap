@@ -24,6 +24,7 @@ fixture=r'''
 #include "ap_content_plan.h"
 #include "ap_crystal_checks.h"
 #include "ap_arena_content.h"
+#include "ap_wumpa_shop.h"
 #define ADVENTURE_BOSS 0x80000000u
 typedef int16_t s16;
 #define CTR_AP 1
@@ -49,6 +50,7 @@ struct Driver {struct Instance *instSelf;int actionsFlagSet,numCrystals;struct {
 struct Level {int numInstances;struct InstDef *ptrInstDefs;};
 struct GameTracker {unsigned gameMode1,gameMode2;int levelID,numPlyrCurrGame,numCrystalsInLEV;struct Driver *drivers[1];struct Model *modelPtr[97];struct Level *level1;};
 struct Small {struct GameTracker *gGT;struct {int stage;struct {unsigned RemBitsConfig0,AddBitsConfig0;}OnBegin;}Loading;} data,*sdata=&data;
+int AP_LocationChecksAllowed(void) { return sdata && sdata->gGT && AP_WumpaBankRaceMode(sdata->gGT->gameMode1); }
 struct CustomTrackRaceContext {int physicalPad,hostLevelID,returnHub,laps,slot,retail,crystal,timeLimitTicks;uint64_t seedEpoch;int64_t trophyLocation;char entryID[65],trackID[65];}context;
 struct ScratchpadStruct {struct {int modelID;}Input1;};
 static ctr_content_pad pad;
@@ -131,6 +133,13 @@ int main(void){
  DENY(context.timeLimitTicks=1,context.timeLimitTicks=pad.time_limit_ticks);
  DENY(context.entryID[0]='x',context.entryID[0]='e');
  DENY(g.gameMode1=CRYSTAL_CHALLENGE,g.gameMode1=ADVENTURE_MODE|CRYSTAL_CHALLENGE);
+ {unsigned modes[]={0,ARCADE_MODE,TIME_TRIAL,BATTLE_MODE,
+    ARCADE_MODE|RELIC_RACE,TIME_TRIAL|RELIC_RACE,BATTLE_MODE|RELIC_RACE,
+    ARCADE_MODE|ADVENTURE_MODE,TIME_TRIAL|ADVENTURE_MODE,BATTLE_MODE|ADVENTURE_MODE};
+  for(unsigned i=0;i<sizeof modes/sizeof *modes;i++) {
+   DENY(g.gameMode1=modes[i]|CRYSTAL_CHALLENGE,g.gameMode1=ADVENTURE_MODE|CRYSTAL_CHALLENGE);
+  }
+ }
  DENY(bound=0,bound=1);
  {int before=sent;AP_NotifyContentCrystalPickup(&instances[0],1);assert(sent==before);}
  for(int a=0;a<4;a++){

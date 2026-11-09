@@ -253,6 +253,19 @@ tools/test-win-logic-seedcfg.cpp
 tools/test-win-logic-stakes.cpp
 tools/test-window-geometry.c
 tools/test-wumpa-dispatch.c
+tools/test-adventure-checks-production.py skip Runs once per sender family below
+cmd adventure-wumpa :: python3 tools/test-adventure-checks-production.py wumpa
+cmd adventure-letters :: python3 tools/test-adventure-checks-production.py letters
+cmd adventure-boxes :: python3 tools/test-adventure-checks-production.py boxes
+cmd adventure-hit :: python3 tools/test-adventure-checks-production.py hit
+cmd adventure-itemsanity :: python3 tools/test-adventure-checks-production.py itemsanity
+cmd adventure-rewards :: python3 tools/test-adventure-checks-production.py rewards
+cmd adventure-goal :: python3 tools/test-adventure-checks-production.py goal
+cmd adventure-results :: python3 tools/test-adventure-checks-production.py results
+cmd adventure-perfect :: python3 tools/test-adventure-checks-production.py perfect
+cmd adventure-custom :: python3 tools/test-adventure-checks-production.py custom
+cmd adventure-cup :: python3 tools/test-adventure-checks-production.py cup
+cmd adventure-shop :: python3 tools/test-adventure-checks-production.py shop
 tools/test-wumpa-production.c skip build-fail under the generic recipe; give it a build line in its header comment
 tools/test-wumpa-residency.c
 tools/test-retail-asset-reader.c

@@ -30,6 +30,8 @@ def function(signature):
 fixture = r'''
 #define _DEFAULT_SOURCE 1
 #include <assert.h>
+/* Mode policy is exercised separately by test-adventure-checks-production.py. */
+int AP_LocationChecksAllowed(void) { return 1; }
 #include "platform/native_custom_tracks.c"
 #include "platform/native_custom_track_manager.c"
 #include "ap/ap_content_plan.h"

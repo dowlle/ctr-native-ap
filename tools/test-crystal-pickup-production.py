@@ -15,12 +15,14 @@ fixture = r'''
 #include <assert.h>
 #include <stddef.h>
 #include "ap_crystal_checks.h"
+#include "ap_wumpa_shop.h"
 #define CTR_CUSTOM_TRACKS 1
 struct InstDef { int unused; };
 struct Level { struct InstDef *ptrInstDefs; int numInstances; };
 struct Instance { struct InstDef *instDef; };
 struct GameTracker { unsigned gameMode1; struct Level *level1; int levelID, numPlyrCurrGame; struct { int cupID; } cup; };
 struct Small { struct GameTracker *gGT; } data, *sdata=&data;
+int AP_LocationChecksAllowed(void) { return sdata && sdata->gGT && AP_WumpaBankRaceMode(sdata->gGT->gameMode1); }
 AP_CrystalChecks ctr_crystal_checks;
 static int active=1, custom=0, exists=1, checked=0, sent, feed, perf, ap_state_gen;
 static long sentCode;
@@ -67,6 +69,14 @@ int main(void){
  NO_SEND(gt.gameMode1=ADVENTURE_MODE|ADVENTURE_ARENA); /* hub is not challenge */
  NO_SEND(gt.gameMode1=CRYSTAL_CHALLENGE); /* no AP checks outside Adventure */
  gt.gameMode1=ADVENTURE_MODE|CRYSTAL_CHALLENGE;
+ { unsigned modes[]={0,ARCADE_MODE,TIME_TRIAL,BATTLE_MODE,
+    ARCADE_MODE|RELIC_RACE,TIME_TRIAL|RELIC_RACE,BATTLE_MODE|RELIC_RACE,
+    ARCADE_MODE|ADVENTURE_MODE,TIME_TRIAL|ADVENTURE_MODE,BATTLE_MODE|ADVENTURE_MODE};
+   for(unsigned i=0;i<sizeof modes/sizeof *modes;i++) {
+    NO_SEND(gt.gameMode1=modes[i]|CRYSTAL_CHALLENGE);
+   }
+   gt.gameMode1=ADVENTURE_MODE|CRYSTAL_CHALLENGE;
+ }
  NO_SEND(gt.levelID=20);gt.levelID=21;
  NO_SEND(gt.numPlyrCurrGame=0);gt.numPlyrCurrGame=1;
  NO_SEND(inst.instDef=&foreign);
