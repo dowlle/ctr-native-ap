@@ -21,6 +21,7 @@ fixture = r'''
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include "ap/ap_feed_lines_logic.h"
 #define CTR_AP
 #define CTR_NATIVE
 #define CTR_CUSTOM_TRACKS
@@ -34,6 +35,7 @@ fixture = r'''
 #define AP_IDX_TROPHY 0
 #define INC_TROPHY 1
 #define AP_FEED_X 8
+#define AP_FEED_LINE_H 12
 #define PARKING_LOT 20
 #define ADVENTURE_CUP 0x10000000
 typedef short s16;
@@ -47,18 +49,22 @@ struct GameTracker {
 } game;
 static struct { struct GameTracker *gGT; char s_x[4],s_longInt[4]; } state={&game,"x","%d"},*sdata=&state;
 static int active=1,received,hidden,enabled=1,draws,lastY,custom,offline;
+static int drawnY[8];
+static struct { int box_placement_refused; } ctr_cfg;
+static AP_FeedLines ap_feed;
 static char lastText[128];
 static int ctr_cfg_active(void) { return active; }
 static int AP_GateCount(int i) { assert(i==AP_IDX_TROPHY); return received; }
 static int AP_HubFeedOn(void) { return enabled; }
 static int AP_CharSwap_HubHudHidden(void) { return hidden; }
-static void AP_FeedTickAndDraw(int x,int y,int race) { assert(x==8&&!race); draws++;lastY=y; }
-static void DecalFont_DrawLine(char *s,int x,int y,int font,int flags) { snprintf(lastText,sizeof lastText,"%s",s);draws++;lastY=y; }
+static void OtherFX_Play(int fx,int volume) { assert(fx==0x41&&volume==1); }
+static void DecalFont_DrawLine(char *s,int x,int y,int font,int flags) { snprintf(lastText,sizeof lastText,"%s",s);if(draws<8)drawnY[draws]=y;draws++;lastY=y; }
 static void DecalFont_DrawLineOT(char *s,int x,int y,int font,int flags,uint32_t *ot) { DecalFont_DrawLine(s,x,y,font,flags); }
 static int CustomTrack_ServingLoad(int level,int cup,int id) { return custom; }
 static int MainRaceTrack_OfflineCustomLoad(void) { return offline; }
 '''
 fixture += function("game/UI/UI_DrawNum.c", "void UI_DrawNumTrophy(s16 posX, s16 posY)")
+fixture += function("ap/ap_hooks_feed.c", "static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)")
 fixture += function("ap/ap_hooks_feed.c", "void AP_FeedDrawHub(void)")
 fixture += function("game/230/MM_ConfigMenu.c", "static void Config_DrawScrollIndicator(int top, int pageRows, uint32_t *ot)")
 text = source("game/MAIN/MainInit.c")
@@ -77,9 +83,24 @@ int main(void) {
     active=0;game.gameMode2=0;UI_DrawNumTrophy(10,20);assert(!strcmp(lastText,"16"));
     game.gameMode2=INC_TROPHY;UI_DrawNumTrophy(10,20);assert(!strcmp(lastText,"15"));
     for(active=0;active<2;active++)for(hidden=0;hidden<2;hidden++)for(enabled=0;enabled<2;enabled++) {
+        AP_FeedLinesReset(&ap_feed);AP_FeedLinesEnqueue(&ap_feed,"WAITING",WHITE,0);
         draws=0;AP_FeedDrawHub();assert(draws==(active&&!hidden&&enabled));
+        assert(ap_feed.qcount==(draws?0:1));
         if(draws) assert(lastY<=120); // last line clears the racer portrait at y=134
     }
+    for(int warning=0;warning<2;warning++)for(int count=0;count<=5;count++) {
+        AP_FeedLinesReset(&ap_feed);ctr_cfg.box_placement_refused=warning;
+        ap_feed.vcount=count;
+        for(int i=0;i<count;i++) { strcpy(ap_feed.vis[i].text,"VISIBLE");ap_feed.vis[i].framesLeft=240; }
+        AP_FeedLinesEnqueue(&ap_feed,"WAITING",WHITE,0);
+        draws=0;AP_FeedTickAndDraw(8,120,0);
+        int limit=warning?3:5;
+        assert(draws==(count<limit?count+1:limit));
+        assert(ap_feed.qcount==(count<limit?0:1));
+        for(int i=0;i<draws;i++) assert(drawnY[i]<=120&&drawnY[i]>=(warning?96:72));
+    }
+    // Warning capacity is hub-only: races still draw five lines.
+    draws=0;AP_FeedTickAndDraw(8,200,1);assert(draws==5&&drawnY[0]==152);
     for(int count=0;count<=9;count++) { draws=0;Config_DrawScrollIndicator(0,count,NULL);assert(!draws); }
     Config_DrawScrollIndicator(0,12,NULL);assert(!strcmp(lastText,"1-9/12  DOWN: MORE")&&lastY==48);
     Config_DrawScrollIndicator(1,12,NULL);assert(!strcmp(lastText,"2-10/12  UP/DOWN: MORE"));
@@ -95,5 +116,5 @@ int main(void) {
 with tempfile.TemporaryDirectory() as tmp:
     path = Path(tmp)
     (path / "test.c").write_text(fixture)
-    subprocess.run(["cc", "-std=c99", "-fno-strict-aliasing", str(path / "test.c"), "-o", str(path / "test")], check=True)
+    subprocess.run(["cc", "-std=c99", "-fno-strict-aliasing", "-I", str(root), str(path / "test.c"), "-o", str(path / "test")], check=True)
     subprocess.run([str(path / "test")], check=True)
