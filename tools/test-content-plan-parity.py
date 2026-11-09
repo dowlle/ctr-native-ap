@@ -2338,6 +2338,23 @@ def ac_forged_on_race(p):
 alter("26 cups itemsanity cup leg route forged beside its race", ac_forged_on_race, one_race)
 assert not any(ok for name, _case, ok in cases if name.startswith(("27 cups itemsanity", "26 cups itemsanity"))), \
     "an itemsanity route forgery validates"
+from worlds.ctr.test.test_item_box_count import fifty_spots, count_world
+with fifty_spots(custom=True):
+    for count in (0, 1, 15, 50):
+        wire = count_world(count).fill_slot_data()
+        assert make_world({}, passthrough=wire).fill_slot_data() == wire
+        cases.append((f"box-count-{count}", wire, True))
+        if count in (1, 50):
+            for bad in (0, 15, 51, True, "50"):
+                forged = copy.deepcopy(wire)
+                forged["content_plan"]["item_boxes"]["box_count"] = bad
+                cases.append((f"box-count-{count}-invalid-{bad}", forged, False))
+            forged = copy.deepcopy(wire)
+            forged["ctr_options"]["item_box_count"] = 50 if count == 1 else 1
+            cases.append((f"box-count-{count}-envelope", forged, False))
+            forged = copy.deepcopy(wire)
+            forged["content_plan"]["required_features"].remove("box_count_v1")
+            cases.append((f"box-count-{count}-feature", forged, False))
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()
