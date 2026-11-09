@@ -86,6 +86,17 @@ static void check(const XdeltaImportItem &item)
         CHECK(state.showStatus && state.reasonLines == 2 && state.panelHeight == 108,
               "offered rows, installing and transient feedback retain their status space");
 }
+static void check_warning(const char *warning)
+{
+    lines.clear();
+    bottom = 0;
+    const auto layout = XdeltaReview_Layout(1, 0, 0, 0);
+    MM_CustomText_Draw(warning, 305, layout.reasonY, 176, layout.reasonLines, 0, nullptr);
+    std::string joined;
+    for (const auto &line : lines) { if (!joined.empty()) joined += '\n'; joined += line; }
+    CHECK(joined == warning, "complete finish gap and explanation fit two offered-row lines");
+    CHECK(bottom <= 64 + layout.panelHeight, "finish warning remains above the status line");
+}
 }
 
 static void put32(Bytes &b, size_t o, uint32_t v) { for (int i = 0; i < 4; i++) b[o + i] = (unsigned char)(v >> (8 * i)); }
@@ -597,6 +608,9 @@ int main()
             const auto *nearItem = item_for(s, 3);
             CHECK(farItem && farItem->offered && farItem->finishGap > CTR_CCV_FINISH_GAP_MAX && farItem->warning[0],
                   "unknown far finish is offered with a measured warning");
+            if (farItem) diagnostic_layout::check_warning(farItem->warning);
+            /* Largest possible gap between signed-16-bit checkpoint positions. */
+            diagnostic_layout::check_warning("Gap: 113510\n1-lap finish");
             CHECK(nearItem && nearItem->offered, "retail-sized finish gap is still offered");
         }
         XdeltaImport_Free(&r.scan);

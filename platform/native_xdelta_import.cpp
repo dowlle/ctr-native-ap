@@ -1535,8 +1535,8 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             }
             item.finishGap = m.finishGap;
             if (m.finishGap > CTR_CCV_FINISH_GAP_MAX)
-                std::snprintf(item.warning, sizeof item.warning, "Finish gap %lu units%s", m.finishGap,
-                              CustomFinish_Terrain(item.levSha256, item.vrmSha256) >= 0 ? ": one-lap finish supported" : ": check in game");
+                std::snprintf(item.warning, sizeof item.warning, "Gap: %lu\n%s", m.finishGap,
+                              CustomFinish_Terrain(item.levSha256, item.vrmSha256) >= 0 ? "1-lap finish" : "Check finish");
             std::string tags = "Race TT";
             if (arcade) tags += " Arcade";
             CustomPackageRelicTargets targets;
