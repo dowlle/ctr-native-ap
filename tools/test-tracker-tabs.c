@@ -91,7 +91,7 @@ static void pause_rows(void)
 	for (travel = 0; travel < 2; travel++) {
 		signed char kinds[AP_PAUSEROW_KINDS];
 		int count = AP_PauseRow_Build(character, tracker, travel, kinds), r, at = 0, trackerRow = -1, travelRow = -1;
-		EXPECT(count == 4 + character + tracker + travel, "each AP row adds one row");
+		EXPECT(count == 4 + character + tracker + 2 * travel, "live hub adds travel and difficulty rows");
 		for (r = 0; r < count; r++) {
 			EXPECT(AP_PauseRow_Up(AP_PauseRow_Down(r, count), count) == r, "up undoes down");
 			EXPECT(AP_PauseRow_Down(r, count) != r, "no row traps the cursor");
@@ -104,6 +104,11 @@ static void pause_rows(void)
 			"TRACKER sits below SELECT CHARACTER, or below RESUME without it");
 		EXPECT(travel ? travelRow == 1 + character + tracker : travelRow < 0,
 			"TRAVEL sits below TRACKER, in the same order without it");
+		if (travel) {
+			EXPECT(kinds[travelRow + 1] == AP_PAUSEROW_DIFFICULTY, "AI DIFFICULTY follows TRAVEL");
+			EXPECT(AP_PauseRow_Carry(kinds, count, travelRow + 1, retail, retailCount) == 0,
+				"losing AI DIFFICULTY lands on RESUME");
+		}
 		for (r = 0; r < retailCount; r++) {
 			int there = AP_PauseRow_Carry(retail, retailCount, r, kinds, count);
 			EXPECT(kinds[there] == retail[r], "a retail highlight keeps its row in the AP set");

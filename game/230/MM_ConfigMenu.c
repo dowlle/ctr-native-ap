@@ -285,9 +285,7 @@ static void Config_UpdateSlider(const struct GamepadBuffer *pad, const int rowSe
 // the fixed presets from the reference difficulty menu. The raw value is what gets
 // stored + synced, so an out-of-ladder value from slot_data still applies as-is;
 // the menu only snaps to the nearest entry for display and left/right stepping.
-static const int   s_aiDiffValues[] = {0, 0x50, 0xA0, 0xF0, 0x140, 0x280};
-static const char *s_aiDiffNames[]  = {"VANILLA", "EASY", "MEDIUM", "HARD", "SUPER HARD", "ULTRA HARD"};
-#define AI_DIFF_COUNT ((int)(sizeof(s_aiDiffValues) / sizeof(s_aiDiffValues[0])))
+#include "../../ap/ap_ai_difficulty.h"
 
 // Aspect-ratio preset ladder (CFG_ENUM), ported from thecodingbob/ctr-native
 // (branch widescreen-option). 0 = 4:3 (vanilla), 1 = 16:9, 2 = 16:10,
@@ -337,41 +335,6 @@ static int Aspect_Index(int value)
 		if (s_aspectValues[i] == value)
 			return i;
 	return 0; // out-of-range persisted value renders and steps as 4:3
-}
-
-// Nearest ladder index for an arbitrary value (exact match, else closest).
-static int AiDiff_NearestIndex(int value)
-{
-	int best = 0;
-	int bestDist = -1;
-	for (int i = 0; i < AI_DIFF_COUNT; i++)
-	{
-		int d = value - s_aiDiffValues[i];
-		if (d < 0)
-			d = -d;
-		if (bestDist < 0 || d < bestDist)
-		{
-			bestDist = d;
-			best = i;
-		}
-	}
-	return best;
-}
-
-static const char *AiDiff_Label(int value)
-{
-	return s_aiDiffNames[AiDiff_NearestIndex(value)];
-}
-
-// Step to the adjacent preset (dir -1/+1), clamped to the ladder ends.
-static void AiDiff_Step(int *value, int dir)
-{
-	int i = AiDiff_NearestIndex(*value) + dir;
-	if (i < 0)
-		i = 0;
-	if (i > AI_DIFF_COUNT - 1)
-		i = AI_DIFF_COUNT - 1;
-	*value = s_aiDiffValues[i];
 }
 
 #ifdef CTR_AP

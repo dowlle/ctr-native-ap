@@ -1,5 +1,59 @@
 #include <common.h>
 
+#ifdef CTR_AP
+#include "../../ap/ap_ai_difficulty.h"
+#include "../../ap/ap_pauserow.h"
+#include <platform/native_menu.h>
+#include <platform/native_renderer.h>
+
+// A4-14: a separate selector keeps title-only Options actions out of a live
+// adventure. Confirm saves the existing comfort setting; Back changes nothing.
+static struct MenuRow ap_difficultyRows[AI_DIFF_COUNT + 1];
+
+static void MainFreeze_AiDifficultyProc(struct RectMenu *menu)
+{
+	if (menu->unk1e != 0)
+	{
+		MainFreeze_SafeAdvDestroy();
+		DecalFont_DrawLine("AI DIFFICULTY: NEXT RACE", 256, 40, FONT_SMALL, ORANGE | JUSTIFY_CENTER);
+		DecalFont_DrawLine(NativeMenu_Labels("* @ SELECT   ^ START BACK"), 256, 160, FONT_SMALL, WHITE | JUSTIFY_CENTER);
+		return;
+	}
+	if (menu->rowSelected >= 0 && menu->rowSelected < AI_DIFF_COUNT && AP_FastTravelAvailable())
+	{
+		g_config.aiDifficulty = s_aiDiffValues[menu->rowSelected];
+		NativeRenderer_CaptureWindowGeometry();
+		NativeConfig_Save();
+		AP_AiDifficultyCommit();
+	}
+	sdata->ptrDesiredMenu = MainFreeze_GetMenuPtr();
+}
+
+static struct RectMenu ap_difficultyMenu = {
+	.stringIndexTitle = 0xFFFF,
+	.posX_curr = 0x100,
+	.posY_curr = 0x6c,
+	.state = 0x8C83,
+	.rows = ap_difficultyRows,
+	.funcPtr = MainFreeze_AiDifficultyProc,
+	.drawStyle = 4,
+};
+
+static void MainFreeze_ShowAiDifficulty(void)
+{
+	for (int i = 0; i < AI_DIFF_COUNT; i++)
+	{
+		ap_difficultyRows[i].stringIndex = AP_LNG_AI_PRESET + i;
+		ap_difficultyRows[i].rowOnPressUp = (char)AP_PauseRow_Up(i, AI_DIFF_COUNT);
+		ap_difficultyRows[i].rowOnPressDown = (char)AP_PauseRow_Down(i, AI_DIFF_COUNT);
+		ap_difficultyRows[i].rowOnPressLeft = ap_difficultyRows[i].rowOnPressRight = (char)i;
+	}
+	ap_difficultyRows[AI_DIFF_COUNT].stringIndex = -1;
+	ap_difficultyMenu.rowSelected = (s16)AiDiff_NearestIndex(g_config.aiDifficulty);
+	sdata->ptrDesiredMenu = &ap_difficultyMenu;
+}
+#endif
+
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
 #endif
@@ -995,6 +1049,11 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 		AP_FastTravelShowMenu();
 		return;
 	}
+	if (stringID == AP_LNG_AI_DIFFICULTY)
+	{
+		MainFreeze_ShowAiDifficulty();
+		return;
+	}
 #endif
 
 #ifdef CTR_AP
@@ -1296,6 +1355,7 @@ struct RectMenu *MainFreeze_GetMenuPtr(void)
 					             : kinds[r] == AP_PAUSEROW_CHARACTER ? LNG_SELECT_CHARACTER
 					             : kinds[r] == AP_PAUSEROW_TRACKER   ? AP_LNG_TRACKER
 					             : kinds[r] == AP_PAUSEROW_TRAVEL    ? AP_LNG_TRAVEL
+					             : kinds[r] == AP_PAUSEROW_DIFFICULTY ? AP_LNG_AI_DIFFICULTY
 					             : kinds[r] == AP_PAUSEROW_HINTS     ? (s16)hintString
 					             : kinds[r] == AP_PAUSEROW_QUIT      ? LNG_QUIT
 					                                                 : LNG_OPTIONS;
