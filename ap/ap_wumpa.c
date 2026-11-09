@@ -14,9 +14,8 @@
 // translation-unit member (game/game_unity.h), same convention as ap_traps.c.
 // ============================================================================
 
-// The vanilla max fruit a kart can hold. RB_Player_ModifyWumpa clamps to this too;
-// we also clamp the bank so an over-long hub session can't accumulate a meaningless
-// hoard (a race resets fruit to 0, so > 10 banked could never be felt).
+// The retail held-fruit cap. The pending kart grant when banking is off uses
+// the same cap; the persistent currency wallet is separate.
 #define AP_WUMPA_MAX 10
 
 // Pending fruit to hand the local player at the next grant opportunity.
@@ -72,7 +71,7 @@ static int AP_WumpaAdventureRace(const struct GameTracker *gGT)
 	return gGT != 0 && AP_WumpaBankRaceMode(gGT->gameMode1);
 }
 
-// AP fruit past 10 waits here until the received-item effect marker that
+// Outside-race AP fruit waits here until the received-item effect marker that
 // covers it has been written, so a crash cannot bank a replayed receipt twice
 // (the marker write is queued before the bank write).
 static int g_wumpa_ap_credit = 0;
@@ -85,7 +84,7 @@ void AP_WumpaCommitReceived(void)
 	if (n <= 0)
 		return;
 	ap_net_wumpa_credit(n);
-	snprintf(msg, sizeof msg, "[AP WUMPA BANK] +%d AP fruit past 10 (lifetime %lld)\n", n,
+	snprintf(msg, sizeof msg, "[AP WUMPA BANK] +%d received AP fruit (lifetime %lld)\n", n,
 	         ap_net_wumpa_lifetime());
 	AP_LogLine(msg);
 }
@@ -421,7 +420,7 @@ void AP_WumpaTick(struct GameTracker *gGT)
 			if (g_race_wumpa >= 0)
 				g_race_start += g_race_wumpa - before;
 			snprintf(msg, sizeof msg, "[AP WUMPA] applied %d starting fruit (now %d)\n",
-			         g_wumpa_starting, (int)local->numWumpas);
+			         grant, (int)local->numWumpas);
 			AP_LogLine(msg);
 		}
 		g_starting_applied = 1;

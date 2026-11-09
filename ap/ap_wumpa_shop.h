@@ -120,7 +120,7 @@ static inline int AP_WumpaBankOverflow(int held, int delta)
 // countdown, which a pause-menu restart also produces) arms it; the finish
 // edge or the attempt's abandonment takes it, whichever comes first. A forced
 // DeathLink loss, an exit to the map and a restart take the abandoned payout
-// below instead of the full count (ruled 2026-11-04).
+// below instead of the held count (ruled 2026-11-04).
 typedef struct AP_WumpaFinishLatch
 {
 	int armed;
