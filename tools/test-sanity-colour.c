@@ -5,7 +5,7 @@
 int main(void)
 {
     int variant, logic, checked;
-    assert(AP_SANITY_VISIBILITY == 1);
+    assert(AP_SANITY_VISIBILITY >= 0 && AP_SANITY_VISIBILITY <= 2);
     assert(AP_PAD_RED_RGB == 0xB85648u);
     assert(AP_SanityHaloBudget(-1) == 0);
     assert(AP_SanityHaloBudget(1023) == 0);

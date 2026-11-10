@@ -199,6 +199,8 @@ void AP_SanityDrawGlow(struct GameTracker *gt)
             u32 flag, colour;
             int radius, look, bucket;
             if (!(inst->flags & DRAW_INSTANCE) || (inst->flags & HIDE_MODEL)) continue;
+            // Crates and fruit disappear by shrinking, with draw flags kept.
+            if (!inst->scale.x || !inst->scale.y || !inst->scale.z) continue;
             CTR_GteLoadSV0(&world); gte_rtps();
             CTR_GteStoreSXY(screen); gte_stsz(&depth); gte_stflg(&flag);
             if ((flag & 0x80060000u) || depth < 160 || depth > 6000) continue;
