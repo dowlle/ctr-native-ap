@@ -217,20 +217,29 @@ static int AP_DemoCamRaceActive(struct GameTracker *gGT)
 }
 
 // CAM_ThTick can only select an authored end-of-race camera when the level
-// carries an ST1_CAMERA_EOR table with entries (CAM.c:1887-1893), and
-// CAM_EndOfRace only takes the arcade branch outside Battle with fewer than
-// three screens (CAM.c:551). Anywhere else the request bit does nothing at all,
-// which is exactly the "no safe racing camera target" case the design keeps the
-// effect armed for.
+// carries an ST1_CAMERA_EOR table it can walk, and CAM_EndOfRace only takes the
+// arcade branch outside Battle with fewer than three screens. Anywhere else the
+// request bit does nothing at all, which is exactly the "no safe racing camera
+// target" case the design keeps the effect armed for. The table test itself is
+// AP_DemoCam_EorTableUsable (ap_democam_logic.h): the entry must be present,
+// not just the count long enough, because a custom LEV can carry count >= 3
+// with the ST1_CAMERA_EOR slot NULL, and the table must hold at least one
+// camera CAM_ThTick can step over.
 static int AP_DemoCamEorTableUsable(struct GameTracker *gGT)
 {
+	struct SpawnType1 *st1;
+
 	if (gGT == 0 || gGT->level1 == 0 || gGT->level1->ptrSpawnType1 == 0)
 		return 0;
 	if ((gGT->gameMode1 & BATTLE_MODE) != 0)
 		return 0;
 	if (gGT->numPlyrCurrGame >= 3)
 		return 0;
-	return gGT->level1->ptrSpawnType1->count >= 3;
+
+	st1 = gGT->level1->ptrSpawnType1;
+	return AP_DemoCam_EorTableUsable(st1->count, (const void *const *)ST1_GETPOINTERS(st1), ST1_CAMERA_EOR,
+	                                 gGT->level1->cnt_restart_points, data.EndOfRace_Camera_Size,
+	                                 (int)(sizeof data.EndOfRace_Camera_Size / sizeof data.EndOfRace_Camera_Size[0]));
 }
 
 static void AP_DemoCamCollect(struct GameTracker *gGT, struct ApDemoCamIdentity *ident,
