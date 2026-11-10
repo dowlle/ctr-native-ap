@@ -15,6 +15,10 @@ extern "C" {
 
 #define CTR_XDELTA_CUTTER_VERSION 1
 #define CTR_XDELTA_ITEM_MAX 96
+/* Items at or above this index are a level found inside a changed disc file
+   outside BIGFILE (the LEV takes an odd index, its VRM the even one before).
+   The package's xdelta-source.json names the file and offsets ("disc_file"). */
+#define CTR_XDELTA_EMBEDDED_INDEX_BASE 0x10000
 #define CTR_XDELTA_TITLE_MAX 641
 #define CTR_XDELTA_REASON_MAX 96
 

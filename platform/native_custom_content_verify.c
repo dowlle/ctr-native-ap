@@ -37,6 +37,13 @@
 #define QUAD_SIZE 0x5c
 #define QUAD_FLAGS 0x12
 #define QUAD_TERRAIN 0x38
+/* Texture pointers (ptr_texture_mid[4], ptr_texture_low). A nonzero one the
+   pointer map does not relocate is never a pointer into the level. Coco Team
+   Racing's track 5 (LEV 92d12259...) holds fixed PS1 addresses (0x80107d00 to
+   0x8051xxxx) in every quad, filled at runtime by the pack's own code, and
+   faults the first frame it draws. */
+#define QUAD_TEX_MID 0x1c
+#define QUAD_TEX_LOW 0x40
 #define QUAD_FLAG_TRIGGER 0x0040u
 #define STEP_SUPER_TURBO_PAD 0x02u
 #define QUAD_MAX 65536u
@@ -99,6 +106,19 @@ static int lev_map(const unsigned char*f,size_t n,struct LevView*l,char*e,size_t
 }
 static int pointer(const struct LevView*l,size_t slot,size_t need,size_t*out,char*e,size_t en){uint32_t v;if(!fits(slot,4,l->map)){seterr(e,en,"required pointer slot outside LEV");return 0;}v=rd32(l->p+slot);if(!v){*out=0;return 1;}if(!has_slot(l,slot)||!fits(v,need,l->map)){seterr(e,en,"required pointer missing from map or out of range");return 0;}*out=v;return 1;}
 
+/* A4-39: every nonzero quad texture pointer (QUAD_TEX_MID[4], QUAD_TEX_LOW)
+   must be a slot the map relocates; the whole-map check already keeps every
+   mapped target inside the payload. One pass over the map marks the texture
+   fields it covers, so the cost is linear. */
+static int quad_textures_mapped(const struct LevView*l,size_t quads,uint32_t nq,char*e,size_t en)
+{
+	static const unsigned char tex[5]={QUAD_TEX_MID,QUAD_TEX_MID+4,QUAD_TEX_MID+8,QUAD_TEX_MID+12,QUAD_TEX_LOW};
+	unsigned char*marks=(unsigned char*)calloc((size_t)nq*5u,1);size_t i,k;
+	if(!marks){seterr(e,en,"out of memory");return 0;}
+	for(i=0;i<l->slotCount;i++){size_t s=((size_t)rd32(l->slots+4*i)>>2)<<2,at,q;if(s<quads)continue;at=s-quads;q=at/QUAD_SIZE;if(q>=nq)continue;for(k=0;k<5;k++)if(at%QUAD_SIZE==tex[k])marks[q*5+k]=1;}
+	for(i=0;i<nq;i++)for(k=0;k<5;k++)if(rd32(l->p+quads+i*QUAD_SIZE+tex[k])&&!marks[i*5+k]){free(marks);seterr(e,en,"quad texture address outside the LEV");return 0;}
+	free(marks);return 1;
+}
 static int vrm_image(const unsigned char*p,size_t n,char*e,size_t en){unsigned x,y,w,h;size_t px;if(n<20){seterr(e,en,"VRM header truncated");return 0;}x=p[12]|p[13]<<8;y=p[14]|p[15]<<8;w=p[16]|p[17]<<8;h=p[18]|p[19]<<8;if(!w||!h||x+w>1024||y+h>512||(size_t)w>SIZE_MAX/(size_t)h/2){seterr(e,en,"VRM rectangle invalid");return 0;}px=(size_t)w*h*2;if(n!=20+px){seterr(e,en,"VRM pixel size invalid");return 0;}return 1;}
 /* A4-8 M04: the shortest distance from a checkpoint on the forward loop
    walked from node 0 (`onLoop`) that links forward to node 0, to node 0
@@ -119,7 +139,7 @@ static int analyze(const unsigned char*f,size_t n,struct CustomContentVerificati
 	for(i=0;i<8;i++){size_t j;int nz=0;for(j=0;j<12;j++)nz|=l.p[SPAWN_P+i*12+j];if(nz)o->measured.spawns++;}
 	if(!pointer(&l,NAV_P,12,&nav,e,en))return 0;
 	if(nav)for(i=0;i<3;i++){size_t h=0;unsigned points;if(!pointer(&l,nav+i*4,NAV_HEAD,&h,e,en))return 0;if(!h||rd16s(l.p+h)!=-0x1303)continue;points=l.p[h+2]|l.p[h+3]<<8;if(!points||!fits(h,NAV_HEAD+((size_t)points+1)*NAV_FRAME,l.map)){seterr(e,en,"navigation frame range invalid");return 0;}o->measured.navPaths++;}
-	{size_t mesh=0,quads=0;uint32_t nq;if(!pointer(&l,MESH_P,MESH_SIZE,&mesh,e,en)){seterr(e,en,"invalid mesh info pointer");return 0;}nq=mesh?rd32(l.p+mesh+MESH_QUAD_N):0;if(mesh&&(nq>QUAD_MAX||!pointer(&l,mesh+MESH_QUAD_P,(size_t)nq*QUAD_SIZE,&quads,e,en)||(nq&&!quads))){seterr(e,en,"invalid quad block table");return 0;}o->measured.quadBlocks=nq;for(i=0;i<nq;i++){const unsigned char*q=l.p+quads+i*QUAD_SIZE;unsigned flags=q[QUAD_FLAGS]|((unsigned)q[QUAD_FLAGS+1]<<8);if((flags&QUAD_FLAG_TRIGGER)&&(q[QUAD_TERRAIN]&STEP_SUPER_TURBO_PAD))o->measured.superTurboPads++;}}
+	{size_t mesh=0,quads=0;uint32_t nq;if(!pointer(&l,MESH_P,MESH_SIZE,&mesh,e,en)){seterr(e,en,"invalid mesh info pointer");return 0;}nq=mesh?rd32(l.p+mesh+MESH_QUAD_N):0;if(mesh&&(nq>QUAD_MAX||!pointer(&l,mesh+MESH_QUAD_P,(size_t)nq*QUAD_SIZE,&quads,e,en)||(nq&&!quads))){seterr(e,en,"invalid quad block table");return 0;}o->measured.quadBlocks=nq;if(nq&&!quad_textures_mapped(&l,quads,nq,e,en))return 0;for(i=0;i<nq;i++){const unsigned char*q=l.p+quads+i*QUAD_SIZE;unsigned flags=q[QUAD_FLAGS]|((unsigned)q[QUAD_FLAGS+1]<<8);if((flags&QUAD_FLAG_TRIGGER)&&(q[QUAD_TERRAIN]&STEP_SUPER_TURBO_PAD))o->measured.superTurboPads++;}}
 	derive(o);o->loadable=1;return 1;
 }
 

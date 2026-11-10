@@ -72,6 +72,10 @@ const size_t kActiveMax = 8;
 const size_t kDirBytesMax = 8u * 1024u * 1024u;       /* Directory bytes collected at once. */
 const long long kScratchBytesMax = 512ll * 1024 * 1024; /* Changed entries kept on disk. */                         /* Overlapping BIGFILE entries held at once. */
 const size_t kOfferedBytesMax = 192u * 1024u * 1024u; /* Package bytes held for one review list. */
+/* A changed disc file that starts with a level is kept up to this size: the
+   LEV and VRM limits plus room for the map and other data after them. */
+const size_t kEmbeddedFileMax = 32u * 1024u * 1024u;
+const size_t kEmbeddedFilesMax = 8;
 
 std::string hex_sha256(const void *bytes, size_t size)
 {
@@ -335,15 +339,23 @@ std::string hash_file(const std::string &path, unsigned long long *bytes, const 
 }
 
 /* ---- Cutter version 1 (the 2026-09-28 and 2026-10-15 research scripts). */
+bool level_header_bounded(const unsigned char *p, uint32_t map);
+
 bool unsupported_lev_map(const unsigned char *p, size_t size)
 {
     if (size < 0x200) return false;
     const uint32_t map = rd32(p);
     if ((map & 3) || map < 0x190 || 8ull + map > size) return false;
     if (!(rd32(p + 4 + map) & 0xe0000000u)) return false;
-    /* Require bounded level structures as well as flag bits,
-       since arbitrary BIGFILE data can contain a high-bit word too. Offsets
-       here are relative to the level body, which starts after the size word. */
+    return level_header_bounded(p, map);
+}
+
+/* Require bounded level structures as well as flag bits, since arbitrary
+   data can contain a high-bit word too. Offsets here are relative to the
+   level body, which starts after the size word; p holds at least 0x200 bytes. */
+bool level_header_bounded(const unsigned char *p, uint32_t map)
+{
+    if ((map & 3) || map < 0x190) return false;
     const uint32_t mesh = rd32(p + 4);
     const uint32_t count = rd32(p + 4 + 0x0c);
     const uint32_t instances = rd32(p + 4 + 0x10);
@@ -556,6 +568,14 @@ struct ChangedEntry
     long long scratch = -1; /* Offset in the scratch file, -1 when not kept. */
 };
 
+/* A disc file outside BIGFILE that starts with a level, kept whole. */
+struct EmbeddedFile
+{
+    std::string path;
+    long long scratch = -1;
+    uint32_t size = 0;
+};
+
 struct PassLayout
 {
     std::map<uint32_t, uint32_t> dirs;            /* lba -> bytes, with their path prefix below */
@@ -593,6 +613,10 @@ struct Extractor
 
     /* Other ISO files: path -> changed */
     std::map<std::string, bool> fileChanged;
+
+    /* Files that start with a level, kept while their sectors arrive in order. */
+    std::map<std::string, std::vector<unsigned char>> capturing;
+    std::vector<EmbeddedFile> embedded;
 
     Extractor(Disc &d, FILE *s, const PassLayout &previous) : disc(d), scratch(s), layout(previous)
     {
@@ -776,15 +800,55 @@ struct Extractor
                 uint32_t sectors = (file.size + kSector - 1) / kSector;
                 if (lba >= file.lba + sectors) continue;
                 bool &changedFlag = fileChanged[path];
-                if (changedFlag) continue;
-                auto retail = disc.files.find(path);
-                unsigned char retailRaw[kRawSector];
-                if (retail == disc.files.end() || retail->second.size != file.size ||
-                    !disc.raw(retail->second.lba + (lba - file.lba), retailRaw) ||
-                    std::memcmp(retailRaw + 16, rawSector + 16, kRawSector - 16))
-                    changedFlag = true;
+                if (!changedFlag)
+                {
+                    auto retail = disc.files.find(path);
+                    unsigned char retailRaw[kRawSector];
+                    if (retail == disc.files.end() || retail->second.size != file.size ||
+                        !disc.raw(retail->second.lba + (lba - file.lba), retailRaw) ||
+                        std::memcmp(retailRaw + 16, rawSector + 16, kRawSector - 16))
+                        changedFlag = true;
+                }
+                capture_sector(path, file, lba, rawSector, changedFlag);
             }
         }
+    }
+
+    /* Some packs keep a level, its pointer map and its texture file in one
+       disc file their own code loads. Such a file is kept whole when its
+       first sector holds a bounded level header and, once its last sector
+       arrives, some sector differs from retail; the scan decides later what
+       it holds. An unchanged file is dropped there, so it never takes one of
+       the kEmbeddedFilesMax places. */
+    void capture_sector(const std::string &path, const IsoFile &file, uint32_t lba, const unsigned char *rawSector, bool changed)
+    {
+        const unsigned char *data = rawSector + kUserData;
+        auto it = capturing.find(path);
+        if (lba == file.lba)
+        {
+            if (it != capturing.end()) { capturing.erase(it); return; } /* Seen twice: never kept. */
+            if (file.size < 0x200 || file.size > kEmbeddedFileMax || (rawSector[18] & 0x20) ||
+                capturing.size() + embedded.size() >= kEmbeddedFilesMax)
+                return;
+            for (const auto &e : embedded) if (e.path == path) return;
+            const uint32_t map = rd32(data);
+            if (8ull + map > file.size || !level_header_bounded(data, map)) return;
+            it = capturing.emplace(path, std::vector<unsigned char>()).first;
+            it->second.reserve(file.size);
+        }
+        if (it == capturing.end()) return;
+        std::vector<unsigned char> &bytes = it->second;
+        if ((unsigned long long)(lba - file.lba) * kSector != bytes.size()) { capturing.erase(it); return; }
+        const uint32_t take = std::min<uint32_t>(kSector, file.size - (uint32_t)bytes.size());
+        bytes.insert(bytes.end(), data, data + take);
+        if (bytes.size() < file.size) return;
+        if (!changed) { capturing.erase(it); return; }
+        if (scratchEnd + (long long)file.size > kScratchBytesMax) throw std::runtime_error("Patch changes too much track data");
+        if (seek64(scratch, (unsigned long long)scratchEnd) || std::fwrite(bytes.data(), 1, bytes.size(), scratch) != bytes.size())
+            throw std::runtime_error("Cannot write the import scratch file");
+        embedded.push_back({path, scratchEnd, file.size});
+        scratchEnd += file.size;
+        capturing.erase(it);
     }
 
     const volatile int *cancel = nullptr;
@@ -834,6 +898,7 @@ struct Extractor
     {
         for (auto &a : active) { a.differs = true; finish_entry(a); } /* Cut short by the end of the disc. */
         active.clear();
+        capturing.clear(); /* Cut short: never kept. */
         if (!bigKnown || !tableReady) needPass = true;
         for (auto &d : layout.dirs) if (!dirsParsed.count(d.first)) needPass = true;
     }
@@ -878,6 +943,8 @@ int write_target(void *context, const void *bytes, size_t size)
 
 /* Region of a BIGFILE index in the retail layout, for grouped skip lines. */
 bool retail_code_entry(uint32_t index) { return index >= 221 && index < 234; }
+/* Retail adventure hubs: five groups of VRM, LEV and pointer map (BI_ADVENTUREHUB). */
+const uint32_t kHubFirst = 200;
 
 bool code_file(const std::string &path)
 {
@@ -887,6 +954,13 @@ bool code_file(const std::string &path)
     return upper.find("SCUS_") != std::string::npos || ends(".BIN") || ends(".EXE") || ends(".CNF");
 }
 
+/* Where a level found inside a changed disc file came from. */
+struct EmbeddedSource
+{
+    std::string file, fileSha256;
+    uint32_t levOffset = 0, mapOffset = 0, vrmOffset = 0;
+};
+
 struct Built
 {
     std::string manifest, pin;
@@ -894,6 +968,7 @@ struct Built
     size_t originalLevBytes = 0;
     /* The BIGFILE entry the VRM came from, when it is not the entry before the LEV. */
     uint32_t followingVrm = 0;
+    EmbeddedSource embedded; /* file empty for BIGFILE pairs */
     CustomPackageOwned *owned = nullptr;
     /* From the pack descriptor, for the Play Solo descriptor. */
     std::string author;
@@ -1110,6 +1185,7 @@ struct Candidate
     std::string originalLevHash;
     size_t originalLevBytes = 0;
     uint32_t followingVrm = 0;
+    EmbeddedSource embedded;
 };
 
 std::string json_dump(const json &value) { return value.dump(-1, ' ', false, json::error_handler_t::strict); }
@@ -1122,6 +1198,7 @@ Built build_package(const Candidate &c, const std::string &title, const std::str
     b.originalLevHash = c.originalLevHash;
     b.originalLevBytes = c.originalLevBytes;
     b.followingVrm = c.followingVrm;
+    b.embedded = c.embedded;
     const std::string levHash = hex_sha256(c.lev.data(), c.lev.size());
     const std::string vrmHash = hex_sha256(c.vrm.data(), c.vrm.size());
     json source = {{"schema_version", 1}, {"provider", "xdelta"}, {"patch_sha256", summary.patchSha256},
@@ -1137,6 +1214,10 @@ Built build_package(const Candidate &c, const std::string &title, const std::str
         source["normalized_lev_bytes"] = c.lev.size();
     }
     if (c.followingVrm) source["vrm_bigfile_index"] = c.followingVrm;
+    if (!c.embedded.file.empty())
+        source["disc_file"] = {{"path", c.embedded.file}, {"sha256", c.embedded.fileSha256},
+                               {"lev_offset", c.embedded.levOffset}, {"map_offset", c.embedded.mapOffset},
+                               {"vrm_offset", c.embedded.vrmOffset}};
     if (!author.empty()) source["author"] = author;
     if (meta && meta->excludeRelic) source["excluded"].push_back("relic");
     if (meta && meta->excludeTokens) source["excluded"].push_back("ctr_tokens");
@@ -1325,7 +1406,13 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
         Extractor &ex = *extractor;
         std::map<uint32_t, const ChangedEntry *> byIndex;
         for (const auto &c : ex.changed) byIndex[c.index] = &c;
+        /* Levels found inside changed disc files, under indexes past any BIGFILE
+           (CTR_XDELTA_EMBEDDED_INDEX_BASE): VRM at an even index, LEV after it. */
+        std::map<uint32_t, std::vector<unsigned char>> embeddedEntries;
+        std::map<uint32_t, EmbeddedSource> embeddedSources;
         auto entry_bytes = [&](uint32_t index) -> std::vector<unsigned char> {
+            auto virt = embeddedEntries.find(index);
+            if (virt != embeddedEntries.end()) return virt->second;
             auto it = byIndex.find(index);
             if (it == byIndex.end()) return disc.entry(index); /* Unchanged: the player's own bytes. */
             if (it->second->scratch < 0) return {};
@@ -1351,6 +1438,10 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
         std::vector<std::pair<const ChangedEntry *, size_t>> deferred;
         bool deferredPass = false;
         size_t refusalSlot = 0, refusalsInserted = 0;
+        auto level_label = [&](uint32_t index) -> std::string {
+            auto it = embeddedSources.find(index);
+            return it != embeddedSources.end() ? "Level in " + it->second.file : "Level " + std::to_string(index);
+        };
         auto consider = [&](const ChangedEntry &c) {
             if (load_flag(cancel)) throw std::runtime_error("Cancelled");
             if (c.scratch < 0) return;
@@ -1367,7 +1458,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                 if (!normalized)
                 {
                     consumed.insert(c.index);
-                    unsupportedLevels.push_back(skip_item((int)c.index, "Level " + std::to_string(c.index),
+                    unsupportedLevels.push_back(skip_item((int)c.index, level_label(c.index),
                                                          "Level format not supported: " + why));
                     return;
                 }
@@ -1378,7 +1469,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                 if (normalized)
                 {
                     consumed.insert(c.index);
-                    unsupportedLevels.push_back(skip_item((int)c.index, "Level " + std::to_string(c.index),
+                    unsupportedLevels.push_back(skip_item((int)c.index, level_label(c.index),
                         !levCut ? "Files failed checks: normalized level cutter" : "No preceding texture file"));
                 }
                 return;
@@ -1410,7 +1501,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             auto refuse_texture = [&]() {
                 if (!normalized) return;
                 consumed.insert(c.index);
-                XdeltaImportItem refusal = skip_item((int)c.index, "Level " + std::to_string(c.index), "No valid preceding texture file");
+                XdeltaImportItem refusal = skip_item((int)c.index, level_label(c.index), "No valid preceding texture file");
                 /* A deferred refusal keeps the diagnostic position it always had. */
                 if (deferredPass) unsupportedLevels.insert(unsupportedLevels.begin() + (long)(refusalSlot + refusalsInserted++), refusal);
                 else unsupportedLevels.push_back(refusal);
@@ -1435,7 +1526,8 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             };
             Candidate candidate{c.index, std::vector<unsigned char>(lev.begin(), lev.begin() + (long)levCut),
                                 std::vector<unsigned char>(vrm.begin(), vrm.begin() + (long)vrmCut),
-                                originalLevHash, originalLevBytes, following ? vrmIndex : 0};
+                                originalLevHash, originalLevBytes, following ? vrmIndex : 0, {}};
+            if (embeddedSources.count(c.index)) candidate.embedded = embeddedSources[c.index];
             lev.clear(); lev.shrink_to_fit(); vrm.clear(); vrm.shrink_to_fit();
             const std::string levHash = hex_sha256(candidate.lev.data(), candidate.lev.size());
             const std::string vrmHash = hex_sha256(candidate.vrm.data(), candidate.vrm.size());
@@ -1502,7 +1594,10 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             set_text(item.vrmSha256, sizeof item.vrmSha256, vrmHash);
             if (!built.owned)
             {
-                if (following) { undo_following(); return; }
+                /* A following pair the package verifier refuses keeps its number
+                   and shows why (A4-39): Coco Team Racing's 608 + 609 was offered
+                   in alpha3, and giving its number back would rename, re-key and
+                   re-pin the track after it. */
                 set_text(item.reason, sizeof item.reason, limit_codepoints("Files failed checks: " + failure, 90));
                 add_item(*scan, item);
                 return;
@@ -1521,6 +1616,18 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                                    : !m.checkpoints ? "Not a race track (no lap checkpoints)"
                                    : "Files failed checks: " + std::string(ttReason);
                 set_text(item.reason, sizeof item.reason, reason);
+                CustomPackage_Free(&built.owned);
+                add_item(*scan, item);
+                return;
+            }
+            /* A level from a disc file whose checkpoints never lead back to the
+               start is a course its pack's own code ends (Coco Team Racing's
+               TRIBAL.BIN runs 0 to 181 and stops). A lap race there cannot
+               finish, so it is refused unless an exact finish rule exists. */
+            if (embeddedSources.count(c.index) && m.finishGap == (unsigned long)-1 &&
+                CustomFinish_Terrain(item.levSha256, item.vrmSha256) < 0)
+            {
+                set_text(item.reason, sizeof item.reason, "Course has no lap loop: its pack's code ends the race");
                 CustomPackage_Free(&built.owned);
                 add_item(*scan, item);
                 return;
@@ -1574,11 +1681,99 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             consider(*d.first);
         }
 
+        /* 4b. A level inside a changed disc file, after every BIGFILE pair so
+           no earlier track is renumbered, renamed or re-pinned. The one shape
+           read: the level with an empty map of its own, then its tagged delta
+           map at the next sector, then its VRM at the sector after the map,
+           with only zero padding between them. The joined level then takes
+           the normalizer, cutter, verifier and race checks every entry takes. */
+        std::set<std::string> embeddedOffered;
+        {
+            std::vector<const EmbeddedFile *> files;
+            for (const auto &e : ex.embedded)
+                if (ex.fileChanged.count(e.path) && ex.fileChanged[e.path]) files.push_back(&e);
+            std::sort(files.begin(), files.end(), [](const EmbeddedFile *a, const EmbeddedFile *b) { return a->path < b->path; });
+            std::vector<ChangedEntry> virtualEntries;
+            virtualEntries.reserve(files.size());
+            uint32_t next = CTR_XDELTA_EMBEDDED_INDEX_BASE;
+            for (const EmbeddedFile *e : files)
+            {
+                if (load_flag(cancel)) throw std::runtime_error("Cancelled");
+                std::vector<unsigned char> b(e->size);
+                if (seek64(scratch.get(), (unsigned long long)e->scratch) || std::fread(b.data(), 1, b.size(), scratch.get()) != b.size())
+                    throw std::runtime_error("Cannot read the import scratch file");
+                const uint32_t map = rd32(b.data());
+                if (rd32(b.data() + 4 + map)) continue; /* Its own map is not empty: not this shape. */
+                const uint32_t vrmIndex = next, levIndex = next + 1;
+                next += 2;
+                const std::string file = e->path.substr(1);
+                auto zeros = [&](size_t from, size_t to) {
+                    return from <= to && to <= b.size() && std::all_of(b.begin() + (long)from, b.begin() + (long)to, [](unsigned char x) { return !x; });
+                };
+                auto aligned = [](size_t at) { return (at + kSector - 1) / kSector * kSector; };
+                const size_t mapAt = aligned(8ull + map);
+                const size_t mapEnd = zeros(8ull + map, mapAt) ? NativeLev::tagged_stream_end(b.data(), b.size(), mapAt) : 0;
+                if (!mapEnd)
+                {
+                    unsupportedLevels.push_back(skip_item((int)levIndex, "Level in " + file, "Level format not supported: no pointer map after it"));
+                    continue;
+                }
+                const size_t vrmAt = aligned(mapEnd);
+                const size_t vrmCut = vrmAt < b.size() && zeros(mapEnd, vrmAt) ? cut_vrm(b.data() + vrmAt, b.size() - vrmAt) : 0;
+                std::vector<unsigned char> vrm;
+                if (vrmCut) vrm.assign(b.begin() + (long)vrmAt, b.begin() + (long)(vrmAt + vrmCut));
+                if (!vrmCut || lev_shaped(vrm))
+                {
+                    unsupportedLevels.push_back(skip_item((int)levIndex, "Level in " + file, "No valid texture file after its map"));
+                    continue;
+                }
+                std::vector<unsigned char> lev(b.begin(), b.begin() + 4 + (long)map);
+                lev.insert(lev.end(), b.begin() + (long)mapAt, b.begin() + (long)mapEnd);
+                embeddedSources[levIndex] = {file, hex_sha256(b.data(), b.size()), 0, (uint32_t)mapAt, (uint32_t)vrmAt};
+                embeddedEntries[vrmIndex] = std::move(vrm);
+                const size_t levBytes = lev.size();
+                embeddedEntries[levIndex] = std::move(lev);
+                b.clear(); b.shrink_to_fit();
+                ChangedEntry c;
+                c.index = levIndex;
+                c.size = (uint32_t)levBytes;
+                c.scratch = 0;
+                virtualEntries.push_back(c);
+                const unsigned before = scan->summary.count;
+                consider(virtualEntries.back());
+                for (unsigned i = before; i < scan->summary.count; i++)
+                    if (scan->summary.items[i].offered && scan->summary.items[i].bigfileIndex == (int)levIndex) embeddedOffered.insert(e->path);
+                embeddedEntries.erase(vrmIndex);
+                embeddedEntries.erase(levIndex);
+            }
+        }
+
+        /* 4c. A replaced adventure hub: retail keeps each hub as VRM, LEV and
+           an external pointer map. A hub has no laps, so it is not a race
+           track; say so instead of counting it with other files. */
+        {
+            static const char *const hubs[] = {"Gem Stone Valley", "N. Sanity Beach", "The Lost Ruins", "Glacier Park", "Citadel City"};
+            for (const auto &c : ex.changed)
+            {
+                if (c.index < kHubFirst || c.index >= kHubFirst + 3 * 5 || (c.index - kHubFirst) % 3 != 1 || consumed.count(c.index))
+                    continue;
+                const auto lev = patched_entry(c.index);
+                const auto ptr = patched_entry(c.index + 1);
+                if (lev.size() < 0x200 || !(rd32(lev.data()) & 0x80000000u) || ptr.size() < 8 || rd32(ptr.data()) & 3 ||
+                    4ull + rd32(ptr.data()) != ptr.size())
+                    continue;
+                for (uint32_t i = c.index - 1; i <= c.index + 1; i++)
+                    if (byIndex.count(i)) consumed.insert(i);
+                unsupportedLevels.push_back(skip_item((int)c.index, std::string(hubs[(c.index - kHubFirst) / 3]) + " hub",
+                                                      "Adventure hub: not a race track"));
+            }
+        }
+
         /* 5. Grouped lines for everything that is not a track. */
         std::vector<std::string> code;
         unsigned other = 0;
         for (const auto &f : ex.fileChanged)
-            if (f.second && f.first != "/BIGFILE.BIG")
+            if (f.second && f.first != "/BIGFILE.BIG" && !embeddedOffered.count(f.first))
             {
                 if (code_file(f.first)) code.push_back(f.first.substr(1));
                 else other++;
@@ -2255,6 +2450,11 @@ bool plan_descriptor(const XdeltaImportSummary &summary, const XdeltaImportItem 
         why = "its title is longer than 128 bytes";
         return false;
     }
+    if (item.bigfileIndex >= CTR_XDELTA_EMBEDDED_INDEX_BASE)
+    {
+        why = "a seed cannot name a track inside a disc file yet";
+        return false;
+    }
     if (item.bigfileIndex < 0 || item.bigfileIndex > 4095)
     {
         why = "its BIGFILE index is out of range";
@@ -2777,7 +2977,7 @@ extern "C" int XdeltaImport_RenameItem(XdeltaImportScan *scan, unsigned int item
     try
     {
         Candidate candidate{(uint32_t)row.bigfileIndex, package_file(old.owned, "lev"), package_file(old.owned, "vrm"),
-                            old.originalLevHash, old.originalLevBytes, old.followingVrm};
+                            old.originalLevHash, old.originalLevBytes, old.followingVrm, old.embedded};
         std::string key = old.hasMeta && !old.meta.trackKey.empty() ? old.meta.trackKey : title_track_key(name);
         if (!track_key_valid(key)) return refuse("No folder name fits this name");
         std::string failure;

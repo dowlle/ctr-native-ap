@@ -1257,6 +1257,66 @@ static int CustomTrackPolicy_ClearUnmappedSt1(unsigned char *file, unsigned long
 	return cleared;
 }
 
+// The same rule for BSP leaves (A4-39): a leaf's hitbox array pointer at node
+// +0x14 is read by every collision search (COLL_FIXED_BSPLEAF_TestInstance).
+// Coco Team Racing's track 3 (LEV 3e80b473...) has 39 leaves whose field holds
+// a value the pointer map leaves out, so it stays a level offset (0xd7ec) and
+// the first AI kart that searches that leaf faults. On PS1 that read lands in
+// low RAM. Clear every nonzero leaf field the map does not relocate; NULL is
+// the "no hitboxes" every reader handles. `file` is the same pre-map LEV
+// subfile as above: mesh_info at data offset 0, bspRoot at mesh_info +0x18,
+// numBspNodes at +0x1c, 0x20-byte nodes, bit 0 of the u16 flag marks a leaf.
+// One pass over the map marks mapped leaf fields, so the cost is linear in
+// map size; levels past CTR_POLICY_BSP_NODES_MAX nodes are left as they are.
+#define CTR_POLICY_BSP_NODES_MAX 32768ul
+static int CustomTrackPolicy_ClearUnmappedBspHitboxes(unsigned char *file, unsigned long fileBytes)
+{
+	unsigned long dataBytes, mapBytes, mesh, root, nodes, i, k;
+	unsigned char *data;
+	const unsigned char *map;
+	unsigned char mapped[CTR_POLICY_BSP_NODES_MAX / 8];
+	int cleared = 0;
+
+	if (file == NULL || fileBytes < 8)
+		return 0;
+	dataBytes = CustomTrackPolicy_ReadLe32(file);
+	if (dataBytes < 0x20 || dataBytes > fileBytes - 8)
+		return 0;
+	data = file + 4;
+	map = data + dataBytes;
+	mapBytes = CustomTrackPolicy_ReadLe32(map);
+	if ((mapBytes & 3) != 0 || mapBytes > fileBytes - 8 - dataBytes)
+		return 0;
+	map += 4;
+
+	mesh = CustomTrackPolicy_ReadLe32(data);
+	if (mesh == 0 || mesh > dataBytes - 0x20)
+		return 0;
+	root = CustomTrackPolicy_ReadLe32(data + mesh + 0x18);
+	nodes = CustomTrackPolicy_ReadLe32(data + mesh + 0x1c);
+	if (root == 0 || nodes == 0 || nodes > CTR_POLICY_BSP_NODES_MAX || root > dataBytes || nodes > (dataBytes - root) / 0x20)
+		return 0;
+
+	for (i = 0; i < (nodes + 7) / 8; i++)
+		mapped[i] = 0;
+	for (k = 0; k < mapBytes; k += 4)
+	{
+		// LOAD_RunPtrMap drops the low two bits of each offset.
+		unsigned long slot = CustomTrackPolicy_ReadLe32(map + k) & ~3uL;
+		if (slot >= root + 0x14 && slot - root < nodes * 0x20 && (slot - root) % 0x20 == 0x14)
+			mapped[(slot - root) / 0x20 / 8] |= (unsigned char)(1u << ((slot - root) / 0x20 % 8));
+	}
+	for (i = 0; i < nodes; i++)
+	{
+		unsigned char *node = data + root + i * 0x20;
+		if ((node[0] & 1) == 0 || (mapped[i / 8] & (1u << (i % 8))) != 0 || CustomTrackPolicy_ReadLe32(node + 0x14) == 0)
+			continue;
+		node[0x14] = node[0x15] = node[0x16] = node[0x17] = 0;
+		cleared++;
+	}
+	return cleared;
+}
+
 // Is there room for one more primitive of `primSize` bytes before the frame's
 // primitive arena runs out? This is decision 7 above.
 //

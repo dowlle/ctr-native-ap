@@ -849,6 +849,45 @@ static unsigned long t_entry(const unsigned char *f, int i)
 	return t_get32(f + 4 + T_LEV_ST1 + 4 + 4 * (unsigned long)i);
 }
 
+// A4-39: BSP leaves whose hitbox array pointer the map leaves out (Coco Team
+// Racing track 3) are cleared before relocation; mapped leaves, empty leaves
+// and branch nodes keep their bytes.
+static void test_bsp_clear_unmapped(void)
+{
+	enum { DATA = 0x200, MESH = 0x40, ROOT = 0x100, NODES = 4, MAPN = 3 };
+	static unsigned char f[4 + DATA + 4 + 4 * MAPN], before[sizeof f];
+	unsigned char *d = f + 4;
+	unsigned long node;
+
+	memset(f, 0, sizeof f);
+	t_put32(f, DATA);
+	t_put32(d, MESH);
+	t_put32(d + MESH + 0x18, ROOT);
+	t_put32(d + MESH + 0x1c, NODES);
+	d[ROOT + 0 * 0x20] = 1; t_put32(d + ROOT + 0 * 0x20 + 0x14, 0x1e0);  // leaf, mapped
+	d[ROOT + 1 * 0x20] = 1; t_put32(d + ROOT + 1 * 0x20 + 0x14, 0xd7ec); // leaf, not mapped
+	d[ROOT + 2 * 0x20] = 1;                                               // leaf, no hitboxes
+	d[ROOT + 3 * 0x20] = 0; t_put32(d + ROOT + 3 * 0x20 + 0x14, 0x0203); // branch: child IDs, not a pointer
+	t_put32(d + DATA, 4 * MAPN);
+	t_put32(d + DATA + 4, 0);                               // mesh_info
+	t_put32(d + DATA + 8, MESH + 0x18);                     // bspRoot
+	t_put32(d + DATA + 12, (ROOT + 0 * 0x20 + 0x14) | 1);   // the low tag bits are ignored
+	memcpy(before, f, sizeof f);
+	expect_int(CustomTrackPolicy_ClearUnmappedBspHitboxes(f, sizeof f), 1, "Coco track 3 shape: one leaf cleared");
+	node = t_get32(d + ROOT + 1 * 0x20 + 0x14);
+	expect_int(node == 0, 1, "the unmapped leaf pointer is NULL");
+	memset(before + 4 + ROOT + 1 * 0x20 + 0x14, 0, 4);
+	expect_int(memcmp(f, before, sizeof f), 0, "and no other byte changes");
+	expect_int(CustomTrackPolicy_ClearUnmappedBspHitboxes(f, sizeof f), 0, "a second pass clears nothing");
+
+	t_put32(d + MESH + 0x1c, (unsigned long)CTR_POLICY_BSP_NODES_MAX + 1);
+	t_put32(d + ROOT + 1 * 0x20 + 0x14, 0xd7ec);
+	expect_int(CustomTrackPolicy_ClearUnmappedBspHitboxes(f, sizeof f), 0, "a node count past the cap is left alone");
+	t_put32(d + MESH + 0x1c, 0x100);
+	expect_int(CustomTrackPolicy_ClearUnmappedBspHitboxes(f, sizeof f), 0, "nodes past the data are left alone");
+	expect_int(CustomTrackPolicy_ClearUnmappedBspHitboxes(f, 7), 0, "a short file is left alone");
+}
+
 static void test_st1_clear_unmapped(void)
 {
 	static unsigned char f[T_LEV_BYTES], before[T_LEV_BYTES];
@@ -1785,6 +1824,7 @@ int main(void)
 	test_measured_flags();
 	test_st1_entry_present();
 	test_st1_clear_unmapped();
+	test_bsp_clear_unmapped();
 	test_prim_fits();
 	test_prim_arena_bytes();
 	test_rendered_slots_fit();

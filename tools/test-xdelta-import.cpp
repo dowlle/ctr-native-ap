@@ -14,7 +14,8 @@
 // directory placed after the data (second pass), duplicate pairs; tail
 // cutting; race, arena and other classification with every skip text; the
 // descriptor (titles, laps, relic targets, wrong patch); determinism of pins
-// and hashes; install and reinstall; the package UUID recipe.
+// and hashes; install and reinstall; the package UUID recipe; a level, map
+// and VRM inside one changed disc file; a replaced adventure hub.
 #include <platform/native_xdelta_import.h>
 #include <platform/native_xdelta_decode.h>
 #include <platform/native_lev_normalize.hpp>
@@ -707,14 +708,18 @@ int main()
             CHECK(leader && !std::strcmp(leader->title, "Following track 1") && normalLeader && !std::strcmp(normalLeader->title, "Following track 2") &&
                   normalized && !std::strcmp(normalized->title, "Following track 3") && ordinary && !std::strcmp(ordinary->title, "Following track 4"),
                   "following pairs are numbered after every ordinary pair");
-            CHECK(last && last->offered && !std::strcmp(last->title, "Following track 5") && !std::strcmp(last->trackKey, "following-track-5"),
+            CHECK(last && last->offered && !std::strcmp(last->title, "Following track 6") && !std::strcmp(last->trackKey, "following-track-6"),
                   "a following pair after refused ones takes the next number");
+            const auto *failed = item_for(s, 242);
+            CHECK(failed && !failed->offered && !std::strcmp(failed->title, "Following track 5") &&
+                  !std::strncmp(failed->reason, "Files failed checks: ", 21),
+                  "a following pair the verifier refuses keeps its number and says why");
             std::vector<int> refusals;
             for (unsigned i = 0; i < s->count; i++)
                 if (!std::strcmp(s->items[i].reason, "No valid preceding texture file")) refusals.push_back(s->items[i].bigfileIndex);
-            CHECK(refusals == std::vector<int>({236, 239, 242, 245, 251, 254}), "deferred refusals keep their diagnostic order");
+            CHECK(refusals == std::vector<int>({236, 239, 245, 251, 254}), "deferred refusals keep their diagnostic order");
             CHECK(line_with(s, "Following track 3") == normalized, "a duplicate following pair is refused, not listed as the same track");
-            for (int slot : {236, 239, 242, 245, 251, 254})
+            for (int slot : {236, 239, 245, 251, 254})
             {
                 const auto *it = item_for(s, slot);
                 CHECK(it && !it->offered && !it->pin[0] && !std::strcmp(it->reason, "No valid preceding texture file") &&
@@ -729,11 +734,11 @@ int main()
             for (unsigned i = 0; i < s->count; i++)
                 if (s->items[i].offered) { offered++; titles.insert(s->items[i].title); }
             CHECK(offered == 5 && titles == std::set<std::string>({"Following track 1", "Following track 2", "Following track 3",
-                                                                    "Following track 4", "Following track 5"}),
-                  "refused following pairs use no track number");
-            /* 237, 243, 246, 248, 249, 255 and seven fillers (232 is in the overlay range):
-               refused pairs give their VRM back. */
-            CHECK(line_with(s, "Other changed files (13)"), "refused following VRMs stay in the other count");
+                                                                    "Following track 4", "Following track 6"}),
+                  "refused following pairs use no track number, except a verifier refusal");
+            /* 237, 246, 248, 249, 255 and seven fillers (232 is in the overlay range):
+               refused pairs give their VRM back; 243 stays with its verifier-refused level. */
+            CHECK(line_with(s, "Other changed files (12)"), "refused following VRMs stay in the other count");
             if (normalized && normalized->offered)
             {
                 const unsigned index = unsigned(normalized - s->items);
@@ -762,6 +767,216 @@ int main()
                     &rows, error, sizeof error);
                 CHECK(rows.size() == 1 && rows[0].local.xdelta, "following pair reloads and verifies");
             }
+        }
+        XdeltaImport_Free(&r.scan);
+    }
+
+    /* A level inside a changed disc file outside BIGFILE: the level with an
+       empty map of its own, its tagged delta map at the next sector, then its
+       VRM at the sector after that. It is offered after every BIGFILE pair
+       and keeps its file and offsets in the provenance. */
+    {
+        auto pad = [](Bytes &b) { b.resize((b.size() + 2047) / 2048 * 2048, 0); };
+        /* Returns the disc file; `normalized` gets the ordinary-map level the importer must build. */
+        auto embedded_file = [&](LevSpec spec, Bytes &normalized, Bytes &vrm, bool withMap, bool withVrm) {
+            normalized = make_lev(spec);
+            const Bytes alt = alternate_lev(normalized);
+            const uint32_t map = NativeLev::word(alt.data());
+            Bytes file(alt.begin(), alt.begin() + 4 + map);
+            NativeLev::append(file, 0); /* Its own map: empty. */
+            pad(file);
+            if (withMap) file.insert(file.end(), alt.begin() + 4 + map, alt.end());
+            pad(file);
+            vrm = make_vrm(spec.seed, 0);
+            if (withVrm) file.insert(file.end(), vrm.begin(), vrm.end());
+            pad(file);
+            file.insert(file.end(), 3000, 0x66); /* Other data the pack keeps after it. */
+            return file;
+        };
+        DiscSpec changed = base;
+        LevSpec spec; spec.seed = 80;
+        Bytes tribalLev, tribalVrm, unused, unusedVrm;
+        changed.files["TRIBAL.BIN"] = embedded_file(spec, tribalLev, tribalVrm, true, true);
+        spec.seed = 81;
+        changed.files["NOMAP.BIN"] = embedded_file(spec, unused, unusedVrm, false, true);
+        spec.seed = 82;
+        changed.files["NOVRM.BIN"] = embedded_file(spec, unused, unusedVrm, true, false);
+        spec.seed = 83;
+        changed.files["PLAIN.BIN"] = make_lev(spec); /* Its own map is not empty: not this shape. */
+        spec.seed = 84; spec.race = false;
+        Bytes arenaLev, arenaVrm;
+        changed.files["SIDE.BIN"] = embedded_file(spec, arenaLev, arenaVrm, true, true);
+        spec.seed = 86; spec.race = true;
+        Bytes lineLev, lineVrm;
+        Bytes line = embedded_file(spec, lineLev, lineVrm, true, true);
+        line[4 + BODY_CHECK + 34 * 12 + 8] = 34;                  /* Checkpoints 0 to 34, the last leads to itself */
+        changed.files["LINE.BIN"] = line;
+        spec.seed = 87;
+        Bytes shortLev, shortVrm;
+        Bytes shortFile = embedded_file(spec, shortLev, shortVrm, true, false);
+        {
+            const uint32_t map = NativeLev::word(shortFile.data());
+            const size_t mapAt = (8 + map + 2047) / 2048 * 2048;
+            const size_t end = NativeLev::tagged_stream_end(shortFile.data(), shortFile.size(), mapAt);
+            shortFile.resize(end); /* The map ends the file: the next sector is past its end. */
+        }
+        changed.files["ZSHORT.BIN"] = shortFile;
+        spec.seed = 85;
+        changed.bigfile[11] = make_lev(spec);                     /* An ordinary BIGFILE track, numbered first */
+        CHECK(XdeltaImport_CutLev(changed.files["TRIBAL.BIN"].data(), changed.files["TRIBAL.BIN"].size()) == 4 + BODY_PTRMAP + 4,
+              "fixture: the cutter alone stops at the level's empty map");
+        const std::string patchPath = write_file("Embedded.xdelta", encode(baseDisc, make_disc(changed)));
+        ScanResult r = scan(patchPath, discPath);
+        CHECK(r.ok, "embedded-level scan succeeds");
+        if (r.ok)
+        {
+            const auto *s = XdeltaImport_Summary(r.scan);
+            const int levIndex = CTR_XDELTA_EMBEDDED_INDEX_BASE + 1;
+            const auto *tribal = item_for(s, levIndex + 8); /* LINE, NOMAP, NOVRM and SIDE sort first. */
+            const auto *ordinary = item_for(s, 11);
+            CHECK(ordinary && ordinary->offered && !std::strcmp(ordinary->title, "Embedded track 1"), "the BIGFILE track keeps its number");
+            CHECK(tribal && tribal->offered && sha_hex(tribalLev) == tribal->levSha256 && sha_hex(tribalVrm) == tribal->vrmSha256 &&
+                  std::strstr(tribal->tags, "Race TT Arcade") && !std::strcmp(tribal->title, "Embedded track 4"),
+                  "a level inside a disc file is offered with its own map and VRM");
+            const auto *lineRow = item_for(s, levIndex);
+            CHECK(lineRow && !lineRow->offered && !std::strcmp(lineRow->title, "Embedded track 2") &&
+                  !std::strcmp(lineRow->reason, "Course has no lap loop: its pack's code ends the race"),
+                  "a disc-file course without a lap loop is refused with its reason");
+            const auto *noMap = item_for(s, levIndex + 2);
+            CHECK(noMap && !noMap->offered && !std::strcmp(noMap->title, "Level in NOMAP.BIN") &&
+                  !std::strcmp(noMap->reason, "Level format not supported: no pointer map after it"),
+                  "a disc-file level without a map after it gets a specific row");
+            const auto *noVrm = item_for(s, levIndex + 4);
+            CHECK(noVrm && !noVrm->offered && !std::strcmp(noVrm->title, "Level in NOVRM.BIN") &&
+                  !std::strcmp(noVrm->reason, "No valid texture file after its map"),
+                  "a disc-file level without a VRM after its map gets a specific row");
+            const auto *shortRow = item_for(s, levIndex + 10);
+            CHECK(shortRow && !shortRow->offered && !std::strcmp(shortRow->title, "Level in ZSHORT.BIN") &&
+                  !std::strcmp(shortRow->reason, "No valid texture file after its map"),
+                  "a map that ends the file is refused without reading past it");
+            const auto *side = item_for(s, levIndex + 6);
+            CHECK(side && !side->offered && !std::strcmp(side->title, "Embedded track 3") &&
+                  !std::strcmp(side->reason, "Not a race track (no lap checkpoints)"),
+                  "a disc-file level takes the same race checks as any entry");
+            const auto *code = line_with(s, "Game code (");
+            CHECK(code && !std::strstr(code->title, "TRIBAL.BIN") && std::strstr(code->title, "LINE.BIN") &&
+                  std::strstr(code->title, "NOMAP.BIN") && std::strstr(code->title, "PLAIN.BIN") && std::strstr(code->title, "+2"),
+                  "only a file whose track is offered leaves the code line");
+            unsigned offered = 0;
+            for (unsigned i = 0; i < s->count; i++) offered += s->items[i].offered;
+            CHECK(offered == 2, "one BIGFILE track and one disc-file track are offered");
+            ScanResult again = scan(patchPath, discPath);
+            const auto *same = again.ok ? item_for(XdeltaImport_Summary(again.scan), levIndex + 8) : nullptr;
+            CHECK(same && tribal && !std::strcmp(same->pin, tribal->pin), "a disc-file track has the same pin on every scan");
+            XdeltaImport_Free(&again.scan);
+            if (tribal && tribal->offered)
+            {
+                const unsigned index = unsigned(tribal - s->items);
+                char error[256];
+                char plan[16384], planKey[65], planRev[65], why[256];
+                CHECK(XdeltaImport_PlanDescriptor(r.scan, index, plan, sizeof plan, planKey, planRev, why, sizeof why) == 0 &&
+                      !std::strcmp(why, "a seed cannot name a track inside a disc file yet"),
+                      "a disc-file track is not planned into a seed descriptor (locator holds 0 to 4095)");
+                CHECK(XdeltaImport_RenameItem(r.scan, index, "Tribal course", error, sizeof error), "disc-file track survives rename");
+                s = XdeltaImport_Summary(r.scan);
+                tribal = item_for(s, levIndex + 8);
+                std::vector<unsigned char> selected(s->count, 0); selected[index] = 1;
+                const std::string assets = root + "/embedded-assets";
+                mkdir(assets.c_str(), 0755);
+                CHECK(XdeltaImport_Install(r.scan, selected.data(), assets.c_str(),
+                                          CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == 1,
+                      "disc-file track installs");
+                const std::string folder = assets + "/tracks/packages/" + tribal->pin;
+                const std::string stem = folder + "/original/bigfile-" + std::to_string(levIndex + 8);
+                CHECK(read_file(stem + ".lev") == tribalLev && read_file(stem + ".vrm") == tribalVrm,
+                      "installed files are the joined level and the VRM after its map");
+                const Bytes source = read_file(folder + "/metadata/xdelta-source.json");
+                const auto provenance = nlohmann::json::parse(source.begin(), source.end(), nullptr, false);
+                const Bytes &file = changed.files["TRIBAL.BIN"];
+                CHECK(!provenance.is_discarded() && provenance["bigfile_index"] == levIndex + 8 &&
+                      provenance["lev_normalizer_version"] == 1 && provenance["disc_file"]["path"] == "TRIBAL.BIN" &&
+                      provenance["disc_file"]["sha256"] == sha_hex(file) && provenance["disc_file"]["lev_offset"] == 0 &&
+                      provenance["disc_file"]["map_offset"] == 0x1800 && provenance["disc_file"]["vrm_offset"] == 0x2000 &&
+                      provenance["normalized_lev_sha256"] == sha_hex(tribalLev),
+                      "provenance names the disc file and offsets after a rename");
+                std::vector<CustomPackageStoreEntry> rows;
+                CustomPackage_ScanStore((assets + "/tracks/packages").c_str(),
+                    [](const CustomPackageStoreEntry *e, void *c) { if (e->verified) static_cast<std::vector<CustomPackageStoreEntry> *>(c)->push_back(*e); },
+                    &rows, error, sizeof error);
+                CHECK(rows.size() == 1 && rows[0].local.xdelta && rows[0].local.bigfileIndex == levIndex + 8,
+                      "disc-file track reloads and verifies");
+            }
+        }
+        XdeltaImport_Free(&r.scan);
+    }
+
+    /* Unchanged disc files that start with a level never take one of the
+       eight places a changed file needs. */
+    {
+        DiscSpec before = base;
+        for (int i = 0; i < 8; i++)
+        {
+            LevSpec same; same.seed = 120 + i;
+            Bytes ordinary = make_lev(same);
+            before.files["A" + std::to_string(i) + ".BIN"] = alternate_lev(ordinary); /* Bounded level header */
+        }
+        const Bytes beforeDisc = make_disc(before);
+        DiscSpec after = before;
+        LevSpec spec; spec.seed = 130;
+        Bytes lev = make_lev(spec);
+        const Bytes alt = alternate_lev(lev);
+        const uint32_t map = NativeLev::word(alt.data());
+        Bytes file(alt.begin(), alt.begin() + 4 + map);
+        NativeLev::append(file, 0);
+        file.resize((file.size() + 2047) / 2048 * 2048, 0);
+        file.insert(file.end(), alt.begin() + 4 + map, alt.end());
+        file.resize((file.size() + 2047) / 2048 * 2048, 0);
+        const Bytes vrm = make_vrm(130, 0);
+        file.insert(file.end(), vrm.begin(), vrm.end());
+        after.files["TRACK.BIN"] = file;
+        const std::string disc2 = write_file("base-embedded.bin", beforeDisc);
+        ScanResult r = scan(write_file("Places.xdelta", encode(beforeDisc, make_disc(after))), disc2);
+        CHECK(r.ok, "places scan succeeds");
+        if (r.ok)
+        {
+            const auto *track = item_for(XdeltaImport_Summary(r.scan), CTR_XDELTA_EMBEDDED_INDEX_BASE + 1);
+            CHECK(track && track->offered && sha_hex(lev) == track->levSha256, "eight unchanged level files do not crowd out a changed one");
+        }
+        XdeltaImport_Free(&r.scan);
+    }
+
+    /* A replaced adventure hub (VRM, LEV with an external map, pointer map)
+       gets its own row instead of counting with other files. */
+    {
+        DiscSpec changed = base;
+        while (changed.bigfile.size() < 230) changed.bigfile.push_back(Bytes(10, 0));
+        auto hub = [](unsigned seed, bool goodPtr) {
+            LevSpec s; s.seed = seed; s.race = false; s.relic = false; s.letters = false;
+            const Bytes ordinary = make_lev(s);
+            const uint32_t map = NativeLev::word(ordinary.data());
+            Bytes lev(ordinary.begin(), ordinary.begin() + 4 + map);
+            put32(lev, 0, 0x80000000u | (uint32_t)(lev.size() - 4));
+            Bytes ptr(ordinary.begin() + 4 + map, ordinary.end());
+            if (!goodPtr) put32(ptr, 0, NativeLev::word(ptr.data()) + 4);
+            return std::make_pair(lev, ptr);
+        };
+        auto citadel = hub(90, true);
+        changed.bigfile[212] = make_vrm(90, 0);
+        changed.bigfile[213] = citadel.first;
+        changed.bigfile[214] = citadel.second;
+        auto glacier = hub(91, false);                             /* Pointer map does not match its size */
+        changed.bigfile[210] = glacier.first;
+        changed.bigfile[211] = glacier.second;
+        ScanResult r = scan(write_file("Hub.xdelta", encode(baseDisc, make_disc(changed))), discPath);
+        CHECK(r.ok, "hub scan succeeds");
+        if (r.ok)
+        {
+            const auto *s = XdeltaImport_Summary(r.scan);
+            const auto *row = item_for(s, 213);
+            CHECK(row && !row->offered && !std::strcmp(row->title, "Citadel City hub") &&
+                  !std::strcmp(row->reason, "Adventure hub: not a race track"), "a replaced hub says it is not a race track");
+            CHECK(!item_for(s, 212) && !item_for(s, 214) && !item_for(s, 210), "hub files have one row; a broken map gets none");
+            CHECK(line_with(s, "Other changed files (2)"), "hub files leave the other count, the broken hub stays in it");
         }
         XdeltaImport_Free(&r.scan);
     }
