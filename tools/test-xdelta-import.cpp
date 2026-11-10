@@ -809,8 +809,8 @@ int main()
         changed.files["LINE.BIN"] = line;
         spec.seed = 85;
         changed.bigfile[11] = make_lev(spec);                     /* An ordinary BIGFILE track, numbered first */
-        CHECK(XdeltaImport_CutLev(changed.files["TRIBAL.BIN"].data(), changed.files["TRIBAL.BIN"].size()) == 0,
-              "fixture: the cutter alone cannot read the disc file");
+        CHECK(XdeltaImport_CutLev(changed.files["TRIBAL.BIN"].data(), changed.files["TRIBAL.BIN"].size()) == 4 + BODY_PTRMAP + 4,
+              "fixture: the cutter alone stops at the level's empty map");
         const std::string patchPath = write_file("Embedded.xdelta", encode(baseDisc, make_disc(changed)));
         ScanResult r = scan(patchPath, discPath);
         CHECK(r.ok, "embedded-level scan succeeds");
