@@ -280,7 +280,7 @@ static Model build() {
     std::set<int64_t> door;
     std::set<int64_t> present;
     for (const auto &c : p.at("checks")) present.insert(c.at("location").get<int64_t>());
-    if (m.itemsanity)
+    if (m.itemsanity) {
         for (const auto &pad : state.pads) {
             if (!pad.occupied || pad.cortex || pad.retail_id != kTigerTemple || pad.mode_count == 0) continue;
             const int64_t letter_r = pad.letter_locations[2];
@@ -292,6 +292,23 @@ static Model build() {
                 if ((pad.box_spots ? pad.box_number[b] == 5 : b == 4) &&
                     pad.box_locations[b] > 0 && present.count(pad.box_locations[b])) door.insert(pad.box_locations[b]);
         }
+        // Selected ordinary pickups share the exact catalog door flags used
+        // by the admitted plan. Their rank alone does not open the door.
+        const auto sanity = state.sanity.find("retail:4");
+        if (sanity != state.sanity.end()) {
+            static const J needs = J::parse(kContentRegistryJSON).at("sanity").at("retail:4").at("needs");
+            static const char *const kinds[] = {"weapon_crate", "wumpa_crate", "wumpa_fruit"};
+            static const int budgets[] = {80, 16, 32};
+            for (int family = 0; family < 3; ++family) {
+                const J rules = needs.value(kinds[family], J::object());
+                for (int n = 0; n < budgets[family]; ++n) {
+                    const int64_t code = sanity->second.locations[family][n];
+                    if (code > 0 && present.count(code) &&
+                        rules.value(std::to_string(n + 1), J::object()).value("door", false)) door.insert(code);
+                }
+            }
+        }
+    }
 
     // Wumpa Income routes (J11): every Trophy Race and CTR Challenge of a
     // track entry on a retail race track 0..15 or a custom track with measured
@@ -412,13 +429,14 @@ static Model build() {
             m.locs.push_back(L);
             continue;
         }
-        // Reach 10 Wumpa and rungs with a cup leg or boss race route (row 10i,
+        // Ordinary pickup sanity, plus Reach 10 Wumpa and rungs with a cup leg or boss race route (row 10i,
         // content_plan.create_regions): any route. A pad route keeps its
         // stage gate and first race; a cup route needs the finish of every
         // earlier leg; a boss route its encounter. The check's rank is on top,
         // bound to the route pad's racer lock.
-        if ((kind == "wumpa" || kind == "podium") &&
-            std::any_of(routes.begin(), routes.end(), [](const J &r) { return !r.at("leg_id").is_null() || !r.at("encounter_id").is_null(); })) {
+        if (kind == "weapon_crate" || kind == "wumpa_crate" || kind == "wumpa_fruit" ||
+            ((kind == "wumpa" || kind == "podium") &&
+             std::any_of(routes.begin(), routes.end(), [](const J &r) { return !r.at("leg_id").is_null() || !r.at("encounter_id").is_null(); }))) {
             L.kind = RACE;
             for (const auto &r : routes) {
                 Route R;

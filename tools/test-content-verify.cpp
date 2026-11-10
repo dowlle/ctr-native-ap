@@ -108,7 +108,7 @@ static void fixtures() {
                                   // Row 10f: the only Wumpa Income is a custom track with measured Wumpa
                                   "wumpa-custom-income",
                                   // A3-7: 27 cups, no Trophy Race: Itemsanity and Wumpa Income from the cup legs
-                                  "twenty-seven-cups", "one-race-pad"};
+                                  "twenty-seven-cups", "one-race-pad", "sanity"};
     for (const char *name : names) {
         std::ifstream in(std::string("tools/fixtures/content-plan/") + name + ".json");
         if (!in) { expect(false, std::string("fixture missing: ") + name); continue; }
@@ -365,7 +365,8 @@ static void shop_key_budgets() {
 
 int main(int argc, char **argv) {
     if (argc > 2 && std::string(argv[1]) == "--probe") probe(argv[2]);
-    else { fixtures(); chain(); checked_is_not_reached(); first_race_won(); shop_key_budgets(); one_race_pad(); }
+    else { fixtures(); chain(); checked_is_not_reached(); first_race_won(); shop_key_budgets(); one_race_pad();
+           probe("tools/fixtures/content-plan/sanity-verify.jsonl"); }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;
 }
