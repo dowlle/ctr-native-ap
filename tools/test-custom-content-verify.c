@@ -120,9 +120,10 @@ static size_t build_mesh_lev(unsigned char *b, size_t cap, const unsigned (*quad
 	return 4 + map + 4 + 2 * 4;
 }
 
-/* A4-39: a quad texture pointer (mid +0x1c..+0x28, low +0x40) at or past the
-   map can never be relocated into the level; Coco Team Racing track 5 holds
-   fixed PS1 addresses there. Zero and payload offsets stay allowed. */
+/* A4-39: every nonzero quad texture pointer (mid +0x1c..+0x28, low +0x40)
+   must be a slot the pointer map relocates. Coco Team Racing track 5 holds
+   fixed PS1 addresses there; an unmapped small offset would stay unrelocated
+   too. Zero, mapped fields and other quad fields stay allowed. */
 static void quad_texture_addresses(void)
 {
 	static const unsigned quads[][2] = {{0, 0}, {0, 0}};
@@ -130,23 +131,32 @@ static void quad_texture_addresses(void)
 	struct CustomContentOwnedPair pair;
 	char error[256];
 	size_t n;
-	const size_t q1 = 4 + QUAD_BODY + QUAD_SIZE;
+	const size_t map = QUAD_BODY + 2 * QUAD_SIZE;
+	const size_t q1 = QUAD_BODY + QUAD_SIZE;
 	memset(&pair, 0, sizeof pair);
 	n = build_mesh_lev(image, sizeof image, quads, 2, 0);
-	put32(image, q1 + 0x1c, 0x10);
-	expect(analyze(image, n, &pair.report, error, sizeof error), "a texture offset inside the payload passes");
+	put32(image, 4 + map, 3 * 4);                /* a third map slot: quad 1's first mid texture */
+	put32(image, 4 + map + 12, q1 + 0x1c);
+	n += 4;
+	put32(image, 4 + q1 + 0x1c, 0x10);
+	expect(analyze(image, n, &pair.report, error, sizeof error), "a mapped texture pointer passes");
 	memset(&pair.report, 0, sizeof pair.report);
-	put32(image, q1 + 0x24, 0x8051371cUL);
+	put32(image, 4 + q1 + 0x20, 0x10);
+	expect(!analyze(image, n, &pair.report, error, sizeof error) && strstr(error, "quad texture address outside the LEV"),
+	       "an unmapped texture offset is refused");
+	memset(&pair.report, 0, sizeof pair.report);
+	put32(image, 4 + q1 + 0x20, 0);
+	put32(image, 4 + q1 + 0x24, 0x8051371cUL);
 	expect(!analyze(image, n, &pair.report, error, sizeof error) && strstr(error, "quad texture address outside the LEV"),
 	       "a fixed PS1 address in a mid texture is refused");
 	memset(&pair.report, 0, sizeof pair.report);
-	put32(image, q1 + 0x24, 0);
-	put32(image, q1 + 0x40, (unsigned long)(QUAD_BODY + 2 * QUAD_SIZE));
+	put32(image, 4 + q1 + 0x24, 0);
+	put32(image, 4 + QUAD_BODY + 0x40, 0x20);
 	expect(!analyze(image, n, &pair.report, error, sizeof error) && strstr(error, "quad texture address outside the LEV"),
-	       "a low texture at the map offset is refused");
+	       "an unmapped low texture on the first quad is refused");
 	memset(&pair.report, 0, sizeof pair.report);
-	put32(image, q1 + 0x40, 0);
-	put32(image, q1 + 0x44, 0x80000000UL);
+	put32(image, 4 + QUAD_BODY + 0x40, 0);
+	put32(image, 4 + q1 + 0x44, 0x80000000UL);
 	expect(analyze(image, n, &pair.report, error, sizeof error), "other quad fields are not read as textures");
 }
 
