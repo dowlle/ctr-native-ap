@@ -393,6 +393,21 @@ void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags)
 	AP_NavRec_NoteItemFire(d, weaponID);
 #endif
 
+#ifdef CTR_AP
+	// A4-46: Warp Ball steers along the restart-point path, which a Crystal
+	// Challenge or battle arena does not have. Whatever granted one (a stale
+	// held item, a trap, a mod), fire a Missile instead of walking off a null
+	// node table. The singleton flag is released because no Warp Ball exists.
+	if (weaponID == 9 &&
+	    !AP_WarpballPathUsable((gGT->gameMode1 & (BATTLE_MODE | CRYSTAL_CHALLENGE)) != 0,
+	                           gGT->level1 != NULL ? gGT->level1->cnt_restart_points : 0,
+	                           gGT->level1 != NULL && gGT->level1->ptr_restart_points != NULL))
+	{
+		gGT->gameMode1 &= ~WARPBALL_HELD;
+		weaponID = 2;
+	}
+#endif
+
 	switch (weaponID)
 	{
 	// Turbo

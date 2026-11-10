@@ -759,6 +759,7 @@ int AP_ItemsanityFilterRoll(struct Driver *driver, int rolled, unsigned roll,
                             const unsigned char *table, int tableCount);
 int AP_ItemsanityUnlockedPool(struct Driver *driver);
 int AP_ItemsanityFilterCrystalGrant(struct Driver *driver, int proposed, unsigned roll);
+int AP_TrapRerollFilterArena(struct Driver *driver, int rolled, unsigned roll);
 int AP_ItemsanitySubstituteOwned(struct Driver *driver, int proposed,
                                  unsigned roll, const unsigned char *table,
                                  int tableCount);

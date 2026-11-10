@@ -53,7 +53,9 @@ int main(void) {
         for (int level = 18; level <= 24; level++) {
             gt.levelID = level; gt.gameMode1 = ADVENTURE_MODE | CRYSTAL_CHALLENGE;
             VehPhysGeneral_SetHeldItem(&local);
-            assert(local.heldItemID == ids[weapon]);
+            // A4-46: an arena has no path for Warp Ball, so a lone Warp Ball
+            // unlock leaves the slot empty instead of arming a crashing weapon.
+            assert(local.heldItemID == (ids[weapon] == 9 ? AP_ITEMSANITY_NO_ITEM : ids[weapon]));
             if (weapon >= 9) assert(local.numHeldItems == 3);
         }
         for (int rank = -1; rank <= 1; rank++) for (int lost = 0; lost < 7; lost++) {
@@ -62,6 +64,14 @@ int main(void) {
             VehPhysGeneral_SetHeldItem(&local);
             assert(local.heldItemID == ids[weapon]);
         }
+    }
+    // A4-46: with every weapon unlocked, no roll in any arena may settle on Warp Ball.
+    memset(ap_itemsanity_owned, 1, sizeof ap_itemsanity_owned);
+    for (int level = 18; level <= 24; level++) for (int r = 0; r < 64; r++) {
+        gt.levelID = level; gt.gameMode1 = ADVENTURE_MODE | CRYSTAL_CHALLENGE;
+        rng = r; local.driverRank = 1;
+        VehPhysGeneral_SetHeldItem(&local);
+        assert(local.heldItemID != 9);
     }
     memset(ap_itemsanity_owned, 0, sizeof ap_itemsanity_owned);
     fruit = 0; gt.gameMode1 = ADVENTURE_MODE | CRYSTAL_CHALLENGE;

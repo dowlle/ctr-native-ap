@@ -204,6 +204,14 @@ int AP_TrapRerollFilter(struct Driver *driver, int rolled, unsigned roll)
 	return AP_TrapRerollFilterPool(driver, rolled, roll, 0);
 }
 
+// A4-46: the arena variant. Item Reroll must not swap an arena draw back to
+// Warp Ball, which has no path to follow in an arena.
+int AP_TrapRerollFilterArena(struct Driver *driver, int rolled, unsigned roll)
+{
+	return AP_TrapRerollFilterPool(driver, rolled, roll,
+	                               AP_ITEMSANITY_ARENA_EXCLUDED_IDS);
+}
+
 // Arena grants bypass the ordinary roulette filter. Under Itemsanity, A4-12
 // draws from all received weapons instead of the arena's fixed Bomb/Turbo.
 // No unlocks means an empty slot with no fruit, retaining the 2026-08-21 rule.
@@ -219,7 +227,9 @@ int AP_ItemsanityFilterCrystalGrant(struct Driver *driver, int proposed, unsigne
 	// A4-12 supersedes the fixed Bomb/Turbo grant under Itemsanity. Reuse the
 	// existing crate roll, before the engine's Warpball and Missile x3 caps.
 	// No received weapon still means an empty slot without consolation fruit.
-	return AP_ItemsanitySelectOwned(roll, 0, AP_ITEMSANITY_FULL_POOL,
+	// A4-46: Warp Ball is excluded, an arena has no restart-point path for it.
+	return AP_ItemsanitySelectOwned(roll, AP_ITEMSANITY_ARENA_EXCLUDED_IDS,
+	                                AP_ITEMSANITY_FULL_POOL,
 	                                AP_ITEMSANITY_FULL_POOL_SIZE, ap_itemsanity_owned);
 }
 
