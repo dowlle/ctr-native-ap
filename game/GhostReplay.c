@@ -34,6 +34,13 @@ internal s16 Ghost_LerpRot12(s16 curr, s16 next, u16 t)
 	return (curr + ((delta * t) >> 0xC)) & 0xFFF;
 }
 
+// A ghost whose tape ended on a track the AI cannot drive (see the end of
+// tape in GhostReplay_ThTick). Hidden, with nothing left to do.
+static void GhostReplay_ThTickParked(struct Thread *t)
+{
+	(void)t;
+}
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80026ed8-0x80027838.
 void GhostReplay_ThTick(struct Thread *t)
 {
@@ -111,7 +118,21 @@ void GhostReplay_ThTick(struct Thread *t)
 				d->speedApprox = gh->speedApprox;
 
 				BOTS_Driver_Convert(d);
-				BOTS_ThTick_Drive(t);
+				if ((d->actionsFlagSet & ACTION_BOT) != 0)
+				{
+					BOTS_ThTick_Drive(t);
+				}
+				else
+				{
+					// BOTS_Driver_Convert refuses a track with no nav path of
+					// two points (a custom track without AI lines) and leaves
+					// botData unset, so BOTS_ThTick_Drive would read a NULL nav
+					// frame. Retail tracks always convert. Hide the ghost and
+					// stop its thread instead (A4-27: Retry in a custom Time
+					// Trial crashed when the replayed tape ran out).
+					inst->flags |= HIDE_MODEL;
+					t->funcThTick = GhostReplay_ThTickParked;
+				}
 
 				d->actionsFlagSet |= ACTION_RACE_FINISHED;
 				t->flags |= THREAD_FLAG_DISABLE_COLLISION;

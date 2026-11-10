@@ -79,6 +79,7 @@ tools/test-focus-mute.c
 tools/test-frame-watch.c
 tools/test-fxmarker.c
 tools/test-fxseen-room-key.c
+tools/test-ghost-tape-end.py
 tools/test-glow-slots.c
 tools/test-goal-line.c
 tools/test-goal-presentation.c
