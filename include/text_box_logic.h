@@ -5,6 +5,7 @@
 
 typedef struct {
     uint32_t key, ms, frame;
+    uint32_t ticks, tickRemainder;
     int width, viewportX, viewportY, viewportW, viewportH, players, valid;
 } TextBoxClock;
 
@@ -47,6 +48,27 @@ static inline uint32_t TextBox_Tick(TextBoxClock *s, uint32_t key, uint32_t fram
     s->viewportX = vx; s->viewportY = vy; s->viewportW = vw;
     s->viewportH = vh; s->players = players;
     return s->ms;
+}
+
+/* The NTSC presentation clock continues during pause and is reproduced by
+   the native replay scheduler's VSync packets. Retain fractional ms so 30
+   and 60 fps accumulate exactly the same time. UI frame identity is separate
+   from the gameplay timer, which stops under PAUSE_ALL. */
+static inline uint32_t TextBox_TickVBlank(TextBoxClock *s, uint32_t key, uint32_t frame,
+    uint32_t ticks, int width, int vx, int vy, int vw, int vh, int players)
+{
+    unsigned elapsed = 0;
+    if (!s->valid || frame != s->frame)
+    {
+        unsigned delta = ticks - s->ticks;
+        if (!s->valid || frame - s->frame > 1) delta = s->tickRemainder = 0;
+        if (delta > 4) delta = 4;
+        unsigned units = delta * 1000 + s->tickRemainder;
+        elapsed = units / 60;
+        s->tickRemainder = units % 60;
+        s->ticks = ticks;
+    }
+    return TextBox_Tick(s, key, frame, (int)elapsed, width, vx, vy, vw, vh, players);
 }
 
 /* Intersect with the UI viewport, including negative fly-in coordinates. */

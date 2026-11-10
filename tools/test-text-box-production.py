@@ -35,8 +35,8 @@ static struct { short font_charPixWidth[4],font_buttonPixWidth[4],font_puncPixWi
 typedef struct { struct {short x,y,w,h;} clip; short ofs[2]; int isbg; } DRAWENV;
 struct DB { DRAWENV drawEnv; struct { void *cursor,*guardEnd; } primMem; } db;
 struct PushBuffer { struct {int x,y,w,h;} rect; uint32_t *ptrOT; };
-struct GameTracker { struct DB *backBuffer; struct PushBuffer pushBuffer_UI; unsigned timer;int elapsedTimeMS,numPlyrCurrGame; } game;
-static struct { struct GameTracker *gGT; } state={&game},*sdata=&state;
+struct GameTracker { struct DB *backBuffer; struct PushBuffer pushBuffer_UI; unsigned timer,frameTimer_VsyncCallback;int elapsedTimeMS,numPlyrCurrGame; } game;
+static struct { struct GameTracker *gGT; unsigned frameCounter; } state={&game,0},*sdata=&state;
 static unsigned char arena[8192];
 static char events[32]; static int ne,drawWidth,drawX,drawFlags;
 static DRAWENV environments[2];static int envCount;
@@ -67,6 +67,12 @@ int main(void) {
     assert(ne==3&&!memcmp(events,"RGC",3));assert(envCount==2);
     assert(environments[0].clip.w==512&&environments[1].clip.x==136&&environments[1].clip.w==240);
     assert(game.pushBuffer_UI.ptrOT==&ot);
+    /* Pause freezes the gameplay timer, while UI frames and VBlanks continue. */
+    for(unsigned frame=1;frame<=180;frame++) {
+        state.frameCounter=frame;game.frameTimer_VsyncCallback=frame;
+        reset();DecalFont_DrawLineBox("St Patricks Day Hub World",136,80,240,FONT_BIG,0,TEXT_MARQUEE,0,&ot);
+    }
+    assert(game.timer==0&&DecalFont_LineBoxOffset("St Patricks Day Hub World",240,FONT_BIG,0)==60);
     reset();DecalFont_DrawLineBox("Acid Lake",256,80,240,FONT_BIG,JUSTIFY_CENTER,TEXT_MARQUEE,0,&ot);
     assert(envCount==0&&ne==1&&drawFlags==JUSTIFY_CENTER);
     reset();db.primMem.guardEnd=arena;DecalFont_DrawLineBox("St Patricks Day Hub World",136,80,240,FONT_BIG,0,TEXT_MARQUEE,0,&ot);

@@ -72,8 +72,8 @@ void DecalFont_DrawLineBox(const char *text, int x, int y, int width,
     /* Strlen width avoids GetLineWidth's legacy signed 16-bit narrowing. */
     textW = DecalFont_GetLineWidthStrlen((char *)text, len, font);
     if (mode == TEXT_MARQUEE && slot >= 0 && slot < TEXT_SLOT_COUNT)
-        ms = TextBox_Tick(&textBoxClocks[slot], TextBox_Key(text), gt->timer,
-            gt->elapsedTimeMS, width, pb->rect.x, pb->rect.y, pb->rect.w,
+        ms = TextBox_TickVBlank(&textBoxClocks[slot], TextBox_Key(text), sdata->frameCounter,
+            gt->frameTimer_VsyncCallback, width, pb->rect.x, pb->rect.y, pb->rect.w,
             pb->rect.h, gt->numPlyrCurrGame);
     if (textW <= width)
     {

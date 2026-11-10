@@ -21,6 +21,15 @@ int main(void)
     assert(TextBox_Offset(425,240,7125)==0);
     assert(TextBox_Offset(240,240,9000)==0);
     for (int fps=30;fps<=60;fps+=30) {
+        TextBoxClock paused={0}, playback={0};
+        for (unsigned frame=0;frame<=(unsigned)fps*3;frame++) {
+            unsigned ticks=frame*60/fps;
+            unsigned ms=TextBox_TickVBlank(&paused,1,frame,ticks,240,0,0,512,216,1);
+            assert(ms==frame*1000/fps);
+            assert(ms==TextBox_TickVBlank(&playback,1,frame,ticks,240,0,0,512,216,1));
+            assert(!memcmp(&paused,&playback,sizeof paused));
+        }
+        assert(TextBox_Offset(425,240,paused.ms)==60);
         TextBoxClock a={0}, replay={0};
         unsigned previous=0;
         tick(&a,0,0,1);tick(&replay,0,0,1);
