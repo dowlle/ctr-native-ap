@@ -80,6 +80,12 @@ The box goes on the ground under your kart, facing the way you face. The file is
 saved after every change, so a crash or closing the game does not lose your
 work.
 
+Finishing the race does not lose your boxes either. There is nothing left to
+save when a race ends: Retry, Restart, Change Level, Change Character and Quit
+all keep every box you placed, and the boxes come back when the track loads
+again. This needs the file to be written: on a full disk a save can fail and
+damage the file, so keep space free and keep a copy of the file you send us.
+
 Delete removes the newest box on the track you are on when no box is selected,
 even if that box came with the release. Select a box first if you want to
 delete a different one.
@@ -136,6 +142,9 @@ card. The next Time Trial on that track shows the best times and races your
 saved ghost. A new version of the track's files, or a different lap count,
 starts fresh. The track has no N. Tropy or Oxide ghost, and there is no Save
 Ghost option: the ghost of a run that beats your saved one is saved by itself.
+Many custom tracks have no lines for computer racers. On such a track a ghost
+disappears from the track and the map when its run ends, where on a normal
+track it drives on.
 
 If the top left says `CUSTOM TRACK NOT LOADED`, the
 track did not load. Go back to the menu and start it again.

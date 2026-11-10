@@ -61,6 +61,30 @@ track, so standing down removes that path. The normal race on the same track
 stays authorable. The gate is `AP_AuthorRaceAllowsAuthoring` in
 `ap/ap_author_ready.h`, tested by `tools/test-author-ready.c`.
 
+## When the race ends
+
+Nothing in author mode waits to be saved. Every drop, delete, move and nudge
+rewrites the file at once (see below), so ending a race, or any exit from it,
+changes nothing about what is on disk, and no exit asks about a placement. The
+one risk is a failing write itself: both writers reopen the file with `"w"`,
+so a write that fails part way (a full disk) can leave the file truncated, and
+only the custom-track writer reports an incomplete write
+(`was not written completely`; both report `could not write` when the file
+does not open). Retry, the pause
+menu's Restart, Change Level, Change Character and Quit all keep the file as it
+is. The markers are rebuilt from the in-memory table, which the file is read
+into once per run, when the track is loaded or restarted (`AP_Author_OnFrame`
+forgets its handles on the spawn pool's generation bump). So a restart can
+show boxes that a damaged file no longer holds; the next launch reads the file.
+After the finish line the keys stay live, and a drop there is filed like any
+other.
+
+A crash on Retry in a custom Time Trial while authoring (A4-27) was not author
+mode: the replayed ghost ran out of tape on a track without AI lines and was
+driven as a bot with no nav path. `GhostReplay_ThTick` now parks such a ghost
+(hidden, empty tick) when `BOTS_Driver_Convert` refuses it;
+`tools/test-ghost-tape-end.py` pins that wiring.
+
 ## Keys
 
 | Key | What it does |
