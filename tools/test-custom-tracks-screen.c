@@ -253,6 +253,7 @@ void CTR_MenuDrawScrollBar(int x, int y, int h, int total, int visible, int top,
 	CTR_Box_DrawClearBox(&thumb, NULL, 0, ot);
 }
 
+#include "text-box-layout-stub.h"
 #include "../game/230/MM_CustomImport.c"
 #include "../game/230/MM_CustomManager.c"
 #include "../game/230/MM_CustomTracks.c"

@@ -110,6 +110,7 @@ int MainRaceTrack_CustomLoadGhost(struct GhostHeader *dst)
     return 1;
 }
 char *RECTMENU_DrawTime(int time) { static char t[16]; snprintf(t, sizeof t, "T%d", time); return t; }
+#include "text-box-layout-stub.h"
 #include "../game/230/MM_CustomTrackSelect.c"
 
 /* What a finished store scan leaves behind. */

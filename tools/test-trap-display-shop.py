@@ -18,6 +18,7 @@ prelude = r'''
 #include "ap/ap_trap_display_logic.h"
 #include "ap/ap_text_clip.h"
 #include "ap/ap_wumpa_shop.h"
+#include "include/text_box.h"
 #define FONT_SMALL 0
 #define WHITE 10
 #define ORANGE 11
@@ -28,7 +29,6 @@ prelude = r'''
 #define AP_WSHOP_RIGHT_X 0x1d0
 static AP_WumpaShopConfig ctr_wumpa_shop;
 static struct { int trap_display; unsigned trap_display_salt; } ctr_cfg;
-static struct { int marqueeFrame; } ap_wshop;
 static int known = 1, text_known = 1, owner = 1, state = AP_WUMPA_SLOT_FOR_SALE;
 static unsigned real_flags = AP_ITEM_FLAG_TRAP;
 static char drawn[128];
@@ -50,6 +50,8 @@ static int DecalFont_GetLineWidthStrlen(char *s, int n, int font)
 { (void)font; return (n < 0 ? (int)strlen(s) : n) * 7; }
 static void DecalFont_DrawLine(char *s, int x, int y, int font, int color)
 { (void)y; (void)font; if (x == AP_WSHOP_NAME_X) { snprintf(drawn, sizeof drawn, "%s", s); drawn_color = color; } }
+void DecalFont_DrawLineBox(const char *s,int x,int y,int width,short font,int color,int mode,int slot,unsigned int *ot)
+{ (void)mode;(void)slot;(void)ot;assert(DecalFont_GetLineWidthStrlen((char *)s,-1,font)<=width);DecalFont_DrawLine((char *)s,x,y,font,color); }
 '''
 tests = r'''
 int main(void)
@@ -87,7 +89,6 @@ int main(void)
         ctr_wumpa_shop.slot[0][0].code = loc;
         for (selected = 0; selected <= 1; selected++)
         {
-            ap_wshop.marqueeFrame = 600; // would scroll a long real trap name
             AP_WShopDrawRow(0, 0, 0, selected);
             assert(!strcmp(drawn, flags & AP_ITEM_FLAG_PROGRESSION ? "PROGRESSION ITEM" : "FILLER ITEM"));
             assert(drawn_color == AP_ClassFontColor(flags));
