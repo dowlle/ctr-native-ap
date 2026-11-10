@@ -40,6 +40,9 @@ static int TextBox_Environments(uint32_t *ot, int x, int y, int w, int h, void *
     struct PushBuffer *pb = &gt->pushBuffer_UI;
     DRAWENV env;
     int l, t, r, b;
+    TextBox_Clip(x, y, w, h, pb->rect.w, pb->rect.h, &l, &t, &r, &b);
+    /* PSX inclusive endpoints wrap an empty clip at zero to 1023. */
+    if (r <= l || b <= t) return 0;
     unsigned char *p = db->primMem.cursor;
     if (p + 0x40 > (unsigned char *)db->primMem.guardEnd) return 0;
     for (u32 i = 0; i < sizeof env / 4; i++)
@@ -50,7 +53,6 @@ static int TextBox_Environments(uint32_t *ot, int x, int y, int w, int h, void *
     env.isbg = 0;
     SetDrawEnv((void *)p, &env);
     AddPrim(ot, p); /* LIFO: restore is rendered after the glyphs. */
-    TextBox_Clip(x, y, w, h, pb->rect.w, pb->rect.h, &l, &t, &r, &b);
     env.clip.x += l; env.clip.y += t;
     env.clip.w = r - l; env.clip.h = b - t;
     *clip = p + 0x40;

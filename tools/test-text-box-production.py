@@ -73,6 +73,10 @@ int main(void) {
         reset();DecalFont_DrawLineBox("St Patricks Day Hub World",136,80,240,FONT_BIG,0,TEXT_MARQUEE,0,&ot);
     }
     assert(game.timer==0&&DecalFont_LineBoxOffset("St Patricks Day Hub World",240,FONT_BIG,0)==60);
+    reset();DecalFont_DrawLineBox("St Patricks Day Hub World",-240,80,240,FONT_BIG,0,TEXT_MARQUEE,1,&ot);
+    assert(ne==0&&envCount==0); /* empty PSX scissor endpoints would wrap */
+    reset();DecalFont_DrawLineBox("St Patricks Day Hub World",136,-30,240,FONT_BIG,0,TEXT_MARQUEE,1,&ot);
+    assert(ne==0&&envCount==0);
     reset();DecalFont_DrawLineBox("Acid Lake",256,80,240,FONT_BIG,JUSTIFY_CENTER,TEXT_MARQUEE,0,&ot);
     assert(envCount==0&&ne==1&&drawFlags==JUSTIFY_CENTER);
     reset();db.primMem.guardEnd=arena;DecalFont_DrawLineBox("St Patricks Day Hub World",136,80,240,FONT_BIG,0,TEXT_MARQUEE,0,&ot);
