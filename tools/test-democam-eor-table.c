@@ -40,9 +40,28 @@ static void expect(const char *name, int got, int want)
 		printf("PASS %s\n", name);
 }
 
+// A ring of checkpoints laid out like struct CheckpointNode (12 bytes: pos,
+// distToFinish, then forward / left / backward / right links at +8).
+#define NODE 12
+static unsigned char nodes[256 * NODE];
+
+static void ring(int n)
+{
+	int i;
+	memset(nodes, 0, sizeof nodes);
+	for (i = 0; i < n; i++)
+	{
+		nodes[i * NODE + 8] = (unsigned char)((i + 1) % n);  // forward
+		nodes[i * NODE + 9] = 0xFF;                          // left
+		nodes[i * NODE + 10] = (unsigned char)((i + n - 1) % n); // backward
+		nodes[i * NODE + 11] = 0xFF;                         // right
+	}
+}
+
 static int usable(int count, const void *const *entries, int restarts)
 {
-	return AP_DemoCam_EorTableUsable(count, entries, EOR, restarts, kSizes, 0x12);
+	ring(restarts);
+	return AP_DemoCam_EorTableUsable(count, entries, EOR, restarts, nodes + 8, NODE, kSizes, 0x12);
 }
 
 int main(void)
@@ -67,6 +86,10 @@ int main(void)
 	static short mode17[] = {2, 3, 4, 1, 2, 3, 7, 17};           // zero-filled last size slot, not a mode
 	static short huge[] = {1000, 0, 0};
 	static short over[] = {65, 0, 4, 1, 2, 3};                   // one past the cap
+	static short shadowed[] = {2, 5, 4, 100, 200, 300, 5, 0};    // later chase entry on the same checkpoint wins
+	static short notShadowed[] = {2, 5, 0, 5, 4, 100, 200, 300}; // later shot wins
+	static short neighbourShadow[] = {2, 5, 4, 1, 2, 3, 6, 0};   // checkpoint 6 links back to 5 and forward to 7: 4 still picks the shot
+	static short fullShadow[] = {4, 5, 4, 1, 2, 3, 4, 0, 5, 0, 6, 0}; // chase entries cover 4, 5, 6 after the shot
 	const void *entries[8];
 	int count, idx, hole;
 
@@ -83,7 +106,8 @@ int main(void)
 	expect("count 3 is enough", usable(3, entries, 30), 1);
 	expect("NULL entry array is refused", usable(4, 0, 30), 0);
 	expect("no restart points is refused", usable(4, entries, 0), 0);
-	expect("no size table is refused", AP_DemoCam_EorTableUsable(4, entries, EOR, 30, 0, 0x12), 0);
+	expect("no size table is refused", AP_DemoCam_EorTableUsable(4, entries, EOR, 30, nodes + 8, NODE, 0, 0x12), 0);
+	expect("no restart point links is refused", AP_DemoCam_EorTableUsable(4, entries, EOR, 30, 0, NODE, kSizes, 0x12), 0);
 
 	// 2. Same rule as CustomTrackPolicy_St1EntryPresent, every count/index/hole.
 	{
@@ -98,7 +122,8 @@ int main(void)
 					entries[2] = hole ? 0 : good;
 					entries[5] = entries[6] = entries[7] = good;
 					policy = CustomTrackPolicy_St1EntryPresent(count, idx, entries);
-					ours = AP_DemoCam_EorTableUsable(count, entries, idx, 30, kSizes, 0x12);
+					ring(30);
+					ours = AP_DemoCam_EorTableUsable(count, entries, idx, 30, nodes + 8, NODE, kSizes, 0x12);
 					if (policy != ours)
 					{
 						printf("  mismatch count=%d index=%d hole=%d policy=%d ours=%d\n", count, idx, hole, policy, ours);
@@ -134,6 +159,14 @@ int main(void)
 	expect("camera count far above the cap is refused", usable(4, entries, 30), 0);
 	entries[EOR] = over;
 	expect("camera count one above the cap (65) is refused", usable(4, entries, 30), 0);
+	entries[EOR] = shadowed;
+	expect("shot hidden by a later chase entry on the same checkpoint is refused", usable(4, entries, 30), 0);
+	entries[EOR] = notShadowed;
+	expect("shot listed after a chase entry on the same checkpoint is accepted", usable(4, entries, 30), 1);
+	entries[EOR] = neighbourShadow;
+	expect("shot still picked on a checkpoint the later chase entry does not reach", usable(4, entries, 30), 1);
+	entries[EOR] = fullShadow;
+	expect("shot hidden on every checkpoint it covers is refused", usable(4, entries, 30), 0);
 	{
 		int m, shots = 0;
 		for (m = 0; m <= 17; m++)

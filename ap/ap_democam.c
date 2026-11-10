@@ -224,7 +224,8 @@ static int AP_DemoCamRaceActive(struct GameTracker *gGT)
 // AP_DemoCam_EorTableUsable (ap_democam_logic.h): the entry must be present,
 // not just the count long enough, because a custom LEV can carry count >= 3
 // with the ST1_CAMERA_EOR slot NULL, and the table must hold at least one
-// camera CAM_ThTick can step over.
+// camera CAM_ThTick can step over and would actually pick as a cinematic
+// shot on some checkpoint.
 static int AP_DemoCamEorTableUsable(struct GameTracker *gGT)
 {
 	struct SpawnType1 *st1;
@@ -236,9 +237,14 @@ static int AP_DemoCamEorTableUsable(struct GameTracker *gGT)
 	if (gGT->numPlyrCurrGame >= 3)
 		return 0;
 
+	if (gGT->level1->ptr_restart_points == 0)
+		return 0;
+
 	st1 = gGT->level1->ptrSpawnType1;
 	return AP_DemoCam_EorTableUsable(st1->count, (const void *const *)ST1_GETPOINTERS(st1), ST1_CAMERA_EOR,
-	                                 gGT->level1->cnt_restart_points, data.EndOfRace_Camera_Size,
+	                                 gGT->level1->cnt_restart_points,
+	                                 &gGT->level1->ptr_restart_points[0].nextIndex_forward,
+	                                 (int)sizeof(struct CheckpointNode), data.EndOfRace_Camera_Size,
 	                                 (int)(sizeof data.EndOfRace_Camera_Size / sizeof data.EndOfRace_Camera_Size[0]));
 }
 
