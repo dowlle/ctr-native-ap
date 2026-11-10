@@ -11,7 +11,7 @@ held = net[net.index('if (AP_ArcadeHoldsRoom())'):]
 held = held[:held.index('}') + 1]
 assert 'AP_FeedLinesReceiptTick(&ap_feed);' in src[src.index('void AP_FeedEndDrain'):]
 surface = src[src.index('static void AP_FeedTickAndDraw'):]
-surface = surface[surface.index('if (playableRace == 1)'):]
+surface = surface[surface.index('if (playableRace != 0)'):]
 begin = surface.index('{')
 depth, end = 1, begin + 1
 while depth:
@@ -113,6 +113,10 @@ int main(void) {
     race_surface(1);
     assert(ap_feed.vcount==1 && ap_feed.qcount==0 && !strcmp(ap_feed.vis[0].text,"KEEP"));
     assert(reset_count==5);
+    AP_FeedTrapLine(13,0,3,AP_FEED_TRAP_ARMED,"FORCED USF ARMED",0);
+    assert(ap_feed.qcount==1);
+    race_surface(2); // results can be the first non-hub surface drawn
+    assert(ap_feed.vcount==1 && ap_feed.qcount==0 && reset_count==5);
     puts("production receipt flags, replay, option off, sender and race/hub trap entry points PASS");
 }
 '''

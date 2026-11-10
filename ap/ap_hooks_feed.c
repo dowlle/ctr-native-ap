@@ -330,7 +330,7 @@ void AP_FeedEndDrain(int drainedThisFrame)
 // most once per frame (see the block comment above).
 static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 {
-	if (playableRace == 1)
+	if (playableRace != 0)
 	{
 		int armedMoved = AP_FeedLinesRetireArmed(&ap_feed);
 		if (armedMoved >= 0)
