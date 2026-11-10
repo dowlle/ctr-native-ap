@@ -41,6 +41,12 @@ expected = dict(retail=[dict(id=i, name=n, location=L[n + ": Trophy Race"], ctr=
                 # review); tools/sync-content-registry.py rewrites it.
                 named_blocks=[dict(key=t.track_key, block=t.block_index, name=t.ap_name)
                               for t in sorted(cp.destinations.NAMED_TRACKS, key=lambda t: t.track_key)])
+expected["sanity"] = cp.sanity.CATALOG
+expected["sanity_exclusions"] = cp.sanity.crate_exclusions.EXCLUSIONS
+expected["sanity_locations"] = {t: [cp.sanity.code(dict(origin="retail", display_name=t), f, 1) for f in range(3)] for t in cp.sanity.BOX_TRACKS}
+expected["sanity_locations"]["Cortex Vortex"] = [35026100, 35026180, 35026200]
+expected["sanity_locations"].update({t.ap_name: [cp.sanity.code(dict(origin="custom", named_block=t.block_index), f, 1)
+                                                   for f in range(3)] for t in cp.destinations.NAMED_TRACKS})
 # Per-track check families (#133 PR 3b): rung, Wumpa and letter codes per
 # retail track and generic slot, and the one global Wumpa check.
 RUNGS = [cp.RUNG_SUFFIX[k] for k in cp.podium.SLOT_ORDER]
@@ -2357,6 +2363,30 @@ with fifty_spots(custom=True):
             forged = copy.deepcopy(wire)
             forged["content_plan"]["required_features"].remove("box_count_v1")
             cases.append((f"box-count-{count}-feature", forged, False))
+for count, mode in ((5, "off"), (50, "both")):
+    wire = make_world(dict(profile_options(), itemboxsanity=count, wumpasanity=mode), seed=3).fill_slot_data()
+    assert cp.validate(wire["content_plan"])
+    cases.append((f"sanity-{count}-{mode}", wire, True))
+    for mutation in ("ordinal", "counts", "hash", "route", "feature"):
+        bad = copy.deepcopy(wire)
+        plan = bad["content_plan"]
+        if mutation == "ordinal":
+            plan["sanity"]["tracks"][0]["weapon_crate"][0] = 81
+        elif mutation == "counts":
+            plan["sanity"]["tracks"][0]["counts"][0] = True
+        elif mutation == "hash":
+            plan["sanity"]["tracks"][0]["lev_sha256"] = "0" * 64
+        elif mutation == "route":
+            next(c for c in plan["checks"] if c["kind"] == "weapon_crate")["routes"][0]["award"] = "box"
+        else:
+            plan["required_features"].remove("itemboxsanity_v1")
+        try:
+            cp.validate(plan)
+            expected_admit = True
+        except Exception:
+            expected_admit = False
+        assert not expected_admit, mutation
+        cases.append((f"sanity-{count}-{mode}-{mutation}", bad, False))
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()

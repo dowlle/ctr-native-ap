@@ -503,7 +503,8 @@ int AP_PadState(int physLevelID, int destLevelID)
         // is left, then Done (AP_PadReplayable keeps the race open).
         if(pad->cup) {
             int bits[6+AP_CONTENT_CUP_TRACK_CHECKS];
-            return AP_PadUncollectedGlowBits(physLevelID,bits,6+AP_CONTENT_CUP_TRACK_CHECKS) ? 2 : 5;
+            return (AP_PadUncollectedGlowBits(physLevelID,bits,6+AP_CONTENT_CUP_TRACK_CHECKS) ||
+                    AP_SanityPadPending(physLevelID,0) || AP_SanityPadPending(physLevelID,1) || AP_SanityPadPending(physLevelID,2)) ? 2 : 5;
         }
 		// Track modes (#133 PR 3), the states of ap_pad_state.h.
 		return AP_ContentTrackPadState(pad);
@@ -523,7 +524,7 @@ static int AP_PadLogicLook(int physLevelID, int look)
 {
 	int bits[AP_PAD_DISPLAY_BITS_MAX];
 	int64_t codes[AP_PAD_DISPLAY_BITS_MAX];
-	int n, i, in = 0, unknown = 0;
+	int n, i, family, in = 0, unknown = 0;
 
 	if (look != AP_PAD_LOOK_OPEN && look != AP_PAD_LOOK_STAGE2_OPEN)
 		return look;
@@ -535,6 +536,21 @@ static int AP_PadLogicLook(int physLevelID, int look)
 		int st = AP_LocationLogicState((long long)codes[i]);
 		if (st == AP_PAD_LOGIC_IN) in++;
 		else if (st == AP_PAD_LOGIC_UNKNOWN) unknown++;
+	}
+	// Ordinary pickup checks affect the colour but deliberately have no glow
+	// entry. Count only their open codes, using the same exported logic.
+	for (family = 0; family < 3; ++family)
+	{
+		int count = ap_content_plan_sanity_pad(physLevelID, family, codes, AP_PAD_DISPLAY_BITS_MAX);
+		for (i = 0; i < count; ++i)
+		{
+			int st;
+			if (AP_ContentCodeChecked(codes[i])) continue;
+			++n;
+			st = AP_LocationLogicState((long long)codes[i]);
+			if (st == AP_PAD_LOGIC_IN) in++;
+			else if (st == AP_PAD_LOGIC_UNKNOWN) unknown++;
+		}
 	}
 	return AP_PadLookByLogic(look, n, in, unknown);
 }
@@ -562,6 +578,8 @@ int AP_ContentPadPlainLeft(const ctr_content_pad *pad)
 	int host;
 	if (!pad || !pad->occupied || pad->crystal || pad->cup)
 		return 0;
+	if (AP_SanityPadPending(pad->physical,0) || AP_SanityPadPending(pad->physical,1) || AP_SanityPadPending(pad->physical,2))
+		return 1;
 	if (fam->wumpa == 1 && pad->wumpa_modes && fam->wumpa_global > 0 && !AP_ContentCodeChecked(fam->wumpa_global))
 		return 1;
 	host = ap_content_pad_host(pad);

@@ -136,6 +136,20 @@ int main(void)
 	       "unloadable bytes refuse even an unstated count");
 	expect(!AP_ContentWeaponCratesHold(0, NULL, why, sizeof why), "no report refuses");
 
+	{
+		ctr_content_package pkg = {0};
+		r = full_track(); r.measured.looseWumpa = 3;
+		pkg.fruit_crates = 2; pkg.loose_fruit = 3;
+		expect(AP_ContentSanityCountsHold(&pkg, &r, why, sizeof why), "measured sanity counts hold");
+		pkg.loose_fruit = 4;
+		expect(!AP_ContentSanityCountsHold(&pkg, &r, why, sizeof why), "wrong loose fruit count refuses");
+		pkg.loose_fruit = -1; pkg.fruit_crates = -1;
+		expect(AP_ContentSanityCountsHold(&pkg, &r, NULL, 0), "unstated sanity counts hold");
+		pkg.fruit_crates = -2;
+		expect(!AP_ContentSanityCountsHold(&pkg, &r, why, sizeof why), "invalid negative sanity count refuses");
+		r.loadable = 0;
+		expect(!AP_ContentSanityCountsHold(&pkg, &r, why, sizeof why), "sanity counts need loadable bytes");
+	}
 	printf("%d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

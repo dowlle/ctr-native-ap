@@ -914,7 +914,7 @@ extern "C" int CustomPackage_StoreDescriptor(const char *assets, const char *pin
             {"arcade", CustomContentVerify_ArcadeRaceReason(&report, nullptr, 0) != 0},
             {"relic", !needsLaps && entry.local.relic != 0}, {"ctr_tokens", entry.local.ctrChallenge != 0},
             {"wumpa", wumpa}, {"super_turbo_pads", m.superTurboPads > 0},
-            {"weapon_crates", m.weaponCrates}, {"ai_nav", m.navPaths > 0}};
+            {"weapon_crates", m.weaponCrates}, {"fruit_crates", m.fruitCrates}, {"loose_fruit", m.looseWumpa}, {"ai_nav", m.navPaths > 0}};
         if (m.checkpoints >= 1 && m.checkpoints <= 255) caps["checkpoints"] = m.checkpoints;
         nlohmann::json files = nlohmann::json::array({
             {{"role", "lev"}, {"sha256", lev->sha256}, {"bytes", lev->bytes}, {"format", "ctr-lev"}, {"format_version", 1}},

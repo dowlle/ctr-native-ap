@@ -31,10 +31,11 @@ extern "C" {
 // includes hint-only checks and may exceed that budget; generated all-family
 // and wide-pool graphs are verified against these tables by native roundtrip.
 // A block that does not fit is refused as a whole, never partially evaluated.
-#define AP_WL_MAX_NODES    16384
-#define AP_WL_MAX_KIDS     16384
+// Sanity rules in wide cup rooms can exceed 16,384 nodes and child indices.
+#define AP_WL_MAX_NODES    65536
+#define AP_WL_MAX_KIDS     65536
 #define AP_WL_MAX_IDS      16384
-#define AP_WL_MAX_CHECKS   4096 // full admitted content-plan check bound, including hint-only checks
+#define AP_WL_MAX_CHECKS   16384 // content-plan check bound, including sanity hint-only checks
 #define AP_WL_MAX_REGIONS  1024
 #define AP_WL_MAX_FAMILIES 256
 #define AP_WL_MAX_START    512 // distinct precollected progression ids

@@ -97,6 +97,35 @@ int main(int argc, char **argv) {
         }
         return 0;
     }
+    {
+        J sanity;
+        std::ifstream("tools/fixtures/content-plan/sanity.json") >> sanity;
+        expect(parse(sanity) && bind_room(sanity), "sanity room parses and binds");
+        int total = 0;
+        for (const auto &row : sanity["content_plan"]["sanity"]["tracks"]) {
+            const auto *record = ap_content_plan_sanity(row["track_id"].get<std::string>().c_str());
+            expect(record != nullptr, "sanity track is retained");
+            if (record) for (int f = 0; f < 3; ++f) {
+                expect(record->counts[f] == row["counts"][f], "sanity counts retained");
+                for (const auto &ordinal : row[f == 0 ? "weapon_crate" : f == 1 ? "wumpa_crate" : "wumpa_fruit"])
+                    expect(record->locations[f][ordinal.get<int>() - 1] > 0, "sanity ordinal has frozen code");
+            }
+        }
+        for (int pad = 0; pad < 27; ++pad) total += ap_content_plan_sanity_pad(pad, 0, nullptr, 320);
+        expect(total > 0, "sanity checks contribute to pad counts");
+        auto bad = sanity;
+        bad["content_plan"]["sanity"]["tracks"][0]["weapon_crate"][0] = 81;
+        refuse(bad, "sanity out-of-budget ordinal refuses");
+        bad = sanity; bad["content_plan"]["sanity"]["tracks"][0]["counts"][0] = true;
+        refuse(bad, "sanity boolean count refuses");
+        bad = sanity; bad["content_plan"]["sanity"]["tracks"][0]["lev_sha256"] = std::string(64, '0');
+        refuse(bad, "sanity LEV mismatch refuses");
+        bad = sanity; bad["content_plan"].erase("sanity");
+        refuse(bad, "sanity feature without record refuses");
+        bad = sanity;
+        for (auto &check : bad["content_plan"]["checks"]) if (check["kind"] == "weapon_crate") { check["routes"][0]["award"] = "box"; break; }
+        refuse(bad, "sanity forged route refuses");
+    }
     J base, extras;
     std::ifstream("tools/fixtures/content-plan/baseline.json") >> base;
     std::ifstream("tools/fixtures/content-plan/starts-extras.json") >> extras;

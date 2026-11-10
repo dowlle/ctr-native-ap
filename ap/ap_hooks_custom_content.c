@@ -194,6 +194,7 @@ static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct Custom
 	if (!AP_ContentCapabilitiesHold(pkg->capabilities, &report, why, sizeof why) ||
 	    !AP_ContentSuperTurboPadsHold(pkg->super_turbo_pads, &report, why, sizeof why) ||
 	    !AP_ContentWeaponCratesHold(pkg->weapon_crates, &report, why, sizeof why) ||
+	    !AP_ContentSanityCountsHold(pkg, &report, why, sizeof why) ||
 	    !AP_ContentBossVenueFactsHold(pkg->checkpoints, pkg->ai_nav, &report, why, sizeof why))
 	{
 		status->state = CTR_CT_MANAGER_UNSUPPORTED;

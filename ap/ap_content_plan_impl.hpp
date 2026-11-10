@@ -43,6 +43,9 @@ struct State {
     ctr_content_capability capability{};
     std::map<int64_t, int> boosts, starts;
     std::set<int64_t> checks;
+    std::map<std::string, ctr_content_sanity> sanity;
+    std::map<int, std::array<std::set<int64_t>, 3>> sanity_pads;
+    std::array<std::string, 6> sanity_boss_tracks;
     // Global check families (#133 PR 4d): the `global_checks` record.
     bool itemsanity = false, hit = false;
     // Item Box Locations (#133 PR 4e): the `item_boxes` record, and the box
@@ -225,6 +228,15 @@ static void package_record(const J &pkg, ctr_content_package &target) {
     if (mode_caps.is_object() && mode_caps.contains("weapon_crates")) {
         target.weapon_crates = number(mode_caps["weapon_crates"], 0, AP_CONTENT_WEAPON_CRATES_MAX);
         mode_caps.erase("weapon_crates");
+    }
+    target.fruit_crates = target.loose_fruit = AP_CONTENT_WEAPON_CRATES_UNSTATED;
+    if (mode_caps.is_object() && mode_caps.contains("fruit_crates")) {
+        target.fruit_crates = number(mode_caps["fruit_crates"], 0, AP_CONTENT_WEAPON_CRATES_MAX);
+        mode_caps.erase("fruit_crates");
+    }
+    if (mode_caps.is_object() && mode_caps.contains("loose_fruit")) {
+        target.loose_fruit = number(mode_caps["loose_fruit"], 0, AP_CONTENT_WEAPON_CRATES_MAX);
+        mode_caps.erase("loose_fruit");
     }
     // `checkpoints` and `ai_nav` (#133 PR 6b) are optional: the restart point
     // count and whether the LEV has AI paths, measured and compared on load.
@@ -782,6 +794,7 @@ static Table table(const J &rows, size_t maximum) {
     }
     return result;
 }
+#include "ap_content_sanity_impl.hpp"
 static void validate(const J &p, State &out) {
     size_t nodes = 0, bytes = 0;
     budget(p, 0, nodes, bytes);
@@ -795,6 +808,7 @@ static void validate(const J &p, State &out) {
     const bool has_capability = p.is_object() && p.contains("capability");
     const bool has_global = p.is_object() && p.contains("global_checks");
     const bool has_boxes = p.is_object() && p.contains("item_boxes");
+    const bool has_sanity = p.is_object() && p.contains("sanity");
     const bool has_bosses = p.is_object() && p.contains("bosses"); // #133 PR 6
     // Row 5: `adventure_structure` (ctr_first) and the `wumpa_shop` record.
     const bool has_structure = p.is_object() && p.contains("adventure_structure");
@@ -811,7 +825,7 @@ static void validate(const J &p, State &out) {
     need(p.is_object() && p.size() == 11u + (has_families ? 1u : 0u) + (has_packs ? 1u : 0u) + (has_racers ? 1u : 0u) +
                                          (has_capability ? 1u : 0u) + (has_global ? 1u : 0u) + (has_boxes ? 1u : 0u) +
                                          (has_bosses ? 1u : 0u) + (has_pad_requirements ? 1u : 0u) + (has_fixed ? 1u : 0u) +
-                                         (has_structure ? 1u : 0u) + (has_shop ? 1u : 0u) + (has_pad_client ? 1u : 0u),
+                                         (has_structure ? 1u : 0u) + (has_shop ? 1u : 0u) + (has_pad_client ? 1u : 0u) + (has_sanity ? 1u : 0u),
          "unsupported or incomplete record fields");
     if (has_structure) need(p["adventure_structure"] == "ctr_first", "adventure_structure must be ctr_first when present");
     out.ctr_first = has_structure;
@@ -998,7 +1012,7 @@ static void validate(const J &p, State &out) {
                 }
         }
     }
-    need(p["checks"].is_array() && p["checks"].size()<=4096,"check array bounds");
+    need(p["checks"].is_array() && p["checks"].size()<=16384,"check array bounds");
     bool plan_laps = false; // #344: lap checks exist for every raced track or none
     for(const auto &check:p["checks"]) { pickups |= check.at("kind")=="crystal_pickup"; plan_laps |= check.at("kind")=="lap"; }
     J features=J::array({"content_plan_v1"});
@@ -1030,6 +1044,11 @@ static void validate(const J &p, State &out) {
     if(has_structure)features.push_back("ctr_first_v1");
     if(out.bosses.extended)features.push_back("boss_opponents_v1");
     if(out.bosses.final_chaos)features.push_back("final_chaos_v1");
+    if(has_sanity) {
+        need(p["sanity"].is_object() && p["sanity"].contains("itemboxsanity") && p["sanity"].contains("wumpasanity"), "sanity settings missing");
+        if(number(p["sanity"]["itemboxsanity"],0,50))features.push_back("itemboxsanity_v1");
+        if(number(p["sanity"]["wumpasanity"],0,3))features.push_back("wumpasanity_v1");
+    }
     if(has_shop)features.push_back("wumpa_shop_v1");
     if(has_shop && p["wumpa_shop"].contains("logic_scale"))features.push_back("wumpa_shop_key_tiers_v1");
     if(wumpa_goal)features.push_back("wumpa_goal_v1");
@@ -2307,6 +2326,7 @@ static void validate(const J &p, State &out) {
         }
         need(income, "the Wumpa Shop and the Wumpa goal need a retail or Wumpa-capable custom race or cup leg to bank fruit");
     }
+    if (has_sanity) sanity_checks(p, out, registry, expected_checks);
     // Two checks never share a name, so a room cannot show two identical rows.
     std::set<std::string> check_names;
     for (const auto &pair : expected_checks)
@@ -2375,7 +2395,8 @@ static void validate(const J &p, State &out) {
         // An Item Box check's stat term (#133 PR 4e): true only, only on a box
         // check, only with Progressive Stats on. Read as given, like `boost`.
         if (bare.is_object() && bare.contains("stats")) {
-            need(bare["stats"] == true && out.capability.stats_mode && bare.contains("kind") && bare["kind"] == "box",
+            need(bare["stats"] == true && out.capability.stats_mode && bare.contains("kind") &&
+                 (bare["kind"] == "box" || bare["kind"] == "weapon_crate" || bare["kind"] == "wumpa_crate" || bare["kind"] == "wumpa_fruit"),
                  "a check stat term must be true, on an Item Box check, with Progressive Stats on");
             out.stat_checks.insert(id);
             bare.erase("stats");
@@ -2552,7 +2573,7 @@ static void validate(const J &p, State &out) {
         if (out.racers) need(locks == std::min(out.requested_locks, eligible), "racer lock count is not min(requested_locks, eligible pads)");
     }
     for (int i = 9; i <= 13; ++i) if (out.items[i].base) { gems.push_back(35010000 + i); out.goal_mask |= 1 << (i - 9); }
-    const int filler = number(items["filler_count"], 0, 4096);
+    const int filler = number(items["filler_count"], 0, 16384);
     // Boss garages (#133 PR 6): the Oxide goal check holds filler only (issue
     // #27), so a plan whose goal is an Oxide challenge keeps one filler slot.
     need(!out.bosses.present || (out.bosses.oxide_goal != 1 && out.bosses.oxide_goal != 2) || filler >= 1,
@@ -2566,7 +2587,7 @@ static void validate(const J &p, State &out) {
              filler + pack_supply >= (int64_t)AP_WUMPA_SHOP_HUBS * out.wumpa.shop_slots + reserve,
              "wumpa_shop excluded: not enough non-progression copies for the shop slots");
     }
-    need(number(items["coded_checks"], 0, 4096) == (int)out.checks.size() && items["locked_checks"] == locked_checks && remaining + filler + locked_checks == (int64_t)out.checks.size() && number(items["trap_count"], 0, 4096) <= filler, "item/check capacity mismatch");
+    need(number(items["coded_checks"], 0, 16384) == (int)out.checks.size() && items["locked_checks"] == locked_checks && remaining + filler + locked_checks == (int64_t)out.checks.size() && number(items["trap_count"], 0, 16384) <= filler, "item/check capacity mismatch");
     need(!out.bosses.gauntlet || entries.count("entry/gem_cup:4"), "bosses.gauntlet needs the Purple Gem Cup");
     // What the record fixes must exist: garages, all five Gem Cups, and the Final
     // Challenge goal with the optional first race.
@@ -3073,6 +3094,22 @@ extern "C" const ctr_content_pad *ap_content_plan_pad(int physical) {
     return nullptr;
 }
 extern "C" int ap_content_plan_cortex(void) { return ap_content_plan_active() && content_plan::state.cortex; }
+extern "C" const ctr_content_sanity *ap_content_plan_sanity(const char *track_id) {
+    if (!ap_content_plan_active() || !track_id) return nullptr;
+    const auto it = content_plan::state.sanity.find(track_id);
+    return it == content_plan::state.sanity.end() ? nullptr : &it->second;
+}
+extern "C" const ctr_content_sanity *ap_content_plan_sanity_boss(int boss) {
+    return boss >= 0 && boss < 6 ? ap_content_plan_sanity(content_plan::state.sanity_boss_tracks[boss].c_str()) : nullptr;
+}
+extern "C" int ap_content_plan_sanity_pad(int physical, int family, int64_t *out, int capacity) {
+    if (!ap_content_plan_active() || family < 0 || family > 2 || capacity < 0) return 0;
+    const auto it = content_plan::state.sanity_pads.find(physical);
+    if (it == content_plan::state.sanity_pads.end()) return 0;
+    int n = 0;
+    for (int64_t code : it->second[family]) { if (n >= capacity) break; if (out) out[n] = code; ++n; }
+    return n;
+}
 extern "C" const ctr_content_package *ap_content_plan_package(int index) {
     return ap_content_plan_active() && index >= 0 && index < content_plan::state.package_count ? &content_plan::state.packages[index] : nullptr;
 }

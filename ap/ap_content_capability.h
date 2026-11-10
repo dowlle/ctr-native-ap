@@ -148,6 +148,22 @@ static inline int AP_ContentWeaponCratesHold(int stated, const struct CustomCont
 	return 0;
 }
 
+static inline int AP_ContentSanityCountsHold(const ctr_content_package *pkg, const struct CustomContentVerification *report,
+                                              char *why, size_t whySize)
+{
+	if (why && whySize) why[0] = '\0';
+	if (!pkg || !report || !report->loadable) {
+		if (why && whySize) snprintf(why, whySize, "the track files failed the structural check");
+		return 0;
+	}
+	if ((pkg->fruit_crates != AP_CONTENT_WEAPON_CRATES_UNSTATED && (pkg->fruit_crates < 0 || (unsigned long)pkg->fruit_crates != report->measured.fruitCrates)) ||
+	    (pkg->loose_fruit != AP_CONTENT_WEAPON_CRATES_UNSTATED && (pkg->loose_fruit < 0 || (unsigned long)pkg->loose_fruit != report->measured.looseWumpa))) {
+		if (why && whySize) snprintf(why, whySize, "sanity pickup counts disagree with the track files");
+		return 0;
+	}
+	return 1;
+}
+
 // Optional measured `checkpoints` and `ai_nav` (#133 PR 6b): the restart
 // point count and whether the LEV has AI navigation paths, which certify the
 // track as a boss venue. A stated value the bytes disagree with refuses the

@@ -55,6 +55,9 @@ int RB_Fruit_ThCollide(struct Thread *fruitTh, struct Thread *driverTh, void *fu
 	}
 
 	driver = driverTh->object;
+#ifdef CTR_AP
+	if (!AP_SanityPickup(fruitInst, driver)) return 0;
+#endif
 	if (modelID == DYNAMIC_PLAYER)
 	{
 		pb = &sdata->gGT->pushBuffer[driver->driverID];

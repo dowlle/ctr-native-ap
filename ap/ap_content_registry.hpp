@@ -6320,6 +6320,2142 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       "block": 84,
       "name": "Yoshi Circuit Legacy"
     }
-  ]
+  ],
+  "sanity": {
+    "be03d2879d70080a17221a681db3b2ac7289d32a5430a8e2249d94a8f6145bc8": {
+      "lev_sha256": "be03d2879d70080a17221a681db3b2ac7289d32a5430a8e2249d94a8f6145bc8",
+      "counts": [
+        16,
+        2,
+        0
+      ],
+      "needs": {}
+    },
+    "retail:1": {
+      "lev_sha256": "be03d2879d70080a17221a681db3b2ac7289d32a5430a8e2249d94a8f6145bc8",
+      "counts": [
+        16,
+        2,
+        0
+      ],
+      "needs": {}
+    },
+    "cc7b8f15b9432772c4d9c5132186d59c9c9e18ac25b6c38afcdb69739693859b": {
+      "lev_sha256": "cc7b8f15b9432772c4d9c5132186d59c9c9e18ac25b6c38afcdb69739693859b",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "5be5bfd1a89be3d43ec7c5d607d61c91ca9afdc04ec5cd172fc185608e906dce": {
+      "lev_sha256": "5be5bfd1a89be3d43ec7c5d607d61c91ca9afdc04ec5cd172fc185608e906dce",
+      "counts": [
+        20,
+        6,
+        0
+      ],
+      "needs": {}
+    },
+    "retail:8": {
+      "lev_sha256": "5be5bfd1a89be3d43ec7c5d607d61c91ca9afdc04ec5cd172fc185608e906dce",
+      "counts": [
+        20,
+        6,
+        0
+      ],
+      "needs": {}
+    },
+    "e1ba6c76570864f04daf8d345f7cd2664e037e58ee2da43733c28a1b4eb6d509": {
+      "lev_sha256": "e1ba6c76570864f04daf8d345f7cd2664e037e58ee2da43733c28a1b4eb6d509",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "d68c894b2092e259bf9aa179e0602d78350a1b376af1bc90a62ebd61bebf6cef": {
+      "lev_sha256": "d68c894b2092e259bf9aa179e0602d78350a1b376af1bc90a62ebd61bebf6cef",
+      "counts": [
+        17,
+        4,
+        0
+      ],
+      "needs": {}
+    },
+    "retail:11": {
+      "lev_sha256": "d68c894b2092e259bf9aa179e0602d78350a1b376af1bc90a62ebd61bebf6cef",
+      "counts": [
+        17,
+        4,
+        0
+      ],
+      "needs": {}
+    },
+    "7347cd50591736199bca22dceca9d32af82fde9fd079cc7b61c4a401a8cb7b3a": {
+      "lev_sha256": "7347cd50591736199bca22dceca9d32af82fde9fd079cc7b61c4a401a8cb7b3a",
+      "counts": [
+        24,
+        4,
+        0
+      ],
+      "needs": {
+        "wumpa_crate": {
+          "4": {
+            "needs": "usf",
+            "reviewed": false
+          }
+        }
+      }
+    },
+    "retail:7": {
+      "lev_sha256": "7347cd50591736199bca22dceca9d32af82fde9fd079cc7b61c4a401a8cb7b3a",
+      "counts": [
+        24,
+        4,
+        0
+      ],
+      "needs": {
+        "wumpa_crate": {
+          "4": {
+            "needs": "usf",
+            "reviewed": false
+          }
+        }
+      }
+    },
+    "072ad55f12314a1c677b6c0b2a0ce90afaa548fa20c3b657def1b4e9e239db19": {
+      "lev_sha256": "072ad55f12314a1c677b6c0b2a0ce90afaa548fa20c3b657def1b4e9e239db19",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "3e4c33ae6ca595bb642da2a1e9fbe9cbe4e27dd8a578dd4d833af2c39c58cd3d": {
+      "lev_sha256": "3e4c33ae6ca595bb642da2a1e9fbe9cbe4e27dd8a578dd4d833af2c39c58cd3d",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "7ab8d7971206c4df35140394eddc06ad488957ad16e7fd5b5338664497cea684": {
+      "lev_sha256": "7ab8d7971206c4df35140394eddc06ad488957ad16e7fd5b5338664497cea684",
+      "counts": [
+        24,
+        4,
+        0
+      ],
+      "needs": {}
+    },
+    "retail:15": {
+      "lev_sha256": "7ab8d7971206c4df35140394eddc06ad488957ad16e7fd5b5338664497cea684",
+      "counts": [
+        24,
+        4,
+        0
+      ],
+      "needs": {}
+    },
+    "7ee583563ec87b3fca265a59a2929118a4f2a1b7ea3c069d47afe913b593ab74": {
+      "lev_sha256": "7ee583563ec87b3fca265a59a2929118a4f2a1b7ea3c069d47afe913b593ab74",
+      "counts": [
+        22,
+        3,
+        0
+      ],
+      "needs": {}
+    },
+    "retail:9": {
+      "lev_sha256": "7ee583563ec87b3fca265a59a2929118a4f2a1b7ea3c069d47afe913b593ab74",
+      "counts": [
+        22,
+        3,
+        0
+      ],
+      "needs": {}
+    },
+    "04b5cef91ff6e18c14276006458f6b71510a379de8b5c8aa553bfb84ed8fa6a8": {
+      "lev_sha256": "04b5cef91ff6e18c14276006458f6b71510a379de8b5c8aa553bfb84ed8fa6a8",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "f6fb070b1a706389f882f4c337c5c7e49a45b705a3469afe67f8ba1eeba71330": {
+      "lev_sha256": "f6fb070b1a706389f882f4c337c5c7e49a45b705a3469afe67f8ba1eeba71330",
+      "counts": [
+        18,
+        3,
+        0
+      ],
+      "needs": {}
+    },
+    "retail:3": {
+      "lev_sha256": "f6fb070b1a706389f882f4c337c5c7e49a45b705a3469afe67f8ba1eeba71330",
+      "counts": [
+        18,
+        3,
+        0
+      ],
+      "needs": {}
+    },
+    "f2a6a4468f535e268c5690eda1954eeaaece6c6b97396a8afe99f33335ab6234": {
+      "lev_sha256": "f2a6a4468f535e268c5690eda1954eeaaece6c6b97396a8afe99f33335ab6234",
+      "counts": [
+        16,
+        10,
+        0
+      ],
+      "needs": {
+        "wumpa_crate": {
+          "7": {
+            "needs": "usf",
+            "reviewed": false
+          },
+          "8": {
+            "needs": "usf",
+            "reviewed": false
+          }
+        }
+      }
+    },
+    "retail:10": {
+      "lev_sha256": "f2a6a4468f535e268c5690eda1954eeaaece6c6b97396a8afe99f33335ab6234",
+      "counts": [
+        16,
+        10,
+        0
+      ],
+      "needs": {
+        "wumpa_crate": {
+          "7": {
+            "needs": "usf",
+            "reviewed": false
+          },
+          "8": {
+            "needs": "usf",
+            "reviewed": false
+          }
+        }
+      }
+    },
+    "632a51fd42bbde6e2d00c956eff1bf1c23065e71b25a158d9333c39030c88636": {
+      "lev_sha256": "632a51fd42bbde6e2d00c956eff1bf1c23065e71b25a158d9333c39030c88636",
+      "counts": [
+        16,
+        2,
+        14
+      ],
+      "needs": {}
+    },
+    "retail:2": {
+      "lev_sha256": "632a51fd42bbde6e2d00c956eff1bf1c23065e71b25a158d9333c39030c88636",
+      "counts": [
+        16,
+        2,
+        14
+      ],
+      "needs": {}
+    },
+    "c983258ea36bbdde62e84a4b146c5f2ebf932463ddd67dccf0fcea027daaa96e": {
+      "lev_sha256": "c983258ea36bbdde62e84a4b146c5f2ebf932463ddd67dccf0fcea027daaa96e",
+      "counts": [
+        16,
+        2,
+        9
+      ],
+      "needs": {}
+    },
+    "retail:5": {
+      "lev_sha256": "c983258ea36bbdde62e84a4b146c5f2ebf932463ddd67dccf0fcea027daaa96e",
+      "counts": [
+        16,
+        2,
+        9
+      ],
+      "needs": {}
+    },
+    "ec01b31e1b867fcc89fe645f4195349a48ca02933ca0944ce9b8acbcc030bd5e": {
+      "lev_sha256": "ec01b31e1b867fcc89fe645f4195349a48ca02933ca0944ce9b8acbcc030bd5e",
+      "counts": [
+        16,
+        3,
+        9
+      ],
+      "needs": {}
+    },
+    "retail:17": {
+      "lev_sha256": "ec01b31e1b867fcc89fe645f4195349a48ca02933ca0944ce9b8acbcc030bd5e",
+      "counts": [
+        16,
+        3,
+        9
+      ],
+      "needs": {}
+    },
+    "e3a9e903505ccd6d2d85fe8302b3d6b37053a68b0eb65a182a6c5b72051d658c": {
+      "lev_sha256": "e3a9e903505ccd6d2d85fe8302b3d6b37053a68b0eb65a182a6c5b72051d658c",
+      "counts": [
+        16,
+        3,
+        6
+      ],
+      "needs": {}
+    },
+    "retail:16": {
+      "lev_sha256": "e3a9e903505ccd6d2d85fe8302b3d6b37053a68b0eb65a182a6c5b72051d658c",
+      "counts": [
+        16,
+        3,
+        6
+      ],
+      "needs": {}
+    },
+    "c4497a621a97a8df1c763e0b6a2dc75cd9f3a57b217b0cefa6a938fc83ee6c70": {
+      "lev_sha256": "c4497a621a97a8df1c763e0b6a2dc75cd9f3a57b217b0cefa6a938fc83ee6c70",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "244822a49af9fece6d83eab880045f51878b136a1c97ecefa70bb913b88571cf": {
+      "lev_sha256": "244822a49af9fece6d83eab880045f51878b136a1c97ecefa70bb913b88571cf",
+      "counts": [
+        16,
+        3,
+        10
+      ],
+      "needs": {}
+    },
+    "retail:14": {
+      "lev_sha256": "244822a49af9fece6d83eab880045f51878b136a1c97ecefa70bb913b88571cf",
+      "counts": [
+        16,
+        3,
+        10
+      ],
+      "needs": {}
+    },
+    "b2426bcd6a785b8600a79a77a31f5878d301042caa07d0adfc578c0b874e2bfb": {
+      "lev_sha256": "b2426bcd6a785b8600a79a77a31f5878d301042caa07d0adfc578c0b874e2bfb",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "d30c47c13da5b3592891397327b41ce398ecbea3a81df7ead8d76ed9d11d6bf4": {
+      "lev_sha256": "d30c47c13da5b3592891397327b41ce398ecbea3a81df7ead8d76ed9d11d6bf4",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "0fa107714652526b004ea373bb198bf01bd58886116ba7448d934b16d8238df3": {
+      "lev_sha256": "0fa107714652526b004ea373bb198bf01bd58886116ba7448d934b16d8238df3",
+      "counts": [
+        12,
+        11,
+        0
+      ],
+      "needs": {
+        "wumpa_crate": {
+          "5": {
+            "needs": "usf",
+            "reviewed": false,
+            "door": true
+          },
+          "6": {
+            "needs": "usf",
+            "reviewed": false,
+            "door": true
+          },
+          "7": {
+            "needs": "usf",
+            "reviewed": false,
+            "door": true
+          },
+          "8": {
+            "needs": "usf",
+            "reviewed": false,
+            "door": true
+          }
+        }
+      }
+    },
+    "retail:4": {
+      "lev_sha256": "0fa107714652526b004ea373bb198bf01bd58886116ba7448d934b16d8238df3",
+      "counts": [
+        12,
+        11,
+        0
+      ],
+      "needs": {
+        "wumpa_crate": {
+          "5": {
+            "needs": "usf",
+            "reviewed": false,
+            "door": true
+          },
+          "6": {
+            "needs": "usf",
+            "reviewed": false,
+            "door": true
+          },
+          "7": {
+            "needs": "usf",
+            "reviewed": false,
+            "door": true
+          },
+          "8": {
+            "needs": "usf",
+            "reviewed": false,
+            "door": true
+          }
+        }
+      }
+    },
+    "a84dcf7132574b3b2cdd3d51ac4511cd68bbdd38e77ea31208be2029bbb72900": {
+      "lev_sha256": "a84dcf7132574b3b2cdd3d51ac4511cd68bbdd38e77ea31208be2029bbb72900",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "e88732cbc1c776e9d4e5f20e3d4aecbfb797b5c9652eaa3fdc78cfdf1f52c9c5": {
+      "lev_sha256": "e88732cbc1c776e9d4e5f20e3d4aecbfb797b5c9652eaa3fdc78cfdf1f52c9c5",
+      "counts": [
+        16,
+        2,
+        16
+      ],
+      "needs": {}
+    },
+    "retail:0": {
+      "lev_sha256": "e88732cbc1c776e9d4e5f20e3d4aecbfb797b5c9652eaa3fdc78cfdf1f52c9c5",
+      "counts": [
+        16,
+        2,
+        16
+      ],
+      "needs": {}
+    },
+    "d62e91af717d1ed16459f181e9bf944cc1c5e3ff272a89cb244bb59a87c3bfcc": {
+      "lev_sha256": "d62e91af717d1ed16459f181e9bf944cc1c5e3ff272a89cb244bb59a87c3bfcc",
+      "counts": [
+        13,
+        2,
+        0
+      ],
+      "needs": {
+        "weapon_crate": {
+          "9": {
+            "needs": "usf",
+            "reviewed": false
+          }
+        }
+      }
+    },
+    "retail:6": {
+      "lev_sha256": "d62e91af717d1ed16459f181e9bf944cc1c5e3ff272a89cb244bb59a87c3bfcc",
+      "counts": [
+        13,
+        2,
+        0
+      ],
+      "needs": {
+        "weapon_crate": {
+          "9": {
+            "needs": "usf",
+            "reviewed": false
+          }
+        }
+      }
+    },
+    "f47a9aacbcd8c6152630f703a690c3542ce6787fa458e0cb11b5149b3388eca4": {
+      "lev_sha256": "f47a9aacbcd8c6152630f703a690c3542ce6787fa458e0cb11b5149b3388eca4",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "f52532557fe59998df30a95f92525b0bc7d16f8e07874d92a3a70da1b79129bc": {
+      "lev_sha256": "f52532557fe59998df30a95f92525b0bc7d16f8e07874d92a3a70da1b79129bc",
+      "counts": [
+        24,
+        12,
+        0
+      ],
+      "needs": {}
+    },
+    "retail:12": {
+      "lev_sha256": "f52532557fe59998df30a95f92525b0bc7d16f8e07874d92a3a70da1b79129bc",
+      "counts": [
+        24,
+        12,
+        0
+      ],
+      "needs": {}
+    },
+    "891994f0a7fcb4d4e1309efede791547082e278cd050ad2a7d545130c9a6128a": {
+      "lev_sha256": "891994f0a7fcb4d4e1309efede791547082e278cd050ad2a7d545130c9a6128a",
+      "counts": [
+        19,
+        13,
+        0
+      ],
+      "needs": {}
+    },
+    "retail:13": {
+      "lev_sha256": "891994f0a7fcb4d4e1309efede791547082e278cd050ad2a7d545130c9a6128a",
+      "counts": [
+        19,
+        13,
+        0
+      ],
+      "needs": {}
+    },
+    "ffdd944c6fc721d59aefdf23c2f90a9f7e4bf341bf952b501286b1354718fc50": {
+      "lev_sha256": "ffdd944c6fc721d59aefdf23c2f90a9f7e4bf341bf952b501286b1354718fc50",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "e766b4ac2d57c80b946e930b9ed50eaa8a580e90d410165b4b150cf7f3716fe0": {
+      "lev_sha256": "e766b4ac2d57c80b946e930b9ed50eaa8a580e90d410165b4b150cf7f3716fe0",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "54d6546d8690c9fe3f3026727fa7af647e4f1736a65637b14337ada0964a5ff9": {
+      "lev_sha256": "54d6546d8690c9fe3f3026727fa7af647e4f1736a65637b14337ada0964a5ff9",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "35dd336d697e6ddc1ef68c3d9b9c921ead7ba400f97a28e47933e7f422b39448": {
+      "lev_sha256": "35dd336d697e6ddc1ef68c3d9b9c921ead7ba400f97a28e47933e7f422b39448",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "1ea0e1c0013d711083bdf237ee28d52f17cbd831960969fc6a5c5cc835f55972": {
+      "lev_sha256": "1ea0e1c0013d711083bdf237ee28d52f17cbd831960969fc6a5c5cc835f55972",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "00913e520398d5408e0214b05cefba3e5ecff1b0e4a922df5009738ad1c91dca": {
+      "lev_sha256": "00913e520398d5408e0214b05cefba3e5ecff1b0e4a922df5009738ad1c91dca",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "a31f66f5ac7d0fcf1a99cfa4af0d956e655f51a3fbc27b3511e24e23f139dda9": {
+      "lev_sha256": "a31f66f5ac7d0fcf1a99cfa4af0d956e655f51a3fbc27b3511e24e23f139dda9",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "8d937cdcc724ebbc1f59a5bc5be6290e9bd22ce5fc02e405351da8b10802d95b": {
+      "lev_sha256": "8d937cdcc724ebbc1f59a5bc5be6290e9bd22ce5fc02e405351da8b10802d95b",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "5452798160a19b3f9d4d756e239953192665ed493b7b2c77acf5e1307b88a51b": {
+      "lev_sha256": "5452798160a19b3f9d4d756e239953192665ed493b7b2c77acf5e1307b88a51b",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "b33df114772ccbc19fa2bae99d7cbf86d6fb015092b5a43a60944ea927876cd7": {
+      "lev_sha256": "b33df114772ccbc19fa2bae99d7cbf86d6fb015092b5a43a60944ea927876cd7",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "db6f51a7857983771eba923883daafd696eaf0224a2d833528361f187a6d7115": {
+      "lev_sha256": "db6f51a7857983771eba923883daafd696eaf0224a2d833528361f187a6d7115",
+      "counts": [
+        31,
+        2,
+        0
+      ],
+      "needs": {}
+    },
+    "a04e15057ee83c80d98f0e88eb513eb51286e123b11e82155203b7ef9a43b23e": {
+      "lev_sha256": "a04e15057ee83c80d98f0e88eb513eb51286e123b11e82155203b7ef9a43b23e",
+      "counts": [
+        16,
+        1,
+        0
+      ],
+      "needs": {}
+    },
+    "6ea3b13dc2fa7e2cc93ee88211822218f6215e74f59d941ab92bc5b61ea6527e": {
+      "lev_sha256": "6ea3b13dc2fa7e2cc93ee88211822218f6215e74f59d941ab92bc5b61ea6527e",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "a0d13ac14427cfb9cb30b2564a034757977082f34e08fb05cc1bcd98757f5b17": {
+      "lev_sha256": "a0d13ac14427cfb9cb30b2564a034757977082f34e08fb05cc1bcd98757f5b17",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "4d5a7397feaa242083a59279c28d8e96118ec7074de5f03eeab329207c4472d4": {
+      "lev_sha256": "4d5a7397feaa242083a59279c28d8e96118ec7074de5f03eeab329207c4472d4",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "77cb05cc35040a3eb5a5f8fdef96ddd356e8951eecf1e8e77422b0119b20782e": {
+      "lev_sha256": "77cb05cc35040a3eb5a5f8fdef96ddd356e8951eecf1e8e77422b0119b20782e",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "5728e57919f873d84c84e8372db4b44bc104c9d7472e89be127def6012293ecf": {
+      "lev_sha256": "5728e57919f873d84c84e8372db4b44bc104c9d7472e89be127def6012293ecf",
+      "counts": [
+        14,
+        6,
+        0
+      ],
+      "needs": {}
+    },
+    "be161e0b11aa03505c501b7db012d830405e69e171f84633c2e24ffe9cc3cbf8": {
+      "lev_sha256": "be161e0b11aa03505c501b7db012d830405e69e171f84633c2e24ffe9cc3cbf8",
+      "counts": [
+        8,
+        8,
+        0
+      ],
+      "needs": {}
+    },
+    "e3d765e824a2de96d06d1f34951b6d2ab51c027fb3353c62d8e7086b8ce1e33a": {
+      "lev_sha256": "e3d765e824a2de96d06d1f34951b6d2ab51c027fb3353c62d8e7086b8ce1e33a",
+      "counts": [
+        19,
+        9,
+        0
+      ],
+      "needs": {}
+    },
+    "8c1fde3e60405eb8737e75aa4cfe5cb205cd9d21961eccf4c5d7827ecf484880": {
+      "lev_sha256": "8c1fde3e60405eb8737e75aa4cfe5cb205cd9d21961eccf4c5d7827ecf484880",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "9553863255f8b9a72cf2b8fbe0e3f1f3195e0e502c604ccf0c3f06ff0c3ea535": {
+      "lev_sha256": "9553863255f8b9a72cf2b8fbe0e3f1f3195e0e502c604ccf0c3f06ff0c3ea535",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "3c4ac895bf8c11ecd44730b40bab7a8d86471f3af55f6ea10146740b90cf37d9": {
+      "lev_sha256": "3c4ac895bf8c11ecd44730b40bab7a8d86471f3af55f6ea10146740b90cf37d9",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "9a9073fe9d2dd0bbf3222dc1b4d8be8ccf6811890e0919ca05fbc181f7adf082": {
+      "lev_sha256": "9a9073fe9d2dd0bbf3222dc1b4d8be8ccf6811890e0919ca05fbc181f7adf082",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "ca4f7c33f1004afe0678b69eb025f546ce0e2b8fc5d16f20b773cebc635465b6": {
+      "lev_sha256": "ca4f7c33f1004afe0678b69eb025f546ce0e2b8fc5d16f20b773cebc635465b6",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "e2c6eaa5687a6b323011c74f0858baaa0228275aeabd279dc7c47c2ec3696a6f": {
+      "lev_sha256": "e2c6eaa5687a6b323011c74f0858baaa0228275aeabd279dc7c47c2ec3696a6f",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "178cfc70ad88c344b74745de1dcd6c56f14474e1686d2a3d5056c47017357c41": {
+      "lev_sha256": "178cfc70ad88c344b74745de1dcd6c56f14474e1686d2a3d5056c47017357c41",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "4d82f9383ae28b7460581b24302f981e1e125f0109b0cd6804b6f497d61c262b": {
+      "lev_sha256": "4d82f9383ae28b7460581b24302f981e1e125f0109b0cd6804b6f497d61c262b",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "c0667cf7709d0d176dd633f77664dd4d016c785063b6b4be18dc351ae154513d": {
+      "lev_sha256": "c0667cf7709d0d176dd633f77664dd4d016c785063b6b4be18dc351ae154513d",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "c22269a892780f3c695d76a4954a2af3e4bbd87d1ff423fa50ba349dfbd96b65": {
+      "lev_sha256": "c22269a892780f3c695d76a4954a2af3e4bbd87d1ff423fa50ba349dfbd96b65",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "04c1f7c37d3a26a3c8ac221d4a69167e578036e7d3f0cab77270ca1541e0f591": {
+      "lev_sha256": "04c1f7c37d3a26a3c8ac221d4a69167e578036e7d3f0cab77270ca1541e0f591",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "a9c8989b857d547eec29b0728899c8f34a878401c2c6dfb2a4b49b9301ab4e83": {
+      "lev_sha256": "a9c8989b857d547eec29b0728899c8f34a878401c2c6dfb2a4b49b9301ab4e83",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "0b59b54ac3d902d43ee7b798d45dd4979aa5859520460282d22fb6bc85dcbcd9": {
+      "lev_sha256": "0b59b54ac3d902d43ee7b798d45dd4979aa5859520460282d22fb6bc85dcbcd9",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "eddcd303e316e8eb41f885e8ec959a2c2d3db06e21727dfc50c61ab8a8048139": {
+      "lev_sha256": "eddcd303e316e8eb41f885e8ec959a2c2d3db06e21727dfc50c61ab8a8048139",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "5ebdb9f235ba0c07ba5c72b715c949afdd6062fcf3208f45a1c13936ffb529c6": {
+      "lev_sha256": "5ebdb9f235ba0c07ba5c72b715c949afdd6062fcf3208f45a1c13936ffb529c6",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "8093b663855d3fd0096fd2980a85bc6efe334c0aff250e8a33eea11909e5c21c": {
+      "lev_sha256": "8093b663855d3fd0096fd2980a85bc6efe334c0aff250e8a33eea11909e5c21c",
+      "counts": [
+        27,
+        4,
+        0
+      ],
+      "needs": {}
+    },
+    "4bc283cbe9e52dc75ffdb62bf8f30a84541d4dc17544ae1b47d68114ae20d3d2": {
+      "lev_sha256": "4bc283cbe9e52dc75ffdb62bf8f30a84541d4dc17544ae1b47d68114ae20d3d2",
+      "counts": [
+        69,
+        7,
+        0
+      ],
+      "needs": {}
+    },
+    "cortex_vortex": {
+      "lev_sha256": "d3189b6263c2a13c9f289e5ad7776bc78cca1cf64be5afa5085d7a727e6efd36",
+      "counts": [
+        69,
+        7,
+        0
+      ],
+      "needs": {}
+    },
+    "80130ec6bc90bc8eb5a1f379a0a2f1666fd3dc180e3c3e84d7eeb6e28f9b2757": {
+      "lev_sha256": "80130ec6bc90bc8eb5a1f379a0a2f1666fd3dc180e3c3e84d7eeb6e28f9b2757",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "17eafea4884285d2d1b6e684519081955347b96196783d06d984f06d72105e3c": {
+      "lev_sha256": "17eafea4884285d2d1b6e684519081955347b96196783d06d984f06d72105e3c",
+      "counts": [
+        29,
+        3,
+        0
+      ],
+      "needs": {
+        "weapon_crate": {
+          "1": {
+            "needs": "usf",
+            "reviewed": false
+          }
+        }
+      }
+    },
+    "21987d52a922a8ae6493eb926e79f3fa55e035b03cf3273db55e150fadc711f7": {
+      "lev_sha256": "21987d52a922a8ae6493eb926e79f3fa55e035b03cf3273db55e150fadc711f7",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "320379a26e12d88fb58eea7c32f349f2e1ff4f1e3907dc746d07cfc7636d1f78": {
+      "lev_sha256": "320379a26e12d88fb58eea7c32f349f2e1ff4f1e3907dc746d07cfc7636d1f78",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "f6c9080c9ff152343631db3047f172e23cdf209e1763f0b510c68cb636f79caf": {
+      "lev_sha256": "f6c9080c9ff152343631db3047f172e23cdf209e1763f0b510c68cb636f79caf",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "c9c8acfb4dd491a82b5030fcaa6c1437743c923be68d017da87869fce0b0a4c2": {
+      "lev_sha256": "c9c8acfb4dd491a82b5030fcaa6c1437743c923be68d017da87869fce0b0a4c2",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "5b3223248a481a2f856bebf7c4eda22e5147723470ec247bf1751eb377c41981": {
+      "lev_sha256": "5b3223248a481a2f856bebf7c4eda22e5147723470ec247bf1751eb377c41981",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "c6a3f63d190e3e52ba6b0dcf0bff2daff01b9abfed270cd029eaa878617d849b": {
+      "lev_sha256": "c6a3f63d190e3e52ba6b0dcf0bff2daff01b9abfed270cd029eaa878617d849b",
+      "counts": [
+        25,
+        3,
+        0
+      ],
+      "needs": {}
+    },
+    "29a8b5b2b72b7dc83662834d2129272f6036fc06fb5fa1c71d547e791eb70ce8": {
+      "lev_sha256": "29a8b5b2b72b7dc83662834d2129272f6036fc06fb5fa1c71d547e791eb70ce8",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "02baa4cfb90f9e3d16ad3e16c52546289935233c3213f85f4ada3a47823d1478": {
+      "lev_sha256": "02baa4cfb90f9e3d16ad3e16c52546289935233c3213f85f4ada3a47823d1478",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "62ff293e6367d41f2916ebe7e44ecc90ac141003c33cf3e912582bb54cb1e671": {
+      "lev_sha256": "62ff293e6367d41f2916ebe7e44ecc90ac141003c33cf3e912582bb54cb1e671",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "f0914b8dfdaa1cf6cdf43d6578c183cbef2890105f91a309eab15f631c3e9960": {
+      "lev_sha256": "f0914b8dfdaa1cf6cdf43d6578c183cbef2890105f91a309eab15f631c3e9960",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "9ddff5eac7ea132aa47c9dbc22f5a5fcc18cc3a1a10d6546a10312b13a6d0c6d": {
+      "lev_sha256": "9ddff5eac7ea132aa47c9dbc22f5a5fcc18cc3a1a10d6546a10312b13a6d0c6d",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "6d083e82a46192284efd23c823fd637e8302d8bb3c4e8356193111566aa313c1": {
+      "lev_sha256": "6d083e82a46192284efd23c823fd637e8302d8bb3c4e8356193111566aa313c1",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "a728c5b1846323d544e5b973a00931d2cceb1f0a67cba5ee5752befcd4aaa4a9": {
+      "lev_sha256": "a728c5b1846323d544e5b973a00931d2cceb1f0a67cba5ee5752befcd4aaa4a9",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "75d743ea3243f8be162e32d99e839a2db6991cec77ff09f0aef82e5edaf3c334": {
+      "lev_sha256": "75d743ea3243f8be162e32d99e839a2db6991cec77ff09f0aef82e5edaf3c334",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "ab3e0f8d0abbae1b0aa64efe50de0d5d1cbd0b3ab27967b4132f76b99f557970": {
+      "lev_sha256": "ab3e0f8d0abbae1b0aa64efe50de0d5d1cbd0b3ab27967b4132f76b99f557970",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "ad527ad87af70b4a98e6de5624db8a16ac297b3723701b91b45a0b2987348234": {
+      "lev_sha256": "ad527ad87af70b4a98e6de5624db8a16ac297b3723701b91b45a0b2987348234",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13": {
+      "lev_sha256": "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13",
+      "counts": [
+        69,
+        7,
+        0
+      ],
+      "needs": {}
+    },
+    "9f85b2d5dbc2fe543ce024751fc6e08f77d7ba649f8ddfec936f016804a9bbf3": {
+      "lev_sha256": "9f85b2d5dbc2fe543ce024751fc6e08f77d7ba649f8ddfec936f016804a9bbf3",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "e2cc24322951d621c33ce00c976f5da22e6da0f143d5fd0b4ca0f560c130efb9": {
+      "lev_sha256": "e2cc24322951d621c33ce00c976f5da22e6da0f143d5fd0b4ca0f560c130efb9",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "77706a3b5d46cdd75ffa05e4da316cf5dc400d6e17aad7ccdf0c3f5cd62eee79": {
+      "lev_sha256": "77706a3b5d46cdd75ffa05e4da316cf5dc400d6e17aad7ccdf0c3f5cd62eee79",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "a76595cd5a72e0b612698f0011b4607bce53567a4b3578c78cad50332412c1b2": {
+      "lev_sha256": "a76595cd5a72e0b612698f0011b4607bce53567a4b3578c78cad50332412c1b2",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "c09b56940f31f342e006c7c40b81dfbe33453edafc4274d74f360c0717bd0fa6": {
+      "lev_sha256": "c09b56940f31f342e006c7c40b81dfbe33453edafc4274d74f360c0717bd0fa6",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "0a10f227dd3d24058cac3cb39a4787f9ffbc970e2041a37db8d1b61c6e6dd090": {
+      "lev_sha256": "0a10f227dd3d24058cac3cb39a4787f9ffbc970e2041a37db8d1b61c6e6dd090",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "d1b54abf41ca68a407373d191dbebd08fe36088a8dc141c754fca9df1c1deb8f": {
+      "lev_sha256": "d1b54abf41ca68a407373d191dbebd08fe36088a8dc141c754fca9df1c1deb8f",
+      "counts": [
+        26,
+        3,
+        0
+      ],
+      "needs": {}
+    },
+    "639434d84fe6de4ba88a31a1dd5a11291d640617ab25af9c7bfbd5d383b53d5d": {
+      "lev_sha256": "639434d84fe6de4ba88a31a1dd5a11291d640617ab25af9c7bfbd5d383b53d5d",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "c62b6b949ab505a1f579ebe0124b1d0d291edfa2b9b6a2367c156cc637cdf4cc": {
+      "lev_sha256": "c62b6b949ab505a1f579ebe0124b1d0d291edfa2b9b6a2367c156cc637cdf4cc",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "ced2df2e83aef4759e0bb132fbd36f44c51d818b623d7950faec2407b8229589": {
+      "lev_sha256": "ced2df2e83aef4759e0bb132fbd36f44c51d818b623d7950faec2407b8229589",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "58d3f92a33e6ac0bc7ad9d176a09e87af011ba0493b63349164af0371351ee9e": {
+      "lev_sha256": "58d3f92a33e6ac0bc7ad9d176a09e87af011ba0493b63349164af0371351ee9e",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "48508645ad632f483660742208ad9f4005523aad58e2b81600017485d3973fda": {
+      "lev_sha256": "48508645ad632f483660742208ad9f4005523aad58e2b81600017485d3973fda",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "f6aa45f60354a29e40a6d2f973ea500cf94da50e831fb38fce039ae7f1abd021": {
+      "lev_sha256": "f6aa45f60354a29e40a6d2f973ea500cf94da50e831fb38fce039ae7f1abd021",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "9d800c29e2c821042f63d5eae7c6503a1ea4304f0a4adbead40ab44b2b3ce878": {
+      "lev_sha256": "9d800c29e2c821042f63d5eae7c6503a1ea4304f0a4adbead40ab44b2b3ce878",
+      "counts": [
+        17,
+        4,
+        0
+      ],
+      "needs": {}
+    },
+    "96ad9f74f51a02eafcc207cd02c97052d674c950e0f24b6440a227494a705fe8": {
+      "lev_sha256": "96ad9f74f51a02eafcc207cd02c97052d674c950e0f24b6440a227494a705fe8",
+      "counts": [
+        8,
+        8,
+        0
+      ],
+      "needs": {}
+    },
+    "2fc45ad5edaf735426b99229cc561293d02badc6a578ef53f328ad3fc2f85360": {
+      "lev_sha256": "2fc45ad5edaf735426b99229cc561293d02badc6a578ef53f328ad3fc2f85360",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "7d1d83e29a5aa06615ba1ef87d60e2f5513d267e76691b7ba2f3b6bce7690415": {
+      "lev_sha256": "7d1d83e29a5aa06615ba1ef87d60e2f5513d267e76691b7ba2f3b6bce7690415",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "665d19819c437ab9ab6cbccac7c0202979405f16e1af39e06d9ea1d3286be9d0": {
+      "lev_sha256": "665d19819c437ab9ab6cbccac7c0202979405f16e1af39e06d9ea1d3286be9d0",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "7e5b776f312f500112061b3b95a1f371571fd7dfe7fbd1dc404e7b3d3a3a1e78": {
+      "lev_sha256": "7e5b776f312f500112061b3b95a1f371571fd7dfe7fbd1dc404e7b3d3a3a1e78",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "afe36db1745f65290c551090515bd742d1ecb0e84d97d7267ae330be9d3160e9": {
+      "lev_sha256": "afe36db1745f65290c551090515bd742d1ecb0e84d97d7267ae330be9d3160e9",
+      "counts": [
+        25,
+        5,
+        0
+      ],
+      "needs": {}
+    },
+    "985663bf855f45fd8b71fe23ada322effb738c5fcf55cbd6c2710f95c631b112": {
+      "lev_sha256": "985663bf855f45fd8b71fe23ada322effb738c5fcf55cbd6c2710f95c631b112",
+      "counts": [
+        14,
+        3,
+        0
+      ],
+      "needs": {}
+    },
+    "4232d4396e59df560678f3d0a370ce874649821ad614139b067250494af8f44c": {
+      "lev_sha256": "4232d4396e59df560678f3d0a370ce874649821ad614139b067250494af8f44c",
+      "counts": [
+        16,
+        2,
+        0
+      ],
+      "needs": {}
+    },
+    "8e040bd120bd964134730cce2a9fa2869922e75bbe71f703b863a16c38b730c4": {
+      "lev_sha256": "8e040bd120bd964134730cce2a9fa2869922e75bbe71f703b863a16c38b730c4",
+      "counts": [
+        12,
+        3,
+        0
+      ],
+      "needs": {}
+    },
+    "a4cfe29c0e3fc7e309d7cfb7c2eeb1fb38bf9359b343d236b46b0c2aedd709e2": {
+      "lev_sha256": "a4cfe29c0e3fc7e309d7cfb7c2eeb1fb38bf9359b343d236b46b0c2aedd709e2",
+      "counts": [
+        12,
+        3,
+        0
+      ],
+      "needs": {}
+    },
+    "83406e87505616994f5b539666f1327597212058506c29d66396aac15448529e": {
+      "lev_sha256": "83406e87505616994f5b539666f1327597212058506c29d66396aac15448529e",
+      "counts": [
+        20,
+        4,
+        0
+      ],
+      "needs": {}
+    },
+    "27e41e0e9c429c500ec9197fb18f66418e395d8d50731c72ba525547a39c59b6": {
+      "lev_sha256": "27e41e0e9c429c500ec9197fb18f66418e395d8d50731c72ba525547a39c59b6",
+      "counts": [
+        16,
+        3,
+        0
+      ],
+      "needs": {}
+    },
+    "72bf846cd1932a058f5a379f577dd50624fa94527150a1d6fc3e29cdd73013f8": {
+      "lev_sha256": "72bf846cd1932a058f5a379f577dd50624fa94527150a1d6fc3e29cdd73013f8",
+      "counts": [
+        11,
+        3,
+        0
+      ],
+      "needs": {}
+    },
+    "fb7119f056178beff7b48ca13c63a5893b0146ef527973f71b5fc57b3cf80766": {
+      "lev_sha256": "fb7119f056178beff7b48ca13c63a5893b0146ef527973f71b5fc57b3cf80766",
+      "counts": [
+        8,
+        2,
+        0
+      ],
+      "needs": {}
+    },
+    "7dd312574cda7a61b0dc216b9667a29d9a65d09bde64a18b8830d8b895b8b103": {
+      "lev_sha256": "7dd312574cda7a61b0dc216b9667a29d9a65d09bde64a18b8830d8b895b8b103",
+      "counts": [
+        16,
+        2,
+        0
+      ],
+      "needs": {}
+    },
+    "29e821ce632c9f483d3e0711e41cc077ab087a8a6044b7a70db826b7b40e71d0": {
+      "lev_sha256": "29e821ce632c9f483d3e0711e41cc077ab087a8a6044b7a70db826b7b40e71d0",
+      "counts": [
+        22,
+        4,
+        0
+      ],
+      "needs": {}
+    },
+    "c7cb55dd24a5fdd2a868968a14e1881866e7e97c9cc9cefb208dd394298ebd17": {
+      "lev_sha256": "c7cb55dd24a5fdd2a868968a14e1881866e7e97c9cc9cefb208dd394298ebd17",
+      "counts": [
+        27,
+        5,
+        0
+      ],
+      "needs": {}
+    },
+    "a24c255c87d062b907dfd052a5691ff1b13875adac3515764ad8e64234705fd0": {
+      "lev_sha256": "a24c255c87d062b907dfd052a5691ff1b13875adac3515764ad8e64234705fd0",
+      "counts": [
+        16,
+        1,
+        0
+      ],
+      "needs": {}
+    },
+    "256d1ed4597aacd081d2806130c28969681ce35df5a5ba53200545cbd1835eb8": {
+      "lev_sha256": "256d1ed4597aacd081d2806130c28969681ce35df5a5ba53200545cbd1835eb8",
+      "counts": [
+        17,
+        2,
+        0
+      ],
+      "needs": {
+        "weapon_crate": {
+          "1": {
+            "needs": "usf",
+            "reviewed": false
+          }
+        }
+      }
+    },
+    "e22b87a73009b94251f5216424cf07875a02e076eb8461b902624c2b5277ad45": {
+      "lev_sha256": "e22b87a73009b94251f5216424cf07875a02e076eb8461b902624c2b5277ad45",
+      "counts": [
+        28,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "8403e3f99ff4927accd15d6bb413181883316d2f1902b9e14bf2ab4eb3b1f0fa": {
+      "lev_sha256": "8403e3f99ff4927accd15d6bb413181883316d2f1902b9e14bf2ab4eb3b1f0fa",
+      "counts": [
+        20,
+        4,
+        0
+      ],
+      "needs": {}
+    },
+    "9bba2b381dc77f8dbe208ef140446c77f4119b3f9b713916c0e11f5b7ade3d8a": {
+      "lev_sha256": "9bba2b381dc77f8dbe208ef140446c77f4119b3f9b713916c0e11f5b7ade3d8a",
+      "counts": [
+        8,
+        2,
+        0
+      ],
+      "needs": {}
+    },
+    "6598755fd3d9b3172bc7a27af250bcf3cb99dd8b709ee5a6e9a2409ee7ef54ec": {
+      "lev_sha256": "6598755fd3d9b3172bc7a27af250bcf3cb99dd8b709ee5a6e9a2409ee7ef54ec",
+      "counts": [
+        12,
+        3,
+        0
+      ],
+      "needs": {}
+    },
+    "abd0f1efa42350fe95727e06bb18c5616d8a9bf41a5cb4fd253effe09b62b1ad": {
+      "lev_sha256": "abd0f1efa42350fe95727e06bb18c5616d8a9bf41a5cb4fd253effe09b62b1ad",
+      "counts": [
+        12,
+        2,
+        0
+      ],
+      "needs": {}
+    },
+    "d3189b6263c2a13c9f289e5ad7776bc78cca1cf64be5afa5085d7a727e6efd36": {
+      "lev_sha256": "d3189b6263c2a13c9f289e5ad7776bc78cca1cf64be5afa5085d7a727e6efd36",
+      "counts": [
+        69,
+        7,
+        0
+      ],
+      "needs": {}
+    },
+    "21e1ffe395f1d5d0a2c4538050d18912577a4dd783026fa9caea8b09ad8d3aee": {
+      "lev_sha256": "21e1ffe395f1d5d0a2c4538050d18912577a4dd783026fa9caea8b09ad8d3aee",
+      "counts": [
+        17,
+        2,
+        0
+      ],
+      "needs": {
+        "weapon_crate": {
+          "1": {
+            "needs": "usf",
+            "reviewed": false
+          }
+        }
+      }
+    },
+    "262bc77013b08ccc92abfc814c5d0147a4020f7506e620703d7a0ce84ba1ac20": {
+      "lev_sha256": "262bc77013b08ccc92abfc814c5d0147a4020f7506e620703d7a0ce84ba1ac20",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "e9dd31ad94bc2d3e3ddc933f8703900810e13dd35a130dba08f2997197ee55c0": {
+      "lev_sha256": "e9dd31ad94bc2d3e3ddc933f8703900810e13dd35a130dba08f2997197ee55c0",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "5cdcff2e56472102b96458cd1e6eee7e769a87129d45aabd7c03095619b48ef9": {
+      "lev_sha256": "5cdcff2e56472102b96458cd1e6eee7e769a87129d45aabd7c03095619b48ef9",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "ab68dfc650456eeed9c3623bacfa1f9d12ee9f647ad1f6397f699c76683d1f0b": {
+      "lev_sha256": "ab68dfc650456eeed9c3623bacfa1f9d12ee9f647ad1f6397f699c76683d1f0b",
+      "counts": [
+        4,
+        4,
+        0
+      ],
+      "needs": {}
+    },
+    "70397e3d9da79d969eccf3cbd52fcd10fd9e0932cfe266fbbf6c98fd34dc5757": {
+      "lev_sha256": "70397e3d9da79d969eccf3cbd52fcd10fd9e0932cfe266fbbf6c98fd34dc5757",
+      "counts": [
+        12,
+        4,
+        0
+      ],
+      "needs": {}
+    },
+    "e441d10837c903d538ce4a5ba7d09b5942848aabc4f81842090a12dc80f3f2d7": {
+      "lev_sha256": "e441d10837c903d538ce4a5ba7d09b5942848aabc4f81842090a12dc80f3f2d7",
+      "counts": [
+        4,
+        8,
+        0
+      ],
+      "needs": {}
+    },
+    "d94d027ff58b3c16a3c7ea51275d6eb51b4440ba1cf643e7a67c8d8f4bc6c1eb": {
+      "lev_sha256": "d94d027ff58b3c16a3c7ea51275d6eb51b4440ba1cf643e7a67c8d8f4bc6c1eb",
+      "counts": [
+        7,
+        3,
+        0
+      ],
+      "needs": {}
+    },
+    "c6ff498c1799f1e49e63a9e5fff398974449b2189b347d57f72cdc8dacdf43f2": {
+      "lev_sha256": "c6ff498c1799f1e49e63a9e5fff398974449b2189b347d57f72cdc8dacdf43f2",
+      "counts": [
+        4,
+        2,
+        0
+      ],
+      "needs": {}
+    },
+    "4de3fb7955d96212419bf1da84104c7696b4d297a9f7197f2c3facb7876c3feb": {
+      "lev_sha256": "4de3fb7955d96212419bf1da84104c7696b4d297a9f7197f2c3facb7876c3feb",
+      "counts": [
+        5,
+        3,
+        0
+      ],
+      "needs": {}
+    },
+    "297b7fd095d510de938cb8f0b4a1b5ab5b6ef531bf27945a1d3a91676b489881": {
+      "lev_sha256": "297b7fd095d510de938cb8f0b4a1b5ab5b6ef531bf27945a1d3a91676b489881",
+      "counts": [
+        4,
+        4,
+        0
+      ],
+      "needs": {}
+    },
+    "1ee72044a3db8f8fa5a754b5199e6fbf7a5add4a92bb227cb1e7fc6e7577c4b7": {
+      "lev_sha256": "1ee72044a3db8f8fa5a754b5199e6fbf7a5add4a92bb227cb1e7fc6e7577c4b7",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "351647ca921f6bdf5a518dd5bb9242f43f34bf8f517ce1ce6b862095ac93b3bb": {
+      "lev_sha256": "351647ca921f6bdf5a518dd5bb9242f43f34bf8f517ce1ce6b862095ac93b3bb",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "e846fa0bc5916211f6cb2593883144dd2bdbeede52e77923b9012a395c4d293e": {
+      "lev_sha256": "e846fa0bc5916211f6cb2593883144dd2bdbeede52e77923b9012a395c4d293e",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "69225716ad94913c6ba99ec9b1fcd71972e7c3df644b06d9ad7523e2ffb4539b": {
+      "lev_sha256": "69225716ad94913c6ba99ec9b1fcd71972e7c3df644b06d9ad7523e2ffb4539b",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "38ffb72f04f7ca927f129b1808c7abae8c2a1b336525f674b89387ce948a9997": {
+      "lev_sha256": "38ffb72f04f7ca927f129b1808c7abae8c2a1b336525f674b89387ce948a9997",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "eafc2585066ad792896333c4623ec4c86a05b8a882acbcbdc782531c26947142": {
+      "lev_sha256": "eafc2585066ad792896333c4623ec4c86a05b8a882acbcbdc782531c26947142",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "17742ab7c332320b4b4c9e3c0ae78a77a9cf3f1ba01e4a9474354f37aaa1b5d2": {
+      "lev_sha256": "17742ab7c332320b4b4c9e3c0ae78a77a9cf3f1ba01e4a9474354f37aaa1b5d2",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "35deb9496c2d35000d6b440d0985564545c887f568db1f12b8adfc9c467de3bc": {
+      "lev_sha256": "35deb9496c2d35000d6b440d0985564545c887f568db1f12b8adfc9c467de3bc",
+      "counts": [
+        6,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "6b43e1c795c09e60911f164c893de0c60a864791d3b261a52628f0746bf2b768": {
+      "lev_sha256": "6b43e1c795c09e60911f164c893de0c60a864791d3b261a52628f0746bf2b768",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    },
+    "8c343aa6723ee2dec99d54f815e77e9e20798f657d6f4464f312529ffe4698f4": {
+      "lev_sha256": "8c343aa6723ee2dec99d54f815e77e9e20798f657d6f4464f312529ffe4698f4",
+      "counts": [
+        0,
+        0,
+        0
+      ],
+      "needs": {}
+    }
+  },
+  "sanity_exclusions": {
+    "256d1ed4597aacd081d2806130c28969681ce35df5a5ba53200545cbd1835eb8": [
+      {
+        "ordinal": 1,
+        "pos": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "21e1ffe395f1d5d0a2c4538050d18912577a4dd783026fa9caea8b09ad8d3aee": [
+      {
+        "ordinal": 1,
+        "pos": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "17eafea4884285d2d1b6e684519081955347b96196783d06d984f06d72105e3c": [
+      {
+        "ordinal": 1,
+        "pos": [
+          0,
+          0,
+          0
+        ]
+      }
+    ]
+  },
+  "sanity_locations": {
+    "Crash Cove": [
+      35029000,
+      35029600,
+      35026300
+    ],
+    "Roo's Tubes": [
+      35029032,
+      35029616,
+      35026316
+    ],
+    "Mystery Caves": [
+      35029064,
+      35029632,
+      35026332
+    ],
+    "Sewer Speedway": [
+      35029096,
+      35029648,
+      35026348
+    ],
+    "Coco Park": [
+      35029128,
+      35029664,
+      35026364
+    ],
+    "Tiger Temple": [
+      35029160,
+      35029680,
+      35026380
+    ],
+    "Papu's Pyramid": [
+      35029192,
+      35029696,
+      35026396
+    ],
+    "Dingo Canyon": [
+      35029224,
+      35029712,
+      35026412
+    ],
+    "Blizzard Bluff": [
+      35029256,
+      35029728,
+      35026428
+    ],
+    "Dragon Mines": [
+      35029288,
+      35029744,
+      35026444
+    ],
+    "Polar Pass": [
+      35029320,
+      35029760,
+      35026460
+    ],
+    "Tiny Arena": [
+      35029352,
+      35029776,
+      35026476
+    ],
+    "Hot Air Skyway": [
+      35029384,
+      35029792,
+      35026492
+    ],
+    "Cortex Castle": [
+      35029416,
+      35029808,
+      35026508
+    ],
+    "N. Gin Labs": [
+      35029448,
+      35029824,
+      35026524
+    ],
+    "Oxide Station": [
+      35029480,
+      35029840,
+      35026540
+    ],
+    "Slide Coliseum": [
+      35029512,
+      35029856,
+      35026556
+    ],
+    "Turbo Track": [
+      35029544,
+      35029872,
+      35026572
+    ],
+    "Cortex Vortex": [
+      35026100,
+      35026180,
+      35026200
+    ],
+    "Acid Lake": [
+      37200000,
+      37200080,
+      37200096
+    ],
+    "Ancient Lake": [
+      37200128,
+      37200208,
+      37200224
+    ],
+    "Android Alley N-Gage": [
+      37200256,
+      37200336,
+      37200352
+    ],
+    "Arabian Heights Day": [
+      37200384,
+      37200464,
+      37200480
+    ],
+    "Arabian Heights Night": [
+      37200512,
+      37200592,
+      37200608
+    ],
+    "Arcane Garden": [
+      37200640,
+      37200720,
+      37200736
+    ],
+    "Arctic Alleyway": [
+      37200768,
+      37200848,
+      37200864
+    ],
+    "Assembly Lane N-Gage": [
+      37200896,
+      37200976,
+      37200992
+    ],
+    "Baby T Park": [
+      37201024,
+      37201104,
+      37201120
+    ],
+    "Big Forest": [
+      37201152,
+      37201232,
+      37201248
+    ],
+    "Bowser Castle 1": [
+      37201280,
+      37201360,
+      37201376
+    ],
+    "Breeze Harbor": [
+      37201408,
+      37201488,
+      37201504
+    ],
+    "Chasqui Rally": [
+      37201536,
+      37201616,
+      37201632
+    ],
+    "Choco Island 2": [
+      37201664,
+      37201744,
+      37201760
+    ],
+    "Coco Park 2025": [
+      37201920,
+      37202000,
+      37202016
+    ],
+    "Country Speedway": [
+      37202176,
+      37202256,
+      37202272
+    ],
+    "Crystal Caves": [
+      37202304,
+      37202384,
+      37202400
+    ],
+    "Cubic Circuit": [
+      37202432,
+      37202512,
+      37202528
+    ],
+    "Cursed Trial Roulette": [
+      37202560,
+      37202640,
+      37202656
+    ],
+    "Dark Ruins": [
+      37202688,
+      37202768,
+      37202784
+    ],
+    "Deep Sea Driving N-Gage": [
+      37202816,
+      37202896,
+      37202912
+    ],
+    "Diwali": [
+      37202944,
+      37203024,
+      37203040
+    ],
+    "Diwali (no USF)": [
+      37203072,
+      37203152,
+      37203168
+    ],
+    "DK Pass": [
+      37203200,
+      37203280,
+      37203296
+    ],
+    "Draculas Castle": [
+      37203328,
+      37203408,
+      37203424
+    ],
+    "Dreamy Heights": [
+      37203456,
+      37203536,
+      37203552
+    ],
+    "Drive Thru Danger": [
+      37203584,
+      37203664,
+      37203680
+    ],
+    "DS Rainbow Road": [
+      37203712,
+      37203792,
+      37203808
+    ],
+    "Dust Keepers": [
+      37203840,
+      37203920,
+      37203936
+    ],
+    "Frozen Depths": [
+      37203968,
+      37204048,
+      37204064
+    ],
+    "Garden Speedway": [
+      37204096,
+      37204176,
+      37204192
+    ],
+    "Glacier Lagoon": [
+      37204224,
+      37204304,
+      37204320
+    ],
+    "Glazed Dessert": [
+      37204352,
+      37204432,
+      37204448
+    ],
+    "Green Hill Raceway": [
+      37204480,
+      37204560,
+      37204576
+    ],
+    "Hangtime Harbor": [
+      37204608,
+      37204688,
+      37204704
+    ],
+    "Hasty Hedges": [
+      37204736,
+      37204816,
+      37204832
+    ],
+    "Haven Stadium": [
+      37204864,
+      37204944,
+      37204960
+    ],
+    "Haven Stadium - Reverse": [
+      37204992,
+      37205072,
+      37205088
+    ],
+    "Holiday Hills": [
+      37205120,
+      37205200,
+      37205216
+    ],
+    "Inferno Island": [
+      37205248,
+      37205328,
+      37205344
+    ],
+    "Jungle Boogie N-Gage": [
+      37205376,
+      37205456,
+      37205472
+    ],
+    "Kong Dungeon": [
+      37205504,
+      37205584,
+      37205600
+    ],
+    "Lava Lane": [
+      37205632,
+      37205712,
+      37205728
+    ],
+    "Lights Out": [
+      37205760,
+      37205840,
+      37205856
+    ],
+    "Mario Circuit 1": [
+      37205888,
+      37205968,
+      37205984
+    ],
+    "Mario Circuit 2": [
+      37206016,
+      37206096,
+      37206112
+    ],
+    "Mario Raceway N64": [
+      37206144,
+      37206224,
+      37206240
+    ],
+    "Matsuri": [
+      37206272,
+      37206352,
+      37206368
+    ],
+    "Namek": [
+      37206400,
+      37206480,
+      37206496
+    ],
+    "Neon Paradise": [
+      37206528,
+      37206608,
+      37206624
+    ],
+    "Neonstadion": [
+      37206656,
+      37206736,
+      37206752
+    ],
+    "North Pole": [
+      37206784,
+      37206864,
+      37206880
+    ],
+    "Out Of Time N-Gage": [
+      37206912,
+      37206992,
+      37207008
+    ],
+    "Papu Cave": [
+      37207040,
+      37207120,
+      37207136
+    ],
+    "Papu's SG Temple": [
+      37207168,
+      37207248,
+      37207264
+    ],
+    "Pepsi City": [
+      37207296,
+      37207376,
+      37207392
+    ],
+    "Redrock Ravine": [
+      37207424,
+      37207504,
+      37207520
+    ],
+    "Royal Raceway": [
+      37207552,
+      37207632,
+      37207648
+    ],
+    "Sampa Run": [
+      37207680,
+      37207760,
+      37207776
+    ],
+    "Sewer Baby Park": [
+      37210880,
+      37210960,
+      37210976
+    ],
+    "Sid House": [
+      37207808,
+      37207888,
+      37207904
+    ],
+    "Sid's House": [
+      37211008,
+      37211088,
+      37211104
+    ],
+    "Skater's Retreat": [
+      37207936,
+      37208016,
+      37208032
+    ],
+    "Skull Cave": [
+      37208064,
+      37208144,
+      37208160
+    ],
+    "SNES Bowser's Castle 2": [
+      37208192,
+      37208272,
+      37208288
+    ],
+    "Snowfall Keep": [
+      37208320,
+      37208400,
+      37208416
+    ],
+    "Snowy Valley": [
+      37208448,
+      37208528,
+      37208544
+    ],
+    "Space Labs": [
+      37208576,
+      37208656,
+      37208672
+    ],
+    "Specter Station": [
+      37211136,
+      37211216,
+      37211232
+    ],
+    "Sunken Sprint": [
+      37208832,
+      37208912,
+      37208928
+    ],
+    "Sunset Vista": [
+      37208960,
+      37209040,
+      37209056
+    ],
+    "Super Snocross 2": [
+      37209088,
+      37209168,
+      37209184
+    ],
+    "The Dairy Track": [
+      37209216,
+      37209296,
+      37209312
+    ],
+    "The Lab": [
+      37209344,
+      37209424,
+      37209440
+    ],
+    "Tizi Challenge": [
+      37211264,
+      37211344,
+      37211360
+    ],
+    "Toasty Terrace": [
+      37209472,
+      37209552,
+      37209568
+    ],
+    "Tomb Temple": [
+      37209600,
+      37209680,
+      37209696
+    ],
+    "Towers": [
+      37209728,
+      37209808,
+      37209824
+    ],
+    "Tribal Trials": [
+      37209856,
+      37209936,
+      37209952
+    ],
+    "TV World": [
+      37209984,
+      37210064,
+      37210080
+    ],
+    "Ursa Glacier": [
+      37210112,
+      37210192,
+      37210208
+    ],
+    "Vanilla Lake 2": [
+      37210240,
+      37210320,
+      37210336
+    ],
+    "Wario Stadium": [
+      37210368,
+      37210448,
+      37210464
+    ],
+    "Wumpa World": [
+      37210496,
+      37210576,
+      37210592
+    ],
+    "Yoshi Circuit": [
+      37210624,
+      37210704,
+      37210720
+    ],
+    "Yoshi Circuit Legacy": [
+      37210752,
+      37210832,
+      37210848
+    ]
+  }
 }
 )CTRREG";
