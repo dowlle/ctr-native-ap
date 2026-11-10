@@ -645,6 +645,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 				// midpoing X,
 				// 30 pixels above botttom Y
+#ifdef CTR_AP
+				AP_FeedHubPadTitle(1);
+#endif
 				DecalFont_DrawLine(warppadLNG, gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
 				                   gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 30, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
 

@@ -120,6 +120,9 @@ void MainFrame_ResetDB(struct GameTracker *gGT)
 
 void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepads)
 {
+#ifdef CTR_AP
+	AP_FeedHubPadTitle(0);
+#endif
 	char bVar1;
 	s16 sVar2;
 	u32 uVar3;

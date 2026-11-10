@@ -160,12 +160,12 @@ void AP_WumpaDrawRaceBank(struct Driver *driver, int x, int y)
 	{
 		long long balance = ap_net_wumpa_balance();
 		if (balance >= -999999 && balance <= 9999999)
-			snprintf(line, sizeof line, "BANK %lld", balance);
+			snprintf(line, sizeof line, "%lld", balance);
 		else
-			snprintf(line, sizeof line, balance < 0 ? "BANK %.1g" : "BANK %.2g", (double)balance);
+			snprintf(line, sizeof line, balance < 0 ? "%.1g" : "%.2g", (double)balance);
 	}
 	else
-		snprintf(line, sizeof line, "BANK ...");
+		snprintf(line, sizeof line, "...");
 	DecalFont_DrawLine(line, x, y + 18, FONT_SMALL, ORANGE);
 }
 

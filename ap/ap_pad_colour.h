@@ -52,15 +52,16 @@ static inline int AP_PadLookFromState(int padState, int racerMissing)
 
 // Pad progress palette, sRGB 0xRRGGBB. Boss completion keeps its own gold.
 // AP_PAD_LOOK_NONE has no colour of its own (0); callers keep the retail look.
+#define AP_PAD_RED_RGB 0xB85648u
 static inline uint32_t AP_PadLookRGB(int look)
 {
 	switch (look)
 	{
-	case AP_PAD_LOOK_CLOSED: return 0xDA4230u;
+	case AP_PAD_LOOK_CLOSED: return AP_PAD_RED_RGB;
 	case AP_PAD_LOOK_OPEN: return 0x70E860u;
 	case AP_PAD_LOOK_STAGE2_OPEN: return 0x70E860u;
-	case AP_PAD_LOOK_STAGE2_WAITING: return 0xDA4230u;
-	case AP_PAD_LOOK_RACER_LOCKED: return 0xDA4230u;
+	case AP_PAD_LOOK_STAGE2_WAITING: return AP_PAD_RED_RGB;
+	case AP_PAD_LOOK_RACER_LOCKED: return AP_PAD_RED_RGB;
 	case AP_PAD_LOOK_DONE: return 0x9AA4AEu;
 	case AP_PAD_LOOK_BOSS_BEATEN: return 0xF2C248u;
 	default: return 0u;
@@ -101,12 +102,12 @@ static inline unsigned AP_PadLookB(uint32_t rgb) { return rgb & 0xffu; }
 // own fade, so the green on top reads green. The beam green is a purer green
 // than the map dot's #70E860, whose red and blue turn the wisps white.
 //
-// Red uses the same shaped colour and removes cyan behind the column.
+// Red uses a softer shaped colour and a weaker cyan-removing filter (A4-34).
 // Done uses a neutral grey model, with no coloured filter or rising wisps.
 #define AP_PAD_BEAM_GREEN 0x20FF20u
 #define AP_PAD_BEAM_FILTER 0x6000FFu // channels the open filter removes
-#define AP_PAD_BEAM_RED 0xFF2020u
-#define AP_PAD_BEAM_RED_FILTER 0x00FFFFu
+#define AP_PAD_BEAM_RED 0xC03838u
+#define AP_PAD_BEAM_RED_FILTER 0x00C0C0u
 #define AP_PAD_BEAM_GREY 0xA0A0A0u
 // Both state beams at 60% of the retail strength:
 // 0x1000 - 0.6 * (0x1000 - 0xC00) = 0xD9A.

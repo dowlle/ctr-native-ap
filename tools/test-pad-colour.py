@@ -32,7 +32,7 @@ int main(void)
     for (look = AP_PAD_LOOK_CLOSED; look <= AP_PAD_LOOK_DONE; look++) {
         int green = look == AP_PAD_LOOK_OPEN || look == AP_PAD_LOOK_STAGE2_OPEN;
         int done = look == AP_PAD_LOOK_DONE;
-        unsigned rgb = done ? 0x9AA4AEu : green ? 0x70E860u : 0xDA4230u;
+        unsigned rgb = done ? 0x9AA4AEu : green ? 0x70E860u : 0xB85648u;
         unsigned hue = done ? AP_PAD_BEAM_GREY : green ? AP_PAD_BEAM_GREEN : AP_PAD_BEAM_RED;
         unsigned filter = done ? 0 : green ? AP_PAD_BEAM_FILTER : AP_PAD_BEAM_RED_FILTER;
         EXPECT(AP_PadLookRGB(look) == rgb, "three progress colours");
@@ -70,6 +70,7 @@ int main(void)
     EXPECT(AP_PadLookRGB(AP_PAD_LOOK_BOSS_BEATEN)==0xF2C248u && AP_PadLookBeamHue(AP_PAD_LOOK_BOSS_BEATEN)==0, "garage gold retained");
     EXPECT(AP_PadLookBeamHue(AP_PAD_LOOK_NONE)==0 && AP_PadLookRGB(AP_PAD_LOOK_NONE)==0, "vanilla retained");
     EXPECT(AP_PAD_BEAM_FILTER_ALPHA==0xB00, "filter strength retained");
+    EXPECT(AP_PAD_BEAM_RED==0xC03838u && AP_PAD_BEAM_RED_FILTER==0x00C0C0u, "softer red and cyan removal together");
     EXPECT(AP_PadTpageBlend(0x003a,2)==0x005a && AP_PadTpageBlend(0xffff,2)==0xffdf, "only blend bits change");
     printf("%d checks, %d failures\n", checks, fails);
     return fails != 0;

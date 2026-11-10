@@ -89,7 +89,7 @@ int main(void)
 	EXPECT(AP_PadLookHasBeamColour(look) && AP_PadLookBeamHue(look) == AP_PAD_BEAM_RED &&
 	       AP_PadLookWispHue(look) == AP_PAD_BEAM_RED && AP_PadLookBeamFilter(look) == AP_PAD_BEAM_RED_FILTER,
 	       "the demoted pad uses the red beam and wisps with cyan filter");
-	EXPECT(AP_PadLookRGB(look) == 0xDA4230u, "the demoted pad's dot and node use red");
+	EXPECT(AP_PadLookRGB(look) == 0xB85648u, "the demoted pad's dot and node use softer red");
 
 	// A received item changes the logic: the look and the birth key follow.
 	{
