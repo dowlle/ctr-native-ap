@@ -61,6 +61,23 @@ track, so standing down removes that path. The normal race on the same track
 stays authorable. The gate is `AP_AuthorRaceAllowsAuthoring` in
 `ap/ap_author_ready.h`, tested by `tools/test-author-ready.c`.
 
+## When the race ends
+
+Nothing in author mode waits to be saved. Every drop, delete, move and nudge
+rewrites the file at once (see below), so a race that ends while author mode
+is on cannot lose a placement, and no exit asks about one. Retry, the pause
+menu's Restart, Change Level, Change Character and Quit all keep the file as it
+is; the marker set is rebuilt from it when the track is loaded or restarted
+(`AP_Author_OnFrame` forgets its handles on the spawn pool's generation bump).
+After the finish line the keys stay live, and a drop there is filed like any
+other.
+
+A crash on Retry in a custom Time Trial while authoring (A4-27) was not author
+mode: the replayed ghost ran out of tape on a track without AI lines and was
+driven as a bot with no nav path. `GhostReplay_ThTick` now parks such a ghost
+(hidden, empty tick) when `BOTS_Driver_Convert` refuses it;
+`tools/test-ghost-tape-end.py` pins that wiring.
+
 ## Keys
 
 | Key | What it does |
