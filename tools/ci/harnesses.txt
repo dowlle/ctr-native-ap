@@ -255,6 +255,7 @@ tools/test-window-geometry.c
 tools/test-wumpa-dispatch.c
 tools/test-adventure-checks-production.py skip Runs once per sender family below
 cmd adventure-wumpa :: python3 tools/test-adventure-checks-production.py wumpa
+cmd adventure-custom-wumpa :: python3 tools/test-adventure-checks-production.py custom_wumpa
 cmd adventure-letters :: python3 tools/test-adventure-checks-production.py letters
 cmd adventure-boxes :: python3 tools/test-adventure-checks-production.py boxes
 cmd adventure-hit :: python3 tools/test-adventure-checks-production.py hit

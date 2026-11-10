@@ -34,8 +34,10 @@ fixture = r'''
 #include "ap/ap_cortex_track.h"
 #include "ap/ap_checkdiag_once.h"
 #include "ap/ap_hit_policy.h"
+#include "ap/ap_custom_trophy_ceremony_logic.h"
+#include "platform/native_custom_race_context.h"
 struct Driver { int numWumpas,numTimeCrates; };
-struct GameTracker { unsigned gameMode1,gameMode2; int levelID,numPlyrCurrGame,timeCratesInLEV,podiumRewardID; struct Driver *drivers[1]; };
+struct GameTracker { int gameMode1; unsigned gameMode2; int levelID,numPlyrCurrGame,timeCratesInLEV,podiumRewardID,bossID; struct Driver *drivers[1]; };
 static struct { struct GameTracker *gGT; } data, *sdata=&data;
 ctr_seed_config ctr_cfg;
 static struct GameTracker gt;
@@ -48,12 +50,15 @@ static int goalEvents;
 static int cortexActive;
 static ap_checkdiag_once_state ap_checkdiag_once;
 static unsigned s_hit_sent_mask;
+static long long lastCode;
+static ap_custom_trophy_ceremony_state ap_custom_trophy_ceremony;
+static int ap_custom_ceremony_bit;
 const ctr_hit_encounters *ap_seedcfg_hit_encounters(void) { return &ctr_cfg.hit; }
 int ctr_cfg_active(void) { return 1; }
 int ap_net_is_connected(void) { return 1; }
 int ap_net_location_checked(long long code) { (void)code; return 0; }
 int ap_net_location_exists(long long code) { return code > 0; }
-void ap_net_send_location(long long code) { assert(code > 0); sent++; }
+void ap_net_send_location(long long code) { assert(code > 0); lastCode=code; sent++; }
 void AP_PerfNoteCheckSent(void) { perf++; }
 static void AP_AppendLog(const char *s) { (void)s; }
 static void AP_FeedOnLocationSent(long code) { (void)code; feed++; }
@@ -97,12 +102,17 @@ static void AP_WumpaGatherFacts(struct GameTracker *g, struct AP_WumpaDispatchFa
 '''
 modes = (root/'include/namespace_Main.h').read_text()
 start = modes.index('enum GameMode1\n')
-fixture = modes[start:modes.index('};', start)+2] + fixture
+mode_macros='\n'.join(line for line in modes.splitlines() if line.startswith(('#define ADVENTURE_BOSS ', '#define IS_BOSS_RACE(')))+'\n'
+custom_macros='\n'.join(line for line in (root/'ap/ap_custom_pad_logic.h').read_text().splitlines() if line.startswith(('#define AP_CUSTOM_TROPHY_PSEUDO_BIT ', '#define AP_CUSTOM_CTR_PSEUDO_BIT ')))+'\n'
+if family in ('custom', 'custom_wumpa'):
+    fixture = '#define CTR_CUSTOM_TRACKS 1\n' + fixture
+fixture = modes[start:modes.index('};', start)+2] + '\n' + mode_macros + custom_macros + fixture
 fixture += function(hooks, 'int AP_LocationChecksAllowed(void)')
 fixture += function(hooks, 'static int AP_EmitClassCheck(long code,')
 
 calls = {
     'wumpa': ('void AP_WumpaReachedTen(', '{ctr_cfg.wumpa.mode=CTR_CFG_WUMPA_GLOBAL;AP_WumpaReachedTen(&local);ctr_cfg.wumpa.mode=CTR_CFG_WUMPA_PER_TRACK;AP_WumpaReachedTen(&local);}'),
+    'custom_wumpa': ('void AP_WumpaReachedTen(', '{int saved=gt.gameMode1;int before=sent;int allowed=AP_LocationChecksAllowed();standalone=1;AP_WumpaReachedTen(&local);assert(sent==before+allowed);if(allowed)assert(lastCode==35016122);standalone=0;gt.gameMode1|=ADVENTURE_BOSS;AP_WumpaReachedTen(&local);assert(sent==before+2*allowed);if(allowed)assert(lastCode==35016123);gt.gameMode1=saved;}'),
     'letters': ('void AP_LetterCollected(', 'AP_LetterCollected(3,0);'),
     'boxes': ('void AP_EmitBoxCheck(', 'AP_EmitBoxCheck(3,0,35000100);'),
     'hit': ('int AP_HitEncounterOnDamage(', 'AP_HitEncounterOnDamage(1,1,1u|2u|16u|32u|128u);'),
@@ -111,13 +121,27 @@ calls = {
     'goal': ('void AP_NotifyGoal(', 'AP_NotifyGoal(0);'),
     'results': ('void AP_NotifyTrialTrackRace(', 'AP_NotifyTrialTrackRace(16,CTR_CFG_TRIAL_TROPHY);'),
     'perfect': ('void AP_NotifyRelicPerfect(', 'AP_NotifyRelicPerfect();'),
-    'custom': ('static void AP_NotifyCustomTrackCtrImpl(', 'AP_NotifyCustomTrackCtrImpl(1,3);'),
+    'custom': ('static void AP_NotifyCustomTrackCtrImpl(', '{unsigned saved=gt.gameMode2;gt.gameMode2=0;AP_NotifyCustomTrackTrophyImpl();gt.gameMode2=TOKEN_RACE;AP_NotifyCustomTrackCtrImpl(1,3);gt.gameMode2=saved;}'),
     'cup': ('int AP_ContentCupFinish(', 'AP_ContentCupFinish(&gt,1);'),
     'cortex': ('void AP_NotifyCortexTrackRace(', 'AP_NotifyCortexTrackRace(0);AP_NotifyCortexTrackRace(1);'),
     'podium': ('static void AP_EmitRung(', 'AP_EmitRung(3,35000100,0,1,"held");AP_EmitRung(3,35000101,3,1,"finish");'),
 }
 if family == 'itemsanity':
     fixture += 'static int AP_ItemsanityActive(void) { return 1; }\n'
+if family == 'custom':
+    fixture += function(hooks, 'static void AP_NotifyCustomTrackTrophyImpl(void)')
+if family == 'custom_wumpa':
+    fixture += r'''
+static int standalone;
+static struct CustomTrackRaceContext context;
+static ctr_content_checks planChecks;
+static ctr_content_bosses planBosses;
+const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int level) { (void)level;return standalone?&context:0; }
+static long AP_StandaloneWumpaCode(void) { return 35016122; }
+int ap_content_plan_active(void) { return 1; }
+const ctr_content_checks *ap_content_plan_checks(void) { return &planChecks; }
+const ctr_content_bosses *ap_content_plan_bosses(void) { return &planBosses; }
+'''
 if family == 'goal':
     fixture += function(hooks, 'static void AP_NotifyAdvRewardImpl(')
     fixture += function(hooks, 'void AP_NotifyAdvReward(')
@@ -135,7 +159,7 @@ if family == 'shop':
 static struct { int hub,cursor; long long buying; } ap_wshop;
 AP_WumpaShopConfig ctr_wumpa_shop;
 static void AP_WShopSay(const char *s) { (void)s; }
-int ap_net_wumpa_buy(long long code,int price,int unlock) { (void)code;(void)price;(void)unlock;sent++;return 0; }
+int ap_net_wumpa_buy(long long code,int price,int unlock) { assert(code==35028600 && price==10 && unlock==0);sent++;return 0; }
 void OtherFX_Play(unsigned int id,int flags) { (void)id;(void)flags; }
 '''
     fixture += function((root/'ap/ap_wumpa_shop_ui.c').read_text(), 'static void AP_WShopBuy(void)')
@@ -159,12 +183,15 @@ int main(void) {
  ctr_cfg.wumpa.mode=CTR_CFG_WUMPA_GLOBAL;ctr_cfg.wumpa.global_code=35016100;
  ctr_cfg.wumpa.tracks[3]=35016101;
  ctr_cfg.custom_ctr_enabled=1;ctr_cfg.custom_ctr_location=35000100;gt.gameMode2=TOKEN_RACE;
+ ctr_cfg.custom_tracks_ok=1;ctr_cfg.custom_track.slot=1;ctr_cfg.custom_track.trophy_location=35000101;
  ctr_cfg.relic_perfect_enabled=1;ctr_cfg.relic_perfect[3]=35000100;
  local.numTimeCrates=gt.timeCratesInLEV=10;
  ctr_cfg.hit.enabled=1;ctr_cfg.hit.locations[1]=35025001;
 '''
 if family == 'shop':
-    fixture += 'ctr_wumpa_shop.state=AP_WUMPA_SHOP_VALID;ctr_wumpa_shop.slots=1;\n'
+    fixture += 'ctr_wumpa_shop.state=AP_WUMPA_SHOP_VALID;ctr_wumpa_shop.slots=1;ctr_wumpa_shop.slot[0][0].code=35028600;ctr_wumpa_shop.slot[0][0].price=10;\n'
+if family == 'custom_wumpa':
+    fixture += 'planChecks.wumpa=2;planBosses.wumpa[0]=35016123;\n'
 if family == 'cup':
     fixture += 'pad.trophy_location=35000100;pad.sweep_location=35000101;\n'
 if family == 'cortex':
