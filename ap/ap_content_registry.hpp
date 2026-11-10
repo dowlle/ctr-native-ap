@@ -6518,11 +6518,11 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         "wumpa_crate": {
           "7": {
             "needs": "usf",
-            "reviewed": false
+            "reviewed": true
           },
           "8": {
             "needs": "usf",
-            "reviewed": false
+            "reviewed": true
           }
         }
       }
@@ -6538,11 +6538,11 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         "wumpa_crate": {
           "7": {
             "needs": "usf",
-            "reviewed": false
+            "reviewed": true
           },
           "8": {
             "needs": "usf",
-            "reviewed": false
+            "reviewed": true
           }
         }
       }
@@ -6674,23 +6674,23 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       "needs": {
         "wumpa_crate": {
           "5": {
-            "needs": "usf",
-            "reviewed": false,
+            "needs": "none",
+            "reviewed": true,
             "door": true
           },
           "6": {
-            "needs": "usf",
-            "reviewed": false,
+            "needs": "none",
+            "reviewed": true,
             "door": true
           },
           "7": {
-            "needs": "usf",
-            "reviewed": false,
+            "needs": "none",
+            "reviewed": true,
             "door": true
           },
           "8": {
-            "needs": "usf",
-            "reviewed": false,
+            "needs": "none",
+            "reviewed": true,
             "door": true
           }
         }
@@ -6706,23 +6706,23 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       "needs": {
         "wumpa_crate": {
           "5": {
-            "needs": "usf",
-            "reviewed": false,
+            "needs": "none",
+            "reviewed": true,
             "door": true
           },
           "6": {
-            "needs": "usf",
-            "reviewed": false,
+            "needs": "none",
+            "reviewed": true,
             "door": true
           },
           "7": {
-            "needs": "usf",
-            "reviewed": false,
+            "needs": "none",
+            "reviewed": true,
             "door": true
           },
           "8": {
-            "needs": "usf",
-            "reviewed": false,
+            "needs": "none",
+            "reviewed": true,
             "door": true
           }
         }
@@ -6762,14 +6762,7 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         2,
         0
       ],
-      "needs": {
-        "weapon_crate": {
-          "9": {
-            "needs": "usf",
-            "reviewed": false
-          }
-        }
-      }
+      "needs": {}
     },
     "retail:6": {
       "lev_sha256": "d62e91af717d1ed16459f181e9bf944cc1c5e3ff272a89cb244bb59a87c3bfcc",
@@ -6778,14 +6771,7 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         2,
         0
       ],
-      "needs": {
-        "weapon_crate": {
-          "9": {
-            "needs": "usf",
-            "reviewed": false
-          }
-        }
-      }
+      "needs": {}
     },
     "f47a9aacbcd8c6152630f703a690c3542ce6787fa458e0cb11b5149b3388eca4": {
       "lev_sha256": "f47a9aacbcd8c6152630f703a690c3542ce6787fa458e0cb11b5149b3388eca4",
@@ -7922,6 +7908,16 @@ static const char kContentRegistryJSON[] = R"CTRREG(
     "17eafea4884285d2d1b6e684519081955347b96196783d06d984f06d72105e3c": [
       {
         "ordinal": 1,
+        "pos": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "d62e91af717d1ed16459f181e9bf944cc1c5e3ff272a89cb244bb59a87c3bfcc": [
+      {
+        "ordinal": 9,
         "pos": [
           0,
           0,

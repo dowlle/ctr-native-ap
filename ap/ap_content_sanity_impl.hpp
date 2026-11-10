@@ -78,11 +78,14 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
         ctr_content_sanity dest{};
         copy(dest.track_id, row["track_id"]); copy(dest.lev_sha256, row["lev_sha256"]);
         std::set<int> excluded;
-        if (track["origin"] == "custom") {
-            // Reviewed exclusions apply even on a track with authored spots.
+        // Reviewed exclusions are keyed by exact LEV and apply to every origin (the retail Roo's Tubes
+        // crate included), even on a track with authored spots.
+        {
             const auto &catalog = registry.at("sanity_exclusions");
             const std::string digest = row["lev_sha256"];
             if (catalog.contains(digest)) for (const auto &c : catalog[digest]) excluded.insert(number(c["ordinal"], 1, 65536));
+        }
+        if (track["origin"] == "custom") {
             for (const auto &pad : out.pads) if (standalone.count(tid) && tid == pad.track_id && !pad.box_spots) {
                 std::vector<int> pool;
                 for (int n = 1; n <= inv["counts"][0].get<int>(); ++n) if (!excluded.count(n)) pool.push_back(n);
