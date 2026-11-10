@@ -125,6 +125,16 @@ int main(int argc, char **argv) {
         bad = sanity;
         for (auto &check : bad["content_plan"]["checks"]) if (check["kind"] == "weapon_crate") { check["routes"][0]["award"] = "box"; break; }
         refuse(bad, "sanity forged route refuses");
+        // Maintainer ruling, 2026-11-10: Roo's Tubes Weapon Crate 9 is a dev-placed crate outside the track, on the reviewed exclusion list.
+        const auto *roo = ap_content_plan_sanity("retail:6");
+        expect(roo != nullptr && roo->locations[0][8] == 0 && roo->locations[0][9] > 0, "Roo's Tubes crate 9 is never a check");
+        // Forge a fully consistent room that picks crate 9 in place of crate 10: only the exclusion can refuse it.
+        bad = sanity;
+        for (auto &row : bad["content_plan"]["sanity"]["tracks"]) if (row["track_id"] == "retail:6") row["weapon_crate"][8] = 9;
+        for (auto &check : bad["content_plan"]["checks"]) if (check["location"] == 35029041) {
+            check["location"] = 35029040; check["display_name"] = "Roo's Tubes: Weapon Crate 9";
+        }
+        refuse(bad, "Roo's Tubes excluded crate 9 forged into the picks refuses");
     }
     J base, extras;
     std::ifstream("tools/fixtures/content-plan/baseline.json") >> base;
