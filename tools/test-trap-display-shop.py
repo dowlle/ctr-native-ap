@@ -58,34 +58,59 @@ int main(void)
 {
     long long loc;
     int selected;
+    int prog1 = 0, filler1 = 0;
     ctr_cfg.trap_display = 1;
     ctr_cfg.trap_display_salt = 12345;
-    for (selected = 0; selected <= 1; selected++)
+    ctr_wumpa_shop.slot[0][0].code = 35028600;
     {
-        int states[] = {AP_WUMPA_SLOT_FOR_SALE, AP_WUMPA_SLOT_LOCKED,
-                        AP_WUMPA_SLOT_TOO_POOR, AP_WUMPA_SLOT_PENDING};
-        unsigned i;
-        for (i = 0; i < sizeof states / sizeof states[0]; i++)
+        unsigned flags = AP_TrapDisplayShopFlags(1, 12345, 35028600, real_flags);
+        const char *label = flags & AP_ITEM_FLAG_PROGRESSION ? "PROGRESSION ITEM" : "FILLER ITEM";
+        for (selected = 0; selected <= 1; selected++)
         {
-            state = states[i];
-            AP_WShopDrawRow(0, 0, 0, selected);
-            assert(!strcmp(drawn, "PROGRESSION ITEM"));
-            assert(drawn_color == (state == AP_WUMPA_SLOT_LOCKED ? GRAY : AP_ITEM_CLASS_PROGRESSION));
+            int states[] = {AP_WUMPA_SLOT_FOR_SALE, AP_WUMPA_SLOT_LOCKED,
+                            AP_WUMPA_SLOT_TOO_POOR, AP_WUMPA_SLOT_PENDING};
+            unsigned i;
+            for (i = 0; i < sizeof states / sizeof states[0]; i++)
+            {
+                state = states[i];
+                AP_WShopDrawRow(0, 0, 0, selected);
+                assert(!strcmp(drawn, label));
+                assert(drawn_color == (state == AP_WUMPA_SLOT_LOCKED ? GRAY : AP_ClassFontColor(flags)));
+            }
         }
+        state = AP_WUMPA_SLOT_FOR_SALE;
+        owner = 2;
+        AP_WShopDrawRow(0, 0, 0, 1);
+        {
+            char want[64];
+            snprintf(want, sizeof want, "%s (OTHER)", label);
+            assert(!strcmp(drawn, want));
+        }
+        owner = 1;
+        text_known = 0;
+        AP_WShopDrawRow(0, 0, 0, 1);
+        assert(!strcmp(drawn, label));
+        text_known = 1;
     }
-    state = AP_WUMPA_SLOT_FOR_SALE;
-    owner = 2;
-    AP_WShopDrawRow(0, 0, 0, 1);
-    assert(!strcmp(drawn, "PROGRESSION ITEM (OTHER)"));
-    owner = 1;
-    text_known = 0;
-    AP_WShopDrawRow(0, 0, 0, 1);
-    assert(!strcmp(drawn, "PROGRESSION ITEM"));
-    text_known = 1;
+    // A4-50: as_progression in the shop splits per location like mixed does,
+    // so both labels appear and one slot keeps its label.
+    for (loc = 35028600; loc < 35028800; loc++)
+    {
+        unsigned flags = AP_TrapDisplayShopFlags(1, 12345, loc, real_flags);
+        if (flags & AP_ITEM_FLAG_PROGRESSION)
+            prog1++;
+        else
+            filler1++;
+        ctr_wumpa_shop.slot[0][0].code = loc;
+        AP_WShopDrawRow(0, 0, 0, 0);
+        assert(!strcmp(drawn, flags & AP_ITEM_FLAG_PROGRESSION ? "PROGRESSION ITEM" : "FILLER ITEM"));
+        assert(drawn_color == AP_ClassFontColor(flags));
+    }
+    assert(prog1 > 60 && filler1 > 60);
     ctr_cfg.trap_display = 2;
     for (loc = 35028600; loc < 35028800; loc++)
     {
-        unsigned flags = AP_TrapDisplayFlags(2, 12345, loc, real_flags);
+        unsigned flags = AP_TrapDisplayShopFlags(2, 12345, loc, real_flags);
         ctr_wumpa_shop.slot[0][0].code = loc;
         for (selected = 0; selected <= 1; selected++)
         {
@@ -108,7 +133,7 @@ int main(void)
     known = 0;
     AP_WShopDrawRow(0, 0, 0, 1);
     assert(!strcmp(drawn, "UNKNOWN ITEM") && drawn_color == WHITE);
-    puts("PASS: production shop names, colours, owners, pending, sold, missing scouts and mixed locations");
+    puts("PASS: production shop names, colours, owners, pending, sold, missing scouts and per-slot random labels");
     return 0;
 }
 '''
