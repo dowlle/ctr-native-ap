@@ -439,11 +439,11 @@ typedef struct
 #define CTR_CFG_HIT_CHARACTER_COUNT    16 // engine character ids 0..15
 #define CTR_CFG_HIT_TRACK_COUNT        18 // ordinary destinations 0..17
 #define CTR_CFG_HIT_CUP_COUNT          5  // cup LevelIDs 100..104
-// Content-plan cups (#133 PR 5b): one order per cup name index 0..36, in the
-// block's optional `content_cups`; their draw destinations are 200..236. The
-// count is the size of the named cup pool (apworld cup_checks.CUP_NAMES, 37
-// since A4-16); a pool name past it would be refused at connect.
-#define CTR_CFG_HIT_CONTENT_CUP_COUNT  37
+// Content-plan cups (#133 PR 5b): one order per cup name index 0..40, in the
+// block's optional `content_cups`; their draw destinations are 200..240. The
+// count is the size of the named cup pool (apworld cup_checks.CUP_NAMES, 41
+// since A4-16c); a pool name past it would be refused at connect.
+#define CTR_CFG_HIT_CONTENT_CUP_COUNT  41
 #define CTR_CFG_HIT_CONTENT_CUP_DEST   200
 #define CTR_CFG_HIT_BOSS_COUNT         6  // canonical boss-win codes, see below
 #define CTR_CFG_HIT_TRIGGER_COUNT      8  // guest engine ids 8..15
