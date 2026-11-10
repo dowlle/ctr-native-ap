@@ -12,6 +12,7 @@ static struct {
     unsigned color;
     short alpha;
     unsigned char family;
+    unsigned short recolour;
 } ap_sanity_objects[512];
 static long ap_sanity_sent[16384];
 static int ap_sanity_sent_count, ap_sanity_feed[3], ap_sanity_feed_ticks;
@@ -146,6 +147,7 @@ int AP_SanityPickup(struct Instance *inst, struct Driver *driver)
             if (!ap_sanity_feed_ticks) ap_sanity_feed_ticks = 120;
             inst->colorRGBA = ap_sanity_objects[i].color;
             inst->alphaScale = ap_sanity_objects[i].alpha;
+            ap_sanity_objects[i].recolour = AP_SanityTag(AP_PAD_LOOK_DONE, AP_SANITY_VISIBILITY);
         }
         return 1;
     }
@@ -156,11 +158,9 @@ void AP_SanityTick(struct GameTracker *gt)
 {
     int i, active = AP_SanityEnsure(gt);
     if (active) for (i = 0; i < ap_sanity_size; ++i) {
-        struct Instance *inst = ap_sanity_objects[i].inst;
         int open = !AP_SanityAlreadySent(ap_sanity_objects[i].code);
         int look = AP_SanityLook(!open, AP_LocationLogicState(ap_sanity_objects[i].code));
-        inst->colorRGBA = AP_SanityTint(look);
-        inst->alphaScale = AP_SanityBlend(AP_SANITY_VISIBILITY);
+        ap_sanity_objects[i].recolour = AP_SanityTag(look, AP_SANITY_VISIBILITY);
     }
     if (ap_sanity_feed_ticks > 0 && --ap_sanity_feed_ticks == 0) {
         static const char *const labels[] = {"WEAPON CRATES", "WUMPA CRATES", "WUMPA FRUIT"};
@@ -173,67 +173,15 @@ void AP_SanityTick(struct GameTracker *gt)
     }
 }
 
-#if defined(CTR_NATIVE)
-// A billboard halo with eight-segment Gouraud fans, fading to black at the
-// rim. Depth sorted with world geometry, behind the original pickup model.
-// No new instances, particles, textures or gameplay state are allocated.
-void AP_SanityDrawGlow(struct GameTracker *gt)
+unsigned AP_SanityRecolourTag(struct Instance *inst)
 {
-    static const short rim[9][2] = {{256,0},{181,181},{0,256},{-181,181},
-        {-256,0},{-181,-181},{0,-256},{181,-181},{256,0}};
-    struct HaloPacket { u32 tag, mode, colour0, xy0, colour1, xy1, colour2, xy2; };
-    int camera, i, j, pass, budget;
-    if (!gt || ap_sanity_ready <= 0 || sdata->Loading.stage != LOAD_IDLE || !AP_SanityRoute(gt)) return;
-    budget = AP_SanityHaloBudget((char *)gt->backBuffer->primMem.end - (char *)gt->backBuffer->primMem.cursor);
-    for (camera = 0; camera < gt->numPlyrCurrGame; ++camera) {
-        struct PushBuffer *pb = &gt->pushBuffer[camera];
-        gte_SetGeomScreen(pb->distanceToScreen_PREV);
-        gte_SetGeomOffset(pb->rect.w >> 1, pb->rect.h >> 1);
-        gte_SetRotMatrix(&pb->matrix_ViewProj);
-        gte_SetTransMatrix(&pb->matrix_ViewProj);
-        for (i = 0; i < ap_sanity_size; ++i) {
-            struct Instance *inst = ap_sanity_objects[i].inst;
-            SVECTOR world = {(short)inst->matrix.t[0], (short)inst->matrix.t[1], (short)inst->matrix.t[2], 0};
-            short screen[2];
-            s32 depth;
-            u32 flag, colour, filter;
-            int radius, look, bucket;
-            if (!(inst->flags & DRAW_INSTANCE) || (inst->flags & HIDE_MODEL)) continue;
-            // Crates and fruit disappear by shrinking, with draw flags kept.
-            if (!inst->scale.x || !inst->scale.y || !inst->scale.z) continue;
-            CTR_GteLoadSV0(&world); gte_rtps();
-            CTR_GteStoreSXY(screen); gte_stsz(&depth); gte_stflg(&flag);
-            if ((flag & 0x80060000u) || depth < 160 || depth > 6000) continue;
-            radius = 150 * pb->distanceToScreen_PREV / depth;
-            if (radius < 2 || screen[0] + radius < 0 || screen[0] - radius > pb->rect.w ||
-                screen[1] + radius < 0 || screen[1] - radius > pb->rect.h) continue;
-            look = AP_SanityLook(AP_SanityAlreadySent(ap_sanity_objects[i].code),
-                                 AP_LocationLogicState(ap_sanity_objects[i].code));
-            colour = AP_SanityHaloColour(look, AP_SANITY_VISIBILITY);
-            filter = AP_SanityHaloFilterColour(look, AP_SANITY_VISIBILITY);
-            bucket = (depth + 160) >> 6;
-            if (bucket > 1023) continue;
-            if (budget-- <= 0) return;
-            if ((char *)gt->backBuffer->primMem.end - (char *)gt->backBuffer->primMem.cursor < (int)(16 * sizeof(struct HaloPacket))) return;
-            // OT insertion is last-in-first-out: link the additive fan first,
-            // then the subtractive fan, so the filter is drawn underneath.
-            for (pass = 0; pass < (filter ? 2 : 1); ++pass) for (j = 0; j < 8; ++j) {
-                struct HaloPacket *p = (struct HaloPacket *)gt->backBuffer->primMem.cursor;
-                int x1 = screen[0] + radius * rim[j][0] / 256, y1 = screen[1] + radius * rim[j][1] / 256;
-                int x2 = screen[0] + radius * rim[j+1][0] / 256, y2 = screen[1] + radius * rim[j+1][1] / 256;
-                p->mode = pass ? 0xe1000a40 : 0xe1000a20;
-                p->colour0 = 0x32000000u | (pass ? filter : colour);
-                p->xy0 = (u16)screen[0] | ((u32)(u16)screen[1] << 16);
-                p->colour1 = p->colour2 = 0;
-                p->xy1 = (u16)x1 | ((u32)(u16)y1 << 16);
-                p->xy2 = (u16)x2 | ((u32)(u16)y2 << 16);
-                CtrGpu_LinkPacket24(&pb->ptrOT[bucket], &p->tag, p, 0x07000000);
-                gt->backBuffer->primMem.cursor = (u32 *)(p + 1);
-            }
-        }
-    }
+    int i;
+    struct GameTracker *gt = sdata ? sdata->gGT : 0;
+    if (ap_sanity_ready <= 0 || !AP_SanityRoute(gt)) return 0;
+    for (i = 0; i < ap_sanity_size; ++i)
+        if (ap_sanity_objects[i].inst == inst) return ap_sanity_objects[i].recolour;
+    return 0;
 }
-#endif
 
 int AP_SanityPadPending(int physical, int family)
 {

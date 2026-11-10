@@ -357,6 +357,8 @@ struct RenderBucketProjectedRegs
 
 struct RenderBucketDrawContext
 {
+	struct TextureLayout sanityTexture;
+	unsigned sanityTag;
 	struct Instance *inst;
 	struct InstDrawPerPlayer *idpp;
 	struct PushBuffer *pb;
@@ -2854,7 +2856,13 @@ static struct TextureLayout *RenderBucket_GetCommandTexture(struct RenderBucketD
 	// NOTE(aalhendi): Retail only uses texture index zero as the explicit G3
 	// path, but a null texture-table entry also reaches DrawInstPrim_Normal as
 	// `a2 == 0` and emits G3. Do not reject that case here.
-	return ctx->idpp->ptrTexLayout[texIndex - 1];
+	struct TextureLayout *tex = ctx->idpp->ptrTexLayout[texIndex - 1];
+	if (tex && ctx->sanityTag) {
+		ctx->sanityTexture = *tex;
+		ctx->sanityTexture.tpage = (tex->tpage & ~0x3c00u) | ctx->sanityTag;
+		return &ctx->sanityTexture;
+	}
+	return tex;
 }
 
 static int RenderBucket_OTEntryPassesDpctGate(const uint32_t *otEntry)
@@ -5186,6 +5194,10 @@ static int RenderBucket_RunInstanceSetupCallback(struct RenderBucketDrawContext 
 
 static void RenderBucket_DispatchDrawFunc(struct RenderBucketDrawContext *ctx)
 {
+	ctx->sanityTag = 0;
+#ifdef CTR_AP
+	ctx->sanityTag = AP_SanityRecolourTag(ctx->inst);
+#endif
 	// NOTE(aalhendi): Retail RenderBucket_Execute copies the per-model color
 	// cache to scratchpad 0x140 before Instance+0x5c setup callback dispatch.
 	RenderBucket_CopyScratchColorCache(ctx);

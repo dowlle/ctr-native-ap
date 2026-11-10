@@ -112,9 +112,6 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 
 	MAINFRAME_PERF_BEGIN(NATIVE_PERF_BUCKET_MAINFRAME_EFFECTS);
 	RenderAllNormalParticles(gGT);
-#if defined(CTR_AP) && defined(CTR_NATIVE)
-	AP_SanityDrawGlow(gGT);
-#endif
 
 	RenderDispEnv_World(gGT); // == RenderDispEnv_World ==
 
