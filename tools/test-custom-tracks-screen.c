@@ -241,13 +241,13 @@ void CTR_Box_DrawClearBox(const RECT *r, const Color *c, int t, uint32_t *ot)
 
 #include "../include/ctr_menu_scrollbar.h"
 /* The scroll bar (A4-36): the real thumb geometry, drawn through the highlight stub above so its bounds checks apply. */
-static int scrollBars;
+static int scrollBars, barVisible, barTop;
 void CTR_MenuDrawScrollBar(int x, int y, int h, int total, int visible, int top, uint32_t *ot)
 {
 	int ty, th;
 	if (!CTR_ScrollBarThumb(total, visible, top, h, 8, &ty, &th))
 		return;
-	scrollBars++;
+	scrollBars++; barVisible = visible; barTop = top;
 	RECT track = {x, y, 4, h}, thumb = {x, y + ty, 4, th};
 	CTR_Box_DrawClearBox(&track, NULL, 0, ot);
 	CTR_Box_DrawClearBox(&thumb, NULL, 0, ot);
@@ -690,7 +690,10 @@ int main(void)
         s_ctTab = CT_TAB_SEED; frame(0, NULL); CHECK(s_ctSeedCount == 5 && scrollBars == before);
         for (int k = 5; k < 12; k++) { row(k, "Extra track", "1.0.0", AP_SEED_SCAN_READY, AP_SEED_SOURCE_BUNDLED); room[k].index = -1; }
         roomCount = 12; frame(0, NULL); CHECK(s_ctSeedCount == 12 && scrollBars == before + 1); /* one bar, track and thumb */
-        roomCount = 7; frame(0, NULL); CHECK(s_ctSeedCount == 7 && scrollBars == before + 1);   /* exactly seven fit: no new bar */
+        CHECK(barVisible == 7 && barTop == 0);
+        roomCount = 8; s_ctListSel[1] = 7; frame(0, NULL); CHECK(s_ctSeedCount == 8 && barVisible == 1 && barTop == 7); /* last page: one row drawn */
+        roomCount = 12; s_ctListSel[1] = 0; frame(0, NULL); CHECK(barVisible == 7 && barTop == 0);
+        before = scrollBars; roomCount = 7; frame(0, NULL); CHECK(s_ctSeedCount == 7 && scrollBars == before);   /* exactly seven fit: no bar */
         roomCount = 5;
     }
 

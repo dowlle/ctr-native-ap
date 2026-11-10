@@ -164,10 +164,12 @@ static int CT_First(int selected) { return selected < 0 ? 0 : (selected / CT_ROW
 
 /* The slim scroll bar of a list with more than CT_ROWS rows (A4-36): right of
    the row highlight, inside the list panel. These lists show a whole page of
-   seven rows at a time, so the thumb follows the page. */
+   seven rows at a time, so the thumb follows the page and the rows it draws
+   (a last page can hold fewer than seven). */
 static void CT_ScrollBar(int total, int first, uint32_t *ot)
 {
-    CTR_MenuDrawScrollBar(284, CT_ROW_Y0 - 2, CT_ROWS * CT_ROW_H, total, CT_ROWS, first, ot);
+    const int shown = total - first < CT_ROWS ? total - first : CT_ROWS;
+    CTR_MenuDrawScrollBar(284, CT_ROW_Y0 - 2, CT_ROWS * CT_ROW_H, total, shown, first, ot);
 }
 
 static int CT_Step(int value, int count, int tapped)
