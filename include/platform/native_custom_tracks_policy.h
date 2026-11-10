@@ -101,6 +101,17 @@
 //    than replacing it, which is why a call site can swap one for the other
 //    without changing what retail content does.
 //
+//    The predicate can only see NULL, so a hole must arrive as NULL. Motor
+//    Sports Land (St. Patrick's Day Racing, LEV 04cfb25f...) breaks that: its
+//    table says count == 4 but overlaps its own icon array, so entries 1 and 2
+//    are the bytes "map-" and "test", left out of the pointer map and never
+//    relocated. ST1_CAMERA_EOR reads as present and the end-of-race camera
+//    dereferences 0x74736574 when the player finishes. Before relocation a
+//    custom LEV still carries its pointer map, so the loader clears every
+//    entry whose slot the map does not relocate (CustomTrackPolicy_ClearUnmappedSt1).
+//    A slot outside the map is never a pointer, and NULL is the absence every
+//    consumer already handles. Retail relocates every entry, so it is unchanged.
+//
 // 7. IS THERE ROOM FOR ONE MORE PRIMITIVE (rung 2d). The engine gives each
 //    frame a fixed primitive arena whose size is looked up BY LEVEL ID
 //    (data.primMem_SizePerLEV_1P[levelID] << 10, game/MAIN/MainInit.c). A
@@ -1182,6 +1193,68 @@ static int CustomTrackPolicy_St1EntryPresent(int count, int index, const void *c
 		return 0;
 
 	return (entries[index] != NULL) ? 1 : 0;
+}
+
+static unsigned long CustomTrackPolicy_ReadLe32(const unsigned char *p)
+{
+	return (unsigned long)p[0] | ((unsigned long)p[1] << 8) | ((unsigned long)p[2] << 16) |
+	       ((unsigned long)p[3] << 24);
+}
+
+// The other half of decision 6: zero every SpawnType1 entry that the LEV's own
+// pointer map does not relocate, so CustomTrackPolicy_St1EntryPresent sees it
+// as absent. `file` is a whole LEV subfile as read, BEFORE LOAD_RunPtrMap:
+// [u32 data size][data, Level header at 0][u32 map bytes][u32 offsets]. The
+// Level's ptrSpawnType1 is at data offset 0x134; the table is a count and then
+// that many entries. Only the seven indices the engine reads (ST1_MAP to
+// ST1_CREDITS) are looked at, so a corrupt count cannot reach other data.
+// Returns how many entries were cleared, 0 when the bytes are not that shape
+// (the loader's own checks answer for those). Entries past the end of the data
+// stop the walk; they are not written.
+static int CustomTrackPolicy_ClearUnmappedSt1(unsigned char *file, unsigned long fileBytes)
+{
+	unsigned long dataBytes, mapBytes, st1, count, i, k;
+	const unsigned char *data, *map;
+	int cleared = 0;
+
+	if (file == NULL || fileBytes < 8)
+		return 0;
+	dataBytes = CustomTrackPolicy_ReadLe32(file);
+	if (dataBytes < 0x138 || dataBytes > fileBytes - 8)
+		return 0;
+	data = file + 4;
+	map = data + dataBytes;
+	mapBytes = CustomTrackPolicy_ReadLe32(map);
+	if ((mapBytes & 3) != 0 || mapBytes > fileBytes - 8 - dataBytes)
+		return 0;
+	map += 4;
+
+	st1 = CustomTrackPolicy_ReadLe32(data + 0x134);
+	if (st1 == 0 || st1 > dataBytes - 4)
+		return 0;
+	count = CustomTrackPolicy_ReadLe32(data + st1);
+	if (count > 0x7fffffffuL)
+		return 0;
+	if (count > 7)
+		count = 7;
+
+	for (i = 0; i < count && (dataBytes - st1 - 4) / 4 > i; i++)
+	{
+		unsigned long slot = st1 + 4 + i * 4;
+		unsigned char *entry = file + 4 + slot;
+		int mapped = 0;
+
+		if (CustomTrackPolicy_ReadLe32(entry) == 0)
+			continue;
+		// LOAD_RunPtrMap drops the low two bits of each offset.
+		for (k = 0; k < mapBytes && !mapped; k += 4)
+			mapped = (CustomTrackPolicy_ReadLe32(map + k) & ~3uL) == slot;
+		if (mapped)
+			continue;
+		entry[0] = entry[1] = entry[2] = entry[3] = 0;
+		cleared++;
+	}
+	return cleared;
 }
 
 // Is there room for one more primitive of `primSize` bytes before the frame's

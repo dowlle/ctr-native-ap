@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 // budget: 2584
 
 enum PlantAnim
@@ -452,7 +456,15 @@ void RB_Plant_LInB(struct Instance *inst)
 	plantBoxDesc.bbox.max.z = 0x1e0;
 
 	ptrSpawnType1 = sdata->gGT->level1->ptrSpawnType1;
+#ifdef CTR_CUSTOM_TRACKS
+	// A custom LEV can have count > 0 with no ST1_SPAWN entry (NULL, or cleared at
+	// load because the pointer map leaves it out; policy header decision 6).
+	// Without one the object keeps its defaults. Retail is unchanged.
+	if (CustomTrackPolicy_St1EntryPresent(ptrSpawnType1->count, ST1_SPAWN,
+	                                      (const void *const *)ST1_GETPOINTERS(ptrSpawnType1)))
+#else
 	if (ptrSpawnType1->count > 0)
+#endif
 	{
 		// puts plants on separate cycles
 		void **pointers = ST1_GETPOINTERS(ptrSpawnType1);
