@@ -7924,6 +7924,17 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           0
         ]
       }
+    ],
+    "7347cd50591736199bca22dceca9d32af82fde9fd079cc7b61c4a401a8cb7b3a": [
+      {
+        "family": "wumpa_crate",
+        "ordinal": 4,
+        "pos": [
+          4884,
+          -1699,
+          5680
+        ]
+      }
     ]
   },
   "sanity_locations": {
