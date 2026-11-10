@@ -6,6 +6,13 @@
 // network and no config dependency, so the feed and the host harness
 // (tools/test-feed-trap-lines.c) drive the same code.
 //
+// A4-54: identical effects share a counted line, with receipt sequences keeping
+// state transitions from adding copies. ARMED is hidden in race contexts; pending
+// identities still join the next warning/fire line. Filler receipts group only
+// within one consecutive run and one fixed four-second receipt window.
+//
+// Historical per-copy helper below is retained for the A3-21 regression fixture
+// and before/after render comparison. Production uses AP_FeedLinesTrapGrouped.
 // TRAP LINES (A3-21, ruled 2026-11-06: trap notices were too spammy).
 // A trap owns ONE line that changes in place: NAME ARMED, then NAME INCOMING, then
 // NAME. The line carries the trap copy's identity (scheduler slot plus its receipt

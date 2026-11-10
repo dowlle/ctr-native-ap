@@ -983,6 +983,7 @@ static void AP_TrapDrainEvents(struct GameTracker *gGT, struct Driver *local)
 {
 	AP_TrapEvent ev;
 	char msg[128];
+	int context = AP_TrapContextOf(gGT, sdata->Loading.stage);
 
 	while (AP_TrapSchedPopEvent(&g_sched, &ev))
 	{
@@ -999,7 +1000,7 @@ static void AP_TrapDrainEvents(struct GameTracker *gGT, struct Driver *local)
 		case AP_TRAP_EV_ARMED:
 			snprintf(msg, sizeof msg, "%s ARMED", name);
 			AP_FeedTrapLine(ev.effect, ev.slot, ev.seq, AP_FEED_TRAP_ARMED, msg,
-			    gGT && !(gGT->gameMode1 & ADVENTURE_ARENA));
+			    context != 0 && context != AP_TRAP_CTX_HUB);
 			snprintf(msg, sizeof msg, "[AP TRAP] armed: %s (slot %d)\n", name, ev.slot);
 			AP_LogLine(msg);
 			break;

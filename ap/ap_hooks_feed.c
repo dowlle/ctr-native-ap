@@ -161,7 +161,10 @@ void AP_FeedOnItemReceived(long long item, int player, long long index, unsigned
 	if (index > ap_feed_hwm)
 		ap_feed_hwm = index;
 	if (AP_FeedConsumeSelfRung(item))
+	{
+		ap_feed.receiptWindow = 0; // a distinct receipt ends a filler run
 		return; // descriptive podium-rung line already queued
+	}
 
 	int self = ap_net_self_slot();
 	// Display rule: own slot OR the server (slot <= 0) shows just the item; anyone
