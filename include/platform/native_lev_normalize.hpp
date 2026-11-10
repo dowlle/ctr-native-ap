@@ -68,5 +68,31 @@ inline Result normalize(std::vector<unsigned char> &b, std::string &why,
     b.swap(out);
     return Result::Normalized;
 }
+
+/* End of a tagged delta map that starts at `at` (its count word) and is not
+   the end of its buffer, as in a disc file that holds a level, then its map,
+   then its texture file. 0 when the stream does not fit. Only the stream
+   length is checked here; normalize() checks every slot once the level and
+   this stream are joined. */
+inline size_t tagged_stream_end(const unsigned char *p, size_t size, size_t at)
+{
+    if (at > size || size - at < 4) return 0;
+    const uint32_t header = word(p + at);
+    if (!(header & 0x80000000u) || (header & 0x60000003u)) return 0;
+    const uint32_t count = (header & 0x7fffffffu) / 4;
+    at += 4;
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        if (size - at < 2) return 0;
+        const uint32_t delta = uint32_t(p[at]) | uint32_t(p[at + 1]) << 8;
+        at += 2;
+        if (delta == 0xffff)
+        {
+            if (size - at < 4) return 0;
+            at += 4;
+        }
+    }
+    return at;
+}
 } // namespace NativeLev
 #endif
