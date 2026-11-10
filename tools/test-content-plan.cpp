@@ -126,6 +126,7 @@ int main(int argc, char **argv) {
         for (auto &check : bad["content_plan"]["checks"]) if (check["kind"] == "weapon_crate") { check["routes"][0]["award"] = "box"; break; }
         refuse(bad, "sanity forged route refuses");
         // Maintainer ruling, 2026-11-10: Roo's Tubes Weapon Crate 9 is a dev-placed crate outside the track, on the reviewed exclusion list.
+        expect(parse(sanity) && bind_room(sanity), "sanity room parses again after the refusal cases");
         const auto *roo = ap_content_plan_sanity("retail:6");
         expect(roo != nullptr && roo->locations[0][8] == 0 && roo->locations[0][9] > 0, "Roo's Tubes crate 9 is never a check");
         // Forge a fully consistent room that picks crate 9 in place of crate 10: only the exclusion can refuse it.
