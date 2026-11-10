@@ -2,6 +2,9 @@
 #define AP_SANITY_COLOUR_H
 #include "ap_pad_colour.h"
 
+struct Instance;
+unsigned AP_SanityRecolourTag(struct Instance *inst);
+
 // 0 subtle (70%), 1 medium (85%, default), 2 strong (100%).
 #define AP_SANITY_VISIBILITY 1
 
