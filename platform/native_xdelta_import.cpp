@@ -1612,6 +1612,18 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                 add_item(*scan, item);
                 return;
             }
+            /* A level from a disc file whose checkpoints never lead back to the
+               start is a course its pack's own code ends (Coco Team Racing's
+               TRIBAL.BIN runs 0 to 181 and stops). A lap race there cannot
+               finish, so it is refused unless an exact finish rule exists. */
+            if (embeddedSources.count(c.index) && m.finishGap == (unsigned long)-1 &&
+                CustomFinish_Terrain(item.levSha256, item.vrmSha256) < 0)
+            {
+                set_text(item.reason, sizeof item.reason, "Course has no lap loop: its pack's code ends the race");
+                CustomPackage_Free(&built.owned);
+                add_item(*scan, item);
+                return;
+            }
             if (const char *blocked = CustomFinish_ImportBlock(item.levSha256, item.vrmSha256))
             {
                 if (following) { CustomPackage_Free(&built.owned); undo_following(); return; }
@@ -2427,6 +2439,11 @@ bool plan_descriptor(const XdeltaImportSummary &summary, const XdeltaImportItem 
     if (title.empty() || title.size() > 128)
     {
         why = "its title is longer than 128 bytes";
+        return false;
+    }
+    if (item.bigfileIndex >= CTR_XDELTA_EMBEDDED_INDEX_BASE)
+    {
+        why = "a seed cannot name a track inside a disc file yet";
         return false;
     }
     if (item.bigfileIndex < 0 || item.bigfileIndex > 4095)
