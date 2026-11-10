@@ -2101,8 +2101,11 @@ extern "C" int AP_Solo_OptionGet(int index, struct APSoloOptionInfo *out)
 	CopyText(out->name, sizeof out->name, o.name);
 	CopyText(out->label, sizeof out->label, o.label);
 	CopyText(out->group, sizeof out->group, o.group);
+	/* A toggle is stored as the YAML "true" / "false" but shown as On / Off,
+	   the words the option descriptions and the checklist rows use (A4-31). */
 	CopyText(out->value, sizeof out->value, o.kind == "set"      ? AP_SoloSetSummary(o)
 	                                        : o.kind == "weights" ? AP_SoloWeightsSummary(o)
+	                                        : o.kind == "toggle"  ? (o.value == "true" ? "On" : "Off")
 	                                                              : o.value);
 	out->kind = o.kind == "toggle"   ? AP_SOLO_OPT_TOGGLE
 	            : o.kind == "choice" ? AP_SOLO_OPT_CHOICE
