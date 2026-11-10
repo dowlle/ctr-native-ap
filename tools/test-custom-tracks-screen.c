@@ -714,6 +714,15 @@ int main(void)
     frame(BTN_DOWN, NULL); CHECK(MM_CustomImport_Active() && consumed == 0);
     frame(0, "import-choose"); CHECK(consumed && has("Choose a file") && has("CRASH-30"));
     frame(BTN_TRIANGLE, NULL); CHECK(!MM_CustomImport_Active() && s_ctFocus == CT_FOCUS_TABS);
+    /* A4-36: nine patch files make ten rows, so the chooser draws a scroll bar; two files do not. */
+    {
+        int before = scrollBars;
+        folderCount = 9; frame(BTN_DOWN, NULL); frame(0, NULL);
+        CHECK(MM_CustomImport_Active() && scrollBars > before && barVisible == 7 && barTop == 0);
+        frame(BTN_TRIANGLE, NULL); folderCount = 2; before = scrollBars;
+        frame(BTN_DOWN, NULL); frame(0, NULL); CHECK(MM_CustomImport_Active() && scrollBars == before);
+        frame(BTN_TRIANGLE, NULL); CHECK(!MM_CustomImport_Active() && s_ctFocus == CT_FOCUS_TABS);
+    }
     /* A full import, then the follow-up choices. */
     frame(BTN_CROSS, NULL); frame(BTN_DOWN, NULL); frame(BTN_CROSS, NULL); CHECK(scanStarts == 1);
     fakeSummary.count = 2;
