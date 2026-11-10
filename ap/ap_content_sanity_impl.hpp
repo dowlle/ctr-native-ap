@@ -77,14 +77,19 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
         need(row["lev_sha256"] == inv["lev_sha256"] && row["counts"] == inv["counts"], "sanity revision/count mismatch");
         ctr_content_sanity dest{};
         copy(dest.track_id, row["track_id"]); copy(dest.lev_sha256, row["lev_sha256"]);
-        std::set<int> excluded;
-        // Reviewed exclusions are keyed by exact LEV and apply to every origin (the retail Roo's Tubes
+        std::set<int> excluded_by_kind[3];
+        // Reviewed exclusions are keyed by exact LEV and model family ("family" defaults to a weapon
+        // crate) and apply to every origin (the retail Roo's Tubes crate and the Hot Air Skyway Wumpa
         // crate included), even on a track with authored spots.
         {
             const auto &catalog = registry.at("sanity_exclusions");
             const std::string digest = row["lev_sha256"];
-            if (catalog.contains(digest)) for (const auto &c : catalog[digest]) excluded.insert(number(c["ordinal"], 1, 65536));
+            if (catalog.contains(digest)) for (const auto &c : catalog[digest]) {
+                const std::string family = c.value("family", std::string("weapon_crate"));
+                for (int f = 0; f < 3; ++f) if (family == kinds[f]) excluded_by_kind[f].insert(number(c["ordinal"], 1, 65536));
+            }
         }
+        std::set<int> &excluded = excluded_by_kind[0];
         if (track["origin"] == "custom") {
             for (const auto &pad : out.pads) if (standalone.count(tid) && tid == pad.track_id && !pad.box_spots) {
                 std::vector<int> pool;
@@ -99,7 +104,7 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
             const J needs = inv.at("needs").value(kinds[f], J::object());
             for (int n = 1; n <= std::min(dest.counts[f], budgets[f]); ++n) {
                 const J rule = needs.value(std::to_string(n), J::object());
-                if ((f || !excluded.count(n)) && rule.value("shortcut", 0) <= tier) pool.insert(n);
+                if (!excluded_by_kind[f].count(n) && rule.value("shortcut", 0) <= tier) pool.insert(n);
             }
             const int selected = f ? ((wumpa & f) ? (int)pool.size() : 0) : std::min((int)pool.size(), count);
             need(row[kinds[f]].is_array() && row[kinds[f]].size() == (size_t)selected, "sanity pick count mismatch");

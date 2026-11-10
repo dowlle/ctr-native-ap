@@ -136,6 +136,22 @@ int main(int argc, char **argv) {
             check["location"] = 35029040; check["display_name"] = "Roo's Tubes: Weapon Crate 9";
         }
         refuse(bad, "Roo's Tubes excluded crate 9 forged into the picks refuses");
+        // Maintainer ruling, 2026-11-10 18:03 CET (A4-41): Hot Air Skyway Wumpa Crate 4 hangs under the road and
+        // is on the same exclusion list, keyed by exact LEV and model family. Its code stays registered.
+        expect(parse(sanity) && bind_room(sanity), "sanity room parses again before the Skyway cases");
+        const auto *sky = ap_content_plan_sanity("retail:7");
+        expect(sky != nullptr && sky->locations[1][2] > 0 && sky->locations[1][3] == 0, "Hot Air Skyway Wumpa crate 4 is never a check");
+        expect(sky != nullptr && sky->locations[0][3] > 0 && sky->counts[1] == 4, "Hot Air Skyway weapon crate 4 and the crate count are untouched");
+        // Forge a fully consistent room that also picks Wumpa crate 4 with its own check: only the exclusion can refuse it.
+        bad = sanity;
+        for (auto &row : bad["content_plan"]["sanity"]["tracks"]) if (row["track_id"] == "retail:7") row["wumpa_crate"].push_back(4);
+        {
+            auto extra = *std::find_if(bad["content_plan"]["checks"].begin(), bad["content_plan"]["checks"].end(),
+                                       [](const J &c) { return c["location"] == 35029794; });
+            extra["location"] = 35029795; extra["display_name"] = "Hot Air Skyway: Wumpa Crate 4";
+            bad["content_plan"]["checks"].push_back(extra);
+        }
+        refuse(bad, "Hot Air Skyway excluded Wumpa crate 4 forged into the picks refuses");
     }
     J base, extras;
     std::ifstream("tools/fixtures/content-plan/baseline.json") >> base;
