@@ -129,6 +129,16 @@ int main(void) {
  pads[3].legs[0].laps=3;strcpy(pads[3].legs[0].track_id,race.trackID);
  expect(banner_name(),"RAW PACKAGE NAME","cup-only package banner");
  expect(standings_name(),"RAW PACKAGE NAME","cup leg heading");
+ pads[6]=pads[3];pads[6].cup=0;strcpy(pads[6].room_title,"Generated Cup Track");
+ pads[3].legs[0].track_pad=6;
+ expect(banner_name(),"GENERATED CUP TRACK","cup leg generated room title");
+ expect(standings_name(),"GENERATED CUP TRACK","cup leg heading generated room title");
+ for(int i=1;i<4;i++) {
+  pads[3].legs[i]=pads[3].legs[0];race.leg=i;
+  expect(banner_name(),"GENERATED CUP TRACK","later cup leg on same host");
+  expect(standings_name(),"GENERATED CUP TRACK","later cup leg heading");
+ }
+ race.leg=0;
  pads[3].legs[0].cortex=1;race.cortex=1;race.hostLevelID=game.levelID=13;
  expect(banner_name(),"CORTEX VORTEX","Cortex cup banner");
  expect(standings_name(),"CORTEX VORTEX","Cortex cup heading");
@@ -150,6 +160,12 @@ int main(void) {
  reset();haveRace=1;race.retail=1;expect(banner_name(),"ROO'S TUBES","retail content-plan race");
  race.retail=0;race.seedEpoch=6;expect(banner_name(),"ROO'S TUBES","stale seed context rejected");
  reset();game.levelID=18;expect(banner_name(),"RETAIL","retail Crystal Challenge");
+ reset();haveRace=1;strcpy(race.trackID,"other");expect(banner_name(),"ROO'S TUBES","mismatched logical track rejected");
+ reset();game.gameMode1=ADVENTURE_BOSS;game.bossID=garage=0;bosses.venue_package[0]=0;
+ game.levelID=5;expect(banner_name(),"RETAIL","garage title does not leak to another host");
+ game.levelID=6;game.gameMode1=0;expect(banner_name(),"ROO'S TUBES","garage title does not leak to ordinary retail race");
+ reset();haveRace=1;memset(pads[3].room_title,'W',128);pads[3].room_title[128]=0;
+ expect(banner_name(),pads[3].room_title,"full long title retained for banner scrolling");
  printf("%d checks, %d failures\n",checks,failures);return failures?1:0;
 }
 '''
