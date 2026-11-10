@@ -37,7 +37,7 @@ int LOAD_IsOpen_AdvHub(void) { return 1; }
 
 shop = r'''
 #define AP_WSHOP_VISIBLE 9
-static struct { int open, buying, hub, cursor, top, msgFrames, marqueeFrame; } ap_wshop;
+static struct { int open, buying, hub, cursor, top, msgFrames; } ap_wshop;
 static struct { int slots; } ctr_wumpa_shop = {3};
 static int buys;
 int AP_WumpaShopRowShown(void) { return 1; }
@@ -49,6 +49,7 @@ void AP_WShopSay(const char *s) {}
 int AP_WumpaShopUsable(void *p) { return 1; }
 void AP_WShopBuy(void) { buys++; }
 void AP_WShopDraw(void) {}
+void DecalFont_ResetLineBox(int slot) { assert(slot == TEXT_SLOT_SHOP); }
 '''
 shop += function('ap/ap_wumpa_shop_ui.c', 'int AP_WumpaShopMenuFrame(void)')
 shop += r'''
