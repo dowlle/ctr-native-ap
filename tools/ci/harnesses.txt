@@ -193,6 +193,7 @@ tools/test-menu-actions.py
 tools/test-solo-selection-production.py
 tools/test-solo-publication-production.py
 tools/test-solo-descriptor-records-production.py
+tools/test-solo-toggle-wording-production.py
 tools/test-solo-logic.cpp
 tools/test-spu-memory.c
 tools/test-stat-ladder.c
@@ -313,3 +314,4 @@ tools/test-track-registry-download-production.py
 tools/test-feed-trap-lines.c
 tools/test-track-sources.c
 tools/test-custom-finish.c
+tools/test-boss-reverb-production.py

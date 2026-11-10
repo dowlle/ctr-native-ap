@@ -11,6 +11,9 @@
 // Debug toggle key from the Controls page (AP Shortcuts), default Numpad +
 // (platform/native_controls.c). SDL-header-free like the other AP modules.
 #include <platform/native_shortcuts.h>
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
 
 // The flag literals in ap_democam_logic.h have to stay the engine's values: the
 // harness compares against them without ever seeing namespace_Camera.h.
@@ -230,7 +233,14 @@ static int AP_DemoCamEorTableUsable(struct GameTracker *gGT)
 		return 0;
 	if (gGT->numPlyrCurrGame >= 3)
 		return 0;
+#ifdef CTR_CUSTOM_TRACKS
+	// Ask for the entry, as CAM_EndOfRace does: a custom LEV can have count >= 3
+	// with ST1_CAMERA_EOR NULL (policy header decision 6). Same answer on retail.
+	return CustomTrackPolicy_St1EntryPresent(gGT->level1->ptrSpawnType1->count, ST1_CAMERA_EOR,
+	                                         (const void *const *)ST1_GETPOINTERS(gGT->level1->ptrSpawnType1));
+#else
 	return gGT->level1->ptrSpawnType1->count >= 3;
+#endif
 }
 
 static void AP_DemoCamCollect(struct GameTracker *gGT, struct ApDemoCamIdentity *ident,
