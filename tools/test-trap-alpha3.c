@@ -224,14 +224,27 @@ static void case_mud_and_jump(void)
 	expect("Mud Season blocked by Ignore Dirt", AP_TrapMudSeasonBlocked(AP_TRAP_MUD_SEASON, 1), 1);
 	expect("Mud Season without Ignore Dirt", AP_TrapMudSeasonBlocked(AP_TRAP_MUD_SEASON, 0), 0);
 	expect("other traps never say BLOCKED", AP_TrapMudSeasonBlocked(AP_TRAP_ICY, 1), 0);
-	// active, normal state, buffer, coyote, cooldown, lockout
-	expect("hop on a grounded chance", AP_TrapAlwaysJumpWants(1, 1, 0, 64, 0, 0), 1);
-	expect("not when off", AP_TrapAlwaysJumpWants(0, 1, 0, 64, 0, 0), 0);
-	expect("not mid drift or damage", AP_TrapAlwaysJumpWants(1, 0, 0, 64, 0, 0), 0);
-	expect("a player buffer is never replaced", AP_TrapAlwaysJumpWants(1, 1, 7, 64, 0, 0), 0);
-	expect("not in the air", AP_TrapAlwaysJumpWants(1, 1, 0, 0, 0, 0), 0);
-	expect("not during cooldown", AP_TrapAlwaysJumpWants(1, 1, 0, 64, 0x180, 0), 0);
-	expect("Red Potion cloud wins", AP_TrapAlwaysJumpWants(1, 1, 0, 64, 0, 1), 0);
+	// active, kart state, buffer, coyote, cooldown, lockout
+	expect("hop on a grounded chance", AP_TrapAlwaysJumpWants(1, 0, 0, 64, 0, 0), 1);
+	expect("hop during a running drift", AP_TrapAlwaysJumpWants(1, 2, 0, 64, 0, 0), 1);
+	expect("not when off", AP_TrapAlwaysJumpWants(0, 0, 0, 64, 0, 0), 0);
+	expect("not when off, drifting", AP_TrapAlwaysJumpWants(0, 2, 0, 64, 0, 0), 0);
+	expect("a player buffer is never replaced", AP_TrapAlwaysJumpWants(1, 0, 7, 64, 0, 0), 0);
+	expect("a player buffer is never replaced, drifting", AP_TrapAlwaysJumpWants(1, 2, 7, 64, 0, 0), 0);
+	expect("not in the air", AP_TrapAlwaysJumpWants(1, 0, 0, 0, 0, 0), 0);
+	expect("not in the air, drifting", AP_TrapAlwaysJumpWants(1, 2, 0, 0, 0, 0), 0);
+	expect("not during cooldown", AP_TrapAlwaysJumpWants(1, 0, 0, 64, 0x180, 0), 0);
+	expect("not during cooldown, drifting", AP_TrapAlwaysJumpWants(1, 2, 0, 64, 0x180, 0), 0);
+	expect("Red Potion cloud wins", AP_TrapAlwaysJumpWants(1, 0, 0, 64, 0, 1), 0);
+	expect("Red Potion cloud wins, drifting", AP_TrapAlwaysJumpWants(1, 2, 0, 64, 0, 1), 0);
+	{
+		// Damage, scripted and freeze states stay out (decomp enum values).
+		static const int out[] = {1, 3, 4, 5, 6, 9, 10, 11};
+		unsigned i;
+		for (i = 0; i < sizeof(out) / sizeof(out[0]); i++)
+			expect("no hop in a damage, scripted or freeze state",
+			       AP_TrapAlwaysJumpWants(1, out[i], 0, 64, 0, 0), 0);
+	}
 }
 
 int main(void)

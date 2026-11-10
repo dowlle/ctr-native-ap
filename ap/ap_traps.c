@@ -1753,7 +1753,8 @@ int AP_TrapMudSeason(struct Driver *driver)
 // gate). A one-frame jump buffer is written for the local kart when it is on
 // the ground and could hop, so the engine's own gate makes the hop: one hop per
 // chance, with its sound, cooldown and coyote rules. Not through the input
-// hook: the input block clears the buffer later in the frame.
+// hook: the input block clears the buffer later in the frame. Runs in normal
+// driving and in a running drift, boosting or not (A4-47a2).
 void AP_TrapAlwaysJump(struct Driver *d)
 {
 	int active;
@@ -1769,7 +1770,7 @@ void AP_TrapAlwaysJump(struct Driver *d)
 		g_trap_jump_owned = 0;
 	}
 	active = g_active[AP_TRAP_ALWAYS_JUMPING] && !g_trap_paused;
-	if (AP_TrapAlwaysJumpWants(active, d->kartState == KS_NORMAL, d->jump_TenBuffer,
+	if (AP_TrapAlwaysJumpWants(active, d->kartState, d->jump_TenBuffer,
 	                           d->jump_CoyoteTimerMS, d->jump_CooldownMS,
 	                           d->rainCloudEffect == RAIN_CLOUD_EFFECT_JUMP_LOCKOUT))
 	{
