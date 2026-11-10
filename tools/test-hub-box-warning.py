@@ -71,17 +71,25 @@ int main(void) {
 }
 ''' % (define("AP_BOX_WARN_LINE1"), define("AP_BOX_WARN_LINE2"), screen_width, feed_x, feed_x)
 
-# Vertical band: the two lines start at 0x48 and are 8 px tall; the hub feed shows
-# three lines while the warning is up, anchored at 120 (pad title showing) or at
-# AP_FEED_BASE_Y (no title). Its top line must start below the warning's bottom.
+# Vertical band, read from the production draw calls: the schema lines, the
+# custom-content lines, this warning and the hub feed must not overlap. Lines are
+# 8 px tall (FONT_SMALL).
 feed = source("ap/ap_hooks_feed.c")
+custom = source("ap/ap_hooks_custom_content.c")
 base_y = int(re.search(r"#define AP_FEED_BASE_Y\s+(0x[0-9A-Fa-f]+|\d+)", feed).group(1), 0)
-anchors = [int(v) for v in re.findall(r"AP_FeedTickAndDraw\(AP_FEED_X, (\d+), 0\)", feed)]
-assert "ap_feed_hub_pad_title ? 120 : AP_FEED_BASE_Y" in feed or anchors == [120]
-assert "0x48 + AP_FEED_LINE_H" in feed
-warning_bottom = 0x48 + line_h + 8
+warn_y = int(re.search(r"DecalFont_DrawLine\(boxWarn1, AP_FEED_X, (0x[0-9A-Fa-f]+|\d+),", feed).group(1), 0)
+assert "boxWarn2, AP_FEED_X, %#x + AP_FEED_LINE_H" % warn_y in feed
+schema_y = int(re.search(r"DecalFont_DrawLine\(warn1, AP_FEED_X, (0x[0-9A-Fa-f]+),", feed).group(1), 0)
+custom_ys = [int(v, 0) + (line_h if plus else 0) for v, plus in re.findall(r"AP_FEED_X, (0x[0-9A-Fa-f]+)( \+ AP_FEED_LINE_H)?, FONT_SMALL", custom)]
+visible = int(re.search(r"const int visibleLimit = [^?]*\? (\d+) :", feed).group(1))
+assert "ap_feed_hub_pad_title ? 120 : AP_FEED_BASE_Y" in feed
+glyph = 8
+assert schema_y + line_h + glyph <= min(custom_ys), (schema_y, custom_ys)
+assert max(custom_ys) + line_h + glyph <= warn_y, (custom_ys, warn_y)
 for anchor in (120, base_y):
-    assert anchor - 2 * line_h >= warning_bottom, (anchor, warning_bottom)
+    feed_top = anchor - (visible - 1) * line_h
+    assert warn_y + line_h + glyph <= feed_top, (warn_y, anchor, feed_top)
+print("bands: schema %#x, custom %s, warning %#x-%#x, feed top %d / %d" % (schema_y, [hex(v) for v in custom_ys], warn_y, warn_y + line_h, 120 - (visible - 1) * line_h, base_y - (visible - 1) * line_h))
 
 with tempfile.TemporaryDirectory() as tmp:
     path = Path(tmp)

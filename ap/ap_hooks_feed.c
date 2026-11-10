@@ -422,7 +422,7 @@ void AP_FeedDrawResults(void)
 // Hub warning for a seed whose item-box numbering the client cannot match.
 // Two lines at 13 px a character: 480 px is the most that fits.
 #define AP_BOX_WARN_LINE1 "ITEM BOX CHECKS OFF ON SOME TRACKS"
-#define AP_BOX_WARN_LINE2 "Seed and client differ: update both."
+#define AP_BOX_WARN_LINE2 "Box numbering differs from this seed."
 
 // Persistent "this seed is from a newer apworld -- update the client" banner
 // (issue #8). Drawn every adventure-hub frame while ctr_cfg.schema_newer is set,
