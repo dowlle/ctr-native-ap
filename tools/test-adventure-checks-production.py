@@ -33,6 +33,7 @@ fixture = r'''
 #include "ap/ap_content_modes.h"
 #include "ap/ap_cortex_track.h"
 #include "ap/ap_checkdiag_once.h"
+#include "ap/ap_hit_policy.h"
 struct Driver { int numWumpas,numTimeCrates; };
 struct GameTracker { unsigned gameMode1,gameMode2; int levelID,numPlyrCurrGame,timeCratesInLEV,podiumRewardID; struct Driver *drivers[1]; };
 static struct { struct GameTracker *gGT; } data, *sdata=&data;
@@ -46,6 +47,8 @@ static int ap_oxide_first_beaten, ap_oxide_final_beaten;
 static int goalEvents;
 static int cortexActive;
 static ap_checkdiag_once_state ap_checkdiag_once;
+static unsigned s_hit_sent_mask;
+const ctr_hit_encounters *ap_seedcfg_hit_encounters(void) { return &ctr_cfg.hit; }
 int ctr_cfg_active(void) { return 1; }
 int ap_net_is_connected(void) { return 1; }
 int ap_net_location_checked(long long code) { (void)code; return 0; }
@@ -102,7 +105,7 @@ calls = {
     'wumpa': ('void AP_WumpaReachedTen(', '{ctr_cfg.wumpa.mode=CTR_CFG_WUMPA_GLOBAL;AP_WumpaReachedTen(&local);ctr_cfg.wumpa.mode=CTR_CFG_WUMPA_PER_TRACK;AP_WumpaReachedTen(&local);}'),
     'letters': ('void AP_LetterCollected(', 'AP_LetterCollected(3,0);'),
     'boxes': ('void AP_EmitBoxCheck(', 'AP_EmitBoxCheck(3,0,35000100);'),
-    'hit': ('int AP_EmitHitCharacterCheck(', 'AP_EmitHitCharacterCheck(35000100);'),
+    'hit': ('int AP_HitEncounterOnDamage(', 'AP_HitEncounterOnDamage(1,1,1u|2u|16u|32u|128u);'),
     'itemsanity': ('void AP_ItemsanityOnUse(', 'AP_ItemsanityOnUse(&local,0);'),
     'rewards': ('static void AP_NotifyAdvRewardImpl(', '{int bits[]={6,22,40,58,76,94,98,106,111};for(unsigned b=0;b<sizeof bits/sizeof *bits;b++)AP_NotifyAdvRewardImpl(bits[b]);}'),
     'goal': ('void AP_NotifyGoal(', 'AP_NotifyGoal(0);'),
@@ -140,7 +143,11 @@ void OtherFX_Play(unsigned int id,int flags) { (void)id;(void)flags; }
 else:
     signature, call = calls[family]
     if signature:
-        fixture += function(hooks, signature)
+        if family == 'hit':
+            fixture += function(hooks, 'int AP_EmitHitCharacterCheck(')
+            fixture += function((root/'ap/ap_hit_encounter.c').read_text(), signature)
+        else:
+            fixture += function(hooks, signature)
 
 fixture += r'''
 int main(void) {
@@ -154,6 +161,7 @@ int main(void) {
  ctr_cfg.custom_ctr_enabled=1;ctr_cfg.custom_ctr_location=35000100;gt.gameMode2=TOKEN_RACE;
  ctr_cfg.relic_perfect_enabled=1;ctr_cfg.relic_perfect[3]=35000100;
  local.numTimeCrates=gt.timeCratesInLEV=10;
+ ctr_cfg.hit.enabled=1;ctr_cfg.hit.locations[1]=35025001;
 '''
 if family == 'shop':
     fixture += 'ctr_wumpa_shop.state=AP_WUMPA_SHOP_VALID;ctr_wumpa_shop.slots=1;\n'
@@ -164,14 +172,14 @@ if family == 'cortex':
 fixture += 'for (unsigned i=0;i<sizeof rejected/sizeof *rejected;i++) {\n'
 fixture += 'gt.gameMode1=rejected[i];' + call
 fixture += r'''
- assert(sent==0 && perf==0 && feed==0 && ledger==0 && goalEvents==0);
+ assert(sent==0 && perf==0 && feed==0 && ledger==0 && goalEvents==0 && s_hit_sent_mask==0);
  for(int w=0;w<6;w++)assert(ap_notified_mask[w]==0);
  }
  // Versus has no dedicated bit and may inherit the relic flag.
  for (int players=2;players<=4;players++) {
   gt.numPlyrCurrGame=players;gt.gameMode1=RELIC_RACE;
 '''
-fixture += call + '\nassert(sent==0);\n}\ngt.numPlyrCurrGame=1;\n'
+fixture += call + '\nassert(sent==0 && s_hit_sent_mask==0);\n}\ngt.numPlyrCurrGame=1;\n'
 fixture += r'''
  // A refused crossing must not consume next Adventure race's check.
  gt.gameMode1=ADVENTURE_MODE;
@@ -181,7 +189,9 @@ if family == 'shop':
 if family == 'perfect':
     fixture += 'gt.gameMode1|=RELIC_RACE;\n'
 fixture += call + '\nassert(sent>0);\n'
-if family not in ('shop', 'rewards', 'goal'):
+if family == 'hit':
+    fixture += 'assert(s_hit_sent_mask==(1u<<1));int before=sent;' + call + '\nassert(sent==before);\n'
+if family not in ('shop', 'rewards', 'goal', 'hit'):
     fixture += 'sent=0;gt.gameMode1=RELIC_RACE;' + call + '\nassert(sent>0);\n'
 fixture += 'return 0;\n}\n'
 with tempfile.TemporaryDirectory() as tmp:

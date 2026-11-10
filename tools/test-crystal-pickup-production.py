@@ -8,6 +8,8 @@ root = Path(__file__).resolve().parents[1]
 source = ap_hooks_unit.read()
 start = source.index('void AP_NotifyCrystalPickup(struct Instance *inst, int driverID)\n{')
 body = source[start:source.index('\n}\n', start) + 3]
+start = source.index('int AP_LocationChecksAllowed(void)\n{')
+policy = source[start:source.index('\n}\n', start) + 3]
 modes = (root/'include/namespace_Main.h').read_text()
 mode_start = modes.index('enum GameMode1\n')
 mode_enum = modes[mode_start:modes.index('};', mode_start)+2]
@@ -22,7 +24,6 @@ struct Level { struct InstDef *ptrInstDefs; int numInstances; };
 struct Instance { struct InstDef *instDef; };
 struct GameTracker { unsigned gameMode1; struct Level *level1; int levelID, numPlyrCurrGame; struct { int cupID; } cup; };
 struct Small { struct GameTracker *gGT; } data, *sdata=&data;
-int AP_LocationChecksAllowed(void) { return sdata && sdata->gGT && AP_WumpaBankRaceMode(sdata->gGT->gameMode1); }
 AP_CrystalChecks ctr_crystal_checks;
 static int active=1, custom=0, exists=1, checked=0, sent, feed, perf, ap_state_gen;
 static long sentCode;
@@ -53,11 +54,13 @@ int main(void){
   int before=sent;
   gt.levelID=levels[a];gt.numPlyrCurrGame=p;
   inst.instDef=&defs[AP_CrystalInstanceBase(a,p)+n];checked=0;
+  assert(AP_CrystalPickupCode(&ctr_crystal_checks,gt.levelID,p,AP_CrystalInstanceBase(a,p)+n)==35028400+20*a+n);
   AP_NotifyCrystalPickup(&inst,0);
-  assert(sent==before+1&&sentCode==35028400+20*a+n);
-  AP_NotifyCrystalPickup(&inst,0);assert(sent==before+1);
+  assert(sent==before+(p==1));
+  if(p==1)assert(sentCode==35028400+20*a+n);
+  AP_NotifyCrystalPickup(&inst,0);assert(sent==before+(p==1));
  }
- assert(sent==320&&feed==sent&&perf==sent&&ap_state_gen==sent);
+ assert(sent==80&&feed==sent&&perf==sent&&ap_state_gen==sent);
  gt.levelID=21;gt.numPlyrCurrGame=1;inst.instDef=&defs[8];checked=0;
  #define NO_SEND(statement) do { int before=sent;statement;AP_NotifyCrystalPickup(&inst,0);assert(sent==before); } while(0)
  NO_SEND(active=0);active=1;
@@ -77,6 +80,8 @@ int main(void){
    }
    gt.gameMode1=ADVENTURE_MODE|CRYSTAL_CHALLENGE;
  }
+ for(int players=2;players<=4;players++){NO_SEND(gt.numPlyrCurrGame=players);}
+ gt.numPlyrCurrGame=1;
  NO_SEND(gt.levelID=20);gt.levelID=21;
  NO_SEND(gt.numPlyrCurrGame=0);gt.numPlyrCurrGame=1;
  NO_SEND(inst.instDef=&foreign);
@@ -90,7 +95,7 @@ int main(void){
 '''
 with tempfile.TemporaryDirectory() as tmp:
     src, exe = Path(tmp)/'pickup.c', Path(tmp)/'pickup'
-    src.write_text(mode_enum+fixture+body+tests)
+    src.write_text(mode_enum+fixture+policy+body+tests)
     subprocess.run(['cc','-std=c11','-fsanitize=undefined','-I',str(root/'ap'),
                     '-I',str(root/'include'),str(src),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
@@ -101,4 +106,4 @@ branch = collision.index('if (modelID == DYNAMIC_PLAYER)')
 hook = collision.index('AP_NotifyCrystalPickup(crystalInst, driver->driverID);')
 hud = collision.index('driver->PickupWumpaHUD.numCollected++;')
 assert branch < hook < hud
-print('Crystal pickup production dispatch passed (320 authored identities + guards)')
+print('Crystal pickup production dispatch passed (320 authored identities, 80 single-player sends, multiplayer refusals and guards)')

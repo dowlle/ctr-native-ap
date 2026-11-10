@@ -4,8 +4,12 @@ import json
 import re
 import subprocess
 import tempfile
+import ap_hooks_unit
 
 root=Path(__file__).resolve().parents[1]
+hooks=ap_hooks_unit.read()
+policy_start=hooks.index('int AP_LocationChecksAllowed(void)\n{')
+policy=hooks[policy_start:hooks.index('\n}\n',policy_start)+3]
 data=json.loads((root/'tools/fixtures/arcade-arenas-v1.json').read_text())
 header=(root/'ap/ap_arena_content.h').read_text().split('ap_arcade_anchors[3][20][3] = {',1)[1]
 anchors=[list(map(int,p)) for p in re.findall(r'\{(-?\d+),(-?\d+),(-?\d+)\}',header)]
@@ -50,7 +54,6 @@ struct Driver {struct Instance *instSelf;int actionsFlagSet,numCrystals;struct {
 struct Level {int numInstances;struct InstDef *ptrInstDefs;};
 struct GameTracker {unsigned gameMode1,gameMode2;int levelID,numPlyrCurrGame,numCrystalsInLEV;struct Driver *drivers[1];struct Model *modelPtr[97];struct Level *level1;};
 struct Small {struct GameTracker *gGT;struct {int stage;struct {unsigned RemBitsConfig0,AddBitsConfig0;}OnBegin;}Loading;} data,*sdata=&data;
-int AP_LocationChecksAllowed(void) { return sdata && sdata->gGT && AP_WumpaBankRaceMode(sdata->gGT->gameMode1); }
 struct CustomTrackRaceContext {int physicalPad,hostLevelID,returnHub,laps,slot,retail,crystal,timeLimitTicks;uint64_t seedEpoch;int64_t trophyLocation;char entryID[65],trackID[65];}context;
 struct ScratchpadStruct {struct {int modelID;}Input1;};
 static ctr_content_pad pad;
@@ -133,6 +136,9 @@ int main(void){
  DENY(context.timeLimitTicks=1,context.timeLimitTicks=pad.time_limit_ticks);
  DENY(context.entryID[0]='x',context.entryID[0]='e');
  DENY(g.gameMode1=CRYSTAL_CHALLENGE,g.gameMode1=ADVENTURE_MODE|CRYSTAL_CHALLENGE);
+ for(int players=2;players<=4;players++){
+  DENY(g.numPlyrCurrGame=players,g.numPlyrCurrGame=1);
+ }
  {unsigned modes[]={0,ARCADE_MODE,TIME_TRIAL,BATTLE_MODE,
     ARCADE_MODE|RELIC_RACE,TIME_TRIAL|RELIC_RACE,BATTLE_MODE|RELIC_RACE,
     ARCADE_MODE|ADVENTURE_MODE,TIME_TRIAL|ADVENTURE_MODE,BATTLE_MODE|ADVENTURE_MODE};
@@ -159,7 +165,7 @@ int main(void){
 '''
 with tempfile.TemporaryDirectory() as tmp:
     src,exe=Path(tmp)/'arcade.c',Path(tmp)/'arcade'
-    src.write_text(mode_enum+fixture+source+tests)
+    src.write_text(mode_enum+fixture+policy+source+tests)
     subprocess.run(['cc','-std=c11','-Wall','-Wextra','-fsanitize=undefined','-I',str(root/'ap'),str(src),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
 print('Arcade production construction/collision/dispatch passed: 60 authored + 80 retail identities, 40 instance/thread allocation failure points and missing model, context guards')
