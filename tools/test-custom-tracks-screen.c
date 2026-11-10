@@ -239,6 +239,20 @@ void CTR_Box_DrawClearBox(const RECT *r, const Color *c, int t, uint32_t *ot)
     if (nhigh < 16) highlights[nhigh++] = *r;
 }
 
+#include "../include/ctr_menu_scrollbar.h"
+/* The scroll bar (A4-36): the real thumb geometry, drawn through the highlight stub above so its bounds checks apply. */
+static int scrollBars;
+void CTR_MenuDrawScrollBar(int x, int y, int h, int total, int visible, int top, uint32_t *ot)
+{
+	int ty, th;
+	if (!CTR_ScrollBarThumb(total, visible, top, h, 8, &ty, &th))
+		return;
+	scrollBars++;
+	RECT track = {x, y, 4, h}, thumb = {x, y + ty, 4, th};
+	CTR_Box_DrawClearBox(&track, NULL, 0, ot);
+	CTR_Box_DrawClearBox(&thumb, NULL, 0, ot);
+}
+
 #include "../game/230/MM_CustomImport.c"
 #include "../game/230/MM_CustomManager.c"
 #include "../game/230/MM_CustomTracks.c"

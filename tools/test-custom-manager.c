@@ -67,6 +67,20 @@ void RECTMENU_DrawInnerRect(RECT *r,int x,uint32_t *ot)
 { (void)x;(void)ot;CHECK(r->x>=0&&r->x+r->w<=512&&r->y+r->h<=216); }
 void CTR_Box_DrawClearBox(const RECT *r,const Color *c,int t,uint32_t *ot)
 { (void)c;(void)t;(void)ot;CHECK(r->x+r->w<=512); }
+
+#include "../include/ctr_menu_scrollbar.h"
+/* The scroll bar (A4-36): the real thumb geometry, drawn through the highlight stub above so its bounds checks apply. */
+static int scrollBars;
+void CTR_MenuDrawScrollBar(int x, int y, int h, int total, int visible, int top, uint32_t *ot)
+{
+	int ty, th;
+	if (!CTR_ScrollBarThumb(total, visible, top, h, 8, &ty, &th))
+		return;
+	scrollBars++;
+	RECT track = {x, y, 4, h}, thumb = {x, y + ty, 4, th};
+	CTR_Box_DrawClearBox(&track, NULL, 0, ot);
+	CTR_Box_DrawClearBox(&thumb, NULL, 0, ot);
+}
 /* xdelta import view (0.3.0): worker, dialog and disc are stubbed. Unused
    with -DMM_IMPORT_PLAYER, where the page does not include the importer. */
 #include <platform/native_xdelta_import.h>
