@@ -224,6 +224,32 @@ static inline void AP_FeedLinesReceiptTick(AP_FeedLines *f)
 	if (f->receiptWindow > 0) --f->receiptWindow;
 }
 
+// Hub ARMED notices must not travel into the race surface. Retire them before
+// promotion so hidden setup notices cannot occupy the race's visible budget.
+// Return the first moved visible index for the renderer's per-line clocks.
+static inline int AP_FeedLinesRetireArmed(AP_FeedLines *f)
+{
+	int i, w = 0, moved = -1;
+	for (i = 0; i < f->vcount; ++i) {
+		if (f->vis[i].trapEffect >= 0 && f->vis[i].trapStage == AP_FEED_TRAP_ARMED) {
+			if (moved < 0) moved = i;
+			continue;
+		}
+		if (w != i) f->vis[w] = f->vis[i];
+		++w;
+	}
+	f->vcount = w;
+	w = 0;
+	for (i = 0; i < f->qcount; ++i) {
+		AP_FeedLine *q = &f->queue[(f->qhead + i) % AP_FEED_QUEUE_MAX];
+		if (q->trapEffect >= 0 && q->trapStage == AP_FEED_TRAP_ARMED) continue;
+		if (w != i) f->queue[(f->qhead + w) % AP_FEED_QUEUE_MAX] = *q;
+		++w;
+	}
+	f->qcount = w;
+	return moved;
+}
+
 // Promote one pending line into a free visible slot, rate-limited by the stagger.
 // Returns 1 when the promoted line asked for the received-item cue.
 static inline int AP_FeedLinesPromote(AP_FeedLines *f)

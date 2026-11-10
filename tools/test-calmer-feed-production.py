@@ -10,6 +10,14 @@ net = (root / 'ap/ap_hooks_net.c').read_text()
 held = net[net.index('if (AP_ArcadeHoldsRoom())'):]
 held = held[:held.index('}') + 1]
 assert 'AP_FeedLinesReceiptTick(&ap_feed);' in src[src.index('void AP_FeedEndDrain'):]
+surface = src[src.index('static void AP_FeedTickAndDraw'):]
+surface = surface[surface.index('if (playableRace == 1)'):]
+begin = surface.index('{')
+depth, end = 1, begin + 1
+while depth:
+    depth += (surface[end] == '{') - (surface[end] == '}')
+    end += 1
+surface = surface[:end]
 
 def function(name):
     start = src.index('void ' + name + '(')
@@ -47,6 +55,9 @@ static int AP_ItemDisplayAlias(long long item,char *d,int n) { (void)item;(void)
 static int AP_CeremonyNameIsBlank(const char *s) { return !*s; }
 static int AP_ClassFontColor(unsigned flags) { return AP_ItemFlagsClass(flags); }
 static int AP_ArcadeHoldsRoom(void) { return 1; }
+#define TEXT_SLOT_FEED 100
+static int reset_count;
+static void DecalFont_ResetLineBox(int slot) { assert(slot>=100 && slot<105);++reset_count; }
 '''
 tests = r'''
 int main(void) {
@@ -91,6 +102,17 @@ int main(void) {
     held_frame();
     AP_FeedOnItemReceived(10,1,22,0);
     assert(ap_feed.qcount==2 && ap_feed.queue[1].copies==1);
+    AP_FeedLinesReset(&ap_feed);
+    AP_FeedTrapLine(13,0,1,AP_FEED_TRAP_ARMED,"FORCED USF ARMED",0);
+    AP_FeedLinesPromote(&ap_feed);
+    AP_FeedLinesReceipt(&ap_feed,10,1,1,"KEEP",3);
+    ap_feed.stagger=0;AP_FeedLinesPromote(&ap_feed);
+    AP_FeedTrapLine(14,1,2,AP_FEED_TRAP_ARMED,"OTHER ARMED",0);
+    race_surface(0);
+    assert(ap_feed.vcount==2 && ap_feed.qcount==1 && reset_count==0);
+    race_surface(1);
+    assert(ap_feed.vcount==1 && ap_feed.qcount==0 && !strcmp(ap_feed.vis[0].text,"KEEP"));
+    assert(reset_count==5);
     puts("production receipt flags, replay, option off, sender and race/hub trap entry points PASS");
 }
 '''
@@ -98,7 +120,8 @@ with tempfile.TemporaryDirectory() as tmp:
     path = Path(tmp)
     (path/'test.c').write_text(stubs + function('AP_FeedOnItemReceived') +
                               function('AP_FeedTrapLine') +
-                              'static void held_frame(void) { ' + held + ' }' + tests)
+                              'static void held_frame(void) { ' + held + ' }' +
+                              'static void race_surface(int playableRace) { ' + surface + ' }' + tests)
     subprocess.run(['cc','-std=c99','-Wall','-Wextra','-I',str(root),
                     str(path/'test.c'),'-o',str(path/'test')],check=True)
     subprocess.run([str(path/'test')],check=True)

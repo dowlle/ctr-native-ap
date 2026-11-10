@@ -41,9 +41,42 @@ static void refreshing_copies(void)
     for (int i=0;i<15;i++) { AP_TrapSchedStep(&s,&race);pump(&s); }
     assert(f.qcount==1 && f.queue[0].copies==4);
 }
+static void hub_to_race(void)
+{
+    AP_FeedLinesReset(&f);
+    AP_FeedLinesEnqueue(&f, "KEEP BEFORE", 3, 0);
+    f.stagger=0;AP_FeedLinesPromote(&f);
+    trap(1,0,1,AP_FEED_TRAP_ARMED,"FORCED USF ARMED",0);
+    f.stagger=0;AP_FeedLinesPromote(&f);
+    AP_FeedLinesEnqueue(&f,"KEEP AFTER",3,0);
+    f.stagger=0;AP_FeedLinesPromote(&f);
+    trap(2,1,2,AP_FEED_TRAP_ARMED,"OTHER ARMED",0);
+    AP_FeedLinesEnqueue(&f,"QUEUED KEEP",3,0);
+    assert(f.vcount==3 && f.qcount==2);
+    assert(AP_FeedLinesRetireArmed(&f)==1);
+    assert(f.vcount==2 && !strcmp(f.vis[1].text,"KEEP AFTER"));
+    assert(f.qcount==1 && !strcmp(f.queue[f.qhead].text,"QUEUED KEEP"));
+    trap(1,0,1,AP_FEED_TRAP_INCOMING,"FORCED USF INCOMING",1);
+    assert(f.qcount==2 && !strcmp(f.queue[(f.qhead+1)%24].text,"FORCED USF INCOMING"));
+    // A full wrapped ring compacts in FIFO order and keeps non-trap ARMED text.
+    AP_FeedLinesReset(&f);
+    f.qhead=23;
+    for(int i=0;i<24;i++) {
+        char text[32];snprintf(text,sizeof text,"ITEM %d ARMED",i);
+        if(i%2) trap(i,i,i+1,AP_FEED_TRAP_ARMED,text,0);
+        else AP_FeedLinesEnqueue(&f,text,3,0);
+    }
+    AP_FeedLinesRetireArmed(&f);
+    assert(f.qcount==12);
+    for(int i=0;i<12;i++) {
+        char text[32];snprintf(text,sizeof text,"ITEM %d ARMED",i*2);
+        assert(!strcmp(f.queue[(f.qhead+i)%24].text,text));
+    }
+}
 int main(void)
 {
     int i;
+    hub_to_race();
     refreshing_copies();
     assert(AP_TRAP_SCHED_CAP == 32);
     AP_FeedLinesReset(&f);

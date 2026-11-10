@@ -330,6 +330,13 @@ void AP_FeedEndDrain(int drainedThisFrame)
 // most once per frame (see the block comment above).
 static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 {
+	if (playableRace == 1)
+	{
+		int armedMoved = AP_FeedLinesRetireArmed(&ap_feed);
+		if (armedMoved >= 0)
+			for (int i = armedMoved; i < AP_FEED_MAX_VISIBLE; ++i)
+				DecalFont_ResetLineBox(TEXT_SLOT_FEED + i);
+	}
 	// The hub's persistent box warning occupies y=72 and y=84. Keep the
 	// newest three lines at 96..120 while it is present; new lines wait in
 	// the queue rather than being promoted into the warning's band.
