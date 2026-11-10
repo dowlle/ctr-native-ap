@@ -2,6 +2,7 @@
 #ifdef CTR_AP
 #include "../../ap/ap_title_ring_logic.h"
 #include "../../ap/ap_traps.h"
+#include "../../ap/ap_sanity_colour.h"
 #include <platform/native_gte_cull.h>
 #endif
 
@@ -2905,6 +2906,16 @@ static u8 RenderBucket_SaturateU8(int value)
 	return (u8)value;
 }
 
+static u32 RenderBucket_SanityColour(struct RenderBucketDrawContext *ctx, u32 colour)
+{
+#ifdef CTR_AP
+    return AP_SanityRecolourRGB(colour, ctx->sanityTag >> 10);
+#else
+    (void)ctx;
+    return colour;
+#endif
+}
+
 static int RenderBucket_DrawInstPrim_NormalAtOTEntry(struct RenderBucketDrawContext *ctx, u32 command, struct TextureLayout *tex, uint32_t *otEntry)
 {
 	if ((char *)ctx->primMem->cursor + sizeof(POLY_GT3) >= (char *)ctx->primMem->guardEnd)
@@ -2923,9 +2934,9 @@ static int RenderBucket_DrawInstPrim_NormalAtOTEntry(struct RenderBucketDrawCont
 	{
 		POLY_G3 *p = ctx->primMem->cursor;
 
-		CtrGpu_WriteColorCode(&p->r0, 0x30000000 | (u32)MFC2(20));
-		CtrGpu_WriteColorCode(&p->r1, (u32)MFC2(21));
-		CtrGpu_WriteColorCode(&p->r2, (u32)MFC2(22));
+		CtrGpu_WriteColorCode(&p->r0, 0x30000000 | RenderBucket_SanityColour(ctx, (u32)MFC2(20)));
+		CtrGpu_WriteColorCode(&p->r1, RenderBucket_SanityColour(ctx, (u32)MFC2(21)));
+		CtrGpu_WriteColorCode(&p->r2, RenderBucket_SanityColour(ctx, (u32)MFC2(22)));
 		CTR_GteStoreSXY3(&p->x0, &p->x1, &p->x2);
 		RenderBucket_LinkPrimRaw(otEntry, p, 0x06000000);
 		ctx->primMem->cursor = (char *)p + 0x1c;
@@ -3359,11 +3370,11 @@ static int RenderBucket_DrawInstPrim_GhostAtRange(struct RenderBucketDrawContext
 
 		packet->drawMode = 0xe1000a20;
 		packet->pad = 0;
-		packet->body.color0AndCode = 0x32000000 | (u32)MFC2(20);
+		packet->body.color0AndCode = 0x32000000 | RenderBucket_SanityColour(ctx, (u32)MFC2(20));
 		packet->body.xy0 = (u32)MFC2(12);
-		packet->body.color1 = (u32)MFC2(21);
+		packet->body.color1 = RenderBucket_SanityColour(ctx, (u32)MFC2(21));
 		packet->body.xy1 = (u32)MFC2(13);
-		packet->body.color2 = (u32)MFC2(22);
+		packet->body.color2 = RenderBucket_SanityColour(ctx, (u32)MFC2(22));
 		packet->body.xy2 = (u32)MFC2(14);
 
 		RenderBucket_LinkPrimRaw(otEntry, packet, 0x0e000000);
@@ -3526,9 +3537,9 @@ static int RenderBucket_DrawSplitPrimitiveNormalAtOTEntry(struct RenderBucketDra
 	{
 		POLY_G3 *p = ctx->primMem->cursor;
 
-		CtrGpu_WriteColorCode(&p->r0, 0x30000000 | (u32)MFC2(20));
-		CtrGpu_WriteColorCode(&p->r1, (u32)MFC2(21));
-		CtrGpu_WriteColorCode(&p->r2, (u32)MFC2(22));
+		CtrGpu_WriteColorCode(&p->r0, 0x30000000 | RenderBucket_SanityColour(ctx, (u32)MFC2(20)));
+		CtrGpu_WriteColorCode(&p->r1, RenderBucket_SanityColour(ctx, (u32)MFC2(21)));
+		CtrGpu_WriteColorCode(&p->r2, RenderBucket_SanityColour(ctx, (u32)MFC2(22)));
 		p->x0 = (s16)v0->sxy;
 		p->y0 = (s16)(v0->sxy >> 16);
 		p->x1 = (s16)v1->sxy;
@@ -3759,11 +3770,11 @@ static int RenderBucket_DrawSplitPrimitiveGhostAtRange(struct RenderBucketDrawCo
 
 		packet->drawMode = 0xe1000a20;
 		packet->pad = 0;
-		packet->body.color0AndCode = 0x32000000 | (u32)MFC2(20);
+		packet->body.color0AndCode = 0x32000000 | RenderBucket_SanityColour(ctx, (u32)MFC2(20));
 		packet->body.xy0 = v0->sxy;
-		packet->body.color1 = (u32)MFC2(21);
+		packet->body.color1 = RenderBucket_SanityColour(ctx, (u32)MFC2(21));
 		packet->body.xy1 = v1->sxy;
-		packet->body.color2 = (u32)MFC2(22);
+		packet->body.color2 = RenderBucket_SanityColour(ctx, (u32)MFC2(22));
 		packet->body.xy2 = v2->sxy;
 
 		RenderBucket_LinkPrimRaw(otEntry, packet, 0x0e000000);

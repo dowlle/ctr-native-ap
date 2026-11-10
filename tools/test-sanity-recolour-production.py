@@ -24,6 +24,7 @@ fixture = r'''
 #include <assert.h>
 #include <stdio.h>
 #include "ap_sanity_colour.h"
+#define CTR_AP
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int16_t s16;
 typedef struct { s16 x,y,page,clut; u8 u,v,bright,dither,r,g,b,a; signed char tcx,tcy,_p0,_p1; } GrVertex;
 #define AP_TPAGE_SIDELOAD_MASK 0xc000
@@ -34,6 +35,7 @@ struct InstDrawPerPlayer { struct TextureLayout **ptrTexLayout; };
 struct RenderBucketDrawContext { struct InstDrawPerPlayer *idpp; struct TextureLayout sanityTexture; unsigned sanityTag; };
 '''
 production = function(bucket, 'static struct TextureLayout *RenderBucket_GetCommandTexture(')
+production += '\n' + function(bucket, 'static u32 RenderBucket_SanityColour(')
 for name in ['Quad', 'Triangle', 'Rect', 'LineZero', 'TriangleZero', 'QuadZero']:
     production += '\n' + function(gpu, 'void MakeTexcoord' + name + '(')
 tests = r'''
@@ -46,6 +48,7 @@ int main(void) {
     assert(RenderBucket_GetCommandTexture(&ctx,1,&valid) == &original && valid);
     for (int tag=1; tag<=9; ++tag) {
         ctx.sanityTag = tag << 10;
+        assert(RenderBucket_SanityColour(&ctx, 0x32abcdef) == AP_SanityRecolourRGB(0x32abcdef, tag));
         struct TextureLayout *copy = RenderBucket_GetCommandTexture(&ctx,1,&valid);
         assert(copy != &original && valid && copy->tpage == (original.tpage | ctx.sanityTag));
         assert(!memcmp(&original,&saved,sizeof original));

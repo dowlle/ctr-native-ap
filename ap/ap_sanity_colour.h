@@ -19,6 +19,27 @@ static inline unsigned AP_SanityTag(int look, int variant)
     return (1 + state * 3 + (unsigned)variant) << 10;
 }
 
+// Untextured pickups (notably loose Wumpa) have no TPAGE word. Apply the
+// same luminance recolour directly to their lit Gouraud vertex colours.
+static inline unsigned AP_SanityRecolourRGB(unsigned colour, unsigned tag)
+{
+    unsigned result = colour & 0xff000000u;
+    unsigned palette, light, strength, state, r, g, b;
+    if (tag < 1 || tag > 9) return colour;
+    state = (tag - 1) / 3;
+    palette = state == 2 ? 0xa4a4a4u : AP_PadLookRGB(state == 1 ? AP_PAD_LOOK_CLOSED : AP_PAD_LOOK_OPEN);
+    strength = 70 + 15 * ((tag - 1) % 3);
+    r = colour & 255; g = (colour >> 8) & 255; b = (colour >> 16) & 255;
+    light = (299 * r + 587 * g + 114 * b) / 1000;
+    for (unsigned channel = 0; channel < 3; ++channel) {
+        unsigned original = (colour >> (channel * 8)) & 255;
+        unsigned target = (palette >> ((2 - channel) * 8)) & 255;
+        unsigned mixed = (original * (100 - strength) + light * target * strength / 164) / 100;
+        result |= (mixed > 255 ? 255 : mixed) << (channel * 8);
+    }
+    return result;
+}
+
 // Replace chroma after texture sampling and vertex lighting, before dither.
 // Preserve luminance detail, including the question mark and wooden edges.
 // Texture/CLUT bytes and shared model data are never changed.
