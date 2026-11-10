@@ -129,7 +129,8 @@ void AH_Pause_Draw(int pageID, int posX)
 			int rowY = rowBase + rowIndex * 0x10;
 			rowIndex++;
 
-			DecalFont_DrawLine(sdata->lngStrings[mdLev->name_LNG], posX + textX, rowY + 0x26, FONT_BIG, 0);
+			DecalFont_DrawLineBox(UI_TrackName(trackID), posX + textX, rowY + 0x26,
+			                     iconX - textX - 8, FONT_BIG, 0, TEXT_ELLIPSIS, 0, NULL);
 
 			if (hubID != 0)
 			{
@@ -278,7 +279,8 @@ void AH_Pause_Draw(int pageID, int posX)
 				struct MetaDataLEV *mdLev = &data.metaDataLEV[crystalID];
 				int crystalRowY = bossRowY + 0x10;
 
-				DecalFont_DrawLine(sdata->lngStrings[mdLev->name_LNG], posX + textX, crystalRowY + 0x26, FONT_BIG, 1);
+				DecalFont_DrawLineBox(UI_TrackName(crystalID), posX + textX, crystalRowY + 0x26,
+				                     iconX - textX - 8, FONT_BIG, 1, TEXT_ELLIPSIS, 0, NULL);
 
 				inst = ptrPauseObject->PauseMember[pauseIndex].inst;
 

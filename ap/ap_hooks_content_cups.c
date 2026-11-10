@@ -160,20 +160,48 @@ const char *AP_ContentRaceDisplayName(void)
 	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(sdata->gGT->levelID);
 	const ctr_content_pad *pad;
 	const ctr_content_package *pkg;
-	const char *title;
+	const char *title = NULL;
 	static char plain[641];
-	if (!race || race->retail || !ap_content_plan_active() ||
-	    race->seedEpoch != ap_content_plan_epoch()) return NULL;
-	if (race->cortex) return "CORTEX VORTEX";
-	pad = ap_content_plan_pad(race->physicalPad);
-	if (!pad) return NULL;
-	if (race->cup)
-		title = AP_ContentCupTrackName();
-	else
+	struct GameTracker *gGT = sdata->gGT;
+	int garage;
+	if (race)
 	{
-		pkg = ap_content_plan_package(pad->package_index);
-		title = pkg ? pkg->display_name : NULL;
+		if (race->retail || !ap_content_plan_active() ||
+		    race->seedEpoch != ap_content_plan_epoch()) return NULL;
+		if (race->cortex) return "CORTEX VORTEX";
+		pad = ap_content_plan_pad(race->physicalPad);
+		if (!pad || !pad->occupied || strcmp(pad->entry_id, race->entryID)) return NULL;
+		if (race->cup)
+		{
+			title = AP_ContentCupTrackName();
+			// A generated room title may differ from the package's raw title.
+			if (title && race->leg >= 0 && race->leg < AP_CONTENT_CUP_LEGS)
+			{
+				const ctr_content_pad *track = ap_content_plan_pad(pad->legs[race->leg].track_pad);
+				if (track && track->occupied && !track->cup &&
+				    !strcmp(track->track_id, race->trackID) && track->room_title[0])
+					title = track->room_title;
+			}
+		}
+		else
+		{
+			if (pad->cup || strcmp(pad->track_id, race->trackID)) return NULL;
+			pkg = ap_content_plan_package(pad->package_index);
+			title = pad->room_title[0] ? pad->room_title : (pkg ? pkg->display_name : NULL);
+		}
 	}
+	else if ((garage = CustomTrack_GarageVenueServing(gGT->levelID, gGT->bossID,
+	                                                gGT->gameMode1 & ADVENTURE_BOSS)) >= 0 &&
+	         ap_content_plan_active())
+	{
+		const ctr_content_bosses *b = ap_content_plan_bosses();
+		if (b->venue_cortex[garage]) return "CORTEX VORTEX";
+		pkg = ap_content_plan_package(b->venue_package[garage]);
+		title = pkg && pkg->display_name[0] ? pkg->display_name : "Custom track";
+	}
+	else if (CustomTrack_OxideFinalServing(gGT->levelID, gGT->bossID,
+	                                      gGT->gameMode1 & ADVENTURE_BOSS))
+		return "CORTEX VORTEX";
 	if (!title) return NULL;
 	CustomIdentity_BannerName(plain, sizeof plain, title);
 	return plain;
