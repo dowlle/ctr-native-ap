@@ -11,9 +11,6 @@
 // Debug toggle key from the Controls page (AP Shortcuts), default Numpad +
 // (platform/native_controls.c). SDL-header-free like the other AP modules.
 #include <platform/native_shortcuts.h>
-#ifdef CTR_CUSTOM_TRACKS
-#include <platform/native_custom_tracks.h>
-#endif
 
 // The flag literals in ap_democam_logic.h have to stay the engine's values: the
 // harness compares against them without ever seeing namespace_Camera.h.
@@ -220,27 +217,35 @@ static int AP_DemoCamRaceActive(struct GameTracker *gGT)
 }
 
 // CAM_ThTick can only select an authored end-of-race camera when the level
-// carries an ST1_CAMERA_EOR table with entries (CAM.c:1887-1893), and
-// CAM_EndOfRace only takes the arcade branch outside Battle with fewer than
-// three screens (CAM.c:551). Anywhere else the request bit does nothing at all,
-// which is exactly the "no safe racing camera target" case the design keeps the
-// effect armed for.
+// carries an ST1_CAMERA_EOR table it can walk, and CAM_EndOfRace only takes the
+// arcade branch outside Battle with fewer than three screens. Anywhere else the
+// request bit does nothing at all, which is exactly the "no safe racing camera
+// target" case the design keeps the effect armed for. The table test itself is
+// AP_DemoCam_EorTableUsable (ap_democam_logic.h): the entry must be present,
+// not just the count long enough, because a custom LEV can carry count >= 3
+// with the ST1_CAMERA_EOR slot NULL, and the table must hold at least one
+// camera CAM_ThTick can step over and would actually pick as a cinematic
+// shot on some checkpoint.
 static int AP_DemoCamEorTableUsable(struct GameTracker *gGT)
 {
+	struct SpawnType1 *st1;
+
 	if (gGT == 0 || gGT->level1 == 0 || gGT->level1->ptrSpawnType1 == 0)
 		return 0;
 	if ((gGT->gameMode1 & BATTLE_MODE) != 0)
 		return 0;
 	if (gGT->numPlyrCurrGame >= 3)
 		return 0;
-#ifdef CTR_CUSTOM_TRACKS
-	// Ask for the entry, as CAM_EndOfRace does: a custom LEV can have count >= 3
-	// with ST1_CAMERA_EOR NULL (policy header decision 6). Same answer on retail.
-	return CustomTrackPolicy_St1EntryPresent(gGT->level1->ptrSpawnType1->count, ST1_CAMERA_EOR,
-	                                         (const void *const *)ST1_GETPOINTERS(gGT->level1->ptrSpawnType1));
-#else
-	return gGT->level1->ptrSpawnType1->count >= 3;
-#endif
+
+	if (gGT->level1->ptr_restart_points == 0)
+		return 0;
+
+	st1 = gGT->level1->ptrSpawnType1;
+	return AP_DemoCam_EorTableUsable(st1->count, (const void *const *)ST1_GETPOINTERS(st1), ST1_CAMERA_EOR,
+	                                 gGT->level1->cnt_restart_points,
+	                                 &gGT->level1->ptr_restart_points[0].nextIndex_forward,
+	                                 (int)sizeof(struct CheckpointNode), data.EndOfRace_Camera_Size,
+	                                 (int)(sizeof data.EndOfRace_Camera_Size / sizeof data.EndOfRace_Camera_Size[0]));
 }
 
 static void AP_DemoCamCollect(struct GameTracker *gGT, struct ApDemoCamIdentity *ident,

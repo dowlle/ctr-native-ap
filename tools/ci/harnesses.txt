@@ -64,6 +64,7 @@ tools/test-custom-trophy-ceremony.c
 tools/test-deathlink-race-loss.c
 tools/test-deathlink-replaced-popup.py
 tools/test-democam.c
+tools/test-democam-eor-table.c
 tools/test-disc-resolution.c
 tools/test-disc-copy.c
 tools/test-disc-picker.c

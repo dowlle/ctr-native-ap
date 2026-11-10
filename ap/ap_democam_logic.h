@@ -208,6 +208,140 @@ static inline int AP_DemoCam_IdentityEqual(const struct ApDemoCamIdentity *a,
 	       a->driver == b->driver && a->levelID == b->levelID;
 }
 
+// ── End-of-race camera table check ──
+//
+// Answers gate->eorTableUsable: would CAM_ThTick's end-of-race block
+// (game/CAM.c, the walk after CAMERA_FLAG_ARCADE_END_OF_RACE_REQUESTED) find
+// anything to switch to on this level? Without one, setting the request bit
+// does nothing and the trap would be spent on the ordinary chase camera, so
+// the trap stays armed instead (Rulebook: a trap that cannot work right now
+// waits).
+//
+// Inputs are plain scalars so the harness needs no engine:
+//   st1Count        struct SpawnType1::count
+//   st1Entries      the pointer array after it (ST1_GETPOINTERS)
+//   eorIndex        ST1_CAMERA_EOR (2)
+//   restartCount    struct Level::cnt_restart_points
+//   restartLinks    &ptr_restart_points[0].nextIndex_forward, the four u8
+//                   links (forward, left, backward, right) of checkpoint 0;
+//                   checkpoint i's links start restartStride bytes later per i
+//   restartStride   sizeof(struct CheckpointNode)
+//   sizeTable       data.EndOfRace_Camera_Size, sizeTableLen entries
+//
+// Rules, in order:
+//  1. The ST1_CAMERA_EOR entry is present: eorIndex < st1Count and the pointer
+//     is non-NULL. Same rule as CustomTrackPolicy_St1EntryPresent, restated
+//     here because that header only defines it under CTR_CUSTOM_TRACKS; the
+//     harness proves the two agree. A custom LEV can have count >= 3 with this
+//     entry NULL, which the old count-only test accepted.
+//  2. The table's camera count (its first s16) is 1..AP_DEMOCAM_EOR_MAX_CAMERAS.
+//     Zero means CAM_ThTick never picks anything; a negative or huge count is
+//     a malformed table. Retail tables hold 10 to 24 cameras. The cap also
+//     bounds this walk: the table's byte length is not known at runtime, so
+//     the walk reads at most 64 camera headers, the same span CAM_ThTick
+//     itself reads on every finish-line frame of such a level.
+//  3. Every camera has a mode CAM_ThTick can step over: |mode| at most
+//     AP_DEMOCAM_EOR_LAST_MODE with a size of 0 or more. The walk advances by
+//     EndOfRace_Camera_Size[|mode|], so one bad mode (size -1, or an index past
+//     the table) misaligns every camera after it. Mode 17 is the zero-filled
+//     last slot of the size table, not a camera mode.
+//  4. Every camera's checkpoint index is below restartCount. CAM_ThTick reads
+//     ptr_restart_points[index] for each camera before it compares.
+//  5. Some checkpoint makes CAM_ThTick pick a cinematic shot. For every
+//     checkpoint X this repeats CAM_ThTick's choice exactly: the LAST camera
+//     whose checkpoint is X or links to X (forward, left, backward, right)
+//     wins. If that camera's mode is one the end-of-race switch sets up
+//     (AP_DemoCam_EorModeIsShot), the table is usable. Mode 0 is the ordinary
+//     chase camera and modes 15 and 16 have no setup in that switch, so a
+//     table whose every pick is one of those, including a shot hidden behind
+//     a later chase entry on the same checkpoints, would spend the trap with
+//     no visible change.
+//
+// Not checked: whether the driver ever reaches one of the table's
+// checkpoints. Engagement is latent on retail too (see the top of this file):
+// the shot changes when the driver reaches a checkpoint with a camera.
+//
+// Only reads the table the level already carries; never writes.
+#define AP_DEMOCAM_EOR_MAX_CAMERAS 64
+#define AP_DEMOCAM_EOR_LAST_MODE 16
+
+// Modes the CAM_ThTick end-of-race switch sets up (game/CAM.c, cases 3, 4, 7,
+// 8, 9, 10, 11, 12, 13, 14).
+static inline int AP_DemoCam_EorModeIsShot(int mode)
+{
+	switch (mode)
+	{
+	case 3: case 4: case 7: case 8: case 9: case 10: case 11: case 12: case 13: case 14:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static inline int AP_DemoCam_EorTableUsable(int st1Count, const void *const *st1Entries, int eorIndex,
+                                            int restartCount, const unsigned char *restartLinks, int restartStride,
+                                            const short *sizeTable, int sizeTableLen)
+{
+	const short *table;
+	const short *cam;
+	short camPoint[AP_DEMOCAM_EOR_MAX_CAMERAS];
+	unsigned char camShot[AP_DEMOCAM_EOR_MAX_CAMERAS];
+	int cameras;
+	int i;
+	int x;
+
+	if (st1Entries == 0 || eorIndex < 0 || eorIndex >= st1Count)
+		return 0;
+	if (st1Entries[eorIndex] == 0)
+		return 0;
+	if (sizeTable == 0 || sizeTableLen <= 0 || restartCount <= 0 || restartLinks == 0 || restartStride < 4)
+		return 0;
+
+	table = (const short *)st1Entries[eorIndex];
+	cameras = table[0];
+	if (cameras < 1 || cameras > AP_DEMOCAM_EOR_MAX_CAMERAS)
+		return 0;
+
+	// Layout per camera: s16 checkpoint index, s16 mode (negative = flagged),
+	// then EndOfRace_Camera_Size[|mode|] bytes of mode data.
+	cam = table + 1;
+	for (i = 0; i < cameras; i++)
+	{
+		int checkpoint = cam[0];
+		int mode = cam[1];
+		int size;
+
+		if (mode < 0)
+			mode = -mode;
+		if (mode > AP_DEMOCAM_EOR_LAST_MODE || mode >= sizeTableLen)
+			return 0;
+		size = sizeTable[mode];
+		if (size < 0 || (size & 1) != 0)
+			return 0;
+		if (checkpoint < 0 || checkpoint >= restartCount)
+			return 0;
+
+		camPoint[i] = (short)checkpoint;
+		camShot[i] = (unsigned char)AP_DemoCam_EorModeIsShot(mode);
+		cam = cam + 2 + size / 2;
+	}
+
+	// CAM_ThTick's pick for a driver on checkpoint x: the last matching camera.
+	for (x = 0; x < restartCount; x++)
+	{
+		int pick = -1;
+		for (i = 0; i < cameras; i++)
+		{
+			const unsigned char *links = restartLinks + (long)camPoint[i] * restartStride;
+			if (x == camPoint[i] || x == links[0] || x == links[1] || x == links[2] || x == links[3])
+				pick = i;
+		}
+		if (pick >= 0 && camShot[pick])
+			return 1;
+	}
+	return 0;
+}
+
 static inline int AP_DemoCam_CanEngage(const struct ApDemoCamGate *g)
 {
 	return g->cameraPresent && g->raceActive && !g->loading && !g->scriptedCamera &&

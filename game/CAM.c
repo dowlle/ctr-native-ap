@@ -1949,10 +1949,9 @@ void CAM_ThTick(struct Thread *t)
 	// CAM_EndOfRace already refuses to arm this block for a level whose
 	// ST1_CAMERA_EOR entry is absent, but it is not the only writer of the
 	// flag: ap/ap_democam.c sets AP_DEMOCAM_FLAG_ARCADE_EOR_REQUESTED straight
-	// onto cDC->flags, and its own AP_DemoCamEorTableUsable answers on count
-	// alone, so it would arm on exactly the table shape that crashes here.
-	// Guarding the dereference itself rather than trusting the arming keeps
-	// that path safe too. Skipping leaves psVar21 at 0, which is the same "no
+	// onto cDC->flags. Its AP_DemoCam_EorTableUsable gate now asks for this
+	// entry too, but guarding the dereference itself rather than trusting
+	// every writer of the flag keeps that path safe regardless. Skipping leaves psVar21 at 0, which is the same "no
 	// end-of-race camera was picked" outcome the count check a few lines above
 	// already produces. Additive, so guard-off output is unchanged.
 	if (!CustomTrackPolicy_St1EntryPresent(psVar14->count, ST1_CAMERA_EOR, (const void *const *)ptrs))
