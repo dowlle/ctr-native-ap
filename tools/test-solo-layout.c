@@ -66,6 +66,20 @@ void CTR_Box_DrawClearBox(const RECT *r, const Color *c, int t, uint32_t *ot)
 	CHECK(panels == 0); /* Highlights also remain in front of the panel. */
 	CHECK(r->x >= 0x18 && r->x + r->w <= 0x1E8 && r->y >= 0x30 && r->y + r->h <= 0xC2);
 }
+
+#include "../include/ctr_menu_scrollbar.h"
+/* The scroll bar (A4-36): the real thumb geometry, drawn through the highlight stub above so its bounds checks apply. */
+static int scrollBars;
+void CTR_MenuDrawScrollBar(int x, int y, int h, int total, int visible, int top, uint32_t *ot)
+{
+	int ty, th;
+	if (!CTR_ScrollBarThumb(total, visible, top, h, 8, &ty, &th))
+		return;
+	scrollBars++;
+	RECT track = {x, y, 4, h}, thumb = {x, y + ty, 4, th};
+	CTR_Box_DrawClearBox(&track, NULL, 0, ot);
+	CTR_Box_DrawClearBox(&thumb, NULL, 0, ot);
+}
 int OtherFX_Play(u32 a, int b) { (void)a; (void)b; return 0; }
 int Platform_OpenURL(const char *u) { (void)u; return 1; }
 int Platform_InputRawGamepadButtons(void) { return 0; }
@@ -659,6 +673,7 @@ int main(void)
 	menuTestLetters = true;
 	MM_Solo_Go(SOLO_HOME); frame(0, "Xbox home hints");
 	CHECK(strstr(drawn, "A: PLAY") && strstr(drawn, "X: DETAILS") && strstr(drawn, "Y: BACK"));
+	CHECKM(scrollBars > 0, "the long Play Solo lists draw a scroll bar");
 	printf("%d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

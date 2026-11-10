@@ -192,6 +192,13 @@ static unsigned MM_CustomImport_SkippedTracks(void)
     return n;
 }
 
+/* The slim scroll bar of the seven-row file and track lists (A4-36), beside the
+   row highlight: the thumb follows the page and the rows it draws. */
+static void MM_CustomImport_ScrollBar(size_t count, size_t first, uint32_t *ot)
+{
+    CTR_MenuDrawScrollBar(284, 66, 7 * 15, (int)count, count - first < 7 ? (int)(count - first) : 7, (int)first, ot);
+}
+
 static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
 {
     int tapped = pad->buttonsTapped;
@@ -481,6 +488,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             }
             if (row == s_importRow) CTR_Box_DrawClearBox(&box, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
         }
+        MM_CustomImport_ScrollBar(count, first, ot);
         if (s_importStage == IMPORT_CHOOSE && s_importRow > 0)
         {
             /* The full file name and what this patch did before. */
@@ -522,6 +530,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             MM_CustomText_Draw(line, 32, box.y + 2, 244, 1, row == s_importRow ? ORANGE : r->offered ? WHITE : GRAY, ot);
             if (row == s_importRow) CTR_Box_DrawClearBox(&box, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
         }
+        MM_CustomImport_ScrollBar(count, first, ot);
         if (!count) MM_CustomText_Draw("The patch changes no track files.", 32, 84, 244, 2, WHITE, ot);
         if (item)
         {

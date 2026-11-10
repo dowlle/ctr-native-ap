@@ -1,5 +1,6 @@
 #include <common.h>
 #include <stdio.h>
+#include <ctr_menu_scrollbar.h>
 #include <ctr_menu_ux.h>
 #include <platform/native_menu.h>
 #include <ctr_menu_pages.h>
@@ -177,22 +178,10 @@ static int s_currentSection = -1; // -1 = section selector, 0+ = submenu
 
 // A page with more rows than fit above the two help lines (0xB8) scrolls: nine
 // rows from CONFIG_ROW_START_Y show at a time. The Archipelago page has eleven
-// config rows since Item Feed (2026-11-03), twelve with Room links.
+// config rows since Item Feed (2026-11-03), twelve with Room links. A page that
+// scrolls shows a slim scroll bar on its right edge (CTR_MenuDrawScrollBar).
 #define CONFIG_PAGE_WINDOW 9
 static int s_configTop;
-static void Config_DrawScrollIndicator(int top, int pageRows, uint32_t *ot)
-{
-	if (pageRows > CONFIG_PAGE_WINDOW)
-	{
-		char range[64];
-		int last = top + CONFIG_PAGE_WINDOW;
-		if (last > pageRows) last = pageRows;
-		snprintf(range, sizeof range, "%d-%d/%d  %s", top + 1, last, pageRows,
-		         top == 0 ? "DOWN: MORE" : last == pageRows ? "UP: MORE" : "UP/DOWN: MORE");
-		DecalFont_DrawLineOT(range, 0x100, 0x30, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
-	}
-}
-
 static void Config_KeepInView(int selected, int pageRows)
 {
 	if (selected < s_configTop)
@@ -216,6 +205,30 @@ static void Config_KeepInView(int selected, int pageRows)
 // Visible rows on a scrolling Controls screen. One fewer than
 // CTR_MENU_PAGE_VISIBLE_ROWS, as in Expanded, so the last row clears the panel edge.
 #define CONFIG_MAX_VISIBLE_ROWS 10
+// The slim scroll bar every scrolling menu list draws on its right edge (A4-36).
+// The track is the row highlight's blue, the thumb the white of the volume
+// slider's bar, both from the existing menu palette. Nothing is drawn unless
+// `total` rows do not fit in `visible`; `top` is the first row shown.
+#define CTR_SCROLLBAR_W 4
+#define CTR_SCROLLBAR_MIN_THUMB 8
+static void CTR_MenuDrawScrollBar(int x, int y, int h, int total, int visible, int top, uint32_t *ot)
+{
+	int thumbY, thumbH;
+	if (!CTR_ScrollBarThumb(total, visible, top, h, CTR_SCROLLBAR_MIN_THUMB, &thumbY, &thumbH))
+		return;
+	RECT track = {x, y, CTR_SCROLLBAR_W, h};
+	CTR_Box_DrawClearBox(&track, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
+	RECT thumb = {x, y + thumbY, CTR_SCROLLBAR_W, thumbH};
+	CTR_Box_DrawSolidBox(&thumb, *(Color *)(data.Options_VolumeSlider_Colors + 0xc), ot);
+}
+
+// The Options page: beside the nine rows, right of the row highlight.
+static void Config_DrawScrollBar(int top, int pageRows, uint32_t *ot)
+{
+	CTR_MenuDrawScrollBar(0x1E4, CONFIG_ROW_START_Y - 2, CONFIG_PAGE_WINDOW * CONFIG_ROW_SPACING, pageRows,
+	                      CONFIG_PAGE_WINDOW, top, ot);
+}
+
 // Frames a held Left/Right waits before it steps again (Config_UpdateSlider's cadence).
 #define CONFIG_STEP_REPEAT_FRAMES 3
 
@@ -1554,7 +1567,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		int startY = 0x3C;
 		int rowSpacing = 0x0E;
 
-		Config_DrawScrollIndicator(s_configTop, pageRows, ot);
+		Config_DrawScrollBar(s_configTop, pageRows, ot);
 
 		for (int j = s_configTop; j < numRows && j < s_configTop + CONFIG_PAGE_WINDOW; j++)
 		{

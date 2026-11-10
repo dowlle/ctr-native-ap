@@ -239,6 +239,20 @@ void CTR_Box_DrawClearBox(const RECT *r, const Color *c, int t, uint32_t *ot)
     if (nhigh < 16) highlights[nhigh++] = *r;
 }
 
+#include "../include/ctr_menu_scrollbar.h"
+/* The scroll bar (A4-36): the real thumb geometry, drawn through the highlight stub above so its bounds checks apply. */
+static int scrollBars, barVisible, barTop;
+void CTR_MenuDrawScrollBar(int x, int y, int h, int total, int visible, int top, uint32_t *ot)
+{
+	int ty, th;
+	if (!CTR_ScrollBarThumb(total, visible, top, h, 8, &ty, &th))
+		return;
+	scrollBars++; barVisible = visible; barTop = top;
+	RECT track = {x, y, 4, h}, thumb = {x, y + ty, 4, th};
+	CTR_Box_DrawClearBox(&track, NULL, 0, ot);
+	CTR_Box_DrawClearBox(&thumb, NULL, 0, ot);
+}
+
 #include "../game/230/MM_CustomImport.c"
 #include "../game/230/MM_CustomManager.c"
 #include "../game/230/MM_CustomTracks.c"
@@ -668,6 +682,21 @@ int main(void)
     revisit(); frame(0, NULL); CHECK(s_ctTab == CT_TAB_LIBRARY);
     room[1].scan = AP_SEED_SCAN_NOT_INSTALLED; room[2].scan = AP_SEED_SCAN_MISMATCH;
 
+    /* 11b. A4-36: a list longer than seven rows draws the scroll bar, a shorter one does not. */
+    {
+        int before;
+        revisit(); frame(0, NULL); before = scrollBars;
+        s_ctTab = CT_TAB_LIBRARY; frame(0, NULL); CHECK(s_ctItemCount <= 7 && scrollBars == before); /* six items fit */
+        s_ctTab = CT_TAB_SEED; frame(0, NULL); CHECK(s_ctSeedCount == 5 && scrollBars == before);
+        for (int k = 5; k < 12; k++) { row(k, "Extra track", "1.0.0", AP_SEED_SCAN_READY, AP_SEED_SOURCE_BUNDLED); room[k].index = -1; }
+        roomCount = 12; frame(0, NULL); CHECK(s_ctSeedCount == 12 && scrollBars == before + 1); /* one bar, track and thumb */
+        CHECK(barVisible == 7 && barTop == 0);
+        roomCount = 8; s_ctListSel[1] = 7; frame(0, NULL); CHECK(s_ctSeedCount == 8 && barVisible == 1 && barTop == 7); /* last page: one row drawn */
+        roomCount = 12; s_ctListSel[1] = 0; frame(0, NULL); CHECK(barVisible == 7 && barTop == 0);
+        before = scrollBars; roomCount = 7; frame(0, NULL); CHECK(s_ctSeedCount == 7 && scrollBars == before);   /* exactly seven fit: no bar */
+        roomCount = 5;
+    }
+
     /* 12. A room without a content plan that names the release profile. */
     seedActive = 0; seedSelected = 1; pkgStatus.state = CTR_CT_MANAGER_NOT_INSTALLED;
     revisit(); frame(0, "seed-legacy"); CHECK(s_ctTab == CT_TAB_SEED && s_ctSeedCount == 1 && has("Missing"));
@@ -685,6 +714,15 @@ int main(void)
     frame(BTN_DOWN, NULL); CHECK(MM_CustomImport_Active() && consumed == 0);
     frame(0, "import-choose"); CHECK(consumed && has("Choose a file") && has("CRASH-30"));
     frame(BTN_TRIANGLE, NULL); CHECK(!MM_CustomImport_Active() && s_ctFocus == CT_FOCUS_TABS);
+    /* A4-36: nine patch files make ten rows, so the chooser draws a scroll bar; two files do not. */
+    {
+        int before = scrollBars;
+        folderCount = 9; frame(BTN_DOWN, NULL); frame(0, NULL);
+        CHECK(MM_CustomImport_Active() && scrollBars > before && barVisible == 7 && barTop == 0);
+        frame(BTN_TRIANGLE, NULL); folderCount = 2; before = scrollBars;
+        frame(BTN_DOWN, NULL); frame(0, NULL); CHECK(MM_CustomImport_Active() && scrollBars == before);
+        frame(BTN_TRIANGLE, NULL); CHECK(!MM_CustomImport_Active() && s_ctFocus == CT_FOCUS_TABS);
+    }
     /* A full import, then the follow-up choices. */
     frame(BTN_CROSS, NULL); frame(BTN_DOWN, NULL); frame(BTN_CROSS, NULL); CHECK(scanStarts == 1);
     fakeSummary.count = 2;
@@ -812,6 +850,7 @@ int main(void)
     }
     scanState = -1; installState = -1;
 
+    CHECK(scrollBars > 0);
     printf("custom tracks screen: %d checks, %d failures\n", checks, failures);
     return failures != 0;
 }

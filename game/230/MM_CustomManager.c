@@ -252,6 +252,7 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
         MM_CustomText_Draw(title,32,box.y+2,244,1,row==*selected ? ORANGE : WHITE,ot);
         if (row==*selected) CTR_Box_DrawClearBox(&box,&sdata->menuRowHighlight_Normal,TRANS_50_DECAL,ot);
     }
+    CTR_MenuDrawScrollBar(284,66,7*15,(int)count,count-first<7?(int)(count-first):7,(int)first,ot); /* more than seven rows (A4-36) */
     if (!count) MM_CustomText_Draw(s_saphiRefreshBusy && !s_contentLibraryTab ? "Loading Saphi..." :
         *s_saphiQuery ? "No search matches" : s_contentLibraryTab ? "No installed tracks" : "Catalogue unavailable",32,84,244,3,WHITE,ot);
     if (source || installed)
