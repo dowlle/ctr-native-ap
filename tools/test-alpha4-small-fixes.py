@@ -75,6 +75,7 @@ static void OtherFX_Play(int fx,int volume) { assert(fx==0x41&&volume==1); }
 static void DecalFont_DrawLine(char *s,int x,int y,int font,int flags) { snprintf(lastText,sizeof lastText,"%s",s);if(draws<8)drawnY[draws]=y;draws++;lastY=y; }
 static void DecalFont_DrawLineOT(char *s,int x,int y,int font,int flags,uint32_t *ot) { DecalFont_DrawLine(s,x,y,font,flags); }
 void DecalFont_DrawLineBox(const char *s,int x,int y,int width,short font,int flags,int mode,int slot,unsigned int *ot) { assert(width==(mode==TEXT_ELLIPSIS?364:480));DecalFont_DrawLine((char *)s,x,y,font,flags); }
+void DecalFont_ResetLineBox(int slot) { assert(slot>=TEXT_SLOT_FEED&&slot<TEXT_SLOT_COUNT); }
 static int CustomTrack_ServingLoad(int level,int cup,int id) { return custom; }
 static int MainRaceTrack_OfflineCustomLoad(void) { return offline; }
 '''

@@ -813,6 +813,19 @@ static void Conn_DrawSlotCaseMarks(const char *slot, int valueX, int y, int shif
 {
 	struct GameTracker *gGT = sdata->gGT;
 	const int charWidth = data.font_charPixWidth[FONT_SMALL];
+	int marks = 0;
+	for (int i = 0; slot[i]; i++)
+	{
+		if (!CTR_MenuSlotCharNeedsCaseMark((unsigned char)slot[i])) continue;
+		int x = valueX + DecalFont_GetLineWidthStrlen((char *)slot, i, FONT_SMALL) - shift;
+		int left = x < valueX ? valueX : x;
+		int right = x + charWidth - 1 > valueX + visibleWidth ? valueX + visibleWidth : x + charWidth - 1;
+		if (right > left) marks++;
+	}
+	uintptr_t cursor = (uintptr_t)gGT->backBuffer->primMem.cursor;
+	uintptr_t guard = (uintptr_t)gGT->backBuffer->primMem.guardEnd;
+	size_t bytes = (size_t)marks * (sizeof(LINE_F2) + sizeof(POLY_F4));
+	if (cursor > guard || bytes > guard - cursor) return;
 
 	for (int i = 0; slot[i] != '\0'; i++)
 	{
@@ -1104,9 +1117,10 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 		/* While typing, keep the cursor visible at the end. */
 		while (editing && buf[start] && DecalFont_GetLineWidthStrlen(buf + start, -1, FONT_SMALL) > width)
 			start++;
+		void *valueBegin = sdata->gGT->backBuffer->primMem.cursor;
 		DecalFont_DrawLineBox(buf + start, valueX, y, width, FONT_SMALL, WHITE,
 		    selected && !editing ? TEXT_MARQUEE : TEXT_ELLIPSIS, TEXT_SLOT_CONNECTION, ot);
-		if (strcmp(e->key, "slot") == 0)
+		if (strcmp(e->key, "slot") == 0 && sdata->gGT->backBuffer->primMem.cursor != valueBegin)
 		{
 			int shift = selected && !editing ? DecalFont_LineBoxOffset(buf, width, FONT_SMALL, TEXT_SLOT_CONNECTION) : 0;
 			int markWidth = width;

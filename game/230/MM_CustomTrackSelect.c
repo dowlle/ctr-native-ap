@@ -195,6 +195,16 @@ static void MM_CustomTrackSelect_Text(const char *text, int x, int y, size_t wid
 
 /* Called after the retail transition state advances, before retail indexing.
    Returning 1 owns this frame; Vanilla returns to the unchanged retail proc. */
+static void MM_CustomTrackSelect_MarqueePin(const char *pin)
+{
+    static char previous[65];
+    if (!pin) pin = "";
+    if (!strcmp(previous, pin)) return;
+    snprintf(previous, sizeof previous, "%s", pin);
+    DecalFont_ResetLineBox(TEXT_SLOT_ARCADE);
+    DecalFont_ResetLineBox(TEXT_SLOT_ARCADE_DETAIL);
+}
+
 static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
 {
     struct GameTracker *gGT = sdata->gGT;
@@ -388,6 +398,7 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
     }
     s_arcadeRows[s_arcadePage - 1] = row;
     entry = rows ? CustomTrackLibrary_Row(&s_arcadeLibrary, first + row) : NULL;
+    MM_CustomTrackSelect_MarqueePin(entry ? entry->manifestSha256 : NULL);
     if (entry) memcpy(s_arcadeLibrary.rememberedPin, entry->manifestSha256, sizeof s_arcadeLibrary.rememberedPin);
     RECTMENU_ClearInput();
 

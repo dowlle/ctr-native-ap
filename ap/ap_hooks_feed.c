@@ -338,7 +338,15 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 	}
 
 	// Age, then compact out expired lines (oldest reach 0 first).
+	int movedFrom = -1;
+	for (int i = 0; i < ap_feed.vcount; i++)
+		if (ap_feed.vis[i].framesLeft <= 1) { movedFrom = i; break; }
 	AP_FeedLinesAge(&ap_feed);
+	// Clocks use visible indices. Restart the moved suffix even when the
+	// incoming line has exactly the same text as the expired line.
+	if (movedFrom >= 0)
+		for (int i = movedFrom; i < AP_FEED_MAX_VISIBLE; i++)
+			DecalFont_ResetLineBox(TEXT_SLOT_FEED + i);
 
 	// Draw: newest (last) at the bottom anchor, older lines stacked upward.
 	// Each line renders in its stored classification colour (issue #195); the
