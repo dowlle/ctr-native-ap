@@ -59,10 +59,14 @@ int main(void)
 	static short zero[] = {0};
 	static short badMode[] = {2, 5, 4, 1, 2, 3, 6, 5};          // second camera: mode 5 does not exist
 	static short pastTable[] = {1, 5, 0x40};                     // mode index past the size table
-	static short badCheckpoint[] = {2, 5, 0, 99, 0};             // second camera: checkpoint 99 of 30
+	static short badCheckpoint[] = {2, 5, 4, 1, 2, 3, 99, 4, 1, 2, 3}; // second camera: checkpoint 99 of 30
 	static short negCheckpoint[] = {1, -1, 0};
-	static short mode0[] = {1, 3, 0};                            // mode 0, no data: retail allows it
+	static short mode0[] = {2, 3, 0, 4, 4, 1, 2, 3};             // mode 0 camera beside a shot: retail allows it
+	static short onlyChase[] = {2, 3, 0, 7, 0};                  // only mode 0: no visible change
+	static short onlyFirstPerson[] = {2, 3, 15, 7, -16};         // modes 15/16: no end-of-race setup
+	static short mode17[] = {2, 3, 4, 1, 2, 3, 7, 17};           // zero-filled last size slot, not a mode
 	static short huge[] = {1000, 0, 0};
+	static short over[] = {65, 0, 4, 1, 2, 3};                   // one past the cap
 	const void *entries[8];
 	int count, idx, hole;
 
@@ -119,9 +123,23 @@ int main(void)
 	entries[EOR] = negCheckpoint;
 	expect("negative checkpoint index is refused", usable(4, entries, 30), 0);
 	entries[EOR] = mode0;
-	expect("mode 0 camera with no data is accepted", usable(4, entries, 30), 1);
+	expect("mode 0 camera with no data beside a shot is accepted", usable(4, entries, 30), 1);
+	entries[EOR] = onlyChase;
+	expect("table of only chase-camera (mode 0) entries is refused", usable(4, entries, 30), 0);
+	entries[EOR] = onlyFirstPerson;
+	expect("table of only modes 15 and 16 is refused", usable(4, entries, 30), 0);
+	entries[EOR] = mode17;
+	expect("mode 17 is refused", usable(4, entries, 30), 0);
 	entries[EOR] = huge;
-	expect("camera count above the cap is refused", usable(4, entries, 30), 0);
+	expect("camera count far above the cap is refused", usable(4, entries, 30), 0);
+	entries[EOR] = over;
+	expect("camera count one above the cap (65) is refused", usable(4, entries, 30), 0);
+	{
+		int m, shots = 0;
+		for (m = 0; m <= 17; m++)
+			shots += AP_DemoCam_EorModeIsShot(m);
+		expect("exactly the ten CAM_ThTick switch modes count as shots", shots, 10);
+	}
 	entries[EOR] = good;
 	expect("restart count exactly one past the highest index is accepted", usable(4, entries, 21), 1);
 	expect("restart count equal to the highest index is refused", usable(4, entries, 20), 0);
