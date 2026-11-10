@@ -497,6 +497,13 @@ void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags)
 			}
 		}
 
+#ifdef CTR_AP
+		// A4-48a2: a boss kit's missile or bomb (not in the garage's retail table) takes the
+		// player when the retail rules above found nobody. NULL for every other shot.
+		if (victim == 0)
+			victim = AP_BossKitShotTarget(d);
+#endif
+
 		dInst = d->instSelf;
 
 		// set up missile

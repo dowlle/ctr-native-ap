@@ -222,8 +222,8 @@ void UI_CupStandings_InputAndDraw(void)
 	{
 		// Level ID
 		index = data.metaDataLEV[gGT->levelID].name_LNG;
-#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
-		ctCupName = AP_ContentCupTrackName();
+#ifdef CTR_CUSTOM_TRACKS
+		ctCupName = UI_TrackName(-1);
 #endif
 	}
 
@@ -255,13 +255,13 @@ void UI_CupStandings_InputAndDraw(void)
 	}
 
 	// title text
-	DecalFont_DrawLine(
+	DecalFont_DrawLineBox(
 #ifdef CTR_CUSTOM_TRACKS
 	    ctCupName != NULL ? (char *)ctCupName : sdata->lngStrings[index],
 #else
 	    sdata->lngStrings[index],
 #endif
-	    local_58[0], local_58[1] - 0x11, 1, 0xffff8000);
+	    local_58[0], local_58[1] - 0x11, 480, 1, 0xffff8000, TEXT_ELLIPSIS, 0, NULL);
 
 	DecalFont_DrawLine(sdata->lngStrings[LNG_STANDINGS], local_58[0], local_58[1], 1, 0xffff8000);
 

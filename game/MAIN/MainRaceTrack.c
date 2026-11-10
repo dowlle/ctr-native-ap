@@ -278,7 +278,8 @@ void MainRaceTrack_CustomSaveGhost(const struct GhostHeader *gh)
 	                    : "[CustomRecords] could not save the ghost to " CTR_RECORDS_DIR "\n");
 }
 
-// The running package's title in banner form, or NULL outside a custom race.
+// The running package's full UTF-8 title, or NULL outside a custom race.
+// UI_TrackName adapts it to the byte-oriented game font.
 const char *MainRaceTrack_OfflineCustomTitle(void)
 {
 	static char s_title[641];
@@ -286,7 +287,7 @@ const char *MainRaceTrack_OfflineCustomTitle(void)
 
 	if (!MainRaceTrack_OfflineCustomLoad() || !CustomOffline_RuntimeManifest(&manifest))
 		return NULL;
-	CustomIdentity_BannerName(s_title, sizeof s_title, manifest.title);
+	snprintf(s_title, sizeof s_title, "%s", manifest.title);
 	return s_title;
 }
 #endif

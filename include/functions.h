@@ -1,6 +1,8 @@
 #ifndef CTR_NATIVE_FUNCTIONS_H
 #define CTR_NATIVE_FUNCTIONS_H
 
+const char *UI_TrackName(int physicalPad);
+
 // Retail overlay address labels; declared as functions to preserve existing address-taking call sites.
 void OVR_Region1(void);
 void OVR_Region2(void);

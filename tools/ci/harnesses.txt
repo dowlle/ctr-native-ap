@@ -16,6 +16,8 @@ tools/test-boss-assist.c
 tools/test-boss-encounters-production.py
 tools/test-boss-lane-ahead.c
 tools/test-boss-lane-production.py
+tools/test-boss-kit-target.c
+tools/test-boss-kit-target-production.py
 tools/test-boss-venue.cpp
 tools/test-boss-venue-production.py
 tools/test-box-colour-config.c
@@ -319,5 +321,6 @@ tools/test-track-registry-download-production.py
 tools/test-feed-trap-lines.c
 tools/test-track-sources.c
 tools/test-custom-finish.c
+tools/test-track-display-name-production.py
 tools/test-boss-reverb-production.py
 tools/test-arena-weapon-fire.py

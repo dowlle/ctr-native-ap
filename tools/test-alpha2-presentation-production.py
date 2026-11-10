@@ -77,6 +77,7 @@ cups = source("ap/ap_hooks_content_cups.c")
 fixture += function(source("ap/ap_hooks_gates.c"), "int AP_BossGarageOpponent(int bossIdx)")
 fixture += function(cups, "const char *AP_ContentCupName(void)")
 fixture += function(cups, "const char *AP_ContentCupTrackName(void)")
+fixture += "\nstatic const char *UI_TrackName(int physical) { (void)physical; const char *s=AP_ContentCupTrackName(); return s ? s : sdata->lngStrings[data.metaDataLEV[tracker.levelID].name_LNG]; }\n"
 ui = source("game/UI/UI_CupStandings.c")
 start = ui.index("\tint index = 0x22E;")
 fixture += "\nstatic const char *heading(void) { struct GameTracker *gGT=&tracker;\n"
