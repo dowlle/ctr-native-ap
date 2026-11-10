@@ -998,7 +998,8 @@ static void AP_TrapDrainEvents(struct GameTracker *gGT, struct Driver *local)
 		{
 		case AP_TRAP_EV_ARMED:
 			snprintf(msg, sizeof msg, "%s ARMED", name);
-			AP_FeedTrapLine(ev.slot, ev.seq, AP_FEED_TRAP_ARMED, msg);
+			AP_FeedTrapLine(ev.effect, ev.slot, ev.seq, AP_FEED_TRAP_ARMED, msg,
+			    gGT && !(gGT->gameMode1 & ADVENTURE_ARENA));
 			snprintf(msg, sizeof msg, "[AP TRAP] armed: %s (slot %d)\n", name, ev.slot);
 			AP_LogLine(msg);
 			break;
@@ -1012,14 +1013,14 @@ static void AP_TrapDrainEvents(struct GameTracker *gGT, struct Driver *local)
 			break;
 		case AP_TRAP_EV_WARN:
 			snprintf(msg, sizeof msg, "%s INCOMING", name);
-			AP_FeedTrapLine(ev.slot, ev.seq, AP_FEED_TRAP_INCOMING, msg);
+			AP_FeedTrapLine(ev.effect, ev.slot, ev.seq, AP_FEED_TRAP_INCOMING, msg, 0);
 			snprintf(msg, sizeof msg, "[AP TRAP] warning: %s (slot %d)\n", name, ev.slot);
 			AP_LogLine(msg);
 			break;
 		case AP_TRAP_EV_FIRE:
 			snprintf(msg, sizeof msg, AP_TrapMudSeasonBlocked(ev.effect, AP_SurfaceHeld(AP_SURFACE_DIRT))
 			                              ? "%s BLOCKED" : "%s", name);
-			AP_FeedTrapLine(ev.slot, ev.seq, AP_FEED_TRAP_FIRED, msg);
+			AP_FeedTrapLine(ev.effect, ev.slot, ev.seq, AP_FEED_TRAP_FIRED, msg, 0);
 			snprintf(msg, sizeof msg, "[AP TRAP] active: %s (slot %d)\n", name, ev.slot);
 			AP_LogLine(msg);
 			break;
