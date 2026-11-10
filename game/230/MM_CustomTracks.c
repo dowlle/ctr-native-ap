@@ -135,7 +135,8 @@ static void CT_Row(int row, const char *text, int selected, int flags, uint32_t 
     RECT box = {24, CT_ROW_Y0 + row * CT_ROW_H, 260, 14};
     char plain[640];
     ap_seed_plain_text(text, plain, sizeof plain);
-    MM_CustomText_Draw(plain, CT_LIST_X, box.y + 2, CT_LIST_W, 1, selected ? ORANGE : flags, ot);
+    DecalFont_DrawLineBox(plain, CT_LIST_X, box.y + 2, CT_LIST_W, FONT_SMALL,
+        selected ? ORANGE : flags, selected ? TEXT_MARQUEE : TEXT_ELLIPSIS, TEXT_SLOT_LIBRARY, ot);
     if (selected) CTR_Box_DrawClearBox(&box, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
 }
 
@@ -146,7 +147,8 @@ static void CT_RowState(int row, const char *title, const char *state, int selec
     char plain[640];
     int stateW = DecalFont_GetLineWidth((char *)state, FONT_SMALL);
     ap_seed_plain_text(title, plain, sizeof plain);
-    MM_CustomText_Draw(plain, CT_LIST_X, box.y + 2, CT_LIST_W - stateW - 10, 1, selected ? ORANGE : WHITE, ot);
+    DecalFont_DrawLineBox(plain, CT_LIST_X, box.y + 2, CT_LIST_W - stateW - 10, FONT_SMALL,
+        selected ? ORANGE : WHITE, selected ? TEXT_MARQUEE : TEXT_ELLIPSIS, TEXT_SLOT_LIBRARY, ot);
     DecalFont_DrawLineOT((char *)state, CT_LIST_X + CT_LIST_W, box.y + 2, FONT_SMALL, JUSTIFY_RIGHT | stateFlags, ot);
     if (selected) CTR_Box_DrawClearBox(&box, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
 }
@@ -175,9 +177,11 @@ static void CT_ScrollBar(int total, int first, uint32_t *ot)
 static int CT_Step(int value, int count, int tapped)
 {
     if (count <= 0) return 0;
-    if (tapped & BTN_UP) { OtherFX_Play(0, 1); return (value + count - 1) % count; }
-    if (tapped & BTN_DOWN) { OtherFX_Play(0, 1); return (value + 1) % count; }
-    return value < count ? value : count - 1;
+    int next = value < count ? value : count - 1;
+    if (tapped & BTN_UP) { OtherFX_Play(0, 1); next = (value + count - 1) % count; }
+    else if (tapped & BTN_DOWN) { OtherFX_Play(0, 1); next = (value + 1) % count; }
+    if (next != value) DecalFont_ResetLineBox(TEXT_SLOT_LIBRARY);
+    return next;
 }
 
 /* ---- the release-profile package (old package page) --------------------- */
@@ -209,6 +213,34 @@ struct CT_LibView
     int package;    /* the track has the release profile (export, relic times) */
     const char *title, *version, *author;
 };
+
+/* A refresh can replace the selected revision without changing its title or
+   row index. Copy its identity before the catalogue/store can be replaced. */
+static void CT_LibraryMarqueeOwner(const struct CT_LibItem *item, const struct CT_LibView *view)
+{
+    static char previous[1024];
+    char owner[1024];
+    owner[0] = 0;
+    if (item && item->kind == CT_ITEM_INSTALLED && view->installed)
+        snprintf(owner, sizeof owner, "installed:%s", view->installed->manifestSha256);
+    else if (item && item->kind == CT_ITEM_CATALOGUE && view->source)
+    {
+        const struct CustomSaphiRevision *r = view->source;
+        snprintf(owner, sizeof owner, "source:%d:%s:%d:%u:%u:%s:%d:%u:%u:%s:%d:%u:%u:%s",
+                 r->trackID, r->version, r->lev.id, r->lev.bytes, r->lev.crc32, r->lev.path,
+                 r->vrm.id, r->vrm.bytes, r->vrm.crc32, r->vrm.path,
+                 r->sca.id, r->sca.bytes, r->sca.crc32, r->sca.path);
+    }
+    else if (item && item->kind == CT_ITEM_PACKAGE)
+    {
+        const struct CustomTrackManagerPackage *p = AP_CustomContentPackage();
+        snprintf(owner, sizeof owner, "package:%s:%s:%s:%s", p->packageUuid,
+                 p->version, p->levSha256, p->vrmSha256);
+    }
+    if (!strcmp(previous, owner)) return;
+    snprintf(previous, sizeof previous, "%s", owner);
+    DecalFont_ResetLineBox(TEXT_SLOT_LIBRARY);
+}
 
 static const struct CustomSaphiRevision *CT_PreferredSource(int trackID)
 {
@@ -957,6 +989,7 @@ static int MM_CustomTracks_ConsumesBack(int section)
 static void CT_GoTab(int tab)
 {
     if (tab == s_ctTab) return;
+    DecalFont_ResetLineBox(TEXT_SLOT_LIBRARY);
     s_ctTab = tab;
     s_ctSub = CT_SUB_NONE;
     s_ctMessage[0] = 0;
@@ -1058,6 +1091,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
     }
     if (s_ctItemCount) { item = &s_ctItems[*sel]; CT_View(item, &v); nActions = CT_LibraryActions(item, &v, actions); }
     else if (s_ctFocus == CT_FOCUS_ACTIONS || s_ctFocus == CT_FOCUS_SUB) { s_ctFocus = CT_FOCUS_LIST; s_ctSub = CT_SUB_NONE; }
+    CT_LibraryMarqueeOwner(item, item ? &v : NULL);
 
     /* Page controls: Filter, Search, Refresh catalogue, Rescan local files. */
     if (s_ctFocus == CT_FOCUS_CONTROLS)

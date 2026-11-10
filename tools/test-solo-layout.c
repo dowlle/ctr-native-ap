@@ -290,6 +290,8 @@ int AP_Solo_SessionState(void) { return AP_SOLO_SESSION_FAILED; }
 const char *AP_Solo_SessionError(void)
 { return "The solo server stopped before it was ready. See solo/logs/server.log for the reason."; }
 
+#include "../game/230/MM_CustomText.c"
+#include "text-box-layout-stub.h"
 #include "../game/230/MM_Solo.c"
 
 /* No two texts overlap. */

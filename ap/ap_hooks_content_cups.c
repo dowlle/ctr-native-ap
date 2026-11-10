@@ -153,6 +153,32 @@ const char *AP_ContentCupTrackName(void)
 	return pkg && pkg->display_name[0] ? pkg->display_name : "Custom track";
 }
 
+/* Full display title for the fly-in, independent of the legacy loader's
+   width-bounded name. Only the active race context may supply this title. */
+const char *AP_ContentRaceDisplayName(void)
+{
+	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(sdata->gGT->levelID);
+	const ctr_content_pad *pad;
+	const ctr_content_package *pkg;
+	const char *title;
+	static char plain[641];
+	if (!race || race->retail || !ap_content_plan_active() ||
+	    race->seedEpoch != ap_content_plan_epoch()) return NULL;
+	if (race->cortex) return "CORTEX VORTEX";
+	pad = ap_content_plan_pad(race->physicalPad);
+	if (!pad) return NULL;
+	if (race->cup)
+		title = AP_ContentCupTrackName();
+	else
+	{
+		pkg = ap_content_plan_package(pad->package_index);
+		title = pkg ? pkg->display_name : NULL;
+	}
+	if (!title) return NULL;
+	CustomIdentity_BannerName(plain, sizeof plain, title);
+	return plain;
+}
+
 // The pad the hub return puts the kart on after the cup, or -1.
 int AP_ContentCupPadLevel(void)
 {

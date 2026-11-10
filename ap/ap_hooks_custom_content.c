@@ -105,8 +105,8 @@ static const struct CustomTrackManagerPackage *AP_ContentPackage(int index)
 	                                         p->lev_sha256, p->vrm_sha256) : NULL;
 }
 
-// A race-start name the big font can draw: printable ASCII, cut until the
-// width check passes, "CUSTOM TRACK" when nothing is left.
+// Legacy loader name: printable ASCII, cut until the width check passes.
+// The fly-in resolves the full display title from the active race context.
 static void AP_ContentRaceName(const char *title, char *out, size_t size)
 {
 	size_t n = 0;
@@ -789,14 +789,14 @@ void AP_DrawCustomContentWarning(void)
 	if (ap_cortex_track_content_required)
 	{
 		DecalFont_DrawLine("!! CORTEX VORTEX REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
-		DecalFont_DrawLine("Cortex Vortex pad track unavailable. Its pad refuses entry.",
+		DecalFont_DrawLine("Install Cortex Vortex: pad locked.",
 		                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
 		return;
 	}
 	if (ap_oxide_final_content_required)
 	{
 		DecalFont_DrawLine("!! CORTEX VORTEX REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
-		DecalFont_DrawLine("Exact bundled files missing or mismatched. Oxide 2 is locked.",
+		DecalFont_DrawLine("Verify Cortex Vortex: Oxide 2 locked.",
 		                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
 		return;
 	}
@@ -804,8 +804,8 @@ void AP_DrawCustomContentWarning(void)
 		return;
 	DecalFont_DrawLine("!! CUSTOM CONTENT REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
 	// A content-plan room lists every required track on its own tab.
-	DecalFont_DrawLine(ap_content_plan_active() ? "Open OPTIONS > Custom Tracks > This Seed to install it."
-	                                            : "Open OPTIONS > Custom Tracks to download or verify the track.",
+	DecalFont_DrawLine(ap_content_plan_active() ? "OPTIONS > Custom Tracks > This Seed"
+	                                            : "OPTIONS > Custom Tracks: verify.",
 	                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
 }
 #endif

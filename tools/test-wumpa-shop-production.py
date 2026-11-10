@@ -189,9 +189,9 @@ check('the shop name column ends one font-measured character cell before the pri
 check('shop widths come from the engine font function, not a character count',
       'DecalFont_GetLineWidthStrlen((char *)s, len, FONT_SMALL)' in ui and 'strlen(name) > 34' not in row)
 check('the selected row scrolls and the others clip',
-      'AP_TextMarquee(' in row and 'AP_TextClipLen(' in row and row.index('if (selected)') < row.index('AP_TextClipLen('))
+      'DecalFont_DrawLineBox(name,' in row and 'selected ? TEXT_MARQUEE : TEXT_ELLIPSIS' in row)
 check('the marquee restarts when the cursor moves or the page opens',
-      ui.count('ap_wshop.marqueeFrame = 0;') >= 2)
+      ui.count('DecalFont_ResetLineBox(TEXT_SLOT_SHOP);') >= 2)
 
 print('FAILED' if failures else 'all passed')
 sys.exit(1 if failures else 0)

@@ -48,7 +48,6 @@
 #define AP_FEED_X                  0x10
 #define AP_FEED_BASE_Y             0xC8 // bottom (newest) line anchor
 #define AP_FEED_RESULTS_BASE_Y     0xAC // same anchor on the results screens: clears the prompt
-#define AP_FEED_MAX_CHARS          28   // DeathLink lines stay clear of the minimap (small font: ~13 px a character)
 
 // ── RACE anchor (bottom-left, matches the hub) ──────────────────────────────
 // Previously the race surface used its own mid-screen band (upper-left of the
@@ -225,7 +224,6 @@ void AP_FeedNoticeLine(const char *text)
 	if (!ctr_cfg_active() || text == 0)
 		return;
 	AP_CeremonySanitize(text, line, (int)sizeof line);
-	line[AP_FEED_MAX_CHARS] = '\0';
 	if (line[0] == '\0')
 		return;
 	AP_FeedEnqueue(line, ORANGE, 1);
@@ -237,7 +235,6 @@ void AP_FeedDeathLinkLine(const char *text, int ignored)
 	if (!ctr_cfg_active() || text == 0)
 		return;
 	AP_CeremonySanitize(text, line, (int)sizeof line);
-	line[AP_FEED_MAX_CHARS] = '\0';
 	if (line[0] == '\0')
 		return;
 	AP_FeedEnqueue(line, ignored ? ORANGE : CORTEX_RED, 0);
@@ -341,7 +338,15 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 	}
 
 	// Age, then compact out expired lines (oldest reach 0 first).
+	int movedFrom = -1;
+	for (int i = 0; i < ap_feed.vcount; i++)
+		if (ap_feed.vis[i].framesLeft <= 1) { movedFrom = i; break; }
 	AP_FeedLinesAge(&ap_feed);
+	// Clocks use visible indices. Restart the moved suffix even when the
+	// incoming line has exactly the same text as the expired line.
+	if (movedFrom >= 0)
+		for (int i = movedFrom; i < AP_FEED_MAX_VISIBLE; i++)
+			DecalFont_ResetLineBox(TEXT_SLOT_FEED + i);
 
 	// Draw: newest (last) at the bottom anchor, older lines stacked upward.
 	// Each line renders in its stored classification colour (issue #195); the
@@ -351,8 +356,9 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 	{
 		int fromBottom = ap_feed.vcount - 1 - i;
 		int y = baseY - fromBottom * AP_FEED_LINE_H;
-		DecalFont_DrawLine(ap_feed.vis[i].text, x, y, FONT_SMALL,
-		                   ap_feed.vis[i].color);
+		DecalFont_DrawLineBox(ap_feed.vis[i].text, x, y, playableRace == 1 ? 364 : 480,
+		    FONT_SMALL, ap_feed.vis[i].color, playableRace == 1 ? TEXT_ELLIPSIS : TEXT_MARQUEE,
+		    TEXT_SLOT_FEED + i, NULL);
 	}
 }
 
@@ -416,7 +422,7 @@ void AP_FeedDrawResults(void)
 	if ((gGT->gameMode1 & PAUSE_ALL) != 0)
 		return;
 
-	AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_RESULTS_BASE_Y, 1);
+	AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_RESULTS_BASE_Y, 2);
 }
 
 // Hub warning for a seed whose item-box numbering the client cannot match.
@@ -449,7 +455,7 @@ void AP_DrawSchemaWarning(void)
 		return;
 	// Static so the strings are not rebuilt per frame; DrawLine takes char*.
 	static char warn1[] = "!! CTR-AP CLIENT OUT OF DATE !!";
-	static char warn2[] = "This seed needs a newer client. Gates may be wrong.";
+	static char warn2[] = "Update client. Gates may be wrong.";
 	DecalFont_DrawLine(warn1, AP_FEED_X, 0x14, FONT_SMALL, RED);
 	DecalFont_DrawLine(warn2, AP_FEED_X, 0x14 + AP_FEED_LINE_H, FONT_SMALL, RED);
 }

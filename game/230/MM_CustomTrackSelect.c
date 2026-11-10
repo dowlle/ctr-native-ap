@@ -195,6 +195,16 @@ static void MM_CustomTrackSelect_Text(const char *text, int x, int y, size_t wid
 
 /* Called after the retail transition state advances, before retail indexing.
    Returning 1 owns this frame; Vanilla returns to the unchanged retail proc. */
+static void MM_CustomTrackSelect_MarqueePin(const char *pin)
+{
+    static char previous[65];
+    if (!pin) pin = "";
+    if (!strcmp(previous, pin)) return;
+    snprintf(previous, sizeof previous, "%s", pin);
+    DecalFont_ResetLineBox(TEXT_SLOT_ARCADE);
+    DecalFont_ResetLineBox(TEXT_SLOT_ARCADE_DETAIL);
+}
+
 static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
 {
     struct GameTracker *gGT = sdata->gGT;
@@ -264,6 +274,8 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
     }
     if (!s_arcadePrepareBusy && !s_arcadeConfirm && (tapped & (BTN_LEFT | BTN_RIGHT)))
     {
+        DecalFont_ResetLineBox(TEXT_SLOT_ARCADE);
+        DecalFont_ResetLineBox(TEXT_SLOT_ARCADE_DETAIL);
         s_arcadePage = (s_arcadePage + ((tapped & BTN_LEFT) ? pages - 1 : 1)) % pages;
         s_arcadeMessage[0] = 0;
         MM_TrackSelect_Video_State(1);
@@ -337,6 +349,11 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
     {
         if (rows && (tapped & (BTN_UP | BTN_DOWN)))
         {
+            if (rows > 1)
+            {
+                DecalFont_ResetLineBox(TEXT_SLOT_ARCADE);
+                DecalFont_ResetLineBox(TEXT_SLOT_ARCADE_DETAIL);
+            }
             row = (row + ((tapped & BTN_UP) ? rows - 1 : 1)) % rows;
             s_arcadeMotion = rows > 1 ? 3 : 0;
             s_arcadeMotionDirection = (tapped & BTN_UP) ? -1 : 1;
@@ -381,6 +398,7 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
     }
     s_arcadeRows[s_arcadePage - 1] = row;
     entry = rows ? CustomTrackLibrary_Row(&s_arcadeLibrary, first + row) : NULL;
+    MM_CustomTrackSelect_MarqueePin(entry ? entry->manifestSha256 : NULL);
     if (entry) memcpy(s_arcadeLibrary.rememberedPin, entry->manifestSha256, sizeof s_arcadeLibrary.rememberedPin);
     RECTMENU_ClearInput();
 
@@ -408,8 +426,9 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
         };
         /* Keep the retail curve, but do not draw a row through the footer. */
         if (box.y + box.h > 176) continue;
-        MM_CustomText_DrawFont(item->title, box.x + 8, box.y + 5, 240, 1, FONT_BIG,
-                               MM_CustomTrackSelect_Eligible(item, NULL, 0) ? ORANGE : ORANGE_DARKENED, ot);
+        DecalFont_DrawLineBox(item->title, box.x + 8, box.y + 5, 240, FONT_BIG,
+            MM_CustomTrackSelect_Eligible(item, NULL, 0) ? ORANGE : ORANGE_DARKENED,
+            i == row && !s_arcadeMotion ? TEXT_MARQUEE : TEXT_ELLIPSIS, TEXT_SLOT_ARCADE, ot);
         if (i == row && !s_arcadeMotion)
         {
             RECT highlight = {box.x + 6, box.y + 4, box.w - 12, box.h - 8};
@@ -426,7 +445,8 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
            facts, then three lines for the state or the start prompt. */
         const char *note = AP_CustomOfflineRoomNote();
         snprintf(line, sizeof line, "v%.20s", entry->version);
-        MM_CustomTrackSelect_Text(entry->title, 309 + dx, 85 + dy, 174, 1, ORANGE, ot);
+        DecalFont_DrawLineBox(entry->title, 309 + dx, 85 + dy, 174, FONT_SMALL,
+            ORANGE, TEXT_MARQUEE, TEXT_SLOT_ARCADE_DETAIL, ot);
         MM_CustomTrackSelect_Text(line, 309 + dx, 98 + dy, 174, 1, WHITE, ot);
         if (entry->author[0]) MM_CustomTrackSelect_Text(entry->author, 309 + dx, 110 + dy, 174, 1, WHITE, ot);
         if (entry->installed && entry->local.laps)
