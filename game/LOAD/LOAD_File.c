@@ -479,6 +479,18 @@ void *LOAD_ReadFile_ex(struct BigHeader *bigfile, u32 loadType, int subfileIndex
 #else
 			int ctOk = CustomTrack_ReadFile(ctOverridePath, ptrDst, (u32)ctSectorBytes, ctOverrideSize);
 #endif
+			// Odd slots of a host group are the LEV (CustomTrackPolicy_SubfileRole).
+			// Its pointer map has not run yet, so an ST1 entry the map leaves out
+			// can still be told from a real one (policy header, decision 6).
+			if (ctOk && (subfileIndex & 1) != 0)
+			{
+				int st1Cleared = CustomTrackPolicy_ClearUnmappedSt1((unsigned char *)ptrDst, ctOverrideSize);
+				if (st1Cleared > 0)
+				{
+					CustomTrack_Log("[CustomTracks] level subfile %d: cleared %d SpawnType1 entr%s outside the pointer map\n",
+					                subfileIndex, st1Cleared, st1Cleared == 1 ? "y" : "ies");
+				}
+			}
 			if (callback != NULL)
 			{
 				LOAD_ReadFileASyncCallback((u8)(ctOk ? CdlComplete : CdlDiskError), NULL);
