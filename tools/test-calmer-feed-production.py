@@ -6,6 +6,10 @@ import tempfile
 
 root = Path(__file__).resolve().parents[1]
 src = (root / 'ap/ap_hooks_feed.c').read_text()
+net = (root / 'ap/ap_hooks_net.c').read_text()
+held = net[net.index('if (AP_ArcadeHoldsRoom())'):]
+held = held[:held.index('}') + 1]
+assert 'AP_FeedLinesReceiptTick(&ap_feed);' in src[src.index('void AP_FeedEndDrain'):]
 
 def function(name):
     start = src.index('void ' + name + '(')
@@ -42,6 +46,7 @@ static void AP_CeremonySanitize(const char *s,char *d,int n) { snprintf(d,n,"%s"
 static int AP_ItemDisplayAlias(long long item,char *d,int n) { (void)item;(void)d;(void)n;return 0; }
 static int AP_CeremonyNameIsBlank(const char *s) { return !*s; }
 static int AP_ClassFontColor(unsigned flags) { return AP_ItemFlagsClass(flags); }
+static int AP_ArcadeHoldsRoom(void) { return 1; }
 '''
 tests = r'''
 int main(void) {
@@ -77,13 +82,23 @@ int main(void) {
     AP_FeedOnItemReceived(10,1,10,0);
     AP_FeedTrapLine(13,2,3,AP_FEED_TRAP_FIRED,"NITRO DROP",1);
     assert(ap_feed.qcount==1 && ap_feed.queue[0].copies==2);
+    active=1;
+    AP_FeedLinesReset(&ap_feed);
+    AP_FeedOnItemReceived(10,1,20,0);
+    for (int i=0;i<239;i++) held_frame();
+    AP_FeedOnItemReceived(10,1,21,0);
+    assert(ap_feed.qcount==1 && ap_feed.queue[0].copies==2);
+    held_frame();
+    AP_FeedOnItemReceived(10,1,22,0);
+    assert(ap_feed.qcount==2 && ap_feed.queue[1].copies==1);
     puts("production receipt flags, replay, option off, sender and race/hub trap entry points PASS");
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:
     path = Path(tmp)
     (path/'test.c').write_text(stubs + function('AP_FeedOnItemReceived') +
-                              function('AP_FeedTrapLine') + tests)
+                              function('AP_FeedTrapLine') +
+                              'static void held_frame(void) { ' + held + ' }' + tests)
     subprocess.run(['cc','-std=c99','-Wall','-Wextra','-I',str(root),
                     str(path/'test.c'),'-o',str(path/'test')],check=True)
     subprocess.run([str(path/'test')],check=True)

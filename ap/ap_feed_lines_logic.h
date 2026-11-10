@@ -7,8 +7,8 @@
 // (tools/test-feed-trap-lines.c) drive the same code.
 //
 // A4-54: identical effects share a counted line, with receipt sequences keeping
-// state transitions from adding copies. ARMED is hidden in race contexts; pending
-// identities still join the next warning/fire line. Filler receipts group only
+// state transitions from adding copies. ARMED is hidden in race contexts; copies
+// join on their own warning/fire/refresh event. Filler receipts group only
 // within one consecutive run and one fixed four-second receipt window.
 //
 // Historical per-copy helper below is retained for the A3-21 regression fixture
@@ -75,8 +75,6 @@ typedef struct
 	int stagger;
 	unsigned receiptID;
 	int receiptWindow;
-	int pendingTrapEffect[32];
-	unsigned pendingTrapSeq[32];
 } AP_FeedLines;
 
 static inline void AP_FeedLinesReset(AP_FeedLines *f)
@@ -87,7 +85,6 @@ static inline void AP_FeedLinesReset(AP_FeedLines *f)
 	f->stagger = 0;
 	f->receiptID = 0;
 	f->receiptWindow = 0;
-	memset(f->pendingTrapSeq, 0, sizeof f->pendingTrapSeq);
 }
 
 // Append a ready-formatted line to the pending ring. Oldest is dropped if full.
@@ -163,8 +160,8 @@ static inline int AP_FeedLinesTrapGrouped(AP_FeedLines *f, int effect, int slot,
 {
 	AP_FeedLine *l = 0;
 	int i;
-	int silent = stage == AP_FEED_TRAP_ARMED && racing;
 	if (effect < 0 || slot < 0 || slot >= 32 || seq == 0) return 0;
+	if (stage == AP_FEED_TRAP_ARMED && racing) return 0;
 	for (i = f->qcount - 1; i >= 0 && !l; --i) {
 		AP_FeedLine *q = &f->queue[(f->qhead + i) % AP_FEED_QUEUE_MAX];
 		if (q->trapEffect == effect) l = q;
@@ -172,27 +169,14 @@ static inline int AP_FeedLinesTrapGrouped(AP_FeedLines *f, int effect, int slot,
 	for (i = f->vcount - 1; i >= 0 && !l; --i)
 		if (f->vis[i].trapEffect == effect) l = &f->vis[i];
 	int updated = l != 0;
-	if (!l && silent) {
-		f->pendingTrapEffect[slot] = effect;
-		f->pendingTrapSeq[slot] = seq;
-		return 0;
-	}
 	if (!l) l = AP_FeedLinesEnqueue(f, text, color, 1);
-	for (i = 0; i < 32; ++i)
-		if (f->pendingTrapSeq[i] && f->pendingTrapEffect[i] == effect) {
-			if (l->copySeq[i] != f->pendingTrapSeq[i]) ++l->copies;
-			l->copySeq[i] = f->pendingTrapSeq[i];
-			f->pendingTrapSeq[i] = 0;
-		}
 	if (slot >= 0 && slot < 32 && l->copySeq[slot] != seq) {
 		l->copySeq[slot] = seq;
 		++l->copies;
 	}
 	l->trapEffect = effect;
-	if (!silent) {
-		l->trapStage = stage;
-		snprintf(l->baseText, sizeof l->baseText, "%s", text);
-	}
+	l->trapStage = stage;
+	snprintf(l->baseText, sizeof l->baseText, "%s", text);
 	l->color = color;
 	if (l->copies > 1) snprintf(l->text, sizeof l->text, "%d %.*s", l->copies,
 	    AP_FEED_TEXT_CAP - 13, l->baseText);

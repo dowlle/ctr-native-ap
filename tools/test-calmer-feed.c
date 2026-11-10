@@ -51,12 +51,18 @@ int main(void)
     trap(1, 1, 2, AP_FEED_TRAP_ARMED, "NITRO DROP ARMED", 1);
     assert(f.qcount == 0);
     trap(1, 0, 1, AP_FEED_TRAP_INCOMING, "NITRO DROP INCOMING", 1);
+    assert(f.qcount == 1 && !strcmp(f.queue[0].text, "NITRO DROP INCOMING"));
+    trap(1, 1, 2, AP_FEED_TRAP_INCOMING, "NITRO DROP INCOMING", 1);
     assert(f.qcount == 1 && !strcmp(f.queue[0].text, "2 NITRO DROP INCOMING"));
     AP_FeedLinesPromote(&f);
     trap(1, 1, 2, AP_FEED_TRAP_FIRED, "NITRO DROP", 1);
     trap(1, 0, 1, AP_FEED_TRAP_FIRED, "NITRO DROP", 1);
     assert(f.vcount == 1 && !strcmp(f.vis[0].text, "2 NITRO DROP"));
+    f.vis[0].framesLeft = 120;
     trap(1, 2, 3, AP_FEED_TRAP_ARMED, "NITRO DROP ARMED", 1);
+    assert(!strcmp(f.vis[0].text, "2 NITRO DROP") && f.vis[0].framesLeft == 120);
+    trap(1, 2, 3, AP_FEED_TRAP_INCOMING, "NITRO DROP INCOMING", 1);
+    trap(1, 2, 3, AP_FEED_TRAP_FIRED, "NITRO DROP", 1);
     assert(!strcmp(f.vis[0].text, "3 NITRO DROP"));
     trap(2, 0, 4, AP_FEED_TRAP_ARMED, "FLATTEN ARMED", 0);
     assert(f.qcount == 1 && !strcmp(f.queue[f.qhead].text, "FLATTEN ARMED"));
