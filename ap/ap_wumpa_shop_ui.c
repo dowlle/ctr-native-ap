@@ -253,8 +253,8 @@ static void AP_WShopDrawRow(int hub, int k, int y, int selected)
 	state = AP_WShopSlotState(hub, k);
 	if (known)
 	{
-		const char *disguise = AP_TrapDisplayName(ctr_cfg.trap_display, ctr_cfg.trap_display_salt,
-		                                        s->code, flags, state == AP_WUMPA_SLOT_SOLD);
+		const char *disguise = AP_TrapDisplayShopName(ctr_cfg.trap_display, ctr_cfg.trap_display_salt,
+		                                            s->code, flags, state == AP_WUMPA_SLOT_SOLD);
 		if (disguise)
 			snprintf(itemS, sizeof itemS, "%s", disguise);
 	}
@@ -264,8 +264,8 @@ static void AP_WShopDrawRow(int hub, int k, int y, int selected)
 		snprintf(name, sizeof name, "%s (%s)", itemS, playerS);
 	else
 		snprintf(name, sizeof name, "%s", itemS);
-	color = known ? AP_ClassFontColor(AP_TrapDisplayFlags(ctr_cfg.trap_display, ctr_cfg.trap_display_salt,
-	                                                      s->code, flags))
+	color = known ? AP_ClassFontColor(AP_TrapDisplayShopFlags(ctr_cfg.trap_display, ctr_cfg.trap_display_salt,
+	                                                          s->code, flags))
 	              : WHITE;
 	switch (state)
 	{

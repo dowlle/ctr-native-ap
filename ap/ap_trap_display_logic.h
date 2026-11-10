@@ -62,4 +62,34 @@ static inline const char *AP_TrapDisplayName(int mode, unsigned salt, long long 
 	return (display & AP_ITEM_FLAG_PROGRESSION) ? "PROGRESSION ITEM" : "FILLER ITEM";
 }
 
+// Wumpa Shop disguise (ruled 2026-11-10, GR-03 / A4-50): in the shop a
+// disguised trap picks PROGRESSION ITEM or FILLER ITEM per location from the
+// same salt hash `mixed` uses, in either disguise mode, so the label no
+// longer tracks the mode. Boxes and pad glow keep the mode's own mapping.
+// `as_progression` carries no salt envelope, so its split comes from the
+// location id alone and is still fixed per slot within one seed.
+static inline unsigned AP_TrapDisplayShopFlags(int mode, unsigned salt, long long location,
+                                               unsigned flags)
+{
+	if ((flags & AP_ITEM_FLAG_TRAP) == 0 ||
+	    (flags & (AP_ITEM_FLAG_PROGRESSION | AP_ITEM_FLAG_USEFUL)) != 0)
+		return flags;
+	if (mode != AP_TRAP_DISPLAY_AS_PROGRESSION && mode != AP_TRAP_DISPLAY_MIXED)
+		return flags;
+	return AP_TrapDisplayMixedLooksProgression(salt, location)
+	           ? ((flags & ~AP_ITEM_FLAG_TRAP) | AP_ITEM_FLAG_PROGRESSION)
+	           : (flags & ~AP_ITEM_FLAG_TRAP);
+}
+
+// The shop's pre-collection name for the same display flags, so name and
+// colour always come from one mapping. NULL as in AP_TrapDisplayName.
+static inline const char *AP_TrapDisplayShopName(int mode, unsigned salt, long long location,
+                                                 unsigned flags, int collected)
+{
+	unsigned display = AP_TrapDisplayShopFlags(mode, salt, location, flags);
+	if (collected || display == flags)
+		return 0;
+	return (display & AP_ITEM_FLAG_PROGRESSION) ? "PROGRESSION ITEM" : "FILLER ITEM";
+}
+
 #endif // AP_TRAP_DISPLAY_LOGIC_H

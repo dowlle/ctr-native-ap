@@ -75,6 +75,41 @@ int main(void)
 			differ += AP_TrapDisplayMixedLooksProgression(1u, loc) != AP_TrapDisplayMixedLooksProgression(2u, loc);
 		expect("mixed: another salt picks differently", differ > 8, 1);
 	}
+
+	// A4-50 (ruled 2026-11-10): in the Wumpa Shop a disguised trap picks its
+	// label per location in either disguise mode; other displays keep the
+	// mode's own mapping.
+	expect("shop: shown keeps a trap", (int)AP_TrapDisplayShopFlags(0, 0, 35014000, T), (int)T);
+	expect("shop: unknown mode keeps a trap", (int)AP_TrapDisplayShopFlags(7, 0, 35014000, T), (int)T);
+	expect("shop: filler untouched", (int)AP_TrapDisplayShopFlags(1, 0, 35014000, 0), 0);
+	expect("shop: useful trap keeps showing useful",
+	       (int)AP_TrapDisplayShopFlags(1, 0, 35014000, U | T), (int)(U | T));
+	expect("shop: collected trap keeps the ordinary name",
+	       AP_TrapDisplayShopName(1, 0, 35014000, T, 1) == NULL, 1);
+	expect("shop: shown keeps the ordinary name",
+	       AP_TrapDisplayShopName(0, 0, 35014000, T, 0) == NULL, 1);
+	{
+		int shopProg = 0, shopFiller = 0, agree = 0;
+		for (loc = 35014000; loc < 35014200; loc++)
+		{
+			unsigned f1 = AP_TrapDisplayShopFlags(1, 12345u, loc, T);
+			unsigned f2 = AP_TrapDisplayShopFlags(2, 12345u, loc, T);
+			const char *n1 = AP_TrapDisplayShopName(1, 12345u, loc, T, 0);
+			const char *n2 = AP_TrapDisplayShopName(2, 12345u, loc, T, 0);
+			if (f1 & P)
+				shopProg++;
+			else
+				shopFiller++;
+			if (f1 != f2 || !n1 || !n2 || strcmp(n1, n2) ||
+			    strcmp(n1, f1 & P ? "PROGRESSION ITEM" : "FILLER ITEM"))
+				failures++;
+			if (AP_ItemFlagsClass(f1) == AP_ItemFlagsClass(AP_TrapDisplayFlags(2, 12345u, loc, T)))
+				agree++;
+		}
+		checks += 400;
+		expect("shop: as_progression splits per location too", shopProg > 60 && shopFiller > 60, 1);
+		expect("shop: both modes pick from one hash", agree, 200);
+	}
 	printf("\n%d checks, %d failures\n", checks, failures);
 	return failures != 0;
 }
