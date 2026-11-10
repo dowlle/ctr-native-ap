@@ -64,11 +64,13 @@ stays authorable. The gate is `AP_AuthorRaceAllowsAuthoring` in
 ## When the race ends
 
 Nothing in author mode waits to be saved. Every drop, delete, move and nudge
-rewrites the file at once (see below), so a race that ends while author mode
-is on loses no placement that was written, and no exit asks about one. A file
-that cannot be opened for writing is logged (`could not write`), and on custom
-tracks so is an incomplete write (`was not written completely`); placements
-made after such a failure live in memory only. Retry, the pause
+rewrites the file at once (see below), so ending a race, or any exit from it,
+changes nothing about what is on disk, and no exit asks about a placement. The
+one risk is a failing write itself: both writers reopen the file with `"w"`,
+so a write that fails part way (a full disk) can leave the file truncated, and
+only the custom-track writer reports an incomplete write
+(`was not written completely`; both report `could not write` when the file
+does not open). Retry, the pause
 menu's Restart, Change Level, Change Character and Quit all keep the file as it
 is; the marker set is rebuilt from it when the track is loaded or restarted
 (`AP_Author_OnFrame` forgets its handles on the spawn pool's generation bump).
