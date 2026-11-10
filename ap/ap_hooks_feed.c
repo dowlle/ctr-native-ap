@@ -356,7 +356,15 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 	}
 }
 
-// Leave the bottom title/racer block clear, including while approaching a pad.
+static int ap_feed_hub_pad_title;
+
+// Reset before hub threads run; the pad sets this only when it draws its title.
+void AP_FeedHubPadTitle(int visible)
+{
+	ap_feed_hub_pad_title = visible;
+}
+
+// Leave the bottom title/racer block clear only while it is drawn.
 // The picker owns the screen: keep both pending and visible feed lines until it
 // closes, just as the race feed waits while paused.
 void AP_FeedDrawHub(void)
@@ -364,7 +372,7 @@ void AP_FeedDrawHub(void)
 	if (!ctr_cfg_active() || !AP_HubFeedOn() || AP_CharSwap_HubHudHidden())
 		return;
 
-	AP_FeedTickAndDraw(AP_FEED_X, 120, 0);
+	AP_FeedTickAndDraw(AP_FEED_X, ap_feed_hub_pad_title ? 120 : AP_FEED_BASE_Y, 0);
 }
 
 // In-race surface (issue #192): the same feed, on the race HUD, so an item sent

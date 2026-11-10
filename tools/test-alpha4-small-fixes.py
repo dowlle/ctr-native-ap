@@ -35,6 +35,7 @@ fixture = r'''
 #define AP_IDX_TROPHY 0
 #define INC_TROPHY 1
 #define AP_FEED_X 8
+#define AP_FEED_BASE_Y 200
 #define AP_FEED_LINE_H 12
 #define PARKING_LOT 20
 #define ADVENTURE_CUP 0x10000000
@@ -65,6 +66,8 @@ static int MainRaceTrack_OfflineCustomLoad(void) { return offline; }
 '''
 fixture += function("game/UI/UI_DrawNum.c", "void UI_DrawNumTrophy(s16 posX, s16 posY)")
 fixture += function("ap/ap_hooks_feed.c", "static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)")
+fixture += "\nstatic int ap_feed_hub_pad_title;\n"
+fixture += function("ap/ap_hooks_feed.c", "void AP_FeedHubPadTitle(int visible)")
 fixture += function("ap/ap_hooks_feed.c", "void AP_FeedDrawHub(void)")
 fixture += function("game/230/MM_ConfigMenu.c", "static void Config_DrawScrollIndicator(int top, int pageRows, uint32_t *ot)")
 text = source("game/MAIN/MainInit.c")
@@ -82,12 +85,17 @@ int main(void) {
     }
     active=0;game.gameMode2=0;UI_DrawNumTrophy(10,20);assert(!strcmp(lastText,"16"));
     game.gameMode2=INC_TROPHY;UI_DrawNumTrophy(10,20);assert(!strcmp(lastText,"15"));
-    for(active=0;active<2;active++)for(hidden=0;hidden<2;hidden++)for(enabled=0;enabled<2;enabled++) {
+    for(int title=0;title<2;title++)for(active=0;active<2;active++)for(hidden=0;hidden<2;hidden++)for(enabled=0;enabled<2;enabled++) {
+        AP_FeedHubPadTitle(title);
         AP_FeedLinesReset(&ap_feed);AP_FeedLinesEnqueue(&ap_feed,"WAITING",WHITE,0);
         draws=0;AP_FeedDrawHub();assert(draws==(active&&!hidden&&enabled));
         assert(ap_feed.qcount==(draws?0:1));
-        if(draws) assert(lastY<=120); // last line clears the racer portrait at y=134
+        if(draws) assert(lastY==(title?120:200));
     }
+    active=enabled=1;hidden=0;
+    // Leaving the pad restores the old anchor on the next frame.
+    AP_FeedHubPadTitle(1);AP_FeedHubPadTitle(0);
+    draws=0;AP_FeedDrawHub();assert(lastY==200);
     for(int warning=0;warning<2;warning++)for(int count=0;count<=5;count++) {
         AP_FeedLinesReset(&ap_feed);ctr_cfg.box_placement_refused=warning;
         ap_feed.vcount=count;
@@ -118,3 +126,13 @@ with tempfile.TemporaryDirectory() as tmp:
     (path / "test.c").write_text(fixture)
     subprocess.run(["cc", "-std=c99", "-fno-strict-aliasing", "-I", str(root), str(path / "test.c"), "-o", str(path / "test")], check=True)
     subprocess.run([str(path / "test")], check=True)
+
+# The title flag follows drawing, including hint/picker suppression, rather
+# than mere proximity or a previous frame's nearest-pad state.
+logic = function("game/MAIN/MainFrame.c", "void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepads)")
+assert logic.index("AP_FeedHubPadTitle(0)") < logic.index("ThTick_RunBucket")
+warp = source("game/232/AH_WarpPad.c")
+title = warp.index("AP_FeedHubPadTitle(1)")
+assert warp.rindex("sdata->AkuAkuHintState == 0", 0, title) < title
+assert "AP_CharSwap_HubHudHidden()" in warp[warp.rindex("sdata->AkuAkuHintState == 0", 0, title):title]
+assert "DecalFont_DrawLine(warppadLNG" in warp[title:title+300]

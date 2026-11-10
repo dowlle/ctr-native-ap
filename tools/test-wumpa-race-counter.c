@@ -9,6 +9,17 @@ struct sData sdata_static;
 ctr_seed_config ctr_cfg;
 AP_WumpaShopConfig ctr_wumpa_shop;
 static int onTrack = 1, credited, forcedLoss;
+static int walletReady = 1, bankDraws, bankX, bankY, bankFont;
+static long long walletBalance = 1005;
+static char bankText[48];
+int ap_net_wumpa_ready(void) { return walletReady; }
+long long ap_net_wumpa_balance(void) { return walletBalance; }
+void DecalFont_DrawLine(char *text, int x, int y, s16 font, int flags)
+{
+	(void)flags;
+	bankDraws++; bankX = x; bankY = y; bankFont = font;
+	snprintf(bankText, sizeof bankText, "%s", text);
+}
 int ctr_cfg_active(void) { return 1; }
 int LOAD_IsOpen_RacingOrBattle(void) { return onTrack; }
 int AP_RaceAttemptIsForcedLoss(void) { return forcedLoss; }
@@ -303,6 +314,7 @@ int main(void)
 	sdata->Loading.stage = LOAD_IDLE;
 	gt.drivers[0] = &d;
 	gt.gameMode1 = ADVENTURE_MODE;
+	gt.numPlyrCurrGame = 1;
 	ctr_wumpa_shop.state = AP_WUMPA_SHOP_VALID;
 	gt.trafficLightsTimer = 5;
 	AP_WumpaReceive(20); // NetTick precedes the first countdown observation.
@@ -316,6 +328,15 @@ int main(void)
 	AP_WumpaTick(&gt);
 	gt.trafficLightsTimer = -1;
 	RB_Player_ModifyWumpa(&d, 15);
+	AP_WumpaDrawRaceBank(&d, 160, 14);
+	CHECK("bank is a small number directly below the Wumpa count", bankDraws == 1 &&
+	      !strcmp(bankText, "1005") && bankX == 160 && bankY == 32 && bankFont == FONT_SMALL);
+	walletReady = 0; AP_WumpaDrawRaceBank(&d, 160, 14);
+	CHECK("unknown wallet uses an unlabelled placeholder", !strcmp(bankText, "..."));
+	walletReady = 1; walletBalance = 100000000;
+	AP_WumpaDrawRaceBank(&d, 160, 14);
+	CHECK("large wallet fits without a label", !strcmp(bankText, "1e+08"));
+	walletBalance = 1005;
 	CHECK("past ten banks immediately, held counter is ten", AP_WumpaRaceCount(&d) == 10 && d.numWumpas == 10 && credited == b0 + 5);
 	RB_Player_ModifyWumpa(&d, -3);
 	CHECK("a hit takes three held fruit, bank is protected", AP_WumpaRaceCount(&d) == 7 && d.numWumpas == 7);
