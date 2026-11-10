@@ -27,15 +27,31 @@ static inline int AP_SanityBlend(int variant)
 static inline int AP_SanityHaloBudget(int freeBytes)
 {
     // Keep at least three quarters of the remaining arena for the world.
-    int count = freeBytes > 0 ? freeBytes / (4 * 256) : 0;
+    int count = freeBytes > 0 ? freeBytes / (4 * 512) : 0;
     return count < 32 ? count : 32;
+}
+
+static inline unsigned AP_SanityHaloStrength(int variant)
+{
+    return variant == 0 ? 48 : variant == 2 ? 112 : 80;
 }
 
 static inline unsigned AP_SanityHaloColour(int look, int variant)
 {
     unsigned rgb = AP_PadLookRGB(look);
-    unsigned strength = variant == 0 ? 48 : variant == 2 ? 112 : 80;
+    unsigned strength = AP_SanityHaloStrength(variant);
     if (look == AP_PAD_LOOK_DONE) strength /= 2;
+    return ((AP_PadLookB(rgb) * strength / 255) << 16) |
+           ((AP_PadLookG(rgb) * strength / 255) << 8) |
+           (AP_PadLookR(rgb) * strength / 255);
+}
+
+static inline unsigned AP_SanityHaloFilterColour(int look, int variant)
+{
+    // The same shaped subtraction as the pad beam keeps green from reading
+    // cyan over blue road/sky. Done has no filter, like the pad's grey beam.
+    unsigned rgb = AP_PadLookBeamFilter(look);
+    unsigned strength = AP_SanityHaloStrength(variant);
     return ((AP_PadLookB(rgb) * strength / 255) << 16) |
            ((AP_PadLookG(rgb) * strength / 255) << 8) |
            (AP_PadLookR(rgb) * strength / 255);

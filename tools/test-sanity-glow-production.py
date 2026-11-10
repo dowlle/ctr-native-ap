@@ -45,7 +45,7 @@ static int AP_LocationLogicState(long code) { (void)code; return 1; }
 static void CtrGpu_LinkPacket24(u32 *ot, u32 *tag, void *packet, u32 length) {
     u32 *p = packet;
     (void)ot; (void)tag;
-    assert(length == 0x07000000 && p[1] == 0xe1000a20 && (p[2] >> 24) == 0x32);
+    assert(length == 0x07000000 && (p[1] == 0xe1000a20 || p[1] == 0xe1000a40) && (p[2] >> 24) == 0x32);
     ++packets;
 }
 '''
@@ -59,8 +59,10 @@ int main(void) {
     gt.pushBuffer[0].distanceToScreen_PREV = 256;
     gt.pushBuffer[0].rect.w = 512; gt.pushBuffer[0].rect.h = 216; gt.pushBuffer[0].ptrOT = ot;
     ap_sanity_objects[0].inst = &inst;
-    AP_SanityDrawGlow(&gt); assert(packets == 8 && db.primMem.cursor == arena + 64);
+    AP_SanityDrawGlow(&gt); assert(packets == 16 && db.primMem.cursor == arena + 128);
     assert((arena[2] & 0xffffff) == AP_SanityHaloColour(AP_PAD_LOOK_OPEN, AP_SANITY_VISIBILITY));
+    assert(arena[65] == 0xe1000a40);
+    assert((arena[66] & 0xffffff) == AP_SanityHaloFilterColour(AP_PAD_LOOK_OPEN, AP_SANITY_VISIBILITY));
     packets = 0; db.primMem.cursor = arena; checked = 1;
     AP_SanityDrawGlow(&gt); assert(packets == 8);
     assert((arena[2] & 0xffffff) == AP_SanityHaloColour(AP_PAD_LOOK_DONE, AP_SANITY_VISIBILITY));

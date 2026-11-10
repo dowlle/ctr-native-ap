@@ -9,9 +9,13 @@ int main(void)
     assert(AP_PAD_RED_RGB == 0xB85648u);
     assert(AP_SanityHaloBudget(-1) == 0);
     assert(AP_SanityHaloBudget(1023) == 0);
-    assert(AP_SanityHaloBudget(1024) == 1);
-    assert(AP_SanityHaloBudget(8192) == 8);
+    assert(AP_SanityHaloBudget(2047) == 0);
+    assert(AP_SanityHaloBudget(2048) == 1);
+    assert(AP_SanityHaloBudget(8192) == 4);
     assert(AP_SanityHaloBudget(1000000) == 32);
+    assert(AP_SanityHaloFilterColour(AP_PAD_LOOK_OPEN, 1) == 0x50001eu);
+    assert(AP_SanityHaloFilterColour(AP_PAD_LOOK_CLOSED, 1) == 0x3c3c00u);
+    assert(AP_SanityHaloFilterColour(AP_PAD_LOOK_DONE, 1) == 0);
     for (checked = 0; checked <= 1; ++checked)
         for (logic = 0; logic <= 2; ++logic) {
             int look = AP_SanityLook(checked, logic);

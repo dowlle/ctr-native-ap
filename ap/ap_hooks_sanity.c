@@ -174,7 +174,7 @@ void AP_SanityTick(struct GameTracker *gt)
 }
 
 #if defined(CTR_NATIVE)
-// A billboard halo made of eight Gouraud triangles, fading to black at the
+// A billboard halo with eight-segment Gouraud fans, fading to black at the
 // rim. Depth sorted with world geometry, behind the original pickup model.
 // No new instances, particles, textures or gameplay state are allocated.
 void AP_SanityDrawGlow(struct GameTracker *gt)
@@ -182,7 +182,7 @@ void AP_SanityDrawGlow(struct GameTracker *gt)
     static const short rim[9][2] = {{256,0},{181,181},{0,256},{-181,181},
         {-256,0},{-181,-181},{0,-256},{181,-181},{256,0}};
     struct HaloPacket { u32 tag, mode, colour0, xy0, colour1, xy1, colour2, xy2; };
-    int camera, i, j, budget;
+    int camera, i, j, pass, budget;
     if (!gt || ap_sanity_ready <= 0 || sdata->Loading.stage != LOAD_IDLE || !AP_SanityRoute(gt)) return;
     budget = AP_SanityHaloBudget((char *)gt->backBuffer->primMem.end - (char *)gt->backBuffer->primMem.cursor);
     for (camera = 0; camera < gt->numPlyrCurrGame; ++camera) {
@@ -196,7 +196,7 @@ void AP_SanityDrawGlow(struct GameTracker *gt)
             SVECTOR world = {(short)inst->matrix.t[0], (short)inst->matrix.t[1], (short)inst->matrix.t[2], 0};
             short screen[2];
             s32 depth;
-            u32 flag, colour;
+            u32 flag, colour, filter;
             int radius, look, bucket;
             if (!(inst->flags & DRAW_INSTANCE) || (inst->flags & HIDE_MODEL)) continue;
             // Crates and fruit disappear by shrinking, with draw flags kept.
@@ -210,16 +210,19 @@ void AP_SanityDrawGlow(struct GameTracker *gt)
             look = AP_SanityLook(AP_SanityAlreadySent(ap_sanity_objects[i].code),
                                  AP_LocationLogicState(ap_sanity_objects[i].code));
             colour = AP_SanityHaloColour(look, AP_SANITY_VISIBILITY);
+            filter = AP_SanityHaloFilterColour(look, AP_SANITY_VISIBILITY);
             bucket = (depth + 160) >> 6;
             if (bucket > 1023) continue;
             if (budget-- <= 0) return;
-            if ((char *)gt->backBuffer->primMem.end - (char *)gt->backBuffer->primMem.cursor < (int)(8 * sizeof(struct HaloPacket))) return;
-            for (j = 0; j < 8; ++j) {
+            if ((char *)gt->backBuffer->primMem.end - (char *)gt->backBuffer->primMem.cursor < (int)(16 * sizeof(struct HaloPacket))) return;
+            // OT insertion is last-in-first-out: link the additive fan first,
+            // then the subtractive fan, so the filter is drawn underneath.
+            for (pass = 0; pass < (filter ? 2 : 1); ++pass) for (j = 0; j < 8; ++j) {
                 struct HaloPacket *p = (struct HaloPacket *)gt->backBuffer->primMem.cursor;
                 int x1 = screen[0] + radius * rim[j][0] / 256, y1 = screen[1] + radius * rim[j][1] / 256;
                 int x2 = screen[0] + radius * rim[j+1][0] / 256, y2 = screen[1] + radius * rim[j+1][1] / 256;
-                p->mode = 0xe1000a20; // additive, same draw mode as warp dust
-                p->colour0 = 0x32000000u | colour;
+                p->mode = pass ? 0xe1000a40 : 0xe1000a20;
+                p->colour0 = 0x32000000u | (pass ? filter : colour);
                 p->xy0 = (u16)screen[0] | ((u32)(u16)screen[1] << 16);
                 p->colour1 = p->colour2 = 0;
                 p->xy1 = (u16)x1 | ((u32)(u16)y1 << 16);
