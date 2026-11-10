@@ -11,6 +11,7 @@
 #ifdef CTR_AP
 
 #include "ap_boss_adapter.h" // J03 boss adapter decisions and glue prototypes
+#include "ap_boss_kit_target_logic.h" // A4-48a2 kit missile and bomb target fallback
 #include "ap_unlock_reasons_logic.h" // A3-17 unlock-reason watch, diff and wording
 
 int AP_GateCount(int itemType)
@@ -998,6 +999,54 @@ static struct MetaDataBOSS *AP_BossGauntletAttackSchedule(int fill)
 	sdata->bossWeaponCooldown = s_apBossGauntletAttack[0].weaponCooldown + 0x3c;
 	sdata->bossJuiceCounter = 0;
 	return s_apBossGauntletAttack;
+}
+
+// A4-48a2: the shot being fired by PickupBots_UpdateBoss qualifies for the
+// player fallback (a kit-added missile or bomb). Set around the ShootNow call,
+// cleared right after, so no other fire path ever sees it.
+static int s_apBossKitShot;
+
+void AP_BossKitShotSet(int weaponType)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const struct MetaDataBOSS *table;
+	unsigned char types[16];
+	int rows = 0, kitRace;
+
+	s_apBossKitShot = 0;
+	if (gGT == NULL || !ctr_cfg_active() || (gGT->gameMode1 & ADVENTURE_BOSS) == 0)
+		return;
+	kitRace = AP_BossKitGarageNow() >= 0 || AP_BossFinalComposedNow();
+	if (!kitRace)
+		return;
+	// The garage's own retail table: Oxide's for both final races, the
+	// garage boss's otherwise (the table a composed kit replaces).
+	table = data.bossWeaponMetaPtr[gGT->bossID < 4 ? gGT->bossID + 1 : 0];
+	while (rows < 16 && table[rows].throwFlag != 0)
+	{
+		types[rows] = table[rows].weaponType;
+		rows++;
+	}
+	s_apBossKitShot = AP_BossKitTarget_Qualifies(kitRace, weaponType, types, rows);
+}
+
+void AP_BossKitShotClear(void)
+{
+	s_apBossKitShot = 0;
+}
+
+// Called by ShootNow's Missile branch when retail found no target.
+struct Driver *AP_BossKitShotTarget(struct Driver *shooter)
+{
+	struct Driver *player;
+
+	if (!s_apBossKitShot || sdata->gGT == NULL)
+		return NULL;
+	player = sdata->gGT->drivers[0];
+	if (!AP_BossKitTarget_UsePlayer(0, 1, player != NULL, player == shooter,
+	                                player != NULL && player->invisibleTimer != 0))
+		return NULL;
+	return player;
 }
 
 struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill)
