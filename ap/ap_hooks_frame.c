@@ -603,7 +603,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 				char c[160];
 				snprintf(c, sizeof c, "[AP HUB] level %d is custom track %d \"%.32s\" (slot %d loads its files only)\n",
 				         (int)gGT->levelID, MainRaceTrack_IdentityLevelID(),
-				         MainRaceTrack_OfflineCustomTitle() ? MainRaceTrack_OfflineCustomTitle() : "?",
+				         UI_TrackName(-1),
 				         (int)gGT->levelID);
 				AP_AppendLog(c);
 			}

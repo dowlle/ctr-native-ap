@@ -100,6 +100,11 @@ warp = source("game/232/AH_WarpPad.c")
 start = warp.index("\t\t\t\t\twarppadLNG =", warp.index("if (ap_content_plan_active())"))
 line = warp[start:warp.index("\n", start)]
 fixture += "static const char *pad_name(int levelID) {const ctr_content_pad *pad=ap_content_plan_pad(levelID);char *warppadLNG;" + line + "return warppadLNG;}\n"
+frame = source("ap/ap_hooks_frame.c")
+start = frame.index('snprintf(c, sizeof c, "[AP HUB] level')
+log_call = frame[start:frame.index(';', start) + 1]
+fixture += "static int MainRaceTrack_IdentityLevelID(void) {return 128;}\n"
+fixture += "static const char *offline_log(void) {struct GameTracker *gGT=&game;static char logged[160];char c[160];" + log_call + "strcpy(logged,c);return logged;}\n"
 fixture += r'''
 static int failures,checks;
 static void expect(const char *got,const char *want,const char *label) {
@@ -180,6 +185,9 @@ int main(void) {
  strcpy(pads[3].room_title,"東京 大阪");
  expect(banner_name(),"CUSTOM TRACK","non-Latin title with spaces has drawable fallback");
  expect(pause_track(3),"CUSTOM TRACK","non-Latin pad with spaces has drawable fallback");
+ reset();char utf8[64],needle[36];memset(utf8,'A',31);strcpy(utf8+31,"éTail");offline=utf8;
+ needle[0]='"';memset(needle+1,'A',31);strcpy(needle+32,"E\"");
+ expect(strstr(offline_log(),needle)?"MATCH":"BAD","MATCH","offline log folds before its 32-byte cut");
  printf("%d checks, %d failures\n",checks,failures);return failures?1:0;
 }
 '''
