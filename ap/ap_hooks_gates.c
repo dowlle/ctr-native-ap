@@ -1044,7 +1044,8 @@ struct Driver *AP_BossKitShotTarget(struct Driver *shooter)
 		return NULL;
 	player = sdata->gGT->drivers[0];
 	if (!AP_BossKitTarget_UsePlayer(0, 1, player != NULL, player == shooter,
-	                                player != NULL && player->invisibleTimer != 0))
+	                                player != NULL && player->invisibleTimer != 0,
+	                                player != NULL && player->kartState == KS_MASK_GRABBED))
 		return NULL;
 	return player;
 }

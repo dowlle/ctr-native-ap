@@ -74,11 +74,12 @@ static inline int AP_BossKitTarget_Qualifies(int kitRace, int weaponType, const 
 
 // The target a shot ends with: retail's own pick wins; only when retail found
 // nobody and the shot qualifies does the player take it, and only a player who
-// could be locked in retail (present, not invisible, not the shooter).
+// could be locked in retail (present, not invisible, not grabbed by a mask,
+// not the shooter).
 static inline int AP_BossKitTarget_UsePlayer(int retailFound, int qualifies, int playerPresent,
-                                             int playerIsShooter, int playerInvisible)
+                                             int playerIsShooter, int playerInvisible, int playerMaskGrabbed)
 {
-	return !retailFound && qualifies && playerPresent && !playerIsShooter && !playerInvisible;
+	return !retailFound && qualifies && playerPresent && !playerIsShooter && !playerInvisible && !playerMaskGrabbed;
 }
 
 #endif

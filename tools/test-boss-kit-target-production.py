@@ -73,6 +73,7 @@ check('(gGT->gameMode1 & ADVENTURE_BOSS) == 0' in hook, 'boss races only')
 check('AP_BossKitGarageNow() >= 0 || AP_BossFinalComposedNow()' in hook, 'composed kit or composed final only')
 check('data.bossWeaponMetaPtr[gGT->bossID < 4 ? gGT->bossID + 1 : 0]' in hook, "the garage's own retail table")
 check('gGT->drivers[0]' in hook, 'the human player is driver 0')
+check('KS_MASK_GRABBED' in hook, 'a mask-grabbed player is skipped, as in retail')
 
 for f in fails:
     print('FAIL', f)
