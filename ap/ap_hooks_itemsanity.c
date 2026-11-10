@@ -69,6 +69,8 @@ int AP_ItemsanityUnlockedPool(struct Driver *driver)
 // adds the absent-code and already-checked guards on top.
 void AP_ItemsanityOnUse(struct Driver *driver, int heldItemID)
 {
+	if (!AP_LocationChecksAllowed())
+		return;
 	struct GameTracker *gGT = sdata->gGT;
 	long plain;
 	long juiced;
@@ -80,14 +82,8 @@ void AP_ItemsanityOnUse(struct Driver *driver, int heldItemID)
 	// is inert for Adventure races, bosses and Crystal Challenges. Keep it as
 	// defence in depth for any future grant path that forgets its own gate.
 	//
-	// It is not inert OUTSIDE Adventure either, and that is deliberate rather
-	// than incidental. Arcade, VS, Time Trial and Battle are all excluded by
-	// AP_ItemsanityShouldFilter, so their rolls are never ownership-filtered, and
-	// before this test an unowned weapon fired in one of them banked its check
-	// exactly the way Kitkat's arena Turbo did. Gating the mint rather than the
-	// mode closes both routes with one rule, and it costs no reachable check: an
-	// itemsanity location already requires its own weapon item in logic, so a
-	// refusal here can only drop a check the player could not have earned.
+	// Non-Adventure rolls remain unfiltered, but the mode guard above refuses
+	// their use checks even when the weapon has been received.
 	//
 	// Deliberately keyed on the received set rather than on the Crystal mode bit,
 	// so any future unfiltered grant is covered by the same rule instead of

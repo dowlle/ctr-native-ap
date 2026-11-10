@@ -4,8 +4,12 @@ import json
 import re
 import subprocess
 import tempfile
+import ap_hooks_unit
 
 root=Path(__file__).resolve().parents[1]
+hooks=ap_hooks_unit.read()
+policy_start=hooks.index('int AP_LocationChecksAllowed(void)\n{')
+policy=hooks[policy_start:hooks.index('\n}\n',policy_start)+3]
 data=json.loads((root/'tools/fixtures/arcade-arenas-v1.json').read_text())
 header=(root/'ap/ap_arena_content.h').read_text().split('ap_arcade_anchors[3][20][3] = {',1)[1]
 anchors=[list(map(int,p)) for p in re.findall(r'\{(-?\d+),(-?\d+),(-?\d+)\}',header)]
@@ -24,6 +28,7 @@ fixture=r'''
 #include "ap_content_plan.h"
 #include "ap_crystal_checks.h"
 #include "ap_arena_content.h"
+#include "ap_wumpa_shop.h"
 #define ADVENTURE_BOSS 0x80000000u
 typedef int16_t s16;
 #define CTR_AP 1
@@ -131,6 +136,16 @@ int main(void){
  DENY(context.timeLimitTicks=1,context.timeLimitTicks=pad.time_limit_ticks);
  DENY(context.entryID[0]='x',context.entryID[0]='e');
  DENY(g.gameMode1=CRYSTAL_CHALLENGE,g.gameMode1=ADVENTURE_MODE|CRYSTAL_CHALLENGE);
+ for(int players=2;players<=4;players++){
+  DENY(g.numPlyrCurrGame=players,g.numPlyrCurrGame=1);
+ }
+ {unsigned modes[]={0,ARCADE_MODE,TIME_TRIAL,BATTLE_MODE,
+    ARCADE_MODE|RELIC_RACE,TIME_TRIAL|RELIC_RACE,BATTLE_MODE|RELIC_RACE,
+    ARCADE_MODE|ADVENTURE_MODE,TIME_TRIAL|ADVENTURE_MODE,BATTLE_MODE|ADVENTURE_MODE};
+  for(unsigned i=0;i<sizeof modes/sizeof *modes;i++) {
+   DENY(g.gameMode1=modes[i]|CRYSTAL_CHALLENGE,g.gameMode1=ADVENTURE_MODE|CRYSTAL_CHALLENGE);
+  }
+ }
  DENY(bound=0,bound=1);
  {int before=sent;AP_NotifyContentCrystalPickup(&instances[0],1);assert(sent==before);}
  for(int a=0;a<4;a++){
@@ -150,7 +165,7 @@ int main(void){
 '''
 with tempfile.TemporaryDirectory() as tmp:
     src,exe=Path(tmp)/'arcade.c',Path(tmp)/'arcade'
-    src.write_text(mode_enum+fixture+source+tests)
+    src.write_text(mode_enum+fixture+policy+source+tests)
     subprocess.run(['cc','-std=c11','-Wall','-Wextra','-fsanitize=undefined','-I',str(root/'ap'),str(src),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
 print('Arcade production construction/collision/dispatch passed: 60 authored + 80 retail identities, 40 instance/thread allocation failure points and missing model, context guards')

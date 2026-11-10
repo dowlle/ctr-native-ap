@@ -268,6 +268,8 @@ static int AP_EmitClassCheck(long code,
                               int addToCeremonyLedger, int ledgerBit, int ledgerTag,
                               int toastSentItem, const char *logFmt, ...)
 {
+	if (!AP_LocationChecksAllowed())
+		return 0;
 	if (!AP_ClassCheckShouldSendPure(code, ap_net_location_checked(code)))
 		return 0; // absent this seed, or already checked (re-fire / re-win / reload / reconnect)
 
@@ -1162,7 +1164,7 @@ void AP_WumpaReachedTen(struct Driver *driver)
 	long code;
 
 	if (driver == 0 || sdata == 0 || sdata->gGT == 0 ||
-	    driver != sdata->gGT->drivers[0])
+	    driver != sdata->gGT->drivers[0] || !AP_LocationChecksAllowed())
 		return;
 
 #ifdef CTR_CUSTOM_TRACKS

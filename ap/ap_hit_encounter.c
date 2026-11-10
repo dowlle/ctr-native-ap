@@ -470,8 +470,10 @@ int AP_HitEncounterOnDamage(int victimEngineID, int damageType, unsigned flags)
 		return 1; // already settled on the server
 	}
 
+	// A refused mode must not consume the session's later Adventure hit.
+	if (!AP_EmitHitCharacterCheck(code))
+		return 0;
 	s_hit_sent_mask |= (1u << victimEngineID);
-	AP_EmitHitCharacterCheck(code);
 	return 1;
 }
 

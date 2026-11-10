@@ -12,6 +12,7 @@
 #include "ap_cup_box_policy.h" // WO-A3: the freestanding cup-leg access decision
 #include "ap_net.h"     // ap_net_location_checked(): server truth
 #include "ap_hooks.h"   // AP_LogLine, AP_EmitBoxCheck
+#include "ap_wumpa_shop.h" // shared Adventure/relic mode policy
 #include "ap_box_colour_logic.h" // AP_BoxColour_Pick: which colour one box wears
 #include "ap_spoiler_items.h"    // #459: AP Box Colours may still hold the colours back
 #include "ap_box_number_logic.h"
@@ -192,7 +193,7 @@ static int AP_BoxChecked(long code, void *ctx)
 // practice. Extending to TIME_TRIAL needs its own confirmed report.
 static int AP_BoxesRaceCarriesBoxes(struct GameTracker *gGT)
 {
-	return (gGT->gameMode1 & (ADVENTURE_MODE | RELIC_RACE)) != 0;
+	return gGT && gGT->numPlyrCurrGame == 1 && AP_WumpaBankRaceMode(gGT->gameMode1);
 }
 
 // ── the alternate-route gate (WO-A3 cup legs; boss races ruled 2026-09-12) ──

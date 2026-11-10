@@ -37,7 +37,7 @@ static int AP_CupSweepRaceValid(struct GameTracker *g,int leg)
     int logical;
     if(!g || !AP_CupSweepIdentity() || leg<0 || leg>=4 || g->cup.cupID!=ap_sweep_attempt.cup ||
        (g->gameMode1 & (ADVENTURE_MODE|ADVENTURE_CUP))!=(ADVENTURE_MODE|ADVENTURE_CUP) ||
-       (g->gameMode1 & (ADVENTURE_ARENA|ARCADE_MODE|MAIN_MENU|BATTLE_MODE|CRYSTAL_CHALLENGE|RELIC_RACE)) ||
+       (g->gameMode1 & (ADVENTURE_ARENA|ARCADE_MODE|TIME_TRIAL|MAIN_MENU|BATTLE_MODE|CRYSTAL_CHALLENGE|RELIC_RACE)) ||
        (g->gameMode2 & (CUP_ANY_KIND|TOKEN_RACE)) || !g->drivers[0] || g->drivers[0]->driverID!=0)return 0;
     logical=ap_sweep_legs[leg];
 #ifdef CTR_CUSTOM_TRACKS

@@ -25,7 +25,7 @@ const ctr_content_pad *AP_ContentCrystalPad(void)
     struct GameTracker *g=sdata->gGT;
     const struct CustomTrackRaceContext *c;
     const ctr_content_pad *p;
-    if(!g || !ctr_cfg_active() || !ap_content_plan_active() ||
+    if(!AP_LocationChecksAllowed() || !g || !ctr_cfg_active() || !ap_content_plan_active() ||
        (g->gameMode1 & (ADVENTURE_MODE|CRYSTAL_CHALLENGE)) != (ADVENTURE_MODE|CRYSTAL_CHALLENGE) ||
        (g->gameMode1 & (ARCADE_MODE|ADVENTURE_CUP|ADVENTURE_BOSS|ADVENTURE_ARENA|RELIC_RACE|MAIN_MENU|BATTLE_MODE)) ||
        (g->gameMode2 & TOKEN_RACE) ||
@@ -130,6 +130,7 @@ void AP_ArcadeCrystals_OnFrame(struct GameTracker *g)
 
 void AP_NotifyContentCrystalPickup(struct Instance *inst,int driverID)
 {
+    if (!AP_LocationChecksAllowed()) return;
     const ctr_content_pad *p=AP_ContentCrystalPad();
     struct GameTracker *g=sdata->gGT;
     int i,index=-1;

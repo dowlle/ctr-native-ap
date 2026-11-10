@@ -11,6 +11,7 @@
 
 void AP_NotifyCrystalPickup(struct Instance *inst, int driverID)
 {
+    if (!AP_LocationChecksAllowed()) return;
     if(ap_content_plan_present() || AP_ContentCrystalIntent()) {AP_NotifyContentCrystalPickup(inst,driverID);return;}
     struct GameTracker *gGT = sdata->gGT;
     int index=-1, i;
@@ -40,6 +41,8 @@ void AP_NotifyCrystalPickup(struct Instance *inst, int driverID)
 // wrappers so the cup aggregate can deliberately pass while the latch is set.
 static void AP_NotifyAdvRewardImpl(int rewardBit)
 {
+	if (!AP_LocationChecksAllowed())
+		return;
 	char msg[192];
 	int newEarn = 0;
 	int bossWonNew = 0;
@@ -184,6 +187,8 @@ void AP_NotifyCupAggregateReward(int rewardBit)
 
 void AP_NotifyGoal(int oxideSecond)
 {
+	if (!AP_LocationChecksAllowed())
+		return;
 	// #286: a forced-loss attempt must not arm or complete the goal.
 	if (AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_GOAL))
 		return;

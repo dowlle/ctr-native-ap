@@ -15,6 +15,8 @@ end = reward_source.index("\n#ifdef CTR_AP\n\t\t\tif (AP_GoalClaimOxideEnding())
 reward = reward_source[start:end]
 fixture = r'''
 #include <assert.h>
+/* Mode policy is exercised separately by test-adventure-checks-production.py. */
+int AP_LocationChecksAllowed(void) { return 1; }
 #include "ap_race_attempt_logic.h"
 #include "ap_boss_won_flags.h"
 #define AP_GOAL_BIT_OXIDE_FIRST 115

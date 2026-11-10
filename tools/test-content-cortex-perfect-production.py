@@ -39,6 +39,8 @@ pins = "\n".join(re.findall(r"^#define CTR_CFG_CORTEX_(?:LEV|VRM)_SHA256 .*$", s
 
 fixture = r'''
 #include <assert.h>
+/* Mode policy is exercised separately by test-adventure-checks-production.py. */
+int AP_LocationChecksAllowed(void) { return 1; }
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>

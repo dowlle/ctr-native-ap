@@ -2,7 +2,14 @@
 from pathlib import Path
 import subprocess
 import tempfile
+import ap_hooks_unit
 root=Path(__file__).resolve().parents[1]
+hooks=ap_hooks_unit.read()
+def function(signature):
+ start=hooks.index(signature)
+ return hooks[start:hooks.index('\n}\n',start)+3]
+policy=function('int AP_LocationChecksAllowed(void)')
+emitter=function('static int AP_EmitClassCheck(long code,')
 modes=(root/'include/namespace_Main.h').read_text()
 start=modes.index('enum GameMode1\n')
 mode_enum=modes[start:modes.index('};',start)+2]
@@ -11,14 +18,17 @@ fixture=r"""
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
 #include "ap_cup_sweeps.h"
+#include "ap_wumpa_shop.h"
+#include "ap_class_check_policy.h"
 #define CTR_AP 1
 #define CTR_CUSTOM_TRACKS 1
 #define CUP_ANY_KIND 0x10
 #define TOKEN_RACE 0x8
 #define AP_RESULT_PRODUCER_ADV_REWARD 0
 struct Driver {int driverID,driverRank;};
-struct GameTracker {unsigned gameMode1,gameMode2;int levelID;struct {int cupID,trackIndex;}cup;struct Driver *drivers[1];};
+struct GameTracker {unsigned gameMode1,gameMode2;int levelID,numPlyrCurrGame;struct {int cupID,trackIndex;}cup;struct Driver *drivers[1];};
 struct {struct GameTracker *gGT;}data,*sdata=&data;
 AP_CupSweepConfig ctr_cup_sweeps;
 static int active=1,displaced,blocked,custom,cortex,exists=1,sent,checked;
@@ -35,10 +45,12 @@ int CustomTrack_CupRaceRedirectActive(int a,int b){(void)a;(void)b;return custom
 int AP_CortexTrackActive(void){return cortex;}
 int AP_RaceAttempt_ProducerBlocked(int p){(void)p;return blocked;}
 int ap_net_location_exists(long code){(void)code;return exists;}
-int AP_EmitClassCheck(long code,int a,int b,int c,int d,const char *fmt,...){
- (void)a;(void)b;(void)c;(void)d;(void)fmt;if(!exists||checked)return 0;
- sent++;last=code;checked=1;return 1;
-}
+int ap_net_location_checked(long code){(void)code;return checked;}
+void ap_net_send_location(long code){sent++;last=code;checked=1;}
+void AP_PerfNoteCheckSent(void){}
+static void AP_AppendLog(const char *text){(void)text;}
+static void AP_CeremonyLedgerAdd(long code,int bit,int tag){(void)code;(void)bit;(void)tag;}
+static void AP_FeedOnLocationSent(long code){(void)code;}
 """
 tests=r"""
 static void setup(struct GameTracker *g,int cup){
@@ -50,7 +62,7 @@ static void setup(struct GameTracker *g,int cup){
   // Four occurrences of one physical track must remain four distinct legs.
   for(int l=0;l<4;l++)ctr_cup_sweeps.legs[c][l]=0;
  }
- g->gameMode1=ADVENTURE_MODE|ADVENTURE_CUP;g->gameMode2=0;
+ g->gameMode1=ADVENTURE_MODE|ADVENTURE_CUP;g->gameMode2=0;g->numPlyrCurrGame=1;
  g->levelID=25;g->cup.cupID=cup;g->cup.trackIndex=0;g->drivers[0]->driverID=0;
  AP_CupSweepEnterFromHub();
 }
@@ -72,6 +84,27 @@ int main(void){
  for(int f=0;f<4;f++){
   setup(&g,0);int before=sent;
   for(int l=0;l<4;l++){blocked=l==f;leg(&g,l,1);}blocked=0;finish(&g);assert(sent==before);
+ }
+ /* A multiplayer cup carrying stale Adventure flags must not pay, and must
+  * not consume a later single-player Adventure sweep of the same cup. */
+ for(int players=2;players<=4;players++){
+  setup(&g,0);g.numPlyrCurrGame=players;int before=sent;
+  for(int l=0;l<4;l++)leg(&g,l,1);
+  finish(&g);assert(sent==before);
+  setup(&g,0);
+  for(int l=0;l<4;l++)leg(&g,l,1);
+  finish(&g);assert(sent==before+1);
+ }
+ {unsigned modes[]={0,ARCADE_MODE,TIME_TRIAL,BATTLE_MODE,
+    ARCADE_MODE|RELIC_RACE,TIME_TRIAL|RELIC_RACE,BATTLE_MODE|RELIC_RACE,
+    ADVENTURE_MODE|ADVENTURE_CUP|ARCADE_MODE,
+    ADVENTURE_MODE|ADVENTURE_CUP|TIME_TRIAL,
+    ADVENTURE_MODE|ADVENTURE_CUP|BATTLE_MODE};
+  for(unsigned i=0;i<sizeof modes/sizeof *modes;i++){
+   setup(&g,0);g.gameMode1=modes[i];int before=sent;
+   for(int l=0;l<4;l++)leg(&g,l,1);
+   finish(&g);assert(sent==before);
+  }
  }
  for(int mutation=0;mutation<15;mutation++){
   setup(&g,0);leg(&g,0,1);int before=sent;
@@ -109,6 +142,6 @@ int main(void){
 """
 with tempfile.TemporaryDirectory() as tmp:
     src,exe=Path(tmp)/'sweeps.c',Path(tmp)/'sweeps'
-    src.write_text(mode_enum+fixture+source+tests)
+    src.write_text(mode_enum+fixture+policy+emitter+source+tests)
     subprocess.run(['cc','-std=c11','-Wall','-Wextra','-fsanitize=undefined','-I',str(root/'ap'),str(src),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
