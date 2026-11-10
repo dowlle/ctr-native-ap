@@ -1,5 +1,6 @@
 // Ordinary pickup checks. Included by game_unity after the race route helpers.
 #ifdef CTR_AP
+
 #include "ap_sanity_colour.h"
 
 static struct InstDef *ap_sanity_defs;
