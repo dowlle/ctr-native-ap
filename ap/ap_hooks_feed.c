@@ -419,6 +419,11 @@ void AP_FeedDrawResults(void)
 	AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_RESULTS_BASE_Y, 1);
 }
 
+// Hub warning for a seed whose item-box numbering the client cannot match.
+// Two lines at 13 px a character: 480 px is the most that fits.
+#define AP_BOX_WARN_LINE1 "ITEM BOX CHECKS OFF ON SOME TRACKS"
+#define AP_BOX_WARN_LINE2 "Box numbering differs from this seed."
+
 // Persistent "this seed is from a newer apworld -- update the client" banner
 // (issue #8). Drawn every adventure-hub frame while ctr_cfg.schema_newer is set,
 // in RED at the top-left so it cannot be mistaken for the transient item feed at
@@ -429,11 +434,14 @@ void AP_DrawSchemaWarning(void)
 {
 	// Item-box slot numbering does not match this seed (Contract 7e): the
 	// affected tracks stand no boxes. Drawn below the schema lines (0x14) and
-	// the custom-content lines (0x30, 0x3c) so the three never overlap.
+	// the custom-content lines (0x30, 0x3c) so the three never overlap. Each
+	// line must fit between AP_FEED_X and the same margin on the right edge of
+	// the 512 px screen (tools/test-hub-box-warning.py measures it); the first
+	// version was 533 px wide and ran off the right edge.
 	if (ctr_cfg.box_placement_refused)
 	{
-		static char boxWarn1[] = "!! ITEM BOX CHECKS OFF ON SOME TRACKS !!";
-		static char boxWarn2[] = "Box numbering does not match this seed.";
+		static char boxWarn1[] = AP_BOX_WARN_LINE1;
+		static char boxWarn2[] = AP_BOX_WARN_LINE2;
 		DecalFont_DrawLine(boxWarn1, AP_FEED_X, 0x48, FONT_SMALL, RED);
 		DecalFont_DrawLine(boxWarn2, AP_FEED_X, 0x48 + AP_FEED_LINE_H, FONT_SMALL, RED);
 	}
