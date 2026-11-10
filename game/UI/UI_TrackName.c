@@ -1,4 +1,8 @@
 #include <common.h>
+#include <platform/native_custom_identity.h>
+#ifdef CTR_CUSTOM_PACKAGES
+#include <platform/native_custom_package.h>
+#endif
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
 #endif
@@ -10,6 +14,7 @@ const char *UI_TrackName(int physicalPad)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	const char *title = NULL;
+	static char plain[641];
 	int level = physicalPad;
 	if (physicalPad < 0)
 	{
@@ -32,11 +37,28 @@ const char *UI_TrackName(int physicalPad)
 	else if (ap_content_plan_active())
 	{
 		const ctr_content_pad *pad = ap_content_plan_pad(physicalPad);
-		return pad && pad->occupied ? (pad->room_title[0] ? pad->room_title : pad->display_name)
-		                            : "No entry selected";
+		if (!pad || !pad->occupied) return "No entry selected";
+		title = pad->room_title[0] ? pad->room_title : pad->display_name;
 	}
 #endif
-	if (title) return title;
+	if (title)
+	{
+#ifdef CTR_CUSTOM_PACKAGES
+		// The game font consumes bytes, while room/package titles are UTF-8.
+		// Fold before uppercasing so accents do not become garbage or '?'.
+		if (CustomPackage_AsciiFold(title, strlen(title), plain, sizeof plain))
+		{
+			size_t n = strlen(plain);
+			const char *first = plain;
+			while (n && plain[n - 1] == ' ') plain[--n] = 0;
+			while (*first == ' ') ++first;
+			CustomIdentity_BannerName(plain, sizeof plain, first);
+			return plain;
+		}
+#endif
+		CustomIdentity_BannerName(plain, sizeof plain, title);
+		return plain;
+	}
 	if (level >= 100 && level < 105)
 	{
 #ifdef CTR_CUSTOM_TRACKS

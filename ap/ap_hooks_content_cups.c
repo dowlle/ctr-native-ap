@@ -153,15 +153,14 @@ const char *AP_ContentCupTrackName(void)
 	return pkg && pkg->display_name[0] ? pkg->display_name : "Custom track";
 }
 
-/* Full display title for the fly-in, independent of the legacy loader's
-   width-bounded name. Only the active race context may supply this title. */
+/* Full UTF-8 title from the active load identity, independent of the legacy
+   loader's width-bounded name. UI_TrackName adapts it to the game font. */
 const char *AP_ContentRaceDisplayName(void)
 {
 	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(sdata->gGT->levelID);
 	const ctr_content_pad *pad;
 	const ctr_content_package *pkg;
 	const char *title = NULL;
-	static char plain[641];
 	struct GameTracker *gGT = sdata->gGT;
 	int garage;
 	if (race)
@@ -202,9 +201,7 @@ const char *AP_ContentRaceDisplayName(void)
 	else if (CustomTrack_OxideFinalServing(gGT->levelID, gGT->bossID,
 	                                      gGT->gameMode1 & ADVENTURE_BOSS))
 		return "CORTEX VORTEX";
-	if (!title) return NULL;
-	CustomIdentity_BannerName(plain, sizeof plain, title);
-	return plain;
+	return title;
 }
 
 // The pad the hub return puts the kart on after the cup, or -1.

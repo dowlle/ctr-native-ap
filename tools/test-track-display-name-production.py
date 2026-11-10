@@ -26,6 +26,7 @@ fixture = r'''
 #include <string.h>
 #include <platform/native_custom_race_context.h>
 #include <platform/native_custom_identity.h>
+#include <platform/native_custom_package.h>
 #include "ap/ap_content_plan.h"
 #define CTR_AP
 #define CTR_CUSTOM_TRACKS
@@ -56,10 +57,12 @@ static int CustomTrack_ServingLoad(int host,int cup,int id) {(void)host;(void)cu
 static int CustomTrack_GarageVenueServing(int host,int boss,int on) {return on && garage>=0 && boss==garage && host==6 ? garage : -1;}
 static int CustomTrack_OxideFinalServing(int host,int boss,int on) {return oxide && on && boss==5 && host==13;}
 static const char *AP_CortexTrackDisplayName(void) {return legacy ? "CORTEX VORTEX" : NULL;}
-static const char *MainRaceTrack_OfflineCustomTitle(void) {return offline;}
+static int MainRaceTrack_OfflineCustomLoad(void) {return offline!=NULL;}
+static int CustomOffline_RuntimeManifest(struct CustomPackageManifest *out) {if(!offline)return 0;memset(out,0,sizeof *out);snprintf(out->title,sizeof out->title,"%s",offline);return 1;}
 static const char *CustomTrack_CupDisplayName(int cup,int adv) {(void)cup;(void)adv;return legacyCup;}
 static const char *AP_ContentCupName(void) {return haveRace && race.cup ? "Mixed Cup" : NULL;}
 '''
+fixture += function("game/MAIN/MainRaceTrack.c", "const char *MainRaceTrack_OfflineCustomTitle(void)")
 cups = "ap/ap_hooks_content_cups.c"
 for signature in ("const ctr_content_pad *AP_ContentCupPad(void)",
                   "int AP_ContentCupLeg(void)", "const char *AP_ContentCupTrackName(void)",
@@ -119,9 +122,9 @@ int main(void) {
  reset();haveRace=1;
  expect(banner_name(),"ROOM TRACK NAME","Adventure banner uses generated room title");
  expect(standings_name(),"ROOM TRACK NAME","standalone per-race standings");
- expect(pause_track(3),"Room Track Name","Adventure pause track row");
- expect(pause_crystal(3),"Room Track Name","Adventure pause arena row with reassigned entry");
- expect(pad_name(3),"Room Track Name","hub pad generated room title");
+ expect(pause_track(3),"ROOM TRACK NAME","Adventure pause track row");
+ expect(pause_crystal(3),"ROOM TRACK NAME","Adventure pause arena row with reassigned entry");
+ expect(pad_name(3),"ROOM TRACK NAME","hub pad generated room title");
  for(int mode=0;mode<3;mode++){race.mode=mode;expect(banner_name(),"ROOM TRACK NAME","Trophy CTR Relic entry");}
  reset();haveRace=1;race.cup=1;race.leg=0;race.trophyLocation=99;race.laps=3;race.returnHub=26;
  pads[3].cup=1;pads[3].trophy_location=99;pads[3].legs[0].retail_id=-1;
@@ -166,6 +169,17 @@ int main(void) {
  game.levelID=6;game.gameMode1=0;expect(banner_name(),"ROO'S TUBES","garage title does not leak to ordinary retail race");
  reset();haveRace=1;memset(pads[3].room_title,'W',128);pads[3].room_title[128]=0;
  expect(banner_name(),pads[3].room_title,"full long title retained for banner scrolling");
+ reset();haveRace=1;strcpy(pads[3].room_title,"Café Éclair");
+ expect(banner_name(),"CAFE ECLAIR","UTF-8 race title folds accents");
+ expect(pause_track(3),"CAFE ECLAIR","UTF-8 pause title folds accents");
+ expect(pad_name(3),"CAFE ECLAIR","UTF-8 pad title folds accents");
+ reset();offline="Café TT";expect(banner_name(),"CAFE TT","offline title folded before lossy banner conversion");
+ reset();haveRace=1;strcpy(pads[3].room_title,"東京");
+ expect(banner_name(),"CUSTOM TRACK","non-Latin-only title has drawable fallback");
+ expect(pause_track(3),"CUSTOM TRACK","non-Latin-only pad has drawable fallback");
+ strcpy(pads[3].room_title,"東京 大阪");
+ expect(banner_name(),"CUSTOM TRACK","non-Latin title with spaces has drawable fallback");
+ expect(pause_track(3),"CUSTOM TRACK","non-Latin pad with spaces has drawable fallback");
  printf("%d checks, %d failures\n",checks,failures);return failures?1:0;
 }
 '''
@@ -174,6 +188,8 @@ if os.environ.get("CTR_NAME_FIXTURE_OUT"):
 with tempfile.TemporaryDirectory() as tmp:
     c = Path(tmp) / "names.c"
     c.write_text(fixture)
-    subprocess.run(["cc", "-std=c11", "-I", str(root), "-I", str(root / "include"),
-                    str(c), "-o", str(c.with_suffix(""))], check=True)
+    subprocess.run(["cc", "-std=c11", "-DUTF8PROC_STATIC", "-I", str(root), "-I", str(root / "include"),
+                    "-I", str(root / "vendor/utf8proc"), str(c),
+                    str(root / "platform/native_custom_unicode.c"), str(root / "vendor/utf8proc/utf8proc.c"),
+                    "-o", str(c.with_suffix(""))], check=True)
     subprocess.run([str(c.with_suffix(""))], check=True)
