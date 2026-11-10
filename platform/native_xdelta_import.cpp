@@ -799,24 +799,28 @@ struct Extractor
                 const IsoFile &file = layout.files[path];
                 uint32_t sectors = (file.size + kSector - 1) / kSector;
                 if (lba >= file.lba + sectors) continue;
-                capture_sector(path, file, lba, rawSector);
                 bool &changedFlag = fileChanged[path];
-                if (changedFlag) continue;
-                auto retail = disc.files.find(path);
-                unsigned char retailRaw[kRawSector];
-                if (retail == disc.files.end() || retail->second.size != file.size ||
-                    !disc.raw(retail->second.lba + (lba - file.lba), retailRaw) ||
-                    std::memcmp(retailRaw + 16, rawSector + 16, kRawSector - 16))
-                    changedFlag = true;
+                if (!changedFlag)
+                {
+                    auto retail = disc.files.find(path);
+                    unsigned char retailRaw[kRawSector];
+                    if (retail == disc.files.end() || retail->second.size != file.size ||
+                        !disc.raw(retail->second.lba + (lba - file.lba), retailRaw) ||
+                        std::memcmp(retailRaw + 16, rawSector + 16, kRawSector - 16))
+                        changedFlag = true;
+                }
+                capture_sector(path, file, lba, rawSector, changedFlag);
             }
         }
     }
 
     /* Some packs keep a level, its pointer map and its texture file in one
        disc file their own code loads. Such a file is kept whole when its
-       first sector holds a bounded level header; the scan decides later
-       whether it changed and what it holds. */
-    void capture_sector(const std::string &path, const IsoFile &file, uint32_t lba, const unsigned char *rawSector)
+       first sector holds a bounded level header and, once its last sector
+       arrives, some sector differs from retail; the scan decides later what
+       it holds. An unchanged file is dropped there, so it never takes one of
+       the kEmbeddedFilesMax places. */
+    void capture_sector(const std::string &path, const IsoFile &file, uint32_t lba, const unsigned char *rawSector, bool changed)
     {
         const unsigned char *data = rawSector + kUserData;
         auto it = capturing.find(path);
@@ -838,6 +842,7 @@ struct Extractor
         const uint32_t take = std::min<uint32_t>(kSector, file.size - (uint32_t)bytes.size());
         bytes.insert(bytes.end(), data, data + take);
         if (bytes.size() < file.size) return;
+        if (!changed) { capturing.erase(it); return; }
         if (scratchEnd + (long long)file.size > kScratchBytesMax) throw std::runtime_error("Patch changes too much track data");
         if (seek64(scratch, (unsigned long long)scratchEnd) || std::fwrite(bytes.data(), 1, bytes.size(), scratch) != bytes.size())
             throw std::runtime_error("Cannot write the import scratch file");
@@ -1714,8 +1719,9 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                     continue;
                 }
                 const size_t vrmAt = aligned(mapEnd);
-                size_t vrmCut = zeros(mapEnd, vrmAt) && vrmAt < b.size() ? cut_vrm(b.data() + vrmAt, b.size() - vrmAt) : 0;
-                std::vector<unsigned char> vrm(b.begin() + (long)vrmAt, b.begin() + (long)(vrmAt + vrmCut));
+                const size_t vrmCut = vrmAt < b.size() && zeros(mapEnd, vrmAt) ? cut_vrm(b.data() + vrmAt, b.size() - vrmAt) : 0;
+                std::vector<unsigned char> vrm;
+                if (vrmCut) vrm.assign(b.begin() + (long)vrmAt, b.begin() + (long)(vrmAt + vrmCut));
                 if (!vrmCut || lev_shaped(vrm))
                 {
                     unsupportedLevels.push_back(skip_item((int)levIndex, "Level in " + file, "No valid texture file after its map"));

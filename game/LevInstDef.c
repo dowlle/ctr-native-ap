@@ -9,11 +9,13 @@
 // entry is an InstDef exactly when it lies on the level's InstDef array, so
 // each direction only converts entries still in the other form. Retail lists
 // see the same single conversion as before.
-static int LevInstDef_IsLevelInstDef(const struct Level *level, const void *entry)
+// 1: on the level's InstDef array, 0: not on it, -1: no array to compare
+// against, where both directions convert as retail does.
+static int LevInstDef_EntryForm(const struct Level *level, const void *entry)
 {
 	uintptr_t base, at;
 	if (level == NULL || level->ptrInstDefs == NULL)
-		return 1; // No array to compare against: keep retail's behaviour.
+		return -1;
 	base = (uintptr_t)level->ptrInstDefs;
 	at = (uintptr_t)entry;
 	return at >= base && (at - base) / sizeof(struct InstDef) < level->numInstances &&
@@ -46,7 +48,7 @@ void LevInstDef_UnPack(struct mesh_info *ptr_mesh_info)
 			for (visInstSrc = (struct InstDef **)qbCurr->pvs->visInstSrc; visInstSrc[0] != NULL; visInstSrc++)
 			{
 #ifdef CTR_NATIVE
-				if (!LevInstDef_IsLevelInstDef(sdata->gGT->level1, visInstSrc[0]))
+				if (LevInstDef_EntryForm(sdata->gGT->level1, visInstSrc[0]) == 0)
 					continue; // A shared list this loop already converted.
 #endif
 				visInstSrc[0] = (struct InstDef *)visInstSrc[0]->ptrInstance;
@@ -61,6 +63,10 @@ void LevInstDef_UnPack(struct mesh_info *ptr_mesh_info)
 		// loop through all instDef pointers in the LEV
 		for (visInstSrc = level1->ptrInstDefPtrArray; visInstSrc[0] != 0; visInstSrc++)
 		{
+#ifdef CTR_NATIVE
+			if (LevInstDef_EntryForm(level1, visInstSrc[0]) == 0)
+				continue; // This array is also a quadblock list, converted above.
+#endif
 			visInstSrc[0] = (struct InstDef *)visInstSrc[0]->ptrInstance;
 		}
 	}
@@ -92,7 +98,7 @@ void LevInstDef_RePack(struct mesh_info *ptr_mesh_info, b32 boolAdvHub)
 			for (visInstSrc = qbCurr->pvs->visInstSrc; visInstSrc[0] != NULL; visInstSrc++)
 			{
 #ifdef CTR_NATIVE
-				if (LevInstDef_IsLevelInstDef(sdata->gGT->level1, visInstSrc[0]))
+				if (LevInstDef_EntryForm(sdata->gGT->level1, visInstSrc[0]) == 1)
 					continue; // A shared list this loop already converted back.
 #endif
 				visInstSrc[0] = (struct Instance *)visInstSrc[0]->instDef; // maybe `visInstSrc[0]->instDef->ptrInstance`?
@@ -108,7 +114,20 @@ void LevInstDef_RePack(struct mesh_info *ptr_mesh_info, b32 boolAdvHub)
 		for (visInstSrc = (struct Instance **)level1->ptrInstDefPtrArray; visInstSrc[0] != NULL; visInstSrc++)
 		{
 			struct Instance *inst = visInstSrc[0];
-			struct InstDef *instDef = inst->instDef;
+			struct InstDef *instDef;
+#ifdef CTR_NATIVE
+			// This array is also a quadblock list, already converted back above:
+			// the entry is the InstDef, and a hub still frees its Instance.
+			if (LevInstDef_EntryForm(level1, visInstSrc[0]) == 1)
+			{
+				instDef = (struct InstDef *)visInstSrc[0];
+				inst = instDef->ptrInstance;
+				if (inst == NULL)
+					continue;
+			}
+			else
+#endif
+				instDef = inst->instDef;
 
 			// if on adv hub
 			if (boolAdvHub != 0)

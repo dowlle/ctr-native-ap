@@ -811,6 +811,16 @@ int main()
         Bytes line = embedded_file(spec, lineLev, lineVrm, true, true);
         line[4 + BODY_CHECK + 34 * 12 + 8] = 34;                  /* Checkpoints 0 to 34, the last leads to itself */
         changed.files["LINE.BIN"] = line;
+        spec.seed = 87;
+        Bytes shortLev, shortVrm;
+        Bytes shortFile = embedded_file(spec, shortLev, shortVrm, true, false);
+        {
+            const uint32_t map = NativeLev::word(shortFile.data());
+            const size_t mapAt = (8 + map + 2047) / 2048 * 2048;
+            const size_t end = NativeLev::tagged_stream_end(shortFile.data(), shortFile.size(), mapAt);
+            shortFile.resize(end); /* The map ends the file: the next sector is past its end. */
+        }
+        changed.files["ZSHORT.BIN"] = shortFile;
         spec.seed = 85;
         changed.bigfile[11] = make_lev(spec);                     /* An ordinary BIGFILE track, numbered first */
         CHECK(XdeltaImport_CutLev(changed.files["TRIBAL.BIN"].data(), changed.files["TRIBAL.BIN"].size()) == 4 + BODY_PTRMAP + 4,
@@ -840,13 +850,17 @@ int main()
             CHECK(noVrm && !noVrm->offered && !std::strcmp(noVrm->title, "Level in NOVRM.BIN") &&
                   !std::strcmp(noVrm->reason, "No valid texture file after its map"),
                   "a disc-file level without a VRM after its map gets a specific row");
+            const auto *shortRow = item_for(s, levIndex + 10);
+            CHECK(shortRow && !shortRow->offered && !std::strcmp(shortRow->title, "Level in ZSHORT.BIN") &&
+                  !std::strcmp(shortRow->reason, "No valid texture file after its map"),
+                  "a map that ends the file is refused without reading past it");
             const auto *side = item_for(s, levIndex + 6);
             CHECK(side && !side->offered && !std::strcmp(side->title, "Embedded track 3") &&
                   !std::strcmp(side->reason, "Not a race track (no lap checkpoints)"),
                   "a disc-file level takes the same race checks as any entry");
             const auto *code = line_with(s, "Game code (");
             CHECK(code && !std::strstr(code->title, "TRIBAL.BIN") && std::strstr(code->title, "LINE.BIN") &&
-                  std::strstr(code->title, "NOMAP.BIN") && std::strstr(code->title, "PLAIN.BIN") && std::strstr(code->title, "+1"),
+                  std::strstr(code->title, "NOMAP.BIN") && std::strstr(code->title, "PLAIN.BIN") && std::strstr(code->title, "+2"),
                   "only a file whose track is offered leaves the code line");
             unsigned offered = 0;
             for (unsigned i = 0; i < s->count; i++) offered += s->items[i].offered;
@@ -892,6 +906,41 @@ int main()
                 CHECK(rows.size() == 1 && rows[0].local.xdelta && rows[0].local.bigfileIndex == levIndex + 8,
                       "disc-file track reloads and verifies");
             }
+        }
+        XdeltaImport_Free(&r.scan);
+    }
+
+    /* Unchanged disc files that start with a level never take one of the
+       eight places a changed file needs. */
+    {
+        DiscSpec before = base;
+        for (int i = 0; i < 8; i++)
+        {
+            LevSpec same; same.seed = 120 + i;
+            Bytes ordinary = make_lev(same);
+            before.files["A" + std::to_string(i) + ".BIN"] = alternate_lev(ordinary); /* Bounded level header */
+        }
+        const Bytes beforeDisc = make_disc(before);
+        DiscSpec after = before;
+        LevSpec spec; spec.seed = 130;
+        Bytes lev = make_lev(spec);
+        const Bytes alt = alternate_lev(lev);
+        const uint32_t map = NativeLev::word(alt.data());
+        Bytes file(alt.begin(), alt.begin() + 4 + map);
+        NativeLev::append(file, 0);
+        file.resize((file.size() + 2047) / 2048 * 2048, 0);
+        file.insert(file.end(), alt.begin() + 4 + map, alt.end());
+        file.resize((file.size() + 2047) / 2048 * 2048, 0);
+        const Bytes vrm = make_vrm(130, 0);
+        file.insert(file.end(), vrm.begin(), vrm.end());
+        after.files["TRACK.BIN"] = file;
+        const std::string disc2 = write_file("base-embedded.bin", beforeDisc);
+        ScanResult r = scan(write_file("Places.xdelta", encode(beforeDisc, make_disc(after))), disc2);
+        CHECK(r.ok, "places scan succeeds");
+        if (r.ok)
+        {
+            const auto *track = item_for(XdeltaImport_Summary(r.scan), CTR_XDELTA_EMBEDDED_INDEX_BASE + 1);
+            CHECK(track && track->offered && sha_hex(lev) == track->levSha256, "eight unchanged level files do not crowd out a changed one");
         }
         XdeltaImport_Free(&r.scan);
     }
