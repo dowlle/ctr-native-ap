@@ -38,6 +38,8 @@ int main(void)
 		for (int mode = 0; mode < 2; mode++)
 		{
 			unsigned seen = 0;
+			// A4-46: the arena grant excludes Warp Ball (index 8).
+			unsigned expect = mode ? mask : (mask & ~(1u << 8));
 			gt.gameMode1 = ADVENTURE_MODE | (mode ? ADVENTURE_BOSS : CRYSTAL_CHALLENGE);
 			assert(AP_ItemsanityUnlockedPool(&local));
 			assert(!AP_ItemsanityUnlockedPool(&bot));
@@ -47,7 +49,7 @@ int main(void)
 				// Even an already-owned retail draw must not starve the other unlocks.
 				int got = mode ? AP_ItemsanityFilterRoll(&local, 0, roll, 0, 0)
 				               : AP_ItemsanityFilterCrystalGrant(&local, 1, roll);
-				if (!mask) assert(got == AP_ITEMSANITY_NO_ITEM);
+				if (!expect) assert(got == AP_ITEMSANITY_NO_ITEM);
 				else
 				{
 					int index = AP_ItemsanityWeaponIndex(got);
@@ -57,7 +59,7 @@ int main(void)
 				assert(AP_ItemsanityFilterRoll(&bot, 8, roll, 0, 0) == 8);
 				assert(AP_ItemsanityFilterCrystalGrant(&bot, 1, roll) == 1);
 			}
-			assert(seen == mask);
+			assert(seen == expect);
 			assert(fruit == ((!mask && mode) ? 200 : 0));
 		}
 	}
@@ -89,6 +91,24 @@ int main(void)
 	// Keep all frozen IDs represented in the harness as well.
 	for (int i = 0; i < AP_ITEMSANITY_WEAPON_COUNT; i++)
 		assert(AP_ItemsanityWeaponIndex(ids[i]) == i);
+	// A4-46: the arena grant never settles on Warp Ball, whatever is owned.
+	gt.gameMode1 = ADVENTURE_MODE | CRYSTAL_CHALLENGE;
+	for (unsigned mask = 0; mask < (1u << AP_ITEMSANITY_WEAPON_COUNT); mask++)
+	{
+		for (int i = 0; i < AP_ITEMSANITY_WEAPON_COUNT; i++)
+			ap_itemsanity_owned[i] = (mask >> i) & 1;
+		for (unsigned roll = 0; roll < 64; roll++)
+			assert(AP_ItemsanityFilterCrystalGrant(&local, 0, roll) != 9);
+	}
+	memset(ap_itemsanity_owned, 0, sizeof ap_itemsanity_owned);
+	ap_itemsanity_owned[8] = 1; // Warp Ball alone
+	assert(AP_ItemsanityFilterCrystalGrant(&local, 0, 3) == AP_ITEMSANITY_NO_ITEM);
+	// Fire-site gate: a real track with a path is usable, an arena never is.
+	assert(AP_WarpballPathUsable(0, 120, 1));
+	assert(!AP_WarpballPathUsable(1, 120, 1)); // battle or Crystal mode
+	assert(!AP_WarpballPathUsable(0, 0, 0));   // no table
+	assert(!AP_WarpballPathUsable(0, 120, 0)); // null table
+	assert(!AP_WarpballPathUsable(0, 2, 1));   // stub path from a custom arena
 	puts("unlocked weapons: 2048 ownership sets, 200 rolls, both modes passed");
 	return 0;
 }

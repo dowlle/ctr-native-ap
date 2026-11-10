@@ -236,6 +236,29 @@ static int AP_ItemsanitySubstituteDownstream(int proposed, unsigned roll,
 	                                AP_ITEMSANITY_FULL_POOL_SIZE, owned);
 }
 
+// A4-46: Warp Ball steers along the track's restart-point path. A Crystal
+// Challenge arena has no such path (or a custom arena may ship a stub), so a
+// Warp Ball fired there walks off a null or empty node table and crashes. The
+// arena grant therefore never hands one out. The retail arena pool is only Bomb
+// and Turbo, so excluding it loses nothing retail ever offered.
+#define AP_ITEMSANITY_WARPBALL_ID 0x9
+
+// Path gate shared by the fire-site safety net. Retail tracks always have far
+// more than three restart points (CAM.c treats more than two as a fly-in
+// track), so a count below that or a null table means "no path to follow".
+// Battle and Crystal Challenge modes never use one whatever the data says.
+static inline int AP_WarpballPathUsable(int battleOrCrystal, int restartCount,
+	int hasRestartTable)
+{
+	return !battleOrCrystal && hasRestartTable && restartCount >= 3;
+}
+
+// Arena weapon pool mask: every Crystal Challenge draw excludes Warp Ball, so
+// a lone Warp Ball unlock leaves the slot empty (the same ruled shape as no
+// unlocks at all).
+#define AP_ITEMSANITY_ARENA_EXCLUDED_IDS \
+	AP_ITEMSANITY_ID_BIT(AP_ITEMSANITY_WARPBALL_ID)
+
 // Boss-race catch-up ladder, strongest rung first. Retail's block names only
 // two of these ids itself (Missile x3 as the escalation target, single Missile
 // as the Komodo Joe cap); Bomb x3 and Bomb are a RULING by analogy, chosen as

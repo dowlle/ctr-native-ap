@@ -1091,8 +1091,9 @@ void VehPhysGeneral_SetHeldItem(struct Driver *driver)
 		driver->heldItemID =
 			(u8)AP_ItemsanityFilterCrystalGrant(driver, driver->heldItemID, (unsigned)rng);
 		if (AP_ItemsanityUnlockedPool(driver))
-			driver->heldItemID = (u8)AP_TrapRerollFilter(driver, driver->heldItemID,
-			                                            (unsigned)rng);
+			// A4-46: the arena variant keeps Item Reroll from restoring Warp Ball.
+			driver->heldItemID = (u8)AP_TrapRerollFilterArena(driver, driver->heldItemID,
+			                                                 (unsigned)rng);
 	}
 	else if (itemSet == -1 && AP_ItemsanityUnlockedPool(driver))
 	{
