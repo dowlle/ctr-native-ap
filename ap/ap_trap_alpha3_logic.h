@@ -70,16 +70,38 @@ static inline int AP_TrapMudSeasonBlocked(int effect, int dirtHeld)
 	return effect == AP_TRAP_MUD_SEASON && dirtHeld;
 }
 
+// Kart states as plain integers (the decomp enum, namespace_Vehicle.h:60-69;
+// ap_traps.c static-asserts the same values). Guarded because the observe logic
+// header repeats them.
+#ifndef AP_TRAP_KS_NORMAL
+#define AP_TRAP_KS_NORMAL   0
+#endif
+#ifndef AP_TRAP_KS_DRIFTING
+#define AP_TRAP_KS_DRIFTING 2
+#endif
+
+// Always Jumping: may the kart hop in this state? The two grounded driving
+// states: normal driving and a running drift. Every other state is damage, a
+// scripted move or a freeze (crash, spinout, engine rev, mask grab, blast, V-shift
+// reverse, warp pad, end freeze) and stays out.
+static inline int AP_TrapAlwaysJumpState(int kartState)
+{
+	return kartState == AP_TRAP_KS_NORMAL || kartState == AP_TRAP_KS_DRIFTING;
+}
+
 // Always Jumping: write a one-frame jump buffer now? Only when the trap runs,
-// the kart drives normally (no drift, damage, mask or warp state), no buffer is
-// set already (a player's own buffer is never replaced), the kart is on the
-// ground (coyote time left), the jump cooldown is over, and no rain cloud locks
-// jumping out (Red Potion wins).
-static inline int AP_TrapAlwaysJumpWants(int active, int normalState, int buffer,
+// the kart is in a hopping state (driving or drifting; a boost of any kind is not
+// an input here, so it never blocks), no buffer is set already (a player's own
+// buffer is never replaced), the kart is on the ground (coyote time left), the
+// jump cooldown is over, and no rain cloud locks jumping out (Red Potion wins).
+// A hop during a drift is the same engine hop a drift entry uses: the drift
+// state only counts frames and never reads the ground flag, so it runs on
+// through the air as it does over a crest.
+static inline int AP_TrapAlwaysJumpWants(int active, int kartState, int buffer,
                                          int coyoteMs, int cooldownMs, int lockout)
 {
-	return active && normalState && buffer == 0 && coyoteMs != 0 && cooldownMs == 0 &&
-	       !lockout;
+	return active && AP_TrapAlwaysJumpState(kartState) && buffer == 0 &&
+	       coyoteMs != 0 && cooldownMs == 0 && !lockout;
 }
 
 #endif // AP_TRAP_ALPHA3_LOGIC_H
