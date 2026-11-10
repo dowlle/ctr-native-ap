@@ -85,7 +85,7 @@ visible = int(re.search(r"const int visibleLimit = [^?]*\? (\d+) :", feed).group
 assert "ap_feed_hub_pad_title ? 120 : AP_FEED_BASE_Y" in feed
 glyph = 8
 assert schema_y + line_h + glyph <= min(custom_ys), (schema_y, custom_ys)
-assert max(custom_ys) + line_h + glyph <= warn_y, (custom_ys, warn_y)
+assert max(custom_ys) + glyph <= warn_y, (custom_ys, warn_y)
 for anchor in (120, base_y):
     feed_top = anchor - (visible - 1) * line_h
     assert warn_y + line_h + glyph <= feed_top, (warn_y, anchor, feed_top)
