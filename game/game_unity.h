@@ -97,6 +97,7 @@
 #include "DebugFont.c"
 
 #include "DecalFont.c"
+#include "DecalFontBox.c"
 
 #include "DecalGlobal.c"
 

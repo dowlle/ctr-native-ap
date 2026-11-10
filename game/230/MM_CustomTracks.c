@@ -135,7 +135,8 @@ static void CT_Row(int row, const char *text, int selected, int flags, uint32_t 
     RECT box = {24, CT_ROW_Y0 + row * CT_ROW_H, 260, 14};
     char plain[640];
     ap_seed_plain_text(text, plain, sizeof plain);
-    MM_CustomText_Draw(plain, CT_LIST_X, box.y + 2, CT_LIST_W, 1, selected ? ORANGE : flags, ot);
+    DecalFont_DrawLineBox(plain, CT_LIST_X, box.y + 2, CT_LIST_W, FONT_SMALL,
+        selected ? ORANGE : flags, selected ? TEXT_MARQUEE : TEXT_ELLIPSIS, TEXT_SLOT_LIBRARY, ot);
     if (selected) CTR_Box_DrawClearBox(&box, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
 }
 
@@ -146,7 +147,8 @@ static void CT_RowState(int row, const char *title, const char *state, int selec
     char plain[640];
     int stateW = DecalFont_GetLineWidth((char *)state, FONT_SMALL);
     ap_seed_plain_text(title, plain, sizeof plain);
-    MM_CustomText_Draw(plain, CT_LIST_X, box.y + 2, CT_LIST_W - stateW - 10, 1, selected ? ORANGE : WHITE, ot);
+    DecalFont_DrawLineBox(plain, CT_LIST_X, box.y + 2, CT_LIST_W - stateW - 10, FONT_SMALL,
+        selected ? ORANGE : WHITE, selected ? TEXT_MARQUEE : TEXT_ELLIPSIS, TEXT_SLOT_LIBRARY, ot);
     DecalFont_DrawLineOT((char *)state, CT_LIST_X + CT_LIST_W, box.y + 2, FONT_SMALL, JUSTIFY_RIGHT | stateFlags, ot);
     if (selected) CTR_Box_DrawClearBox(&box, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
 }

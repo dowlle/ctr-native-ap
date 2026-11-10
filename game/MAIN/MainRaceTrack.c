@@ -281,7 +281,7 @@ void MainRaceTrack_CustomSaveGhost(const struct GhostHeader *gh)
 // The running package's title in banner form, or NULL outside a custom race.
 const char *MainRaceTrack_OfflineCustomTitle(void)
 {
-	static char s_title[32];
+	static char s_title[641];
 	struct CustomPackageManifest manifest;
 
 	if (!MainRaceTrack_OfflineCustomLoad() || !CustomOffline_RuntimeManifest(&manifest))

@@ -450,8 +450,8 @@ static void MM_Solo_PageHome(uint32_t *ot, struct GamepadBuffer *pad)
 		}
 		else
 			snprintf(line, sizeof line, "%s", s_soloHomeActions[row - rooms]);
-		MM_Solo_Fit(line, fit, sizeof fit, SOLO_ROW_W);
-		DecalFont_DrawLineOT(fit, SOLO_ROW_X, y, FONT_SMALL, color, ot);
+		DecalFont_DrawLineBox(line, SOLO_ROW_X, y, SOLO_ROW_W, FONT_SMALL, color,
+		    i == s_soloSel ? TEXT_MARQUEE : TEXT_ELLIPSIS, TEXT_SLOT_SOLO, ot);
 		if (i == s_soloSel)
 			MM_Solo_Highlight(y, ot);
 	}
@@ -532,7 +532,6 @@ static void MM_Solo_PageDetails(uint32_t *ot, struct GamepadBuffer *pad)
 static void MM_Solo_PageNew(uint32_t *ot, struct GamepadBuffer *pad)
 {
 	const int count = AP_Solo_StartCount();
-	char fit[160];
 	int i;
 	MM_Solo_Navigate(pad, count);
 	if ((pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0 && count > 0)
@@ -568,8 +567,9 @@ static void MM_Solo_PageNew(uint32_t *ot, struct GamepadBuffer *pad)
 		struct APSoloStartInfo st;
 		const int y = SOLO_LIST_Y + (i - s_soloTop) * SOLO_ROW_H;
 		AP_Solo_StartGet(i, &st);
-		MM_Solo_Fit(st.label, fit, sizeof fit, SOLO_ROW_W);
-		DecalFont_DrawLineOT(fit, SOLO_ROW_X, y, FONT_SMALL, st.error[0] ? GRAY : (st.isPreset ? ORANGE : WHITE), ot);
+		DecalFont_DrawLineBox(st.label, SOLO_ROW_X, y, SOLO_ROW_W, FONT_SMALL,
+		    st.error[0] ? GRAY : (st.isPreset ? ORANGE : WHITE),
+		    i == s_soloSel ? TEXT_MARQUEE : TEXT_ELLIPSIS, TEXT_SLOT_SOLO, ot);
 		if (i == s_soloSel)
 			MM_Solo_Highlight(y, ot);
 	}
@@ -715,8 +715,8 @@ static void MM_Solo_PageOptionGroups(uint32_t *ot, struct GamepadBuffer *pad)
 		{
 			int shown, changed, blocked;
 			MM_Solo_GroupCounts(labels[i], &shown, &changed, &blocked);
-			MM_Solo_Fit(labels[i], fit, sizeof fit, SOLO_ROW_W - 0x90);
-			DecalFont_DrawLineOT(fit, SOLO_ROW_X, y, FONT_SMALL, ORANGE, ot);
+			DecalFont_DrawLineBox(labels[i], SOLO_ROW_X, y, SOLO_ROW_W - 0x90, FONT_SMALL,
+			    ORANGE, i == s_soloSel ? TEXT_MARQUEE : TEXT_ELLIPSIS, TEXT_SLOT_SOLO, ot);
 			if (blocked)
 				snprintf(line, sizeof line, "%d to fix", blocked);
 			else if (changed)
@@ -750,7 +750,7 @@ static void MM_Solo_PageChecklist(uint32_t *ot, struct GamepadBuffer *pad)
 	const int count = AP_Solo_OptionItemCount(s_soloList);
 	const int previousRow = s_soloSel;
 	const int labelW = SOLO_CHECK_DEFAULT_R - DecalFont_GetLineWidth((char *)"default", FONT_SMALL) - 0x08 - SOLO_ROW_X;
-	char line[160], fit[160];
+	char line[160];
 	int i, on = 0;
 
 	AP_Solo_OptionGet(s_soloList, &info);
@@ -801,8 +801,8 @@ static void MM_Solo_PageChecklist(uint32_t *ot, struct GamepadBuffer *pad)
 	{
 		const int y = SOLO_LIST_Y + (i - s_soloTop) * SOLO_ROW_H;
 		AP_Solo_OptionItemGet(s_soloList, i, &item);
-		MM_Solo_Fit(item.label, fit, sizeof fit, labelW);
-		DecalFont_DrawLineOT(fit, SOLO_ROW_X, y, FONT_SMALL, ORANGE, ot);
+		DecalFont_DrawLineBox(item.label, SOLO_ROW_X, y, labelW, FONT_SMALL,
+		    ORANGE, i == s_soloSel ? TEXT_MARQUEE : TEXT_ELLIPSIS, TEXT_SLOT_SOLO, ot);
 		if (info.kind == AP_SOLO_OPT_WEIGHTS)
 		{
 			/* The grey number is the option's default weight. */
@@ -968,11 +968,12 @@ static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
 			AP_Solo_OptionGet(map[i], &info);
 			/* Names fit the row or take a second line for the value; the fit
 			   only guards a name longer than the row. */
-			MM_Solo_Fit(info.label, fit, sizeof fit, SOLO_ROW_W);
-			DecalFont_DrawLineOT(fit, SOLO_ROW_X, y, FONT_SMALL, info.forced ? GRAY : ORANGE, ot);
-			MM_Solo_Fit(info.value, fit, sizeof fit, SOLO_ROW_W - SOLO_OPTION_GAP);
-			DecalFont_DrawLineOT(fit, SOLO_ROW_R, y + (lines - 1) * SOLO_ROW_H, FONT_SMALL,
-			                     JUSTIFY_RIGHT | (info.forced ? GRAY : (info.note[0] ? RED : WHITE)), ot);
+			DecalFont_DrawLineBox(info.label, SOLO_ROW_X, y, SOLO_ROW_W, FONT_SMALL,
+			    info.forced ? GRAY : ORANGE, i == s_soloSel ? TEXT_MARQUEE : TEXT_ELLIPSIS, TEXT_SLOT_SOLO, ot);
+			DecalFont_DrawLineBox(info.value, SOLO_ROW_R, y + (lines - 1) * SOLO_ROW_H,
+			    SOLO_ROW_W - SOLO_OPTION_GAP, FONT_SMALL,
+			    JUSTIFY_RIGHT | (info.forced ? GRAY : (info.note[0] ? RED : WHITE)),
+			    i == s_soloSel ? TEXT_MARQUEE : TEXT_ELLIPSIS, TEXT_SLOT_SOLO_VALUE, ot);
 			if (i == s_soloSel)
 				MM_Solo_HighlightLines(y, lines, ot);
 			used += lines;
@@ -1053,8 +1054,8 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 		{
 			AP_Solo_TrackGet(i, &info);
 			snprintf(line, sizeof line, "%s %s", info.title, info.revision);
-			MM_Solo_Fit(line, fit, sizeof fit, SOLO_TRACK_PICK_X - SOLO_ROW_X - 0x08);
-			DecalFont_DrawLineOT(fit, SOLO_ROW_X, y, FONT_SMALL, ORANGE, ot);
+			DecalFont_DrawLineBox(line, SOLO_ROW_X, y, SOLO_TRACK_PICK_X - SOLO_ROW_X - 0x08,
+			    FONT_SMALL, ORANGE, i == s_soloSel ? TEXT_MARQUEE : TEXT_ELLIPSIS, TEXT_SLOT_SOLO, ot);
 			if (info.needsLaps)
 			{
 				snprintf(line, sizeof line, "< %d lap%s >", info.laps, info.laps == 1 ? "" : "s");

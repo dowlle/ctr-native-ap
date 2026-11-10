@@ -1,0 +1,89 @@
+"""Run the production font and box renderer against a packet-recording GPU."""
+from pathlib import Path
+import json
+import re
+import subprocess
+import tempfile
+
+root = Path(__file__).resolve().parents[1]
+def source(p): return (root / p).read_text()
+def function(p, signature):
+    s = source(p)
+    start = s.index(signature + "\n{")
+    return s[start:s.index("\n}\n", start) + 3]
+def table(name):
+    body = re.search(r"\." + name + r"\s*=\s*\{(.*?)\}", source("game/zGlobal_DATA.c"), re.S).group(1)
+    return ",".join(re.findall(r"0x[0-9A-Fa-f]+|-?\d+", re.sub(r"//[^\n]*", "", body)))
+
+fixture = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <string.h>
+#include <stdio.h>
+#include <text_box.h>
+typedef short s16; typedef unsigned char u8; typedef unsigned int u32;
+#define UsaRetail 926
+#define EurRetail 1020
+#define JpnRetail 1111
+#define JpnTrial 1006
+#define BUILD UsaRetail
+#define FONT_BIG 1
+#define FONT_SMALL 2
+#define JUSTIFY_CENTER 0x1000
+#define JUSTIFY_RIGHT 0x2000
+static struct { short font_charPixWidth[4],font_buttonPixWidth[4],font_puncPixWidth[4]; } data={%s};
+typedef struct { struct {short x,y,w,h;} clip; short ofs[2]; int isbg; } DRAWENV;
+struct DB { DRAWENV drawEnv; struct { void *cursor,*guardEnd; } primMem; } db;
+struct PushBuffer { struct {int x,y,w,h;} rect; uint32_t *ptrOT; };
+struct GameTracker { struct DB *backBuffer; struct PushBuffer pushBuffer_UI; unsigned timer;int elapsedTimeMS,numPlyrCurrGame; } game;
+static struct { struct GameTracker *gGT; } state={&game},*sdata=&state;
+static unsigned char arena[8192];
+static char events[32]; static int ne,drawWidth,drawX,drawFlags;
+static DRAWENV environments[2];static int envCount;
+static u32 CTR_ReadU32LE(const void *p) { u32 v;memcpy(&v,p,4);return v; }
+static void CTR_WriteU32LE(void *p,u32 v) { memcpy(p,&v,4); }
+static void SetDrawEnv(void *p,DRAWENV *env) { memcpy(p,env,sizeof *env);environments[envCount++]=*env; }
+static void AddPrim(uint32_t *ot,void *p) { assert(ot==game.pushBuffer_UI.ptrOT);events[ne++]=(p==arena?'R':'C'); }
+''' % ("{" + "},{".join(table(n) for n in ("font_charPixWidth","font_buttonPixWidth","font_puncPixWidth")) + "}")
+fixture += function("game/DecalFont.c", "int DecalFont_GetLineWidthStrlen(char *character, int len, int fontType)")
+fixture += r'''
+static void DecalFont_DrawLineStrlen(char *s,s16 n,int x,s16 y,s16 f,int flags) { (void)y;drawWidth+=DecalFont_GetLineWidthStrlen(s,n,f);drawX=x;drawFlags=flags;events[ne++]='G'; }
+static void DecalFont_DrawLineOT(char *s,int x,int y,s16 f,int flags,uint32_t *ot) { assert(ot==game.pushBuffer_UI.ptrOT);DecalFont_DrawLineStrlen(s,strlen(s),x,y,f,flags); }
+'''
+fixture += source("game/DecalFontBox.c").replace("#include <common.h>", "")
+fixture += r'''
+static void reset(void) { db.primMem.cursor=arena;ne=envCount=drawWidth=0; }
+int main(void) {
+    uint32_t ot;
+    game.backBuffer=&db;game.pushBuffer_UI.rect.w=512;game.pushBuffer_UI.rect.h=216;game.pushBuffer_UI.ptrOT=&ot;
+    game.numPlyrCurrGame=1;db.primMem.guardEnd=arena+sizeof arena-64;
+    for(int w=1;w<=480;w++) {
+        reset();DecalFont_DrawLineBox("Long title with @ [ ^ * and punctuation: ...",16,80,w,FONT_SMALL,0,TEXT_ELLIPSIS,0,&ot);
+        assert(drawWidth<=w);assert(envCount==0);
+    }
+    reset();DecalFont_DrawLineBox("St Patricks Day Hub World",136,80,240,FONT_BIG,0,TEXT_MARQUEE,0,&ot);
+    assert(ne==3&&!memcmp(events,"RGC",3));assert(envCount==2);
+    assert(environments[0].clip.w==512&&environments[1].clip.x==136&&environments[1].clip.w==240);
+    assert(game.pushBuffer_UI.ptrOT==&ot);
+    reset();DecalFont_DrawLineBox("Acid Lake",256,80,240,FONT_BIG,JUSTIFY_CENTER,TEXT_MARQUEE,0,&ot);
+    assert(envCount==0&&ne==1&&drawFlags==JUSTIFY_CENTER);
+    reset();db.primMem.guardEnd=arena;DecalFont_DrawLineBox("St Patricks Day Hub World",136,80,240,FONT_BIG,0,TEXT_MARQUEE,0,&ot);
+    assert(ne==0&&envCount==0); /* allocation cannot emit half a clip pair */
+    puts("PASS: production width, ellipses at every box width, packet order, clip and restore, fitting alignment, arena exhaustion");
+}
+'''
+
+# Authored warnings must fit with equal 16 px margins using real font metrics.
+for path, pattern in (("ap/ap_hooks_feed.c", r'static char warn[12]\[\] = "([^"]+)"'),
+                      ("ap/ap_hooks_custom_content.c", r'"([^"\n]+)"')):
+    text = source(path)
+    if "custom_content" in path: text = text[text.index("void AP_DrawCustomContentWarning"):]
+    for line in re.findall(pattern, text):
+        fixture = fixture.replace('    puts("PASS: production width',
+            '    assert(DecalFont_GetLineWidthStrlen(' + json.dumps(line) + ',-1,FONT_SMALL)<=480);\n    puts("PASS: production width', 1)
+
+with tempfile.TemporaryDirectory() as tmp:
+    p = Path(tmp)
+    (p / "test.c").write_text(fixture)
+    subprocess.run(["cc", "-std=c99", "-Wall", "-I", str(root / "include"), str(p / "test.c"), "-o", str(p / "test")], check=True)
+    subprocess.run([str(p / "test")], check=True)

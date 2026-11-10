@@ -355,8 +355,8 @@ static void AP_DeathLinkDeferOnce(const char *msg)
 }
 
 // Popup for the death being handled: two short feed lines (source, then cause; or
-// "ignored" and the reason). Each line is cut at 28 characters by
-// AP_FeedDeathLinkLine so it stays clear of the minimap.
+// "ignored" and the reason). The feed scrolls on static screens and fits
+// each line to the space before the minimap during a race.
 static void AP_DeathLinkPopup(int applied, const char *why)
 {
 	char src[17]; // up to 16 characters of the source slot name

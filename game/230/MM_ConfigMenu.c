@@ -809,7 +809,7 @@ static void Conn_FormatValue(const ConfigEntry *e, int masked, int editing, char
 // This mirrors the font's white fill / black outline contrast and stays visible
 // across both the yellow selection bar and the menu background art. Do not use
 // the font's `_` glyph: its baseline is not visible on this small-font row.
-static void Conn_DrawSlotCaseMarks(const char *slot, int valueX, int y, uint32_t *ot)
+static void Conn_DrawSlotCaseMarks(const char *slot, int valueX, int y, int shift, int visibleWidth, uint32_t *ot)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	const int charWidth = data.font_charPixWidth[FONT_SMALL];
@@ -818,28 +818,31 @@ static void Conn_DrawSlotCaseMarks(const char *slot, int valueX, int y, uint32_t
 	{
 		if (CTR_MenuSlotCharNeedsCaseMark((unsigned char)slot[i]))
 		{
+			int x = valueX + DecalFont_GetLineWidthStrlen((char *)slot, i, FONT_SMALL) - shift;
+			int left = x < valueX ? valueX : x;
+			int right = x + charWidth - 1 > valueX + visibleWidth ? valueX + visibleWidth : x + charWidth - 1;
+			if (right <= left) continue;
 			LINE_F2 *line = gGT->backBuffer->primMem.cursor;
 			POLY_F4 *stroke = (POLY_F4 *)(line + 1);
-			int x = valueX + DecalFont_GetLineWidthStrlen((char *)slot, i, FONT_SMALL);
 
 			// Link the white center first. OT insertion is LIFO, so the black backing
 			// linked afterward is drawn first and the white line lands on top.
 			CtrGpu_WriteColorCode(&line->r0, *data.ptrColor[WHITE]);
-			line->x0 = x + 1;
+			line->x0 = left;
 			line->y0 = y + 9;
-			line->x1 = x + charWidth - 2;
+			line->x1 = right;
 			line->y1 = y + 9;
 			addLineF2(ot, line);
 
 			CtrGpu_WriteColorCode(&stroke->r0, 0);
 			setPolyF4(stroke);
-			stroke->x0 = x;
+			stroke->x0 = left;
 			stroke->y0 = y + 8;
-			stroke->x1 = x + charWidth - 1;
+			stroke->x1 = right;
 			stroke->y1 = y + 8;
-			stroke->x2 = x;
+			stroke->x2 = left;
 			stroke->y2 = y + 11;
-			stroke->x3 = x + charWidth - 1;
+			stroke->x3 = right;
 			stroke->y3 = y + 11;
 			AddPrim(ot, stroke);
 
@@ -1093,9 +1096,22 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 
 		DecalFont_DrawLineOT((char *)e->label, labelX, y, FONT_SMALL, ORANGE, ot);
 		Conn_FormatValue(e, masked, editing, buf, sizeof buf);
-		DecalFont_DrawLineOT(buf, valueX, y, FONT_SMALL, WHITE, ot);
+		const int width = CONN_ROW_X + CONN_ROW_W - valueX - 8;
+		const int selected = j == menu->rowSelected;
+		int start = 0;
+		/* While typing, keep the cursor visible at the end. */
+		while (editing && buf[start] && DecalFont_GetLineWidthStrlen(buf + start, -1, FONT_SMALL) > width)
+			start++;
+		DecalFont_DrawLineBox(buf + start, valueX, y, width, FONT_SMALL, WHITE,
+		    selected && !editing ? TEXT_MARQUEE : TEXT_ELLIPSIS, TEXT_SLOT_CONNECTION, ot);
 		if (strcmp(e->key, "slot") == 0)
-			Conn_DrawSlotCaseMarks((const char *)e->valuePtr, valueX, y, ot);
+		{
+			int shift = selected && !editing ? DecalFont_LineBoxOffset(buf, width, FONT_SMALL, TEXT_SLOT_CONNECTION) : 0;
+			int markWidth = width;
+			if (!selected && DecalFont_GetLineWidth(buf, FONT_SMALL) > width)
+				markWidth -= DecalFont_GetLineWidth("...", FONT_SMALL);
+			Conn_DrawSlotCaseMarks((const char *)e->valuePtr + start, valueX, y, shift, markWidth, ot);
+		}
 
 		if (j == menu->rowSelected)
 		{

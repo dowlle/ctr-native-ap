@@ -408,8 +408,9 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
         };
         /* Keep the retail curve, but do not draw a row through the footer. */
         if (box.y + box.h > 176) continue;
-        MM_CustomText_DrawFont(item->title, box.x + 8, box.y + 5, 240, 1, FONT_BIG,
-                               MM_CustomTrackSelect_Eligible(item, NULL, 0) ? ORANGE : ORANGE_DARKENED, ot);
+        DecalFont_DrawLineBox(item->title, box.x + 8, box.y + 5, 240, FONT_BIG,
+            MM_CustomTrackSelect_Eligible(item, NULL, 0) ? ORANGE : ORANGE_DARKENED,
+            i == row && !s_arcadeMotion ? TEXT_MARQUEE : TEXT_ELLIPSIS, TEXT_SLOT_ARCADE, ot);
         if (i == row && !s_arcadeMotion)
         {
             RECT highlight = {box.x + 6, box.y + 4, box.w - 12, box.h - 8};
@@ -426,7 +427,8 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
            facts, then three lines for the state or the start prompt. */
         const char *note = AP_CustomOfflineRoomNote();
         snprintf(line, sizeof line, "v%.20s", entry->version);
-        MM_CustomTrackSelect_Text(entry->title, 309 + dx, 85 + dy, 174, 1, ORANGE, ot);
+        DecalFont_DrawLineBox(entry->title, 309 + dx, 85 + dy, 174, FONT_SMALL,
+            ORANGE, TEXT_MARQUEE, TEXT_SLOT_ARCADE_DETAIL, ot);
         MM_CustomTrackSelect_Text(line, 309 + dx, 98 + dy, 174, 1, WHITE, ot);
         if (entry->author[0]) MM_CustomTrackSelect_Text(entry->author, 309 + dx, 110 + dy, 174, 1, WHITE, ot);
         if (entry->installed && entry->local.laps)
