@@ -32,6 +32,7 @@ struct Driver;
 void AP_SanityLevelInstances(struct InstDef *defs, int count);
 int AP_SanityPickup(struct Instance *inst, struct Driver *driver);
 void AP_SanityTick(struct GameTracker *gt);
+void AP_SanityDrawGlow(struct GameTracker *gt);
 int AP_SanityPadPending(int physical, int family);
 
 // Called once per frame from the main loop (CTR_Main in MainMain.c).

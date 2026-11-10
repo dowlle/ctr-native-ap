@@ -1,0 +1,36 @@
+#ifndef AP_SANITY_COLOUR_H
+#define AP_SANITY_COLOUR_H
+
+#include "ap_pad_colour.h"
+
+// Picture candidates: 0 subtle, 1 medium (default), 2 strong. One choice
+// controls both the original model's blend and its soft additive halo.
+#define AP_SANITY_VISIBILITY 1
+
+static inline int AP_SanityLook(int checked, int logicState)
+{
+    // Unknown exported logic keeps the same fallback as the pads.
+    return checked ? AP_PAD_LOOK_DONE : logicState == 0 ? AP_PAD_LOOK_CLOSED : AP_PAD_LOOK_OPEN;
+}
+
+static inline unsigned AP_SanityTint(int look)
+{
+    // Instance far colour is packed 0x0RRGGBB0, not GPU 0x00BBGGRR.
+    return AP_PadLookRGB(look) << 4;
+}
+
+static inline int AP_SanityBlend(int variant)
+{
+    return variant == 0 ? 0x600 : variant == 2 ? 0xB00 : 0x880;
+}
+
+static inline unsigned AP_SanityHaloColour(int look, int variant)
+{
+    unsigned rgb = AP_PadLookRGB(look);
+    unsigned strength = variant == 0 ? 48 : variant == 2 ? 112 : 80;
+    if (look == AP_PAD_LOOK_DONE) strength /= 2;
+    return ((AP_PadLookB(rgb) * strength / 255) << 16) |
+           ((AP_PadLookG(rgb) * strength / 255) << 8) |
+           (AP_PadLookR(rgb) * strength / 255);
+}
+#endif

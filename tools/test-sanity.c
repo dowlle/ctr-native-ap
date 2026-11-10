@@ -33,6 +33,8 @@ static ctr_content_pad pad;
 static struct CustomTrackRaceContext context;
 static uint64_t epoch = 1;
 static int sent, checked, route_valid = 1, notices;
+static int logic_state = 1;
+static int AP_LocationLogicState(long long code) { (void)code; return logic_state; }
 int ctr_cfg_active(void) { return 1; }
 int ap_content_plan_active(void) { return 1; }
 uint64_t ap_content_plan_epoch(void) { return epoch; }
@@ -66,11 +68,19 @@ int main(void) {
     for (i = 0; i < 4; ++i) { defs[i].model = &models[i]; defs[i].ptrInstance = &objects[i]; }
     AP_SanityLevelInstances(defs, 4); AP_SanityTick(&gt);
     assert(objects[0].colorRGBA == 0 && objects[1].colorRGBA != 0);
+    assert(objects[1].colorRGBA == AP_SanityTint(AP_PAD_LOOK_OPEN));
+    logic_state = 0; AP_SanityTick(&gt);
+    for (i = 1; i < 4; ++i) assert(objects[i].colorRGBA == AP_SanityTint(AP_PAD_LOOK_CLOSED));
+    logic_state = 2; AP_SanityTick(&gt);
+    assert(objects[1].colorRGBA == AP_SanityTint(AP_PAD_LOOK_OPEN));
+    logic_state = 1;
     assert(AP_SanityPickup(&objects[3], &bot) == 0 && !sent);
     assert(AP_SanityPickup(&objects[1], &bot) == 1 && !sent);
     AP_SanityPickup(&objects[1], &second); assert(!sent);
     AP_SanityPickup(&objects[1], &player); assert(sent == 1 && objects[1].colorRGBA == 0);
     AP_SanityPickup(&objects[1], &player); assert(sent == 1);
+    AP_SanityTick(&gt);
+    assert(objects[1].colorRGBA == AP_SanityTint(AP_PAD_LOOK_DONE));
     AP_SanityPickup(&objects[3], &player); assert(sent == 2);
     assert(AP_SanityPickup(&objects[3], &bot) == 1);
     AP_SanityLevelInstances(defs, 4); AP_SanityPickup(&objects[1], &player); assert(sent == 2);
