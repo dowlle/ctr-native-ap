@@ -56,6 +56,20 @@
 #define SOLO_ROW_W (SOLO_ROW_R - SOLO_ROW_X)
 #define SOLO_HELP_Y 0xA8
 #define SOLO_FOOTER_Y 0xC4
+/* The slim scroll bar of a list that has more rows than fit (A4-36). */
+#define SOLO_BAR_X 0x1E4
+static void MM_Solo_ScrollBar(int total, int shown, int top, uint32_t *ot)
+{
+	CTR_MenuDrawScrollBar(SOLO_BAR_X, SOLO_LIST_Y - 2, SOLO_ROWS * SOLO_ROW_H, total, shown, top, ot);
+}
+/* The slim scroll bar of a list that has more rows than fit (A4-36): `lines`
+   text lines from y, of which `shown` rows are on screen starting at row `top`
+   out of `total`. Right of the row highlight, inside the menu frame. */
+#define SOLO_BAR_X 0x1E0
+static void MM_Solo_ScrollBarAt(int y, int lines, int total, int shown, int top, uint32_t *ot)
+{
+	CTR_MenuDrawScrollBar(SOLO_BAR_X, y - 2, lines * SOLO_ROW_H, total, shown, top, ot);
+}
 #define SOLO_AP_PIE_URL "https://ap-pie.com/yaml-builder/ctr"
 
 enum SoloPage
@@ -447,6 +461,7 @@ static void MM_Solo_PageHome(uint32_t *ot, struct GamepadBuffer *pad)
 		if (i == s_soloSel)
 			MM_Solo_Highlight(y, ot);
 	}
+	MM_Solo_ScrollBarAt(listY, s_soloRowsShown, count, s_soloRowsShown, s_soloTop, ot);
 	if (AP_Solo_InboxPath()[0])
 	{
 		/* A long path keeps its end: "Inbox: ...folder/solo/inbox". */
@@ -564,6 +579,7 @@ static void MM_Solo_PageNew(uint32_t *ot, struct GamepadBuffer *pad)
 		if (i == s_soloSel)
 			MM_Solo_Highlight(y, ot);
 	}
+	MM_Solo_ScrollBarAt(SOLO_LIST_Y, SOLO_ROWS, count, SOLO_ROWS, s_soloTop, ot);
 	MM_Solo_Footer(NativeMenu_Labels("*: CHOOSE   ^: BACK"), ot);
 }
 
@@ -719,6 +735,7 @@ static void MM_Solo_PageOptionGroups(uint32_t *ot, struct GamepadBuffer *pad)
 		if (i == s_soloSel)
 			MM_Solo_Highlight(y, ot);
 	}
+	MM_Solo_ScrollBarAt(SOLO_LIST_Y, SOLO_ROWS, count, SOLO_ROWS, s_soloTop, ot);
 	if (s_soloSel < groups)
 		MM_Solo_Help("Open a group to change its options.", GRAY, ot);
 	else if (AP_Solo_OptionsBlocked() >= 0)
@@ -811,6 +828,7 @@ static void MM_Solo_PageChecklist(uint32_t *ot, struct GamepadBuffer *pad)
 		if (i == s_soloSel)
 			MM_Solo_Highlight(y, ot);
 	}
+	MM_Solo_ScrollBarAt(SOLO_LIST_Y, SOLO_ROWS, count, SOLO_ROWS, s_soloTop, ot);
 	if (info.note[0])
 		MM_Solo_Help(info.note, RED, ot);
 	else if (info.kind == AP_SOLO_OPT_WEIGHTS)
@@ -946,6 +964,7 @@ static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
 	DecalFont_DrawLineOT(fit, 0x100, 0x18, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
 	{
 		int used = 0; /* list lines drawn */
+		int rowsDrawn = 0;
 		for (i = s_soloTop; i < count; i++)
 		{
 			const int y = SOLO_LIST_Y + used * SOLO_ROW_H;
@@ -963,7 +982,9 @@ static void MM_Solo_PageOptions(uint32_t *ot, struct GamepadBuffer *pad)
 			if (i == s_soloSel)
 				MM_Solo_HighlightLines(y, lines, ot);
 			used += lines;
+			rowsDrawn++;
 		}
+		MM_Solo_ScrollBarAt(SOLO_LIST_Y, SOLO_ROWS, count, rowsDrawn, s_soloTop, ot);
 	}
 	if (AP_Solo_OptionGet(map[s_soloSel], &info))
 		/* A forced reason or warning needs both lines; otherwise the hint. */
@@ -1054,6 +1075,7 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 		if (i == s_soloSel)
 			MM_Solo_Highlight(y, ot);
 	}
+	MM_Solo_ScrollBarAt(SOLO_LIST_Y, s_soloRowsShown, count, s_soloRowsShown, s_soloTop, ot);
 	/* Three help lines under the eight rows: what the selected track is, then
 	   what the picks mean (that line used to sit on the title rule). */
 	{
@@ -1123,6 +1145,7 @@ static void MM_Solo_PageHelp(uint32_t *ot, struct GamepadBuffer *pad)
 	AP_Solo_OptionGet(s_soloHelpRow, &info);
 	MM_Solo_Title(info.label, ot);
 	MM_Solo_WrapLines(text, 0x30, SOLO_LIST_Y, 0x1A0, SOLO_HELP_LINES, s_soloHelpTop, 0, WHITE, ot);
+	MM_Solo_ScrollBarAt(SOLO_LIST_Y, SOLO_HELP_LINES, total, SOLO_HELP_LINES, s_soloHelpTop, ot);
 	MM_Solo_Footer(last ? NativeMenu_Labels("UP/DOWN: SCROLL  ^: BACK") : NativeMenu_Labels("^: BACK"), ot);
 }
 

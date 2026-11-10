@@ -162,6 +162,14 @@ static void CT_Footer(const char *status, const char *hint, uint32_t *ot)
 /* Rows 0..count-1 shown seven at a time around `selected`. */
 static int CT_First(int selected) { return selected < 0 ? 0 : (selected / CT_ROWS) * CT_ROWS; }
 
+/* The slim scroll bar of a list with more than CT_ROWS rows (A4-36): right of
+   the row highlight, inside the list panel. These lists show a whole page of
+   seven rows at a time, so the thumb follows the page. */
+static void CT_ScrollBar(int total, int first, uint32_t *ot)
+{
+    CTR_MenuDrawScrollBar(284, CT_ROW_Y0 - 2, CT_ROWS * CT_ROW_H, total, CT_ROWS, first, ot);
+}
+
 static int CT_Step(int value, int count, int tapped)
 {
     if (count <= 0) return 0;
@@ -1001,6 +1009,7 @@ static void CT_DrawActions(const struct CT_Action *a, int n, uint32_t *ot)
     int i, first = CT_First(s_ctActionSel);
     for (i = first; i < first + CT_ROWS && i < n; i++)
         CT_Row(i - first, a[i].label, i == s_ctActionSel, a[i].reason[0] ? GRAY : WHITE, ot);
+    CT_ScrollBar(n, first, ot);
 }
 
 /* The detail panel under an action list: the title, then what the selected
@@ -1196,6 +1205,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
             CT_RowState(i - first, line, MM_CustomSourceInstalled(r, &older) ? "Installed" : r->disabledReason[0] ? "Off" : "",
                         i == s_ctSubSel, WHITE, ot);
         }
+        CT_ScrollBar(count, first, ot);
         if (count)
         {
             const struct CustomSaphiRevision *r = CustomSaphi_Row(s_saphiCatalogue, versions[s_ctSubSel]);
@@ -1229,6 +1239,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
             CT_View(&s_ctItems[i], &row);
             CT_Row(i - first, row.title, i == *sel && s_ctFocus == CT_FOCUS_LIST, WHITE, ot);
         }
+        CT_ScrollBar(s_ctItemCount, first, ot);
         if (!s_ctItemCount)
             MM_CustomText_Draw(s_saphiQuery[0] ? "No search matches" :
                                s_ctFilter == CT_FILTER_INSTALLED ? "No installed tracks. Import or Browse to add some." :
@@ -1438,6 +1449,7 @@ static void CT_SeedFrame(int tapped, uint32_t *ot)
             CT_RowState(i - first, q->title, CT_SeedStateText(q), i == *sel && s_ctFocus == CT_FOCUS_LIST,
                         ap_seed_row_state(q) == AP_SEED_STATE_READY ? WHITE : RED, ot);
         }
+        CT_ScrollBar(s_ctSeedCount, first, ot);
         if (!s_ctSeedCount)
         {
             ap_net_seed_name(seed, sizeof seed);

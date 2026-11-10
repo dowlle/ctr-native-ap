@@ -748,6 +748,16 @@ static void Controls_DrawRows(struct RectMenu *menu, uint32_t *ot, int device)
 			Config_DrawRowHighlight(ot, y);
 		}
 	}
+
+	// Rows beyond the screen: a slim scroll bar right of the highlight, with the
+	// window start held inside the list so the thumb stays in its track.
+	{
+		int top = s_scroll;
+		if (top > s_rowCount - CONFIG_MAX_VISIBLE_ROWS)
+			top = s_rowCount - CONFIG_MAX_VISIBLE_ROWS;
+		CTR_MenuDrawScrollBar(0x1E4, CONFIG_ROW_START_Y - 2, CONFIG_MAX_VISIBLE_ROWS * CONFIG_ROW_SPACING,
+		                      s_rowCount, CONFIG_MAX_VISIBLE_ROWS, top, ot);
+	}
 }
 
 static b32 MM_Controls_IsPickerOpen(void)
