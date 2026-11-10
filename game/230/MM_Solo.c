@@ -56,12 +56,6 @@
 #define SOLO_ROW_W (SOLO_ROW_R - SOLO_ROW_X)
 #define SOLO_HELP_Y 0xA8
 #define SOLO_FOOTER_Y 0xC4
-/* The slim scroll bar of a list that has more rows than fit (A4-36). */
-#define SOLO_BAR_X 0x1E4
-static void MM_Solo_ScrollBar(int total, int shown, int top, uint32_t *ot)
-{
-	CTR_MenuDrawScrollBar(SOLO_BAR_X, SOLO_LIST_Y - 2, SOLO_ROWS * SOLO_ROW_H, total, shown, top, ot);
-}
 /* The slim scroll bar of a list that has more rows than fit (A4-36): `lines`
    text lines from y, of which `shown` rows are on screen starting at row `top`
    out of `total`. Right of the row highlight, inside the menu frame. */
