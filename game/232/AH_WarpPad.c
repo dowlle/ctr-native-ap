@@ -612,8 +612,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 #ifdef CTR_AP
 				if (ap_content_plan_active())
 				{
-					const ctr_content_pad *pad = ap_content_plan_pad(levelID);
-					warppadLNG = (char *)(pad && pad->occupied ? pad->display_name : "No entry selected");
+					warppadLNG = (char *)UI_TrackName(levelID);
 				}
 				else
 #endif
