@@ -16,6 +16,21 @@ int DecalFont_LineBoxOffset(const char *text, int width, s16 font, int slot)
         width, textBoxClocks[slot].ms);
 }
 
+int DecalFont_LineBoxPrefixLen(const char *text, int width, s16 font)
+{
+    int n = 0, used = 0;
+    int dots = DecalFont_GetLineWidthStrlen("...", 3, font);
+    if (DecalFont_GetLineWidthStrlen((char *)text, -1, font) <= width)
+        return (int)strlen(text);
+    while (text[n])
+    {
+        int advance = DecalFont_GetLineWidthStrlen((char *)text + n, 1, font);
+        if (used + advance + dots > width) break;
+        used += advance; n++;
+    }
+    return n;
+}
+
 /* Both environment packets are allocated before drawing any glyphs. If the
    arena is full, skip the line rather than leave an unpaired scissor behind. */
 static int TextBox_Environments(uint32_t *ot, int x, int y, int w, int h, void **clip)
@@ -71,14 +86,9 @@ void DecalFont_DrawLineBox(const char *text, int x, int y, int width,
     flags &= ~(JUSTIFY_CENTER | JUSTIFY_RIGHT);
     if (mode != TEXT_MARQUEE)
     {
-        int n = 0, used = 0;
+        int n = DecalFont_LineBoxPrefixLen(text, width, font);
+        int used = DecalFont_GetLineWidthStrlen((char *)text, n, font);
         int dots = DecalFont_GetLineWidthStrlen("...", 3, font);
-        while (n < len)
-        {
-            int advance = DecalFont_GetLineWidthStrlen((char *)text + n, 1, font);
-            if (used + advance + dots > width) break;
-            used += advance; n++;
-        }
         uint32_t *saved = pb->ptrOT;
         pb->ptrOT = ot;
         DecalFont_DrawLineStrlen((char *)text, n, x, y, font, flags);

@@ -60,6 +60,8 @@ int main(void) {
     for(int w=1;w<=480;w++) {
         reset();DecalFont_DrawLineBox("Long title with @ [ ^ * and punctuation: ...",16,80,w,FONT_SMALL,0,TEXT_ELLIPSIS,0,&ot);
         assert(drawWidth<=w);assert(envCount==0);
+        int n=DecalFont_LineBoxPrefixLen("Long title with @ [ ^ * and punctuation: ...",w,FONT_SMALL);
+        assert(DecalFont_GetLineWidthStrlen("Long title with @ [ ^ * and punctuation: ...",n,FONT_SMALL)<=w);
     }
     reset();DecalFont_DrawLineBox("St Patricks Day Hub World",136,80,240,FONT_BIG,0,TEXT_MARQUEE,0,&ot);
     assert(ne==3&&!memcmp(events,"RGC",3));assert(envCount==2);

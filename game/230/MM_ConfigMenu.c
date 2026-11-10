@@ -1109,7 +1109,8 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 			int shift = selected && !editing ? DecalFont_LineBoxOffset(buf, width, FONT_SMALL, TEXT_SLOT_CONNECTION) : 0;
 			int markWidth = width;
 			if (!selected && DecalFont_GetLineWidth(buf, FONT_SMALL) > width)
-				markWidth -= DecalFont_GetLineWidth("...", FONT_SMALL);
+				markWidth = DecalFont_GetLineWidthStrlen(buf,
+				    DecalFont_LineBoxPrefixLen(buf, width, FONT_SMALL), FONT_SMALL);
 			Conn_DrawSlotCaseMarks((const char *)e->valuePtr + start, valueX, y, shift, markWidth, ot);
 		}
 

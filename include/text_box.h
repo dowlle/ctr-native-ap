@@ -13,6 +13,7 @@ enum {
 void DecalFont_DrawLineBox(const char *text, int x, int y, int width,
     short font, int flags, int mode, int slot, unsigned int *ot);
 int DecalFont_LineBoxOffset(const char *text, int width, short font, int slot);
+int DecalFont_LineBoxPrefixLen(const char *text, int width, short font);
 void DecalFont_ResetLineBox(int slot);
 
 #endif
