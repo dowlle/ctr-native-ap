@@ -177,9 +177,11 @@ static void CT_ScrollBar(int total, int first, uint32_t *ot)
 static int CT_Step(int value, int count, int tapped)
 {
     if (count <= 0) return 0;
-    if (tapped & BTN_UP) { OtherFX_Play(0, 1); return (value + count - 1) % count; }
-    if (tapped & BTN_DOWN) { OtherFX_Play(0, 1); return (value + 1) % count; }
-    return value < count ? value : count - 1;
+    int next = value < count ? value : count - 1;
+    if (tapped & BTN_UP) { OtherFX_Play(0, 1); next = (value + count - 1) % count; }
+    else if (tapped & BTN_DOWN) { OtherFX_Play(0, 1); next = (value + 1) % count; }
+    if (next != value) DecalFont_ResetLineBox(TEXT_SLOT_LIBRARY);
+    return next;
 }
 
 /* ---- the release-profile package (old package page) --------------------- */
@@ -959,6 +961,7 @@ static int MM_CustomTracks_ConsumesBack(int section)
 static void CT_GoTab(int tab)
 {
     if (tab == s_ctTab) return;
+    DecalFont_ResetLineBox(TEXT_SLOT_LIBRARY);
     s_ctTab = tab;
     s_ctSub = CT_SUB_NONE;
     s_ctMessage[0] = 0;

@@ -1045,6 +1045,8 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	// suppressed: text mode owns input.
 	if (!s_connEditing && !justResolved && !soloClosed)
 	{
+		if (pad->buttonsTapped & (BTN_UP | BTN_DOWN))
+			DecalFont_ResetLineBox(TEXT_SLOT_CONNECTION);
 		if ((pad->buttonsTapped & BTN_UP) != 0)
 		{
 			menu->rowSelected = (menu->rowSelected > 0) ? menu->rowSelected - 1 : numRows - 1;

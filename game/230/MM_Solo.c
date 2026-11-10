@@ -259,6 +259,7 @@ static int s_soloRowsShown = SOLO_ROWS; /* list rows of the current page */
 /* Up / Down over `count` rows, keeping the selection in view. */
 static void MM_Solo_Navigate(struct GamepadBuffer *pad, int count)
 {
+	const int previous = s_soloSel;
 	if (count <= 0)
 	{
 		s_soloSel = 0;
@@ -277,6 +278,11 @@ static void MM_Solo_Navigate(struct GamepadBuffer *pad, int count)
 		OtherFX_Play(0, 1);
 	}
 	if (s_soloSel >= count) s_soloSel = count - 1;
+	if (s_soloSel != previous)
+	{
+		DecalFont_ResetLineBox(TEXT_SLOT_SOLO);
+		DecalFont_ResetLineBox(TEXT_SLOT_SOLO_VALUE);
+	}
 	if (s_soloSel < s_soloTop) s_soloTop = s_soloSel;
 	if (s_soloSel >= s_soloTop + s_soloRowsShown) s_soloTop = s_soloSel - s_soloRowsShown + 1;
 }

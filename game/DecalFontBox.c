@@ -31,9 +31,19 @@ int DecalFont_LineBoxPrefixLen(const char *text, int width, s16 font)
     return n;
 }
 
-/* Both environment packets are allocated before drawing any glyphs. If the
-   arena is full, skip the line rather than leave an unpaired scissor behind. */
-static int TextBox_Environments(uint32_t *ot, int x, int y, int w, int h, void **clip)
+/* The retail glyph emitter does not check capacity. Budget its worst case,
+   one GT4 per byte, before linking any part of a line. Keep the guard margin. */
+static int TextBox_HasRoom(int glyphs, unsigned envBytes)
+{
+    struct DB *db = sdata->gGT->backBuffer;
+    uintptr_t cursor = (uintptr_t)db->primMem.cursor;
+    uintptr_t guard = (uintptr_t)db->primMem.guardEnd;
+    size_t needed = (size_t)glyphs * sizeof(POLY_GT4) + envBytes;
+    return glyphs >= 0 && cursor <= guard && needed <= guard - cursor;
+}
+
+/* Reserve both environments and every visible glyph before linking restore. */
+static int TextBox_Environments(uint32_t *ot, int x, int y, int w, int h, int glyphs, void **clip)
 {
     struct GameTracker *gt = sdata->gGT;
     struct DB *db = gt->backBuffer;
@@ -44,7 +54,7 @@ static int TextBox_Environments(uint32_t *ot, int x, int y, int w, int h, void *
     /* PSX inclusive endpoints wrap an empty clip at zero to 1023. */
     if (r <= l || b <= t) return 0;
     unsigned char *p = db->primMem.cursor;
-    if (p + 0x40 > (unsigned char *)db->primMem.guardEnd) return 0;
+    if (!TextBox_HasRoom(glyphs, 0x80)) return 0;
     for (u32 i = 0; i < sizeof env / 4; i++)
         CTR_WriteU32LE((u8 *)&env + i * 4, CTR_ReadU32LE((u8 *)&db->drawEnv + i * 4));
     env.clip.x += pb->rect.x; env.clip.y += pb->rect.y;
@@ -79,6 +89,7 @@ void DecalFont_DrawLineBox(const char *text, int x, int y, int width,
             pb->rect.h, gt->numPlyrCurrGame);
     if (textW <= width)
     {
+        if (!TextBox_HasRoom(len, 0)) return;
         DecalFont_DrawLineOT((char *)text, x, y, font, flags, ot);
         return;
     }
@@ -91,6 +102,7 @@ void DecalFont_DrawLineBox(const char *text, int x, int y, int width,
         int n = DecalFont_LineBoxPrefixLen(text, width, font);
         int used = DecalFont_GetLineWidthStrlen((char *)text, n, font);
         int dots = DecalFont_GetLineWidthStrlen("...", 3, font);
+        if (!TextBox_HasRoom(n + (dots <= width ? 3 : 0), 0)) return;
         uint32_t *saved = pb->ptrOT;
         pb->ptrOT = ot;
         DecalFont_DrawLineStrlen((char *)text, n, x, y, font, flags);
@@ -112,7 +124,7 @@ void DecalFont_DrawLineBox(const char *text, int x, int y, int width,
     }
     void *clip;
     if (first < 0 || !TextBox_Environments(ot, x, y - 2, width,
-        (font == FONT_BIG ? 17 : 12) + 4, &clip)) return;
+        (font == FONT_BIG ? 17 : 12) + 4, count, &clip)) return;
     uint32_t *saved = pb->ptrOT;
     pb->ptrOT = ot;
     DecalFont_DrawLineStrlen((char *)text + first, count, firstX, y, font, flags);

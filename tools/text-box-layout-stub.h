@@ -7,3 +7,4 @@ void DecalFont_DrawLineBox(const char *text, int x, int y, int width,
     (void)mode; (void)slot;
     MM_CustomText_DrawFont(text, x, y, width, 1, font, flags, ot);
 }
+void DecalFont_ResetLineBox(int slot) { (void)slot; }

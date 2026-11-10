@@ -264,6 +264,8 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
     }
     if (!s_arcadePrepareBusy && !s_arcadeConfirm && (tapped & (BTN_LEFT | BTN_RIGHT)))
     {
+        DecalFont_ResetLineBox(TEXT_SLOT_ARCADE);
+        DecalFont_ResetLineBox(TEXT_SLOT_ARCADE_DETAIL);
         s_arcadePage = (s_arcadePage + ((tapped & BTN_LEFT) ? pages - 1 : 1)) % pages;
         s_arcadeMessage[0] = 0;
         MM_TrackSelect_Video_State(1);
@@ -337,6 +339,11 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
     {
         if (rows && (tapped & (BTN_UP | BTN_DOWN)))
         {
+            if (rows > 1)
+            {
+                DecalFont_ResetLineBox(TEXT_SLOT_ARCADE);
+                DecalFont_ResetLineBox(TEXT_SLOT_ARCADE_DETAIL);
+            }
             row = (row + ((tapped & BTN_UP) ? rows - 1 : 1)) % rows;
             s_arcadeMotion = rows > 1 ? 3 : 0;
             s_arcadeMotionDirection = (tapped & BTN_UP) ? -1 : 1;

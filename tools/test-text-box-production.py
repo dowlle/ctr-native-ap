@@ -46,11 +46,22 @@ static void SetDrawEnv(void *p,DRAWENV *env) { memcpy(p,env,sizeof *env);environ
 static void AddPrim(uint32_t *ot,void *p) { assert(ot==game.pushBuffer_UI.ptrOT);events[ne++]=(p==arena?'R':'C'); }
 ''' % ("{" + "},{".join(table(n) for n in ("font_charPixWidth","font_buttonPixWidth","font_puncPixWidth")) + "}")
 fixture += function("game/DecalFont.c", "int DecalFont_GetLineWidthStrlen(char *character, int len, int fontType)")
+gpu = source("include/psx/libgpu.h")
+end = gpu.index("} POLY_GT4;") + len("} POLY_GT4;")
+start = gpu.rfind("typedef struct", 0, end)
+fixture += "\ntypedef short VERTTYPE;\n#define DECLARE_P_ADDR uint32_t tag;\n" + gpu[start:end] + "\n"
 fixture += r'''
-static void DecalFont_DrawLineStrlen(char *s,s16 n,int x,s16 y,s16 f,int flags) { (void)y;drawWidth+=DecalFont_GetLineWidthStrlen(s,n,f);drawX=x;drawFlags=flags;events[ne++]='G'; }
+static void DecalFont_DrawLineStrlen(char *s,s16 n,int x,s16 y,s16 f,int flags) {
+    (void)y;drawWidth+=DecalFont_GetLineWidthStrlen(s,n,f);drawX=x;drawFlags=flags;events[ne++]='G';
+    size_t bytes=(size_t)n*sizeof(POLY_GT4);
+    assert((uintptr_t)db.primMem.cursor+bytes<=(uintptr_t)db.primMem.guardEnd);
+    memset(db.primMem.cursor,0xA5,bytes);db.primMem.cursor=(unsigned char *)db.primMem.cursor+bytes;
+}
 static void DecalFont_DrawLineOT(char *s,int x,int y,s16 f,int flags,uint32_t *ot) { assert(ot==game.pushBuffer_UI.ptrOT);DecalFont_DrawLineStrlen(s,strlen(s),x,y,f,flags); }
 '''
 fixture += source("game/DecalFontBox.c").replace("#include <common.h>", "")
+fixture += "\n#define BTN_UP 1\n#define BTN_DOWN 2\nstatic void OtherFX_Play(int a,int b) {(void)a;(void)b;}\n"
+fixture += function("game/230/MM_CustomTracks.c", "static int CT_Step(int value, int count, int tapped)")
 fixture += r'''
 static void reset(void) { db.primMem.cursor=arena;ne=envCount=drawWidth=0; }
 int main(void) {
@@ -73,12 +84,34 @@ int main(void) {
         reset();DecalFont_DrawLineBox("St Patricks Day Hub World",136,80,240,FONT_BIG,0,TEXT_MARQUEE,0,&ot);
     }
     assert(game.timer==0&&DecalFont_LineBoxOffset("St Patricks Day Hub World",240,FONT_BIG,0)==60);
+    /* Adjacent revisions share a title: actual menu navigation must restart it. */
+    reset();DecalFont_DrawLineBox("St Patricks Day Hub World",32,68,244,FONT_SMALL,0,TEXT_MARQUEE,TEXT_SLOT_LIBRARY,&ot);
+    for(unsigned f=181;f<=360;f++) {
+        state.frameCounter=f;game.frameTimer_VsyncCallback=f;
+        reset();DecalFont_DrawLineBox("St Patricks Day Hub World",32,68,244,FONT_SMALL,0,TEXT_MARQUEE,TEXT_SLOT_LIBRARY,&ot);
+    }
+    assert(DecalFont_LineBoxOffset("St Patricks Day Hub World",244,FONT_SMALL,TEXT_SLOT_LIBRARY)>0);
+    assert(CT_Step(0,2,BTN_DOWN)==1);
+    state.frameCounter++;game.frameTimer_VsyncCallback++;
+    reset();DecalFont_DrawLineBox("St Patricks Day Hub World",32,83,244,FONT_SMALL,0,TEXT_MARQUEE,TEXT_SLOT_LIBRARY,&ot);
+    assert(DecalFont_LineBoxOffset("St Patricks Day Hub World",244,FONT_SMALL,TEXT_SLOT_LIBRARY)==0);
     reset();DecalFont_DrawLineBox("St Patricks Day Hub World",-240,80,240,FONT_BIG,0,TEXT_MARQUEE,1,&ot);
     assert(ne==0&&envCount==0); /* empty PSX scissor endpoints would wrap */
     reset();DecalFont_DrawLineBox("St Patricks Day Hub World",136,-30,240,FONT_BIG,0,TEXT_MARQUEE,1,&ot);
     assert(ne==0&&envCount==0);
     reset();DecalFont_DrawLineBox("Acid Lake",256,80,240,FONT_BIG,JUSTIFY_CENTER,TEXT_MARQUEE,0,&ot);
     assert(envCount==0&&ne==1&&drawFlags==JUSTIFY_CENTER);
+    /* Real GT4-sized glyph writes, across every near-capacity boundary. */
+    for(int available=0;available<=1600;available++) {
+        reset();db.primMem.guardEnd=arena+available;
+        DecalFont_DrawLineBox("St Patricks Day Hub World",136,80,240,FONT_BIG,0,TEXT_MARQUEE,0,&ot);
+        assert((uintptr_t)db.primMem.cursor<=(uintptr_t)db.primMem.guardEnd);
+        assert((ne==0&&envCount==0)||(ne==3&&envCount==2));
+        reset();DecalFont_DrawLineBox("A long line of text",16,80,100,FONT_SMALL,0,TEXT_ELLIPSIS,0,&ot);
+        assert((uintptr_t)db.primMem.cursor<=(uintptr_t)db.primMem.guardEnd);
+        reset();DecalFont_DrawLineBox("Short",16,80,240,FONT_SMALL,0,TEXT_MARQUEE,0,&ot);
+        assert((uintptr_t)db.primMem.cursor<=(uintptr_t)db.primMem.guardEnd);
+    }
     reset();db.primMem.guardEnd=arena;DecalFont_DrawLineBox("St Patricks Day Hub World",136,80,240,FONT_BIG,0,TEXT_MARQUEE,0,&ot);
     assert(ne==0&&envCount==0); /* allocation cannot emit half a clip pair */
     puts("PASS: production width, ellipses at every box width, packet order, clip and restore, fitting alignment, arena exhaustion");
