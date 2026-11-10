@@ -13,8 +13,9 @@ This checks the production wiring:
    no path has two points, and ACTION_BOT is set only on the success path.
 2. The ghost clears ACTION_BOT before the convert, so the bit afterwards says
    whether the convert happened.
-3. BOTS_ThTick_Drive runs only under that test. A refused ghost is hidden and
-   its thread parked on an empty tick, so the next frame cannot retry it.
+3. BOTS_ThTick_Drive runs only under that test, with nothing between the
+   convert and the test. A refused ghost is hidden, taken off the map and its
+   thread parked on an empty tick, so the next frame cannot retry it.
 4. No other caller drives a converted driver directly.
 """
 from pathlib import Path
@@ -74,11 +75,20 @@ conv = end_block.index('BOTS_Driver_Convert(d);')
 test = end_block.index('if ((d->actionsFlagSet & ACTION_BOT) != 0)')
 drive = end_block.index('BOTS_ThTick_Drive(t);')
 check(clear < conv < test < drive, 'clear, convert, test, then drive')
+between = end_block[conv + len('BOTS_Driver_Convert(d);'):test]
+check(not re.search(r'\S', between), 'nothing runs between the convert and its test')
+check(len(re.findall(r'ACTION_BOT', end_block)) == 2, 'ACTION_BOT is only cleared and then tested at the end of tape')
 check(end_block.count('BOTS_ThTick_Drive(') == 1, 'one drive call at the end of tape')
 guarded = body(end_block[test:], 'if ((d->actionsFlagSet & ACTION_BOT) != 0)')
 check('BOTS_ThTick_Drive(t);' in guarded, 'the drive call is inside the converted branch')
 refused = body(end_block[test + len(guarded):], 'else')
 check('inst->flags |= HIDE_MODEL;' in refused, 'a refused ghost is hidden')
+check('d->ghostBoolInit = 0;' in refused, 'a refused ghost leaves the map')
+map_src = (root / 'game/UI/UI_Map.c').read_text()
+check('if (*(s16 *)((int)d + 0x632) == 0)' in body(map_src, 'void UI_Map_DrawGhosts('),
+      'the map skips a ghost whose ghostBoolInit (0x632) is clear')
+vehicle = (root / 'include/namespace_Vehicle.h').read_text()
+check(re.search(r'// 0x632\s*\n\s*s16 ghostBoolInit;', vehicle) is not None, 'ghostBoolInit is the field at 0x632')
 check('t->funcThTick = GhostReplay_ThTickParked;' in refused, 'a refused ghost is parked')
 check(not re.search(r'\bBOTS_\w+\s*\(', refused), 'the refused branch calls no bot code')
 check(end_block.rindex('d->actionsFlagSet |= ACTION_RACE_FINISHED;') > drive, 'both branches still mark the ghost finished')

@@ -129,8 +129,11 @@ void GhostReplay_ThTick(struct Thread *t)
 					// botData unset, so BOTS_ThTick_Drive would read a NULL nav
 					// frame. Retail tracks always convert. Hide the ghost and
 					// stop its thread instead (A4-27: Retry in a custom Time
-					// Trial crashed when the replayed tape ran out).
+					// Trial crashed when the replayed tape ran out). Clearing
+					// ghostBoolInit also takes it off the map (UI_Map_DrawGhosts);
+					// GhostReplay_Init2 sets it again for the next race.
 					inst->flags |= HIDE_MODEL;
+					d->ghostBoolInit = 0;
 					t->funcThTick = GhostReplay_ThTickParked;
 				}
 
