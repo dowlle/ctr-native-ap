@@ -1128,6 +1128,17 @@ int AP_BossLossEasingNow(void);
 struct MetaDataBOSS;
 struct MetaDataBOSS *AP_BossVenueAttackSchedule(int fill);
 
+// A4-48a2: a composed boss kit's missile or bomb, which the garage's retail
+// table does not carry, locks onto the human player when the retail rules find
+// no target. PickupBots_UpdateBoss brackets its projectile ShootNow with Set
+// (the weaponType about to fire) and Clear; ShootNow asks Target when retail
+// found nobody. NULL when the shot does not qualify.
+// IMPLEMENTED C-SIDE in ap_hooks_gates.c; the rule is ap_boss_kit_target_logic.h.
+struct Driver;
+void AP_BossKitShotSet(int weaponType);
+void AP_BossKitShotClear(void);
+struct Driver *AP_BossKitShotTarget(struct Driver *shooter);
+
 #ifdef __cplusplus
 } // extern "C"
 

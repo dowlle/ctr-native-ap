@@ -966,6 +966,10 @@ static void PickupBots_UpdateBoss(struct Driver *boss)
 #endif
 		boss->numWumpas = ((bossMeta->juiceFlag & BOSS_WEAPON_JUICED) != 0) ? 10 : 0;
 		boss->heldItemID = weaponID;
+#ifdef CTR_AP
+		// A4-48a2: a kit-added missile or bomb locks onto the player when retail finds nobody.
+		AP_BossKitShotSet(bossMeta->weaponType);
+#endif
 
 		if ((u16)(weaponID - PICKUPBOTS_ITEM_TNT) < 2)
 		{
@@ -1005,6 +1009,9 @@ static void PickupBots_UpdateBoss(struct Driver *boss)
 			}
 		}
 
+#ifdef CTR_AP
+		AP_BossKitShotClear();
+#endif
 		boss->heldItemID = PICKUPBOTS_ITEM_NONE;
 		boss->numWumpas = oldWumpa;
 	}
