@@ -219,5 +219,6 @@ int main(void)
 #endif
  CHECK(CustomRevision_Compare("2.0.0","1.99.0")>0);
  CHECK(CustomRevision_Compare("1.0.0","1.0.0-rc1")>0);
+ CHECK(scrollBars>0);
  printf("custom manager: %d checks, %d failures\n",checks,failures);return failures!=0;
 }

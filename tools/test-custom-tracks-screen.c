@@ -682,6 +682,18 @@ int main(void)
     revisit(); frame(0, NULL); CHECK(s_ctTab == CT_TAB_LIBRARY);
     room[1].scan = AP_SEED_SCAN_NOT_INSTALLED; room[2].scan = AP_SEED_SCAN_MISMATCH;
 
+    /* 11b. A4-36: a list longer than seven rows draws the scroll bar, a shorter one does not. */
+    {
+        int before;
+        revisit(); frame(0, NULL); before = scrollBars;
+        s_ctTab = CT_TAB_LIBRARY; frame(0, NULL); CHECK(s_ctItemCount <= 7 && scrollBars == before); /* six items fit */
+        s_ctTab = CT_TAB_SEED; frame(0, NULL); CHECK(s_ctSeedCount == 5 && scrollBars == before);
+        for (int k = 5; k < 12; k++) { row(k, "Extra track", "1.0.0", AP_SEED_SCAN_READY, AP_SEED_SOURCE_BUNDLED); room[k].index = -1; }
+        roomCount = 12; frame(0, NULL); CHECK(s_ctSeedCount == 12 && scrollBars == before + 1); /* one bar, track and thumb */
+        roomCount = 7; frame(0, NULL); CHECK(s_ctSeedCount == 7 && scrollBars == before + 1);   /* exactly seven fit: no new bar */
+        roomCount = 5;
+    }
+
     /* 12. A room without a content plan that names the release profile. */
     seedActive = 0; seedSelected = 1; pkgStatus.state = CTR_CT_MANAGER_NOT_INSTALLED;
     revisit(); frame(0, "seed-legacy"); CHECK(s_ctTab == CT_TAB_SEED && s_ctSeedCount == 1 && has("Missing"));
@@ -826,6 +838,7 @@ int main(void)
     }
     scanState = -1; installState = -1;
 
+    CHECK(scrollBars > 0);
     printf("custom tracks screen: %d checks, %d failures\n", checks, failures);
     return failures != 0;
 }

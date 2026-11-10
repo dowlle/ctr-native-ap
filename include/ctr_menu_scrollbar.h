@@ -22,13 +22,13 @@ static inline int CTR_ScrollBarThumb(int total, int visible, int top, int trackH
 		top = 0;
 	if (top > maxTop)
 		top = maxTop;
-	h = trackH * visible / total;
+	h = (int)((long long)trackH * visible / total);
 	if (h < minH)
 		h = minH;
 	if (h > trackH)
 		h = trackH;
 	*thumbH = h;
-	*thumbY = (trackH - h) * top / maxTop;
+	*thumbY = (int)((long long)(trackH - h) * top / maxTop);
 	return 1;
 }
 

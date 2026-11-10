@@ -673,6 +673,7 @@ int main(void)
 	menuTestLetters = true;
 	MM_Solo_Go(SOLO_HOME); frame(0, "Xbox home hints");
 	CHECK(strstr(drawn, "A: PLAY") && strstr(drawn, "X: DETAILS") && strstr(drawn, "Y: BACK"));
+	CHECKM(scrollBars > 0, "the long Play Solo lists draw a scroll bar");
 	printf("%d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

@@ -34,6 +34,10 @@ int main(void)
 	// A long list keeps a thumb that can be seen.
 	CHECK("minimum thumb", CTR_ScrollBarThumb(2000, 9, 0, 126, 8, &y, &h) && h == 8);
 
+	// Large lists and tracks do not overflow.
+	CHECK("huge list", CTR_ScrollBarThumb(2000000000, 1000, 1999999000, 100000, 8, &y, &h) && h == 8 && y == 100000 - 8);
+	CHECK("huge track", CTR_ScrollBarThumb(2000000000, 1000000000, 1000000000, 2000000000, 8, &y, &h) && h == 1000000000 && y == 1000000000);
+
 	// Every shape: inside the track, monotone in top, ends exact.
 	for (total = 2; total <= 200; total++)
 		for (visible = 1; visible < total && visible <= 20; visible++)
