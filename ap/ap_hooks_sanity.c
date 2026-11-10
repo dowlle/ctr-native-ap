@@ -182,8 +182,9 @@ void AP_SanityDrawGlow(struct GameTracker *gt)
     static const short rim[9][2] = {{256,0},{181,181},{0,256},{-181,181},
         {-256,0},{-181,-181},{0,-256},{181,-181},{256,0}};
     struct HaloPacket { u32 tag, mode, colour0, xy0, colour1, xy1, colour2, xy2; };
-    int camera, i, j;
+    int camera, i, j, budget;
     if (!gt || ap_sanity_ready <= 0 || sdata->Loading.stage != LOAD_IDLE || !AP_SanityRoute(gt)) return;
+    budget = AP_SanityHaloBudget((char *)gt->backBuffer->primMem.end - (char *)gt->backBuffer->primMem.cursor);
     for (camera = 0; camera < gt->numPlyrCurrGame; ++camera) {
         struct PushBuffer *pb = &gt->pushBuffer[camera];
         gte_SetGeomScreen(pb->distanceToScreen_PREV);
@@ -209,6 +210,7 @@ void AP_SanityDrawGlow(struct GameTracker *gt)
             colour = AP_SanityHaloColour(look, AP_SANITY_VISIBILITY);
             bucket = (depth + 160) >> 6;
             if (bucket > 1023) continue;
+            if (budget-- <= 0) return;
             if ((char *)gt->backBuffer->primMem.end - (char *)gt->backBuffer->primMem.cursor < (int)(8 * sizeof(struct HaloPacket))) return;
             for (j = 0; j < 8; ++j) {
                 struct HaloPacket *p = (struct HaloPacket *)gt->backBuffer->primMem.cursor;

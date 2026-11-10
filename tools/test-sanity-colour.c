@@ -7,6 +7,11 @@ int main(void)
     int variant, logic, checked;
     assert(AP_SANITY_VISIBILITY == 1);
     assert(AP_PAD_RED_RGB == 0xB85648u);
+    assert(AP_SanityHaloBudget(-1) == 0);
+    assert(AP_SanityHaloBudget(1023) == 0);
+    assert(AP_SanityHaloBudget(1024) == 1);
+    assert(AP_SanityHaloBudget(8192) == 8);
+    assert(AP_SanityHaloBudget(1000000) == 32);
     for (checked = 0; checked <= 1; ++checked)
         for (logic = 0; logic <= 2; ++logic) {
             int look = AP_SanityLook(checked, logic);

@@ -24,6 +24,13 @@ static inline int AP_SanityBlend(int variant)
     return variant == 0 ? 0x600 : variant == 2 ? 0xB00 : 0x880;
 }
 
+static inline int AP_SanityHaloBudget(int freeBytes)
+{
+    // Keep at least three quarters of the remaining arena for the world.
+    int count = freeBytes > 0 ? freeBytes / (4 * 256) : 0;
+    return count < 32 ? count : 32;
+}
+
 static inline unsigned AP_SanityHaloColour(int look, int variant)
 {
     unsigned rgb = AP_PadLookRGB(look);
