@@ -352,7 +352,16 @@ static u32 PlaySound3D_CalculateLR(s32 *dir)
 static u32 PlaySound3D_BuildFlags(struct GameTracker *gGT, int cameraIndex, u32 distance, u32 lr)
 {
 	u32 volume;
+#ifdef CTR_NATIVE
+	// NOTE(A4-39): CAM leaves ptrQuadBlock NULL when no quadblock is under the
+	// camera (CAM.c checks it before every use). On PS1 this read lands in low
+	// RAM; natively it faults, seen when an AI kart broke a weapon crate on a
+	// Coco Team Racing track. No quadblock means no echo.
+	const struct QuadBlock *cameraQuad = gGT->cameraDC[cameraIndex].ptrQuadBlock;
+	u32 echo = cameraQuad ? ((u32)cameraQuad->quadFlags & QUADBLOCK_FLAG_ENGINE_ECHO) : 0;
+#else
 	u32 echo = (u32)gGT->cameraDC[cameraIndex].ptrQuadBlock->quadFlags & QUADBLOCK_FLAG_ENGINE_ECHO;
+#endif
 
 	if (distance < 301)
 	{
@@ -404,7 +413,16 @@ void PlaySound3D(u32 soundID, struct Instance *inst)
 static u32 PlaySound3D_Flags_BuildFlags(struct GameTracker *gGT, int cameraIndex, u32 distance, u32 lr)
 {
 	u32 volume;
+#ifdef CTR_NATIVE
+	// NOTE(A4-39): CAM leaves ptrQuadBlock NULL when no quadblock is under the
+	// camera (CAM.c checks it before every use). On PS1 this read lands in low
+	// RAM; natively it faults, seen when an AI kart broke a weapon crate on a
+	// Coco Team Racing track. No quadblock means no echo.
+	const struct QuadBlock *cameraQuad = gGT->cameraDC[cameraIndex].ptrQuadBlock;
+	u32 echo = cameraQuad ? ((u32)cameraQuad->quadFlags & QUADBLOCK_FLAG_ENGINE_ECHO) : 0;
+#else
 	u32 echo = (u32)gGT->cameraDC[cameraIndex].ptrQuadBlock->quadFlags & QUADBLOCK_FLAG_ENGINE_ECHO;
+#endif
 
 	if (distance < 301)
 	{

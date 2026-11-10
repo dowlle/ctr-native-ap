@@ -490,6 +490,12 @@ void *LOAD_ReadFile_ex(struct BigHeader *bigfile, u32 loadType, int subfileIndex
 					CustomTrack_Log("[CustomTracks] level subfile %d: cleared %d SpawnType1 entr%s outside the pointer map\n",
 					                subfileIndex, st1Cleared, st1Cleared == 1 ? "y" : "ies");
 				}
+				int bspCleared = CustomTrackPolicy_ClearUnmappedBspHitboxes((unsigned char *)ptrDst, ctOverrideSize);
+				if (bspCleared > 0)
+				{
+					CustomTrack_Log("[CustomTracks] level subfile %d: cleared %d BSP leaf hitbox pointer%s outside the pointer map\n",
+					                subfileIndex, bspCleared, bspCleared == 1 ? "" : "s");
+				}
 			}
 			if (callback != NULL)
 			{
