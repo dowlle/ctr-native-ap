@@ -72,8 +72,10 @@ only the custom-track writer reports an incomplete write
 (`was not written completely`; both report `could not write` when the file
 does not open). Retry, the pause
 menu's Restart, Change Level, Change Character and Quit all keep the file as it
-is; the marker set is rebuilt from it when the track is loaded or restarted
-(`AP_Author_OnFrame` forgets its handles on the spawn pool's generation bump).
+is. The markers are rebuilt from the in-memory table, which the file is read
+into once per run, when the track is loaded or restarted (`AP_Author_OnFrame`
+forgets its handles on the spawn pool's generation bump). So a restart can
+show boxes that a damaged file no longer holds; the next launch reads the file.
 After the finish line the keys stay live, and a drop there is filed like any
 other.
 
