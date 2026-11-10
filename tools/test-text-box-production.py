@@ -73,6 +73,17 @@ static void addLineF2(u32 *ot,LINE_F2 *p) {AddPrim(ot,p);}
 fixture += function("game/230/MM_ConfigMenu.c", "static void Conn_DrawSlotCaseMarks(const char *slot, int valueX, int y, int shift, int visibleWidth, uint32_t *ot)")
 fixture += "\n#define BTN_UP 1\n#define BTN_DOWN 2\nstatic void OtherFX_Play(int a,int b) {(void)a;(void)b;}\n"
 fixture += function("game/230/MM_CustomTracks.c", "static int CT_Step(int value, int count, int tapped)")
+fixture += '\n#define CTR_CUSTOM_TRACKS\n#include <platform/native_custom_track_library.h>\n#include <platform/native_custom_track_manager.h>\n#include <platform/native_saphi_catalogue.h>\n'
+fixture += '''
+enum { CT_ITEM_INSTALLED, CT_ITEM_CATALOGUE, CT_ITEM_PACKAGE };
+struct CT_LibItem { int kind; size_t index; };
+struct CT_LibView {
+    const struct CustomTrackLibraryEntry *installed;
+    const struct CustomSaphiRevision *source;
+};
+static const struct CustomTrackManagerPackage *AP_CustomContentPackage(void) { return NULL; }
+'''
+fixture += function("game/230/MM_CustomTracks.c", "static void CT_LibraryMarqueeOwner(const struct CT_LibItem *item, const struct CT_LibView *view)")
 fixture += function("game/230/MM_CustomTrackSelect.c", "static void MM_CustomTrackSelect_MarqueePin(const char *pin)")
 fixture += "\n#define AP_FEED_LINE_H 12\nstatic AP_FeedLines ap_feed;\nstatic struct {int box_placement_refused;} ctr_cfg;\n"
 fixture += function("ap/ap_hooks_feed.c", "static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)")
@@ -109,9 +120,27 @@ int main(void) {
     state.frameCounter++;game.frameTimer_VsyncCallback++;
     reset();DecalFont_DrawLineBox("St Patricks Day Hub World",32,83,244,FONT_SMALL,0,TEXT_MARQUEE,TEXT_SLOT_LIBRARY,&ot);
     assert(DecalFont_LineBoxOffset("St Patricks Day Hub World",244,FONT_SMALL,TEXT_SLOT_LIBRARY)==0);
+    /* Catalogue refresh replaces bytes under the same title/version/index. */
+    struct CustomSaphiRevision revision={0};
+    struct CT_LibItem selected={CT_ITEM_CATALOGUE,0};
+    struct CT_LibView selectedView={NULL,&revision};
+    revision.trackID=101;revision.lev.id=1;revision.vrm.id=2;
+    strcpy(revision.version,"1.0");
+    CT_LibraryMarqueeOwner(&selected,&selectedView);
+    for(unsigned i=0;i<=180;i++) {
+        state.frameCounter++;game.frameTimer_VsyncCallback++;
+        CT_LibraryMarqueeOwner(&selected,&selectedView);
+        reset();DecalFont_DrawLineBox("St Patricks Day Hub World",32,68,244,FONT_SMALL,0,TEXT_MARQUEE,TEXT_SLOT_LIBRARY,&ot);
+    }
+    assert(DecalFont_LineBoxOffset("St Patricks Day Hub World",244,FONT_SMALL,TEXT_SLOT_LIBRARY)>0);
+    revision.lev.crc32=42;
+    CT_LibraryMarqueeOwner(&selected,&selectedView);
+    state.frameCounter++;game.frameTimer_VsyncCallback++;
+    reset();DecalFont_DrawLineBox("St Patricks Day Hub World",32,68,244,FONT_SMALL,0,TEXT_MARQUEE,TEXT_SLOT_LIBRARY,&ot);
+    assert(DecalFont_LineBoxOffset("St Patricks Day Hub World",244,FONT_SMALL,TEXT_SLOT_LIBRARY)==0);
     MM_CustomTrackSelect_MarqueePin("old-revision");
-    for(unsigned f=362;f<=542;f++) {
-        state.frameCounter=f;game.frameTimer_VsyncCallback=f;
+    for(unsigned i=0;i<=180;i++) {
+        state.frameCounter++;game.frameTimer_VsyncCallback++;
         reset();DecalFont_DrawLineBox("St Patricks Day Hub World",40,80,240,FONT_BIG,0,TEXT_MARQUEE,TEXT_SLOT_ARCADE,&ot);
     }
     assert(DecalFont_LineBoxOffset("St Patricks Day Hub World",240,FONT_BIG,TEXT_SLOT_ARCADE)>0);

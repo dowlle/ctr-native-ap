@@ -214,6 +214,34 @@ struct CT_LibView
     const char *title, *version, *author;
 };
 
+/* A refresh can replace the selected revision without changing its title or
+   row index. Copy its identity before the catalogue/store can be replaced. */
+static void CT_LibraryMarqueeOwner(const struct CT_LibItem *item, const struct CT_LibView *view)
+{
+    static char previous[1024];
+    char owner[1024];
+    owner[0] = 0;
+    if (item && item->kind == CT_ITEM_INSTALLED && view->installed)
+        snprintf(owner, sizeof owner, "installed:%s", view->installed->manifestSha256);
+    else if (item && item->kind == CT_ITEM_CATALOGUE && view->source)
+    {
+        const struct CustomSaphiRevision *r = view->source;
+        snprintf(owner, sizeof owner, "source:%d:%s:%d:%u:%u:%s:%d:%u:%u:%s:%d:%u:%u:%s",
+                 r->trackID, r->version, r->lev.id, r->lev.bytes, r->lev.crc32, r->lev.path,
+                 r->vrm.id, r->vrm.bytes, r->vrm.crc32, r->vrm.path,
+                 r->sca.id, r->sca.bytes, r->sca.crc32, r->sca.path);
+    }
+    else if (item && item->kind == CT_ITEM_PACKAGE)
+    {
+        const struct CustomTrackManagerPackage *p = AP_CustomContentPackage();
+        snprintf(owner, sizeof owner, "package:%s:%s:%s:%s", p->packageUuid,
+                 p->version, p->levSha256, p->vrmSha256);
+    }
+    if (!strcmp(previous, owner)) return;
+    snprintf(previous, sizeof previous, "%s", owner);
+    DecalFont_ResetLineBox(TEXT_SLOT_LIBRARY);
+}
+
 static const struct CustomSaphiRevision *CT_PreferredSource(int trackID)
 {
     const struct CustomSaphiRevision *best = NULL;
@@ -1063,6 +1091,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
     }
     if (s_ctItemCount) { item = &s_ctItems[*sel]; CT_View(item, &v); nActions = CT_LibraryActions(item, &v, actions); }
     else if (s_ctFocus == CT_FOCUS_ACTIONS || s_ctFocus == CT_FOCUS_SUB) { s_ctFocus = CT_FOCUS_LIST; s_ctSub = CT_SUB_NONE; }
+    CT_LibraryMarqueeOwner(item, item ? &v : NULL);
 
     /* Page controls: Filter, Search, Refresh catalogue, Rescan local files. */
     if (s_ctFocus == CT_FOCUS_CONTROLS)
