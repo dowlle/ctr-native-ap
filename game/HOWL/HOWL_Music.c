@@ -35,23 +35,28 @@ void Music_LoadBanks(void)
 	struct Bank thisBank;
 	struct GameTracker *gGT = sdata->gGT;
 	int level = gGT->levelID;
+	int reverbLevel = level;
 	u8 *arr = (u8 *)&sdata->audioDefaults[7];
 
 #ifdef CTR_CUSTOM_PACKAGES
 	// Retail slot sizes back before any bank of this load (HOWL_CustomMusic.c).
 	HOWL_CustomMusic_Reset();
+	reverbLevel = MainRaceTrack_IdentityLevelID();
+#endif
+
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	// AP custom venues retain a retail host slot. Match the byte loader's
+	// serving predicates rather than borrowing that slot's reverb row.
+	int bossRace = (gGT->gameMode1 & ADVENTURE_BOSS) != 0;
+	if (CustomTrack_GarageVenueServing(level, gGT->bossID, bossRace) >= 0 ||
+	    CustomTrack_OxideFinalServing(level, gGT->bossID, bossRace) ||
+	    CustomTrack_CortexTrackServing(level, bossRace) ||
+	    CustomTrack_ServingLoad(level, (gGT->gameMode1 & ADVENTURE_CUP) != 0, gGT->cup.cupID))
+		reverbLevel = INTRO_RACE_TODAY; // no retail row: default mode 4
 #endif
 
 	Audio_SetReverbMode(
-	    // Level ID
-#ifdef CTR_CUSTOM_PACKAGES
-	    // A custom-page race passes its own id, which has no reverb row, so the
-	    // engine's default for such a level applies (native_custom_identity.h).
-	    MainRaceTrack_IdentityLevelID(),
-#else
-	    level,
-#endif
-
+	    reverbLevel,
 #ifdef CTR_AP
 	    // bossID is the garage, whose shuffled venue may be another track.
 	    // Use that track's reverb (and the custom identity's default), while
