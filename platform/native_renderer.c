@@ -1087,14 +1087,15 @@ global_variable const char *gpu_shader_common = "	varying vec4 v_texcoord;\n"
 const char *gte_shader_4 = GPU_FRAGMENT_SAMPLE_SHADER(4);
 const char *gte_shader_8 = GPU_FRAGMENT_SAMPLE_SHADER(8);
 const char *gte_shader_16 = GPU_FRAGMENT_SAMPLE_SHADER(16);
-const char *gte_shader_32_rgba = "	uniform sampler2D s_texture;\n"
+const char *gte_shader_32_rgba = AP_SANITY_RECOLOUR_GLSL
+                                 "	uniform sampler2D s_texture;\n"
                                  "	uniform int psxDrawMaskSet;\n"
                                  "	uniform vec2 texelSize;\n"
                                  "	void main() {\n"
                                  "		vec2 tc = v_texcoord.xy * texelSize + texelSize * 0.5;\n"
                                  "		vec4 color = texture2D(s_texture, tc);\n"
-	    "\t\tcolor *= v_color; color.rgb = sanityRecolour(color.rgb, v_sanityTag);\n" \
-	    "\t\tfragColor = dither(color);\n" \
+                                 "\t\tcolor *= v_color; color.rgb = sanityRecolour(color.rgb, v_sanityTag);\n"
+                                 "\t\tfragColor = dither(color);\n"
                                  "		fragColor.a = float(psxDrawMaskSet);\n"
                                  "	}\n";
 

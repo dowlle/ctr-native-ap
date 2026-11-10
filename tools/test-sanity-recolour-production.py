@@ -1,4 +1,4 @@
-"""Exercise production texture copies and GPU metadata with reused vertices."""
+"""Exercise production packets and GLSL programs, requires glslang-tools."""
 import os
 from pathlib import Path
 import subprocess
@@ -76,8 +76,48 @@ int main(void) {
     puts("production recolour: private texture copy, nine tags, all vertex paths and reused slots pass");
 }
 '''
+def validate_shaders(root, tmp):
+    renderer = (root / 'platform/native_renderer.c').read_text()
+    start = renderer.index('#define GPU_SAMPLE_TEXTURE_4BIT_FUNC')
+    end = renderer.index('internal int NativeRenderer_Shader_CheckShaderStatus(', start)
+    definitions = renderer[start:end]
+    headers = ''
+    for name in ['GLSL_HEADER_VERT', 'GLSL_HEADER_FRAG']:
+        start = renderer.index('const char *' + name + ' =')
+        # Semicolons inside shader strings are part of the source, not the C declaration.
+        end = renderer.index(';\n', start)
+        headers += renderer[start:end+1] + '\n'
+    dump = r'''
+int main(int argc, char **argv) {
+    const char *names[] = {"4","8","16","32"};
+    const char *sources[] = {gte_shader_4,gte_shader_8,gte_shader_16,gte_shader_32_rgba};
+    char path[4096];
+    (void)argc;
+    snprintf(path,sizeof path,"%s/native.vert",argv[1]);
+    FILE *f=fopen(path,"w");
+    if (!f) return 1;
+    fprintf(f,"%s%s%s",GLSL_HEADER_VERT,gpu_shader_common,GTE_VERTEX_SHADER); fclose(f);
+    for (int i=0;i<4;++i) {
+        snprintf(path,sizeof path,"%s/native-%s.frag",argv[1],names[i]);
+        f=fopen(path,"w"); if (!f) return 1;
+        fprintf(f,"%s%s%s%s",GLSL_HEADER_FRAG,gpu_shader_common,GPU_DITHERING,sources[i]); fclose(f);
+    }
+    return 0;
+}
+'''
+    src, exe = tmp / 'shaders.c', tmp / 'shaders'
+    src.write_text('#include <stdio.h>\n#include "ap_sanity_colour.h"\n#define global_variable\n' + definitions + headers + dump)
+    subprocess.run([os.environ.get('CC','cc'),'-std=c11','-I',str(root/'ap'),str(src),'-o',str(exe)],check=True)
+    subprocess.run([str(exe),str(tmp)],check=True)
+    validator = os.environ.get('CTR_GLSLANG_VALIDATOR','glslangValidator')
+    for name in ['4','8','16','32']:
+        subprocess.run([validator,'-l',str(tmp/'native.vert'),str(tmp/f'native-{name}.frag')],check=True)
+    print('production shaders: GLSL 140 vertex and all four fragment programs compile and link')
+
+
 with tempfile.TemporaryDirectory() as tmp:
     src, exe = Path(tmp) / 'recolour.c', Path(tmp) / 'recolour'
     src.write_text(fixture + production + tests)
     subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-I', str(root / 'ap'), str(src), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
+    validate_shaders(root, Path(tmp))
