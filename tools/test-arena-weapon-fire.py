@@ -28,6 +28,9 @@ fixture = r'''
 #include "ap/ap_itemsanity_logic.h"
 void AP_LogLine(const char *s) { (void)s; }
 void AP_NavRec_NoteItemFire(struct Driver *d, int id) { (void)d; (void)id; }
+struct Driver *AP_BossKitShotTarget(struct Driver *d) {
+    (void)d; assert(!IS_BOSS_RACE(sdata->gGT->gameMode1)); return NULL;
+}
 static int useId, useCount, boost;
 void AP_ItemsanityOnUse(struct Driver *d, int id) { (void)d; useId=id; useCount++; }
 #include "game/Vehicle/VehPickupItem.c"
