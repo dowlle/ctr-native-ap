@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b5984-0x800b5f50.
 
 
@@ -186,7 +190,15 @@ void RB_Armadillo_LInB(struct Instance *inst)
 	armObj->velX = inst->matrix.m[0][2] >> 7;
 	armObj->velZ = inst->matrix.m[2][2] >> 7;
 
+#ifdef CTR_CUSTOM_TRACKS
+	// A custom LEV can have count > 0 with no ST1_SPAWN entry (NULL, or cleared at
+	// load because the pointer map leaves it out; policy header decision 6).
+	// Without one the object keeps its defaults. Retail is unchanged.
+	if (!CustomTrackPolicy_St1EntryPresent(sdata->gGT->level1->ptrSpawnType1->count, ST1_SPAWN,
+	                                       (const void *const *)ST1_GETPOINTERS(sdata->gGT->level1->ptrSpawnType1)))
+#else
 	if (sdata->gGT->level1->ptrSpawnType1->count <= 0)
+#endif
 	{
 		return;
 	}

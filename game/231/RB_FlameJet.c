@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_CUSTOM_TRACKS
+#include <platform/native_custom_tracks.h>
+#endif
+
 struct HitboxDesc fjBoxDesc = {.inst = (struct Instance *)0,
                                .thread = (struct Thread *)0,
                                .bucket = (struct Thread *)0,
@@ -448,7 +452,15 @@ void RB_FlameJet_LInB(struct Instance *inst)
 	fjBoxDesc.bbox.max.y = 0x80;
 	fjBoxDesc.bbox.max.z = 0x140;
 
+#ifdef CTR_CUSTOM_TRACKS
+	// A custom LEV can have count > 0 with no ST1_SPAWN entry (NULL, or cleared at
+	// load because the pointer map leaves it out; policy header decision 6).
+	// Without one the object keeps its defaults. Retail is unchanged.
+	if (CustomTrackPolicy_St1EntryPresent(sdata->gGT->level1->ptrSpawnType1->count, ST1_SPAWN,
+	                                      (const void *const *)ST1_GETPOINTERS(sdata->gGT->level1->ptrSpawnType1)))
+#else
 	if (sdata->gGT->level1->ptrSpawnType1->count > 0)
+#endif
 	{
 		// put on separate cycles
 		void **pointers = ST1_GETPOINTERS(sdata->gGT->level1->ptrSpawnType1);

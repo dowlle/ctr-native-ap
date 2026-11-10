@@ -40,7 +40,10 @@
 //      count thresholds CAM.c used to guard its two cameras with both PASS on
 //      Baby T Park's full-width-with-holes table while the predicate that
 //      replaced them refuses, and that on every retail shape -- arcade and
-//      battle -- the two agree, which is the safety argument for the swap.
+//      battle -- the two agree, which is the safety argument for the swap,
+//   7b. that ST1 entries the pointer map does not relocate are cleared before
+//      relocation (Motor Sports Land's "map-" and "test"), and that retail and
+//      Baby T Park shapes, and bytes that are not a LEV, are left untouched.
 //
 // MUTATION SENSITIVITY. Each redirect term is asserted in a pair of rows that
 // differ in that term alone, so dropping any one of them from
@@ -787,6 +790,164 @@ static void test_st1_entry_present(void)
 	expect_int(CustomTrackPolicy_St1EntryPresent(0, 0, entries), 0, "an empty table is absent");
 	expect_int(CustomTrackPolicy_St1EntryPresent(-1, 0, entries), 0, "a negative count is absent");
 	expect_int(CustomTrackPolicy_St1EntryPresent(4, -1, entries), 0, "a negative index is absent");
+}
+
+// ---------------------------------------------------------------------------
+// 9b. ST1 entries outside the pointer map are cleared before relocation.
+// ---------------------------------------------------------------------------
+
+// A LEV subfile as the loader reads it: [u32 data size][data][u32 map
+// bytes][u32 offsets]. The data is big enough for the Level header (whose
+// ptrSpawnType1 is at 0x134) and one table at T_LEV_ST1.
+#define T_LEV_DATA  0x200uL
+#define T_LEV_ST1   0x1c0uL
+#define T_LEV_MAPN  8
+#define T_LEV_BYTES (4 + T_LEV_DATA + 4 + 4 * T_LEV_MAPN)
+
+static void t_put32(unsigned char *p, unsigned long v)
+{
+	p[0] = (unsigned char)v;
+	p[1] = (unsigned char)(v >> 8);
+	p[2] = (unsigned char)(v >> 16);
+	p[3] = (unsigned char)(v >> 24);
+}
+
+static unsigned long t_get32(const unsigned char *p)
+{
+	return (unsigned long)p[0] | ((unsigned long)p[1] << 8) | ((unsigned long)p[2] << 16) | ((unsigned long)p[3] << 24);
+}
+
+// Build a LEV whose table has `count` entries with the given raw values. Slots
+// whose bit is set in `mappedMask` go into the pointer map, plus the header's
+// own ptrSpawnType1 slot. Low bits are set on the header's offset and on the
+// first mapped entry's, as LOAD_RunPtrMap ignores them.
+static void t_build_lev(unsigned char *f, unsigned long count, const unsigned long *values, unsigned mappedMask)
+{
+	unsigned char *d = f + 4, *map = f + 4 + T_LEV_DATA;
+	unsigned long i;
+	int n = 0;
+
+	memset(f, 0, T_LEV_BYTES);
+	t_put32(f, T_LEV_DATA);
+	t_put32(d + 0x134, T_LEV_ST1);
+	t_put32(map + 4 + 4 * n++, 0x134 | 2);
+	t_put32(d + T_LEV_ST1, count);
+	for (i = 0; i < count && i < 15; i++)
+	{
+		t_put32(d + T_LEV_ST1 + 4 + 4 * i, values[i]);
+		if ((mappedMask >> i) & 1)
+		{
+			t_put32(map + 4 + 4 * n, (T_LEV_ST1 + 4 + 4 * i) | (n == 1 ? 1 : 0));
+			n++;
+		}
+	}
+	t_put32(map, 4uL * T_LEV_MAPN);
+}
+
+static unsigned long t_entry(const unsigned char *f, int i)
+{
+	return t_get32(f + 4 + T_LEV_ST1 + 4 + 4 * (unsigned long)i);
+}
+
+static void test_st1_clear_unmapped(void)
+{
+	static unsigned char f[T_LEV_BYTES], before[T_LEV_BYTES];
+	int i;
+
+	// Motor Sports Land, measured: count 4, entry 0 the minimap and entry 3 the
+	// intro camera path are in the map; entries 1 and 2 are the icon name bytes
+	// "map-" and "test", not in it.
+	{
+		const unsigned long msl[4] = { 0xc2fe8, 0x2d70616d, 0x74736574, 0xc8a68 };
+		t_build_lev(f, 4, msl, (1u << 0) | (1u << 3));
+		memcpy(before, f, sizeof f);
+		expect_int(CustomTrackPolicy_ClearUnmappedSt1(f, sizeof f), 2, "Motor Sports Land: two entries cleared");
+		expect_int(t_entry(f, 0) == 0xc2fe8, 1, "the mapped minimap entry is kept");
+		expect_int(t_entry(f, 1) == 0, 1, "\"map-\" in ST1_SPAWN is cleared");
+		expect_int(t_entry(f, 2) == 0, 1, "\"test\" in ST1_CAMERA_EOR is cleared");
+		expect_int(t_entry(f, 3) == 0xc8a68, 1, "the mapped intro camera path is kept");
+		before[4 + T_LEV_ST1 + 8] = before[4 + T_LEV_ST1 + 9] = before[4 + T_LEV_ST1 + 10] = before[4 + T_LEV_ST1 + 11] = 0;
+		before[4 + T_LEV_ST1 + 12] = before[4 + T_LEV_ST1 + 13] = before[4 + T_LEV_ST1 + 14] = before[4 + T_LEV_ST1 + 15] = 0;
+		expect_int(memcmp(f, before, sizeof f), 0, "and no other byte changes");
+
+		// After relocation the engine's guards now refuse the end-of-race camera
+		// and still take the fly-in and the map.
+		{
+			static const int present = 0;
+			const void *rel[4];
+			for (i = 0; i < 4; i++)
+				rel[i] = t_entry(f, i) ? (const void *)&present : NULL;
+			expect_int(CustomTrackPolicy_St1EntryPresent(4, T_ST1_CAMERA_EOR, rel), 0, "no end-of-race camera after the clear");
+			expect_int(CustomTrackPolicy_St1EntryPresent(4, T_ST1_CAMERA_PATH, rel), 1, "the fly-in stays");
+			expect_int(CustomTrackPolicy_St1EntryPresent(4, T_ST1_MAP, rel), 1, "the minimap stays");
+		}
+		expect_int(CustomTrackPolicy_ClearUnmappedSt1(f, sizeof f), 0, "a second pass clears nothing");
+	}
+
+	// Retail arcade: every non-NULL entry is in the map, NULL ST1_SPAWN is not.
+	{
+		const unsigned long retail[4] = { 0x1000, 0, 0x2000, 0x3000 };
+		t_build_lev(f, 4, retail, (1u << 0) | (1u << 2) | (1u << 3));
+		memcpy(before, f, sizeof f);
+		expect_int(CustomTrackPolicy_ClearUnmappedSt1(f, sizeof f), 0, "retail arcade shape: nothing cleared");
+		expect_int(memcmp(f, before, sizeof f), 0, "retail arcade shape: bytes unchanged");
+	}
+
+	// Baby T Park: holes already NULL, the rest mapped.
+	{
+		const unsigned long btp[7] = { 0, 0x1000, 0, 0, 0x2000, 0x3000, 0 };
+		t_build_lev(f, 7, btp, (1u << 1) | (1u << 4) | (1u << 5));
+		memcpy(before, f, sizeof f);
+		expect_int(CustomTrackPolicy_ClearUnmappedSt1(f, sizeof f), 0, "Baby T Park shape: nothing cleared");
+		expect_int(memcmp(f, before, sizeof f), 0, "Baby T Park shape: bytes unchanged");
+	}
+
+	// A count past the seven engine indices: only those seven are touched.
+	{
+		unsigned long junk[10];
+		for (i = 0; i < 10; i++)
+			junk[i] = 0x41414141uL + (unsigned long)i;
+		t_build_lev(f, 10, junk, 0);
+		expect_int(CustomTrackPolicy_ClearUnmappedSt1(f, sizeof f), 7, "only ST1_MAP to ST1_CREDITS are cleared");
+		expect_int(t_entry(f, 7) == 0x41414148uL, 1, "index 7 is left alone");
+	}
+
+	// A table that runs off the end of the data stops there.
+	{
+		const unsigned long one[1] = { 0x5a5a5a5a };
+		t_build_lev(f, 1, one, 0);
+		t_put32(f + 4 + 0x134, T_LEV_DATA - 8); // count, one entry, then the data ends
+		t_put32(f + 4 + T_LEV_DATA - 8, 5);
+		t_put32(f + 4 + T_LEV_DATA - 4, 0x5a5a5a5a);
+		memcpy(before, f, sizeof f);
+		expect_int(CustomTrackPolicy_ClearUnmappedSt1(f, sizeof f), 1, "the one in-bounds entry is cleared");
+		expect_int(memcmp(f + 4 + T_LEV_DATA, before + 4 + T_LEV_DATA, sizeof f - 4 - T_LEV_DATA), 0,
+		           "nothing past the data is written");
+	}
+
+	// Shapes that are not a LEV are refused untouched.
+	{
+		const unsigned long msl[4] = { 0xc2fe8, 0x2d70616d, 0x74736574, 0xc8a68 };
+		t_build_lev(f, 4, msl, 1u);
+		memcpy(before, f, sizeof f);
+		expect_int(CustomTrackPolicy_ClearUnmappedSt1(NULL, sizeof f), 0, "NULL file");
+		expect_int(CustomTrackPolicy_ClearUnmappedSt1(f, 7), 0, "shorter than two words");
+		expect_int(CustomTrackPolicy_ClearUnmappedSt1(f, T_LEV_DATA + 4), 0, "no room for the map size");
+		t_put32(f + 4 + T_LEV_DATA, 4uL * T_LEV_MAPN + 4);
+		expect_int(CustomTrackPolicy_ClearUnmappedSt1(f, sizeof f), 0, "map runs past the file");
+		t_put32(f + 4 + T_LEV_DATA, 4uL * T_LEV_MAPN - 2);
+		expect_int(CustomTrackPolicy_ClearUnmappedSt1(f, sizeof f), 0, "map size not a whole number of offsets");
+		t_put32(f + 4 + T_LEV_DATA, 4uL * T_LEV_MAPN);
+		t_put32(f + 4 + 0x134, T_LEV_DATA);
+		expect_int(CustomTrackPolicy_ClearUnmappedSt1(f, sizeof f), 0, "table pointer past the data");
+		t_put32(f + 4 + 0x134, 0);
+		expect_int(CustomTrackPolicy_ClearUnmappedSt1(f, sizeof f), 0, "no table");
+		t_put32(f + 4 + 0x134, T_LEV_ST1);
+		t_put32(f + 4 + T_LEV_ST1, 0xffffffffuL);
+		expect_int(CustomTrackPolicy_ClearUnmappedSt1(f, sizeof f), 0, "negative count");
+		t_put32(f + 4 + T_LEV_ST1, 4);
+		expect_int(memcmp(f, before, sizeof f), 0, "refusals write nothing");
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1623,6 +1784,7 @@ int main(void)
 	test_box_verdict();
 	test_measured_flags();
 	test_st1_entry_present();
+	test_st1_clear_unmapped();
 	test_prim_fits();
 	test_prim_arena_bytes();
 	test_rendered_slots_fit();
