@@ -52,7 +52,14 @@ void Music_LoadBanks(void)
 	    level,
 #endif
 
+#ifdef CTR_AP
+	    // bossID is the garage, whose shuffled venue may be another track.
+	    // Use that track's reverb (and the custom identity's default), while
+	    // collision still enables engine echo on the loaded LEV's own quads.
+	    0,
+#else
 	    (IS_BOSS_RACE(gGT->gameMode1)),
+#endif
 
 	    // Boss ID
 	    gGT->bossID);
