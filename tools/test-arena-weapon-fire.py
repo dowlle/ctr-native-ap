@@ -106,6 +106,7 @@ static void setup(int arena,int fruit,int mode) {
     }
 }
 static void fire(int id) {
+    if(id==9) gt.gameMode1|=WARPBALL_HELD;
     driver.heldItemID=id;driver.actionsFlagSet|=ACTION_WEAPON_FIRE_REQUEST;
     VehPickupItem_ShootOnCirclePress(&driver);
     assert(!(driver.actionsFlagSet&ACTION_WEAPON_FIRE_REQUEST));
@@ -153,6 +154,7 @@ int main(void) {
     for(unsigned i=0;i<sizeof allocating/sizeof allocating[0];i++) {
         setup(arena,fruit,CRYSTAL_CHALLENGE);failBirth=1;fire(allocating[i]);
         assert(born==0 && gt.numMissiles==0 && driver.numTimesMissileLaunched==0);
+        assert(!(gt.gameMode1&WARPBALL_HELD));
     }
     // The global projectile cap remains a harmless consumed shot.
     setup(18,10,CRYSTAL_CHALLENGE);gt.numMissiles=12;fire(2);
