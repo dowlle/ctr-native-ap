@@ -224,6 +224,23 @@ static inline void AP_FeedLinesReceiptTick(AP_FeedLines *f)
 	if (f->receiptWindow > 0) --f->receiptWindow;
 }
 
+// Runtime reissues an undelivered effect after a load using a fresh scheduler
+// slot/sequence (and therefore unchanged receipt-order priority). Transfer only
+// the display membership: this is the same received copy, not another item.
+static inline void AP_FeedLinesReissue(AP_FeedLines *f, int effect, int oldSlot,
+        unsigned oldSeq, int newSlot, unsigned newSeq)
+{
+	int i;
+	if (oldSlot < 0 || oldSlot >= 32 || newSlot < 0 || newSlot >= 32 || !oldSeq || !newSeq) return;
+	for (i = 0; i < f->qcount + f->vcount; ++i) {
+		AP_FeedLine *l = i < f->qcount ? &f->queue[(f->qhead + i) % AP_FEED_QUEUE_MAX]
+		                                  : &f->vis[i - f->qcount];
+		if (l->trapEffect != effect || l->copySeq[oldSlot] != oldSeq) continue;
+		l->copySeq[oldSlot] = 0;
+		l->copySeq[newSlot] = newSeq;
+	}
+}
+
 // Hub ARMED notices must not travel into the race surface. Retire them before
 // promotion so hidden setup notices cannot occupy the race's visible budget.
 // Return the first moved visible index for the renderer's per-line clocks.

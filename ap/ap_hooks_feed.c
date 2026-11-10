@@ -218,6 +218,12 @@ void AP_FeedTrapLine(int effect, int trapSlot, unsigned int trapSeq, int stage, 
 	AP_FeedLinesTrapGrouped(&ap_feed, effect, trapSlot, trapSeq, stage, line, CORTEX_RED, racing);
 }
 
+void AP_FeedTrapReissue(int effect, int oldSlot, unsigned oldSeq, int newSlot, unsigned newSeq)
+{
+	if (ctr_cfg_active())
+		AP_FeedLinesReissue(&ap_feed, effect, oldSlot, oldSeq, newSlot, newSeq);
+}
+
 // One received-DeathLink line: a death applied (red) or ignored because it did not
 // arrive in a live race (orange). Like the trap line it is live gameplay state, not
 // a replayed receipt, so it bypasses the initial-inventory absorb window.

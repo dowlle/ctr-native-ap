@@ -1302,6 +1302,28 @@ static int AP_TrapReverseRestored(void)
 	return g_recover_ms >= AP_TRAP_RECOVER_MS;
 }
 
+// Owed effects keep the scheduler's usual fresh priority on reissue; only the
+// feed's receipt membership follows them to the freshly allocated identity.
+static void AP_TrapSaveFeedIdentities(int *slots, unsigned *seqs)
+{
+	for (int e = 0; e < AP_TRAP_EFFECT_COUNT; ++e) { slots[e] = -1; seqs[e] = 0; }
+	for (int i = 0; i < AP_TRAP_SCHED_CAP; ++i)
+		if (g_sched.slots[i].state == AP_TRAP_SLOT_ACTIVE) {
+			int effect = g_sched.slots[i].effect;
+			if (effect < AP_TRAP_EFFECT_COUNT) {
+				slots[effect] = i;
+				seqs[effect] = g_sched.slots[i].seq;
+			}
+		}
+}
+
+static void AP_TrapReceiveOwed(int effect, const int *oldSlots, const unsigned *oldSeqs)
+{
+	int slot = AP_TrapSchedReceive(&g_sched, effect);
+	if (slot >= 0)
+		AP_FeedTrapReissue(effect, oldSlots[effect], oldSeqs[effect], slot, g_sched.slots[slot].seq);
+}
+
 // ── Per-frame lifecycle ──
 void AP_TrapTick(struct GameTracker *gGT)
 {
@@ -1356,6 +1378,9 @@ void AP_TrapTick(struct GameTracker *gGT)
 	g_prev_load = loadStage;
 	if (boundary)
 	{
+		int feedSlots[AP_TRAP_EFFECT_COUNT];
+		unsigned feedSeqs[AP_TRAP_EFFECT_COUNT];
+		AP_TrapSaveFeedIdentities(feedSlots, feedSeqs);
 		// Forced Use is ruled to wait through transitions rather than be consumed
 		// unsuccessfully, but the shared lifecycle clears every ACTIVE copy at a
 		// map boundary. A copy that fired and never got its weapon away is
@@ -1405,16 +1430,16 @@ void AP_TrapTick(struct GameTracker *gGT)
 			g_trap_spawn_pending[e] = 0;
 
 		if (refireClocked)
-			AP_TrapSchedReceive(&g_sched, AP_TRAP_CLOCKED_OUT);
+			AP_TrapReceiveOwed(AP_TRAP_CLOCKED_OUT, feedSlots, feedSeqs);
 		if (refireFlatten)
-			AP_TrapSchedReceive(&g_sched, AP_TRAP_FLATTEN);
+			AP_TrapReceiveOwed(AP_TRAP_FLATTEN, feedSlots, feedSeqs);
 		if (refireForcedUse)
-			AP_TrapSchedReceive(&g_sched, AP_TRAP_FORCED_USE);
+			AP_TrapReceiveOwed(AP_TRAP_FORCED_USE, feedSlots, feedSeqs);
 		if (refireReroll)
-			AP_TrapSchedReceive(&g_sched, AP_TRAP_ITEM_REROLL);
-		if (refireNitro) AP_TrapSchedReceive(&g_sched, AP_TRAP_NITRO);
-		if (refirePotion) AP_TrapSchedReceive(&g_sched, AP_TRAP_RED_POTION);
-		if (refireWarpball) AP_TrapSchedReceive(&g_sched, AP_TRAP_WARPBALL_AMBUSH);
+			AP_TrapReceiveOwed(AP_TRAP_ITEM_REROLL, feedSlots, feedSeqs);
+		if (refireNitro) AP_TrapReceiveOwed(AP_TRAP_NITRO, feedSlots, feedSeqs);
+		if (refirePotion) AP_TrapReceiveOwed(AP_TRAP_RED_POTION, feedSlots, feedSeqs);
+		if (refireWarpball) AP_TrapReceiveOwed(AP_TRAP_WARPBALL_AMBUSH, feedSlots, feedSeqs);
 	}
 
 	w.context = AP_TrapContextOf(gGT, loadStage);

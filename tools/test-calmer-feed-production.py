@@ -6,6 +6,11 @@ import tempfile
 
 root = Path(__file__).resolve().parents[1]
 src = (root / 'ap/ap_hooks_feed.c').read_text()
+runtime = (root / 'ap/ap_traps.c').read_text()
+boundary = runtime[runtime.index('if (boundary)'):runtime.index('\n\tw.context =')]
+assert boundary.index('AP_TrapSaveFeedIdentities') < boundary.index('AP_TrapSchedMapChange')
+assert 'AP_TrapSchedReceive(&g_sched' not in boundary
+assert boundary.count('AP_TrapReceiveOwed(') == 7
 net = (root / 'ap/ap_hooks_net.c').read_text()
 held = net[net.index('if (AP_ArcadeHoldsRoom())'):]
 held = held[:held.index('}') + 1]
@@ -19,15 +24,15 @@ while depth:
     end += 1
 surface = surface[:end]
 
-def function(name):
-    start = src.index('void ' + name + '(')
-    begin = src.index('{', start)
+def function(name, source=src, prefix='void '):
+    start = source.index(prefix + name + '(')
+    begin = source.index('{', start)
     depth = 1
     end = begin + 1
     while depth:
-        depth += (src[end] == '{') - (src[end] == '}')
+        depth += (source[end] == '{') - (source[end] == '}')
         end += 1
-    return src[start:end]
+    return source[start:end]
 
 stubs = r'''
 #include <assert.h>
@@ -35,6 +40,7 @@ stubs = r'''
 #include <string.h>
 #include "ap/ap_feed_lines_logic.h"
 #include "ap/ap_item_flags.h"
+#include "ap/ap_trap_sched_logic.h"
 #define AP_FEED_ITEM_CAP 32
 #define AP_FEED_PLAYER_CAP 24
 #define AP_FEED_FMT_OWN "%s"
@@ -42,6 +48,7 @@ stubs = r'''
 #define AP_FEED_ITEM_UNKNOWN "AP ITEM"
 #define CORTEX_RED 7
 static AP_FeedLines ap_feed;
+static AP_TrapSched g_sched;
 static int active=1, ap_feed_primed=1;
 static long long ap_feed_hwm=-1;
 static int ctr_cfg_active(void) { return active; }
@@ -117,6 +124,44 @@ int main(void) {
     assert(ap_feed.qcount==1);
     race_surface(2); // results can be the first non-hub surface drawn
     assert(ap_feed.vcount==1 && ap_feed.qcount==0 && reset_count==5);
+    // The real boundary snapshot/reissue glue moves display identity while the
+    // scheduler retains its original fresh-sequence ordering behavior.
+    AP_FeedLinesReset(&ap_feed);
+    AP_TrapSchedReset(&g_sched);
+    int old=AP_TrapSchedReceive(&g_sched,AP_TRAP_FLATTEN);
+    unsigned first=g_sched.slots[old].seq;
+    g_sched.slots[old].state=AP_TRAP_SLOT_ACTIVE;
+    AP_FeedTrapLine(AP_TRAP_FLATTEN,old,first,AP_FEED_TRAP_FIRED,"FLATTEN",1);
+    AP_FeedLinesPromote(&ap_feed);
+    int oldSlots[AP_TRAP_EFFECT_COUNT];unsigned oldSeqs[AP_TRAP_EFFECT_COUNT];
+    AP_TrapSaveFeedIdentities(oldSlots,oldSeqs);
+    AP_TrapSchedMapChange(&g_sched);
+    AP_TrapSchedReceive(&g_sched,AP_TRAP_BOOST); // occupies the original slot
+    AP_TrapReceiveOwed(AP_TRAP_FLATTEN,oldSlots,oldSeqs);
+    assert(g_sched.slots[1].effect==AP_TRAP_FLATTEN && g_sched.slots[1].seq>first);
+    AP_FeedTrapLine(AP_TRAP_FLATTEN,1,g_sched.slots[1].seq,AP_FEED_TRAP_INCOMING,"FLATTEN INCOMING",1);
+    assert(ap_feed.vcount==1 && ap_feed.qcount==0 && ap_feed.vis[0].copies==1);
+    assert(!strcmp(ap_feed.vis[0].text,"FLATTEN INCOMING"));
+    // A second restart still represents that one receipt.
+    g_sched.slots[1].state=AP_TRAP_SLOT_ACTIVE;
+    AP_TrapSaveFeedIdentities(oldSlots,oldSeqs);
+    AP_TrapSchedMapChange(&g_sched);
+    AP_TrapReceiveOwed(AP_TRAP_FLATTEN,oldSlots,oldSeqs);
+    AP_FeedTrapLine(AP_TRAP_FLATTEN,1,g_sched.slots[1].seq,AP_FEED_TRAP_INCOMING,"FLATTEN INCOMING",1);
+    assert(ap_feed.vis[0].copies==1);
+    int real=AP_TrapSchedReceive(&g_sched,AP_TRAP_FLATTEN);
+    AP_FeedTrapLine(AP_TRAP_FLATTEN,real,g_sched.slots[real].seq,AP_FEED_TRAP_INCOMING,"FLATTEN INCOMING",1);
+    assert(ap_feed.vis[0].copies==2 && !strcmp(ap_feed.vis[0].text,"2 FLATTEN INCOMING"));
+    // A queued line follows a later reissue too; an expired line adds a fresh 1.
+    AP_FeedLinesReset(&ap_feed);
+    AP_FeedTrapLine(AP_TRAP_FLATTEN,1,90,AP_FEED_TRAP_FIRED,"FLATTEN",1);
+    AP_FeedTrapReissue(AP_TRAP_FLATTEN,1,90,4,91);
+    AP_FeedTrapLine(AP_TRAP_FLATTEN,4,91,AP_FEED_TRAP_INCOMING,"FLATTEN INCOMING",1);
+    assert(ap_feed.qcount==1 && ap_feed.queue[0].copies==1);
+    AP_FeedLinesReset(&ap_feed);
+    AP_FeedTrapReissue(AP_TRAP_FLATTEN,4,91,2,92);
+    AP_FeedTrapLine(AP_TRAP_FLATTEN,2,92,AP_FEED_TRAP_INCOMING,"FLATTEN INCOMING",1);
+    assert(ap_feed.qcount==1 && ap_feed.queue[0].copies==1);
     puts("production receipt flags, replay, option off, sender and race/hub trap entry points PASS");
 }
 '''
@@ -124,6 +169,9 @@ with tempfile.TemporaryDirectory() as tmp:
     path = Path(tmp)
     (path/'test.c').write_text(stubs + function('AP_FeedOnItemReceived') +
                               function('AP_FeedTrapLine') +
+                              function('AP_FeedTrapReissue') +
+                              function('AP_TrapSaveFeedIdentities',runtime,'static void ') +
+                              function('AP_TrapReceiveOwed',runtime,'static void ') +
                               'static void held_frame(void) { ' + held + ' }' +
                               'static void race_surface(int playableRace) { ' + surface + ' }' + tests)
     subprocess.run(['cc','-std=c99','-Wall','-Wextra','-I',str(root),
