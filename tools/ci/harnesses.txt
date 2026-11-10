@@ -320,3 +320,4 @@ tools/test-feed-trap-lines.c
 tools/test-track-sources.c
 tools/test-custom-finish.c
 tools/test-boss-reverb-production.py
+tools/test-arena-weapon-fire.py
