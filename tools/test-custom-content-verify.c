@@ -120,6 +120,36 @@ static size_t build_mesh_lev(unsigned char *b, size_t cap, const unsigned (*quad
 	return 4 + map + 4 + 2 * 4;
 }
 
+/* A4-39: a quad texture pointer (mid +0x1c..+0x28, low +0x40) at or past the
+   map can never be relocated into the level; Coco Team Racing track 5 holds
+   fixed PS1 addresses there. Zero and payload offsets stay allowed. */
+static void quad_texture_addresses(void)
+{
+	static const unsigned quads[][2] = {{0, 0}, {0, 0}};
+	unsigned char image[4096];
+	struct CustomContentOwnedPair pair;
+	char error[256];
+	size_t n;
+	const size_t q1 = 4 + QUAD_BODY + QUAD_SIZE;
+	memset(&pair, 0, sizeof pair);
+	n = build_mesh_lev(image, sizeof image, quads, 2, 0);
+	put32(image, q1 + 0x1c, 0x10);
+	expect(analyze(image, n, &pair.report, error, sizeof error), "a texture offset inside the payload passes");
+	memset(&pair.report, 0, sizeof pair.report);
+	put32(image, q1 + 0x24, 0x8051371cUL);
+	expect(!analyze(image, n, &pair.report, error, sizeof error) && strstr(error, "quad texture address outside the LEV"),
+	       "a fixed PS1 address in a mid texture is refused");
+	memset(&pair.report, 0, sizeof pair.report);
+	put32(image, q1 + 0x24, 0);
+	put32(image, q1 + 0x40, (unsigned long)(QUAD_BODY + 2 * QUAD_SIZE));
+	expect(!analyze(image, n, &pair.report, error, sizeof error) && strstr(error, "quad texture address outside the LEV"),
+	       "a low texture at the map offset is refused");
+	memset(&pair.report, 0, sizeof pair.report);
+	put32(image, q1 + 0x40, 0);
+	put32(image, q1 + 0x44, 0x80000000UL);
+	expect(analyze(image, n, &pair.report, error, sizeof error), "other quad fields are not read as textures");
+}
+
 static void super_turbo_pad_quads(void)
 {
 	/* Trigger quads OR their terrain byte into the step flags; bit 0x2 is
@@ -387,6 +417,7 @@ int main(void)
 	}
 
 	super_turbo_pad_quads();
+	quad_texture_addresses();
 	expect(v.measured.superTurboPads == 0 && v.measured.quadBlocks == 0, "the full fixture has no mesh and no super pads");
 	printf("custom-content verifier: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
