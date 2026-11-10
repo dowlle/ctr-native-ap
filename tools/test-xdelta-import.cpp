@@ -708,14 +708,18 @@ int main()
             CHECK(leader && !std::strcmp(leader->title, "Following track 1") && normalLeader && !std::strcmp(normalLeader->title, "Following track 2") &&
                   normalized && !std::strcmp(normalized->title, "Following track 3") && ordinary && !std::strcmp(ordinary->title, "Following track 4"),
                   "following pairs are numbered after every ordinary pair");
-            CHECK(last && last->offered && !std::strcmp(last->title, "Following track 5") && !std::strcmp(last->trackKey, "following-track-5"),
+            CHECK(last && last->offered && !std::strcmp(last->title, "Following track 6") && !std::strcmp(last->trackKey, "following-track-6"),
                   "a following pair after refused ones takes the next number");
+            const auto *failed = item_for(s, 242);
+            CHECK(failed && !failed->offered && !std::strcmp(failed->title, "Following track 5") &&
+                  !std::strncmp(failed->reason, "Files failed checks: ", 21),
+                  "a following pair the verifier refuses keeps its number and says why");
             std::vector<int> refusals;
             for (unsigned i = 0; i < s->count; i++)
                 if (!std::strcmp(s->items[i].reason, "No valid preceding texture file")) refusals.push_back(s->items[i].bigfileIndex);
-            CHECK(refusals == std::vector<int>({236, 239, 242, 245, 251, 254}), "deferred refusals keep their diagnostic order");
+            CHECK(refusals == std::vector<int>({236, 239, 245, 251, 254}), "deferred refusals keep their diagnostic order");
             CHECK(line_with(s, "Following track 3") == normalized, "a duplicate following pair is refused, not listed as the same track");
-            for (int slot : {236, 239, 242, 245, 251, 254})
+            for (int slot : {236, 239, 245, 251, 254})
             {
                 const auto *it = item_for(s, slot);
                 CHECK(it && !it->offered && !it->pin[0] && !std::strcmp(it->reason, "No valid preceding texture file") &&
@@ -730,11 +734,11 @@ int main()
             for (unsigned i = 0; i < s->count; i++)
                 if (s->items[i].offered) { offered++; titles.insert(s->items[i].title); }
             CHECK(offered == 5 && titles == std::set<std::string>({"Following track 1", "Following track 2", "Following track 3",
-                                                                    "Following track 4", "Following track 5"}),
-                  "refused following pairs use no track number");
-            /* 237, 243, 246, 248, 249, 255 and seven fillers (232 is in the overlay range):
-               refused pairs give their VRM back. */
-            CHECK(line_with(s, "Other changed files (13)"), "refused following VRMs stay in the other count");
+                                                                    "Following track 4", "Following track 6"}),
+                  "refused following pairs use no track number, except a verifier refusal");
+            /* 237, 246, 248, 249, 255 and seven fillers (232 is in the overlay range):
+               refused pairs give their VRM back; 243 stays with its verifier-refused level. */
+            CHECK(line_with(s, "Other changed files (12)"), "refused following VRMs stay in the other count");
             if (normalized && normalized->offered)
             {
                 const unsigned index = unsigned(normalized - s->items);

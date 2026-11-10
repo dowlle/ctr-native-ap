@@ -1589,7 +1589,10 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             set_text(item.vrmSha256, sizeof item.vrmSha256, vrmHash);
             if (!built.owned)
             {
-                if (following) { undo_following(); return; }
+                /* A following pair the package verifier refuses keeps its number
+                   and shows why (A4-39): Coco Team Racing's 608 + 609 was offered
+                   in alpha3, and giving its number back would rename, re-key and
+                   re-pin the track after it. */
                 set_text(item.reason, sizeof item.reason, limit_codepoints("Files failed checks: " + failure, 90));
                 add_item(*scan, item);
                 return;
