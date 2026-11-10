@@ -9,9 +9,42 @@ static void trap(int effect, int slot, unsigned seq, int stage, const char *text
 {
     AP_FeedLinesTrapGrouped(&f, effect, slot, seq, stage, text, 7, race);
 }
+static void pump(AP_TrapSched *s)
+{
+    AP_TrapEvent ev;
+    while (AP_TrapSchedPopEvent(s, &ev)) {
+        int stage = ev.kind == AP_TRAP_EV_ARMED ? AP_FEED_TRAP_ARMED :
+                    ev.kind == AP_TRAP_EV_WARN ? AP_FEED_TRAP_INCOMING :
+                    (ev.kind == AP_TRAP_EV_FIRE || ev.kind == AP_TRAP_EV_REFRESH) ? AP_FEED_TRAP_FIRED : -1;
+        if (stage >= 0) trap(ev.effect, ev.slot, ev.seq, stage, "FORCED BOOST", 1);
+    }
+}
+static void refreshing_copies(void)
+{
+    AP_TrapSched s;
+    AP_TrapWorld race = {0};
+    race.context = AP_TRAP_CTX_RACE;
+    race.controlUnlocked = 1;
+    race.elapsedMs = 100;
+    race.mapEpoch = 1;
+    AP_FeedLinesReset(&f);
+    AP_TrapSchedReset(&s);
+    AP_TrapSchedReceive(&s, AP_TRAP_BOOST);
+    AP_TrapSchedReceive(&s, AP_TRAP_BOOST);
+    for (int i=0;i<15;i++) { AP_TrapSchedStep(&s,&race);pump(&s); }
+    assert(f.qcount==1 && f.queue[0].copies==2);
+    AP_TrapSchedReceive(&s, AP_TRAP_BOOST); // refreshes without ARMED or WARN
+    AP_TrapSchedStep(&s,&race);pump(&s);
+    assert(f.qcount==1 && f.queue[0].copies==3);
+    AP_TrapSchedMapChange(&s);pump(&s);
+    AP_TrapSchedReceive(&s, AP_TRAP_BOOST);
+    for (int i=0;i<15;i++) { AP_TrapSchedStep(&s,&race);pump(&s); }
+    assert(f.qcount==1 && f.queue[0].copies==4);
+}
 int main(void)
 {
     int i;
+    refreshing_copies();
     assert(AP_TRAP_SCHED_CAP == 32);
     AP_FeedLinesReset(&f);
     trap(1, 0, 1, AP_FEED_TRAP_ARMED, "NITRO DROP ARMED", 1);

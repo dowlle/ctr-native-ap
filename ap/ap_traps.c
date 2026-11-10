@@ -1026,6 +1026,7 @@ static void AP_TrapDrainEvents(struct GameTracker *gGT, struct Driver *local)
 			AP_LogLine(msg);
 			break;
 		case AP_TRAP_EV_REFRESH:
+			AP_FeedTrapLine(ev.effect, ev.slot, ev.seq, AP_FEED_TRAP_FIRED, name, 0);
 			snprintf(msg, sizeof msg, "[AP TRAP] refreshed: %s (slot %d)\n", name, ev.slot);
 			AP_LogLine(msg);
 			break;
