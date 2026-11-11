@@ -14,6 +14,7 @@
 #include "ap_wumpa_shop_menu.h" // #249 green load/save menu row ids
 #include "ap_content_plan.h"
 #include "ap_content_modes.h"
+#include "ap_sanity_colour.h"
 #include "ap_win_logic.h"
 #include "ap_lettersanity.h" // freestanding pickup and token-gate decisions
 #include "ap_cortex_track.h" // Cortex Vortex pad track slots + pseudo-bits (schema 15)

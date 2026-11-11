@@ -1,5 +1,5 @@
 // Production matrix builders and NCLIP, with synthetic geometry (no disc needed).
-// cc -m32 -std=c99 -DCTR_NATIVE -DCTR_AP -DBUILD=926 -I include -I .
+// cc -m32 -std=c99 -Werror=implicit-function-declaration -DCTR_NATIVE -DCTR_AP -DBUILD=926 -I include -I .
 // -ffunction-sections -fdata-sections -Wl,--gc-sections
 // tools/test-mirror-model-cull.c platform/native_inline_c.c platform/native_libgte.c
 // -lm -o /tmp/test-mirror-model-cull

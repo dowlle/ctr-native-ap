@@ -1,6 +1,8 @@
 // Ordinary pickup checks. Included by game_unity after the race route helpers.
 #ifdef CTR_AP
 
+#include "ap_sanity_colour.h"
+
 static struct InstDef *ap_sanity_defs;
 static int ap_sanity_defs_count, ap_sanity_ready, ap_sanity_size;
 static uint64_t ap_sanity_epoch;
@@ -10,6 +12,7 @@ static struct {
     unsigned color;
     short alpha;
     unsigned char family;
+    unsigned short recolour;
 } ap_sanity_objects[512];
 static long ap_sanity_sent[16384];
 static int ap_sanity_sent_count, ap_sanity_feed[3], ap_sanity_feed_ticks;
@@ -144,6 +147,7 @@ int AP_SanityPickup(struct Instance *inst, struct Driver *driver)
             if (!ap_sanity_feed_ticks) ap_sanity_feed_ticks = 120;
             inst->colorRGBA = ap_sanity_objects[i].color;
             inst->alphaScale = ap_sanity_objects[i].alpha;
+            ap_sanity_objects[i].recolour = AP_SanityTag(AP_PAD_LOOK_DONE, AP_SANITY_VISIBILITY);
         }
         return 1;
     }
@@ -154,11 +158,9 @@ void AP_SanityTick(struct GameTracker *gt)
 {
     int i, active = AP_SanityEnsure(gt);
     if (active) for (i = 0; i < ap_sanity_size; ++i) {
-        struct Instance *inst = ap_sanity_objects[i].inst;
         int open = !AP_SanityAlreadySent(ap_sanity_objects[i].code);
-        // A small cyan colour blend leaves the original crate/fruit readable.
-        inst->colorRGBA = open ? 0x05affdf0u : ap_sanity_objects[i].color;
-        inst->alphaScale = open ? 0x280 : ap_sanity_objects[i].alpha;
+        int look = AP_SanityLook(!open, AP_LocationLogicState(ap_sanity_objects[i].code));
+        ap_sanity_objects[i].recolour = AP_SanityTag(look, AP_SANITY_VISIBILITY);
     }
     if (ap_sanity_feed_ticks > 0 && --ap_sanity_feed_ticks == 0) {
         static const char *const labels[] = {"WEAPON CRATES", "WUMPA CRATES", "WUMPA FRUIT"};
@@ -169,6 +171,16 @@ void AP_SanityTick(struct GameTracker *gt)
             ap_sanity_feed[i] = 0;
         }
     }
+}
+
+unsigned AP_SanityRecolourTag(struct Instance *inst)
+{
+    int i;
+    struct GameTracker *gt = sdata ? sdata->gGT : 0;
+    if (ap_sanity_ready <= 0 || !AP_SanityRoute(gt)) return 0;
+    for (i = 0; i < ap_sanity_size; ++i)
+        if (ap_sanity_objects[i].inst == inst) return ap_sanity_objects[i].recolour;
+    return 0;
 }
 
 int AP_SanityPadPending(int physical, int family)

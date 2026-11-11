@@ -33,6 +33,8 @@ static ctr_content_pad pad;
 static struct CustomTrackRaceContext context;
 static uint64_t epoch = 1;
 static int sent, checked, route_valid = 1, notices;
+static int logic_state = 1;
+static int AP_LocationLogicState(long long code) { (void)code; return logic_state; }
 int ctr_cfg_active(void) { return 1; }
 int ap_content_plan_active(void) { return 1; }
 uint64_t ap_content_plan_epoch(void) { return epoch; }
@@ -65,16 +67,24 @@ int main(void) {
     record.locations[0][1] = 101; record.locations[1][0] = 102; record.locations[2][0] = 103;
     for (i = 0; i < 4; ++i) { defs[i].model = &models[i]; defs[i].ptrInstance = &objects[i]; }
     AP_SanityLevelInstances(defs, 4); AP_SanityTick(&gt);
-    assert(objects[0].colorRGBA == 0 && objects[1].colorRGBA != 0);
+    assert(AP_SanityRecolourTag(&objects[0]) == 0 && objects[1].colorRGBA == 0);
+    assert(AP_SanityRecolourTag(&objects[1]) == AP_SanityTag(AP_PAD_LOOK_OPEN, AP_SANITY_VISIBILITY));
+    logic_state = 0; AP_SanityTick(&gt);
+    for (i = 1; i < 4; ++i) assert(AP_SanityRecolourTag(&objects[i]) == AP_SanityTag(AP_PAD_LOOK_CLOSED, AP_SANITY_VISIBILITY));
+    logic_state = 2; AP_SanityTick(&gt);
+    assert(AP_SanityRecolourTag(&objects[1]) == AP_SanityTag(AP_PAD_LOOK_OPEN, AP_SANITY_VISIBILITY));
+    logic_state = 1;
     assert(AP_SanityPickup(&objects[3], &bot) == 0 && !sent);
     assert(AP_SanityPickup(&objects[1], &bot) == 1 && !sent);
     AP_SanityPickup(&objects[1], &second); assert(!sent);
     AP_SanityPickup(&objects[1], &player); assert(sent == 1 && objects[1].colorRGBA == 0);
     AP_SanityPickup(&objects[1], &player); assert(sent == 1);
+    AP_SanityTick(&gt);
+    assert(AP_SanityRecolourTag(&objects[1]) == AP_SanityTag(AP_PAD_LOOK_DONE, AP_SANITY_VISIBILITY));
     AP_SanityPickup(&objects[3], &player); assert(sent == 2);
     assert(AP_SanityPickup(&objects[3], &bot) == 1);
     AP_SanityLevelInstances(defs, 4); AP_SanityPickup(&objects[1], &player); assert(sent == 2);
-    gt.gameMode1 |= RELIC_RACE; AP_SanityPickup(&objects[2], &player); assert(sent == 2);
+    gt.gameMode1 |= RELIC_RACE; assert(AP_SanityRecolourTag(&objects[1]) == 0); AP_SanityPickup(&objects[2], &player); assert(sent == 2);
     gt.gameMode1 = ADVENTURE_MODE | TIME_TRIAL; AP_SanityPickup(&objects[2], &player); assert(sent == 2);
     gt.gameMode1 = ADVENTURE_MODE; route_valid = 0; AP_SanityPickup(&objects[2], &player); assert(sent == 2);
     route_valid = 1; AP_SanityPickup(&objects[2], &player); assert(sent == 3);

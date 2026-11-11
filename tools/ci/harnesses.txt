@@ -217,6 +217,8 @@ tools/test-tunnel-charswap-production.py
 tools/test-door-history-production.py
 tools/test-content-plan.cpp
 tools/test-sanity.c
+tools/test-sanity-colour.c
+tools/test-sanity-recolour-production.py
 tools/test-content-features.cpp
 tools/test-content-verify.cpp
 tools/test-content-cup-latch.c

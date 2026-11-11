@@ -20,6 +20,7 @@
 
 #include <assert.h>
 #include <string.h>
+#include "../ap/ap_sanity_colour.h"
 
 #ifdef _WIN32
 #include "platform/native_win32.h"
@@ -1012,6 +1013,7 @@ GLint u_disableDitherLoc;
 #define GPU_ARRAY_FUNC "	float _idx2(vec2 array, int idx) { return array[idx]; }\n"
 
 #define GPU_FRAGMENT_SAMPLE_SHADER(bit)                                                                                                               \
+	AP_SANITY_RECOLOUR_GLSL \
 	GPU_FETCH_VRAM_FUNC                                                                                                                               \
 	GPU_ARRAY_FUNC                                                                                                                                    \
 	GPU_SAMPLE_TEXTURE_##bit##BIT_FUNC                                                                                                                \
@@ -1070,11 +1072,13 @@ GLint u_disableDitherLoc;
 	    "	}\n"                                                                                                                                        \
 	    "	void main() {\n"                                                                                                                            \
 	    "		vec4 color = (bilinearFilter > 0) ? bilinearTextureSample(v_texcoord.xy) : nearestTextureSample(v_texcoord.xy);\n"                         \
-	    "		fragColor = dither(color * v_color);\n"                                                                                                    \
+	    "\t\tcolor *= v_color; color.rgb = sanityRecolour(color.rgb, v_sanityTag);\n" \
+	    "\t\tfragColor = dither(color);\n" \
 	    "		fragColor.a = (psxDrawMaskSet != 0 || (psxTextureOutputStp != 0 && sampledStp >= 0.5)) ? 1.0 : 0.0;\n"                                     \
 	    "	}\n"
 
 global_variable const char *gpu_shader_common = "	varying vec4 v_texcoord;\n"
+                                                "\tvarying float v_sanityTag;\n"
                                                 "	varying vec4 v_color;\n"
                                                 "	varying vec4 v_page_clut;\n"
                                                 "	varying vec2 v_ditherCoord;\n"
@@ -1083,13 +1087,15 @@ global_variable const char *gpu_shader_common = "	varying vec4 v_texcoord;\n"
 const char *gte_shader_4 = GPU_FRAGMENT_SAMPLE_SHADER(4);
 const char *gte_shader_8 = GPU_FRAGMENT_SAMPLE_SHADER(8);
 const char *gte_shader_16 = GPU_FRAGMENT_SAMPLE_SHADER(16);
-const char *gte_shader_32_rgba = "	uniform sampler2D s_texture;\n"
+const char *gte_shader_32_rgba = AP_SANITY_RECOLOUR_GLSL
+                                 "	uniform sampler2D s_texture;\n"
                                  "	uniform int psxDrawMaskSet;\n"
                                  "	uniform vec2 texelSize;\n"
                                  "	void main() {\n"
                                  "		vec2 tc = v_texcoord.xy * texelSize + texelSize * 0.5;\n"
                                  "		vec4 color = texture2D(s_texture, tc);\n"
-                                 "		fragColor = dither(color * v_color);\n"
+                                 "\t\tcolor *= v_color; color.rgb = sanityRecolour(color.rgb, v_sanityTag);\n"
+                                 "\t\tfragColor = dither(color);\n"
                                  "		fragColor.a = float(psxDrawMaskSet);\n"
                                  "	}\n";
 
@@ -1105,6 +1111,7 @@ const char *gte_shader_32_rgba = "	uniform sampler2D s_texture;\n"
 	"	void main() {\n"                                                                                             \
 	"		v_ditherCoord = a_position.xy;\n"                                                                           \
 	"		v_texcoord = a_texcoord;\n"                                                                                 \
+	"\t\tv_sanityTag = a_extra.z;\n" \
 	"		v_texcoord.xy += a_extra.xy * 0.5;\n"                                                                       \
 	"		v_color = a_color;\n"                                                                                       \
 	"		v_color.xyz *= a_texcoord.z;\n"                                                                             \
