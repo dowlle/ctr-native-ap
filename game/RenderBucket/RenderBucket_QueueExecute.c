@@ -1,4 +1,5 @@
 #include <common.h>
+#include <platform/native_sanity_recolour.h>
 #ifdef CTR_AP
 #include "../../ap/ap_title_ring_logic.h"
 #include "../../ap/ap_traps.h"

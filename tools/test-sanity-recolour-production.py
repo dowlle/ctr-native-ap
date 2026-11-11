@@ -141,6 +141,9 @@ int main(int argc, char **argv) {
 
 
 with tempfile.TemporaryDirectory() as tmp:
+    # This consumer also builds without CTR_AP, while metadata helpers remain
+    # referenced in its ordinary texture path. Compile that actual variant.
+    subprocess.run([os.environ.get('CC', 'cc'), '-m32', '-std=c99', '-Werror=implicit-function-declaration', '-DCTR_NATIVE', '-DBUILD=926', '-I', str(root/'include'), '-I', str(root), '-fsyntax-only', str(root/'game/RenderBucket/RenderBucket_QueueExecute.c')], check=True)
     src, exe = Path(tmp) / 'recolour.c', Path(tmp) / 'recolour'
     src.write_text(fixture + production + tests)
     subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-I', str(root / 'ap'), str(src), '-o', str(exe)], check=True)
