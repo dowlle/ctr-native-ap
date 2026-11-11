@@ -50,7 +50,13 @@ static int CustomTrack_ServingLoad(int a, int b, int c) { (void)a; (void)b; (voi
 static int ap_net_location_checked(long code) { (void)code; return checked; }
 static int AP_ContentCodeChecked(int64_t code) { (void)code; return checked; }
 static void AP_AppendLog(const char *line) { (void)line; }
-static void AP_FeedNoticeLine(const char *line) { assert(strstr(line, "CHECKED")); ++notices; }
+static void AP_FeedNoticeLine(const char *line) {
+    static const char *const expected[] = {
+        "1 WEAPON CRATES CHECKED", "1 WUMPA CRATES CHECKED", "1 WUMPA FRUIT CHECKED"
+    };
+    assert(notices < 3 && !strcmp(line, expected[notices]));
+    ++notices;
+}
 static int AP_EmitClassCheck(long code, int ledger, int bit, int tag, int toast, const char *fmt, ...) {
     assert(code > 0 && !ledger && bit == -1 && tag == -1 && !toast && fmt); ++sent; return 1;
 }
@@ -60,7 +66,7 @@ int main(void) {
     struct Instance objects[4] = {{0}};
     struct InstDef defs[4];
     struct Driver player = {0, 0}, bot = {ACTION_BOT, 1}, second = {0, 1};
-    int i;
+    int i, feed_ticks = 0;
     gt.gameMode1 = ADVENTURE_MODE; gt.drivers[0] = &player;
     context.seedEpoch = 1; context.retail = 1; strcpy(context.trackID, "retail:3");
     record.counts[0] = 2; record.counts[1] = record.counts[2] = 1;
@@ -80,6 +86,7 @@ int main(void) {
     AP_SanityPickup(&objects[1], &player); assert(sent == 1 && objects[1].colorRGBA == 0);
     AP_SanityPickup(&objects[1], &player); assert(sent == 1);
     AP_SanityTick(&gt);
+    ++feed_ticks; /* The recolour tick also advances the first pickup's batch. */
     assert(AP_SanityRecolourTag(&objects[1]) == AP_SanityTag(AP_PAD_LOOK_DONE, AP_SANITY_VISIBILITY));
     AP_SanityPickup(&objects[3], &player); assert(sent == 2);
     assert(AP_SanityPickup(&objects[3], &bot) == 1);
@@ -88,10 +95,12 @@ int main(void) {
     gt.gameMode1 = ADVENTURE_MODE | TIME_TRIAL; AP_SanityPickup(&objects[2], &player); assert(sent == 2);
     gt.gameMode1 = ADVENTURE_MODE; route_valid = 0; AP_SanityPickup(&objects[2], &player); assert(sent == 2);
     route_valid = 1; AP_SanityPickup(&objects[2], &player); assert(sent == 3);
-    for (i = 0; i < 239; ++i) AP_SanityTick(&gt);
+    for (; feed_ticks < 239; ++feed_ticks) AP_SanityTick(&gt);
     assert(notices == 0);
     AP_SanityTick(&gt);
     assert(notices == 3);
+    for (i = 0; i < 240; ++i) AP_SanityTick(&gt);
+    assert(notices == 3); /* A flushed batch must not be announced twice. */
     gt.gameMode1 = ADVENTURE_MODE | 128; gt.bossID = 0;
     assert(AP_SanityRoute(&gt) == &boss_record); /* Boss identity wins over a standalone host context. */
     gt.gameMode1 = ADVENTURE_MODE;
