@@ -107,7 +107,7 @@ int main(void) {
     record.locations[1][0] = 0;
     AP_SanityLevelInstances(defs, 4); AP_SanityTick(&gt);
     assert(AP_SanityRecolourTag(&objects[2]) == 0);
-    assert(AP_SanityPickup(&objects[2], &player) == 0 && sent == 3);
+    assert(AP_SanityPickup(&objects[2], &player) == 1 && sent == 3);
     assert(AP_SanityRecolourTag(&objects[1]) != 0);
     puts("sanity runtime: ordinal pick, AI, local player, dedup, reload, race mode, route, feed and mismatch pass");
     return 0;

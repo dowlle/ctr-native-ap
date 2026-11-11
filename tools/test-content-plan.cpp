@@ -173,7 +173,8 @@ int main(int argc, char **argv) {
                 auto bad = room;
                 for (auto &row : bad["content_plan"]["sanity"]["tracks"])
                     if (row["track_id"] == "custom/tv-world/1.1.0") row["wumpa_crate"].insert(row["wumpa_crate"].begin() + 2, 3);
-                auto extra = check(bad, 37210065);
+                auto extra = *std::find_if(bad["content_plan"]["checks"].begin(), bad["content_plan"]["checks"].end(),
+                                           [](const J &c) { return c["location"] == 37210065; });
                 extra["location"] = 37210066; extra["display_name"] = "TV World: Wumpa Crate 3";
                 bad["content_plan"]["checks"].push_back(extra);
                 refuse(bad, "TV World removed crate forged into room refuses");
