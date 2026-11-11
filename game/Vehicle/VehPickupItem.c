@@ -430,9 +430,6 @@ void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags)
 			return;
 		}
 
-		gGT->numMissiles++;
-		d->numTimesMissileLaunched++;
-
 		GAMEPAD_ShockFreq(d, 8, 0);
 		GAMEPAD_ShockForce1(d, 8, 0x7f);
 
@@ -527,10 +524,16 @@ void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags)
 		// medium stack pool
 		weaponInst = INSTANCE_BirthWithThread(modelID, weaponName, MEDIUM, bucket, RB_MovingExplosive_ThTick, sizeof(struct TrackerWeapon), parentTh);
 
-		// NOTE(aalhendi): Native low-RAM audit candidate only. Retail
-		// dereferences weapon birth results before later checks in several
-		// branches of this function; keep unpatched until memory pressure or
-		// gameplay repro proves the semantic fallback.
+#if defined(CTR_NATIVE)
+		// Persistent arena mines share the weapon pools. A failed birth consumes
+		// the shot, like the projectile cap, without leaking a missile slot.
+		if (weaponInst == NULL)
+		{
+			return;
+		}
+#endif
+		gGT->numMissiles++;
+		d->numTimesMissileLaunched++;
 
 		VehPickupItem_CopyMatrix(&weaponInst->matrix, &dInst->matrix);
 
