@@ -1614,6 +1614,59 @@ int main(int argc, char **argv) {
         }
         expect(crates, "community spots: without its set DK Pass keeps crate seating");
     }
+    // A4-62b: Country Speedway 1.3.1 (block 17, 14 spots, number 6 left out,
+    // no weapon crates) and Gossamer's Castle 1.0.0 (block 89, 15 spots).
+    J community_b;
+    std::ifstream("tools/fixtures/content-plan/box-spots-community-b.json") >> community_b;
+    expect(parse(community_b) && bind_room(community_b) && ap_content_plan_active(), "community spots b room binds");
+    {
+        std::map<std::string, J> sets;
+        for (const auto &set : community_b["content_plan"]["item_boxes"]["spot_sets"]) sets[set["track_id"]] = set;
+        std::map<int64_t, J> checks;
+        for (const auto &c : community_b["content_plan"]["checks"]) if (c.contains("spot")) checks[c["location"]] = c;
+        const std::vector<int> cs_numbers = {1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+        const std::set<int> cs_boost = {2, 3, 4, 11, 14}, gc_boost = {6};
+        std::map<int, std::vector<int>> stood;
+        bool fields_ok = true, boost_ok = true;
+        for (int p = 0; p < 111; ++p) {
+            const ctr_content_pad *pad = ap_content_plan_pad(p);
+            if (!pad || !pad->occupied || (pad->named_block != 17 && pad->named_block != 89)) continue;
+            const J &set = sets.at(pad->track_id);
+            const int want = pad->named_block == 17 ? 14 : 15;
+            fields_ok &= pad->box_spots && pad->box_crates == 0 && pad->box_count == want && set["pool"] == want;
+            for (int b = 0; b < pad->box_count; ++b) {
+                const int n = pad->box_number[b];
+                const J &c = checks.at(pad->box_locations[b]);
+                fields_ok &= c["spot"]["number"] == n && set["picked"][b] == n &&
+                             pad->box_locations[b] == 35200000 + 200 * pad->named_block + 19 + n &&
+                             c["spot"]["pos"][0] == pad->box_pos[b][0] && c["spot"]["pos"][1] == pad->box_pos[b][1] &&
+                             c["spot"]["pos"][2] == pad->box_pos[b][2] && c["spot"]["rot_y"] == pad->box_rot_y[b];
+                const std::set<int> &boosted = pad->named_block == 17 ? cs_boost : gc_boost;
+                boost_ok &= (c.value("boost", 0) == 1) == (boosted.count(n) == 1);
+                stood[pad->named_block].push_back(n);
+            }
+        }
+        std::vector<int> gc_numbers;
+        for (int n = 1; n <= 15; ++n) gc_numbers.push_back(n);
+        expect(stood[17] == cs_numbers, "community spots b: Country Speedway stands 14 spots, number 6 left out");
+        expect(stood[89] == gc_numbers, "community spots b: Gossamer's Castle (block 89) stands all 15");
+        expect(fields_ok, "community spots b: codes, numbers and positions match the room's checks");
+        expect(boost_ok, "community spots b: only the reviewed jump spots need boost");
+        auto set_of = [](J &j, const std::string &id) -> J & {
+            for (auto &s : j["content_plan"]["item_boxes"]["spot_sets"]) if (s["track_id"] == id) return s;
+            throw std::runtime_error("no spot set " + id);
+        };
+        J bad = community_b;
+        set_of(bad, "custom/gossamer-s-castle/1.0.0")["lev_sha256"] = std::string(64, 'a');
+        refuse(bad, "community spots b: Gossamer's Castle set pinned to another LEV");
+        bad = community_b;
+        set_of(bad, "custom/country-speedway/1.3.1")["picked"].erase(0);
+        refuse(bad, "community spots b: Country Speedway picks one short");
+        bad = community_b;
+        auto &picked = set_of(bad, "custom/country-speedway/1.3.1")["picked"];
+        std::swap(picked[0], picked[1]);
+        refuse(bad, "community spots b: Country Speedway picks out of order");
+    }
     // Cups (#133 PR 5): nine cups over retail, custom (named and generic) and
     // Cortex Vortex legs, shortened laps, sweeps and Cup Leg Victory checks.
     // Every cup pad is checked against the room's own records.

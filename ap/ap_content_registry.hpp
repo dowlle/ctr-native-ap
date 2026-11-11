@@ -6056,6 +6056,11 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       "name": "Glazed Dessert"
     },
     {
+      "key": "gossamer-s-castle",
+      "block": 89,
+      "name": "Gossamer's Castle"
+    },
+    {
       "key": "green-hill-raceway",
       "block": 35,
       "name": "Green Hill Raceway"
@@ -8197,6 +8202,11 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       37204352,
       37204432,
       37204448
+    ],
+    "Gossamer's Castle": [
+      37211392,
+      37211472,
+      37211488
     ],
     "Green Hill Raceway": [
       37204480,
