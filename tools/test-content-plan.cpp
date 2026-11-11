@@ -169,6 +169,11 @@ int main(int argc, char **argv) {
                 expect((record->locations[1][n - 1] == 0) == (removed && n >= 3 && n <= 6), "TV World selected ordinal slots");
             if (record) for (int n = 0; n < 19; ++n)
                 expect(record->locations[0][n] > 0, "TV World weapon crates remain selected");
+            for (const char *key : {"logic_difficulty", "boost_blue_fire"}) {
+                auto bad = room;
+                bad["content_plan"]["sanity"].erase(key);
+                refuse(bad, "unpaired sanity selection settings refuse");
+            }
             if (removed) {
                 auto bad = room;
                 for (auto &row : bad["content_plan"]["sanity"]["tracks"])
