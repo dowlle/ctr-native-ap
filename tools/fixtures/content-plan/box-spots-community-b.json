@@ -14488,7 +14488,7 @@
     },
     {
      "track_id": "custom/country-speedway/1.3.1",
-     "file_sha256": "1360bc4e1cfe653327755d52f4d70af8cfe2f6dfc2a088a3af92aeaa9968d4da",
+     "file_sha256": "aa8993229b8e94c9d3cea25d6a8645deff642bf7097a14a2f21672e426b5d802",
      "pool": 14,
      "picked": [
       1,
@@ -14510,7 +14510,7 @@
     },
     {
      "track_id": "custom/gossamer-s-castle/1.0.0",
-     "file_sha256": "f59fbdb9aaaf616df4e5792cc65f5770677d564d1031d52f906b562d26129037",
+     "file_sha256": "4ad60498dedc1d71a2dfee05edf8cd6cdd4a2a3866abae3367abefe27fee9a00",
      "pool": 15,
      "picked": [
       1,
