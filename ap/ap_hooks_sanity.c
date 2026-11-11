@@ -144,7 +144,7 @@ int AP_SanityPickup(struct Instance *inst, struct Driver *driver)
             ap_sanity_sent[at] = code;
             ++ap_sanity_sent_count;
             ++ap_sanity_feed[ap_sanity_objects[i].family];
-            if (!ap_sanity_feed_ticks) ap_sanity_feed_ticks = 120;
+            if (!ap_sanity_feed_ticks) ap_sanity_feed_ticks = 240;
             inst->colorRGBA = ap_sanity_objects[i].color;
             inst->alphaScale = ap_sanity_objects[i].alpha;
             ap_sanity_objects[i].recolour = AP_SanityTag(AP_PAD_LOOK_DONE, AP_SANITY_VISIBILITY);

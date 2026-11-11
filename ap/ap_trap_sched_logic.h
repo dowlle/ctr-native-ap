@@ -1055,7 +1055,9 @@ static inline void AP_TrapSchedStep(AP_TrapSched *s, const AP_TrapWorld *w)
 			{
 				if (AP_TrapSchedHasTimer(d))
 					s->slots[running].remainMs = AP_TrapSchedEffectiveDuration(s, d);
-				AP_TrapSchedEmit(s, AP_TRAP_EV_REFRESH, effect, running);
+				// Presentation counts the consumed receipt, not the running copy
+				// whose timer was refilled. Effects still use the running slot above.
+				AP_TrapSchedEmit(s, AP_TRAP_EV_REFRESH, effect, best);
 				s->slots[best].state = AP_TRAP_SLOT_EMPTY;
 				continue;
 			}

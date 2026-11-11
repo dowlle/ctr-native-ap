@@ -161,7 +161,10 @@ void AP_FeedOnItemReceived(long long item, int player, long long index, unsigned
 	if (index > ap_feed_hwm)
 		ap_feed_hwm = index;
 	if (AP_FeedConsumeSelfRung(item))
+	{
+		ap_feed.receiptWindow = 0; // a distinct receipt ends a filler run
 		return; // descriptive podium-rung line already queued
+	}
 
 	int self = ap_net_self_slot();
 	// Display rule: own slot OR the server (slot <= 0) shows just the item; anyone
@@ -196,14 +199,15 @@ void AP_FeedOnItemReceived(long long item, int player, long long index, unsigned
 
 	// Colour by AP class, not by own/foreign: an own filler reads cyan exactly
 	// like a foreign one. own only shaped the wording above.
-	AP_FeedEnqueue(line, AP_ClassFontColor(flags), 1);
+	AP_FeedLinesReceipt(&ap_feed, item, player,
+	    AP_ItemFlagsClass(flags) == AP_ITEM_CLASS_FILLER, line, AP_ClassFontColor(flags));
 }
 
 // Trap-state line from the trap scheduler (ap_traps.c): armed, incoming, active.
 // Coloured as a trap so a warning reads the same as the receipt that produced it.
 // Deliberately outside the initial-inventory absorb window that gates the received
 // feed: an armed trap is live gameplay state, not a replayed receipt.
-void AP_FeedTrapLine(int trapSlot, unsigned int trapSeq, int stage, const char *text)
+void AP_FeedTrapLine(int effect, int trapSlot, unsigned int trapSeq, int stage, const char *text, int racing)
 {
 	char line[AP_FEED_TEXT_CAP];
 	if (!ctr_cfg_active() || text == 0)
@@ -211,7 +215,13 @@ void AP_FeedTrapLine(int trapSlot, unsigned int trapSeq, int stage, const char *
 	AP_CeremonySanitize(text, line, (int)sizeof line);
 	if (line[0] == '\0')
 		return;
-	AP_FeedLinesTrapState(&ap_feed, trapSlot, trapSeq, stage, line, CORTEX_RED);
+	AP_FeedLinesTrapGrouped(&ap_feed, effect, trapSlot, trapSeq, stage, line, CORTEX_RED, racing);
+}
+
+void AP_FeedTrapReissue(int effect, int oldSlot, unsigned oldSeq, int newSlot, unsigned newSeq)
+{
+	if (ctr_cfg_active())
+		AP_FeedLinesReissue(&ap_feed, effect, oldSlot, oldSeq, newSlot, newSeq);
 }
 
 // One received-DeathLink line: a death applied (red) or ignored because it did not
@@ -302,6 +312,7 @@ static void AP_FeedOnLocationSent(long code)
 // is absorbed by AP_FeedOnItemReceived), so a chunked initial sync stays silent.
 void AP_FeedEndDrain(int drainedThisFrame)
 {
+	AP_FeedLinesReceiptTick(&ap_feed);
 	AP_FeedLetterReadyUpdates();
 	AP_FeedOxideFinalOpenUpdate();
 	if (ap_feed_primed)
@@ -325,6 +336,13 @@ void AP_FeedEndDrain(int drainedThisFrame)
 // most once per frame (see the block comment above).
 static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 {
+	if (playableRace != 0)
+	{
+		int armedMoved = AP_FeedLinesRetireArmed(&ap_feed);
+		if (armedMoved >= 0)
+			for (int i = armedMoved; i < AP_FEED_MAX_VISIBLE; ++i)
+				DecalFont_ResetLineBox(TEXT_SLOT_FEED + i);
+	}
 	// The hub's persistent box warning occupies y=72 and y=84. Keep the
 	// newest three lines at 96..120 while it is present; new lines wait in
 	// the queue rather than being promoted into the warning's band.

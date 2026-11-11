@@ -225,7 +225,8 @@ int  AP_HubFeedOn(void);
 // trapSeq identify the trap copy (ev.slot and ev.seq of the scheduler event) and
 // stage is an AP_FEED_TRAP_* value (ap_feed_lines_logic.h): a trap keeps one feed
 // line that changes in place instead of adding a line per state.
-void AP_FeedTrapLine(int trapSlot, unsigned int trapSeq, int stage, const char *text);
+void AP_FeedTrapLine(int effect, int trapSlot, unsigned int trapSeq, int stage, const char *text, int racing);
+void AP_FeedTrapReissue(int effect, int oldSlot, unsigned oldSeq, int newSlot, unsigned newSeq);
 // One-off client notice line in the received-item feed (orange).
 void AP_FeedNoticeLine(const char *text);
 // One DeathLink line (a received death applied, or ignored) on the same surfaces.

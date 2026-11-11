@@ -86,7 +86,12 @@ static void AP_NetTick(struct GameTracker *gGT)
 	// and a reconnect's reset waits with them, so the race never sees the room's
 	// state change, and the feed and tallies see ordinary late receipts after it.
 	if (AP_ArcadeHoldsRoom())
+	{
+		// Receipts stay queued, but a previous receipt's grouping window still
+		// ages once per frame even when the feed is hidden or switched off.
+		AP_FeedLinesReceiptTick(&ap_feed);
 		return;
+	}
 
 	// On a fresh slot-connect (new seed, reconnect, or server switch) the server
 	// resends the FULL ReceivedItems list from index 0. Zero the per-session

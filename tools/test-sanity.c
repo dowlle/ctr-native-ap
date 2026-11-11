@@ -88,7 +88,9 @@ int main(void) {
     gt.gameMode1 = ADVENTURE_MODE | TIME_TRIAL; AP_SanityPickup(&objects[2], &player); assert(sent == 2);
     gt.gameMode1 = ADVENTURE_MODE; route_valid = 0; AP_SanityPickup(&objects[2], &player); assert(sent == 2);
     route_valid = 1; AP_SanityPickup(&objects[2], &player); assert(sent == 3);
-    for (i = 0; i < 121; ++i) AP_SanityTick(&gt);
+    for (i = 0; i < 239; ++i) AP_SanityTick(&gt);
+    assert(notices == 0);
+    AP_SanityTick(&gt);
     assert(notices == 3);
     gt.gameMode1 = ADVENTURE_MODE | 128; gt.bossID = 0;
     assert(AP_SanityRoute(&gt) == &boss_record); /* Boss identity wins over a standalone host context. */
