@@ -17,6 +17,7 @@ struct GameTracker;
 struct Driver;
 void AP_CupSweepOnLoadRequested(int levelID);
 void AP_ContentCupOnLoadRequested(int levelID);
+void AP_HubSaveBoxCloseForLoad(void);
 void AP_DeathLinkOnRaceEnd(struct GameTracker *gGT, struct Driver *player);
 #include "test-custom-time-trial.c"
 
@@ -34,6 +35,10 @@ void AP_CupSweepOnLoadRequested(int levelID)
 void AP_ContentCupOnLoadRequested(int levelID)
 {
 	(void)levelID;
+}
+
+void AP_HubSaveBoxCloseForLoad(void)
+{
 }
 
 void AP_DeathLinkOnRaceEnd(struct GameTracker *gGT, struct Driver *player)

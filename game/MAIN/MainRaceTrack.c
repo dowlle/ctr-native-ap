@@ -302,6 +302,12 @@ void MainRaceTrack_StartLoad(s16 levelID)
 
 	ElimBG_Deactivate(sdata->gGT);
 
+#ifdef CTR_AP
+	// A4-58: the hub save box (green menu, profile page, shop page, icon
+	// thread) closes before the hub's pools are rebuilt.
+	AP_HubSaveBoxCloseForLoad();
+#endif
+
 #ifdef CTR_CUSTOM_PACKAGES
 	if (MainRaceTrack_OfflineRefuseLoad(levelID))
 		levelID = MAIN_MENU_LEVEL;

@@ -58,7 +58,14 @@ void AH_SaveObj_ThTick(struct Thread *t)
 		    ((gGT->gameMode1 & PAUSE_ALL) != 0) ||
 
 		    // If driver is too far away from screen
-		    (0x8ffff < dist))
+		    (0x8ffff < dist)
+#ifdef CTR_AP
+		    // A4-58: not while a level load or an AP hub move is pending.
+		    // The hub keeps ticking until the checkered flag covers it, and
+		    // a box opened then would outlive the hub.
+		    || !AP_HubSaveBoxMayOpenNow()
+#endif
+		)
 		{
 			// dont trigger menu, but play
 			// sound of the load/save screen
@@ -161,6 +168,13 @@ void AH_SaveObj_ThTick(struct Thread *t)
 					if ((save->flags & 2) == 0)
 					{
 						save->flags |= 2;
+#ifdef CTR_AP
+						// A4-58: a load requested during the approach. Skip
+						// the menu; with flags & 2 set the camera returns
+						// to the kart as after EXIT.
+						if (!AP_HubSaveBoxMayOpenNow())
+							goto LAB_800af72c;
+#endif
 
 						SelectProfile_GetTrackID();
 

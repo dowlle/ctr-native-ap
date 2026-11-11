@@ -716,6 +716,13 @@ void AP_WumpaShopPrepareGreenMenu(struct RectMenu *menu);
 int AP_WumpaShopGreenMenuRow(struct RectMenu *menu, int row);
 int AP_WumpaShopGreenExitRow(const struct RectMenu *menu);
 int AP_WumpaShopMenuFrame(void);
+int AP_WumpaShopPageOpen(void);
+void AP_WumpaShopClosePage(void);
+// A4-58 hub save box (ap_hub_savebox.c, decisions in ap_hub_savebox_logic.h):
+// MayOpenNow refuses the save screen while a load or an AP hub move is
+// pending; CloseForLoad closes the box when a load from a hub starts.
+int AP_HubSaveBoxMayOpenNow(void);
+void AP_HubSaveBoxCloseForLoad(void);
 
 // Hit Character encounters (schema 16, ticket 06): send one parsed Hit location
 // through the shared class-check path (per-seed membership + server-checked
