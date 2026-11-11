@@ -386,6 +386,22 @@ static const int   s_raceMenuValues[] = {-1, 1, 0};
 static const char *s_raceMenuNames[]  = {"SEED", "ALWAYS", "PRODUCTIVE"};
 #define RACEMENU_COUNT ((int)(sizeof(s_raceMenuValues) / sizeof(s_raceMenuValues[0])))
 
+// Boss Music (A4-61): the boss banks / the venue's own music in boss races and
+// boss cup legs. 0 and 1 are AP_BOSS_MUSIC_BOSS_THEME / AP_BOSS_MUSIC_TRACK
+// (ap/ap_boss_music_logic.h); Music_AsyncParseBanks reads the row at every
+// level load, so a change applies to the next race.
+static const int   s_bossMusicValues[] = {0, 1};
+static const char *s_bossMusicNames[]  = {"BOSS THEME", "TRACK"};
+#define BOSSMUSIC_COUNT ((int)(sizeof(s_bossMusicValues) / sizeof(s_bossMusicValues[0])))
+
+static int BossMusic_Index(int value)
+{
+	for (int i = 0; i < BOSSMUSIC_COUNT; i++)
+		if (s_bossMusicValues[i] == value)
+			return i;
+	return 0; // out-of-range persisted value renders and steps as BOSS THEME
+}
+
 static int RaceMenu_Index(int value)
 {
 	for (int i = 0; i < RACEMENU_COUNT; i++)
@@ -451,6 +467,8 @@ static const char *Enum_Label(const ConfigEntry *e)
 		return s_trapDurationNames[TrapDuration_Index(*(int *)e->valuePtr)];
 	if (e->valuePtr == &g_config.raceTypeSelector)
 		return s_raceMenuNames[RaceMenu_Index(*(int *)e->valuePtr)];
+	if (e->valuePtr == &g_config.bossMusic)
+		return s_bossMusicNames[BossMusic_Index(*(int *)e->valuePtr)];
 #endif
 	return AiDiff_Label(*(int *)e->valuePtr);
 }
@@ -526,6 +544,16 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 		if (i > TRAP_DURATION_COUNT - 1)
 			i = TRAP_DURATION_COUNT - 1;
 		*(int *)e->valuePtr = s_trapDurationValues[i];
+		return;
+	}
+	if (e->valuePtr == &g_config.bossMusic)
+	{
+		int i = BossMusic_Index(*(int *)e->valuePtr) + dir;
+		if (i < 0)
+			i = 0;
+		if (i > BOSSMUSIC_COUNT - 1)
+			i = BOSSMUSIC_COUNT - 1;
+		*(int *)e->valuePtr = s_bossMusicValues[i];
 		return;
 	}
 #endif
@@ -615,6 +643,11 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 	{
 		first = "When race pads ask which race.";
 		second = "SEED uses the seed's setting.";
+	}
+	if (e->valuePtr == &g_config.bossMusic)
+	{
+		first = "Music in boss races and cups:";
+		second = "the theme or the track's own.";
 	}
 	if (e->valuePtr == &g_config.itemFeed)
 	{

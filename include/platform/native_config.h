@@ -128,6 +128,14 @@ typedef struct
 	                            // -1 = follow the seed's race_type_selector
 	                            // (default), 0 = productive, 1 = always. Read
 	                            // at every pad entry (AP_RaceTypeSelectorSetting).
+	int  bossMusic;             // Archipelago: Boss Music (A4-61). 0 = BOSS THEME
+	                            // (default, unchanged behaviour), 1 = TRACK: boss
+	                            // races and boss cup legs play the venue's own
+	                            // music (a custom venue's .sca included) instead
+	                            // of the boss theme. Local presentation
+	                            // preference, not slot_data. Consumed by
+	                            // Music_AsyncParseBanks (game/HOWL/HOWL_Music.c)
+	                            // through ap/ap_boss_music_logic.h.
 	// Archipelago room, edited in the in-game connection manager (see
 	// game/230/MM_ConfigMenu.c) and persisted to config.ini [Connection]. uri is
 	// "ws://host:port". Slot names are at most 16 chars in AP but the buffers are

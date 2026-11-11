@@ -20,6 +20,7 @@ tools/test-boss-lane-ahead.c
 tools/test-boss-lane-production.py
 tools/test-boss-kit-target.c
 tools/test-boss-kit-target-production.py
+tools/test-boss-music.c
 tools/test-boss-venue.cpp
 tools/test-boss-venue-production.py
 tools/test-box-colour-config.c
