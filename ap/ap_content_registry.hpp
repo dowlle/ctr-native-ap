@@ -8463,6 +8463,43 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       37210832,
       37210848
     ]
+  },
+  "object_rulings": {
+    "version": 1,
+    "rulings": [
+      {
+        "content_id": "tv-world",
+        "kind": "wumpa_crate",
+        "ordinal": 3,
+        "hard_rank": 2,
+        "blue_fire_rank": 3,
+        "ruling": "Project ruling 2026-11-11 03:14 CET, A4-52: hard needs Boost 2; easy/medium need Blue Fire Boost 3 or remove the check."
+      },
+      {
+        "content_id": "tv-world",
+        "kind": "wumpa_crate",
+        "ordinal": 4,
+        "hard_rank": 2,
+        "blue_fire_rank": 3,
+        "ruling": "Project ruling 2026-11-11 03:14 CET, A4-52: hard needs Boost 2; easy/medium need Blue Fire Boost 3 or remove the check."
+      },
+      {
+        "content_id": "tv-world",
+        "kind": "wumpa_crate",
+        "ordinal": 5,
+        "hard_rank": 2,
+        "blue_fire_rank": 3,
+        "ruling": "Project ruling 2026-11-11 03:14 CET, A4-52: hard needs Boost 2; easy/medium need Blue Fire Boost 3 or remove the check."
+      },
+      {
+        "content_id": "tv-world",
+        "kind": "wumpa_crate",
+        "ordinal": 6,
+        "hard_rank": 2,
+        "blue_fire_rank": 3,
+        "ruling": "Project ruling 2026-11-11 03:14 CET, A4-52: hard needs Boost 2; easy/medium need Blue Fire Boost 3 or remove the check."
+      }
+    ]
   }
 }
 )CTRREG";

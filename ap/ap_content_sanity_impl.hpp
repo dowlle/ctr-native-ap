@@ -1,7 +1,14 @@
 // Included inside the content-plan parser namespace. No runtime dependencies.
 static void sanity_checks(const J &p, State &out, const J &registry, std::map<int64_t, J> &expected) {
     const J &s = p.at("sanity");
-    fields(s, {"itemboxsanity", "wumpasanity", "shortcut_knowledge", "tracks"});
+    const bool context = s.contains("logic_difficulty");
+    if (context) fields(s, {"itemboxsanity", "wumpasanity", "shortcut_knowledge", "tracks", "logic_difficulty", "boost_blue_fire"});
+    else fields(s, {"itemboxsanity", "wumpasanity", "shortcut_knowledge", "tracks"});
+    const int difficulty = context ? number(s["logic_difficulty"], 0, 2) : out.capability.present ? out.capability.logic_difficulty : 2;
+    if (context) need(s["boost_blue_fire"].is_boolean(), "sanity Blue Fire setting");
+    const bool blue = context ? s["boost_blue_fire"].get<bool>() : out.capability.boost_blue_fire != 0;
+    need(!context || !out.capability.present || (difficulty == out.capability.logic_difficulty && blue == !!out.capability.boost_blue_fire), "sanity object settings mismatch");
+    need(!blue || out.capability.boost_mode, "sanity Blue Fire needs boost");
     const int count = number(s["itemboxsanity"], 0, 50), wumpa = number(s["wumpasanity"], 0, 3);
     const int tier = number(s["shortcut_knowledge"], 0, 2);
     need(count || wumpa, "empty sanity feature");
@@ -74,6 +81,17 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
         const std::string tid = text(row["track_id"]);
         need(wanted.erase(tid) == 1, "unknown or duplicate sanity track");
         const J &track = *tracks.at(tid), &inv = *inventory(track);
+        // A4-52, project ruling 2026-11-11: use the same data-driven eligibility
+        // filter as reviewed shortcut objects. Zero location slots never show or send checks.
+        auto ruled_out = [&](const char *kind, int ordinal) {
+            if (track["origin"] != "custom") return false;
+            const J &pkg = *packages.at(track["package_id"]);
+            for (const auto &rule : registry.at("object_rulings").at("rulings")) {
+                if (rule["content_id"] == pkg["content_id"] && rule["kind"] == kind && rule["ordinal"] == ordinal)
+                    return difficulty < 2 && !blue;
+            }
+            return false;
+        };
         need(row["lev_sha256"] == inv["lev_sha256"] && row["counts"] == inv["counts"], "sanity revision/count mismatch");
         ctr_content_sanity dest{};
         copy(dest.track_id, row["track_id"]); copy(dest.lev_sha256, row["lev_sha256"]);
@@ -104,7 +122,7 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
             const J needs = inv.at("needs").value(kinds[f], J::object());
             for (int n = 1; n <= std::min(dest.counts[f], budgets[f]); ++n) {
                 const J rule = needs.value(std::to_string(n), J::object());
-                if (!excluded_by_kind[f].count(n) && rule.value("shortcut", 0) <= tier) pool.insert(n);
+                if (!excluded_by_kind[f].count(n) && rule.value("shortcut", 0) <= tier && !ruled_out(kinds[f], n)) pool.insert(n);
             }
             const int selected = f ? ((wumpa & f) ? (int)pool.size() : 0) : std::min((int)pool.size(), count);
             need(row[kinds[f]].is_array() && row[kinds[f]].size() == (size_t)selected, "sanity pick count mismatch");
