@@ -42,6 +42,7 @@ block = warp[title:warp.index("// if track is unlocked, ignore all other ELSE-IF
 assert "ap_pad_title_block_lift((apStage2 != AP_S2LINE_NONE) + (apBoxesLeft > 0)" in block
 assert "rect.h - 30 - apLift, FONT_BIG" in warp
 assert "TEXT_MARQUEE, TEXT_SLOT_PAD, NULL" in block
+assert "int apS2W = gGT->pushBuffer[0].rect.w - 160;" in block
 assert "apStage2 == AP_S2LINE_MET ? LIGHT_GREEN" in block
 assert "apStage2 == AP_S2LINE_DONE ? GRAY : RED" in block
 # Stage 2 sits directly under the name; AP BOXES LEFT keeps the bottom line.

@@ -5,7 +5,7 @@
 //
 // Standing at a pad shows its name. A pad with a second stage also shows one
 // small line under the name with what stage 2 asks for and how many the player
-// holds, `Stage 2: 2 Gold Relics (have 1)`, from the first approach on. Before
+// holds, `Stage 2: 1/2 Gold Relics`, from the first approach on. Before
 // A4-59 the second stage only showed after the pad's first race was won, as
 // the floating requirement model, so a player could not plan for it.
 //
@@ -73,7 +73,9 @@ static inline int ap_pad_stage2_line_state(const ctr_content_pad *pad, int padSt
 	return owned >= pad->stage2_count ? AP_S2LINE_MET : AP_S2LINE_UNMET;
 }
 
-// The line's text; returns its length, 0 for AP_S2LINE_NONE.
+// The line's text; returns its length, 0 for AP_S2LINE_NONE. Held count first,
+// capped at the need, as `1/2 Gold Relics`: the HUD font has no parentheses,
+// and the short form stays clear of the minimap corner.
 static inline int ap_pad_stage2_line_text(const ctr_content_pad *pad, int state, int owned, char *out, size_t cap)
 {
 	char what[40];
@@ -84,8 +86,12 @@ static inline int ap_pad_stage2_line_text(const ctr_content_pad *pad, int state,
 		return 0;
 	ap_content_requirement_text(pad->stage2_mask, pad->stage2_count, what, sizeof what);
 	if (state == AP_S2LINE_DONE)
-		return snprintf(out, cap, "Stage 2: %s (done)", what);
-	return snprintf(out, cap, "Stage 2: %s (have %d)", what, owned);
+		return snprintf(out, cap, "Stage 2 done: %s", what);
+	if (owned > pad->stage2_count)
+		owned = pad->stage2_count;
+	if (owned < 0)
+		owned = 0;
+	return snprintf(out, cap, "Stage 2: %d/%s", owned, what);
 }
 
 // How far the name and the lines above it move up, in pixels: the block under

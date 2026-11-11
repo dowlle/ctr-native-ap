@@ -67,7 +67,7 @@ int main(void)
 	p = track_pad(1u << 2, 2);
 	s = line_of(&p, 1, text);
 	EXPECT(s == AP_S2LINE_UNMET, "closed pad shows its unmet stage 2");
-	EXPECT(strcmp(text, "Stage 2: 2 Gold Relics (have 0)") == 0, "unmet text");
+	EXPECT(strcmp(text, "Stage 2: 0/2 Gold Relics") == 0, "unmet text");
 	s = line_of(&p, 2, text);
 	EXPECT(s == AP_S2LINE_UNMET, "open pad before the first race shows stage 2");
 
@@ -75,16 +75,16 @@ int main(void)
 	counts[2] = 1;
 	s = line_of(&p, 3, text);
 	EXPECT(s == AP_S2LINE_UNMET, "waiting pad still red");
-	EXPECT(strcmp(text, "Stage 2: 2 Gold Relics (have 1)") == 0, "have 1");
+	EXPECT(strcmp(text, "Stage 2: 1/2 Gold Relics") == 0, "held 1 of 2");
 
 	// Both held: green, even before the first race is won (the item part is met).
 	counts[2] = 2;
 	s = line_of(&p, 2, text);
 	EXPECT(s == AP_S2LINE_MET, "met is green");
-	EXPECT(strcmp(text, "Stage 2: 2 Gold Relics (have 2)") == 0, "met text");
+	EXPECT(strcmp(text, "Stage 2: 2/2 Gold Relics") == 0, "met text");
 	counts[2] = 5;
 	s = line_of(&p, 4, text);
-	EXPECT(s == AP_S2LINE_MET && strcmp(text, "Stage 2: 2 Gold Relics (have 5)") == 0, "more than needed");
+	EXPECT(s == AP_S2LINE_MET && strcmp(text, "Stage 2: 2/2 Gold Relics") == 0, "held count capped at the need");
 
 	// Every stage 2 check collected while the Trophy check still waits: grey.
 	checked_n = 0;
@@ -96,7 +96,7 @@ int main(void)
 	checked_codes[checked_n++] = 104;
 	s = line_of(&p, 4, text);
 	EXPECT(s == AP_S2LINE_DONE, "nothing left behind stage 2 is grey");
-	EXPECT(strcmp(text, "Stage 2: 2 Gold Relics (done)") == 0, "done text");
+	EXPECT(strcmp(text, "Stage 2 done: 2 Gold Relics") == 0, "done text");
 	// A seed without some tier checks (code 0) does not count them as left.
 	checked_n = 0;
 	p.relic_locations[1] = 0; p.relic_locations[2] = 0;
@@ -139,22 +139,23 @@ int main(void)
 	p.ctr_first = 1;
 	counts[14] = 1;
 	EXPECT(line_of(&p, 1, text) == AP_S2LINE_UNMET, "ctr_first relic stage 2");
-	EXPECT(strcmp(text, "Stage 2: 3 Keys (have 1)") == 0, "key wording");
+	EXPECT(strcmp(text, "Stage 2: 1/3 Keys") == 0, "key wording");
 
 	// Any-of families and singular wording, as the tracker's rows say them.
 	memset(counts, 0, sizeof counts);
 	counts[9] = 1; counts[12] = 1;
 	p = track_pad(0x3e00u, 3);
 	line_of(&p, 1, text);
-	EXPECT(strcmp(text, "Stage 2: 3 Any Gems (have 2)") == 0, "any gem");
+	EXPECT(strcmp(text, "Stage 2: 2/3 Any Gems") == 0, "any gem");
 	p = track_pad(1u << 0, 1);
 	counts[0] = 0;
 	line_of(&p, 1, text);
-	EXPECT(strcmp(text, "Stage 2: 1 Trophy (have 0)") == 0, "one trophy");
+	EXPECT(strcmp(text, "Stage 2: 0/1 Trophy") == 0, "one trophy");
 	p = track_pad(1u << 8, 4);
 	line_of(&p, 1, text);
-	EXPECT(strcmp(text, "Stage 2: 4 Purple CTR Tokens (have 0)") == 0, "longest single wording");
+	EXPECT(strcmp(text, "Stage 2: 0/4 Purple CTR Tokens") == 0, "longest single wording");
 	EXPECT((int)strlen(text) < 64, "fits the drawing buffer");
+	EXPECT(strchr(text, '(') == NULL, "no parentheses: the HUD font has none");
 
 	// A small buffer truncates safely.
 	{

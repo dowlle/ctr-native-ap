@@ -681,7 +681,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				// line scrolls in the shared A4-44 box instead of running off.
 				if (apStage2 != AP_S2LINE_NONE)
 				{
-					int apS2W = gGT->pushBuffer[0].rect.w - 32;
+					// 160 narrower than the view keeps it clear of the
+					// bottom right HUD corner; longer lines scroll.
+					int apS2W = gGT->pushBuffer[0].rect.w - 160;
 					DecalFont_DrawLineBox(apStage2Line,
 					                      gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
 					                      gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 15 - apLift,
