@@ -40,21 +40,37 @@ static inline int ap_pad_stage2_has_mode(const ctr_content_pad *pad)
 	return 0;
 }
 
-// Unchecked race checks behind the second stage: the CTR Token and relic
-// checks of every stage 2 mode (ap_content_mode_codes). Shared families such
-// as the track's Wumpa check are not counted; they can be earned in the first
-// race too.
+// Unchecked checks only a stage 2 race can earn: the race checks of every
+// stage 2 mode (CTR Token, relic tiers, a ctr_first paired Trophy) and its
+// family checks (CTR letters, Relic Race Perfect, podium rungs when their race
+// is behind stage 2). Checks a stage 1 race also reaches are not counted: the
+// pad's Item Boxes, the track's lap check and a Wumpa check with a stage 1
+// route. Same families as ap_content_mode_pending.
 static inline int ap_pad_stage2_left(const ctr_content_pad *pad, ap_content_checked_fn checked)
 {
-	int i, k, n, left = 0;
+	int i, j, k, n, left = 0, wumpaStage1 = 0;
+	for (j = 0; pad && j < pad->mode_count && j < AP_CONTENT_MODE_COUNT; ++j)
+		if (pad->stages[j] != 2 && (pad->wumpa_modes & (1u << pad->modes[j])))
+			wumpaStage1 = 1;
 	for (i = 0; pad && i < pad->mode_count && i < AP_CONTENT_MODE_COUNT; ++i)
 	{
-		int64_t codes[3] = {0, 0, 0};
+		int64_t codes[3] = {0, 0, 0}, family[AP_CONTENT_FAMILY_SLOTS];
+		int slots[AP_CONTENT_FAMILY_SLOTS];
+		int64_t paired;
 		if (pad->stages[i] != 2)
 			continue;
 		n = ap_content_mode_codes(pad, pad->modes[i], codes);
 		for (k = 0; k < n; ++k)
 			left += codes[k] > 0 && !checked(codes[k]);
+		paired = ap_content_mode_paired_trophy(pad, pad->modes[i]);
+		left += paired > 0 && !checked(paired);
+		n = ap_content_mode_family_codes(pad, pad->modes[i], family, slots);
+		for (k = 0; k < n; ++k)
+		{
+			if (slots[k] == AP_CONTENT_FAMILY_LAP || (slots[k] == 5 && wumpaStage1))
+				continue;
+			left += family[k] > 0 && !checked(family[k]);
+		}
 	}
 	return left;
 }

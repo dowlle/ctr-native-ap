@@ -105,6 +105,31 @@ int main(void)
 	EXPECT(line_of(&p, 4, text) == AP_S2LINE_DONE, "absent tier codes are not left");
 	checked_n = 0;
 
+	// Family checks only a stage 2 race earns keep the line coloured: Relic
+	// Race Perfect and the CTR letters (review finding, A4-59 round 1). Boxes,
+	// the lap check and a Wumpa check with a stage 1 route do not.
+	p = track_pad(1u << 2, 2);
+	counts[2] = 2;
+	checked_n = 0;
+	checked_codes[checked_n++] = 101;
+	checked_codes[checked_n++] = 102;
+	checked_codes[checked_n++] = 103;
+	checked_codes[checked_n++] = 104;
+	p.perfect_location = 105;
+	EXPECT(line_of(&p, 4, text) == AP_S2LINE_MET, "unchecked Relic Race Perfect keeps it green");
+	p.perfect_location = 0;
+	p.letter_locations[1] = 106;
+	EXPECT(line_of(&p, 4, text) == AP_S2LINE_MET, "unchecked CTR letter keeps it green");
+	p.letter_locations[1] = 0;
+	p.lap_location = 107;
+	p.box_count = 1; p.box_locations[0] = 108;
+	p.wumpa_location = 109;
+	p.wumpa_modes = (1u << AP_CONTENT_MODE_TROPHY) | (1u << AP_CONTENT_MODE_CTR);
+	EXPECT(line_of(&p, 4, text) == AP_S2LINE_DONE, "lap, boxes and a stage 1 Wumpa route are not stage 2");
+	p.wumpa_modes = 1u << AP_CONTENT_MODE_CTR;
+	EXPECT(line_of(&p, 4, text) == AP_S2LINE_MET, "a Wumpa check only stage 2 reaches counts");
+	checked_n = 0;
+
 	// A Done pad shows nothing; its grey X already says it.
 	p = track_pad(1u << 2, 2);
 	EXPECT(line_of(&p, 5, text) == AP_S2LINE_NONE && text[0] == 0, "done pad has no line");
