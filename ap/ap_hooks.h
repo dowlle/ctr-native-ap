@@ -861,6 +861,9 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap);
 #define AP_PAD_DISPLAY_BITS_MAX 256
 // Pad Approach Hints (#124): call while the pad at levelID shows its name.
 void AP_PadApproachHints(int levelID);
+// A4-59: the stage 2 line under the pad's name. Writes the text into `out` and
+// returns its AP_S2LINE_* state (ap_pad_stage2_line.h), 0 when the pad shows none.
+int AP_PadStage2Line(int levelID, char *out, int cap);
 int AP_PadUncollectedDisplayBits(int destLevelID, int *outBits, int cap);
 
 // ── Prize-slot layout (issue #59) ──

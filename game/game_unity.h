@@ -10,6 +10,7 @@
 #include "../ap/ap_link.h"      // one-click-connect glue (#334 slice 3)
 #include "../ap/ap_update.h"    // signed in-game updater (#301)
 #include "../ap/ap_pad_state.h" // tier-2 pad routing is consumed by AH_WarpPad.c
+#include "../ap/ap_pad_stage2_line.h" // A4-59 stage 2 line, drawn by AH_WarpPad.c
 #include "../ap/ap_hit_policy.h"    // freestanding Hit Character encounter decisions (ticket 06)
 #include "../ap/ap_hit_chooser.h"   // freestanding ordinary chooser state machine (ticket 06)
 #include "../ap/ap_hit_encounter.h" // Hit Character gather: roster + dispatch (ticket 06)
