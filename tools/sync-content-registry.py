@@ -66,13 +66,15 @@ def main():
     cups = cup_pool(args.apworld)
     sanity = json.loads((args.apworld / "worlds/ctr/data/sanity_needs.json").read_text())
     exclusions = json.loads((args.apworld / "worlds/ctr/data/crate_exclusions.json").read_text())
+    object_rulings = json.loads((args.apworld / "worlds/ctr/data/object_rulings.json").read_text())
     data = json.loads((args.apworld / "worlds/ctr/data/locations.json").read_text())
     box_tracks = [n for _, n in sorted((r["code"], r["region"]) for r in data if r["name"].endswith(": Sapphire Time Trial") and r["code"] is not None)]
     bases = {name: [35029000 + 32 * i, 35029600 + 16 * i, 35026300 + 16 * i] for i, name in enumerate(box_tracks)}
     bases["Cortex Vortex"] = [35026100, 35026180, 35026200]
     bases.update({t["name"]: [37200000 + 128 * t["block"] + off for off in (0, 80, 96)] for t in expected})
     if (registry.get("named_blocks") == expected and registry.get("cups") == cups and registry.get("sanity") == sanity
-            and registry.get("sanity_exclusions") == exclusions and registry.get("sanity_locations") == bases):
+            and registry.get("sanity_exclusions") == exclusions and registry.get("sanity_locations") == bases
+            and registry.get("object_rulings") == object_rulings):
         print(f"PASS named-block table and cup pool match the apworld ({len(expected)} blocks, {len(cups)} cups)")
         return 0
     if not args.write:
@@ -82,6 +84,7 @@ def main():
     registry["cups"] = cups
     registry["sanity"] = sanity
     registry["sanity_exclusions"] = exclusions
+    registry["object_rulings"] = object_rulings
     registry["sanity_locations"] = bases
     body = "\n" + json.dumps(registry, indent=2) + "\n"
     HEADER.write_text(text[:match.start(2)] + body + text[match.end(2):], encoding="utf-8")

@@ -153,6 +153,35 @@ int main(int argc, char **argv) {
         }
         refuse(bad, "Hot Air Skyway excluded Wumpa crate 4 forged into the picks refuses");
     }
+    {
+        // A4-52, ruling 2026-11-11: all difficulty/Blue Fire/boost-mode combinations.
+        std::ifstream fixture("tools/fixtures/content-plan/object-rulings.jsonl");
+        std::string line;
+        int rows = 0;
+        while (std::getline(fixture, line)) {
+            const J sample = J::parse(line);
+            const J room = sample["slot_data"];
+            const bool removed = sample["difficulty"] != "hard" && (sample["boost"] == "off" || !sample["blue"].get<bool>());
+            expect(parse(room) && bind_room(room), "object ruling room parses and binds");
+            const auto *record = ap_content_plan_sanity("custom/tv-world/1.1.0");
+            expect(record && record->counts[1] == 9, "TV World retains physical count");
+            if (record) for (int n = 1; n <= 9; ++n)
+                expect((record->locations[1][n - 1] == 0) == (removed && n >= 3 && n <= 6), "TV World selected ordinal slots");
+            if (record) for (int n = 0; n < 19; ++n)
+                expect(record->locations[0][n] > 0, "TV World weapon crates remain selected");
+            if (removed) {
+                auto bad = room;
+                for (auto &row : bad["content_plan"]["sanity"]["tracks"])
+                    if (row["track_id"] == "custom/tv-world/1.1.0") row["wumpa_crate"].insert(row["wumpa_crate"].begin() + 2, 3);
+                auto extra = check(bad, 37210065);
+                extra["location"] = 37210066; extra["display_name"] = "TV World: Wumpa Crate 3";
+                bad["content_plan"]["checks"].push_back(extra);
+                refuse(bad, "TV World removed crate forged into room refuses");
+            }
+            ++rows;
+        }
+        expect(rows == 18, "all object ruling fixtures exercised");
+    }
     J base, extras;
     std::ifstream("tools/fixtures/content-plan/baseline.json") >> base;
     std::ifstream("tools/fixtures/content-plan/starts-extras.json") >> extras;

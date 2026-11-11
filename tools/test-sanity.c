@@ -101,6 +101,14 @@ int main(void) {
     ++epoch; context.seedEpoch = epoch; record.counts[0] = 3;
     AP_SanityLevelInstances(defs, 4); AP_SanityPickup(&objects[2], &player); assert(sent == 3 && ap_sanity_ready == -1);
     AP_SanityLevelInstances(defs, 513); AP_SanityPickup(&objects[2], &player); assert(sent == 3);
+    /* A4-52: an eligible physical crate with no selected check stays ordinary,
+       without a recolour or network send. Other selected families still work. */
+    ++epoch; context.seedEpoch = epoch; record.counts[0] = 2;
+    record.locations[1][0] = 0;
+    AP_SanityLevelInstances(defs, 4); AP_SanityTick(&gt);
+    assert(AP_SanityRecolourTag(&objects[2]) == 0);
+    assert(AP_SanityPickup(&objects[2], &player) == 0 && sent == 3);
+    assert(AP_SanityRecolourTag(&objects[1]) != 0);
     puts("sanity runtime: ordinal pick, AI, local player, dedup, reload, race mode, route, feed and mismatch pass");
     return 0;
 }
