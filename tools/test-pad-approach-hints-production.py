@@ -24,7 +24,9 @@ def body(text, head):
 # The call sits right after the pad name is drawn, once, and nowhere else.
 name = warp.index("DecalFont_DrawLine(warppadLNG,")
 call = warp.index("AP_PadApproachHints(levelID);")
-assert name < call < warp.index("int apBoxesLeft = 0;", call)
+# A4-59 computes the lines under the name before it; the next drawing after
+# the call is the stage 2 line.
+assert name < call < warp.index("if (apStage2 != AP_S2LINE_NONE)", call)
 assert warp.count("AP_PadApproachHints(") == 1
 assert '#include "ap_pad_hints_logic.h"' in hooks
 
