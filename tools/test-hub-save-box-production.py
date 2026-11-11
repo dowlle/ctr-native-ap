@@ -39,14 +39,19 @@ first_hint = tick.find("MainFrame_RequestMaskHint", trigger)
 check("the save screen's wake test refuses while a load or hub move is pending",
       trigger >= 0 and 0 <= gate1 < first_hint)
 show = tick.find("RECTMENU_Show(&data.menuGreenLoadSave)")
-gate2 = tick.rfind("AP_HubSaveBoxMayOpenNow()", 0, show)
-check("the green menu is not shown once a load is pending", show >= 0 and gate2 > gate1)
+mark = tick.rfind("save->flags |= 2;", 0, show)
+between = tick[mark:show] if mark >= 0 else ""
+check("the green menu is not shown once a load is pending (the skip sits between flags |= 2 and the show)",
+      show >= 0 and mark > gate1 and "if (!AP_HubSaveBoxMayOpenNow())" in between
+      and "goto LAB_800af72c;" in between.split("if (!AP_HubSaveBoxMayOpenNow())", 1)[-1].split(";", 1)[0] + ";")
 
 race = (root / "game/MAIN/MainRaceTrack.c").read_text()
 start_load = body(race, "void MainRaceTrack_StartLoad(")
 close = start_load.find("AP_HubSaveBoxCloseForLoad();")
-check("every level load closes the hub save box before the level file loads",
-      0 <= close < start_load.find("LOAD_LevelFile(levelID);"))
+guard = start_load.rfind("#ifdef CTR_AP", 0, close)
+check("every level load closes the hub save box before the level file loads, unconditionally in AP builds",
+      0 <= close < start_load.find("LOAD_LevelFile(levelID);") and guard >= 0
+      and "if (" not in start_load[guard:close] and "#endif" not in start_load[guard:close])
 
 glue_path = root / "ap/ap_hub_savebox.c"
 glue = glue_path.read_text() if glue_path.exists() else ""

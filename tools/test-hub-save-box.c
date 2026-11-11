@@ -10,7 +10,8 @@
 // The model below replays both with the decisions of ap_hub_savebox_logic.h
 // standing in for the engine glue (ap_hub_savebox.c; wiring checked by
 // tools/test-hub-save-box-production.py). Build with -DA458_BEFORE to replay
-// the behaviour before the fix: every scenario check fails.
+// the behaviour before the fix: every scenario check fails (the decision
+// table checks above them pin the header and pass either way).
 #include <stdio.h>
 #include "ap_hub_savebox_logic.h"
 
@@ -71,6 +72,12 @@ static void save_tick(void)
 			g.kartFrozen = 1;
 			g.camFrames = 3;
 		}
+		return;
+	}
+	if ((g.flags & 2) && g.camFrames == 0 && g.active == MENU_NONE)
+	{
+		// no menu: the camera goes back and the kart's own tick returns
+		g.kartFrozen = 0;
 		return;
 	}
 	if (g.camFrames > 0 && --g.camFrames == 0 && (g.flags & 2) == 0)
@@ -197,7 +204,8 @@ static void scenario_approach_then_load(void)
 	g.loadIdle = 0; // a load requested during the camera approach
 	save_tick(); save_tick(); save_tick();
 	CHECK("approach: a load requested mid-approach skips the menu", g.active == MENU_NONE);
-	CHECK("approach: the camera goes back (flags & 2)", (g.flags & 2) != 0);
+	save_tick();
+	CHECK("approach: the camera goes back and the kart is released", (g.flags & 2) != 0 && !g.kartFrozen);
 }
 
 int main(void)
