@@ -2860,7 +2860,7 @@ static struct TextureLayout *RenderBucket_GetCommandTexture(struct RenderBucketD
 	struct TextureLayout *tex = ctx->idpp->ptrTexLayout[texIndex - 1];
 	if (tex && ctx->sanityTag) {
 		ctx->sanityTexture = *tex;
-		ctx->sanityTexture.tpage = (tex->tpage & ~0x3c00u) | ctx->sanityTag;
+		ctx->sanityTexture.tpage = (tex->tpage & ~NATIVE_SANITY_TPAGE_MASK) | ctx->sanityTag;
 		return &ctx->sanityTexture;
 	}
 	return tex;
@@ -2909,7 +2909,7 @@ static u8 RenderBucket_SaturateU8(int value)
 static u32 RenderBucket_SanityColour(struct RenderBucketDrawContext *ctx, u32 colour)
 {
 #ifdef CTR_AP
-    return AP_SanityRecolourRGB(colour, ctx->sanityTag >> 10);
+    return AP_SanityRecolourRGB(colour, NativeSanityDecodeTag(ctx->sanityTag));
 #else
     (void)ctx;
     return colour;

@@ -1,6 +1,7 @@
 #ifndef AP_SANITY_COLOUR_H
 #define AP_SANITY_COLOUR_H
 #include "ap_pad_colour.h"
+#include "../include/platform/native_sanity_recolour.h"
 
 struct Instance;
 unsigned AP_SanityRecolourTag(struct Instance *inst);
@@ -13,13 +14,12 @@ static inline int AP_SanityLook(int checked, int logicState)
     return checked ? AP_PAD_LOOK_DONE : logicState == 0 ? AP_PAD_LOOK_CLOSED : AP_PAD_LOOK_OPEN;
 }
 
-// Native-only primitive metadata in unused TPAGE bits 10..13. Bits 14..15
-// belong to sideloaded art. Zero means ordinary rendering. Per-primitive
-// metadata survives ordering-table depth sorting without leaking state.
+// Marker-gated native metadata survives depth sorting without treating
+// ordinary TPAGE flags as check state. Zero means ordinary rendering.
 static inline unsigned AP_SanityTag(int look, int variant)
 {
     unsigned state = look == AP_PAD_LOOK_DONE ? 2 : look == AP_PAD_LOOK_CLOSED ? 1 : 0;
-    return (1 + state * 3 + (unsigned)variant) << 10;
+    return NativeSanityEncodeTag(1 + state * 3 + (unsigned)variant);
 }
 
 // Untextured pickups (notably loose Wumpa) have no TPAGE word. Apply the

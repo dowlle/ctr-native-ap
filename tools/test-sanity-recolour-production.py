@@ -34,6 +34,7 @@ struct TextureLayout { u8 u0,v0; u16 clut; u8 u1,v1; u16 tpage; u8 u2,v2,u3,v3; 
 struct InstDrawPerPlayer { struct TextureLayout **ptrTexLayout; };
 struct RenderBucketDrawContext { struct InstDrawPerPlayer *idpp; struct TextureLayout sanityTexture; unsigned sanityTag; };
 '''
+fixture += next(line for line in (root / 'include/psx/libgpu.h').read_text().splitlines() if line.startswith('#define getTPage(')) + '\n'
 production = function(bucket, 'static struct TextureLayout *RenderBucket_GetCommandTexture(')
 production += '\n' + function(bucket, 'static u32 RenderBucket_SanityColour(')
 for name in ['Quad', 'Triangle', 'Rect', 'LineZero', 'TriangleZero', 'QuadZero']:
@@ -45,9 +46,33 @@ int main(void) {
     struct InstDrawPerPlayer idpp = {textures};
     struct RenderBucketDrawContext ctx = {&idpp, {0}, 0};
     GrVertex vertices[4]; u8 uv[] = {20,30}; int valid;
+    // Actual ordinary TPAGE construction includes bit 11 for Y=0x200.
+    assert(getTPage(2,0,0,0x200) == 0x900);
+    for (int x=0;x<1024;x+=64) for (int y=0;y<1024;y+=256)
+        for (int mode=0;mode<4;++mode) for (int blend=0;blend<4;++blend) {
+            unsigned ordinary = getTPage(mode,blend,x,y);
+            assert(!(ordinary & NATIVE_SANITY_TPAGE_MARKER));
+            assert(!NativeSanityDecodeTag(ordinary));
+            assert(NativeSanityClearTag(ordinary) == ordinary);
+        }
+    // Include dither, legacy flags and both sideload flag combinations.
+    // None can opt into recolouring without the reserved marker field.
+    for (unsigned ordinary=0;ordinary<=0xffff;++ordinary) {
+        if (ordinary & NATIVE_SANITY_TPAGE_MARKER) continue;
+        assert(!NativeSanityDecodeTag(ordinary));
+        assert(NativeSanityClearTag(ordinary) == ordinary);
+        MakeTexcoordQuad(vertices,uv,uv,uv,uv,(s16)ordinary,0x123,1);
+        for (int i=0;i<4;++i) assert(!vertices[i]._p0);
+        MakeTexcoordTriangle(vertices,uv,uv,uv,(s16)ordinary,0x123,1);
+        for (int i=0;i<3;++i) assert(!vertices[i]._p0);
+        MakeTexcoordRect(vertices,uv,(s16)ordinary,0x123,8,8);
+        for (int i=0;i<4;++i) assert(!vertices[i]._p0);
+    }
     assert(RenderBucket_GetCommandTexture(&ctx,1,&valid) == &original && valid);
     for (int tag=1; tag<=9; ++tag) {
-        ctx.sanityTag = tag << 10;
+        ctx.sanityTag = NativeSanityEncodeTag(tag);
+        assert(ctx.sanityTag & NATIVE_SANITY_TPAGE_MARKER);
+        assert(NativeSanityClearTag(original.tpage | ctx.sanityTag) == original.tpage);
         assert(RenderBucket_SanityColour(&ctx, 0x32abcdef) == AP_SanityRecolourRGB(0x32abcdef, tag));
         struct TextureLayout *copy = RenderBucket_GetCommandTexture(&ctx,1,&valid);
         assert(copy != &original && valid && copy->tpage == (original.tpage | ctx.sanityTag));

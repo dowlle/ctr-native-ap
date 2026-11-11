@@ -6,6 +6,7 @@
 
 #include <macros.h>
 #include "platform/native_gpu.h"
+#include "platform/native_sanity_recolour.h"
 
 #include <platform.h>
 
@@ -398,7 +399,7 @@ void MakeVertexRect(GrVertex *vertex, VERTTYPE *p0, s16 w, s16 h)
 
 void MakeTexcoordQuad(GrVertex *vertex, u8 *uv0, u8 *uv1, u8 *uv2, u8 *uv3, s16 page, s16 clut, u8 dither)
 {
-	for (int i = 0; i < 4; ++i) vertex[i]._p0 = (page >> 10) & 15;
+	for (int i = 0; i < 4; ++i) vertex[i]._p0 = NativeSanityDecodeTag((u16)page);
 
 	assert(uv0);
 	assert(uv1);
@@ -468,7 +469,7 @@ void MakeTexcoordQuad(GrVertex *vertex, u8 *uv0, u8 *uv1, u8 *uv2, u8 *uv3, s16 
 
 void MakeTexcoordTriangle(GrVertex *vertex, u8 *uv0, u8 *uv1, u8 *uv2, s16 page, s16 clut, u8 dither)
 {
-	for (int i = 0; i < 3; ++i) vertex[i]._p0 = (page >> 10) & 15;
+	for (int i = 0; i < 3; ++i) vertex[i]._p0 = NativeSanityDecodeTag((u16)page);
 
 	assert(uv0);
 	assert(uv1);
@@ -528,7 +529,7 @@ void MakeTexcoordTriangle(GrVertex *vertex, u8 *uv0, u8 *uv1, u8 *uv2, s16 page,
 
 void MakeTexcoordRect(GrVertex *vertex, u8 *uv, s16 page, s16 clut, s16 w, s16 h)
 {
-	for (int i = 0; i < 4; ++i) vertex[i]._p0 = (page >> 10) & 15;
+	for (int i = 0; i < 4; ++i) vertex[i]._p0 = NativeSanityDecodeTag((u16)page);
 
 	assert(uv);
 
@@ -1704,7 +1705,7 @@ internal int ProcessTileAndSprt(P_TAG *polyTag)
 		// verbatim, and only DR_TPAGE masks it back to 0x1FF). Nothing
 		// sideloaded is ever drawn as a sprite, so strip it here rather than
 		// let a sprite sample the AP atlas.
-		activeDrawEnv.tpage &= (u16)~(AP_TPAGE_SIDELOAD_MASK | 0x3c00u);
+		activeDrawEnv.tpage = (u16)(NativeSanityClearTag(activeDrawEnv.tpage) & ~AP_TPAGE_SIDELOAD_MASK);
 
 		AddSplit(semiTrans, true, NativeGpu_TPageOverlapsActiveDrawPage(activeDrawEnv.tpage));
 
@@ -1757,7 +1758,7 @@ internal int ProcessTileAndSprt(P_TAG *polyTag)
 	{
 		SPRT_8 *poly = (SPRT_8 *)polyTag;
 
-		activeDrawEnv.tpage &= (u16)~(AP_TPAGE_SIDELOAD_MASK | 0x3c00u);  // see case 0x64
+		activeDrawEnv.tpage = (u16)(NativeSanityClearTag(activeDrawEnv.tpage) & ~AP_TPAGE_SIDELOAD_MASK);  // see case 0x64
 
 		AddSplit(semiTrans, true, NativeGpu_TPageOverlapsActiveDrawPage(activeDrawEnv.tpage));
 
@@ -1793,7 +1794,7 @@ internal int ProcessTileAndSprt(P_TAG *polyTag)
 	{
 		SPRT_16 *poly = (SPRT_16 *)polyTag;
 
-		activeDrawEnv.tpage &= (u16)~(AP_TPAGE_SIDELOAD_MASK | 0x3c00u);  // see case 0x64
+		activeDrawEnv.tpage = (u16)(NativeSanityClearTag(activeDrawEnv.tpage) & ~AP_TPAGE_SIDELOAD_MASK);  // see case 0x64
 
 		AddSplit(semiTrans, true, NativeGpu_TPageOverlapsActiveDrawPage(activeDrawEnv.tpage));
 
