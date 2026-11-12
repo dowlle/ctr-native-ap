@@ -84,6 +84,10 @@ int ap_track_registry_lookup(const char *lev_sha256, uint32_t lev_bytes,
                              const char *vrm_sha256, uint32_t vrm_bytes,
                              struct ApTrackRegistryMatch *out);
 
+// The registry track key for a Saphi track id (permission check, A4-74).
+// Returns 1 and fills key when exactly one registry track names that id.
+int ap_track_registry_key_for_saphi(int saphi_track_id, char *key, int key_bytes);
+
 #ifdef __cplusplus
 }
 
@@ -99,6 +103,10 @@ bool ap_https_get(const char *host, const std::string &path, size_t max_bytes,
 // cache loader). Returns the number of downloadable revisions indexed, or -1
 // with error set when the bytes are not a usable registry.
 int ap_track_registry_parse_check(const std::vector<unsigned char> &bytes, std::string &error);
+
+// The names a registry track credits, in registry order (permission check,
+// A4-74). False when the track is unknown or a credit is unreadable.
+bool ap_track_registry_credits(const std::string &track_key, std::vector<std::string> &names);
 #endif
 
 #endif

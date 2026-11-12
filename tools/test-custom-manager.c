@@ -109,6 +109,16 @@ int XdeltaImport_PollInstall(int *installed,char *e,size_t n) { (void)e;(void)n;
 static int saphiBusy;
 int ap_custom_track_download_busy(char *text, int size)
 { if (text && size > 0) snprintf(text, size, "%s", saphiBusy ? "Project Saphi is busy, waiting 60s" : ""); return saphiBusy; }
+/* The track author permission check (A4-74): the real resolver is
+   ap/ap_track_consent.cpp (tools/test-track-consent.cpp); here one Saphi
+   track id is refused and the list can be missing. */
+#include "../ap/ap_track_consent.h"
+static int permDenied=-1, permListed=1, consentRefreshes;
+int ap_track_permission(int track,int author,int saphi,const char *key)
+{ (void)author;(void)saphi;(void)key; return !permListed ? AP_TRACK_PERMISSION_UNKNOWN : track==permDenied ? AP_TRACK_PERMISSION_DENY : AP_TRACK_PERMISSION_ALLOW; }
+const char *ap_track_permission_text(void)
+{ return permListed ? "The author has not allowed in-game download." : "The permission list could not be loaded, so in-game download is off."; }
+int ap_track_consent_refresh_assets(const char *a) { (void)a; consentRefreshes++; return 1; }
 #include "../game/230/MM_CustomManager.c"
 static void tick(int buttons) { struct GamepadBuffer pad={0};pad.buttonsTapped=buttons;drawn[0]=0;MM_ConfigProc_TrackLibrary(NULL,NULL,&pad); }
 int main(void)
@@ -217,6 +227,21 @@ int main(void)
  s_saphiDownloading=0;tick(BTN_SELECT);tick(0);CHECK(!strstr(drawn,"Import")&&!strstr(drawn,"Choose a file"));
  dropState=1;tick(0);CHECK(dropState==1);dropState=0;
 #endif
+ /* A4-74: Browse lists only tracks whose author said yes, Download refuses
+    the rest, and with no permission list Browse says why instead of looking empty. */
+ s_contentLibraryTab=0;s_saphiVersionTrack=0;s_saphiQuery[0]=0;s_saphiDownloading=0;s_saphiMessage[0]=0;
+ for(int i=0;i<9;i++){rows[i].trackID=i+1;strcpy(rows[i].version,"1.0.0");rows[i].disabledReason[0]=0;rows[i].current=0;}
+ CHECK(consentRefreshes>=2); /* the first load and L2 */
+ tick(0);{char *p=strstr(drawn,"1/9");CHECK(p!=NULL);}
+ permDenied=1;s_saphiSelection[0]=0;tick(0);CHECK(strstr(drawn,"1/8")!=NULL);
+ /* The refused row cannot be reached any more; a direct Download of it is refused too. */
+ /* Two revisions of the refused track: both left out. The first listed row (track 2) still downloads. */
+ {int b=starts;
+  rows[1].trackID=1;tick(0);CHECK(strstr(drawn,"1/7")!=NULL);
+  rows[1].trackID=2;tick(BTN_CROSS);CHECK(starts==b+1);s_saphiDownloading=0;installResult=-1;}
+ permListed=0;tick(0);CHECK(strstr(drawn,"0/0")&&strstr(drawn,"permission")&&!strstr(drawn,"Catalogue unavailable"));
+ {int b=starts;tick(BTN_CROSS);CHECK(starts==b);}
+ permListed=1;permDenied=-1;
  CHECK(CustomRevision_Compare("2.0.0","1.99.0")>0);
  CHECK(CustomRevision_Compare("1.0.0","1.0.0-rc1")>0);
  CHECK(scrollBars>0);

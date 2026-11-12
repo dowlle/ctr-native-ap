@@ -5,6 +5,7 @@
    (MM_CustomTracks.c) instead of the page below. */
 #include <platform/native_custom_revision.h>
 #include "../../ap/ap_custom_track_download.h"
+#include "../../ap/ap_track_consent.h" /* the track author permission check (A4-74) */
 #ifndef MM_IMPORT_PLAYER // the player client imports on Custom Content instead
 #include "MM_CustomImport.c"
 #endif
@@ -142,6 +143,7 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
     {
         s_saphiLoaded = 1;
         s_saphiRefreshBusy = CustomSaphi_StartRefresh();
+        ap_track_consent_refresh_assets(NativeAssets_GetAssetDir()); /* A4-74 */
         if (!s_saphiRefreshBusy) snprintf(s_saphiMessage,sizeof s_saphiMessage,"Could not refresh Saphi. L2: Retry.");
         if (tapped & BTN_L2) s_contentStoreWanted = 1;
     }
@@ -176,10 +178,13 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
             const struct CustomSaphiRevision *r = CustomSaphi_Row(s_saphiCatalogue, i);
             if (s_saphiVersionTrack)
             {
-                if(r->trackID==s_saphiVersionTrack) visible[count++]=i;
+                if(r->trackID==s_saphiVersionTrack &&
+                   ap_track_permission(r->trackID,r->authorID,r->saphiPermission,NULL)==AP_TRACK_PERMISSION_ALLOW) visible[count++]=i;
                 continue;
             }
             if (!(MM_CustomSearchMatch(r->title,s_saphiQuery) || MM_CustomSearchMatch(r->author,s_saphiQuery))) continue;
+            /* A4-74: Browse lists only tracks whose author allowed in-game download. */
+            if (ap_track_permission(r->trackID,r->authorID,r->saphiPermission,NULL)!=AP_TRACK_PERMISSION_ALLOW) continue;
             size_t at=0;
             for(;at<count;at++) if(CustomSaphi_Row(s_saphiCatalogue,visible[at])->trackID==r->trackID) break;
             if(at==count) visible[count++]=i;
@@ -225,6 +230,11 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
     if ((tapped & (BTN_CROSS | BTN_CIRCLE)) && !MM_CustomLibrary_Busy())
     {
         if (sourceInstalled) { s_contentStoreWanted=1; snprintf(s_saphiMessage,sizeof s_saphiMessage,"Installed. Files verified."); }
+        else if (source && ap_track_permission(source->trackID,source->authorID,source->saphiPermission,NULL)!=AP_TRACK_PERMISSION_ALLOW)
+        {
+            s_saphiFailed = 1;
+            snprintf(s_saphiMessage,sizeof s_saphiMessage,"%s",ap_track_permission_text());
+        }
         else if (source && !source->disabledReason[0])
         {
             s_saphiDownloading = CustomSaphi_StartInstall(source,NativeAssets_GetAssetDir());
@@ -254,7 +264,8 @@ static void MM_ConfigProc_TrackLibrary(struct RectMenu *menu, uint32_t *ot, stru
     }
     CTR_MenuDrawScrollBar(284,66,7*15,(int)count,count-first<7?(int)(count-first):7,(int)first,ot); /* more than seven rows (A4-36) */
     if (!count) MM_CustomText_Draw(s_saphiRefreshBusy && !s_contentLibraryTab ? "Loading Saphi..." :
-        *s_saphiQuery ? "No search matches" : s_contentLibraryTab ? "No installed tracks" : "Catalogue unavailable",32,84,244,3,WHITE,ot);
+        *s_saphiQuery ? "No search matches" : s_contentLibraryTab ? "No installed tracks" :
+        s_saphiCatalogue && CustomSaphi_Count(s_saphiCatalogue) ? ap_track_permission_text() : "Catalogue unavailable",32,84,244,3,WHITE,ot);
     if (source || installed)
     {
         MM_CustomText_Draw(source ? source->title : installed->title,305,70,176,2,ORANGE,ot);

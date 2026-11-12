@@ -88,5 +88,24 @@ int main(int argc,char **argv)
     {auto big=sca;big["file_size"]=2*1024*1024;j=withSca({big});CHECK(parse(j,&c));CHECK(rowFor(c,"1.0.0")->sca.id==0);CustomSaphi_Free(&c);}
     {auto ref=sca;ref["download_url"]=nullptr;ref["file_size"]=0;j=withSca({ref});CHECK(parse(j,&c));CHECK(rowFor(c,"1.0.0")->sca.id==0);CustomSaphi_Free(&c);}
     {auto odd=sca;odd["is_current"]="yes";j=withSca({odd});CHECK(parse(j,&c));CHECK(rowFor(c,"1.0.0")->sca.id==0);CustomSaphi_Free(&c);}
+    /* A4-74: author_id is read for the permission check; a missing or odd
+       one leaves the author unknown and never fails the catalogue. Saphi
+       publishes no permission field yet, and the adapter reads none: every
+       revision is unknown, whatever look-alike field appears (auto_download
+       is Saphi's own client hint, not permission). */
+    j=fixture();CHECK(parse(j,&c));CHECK(CustomSaphi_Row(c,0)->authorID==0 &&
+        CustomSaphi_Row(c,0)->saphiPermission==CUSTOM_SAPHI_PERMISSION_UNKNOWN);CustomSaphi_Free(&c);
+    j=fixture();j["data"][0]["author_id"]=12;CHECK(parse(j,&c));CHECK(CustomSaphi_Row(c,0)->authorID==12);CustomSaphi_Free(&c);
+    for(const json &odd:{json("12"),json(0),json(-3),json(1e12),json(nullptr),json(3.5)})
+    {j=fixture();j["data"][0]["author_id"]=odd;CHECK(parse(j,&c));CHECK(CustomSaphi_Row(c,0)->authorID==0);CustomSaphi_Free(&c);}
+    {
+        j=fixture();auto &t=j["data"][0];
+        t["author_id"]=1;t["permissions"]={{"client_download",true},{"listing","allow"}};
+        t["allow_download"]=true;t["download_permission"]="granted";
+        for(auto &m:t["downloads"]){m["auto_download"]=true;m["permission"]="allow";m["allow_third_party"]=true;}
+        CHECK(parse(j,&c));CHECK(CustomSaphi_Row(c,0)->saphiPermission==CUSTOM_SAPHI_PERMISSION_UNKNOWN);CustomSaphi_Free(&c);
+        t["permissions"]={{"client_download",false}};t["allow_download"]=false;
+        CHECK(parse(j,&c));CHECK(CustomSaphi_Row(c,0)->saphiPermission==CUSTOM_SAPHI_PERMISSION_UNKNOWN);CustomSaphi_Free(&c);
+    }
     std::printf("Saphi catalogue: %d checks, %d failures\n",checks,failures);return failures!=0;
 }

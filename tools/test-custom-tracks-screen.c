@@ -112,6 +112,29 @@ const struct CustomSaphiRevision *CustomSaphi_Row(const struct CustomSaphiCatalo
 int CustomSaphi_StartInstall(const struct CustomSaphiRevision *r, const char *a) { (void)r; (void)a; installStarts++; return 1; }
 int CustomSaphi_PollInstall(char pin[65], char *e, size_t n) { (void)e; (void)n; if (installResult == 1) strcpy(pin, "fixture"); return installResult; }
 
+/* ---- the track author permission check (A4-74) ----
+   The real resolver is ap/ap_track_consent.cpp (tools/test-track-consent.cpp);
+   here a deny list per Saphi track id and the list's state stand in for it. */
+#include "../ap/ap_track_consent.h"
+static int permDeny[8], permDenyCount, permSource = AP_TRACK_CONSENT_SOURCE_LIVE, permState = AP_TRACK_CONSENT_DONE;
+static int consentRefreshes;
+int ap_track_permission(int track, int author, int saphi, const char *key)
+{
+    int i;
+    (void)author; (void)saphi; (void)key;
+    if (permSource == AP_TRACK_CONSENT_SOURCE_NONE || track <= 0) return AP_TRACK_PERMISSION_UNKNOWN;
+    for (i = 0; i < permDenyCount; i++) if (permDeny[i] == track) return AP_TRACK_PERMISSION_DENY;
+    return AP_TRACK_PERMISSION_ALLOW;
+}
+int ap_track_consent_status(int *source, char *d, int n) { if (source) *source = permSource; if (d && n > 0) d[0] = 0; return permState; }
+int ap_track_consent_refresh_assets(const char *a) { (void)a; consentRefreshes++; return 1; }
+const char *ap_track_permission_text(void)
+{
+    if (permSource != AP_TRACK_CONSENT_SOURCE_NONE) return "The author has not allowed in-game download.";
+    if (permState == AP_TRACK_CONSENT_LOADING || permState == AP_TRACK_CONSENT_IDLE) return "Checking which authors allow in-game download...";
+    return "The permission list could not be loaded, so in-game download is off.";
+}
+
 /* ---- Play Solo ---- */
 static int publishOK = 1, soloActive;
 int AP_Solo_PublishInstalledStore(const char *pin, char *error, size_t n) { (void)pin; if (!publishOK) snprintf(error, n, "Index unavailable"); return publishOK; }
@@ -338,6 +361,7 @@ static void entry(int i, const char *title, const char *version, int trackID, in
     snprintf(lib[i].author, sizeof lib[i].author, "Author %d", i);
     snprintf(lib[i].local.uuid, sizeof lib[i].local.uuid, "uuid-%d", trackID ? trackID : 900 + i);
     lib[i].installed = 1; lib[i].local.trackID = trackID; lib[i].local.arcade = arcade; lib[i].local.timeTrial = 1;
+    lib[i].local.permissionTrackID = trackID;
     lib[i].local.xdelta = xdelta; lib[i].local.levID = trackID * 10; lib[i].local.vrmID = trackID * 10 + 1;
     if (!arcade) snprintf(lib[i].local.arcadeReason, sizeof lib[i].local.arcadeReason, "Grid: 3 of 8");
 }
@@ -355,6 +379,25 @@ static int has(const char *s)
     static char flat[sizeof drawn];
     size_t i;
     for (i = 0; drawn[i] && i + 1 < sizeof flat; i++) flat[i] = drawn[i] == '\n' ? ' ' : drawn[i];
+    flat[i] = 0;
+    return strstr(flat, s) != NULL;
+}
+/* A detail text longer than its lines turns a page every CT_PAGE_FRAMES
+   with no input: look through every page (up to four). */
+static int has_paged(const char *s, const char *name)
+{
+    static char all[4 * sizeof drawn];
+    static char flat[4 * sizeof drawn];
+    size_t i;
+    int page, k;
+    all[0] = 0;
+    for (page = 0; page < 4; page++)
+    {
+        frame(0, page ? NULL : name);
+        if (strlen(all) + strlen(drawn) + 1 < sizeof all) strcat(all, drawn);
+        for (k = 0; k < CT_PAGE_FRAMES; k++) frame(0, NULL);
+    }
+    for (i = 0; all[i] && i + 1 < sizeof flat; i++) flat[i] = all[i] == '\n' ? ' ' : all[i];
     flat[i] = 0;
     return strstr(flat, s) != NULL;
 }
@@ -850,6 +893,121 @@ int main(void)
         installState = 1; frame(0, NULL); frame(BTN_CROSS, NULL); frame(BTN_TRIANGLE, NULL);
     }
     scanState = -1; installState = -1;
+
+    /* 12. A4-74: only tracks whose author said yes are offered for download. */
+    seedActive = 0; seedSelected = 0; roomCount = 0; seedBusy = 0; seedConnected = 0; seedName[0] = 0;
+    s_contentLibrary.count = 5; catCount = 5; pkgStatus.state = CTR_CT_MANAGER_READY;
+    s_saphiQuery[0] = 0; s_saphiMessage[0] = 0; s_ctMessage[0] = 0; s_contentStoreWanted = 0;
+    revisit(); frame(0, NULL);
+    s_ctTab = CT_TAB_LIBRARY; s_ctFocus = CT_FOCUS_LIST; s_ctSub = CT_SUB_NONE; s_ctFilter = CT_FILTER_BROWSE;
+    frame(0, NULL); CHECK(s_ctItemCount == 4); /* everything allowed: as in section 3 */
+    {
+        /* The first visit and Refresh catalogue also fetch the permission list. */
+        const int before = consentRefreshes;
+        s_ctFocus = CT_FOCUS_CONTROLS; s_ctControlSel[CT_TAB_LIBRARY] = 2;
+        frame(BTN_CROSS, NULL); CHECK(consentRefreshes == before + 1);
+        refreshResult = 1; frame(0, NULL); refreshResult = -1; s_ctMessage[0] = 0;
+        s_ctFocus = CT_FOCUS_LIST;
+    }
+    /* Android Alley Remix's author has not said yes: Browse leaves it out and says so. */
+    permDeny[0] = 140; permDenyCount = 1;
+    frame(0, "permission-browse");
+    CHECK(s_ctItemCount == 3 && !has("Android Alley Remix") && has("Arcane Garden"));
+    s_ctFocus = CT_FOCUS_CONTROLS;
+    CHECK(has_paged("1 track not listed: its", "permission-browse-controls") && has_paged("author has not allowed in-game download.", NULL));
+    s_ctFilter = CT_FILTER_ALL; frame(0, NULL); CHECK(!has("Android Alley Remix"));
+    /* Coco Park 2025 is installed and its author has not said yes: it stays
+       listed and racing, loses Update and Versions, keeps its source page. */
+    permDeny[1] = 130; permDenyCount = 2;
+    s_ctFocus = CT_FOCUS_LIST; s_ctListSel[CT_TAB_LIBRARY] = 0;
+    select_track("Coco Park 2025");
+    frame(0, "permission-installed"); CHECK(has("Not allowed by author") && !has("Update available"));
+    frame(BTN_CROSS, "permission-installed-actions");
+    CHECK(s_ctFocus == CT_FOCUS_ACTIONS && has("Recheck files") && !has("Update to"));
+    {
+        const int before = installStarts;
+        frame(BTN_CROSS, NULL); CHECK(installStarts == before && s_contentStoreWanted == 1);
+        s_contentStoreWanted = 0;
+        CHECK(select_action("Versions")); frame(BTN_CROSS, "permission-versions-refused");
+        CHECK(s_ctSub == CT_SUB_NONE && has("has not allowed"));
+        /* The Versions list path, called directly: refused, nothing started. */
+        CT_StartSaphiInstall(&cat[2], NULL);
+        CHECK(installStarts == before && strstr(s_ctMessage, "has not allowed"));
+        CHECK(select_action("Open source page")); frame(BTN_CROSS, NULL);
+        CHECK(!strcmp(lastURL, "https://www.projectsaphi.com/tracks/130"));
+    }
+    frame(BTN_TRIANGLE, NULL);
+    /* Without the catalogue an installed copy is matched by the Saphi track id it recorded. */
+    catCount = 0; s_ctListSel[CT_TAB_LIBRARY] = 0;
+    select_track("Coco Park 2025");
+    frame(0, "permission-installed-offline"); CHECK(has("Not allowed by author"));
+    select_track("Arabian Heights Night"); frame(0, NULL); CHECK(!has("Not allowed by author"));
+    catCount = 5;
+    /* A cached list works like the live one and says so. */
+    permSource = AP_TRACK_CONSENT_SOURCE_CACHED; s_ctFilter = CT_FILTER_BROWSE; s_ctFocus = CT_FOCUS_CONTROLS;
+    CHECK(has_paged("2 tracks not listed: their", "permission-cached") && has_paged("(saved list).", NULL));
+    /* No list (offline without a cache, or consent.json missing or unreadable):
+       nothing is offered, and Browse says why instead of looking empty. */
+    permSource = AP_TRACK_CONSENT_SOURCE_NONE; permState = AP_TRACK_CONSENT_UNAVAILABLE;
+    s_ctFocus = CT_FOCUS_LIST; frame(0, "permission-unavailable");
+    CHECK(s_ctItemCount == 0 && has("The permission list could not be loaded"));
+    s_ctFocus = CT_FOCUS_CONTROLS;
+    CHECK(has_paged("The permission list could", "permission-unavailable-controls") && has_paged("not be loaded, so no track is offered for", NULL));
+    s_ctFilter = CT_FILTER_ALL; s_ctFocus = CT_FOCUS_LIST; frame(0, NULL);
+    CHECK(s_ctItemCount == 4 && has("Coco Park 2025") && has("Nightmare Fueled")); /* installed copies stay */
+    permState = AP_TRACK_CONSENT_LOADING; s_ctFilter = CT_FILTER_BROWSE;
+    frame(0, "permission-loading"); CHECK(s_ctItemCount == 0 && has("Checking which authors allow"));
+    /* The release profile: not allowed and not installed is not listed; installed, it rechecks instead of downloading. */
+    permSource = AP_TRACK_CONSENT_SOURCE_LIVE; permState = AP_TRACK_CONSENT_DONE; permDeny[2] = 101; permDenyCount = 3;
+    s_contentLibrary.count = 0; catCount = 0; s_ctFilter = CT_FILTER_ALL;
+    pkgStatus.state = CTR_CT_MANAGER_NOT_INSTALLED; frame(0, NULL); CHECK(s_ctItemCount == 0);
+    pkgStatus.state = CTR_CT_MANAGER_READY; frame(0, NULL); CHECK(s_ctItemCount == 1 && has("Baby T Park"));
+    {
+        const int before = legacyStarts, verified = verifies;
+        s_ctListSel[CT_TAB_LIBRARY] = 0; frame(BTN_CROSS, "permission-package-actions");
+        CHECK(has("Recheck files") && !has("Download v"));
+        frame(BTN_CROSS, NULL); CHECK(legacyStarts == before && verifies == verified + 1);
+    }
+    frame(BTN_TRIANGLE, NULL);
+    /* This Seed: an allowed missing track downloads; a not-allowed one is
+       shown with where to get it and is never queued. */
+    s_contentLibrary.count = 5; catCount = 5;
+    seedActive = 1; seedConnected = 1; strcpy(seedName, "AP_Permission");
+    row(0, "Ancient Lake", "1.2.0", AP_SEED_SCAN_NOT_INSTALLED, AP_SEED_SOURCE_SAPHI);
+    row(1, "DK Pass", "1.0.0", AP_SEED_SCAN_NOT_INSTALLED, AP_SEED_SOURCE_NOT_ALLOWED);
+    room[1].saphi_track_id = 122;
+    snprintf(room[1].permission, sizeof room[1].permission, "The author has not allowed in-game download.");
+    roomCount = 2;
+    revisit(); frame(0, "permission-seed"); CHECK(s_ctTab == CT_TAB_SEED && has("DK Pass"));
+    {
+        int plan[AP_SEED_ROWS_MAX], queued = 0; uint64_t bytes = 0; char reason[200];
+        CHECK(AP_SeedContentInstallPreview(plan, &queued, &bytes, reason, sizeof reason) == AP_SEED_PLAN_OK &&
+              queued == 1 && plan[0] == 0);
+        CT_RequiredFiles(&s_ctSeedRows[1]);
+        CHECK(strstr(s_ctInfo, "has not allowed") && strstr(s_ctInfo, "projectsaphi.com/tracks/122") &&
+              strstr(s_ctInfo, "tracks/track-1/original"));
+        s_ctSub = CT_SUB_NONE; s_ctFocus = CT_FOCUS_LIST; s_ctListSel[CT_TAB_SEED] = 1;
+        CHECK(has_paged("(author has not allowed", "permission-seed-not-allowed"));
+        frame(BTN_CROSS, NULL); CHECK(select_action("Open source page")); frame(BTN_CROSS, NULL);
+        CHECK(!strcmp(lastURL, "https://www.projectsaphi.com/tracks/122"));
+        frame(BTN_TRIANGLE, NULL);
+        /* Only the not-allowed track missing: Install missing explains, downloads nothing. */
+        room[0].scan = AP_SEED_SCAN_READY;
+        CHECK(ap_seed_install_plan(room, roomCount, 0, plan, &queued, &bytes, reason, sizeof reason) == AP_SEED_PLAN_MANUAL_ONLY &&
+              strstr(reason, "has not allowed"));
+    }
+    /* The old single-package room (Baby T Park, not allowed): instructions, never the download. */
+    seedActive = 0; seedSelected = 1; roomCount = 0;
+    pkgStatus.state = CTR_CT_MANAGER_NOT_INSTALLED;
+    revisit(); frame(0, "permission-legacy-seed");
+    CHECK(s_ctSeedLegacy && s_ctSeedRows[0].source == AP_SEED_SOURCE_NOT_ALLOWED && s_ctSeedRows[0].saphi_track_id == 101);
+    {
+        const int before = legacyStarts;
+        CT_InstallMissing(); CHECK(legacyStarts == before && s_ctSub == CT_SUB_INFO && strstr(s_ctInfo, "tracks/101"));
+        s_ctSub = CT_SUB_NONE;
+        CT_Resolve(&s_ctSeedRows[0]); CHECK(legacyStarts == before);
+    }
+    seedSelected = 0; s_ctSub = CT_SUB_NONE; pkgStatus.state = CTR_CT_MANAGER_READY; permDenyCount = 0;
 
     CHECK(scrollBars > 0);
     printf("custom tracks screen: %d checks, %d failures\n", checks, failures);

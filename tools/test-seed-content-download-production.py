@@ -120,6 +120,20 @@ extern "C" int mkdirat(int dir, const char *name, mode_t mode)
 	if (before_mkdir && before_mkdir(name)) before_mkdir = nullptr;
 	return real(dir, name, mode);
 }
+#include "ap_track_consent.h"
+// The track author permission check (A4-74): the real resolver is
+// ap/ap_track_consent.cpp (tools/test-track-consent.cpp). Here it allows,
+// unless a case sets g_permission, and records which Saphi track was asked.
+static int g_permission = AP_TRACK_PERMISSION_ALLOW, g_permission_track = -1;
+extern "C" int ap_track_permission(int track, int author, int saphi, const char *key)
+{ (void)author; (void)saphi; (void)key; g_permission_track = track; return g_permission; }
+extern "C" const char *ap_track_permission_text(void) { return "The author has not allowed in-game download."; }
+extern "C" int ap_track_consent_saphi_author(int track) { return track == 121 ? 12 : 0; }
+extern "C" int ap_track_saphi_id_from_url(const char *url)
+{
+	const char *at = url ? std::strstr(url, "/tracks/") : nullptr;
+	return at ? std::atoi(at + 8) : 0;
+}
 '''
 
 stub = r'''

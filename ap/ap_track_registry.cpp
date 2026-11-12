@@ -14,6 +14,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #ifdef _WIN32
@@ -35,7 +36,17 @@ struct Revision
 	int track_id = 0, lev_download = 0, vrm_download = 0;
 	std::string key, revision;
 };
-using Index = std::vector<Revision>;
+// The downloadable revisions, plus what the permission check (A4-74) needs:
+// which track key a Saphi track id has, and each track's credited names.
+struct Index
+{
+	std::vector<Revision> rows;
+	std::unordered_map<int, std::string> key_by_saphi;
+	std::unordered_map<std::string, std::vector<std::string>> credits;
+	void clear() { rows.clear(); key_by_saphi.clear(); credits.clear(); }
+};
+constexpr size_t kMaxCredits = 16;     // per track
+constexpr size_t kCreditNameMax = 80;  // bytes, like a Saphi author
 
 struct RegistryState
 {
@@ -177,6 +188,25 @@ bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::str
 	}
 	for (const auto &track : *tracks)
 	{
+		const std::string key = short_text(member(track, "track_key"));
+		const nlohmann::json *credits = member(track, "credits");
+		if (!key.empty() && credits && credits->is_array() && credits->size() <= kMaxCredits)
+		{
+			std::vector<std::string> names;
+			bool ok = true;
+			for (const auto &credit : *credits)
+			{
+				const nlohmann::json *name = member(credit, "name");
+				if (!name || !name->is_string() || name->get_ref<const std::string &>().empty() ||
+				    name->get_ref<const std::string &>().size() > kCreditNameMax)
+				{
+					ok = false; // a credit this client cannot read: no names, so no permission by name
+					break;
+				}
+				names.push_back(name->get<std::string>());
+			}
+			if (ok && !names.empty() && !index.credits.count(key)) index.credits.emplace(key, std::move(names));
+		}
 		const nlohmann::json *revisions = member(track, "revisions");
 		const nlohmann::json *prov = member(track, "provenance");
 		const nlohmann::json *saphi = prov ? member(*prov, "saphi") : nullptr;
@@ -184,6 +214,13 @@ bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::str
 		long long track_id = 0;
 		if (!revisions || !revisions->is_array() || revisions->size() > kMaxRevisions) continue;
 		if (!id || !positive(*id, kSaphiIdMax, track_id)) track_id = 0;
+		// Two keys claiming one Saphi track: neither is trusted.
+		if (track_id && !key.empty())
+		{
+			auto found = index.key_by_saphi.find(static_cast<int>(track_id));
+			if (found == index.key_by_saphi.end()) index.key_by_saphi.emplace(static_cast<int>(track_id), key);
+			else if (found->second != key) found->second.clear();
+		}
 		for (const auto &revision : *revisions)
 		{
 			Revision row;
@@ -191,10 +228,10 @@ bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::str
 			if (!file_pin(files, "lev", row.lev, row.lev_size) || !file_pin(files, "vrm", row.vrm, row.vrm_size))
 				continue;
 			row.track_id = static_cast<int>(track_id);
-			row.key = short_text(member(track, "track_key"));
+			row.key = key;
 			row.revision = short_text(member(revision, "revision"));
 			saphi_downloads(revision, row);
-			index.push_back(std::move(row));
+			index.rows.push_back(std::move(row));
 		}
 	}
 	return true;
@@ -324,7 +361,7 @@ int ap_track_registry_parse_check(const std::vector<unsigned char> &bytes, std::
 	Index index;
 	if (!parse_index(bytes, index, error)) return -1;
 	int n = 0;
-	for (const auto &r : index)
+	for (const auto &r : index.rows)
 		if (r.track_id && r.lev_download && r.vrm_download) n++;
 	return n;
 }
@@ -387,7 +424,7 @@ extern "C" int ap_track_registry_lookup(const char *lev_sha256, uint32_t lev_byt
 	const std::string lev = lower(lev_sha256), vrm = lower(vrm_sha256);
 	bool not_on_saphi = false, conflict = false;
 	if (lev.size() != 64 || vrm.size() != 64) return AP_TRACK_REGISTRY_NOT_LISTED;
-	for (const auto &r : *index)
+	for (const auto &r : index->rows)
 	{
 		if (r.lev != lev || r.vrm != vrm) continue;
 		if ((lev_bytes && r.lev_size != lev_bytes) || (vrm_bytes && r.vrm_size != vrm_bytes))
@@ -413,6 +450,38 @@ extern "C" int ap_track_registry_lookup(const char *lev_sha256, uint32_t lev_byt
 	}
 	return not_on_saphi ? AP_TRACK_REGISTRY_NOT_ON_SAPHI
 	                    : conflict ? AP_TRACK_REGISTRY_PIN_CONFLICT : AP_TRACK_REGISTRY_NOT_LISTED;
+}
+
+extern "C" int ap_track_registry_key_for_saphi(int saphi_track_id, char *key, int key_bytes)
+{
+	std::shared_ptr<const Index> index;
+	{
+		RegistryState &s = registry_state();
+		std::lock_guard<std::mutex> lock(s.mutex);
+		index = s.index;
+	}
+	if (key && key_bytes > 0) key[0] = 0;
+	if (!index || saphi_track_id <= 0) return 0;
+	auto found = index->key_by_saphi.find(saphi_track_id);
+	if (found == index->key_by_saphi.end() || found->second.empty()) return 0;
+	if (key && key_bytes > 0) std::snprintf(key, static_cast<size_t>(key_bytes), "%s", found->second.c_str());
+	return 1;
+}
+
+bool ap_track_registry_credits(const std::string &track_key, std::vector<std::string> &names)
+{
+	std::shared_ptr<const Index> index;
+	{
+		RegistryState &s = registry_state();
+		std::lock_guard<std::mutex> lock(s.mutex);
+		index = s.index;
+	}
+	names.clear();
+	if (!index || track_key.empty()) return false;
+	auto found = index->credits.find(track_key);
+	if (found == index->credits.end()) return false;
+	names = found->second;
+	return true;
 }
 
 #ifdef AP_TRACK_REGISTRY_TEST

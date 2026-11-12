@@ -218,7 +218,7 @@ if(NOT CTR_AP)
         find_package(ZLIB REQUIRED)
         find_package(Threads REQUIRED)
         add_library(custom_package STATIC ${CTR_CUSTOM_PACKAGE_SOURCES}
-            ap/ap_custom_track_download.cpp)
+            ap/ap_custom_track_download.cpp ap/ap_track_registry.cpp ap/ap_track_consent.cpp)
         set_target_properties(custom_package PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
         target_include_directories(custom_package PRIVATE ${CMAKE_SOURCE_DIR}/include
             ${CMAKE_SOURCE_DIR}/ap ${AP_VENDOR}/json/include ${AP_VENDOR}/asio/include
@@ -322,7 +322,7 @@ if(CTR_AP)
     target_sources(ap_net PRIVATE ap/ap_solo.cpp)
     target_link_libraries(ap_net PRIVATE SDL3::SDL3)
     if(CTR_CUSTOM_TRACKS)
-        target_sources(ap_net PRIVATE ap/ap_custom_track_download.cpp ap/ap_track_registry.cpp)
+        target_sources(ap_net PRIVATE ap/ap_custom_track_download.cpp ap/ap_track_registry.cpp ap/ap_track_consent.cpp)
         target_compile_definitions(ap_net PRIVATE CTR_CUSTOM_TRACKS)
     endif()
     set_target_properties(ap_net PROPERTIES

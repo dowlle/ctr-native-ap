@@ -26,7 +26,13 @@ Cases:
      Project Saphi download, labelled live or cached; offline, not listed or
      not on Saphi stay manual with the reason; the install calls the registry
      download with the room's pins and the track-key folder, never the
-     compiled path; an unsafe key refuses; Rescan asks again.
+     compiled path; an unsafe key refuses; Rescan asks again,
+  9. the track author permission check (A4-74, resolver stubbed here): a
+     missing package fetches the permission list, cache in assets; a row
+     that would download from Saphi (registry, built-in table or compiled
+     profile) whose author has not said yes is NOT_ALLOWED, with its Saphi
+     track id and the reason, and is never queued or started; Cortex Vortex
+     is untouched; Rescan asks for the list again.
 """
 from pathlib import Path
 import subprocess
@@ -54,6 +60,7 @@ static void AP_AppendLog(const char *msg) { AP_LogLine(msg); }
 #include "ap/ap_content_plan.h"
 #include "ap/ap_custom_track_download.h"
 #include "ap/ap_track_registry.h"
+#include "ap/ap_track_consent.h"
 '''
 
 stubs = r'''
@@ -138,6 +145,33 @@ int ap_custom_track_download_start_registry(const char *tracks, const char *root
 	reg_lev_bytes = levBytes; reg_vrm_bytes = vrmBytes;
 	dl_state = AP_CT_DOWNLOAD_RUNNING;
 	return 1;
+}
+/* A4-74: the permission check, recorded. A Saphi track id in perm_deny is
+   not allowed; every other known id is. */
+static int perm_deny[4], perm_deny_count, perm_last_track, consent_refreshes;
+static char consent_assets[512];
+int ap_track_permission(int track, int author, int saphi, const char *key)
+{
+	int i;
+	(void)author; (void)saphi; (void)key;
+	perm_last_track = track;
+	if (track <= 0) return AP_TRACK_PERMISSION_UNKNOWN;
+	for (i = 0; i < perm_deny_count; i++) if (perm_deny[i] == track) return AP_TRACK_PERMISSION_DENY;
+	return AP_TRACK_PERMISSION_ALLOW;
+}
+const char *ap_track_permission_text(void) { return "The author has not allowed in-game download."; }
+int ap_track_consent_status(int *source, char *detail, int n)
+{
+	if (source) *source = AP_TRACK_CONSENT_SOURCE_LIVE;
+	if (detail && n > 0) detail[0] = 0;
+	return AP_TRACK_CONSENT_DONE;
+}
+int ap_track_consent_refresh_assets(const char *assets)
+{ consent_refreshes++; snprintf(consent_assets, sizeof consent_assets, "%s", assets ? assets : ""); return 1; }
+int ap_track_saphi_id_from_url(const char *url)
+{
+	const char *at = url ? strstr(url, "/tracks/") : NULL;
+	return at ? atoi(at + 8) : 0;
 }
 int ap_custom_track_download_start_shared(const char *tracks, const char *rootDir,
     const char *api, const char *version, const char *uuid, const char *title, const char *author, unsigned int laps,
@@ -460,6 +494,63 @@ int main(void)
 	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
 	expect(reg_refreshes == 1, "a cached copy is refreshed for a new room");
 
+	/* 9. A4-74: only a track whose author said yes is offered for download. */
+	expect(consent_refreshes >= 1 && !strcmp(consent_assets, assets_root), "a missing package fetches the permission list");
+	reg_source = AP_TRACK_REGISTRY_SOURCE_LIVE; reg_state = AP_TRACK_REGISTRY_DONE; reg_result = AP_TRACK_REGISTRY_MATCH;
+	snprintf(reg_lev, sizeof reg_lev, REG_LEV); reg_vrm = REG_VRM; reg_generation++;
+	dl_state = AP_CT_DOWNLOAD_IDLE; reg_starts = 0; starts = 0;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(rows[1].source == AP_SEED_SOURCE_SAPHI && rows[1].saphi_track_id == 121 && perm_last_track == 121,
+	       "an allowed registry track stays a Saphi download, checked by its Saphi track id");
+	perm_deny[0] = 121; perm_deny_count = 1;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	{
+		char instruction[256];
+		ap_seed_instruction(&rows[1], instruction, sizeof instruction);
+		expect(rows[1].source == AP_SEED_SOURCE_NOT_ALLOWED && rows[1].saphi_track_id == 121 &&
+		       !strcmp(rows[1].permission, "The author has not allowed in-game download.") &&
+		       !strcmp(ap_seed_source_text(&rows[1]), "No download (author has not allowed it)") &&
+		       strstr(instruction, "projectsaphi.com/tracks/121") && strstr(instruction, "tracks/acid-lake/original"),
+		       "a registry track whose author has not said yes: shown, with its source page and folder");
+	}
+	expect(AP_SeedContentInstallPreview(plan, &count, &bytes, message, sizeof message) == AP_SEED_PLAN_MANUAL_ONLY &&
+	       strstr(message, "has not allowed"), "Install missing explains instead of queueing it");
+	expect(!AP_SeedContentInstallStart(message, sizeof message) && reg_starts == 0 && starts == 0,
+	       "and starts no download");
+	/* With an allowed compiled profile missing too: only that one is queued. */
+	package(0, "baby-t-park", "1.0.2", current, 2470836, 115732, CTR_CT_MANAGER_NOT_INSTALLED);
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(rows[0].source == AP_SEED_SOURCE_SAPHI && rows[0].saphi_track_id == 101 &&
+	       AP_SeedContentInstallPreview(plan, &count, &bytes, message, sizeof message) == AP_SEED_PLAN_OK && count == 1 && plan[0] == 0,
+	       "an allowed and a not-allowed missing track: only the allowed one is queued");
+	/* The compiled Baby T Park download when its author has not said yes. */
+	perm_deny[1] = 101; perm_deny_count = 2;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(rows[0].source == AP_SEED_SOURCE_NOT_ALLOWED && rows[0].saphi_track_id == 101 &&
+	       !AP_SeedContentInstallStart(message, sizeof message) && starts == 0 && reg_starts == 0,
+	       "the compiled Baby T Park download is gated too");
+	/* The built-in source table (A4-2) is gated the same way. */
+	snprintf(reg_lev, sizeof reg_lev, "other"); reg_generation++;
+	snprintf(packages[1].lev_sha256, sizeof packages[1].lev_sha256, "%s",
+	         "286d6574d87e158d78cc89986f16b8b51e5b94f1b153574ea9358582e32c6ba1");
+	snprintf(packages[1].vrm_sha256, sizeof packages[1].vrm_sha256, "%s",
+	         "bc19e0e64c89c4c6b7afbf3e33225bc640aeb10cf64f58a0cde7089620b016c4");
+	perm_deny[2] = 123; perm_deny_count = 3;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(rows[1].registry == AP_SEED_REGISTRY_TABLE && rows[1].source == AP_SEED_SOURCE_NOT_ALLOWED &&
+	       rows[1].saphi_track_id == 123, "a built-in table track whose author has not said yes is not offered");
+	/* Cortex Vortex is bundled and untouched by the check. */
+	plan_cortex = 1; ap_content_cortex_ready = 1;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(n == 3 && rows[2].source == AP_SEED_SOURCE_BUNDLED && !rows[2].permission[0], "Cortex Vortex is untouched");
+	plan_cortex = 0;
+	{
+		const int before = consent_refreshes;
+		AP_SeedContentRegistryRetry();
+		expect(consent_refreshes == before + 1, "Rescan asks for the permission list again");
+	}
+	perm_deny_count = 0;
+
 	snprintf(path, sizeof path, "rm -rf '%s'", assets_root);
 	if (system(path) != 0) return 2;
 	printf("%d checks, %d failures\n", checks, failures);
@@ -477,4 +568,4 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run([str(exe)], check=True, cwd=root)
 print("PASS: Current Seed hooks: rows and sources, refusals before download, exact pins and descriptor metadata per "
       "revision, no second room folder, failure and room-change stops, registry rows (live, cached, "
-      "offline, not listed) and pinned registry downloads")
+      "offline, not listed) and pinned registry downloads, and the track author permission check on every download source")

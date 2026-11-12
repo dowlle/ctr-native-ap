@@ -5,6 +5,7 @@
 #include "ap_custom_track_download.h"
 #include "ap_seed_content_logic.h" // ap_seed_size_agrees, ap_seed_root_safe (Current Seed, #133 PR 7)
 #include "ap_track_registry.h"     // ap_https_get (row 10k)
+#include "ap_track_consent.h"      // the track author permission check (A4-74)
 #ifdef CTR_CUSTOM_PACKAGES
 // The Track Manager's Saphi catalogue and package install.
 #include <platform/native_saphi_catalogue.h>
@@ -1134,8 +1135,16 @@ void worker(std::string package_root, std::string api_url, std::string version,
 			nlohmann::json files = nlohmann::json::array({
 				{{"role", "lev"}, {"path", "original/track.lev"}, {"sha256", lev_hash}, {"bytes", lev_bytes.size()}},
 				{{"role", "vrm"}, {"path", "original/track.vrm"}, {"sha256", vrm_hash}, {"bytes", vrm_bytes.size()}}});
-			const std::string source = nlohmann::json({{"schema_version", 1}, {"provider", "ctr-seed"},
-				{"track_key", key}, {"author", seed_author}}).dump();
+			nlohmann::json seed_source = {{"schema_version", 1}, {"provider", "ctr-seed"},
+				{"track_key", key}, {"author", seed_author}};
+			// A4-74: what a later permission decision is matched on.
+			if (const int saphi_track = ap_track_saphi_id_from_url(api_url.c_str()))
+			{
+				seed_source["saphi_track_id"] = saphi_track;
+				if (const int author_id = ap_track_consent_saphi_author(saphi_track))
+					seed_source["saphi_author_id"] = author_id;
+			}
+			const std::string source = seed_source.dump();
 			std::string settings;
 			std::string relicTargets;
 			if (seed_laps >= 1 && seed_laps <= 7)
@@ -1268,6 +1277,18 @@ int start_worker(const char *package_root, const char *download_api_url, const c
 	             int relic_sapphire = 0, int relic_gold = 0, int relic_platinum = 0)
 {
 	DownloadState &shared = download_state();
+	// A4-74: every Saphi download this worker makes (Current Seed, the
+	// compiled Baby T Park profile, the legacy entry points) needs the track
+	// author's yes. Unknown and deny both refuse, before anything changes.
+	if (ap_track_permission(ap_track_saphi_id_from_url(download_api_url), 0, AP_TRACK_PERMISSION_UNKNOWN, nullptr) !=
+	    AP_TRACK_PERMISSION_ALLOW)
+	{
+		std::lock_guard<std::mutex> lock(shared.mutex);
+		if (shared.state == AP_CT_DOWNLOAD_RUNNING) return 0;
+		shared.state = AP_CT_DOWNLOAD_FAILED;
+		shared.detail = ap_track_permission_text();
+		return 0;
+	}
 	{
 		std::lock_guard<std::mutex> lock(shared.mutex);
 		if (shared.state == AP_CT_DOWNLOAD_RUNNING)
@@ -1445,6 +1466,21 @@ void saphi_refresh_worker()
         char detail[512];
         if (!CustomSaphi_ParseCatalogue(bytes.data(), bytes.size(), &catalogue, detail, sizeof detail))
             throw std::runtime_error(detail);
+        /* A4-74: a seed or installed package that knows only its Saphi track
+           id is matched to its author through what the catalogue says. */
+        /* The Saphi value of the current revision stands for the track; a
+           track with no current revision teaches its author only. Rows are
+           sorted current first per title, so a current row is noted first. */
+        std::map<int, bool> noted;
+        for (size_t i = 0; i < CustomSaphi_Count(catalogue); i++)
+        {
+            const CustomSaphiRevision *r = CustomSaphi_Row(catalogue, i);
+            if (noted.count(r->trackID) && !r->current) continue;
+            ap_track_consent_note_saphi(r->trackID, r->authorID,
+                                        r->current ? r->saphiPermission : CUSTOM_SAPHI_PERMISSION_UNKNOWN);
+            if (r->current) noted[r->trackID] = true;
+            else noted.emplace(r->trackID, false);
+        }
     }
     catch (const std::exception &e) { error = e.what(); }
     auto &state = saphi_refresh_state();
@@ -1536,6 +1572,12 @@ void saphi_install_worker(CustomSaphiRevision revision, std::string assets)
             {"track_id",revision.trackID},{"lev_media_id",revision.lev.id},{"vrm_media_id",revision.vrm.id},
             {"version",revision.version},{"author",revision.author}};
         if (!sca.empty()) source["sca_media_id"] = revision.sca.id;
+        /* A4-74: what a later permission decision is matched on. */
+        if (revision.authorID > 0) source["author_id"] = revision.authorID;
+        {
+            char key[65];
+            if (ap_track_registry_key_for_saphi(revision.trackID, key, sizeof key)) source["track_key"] = key;
+        }
         std::string presentation = source.dump();
         files.push_back({{"role","presentation"},{"path","metadata/saphi-source.json"},
             {"sha256",saphi_digest(presentation.data(),presentation.size(),EVP_sha256())},{"bytes",presentation.size()}});
@@ -1581,6 +1623,10 @@ extern "C" int CustomSaphi_StartInstall(const CustomSaphiRevision *revision, con
         !std::memchr(revision->title,0,sizeof revision->title) || !std::memchr(revision->version,0,sizeof revision->version) ||
         !std::memchr(revision->lev.path,0,sizeof revision->lev.path) || !std::memchr(revision->vrm.path,0,sizeof revision->vrm.path) ||
         !std::memchr(revision->sca.path,0,sizeof revision->sca.path)) return 0;
+    /* A4-74: Download, Update and Versions all start here. Only a track
+       whose author said yes downloads; unknown and deny refuse. */
+    if (ap_track_permission(revision->trackID, revision->authorID, revision->saphiPermission, nullptr) != AP_TRACK_PERMISSION_ALLOW)
+        return 0;
     auto &state = saphi_install_state();
     std::lock_guard<std::mutex> guard(state.mutex);
     if (state.state != -1) return 0;

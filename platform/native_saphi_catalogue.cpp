@@ -60,6 +60,33 @@ unsigned int source_modes(const json &modes, std::string *other)
     }
     return result;
 }
+/* Project Saphi's own permission setting (A4-74). Saphi will most likely
+   add upload-form checkboxes so uploaders say how a track may be used
+   (Garma, 2026-11-12 18:37 CET); no field exists yet. This is the only
+   place to change when it ships: read the track object and, when Saphi
+   versions it per file, the file row (file is null for the track level).
+   Anything this client does not understand is unknown, never allow. A
+   track-level setting with no per-file one: return the track's value for
+   file rows too, so the revision rule below sees all three agree. Today no
+   field is read, so every answer is unknown (auto_download is Saphi's own
+   client hint, A4-67, and is not permission). */
+int saphi_permission(const json &track, const json *file)
+{
+    (void)track;
+    (void)file;
+    return CUSTOM_SAPHI_PERMISSION_UNKNOWN;
+}
+/* A revision is allowed by Saphi only when the track and both its files
+   allow; any deny denies. */
+int saphi_revision_permission(int track, int lev, int vrm)
+{
+    if (track == CUSTOM_SAPHI_PERMISSION_DENY || lev == CUSTOM_SAPHI_PERMISSION_DENY || vrm == CUSTOM_SAPHI_PERMISSION_DENY)
+        return CUSTOM_SAPHI_PERMISSION_DENY;
+    if (track == CUSTOM_SAPHI_PERMISSION_ALLOW &&
+        lev == CUSTOM_SAPHI_PERMISSION_ALLOW && vrm == CUSTOM_SAPHI_PERMISSION_ALLOW)
+        return CUSTOM_SAPHI_PERMISSION_ALLOW;
+    return CUSTOM_SAPHI_PERMISSION_UNKNOWN;
+}
 CustomSaphiMedia source_media(const json &media, int track)
 {
     CustomSaphiMedia result{};
@@ -106,11 +133,18 @@ extern "C" int CustomSaphi_ParseCatalogue(const char *input, size_t size,
             base.trackID = id;
             source_text(track.at("name"), base.title);
             source_text(track.at("author"), base.author, true);
+            /* Optional: a missing or odd author_id leaves the author unknown
+               (so the track is not offered), never fails the catalogue. */
+            if (track.contains("author_id") && track["author_id"].is_number_integer() &&
+                track["author_id"] >= 1 && track["author_id"] <= 100000000)
+                base.authorID = track["author_id"].get<int>();
+            const int trackPermission = saphi_permission(track, nullptr);
             if (track.contains("lap_count") && !track["lap_count"].is_null())
                 base.sourceLaps = source_integer(track["lap_count"], 2147483647);
             const auto &downloads = track.at("downloads");
             if (!downloads.is_array() || downloads.size() > 512) throw std::runtime_error("Too many Saphi media rows");
-            struct Pair { CustomSaphiRevision revision{}; int levCount = 0, vrmCount = 0; bool levCurrent = false, vrmCurrent = false; };
+            struct Pair { CustomSaphiRevision revision{}; int levCount = 0, vrmCount = 0; bool levCurrent = false, vrmCurrent = false;
+                          int levPermission = CUSTOM_SAPHI_PERMISSION_UNKNOWN, vrmPermission = CUSTOM_SAPHI_PERMISSION_UNKNOWN; };
             std::map<std::tuple<std::string, unsigned int, std::string>, Pair> pairs;
             /* Audio is optional: a malformed or ambiguous .sca row leaves the
                track without its own music instead of failing the catalogue. */
@@ -142,8 +176,8 @@ extern "C" int CustomSaphi_ParseCatalogue(const char *input, size_t size,
                 if (!media.at("is_current").is_boolean()) throw std::runtime_error("Invalid Saphi current flag");
                 auto &pair = pairs[std::make_tuple(std::string(row.version), row.modeTags, otherModes)];
                 if (!pair.levCount && !pair.vrmCount) pair.revision = row;
-                if (type == "lev") { pair.revision.lev = file; pair.levCount++; pair.levCurrent = media["is_current"]; }
-                else { pair.revision.vrm = file; pair.vrmCount++; pair.vrmCurrent = media["is_current"]; }
+                if (type == "lev") { pair.revision.lev = file; pair.levCount++; pair.levCurrent = media["is_current"]; pair.levPermission = saphi_permission(track, &media); }
+                else { pair.revision.vrm = file; pair.vrmCount++; pair.vrmCurrent = media["is_current"]; pair.vrmPermission = saphi_permission(track, &media); }
             }
             for (auto &item : pairs)
             {
@@ -156,6 +190,7 @@ extern "C" int CustomSaphi_ParseCatalogue(const char *input, size_t size,
                     std::snprintf(pair.revision.disabledReason, sizeof pair.revision.disabledReason,
                         "Files not hosted");
                 pair.revision.current = pair.levCurrent && pair.vrmCurrent;
+                pair.revision.saphiPermission = saphi_revision_permission(trackPermission, pair.levPermission, pair.vrmPermission);
                 if (pair.revision.current) pair.revision.sca = sca;
                 result->rows.push_back(pair.revision);
                 if (result->rows.size() > 1024) throw std::runtime_error("Too many Saphi revisions");

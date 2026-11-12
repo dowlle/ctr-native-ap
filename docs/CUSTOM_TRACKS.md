@@ -240,6 +240,30 @@ for history; it has no Archipelago dependency) and
 - Older versions of a track can be listed and installed side by side; the
   manager marks a newer Saphi version as "Update available" and never replaces
   an installed revision.
+- **Track author permission (0.3.0-alpha4).** The client offers a track for
+  in-game download only when its author said yes. One resolver,
+  `ap_track_permission` in `ap/ap_track_consent.cpp`, answers allow, deny or
+  unknown from, in order: Project Saphi's own permission value (read by one
+  adapter, `saphi_permission` in `platform/native_saphi_catalogue.cpp`; Saphi
+  publishes none yet, so it is always unknown), then the author's recorded
+  answer in `consent.json` of the public registry
+  `dowlle/ctr-track-registry`, otherwise unknown. A direct "no" there beats a
+  Saphi allow. Unknown and deny both mean: not listed in Browse, and no
+  Download, Update or Versions. The gate also sits in `CustomSaphi_StartInstall`
+  and in the shared download worker, so Current Seed's "Install missing" and the
+  compiled Baby T Park download are covered. A track that is not allowed is
+  still shown where the player has it or a seed needs it, with the reason and
+  its Saphi page; installed copies keep racing, manual LEV/VRM and xdelta
+  imports are untouched, and nothing on disk is deleted. `consent.json` is
+  fetched like `registry.json` (GitHub raw only, 1 MiB cap, last good copy in
+  `assets/track-consent-cache.json`); with no live copy and no cache every
+  track is unknown and the screen says the list could not be loaded. A track
+  is matched to its authors by the catalogue's `author_id`, by the Saphi track
+  id the catalogue or the install recorded (`saphi-source.json` now records
+  `author_id` and the registry `track_key`; Current Seed's
+  `seed-source.json` records `saphi_track_id` and `saphi_author_id`), and by
+  the registry's credits for the track key; every credited author must have
+  said yes. A package that cannot be matched is unknown.
 
 ## 6. Racing a package: the loading path
 

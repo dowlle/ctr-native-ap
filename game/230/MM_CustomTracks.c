@@ -30,6 +30,7 @@
    after MM_CustomManager.c; tools/test-custom-tracks-screen.c drives it. */
 
 #include "../../ap/ap_net.h" // ap_net_seed_name, ap_net_slot_name: Seed identity
+#include "../../ap/ap_track_consent.h" // the track author permission check (A4-74)
 
 enum { CT_TAB_LIBRARY, CT_TAB_SEED, CT_TAB_IMPORT, CT_TAB_COUNT };
 enum { CT_FOCUS_TABS, CT_FOCUS_LIST, CT_FOCUS_CONTROLS, CT_FOCUS_ACTIONS, CT_FOCUS_SUB };
@@ -211,8 +212,57 @@ struct CT_LibView
     int older;      /* an older revision is installed: Update */
     int trackID;    /* Saphi track id, 0 when unknown */
     int package;    /* the track has the release profile (export, relic times) */
+    int allowed;    /* A4-74: its author allowed in-game download (Download, Update, Versions) */
     const char *title, *version, *author;
 };
+
+/* A4-74: catalogue tracks the Library leaves out because their author has
+   not allowed in-game download (counted per Saphi track, not installed). */
+static int s_ctNotAllowed;
+
+static int CT_RevisionAllowed(const struct CustomSaphiRevision *r)
+{
+    return r && ap_track_permission(r->trackID, r->authorID, r->saphiPermission, NULL) == AP_TRACK_PERMISSION_ALLOW;
+}
+
+/* The permission list's state for the page controls, "" when it is loaded
+   and nothing is left out. */
+static void CT_PermissionLine(char *out, size_t size)
+{
+    int source = AP_TRACK_CONSENT_SOURCE_NONE;
+    const int state = ap_track_consent_status(&source, NULL, 0);
+    out[0] = 0;
+    if (source == AP_TRACK_CONSENT_SOURCE_NONE)
+        snprintf(out, size, "%s", state == AP_TRACK_CONSENT_LOADING || state == AP_TRACK_CONSENT_IDLE ?
+                 "Checking which authors allow in-game download..." :
+                 "The permission list could not be loaded, so no track is offered for download.");
+    else if (s_ctNotAllowed)
+        snprintf(out, size, "%d track%s not listed: %s author%s not allowed in-game download%s.", s_ctNotAllowed,
+                 s_ctNotAllowed == 1 ? "" : "s", s_ctNotAllowed == 1 ? "its" : "their",
+                 s_ctNotAllowed == 1 ? " has" : "s have", source == AP_TRACK_CONSENT_SOURCE_CACHED ? " (saved list)" : "");
+}
+
+/* The two-line status slot of the Library detail: short, so it fits
+   without paging. The actions say it in full. */
+static const char *CT_PermissionShort(void)
+{
+    int source = AP_TRACK_CONSENT_SOURCE_NONE;
+    const int state = ap_track_consent_status(&source, NULL, 0);
+    if (source != AP_TRACK_CONSENT_SOURCE_NONE) return "Not allowed by author";
+    return state == AP_TRACK_CONSENT_LOADING || state == AP_TRACK_CONSENT_IDLE ? "Checking permission..." : "Download off: no list";
+}
+
+/* Browse with every catalogue track left out: why, instead of an empty page. */
+static const char *CT_PermissionEmpty(void)
+{
+    int source = AP_TRACK_CONSENT_SOURCE_NONE;
+    const int state = ap_track_consent_status(&source, NULL, 0);
+    if (source != AP_TRACK_CONSENT_SOURCE_NONE)
+        return "No listed track. Only tracks whose authors allow in-game download are listed.";
+    return state == AP_TRACK_CONSENT_LOADING || state == AP_TRACK_CONSENT_IDLE ?
+           "Checking which authors allow in-game download..." :
+           "The permission list could not be loaded, so no track is offered for download. Refresh to retry.";
+}
 
 /* A refresh can replace the selected revision without changing its title or
    row index. Copy its identity before the catalogue/store can be replaced. */
@@ -273,6 +323,12 @@ static void CT_View(const struct CT_LibItem *item, struct CT_LibView *v)
     if (v->source) v->exact = MM_CustomSourceInstalled(v->source, &v->older);
     if (!v->installed) v->installed = v->exact;
     v->package = item->kind == CT_ITEM_PACKAGE || (v->trackID > 0 && v->trackID == CT_PackageTrackID());
+    if (v->source) v->allowed = CT_RevisionAllowed(v->source);
+    else if (item->kind == CT_ITEM_PACKAGE)
+        v->allowed = ap_track_permission(CT_PackageTrackID(), 0, AP_TRACK_PERMISSION_UNKNOWN, NULL) == AP_TRACK_PERMISSION_ALLOW;
+    else if (v->installed)
+        v->allowed = ap_track_permission(v->installed->local.permissionTrackID, v->installed->local.authorID,
+                                         AP_TRACK_PERMISSION_UNKNOWN, v->installed->local.trackKey) == AP_TRACK_PERMISSION_ALLOW;
     if (item->kind == CT_ITEM_PACKAGE)
     {
         v->title = package->title; v->version = package->version; v->author = package->author;
@@ -330,14 +386,24 @@ static void CT_BuildLibrary(void)
             else if (CustomRevision_Compare(r->version, s_contentLibrary.entries[s_ctItems[at].index].version) > 0)
                 s_ctItems[at].index = i;
         }
+    s_ctNotAllowed = 0;
     {
         const int installedRows = n;
+        int hidden[CTR_LIBRARY_MAX], hiddenCount = 0;
         if (s_ctFilter != CT_FILTER_INSTALLED)
             for (i = 0; i < CustomSaphi_Count(s_saphiCatalogue) && n < CTR_LIBRARY_MAX; i++)
             {
                 const struct CustomSaphiRevision *r = CustomSaphi_Row(s_saphiCatalogue, i);
                 int at, shown = 0;
                 if (!(MM_CustomSearchMatch(r->title, s_saphiQuery) || MM_CustomSearchMatch(r->author, s_saphiQuery))) continue;
+                /* A4-74: only tracks whose author said yes are offered. An
+                   installed copy is still listed above, from the store. */
+                if (!CT_RevisionAllowed(r))
+                {
+                    for (at = 0; at < hiddenCount && hidden[at] != r->trackID; at++) {}
+                    if (at == hiddenCount && hiddenCount < CTR_LIBRARY_MAX) hidden[hiddenCount++] = r->trackID;
+                    continue;
+                }
                 /* All: a track already listed as installed is not listed twice. */
                 for (at = 0; at < installedRows && r->trackID > 0; at++)
                     if (s_contentLibrary.entries[s_ctItems[at].index].local.trackID == r->trackID) shown = 1;
@@ -348,6 +414,17 @@ static void CT_BuildLibrary(void)
                 else if (MM_CustomSourcePreferred(r, CustomSaphi_Row(s_saphiCatalogue, s_ctItems[at].index)))
                     s_ctItems[at].index = i;
             }
+        /* A hidden track with an allowed revision listed, or installed, is not counted. */
+        for (int h = 0; h < hiddenCount; h++)
+        {
+            int at, listed = 0;
+            for (at = 0; at < n && !listed; at++)
+                listed = (s_ctItems[at].kind == CT_ITEM_CATALOGUE &&
+                          CustomSaphi_Row(s_saphiCatalogue, s_ctItems[at].index)->trackID == hidden[h]) ||
+                         (s_ctItems[at].kind == CT_ITEM_INSTALLED &&
+                          s_contentLibrary.entries[s_ctItems[at].index].local.trackID == hidden[h]);
+            if (!listed) s_ctNotAllowed++;
+        }
     }
     for (i = 0; i < (size_t)n; i++)
     {
@@ -355,7 +432,11 @@ static void CT_BuildLibrary(void)
         CT_View(&s_ctItems[i], &v);
         if (v.package) packageListed = 1;
     }
+    /* A4-74: the release-profile row offers a download only when allowed;
+       without one it is listed only when its files are already there. */
     if (!packageListed && packageID > 0 && s_ctFilter != CT_FILTER_BROWSE && package &&
+        (ap_track_permission(packageID, 0, AP_TRACK_PERMISSION_UNKNOWN, NULL) == AP_TRACK_PERMISSION_ALLOW ||
+         AP_CustomContentStatus()->state != CTR_CT_MANAGER_NOT_INSTALLED) &&
         (s_ctFilter == CT_FILTER_ALL || AP_CustomContentStatus()->state == CTR_CT_MANAGER_READY) &&
         MM_CustomSearchMatch(package->title, s_saphiQuery))
     {
@@ -452,6 +533,14 @@ static int CT_LibraryActions(const struct CT_LibItem *item, const struct CT_LibV
         snprintf(label, sizeof label, "Downloading...");
         snprintf(reason, sizeof reason, "A download is running. Wait for it to finish.");
     }
+    else if (!v->allowed && (v->installed || (item->kind == CT_ITEM_PACKAGE &&
+             AP_CustomContentStatus()->state != CTR_CT_MANAGER_NOT_INSTALLED)))
+        snprintf(label, sizeof label, "Recheck files"); /* A4-74: an installed copy keeps working, no Update */
+    else if (!v->allowed)
+    {
+        snprintf(label, sizeof label, "Download");
+        snprintf(reason, sizeof reason, "%s", ap_track_permission_text());
+    }
     else if (item->kind == CT_ITEM_PACKAGE)
         snprintf(label, sizeof label, "Download v%.24s", v->version);
     else if (v->source && v->exact)
@@ -463,7 +552,8 @@ static int CT_LibraryActions(const struct CT_LibItem *item, const struct CT_LibV
     }
     else snprintf(label, sizeof label, "Recheck files");
     CT_Add(a, &n, CT_ACT_INSTALL, label, reason);
-    CT_Add(a, &n, CT_ACT_VERSIONS, "Versions", v->source ? "" : "Not in the Project Saphi catalogue.");
+    CT_Add(a, &n, CT_ACT_VERSIONS, "Versions", !v->source ? "Not in the Project Saphi catalogue." :
+           !v->allowed ? ap_track_permission_text() : "");
     CT_Add(a, &n, CT_ACT_SOURCE, "Open source page",
            v->trackID > 0 || item->kind == CT_ITEM_PACKAGE ? "" :
            v->installed && v->installed->local.xdelta ? "Imported from a patch. No source page is known." :
@@ -499,6 +589,7 @@ static void CT_StartSaphiInstall(const struct CustomSaphiRevision *r, const stru
         return;
     }
     if (r->disabledReason[0]) { CT_SetMessage(r->disabledReason); return; }
+    if (!CT_RevisionAllowed(r)) { CT_SetMessage(ap_track_permission_text()); return; }
     if (MM_CustomLibrary_Busy() || AP_SeedContentInstallBusy())
     {
         CT_SetMessage("Another track job is running. Try again when it finishes.");
@@ -740,6 +831,12 @@ static void CT_BuildSeed(void)
         r->scan = CT_ScanFromStatus(AP_CustomContentStatus()->state);
         r->source = AP_SEED_SOURCE_SAPHI;
         r->index = -2;
+        r->saphi_track_id = CT_PackageTrackID();
+        if (ap_track_permission(r->saphi_track_id, 0, AP_TRACK_PERMISSION_UNKNOWN, NULL) != AP_TRACK_PERMISSION_ALLOW)
+        {
+            r->source = AP_SEED_SOURCE_NOT_ALLOWED; /* A4-74 */
+            snprintf(r->permission, sizeof r->permission, "%s", ap_track_permission_text());
+        }
         r->locator.bigfile_index = -1;
         s_ctSeedCount = 1;
         s_ctSeedLegacy = 1;
@@ -816,7 +913,7 @@ static int CT_SeedActions(const struct AP_SeedContentRow *r, struct CT_Action *a
            busy ? "An install is running. Wait for it to finish." : "");
     CT_Add(a, &n, CT_ACT_SEED_VERIFY, "Verify / Setup", busy ? "An install is running. Wait for it to finish." : "");
     {
-        int trackID = 0;
+        int trackID = r->saphi_track_id;
         size_t i;
         for (i = 0; i < s_contentLibrary.count && !trackID; i++)
             if (!strcmp(s_contentLibrary.entries[i].title, r->title)) trackID = s_contentLibrary.entries[i].local.trackID;
@@ -899,6 +996,7 @@ static void CT_InstallMissing(void)
     if (s_ctSeedLegacy)
     {
         if (ap_seed_row_state(&s_ctSeedRows[0]) == AP_SEED_STATE_READY) CT_SetMessage("Every track this seed needs is ready.");
+        else if (s_ctSeedRows[0].source == AP_SEED_SOURCE_NOT_ALLOWED) CT_RequiredFiles(&s_ctSeedRows[0]);
         else CT_LegacyDownload();
         return;
     }
@@ -917,6 +1015,7 @@ static void CT_Resolve(const struct AP_SeedContentRow *r)
     if (r->index == -2)
     {
         if (ap_seed_row_state(r) == AP_SEED_STATE_READY) CT_SetMessage("Ready. Files verified.");
+        else if (r->source == AP_SEED_SOURCE_NOT_ALLOWED) CT_RequiredFiles(r);
         else CT_LegacyDownload();
         return;
     }
@@ -954,6 +1053,7 @@ static void CT_Poll(void)
         s_saphiLoaded = 1;
         s_saphiRefreshBusy = CustomSaphi_StartRefresh();
         s_saphiRefreshFailed = !s_saphiRefreshBusy;
+        ap_track_consent_refresh_assets(NativeAssets_GetAssetDir()); /* A4-74 */
     }
     AP_SeedContentInstallTick(s_ctMessage, sizeof s_ctMessage);
     /* A finished refresh: the page controls show the catalogue state instead. */
@@ -1120,6 +1220,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
                 {
                     s_saphiRefreshBusy = CustomSaphi_StartRefresh();
                     s_saphiRefreshFailed = !s_saphiRefreshBusy;
+                    ap_track_consent_refresh_assets(NativeAssets_GetAssetDir()); /* A4-74 */
                     CT_SetMessage(s_saphiRefreshBusy ? "Refreshing the Project Saphi catalogue..." : "Could not refresh the catalogue.");
                 }
             }
@@ -1144,7 +1245,13 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
             else switch (a->id)
             {
             case CT_ACT_INSTALL:
-                if (item->kind == CT_ITEM_PACKAGE) CT_LegacyDownload();
+                if (!v.allowed && item->kind == CT_ITEM_PACKAGE)
+                {
+                    AP_CustomContentVerify();
+                    CT_SetMessage(AP_CustomContentStatus()->detail);
+                }
+                else if (!v.allowed) { s_contentStoreWanted = 1; CT_SetMessage("Checking the installed files again."); }
+                else if (item->kind == CT_ITEM_PACKAGE) CT_LegacyDownload();
                 else if (v.source) CT_StartSaphiInstall(v.source, v.exact);
                 else { s_contentStoreWanted = 1; CT_SetMessage("Checking the installed files again."); }
                 break;
@@ -1220,7 +1327,11 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
                 s_ctMessage[0] ? s_ctMessage : s_saphiRefreshBusy ? "Catalogue: loading..." :
                 !s_saphiCatalogue ? "Catalogue: unavailable. Installed tracks still listed." :
                 s_saphiRefreshFailed ? "Catalogue: offline, showing the last copy loaded." : "Catalogue: loaded.";
-            CT_DrawPaged(state, CT_DETAIL_X, 122, CT_DETAIL_W, 4, ORANGE, ot);
+            /* A4-74: the permission list's state after the catalogue's. */
+            char permission[200], text[CT_TEXT_MAX];
+            CT_PermissionLine(permission, sizeof permission);
+            snprintf(text, sizeof text, "%s%s%s", state, permission[0] ? " " : "", permission);
+            CT_DrawPaged(text, CT_DETAIL_X, 122, CT_DETAIL_W, 4, ORANGE, ot);
         }
     }
     else if (s_ctFocus == CT_FOCUS_ACTIONS && item)
@@ -1280,6 +1391,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
             MM_CustomText_Draw(s_saphiQuery[0] ? "No search matches" :
                                s_ctFilter == CT_FILTER_INSTALLED ? "No installed tracks. Import or Browse to add some." :
                                s_saphiRefreshBusy ? "Loading Project Saphi..." :
+                               s_ctNotAllowed ? CT_PermissionEmpty() :
                                s_ctFilter == CT_FILTER_BROWSE ? "Catalogue unavailable. Refresh it from the page controls." :
                                "No tracks yet. Refresh the catalogue or import a patch.",
                                CT_LIST_X, 84, CT_LIST_W, 3, WHITE, ot);
@@ -1306,6 +1418,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
                     e && !e->local.arcade ? (e->local.timeTrial ? e->local.arcadeReason : e->local.timeTrialReason) : "";
                 const char *status = s_saphiDownloading ? s_saphiMessage :
                     strstr(s_saphiMessage, "publication failed") ? s_saphiMessage :
+                    !v.allowed ? CT_PermissionShort() :
                     item->kind == CT_ITEM_PACKAGE ? AP_CustomContentStatus()->detail :
                     v.source && v.source->disabledReason[0] && !e ? v.source->disabledReason :
                     v.older && !v.exact && v.source ? "Update available" : "";
@@ -1395,7 +1508,7 @@ static void CT_SeedFrame(int tapped, uint32_t *ot)
                 if (r->index == -2) CT_OpenURL(AP_CustomContentPackage()->sourceUrl);
                 else
                 {
-                    int trackID = 0;
+                    int trackID = r->saphi_track_id;
                     size_t k;
                     for (k = 0; k < s_contentLibrary.count && !trackID; k++)
                         if (!strcmp(s_contentLibrary.entries[k].title, r->title)) trackID = s_contentLibrary.entries[k].local.trackID;

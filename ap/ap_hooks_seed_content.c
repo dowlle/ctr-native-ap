@@ -22,6 +22,7 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include "ap_seed_content.h"
 #include "ap_track_registry.h"
+#include "ap_track_consent.h"
 #include <platform/native_track_sources.h>
 
 static int AP_SeedScanFromManager(int stored)
@@ -64,6 +65,44 @@ static struct
 } ap_seed_registry;
 static int ap_seed_registry_asked, ap_seed_registry_last_state;
 static uint64_t ap_seed_registry_asked_epoch;
+static int ap_seed_consent_asked, ap_seed_consent_last_state;
+static uint64_t ap_seed_consent_asked_epoch;
+
+// A4-74: fetch the track author permission list when the room misses any
+// package (compiled profile or not): every download needs the author's yes.
+// Once per room, unless this session already has the live copy; `force`
+// (Rescan) asks again unless a fetch is running.
+static void AP_SeedConsentEnsure(int force)
+{
+	char line[400], detail[256];
+	int i, needed = 0, source = AP_TRACK_CONSENT_SOURCE_NONE;
+	const int state = ap_track_consent_status(&source, detail, sizeof detail);
+	if (state != ap_seed_consent_last_state && ap_seed_consent_last_state == AP_TRACK_CONSENT_LOADING)
+	{
+		snprintf(line, sizeof line, "[CustomTracks] Current Seed: permission list %s%s%s\n",
+		         source == AP_TRACK_CONSENT_SOURCE_LIVE ? "fetched" :
+		         source == AP_TRACK_CONSENT_SOURCE_CACHED ? "not fetched, using the cached copy" :
+		         "unavailable, no cached copy: no track is offered for download",
+		         detail[0] ? ": " : "", detail);
+		AP_AppendLog(line);
+	}
+	ap_seed_consent_last_state = state;
+	if (state == AP_TRACK_CONSENT_LOADING) return;
+	if (!force && ap_seed_consent_asked && ap_seed_consent_asked_epoch == ap_content_plan_epoch()) return;
+	for (i = 0; i < AP_CONTENT_MAX_PACKAGES && !needed; ++i)
+		if (ap_content_plan_package(i) && ap_content_package_scan[i] != CTR_CT_MANAGER_READY + 1) needed = 1;
+	if (!needed) return;
+	ap_seed_consent_asked = 1;
+	ap_seed_consent_asked_epoch = ap_content_plan_epoch();
+	if (!force && state == AP_TRACK_CONSENT_DONE && source == AP_TRACK_CONSENT_SOURCE_LIVE) return;
+	if (ap_track_consent_refresh_assets(NativeAssets_GetAssetDir()))
+	{
+		ap_seed_consent_last_state = AP_TRACK_CONSENT_LOADING;
+		snprintf(line, sizeof line, "[CustomTracks] Current Seed: checking the track author permission list (%s)\n",
+		         AP_TRACK_CONSENT_HOST AP_TRACK_CONSENT_PATH);
+		AP_AppendLog(line);
+	}
+}
 
 // assets/track-registry-cache.json: next to tracks/, which is writable
 // wherever tracks can be installed (the Deck's AppImage folder is not).
@@ -99,9 +138,10 @@ static void AP_SeedRegistryEnsure(int force)
 	ap_seed_registry_last_state = state;
 	if (state == AP_TRACK_REGISTRY_LOADING) return;
 	if (!force && ap_seed_registry_asked && ap_seed_registry_asked_epoch == ap_content_plan_epoch()) return;
+	// Compiled profiles too (A4-74): the registry's credits are how a track
+	// is matched to its author when the catalogue is not loaded.
 	for (i = 0; i < AP_CONTENT_MAX_PACKAGES && !needed; ++i)
-		if (ap_content_plan_package(i) && !AP_ContentPackage(i) &&
-		    ap_content_package_scan[i] != CTR_CT_MANAGER_READY + 1) needed = 1;
+		if (ap_content_plan_package(i) && ap_content_package_scan[i] != CTR_CT_MANAGER_READY + 1) needed = 1;
 	if (!needed) return;
 	ap_seed_registry_asked = 1;
 	ap_seed_registry_asked_epoch = ap_content_plan_epoch();
@@ -185,6 +225,20 @@ static int AP_SeedTableMatch(const ctr_content_package *pkg, struct ApTrackRegis
 void AP_SeedContentRegistryRetry(void)
 {
 	AP_SeedRegistryEnsure(1);
+	AP_SeedConsentEnsure(1);
+}
+
+// A4-74: a row that would download from Saphi is offered only when the track
+// author said yes. Otherwise it becomes NOT_ALLOWED: shown, with where to get
+// the files, never downloaded. Cortex Vortex is bundled and untouched.
+static void AP_SeedPermission(struct AP_SeedContentRow *row, int saphi_track_id, const char *track_key)
+{
+	row->saphi_track_id = saphi_track_id;
+	if (row->source != AP_SEED_SOURCE_SAPHI) return;
+	if (ap_track_permission(saphi_track_id, 0, AP_TRACK_PERMISSION_UNKNOWN, track_key) == AP_TRACK_PERMISSION_ALLOW)
+		return;
+	row->source = AP_SEED_SOURCE_NOT_ALLOWED;
+	snprintf(row->permission, sizeof row->permission, "%s", ap_track_permission_text());
 }
 
 int AP_SeedContentRows(struct AP_SeedContentRow *rows, int max)
@@ -192,6 +246,7 @@ int AP_SeedContentRows(struct AP_SeedContentRow *rows, int max)
 	int i, n = 0;
 	if (!rows || max <= 0 || !ap_content_plan_active()) return 0;
 	AP_SeedRegistryEnsure(0);
+	AP_SeedConsentEnsure(0);
 	for (i = 0; i < AP_CONTENT_MAX_PACKAGES && n < max; ++i)
 	{
 		const ctr_content_package *pkg = ap_content_plan_package(i);
@@ -210,16 +265,24 @@ int AP_SeedContentRows(struct AP_SeedContentRow *rows, int max)
 		row->scan = AP_SeedScanFromManager(ap_content_package_scan[i]);
 		row->source = compiled && compiled->downloadApiUrl && compiled->downloadApiUrl[0]
 		              ? AP_SEED_SOURCE_SAPHI : AP_SEED_SOURCE_MANUAL;
-		if (!compiled)
+		if (compiled)
+			AP_SeedPermission(row, ap_track_saphi_id_from_url(compiled->sourceUrl), NULL);
+		else
 		{
-			row->registry = AP_SeedRegistryRow(i, pkg, NULL);
+			struct ApTrackRegistryMatch match;
+			memset(&match, 0, sizeof match);
+			row->registry = AP_SeedRegistryRow(i, pkg, &match);
 			if (row->registry == AP_SEED_REGISTRY_LIVE || row->registry == AP_SEED_REGISTRY_CACHED)
+			{
 				row->source = AP_SEED_SOURCE_SAPHI;
+				AP_SeedPermission(row, match.saphi_track_id, match.track_key);
+			}
 			else if ((row->registry == AP_SEED_REGISTRY_OFFLINE || row->registry == AP_SEED_REGISTRY_NOT_LISTED) &&
-			         AP_SeedTableMatch(pkg, NULL))
+			         AP_SeedTableMatch(pkg, &match))
 			{
 				row->registry = AP_SEED_REGISTRY_TABLE;
 				row->source = AP_SEED_SOURCE_SAPHI;
+				AP_SeedPermission(row, match.saphi_track_id, match.track_key);
 			}
 			else if (row->scan != AP_SEED_SCAN_READY)
 			{

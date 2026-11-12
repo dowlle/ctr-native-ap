@@ -64,6 +64,23 @@ prelude = r'''
 #include <string>
 #include <thread>
 #include <vector>
+#include "ap_track_consent.h"
+// The track author permission check (A4-74): the real resolver is
+// ap/ap_track_consent.cpp (tools/test-track-consent.cpp). Here it allows,
+// unless a case sets g_permission, and records which Saphi track was asked.
+static int g_permission = AP_TRACK_PERMISSION_ALLOW, g_permission_track = -1;
+extern "C" int ap_track_permission(int track, int author, int saphi, const char *key)
+{ (void)author; (void)saphi; (void)key; g_permission_track = track; return g_permission; }
+extern "C" const char *ap_track_permission_text(void) { return "The author has not allowed in-game download."; }
+extern "C" int ap_track_consent_saphi_author(int track) { return track == 121 ? 12 : 0; }
+extern "C" int ap_track_registry_key_for_saphi(int track, char *key, int bytes)
+{ if (track != 121 || !key || bytes < 16) return 0; std::snprintf(key, bytes, "acid-lake"); return 1; }
+extern "C" void ap_track_consent_note_saphi(int track, int author, int saphi) { (void)track; (void)author; (void)saphi; }
+extern "C" int ap_track_saphi_id_from_url(const char *url)
+{
+	const char *at = url ? std::strstr(url, "/tracks/") : nullptr;
+	return at ? std::atoi(at + 8) : 0;
+}
 '''
 
 stub = r'''
@@ -249,6 +266,18 @@ int main()
 		expect(f.ok && f.path.find("/original/sca-874.sca") != std::string::npos, route + "stored as original/sca-<id>.sca");
 		expect(find_music_for(assets, "2.0.0").ok == false, route + "another revision finds none");
 		expect(find_music_for(assets, "1.0.0", "99999999-2222-5333-8444-555555555555").ok == false, route + "another uuid finds none");
+		// A4-74: a Current Seed install records the Saphi track and author
+		// ids it was matched on; the store scan reads them back.
+		{
+			struct Seen { int author = 0, track = 0; std::string key; } seen;
+			char scanError[256] = {};
+			CustomPackage_ScanStore((assets + "/tracks/packages").c_str(), [](const CustomPackageStoreEntry *e, void *c) {
+				auto *s = static_cast<Seen *>(c);
+				s->author = e->local.authorID; s->track = e->local.permissionTrackID; s->key = e->local.trackKey;
+			}, &seen, scanError, sizeof scanError);
+			expect(seen.track == 121 && seen.author == 12 && seen.key == "acid-lake",
+			       route + "seed-source.json gives the permission check the Saphi ids and the track key");
+		}
 
 		// b. Listings that are not exactly one current .sca of this version.
 		struct Case { const char *name; std::vector<Sca> list; };
@@ -355,6 +384,15 @@ int main()
 			served["/api/v3/tracks/121/downloads/873"] = vrm;
 			served["/api/v3/tracks/121/downloads/874"] = music;
 		}
+		rev.authorID = 12;
+		// A4-74: a revision whose author has not said yes never starts.
+		for (int answer : {AP_TRACK_PERMISSION_UNKNOWN, AP_TRACK_PERMISSION_DENY})
+		{
+			g_permission = answer; g_permission_track = -1;
+			expect(CustomSaphi_StartInstall(&rev, assets.c_str()) == 0 && g_permission_track == 121,
+			       "Track Manager install refused when the author has not allowed in-game download");
+		}
+		g_permission = AP_TRACK_PERMISSION_ALLOW;
 		expect(CustomSaphi_StartInstall(&rev, assets.c_str()) == 1, "Track Manager install starts");
 		int state = 0; char pin[65] = {}, error[256] = {};
 		for (int i = 0; i < 3000 && (state = CustomSaphi_PollInstall(pin, error, sizeof error)) == 0; i++)
@@ -362,6 +400,21 @@ int main()
 		expect(state == 1, std::string("Track Manager install succeeds: ") + error);
 		expect(manifest_has_sca(assets), "Track Manager: the manifest pins role sca");
 		expect(slurp(assets + "/tracks/packages/" + pin + "/original/sca-874.sca") == music, "Track Manager: the .sca is in the store");
+		// A4-74: saphi-source.json records the author id and the registry
+		// track key, and the store scan reads them back for the permission check.
+		{
+			auto source = nlohmann::json::parse(slurp(assets + "/tracks/packages/" + pin + "/metadata/saphi-source.json"));
+			expect(source.value("author_id", 0) == 12 && source.value("track_key", std::string()) == "acid-lake",
+			       "saphi-source.json records author_id and track_key: " + source.dump());
+			struct Seen { int author = 0, track = 0; std::string key; } seen;
+			char scanError[256] = {};
+			CustomPackage_ScanStore((assets + "/tracks/packages").c_str(), [](const CustomPackageStoreEntry *e, void *c) {
+				auto *s = static_cast<Seen *>(c);
+				s->author = e->local.authorID; s->track = e->local.permissionTrackID; s->key = e->local.trackKey;
+			}, &seen, scanError, sizeof scanError);
+			expect(seen.author == 12 && seen.track == 121 && seen.key == "acid-lake",
+			       "the store scan reads the author id, the Saphi track id and the track key back");
+		}
 	}
 
 	std::printf("%d checks, %d failures\n", checks, failures);
