@@ -1317,6 +1317,57 @@ static int CustomTrackPolicy_ClearUnmappedBspHitboxes(unsigned char *file, unsig
 	return cleared;
 }
 
+// Camera-search flags (A4-63). CAM_FindClosestQuadblock only takes quadblocks
+// with flag 0x0800, and nothing else in the game reads that flag. The quadblock
+// it finds gives the camera its visible-instance list (CAM.c, cDC->visInstSrc),
+// and that list is the only way placed LEV objects are drawn. Retail sets 0x0800
+// on its ground quads (0x1000). Coco Team Racing's track 6 (LEV 849e675d...)
+// sets it on none of its 7,155 quadblocks, so the list stays NULL and every
+// weapon crate, Wumpa crate, tyre stack, turbo pad model and the finish arch is
+// missing, while their collision stays (the invisible walls). When a level has
+// no 0x0800 quad at all, add it to every ground quad; a level with at least one
+// (every retail track, Coco track 3) is left exactly as it is. `file` is the
+// pre-map LEV subfile: mesh_info at data offset 0, numQuadBlock at +0,
+// ptrQuadBlockArray at +0xc, 0x5c-byte quadblocks, u16 flags at +0x12.
+#define CTR_POLICY_QUAD_CAMERA_SEARCH 0x0800u
+#define CTR_POLICY_QUAD_GROUND        0x1000u
+static int CustomTrackPolicy_AddCameraSearchFlags(unsigned char *file, unsigned long fileBytes)
+{
+	unsigned long dataBytes, mesh, count, quads, i;
+	unsigned char *data;
+	int added = 0;
+
+	if (file == NULL || fileBytes < 8)
+		return 0;
+	dataBytes = CustomTrackPolicy_ReadLe32(file);
+	if (dataBytes < 0x20 || dataBytes > fileBytes - 4)
+		return 0;
+	data = file + 4;
+	mesh = CustomTrackPolicy_ReadLe32(data);
+	if (mesh == 0 || mesh > dataBytes - 0x20)
+		return 0;
+	count = CustomTrackPolicy_ReadLe32(data + mesh);
+	quads = CustomTrackPolicy_ReadLe32(data + mesh + 0xc);
+	if (count == 0 || quads == 0 || quads > dataBytes || count > (dataBytes - quads) / 0x5c)
+		return 0;
+
+	for (i = 0; i < count; i++)
+	{
+		const unsigned char *q = data + quads + i * 0x5c;
+		if (((unsigned)q[0x12] | ((unsigned)q[0x13] << 8)) & CTR_POLICY_QUAD_CAMERA_SEARCH)
+			return 0;
+	}
+	for (i = 0; i < count; i++)
+	{
+		unsigned char *q = data + quads + i * 0x5c;
+		if ((((unsigned)q[0x12] | ((unsigned)q[0x13] << 8)) & CTR_POLICY_QUAD_GROUND) == 0)
+			continue;
+		q[0x13] |= (unsigned char)(CTR_POLICY_QUAD_CAMERA_SEARCH >> 8);
+		added++;
+	}
+	return added;
+}
+
 // Is there room for one more primitive of `primSize` bytes before the frame's
 // primitive arena runs out? This is decision 7 above.
 //

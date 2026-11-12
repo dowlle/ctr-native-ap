@@ -496,6 +496,12 @@ void *LOAD_ReadFile_ex(struct BigHeader *bigfile, u32 loadType, int subfileIndex
 					CustomTrack_Log("[CustomTracks] level subfile %d: cleared %d BSP leaf hitbox pointer%s outside the pointer map\n",
 					                subfileIndex, bspCleared, bspCleared == 1 ? "" : "s");
 				}
+				int camAdded = CustomTrackPolicy_AddCameraSearchFlags((unsigned char *)ptrDst, ctOverrideSize);
+				if (camAdded > 0)
+				{
+					CustomTrack_Log("[CustomTracks] level subfile %d: no camera-search quadblocks; added the flag to %d ground quadblock%s\n",
+					                subfileIndex, camAdded, camAdded == 1 ? "" : "s");
+				}
 			}
 			if (callback != NULL)
 			{

@@ -888,6 +888,68 @@ static void test_bsp_clear_unmapped(void)
 	expect_int(CustomTrackPolicy_ClearUnmappedBspHitboxes(f, 7), 0, "a short file is left alone");
 }
 
+// A4-63: Coco Team Racing track 6 (LEV 849e675d...) sets the camera-search
+// flag 0x0800 on none of its 7,155 quadblocks. CAM_FindClosestQuadblock only
+// takes quads with that flag, so the camera never gets a quadblock, its
+// visible-instance list stays NULL and no placed object (crates, tyre stacks,
+// pads, the finish arch) is drawn. Retail sets the flag on its ground quads.
+// The loader adds it to ground quads (0x1000) only when a level has none.
+static unsigned t_quad_flags(const unsigned char *d, unsigned long qa, int i)
+{
+	return (unsigned)d[qa + 0x5c * (unsigned long)i + 0x12] | ((unsigned)d[qa + 0x5c * (unsigned long)i + 0x13] << 8);
+}
+
+static void t_set_quad_flags(unsigned char *d, unsigned long qa, int i, unsigned flags)
+{
+	d[qa + 0x5c * (unsigned long)i + 0x12] = (unsigned char)(flags & 0xff);
+	d[qa + 0x5c * (unsigned long)i + 0x13] = (unsigned char)(flags >> 8);
+}
+
+static void test_camera_search_flags(void)
+{
+	enum { DATA = 0x300, MESH = 0x40, QA = 0x80, NQ = 4 };
+	static unsigned char f[4 + DATA + 4], before[sizeof f];
+	unsigned char *d = f + 4;
+
+	memset(f, 0, sizeof f);
+	t_put32(f, DATA);
+	t_put32(d, MESH);
+	t_put32(d + MESH, NQ);
+	t_put32(d + MESH + 0xc, QA);
+	t_put32(d + DATA, 0); // empty pointer map
+	t_set_quad_flags(d, QA, 0, 0x1000);          // ground
+	t_set_quad_flags(d, QA, 1, 0x2000);          // wall
+	t_set_quad_flags(d, QA, 2, 0x1000 | 0x0001); // ground, other bits kept
+	t_set_quad_flags(d, QA, 3, 0x0000);          // no flags
+	memcpy(before, f, sizeof f);
+	expect_int(CustomTrackPolicy_AddCameraSearchFlags(f, sizeof f), 2, "Coco track 6 shape: both ground quads get the camera flag");
+	expect_int((int)t_quad_flags(d, QA, 0), 0x1800, "ground quad: 0x1000 | 0x0800");
+	expect_int((int)t_quad_flags(d, QA, 1), 0x2000, "wall quad unchanged");
+	expect_int((int)t_quad_flags(d, QA, 2), 0x1801, "other bits of a ground quad kept");
+	expect_int((int)t_quad_flags(d, QA, 3), 0, "flagless quad unchanged");
+	t_set_quad_flags(before + 4, QA, 0, 0x1800);
+	t_set_quad_flags(before + 4, QA, 2, 0x1801);
+	expect_int(memcmp(f, before, sizeof f), 0, "and no other byte changes");
+	expect_int(CustomTrackPolicy_AddCameraSearchFlags(f, sizeof f), 0, "a second pass adds nothing");
+
+	// A level that already has one camera quad (retail, Coco track 3) keeps its flags.
+	t_set_quad_flags(d, QA, 0, 0x1000);
+	t_set_quad_flags(d, QA, 1, 0x2800);
+	t_set_quad_flags(d, QA, 2, 0x1000);
+	expect_int(CustomTrackPolicy_AddCameraSearchFlags(f, sizeof f), 0, "a level with a camera quad is left alone");
+	expect_int((int)t_quad_flags(d, QA, 0), 0x1000, "its ground quads stay without the flag");
+
+	t_set_quad_flags(d, QA, 1, 0x2000);
+	t_put32(d + MESH, 0x100);
+	expect_int(CustomTrackPolicy_AddCameraSearchFlags(f, sizeof f), 0, "quads past the data are left alone");
+	t_put32(d + MESH, NQ);
+	t_put32(d, DATA);
+	expect_int(CustomTrackPolicy_AddCameraSearchFlags(f, sizeof f), 0, "mesh_info past the data is left alone");
+	t_put32(d, MESH);
+	expect_int(CustomTrackPolicy_AddCameraSearchFlags(f, 7), 0, "a short file is left alone");
+	expect_int(CustomTrackPolicy_AddCameraSearchFlags(NULL, sizeof f), 0, "NULL is left alone");
+}
+
 static void test_st1_clear_unmapped(void)
 {
 	static unsigned char f[T_LEV_BYTES], before[T_LEV_BYTES];
@@ -1825,6 +1887,7 @@ int main(void)
 	test_st1_entry_present();
 	test_st1_clear_unmapped();
 	test_bsp_clear_unmapped();
+	test_camera_search_flags();
 	test_prim_fits();
 	test_prim_arena_bytes();
 	test_rendered_slots_fit();
