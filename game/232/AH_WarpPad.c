@@ -642,29 +642,56 @@ void AH_WarpPad_ThTick(struct Thread *t)
 #endif
 				}
 
-				// midpoing X,
-				// 30 pixels above botttom Y
 #ifdef CTR_AP
-				AP_FeedHubPadTitle(1);
-#endif
-				DecalFont_DrawLine(warppadLNG, gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
-				                   gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 30, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
-
-#ifdef CTR_AP
-				// Pad Approach Hints (#124, ruling of 2026-07-20): the name is on
-				// screen, so the pad hints its open checks (off by default).
-				AP_PadApproachHints(levelID);
+				// The lines under the name (A4-59): the stage 2 line first, then
+				// AP BOXES LEFT. With both, the name and everything above it move
+				// up one small line, as the garage panel moves its title; with one
+				// line or none the layout is the old one.
 				int apBoxesLeft = 0;
+				char apStage2Line[64];
+				int apStage2 = AP_PadStage2Line(levelID, apStage2Line, (int)sizeof apStage2Line);
 				// A trophy-complete pad can deliberately stay raceable while this
 				// destination still owns unchecked AP boxes (#232). Without an
 				// explanation that looks like a pad which failed to advance. Show the
 				// exact server-truth count below the title only in that transitional
 				// state; before the trophy it is ordinary race content, and at zero
 				// the line disappears as the pad advances normally.
-				// Plan pads show this line and no other (ruled 2026-10-30).
+				// Plan pads showed this line and no other (ruled 2026-10-30); the
+				// stage 2 line is the one addition (A4-59, 2026-11-11).
 				if (ap_content_plan_active())
 					apBoxesLeft = AP_ContentBoxesLine(ap_content_plan_pad(levelID));
+				int apLift = ap_pad_title_block_lift((apStage2 != AP_S2LINE_NONE) + (apBoxesLeft > 0),
+				                                     data.font_charPixHeight[FONT_SMALL]);
+				AP_FeedHubPadTitle(1);
+#else
+				int apLift = 0;
+#endif
+				// midpoing X,
+				// 30 pixels above botttom Y
+				DecalFont_DrawLine(warppadLNG, gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
+				                   gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 30 - apLift, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
 
+#ifdef CTR_AP
+				// Pad Approach Hints (#124, ruling of 2026-07-20): the name is on
+				// screen, so the pad hints its open checks (off by default).
+				AP_PadApproachHints(levelID);
+
+				// A4-59: what stage 2 asks for, in the A4-10 pad colours: green
+				// met, red not met, grey when its races have nothing left. A long
+				// line scrolls in the shared A4-44 box instead of running off.
+				if (apStage2 != AP_S2LINE_NONE)
+				{
+					// 160 narrower than the view keeps it clear of the
+					// bottom right HUD corner; longer lines scroll.
+					int apS2W = gGT->pushBuffer[0].rect.w - 160;
+					DecalFont_DrawLineBox(apStage2Line,
+					                      gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
+					                      gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 15 - apLift,
+					                      apS2W, FONT_SMALL,
+					                      JUSTIFY_CENTER | (apStage2 == AP_S2LINE_MET ? LIGHT_GREEN
+					                                        : apStage2 == AP_S2LINE_DONE ? GRAY : RED),
+					                      TEXT_MARQUEE, TEXT_SLOT_PAD, NULL);
+				}
 
 				if (apBoxesLeft > 0)
 				{
@@ -692,9 +719,8 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				{
 					int apLockPhys = ctr_cfg_warp_phys(levelID);
 					int apLockRacer = ctr_cfg_racer_lock(apLockPhys);
-					// A content-plan pad with second-stage modes draws their line
-					// at h-45 (above), so its racer line and portrait sit 15
-					// pixels higher (#133 PR 4b). Normal rooms are unchanged.
+					// With two lines under the name (A4-59) the racer line and
+					// portrait move up with the name by apLift.
 
 					if (apLockRacer >= 0)
 					{
@@ -709,7 +735,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						// h-62 planted the icon straight through the text (Deck
 						// field check, 2026-08-17).
 						short apCy = (short)(gGT->pushBuffer[0].rect.y
-						                     + gGT->pushBuffer[0].rect.h - 82);
+						                     + gGT->pushBuffer[0].rect.h - 82 - apLift);
 
 						// Portrait centred above the title, dimmed until owned so
 						// "can I use this pad yet" reads without counting items.
@@ -732,7 +758,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						DecalFont_DrawLine(apHave ? "RACER READY" : apRacerLine,
 						                   apCx,
 						                   (short)(gGT->pushBuffer[0].rect.y
-						                           + gGT->pushBuffer[0].rect.h - 45),
+						                           + gGT->pushBuffer[0].rect.h - 45 - apLift),
 						                   FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
 					}
 				}

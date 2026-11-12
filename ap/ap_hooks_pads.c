@@ -287,6 +287,27 @@ void AP_PadApproachHints(int levelID)
 	if (eligible > 0) ap_net_pad_approach_hint(levelID, codes, eligible);
 }
 
+// A4-59: what the pad's stage 2 asks for, under its name, from the first
+// approach on (ap_pad_stage2_line.h). Same counting as the stage 2 gate and the
+// same wording as the tracker's activity rows; nothing new from slot_data.
+int AP_PadStage2Line(int levelID, char *out, int cap)
+{
+	const ctr_content_pad *pad;
+	int owned, state;
+	if (out && cap > 0)
+		out[0] = 0;
+	if (!out || cap <= 0 || !ctr_cfg_active() || !ap_content_plan_active())
+		return AP_S2LINE_NONE;
+	pad = ap_content_plan_pad(levelID);
+	if (!pad)
+		return AP_S2LINE_NONE;
+	owned = AP_ContentStage2Owned(pad);
+	state = ap_pad_stage2_line_state(pad, AP_PadState(ctr_cfg_warp_phys(levelID), levelID), owned,
+	                                 ap_pad_stage2_left(pad, AP_ContentCodeChecked));
+	ap_pad_stage2_line_text(pad, state, owned, out, (size_t)cap);
+	return state;
+}
+
 int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap)
 {
 	if (ap_content_plan_active())

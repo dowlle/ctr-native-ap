@@ -165,6 +165,8 @@ tools/test-pad-colour.py
 tools/test-pad-logic-look.c
 tools/test-pad-logic-look-production.py
 tools/test-pad-rebuild-production.py
+tools/test-pad-stage2-line.c
+tools/test-pad-stage2-line-production.py
 tools/test-picker-infoline.c
 tools/test-podium-skip.c
 tools/test-podium-trophy-presentation.c

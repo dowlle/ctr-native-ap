@@ -33,6 +33,7 @@
 #include "ap_relic_perfect.h" // freestanding Relic Race perfect decision (#49)
 #include "ap_glow_slots_logic.h"
 #include "ap_pad_hints_logic.h" // #124 Pad Approach Hints
+#include "ap_pad_stage2_line.h" // A4-59 stage 2 line under the pad name
 #include "ap_hint_filters_logic.h" // A2-23 hint filters
 #include "ap_pad_glow_items.h" // box / letter / Wumpa pad display identities
 #include "ap_trial_pad_glow.h" // SC/TT Trophy + CTR pad display identities (#343)
