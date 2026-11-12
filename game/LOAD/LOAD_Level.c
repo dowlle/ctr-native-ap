@@ -43,6 +43,11 @@ void LOAD_LevelFile(int levelID)
 	gGT->hudFlags &= 0xfe;
 
 	gGT->prevLEV = gGT->levelID;
+#ifdef CTR_AP
+	// A4-60c: leaving the hub behind name entry records the garage, so the
+	// adventure starts exactly as it does from the garage.
+	gGT->prevLEV = AP_HubNameEntry_OnLevelFile(gGT->prevLEV, levelID);
+#endif
 	gGT->levelID = levelID;
 
 	// disable all rendering except checkeredFlag

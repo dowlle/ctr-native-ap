@@ -150,6 +150,15 @@ static int MainInit_GetPrimMemSize(struct GameTracker *gGT)
 		return 0x1b800;
 	}
 
+#ifdef CTR_AP
+	// A4-60c: the hub behind name entry keeps the hub's adventure budget, not
+	// the 0x17c00 of a menu level; its camera stays at driving height.
+	if (AP_HubNameEntry_IsBackdropLevel(gGT->levelID))
+	{
+		return AP_HNE_PRIM_BYTES;
+	}
+#endif
+
 	// main menu
 	if ((gGT->gameMode1 & MAIN_MENU) != 0)
 	{
@@ -295,6 +304,15 @@ void MainInit_OTMem(struct GameTracker *gGT)
 	int size;
 	u32 gameMode = gGT->gameMode1;
 
+#ifdef CTR_AP
+	// A4-60c: the hub behind name entry gets the hub's ordering table.
+	if (AP_HubNameEntry_IsBackdropLevel(gGT->levelID))
+	{
+		size = AP_HNE_OT_BYTES;
+		goto EndFunc;
+	}
+#endif
+
 	if ((gameMode & MAIN_MENU) != 0)
 	{
 		size = 0x1800;
@@ -359,6 +377,13 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 			{
 				renderBucketSize = 0x800;
 			}
+#ifdef CTR_AP
+			// A4-60c: the hub behind name entry, like the garage and the hub.
+			if (AP_HubNameEntry_IsBackdropLevel(gGT->levelID))
+			{
+				renderBucketSize = 0x800;
+			}
+#endif
 		}
 	}
 

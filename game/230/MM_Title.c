@@ -135,7 +135,14 @@ void MM_Title_MenuUpdate(void)
 		// go to adventure character select screen
 		sdata->mainMenuState = MAIN_MENU_ADVENTURE;
 
+#ifdef CTR_AP
+		// A4-60c: when the seed owns the racer, a random hub stands in for the
+		// garage behind name entry. Offline, old and refused seeds get the
+		// garage and its picker, unchanged.
+		MainRaceTrack_RequestLoad((s16)AP_HubNameEntry_NewAdventureLevel());
+#else
 		MainRaceTrack_RequestLoad(ADVENTURE_GARAGE);
+#endif
 		break;
 
 	// adventure save/load
