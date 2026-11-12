@@ -117,7 +117,7 @@ static int permDenied=-1, permListed=1, consentRefreshes;
 int ap_track_permission(int track,int author,int saphi,const char *key)
 { (void)author;(void)saphi;(void)key; return !permListed ? AP_TRACK_PERMISSION_UNKNOWN : track==permDenied ? AP_TRACK_PERMISSION_DENY : AP_TRACK_PERMISSION_ALLOW; }
 const char *ap_track_permission_text(void)
-{ return permListed ? "The author has not allowed in-game download." : "The permission list could not be loaded, so in-game download is off."; }
+{ return permListed ? "The author has not allowed in-game download." : "Permission list not loaded, so download is off."; }
 int ap_track_consent_refresh_assets(const char *a) { (void)a; consentRefreshes++; return 1; }
 #include "../game/230/MM_CustomManager.c"
 static void tick(int buttons) { struct GamepadBuffer pad={0};pad.buttonsTapped=buttons;drawn[0]=0;MM_ConfigProc_TrackLibrary(NULL,NULL,&pad); }
@@ -239,7 +239,7 @@ int main(void)
  {int b=starts;
   rows[1].trackID=1;tick(0);CHECK(strstr(drawn,"1/7")!=NULL);
   rows[1].trackID=2;tick(BTN_CROSS);CHECK(starts==b+1);s_saphiDownloading=0;installResult=-1;}
- permListed=0;tick(0);CHECK(strstr(drawn,"0/0")&&strstr(drawn,"permission")&&!strstr(drawn,"Catalogue unavailable"));
+ permListed=0;tick(0);CHECK(strstr(drawn,"0/0")&&strstr(drawn,"Permission")&&!strstr(drawn,"...")&&!strstr(drawn,"Catalogue unavailable"));
  {int b=starts;tick(BTN_CROSS);CHECK(starts==b);}
  permListed=1;permDenied=-1;
  CHECK(CustomRevision_Compare("2.0.0","1.99.0")>0);

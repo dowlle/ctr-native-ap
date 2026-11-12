@@ -489,7 +489,7 @@ extern "C" const char *ap_track_permission_text(void)
 	if (source != AP_TRACK_CONSENT_SOURCE_NONE) return "The author has not allowed in-game download.";
 	if (state == AP_TRACK_CONSENT_LOADING || state == AP_TRACK_CONSENT_IDLE)
 		return "Checking which authors allow in-game download...";
-	return "The permission list could not be loaded, so in-game download is off.";
+	return "Permission list not loaded, so download is off.";
 }
 
 #ifdef AP_TRACK_CONSENT_TEST

@@ -330,7 +330,7 @@ int main(int argc, char **argv)
 	CHECK(ap_track_consent_refresh(cache.c_str()) == 1);
 	CHECK(wait_consent(&source, &detail) == AP_TRACK_CONSENT_UNAVAILABLE && source == AP_TRACK_CONSENT_SOURCE_NONE);
 	CHECK(ap_track_permission(2, 1, U, nullptr) == U && ap_track_permission(2, 1, A, nullptr) == U);
-	CHECK(std::strstr(ap_track_permission_text(), "could not be loaded"));
+	CHECK(std::strstr(ap_track_permission_text(), "not loaded"));
 
 	// 4d. consent.json missing on main (before the registry PR merges): the
 	// host answers 404. Same as no list.

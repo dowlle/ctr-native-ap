@@ -258,10 +258,10 @@ static const char *CT_PermissionEmpty(void)
     int source = AP_TRACK_CONSENT_SOURCE_NONE;
     const int state = ap_track_consent_status(&source, NULL, 0);
     if (source != AP_TRACK_CONSENT_SOURCE_NONE)
-        return "No listed track. Only tracks whose authors allow in-game download are listed.";
+        return "Only author-allowed tracks are listed.";
     return state == AP_TRACK_CONSENT_LOADING || state == AP_TRACK_CONSENT_IDLE ?
            "Checking which authors allow in-game download..." :
-           "The permission list could not be loaded, so no track is offered for download. Refresh to retry.";
+           "Permission list not loaded: no downloads.";
 }
 
 /* A refresh can replace the selected revision without changing its title or

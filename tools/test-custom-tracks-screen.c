@@ -132,7 +132,7 @@ const char *ap_track_permission_text(void)
 {
     if (permSource != AP_TRACK_CONSENT_SOURCE_NONE) return "The author has not allowed in-game download.";
     if (permState == AP_TRACK_CONSENT_LOADING || permState == AP_TRACK_CONSENT_IDLE) return "Checking which authors allow in-game download...";
-    return "The permission list could not be loaded, so in-game download is off.";
+    return "Permission list not loaded, so download is off.";
 }
 
 /* ---- Play Solo ---- */
@@ -916,6 +916,14 @@ int main(void)
     s_ctFocus = CT_FOCUS_CONTROLS;
     CHECK(has_paged("1 track not listed: its", "permission-browse-controls") && has_paged("author has not allowed in-game download.", NULL));
     s_ctFilter = CT_FILTER_ALL; frame(0, NULL); CHECK(!has("Android Alley Remix"));
+    /* Every catalogue track left out: Browse says why, untruncated. */
+    {
+        int keep = permDenyCount;
+        permDeny[1] = 101; permDeny[2] = 130; permDeny[3] = 150; permDenyCount = 4;
+        s_ctFilter = CT_FILTER_BROWSE; s_ctFocus = CT_FOCUS_LIST; frame(0, "permission-none-allowed");
+        CHECK(s_ctItemCount == 0 && has("Only author-allowed tracks are listed.") && !has("..."));
+        permDenyCount = keep; s_ctFilter = CT_FILTER_ALL;
+    }
     /* Coco Park 2025 is installed and its author has not said yes: it stays
        listed and racing, loses Update and Versions, keeps its source page. */
     permDeny[1] = 130; permDenyCount = 2;
@@ -950,7 +958,7 @@ int main(void)
        nothing is offered, and Browse says why instead of looking empty. */
     permSource = AP_TRACK_CONSENT_SOURCE_NONE; permState = AP_TRACK_CONSENT_UNAVAILABLE;
     s_ctFocus = CT_FOCUS_LIST; frame(0, "permission-unavailable");
-    CHECK(s_ctItemCount == 0 && has("The permission list could not be loaded"));
+    CHECK(s_ctItemCount == 0 && has("Permission list not loaded: no downloads.") && !has("..."));
     s_ctFocus = CT_FOCUS_CONTROLS;
     CHECK(has_paged("The permission list could", "permission-unavailable-controls") && has_paged("not be loaded, so no track is offered for", NULL));
     s_ctFilter = CT_FILTER_ALL; s_ctFocus = CT_FOCUS_LIST; frame(0, NULL);
