@@ -268,3 +268,12 @@ so both tracks stand all 15 at their spots, hide no crate and carry no crate
 exclusion. `test-content-plan.cpp` checks codes, numbers and positions, two
 refusals, and that the same room without the DK Pass set (a room from before
 the file shipped) keeps crate seating there.
+
+`box-spots-community-b.json` (A4-62b) is slot data the paired apworld emitted
+the same way (seed 3, Shortcut Knowledge hard, progressive boost and stats on)
+with the Country Speedway 1.3.1 and Gossamer's Castle 1.0.0 package records of
+a shared player YAML. Gossamer's Castle is named block 89 (minted in the same
+apworld PR). Country Speedway has 14 spots, numbers 1 to 15 without 6, and its
+package has no weapon crates, so every box it has comes from the spot file.
+`test-content-plan.cpp` checks codes, numbers (with the gap), positions and the
+boost spots, and three refusals.
