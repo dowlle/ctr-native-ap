@@ -515,8 +515,9 @@ extern "C" int ap_track_permission(int saphi_track_id, int saphi_author_id, int 
 		}
 	}
 	// The key the caller knows (a seed's folder may differ from the registry
-	// key) and the registry key for the Saphi track id: a refusal under either
-	// refuses; otherwise either can allow.
+	// key) and the registry key for the Saphi track id. When the registry
+	// knows the Saphi id, its key decides; a different caller key can only
+	// refuse, never lend another track's yes.
 	std::string key = track_key ? track_key : "", registry_key;
 	if (saphi_track_id > 0)
 	{
@@ -530,9 +531,7 @@ extern "C" int ap_track_permission(int saphi_track_id, int saphi_author_id, int 
 	if (registry_key.empty() || registry_key == key) return first;
 	ap_track_registry_credits(registry_key, names);
 	const int second = ap_track_consent_decide(list.get(), saphi_permission, saphi_author_id, names, registry_key);
-	if (first == AP_TRACK_PERMISSION_DENY || second == AP_TRACK_PERMISSION_DENY) return AP_TRACK_PERMISSION_DENY;
-	return first == AP_TRACK_PERMISSION_ALLOW || second == AP_TRACK_PERMISSION_ALLOW ? AP_TRACK_PERMISSION_ALLOW
-	                                                                                  : AP_TRACK_PERMISSION_UNKNOWN;
+	return first == AP_TRACK_PERMISSION_DENY ? AP_TRACK_PERMISSION_DENY : second;
 }
 
 extern "C" int ap_track_saphi_id_from_url(const char *url)
