@@ -62,7 +62,7 @@ int AP_HitEncounterFieldOn(void)
 }
 
 // The destination key for cursors: tracks 0..17 map to 0..17, cups 100..104 to
-// 18..22, content-plan cups 200..240 (#133 PR 5b) to 23..63; anything else is
+// 18..22, content-plan cups 200..243 (#133 PR 5b) to 23..66; anything else is
 // -1.
 #define AP_HIT_DEST_KEYS (CTR_CFG_HIT_TRACK_COUNT + CTR_CFG_HIT_CUP_COUNT + CTR_CFG_HIT_CONTENT_CUP_COUNT)
 static int ap_hit_dest_key(int destLevelID)
