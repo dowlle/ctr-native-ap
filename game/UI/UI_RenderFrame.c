@@ -782,6 +782,15 @@ void UI_RenderFrame_Racing()
 				mapPosY += 10;
 			}
 
+#if defined(CTR_NATIVE) && defined(CTR_CUSTOM_TRACKS)
+			// A4-64: a custom level whose minimap texture failed the load-time
+			// check draws its checkpoint outline, or nothing, instead.
+			if (UI_Map_CustomMode() != CTR_POLICY_MINIMAP_TEXTURE)
+			{
+				UI_Map_CustomDraw((int)levPtrMap, &gGT->backBuffer->primMem, gGT->pushBuffer_UI.ptrOT);
+			}
+			else
+#endif
 			// Draw the map
 			UI_Map_DrawMap(
 			    // top half and bottom half

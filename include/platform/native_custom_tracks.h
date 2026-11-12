@@ -392,6 +392,16 @@ void CustomTrackDiag_NoteFrameSpend(unsigned long beforeGeomBytes, unsigned long
 // frames have been seen, in which case it does nothing.
 void CustomTrackDiag_FlushLevelLoad(void);
 
+// Minimap sanity (A4-64, policy header). LOAD_ReadFile notes a LEV served from a
+// custom override; stage 7 of the level loader then checks the minimap icons
+// against the uploaded VRAM once. The race HUD asks the mode each frame and,
+// for anything but CTR_POLICY_MINIMAP_TEXTURE, calls UI_Map_CustomDraw instead
+// of UI_Map_DrawMap.
+void UI_Map_CustomNoteOverrideLev(void);
+void UI_Map_CustomEvaluate(struct GameTracker *gGT);
+int UI_Map_CustomMode(void);
+void UI_Map_CustomDraw(int ptrMap, struct PrimMem *primMem, uint32_t *otMem);
+
 #endif // CTR_CUSTOM_TRACKS
 
 #endif // NATIVE_CUSTOM_TRACKS_H

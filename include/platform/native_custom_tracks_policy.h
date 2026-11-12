@@ -1368,6 +1368,125 @@ static int CustomTrackPolicy_AddCameraSearchFlags(unsigned char *file, unsigned 
 	return added;
 }
 
+// Minimap sanity (A4-64). The race HUD draws the minimap from icons 3 and 4 of
+// the level's texture lookup (UI_Map_DrawMap). Every retail minimap, Coco track 3
+// and every community track checked is a grey or white outline: each texel it
+// draws maps to a CLUT colour with equal red, green and blue (37 retail levels,
+// 27 imported custom levels with a minimap; the worst valid one, Motor Sports
+// Land, has 18 of 3,348 texels off-grey in a one-pixel edge column). Coco Team
+// Racing's track 6 (LEV 849e675d...) names hub icons ("map-hub-01/02", 104x40)
+// that its VRM never fills: the texels and both CLUT rows hold road textures, so
+// all 4,160 texels of each half are coloured noise. No file of the mod holds a
+// minimap texture or the standard minimap CLUTs for it.
+//
+// So a custom level whose minimap draws more than 10% off-grey texels in either
+// half does not get the texture drawn. When its ST1 minimap block and lap
+// checkpoints are usable, the HUD draws the checkpoint loop as a white outline
+// through the same projection the racer dots use (UI_Map_GetIconPos), so the
+// dots sit on it; otherwise the minimap is hidden. Retail levels are never
+// checked.
+#define CTR_POLICY_MINIMAP_TEXTURE 0
+#define CTR_POLICY_MINIMAP_OUTLINE 1
+#define CTR_POLICY_MINIMAP_HIDDEN  2
+#define CTR_POLICY_MINIMAP_NONGREY_PERMILLE_MAX 100ul
+
+static int CustomTrackPolicy_Rgb15IsGrey(unsigned colour)
+{
+	unsigned r = colour & 31u, g = (colour >> 5) & 31u, b = (colour >> 10) & 31u;
+	return r == g && g == b;
+}
+
+// The VRAM rectangles one icon samples. `layout` is the 12-byte TextureLayout
+// (u0 v0 clut u1 v1 tpage u2 v2 u3 v3). Returns 0 for a direct-colour page,
+// which has no CLUT and is left alone. Texel rect in VRAM halfwords; the CLUT
+// rect is one row of 16 or 256 entries.
+struct CustomTrackMinimapRects
+{
+	int texX, texY, texW, texH;
+	int clutX, clutY, clutW;
+	int bpp, u0, v0, uw, vh;
+};
+
+static int CustomTrackPolicy_MinimapIconRects(const unsigned char *layout, struct CustomTrackMinimapRects *r)
+{
+	unsigned clut, tpage, umin, umax, vmin, vmax, k;
+	const unsigned char us[4] = {layout[0], layout[4], layout[8], layout[10]};
+	const unsigned char vs[4] = {layout[1], layout[5], layout[9], layout[11]};
+
+	clut = (unsigned)layout[2] | ((unsigned)layout[3] << 8);
+	tpage = (unsigned)layout[6] | ((unsigned)layout[7] << 8);
+	umin = umax = us[0];
+	vmin = vmax = vs[0];
+	for (k = 1; k < 4; k++)
+	{
+		if (us[k] < umin) umin = us[k];
+		if (us[k] > umax) umax = us[k];
+		if (vs[k] < vmin) vmin = vs[k];
+		if (vs[k] > vmax) vmax = vs[k];
+	}
+	r->bpp = (int)((tpage >> 7) & 3u);
+	if (r->bpp > 1)
+		return 0;
+	r->u0 = (int)umin;
+	r->v0 = (int)vmin;
+	r->uw = (int)(umax - umin + 1);
+	r->vh = (int)(vmax - vmin + 1);
+	r->texX = (int)((tpage & 15u) * 64u + (r->bpp == 0 ? umin / 4u : umin / 2u));
+	r->texY = (int)(((tpage >> 4) & 1u) * 256u + vmin);
+	r->texW = (int)((r->bpp == 0 ? umax / 4u : umax / 2u) - (r->bpp == 0 ? umin / 4u : umin / 2u) + 1);
+	r->texH = r->vh;
+	r->clutX = (int)((clut & 63u) * 16u);
+	r->clutY = (int)(clut >> 6);
+	r->clutW = r->bpp == 0 ? 16 : 256;
+	return 1;
+}
+
+// Count the texels of one icon that draw an off-grey colour. `tex` holds the
+// texel rect row by row (texW halfwords a row), `clut` the CLUT row.
+static unsigned long CustomTrackPolicy_MinimapNonGrey(const struct CustomTrackMinimapRects *r, const unsigned short *tex,
+                                                      const unsigned short *clut, unsigned long *total)
+{
+	unsigned long bad = 0;
+	int i, j;
+
+	*total = 0;
+	for (j = 0; j < r->vh; j++)
+	{
+		for (i = 0; i < r->uw; i++)
+		{
+			int u = r->u0 + i, idx;
+			int col = (r->bpp == 0 ? u / 4 : u / 2) - (r->bpp == 0 ? r->u0 / 4 : r->u0 / 2);
+			unsigned w = tex[j * r->texW + col];
+			idx = r->bpp == 0 ? (int)((w >> ((u % 4) * 4)) & 15u) : (int)((w >> ((u % 2) * 8)) & 255u);
+			(*total)++;
+			if (!CustomTrackPolicy_Rgb15IsGrey(clut[idx]))
+				bad++;
+		}
+	}
+	return bad;
+}
+
+static int CustomTrackPolicy_MinimapHalfUsable(unsigned long nonGrey, unsigned long total)
+{
+	return total != 0 && nonGrey * 1000ul <= total * CTR_POLICY_MINIMAP_NONGREY_PERMILLE_MAX;
+}
+
+// The checkpoint outline needs a minimap block the racer dots can use
+// (UI_Map_GetIconPos divides by both world ranges) and a loop to draw.
+static int CustomTrackPolicy_MinimapOutlineUsable(int endX, int endY, int startX, int startY, int sizeX, int sizeY, int mode,
+                                                  long checkpoints)
+{
+	return endX > startX && endY > startY && sizeX > 0 && sizeY > 0 && mode >= 0 && mode <= 3 && checkpoints >= 2 &&
+	       checkpoints <= 255;
+}
+
+static int CustomTrackPolicy_MinimapMode(int textureUsable, int outlineUsable)
+{
+	if (textureUsable)
+		return CTR_POLICY_MINIMAP_TEXTURE;
+	return outlineUsable ? CTR_POLICY_MINIMAP_OUTLINE : CTR_POLICY_MINIMAP_HIDDEN;
+}
+
 // Is there room for one more primitive of `primSize` bytes before the frame's
 // primitive arena runs out? This is decision 7 above.
 //

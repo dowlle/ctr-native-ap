@@ -950,6 +950,102 @@ static void test_camera_search_flags(void)
 	expect_int(CustomTrackPolicy_AddCameraSearchFlags(NULL, sizeof f), 0, "NULL is left alone");
 }
 
+// Minimap sanity (A4-64). A 4-bit minimap half, laid out like the real ones:
+// Coco track 6 names a 104x40 icon at u 112..215, v 48..87 of page x 640 with
+// its CLUT at (704, 215); the bytes there are road texture. Synthetic texels
+// and colours stand in for the third-party data.
+static void t_layout(unsigned char *l, unsigned u0, unsigned v0, unsigned u1, unsigned v1, unsigned clut, unsigned tpage)
+{
+	l[0] = (unsigned char)u0; l[1] = (unsigned char)v0;
+	l[2] = (unsigned char)clut; l[3] = (unsigned char)(clut >> 8);
+	l[4] = (unsigned char)u1; l[5] = (unsigned char)v0;
+	l[6] = (unsigned char)tpage; l[7] = (unsigned char)(tpage >> 8);
+	l[8] = (unsigned char)u0; l[9] = (unsigned char)v1;
+	l[10] = (unsigned char)u1; l[11] = (unsigned char)v1;
+}
+
+static void test_minimap_sanity(void)
+{
+	static unsigned short tex[64 * 256];
+	unsigned short clut[256];
+	unsigned char l[12];
+	struct CustomTrackMinimapRects r;
+	unsigned long total = 0, bad;
+	int i;
+
+	// Geometry of the track 6 icon.
+	t_layout(l, 112, 48, 215, 87, 0x35ec, 0x006a);
+	expect_int(CustomTrackPolicy_MinimapIconRects(l, &r), 1, "a 4-bit icon is checked");
+	expect_int(r.texX, 640 + 28, "texel rect x: page 640 + u 112 / 4");
+	expect_int(r.texY, 48, "texel rect y");
+	expect_int(r.texW, 26, "texel rect width: u 112..215 is 26 halfwords");
+	expect_int(r.texH, 40, "texel rect height");
+	expect_int(r.clutX, 704, "CLUT x");
+	expect_int(r.clutY, 215, "CLUT y");
+	expect_int(r.clutW, 16, "a 4-bit CLUT has 16 entries");
+	expect_int(r.uw * r.vh, 4160, "4,160 texels per half");
+
+	// Retail minimap CLUT (0x8000 x4, 0x7fff x4, 0xa108 x4, 0xc210 x4) with an
+	// outline: every drawn colour is grey, so the half is usable.
+	for (i = 0; i < 16; i++)
+		clut[i] = (unsigned short)(i < 4 ? 0x8000 : i < 8 ? 0x7fff : i < 12 ? 0xa108 : 0xc210);
+	memset(tex, 0, sizeof tex);
+	for (i = 0; i < r.texW; i++)
+		tex[10 * r.texW + i] = 0x5555; // one row of index 5 = white
+	bad = CustomTrackPolicy_MinimapNonGrey(&r, tex, clut, &total);
+	expect_int((int)total, 4160, "every texel of the half is counted");
+	expect_int((int)bad, 0, "a retail-style outline has no off-grey texel");
+	expect_int(CustomTrackPolicy_MinimapHalfUsable(bad, total), 1, "so it is drawn");
+
+	// Track 6: the CLUT row holds texture colours, so every texel is noise.
+	for (i = 0; i < 16; i++)
+		clut[i] = (unsigned short)(0x1000 + i * 0x0421 + 3); // red differs from green
+	for (i = 0; i < 64 * 256; i++)
+		tex[i] = (unsigned short)(0x1234 + i * 7);
+	bad = CustomTrackPolicy_MinimapNonGrey(&r, tex, clut, &total);
+	expect_int((int)bad, 4160, "track 6 shape: all 4,160 texels off-grey");
+	expect_int(CustomTrackPolicy_MinimapHalfUsable(bad, total), 0, "so the texture is not drawn");
+
+	// Motor Sports Land, measured: 18 of 3,348 texels off-grey in one edge column.
+	expect_int(CustomTrackPolicy_MinimapHalfUsable(18, 3348), 1, "Motor Sports Land's edge column keeps its minimap");
+	expect_int(CustomTrackPolicy_MinimapHalfUsable(334, 3348), 1, "just under 10% off-grey is drawn");
+	expect_int(CustomTrackPolicy_MinimapHalfUsable(335, 3348), 0, "just over 10% off-grey is not");
+	expect_int(CustomTrackPolicy_MinimapHalfUsable(0, 0), 0, "an empty icon is not drawn");
+
+	// The grey test ignores the STP bit and needs all three channels equal.
+	expect_int(CustomTrackPolicy_Rgb15IsGrey(0x0000), 1, "transparent black is grey");
+	expect_int(CustomTrackPolicy_Rgb15IsGrey(0xa108), 1, "0xa108 with STP is grey");
+	expect_int(CustomTrackPolicy_Rgb15IsGrey(0x7fff), 1, "white is grey");
+	expect_int(CustomTrackPolicy_Rgb15IsGrey(0x7fdf), 0, "one channel off is not grey");
+
+	// An 8-bit icon: 2 texels per halfword, 256-entry CLUT.
+	t_layout(l, 10, 0, 19, 3, 0x0040, 0x0080 | 0x0003);
+	expect_int(CustomTrackPolicy_MinimapIconRects(l, &r), 1, "an 8-bit icon is checked");
+	expect_int(r.texX, 192 + 5, "8-bit texel x: page 192 + u 10 / 2");
+	expect_int(r.texW, 5, "8-bit width: u 10..19 is 5 halfwords");
+	expect_int(r.clutW, 256, "an 8-bit CLUT has 256 entries");
+	// A direct-colour page has no CLUT and is left alone.
+	t_layout(l, 0, 0, 7, 7, 0, 0x0100);
+	expect_int(CustomTrackPolicy_MinimapIconRects(l, &r), 0, "a 15-bit icon is not checked");
+
+	// Outline: track 6's minimap block (128x50, world X -24675..14280, Z
+	// -14400..23885, mode 0) and 240 checkpoints.
+	expect_int(CustomTrackPolicy_MinimapOutlineUsable(14280, 23885, -24675, -14400, 128, 50, 0, 240), 1,
+	           "track 6's minimap block and checkpoints draw an outline");
+	expect_int(CustomTrackPolicy_MinimapOutlineUsable(14280, 23885, 14280, -14400, 128, 50, 0, 240), 0, "a zero X range would divide by zero");
+	expect_int(CustomTrackPolicy_MinimapOutlineUsable(14280, -14400, -24675, -14400, 128, 50, 0, 240), 0, "a zero Z range would divide by zero");
+	expect_int(CustomTrackPolicy_MinimapOutlineUsable(14280, 23885, -24675, -14400, 0, 50, 0, 240), 0, "no icon width");
+	expect_int(CustomTrackPolicy_MinimapOutlineUsable(14280, 23885, -24675, -14400, 128, 50, 4, 240), 0, "an unknown rotation");
+	expect_int(CustomTrackPolicy_MinimapOutlineUsable(14280, 23885, -24675, -14400, 128, 50, 0, 1), 0, "one checkpoint is no loop");
+	expect_int(CustomTrackPolicy_MinimapOutlineUsable(14280, 23885, -24675, -14400, 128, 50, 0, 256), 0,
+	           "more checkpoints than a u8 next index reaches");
+
+	expect_int(CustomTrackPolicy_MinimapMode(1, 1), CTR_POLICY_MINIMAP_TEXTURE, "a usable texture is always drawn");
+	expect_int(CustomTrackPolicy_MinimapMode(1, 0), CTR_POLICY_MINIMAP_TEXTURE, "even without a usable outline");
+	expect_int(CustomTrackPolicy_MinimapMode(0, 1), CTR_POLICY_MINIMAP_OUTLINE, "track 6: the checkpoint outline replaces the noise");
+	expect_int(CustomTrackPolicy_MinimapMode(0, 0), CTR_POLICY_MINIMAP_HIDDEN, "no texture and no outline: hidden");
+}
+
 static void test_st1_clear_unmapped(void)
 {
 	static unsigned char f[T_LEV_BYTES], before[T_LEV_BYTES];
@@ -1888,6 +1984,7 @@ int main(void)
 	test_st1_clear_unmapped();
 	test_bsp_clear_unmapped();
 	test_camera_search_flags();
+	test_minimap_sanity();
 	test_prim_fits();
 	test_prim_arena_bytes();
 	test_rendered_slots_fit();
