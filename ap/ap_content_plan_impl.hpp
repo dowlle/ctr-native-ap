@@ -795,6 +795,25 @@ static Table table(const J &rows, size_t maximum) {
     return result;
 }
 #include "ap_content_sanity_impl.hpp"
+// The optional lap fields of a Cortex Vortex track record, read and set aside so
+// the rest of the record compares as before. `standalone_laps` (A4-13, ruled
+// 2026-11-09) is exactly 2: the pad's Trophy Race and CTR Challenge laps.
+// `relic_laps` (A4-70, ruled 2026-11-12) is exactly 3: the Relic Race laps when
+// they differ from the pad's, and only ever beside `standalone_laps`. Either is
+// -1 when absent. A cup leg or a venue raced nowhere else accepts both, inert.
+static void cortex_lap_fields(J &held, int &standalone, int &relic) {
+    standalone = relic = -1;
+    if (held.contains("standalone_laps")) {
+        standalone = number(held["standalone_laps"], 2, 2);
+        held.erase("standalone_laps");
+    }
+    if (held.contains("relic_laps")) {
+        need(standalone > 0, "relic_laps without standalone_laps");
+        relic = number(held["relic_laps"], 3, 3);
+        held.erase("relic_laps");
+    }
+}
+
 static void validate(const J &p, State &out) {
     size_t nodes = 0, bytes = 0;
     budget(p, 0, nodes, bytes);
@@ -1156,10 +1175,8 @@ static void validate(const J &p, State &out) {
             // the track's authored laps, shortened by one_lap_cups as before.
             // Accept it bounds-checked, then set it aside.
             J held = track;
-            if (held.contains("standalone_laps")) {
-                number(held["standalone_laps"], 2, 2);
-                held.erase("standalone_laps");
-            }
+            int ignored_standalone, ignored_relic;
+            cortex_lap_fields(held, ignored_standalone, ignored_relic);
             fields(held, {"id", "origin", "package_id", "display_name", "laps", "modes", "capabilities", "field_size"});
             const J &row = registry["cortex_vortex"];
             need(track_id == row["id"].get<std::string>() && track["package_id"] == row["package_id"] &&
@@ -1449,6 +1466,7 @@ static void validate(const J &p, State &out) {
         int64_t codes[AP_CONTENT_MODE_COUNT][3] = {};
         unsigned supported = 0;
         int standalone_laps = -1; // `standalone_laps` of a Cortex Vortex record (A4-13), -1 when absent
+        int relic_laps = -1;      // `relic_laps` of a Cortex Vortex record (A4-70), -1 when absent
         if (track.at("origin") == "retail") {
             fields(track, {"id", "origin", "retail_id", "display_name", "laps", "modes", "capabilities", "field_size"});
             const int rid = number(track["retail_id"], 0, 17);
@@ -1467,10 +1485,7 @@ static void validate(const J &p, State &out) {
             // that many laps. A plan from before the ruling carries no key and
             // races the authored three, as it did.
             J held = track;
-            if (held.contains("standalone_laps")) {
-                standalone_laps = number(held["standalone_laps"], 2, 2);
-                held.erase("standalone_laps");
-            }
+            cortex_lap_fields(held, standalone_laps, relic_laps);
             fields(held, {"id", "origin", "package_id", "display_name", "laps", "modes", "capabilities", "field_size"});
             const J &row = registry["cortex_vortex"];
             need(!cortex_seen && track_id == row["id"].get<std::string>() && track["package_id"] == row["package_id"] &&
@@ -1535,6 +1550,10 @@ static void validate(const J &p, State &out) {
         need((track_bits & ~supported) == 0, "a track mode its capabilities do not allow");
         dest.occupied = 1;
         dest.laps = standalone_laps > 0 ? standalone_laps : number(track["laps"], 1, 7);
+        // A4-70: the Relic Race laps of a Cortex Vortex pad when they differ from
+        // the pad's laps; 0 means the pad's laps (every other pad and every plan
+        // from before the ruling).
+        dest.relic_laps = relic_laps > 0 ? relic_laps : 0;
         copy(dest.entry_id, entry["id"]); copy(dest.track_id, track["id"]); copy(dest.display_name, track["display_name"]);
         copy(dest.room_title, J(check_title));
         dest.trophy_location = (track_bits & (1u << AP_CONTENT_MODE_TROPHY)) ? codes[AP_CONTENT_MODE_TROPHY][0] : 0;
@@ -1891,10 +1910,8 @@ static void validate(const J &p, State &out) {
                             // `standalone_laps` (A4-13) is inert on a venue raced
                             // nowhere else; accept it bounds-checked, then compare.
                             J held = track;
-                            if (held.contains("standalone_laps")) {
-                                number(held["standalone_laps"], 2, 2);
-                                held.erase("standalone_laps");
-                            }
+                            int ignored_standalone, ignored_relic;
+                            cortex_lap_fields(held, ignored_standalone, ignored_relic);
                             need(!cortex_seen && held == J{{"id", row["id"]}, {"origin", "cortex_vortex"}, {"package_id", row["package_id"]},
                                                             {"display_name", row["name"]}, {"laps", row["laps"]}, {"modes", J::array({"trophy"})},
                                                             {"capabilities", J::array({"trophy"})}, {"field_size", 8}},
@@ -2026,10 +2043,8 @@ static void validate(const J &p, State &out) {
                     // `standalone_laps` (A4-13) is inert on a venue raced
                     // nowhere else; accept it bounds-checked, then compare.
                     J held = track;
-                    if (held.contains("standalone_laps")) {
-                        number(held["standalone_laps"], 2, 2);
-                        held.erase("standalone_laps");
-                    }
+                    int ignored_standalone, ignored_relic;
+                    cortex_lap_fields(held, ignored_standalone, ignored_relic);
                     need(!cortex_seen && held == J{{"id", row["id"]}, {"origin", "cortex_vortex"}, {"package_id", row["package_id"]},
                                                     {"display_name", row["name"]}, {"laps", row["laps"]}, {"modes", J::array({"trophy"})},
                                                     {"capabilities", J::array({"trophy"})}, {"field_size", 8}},

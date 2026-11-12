@@ -877,6 +877,16 @@ int main(int argc, char **argv) {
         cv_refuse("Cortex Vortex standalone laps three", [&](J &p) { cv_track(p)["standalone_laps"] = 3; });
         cv_refuse("Cortex Vortex standalone laps seven", [&](J &p) { cv_track(p)["standalone_laps"] = 7; });
         cv_refuse("Cortex Vortex standalone laps not an integer", [&](J &p) { cv_track(p)["standalone_laps"] = 2.5; });
+        // A4-70 (ruled 2026-11-12): relic_laps is exactly 3, only beside standalone_laps.
+        cv_refuse("Cortex Vortex relic laps without standalone laps", [&](J &p) { cv_track(p)["relic_laps"] = 3; });
+        cv_refuse("Cortex Vortex relic laps two", [&](J &p) { cv_track(p)["standalone_laps"] = 2; cv_track(p)["relic_laps"] = 2; });
+        cv_refuse("Cortex Vortex relic laps one", [&](J &p) { cv_track(p)["standalone_laps"] = 2; cv_track(p)["relic_laps"] = 1; });
+        cv_refuse("Cortex Vortex relic laps four", [&](J &p) { cv_track(p)["standalone_laps"] = 2; cv_track(p)["relic_laps"] = 4; });
+        cv_refuse("Cortex Vortex relic laps seven", [&](J &p) { cv_track(p)["standalone_laps"] = 2; cv_track(p)["relic_laps"] = 7; });
+        cv_refuse("Cortex Vortex relic laps not an integer", [&](J &p) { cv_track(p)["standalone_laps"] = 2; cv_track(p)["relic_laps"] = 3.5; });
+        cv_refuse("Cortex Vortex relic laps as text", [&](J &p) { cv_track(p)["standalone_laps"] = 2; cv_track(p)["relic_laps"] = "3"; });
+        cv_refuse("relic laps on a retail track", [&](J &p) {
+            for (auto &t : p["tracks"]) if (t["origin"] == "retail") { t["standalone_laps"] = 2; t["relic_laps"] = 3; return; } });
         cv_refuse("standalone laps on a retail track", [&](J &p) {
             for (auto &t : p["tracks"]) if (t["origin"] == "retail") { t["standalone_laps"] = 2; return; } });
         cv_refuse("Cortex Vortex package", [&](J &p) { cv_track(p)["package_id"] = "package/cortex-vortex/1.1.2"; });
@@ -916,6 +926,42 @@ int main(int argc, char **argv) {
             }
         }
         expect(found, "the two-lap plan keeps its Cortex Vortex pad");
+    }
+    // A4-70 (ruled 2026-11-12): three generations of room, each keeps what it
+    // was generated with. Before A4-13: no keys, every race three laps. A4-13:
+    // standalone_laps 2 alone, every race two laps (the Relic Race too, targets
+    // scaled in the production tests). A4-70: standalone_laps 2 and relic_laps 3,
+    // Trophy Race and CTR Challenge two laps, Relic Race three.
+    {
+        auto cortex_pad_laps = [&](const J &room, int &trophy, int &ctr, int &relic) {
+            expect(parse(room) && bind_room(room, "seed-C") && ap_content_plan_active() && ap_content_plan_cortex(),
+                   "Cortex Vortex generation binds");
+            bool found = false;
+            for (int id = 0; id <= 110; ++id) {
+                const auto *p = ap_content_plan_pad(id);
+                if (p && p->occupied && p->cortex) {
+                    found = true;
+                    expect(p->mode_count == 3, "the Cortex Vortex pad keeps all three modes");
+                    trophy = ap_content_mode_laps(p, AP_CONTENT_MODE_TROPHY);
+                    ctr = ap_content_mode_laps(p, AP_CONTENT_MODE_CTR);
+                    relic = ap_content_mode_laps(p, AP_CONTENT_MODE_RELIC);
+                }
+            }
+            expect(found, "the generation keeps its Cortex Vortex pad");
+        };
+        int trophy = 0, ctr = 0, relic = 0;
+        cortex_pad_laps(cvp, trophy, ctr, relic);
+        expect(trophy == 3 && ctr == 3 && relic == 3, "before A4-13: Trophy, CTR and Relic all three laps");
+        J gen2 = cvp;
+        for (auto &t : gen2["content_plan"]["tracks"])
+            if (t["origin"] == "cortex_vortex") t["standalone_laps"] = 2;
+        cortex_pad_laps(gen2, trophy, ctr, relic);
+        expect(trophy == 2 && ctr == 2 && relic == 2, "A4-13 room: Trophy, CTR and Relic all stay two laps");
+        J gen3 = gen2;
+        for (auto &t : gen3["content_plan"]["tracks"])
+            if (t["origin"] == "cortex_vortex") t["relic_laps"] = 3;
+        cortex_pad_laps(gen3, trophy, ctr, relic);
+        expect(trophy == 2 && ctr == 2 && relic == 3, "A4-70 room: Trophy and CTR two laps, Relic three");
     }
     // Pool-only packs and the content-plan envelope (#133 PR 4a): an apworld-
     // emitted room with Progressive Starting Wumpa 3, Turbo Grant, Tizi
@@ -1968,6 +2014,8 @@ int main(int argc, char **argv) {
             J keyed = cuproom;
             for (auto &t : keyed["content_plan"]["tracks"])
                 if (t["origin"] == "cortex_vortex") t["standalone_laps"] = 2;
+            for (auto &t : keyed["content_plan"]["tracks"])
+                if (t["origin"] == "cortex_vortex") t["relic_laps"] = 3; // A4-70: inert for cup legs and venues
             expect(parse(keyed) && bind_room(keyed) && ap_content_plan_active(), "bosses-cups: standalone_laps binds");
             const ctr_content_pad *kroo = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + 0);
             const ctr_content_pad *kpapu = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + 1);

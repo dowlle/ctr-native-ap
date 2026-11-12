@@ -1208,7 +1208,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			sdata->Loading.OnBegin.AddBitsConfig0 |= RELIC_RACE;
 			sdata->Loading.OnBegin.RemBitsConfig0 &= ~RELIC_RACE;
 		}
-		gGT->numLaps = (char)pad->laps;
+		gGT->numLaps = (char)ap_content_mode_laps(pad, mode);
 		// A content-plan cup (#133 PR 5) runs on the Adventure Cup machinery:
 		// engine cup 0 (never the Purple Cup's boss field), its legs and laps
 		// from the plan through the cup race context, its Win paid on points
