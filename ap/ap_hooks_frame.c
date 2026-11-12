@@ -624,6 +624,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 			// A transition's destination levelID cannot lie. Gated on the
 			// option so the write never fires on seeds without it.
 			if (ctr_cfg_active() && (ctr_cfg.one_lap_cups || ap_content_plan_active()) &&
+			    !AP_HubNameEntry_Active() &&
 			    (int)gGT->levelID >= GEM_STONE_VALLEY &&
 			    (int)gGT->levelID <= CITADEL_CITY && gGT->numLaps != 3)
 			{
@@ -637,8 +638,9 @@ static void ap_onframe_body(struct GameTracker *gGT)
 			// timing as the one-lap restore above: the watcher fires early in
 			// the hub load, before the driver MPK stage reads
 			// characterIDs[0], so the restored racer's model is what loads.
+			// A4-60c: the hub behind name entry is a menu, not a hub return.
 			if ((int)gGT->levelID >= GEM_STONE_VALLEY &&
-			    (int)gGT->levelID <= CITADEL_CITY)
+			    (int)gGT->levelID <= CITADEL_CITY && !AP_HubNameEntry_Active())
 			{
 				AP_RacerLock_RestoreOnHub();
 			}
@@ -737,7 +739,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// no race ceremony, door cutscene, pause menu or character picker owns the
 	// transition. Oxide completion claims the same pending edge in game/222.c and
 	// retains its vanilla ending cutscene instead of taking this direct path.
-	if (ap_goal_presentation.creditsPending &&
+	if (ap_goal_presentation.creditsPending && !AP_HubNameEntry_Active() &&
 	    gGT->levelID >= GEM_STONE_VALLEY && gGT->levelID <= CITADEL_CITY &&
 	    LOAD_IsOpen_AdvHub() != 0 && gGT->drivers[0] != NULL &&
 	    (gGT->gameMode1 & (PAUSE_1 | LOADING | GAME_CUTSCENE)) == 0 &&
@@ -781,6 +783,8 @@ void AP_OnFrame(struct GameTracker *gGT)
 	AP_PerfFrameBegin((int)gGT->levelID, (int)sdata->Loading.stage,
 	                  (unsigned)gGT->timer);
 #endif
+	// A4-60c: the hub behind name entry (handoff, camera, garage fallback).
+	AP_HubNameEntry_OnFrame(gGT);
 	AP_ArcadeCrystals_OnFrame(gGT);
 	// #375: a tracker start waits for its pad's hub, then for the pad.
 	AP_TrackerLaunchFrame(gGT);

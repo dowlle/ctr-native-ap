@@ -333,3 +333,5 @@ tools/test-boss-reverb-production.py
 tools/test-arena-weapon-fire.py
 tools/test-hub-save-box.c
 tools/test-hub-save-box-production.py
+tools/test-hub-name-entry.c
+tools/test-hub-name-entry-production.py

@@ -59,6 +59,15 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 	// Used in stage 0, 4, 5, 6
 	b32 boolPlayMusicDuringLoading = (levelID == ADVENTURE_GARAGE) || (levelID == NAUGHTY_DOG_CRATE);
 
+#ifdef CTR_AP
+	// A4-60c: the hub behind name entry loads the way the garage loads (menu
+	// mode, one player, the garage's overlay and render flags), except that
+	// its music and LOD are the hub's own.
+	b32 apHubBackdrop = AP_HubNameEntry_IsBackdropLevel(levelID);
+#else
+	b32 apHubBackdrop = 0;
+#endif
+
 	switch (loadingStage)
 	{
 	case 0:
@@ -173,6 +182,20 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 				sdata->mainMenuState = MAIN_MENU_ADVENTURE;
 			}
 		}
+		else if (apHubBackdrop)
+		{
+			// The garage branch above, for a hub level file. No ADVENTURE_ARENA
+			// and no LEV_SWAP: one pack, no neighbouring hub, no hub threads.
+			gGT->gameMode1 |= MAIN_MENU;
+			gGT->numPlyrNextGame = gGT->numPlyrCurrGame;
+			gGT->numPlyrCurrGame = 1;
+			sdata->mainMenuState = MAIN_MENU_ADVENTURE;
+
+			// Draw the hub's level instances but give none of them a thread
+			// (INSTANCE_LevInitAll skips every LInB), the podium's own switch:
+			// warp pads, doors, garages and the save box stay still.
+			gGT->gameMode2 |= NO_LEV_INSTANCE;
+		}
 		else if (strncmp(gGT->levelName, sdata->s_hub, 3) == 0)
 		{
 			gGT->numPlyrNextGame = 1;
@@ -279,7 +302,7 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 	case 3:
 	{
 		// NOTE(aalhendi): ASM-verified NTSC-U 926 0x80033c0c-0x80033cd4 for thread overlay routing.
-		if ((levelID != ADVENTURE_GARAGE) && ((gGT->gameMode1 & MAIN_MENU) != 0))
+		if ((levelID != ADVENTURE_GARAGE) && !apHubBackdrop && ((gGT->gameMode1 & MAIN_MENU) != 0))
 		{
 			ovrRegion3 = 0;
 		}
@@ -293,7 +316,7 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 			}
 		}
 		else if ((gGT->podiumRewardID != NOFUNC) || ((gGT->gameMode1 & GAME_CUTSCENE) != 0) || ((gGT->gameMode2 & CREDITS) != 0) ||
-		         (levelID == ADVENTURE_GARAGE))
+		         (levelID == ADVENTURE_GARAGE) || apHubBackdrop)
 		{
 			ovrRegion3 = 3;
 		}
@@ -515,6 +538,13 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 			// add PTR file to loading queue
 			int ptrIndex = LOAD_GetBigfileIndex(gGT->levelID, sdata->levelLOD, LVI_PTR);
 #if defined(CTR_NATIVE)
+			if (apHubBackdrop)
+			{
+				// No LEV swap set the pointer map destination up for this load;
+				// use the native scratch the adventure hub load uses.
+				sdata->PatchMem_Ptr = NativePtrScratch_Data();
+				sdata->PatchMem_Size = NativePtrScratch_Capacity();
+			}
 			struct BigEntry *entries = BIG_GETENTRY(bigfile ? bigfile : sdata->ptrBigfile1);
 			NativePtrScratch_Require((u32)entries[ptrIndex].size, "initial level PTR");
 #endif
@@ -759,7 +789,7 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 		}
 
 		// MAIN_MENU is used for main menu, scrapbook, and adventure garage.
-		if (((gGT->gameMode1 & MAIN_MENU) != 0) && (gGT->levelID != ADVENTURE_GARAGE))
+		if (((gGT->gameMode1 & MAIN_MENU) != 0) && (gGT->levelID != ADVENTURE_GARAGE) && !apHubBackdrop)
 		{
 			// disable rendering everything, draw loading screen and instances
 			gGT->renderFlags = (gGT->renderFlags & 0x1000) | 0x20;

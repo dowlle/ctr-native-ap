@@ -19,7 +19,10 @@ int AP_HubSaveBoxMayOpenNow(void)
 void AP_HubSaveBoxCloseForLoad(void)
 {
 	struct GameTracker *gt = sdata->gGT;
-	int fromHub = gt != NULL && gt->levelID >= GEM_STONE_VALLEY && gt->levelID <= CITADEL_CITY;
+	/* A4-60c: the hub behind name entry is a menu screen. Its profile page is
+	 * the main menu's, which loads the adventure through these same menus. */
+	int fromHub = gt != NULL && gt->levelID >= GEM_STONE_VALLEY && gt->levelID <= CITADEL_CITY &&
+	              !AP_HubNameEntry_Active();
 	int a = AP_HubSaveBoxLoadActions(fromHub, AP_HSBIsBoxMenu(sdata->ptrActiveMenu),
 	                                 AP_HSBIsBoxMenu(sdata->ptrDesiredMenu), sdata->ptrLoadSaveObj != 0,
 	                                 AP_WumpaShopPageOpen());

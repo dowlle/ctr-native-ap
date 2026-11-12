@@ -105,6 +105,10 @@ static void CS_Garage_ApplyApRacerOverride(void)
 // AP-owned Cancel cannot re-arm the skip and reopen name entry.
 int CS_Garage_APNameEntryCancelToMainMenu(void)
 {
+	// A4-60c: name entry over the hub backdrop has no garage to return to.
+	if (AP_HubNameEntry_CancelToTitle())
+		return 1;
+
 	int apRacer = AP_CharSwap_GarageRacer();
 
 	if (!AP_GarageSkip_ShouldExitToMainMenu(&apGarageSkip, apRacer))
@@ -762,6 +766,14 @@ struct RectMenu *CS_Garage_GetMenuPtr(void)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b8558-0x800b8598
 void CS_Garage_Init(void)
 {
+#ifdef CTR_AP
+	// A4-60c: on the hub behind name entry there is no garage to set up.
+	if (AP_HubNameEntry_GarageInit())
+	{
+		return;
+	}
+#endif
+
 	// go to 3D character selection
 	sdata->ptrActiveMenu = &gGarage.menuGarage;
 

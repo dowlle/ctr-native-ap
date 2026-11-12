@@ -107,6 +107,9 @@ void AP_Discord_OnFrame(struct GameTracker *gGT)
 		facts.gameMode1 = gGT->gameMode1;
 		facts.gameMode2 = gGT->gameMode2;
 		facts.levelID = (int)gGT->levelID;
+		// A4-60c: the hub behind name entry is the garage's screen.
+		if (AP_HubNameEntry_IsBackdropLevel(facts.levelID))
+			facts.levelID = ADVENTURE_GARAGE;
 		facts.loading = sdata->Loading.stage != LOAD_IDLE;
 
 		memset(&in, 0, sizeof in);

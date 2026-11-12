@@ -323,7 +323,13 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 		    ((gGT->gameMode2 & CREDITS) != 0) ||
 
 		    // adventure character select
-		    (gGT->levelID == ADVENTURE_GARAGE))
+		    (gGT->levelID == ADVENTURE_GARAGE)
+#ifdef CTR_AP
+		    // A4-60c: the hub behind name entry loads the garage's pack, the
+		    // racer's adventure pack (the one the hub itself loads later)
+		    || AP_HubNameEntry_IsBackdropLevel(gGT->levelID)
+#endif
+		    )
 		{
 			lastFileIndexMPK = BI_ADVENTUREPACK + data.characterIDs[0];
 			goto QueueLastPack;

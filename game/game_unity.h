@@ -36,6 +36,7 @@
 #include "../ap/ap_tracker.h"    // hub pause menu TRACKER row
 #include "../ap/ap_fasttravel.h" // hub fast travel (A3-16)
 #include "../ap/ap_garageskip.h" // adventure-start garage skip session latch (#54/#209)
+#include "../ap/ap_hub_name_entry.h" // A4-60c random hub behind adventure name entry
 #include "../ap/ap_oxide_cutscene.h" // Oxide Final-Challenge presentation readiness (WO-A4)
 #include "../ap/ap_oxide_weapon_schedule.h"
 #include "../ap/ap_statbar.h"    // Garage stat bar, shared with the hub picker (#220)
@@ -450,6 +451,7 @@
 #include "../ap/ap_tracker_launch.c" // #375 tracker pad start
 #include "../ap/ap_fasttravel.c"     // A3-16 hub fast travel (after the tracker: refuses while a start is pending)
 #include "../ap/ap_hub_savebox.c"    // A4-58 hub save box closes on a load (after travel, tracker and shop page)
+#include "../ap/ap_hub_name_entry.c" // A4-60c random hub behind adventure name entry (after the save box)
 #include "../ap/ap_link.c"     // one-click-connect glue (#334 slice 3)
 #include "../ap/ap_update.c"   // signed in-game updater (#301)
 #else
