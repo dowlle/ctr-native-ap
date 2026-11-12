@@ -417,6 +417,25 @@ void UI_Map_DrawTracking(int ptrMap, struct Thread *bucket)
 static int s_ctMinimapOverrideLev;
 static int s_ctMinimapMode = CTR_POLICY_MINIMAP_TEXTURE;
 
+// The level the mode was decided for. A save-state restore brings back another
+// level and its VRAM without running the loader, so a mode whose level, icons
+// or icon layouts no longer match falls back to the texture path.
+static struct
+{
+	struct Level *level;
+	struct Icon *top, *bottom;
+	u8 topLayout[12], bottomLayout[12];
+} s_ctMinimapFor;
+
+static int UI_Map_CustomSameLevel(struct GameTracker *gGT)
+{
+	struct Icon *top = gGT->ptrIcons[3], *bottom = gGT->ptrIcons[4];
+
+	return gGT->level1 == s_ctMinimapFor.level && top == s_ctMinimapFor.top && bottom == s_ctMinimapFor.bottom &&
+	       (top == NULL || memcmp(&top->texLayout, s_ctMinimapFor.topLayout, 12) == 0) &&
+	       (bottom == NULL || memcmp(&bottom->texLayout, s_ctMinimapFor.bottomLayout, 12) == 0);
+}
+
 void UI_Map_CustomNoteOverrideLev(void)
 {
 	s_ctMinimapOverrideLev = 1;
@@ -424,14 +443,17 @@ void UI_Map_CustomNoteOverrideLev(void)
 
 int UI_Map_CustomMode(void)
 {
+	if (s_ctMinimapMode == CTR_POLICY_MINIMAP_TEXTURE || !UI_Map_CustomSameLevel(sdata->gGT))
+		return CTR_POLICY_MINIMAP_TEXTURE;
 	return s_ctMinimapMode;
 }
 
-// Off-grey texels of one icon, read back from VRAM. Returns 1 when the icon can
-// be checked; a direct-colour page or an oversized rect is left as usable.
+// Off-grey texels of one icon, read back from VRAM. Returns 1 when the icon is
+// usable; a direct-colour page is left as usable, and so is a rect that does
+// not fit one texture page or VRAM, which no icon layout can produce.
 static int UI_Map_CustomIconUsable(struct Icon *icon, unsigned long *nonGreyOut, unsigned long *totalOut)
 {
-	static u16 tex[64 * 256];
+	static u16 tex[128 * 256]; // an 8-bit page is 128 halfwords wide
 	static u16 clut[256];
 	struct CustomTrackMinimapRects r;
 	RECT rect;
@@ -443,7 +465,7 @@ static int UI_Map_CustomIconUsable(struct Icon *icon, unsigned long *nonGreyOut,
 		return 0;
 	if (!CustomTrackPolicy_MinimapIconRects((const unsigned char *)&icon->texLayout, &r))
 		return 1;
-	if (r.texW <= 0 || r.texW > 64 || r.texH <= 0 || r.texH > 256 || r.texX + r.texW > 1024 || r.texY + r.texH > 512 ||
+	if (r.texW <= 0 || r.texW > 128 || r.texH <= 0 || r.texH > 256 || r.texX + r.texW > 1024 || r.texY + r.texH > 512 ||
 	    r.clutX + r.clutW > 1024 || r.clutY >= 512)
 		return 1;
 
@@ -490,6 +512,13 @@ void UI_Map_CustomEvaluate(struct GameTracker *gGT)
 	}
 
 	s_ctMinimapMode = CustomTrackPolicy_MinimapMode(top && bottom, outline);
+	s_ctMinimapFor.level = lev;
+	s_ctMinimapFor.top = gGT->ptrIcons[3];
+	s_ctMinimapFor.bottom = gGT->ptrIcons[4];
+	if (s_ctMinimapFor.top != NULL)
+		memcpy(s_ctMinimapFor.topLayout, &s_ctMinimapFor.top->texLayout, 12);
+	if (s_ctMinimapFor.bottom != NULL)
+		memcpy(s_ctMinimapFor.bottomLayout, &s_ctMinimapFor.bottom->texLayout, 12);
 	if (s_ctMinimapMode != CTR_POLICY_MINIMAP_TEXTURE)
 	{
 		CustomTrack_Log("[CustomTracks] minimap texture is not a minimap (off-grey texels %lu/%lu and %lu/%lu); %s\n", bad3, tot3,
@@ -534,7 +563,7 @@ void UI_Map_CustomDraw(int ptrMap, struct PrimMem *primMem, uint32_t *otMem)
 	struct CheckpointNode *cp;
 	int count, i, k;
 
-	if (s_ctMinimapMode != CTR_POLICY_MINIMAP_OUTLINE || ptrMap == 0 || lev == NULL)
+	if (UI_Map_CustomMode() != CTR_POLICY_MINIMAP_OUTLINE || ptrMap == 0 || lev == NULL)
 		return;
 	cp = lev->ptr_restart_points;
 	count = lev->cnt_restart_points;

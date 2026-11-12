@@ -1024,6 +1024,14 @@ static void test_minimap_sanity(void)
 	expect_int(r.texX, 192 + 5, "8-bit texel x: page 192 + u 10 / 2");
 	expect_int(r.texW, 5, "8-bit width: u 10..19 is 5 halfwords");
 	expect_int(r.clutW, 256, "an 8-bit CLUT has 256 entries");
+	// The widest 8-bit icon, u 0..255, spans the whole 128-halfword page.
+	t_layout(l, 0, 0, 255, 49, 0x0040, 0x0080);
+	expect_int(CustomTrackPolicy_MinimapIconRects(l, &r), 1, "a full-width 8-bit icon is checked");
+	expect_int(r.texW, 128, "full-width 8-bit icon: 128 halfwords");
+	// The widest 4-bit icon spans the 64-halfword page.
+	t_layout(l, 0, 0, 255, 49, 0x0040, 0x0000);
+	expect_int(CustomTrackPolicy_MinimapIconRects(l, &r), 1, "a full-width 4-bit icon is checked");
+	expect_int(r.texW, 64, "full-width 4-bit icon: 64 halfwords");
 	// A direct-colour page has no CLUT and is left alone.
 	t_layout(l, 0, 0, 7, 7, 0, 0x0100);
 	expect_int(CustomTrackPolicy_MinimapIconRects(l, &r), 0, "a 15-bit icon is not checked");
