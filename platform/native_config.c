@@ -50,6 +50,7 @@ NativeConfig g_config = {
 	-1,    // dlSendLoss
 	15,    // trapDuration (recommended default, seconds; 0 = full race)
 	-1,    // raceTypeSelector (-1 = follow the seed's race_type_selector)
+	0,     // bossMusic (0 = BOSS THEME, the behaviour every build had)
 	"",    // uri      (empty = no saved room; startup skips the auto-dial)
 	"",    // slot
 	"",    // password
@@ -157,6 +158,12 @@ const ConfigEntry g_configEntries[] = {
 	// Race type menu on plan pads (#208, CFG_ENUM SEED / ALWAYS / PRODUCTIVE).
 	// SEED follows the seed's race_type_selector. Shown on the Gameplay page.
 	{"Archipelago", "race_type_selector",       "Race Type Menu",               CFG_ENUM, &g_config.raceTypeSelector},
+	// Boss Music (A4-61, CFG_ENUM BOSS THEME / TRACK): a LOCAL client option,
+	// default BOSS THEME, asked for by a player on Discord (2026-11-11). TRACK
+	// plays the venue's own music in boss races and boss cup legs instead of
+	// the boss theme. Not slot_data: a presentation preference each player
+	// picks for themselves. Shown on the Gameplay page.
+	{"Archipelago", "boss_music",               "Boss Music",                   CFG_ENUM, &g_config.bossMusic},
 	{"Archipelago", "map_flash",                "Map Flash",                    CFG_BOOL, &g_config.mapFlash},
 	// Item Box Colours: this player's opt-out of the seed's AP item box colours
 	// (color_boxes_by_item). Off = pink boxes for this player only. The menu

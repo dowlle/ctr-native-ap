@@ -1,4 +1,8 @@
 #include <common.h>
+#ifdef CTR_AP
+// A4-61: the Boss Music row's decision (boss banks or the venue's own music).
+#include "../../ap/ap_boss_music_logic.h"
+#endif
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_identity.h>
 #include "HOWL_CustomMusic.c"
@@ -141,8 +145,14 @@ u32 Music_AsyncParseBanks(void)
 			goto PARSE_FINISH;
 		}
 
-		// If you're in a Boss Race
+		// If you're in a Boss Race. A4-61: with the Boss Music row on TRACK the
+		// load takes the venue's own bank and song below instead, the .sca of a
+		// custom venue included, exactly like a non-boss race on that track.
+#ifdef CTR_AP
+		if (AP_BossMusic_BossBanks(IS_BOSS_RACE(gGT->gameMode1), g_config.bossMusic))
+#else
 		if (IS_BOSS_RACE(gGT->gameMode1))
+#endif
 		{
 			if (gGT->bossID >= 6)
 			{
@@ -419,7 +429,13 @@ u32 Music_AsyncParseBanks(void)
 
 		// If you're in a Boss Race
 		// 0x80000000
+		// A4-61: TRACK answers 0 here, so the venue's own song (or a custom
+		// venue's .sca song, in the branch below) plays instead of the theme.
+#ifdef CTR_AP
+		if (AP_BossMusic_BossBanks(IS_BOSS_RACE(gGT->gameMode1), g_config.bossMusic))
+#else
 		if (IS_BOSS_RACE(gGT->gameMode1))
+#endif
 		{
 			if (gGT->bossID >= 6)
 			{
