@@ -163,12 +163,16 @@ int main(void)
 	                                                                           frame(&s, 1, 5) == AP_HNE_ACT_NONE);
 
 	// ---- flow 4: the seed stops owning the racer while the hub loads ---------
+	// AP_CharSwap_GarageRacer() answers -1 here, for example after a refused
+	// seed. A plain socket drop keeps the seed configuration and the answer,
+	// exactly as the garage skip sees it, so the backdrop follows the garage:
+	// it shows whenever the garage would skip its picker.
 	e.level = LEVEL_TITLE;
 	e.menu = MENU_NONE;
 	level = AP_HNE_BeginNewAdventure(&s, 5, 555u, ALL);
 	level_file(&s, level);
 	load_done(-1);
-	CHECK("flow 4: a disconnect during the load falls back to the garage",
+	CHECK("flow 4: a seed that stops owning the racer during the load falls back to the garage",
 	      frame(&s, 1, -1) == AP_HNE_ACT_FALLBACK && e.level == LEVEL_GARAGE);
 	load_done(-1);
 	CHECK("flow 4: where the retail picker runs", e.menu == MENU_GARAGE_PICKER);

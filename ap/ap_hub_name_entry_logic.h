@@ -104,7 +104,9 @@ static inline int AP_HNE_PickHub(unsigned *rng, int last, const int usable[AP_HN
 // New Adventure: which level to request. The hub only when the seed owns the
 // racer (apRacer >= 0, AP_CharSwap_GarageRacer) and a hub is usable. Offline
 // play, old seeds without the character keys, refused seeds and a connect
-// that has not landed yet all get the garage and its picker, unchanged.
+// that has not landed yet all get the garage and its picker, unchanged. This
+// is the garage skip's own test (CS_Garage_MenuProc): the hub shows exactly
+// when the garage would skip its picker, a socket drop included.
 static inline int AP_HNE_BeginNewAdventure(struct AP_HubNameEntryState *s, int apRacer, unsigned entropy,
                                            const int usable[AP_HNE_HUBS])
 {
