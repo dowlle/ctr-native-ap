@@ -230,7 +230,10 @@ void AP_SeedContentRegistryRetry(void)
 
 // A4-74: a row that would download from Saphi is offered only when the track
 // author said yes. Otherwise it becomes NOT_ALLOWED: shown, with where to get
-// the files, never downloaded. Cortex Vortex is bundled and untouched.
+// the files, never downloaded. Cortex Vortex is bundled and untouched. The
+// identity (Saphi id and the room's track key, which is also the install
+// folder) is the one the download worker checks again before each download;
+// the resolver adds the registry key for the Saphi id.
 static void AP_SeedPermission(struct AP_SeedContentRow *row, int saphi_track_id, const char *track_key)
 {
 	row->saphi_track_id = saphi_track_id;
@@ -266,7 +269,7 @@ int AP_SeedContentRows(struct AP_SeedContentRow *rows, int max)
 		row->source = compiled && compiled->downloadApiUrl && compiled->downloadApiUrl[0]
 		              ? AP_SEED_SOURCE_SAPHI : AP_SEED_SOURCE_MANUAL;
 		if (compiled)
-			AP_SeedPermission(row, ap_track_saphi_id_from_url(compiled->sourceUrl), NULL);
+			AP_SeedPermission(row, ap_track_saphi_id_from_url(compiled->sourceUrl), pkg->content_id);
 		else
 		{
 			struct ApTrackRegistryMatch match;
@@ -275,14 +278,14 @@ int AP_SeedContentRows(struct AP_SeedContentRow *rows, int max)
 			if (row->registry == AP_SEED_REGISTRY_LIVE || row->registry == AP_SEED_REGISTRY_CACHED)
 			{
 				row->source = AP_SEED_SOURCE_SAPHI;
-				AP_SeedPermission(row, match.saphi_track_id, match.track_key);
+				AP_SeedPermission(row, match.saphi_track_id, pkg->content_id);
 			}
 			else if ((row->registry == AP_SEED_REGISTRY_OFFLINE || row->registry == AP_SEED_REGISTRY_NOT_LISTED) &&
 			         AP_SeedTableMatch(pkg, &match))
 			{
 				row->registry = AP_SEED_REGISTRY_TABLE;
 				row->source = AP_SEED_SOURCE_SAPHI;
-				AP_SeedPermission(row, match.saphi_track_id, match.track_key);
+				AP_SeedPermission(row, match.saphi_track_id, pkg->content_id);
 			}
 			else if (row->scan != AP_SEED_SCAN_READY)
 			{

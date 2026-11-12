@@ -226,6 +226,21 @@ bool list_refused(const std::string &error)
 	return error.find("refused the file (HTTP 4") != std::string::npos;
 }
 
+// Only these failures mean GitHub could not be reached, so the saved copy
+// may stand in: no connection, a timeout, no TLS, or the server busy or
+// down (429, 5xx). Anything else (a refusal, an oversize, cut-off or
+// malformed answer, an unknown message) means the live list is missing or
+// unreadable, and nothing is allowed.
+bool list_unreachable(const std::string &error)
+{
+	static const char *const kinds[] = {"Could not reach ", " request timed out", "is unavailable (HTTP 5",
+	                                    "is busy (HTTP 429)", "No usable TLS certificate store",
+	                                    "Could not start Windows HTTPS", "Could not set up Windows HTTPS"};
+	for (const char *kind : kinds)
+		if (error.find(kind) != std::string::npos) return true;
+	return false;
+}
+
 void clear_list()
 {
 	ConsentState &s = consent_state();
@@ -250,11 +265,11 @@ void refresh_worker(std::string cache_path)
 		if (!ap_https_get(AP_TRACK_CONSENT_HOST, AP_TRACK_CONSENT_PATH, AP_TRACK_CONSENT_MAX_BYTES, live, error))
 		{
 			if (error.empty()) error = "Could not reach the permission list.";
-			if (list_refused(error))
+			if (list_refused(error) || !list_unreachable(error))
 			{
 				clear_list();
-				if (!cache_path.empty()) std::remove(cache_path.c_str());
-				std::fprintf(stderr, "[CustomTracks] Permission list missing: %s\n", error.c_str());
+				if (list_refused(error) && !cache_path.empty()) std::remove(cache_path.c_str());
+				std::fprintf(stderr, "[CustomTracks] Permission list missing or unreadable: %s\n", error.c_str());
 				finish(AP_TRACK_CONSENT_UNAVAILABLE, error);
 				return;
 			}
@@ -448,7 +463,9 @@ extern "C" int ap_track_consent_status(int *source, char *detail, int detail_byt
 {
 	ConsentState &s = consent_state();
 	std::lock_guard<std::mutex> lock(s.mutex);
-	if (source) *source = s.list ? s.source : AP_TRACK_CONSENT_SOURCE_NONE;
+	// While a refresh runs no list is in force: a list about to be found
+	// missing must not allow a download meanwhile.
+	if (source) *source = s.list && s.state != AP_TRACK_CONSENT_LOADING ? s.source : AP_TRACK_CONSENT_SOURCE_NONE;
 	if (detail && detail_bytes > 0)
 		std::snprintf(detail, static_cast<size_t>(detail_bytes), "%s", s.detail.c_str());
 	return s.state;
@@ -489,7 +506,7 @@ extern "C" int ap_track_permission(int saphi_track_id, int saphi_author_id, int 
 	{
 		ConsentState &s = consent_state();
 		std::lock_guard<std::mutex> lock(s.mutex);
-		list = s.list;
+		if (s.state != AP_TRACK_CONSENT_LOADING) list = s.list; // suspended while a refresh runs
 		auto it = saphi_track_id > 0 ? s.learned.find(saphi_track_id) : s.learned.end();
 		if (it != s.learned.end())
 		{

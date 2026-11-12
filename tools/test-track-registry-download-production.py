@@ -61,8 +61,9 @@ prelude = r'''
 // ap/ap_track_consent.cpp (tools/test-track-consent.cpp). Here it allows,
 // unless a case sets g_permission, and records which Saphi track was asked.
 static int g_permission = AP_TRACK_PERMISSION_ALLOW, g_permission_track = -1;
+static std::string g_permission_key;
 extern "C" int ap_track_permission(int track, int author, int saphi, const char *key)
-{ (void)author; (void)saphi; (void)key; g_permission_track = track; return g_permission; }
+{ (void)author; (void)saphi; g_permission_track = track; g_permission_key = key ? key : ""; return g_permission; }
 extern "C" const char *ap_track_permission_text(void) { return "The author has not allowed in-game download."; }
 extern "C" int ap_track_consent_saphi_author(int track) { return track == 121 ? 12 : 0; }
 extern "C" int ap_track_saphi_id_from_url(const char *url)
@@ -180,7 +181,8 @@ int main()
 	{
 		g_permission = answer; g_permission_track = -1;
 		expect(!start(121, 872, 873), "a track whose author has not allowed in-game download is refused");
-		expect(g_permission_track == 121, "the permission check is asked for the Saphi track being downloaded");
+		expect(g_permission_track == 121 && g_permission_key == "acid-lake",
+		       "the permission check is asked for the Saphi track and the package folder's track key");
 		char text[256];
 		expect(ap_custom_track_download_status(text, sizeof text) == AP_CT_DOWNLOAD_FAILED &&
 		       std::string(text) == "The author has not allowed in-game download.", std::string("refusal says why: ") + text);

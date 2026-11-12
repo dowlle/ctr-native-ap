@@ -27,6 +27,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -54,9 +55,12 @@ static bool g_up;
 static std::map<std::string, std::string> g_files;
 static std::vector<std::string> g_asked;
 
+static std::atomic<bool> g_hold{false}; // the stub waits here: a refresh in flight
+
 bool ap_https_get(const char *host, const std::string &path, size_t max_bytes,
                   std::vector<unsigned char> &body, std::string &error)
 {
+	while (g_hold) std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	std::lock_guard<std::mutex> lock(g_mutex);
 	g_asked.push_back(std::string(host) + path);
 	body.clear();
@@ -65,6 +69,9 @@ bool ap_https_get(const char *host, const std::string &path, size_t max_bytes,
 	// The production wording (transfer_error): a 4xx is a refusal.
 	if (it == g_files.end()) { error = "the track registry refused the file (HTTP 404)."; return false; }
 	if (it->second == "503") { error = "the track registry is unavailable (HTTP 503). Retry later."; return false; }
+	if (it->second == "429") { error = "the track registry is busy (HTTP 429). Retry in a minute."; return false; }
+	if (it->second == "cut") { error = "the track registry returned an incomplete download."; return false; }
+	if (it->second == "odd") { error = "the track registry returned an invalid HTTP response."; return false; }
 	if (it->second.size() > max_bytes) { error = "the track registry returned a file larger than this client accepts."; return false; }
 	body.assign(it->second.begin(), it->second.end());
 	return true;
@@ -373,18 +380,48 @@ int main(int argc, char **argv)
 	CHECK(ap_track_consent_refresh(cache.c_str()) == 1);
 	CHECK(wait_consent(&source) == AP_TRACK_CONSENT_DONE && source == AP_TRACK_CONSENT_SOURCE_CACHED &&
 	      ap_track_permission(2, 1, U, nullptr) == A);
+	ap_track_consent_test_reset();
+	serve(true, "429");
+	CHECK(ap_track_consent_refresh(cache.c_str()) == 1);
+	CHECK(wait_consent(&source) == AP_TRACK_CONSENT_DONE && source == AP_TRACK_CONSENT_SOURCE_CACHED);
+	// An answer that arrived but cannot be read (cut off, malformed, past
+	// the size cap): unreadable, so nothing allowed even with the cache.
+	for (const std::string &bad : {std::string("cut"), std::string("odd"), std::string(AP_TRACK_CONSENT_MAX_BYTES + 10, ' ')})
+	{
+		ap_track_consent_test_reset();
+		serve(true, bad);
+		CHECK(ap_track_consent_refresh(cache.c_str()) == 1);
+		CHECK(wait_consent(&source) == AP_TRACK_CONSENT_UNAVAILABLE && ap_track_permission(2, 1, U, nullptr) == U &&
+		      slurp(cache) == v1);
+	}
+	// While a refresh runs no grant is in force, and the screen says it is
+	// checking; a later network failure brings the session's list back.
+	ap_track_consent_test_reset();
+	serve(true, v1);
+	CHECK(ap_track_consent_refresh(cache.c_str()) == 1 && wait_consent(&source) == AP_TRACK_CONSENT_DONE);
+	CHECK(ap_track_permission(2, 1, U, nullptr) == A);
+	g_hold = true;
+	serve(true, "");
+	CHECK(ap_track_consent_refresh(cache.c_str()) == 1);
+	CHECK(ap_track_consent_status(&source, nullptr, 0) == AP_TRACK_CONSENT_LOADING && source == AP_TRACK_CONSENT_SOURCE_NONE);
+	CHECK(ap_track_permission(2, 1, U, nullptr) == U && std::strstr(ap_track_permission_text(), "Checking"));
+	g_hold = false;
+	CHECK(wait_consent(&source) == AP_TRACK_CONSENT_UNAVAILABLE && ap_track_permission(2, 1, U, nullptr) == U);
+	spit(cache, v1);
+	serve(true, v1);
+	CHECK(ap_track_consent_refresh(cache.c_str()) == 1 && wait_consent(&source) == AP_TRACK_CONSENT_DONE);
+	g_hold = true;
+	serve(false, "");
+	CHECK(ap_track_consent_refresh(cache.c_str()) == 1 && ap_track_permission(2, 1, U, nullptr) == U);
+	g_hold = false;
+	CHECK(wait_consent(&source) == AP_TRACK_CONSENT_DONE && source == AP_TRACK_CONSENT_SOURCE_LIVE &&
+	      ap_track_permission(2, 1, U, nullptr) == A);
 	// A broken cache and no network: nothing allowed.
 	ap_track_consent_test_reset();
 	spit(cache, "{broken");
 	serve(false, "");
 	CHECK(ap_track_consent_refresh(cache.c_str()) == 1);
 	CHECK(wait_consent(&source) == AP_TRACK_CONSENT_UNAVAILABLE && ap_track_permission(2, 1, U, nullptr) == U);
-	// An oversize answer is refused.
-	ap_track_consent_test_reset();
-	unlink(cache.c_str());
-	serve(true, std::string(AP_TRACK_CONSENT_MAX_BYTES + 10, ' '));
-	CHECK(ap_track_consent_refresh(cache.c_str()) == 1);
-	CHECK(wait_consent(&source) == AP_TRACK_CONSENT_UNAVAILABLE);
 
 	// A withdrawal reaches the client with the next live fetch, no release.
 	ap_track_consent_test_reset();

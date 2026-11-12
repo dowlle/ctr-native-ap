@@ -1280,8 +1280,21 @@ int start_worker(const char *package_root, const char *download_api_url, const c
 	// A4-74: every Saphi download this worker makes (Current Seed, the
 	// compiled Baby T Park profile, the legacy entry points) needs the track
 	// author's yes. Unknown and deny both refuse, before anything changes.
-	if (ap_track_permission(ap_track_saphi_id_from_url(download_api_url), 0, AP_TRACK_PERMISSION_UNKNOWN, nullptr) !=
-	    AP_TRACK_PERMISSION_ALLOW)
+	// The identity is the one the This Seed row used: the Saphi track id and
+	// the package folder, which is the room's track key (ap_hooks_seed_content.c).
+	std::string folder_key;
+	if (package_root)
+	{
+		const char *slash = std::strrchr(package_root, '/');
+#ifdef _WIN32
+		const char *back = std::strrchr(package_root, '\\');
+		if (back && (!slash || back > slash)) slash = back;
+#endif
+		folder_key = slash ? slash + 1 : package_root;
+		if (!ap_seed_folder_safe(folder_key.c_str())) folder_key.clear();
+	}
+	if (ap_track_permission(ap_track_saphi_id_from_url(download_api_url), 0, AP_TRACK_PERMISSION_UNKNOWN,
+	                        folder_key.c_str()) != AP_TRACK_PERMISSION_ALLOW)
 	{
 		std::lock_guard<std::mutex> lock(shared.mutex);
 		if (shared.state == AP_CT_DOWNLOAD_RUNNING) return 0;
