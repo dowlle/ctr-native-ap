@@ -218,6 +218,18 @@ static void AP_WShopClose(void)
 	ap_wshop.buying = -1;
 }
 
+// A4-58: a level load closes the page with the rest of the hub save box
+// (ap_hub_savebox.c).
+int AP_WumpaShopPageOpen(void)
+{
+	return ap_wshop.open;
+}
+
+void AP_WumpaShopClosePage(void)
+{
+	AP_WShopClose();
+}
+
 // Width of `len` characters of `s` (the whole string for len < 0) in the shop's
 // font, from the font's own tables.
 static int AP_WShopTextWidth(const char *s, int len, void *ctx)

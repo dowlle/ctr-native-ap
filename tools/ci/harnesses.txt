@@ -328,3 +328,5 @@ tools/test-custom-finish.c
 tools/test-track-display-name-production.py
 tools/test-boss-reverb-production.py
 tools/test-arena-weapon-fire.py
+tools/test-hub-save-box.c
+tools/test-hub-save-box-production.py
