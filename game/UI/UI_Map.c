@@ -471,7 +471,7 @@ static int UI_Map_CustomIconUsable(struct Icon *icon, unsigned long *nonGreyOut,
 	if (r.clutW == 0)
 		memset(clut, 0, sizeof clut);
 	if (r.texW <= 0 || r.texW > 256 || r.texH <= 0 || r.texH > 256 || r.texX + r.texW > 1024 || r.texY + r.texH > 512 ||
-	    r.clutX + r.clutW > 1024 || r.clutY >= 512)
+	    (r.clutW > 0 && (r.clutX + r.clutW > 1024 || r.clutY >= 512)))
 		return 1;
 
 	rect.x = (s16)r.texX;
