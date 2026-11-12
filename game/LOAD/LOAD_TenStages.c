@@ -564,6 +564,11 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 		{
 			DecalGlobal_Store(gGT, lev->levTexLookup);
 		}
+#if defined(CTR_NATIVE) && defined(CTR_CUSTOM_TRACKS)
+		// A4-64: a custom LEV whose minimap icons draw coloured noise gets the
+		// checkpoint outline or no minimap (native_custom_tracks_policy.h).
+		UI_Map_CustomEvaluate(gGT);
+#endif
 
 		DebugFont_Init(gGT);
 

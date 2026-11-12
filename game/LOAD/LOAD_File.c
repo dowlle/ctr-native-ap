@@ -484,6 +484,7 @@ void *LOAD_ReadFile_ex(struct BigHeader *bigfile, u32 loadType, int subfileIndex
 			// can still be told from a real one (policy header, decision 6).
 			if (ctOk && (subfileIndex & 1) != 0)
 			{
+				UI_Map_CustomNoteOverrideLev();
 				int st1Cleared = CustomTrackPolicy_ClearUnmappedSt1((unsigned char *)ptrDst, ctOverrideSize);
 				if (st1Cleared > 0)
 				{

@@ -410,3 +410,203 @@ void UI_Map_DrawTracking(int ptrMap, struct Thread *bucket)
 	}
 	return;
 }
+
+#if defined(CTR_NATIVE) && defined(CTR_CUSTOM_TRACKS)
+// Minimap sanity for custom levels (A4-64). The decision and the measurements
+// behind it are in native_custom_tracks_policy.h ("Minimap sanity").
+static int s_ctMinimapOverrideLev;
+static int s_ctMinimapLevelIsCustom; // the last loaded level came from a custom override
+static int s_ctMinimapMode = CTR_POLICY_MINIMAP_TEXTURE;
+
+// The level the mode was decided for. A save-state restore brings back a level
+// and its VRAM without running the loader; NativeCheckpoint_Restore then calls
+// UI_Map_CustomAfterRestore, which measures the restored VRAM again. As a second
+// guard, a mode whose level, icons or icon layouts no longer match falls back
+// to the texture path.
+static struct
+{
+	struct Level *level;
+	struct Icon *top, *bottom;
+	u8 topLayout[12], bottomLayout[12];
+} s_ctMinimapFor;
+
+static int UI_Map_CustomSameLevel(struct GameTracker *gGT)
+{
+	struct Icon *top = gGT->ptrIcons[3], *bottom = gGT->ptrIcons[4];
+
+	return gGT->level1 == s_ctMinimapFor.level && top == s_ctMinimapFor.top && bottom == s_ctMinimapFor.bottom &&
+	       (top == NULL || memcmp(&top->texLayout, s_ctMinimapFor.topLayout, 12) == 0) &&
+	       (bottom == NULL || memcmp(&bottom->texLayout, s_ctMinimapFor.bottomLayout, 12) == 0);
+}
+
+void UI_Map_CustomNoteOverrideLev(void)
+{
+	s_ctMinimapOverrideLev = 1;
+}
+
+int UI_Map_CustomMode(void)
+{
+	if (s_ctMinimapMode == CTR_POLICY_MINIMAP_TEXTURE || !UI_Map_CustomSameLevel(sdata->gGT))
+		return CTR_POLICY_MINIMAP_TEXTURE;
+	return s_ctMinimapMode;
+}
+
+// Off-grey texels of one icon, read back from VRAM. Returns 1 when the icon is
+// usable. A layout with the reserved colour depth, or a rect past the edge of
+// VRAM, is left as usable: the retail path draws it as before.
+static int UI_Map_CustomIconUsable(struct Icon *icon, unsigned long *nonGreyOut, unsigned long *totalOut)
+{
+	static u16 tex[256 * 256]; // a 15-bit page is 256 halfwords wide
+	static u16 clut[256];
+	struct CustomTrackMinimapRects r;
+	RECT rect;
+	void *texDst = tex, *clutDst = clut; // StoreImage takes u32 *; the rows are halfwords
+
+	*nonGreyOut = 0;
+	*totalOut = 0;
+	if (icon == NULL)
+		return 0;
+	if (!CustomTrackPolicy_MinimapIconRects((const unsigned char *)&icon->texLayout, &r))
+		return 1;
+	if (r.clutW == 0)
+		memset(clut, 0, sizeof clut);
+	if (r.texW <= 0 || r.texW > 256 || r.texH <= 0 || r.texH > 256 || r.texX + r.texW > 1024 || r.texY + r.texH > 512 ||
+	    (r.clutW > 0 && (r.clutX + r.clutW > 1024 || r.clutY >= 512)))
+		return 1;
+
+	rect.x = (s16)r.texX;
+	rect.y = (s16)r.texY;
+	rect.w = (s16)r.texW;
+	rect.h = (s16)r.texH;
+	StoreImage(&rect, (u32 *)texDst);
+	if (r.clutW > 0)
+	{
+		rect.x = (s16)r.clutX;
+		rect.y = (s16)r.clutY;
+		rect.w = (s16)r.clutW;
+		rect.h = 1;
+		StoreImage(&rect, (u32 *)clutDst);
+	}
+
+	*nonGreyOut = CustomTrackPolicy_MinimapNonGrey(&r, tex, clut, totalOut);
+	return CustomTrackPolicy_MinimapHalfUsable(*nonGreyOut, *totalOut);
+}
+
+static void UI_Map_CustomDecide(struct GameTracker *gGT, int isCustom)
+{
+	struct Level *lev = gGT->level1;
+	unsigned long bad3, tot3, bad4, tot4;
+	int top, bottom, outline = 0;
+	struct Map *map = NULL;
+
+	s_ctMinimapMode = CTR_POLICY_MINIMAP_TEXTURE;
+	if (!isCustom || lev == NULL)
+		return;
+
+	top = UI_Map_CustomIconUsable(gGT->ptrIcons[3], &bad3, &tot3);
+	bottom = UI_Map_CustomIconUsable(gGT->ptrIcons[4], &bad4, &tot4);
+
+	if ((lev->ptrSpawnType1 != NULL) && (lev->ptrSpawnType1->count != 0))
+	{
+		void **pointers = ST1_GETPOINTERS(lev->ptrSpawnType1);
+		map = (struct Map *)pointers[ST1_MAP];
+	}
+	if (map != NULL && lev->ptr_restart_points != NULL)
+	{
+		outline = CustomTrackPolicy_MinimapOutlineUsable(map->worldEndX, map->worldEndY, map->worldStartX, map->worldStartY,
+		                                                 map->iconSizeX, map->iconSizeY, map->mode, lev->cnt_restart_points);
+	}
+
+	s_ctMinimapMode = CustomTrackPolicy_MinimapMode(top && bottom, outline);
+	s_ctMinimapFor.level = lev;
+	s_ctMinimapFor.top = gGT->ptrIcons[3];
+	s_ctMinimapFor.bottom = gGT->ptrIcons[4];
+	if (s_ctMinimapFor.top != NULL)
+		memcpy(s_ctMinimapFor.topLayout, &s_ctMinimapFor.top->texLayout, 12);
+	if (s_ctMinimapFor.bottom != NULL)
+		memcpy(s_ctMinimapFor.bottomLayout, &s_ctMinimapFor.bottom->texLayout, 12);
+	if (s_ctMinimapMode != CTR_POLICY_MINIMAP_TEXTURE)
+	{
+		CustomTrack_Log("[CustomTracks] minimap texture is not a minimap (off-grey texels %lu/%lu and %lu/%lu); %s\n", bad3, tot3,
+		                bad4, tot4,
+		                s_ctMinimapMode == CTR_POLICY_MINIMAP_OUTLINE ? "drawing the checkpoint outline" : "minimap hidden");
+	}
+}
+
+void UI_Map_CustomEvaluate(struct GameTracker *gGT)
+{
+	s_ctMinimapLevelIsCustom = s_ctMinimapOverrideLev;
+	s_ctMinimapOverrideLev = 0;
+	UI_Map_CustomDecide(gGT, s_ctMinimapLevelIsCustom);
+}
+
+// A restored state is the same level kind as the one loaded: with custom
+// packages a restore across tracks is refused (native_checkpoint.c), and the
+// VRAM is measured again, so a state saved on another level cannot carry its
+// mode across.
+void UI_Map_CustomAfterRestore(struct GameTracker *gGT)
+{
+	UI_Map_CustomDecide(gGT, s_ctMinimapLevelIsCustom);
+}
+
+// One outline segment as a three-pixel POLY_F4, thickened across its minor
+// axis, about the stroke width of a retail minimap outline.
+static int UI_Map_CustomSegment(struct PrimMem *primMem, uint32_t *otMem, int x0, int y0, int x1, int y1)
+{
+	POLY_F4 *p = (POLY_F4 *)primMem->cursor;
+	int dx = x1 - x0, dy = y1 - y0;
+	int ox = 0, oy = 0;
+
+	if (!CustomTrackPolicy_PrimFits(primMem->cursor, sizeof(POLY_F4), primMem->guardEnd))
+		return 0;
+	if ((dx < 0 ? -dx : dx) >= (dy < 0 ? -dy : dy))
+		oy = 3;
+	else
+		ox = 3;
+
+	CtrGpu_WriteColorCode(&p->r0, 0xffffff);
+	setPolyF4(p);
+	p->x0 = (s16)x0;
+	p->y0 = (s16)y0;
+	p->x1 = (s16)x1;
+	p->y1 = (s16)y1;
+	p->x2 = (s16)(x0 + ox);
+	p->y2 = (s16)(y0 + oy);
+	p->x3 = (s16)(x1 + ox);
+	p->y3 = (s16)(y1 + oy);
+	AddPrim(otMem, p);
+	primMem->cursor = p + 1;
+	return 1;
+}
+
+void UI_Map_CustomDraw(int ptrMap, struct PrimMem *primMem, uint32_t *otMem)
+{
+	struct Level *lev = sdata->gGT->level1;
+	struct CheckpointNode *cp;
+	int count, i, k;
+
+	if (UI_Map_CustomMode() != CTR_POLICY_MINIMAP_OUTLINE || ptrMap == 0 || lev == NULL)
+		return;
+	cp = lev->ptr_restart_points;
+	count = lev->cnt_restart_points;
+	if (cp == NULL || count < 2 || count > 255)
+		return;
+
+	for (i = 0; i < count; i++)
+	{
+		const u8 next[3] = {cp[i].nextIndex_forward, cp[i].nextIndex_left, cp[i].nextIndex_right};
+		for (k = 0; k < 3; k++)
+		{
+			int ax = cp[i].pos.x, ay = cp[i].pos.z, bx, by;
+			if (next[k] >= count)
+				continue;
+			bx = cp[next[k]].pos.x;
+			by = cp[next[k]].pos.z;
+			UI_Map_GetIconPos((s16 *)ptrMap, &ax, &ay);
+			UI_Map_GetIconPos((s16 *)ptrMap, &bx, &by);
+			if (!UI_Map_CustomSegment(primMem, otMem, ax, ay, bx, by))
+				return;
+		}
+	}
+}
+#endif
