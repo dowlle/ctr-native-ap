@@ -250,3 +250,9 @@ with tempfile.TemporaryDirectory() as temporary:
                     "-fno-sanitize-recover=all", "-I", str(root / "include"), "-I", str(root), "-I", str(root / "ap"),
                     str(path), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
+    # A4-70: the pad entry sets the race's laps per mode (a Relic Race may run other laps
+    # than the pad's Trophy Race), and the context staged for it carries the same laps.
+    warp = (root / "game/232/AH_WarpPad.c").read_text(encoding="utf-8")
+    assert "gGT->numLaps = (char)ap_content_mode_laps(pad, mode);" in warp, "warp pad start uses the mode's laps"
+    assert "gGT->numLaps = (char)pad->laps;" not in warp, "warp pad start never reads the pad's laps for a mode race"
+    print("PASS: warp pad start reads the mode's laps")
