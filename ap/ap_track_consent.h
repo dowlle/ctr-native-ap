@@ -19,8 +19,9 @@
 //
 // Source: HTTPS only, one fixed GitHub raw URL (the transport's host
 // allow-list), size cap AP_TRACK_CONSENT_MAX_BYTES, the transport's timeout.
-// The last good copy is kept on disk and used when GitHub cannot be reached.
-// With no live copy and no cache, every track is unknown.
+// The last good copy is kept on disk and used only when GitHub cannot be
+// reached. A missing (HTTP 4xx) or unreadable live file, or no live copy and
+// no cache, leaves every track unknown.
 
 #include <stddef.h>
 #include <stdint.h>
@@ -60,9 +61,9 @@ enum
 	AP_TRACK_CONSENT_UNAVAILABLE  // finished with no live copy and no cache
 };
 
-// Start one background refresh unless one is running: load the cached copy
-// at cache_path (published at once when valid), fetch consent.json, and on
-// success publish it and replace the cache. Returns 1 when a worker started.
+// Start one background refresh unless one is running: fetch consent.json and
+// on success publish it and replace the cache at cache_path; when GitHub
+// cannot be reached, publish the cache instead. Returns 1 when a worker started.
 int ap_track_consent_refresh(const char *cache_path);
 
 // The same, with the cache next to tracks/ in the assets folder.

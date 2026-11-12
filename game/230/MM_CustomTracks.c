@@ -499,6 +499,15 @@ static const char *CT_ActionHelp(const struct CT_Action *a)
     }
 }
 
+/* The Saphi page of the shown track. A Current Seed install keeps trackID
+   zero (no catalogue updates) but records its Saphi id for the permission
+   check (A4-74); its page is known too. */
+static int CT_SourceTrackID(const struct CT_LibView *v)
+{
+    if (v->trackID > 0) return v->trackID;
+    return v->installed ? v->installed->local.permissionTrackID : 0;
+}
+
 static void CT_Add(struct CT_Action *a, int *n, int id, const char *label, const char *reason)
 {
     if (*n >= CT_ACTIONS_MAX) return;
@@ -555,7 +564,7 @@ static int CT_LibraryActions(const struct CT_LibItem *item, const struct CT_LibV
     CT_Add(a, &n, CT_ACT_VERSIONS, "Versions", !v->source ? "Not in the Project Saphi catalogue." :
            !v->allowed ? ap_track_permission_text() : "");
     CT_Add(a, &n, CT_ACT_SOURCE, "Open source page",
-           v->trackID > 0 || item->kind == CT_ITEM_PACKAGE ? "" :
+           CT_SourceTrackID(v) > 0 || item->kind == CT_ITEM_PACKAGE ? "" :
            v->installed && v->installed->local.xdelta ? "Imported from a patch. No source page is known." :
            "No source page is known for this track.");
     if (v->package)
@@ -1260,7 +1269,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
                 break;
             case CT_ACT_SOURCE:
                 if (item->kind == CT_ITEM_PACKAGE) CT_OpenURL(AP_CustomContentPackage()->sourceUrl);
-                else CT_OpenTrackSource(v.trackID);
+                else CT_OpenTrackSource(CT_SourceTrackID(&v));
                 break;
             case CT_ACT_VERIFY:
                 AP_CustomContentVerify();

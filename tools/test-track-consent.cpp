@@ -14,10 +14,11 @@
 //   3. matching: by the catalogue's author_id, by what the catalogue taught
 //      for a Saphi track id (Current Seed, installed packages), and by the
 //      registry's credits for the track key,
-//   4. the three failure cases: no network with a cache uses the cache; no
-//      network and no cache, consent.json missing (HTTP 404, as before the
-//      registry PR merges) or unreadable: everything unknown, and the text
-//      says the list could not be loaded,
+//   4. the failure cases: no network (or a 5xx) with a cache uses the cache;
+//      no network and no cache, consent.json missing (HTTP 404, as before the
+//      registry PR merges) or unreadable: everything unknown even with a
+//      cache, a missing file also drops the cache, and the text says the list
+//      is not loaded,
 //   5. the Saphi track id in a download or source URL.
 // With arguments <registry.json> <consent.json> <saphi page>... it prints,
 // for recorded Saphi catalogue pages, which tracks the real files allow.
@@ -61,7 +62,9 @@ bool ap_https_get(const char *host, const std::string &path, size_t max_bytes,
 	body.clear();
 	if (!g_up) { error = "Could not reach the track registry: stub offline"; return false; }
 	auto it = g_files.find(path);
-	if (it == g_files.end()) { error = "The track registry answered HTTP 404."; return false; }
+	// The production wording (transfer_error): a 4xx is a refusal.
+	if (it == g_files.end()) { error = "the track registry refused the file (HTTP 404)."; return false; }
+	if (it->second == "503") { error = "the track registry is unavailable (HTTP 503). Retry later."; return false; }
 	if (it->second.size() > max_bytes) { error = "the track registry returned a file larger than this client accepts."; return false; }
 	body.assign(it->second.begin(), it->second.end());
 	return true;
@@ -300,6 +303,8 @@ int main(int argc, char **argv)
 	CHECK(wait_registry() == AP_TRACK_REGISTRY_DONE);
 	CHECK(ap_track_permission(2, 0, U, nullptr) == A);            // dreamy-heights, credited to Boxic
 	CHECK(ap_track_permission(0, 0, U, "dreamy-heights") == A);   // a seed package's track key
+	CHECK(ap_track_permission(2, 0, U, "folder-name") == A);      // a seed folder that is not the registry key
+	CHECK(ap_track_permission(0, 0, U, "folder-name") == U);
 	CHECK(ap_track_permission(60, 0, U, nullptr) == A);           // both credited authors said yes
 	CHECK(ap_track_permission(70, 1, U, nullptr) == U);           // a co-author was not asked
 	CHECK(ap_track_permission(122, 0, U, nullptr) == U);          // dk-pass, Blounard not asked
@@ -332,25 +337,42 @@ int main(int argc, char **argv)
 	CHECK(ap_track_permission(2, 1, U, nullptr) == U && ap_track_permission(2, 1, A, nullptr) == U);
 	CHECK(std::strstr(ap_track_permission_text(), "not loaded"));
 
-	// 4d. consent.json missing on main (before the registry PR merges): the
-	// host answers 404. Same as no list.
+	// 4d. consent.json missing on main (before the registry PR merges, or
+	// removed later): the host refuses it with 404. Nothing is allowed, even
+	// with a good cache, and the cache is dropped.
 	ap_track_consent_test_reset();
+	spit(cache, v1);
 	serve(true, "", registry_fixture());
 	CHECK(ap_track_consent_refresh(cache.c_str()) == 1);
 	CHECK(wait_consent(&source, &detail) == AP_TRACK_CONSENT_UNAVAILABLE && detail.find("404") != std::string::npos);
-	CHECK(ap_track_permission(2, 1, U, nullptr) == U && access(cache.c_str(), F_OK) != 0);
+	CHECK(source == AP_TRACK_CONSENT_SOURCE_NONE && ap_track_permission(2, 1, U, nullptr) == U && access(cache.c_str(), F_OK) != 0);
+	// A list fetched earlier this session is cleared by a later 404 too.
+	serve(true, v1);
+	CHECK(ap_track_consent_refresh(cache.c_str()) == 1 && wait_consent(&source) == AP_TRACK_CONSENT_DONE);
+	CHECK(ap_track_permission(2, 1, U, nullptr) == A);
+	serve(true, "");
+	CHECK(ap_track_consent_refresh(cache.c_str()) == 1 && wait_consent(&source) == AP_TRACK_CONSENT_UNAVAILABLE);
+	CHECK(ap_track_permission(2, 1, U, nullptr) == U);
 
-	// 4e. consent.json unreadable: refused, a good cache is kept and used.
+	// 4e. consent.json unreadable (broken or a format this client does not
+	// read): nothing allowed, even with a good cache; the cache is kept for a
+	// later offline start.
 	ap_track_consent_test_reset();
+	spit(cache, v1);
 	serve(true, "{\"format\": 1, \"authors\": [");
 	CHECK(ap_track_consent_refresh(cache.c_str()) == 1);
 	CHECK(wait_consent(&source, &detail) == AP_TRACK_CONSENT_UNAVAILABLE && detail.find("not valid JSON") != std::string::npos);
-	spit(cache, v1);
+	CHECK(ap_track_permission(2, 1, U, nullptr) == U && slurp(cache) == v1);
 	ap_track_consent_test_reset();
 	serve(true, "{\"format\": 9, \"authors\": []}");
 	CHECK(ap_track_consent_refresh(cache.c_str()) == 1);
-	CHECK(wait_consent(&source) == AP_TRACK_CONSENT_DONE && source == AP_TRACK_CONSENT_SOURCE_CACHED);
-	CHECK(slurp(cache) == v1 && ap_track_permission(2, 1, U, nullptr) == A);
+	CHECK(wait_consent(&source) == AP_TRACK_CONSENT_UNAVAILABLE && ap_track_permission(2, 1, U, nullptr) == U);
+	// A server error is like no network: the cache is used.
+	ap_track_consent_test_reset();
+	serve(true, "503");
+	CHECK(ap_track_consent_refresh(cache.c_str()) == 1);
+	CHECK(wait_consent(&source) == AP_TRACK_CONSENT_DONE && source == AP_TRACK_CONSENT_SOURCE_CACHED &&
+	      ap_track_permission(2, 1, U, nullptr) == A);
 	// A broken cache and no network: nothing allowed.
 	ap_track_consent_test_reset();
 	spit(cache, "{broken");

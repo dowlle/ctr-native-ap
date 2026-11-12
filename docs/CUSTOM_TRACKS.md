@@ -256,8 +256,9 @@ for history; it has no Archipelago dependency) and
   its Saphi page; installed copies keep racing, manual LEV/VRM and xdelta
   imports are untouched, and nothing on disk is deleted. `consent.json` is
   fetched like `registry.json` (GitHub raw only, 1 MiB cap, last good copy in
-  `assets/track-consent-cache.json`); with no live copy and no cache every
-  track is unknown and the screen says the list could not be loaded. A track
+  `assets/track-consent-cache.json`, used only when GitHub cannot be reached).
+  A missing (HTTP 4xx) or unreadable live file, or no live copy and no cache,
+  leaves every track unknown, and the screen says the list is not loaded. A track
   is matched to its authors by the catalogue's `author_id`, by the Saphi track
   id the catalogue or the install recorded (`saphi-source.json` now records
   `author_id` and the registry `track_key`; Current Seed's

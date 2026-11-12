@@ -217,52 +217,91 @@ void finish(int state, const std::string &detail)
 	s.detail = detail;
 }
 
+// The host answered and refused the file (HTTP 4xx other than 429): the list
+// is gone, not unreachable. The transport words every refusal this way
+// (transfer_error in ap_custom_track_download.cpp; its wording is pinned by
+// tools/test-track-registry-download-production.py).
+bool list_refused(const std::string &error)
+{
+	return error.find("refused the file (HTTP 4") != std::string::npos;
+}
+
+void clear_list()
+{
+	ConsentState &s = consent_state();
+	std::lock_guard<std::mutex> lock(s.mutex);
+	if (s.list) s.generation++;
+	s.list.reset();
+	s.source = AP_TRACK_CONSENT_SOURCE_NONE;
+}
+
+// Fail closed: the cached copy is used only when GitHub cannot be reached.
+// It is not published before the live answer, so a list that was removed
+// or broken on GitHub never allows a download, not even while loading. A
+// missing (HTTP 4xx) or unreadable live file clears the list and, when
+// missing, the cache.
 void refresh_worker(std::string cache_path)
 {
-	std::vector<unsigned char> cached, live;
+	std::vector<unsigned char> live;
 	std::string error;
 	std::shared_ptr<const ApTrackConsentList> list;
-	bool have_cache = false;
 	try
 	{
-		if (!cache_path.empty() && read_capped(cache_path, cached) && ap_track_consent_parse(cached, list, error))
-		{
-			have_cache = true;
-			bool empty;
-			{
-				ConsentState &s = consent_state();
-				std::lock_guard<std::mutex> lock(s.mutex);
-				empty = !s.list;
-			}
-			// A copy fetched earlier this session is newer than the disk.
-			if (empty) publish(list, AP_TRACK_CONSENT_SOURCE_CACHED);
-		}
-		error.clear();
 		if (!ap_https_get(AP_TRACK_CONSENT_HOST, AP_TRACK_CONSENT_PATH, AP_TRACK_CONSENT_MAX_BYTES, live, error))
 		{
 			if (error.empty()) error = "Could not reach the permission list.";
+			if (list_refused(error))
+			{
+				clear_list();
+				if (!cache_path.empty()) std::remove(cache_path.c_str());
+				std::fprintf(stderr, "[CustomTracks] Permission list missing: %s\n", error.c_str());
+				finish(AP_TRACK_CONSENT_UNAVAILABLE, error);
+				return;
+			}
 		}
 		else if (ap_track_consent_parse(live, list, error))
 		{
+			std::vector<unsigned char> cached;
+			const bool same = !cache_path.empty() && read_capped(cache_path, cached) && cached == live;
 			publish(list, AP_TRACK_CONSENT_SOURCE_LIVE);
-			if (!cache_path.empty() && (!have_cache || live != cached) && !write_cache(cache_path, live))
+			if (!cache_path.empty() && !same && !write_cache(cache_path, live))
 				std::fprintf(stderr, "[CustomTracks] Could not save the permission list cache.\n");
 			finish(AP_TRACK_CONSENT_DONE, "");
 			return;
 		}
+		else
+		{
+			clear_list();
+			std::fprintf(stderr, "[CustomTracks] Permission list unreadable: %s\n", error.c_str());
+			finish(AP_TRACK_CONSENT_UNAVAILABLE, error);
+			return;
+		}
+		// Unreachable: a list fetched earlier this session stays; otherwise
+		// the last good copy on disk.
+		bool have;
+		{
+			ConsentState &s = consent_state();
+			std::lock_guard<std::mutex> lock(s.mutex);
+			have = s.list != nullptr;
+		}
+		std::vector<unsigned char> cached;
+		std::string cache_error;
+		if (!have && !cache_path.empty() && read_capped(cache_path, cached) && ap_track_consent_parse(cached, list, cache_error))
+		{
+			publish(list, AP_TRACK_CONSENT_SOURCE_CACHED);
+			have = true;
+		}
+		std::fprintf(stderr, "[CustomTracks] Permission list refresh failed: %s\n", error.c_str());
+		finish(have ? AP_TRACK_CONSENT_DONE : AP_TRACK_CONSENT_UNAVAILABLE, error);
+		return;
 	}
 	catch (const std::exception &e)
 	{
 		error = std::string("Permission list: ") + e.what();
 	}
-	bool usable;
-	{
-		ConsentState &s = consent_state();
-		std::lock_guard<std::mutex> lock(s.mutex);
-		usable = s.list != nullptr;
-	}
+	clear_list();
 	std::fprintf(stderr, "[CustomTracks] Permission list refresh failed: %s\n", error.c_str());
-	finish(usable ? AP_TRACK_CONSENT_DONE : AP_TRACK_CONSENT_UNAVAILABLE, error);
+	finish(AP_TRACK_CONSENT_UNAVAILABLE, error);
 }
 } // namespace
 
@@ -458,15 +497,25 @@ extern "C" int ap_track_permission(int saphi_track_id, int saphi_author_id, int 
 			if (saphi_permission == AP_TRACK_PERMISSION_UNKNOWN) saphi_permission = it->second.saphi_permission;
 		}
 	}
-	std::string key = track_key ? track_key : "";
-	if (key.empty() && saphi_track_id > 0)
+	// The key the caller knows (a seed's folder may differ from the registry
+	// key) and the registry key for the Saphi track id: a refusal under either
+	// refuses; otherwise either can allow.
+	std::string key = track_key ? track_key : "", registry_key;
+	if (saphi_track_id > 0)
 	{
 		char found[65];
-		if (ap_track_registry_key_for_saphi(saphi_track_id, found, sizeof found)) key = found;
+		if (ap_track_registry_key_for_saphi(saphi_track_id, found, sizeof found)) registry_key = found;
 	}
+	if (key.empty()) key.swap(registry_key);
 	std::vector<std::string> names;
 	if (!key.empty()) ap_track_registry_credits(key, names);
-	return ap_track_consent_decide(list.get(), saphi_permission, saphi_author_id, names, key);
+	const int first = ap_track_consent_decide(list.get(), saphi_permission, saphi_author_id, names, key);
+	if (registry_key.empty() || registry_key == key) return first;
+	ap_track_registry_credits(registry_key, names);
+	const int second = ap_track_consent_decide(list.get(), saphi_permission, saphi_author_id, names, registry_key);
+	if (first == AP_TRACK_PERMISSION_DENY || second == AP_TRACK_PERMISSION_DENY) return AP_TRACK_PERMISSION_DENY;
+	return first == AP_TRACK_PERMISSION_ALLOW || second == AP_TRACK_PERMISSION_ALLOW ? AP_TRACK_PERMISSION_ALLOW
+	                                                                                  : AP_TRACK_PERMISSION_UNKNOWN;
 }
 
 extern "C" int ap_track_saphi_id_from_url(const char *url)

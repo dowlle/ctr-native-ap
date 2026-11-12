@@ -950,6 +950,13 @@ int main(void)
     select_track("Coco Park 2025");
     frame(0, "permission-installed-offline"); CHECK(has("Not allowed by author"));
     select_track("Arabian Heights Night"); frame(0, NULL); CHECK(!has("Not allowed by author"));
+    /* A Current Seed install (trackID zero, Saphi id recorded) keeps its source page. */
+    lib[2].local.trackID = 0; lib[2].local.permissionTrackID = 120;
+    select_track("Arabian Heights Night"); frame(BTN_CROSS, NULL);
+    CHECK(select_action("Open source page")); frame(BTN_CROSS, NULL);
+    CHECK(!strcmp(lastURL, "https://www.projectsaphi.com/tracks/120"));
+    frame(BTN_TRIANGLE, NULL);
+    lib[2].local.trackID = 120;
     catCount = 5;
     /* A cached list works like the live one and says so. */
     permSource = AP_TRACK_CONSENT_SOURCE_CACHED; s_ctFilter = CT_FILTER_BROWSE; s_ctFocus = CT_FOCUS_CONTROLS;
