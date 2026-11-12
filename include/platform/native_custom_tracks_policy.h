@@ -1397,9 +1397,9 @@ static int CustomTrackPolicy_Rgb15IsGrey(unsigned colour)
 }
 
 // The VRAM rectangles one icon samples. `layout` is the 12-byte TextureLayout
-// (u0 v0 clut u1 v1 tpage u2 v2 u3 v3). Returns 0 for a direct-colour page,
-// which has no CLUT and is left alone. Texel rect in VRAM halfwords; the CLUT
-// rect is one row of 16 or 256 entries.
+// (u0 v0 clut u1 v1 tpage u2 v2 u3 v3). Texel rect in VRAM halfwords; the CLUT
+// rect is one row of 16 or 256 entries, or none (clutW 0) for a direct-colour
+// page, whose texels are the colours. Returns 0 for the reserved depth 3.
 struct CustomTrackMinimapRects
 {
 	int texX, texY, texW, texH;
@@ -1425,24 +1425,25 @@ static int CustomTrackPolicy_MinimapIconRects(const unsigned char *layout, struc
 		if (vs[k] > vmax) vmax = vs[k];
 	}
 	r->bpp = (int)((tpage >> 7) & 3u);
-	if (r->bpp > 1)
+	if (r->bpp > 2)
 		return 0;
 	r->u0 = (int)umin;
 	r->v0 = (int)vmin;
 	r->uw = (int)(umax - umin + 1);
 	r->vh = (int)(vmax - vmin + 1);
-	r->texX = (int)((tpage & 15u) * 64u + (r->bpp == 0 ? umin / 4u : umin / 2u));
+	r->texX = (int)((tpage & 15u) * 64u + umin / (4u >> r->bpp));
 	r->texY = (int)(((tpage >> 4) & 1u) * 256u + vmin);
-	r->texW = (int)((r->bpp == 0 ? umax / 4u : umax / 2u) - (r->bpp == 0 ? umin / 4u : umin / 2u) + 1);
+	r->texW = (int)(umax / (4u >> r->bpp) - umin / (4u >> r->bpp) + 1);
 	r->texH = r->vh;
 	r->clutX = (int)((clut & 63u) * 16u);
 	r->clutY = (int)(clut >> 6);
-	r->clutW = r->bpp == 0 ? 16 : 256;
+	r->clutW = r->bpp == 0 ? 16 : r->bpp == 1 ? 256 : 0;
 	return 1;
 }
 
 // Count the texels of one icon that draw an off-grey colour. `tex` holds the
-// texel rect row by row (texW halfwords a row), `clut` the CLUT row.
+// texel rect row by row (texW halfwords a row), `clut` the CLUT row (unused
+// for a direct-colour page).
 static unsigned long CustomTrackPolicy_MinimapNonGrey(const struct CustomTrackMinimapRects *r, const unsigned short *tex,
                                                       const unsigned short *clut, unsigned long *total)
 {
@@ -1454,12 +1455,18 @@ static unsigned long CustomTrackPolicy_MinimapNonGrey(const struct CustomTrackMi
 	{
 		for (i = 0; i < r->uw; i++)
 		{
-			int u = r->u0 + i, idx;
-			int col = (r->bpp == 0 ? u / 4 : u / 2) - (r->bpp == 0 ? r->u0 / 4 : r->u0 / 2);
-			unsigned w = tex[j * r->texW + col];
-			idx = r->bpp == 0 ? (int)((w >> ((u % 4) * 4)) & 15u) : (int)((w >> ((u % 2) * 8)) & 255u);
+			int per = 4 >> r->bpp; // texels per halfword: 4, 2 or 1
+			int u = r->u0 + i;
+			unsigned w = tex[j * r->texW + (u / per - r->u0 / per)];
+			unsigned colour;
+			if (r->bpp == 0)
+				colour = clut[(w >> ((u % 4) * 4)) & 15u];
+			else if (r->bpp == 1)
+				colour = clut[(w >> ((u % 2) * 8)) & 255u];
+			else
+				colour = w;
 			(*total)++;
-			if (!CustomTrackPolicy_Rgb15IsGrey(clut[idx]))
+			if (!CustomTrackPolicy_Rgb15IsGrey(colour))
 				bad++;
 		}
 	}

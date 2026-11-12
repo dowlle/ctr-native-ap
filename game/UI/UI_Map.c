@@ -415,11 +415,14 @@ void UI_Map_DrawTracking(int ptrMap, struct Thread *bucket)
 // Minimap sanity for custom levels (A4-64). The decision and the measurements
 // behind it are in native_custom_tracks_policy.h ("Minimap sanity").
 static int s_ctMinimapOverrideLev;
+static int s_ctMinimapLevelIsCustom; // the last loaded level came from a custom override
 static int s_ctMinimapMode = CTR_POLICY_MINIMAP_TEXTURE;
 
-// The level the mode was decided for. A save-state restore brings back another
-// level and its VRAM without running the loader, so a mode whose level, icons
-// or icon layouts no longer match falls back to the texture path.
+// The level the mode was decided for. A save-state restore brings back a level
+// and its VRAM without running the loader; NativeCheckpoint_Restore then calls
+// UI_Map_CustomAfterRestore, which measures the restored VRAM again. As a second
+// guard, a mode whose level, icons or icon layouts no longer match falls back
+// to the texture path.
 static struct
 {
 	struct Level *level;
@@ -449,11 +452,11 @@ int UI_Map_CustomMode(void)
 }
 
 // Off-grey texels of one icon, read back from VRAM. Returns 1 when the icon is
-// usable; a direct-colour page is left as usable, and so is a rect that does
-// not fit one texture page or VRAM, which no icon layout can produce.
+// usable. A layout with the reserved colour depth, or a rect past the edge of
+// VRAM, is left as usable: the retail path draws it as before.
 static int UI_Map_CustomIconUsable(struct Icon *icon, unsigned long *nonGreyOut, unsigned long *totalOut)
 {
-	static u16 tex[128 * 256]; // an 8-bit page is 128 halfwords wide
+	static u16 tex[256 * 256]; // a 15-bit page is 256 halfwords wide
 	static u16 clut[256];
 	struct CustomTrackMinimapRects r;
 	RECT rect;
@@ -465,7 +468,9 @@ static int UI_Map_CustomIconUsable(struct Icon *icon, unsigned long *nonGreyOut,
 		return 0;
 	if (!CustomTrackPolicy_MinimapIconRects((const unsigned char *)&icon->texLayout, &r))
 		return 1;
-	if (r.texW <= 0 || r.texW > 128 || r.texH <= 0 || r.texH > 256 || r.texX + r.texW > 1024 || r.texY + r.texH > 512 ||
+	if (r.clutW == 0)
+		memset(clut, 0, sizeof clut);
+	if (r.texW <= 0 || r.texW > 256 || r.texH <= 0 || r.texH > 256 || r.texX + r.texW > 1024 || r.texY + r.texH > 512 ||
 	    r.clutX + r.clutW > 1024 || r.clutY >= 512)
 		return 1;
 
@@ -474,27 +479,28 @@ static int UI_Map_CustomIconUsable(struct Icon *icon, unsigned long *nonGreyOut,
 	rect.w = (s16)r.texW;
 	rect.h = (s16)r.texH;
 	StoreImage(&rect, (u32 *)texDst);
-	rect.x = (s16)r.clutX;
-	rect.y = (s16)r.clutY;
-	rect.w = (s16)r.clutW;
-	rect.h = 1;
-	StoreImage(&rect, (u32 *)clutDst);
+	if (r.clutW > 0)
+	{
+		rect.x = (s16)r.clutX;
+		rect.y = (s16)r.clutY;
+		rect.w = (s16)r.clutW;
+		rect.h = 1;
+		StoreImage(&rect, (u32 *)clutDst);
+	}
 
 	*nonGreyOut = CustomTrackPolicy_MinimapNonGrey(&r, tex, clut, totalOut);
 	return CustomTrackPolicy_MinimapHalfUsable(*nonGreyOut, *totalOut);
 }
 
-void UI_Map_CustomEvaluate(struct GameTracker *gGT)
+static void UI_Map_CustomDecide(struct GameTracker *gGT, int isCustom)
 {
-	int overrideLev = s_ctMinimapOverrideLev;
 	struct Level *lev = gGT->level1;
 	unsigned long bad3, tot3, bad4, tot4;
 	int top, bottom, outline = 0;
 	struct Map *map = NULL;
 
-	s_ctMinimapOverrideLev = 0;
 	s_ctMinimapMode = CTR_POLICY_MINIMAP_TEXTURE;
-	if (!overrideLev || lev == NULL)
+	if (!isCustom || lev == NULL)
 		return;
 
 	top = UI_Map_CustomIconUsable(gGT->ptrIcons[3], &bad3, &tot3);
@@ -525,6 +531,22 @@ void UI_Map_CustomEvaluate(struct GameTracker *gGT)
 		                bad4, tot4,
 		                s_ctMinimapMode == CTR_POLICY_MINIMAP_OUTLINE ? "drawing the checkpoint outline" : "minimap hidden");
 	}
+}
+
+void UI_Map_CustomEvaluate(struct GameTracker *gGT)
+{
+	s_ctMinimapLevelIsCustom = s_ctMinimapOverrideLev;
+	s_ctMinimapOverrideLev = 0;
+	UI_Map_CustomDecide(gGT, s_ctMinimapLevelIsCustom);
+}
+
+// A restored state is the same level kind as the one loaded: with custom
+// packages a restore across tracks is refused (native_checkpoint.c), and the
+// VRAM is measured again, so a state saved on another level cannot carry its
+// mode across.
+void UI_Map_CustomAfterRestore(struct GameTracker *gGT)
+{
+	UI_Map_CustomDecide(gGT, s_ctMinimapLevelIsCustom);
 }
 
 // One outline segment as a three-pixel POLY_F4, thickened across its minor

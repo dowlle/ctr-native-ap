@@ -1032,9 +1032,20 @@ static void test_minimap_sanity(void)
 	t_layout(l, 0, 0, 255, 49, 0x0040, 0x0000);
 	expect_int(CustomTrackPolicy_MinimapIconRects(l, &r), 1, "a full-width 4-bit icon is checked");
 	expect_int(r.texW, 64, "full-width 4-bit icon: 64 halfwords");
-	// A direct-colour page has no CLUT and is left alone.
-	t_layout(l, 0, 0, 7, 7, 0, 0x0100);
-	expect_int(CustomTrackPolicy_MinimapIconRects(l, &r), 0, "a 15-bit icon is not checked");
+	// A direct-colour page: the texels are the colours, no CLUT.
+	t_layout(l, 4, 0, 11, 7, 0, 0x0100 | 0x0002);
+	expect_int(CustomTrackPolicy_MinimapIconRects(l, &r), 1, "a 15-bit icon is checked");
+	expect_int(r.texX, 128 + 4, "15-bit texel x: page 128 + u 4");
+	expect_int(r.texW, 8, "15-bit width: one halfword per texel");
+	expect_int(r.clutW, 0, "a 15-bit icon has no CLUT");
+	for (i = 0; i < 64; i++)
+		tex[i] = (unsigned short)(i < 8 ? 0x7c1f : 0x0000); // first row magenta, rest transparent
+	bad = CustomTrackPolicy_MinimapNonGrey(&r, tex, NULL, &total);
+	expect_int((int)total, 64, "every 15-bit texel is counted");
+	expect_int((int)bad, 8, "the magenta row is off-grey");
+	expect_int(CustomTrackPolicy_MinimapHalfUsable(bad, total), 0, "12.5% off-grey direct colour is not drawn");
+	t_layout(l, 0, 0, 7, 7, 0, 0x0180);
+	expect_int(CustomTrackPolicy_MinimapIconRects(l, &r), 0, "the reserved depth 3 is not checked");
 
 	// Outline: track 6's minimap block (128x50, world X -24675..14280, Z
 	// -14400..23885, mode 0) and 240 checkpoints.

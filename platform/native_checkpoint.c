@@ -14,6 +14,9 @@
 #include "platform/native_custom_offline.h"
 #include "platform/native_custom_state_identity.h"
 #endif
+#ifdef CTR_CUSTOM_TRACKS
+#include "platform/native_custom_tracks.h" // UI_Map_CustomAfterRestore (A4-64)
+#endif
 
 #define NATIVE_CHECKPOINT_FOURCC(a, b, c, d) ((u32)(a) | ((u32)(b) << 8) | ((u32)(c) << 16) | ((u32)(d) << 24))
 
@@ -2405,6 +2408,10 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 	{
 		return 0;
 	}
+#ifdef CTR_CUSTOM_TRACKS
+	// The restored VRAM may hold another minimap: decide its mode again.
+	UI_Map_CustomAfterRestore(sdata->gGT);
+#endif
 
 	return 1;
 }
