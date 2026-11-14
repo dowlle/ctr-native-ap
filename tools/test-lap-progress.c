@@ -20,6 +20,9 @@
 // does. Those frames name restart point 102 of 102. Retail counts the lap on
 // every line; skipping them, as A3-26 first did, loses it on line 0; with the
 // rule every line counts it again.
+// Papu's Pyramid standings (A4-78b): over every grid, empty slot and path draw,
+// the human's HUD place on lap 3 and the place the finish pays out, with 7
+// racers as well as 8. The A3-26 skip pays 4th; the rule matches retail.
 
 #include <math.h>
 #include <stdint.h>
@@ -434,11 +437,172 @@ static void retail_papu(void)
 	free(l.d);
 }
 
+// ---------------------------------------------------------------------------
+// Papu's Pyramid standings over a whole race (A4-78b). sturg's third case:
+// seven racers (one grid slot empty, A4-77), HUD 4th on lap 3 of 3 with most
+// CPUs ahead on the minimap, and the results screen paid 4th. This models the
+// parts of the race that follow from which crossings a CPU counts: a CPU that
+// counts every crossing finishes after three laps; one that never counts the
+// finish crossing never finishes and is sorted by lap index. The grid-slot to
+// nav-line map is BOTS.c's pathOrder; the sort is PlayLevel_UpdateLapStats'.
+
+#define RACERS 8
+
+// 1 when every crossing on `lane` is counted for all step sizes and phases,
+// 0 when none is, -1 when it varies.
+static int lane_counts(const struct Lev *l, uint32_t rp, int cnt, int lane, int mode)
+{
+	static const double steps[] = {20, 60, 100, 160, 240};
+	int seen = -2, fb, lb, good;
+	for (unsigned si = 0; si < sizeof(steps) / sizeof(steps[0]); si++)
+	{
+		for (int ph = 0; ph < 4; ph++)
+		{
+			int r = drive_line(l, rp, cnt, lane, steps[si], steps[si] * ph / 4, mode, &fb, &lb, &good);
+			if (r != 0 && r != 1)
+				return -1;
+			if (seen == -2)
+				seen = r;
+			else if (seen != r)
+				return -1;
+		}
+	}
+	return seen;
+}
+
+struct Racer
+{
+	int present, human, line, lapIndex, progress; // progress: units past the line
+};
+
+// The PlayLevel ranking loop over unfinished racers: highest lap, then most
+// progress. An empty slot is skipped as a NULL driver is. Returns the human's
+// rank (0 based).
+static int sort_rank(const struct Racer *r)
+{
+	int rank[RACERS];
+	for (int i = 0; i < RACERS; i++)
+		rank[i] = -1;
+	int humanRank = -1;
+	for (int curr = 0; curr < 8; curr++)
+	{
+		int best = -1, bestLap = -10, bestProg = -1;
+		for (int i = 0; i < RACERS; i++)
+		{
+			if (!r[i].present || rank[i] != -1)
+				continue;
+			if (r[i].lapIndex > bestLap || (r[i].lapIndex == bestLap && r[i].progress > bestProg))
+			{
+				best = i;
+				bestLap = r[i].lapIndex;
+				bestProg = r[i].progress;
+			}
+		}
+		if (best != -1)
+		{
+			rank[best] = curr;
+			if (r[best].human)
+				humanRank = curr;
+		}
+	}
+	return humanRank;
+}
+
+// One race. `counts[line]` says whether a CPU on that nav line counts the
+// finish crossing. CPUs take 60 s a lap, the human 99, 69 and 84 s (sturg's
+// 1:39.39, 1:08.83 and the rest of 4:12.29). *hud is the human's place on
+// lap 3, as the HUD shows it; *paid the place the finish pays out: the
+// number of racers that finish before the human (all CPUs that count laps,
+// as a CPU that never counts a crossing never finishes). Both 0 based.
+static void race(const int counts[3], int humanSlot, int missingSlot, int firstPath, int secondPath, int *hud, int *paid,
+                 int *racers)
+{
+	int pathOrder[8] = {0, firstPath, secondPath + 1, 2, 0, firstPath ^ 1, (secondPath ^ 1) + 1, 2};
+	struct Racer r[RACERS];
+	*racers = 0;
+	*paid = 0;
+	for (int i = 0; i < RACERS; i++)
+	{
+		r[i].present = i != missingSlot;
+		r[i].human = i == humanSlot;
+		r[i].line = pathOrder[i];
+		*racers += r[i].present;
+		if (r[i].human)
+		{
+			// 12 s into lap 3 of the human's race, index 2.
+			r[i].lapIndex = 2;
+			r[i].progress = (int)(12.0 / 84.0 * 77776);
+		}
+		else
+		{
+			// At the same moment (180 s) a CPU is 59 s into its lap 3, two
+			// crossings behind it when it counted them, none when it did not.
+			r[i].lapIndex = counts[r[i].line] ? 2 : 0;
+			r[i].progress = (int)(59.0 / 60.0 * 77776);
+			*paid += r[i].present && counts[r[i].line];
+		}
+	}
+	*hud = sort_rank(r);
+}
+
+static void papu_standings(void)
+{
+	struct Lev l;
+	if (!load_lev("CTR_LAP_PROGRESS_PAPU_LEV", "Papu's Pyramid", &l))
+		return;
+	int cnt = (int)rd32(&l, 0x148);
+	uint32_t rp = rd32(&l, 0x14c);
+
+	int mc[3][3];
+	for (int m = 0; m < 3; m++)
+		for (int lane = 0; lane < 3; lane++)
+			mc[m][lane] = lane_counts(&l, rp, cnt, lane, m);
+	CHECK(mc[RETAIL][0] == 1 && mc[RETAIL][1] == 1 && mc[RETAIL][2] == 1, "retail: every line counts the finish crossing");
+	CHECK(mc[A3_26][0] == 0 && mc[A3_26][1] == 1 && mc[A3_26][2] == 1, "the A3-26 skip: only line 0 never counts it");
+	CHECK(mc[RULE][0] == 1 && mc[RULE][1] == 1 && mc[RULE][2] == 1, "with the rule every line counts it");
+
+	int skipPaid4 = 0, skipHud4 = 0, skipBad = 0, configs = 0, seven = 0, fullBad = 0, ruleBad = 0;
+	for (int human = 0; human < RACERS; human++)
+	{
+		for (int missing = -1; missing < RACERS; missing++) // -1: full field
+		{
+			if (missing == human)
+				continue;
+			for (int fp = 0; fp < 2; fp++)
+			{
+				for (int sp = 0; sp < 2; sp++)
+				{
+					int hud, paid, racers, hudR, paidR, hudV, paidV;
+					race(mc[A3_26], human, missing, fp, sp, &hud, &paid, &racers);
+					race(mc[RULE], human, missing, fp, sp, &hudR, &paidR, &racers);
+					race(mc[RETAIL], human, missing, fp, sp, &hudV, &paidV, &racers);
+					configs++;
+					seven += racers == 7;
+					skipPaid4 += paid == 3 && racers == 7;
+					skipHud4 += hud == 3 && racers == 7;
+					skipBad += paid < racers - 1;
+					fullBad += racers == 8 && paid < 7;
+					ruleBad += hudR != racers - 1 || paidR != racers - 1 || hudV != hudR || paidV != paidR;
+				}
+			}
+		}
+	}
+	printf("  %d grids (%d with 7 racers): the A3-26 skip paid a place ahead of last in %d (4th with 7 racers: %d paid, %d HUD); rule differs from retail or from last in %d\n",
+	       configs, seven, skipBad, skipPaid4, skipHud4, ruleBad);
+	CHECK(ruleBad == 0, "with the rule the slow human is last in the HUD and the payout, as retail, for every grid and path draw");
+	CHECK(skipPaid4 > 0, "the A3-26 skip pays 4th with 7 racers (A4-78b)");
+	CHECK(skipHud4 > 0, "the A3-26 skip shows 4th on lap 3 with 7 racers (A4-78b)");
+	CHECK(skipBad > 0, "the A3-26 skip pays a slow human a place ahead of last");
+	CHECK(fullBad > 0, "the skip pays a wrong place with a full field of 8 too: the empty slot is not the cause");
+	free(l.d);
+}
+
 int main(void)
 {
 	synthetic();
 	retail_ngin();
 	retail_papu();
+	papu_standings();
 	printf("%d of %d checks passed\n", checks - fails, checks);
 	return fails ? 1 : 0;
 }
