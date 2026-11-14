@@ -13,7 +13,11 @@ them where the garage is special today:
 - the AP hooks that key on a hub level id alone stay quiet while it is up:
   the hub return (one-lap restore, racer lock), the goal credits, the hub save
   box close (A4-58, #667) and Discord;
-- the glue is a unity member and runs from AP_OnFrame.
+- the glue is a unity member and runs from AP_OnFrame;
+- A4-87: the handoff shows name entry, not only asks for it, and the two
+  engine facts the C harness's menu model rests on still hold (ProcessState
+  runs only while a menu is shown; only ProcessState turns the desired menu
+  into the shown one), with nothing showing a menu over the hub before it.
 """
 from pathlib import Path
 import re
@@ -124,7 +128,6 @@ for needle, label in [
     ("AP_CharSwap_GarageRacer()", "the glue gates on the seed owning the racer"),
     ("BI_ADVENTUREHUB", "the glue checks the hub files on the disc"),
     ("NativePtrScratch_Capacity()", "the preflight knows the pointer map scratch"),
-    ("sdata->ptrDesiredMenu = &data.menuSubmitName;", "the handoff opens name entry"),
     ("SubmitName_RestoreName(0);", "the handoff seeds name entry as the garage skip does"),
     ("MainRaceTrack_RequestLoad(ADVENTURE_GARAGE);", "the fallback loads the garage"),
     ("MainRaceTrack_RequestLoad(MAIN_MENU_LEVEL);", "Cancel loads the title"),
@@ -132,6 +135,33 @@ for needle, label in [
     ("cameraMode = 3;", "the camera is a free camera"),
 ]:
     check(label, needle in glue)
+
+# ---- A4-87: name entry has to be shown, not only asked for ------------------
+handoff = glue[glue.find("if (action == AP_HNE_ACT_HANDOFF)"):]
+handoff = handoff[:handoff.find("\n\t}\n")]
+check("A4-87: the handoff shows name entry and leaves it desired (AP_HNE_OpenMenu)",
+      "AP_HNE_OpenMenu(&sdata->ptrActiveMenu, &sdata->ptrDesiredMenu, &data.menuSubmitName);" in handoff)
+logic = read("ap/ap_hub_name_entry_logic.h")
+openmenu = body(logic, "static inline void AP_HNE_OpenMenu(")
+check("A4-87: AP_HNE_OpenMenu sets both the shown and the desired menu",
+      "*desiredMenu = menu;" in openmenu and "*activeMenu = menu;" in openmenu)
+hginit = body(glue, "int AP_HubNameEntry_GarageInit(")
+check("A4-87: the backdrop's garage init clears the shown menu (why the handoff must show one)",
+      "sdata->ptrActiveMenu = NULL;" in hginit)
+render = body(read("game/MAIN/MainFrame_RenderFrame.c"), "void MainFrame_RenderFrame(")
+m = re.search(r"if \(sdata->ptrActiveMenu != 0\)\s*\{\s*if \(sdata->Loading.stage == LOAD_IDLE\)\s*\{\s*RECTMENU_ProcessState\(\);", render)
+check("A4-87 model fact 1: MainFrame_RenderFrame runs RECTMENU_ProcessState only while a menu is shown", m is not None)
+proc = body(read("game/RECTMENU.c"), "void RECTMENU_ProcessState()")
+promotes = "currMenu = sdata->ptrDesiredMenu;" in proc and "sdata->ptrActiveMenu = currMenu;" in proc
+copies = []
+for path in sorted((root / "game").rglob("*.c")) + sorted((root / "ap").rglob("*.c")):
+    for line in path.read_text(errors="replace").splitlines():
+        if re.search(r"ptrActiveMenu\s*=[^=][^;]*ptrDesiredMenu", line):
+            copies.append("%s: %s" % (path.relative_to(root), line.strip()))
+check("A4-87 model fact 2: only RECTMENU_ProcessState turns the desired menu into the shown one",
+      promotes and not copies)
+for c in copies:
+    print("      other copy: " + c)
 
 unity = read("game/game_unity.h")
 check("the glue is a unity member after the save box unit, its header among the AP headers",

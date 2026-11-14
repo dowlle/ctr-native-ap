@@ -181,6 +181,22 @@ static inline int AP_HNE_Frame(struct AP_HubNameEntryState *s, int levelID, int 
 	return AP_HNE_ACT_CAMERA;
 }
 
+// Opening name entry on the handoff frame (A4-87). Two engine facts decide
+// how. RECTMENU_ProcessState is the only code that turns ptrDesiredMenu into
+// the shown menu (ptrActiveMenu), and MainFrame_RenderFrame calls it only
+// while a menu is already shown. The garage skip sets the desired menu from
+// inside the garage's own shown menu, so the next frame picks it up. Over the
+// hub no menu is shown (the garage init hook clears the garage's), so a
+// desired menu alone is never picked up: nothing draws and no button is read.
+// The handoff therefore shows name entry itself, and also leaves it desired,
+// so the first ProcessState run still does the retail promotion.
+struct RectMenu;
+static inline void AP_HNE_OpenMenu(struct RectMenu **activeMenu, struct RectMenu **desiredMenu, struct RectMenu *menu)
+{
+	*desiredMenu = menu;
+	*activeMenu = menu;
+}
+
 // Name entry Cancel on the backdrop: back to the title, like the AP-owned
 // garage Cancel (H6-02). There is no garage menu to return to here.
 static inline int AP_HNE_CancelToTitle(const struct AP_HubNameEntryState *s, int levelID)

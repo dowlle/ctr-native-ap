@@ -141,8 +141,10 @@ void AP_HubNameEntry_OnFrame(struct GameTracker *gGT)
 	{
 		/* What the garage skip does on its commit frame (CS_Garage_MenuProc),
 		 * with the racer AP resolved. Everything after it, name entry, the
-		 * profile slot and the hub load, is the unchanged retail path. */
-		sdata->ptrDesiredMenu = &data.menuSubmitName;
+		 * profile slot and the hub load, is the unchanged retail path. No
+		 * menu is shown over the hub, so name entry is shown here as well as
+		 * desired (AP_HNE_OpenMenu says why; A4-87). */
+		AP_HNE_OpenMenu(&sdata->ptrActiveMenu, &sdata->ptrDesiredMenu, &data.menuSubmitName);
 		data.characterIDs[0] = (s16)apRacer;
 		sdata->advProgress.characterID = (s16)apRacer;
 		SubmitName_RestoreName(0);
