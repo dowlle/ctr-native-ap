@@ -336,6 +336,95 @@ static void test_short_grid(void)
 	}
 }
 
+// The Adventure pad's order for eight karts (game/232/AH_WarpPad.c), with the
+// retail speed champion rule: a champion id 0..7 other than P1 takes pole,
+// anything else (Papu's Pyramid's champion is Papu Papu, id 9, and custom
+// tracks have none) takes the random shuffle. Rng is a plain LCG here.
+static void pad_order(unsigned char order[8], int champ, int p1, const int ids[8], unsigned seed)
+{
+	int i, rnd[8], slot = 0;
+	if (champ >= 0 && champ < 8 && champ != p1)
+	{
+		for (i = 1; i < 8; i++)
+		{
+			if (champ == ids[i])
+			{
+				order[i] = 0;
+				slot = i;
+			}
+			else if (i == 7)
+				order[7] = (unsigned char)slot;
+			else
+				order[i] = (unsigned char)i;
+		}
+	}
+	else
+	{
+		for (i = 1; i < 8; i++)
+			rnd[i] = i;
+		for (i = 0; i < 7; i++)
+		{
+			int r, k = 7 - i;
+			seed = seed * 1664525u + 1013904223u;
+			r = (int)(((seed >> 8) & 0xfff) % (unsigned)k) + 1;
+			order[rnd[r]] = (unsigned char)i;
+			while (r < 7)
+			{
+				rnd[r] = rnd[r + 1];
+				r++;
+			}
+		}
+	}
+	order[0] = 7;
+}
+
+// A4-77b: sturg's third case is retail Papu's Pyramid in the same seed. The
+// field draw does not look at the track, and the pad's order is the same
+// shape on a retail track, so the same short field must give a dense grid on
+// the shuffle branch (Papu's Pyramid, champion Papu Papu) and on every
+// champion branch (champion 0..7, seated or held).
+static void test_retail_short_grid(void)
+{
+	const int held[6] = {3, 1, 2, 0, OXIDE, OXIDE};
+	ap_hit_field f;
+	int champs[10] = {PAPU, 0, 1, 2, 3, 4, 5, 6, 7, -1};
+	int c, k, i, bad = 0, notlast = 0, tail = 0, drift = 0;
+	unsigned seed;
+
+	draw(held, 0, PAPU, 7, &f);
+	CHECK(f.count == 6, "retail pad: six AI for Papu Papu with four held");
+	for (c = 0; c < 10; c++)
+	{
+		for (seed = 1; seed <= 200; seed++)
+		{
+			unsigned char order[8], before[8], seen[8] = {0};
+			int ids[8];
+			ids[0] = PAPU;
+			for (i = 0; i < 6; i++)
+				ids[1 + i] = f.ids[i];
+			ids[7] = 4; // the unborn driver's retail id
+			pad_order(order, champs[c], PAPU, ids, seed * 7919u + (unsigned)c);
+			memcpy(before, order, 8);
+			AP_RosterCompactSpawnOrder(order, 1 + f.count);
+			for (k = 0; k < 7; k++)
+				if (order[k] < 7)
+					seen[order[k]]++;
+			for (k = 0; k < 7; k++)
+				bad += seen[k] != 1;
+			notlast += order[0] != 6;
+			tail += order[7] != before[7];
+			// relative order of the seven karts is kept
+			for (k = 0; k < 7; k++)
+				for (i = 0; i < 7; i++)
+					drift += (before[k] < before[i]) != (order[k] < order[i]);
+		}
+	}
+	CHECK(bad == 0, "retail pad: every place 0..6 taken once, shuffle and champion branches");
+	CHECK(notlast == 0, "retail pad: P1 starts last of seven");
+	CHECK(tail == 0, "retail pad: unborn driver entry untouched");
+	CHECK(drift == 0, "retail pad: relative order of the karts kept");
+}
+
 int main(void)
 {
 	test_eligibility();
@@ -344,6 +433,7 @@ int main(void)
 	test_seat();
 	test_chaos();
 	test_short_grid();
+	test_retail_short_grid();
 	printf("roster swap: %d passed, %d failed\n", s_pass, s_fail);
 	return s_fail != 0;
 }
