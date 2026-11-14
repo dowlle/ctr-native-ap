@@ -5,20 +5,14 @@
 #include "ap_hub_name_entry.h"
 #include <time.h>
 
-static struct AP_HubNameEntryState s_apHne = {AP_HNE_OFF, -1, -1, 0x2545f491u, 0, 0};
+static struct AP_HubNameEntryState s_apHne = {AP_HNE_OFF, -1, -1, 0x2545f491u, 0, 0, -1, {-1, -1, -1, -1, -1}};
 
-/* Two or three stops per hub, indexed like the hubs (Gem Stone Valley first).
- * Each eye sits about 350 units above a road quadblock that carries a
- * visibility list, looking at a hub landmark. Picked from headless editor
- * renders of the retail hubs drawn with the game's own camera visibility at
- * the 0x1c000 primitive arena (the A4-60c note has the frames and the
- * figures). */
-struct AP_HNE_HubStops
-{
-	int count;
-	struct AP_HNE_Stop stops[3];
-};
-
+/* The camera path pool (A4-60c, A4-90): several paths per hub, each two or
+ * three stops. Each eye sits about 350 units above a road quadblock that
+ * carries a visibility list, looking at a hub landmark. Picked from headless
+ * editor renders of the retail hubs drawn with the game's own camera
+ * visibility at the 0x1c000 primitive arena (the A4-60c and A4-90 notes have
+ * the frames and the figures). */
 #include "ap_hub_name_entry_stops.h"
 
 static int AP_HNE_HubUsable(int hub)
@@ -28,7 +22,7 @@ static int AP_HNE_HubUsable(int hub)
 	int base = BI_ADVENTUREHUB + hub * 3;
 	if (big == NULL || base + LVI_PTR >= big->numEntry)
 		return 0;
-	if (s_apHneStops[hub].count < 1)
+	if (AP_HNE_PathsForHub(s_apHnePaths, AP_HNE_PATHS, hub) < 1)
 		return 0;
 	e = BIG_GETENTRY(big);
 	return AP_HNE_HubFilesUsable((unsigned)e[base + LVI_VRAM].size, (unsigned)e[base + LVI_LEV].size,
@@ -47,8 +41,9 @@ int AP_HubNameEntry_NewAdventureLevel(void)
 	level = AP_HNE_BeginNewAdventure(&s_apHne, apRacer, entropy, usable);
 	if (level != AP_HNE_GARAGE_LEVEL)
 	{
-		snprintf(line, sizeof line, "[AP HUB NAME] new adventure: hub level %d behind name entry (racer %d)\n", level,
-		         apRacer);
+		AP_HNE_PickPath(&s_apHne, s_apHnePaths, AP_HNE_PATHS, level - AP_HNE_FIRST_HUB_LEVEL);
+		snprintf(line, sizeof line, "[AP HUB NAME] new adventure: hub level %d path %d behind name entry (racer %d)\n",
+		         level, s_apHne.path, apRacer);
 		AP_LogLine(line);
 	}
 	else if (apRacer >= 0)
@@ -114,7 +109,7 @@ void AP_HubNameEntry_OnFrame(struct GameTracker *gGT)
 {
 	int action, apRacer, i, loadIdle, levelOk;
 	int eye[3], look[3], rot[3];
-	const struct AP_HNE_HubStops *hs;
+	const struct AP_HNE_Path *hp;
 	struct PushBuffer *pb;
 	char line[160];
 
@@ -169,8 +164,13 @@ void AP_HubNameEntry_OnFrame(struct GameTracker *gGT)
 			gGT->drivers[i]->instSelf->flags |= HIDE_MODEL;
 	}
 
-	hs = &s_apHneStops[s_apHne.hubLevel - AP_HNE_FIRST_HUB_LEVEL];
-	AP_HNE_CameraAt(hs->stops, hs->count, s_apHne.elapsedMs, eye, look);
+	if (s_apHne.path < 0 || s_apHne.path >= AP_HNE_PATHS ||
+	    s_apHnePaths[s_apHne.path].hub != s_apHne.hubLevel - AP_HNE_FIRST_HUB_LEVEL)
+		AP_HNE_PickPath(&s_apHne, s_apHnePaths, AP_HNE_PATHS, s_apHne.hubLevel - AP_HNE_FIRST_HUB_LEVEL);
+	if (s_apHne.path < 0)
+		return;
+	hp = &s_apHnePaths[s_apHne.path];
+	AP_HNE_CameraAt(hp->stops, hp->count, s_apHne.elapsedMs, eye, look);
 	AP_HNE_LookRotation(eye, look, rot);
 	pb = &gGT->pushBuffer[0];
 	pb->pos.x = (s16)eye[0];
