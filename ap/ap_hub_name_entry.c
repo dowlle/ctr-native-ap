@@ -5,7 +5,7 @@
 #include "ap_hub_name_entry.h"
 #include <time.h>
 
-static struct AP_HubNameEntryState s_apHne = {AP_HNE_OFF, -1, -1, 0x2545f491u, 0, 0, 0};
+static struct AP_HubNameEntryState s_apHne = {AP_HNE_OFF, -1, -1, 0x2545f491u, 0, 0};
 
 /* Two or three stops per hub, indexed like the hubs (Gem Stone Valley first).
  * Each eye sits about 350 units above a road quadblock that carries a
@@ -103,16 +103,6 @@ int AP_HubNameEntry_CancelToTitle(void)
 	return 1;
 }
 
-// The host keyboard's Enter, as name entry reads it (SubmitName_DrawMenu).
-static int AP_HNE_EnterHeld(void)
-{
-#if defined(CTR_NATIVE)
-	return NikoGetEnterKey();
-#else
-	return 0;
-#endif
-}
-
 static int AP_HNE_LevelOk(struct GameTracker *gGT)
 {
 	struct Level *lev = gGT->level1;
@@ -134,12 +124,9 @@ void AP_HubNameEntry_OnFrame(struct GameTracker *gGT)
 	apRacer = s_apHne.handedOff ? 0 : AP_CharSwap_GarageRacer();
 	loadIdle = sdata->Loading.stage == LOAD_IDLE;
 	levelOk = AP_HNE_LevelOk(gGT);
-	/* An Enter still held from the title waits up to a second before name
-	 * entry opens; the hub already shows from the first stop meanwhile. */
-	if (AP_HNE_HoldHandoff(&s_apHne, (int)gGT->levelID, loadIdle, levelOk, apRacer, AP_HNE_EnterHeld()))
-		action = AP_HNE_ACT_CAMERA;
-	else
-		action = AP_HNE_Frame(&s_apHne, (int)gGT->levelID, loadIdle, levelOk, apRacer);
+	/* An Enter or button still held from the title is ignored by name entry
+	 * itself until released (SubmitName_RestoreName arms it, A4-87b). */
+	action = AP_HNE_Frame(&s_apHne, (int)gGT->levelID, loadIdle, levelOk, apRacer);
 	if (action == AP_HNE_ACT_NONE)
 		return;
 

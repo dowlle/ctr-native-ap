@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "ap_hub_name_entry_logic.h"
+#include "ap_name_entry_held_logic.h"
 
 struct AP_HNE_HubStops
 {
@@ -89,15 +90,6 @@ static int frame(struct AP_HubNameEntryState *s, int levelOk, int apRacer)
 	return a;
 }
 
-// The glue's per-frame order (AP_HubNameEntry_OnFrame): the bounded Enter
-// hold, which shows the hub from the first stop, then the frame decision.
-static int glue_frame(struct AP_HubNameEntryState *s, int levelOk, int apRacer, int enterHeld)
-{
-	if (AP_HNE_HoldHandoff(s, e.level, !e.loading, levelOk, apRacer, enterHeld))
-		return AP_HNE_ACT_CAMERA;
-	return frame(s, levelOk, apRacer);
-}
-
 static void load_done(int apRacer)
 {
 	e.loading = 0;
@@ -114,7 +106,7 @@ static void load_done(int apRacer)
 
 int main(void)
 {
-	struct AP_HubNameEntryState s = {AP_HNE_OFF, -1, -1, 12345u, 0, 0, 0};
+	struct AP_HubNameEntryState s = {AP_HNE_OFF, -1, -1, 12345u, 0, 0};
 	int i, level, counts[5] = {0}, repeats = 0, last = -1, outOfRange = 0;
 
 	// ---- gating -------------------------------------------------------------
@@ -208,48 +200,91 @@ int main(void)
 	CHECK("A4-87: AP_HNE_OpenMenu shows it and leaves it desired for the retail promotion",
 	      e.active == &nameEntryMenu && e.desired == &nameEntryMenu && name_entry_runs() && e.desired == NULL);
 
-	// ---- A4-87 review: an Enter held from the title ---------------------------
-	// glue_frame runs the glue's order: the bounded Enter hold first, then the
-	// frame decision.
+	// ---- A4-87b: input held from before name entry opened --------------------
+	// The guard arms in SubmitName_RestoreName, which every caller runs when it
+	// opens name entry (hub backdrop, garage, garage skip, Time Trial). Pad
+	// bits as the engine's BTN_ values (the harness only needs distinct bits).
 	{
-		int held, k, waits;
+		enum { CIRCLE = 0x40, CROSS = 0x10, START = 0x1000, TRI = 0x40000, SQ = 0x20, UP = 0x1, L1 = 0x800 };
+		const unsigned MASK = CIRCLE | CROSS | START | TRI | SQ;
+		struct AP_NEH_Guard g;
+		unsigned tap;
+		int ign;
+
+		// The hub handoff opens name entry with no wait: it opens at once while Enter is down.
 		e.level = LEVEL_TITLE;
 		menus_none();
 		level = AP_HNE_BeginNewAdventure(&s, 5, 4242u, ALL);
 		level_file(&s, level);
 		load_done(5);
-		for (waits = 0, k = 0; k < 100 && (held = glue_frame(&s, 1, 5, 1)) == AP_HNE_ACT_CAMERA && !s.handedOff; k++)
-			waits++;
-		CHECK("A4-87: a held Enter holds name entry for at most 30 frames, the camera showing the hub",
-		      waits == AP_HNE_ENTER_WAIT_FRAMES && held == AP_HNE_ACT_HANDOFF);
-		CHECK("A4-87: a stuck Enter: name entry then opens and runs anyway (as from the garage)", name_entry_runs());
-		CHECK("A4-87: after the handoff Enter is name entry's, the camera keeps running",
-		      glue_frame(&s, 1, 5, 1) == AP_HNE_ACT_CAMERA && glue_frame(&s, 1, 5, 0) == AP_HNE_ACT_CAMERA);
+		CHECK("A4-87b: a held Enter no longer delays the handoff (the 1 s wait is gone)",
+		      frame(&s, 1, 5) == AP_HNE_ACT_HANDOFF && name_entry_runs());
 
-		e.level = LEVEL_TITLE;
-		menus_none();
-		level = AP_HNE_BeginNewAdventure(&s, 5, 4343u, ALL);
-		level_file(&s, level);
-		CHECK("A4-87: a new New Adventure starts with a fresh wait", s.enterWaitFrames == 0);
-		CHECK("A4-87: no wait while the hub still loads", glue_frame(&s, 1, 5, 1) == AP_HNE_ACT_NONE && s.enterWaitFrames == 0);
-		load_done(5);
-		for (k = 0; k < 5; k++)
-			glue_frame(&s, 1, 5, 1);
-		CHECK("A4-87: Enter released: the handoff opens name entry at once",
-		      !s.handedOff && menu_frame() == NULL && glue_frame(&s, 1, 5, 0) == AP_HNE_ACT_HANDOFF && name_entry_runs());
+		// Keyboard Enter held through the open (restored name, cursor on SAVE).
+		AP_NEH_Arm(&g, 0, MASK, 1, 0);
+		tap = 0;
+		ign = AP_NEH_Filter(&g, 0, 1, 0, &tap);
+		CHECK("A4-87b: Enter held at the open is ignored on the first frame", ign == 1);
+		ign = AP_NEH_Filter(&g, 0, 1, 0, &tap);
+		CHECK("A4-87b: ... and for as long as it stays down (a stuck Enter never submits)", ign == 1);
+		ign = AP_NEH_Filter(&g, 0, 0, 0, &tap);
+		CHECK("A4-87b: released once: ignored no more", ign == 0);
+		ign = AP_NEH_Filter(&g, 0, 1, 0, &tap);
+		CHECK("A4-87b: pressed again after the release: Enter works", ign == 0);
 
-		e.level = LEVEL_TITLE;
-		level = AP_HNE_BeginNewAdventure(&s, 5, 4444u, ALL);
-		level_file(&s, level);
-		load_done(5);
-		CHECK("A4-87: a held Enter never delays the fallback of an unusable hub",
-		      glue_frame(&s, 0, 5, 1) == AP_HNE_ACT_FALLBACK && e.level == LEVEL_GARAGE);
-		e.level = LEVEL_TITLE;
-		level = AP_HNE_BeginNewAdventure(&s, 5, 4545u, ALL);
-		level_file(&s, level);
-		load_done(-1);
-		CHECK("A4-87: nor the fallback of a seed that stopped owning the racer",
-		      glue_frame(&s, 1, -1, 1) == AP_HNE_ACT_FALLBACK && e.level == LEVEL_GARAGE);
+		// Enter not held at the open: never ignored.
+		AP_NEH_Arm(&g, 0, MASK, 0, 0);
+		tap = 0;
+		CHECK("A4-87b: Enter pressed after the open works at once", AP_NEH_Filter(&g, 0, 1, 0, &tap) == 0);
+
+		// Escape (cancel on the keyboard).
+		AP_NEH_Arm(&g, 0, MASK, 0, 1);
+		tap = 0;
+		CHECK("A4-87b: Escape held at the open is ignored until released",
+		      AP_NEH_Filter(&g, 0, 0, 1, &tap) == 2 && AP_NEH_Filter(&g, 0, 0, 0, &tap) == 0 &&
+		          AP_NEH_Filter(&g, 0, 0, 1, &tap) == 0);
+
+		// Controller: Circle held through the open, and a tap on the open frame.
+		AP_NEH_Arm(&g, CIRCLE | UP, MASK, 0, 0);
+		tap = CIRCLE | UP;
+		AP_NEH_Filter(&g, CIRCLE | UP, 0, 0, &tap);
+		CHECK("A4-87b: a pad button held at the open loses its tap, the d-pad keeps it", tap == UP);
+		tap = CIRCLE;
+		AP_NEH_Filter(&g, CIRCLE, 0, 0, &tap);
+		CHECK("A4-87b: ... every frame it stays down", tap == 0);
+		tap = 0;
+		AP_NEH_Filter(&g, 0, 0, 0, &tap);
+		tap = CIRCLE;
+		AP_NEH_Filter(&g, CIRCLE, 0, 0, &tap);
+		CHECK("A4-87b: released once, then pressed: the tap counts", tap == CIRCLE);
+
+		// Per input: Circle held at the open does not stop Cross.
+		AP_NEH_Arm(&g, CIRCLE, MASK, 0, 0);
+		tap = CROSS;
+		AP_NEH_Filter(&g, CIRCLE | CROSS, 0, 0, &tap);
+		CHECK("A4-87b: only the inputs held at the open are ignored (Cross still works)", tap == CROSS);
+
+		// Start and Triangle (cancel, backspace) are guarded like the rest.
+		AP_NEH_Arm(&g, START | TRI | L1, MASK, 0, 0);
+		tap = START | TRI | L1;
+		AP_NEH_Filter(&g, START | TRI | L1, 0, 0, &tap);
+		CHECK("A4-87b: Start and Triangle are guarded, shoulder buttons are not in the guard", tap == L1);
+
+		// A tap of a button held at the open, with the button already up, is no longer held
+		// state: the filter keys on the held bits, so a stale tap bit with the button up passes.
+		AP_NEH_Arm(&g, SQ, MASK, 0, 0);
+		tap = 0;
+		AP_NEH_Filter(&g, 0, 0, 0, &tap);
+		tap = SQ;
+		AP_NEH_Filter(&g, SQ, 0, 0, &tap);
+		CHECK("A4-87b: release clears the guard for good", tap == SQ);
+
+		// Two callers, back to back: the guard re-arms on every open.
+		AP_NEH_Arm(&g, 0, MASK, 0, 0);
+		AP_NEH_Arm(&g, CIRCLE, MASK, 1, 0);
+		tap = CIRCLE;
+		ign = AP_NEH_Filter(&g, CIRCLE, 1, 0, &tap);
+		CHECK("A4-87b: each open arms afresh with its own held state", ign == 1 && tap == 0);
 	}
 
 	// ---- flow 2: Cancel ----------------------------------------------------
