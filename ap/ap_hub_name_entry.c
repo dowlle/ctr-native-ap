@@ -172,6 +172,7 @@ void AP_HubNameEntry_OnFrame(struct GameTracker *gGT)
 	hp = &s_apHnePaths[s_apHne.path];
 	AP_HNE_CameraAt(hp->stops, hp->count, s_apHne.elapsedMs, eye, look);
 	AP_HNE_LookRotation(eye, look, rot);
+	rot[0] = (rot[0] + AP_HNE_AIM_ABOVE) & 0xfff; /* landmark below the name entry box */
 	pb = &gGT->pushBuffer[0];
 	pb->pos.x = (s16)eye[0];
 	pb->pos.y = (s16)eye[1];

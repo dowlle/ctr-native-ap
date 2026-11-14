@@ -197,6 +197,10 @@ check("A4-90: the camera runs the picked path of the pool",
       "hp = &s_apHnePaths[s_apHne.path];" in onframe_glue
       and "AP_HNE_CameraAt(hp->stops, hp->count, s_apHne.elapsedMs, eye, look);" in onframe_glue
       and "s_apHneStops" not in glue)
+check("A4-90: the camera aims above the landmark so name entry does not cover it",
+      "rot[0] = (rot[0] + AP_HNE_AIM_ABOVE) & 0xfff;" in onframe_glue
+      and onframe_glue.find("AP_HNE_LookRotation(eye, look, rot);") < onframe_glue.find("AP_HNE_AIM_ABOVE")
+      and onframe_glue.find("AP_HNE_AIM_ABOVE") < onframe_glue.find("pb->rot.x = (s16)rot[0];"))
 check("A4-90: a hub with no camera path is not usable",
       "AP_HNE_PathsForHub(s_apHnePaths, AP_HNE_PATHS, hub) < 1" in body(glue, "static int AP_HNE_HubUsable("))
 stops = read("ap/ap_hub_name_entry_stops.h")

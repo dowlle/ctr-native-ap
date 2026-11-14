@@ -263,6 +263,13 @@ static inline int AP_HNE_PickPath(struct AP_HubNameEntryState *s, const struct A
 	return s->path;
 }
 
+// Name entry covers the middle of the screen (its box runs from about 18% to
+// 78% of the height). The camera therefore aims this much above the landmark,
+// in the engine's 4096 units per turn (about 21 degrees), so the landmark sits
+// in the free band below the box instead of behind the keyboard (A4-90,
+// measured in headless frames with name entry drawn).
+#define AP_HNE_AIM_ABOVE 240
+
 #define AP_HNE_HOLD_MS 2500u
 #define AP_HNE_GLIDE_MS 6000u
 

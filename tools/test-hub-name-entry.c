@@ -441,6 +441,15 @@ int main(void)
 		CHECK("the five A4-60c paths stay first, one per hub in hub order", ok);
 	}
 
+	{
+		// The aim offset puts the landmark below name entry's box (bottom edge
+		// at 78% of the height). The headless frames in the A4-90 note set its
+		// value; this pins it to a sane window so a typo cannot point the
+		// camera at the sky or the floor.
+		CHECK("A4-90: the aim above the landmark is between 15 and 25 degrees",
+		      AP_HNE_AIM_ABOVE * 360 >= 15 * 4096 && AP_HNE_AIM_ABOVE * 360 <= 25 * 4096);
+	}
+
 	// ---- path pick (A4-90) ---------------------------------------------------
 	{
 		struct AP_HubNameEntryState ps = {AP_HNE_OFF, -1, -1, 0x2545f491u, 0, 0, -1, {-1, -1, -1, -1, -1}};
