@@ -275,6 +275,67 @@ static void test_chaos(void)
 	}
 }
 
+// A4-77 (2026-11-14): a short field's start grid. A tester's seed held Crash,
+// Cortex, Tiny and Coco behind four garages and started as Papu Papu: six AI
+// race, and the grid order the pad wrote for eight karts left one place empty.
+static void test_short_grid(void)
+{
+	const int held[6] = {3, 1, 2, 0, OXIDE, OXIDE};
+	ap_hit_field f;
+	int i, j;
+
+	draw(held, 0, PAPU, 7, &f);
+	CHECK(f.count == 6, "Papu Papu with four defaults held: six AI");
+
+	{
+		// The pad's order: P1 last, drivers 1..7 shuffled over 0..6. Driver 7
+		// is not born, and here held the pole.
+		unsigned char order[8] = {7, 3, 5, 1, 6, 2, 4, 0};
+		const unsigned char want[8] = {6, 2, 4, 0, 5, 1, 3, 0};
+		unsigned char seen[8] = {0};
+		AP_RosterCompactSpawnOrder(order, 1 + f.count);
+		CHECK(memcmp(order, want, sizeof want) == 0, "places renumbered in order");
+		for (i = 0; i < 7; i++)
+			seen[order[i]]++;
+		for (i = 0, j = 0; i < 7; i++)
+			j += seen[i] == 1;
+		CHECK(j == 7, "every place 0..6 taken once: no blank rank");
+		CHECK(order[0] == 6, "P1 starts last of seven");
+		CHECK(order[7] == 0, "the unborn driver's entry is left alone");
+	}
+	{
+		// A full field and a dense order are unchanged.
+		unsigned char order[8] = {7, 3, 5, 1, 6, 2, 4, 0};
+		const unsigned char same[8] = {7, 3, 5, 1, 6, 2, 4, 0};
+		AP_RosterCompactSpawnOrder(order, 8);
+		CHECK(memcmp(order, same, sizeof same) == 0, "a full field keeps its grid");
+	}
+	{
+		// The speed champion order: the champion at 0, driver 7 holds the
+		// champion's old place. Five karts after four seats are held.
+		unsigned char order[8] = {7, 1, 2, 0, 4, 5, 6, 3};
+		const unsigned char want[8] = {4, 1, 2, 0, 3, 5, 6, 3};
+		AP_RosterCompactSpawnOrder(order, 5);
+		CHECK(memcmp(order, want, sizeof want) == 0, "champion order, five karts");
+	}
+	{
+		// A stale duplicate (a later cup leg copies ranks of the karts that
+		// raced) still gives distinct places.
+		unsigned char order[8] = {6, 0, 0, 2, 1, 3, 4, 5};
+		const unsigned char want[8] = {6, 0, 1, 3, 2, 4, 5, 5};
+		AP_RosterCompactSpawnOrder(order, 7);
+		CHECK(memcmp(order, want, sizeof want) == 0, "a tie keeps driver order");
+	}
+	{
+		unsigned char order[8] = {7, 3, 5, 1, 6, 2, 4, 0};
+		const unsigned char same[8] = {7, 3, 5, 1, 6, 2, 4, 0};
+		AP_RosterCompactSpawnOrder(order, 0);
+		AP_RosterCompactSpawnOrder(order, 9);
+		AP_RosterCompactSpawnOrder(0, 5);
+		CHECK(memcmp(order, same, sizeof same) == 0, "out of range counts change nothing");
+	}
+}
+
 int main(void)
 {
 	test_eligibility();
@@ -282,6 +343,7 @@ int main(void)
 	test_draw();
 	test_seat();
 	test_chaos();
+	test_short_grid();
 	printf("roster swap: %d passed, %d failed\n", s_pass, s_fail);
 	return s_fail != 0;
 }

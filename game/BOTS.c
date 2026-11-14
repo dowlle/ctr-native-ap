@@ -489,6 +489,22 @@ void BOTS_Adv_AdjustDifficulty(void)
 		}
 	}
 
+#ifdef CTR_AP
+	// A roster swap field that could not fill races fewer karts
+	// (MainInit_Drivers). The places the pad wrote for eight karts then leave
+	// one empty: a blank standings portrait before the start and P1 shown 8TH
+	// (A4-77). Renumber the seated karts' places, before the grid, the paths
+	// and the launch order read them. Same test as MainInit_Drivers.
+	if ((s32)gameMode1 >= 0 && AP_HitFieldShortSeats() >= 0)
+	{
+		s32 karts = gGT->numPlyrCurrGame + AP_HitFieldShortSeats();
+		if (karts < BOTS_MAX_KARTS)
+		{
+			AP_RosterCompactSpawnOrder((unsigned char *)sdata->kartSpawnOrderArray, karts);
+		}
+	}
+#endif
+
 	u8 pathOrder[8];
 	pathOrder[0] = 0;
 	pathOrder[4] = 0;
