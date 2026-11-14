@@ -84,8 +84,17 @@ static inline int ap_hub_hint_hold_release(ap_hub_hint_hold *h, int hintState, i
 // pack. Returns 1 when it must not run now: during a hint or with a read still
 // held it is remembered; with no hub in the second pack it is skipped, because
 // LOAD_Hub_SwapNow would wait forever on it (only a hint can lead there).
+//
+// Only a swap asked in a hub is the hold's business. The intro and the credits
+// change levels through the same request (CS_Thread opcodes 0x10 and 0xf set
+// levelID to the next cutscene level, read it into the second pack and raise
+// bool_AdvHub_NeedToSwapLEV), and none of those levels is a hub. Holding them
+// left the credits on the first credits level for good, so the next dancer's
+// model was missing and its birth failed (#677). They run as in retail.
 static inline int ap_hub_hint_hold_swap(ap_hub_hint_hold *h, int hintState, int currLevel, int packLev)
 {
+	if (!ap_hub_hint_hold_is_hub(currLevel))
+		return 0;
 	if (hintState == 0 && h->lev < 0)
 		return !ap_hub_hint_hold_is_hub(packLev);
 	h->swap = 1;

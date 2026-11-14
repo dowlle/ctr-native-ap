@@ -17,6 +17,8 @@
 #include "ap_hub_hint_hold.h"
 
 enum { NSB = 26, GSV = 25, MASK = 1000 };
+// Cutscene levels that change through the same swap request (namespace_Level.h).
+enum { INTRO_RACE_TODAY = 30, INTRO_COCO = 31, CREDITS_CRASH = 44, CREDITS_CORTEX = 45, CREDITS_TINY = 46 };
 
 typedef struct
 {
@@ -278,6 +280,45 @@ int main(void)
 	FullLoad(&m, NSB); // back in a hub later: an idle tick does nothing
 	HubMain(&m, -1, 0);
 	assert(m.swaps == 0 && !m.stalled);
+	checks++;
+
+	// #677: the intro and the credits change levels through the same swap
+	// request. CS_Thread opcode 0x10 sets levelID to the next cutscene level and
+	// reads it into the second pack, opcode 0xf raises bool_AdvHub_NeedToSwapLEV.
+	// No hub is involved, so the hold must let the swap run as in retail; it used
+	// to skip it for good (no hub in the second pack), which left the credits on
+	// Crash's level and failed the next dancer's birth.
+	for (useHold = 0; useHold < 2; useHold++)
+	{
+		static const int credits[][2] = {
+		    {CREDITS_CRASH, CREDITS_CORTEX}, {CREDITS_CORTEX, CREDITS_TINY}, {INTRO_RACE_TODAY, INTRO_COCO}};
+		int k;
+		for (k = 0; k < 3; k++)
+		{
+			Init(&m, useHold);
+			FullLoad(&m, credits[k][0]);
+			m.level = credits[k][1]; // opcode 0x10
+			ReadFile(&m, credits[k][1]);
+			LandQueue(&m); // opcode 0x11 waits for the read
+			m.needSwap = 1; // opcode 0xf
+			HubMain(&m, -1, 0);
+			assert(m.swaps == 1 && m.swappedTo == credits[k][1] && !m.stalled && m.needSwap == 0);
+			assert(!m.hold.swap && m.hold.lev == -1);
+			checks++;
+		}
+	}
+
+	// A hint state left non-zero outside a hub (none plays there) still does not
+	// hold a cutscene swap.
+	Init(&m, 1);
+	FullLoad(&m, CREDITS_CRASH);
+	m.level = CREDITS_CORTEX;
+	ReadFile(&m, CREDITS_CORTEX);
+	LandQueue(&m);
+	m.hint = 4;
+	m.needSwap = 1;
+	HubMain(&m, -1, 0);
+	assert(m.swaps == 1 && m.swappedTo == CREDITS_CORTEX && !m.hold.swap);
 	checks++;
 
 	printf("PASS: hub streaming waits for a mask hint (%d scenarios)\n", checks);
