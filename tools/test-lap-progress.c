@@ -22,7 +22,7 @@
 // rule every line counts it again.
 // Papu's Pyramid standings (A4-78b): over every grid, empty slot and path draw,
 // the human's HUD place on lap 3 and the place the finish pays out, with 7
-// racers as well as 8. The A3-26 skip pays 4th; the rule matches retail.
+// racers as well as 8. Some grids under the A3-26 skip pay 4th; the rule matches retail.
 
 #include <math.h>
 #include <stdint.h>
@@ -545,8 +545,22 @@ static void race(const int counts[3], int humanSlot, int missingSlot, int firstP
 	*hud = sort_rank(r);
 }
 
+// Without track data: the model alone, with line 0 not counting (the skip) or
+// counting (retail and the rule). Human in slot 2, slot 6 empty, line draws 0 0:
+// slots 0, 1 and 4 ride line 0, so three CPUs never finish under the skip.
+static void standings_model(void)
+{
+	static const int skip[3] = {0, 1, 1}, ok[3] = {1, 1, 1};
+	int hud, paid, racers;
+	race(skip, 2, 6, 0, 0, &hud, &paid, &racers);
+	CHECK(racers == 7 && hud == 3 && paid == 3, "model: with line 0 not counting, 3 line-0 CPUs of 7 racers leave the human 4th in the HUD and the payout");
+	race(ok, 2, 6, 0, 0, &hud, &paid, &racers);
+	CHECK(racers == 7 && hud == 6 && paid == 6, "model: with every line counting the slow human is 7th of 7");
+}
+
 static void papu_standings(void)
 {
+	standings_model();
 	struct Lev l;
 	if (!load_lev("CTR_LAP_PROGRESS_PAPU_LEV", "Papu's Pyramid", &l))
 		return;
