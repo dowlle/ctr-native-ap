@@ -1727,6 +1727,39 @@ int main()
                                    "Pack descriptor not used: track_key must be a registry track key"),
               "a track_key that is not a registry key refuses the descriptor");
         XdeltaImport_Free(&k.scan);
+        /* A4-95 review: a descriptor value the package rules refuse (here a version that is not semver)
+           retries the build without the descriptor, and the track key it named must survive that. */
+        {
+            nlohmann::json retry = d;
+            retry["tracks"]["1"] = {{"title", "Retry Lane"}, {"track_key", "retry-lane-key"}, {"version", "1"}};
+            text = retry.dump();
+            write_file("Pack.ctrpack.json", Bytes(text.begin(), text.end()));
+            ScanResult rr = scan(patchPath, discPath);
+            CHECK(rr.ok, "A4-95 scan with a descriptor version the package rules refuse");
+            const XdeltaImportItem *r1 = rr.ok ? item_for(XdeltaImport_Summary(rr.scan), 1) : nullptr;
+            CHECK(r1 && r1->offered && !std::strcmp(r1->title, "Retry Lane") && !std::strcmp(r1->trackKey, "retry-lane-key"),
+                  "A4-95 the retried track keeps its descriptor title and key");
+            if (r1 && r1->offered)
+            {
+                const std::string assets = root + "/a495-retry-assets";
+                mkdir(assets.c_str(), 0755);
+                std::vector<unsigned char> sel(XdeltaImport_Summary(rr.scan)->count, 0);
+                sel[unsigned(r1 - XdeltaImport_Summary(rr.scan)->items)] = 1;
+                char error[256] = {};
+                CHECK(XdeltaImport_Install(rr.scan, sel.data(), assets.c_str(), CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM,
+                                           error, sizeof error) == 1, "A4-95 the retried track installs");
+                char skey[65], srev[65], splan[16384], serr[256];
+                CHECK(CustomPackage_StoreDescriptor(assets.c_str(), r1->pin, nullptr, skey, sizeof skey, srev, sizeof srev, splan, sizeof splan,
+                                                    serr, sizeof serr) != 0 && !std::strcmp(skey, "retry-lane-key"),
+                      "A4-95 the store reads the descriptor's key from the retried package");
+                char why[96];
+                const unsigned at = unsigned(r1 - XdeltaImport_Summary(rr.scan)->items);
+                CHECK(XdeltaImport_RenameItem(rr.scan, at, "Renamed Retry", why, sizeof why) &&
+                          !std::strcmp(item_for(XdeltaImport_Summary(rr.scan), 1)->trackKey, "retry-lane-key"),
+                      "A4-95 a rename after the retry keeps the key");
+            }
+            if (rr.ok) XdeltaImport_Free(&rr.scan);
+        }
         nlohmann::json wrong = d;
         wrong["patch_sha256"] = std::string(64, '0');
         text = wrong.dump();

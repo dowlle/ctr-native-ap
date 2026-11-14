@@ -1626,7 +1626,8 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             {
                 /* A descriptor value the package rules refuse never costs the track. */
                 std::string retry;
-                built = build_package(candidate, title, "1.0.0", nullptr, summary, author, retry, curatedKey);
+                built = build_package(candidate, title, "1.0.0", nullptr, summary, author, retry,
+                                      meta && !meta->trackKey.empty() ? meta->trackKey : curatedKey);
                 if (built.owned) { failure.clear(); retried = true; }
             }
             built.author = author;
