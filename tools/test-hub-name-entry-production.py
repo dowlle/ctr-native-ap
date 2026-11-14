@@ -18,7 +18,7 @@ them where the garage is special today:
   engine facts the C harness's menu model rests on still hold (ProcessState
   runs only while a menu is shown; only ProcessState turns the desired menu
   into the shown one), with nothing showing a menu over the hub before it;
-  the handoff waits for a released Enter.
+  the handoff waits a bounded time for a released Enter.
 """
 from pathlib import Path
 import re
@@ -146,8 +146,11 @@ logic = read("ap/ap_hub_name_entry_logic.h")
 openmenu = body(logic, "static inline void AP_HNE_OpenMenu(")
 check("A4-87: AP_HNE_OpenMenu sets both the shown and the desired menu",
       "*desiredMenu = menu;" in openmenu and "*activeMenu = menu;" in openmenu)
-check("A4-87: the handoff waits for an idle load and a released Enter (AP_HNE_FrameReady)",
-      "AP_HNE_FrameReady(sdata->Loading.stage == LOAD_IDLE, s_apHne.handedOff, AP_HNE_EnterHeld())" in glue
+onframe_glue = body(glue, "void AP_HubNameEntry_OnFrame(")
+hold_at = onframe_glue.find("if (AP_HNE_HoldHandoff(&s_apHne, (int)gGT->levelID, loadIdle, levelOk, apRacer, AP_HNE_EnterHeld()))")
+check("A4-87: the bounded Enter hold runs before the frame decision, and holds only the camera",
+      0 <= hold_at < onframe_glue.find("action = AP_HNE_Frame(&s_apHne, (int)gGT->levelID, loadIdle, levelOk, apRacer);")
+      and "action = AP_HNE_ACT_CAMERA;" in onframe_glue[hold_at:hold_at + 200]
       and "return NikoGetEnterKey();" in body(glue, "static int AP_HNE_EnterHeld("))
 hginit = body(glue, "int AP_HubNameEntry_GarageInit(")
 check("A4-87: the backdrop's garage init clears the shown menu (why the handoff must show one)",

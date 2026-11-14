@@ -89,6 +89,15 @@ static int frame(struct AP_HubNameEntryState *s, int levelOk, int apRacer)
 	return a;
 }
 
+// The glue's per-frame order (AP_HubNameEntry_OnFrame): the bounded Enter
+// hold, which shows the hub from the first stop, then the frame decision.
+static int glue_frame(struct AP_HubNameEntryState *s, int levelOk, int apRacer, int enterHeld)
+{
+	if (AP_HNE_HoldHandoff(s, e.level, !e.loading, levelOk, apRacer, enterHeld))
+		return AP_HNE_ACT_CAMERA;
+	return frame(s, levelOk, apRacer);
+}
+
 static void load_done(int apRacer)
 {
 	e.loading = 0;
@@ -105,7 +114,7 @@ static void load_done(int apRacer)
 
 int main(void)
 {
-	struct AP_HubNameEntryState s = {AP_HNE_OFF, -1, -1, 12345u, 0, 0};
+	struct AP_HubNameEntryState s = {AP_HNE_OFF, -1, -1, 12345u, 0, 0, 0};
 	int i, level, counts[5] = {0}, repeats = 0, last = -1, outOfRange = 0;
 
 	// ---- gating -------------------------------------------------------------
@@ -200,23 +209,48 @@ int main(void)
 	      e.active == &nameEntryMenu && e.desired == &nameEntryMenu && name_entry_runs() && e.desired == NULL);
 
 	// ---- A4-87 review: an Enter held from the title ---------------------------
-	CHECK("A4-87: before the handoff, a held Enter keeps name entry closed",
-	      !AP_HNE_FrameReady(1, 0, 1) && AP_HNE_FrameReady(1, 0, 0) && !AP_HNE_FrameReady(0, 0, 0));
-	CHECK("A4-87: after the handoff, Enter belongs to name entry and the camera keeps running",
-	      AP_HNE_FrameReady(1, 1, 1) && !AP_HNE_FrameReady(0, 1, 0));
-	e.level = LEVEL_TITLE;
-	menus_none();
-	level = AP_HNE_BeginNewAdventure(&s, 5, 4242u, ALL);
-	level_file(&s, level);
-	load_done(5);
-	CHECK("A4-87: with Enter held the hub waits, nothing is shown",
-	      AP_HNE_Frame(&s, e.level, AP_HNE_FrameReady(!e.loading, s.handedOff, 1), 1, 5) == AP_HNE_ACT_NONE &&
-	          !s.handedOff && menu_frame() == NULL);
-	CHECK("A4-87: Enter released: the handoff opens name entry",
-	      AP_HNE_Frame(&s, e.level, AP_HNE_FrameReady(!e.loading, s.handedOff, 0), 1, 5) == AP_HNE_ACT_HANDOFF);
-	AP_HNE_OpenMenu(&e.active, &e.desired, &nameEntryMenu);
-	CHECK("A4-87: name entry then runs", name_entry_runs());
-	level_file(&s, LEVEL_TITLE);
+	// glue_frame runs the glue's order: the bounded Enter hold first, then the
+	// frame decision.
+	{
+		int held, k, waits;
+		e.level = LEVEL_TITLE;
+		menus_none();
+		level = AP_HNE_BeginNewAdventure(&s, 5, 4242u, ALL);
+		level_file(&s, level);
+		load_done(5);
+		for (waits = 0, k = 0; k < 100 && (held = glue_frame(&s, 1, 5, 1)) == AP_HNE_ACT_CAMERA && !s.handedOff; k++)
+			waits++;
+		CHECK("A4-87: a held Enter holds name entry for at most 30 frames, the camera showing the hub",
+		      waits == AP_HNE_ENTER_WAIT_FRAMES && held == AP_HNE_ACT_HANDOFF);
+		CHECK("A4-87: a stuck Enter: name entry then opens and runs anyway (as from the garage)", name_entry_runs());
+		CHECK("A4-87: after the handoff Enter is name entry's, the camera keeps running",
+		      glue_frame(&s, 1, 5, 1) == AP_HNE_ACT_CAMERA && glue_frame(&s, 1, 5, 0) == AP_HNE_ACT_CAMERA);
+
+		e.level = LEVEL_TITLE;
+		menus_none();
+		level = AP_HNE_BeginNewAdventure(&s, 5, 4343u, ALL);
+		level_file(&s, level);
+		CHECK("A4-87: a new New Adventure starts with a fresh wait", s.enterWaitFrames == 0);
+		CHECK("A4-87: no wait while the hub still loads", glue_frame(&s, 1, 5, 1) == AP_HNE_ACT_NONE && s.enterWaitFrames == 0);
+		load_done(5);
+		for (k = 0; k < 5; k++)
+			glue_frame(&s, 1, 5, 1);
+		CHECK("A4-87: Enter released: the handoff opens name entry at once",
+		      !s.handedOff && menu_frame() == NULL && glue_frame(&s, 1, 5, 0) == AP_HNE_ACT_HANDOFF && name_entry_runs());
+
+		e.level = LEVEL_TITLE;
+		level = AP_HNE_BeginNewAdventure(&s, 5, 4444u, ALL);
+		level_file(&s, level);
+		load_done(5);
+		CHECK("A4-87: a held Enter never delays the fallback of an unusable hub",
+		      glue_frame(&s, 0, 5, 1) == AP_HNE_ACT_FALLBACK && e.level == LEVEL_GARAGE);
+		e.level = LEVEL_TITLE;
+		level = AP_HNE_BeginNewAdventure(&s, 5, 4545u, ALL);
+		level_file(&s, level);
+		load_done(-1);
+		CHECK("A4-87: nor the fallback of a seed that stopped owning the racer",
+		      glue_frame(&s, 1, -1, 1) == AP_HNE_ACT_FALLBACK && e.level == LEVEL_GARAGE);
+	}
 
 	// ---- flow 2: Cancel ----------------------------------------------------
 	e.level = LEVEL_TITLE;
