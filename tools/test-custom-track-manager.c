@@ -848,6 +848,30 @@ int main(void)
 		expect_int(CustomTrackManager_LocateContentFiles(root, "open-key", "Open\nTrack", "2.1", s_fixtureLevSha,
 		           (unsigned long)s_fixtureLevLen, vrmSha, 3, &open), CTR_CT_MANAGER_READY, "an unprintable title is not echoed");
 		expect_int(strchr(open.detail, '\n') == NULL, 1, "status detail stays one line");
+		// A4-95: a room made before the track was named "Tizi Madness" still says "CocoTeamRacing track 3".
+		// The files are found by the folder key and the pinned hashes, so either title resolves the same
+		// pair, and the title is only shown.
+		{
+			struct CustomTrackManagerStatus oldTitle, newTitle;
+			expect_int(CustomTrackManager_LocateContentFiles(root, "open-key", "CocoTeamRacing track 3", "1.0.0", s_fixtureLevSha,
+			           (unsigned long)s_fixtureLevLen, vrmSha, 3, &oldTitle), CTR_CT_MANAGER_READY, "A4-95 old generic title resolves");
+			expect_int(CustomTrackManager_LocateContentFiles(root, "open-key", "Tizi Madness", "1.0.0", s_fixtureLevSha,
+			           (unsigned long)s_fixtureLevLen, vrmSha, 3, &newTitle), CTR_CT_MANAGER_READY, "A4-95 new title resolves");
+			expect_int(strcmp(oldTitle.levPath, newTitle.levPath) == 0 && strcmp(oldTitle.vrmPath, newTitle.vrmPath) == 0 &&
+			           oldTitle.levBytes == newTitle.levBytes, 1, "A4-95 both titles give the same files");
+			// A missing Coco pair says where it comes from under either title and the same folder key.
+			expect_int(CustomTrackManager_LocateContentFiles(root, "cocoteamracing-track-3", "CocoTeamRacing track 3", "1.0.0",
+			           "3e80b47339d243db00acc33d6b7eb9efb15eaf946aa830b1766d56f5b1c15e42", (unsigned long)s_fixtureLevLen,
+			           "74c00036dd24a34134c76236ae89dba1f3caa4b67bb30ca5717988b8987bf6ce", 3, &oldTitle),
+			           CTR_CT_MANAGER_NOT_INSTALLED, "A4-95 absent Coco pair under the old title");
+			expect_int(CustomTrackManager_LocateContentFiles(root, "cocoteamracing-track-3", "Tizi Madness", "1.0.0",
+			           "3e80b47339d243db00acc33d6b7eb9efb15eaf946aa830b1766d56f5b1c15e42", (unsigned long)s_fixtureLevLen,
+			           "74c00036dd24a34134c76236ae89dba1f3caa4b67bb30ca5717988b8987bf6ce", 3, &newTitle),
+			           CTR_CT_MANAGER_NOT_INSTALLED, "A4-95 absent Coco pair under the new title");
+			expect_contains(oldTitle.detail, "Import CocoTeamRacing.xdelta (slot 47)", "A4-95 old title names the Coco patch and slot");
+			expect_contains(newTitle.detail, "Import CocoTeamRacing.xdelta (slot 47)", "A4-95 new title names the Coco patch and slot");
+			expect_contains(newTitle.detail, "tracks/cocoteamracing-track-3/original", "A4-95 the folder key is the one rooms already use");
+		}
 	}
 	printf("test-custom-track-manager: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;

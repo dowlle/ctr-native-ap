@@ -1118,21 +1118,53 @@ const struct { const char *patch; int slot; const char *name; } kCuratedTracks[]
     {"748a18082ca0dbc6ff31321e7a75bfa58c3afac80102363fb1385b32e50196df", 39, "Holland"},
     {"748a18082ca0dbc6ff31321e7a75bfa58c3afac80102363fb1385b32e50196df", 47, "Motor Sports Land"},
     {"748a18082ca0dbc6ff31321e7a75bfa58c3afac80102363fb1385b32e50196df", 135, "N-Gage Jungle Boogie"},
+    /* Coco Team Racing track 3 (A4-95); its credit and folder key are in kCuratedExtras. */
+    {"17e43e108b7f732cb8302636f6984a3b0df59df6af517fffab0e860d00209b54", 47, "Tizi Madness"},
+};
+
+/* Credit and folder key for curated rows that need them (A4-95). Coco Team
+   Racing track 3 is the Tizi training track (player ruling, 2026-11-14), credited to
+   FrostedWombat, who approved the import on 2026-11-13. Its folder key stays
+   the one the generic title gave in alpha3 and alpha4: a seed finds its files
+   under tracks/<key>/original, so a better display name must not move it. */
+const struct { const char *patch; int slot; const char *author; const char *key; } kCuratedExtras[] = {
+    {"17e43e108b7f732cb8302636f6984a3b0df59df6af517fffab0e860d00209b54", 47, "FrostedWombat", "cocoteamracing-track-3"},
 };
 
 #ifdef CTR_XDELTA_TESTING
-std::vector<std::tuple<std::string, int, std::string>> g_testCurated; /* Harness-only extra rows. */
+struct TestCurated { std::string patch; int slot; std::string name, author, key; };
+std::vector<TestCurated> g_testCurated; /* Harness-only extra rows. */
 #endif
+
+/* One curated row's display data. author and key are empty when the row sets
+   none; the pointers stay valid for the life of the process. */
+struct Curated { const char *name, *author, *key; };
+
+bool curated_track(const std::string &patchSha256, int bigfileIndex, Curated &out)
+{
+    for (const auto &k : kCuratedTracks)
+        if (k.slot == bigfileIndex && patchSha256 == k.patch)
+        {
+            out = {k.name, "", ""};
+            for (const auto &e : kCuratedExtras)
+                if (e.slot == bigfileIndex && patchSha256 == e.patch) { out.author = e.author; out.key = e.key; }
+            return true;
+        }
+#ifdef CTR_XDELTA_TESTING
+    for (const auto &k : g_testCurated)
+        if (k.slot == bigfileIndex && k.patch == patchSha256)
+        {
+            out = {k.name.c_str(), k.author.c_str(), k.key.c_str()};
+            return true;
+        }
+#endif
+    return false;
+}
 
 const char *curated_track_name(const std::string &patchSha256, int bigfileIndex)
 {
-    for (const auto &k : kCuratedTracks)
-        if (k.slot == bigfileIndex && patchSha256 == k.patch) return k.name;
-#ifdef CTR_XDELTA_TESTING
-    for (const auto &k : g_testCurated)
-        if (std::get<1>(k) == bigfileIndex && std::get<0>(k) == patchSha256) return std::get<2>(k).c_str();
-#endif
-    return nullptr;
+    Curated c;
+    return curated_track(patchSha256, bigfileIndex, c) ? c.name : nullptr;
 }
 
 const char *known_track_name(const std::string &levSha256)
@@ -1536,14 +1568,15 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                then a plain label the player can edit before installing. */
             std::string title;
             int nameSource = XDELTA_NAME_LABEL;
+            Curated curatedRow = {"", "", ""};
             if (meta && !meta->title.empty() && CustomPackage_ValidateTitle(meta->title.data(), meta->title.size()))
             {
                 title = meta->title;
                 nameSource = XDELTA_NAME_DESCRIPTOR;
             }
-            else if (const char *curated = curated_track_name(summary.patchSha256, (int)c.index))
+            else if (curated_track(summary.patchSha256, (int)c.index, curatedRow))
             {
-                title = curated;
+                title = curatedRow.name;
                 nameSource = XDELTA_NAME_TESTER;
             }
             else if (const char *known = known_track_name(levHash))
@@ -1573,6 +1606,9 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             }
             std::string version = meta && !meta->version.empty() ? meta->version : "1.0.0";
             std::string author = meta && !meta->author.empty() ? meta->author : descriptor.packAuthor;
+            /* A curated credit fills in only when the pack names nobody, and only
+               alongside the curated title it was entered with. */
+            if (author.empty() && nameSource == XDELTA_NAME_TESTER) author = curatedRow.author;
             std::string failure;
             bool retried = false;
             Built built = build_package(candidate, title, version, meta, summary, author, failure);
@@ -1652,7 +1688,11 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             if (m.letterC == 1 && m.letterT == 1 && m.letterR == 1 && !(meta && meta->excludeTokens)) tags += " CTR";
             set_text(item.tags, sizeof item.tags, tags);
             set_text(item.pin, sizeof item.pin, built.pin);
-            set_text(item.trackKey, sizeof item.trackKey, meta && !meta->trackKey.empty() ? meta->trackKey : title_track_key(title));
+            /* The folder key: a pack descriptor's track_key, then a curated row's (kept when the
+               display name is better than the one the key came from), then the title's. */
+            set_text(item.trackKey, sizeof item.trackKey,
+                     meta && !meta->trackKey.empty() ? meta->trackKey
+                     : nameSource == XDELTA_NAME_TESTER && curatedRow.key[0] ? std::string(curatedRow.key) : title_track_key(title));
             if (!track_key_valid(item.trackKey))
             {
                 if (following) { CustomPackage_Free(&built.owned); undo_following(); return; }
@@ -3115,7 +3155,22 @@ extern "C" const char *XdeltaImportTest_CuratedName(const char *patchSha256, int
 }
 extern "C" void XdeltaImportTest_AddCurated(const char *patchSha256, int bigfileIndex, const char *name)
 {
-    g_testCurated.emplace_back(patchSha256, bigfileIndex, name);
+    g_testCurated.push_back({patchSha256, bigfileIndex, name, "", ""});
+}
+extern "C" void XdeltaImportTest_AddCuratedFull(const char *patchSha256, int bigfileIndex, const char *name, const char *author, const char *key)
+{
+    g_testCurated.push_back({patchSha256, bigfileIndex, name, author ? author : "", key ? key : ""});
+}
+extern "C" void XdeltaImportTest_ClearCurated() { g_testCurated.clear(); }
+extern "C" const char *XdeltaImportTest_CuratedAuthor(const char *patchSha256, int bigfileIndex)
+{
+    Curated c;
+    return patchSha256 && curated_track(patchSha256, bigfileIndex, c) && c.author[0] ? c.author : nullptr;
+}
+extern "C" const char *XdeltaImportTest_CuratedKey(const char *patchSha256, int bigfileIndex)
+{
+    Curated c;
+    return patchSha256 && curated_track(patchSha256, bigfileIndex, c) && c.key[0] ? c.key : nullptr;
 }
 extern "C" const char *XdeltaImportTest_KnownName(const char *levSha256) { return levSha256 ? known_track_name(levSha256) : nullptr; }
 extern "C" void XdeltaImportTest_History(const char *assets, const char *sha, char *out, size_t size)
