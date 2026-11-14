@@ -330,6 +330,38 @@ int AP_HitFieldShortSeats(void)
 	return s_shortSeats;
 }
 
+static int ap_hit_in_stock(int id, int player)
+{
+	return AP_HitInStockPure(id, player);
+}
+
+// Ordinary races always have eight karts (ruled 2026-11-14, A4-81): a field the
+// draw left short takes held boss racers in its empty seats, picked from the
+// destination's seeded order (AP_RosterFillField). Cups, boss races, Crystal
+// Challenges and the Final Challenge never come here.
+static int ap_hit_fill_ordinary(int destLevelID, int player, int aiSeats, int *ids, int count)
+{
+	const int *order = AP_HitEncounterOrder(destLevelID);
+	unsigned char eligible[CTR_CFG_HIT_CHARACTER_COUNT];
+	unsigned char unchecked[CTR_CFG_HIT_CHARACTER_COUNT];
+	unsigned char held[CTR_CFG_HIT_CHARACTER_COUNT] = {0};
+	int ident[AP_HIT_BOSS_CODES];
+	int i;
+
+	if (order == NULL || count <= 0 || count >= aiSeats)
+		return count;
+	if (!AP_HitEncounterGather(eligible, unchecked))
+		return count;
+	if (ap_hit_swap_identity(ident))
+	{
+		unsigned checked = ap_hit_boss_checked_mask();
+		for (i = 0; i < CTR_CFG_HIT_CHARACTER_COUNT; i++)
+			held[i] = (unsigned char)AP_RosterHeld(ident, i, checked);
+	}
+	return AP_RosterFillField(ids, count, aiSeats, order, eligible, held, player,
+	                          CTR_CFG_HIT_MAX_GUESTS, ap_hit_in_stock);
+}
+
 int AP_HitRaceField(int destLevelID, int player, int aiSeats, int *outIDs, int *outFresh)
 {
 	int i;
@@ -339,6 +371,7 @@ int AP_HitRaceField(int destLevelID, int player, int aiSeats, int *outIDs, int *
 	if (!reuse)
 	{
 		int n = AP_HitEncounterDrawFresh(destLevelID, player, aiSeats, s_raceSnap.ids);
+		n = ap_hit_fill_ordinary(destLevelID, player, aiSeats, s_raceSnap.ids, n);
 		s_raceSnap.valid = n > 0;
 		s_raceSnap.level = destLevelID;
 		s_raceSnap.player = player;

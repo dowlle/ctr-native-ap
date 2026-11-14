@@ -426,6 +426,180 @@ static void test_retail_short_grid(void)
 	CHECK(drift == 0, "retail pad: relative order of the karts kept");
 }
 
+// A4-81 (ruled 2026-11-14): ordinary races always have eight karts. The held
+// mask the native side builds from the swap.
+static void held_mask(const int ident[6], unsigned checked, unsigned char held[16])
+{
+	int i;
+	for (i = 0; i < 16; i++)
+		held[i] = (unsigned char)AP_RosterHeld(ident, i, checked);
+}
+
+static const int kOrder[16] = {3, 14, 1, 9, 5, 0, 12, 7, 15, 2, 10, 4, 8, 13, 6, 11};
+
+static int fill(const int ident[6], unsigned checked, int player, ap_hit_field *f)
+{
+	unsigned char eligible[16], held[16];
+	int i;
+	for (i = 0; i < 16; i++)
+		eligible[i] = (unsigned char)AP_RosterEligibleNoHit(ident, i, checked);
+	held_mask(ident, checked, held);
+	f->count = AP_RosterFillField(f->ids, f->count, 7, kOrder, eligible, held, player, 3, in_stock);
+	return f->count;
+}
+
+static int field_ok(const ap_hit_field *f, int player)
+{
+	int i, j, extras = 0;
+	for (i = 0; i < f->count; i++)
+	{
+		if (f->ids[i] < 0 || f->ids[i] > 15 || f->ids[i] == player)
+			return 0;
+		for (j = 0; j < i; j++)
+			if (f->ids[j] == f->ids[i])
+				return 0;
+		extras += !in_stock(f->ids[i], player);
+	}
+	return extras <= 3;
+}
+
+static void test_full_field(void)
+{
+	// sturg's seed: Roo's garage Coco, Papu's Cortex, Joe's Tiny, Pinstripe's
+	// Crash, N. Oxide in his own; he starts as Papu Papu.
+	const int sturg[6] = {1, 2, 3, CRASH, OXIDE, OXIDE};
+	ap_hit_field f, before;
+	unsigned char held[16];
+	int i, filler = -1, heldSeated = 0, first = -1;
+
+	draw(sturg, 0, PAPU, 7, &f);
+	CHECK(f.count == 6, "sturg: the draw seats six pool racers");
+	before = f;
+	CHECK(fill(sturg, 0, PAPU, &f) == 7, "sturg: the field fills to seven AI, eight karts");
+	CHECK(field_ok(&f, PAPU), "sturg: no player, no duplicate, three extras at most");
+	CHECK(memcmp(f.ids, before.ids, sizeof(int) * 6) == 0, "sturg: the drawn six keep their seats");
+	held_mask(sturg, 0, held);
+	for (i = 0; i < f.count; i++)
+		if (held[f.ids[i]])
+		{
+			heldSeated++;
+			filler = f.ids[i];
+		}
+	for (i = 0; i < 16 && first < 0; i++)
+		if (kOrder[i] <= 3)
+			first = kOrder[i];
+	CHECK(heldSeated == 1 && f.count == 7 && filler == f.ids[6], "sturg: one held racer, in the last seat");
+	CHECK(filler == first, "sturg: the filler is the first held stock id in the seeded order");
+	CHECK(in_stock(filler, PAPU), "sturg: the filler needs no extra model");
+	{
+		// Every grid place is taken: the pad's order for eight karts is
+		// already dense, so the A4-77 compaction changes nothing.
+		unsigned char order[8] = {7, 3, 5, 1, 6, 2, 4, 0};
+		const unsigned char same[8] = {7, 3, 5, 1, 6, 2, 4, 0};
+		unsigned char seen[8] = {0};
+		int k, ok = 1;
+		AP_RosterCompactSpawnOrder(order, 1 + f.count);
+		CHECK(memcmp(order, same, sizeof same) == 0, "sturg: eight karts keep the pad's grid");
+		for (k = 0; k < 8; k++)
+			seen[order[k]]++;
+		for (k = 0; k < 8; k++)
+			ok &= seen[k] == 1;
+		CHECK(ok, "sturg: every grid place 0..7 taken once");
+	}
+	{
+		// Stable across re-entry: the same pool gives the same filler, and the
+		// draw's cursors are what they were without the fill.
+		ap_hit_field g;
+		draw(sturg, 0, PAPU, 7, &g);
+		fill(sturg, 0, PAPU, &g);
+		CHECK(g.count == 7 && memcmp(g.ids, f.ids, sizeof(int) * 7) == 0, "sturg: re-entry seats the same eight");
+	}
+	{
+		// Beating Roo's garage frees Coco: she joins the pool, and the filler
+		// is another held racer (or none is needed).
+		ap_hit_field g;
+		draw(sturg, 1u << 0, PAPU, 7, &g);
+		fill(sturg, 1u << 0, PAPU, &g);
+		CHECK(g.count == 7 && field_ok(&g, PAPU), "sturg, Roo's garage won: still eight karts");
+	}
+
+	// A full field is unchanged.
+	draw(kRetail, 0, CRASH, 7, &f);
+	before = f;
+	CHECK(f.count == 7 && fill(kRetail, 0, CRASH, &f) == 7, "a full field stays seven AI");
+	CHECK(memcmp(f.ids, before.ids, sizeof(int) * 7) == 0, "a full field keeps every seat");
+
+	{
+		// Pool racers come before held ones: a short field with a free stock
+		// id takes it first.
+		const int crash[6] = {CRASH, PAPU, JOE, PINSTRIPE, OXIDE, OXIDE};
+		unsigned char eligible[16], h[16];
+		int ids[7] = {5, 6};
+		int n;
+		for (i = 0; i < 16; i++)
+			eligible[i] = (unsigned char)AP_RosterEligibleNoHit(crash, i, 0);
+		held_mask(crash, 0, h);
+		n = AP_RosterFillField(ids, 2, 3, kOrder, eligible, h, CORTEX, 3, in_stock);
+		CHECK(n == 3 && ids[2] == 3, "a pool stock id fills before a held racer");
+		n = AP_RosterFillField(ids, 3, 3, kOrder, eligible, h, CORTEX, 3, in_stock);
+		CHECK(n == 3, "a full count is left alone");
+	}
+	{
+		// A held racer with no model room stays out: the field is then left
+		// short (the A4-77 grid fix covers it). Not reachable from the draw.
+		unsigned char eligible[16] = {0}, h[16] = {0};
+		int ids[7] = {7, 8, 10};
+		h[OXIDE] = 1;
+		CHECK(AP_RosterFillField(ids, 3, 7, kOrder, eligible, h, PAPU, 3, in_stock) == 3,
+		      "no fourth extra model");
+		CHECK(AP_RosterFillField(0, 3, 7, kOrder, eligible, h, PAPU, 3, in_stock) == 3, "null ids");
+	}
+
+	{
+		// Every swap: four garages from any of the sixteen racers, three
+		// final racers, every player. The draw plus the fill always seats
+		// seven valid AI, and the drawn ids keep their seats.
+		int g[4], fin, player, bad = 0, total = 0;
+		const int finals[3] = {OXIDE, 4, 12};
+		for (g[0] = 0; g[0] < 16; g[0]++)
+			for (g[1] = 0; g[1] < 16; g[1]++)
+				for (g[2] = 0; g[2] < 16; g[2]++)
+					for (g[3] = 0; g[3] < 16; g[3]++)
+					{
+						int ident[6], a, b, dup = 0;
+						for (a = 0; a < 4; a++)
+							for (b = 0; b < a; b++)
+								dup |= g[a] == g[b];
+						if (dup)
+							continue;
+						for (fin = 0; fin < 3; fin++)
+						{
+							int clash = 0;
+							for (a = 0; a < 4; a++)
+							{
+								ident[a] = g[a];
+								clash |= g[a] == finals[fin];
+							}
+							if (clash)
+								continue;
+							ident[4] = ident[5] = finals[fin];
+							for (player = 0; player < 16; player++)
+							{
+								ap_hit_field d, e;
+								draw(ident, 0, player, 7, &d);
+								e = d;
+								fill(ident, 0, player, &e);
+								total++;
+								if (e.count != 7 || !field_ok(&e, player) ||
+								    memcmp(e.ids, d.ids, sizeof(int) * (size_t)d.count) != 0)
+									bad++;
+							}
+						}
+					}
+		CHECK(total > 1000000 && bad == 0, "every swap and player: seven AI after the fill");
+	}
+}
+
 int main(void)
 {
 	test_eligibility();
@@ -435,6 +609,7 @@ int main(void)
 	test_chaos();
 	test_short_grid();
 	test_retail_short_grid();
+	test_full_field();
 	printf("roster swap: %d passed, %d failed\n", s_pass, s_fail);
 	return s_fail != 0;
 }
