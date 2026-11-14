@@ -18,7 +18,7 @@ them where the garage is special today:
   engine facts the C harness's menu model rests on still hold (ProcessState
   runs only while a menu is shown; only ProcessState turns the desired menu
   into the shown one), with nothing showing a menu over the hub before it;
-  the handoff waits a bounded time for a released Enter.
+  a held Enter or button is ignored by name entry itself (A4-87b).
 """
 from pathlib import Path
 import re
@@ -147,11 +147,27 @@ openmenu = body(logic, "static inline void AP_HNE_OpenMenu(")
 check("A4-87: AP_HNE_OpenMenu sets both the shown and the desired menu",
       "*desiredMenu = menu;" in openmenu and "*activeMenu = menu;" in openmenu)
 onframe_glue = body(glue, "void AP_HubNameEntry_OnFrame(")
-hold_at = onframe_glue.find("if (AP_HNE_HoldHandoff(&s_apHne, (int)gGT->levelID, loadIdle, levelOk, apRacer, AP_HNE_EnterHeld()))")
-check("A4-87: the bounded Enter hold runs before the frame decision, and holds only the camera",
-      0 <= hold_at < onframe_glue.find("action = AP_HNE_Frame(&s_apHne, (int)gGT->levelID, loadIdle, levelOk, apRacer);")
-      and "action = AP_HNE_ACT_CAMERA;" in onframe_glue[hold_at:hold_at + 200]
-      and "return NikoGetEnterKey();" in body(glue, "static int AP_HNE_EnterHeld("))
+check("A4-87b: the hub handoff no longer waits for Enter (the engine guard replaced the wait)",
+      "HoldHandoff" not in glue and "HoldHandoff" not in logic and "AP_HNE_EnterHeld" not in glue
+      and "enterWaitFrames" not in logic
+      and "action = AP_HNE_Frame(&s_apHne, (int)gGT->levelID, loadIdle, levelOk, apRacer);" in onframe_glue)
+sub = read("game/SubmitName.c")
+restore = body(sub, "void SubmitName_RestoreName(")
+draw = body(sub, "s16 SubmitName_DrawMenu(")
+check("A4-87b: name entry arms the held-input guard where every caller opens it (SubmitName_RestoreName)",
+      "AP_NEH_Arm(&nameEntryHeld, (unsigned)sdata->buttonHeldPerPlayer[0], NAME_ENTRY_PAD_KEYS, NikoGetEnterKey()," in restore and "NikoGetEscapeKey()" in restore)
+check("A4-87b: SubmitName_DrawMenu filters pad taps, Enter and Escape through the guard before reading them",
+      "AP_NEH_Filter(&nameEntryHeld," in draw
+      and draw.find("AP_NEH_Filter(") < draw.find("if (kbCurr != kbPrev)")
+      and "kbCurr == 41 && !(ignoreKeys & 2)" in draw and "NikoGetEscapeKey()" in draw and "if (enterHeld && !(ignoreKeys & 1))" in draw
+      and "NikoGetEnterKey()" not in draw.replace("int enterHeld = NikoGetEnterKey();", ""))
+openers = [str(p.relative_to(root)) for p in sorted((root / "game").rglob("*.c")) + sorted((root / "ap").rglob("*.c"))
+           if "ptrDesiredMenu = &data.menuSubmitName" in p.read_text(errors="replace")]
+unarmed = [f for f in openers
+           if read(f).count("ptrDesiredMenu = &data.menuSubmitName") + read(f).count("AP_HNE_OpenMenu(&sdata->ptrActiveMenu, &sdata->ptrDesiredMenu, &data.menuSubmitName)")
+           > read(f).count("SubmitName_RestoreName(0)")]
+check("A4-87b: every place that asks for name entry also calls SubmitName_RestoreName (so the guard arms): " + ", ".join(openers),
+      openers and not unarmed)
 hginit = body(glue, "int AP_HubNameEntry_GarageInit(")
 check("A4-87: the backdrop's garage init clears the shown menu (why the handoff must show one)",
       "sdata->ptrActiveMenu = NULL;" in hginit)

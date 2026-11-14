@@ -1,4 +1,14 @@
 #include <common.h>
+#include "../ap/ap_name_entry_held_logic.h"
+
+#ifdef CTR_NATIVE
+int kbCurr = 0;
+int kbPrev = 0;
+// Pad buttons that confirm or cancel name entry: Circle/Cross (pick), Triangle/
+// Square (backspace) and Start (cancel).
+#define NAME_ENTRY_PAD_KEYS (BTN_CIRCLE | BTN_CROSS_one | BTN_TRIANGLE | BTN_SQUARE_one | BTN_START)
+static struct AP_NEH_Guard nameEntryHeld;
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8004aa08-0x8004aa60
 void SubmitName_RestoreName(s16 param_1)
@@ -20,14 +30,19 @@ void SubmitName_RestoreName(s16 param_1)
 	}
 
 	gGT->typeCursorPosition = cursor;
+
+#ifdef CTR_NATIVE
+	// A4-87b: every caller opens name entry here. Whatever confirm or cancel
+	// input is held now is ignored until released once.
+	AP_NEH_Arm(&nameEntryHeld, (unsigned)sdata->buttonHeldPerPlayer[0], NAME_ENTRY_PAD_KEYS, NikoGetEnterKey(),
+	           NikoGetEscapeKey());
+#endif
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8004aa60-0x8004b144 for the
 // retail path. CTR_NATIVE adds host keyboard shortcuts before retail input.
 
 #ifdef CTR_NATIVE
-int kbCurr = 0;
-int kbPrev = 0;
 void SubmitName_UseKeyboard(int key)
 {
 	kbCurr = key;
@@ -237,6 +252,16 @@ s16 SubmitName_DrawMenu(u16 string)
 	int tap = sdata->buttonTapPerPlayer[0];
 
 #ifdef CTR_NATIVE
+	// A4-87b: inputs held from before name entry opened do nothing until
+	// they are released once.
+	int enterHeld = NikoGetEnterKey();
+	int ignoreKeys;
+	{
+		unsigned tapBits = (unsigned)tap;
+		ignoreKeys = AP_NEH_Filter(&nameEntryHeld, (unsigned)sdata->buttonHeldPerPlayer[0], enterHeld,
+		                           NikoGetEscapeKey(), &tapBits);
+		tap = (int)tapBits;
+	}
 	// NOTE(aalhendi): native keyboard shortcut; retail input remains gamepad-driven.
 
 	if (kbCurr != kbPrev)
@@ -275,8 +300,8 @@ s16 SubmitName_DrawMenu(u16 string)
 			tap = BTN_CIRCLE;
 		}
 
-		// Escape
-		if (kbCurr == 41)
+		// Escape (not while it is still held from before the open)
+		if (kbCurr == 41 && !(ignoreKeys & 2))
 		{
 			cursorPosition = 1000;
 			tap = BTN_CIRCLE;
@@ -300,7 +325,7 @@ s16 SubmitName_DrawMenu(u16 string)
 	kbPrev = kbCurr;
 
 	// Press Enter
-	if (NikoGetEnterKey())
+	if (enterHeld && !(ignoreKeys & 1))
 	{
 		cursorPosition = 1001;
 		tap = BTN_CIRCLE;

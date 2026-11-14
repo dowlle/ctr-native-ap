@@ -979,6 +979,13 @@ int NikoGetEnterKey(void)
 	return (kb && kb[SDL_SCANCODE_RETURN]) ? 1 : 0;
 }
 
+// Escape as held state, for name entry's held-input guard (A4-87b).
+int NikoGetEscapeKey(void)
+{
+	const bool *kb = SDL_GetKeyboardState(NULL);
+	return (kb && kb[SDL_SCANCODE_ESCAPE]) ? 1 : 0;
+}
+
 // NOTE(aalhendi): VSyncCallback uses the PSX facade, but native owns the VBlank
 // clock that emits the registered callback.
 // NOTE(aalhendi): Native paces VBlank from PS1 NTSC video timing instead of
