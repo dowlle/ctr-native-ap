@@ -103,6 +103,16 @@ int AP_HubNameEntry_CancelToTitle(void)
 	return 1;
 }
 
+// The host keyboard's Enter, as name entry reads it (SubmitName_DrawMenu).
+static int AP_HNE_EnterHeld(void)
+{
+#if defined(CTR_NATIVE)
+	return NikoGetEnterKey();
+#else
+	return 0;
+#endif
+}
+
 static int AP_HNE_LevelOk(struct GameTracker *gGT)
 {
 	struct Level *lev = gGT->level1;
@@ -122,8 +132,9 @@ void AP_HubNameEntry_OnFrame(struct GameTracker *gGT)
 		return;
 
 	apRacer = s_apHne.handedOff ? 0 : AP_CharSwap_GarageRacer();
-	action = AP_HNE_Frame(&s_apHne, (int)gGT->levelID, sdata->Loading.stage == LOAD_IDLE, AP_HNE_LevelOk(gGT),
-	                      apRacer);
+	action = AP_HNE_Frame(&s_apHne, (int)gGT->levelID,
+	                      AP_HNE_FrameReady(sdata->Loading.stage == LOAD_IDLE, s_apHne.handedOff, AP_HNE_EnterHeld()),
+	                      AP_HNE_LevelOk(gGT), apRacer);
 	if (action == AP_HNE_ACT_NONE)
 		return;
 

@@ -181,6 +181,17 @@ static inline int AP_HNE_Frame(struct AP_HubNameEntryState *s, int levelID, int 
 	return AP_HNE_ACT_CAMERA;
 }
 
+// The handoff waits for an idle load and, before name entry first opens, for
+// the keyboard Enter key to be up (A4-87 review). Name entry reads Enter as a
+// held key (NikoGetEnterKey), and with a name from an earlier session the
+// cursor starts on SAVE, so an Enter still held from the title would submit
+// the name on name entry's first frame, before it was ever seen. After the
+// handoff Enter is name entry's own and the camera keeps running.
+static inline int AP_HNE_FrameReady(int loadIdle, int handedOff, int enterHeld)
+{
+	return loadIdle && (handedOff || !enterHeld);
+}
+
 // Opening name entry on the handoff frame (A4-87). Two engine facts decide
 // how. RECTMENU_ProcessState is the only code that turns ptrDesiredMenu into
 // the shown menu (ptrActiveMenu), and MainFrame_RenderFrame calls it only

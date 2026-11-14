@@ -17,7 +17,8 @@ them where the garage is special today:
 - A4-87: the handoff shows name entry, not only asks for it, and the two
   engine facts the C harness's menu model rests on still hold (ProcessState
   runs only while a menu is shown; only ProcessState turns the desired menu
-  into the shown one), with nothing showing a menu over the hub before it.
+  into the shown one), with nothing showing a menu over the hub before it;
+  the handoff waits for a released Enter.
 """
 from pathlib import Path
 import re
@@ -145,6 +146,9 @@ logic = read("ap/ap_hub_name_entry_logic.h")
 openmenu = body(logic, "static inline void AP_HNE_OpenMenu(")
 check("A4-87: AP_HNE_OpenMenu sets both the shown and the desired menu",
       "*desiredMenu = menu;" in openmenu and "*activeMenu = menu;" in openmenu)
+check("A4-87: the handoff waits for an idle load and a released Enter (AP_HNE_FrameReady)",
+      "AP_HNE_FrameReady(sdata->Loading.stage == LOAD_IDLE, s_apHne.handedOff, AP_HNE_EnterHeld())" in glue
+      and "return NikoGetEnterKey();" in body(glue, "static int AP_HNE_EnterHeld("))
 hginit = body(glue, "int AP_HubNameEntry_GarageInit(")
 check("A4-87: the backdrop's garage init clears the shown menu (why the handoff must show one)",
       "sdata->ptrActiveMenu = NULL;" in hginit)

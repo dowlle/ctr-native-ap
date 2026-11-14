@@ -40,7 +40,7 @@ static struct
 // One frame of MainFrame_RenderFrame and RECTMENU_ProcessState as far as the
 // menu pointers go (A4-87): ProcessState runs only while a menu is shown, and
 // it is the only code that turns the desired menu into the shown one. Returns
-// the menu that ran this frame (drew itself and read the buttons), or NULL.
+// the menu that ran this frame (ProcessState ran its menu proc), or NULL.
 // tools/test-hub-name-entry-production.py pins both facts to the engine.
 static struct RectMenu *menu_frame(void)
 {
@@ -54,7 +54,7 @@ static struct RectMenu *menu_frame(void)
 	return e.active;
 }
 
-// Name entry runs (draws and reads buttons) on each of the next frames.
+// Name entry is the menu ProcessState runs on each of the next frames.
 static int name_entry_runs(void)
 {
 	int i;
@@ -176,7 +176,7 @@ int main(void)
 	CHECK("flow 1: over the hub no menu is shown before the handoff", menu_frame() == NULL);
 	CHECK("flow 1: the first idle frame commits the racer and opens name entry",
 	      frame(&s, 1, 5) == AP_HNE_ACT_HANDOFF && s.phase == AP_HNE_SHOWING);
-	CHECK("flow 1 (A4-87): name entry then runs over the hub, drawn and reading buttons", name_entry_runs());
+	CHECK("flow 1 (A4-87): name entry then runs over the hub (ProcessState runs it every frame)", name_entry_runs());
 	CHECK("flow 1: the handoff happens once, then the camera moves",
 	      frame(&s, 1, 5) == AP_HNE_ACT_CAMERA && frame(&s, 1, 5) == AP_HNE_ACT_CAMERA);
 	CHECK("flow 1: AP hub code reads the feature as active on the hub", s.phase != AP_HNE_OFF);
@@ -198,6 +198,25 @@ int main(void)
 	AP_HNE_OpenMenu(&e.active, &e.desired, &nameEntryMenu);
 	CHECK("A4-87: AP_HNE_OpenMenu shows it and leaves it desired for the retail promotion",
 	      e.active == &nameEntryMenu && e.desired == &nameEntryMenu && name_entry_runs() && e.desired == NULL);
+
+	// ---- A4-87 review: an Enter held from the title ---------------------------
+	CHECK("A4-87: before the handoff, a held Enter keeps name entry closed",
+	      !AP_HNE_FrameReady(1, 0, 1) && AP_HNE_FrameReady(1, 0, 0) && !AP_HNE_FrameReady(0, 0, 0));
+	CHECK("A4-87: after the handoff, Enter belongs to name entry and the camera keeps running",
+	      AP_HNE_FrameReady(1, 1, 1) && !AP_HNE_FrameReady(0, 1, 0));
+	e.level = LEVEL_TITLE;
+	menus_none();
+	level = AP_HNE_BeginNewAdventure(&s, 5, 4242u, ALL);
+	level_file(&s, level);
+	load_done(5);
+	CHECK("A4-87: with Enter held the hub waits, nothing is shown",
+	      AP_HNE_Frame(&s, e.level, AP_HNE_FrameReady(!e.loading, s.handedOff, 1), 1, 5) == AP_HNE_ACT_NONE &&
+	          !s.handedOff && menu_frame() == NULL);
+	CHECK("A4-87: Enter released: the handoff opens name entry",
+	      AP_HNE_Frame(&s, e.level, AP_HNE_FrameReady(!e.loading, s.handedOff, 0), 1, 5) == AP_HNE_ACT_HANDOFF);
+	AP_HNE_OpenMenu(&e.active, &e.desired, &nameEntryMenu);
+	CHECK("A4-87: name entry then runs", name_entry_runs());
+	level_file(&s, LEVEL_TITLE);
 
 	// ---- flow 2: Cancel ----------------------------------------------------
 	e.level = LEVEL_TITLE;
