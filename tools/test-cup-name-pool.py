@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""The named cup pool in native (A3-42, nine tester cup names appended; A4-16, Dex Cup appended).
+"""The named cup pool in native (A3-42, nine tester cup names appended; A4-16, Dex Cup appended;
+A4-71, three track author names appended).
 
 Reads ap/ap_content_registry.hpp (the registry the apworld's CUP_NAMES is synced
 into by tools/sync-content-registry.py) and the engine's own font tables in
@@ -7,7 +8,8 @@ game/zGlobal_DATA.c, and pins four things:
 
 1. The pool is append-only: the first 27 names and codes are the frozen 0.3.0
    ones, names 27 and up take the growth ranges 35027100 / 35027300, and the
-   nine alpha3 names, Dex Cup and the four A4-16c names follow in order.
+   nine alpha3 names, Dex Cup, the four A4-16c names and the three A4-71
+   track author names follow in order.
 2. Every glyph of every name has an icon in data.font_characterIconID (0xFF is
    "not drawn"), underscore included.
 3. The cup banner (UI_RaceFlow.c) and the standings title (UI_CupStandings.c)
@@ -88,11 +90,12 @@ FROZEN_NAMES = [
 ]
 NEW = ["Cristichi Cup", "FruitLion8 Cup", "TayWoodz Cup", "MeD Cup", "Lionboy Cup",
        "MisterShaokahn Cup", "Sturg Cup", "Prototyp_002 Cup", "Em Cup", "Dex Cup",
-       "Hiru Cup", "Spark Cup", "Sido Cup", "DM3 Productions Cup"]
+       "Hiru Cup", "Spark Cup", "Sido Cup", "DM3 Productions Cup",
+       "Boxic Cup", "Lolothesamurai Cup", "PanchoPew Cup"]
 
-check("pool has the 27 frozen names and the fourteen later names", len(cups) == FROZEN + len(NEW))
+check(f"pool has the 27 frozen names and the {len(NEW)} later names", len(cups) == FROZEN + len(NEW))
 check("the 27 frozen names are unchanged and in order", names[:FROZEN] == FROZEN_NAMES)
-check("the alpha3, Dex and A4-16c names follow Sphere Cup in order", names[FROZEN:] == NEW)
+check("the alpha3, Dex, A4-16c and A4-71 names follow Sphere Cup in order", names[FROZEN:] == NEW)
 check("names are unique", len(set(names)) == len(names))
 check("frozen names keep 35027000 + i and 35027200 + i",
       all(c["win"] == 35027000 + i and c["sweep"] == 35027200 + i for i, c in enumerate(cups[:FROZEN])))
@@ -114,6 +117,8 @@ for w, n in rows[:6]:
 check(f"no name is wider than the widest frozen name ({oldest} px)", all(width(n) <= oldest for n in names[FROZEN:]))
 check("every name fits one 512 px player view with 100 px to spare", all(width(n) <= 412 for n in names))
 check("MisterShaokahn Cup is 18 characters and 306 px", width("MisterShaokahn Cup") == 306)
+check("Lolothesamurai Cup is 18 characters and 306 px, below the widest frozen name",
+      width("Lolothesamurai Cup") == 306 and width("Lolothesamurai Cup") <= oldest)
 
 count = int(re.search(r"#define CTR_CFG_HIT_CONTENT_CUP_COUNT\s+(\d+)", seedcfg)[1])
 check(f"Hit Character content cup table ({count}) covers the pool ({len(cups)})", count >= len(cups))

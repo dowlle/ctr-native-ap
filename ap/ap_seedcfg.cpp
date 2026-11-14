@@ -650,7 +650,7 @@ static int parse_hit_character(const nlohmann::json &j, bool contentPlan = false
 	}
 
 	// content_cups (#133 PR 5b, content plans only): distinct cup name indices
-	// 0..40, each {order: a permutation of 0..15}, at least one.
+	// 0..43, each {order: a permutation of 0..15}, at least one.
 	if (hasContentCups)
 	{
 		const auto &cc = b["content_cups"];
