@@ -235,6 +235,7 @@ int main(void)
 		// Enter not held at the open: never ignored.
 		AP_NEH_Arm(&g, 0, MASK, 0, 0);
 		tap = 0;
+		AP_NEH_Filter(&g, 0, 0, 0, &tap); // the first drawn frame
 		CHECK("A4-87b: Enter pressed after the open works at once", AP_NEH_Filter(&g, 0, 1, 0, &tap) == 0);
 
 		// Escape (cancel on the keyboard).
@@ -260,6 +261,8 @@ int main(void)
 
 		// Per input: Circle held at the open does not stop Cross.
 		AP_NEH_Arm(&g, CIRCLE, MASK, 0, 0);
+		tap = 0;
+		AP_NEH_Filter(&g, CIRCLE, 0, 0, &tap); // the first drawn frame
 		tap = CROSS;
 		AP_NEH_Filter(&g, CIRCLE | CROSS, 0, 0, &tap);
 		CHECK("A4-87b: only the inputs held at the open are ignored (Cross still works)", tap == CROSS);
@@ -278,6 +281,24 @@ int main(void)
 		tap = SQ;
 		AP_NEH_Filter(&g, SQ, 0, 0, &tap);
 		CHECK("A4-87b: release clears the guard for good", tap == SQ);
+
+		// The hub handoff arms before the frame's input is read: a press first
+		// seen on the first drawn frame is covered, one on the second is not.
+		AP_NEH_Arm(&g, 0, MASK, 0, 0);
+		tap = CROSS;
+		ign = AP_NEH_Filter(&g, CROSS, 1, 1, &tap);
+		CHECK("A4-87b: input first seen on name entry's first frame is ignored too (arm runs before input is read)",
+		      tap == 0 && ign == 3);
+		AP_NEH_Filter(&g, 0, 0, 0, &tap);
+		tap = CROSS;
+		AP_NEH_Filter(&g, CROSS, 0, 0, &tap);
+		CHECK("A4-87b: ... until released once, then it works", tap == CROSS);
+		AP_NEH_Arm(&g, 0, MASK, 0, 0);
+		tap = 0;
+		AP_NEH_Filter(&g, 0, 0, 0, &tap);
+		tap = CROSS;
+		ign = AP_NEH_Filter(&g, CROSS, 1, 1, &tap);
+		CHECK("A4-87b: input pressed on the second drawn frame or later works", tap == CROSS && ign == 0);
 
 		// Two callers, back to back: the guard re-arms on every open.
 		AP_NEH_Arm(&g, 0, MASK, 0, 0);

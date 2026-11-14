@@ -35,7 +35,7 @@ void SubmitName_RestoreName(s16 param_1)
 	// A4-87b: every caller opens name entry here. Whatever confirm or cancel
 	// input is held now is ignored until released once.
 	AP_NEH_Arm(&nameEntryHeld, (unsigned)sdata->buttonHeldPerPlayer[0], NAME_ENTRY_PAD_KEYS, NikoGetEnterKey(),
-	           kbCurr == 41);
+	           NikoGetEscapeKey());
 #endif
 }
 
@@ -259,7 +259,7 @@ s16 SubmitName_DrawMenu(u16 string)
 	{
 		unsigned tapBits = (unsigned)tap;
 		ignoreKeys = AP_NEH_Filter(&nameEntryHeld, (unsigned)sdata->buttonHeldPerPlayer[0], enterHeld,
-		                           kbCurr == 41, &tapBits);
+		                           NikoGetEscapeKey(), &tapBits);
 		tap = (int)tapBits;
 	}
 	// NOTE(aalhendi): native keyboard shortcut; retail input remains gamepad-driven.

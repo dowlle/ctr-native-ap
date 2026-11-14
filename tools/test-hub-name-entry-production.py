@@ -155,11 +155,11 @@ sub = read("game/SubmitName.c")
 restore = body(sub, "void SubmitName_RestoreName(")
 draw = body(sub, "s16 SubmitName_DrawMenu(")
 check("A4-87b: name entry arms the held-input guard where every caller opens it (SubmitName_RestoreName)",
-      "AP_NEH_Arm(&nameEntryHeld, (unsigned)sdata->buttonHeldPerPlayer[0], NAME_ENTRY_PAD_KEYS, NikoGetEnterKey()," in restore)
+      "AP_NEH_Arm(&nameEntryHeld, (unsigned)sdata->buttonHeldPerPlayer[0], NAME_ENTRY_PAD_KEYS, NikoGetEnterKey()," in restore and "NikoGetEscapeKey()" in restore)
 check("A4-87b: SubmitName_DrawMenu filters pad taps, Enter and Escape through the guard before reading them",
       "AP_NEH_Filter(&nameEntryHeld," in draw
       and draw.find("AP_NEH_Filter(") < draw.find("if (kbCurr != kbPrev)")
-      and "kbCurr == 41 && !(ignoreKeys & 2)" in draw and "if (enterHeld && !(ignoreKeys & 1))" in draw
+      and "kbCurr == 41 && !(ignoreKeys & 2)" in draw and "NikoGetEscapeKey()" in draw and "if (enterHeld && !(ignoreKeys & 1))" in draw
       and "NikoGetEnterKey()" not in draw.replace("int enterHeld = NikoGetEnterKey();", ""))
 openers = [str(p.relative_to(root)) for p in sorted((root / "game").rglob("*.c")) + sorted((root / "ap").rglob("*.c"))
            if "ptrDesiredMenu = &data.menuSubmitName" in p.read_text(errors="replace")]

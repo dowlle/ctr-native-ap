@@ -36,6 +36,7 @@ int Platform_OpenURL(const char *url);
 
 #if defined(CTR_NATIVE)
 int NikoGetEnterKey(void);
+int NikoGetEscapeKey(void);
 
 // In-game text entry (host keyboard). While a session is active the platform
 // event loop routes typing into the caller's buffer instead of the game: printable
