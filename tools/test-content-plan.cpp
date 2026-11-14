@@ -2337,6 +2337,30 @@ int main(int argc, char **argv) {
         expect(!parse(free_door), "bosses-zero-relics: a record without its Boss arm no longer matches the plan");
         expect(parse(zero), "bosses-zero-relics: the room parses again");
     }
+    // A4-79z: bosses-zero-relics-free.json is an any_percent room with no companion arm,
+    // platinum_relics and no Platinum Relic in the pool, count 0: nothing asks
+    // for a relic, so the Final Challenge door is `always` and no supply is needed.
+    {
+        J freeroom;
+        std::ifstream("tools/fixtures/content-plan/bosses-zero-relics-free.json") >> freeroom;
+        expect(parse(freeroom) && bind_room(freeroom) && ap_content_plan_active(), "bosses-zero-relics-free: room binds");
+        const ctr_content_bosses *b = ap_content_plan_bosses();
+        expect(b->present && b->oxide_goal == 1 && b->final_unlock == 2 && b->final_count == 0 &&
+               ctr_cfg.oxide_final_unlock == 2 && ctr_cfg.oxide_final_count == 0,
+               "bosses-zero-relics-free: count 0 with a relic tier that has no supply");
+        auto door = [](J &j) -> J & {
+            for (auto &r : j["content_plan"]["requirements"]) if (r["id"] == "oxide:final") return r["predicate"];
+            throw std::runtime_error("no oxide:final");
+        };
+        expect(door(freeroom) == J{{"op", "always"}}, "bosses-zero-relics-free: the door is always");
+        J forged = freeroom;
+        door(forged) = J{{"op", "count"}, {"item", 35010003}, {"count", 1}};
+        expect(!parse(forged), "bosses-zero-relics-free: a relic term forged onto the free door is refused");
+        J counted = freeroom;
+        counted["content_plan"]["bosses"]["oxide_final_count"] = 1;
+        expect(!parse(counted), "bosses-zero-relics-free: a counted record with no supply is refused");
+        expect(parse(freeroom), "bosses-zero-relics-free: the room parses again");
+    }
     // Bosses off: the garages stay empty and the goal is the Gem arm alone.
     expect(parse(base) && bind_room(base) && !ap_content_plan_bosses()->present && ctr_cfg.goal_oxide == 3 &&
            ctr_cfg.goal_bosses == 0 && ctr_boss_encounters.state == AP_BOSS_ENC_RETAIL, "bosses off: empty garages");
