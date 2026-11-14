@@ -273,6 +273,33 @@ int main(void)
 		expect(strlen(tiny) == 7, "locator truncates safely");
 	}
 
+	/* 8. A4-74: a track whose author has not allowed in-game download is
+	 * missing but never downloaded, and says where to get it. */
+	{
+		struct AP_SeedContentRow rows[2];
+		int plan[2], count = -1;
+		uint64_t bytes = 0;
+		char reason[200], text[256];
+		rows[0] = row("DK Pass", AP_SEED_SCAN_NOT_INSTALLED, AP_SEED_SOURCE_NOT_ALLOWED, 1000, 2000);
+		rows[0].saphi_track_id = 122;
+		snprintf(rows[0].permission, sizeof rows[0].permission, "The author has not allowed in-game download.");
+		rows[1] = row("Ancient Lake", AP_SEED_SCAN_READY, AP_SEED_SOURCE_SAPHI, 1000, 2000);
+		expect(ap_seed_row_state(&rows[0]) == AP_SEED_STATE_MISSING && !ap_seed_row_downloadable(&rows[0]),
+		       "not allowed: missing, not downloadable");
+		expect(ap_seed_install_plan(rows, 2, 0, plan, &count, &bytes, reason, sizeof reason) == AP_SEED_PLAN_MANUAL_ONLY &&
+		       count == 0 && strstr(reason, "has not allowed"), "Install missing explains the refusal");
+		expect(!strcmp(ap_seed_source_text(&rows[0]), "No download (author has not allowed it)"), "source line");
+		ap_seed_instruction(&rows[0], text, sizeof text);
+		expect(strstr(text, "The author has not allowed in-game download.") && strstr(text, "projectsaphi.com/tracks/122") &&
+		       strstr(text, "v1.0.2") && strstr(text, "original"), "instruction: the reason, the source page and the folder");
+		rows[0].saphi_track_id = 0;
+		ap_seed_instruction(&rows[0], text, sizeof text);
+		expect(strstr(text, "has not allowed") && !strstr(text, "projectsaphi"), "without a Saphi id: the folder only");
+		rows[1].scan = AP_SEED_SCAN_NOT_INSTALLED;
+		expect(ap_seed_install_plan(rows, 2, 0, plan, &count, &bytes, reason, sizeof reason) == AP_SEED_PLAN_OK &&
+		       count == 1 && plan[0] == 1, "an allowed missing track beside it is still queued");
+	}
+
 	printf("%d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

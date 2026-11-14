@@ -8,7 +8,8 @@ makes for a package the live track registry located on Saphi.
 
 Cases, each checked against the file system afterwards:
   1. bad registry answers are refused at start: no track id, no or equal
-     download ids, an unsafe package root,
+     download ids, an unsafe package root; and (A4-74) a track whose author
+     has not allowed in-game download, before any request,
   2. a clean install fetches only Saphi's listing for the named track and the
      two named download ids, and writes the pinned bytes to
      tracks/<key>/original,
@@ -55,6 +56,21 @@ prelude = r'''
 #include <string>
 #include <thread>
 #include <vector>
+#include "ap_track_consent.h"
+// The track author permission check (A4-74): the real resolver is
+// ap/ap_track_consent.cpp (tools/test-track-consent.cpp). Here it allows,
+// unless a case sets g_permission, and records which Saphi track was asked.
+static int g_permission = AP_TRACK_PERMISSION_ALLOW, g_permission_track = -1;
+static std::string g_permission_key;
+extern "C" int ap_track_permission(int track, int author, int saphi, const char *key)
+{ (void)author; (void)saphi; g_permission_track = track; g_permission_key = key ? key : ""; return g_permission; }
+extern "C" const char *ap_track_permission_text(void) { return "The author has not allowed in-game download."; }
+extern "C" int ap_track_consent_saphi_author(int track) { return track == 121 ? 12 : 0; }
+extern "C" int ap_track_saphi_id_from_url(const char *url)
+{
+	const char *at = url ? std::strstr(url, "/tracks/") : nullptr;
+	return at ? std::atoi(at + 8) : 0;
+}
 '''
 
 stub = r'''
@@ -158,6 +174,21 @@ int main()
 	expect(!start(-1, 872, 873), "a negative track id");
 	expect(!start(121, 872, 873, tracks + "/../escape") && !start(121, 872, 873, tracks + "/a/b"), "an unsafe root");
 	expect(asked().empty() && !exists(pkg), "no request and no folder after the start refusals");
+
+	// 1b. A4-74: the track author has not said yes (unknown) or said no:
+	// refused at start, the reason is the download status, nothing fetched.
+	for (int answer : {AP_TRACK_PERMISSION_UNKNOWN, AP_TRACK_PERMISSION_DENY})
+	{
+		g_permission = answer; g_permission_track = -1;
+		expect(!start(121, 872, 873), "a track whose author has not allowed in-game download is refused");
+		expect(g_permission_track == 121 && g_permission_key == "acid-lake",
+		       "the permission check is asked for the Saphi track and the package folder's track key");
+		char text[256];
+		expect(ap_custom_track_download_status(text, sizeof text) == AP_CT_DOWNLOAD_FAILED &&
+		       std::string(text) == "The author has not allowed in-game download.", std::string("refusal says why: ") + text);
+		expect(asked().empty() && !exists(pkg), "no request and no folder after a permission refusal");
+	}
+	g_permission = AP_TRACK_PERMISSION_ALLOW;
 
 	// 2. A clean install from the named ids.
 	serve(lb);

@@ -529,6 +529,20 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
             if (source.at("schema_version") != 1) continue;
             if (source.at("provider") == "ctr-seed")
             {
+                /* A4-74: the ids a seed install recorded, for the permission check. */
+                if (source.contains("saphi_track_id") && source["saphi_track_id"].is_number_integer() &&
+                    source["saphi_track_id"] > 0 && source["saphi_track_id"] <= 100000000)
+                    entry.local.permissionTrackID = source["saphi_track_id"].get<int>();
+                if (source.contains("saphi_author_id") && source["saphi_author_id"].is_number_integer() &&
+                    source["saphi_author_id"] > 0 && source["saphi_author_id"] <= 100000000)
+                    entry.local.authorID = source["saphi_author_id"].get<int>();
+                if (source.contains("track_key") && source["track_key"].is_string())
+                {
+                    auto key = source["track_key"].get<std::string>();
+                    if (!key.empty() && key.size() < sizeof entry.local.trackKey &&
+                        key.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789-.") == std::string::npos)
+                        std::memcpy(entry.local.trackKey, key.c_str(), key.size() + 1);
+                }
                 if (source.contains("author") && source["author"].is_string())
                 {
                     auto author = source["author"].get<std::string>();
@@ -614,10 +628,20 @@ CustomPackageStoreEntry scan_entry(const std::string &prefix, const std::string 
                 auto author=source.at("author").get<std::string>();
                 if (track<=0 || lev<=0 || vrm<=0 || author.size()>=sizeof entry.local.author ||
                     std::any_of(author.begin(),author.end(),[](unsigned char c){return c<32 || c==127;})) continue;
-                entry.local.trackID=track;entry.local.levID=lev;entry.local.vrmID=vrm;
+                entry.local.trackID=track;entry.local.levID=lev;entry.local.vrmID=vrm;entry.local.permissionTrackID=track;
                 if (source.contains("sca_media_id") && source["sca_media_id"].is_number_integer() && source["sca_media_id"]>0)
                     entry.local.scaID=source["sca_media_id"].get<int>();
                 std::memcpy(entry.local.author,author.c_str(),author.size()+1);
+                if (source.contains("author_id") && source["author_id"].is_number_integer() &&
+                    source["author_id"]>0 && source["author_id"]<=100000000)
+                    entry.local.authorID=source["author_id"].get<int>();
+                if (source.contains("track_key") && source["track_key"].is_string())
+                {
+                    auto key=source["track_key"].get<std::string>();
+                    if (!key.empty() && key.size()<sizeof entry.local.trackKey &&
+                        key.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789-")==std::string::npos)
+                        std::memcpy(entry.local.trackKey,key.c_str(),key.size()+1);
+                }
             } catch (const std::exception &) { /* Optional display metadata cannot grant admission. */ }
         }
     }

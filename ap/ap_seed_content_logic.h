@@ -49,7 +49,8 @@ enum
 {
 	AP_SEED_SOURCE_MANUAL = 0, /* no trusted download: the player adds the files */
 	AP_SEED_SOURCE_SAPHI,      /* a Project Saphi download: compiled profile or track registry */
-	AP_SEED_SOURCE_BUNDLED     /* Cortex Vortex, shipped with the client */
+	AP_SEED_SOURCE_BUNDLED,    /* Cortex Vortex, shipped with the client */
+	AP_SEED_SOURCE_NOT_ALLOWED /* on Saphi, but its author has not allowed in-game download (A4-74) */
 };
 
 /* What the live track registry said about a package without a compiled
@@ -101,6 +102,10 @@ struct AP_SeedContentRow
 	/* The built-in source table's sentence for a missing track that comes from an
 	 * xdelta patch ("Import X.xdelta (slot 7) from <page>."), "" when unknown (A4-2). */
 	char source_hint[AP_SEED_HINT_MAX];
+	/* A4-74: the Saphi track id when known (its page is where a player gets
+	 * the files of a NOT_ALLOWED track), and that row's plain reason. */
+	int saphi_track_id;
+	char permission[96];
 };
 
 /* Copy room text for drawing: printable ASCII only (a UTF-8 sequence becomes
@@ -244,7 +249,13 @@ static inline int ap_seed_install_plan(const struct AP_SeedContentRow *rows, int
 	}
 	if (!queued)
 	{
-		if (reason) snprintf(reason, reason_size, "No missing track has a download. Follow each track's instructions.");
+		int refused = 0;
+		for (i = 0; i < count; i++)
+			if (ap_seed_row_state(&rows[i]) == AP_SEED_STATE_MISSING && rows[i].source == AP_SEED_SOURCE_NOT_ALLOWED) refused++;
+		if (reason)
+			snprintf(reason, reason_size, "%s", refused
+			         ? "No missing track can be downloaded here: its author has not allowed in-game download. Follow each track's instructions."
+			         : "No missing track has a download. Follow each track's instructions.");
 		return AP_SEED_PLAN_MANUAL_ONLY;
 	}
 	if (plan_count) *plan_count = queued;
@@ -273,6 +284,7 @@ static inline void ap_seed_format_bytes(uint64_t bytes, char *out, size_t size)
 static inline const char *ap_seed_source_text(const struct AP_SeedContentRow *row)
 {
 	if (row->source == AP_SEED_SOURCE_BUNDLED) return "Comes with the client";
+	if (row->source == AP_SEED_SOURCE_NOT_ALLOWED) return "No download (author has not allowed it)";
 	if (row->source == AP_SEED_SOURCE_SAPHI)
 		return row->registry == AP_SEED_REGISTRY_CACHED ? "Project Saphi (cached registry)" :
 		       row->registry == AP_SEED_REGISTRY_TABLE ? "Project Saphi (built-in list)" :
@@ -310,6 +322,17 @@ static inline void ap_seed_instruction(const struct AP_SeedContentRow *row, char
 	case AP_SEED_SCAN_MISSING_FILE:
 		if (row->source == AP_SEED_SOURCE_SAPHI)
 			snprintf(out, size, "Downloads from Project Saphi with Install missing content.");
+		else if (row->source == AP_SEED_SOURCE_NOT_ALLOWED)
+		{
+			char why[96];
+			ap_seed_plain_text(row->permission[0] ? row->permission : "The author has not allowed in-game download.",
+			                   why, sizeof why);
+			if (row->saphi_track_id > 0)
+				snprintf(out, size, "%s Get v%s from projectsaphi.com/tracks/%d, put the LEV and VRM in tracks/%s/original, then Rescan.",
+				         why, rev, row->saphi_track_id, folder);
+			else
+				snprintf(out, size, "%s Put the v%s LEV and VRM in tracks/%s/original, then Rescan.", why, rev, folder);
+		}
 		else if (row->registry == AP_SEED_REGISTRY_CHECKING)
 			snprintf(out, size, "Checking the track registry for a download...");
 		else if (row->locator.patch_sha256[0])

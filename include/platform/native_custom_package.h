@@ -114,6 +114,14 @@ struct CustomPackageLocalInfo
     char uuid[37], author[129];
     int trackID, levID, vrmID;
     int scaID; /* Saphi media id of the pinned .sca, zero when the package has none. */
+    /* Track author permission check (A4-74): the Saphi author id and the
+       registry track key recorded at install, zero / "" for packages
+       installed before 0.3.0-alpha4 (matched by their Saphi track id).
+       permissionTrackID is that Saphi track id: trackID for a catalogue
+       install, the recorded saphi_track_id for a Current Seed install (whose
+       trackID stays zero, so it is not offered catalogue updates). */
+    int authorID, permissionTrackID;
+    char trackKey[65];
     int arcade; /* Owned structural prerequisites and supported lap storage. */
     int timeTrial; /* Lap checkpoint graph and supported lap storage (one kart). */
     unsigned int laps; /* Laps the package races, 0 when its race settings are invalid. */

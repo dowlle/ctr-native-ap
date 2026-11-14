@@ -28,6 +28,19 @@ struct CustomSaphiRevision
     int current;
     int sourceLaps; /* Track-level source metadata, zero if unspecified. */
     char disabledReason[129]; /* Ambiguous/missing pair remains visible. */
+    /* Track author permission check (A4-74). authorID is Saphi's author_id,
+       zero when absent or unreadable. saphiPermission is Saphi's own
+       permission value for this revision as CustomSaphi_Permission reads it:
+       CUSTOM_SAPHI_PERMISSION_*; always unknown until Saphi publishes one. */
+    int authorID;
+    int saphiPermission;
+};
+/* Same values as AP_TRACK_PERMISSION_* (ap/ap_track_consent.h). */
+enum
+{
+    CUSTOM_SAPHI_PERMISSION_UNKNOWN = 0,
+    CUSTOM_SAPHI_PERMISSION_ALLOW = 1,
+    CUSTOM_SAPHI_PERMISSION_DENY = 2
 };
 struct CustomSaphiCatalogue;
 /* Parse a complete, bounded response transactionally. No downloads/writes.
