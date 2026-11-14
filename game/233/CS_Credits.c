@@ -306,8 +306,31 @@ void CS_Credits_NewDancer(struct Thread *dancerTh, int dancerModelID)
 
 	// store globally, make instance invisible
 	creditsBSS.DancerThread = dancerTh;
-	creditsBSS.dancerInst_invisible = dancerTh->inst;
-	creditsBSS.dancerInst_invisible->flags |= HIDE_MODEL;
+#if defined(CTR_NATIVE)
+	// NOTE(dowlle): CS_Thread_Init returns NULL when the dancer's model is not
+	// in the loaded level or a pool is full (#677). Retail reads through address
+	// 0 here without faulting. Native keeps no dancer: CS_Credits_ThTick and
+	// CS_Credits_NewCreditGhosts already treat a NULL dancer as "none yet", the
+	// way the credits start. The epilogue text below still advances.
+	if (dancerTh == NULL)
+	{
+		creditsBSS.dancerInst_invisible = NULL;
+#if defined(CTR_AP)
+		{
+			char apmsg[128];
+			snprintf(apmsg, sizeof apmsg,
+			         "[AP CREDITS] dancer birth NULL model=%d level=%d (no dancer, epilogue goes on)\n",
+			         dancerModelID, sdata->gGT->levelID);
+			AP_LogLine(apmsg);
+		}
+#endif
+	}
+	else
+#endif
+	{
+		creditsBSS.dancerInst_invisible = dancerTh->inst;
+		creditsBSS.dancerInst_invisible->flags |= HIDE_MODEL;
+	}
 
 	creditsObj->countdown = 360;
 
@@ -337,8 +360,20 @@ void CS_Credits_NewDancer(struct Thread *dancerTh, int dancerModelID)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b9398-0x800b93f4
 int CS_Credits_NewCreditGhosts(void)
 {
-	struct Model *model = creditsBSS.dancerInst_invisible->model;
+	struct Model *model;
 	int i;
+
+#if defined(CTR_NATIVE)
+	// NOTE(dowlle): no dancer after a failed birth (#677, CS_Credits_NewDancer).
+	// The ghost trail has no new model to catch up to, so the wait is over and
+	// the script goes on.
+	if (creditsBSS.dancerInst_invisible == NULL)
+	{
+		return 1;
+	}
+#endif
+
+	model = creditsBSS.dancerInst_invisible->model;
 
 	for (i = 0; i < 5; i++)
 	{

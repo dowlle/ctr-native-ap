@@ -800,6 +800,8 @@ processOpcode:
 		initData->rot.z += R233.creditsDancerRotOffset.z;
 
 		dancerThread = (struct Thread *)CS_Thread_Init(dancerModelID, R233.s_g_dancer, initData, 0, 0);
+		// May be NULL on native (#677); CS_Credits_NewDancer then runs the
+		// epilogue without a dancer.
 		CS_Credits_NewDancer(dancerThread, (int)opcodeMetaShorts[6]);
 	}
 	break;
