@@ -53,6 +53,7 @@ struct AP_HubNameEntryState
 	unsigned rng;      // xorshift32 state
 	int handedOff;     // the racer is committed and name entry requested
 	unsigned elapsedMs; // camera clock since the hub came up
+	int enterWaitFrames; // frames the handoff has waited for Enter (A4-87)
 };
 
 static inline void AP_HNE_Reset(struct AP_HubNameEntryState *s)
@@ -61,6 +62,7 @@ static inline void AP_HNE_Reset(struct AP_HubNameEntryState *s)
 	s->hubLevel = -1;
 	s->handedOff = 0;
 	s->elapsedMs = 0;
+	s->enterWaitFrames = 0;
 }
 
 // Can this hub's files load as a backdrop? Every size comes from the disc's
@@ -179,6 +181,43 @@ static inline int AP_HNE_Frame(struct AP_HubNameEntryState *s, int levelID, int 
 		return AP_HNE_ACT_HANDOFF;
 	}
 	return AP_HNE_ACT_CAMERA;
+}
+
+// The handoff holds while the keyboard Enter key is down, for at most
+// AP_HNE_ENTER_WAIT_FRAMES (A4-87 review). Name entry reads Enter as a held
+// key (NikoGetEnterKey), and with a name from an earlier session its cursor
+// starts on SAVE, so an Enter still held from the title would submit the name
+// on name entry's first frame, before it was ever seen. The wait is bounded so
+// a stuck Enter cannot keep the screen empty (after it the handoff goes ahead
+// exactly as the garage's does), and it never stands in front of the garage
+// fallback: a hub that is not usable, or a seed that stopped owning the
+// racer, falls back at once. Returns 1 for a frame the handoff waits.
+#define AP_HNE_ENTER_WAIT_FRAMES 30
+static inline int AP_HNE_HoldHandoff(struct AP_HubNameEntryState *s, int levelID, int loadIdle, int levelOk,
+                                     int apRacer, int enterHeld)
+{
+	if (s->phase == AP_HNE_OFF || s->handedOff || levelID != s->hubLevel || !loadIdle)
+		return 0;
+	if (!levelOk || apRacer < 0 || !enterHeld || s->enterWaitFrames >= AP_HNE_ENTER_WAIT_FRAMES)
+		return 0;
+	s->enterWaitFrames++;
+	return 1;
+}
+
+// Opening name entry on the handoff frame (A4-87). Two engine facts decide
+// how. RECTMENU_ProcessState is the only code that turns ptrDesiredMenu into
+// the shown menu (ptrActiveMenu), and MainFrame_RenderFrame calls it only
+// while a menu is already shown. The garage skip sets the desired menu from
+// inside the garage's own shown menu, so the next frame picks it up. Over the
+// hub no menu is shown (the garage init hook clears the garage's), so a
+// desired menu alone is never picked up: nothing draws and no button is read.
+// The handoff therefore shows name entry itself, and also leaves it desired,
+// so the first ProcessState run still does the retail promotion.
+struct RectMenu;
+static inline void AP_HNE_OpenMenu(struct RectMenu **activeMenu, struct RectMenu **desiredMenu, struct RectMenu *menu)
+{
+	*desiredMenu = menu;
+	*activeMenu = menu;
 }
 
 // Name entry Cancel on the backdrop: back to the title, like the AP-owned

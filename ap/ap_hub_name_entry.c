@@ -5,7 +5,7 @@
 #include "ap_hub_name_entry.h"
 #include <time.h>
 
-static struct AP_HubNameEntryState s_apHne = {AP_HNE_OFF, -1, -1, 0x2545f491u, 0, 0};
+static struct AP_HubNameEntryState s_apHne = {AP_HNE_OFF, -1, -1, 0x2545f491u, 0, 0, 0};
 
 /* Two or three stops per hub, indexed like the hubs (Gem Stone Valley first).
  * Each eye sits about 350 units above a road quadblock that carries a
@@ -103,6 +103,16 @@ int AP_HubNameEntry_CancelToTitle(void)
 	return 1;
 }
 
+// The host keyboard's Enter, as name entry reads it (SubmitName_DrawMenu).
+static int AP_HNE_EnterHeld(void)
+{
+#if defined(CTR_NATIVE)
+	return NikoGetEnterKey();
+#else
+	return 0;
+#endif
+}
+
 static int AP_HNE_LevelOk(struct GameTracker *gGT)
 {
 	struct Level *lev = gGT->level1;
@@ -112,7 +122,7 @@ static int AP_HNE_LevelOk(struct GameTracker *gGT)
 
 void AP_HubNameEntry_OnFrame(struct GameTracker *gGT)
 {
-	int action, apRacer, i;
+	int action, apRacer, i, loadIdle, levelOk;
 	int eye[3], look[3], rot[3];
 	const struct AP_HNE_HubStops *hs;
 	struct PushBuffer *pb;
@@ -122,15 +132,21 @@ void AP_HubNameEntry_OnFrame(struct GameTracker *gGT)
 		return;
 
 	apRacer = s_apHne.handedOff ? 0 : AP_CharSwap_GarageRacer();
-	action = AP_HNE_Frame(&s_apHne, (int)gGT->levelID, sdata->Loading.stage == LOAD_IDLE, AP_HNE_LevelOk(gGT),
-	                      apRacer);
+	loadIdle = sdata->Loading.stage == LOAD_IDLE;
+	levelOk = AP_HNE_LevelOk(gGT);
+	/* An Enter still held from the title waits up to a second before name
+	 * entry opens; the hub already shows from the first stop meanwhile. */
+	if (AP_HNE_HoldHandoff(&s_apHne, (int)gGT->levelID, loadIdle, levelOk, apRacer, AP_HNE_EnterHeld()))
+		action = AP_HNE_ACT_CAMERA;
+	else
+		action = AP_HNE_Frame(&s_apHne, (int)gGT->levelID, loadIdle, levelOk, apRacer);
 	if (action == AP_HNE_ACT_NONE)
 		return;
 
 	if (action == AP_HNE_ACT_FALLBACK)
 	{
 		snprintf(line, sizeof line, "[AP HUB NAME] hub level %d not usable (level %d, racer %d): the garage loads\n",
-		         (int)gGT->levelID, AP_HNE_LevelOk(gGT), apRacer);
+		         (int)gGT->levelID, levelOk, apRacer);
 		AP_LogLine(line);
 		sdata->mainMenuState = MAIN_MENU_ADVENTURE;
 		MainRaceTrack_RequestLoad(ADVENTURE_GARAGE);
@@ -141,8 +157,10 @@ void AP_HubNameEntry_OnFrame(struct GameTracker *gGT)
 	{
 		/* What the garage skip does on its commit frame (CS_Garage_MenuProc),
 		 * with the racer AP resolved. Everything after it, name entry, the
-		 * profile slot and the hub load, is the unchanged retail path. */
-		sdata->ptrDesiredMenu = &data.menuSubmitName;
+		 * profile slot and the hub load, is the unchanged retail path. No
+		 * menu is shown over the hub, so name entry is shown here as well as
+		 * desired (AP_HNE_OpenMenu says why; A4-87). */
+		AP_HNE_OpenMenu(&sdata->ptrActiveMenu, &sdata->ptrDesiredMenu, &data.menuSubmitName);
 		data.characterIDs[0] = (s16)apRacer;
 		sdata->advProgress.characterID = (s16)apRacer;
 		SubmitName_RestoreName(0);
@@ -151,7 +169,7 @@ void AP_HubNameEntry_OnFrame(struct GameTracker *gGT)
 		         apRacer);
 		AP_LogLine(line);
 	}
-	else
+	else if (s_apHne.handedOff)
 	{
 		s_apHne.elapsedMs += (unsigned)(gGT->elapsedTimeMS > 0 ? gGT->elapsedTimeMS : 0);
 	}

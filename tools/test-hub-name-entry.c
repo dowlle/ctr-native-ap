@@ -24,12 +24,51 @@ enum { LEVEL_GSV = 25, LEVEL_NSB = 26, LEVEL_CITADEL = 29, LEVEL_TITLE = 39, LEV
 static const int ALL[5] = {1, 1, 1, 1, 1};
 
 // The engine as far as these flows see it: the level, the load stage, the
-// recorded prevLEV, the open menu.
-enum { MENU_NONE, MENU_NAME_ENTRY, MENU_GARAGE_PICKER };
+// recorded prevLEV, and the two menu pointers (sdata->ptrActiveMenu, the shown
+// menu, and sdata->ptrDesiredMenu, the one asked for next).
+struct RectMenu
+{
+	int id;
+};
+static struct RectMenu nameEntryMenu = {1}, garagePicker = {2};
 static struct
 {
-	int level, prevLEV, loading, menu;
+	int level, prevLEV, loading;
+	struct RectMenu *active, *desired;
 } e;
+
+// One frame of MainFrame_RenderFrame and RECTMENU_ProcessState as far as the
+// menu pointers go (A4-87): ProcessState runs only while a menu is shown, and
+// it is the only code that turns the desired menu into the shown one. Returns
+// the menu that ran this frame (ProcessState ran its menu proc), or NULL.
+// tools/test-hub-name-entry-production.py pins both facts to the engine.
+static struct RectMenu *menu_frame(void)
+{
+	if (e.active == NULL)
+		return NULL;
+	if (e.desired != NULL)
+	{
+		e.active = e.desired;
+		e.desired = NULL;
+	}
+	return e.active;
+}
+
+// Name entry is the menu ProcessState runs on each of the next frames.
+static int name_entry_runs(void)
+{
+	int i;
+	for (i = 0; i < 3; i++)
+		if (menu_frame() != &nameEntryMenu)
+			return 0;
+	return 1;
+}
+
+static void menus_none(void)
+{
+	e.active = NULL;
+	e.desired = NULL;
+}
 
 static void level_file(struct AP_HubNameEntryState *s, int next)
 {
@@ -44,22 +83,38 @@ static int frame(struct AP_HubNameEntryState *s, int levelOk, int apRacer)
 {
 	int a = AP_HNE_Frame(s, e.level, !e.loading, levelOk, apRacer);
 	if (a == AP_HNE_ACT_HANDOFF)
-		e.menu = MENU_NAME_ENTRY;
+		AP_HNE_OpenMenu(&e.active, &e.desired, &nameEntryMenu); // the glue's handoff
 	if (a == AP_HNE_ACT_FALLBACK)
 		level_file(s, LEVEL_GARAGE);
 	return a;
+}
+
+// The glue's per-frame order (AP_HubNameEntry_OnFrame): the bounded Enter
+// hold, which shows the hub from the first stop, then the frame decision.
+static int glue_frame(struct AP_HubNameEntryState *s, int levelOk, int apRacer, int enterHeld)
+{
+	if (AP_HNE_HoldHandoff(s, e.level, !e.loading, levelOk, apRacer, enterHeld))
+		return AP_HNE_ACT_CAMERA;
+	return frame(s, levelOk, apRacer);
 }
 
 static void load_done(int apRacer)
 {
 	e.loading = 0;
 	if (e.level == LEVEL_GARAGE)
-		e.menu = apRacer >= 0 ? MENU_NAME_ENTRY : MENU_GARAGE_PICKER; // the garage skip, or the retail picker
+	{
+		// CS_Garage_Init shows the garage menu; with an AP racer the garage
+		// skip then asks for name entry from inside it (CS_Garage_MenuProc).
+		e.active = &garagePicker;
+		e.desired = apRacer >= 0 ? &nameEntryMenu : NULL;
+	}
+	else if (e.level >= LEVEL_GSV && e.level <= LEVEL_CITADEL)
+		menus_none(); // the backdrop: AP_HubNameEntry_GarageInit clears the shown menu
 }
 
 int main(void)
 {
-	struct AP_HubNameEntryState s = {AP_HNE_OFF, -1, -1, 12345u, 0, 0};
+	struct AP_HubNameEntryState s = {AP_HNE_OFF, -1, -1, 12345u, 0, 0, 0};
 	int i, level, counts[5] = {0}, repeats = 0, last = -1, outOfRange = 0;
 
 	// ---- gating -------------------------------------------------------------
@@ -121,14 +176,16 @@ int main(void)
 	// ---- flow 1: AP-owned start, name entry, confirm -------------------------
 	AP_HNE_Reset(&s);
 	e.level = LEVEL_TITLE;
-	e.menu = MENU_NONE;
+	menus_none();
 	level = AP_HNE_BeginNewAdventure(&s, 5, 99u, ALL);
 	level_file(&s, level);
 	CHECK("flow 1: the backdrop load keeps the feature on (title -> hub)", s.phase == AP_HNE_LOADING && e.prevLEV == LEVEL_TITLE);
-	CHECK("flow 1: nothing happens while the hub still loads", frame(&s, 1, 5) == AP_HNE_ACT_NONE && e.menu == MENU_NONE);
+	CHECK("flow 1: nothing happens while the hub still loads", frame(&s, 1, 5) == AP_HNE_ACT_NONE && menu_frame() == NULL);
 	load_done(5);
+	CHECK("flow 1: over the hub no menu is shown before the handoff", menu_frame() == NULL);
 	CHECK("flow 1: the first idle frame commits the racer and opens name entry",
-	      frame(&s, 1, 5) == AP_HNE_ACT_HANDOFF && e.menu == MENU_NAME_ENTRY && s.phase == AP_HNE_SHOWING);
+	      frame(&s, 1, 5) == AP_HNE_ACT_HANDOFF && s.phase == AP_HNE_SHOWING);
+	CHECK("flow 1 (A4-87): name entry then runs over the hub (ProcessState runs it every frame)", name_entry_runs());
 	CHECK("flow 1: the handoff happens once, then the camera moves",
 	      frame(&s, 1, 5) == AP_HNE_ACT_CAMERA && frame(&s, 1, 5) == AP_HNE_ACT_CAMERA);
 	CHECK("flow 1: AP hub code reads the feature as active on the hub", s.phase != AP_HNE_OFF);
@@ -137,6 +194,63 @@ int main(void)
 	      e.prevLEV == LEVEL_GARAGE && s.phase == AP_HNE_OFF && !AP_HNE_IsBackdropLevel(&s, LEVEL_NSB));
 	load_done(5);
 	CHECK("flow 1: the adventure's hub is an ordinary hub (no camera, no handoff)", frame(&s, 1, 5) == AP_HNE_ACT_NONE);
+
+	// ---- A4-87: the alpha3 handoff only asked for name entry -----------------
+	// It set the desired menu and nothing else. Over the hub no menu is shown,
+	// so ProcessState never ran and never picked it up: the hub drew, name
+	// entry never did, and no button reached it.
+	menus_none();
+	e.desired = &nameEntryMenu;
+	CHECK("A4-87: asking for name entry with no menu shown never runs it", menu_frame() == NULL &&
+	                                                                         menu_frame() == NULL && !name_entry_runs());
+	menus_none();
+	AP_HNE_OpenMenu(&e.active, &e.desired, &nameEntryMenu);
+	CHECK("A4-87: AP_HNE_OpenMenu shows it and leaves it desired for the retail promotion",
+	      e.active == &nameEntryMenu && e.desired == &nameEntryMenu && name_entry_runs() && e.desired == NULL);
+
+	// ---- A4-87 review: an Enter held from the title ---------------------------
+	// glue_frame runs the glue's order: the bounded Enter hold first, then the
+	// frame decision.
+	{
+		int held, k, waits;
+		e.level = LEVEL_TITLE;
+		menus_none();
+		level = AP_HNE_BeginNewAdventure(&s, 5, 4242u, ALL);
+		level_file(&s, level);
+		load_done(5);
+		for (waits = 0, k = 0; k < 100 && (held = glue_frame(&s, 1, 5, 1)) == AP_HNE_ACT_CAMERA && !s.handedOff; k++)
+			waits++;
+		CHECK("A4-87: a held Enter holds name entry for at most 30 frames, the camera showing the hub",
+		      waits == AP_HNE_ENTER_WAIT_FRAMES && held == AP_HNE_ACT_HANDOFF);
+		CHECK("A4-87: a stuck Enter: name entry then opens and runs anyway (as from the garage)", name_entry_runs());
+		CHECK("A4-87: after the handoff Enter is name entry's, the camera keeps running",
+		      glue_frame(&s, 1, 5, 1) == AP_HNE_ACT_CAMERA && glue_frame(&s, 1, 5, 0) == AP_HNE_ACT_CAMERA);
+
+		e.level = LEVEL_TITLE;
+		menus_none();
+		level = AP_HNE_BeginNewAdventure(&s, 5, 4343u, ALL);
+		level_file(&s, level);
+		CHECK("A4-87: a new New Adventure starts with a fresh wait", s.enterWaitFrames == 0);
+		CHECK("A4-87: no wait while the hub still loads", glue_frame(&s, 1, 5, 1) == AP_HNE_ACT_NONE && s.enterWaitFrames == 0);
+		load_done(5);
+		for (k = 0; k < 5; k++)
+			glue_frame(&s, 1, 5, 1);
+		CHECK("A4-87: Enter released: the handoff opens name entry at once",
+		      !s.handedOff && menu_frame() == NULL && glue_frame(&s, 1, 5, 0) == AP_HNE_ACT_HANDOFF && name_entry_runs());
+
+		e.level = LEVEL_TITLE;
+		level = AP_HNE_BeginNewAdventure(&s, 5, 4444u, ALL);
+		level_file(&s, level);
+		load_done(5);
+		CHECK("A4-87: a held Enter never delays the fallback of an unusable hub",
+		      glue_frame(&s, 0, 5, 1) == AP_HNE_ACT_FALLBACK && e.level == LEVEL_GARAGE);
+		e.level = LEVEL_TITLE;
+		level = AP_HNE_BeginNewAdventure(&s, 5, 4545u, ALL);
+		level_file(&s, level);
+		load_done(-1);
+		CHECK("A4-87: nor the fallback of a seed that stopped owning the racer",
+		      glue_frame(&s, 1, -1, 1) == AP_HNE_ACT_FALLBACK && e.level == LEVEL_GARAGE);
+	}
 
 	// ---- flow 2: Cancel ----------------------------------------------------
 	e.level = LEVEL_TITLE;
@@ -159,8 +273,8 @@ int main(void)
 	      frame(&s, 0, 5) == AP_HNE_ACT_FALLBACK && e.level == LEVEL_GARAGE && s.phase == AP_HNE_OFF);
 	CHECK("flow 3: the garage loads as the garage, not as a backdrop", !AP_HNE_IsBackdropLevel(&s, LEVEL_GARAGE));
 	load_done(5);
-	CHECK("flow 3: the garage then runs its usual AP skip into name entry", e.menu == MENU_NAME_ENTRY &&
-	                                                                           frame(&s, 1, 5) == AP_HNE_ACT_NONE);
+	CHECK("flow 3: the garage then runs its usual AP skip into name entry",
+	      frame(&s, 1, 5) == AP_HNE_ACT_NONE && name_entry_runs());
 
 	// ---- flow 4: the seed stops owning the racer while the hub loads ---------
 	// AP_CharSwap_GarageRacer() answers -1 here, for example after a refused
@@ -168,14 +282,14 @@ int main(void)
 	// exactly as the garage skip sees it, so the backdrop follows the garage:
 	// it shows whenever the garage would skip its picker.
 	e.level = LEVEL_TITLE;
-	e.menu = MENU_NONE;
+	menus_none();
 	level = AP_HNE_BeginNewAdventure(&s, 5, 555u, ALL);
 	level_file(&s, level);
 	load_done(-1);
 	CHECK("flow 4: a seed that stops owning the racer during the load falls back to the garage",
 	      frame(&s, 1, -1) == AP_HNE_ACT_FALLBACK && e.level == LEVEL_GARAGE);
 	load_done(-1);
-	CHECK("flow 4: where the retail picker runs", e.menu == MENU_GARAGE_PICKER);
+	CHECK("flow 4: where the retail picker runs", menu_frame() == &garagePicker && menu_frame() == &garagePicker);
 
 	// ---- flow 5: another load takes over the request -------------------------
 	e.level = LEVEL_TITLE;
@@ -189,7 +303,7 @@ int main(void)
 	level_file(&s, level);
 	load_done(-1);
 	CHECK("flow 6: offline gets the garage and its picker, prevLEV as before",
-	      level == LEVEL_GARAGE && e.menu == MENU_GARAGE_PICKER && e.prevLEV == LEVEL_TITLE &&
+	      level == LEVEL_GARAGE && menu_frame() == &garagePicker && e.prevLEV == LEVEL_TITLE &&
 	          frame(&s, 1, -1) == AP_HNE_ACT_NONE);
 
 	// ---- camera ------------------------------------------------------------
