@@ -87,8 +87,8 @@ void AP_HitLoadBegin(void);
 
 // The field this load seated. A field the roster swap left short (racers held
 // behind their garages, three extra models) races with fewer karts. Ordinary
-// races are filled by AP_HitRaceField (A4-81), so this is a Gem Cup leg or a
-// safety net:
+// races are filled by AP_HitRaceField (A4-81) and cups by the cup snapshot
+// (A4-81b), so this is only a safety net:
 // AP_HitFieldShortSeats is then its AI count for MainInit_Drivers, else -1.
 // Cleared by AP_HitLoadBegin.
 void AP_HitFieldSeated(int seated, int aiSeats);

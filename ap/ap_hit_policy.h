@@ -158,8 +158,8 @@ static inline int AP_HitTakePure(const int *order, int pool, int player,
 // three non-stock ids, at most aiSeats opponents. Returns the count: fewer than
 // aiSeats only when the roster swap holds default racers behind their garages
 // and three extra models cannot cover them. An ordinary race then fills the
-// empty seats with held racers (AP_RosterFillField, ruled 2026-11-14, A4-81);
-// a Gem Cup field keeps its own rule and races with fewer karts.
+// empty seats with held racers (AP_RosterFillField, ruled 2026-11-14, A4-81),
+// and so does a Gem Cup or extra cup at its fresh draw (A4-81b).
 static inline int AP_HitDrawFieldPure(const int *order,
                                       const unsigned char *eligible,
                                       const unsigned char *unchecked,
