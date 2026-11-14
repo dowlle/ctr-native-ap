@@ -1,0 +1,47 @@
+{
+  "format": 1,
+  "about": "What each track author said when asked whether CTR Archipelago may offer their tracks for in-game download through the Project Saphi API. The client lists and downloads a track only when its author said yes here, or when Project Saphi's own setting allows it and the author has not said no here. An author or track that is not listed is unknown, and unknown is not offered for download. Players can still import track files by hand.",
+  "authors": [
+    {
+      "saphi_author_id": 1,
+      "name": "Boxic",
+      "client_listing": {
+        "status": "granted",
+        "scope": "all_saphi_tracks",
+        "on": "2026-11-12",
+        "evidence": "private receipt held by the maintainer"
+      }
+    },
+    {
+      "saphi_author_id": 3,
+      "name": "Lockheart",
+      "client_listing": {
+        "status": "granted",
+        "scope": "all_saphi_tracks",
+        "on": "2026-11-12",
+        "evidence": "private receipt held by the maintainer"
+      }
+    },
+    {
+      "saphi_author_id": 5,
+      "name": "PanchoPew",
+      "client_listing": {
+        "status": "granted",
+        "scope": "all_saphi_tracks",
+        "on": "2026-11-12",
+        "evidence": "private receipt held by the maintainer"
+      }
+    },
+    {
+      "saphi_author_id": 12,
+      "name": "Lolothesamurai",
+      "client_listing": {
+        "status": "granted",
+        "scope": "all_saphi_tracks",
+        "on": "2026-11-12",
+        "evidence": "private receipt held by the maintainer"
+      }
+    }
+  ],
+  "tracks": []
+}

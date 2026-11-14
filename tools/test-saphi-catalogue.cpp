@@ -89,10 +89,10 @@ int main(int argc,char **argv)
     {auto ref=sca;ref["download_url"]=nullptr;ref["file_size"]=0;j=withSca({ref});CHECK(parse(j,&c));CHECK(rowFor(c,"1.0.0")->sca.id==0);CustomSaphi_Free(&c);}
     {auto odd=sca;odd["is_current"]="yes";j=withSca({odd});CHECK(parse(j,&c));CHECK(rowFor(c,"1.0.0")->sca.id==0);CustomSaphi_Free(&c);}
     /* A4-74: author_id is read for the permission check; a missing or odd
-       one leaves the author unknown and never fails the catalogue. Saphi
-       publishes no permission field yet, and the adapter reads none: every
-       revision is unknown, whatever look-alike field appears (auto_download
-       is Saphi's own client hint, not permission). */
+       one leaves the author unknown and never fails the catalogue. A4-79:
+       the adapter reads the track's `permissions` object (public_non_profit
+       once specified); no object, or look-alike fields, stay unknown
+       (auto_download is Saphi's own client hint, not permission). */
     j=fixture();CHECK(parse(j,&c));CHECK(CustomSaphi_Row(c,0)->authorID==0 &&
         CustomSaphi_Row(c,0)->saphiPermission==CUSTOM_SAPHI_PERMISSION_UNKNOWN);CustomSaphi_Free(&c);
     j=fixture();j["data"][0]["author_id"]=12;CHECK(parse(j,&c));CHECK(CustomSaphi_Row(c,0)->authorID==12);CustomSaphi_Free(&c);
@@ -106,6 +106,37 @@ int main(int argc,char **argv)
         CHECK(parse(j,&c));CHECK(CustomSaphi_Row(c,0)->saphiPermission==CUSTOM_SAPHI_PERMISSION_UNKNOWN);CustomSaphi_Free(&c);
         t["permissions"]={{"client_download",false}};t["allow_download"]=false;
         CHECK(parse(j,&c));CHECK(CustomSaphi_Row(c,0)->saphiPermission==CUSTOM_SAPHI_PERMISSION_UNKNOWN);CustomSaphi_Free(&c);
+    }
+    /* A4-79: the track-level permissions object, for track and file rows
+       alike (there is no per-file field). */
+    {
+        auto perm=[](bool specified,json pnp){return json{{"specified",specified},{"reach","public"},{"monetization","non_profit"},
+            {"credit_required",true},{"saphi",true},{"public_non_profit",pnp}};};
+        auto with=[&](json p,bool present=true){auto j=fixture();if(present) j["data"][0]["permissions"]=p;return j;};
+        auto row=[&](const json &j,int *credit=nullptr){CustomSaphiCatalogue *cat=nullptr;int r=-1;
+            if(parse(j,&cat)&&CustomSaphi_Count(cat)==1){r=CustomSaphi_Row(cat,0)->saphiPermission;if(credit)*credit=CustomSaphi_Row(cat,0)->creditRequired;}
+            CustomSaphi_Free(&cat);return r;};
+        int credit=-1;
+        CHECK(row(with(perm(true,true)),&credit)==CUSTOM_SAPHI_PERMISSION_ALLOW && credit==CUSTOM_SAPHI_CREDIT_REQUIRED);
+        CHECK(row(with(perm(true,false)))==CUSTOM_SAPHI_PERMISSION_DENY);
+        CHECK(row(with(perm(false,true)),&credit)==CUSTOM_SAPHI_PERMISSION_UNKNOWN && credit==CUSTOM_SAPHI_CREDIT_UNKNOWN);
+        CHECK(row(with(nullptr,false))==CUSTOM_SAPHI_PERMISSION_UNKNOWN);
+        for(const json &odd:{json("allow"),json(nullptr),json(true),json(7),json::array(),json::object(),json{{"specified",true}},
+            json{{"specified","true"},{"public_non_profit",true}},json{{"specified",true},{"public_non_profit","true"}},
+            json{{"specified",true},{"public_non_profit",1}},json{{"specified",true},{"public_non_profit",nullptr}}})
+            CHECK(row(with(odd))==CUSTOM_SAPHI_PERMISSION_UNKNOWN);
+        /* The catalogue is never rejected for what is in permissions, and one bad track does not touch another. */
+        {auto j=fixture();auto second=j["data"][0];second["id"]=8;second["permissions"]="junk";
+         for(int i=0;i<2;i++){second["downloads"][i]["id"]=20+i;second["downloads"][i]["download_url"]="/api/v3/tracks/8/downloads/"+std::to_string(20+i);}
+         j["data"][0]["permissions"]=perm(true,true);j["data"].push_back(second);
+         CHECK(parse(j,&c));CHECK(CustomSaphi_Count(c)==2);
+         for(size_t i=0;i<2;i++) CHECK(CustomSaphi_Row(c,i)->saphiPermission==(CustomSaphi_Row(c,i)->trackID==7?CUSTOM_SAPHI_PERMISSION_ALLOW:CUSTOM_SAPHI_PERMISSION_UNKNOWN));
+         CustomSaphi_Free(&c);}
+        /* reach, monetization and saphi do not decide. */
+        {auto p=perm(true,true);p["reach"]="local";p["monetization"]="commercial";p["saphi"]=false;CHECK(row(with(p))==CUSTOM_SAPHI_PERMISSION_ALLOW);
+         p=perm(true,false);p["reach"]="public";p["saphi"]=true;CHECK(row(with(p))==CUSTOM_SAPHI_PERMISSION_DENY);}
+        /* File rows carry no field of their own: a per-file look-alike changes nothing. */
+        {auto j=with(perm(true,true));for(auto &m:j["data"][0]["downloads"]) m["permissions"]=perm(true,false);CHECK(row(j)==CUSTOM_SAPHI_PERMISSION_ALLOW);}
     }
     std::printf("Saphi catalogue: %d checks, %d failures\n",checks,failures);return failures!=0;
 }

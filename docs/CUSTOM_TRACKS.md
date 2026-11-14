@@ -243,12 +243,22 @@ for history; it has no Archipelago dependency) and
 - **Track author permission (0.3.0-alpha4).** The client offers a track for
   in-game download only when its author said yes. One resolver,
   `ap_track_permission` in `ap/ap_track_consent.cpp`, answers allow, deny or
-  unknown from, in order: Project Saphi's own permission value (read by one
-  adapter, `saphi_permission` in `platform/native_saphi_catalogue.cpp`; Saphi
-  publishes none yet, so it is always unknown), then the author's recorded
-  answer in `consent.json` of the public registry
-  `dowlle/ctr-track-registry`, otherwise unknown. A direct "no" there beats a
-  Saphi allow. Unknown and deny both mean: not listed in Browse, and no
+  unknown from, in order: the author's recorded answer in `consent.json` of the
+  public registry `dowlle/ctr-track-registry` (a track entry first, then the
+  author's; granted allows, declined or withdrawn denies, and it wins over
+  Saphi either way, because it is what the author told the maintainer
+  directly), then, only when `consent.json` has no applicable answer, Project
+  Saphi's own permission value (read by one adapter, `saphi_permission` in
+  `platform/native_saphi_catalogue.cpp`, which reads the track's `permissions`
+  object: once the uploader has specified, `public_non_profit` true allows and
+  false denies, since the CTR Archipelago is a free public project; a track that
+  is unspecified, or whose object is missing or malformed, is unknown, and
+  `reach`, `monetization` and `saphi` do not decide), otherwise unknown. So a
+  blanket grant in `consent.json` also covers a track whose Saphi setting is
+  "Saphi only". With several credited authors every one must allow, each by
+  their `consent.json` answer if any, else Saphi's track value. The
+  author's credit setting is kept on the catalogue revision (`creditRequired`)
+  for a later credits change; nothing reads it yet. Unknown and deny both mean: not listed in Browse, and no
   Download, Update or Versions. The gate also sits in `CustomSaphi_StartInstall`
   and in the shared download worker, so Current Seed's "Install missing" and the
   compiled Baby T Park download are covered. A track that is not allowed is
@@ -258,13 +268,14 @@ for history; it has no Archipelago dependency) and
   fetched like `registry.json` (GitHub raw only, 1 MiB cap, last good copy in
   `assets/track-consent-cache.json`, used only when GitHub cannot be reached).
   A missing (HTTP 4xx) or unreadable live file, or no live copy and no cache,
-  leaves every track unknown, and the screen says the list is not loaded. A track
+  leaves every track not offered (unknown, or deny where Saphi says deny), and the screen says the list is not loaded. A track
   is matched to its authors by the catalogue's `author_id`, by the Saphi track
   id the catalogue or the install recorded (`saphi-source.json` now records
   `author_id` and the registry `track_key`; Current Seed's
   `seed-source.json` records `saphi_track_id` and `saphi_author_id`), and by
   the registry's credits for the track key; every credited author must have
-  said yes. A package that cannot be matched is unknown.
+  said yes (or, where nothing is recorded for an author, Saphi's value for the track allows). A package that cannot be matched to any author or
+  recorded answer takes Saphi's value for the track if it has one, else it is unknown.
 
 ## 6. Racing a package: the loading path
 

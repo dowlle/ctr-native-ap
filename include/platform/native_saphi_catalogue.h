@@ -31,9 +31,12 @@ struct CustomSaphiRevision
     /* Track author permission check (A4-74). authorID is Saphi's author_id,
        zero when absent or unreadable. saphiPermission is Saphi's own
        permission value for this revision as CustomSaphi_Permission reads it:
-       CUSTOM_SAPHI_PERMISSION_*; always unknown until Saphi publishes one. */
+       CUSTOM_SAPHI_PERMISSION_*, from the track's `permissions` object
+       (public_non_profit; A4-79). creditRequired is the author's credit
+       setting, CUSTOM_SAPHI_CREDIT_*, unknown until the author specified. */
     int authorID;
     int saphiPermission;
+    int creditRequired;
 };
 /* Same values as AP_TRACK_PERMISSION_* (ap/ap_track_consent.h). */
 enum
@@ -41,6 +44,13 @@ enum
     CUSTOM_SAPHI_PERMISSION_UNKNOWN = 0,
     CUSTOM_SAPHI_PERMISSION_ALLOW = 1,
     CUSTOM_SAPHI_PERMISSION_DENY = 2
+};
+/* The author's credit setting (A4-79); unknown until the author specified. */
+enum
+{
+    CUSTOM_SAPHI_CREDIT_UNKNOWN = 0,
+    CUSTOM_SAPHI_CREDIT_REQUIRED = 1,
+    CUSTOM_SAPHI_CREDIT_NOT_REQUIRED = 2
 };
 struct CustomSaphiCatalogue;
 /* Parse a complete, bounded response transactionally. No downloads/writes.

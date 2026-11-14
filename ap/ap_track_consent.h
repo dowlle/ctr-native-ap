@@ -6,13 +6,18 @@
 //
 // One resolver, ap_track_permission, answers allow, deny or unknown from, in
 // order:
-//   1. Project Saphi's own permission value, when Saphi publishes one and
-//      this client understands it (the adapter in
-//      platform/native_saphi_catalogue.cpp; today always unknown),
-//   2. the author's recorded answer in the public registry's consent.json
-//      (dowlle/ctr-track-registry), fetched live like registry.json,
+//   1. the author's recorded answer in the public registry's consent.json
+//      (dowlle/ctr-track-registry), fetched live like registry.json: a track
+//      entry first, then the author's; granted allows, declined or withdrawn
+//      denies. This is what the author told the maintainer directly, so it
+//      wins over Project Saphi's setting either way (A4-79b),
+//   2. only when consent.json has no applicable answer: Project Saphi's own
+//      permission value (the adapter in platform/native_saphi_catalogue.cpp
+//      reads public_non_profit from the track's permissions object;
+//      unspecified or malformed is unknown),
 //   3. otherwise unknown.
-// A direct "no" in consent.json (declined or withdrawn) beats a Saphi allow.
+// With several credited authors every one must allow; each uses their own
+// consent.json answer if any, else Saphi's track value.
 // Unknown and deny both mean: not offered for download. Nothing on the
 // player's disk is ever deleted or disabled by this check; it only decides
 // whether the client downloads, updates or lists a track for download.
@@ -21,7 +26,8 @@
 // allow-list), size cap AP_TRACK_CONSENT_MAX_BYTES, the transport's timeout.
 // The last good copy is kept on disk and used only when GitHub cannot be
 // reached. A missing (HTTP 4xx) or unreadable live file, or no live copy and
-// no cache, leaves every track unknown.
+// no cache, leaves every track not offered (unknown, or deny where Saphi
+// says deny).
 
 #include <stddef.h>
 #include <stdint.h>
