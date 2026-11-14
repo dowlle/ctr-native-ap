@@ -110,6 +110,33 @@ static inline int AP_RosterSeatAttacker(int *ids, int count, int attacker, int p
 	return seat;
 }
 
+// The start grid of a short field. Retail fills kartSpawnOrderArray for eight
+// karts: the Adventure pad gives P1 place 7 and drivers 1..7 the places 0..6.
+// When the field could not fill, drivers past `karts` are never born, so their
+// places stay empty: a gap on the grid, and before the lights go green the
+// standings take each kart's rank from this array, so the HUD shows a blank
+// portrait and P1 reads 8TH (A4-77, 2026-11-14). Renumber the places of the
+// karts that race to 0..karts-1, keeping their order, so P1 stays last.
+// Entries past `karts` are left alone. A tie keeps the lower driver first.
+static inline void AP_RosterCompactSpawnOrder(unsigned char *order, int karts)
+{
+	unsigned char dense[8];
+	int i, j;
+
+	if (order == 0 || karts <= 0 || karts > 8)
+		return;
+	for (i = 0; i < karts; i++)
+	{
+		int below = 0;
+		for (j = 0; j < karts; j++)
+			if (order[j] < order[i] || (order[j] == order[i] && j < i))
+				below++;
+		dense[i] = (unsigned char)below;
+	}
+	for (i = 0; i < karts; i++)
+		order[i] = dense[i];
+}
+
 // The chaos field: the final racer first, in the seat a boss race gives its
 // opponent, then the four garages. Racers are pairwise distinct on the wire.
 static inline void AP_RosterChaosLineup(const int ident[AP_HIT_BOSS_CODES], int out[AP_ROSTER_CHAOS_RIVALS])
