@@ -47,7 +47,9 @@ void VehLap_UpdateProgress(struct Driver *driver)
 	// on its line still crosses below 1200 and its lap counts.
 	int lastCheckpoint = driver->checkpoint.currentIndex;
 	int lastForward = AP_LapProgress_IndexUsable(lastCheckpoint, level->cnt_restart_points) ? nodes[lastCheckpoint].nextIndex_forward : -1;
-	checkpointIndex = (s16)AP_LapProgress_MeasureIndex(checkpointIndex, lastCheckpoint, lastForward, level->cnt_restart_points);
+	int nearFinish = AP_LapProgress_NearFinish(CTR_MipsSra(driver->posCurr.x, 8), CTR_MipsSra(driver->posCurr.y, 8), CTR_MipsSra(driver->posCurr.z, 8),
+	                                           nodes[0].pos.x, nodes[0].pos.y, nodes[0].pos.z);
+	checkpointIndex = (s16)AP_LapProgress_MeasureIndex(checkpointIndex, lastCheckpoint, lastForward, nearFinish, level->cnt_restart_points);
 	if (!AP_LapProgress_IndexUsable(checkpointIndex, level->cnt_restart_points) ||
 	    !AP_LapProgress_IndexUsable(nodes[checkpointIndex].nextIndex_forward, level->cnt_restart_points) ||
 	    !AP_LapProgress_IndexUsable(nodes[nodes[checkpointIndex].nextIndex_forward].nextIndex_forward, level->cnt_restart_points))

@@ -15,8 +15,10 @@ tools/test-lap-progress.c. This checks how the engine calls it:
    (driver->checkpoint.currentIndex) and that checkpoint's forward link, read
    only when the last checkpoint is inside the array. A nav frame naming a
    restart point past the array (Papu's Pyramid's 102) is measured from a last
-   checkpoint that links to the finish, not skipped. It runs after the
-   negative-index return and writes only locals.
+   checkpoint that links to the finish while the kart is near restart point 0,
+   not skipped. It runs after the negative-index return and writes only
+   locals. BOTS.c still gives a bot on its line the nav frame's index, the
+   source of Papu's Pyramid's 102.
 """
 from pathlib import Path
 import re
@@ -63,27 +65,32 @@ pre = body[:guard]
 check(pre.rfind('#ifdef CTR_AP') > pre.rfind('#endif'), 'the guard is inside #ifdef CTR_AP')
 check('if ((quad != NULL) && (quad->checkpointIndex != 0xff))' in body, "the human 0xff skip is retail's")
 check('checkpointIndex = driver->botData.ai_quadblock_checkpointIndex;' in body, 'a bot still takes its own index')
+check('botDriver->botData.ai_quadblock_checkpointIndex = navFrameCurr->goBackCount;' in bots,
+      'BOTS.c gives a bot on its line the nav frame index (A4-78 source)')
 check('botDriver->botData.ai_quadblock_checkpointIndex = sps->hit.ptrQuadblock->checkpointIndex;' in bots,
       'BOTS.c still takes the quad index off the nav line')
 
 # 4. A4-78: the index is chosen before the guard, from the last checkpoint.
 last_line = 'int lastCheckpoint = driver->checkpoint.currentIndex;'
 fwd_line = 'int lastForward = AP_LapProgress_IndexUsable(lastCheckpoint, level->cnt_restart_points) ? nodes[lastCheckpoint].nextIndex_forward : -1;'
-pick_line = 'checkpointIndex = (s16)AP_LapProgress_MeasureIndex(checkpointIndex, lastCheckpoint, lastForward, level->cnt_restart_points);'
+near_line = 'int nearFinish = AP_LapProgress_NearFinish(CTR_MipsSra(driver->posCurr.x, 8), CTR_MipsSra(driver->posCurr.y, 8), CTR_MipsSra(driver->posCurr.z, 8),'
+pick_line = 'checkpointIndex = (s16)AP_LapProgress_MeasureIndex(checkpointIndex, lastCheckpoint, lastForward, nearFinish, level->cnt_restart_points);'
 check(body.count('AP_LapProgress_MeasureIndex(') == 1, 'the index is picked once')
 check(last_line in body, 'the last checkpoint is the racer\'s stored one')
 check(fwd_line in body, 'its forward link is read only when it is inside the array')
-check(pick_line in body, 'the pick takes the racer index, the last checkpoint, its forward link and the array size')
-if last_line in body and fwd_line in body and pick_line in body:
+check(near_line in body and 'nodes[0].pos.x, nodes[0].pos.y, nodes[0].pos.z);' in body, 'the kart is compared with restart point 0 in world units')
+check(pick_line in body, 'the pick takes the racer index, the last checkpoint, its forward link, the reach and the array size')
+if last_line in body and fwd_line in body and near_line in body and pick_line in body:
     pick = body.index(pick_line)
     neg = body.index('(checkpointIndex < 0)')
-    check(neg < body.index(last_line) < body.index(fwd_line) < pick < guard, 'the pick sits after the negative-index return and before the guard')
+    check(neg < body.index(last_line) < body.index(fwd_line) < body.index(near_line) < pick < guard, 'the pick sits after the negative-index return and before the guard')
     check(nodes_decl < body.index(fwd_line), 'the forward link is read after the array is taken')
     check(pre.rfind('#ifdef CTR_AP') < body.index(last_line), 'the pick is inside #ifdef CTR_AP')
 logic = (root / 'ap/ap_lap_progress_logic.h').read_text()
 check('#define AP_LAP_PROGRESS_NO_CHECKPOINT 0xff' in logic, 'a quad without a checkpoint is 0xff')
 check('if (index == AP_LAP_PROGRESS_NO_CHECKPOINT)' in logic, '0xff still skips (A3-26)')
-check('&& (lastForward == 0))' in logic, 'the fallback needs a last checkpoint that links to the finish')
+check('&& (lastForward == 0) && nearFinish)' in logic, 'the fallback needs a last checkpoint that links to the finish and a kart near it')
+check('#define AP_LAP_PROGRESS_FINISH_REACH 0x1000' in logic, 'the reach is 0x1000 world units')
 
 for f in fails:
     print('FAIL', f)

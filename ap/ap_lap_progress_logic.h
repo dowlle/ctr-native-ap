@@ -59,12 +59,13 @@ static inline int AP_LapProgress_IndexUsable(int index, int numRestartPoints)
 // A3-26 N. Gin Labs case) still skips. Any other index past the array is
 // measured from the racer's last checkpoint only when that checkpoint links
 // forward to restart point 0, the last point before the finish line, as 101
-// does on Papu's Pyramid; the progress is then retail's. Anywhere else, or
-// without a usable last checkpoint, it skips as A3-26 did, so a stale
-// mid-track checkpoint can never be measured toward the line.
+// does on Papu's Pyramid, and the kart is near restart point 0
+// (AP_LapProgress_NearFinish); the progress is then retail's. Anywhere else,
+// or without a usable last checkpoint, it skips as A3-26 did, so a stale
+// checkpoint is never measured toward the line from elsewhere on the track.
 // lastForward is the last checkpoint's nextIndex_forward, or -1 when the
 // caller could not read it.
-static inline int AP_LapProgress_MeasureIndex(int index, int lastIndex, int lastForward, int numRestartPoints)
+static inline int AP_LapProgress_MeasureIndex(int index, int lastIndex, int lastForward, int nearFinish, int numRestartPoints)
 {
 	if (AP_LapProgress_IndexUsable(index, numRestartPoints))
 	{
@@ -74,11 +75,25 @@ static inline int AP_LapProgress_MeasureIndex(int index, int lastIndex, int last
 	{
 		return -1;
 	}
-	if (AP_LapProgress_IndexUsable(lastIndex, numRestartPoints) && (lastForward == 0))
+	if (AP_LapProgress_IndexUsable(lastIndex, numRestartPoints) && (lastForward == 0) && nearFinish)
 	{
 		return lastIndex;
 	}
 	return -1;
+}
+
+// How far from restart point 0, on every axis, in world units, the kart may
+// be for the fallback above. Papu's Pyramid's finish-line nav frames reach
+// 1314 on one axis; this is about three times that.
+#define AP_LAP_PROGRESS_FINISH_REACH 0x1000
+
+// Is the kart (world units) within the reach of restart point 0 on every axis?
+static inline int AP_LapProgress_NearFinish(int kartX, int kartY, int kartZ, int startX, int startY, int startZ)
+{
+	int dx = kartX - startX, dy = kartY - startY, dz = kartZ - startZ;
+	return (dx >= -AP_LAP_PROGRESS_FINISH_REACH) && (dx <= AP_LAP_PROGRESS_FINISH_REACH) &&
+	       (dy >= -AP_LAP_PROGRESS_FINISH_REACH) && (dy <= AP_LAP_PROGRESS_FINISH_REACH) &&
+	       (dz >= -AP_LAP_PROGRESS_FINISH_REACH) && (dz <= AP_LAP_PROGRESS_FINISH_REACH);
 }
 
 #endif // AP_LAP_PROGRESS_LOGIC_H

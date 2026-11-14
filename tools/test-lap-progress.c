@@ -54,16 +54,21 @@ static void synthetic(void)
 	CHECK(AP_LapProgress_IndexUsable(254, 255), "a 255-point level keeps index 254");
 
 	// A4-78: which index is measured.
-	CHECK(AP_LapProgress_MeasureIndex(40, 39, 40, 102) == 40, "a usable index is measured");
-	CHECK(AP_LapProgress_MeasureIndex(0, 101, 0, 102) == 0, "restart point 0 is measured");
-	CHECK(AP_LapProgress_MeasureIndex(0xff, 80, 81, 138) == -1, "a quad without a checkpoint still skips (A3-26)");
-	CHECK(AP_LapProgress_MeasureIndex(0xff, 137, 0, 138) == -1, "a quad without a checkpoint skips even at the finish");
-	CHECK(AP_LapProgress_MeasureIndex(102, 101, 0, 102) == 101, "past the array at the finish: measured from the last checkpoint");
-	CHECK(AP_LapProgress_MeasureIndex(130, 101, 0, 102) == 101, "any index past the array other than 0xff, at the finish");
-	CHECK(AP_LapProgress_MeasureIndex(102, 57, 58, 102) == -1, "past the array mid-track skips (no stale measurement)");
-	CHECK(AP_LapProgress_MeasureIndex(102, 57, -1, 102) == -1, "an unread forward link skips");
-	CHECK(AP_LapProgress_MeasureIndex(102, 102, 0, 102) == -1, "no usable last checkpoint skips");
-	CHECK(AP_LapProgress_MeasureIndex(3, 5, 0, 0) == -1, "a level without restart points skips");
+	CHECK(AP_LapProgress_MeasureIndex(40, 39, 40, 0, 102) == 40, "a usable index is measured");
+	CHECK(AP_LapProgress_MeasureIndex(0, 101, 0, 1, 102) == 0, "restart point 0 is measured");
+	CHECK(AP_LapProgress_MeasureIndex(0xff, 80, 81, 0, 138) == -1, "a quad without a checkpoint still skips (A3-26)");
+	CHECK(AP_LapProgress_MeasureIndex(0xff, 137, 0, 1, 138) == -1, "a quad without a checkpoint skips even at the finish");
+	CHECK(AP_LapProgress_MeasureIndex(102, 101, 0, 1, 102) == 101, "past the array at the finish: measured from the last checkpoint");
+	CHECK(AP_LapProgress_MeasureIndex(130, 101, 0, 1, 102) == 101, "any index past the array other than 0xff, at the finish");
+	CHECK(AP_LapProgress_MeasureIndex(102, 101, 0, 0, 102) == -1, "away from restart point 0 it skips");
+	CHECK(AP_LapProgress_MeasureIndex(102, 57, 58, 1, 102) == -1, "past the array mid-track skips (no stale measurement)");
+	CHECK(AP_LapProgress_MeasureIndex(102, 57, -1, 1, 102) == -1, "an unread forward link skips");
+	CHECK(AP_LapProgress_MeasureIndex(102, 102, 0, 1, 102) == -1, "no usable last checkpoint skips");
+	CHECK(AP_LapProgress_MeasureIndex(3, 5, 0, 1, 0) == -1, "a level without restart points skips");
+	CHECK(AP_LapProgress_NearFinish(1201 + 0x1000, -192, -5729 - 0x1000, 1201, -192, -5729), "the reach is inclusive");
+	CHECK(!AP_LapProgress_NearFinish(1201 + 0x1001, -192, -5729, 1201, -192, -5729), "one past the reach on x is far");
+	CHECK(!AP_LapProgress_NearFinish(1201, -192 - 0x1001, -5729, 1201, -192, -5729), "one past the reach on y is far");
+	CHECK(!AP_LapProgress_NearFinish(1201, -192, -5729 + 0x1001, 1201, -192, -5729), "one past the reach on z is far");
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +115,9 @@ static int measure(const struct Lev *l, uint32_t rp, int cnt, int cp, int x, int
 	if (mode == RULE)
 	{
 		int lastForward = AP_LapProgress_IndexUsable(*last, cnt) ? node_at(l, rp, *last).fwd : -1;
-		cp = AP_LapProgress_MeasureIndex(cp, *last, lastForward, cnt);
+		struct Node start = node_at(l, rp, 0);
+		int nearFinish = AP_LapProgress_NearFinish(x, y, z, start.x, start.y, start.z);
+		cp = AP_LapProgress_MeasureIndex(cp, *last, lastForward, nearFinish, cnt);
 	}
 	if (cp < 0)
 		return 0;
