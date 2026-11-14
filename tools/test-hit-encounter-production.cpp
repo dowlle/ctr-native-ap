@@ -822,6 +822,80 @@ static void test_roster_swap(void)
 		expect(oxide, "N. Oxide with his races off rotates into the field");
 	}
 
+	// A4-81b (ruled 2026-11-14): a Gem Cup or extra cup that runs short fills
+	// the same way, once, at its fresh draw. Four held defaults, a guest player.
+	{
+		const int player = 13;
+		for (int cup = 0; cup < 4; cup++)
+		{
+			int cupIds[AP_HIT_FIELD_MAX], rawA[AP_HIT_FIELD_MAX], rawB[AP_HIT_FIELD_MAX];
+			int later[AP_HIT_FIELD_MAX];
+
+			reset_state();
+			swap_bosses(0, 1, 2, 3, 0);
+			ctr_boss_encounters.oxideDisabled = 1;
+			AP_HitCupSnapshotBegin(cup);
+			int c = AP_HitCupSnapshotField(cup, 0, player, 7, cupIds);
+			expect_eq(c, 7, "a short cup fills to seven AI on its first leg");
+			int held = 0, filler = -1;
+			for (int i = 0; i < c; i++)
+				if (cupIds[i] <= 3)
+				{
+					held++;
+					filler = cupIds[i];
+				}
+			expect_eq(held, 1, "exactly one held default fills the cup's empty seat");
+			expect(c == 7 && cupIds[6] == filler, "the cup's filler takes the last seat");
+			const int *order = AP_HitEncounterOrder(100 + cup);
+			int first = -1;
+			for (int pos = 0; pos < 16 && first < 0; pos++)
+				if (order[pos] >= 0 && order[pos] <= 3)
+					first = order[pos];
+			expect_eq(filler, first, "the cup's filler is the first held id in the cup's seeded order");
+			for (int leg = 1; leg < 4; leg++)
+			{
+				int n2 = AP_HitCupSnapshotField(cup, leg, player, 7, later);
+				expect(n2 == 7 && std::memcmp(later, cupIds, sizeof later) == 0,
+				       "every later leg seats the same eight karts");
+			}
+			int n3 = AP_HitCupSnapshotField(cup, 3, player, 7, later);
+			expect(n3 == 7 && std::memcmp(later, cupIds, sizeof later) == 0, "a restart of the last leg keeps the field");
+			// A garage won mid-cup does not change the active cup's field.
+			for (int g = 0; g < 4; g++)
+				g_checked.insert(35011100LL + g);
+			n3 = AP_HitCupSnapshotField(cup, 2, player, 7, later);
+			expect(n3 == 7 && std::memcmp(later, cupIds, sizeof later) == 0, "a mid-cup unlock cannot alter the frozen cup");
+			for (int g = 0; g < 4; g++)
+				g_checked.erase(35011100LL + g);
+
+			// No cursor moves: the next cup's drawn six are what the unfilled
+			// draw yields, and a second fresh cup is the second unfilled draw.
+			AP_HitCupSnapshotBegin(cup);
+			int d2 = AP_HitCupSnapshotField(cup, 0, player, 7, later);
+			reset_state();
+			swap_bosses(0, 1, 2, 3, 0);
+			ctr_boss_encounters.oxideDisabled = 1;
+			int r1 = AP_HitEncounterDrawFresh(100 + cup, player, 7, rawA);
+			int r2 = AP_HitEncounterDrawFresh(100 + cup, player, 7, rawB);
+			expect(r1 == 6 && std::memcmp(rawA, cupIds, 6 * sizeof(int)) == 0, "the filled cup's drawn six are the unfilled draw");
+			expect(d2 == 7 && r2 == 6 && std::memcmp(rawB, later, 6 * sizeof(int)) == 0,
+			       "the fill moved no cursor: the next cup draws what it always did");
+		}
+
+		// A full cup is unchanged: no held racer, the draw is the field.
+		reset_state();
+		swap_bosses(0, 9, 11, 8, 0); // one default held: the pool still fills seven
+		{
+			int cupIds[AP_HIT_FIELD_MAX], raw[AP_HIT_FIELD_MAX];
+			AP_HitCupSnapshotBegin(1);
+			int c = AP_HitCupSnapshotField(1, 0, player, 7, cupIds);
+			reset_state();
+
+			int r = AP_HitEncounterDrawFresh(101, player, 7, raw);
+			expect(c == 7 && r == 7 && std::memcmp(raw, cupIds, sizeof raw) == 0, "a full cup field is unchanged");
+		}
+	}
+
 	// A gauntlet with the retail bosses: only its Purple Gem Cup legs draw.
 	reset_state();
 	swap_bosses(10, 9, 11, 8, 1);

@@ -335,11 +335,13 @@ static int ap_hit_in_stock(int id, int player)
 	return AP_HitInStockPure(id, player);
 }
 
-// Ordinary races always have eight karts (ruled 2026-11-14, A4-81): a field the
-// draw left short takes held boss racers in its empty seats, picked from the
-// destination's seeded order (AP_RosterFillField). Cups, boss races, Crystal
-// Challenges and the Final Challenge never come here.
-static int ap_hit_fill_ordinary(int destLevelID, int player, int aiSeats, int *ids, int count)
+// Fields always have their full seats (ruled 2026-11-14, A4-81 and A4-81b): a
+// field the draw left short takes held boss racers in its empty seats, picked
+// from the destination's seeded order (AP_RosterFillField). Ordinary races
+// (AP_HitRaceField) and Gem Cups and extra cups (AP_HitCupSnapshotFieldAt)
+// come here. Boss races, boss cups, Crystal Challenges and the Final Challenge
+// never do.
+static int ap_hit_fill_field(int destLevelID, int player, int aiSeats, int *ids, int count)
 {
 	const int *order = AP_HitEncounterOrder(destLevelID);
 	unsigned char eligible[CTR_CFG_HIT_CHARACTER_COUNT];
@@ -371,7 +373,7 @@ int AP_HitRaceField(int destLevelID, int player, int aiSeats, int *outIDs, int *
 	if (!reuse)
 	{
 		int n = AP_HitEncounterDrawFresh(destLevelID, player, aiSeats, s_raceSnap.ids);
-		n = ap_hit_fill_ordinary(destLevelID, player, aiSeats, s_raceSnap.ids, n);
+		n = ap_hit_fill_field(destLevelID, player, aiSeats, s_raceSnap.ids, n);
 		s_raceSnap.valid = n > 0;
 		s_raceSnap.level = destLevelID;
 		s_raceSnap.player = player;
@@ -439,6 +441,10 @@ int AP_HitCupSnapshotFieldAt(int dest, int cupID, int trackIndex, int player, in
 	if (kind == AP_HIT_CUP_LEG_NEW)
 	{
 		int n = AP_HitEncounterDrawFresh(dest, player, aiSeats, s_cupSnapshot.ids);
+		// A4-81b: a short cup field fills once, here, and the filled roster is
+		// the frozen one, so every leg, restart and re-entry seats the same
+		// racers. No cursor moves and no random number is drawn.
+		n = ap_hit_fill_field(dest, player, aiSeats, s_cupSnapshot.ids, n);
 		s_cupSnapshot.count = n;
 		s_cupSnapshot.valid = 1;
 		s_cupSnapshot.cupID = cupID;
