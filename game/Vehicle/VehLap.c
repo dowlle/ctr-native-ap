@@ -41,6 +41,11 @@ void VehLap_UpdateProgress(struct Driver *driver)
 	// for a human. Restart point 255 is read from past the array; on N. Gin
 	// Labs' barrel ramp that looks like the finish line and the next quad with
 	// a checkpoint counts a lap. Keep the last progress, as a human does.
+	// A4-78: Papu's Pyramid's nav lines name restart point 102 of 102 at the
+	// finish line. That index is measured from the last checkpoint (101, which
+	// links forward to 0 as retail's read of 102 does), not skipped, so a bot
+	// on its line still crosses below 1200 and its lap counts.
+	checkpointIndex = (s16)AP_LapProgress_MeasureIndex(checkpointIndex, driver->checkpoint.currentIndex, level->cnt_restart_points);
 	if (!AP_LapProgress_IndexUsable(checkpointIndex, level->cnt_restart_points) ||
 	    !AP_LapProgress_IndexUsable(nodes[checkpointIndex].nextIndex_forward, level->cnt_restart_points) ||
 	    !AP_LapProgress_IndexUsable(nodes[nodes[checkpointIndex].nextIndex_forward].nextIndex_forward, level->cnt_restart_points))

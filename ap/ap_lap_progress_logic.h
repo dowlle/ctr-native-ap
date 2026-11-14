@@ -27,8 +27,9 @@
 // A boss that changes lane on the ramp gains a lap and wins a lap early.
 //
 // Ruling (A3-26, conservative): every racer is measured only from restart
-// points that exist. Otherwise the update is skipped and the racer keeps its
-// last progress and checkpoint, as a human already does on such a quad.
+// points that exist. On a quad without a checkpoint the update is skipped and
+// the racer keeps its last progress and checkpoint, as a human already does.
+// A4-78 narrows the skip to that case: see AP_LapProgress_MeasureIndex.
 // ============================================================================
 
 // Is a restart point index inside the level's restart point array? The
@@ -37,6 +38,42 @@
 static inline int AP_LapProgress_IndexUsable(int index, int numRestartPoints)
 {
 	return (index >= 0) && (index < numRestartPoints);
+}
+
+// A quad without a checkpoint stores this index.
+#define AP_LAP_PROGRESS_NO_CHECKPOINT 0xff
+
+// Which restart point to measure from (A4-78), or -1 to skip the update.
+//
+// Papu's Pyramid has 102 restart points (0 to 101), but each of its three AI
+// nav lines names restart point 102 on the frames that cross the finish line
+// (path 0 frames 278 to 282, path 1 frames 271 to 273, path 2 frames 286 and
+// 287). Retail reads point 102 from past the array; those bytes link forward
+// to point 0, as point 101 does, so retail measures exactly as from 101 and
+// the bot's progress falls below 1200 before it crosses. Skipping those
+// frames, as A3-26 first did, froze a bot on nav line 0 at about 1568, so the
+// crossing rule never fired and the bot lost a lap every lap: a CPU ahead on
+// track was ranked behind the player.
+//
+// Rule: a usable index is measured. 0xff (a quad without a checkpoint, the
+// A3-26 N. Gin Labs case) still skips. Any other index past the array is
+// measured from the racer's last checkpoint, which on Papu's Pyramid is 101,
+// so the progress is retail's. Without a usable last checkpoint it skips.
+static inline int AP_LapProgress_MeasureIndex(int index, int lastIndex, int numRestartPoints)
+{
+	if (AP_LapProgress_IndexUsable(index, numRestartPoints))
+	{
+		return index;
+	}
+	if (index == AP_LAP_PROGRESS_NO_CHECKPOINT)
+	{
+		return -1;
+	}
+	if (AP_LapProgress_IndexUsable(lastIndex, numRestartPoints))
+	{
+		return lastIndex;
+	}
+	return -1;
 }
 
 #endif // AP_LAP_PROGRESS_LOGIC_H

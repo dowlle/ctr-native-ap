@@ -10,6 +10,11 @@ tools/test-lap-progress.c. This checks how the engine calls it:
    keeps its last progress and checkpoint, as a human does on such a quad.
 3. The guard is AP only; the human 0xff skip and the bot index source are the
    retail ones.
+4. A4-78: before the guard, AP_LapProgress_MeasureIndex picks the index to
+   measure from the racer's index and its last checkpoint
+   (driver->checkpoint.currentIndex), so a nav frame naming a restart point
+   past the array (Papu's Pyramid's 102) is measured, not skipped. It runs
+   after the negative-index return and writes only the local index.
 """
 from pathlib import Path
 import re
@@ -56,6 +61,19 @@ check('if ((quad != NULL) && (quad->checkpointIndex != 0xff))' in body, "the hum
 check('checkpointIndex = driver->botData.ai_quadblock_checkpointIndex;' in body, 'a bot still takes its own index')
 check('botDriver->botData.ai_quadblock_checkpointIndex = sps->hit.ptrQuadblock->checkpointIndex;' in bots,
       'BOTS.c still takes the quad index off the nav line')
+
+# 4. A4-78: the index is chosen before the guard, from the last checkpoint.
+pick_line = 'checkpointIndex = (s16)AP_LapProgress_MeasureIndex(checkpointIndex, driver->checkpoint.currentIndex, level->cnt_restart_points);'
+check(body.count('AP_LapProgress_MeasureIndex(') == 1, 'the index is picked once')
+check(pick_line in body, 'the pick takes the racer index, its last checkpoint and the array size')
+if pick_line in body:
+    pick = body.index(pick_line)
+    neg = body.index('(checkpointIndex < 0)')
+    check(neg < pick < guard, 'the pick sits after the negative-index return and before the guard')
+    check(pre.rfind('#ifdef CTR_AP') < pick, 'the pick is inside #ifdef CTR_AP')
+logic = (root / 'ap/ap_lap_progress_logic.h').read_text()
+check('#define AP_LAP_PROGRESS_NO_CHECKPOINT 0xff' in logic, 'a quad without a checkpoint is 0xff')
+check('if (index == AP_LAP_PROGRESS_NO_CHECKPOINT)' in logic, '0xff still skips (A3-26)')
 
 for f in fails:
     print('FAIL', f)
