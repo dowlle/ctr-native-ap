@@ -202,6 +202,35 @@ int main(void)
 	       staged_race.returnHub == 26 && staged_race.seedEpoch == 7 && !staged_race.retail &&
 	       strcmp(staged_race.levSha256, plan_package.lev_sha256) == 0, "race context staged for the pad");
 
+	/* A4-70: a pad whose Relic Race runs other laps than its Trophy Race and CTR
+	   Challenge stages each mode's own laps in the race context. */
+	{
+		ctr_content_pad saved = plan_pad;
+		plan_package.capabilities |= AP_CONTENT_CAP_RELIC;
+		plan_pad.laps = 2; plan_pad.relic_laps = 3;
+		plan_pad.mode_count = 3; plan_pad.modes[0] = AP_CONTENT_MODE_TROPHY; plan_pad.modes[1] = AP_CONTENT_MODE_CTR;
+		plan_pad.modes[2] = AP_CONTENT_MODE_RELIC; plan_pad.stages[1] = plan_pad.stages[2] = 1;
+		plan_pad.ctr_location = 35016301; plan_pad.relic_route = plan_pad.relic_locations[0] = 35016302;
+		plan_pad.relic_locations[1] = 35016303; plan_pad.relic_locations[2] = 35016304;
+		reset_calls();
+		expect(preflight() && AP_ContentPreparePad(3, AP_CONTENT_MODE_RELIC) == 6 && staged == 1 &&
+		       staged_race.mode == AP_CONTENT_MODE_RELIC && staged_race.laps == 3, "A4-70: the Relic Race stages the relic laps");
+		reset_calls();
+		expect(preflight() && AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6 && staged == 1 && staged_race.laps == 2,
+		       "A4-70: the Trophy Race stays on the pad's laps");
+		reset_calls();
+		expect(preflight() && AP_ContentPreparePad(3, AP_CONTENT_MODE_CTR) == 6 && staged == 1 && staged_race.laps == 2,
+		       "A4-70: the CTR Challenge stays on the pad's laps");
+		plan_pad.relic_laps = 0; /* an A4-13 pad: the Relic Race stays on the pad's two laps */
+		reset_calls();
+		expect(preflight() && AP_ContentPreparePad(3, AP_CONTENT_MODE_RELIC) == 6 && staged == 1 && staged_race.laps == 2,
+		       "A4-70: without relic_laps the Relic Race keeps the pad's laps");
+		plan_pad = saved;
+		plan_package.capabilities &= ~AP_CONTENT_CAP_RELIC;
+		reset_calls();
+		expect(preflight(), "A4-70 case leaves the fixture as it was");
+	}
+
 	/* Super turbo pads (#133 PR 4c): the fixture LEV has no quad blocks, so
 	   a stated true is refused at connect and at pad entry; false and
 	   unstated are admitted. */

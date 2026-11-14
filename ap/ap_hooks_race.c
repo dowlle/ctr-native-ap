@@ -497,7 +497,7 @@ static const ctr_content_pad *AP_StandaloneRoutePad(const struct CustomTrackRace
 	    context->seedEpoch != ap_content_plan_epoch() ||
 	    ap_content_mode_codes(pad, context->mode, codes) < 1 ||
 	    ap_content_mode_route(pad, context->mode) != context->trophyLocation ||
-	    pad->hub != context->returnHub || pad->laps != context->laps || pad->custom_slot != context->slot ||
+	    pad->hub != context->returnHub || ap_content_mode_laps(pad, context->mode) != context->laps || pad->custom_slot != context->slot ||
 	    context->retail != (pad->retail_id >= 0) || context->cortex != pad->cortex ||
 	    context->hostLevelID != ap_content_pad_host(pad) ||
 	    strcmp(pad->entry_id, context->entryID) || strcmp(pad->track_id, context->trackID)) return NULL;
@@ -696,9 +696,11 @@ static const ctr_content_pad *AP_StandaloneRelicPad(void)
 // Retail tracks keep their retail relic targets; a custom track uses its
 // package's targets, never the host slot's. Cortex Vortex uses the targets
 // its legacy pad track uses (AP_CortexRelicTime, placeholders until the
-// track author supplies real times), scaled to the pad's laps: standalone
-// races are two laps since 2026-11-09 (A4-13); a plan from before the ruling
-// carries no `standalone_laps` and races three, so its targets are unchanged.
+// track author supplies real times), scaled to the laps the Relic Race runs.
+// Three generations of room: before A4-13 (2026-11-09) no `standalone_laps`,
+// three laps, the placeholders as authored; A4-13 `standalone_laps` 2 and no
+// `relic_laps`, two laps, targets scaled by two thirds; A4-70 (2026-11-12)
+// `relic_laps` 3 beside it, a three-lap Relic Race, the placeholders again.
 int AP_StandaloneRelicTarget(int tier)
 {
 	const ctr_content_pad *pad = AP_StandaloneRelicPad();
@@ -707,7 +709,7 @@ int AP_StandaloneRelicTarget(int tier)
 	if (pad->retail_id >= 0)
 		return pad->retail_id < 18 ? data.RelicTime[pad->retail_id * 3 + tier] : -1;
 	if (pad->cortex)
-		return AP_CortexRelicTimeForLaps(tier, pad->laps);
+		return AP_CortexRelicTimeForLaps(tier, ap_content_mode_laps(pad, AP_CONTENT_MODE_RELIC));
 	pkg = ap_content_plan_package(pad->package_index);
 	return pkg && pkg->has_relic_targets ? pkg->relic_targets[tier] : -1;
 }

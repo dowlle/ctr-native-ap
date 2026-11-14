@@ -64,6 +64,11 @@ typedef struct ctr_content_pad {
      * (package_index -1, custom_slot 0). */
     int cortex;
     int custom_slot, package_index, laps;
+    /* A4-70: laps of this pad's Relic Race when they differ from `laps` (Cortex
+     * Vortex: Trophy Race and CTR Challenge run two laps, the Relic Race three,
+     * and plans from the A4-13 generation carry no field and keep two). 0 means
+     * `laps`. Read it through ap_content_mode_laps. */
+    int relic_laps;
     int crystal, target, time_limit_ticks, crystal_count;
     int64_t crystal_locations[20];
     int named_block; /* -1 generic slot ids, otherwise 0..9999 (#306) */
@@ -370,6 +375,13 @@ static inline int ap_content_stage2_owned(const ctr_content_pad *pad, const int 
         if (pad->stage2_mask & (1u << i)) owned += counts[i];
     return owned;
 }
+/* Laps a race of this mode runs on this pad (A4-70): the Relic Race may run
+ * other laps than the pad's Trophy Race and CTR Challenge. */
+static inline int ap_content_mode_laps(const ctr_content_pad *pad, int mode)
+{
+    return mode == AP_CONTENT_MODE_RELIC && pad->relic_laps > 0 ? pad->relic_laps : pad->laps;
+}
+
 /* The check codes a mode owns on this pad (Trophy 1, CTR 1, Relic 3); 0 when
  * the entry lacks the mode. */
 static inline int ap_content_mode_codes(const ctr_content_pad *pad, int mode, int64_t out[3])

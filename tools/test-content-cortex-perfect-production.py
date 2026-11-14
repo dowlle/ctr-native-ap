@@ -204,6 +204,23 @@ int main(void) {
  for (int t=0;t<3;t++) assert(AP_StandaloneRelicTarget(t)==AP_CORTEX_RELIC_TARGETS.time[t]*2/3);
  assert(AP_NotifyStandaloneRelic(AP_CORTEX_RELIC_TARGETS.time[1]*2/3)==2 && sent(35026001) && sent(35026002) && !sent(35026003)); cases++;
  reset(CORTEX); context.laps=pad.laps=2; assert(AP_NotifyStandaloneRelic(AP_CORTEX_RELIC_TARGETS.time[0]*2/3+1)==0); cases++;
+ /* A4-70: three generations. Before A4-13 and A4-70 the Relic Race is three laps (the placeholders as authored);
+    an A4-13 room (pad two laps, no relic_laps) keeps a two-lap Relic Race with scaled targets; an A4-70 room
+    (pad two laps, relic_laps 3) races the Relic Race at three laps against the unscaled targets. */
+ reset(CORTEX); pad.laps=2; pad.relic_laps=3; context.laps=3;
+ assert(AP_StandaloneRoutePad(&context)==&pad); cases++;
+ for (int t=0;t<3;t++) assert(AP_StandaloneRelicTarget(t)==AP_CORTEX_RELIC_TARGETS.time[t]);
+ assert(AP_StandaloneRelicTarget(0)==189120 && AP_StandaloneRelicTarget(1)==168960 && AP_StandaloneRelicTarget(2)==147840); cases++;
+ assert(AP_NotifyStandaloneRelic(AP_CORTEX_RELIC_TARGETS.time[1])==2 && sent(35026001) && sent(35026002) && !sent(35026003)); cases++;
+ reset(CORTEX); pad.laps=2; pad.relic_laps=3; context.laps=3; assert(AP_NotifyStandaloneRelic(AP_CORTEX_RELIC_TARGETS.time[0]+1)==0); cases++;
+ reset(CORTEX); pad.laps=2; pad.relic_laps=3; context.laps=2; assert(AP_StandaloneRoutePad(&context)==NULL); cases++; /* a two-lap context is stale on an A4-70 pad */
+ reset(CORTEX); pad.laps=2; pad.relic_laps=0; context.laps=2; assert(AP_StandaloneRoutePad(&context)==&pad); cases++; /* A4-13 room */
+ reset(CORTEX); pad.laps=2; pad.relic_laps=0; context.laps=3; assert(AP_StandaloneRoutePad(&context)==NULL); cases++;
+ reset(CORTEX); pad.laps=3; pad.relic_laps=0; context.laps=3; assert(AP_StandaloneRoutePad(&context)==&pad); cases++; /* pre-A4-13 room */
+ for (int t=0;t<3;t++) assert(AP_StandaloneRelicTarget(t)==AP_CORTEX_RELIC_TARGETS.time[t]);
+ /* The Trophy Race and CTR Challenge of an A4-70 pad stay on the pad's two laps. */
+ reset(CORTEX); pad.laps=2; pad.relic_laps=3; context.mode=AP_CONTENT_MODE_TROPHY; context.laps=2; context.trophyLocation=pad.trophy_location;
+ assert(ap_content_mode_laps(&pad,AP_CONTENT_MODE_TROPHY)==2 && ap_content_mode_laps(&pad,AP_CONTENT_MODE_CTR)==2 && ap_content_mode_laps(&pad,AP_CONTENT_MODE_RELIC)==3); cases++;
  reset(CUSTOM); assert(AP_StandaloneRelicTarget(2)==76800); cases++;
  /* Cortex Vortex letter items 35010200..202 read their own receipts. */
  reset(CORTEX);
@@ -233,3 +250,9 @@ with tempfile.TemporaryDirectory() as temporary:
                     "-fno-sanitize-recover=all", "-I", str(root / "include"), "-I", str(root), "-I", str(root / "ap"),
                     str(path), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
+    # A4-70: the pad entry sets the race's laps per mode (a Relic Race may run other laps
+    # than the pad's Trophy Race), and the context staged for it carries the same laps.
+    warp = (root / "game/232/AH_WarpPad.c").read_text(encoding="utf-8")
+    assert "gGT->numLaps = (char)ap_content_mode_laps(pad, mode);" in warp, "warp pad start uses the mode's laps"
+    assert "gGT->numLaps = (char)pad->laps;" not in warp, "warp pad start never reads the pad's laps for a mode race"
+    print("PASS: warp pad start reads the mode's laps")
