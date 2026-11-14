@@ -157,9 +157,9 @@ static inline int AP_HitTakePure(const int *order, int pool, int player,
 // apworld's hit_character module). Never the player, never a duplicate, at most
 // three non-stock ids, at most aiSeats opponents. Returns the count: fewer than
 // aiSeats only when the roster swap holds default racers behind their garages
-// and three extra models cannot cover them. Then the race runs with fewer
-// karts (ruled 2026-10-30, dispatcher 2026-11-02); a held racer never takes a
-// seat early.
+// and three extra models cannot cover them. An ordinary race then fills the
+// empty seats with held racers (AP_RosterFillField, ruled 2026-11-14, A4-81);
+// a Gem Cup field keeps its own rule and races with fewer karts.
 static inline int AP_HitDrawFieldPure(const int *order,
                                       const unsigned char *eligible,
                                       const unsigned char *unchecked,

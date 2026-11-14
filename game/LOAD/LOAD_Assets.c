@@ -529,8 +529,9 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 						                      (int)data.characterIDs[0], 3, LOAD_RosterInStock);
 					for (k = 0; k < hitCount; k++)
 						data.characterIDs[1 + k] = (s16)hitRoster[k];
-					// A held racer never takes a seat early: a short field races
-					// with fewer karts (MainInit_Drivers reads this).
+					// An ordinary race is filled to seven AI by AP_HitRaceField
+					// (A4-81). A Gem Cup field can still be short and races with
+					// fewer karts (MainInit_Drivers reads this).
 					AP_HitFieldSeated(hitCount, aiSeats);
 
 					hitNeed = AP_HitEncounterExtras(hitRoster, hitCount,

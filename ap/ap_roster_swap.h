@@ -137,6 +137,61 @@ static inline void AP_RosterCompactSpawnOrder(unsigned char *order, int karts)
 		order[i] = dense[i];
 }
 
+// Is `racer` held by the swap: drawn as a boss and none of its boss wins
+// checked yet? `checked` is a mask over the codes.
+static inline int AP_RosterHeld(const int ident[AP_HIT_BOSS_CODES], int racer, unsigned checked)
+{
+	unsigned mask = AP_RosterBossMask(ident, racer);
+	return mask != 0 && (mask & checked) == 0;
+}
+
+// Ordinary races always have eight karts (ruled 2026-11-14, A4-81). This
+// replaces the short field of 2026-11-02: when the drawn field cannot fill
+// `aiSeats`, the empty seats are filled here. Racers the pool allows come first
+// (an eligible id not seated yet), then racers the swap holds behind their
+// garages (`held`). Within each pass a stock id, which needs no model, comes
+// before a non-stock id, and a non-stock id only while the field stays within
+// `maxExtras` models the player's pack does not carry.
+//
+// The filler is chosen by walking the destination's seeded order from its
+// first position. No cursor moves and no RNG is drawn, so the same pool on the
+// same track picks the same filler, and every later draw is exactly what it
+// was before. Never the player, never a duplicate. Returns the new count.
+static inline int AP_RosterFillField(int *ids, int count, int aiSeats, const int *order,
+                                     const unsigned char *eligible, const unsigned char *held,
+                                     int player, int maxExtras, int (*inStock)(int id, int player))
+{
+	int pass, pos, i, extras = 0;
+
+	if (ids == 0 || order == 0 || eligible == 0 || held == 0 || count < 0 || count >= aiSeats)
+		return count < 0 ? 0 : count;
+	for (i = 0; i < count; i++)
+		if (!inStock(ids[i], player))
+			extras++;
+	// Pass 0: pool, stock. 1: pool, extra model. 2: held, stock. 3: held, extra.
+	for (pass = 0; pass < 4 && count < aiSeats; pass++)
+		for (pos = 0; pos < AP_ROSTER_CHARACTERS && count < aiSeats; pos++)
+		{
+			int id = order[pos], stock, seated = 0;
+			if (id < 0 || id >= AP_ROSTER_CHARACTERS || id == player)
+				continue;
+			if (pass < 2 ? !eligible[id] : !held[id])
+				continue;
+			for (i = 0; i < count; i++)
+				if (ids[i] == id)
+					seated = 1;
+			if (seated)
+				continue;
+			stock = inStock(id, player);
+			if ((pass & 1) == 0 ? !stock : (stock || extras >= maxExtras))
+				continue;
+			if (!stock)
+				extras++;
+			ids[count++] = id;
+		}
+	return count;
+}
+
 // The chaos field: the final racer first, in the seat a boss race gives its
 // opponent, then the four garages. Racers are pairwise distinct on the wire.
 static inline void AP_RosterChaosLineup(const int ident[AP_HIT_BOSS_CODES], int out[AP_ROSTER_CHAOS_RIVALS])

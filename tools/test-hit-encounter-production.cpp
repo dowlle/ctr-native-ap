@@ -771,22 +771,47 @@ static void test_roster_swap(void)
 	expect(!AP_HitEncounterShouldApply(1, 3, 0, 1, 0, 0, 0, 0, 1), "a boss race keeps its own field");
 
 	// Four held defaults with a guest player: three free stock ids and three
-	// extras. The race runs with six AI, none of them held (fixes 2026-11-02).
+	// extras leave six pool racers. Ordinary races always have eight karts
+	// (ruled 2026-11-14, A4-81): one held default fills the last seat, the
+	// first held id in the track's seeded order, the same on every fresh race.
 	// N. Oxide's races are off, so he races from the start.
 	reset_state();
 	swap_bosses(0, 1, 2, 3, 0);
 	ctr_boss_encounters.oxideDisabled = 1;
 	expect(AP_HitEncounterGuestEligible(15) || !AP_HitEncounterEnabled(), "N. Oxide disabled is in the pool");
 	n = race_after_hub(3, 13, ids);
-	expect_eq(n, 6, "four held defaults, six seats");
-	for (int i = 0; i < n; i++)
-		expect(ids[i] > 3, "no held default seated early");
+	expect_eq(n, 7, "four held defaults: the field still fills seven AI");
+	{
+		int heldSeated = 0, filler = -1;
+		for (int i = 0; i < n; i++)
+			if (ids[i] <= 3)
+			{
+				heldSeated++;
+				filler = ids[i];
+			}
+		expect_eq(heldSeated, 1, "exactly one held default fills the empty seat");
+		expect(ids[6] == filler, "the filler takes the last seat, after the drawn six");
+		for (int i = 0; i < 6; i++)
+			expect(ids[i] > 3, "the drawn six are pool racers");
+		const int *order = AP_HitEncounterOrder(3);
+		int first = -1;
+		for (int pos = 0; pos < 16 && first < 0; pos++)
+			if (order[pos] >= 0 && order[pos] <= 3)
+				first = order[pos];
+		expect_eq(filler, first, "the filler is the first held id in the seeded order");
+		int again[AP_HIT_FIELD_MAX], fresh = -1;
+		AP_HitLoadBegin();
+		int m = AP_HitRaceField(3, 13, 7, again, &fresh);
+		expect(fresh == 0 && m == 7 && again[6] == filler, "a retry keeps the same eight karts");
+		m = race_after_hub(3, 13, again);
+		expect(m == 7 && again[6] == filler, "re-entry fills with the same held racer");
+	}
 	AP_HitFieldSeated(n, 7);
-	expect_eq(AP_HitFieldShortSeats(), 6, "the short field reaches MainInit_Drivers");
+	expect_eq(AP_HitFieldShortSeats(), -1, "a filled field is not short: MainInit_Drivers births eight");
+	AP_HitFieldSeated(6, 7);
+	expect_eq(AP_HitFieldShortSeats(), 6, "a short field (a Gem Cup leg) still reaches MainInit_Drivers");
 	AP_HitLoadBegin();
 	expect_eq(AP_HitFieldShortSeats(), -1, "the next load clears it");
-	AP_HitFieldSeated(7, 7);
-	expect_eq(AP_HitFieldShortSeats(), -1, "a full field races eight karts");
 	{
 		bool oxide = false;
 		for (int k = 0; k < 6 && !oxide; k++)

@@ -86,7 +86,9 @@ void AP_HitEncounterResetDrawState(void);
 void AP_HitLoadBegin(void);
 
 // The field this load seated. A field the roster swap left short (racers held
-// behind their garages, three extra models) races with fewer karts:
+// behind their garages, three extra models) races with fewer karts. Ordinary
+// races are filled by AP_HitRaceField (A4-81), so this is a Gem Cup leg or a
+// safety net:
 // AP_HitFieldShortSeats is then its AI count for MainInit_Drivers, else -1.
 // Cleared by AP_HitLoadBegin.
 void AP_HitFieldSeated(int seated, int aiSeats);
@@ -95,6 +97,8 @@ int AP_HitFieldShortSeats(void);
 // The field for an ordinary apply load at `destLevelID`: reuses the stored
 // field when the immediately previous driver load was an ordinary apply for
 // the same level, player and seat count (a restart/retry), else draws fresh.
+// A fresh field the draw left short takes held boss racers in its empty seats
+// (ruled 2026-11-14, A4-81: ordinary races always have eight karts).
 // *outFresh (may be NULL) reports which. Returns the count.
 int AP_HitRaceField(int destLevelID, int player, int aiSeats, int *outIDs, int *outFresh);
 
