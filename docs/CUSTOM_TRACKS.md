@@ -243,16 +243,20 @@ for history; it has no Archipelago dependency) and
 - **Track author permission (0.3.0-alpha4).** The client offers a track for
   in-game download only when its author said yes. One resolver,
   `ap_track_permission` in `ap/ap_track_consent.cpp`, answers allow, deny or
-  unknown from, in order: Project Saphi's own permission value (read by one
-  adapter, `saphi_permission` in `platform/native_saphi_catalogue.cpp`, which
-  reads the track's `permissions` object: once the uploader has specified,
-  `public_non_profit` true allows and false denies, since the CTR Archipelago
-  is a free public project; a track that is unspecified, or whose object is
-  missing or malformed, is unknown, and `reach`, `monetization` and `saphi`
-  do not decide), then the author's recorded answer in `consent.json` of the
-  public registry `dowlle/ctr-track-registry`, otherwise unknown. A direct
-  "no" there (declined or withdrawn) beats a Saphi allow, and a Saphi deny
-  beats a recorded yes, because it is the author's own current setting. The
+  unknown from, in order: the author's recorded answer in `consent.json` of the
+  public registry `dowlle/ctr-track-registry` (a track entry first, then the
+  author's; granted allows, declined or withdrawn denies, and it wins over
+  Saphi either way, because it is what the author told the maintainer
+  directly), then, only when `consent.json` has no applicable answer, Project
+  Saphi's own permission value (read by one adapter, `saphi_permission` in
+  `platform/native_saphi_catalogue.cpp`, which reads the track's `permissions`
+  object: once the uploader has specified, `public_non_profit` true allows and
+  false denies, since the CTR Archipelago is a free public project; a track that
+  is unspecified, or whose object is missing or malformed, is unknown, and
+  `reach`, `monetization` and `saphi` do not decide), otherwise unknown. So a
+  blanket grant in `consent.json` also covers a track whose Saphi setting is
+  "Saphi only". With several credited authors every one must allow, each by
+  their `consent.json` answer if any, else Saphi's track value. The
   author's credit setting is kept on the catalogue revision (`creditRequired`)
   for a later credits change; nothing reads it yet. Unknown and deny both mean: not listed in Browse, and no
   Download, Update or Versions. The gate also sits in `CustomSaphi_StartInstall`

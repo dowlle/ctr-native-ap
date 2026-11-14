@@ -380,44 +380,41 @@ bool ap_track_consent_parse(const std::vector<unsigned char> &bytes, std::shared
 int ap_track_consent_decide(const ApTrackConsentList *list, int saphi_permission, int saphi_author_id,
                             const std::vector<std::string> &credit_names, const std::string &track_key)
 {
-	int recorded = AP_TRACK_PERMISSION_UNKNOWN;
-	if (list)
+	// A4-79b: what an author told us directly (consent.json) wins over
+	// Saphi's setting either way. Saphi's track value only answers for an
+	// author or track with no recorded answer.
+	if (saphi_permission != AP_TRACK_PERMISSION_ALLOW && saphi_permission != AP_TRACK_PERMISSION_DENY)
+		saphi_permission = AP_TRACK_PERMISSION_UNKNOWN;
+	// Without the list a direct answer cannot be ruled out: nothing is
+	// offered. A Saphi deny stays a deny.
+	if (!list) return saphi_permission == AP_TRACK_PERMISSION_DENY ? AP_TRACK_PERMISSION_DENY : AP_TRACK_PERMISSION_UNKNOWN;
+	auto track = track_key.empty() ? list->by_track.end() : list->by_track.find(track_key);
+	if (track != list->by_track.end())
+		return track->second == kGranted ? AP_TRACK_PERMISSION_ALLOW : AP_TRACK_PERMISSION_DENY;
+	// Every author we can name for the track must allow: the Saphi author by
+	// id and each name the registry credits. Each uses their own recorded
+	// answer if any, else Saphi's track value.
+	int counted = 0;
+	bool all = true, refused = false;
+	auto take = [&](int status) {
+		counted++;
+		const int answer = status == kGranted ? AP_TRACK_PERMISSION_ALLOW
+		                   : status ? AP_TRACK_PERMISSION_DENY : saphi_permission;
+		if (answer == AP_TRACK_PERMISSION_DENY) refused = true;
+		else if (answer != AP_TRACK_PERMISSION_ALLOW) all = false;
+	};
+	if (saphi_author_id > 0)
 	{
-		auto track = track_key.empty() ? list->by_track.end() : list->by_track.find(track_key);
-		if (track != list->by_track.end())
-			recorded = track->second == kGranted ? AP_TRACK_PERMISSION_ALLOW : AP_TRACK_PERMISSION_DENY;
-		else
-		{
-			// Every author we can name for the track must have said yes:
-			// the Saphi author by id and each name the registry credits.
-			bool any = false, all = true, refused = false;
-			auto take = [&](int status) {
-				if (!status) { all = false; return; }
-				any = true;
-				if (status == kRefused) refused = true;
-			};
-			if (saphi_author_id > 0)
-			{
-				auto it = list->by_author_id.find(saphi_author_id);
-				take(it == list->by_author_id.end() ? 0 : it->second);
-			}
-			for (const auto &name : credit_names)
-			{
-				auto it = list->by_name.find(name);
-				take(it == list->by_name.end() ? 0 : it->second);
-			}
-			recorded = refused ? AP_TRACK_PERMISSION_DENY
-			           : any && all ? AP_TRACK_PERMISSION_ALLOW : AP_TRACK_PERMISSION_UNKNOWN;
-		}
+		auto it = list->by_author_id.find(saphi_author_id);
+		take(it == list->by_author_id.end() ? 0 : it->second);
 	}
-	if (saphi_permission == AP_TRACK_PERMISSION_DENY) return AP_TRACK_PERMISSION_DENY;
-	// An author's own "no" to us stays honoured until they lift it, even
-	// when Saphi later says allow.
-	if (recorded == AP_TRACK_PERMISSION_DENY) return AP_TRACK_PERMISSION_DENY;
-	// Without the list a direct "no" cannot be ruled out: nothing is offered.
-	if (!list) return AP_TRACK_PERMISSION_UNKNOWN;
-	if (saphi_permission == AP_TRACK_PERMISSION_ALLOW) return AP_TRACK_PERMISSION_ALLOW;
-	return recorded;
+	for (const auto &name : credit_names)
+	{
+		auto it = list->by_name.find(name);
+		take(it == list->by_name.end() ? 0 : it->second);
+	}
+	if (!counted) return saphi_permission; // no author to ask: Saphi's value for the track
+	return refused ? AP_TRACK_PERMISSION_DENY : all ? AP_TRACK_PERMISSION_ALLOW : AP_TRACK_PERMISSION_UNKNOWN;
 }
 
 extern "C" int ap_track_consent_refresh(const char *cache_path)

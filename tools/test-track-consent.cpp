@@ -5,9 +5,9 @@
 // place of GitHub and a registry fixture shaped like the public one:
 //   1. consent.json format 1 parses; a wrong format, broken, deeply nested
 //      or oversize file is refused,
-//   2. the decision order: Saphi's value when present and understood, then
-//      the author's recorded answer, otherwise unknown; a direct "no" beats a
-//      Saphi allow; a Saphi deny beats a recorded yes; every credited author
+//   2. the decision order: the author's recorded answer first, then Saphi's
+//      value when present and understood, otherwise unknown; a recorded answer
+//      (yes or no) beats Saphi either way; every credited author
 //      must have said yes; a track entry beats its author's; an answer or
 //      scope this client does not read is unknown, never allow; with no list
 //      nothing is allowed, even with a Saphi allow,
@@ -21,8 +21,8 @@
 //      is not loaded,
 //   5. the Saphi track id in a download or source URL.
 //   6. Saphi's own permission fields (A4-79): the catalogue adapter's mapping
-//      (unspecified, allow, deny, malformed), a Saphi deny over a recorded
-//      yes, a recorded decline over a Saphi allow, and the recorded
+//      (unspecified, allow, deny, malformed), a recorded yes over a Saphi
+//      deny (A4-79b), a recorded decline over a Saphi allow, and the recorded
 //      2026-11-14 catalogue giving 61 allowed tracks with today's consent.json.
 // With arguments <registry.json> <consent.json> <saphi page>... it prints,
 // for recorded Saphi catalogue pages, which tracks the real files allow.
@@ -258,7 +258,18 @@ int main(int argc, char **argv)
 	CHECK(decide(v1, U, 12, {"Lolothesamurai", "PanchoPew"}) == A); // both credited authors said yes
 	CHECK(decide(v1, U, 1, {"Boxic", "Blounard"}) == U);            // one credited author unknown
 	CHECK(decide(v1, A, 7) == A);                 // Saphi allow, no direct answer
-	CHECK(decide(v1, D, 1) == D);                 // Saphi deny beats a recorded yes
+	CHECK(decide(v1, D, 1) == A);                 // A4-79b: a recorded yes beats a Saphi deny
+	CHECK(decide(v1, U, 1) == A);                 // consent grant, Saphi unspecified
+	CHECK(decide(v1, A, 7) == A);                 // no consent entry, Saphi allow
+	CHECK(decide(v1, D, 7) == D);                 // no consent entry, Saphi deny
+	CHECK(decide(v1, U, 7) == U);                 // no consent entry, Saphi unspecified
+	CHECK(decide(v1, D, 0) == D && decide(v1, A, 0) == A && decide(v1, U, 0) == U); // no author known: Saphi's value
+	// Co-credit: every author must allow; each uses their DM answer, else Saphi's track value.
+	CHECK(decide(v1, A, 1, {"Boxic", "Blounard"}) == A);  // Boxic by DM, Blounard only by Saphi allow
+	CHECK(decide(v1, D, 1, {"Boxic", "Blounard"}) == D);  // Blounard has nothing but a Saphi deny
+	CHECK(decide(v1, U, 1, {"Boxic", "Blounard"}) == U);  // Blounard unknown on both
+	CHECK(decide(v1, D, 7, {"Boxic"}) == D);              // Saphi author 7 has nothing, Saphi deny
+	CHECK(decide(v1, D, 1, {"Boxic"}) == A);              // both credits are DM-granted
 	{
 		json c = json::parse(v1);
 		c["authors"].push_back(author(9, "Tramadolls", grant("declined", nullptr)));
@@ -273,6 +284,10 @@ int main(int argc, char **argv)
 		const std::string v = c.dump();
 		CHECK(decide(v, U, 9) == D && decide(v, U, 18) == D);        // declined, withdrawn
 		CHECK(decide(v, A, 9) == D);                                 // a direct "no" beats a later Saphi allow
+		CHECK(decide(v, A, 9, {"Boxic"}) == D);                      // co-credit: one author declined, the other granted
+		CHECK(decide(v, A, 7, {"Blounard", "Tramadolls"}) == D);     // a declined co-author beats Saphi allow for the other
+		CHECK(decide(v, D, 1, {"Boxic"}, "dk-pass") == A);           // a track grant beats a Saphi deny
+		CHECK(decide(v, A, 1, {"Boxic"}, "dreamy-heights") == D);    // a track decline beats a Saphi allow
 		CHECK(decide(v, U, 19) == U);                                // an answer this client does not read
 		CHECK(decide(v, U, 21) == U && decide(v, U, 22) == U);       // a grant without the known scope
 		CHECK(decide(v, U, 5) == D);                                 // two answers: the "no" wins
@@ -326,8 +341,12 @@ int main(int argc, char **argv)
 	ap_track_consent_note_saphi(900, 3, U);                        // the catalogue: Lockheart's track
 	CHECK(ap_track_consent_generation() != gen && ap_track_consent_saphi_author(900) == 3);
 	CHECK(ap_track_permission(900, 0, U, nullptr) == A);
-	ap_track_consent_note_saphi(901, 3, D);                        // Saphi says no for this one
-	CHECK(ap_track_permission(901, 0, U, nullptr) == D);
+	ap_track_consent_note_saphi(901, 3, D);                        // Saphi says no, but Lockheart's recorded yes wins (A4-79b)
+	CHECK(ap_track_permission(901, 0, U, nullptr) == A);
+	ap_track_consent_note_saphi(902, 7, D);                        // Saphi says no, nobody recorded anything
+	CHECK(ap_track_permission(902, 0, U, nullptr) == D);
+	ap_track_consent_note_saphi(903, 7, A);                        // Saphi says yes, nobody recorded anything
+	CHECK(ap_track_permission(903, 0, U, nullptr) == A);
 	gen = ap_track_consent_generation();
 	ap_track_consent_note_saphi(900, 3, U);                        // no change, no new generation
 	CHECK(ap_track_consent_generation() == gen);
@@ -534,11 +553,12 @@ int main(int argc, char **argv)
 		}
 		// A malformed object does not reject the catalogue (one() returned a row above); neither
 		// does one beside a good track.
-		// The resolver: Saphi deny beats a recorded yes; a recorded decline beats a Saphi allow.
-		CHECK(decide(v1, one(perm(true, false), true), 3) == D);        // Lockheart said yes, his track on Saphi says no
+		// The resolver (A4-79b): a recorded answer, yes or no, beats Saphi; Saphi answers only without one.
+		CHECK(decide(v1, one(perm(true, false), true), 3) == A);        // Lockheart said yes by DM, Saphi says no: the DM wins
 		CHECK(decide(v1, one(perm(true, true), true), 3) == A);
 		CHECK(decide(v1, one(unspecified, true), 3) == A);              // unspecified: the recorded yes decides
 		CHECK(decide(v1, one(perm(true, true), true), 7) == A);         // Saphi allow, nobody recorded
+		CHECK(decide(v1, one(perm(true, false), true), 7) == D);        // Saphi deny, nobody recorded
 		CHECK(decide(v1, one(perm(false, true), true), 7) == U);        // unspecified, not asked: unknown
 		CHECK(decide(v1, one(json("x"), true), 7) == U);
 		{
@@ -609,7 +629,7 @@ int main(int argc, char **argv)
 			const CustomSaphiRevision *r = CustomSaphi_Row(c, i);
 			CHECK(ap_track_permission(r->trackID, r->authorID, r->saphiPermission, nullptr) == U);
 		}
-		// With consent.json but Lockheart's Saphi setting turned to deny: those 12 drop out, 49 remain.
+		// A4-79b: Lockheart's Saphi setting turned to deny changes nothing, his recorded DM yes wins: still 61.
 		json flipped = json::parse(text);
 		for (auto &t : flipped["data"])
 			if (t["permissions"]["specified"] == true) t["permissions"]["public_non_profit"] = false;
@@ -626,7 +646,7 @@ int main(int argc, char **argv)
 			still += p == A;
 			denied += p == D;
 		}
-		CHECK(still == 49 && denied == 12);
+		CHECK(still == 61 && denied == 0);
 		CustomSaphi_Free(&f);
 		CustomSaphi_Free(&c);
 		ap_track_consent_test_reset();
