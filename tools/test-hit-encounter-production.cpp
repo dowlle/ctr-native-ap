@@ -882,6 +882,35 @@ static void test_roster_swap(void)
 			       "the fill moved no cursor: the next cup draws what it always did");
 		}
 
+		// An extra (content-plan) cup, destination 200 + its name index, fills
+		// the same way and freezes the filled roster for every leg.
+		for (int idx = 0; idx < 2; idx++)
+		{
+			int ids2[AP_HIT_FIELD_MAX], again2[AP_HIT_FIELD_MAX];
+			const int dest = CTR_CFG_HIT_CONTENT_CUP_DEST + idx;
+			reset_state();
+			swap_bosses(0, 1, 2, 3, 0);
+			ctr_boss_encounters.oxideDisabled = 1;
+			AP_HitCupSnapshotBegin(0);
+			int c = AP_HitCupSnapshotFieldAt(dest, 0, 0, player, 7, ids2);
+			int held = 0, extras = 0;
+			for (int i = 0; i < c; i++)
+			{
+				if (ids2[i] <= 3)
+					held++;
+				extras += AP_HitInStockPure(ids2[i], player) ? 0 : 1;
+			}
+			expect_eq(c, 7, "a short extra cup fills to seven AI");
+			expect_eq(held, 1, "one held default fills the extra cup's empty seat");
+			expect(extras <= 3, "the extra cup stays within three extra models");
+			for (int leg = 1; leg < 4; leg++)
+			{
+				int n2 = AP_HitCupSnapshotFieldAt(dest, 0, leg, player, 7, again2);
+				expect(n2 == 7 && std::memcmp(again2, ids2, sizeof again2) == 0,
+				       "every leg of the extra cup seats the same eight karts");
+			}
+		}
+
 		// A full cup is unchanged: no held racer, the draw is the field.
 		reset_state();
 		swap_bosses(0, 9, 11, 8, 0); // one default held: the pool still fills seven
