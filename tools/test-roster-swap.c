@@ -399,10 +399,11 @@ static void test_retail_short_grid(void)
 		{
 			unsigned char order[8], before[8], seen[8] = {0};
 			int ids[8];
+			// The pad runs LOAD_Robots1P first: a guest player's AI carry
+			// the pack ids 0..6, before the drawn field replaces them.
 			ids[0] = PAPU;
-			for (i = 0; i < 6; i++)
-				ids[1 + i] = f.ids[i];
-			ids[7] = 4; // the unborn driver's retail id
+			for (i = 1; i < 8; i++)
+				ids[i] = i - 1;
 			pad_order(order, champs[c], PAPU, ids, seed * 7919u + (unsigned)c);
 			memcpy(before, order, 8);
 			AP_RosterCompactSpawnOrder(order, 1 + f.count);
