@@ -26,7 +26,8 @@
 // allow-list), size cap AP_TRACK_CONSENT_MAX_BYTES, the transport's timeout.
 // The last good copy is kept on disk and used only when GitHub cannot be
 // reached. A missing (HTTP 4xx) or unreadable live file, or no live copy and
-// no cache, leaves every track unknown.
+// no cache, leaves every track not offered (unknown, or deny where Saphi
+// says deny).
 
 #include <stddef.h>
 #include <stdint.h>

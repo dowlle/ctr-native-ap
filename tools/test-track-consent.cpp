@@ -331,6 +331,8 @@ int main(int argc, char **argv)
 	CHECK(ap_track_permission(2, 0, U, nullptr) == A);            // dreamy-heights, credited to Boxic
 	CHECK(ap_track_permission(0, 0, U, "dreamy-heights") == A);   // a seed package's track key
 	CHECK(ap_track_permission(2, 0, U, "folder-name") == A);      // a seed folder that is not the registry key
+	CHECK(ap_track_permission(2, 0, D, "folder-name") == A);      // a recorded yes under the registry key beats a Saphi deny, whatever the folder is called
+	CHECK(ap_track_permission(2, 0, D, nullptr) == A);
 	CHECK(ap_track_permission(122, 0, U, "dreamy-heights") == U); // a consenting track's name on dk-pass files lends nothing
 	CHECK(ap_track_permission(0, 0, U, "folder-name") == U);
 	CHECK(ap_track_permission(60, 0, U, nullptr) == A);           // both credited authors said yes

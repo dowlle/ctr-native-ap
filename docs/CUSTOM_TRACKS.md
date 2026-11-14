@@ -268,13 +268,14 @@ for history; it has no Archipelago dependency) and
   fetched like `registry.json` (GitHub raw only, 1 MiB cap, last good copy in
   `assets/track-consent-cache.json`, used only when GitHub cannot be reached).
   A missing (HTTP 4xx) or unreadable live file, or no live copy and no cache,
-  leaves every track unknown, and the screen says the list is not loaded. A track
+  leaves every track not offered (unknown, or deny where Saphi says deny), and the screen says the list is not loaded. A track
   is matched to its authors by the catalogue's `author_id`, by the Saphi track
   id the catalogue or the install recorded (`saphi-source.json` now records
   `author_id` and the registry `track_key`; Current Seed's
   `seed-source.json` records `saphi_track_id` and `saphi_author_id`), and by
   the registry's credits for the track key; every credited author must have
-  said yes. A package that cannot be matched is unknown.
+  said yes (or, where nothing is recorded for an author, Saphi's value for the track allows). A package that cannot be matched to any author or
+  recorded answer takes Saphi's value for the track if it has one, else it is unknown.
 
 ## 6. Racing a package: the loading path
 

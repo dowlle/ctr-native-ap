@@ -524,11 +524,16 @@ extern "C" int ap_track_permission(int saphi_track_id, int saphi_author_id, int 
 	if (key.empty()) key.swap(registry_key);
 	std::vector<std::string> names;
 	if (!key.empty()) ap_track_registry_credits(key, names);
-	const int first = ap_track_consent_decide(list.get(), saphi_permission, saphi_author_id, names, key);
-	if (registry_key.empty() || registry_key == key) return first;
+	if (registry_key.empty() || registry_key == key)
+		return ap_track_consent_decide(list.get(), saphi_permission, saphi_author_id, names, key);
+	// Two keys: the caller's key can only refuse from a recorded answer, so its
+	// pass runs without Saphi's value (a Saphi deny must not outvote a grant
+	// found under the registry key). Saphi's value counts once, in the
+	// registry pass.
+	const int first = ap_track_consent_decide(list.get(), AP_TRACK_PERMISSION_UNKNOWN, saphi_author_id, names, key);
+	if (first == AP_TRACK_PERMISSION_DENY) return AP_TRACK_PERMISSION_DENY;
 	ap_track_registry_credits(registry_key, names);
-	const int second = ap_track_consent_decide(list.get(), saphi_permission, saphi_author_id, names, registry_key);
-	return first == AP_TRACK_PERMISSION_DENY ? AP_TRACK_PERMISSION_DENY : second;
+	return ap_track_consent_decide(list.get(), saphi_permission, saphi_author_id, names, registry_key);
 }
 
 extern "C" int ap_track_saphi_id_from_url(const char *url)
