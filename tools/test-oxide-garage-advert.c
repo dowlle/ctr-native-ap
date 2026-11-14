@@ -305,6 +305,42 @@ int main(void)
 	}
 
 	// ---------------------------------------------------------------------
+	// A4-79: a relic count of 0 asks no relic, so the panel never shows a
+	// relic line ("0/0") and nothing turns the 0 into the vanilla 18.
+	// ---------------------------------------------------------------------
+	{
+		AP_OxideGarageState final = St(AP_OXIDE_ENCOUNTER_FINAL, 1, 1);
+		int modes[5] = {AP_OXIDE_RELIC_MODE_SAPPHIRE, AP_OXIDE_RELIC_MODE_GOLD,
+		                AP_OXIDE_RELIC_MODE_PLATINUM, AP_OXIDE_RELIC_MODE_BEST_TIER,
+		                AP_OXIDE_RELIC_MODE_TOTAL};
+		char part[64];
+		int i;
+
+		for (i = 0; i < 5; i++)
+		{
+			CHECK("count 0: the relic term writes nothing in any mode",
+			      AP_OxideRelicTermFormat(modes[i], 0, 0, 0, 0, part,
+			                              sizeof part) == 0);
+			// Count 0 is always met, so the Final panel shows the companions
+			// only, with nothing held.
+			AP_OxideGarageAdvertFormat(final, AP_OXIDE_REQ_KEY, 4, -1, 4, 1,
+			                          modes[i], 0, 0, 0, 0, 2, 0, 0, 0, out,
+			                          sizeof out);
+			CHECK("count 0: the Final panel has no relic line",
+			      strstr(out, "SAPPHIRE") == 0 && strstr(out, "GOLD") == 0 &&
+			      strstr(out, "PLATINUM") == 0 && strstr(out, "RELIC") == 0 &&
+			      strstr(out, "0/0") == 0);
+			CHECK("count 0: the Boss companion line is still shown",
+			      strstr(out, "BOSSES 0/2") != 0);
+		}
+		// A real count still prints its relic line.
+		CHECK("count 18 still reads SAPPHIRE 0/18",
+		      AP_OxideRelicTermFormat(AP_OXIDE_RELIC_MODE_SAPPHIRE, 18, 0, 0, 0,
+		                              part, sizeof part) == 1 &&
+		      strcmp(part, "SAPPHIRE 0/18") == 0);
+	}
+
+	// ---------------------------------------------------------------------
 	// BUFFER SAFETY: a short buffer must still be NUL-terminated and must
 	// never be written past, exactly like AP_GoalLineFormat's contract.
 	// ---------------------------------------------------------------------

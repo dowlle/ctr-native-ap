@@ -600,7 +600,7 @@ static void boss_settings(const J &b, ctr_content_bosses &out) {
     // the wire, always false (apworld content_bosses.check_record).
     need(!out.repeats, "bosses.repeats must be false: boss encounters never repeat");
     out.final_unlock = number(b["oxide_final_unlock"], 0, 4);
-    out.final_count = number(b["oxide_final_count"], 1, out.final_unlock == 4 ? 54 : 18);
+    out.final_count = number(b["oxide_final_count"], 0, out.final_unlock == 4 ? 54 : 18); // A4-79: 0 asks no relic
     need(out.oxide_goal != 3 || (out.final_unlock == 0 && out.final_count == 18),
          "bosses.oxide_final_unlock and oxide_final_count keep their defaults when Oxide is disabled");
     for (int g = 0; g < 4; ++g) out.opponent[g] = kBossOpponents[g];
@@ -2745,9 +2745,13 @@ static void validate(const J &p, State &out) {
                 supply = tier_base[b.final_unlock];
                 relic = J{{"op", "count"}, {"item", 35010001 + b.final_unlock}, {"count", n}};
             }
-            need(supply >= 1 && n <= supply, "the Final Challenge relic count is above the base supply its mode can count");
-            final_terms.push_back(relic);
-            want["oxide:final"] = all_of(final_terms);
+            // A4-79: a count of 0 asks no relic (no supply needed); the door keeps the
+            // companion terms alone, or `always` when there are none.
+            if (n > 0) {
+                need(supply >= 1 && n <= supply, "the Final Challenge relic count is above the base supply its mode can count");
+                final_terms.push_back(relic);
+            }
+            want["oxide:final"] = final_terms.empty() ? J{{"op", "always"}} : all_of(final_terms);
             ids.push_back("oxide:final");
         }
         need(boss_requirement_ids == ids, "encounter requirement ids do not match the bosses record");
