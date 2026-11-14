@@ -6,9 +6,10 @@
 //
 // One resolver, ap_track_permission, answers allow, deny or unknown from, in
 // order:
-//   1. Project Saphi's own permission value, when Saphi publishes one and
-//      this client understands it (the adapter in
-//      platform/native_saphi_catalogue.cpp; today always unknown),
+//   1. Project Saphi's own permission value, when the uploader specified one
+//      and this client understands it (the adapter in
+//      platform/native_saphi_catalogue.cpp reads public_non_profit from the
+//      track's permissions object; unspecified or malformed is unknown),
 //   2. the author's recorded answer in the public registry's consent.json
 //      (dowlle/ctr-track-registry), fetched live like registry.json,
 //   3. otherwise unknown.

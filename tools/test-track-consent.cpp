@@ -1,4 +1,4 @@
-// g++ -m32 -std=c++17 -Wall -Wextra -Werror -DAP_TRACK_CONSENT_TEST -DAP_TRACK_REGISTRY_TEST -I ap -I ap/vendor/json/include tools/test-track-consent.cpp ap/ap_track_consent.cpp ap/ap_track_registry.cpp -o /tmp/test-track-consent -pthread
+// g++ -m32 -std=c++17 -Wall -Wextra -Werror -DAP_TRACK_CONSENT_TEST -DAP_TRACK_REGISTRY_TEST -I ap -I include -I ap/vendor/json/include tools/test-track-consent.cpp ap/ap_track_consent.cpp ap/ap_track_registry.cpp platform/native_saphi_catalogue.cpp -o /tmp/test-track-consent -pthread
 //
 // Track author permission check (A4-74): the one resolver
 // (ap_track_permission) and the consent.json fetch, with a stub transport in
@@ -20,10 +20,15 @@
 //      cache, a missing file also drops the cache, and the text says the list
 //      is not loaded,
 //   5. the Saphi track id in a download or source URL.
+//   6. Saphi's own permission fields (A4-79): the catalogue adapter's mapping
+//      (unspecified, allow, deny, malformed), a Saphi deny over a recorded
+//      yes, a recorded decline over a Saphi allow, and the recorded
+//      2026-11-14 catalogue giving 61 allowed tracks with today's consent.json.
 // With arguments <registry.json> <consent.json> <saphi page>... it prints,
 // for recorded Saphi catalogue pages, which tracks the real files allow.
 #include "ap_track_consent.h"
 #include "ap_track_registry.h"
+#include <platform/native_saphi_catalogue.h>
 
 #include <nlohmann/json.hpp>
 
@@ -435,6 +440,197 @@ int main(int argc, char **argv)
 	CHECK(ap_track_consent_refresh(cache.c_str()) == 1);
 	CHECK(wait_consent(&source) == AP_TRACK_CONSENT_DONE && source == AP_TRACK_CONSENT_SOURCE_LIVE);
 	CHECK(ap_track_permission(2, 1, U, nullptr) == D && slurp(cache) != v1);
+
+	// 6. Saphi's own permission fields (A4-79). The adapter is the catalogue
+	// parser's: a one-track catalogue goes in, the revision's saphiPermission
+	// and creditRequired come out, and the resolver gets that value.
+	{
+		auto one = [](json permissions, bool with, int *credit = nullptr) {
+			json lev = {{"id", 11}, {"type", "lev"}, {"version", "1.0.0"}, {"modes", {"arcade"}}, {"file_size", 4096},
+			            {"crc32_hash", 4294967295u}, {"download_url", "/api/v3/tracks/7/downloads/11"}, {"is_current", true}};
+			json vrm = lev;
+			vrm["id"] = 12;
+			vrm["type"] = "vrm";
+			vrm["download_url"] = "/api/v3/tracks/7/downloads/12";
+			json track = {{"id", 7}, {"name", "Fixture"}, {"author", "Creator"}, {"author_id", 3}, {"type", "race"},
+			              {"is_active", true}, {"lap_count", 3}, {"downloads", {lev, vrm}}};
+			if (with) track["permissions"] = permissions;
+			std::string text = json({{"data", json::array({track})}}).dump(), err(256, '\0');
+			CustomSaphiCatalogue *c = nullptr;
+			int result = -1;
+			if (CustomSaphi_ParseCatalogue(text.data(), text.size(), &c, &err[0], err.size()) && CustomSaphi_Count(c) == 1)
+			{
+				result = CustomSaphi_Row(c, 0)->saphiPermission;
+				if (credit) *credit = CustomSaphi_Row(c, 0)->creditRequired;
+			}
+			CustomSaphi_Free(&c);
+			return result;
+		};
+		auto perm = [](bool specified, json pnp) {
+			return json{{"specified", specified}, {"reach", "public"}, {"monetization", "non_profit"}, {"credit_required", true},
+			            {"saphi", true}, {"local_non_profit", true}, {"local_commercial", false}, {"private_non_profit", true},
+			            {"private_commercial", false}, {"public_non_profit", pnp}, {"public_commercial", false}};
+		};
+		int credit = -1;
+		// Unspecified (every track uploaded before the fields existed): unknown.
+		json unspecified = {{"specified", false}, {"reach", nullptr}, {"monetization", nullptr}, {"credit_required", nullptr},
+		                    {"saphi", true}, {"local_non_profit", false}, {"local_commercial", false}, {"private_non_profit", false},
+		                    {"private_commercial", false}, {"public_non_profit", false}, {"public_commercial", false}};
+		CHECK(one(unspecified, true, &credit) == U && credit == CUSTOM_SAPHI_CREDIT_UNKNOWN);
+		CHECK(one(perm(false, true), true) == U);                      // specified false wins over a true box
+		CHECK(one(perm(true, true), true, &credit) == A && credit == CUSTOM_SAPHI_CREDIT_REQUIRED);
+		CHECK(one(perm(true, false), true) == D);
+		{
+			json p = perm(true, true);
+			p["credit_required"] = false;
+			CHECK(one(p, true, &credit) == A && credit == CUSTOM_SAPHI_CREDIT_NOT_REQUIRED);
+			p["credit_required"] = nullptr;
+			CHECK(one(p, true, &credit) == A && credit == CUSTOM_SAPHI_CREDIT_UNKNOWN);
+			p["credit_required"] = "yes";
+			CHECK(one(p, true, &credit) == A && credit == CUSTOM_SAPHI_CREDIT_UNKNOWN);
+		}
+		// reach, monetization and saphi do not decide.
+		{
+			json p = perm(true, true);
+			p["reach"] = "local";
+			p["monetization"] = "commercial";
+			p["saphi"] = false;
+			p["public_commercial"] = false;
+			CHECK(one(p, true) == A);
+			p = perm(true, false);
+			p["reach"] = "public";
+			p["monetization"] = "non_profit";
+			p["saphi"] = true;
+			p["local_non_profit"] = true;
+			CHECK(one(p, true) == D);
+			p = perm(true, true);
+			p.erase("reach");
+			p.erase("monetization");
+			p.erase("saphi");
+			CHECK(one(p, true) == A);
+		}
+		// Malformed permissions never throw and never allow: unknown.
+		CHECK(one(nullptr, false) == U);                                // missing
+		CHECK(one(json("allowed"), true) == U);                         // a string
+		CHECK(one(json(nullptr), true) == U);                           // null
+		CHECK(one(json(true), true) == U);
+		CHECK(one(json(1), true) == U);
+		CHECK(one(json::array({true}), true) == U);
+		CHECK(one(json::object(), true) == U);                          // no keys
+		CHECK(one(json{{"public_non_profit", true}}, true) == U);       // specified missing
+		for (const json &odd : {json("true"), json(1), json(nullptr), json::array(), json::object(), json(1.5)})
+		{
+			json p = perm(true, true);
+			p["specified"] = odd;
+			CHECK(one(p, true) == U);                                   // specified not a boolean
+			p = perm(true, true);
+			p["public_non_profit"] = odd;
+			CHECK(one(p, true) == U);                                   // public_non_profit not a boolean
+		}
+		{
+			json p = perm(true, true);
+			p.erase("public_non_profit");
+			CHECK(one(p, true, &credit) == U && credit == CUSTOM_SAPHI_CREDIT_REQUIRED);
+		}
+		// A malformed object does not reject the catalogue (one() returned a row above); neither
+		// does one beside a good track.
+		// The resolver: Saphi deny beats a recorded yes; a recorded decline beats a Saphi allow.
+		CHECK(decide(v1, one(perm(true, false), true), 3) == D);        // Lockheart said yes, his track on Saphi says no
+		CHECK(decide(v1, one(perm(true, true), true), 3) == A);
+		CHECK(decide(v1, one(unspecified, true), 3) == A);              // unspecified: the recorded yes decides
+		CHECK(decide(v1, one(perm(true, true), true), 7) == A);         // Saphi allow, nobody recorded
+		CHECK(decide(v1, one(perm(false, true), true), 7) == U);        // unspecified, not asked: unknown
+		CHECK(decide(v1, one(json("x"), true), 7) == U);
+		{
+			json c = json::parse(v1);
+			c["authors"].push_back(author(9, "Declined Author", grant("declined")));
+			c["authors"].push_back(author(10, "Withdrawn Author", grant("withdrawn")));
+			const std::string v2 = c.dump();
+			CHECK(decide(v2, one(perm(true, true), true), 9) == D);     // declined beats a Saphi allow
+			CHECK(decide(v2, one(perm(true, true), true), 10) == D);    // withdrawn beats a Saphi allow
+			CHECK(decide(v2, one(perm(true, false), true), 9) == D);
+		}
+	}
+	// The recorded 2026-11-14 catalogue (117 tracks) with today's consent.json:
+	// 61 allowed. Lockheart's 12 are specified public non-profit on Saphi and
+	// recorded yes; the 105 unspecified tracks follow consent.json.
+	{
+		const std::string dir_fixtures = "tools/fixtures/saphi-permissions/";
+		std::string recorded = slurp(dir_fixtures + "catalogue-2026-11-14.json"), consent = slurp(dir_fixtures + "consent-2026-11-14.json");
+		if (recorded.empty() || consent.empty()) // run from another directory
+		{
+			const char *root = getenv("CTR_REPO_ROOT");
+			if (root) { recorded = slurp(std::string(root) + "/" + dir_fixtures + "catalogue-2026-11-14.json");
+			            consent = slurp(std::string(root) + "/" + dir_fixtures + "consent-2026-11-14.json"); }
+		}
+		CHECK(!recorded.empty() && !consent.empty());
+		json page = json::parse(recorded.empty() ? "{\"data\":[]}" : recorded);
+		CHECK(page["data"].size() == 117);
+		for (auto &t : page["data"])
+		{
+			const int id = t["id"].get<int>();
+			json lev = {{"id", id * 10 + 1}, {"type", "lev"}, {"version", "1.0.0"}, {"modes", {"arcade"}}, {"file_size", 4096},
+			            {"crc32_hash", 1}, {"download_url", "/api/v3/tracks/" + std::to_string(id) + "/downloads/" + std::to_string(id * 10 + 1)},
+			            {"is_current", true}};
+			json vrm = lev;
+			vrm["id"] = id * 10 + 2;
+			vrm["type"] = "vrm";
+			vrm["download_url"] = "/api/v3/tracks/" + std::to_string(id) + "/downloads/" + std::to_string(id * 10 + 2);
+			t["downloads"] = {lev, vrm};
+			t["type"] = "race"; // the five adventure hubs would not make rows; judge them by their permissions too
+		}
+		std::string text = page.dump(), err(256, '\0');
+		CustomSaphiCatalogue *c = nullptr;
+		CHECK(CustomSaphi_ParseCatalogue(text.data(), text.size(), &c, &err[0], err.size()));
+		CHECK(CustomSaphi_Count(c) == 117);
+		ap_track_consent_test_reset();
+		serve(true, consent);
+		CHECK(ap_track_consent_refresh("") == 1 && wait_consent(&source) == AP_TRACK_CONSENT_DONE);
+		int allowed = 0, specified = 0, saphi_allow = 0, saphi_unknown = 0, deny = 0, lockheart = 0;
+		std::map<int, int> by_author;
+		for (size_t i = 0; i < CustomSaphi_Count(c); i++)
+		{
+			const CustomSaphiRevision *r = CustomSaphi_Row(c, i);
+			const int p = ap_track_permission(r->trackID, r->authorID, r->saphiPermission, nullptr);
+			if (p == A) { allowed++; by_author[r->authorID]++; }
+			if (p == D) deny++;
+			if (r->saphiPermission == A) { saphi_allow++; if (r->authorID == 3) lockheart++; }
+			if (r->saphiPermission == U) saphi_unknown++;
+			if (r->creditRequired == CUSTOM_SAPHI_CREDIT_REQUIRED) specified++;
+		}
+		CHECK(allowed == 61);
+		CHECK(saphi_allow == 12 && lockheart == 12 && saphi_unknown == 105 && deny == 0);
+		CHECK(specified == 12);                                        // credit_required stored on exactly the specified tracks
+		CHECK(by_author[3] == 12);                                     // Lockheart: Saphi and consent both allow
+		// Without consent.json nothing is allowed, even Lockheart's Saphi allow.
+		ap_track_consent_test_reset();
+		for (size_t i = 0; i < CustomSaphi_Count(c); i++)
+		{
+			const CustomSaphiRevision *r = CustomSaphi_Row(c, i);
+			CHECK(ap_track_permission(r->trackID, r->authorID, r->saphiPermission, nullptr) == U);
+		}
+		// With consent.json but Lockheart's Saphi setting turned to deny: those 12 drop out, 49 remain.
+		json flipped = json::parse(text);
+		for (auto &t : flipped["data"])
+			if (t["permissions"]["specified"] == true) t["permissions"]["public_non_profit"] = false;
+		std::string ftext = flipped.dump();
+		CustomSaphiCatalogue *f = nullptr;
+		CHECK(CustomSaphi_ParseCatalogue(ftext.data(), ftext.size(), &f, &err[0], err.size()));
+		serve(true, consent);
+		CHECK(ap_track_consent_refresh("") == 1 && wait_consent(&source) == AP_TRACK_CONSENT_DONE);
+		int still = 0, denied = 0;
+		for (size_t i = 0; i < CustomSaphi_Count(f); i++)
+		{
+			const CustomSaphiRevision *r = CustomSaphi_Row(f, i);
+			const int p = ap_track_permission(r->trackID, r->authorID, r->saphiPermission, nullptr);
+			still += p == A;
+			denied += p == D;
+		}
+		CHECK(still == 49 && denied == 12);
+		CustomSaphi_Free(&f);
+		CustomSaphi_Free(&c);
+		ap_track_consent_test_reset();
+	}
 
 	unlink(cache.c_str());
 	rmdir(dir);

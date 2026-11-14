@@ -60,21 +60,52 @@ unsigned int source_modes(const json &modes, std::string *other)
     }
     return result;
 }
-/* Project Saphi's own permission setting (A4-74). Saphi will most likely
-   add upload-form checkboxes so uploaders say how a track may be used
-   (Garma, 2026-11-12 18:37 CET); no field exists yet. This is the only
-   place to change when it ships: read the track object and, when Saphi
-   versions it per file, the file row (file is null for the track level).
-   Anything this client does not understand is unknown, never allow. A
-   track-level setting with no per-file one: return the track's value for
-   file rows too, so the revision rule below sees all three agree. Today no
-   field is read, so every answer is unknown (auto_download is Saphi's own
-   client hint, A4-67, and is not permission). */
+/* Project Saphi's own permission setting (A4-74, filled in by A4-79).
+   Since 2026-11-13 every track object carries a track-level "permissions"
+   object: uploaders say which project types (local, private, public; non-
+   profit, commercial) may use the track and whether credit is required.
+   Saphi publishes no per-file field, so the track's value is returned for
+   file rows too and the revision rule below sees all three agree. The
+   CTR Archipelago is a free public project, so the one field that answers
+   for it is public_non_profit:
+     permissions missing or not an object, specified not a boolean, or
+     specified false (the "unspecified" state of every track uploaded before
+     the fields existed)                                         -> unknown
+     specified true, public_non_profit true (a boolean)          -> allow
+     specified true, public_non_profit false (a boolean)         -> deny
+     specified true, public_non_profit missing or not a boolean  -> unknown
+   reach, monetization and saphi are not part of the decision, and nothing
+   in permissions ever rejects the catalogue: a malformed object only makes
+   that track unknown. auto_download is Saphi's own client hint (A4-67) and
+   is not permission. */
+const json *saphi_permissions_object(const json &track)
+{
+    if (!track.is_object()) return nullptr;
+    auto it = track.find("permissions");
+    if (it == track.end() || !it->is_object()) return nullptr;
+    auto specified = it->find("specified");
+    if (specified == it->end() || !specified->is_boolean() || !specified->get<bool>()) return nullptr;
+    return &*it;
+}
 int saphi_permission(const json &track, const json *file)
 {
-    (void)track;
-    (void)file;
-    return CUSTOM_SAPHI_PERMISSION_UNKNOWN;
+    (void)file; /* No per-file field exists; the track level answers. */
+    const json *permissions = saphi_permissions_object(track);
+    if (!permissions) return CUSTOM_SAPHI_PERMISSION_UNKNOWN;
+    auto field = permissions->find("public_non_profit");
+    if (field == permissions->end() || !field->is_boolean()) return CUSTOM_SAPHI_PERMISSION_UNKNOWN;
+    return field->get<bool>() ? CUSTOM_SAPHI_PERMISSION_ALLOW : CUSTOM_SAPHI_PERMISSION_DENY;
+}
+/* Whether the author asks for credit. Meaningful only once the author has
+   specified; a missing or non-boolean value stays unknown. Stored so a later
+   credits job can use it; nothing reads it for the decision. */
+int saphi_credit_required(const json &track)
+{
+    const json *permissions = saphi_permissions_object(track);
+    if (!permissions) return CUSTOM_SAPHI_CREDIT_UNKNOWN;
+    auto field = permissions->find("credit_required");
+    if (field == permissions->end() || !field->is_boolean()) return CUSTOM_SAPHI_CREDIT_UNKNOWN;
+    return field->get<bool>() ? CUSTOM_SAPHI_CREDIT_REQUIRED : CUSTOM_SAPHI_CREDIT_NOT_REQUIRED;
 }
 /* A revision is allowed by Saphi only when the track and both its files
    allow; any deny denies. */
@@ -139,6 +170,7 @@ extern "C" int CustomSaphi_ParseCatalogue(const char *input, size_t size,
                 track["author_id"] >= 1 && track["author_id"] <= 100000000)
                 base.authorID = track["author_id"].get<int>();
             const int trackPermission = saphi_permission(track, nullptr);
+            base.creditRequired = saphi_credit_required(track);
             if (track.contains("lap_count") && !track["lap_count"].is_null())
                 base.sourceLaps = source_integer(track["lap_count"], 2147483647);
             const auto &downloads = track.at("downloads");

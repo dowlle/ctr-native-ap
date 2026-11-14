@@ -244,11 +244,17 @@ for history; it has no Archipelago dependency) and
   in-game download only when its author said yes. One resolver,
   `ap_track_permission` in `ap/ap_track_consent.cpp`, answers allow, deny or
   unknown from, in order: Project Saphi's own permission value (read by one
-  adapter, `saphi_permission` in `platform/native_saphi_catalogue.cpp`; Saphi
-  publishes none yet, so it is always unknown), then the author's recorded
-  answer in `consent.json` of the public registry
-  `dowlle/ctr-track-registry`, otherwise unknown. A direct "no" there beats a
-  Saphi allow. Unknown and deny both mean: not listed in Browse, and no
+  adapter, `saphi_permission` in `platform/native_saphi_catalogue.cpp`, which
+  reads the track's `permissions` object: once the uploader has specified,
+  `public_non_profit` true allows and false denies, since the CTR Archipelago
+  is a free public project; a track that is unspecified, or whose object is
+  missing or malformed, is unknown, and `reach`, `monetization` and `saphi`
+  do not decide), then the author's recorded answer in `consent.json` of the
+  public registry `dowlle/ctr-track-registry`, otherwise unknown. A direct
+  "no" there (declined or withdrawn) beats a Saphi allow, and a Saphi deny
+  beats a recorded yes, because it is the author's own current setting. The
+  author's credit setting is kept on the catalogue revision (`creditRequired`)
+  for a later credits change; nothing reads it yet. Unknown and deny both mean: not listed in Browse, and no
   Download, Update or Versions. The gate also sits in `CustomSaphi_StartInstall`
   and in the shared download worker, so Current Seed's "Install missing" and the
   compiled Baby T Park download are covered. A track that is not allowed is
