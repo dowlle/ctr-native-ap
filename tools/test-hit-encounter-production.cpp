@@ -884,10 +884,25 @@ static void test_roster_swap(void)
 
 		// An extra (content-plan) cup, destination 200 + its name index, fills
 		// the same way and freezes the filled roster for every leg.
-		for (int idx = 0; idx < 2; idx++)
+		// Run it twice: with no Hit block (the identity order) and with an
+		// enabled block carrying a configured content-cup order (reversed).
+		for (int idx = 0; idx < 4; idx++)
 		{
 			int ids2[AP_HIT_FIELD_MAX], again2[AP_HIT_FIELD_MAX];
-			const int dest = CTR_CFG_HIT_CONTENT_CUP_DEST + idx;
+			const int dest = CTR_CFG_HIT_CONTENT_CUP_DEST + (idx & 1);
+			if (idx == 2)
+			{
+				install_hit_runtime(g_fixture);
+				for (int c2 = 0; c2 < 2; c2++)
+				{
+					for (int i = 0; i < 16; i++)
+						ctr_cfg.hit.content_cups[c2].ids[i] = 15 - i;
+					ctr_cfg.hit.content_cup_present[c2] = 1;
+				}
+				expect(AP_HitEncounterEnabled(), "a Hit block with configured content-cup orders");
+				expect(AP_HitEncounterOrder(CTR_CFG_HIT_CONTENT_CUP_DEST) == ctr_cfg.hit.content_cups[0].ids, "the content cup's own order");
+			}
+			g_checked.clear();
 			reset_state();
 			swap_bosses(0, 1, 2, 3, 0);
 			ctr_boss_encounters.oxideDisabled = 1;
@@ -901,7 +916,10 @@ static void test_roster_swap(void)
 				extras += AP_HitInStockPure(ids2[i], player) ? 0 : 1;
 			}
 			expect_eq(c, 7, "a short extra cup fills to seven AI");
-			expect_eq(held, 1, "one held default fills the extra cup's empty seat");
+			// With no Hit block the pool is wide and one held default fills the
+			// seat; with an enabled block most guests are locked, the pool is
+			// small and more seats take held defaults.
+			expect(idx < 2 ? held == 1 : held >= 1, "held defaults fill the extra cup's empty seats");
 			expect(extras <= 3, "the extra cup stays within three extra models");
 			for (int leg = 1; leg < 4; leg++)
 			{
@@ -909,7 +927,21 @@ static void test_roster_swap(void)
 				expect(n2 == 7 && std::memcmp(again2, ids2, sizeof again2) == 0,
 				       "every leg of the extra cup seats the same eight karts");
 			}
+			if (idx >= 2)
+			{
+				// The fillers are the first held ids in the content cup's own order.
+				const int *ord = AP_HitEncounterOrder(dest);
+				int expectHeld[4], nh = 0;
+				for (int pos = 0; pos < 16; pos++)
+					if (ord[pos] >= 0 && ord[pos] <= 3)
+						expectHeld[nh++] = ord[pos];
+				bool follows = c == 7;
+				for (int i = 0; i < held && follows; i++)
+					follows = ids2[7 - held + i] == expectHeld[i];
+				expect(follows, "the extra cup's fillers follow its own seeded order");
+			}
 		}
+		install_hit_runtime(off); // back to no Hit block for the rest
 
 		// A full cup is unchanged: no held racer, the draw is the field.
 		reset_state();
