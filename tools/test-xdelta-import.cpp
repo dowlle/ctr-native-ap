@@ -2261,6 +2261,29 @@ int main()
                               "A4-95 the copy imported under the old title stays installed (it keeps the old name)");
                         CHECK(stat((assets + "/tracks/packages/" + n1->pin).c_str(), &st) == 0, "A4-95 the named copy is a second package");
                         CHECK(stat((assets + "/tracks/pack-track-1/original").c_str(), &st) == 0, "A4-95 one room folder serves both");
+                        /* Play Solo reads the installed package through the store, not the importer: both
+                           copies must give the same key and package id, the new one with the new name. */
+                        for (const char *pin : {oldPin.c_str(), (const char *)n1->pin})
+                        {
+                            char skey[65], srev[65], splan[16384], serr[256];
+                            const int kind = CustomPackage_StoreDescriptor(assets.c_str(), pin, nullptr, skey, sizeof skey, srev, sizeof srev,
+                                                                          splan, sizeof splan, serr, sizeof serr);
+                            CHECK(kind != 0, "A4-95 the store reads the installed copy");
+                            auto sd = nlohmann::json::parse(kind ? splan : "{}", nullptr, false);
+                            CHECK(kind && !sd.is_discarded() && !std::strcmp(skey, "pack-track-1") && sd["id"] == "package/pack-track-1/1.0.0" &&
+                                  sd["content_id"] == "pack-track-1",
+                                  "A4-95 the store descriptor keeps the same key and package id for the old and the new copy");
+                            if (kind && !sd.is_discarded() && std::string(pin) == n1->pin)
+                                CHECK(sd["display_name"] == "Tizi Test" && sd["author"] == "Test Author",
+                                      "A4-95 the store descriptor of the named copy shows name and credit");
+                        }
+                        /* A player's own name on a curated track changes the title, never the key. */
+                        char renameWhy[96];
+                        const unsigned namedIndex = unsigned(n1 - XdeltaImport_Summary(named.scan)->items);
+                        CHECK(XdeltaImport_RenameItem(named.scan, namedIndex, "My Tizi", renameWhy, sizeof renameWhy), "A4-95 rename a curated track");
+                        const XdeltaImportItem *r1 = item_for(XdeltaImport_Summary(named.scan), 1);
+                        CHECK(r1 && !std::strcmp(r1->title, "My Tizi") && !std::strcmp(r1->trackKey, "pack-track-1"),
+                              "A4-95 a rename keeps the curated folder key");
                         /* A room made under the old title pins the uuid, revision and both file hashes. */
                         char uuid[37], levPath[4096], vrmPath[4096];
                         XdeltaImport_PackageUuid(sha, 1, uuid);

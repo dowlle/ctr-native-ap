@@ -977,6 +977,9 @@ struct Built
     TrackMeta meta;
     bool hasMeta = false;
     std::string version;
+    /* A curated folder key (A4-95), kept in the package's source metadata so the store
+       and Play Solo read the same key as the importer, and kept across renames. */
+    std::string curatedKey;
 };
 
 void set_text(char *destination, size_t capacity, const std::string &text)
@@ -1224,9 +1227,11 @@ std::string json_dump(const json &value) { return value.dump(-1, ' ', false, jso
 
 /* Build the package for one cut pair and acquire it through the verifier. */
 Built build_package(const Candidate &c, const std::string &title, const std::string &version, const TrackMeta *meta,
-                    const XdeltaImportSummary &summary, const std::string &author, std::string &failure)
+                    const XdeltaImportSummary &summary, const std::string &author, std::string &failure,
+                    const std::string &curatedKey = std::string())
 {
     Built b;
+    b.curatedKey = curatedKey;
     b.originalLevHash = c.originalLevHash;
     b.originalLevBytes = c.originalLevBytes;
     b.followingVrm = c.followingVrm;
@@ -1254,6 +1259,7 @@ Built build_package(const Candidate &c, const std::string &title, const std::str
     if (meta && meta->excludeRelic) source["excluded"].push_back("relic");
     if (meta && meta->excludeTokens) source["excluded"].push_back("ctr_tokens");
     if (meta && !meta->trackKey.empty()) source["track_key"] = meta->trackKey;
+    else if (!curatedKey.empty()) source["track_key"] = curatedKey;
     const std::string presentation = json_dump(source);
     std::string settings, relic;
     const std::string index = std::to_string(c.index);
@@ -1609,14 +1615,18 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             /* A curated credit fills in only when the pack names nobody, and only
                alongside the curated title it was entered with. */
             if (author.empty() && nameSource == XDELTA_NAME_TESTER) author = curatedRow.author;
+            /* The curated key, unless the pack descriptor names one. It goes into the package's
+               source metadata, which the store reads for the folder key. */
+            const std::string curatedKey = nameSource == XDELTA_NAME_TESTER && curatedRow.key[0] && !(meta && !meta->trackKey.empty())
+                                               ? std::string(curatedRow.key) : std::string();
             std::string failure;
             bool retried = false;
-            Built built = build_package(candidate, title, version, meta, summary, author, failure);
+            Built built = build_package(candidate, title, version, meta, summary, author, failure, curatedKey);
             if (!built.owned && meta && (meta->relic || meta->laps || !meta->version.empty()))
             {
                 /* A descriptor value the package rules refuse never costs the track. */
                 std::string retry;
-                built = build_package(candidate, title, "1.0.0", nullptr, summary, author, retry);
+                built = build_package(candidate, title, "1.0.0", nullptr, summary, author, retry, curatedKey);
                 if (built.owned) { failure.clear(); retried = true; }
             }
             built.author = author;
@@ -1691,8 +1701,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             /* The folder key: a pack descriptor's track_key, then a curated row's (kept when the
                display name is better than the one the key came from), then the title's. */
             set_text(item.trackKey, sizeof item.trackKey,
-                     meta && !meta->trackKey.empty() ? meta->trackKey
-                     : nameSource == XDELTA_NAME_TESTER && curatedRow.key[0] ? std::string(curatedRow.key) : title_track_key(title));
+                     meta && !meta->trackKey.empty() ? meta->trackKey : !curatedKey.empty() ? curatedKey : title_track_key(title));
             if (!track_key_valid(item.trackKey))
             {
                 if (following) { CustomPackage_Free(&built.owned); undo_following(); return; }
@@ -3018,11 +3027,12 @@ extern "C" int XdeltaImport_RenameItem(XdeltaImportScan *scan, unsigned int item
     {
         Candidate candidate{(uint32_t)row.bigfileIndex, package_file(old.owned, "lev"), package_file(old.owned, "vrm"),
                             old.originalLevHash, old.originalLevBytes, old.followingVrm, old.embedded};
-        std::string key = old.hasMeta && !old.meta.trackKey.empty() ? old.meta.trackKey : title_track_key(name);
+        std::string key = old.hasMeta && !old.meta.trackKey.empty() ? old.meta.trackKey
+                          : !old.curatedKey.empty() ? old.curatedKey : title_track_key(name);
         if (!track_key_valid(key)) return refuse("No folder name fits this name");
         std::string failure;
         Built rebuilt = build_package(candidate, name, old.version.empty() ? "1.0.0" : old.version, old.hasMeta ? &old.meta : nullptr,
-                                      scan->summary, old.author, failure);
+                                      scan->summary, old.author, failure, old.curatedKey);
         if (!rebuilt.owned) return refuse(limit_codepoints("Files failed checks: " + failure, 80).c_str());
         rebuilt.author = old.author;
         rebuilt.version = old.version;
