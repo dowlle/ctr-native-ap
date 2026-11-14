@@ -54,15 +54,16 @@ static void synthetic(void)
 	CHECK(AP_LapProgress_IndexUsable(254, 255), "a 255-point level keeps index 254");
 
 	// A4-78: which index is measured.
-	CHECK(AP_LapProgress_MeasureIndex(40, 39, 102) == 40, "a usable index is measured");
-	CHECK(AP_LapProgress_MeasureIndex(0, 101, 102) == 0, "restart point 0 is measured");
-	CHECK(AP_LapProgress_MeasureIndex(0xff, 80, 138) == -1, "a quad without a checkpoint still skips (A3-26)");
-	CHECK(AP_LapProgress_MeasureIndex(102, 101, 102) == 101, "one past the array is measured from the last checkpoint");
-	CHECK(AP_LapProgress_MeasureIndex(130, 57, 102) == 57, "any index past the array other than 0xff takes the last checkpoint");
-	CHECK(AP_LapProgress_MeasureIndex(102, 102, 102) == -1, "no usable last checkpoint skips");
-	CHECK(AP_LapProgress_MeasureIndex(-1, 5, 102) == 5, "a negative index takes the last checkpoint");
-	CHECK(AP_LapProgress_MeasureIndex(3, 5, 0) == -1, "a level without restart points skips");
-	CHECK(AP_LapProgress_MeasureIndex(0xff, 0xff, 255) == -1, "0xff skips even on a 255-point level");
+	CHECK(AP_LapProgress_MeasureIndex(40, 39, 40, 102) == 40, "a usable index is measured");
+	CHECK(AP_LapProgress_MeasureIndex(0, 101, 0, 102) == 0, "restart point 0 is measured");
+	CHECK(AP_LapProgress_MeasureIndex(0xff, 80, 81, 138) == -1, "a quad without a checkpoint still skips (A3-26)");
+	CHECK(AP_LapProgress_MeasureIndex(0xff, 137, 0, 138) == -1, "a quad without a checkpoint skips even at the finish");
+	CHECK(AP_LapProgress_MeasureIndex(102, 101, 0, 102) == 101, "past the array at the finish: measured from the last checkpoint");
+	CHECK(AP_LapProgress_MeasureIndex(130, 101, 0, 102) == 101, "any index past the array other than 0xff, at the finish");
+	CHECK(AP_LapProgress_MeasureIndex(102, 57, 58, 102) == -1, "past the array mid-track skips (no stale measurement)");
+	CHECK(AP_LapProgress_MeasureIndex(102, 57, -1, 102) == -1, "an unread forward link skips");
+	CHECK(AP_LapProgress_MeasureIndex(102, 102, 0, 102) == -1, "no usable last checkpoint skips");
+	CHECK(AP_LapProgress_MeasureIndex(3, 5, 0, 0) == -1, "a level without restart points skips");
 }
 
 // ---------------------------------------------------------------------------
@@ -107,7 +108,10 @@ static int measure(const struct Lev *l, uint32_t rp, int cnt, int cp, int x, int
 {
 	int guarded = mode != RETAIL;
 	if (mode == RULE)
-		cp = AP_LapProgress_MeasureIndex(cp, *last, cnt);
+	{
+		int lastForward = AP_LapProgress_IndexUsable(*last, cnt) ? node_at(l, rp, *last).fwd : -1;
+		cp = AP_LapProgress_MeasureIndex(cp, *last, lastForward, cnt);
+	}
 	if (cp < 0)
 		return 0;
 	if (guarded && !AP_LapProgress_IndexUsable(cp, cnt))
@@ -268,9 +272,15 @@ static int load_lev(const char *env, const char *name, struct Lev *l)
 	CHECK(fread(&size, 4, 1, f) == 1, "the LEV has a size");
 	l->size = size;
 	l->d = (uint8_t *)malloc(size);
-	CHECK(l->d != NULL && fread(l->d, 1, size, f) == size, "the LEV data reads");
+	int ok = l->d != NULL && size > 0x190 && fread(l->d, 1, size, f) == size;
+	CHECK(ok, "the LEV data reads");
 	fclose(f);
-	return l->d != NULL;
+	if (!ok)
+	{
+		free(l->d);
+		l->d = NULL;
+	}
+	return ok;
 }
 
 static void retail_ngin(void)

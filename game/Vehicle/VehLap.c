@@ -45,7 +45,9 @@ void VehLap_UpdateProgress(struct Driver *driver)
 	// finish line. That index is measured from the last checkpoint (101, which
 	// links forward to 0 as retail's read of 102 does), not skipped, so a bot
 	// on its line still crosses below 1200 and its lap counts.
-	checkpointIndex = (s16)AP_LapProgress_MeasureIndex(checkpointIndex, driver->checkpoint.currentIndex, level->cnt_restart_points);
+	int lastCheckpoint = driver->checkpoint.currentIndex;
+	int lastForward = AP_LapProgress_IndexUsable(lastCheckpoint, level->cnt_restart_points) ? nodes[lastCheckpoint].nextIndex_forward : -1;
+	checkpointIndex = (s16)AP_LapProgress_MeasureIndex(checkpointIndex, lastCheckpoint, lastForward, level->cnt_restart_points);
 	if (!AP_LapProgress_IndexUsable(checkpointIndex, level->cnt_restart_points) ||
 	    !AP_LapProgress_IndexUsable(nodes[checkpointIndex].nextIndex_forward, level->cnt_restart_points) ||
 	    !AP_LapProgress_IndexUsable(nodes[nodes[checkpointIndex].nextIndex_forward].nextIndex_forward, level->cnt_restart_points))

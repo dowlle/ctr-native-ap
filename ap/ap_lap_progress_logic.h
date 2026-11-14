@@ -57,9 +57,14 @@ static inline int AP_LapProgress_IndexUsable(int index, int numRestartPoints)
 //
 // Rule: a usable index is measured. 0xff (a quad without a checkpoint, the
 // A3-26 N. Gin Labs case) still skips. Any other index past the array is
-// measured from the racer's last checkpoint, which on Papu's Pyramid is 101,
-// so the progress is retail's. Without a usable last checkpoint it skips.
-static inline int AP_LapProgress_MeasureIndex(int index, int lastIndex, int numRestartPoints)
+// measured from the racer's last checkpoint only when that checkpoint links
+// forward to restart point 0, the last point before the finish line, as 101
+// does on Papu's Pyramid; the progress is then retail's. Anywhere else, or
+// without a usable last checkpoint, it skips as A3-26 did, so a stale
+// mid-track checkpoint can never be measured toward the line.
+// lastForward is the last checkpoint's nextIndex_forward, or -1 when the
+// caller could not read it.
+static inline int AP_LapProgress_MeasureIndex(int index, int lastIndex, int lastForward, int numRestartPoints)
 {
 	if (AP_LapProgress_IndexUsable(index, numRestartPoints))
 	{
@@ -69,7 +74,7 @@ static inline int AP_LapProgress_MeasureIndex(int index, int lastIndex, int numR
 	{
 		return -1;
 	}
-	if (AP_LapProgress_IndexUsable(lastIndex, numRestartPoints))
+	if (AP_LapProgress_IndexUsable(lastIndex, numRestartPoints) && (lastForward == 0))
 	{
 		return lastIndex;
 	}
