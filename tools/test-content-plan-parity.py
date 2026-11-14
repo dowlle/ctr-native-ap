@@ -1463,6 +1463,17 @@ for seed in range(60):
     cases.append((f"bosses-generated-{seed}", wire, True))
 for fixture in ("bosses", "bosses-final", "bosses-custom", "bosses-cups"):
     cases.append((fixture + "-fixture", json.loads((root / f"tools/fixtures/content-plan/{fixture}.json").read_text()), True))
+# A4-79: a Final Challenge relic count of 0 asks no relic, for every Oxide goal
+# and relic mode. The generated plans are accepted; a relic term forged onto a
+# zero-count door, or a free door forged onto a counted one, is refused.
+from worlds.ctr.test.test_content_bosses import boss_options
+for zero_goal in ("none", "any_percent", "101_percent"):
+    for zero_unlock in ("sapphire_relics", "gold_relics", "platinum_relics", "any_relic_type", "total_relics"):
+        zero_opts = boss_options(oxide_goal=zero_goal, oxide_final_challenge_unlock=zero_unlock,
+                                 oxide_final_challenge_relic_count=0,
+                                 bosses_required_goal=1 if zero_goal != "101_percent" else 0)
+        cases.append((f"bosses-zero-{zero_goal}-{zero_unlock}", make_world(zero_opts, seed=3).fill_slot_data(), True))
+zero_base = next(w for name, w, ok in cases if name == "bosses-zero-101_percent-sapphire_relics")
 boss_base = next(w for name, w, ok in cases if name == "bosses-fixture")
 def boss_env(name, change, source=None):
     case = copy.deepcopy(source or boss_base)
@@ -1549,6 +1560,12 @@ for name, change in [
         ("boss rank above the chain", lambda c: b_check(c, 35011105).__setitem__("boost", 3)),
         ]:
     boss_env(name, change)
+# A4-79 forgeries around the zero count.
+boss_env("zero count with a relic term", lambda c: b_req(c, "oxide:final").__setitem__(
+    "predicate", dict(op="count", item=35010001, count=1)), source=zero_base)
+boss_env("zero count record negative", lambda c: c["content_plan"]["bosses"].__setitem__("oxide_final_count", -1), source=zero_base)
+boss_env("counted record with a free door", lambda c: b_req(c, "oxide:final").__setitem__("predicate", dict(op="always")))
+boss_env("zero count record with the door left counted", lambda c: c["content_plan"]["bosses"].__setitem__("oxide_final_count", 0))
 # A boss check's `boost` is the apworld's logic as data, read as given like
 # every other check's rank (#133 PR 4c above): a forged rank inside the chain
 # is refused by the generator alone.

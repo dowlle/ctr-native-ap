@@ -185,6 +185,9 @@ static inline int AP_OxideRelicTermFormat(int mode, int n, int sapphire,
 
 	if (out == 0 || cap <= 0)
 		return 0;
+	// A4-79: a count of 0 asks no relic, so there is no relic line to show.
+	if (n <= 0)
+		return 0;
 	if (gold > best)
 		best = gold;
 	if (platinum > best)

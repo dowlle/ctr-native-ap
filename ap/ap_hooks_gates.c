@@ -1566,8 +1566,8 @@ static int AP_OxideGateAdvert(char *out, int cap)
 	const ctr_req *door = &ctr_cfg.boss_req[4];
 	int n = ctr_cfg.oxide_final_count;
 
-	if (n <= 0)
-		n = 18; // the vanilla rule, same fallback ap_verify.c uses
+	if (n < 0)
+		n = 18; // the vanilla rule, same fallback ap_verify.c uses; 0 is a real count (A4-79)
 
 	return AP_OxideGarageAdvertFormat(
 		st, door->type, door->count, door->colour, AP_ReqOwned(door),
