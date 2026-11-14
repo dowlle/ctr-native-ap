@@ -10,11 +10,6 @@
 #include "ap_hub_name_entry_logic.h"
 #include "ap_name_entry_held_logic.h"
 
-struct AP_HNE_HubStops
-{
-	int count;
-	struct AP_HNE_Stop stops[3];
-};
 #include "ap_hub_name_entry_stops.h"
 
 static int failures;
@@ -106,7 +101,7 @@ static void load_done(int apRacer)
 
 int main(void)
 {
-	struct AP_HubNameEntryState s = {AP_HNE_OFF, -1, -1, 12345u, 0, 0};
+	struct AP_HubNameEntryState s = {AP_HNE_OFF, -1, -1, 12345u, 0, 0, -1, {-1, -1, -1, -1, -1}};
 	int i, level, counts[5] = {0}, repeats = 0, last = -1, outOfRange = 0;
 
 	// ---- gating -------------------------------------------------------------
@@ -407,28 +402,101 @@ int main(void)
 		      rot[0] == ((-518 + 0x800) & 0xfff) && rot[1] == 3279 && rot[2] == 0);
 	}
 
-	// ---- the shipped stop table ---------------------------------------------
+	// ---- the shipped path table (A4-60c, A4-90) -------------------------------
 	{
-		int h, j, k, ok = 1, near = 1;
-		for (h = 0; h < AP_HNE_HUBS; h++)
+		int i, j, k, h, ok = 1, near = 1, perHub[AP_HNE_HUBS] = {0};
+		for (i = 0; i < AP_HNE_PATHS; i++)
 		{
-			if (s_apHneStops[h].count < 2 || s_apHneStops[h].count > 3)
-				ok = 0;
-			for (j = 0; j < s_apHneStops[h].count; j++)
-				for (k = 0; k < 3; k++)
-					if (s_apHneStops[h].stops[j].eye[k] < -32768 || s_apHneStops[h].stops[j].eye[k] > 32767 ||
-					    s_apHneStops[h].stops[j].look[k] < -32768 || s_apHneStops[h].stops[j].look[k] > 32767)
-						ok = 0;
-			for (j = 1; j < s_apHneStops[h].count; j++)
+			const struct AP_HNE_Path *p = &s_apHnePaths[i];
+			if (p->hub < 0 || p->hub >= AP_HNE_HUBS || p->count < 2 || p->count > 3)
 			{
-				const int *a = s_apHneStops[h].stops[j - 1].eye, *b = s_apHneStops[h].stops[j].eye;
+				ok = 0;
+				continue;
+			}
+			perHub[p->hub]++;
+			for (j = 0; j < p->count; j++)
+				for (k = 0; k < 3; k++)
+					if (p->stops[j].eye[k] < -32768 || p->stops[j].eye[k] > 32767 || p->stops[j].look[k] < -32768 ||
+					    p->stops[j].look[k] > 32767)
+						ok = 0;
+			for (j = 1; j < p->count; j++)
+			{
+				const int *a = p->stops[j - 1].eye, *b = p->stops[j].eye;
 				double dx = a[0] - b[0], dz = a[2] - b[2];
 				if (dx * dx + dz * dz > 2500.0 * 2500.0)
 					near = 0;
 			}
 		}
-		CHECK("every hub has two or three stops, all inside the push buffer's 16-bit range", ok);
+		CHECK("every path names a hub and has two or three stops, all inside the push buffer's 16-bit range", ok);
 		CHECK("consecutive stops are close (under 2500 units), so a glide stays over the same stretch", near);
+		ok = AP_HNE_PATHS >= 25 && AP_HNE_PATHS <= 64;
+		for (h = 0; h < AP_HNE_HUBS; h++)
+			ok = ok && perHub[h] >= 4 && perHub[h] == AP_HNE_PathsForHub(s_apHnePaths, AP_HNE_PATHS, h);
+		CHECK("A4-90: the pool has 25 to 64 paths, every hub at least four", ok);
+		printf("      paths: %d (GSV %d, NSB %d, Ruins %d, Glacier %d, Citadel %d)\n", AP_HNE_PATHS, perHub[0], perHub[1],
+		       perHub[2], perHub[3], perHub[4]);
+		ok = 1;
+		for (i = 0; i < AP_HNE_HUBS; i++)
+			ok = ok && s_apHnePaths[i].hub == i;
+		CHECK("the five A4-60c paths stay first, one per hub in hub order", ok);
+	}
+
+	{
+		// The aim offset puts the landmark below name entry's box (bottom edge
+		// at 78% of the height). The headless frames in the A4-90 note set its
+		// value; this pins it to a sane window so a typo cannot point the
+		// camera at the sky or the floor.
+		CHECK("A4-90: the aim above the landmark is between 15 and 25 degrees",
+		      AP_HNE_AIM_ABOVE * 360 >= 15 * 4096 && AP_HNE_AIM_ABOVE * 360 <= 25 * 4096);
+	}
+
+	// ---- path pick (A4-90) ---------------------------------------------------
+	{
+		struct AP_HubNameEntryState ps = {AP_HNE_OFF, -1, -1, 0x2545f491u, 0, 0, -1, {-1, -1, -1, -1, -1}};
+		int pathCount[64] = {0}, lastPathShown = -1, pathRepeats = 0, hubRepeats = 0, lastHubShown = -1, wrongHub = 0,
+		    missing = 0, perHubPathRepeat = 0, prevOfHub[AP_HNE_HUBS] = {-1, -1, -1, -1, -1}, n;
+		for (i = 0; i < 20000; i++)
+		{
+			int lv = AP_HNE_BeginNewAdventure(&ps, 1, (unsigned)i * 2246822519u, ALL), hub = lv - LEVEL_GSV, pth;
+			pth = AP_HNE_PickPath(&ps, s_apHnePaths, AP_HNE_PATHS, hub);
+			if (pth < 0 || pth >= AP_HNE_PATHS)
+			{
+				missing++;
+				continue;
+			}
+			wrongHub += s_apHnePaths[pth].hub != hub;
+			pathRepeats += pth == lastPathShown;
+			hubRepeats += hub == lastHubShown;
+			perHubPathRepeat += pth == prevOfHub[hub];
+			prevOfHub[hub] = pth;
+			lastPathShown = pth;
+			lastHubShown = hub;
+			pathCount[pth]++;
+		}
+		CHECK("every New Adventure gets a path of the hub it loads", missing == 0 && wrongHub == 0);
+		CHECK("hub first: the same hub never comes twice in a row", hubRepeats == 0);
+		CHECK("the same path never comes twice in a row, and a hub never repeats the path it showed last time",
+		      pathRepeats == 0 && perHubPathRepeat == 0);
+		n = 1;
+		for (i = 0; i < AP_HNE_PATHS; i++)
+		{
+			int share = AP_HNE_PathsForHub(s_apHnePaths, AP_HNE_PATHS, s_apHnePaths[i].hub);
+			double expect = 20000.0 / AP_HNE_HUBS / share;
+			if (pathCount[i] < expect * 0.75 || pathCount[i] > expect * 1.25)
+				n = 0;
+		}
+		CHECK("every path comes up, each within 25% of an even share of its hub over 20000 picks", n);
+		{
+			const struct AP_HNE_Path one[2] = {{2, 2, {{{0, 0, 0}, {0, 0, 1}}, {{1, 0, 0}, {0, 0, 1}}}},
+			                                   {3, 2, {{{0, 0, 0}, {0, 0, 1}}, {{1, 0, 0}, {0, 0, 1}}}}};
+			int a = AP_HNE_PickPath(&ps, one, 2, 2), b = AP_HNE_PickPath(&ps, one, 2, 2);
+			CHECK("a hub with a single path shows it every time", a == 0 && b == 0);
+			CHECK("a hub with no path, or a bad hub, gets no path (the preflight refuses such a hub)",
+			      AP_HNE_PickPath(&ps, one, 2, 4) == -1 && ps.path == -1 && AP_HNE_PickPath(&ps, one, 2, 7) == -1 &&
+			          AP_HNE_PathsForHub(one, 2, 4) == 0);
+		}
+		AP_HNE_Reset(&ps);
+		CHECK("a reset clears the showing's path but keeps each hub's last path", ps.path == -1 && ps.lastPath[0] >= 0);
 	}
 
 	printf("%s (%d failure%s)\n", failures ? "FAILED" : "PASSED", failures, failures == 1 ? "" : "s");
