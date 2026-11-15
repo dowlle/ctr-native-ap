@@ -64,14 +64,25 @@ static inline int NativeDrawDistance_TextureLodThreshold(int retailThreshold, bo
 
 // Per-level render arenas (primitive memory and the ordering-table arena) are
 // sized by retail for retail's draw distance, and the level renderer stops
-// mid-walk when one runs out. With the option on at level load they grow by the
-// same factor (Expanded e86365e10b). Unlike Expanded this is applied only when
-// the option is on, so a load with the option off allocates exactly what it did
-// before, and only in builds with the 8 MiB MEMPACK (CTR_CUSTOM_TRACKS), see
+// mid-walk when one runs out. Expanded (e86365e10b) grows them by the same
+// factor on every load. Here they grow on a 1P load only when the option is on
+// at level load, so a 1P load with it off allocates exactly what it did before
+// (and the custom-track 1P floor wins over the scaled size anyway). A
+// split-screen load (2P to 4P) always grows, whatever the option says, so
+// switching the option on mid-race works at once (maintainer ruling 2026-11-15,
+// A5-4b). The main menu and cutscenes are not split screen even though the
+// player count can read 2 to 4 there (the main menu loads with 4), so they
+// follow the option like 1P: the caller passes notSplitScreenScene for them.
+// Only in builds with the 8 MiB MEMPACK (CTR_CUSTOM_TRACKS), see
 // MainInit_PrimMem and MainInit_OTMem.
-static inline int NativeDrawDistance_ArenaBytes(int retailBytes, bool extended)
+static inline bool NativeDrawDistance_ArenaGrows(bool extended, int numPlyrCurrGame, bool notSplitScreenScene)
 {
-	return extended ? retailBytes * NATIVE_DRAW_DISTANCE_SCALE : retailBytes;
+	return extended || (numPlyrCurrGame >= 2 && !notSplitScreenScene);
+}
+
+static inline int NativeDrawDistance_ArenaBytes(int retailBytes, bool grow)
+{
+	return grow ? retailBytes * NATIVE_DRAW_DISTANCE_SCALE : retailBytes;
 }
 
 #endif

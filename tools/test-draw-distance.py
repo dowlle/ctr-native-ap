@@ -6,8 +6,9 @@ headers include/platform/native_draw_distance.h and game/RenderLevel/RenderLevel
 compiled against small stubs for the engine types they need, with the retail values as
 independent fixtures. Then the source is checked: every renderer path asks those helpers,
 the clip-record arena goes through one function everywhere, and the primitive and
-ordering-table arenas grow only with the option on, in the 8 MiB MEMPACK build, before
-the custom-track 1P floor.
+ordering-table arenas grow in the 8 MiB MEMPACK build, before the custom-track 1P floor:
+on a 1P load only with the option on, on a split-screen (2P to 4P) load always (A5-4b,
+maintainer ruling 2026-11-15), so the option works at once when it is switched on mid-race.
 """
 from pathlib import Path
 import re
@@ -120,7 +121,20 @@ int main(void)
 	CHECK(NativeDrawDistance_BspLodThreshold(v, true) / v == NATIVE_DRAW_DISTANCE_SCALE, "on: BSP LOD scaled by the factor");
 	CHECK(NativeDrawDistance_TextureLodThreshold(v, true) / v == NATIVE_DRAW_DISTANCE_SCALE, "on: texture LOD scaled by the factor");
 	CHECK(NativeDrawDistance_ArenaBytes(v, true) / v == NATIVE_DRAW_DISTANCE_SCALE, "on: arena scaled by the factor");
-
+	/* A5-4b: who grows. 1P follows the option at level load; 2P to 4P always grow;
+	   the attract path (0 players), the main menu and cutscenes follow the option. */
+	CHECK(!NativeDrawDistance_ArenaGrows(false, 1, false), "1P, option off: arenas keep retail size");
+	CHECK(NativeDrawDistance_ArenaGrows(true, 1, false), "1P, option on: arenas grow");
+	CHECK(!NativeDrawDistance_ArenaGrows(false, 0, false), "attract path, option off: arenas keep retail size");
+	CHECK(!NativeDrawDistance_ArenaGrows(false, 4, true), "main menu (loads with 4 players), option off: arenas keep retail size");
+	CHECK(NativeDrawDistance_ArenaGrows(true, 4, true), "main menu, option on: arenas grow as in A5-4");
+	for (int p = 2; p <= 4; p++)
+	{
+		CHECK(NativeDrawDistance_ArenaGrows(false, p, false), "split screen, option off: arenas still grow");
+		CHECK(NativeDrawDistance_ArenaGrows(true, p, false), "split screen, option on: arenas grow");
+		CHECK(NativeDrawDistance_ArenaBytes(v, NativeDrawDistance_ArenaGrows(false, p, false)) == NativeDrawDistance_ArenaBytes(v, NativeDrawDistance_ArenaGrows(true, p, false)),
+		      "split screen: the arena size does not depend on the option");
+	}
 	static const struct { int proj; struct V r; } race[] = {
 	    {128, {4160, 3328, 3072, 1536, 896, 448}},
 	    {256, {8320, 6656, 6144, 3072, 1792, 896}},
@@ -226,18 +240,24 @@ check("MainDB_GetClipEntries(gGT->levelID, gGT->numPlyrCurrGame) << 2" in read("
 clip_h = read("platform/native_clip_scratch.h")
 check("#define CTR_NATIVE_CLIP_SCRATCH_SCALE ((uint32_t)NATIVE_DRAW_DISTANCE_SCALE)" in clip_h, "clip scratch scale is the draw-distance factor")
 
-# --- Prim and OT arenas: option on, 8 MiB build, before the 1P floor -------------------
+# --- Prim and OT arenas: 1P with the option, split screen always, 8 MiB build, before the 1P floor
 init = read("game/MAIN/MainInit.c")
 prim = init[init.index("void MainInit_PrimMem("):init.index("void MainInit_JitPoolsReset(")]
 ot = init[init.index("void MainInit_OTMem("):init.index("void MainInit_JitPoolsNew(")]
-scale_line = "size = NativeDrawDistance_ArenaBytes(size, g_config.increaseDrawDistance);"
-check(scale_line in prim and prim.index("#ifdef CTR_CUSTOM_TRACKS") < prim.index(scale_line) < prim.index("CustomTrackPolicy_PrimArenaBytes("),
-      "prim arena scales inside CTR_CUSTOM_TRACKS, before the custom-track floor")
-check(scale_line in ot and ot.index("#ifdef CTR_CUSTOM_TRACKS") < ot.index(scale_line) < ot.index("MainDB_OTMem(&gGT->db[0].otMem, size);"),
-      "OT arena scales inside CTR_CUSTOM_TRACKS, before it is allocated")
+grow_prim = ("size = NativeDrawDistance_ArenaBytes(size, NativeDrawDistance_ArenaGrows(g_config.increaseDrawDistance, gGT->numPlyrCurrGame,", "(gGT->gameMode1 & (MAIN_MENU | GAME_CUTSCENE)) != 0));")
+grow_ot = ("size = NativeDrawDistance_ArenaBytes(size, NativeDrawDistance_ArenaGrows(g_config.increaseDrawDistance, gGT->numPlyrCurrGame,", "(gameMode & (MAIN_MENU | GAME_CUTSCENE)) != 0));")
+def at(body, pair):
+    i = body.find(pair[0])
+    return i if i >= 0 and body.find(pair[1], i) >= 0 and body.find(pair[1], i) - i < 300 else -1
+check(at(prim, grow_prim) >= 0 and prim.index("#ifdef CTR_CUSTOM_TRACKS") < at(prim, grow_prim) < prim.index("CustomTrackPolicy_PrimArenaBytes("),
+      "prim arena scales inside CTR_CUSTOM_TRACKS, by the option, the player count and the menu/cutscene test, before the custom-track floor")
+check(at(ot, grow_ot) >= 0 and ot.index("#ifdef CTR_CUSTOM_TRACKS") < at(ot, grow_ot) < ot.index("MainDB_OTMem(&gGT->db[0].otMem, size);"),
+      "OT arena scales inside CTR_CUSTOM_TRACKS, by the same rule, before it is allocated")
+check(prim.count("NativeDrawDistance_ArenaBytes(") == 1 and ot.count("NativeDrawDistance_ArenaBytes(") == 1,
+      "each arena is scaled exactly once per load")
 check("static int MainInit_GetPrimMemSize(struct GameTracker *gGT)" in init, "the ASM-verified retail prim size function is still there, unscaled")
 
-# --- Budget arithmetic for the worst load with the option on ---------------------------
+# --- Budget arithmetic for the worst grown load (split screen grows even with the option off)
 policy = read("include/platform/native_custom_tracks_policy.h")
 floor = int(re.search(r"#define CTR_CT_PRIM_ARENA_BYTES (0x[0-9A-Fa-f]+)", policy).group(1), 16)
 scale = int(re.search(r"#define NATIVE_DRAW_DISTANCE_SCALE (\d+)", dd).group(1))
