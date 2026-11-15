@@ -296,7 +296,7 @@ static int FakeFetch(void *ctx, unsigned int fileIndex, struct AP_NavRecLaneCand
 // load's identity, in index order. AP_NavRec_BuildPool in ap/ap_navrec.c does
 // exactly this with a file read in place of the array.
 static struct AP_NavRecPoolEntry g_pool[FAKE_MAX_FILES];
-static unsigned int              g_poolWork[2 * FAKE_MAX_FILES];
+static unsigned int              g_poolWork[AP_NAVREC_POOL_WORK_PER_ENTRY * FAKE_MAX_FILES];
 
 static unsigned int FakePool(void)
 {
@@ -328,15 +328,55 @@ static unsigned int FakePool(void)
 	return count;
 }
 
-static unsigned int FakePick(unsigned int seed, struct AP_NavRecPoolPick picks[AP_NAVREC_LANES], unsigned int *opened,
-                             unsigned int *contributors)
+static unsigned int FakePickRepeat(unsigned int seed, int allowRepeat, struct AP_NavRecPoolPick picks[AP_NAVREC_LANES],
+                                   unsigned int *opened, unsigned int *contributors)
 {
 	unsigned int poolCount = FakePool();
 
 	memset(picks, 0, sizeof(struct AP_NavRecPoolPick) * AP_NAVREC_LANES);
 	g_folder.opened = 0;
-	return AP_NavRecPool_Pick(g_pool, poolCount, seed, AP_NAVREC_MAX_LOAD_ATTEMPTS, FakeFetch, &g_folder, g_poolWork, picks, opened,
-	                          contributors);
+	return AP_NavRecPool_Pick(g_pool, poolCount, seed, AP_NAVREC_MAX_LOAD_ATTEMPTS, allowRepeat, FakeFetch, &g_folder, g_poolWork, picks,
+	                          opened, contributors);
+}
+
+static unsigned int FakePick(unsigned int seed, struct AP_NavRecPoolPick picks[AP_NAVREC_LANES], unsigned int *opened,
+                             unsigned int *contributors)
+{
+	return FakePickRepeat(seed, 0, picks, opened, contributors);
+}
+
+// No (file, lap) pair twice in one set of picks.
+static int PicksNoDuplicateLap(const struct AP_NavRecPoolPick *picks, unsigned int n)
+{
+	unsigned int i;
+	unsigned int j;
+
+	for (i = 0; i < n; i++)
+		for (j = i + 1u; j < n; j++)
+			if ((picks[i].fileIndex == picks[j].fileIndex) && (picks[i].lapOrdinal == picks[j].lapOrdinal))
+				return 0;
+	return 1;
+}
+
+static int PicksEqual(const struct AP_NavRecPoolPick *a, const struct AP_NavRecPoolPick *b, unsigned int n)
+{
+	unsigned int i;
+
+	for (i = 0; i < n; i++)
+		if ((a[i].fileIndex != b[i].fileIndex) || (a[i].lapOrdinal != b[i].lapOrdinal) || (strcmp(a[i].driverName, b[i].driverName) != 0))
+			return 0;
+	return 1;
+}
+
+static unsigned int PicksBy(const struct AP_NavRecPoolPick *picks, unsigned int n, const char *name)
+{
+	unsigned int i;
+	unsigned int c = 0;
+
+	for (i = 0; i < n; i++)
+		if (strcmp(picks[i].driverName, name) == 0)
+			c++;
+	return c;
 }
 
 static int PicksDistinct(const struct AP_NavRecPoolPick *picks, unsigned int n)
@@ -1529,6 +1569,266 @@ int main(void)
 		n = FakePick(5u, picks, &opened, &contributors);
 		check(n == 0u, "a folder of corrupt files races nothing");
 		check(opened == (unsigned int)AP_NAVREC_MAX_LOAD_ATTEMPTS, "and stops after the full-read budget");
+	}
+
+	// ---------------------------------------------------------------
+	// Several laps per contributor (A5-7, nav_repeat_laps).
+	//
+	// Off is the single-lane rule above, byte for byte. On adds a second pass
+	// that fills the lanes the first pass left free from the same
+	// contributors, never repeating a (file, lap) pair.
+	// ---------------------------------------------------------------
+	{
+		struct AP_NavRecPoolPick picks[AP_NAVREC_LANES];
+		struct AP_NavRecPoolPick off[AP_NAVREC_LANES];
+		struct AP_NavRecPoolPick again[AP_NAVREC_LANES];
+		unsigned int             opened;
+		unsigned int             contributors;
+		unsigned int             n;
+		unsigned int             nOff;
+		unsigned int             seed;
+		unsigned int             i;
+
+		// Off: one lane per contributor, whatever the pool holds.
+		FakeReset(3);
+		FakeAdd(1, "Dex", 3, 0);
+		FakeAdd(2, "Dex", 3, 0);
+		FakeAdd(3, "Dex", 3, 0);
+		{
+			int one = 1;
+
+			for (seed = 1; seed <= 100u; seed++)
+			{
+				n = FakePickRepeat(seed, 0, picks, &opened, &contributors);
+				if ((n != 1u) || (opened != 1u))
+					one = 0;
+			}
+			check(one, "repeat off: one contributor with three files and nine laps still races one lap on one lane, one full read");
+		}
+
+		// On, one contributor, several files: every free lane is filled from
+		// a different file, and no lap repeats.
+		{
+			int full = 1;
+			int distinctFiles = 1;
+			int noDup = 1;
+			int inRange = 1;
+			int budget = 1;
+
+			for (seed = 1; seed <= 200u; seed++)
+			{
+				n = FakePickRepeat(seed, 1, picks, &opened, &contributors);
+				if ((n != 3u) || (contributors != 1u))
+					full = 0;
+				if ((n == 3u) && ((picks[0].fileIndex == picks[1].fileIndex) || (picks[0].fileIndex == picks[2].fileIndex) ||
+				                  (picks[1].fileIndex == picks[2].fileIndex)))
+					distinctFiles = 0;
+				if (!PicksNoDuplicateLap(picks, n))
+					noDup = 0;
+				for (i = 0; i < n; i++)
+					if ((picks[i].lapOrdinal >= 3u) || (strcmp(picks[i].driverName, "Dex") != 0))
+						inRange = 0;
+				if ((opened > (unsigned int)AP_NAVREC_MAX_LOAD_ATTEMPTS) || (g_folder.opened != opened))
+					budget = 0;
+			}
+			check(full, "repeat on: one contributor with three files fills all three lanes");
+			check(distinctFiles, "repeat on: a file not raced yet is used before a second lap of a raced file");
+			check(noDup, "repeat on: no lap twice in one race");
+			check(inRange, "repeat on: every pick is an eligible lap of that contributor");
+			check(budget, "repeat on: three files cost three full reads, none twice");
+		}
+
+		// On, one file: other laps of the same file fill the lanes, up to the
+		// number of laps it holds.
+		FakeReset(3);
+		FakeAdd(1, "Solo", 3, 0);
+		{
+			int three = 1;
+			int lapsDiffer = 1;
+
+			for (seed = 1; seed <= 100u; seed++)
+			{
+				n = FakePickRepeat(seed, 1, picks, &opened, &contributors);
+				if (n != 3u)
+					three = 0;
+				if (!PicksNoDuplicateLap(picks, n))
+					lapsDiffer = 0;
+			}
+			check(three, "repeat on: one file with three laps fills three lanes");
+			check(lapsDiffer, "repeat on: and they are three different laps");
+		}
+		FakeReset(3);
+		FakeAdd(1, "Solo", 2, 0);
+		n = FakePickRepeat(7u, 1, picks, &opened, &contributors);
+		check(n == 2u && PicksNoDuplicateLap(picks, n), "repeat on: one file with two laps fills two lanes, the third stays the track's line");
+		FakeReset(3);
+		FakeAdd(1, "Solo", 1, 0);
+		n = FakePickRepeat(7u, 1, picks, &opened, &contributors);
+		check(n == 1u, "repeat on: one file with one lap fills one lane, nothing is repeated to fill the rest");
+
+		// On, two contributors: each keeps a lane, the third lane goes to one
+		// of them, and over many seeds both get it.
+		FakeReset(3);
+		FakeAdd(1, "Ann", 3, 0);
+		FakeAdd(2, "Ann", 3, 0);
+		FakeAdd(3, "Bo", 3, 0);
+		FakeAdd(4, "Bo", 3, 0);
+		{
+			int full = 1;
+			int each = 1;
+			int noDup = 1;
+			unsigned int annTwo = 0;
+			unsigned int boTwo = 0;
+
+			for (seed = 1; seed <= 300u; seed++)
+			{
+				n = FakePickRepeat(seed, 1, picks, &opened, &contributors);
+				if ((n != 3u) || (contributors != 2u))
+					full = 0;
+				if ((PicksBy(picks, n, "Ann") < 1u) || (PicksBy(picks, n, "Bo") < 1u))
+					each = 0;
+				if (!PicksNoDuplicateLap(picks, n))
+					noDup = 0;
+				if (PicksBy(picks, n, "Ann") == 2u)
+					annTwo++;
+				if (PicksBy(picks, n, "Bo") == 2u)
+					boTwo++;
+			}
+			check(full, "repeat on: two contributors fill three lanes");
+			check(each, "repeat on: both contributors keep a lane");
+			check(noDup, "repeat on: two contributors, no lap twice");
+			check((annTwo > 50u) && (boTwo > 50u), "repeat on: the extra lane goes to either contributor across seeds");
+		}
+
+		// On, two contributors, one of them has nothing more to give: the
+		// other fills the lane.
+		FakeReset(3);
+		FakeAdd(1, "Ann", 3, 0);
+		FakeAdd(2, "Bo", 1, 0);
+		{
+			int ok = 1;
+
+			for (seed = 1; seed <= 100u; seed++)
+			{
+				n = FakePickRepeat(seed, 1, picks, &opened, &contributors);
+				if ((n != 3u) || (PicksBy(picks, n, "Bo") != 1u) || (PicksBy(picks, n, "Ann") != 2u) || !PicksNoDuplicateLap(picks, n))
+					ok = 0;
+			}
+			check(ok, "repeat on: a contributor with one lap keeps one lane and the other fills the third");
+		}
+		FakeReset(3);
+		FakeAdd(1, "Ann", 1, 0);
+		FakeAdd(2, "Bo", 1, 0);
+		n = FakePickRepeat(3u, 1, picks, &opened, &contributors);
+		check(n == 2u, "repeat on: two contributors with one lap each fill two lanes and no more");
+
+		// On, three or more contributors: lanes are already full, so the
+		// result is the single-lane result exactly.
+		{
+			static const char *const names[5] = {"A1", "B2", "C3", "D4", "E5"};
+			unsigned int         people;
+
+			for (people = 3u; people <= 5u; people++)
+			{
+				int same = 1;
+				int unique = 1;
+
+				FakeReset(3);
+				for (i = 0; i < people; i++)
+				{
+					FakeAdd(1u + i * 2u, names[i], 3, 0);
+					FakeAdd(2u + i * 2u, names[i], 3, 0);
+				}
+				for (seed = 1; seed <= 150u; seed++)
+				{
+					nOff = FakePickRepeat(seed, 0, off, &opened, &contributors);
+					n = FakePickRepeat(seed, 1, picks, &opened, &contributors);
+					if ((n != 3u) || (nOff != 3u) || !PicksEqual(off, picks, 3u))
+						same = 0;
+					if (!PicksDistinct(picks, n))
+						unique = 0;
+				}
+				check(same, people == 3u ? "repeat on, 3 contributors: identical to off for every seed"
+				                         : (people == 4u ? "repeat on, 4 contributors: identical to off for every seed"
+				                                         : "repeat on, 5 contributors: identical to off for every seed"));
+				check(unique, "repeat on, 3 or more contributors: three different people, as before");
+			}
+		}
+
+		// Same seed, same field; the seed matters.
+		FakeReset(3);
+		FakeAdd(1, "Ann", 3, 0);
+		FakeAdd(2, "Ann", 3, 0);
+		FakeAdd(3, "Bo", 3, 0);
+		{
+			int same = 1;
+			unsigned int differing = 0;
+
+			for (seed = 1; seed <= 200u; seed++)
+			{
+				n = FakePickRepeat(seed, 1, picks, &opened, &contributors);
+				nOff = FakePickRepeat(seed, 1, again, &opened, &contributors);
+				if ((n != nOff) || !PicksEqual(picks, again, n))
+					same = 0;
+				nOff = FakePickRepeat(seed + 1000u, 1, again, &opened, &contributors);
+				if ((n != nOff) || !PicksEqual(picks, again, n))
+					differing++;
+			}
+			check(same, "repeat on: the same seed always gives the same field");
+			check(differing > 100u, "repeat on: different seeds give different fields");
+		}
+
+		// Budget. A contributor with ten broken files and one good one: the
+		// per-contributor cap of the first pass must not stop the fill, and no
+		// file is read twice.
+		FakeReset(3);
+		for (i = 0; i < 10u; i++)
+			FakeAdd(1u + i, "Dex", 1, 1);
+		FakeAdd(20, "Dex", 3, 0);
+		{
+			int filled = 1;
+			int bounded = 1;
+			int offSometimesEmpty = 0;
+
+			for (seed = 1; seed <= 100u; seed++)
+			{
+				n = FakePickRepeat(seed, 1, picks, &opened, &contributors);
+				if ((n != 3u) || !PicksNoDuplicateLap(picks, n))
+					filled = 0;
+				if ((opened > 11u) || (g_folder.opened > 11u))
+					bounded = 0;
+				if (FakePickRepeat(seed, 0, picks, &opened, &contributors) == 0u)
+					offSometimesEmpty = 1;
+			}
+			check(filled, "repeat on: broken files do not stop one contributor from filling every lane");
+			check(bounded, "repeat on: and no file is read twice");
+			check(offSometimesEmpty, "repeat off keeps the per-contributor cap (three reads can miss the one good file)");
+		}
+
+		// A folder of broken files from one person still costs the budget and
+		// no more.
+		FakeReset(3);
+		for (i = 0; i < 30u; i++)
+			FakeAdd(1u + i, "Dex", 1, 1);
+		n = FakePickRepeat(9u, 1, picks, &opened, &contributors);
+		check(n == 0u && opened == (unsigned int)AP_NAVREC_MAX_LOAD_ATTEMPTS, "repeat on: 30 broken files cost exactly the full-read budget");
+
+		// Many good files: never more reads than lanes in the end (3 reads for
+		// 3 picks), far below the budget.
+		FakeReset(3);
+		for (i = 0; i < 20u; i++)
+			FakeAdd(1u + i, (i & 1u) ? "Ann" : "Bo", 3, 0);
+		{
+			int cheap = 1;
+
+			for (seed = 1; seed <= 100u; seed++)
+			{
+				n = FakePickRepeat(seed, 1, picks, &opened, &contributors);
+				if ((n != 3u) || (opened != 3u))
+					cheap = 0;
+			}
+			check(cheap, "repeat on: twenty good files fill three lanes with three full reads");
+		}
 	}
 
 	// ---------------------------------------------------------------

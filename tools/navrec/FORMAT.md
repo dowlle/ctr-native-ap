@@ -596,6 +596,13 @@ once-per-race cost at a moment when nothing is being driven.
   for another file by the same person. At most 24 full reads are spent. The
   log line names the seed, and each lane line names the file, driver, lap,
   seam result and crate-bit count, so a report can be reproduced.
+- With `nav_repeat_laps` on (A5-7, off by default), a second pass runs after the
+  one-per-contributor pick when lanes are still free: the contributor holding the fewest lanes
+  (ties in the first pass's random order) gets another, from a file not used yet,
+  else from an unused lap of a used file; a (file, lap) pair never races twice.
+  The per-contributor read cap above applies to the first pass only; the
+  24-read budget bounds both passes, and a file is never read twice in the pick.
+  With it off, or with three or more contributors, the result is identical.
 - With k contributors, lanes 0 to k-1 are recorded and the other lanes keep the
   track's own line. Lane changes between a recorded lane and a track lane are
   off in both directions, so a recorded lane keeps its bots. Each recorded lane

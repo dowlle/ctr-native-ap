@@ -219,6 +219,16 @@ of each lap is blended so the line does not jump there, and recorded lines
 break crates where the track's own lines do. If no usable recording loads, the
 track's own navigation remains in use.
 
+By default each contributor races at most one lap, so a track with a single
+contributor has one recorded opponent. To fill the other recorded lines from the
+same people, turn on **Several Laps Per Driver** (`nav_repeat_laps` under
+`[Authoring]`, off by default). After every contributor has a lane, the free
+lanes get other laps from the same contributors, a recording not used yet before
+another lap of one that is, and never the same lap twice in one race. The race
+seed decides, so the same seed gives the same field. With this on, one name can
+appear on more than one opponent. It changes nothing when three or more
+contributors have recordings.
+
 Recorded lines do not guarantee the original lap time. Crate contact and the
 finish blend still need gameplay testing. A separate recorded line for every
 opponent is planned for a later release. In 2P only player 1's laps are saved,

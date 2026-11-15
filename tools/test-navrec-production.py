@@ -61,6 +61,11 @@ check("AP_NavRecFormat_Peek(" in pool and "AP_NavRecPool_EntryCompatible(" in po
       "the pool is built from header peeks, filtered by identity, keyed by contributor")
 check("AP_NavRecFormat_Read(" not in pool, "building the pool never decodes a whole file")
 check("AP_NavRecPool_Pick(" in load and "AP_NAVREC_MAX_LOAD_ATTEMPTS" in load, "the loader picks through the pool with the read budget")
+check("g_config.navRepeatLaps" in load and "AP_NAVREC_POOL_WORK_PER_ENTRY" in load,
+      "the loader passes nav_repeat_laps to the pick and sizes the scratch for it (A5-7)")
+cfg = (root / "platform" / "native_config.c").read_text()
+check('"nav_repeat_laps"' in cfg and "&g_config.navRepeatLaps" in cfg, "nav_repeat_laps is a config row in [Authoring]")
+check(re.search(r"false,\s*//\s*navRepeatLaps", cfg) is not None, "nav_repeat_laps defaults to off")
 check("AP_NavRecLane_Select" not in src and "AP_NavRecLane_Plan" not in src, "the newest-first selector is gone")
 check(re.search(r"seed %08x", load) is not None, "the pool log line carries the seed")
 check(re.search(r'lane %d: \\"%s\\" driver', load) is not None, "each recorded lane logs its file and driver")

@@ -54,7 +54,7 @@ static int FindPage(int numPages, const char *name)
 int main(void)
 {
 	static const char *const authoring[] = {
-		"box_author", "nav_record", "nav_use_recorded", "nav_driver_name", NULL};
+		"box_author", "nav_record", "nav_use_recorded", "nav_repeat_laps", "nav_driver_name", NULL};
 	static const char *const absent[] = {
 		"uri", "slot", "password", "skip_hints", "skip_podium", "skip_cutscenes",
 		"ai_difficulty", "map_flash", "item_feed", "item_box_colours", "death_link",
@@ -85,6 +85,7 @@ int main(void)
 	EXPECT_TRUE("Box Author Mode defaults to off", g_config.boxAuthor == false);
 	EXPECT_TRUE("Save AI Lap Recordings defaults to off", g_config.navRecord == false);
 	EXPECT_TRUE("Use Recorded AI Laps defaults to off", g_config.navUseRecorded == false);
+	EXPECT_TRUE("Several Laps Per Driver defaults to off", g_config.navRepeatLaps == false);
 	EXPECT_TRUE("Driver Name defaults to empty", g_config.navDriverName[0] == '\0');
 
 	for (const char *const *k = absent; *k != NULL; k++)

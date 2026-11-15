@@ -183,6 +183,12 @@ typedef struct
 	// does not gate recording.
 	bool navRecord;
 	bool navUseRecorded;
+	// navRepeatLaps (A5-7) only matters with navUseRecorded on. Off: one recorded
+	// lap per contributor, so a track with one contributor has one recorded
+	// opponent. On: once every contributor has a lane, the remaining lanes are
+	// filled with other laps from the same contributors (never the same lap
+	// twice), seeded by the race seed. Reads files only.
+	bool navRepeatLaps;
 	char navDriverName[32];
 	// Discord Rich Presence (issue #366). discordStatus is the local "Discord
 	// Status" option (Archipelago page, default off): on, the game shows what
@@ -203,6 +209,7 @@ typedef struct
 #ifdef CTR_AI_LAP_RECORDER
 	bool navRecord;
 	bool navUseRecorded;
+	bool navRepeatLaps;
 	char navDriverName[32];
 #endif
 #endif
