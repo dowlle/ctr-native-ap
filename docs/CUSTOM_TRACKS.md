@@ -206,9 +206,10 @@ the player client's Custom Content and Track Library pages. Three tabs:
   (`known_track_name` in `platform/native_xdelta_import.cpp`), then a label
   such as "Lego Adventure track 3"; Select in the review list types a name.
   A curated row may also carry a credit and a folder key. Coco Team Racing
-  track 3 (BIGFILE 47) is "Tizi Madness" by FrostedWombat and keeps the folder
-  key `cocoteamracing-track-3` its generic title gave, so seeds made before the
-  name still find their files. A copy imported earlier keeps its old name until
+  track 3 (BIGFILE 47) is "Tizi Madness" and track 6 (BIGFILE 613) is "Adventure
+  Path", both by FrostedWombat; each keeps the folder key its generic title gave
+  (`cocoteamracing-track-3`, `cocoteamracing-track-6`), so seeds made before the
+  names still find their files. A copy imported earlier keeps its old name until
   the patch is imported again; the new copy is a second package of the same
   uuid and revision, and Play Solo lists the newest.
   While naming, Left / Right on the pad (or the arrow keys) move a text cursor

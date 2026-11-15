@@ -2235,7 +2235,18 @@ int main()
             char key[65];
             CHECK(XdeltaImport_TrackKey("CocoTeamRacing track 3", key) && !std::strcmp(key, "cocoteamracing-track-3"),
                   "the generic title gave exactly that key");
-            for (int slot : {5, 6, 608, 613})
+            /* A4-95b: track 6 (BIGFILE 613) is Adventure Path, same author, key unchanged. */
+            CHECK(XdeltaImportTest_CuratedName(coco, 613) && !std::strcmp(XdeltaImportTest_CuratedName(coco, 613), "Adventure Path"),
+                  "Coco track 6 (BIGFILE 613) is Adventure Path");
+            CHECK(XdeltaImportTest_CuratedAuthor(coco, 613) && !std::strcmp(XdeltaImportTest_CuratedAuthor(coco, 613), "FrostedWombat"),
+                  "Coco track 6 is credited to FrostedWombat");
+            CHECK(XdeltaImportTest_CuratedKey(coco, 613) && !std::strcmp(XdeltaImportTest_CuratedKey(coco, 613), "cocoteamracing-track-6"),
+                  "Coco track 6 keeps its folder key");
+            CHECK(XdeltaImport_TrackKey("CocoTeamRacing track 6", key) && !std::strcmp(key, "cocoteamracing-track-6"),
+                  "the generic title gave exactly that key for track 6");
+            CHECK(XdeltaImportTest_CuratedKey(coco, 47) && std::strcmp(XdeltaImportTest_CuratedKey(coco, 47), XdeltaImportTest_CuratedKey(coco, 613)),
+                  "tracks 3 and 6 have different keys");
+            for (int slot : {5, 6, 608, 614})
                 CHECK(!XdeltaImportTest_CuratedName(coco, slot), "no other Coco slot is named by this row");
             CHECK(!XdeltaImportTest_CuratedAuthor(patches[0], 47) && !XdeltaImportTest_CuratedKey(patches[0], 47),
                   "the older curated rows have no author or key override");

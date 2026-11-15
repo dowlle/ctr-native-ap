@@ -1121,17 +1121,19 @@ const struct { const char *patch; int slot; const char *name; } kCuratedTracks[]
     {"748a18082ca0dbc6ff31321e7a75bfa58c3afac80102363fb1385b32e50196df", 39, "Holland"},
     {"748a18082ca0dbc6ff31321e7a75bfa58c3afac80102363fb1385b32e50196df", 47, "Motor Sports Land"},
     {"748a18082ca0dbc6ff31321e7a75bfa58c3afac80102363fb1385b32e50196df", 135, "N-Gage Jungle Boogie"},
-    /* Coco Team Racing track 3 (A4-95); its credit and folder key are in kCuratedExtras. */
+    /* Coco Team Racing tracks 3 and 6 (A4-95, A4-95b); their credit and folder keys are in kCuratedExtras. */
     {"17e43e108b7f732cb8302636f6984a3b0df59df6af517fffab0e860d00209b54", 47, "Tizi Madness"},
+    {"17e43e108b7f732cb8302636f6984a3b0df59df6af517fffab0e860d00209b54", 613, "Adventure Path"},
 };
 
 /* Credit and folder key for curated rows that need them (A4-95). Coco Team
-   Racing track 3 is the Tizi training track (player ruling, 2026-11-14), credited to
-   FrostedWombat, who approved the import on 2026-11-13. Its folder key stays
+   Racing track 3 is the Tizi training track and track 6 is Adventure Path (player rulings,
+   2026-11-14), both credited to FrostedWombat, who approved the import on 2026-11-13. Its folder key stays
    the one the generic title gave in alpha3 and alpha4: a seed finds its files
    under tracks/<key>/original, so a better display name must not move it. */
 const struct { const char *patch; int slot; const char *author; const char *key; } kCuratedExtras[] = {
     {"17e43e108b7f732cb8302636f6984a3b0df59df6af517fffab0e860d00209b54", 47, "FrostedWombat", "cocoteamracing-track-3"},
+    {"17e43e108b7f732cb8302636f6984a3b0df59df6af517fffab0e860d00209b54", 613, "FrostedWombat", "cocoteamracing-track-6"},
 };
 
 #ifdef CTR_XDELTA_TESTING
