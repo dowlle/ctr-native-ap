@@ -9,6 +9,13 @@ int main(void) {
     assert(AP_PAD_RED_RGB == 0xB85648u);
     for (int state = 0; state < 3; ++state)
         for (int variant = 0; variant < 3; ++variant) {
+            if (state == 2) {
+                /* A5-2: a checked object has no tint at all, as in retail. */
+                assert(AP_SanityTag(looks[state], variant) == 0);
+                assert(NativeSanityDecodeTag(AP_SanityTag(looks[state], variant)) == 0);
+                assert(AP_SanityRecolourRGB(0x3200a0ff, NativeSanityDecodeTag(AP_SanityTag(looks[state], variant))) == 0x3200a0ff);
+                continue;
+            }
             unsigned tag = AP_SanityTag(looks[state], variant);
             assert(!(tag & ~NATIVE_SANITY_TPAGE_MASK));
             assert(tag & NATIVE_SANITY_TPAGE_MARKER);
@@ -22,18 +29,15 @@ int main(void) {
                 assert(((dark >> (channel * 8)) & 255) < ((light >> (channel * 8)) & 255));
             if (state == 0) assert(((light >> 8) & 255) > (light & 255));
             if (state == 1) assert((light & 255) > ((light >> 8) & 255));
-            if (state == 2 && variant == 2) {
-                unsigned grey = AP_SanityRecolourRGB(0x3200a0ff, NativeSanityDecodeTag(tag));
-                assert((grey & 255) == ((grey >> 8) & 255));
-                assert((grey & 255) == ((grey >> 16) & 255));
-            }
         }
     for (int logic = 0; logic < 3; ++logic) {
         assert(AP_SanityLook(1, logic) == AP_PAD_LOOK_DONE);
         assert(AP_SanityLook(0, logic) == (logic ? AP_PAD_LOOK_OPEN : AP_PAD_LOOK_CLOSED));
     }
     assert(AP_SanityRecolourRGB(0x32abcdef, 0) == 0x32abcdef);
+    assert(AP_SanityRecolourRGB(0x32abcdef, 7) == 0x32abcdef);
+    assert(AP_SanityRecolourRGB(0x32abcdef, 9) == 0x32abcdef);
     assert(AP_SanityRecolourRGB(0x32abcdef, 10) == 0x32abcdef);
-    puts("sanity recolour: state precedence, unknown logic, palette and nine unique primitive tags pass");
+    puts("sanity recolour: state precedence, unknown logic, palette, six unique tags and untinted done state pass");
     return 0;
 }

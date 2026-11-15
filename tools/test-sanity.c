@@ -87,7 +87,8 @@ int main(void) {
     AP_SanityPickup(&objects[1], &player); assert(sent == 1);
     AP_SanityTick(&gt);
     ++feed_ticks; /* The recolour tick also advances the first pickup's batch. */
-    assert(AP_SanityRecolourTag(&objects[1]) == AP_SanityTag(AP_PAD_LOOK_DONE, AP_SANITY_VISIBILITY));
+    assert(AP_SanityRecolourTag(&objects[1]) == 0); /* A5-2: checked means no tint, as retail. */
+    assert(AP_SanityTag(AP_PAD_LOOK_DONE, AP_SANITY_VISIBILITY) == 0);
     AP_SanityPickup(&objects[3], &player); assert(sent == 2);
     assert(AP_SanityPickup(&objects[3], &bot) == 1);
     AP_SanityLevelInstances(defs, 4); AP_SanityPickup(&objects[1], &player); assert(sent == 2);
