@@ -52,6 +52,12 @@ check('if (!AP_TiziMadnessLoad(gGT))' in tick, 'the tick asks the load identity'
 check('gGT->drivers[0]' in tick and 'ACTION_BOT' in tick, 'player 1 only, never a bot')
 check('trafficLightsTimer < 1' in tick and 'END_OF_RACE' in tick and 'PAUSE_ALL' in tick,
       'after the countdown, not at the end of the race, not paused')
+step = tick.index('AP_TurboGrantRaceStep(&g_tm_race,')
+latch = tick.index('if (!g_tm_race.countdownSeen)')
+write = tick.index('local->heldItemID = AP_TIZI_MADNESS_HELD_MASK;')
+body_start = tick.index('void AP_TiziMadnessTick(struct GameTracker *gGT)')
+check(body_start < step < latch < write and tick[body_start:step].count('return;') == 1,
+      'the countdown latch runs every frame and gates the write (race-load gap)')
 check(re.search(r'AP_TiziMadnessRefillOn\(1, AP_TiziItemsanitySeed\(\), AP_TiziMaskReceived\(\)\)', tick),
       'the gate reads the Tizi Helper receipt and probe')
 check(len(re.findall(r'heldItemID\s*=[^=]', tick)) == 1 and 'local->heldItemID = AP_TIZI_MADNESS_HELD_MASK;' in tick,

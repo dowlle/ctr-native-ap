@@ -6,6 +6,7 @@
 
 #include "ap_tizi_madness.h"
 #include "ap_tizi_madness_logic.h"
+#include "ap_turbogrant_logic.h" // the per-attempt countdown latch (AP_TurboGrantRace)
 #include "ap_tizi.h"  // the Mask weapon receipt and the Itemsanity probe (#223)
 #include "ap_hooks.h" // AP_LogLine
 #ifdef CTR_CUSTOM_TRACKS
@@ -21,9 +22,15 @@
 // rebuilt from zero on every fresh connect, so the two features read one flag.
 // ============================================================================
 
-// One log line per race load, so a run shows which way the gate went without
-// a line per refill.
-static int g_tm_logged_level = -1;
+// The attempt latch the Turbo Grant uses (ap_turbogrant_logic.h): the
+// countdown of this attempt was seen on a live track. Until then the race flags
+// can be stale from the previous level, and anything written to the kart would
+// land before VehBirth (the race-load gap, see ap_wumpa.c). Only the
+// countdownSeen half is used; a Mask is never "given once".
+static AP_TurboGrantRace g_tm_race;
+
+// One log line per race attempt, so a run shows which way the gate went without
+// a line per refill. Cleared with each new countdown.
 static int g_tm_logged_state = -1;
 
 // Is the level being raced Tizi Madness? Decided by the LEV and VRM pins of
@@ -53,9 +60,9 @@ static int AP_TiziMadnessLoad(struct GameTracker *gGT)
 static void AP_TiziMadnessLog(struct GameTracker *gGT, int state)
 {
 	char msg[160];
-	if (g_tm_logged_level == (int)gGT->levelID && g_tm_logged_state == state)
+	(void)gGT;
+	if (g_tm_logged_state == state)
 		return;
-	g_tm_logged_level = (int)gGT->levelID;
 	g_tm_logged_state = state;
 	snprintf(msg, sizeof msg, state ?
 	         "[AP TIZI MADNESS] on Tizi Madness: the weapon slot keeps a Mask\n" :
@@ -68,21 +75,27 @@ void AP_TiziMadnessTick(struct GameTracker *gGT)
 	struct Driver *local;
 	int raceActive;
 	int refill;
+	int onTrack;
 
 	if (gGT == 0)
 		return;
-	if (!LOAD_IsOpen_RacingOrBattle())
-	{
-		g_tm_logged_level = -1;
+
+	// Keep the attempt latch every frame, whatever else this tick decides. A new
+	// countdown is a new attempt (a start or a restart), so the log line may
+	// repeat for it.
+	onTrack = LOAD_IsOpen_RacingOrBattle();
+	if (onTrack && (gGT->gameMode1 & END_OF_RACE) == 0 && gGT->trafficLightsTimer >= 1)
+		g_tm_logged_state = -1;
+	AP_TurboGrantRaceStep(&g_tm_race, onTrack, (gGT->gameMode1 & END_OF_RACE) != 0,
+	                      gGT->trafficLightsTimer >= 1);
+	if (!g_tm_race.countdownSeen)
 		return;
-	}
 
 	// The same live-race window as the Turbo Grant and the Wumpa filler: after
-	// the countdown, not paused, not in a menu, cutscene or end of race. A Mask
-	// written earlier would be wiped by VehBirth, see ap_wumpa.c.
+	// the countdown, not paused, not in a menu, cutscene or end of race.
 	raceActive = (gGT->gameMode1 &
 	              (START_OF_RACE | END_OF_RACE | MAIN_MENU | GAME_CUTSCENE | PAUSE_ALL)) == 0 &&
-	             gGT->trafficLightsTimer < 1;
+	             gGT->trafficLightsTimer < 1 && onTrack;
 	if (!raceActive)
 		return;
 	if (!AP_TiziMadnessLoad(gGT))
