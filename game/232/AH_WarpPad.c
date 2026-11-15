@@ -5,6 +5,10 @@
 #endif
 
 #ifdef CTR_AP
+#include "../../ap/ap_warppad_digits_logic.h"
+#endif
+
+#ifdef CTR_AP
 // Content-plan manual rule text (#463), defined beside the other requirement
 // display helpers below; the pad status line near the top of ThTick uses it.
 // The second-stage rule's item text (#133 PR 3), beside the manual rule's.
@@ -259,6 +263,32 @@ void AH_WarpPad_AllWarppadNum()
 		// DCxDemo says:
 		// 1 to 8 is taken from mpk i guess, 0, 9 and X are seprate models
 
+#ifdef CTR_AP
+		// A5-1: both digits pick their STATIC_BIG1 header by value, and never
+		// past the loaded model's headers (ap_warppad_digits_logic.h). The
+		// retail lines below read header `digit1s - 1` unchecked, which a pad
+		// count of 20 or more pushed past the eight digit headers.
+		{
+			int header;
+
+			inst = wp->inst[WPIS_CLOSED_1S];
+			if ((inst != 0) && (inst->model != 0) && (inst->model->id == AP_WARPPAD_DIGIT_MODEL_1TO8))
+			{
+				header = ap_warppad_digit_header(wp->digit1s, inst->model->numHeaders);
+				if (header >= 0)
+					AH_WarpPad_SetNumModelData(inst, &inst->model->headers[header]);
+			}
+
+			inst = wp->inst[WPIS_CLOSED_10S];
+			if ((inst != 0) && (inst->model != 0) && (inst->model->id == AP_WARPPAD_DIGIT_MODEL_1TO8))
+			{
+				header = ap_warppad_digit_header(wp->digit10s, inst->model->numHeaders);
+				if (header >= 0)
+					AH_WarpPad_SetNumModelData(inst, &inst->model->headers[header]);
+			}
+		}
+		(void)mh;
+#else
 		if ((wp->inst[2] != 0) && (wp->digit1s != 0) && (wp->digit1s != 9))
 		{
 			inst = wp->inst[2];
@@ -272,6 +302,7 @@ void AH_WarpPad_AllWarppadNum()
 			mh = &inst->model->headers[0];
 			AH_WarpPad_SetNumModelData(inst, mh);
 		}
+#endif
 	}
 }
 
@@ -3123,6 +3154,11 @@ ContentPad_BuildGate:
 
 	// === if locked ===
 
+#ifdef CTR_AP
+	// A5-1: a seed can ask for 20 or more; split into two real digits, capped
+	// at 99 for display only (ap_warppad_digits_logic.h).
+	ap_warppad_split_digits(unlockItem_numNeeded, &warppadObj->digit10s, &warppadObj->digit1s);
+#else
 	if (unlockItem_numNeeded < 10)
 	{
 		warppadObj->digit10s = 0;
@@ -3134,6 +3170,7 @@ ContentPad_BuildGate:
 		warppadObj->digit10s = 1;
 		warppadObj->digit1s = unlockItem_numNeeded - 10;
 	}
+#endif
 
 	// ====== Item ========
 
@@ -3276,7 +3313,12 @@ ContentPad_BuildGate:
 	if (warppadObj->digit10s != 0)
 	{
 		// WPIS_CLOSED_10S
+#ifdef CTR_AP
+		// A5-1: the tens digit can be 1 to 9, not only 1.
+		newInst = INSTANCE_Birth3D(gGT->modelPtr[ap_warppad_digit_model(warppadObj->digit10s)], "warpnum", t);
+#else
 		newInst = INSTANCE_Birth3D(gGT->modelPtr[STATIC_BIG1], "warpnum", t);
+#endif
 
 		// copy matrix
 		*(int *)((int)&newInst->matrix + 0x0) = 0x1000;
@@ -3304,6 +3346,9 @@ ContentPad_BuildGate:
 	// ====== "1s" ========
 
 	// STATIC_BIG (1-8)
+#ifdef CTR_AP
+	i = ap_warppad_digit_model(warppadObj->digit1s);
+#else
 	i = 0x38;
 	if (warppadObj->digit1s == 0)
 	{
@@ -3313,6 +3358,7 @@ ContentPad_BuildGate:
 	{
 		i = 0x6e; // '9'
 	}
+#endif
 
 	// WPIS_CLOSED_1S
 	newInst = INSTANCE_Birth3D(gGT->modelPtr[i], "warpnum", t);
