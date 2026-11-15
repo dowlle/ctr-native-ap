@@ -345,6 +345,67 @@ static unsigned int FakePick(unsigned int seed, struct AP_NavRecPoolPick picks[A
 	return FakePickRepeat(seed, 0, picks, opened, contributors);
 }
 
+
+// Fingerprint of the off path: picks, reads and the ORDER the files were read
+// in, over several pools and seeds. The expected value was captured by running
+// this same code against the picker of origin/main before A5-7 existed, so the
+// setting being off is pinned to the old random draws and read order, not to
+// the new picker's own output.
+static unsigned int g_trace;
+
+static void TraceMix(unsigned int v)
+{
+	g_trace = (g_trace ^ v) * 16777619u;
+}
+
+static int TraceFetch(void *ctx, unsigned int fileIndex, struct AP_NavRecLaneCandidate *out)
+{
+	TraceMix(0xF000u + fileIndex);
+	return FakeFetch(ctx, fileIndex, out);
+}
+
+static unsigned int OffPathFingerprint(void)
+{
+	static const char *const names[6] = {"Ann", "Bo", "Cy", "Di", "Ed", "Fay"};
+	unsigned int             shape;
+	unsigned int             seed;
+
+	g_trace = 2166136261u;
+
+	for (shape = 0; shape < 4u; shape++)
+	{
+		unsigned int people = (shape == 0u) ? 1u : (shape == 1u ? 2u : (shape == 2u ? 3u : 6u));
+		unsigned int i;
+
+		FakeReset(3);
+		for (i = 0; i < 12u; i++)
+			FakeAdd(1u + i, names[i % people], 1u + (i % 3u), (shape == 1u && i == 4u) ? 1 : 0);
+
+		for (seed = 1; seed <= 60u; seed++)
+		{
+			struct AP_NavRecPoolPick picks[AP_NAVREC_LANES];
+			unsigned int             opened = 0;
+			unsigned int             contributors = 0;
+			unsigned int             poolCount = FakePool();
+			unsigned int             n;
+			unsigned int             k;
+
+			memset(picks, 0, sizeof picks);
+			n = AP_NavRecPool_Pick(g_pool, poolCount, seed * 7919u, AP_NAVREC_MAX_LOAD_ATTEMPTS, 0, TraceFetch, &g_folder, g_poolWork, picks,
+			                       &opened, &contributors);
+			TraceMix(n);
+			TraceMix(opened);
+			TraceMix(contributors);
+			for (k = 0; k < n; k++)
+			{
+				TraceMix(picks[k].fileIndex);
+				TraceMix(picks[k].lapOrdinal);
+			}
+		}
+	}
+	return g_trace;
+}
+
 // No (file, lap) pair twice in one set of picks.
 static int PicksNoDuplicateLap(const struct AP_NavRecPoolPick *picks, unsigned int n)
 {
@@ -1605,6 +1666,9 @@ int main(void)
 			}
 			check(one, "repeat off: one contributor with three files and nine laps still races one lap on one lane, one full read");
 		}
+
+		// Off is the old picker, draw for draw (value captured from origin/main).
+		check(OffPathFingerprint() == 0xa86b968cU, "repeat off: picks, reads and read order match the picker before A5-7 for 240 pools and seeds");
 
 		// On, one contributor, several files: every free lane is filled from
 		// a different file, and no lap repeats.
