@@ -2358,45 +2358,20 @@ static u32 DrawLevelOvr1P_GetPreparedProjectedMaxDepthCount(const struct DrawLev
 	return maxDepth;
 }
 
-static int DrawLevelOvr1P_SourceInsideClipRecordWindow(const struct DrawLevelOvr1PScratchVertex *src)
-{
-	const s16 *center = DrawLevelOvr1P_Scratch()->projectedCenter.v;
-	s32 x = (s32)src->pos[0] - center[0];
-	s32 y = (s32)src->pos[1] - center[1];
-	s32 z = (s32)src->pos[2] - center[2];
-
-	if (x < 0)
-	{
-		x = -x;
-	}
-
-	if (y < 0)
-	{
-		y = -y;
-	}
-
-	if (z < 0)
-	{
-		z = -z;
-	}
-
-	// NOTE(aalhendi): Retail 0x800a4f38/0x800a3640 use the sign bit of these
-	// extent checks ANDed together; negative means the source point is inside.
-	u32 insideBits = (u32)(x - 0x100) & (u32)(y - 0x180) & (u32)(z - 0x100);
-	return (s32)insideBits < 0;
-}
-
+/*
+ * Retail only wrote a clip record for a near-clipped face when one of its source vertices sat
+ * inside a window of 0x100 x 0x180 x 0x100 around the projected centre. A wider view reaches
+ * past that window at the screen edges, so the road quad was dropped and the ground under it
+ * showed as a flat wedge. The near clipper now decides visibility, as in CTR Native Expanded
+ * 209b71fed0. Every record writer must therefore check that the arena still has room, which
+ * this does for all of them.
+ */
 static int DrawLevelOvr1P_ShouldWriteRenderedClippedRecord(const struct DrawLevelOvr1PScratchVertex *projected, const int *indices, int count)
 {
-	for (int i = 0; i < count; i++)
-	{
-		if (DrawLevelOvr1P_SourceInsideClipRecordWindow(&projected[indices[i]]))
-		{
-			return 1;
-		}
-	}
+	(void)projected;
+	(void)indices;
 
-	return 0;
+	return DrawLevelOvr1P_HasClipRecordSpace(DrawLevelOvr1P_GetClipRecordSize(count));
 }
 
 static void DrawLevelOvr1P_CopyClipRecordVertex(struct DrawLevelOvr1PClipRecordVertex *dst, const struct DrawLevelOvr1PScratchVertex *src)
