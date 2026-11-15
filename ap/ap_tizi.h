@@ -76,6 +76,12 @@ void AP_TiziTick(struct GameTracker *gGT);
 // forced Mask when the helper is active and this crate is one of the four.
 void AP_TiziOnWeaponBoxHit(struct Driver *driver, struct Instance *crateInst);
 
+// For the Tizi Madness Mask (A4-96, ap_tizi_madness.c), which reads the same
+// receipt and the same Itemsanity probe: has the Mask weapon item arrived, and
+// is this an Itemsanity seed (server location membership, "off" without one).
+int AP_TiziMaskReceived(void);
+int AP_TiziItemsanitySeed(void);
+
 // Called with the weapon the vanilla roll produced. Returns the Mask instead
 // when a helper box armed this roll, and `rolled` unchanged in every other case.
 int AP_TiziFilterRoll(struct Driver *driver, int rolled);

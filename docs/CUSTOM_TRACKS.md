@@ -214,6 +214,13 @@ the player client's Custom Content and Track Library pages. Three tabs:
   uuid and revision, and Play Solo lists the newest.
   While naming, Left / Right on the pad (or the arrow keys) move a text cursor
   through the name, so the start can be edited without deleting back to it.
+- Tizi Madness is a training track for the Tiziano shortcut. While it is
+  raced, in any mode, player 1 always holds a Mask: the weapon slot is filled
+  with a Mask whenever it is empty, no box needed. On an Itemsanity seed this
+  starts once the Mask item has arrived. Seeds with `shortcut_knowledge` easy
+  or medium leave the track out. The track is recognised by its LEV and VRM
+  hashes (`include/platform/native_tizi_madness.h`), so a renamed copy counts
+  too.
 
 The page opens on This Seed only when the loaded seed misses tracks, otherwise
 on Library. Left / Right or L1 / R1 change tabs on the tab strip; in a list,

@@ -309,6 +309,9 @@ int CustomTrack_RaceFeatureEnabled(void);
 int CustomTrack_ServingLoad(int levelID, int adventureCupActive, int cupID);
 /* Authored one-lap finish terrain, or -1 for ordinary circuit racing. */
 int CustomTrack_FinishTerrain(const struct CustomTrackLoadContext *ctx);
+/* Is the pair served for this load Tizi Madness (native_tizi_madness.h,
+   A4-96)? Same precedence as CustomTrack_FinishTerrain. */
+int CustomTrack_TiziMadness(const struct CustomTrackLoadContext *ctx);
 
 // The retail trophy-track identity eligible for podium checks on this load, or
 // -1 while custom bytes are being served. A borrowed host levelID is a loading

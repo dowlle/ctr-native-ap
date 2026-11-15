@@ -696,6 +696,11 @@ static void ap_onframe_body(struct GameTracker *gGT)
 		AP_TurboGrantTick(gGT); // #224: requeue a lost in-flight Turbo, then deliver
 		                        // one pending grant into an empty in-race weapon slot
 	}
+	// A4-96: on Tizi Madness the weapon slot keeps a Mask. After the Turbo
+	// Grant, so a race's Turbo lands first and the Mask follows once it is
+	// used; outside the block above, because the ruling covers the custom
+	// Arcade page too ("everywhere").
+	AP_TiziMadnessTick(gGT);
 	AP_ShortcutKeys();
 	AP_NavRec_Tick(gGT);      // AI lap recorder; inert unless nav_record is on
 	AP_ShortcutSkipTick(gGT); // layer-2 checkpoint-% gap-skip detector (Shortcutless)
