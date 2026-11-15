@@ -156,12 +156,21 @@ int main(void)
 		memset(&wp, 0, sizeof(wp));
 		memset(&ones, 0, sizeof(ones));
 		ones.model = &small;
+		ones.shownHeader = -7; /* untouched marker: the pass must skip it */
 		wp.inst[WPIS_CLOSED_1S] = &ones;
 		wp.digit1s = 7;
 		digit_pass(&wp);
-		if (ones.shownHeader != 0)
+		if (ones.shownHeader != -7)
 		{
 			printf("FAIL short model: header %d selected\n", ones.shownHeader);
+			fail = 1;
+		}
+		/* and a digit the short model has is still selected */
+		wp.digit1s = 2;
+		digit_pass(&wp);
+		if (ones.shownHeader != 1)
+		{
+			printf("FAIL short model: digit 2 gave header %d\n", ones.shownHeader);
 			fail = 1;
 		}
 	}
