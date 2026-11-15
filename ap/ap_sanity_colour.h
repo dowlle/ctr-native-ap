@@ -16,9 +16,11 @@ static inline int AP_SanityLook(int checked, int logicState)
 
 // Marker-gated native metadata survives depth sorting without treating
 // ordinary TPAGE flags as check state. Zero means ordinary rendering.
+// A checked object (A5-2) carries no tag at all, so it draws exactly as retail.
 static inline unsigned AP_SanityTag(int look, int variant)
 {
-    unsigned state = look == AP_PAD_LOOK_DONE ? 2 : look == AP_PAD_LOOK_CLOSED ? 1 : 0;
+    unsigned state = look == AP_PAD_LOOK_CLOSED ? 1 : 0;
+    if (look == AP_PAD_LOOK_DONE) return 0;
     return NativeSanityEncodeTag(1 + state * 3 + (unsigned)variant);
 }
 
@@ -28,9 +30,9 @@ static inline unsigned AP_SanityRecolourRGB(unsigned colour, unsigned tag)
 {
     unsigned result = colour & 0xff000000u;
     unsigned palette, light, strength, state, r, g, b;
-    if (tag < 1 || tag > 9) return colour;
+    if (tag < 1 || tag > 6) return colour;
     state = (tag - 1) / 3;
-    palette = state == 2 ? 0xa4a4a4u : AP_PadLookRGB(state == 1 ? AP_PAD_LOOK_CLOSED : AP_PAD_LOOK_OPEN);
+    palette = AP_PadLookRGB(state == 1 ? AP_PAD_LOOK_CLOSED : AP_PAD_LOOK_OPEN);
     strength = 70 + 15 * ((tag - 1) % 3);
     r = colour & 255; g = (colour >> 8) & 255; b = (colour >> 16) & 255;
     light = (299 * r + 587 * g + 114 * b) / 1000;
@@ -48,10 +50,10 @@ static inline unsigned AP_SanityRecolourRGB(unsigned colour, unsigned tag)
 // Texture/CLUT bytes and shared model data are never changed.
 #define AP_SANITY_RECOLOUR_GLSL \
     "vec3 sanityRecolour(vec3 rgb, float tag) {\n" \
-    "  if (tag < 0.5 || tag > 9.5) return rgb;\n" \
+    "  if (tag < 0.5 || tag > 6.5) return rgb;\n" \
     "  float state = floor((tag - 1.0) / 3.0);\n" \
     "  float strength = 0.70 + 0.15 * mod(tag - 1.0, 3.0);\n" \
-    "  vec3 palette = state < 0.5 ? vec3(112.0,232.0,96.0) : state < 1.5 ? vec3(184.0,86.0,72.0) : vec3(164.0);\n" \
+    "  vec3 palette = state < 0.5 ? vec3(112.0,232.0,96.0) : vec3(184.0,86.0,72.0);\n" \
     "  float light = dot(rgb, vec3(0.299,0.587,0.114));\n" \
     "  return mix(rgb, light * palette / 164.0, strength);\n" \
     "}\n"

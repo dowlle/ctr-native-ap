@@ -94,6 +94,13 @@ int main(void) {
         memset(vertices,0x7f,sizeof vertices); MakeTexcoordLineZero(vertices,0);
         for (int i=0;i<4;++i) assert(!vertices[i]._p0);
     }
+    /* A5-2: a checked object carries no tag, so it uses the shared texture and unchanged colours. */
+    for (int v=0; v<3; ++v) {
+        ctx.sanityTag = AP_SanityTag(AP_PAD_LOOK_DONE, v);
+        assert(!ctx.sanityTag);
+        assert(RenderBucket_SanityColour(&ctx, 0x32abcdef) == 0x32abcdef);
+        assert(RenderBucket_GetCommandTexture(&ctx,1,&valid) == &original && valid);
+    }
     assert(!RenderBucket_GetCommandTexture(&ctx,0,&valid) && valid);
     assert(!RenderBucket_GetCommandTexture(&ctx,2,&valid) && valid);
     idpp.ptrTexLayout=0;
