@@ -52,6 +52,10 @@ extern "C" const char *XdeltaImportTest_KnownName(const char *levSha256);
 extern "C" const char *XdeltaImportTest_CuratedName(const char *patchSha256, int bigfileIndex);
 extern "C" int XdeltaImport_TestOldCopyState(const XdeltaImportScan *scan, unsigned int item, const char *assets);
 extern "C" void XdeltaImportTest_AddCurated(const char *patchSha256, int bigfileIndex, const char *name);
+extern "C" void XdeltaImportTest_AddCuratedFull(const char *patchSha256, int bigfileIndex, const char *name, const char *author, const char *key);
+extern "C" void XdeltaImportTest_ClearCurated();
+extern "C" const char *XdeltaImportTest_CuratedAuthor(const char *patchSha256, int bigfileIndex);
+extern "C" const char *XdeltaImportTest_CuratedKey(const char *patchSha256, int bigfileIndex);
 extern "C" void XdeltaImportTest_History(const char *assets, const char *sha, char *out, size_t size);
 extern "C" void XdeltaImportTest_PackLabel(const char *stem, char *out, size_t size);
 using Bytes = std::vector<unsigned char>;
@@ -1723,6 +1727,39 @@ int main()
                                    "Pack descriptor not used: track_key must be a registry track key"),
               "a track_key that is not a registry key refuses the descriptor");
         XdeltaImport_Free(&k.scan);
+        /* A4-95 review: a descriptor value the package rules refuse (here a version that is not semver)
+           retries the build without the descriptor, and the track key it named must survive that. */
+        {
+            nlohmann::json retry = d;
+            retry["tracks"]["1"] = {{"title", "Retry Lane"}, {"track_key", "retry-lane-key"}, {"version", "1"}};
+            text = retry.dump();
+            write_file("Pack.ctrpack.json", Bytes(text.begin(), text.end()));
+            ScanResult rr = scan(patchPath, discPath);
+            CHECK(rr.ok, "A4-95 scan with a descriptor version the package rules refuse");
+            const XdeltaImportItem *r1 = rr.ok ? item_for(XdeltaImport_Summary(rr.scan), 1) : nullptr;
+            CHECK(r1 && r1->offered && !std::strcmp(r1->title, "Retry Lane") && !std::strcmp(r1->trackKey, "retry-lane-key"),
+                  "A4-95 the retried track keeps its descriptor title and key");
+            if (r1 && r1->offered)
+            {
+                const std::string assets = root + "/a495-retry-assets";
+                mkdir(assets.c_str(), 0755);
+                std::vector<unsigned char> sel(XdeltaImport_Summary(rr.scan)->count, 0);
+                sel[unsigned(r1 - XdeltaImport_Summary(rr.scan)->items)] = 1;
+                char error[256] = {};
+                CHECK(XdeltaImport_Install(rr.scan, sel.data(), assets.c_str(), CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM,
+                                           error, sizeof error) == 1, "A4-95 the retried track installs");
+                char skey[65], srev[65], splan[16384], serr[256];
+                CHECK(CustomPackage_StoreDescriptor(assets.c_str(), r1->pin, nullptr, skey, sizeof skey, srev, sizeof srev, splan, sizeof splan,
+                                                    serr, sizeof serr) != 0 && !std::strcmp(skey, "retry-lane-key"),
+                      "A4-95 the store reads the descriptor's key from the retried package");
+                char why[96];
+                const unsigned at = unsigned(r1 - XdeltaImport_Summary(rr.scan)->items);
+                CHECK(XdeltaImport_RenameItem(rr.scan, at, "Renamed Retry", why, sizeof why) &&
+                          !std::strcmp(item_for(XdeltaImport_Summary(rr.scan), 1)->trackKey, "retry-lane-key"),
+                      "A4-95 a rename after the retry keeps the key");
+            }
+            if (rr.ok) XdeltaImport_Free(&rr.scan);
+        }
         nlohmann::json wrong = d;
         wrong["patch_sha256"] = std::string(64, '0');
         text = wrong.dump();
@@ -2185,6 +2222,36 @@ int main()
         }
         CHECK(!XdeltaImportTest_CuratedName("00", 7) && !XdeltaImportTest_CuratedName(nullptr, 7), "an unknown patch has no curated names");
 
+        /* A4-95: Coco Team Racing track 3 is Tizi Madness by FrostedWombat; its folder key is the one the
+           generic title gave, so seeds made earlier still find their files. */
+        {
+            const char *coco = "17e43e108b7f732cb8302636f6984a3b0df59df6af517fffab0e860d00209b54";
+            CHECK(XdeltaImportTest_CuratedName(coco, 47) && !std::strcmp(XdeltaImportTest_CuratedName(coco, 47), "Tizi Madness"),
+                  "Coco track 3 (BIGFILE 47) is Tizi Madness");
+            CHECK(XdeltaImportTest_CuratedAuthor(coco, 47) && !std::strcmp(XdeltaImportTest_CuratedAuthor(coco, 47), "FrostedWombat"),
+                  "Coco track 3 is credited to FrostedWombat");
+            CHECK(XdeltaImportTest_CuratedKey(coco, 47) && !std::strcmp(XdeltaImportTest_CuratedKey(coco, 47), "cocoteamracing-track-3"),
+                  "Coco track 3 keeps its folder key");
+            char key[65];
+            CHECK(XdeltaImport_TrackKey("CocoTeamRacing track 3", key) && !std::strcmp(key, "cocoteamracing-track-3"),
+                  "the generic title gave exactly that key");
+            /* A4-95b: track 6 (BIGFILE 613) is Adventure Path, same author, key unchanged. */
+            CHECK(XdeltaImportTest_CuratedName(coco, 613) && !std::strcmp(XdeltaImportTest_CuratedName(coco, 613), "Adventure Path"),
+                  "Coco track 6 (BIGFILE 613) is Adventure Path");
+            CHECK(XdeltaImportTest_CuratedAuthor(coco, 613) && !std::strcmp(XdeltaImportTest_CuratedAuthor(coco, 613), "FrostedWombat"),
+                  "Coco track 6 is credited to FrostedWombat");
+            CHECK(XdeltaImportTest_CuratedKey(coco, 613) && !std::strcmp(XdeltaImportTest_CuratedKey(coco, 613), "cocoteamracing-track-6"),
+                  "Coco track 6 keeps its folder key");
+            CHECK(XdeltaImport_TrackKey("CocoTeamRacing track 6", key) && !std::strcmp(key, "cocoteamracing-track-6"),
+                  "the generic title gave exactly that key for track 6");
+            CHECK(XdeltaImportTest_CuratedKey(coco, 47) && std::strcmp(XdeltaImportTest_CuratedKey(coco, 47), XdeltaImportTest_CuratedKey(coco, 613)),
+                  "tracks 3 and 6 have different keys");
+            for (int slot : {5, 6, 608, 614})
+                CHECK(!XdeltaImportTest_CuratedName(coco, slot), "no other Coco slot is named by this row");
+            CHECK(!XdeltaImportTest_CuratedAuthor(patches[0], 47) && !XdeltaImportTest_CuratedKey(patches[0], 47),
+                  "the older curated rows have no author or key override");
+        }
+
         /* End to end on the synthetic patch: its hash is registered for slot 1 only. */
         ScanResult plain = scan(patchPath, discPath);
         CHECK(plain.ok, "scan before registering the curated row");
@@ -2192,6 +2259,90 @@ int main()
         {
             char sha[65];
             std::snprintf(sha, sizeof sha, "%s", XdeltaImport_Summary(plain.scan)->patchSha256);
+            /* A4-95 end to end: a track imported under its generic name is later named, credited and
+               given the folder key it already had. The files, the key and the revision stay; only the
+               title, the credit and so the manifest pin change. */
+            {
+                const XdeltaImportItem *old1 = item_for(XdeltaImport_Summary(plain.scan), 1);
+                CHECK(old1 && old1->offered && !std::strcmp(old1->title, "Pack track 1") && !std::strcmp(old1->trackKey, "pack-track-1"),
+                      "A4-95 the generic copy is Pack track 1 under pack-track-1");
+                const std::string assets = root + "/a495-assets";
+                mkdir(assets.c_str(), 0755);
+                char error[256] = {};
+                if (old1 && old1->offered)
+                {
+                    std::vector<unsigned char> sel(XdeltaImport_Summary(plain.scan)->count, 0);
+                    sel[unsigned(old1 - XdeltaImport_Summary(plain.scan)->items)] = 1;
+                    CHECK(XdeltaImport_Install(plain.scan, sel.data(), assets.c_str(),
+                                               CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == 1,
+                          "A4-95 the generic copy installs");
+                    const std::string oldPin = old1->pin, oldLev = old1->levSha256, oldVrm = old1->vrmSha256;
+                    XdeltaImportTest_AddCuratedFull(sha, 1, "Tizi Test", "Test Author", "pack-track-1");
+                    ScanResult named = scan(patchPath, discPath);
+                    CHECK(named.ok, "A4-95 scan with the named row");
+                    if (named.ok)
+                    {
+                        const XdeltaImportItem *n1 = item_for(XdeltaImport_Summary(named.scan), 1);
+                        CHECK(n1 && n1->offered && !std::strcmp(n1->title, "Tizi Test") && n1->nameSource == XDELTA_NAME_TESTER,
+                              "A4-95 the new title shows");
+                        CHECK(n1 && !std::strcmp(n1->trackKey, "pack-track-1"), "A4-95 the folder key does not move");
+                        CHECK(n1 && oldLev == n1->levSha256 && oldVrm == n1->vrmSha256, "A4-95 the LEV and VRM hashes do not move");
+                        CHECK(n1 && oldPin != n1->pin, "A4-95 the manifest pin follows the title and credit");
+                        char solo[16384], key[65], revision[65], why[160];
+                        CHECK(n1 && XdeltaImport_PlanDescriptor(named.scan, unsigned(n1 - XdeltaImport_Summary(named.scan)->items), solo, sizeof solo,
+                                                                key, revision, why, sizeof why) == 2, "A4-95 the named copy plans a descriptor (laps wait for the player)");
+                        auto pd = nlohmann::json::parse(solo, nullptr, false);
+                        CHECK(!pd.is_discarded() && pd["display_name"] == "Tizi Test" && pd["author"] == "Test Author" &&
+                              pd["content_id"] == "pack-track-1" && pd["id"] == "package/pack-track-1/1.0.0",
+                              "A4-95 the descriptor shows name and credit under the same ids");
+                        std::vector<unsigned char> sel2(XdeltaImport_Summary(named.scan)->count, 0);
+                        sel2[unsigned(n1 - XdeltaImport_Summary(named.scan)->items)] = 1;
+                        CHECK(XdeltaImport_Install(named.scan, sel2.data(), assets.c_str(),
+                                                   CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM, error, sizeof error) == 1,
+                              "A4-95 the named copy installs over the generic one");
+                        struct stat st;
+                        CHECK(stat((assets + "/tracks/packages/" + oldPin).c_str(), &st) == 0,
+                              "A4-95 the copy imported under the old title stays installed (it keeps the old name)");
+                        CHECK(stat((assets + "/tracks/packages/" + n1->pin).c_str(), &st) == 0, "A4-95 the named copy is a second package");
+                        CHECK(stat((assets + "/tracks/pack-track-1/original").c_str(), &st) == 0, "A4-95 one room folder serves both");
+                        /* Play Solo reads the installed package through the store, not the importer: both
+                           copies must give the same key and package id, the new one with the new name. */
+                        for (const char *pin : {oldPin.c_str(), (const char *)n1->pin})
+                        {
+                            char skey[65], srev[65], splan[16384], serr[256];
+                            const int kind = CustomPackage_StoreDescriptor(assets.c_str(), pin, nullptr, skey, sizeof skey, srev, sizeof srev,
+                                                                          splan, sizeof splan, serr, sizeof serr);
+                            CHECK(kind != 0, "A4-95 the store reads the installed copy");
+                            auto sd = nlohmann::json::parse(kind ? splan : "{}", nullptr, false);
+                            CHECK(kind && !sd.is_discarded() && !std::strcmp(skey, "pack-track-1") && sd["id"] == "package/pack-track-1/1.0.0" &&
+                                  sd["content_id"] == "pack-track-1",
+                                  "A4-95 the store descriptor keeps the same key and package id for the old and the new copy");
+                            if (kind && !sd.is_discarded() && std::string(pin) == n1->pin)
+                                CHECK(sd["display_name"] == "Tizi Test" && sd["author"] == "Test Author",
+                                      "A4-95 the store descriptor of the named copy shows name and credit");
+                        }
+                        /* A player's own name on a curated track changes the title, never the key. */
+                        char renameWhy[96];
+                        const unsigned namedIndex = unsigned(n1 - XdeltaImport_Summary(named.scan)->items);
+                        CHECK(XdeltaImport_RenameItem(named.scan, namedIndex, "My Tizi", renameWhy, sizeof renameWhy), "A4-95 rename a curated track");
+                        const XdeltaImportItem *r1 = item_for(XdeltaImport_Summary(named.scan), 1);
+                        CHECK(r1 && !std::strcmp(r1->title, "My Tizi") && !std::strcmp(r1->trackKey, "pack-track-1"),
+                              "A4-95 a rename keeps the curated folder key");
+                        /* A room made under the old title pins the uuid, revision and both file hashes. */
+                        char uuid[37], levPath[4096], vrmPath[4096];
+                        XdeltaImport_PackageUuid(sha, 1, uuid);
+                        const std::string oldFolder = assets + "/tracks/packages/" + oldPin;
+                        const unsigned long levSize = (unsigned long)read_file(oldFolder + "/original/bigfile-1.lev").size();
+                        const unsigned long vrmSize = (unsigned long)read_file(oldFolder + "/original/bigfile-1.vrm").size();
+                        CHECK(CustomPackage_FindPinnedFiles(assets.c_str(), "1.0.0", uuid, oldLev.c_str(), levSize,
+                                                            oldVrm.c_str(), vrmSize, levPath, sizeof levPath,
+                                                            vrmPath, sizeof vrmPath) != 0,
+                              "A4-95 a room made under the old title still resolves its files by hash");
+                    }
+                    XdeltaImport_Free(&named.scan);
+                    XdeltaImportTest_ClearCurated();
+                }
+            }
             XdeltaImportTest_AddCurated(sha, 1, "Curated Raceway");
             ScanResult r = scan(patchPath, discPath);
             CHECK(r.ok, "scan with a curated row");

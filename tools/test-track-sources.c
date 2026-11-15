@@ -100,6 +100,9 @@ int main(void)
 	/* Coco Team Racing track 3 has a normalized LEV (A3-36). */
 	expect(TrackSources_Find(COCO_LEV, NULL, &s) && s.slot == 47 && !strcmp(s.patchFile, "CocoTeamRacing.xdelta") &&
 	       strstr(s.page, "coco-team-racing"), "the normalized Coco Team Racing LEV");
+	/* A4-95: the row carries the track's name; the hashes that identify it did not move. */
+	expect(!strcmp(s.title, "Tizi Madness") && !strcmp(s.vrm, "74c00036dd24a34134c76236ae89dba1f3caa4b67bb30ca5717988b8987bf6ce") &&
+	       !strcmp(s.patchSha256, "17e43e108b7f732cb8302636f6984a3b0df59df6af517fffab0e860d00209b54"), "Coco track 3 is Tizi Madness, same pins");
 
 	/* 5. The Seed tab instruction. */
 	memset(&r, 0, sizeof r);
