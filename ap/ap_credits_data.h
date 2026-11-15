@@ -127,7 +127,7 @@ static const struct ApCreditLine AP_CREDITS_LINES[] = {
     // out on purpose.
     {1, "CUSTOM TRACK AUTHORS"},
     {0, "BOXIC"},
-    {0, "LOCKHEART"},
+    {0, "BABY T PARK - LOCKHEART"},
     {0, "LOLOTHESAMURAI"},
     {0, "PANCHOPEW"},
     {0, "COCO TEAM RACING - FROSTEDWOMBAT"},
