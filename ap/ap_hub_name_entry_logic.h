@@ -127,6 +127,23 @@ static inline int AP_HNE_BeginNewAdventure(struct AP_HubNameEntryState *s, int a
 	return s->hubLevel;
 }
 
+// The level instances whose LEV model is only an editor marker (A6-3). Retail
+// hides each one in its birth function, which the backdrop never runs:
+// AH_WarpPad_LInB hides the "warppad#N" instance (STATIC_WARPPAD, drawn as a
+// large red triangle standing on the pad; the coloured pad disc is the hub's
+// own floor) and AH_SaveObj_LInB hides the "saveobj" instance
+// (STATIC_SAVEOBJ). Without that the red triangles stick out of every pad in
+// view. The backdrop hides them the same way
+// and births nothing in their place, so a pad shows as its retail floor with
+// no beam, prize, requirement item, digits or AP state colour.
+#define AP_HNE_MODEL_WARPPAD 0x6c // STATIC_WARPPAD
+#define AP_HNE_MODEL_SAVEOBJ 0x72 // STATIC_SAVEOBJ
+
+static inline int AP_HNE_HidesLevModel(int modelID)
+{
+	return modelID == AP_HNE_MODEL_WARPPAD || modelID == AP_HNE_MODEL_SAVEOBJ;
+}
+
 // Is the hub of this level load the backdrop? Asked by every load step that
 // treats the garage specially (LOAD_TenStages, LOAD_DriverMPK, MainInit).
 static inline int AP_HNE_IsBackdropLevel(const struct AP_HubNameEntryState *s, int levelID)

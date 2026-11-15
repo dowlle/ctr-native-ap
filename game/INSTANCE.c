@@ -489,6 +489,9 @@ void INSTANCE_LevInitAll(struct InstDef *levInstDef, int numInst)
 	// the crates a mode disables, and the census reads exactly that flag.
 	AP_TrapLevelInstances(apLevInstDefBase, numInst);
 	AP_SanityLevelInstances(apLevInstDefBase, numInst);
+	// A6-3: the hub behind name entry runs no birth functions, so hide the
+	// warp pad and save box markers they would hide.
+	AP_HubNameEntry_LevInstances(apLevInstDefBase, numInst);
 #endif
 }
 

@@ -21,7 +21,10 @@ them where the garage is special today:
   a held Enter or button is ignored by name entry itself (A4-87b);
 - A4-90: New Adventure picks a camera path of the picked hub from the pool,
   the camera runs that path, a hub with no path is not usable, and the pool
-  is the generated table (no option, no config switch).
+  is the generated table (no option, no config switch);
+- A6-3: after INSTANCE_LevInitAll's loop, the backdrop hides the warp pad and
+  save box markers their retail birth functions hide, and starts nothing;
+  the two model ids are the engine's STATIC_WARPPAD and STATIC_SAVEOBJ.
 """
 from pathlib import Path
 import re
@@ -208,6 +211,29 @@ check("A4-90: the pool is the generated data table", "static const struct AP_HNE
       and "#define AP_HNE_PATHS" in stops)
 check("A4-90: no option or config switch for the paths",
       "config" not in glue.lower() and "getenv" not in glue and "slot_data" not in glue)
+
+# ---- A6-3: warp pad and save box markers -------------------------------------
+inst_c = read("game/INSTANCE.c")
+levinit = body(inst_c, "void INSTANCE_LevInitAll(")
+call = levinit.find("AP_HubNameEntry_LevInstances(apLevInstDefBase, numInst);")
+check("A6-3: INSTANCE_LevInitAll hands its instances to the backdrop after the loop, in the AP block",
+      call > levinit.rfind("levInstDef++;") > 0 and levinit.rfind("#ifdef CTR_AP", 0, call) > levinit.rfind("levInstDef++;")
+      and levinit.find("#endif", call) > call)
+lev_glue = body(glue, "void AP_HubNameEntry_LevInstances(")
+check("A6-3: only on the backdrop, only when its instances got no thread (NO_LEV_INSTANCE)",
+      "AP_HNE_IsBackdropLevel(&s_apHne, (int)gGT->levelID)" in lev_glue
+      and "(gGT->gameMode2 & NO_LEV_INSTANCE) == 0" in lev_glue)
+check("A6-3: the markers are hidden and nothing is born or started for them",
+      "inst->flags |= HIDE_MODEL;" in lev_glue and "AP_HNE_HidesLevModel(" in lev_glue
+      and "Birth" not in lev_glue and "LInB" not in lev_glue and "PROC_" not in lev_glue)
+enum = read("include/namespace_Instance.h")
+logic = read("ap/ap_hub_name_entry_logic.h")
+check("A6-3: the hidden model ids are the engine's STATIC_WARPPAD and STATIC_SAVEOBJ",
+      "STATIC_WARPPAD = 0x6C," in enum and "STATIC_SAVEOBJ = 0x72," in enum
+      and "#define AP_HNE_MODEL_WARPPAD 0x6c" in logic and "#define AP_HNE_MODEL_SAVEOBJ 0x72" in logic)
+check("A6-3: retail births still hide the same two markers (what the backdrop copies)",
+      "inst->flags |= HIDE_MODEL;" in body(read("game/232/AH_WarpPad.c"), "static void AH_WarpPad_BuildInstances(struct Thread *t)\n{")
+      and "savInst->flags |= HIDE_MODEL;" in body(read("game/232/AH_SaveObj.c"), "void AH_SaveObj_LInB("))
 
 unity = read("game/game_unity.h")
 check("the glue is a unity member after the save box unit, its header among the AP headers",
