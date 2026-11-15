@@ -1317,7 +1317,7 @@ static int AP_NavRec_LoadForLevel(int levelID, unsigned int seed)
 	}
 
 	buf = (struct AP_NavRecLoadBuf *)malloc(sizeof *buf);
-	work = (unsigned int *)malloc(sizeof *work * 2u * (size_t)poolCount);
+	work = (unsigned int *)malloc(sizeof *work * AP_NAVREC_POOL_WORK_PER_ENTRY * (size_t)poolCount);
 	if ((buf == NULL) || (work == NULL))
 	{
 		free(buf);
@@ -1341,7 +1341,7 @@ static int AP_NavRec_LoadForLevel(int levelID, unsigned int seed)
 	fetchCtx.levelID = levelID;
 	fetchCtx.buf = buf;
 
-	pickCount = AP_NavRecPool_Pick(entries, poolCount, seed, AP_NAVREC_MAX_LOAD_ATTEMPTS, AP_NavRec_FetchCandidate, &fetchCtx, work, picks,
+	pickCount = AP_NavRecPool_Pick(entries, poolCount, seed, AP_NAVREC_MAX_LOAD_ATTEMPTS, g_config.navRepeatLaps ? 1 : 0, AP_NavRec_FetchCandidate, &fetchCtx, work, picks,
 	                               &opened, &contributors);
 	free(work);
 	free(entries);

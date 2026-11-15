@@ -53,7 +53,7 @@ static const char *const s_ctrMenuPageArchipelago[] = {
 	"discord_status", NULL,
 };
 static const char *const s_ctrMenuPageAuthoring[] = {
-	"box_author", "nav_record", "nav_use_recorded", "nav_driver_name", NULL,
+	"box_author", "nav_record", "nav_use_recorded", "nav_repeat_laps", "nav_driver_name", NULL,
 };
 
 static const CtrMenuPage s_ctrMenuPages[] = {
