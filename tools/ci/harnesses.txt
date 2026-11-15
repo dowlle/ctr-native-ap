@@ -37,6 +37,7 @@ tools/test-box-spots.cpp
 tools/test-alpha2-presentation-production.py
 tools/test-alpha4-small-fixes.py
 tools/test-clip-record-space.py
+tools/test-draw-distance.py
 tools/test-hub-box-warning.py
 tools/test-text-box.c
 tools/test-text-box-production.py

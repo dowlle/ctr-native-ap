@@ -1,4 +1,5 @@
 #include <common.h>
+#include <platform/native_draw_distance.h>
 #include <platform/native_sanity_recolour.h>
 #ifdef CTR_AP
 #include "../../ap/ap_title_ring_logic.h"
@@ -1166,7 +1167,7 @@ static int RenderBucket_AcceptProjectedBounds(const struct RenderBucketBounds *b
 
 	// increase_draw_distance (config.ini): relax the far-Z reject so geometry past
 	// the normal half-screen depth is still accepted.
-	int gsh = g_config.increaseDrawDistance ? (geomScreenHalf >> 2) : geomScreenHalf;
+	int gsh = NativeDrawDistance_GeomScreenHalf(geomScreenHalf, g_config.increaseDrawDistance);
 	if (RenderBucket_MipsSub(bounds->maxZ, gsh) < 0)
 	{
 		return 0;
@@ -1282,8 +1283,8 @@ static struct ModelHeader *RenderBucket_SelectModelHeader(struct Instance *inst,
 	// increase_draw_distance (config.ini): shrink the per-model LOD distance so
 	// higher-detail LODs are held farther out. Must skip screenspace instances
 	// (e.g. instBigNum) whose viewDepth is a digit selector, not a 3D camera distance.
-	if (g_config.increaseDrawDistance && (inst->flags & SCREENSPACE_INSTANCE) == 0)
-		projectedDistance = (projectedDistance * 100) / 400;
+	projectedDistance = NativeDrawDistance_ProjectedLodDistance(projectedDistance,
+	                                                            g_config.increaseDrawDistance && (inst->flags & SCREENSPACE_INSTANCE) == 0);
 #endif
 	mh = inst->model->headers;
 	headersRemaining = inst->model->numHeaders;
