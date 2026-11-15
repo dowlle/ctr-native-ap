@@ -1,4 +1,5 @@
 #include <common.h>
+#include "../RenderLevel/RenderLevelLod.h"
 #include "../RenderLevel/DrawLevelOvr_shared.h"
 
 static void DrawLevelOvr2P_CopyClipRecordJumpTable(void);
@@ -95,11 +96,8 @@ static void DrawLevelOvr2P_SeedSharedHelperThresholdScratch(void)
 	// NOTE(aalhendi): Retail 227 bakes these thresholds as immediates in
 	// copied BSP handler bodies. Native reuses 226 C helpers that still read
 	// the equivalent thresholds from scratch, so seed the shared-helper view.
-	DrawLevelOvr1P_RenderScratch()->depthScale = 0x19c0;
-	DrawLevelOvr1P_RenderScratch()->textureLodDepthThreshold0 = 0x1000;
-	DrawLevelOvr1P_RenderScratch()->textureLodDepthThreshold1 = 0x800;
-	DrawLevelOvr1P_RenderScratch()->topLevelNearDepthThreshold = 0x600;
-	DrawLevelOvr1P_RenderScratch()->recursiveNearDepthThreshold = 0x300;
+	// increase_draw_distance scales them like the 1P path does.
+	RenderLevelLod_Init2P(DrawLevelOvr1P_RenderScratch(), g_config.increaseDrawDistance);
 }
 
 static const struct DrawLevelOvr1PBucket *DrawLevelOvr2P_FindBucketByHandler(u32 handlerAddress)

@@ -12,7 +12,7 @@
 typedef struct
 {
 	bool skipIntro;             // Video & QoL: skip boot intros, go straight to the main menu
-	bool increaseDrawDistance;  // Video & QoL: render level geometry farther
+	bool increaseDrawDistance;  // Video & QoL: render level geometry and LOD 4x farther (native_draw_distance.h)
 	bool disableSplitScreenLod; // Video & QoL: hi-res character models in 3-4P split screen
 	bool fullscreen;            // Video & QoL: borderless fullscreen window (default windowed)
 	int  aspectRatio;           // Video & QoL: 0 = 4:3 (vanilla), 1 = 16:9, 2 = 16:10, 3 = 21:9

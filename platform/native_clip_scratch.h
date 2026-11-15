@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "../include/platform/native_draw_distance.h"
+
 // Per-player clip records are per-frame render scratch. MainInit_JitPoolsNew
 // hands every player a block of MainDB_GetClipSize(levelID, players) 32-bit
 // entries, the DrawLevelOvr* overlays fill it while drawing the frame, and
@@ -21,10 +23,26 @@
 // players. tools/test-native-clip-scratch.c re-derives the 24,000 by reading
 // game/MAIN/MainDB.c, so a future table edit that outgrows this buffer fails
 // the harness instead of silently overrunning it.
-#define CTR_NATIVE_CLIP_SCRATCH_MAX_ENTRIES 24000u
+//
+// Native hands every player CTR_NATIVE_CLIP_SCRATCH_SCALE times retail's entry
+// count (MainDB_GetClipEntries), always, not only with increase_draw_distance
+// on. Retail sized the block for retail's draw distance and 4:3; the writers
+// drop a near-clipped face once it is full (A5-3), and a wider view or a longer
+// draw distance fills it sooner. Ported from CTR Native Expanded e86365e10b,
+// which scales the clip records by the same factor as the other arenas. The
+// buffer is process-owned storage, so the larger block costs no MEMPACK.
+#define CTR_NATIVE_CLIP_SCRATCH_SCALE ((uint32_t)NATIVE_DRAW_DISTANCE_SCALE)
+#define CTR_NATIVE_CLIP_SCRATCH_RETAIL_MAX_ENTRIES 24000u
+#define CTR_NATIVE_CLIP_SCRATCH_MAX_ENTRIES (CTR_NATIVE_CLIP_SCRATCH_RETAIL_MAX_ENTRIES * CTR_NATIVE_CLIP_SCRATCH_SCALE)
 #define CTR_NATIVE_CLIP_SCRATCH_MAX_PLAYERS 4u
 #define CTR_NATIVE_CLIP_SCRATCH_CAPACITY \
 	(CTR_NATIVE_CLIP_SCRATCH_MAX_ENTRIES * 4u * CTR_NATIVE_CLIP_SCRATCH_MAX_PLAYERS)
+
+// Retail's per-player entry count (MainDB_GetClipSize) to the native one.
+static inline uint32_t NativeClipScratch_Entries(uint32_t retailEntries)
+{
+	return retailEntries * CTR_NATIVE_CLIP_SCRATCH_SCALE;
+}
 
 static inline uint32_t NativeClipScratch_PlayerBytes(uint32_t clipEntries)
 {

@@ -316,12 +316,14 @@ int main(int argc, char **argv)
 	       "post-fix Polar Pass load survives and keeps 10,868 bytes");
 
 	// The declared capacity has to cover the whole table, at every player count
-	// data.PtrClipBuffer can hold.
+	// data.PtrClipBuffer can hold. Native allocates CTR_NATIVE_CLIP_SCRATCH_SCALE
+	// times the retail entry count (MainDB_GetClipEntries, A5-4), so the check
+	// runs on the scaled count.
 	for (int level = 0; level < levelCount; level++)
 	{
 		for (int players = 1; players <= (int)CTR_NATIVE_CLIP_SCRATCH_MAX_PLAYERS; players++)
 		{
-			int entries = clipEntriesFor(level, players);
+			int entries = (int)NativeClipScratch_Entries((uint32_t)clipEntriesFor(level, players));
 			int bytes = entries * 4 * players;
 
 			if (entries > worstEntries)
@@ -340,7 +342,11 @@ int main(int argc, char **argv)
 
 	expect(worstEntries == (int)CTR_NATIVE_CLIP_SCRATCH_MAX_ENTRIES,
 	       "declared max entry count still matches the live clip size table");
-	expect(garage >= 0 && clipEntriesFor(garage, 1) == worstEntries,
+	expect(clipEntriesFor(garage, 1) == (int)CTR_NATIVE_CLIP_SCRATCH_RETAIL_MAX_ENTRIES,
+	       "declared retail max entry count matches the live clip size table");
+	expect(CTR_NATIVE_CLIP_SCRATCH_SCALE >= 1u,
+	       "the native clip scale never shrinks retail's block");
+	expect(garage >= 0 && (int)NativeClipScratch_Entries((uint32_t)clipEntriesFor(garage, 1)) == worstEntries,
 	       "ADVENTURE_GARAGE is the worst case the buffer is sized from");
 	expect(worstBytes <= (int)CTR_NATIVE_CLIP_SCRATCH_CAPACITY,
 	       "every level fits the dedicated scratch at four players");
@@ -365,7 +371,7 @@ int main(int argc, char **argv)
 
 	// Slices: disjoint, word aligned, inside the buffer.
 	{
-		uint32_t entries = (uint32_t)clipEntriesFor(polar, 4);
+		uint32_t entries = NativeClipScratch_Entries((uint32_t)clipEntriesFor(polar, 4));
 		uint32_t players = CTR_NATIVE_CLIP_SCRATCH_MAX_PLAYERS;
 		uint32_t stride = NativeClipScratch_PlayerBytes(entries);
 		unsigned char *base = (unsigned char *)NativeClipScratch_Player(0, entries, players);

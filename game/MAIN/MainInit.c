@@ -2,6 +2,7 @@
 
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
+#include <platform/native_draw_distance.h>
 #include "../../ap/ap_instance_pool_logic.h"
 #endif
 
@@ -223,6 +224,18 @@ void MainInit_PrimMem(struct GameTracker *gGT)
 	}
 
 #ifdef CTR_CUSTOM_TRACKS
+	// increase_draw_distance draws up to four times as far, through more
+	// subdivided quadblocks, and the level renderer abandons the rest of the
+	// frame's terrain when this arena runs out. With the option on at level
+	// load the retail budget grows by NATIVE_DRAW_DISTANCE_SCALE (Expanded
+	// e86365e10b scales it the same way, unconditionally). Only in this build:
+	// CTR_CUSTOM_TRACKS is what selects the 8 MiB MEMPACK, and the retail
+	// window has no room for it. With the option off the size is untouched.
+	// The 1P floor below still applies on top; the scaled retail 1P budget
+	// never exceeds it, so in 1P this changes nothing, and in 2P to 4P it is
+	// the whole increase.
+	size = NativeDrawDistance_ArenaBytes(size, g_config.increaseDrawDistance);
+
 	// MainInit_GetPrimMemSize is left alone deliberately -- it is an
 	// ASM-verified retail function and its answer stays exactly what retail
 	// computes. The floor is applied HERE, after it, so a build without
@@ -342,6 +355,12 @@ void MainInit_OTMem(struct GameTracker *gGT)
 	size = 0x3000;
 
 EndFunc:
+
+#ifdef CTR_CUSTOM_TRACKS
+	// The ordering-table arena grows with the primitive arena when
+	// increase_draw_distance is on at level load (see MainInit_PrimMem).
+	size = NativeDrawDistance_ArenaBytes(size, g_config.increaseDrawDistance);
+#endif
 
 	MainDB_OTMem(&gGT->db[0].otMem, size);
 	MainDB_OTMem(&gGT->db[1].otMem, size);
@@ -522,7 +541,7 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 
 	for (int i = 0; i < gGT->numPlyrCurrGame; i++)
 	{
-		int clipEntries = MainDB_GetClipSize(gGT->levelID, gGT->numPlyrCurrGame);
+		int clipEntries = MainDB_GetClipEntries(gGT->levelID, gGT->numPlyrCurrGame);
 #if defined(CTR_NATIVE)
 		// Clip records are per-frame render scratch, not gameplay state, and
 		// retail's MEMPACK_AllocMem(entries << 2) is the largest single

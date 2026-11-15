@@ -1,4 +1,7 @@
 #include <common.h>
+#if defined(CTR_NATIVE)
+#include "../../platform/native_clip_scratch.h"
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80034960-0x800349c4.
 int MainDB_GetClipSize(u32 levelID, int numPlyrCurrGame)
@@ -29,6 +32,21 @@ int MainDB_GetClipSize(u32 levelID, int numPlyrCurrGame)
 	default:
 		return 3000;
 	}
+}
+
+// The per-player clip-record entry count the game actually allocates and
+// bounds its writers with. Retail's table above stays as retail computes it;
+// native multiplies it by CTR_NATIVE_CLIP_SCRATCH_SCALE (see
+// platform/native_clip_scratch.h). Allocation (MainInit_JitPoolsNew), the
+// checkpoint rebind and the writers' end test must all ask here, never the
+// retail table directly, or the slices and the end test disagree.
+int MainDB_GetClipEntries(u32 levelID, int numPlyrCurrGame)
+{
+#if defined(CTR_NATIVE)
+	return (int)NativeClipScratch_Entries((u32)MainDB_GetClipSize(levelID, numPlyrCurrGame));
+#else
+	return MainDB_GetClipSize(levelID, numPlyrCurrGame);
+#endif
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800349c4-0x80034a28.

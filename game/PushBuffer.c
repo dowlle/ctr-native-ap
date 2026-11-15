@@ -1,4 +1,5 @@
 #include <common.h>
+#include <platform/native_draw_distance.h>
 
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800426f8-0x80042910.
@@ -664,7 +665,8 @@ void PushBuffer_UpdateFrustum(struct PushBuffer *pb)
 
 	// increase_draw_distance (config.ini, see platform/native_config.c): push the
 	// frustum far clip out so distant geometry is not culled early.
-	int farClip = g_config.increaseDrawDistance ? 0x200 : 0x100;
+	// Scaled like every LOD threshold (platform/native_draw_distance.h).
+	int farClip = NativeDrawDistance_FarClip(g_config.increaseDrawDistance);
 
 	for (int i = 0; i < 4; i++)
 	{
