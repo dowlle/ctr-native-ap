@@ -24,6 +24,9 @@ static struct {
 	int flags;
 	s16 split, camera;
 	s16 turnAngle, rotationY;
+	// the warp animation sets 2 after 800 frames and the emitter then skips the
+	// exhaust (A6-2 review)
+	s8 revEngineState;
 } apWarpSnapshot;
 
 static void AH_WarpPad_WarpCapture(struct GameTracker *gGT)
@@ -33,6 +36,7 @@ static void AH_WarpPad_WarpCapture(struct GameTracker *gGT)
 	apWarpSnapshot.positionY = driver->posCurr.y;
 	apWarpSnapshot.turnAngle = driver->turnAngleCurr;
 	apWarpSnapshot.rotationY = driver->rotCurr.y;
+	apWarpSnapshot.revEngineState = driver->revEngineState;
 	apWarpSnapshot.scale = driver->instSelf->scale;
 	apWarpSnapshot.flags = driver->instSelf->flags & (REFLECTIVE | HIDE_MODEL);
 	apWarpSnapshot.split = driver->instSelf->vertSplit;
@@ -46,6 +50,7 @@ static void AH_WarpPad_WarpRestore(struct GameTracker *gGT)
 	driver->posCurr.y = apWarpSnapshot.positionY;
 	driver->turnAngleCurr = apWarpSnapshot.turnAngle;
 	driver->rotCurr.y = apWarpSnapshot.rotationY;
+	driver->revEngineState = apWarpSnapshot.revEngineState;
 	driver->instSelf->scale = apWarpSnapshot.scale;
 	driver->instSelf->flags = (driver->instSelf->flags & ~(REFLECTIVE | HIDE_MODEL)) |
 	                         apWarpSnapshot.flags;

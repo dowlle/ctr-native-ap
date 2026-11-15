@@ -15,6 +15,7 @@ fixture = r'''
 #include <assert.h>
 #include <stddef.h>
 typedef short s16;
+typedef signed char s8;
 typedef struct { s16 x,y,z; } SVec3;
 #define REFLECTIVE 1
 #define HIDE_MODEL 2
@@ -24,7 +25,7 @@ typedef struct { s16 x,y,z; } SVec3;
 #define KS_NORMAL 0
 #define HOWL_SFX_CENTER_NO_DISTORTION 0x8080
 struct Instance { SVec3 scale; int flags; s16 vertSplit; } instance;
-struct Driver { void (*funcPtrs[1])(void); int driverID, kartState;
+struct Driver { void (*funcPtrs[1])(void); int driverID, kartState; s8 revEngineState;
  struct { int y; } posCurr; s16 turnAngleCurr; SVec3 rotCurr; struct Instance *instSelf; } driver;
 struct GameTracker { struct Driver *drivers[1]; struct { s16 cameraMode; } cameraDC[1]; } game, *gGT=&game;
 struct Warp { int framesWarping, boolEnteredWarppad, levelID; } warp, *warppadObj=&warp;
@@ -51,15 +52,16 @@ int main(void) {
   warp.levelID=physical;warp.framesWarping=63;warp.boolEnteredWarppad=1;
   sdata->boolOpenTokenRelicMenu=1;apEntryRefusedDest=-1;dropped=hidden=logged=engineInits=0;
   driver.posCurr.y=123;instance.scale=(SVec3){100,200,300};
-  driver.turnAngleCurr=-1234;driver.rotCurr.y=2345;
+  driver.turnAngleCurr=-1234;driver.rotCurr.y=2345;driver.revEngineState=ownedFlags&1;
   instance.flags=16|ownedFlags;instance.vertSplit=42;game.cameraDC[0].cameraMode=7;
   AH_WarpPad_WarpCapture(gGT);
   driver.posCurr.y=999;instance.scale=(SVec3){1,2,3};
-  driver.turnAngleCurr=1000;driver.rotCurr.y=-1000;
+  driver.turnAngleCurr=1000;driver.rotCurr.y=-1000;driver.revEngineState=2;
   instance.flags=32|REFLECTIVE|HIDE_MODEL;instance.vertSplit=99;game.cameraDC[0].cameraMode=3;
   driver.funcPtrs[0]=0;driver.kartState=(ownedFlags&1)?KS_WARP_PAD:KS_NORMAL;
   assert(evaluate()==1&&warp.framesWarping==0&&warp.boolEnteredWarppad==0);
   assert(driver.funcPtrs[0]==VehPhysProc_Driving_Init);
+  assert(driver.revEngineState==(ownedFlags&1));
   assert(driver.posCurr.y==123&&driver.turnAngleCurr==-1234&&driver.rotCurr.y==2345);
   assert(instance.scale.x==100&&instance.scale.y==200&&instance.scale.z==300);
   assert(instance.flags==(32|ownedFlags)&&instance.vertSplit==42&&game.cameraDC[0].cameraMode==7);
