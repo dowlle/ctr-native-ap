@@ -83,7 +83,10 @@ void AP_TiziMadnessTick(struct GameTracker *gGT)
 	// Keep the attempt latch every frame, whatever else this tick decides. A new
 	// countdown is a new attempt (a start or a restart), so the log line may
 	// repeat for it.
-	onTrack = LOAD_IsOpen_RacingOrBattle();
+	// A load in progress (a restart from the pause menu keeps running frames
+	// until the transition covers the screen) ends the attempt: the kart is
+	// about to be rebuilt by VehBirth. Same rule as the Wumpa lifecycle.
+	onTrack = LOAD_IsOpen_RacingOrBattle() && sdata->Loading.stage == LOAD_IDLE;
 	if (onTrack && (gGT->gameMode1 & END_OF_RACE) == 0 && gGT->trafficLightsTimer >= 1)
 		g_tm_logged_state = -1;
 	AP_TurboGrantRaceStep(&g_tm_race, onTrack, (gGT->gameMode1 & END_OF_RACE) != 0,

@@ -58,6 +58,8 @@ write = tick.index('local->heldItemID = AP_TIZI_MADNESS_HELD_MASK;')
 body_start = tick.index('void AP_TiziMadnessTick(struct GameTracker *gGT)')
 check(body_start < step < latch < write and tick[body_start:step].count('return;') == 1,
       'the countdown latch runs every frame and gates the write (race-load gap)')
+check('onTrack = LOAD_IsOpen_RacingOrBattle() && sdata->Loading.stage == LOAD_IDLE;' in tick,
+      'a load in progress (a pause-menu restart) ends the attempt before VehBirth')
 check(re.search(r'AP_TiziMadnessRefillOn\(1, AP_TiziItemsanitySeed\(\), AP_TiziMaskReceived\(\)\)', tick),
       'the gate reads the Tizi Helper receipt and probe')
 check(len(re.findall(r'heldItemID\s*=[^=]', tick)) == 1 and 'local->heldItemID = AP_TIZI_MADNESS_HELD_MASK;' in tick,
