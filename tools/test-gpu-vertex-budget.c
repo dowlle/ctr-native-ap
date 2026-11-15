@@ -14,6 +14,7 @@
 //   * a flush inside the primitive (index back below the start) is kept
 //   * a replay of a full buffer of LINE_F4-sized primitives never keeps an
 //     index past capacity and never writes past capacity plus the slack
+//   * a draw split's vertex range type can index the whole batch (A5-13)
 
 #include <stdio.h>
 
@@ -79,6 +80,28 @@ int main(void)
 		expect(maxWritten <= capacity + NATIVE_GPU_MAX_PRIMITIVE_VERTICES, "replay: writes stay inside the slack");
 		expect(index == (capacity / NATIVE_GPU_MAX_PRIMITIVE_VERTICES) * NATIVE_GPU_MAX_PRIMITIVE_VERTICES, "replay: whole primitives kept");
 		expect(o.skippedPrimitives == 20 - capacity / NATIVE_GPU_MAX_PRIMITIVE_VERTICES, "replay: every later primitive counted");
+	}
+
+	{
+		// A5-13: a draw split's first vertex and count must reach the whole
+		// batch. u16 wrapped past 65,535 vertices and drew earlier vertices in
+		// shifted triangles; native_gpu.c asserts its fields with the same macro.
+		const unsigned long long batch = 1ull << 18; // MAX_VERTEX_BUFFER_SIZE
+		expect(!NATIVE_GPU_SPLIT_FIELD_HOLDS(2u, batch), "split field: 16 bits cannot index a 1 << 18 batch");
+		expect(!NATIVE_GPU_SPLIT_FIELD_HOLDS(2u, 65536ull), "split field: 16 bits cannot index 65,536 vertices");
+		expect(NATIVE_GPU_SPLIT_FIELD_HOLDS(sizeof(NativeGpuVertexIndex), batch), "split field: the vertex index type holds the batch and slack");
+		expect(NATIVE_GPU_SPLIT_FIELD_HOLDS(sizeof(NativeGpuVertexIndex), batch * 64ull), "split field: and far beyond it");
+
+		// The wrap itself, as the old field stored it: a split that starts after
+		// 65,536 vertices pointed back at the start of the batch.
+		{
+			const int start = 70000;
+			unsigned short oldField = (unsigned short)start;
+			NativeGpuVertexIndex newField = start;
+			expect(oldField == start - 65536, "split field: the old u16 start wraps to an earlier vertex");
+			expect(newField == start, "split field: the new start is exact");
+			expect((start - oldField) % 3 == 1, "split field: and the wrap shifts triangle groups by one vertex");
+		}
 	}
 
 	printf("%d checks, %d failures\n", g_checks, g_failures);

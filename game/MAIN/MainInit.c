@@ -236,7 +236,8 @@ void MainInit_PrimMem(struct GameTracker *gGT)
 	// window has no room for it. A 1P load with the option off is untouched.
 	// The 1P floor below still applies on top; the scaled retail 1P budget
 	// never exceeds it, so in 1P this changes nothing, and in 2P to 4P it is
-	// the whole increase.
+	// the whole increase. A served custom track in 1P with the option on gets
+	// a larger floor (1.5 MiB, A5-13): North Pole outgrew the 1 MiB one.
 	size = NativeDrawDistance_ArenaBytes(size, NativeDrawDistance_ArenaGrows(g_config.increaseDrawDistance, gGT->numPlyrCurrGame,
 	                                                                          (gGT->gameMode1 & (MAIN_MENU | GAME_CUTSCENE)) != 0));
 
@@ -275,7 +276,8 @@ void MainInit_PrimMem(struct GameTracker *gGT)
 		                                             (gGT->gameMode1 & ADVENTURE_BOSS) != 0) >= 0 ||
 		              CustomTrack_CortexTrackServing((int)gGT->levelID,
 		                                             (gGT->gameMode1 & ADVENTURE_BOSS) != 0);
-		unsigned long chosen = CustomTrackPolicy_PrimArenaBytes(serving, gGT->numPlyrCurrGame, (unsigned long)size);
+		unsigned long chosen = CustomTrackPolicy_PrimArenaBytesWithDrawDistance(serving, gGT->numPlyrCurrGame, (unsigned long)size,
+		                                                                        g_config.increaseDrawDistance);
 
 		if (chosen != (unsigned long)size)
 		{

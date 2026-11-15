@@ -87,11 +87,15 @@ typedef struct
 	bool psxTextureOutputSTP;
 	bool psxDrawMaskSet;
 
-	u16 startVertex;
-	u16 numVerts;
+	// Index the whole vertex batch, see NativeGpuVertexIndex.
+	NativeGpuVertexIndex startVertex;
+	NativeGpuVertexIndex numVerts;
 
 	const char *debugText;
 } GPUDrawSplit;
+
+CTR_STATIC_ASSERT(NATIVE_GPU_SPLIT_FIELD_HOLDS(sizeof(((GPUDrawSplit *)0)->startVertex), MAX_VERTEX_BUFFER_SIZE));
+CTR_STATIC_ASSERT(NATIVE_GPU_SPLIT_FIELD_HOLDS(sizeof(((GPUDrawSplit *)0)->numVerts), MAX_VERTEX_BUFFER_SIZE));
 
 #define MAX_DRAW_SPLITS 4096
 
