@@ -88,6 +88,10 @@ static const struct ApCreditLine AP_CREDITS_LINES[] = {
     // Controls page (0.3.0) is ported from CTR Native Expanded (GPL-3.0).
     {0, "BUTTON MAPPING - THECODINGBOB"},
     {0, "RESERVES METER - SUPERSTARXALIEN"},
+    // THIRD_PARTY_NOTICES.md "Always Jumping trap": the idea and the
+    // jump-buffer mechanism come from AlienGenie's CTR-AlwaysJumpingMod. Name
+    // chosen by AlienGenie ("AlienGenie works", 2026-11-14).
+    {0, "ALWAYS JUMPING TRAP - ALIENGENIE"},
     // THIRD_PARTY_NOTICES.md "CTR ModSDK Retro-Fueled mechanics and Blue Fire
     // palette": the Progressive Boost capstone adapts Retro-Fueled (original mod
     // TheRedhotbr, GPL-3.0) and its blue-fire colour swap by Avery.
@@ -112,7 +116,22 @@ static const struct ApCreditLine AP_CREDITS_LINES[] = {
     {0, "AND CHRISTOPHER WILSON"},
     {0, ""},
     {1, "CORTEX VORTEX TRACK"},
-    {0, "TRACK BY LOCKHEART"},
+    // The track's own music (the .sca) ships too and is covered by the same
+    // permission (THIRD_PARTY_NOTICES.md "Cortex Vortex track").
+    {0, "TRACK AND MUSIC BY LOCKHEART"},
+    {0, ""},
+    // Authors who said yes (2026-11-12 and 2026-11-13) to their tracks being
+    // offered through the client's Project Saphi download or importer. Names as
+    // Project Saphi lists them; Lolothesamurai asked for exactly that spelling.
+    // Authors with no recorded yes (N.Hanced Team, Mnesiq and others) are left
+    // out on purpose.
+    {1, "CUSTOM TRACK AUTHORS"},
+    {0, "BOXIC"},
+    {0, "BABY T PARK - LOCKHEART"},
+    {0, "LOLOTHESAMURAI"},
+    {0, "PANCHOPEW"},
+    {0, "COCO TEAM RACING - FROSTEDWOMBAT"},
+    {0, "TRACK DOWNLOADS - PROJECT SAPHI"},
     {0, ""},
     {1, "LIBRARIES"},
     {0, "PSY-X - REDRIVER2 PROJECT"},
@@ -124,6 +143,17 @@ static const struct ApCreditLine AP_CREDITS_LINES[] = {
     {0, "WEBSOCKET++ - PETER THORSON"},
     {0, "ASIO - CHRIS KOHLHOFF"},
     {0, "SDL3 - SAM LANTINGA"},
+    {0, "XDELTA3 - JOSHUA MACDONALD"},
+    {0, "UTF8PROC - STEVEN G. JOHNSON"},
+    {0, ""},
+    // THIRD_PARTY_NOTICES.md "Solo runtime": the Play Solo runtime in the
+    // release archives bundles CPython and a trimmed Archipelago core plus a
+    // handful of small Python packages that the notices file lists in full.
+    {1, "PLAY SOLO RUNTIME"},
+    {0, "ARCHIPELAGO - LLCOOLDAVE"},
+    {0, "AND BERSERKER66"},
+    {0, "CPYTHON - PSF"},
+    {0, "MORE IN THIRD_PARTY_NOTICES.MD"},
     // Spacer gap between the AP section and the vanilla roll it precedes.
     {0, ""},
     {0, ""},
