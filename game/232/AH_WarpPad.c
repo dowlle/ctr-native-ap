@@ -24,6 +24,9 @@ static struct {
 	int flags;
 	s16 split, camera;
 	s16 turnAngle, rotationY;
+	// the warp animation sets 2 after 800 frames and the emitter then skips the
+	// exhaust (A6-2 review)
+	s8 revEngineState;
 } apWarpSnapshot;
 
 static void AH_WarpPad_WarpCapture(struct GameTracker *gGT)
@@ -33,6 +36,7 @@ static void AH_WarpPad_WarpCapture(struct GameTracker *gGT)
 	apWarpSnapshot.positionY = driver->posCurr.y;
 	apWarpSnapshot.turnAngle = driver->turnAngleCurr;
 	apWarpSnapshot.rotationY = driver->rotCurr.y;
+	apWarpSnapshot.revEngineState = driver->revEngineState;
 	apWarpSnapshot.scale = driver->instSelf->scale;
 	apWarpSnapshot.flags = driver->instSelf->flags & (REFLECTIVE | HIDE_MODEL);
 	apWarpSnapshot.split = driver->instSelf->vertSplit;
@@ -46,11 +50,20 @@ static void AH_WarpPad_WarpRestore(struct GameTracker *gGT)
 	driver->posCurr.y = apWarpSnapshot.positionY;
 	driver->turnAngleCurr = apWarpSnapshot.turnAngle;
 	driver->rotCurr.y = apWarpSnapshot.rotationY;
+	driver->revEngineState = apWarpSnapshot.revEngineState;
 	driver->instSelf->scale = apWarpSnapshot.scale;
 	driver->instSelf->flags = (driver->instSelf->flags & ~(REFLECTIVE | HIDE_MODEL)) |
 	                         apWarpSnapshot.flags;
 	driver->instSelf->vertSplit = apWarpSnapshot.split;
 	gGT->cameraDC[driver->driverID].cameraMode = apWarpSnapshot.camera;
+	// Backing out of a pad (A6-2): VehStuckProc_Warp_Init stopped the kart's
+	// engine channel and only a level load (VehBirth_EngineAudio_AllPlayers)
+	// allocates it again, so the engine stayed silent in the hub. Give it back,
+	// but only when the warp init ran (kartState is still KS_WARP_PAD) and so
+	// stopped it, never a second channel.
+	if (driver->kartState == KS_WARP_PAD)
+		EngineAudio_InitOnce((data.MetaDataCharacters[data.characterIDs[driver->driverID]].engineID * 4) + driver->driverID,
+		                     HOWL_SFX_CENTER_NO_DISTORTION);
 	apWarpSnapshot.driver = NULL;
 }
 #endif
