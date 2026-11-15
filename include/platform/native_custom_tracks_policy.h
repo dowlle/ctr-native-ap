@@ -195,8 +195,9 @@
 //
 //    So the floor is widened on headroom, not on a proven exhaustion: every
 //    1P level load (numPlyrCurrGame == 1) gets it. 2P/3P/4P and the
-//    numPlyrCurrGame == 0 attract path do not get the floor, because nothing
-//    had been measured for them. (Since A5-4b split-screen races get a
+//    numPlyrCurrGame == 0 attract path do not get it on headroom grounds
+//    (only when they serve a custom track's bytes), because nothing had been
+//    measured for them. (Since A5-4b split-screen races get a
 //    different raise instead: their arenas always grow by the draw-distance
 //    factor, see NativeDrawDistance_ArenaGrows in
 //    include/platform/native_draw_distance.h.)
@@ -1531,7 +1532,8 @@ static int CustomTrackPolicy_PrimFits(const void *cursor, unsigned long primSize
 // -- a table lookup (data.primMem_SizePerLEV_1P and its 2P/4P siblings) or one
 // of the four constants MainInit_GetPrimMemSize returns for the non-arcade
 // cases -- times NATIVE_DRAW_DISTANCE_SCALE when MainInit_PrimMem grows it for
-// Increase Draw Distance (1P with the option on, every split-screen race).
+// Increase Draw Distance (any load with the option on at level load, and
+// every split-screen race even with it off).
 //
 // Two independent reasons to raise it, either one sufficient:
 //   servingCustomTrack -- the slot's budget was chosen for someone else's
