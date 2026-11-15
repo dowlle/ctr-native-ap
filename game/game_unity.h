@@ -27,6 +27,7 @@
 #include "../ap/ap_charseat.h"   // stored-racer seat state machine (#54/#209)
 #include "../ap/ap_charswap.h"   // character phase: hub picker + swap (#54/#209)
 #include "../ap/ap_tizi.h"       // Papu's Pyramid mask helper (#223)
+#include "../ap/ap_tizi_madness.h" // always a Mask on Tizi Madness (A4-96)
 #include "../ap/ap_turbogrant.h" // in-race Turbo hand-out (#224)
 #include "../ap/ap_reserve_top_up.h"
 #include "../ap/ap_spoiler_items.h" // reveal items for pad previews and box colours (#459)
@@ -436,6 +437,7 @@
 #include "../ap/ap_charseat.c"
 #include "../ap/ap_charswap.c"
 #include "../ap/ap_tizi.c"
+#include "../ap/ap_tizi_madness.c"
 #include "../ap/ap_turbogrant.c"
 #include "../ap/ap_reserve_top_up.c"
 #include "../ap/ap_spoiler_items.c"

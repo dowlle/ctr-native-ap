@@ -80,6 +80,16 @@ static int AP_TiziItemsanityOn(void)
 	       ap_net_location_exists(AP_TIZI_ITEMSANITY_PROBE_CODE);
 }
 
+int AP_TiziMaskReceived(void)
+{
+	return g_tizi_mask_received;
+}
+
+int AP_TiziItemsanitySeed(void)
+{
+	return AP_TiziItemsanityOn();
+}
+
 static int AP_TiziActive(void)
 {
 	return AP_TiziHelperActive(g_tizi_helper_received, AP_TiziItemsanityOn(),

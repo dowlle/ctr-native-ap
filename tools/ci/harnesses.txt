@@ -218,6 +218,8 @@ tools/test-text-clip.c
 tools/test-text-cursor.c
 tools/test-title-ring.c
 tools/test-tizi-helper.c
+tools/test-tizi-madness.c
+tools/test-tizi-madness-production.py
 tools/test-transition-diag.c
 tools/test-tunnel-charswap-production.py
 tools/test-door-history-production.py

@@ -3,6 +3,7 @@
 #include <platform/native_custom_tracks.h>
 #include <platform/native_sha256.h>
 #include <platform/native_custom_finish.h>
+#include <platform/native_tizi_madness.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1448,6 +1449,23 @@ int CustomTrack_FinishTerrain(const struct CustomTrackLoadContext *ctx)
 		return CustomFinish_Terrain(s_oxideFinalDescriptor.levSha256, s_oxideFinalDescriptor.vrmSha256);
 	return CustomTrack_LoadServes(ctx) ?
 	       CustomFinish_Terrain(s_descriptor.levSha256, s_descriptor.vrmSha256) : -1;
+}
+
+int CustomTrack_TiziMadness(const struct CustomTrackLoadContext *ctx)
+{
+	int garage;
+	if (!ctx) return 0;
+	CustomTrack_Config();
+	/* Same precedence as CustomTrack_FinishTerrain and GetOverride: the pair
+	   that is actually served for this load decides (A4-96). */
+	garage = CustomTrack_GarageVenueServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive);
+	if (garage >= 0)
+		return CustomTrack_IsTiziMadness(s_garageVenue[garage].levSha256, s_garageVenue[garage].vrmSha256);
+	if (CustomTrack_OxideFinalServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive) ||
+	    CustomTrack_CortexTrackServing(ctx->levelID, ctx->adventureBossActive))
+		return CustomTrack_IsTiziMadness(s_oxideFinalDescriptor.levSha256, s_oxideFinalDescriptor.vrmSha256);
+	return CustomTrack_LoadServes(ctx) &&
+	       CustomTrack_IsTiziMadness(s_descriptor.levSha256, s_descriptor.vrmSha256);
 }
 
 int CustomTrack_RetailPodiumLevelID(int levelID, int adventureCupActive, int cupID)

@@ -1,6 +1,7 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_offline.h>
 #include <platform/native_custom_finish.h>
+#include <platform/native_tizi_madness.h>
 #include <platform/native_custom_identity.h>
 #include <platform/native_custom_state_identity.h>
 #include <platform/native_custom_content_verify.h>
@@ -17,17 +18,33 @@ static int musicFallbackLevel = -1;
 static int activeMode;
 static int activeLaps;
 static int activeFinishTerrain = -1;
+/* The active package is Tizi Madness by its LEV and VRM pins (A4-96). */
+static int activeTiziMadness;
+
+static void package_pins(const struct CustomPackageManifest *manifest, const char **lev, const char **vrm)
+{
+    unsigned int i;
+    *lev = NULL;
+    *vrm = NULL;
+    for (i = 0; i < manifest->count; i++)
+    {
+        if (!strcmp(manifest->files[i].role, "lev")) *lev = manifest->files[i].sha256;
+        if (!strcmp(manifest->files[i].role, "vrm")) *vrm = manifest->files[i].sha256;
+    }
+}
 
 static int package_finish_terrain(const struct CustomPackageManifest *manifest)
 {
-    const char *lev = NULL, *vrm = NULL;
-    unsigned int i;
-    for (i = 0; i < manifest->count; i++)
-    {
-        if (!strcmp(manifest->files[i].role, "lev")) lev = manifest->files[i].sha256;
-        if (!strcmp(manifest->files[i].role, "vrm")) vrm = manifest->files[i].sha256;
-    }
+    const char *lev, *vrm;
+    package_pins(manifest, &lev, &vrm);
     return CustomFinish_Terrain(lev, vrm);
+}
+
+static int package_tizi_madness(const struct CustomPackageManifest *manifest)
+{
+    const char *lev, *vrm;
+    package_pins(manifest, &lev, &vrm);
+    return CustomTrack_IsTiziMadness(lev, vrm);
 }
 static uint64_t runtimeGeneration;
 static unsigned int servedRoles;
@@ -206,8 +223,9 @@ int CustomOffline_BeginRuntime(struct CustomOfflineRequest **request, int hostLe
     activeLaps = (int)laps;
     {
         struct CustomPackageManifest manifest;
-        activeFinishTerrain = CustomOffline_GetManifest(activeRequest, &manifest) ?
-                              package_finish_terrain(&manifest) : -1;
+        int haveManifest = CustomOffline_GetManifest(activeRequest, &manifest);
+        activeFinishTerrain = haveManifest ? package_finish_terrain(&manifest) : -1;
+        activeTiziMadness = haveManifest ? package_tizi_madness(&manifest) : 0;
     }
     ++runtimeGeneration;
     clear_observations();
@@ -230,6 +248,7 @@ void CustomOffline_EndRuntime(void)
     activeHost = -1;
     activeMode = 0;
     activeLaps = 0;
+    activeTiziMadness = 0;
     clear_observations();
 }
 
@@ -239,6 +258,7 @@ void CustomOffline_SetMusicFallbackLevel(int level) { musicFallbackLevel = activ
 uint64_t CustomOffline_RuntimeGeneration(void) { return runtimeGeneration; }
 int CustomOffline_RuntimeLaps(void) { return activeLaps; }
 int CustomOffline_RuntimeFinishTerrain(void) { return activeRequest ? activeFinishTerrain : -1; }
+int CustomOffline_RuntimeTiziMadness(void) { return activeRequest ? activeTiziMadness : 0; }
 
 void CustomOffline_OnLoadRequested(int levelID)
 {
