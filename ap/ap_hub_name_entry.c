@@ -61,6 +61,27 @@ int AP_HubNameEntry_IsBackdropLevel(int levelID)
 	return AP_HNE_IsBackdropLevel(&s_apHne, levelID);
 }
 
+void AP_HubNameEntry_LevInstances(struct InstDef *instDefs, int numInst)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int i, hidden = 0;
+	char line[128];
+	if (instDefs == NULL || !AP_HNE_IsBackdropLevel(&s_apHne, (int)gGT->levelID) ||
+	    (gGT->gameMode2 & NO_LEV_INSTANCE) == 0)
+		return;
+	for (i = 0; i < numInst; i++)
+	{
+		struct Instance *inst = instDefs[i].ptrInstance;
+		if (inst == NULL || instDefs[i].model == NULL || !AP_HNE_HidesLevModel((s16)instDefs[i].model->id))
+			continue;
+		inst->flags |= HIDE_MODEL;
+		hidden++;
+	}
+	snprintf(line, sizeof line, "[AP HUB NAME] hub level %d: %d warp pad and save box markers hidden\n",
+	         (int)gGT->levelID, hidden);
+	AP_LogLine(line);
+}
+
 int AP_HubNameEntry_GarageInit(void)
 {
 	int apRacer;

@@ -499,6 +499,25 @@ int main(void)
 		CHECK("a reset clears the showing's path but keeps each hub's last path", ps.path == -1 && ps.lastPath[0] >= 0);
 	}
 
+	// ---- A6-3: warp pad and save box markers ----------------------------------
+	{
+		// Every LEV model of the five retail hubs (headless dump, A6-3):
+		// 108 warp pad, 114 save box, 115..119 boss garages, 122 door, 225 hub door.
+		const int hubModels[] = {108, 114, 115, 116, 117, 118, 119, 122, 225};
+		int hides = 0, n;
+		for (n = 0; n < (int)(sizeof hubModels / sizeof hubModels[0]); n++)
+			hides += AP_HNE_HidesLevModel(hubModels[n]);
+		CHECK("A6-3: the warp pad marker (STATIC_WARPPAD 0x6c) is hidden on the backdrop",
+		      AP_HNE_HidesLevModel(0x6c) && AP_HNE_MODEL_WARPPAD == 108);
+		CHECK("A6-3: the save box marker (STATIC_SAVEOBJ 0x72) is hidden on the backdrop",
+		      AP_HNE_HidesLevModel(0x72) && AP_HNE_MODEL_SAVEOBJ == 114);
+		CHECK("A6-3: doors, hub doors and boss garages still draw (only the two markers of the hub models hide)",
+		      hides == 2 && !AP_HNE_HidesLevModel(122) && !AP_HNE_HidesLevModel(225) && !AP_HNE_HidesLevModel(115) &&
+		          !AP_HNE_HidesLevModel(119));
+		CHECK("A6-3: no model id, the -1 of an empty slot or a negative id is hidden",
+		      !AP_HNE_HidesLevModel(0) && !AP_HNE_HidesLevModel(-1) && !AP_HNE_HidesLevModel(-108));
+	}
+
 	printf("%s (%d failure%s)\n", failures ? "FAILED" : "PASSED", failures, failures == 1 ? "" : "s");
 	return failures ? 1 : 0;
 }

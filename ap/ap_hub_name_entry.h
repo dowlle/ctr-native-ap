@@ -19,6 +19,12 @@ int AP_HubNameEntry_Active(void);
 // This level load is the backdrop: load it the way the garage loads.
 int AP_HubNameEntry_IsBackdropLevel(int levelID);
 
+// INSTANCE_LevInitAll, after its loop: on the backdrop, hide the level
+// instances whose birth function would hide them (warp pads, the save box),
+// since the backdrop runs no birth functions (A6-3).
+struct InstDef;
+void AP_HubNameEntry_LevInstances(struct InstDef *instDefs, int numInst);
+
 // CS_Garage_Init on the backdrop: set up the screen instead of the garage
 // picker. Returns 1 when it did (the garage init must not run).
 int AP_HubNameEntry_GarageInit(void);
