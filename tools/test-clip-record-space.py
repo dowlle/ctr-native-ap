@@ -79,7 +79,10 @@ int main(void)
 	assert(DrawLevelOvr1P_ShouldWriteRenderedClippedRecord(far, idx, 3) == 0);
 	gStart = NULL;
 	assert(DrawLevelOvr1P_ShouldWriteRenderedClippedRecord(far, idx, 3) == 0);
-	setup(600, 512);
+	/* Cursor past the end of the arena, both inside the array. */
+	gStart = arena;
+	gCursor = arena + 400;
+	gEnd = arena + 256;
 	assert(DrawLevelOvr1P_ShouldWriteRenderedClippedRecord(far, idx, 3) == 0);
 
 	puts("clip record space ok");
@@ -107,7 +110,7 @@ failures = []
 bodies = re.split(r"\n(?=static [^\n;]*\()", text)
 writers = 0
 for body in bodies:
-    if "DrawLevelOvr1P_SetClipRecordCursor(cursor + recordSize)" not in body:
+    if not re.search(r"DrawLevelOvr1P_SetClipRecordCursor\(\s*cursor\b", body):
         continue
     name = re.search(r"(\w+)\(", body.split("\n", 1)[0]).group(1)
     writers += 1
