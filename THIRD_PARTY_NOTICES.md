@@ -359,6 +359,21 @@ Python parts ship as unmodified source files (plus precompiled bytecode).
 - pathspec 1.0.4, Mozilla Public License 2.0. The files are unmodified; the
   source is the shipped `.py` files and https://github.com/cpburnz/python-pathspec.
 
+## Always Jumping trap (AP build only)
+
+Paths: `ap/ap_traps.c`, `ap/ap_traps.h`, `ap/ap_trap_alpha3_logic.h`, and the
+hook in `game/Vehicle/VehPhysGeneral.c`
+
+The Always Jumping trap (the kart hops at every chance it has on the ground) is
+based on the CTR-AlwaysJumpingMod by **AlienGenie**
+(<https://github.com/Tumlee/CTR-AlwaysJumpingMod>). The idea and the method come
+from that mod: force the driver's jump buffer on before the game's ordinary jump
+gate runs. The implementation here is written for this project's own trap
+scheduler and rules; no source file of the mod is included.
+
+License: none claimed for the mod, whose repository carries no license file.
+This entry is a credit for the idea and the method, not a license grant.
+
 ## SDL3
 
 Path: `externals/SDL`

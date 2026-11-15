@@ -90,12 +90,16 @@ wswrap	WSWRAP;BLACK-SLIVER
 nlohmann/json	NLOHMANN JSON;NIELS LOHMANN
 WebSocket++	WEBSOCKET++;PETER THORSON
 Asio	ASIO;CHRIS KOHLHOFF
-Archipelago Logo Marker (AP build only)	MMRECOMPRANDO;KRISTA CORKOS;CHRISTOPHER WILSON
+Archipelago Logo Marker (AP build and authoring client)	MMRECOMPRANDO;KRISTA CORKOS;CHRISTOPHER WILSON
 CTR ModSDK Retro-Fueled mechanics and Blue Fire palette (AP build only)	THEREDHOTBR;AVERY
 AP Box Texture (AP build only)	JURNTHREINAL;KRISTA CORKOS;CHRISTOPHER WILSON
 Cortex Vortex track (AP build only)	LOCKHEART
 SDL3	SDL3;SAM LANTINGA
 CTR Native Expanded controls	THECODINGBOB
+Always Jumping trap (AP build only)	ALIENGENIE
+Solo runtime (AP release archives only)	ARCHIPELAGO;LLCOOLDAVE;BERSERKER66;CPYTHON
+xdelta3 (AP build, box authoring build and authoring client)	XDELTA3;JOSHUA MACDONALD
+utf8proc (AP build, box authoring build and authoring client)	UTF8PROC;STEVEN G. JOHNSON
 EOF
 )"
 
@@ -161,7 +165,7 @@ $EXPECTED_CREDITS
 EOF
 
 # --- 2. Fixed human credits --------------------------------------------------
-for name in DOWLLE ICEBOUND777 TAOR THECODINGBOB SUPERSTARXALIEN; do
+for name in DOWLLE ICEBOUND777 TAOR THECODINGBOB SUPERSTARXALIEN ALIENGENIE; do
 	if ! name_present "$name"; then
 		echo "FAIL: required credit missing from credits data: $name"
 		fail=1
@@ -189,6 +193,7 @@ done <<'EOF'
 OPTIONS MENU - THECODINGBOB
 GRAPHICS OPTIONS - THECODINGBOB
 RESERVES METER - SUPERSTARXALIEN
+ALWAYS JUMPING TRAP - ALIENGENIE
 EOF
 
 # --- 4. Glyph set + line width ----------------------------------------------
