@@ -1574,10 +1574,14 @@ static unsigned long CustomTrackPolicy_PrimArenaBytes(int servingCustomTrack, in
 // the 1 MiB floor (A5-13). Everything else, including a retail 1P load with the
 // option on and every load with it off, gets exactly what
 // CustomTrackPolicy_PrimArenaBytes gives. Also a floor: a larger size is kept.
+// Like every draw-distance arena, the size is chosen at level load: turning
+// the option on mid-race (or restoring a checkpoint taken with it off) keeps
+// the 1 MiB arena until the next load, where a dense frame can lose the rest
+// of its terrain, as before this raise.
 //
 // Ceilings for the raise, asserted in tools/test-custom-track-policy.c:
-// GPU link tokens, two arenas at 1.5 MiB plus the OT and swapchain pairs are
-// 3,170,352 of 15,728,640; MEMPACK, measured on North Pole 1.1.0 (8 karts,
+// GPU link tokens, two arenas at 1.5 MiB plus the grown OT pair and the
+// swapchain pair are 3,219,504 of 15,728,640; MEMPACK, measured on North Pole 1.1.0 (8 karts,
 // Arcade) at 3,366,880 bytes free in the race with the raise, and the densest
 // other local tracks keep more (see the A5-13 note).
 static unsigned long CustomTrackPolicy_PrimArenaBytesWithDrawDistance(int servingCustomTrack, int numPlyrCurrGame, unsigned long retailBytes,

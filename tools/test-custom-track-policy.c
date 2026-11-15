@@ -1419,12 +1419,12 @@ static void test_prim_arena_bytes_draw_distance(void)
 	// The ceilings, as for the 1 MiB floor.
 	{
 		const unsigned long tokenBudget = 0x00f00000uL;
-		const unsigned long otPair = 2uL * 0x2000uL;
+		const unsigned long otPair = 2uL * 0x2000uL * 4uL; // the 1P OT grows by the draw-distance factor on this load
 		const unsigned long swapPair = 2uL * ((1uL << 12) | 0x18uL);
 		const unsigned long registered = 2uL * CTR_CT_PRIM_ARENA_BYTES_DRAW_DISTANCE + otPair + swapPair;
 
-		expect_int(registered == 3170352uL, 1, "both raised arenas plus OT and swapchain are 3,170,352 bytes");
-		expect_int(registered * 3 < tokenBudget, 1, "a fifth of the GPU link token space");
+		expect_int(registered == 3219504uL, 1, "both raised arenas plus the grown OT pair and swapchain are 3,219,504 bytes");
+		expect_int(registered * 4 < tokenBudget, 1, "under a quarter of the GPU link token space");
 
 		// MEMPACK: the raise costs 1 MiB over the 1 MiB floor. Measured free in
 		// the North Pole race with it: 3,366,880.
