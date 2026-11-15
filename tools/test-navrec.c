@@ -1650,6 +1650,9 @@ int main(void)
 		unsigned int             seed;
 		unsigned int             i;
 
+		// Off is the old picker, draw for draw (value captured from origin/main).
+		check(OffPathFingerprint() == 0xa86b968cU, "repeat off: picks, reads and read order match the picker before A5-7 for 240 pools and seeds");
+
 		// Off: one lane per contributor, whatever the pool holds.
 		FakeReset(3);
 		FakeAdd(1, "Dex", 3, 0);
@@ -1666,9 +1669,6 @@ int main(void)
 			}
 			check(one, "repeat off: one contributor with three files and nine laps still races one lap on one lane, one full read");
 		}
-
-		// Off is the old picker, draw for draw (value captured from origin/main).
-		check(OffPathFingerprint() == 0xa86b968cU, "repeat off: picks, reads and read order match the picker before A5-7 for 240 pools and seeds");
 
 		// On, one contributor, several files: every free lane is filled from
 		// a different file, and no lap repeats.
