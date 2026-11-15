@@ -226,15 +226,19 @@ void MainInit_PrimMem(struct GameTracker *gGT)
 #ifdef CTR_CUSTOM_TRACKS
 	// increase_draw_distance draws up to four times as far, through more
 	// subdivided quadblocks, and the level renderer abandons the rest of the
-	// frame's terrain when this arena runs out. With the option on at level
-	// load the retail budget grows by NATIVE_DRAW_DISTANCE_SCALE (Expanded
-	// e86365e10b scales it the same way, unconditionally). Only in this build:
+	// frame's terrain when this arena runs out. The retail budget grows by
+	// NATIVE_DRAW_DISTANCE_SCALE on a 1P load with the option on at level load,
+	// and on every split-screen (2P to 4P) load whatever the option says, so
+	// turning it on mid-race in split screen works at once (the main menu and
+	// cutscenes are not split screen, though the main menu loads with 4) (Expanded
+	// e86365e10b scales every load, unconditionally). Only in this build:
 	// CTR_CUSTOM_TRACKS is what selects the 8 MiB MEMPACK, and the retail
-	// window has no room for it. With the option off the size is untouched.
+	// window has no room for it. A 1P load with the option off is untouched.
 	// The 1P floor below still applies on top; the scaled retail 1P budget
 	// never exceeds it, so in 1P this changes nothing, and in 2P to 4P it is
 	// the whole increase.
-	size = NativeDrawDistance_ArenaBytes(size, g_config.increaseDrawDistance);
+	size = NativeDrawDistance_ArenaBytes(size, NativeDrawDistance_ArenaGrows(g_config.increaseDrawDistance, gGT->numPlyrCurrGame,
+	                                                                          (gGT->gameMode1 & (MAIN_MENU | GAME_CUTSCENE)) != 0));
 
 	// MainInit_GetPrimMemSize is left alone deliberately -- it is an
 	// ASM-verified retail function and its answer stays exactly what retail
@@ -357,9 +361,11 @@ void MainInit_OTMem(struct GameTracker *gGT)
 EndFunc:
 
 #ifdef CTR_CUSTOM_TRACKS
-	// The ordering-table arena grows with the primitive arena when
-	// increase_draw_distance is on at level load (see MainInit_PrimMem).
-	size = NativeDrawDistance_ArenaBytes(size, g_config.increaseDrawDistance);
+	// The ordering-table arena grows with the primitive arena: on a 1P load
+	// with increase_draw_distance on, and on every split-screen load (see
+	// MainInit_PrimMem).
+	size = NativeDrawDistance_ArenaBytes(size, NativeDrawDistance_ArenaGrows(g_config.increaseDrawDistance, gGT->numPlyrCurrGame,
+	                                                                          (gameMode & (MAIN_MENU | GAME_CUTSCENE)) != 0));
 #endif
 
 	MainDB_OTMem(&gGT->db[0].otMem, size);

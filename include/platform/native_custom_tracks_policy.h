@@ -195,8 +195,12 @@
 //
 //    So the floor is widened on headroom, not on a proven exhaustion: every
 //    1P level load (numPlyrCurrGame == 1) gets it. 2P/3P/4P and the
-//    numPlyrCurrGame == 0 attract path keep their retail arenas, because
-//    nothing has been measured for them.
+//    numPlyrCurrGame == 0 attract path do not get it on headroom grounds
+//    (only when they serve a custom track's bytes), because nothing had been
+//    measured for them. (Since A5-4b split-screen races get a
+//    different raise instead: their arenas always grow by the draw-distance
+//    factor, see NativeDrawDistance_ArenaGrows in
+//    include/platform/native_draw_distance.h.)
 //
 //    THE FOURTH CEILING, checked for the widening and asserted with the other
 //    three: MEMPACK has room for the floor on EVERY 1P load, not just the
@@ -1524,9 +1528,12 @@ static int CustomTrackPolicy_PrimFits(const void *cursor, unsigned long primSize
 // computed, raised to CTR_CT_PRIM_ARENA_BYTES when this load qualifies for the
 // floor. Decision 8 above.
 //
-// `retailBytes` is the retail answer for this load -- a table lookup
-// (data.primMem_SizePerLEV_1P and its 2P/4P siblings) or one of the four
-// constants MainInit_GetPrimMemSize returns for the non-arcade cases.
+// `retailBytes` is the size this load has before the floor: the retail answer
+// -- a table lookup (data.primMem_SizePerLEV_1P and its 2P/4P siblings) or one
+// of the four constants MainInit_GetPrimMemSize returns for the non-arcade
+// cases -- times NATIVE_DRAW_DISTANCE_SCALE when MainInit_PrimMem grows it for
+// Increase Draw Distance (any load with the option on at level load, and
+// every split-screen race even with it off).
 //
 // Two independent reasons to raise it, either one sufficient:
 //   servingCustomTrack -- the slot's budget was chosen for someone else's
@@ -1535,8 +1542,9 @@ static int CustomTrackPolicy_PrimFits(const void *cursor, unsigned long primSize
 //   numPlyrCurrGame == 1 -- measured headroom. The hub's worst frame sat at
 //     93% of a constant the PS1 chose, and a frame that crosses it loses the
 //     rest of level rendering silently.
-// Everything else keeps its retail bytes exactly: split-screen, the attract
-// path, and every load in a build without CTR_CUSTOM_TRACKS.
+// Everything else keeps the size it was given: split-screen, the attract path,
+// and every load in a build without CTR_CUSTOM_TRACKS (which keeps retail's
+// bytes exactly).
 //
 // The expansion is a floor, not a replacement: a load whose retail budget is
 // already larger than CTR_CT_PRIM_ARENA_BYTES keeps it, so no load can ever be
