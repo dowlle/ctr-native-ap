@@ -52,10 +52,15 @@ int main(void) {
         ap_itemsanity_owned[weapon] = 1;
         for (int level = 18; level <= 24; level++) {
             gt.levelID = level; gt.gameMode1 = ADVENTURE_MODE | CRYSTAL_CHALLENGE;
+            fruit = 0;
             VehPhysGeneral_SetHeldItem(&local);
-            // A4-46: an arena has no path for Warp Ball, so a lone Warp Ball
-            // unlock leaves the slot empty instead of arming a crashing weapon.
-            assert(local.heldItemID == (ids[weapon] == 9 ? AP_ITEMSANITY_NO_ITEM : ids[weapon]));
+            assert(fruit == 0);
+            // A5-8: a Crystal Challenge hands out only Turbo, Bomb, Missile, Shield,
+            // Mask and the x3 variants. TNT/Nitro, Beaker, Clock and Warp Ball (ids
+            // 3, 4, 8, 9; Warp Ball also by A4-46, an arena has no path for it)
+            // leave the slot empty, with no consolation fruit.
+            int excluded = ids[weapon] == 3 || ids[weapon] == 4 || ids[weapon] == 8 || ids[weapon] == 9;
+            assert(local.heldItemID == (excluded ? AP_ITEMSANITY_NO_ITEM : ids[weapon]));
             if (weapon >= 9) assert(local.numHeldItems == 3);
         }
         for (int rank = -1; rank <= 1; rank++) for (int lost = 0; lost < 7; lost++) {
@@ -66,12 +71,33 @@ int main(void) {
         }
     }
     // A4-46: with every weapon unlocked, no roll in any arena may settle on Warp Ball.
+    unsigned seenArena = 0;
     memset(ap_itemsanity_owned, 1, sizeof ap_itemsanity_owned);
     for (int level = 18; level <= 24; level++) for (int r = 0; r < 64; r++) {
         gt.levelID = level; gt.gameMode1 = ADVENTURE_MODE | CRYSTAL_CHALLENGE;
         rng = r; local.driverRank = 1;
         VehPhysGeneral_SetHeldItem(&local);
         assert(local.heldItemID != 9);
+        // A5-8: with everything unlocked, every roll stays in the useful set.
+        assert(local.heldItemID == 0 || local.heldItemID == 1 || local.heldItemID == 2 ||
+               local.heldItemID == 6 || local.heldItemID == 7 ||
+               local.heldItemID == 10 || local.heldItemID == 11);
+        seenArena |= 1u << local.heldItemID;
+    }
+    assert(seenArena == 0xCC7u); // ids 0,1,2,6,7,10,11 all appear
+    // Boss races still yield every unlocked weapon, excluded ones included.
+    {
+        unsigned seenBoss = 0;
+        for (int i = 0; i < 20; i++) table[i] = (u8)(i % 12);
+        gt.levelID = DRAGON_MINES; gt.gameMode1 = ADVENTURE_MODE | ADVENTURE_BOSS;
+        for (int r = 0; r < 400; r++) for (int rank = -1; rank <= 1; rank++) {
+            rng = r; local.driverRank = rank;
+            gt.gameMode1 = ADVENTURE_MODE | ADVENTURE_BOSS; // clear WARPBALL_HELD
+            VehPhysGeneral_SetHeldItem(&local);
+            seenBoss |= 1u << local.heldItemID;
+        }
+        assert((seenBoss & 0xF18u) == 0xF18u); // TNT 3, Beaker 4, Clock 8, Warp Ball 9, x3 10, 11
+        memset(table, 0, sizeof table);
     }
     memset(ap_itemsanity_owned, 0, sizeof ap_itemsanity_owned);
     fruit = 0; gt.gameMode1 = ADVENTURE_MODE | CRYSTAL_CHALLENGE;

@@ -213,7 +213,8 @@ int AP_TrapRerollFilterArena(struct Driver *driver, int rolled, unsigned roll)
 }
 
 // Arena grants bypass the ordinary roulette filter. Under Itemsanity, A4-12
-// draws from all received weapons instead of the arena's fixed Bomb/Turbo.
+// draws from received weapons instead of the arena's fixed Bomb/Turbo; A5-8
+// narrows that to the useful five families (see CRYSTAL_EXCLUDED_IDS).
 // No unlocks means an empty slot with no fruit, retaining the 2026-08-21 rule.
 int AP_ItemsanityFilterCrystalGrant(struct Driver *driver, int proposed, unsigned roll)
 {
@@ -243,22 +244,31 @@ int AP_ItemsanitySubstituteOwned(struct Driver *driver, int proposed,
 {
 	struct GameTracker *gGT = sdata->gGT;
 	int filtered;
+	int crystal;
+	unsigned crystalMask;
 	if (!gGT || !AP_ItemsanityShouldFilter(AP_ItemsanityActive(),
 	    driver == gGT->drivers[0], (gGT->gameMode1 & ADVENTURE_MODE) != 0,
 	    (gGT->gameMode1 & BATTLE_MODE) != 0,
 	    (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0))
 		return proposed;
 
-	filtered = AP_ItemsanitySubstituteDownstream(proposed, roll, table,
-	                                            tableCount, ap_itemsanity_owned);
+	// A5-8: a Crystal Challenge cap rewrite stays inside the useful pool too.
+	crystal = (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0;
+	crystalMask = crystal ? AP_ITEMSANITY_CRYSTAL_EXCLUDED_IDS : 0;
+	(void)table;
+	(void)tableCount;
+	filtered = AP_ItemsanitySubstituteDownstreamMasked(proposed, roll, crystalMask,
+	                                                  ap_itemsanity_owned);
 	if (AP_ItemsanityUnlockedPool(driver))
 	{
 		// A cap may rewrite a safe draw back into Item Reroll's discarded
 		// weapon. Reapply its guard without reissuing either capped weapon:
 		// their bookkeeping has already run by this point.
 		filtered = AP_TrapRerollFilterPool(driver, filtered, roll,
-		                                  AP_ITEMSANITY_CAPPED_IDS);
+		                                  AP_ITEMSANITY_CAPPED_IDS | crystalMask);
 	}
+	if (filtered == AP_ITEMSANITY_NO_ITEM && crystal)
+		return filtered; // arena keeps the A4-12 empty slot without fruit
 	if (filtered == AP_ITEMSANITY_NO_ITEM)
 	{
 		// Same ruled Empty Crates shape as the draw filter.

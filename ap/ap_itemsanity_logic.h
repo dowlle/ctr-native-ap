@@ -220,20 +220,27 @@ static int AP_ItemsanitySubstituteRoll(int rolled, unsigned roll,
 // Every ordinary substitution goes through here; the Crystal Challenge hardcode
 // is the only remaining ruled bypass. Both capped ids are always excluded, per
 // AP_ITEMSANITY_CAPPED_IDS.
-static int AP_ItemsanitySubstituteDownstream(int proposed, unsigned roll,
+static int AP_ItemsanitySubstituteDownstreamMasked(int proposed, unsigned roll,
+	unsigned extraExcluded, const unsigned char owned[AP_ITEMSANITY_WEAPON_COUNT])
+{
+	int canonical = AP_ItemsanityCanonicalWeapon(proposed);
+	if (AP_ItemsanityRollAllowed(proposed, owned) &&
+	    !(canonical >= 0 && canonical < 32 &&
+	      (extraExcluded & AP_ITEMSANITY_ID_BIT(canonical))))
+		return proposed;
+	return AP_ItemsanitySelectOwned(roll, AP_ITEMSANITY_CAPPED_IDS | extraExcluded,
+	                                AP_ITEMSANITY_FULL_POOL,
+	                                AP_ITEMSANITY_FULL_POOL_SIZE, owned);
+}
+
+// Unmasked form (boss races, ordinary rolls): the full unlocked pool.
+static inline int AP_ItemsanitySubstituteDownstream(int proposed, unsigned roll,
 	const unsigned char *table, int tableCount,
 	const unsigned char owned[AP_ITEMSANITY_WEAPON_COUNT])
 {
 	(void)table;
 	(void)tableCount;
-	if (AP_ItemsanityRollAllowed(proposed, owned))
-		return proposed;
-	// Same full pool as the draw filter, but the two capped ids stay excluded:
-	// this runs AFTER vanilla's single-warpball and 3-missile caps, so handing
-	// one back here would undo the cap that just ran.
-	return AP_ItemsanitySelectOwned(roll, AP_ITEMSANITY_CAPPED_IDS,
-	                                AP_ITEMSANITY_FULL_POOL,
-	                                AP_ITEMSANITY_FULL_POOL_SIZE, owned);
+	return AP_ItemsanitySubstituteDownstreamMasked(proposed, roll, 0, owned);
 }
 
 // A4-46: Warp Ball steers along the track's restart-point path. A Crystal
@@ -253,11 +260,18 @@ static inline int AP_WarpballPathUsable(int battleOrCrystal, int restartCount,
 	return !battleOrCrystal && hasRestartTable && restartCount >= 3;
 }
 
-// Arena weapon pool mask: every Crystal Challenge draw excludes Warp Ball, so
-// a lone Warp Ball unlock leaves the slot empty (the same ruled shape as no
-// unlocks at all).
-#define AP_ITEMSANITY_ARENA_EXCLUDED_IDS \
-	AP_ITEMSANITY_ID_BIT(AP_ITEMSANITY_WARPBALL_ID)
+// Crystal Challenge weapon pool mask (A5-8). Ruled 2026-11-15: a
+// Crystal Challenge with Itemsanity draws only from the useful weapons the
+// player has unlocked. Allowed held ids: 0 Turbo, 1 Bomb, 2 Missile, 6 Shield
+// Bubble, 7 Mask, 10 Bomb x3, 11 Missile x3 (Spring, id 5, canonicalises to
+// Turbo). Excluded: 3 TNT/Nitro, 4 Beaker, 8 N. Tropy Clock and 9 Warp Ball.
+// Warp Ball was already excluded by A4-46 (no restart-point path in an arena),
+// so a lone excluded unlock leaves the slot empty, the same ruled shape as no
+// unlocks at all. Boss races keep the full unlocked pool.
+#define AP_ITEMSANITY_CRYSTAL_EXCLUDED_IDS \
+	(AP_ITEMSANITY_ID_BIT(3) | AP_ITEMSANITY_ID_BIT(4) | \
+	 AP_ITEMSANITY_ID_BIT(8) | AP_ITEMSANITY_ID_BIT(AP_ITEMSANITY_WARPBALL_ID))
+#define AP_ITEMSANITY_ARENA_EXCLUDED_IDS AP_ITEMSANITY_CRYSTAL_EXCLUDED_IDS
 
 // Boss-race catch-up ladder, strongest rung first. Retail's block names only
 // two of these ids itself (Missile x3 as the escalation target, single Missile
