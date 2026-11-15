@@ -18,7 +18,10 @@ them where the garage is special today:
   engine facts the C harness's menu model rests on still hold (ProcessState
   runs only while a menu is shown; only ProcessState turns the desired menu
   into the shown one), with nothing showing a menu over the hub before it;
-  a held Enter or button is ignored by name entry itself (A4-87b).
+  a held Enter or button is ignored by name entry itself (A4-87b);
+- A4-90: New Adventure picks a camera path of the picked hub from the pool,
+  the camera runs that path, a hub with no path is not usable, and the pool
+  is the generated table (no option, no config switch).
 """
 from pathlib import Path
 import re
@@ -185,6 +188,26 @@ check("A4-87 model fact 2: only RECTMENU_ProcessState turns the desired menu int
       promotes and not copies)
 for c in copies:
     print("      other copy: " + c)
+
+newadv = body(glue, "int AP_HubNameEntry_NewAdventureLevel(")
+begin = newadv.find("AP_HNE_BeginNewAdventure(")
+pick = newadv.find("AP_HNE_PickPath(&s_apHne, s_apHnePaths, AP_HNE_PATHS, level - AP_HNE_FIRST_HUB_LEVEL);")
+check("A4-90: New Adventure picks the hub first, then a path of that hub", 0 <= begin < pick)
+check("A4-90: the camera runs the picked path of the pool",
+      "hp = &s_apHnePaths[s_apHne.path];" in onframe_glue
+      and "AP_HNE_CameraAt(hp->stops, hp->count, s_apHne.elapsedMs, eye, look);" in onframe_glue
+      and "s_apHneStops" not in glue)
+check("A4-90: the camera aims above the landmark so name entry does not cover it",
+      "rot[0] = (rot[0] + AP_HNE_AIM_ABOVE) & 0xfff;" in onframe_glue
+      and onframe_glue.find("AP_HNE_LookRotation(eye, look, rot);") < onframe_glue.find("AP_HNE_AIM_ABOVE")
+      and onframe_glue.find("AP_HNE_AIM_ABOVE") < onframe_glue.find("pb->rot.x = (s16)rot[0];"))
+check("A4-90: a hub with no camera path is not usable",
+      "AP_HNE_PathsForHub(s_apHnePaths, AP_HNE_PATHS, hub) < 1" in body(glue, "static int AP_HNE_HubUsable("))
+stops = read("ap/ap_hub_name_entry_stops.h")
+check("A4-90: the pool is the generated data table", "static const struct AP_HNE_Path s_apHnePaths[] = {" in stops
+      and "#define AP_HNE_PATHS" in stops)
+check("A4-90: no option or config switch for the paths",
+      "config" not in glue.lower() and "getenv" not in glue and "slot_data" not in glue)
 
 unity = read("game/game_unity.h")
 check("the glue is a unity member after the save box unit, its header among the AP headers",

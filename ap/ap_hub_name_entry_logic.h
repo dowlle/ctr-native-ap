@@ -53,6 +53,8 @@ struct AP_HubNameEntryState
 	unsigned rng;      // xorshift32 state
 	int handedOff;     // the racer is committed and name entry requested
 	unsigned elapsedMs; // camera clock since the hub came up
+	int path;          // camera path of this showing (index into the path table), -1 when none
+	int lastPath[AP_HNE_HUBS]; // the path each hub showed last time, -1 before its first (A4-90)
 };
 
 static inline void AP_HNE_Reset(struct AP_HubNameEntryState *s)
@@ -61,6 +63,7 @@ static inline void AP_HNE_Reset(struct AP_HubNameEntryState *s)
 	s->hubLevel = -1;
 	s->handedOff = 0;
 	s->elapsedMs = 0;
+	s->path = -1;
 }
 
 // Can this hub's files load as a backdrop? Every size comes from the disc's
@@ -216,6 +219,56 @@ struct AP_HNE_Stop
 	int eye[3];
 	int look[3];
 };
+
+// A4-90: a pool of camera paths, several per hub (ap/ap_hub_name_entry_stops.h).
+// Each New Adventure picks the hub first, as before: a random usable hub,
+// never the same hub twice in a row. Then a random path of that hub, never the
+// one that hub showed the last time it came up (when it has another). So the
+// same path never shows twice in a row either, and each path of a hub comes up
+// equally often.
+struct AP_HNE_Path
+{
+	int hub; // 0 Gem Stone Valley .. 4 Citadel City
+	int count;
+	struct AP_HNE_Stop stops[3];
+};
+
+static inline int AP_HNE_PathsForHub(const struct AP_HNE_Path *paths, int n, int hub)
+{
+	int i, c = 0;
+	for (i = 0; i < n; i++)
+		c += paths[i].hub == hub && paths[i].count >= 1;
+	return c;
+}
+
+// Sets s->path for the hub of this showing and remembers it for that hub.
+// Returns the path index, -1 when the hub has no path (the preflight refuses
+// such a hub, so this does not happen on the shipped table).
+static inline int AP_HNE_PickPath(struct AP_HubNameEntryState *s, const struct AP_HNE_Path *paths, int n, int hub)
+{
+	int choices[64];
+	int i, c = 0, last;
+	if (hub < 0 || hub >= AP_HNE_HUBS)
+		return s->path = -1;
+	last = s->lastPath[hub];
+	for (i = 0; i < n && c < 64; i++)
+		if (paths[i].hub == hub && paths[i].count >= 1 && i != last)
+			choices[c++] = i;
+	if (c == 0 && last >= 0 && last < n && paths[last].hub == hub && paths[last].count >= 1)
+		choices[c++] = last;
+	if (c == 0)
+		return s->path = -1;
+	s->path = choices[AP_HNE_NextRandom(&s->rng) % (unsigned)c];
+	s->lastPath[hub] = s->path;
+	return s->path;
+}
+
+// Name entry covers the middle of the screen (its box runs from about 18% to
+// 78% of the height). The camera therefore aims this much above the landmark,
+// in the engine's 4096 units per turn (about 21 degrees), so the landmark sits
+// in the free band below the box instead of behind the keyboard (A4-90,
+// measured in headless frames with name entry drawn).
+#define AP_HNE_AIM_ABOVE 240
 
 #define AP_HNE_HOLD_MS 2500u
 #define AP_HNE_GLIDE_MS 6000u
