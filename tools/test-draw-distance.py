@@ -231,6 +231,19 @@ for field in ("topLevelNearDepthThreshold", "recursiveNearDepthThreshold"):
     assigns = re.findall(r"scratch->" + field + r" = (\w+)\(", lod_flat)
     check(len(assigns) == 4 and all(a == "NativeDrawDistance_SubdivisionThreshold" for a in assigns),
           "all four %s assignments use NativeDrawDistance_SubdivisionThreshold (%s)" % (field, ", ".join(assigns)))
+# The renderer reads the two subdivision thresholds by scratch offset: 0x24 top-level, 0x28 recursive.
+main_h = read("include/namespace_Main.h")
+check("offsetof(struct MainRenderLevelGeometryScratch, topLevelNearDepthThreshold) == 0x24" in main_h and
+      "offsetof(struct MainRenderLevelGeometryScratch, recursiveNearDepthThreshold) == 0x28" in main_h,
+      "the subdivision thresholds sit at scratch 0x24 and 0x28")
+ovr1p = read("game/226/226_00_DrawLevelOvr1P.c")
+check("return DrawLevelOvr1P_GetProjectedNearMaskAtScratchOffset(projected, indices, 0x24);" in ovr1p and
+      "return DrawLevelOvr1P_GetProjectedNearMaskAtScratchOffset(projected, indices, 0x28);" in ovr1p,
+      "the top-level and recursive near masks read scratch 0x24 and 0x28")
+near_args = set(re.findall(r"DrawLevelOvr1P_GetProjectedNearMaskAtScratchOffset\(projected, indices, (\w+)\)", ovr1p))
+check(near_args <= {"0x24", "0x28", "scratchOffset", "thresholdScratchOffset"}, "near masks only read the subdivision thresholds (%s)" % ", ".join(sorted(near_args)))
+offset_args = set(re.findall(r"(0x[0-9a-fA-F]+), (?:inheritedOtIndex|otIndexOverride)\)", ovr1p)) | set(re.findall(r"directMask, (0x[0-9a-fA-F]+)\)", ovr1p))
+check(offset_args <= {"0x24", "0x28"}, "every threshold offset handed to a near-subdivision dispatcher is 0x24 or 0x28 (%s)" % ", ".join(sorted(offset_args)))
 for field in ("textureLodDepthThreshold0", "textureLodDepthThreshold1"):
     assigns = re.findall(r"scratch->" + field + r" = (\w+)\(", lod_flat)
     check(len(assigns) == 4 and all(a == "NativeDrawDistance_TextureLodThreshold" for a in assigns),
