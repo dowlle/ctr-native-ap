@@ -4,6 +4,7 @@
 #include "ap_coop_logic.h"
 #include "ap_capability.h"
 #include "ap_charswap.h"
+#include "ap_hooks.h"
 #include "ap_net.h"
 
 static const char *ap_coop_help = "Hub only; connect two controllers.";
@@ -106,6 +107,13 @@ void AP_CoopPrepareLoad(struct GameTracker *gt)
 	gt->numPlyrCurrGame = two ? 2 : 1;
 	/* Hub and unsupported races are always solo, without losing the preference. */
 	gt->numPlyrNextGame = 1;
+	if (g_config.coopAdventure == 1 && !two &&
+	    !(mode & (ADVENTURE_ARENA | MAIN_MENU | GAME_CUTSCENE)))
+	{
+		AP_FeedNoticeLine(AP_CoopControllers() < 2 ? "P2 DISCONNECTED: SOLO RACE" :
+		    !AP_CoopRacerUnlocked(g_config.coopRacer) ? "P2 RACER LOCKED: SOLO RACE" :
+	    "P2 SITS THIS RACE OUT");
+	}
 	if (two)
 	{
 		data.characterIDs[1] = g_config.coopRacer;

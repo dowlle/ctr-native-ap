@@ -14,9 +14,11 @@ ctr_seed_config ctr_cfg;
 static int active = 1, packedValue, known, writes;
 static unsigned revision;
 static unsigned unlocked = 1u;
+static char notice[64];
 int ctr_cfg_active(void) { return active; }
 int AP_CharacterUnlocked(int racer) { return (unlocked >> racer) & 1u; }
 void AP_CharSwap_ApplyStatPackage(struct Driver *driver) { (void)driver; }
+void AP_FeedNoticeLine(const char *text) { snprintf(notice, sizeof notice, "%s", text); }
 void ap_net_coop_set(int packed) { packedValue = packed; writes++; known = 1; }
 int ap_net_coop_known(int *out) { *out = packedValue; return known; }
 unsigned ap_net_coop_revision(void) { return revision; }
@@ -101,11 +103,13 @@ int main(void)
 	gt.gameMode2 = TOKEN_RACE;
 	AP_CoopPrepareLoad(&gt);
 	assert(gt.numPlyrCurrGame == 1);
+	assert(strstr(notice, "SITS THIS RACE OUT"));
 	gt.gameMode2 = 0;
 	pads.numGamepadsConnected = 1;
 	pads.gamepadsConnectedByFlag = 1;
 	AP_CoopPrepareLoad(&gt);
 	assert(gt.numPlyrCurrGame == 1);
+	assert(strstr(notice, "DISCONNECTED"));
 	gt.gameMode1 |= ADVENTURE_ARENA;
 	AP_CoopStep(-1); /* solo remains available after P2 disconnects */
 	assert(!g_config.coopAdventure);
