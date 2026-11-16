@@ -249,7 +249,7 @@ grow_ot = ("size = NativeDrawDistance_ArenaBytes(size, NativeDrawDistance_ArenaG
 def at(body, pair):
     i = body.find(pair[0])
     return i if i >= 0 and body.find(pair[1], i) >= 0 and body.find(pair[1], i) - i < 300 else -1
-check(at(prim, grow_prim) >= 0 and prim.index("#ifdef CTR_CUSTOM_TRACKS") < at(prim, grow_prim) < prim.index("CustomTrackPolicy_PrimArenaBytes("),
+check(at(prim, grow_prim) >= 0 and prim.index("#ifdef CTR_CUSTOM_TRACKS") < at(prim, grow_prim) < prim.index("CustomTrackPolicy_PrimArenaBytesWithDrawDistance("),
       "prim arena scales inside CTR_CUSTOM_TRACKS, by the option, the player count and the menu/cutscene test, before the custom-track floor")
 check(at(ot, grow_ot) >= 0 and ot.index("#ifdef CTR_CUSTOM_TRACKS") < at(ot, grow_ot) < ot.index("MainDB_OTMem(&gGT->db[0].otMem, size);"),
       "OT arena scales inside CTR_CUSTOM_TRACKS, by the same rule, before it is allocated")
@@ -264,6 +264,12 @@ scale = int(re.search(r"#define NATIVE_DRAW_DISTANCE_SCALE (\d+)", dd).group(1))
 retail_prim_max = 255 << 10  # u8 << 10, the per-level table ceiling, larger than every constant branch
 retail_ot_max = 0x8000  # battle
 check(retail_prim_max * scale <= floor, "scaled 1P retail budget never exceeds the 1P floor, so 1P allocates what it did before")
+# A5-13: a served custom track in 1P with the option on gets the raised floor, through the policy, with the option at level load
+dd_floor = int(re.search(r"#define CTR_CT_PRIM_ARENA_BYTES_DRAW_DISTANCE (0x[0-9A-Fa-f]+)", policy).group(1), 16)
+check(floor < dd_floor <= floor * 2, "the draw-distance custom-track floor is above the 1P floor and at most twice it")
+check("CustomTrackPolicy_PrimArenaBytesWithDrawDistance(serving, gGT->numPlyrCurrGame, (unsigned long)size," in prim and "g_config.increaseDrawDistance);" in prim,
+      "the prim arena asks the draw-distance policy with the option at level load")
+floor = max(floor, dd_floor)
 token_budget = 0x00F00000
 worst = 2 * max(floor, retail_prim_max * scale) + 2 * retail_ot_max * scale + 2 * ((4 << 12) | 0x18)
 check(worst < token_budget // 2, "worst prim plus OT pair stays under half the GPU link token budget (%d of %d)" % (worst, token_budget))

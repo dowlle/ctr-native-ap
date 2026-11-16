@@ -1374,6 +1374,69 @@ static void test_prim_arena_bytes(void)
 }
 
 // ---------------------------------------------------------------------------
+// 11b. The primitive arena with Increase Draw Distance (A5-13).
+// ---------------------------------------------------------------------------
+
+static void test_prim_arena_bytes_draw_distance(void)
+{
+	const unsigned long retailSlot6 = 0x67uL << 10; // 105,472
+	const unsigned long scaledSlot6 = retailSlot6 * 4uL; // 421,888, what MainInit_PrimMem hands in with the option on
+
+	// Option off: exactly the old answer, for every reason and player count.
+	expect_int(CustomTrackPolicy_PrimArenaBytesWithDrawDistance(1, 1, retailSlot6, 0) == CTR_CT_PRIM_ARENA_BYTES, 1,
+	           "a served custom track with the option off keeps the 1 MiB floor");
+	expect_int(CustomTrackPolicy_PrimArenaBytesWithDrawDistance(0, 1, retailSlot6, 0) == CTR_CT_PRIM_ARENA_BYTES, 1,
+	           "so does a retail 1P load");
+	expect_int(CustomTrackPolicy_PrimArenaBytesWithDrawDistance(0, 2, retailSlot6, 0) == retailSlot6, 1,
+	           "and split screen keeps what it was handed");
+
+	// Option on: only a served custom track in 1P gets the raise.
+	expect_int(CustomTrackPolicy_PrimArenaBytesWithDrawDistance(1, 1, scaledSlot6, 1) == CTR_CT_PRIM_ARENA_BYTES_DRAW_DISTANCE, 1,
+	           "a served custom track in 1P with the option on gets 1.5 MiB");
+	expect_int(CustomTrackPolicy_PrimArenaBytesWithDrawDistance(0, 1, scaledSlot6, 1) == CTR_CT_PRIM_ARENA_BYTES, 1,
+	           "a retail 1P load with the option on keeps the 1 MiB floor");
+	expect_int(CustomTrackPolicy_PrimArenaBytesWithDrawDistance(1, 2, scaledSlot6, 1) == CTR_CT_PRIM_ARENA_BYTES, 1,
+	           "a served track at another player count keeps the 1 MiB floor");
+	expect_int(CustomTrackPolicy_PrimArenaBytesWithDrawDistance(0, 2, scaledSlot6, 1) == scaledSlot6, 1,
+	           "and retail split screen keeps the scaled retail size");
+
+	// A floor: never shrinks a larger size.
+	expect_int(CustomTrackPolicy_PrimArenaBytesWithDrawDistance(1, 1, CTR_CT_PRIM_ARENA_BYTES_DRAW_DISTANCE + 4096uL, 1) ==
+	               CTR_CT_PRIM_ARENA_BYTES_DRAW_DISTANCE + 4096uL,
+	           1, "a larger arena is kept");
+
+	// What it was sized against: North Pole 1.1.0, Arcade, 8 karts, option on,
+	// measured with a 1.5 MiB test arena (A5-13, 2026-11-15).
+	{
+		const unsigned long northPoleWorst = 1154084uL;
+
+		expect_int(northPoleWorst > CTR_CT_PRIM_ARENA_BYTES, 1, "North Pole's worst frame does not fit the 1 MiB floor");
+		expect_int(northPoleWorst < CTR_CT_PRIM_ARENA_BYTES_DRAW_DISTANCE, 1, "it fits the raised floor");
+		expect_int((CTR_CT_PRIM_ARENA_BYTES_DRAW_DISTANCE - northPoleWorst) * 4uL > CTR_CT_PRIM_ARENA_BYTES_DRAW_DISTANCE, 1,
+		           "with more than a quarter spare");
+	}
+
+	// The ceilings, as for the 1 MiB floor.
+	{
+		const unsigned long tokenBudget = 0x00f00000uL;
+		const unsigned long otPair = 2uL * 0x2000uL * 4uL; // the 1P OT grows by the draw-distance factor on this load
+		const unsigned long swapPair = 2uL * ((1uL << 12) | 0x18uL);
+		const unsigned long registered = 2uL * CTR_CT_PRIM_ARENA_BYTES_DRAW_DISTANCE + otPair + swapPair;
+
+		expect_int(registered == 3219504uL, 1, "both raised arenas plus the grown OT pair and swapchain are 3,219,504 bytes");
+		expect_int(registered * 4 < tokenBudget, 1, "under a quarter of the GPU link token space");
+
+		// MEMPACK: the raise costs 1 MiB over the 1 MiB floor. Measured free in
+		// the North Pole race with it: 3,366,880.
+		const unsigned long cost = 2uL * (CTR_CT_PRIM_ARENA_BYTES_DRAW_DISTANCE - CTR_CT_PRIM_ARENA_BYTES);
+		const unsigned long northPoleFreeWithRaise = 3366880uL;
+
+		expect_int(cost == 1048576uL, 1, "the raise costs 1 MiB of MEMPACK");
+		expect_int(northPoleFreeWithRaise > 3uL * cost, 1, "and the race still has three times that free");
+	}
+}
+
+// ---------------------------------------------------------------------------
 // 12. How many rendered quadblocks fit.
 // ---------------------------------------------------------------------------
 
@@ -2006,6 +2069,7 @@ int main(void)
 	test_minimap_sanity();
 	test_prim_fits();
 	test_prim_arena_bytes();
+	test_prim_arena_bytes_draw_distance();
 	test_rendered_slots_fit();
 	test_name_width();
 	test_name_fits();
