@@ -802,7 +802,7 @@ static void AP_TrackerDrawChecks(void)
 		uint32_t red=AP_TrackerRGBA(AP_PadLookR(rgb),AP_PadLookG(rgb),AP_PadLookB(rgb),255);
 		const char *name=i==0 && rows[0].total && ap_content_plan_checks()->wumpa==1 ? "10 WUMPA GLOBAL" : names[i];
 		AP_TrackerText(name,114,y,21,r->total?TRACKER_WHITE:TRACKER_GRAY,310);
-		if (!r->total) { AP_TrackerText("NOT IN SEED",434,y,19,TRACKER_GRAY,700); continue; }
+		if (!r->total) { AP_TrackerText("NO CHECK HERE",434,y,19,TRACKER_GRAY,700); continue; }
 		snprintf(text,sizeof text,"%d / %d",r->done,r->total); AP_TrackerText(text,434,y,21,green,170);
 		snprintf(text,sizeof text,"%d",r->in_logic); AP_TrackerText(text,654,y,21,green,140);
 		snprintf(text,sizeof text,"%d",r->out_logic); AP_TrackerText(text,834,y,21,red,110);
