@@ -6,6 +6,7 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 fixture = (root / 'tools/test-coop.c').read_text().split('int main(void)')[0]
 fixture = fixture.replace('#include "../ap/ap_coop.c"', '#include "ap/ap_coop.c"')
+fixture = fixture.replace('#include "../ap/ap_capability.c"', '#include "ap/ap_capability.c"')
 fixture += '''
 static int legacySteps;
 static void Enum_Step(const ConfigEntry *entry, int direction)
@@ -22,6 +23,7 @@ int main(void) {
     sdata->Loading.stage = LOAD_IDLE;
     gt.gameMode1 = ADVENTURE_MODE | ADVENTURE_ARENA;
     ctr_cfg.character_phase_present = 1;
+    ctr_cfg.character_unlocks = 1;
     ConfigEntry players = {.valuePtr = &g_config.coopAdventure};
     ConfigEntry racer = {.valuePtr = &g_config.coopRacer};
     pads.gamepadsConnectedByFlag = 1;
@@ -31,7 +33,7 @@ int main(void) {
     pads.gamepadsConnectedByFlag = 3;
     Enum_Advance(&players); assert(g_config.coopAdventure && writes == 1);
     Enum_Advance(&players); assert(!g_config.coopAdventure && writes == 2);
-    unlocked |= 1u << 10;
+    unlockRacer(10);
     Enum_Advance(&racer); assert(g_config.coopRacer == 10);
     Enum_Advance(&racer); assert(g_config.coopRacer == 0);
     gt.gameMode1 |= ADVENTURE_CUP;
@@ -49,6 +51,7 @@ with tempfile.TemporaryDirectory() as tmp:
     src, binary = Path(tmp) / 'menu.c', Path(tmp) / 'menu'
     src.write_text(fixture)
     subprocess.run(['cc', '-m32', '-std=c99', '-DCTR_AP', '-DCTR_NATIVE', '-DBUILD=926',
+                    '-ffunction-sections', '-fdata-sections', '-Wl,--gc-sections',
                     '-I', str(root), '-I', str(root / 'include'), '-I', str(root / 'ap'),
                     str(src), '-o', str(binary), '-lm'], check=True)
     subprocess.run([str(binary)], check=True)

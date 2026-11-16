@@ -4,6 +4,8 @@ This draft implements the first retail Trophy Race slice of two local players on
 
 In the hub, open Options, Gameplay, Adventure Players and select 2P LENIENT with two controller slots connected. Player 2 Racer cycles through unlocked racers. Both choices are stored together in the slot's `ctr_coop_<slot>` data-storage key: engine racer ID 0 to 15, plus 16 when co-op is selected. Missing or invalid storage starts solo. Global configuration does not carry a choice into another room.
 
+On older seeds without a character phase, this first slice uses the conservative unlock predicate for P2: the eight vanilla Adventure racers plus P1's current racer. P1's existing wider legacy browse picker stays unchanged. Modern seeds with character unlocks disabled still offer all sixteen racers to P2.
+
 The hub stays under player 1's control. Standalone retail Trophy Races seat two humans and four bots using the retail split-screen loader. Both humans must finish before the race ends. Either human finishing first wins the Trophy; podium checks use the better position. Either human can earn item-box, Itemsanity, letter, Hit Character, Wumpa and lap checks. Partner hits are excluded. Weapon ownership, progressive stats, shortcut and surface restrictions apply to both karts, with each racer's own stat row. Received and starting Wumpa reaches both karts; Turbo and useful grants prefer player 1, then player 2 when the first slot is busy.
 
 Changing the player count or P2 racer is refused during a race, cup or load. Enabling needs connected controller slots 1 and 2. Switching back to solo in the hub remains possible after the second controller disconnects. A remembered co-op preference falls back to solo at race entry without a second controller or an unlocked P2 racer.

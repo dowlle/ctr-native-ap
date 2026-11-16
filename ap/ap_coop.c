@@ -34,7 +34,7 @@ static int AP_CoopControllers(void)
 static int AP_CoopRacerUnlocked(int racer)
 {
 	return racer >= 0 && racer < 16 &&
-	       (!ctr_cfg.character_phase_present || AP_CharacterUnlocked(racer));
+	       AP_CharacterUnlocked(racer);
 }
 
 static int AP_CoopCanEdit(int enabling)

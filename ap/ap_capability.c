@@ -721,7 +721,7 @@ int AP_CapabilityFireGrant(struct Driver *driver, int *reserves, uint32_t type, 
 
 int AP_CapabilityRetroFueled(struct Driver *driver)
 {
-	return driver != 0 && AP_CapabilityIsLocal(driver) &&
+	return AP_CapabilityRoomStatsRace() && driver != 0 && AP_CapabilityIsLocal(driver) &&
 	       driver->driverID < 8 && AP_TrapWeakenBoostTier(AP_CapabilityAppliedRankForCharacter(
 	           AP_CAP_CHAIN_BOOST, data.characterIDs[driver->driverID])) == AP_CAP_BOOST_BLUEFIRE;
 }

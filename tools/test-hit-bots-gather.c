@@ -241,8 +241,7 @@ static void test_attribution_flags(void)
 	gGT.gameMode1 = ADVENTURE_MODE;
 	drivers[0].actionsFlagSet = ACTION_BOT;
 	hit(1, 1, 0, 0);
-	// The gather still marks P1 as the local attacker AND as an AI; the pure
-	// decision rejects on the AI bit, so no check is sent.
+	// A finished P1 is an AI attacker, so no check is sent.
 	expect((g_flags & 64u) != 0, "P1 with ACTION_BOT is flagged as an AI attacker");
 
 	// wasDamageActive propagates for the type-1/type-4 distinction.

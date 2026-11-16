@@ -1,4 +1,4 @@
-// cc -m32 -Wall -Wextra -DCTR_AP -DCTR_NATIVE -DCTR_CUSTOM_TRACKS -DBUILD=926 -I ap -I . -I include
+// cc -m32 -Wall -Wextra -DCTR_AP -DCTR_NATIVE -DCTR_CUSTOM_TRACKS -DBUILD=926 -ffunction-sections -fdata-sections -Wl,--gc-sections -I ap -I . -I include
 //    -o /tmp/test-coop tools/test-coop.c -lm
 // Compile the production option, ownership, load and result code with engine
 // and transport stubs. No rendering or network is involved.
@@ -14,7 +14,6 @@ NativeConfig g_config;
 ctr_seed_config ctr_cfg;
 static int active = 1, packedValue, known, writes;
 static unsigned revision;
-static unsigned unlocked = 1u;
 static char notice[64];
 static int customServing, cortex, haveContext, queriedPlayers;
 static struct CustomTrackRaceContext raceContext;
@@ -29,13 +28,25 @@ int AP_CortexTrackActive(void) { return cortex; }
 const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int level)
 { (void)level; return haveContext ? &raceContext : NULL; }
 int ctr_cfg_active(void) { return active; }
-int AP_CharacterUnlocked(int racer) { return (unlocked >> racer) & 1u; }
+void AP_LogLine(const char *line) { (void)line; }
 void AP_CharSwap_ApplyStatPackage(struct Driver *driver) { (void)driver; }
 void AP_FeedNoticeLine(const char *text) { snprintf(notice, sizeof notice, "%s", text); }
 void ap_net_coop_set(int packed) { packedValue = packed; writes++; known = 1; }
 int ap_net_coop_known(int *out) { *out = packedValue; return known; }
 unsigned ap_net_coop_revision(void) { return revision; }
+#include "../ap/ap_capability.c"
 #include "../ap/ap_coop.c"
+
+static void unlockRacer(int racer)
+{
+	for (int slot = 0; slot < 16; slot++)
+		if (AP_CapabilityRosterCharacter(slot) == racer)
+		{
+			AP_CharacterReceive(slot);
+			return;
+		}
+	assert(0);
+}
 
 int main(void)
 {
@@ -49,6 +60,7 @@ int main(void)
 	gt.drivers[1] = &drivers[1];
 	gt.drivers[2] = &drivers[2];
 	ctr_cfg.character_phase_present = 1;
+	ctr_cfg.character_unlocks = 1;
 	gt.gameMode1 = ADVENTURE_MODE | ADVENTURE_ARENA;
 	pads.numGamepadsConnected = 1;
 	AP_CoopStep(1);
@@ -71,7 +83,7 @@ int main(void)
 	AP_CoopStep(-1);
 	assert(g_config.coopAdventure && writes == 1);
 	sdata->Loading.stage = LOAD_IDLE;
-	unlocked |= 1u << 10;
+	unlockRacer(10);
 	AP_CoopRacerStep(1);
 	assert(g_config.coopRacer == 10);
 	AP_CoopRacerStep(-1);
@@ -155,9 +167,36 @@ int main(void)
 	packedValue = 16 + 12; known = 1; revision++;
 	AP_CoopTick(&gt);
 	assert(g_config.coopRacer != 12); /* delayed unlock remains pending */
-	unlocked |= 1u << 12;
+	unlockRacer(12);
 	AP_CoopTick(&gt);
 	assert(g_config.coopRacer == 12 && g_config.coopAdventure);
+	/* The new P2 picker uses the actual unlock predicate even on legacy
+	 * seeds. P1's wider legacy browse UI is deliberately left unchanged. */
+	ctr_cfg.character_phase_present = 0;
+	data.characterIDs[0] = 0;
+	pads.gamepadsConnectedByFlag = 3;
+	g_config.coopRacer = 7;
+	AP_CoopRacerStep(1);
+	assert(g_config.coopRacer == 0);
+	data.characterIDs[0] = 10;
+	g_config.coopRacer = 7;
+	AP_CoopRacerStep(1);
+	assert(g_config.coopRacer == 10); /* the currently driven P1 guest is available */
+	g_config.coopRacer = 12;
+	gt.gameMode1 = ADVENTURE_MODE;
+	AP_CoopPrepareLoad(&gt);
+	assert(gt.numPlyrCurrGame == 1 && strstr(notice, "RACER LOCKED"));
+	/* Modern all-unlocked comfort mode still offers all sixteen. */
+	ctr_cfg.character_phase_present = 1;
+	ctr_cfg.character_unlocks = 0;
+	gt.gameMode1 |= ADVENTURE_ARENA;
+	g_config.coopRacer = 7;
+	AP_CoopRacerStep(1);
+	assert(g_config.coopRacer == 8);
+	g_config.coopRacer = 12;
+	gt.gameMode1 = ADVENTURE_MODE;
+	AP_CoopPrepareLoad(&gt);
+	assert(gt.numPlyrCurrGame == 2);
 	puts("PASS co-op production: option refusals, unlocked racer, custom identity and solo fallback, ownership, 81 rank pairs, finished-bot result, restore");
 	return 0;
 }
