@@ -240,8 +240,14 @@ ovr1p = read("game/226/226_00_DrawLevelOvr1P.c")
 check("return DrawLevelOvr1P_GetProjectedNearMaskAtScratchOffset(projected, indices, 0x24);" in ovr1p and
       "return DrawLevelOvr1P_GetProjectedNearMaskAtScratchOffset(projected, indices, 0x28);" in ovr1p,
       "the top-level and recursive near masks read scratch 0x24 and 0x28")
-near_args = set(re.findall(r"DrawLevelOvr1P_GetProjectedNearMaskAtScratchOffset\(projected, indices, (\w+)\)", ovr1p))
-check(near_args <= {"0x24", "0x28", "scratchOffset", "thresholdScratchOffset"}, "near masks only read the subdivision thresholds (%s)" % ", ".join(sorted(near_args)))
+# Every near-mask read, whatever its vertex and index arguments: the two subdivision thresholds, a forwarded
+# offset (checked below at the dispatchers), or 0x14, the full-dynamic low-LOD depth scale, which never scales.
+near_calls = re.findall(r"DrawLevelOvr1P_GetProjectedNearMaskAtScratchOffset\(\s*\w+\s*,\s*\w+\s*,\s*(\w+)\s*\)", ovr1p)
+near_args = set(near_calls)
+check(len(near_calls) == ovr1p.count("DrawLevelOvr1P_GetProjectedNearMaskAtScratchOffset(") - 1,
+      "every near-mask call has a parsed offset argument (%d calls)" % len(near_calls))
+check(near_args <= {"0x14", "0x24", "0x28", "scratchOffset", "thresholdScratchOffset"}, "near masks only read the subdivision thresholds or the unscaled depth scale (%s)" % ", ".join(sorted(near_args)))
+check("offsetof(struct MainRenderLevelGeometryScratch, depthScale) == 0x14" in main_h, "scratch 0x14 is the depth scale")
 offset_args = set(re.findall(r"(0x[0-9a-fA-F]+), (?:inheritedOtIndex|otIndexOverride)\)", ovr1p)) | set(re.findall(r"directMask, (0x[0-9a-fA-F]+)\)", ovr1p))
 check(offset_args <= {"0x24", "0x28"}, "every threshold offset handed to a near-subdivision dispatcher is 0x24 or 0x28 (%s)" % ", ".join(sorted(offset_args)))
 for field in ("textureLodDepthThreshold0", "textureLodDepthThreshold1"):
