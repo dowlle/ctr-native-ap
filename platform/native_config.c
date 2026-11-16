@@ -42,6 +42,7 @@ NativeConfig g_config = {
 	true,  // mapFlash (default on: vanilla-style Raceable flicker)
 	true,  // itemBoxColours (default on: follow the seed's item box colours)
 	true,  // itemBoxNumbers (default on: show the authored location number)
+	false, // sanityNumbers (default off: ordinary check object ordinals)
 	true,  // itemFeed (default on: the item feed shows, as before)
 	0,     // aiDifficulty (0 = vanilla)
 	-1,    // deathLink (-1 = follow the seed option)
@@ -172,6 +173,7 @@ const ConfigEntry g_configEntries[] = {
 	// shows "OFF (SEED)" and ignores input while a loaded seed has colours off.
 	{"Archipelago", "item_box_colours",         "Item Box Colours",             CFG_BOOL, &g_config.itemBoxColours},
 	{"Archipelago", "item_box_numbers",         "Item Box Numbers",             CFG_BOOL, &g_config.itemBoxNumbers},
+	{"Archipelago", "sanity_numbers",           "Crate / Fruit Numbers",        CFG_BOOL, &g_config.sanityNumbers},
 	{"Archipelago", "item_feed",                "Item Feed",                    CFG_BOOL, &g_config.itemFeed},
 	// CFG_ENUM: AI-difficulty preset, stepped through a fixed value ladder and
 	// rendered as a preset name (see MM_ConfigMenu.c). Stored as its raw value.

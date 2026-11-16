@@ -164,6 +164,16 @@ Item Box Colours**; the setting is saved in `config.ini`. The seed can also
 turn colours off for everyone with the YAML option `color_boxes_by_item`, for
 example for a race. Then the row shows **OFF (SEED)** and cannot be turned on.
 
+To number ordinary weapon crates, Wumpa crates and loose fruit that are checks,
+turn on **OPTIONS → Archipelago → Crate / Fruit Numbers**. It is off by default
+and saves as `sanity_numbers` under `[Archipelago]` in `config.ini`. Each number
+matches the permanent crate or fruit ordinal in its location name, even when
+earlier objects were not selected for the seed. The number disappears once
+checked, and the object returns to its retail colour. Open objects keep the
+green in-logic or red out-of-logic tint. Labels use the AP box style and distance
+limit, in unpaused single-player Adventure races. **Update Check** is on the
+Connection page.
+
 AP boxes break when your kart touches their collection area, when your moving
 bomb, missile or thrown shield hits them, or when your weapon explodes close
 enough. Direct projectile hits check the movement between frames. Opponent

@@ -126,9 +126,9 @@ int main(void)
 			"skip_intro", "skip_hints", "race_type_selector", "skip_podium", "skip_cutscenes",
 			"boss_music", "ai_difficulty", "mute_when_unfocused", "device_aware_labels", NULL};
 		static const char *const controls[] = {NULL};
-		static const char *const connection[] = {"uri", "slot", "password", NULL};
+		static const char *const connection[] = {"uri", "slot", "password", "update_check", NULL};
 		static const char *const archipelago[] = {
-			"map_flash", "item_feed", "item_box_colours", "item_box_numbers", "death_link", "dl_send_fall", "dl_send_hit", "dl_send_loss", "trap_duration", "update_check",
+			"map_flash", "item_feed", "item_box_colours", "item_box_numbers", "sanity_numbers", "death_link", "dl_send_fall", "dl_send_hit", "dl_send_loss", "trap_duration",
 			"discord_status", NULL};
 		static const char *const authoring[] = {
 			"nav_record", "nav_use_recorded", "nav_repeat_laps", "nav_driver_name", NULL};

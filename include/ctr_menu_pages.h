@@ -46,10 +46,10 @@ static const char *const s_ctrMenuPageControls[] = {
 	NULL,
 };
 static const char *const s_ctrMenuPageConnection[] = {
-	"uri", "slot", "password", NULL,
+	"uri", "slot", "password", "update_check", NULL,
 };
 static const char *const s_ctrMenuPageArchipelago[] = {
-	"map_flash", "item_feed", "item_box_colours", "item_box_numbers", "death_link", "dl_send_fall", "dl_send_hit", "dl_send_loss", "trap_duration", "update_check",
+	"map_flash", "item_feed", "item_box_colours", "item_box_numbers", "sanity_numbers", "death_link", "dl_send_fall", "dl_send_hit", "dl_send_loss", "trap_duration",
 	"discord_status", NULL,
 };
 static const char *const s_ctrMenuPageAuthoring[] = {

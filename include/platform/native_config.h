@@ -103,6 +103,7 @@ typedef struct
 	                            // colours on when the seed has them off
 	                            // (AP_BoxColour_Enabled, ap/ap_box_colour_logic.h).
 	bool itemBoxNumbers;        // Archipelago: local overhead AP box numbers (default on).
+	bool sanityNumbers;         // Local weapon/Wumpa check ordinals (default off).
 	bool itemFeed;              // Archipelago: the AP item feed in the hub and in races
 	                            // (default on). Replaces ap-config.txt "hub_feed="
 	                            // when config.ini exists, like mapFlash (AP_HubFeedOn).
