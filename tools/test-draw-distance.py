@@ -1,4 +1,5 @@
-"""A5-4: Increase Draw Distance scales every LOD threshold, the far clip and the render arenas by one factor.
+"""A5-4: Increase Draw Distance scales the BSP and texture LOD thresholds, the far clip and the render arenas by one factor.
+A5-13c: the top-level and recursive near-subdivision thresholds keep retail's value with the option on.
 
 Ported from the CTR Native Expanded (thecodingbob) tests tests/test_draw_distance.c and
 tests/test_level_lod.c, which this repository has no CTest target for. The production
@@ -93,8 +94,9 @@ static void textures(const struct MainRenderLevelGeometryScratch *s, const struc
 	CHECK(s->depthScale == r->depthScale, "depth projection does not depend on the option");
 	CHECK(s->textureLodDepthThreshold0 == r->t0 * f, "texture LOD 0 scaled exactly once");
 	CHECK(s->textureLodDepthThreshold1 == r->t1 * f, "texture LOD 1 scaled exactly once");
-	CHECK(s->topLevelNearDepthThreshold == r->top * f, "top-level subdivision scaled exactly once");
-	CHECK(s->recursiveNearDepthThreshold == r->rec * f, "recursive mosaic subdivision scaled exactly once");
+	/* A5-13c: the near-subdivision thresholds stay retail with the option on. */
+	CHECK(s->topLevelNearDepthThreshold == r->top, "top-level subdivision stays retail");
+	CHECK(s->recursiveNearDepthThreshold == r->rec, "recursive mosaic subdivision stays retail");
 	CHECK(s->textureLodDepthThreshold0 >= s->textureLodDepthThreshold1 && s->textureLodDepthThreshold1 >= s->topLevelNearDepthThreshold &&
 	      s->topLevelNearDepthThreshold >= s->recursiveNearDepthThreshold, "thresholds keep their near-to-far order");
 }
@@ -120,6 +122,8 @@ int main(void)
 	CHECK(v / NativeDrawDistance_ProjectedLodDistance(v, true) == NATIVE_DRAW_DISTANCE_SCALE, "on: model LOD depth divided by the factor");
 	CHECK(NativeDrawDistance_BspLodThreshold(v, true) / v == NATIVE_DRAW_DISTANCE_SCALE, "on: BSP LOD scaled by the factor");
 	CHECK(NativeDrawDistance_TextureLodThreshold(v, true) / v == NATIVE_DRAW_DISTANCE_SCALE, "on: texture LOD scaled by the factor");
+	CHECK(NativeDrawDistance_SubdivisionThreshold(v, false) == v, "off: subdivision untouched");
+	CHECK(NativeDrawDistance_SubdivisionThreshold(v, true) == v, "on: subdivision stays retail (A5-13c)");
 	CHECK(NativeDrawDistance_ArenaBytes(v, true) / v == NATIVE_DRAW_DISTANCE_SCALE, "on: arena scaled by the factor");
 	/* A5-4b: who grows. 1P follows the option at level load; 2P to 4P always grow;
 	   the attract path (0 players), the main menu and cutscenes follow the option. */
@@ -221,6 +225,37 @@ bucket = read("game/RenderBucket/RenderBucket_QueueExecute.c")
 check("NativeDrawDistance_GeomScreenHalf(geomScreenHalf, g_config.increaseDrawDistance)" in bucket, "instance far-Z reject uses the shared factor")
 check("NativeDrawDistance_ProjectedLodDistance(" in bucket and "* 100) / 400" not in bucket, "model LOD distance uses the shared factor")
 check("NativeDrawDistance_FarClip(g_config.increaseDrawDistance)" in read("game/PushBuffer.c"), "frustum far clip uses the shared factor")
+# A5-13c: every near-subdivision threshold goes through the retail-keeping helper, every texture threshold through the scaled one.
+lod_flat = re.sub(r"\s+", " ", lod)
+for field in ("topLevelNearDepthThreshold", "recursiveNearDepthThreshold"):
+    assigns = re.findall(r"scratch->" + field + r" = (\w+)\(", lod_flat)
+    check(len(assigns) == 4 and all(a == "NativeDrawDistance_SubdivisionThreshold" for a in assigns),
+          "all four %s assignments use NativeDrawDistance_SubdivisionThreshold (%s)" % (field, ", ".join(assigns)))
+# The renderer reads the two subdivision thresholds by scratch offset: 0x24 top-level, 0x28 recursive.
+main_h = read("include/namespace_Main.h")
+check("offsetof(struct MainRenderLevelGeometryScratch, topLevelNearDepthThreshold) == 0x24" in main_h and
+      "offsetof(struct MainRenderLevelGeometryScratch, recursiveNearDepthThreshold) == 0x28" in main_h,
+      "the subdivision thresholds sit at scratch 0x24 and 0x28")
+ovr1p = read("game/226/226_00_DrawLevelOvr1P.c")
+check("return DrawLevelOvr1P_GetProjectedNearMaskAtScratchOffset(projected, indices, 0x24);" in ovr1p and
+      "return DrawLevelOvr1P_GetProjectedNearMaskAtScratchOffset(projected, indices, 0x28);" in ovr1p,
+      "the top-level and recursive near masks read scratch 0x24 and 0x28")
+# Every near-mask read, whatever its vertex and index arguments: the two subdivision thresholds, a forwarded
+# offset (checked below at the dispatchers), or 0x14, the full-dynamic low-LOD depth scale, which never scales.
+near_calls = re.findall(r"DrawLevelOvr1P_GetProjectedNearMaskAtScratchOffset\(\s*\w+\s*,\s*\w+\s*,\s*(\w+)\s*\)", ovr1p)
+near_args = set(near_calls)
+check(len(near_calls) == ovr1p.count("DrawLevelOvr1P_GetProjectedNearMaskAtScratchOffset(") - 1,
+      "every near-mask call has a parsed offset argument (%d calls)" % len(near_calls))
+check(near_args <= {"0x14", "0x24", "0x28", "scratchOffset", "thresholdScratchOffset"}, "near masks only read the subdivision thresholds or the unscaled depth scale (%s)" % ", ".join(sorted(near_args)))
+check("offsetof(struct MainRenderLevelGeometryScratch, depthScale) == 0x14" in main_h, "scratch 0x14 is the depth scale")
+low_calls = re.findall(r"DrawLevelOvr1P_GetProjectedNearMaskAtScratchOffset\(\s*\w+\s*,\s*(\w+)\s*,\s*0x14\s*\)", ovr1p)
+check(low_calls == ["sDrawLevelOvr1PFullDynamicLowIndices"], "only the full-dynamic low-LOD near mask reads scratch 0x14 (%s)" % ", ".join(low_calls))
+offset_args = set(re.findall(r"(0x[0-9a-fA-F]+), (?:inheritedOtIndex|otIndexOverride)\)", ovr1p)) | set(re.findall(r"directMask, (0x[0-9a-fA-F]+)\)", ovr1p))
+check(offset_args <= {"0x24", "0x28"}, "every threshold offset handed to a near-subdivision dispatcher is 0x24 or 0x28 (%s)" % ", ".join(sorted(offset_args)))
+for field in ("textureLodDepthThreshold0", "textureLodDepthThreshold1"):
+    assigns = re.findall(r"scratch->" + field + r" = (\w+)\(", lod_flat)
+    check(len(assigns) == 4 and all(a == "NativeDrawDistance_TextureLodThreshold" for a in assigns),
+          "all four %s assignments use NativeDrawDistance_TextureLodThreshold (%s)" % (field, ", ".join(assigns)))
 for path in sorted((root / "game").rglob("*.c")):
     for n, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
         if re.search(r"increaseDrawDistance\s*\?", line):

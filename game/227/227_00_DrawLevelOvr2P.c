@@ -96,7 +96,8 @@ static void DrawLevelOvr2P_SeedSharedHelperThresholdScratch(void)
 	// NOTE(aalhendi): Retail 227 bakes these thresholds as immediates in
 	// copied BSP handler bodies. Native reuses 226 C helpers that still read
 	// the equivalent thresholds from scratch, so seed the shared-helper view.
-	// increase_draw_distance scales them like the 1P path does.
+	// increase_draw_distance scales the texture thresholds like the 1P path
+	// does; the two near-subdivision thresholds stay retail (A5-13c).
 	RenderLevelLod_Init2P(DrawLevelOvr1P_RenderScratch(), g_config.increaseDrawDistance);
 }
 
