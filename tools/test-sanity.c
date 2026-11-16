@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "ap_content_plan.h"
+#include "ap_class_check_policy.h"
+#include "ap_feed_lines_logic.h"
 #define CTR_CUSTOM_TRACKS
 #define PU_RANDOM_CRATE 8
 #define PU_FRUIT_CRATE 7
@@ -33,6 +35,8 @@ static ctr_content_pad pad;
 static struct CustomTrackRaceContext context;
 static uint64_t epoch = 1;
 static int sent, checked, route_valid = 1, notices;
+static int scout_known = 1, own_slot, sent_toasts;
+static AP_FeedLines feed;
 static int logic_state = 1;
 static int AP_LocationLogicState(long long code) { (void)code; return logic_state; }
 int ctr_cfg_active(void) { return 1; }
@@ -58,7 +62,16 @@ static void AP_FeedNoticeLine(const char *line) {
     ++notices;
 }
 static int AP_EmitClassCheck(long code, int ledger, int bit, int tag, int toast, const char *fmt, ...) {
-    assert(code > 0 && !ledger && bit == -1 && tag == -1 && !toast && fmt); ++sent; return 1;
+    assert(code > 0 && !ledger && bit == -1 && tag == -1 && fmt);
+    if (!AP_ClassCheckShouldSendPure(code, checked)) return 0;
+    ++sent;
+    /* Use the argument from the production pickup call, not a simulated flag.
+       Model only the common emitter and scout guard; engine/network stay stubbed. */
+    if (toast && AP_LocationSentShouldToastPure(scout_known, own_slot)) {
+        ++sent_toasts;
+        AP_FeedLinesEnqueue(&feed, "WUMPA FRUIT TO PLAYER", 0, 0);
+    }
+    return 1;
 }
 #include "ap_hooks_sanity.c"
 int main(void) {
@@ -121,6 +134,41 @@ int main(void) {
     assert(AP_SanityRecolourTag(&objects[2]) == 0);
     assert(AP_SanityPickup(&objects[2], &player) == 1 && sent == 3);
     assert(AP_SanityRecolourTag(&objects[1]) != 0);
+    /* Each selected family: foreign, own-slot, unknown scout, and retouch.
+       A burst stays as separate sends even for identical filler text. */
+    AP_FeedLinesReset(&feed);
+    sent_toasts = 0;
+    record.locations[1][0] = 102;
+    for (int recipient = 0; recipient < 3; ++recipient) {
+        int before = sent, toast_before = sent_toasts;
+        ++epoch; context.seedEpoch = epoch;
+        scout_known = recipient != 2; own_slot = recipient == 1;
+        AP_SanityLevelInstances(defs, 4);
+        for (i = 1; i < 4; ++i) {
+            AP_SanityPickup(&objects[i], &player);
+            AP_SanityPickup(&objects[i], &player);
+        }
+        assert(sent == before + 3);
+        assert(sent_toasts == toast_before + (recipient == 0 ? 3 : 0));
+        for (i = 0; i < 3; ++i) assert(ap_sanity_feed[i] == 1);
+    }
+    scout_known = 1; own_slot = 0;
+    for (int burst = 0; burst < 3; ++burst) {
+        ++epoch; context.seedEpoch = epoch;
+        AP_SanityLevelInstances(defs, 4);
+        for (i = 1; i < 4; ++i) AP_SanityPickup(&objects[i], &player);
+    }
+    assert(sent_toasts == 12 && feed.qcount == 12 && !feed.receiptWindow);
+    for (i = 0; i < 12; ++i) {
+        int pending = feed.qcount;
+        while (feed.qcount == pending) {
+            AP_FeedLinesAge(&feed);
+            assert(!AP_FeedLinesPromote(&feed));
+        }
+        assert(!strcmp(feed.vis[feed.vcount - 1].text, "WUMPA FRUIT TO PLAYER"));
+        assert(feed.vis[feed.vcount - 1].framesLeft == AP_FEED_LIFETIME_FRAMES);
+    }
+    assert(feed.qcount == 0);
     puts("sanity runtime: ordinal pick, AI, local player, dedup, reload, race mode, route, feed and mismatch pass");
     return 0;
 }
