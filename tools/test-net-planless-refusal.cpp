@@ -143,6 +143,15 @@ static void test_version_advice(void)
 	room["build_version"] = "bad~00\n<script>";
 	expect(ap_seed_refusal::message(room, "").find("MATCHING CLIENT") != std::string::npos,
 	       "unsafe metadata stays out of font");
+	for (const char *label : {"0", "0.3", "0.3.0-", "0.3.0-A..B", "0.3.0A", "00.3.0"}) {
+		room["build_version"] = label;
+		expect(ap_seed_refusal::message(room, checksums[1]).find("CHECK ALPHA3") != std::string::npos,
+		       "malformed version shape falls back to tentative family advice");
+	}
+	room["build_version"] = "0.3.0";
+	expect(ap_seed_refusal::message(room, "").find("USE CLIENT 0.3.0.") != std::string::npos,
+	       "well-formed explicit stable build is retained");
+	room["build_version"] = "bad~00\n<script>";
 	room["ctr_options"] = 17;
 	expect(ap_seed_refusal::message(room, "").find("MATCHING CLIENT") != std::string::npos,
 	       "malformed options safe");

@@ -39,6 +39,25 @@ inline std::string build_label(const nlohmann::json &slot)
         if (c >= 'a' && c <= 'z') c -= 'a' - 'A';
         if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-')) return {};
     }
+    // Require three numeric version components, then an optional nonempty
+    // prerelease label. Glyph safety alone would accept false advice like 0.
+    size_t pos = 0;
+    for (int component = 0; component < 3; ++component) {
+        const size_t begin = pos;
+        while (pos < value.size() && value[pos] >= '0' && value[pos] <= '9') ++pos;
+        if (pos == begin || (pos > begin + 1 && value[begin] == '0')) return {};
+        if (component < 2 && (pos == value.size() || value[pos++] != '.')) return {};
+    }
+    if (pos == value.size()) return value;
+    if (value[pos++] != '-' || pos == value.size()) return {};
+    bool need_part = true;
+    for (; pos < value.size(); ++pos) {
+        if (value[pos] == '.' || value[pos] == '-') {
+            if (need_part) return {};
+            need_part = true;
+        } else need_part = false;
+    }
+    if (need_part) return {};
     return value;
 }
 
