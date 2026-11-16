@@ -94,6 +94,11 @@ int main(void) {
     int hidden=place==0?(frame>=131&&frame<236):place==1?(frame>=101&&frame<236):0;
     assert(!!(t->inst->flags&HIDE_MODEL)==hidden); cases++;
    }
+   /* A matching loser must not repeatedly hide/unhide the winner and
+      subtract depth bias on every tick of the overlapping camera windows. */
+   u8 bias=(u8)(place==0?-6:place==1?-2:0);
+   assert(t->inst->depthBiasNormal==bias);
+   assert(t->inst->depthBiasSecondary==bias);
   }
  }
  struct Model winner={0},loser={0}; winner.id=STATIC_CRASHDANCE;loser.id=STATIC_CRASHDANCE+1;
