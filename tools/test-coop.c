@@ -91,6 +91,12 @@ int main(void)
 	assert(AP_CoopRank(&gt, 1) == 0 && AP_CoopWon(&gt));
 	assert(!AP_IsSlotHuman(&gt, &drivers[1])); /* finished bot cannot fire checks */
 	drivers[1].actionsFlagSet = 0;
+	gt.gameMode1 = ADVENTURE_MODE | MAIN_MENU;
+	gt.numPlyrCurrGame = 4; gt.numPlyrNextGame = 2;
+	AP_CoopPrepareLoad(&gt);
+	assert(gt.numPlyrCurrGame == 4 && gt.numPlyrNextGame == 2);
+	gt.gameMode1 = ADVENTURE_MODE;
+	gt.numPlyrCurrGame = 1; gt.numPlyrNextGame = 1;
 	const unsigned unsupported[] = {ADVENTURE_CUP, ADVENTURE_BOSS, RELIC_RACE,
 	    CRYSTAL_CHALLENGE, ARCADE_MODE, TIME_TRIAL, BATTLE_MODE, MAIN_MENU, GAME_CUTSCENE};
 	for (unsigned i = 0; i < sizeof unsupported / sizeof unsupported[0]; i++)

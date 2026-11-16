@@ -86,6 +86,9 @@ const char *AP_CoopHelp(void) { return ap_coop_help; }
 void AP_CoopPrepareLoad(struct GameTracker *gt)
 {
 	int mode = gt->gameMode1;
+	/* The screen/garage loader owns its temporary menu player counts. An
+	 * Adventure flag can still be present while returning to those menus. */
+	if (mode & (MAIN_MENU | GAME_CUTSCENE)) return;
 	int retail = gt->levelID >= 0 && gt->levelID <= TURBO_TRACK;
 #ifdef CTR_CUSTOM_TRACKS
 	if (CustomTrack_ServingLoad((int)gt->levelID, (mode & ADVENTURE_CUP) != 0, gt->cup.cupID) ||
