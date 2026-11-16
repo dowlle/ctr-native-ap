@@ -6,6 +6,7 @@
 #include "ap_world_number.h"
 #include <platform/native_config.h>
 #endif
+#include "ap_class_check_policy.h"
 
 static struct InstDef *ap_sanity_defs;
 static int ap_sanity_defs_count, ap_sanity_ready, ap_sanity_size;
@@ -147,7 +148,7 @@ int AP_SanityPickup(struct Instance *inst, struct Driver *driver)
         if (AP_SanityAlreadySent(code)) return 1;
         if (bot) return ap_sanity_objects[i].family != 2;
         if (driver->driverID != 0 || driver != gt->drivers[0] || ap_sanity_sent_count >= 16384) return 1;
-        if (AP_EmitClassCheck(code, 0, -1, -1, 0, "[AP CHECK] sanity location=%ld\n", code)) {
+        if (AP_EmitClassCheck(code, 0, -1, -1, AP_SANITY_TOAST_SENT_ITEM, "[AP CHECK] sanity location=%ld\n", code)) {
             int at = AP_SanitySentIndex(code);
             memmove(&ap_sanity_sent[at + 1], &ap_sanity_sent[at], (ap_sanity_sent_count - at) * sizeof(long));
             ap_sanity_sent[at] = code;

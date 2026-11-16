@@ -43,8 +43,11 @@
 #include <fstream>
 #include <set>
 
+static std::string g_captured_log;
+
 extern "C" void AP_LogLine(const char *line)
 {
+	g_captured_log += line;
 	std::fputs(line, stdout);
 }
 
@@ -272,11 +275,17 @@ static void test_malformed_block_refused(void)
 	nlohmann::json d = g_fixture;
 	d["hit_character_encounters"]["schema"] = 1; // superseded block schema 1
 	m->calls.reset();
+	g_captured_log.clear();
 	m->emit_slot_connected(d);
 	expect(ap_net_is_connected() == 0, "malformed: not admitted");
 	expect(ap_net_status() == AP_NET_STATUS_ERROR, "malformed: ERROR");
-	expect(std::string(ap_net_last_error()).find("block schema") != std::string::npos,
-	       "malformed: the visible error names the block schema");
+	expect(std::string(ap_net_last_error()).find("CTR APWORLD VERSION MISMATCH") != std::string::npos,
+	       "malformed: the visible error gives matching-client advice");
+	const std::string technical_reason = ap_seedcfg_reject_reason();
+	expect(technical_reason.find("block schema") != std::string::npos,
+	       "malformed: technical reason names the block schema");
+	expect(g_captured_log.find("seed REFUSED (" + technical_reason + ")") != std::string::npos,
+	       "malformed: exact block schema reason stays in the log");
 	expect(m->calls.location_scouts == 0, "malformed: no scout");
 	ap_net_poll();
 	expect(g_ap == nullptr, "malformed: torn down");
@@ -366,11 +375,17 @@ static void test_fallback_consistency(void)
 		m->test_set_checked({35025000});
 		room_missing(m, {35011008}); // Penta Penguin unlock win, absent from the plan
 		m->calls.reset();
+		g_captured_log.clear();
 		m->emit_slot_connected(fallback_seed());
 		expect(ap_net_is_connected() == 0, "conflict: not admitted");
 		expect(ap_net_status() == AP_NET_STATUS_ERROR, "conflict: ERROR");
-		expect(std::string(ap_net_last_error()).find("content plan") != std::string::npos,
-		       "conflict: extra unlock win is refused by exact plan binding");
+		expect(std::string(ap_net_last_error()).find("CTR APWORLD VERSION MISMATCH") != std::string::npos,
+		       "conflict: exact plan binding refusal gives matching-client advice");
+		const std::string technical_reason = ap_seedcfg_reject_reason();
+		expect(technical_reason.find("content plan") != std::string::npos,
+		       "conflict: extra unlock win retains the exact plan binding reason");
+		expect(g_captured_log.find("seed REFUSED (" + technical_reason + ")") != std::string::npos,
+		       "conflict: exact plan binding reason stays in the log");
 		expect(ap_seedcfg_hit_encounters() == nullptr,
 		       "conflict: no encounter data reachable");
 		expect(m->calls.location_scouts == 0, "conflict: no scout");

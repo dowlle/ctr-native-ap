@@ -44,6 +44,7 @@ typedef struct ctr_content_leg {
      * and Wumpa check are the leg's too, for the cup's glow and state. */
     int track_pad;
     char leg_id[65], track_id[65];
+    char room_title[129]; /* accepted track title, including cup-only custom legs */
 } ctr_content_leg;
 typedef struct ctr_content_pad {
     int physical, hub, keys, occupied;

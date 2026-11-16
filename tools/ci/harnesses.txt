@@ -1,4 +1,5 @@
 # Harnesses CI runs (tools/ci/run-harnesses.py). One per line; `skip <reason>` opts out.
+tools/test-podium-duplicate-production.py
 tools/test-calmer-feed.c
 tools/test-calmer-feed-production.py
 tools/test-instance-pool.c
@@ -178,6 +179,7 @@ tools/test-race-stats.c
 tools/test-room-effects-production.c
 tools/test-profile-racer-production.py
 tools/test-warppad-digits-production.py
+tools/test-warppad-requirement-types-production.py
 tools/test-wipeout-production.py
 tools/test-trap-mode-production.py
 tools/test-received-backlog.cpp
@@ -190,6 +192,7 @@ tools/test-tracker-assets.c
 tools/test-tracker-boss-node.c
 tools/test-tracker-markers.c
 tools/test-tracker-progress.c
+tools/test-tracker-checks.c
 tools/test-asio-ssl-includes.cpp
 tools/test-tracker-tabs.c
 tools/test-tracker-pad-launch.py
@@ -344,4 +347,6 @@ tools/test-arena-weapon-fire.py
 tools/test-hub-save-box.c
 tools/test-hub-save-box-production.py
 tools/test-hub-name-entry.c
+tools/test-hub-backdrop-pieces.c
+tools/test-hub-backdrop-pads.c
 tools/test-hub-name-entry-production.py
