@@ -3,6 +3,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import ap_hooks_unit
+import coop_fixture
 root=Path(__file__).resolve().parents[1]
 hooks=ap_hooks_unit.read()
 def function(signature):
@@ -142,6 +143,6 @@ int main(void){
 """
 with tempfile.TemporaryDirectory() as tmp:
     src,exe=Path(tmp)/'sweeps.c',Path(tmp)/'sweeps'
-    src.write_text(mode_enum+fixture+policy+emitter+source+tests)
+    src.write_text(mode_enum+fixture+coop_fixture.predicates()+policy+emitter+source+tests)
     subprocess.run(['cc','-std=c11','-Wall','-Wextra','-fsanitize=undefined','-I',str(root/'ap'),str(src),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)

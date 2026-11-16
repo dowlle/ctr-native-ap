@@ -1,4 +1,5 @@
 #ifdef CTR_AP
+#include "ap_coop.h"
 
 #include <common.h> // structs Driver/GameTracker + sdata + gameMode/enum flags + functions.h (RB_Player_ModifyWumpa)
 
@@ -118,11 +119,16 @@ static int AP_WumpaRaceTracking(struct Driver *driver)
 static int AP_WumpaReceiptInRace(void)
 {
 	struct GameTracker *gt = sdata->gGT;
-	struct Driver *d = gt ? gt->drivers[0] : 0;
-	return ctr_cfg_active() && !ctr_cfg.schema_newer && AP_WumpaAdventureRace(gt) &&
-	       !(gt->gameMode2 & CHEAT_WUMPA) && LOAD_IsOpen_RacingOrBattle() && d &&
-	       !(d->actionsFlagSet & (ACTION_BOT | ACTION_RACE_FINISHED)) &&
-	       !(gt->gameMode1 & (END_OF_RACE | MAIN_MENU | GAME_CUTSCENE));
+	if (!ctr_cfg_active() || ctr_cfg.schema_newer || !AP_WumpaAdventureRace(gt) ||
+	    (gt->gameMode2 & CHEAT_WUMPA) || !LOAD_IsOpen_RacingOrBattle() ||
+	    (gt->gameMode1 & (END_OF_RACE | MAIN_MENU | GAME_CUTSCENE))) return 0;
+	int humans = AP_CoopRace(gt) ? 2 : 1;
+	for (int i = 0; i < humans; i++)
+	{
+		struct Driver *d = gt->drivers[i];
+		if (AP_IsSlotHuman(gt, d) && !(d->actionsFlagSet & ACTION_RACE_FINISHED)) return 1;
+	}
+	return 0;
 }
 
 int AP_WumpaRaceCount(struct Driver *driver)
@@ -415,6 +421,12 @@ void AP_WumpaTick(struct GameTracker *gGT)
 			// Starting fruit fills the kart only. It must never produce
 			// overflow credit, including a pickup before this tick.
 			RB_Player_ModifyWumpa(local, grant);
+			if (AP_CoopRace(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]))
+			{
+				int otherGrant = AP_WUMPA_MAX - gGT->drivers[1]->numWumpas;
+				if (otherGrant > g_wumpa_starting) otherGrant = g_wumpa_starting;
+				if (otherGrant > 0) RB_Player_ModifyWumpa(gGT->drivers[1], otherGrant);
+			}
 			// Starting fruit joins the held count but is never banked by an
 			// abandoned attempt.
 			if (g_race_wumpa >= 0)
@@ -429,6 +441,8 @@ void AP_WumpaTick(struct GameTracker *gGT)
 	if (g_wumpa_race_pending > 0)
 	{
 		RB_Player_ModifyWumpa(local, g_wumpa_race_pending);
+		if (AP_CoopRace(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]))
+			RB_Player_ModifyWumpa(gGT->drivers[1], g_wumpa_race_pending);
 		g_wumpa_race_pending = 0;
 	}
 	if (g_wumpa_pending <= 0)
@@ -439,6 +453,8 @@ void AP_WumpaTick(struct GameTracker *gGT)
 	// end-of-race comments, and no-ops under the unlimited-wumpa cheat -- exactly the
 	// canonical fruit-grant path every pickup uses (game/231/RB_Player.c).
 	RB_Player_ModifyWumpa(local, g_wumpa_pending);
+	if (AP_CoopRace(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]))
+		RB_Player_ModifyWumpa(gGT->drivers[1], g_wumpa_pending);
 	snprintf(msg, sizeof msg, "[AP WUMPA] granted +%d in-race (now %d)\n",
 	         g_wumpa_pending, (int)local->numWumpas);
 	AP_LogLine(msg);

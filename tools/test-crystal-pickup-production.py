@@ -3,6 +3,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import ap_hooks_unit
+import coop_fixture
 
 root = Path(__file__).resolve().parents[1]
 source = ap_hooks_unit.read()
@@ -22,7 +23,7 @@ fixture = r'''
 struct InstDef { int unused; };
 struct Level { struct InstDef *ptrInstDefs; int numInstances; };
 struct Instance { struct InstDef *instDef; };
-struct GameTracker { unsigned gameMode1; struct Level *level1; int levelID, numPlyrCurrGame; struct { int cupID; } cup; };
+struct GameTracker { unsigned gameMode1; struct Level *level1; int levelID, numPlyrCurrGame; struct { int cupID; } cup; unsigned gameMode2; };
 struct Small { struct GameTracker *gGT; } data, *sdata=&data;
 AP_CrystalChecks ctr_crystal_checks;
 static int active=1, custom=0, exists=1, checked=0, sent, feed, perf, ap_state_gen;
@@ -95,7 +96,7 @@ int main(void){
 '''
 with tempfile.TemporaryDirectory() as tmp:
     src, exe = Path(tmp)/'pickup.c', Path(tmp)/'pickup'
-    src.write_text(mode_enum+fixture+policy+body+tests)
+    src.write_text(mode_enum+fixture+coop_fixture.predicates()+policy+body+tests)
     subprocess.run(['cc','-std=c11','-fsanitize=undefined','-I',str(root/'ap'),
                     '-I',str(root/'include'),str(src),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)

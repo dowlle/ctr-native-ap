@@ -8,6 +8,7 @@ that game/PlayLevel.c calls it right after the forward crossing advances
 lapIndex, and that the unity build includes the part.
 """
 from pathlib import Path
+import coop_fixture
 import re
 import subprocess
 import tempfile
@@ -42,7 +43,7 @@ fixture = r"""
 #define ADVENTURE_BOSS 0x80000000u
 #define IS_BOSS_RACE(gm) ((int)(gm) < 0)
 struct Driver {int actionsFlagSet, lapIndex;};
-struct GameTracker {unsigned gameMode1; int levelID; int bossID; char boolDemoMode; int numPlyrCurrGame;};
+struct GameTracker {unsigned gameMode1; int levelID; int bossID; char boolDemoMode; int numPlyrCurrGame; unsigned gameMode2; struct Driver *drivers[2];};
 struct CustomTrackRaceContext {int cup, retail;};
 static int active = 1, plan = 1, offline, serving, exists = 1, checked, sent, cup_leg = -1;
 static long last;
@@ -142,13 +143,18 @@ int main(void)
     }
     reset(); standalone(); exists = 0; assert(cross(0) == -1);
     reset(); standalone(); checked = 1; assert(cross(0) == -1);
-    puts("Production lap dispatch: plan pads, cup legs, boss races, boss cup legs and every refusal passed");
+    reset(); standalone(); g.numPlyrCurrGame = 2; g.drivers[1] = &driver;
+    assert(cross(1) == 35028003);
+    assert(cross(2) == -1);
+    driver.actionsFlagSet = ACTION_BOT; assert(cross(1) == -1);
+    driver.actionsFlagSet = 0; g.gameMode1 = ARCADE_MODE; assert(cross(1) == -1);
+    puts("Production lap dispatch: plan pads, cups, bosses, P2 Trophy crossings and every refusal passed");
     return 0;
 }
 """
 with tempfile.TemporaryDirectory() as tmp:
     src, exe = Path(tmp) / 'laps.c', Path(tmp) / 'laps'
-    src.write_text(mode_enum + fixture + source + tests)
+    src.write_text(mode_enum + fixture + coop_fixture.predicates() + source + tests)
     subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-fsanitize=undefined', '-I', str(root / 'ap'), str(src),
                     '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)

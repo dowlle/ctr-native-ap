@@ -1,4 +1,5 @@
 #ifdef CTR_AP
+#include "ap_coop.h"
 
 #include <common.h> // struct Driver / QuadBlock / Level / GameTracker, sdata, DRIVER_COLL_FLAG_*, TERRAIN_*, LevelID
 #include <stdio.h>
@@ -150,7 +151,7 @@ int AP_ShortcutCheck(struct Driver *driver, struct QuadBlock *quad)
 {
 	if (driver == 0 || quad == 0)
 		return 0;
-	if (driver != AP_ScLocalDriver())
+	if (!AP_IsSlotHuman(sdata ? sdata->gGT : 0, driver))
 		return 0; // enforce on the local player only
 
 	// Verify tool: log each distinct quad the player touches so a shortcut's
@@ -220,7 +221,7 @@ static int AP_LastValidInMesh(struct GameTracker *gGT, struct QuadBlock *qb)
 	return 1;
 }
 
-void AP_ShortcutSkipTick(struct GameTracker *gGT)
+static void AP_ShortcutSkipDriver(struct GameTracker *gGT, int humanSlot)
 {
 	struct Driver *d;
 	int levelID, maxCheckpoint, cur, prev, maxSkip;
@@ -260,8 +261,8 @@ void AP_ShortcutSkipTick(struct GameTracker *gGT)
 		return;
 	}
 
-	d = gGT->drivers[0]; // local player
-	if (d == 0 || d->lastValid == 0)
+	d = gGT->drivers[humanSlot];
+	if (!AP_IsSlotHuman(gGT, d) || d->lastValid == 0)
 	{
 		g_lastValid_prev = 0;
 		g_scless_stale_logged = 0;
@@ -349,6 +350,19 @@ void AP_ShortcutSkipTick(struct GameTracker *gGT)
 	}
 
 	g_lastValid_prev = d->lastValid;
+}
+
+void AP_ShortcutSkipTick(struct GameTracker *gGT)
+{
+	static struct QuadBlock *previous[2];
+	int humans = AP_CoopRace(gGT) ? 2 : 1;
+	for (int i = 0; i < humans; i++)
+	{
+		g_lastValid_prev = previous[i];
+		AP_ShortcutSkipDriver(gGT, i);
+		previous[i] = g_lastValid_prev;
+	}
+	if (humans == 1) previous[1] = 0;
 }
 
 // ── Dev keys + config ────────────────────────────────────────────────────────
