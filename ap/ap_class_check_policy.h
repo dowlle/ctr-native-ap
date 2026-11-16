@@ -1,6 +1,10 @@
 #ifndef AP_CLASS_CHECK_POLICY_H
 #define AP_CLASS_CHECK_POLICY_H
 
+// Sanity pickups keep their batched family count separately. Foreign items
+// also use the ordinary sent-item feed; own-slot receipts suppress that line.
+#define AP_SANITY_TOAST_SENT_ITEM 1
+
 // Freestanding guard decisions shared by AP_EmitClassCheck (the common
 // location-check gate used by podium, item-box, itemsanity, relic-perfect,
 // custom-track-trophy and Lettersanity checks) and AP_FeedOnLocationSent (the
