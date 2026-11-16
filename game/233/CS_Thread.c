@@ -16,6 +16,16 @@ struct CSThreadParentFrameScratch
 CTR_STATIC_ASSERT(offsetof(struct CSThreadParentFrameScratch, parentPos) == 0x00);
 CTR_STATIC_ASSERT(offsetof(struct CSThreadParentFrameScratch, parentRot) == 0x10);
 
+// The scene gives each racer a distinct role even when their model IDs match.
+// Keep the garage/ending dancer's model-based behavior for other callers.
+static int CS_PodiumRank(const char *name)
+{
+	if (name == R233.s_first) return 0;
+	if (name == R233.s_second) return 1;
+	if (name == R233.s_third) return 2;
+	return -1;
+}
+
 static void CS_SaveDecodedOpcode(const struct CutsceneObj *cs, int out[5])
 {
 	out[0] = cs->decodedOpcode.words[0];
@@ -75,12 +85,14 @@ int CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs)
 
 	if (instance != 0)
 	{
+		int podiumRank = instance->thread ? CS_PodiumRank(instance->thread->name) : -1;
 		if ((instance->flags & SPLIT_LINE) != 0)
 		{
 			instance->vertSplit = D233.VertSplitLine;
 		}
 
-		if ((int)instance->model->id == (u32)(u8)gGT->podium_modelIndex_Second)
+		if (podiumRank == 1 || (podiumRank < 0 &&
+		    (int)instance->model->id == (u32)(u8)gGT->podium_modelIndex_Second))
 		{
 			if (D233.PodiumInitUnk2 - 0x65U < 0x87)
 			{
@@ -99,7 +111,8 @@ int CS_Thread_UseOpcode(struct Instance *instance, struct CutsceneObj *cs)
 		}
 	afterPodiumSecondModelCheck:
 
-		if ((int)instance->model->id == (u32)(u8)gGT->podium_modelIndex_First)
+		if (podiumRank == 0 || (podiumRank < 0 &&
+		    (int)instance->model->id == (u32)(u8)gGT->podium_modelIndex_First))
 		{
 			if (D233.PodiumInitUnk2 - 0x83U < 0x69)
 			{
@@ -1601,6 +1614,19 @@ struct Thread *CS_Thread_Init(s16 modelID, const char *name, struct CsThreadInit
 
 		t = inst->thread;
 		t->funcThDestroy = PROC_DestroyInstance;
+
+		// LOAD stage 8 registers models by ID, so the losing copy overwrites
+		// the winner when both racers have the same character. The loader also
+		// retains the separate assets by place. Bind this instance to its own
+		// asset before any animation is selected. Oxide's missing win asset
+		// continues to use the existing model-table fallback.
+		int podiumRank = CS_PodiumRank(name);
+		if (podiumRank >= 0)
+		{
+			struct Model *model = (&data.podiumModel_firstPlace)[podiumRank];
+			if (model != NULL && model->id == modelID)
+				inst->model = model;
+		}
 	}
 
 	cs = t->object;
@@ -1682,7 +1708,8 @@ struct Thread *CS_Thread_Init(s16 modelID, const char *name, struct CsThreadInit
 			char *const *base;
 			int off = (modelID - STATIC_CRASHDANCE);
 
-			if (modelID == gGT->podium_modelIndex_First)
+			int podiumRank = CS_PodiumRank(name);
+			if (podiumRank == 0 || (podiumRank < 0 && modelID == gGT->podium_modelIndex_First))
 			{
 				base = R233.danceFirstScripts;
 			}
