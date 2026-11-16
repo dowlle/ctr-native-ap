@@ -343,4 +343,5 @@ tools/test-hub-save-box.c
 tools/test-hub-save-box-production.py
 tools/test-hub-name-entry.c
 tools/test-hub-backdrop-pieces.c
+tools/test-hub-backdrop-pads.c
 tools/test-hub-name-entry-production.py

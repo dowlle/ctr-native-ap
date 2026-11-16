@@ -4,6 +4,7 @@
 #include "ap_hub_name_entry_logic.h"
 #include "ap_hub_name_entry.h"
 #include "ap_hub_backdrop_pieces.h"
+#include "ap_hub_backdrop_pads.h"
 #include <time.h>
 
 static struct AP_HubNameEntryState s_apHne = {AP_HNE_OFF, -1, -1, 0x2545f491u, 0, 0, -1, {-1, -1, -1, -1, -1}};
@@ -67,6 +68,7 @@ void AP_HubNameEntry_LevInstances(struct InstDef *instDefs, int numInst)
 	struct GameTracker *gGT = sdata->gGT;
 	int i, hidden = 0, pieces = 0;
 	char line[128];
+	AP_HNE_ResetBackdropPads();
 	if (instDefs == NULL || !AP_HNE_IsBackdropLevel(&s_apHne, (int)gGT->levelID) ||
 	    (gGT->gameMode2 & NO_LEV_INSTANCE) == 0)
 		return;
@@ -79,6 +81,7 @@ void AP_HubNameEntry_LevInstances(struct InstDef *instDefs, int numInst)
 		{
 			inst->flags |= HIDE_MODEL;
 			hidden++;
+			AP_HNE_AddBackdropPad(gGT, inst);
 		}
 		else
 			pieces += AP_HNE_AddBackdropPiece(gGT, inst);
@@ -110,6 +113,7 @@ int AP_HubNameEntry_GarageInit(void)
 
 int AP_HubNameEntry_OnLevelFile(int leaving, int next)
 {
+	AP_HNE_ResetBackdropPads();
 	return AP_HNE_OnLevelFile(&s_apHne, leaving, next);
 }
 
@@ -182,6 +186,8 @@ void AP_HubNameEntry_OnFrame(struct GameTracker *gGT)
 	{
 		s_apHne.elapsedMs += (unsigned)(gGT->elapsedTimeMS > 0 ? gGT->elapsedTimeMS : 0);
 	}
+	if (gGT->gameMode2 & NO_LEV_INSTANCE)
+		AP_HNE_AnimateBackdropPads();
 
 	/* The menu-mode load births four drivers of the racer at the start line
 	 * with a null thread. They are not part of the picture. */

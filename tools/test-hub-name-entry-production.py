@@ -235,6 +235,15 @@ check("A6-7: pieces have no gameplay threads, AP gates, reward state, saves or s
       and all(word not in pieces for word in ("PROC_", "AP_Gate", "advProgress", "Save(", "headers->")))
 check("A6-7: extra pieces share the level's instance-pool lifetime",
       "JitPool_Clear(&gGT->JitPools.instance);" in body(init, "void MainInit_JitPoolsReset("))
+pads = read("ap/ap_hub_backdrop_pads.h")
+check("A6-7b: pads are born under the backdrop-only load gate",
+      lev_glue.find("AP_HNE_AddBackdropPad(gGT, inst)") > lev_glue.find("return;") > lev_glue.find("NO_LEV_INSTANCE"))
+check("A6-7b: pointers are forgotten on load and before each instance table",
+      "AP_HNE_ResetBackdropPads();" in body(glue, "int AP_HubNameEntry_OnLevelFile(")
+      and lev_glue.find("AP_HNE_ResetBackdropPads();") < lev_glue.find("return;"))
+check("A6-7b: scenery uses only retail models and no gameplay state or shared RNG",
+      all(word not in pads for word in ("AH_WarpPad_ThTick(", "AH_WarpPad_LInB(", "MixRNG_", "AP_Pad", "advProgress", "Save(", "headers[", "PROC_"))
+      and 'INSTANCE_Birth3D(gGT->modelPtr[id], name, NULL)' in pads)
 enum = read("include/namespace_Instance.h")
 logic = read("ap/ap_hub_name_entry_logic.h")
 check("A6-3: the hidden model ids are the engine's STATIC_WARPPAD and STATIC_SAVEOBJ",
