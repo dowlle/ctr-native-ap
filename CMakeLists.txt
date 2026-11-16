@@ -398,6 +398,11 @@ if(CTR_AP)
     endif()
     target_link_options(ctr_native PRIVATE -static-libstdc++)
 endif()
+# OpenSSL 4's static random provider calls BCryptGenRandom. Keep the system
+# import library after Crypto for both AP and standalone authoring builds.
+if(WIN32 AND TARGET OpenSSL::Crypto)
+    set_property(TARGET OpenSSL::Crypto APPEND PROPERTY INTERFACE_LINK_LIBRARIES bcrypt)
+endif()
 target_compile_options(ctr_native PRIVATE -O2)
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(ctr_native PRIVATE -Wenum-conversion -Wenum-compare -Wswitch-enum -Wformat -Wparentheses)

@@ -59,7 +59,10 @@ macro_file = -
 macro = -
 macro_value = -
 version = 0.8.2
-tree_sha256 = 61b29871afe09f27b24e54d3f87f71a21f8f079858aac9286b10589569235d44
+upstream_tree_sha256 = 61b29871afe09f27b24e54d3f87f71a21f8f079858aac9286b10589569235d44
+patch = patches/websocketpp-openssl4.patch
+patch_sha256 = d3ae46f93c9a6a37fd2e0227fbe35988807663c36c9d617bd5ab04bdbfd2f8d3
+tree_sha256 = e187e098f28ef38f1d6b1ba94ed4fd360fa4721bb3503e2bf8d30cfccecc37c3
 
 [asio]
 url = https://github.com/chriskohlhoff/asio.git
