@@ -1,4 +1,4 @@
-// cc -m32 -Wall -Wextra -DCTR_AP -DCTR_NATIVE -DBUILD=926 -I ap -I . -I include
+// cc -m32 -Wall -Wextra -DCTR_AP -DCTR_NATIVE -DCTR_CUSTOM_TRACKS -DBUILD=926 -I ap -I . -I include
 //    -o /tmp/test-coop tools/test-coop.c -lm
 // Compile the production option, ownership, load and result code with engine
 // and transport stubs. No rendering or network is involved.
@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <common.h>
+#include "platform/native_custom_race_context.h"
 #include "ap/ap_seedcfg.h"
 struct sData sdata_static;
 struct Data data;
@@ -15,6 +16,18 @@ static int active = 1, packedValue, known, writes;
 static unsigned revision;
 static unsigned unlocked = 1u;
 static char notice[64];
+static int customServing, cortex, haveContext, queriedPlayers;
+static struct CustomTrackRaceContext raceContext;
+int CustomTrack_ServingLoad(int level, int cup, int cupID)
+{
+	(void)level; (void)cup; (void)cupID;
+	queriedPlayers = sdata->gGT->numPlyrCurrGame;
+	/* The current custom predicate admits only one player. */
+	return customServing && queriedPlayers == 1;
+}
+int AP_CortexTrackActive(void) { return cortex; }
+const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int level)
+{ (void)level; return haveContext ? &raceContext : NULL; }
 int ctr_cfg_active(void) { return active; }
 int AP_CharacterUnlocked(int racer) { return (unlocked >> racer) & 1u; }
 void AP_CharSwap_ApplyStatPackage(struct Driver *driver) { (void)driver; }
@@ -91,6 +104,25 @@ int main(void)
 	assert(AP_CoopRank(&gt, 1) == 0 && AP_CoopWon(&gt));
 	assert(!AP_IsSlotHuman(&gt, &drivers[1])); /* finished bot cannot fire checks */
 	drivers[1].actionsFlagSet = 0;
+	gt.numPlyrCurrGame = 1;
+	customServing = 1;
+	AP_CoopPrepareLoad(&gt);
+	assert(queriedPlayers == 1 && gt.numPlyrCurrGame == 1);
+	assert(g_config.coopAdventure && strstr(notice, "SITS THIS RACE OUT"));
+	/* Retained custom identity must win even if the one-player serving
+	 * predicate is false while returning from a two-human race. */
+	gt.numPlyrCurrGame = 2; haveContext = 1; raceContext.retail = 0;
+	AP_CoopPrepareLoad(&gt);
+	assert(queriedPlayers == 2 && gt.numPlyrCurrGame == 1);
+	customServing = 0; raceContext.retail = 1;
+	AP_CoopPrepareLoad(&gt);
+	assert(gt.numPlyrCurrGame == 2); /* retail content-plan identity */
+	haveContext = 0; cortex = 1;
+	AP_CoopPrepareLoad(&gt);
+	assert(gt.numPlyrCurrGame == 1 && g_config.coopAdventure);
+	cortex = 0;
+	AP_CoopPrepareLoad(&gt);
+	assert(gt.numPlyrCurrGame == 2); /* supported retail return */
 	gt.gameMode1 = ADVENTURE_MODE | MAIN_MENU;
 	gt.numPlyrCurrGame = 4; gt.numPlyrNextGame = 2;
 	AP_CoopPrepareLoad(&gt);
@@ -126,6 +158,6 @@ int main(void)
 	unlocked |= 1u << 12;
 	AP_CoopTick(&gt);
 	assert(g_config.coopRacer == 12 && g_config.coopAdventure);
-	puts("PASS co-op production: option refusals, unlocked racer, solo fallback, ownership, 81 rank pairs, finished-bot result, restore");
+	puts("PASS co-op production: option refusals, unlocked racer, custom identity and solo fallback, ownership, 81 rank pairs, finished-bot result, restore");
 	return 0;
 }
