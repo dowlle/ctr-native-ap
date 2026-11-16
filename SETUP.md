@@ -172,7 +172,7 @@ earlier objects were not selected for the seed. The number disappears once
 checked, and the object returns to its retail colour. Open objects keep the
 green in-logic or red out-of-logic tint. Labels use the AP box style and distance
 limit, in unpaused single-player Adventure races. **Update Check** is on the
-Connection page.
+Gameplay page.
 
 AP boxes break when your kart touches their collection area, when your moving
 bomb, missile or thrown shield hits them, or when your weapon explodes close
