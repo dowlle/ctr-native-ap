@@ -178,6 +178,7 @@ tools/test-race-stats.c
 tools/test-room-effects-production.c
 tools/test-profile-racer-production.py
 tools/test-warppad-digits-production.py
+tools/test-warppad-requirement-types-production.py
 tools/test-wipeout-production.py
 tools/test-trap-mode-production.py
 tools/test-received-backlog.cpp
