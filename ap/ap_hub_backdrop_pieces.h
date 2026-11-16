@@ -56,6 +56,9 @@ static int AP_HNE_AddBackdropPiece(struct GameTracker *gGT, struct Instance *ins
 	inst->depthBiasSecondary = 1;
 	inst->unk53 = 0;
 	inst->vertSplit = inst->instDef->pos.y + 0x300;
+	/* The first idle retail tick applies these closed-door render flags. */
+	inst->flags |= SPLIT_SPECIAL;
+	inst->flags &= ~(SPLIT_LINE | REFLECTION_FUNC23 | WATER_SPLIT_WHITE);
 	return 1;
 }
 #endif

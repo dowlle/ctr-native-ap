@@ -62,6 +62,7 @@ int main(void)
 	for (yaw = 0; yaw < 4096; yaw += 1024)
 	{
 		inst.model = &models[ids[i]];
+		inst.flags = SPLIT_LINE | REFLECTION_FUNC23 | WATER_SPLIT_WHITE;
 		def.rot.y = yaw;
 		assert(AP_HNE_AddBackdropPiece(&gt, &inst) == 1);
 		assert(born.model == &models[STATIC_GARAGETOP] && born.thread == NULL);
@@ -71,6 +72,8 @@ int main(void)
 		assert(memcmp(born.matrix.m, inst.matrix.m, sizeof born.matrix.m) == 0);
 		assert(born.depthBiasNormal == 0xfe && inst.depthBiasNormal == 1 && inst.depthBiasSecondary == 1);
 		assert(inst.unk53 == 0 && inst.vertSplit == 120 + 0x300);
+		assert(inst.flags & SPLIT_SPECIAL);
+		assert(!(inst.flags & (SPLIT_LINE | REFLECTION_FUNC23 | WATER_SPLIT_WHITE)));
 	}
 	/* Everything except wooden doors and the four roll-up garages is inert. */
 	for (i = 0; i < 256; i++)
