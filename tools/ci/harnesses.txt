@@ -1,5 +1,7 @@
 # Harnesses CI runs (tools/ci/run-harnesses.py). One per line; `skip <reason>` opts out.
 tools/test-calmer-feed.c
+tools/test-coop.c
+tools/test-coop-menu.py
 tools/test-calmer-feed-production.py
 tools/test-instance-pool.c
 tools/test-ai-difficulty-menu.py

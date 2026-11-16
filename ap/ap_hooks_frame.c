@@ -526,6 +526,7 @@ static void ap_onframe_body(struct GameTracker *gGT)
 	// racer; the first seat of a connection applies wherever we are.
 	AP_CharSwap_SeatStartingCharacter(gGT);
 	AP_CharSwap_Tick(gGT);
+	AP_CoopTick(gGT);
 
 	{
 		static int ap_booted = 0;

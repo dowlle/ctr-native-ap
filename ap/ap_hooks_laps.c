@@ -52,7 +52,7 @@ static long AP_LapCode(struct GameTracker *gGT)
 // Battle, the main menu or the demo.
 static int AP_LapRaceMode(const struct GameTracker *gGT)
 {
-	return gGT->numPlyrCurrGame == 1 && AP_WumpaBankRaceMode(gGT->gameMode1) && !gGT->boolDemoMode &&
+	return (gGT->numPlyrCurrGame == 1 || AP_CoopRace(gGT)) && AP_WumpaBankRaceMode(gGT->gameMode1) && !gGT->boolDemoMode &&
 	       !(gGT->gameMode1 & (ADVENTURE_ARENA | ARCADE_MODE | BATTLE_MODE | CRYSTAL_CHALLENGE | MAIN_MENU));
 }
 
@@ -60,7 +60,8 @@ void AP_LapOnCrossing(struct GameTracker *gGT, struct Driver *driver, int driver
 {
 	long code;
 	if (!gGT || !driver || !ctr_cfg_active() ||
-	    !AP_LapCrossingCounts(driverSlot, (driver->actionsFlagSet & ACTION_BOT) != 0, driver->lapIndex,
+	    !AP_LapCrossingCounts(AP_CoopRace(gGT) && driverSlot == 1 && driver == gGT->drivers[1] ? 0 : driverSlot,
+	                          (driver->actionsFlagSet & ACTION_BOT) != 0, driver->lapIndex,
 	                          AP_LapRaceMode(gGT)))
 		return;
 	code = AP_LapCode(gGT);

@@ -1,4 +1,5 @@
 #ifdef CTR_AP
+#include "ap_coop.h"
 
 #include <common.h> // structs Driver/GameTracker/GamepadBuffer/CameraDC + sdata + enums
 #include <stdio.h>
@@ -147,7 +148,7 @@ static struct Driver *AP_TrapLocalDriver(void)
 
 static int AP_TrapIsLocal(struct Driver *driver)
 {
-	return driver != 0 && driver == AP_TrapLocalDriver() && AP_CapabilityRoomStatsRace();
+	return AP_IsSlotHuman(sdata ? sdata->gGT : 0, driver) && AP_CapabilityRoomStatsRace();
 }
 
 int AP_TrapSuppressCrateReward(struct Driver *driver)

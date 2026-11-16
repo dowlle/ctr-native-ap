@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_coop.h"
+#endif
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
 #include <platform/native_custom_tracks.h>
 #endif
@@ -198,7 +201,11 @@ static void MainGameEnd_UpdateAdventureLosses(struct GameTracker *gGT, struct Dr
 		return;
 	}
 
-	if (player->driverRank == 0)
+	if (
+#ifdef CTR_AP
+	    AP_CoopRace(gGT) ? AP_CoopWon(gGT) :
+#endif
+	    player->driverRank == 0)
 	{
 		if (IS_BOSS_RACE(gGT->gameMode1))
 		{

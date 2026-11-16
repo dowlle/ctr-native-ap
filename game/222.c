@@ -98,6 +98,9 @@ void AA_EndEvent_DrawMenu(void)
 
 	// For trophy race, check 1st place
 	b32 didWin = (driver->driverRank == 0);
+#ifdef CTR_AP
+	if (AP_CoopRace(gGT)) didWin = AP_CoopWon(gGT);
+#endif
 	b32 didEarnCtrToken = didWin && (driver->PickupLetterHUD.numCollected == 3);
 #ifdef CTR_AP
 	if (ctr_cfg_active() && (ctr_cfg.lettersanity_mode >= 2

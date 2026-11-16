@@ -1,4 +1,5 @@
 #ifdef CTR_AP
+#include "ap_coop.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -141,6 +142,8 @@ void AP_TurboGrantTick(struct GameTracker *gGT)
 		return;
 
 	local = AP_TurboGrantLocalDriver(gGT);
+	if (AP_CoopRace(gGT) && (!local || !AP_TurboGrantSlotFree(local)))
+		local = gGT->drivers[1];
 	if (local == 0 || !AP_TurboGrantSlotFree(local))
 		return;
 

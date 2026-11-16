@@ -328,6 +328,18 @@ static bool        g_char_known = false;
 // a re-seat would be a harmless no-op either way.
 static unsigned    g_char_rev = 0;
 
+static int g_coop_value = 0;
+static bool g_coop_known = false;
+static unsigned g_coop_rev = 0;
+static std::string ap_coop_key() { return "ctr_coop_" + g_slot; }
+static void ap_coop_accept(const nlohmann::json &value)
+{
+	if (!value.is_number_integer() || value < 0 || value > 31) return;
+	g_coop_value = value.get<int>();
+	g_coop_known = true;
+	g_coop_rev++;
+}
+
 static std::string ap_char_key()
 {
 	return "ctr_character_" + g_slot;
@@ -1281,6 +1293,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			g_diff_known = true;
 			std::fprintf(stderr, "[AP NET] difficulty override retrieved: %d\n", g_diff_value);
 		}
+		auto coop = keys.find(ap_coop_key());
+		if (coop != keys.end()) ap_coop_accept(coop->second);
 		auto ch = keys.find(ap_char_key());
 		int  cv = 0;
 		// A stored racer outside the roster is a key some other tool wrote.
@@ -1380,6 +1394,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			std::fprintf(stderr, "[AP NET] difficulty override changed: %d\n", g_diff_value);
 		}
 		int cv = 0;
+		if (key == ap_coop_key()) ap_coop_accept(value);
 		if (key == ap_char_key() && ap_char_accept(value, &cv))
 		{
 			g_char_value = cv;
@@ -1559,6 +1574,7 @@ static void ap_net_apply_retry_stop(void)
 	AP_DeathLinkInboxClear(&g_dl_inbox);
 	g_diff_known = false;
 	g_char_known = false;
+	g_coop_known = false;
 	g_edit_known = false;
 	g_statsel_known = false;
 	g_statsel_inflight.clear();
@@ -1605,6 +1621,7 @@ static void ap_net_apply_seed_reject(void)
 	AP_DeathLinkInboxClear(&g_dl_inbox);
 	g_diff_known = false;
 	g_char_known = false;
+	g_coop_known = false;
 	g_edit_known = false;
 	g_statsel_known = false;
 	g_statsel_inflight.clear();
@@ -2435,6 +2452,37 @@ extern "C" unsigned ap_net_character_revision(void)
 	return g_char_rev;
 }
 
+extern "C" void ap_net_coop_subscribe(void)
+{
+	if (!g_ap || !g_connected) return;
+	AP_NET_GUARD("coop_subscribe", {
+		const std::string key = ap_coop_key();
+		g_ap->SetNotify({key});
+		g_ap->Get({key});
+	});
+}
+
+extern "C" void ap_net_coop_set(int packed)
+{
+	if (!g_ap || !g_connected || packed < 0 || packed > 31) return;
+	AP_NET_GUARD("coop_set", {
+		APClient::DataStorageOperation op;
+		op.operation = "replace";
+		op.value = packed;
+		g_ap->Set(ap_coop_key(), packed, false, {op});
+	});
+	g_coop_value = packed;
+	g_coop_known = true;
+}
+
+extern "C" int ap_net_coop_known(int *out)
+{
+	if (!g_coop_known) return 0;
+	if (out) *out = g_coop_value;
+	return 1;
+}
+extern "C" unsigned ap_net_coop_revision(void) { return g_coop_rev; }
+
 extern "C" void ap_net_editstats_subscribe(void)
 {
 	if (!g_ap || !g_connected)
@@ -2829,6 +2877,7 @@ extern "C" void ap_net_shutdown(void)
 	AP_DeathLinkInboxClear(&g_dl_inbox); // a pending death must not survive a server switch
 	g_diff_known = false; // a difficulty override must not survive a server switch
 	g_char_known = false; // nor may a racer selection leak into another slot
+	g_coop_known = false;
 	g_edit_known = false; // nor an edited stat package
 	g_statsel_known = false; // nor a rank selection
 	g_statsel_inflight.clear();

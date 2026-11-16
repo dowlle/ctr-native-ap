@@ -6,6 +6,7 @@
 // Archipelago hook declarations (CTR_AP build only; see ap/ap_hooks.h)
 #ifdef CTR_AP
 #include "../ap/ap_hooks.h"
+#include "../ap/ap_coop.h"
 #include "../ap/ap_perf.h"      // whole-frame stall watchdog, bracketed in MainMain.c
 #include "../ap/ap_link.h"      // one-click-connect glue (#334 slice 3)
 #include "../ap/ap_update.h"    // signed in-game updater (#301)
@@ -404,6 +405,7 @@
 #include "../ap/ap_hooks_race.c"
 #include "../ap/ap_hooks_itemsanity.c"
 #include "../ap/ap_hooks_race_checks.c"
+#include "../ap/ap_coop.c"
 #include "../ap/ap_hooks_frame.c"
 #include "../ap/ap_hooks_cup_sweeps.c"
 #include "../ap/ap_hooks_content_cups.c" // #133 PR 5 content-plan cups

@@ -1,5 +1,6 @@
 #include <platform/native_menu.h>
 #ifdef CTR_AP
+#include "ap_coop.h"
 
 #include <common.h> // struct Driver / GameTracker / Level, sdata, data, LevelID, BTN_*
 #include <stddef.h> // offsetof
@@ -658,12 +659,12 @@ void AP_CharSwap_ApplyStatPackage(struct Driver *driver)
 	// editable package, Penta MAX table or class override over VehBirth_SetConsts.
 	if (!AP_CapabilityRoomStatsRace())
 		return;
-	if (driver->driverID != 0)
+	if (driver->driverID != 0 && !(AP_CoopRace(gGT) && driver->driverID == 1))
 		return; // local player only
-	if (gGT->drivers[0] != driver)
+	if (gGT->drivers[driver->driverID] != driver)
 		return; // and only the real P1 driver object, never the ghost
 
-	characterID = data.characterIDs[0];
+	characterID = data.characterIDs[driver->driverID];
 	if ((unsigned)characterID >= AP_CS_TILES)
 		return;
 

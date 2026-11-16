@@ -612,7 +612,7 @@ int AP_NotifyStandaloneRace(void)
 	    (context->mode == AP_CONTENT_MODE_CTR
 	         ? !(gGT->drivers[0]->driverRank == 0 &&
 	             AP_LetterTokenEarned(gGT->levelID, 1, gGT->drivers[0]->PickupLetterHUD.numCollected))
-	         : !ap_content_race_award(context->mode, gGT->drivers[0]->driverRank,
+	         : !ap_content_race_award(context->mode, AP_CoopRank(gGT, 0),
 	                                  gGT->drivers[0]->PickupLetterHUD.numCollected)))
 		return 0;
 	if (context->trophyLocation > 2147483647 ||
@@ -1166,7 +1166,7 @@ void AP_WumpaReachedTen(struct Driver *driver)
 	long code;
 
 	if (driver == 0 || sdata == 0 || sdata->gGT == 0 ||
-	    driver != sdata->gGT->drivers[0] || !AP_LocationChecksAllowed())
+	    !AP_IsSlotHuman(sdata->gGT, driver) || !AP_LocationChecksAllowed())
 		return;
 
 #ifdef CTR_CUSTOM_TRACKS
