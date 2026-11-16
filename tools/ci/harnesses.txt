@@ -191,6 +191,7 @@ tools/test-tracker-boss-node.c
 tools/test-tracker-markers.c
 tools/test-tracker-progress.c
 tools/test-tracker-checks.c
+tools/test-asio-ssl-includes.cpp
 tools/test-tracker-tabs.c
 tools/test-tracker-pad-launch.py
 tools/test-fast-travel.py
