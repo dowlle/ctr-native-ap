@@ -15,7 +15,7 @@
 //      are refused with the exact message and no update banner,
 //   2. a refused room sends no door storage, no check and no scout, and its items
 //      do not enter the queue,
-//   3. a room with a broken plan keeps the plan's own refusal.
+//   3. a broken plan gives matching-client advice and logs its technical reason.
 
 #include "../ap/ap_net.cpp"
 
@@ -126,10 +126,10 @@ static void test_version_advice(void)
 		m->emit_slot_connected(room);
 		const std::string message = ap_net_last_error();
 		expect(message.find(hints[i]) != std::string::npos, "correct family or unknown advice");
-		// Two 432px rows at 13px per letter. The first clause is 28 chars;
+		// Two 432px rows at 13px per letter. The first clause is 29 chars;
 		// every remaining clause fits the second row even at this worst width.
 		const auto split = message.find(". ");
-		expect(split != std::string::npos && split * 13 <= 432 && (message.size() - split - 2) * 13 <= 432,
+		expect(split != std::string::npos && (split + 1) * 13 <= 432 && (message.size() - split - 2) * 13 <= 432,
 		       "advice fits the two connection rows");
 		expect(message.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .-/") == std::string::npos,
 		       "credits font safe");
