@@ -5,9 +5,11 @@ Covers the hub Key floor plus stage 1 and stage 2 for 15 individual mask
 bits and the three any-of families, counts 1 to 300: 37 rows, 11,100 cases.
 Checks the requirement icon and full gate count, the displayed count capped
 at 99, and header bounds against a fake eight-header digit model.
+For counts above 99, also runs 14,874 production gate decisions immediately
+below and at each required count, so the display cap cannot lower the gate.
 
 Compiles AP_ContentMaskToReq, AP_ReqToUnlock, ap_pad_gate_layer, the content
-plan birth block and the per-frame digit pass from production source. The
+plan birth block, gate condition and per-frame digit pass from production source. The
 birth split and digit model choices are pinned to their production call
 sites. This host test does not load retail assets or render a played hub.
 Run from the repository root, with no arguments.
@@ -36,6 +38,9 @@ plan_end = warp.index("goto ContentPad_BuildGate;", plan_start)
 plan_block = warp[plan_start:plan_end] + "goto ContentPad_BuildGate;\n\t}\n"
 assert "pad->rule_count" in plan_block and "pad->stage2_count" in plan_block and "pad->keys" in plan_block
 
+gate_start = warp.index("\tif (unlockItem_numOwned", warp.index("ContentPad_BuildGate:"))
+gate_condition = warp[gate_start:warp.index("\n\t{", gate_start)]
+
 allnum = func(warp, "void AH_WarpPad_AllWarppadNum()")
 s = allnum.index("#ifdef CTR_AP\n")
 digit_pass = allnum[s + len("#ifdef CTR_AP\n"):allnum.index("#else", s)]
@@ -53,6 +58,7 @@ layer_selector = func((ap_dir / "ap_pad_birth.h").read_text(encoding="utf-8"),
 program = r"""
 #include <stdio.h>
 #include <string.h>
+#define CTR_AP 1
 """ + include + r"""
 typedef short s16;
 typedef struct { int type; int count; int colour; } ctr_req;
@@ -67,6 +73,8 @@ typedef struct { int keys, has_rule, rule_count; unsigned rule_mask;
 static ctr_content_pad g_pad;
 static int g_state;
 static int g_keys;
+static int g_owned;
+static int AP_PadReplayable(int a, int b) { (void)a; (void)b; return 0; }
 static int ap_content_plan_active(void) { return 1; }
 static const ctr_content_pad *ap_content_plan_pad(int id) { (void)id; return &g_pad; }
 static int AP_PadState(int a, int b) { (void)a; (void)b; return g_state; }
@@ -77,15 +85,15 @@ static int AP_GateCountGemColour(int c) { (void)c; return 0; }
 static int AP_GateCountTokenSum(void) { return 0; }
 static int AP_GateCountRelicSum(void) { return 0; }
 static int AP_GateCountGemSum(void) { return 0; }
-static int AP_ContentPadRuleOwned(const ctr_content_pad *p) { (void)p; return 0; }
-static int AP_ContentStage2Owned(const ctr_content_pad *p) { (void)p; return 0; }
+static int AP_ContentPadRuleOwned(const ctr_content_pad *p) { (void)p; return g_owned; }
+static int AP_ContentStage2Owned(const ctr_content_pad *p) { (void)p; return g_owned; }
 static int AP_ReqRelicTintTier(const ctr_req *r) { return r->colour; }
 static int AP_ReqGemColour(const ctr_req *r) { return r->colour; }
 static int AP_ReqTokenColour(const ctr_req *r) { return r->colour; }
 """ + layer_selector + req_to_unlock + mask_to_req + r"""
 
 /* What the production block hands to the gate builder. */
-static void select_requirement(int levelID, int *modelOut, int *neededOut)
+static void select_requirement(int levelID, int *modelOut, int *neededOut, int *openOut)
 {
 	struct { int levelID; } warppadObjS = { 0 }, *warppadObj = &warppadObjS;
 	int unlockItem_modelID = 0, unlockItem_numOwned = 0, unlockItem_numNeeded = -1;
@@ -94,7 +102,10 @@ static void select_requirement(int levelID, int *modelOut, int *neededOut)
 ContentPad_BuildGate:
 	(void)reqRelicTint; (void)reqGemColour; (void)reqTokenColour;
 	*modelOut = unlockItem_modelID;
-	*neededOut = (unlockItem_numOwned >= unlockItem_numNeeded) ? -1 : unlockItem_numNeeded;
+	*neededOut = unlockItem_numNeeded;
+	*openOut = 0;
+""" + gate_condition + r"""
+		*openOut = 1;
 }
 
 enum { WPIS_CLOSED_ITEM = 0, WPIS_CLOSED_X, WPIS_CLOSED_1S, WPIS_CLOSED_10S, WPIS_COUNT = 8 };
@@ -181,7 +192,7 @@ int main(void)
 	static const struct { const char *name; unsigned mask; } fam[] = {
 		{ "AnyRelic", 0xEu }, { "AnyCtrToken", 0x1F0u }, { "AnyGem", 0x3E00u } };
 	struct { const char *name; unsigned mask; } types[18];
-	int ntypes = 0, i, layer, n, fail = 0, cases = 0;
+	int ntypes = 0, i, layer, n, fail = 0, cases = 0, gate_cases = 0;
 	g_models[0].id = 0x38; g_models[0].numHeaders = 8; g_models[0].headers = g_hdr;
 	g_models[1].id = 0x6d; g_models[1].numHeaders = 1; g_models[1].headers = g_hdr;
 	g_models[2].id = 0x6e; g_models[2].numHeaders = 1; g_models[2].headers = g_hdr;
@@ -197,15 +208,17 @@ int main(void)
 			int first_overrun = -1, overruns = 0;
 			for (n = 1; n <= 300; n++)
 			{
-				int model, needed, shown, over, want;
+				int model, needed, shown, over, want, opened;
 				memset(&g_pad, 0, sizeof(g_pad));
+				g_owned = 0;
 				if (layer == 0) { g_pad.keys = n; g_keys = 0; g_state = 1; }
 				else if (layer == 1) { g_pad.keys = 0; g_keys = 0; g_state = 1; g_pad.has_rule = 1;
 				                       g_pad.rule_mask = types[t].mask; g_pad.rule_count = n; }
 				else { g_keys = 0; g_state = 3; g_pad.has_rule = 1; g_pad.rule_mask = 1u; g_pad.rule_count = 1;
 				       g_pad.has_stage2 = 1; g_pad.stage2_mask = types[t].mask; g_pad.stage2_count = n; }
-				select_requirement(3, &model, &needed);
+				select_requirement(3, &model, &needed, &opened);
 				cases++;
+				if (opened) { printf("FAIL unmet pad opens at %d\n", n); fail = 1; }
 				if (needed != n)
 				{ printf("FAIL %s %s count %d: block asks %d\n", lname[layer], layer ? types[t].name : "Key", n, needed); fail = 1; continue; }
 				if (model != (layer ? expected_model(types[t].mask) : STATIC_KEY))
@@ -215,6 +228,20 @@ int main(void)
 				if (over) { overruns++; if (first_overrun < 0) first_overrun = n; }
 				if (over || shown != want)
 				{ printf("FAIL %s %s count %d shows %d (overrun %d)\n", lname[layer], layer ? types[t].name : "Key", n, shown, over); fail = 1; }
+				/* Display saturation must not lower the production gate threshold. */
+				if (n > 99)
+				{
+					int owned;
+					for (owned = n - 1; owned <= n; owned++)
+					{
+						g_owned = owned;
+						if (layer == 0) g_keys = owned;
+						select_requirement(3, &model, &needed, &opened);
+						gate_cases++;
+						if (needed != n || opened != (owned >= n))
+						{ printf("FAIL %s %s gate needs %d, owned %d: count %d open %d\n", lname[layer], layer ? types[t].name : "Key", n, owned, needed, opened); fail = 1; }
+					}
+				}
 			}
 			printf("%-14s %-17s counts 1..300: %s", lname[layer], layer ? types[t].name : "Key",
 			       overruns ? "per-frame pass reads past the 8 digit headers" : "number drawn, never past the digit headers");
@@ -223,7 +250,9 @@ int main(void)
 		}
 	}
 	if (cases != 11100) { printf("FAIL case count %d, want 11100\n", cases); fail = 1; }
+	if (gate_cases != 14874) { printf("FAIL gate case count %d, want 14874\n", gate_cases); fail = 1; }
 	printf("warppad requirement types: %d type x layer x count cases, %s\n", cases, fail ? "FAIL" : "ok");
+	printf("production gate: %d below/at-threshold checks above 99, %s\n", gate_cases, fail ? "FAIL" : "ok");
 	return fail;
 }
 """
