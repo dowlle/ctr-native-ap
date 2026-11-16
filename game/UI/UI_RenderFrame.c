@@ -917,6 +917,7 @@ void UI_RenderFrame_Racing()
 
 #if defined(CTR_NATIVE)
 	AP_Boxes_DrawNumbers();
+	AP_SanityDrawNumbers();
 #endif
 
 	// Box placement author mode (#182): one status line while the mode is on.

@@ -2,6 +2,10 @@
 #ifdef CTR_AP
 
 #include "ap_sanity_colour.h"
+#ifdef CTR_NATIVE
+#include "ap_world_number.h"
+#include <platform/native_config.h>
+#endif
 #include "ap_class_check_policy.h"
 
 static struct InstDef *ap_sanity_defs;
@@ -13,6 +17,7 @@ static struct {
     unsigned color;
     short alpha;
     unsigned char family;
+    unsigned char ordinal, open;
     unsigned short recolour;
 } ap_sanity_objects[512];
 static long ap_sanity_sent[16384];
@@ -112,6 +117,10 @@ static int AP_SanityEnsure(struct GameTracker *gt)
             ap_sanity_objects[n].inst = d->ptrInstance;
             ap_sanity_objects[n].code = (long)row->locations[f][counts[f] - 1];
             ap_sanity_objects[n].family = (unsigned char)f;
+            // Count every object in this family, including unselected checks.
+            // This is the permanent LEV ordinal used in the location name.
+            ap_sanity_objects[n].ordinal = (unsigned char)counts[f];
+            ap_sanity_objects[n].open = 0;
             ap_sanity_objects[n].color = d->ptrInstance->colorRGBA;
             ap_sanity_objects[n].alpha = d->ptrInstance->alphaScale;
         }
@@ -144,6 +153,7 @@ int AP_SanityPickup(struct Instance *inst, struct Driver *driver)
             memmove(&ap_sanity_sent[at + 1], &ap_sanity_sent[at], (ap_sanity_sent_count - at) * sizeof(long));
             ap_sanity_sent[at] = code;
             ++ap_sanity_sent_count;
+            ap_sanity_objects[i].open = 0;
             ++ap_sanity_feed[ap_sanity_objects[i].family];
             if (!ap_sanity_feed_ticks) ap_sanity_feed_ticks = 240;
             inst->colorRGBA = ap_sanity_objects[i].color;
@@ -160,6 +170,7 @@ void AP_SanityTick(struct GameTracker *gt)
     int i, active = AP_SanityEnsure(gt);
     if (active) for (i = 0; i < ap_sanity_size; ++i) {
         int open = !AP_SanityAlreadySent(ap_sanity_objects[i].code);
+        ap_sanity_objects[i].open = (unsigned char)open;
         int look = AP_SanityLook(!open, AP_LocationLogicState(ap_sanity_objects[i].code));
         ap_sanity_objects[i].recolour = AP_SanityTag(look, AP_SANITY_VISIBILITY);
     }
@@ -183,6 +194,36 @@ unsigned AP_SanityRecolourTag(struct Instance *inst)
         if (ap_sanity_objects[i].inst == inst) return ap_sanity_objects[i].recolour;
     return 0;
 }
+
+#ifdef CTR_NATIVE
+void AP_SanityDrawNumbers(void)
+{
+    struct GameTracker *gt;
+    MATRIX *view;
+    int i;
+    if (!g_config.sanityNumbers || !sdata || !(gt = sdata->gGT) ||
+        sdata->Loading.stage != LOAD_IDLE || gt->numPlyrCurrGame != 1 ||
+        (gt->gameMode1 & PAUSE_ALL) || ap_sanity_ready <= 0 || !AP_SanityRoute(gt))
+        return;
+    view = &gt->pushBuffer[0].matrix_ViewProj;
+    gte_SetRotMatrix(view);
+    gte_SetTransMatrix(view);
+    for (i = 0; i < ap_sanity_size; ++i) {
+        struct Instance *inst = ap_sanity_objects[i].inst;
+        SVECTOR world;
+        char number[4];
+        // Retail hides a broken crate or collected fruit with zero scale.
+        if (!ap_sanity_objects[i].open || !inst || inst->scale.x == 0 ||
+            (inst->flags & (DRAW_INSTANCE | HIDE_MODEL)) != DRAW_INSTANCE) continue;
+        snprintf(number, sizeof number, "%u", (unsigned)ap_sanity_objects[i].ordinal);
+        world.vx = (s16)inst->matrix.t[0];
+        world.vy = (s16)(inst->matrix.t[1] + 100);
+        world.vz = (s16)inst->matrix.t[2];
+        world.pad = 0;
+        AP_WorldNumber_Draw(&world, number);
+    }
+}
+#endif
 
 int AP_SanityPadPending(int physical, int family)
 {

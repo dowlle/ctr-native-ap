@@ -18,6 +18,7 @@
 //     row onto a fallback page
 //   * pages do not change where a row is saved: the config.ini sections of the
 //     moved rows are the ones v0.2.0 wrote
+//   * Connection's bespoke text editor receives only strings with real buffers
 
 #include <stdio.h>
 #include <string.h>
@@ -103,6 +104,13 @@ int main(void)
 		snprintf(label, sizeof label, "%s fits the panel (%d rows, limit %d)",
 			s_names[p], s_counts[p], CTR_MENU_PAGE_VISIBLE_ROWS);
 		EXPECT_TRUE(label, s_counts[p] <= CTR_MENU_PAGE_VISIBLE_ROWS);
+		if (strcmp(s_names[p], "Connection") == 0)
+			for (int r = 0; r < s_counts[p]; r++)
+			{
+				const ConfigEntry *e = &g_configEntries[s_rows[p][r]];
+				snprintf(label, sizeof label, "Connection row %s has a valid text buffer", e->key);
+				EXPECT_TRUE(label, e->type == CFG_STRING && e->valuePtr != NULL && e->max > 1);
+			}
 	}
 
 	for (int p = 0; p < CTR_MENU_PAGE_COUNT; p++)
@@ -124,11 +132,11 @@ int main(void)
 			"disable_split_screen_lod", NULL};
 		static const char *const gameplay[] = {
 			"skip_intro", "skip_hints", "race_type_selector", "skip_podium", "skip_cutscenes",
-			"boss_music", "ai_difficulty", "mute_when_unfocused", "device_aware_labels", NULL};
+			"boss_music", "ai_difficulty", "mute_when_unfocused", "device_aware_labels", "update_check", NULL};
 		static const char *const controls[] = {NULL};
 		static const char *const connection[] = {"uri", "slot", "password", NULL};
 		static const char *const archipelago[] = {
-			"map_flash", "item_feed", "item_box_colours", "item_box_numbers", "death_link", "dl_send_fall", "dl_send_hit", "dl_send_loss", "trap_duration", "update_check",
+			"map_flash", "item_feed", "item_box_colours", "item_box_numbers", "sanity_numbers", "death_link", "dl_send_fall", "dl_send_hit", "dl_send_loss", "trap_duration",
 			"discord_status", NULL};
 		static const char *const authoring[] = {
 			"nav_record", "nav_use_recorded", "nav_repeat_laps", "nav_driver_name", NULL};
