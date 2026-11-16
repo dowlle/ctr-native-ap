@@ -81,11 +81,13 @@ tracker = r'''
 #define SDL_BUTTON_LMASK 1
 typedef struct { int physical, destination, kind, x,y,cx,cy,cw,ch; } AP_TrackerNode;
 static struct {
-    int open,hub,tab,focus,pinned,count,acts_open,acts_cursor;
+    int open,hub,tab,focus,pinned,count,acts_open,acts_cursor,checks_open,checks_page;
     float mouse_x,mouse_y; unsigned mouse_buttons;
     ap_padact_list acts; AP_TrackerNode nodes[2];
 } ap_tracker;
 static int ap_tracker_request, launches, launchEnabled = 1;
+static int checksPages=4;
+int AP_TrackerChecksPages(const AP_TrackerNode *node) { return checksPages; }
 static struct { struct { int w,h; } disp; } activeDispEnv;
 int ctr_cfg_active(void) { return 1; }
 unsigned SDL_GetMouseState(float *x,float *y) { *x=0; *y=0; return 0; }
@@ -93,7 +95,7 @@ void SDL_ShowCursor(void) {}
 void AH_Pause_Destroy(void) {}
 void MainFreeze_MenuPtrDefault(struct RectMenu *menu) {}
 int AP_TrackerLoadAssets(void) { return 1; }
-void AP_TrackerClose(void) { ap_tracker.open=0; ap_tracker.acts_open=0; ap_tracker.pinned=0; }
+void AP_TrackerClose(void) { ap_tracker.open=0; ap_tracker.acts_open=0; ap_tracker.pinned=0; ap_tracker.checks_open=0; }
 void AP_TrackerShutdown(void) {}
 void AP_TrackerBuildNodes(void) {}
 void AP_TrackerDraw(void) {}
@@ -140,8 +142,28 @@ static void tracker_tests(void) {
         assert(AP_TrackerMenuFrame() && ap_tracker.open && !(sdata->AnyPlayerTap & BTN_START));
         assert(!ap_tracker_request);
     }
-    ap_tracker.open=1; sdata->buttonTapPerPlayer[0]=BTN_SQUARE;
-    assert(AP_TrackerMenuFrame() && ap_tracker.open);
+    for(int enabled=0;enabled<2;enabled++) {
+        memset(&ap_tracker,0,sizeof ap_tracker); ap_tracker.open=1; ap_tracker.count=1;
+        launchEnabled=enabled; int before=launches;
+        sdata->buttonTapPerPlayer[0]=BTN_SQUARE;
+        assert(AP_TrackerMenuFrame() && ap_tracker.open && ap_tracker.checks_open);
+        assert(!ap_tracker.acts_open && launches==before && ap_tracker.checks_page==0);
+        sdata->buttonTapPerPlayer[0]=BTN_L1;
+        assert(AP_TrackerMenuFrame() && ap_tracker.checks_page==3 && ap_tracker.tab==0);
+        sdata->buttonTapPerPlayer[0]=BTN_R1;
+        assert(AP_TrackerMenuFrame() && ap_tracker.checks_page==0 && ap_tracker.tab==0);
+        checksPages=1; ap_tracker.checks_page=3; /* A changed room removes the cup. */
+        assert(AP_TrackerMenuFrame() && ap_tracker.checks_page==0); checksPages=4;
+        for(int b=0;b<2;b++) {
+            ap_tracker.checks_open=1;
+            sdata->buttonTapPerPlayer[0]=backs[b]; sdata->AnyPlayerTap=backs[b];
+            assert(AP_TrackerMenuFrame() && ap_tracker.open && !ap_tracker.checks_open);
+            assert(!(sdata->AnyPlayerTap & BTN_START));
+        }
+    }
+    launchEnabled=1;
+    ap_tracker.tab=AP_TRACKER_TAB_ITEMS; sdata->buttonTapPerPlayer[0]=BTN_SQUARE;
+    assert(AP_TrackerMenuFrame() && !ap_tracker.checks_open);
     ap_tracker.tab=0; sdata->buttonTapPerPlayer[0]=BTN_R1;
     assert(AP_TrackerMenuFrame() && ap_tracker.tab==1);
     sdata->buttonTapPerPlayer[0]=BTN_L1;
@@ -242,4 +264,4 @@ with tempfile.TemporaryDirectory(prefix='ctr-menu-actions-') as tmp:
     subprocess.run(['cc', '-m32', '-DCTR_NATIVE', '-DBUILD=926', '-I', str(root / 'include'),
                     '-I', str(root), str(src), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print('production menu actions: shop, tracker map/activity list, Controls picker, character picker, room links passed')
+print('production menu actions: shop, tracker map/activity/check pages, Controls picker, character picker, room links passed')
