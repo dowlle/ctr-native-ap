@@ -119,7 +119,7 @@ void AP_CoopPrepareLoad(struct GameTracker *gt)
 void AP_CoopTick(struct GameTracker *gt)
 {
 	int packed;
-	if (AP_CoopRace(gt) && gt->drivers[1])
+	if (sdata && sdata->Loading.stage == LOAD_IDLE && AP_CoopRace(gt) && gt->drivers[1])
 		AP_CharSwap_ApplyStatPackage(gt->drivers[1]);
 	if (!gt || !(gt->gameMode1 & ADVENTURE_ARENA) ||
 	    (gt->gameMode1 & (ADVENTURE_CUP | MAIN_MENU | GAME_CUTSCENE)) ||

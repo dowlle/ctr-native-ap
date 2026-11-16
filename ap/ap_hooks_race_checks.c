@@ -252,7 +252,7 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 
 	// Live-position mirror: only meaningful with a valid player driver in an
 	// adventure context; -1 otherwise so a diff can't misread a stale hub rank.
-	if (p != NULL && (gGT->gameMode1 & ADVENTURE_MODE) != 0)
+	if (p != NULL && sdata->Loading.stage == LOAD_IDLE && (gGT->gameMode1 & ADVENTURE_MODE) != 0)
 		ap_live_position = AP_CoopRank(gGT, 0) >= 0 ? AP_CoopRank(gGT, 0) + 1 : -1;
 	else
 		ap_live_position = -1;
@@ -272,7 +272,7 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 
 	int finishedNow = (p->actionsFlagSet & ACTION_RACE_FINISHED) != 0;
 	if (AP_CoopRace(gGT))
-		finishedNow = finishedNow && gGT->drivers[1] &&
+		finishedNow = inRace && finishedNow && gGT->drivers[1] &&
 		    (gGT->drivers[1]->actionsFlagSet & ACTION_RACE_FINISHED);
 	if (finishedNow && !ap_finish_prev && inRace)
 	{

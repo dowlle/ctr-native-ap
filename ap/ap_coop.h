@@ -13,8 +13,9 @@ static inline int AP_CoopRace(const struct GameTracker *gt)
 }
 static inline int AP_IsSlotHuman(const struct GameTracker *gt, const struct Driver *driver)
 {
-	if (!gt || !driver || (driver->actionsFlagSet & ACTION_BOT)) return 0;
-	return driver == gt->drivers[0] || (AP_CoopRace(gt) && driver == gt->drivers[1]);
+	if (!gt || !driver) return 0;
+	if (driver != gt->drivers[0] && !(AP_CoopRace(gt) && driver == gt->drivers[1])) return 0;
+	return !(driver->actionsFlagSet & ACTION_BOT);
 }
 static inline int AP_CoopRank(const struct GameTracker *gt, int finishedOnly)
 {
