@@ -5,8 +5,10 @@ Native #84 removed the star once the boss check was collected. The project ruled
 
 1. Cut the marker-state tail out of game/232/AH_Map.c (from the "open, not
    beaten" default to the goto) and the colour pick out of the draw block, build
-   both against stubs and check, for all four boss garages and the Oxide icon,
-   with AP on and off: uncollected is state 1 (blue/white flicker), collected is
+   both against stubs and check, for marker types 0..3 (Ripper Roo, Papu Papu,
+   Komodo Joe, Pinstripe; type 3 is Pinstripe's Citadel garage, the one the AP
+   branch used to remove) and the Oxide icon (type 4), with AP on and off:
+   uncollected is state 1 (blue/white flicker on both timer frames), collected is
    state 2 (red, colour 3), never -1 (no star).
 2. Check the source no longer sets the marker state to -1 for a beaten boss.
 """
@@ -65,25 +67,26 @@ fixture = fixture.replace('TAIL', tail).replace('COLOUR', colour)
 main = r'''
 int main(void)
 {
-    int on, boss;
+    int on, type, frame;
     for (on = 0; on <= 1; on++)
     {
         cfg_on = on;
-        for (boss = 0; boss < 4; boss++) /* Roo, Papu, Komodo, Pinstripe: marker type 3 */
+        for (type = 0; type <= 4; type++) /* 0..3 boss garages, 4 Oxide */
         {
-            expect("uncollected -> open state", state(3, 0), 1);
-            expect("uncollected -> blue/white", colour_of(state(3, 0)), 5);
-            expect("collected -> red state", state(3, 1), 2);
-            expect("collected -> red colour 3", colour_of(state(3, 1)), 3);
+            expect("uncollected -> open state", state(type, 0), 1);
+            for (frame = 0; frame < 4; frame++)
+            {
+                gGT_s.timer = frame;
+                expect("uncollected -> blue/white flicker",
+                       colour_of(state(type, 0)), (frame & 2) ? 4 : 5);
+            }
+            expect("collected -> red state", state(type, 1), 2);
+            expect("collected -> red colour 3", colour_of(state(type, 1)), 3);
         }
-        /* Oxide icon shares the tail and keeps its own marker */
-        expect("oxide uncollected", state(4, 0), 1);
-        expect("oxide collected", state(4, 1), 2);
     }
     puts(fails ? "FAIL boss garage star red" : "ok boss garage star red");
     return fails != 0;
-}
-'''
+}'''
 with tempfile.TemporaryDirectory() as tmp:
     tmp = Path(tmp)
     (tmp / 'star.c').write_text(fixture + main)

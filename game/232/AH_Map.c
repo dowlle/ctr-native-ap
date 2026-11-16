@@ -434,8 +434,8 @@ void AH_Map_HubItems(void *hubPtrs, s16 *param_2)
 						sVar8 = 2;
 						// AP (#704): a collected boss garage star turns red like
 						// vanilla (sVar8 = 2, colour 3) instead of vanishing. This
-						// reverses #84's "removed once checked" rule for the boss
-						// garage; the Oxide icon (sVar1 == 4) is unchanged. The
+						// reverses #84's "removed once checked" rule, which only
+						// reached Pinstripe's garage (sVar1 == 3). The
 						// beaten state itself comes from AP_BossMapStarBeaten above.
 					}
 					goto LAB_800b17ec;
