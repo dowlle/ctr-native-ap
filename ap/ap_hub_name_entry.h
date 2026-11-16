@@ -21,7 +21,8 @@ int AP_HubNameEntry_IsBackdropLevel(int levelID);
 
 // INSTANCE_LevInitAll, after its loop: on the backdrop, hide the level
 // instances whose birth function would hide them (warp pads, the save box),
-// since the backdrop runs no birth functions (A6-3).
+// since the backdrop runs no birth functions (A6-3). Add the missing static
+// door leaves and garage tops without their gameplay threads (A6-7).
 struct InstDef;
 void AP_HubNameEntry_LevInstances(struct InstDef *instDefs, int numInst);
 

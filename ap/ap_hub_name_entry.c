@@ -3,6 +3,7 @@
  * after ap_hub_savebox.c. */
 #include "ap_hub_name_entry_logic.h"
 #include "ap_hub_name_entry.h"
+#include "ap_hub_backdrop_pieces.h"
 #include <time.h>
 
 static struct AP_HubNameEntryState s_apHne = {AP_HNE_OFF, -1, -1, 0x2545f491u, 0, 0, -1, {-1, -1, -1, -1, -1}};
@@ -64,7 +65,7 @@ int AP_HubNameEntry_IsBackdropLevel(int levelID)
 void AP_HubNameEntry_LevInstances(struct InstDef *instDefs, int numInst)
 {
 	struct GameTracker *gGT = sdata->gGT;
-	int i, hidden = 0;
+	int i, hidden = 0, pieces = 0;
 	char line[128];
 	if (instDefs == NULL || !AP_HNE_IsBackdropLevel(&s_apHne, (int)gGT->levelID) ||
 	    (gGT->gameMode2 & NO_LEV_INSTANCE) == 0)
@@ -72,13 +73,18 @@ void AP_HubNameEntry_LevInstances(struct InstDef *instDefs, int numInst)
 	for (i = 0; i < numInst; i++)
 	{
 		struct Instance *inst = instDefs[i].ptrInstance;
-		if (inst == NULL || instDefs[i].model == NULL || !AP_HNE_HidesLevModel((s16)instDefs[i].model->id))
+		if (inst == NULL || instDefs[i].model == NULL)
 			continue;
-		inst->flags |= HIDE_MODEL;
-		hidden++;
+		if (AP_HNE_HidesLevModel((s16)instDefs[i].model->id))
+		{
+			inst->flags |= HIDE_MODEL;
+			hidden++;
+		}
+		else
+			pieces += AP_HNE_AddBackdropPiece(gGT, inst);
 	}
-	snprintf(line, sizeof line, "[AP HUB NAME] hub level %d: %d warp pad and save box markers hidden\n",
-	         (int)gGT->levelID, hidden);
+	snprintf(line, sizeof line, "[AP HUB NAME] hub level %d: %d markers hidden, %d static door/garage pieces added\n",
+	         (int)gGT->levelID, hidden, pieces);
 	AP_LogLine(line);
 }
 

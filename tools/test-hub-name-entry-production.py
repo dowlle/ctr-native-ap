@@ -226,6 +226,15 @@ check("A6-3: only on the backdrop, only when its instances got no thread (NO_LEV
 check("A6-3: the markers are hidden and nothing is born or started for them",
       "inst->flags |= HIDE_MODEL;" in lev_glue and "AP_HNE_HidesLevModel(" in lev_glue
       and "Birth" not in lev_glue and "LInB" not in lev_glue and "PROC_" not in lev_glue)
+pieces = read("ap/ap_hub_backdrop_pieces.h")
+check("A6-7: static pieces are added only inside the backdrop's existing load gate",
+      lev_glue.find("AP_HNE_AddBackdropPiece(gGT, inst)") > lev_glue.find("return;") > lev_glue.find("NO_LEV_INSTANCE"))
+check("A6-7: pieces have no gameplay threads, AP gates, reward state, saves or shared model writes",
+      'INSTANCE_Birth3D(model, "backdrop-door", NULL)' in pieces
+      and 'INSTANCE_Birth3D(model, "backdrop-top", NULL)' in pieces
+      and all(word not in pieces for word in ("PROC_", "AP_Gate", "advProgress", "Save(", "headers->")))
+check("A6-7: extra pieces share the level's instance-pool lifetime",
+      "JitPool_Clear(&gGT->JitPools.instance);" in body(init, "void MainInit_JitPoolsReset("))
 enum = read("include/namespace_Instance.h")
 logic = read("ap/ap_hub_name_entry_logic.h")
 check("A6-3: the hidden model ids are the engine's STATIC_WARPPAD and STATIC_SAVEOBJ",
