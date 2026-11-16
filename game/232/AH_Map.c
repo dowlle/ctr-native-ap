@@ -432,16 +432,11 @@ void AH_Map_HubItems(void *hubPtrs, s16 *param_2)
 					if (sVar7 != 0)
 					{
 						sVar8 = 2;
-#ifdef CTR_AP
-						// AP: a checked boss-race location removes the star entirely
-						// (sVar8 = -1 skips the marker block at `if (-1 < sVar8)`).
-						// Guard on sVar1 == 3: the Oxide icon (sVar1 == 4) shares this
-						// tail and must keep its own marker (out of #84's scope).
-						if (ctr_cfg_active() && sVar1 == 3)
-						{
-							sVar8 = -1;
-						}
-#endif
+						// AP (#704): a collected boss garage star turns red like
+						// vanilla (sVar8 = 2, colour 3) instead of vanishing. This
+						// reverses #84's "removed once checked" rule for the boss
+						// garage; the Oxide icon (sVar1 == 4) is unchanged. The
+						// beaten state itself comes from AP_BossMapStarBeaten above.
 					}
 					goto LAB_800b17ec;
 				}
