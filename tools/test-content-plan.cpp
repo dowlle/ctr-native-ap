@@ -1752,6 +1752,8 @@ int main(int argc, char **argv) {
                        leg["id"] == l.leg_id && l.cortex == (track["origin"] == "cortex_vortex") &&
                        (l.package_index >= 0) == (track["origin"] == "custom"),
                        "cups: leg host, laps and identity");
+                expect(std::string(l.room_title) == track.value("room_title", track["display_name"].get<std::string>()),
+                       "cups: accepted room title retained even without a standalone pad");
                 expect(l.victory == (victory.count(leg["track_id"]) ? victory[leg["track_id"]] : 0), "cups: leg Cup Leg Victory code");
                 const int full = track["laps"].get<int>();
                 expect(l.laps == (full / 2 > 1 ? full / 2 : 1), "cups: one_lap_cups shortens every leg");
@@ -1767,6 +1769,28 @@ int main(int argc, char **argv) {
         }
         expect(seen == 9, "cups: nine cup pads");
         expect(!victory.empty(), "cups: the fixture has Cup Leg Victory checks");
+        J renamed = cups;
+        const std::string generic_id = "custom/fixture-loop/2.1";
+        for (auto &t : renamed["content_plan"]["tracks"])
+            if (t["id"] == generic_id) t["room_title"] = "Crash Cove (Custom)";
+        for (auto &c : renamed["content_plan"]["checks"])
+            if (c["owner"] == generic_id) {
+                const std::string name = c["display_name"];
+                c["display_name"] = "Crash Cove (Custom)" + name.substr(std::string("Fixture Loop").size());
+            }
+        expect(parse(renamed) && bind_room(renamed), "cups: a generic track with a distinct room title binds");
+        int renamed_legs = 0;
+        for (int id = 0; id <= 110; ++id) {
+            const auto *p = ap_content_plan_pad(id);
+            if (!p || !p->occupied || !p->cup) continue;
+            for (const auto &leg : p->legs) if (generic_id == leg.track_id) {
+                ++renamed_legs;
+                const auto *pkg = ap_content_plan_package(leg.package_index);
+                expect(std::string(leg.room_title) == "Crash Cove (Custom)" && pkg &&
+                       std::string(pkg->display_name) == "Fixture Loop", "cups: leg title differs from package title");
+            }
+        }
+        expect(renamed_legs > 0, "cups: renamed generic track occurs in a cup");
         // A forged leg refuses the room.
         J forged = cups;
         for (auto &e : forged["content_plan"]["entries"])

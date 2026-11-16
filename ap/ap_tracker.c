@@ -752,7 +752,8 @@ static void AP_TrackerChecksBuild(const AP_TrackerNode *n, AP_TrackerCheckCount 
 		sanity = ap_content_plan_sanity(leg->track_id);
 		wumpa = leg->wumpa;
 		if (!wumpa && track) wumpa = track->wumpa_location;
-		if (track) snprintf(title, title_size, "%s", track->room_title[0] ? track->room_title : track->display_name);
+		if (leg->room_title[0]) snprintf(title, title_size, "%s", leg->room_title);
+		else if (track) snprintf(title, title_size, "%s", track->room_title[0] ? track->room_title : track->display_name);
 		else if (leg->cortex) snprintf(title, title_size, "CORTEX VORTEX");
 		else if (leg->retail_id >= 0 && leg->retail_id < 18)
 			snprintf(title, title_size, "%s", sdata->lngStrings[data.metaDataLEV[leg->retail_id].name_LNG]);

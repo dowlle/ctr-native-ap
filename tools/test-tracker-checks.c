@@ -118,6 +118,11 @@ int main(int argc,char **argv) {
     AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
     expect(&rows[0],1,1,0,0,0); expect(&rows[1],3,0,1,1,1);
     assert(strstr(route,"LEG 3 OF 4") && AP_TrackerChecksPages(&node)==4);
+    /* A cup-only custom leg keeps the accepted room title, not its package name. */
+    strcpy(pads[1].legs[2].room_title,"CRASH COVE (CUSTOM)");
+    AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
+    assert(!strcmp(title,"CRASH COVE (CUSTOM)"));
+    pads[1].legs[2].room_title[0]=0;
     ap_tracker.checks_page=1;
     AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
     expect(&rows[0],0,0,0,0,0); expect(&rows[1],0,0,0,0,0);
