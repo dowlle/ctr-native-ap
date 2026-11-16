@@ -137,7 +137,7 @@ int AP_SanityPickup(struct Instance *inst, struct Driver *driver)
         // belong in the same room's held-check queue.
         if (AP_SanityAlreadySent(code)) return 1;
         if (bot) return ap_sanity_objects[i].family != 2;
-        if (driver->driverID != 0 || driver != gt->drivers[0] || ap_sanity_sent_count >= 16384) return 1;
+        if (!AP_IsSlotHuman(gt, driver) || ap_sanity_sent_count >= 16384) return 1;
         if (AP_EmitClassCheck(code, 0, -1, -1, 0, "[AP CHECK] sanity location=%ld\n", code)) {
             int at = AP_SanitySentIndex(code);
             memmove(&ap_sanity_sent[at + 1], &ap_sanity_sent[at], (ap_sanity_sent_count - at) * sizeof(long));

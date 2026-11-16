@@ -12,6 +12,8 @@ Custom tracks, Cortex Vortex, cups, bosses, CTR Challenges, Relic Races and Crys
 
 ## Remaining work before broader use
 
+Ordinary weapon-crate, Wumpa-crate and loose-fruit checks also accept either human and share their checked set. Their instance-count verification remains in place; a 2P level whose pickup counts differ from the room's verified record refuses those checks instead of assigning another object's code. Per-track 2P pickup compatibility still needs inspection.
+
 The special AP encounter roster still uses the solo loader. Two-player races currently use the retail four-bot pool, without the guest racer swaps or held-boss exclusions. P2 fruit is not yet included in the shared Wumpa wallet's finish and exit accounting. Trap scheduling and DeathLink targeting still need the full pair treatment, including local DeathLink without another AP player. Physics-based trap restrictions recognize both humans, but instant traps and some camera effects still target P1. The tracker, box numbers, blue-fire palette and podium presentation need a split-screen pass. Hard difficulty and the remaining event types are not implemented.
 
 The two-player Adventure design is based on Coding Bob's [CTR Native Expanded](https://github.com/thecodingbob/ctr-native), used as a reference for the single-player hub and multiplayer race boundary. The AP result policy here is Lenient: either human wins.
