@@ -16,6 +16,9 @@ struct Data data;
 #include "../platform/native_config.c"
 
 static struct GameTracker gt;
+static struct DB frame_buffer;
+static union { u32 align; unsigned char bytes[65536 + 32]; } arena;
+static size_t arena_budget = 65536;
 static struct CustomTrackRaceContext context;
 static ctr_content_sanity record;
 static ctr_content_pad pad;
@@ -53,6 +56,12 @@ static int AP_EmitClassCheck(long code, int a, int b, int c, int d, const char *
 static void test_load(const SVECTOR *v) { last_world = *v; ++projections; }
 static void test_screen(s16 *out) { out[0] = sx; out[1] = sy; }
 static void test_font(char *text, int x, int y, s16 font, int style) {
+    struct PrimMem *prim = &gt.backBuffer->primMem;
+    size_t bytes = strlen(text) * sizeof(POLY_GT4);
+    assert((uintptr_t)prim->cursor <= (uintptr_t)prim->guardEnd);
+    assert(bytes <= (uintptr_t)prim->guardEnd - (uintptr_t)prim->cursor);
+    memset(prim->cursor, 0x5a, bytes);
+    prim->cursor = (unsigned char *)prim->cursor + bytes;
     assert(font == FONT_SMALL && data.font_charPixWidth[font] == (test_depth < 450 ? 13 : test_depth < 900 ? 11 : 9));
     assert(x == sx + (draws % 2) && y == sy + (draws % 2));
     assert(style == (JUSTIFY_CENTER | (draws % 2 ? BLACK : WHITE)));
@@ -76,11 +85,31 @@ static void test_font(char *text, int x, int y, s16 font, int style) {
 
 static void draw(int expected) {
     int old_reads = reads;
+    size_t i;
+    gt.backBuffer = &frame_buffer;
+    memset(arena.bytes, 0xa5, sizeof arena.bytes);
+    frame_buffer.primMem.cursor = arena.bytes;
+    frame_buffer.primMem.guardEnd = arena.bytes + arena_budget;
     draws = projections = 0;
     AP_SanityDrawNumbers();
     if (draws != 2 * expected) fprintf(stderr, "draw: expected %d labels, got %d, projections=%d size=%d open=%d ready=%d load=%d config=%d route=%p\n", expected, draws / 2, projections, ap_sanity_size, ap_sanity_objects[0].open, ap_sanity_ready, sdata->Loading.stage, g_config.sanityNumbers, (void *)AP_SanityRoute(&gt));
     assert(draws == 2 * expected && reads == old_reads);
     assert(data.font_charPixWidth[FONT_SMALL] == 7);
+    for (i = arena_budget; i < arena_budget + 32; ++i) assert(arena.bytes[i] == 0xa5);
+}
+
+static void label_budget(size_t bytes, int expected) {
+    SVECTOR world = {0};
+    size_t i;
+    memset(arena.bytes, 0xa5, sizeof arena.bytes);
+    frame_buffer.primMem.cursor = arena.bytes;
+    frame_buffer.primMem.guardEnd = arena.bytes + bytes;
+    draws = 0;
+    AP_WorldNumber_Draw(&world, "80");
+    assert(draws == expected * 2);
+    assert((unsigned char *)frame_buffer.primMem.cursor == arena.bytes + (expected ? 4 * sizeof(POLY_GT4) : 0));
+    assert(data.font_charPixWidth[FONT_SMALL] == 7);
+    for (i = bytes; i < bytes + 32; ++i) assert(arena.bytes[i] == 0xa5);
 }
 
 int main(void) {
@@ -120,6 +149,7 @@ int main(void) {
     for (i = 0; i < 80; ++i) for (f = 0; f < 3; ++f) if (i < record.counts[f]) {
         defs[n].model = &models[f]; defs[n].ptrInstance = &objects[n];
         objects[n].scale.x = 0x1000; objects[n].matrix.t[1] = 50;
+        objects[n].flags = DRAW_INSTANCE;
         if (i != 0 && i != 7) record.locations[f][i] = 1000 + f * 100 + i;
         ++n;
     }
@@ -133,6 +163,8 @@ int main(void) {
     assert(!AP_SanityRecolourTag(&objects[3]));
     checked = 1101; AP_SanityTick(&gt); draw(120);
     objects[5].scale.x = 0; draw(119); objects[5].scale.x = 0x1000;
+    objects[5].flags &= ~DRAW_INSTANCE; draw(119); objects[5].flags |= DRAW_INSTANCE;
+    objects[5].flags |= HIDE_MODEL; draw(119); objects[5].flags &= ~HIDE_MODEL;
     g_config.sanityNumbers = false; draw(0); assert(!projections); g_config.sanityNumbers = true;
     gt.numPlyrCurrGame = 2; draw(0); gt.numPlyrCurrGame = 1;
     gt.gameMode1 |= PAUSE_ALL; draw(0); gt.gameMode1 = ADVENTURE_MODE | RELIC_RACE; draw(0);
@@ -142,12 +174,21 @@ int main(void) {
     test_depth = 900; draw(120); flags = 0x40000; draw(0); flags = 0;
     sx = 19; draw(0); sx = 493; draw(0); sx = 250;
     sy = 15; draw(0); sy = 201; draw(0); sy = 100;
+    label_budget(0, 0);
+    label_budget(2 * sizeof(POLY_GT4), 0); // White alone fits; the whole label does not.
+    label_budget(4 * sizeof(POLY_GT4) - 1, 0);
+    label_budget(4 * sizeof(POLY_GT4), 1); // Exact boundary includes both passes.
+    frame_buffer.primMem.cursor = arena.bytes + 16;
+    frame_buffer.primMem.guardEnd = arena.bytes + 8;
+    draws = 0; { SVECTOR world = {0}; AP_WorldNumber_Draw(&world, "80"); }
+    assert(!draws);
+    arena_budget = 3 * sizeof(POLY_GT4); draw(1); arena_budget = 65536;
     // Different identity routes preserve ordinals, not frozen code arithmetic.
     strcpy(context.trackID, "cortex_vortex"); context.retail = 0; AP_SanityTick(&gt); draw(120);
     strcpy(context.trackID, "custom:north-pole"); AP_SanityTick(&gt); draw(120);
     context.cup = 1; strcpy(pad.legs[0].track_id, context.trackID); draw(120); context.cup = 0;
     ++epoch; context.seedEpoch = epoch; AP_SanityTick(&gt); draw(121);
     record.counts[0] = 79; AP_SanityLevelInstances(defs, n); AP_SanityTick(&gt); draw(0);
-    puts("sanity numbers: production ordinals, holes, three families, routes, completion, config, menu, clipping and dense 128-object binding pass");
+    puts("sanity numbers: ordinals, families, routes, completion, config, menu, clipping, visibility flags, two-pass arena bounds and dense binding pass");
     return 0;
 }

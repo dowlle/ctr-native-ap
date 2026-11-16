@@ -2,6 +2,8 @@
 #define AP_WORLD_NUMBER_H
 
 #include "ap_box_number_logic.h"
+#include <stdint.h>
+#include <string.h>
 
 // Call after setting the current viewport's GTE matrices. Both AP boxes and
 // ordinary sanity pickups use the same raster, clipping and drop shadow.
@@ -11,6 +13,20 @@ static inline void AP_WorldNumber_Draw(const SVECTOR *world, const char *number)
 	s32 depth;
 	u32 flag;
 	int width, oldWidth;
+	struct GameTracker *gt = sdata ? sdata->gGT : 0;
+	struct PrimMem *prim;
+	uintptr_t cursor, limit;
+	size_t glyphs;
+	if (!gt || !gt->backBuffer || !number || !(glyphs = strlen(number)))
+		return;
+	prim = &gt->backBuffer->primMem;
+	cursor = (uintptr_t)prim->cursor;
+	limit = (uintptr_t)prim->guardEnd;
+	// Decimal digits use one GT4 each in DecalFont. Check both complete
+	// passes before either writes, so a crowded frame drops the whole label.
+	if (!cursor || !limit || cursor > limit ||
+	    glyphs > (limit - cursor) / (2 * sizeof(POLY_GT4)))
+		return;
 	CTR_GteLoadSV0(world);
 	gte_rtps();
 	CTR_GteStoreSXY(screen);

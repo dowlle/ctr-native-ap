@@ -212,7 +212,8 @@ void AP_SanityDrawNumbers(void)
         SVECTOR world;
         char number[4];
         // Retail hides a broken crate or collected fruit with zero scale.
-        if (!ap_sanity_objects[i].open || !inst || inst->scale.x == 0) continue;
+        if (!ap_sanity_objects[i].open || !inst || inst->scale.x == 0 ||
+            (inst->flags & (DRAW_INSTANCE | HIDE_MODEL)) != DRAW_INSTANCE) continue;
         snprintf(number, sizeof number, "%u", (unsigned)ap_sanity_objects[i].ordinal);
         world.vx = (s16)inst->matrix.t[0];
         world.vy = (s16)(inst->matrix.t[1] + 100);
