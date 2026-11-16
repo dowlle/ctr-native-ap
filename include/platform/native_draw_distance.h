@@ -11,9 +11,11 @@
 //
 // Ported from CTR Native Expanded (thecodingbob), commits 0fd84de084,
 // e0fedbf27f and a81bf65bf9. Before this port only the BSP LOD threshold was
-// scaled (x3). The texture and subdivision thresholds stayed at retail values,
-// so neighbouring quadblocks rendered at different subdivision levels and left
-// T-junction cracks with the option on. Every threshold now scales together.
+// scaled (x3). The texture thresholds stayed at retail values, so neighbouring
+// quadblocks rendered at different levels and left T-junction cracks with the
+// option on. The BSP and texture thresholds now scale together; the two
+// near-subdivision thresholds stay retail (A5-13c, see
+// NativeDrawDistance_SubdivisionThreshold).
 //
 // Each helper is pure: it takes retail's own value plus the flag, reads no
 // global, and returns the value the caller should use. That is what lets them be
@@ -55,11 +57,30 @@ static inline int NativeDrawDistance_BspLodThreshold(int retailThreshold, bool e
 	return extended ? retailThreshold * NATIVE_DRAW_DISTANCE_SCALE : retailThreshold;
 }
 
-// Scale both texture selection and top-level/recursive subdivision: mosaic
-// textures only load their highest-resolution UVs in the deepest helper frame.
+// The two texture LOD thresholds (textureLodDepthThreshold0 and 1): which
+// texture level a quadblock face uses. Scaled with the BSP threshold, so the
+// faces drawn whole at a distance pick their levels consistently.
 static inline int NativeDrawDistance_TextureLodThreshold(int retailThreshold, bool extended)
 {
 	return extended ? retailThreshold * NATIVE_DRAW_DISTANCE_SCALE : retailThreshold;
+}
+
+// The top-level and recursive near-subdivision thresholds (topLevelNear and
+// recursiveNear) keep retail's value with the option on too (A5-13c). Scaled,
+// distant faces only one or two screen pixels tall were split into
+// sub-triangles on PS1 integer screen coordinates. Where a face met a
+// neighbour split one level deeper, the rounded T-junction covered or uncovered
+// whole one-pixel rows: turbo pads broke into detached green and yellow
+// slivers (Mystery Caves start straight), and the ground showed more gaps to
+// the background. Expanded scales these as well and shows the same slivers.
+// Subdivision only adds detail next to the camera, where retail already does
+// it, and the topLevelNear value also gates the mosaic texture level, so both
+// stay together. The parameter stays so the call sites read like the others
+// and a later change is one line.
+static inline int NativeDrawDistance_SubdivisionThreshold(int retailThreshold, bool extended)
+{
+	(void)extended;
+	return retailThreshold;
 }
 
 // Per-level render arenas (primitive memory and the ordering-table arena) are

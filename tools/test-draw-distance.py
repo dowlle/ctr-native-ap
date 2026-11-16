@@ -1,4 +1,5 @@
-"""A5-4: Increase Draw Distance scales every LOD threshold, the far clip and the render arenas by one factor.
+"""A5-4: Increase Draw Distance scales the BSP and texture LOD thresholds, the far clip and the render arenas by one factor.
+A5-13c: the top-level and recursive near-subdivision thresholds keep retail's value with the option on.
 
 Ported from the CTR Native Expanded (thecodingbob) tests tests/test_draw_distance.c and
 tests/test_level_lod.c, which this repository has no CTest target for. The production
@@ -93,8 +94,9 @@ static void textures(const struct MainRenderLevelGeometryScratch *s, const struc
 	CHECK(s->depthScale == r->depthScale, "depth projection does not depend on the option");
 	CHECK(s->textureLodDepthThreshold0 == r->t0 * f, "texture LOD 0 scaled exactly once");
 	CHECK(s->textureLodDepthThreshold1 == r->t1 * f, "texture LOD 1 scaled exactly once");
-	CHECK(s->topLevelNearDepthThreshold == r->top * f, "top-level subdivision scaled exactly once");
-	CHECK(s->recursiveNearDepthThreshold == r->rec * f, "recursive mosaic subdivision scaled exactly once");
+	/* A5-13c: the near-subdivision thresholds stay retail with the option on. */
+	CHECK(s->topLevelNearDepthThreshold == r->top, "top-level subdivision stays retail");
+	CHECK(s->recursiveNearDepthThreshold == r->rec, "recursive mosaic subdivision stays retail");
 	CHECK(s->textureLodDepthThreshold0 >= s->textureLodDepthThreshold1 && s->textureLodDepthThreshold1 >= s->topLevelNearDepthThreshold &&
 	      s->topLevelNearDepthThreshold >= s->recursiveNearDepthThreshold, "thresholds keep their near-to-far order");
 }
@@ -120,6 +122,8 @@ int main(void)
 	CHECK(v / NativeDrawDistance_ProjectedLodDistance(v, true) == NATIVE_DRAW_DISTANCE_SCALE, "on: model LOD depth divided by the factor");
 	CHECK(NativeDrawDistance_BspLodThreshold(v, true) / v == NATIVE_DRAW_DISTANCE_SCALE, "on: BSP LOD scaled by the factor");
 	CHECK(NativeDrawDistance_TextureLodThreshold(v, true) / v == NATIVE_DRAW_DISTANCE_SCALE, "on: texture LOD scaled by the factor");
+	CHECK(NativeDrawDistance_SubdivisionThreshold(v, false) == v, "off: subdivision untouched");
+	CHECK(NativeDrawDistance_SubdivisionThreshold(v, true) == v, "on: subdivision stays retail (A5-13c)");
 	CHECK(NativeDrawDistance_ArenaBytes(v, true) / v == NATIVE_DRAW_DISTANCE_SCALE, "on: arena scaled by the factor");
 	/* A5-4b: who grows. 1P follows the option at level load; 2P to 4P always grow;
 	   the attract path (0 players), the main menu and cutscenes follow the option. */
@@ -221,6 +225,16 @@ bucket = read("game/RenderBucket/RenderBucket_QueueExecute.c")
 check("NativeDrawDistance_GeomScreenHalf(geomScreenHalf, g_config.increaseDrawDistance)" in bucket, "instance far-Z reject uses the shared factor")
 check("NativeDrawDistance_ProjectedLodDistance(" in bucket and "* 100) / 400" not in bucket, "model LOD distance uses the shared factor")
 check("NativeDrawDistance_FarClip(g_config.increaseDrawDistance)" in read("game/PushBuffer.c"), "frustum far clip uses the shared factor")
+# A5-13c: every near-subdivision threshold goes through the retail-keeping helper, every texture threshold through the scaled one.
+lod_flat = re.sub(r"\s+", " ", lod)
+for field in ("topLevelNearDepthThreshold", "recursiveNearDepthThreshold"):
+    assigns = re.findall(r"scratch->" + field + r" = (\w+)\(", lod_flat)
+    check(len(assigns) == 4 and all(a == "NativeDrawDistance_SubdivisionThreshold" for a in assigns),
+          "all four %s assignments use NativeDrawDistance_SubdivisionThreshold (%s)" % (field, ", ".join(assigns)))
+for field in ("textureLodDepthThreshold0", "textureLodDepthThreshold1"):
+    assigns = re.findall(r"scratch->" + field + r" = (\w+)\(", lod_flat)
+    check(len(assigns) == 4 and all(a == "NativeDrawDistance_TextureLodThreshold" for a in assigns),
+          "all four %s assignments use NativeDrawDistance_TextureLodThreshold (%s)" % (field, ", ".join(assigns)))
 for path in sorted((root / "game").rglob("*.c")):
     for n, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
         if re.search(r"increaseDrawDistance\s*\?", line):
