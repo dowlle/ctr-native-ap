@@ -1,0 +1,20 @@
+--- a/websocketpp/common/asio_ssl.hpp
++++ b/websocketpp/common/asio_ssl.hpp
+@@ -31,7 +31,16 @@
+ // NOTE: This file must be included before common/asio.hpp
+ 
+ #ifdef ASIO_STANDALONE
+-    #include <asio/ssl.hpp>
++    // The umbrella also parses an unused deprecated verifier whose direct
++    // ASN1_STRING field access no longer compiles with OpenSSL 4.
++    #include <asio/ssl/context.hpp>
++    #include <asio/ssl/context_base.hpp>
++    #include <asio/ssl/error.hpp>
++    #include <asio/ssl/host_name_verification.hpp>
++    #include <asio/ssl/stream.hpp>
++    #include <asio/ssl/stream_base.hpp>
++    #include <asio/ssl/verify_context.hpp>
++    #include <asio/ssl/verify_mode.hpp>
+ #else
+     #include <boost/asio/ssl.hpp>
+ #endif
