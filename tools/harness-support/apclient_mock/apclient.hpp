@@ -34,6 +34,13 @@ inline std::string &ap_mock_slot()
 	return s;
 }
 
+class DefaultDataPackageStore
+{
+public:
+	virtual ~DefaultDataPackageStore() = default;
+	virtual bool load(const std::string &, const std::string &, nlohmann::json &) { return false; }
+};
+
 class APClient
 {
 public:
@@ -101,8 +108,9 @@ public:
 	Calls calls;
 
 	APClient(const std::string &, const std::string &, const std::string &,
-	         const std::string &)
+	         const std::string &, DefaultDataPackageStore *store = nullptr)
 	{
+		store_ = store;
 	}
 
 	void poll() {}
@@ -208,8 +216,12 @@ public:
 		if (slot_refused_)
 			slot_refused_(errors);
 	}
-	void emit_room_info()
+	void emit_room_info(const std::string &checksum = "")
 	{
+		if (store_) {
+			nlohmann::json ignored;
+			store_->load("Crash Team Racing", checksum, ignored);
+		}
 		if (room_info_)
 			room_info_();
 	}
@@ -262,6 +274,7 @@ public:
 	void test_set_missing(const std::set<int64_t> &s) { missing_ = s; }
 
 private:
+	DefaultDataPackageStore *store_ = nullptr;
 	State state_ = State::DISCONNECTED;
 	std::set<int64_t> checked_;
 	std::set<int64_t> missing_;
