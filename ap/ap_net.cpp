@@ -17,6 +17,7 @@
 #include "ap_received_batch_logic.h"
 #include "ap_seedcfg.h"   // ap_seedcfg_parse_json() -- per-seed slot_data (Phase 2)
 #include "ap_content_plan.h"
+#include "ap_seed_refusal.hpp"
 #include "ap_locations.h" // AP_LOCATION_TABLE -- the 99 CTR codes to scout on connect
 #include "ap_box_map.h"   // AP_BOX_CODE_BASE / AP_BOX_LOCATION_COUNT -- the #109 block
 #include "ap_held_checks.h"
@@ -718,7 +719,7 @@ static bool g_tls_diag_logged = false; // the TLS verdict below is logged once p
 // deliberately kept, see the caller), makes the reason visible and defers the
 // teardown past the callback. Shared by the parser's own refusal and the block
 // schema 3 fallback consistency check that follows it.
-static void ap_net_refuse_seed(const std::string &reason)
+static void ap_net_refuse_seed(const std::string &reason, const std::string &player_message = {})
 {
 	g_connected = false;
 	g_rejected = true;
@@ -741,17 +742,28 @@ static void ap_net_refuse_seed(const std::string &reason)
 	g_wumpa.disconnected();
 	g_pad_hints.disconnected();
 	g_status = AP_NET_STATUS_ERROR;
-	g_last_error = reason;
-	char line[256];
-	std::snprintf(line, sizeof line,
-	              "[AP NET] seed REFUSED (%s); no door storage, held checks or "
-	              "scouts sent; session will not be admitted\n",
-	              g_last_error.c_str());
-	std::fprintf(stderr, "%s", line);
-	AP_LogLine(line);
+	g_last_error = player_message.empty() ? reason : player_message;
+	const std::string line = "[AP NET] seed REFUSED (" + reason +
+	    "); no door storage, held checks or scouts sent; session will not be admitted\n";
+	std::fprintf(stderr, "%s", line.c_str());
+	AP_LogLine(line.c_str());
 	// Deferred teardown: never delete g_ap from inside its own callback.
 	g_reject_stop_pending = true;
 }
+
+// APClient passes the remote RoomInfo checksum to load even on a cache miss,
+// before its RoomInfo callback. Preserve its default cache behavior.
+class RefusalDataPackageStore : public DefaultDataPackageStore
+{
+public:
+	std::string ctr_checksum;
+	bool load(const std::string &game, const std::string &checksum, nlohmann::json &data) override
+	{
+		if (game == "Crash Team Racing") ctr_checksum = checksum;
+		return DefaultDataPackageStore::load(game, checksum, data);
+	}
+};
+static RefusalDataPackageStore g_refusal_store;
 
 // The four guests that can carry a Key fallback, for the one connect log line
 // per fallback guest. Index is guest - 8; the boss guests never carry one.
@@ -790,10 +802,11 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		ap_tls_log_cert_store();
 	try
 	{
+		g_refusal_store.ctr_checksum.clear();
 		g_ap = new APClient(uuid ? uuid : "ctr-native",
 		                    game ? game : "Crash Team Racing",
 		                    uri ? uri : "ws://localhost:38281",
-		                    g_cert_store);
+		                    g_cert_store, &g_refusal_store);
 		ap_locs_invalidate(); // a new client starts with empty sets
 	}
 	catch (...)
@@ -809,6 +822,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	}
 
 	g_ap->set_socket_connected_handler([]() {
+		g_refusal_store.ctr_checksum.clear();
 		if (g_rejected)
 			return; // a refused seed's incompatibility reason/status must survive
 		// The room answered a websocket handshake, so it is reachable: any
@@ -917,6 +931,14 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		g_ap->ConnectSlot(g_slot, g_password, 7, {"AP"}, APClient::Version{0, 6, 7});
 	});
 	g_ap->set_slot_connected_handler([](const nlohmann::json &slotData) {
+		const auto refuse_plan = [&]() {
+			const std::string advice = ap_seed_refusal::message(slotData, g_refusal_store.ctr_checksum);
+			const std::string diagnostic = ap_seed_refusal::diagnostics(slotData, g_refusal_store.ctr_checksum);
+			std::fprintf(stderr, "%s[AP NET] %s\n", diagnostic.c_str(), advice.c_str());
+			AP_LogLine(diagnostic.c_str());
+			AP_LogLine(("[AP NET] " + advice + "\n").c_str());
+			ap_net_refuse_seed(ap_seedcfg_reject_reason(), advice);
+		};
 		// ADMISSION FIRST (ticket 05). Clear the accepted latch BEFORE parsing so
 		// the client is never observable as connected while the seed is still
 		// being judged, then parse and decide before ANY success side effect: a
@@ -932,7 +954,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			// checks are deliberately KEPT: a later reconnect to the same
 			// seed/slot may still flush them, and the held-check identity check
 			// discards them for a different seed.
-			ap_net_refuse_seed(ap_seedcfg_reject_reason());
+			refuse_plan();
 			return;
 		}
 		// One generator: every 0.3.0 room carries a content plan, so a room
@@ -952,7 +974,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			if (!ap_content_plan_bind(g_ap->get_seed().c_str(), g_ap->get_team_number(),
 			                          g_ap->get_player_number(), ids.data(), ids.size()))
 			{
-				ap_net_refuse_seed(ap_seedcfg_reject_reason());
+				refuse_plan();
 				return;
 			}
 #ifndef CTR_CUSTOM_TRACKS
