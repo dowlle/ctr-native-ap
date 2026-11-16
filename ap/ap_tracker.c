@@ -6,6 +6,7 @@
 #include "ap_tracker_boss_node_logic.h"
 #include "ap_tracker_progress.h"
 #include "ap_tracker_tabs.h"
+#include "ap_tracker_checks.h"
 #include <platform/native_assets.h>
 #include <platform/native_disc_image.h>
 #include <platform/native_renderer.h>
@@ -31,6 +32,7 @@ static struct {
 	int open, hub, tab, focus, pinned, count, loaded;
 	/* #375 activity list for the focused node: open, cursor, rows. */
 	int acts_open, acts_cursor;
+	int checks_open, checks_page;
 	ap_padact_list acts;
 	float mouse_x, mouse_y;
 	unsigned mouse_buttons;
@@ -715,6 +717,103 @@ static void AP_TrackerActivitiesBuild(void)
 	else if (n->kind == 4) ap_tracker.acts.count = 0;
 	else AP_PadActivities(ap_tracker.hub, n->physical, n->destination, &ap_tracker.acts);
 }
+
+/* Square opens a read-only track page even when tracker launches are off.
+ * Cup pages are per leg, so a cup-only track remains discoverable. */
+static const ctr_content_pad *AP_TrackerChecksPad(const AP_TrackerNode *n)
+{
+	if (!ap_content_plan_active()) return NULL;
+	if (n->kind != 3) return ap_content_plan_pad(n->physical);
+	if (ap_tracker.hub > 0 && ap_content_plan_bosses()->cup[ap_tracker.hub - 1])
+		return ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + ap_tracker.hub - 1);
+	return NULL;
+}
+static int AP_TrackerChecksPages(const AP_TrackerNode *n)
+{
+	const ctr_content_pad *pad = AP_TrackerChecksPad(n);
+	return pad && pad->cup ? AP_CONTENT_CUP_LEGS : n->kind == 3 && !ap_tracker.hub ? 2 : 1;
+}
+static int AP_TrackerChecksLogic(int64_t code) { return AP_LocationLogicState(code); }
+
+static void AP_TrackerChecksBuild(const AP_TrackerNode *n, AP_TrackerCheckCount rows[4],
+                                  char *title, size_t title_size, char *route, size_t route_size)
+{
+	const ctr_content_pad *pad = AP_TrackerChecksPad(n);
+	const ctr_content_checks *fam = ap_content_plan_checks();
+	const ctr_content_sanity *sanity = NULL;
+	AP_TrackerCheckSource source = { AP_ContentCodeChecked, AP_TrackerChecksLogic };
+	int64_t wumpa = 0;
+	memset(rows, 0, 4 * sizeof *rows);
+	snprintf(title, title_size, "%s", n->title);
+	snprintf(route, route_size, "THIS PAD'S RACE MODES");
+	if (pad && pad->cup) {
+		const ctr_content_leg *leg = &pad->legs[ap_tracker.checks_page];
+		const ctr_content_pad *track = ap_content_plan_pad(leg->track_pad);
+		sanity = ap_content_plan_sanity(leg->track_id);
+		wumpa = leg->wumpa;
+		if (!wumpa && track) wumpa = track->wumpa_location;
+		if (leg->room_title[0]) snprintf(title, title_size, "%s", leg->room_title);
+		else if (track) snprintf(title, title_size, "%s", track->room_title[0] ? track->room_title : track->display_name);
+		else if (leg->cortex) snprintf(title, title_size, "CORTEX VORTEX");
+		else if (leg->retail_id >= 0 && leg->retail_id < 18)
+			snprintf(title, title_size, "%s", sdata->lngStrings[data.metaDataLEV[leg->retail_id].name_LNG]);
+		else {
+			const ctr_content_package *pkg=ap_content_plan_package(leg->package_index);
+			snprintf(title,title_size,"%s",pkg?pkg->display_name:leg->track_id);
+		}
+		snprintf(route, route_size, "%s: LEG %d OF %d", n->title, ap_tracker.checks_page + 1, AP_CONTENT_CUP_LEGS);
+	} else if (pad && !pad->crystal) {
+		sanity = ap_content_plan_sanity(pad->track_id);
+		wumpa = pad->wumpa_modes ? (fam->wumpa == 1 ? fam->wumpa_global : pad->wumpa_location) : 0;
+	} else if (n->kind == 3 && ap_content_plan_active()) {
+		int boss = ap_tracker.hub ? ap_tracker.hub - 1 : 4 + ap_tracker.checks_page;
+		sanity = ap_content_plan_sanity_boss(boss);
+		wumpa = ap_content_plan_bosses()->wumpa[boss];
+		snprintf(route, route_size, "%s%s%s BOSS RACE%s", n->pad, n->pad[0]?" | ":"", n->title,
+		         !ap_tracker.hub && ap_tracker.checks_page ? " REMATCH" : "");
+	} else if (!ap_content_plan_active() && n->kind == 0) {
+		wumpa = n->destination >= 0 && n->destination < 18 ? ctr_cfg.wumpa.tracks[n->destination] :
+			n->destination == AP_CORTEX_DEST && ctr_cfg.cortex_track.valid ? ctr_cfg.cortex_track.wumpa : 0;
+		if (ctr_cfg.wumpa.mode == CTR_CFG_WUMPA_GLOBAL) wumpa = ctr_cfg.wumpa.global_code;
+	}
+	AP_TrackerCheckAdd(&rows[0], wumpa, source);
+	AP_TrackerCheckSanity(&rows[1], sanity, source);
+}
+
+static void AP_TrackerDrawChecks(void)
+{
+	static const char *const names[] = {"REACH 10 WUMPA", "WEAPON CRATES", "WUMPA CRATES", "WUMPA FRUIT"};
+	AP_TrackerNode *n = &ap_tracker.nodes[ap_tracker.focus];
+	AP_TrackerCheckCount rows[4]; char title[160], route[256], text[128]; int i;
+	AP_TrackerChecksBuild(n, rows, title, sizeof title, route, sizeof route);
+	AP_TrackerRect(90,140,1100,510,AP_TrackerRGBA(10,15,18,255));
+	AP_TrackerBorder(90,140,1100,510,TRACKER_MINT,3);
+	AP_TrackerText(title,114,160,28,TRACKER_GOLD,1052);
+	AP_TrackerText(route,114,201,18,TRACKER_WHITE,1052);
+	AP_TrackerText("CHECK FAMILY",114,251,18,TRACKER_WHITE,310);
+	AP_TrackerText("DONE / TOTAL",434,251,18,TRACKER_WHITE,170);
+	AP_TrackerText("IN LOGIC",654,251,18,TRACKER_WHITE,140);
+	AP_TrackerText("OUT",834,251,18,TRACKER_WHITE,110);
+	AP_TrackerText("UNKNOWN",994,251,18,TRACKER_WHITE,150);
+	for (i=0;i<4;i++) {
+		AP_TrackerCheckCount *r=&rows[i]; int y=294+i*60;
+		uint32_t rgb = AP_PadLookRGB(r->total && r->done==r->total ? AP_PAD_LOOK_DONE : AP_PAD_LOOK_OPEN);
+		uint32_t green=AP_TrackerRGBA(AP_PadLookR(rgb),AP_PadLookG(rgb),AP_PadLookB(rgb),255);
+		rgb=AP_PadLookRGB(AP_PAD_LOOK_STAGE2_WAITING);
+		uint32_t red=AP_TrackerRGBA(AP_PadLookR(rgb),AP_PadLookG(rgb),AP_PadLookB(rgb),255);
+		const char *name=i==0 && rows[0].total && ap_content_plan_checks()->wumpa==1 ? "10 WUMPA GLOBAL" : names[i];
+		AP_TrackerText(name,114,y,21,r->total?TRACKER_WHITE:TRACKER_GRAY,310);
+		if (!r->total) { AP_TrackerText("NO CHECK HERE",434,y,19,TRACKER_GRAY,700); continue; }
+		snprintf(text,sizeof text,"%d / %d",r->done,r->total); AP_TrackerText(text,434,y,21,green,170);
+		snprintf(text,sizeof text,"%d",r->in_logic); AP_TrackerText(text,654,y,21,green,140);
+		snprintf(text,sizeof text,"%d",r->out_logic); AP_TrackerText(text,834,y,21,red,110);
+		snprintf(text,sizeof text,"%d",r->unknown); AP_TrackerText(text,994,y,21,TRACKER_GRAY,150);
+	}
+	AP_TrackerText("WUMPA CRATES + FRUIT: WUMPASANITY   WEAPON CRATES: ITEMBOXSANITY",114,548,15,TRACKER_WHITE,1052);
+	AP_TrackerText("COUNTS ARE SHARED ACROSS RACE, CUP AND BOSS ROUTES",114,575,15,TRACKER_WHITE,1052);
+	snprintf(text,sizeof text,"PAGE %d/%d   L1/R1 TRACK PAGES   ^ BACK",ap_tracker.checks_page+1,AP_TrackerChecksPages(n));
+	AP_TrackerText(NativeMenu_Labels(text),114,610,18,TRACKER_WHITE,1052);
+}
 static void AP_TrackerDrawActivities(void)
 {
 	AP_TrackerNode *n = &ap_tracker.nodes[ap_tracker.focus];
@@ -812,12 +911,11 @@ static void AP_TrackerDraw(void)
 	{
 		/* #375: Cross opens the activity list when the seed allows starts. */
 		int launch = AP_TrackerLaunchEnabled();
-		AP_TrackerText(AP_TrackerTabShown(AP_TRACKER_TAB_RACERS)
-			? (launch ? NativeMenu_Labels("L1/R1 HUBS, RACERS, ITEMS   D-PAD FOCUS   * ACTIVITIES   ^ BACK") : NativeMenu_Labels("L1/R1 HUBS, RACERS, ITEMS   D-PAD FOCUS   * INSPECT   ^ BACK"))
-			: (launch ? NativeMenu_Labels("L1/R1 HUBS, ITEMS   D-PAD FOCUS   * ACTIVITIES   ^ BACK") : NativeMenu_Labels("L1/R1 HUBS, ITEMS   D-PAD FOCUS   * INSPECT   ^ BACK")),
+		AP_TrackerText(launch ? NativeMenu_Labels("L1/R1 TABS   D-PAD FOCUS   * ACTIVITIES   [ CHECKS   ^ BACK") : NativeMenu_Labels("L1/R1 TABS   D-PAD FOCUS   * INSPECT   [ CHECKS   ^ BACK"),
 			32,744,16,TRACKER_WHITE,1210);
 	}
 	if (ap_tracker.acts_open && ap_tracker.count) AP_TrackerDrawActivities();
+	if (ap_tracker.checks_open && ap_tracker.count) AP_TrackerDrawChecks();
 }
 
 int AP_TrackerOpen(void) { return ap_tracker.open; }
@@ -833,7 +931,7 @@ int AP_TrackerAvailable(void)
 }
 static void AP_TrackerClose(void)
 {
-	ap_tracker.open=0; ap_tracker.pinned=0; ap_tracker.acts_open=0;
+	ap_tracker.open=0; ap_tracker.pinned=0; ap_tracker.acts_open=0; ap_tracker.checks_open=0;
 	if(g_window && (SDL_GetWindowFlags(g_window)&SDL_WINDOW_FULLSCREEN)) SDL_HideCursor();
 }
 int AP_TrackerMenuFrame(void)
@@ -857,8 +955,15 @@ int AP_TrackerMenuFrame(void)
 		sdata->AnyPlayerTap &= ~BTN_START; /* The successful opening frame owns it too. */
 		if(ap_tracker.hub<0 || ap_tracker.hub>=5) ap_tracker.hub=0;
 		ap_tracker.tab=ap_tracker.hub;
-		ap_tracker.focus=0; ap_tracker.pinned=0; ap_tracker.acts_open=0; AP_TrackerBuildNodes();
+		ap_tracker.focus=0; ap_tracker.pinned=0; ap_tracker.acts_open=0; ap_tracker.checks_open=0; AP_TrackerBuildNodes();
 		SDL_ShowCursor(); AP_LogLine("[AP TRACKER] enlarged hub map opened\n");
+	} else if(ap_tracker.checks_open) {
+		/* The detail page owns Back and shoulder buttons, including Start. */
+		int pages=AP_TrackerChecksPages(&ap_tracker.nodes[ap_tracker.focus]);
+		ap_tracker.checks_page%=pages;
+		if(tap&(BTN_TRIANGLE|BTN_START)) ap_tracker.checks_open=0;
+		else if(tap&(BTN_L1|BTN_R1))
+			ap_tracker.checks_page=(ap_tracker.checks_page+((tap&BTN_L1)?pages-1:1))%pages;
 	} else if(ap_tracker.acts_open) {
 		/* #375 activity list: it owns input until it closes or starts. */
 		AP_TrackerNode *n=&ap_tracker.nodes[ap_tracker.focus];
@@ -897,6 +1002,9 @@ int AP_TrackerMenuFrame(void)
 			/* RACERS and ITEMS are read-only lists: no focus, pinning or map
 			 * hit-testing, so the hidden map keeps its hub, focus and pin. */
 		} else {
+			if((tap&BTN_SQUARE) && ap_tracker.count) {
+				ap_tracker.checks_open=1; ap_tracker.checks_page=0;
+			} else {
 			if(tap&(BTN_UP|BTN_DOWN|BTN_LEFT|BTN_RIGHT)) {
 				ap_tracker.focus=(ap_tracker.focus+((tap&(BTN_UP|BTN_LEFT))?ap_tracker.count-1:1))%ap_tracker.count; ap_tracker.pinned=0;
 			}
@@ -921,10 +1029,15 @@ int AP_TrackerMenuFrame(void)
 					}
 				}
 			}
+			}
 		}
 	}
 	ap_tracker.mouse_x=mx; ap_tracker.mouse_y=my; ap_tracker.mouse_buttons=buttons;
-	AP_TrackerBuildNodes(); AP_TrackerDraw(); return 1;
+	AP_TrackerBuildNodes();
+	/* A room refresh can replace the focused cup while rebuilding nodes. */
+	if (ap_tracker.checks_open && ap_tracker.count)
+		ap_tracker.checks_page%=AP_TrackerChecksPages(&ap_tracker.nodes[ap_tracker.focus]);
+	AP_TrackerDraw(); return 1;
 }
 void AP_TrackerPresent(void)
 {

@@ -1219,6 +1219,7 @@ static void validate(const J &p, State &out) {
         lt.full_laps = number(track["laps"], 1, 7);
         if (trophy_tracks.count(track_id)) leg.victory = 0;
         copy(leg.track_id, J(track_id));
+        copy(leg.room_title, J(lt.title));
         return leg_tracks.emplace(track_id, lt).first->second;
     };
     int shortened = -1; // the plan-wide shortened-cup switch, -1 before a leg tells
