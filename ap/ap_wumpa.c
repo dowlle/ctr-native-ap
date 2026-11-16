@@ -119,11 +119,16 @@ static int AP_WumpaRaceTracking(struct Driver *driver)
 static int AP_WumpaReceiptInRace(void)
 {
 	struct GameTracker *gt = sdata->gGT;
-	struct Driver *d = gt ? gt->drivers[0] : 0;
-	return ctr_cfg_active() && !ctr_cfg.schema_newer && AP_WumpaAdventureRace(gt) &&
-	       !(gt->gameMode2 & CHEAT_WUMPA) && LOAD_IsOpen_RacingOrBattle() && d &&
-	       !(d->actionsFlagSet & (ACTION_BOT | ACTION_RACE_FINISHED)) &&
-	       !(gt->gameMode1 & (END_OF_RACE | MAIN_MENU | GAME_CUTSCENE));
+	if (!ctr_cfg_active() || ctr_cfg.schema_newer || !AP_WumpaAdventureRace(gt) ||
+	    (gt->gameMode2 & CHEAT_WUMPA) || !LOAD_IsOpen_RacingOrBattle() ||
+	    (gt->gameMode1 & (END_OF_RACE | MAIN_MENU | GAME_CUTSCENE))) return 0;
+	int humans = AP_CoopRace(gt) ? 2 : 1;
+	for (int i = 0; i < humans; i++)
+	{
+		struct Driver *d = gt->drivers[i];
+		if (AP_IsSlotHuman(gt, d) && !(d->actionsFlagSet & ACTION_RACE_FINISHED)) return 1;
+	}
+	return 0;
 }
 
 int AP_WumpaRaceCount(struct Driver *driver)

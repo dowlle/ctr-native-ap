@@ -107,10 +107,10 @@ void AP_UsefulTick(struct GameTracker *gGT)
 		g_usefulCountdownSeen = 1;
 	if (!AP_UsefulRaceActive(gGT)) return;
 	driver = gGT->drivers[0];
-	if (AP_CoopRace(gGT) && (!driver || driver->heldItemID != 0xf || driver->numHeldItems))
+	if (AP_CoopRace(gGT) && (!AP_IsSlotHuman(gGT, driver) || driver->heldItemID != 0xf || driver->numHeldItems))
 		driver = gGT->drivers[1];
 	if (!driver) return;
-	if (AP_CoopRace(gGT) && (driver->heldItemID != 0xf || driver->numHeldItems)) return;
+	if (AP_CoopRace(gGT) && (!AP_IsSlotHuman(gGT, driver) || driver->heldItemID != 0xf || driver->numHeldItems)) return;
 	pending = AP_UsefulPendingMask(g_usefulReceived, g_usefulApplied);
 	for (effect = 0; effect < AP_USEFUL_ITEM_COUNT; effect++)
 	{

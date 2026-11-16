@@ -262,7 +262,7 @@ static void AP_ShortcutSkipDriver(struct GameTracker *gGT, int humanSlot)
 	}
 
 	d = gGT->drivers[humanSlot];
-	if (d == 0 || d->lastValid == 0)
+	if (!AP_IsSlotHuman(gGT, d) || d->lastValid == 0)
 	{
 		g_lastValid_prev = 0;
 		g_scless_stale_logged = 0;
