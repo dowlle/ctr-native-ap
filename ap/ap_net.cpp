@@ -285,7 +285,10 @@ static bool g_scouts_done = false;
 static std::set<int64_t> g_pending_checks;
 
 // #188: locations earned while the client could not send (not yet connected, or
-// the guarded LocationChecks call itself threw over a dying socket). Deliberately
+// the guarded LocationChecks call itself threw over a dying socket). Since #707
+// it also keeps every check that WAS sent, because a send into a socket whose
+// network is already gone succeeds locally and is lost; the connect flush drops
+// whatever the server reports as checked and sends the rest again. Deliberately
 // NOT cleared on slot-connect/shutdown like g_pending_checks above -- these are
 // the opposite lifecycle: they must SURVIVE a disconnect and flush on the next
 // successful slot-connect. A std::set dedupes a location that re-fires its grant
@@ -1763,6 +1766,14 @@ static bool ap_net_try_send_location(int64_t code)
 		g_pending_checks.insert(code); // #85: in flight until its receipt drains
 		sent = true;
 	});
+	// #707: a successful call only means the packet was handed to the socket.
+	// After a network loss the socket stays "connected" until the ping times
+	// out (wswrap: 25 s ping, 10 s pong), and a check written in that window
+	// never reaches the server. Keep every sent check with the held checks
+	// too, so the next same-seed/slot connect sends it again unless the
+	// Connected packet already lists it as checked.
+	if (sent)
+		g_held_checks.hold(code);
 	return sent;
 }
 
