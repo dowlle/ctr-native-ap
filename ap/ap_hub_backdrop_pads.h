@@ -9,9 +9,17 @@ static struct AP_HNE_BackdropPad
 {
 	struct Instance *beam, *trophy, *ring[2];
 	int pos[3];
-	unsigned tick, rng, beamYaw;
+	unsigned tick, rng, beamYaw, ringYaw[2];
 } s_apHnePads[AP_HNE_BACKDROP_PADS];
 static int s_apHnePadCount;
+
+static unsigned AP_HNE_BackdropRandom(struct AP_HNE_BackdropPad *pad)
+{
+	pad->rng ^= pad->rng << 13;
+	pad->rng ^= pad->rng >> 17;
+	pad->rng ^= pad->rng << 5;
+	return pad->rng;
+}
 
 static void AP_HNE_ResetBackdropPads(void)
 {
@@ -73,10 +81,7 @@ static void AP_HNE_AnimateBackdropPads(void)
 		 * Never consume the gameplay RNG while name entry is open. */
 		if (pad->beam != NULL && (tick & 1))
 		{
-			pad->rng ^= pad->rng << 13;
-			pad->rng ^= pad->rng >> 17;
-			pad->rng ^= pad->rng << 5;
-			pad->beamYaw = (pad->beamYaw + (pad->rng % 6 + 1) * 0x200) & 0xfff;
+			pad->beamYaw = (pad->beamYaw + (AP_HNE_BackdropRandom(pad) % 6 + 1) * 0x200) & 0xfff;
 			rot.y = (s16)pad->beamYaw;
 			ConvertRotToMatrix(&pad->beam->matrix, &rot);
 		}
@@ -85,7 +90,8 @@ static void AP_HNE_AnimateBackdropPads(void)
 			struct Instance *ring = pad->ring[i];
 			int rise = 0x20 + i * 0x10;
 			if (ring == NULL) continue;
-			rot.y = (s16)((tick * 0x100) & 0xfff);
+			pad->ringYaw[i] = (pad->ringYaw[i] + 0x100) & 0xfff;
+			rot.y = (s16)pad->ringYaw[i];
 			ConvertRotToMatrix(&ring->matrix, &rot);
 			if (ring->matrix.t[1] < pad->pos[1] + 0x600)
 			{
@@ -97,6 +103,8 @@ static void AP_HNE_AnimateBackdropPads(void)
 			{
 				ring->matrix.t[1] = pad->pos[1];
 				ring->alphaScale = 0x1000;
+				/* Retail rephases each wisp when it starts another rise. */
+				pad->ringYaw[i] = AP_HNE_BackdropRandom(pad) & 0xfff;
 			}
 		}
 		if (pad->trophy != NULL)

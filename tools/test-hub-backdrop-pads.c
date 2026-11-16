@@ -58,6 +58,16 @@ int main(void)
 	for (i = 0; i < 1024; i++)
 	{
 		AP_HNE_AnimateBackdropPads();
+		if (i == 47) /* Tick 49: the first ring completes its first rise. */
+		{
+			assert(born[2].matrix.t[1] == 120 && born[2].alphaScale == 0x1000);
+			assert(s_apHnePads[0].ringYaw[0] != ((49 * 0x100) & 0xfff));
+		}
+		if (i == 48)
+		{
+			assert(born[2].matrix.m[1][1] != ((50 * 0x100) & 0xfff));
+			assert(born[2].matrix.m[1][1] != born[3].matrix.m[1][1]);
+		}
 		assert(abs(born[1].matrix.t[0] + 500) <= 160);
 		assert(abs(born[1].matrix.t[1] - 376) <= 64);
 		assert(abs(born[1].matrix.t[2] - 800) <= 160);
