@@ -1032,7 +1032,11 @@ int AP_TrackerMenuFrame(void)
 		}
 	}
 	ap_tracker.mouse_x=mx; ap_tracker.mouse_y=my; ap_tracker.mouse_buttons=buttons;
-	AP_TrackerBuildNodes(); AP_TrackerDraw(); return 1;
+	AP_TrackerBuildNodes();
+	/* A room refresh can replace the focused cup while rebuilding nodes. */
+	if (ap_tracker.checks_open && ap_tracker.count)
+		ap_tracker.checks_page%=AP_TrackerChecksPages(&ap_tracker.nodes[ap_tracker.focus]);
+	AP_TrackerDraw(); return 1;
 }
 void AP_TrackerPresent(void)
 {

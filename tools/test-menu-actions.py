@@ -86,7 +86,7 @@ static struct {
     ap_padact_list acts; AP_TrackerNode nodes[2];
 } ap_tracker;
 static int ap_tracker_request, launches, launchEnabled = 1;
-static int checksPages=4;
+static int checksPages=4, rebuildPages;
 int AP_TrackerChecksPages(const AP_TrackerNode *node) { return checksPages; }
 static struct { struct { int w,h; } disp; } activeDispEnv;
 int ctr_cfg_active(void) { return 1; }
@@ -97,7 +97,7 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu) {}
 int AP_TrackerLoadAssets(void) { return 1; }
 void AP_TrackerClose(void) { ap_tracker.open=0; ap_tracker.acts_open=0; ap_tracker.pinned=0; ap_tracker.checks_open=0; }
 void AP_TrackerShutdown(void) {}
-void AP_TrackerBuildNodes(void) {}
+void AP_TrackerBuildNodes(void) { if(rebuildPages) { checksPages=rebuildPages; rebuildPages=0; } }
 void AP_TrackerDraw(void) {}
 void AP_LogLine(const char *s) {}
 void AP_TrackerActivitiesBuild(void) {
@@ -153,6 +153,9 @@ static void tracker_tests(void) {
         sdata->buttonTapPerPlayer[0]=BTN_R1;
         assert(AP_TrackerMenuFrame() && ap_tracker.checks_page==0 && ap_tracker.tab==0);
         checksPages=1; ap_tracker.checks_page=3; /* A changed room removes the cup. */
+        assert(AP_TrackerMenuFrame() && ap_tracker.checks_page==0); checksPages=4;
+        ap_tracker.checks_page=3; rebuildPages=1;
+        sdata->buttonTapPerPlayer[0]=0;
         assert(AP_TrackerMenuFrame() && ap_tracker.checks_page==0); checksPages=4;
         for(int b=0;b<2;b++) {
             ap_tracker.checks_open=1;
