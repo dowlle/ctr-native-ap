@@ -15,7 +15,7 @@
 //      are refused with the exact message and no update banner,
 //   2. a refused room sends no door storage, no check and no scout, and its items
 //      do not enter the queue,
-//   3. a room with a broken plan keeps the plan's own refusal.
+//   3. a broken plan gives matching-client advice and logs its technical reason.
 
 #include "../ap/ap_net.cpp"
 
@@ -25,8 +25,10 @@
 
 extern "C" void AP_LogLine(const char *line)
 {
-	(void)line;
+	extern std::string captured_log;
+	captured_log += line;
 }
+std::string captured_log;
 
 static const char *const kMessage = "This room was made with v0.2.x. Play it on the v0.2.4 client.";
 static int g_checks = 0;
@@ -103,6 +105,58 @@ static void test_broken_plan_keeps_its_refusal(void)
 	m->emit_slot_connected(room);
 	expect(ap_net_status() == AP_NET_STATUS_ERROR, "a broken plan is refused");
 	expect(std::strstr(ap_net_last_error(), kMessage) == nullptr, "with its own reason");
+	expect(std::strstr(ap_net_last_error(), "MATCHING CLIENT") != nullptr, "matching-client advice");
+	expect(captured_log.find("seed REFUSED (content_plan:") != std::string::npos, "technical reason logged");
+	expect(captured_log.find("schema_version") != std::string::npos, "schema logged");
+	expect(m->calls.location_checks == 0 && m->calls.location_scouts == 0 && m->calls.data_set == 0,
+	       "version advice preserves admission safety");
+}
+
+static void test_version_advice(void)
+{
+	const char *checksums[] = {"06576a4d1654a8c0ecaa9298efc5066c9f6dbab1",
+	                          "dfef5220b67ad917f534bac828b5bf882156caad",
+	                          "df96b8611492503ee9aeeb1b5fec2ad2b9779ae5", "", "dfef5220-forged"};
+	const char *hints[] = {"ALPHA1/ALPHA2", "ALPHA3", "ALPHA4/ALPHA5", "MATCHING CLIENT", "MATCHING CLIENT"};
+	for (int i = 0; i < 5; ++i) {
+		APClient *m = start();
+		m->emit_room_info(checksums[i]);
+		nlohmann::json room = {{"schema_version", 18}, {"content_plan", nlohmann::json::object()},
+		    {"ctr_options", {{"schema_version", 18}, {"world_version", "0.3.0"}, {"content_plan", true}}}};
+		m->emit_slot_connected(room);
+		const std::string message = ap_net_last_error();
+		expect(message.find(hints[i]) != std::string::npos, "correct family or unknown advice");
+		// Two 432px rows at 13px per letter. The first clause is 29 chars;
+		// every remaining clause fits the second row even at this worst width.
+		const auto split = message.find(". ");
+		expect(split != std::string::npos && (split + 1) * 13 <= 432 && (message.size() - split - 2) * 13 <= 432,
+		       "advice fits the two connection rows");
+		expect(message.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .-/") == std::string::npos,
+		       "credits font safe");
+	}
+	nlohmann::json room = {{"ctr_options", {{"world_version", "0.3.0"}}}, {"build_version", "0.3.0-alpha6"}};
+	expect(ap_seed_refusal::message(room, checksums[1]).find("USE CLIENT 0.3.0-ALPHA6") != std::string::npos,
+	       "explicit build outranks a table family");
+	room["build_version"] = "0.3.0-12345678901234567890";
+	expect(ap_seed_refusal::message(room, "").find("MATCHING CLIENT") != std::string::npos,
+	       "overlong build label falls back to fitting advice");
+	room["build_version"] = "bad~00\n<script>";
+	expect(ap_seed_refusal::message(room, "").find("MATCHING CLIENT") != std::string::npos,
+	       "unsafe metadata stays out of font");
+	for (const char *label : {"0", "0.3", "0.3.0-", "0.3.0-A..B", "0.3.0A", "00.3.0"}) {
+		room["build_version"] = label;
+		expect(ap_seed_refusal::message(room, checksums[1]).find("CHECK ALPHA3") != std::string::npos,
+		       "malformed version shape falls back to tentative family advice");
+	}
+	room["build_version"] = "0.3.0";
+	expect(ap_seed_refusal::message(room, "").find("USE CLIENT 0.3.0.") != std::string::npos,
+	       "well-formed explicit stable build is retained");
+	room["build_version"] = "bad~00\n<script>";
+	room["ctr_options"] = 17;
+	expect(ap_seed_refusal::message(room, "").find("MATCHING CLIENT") != std::string::npos,
+	       "malformed options safe");
+	start();
+	expect(g_refusal_store.ctr_checksum.empty(), "new connection clears the previous family");
 }
 
 int main(void)
@@ -112,6 +166,7 @@ int main(void)
 	test_refused({{"ctr_options", nlohmann::json::object()}}, "room with no schema");
 	test_refused(nlohmann::json::object(), "empty room");
 	test_broken_plan_keeps_its_refusal();
+	test_version_advice();
 	ap_net_shutdown();
 	std::printf("%d checks, %d failures\n", g_checks, g_failures);
 	return g_failures ? 1 : 0;
