@@ -324,6 +324,23 @@ typedef struct ctr_content_item {
     int base, extra, start_from_pool, start_additional, remaining, receipt_cap;
 } ctr_content_item;
 
+/* Admit pool-scaled random pads (pad_scaling.py), and retain the historical
+ * 8/4 allowance so older small-pool rooms still load. Extras and starts never
+ * raise a cap. Keep arithmetic wide for hostile rooms. */
+static inline int ap_content_random_pad_cap(unsigned mask, int stage, const ctr_content_item *items)
+{
+    int first = 0, last = 0, baseline = 16;
+    if (mask == (1u << 14)) return 4;
+    if (mask & 0x000eu) { first = 1; last = 3; baseline = 36; }
+    else if (mask & 0x01f0u) { first = 4; last = 8; baseline = 20; }
+    else if (mask & 0x3e00u) { first = 9; last = 13; baseline = 5; }
+    int64_t total = 0;
+    for (int i = first; i <= last; ++i) total += items[i].base;
+    const int64_t scaled = ((stage == 1 ? 8 : 4) * total + baseline - 1) / baseline;
+    const int legacy = stage == 1 ? 8 : 4;
+    return scaled > 99 ? 99 : scaled < legacy ? legacy : (int)scaled;
+}
+
 /* The plan's per-track check settings (#133 PR 3b): `lettersanity` 0 off,
  * 1 locations, 2 locations and items, 3 items; `wumpa` 0 off, 1 global,
  * 2 per track, with the global check's code. `relic_perfect` 1 when Relic

@@ -2418,6 +2418,56 @@ int main(int argc, char **argv) {
         expect(ap_content_mode_open(&pad, AP_CONTENT_MODE_CTR, counts, won_check), "a plan without the feature keeps its gates");
     }
     // Paired real generation with synthetic 50-spot retail and named tracks.
+    // Pool-scaled pad admission uses the production parser, not just the cap
+    // helper. Reuse an existing room with ample filler and preserve its checks.
+    {
+        J room;
+        std::ifstream("tools/fixtures/content-plan/box-count-50.json") >> room;
+        J &plan = room["content_plan"];
+        J tokens = J::array(), relics = J::array();
+        for (auto &row : plan["items"]["rows"]) {
+            const int code = row["item"];
+            if (code >= 35010000 && code <= 35010008) {
+                const int delta = row["base"].get<int>() * (code >= 35010004 ? 15 : 3);
+                for (const char *key : {"base", "remaining", "receipt_cap", "requirement_ceiling"})
+                    row[key] = row[key].get<int>() + delta;
+                plan["items"]["filler_count"] = plan["items"]["filler_count"].get<int>() - delta;
+            }
+            if (row["base"].get<int>() && code >= 35010004 && code <= 35010008) tokens.push_back(code);
+            if (row["base"].get<int>() && code >= 35010001 && code <= 35010003) relics.push_back(code);
+        }
+        auto rule = [](J &j, const std::string &id) -> J & {
+            for (auto &r : j["content_plan"]["requirements"]) if (r["id"] == id) return r["predicate"];
+            throw std::runtime_error("missing scaled-pad fixture rule");
+        };
+        rule(room, "stage1:0") = J{{"op", "sum"}, {"items", tokens}, {"count", 32}};
+        rule(room, "stage2:0") = J{{"op", "sum"}, {"items", relics}, {"count", 16}};
+        expect(parse(room) && bind_room(room, "scaled-pool"), "scaled pool: high-count room parses and binds");
+        const auto *pad = ap_content_plan_pad(0);
+        expect(pad && pad->rule_count == 32 && pad->stage2_count == 16,
+               "scaled pool: parser retains both high counts");
+        if (pad && pad->mode_count > 1) {
+            int counts[15] = {};
+            counts[14] = 4; counts[4] = 31; counts[1] = 15;
+            expect(!ap_content_pad_open(pad, counts), "scaled pool: parsed stage 1 stays closed below 32");
+            counts[4] = 32;
+            expect(ap_content_pad_open(pad, counts), "scaled pool: parsed stage 1 opens at 32");
+            int64_t codes[3] = {};
+            ap_content_mode_codes(pad, pad->modes[0], codes);
+            won_code = codes[0];
+            expect(!ap_content_mode_open(pad, pad->modes[1], counts, won_check),
+                   "scaled pool: parsed stage 2 stays closed below 16");
+            counts[1] = 16;
+            expect(ap_content_mode_open(pad, pad->modes[1], counts, won_check),
+                   "scaled pool: parsed stage 2 opens at 16 after first win");
+        }
+        J bad = room; rule(bad, "stage1:0")["count"] = 33;
+        refuse(bad, "scaled pool: stage 1 above its Token cap");
+        bad = room; rule(bad, "stage2:0")["count"] = 25;
+        refuse(bad, "scaled pool: stage 2 above its Relic cap");
+        bad = room; rule(bad, "stage2:0") = J{{"op", "sum"}, {"items", tokens}, {"count", 16}};
+        refuse(bad, "scaled pool: second stage already implied by stage 1");
+    }
     for (int count : {0, 1, 15, 50}) {
         J room;
         std::ifstream("tools/fixtures/content-plan/box-count-" + std::to_string(count) + ".json") >> room;

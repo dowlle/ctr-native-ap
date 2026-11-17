@@ -2543,16 +2543,18 @@ static void validate(const J &p, State &out) {
     need(pad_mode != PAD_REQ_VANILLA || manual_ids.empty(), "manual rules need a random pad requirement mode");
     if (pad_mode == PAD_REQ_VANILLA) vanilla_pads(out);
     else if (has_pad_requirements) {
-        // A drawn stage keeps its count ceiling (Keys excepted), and a stage 2
+        // A drawn stage keeps its pool-scaled ceiling, and a stage 2
         // asks more than its pad's stage 1, the apworld's check_record. The
         // draw itself is not redone.
         for (const auto &pair : stage1_ids) {
             const ctr_content_pad &pad = *manual_pad.at(pair.first);
-            need(pad.rule_mask == (1u << 14) || pad.rule_count <= 8, "a drawn stage 1 asks above its count ceiling");
+            need(pad.rule_count <= ap_content_random_pad_cap(pad.rule_mask, 1, out.items.data()),
+                 "a drawn stage 1 asks above its count ceiling");
         }
         for (const auto &pair : stage2_ids) {
             const ctr_content_pad &pad = *stage2_pad.at(pair.first);
-            need(pad.stage2_mask == (1u << 14) || pad.stage2_count <= 4, "a drawn stage 2 asks above its count ceiling");
+            need(pad.stage2_count <= ap_content_random_pad_cap(pad.stage2_mask, 2, out.items.data()),
+                 "a drawn stage 2 asks above its count ceiling");
             need(!pad.has_rule || pad.stage2_count > pad.rule_count || (pad.rule_mask & ~pad.stage2_mask),
                  "a stage 2 asks no more than its stage 1");
         }
