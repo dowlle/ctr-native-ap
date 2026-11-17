@@ -2440,28 +2440,28 @@ int main(int argc, char **argv) {
             for (auto &r : j["content_plan"]["requirements"]) if (r["id"] == id) return r["predicate"];
             throw std::runtime_error("missing scaled-pad fixture rule");
         };
-        rule(room, "stage1:0") = J{{"op", "sum"}, {"items", tokens}, {"count", 32}};
-        rule(room, "stage2:0") = J{{"op", "sum"}, {"items", relics}, {"count", 16}};
+        rule(room, "stage1:0") = J{{"op", "sum"}, {"items", tokens}, {"count", 64}};
+        rule(room, "stage2:0") = J{{"op", "sum"}, {"items", relics}, {"count", 24}};
         expect(parse(room) && bind_room(room, "scaled-pool"), "scaled pool: high-count room parses and binds");
         const auto *pad = ap_content_plan_pad(0);
-        expect(pad && pad->rule_count == 32 && pad->stage2_count == 16,
+        expect(pad && pad->rule_count == 64 && pad->stage2_count == 24,
                "scaled pool: parser retains both high counts");
         if (pad && pad->mode_count > 1) {
             int counts[15] = {};
-            counts[14] = 4; counts[4] = 31; counts[1] = 15;
-            expect(!ap_content_pad_open(pad, counts), "scaled pool: parsed stage 1 stays closed below 32");
-            counts[4] = 32;
-            expect(ap_content_pad_open(pad, counts), "scaled pool: parsed stage 1 opens at 32");
+            counts[14] = 4; counts[4] = 63; counts[1] = 23;
+            expect(!ap_content_pad_open(pad, counts), "scaled pool: parsed stage 1 stays closed below 64");
+            counts[4] = 64;
+            expect(ap_content_pad_open(pad, counts), "scaled pool: parsed stage 1 opens at 64");
             int64_t codes[3] = {};
             ap_content_mode_codes(pad, pad->modes[0], codes);
             won_code = codes[0];
             expect(!ap_content_mode_open(pad, pad->modes[1], counts, won_check),
-                   "scaled pool: parsed stage 2 stays closed below 16");
-            counts[1] = 16;
+                   "scaled pool: parsed stage 2 stays closed below 24");
+            counts[1] = 24;
             expect(ap_content_mode_open(pad, pad->modes[1], counts, won_check),
-                   "scaled pool: parsed stage 2 opens at 16 after first win");
+                   "scaled pool: parsed stage 2 opens at 24 after first win");
         }
-        J bad = room; rule(bad, "stage1:0")["count"] = 33;
+        J bad = room; rule(bad, "stage1:0")["count"] = 65;
         refuse(bad, "scaled pool: stage 1 above its Token cap");
         bad = room; rule(bad, "stage2:0")["count"] = 25;
         refuse(bad, "scaled pool: stage 2 above its Relic cap");
