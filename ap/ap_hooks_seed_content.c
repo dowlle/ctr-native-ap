@@ -404,7 +404,7 @@ static int AP_SeedInstallBegin(int at, char *message, size_t messageSize)
 			                                                pkg->has_relic_targets ? pkg->relic_targets[1] : 0,
 			                                                pkg->has_relic_targets ? pkg->relic_targets[2] : 0,
 			                                                pkg->lev_sha256, pkg->lev_bytes,
-			                                                pkg->vrm_sha256, pkg->vrm_bytes, 0, 0, 0);
+			                                                pkg->vrm_sha256, pkg->vrm_bytes, 0, 0, 0, pkg->content_id);
 		else
 		{
 			int source = AP_TRACK_REGISTRY_SOURCE_NONE;
@@ -422,7 +422,7 @@ static int AP_SeedInstallBegin(int at, char *message, size_t messageSize)
 			                                                pkg->has_relic_targets ? pkg->relic_targets[2] : 0,
 			                                                pkg->lev_sha256, pkg->lev_bytes,
 			                                                pkg->vrm_sha256, pkg->vrm_bytes, match.saphi_track_id,
-			                                                match.lev_download_id, match.vrm_download_id);
+			                                                match.lev_download_id, match.vrm_download_id, pkg->content_id);
 		}
 	}
 	if (!started)

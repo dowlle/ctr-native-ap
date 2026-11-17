@@ -44,14 +44,14 @@ int ap_custom_track_download_start_registry(const char *tracks_dir,
 	                                        const char *vrm_sha256, uint32_t vrm_bytes);
 
 /* Current Seed's one-copy install into tracks/packages. The room descriptor
-   supplies the revision and UUID; the downloaded bytes still have to match
-   both seed pins before a package is published. */
+   supplies the content key, revision and UUID; the downloaded bytes still
+   have to match both seed pins before a package is published. */
 int ap_custom_track_download_start_shared(const char *tracks_dir, const char *package_root,
     const char *download_api_url, const char *revision, const char *uuid,
     const char *title, const char *author, unsigned int laps,
     int relic_sapphire, int relic_gold, int relic_platinum,
     const char *lev_sha256, uint32_t lev_bytes, const char *vrm_sha256, uint32_t vrm_bytes,
-    int saphi_track_id, int lev_download_id, int vrm_download_id);
+    int saphi_track_id, int lev_download_id, int vrm_download_id, const char *content_key);
 
 // Thread-safe snapshot for the game thread. Returns an AP_CT_DOWNLOAD_* value.
 int ap_custom_track_download_status(char *detail, int detail_bytes);

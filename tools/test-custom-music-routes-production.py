@@ -219,10 +219,10 @@ static int install_seed(const std::string &assets, bool by_ids, std::string &det
 	const std::string ls = sha(lev), vs = sha(vrm);
 	const int ok = by_ids
 		? ap_custom_track_download_start_shared(tracks.c_str(), pkg.c_str(), nullptr, "1.0.0", seed_uuid.c_str(), "Acid Lake",
-		      "Author", 3, 0, 0, 0, ls.c_str(), (uint32_t)lev.size(), vs.c_str(), (uint32_t)vrm.size(), 121, 872, 873)
+		      "Author", 3, 0, 0, 0, ls.c_str(), (uint32_t)lev.size(), vs.c_str(), (uint32_t)vrm.size(), 121, 872, 873, "acid-lake")
 		: ap_custom_track_download_start_shared(tracks.c_str(), pkg.c_str(),
 		      "https://www.projectsaphi.com/api/v2/tracks/121/downloads", "1.0.0", seed_uuid.c_str(), "Acid Lake",
-		      "Author", 3, 0, 0, 0, ls.c_str(), (uint32_t)lev.size(), vs.c_str(), (uint32_t)vrm.size(), 0, 0, 0);
+		      "Author", 3, 0, 0, 0, ls.c_str(), (uint32_t)lev.size(), vs.c_str(), (uint32_t)vrm.size(), 0, 0, 0, "acid-lake");
 	if (!ok) { detail = "start refused"; return -1; }
 	return finish(detail);
 }
@@ -428,10 +428,14 @@ c_units = ["platform/native_custom_package_owned.c", "platform/native_custom_con
            "platform/native_custom_offline.c", "platform/native_custom_unicode.c",
            "platform/native_custom_track_manager.c", "vendor/utf8proc/utf8proc.c"]
 
-with tempfile.TemporaryDirectory() as tmp:
-    work = Path(tmp)
+def run_harness(body=tests, extra=""):
+    with tempfile.TemporaryDirectory() as tmp:
+        build_harness(Path(tmp), body, extra)
+
+
+def build_harness(work, body, extra):
     src, exe = work / "music_routes.cpp", work / "music_routes"
-    src.write_text(prelude + part_a + stub + part_b + part_c + tests, encoding="utf-8")
+    src.write_text(prelude + part_a + stub + part_b + part_c + extra + body, encoding="utf-8")
     includes = ["-I" + str(root / "ap"), "-I" + str(root / "include"), "-I" + str(root),
                 "-I" + str(root / "ap/vendor/json/include"), "-I" + str(root / "vendor/utf8proc")]
     defines = ["-DCTR_CUSTOM_TRACKS", "-DCTR_CUSTOM_PACKAGES", "-DUTF8PROC_STATIC"]
@@ -448,3 +452,7 @@ with tempfile.TemporaryDirectory() as tmp:
         objects.append(str(obj))
     subprocess.run(["g++", "-m32", *objects, "-o", str(exe), "-lm", "-lcrypto", "-lz", "-pthread"], check=True, cwd=root)
     subprocess.run([str(exe)], check=True, cwd=root)
+
+
+if __name__ == "__main__":
+    run_harness()

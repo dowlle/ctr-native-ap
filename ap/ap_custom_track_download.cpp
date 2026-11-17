@@ -1060,12 +1060,13 @@ void worker(std::string package_root, std::string api_url, std::string version,
 	        std::string lev_hash, std::string vrm_hash,
 	        uint32_t lev_pin, uint32_t vrm_pin, std::string tracks, int lev_id, int vrm_id,
 	        std::string seed_uuid, std::string seed_title, std::string seed_author, unsigned int seed_laps,
-	        int relic_sapphire, int relic_gold, int relic_platinum)
+	        int relic_sapphire, int relic_gold, int relic_platinum, std::string seed_key)
 {
 	const bool pinned = !tracks.empty();
 #ifndef CTR_CUSTOM_PACKAGES
 	(void)seed_uuid; (void)seed_title; (void)seed_author; (void)seed_laps;
 	(void)relic_sapphire; (void)relic_gold; (void)relic_platinum;
+	(void)seed_key;
 #endif
 	try
 	{
@@ -1136,7 +1137,7 @@ void worker(std::string package_root, std::string api_url, std::string version,
 				{{"role", "lev"}, {"path", "original/track.lev"}, {"sha256", lev_hash}, {"bytes", lev_bytes.size()}},
 				{{"role", "vrm"}, {"path", "original/track.vrm"}, {"sha256", vrm_hash}, {"bytes", vrm_bytes.size()}}});
 			nlohmann::json seed_source = {{"schema_version", 1}, {"provider", "ctr-seed"},
-				{"track_key", key}, {"author", seed_author}};
+				{"track_key", seed_key}, {"author", seed_author}};
 			// A4-74: what a later permission decision is matched on.
 			if (const int saphi_track = ap_track_saphi_id_from_url(api_url.c_str()))
 			{
@@ -1274,7 +1275,8 @@ int start_worker(const char *package_root, const char *download_api_url, const c
 	             uint32_t lev_bytes, uint32_t vrm_bytes, const char *tracks, int lev_id = 0, int vrm_id = 0,
 	             const char *seed_uuid = nullptr, const char *seed_title = nullptr,
 	             const char *seed_author = nullptr, unsigned int seed_laps = 0,
-	             int relic_sapphire = 0, int relic_gold = 0, int relic_platinum = 0)
+	             int relic_sapphire = 0, int relic_gold = 0, int relic_platinum = 0,
+	             const char *seed_key = nullptr)
 {
 	DownloadState &shared = download_state();
 	// A4-74: every Saphi download this worker makes (Current Seed, the
@@ -1316,7 +1318,7 @@ int start_worker(const char *package_root, const char *download_api_url, const c
 		            std::string(tracks ? tracks : ""), lev_id, vrm_id,
 		            std::string(seed_uuid ? seed_uuid : ""), std::string(seed_title ? seed_title : ""),
 		            std::string(seed_author ? seed_author : ""), seed_laps,
-		            relic_sapphire, relic_gold, relic_platinum).detach();
+		            relic_sapphire, relic_gold, relic_platinum, std::string(seed_key ? seed_key : "")).detach();
 		return 1;
 	}
 	catch (const std::exception &e)
@@ -1392,16 +1394,27 @@ extern "C" int ap_custom_track_download_start_shared(const char *tracks_dir, con
     const char *title, const char *author, unsigned int laps,
     int relic_sapphire, int relic_gold, int relic_platinum,
     const char *lev_sha256, uint32_t lev_bytes, const char *vrm_sha256, uint32_t vrm_bytes,
-    int saphi_track_id, int lev_download_id, int vrm_download_id)
+    int saphi_track_id, int lev_download_id, int vrm_download_id, const char *content_key)
 {
 #ifndef CTR_CUSTOM_PACKAGES
     (void)tracks_dir; (void)package_root; (void)download_api_url; (void)revision; (void)uuid;
     (void)title; (void)author; (void)laps; (void)relic_sapphire; (void)relic_gold; (void)relic_platinum;
     (void)lev_sha256; (void)lev_bytes; (void)vrm_sha256; (void)vrm_bytes;
     (void)saphi_track_id; (void)lev_download_id; (void)vrm_download_id;
+    (void)content_key;
     return 0;
 #else
     char api[96];
+    // A package folder may include its version. Identity comes from slot_data.
+    if (!content_key || !*content_key || std::strlen(content_key) > 64) return 0;
+    bool dash = true;
+    for (const unsigned char *p = reinterpret_cast<const unsigned char *>(content_key); *p; ++p)
+    {
+        if (*p == '-' && !dash) dash = true;
+        else if ((*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9')) dash = false;
+        else return 0;
+    }
+    if (dash || 9 + std::strlen(content_key) + (revision ? std::strlen(revision) : 0) > 64) return 0;
     if (!tracks_dir || !package_root || !revision || !*revision || !uuid || !*uuid ||
         !title || !*title || !author || !*author || laps < 1 || laps > 7 ||
         !lev_sha256 || !vrm_sha256 || !lev_bytes || !vrm_bytes ||
@@ -1416,7 +1429,7 @@ extern "C" int ap_custom_track_download_start_shared(const char *tracks_dir, con
     if (!download_api_url || !*download_api_url) return 0;
     return start_worker(package_root, download_api_url, revision, lev_sha256, vrm_sha256,
                         lev_bytes, vrm_bytes, tracks_dir, lev_download_id, vrm_download_id,
-                        uuid, title, author, laps, relic_sapphire, relic_gold, relic_platinum);
+                        uuid, title, author, laps, relic_sapphire, relic_gold, relic_platinum, content_key);
 #endif
 }
 

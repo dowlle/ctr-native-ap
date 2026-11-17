@@ -917,7 +917,20 @@ extern "C" int CustomPackage_StoreDescriptor(const char *assets, const char *pin
             if (source.is_object() && source.contains("provider") && source["provider"].is_string() &&
                 (source["provider"] == "xdelta" || source["provider"] == "ctr-seed") &&
                 source.contains("track_key") && source["track_key"].is_string())
+            {
                 trackKey = source["track_key"].get<std::string>();
+                // Older seed installs used the folder, sometimes <key>-<version>.
+                // Repair only invalid metadata; explicit registry keys stay exact.
+                if (!descriptor_key(trackKey))
+                {
+                    const std::string suffix = std::string("-") + manifest.version;
+                    if (source["provider"] == "ctr-seed" && trackKey.size() > suffix.size() &&
+                        trackKey.compare(trackKey.size() - suffix.size(), suffix.size(), suffix) == 0)
+                        trackKey.resize(trackKey.size() - suffix.size());
+                    if (!descriptor_key(trackKey)) trackKey = descriptor_title_key(trackKey.c_str());
+                    if (!descriptor_key(trackKey)) trackKey = descriptor_title_key(manifest.title);
+                }
+            }
         }
         const std::string id = "package/" + trackKey + "/" + manifest.version;
         if (!descriptor_key(trackKey) || id.size() > 64 || ("custom/" + trackKey + "/" + manifest.version).size() > 64)
