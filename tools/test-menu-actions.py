@@ -153,8 +153,9 @@ static void tracker_tests(void) {
         assert(AP_TrackerMenuFrame() && ap_tracker.checks_detail==2 && ap_tracker.focus==0);
         sdata->buttonTapPerPlayer[0]=BTN_DOWN;
         assert(AP_TrackerMenuFrame() && ap_tracker.checks_detail==0);
+        ap_tracker.checks_detail=2;
         sdata->buttonTapPerPlayer[0]=BTN_L1;
-        assert(AP_TrackerMenuFrame() && ap_tracker.checks_page==3 && ap_tracker.tab==0);
+        assert(AP_TrackerMenuFrame() && ap_tracker.checks_page==3 && ap_tracker.tab==0 && ap_tracker.checks_detail==0);
         sdata->buttonTapPerPlayer[0]=BTN_R1;
         assert(AP_TrackerMenuFrame() && ap_tracker.checks_page==0 && ap_tracker.tab==0);
         checksPages=1; ap_tracker.checks_page=3; /* A changed room removes the cup. */
