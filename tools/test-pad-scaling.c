@@ -20,13 +20,20 @@ int main(void)
     for (int mult = 1; mult <= 100; ++mult) {
         for (int i = 0; i < 15; ++i) items[i].base = baseline[i] * mult;
         for (int stage = 1; stage <= 2; ++stage) {
-            const int scaled = (stage == 1 ? 8 : 4) * mult;
-            for (int i = 0; i < 14; ++i)
+            const int legacy = stage == 1 ? 8 : 4;
+            for (int i = 0; i < 14; ++i) {
+                int scaled = (i == 0 ? 16 : i <= 3 ? 36 : i <= 8 ? 20 : 5) * mult;
+                if (scaled < legacy) scaled = legacy;
                 expect(ap_content_random_pad_cap(1u << i, stage, items) == (scaled > 99 ? 99 : scaled),
                        "concrete cap follows family base supply");
-            expect(ap_content_random_pad_cap(0x000e, stage, items) == (scaled > 99 ? 99 : scaled), "any Relic cap");
-            expect(ap_content_random_pad_cap(0x01f0, stage, items) == (scaled > 99 ? 99 : scaled), "any Token cap");
-            expect(ap_content_random_pad_cap(0x3e00, stage, items) == (scaled > 99 ? 99 : scaled), "any Gem cap");
+            }
+            const unsigned masks[3] = {0x000e, 0x01f0, 0x3e00};
+            const int totals[3] = {36, 20, 5};
+            for (int f = 0; f < 3; ++f) {
+                int scaled = totals[f] * mult;
+                if (scaled < legacy) scaled = legacy;
+                expect(ap_content_random_pad_cap(masks[f], stage, items) == (scaled > 99 ? 99 : scaled), "any family cap");
+            }
             expect(ap_content_random_pad_cap(1u << 14, stage, items) == 4, "Keys stay at four");
         }
     }
