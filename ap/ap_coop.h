@@ -35,6 +35,7 @@ static inline int AP_CoopWon(const struct GameTracker *gt)
 	return AP_CoopRank(gt, 0) == 0;
 }
 void AP_CoopPrepareLoad(struct GameTracker *gt);
+void AP_CoopPrepareGrid(struct GameTracker *gt);
 void AP_CoopStep(int direction);
 void AP_CoopRacerStep(int direction);
 const char *AP_CoopHelp(void);

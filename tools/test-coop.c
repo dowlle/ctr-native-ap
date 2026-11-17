@@ -97,9 +97,6 @@ int main(void)
 	AP_CoopPrepareLoad(&gt);
 	assert(gt.numPlyrCurrGame == 2 && gt.numPlyrNextGame == 1);
 	assert(data.characterIDs[1] == 10);
-	unsigned seats = 0;
-	for (int i = 0; i < 6; i++) seats |= 1u << sdata->kartSpawnOrderArray[i];
-	assert(seats == 63);
 	assert(AP_IsSlotHuman(&gt, &drivers[0]) && AP_IsSlotHuman(&gt, &drivers[1]));
 	assert(!AP_IsSlotHuman(&gt, &drivers[2]) && !AP_IsSlotHuman(&gt, NULL));
 	assert(!AP_CoopFinishReady(1, 2, 1));

@@ -120,11 +120,17 @@ void AP_CoopPrepareLoad(struct GameTracker *gt)
 	if (two)
 	{
 		data.characterIDs[1] = g_config.coopRacer;
-		/* Retail's 2P roster has six seats. Both humans start behind the bots. */
-		sdata->kartSpawnOrderArray[0] = 5;
-		sdata->kartSpawnOrderArray[1] = 4;
-		for (int i = 2; i < 6; i++) sdata->kartSpawnOrderArray[i] = i - 2;
 	}
+}
+
+void AP_CoopPrepareGrid(struct GameTracker *gt)
+{
+	if (!AP_CoopRace(gt)) return;
+	/* Run after stock difficulty setup copies its 2P grid, before paths,
+	 * launch order and driver birth consume it. Retail 2P has six seats. */
+	sdata->kartSpawnOrderArray[0] = 5;
+	sdata->kartSpawnOrderArray[1] = 4;
+	for (int i = 2; i < 6; i++) sdata->kartSpawnOrderArray[i] = i - 2;
 }
 
 void AP_CoopTick(struct GameTracker *gt)
