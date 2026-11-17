@@ -2461,9 +2461,9 @@ int main(int argc, char **argv) {
             expect(ap_content_mode_open(pad, pad->modes[1], counts, won_check),
                    "scaled pool: parsed stage 2 opens at 24 after first win");
         }
-        J bad = room; rule(bad, "stage1:0")["count"] = 65;
+        J bad = room; rule(bad, "stage1:0")["count"] = 81;
         refuse(bad, "scaled pool: stage 1 above its Token cap");
-        bad = room; rule(bad, "stage2:0")["count"] = 25;
+        bad = room; rule(bad, "stage2:0")["count"] = 100;
         refuse(bad, "scaled pool: stage 2 above its Relic cap");
         bad = room; rule(bad, "stage2:0") = J{{"op", "sum"}, {"items", tokens}, {"count", 16}};
         refuse(bad, "scaled pool: second stage already implied by stage 1");
