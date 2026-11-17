@@ -58,8 +58,10 @@ static std::string install_metadata(const std::string &assets, const char *key, 
                                     {"vrm", vrm.data(), vrm.size()}};
     CustomPackageOwned *owned = nullptr;
     char error[512] = {};
-    assert(CustomPackage_AcquireBuffers(manifest.data(), manifest.size(), pin.c_str(), inputs, 3,
-                                        &owned, error, sizeof error));
+    const int acquired = CustomPackage_AcquireBuffers(manifest.data(), manifest.size(), pin.c_str(), inputs, 3,
+                                                      &owned, error, sizeof error);
+    if (!acquired) std::fprintf(stderr, "fixture %s: %s\n", title, error);
+    assert(acquired);
     assert(CustomPackage_InstallAssets(owned, assets.c_str(), error, sizeof error));
     CustomPackage_Free(&owned);
     return pin;
@@ -98,7 +100,7 @@ int main()
                                              sha(vrm).c_str(), vrm.size(), lp, sizeof lp, vp, sizeof vp));
     }
     // A version that cannot fit in either id remains a per-package refusal.
-    const auto bad = install_metadata(assets, "bad-track", "Too Long Revision", std::string(60, '1').c_str());
+    const auto bad = install_metadata(assets, "bad-track", "Too Long Revision", ("1.0.0-" + std::string(54, 'a')).c_str());
     assert(!descriptor(assets, bad));
     auto scan = CollectInstalledStore(assets, "");
     assert(!scan.failed && scan.error.empty() && scan.descriptors.size() == 2);
@@ -140,5 +142,5 @@ int main()
 }
 '''
 if "--baseline" in sys.argv:
-    extra = "#define A5_BASELINE\n" + extra
+    extra = "\n#define A5_BASELINE\n" + extra
 helper["run_harness"](body, extra)
