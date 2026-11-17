@@ -80,7 +80,7 @@ static const struct CustomTrackManagerPackage *compiled_for[4];
 static const struct CustomTrackManagerPackage *AP_ContentPackage(int i) { return i >= 0 && i < package_count ? compiled_for[i] : NULL; }
 static int dl_state = AP_CT_DOWNLOAD_IDLE, starts, refuse_start;
 static char dl_detail[200], start_tracks[512], start_root[512], start_version[80], start_lev[80], start_vrm[80];
-static char start_uuid[40], start_title[130], start_author[130];
+static char start_uuid[40], start_title[130], start_author[130], start_key[65];
 static unsigned int start_laps;
 static uint32_t start_lev_bytes, start_vrm_bytes;
 int ap_custom_track_download_start_pinned(const char *tracks, const char *rootDir, const char *api, const char *version,
@@ -177,8 +177,9 @@ int ap_custom_track_download_start_shared(const char *tracks, const char *rootDi
     const char *api, const char *version, const char *uuid, const char *title, const char *author, unsigned int laps,
     int sapphire, int gold, int platinum,
     const char *lev, uint32_t levBytes, const char *vrm, uint32_t vrmBytes,
-    int track, int levId, int vrmId)
+    int track, int levId, int vrmId, const char *contentKey)
 {
+    snprintf(start_key, sizeof start_key, "%s", contentKey ? contentKey : "");
     (void)sapphire; (void)gold; (void)platinum;
     snprintf(start_uuid, sizeof start_uuid, "%s", uuid);
     snprintf(start_title, sizeof start_title, "%s", title);
@@ -310,7 +311,7 @@ int main(void)
 	       !strcmp(start_lev, current->levSha256) && !strcmp(start_vrm, current->vrmSha256) &&
 	       start_lev_bytes == 2470836 && start_vrm_bytes == 115732 &&
 	       !strcmp(start_uuid, packages[0].uuid) && !strcmp(start_title, packages[0].display_name) &&
-	       !strcmp(start_author, packages[0].author) && start_laps == 3,
+	       !strcmp(start_author, packages[0].author) && !strcmp(start_key, "baby-t-park") && start_laps == 3,
 	       "first download carries the descriptor identity, author, laps and exact seed pins");
 	expect(strstr(message, "(1 of 2)") != NULL, "progress names the position");
 	expect(!AP_SeedContentInstallStart(message, sizeof message) && starts == 1, "a second start while one runs is refused");
@@ -415,7 +416,8 @@ int main(void)
 	       "the install starts the registry download, not the compiled one");
 	snprintf(path, sizeof path, "%s/acid-lake", tracks);
 	expect(!strcmp(reg_root, path) && reg_track == 121 && reg_lev_id == 872 && reg_vrm_id == 873 &&
-	       !strcmp(reg_pin_lev, REG_LEV) && !strcmp(reg_pin_vrm, REG_VRM) && reg_lev_bytes == 810876 && reg_vrm_bytes == 458808,
+	       !strcmp(reg_pin_lev, REG_LEV) && !strcmp(reg_pin_vrm, REG_VRM) && reg_lev_bytes == 810876 && reg_vrm_bytes == 458808 &&
+	       !strcmp(start_key, "acid-lake"),
 	       "registry download: tracks/<key>, the located ids, the room's own pins");
 	expect(strstr(log_text, "cached track registry") && strstr(log_text, "Saphi track 121"), "the log names the cached source");
 	dl_state = AP_CT_DOWNLOAD_SUCCEEDED;

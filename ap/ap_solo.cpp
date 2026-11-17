@@ -1467,12 +1467,17 @@ void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 		result.live.insert(StoreSignature(entry->manifest));
 	if (!result.pin.empty() && result.pin != entry->pin) return;
 	result.published++;
+	// A full scan lists the usable packages even if another install is broken.
+	// An explicit single-install request still reports its own refusal.
 	if (!entry->verified)
 	{
-		result.failed++;
 		const std::string named = PackageLabel(*entry) + ": " + entry->error + "; reinstall or remove this track";
 		result.notes.push_back("package " + std::string(entry->pin) + " not published: " + named);
-		if (result.error.empty()) result.error = named;
+		if (!result.pin.empty())
+		{
+			result.failed++;
+			if (result.error.empty()) result.error = named;
+		}
 		return;
 	}
 	char key[65], revision[65], json[16384], error[256];
@@ -1504,10 +1509,13 @@ void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 		key, sizeof key, revision, sizeof revision, json, sizeof json, error, sizeof error);
 	if (!kind)
 	{
-		result.failed++;
 		const std::string named = PackageLabel(*entry) + ": " + error;
 		result.notes.push_back("package " + std::string(entry->pin) + " not published: " + named);
-		if (result.error.empty()) result.error = named;
+		if (!result.pin.empty())
+		{
+			result.failed++;
+			if (result.error.empty()) result.error = named;
+		}
 	}
 	else
 		result.descriptors.push_back({kind, key, revision, json, entry->manifest.title, entry->pin});
