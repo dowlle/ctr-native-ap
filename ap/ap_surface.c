@@ -1,6 +1,7 @@
 #ifdef CTR_AP
 
 #include <common.h>
+#include "ap_coop.h"
 
 #include "ap_surface.h"
 #include "ap_surface_logic.h"
@@ -25,7 +26,7 @@ void AP_SurfaceReceive(int item)
 int AP_SurfaceTerrain(struct Driver *driver, int terrain, int naturalTerrain)
 {
 	int localDriver = driver != 0 && sdata != 0 && sdata->gGT != 0 &&
-	                  driver == sdata->gGT->drivers[0] && AP_CapabilityRoomStatsRace();
+	                  AP_IsSlotHuman(sdata->gGT, driver) && AP_CapabilityRoomStatsRace();
 	return AP_SurfaceResolveTerrainMud(terrain, naturalTerrain, localDriver,
 	                                   g_surface_held,
 	                                   localDriver && AP_TrapMudSeason(driver));

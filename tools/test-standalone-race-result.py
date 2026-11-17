@@ -47,6 +47,12 @@ static struct CustomTrackRaceContext context;
 static int active,blocked,serving,exists,checked,haveContext,sent,feed;
 static long sentCode;
 static int planActive;
+static int teamRank = -2;
+/* Team-rank policy is compiled from production in test-coop.c. This fixture
+ * verifies the result producer uses its answer instead of reading P1 again. */
+int AP_CoopRank(const struct GameTracker *gt, int finishedOnly) {
+ (void)finishedOnly; return teamRank == -2 ? gt->drivers[0]->driverRank : teamRank;
+}
 static uint64_t epoch;
 static ctr_content_pad pad;
 int ap_content_plan_active(void) { return planActive; }
@@ -89,6 +95,11 @@ static void reset(void) {
 }
 int main(void) {
  int cases=0;
+ reset(); driver.driverRank=5; teamRank=0;
+ assert(AP_NotifyStandaloneRace() && sent==1);
+ reset(); driver.driverRank=0; teamRank=3;
+ assert(!AP_NotifyStandaloneRace() && !sent);
+ teamRank=-2;
  for(int mode=0;mode<32;mode++) for(int token=0;token<2;token++)
  for(int rank=0;rank<8;rank++) for(int loss=0;loss<2;loss++) {
   reset(); game.gameMode1=mode; game.gameMode2=token;

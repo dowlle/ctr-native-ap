@@ -14,6 +14,7 @@ fixture = r'''
 #include <stdio.h>
 #include <string.h>
 #include <common.h>
+#include "ap/ap_coop.h"
 #include "ap/ap_traps.h"
 #include "ap/ap_capability.h"
 struct sData sdata_static;
@@ -33,7 +34,7 @@ for signature in ("static int AP_TrapIsLocal(", "int AP_TrapSuppressCrateReward(
     fixture += function(signature)
 fixture += r'''
 int main(void) {
-    struct GameTracker gt = {0}; sdata->gGT = &gt;
+    struct GameTracker gt = {0}; sdata->gGT = &gt; gt.drivers[0] = &local;
     struct PushBuffer *pb = &gt.pushBuffer[0];
     memset(g_active, 1, sizeof g_active);
     adventure = 0;
@@ -57,6 +58,11 @@ int main(void) {
     assert(AP_TrapRerollExcludedItem() == 5);
     assert(AP_TrapOwnsCamera() && AP_TrapMirrorCullFlip());
     assert(AP_TrapGravity(&local, 1000) < 1000);
+    gt.gameMode1 = ADVENTURE_MODE; gt.numPlyrCurrGame = 2; gt.drivers[1] = &other;
+    assert(AP_TrapIsLocal(&other) && AP_TrapWeakenedActive(&other));
+    assert(AP_TrapGravity(&other, 1000) < 1000 && !AP_TrapAllowBoostGrant(&other));
+    gt.gameMode1 |= ARCADE_MODE;
+    assert(!AP_TrapIsLocal(&other));
     puts("PASS: active trap consumers cannot affect a non-Adventure race");
 }
 '''

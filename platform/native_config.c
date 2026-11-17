@@ -65,6 +65,8 @@ NativeConfig g_config = {
 	"",    // navDriverName (empty = fall back to the Archipelago slot name)
 	false, // discordStatus (off: nothing is opened or sent unless the player opts in)
 	"",    // discordAppId (empty = the built-in AP_DISCORD_APPLICATION_ID)
+	0,     // coopAdventure (solo by default)
+	0,     // coopRacer (Crash, validated against unlocks before seating)
 #else
 #ifdef CTR_BOX_AUTHORING
 	false, // boxAuthor
@@ -167,6 +169,8 @@ const ConfigEntry g_configEntries[] = {
 	// the boss theme. Not slot_data: a presentation preference each player
 	// picks for themselves. Shown on the Gameplay page.
 	{"Archipelago", "boss_music",               "Boss Music",                   CFG_ENUM, &g_config.bossMusic},
+	{"Archipelago", "coop_adventure",           "Adventure Players",            CFG_ENUM, &g_config.coopAdventure},
+	{"Archipelago", "coop_racer",               "Player 2 Racer",               CFG_ENUM, &g_config.coopRacer},
 	{"Archipelago", "map_flash",                "Map Flash",                    CFG_BOOL, &g_config.mapFlash},
 	// Item Box Colours: this player's opt-out of the seed's AP item box colours
 	// (color_boxes_by_item). Off = pink boxes for this player only. The menu

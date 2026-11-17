@@ -2,6 +2,7 @@
 
 #ifdef CTR_AP
 #include "../ap/ap_boss_adapter.h" // J03 boss adapter protection
+#include "../ap/ap_coop.h"
 #endif
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_identity.h>
@@ -503,6 +504,10 @@ void BOTS_Adv_AdjustDifficulty(void)
 			AP_RosterCompactSpawnOrder((unsigned char *)sdata->kartSpawnOrderArray, karts);
 		}
 	}
+#endif
+
+#ifdef CTR_AP
+	AP_CoopPrepareGrid(gGT);
 #endif
 
 	u8 pathOrder[8];

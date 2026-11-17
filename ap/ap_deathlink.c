@@ -1,4 +1,5 @@
 #ifdef CTR_AP
+#include "ap_coop.h"
 
 #include <common.h> // Driver / GameTracker + sdata + kartState + gameMode flags
 #include <stdio.h>
@@ -285,7 +286,7 @@ void AP_DeathLinkOnHit(struct Driver *victim, int damageType, int reason)
 	if (sdata == 0 || sdata->gGT == 0)
 		return;
 	gGT = sdata->gGT;
-	if (victim == 0 || victim != gGT->drivers[0])
+	if (!AP_IsSlotHuman(gGT, victim))
 		return; // local player only
 	if (g_dl_swallow_edge)
 		return; // mid received-death application: never send
@@ -881,7 +882,7 @@ void AP_DeathLinkOnRaceEnd(struct GameTracker *gGT, struct Driver *player)
 	lost = AP_DeathLinkRaceEndLost((gGT->gameMode1 & ADVENTURE_MODE) != 0,
 	                               (gGT->gameMode1 & ADVENTURE_CUP) != 0,
 	                               (gGT->gameMode1 & RELIC_RACE) != 0, crystal,
-	                               (int)player->driverRank, (int)player->numCrystals,
+	                               AP_CoopRace(gGT) ? AP_CoopRank(gGT, 0) : (int)player->driverRank, (int)player->numCrystals,
 	                               (int)gGT->numCrystalsInLEV);
 	AP_DeathLinkSendLoss(gGT, AP_DL_EV_RACE_END, lost, 0);
 }
