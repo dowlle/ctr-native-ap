@@ -81,13 +81,14 @@ tracker = r'''
 #define SDL_BUTTON_LMASK 1
 typedef struct { int physical, destination, kind, x,y,cx,cy,cw,ch; } AP_TrackerNode;
 static struct {
-    int open,hub,tab,focus,pinned,count,acts_open,acts_cursor,checks_open,checks_page;
+    int open,hub,tab,focus,pinned,count,acts_open,acts_cursor,checks_open,checks_page,checks_detail;
     float mouse_x,mouse_y; unsigned mouse_buttons;
     ap_padact_list acts; AP_TrackerNode nodes[2];
 } ap_tracker;
 static int ap_tracker_request, launches, launchEnabled = 1;
 static int checksPages=4, rebuildPages;
 int AP_TrackerChecksPages(const AP_TrackerNode *node) { return checksPages; }
+int AP_TrackerChecksDetails(const AP_TrackerNode *node) { return 3; }
 static struct { struct { int w,h; } disp; } activeDispEnv;
 int ctr_cfg_active(void) { return 1; }
 unsigned SDL_GetMouseState(float *x,float *y) { *x=0; *y=0; return 0; }
@@ -148,6 +149,10 @@ static void tracker_tests(void) {
         sdata->buttonTapPerPlayer[0]=BTN_SQUARE;
         assert(AP_TrackerMenuFrame() && ap_tracker.open && ap_tracker.checks_open);
         assert(!ap_tracker.acts_open && launches==before && ap_tracker.checks_page==0);
+        sdata->buttonTapPerPlayer[0]=BTN_UP;
+        assert(AP_TrackerMenuFrame() && ap_tracker.checks_detail==2 && ap_tracker.focus==0);
+        sdata->buttonTapPerPlayer[0]=BTN_DOWN;
+        assert(AP_TrackerMenuFrame() && ap_tracker.checks_detail==0);
         sdata->buttonTapPerPlayer[0]=BTN_L1;
         assert(AP_TrackerMenuFrame() && ap_tracker.checks_page==3 && ap_tracker.tab==0);
         sdata->buttonTapPerPlayer[0]=BTN_R1;
