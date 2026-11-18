@@ -405,6 +405,22 @@ static void ap_cs_editPersist(void)
 
 static void ap_cs_reapplyLive(struct GameTracker *gGT); // defined with the swap below
 
+// Re-apply the stat package to the kart that exists right now, when there is
+// one to write: a loaded level (not the main menu) with a live P1 driver. Used
+// when the stored package changes underneath a running kart (restore, or a
+// connect reset to a slot that has none), so the kart drives what the picker
+// and the race Kart Setup page show. Both callers run on the game thread
+// (AP_CharSwap_Tick, and AP_NetTick's connect handler).
+static void ap_cs_reapplyLiveIfSafe(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	if (gGT == NULL || gGT->drivers[0] == NULL || sdata->Loading.stage != LOAD_IDLE)
+		return;
+	if ((gGT->gameMode1 & MAIN_MENU) != 0)
+		return;
+	ap_cs_reapplyLive(gGT);
+}
+
 // Apply a package that arrived from the server, once per revision. Same
 // asynchronous-`Get` reasoning as the racer seat: the reply lands some frames
 // after the subscribe, so a one-shot keyed on "have I restored yet" would miss
@@ -433,8 +449,7 @@ static void ap_cs_editRestore(void)
 	// switch in a race or in the hub) applies to it now, through the same
 	// constants rewrite an edit uses, so the kart drives what the picker and the
 	// race Kart Setup page show instead of waiting for the next birth.
-	if (sdata->gGT != NULL && sdata->gGT->drivers[0] != NULL && sdata->Loading.stage == LOAD_IDLE)
-		ap_cs_reapplyLive(sdata->gGT);
+	ap_cs_reapplyLiveIfSafe();
 }
 
 // Progressive package: a stand-in for "received Progressive copies". Per
@@ -1577,6 +1592,9 @@ void AP_CharSwap_ConnectReset(void)
 	// deltas and only a package that actually belongs to it can move them.
 	memset(ap_cs_editGlobal, 0, sizeof ap_cs_editGlobal);
 	memset(ap_cs_editPerChar, 0, sizeof ap_cs_editPerChar);
+	// And a kart already on track drops the old slot's tune now, not at its next
+	// birth: the new slot's own package (if any) re-applies when it arrives.
+	ap_cs_reapplyLiveIfSafe();
 
 	// Drop any in-flight racer-lock enforcement (review finding). On a
 	// reconnect the seat machine re-applies the authoritative racer anyway,

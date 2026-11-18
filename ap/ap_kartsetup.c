@@ -110,7 +110,8 @@ int AP_KartSetupMenuFrame(void)
 
 	if (!ap_ks_context())
 	{
-		int wasOpen = ap_ks.open;
+		// A pending open (the row was confirmed last frame) counts as the page's.
+		int wasOpen = ap_ks.open || ap_ks.request;
 		ap_ks.request = 0;
 		ap_ks.open = 0;
 		// The page closed under the player (a disconnect or slot switch took the

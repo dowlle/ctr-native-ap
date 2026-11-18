@@ -35,6 +35,7 @@
 #include "ap/ap_capability.c"
 #include "ap/ap_charswap.c"
 #include "ap/ap_kartsetup.c"
+#include "ap/ap_charseat.c"
 
 struct sData sdata_static;
 struct Data data;
@@ -385,6 +386,11 @@ int main(void)
 		ap_cs_editRestore();
 		EXPECT(shown(STAT_SPEED, CRASH_BANDICOOT) == want, "reconnect restores the selection");
 		EXPECT(drv.const_Speed_ClassStat == want, "a restored package is applied to the running kart");
+		// Slot switch to a slot with no stored package: the kart drops the tune.
+		AP_CharSwap_ConnectReset();
+		EXPECT(drv.const_Speed_ClassStat == shown(STAT_SPEED, CRASH_BANDICOOT) &&
+		           drv.const_Speed_ClassStat == data.metaPhys[0].value[data.MetaDataCharacters[CRASH_BANDICOOT].engineID],
+		       "a connect reset puts the running kart back on the panel's (vanilla) values");
 	}
 
 	// ── Editable stats, per-racer scope ──
@@ -498,10 +504,19 @@ int main(void)
 	       "losing the row closes the page and swallows that frame's press");
 	EXPECT(frame(BTN_CROSS_one) == 0, "the pause menu has input again on the next frame");
 	cfg_active = 1;
+	// Same when the row disappears between its confirm and the page opening.
+	pause_race(&data.menuAdvRace);
+	AP_KartSetupRequestOpen();
+	cfg_active = 0;
+	EXPECT(frame(BTN_CROSS_one) == 1 && !AP_KartSetupOpen() && sdata->AnyPlayerTap == 0,
+	       "a pending open that loses its row also swallows that frame's press");
+	cfg_active = 1;
 	pause_race(&data.menuAdvRace);
 	sdata->ptrActiveMenu = &data.menuQuit;
 	AP_KartSetupRequestOpen();
-	EXPECT(frame(BTN_CROSS_one) == 0 && !AP_KartSetupOpen(), "never opens over another menu");
+	frame(BTN_CROSS_one);
+	EXPECT(!AP_KartSetupOpen(), "never opens over another menu");
+	EXPECT(frame(BTN_CROSS_one) == 0 && !AP_KartSetupOpen(), "the other menu keeps its input");
 
 	printf("%s: %d failure(s)\n", failures ? "FAIL" : "PASS", failures);
 	return failures != 0;
