@@ -17,6 +17,7 @@ end = source.index("\n#endif", start)
 fixture = r'''
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 #include <common.h>
 #include "ap/ap_kartsetup_logic.h"
 struct sData sdata_static;
@@ -27,14 +28,21 @@ fixture += source[start:end]
 fixture += r'''
 static struct MenuRow race[5] = {{0x2,3,1,0,0},{0x1,0,2,1,1},{0xD,1,3,2,2},{0xE,2,0,3,3},{-1,0,0,0,0}};
 static struct MenuRow cup[4] = {{0x2,2,1,0,0},{0xD,0,2,1,1},{0xE,1,0,2,2},{-1,0,0,0,0}};
+static struct MenuRow arcade[7] = {{0x2,5,1,0,0},{0x1,0,2,1,1},{0x5,1,3,2,2},{0x6,2,4,3,3},{0x3,3,5,4,4},{0xE,4,0,5,5},{-1,0,0,0,0}};
+static struct MenuRow arcadeCup[4] = {{0x2,2,1,0,0},{0x3,0,2,1,1},{0xE,1,0,2,2},{-1,0,0,0,0}};
 
 static void check(struct MenuRow *retail, int retailCount, struct MenuRow *ap) {
     struct RectMenu m = {0};
+    /* The static contents (what a checkpoint restored in a fresh process sees)
+       are exactly what the builder writes. */
+    struct MenuRow before[AP_KS_ROWS_MAX + 1];
+    memcpy(before, ap, sizeof before);
     m.rows = retail;
     m.rowSelected = 0;
     live = 1;
     assert(MainFreeze_APKartSetupRows(&m, retail, ap) == &m);
     assert(m.rows == ap);
+    assert(memcmp(before, ap, sizeof before) == 0);
     int count = retailCount + 1;
     assert(ap[0].stringIndex == 0x2 && ap[1].stringIndex == AP_LNG_KART_SETUP);
     for (int r = 2; r < count; r++) assert(ap[r].stringIndex == retail[r - 1].stringIndex);
@@ -79,13 +87,14 @@ static void check(struct MenuRow *retail, int retailCount, struct MenuRow *ap) {
 int main(void) {
     check(race, 4, ap_ksRowsAdvRace);
     check(cup, 3, ap_ksRowsAdvCup);
+    check(arcade, 6, ap_ksRowsArcadeRace);
+    check(arcadeCup, 3, ap_ksRowsArcadeCup);
     /* Pure gate: hub, 2P, Arcade and a dead selector carry no row. */
-    assert(AP_KartSetup_RowLive(AP_KS_ADVENTURE_MODE, 1, 1, 1));
-    assert(!AP_KartSetup_RowLive(AP_KS_ADVENTURE_MODE | AP_KS_ADVENTURE_ARENA, 1, 1, 1));
-    assert(!AP_KartSetup_RowLive(AP_KS_ADVENTURE_MODE, 2, 1, 1));
-    assert(!AP_KartSetup_RowLive(AP_KS_ADVENTURE_MODE, 1, 0, 1));
-    assert(!AP_KartSetup_RowLive(AP_KS_ADVENTURE_MODE, 1, 1, 0));
-    assert(!AP_KartSetup_RowLive(0, 1, 1, 1));
+    assert(AP_KartSetup_RowLive(ADVENTURE_MODE, 1, 1, 1));
+    assert(!AP_KartSetup_RowLive(ADVENTURE_MODE | AP_KS_ADVENTURE_ARENA, 1, 1, 1));
+    assert(!AP_KartSetup_RowLive(ADVENTURE_MODE, 2, 1, 1));
+    assert(!AP_KartSetup_RowLive(ADVENTURE_MODE, 1, 0, 1));
+    assert(!AP_KartSetup_RowLive(ADVENTURE_MODE, 1, 1, 0));
     puts("kart setup race pause rows: PASS");
     return 0;
 }
@@ -106,6 +115,10 @@ rect = (root / "game/RECTMENU.c").read_text()
 hook = rect.index("if (AP_KartSetupMenuFrame()) return;")
 assert hook < rect.index("struct RectMenu *currMenu;", hook)
 assert 'index == AP_LNG_KART_SETUP' in rect and '"KART SETUP"' in rect
+# The pause pass re-syncs the race menu on screen; GetMenuPtr routes all four.
+assert "MainFreeze_APKartSetupSync();" in (root / "ap/ap_kartsetup.c").read_text()
+for menu_name in ("menuAdvRace", "menuAdvCup", "menuArcadeRace", "menuArcadeCup"):
+    assert f"MainFreeze_APKartSetupRows(&data.{menu_name}" in source, menu_name
 # One owner for the rules: both surfaces step through the same function.
 swap = (root / "ap/ap_charswap.c").read_text()
 assert swap.count("ap_cs_adjustFor(") == 3, "definition, hub caller, race caller"

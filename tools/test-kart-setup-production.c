@@ -78,6 +78,8 @@ void VehBirth_SetConsts(struct Driver *d)
 }
 int AP_TrapWeakenedActive(struct Driver *d) { (void)d; return 0; }
 void MainFreeze_MenuPtrDefault(struct RectMenu *m) { (void)m; }
+static int syncs;
+void MainFreeze_APKartSetupSync(void) { syncs++; }
 void RECTMENU_ClearInput(void) {}
 char *NativeMenu_Labels(const char *t) { return (char *)t; }
 static char last_lines[16][96];
@@ -259,8 +261,14 @@ int main(void)
 	EXPECT(AP_KartSetupRowLive(), "Adventure cup race carries KART SETUP");
 	gt.gameMode1 = ADVENTURE_ARENA;
 	EXPECT(!AP_KartSetupRowLive(), "hub keeps SELECT CHARACTER only");
+	gt.gameMode1 = RELIC_RACE;
+	EXPECT(AP_KartSetupRowLive(), "Relic Race without ADVENTURE_MODE still drives the room's stats: row");
 	gt.gameMode1 = ARCADE_MODE;
 	EXPECT(!AP_KartSetupRowLive(), "Arcade (vanilla stats room option) has no KART SETUP");
+	gt.gameMode1 = ARCADE_MODE | RELIC_RACE;
+	EXPECT(!AP_KartSetupRowLive(), "Arcade with a stale Relic bit has no KART SETUP");
+	gt.gameMode1 = TIME_TRIAL;
+	EXPECT(!AP_KartSetupRowLive(), "Time Trial has no KART SETUP");
 	gt.gameMode1 = ADVENTURE_MODE;
 	gt.numPlyrCurrGame = 2;
 	EXPECT(!AP_KartSetupRowLive(), "two local players: no KART SETUP");
@@ -290,6 +298,14 @@ int main(void)
 	EXPECT(!AP_KartSetupOpen() && (gt.gameMode1 & PAUSE_1) && (sdata->AnyPlayerTap & BTN_START) == 0,
 	       "Start goes back to the pause menu and does not unpause");
 	EXPECT(frame(0) == 0, "pause menu owns the next frame again");
+	EXPECT(syncs > 0, "every menu pass re-syncs the race pause rows");
+	// A Relic Race without ADVENTURE_MODE pauses into the Arcade menu.
+	gt.gameMode1 = RELIC_RACE | PAUSE_1;
+	pause_race(&data.menuArcadeRace);
+	AP_KartSetupRequestOpen();
+	EXPECT(frame(BTN_CROSS_one) == 1 && AP_KartSetupOpen(), "page opens from the Arcade menu a Relic Race uses");
+	frame(BTN_TRIANGLE);
+	gt.gameMode1 = ADVENTURE_MODE;
 
 	// ── Editable stats, global scope ──
 	reset_world();

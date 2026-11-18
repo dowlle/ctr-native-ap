@@ -6,7 +6,8 @@
 // should essentially follow the character selector screen and have the same
 // rules as there.")
 //
-// A KART SETUP row in the Adventure race and cup pause menus opens this page
+// A KART SETUP row in the Adventure race and cup pause menus (and the Arcade
+// ones a Relic Race without ADVENTURE_MODE pauses into) opens this page
 // inside the same pause, the way the hub pause TRACKER row opens the tracker:
 // PAUSE_1 stays set for the whole visit, so the race timer, lap progress and
 // every kart stand still, and Back returns to the pause menu with its RESUME
@@ -24,14 +25,13 @@
 // live driver at once through the picker's own constants rewrite.
 // ---------------------------------------------------------------------------
 
-#include "ap_kartsetup_logic.h"
+#include "ap_kartsetup.h" // includes ap_kartsetup_logic.h
 #include "ap_stat_select_logic.h"
 #include "ap_charswap.h"
 #include "ap_capability.h"
 #include "ap_hooks.h"
 
 CTR_STATIC_ASSERT(AP_KS_ADVENTURE_ARENA == ADVENTURE_ARENA);
-CTR_STATIC_ASSERT(AP_KS_ADVENTURE_MODE == ADVENTURE_MODE);
 
 static struct
 {
@@ -70,7 +70,7 @@ static int ap_ks_context(void)
 		return 0;
 	if (m == NULL || sdata->ptrDesiredMenu != NULL || m->funcPtr != MainFreeze_MenuPtrDefault)
 		return 0;
-	if (m != &data.menuAdvRace && m != &data.menuAdvCup)
+	if (m != &data.menuAdvRace && m != &data.menuAdvCup && m != &data.menuArcadeRace && m != &data.menuArcadeCup)
 		return 0;
 	if ((m->state & NEEDS_TO_CLOSE) != 0)
 		return 0;
@@ -103,6 +103,10 @@ int AP_KartSetupMenuFrame(void)
 {
 	int tap;
 	unsigned avail;
+
+	// A connect, disconnect or slot switch while paused adds or removes the row
+	// on the menu already on screen, carrying the highlight by row.
+	MainFreeze_APKartSetupSync();
 
 	if (!ap_ks_context())
 	{

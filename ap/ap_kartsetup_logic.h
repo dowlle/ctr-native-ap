@@ -14,8 +14,11 @@
 //
 // The retail Adventure race menu is RESUME, RESTART, EXIT TO MAP, OPTIONS
 // (data.rowsAdvRace) and the Adventure cup menu is RESUME, EXIT TO MAP, OPTIONS
-// (data.rowsAdvCup). KART SETUP goes directly below RESUME in both, the place
-// the hub menu gives SELECT CHARACTER.
+// (data.rowsAdvCup). KART SETUP goes directly below RESUME, the place the hub
+// menu gives SELECT CHARACTER. A Relic Race on the AP map can run without
+// ADVENTURE_MODE (ap_race_stats_logic.h) and then pauses into the Arcade race
+// or cup menu while still driving the room's stats, so those menus take the
+// row too, under the same room-stats rule; real Arcade never does.
 //
 // Header-only and free of engine types so tools/test-kart-setup.c exercises the
 // same rows MainFreeze.c builds.
@@ -25,8 +28,8 @@
 // index comes near the 0x7f00 block (see ap_pauserow.h).
 #define AP_LNG_KART_SETUP 0x7f20
 
-// Largest retail race row set this header is asked to extend (rowsAdvRace).
-#define AP_KS_RETAIL_MAX 4
+// Largest retail race row set this header is asked to extend (rowsArcadeRace).
+#define AP_KS_RETAIL_MAX 6
 #define AP_KS_ROWS_MAX (AP_KS_RETAIL_MAX + 1)
 
 // Row strings in order, KART SETUP inserted below the first (RESUME) row.
@@ -76,23 +79,23 @@ static inline int AP_KartSetupRows_Down(int row, int count)
 	return count > 0 ? (row + 1) % count : 0;
 }
 
-// Game-mode bits the row gate reads, mirrored so the harness needs no engine
-// headers. ap_kartsetup.c pins them against the engine's own values.
+// Game-mode bit the row gate reads, mirrored so the harness needs no engine
+// headers. ap_kartsetup.c pins it against the engine's own value.
 #define AP_KS_ADVENTURE_ARENA 0x100000u
-#define AP_KS_ADVENTURE_MODE 0x80000u
 
 // Whether a race pause menu carries KART SETUP. `selectorLive` is the hub
 // picker's own gate (AP_CharSwap_PauseRowLive), `roomStats` is the room-option
-// test the stat writers use (AP_CapabilityRoomStatsRace), so the row exists
-// exactly where the selector's settings drive the kart. One local player only:
-// the selector's settings belong to player 1.
+// test the stat writers use (AP_CapabilityRoomStatsRace: Adventure races,
+// cups, bosses, Relic Races and Crystal Challenges, never Arcade, Time Trial,
+// Versus or Battle), so the row exists exactly where the selector's settings
+// drive the kart. One local player only: the selector's settings belong to
+// player 1.
 static inline int AP_KartSetup_RowLive(unsigned gameMode1, int players, int selectorLive, int roomStats)
 {
 	if (!selectorLive || !roomStats || players != 1)
 		return 0;
-	if ((gameMode1 & AP_KS_ADVENTURE_ARENA) != 0)
-		return 0; // the hub has SELECT CHARACTER, which already holds these controls
-	return (gameMode1 & AP_KS_ADVENTURE_MODE) != 0;
+	// The hub has SELECT CHARACTER, which already holds these controls.
+	return (gameMode1 & AP_KS_ADVENTURE_ARENA) == 0;
 }
 
 #endif // AP_KARTSETUP_LOGIC_H

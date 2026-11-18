@@ -62,8 +62,44 @@ static void MainFreeze_ShowAiDifficulty(void)
 // layout around them, so the menu points at an AP-owned copy instead of growing
 // the retail table, and the highlight is carried across by row so a connect or
 // disconnect mid-race never lands it on a different row.
-static struct MenuRow ap_ksRowsAdvRace[AP_KS_ROWS_MAX + 1];
-static struct MenuRow ap_ksRowsAdvCup[AP_KS_ROWS_MAX + 1];
+//
+// The AP tables start out holding the rows the swap builds, not zeros: a
+// checkpoint restored into a fresh process brings menu->rows back pointing at
+// them (platform/native_checkpoint.c relocates the pointer, not the table), and
+// the menu code walks a table up to its -1 terminator before anything rebuilds
+// it. tools/test-kart-setup-rows.py checks these against the builder.
+static struct MenuRow ap_ksRowsAdvRace[AP_KS_ROWS_MAX + 1] = { // RESUME, KART SETUP, RESTART, EXIT TO MAP, OPTIONS
+	{0x2, 4, 1, 0, 0},
+	{AP_LNG_KART_SETUP, 0, 2, 1, 1},
+	{0x1, 1, 3, 2, 2},
+	{0xD, 2, 4, 3, 3},
+	{0xE, 3, 0, 4, 4},
+	{-1, 0, 0, 0, 0},
+};
+static struct MenuRow ap_ksRowsAdvCup[AP_KS_ROWS_MAX + 1] = { // RESUME, KART SETUP, EXIT TO MAP, OPTIONS
+	{0x2, 3, 1, 0, 0},
+	{AP_LNG_KART_SETUP, 0, 2, 1, 1},
+	{0xD, 1, 3, 2, 2},
+	{0xE, 2, 0, 3, 3},
+	{-1, 0, 0, 0, 0},
+};
+static struct MenuRow ap_ksRowsArcadeRace[AP_KS_ROWS_MAX + 1] = { // RESUME, KART SETUP, RESTART, CHANGE CHARACTER, CHANGE LEVEL, QUIT, OPTIONS
+	{0x2, 6, 1, 0, 0},
+	{AP_LNG_KART_SETUP, 0, 2, 1, 1},
+	{0x1, 1, 3, 2, 2},
+	{0x5, 2, 4, 3, 3},
+	{0x6, 3, 5, 4, 4},
+	{0x3, 4, 6, 5, 5},
+	{0xE, 5, 0, 6, 6},
+	{-1, 0, 0, 0, 0},
+};
+static struct MenuRow ap_ksRowsArcadeCup[AP_KS_ROWS_MAX + 1] = { // RESUME, KART SETUP, QUIT, OPTIONS
+	{0x2, 3, 1, 0, 0},
+	{AP_LNG_KART_SETUP, 0, 2, 1, 1},
+	{0x3, 1, 3, 2, 2},
+	{0xE, 2, 0, 3, 3},
+	{-1, 0, 0, 0, 0},
+};
 
 static struct RectMenu *MainFreeze_APKartSetupRows(struct RectMenu *menu, struct MenuRow *retailRows,
                                                    struct MenuRow *apRows)
@@ -1470,11 +1506,38 @@ struct RectMenu *MainFreeze_GetMenuPtr(void)
 
 	if ((gGT->gameMode2 & CUP_ANY_KIND) != 0)
 	{
+#ifdef CTR_AP
+		// A Relic Race without ADVENTURE_MODE still drives the room's stats
+		// (ap_race_stats_logic.h); real Arcade never carries the row.
+		return MainFreeze_APKartSetupRows(&data.menuArcadeCup, &data.rowsArcadeCup[0], ap_ksRowsArcadeCup);
+#endif
 		return &data.menuArcadeCup;
 	}
 
+#ifdef CTR_AP
+	return MainFreeze_APKartSetupRows(&data.menuArcadeRace, &data.rowsArcadeRace[0], ap_ksRowsArcadeRace);
+#endif
 	return &data.menuArcadeRace;
 }
+
+#ifdef CTR_AP
+// In-race Kart Setup: called every menu pass by AP_KartSetupMenuFrame so a
+// connection change while paused adds or removes the row on the menu that is
+// already on screen. Only ever touches a race pause menu, and only the one
+// this mode would pause into, so the hub, Quit, Options and every other menu
+// are left alone.
+void MainFreeze_APKartSetupSync(void)
+{
+	struct RectMenu *m = sdata->ptrActiveMenu;
+	if (m == NULL || sdata->ptrDesiredMenu != NULL || m->funcPtr != MainFreeze_MenuPtrDefault)
+		return;
+	if (m != &data.menuAdvRace && m != &data.menuAdvCup && m != &data.menuArcadeRace && m != &data.menuArcadeCup)
+		return;
+	if ((sdata->gGT->gameMode1 & ADVENTURE_ARENA) != 0)
+		return;
+	(void)MainFreeze_GetMenuPtr();
+}
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80039e98-0x80039fa8.
 void MainFreeze_IfPressStart(void)

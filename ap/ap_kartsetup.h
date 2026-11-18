@@ -11,5 +11,8 @@ int AP_KartSetupRowLive(void);
 void AP_KartSetupRequestOpen(void);
 int AP_KartSetupOpen(void);
 int AP_KartSetupMenuFrame(void);
+// MainFreeze.c: re-run the race pause row swap on the race pause menu on
+// screen, if any (no-op otherwise).
+void MainFreeze_APKartSetupSync(void);
 
 #endif // AP_KARTSETUP_H
