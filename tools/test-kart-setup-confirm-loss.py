@@ -70,6 +70,15 @@ fixture = r'''
 #include <string.h>
 #include <common.h>
 #include "ap/ap_wumpa_shop_menu.h"
+// The game build declares these through its own include chain; a newer GCC
+// refuses implicit declarations, so the harness names them up front.
+#include "ap/ap_hooks.h"
+#include "ap/ap_charswap.h"
+#include "ap/ap_deathlink.h"
+#include "ap/ap_fasttravel.h"
+#include "ap/ap_tracker.h"
+#include "ap/ap_link.h"
+#include "ap/ap_update.h"
 #include "game/MAIN/MainFreeze.c"
 #include "game/RECTMENU.c"
 #include "PAGE_SOURCE"
@@ -374,7 +383,9 @@ def build_and_run(tmp, name, page_source, extra):
     text = fixture.replace('"PAGE_SOURCE"', '"' + str(page_path) + '"')
     text = text.replace("RETAIL_ROWS", retail_rows).replace("RETAIL_MENU", retail_menu)
     src.write_text(text)
-    subprocess.run(["cc", "-m32", "-std=gnu99", "-w", "-DCTR_AP", "-DCTR_NATIVE", "-DBUILD=926", *extra,
+    subprocess.run(["cc", "-m32", "-std=gnu99", "-Werror=implicit-function-declaration",
+                    "-Werror=incompatible-pointer-types", "-Werror=int-conversion",
+                    "-DCTR_AP", "-DCTR_NATIVE", "-DBUILD=926", *extra,
                     "-I", str(root / "include"), "-I", str(root), "-I", str(root / "ap"),
                     "-I", str(root / "externals/SDL/include"), str(src), "-o", str(exe), "-lm"], check=True)
     return subprocess.run([str(exe)], check=False)
