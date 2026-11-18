@@ -403,6 +403,24 @@ static void ap_cs_editPersist(void)
 	ap_net_editstats_set(packed, AP_NET_EDITSTAT_COUNT);
 }
 
+static void ap_cs_reapplyLive(struct GameTracker *gGT); // defined with the swap below
+
+// Re-apply the stat package to the kart that exists right now, when there is
+// one to write: a loaded level (not the main menu) with a live P1 driver. Used
+// when the stored package changes underneath a running kart (restore, or a
+// connect reset to a slot that has none), so the kart drives what the picker
+// and the race Kart Setup page show. Both callers run on the game thread
+// (AP_CharSwap_Tick, and AP_NetTick's connect handler).
+static void ap_cs_reapplyLiveIfSafe(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	if (gGT == NULL || gGT->drivers[0] == NULL || sdata->Loading.stage != LOAD_IDLE)
+		return;
+	if ((gGT->gameMode1 & MAIN_MENU) != 0)
+		return;
+	ap_cs_reapplyLive(gGT);
+}
+
 // Apply a package that arrived from the server, once per revision. Same
 // asynchronous-`Get` reasoning as the racer seat: the reply lands some frames
 // after the subscribe, so a one-shot keyed on "have I restored yet" would miss
@@ -427,6 +445,11 @@ static void ap_cs_editRestore(void)
 	ap_cs_editRestoredRev = rev;
 	ap_cs_editUnpack(packed);
 	AP_LogLine("[AP CHARSWAP] editable stat package restored from AP data storage\n");
+	// A package that arrives while a kart already exists (a reconnect or slot
+	// switch in a race or in the hub) applies to it now, through the same
+	// constants rewrite an edit uses, so the kart drives what the picker and the
+	// race Kart Setup page show instead of waiting for the next birth.
+	ap_cs_reapplyLiveIfSafe();
 }
 
 // Progressive package: a stand-in for "received Progressive copies". Per
@@ -1275,19 +1298,23 @@ static void ap_cs_revalidateRow(void)
 		ap_cs_panelRow = row;
 }
 
-static void ap_cs_adjust(struct GameTracker *gGT, int dir)
+// One LEFT/RIGHT press on panel row `row` for racer `characterID`. Shared by the
+// hub picker and the in-race Kart Setup page (ruling of 2026-11-18: Kart Setup
+// follows the character selector and has the same rules), so both surfaces
+// change the same stored selection through the same steps, bounds, sounds and
+// persistence. Returns the row actually used (the requested one, or the first
+// available row when that one is not available for this racer), or -1 when
+// nothing can be changed.
+static int ap_cs_adjustFor(struct GameTracker *gGT, int characterID, int row, int dir)
 {
-	int characterID = ap_cs_tiles[ap_cs_cursor].characterID;
 	short *slot;
 	int base, next;
 	int ranks[AP_EDITRANK_COUNT];
 	int stat;
-	int row;
 
-	row = AP_StatSel_ValidRow(ap_cs_panelRow, ap_cs_panelRowsAvailable(characterID));
+	row = AP_StatSel_ValidRow(row, ap_cs_panelRowsAvailable(characterID));
 	if (row < 0)
-		return;
-	ap_cs_panelRow = row;
+		return -1;
 
 	// Progressive rank selector. ap_capability.c owns the selection, its clamp to
 	// the received ceiling and its persistence; the kart picks it up on the next
@@ -1298,7 +1325,7 @@ static void ap_cs_adjust(struct GameTracker *gGT, int dir)
 	{
 		if (AP_CapabilitySelectStep(row, characterID, dir))
 			OtherFX_Play(0, 1);
-		return;
+		return row;
 	}
 
 	// The row on screen is NOT the slot in the package any more: the picker shows
@@ -1310,15 +1337,17 @@ static void ap_cs_adjust(struct GameTracker *gGT, int dir)
 
 	base = ap_cs_vanillaValue(stat, characterID);
 	if (base < 0 || !ap_cs_rankValues(stat, ranks))
-		return;
+		return row;
 
 	// One press moves to the next rank value, never to a free value.
 	next = AP_EditRank_Step(ranks, base + ap_cs_editDelta(stat, characterID), dir);
 	next = ap_cs_clamp(stat, next);
 	*slot = (short)((ap_cs_editMode == AP_CS_MODE_GLOBAL) ? AP_EditRank_GlobalStore(ranks, next) : next - base);
 
-	// Only the character you are standing as can be applied live; the others
-	// take effect when you swap to them.
+	// Only the character you are driving can be applied live; the others take
+	// effect when you swap to them. In a race this is the same constants
+	// rewrite the hub uses (VehBirth_SetConsts plus the package post-pass): it
+	// writes the const_* fields only, never speed, position, lap or timer state.
 	if (characterID == data.characterIDs[0])
 		ap_cs_reapplyLive(gGT);
 
@@ -1329,6 +1358,14 @@ static void ap_cs_adjust(struct GameTracker *gGT, int dir)
 	ap_cs_editPersist();
 
 	OtherFX_Play(0, 1);
+	return row;
+}
+
+static void ap_cs_adjust(struct GameTracker *gGT, int dir)
+{
+	int row = ap_cs_adjustFor(gGT, ap_cs_tiles[ap_cs_cursor].characterID, ap_cs_panelRow, dir);
+	if (row >= 0)
+		ap_cs_panelRow = row;
 }
 
 // Where the picker's navigation input comes from, and why NOT buttonTapPerPlayer.
@@ -1555,6 +1592,9 @@ void AP_CharSwap_ConnectReset(void)
 	// deltas and only a package that actually belongs to it can move them.
 	memset(ap_cs_editGlobal, 0, sizeof ap_cs_editGlobal);
 	memset(ap_cs_editPerChar, 0, sizeof ap_cs_editPerChar);
+	// And a kart already on track drops the old slot's tune now, not at its next
+	// birth: the new slot's own package (if any) re-applies when it arrives.
+	ap_cs_reapplyLiveIfSafe();
 
 	// Drop any in-flight racer-lock enforcement (review finding). On a
 	// reconnect the seat machine re-applies the authoritative racer anyway,
@@ -1920,6 +1960,50 @@ void AP_CharSwap_Tick(struct GameTracker *gGT)
 }
 
 // ---------------------------------------------------------------------------
+// In-race Kart Setup (ruling of 2026-11-18: "The kart setup options should
+// essentially follow the character selector screen and have the same rules as
+// there.")
+//
+// The race pause page (ap_kartsetup.c) owns only its open state and input
+// routing. Everything that decides WHAT can change, by how much, where it is
+// stored and how it is drawn is the picker's own code below, called for the
+// racer being driven: the same panel rows (ap_cs_panelRowsAvailable), the same
+// LEFT/RIGHT step (ap_cs_adjustFor, which writes the same global or
+// per-character slot and persists it the same way), and the same panel
+// (ap_cs_drawPanel). An edit made in either place is therefore the other's
+// state, with no copy to keep in step.
+// ---------------------------------------------------------------------------
+static short ap_ks_barLen[AP_CS_UI_ROWS];
+static int ap_ks_barChar = -1;
+
+static int ap_ks_character(void)
+{
+	int characterID = data.characterIDs[0];
+	return ((unsigned)characterID < AP_CS_TILES) ? characterID : -1;
+}
+
+unsigned AP_CharSwap_KartSetupRows(void)
+{
+	int characterID = ap_ks_character();
+	return characterID < 0 ? 0u : ap_cs_panelRowsAvailable(characterID);
+}
+
+int AP_CharSwap_KartSetupAdjust(int row, int dir)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int characterID = ap_ks_character();
+	if (gGT == NULL || characterID < 0)
+		return -1;
+	return ap_cs_adjustFor(gGT, characterID, row, dir);
+}
+
+void AP_CharSwap_KartSetupResetBars(void)
+{
+	ap_ks_barChar = -1; // grow from empty, as the picker does when it opens
+}
+
+
+// ---------------------------------------------------------------------------
 // Draw
 // ---------------------------------------------------------------------------
 #define AP_CS_TILE_W 0x34
@@ -2120,10 +2204,145 @@ static void ap_cs_drawRowArrows(struct GameTracker *gGT, int leftX, int rightX, 
 	}
 }
 
+// The racer panel under the picker grid: name, boost line, the three stat bars
+// and their lowered-rank labels. Shared by the hub picker and the in-race Kart
+// Setup page (ruling of 2026-11-18), so both surfaces show the same rows in the same
+// order with the same values, labels and arrows. `focusRow` is the focused panel
+// row (AP_SS_PANEL_*), or -1 when the panel is not in edit focus. `barLen` and
+// `barChar` are the caller's own bar animation state.
+static void ap_cs_drawPanel(struct GameTracker *gGT, int characterID, int panelY, int focusRow,
+                            short barLen[AP_CS_UI_ROWS], int *barChar)
+{
+	struct Driver *live = gGT->drivers[0];
+	char line[96];
+	int i;
+	// The tier this racer DRIVES (the player's selection under the received
+	// ceiling); the ceiling itself is named on the line only when lowered.
+	int boostTier = AP_CapabilityAppliedRankForCharacter(AP_CAP_CHAIN_BOOST, characterID);
+
+	DecalFont_DrawLine(sdata->lngStrings[data.MetaDataCharacters[characterID].name_LNG_long],
+	                   0x100, panelY, FONT_BIG, (JUSTIFY_CENTER | WHITE));
+
+	// Boost tier, plus LOCKED when it applies. Nothing else: this line is
+	// centered on a 512-wide frame, so every character it carries that does NOT
+	// change as the cursor moves is spent pushing the ones that do off both
+	// edges. The ownership label and the editor marker used to sit here and did
+	// exactly that. See ap/ap_pickerline.h for the composition and the width
+	// budget the harness holds.
+	{
+		int boostCeiling = ctr_cfg.boost_blue_fire
+		                       ? AP_CAP_BOOST_BLUEFIRE
+		                       : AP_CAP_BOOST_USF;
+		int boostFocused = focusRow == AP_SS_PANEL_BOOST;
+		const char *maxName = AP_CapabilitySelectionLowered(AP_CAP_CHAIN_BOOST, characterID)
+		                          ? ap_cs_boostTierName(AP_CapabilityCeilingForCharacter(
+		                                AP_CAP_CHAIN_BOOST, characterID))
+		                          : NULL;
+		AP_PickerLine_Compose(line, sizeof line, boostTier, boostCeiling,
+		                      (boostTier >= 0) ? ap_cs_boostTierName(boostTier) : "",
+		                      maxName, ap_cs_isUnlocked(characterID));
+		DecalFont_DrawLine(line, 0x100, panelY + 20, FONT_SMALL,
+		                   (JUSTIFY_CENTER | (boostFocused ? WHITE
+		                                      : ap_cs_isUnlocked(characterID) ? ORANGE : RED)));
+		if (boostFocused)
+		{
+			int half = DecalFont_GetLineWidth(line, FONT_SMALL) / 2;
+			ap_cs_drawRowArrows(gGT, 0x100 - half - 16, 0x100 + half + 16, panelY + 23);
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// Three stat bars, drawn by the Garage's own renderer (#220 ruling).
+	//
+	// SPEED, ACCEL, TURN, in the Garage's order, through AP_StatBar_Draw -- the
+	// same function game/233/CS_Garage.c calls, so the two surfaces cannot
+	// drift. ACCSPD is no longer shown or editable here; it remains in the edit
+	// package, which is why every index below goes through
+	// AP_CharStatRow_ToStat rather than being a row number.
+	//
+	// The fill ANIMATES, as it does in the Garage: barLen lerps toward the
+	// target at the Garage's own rate, so an edit slides the bar instead of
+	// snapping it. The state is reset when the picker opens and when the
+	// highlighted racer changes, so a new portrait grows its bars rather than
+	// inheriting the last one's.
+	// ------------------------------------------------------------------
+	if (*barChar != characterID)
+	{
+		*barChar = characterID;
+		for (i = 0; i < AP_CS_UI_ROWS; i++)
+			barLen[i] = 0;
+	}
+
+	for (i = 0; i < AP_CS_UI_ROWS; i++)
+	{
+		int stat = AP_CharStatRow_ToStat(i);
+		int want = ap_cs_effectiveValue(stat, characterID);
+		int barY = panelY + 34 + i * AP_STATBAR_ROW_PITCH;
+		int lo = 0, hi = 0, target;
+		int focused = (focusRow >= 0 && (i + 1 == focusRow));
+
+		// The ladder the value is placed on, the same one the rank word reads.
+		ap_cs_statLadder(stat, &lo, &hi);
+
+		{
+			int rank = ap_cs_effectiveRank(stat, characterID);
+			target = (rank >= 0) ? AP_StatBar_LenForRank(rank)
+			                     : AP_StatBar_LenForValue(want, lo, hi);
+		}
+		barLen[i] = (short)AP_StatBar_Step(barLen[i], target);
+
+		DecalFont_DrawLine((char *)ap_cs_stats[stat].label, AP_CS_BAR_X - 6, barY - 1,
+		                   FONT_SMALL, (JUSTIFY_RIGHT | (focused ? WHITE : ORANGE)));
+
+		AP_StatBar_Draw(AP_CS_BAR_X, barY, barLen[i], AP_STATBAR_COLORS,
+		                gGT->pushBuffer_UI.ptrOT, &gGT->backBuffer->primMem);
+
+		// The focused row wears the Garage's own blinking left/right arrows, the
+		// same icon and call the hub pause screen already draws in this overlay
+		// (game/232/AH_Pause.c:63-77, icon 0x38 of gGT->iconGroup[4]), so this is
+		// the retail arrow rather than a lookalike -- and its residency in the
+		// hub is proven by that existing call, not assumed.
+		if (focused)
+			ap_cs_drawRowArrows(gGT, AP_CS_BAR_X - 22, AP_CS_BAR_X + AP_STATBAR_MAX_LEN + 22, barY + 3);
+
+		// The live column stays a dev-key diagnostic: it is the swap proof (the
+		// racer you are standing as must match, any other portrait must not), and
+		// it is not player information.
+		if (AP_DevKeysEnabled())
+		{
+			snprintf(line, sizeof line, "%6d %-9s live %6d", want, ap_cs_rankName(stat, want),
+			         ap_cs_liveValue(live, stat));
+			DecalFont_DrawLine(line, AP_CS_BAR_X + AP_STATBAR_MAX_LEN + 40, barY - 1,
+			                   FONT_SMALL, ORANGE);
+		}
+		// A lowered Progressive Stats rank names its ceiling beside the bar, so
+		// the player can see they are driving below what they unlocked. At the
+		// ceiling the bar alone says it. Same column as the dev diagnostic,
+		// which takes precedence on a dev build.
+		else if (AP_CapabilitySelectionLowered(i + 1, characterID))
+		{
+			snprintf(line, sizeof line, "MAX %s",
+			         ap_cs_statRankName(AP_CapabilityCeilingForCharacter(i + 1, characterID)));
+			DecalFont_DrawLine(line, AP_CS_BAR_X + AP_STATBAR_MAX_LEN + 40, barY - 1,
+			                   FONT_SMALL, ORANGE);
+		}
+	}
+}
+
+// The Kart Setup page's panel: the picker's own, for the racer being driven.
+void AP_CharSwap_KartSetupDrawPanel(int panelY, int focusRow)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int characterID = ap_ks_character();
+	if (gGT == NULL || characterID < 0)
+		return;
+	ap_cs_drawPanel(gGT, characterID, panelY, focusRow, ap_ks_barLen, &ap_ks_barChar);
+}
+
+
 void AP_CharPicker_Draw(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
-	struct Driver *live;
 	unsigned int *ot;
 	Color col;
 	RECT r;
@@ -2131,17 +2350,12 @@ void AP_CharPicker_Draw(void)
 	int i;
 	int selectedChar;
 	int panelY;
-	int boostTier;
 
 	if (!ap_cs_open || (gGT == NULL))
 		return;
 
 	ot = gGT->backBuffer->otMem.uiOT;
-	live = gGT->drivers[0];
 	selectedChar = ap_cs_tiles[ap_cs_cursor].characterID;
-	// The tier this racer DRIVES (the player's selection under the received
-	// ceiling); the ceiling itself is named on the line only when lowered.
-	boostTier = AP_CapabilityAppliedRankForCharacter(AP_CAP_CHAIN_BOOST, selectedChar);
 
 	// Cursor highlight: an OUTLINE on the tile border, never a filled box.
 	//
@@ -2300,113 +2514,7 @@ void AP_CharPicker_Draw(void)
 	// no boost row and no stats at all.
 	// ------------------------------------------------------------------
 	panelY = 130;
-	DecalFont_DrawLine(sdata->lngStrings[data.MetaDataCharacters[selectedChar].name_LNG_long],
-	                   0x100, panelY, FONT_BIG, (JUSTIFY_CENTER | WHITE));
-
-	// Boost tier, plus LOCKED when it applies. Nothing else: this line is
-	// centered on a 512-wide frame, so every character it carries that does NOT
-	// change as the cursor moves is spent pushing the ones that do off both
-	// edges. The ownership label and the editor marker used to sit here and did
-	// exactly that. See ap/ap_pickerline.h for the composition and the width
-	// budget the harness holds.
-	{
-		int boostCeiling = ctr_cfg.boost_blue_fire
-		                       ? AP_CAP_BOOST_BLUEFIRE
-		                       : AP_CAP_BOOST_USF;
-		int boostFocused = ap_cs_editFocus && ap_cs_panelRow == AP_SS_PANEL_BOOST;
-		const char *maxName = AP_CapabilitySelectionLowered(AP_CAP_CHAIN_BOOST, selectedChar)
-		                          ? ap_cs_boostTierName(AP_CapabilityCeilingForCharacter(
-		                                AP_CAP_CHAIN_BOOST, selectedChar))
-		                          : NULL;
-		AP_PickerLine_Compose(line, sizeof line, boostTier, boostCeiling,
-		                      (boostTier >= 0) ? ap_cs_boostTierName(boostTier) : "",
-		                      maxName, ap_cs_isUnlocked(selectedChar));
-		DecalFont_DrawLine(line, 0x100, panelY + 20, FONT_SMALL,
-		                   (JUSTIFY_CENTER | (boostFocused ? WHITE
-		                                      : ap_cs_isUnlocked(selectedChar) ? ORANGE : RED)));
-		if (boostFocused)
-		{
-			int half = DecalFont_GetLineWidth(line, FONT_SMALL) / 2;
-			ap_cs_drawRowArrows(gGT, 0x100 - half - 16, 0x100 + half + 16, panelY + 23);
-		}
-	}
-
-	// ------------------------------------------------------------------
-	// Three stat bars, drawn by the Garage's own renderer (#220 ruling).
-	//
-	// SPEED, ACCEL, TURN, in the Garage's order, through AP_StatBar_Draw -- the
-	// same function game/233/CS_Garage.c calls, so the two surfaces cannot
-	// drift. ACCSPD is no longer shown or editable here; it remains in the edit
-	// package, which is why every index below goes through
-	// AP_CharStatRow_ToStat rather than being a row number.
-	//
-	// The fill ANIMATES, as it does in the Garage: ap_cs_barLen lerps toward the
-	// target at the Garage's own rate, so an edit slides the bar instead of
-	// snapping it. The state is reset when the picker opens and when the
-	// highlighted racer changes, so a new portrait grows its bars rather than
-	// inheriting the last one's.
-	// ------------------------------------------------------------------
-	if (ap_cs_barChar != selectedChar)
-	{
-		ap_cs_barChar = selectedChar;
-		for (i = 0; i < AP_CS_UI_ROWS; i++)
-			ap_cs_barLen[i] = 0;
-	}
-
-	for (i = 0; i < AP_CS_UI_ROWS; i++)
-	{
-		int stat = AP_CharStatRow_ToStat(i);
-		int want = ap_cs_effectiveValue(stat, selectedChar);
-		int barY = panelY + 34 + i * AP_STATBAR_ROW_PITCH;
-		int lo = 0, hi = 0, target;
-		int focused = (ap_cs_editFocus && (i + 1 == ap_cs_panelRow));
-
-		// The ladder the value is placed on, the same one the rank word reads.
-		ap_cs_statLadder(stat, &lo, &hi);
-
-		{
-			int rank = ap_cs_effectiveRank(stat, selectedChar);
-			target = (rank >= 0) ? AP_StatBar_LenForRank(rank)
-			                     : AP_StatBar_LenForValue(want, lo, hi);
-		}
-		ap_cs_barLen[i] = (short)AP_StatBar_Step(ap_cs_barLen[i], target);
-
-		DecalFont_DrawLine((char *)ap_cs_stats[stat].label, AP_CS_BAR_X - 6, barY - 1,
-		                   FONT_SMALL, (JUSTIFY_RIGHT | (focused ? WHITE : ORANGE)));
-
-		AP_StatBar_Draw(AP_CS_BAR_X, barY, ap_cs_barLen[i], AP_STATBAR_COLORS,
-		                gGT->pushBuffer_UI.ptrOT, &gGT->backBuffer->primMem);
-
-		// The focused row wears the Garage's own blinking left/right arrows, the
-		// same icon and call the hub pause screen already draws in this overlay
-		// (game/232/AH_Pause.c:63-77, icon 0x38 of gGT->iconGroup[4]), so this is
-		// the retail arrow rather than a lookalike -- and its residency in the
-		// hub is proven by that existing call, not assumed.
-		if (focused)
-			ap_cs_drawRowArrows(gGT, AP_CS_BAR_X - 22, AP_CS_BAR_X + AP_STATBAR_MAX_LEN + 22, barY + 3);
-
-		// The live column stays a dev-key diagnostic: it is the swap proof (the
-		// racer you are standing as must match, any other portrait must not), and
-		// it is not player information.
-		if (AP_DevKeysEnabled())
-		{
-			snprintf(line, sizeof line, "%6d %-9s live %6d", want, ap_cs_rankName(stat, want),
-			         ap_cs_liveValue(live, stat));
-			DecalFont_DrawLine(line, AP_CS_BAR_X + AP_STATBAR_MAX_LEN + 40, barY - 1,
-			                   FONT_SMALL, ORANGE);
-		}
-		// A lowered Progressive Stats rank names its ceiling beside the bar, so
-		// the player can see they are driving below what they unlocked. At the
-		// ceiling the bar alone says it. Same column as the dev diagnostic,
-		// which takes precedence on a dev build.
-		else if (AP_CapabilitySelectionLowered(i + 1, selectedChar))
-		{
-			snprintf(line, sizeof line, "MAX %s",
-			         ap_cs_statRankName(AP_CapabilityCeilingForCharacter(i + 1, selectedChar)));
-			DecalFont_DrawLine(line, AP_CS_BAR_X + AP_STATBAR_MAX_LEN + 40, barY - 1,
-			                   FONT_SMALL, ORANGE);
-		}
-	}
+	ap_cs_drawPanel(gGT, selectedChar, panelY, ap_cs_editFocus ? ap_cs_panelRow : -1, ap_cs_barLen, &ap_cs_barChar);
 
 	if (ap_cs_editFocus)
 		snprintf(line, sizeof line, "%s", NativeMenu_Labels("LEFT/RIGHT: CHANGE   ^: BACK"));

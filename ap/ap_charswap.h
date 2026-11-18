@@ -141,4 +141,14 @@ void AP_CharSwap_ConnectReset(void);
 // the package is inactive). No-op unless a test package is active.
 void AP_CharSwap_ApplyStatPackage(struct Driver *driver);
 
+// In-race Kart Setup (ruling of 2026-11-18). The race pause page reuses the picker's
+// panel for the racer being driven (data.characterIDs[0]): the rows it can
+// change (bit r = AP_SS_PANEL_* row r), one LEFT/RIGHT step on a row (returns
+// the row used, or -1 when nothing can change), and the panel drawing. Edits go
+// to the same global or per-racer storage the hub picker uses.
+unsigned AP_CharSwap_KartSetupRows(void);
+int AP_CharSwap_KartSetupAdjust(int row, int dir);
+void AP_CharSwap_KartSetupResetBars(void);
+void AP_CharSwap_KartSetupDrawPanel(int panelY, int focusRow);
+
 #endif // AP_CHARSWAP_H

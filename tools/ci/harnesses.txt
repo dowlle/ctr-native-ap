@@ -115,6 +115,9 @@ tools/test-item-aliases.c
 tools/test-itemsanity.c
 tools/test-itemsanity-unlocked.c
 tools/test-itemsanity-set-held-production.py
+tools/test-kart-setup-confirm-loss.py
+tools/test-kart-setup-production.c
+tools/test-kart-setup-rows.py
 tools/test-lap-checks.cpp
 tools/test-lap-checks-production.py
 tools/test-lap-progress.c
