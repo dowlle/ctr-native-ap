@@ -3,6 +3,7 @@
 #ifdef CTR_AP
 #include "../../ap/ap_ai_difficulty.h"
 #include "../../ap/ap_pauserow.h"
+#include "../../ap/ap_kartsetup.h"
 #include <platform/native_menu.h>
 #include <platform/native_renderer.h>
 
@@ -51,6 +52,58 @@ static void MainFreeze_ShowAiDifficulty(void)
 	ap_difficultyRows[AI_DIFF_COUNT].stringIndex = -1;
 	ap_difficultyMenu.rowSelected = (s16)AiDiff_NearestIndex(g_config.aiDifficulty);
 	sdata->ptrDesiredMenu = &ap_difficultyMenu;
+}
+#endif
+
+#ifdef CTR_AP
+// In-race Kart Setup (ruling of 2026-11-18): a KART SETUP row directly below RESUME
+// in the Adventure race and cup pause menus. Same swap as the hub's AP row set
+// below: data.rowsAdvRace / rowsAdvCup sit inside struct rData with retail
+// layout around them, so the menu points at an AP-owned copy instead of growing
+// the retail table, and the highlight is carried across by row so a connect or
+// disconnect mid-race never lands it on a different row.
+static struct MenuRow ap_ksRowsAdvRace[AP_KS_ROWS_MAX + 1];
+static struct MenuRow ap_ksRowsAdvCup[AP_KS_ROWS_MAX + 1];
+
+static struct RectMenu *MainFreeze_APKartSetupRows(struct RectMenu *menu, struct MenuRow *retailRows,
+                                                   struct MenuRow *apRows)
+{
+	short retail[AP_KS_RETAIL_MAX], strings[AP_KS_ROWS_MAX];
+	int retailCount = 0, count, r;
+	int onAp = menu->rows == apRows;
+
+	while (retailCount < AP_KS_RETAIL_MAX && retailRows[retailCount].stringIndex != -1)
+	{
+		retail[retailCount] = retailRows[retailCount].stringIndex;
+		retailCount++;
+	}
+
+	if (!AP_KartSetupRowLive())
+	{
+		if (onAp)
+		{
+			menu->rowSelected = (s16)AP_KartSetupRows_ToRetail(menu->rowSelected, retailCount);
+			menu->rows = retailRows;
+		}
+		return menu;
+	}
+
+	count = AP_KartSetupRows_Build(retail, retailCount, 1, strings);
+	for (r = 0; r < count; r++)
+	{
+		apRows[r].stringIndex = strings[r];
+		apRows[r].rowOnPressUp = (char)AP_KartSetupRows_Up(r, count);
+		apRows[r].rowOnPressDown = (char)AP_KartSetupRows_Down(r, count);
+		apRows[r].rowOnPressLeft = (char)r;
+		apRows[r].rowOnPressRight = (char)r;
+	}
+	apRows[count].stringIndex = -1;
+	if (!onAp)
+		menu->rowSelected = (s16)AP_KartSetupRows_ToAp(menu->rowSelected, retailCount);
+	else if (menu->rowSelected < 0 || menu->rowSelected >= count)
+		menu->rowSelected = 0;
+	menu->rows = apRows;
+	return menu;
 }
 #endif
 
@@ -1044,6 +1097,13 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 	// A3-16: TRAVEL opens the hub selector, a menu of its own in the pause
 	// menu's place (the QUIT row's pattern). The trip itself starts only when
 	// a hub row is confirmed there.
+	// In-race Kart Setup (2026-11-18): the page opens inside this same pause,
+	// as the TRACKER row's does, so the race stays paused and Back lands here.
+	if (stringID == AP_LNG_KART_SETUP)
+	{
+		AP_KartSetupRequestOpen();
+		return;
+	}
 	if (stringID == AP_LNG_TRAVEL)
 	{
 		AP_FastTravelShowMenu();
@@ -1391,9 +1451,15 @@ struct RectMenu *MainFreeze_GetMenuPtr(void)
 	{
 		if ((gameMode & ADVENTURE_CUP) != 0)
 		{
+#ifdef CTR_AP
+			return MainFreeze_APKartSetupRows(&data.menuAdvCup, &data.rowsAdvCup[0], ap_ksRowsAdvCup);
+#endif
 			return &data.menuAdvCup;
 		}
 
+#ifdef CTR_AP
+		return MainFreeze_APKartSetupRows(&data.menuAdvRace, &data.rowsAdvRace[0], ap_ksRowsAdvRace);
+#endif
 		return &data.menuAdvRace;
 	}
 
