@@ -781,7 +781,10 @@ static void AP_TrackerRewardsBuild(const AP_TrackerNode *n, AP_TrackerRewards *o
 			snprintf(name,sizeof name,"LEG %d WIN: %s",i+1,title);
 			AP_TrackerRewardAdd(out,l->victory,name);
 		}
-		for (int i=0;i<5;i++) {
+		/* A boss (garage) cup earns no podium rung, even on a track whose
+		 * standalone Trophy Race has them: AP_StandalonePodiumTrack and
+		 * ap_content_cup_track_checks both exclude it. */
+		if (pad->physical < AP_CONTENT_GARAGE_CUP_PAD) for (int i=0;i<5;i++) {
 			AP_TrackerRewardAdd(out,leg->rungs[i],rungs[i]);
 			if (track) AP_TrackerRewardAdd(out,track->rung_locations[i],rungs[i]);
 		}

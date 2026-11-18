@@ -146,6 +146,27 @@ static void reward_tests(void) {
     ap_tracker.checks_page=2; AP_TrackerRewardsBuild(&n,&r); assert(r.count==8);
     n.kind=3; n.physical=-1; ap_tracker.hub=1; bosses.cup[0]=1;
     AP_TrackerRewardsBuild(&n,&r); assert(r.count==8);
+    /* A real boss cup (garage pad) whose leg track has a standalone Trophy
+     * Race with enabled rungs: the race's held and finish rows belong to that
+     * race alone. Cup win, leg lap and the rest stay. Ordinary cup control. */
+    {
+        int old_phys=pads[1].physical, i, held=0;
+        pads[1].legs[2].rungs[0]=0; pads[1].legs[2].lap=330;
+        pads[0].rung_locations[0]=331; pads[0].rung_locations[3]=332;
+        n.kind=2; n.physical=100; ap_tracker.checks_page=2;
+        AP_TrackerRewardsBuild(&n,&r);
+        for(i=0;i<r.count;i++) held|=r.rows[i].code==331 || r.rows[i].code==332;
+        assert(held);
+        pads[1].physical=AP_CONTENT_GARAGE_CUP_PAD; pads[1].legs[2].rungs[1]=333;
+        AP_TrackerRewardsBuild(&n,&r);
+        assert(r.rows[0].code==300 && r.rows[1].code==301);
+        for(i=0;i<r.count;i++)
+            assert(r.rows[i].code!=331 && r.rows[i].code!=332 && r.rows[i].code!=333);
+        assert(r.rows[r.count-1].code==330 && !strcmp(r.rows[r.count-1].name,"COMPLETE ONE LAP"));
+        pads[1].physical=old_phys; pads[1].legs[2].rungs[1]=0; pads[1].legs[2].lap=311;
+        pads[1].legs[2].rungs[0]=310; pads[0].rung_locations[0]=310; pads[0].rung_locations[3]=0;
+        n.kind=3; n.physical=-1;
+    }
     bosses.cup[0]=0; bosses.lap[0]=320;
     AP_TrackerRewardsBuild(&n,&r); assert(r.count==2 && r.rows[0].code==35011100);
     ap_tracker.hub=0; ap_tracker.checks_page=1; bosses.lap[5]=321;
