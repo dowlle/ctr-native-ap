@@ -82,19 +82,27 @@ void RECTMENU_ClearInput(void) {}
 char *NativeMenu_Labels(const char *t) { return (char *)t; }
 static char last_lines[16][96];
 static int line_count;
+// Record hooks: a local capture build (KS_CAPTURE_HOOKS) supplies its own to
+// replay the page's draw calls through the retail font; the harness ignores them.
+#ifndef KS_CAPTURE_HOOKS
+static void ks_record_text(const char *t, int x, int y, int font, int flags)
+{ (void)t; (void)x; (void)y; (void)font; (void)flags; }
+static void ks_record_box(char kind, int x, int y, int w, int h)
+{ (void)kind; (void)x; (void)y; (void)w; (void)h; }
+int DecalFont_GetLineWidth(char *t, s16 f) { (void)f; return (int)strlen(t) * 8; }
+#endif
 void DecalFont_DrawLine(char *t, int x, int y, s16 f, int flags)
 {
-	(void)x; (void)y; (void)f; (void)flags;
 	if (line_count < 16)
 		snprintf(last_lines[line_count++], 96, "%s", t);
+	ks_record_text(t, x, y, f, flags);
 }
-int DecalFont_GetLineWidth(char *t, s16 f) { (void)f; return (int)strlen(t) * 8; }
-void RECTMENU_DrawInnerRect(RECT *r, int type, uint32_t *ot) { (void)r; (void)type; (void)ot; }
+void RECTMENU_DrawInnerRect(RECT *r, int type, uint32_t *ot) { (void)type; (void)ot; ks_record_box('P', r->x, r->y, r->w, r->h); }
 void AP_StatBar_Draw(int x, int y, int len, const unsigned int *c, void *ot, struct PrimMem *pm)
-{ (void)x; (void)y; (void)len; (void)c; (void)ot; (void)pm; }
+{ (void)c; (void)ot; (void)pm; ks_record_box('B', x, y, len, 7); }
 void DecalHUD_Arrow2D(struct Icon *i, s16 x, s16 y, struct PrimMem *p, uint32_t *ot, u32 a, u32 b, u32 c, u32 d, char e,
                       int f, u16 g)
-{ (void)i; (void)x; (void)y; (void)p; (void)ot; (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; (void)g; }
+{ (void)i; (void)p; (void)ot; (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; ks_record_box(g ? 'L' : 'R', x, y, 0, 0); }
 
 // ---- AP data storage stubs ------------------------------------------------------
 static int store_edit[AP_NET_EDITSTAT_COUNT], store_edit_known, edit_writes;
