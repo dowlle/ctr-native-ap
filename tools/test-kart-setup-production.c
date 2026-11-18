@@ -80,7 +80,11 @@ int AP_TrapWeakenedActive(struct Driver *d) { (void)d; return 0; }
 void MainFreeze_MenuPtrDefault(struct RectMenu *m) { (void)m; }
 static int syncs;
 void MainFreeze_APKartSetupSync(void) { syncs++; }
-void RECTMENU_ClearInput(void) {}
+void RECTMENU_ClearInput(void)
+{
+	sdata->AnyPlayerTap = 0;
+	sdata->buttonTapPerPlayer[0] = 0;
+}
 char *NativeMenu_Labels(const char *t) { return (char *)t; }
 static char last_lines[16][96];
 static int line_count;
@@ -189,6 +193,7 @@ static void reset_world(void)
 	gt.numPlyrCurrGame = 1;
 	gt.gameMode1 = ADVENTURE_MODE;
 	sdata->gGT = &gt;
+	sdata->Loading.stage = LOAD_IDLE;
 	for (int i = 0; i < 0x400; i++)
 		lng[i] = (char *)"NAME";
 	sdata->lngStrings = lng;
@@ -375,9 +380,11 @@ int main(void)
 	{
 		int want = shown(STAT_SPEED, CRASH_BANDICOOT);
 		memset(ap_cs_editGlobal, 0, sizeof ap_cs_editGlobal);
+		drv.const_Speed_ClassStat = 1;
 		store_edit_rev++;
 		ap_cs_editRestore();
 		EXPECT(shown(STAT_SPEED, CRASH_BANDICOOT) == want, "reconnect restores the selection");
+		EXPECT(drv.const_Speed_ClassStat == want, "a restored package is applied to the running kart");
 	}
 
 	// ── Editable stats, per-racer scope ──
@@ -478,7 +485,19 @@ int main(void)
 	AP_KartSetupRequestOpen();
 	frame(BTN_CROSS_one);
 	gt.gameMode1 &= ~PAUSE_1;
-	EXPECT(frame(0) == 0 && !AP_KartSetupOpen(), "an unpause closes the page");
+	EXPECT(frame(0) == 1 && !AP_KartSetupOpen(), "an unpause closes the page (that frame swallowed)");
+	EXPECT(frame(0) == 0, "and leaves the menu pass alone afterwards");
+	// The row goes away while the page is open (a disconnect): the press of that
+	// frame is swallowed rather than reaching RESUME underneath.
+	pause_race(&data.menuAdvRace);
+	AP_KartSetupRequestOpen();
+	frame(BTN_CROSS_one);
+	cfg_active = 0;
+	EXPECT(frame(BTN_CROSS_one) == 1 && !AP_KartSetupOpen() && sdata->AnyPlayerTap == 0 &&
+	           sdata->buttonTapPerPlayer[0] == 0,
+	       "losing the row closes the page and swallows that frame's press");
+	EXPECT(frame(BTN_CROSS_one) == 0, "the pause menu has input again on the next frame");
+	cfg_active = 1;
 	pause_race(&data.menuAdvRace);
 	sdata->ptrActiveMenu = &data.menuQuit;
 	AP_KartSetupRequestOpen();

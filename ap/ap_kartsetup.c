@@ -110,8 +110,19 @@ int AP_KartSetupMenuFrame(void)
 
 	if (!ap_ks_context())
 	{
+		int wasOpen = ap_ks.open;
 		ap_ks.request = 0;
 		ap_ks.open = 0;
+		// The page closed under the player (a disconnect or slot switch took the
+		// row away, or the menu changed). The press of this frame was meant for
+		// the page: swallow it so it cannot also select RESUME, or reach
+		// MainFrame's Start unpause, on the menu underneath.
+		if (wasOpen && sdata->ptrActiveMenu != NULL)
+		{
+			RECTMENU_ClearInput();
+			AP_LogLine("[AP KARTSETUP] closed: the row is no longer available here\n");
+			return 1;
+		}
 		return 0;
 	}
 

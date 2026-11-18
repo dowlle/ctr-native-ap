@@ -403,6 +403,8 @@ static void ap_cs_editPersist(void)
 	ap_net_editstats_set(packed, AP_NET_EDITSTAT_COUNT);
 }
 
+static void ap_cs_reapplyLive(struct GameTracker *gGT); // defined with the swap below
+
 // Apply a package that arrived from the server, once per revision. Same
 // asynchronous-`Get` reasoning as the racer seat: the reply lands some frames
 // after the subscribe, so a one-shot keyed on "have I restored yet" would miss
@@ -427,6 +429,12 @@ static void ap_cs_editRestore(void)
 	ap_cs_editRestoredRev = rev;
 	ap_cs_editUnpack(packed);
 	AP_LogLine("[AP CHARSWAP] editable stat package restored from AP data storage\n");
+	// A package that arrives while a kart already exists (a reconnect or slot
+	// switch in a race or in the hub) applies to it now, through the same
+	// constants rewrite an edit uses, so the kart drives what the picker and the
+	// race Kart Setup page show instead of waiting for the next birth.
+	if (sdata->gGT != NULL && sdata->gGT->drivers[0] != NULL && sdata->Loading.stage == LOAD_IDLE)
+		ap_cs_reapplyLive(sdata->gGT);
 }
 
 // Progressive package: a stand-in for "received Progressive copies". Per
