@@ -1521,21 +1521,43 @@ struct RectMenu *MainFreeze_GetMenuPtr(void)
 }
 
 #ifdef CTR_AP
+// Whether the highlighted row of `m` is KART SETUP.
+static int MainFreeze_APKartSetupHighlighted(const struct RectMenu *m)
+{
+	int r;
+	if (m->rows == NULL || m->rowSelected < 0)
+		return 0;
+	// Bounded by the table's terminator: a restored row index may be junk
+	// until MainFreeze_APKartSetupRows clamps it.
+	for (r = 0; r <= m->rowSelected; r++)
+		if (m->rows[r].stringIndex == -1)
+			return 0;
+	return m->rows[m->rowSelected].stringIndex == AP_LNG_KART_SETUP;
+}
+
 // In-race Kart Setup: called every menu pass by AP_KartSetupMenuFrame so a
 // connection change while paused adds or removes the row on the menu that is
 // already on screen. Only ever touches a race pause menu, and only the one
 // this mode would pause into, so the hub, Quit, Options and every other menu
 // are left alone.
-void MainFreeze_APKartSetupSync(void)
+//
+// Returns 1 when this pass removed the KART SETUP row while it was the
+// highlighted row (the highlight then sits on RESUME), 0 otherwise. The caller
+// swallows that frame's press: it was aimed at KART SETUP, and must not
+// confirm RESUME instead.
+int MainFreeze_APKartSetupSync(void)
 {
 	struct RectMenu *m = sdata->ptrActiveMenu;
+	int onKartSetup;
 	if (m == NULL || sdata->ptrDesiredMenu != NULL || m->funcPtr != MainFreeze_MenuPtrDefault)
-		return;
+		return 0;
 	if (m != &data.menuAdvRace && m != &data.menuAdvCup && m != &data.menuArcadeRace && m != &data.menuArcadeCup)
-		return;
+		return 0;
 	if ((sdata->gGT->gameMode1 & ADVENTURE_ARENA) != 0)
-		return;
+		return 0;
+	onKartSetup = MainFreeze_APKartSetupHighlighted(m);
 	(void)MainFreeze_GetMenuPtr();
+	return onKartSetup && !MainFreeze_APKartSetupHighlighted(m);
 }
 #endif
 

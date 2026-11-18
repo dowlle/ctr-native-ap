@@ -116,7 +116,7 @@ hook = rect.index("if (AP_KartSetupMenuFrame()) return;")
 assert hook < rect.index("struct RectMenu *currMenu;", hook)
 assert 'index == AP_LNG_KART_SETUP' in rect and '"KART SETUP"' in rect
 # The pause pass re-syncs the race menu on screen; GetMenuPtr routes all four.
-assert "MainFreeze_APKartSetupSync();" in (root / "ap/ap_kartsetup.c").read_text()
+assert "if (MainFreeze_APKartSetupSync()" in (root / "ap/ap_kartsetup.c").read_text()
 for menu_name in ("menuAdvRace", "menuAdvCup", "menuArcadeRace", "menuArcadeCup"):
     assert f"MainFreeze_APKartSetupRows(&data.{menu_name}" in source, menu_name
 # One owner for the rules: both surfaces step through the same function.

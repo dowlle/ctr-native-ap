@@ -80,7 +80,7 @@ void VehBirth_SetConsts(struct Driver *d)
 int AP_TrapWeakenedActive(struct Driver *d) { (void)d; return 0; }
 void MainFreeze_MenuPtrDefault(struct RectMenu *m) { (void)m; }
 static int syncs;
-void MainFreeze_APKartSetupSync(void) { syncs++; }
+int MainFreeze_APKartSetupSync(void) { syncs++; return 0; }
 void RECTMENU_ClearInput(void)
 {
 	sdata->AnyPlayerTap = 0;

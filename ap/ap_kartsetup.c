@@ -106,7 +106,16 @@ int AP_KartSetupMenuFrame(void)
 
 	// A connect, disconnect or slot switch while paused adds or removes the row
 	// on the menu already on screen, carrying the highlight by row.
-	MainFreeze_APKartSetupSync();
+	// If that removed the highlighted KART SETUP row, the highlight now sits on
+	// RESUME, and this frame's press was aimed at KART SETUP: swallow it before
+	// the menu underneath (Cross on RESUME) or MainFrame's Start unpause can act
+	// on it. The menu still runs and draws this frame, with no press, and the
+	// next frame's input is read fresh by RECTMENU_CollectInput.
+	if (MainFreeze_APKartSetupSync() && !ap_ks.open && !ap_ks.request)
+	{
+		RECTMENU_ClearInput();
+		AP_LogLine("[AP KARTSETUP] row removed under the highlight, press swallowed\n");
+	}
 
 	if (!ap_ks_context())
 	{
