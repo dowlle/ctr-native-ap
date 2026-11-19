@@ -172,7 +172,8 @@ int main(void)
  /* Same track files, but Saphi now lists the track's music: an update, not installed. */
  rows[1].sca.id=77;CHECK(MM_CustomSourceInstalled(&rows[1],&older)==NULL && older==1);
  installed.local.scaID=77;CHECK(MM_CustomSourceInstalled(&rows[1],&older)==&installed && older==0);
- rows[1].sca.id=0;installed.local.scaID=0;
+ rows[1].sca.id=0;CHECK(MM_CustomSourceInstalled(&rows[1],&older)==&installed && older==0);
+ installed.local.scaID=0;
  /* Installed tab: which pages list the track, and why not Arcade (two lines). */
  tick(BTN_R1);CHECK(s_contentLibraryTab==1);s_saphiMessage[0]=0;
  installed.local.arcade=1;installed.local.timeTrial=1;tick(0);
