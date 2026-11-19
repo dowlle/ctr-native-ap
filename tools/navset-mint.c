@@ -3,7 +3,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifndef CTR_AP
 #define CTR_AP
+#endif
 #include "../include/platform/native_sha256.h"
 #include "../ap/ap_navrec_format.h"
 #include "../ap/ap_navrec_playback_logic.h"
@@ -12,6 +14,21 @@ static unsigned char input[AP_NAVREC_MAX_FILE_BYTES];
 static unsigned char output[AP_NAVSET_MAX_FILE_BYTES];
 static struct AP_NavRecNode nodes[AP_NAVREC_MAX_LAPS][AP_NAVREC_MAX_NODES];
 static unsigned int stamps[AP_NAVREC_MAX_LAPS][AP_NAVREC_MAX_NODES];
+static struct AP_NavRecNode selectedNodes[AP_NAVSET_MAX_LAPS][AP_NAVREC_MAX_NODES];
+static unsigned int selectedCounts[AP_NAVSET_MAX_LAPS];
+
+static int store_distinct_nodes(const struct AP_NavRecNode *decoded, unsigned int count, unsigned int slot)
+{
+	size_t bytes = count * sizeof *decoded;
+	for (unsigned int i = 0; i < slot; i++)
+	{
+		if (selectedCounts[i] == count && !memcmp(selectedNodes[i], decoded, bytes))
+			return 0;
+	}
+	selectedCounts[slot] = count;
+	memcpy(selectedNodes[slot], decoded, bytes);
+	return 1;
+}
 
 static unsigned int read_recording(const char *path)
 {
@@ -61,13 +78,8 @@ static int add_lap(const char *path, const char *index, unsigned int slot, unsig
 	unsigned int frameBytes = count * AP_NAVREC_NODE_BYTES;
 	unsigned int stampBytes = count * AP_NAVREC_STAMP_BYTES;
 	unsigned char *entry = output + AP_NAVREC_HEADER_BYTES_V3 + slot * AP_NAVSET_LAPDIR_BYTES;
-	for (unsigned int i = 0; i < slot; i++)
-	{
-		const unsigned char *previous = output + AP_NAVREC_HEADER_BYTES_V3 + i * AP_NAVSET_LAPDIR_BYTES;
-		if (AP_NavRecFormat_GetU32(previous) == count &&
-		    !memcmp(output + AP_NavRecFormat_GetU32(previous + 0x0c), frames, frameBytes))
-			return 0;
-	}
+	if (!store_distinct_nodes(nodes[lap], count, slot))
+		return 0;
 
 	memcpy(entry, sourceEntry, 0x1c);
 	memcpy(entry + 0x1c, info.driverName, strlen(info.driverName));

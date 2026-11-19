@@ -124,6 +124,16 @@ def propose_crates(triangles, checkpoints):
     return rows
 
 
+def write_proposals(output, track, grid, rows):
+    output.mkdir(parents=True)
+    for filename, format_name, key, spots in (
+        ("grid-spots.json", "ctr-ap-grid-spots", "spawns", grid),
+        ("weapon-crate-spots.json", "ctr-ap-weapon-crate-spots", "rows", rows),
+    ):
+        document = {"format": format_name, "version": 1, "track": track, key: spots}
+        (output / filename).write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("lev", type=Path)
@@ -140,13 +150,10 @@ def main():
         parser.error(str(exc))
     track = {"kind": "custom", "track_key": args.track_key, "name": args.track_name,
              "lev_sha256": [hashlib.sha256(raw).hexdigest()]}
-    args.output.mkdir(parents=True)
-    for filename, format_name, key, spots in (
-        ("grid-spots.json", "ctr-ap-grid-spots", "spawns", grid),
-        ("weapon-crate-spots.json", "ctr-ap-weapon-crate-spots", "rows", rows),
-    ):
-        document = {"format": format_name, "version": 1, "track": track, key: spots}
-        (args.output / filename).write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    try:
+        write_proposals(args.output, track, grid, rows)
+    except OSError as exc:
+        parser.error(str(exc))
 
 
 if __name__ == "__main__":

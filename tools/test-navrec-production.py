@@ -85,6 +85,11 @@ check("facts.offlineCustomServing = MainRaceTrack_OfflineCustomLoad();" in bots
 check("AP_NavRec_ResetCapture();" in init and re.search(
       r"if \(iVar8 == LOAD_RESTART\)[\s\S]*?AP_NavRec_ResetCapture\(\);[\s\S]*?MainRaceTrack_OfflineResidentRestart\(\);",
       main_loop) is not None, "new loads and resident race restarts both discard the previous capture")
+check(0 <= restore.find("AP_NavRec_ResetCapture();") < restore.find("AP_NavRec_RederiveLoadIdentity("),
+      "checkpoint restore discards the flying lap even when its index and identity did not change")
+check(0 <= load.find("if (MainRaceTrack_OfflineCustomTimeTrial())") < load.find("AP_NavRec_HighestIndex(")
+      and "MainRaceTrack_OfflineCustomTimeTrial" not in body("AP_NavRec_Write"),
+      "custom Time Trial records laps and keeps ghosts on the track's own paths")
 check("AP_NavRecLane_Select" not in src and "AP_NavRecLane_Plan" not in src, "the newest-first selector is gone")
 check(re.search(r"seed %08x", load) is not None, "the pool log line carries the seed")
 check(re.search(r'lane %d: \\"%s\\" driver', load) is not None, "each recorded lane logs its file and driver")

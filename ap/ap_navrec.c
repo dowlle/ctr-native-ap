@@ -1306,6 +1306,14 @@ static int AP_NavRec_LoadForLevel(int levelID, unsigned int seed)
 	if (!g_config.navUseRecorded)
 		return 0;
 
+#ifdef CTR_CUSTOM_PACKAGES
+	// Custom Time Trial records laps. Its ghosts may convert to the bot
+	// tick when their tapes end, and are outside the race driver array that
+	// checkpoint restore uses to rebind recorded lanes.
+	if (MainRaceTrack_OfflineCustomTimeTrial())
+		return 0;
+#endif
+
 	AP_NavRec_ClearLaneIdentity();
 
 	// A served custom load without a navigation identity loads NOTHING. The
@@ -1700,6 +1708,9 @@ void AP_NavRec_AfterCheckpointRestore(void)
 	if ((sdata == NULL) || (sdata->gGT == NULL))
 		return;
 
+	// Sample storage is process-local. A restore may rewind within a lap,
+	// so discard the capture even when the lap index and identity match.
+	AP_NavRec_ResetCapture();
 	levelID = (int)sdata->gGT->levelID;
 
 #ifdef CTR_CUSTOM_PACKAGES

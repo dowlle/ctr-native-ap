@@ -646,7 +646,7 @@ and `cc -O2 -o navrec-inspect tools/navrec-inspect.c -lm`. Inspect candidate
 recordings and pass exactly seven file and zero-based lap-index pairs after
 the mint tool's output filename. The output must be a new file. The tool
 requires matching custom identities, clean closed laps within the finish-blend
-bound, and distinct node payloads.
+bound, and distinct decoded node payloads.
 
 For a local placement preview, run
 `python3 tools/navrec/propose-placements.py TRACK.lev NEW_OUTPUT_DIR TRACK_KEY TRACK_NAME`.

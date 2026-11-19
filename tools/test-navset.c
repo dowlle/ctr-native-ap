@@ -5,11 +5,13 @@
 #define CTR_AP
 #endif
 #include "../include/bots_nav_lanes.h"
-#include "../ap/ap_navrec_format.h"
+#define main NavSetMintMain
+#include "navset-mint.c"
+#undef main
 
 static unsigned char fixture[AP_NAVSET_MAX_FILE_BYTES];
-static struct AP_NavRecNode nodes[AP_NAVSET_MAX_LAPS][AP_NAVREC_MAX_NODES];
-static unsigned int stamps[AP_NAVSET_MAX_LAPS][AP_NAVREC_MAX_NODES];
+static struct AP_NavRecNode setNodes[AP_NAVSET_MAX_LAPS][AP_NAVREC_MAX_NODES];
+static unsigned int setStamps[AP_NAVSET_MAX_LAPS][AP_NAVREC_MAX_NODES];
 static struct AP_NavSetInfo info;
 static int failures;
 
@@ -76,31 +78,39 @@ int main(void)
 	      BOTS_NavFallbackPath(9, 1, 2) == 2, "recorded lane falls back to the original track lane first");
 	check(BOTS_NavFallbackPath(2, 0, 1) == 1 && BOTS_NavFallbackPath(0, 2, 1) == 2,
 	      "track lanes fall back in descending order");
-	check(AP_NavSet_Read(fixture, size, &info, nodes, stamps) == AP_NAVREC_OK, "reads seven distinct laps");
+	check(AP_NavSet_Read(fixture, size, &info, setNodes, setStamps) == AP_NAVREC_OK, "reads seven distinct laps");
 	check(info.header.lapCount == 7 && info.header.navRevision == 0xbbab52f2u &&
 	      info.header.trackUuid[0] == 0x26, "preserves the track identity");
 	check(!strcmp(info.driverNames[6], "Driver 7") && info.sourceShaPrefix[6][0] == 7 &&
-	      info.laps[6].lapFrames == AP_NAVREC_MIN_NODES + 6 && nodes[6][0].posX == 600 &&
-	      stamps[6][1] == 1, "preserves per-lap metadata, nodes and timestamps");
-	check(AP_NavRecFormat_Read(fixture, size, &info.header, nodes, stamps) == AP_NAVREC_ERR_VERSION,
+	      info.laps[6].lapFrames == AP_NAVREC_MIN_NODES + 6 && setNodes[6][0].posX == 600 &&
+	      setStamps[6][1] == 1, "preserves per-lap metadata, nodes and timestamps");
+	check(store_distinct_nodes(setNodes[0], info.laps[0].nodeCount, 0), "first decoded line is distinct");
+	check(store_distinct_nodes(setNodes[1], info.laps[1].nodeCount, 1), "a second decoded line can differ");
+	check(AP_NavRecFormat_Read(fixture, size, &info.header, setNodes, setStamps) == AP_NAVREC_ERR_VERSION,
 	      "the ordinary lap loader refuses sets");
-	check(AP_NavSet_Read(fixture, size - 1, &info, nodes, stamps) == AP_NAVREC_ERR_SIZE, "rejects truncation");
+	check(AP_NavSet_Read(fixture, size - 1, &info, setNodes, setStamps) == AP_NAVREC_ERR_SIZE, "rejects truncation");
 	fixture[size - 1] ^= 1;
-	check(AP_NavSet_Read(fixture, size, &info, nodes, stamps) == AP_NAVREC_ERR_HASH, "rejects damaged checksum");
+	check(AP_NavSet_Read(fixture, size, &info, setNodes, setStamps) == AP_NAVREC_ERR_HASH, "rejects damaged checksum");
 	fixture[0x55] = 8;
 	checksum(size);
-	check(AP_NavSet_Read(fixture, size, &info, nodes, stamps) == AP_NAVREC_ERR_LAPCOUNT, "rejects eight entries");
+	check(AP_NavSet_Read(fixture, size, &info, setNodes, setStamps) == AP_NAVREC_ERR_LAPCOUNT, "rejects eight entries");
 	size = makeSet(1);
-	check(AP_NavSet_Read(fixture, size, &info, nodes, stamps) == AP_NAVREC_OK, "reads a one-lap set");
+	check(AP_NavSet_Read(fixture, size, &info, setNodes, setStamps) == AP_NAVREC_OK, "reads a one-lap set");
+	unsigned int frames = AP_NavRecFormat_GetU32(entry + 0x0c);
+	AP_NavRecFormat_PutU16(fixture + frames + 0x10, 0x1234);
+	checksum(size);
+	check(AP_NavSet_Read(fixture, size, &info, setNodes, setStamps) == AP_NAVREC_OK &&
+	      !store_distinct_nodes(setNodes[0], info.laps[0].nodeCount, 2),
+	      "two lines differing only in the serialized lane-change opcode are duplicates");
 	AP_NavRecFormat_PutU32(entry + 0x10, AP_NavRecFormat_GetU32(entry + 0x0c));
 	checksum(size);
-	check(AP_NavSet_Read(fixture, size, &info, nodes, stamps) == AP_NAVREC_ERR_OVERLAP, "rejects overlapping payloads");
+	check(AP_NavSet_Read(fixture, size, &info, setNodes, setStamps) == AP_NAVREC_ERR_OVERLAP, "rejects overlapping payloads");
 	AP_NavRecFormat_PutU32(entry + 0x10, 0xffffffffu);
 	checksum(size);
-	check(AP_NavSet_Read(fixture, size, &info, nodes, stamps) == AP_NAVREC_ERR_OFFSETS, "rejects an offset out of range");
+	check(AP_NavSet_Read(fixture, size, &info, setNodes, setStamps) == AP_NAVREC_ERR_OFFSETS, "rejects an offset out of range");
 	size = makeSet(1);
 	fixture[0x64] = 0;
 	checksum(size);
-	check(AP_NavSet_Read(fixture, size, &info, nodes, stamps) == AP_NAVREC_ERR_HEADER_SHAPE, "rejects an empty track UUID");
+	check(AP_NavSet_Read(fixture, size, &info, setNodes, setStamps) == AP_NAVREC_ERR_HEADER_SHAPE, "rejects an empty track UUID");
 	return failures ? EXIT_FAILURE : EXIT_SUCCESS;
 }

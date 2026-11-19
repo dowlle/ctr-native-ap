@@ -1,6 +1,7 @@
 """Verify the grid and crate proposer on flat ground without a game asset."""
 
 import runpy
+from tempfile import TemporaryDirectory
 from pathlib import Path
 
 proposer = runpy.run_path(str(Path(__file__).parent / "navrec" / "propose-placements.py"))
@@ -43,3 +44,18 @@ for transform in (
         raise AssertionError("Ungrounded placements and broken checkpoint paths must be refused")
 
 print("Grid and crate rows checked on synthetic ground")
+
+with TemporaryDirectory() as temp:
+    output = Path(temp) / "proposal"
+    proposer["write_proposals"](output, {"track_key": "fixture"}, grid, rows)
+    expected = ("grid-spots.json", "weapon-crate-spots.json")
+    before = [(output / name).read_bytes() for name in expected]
+    try:
+        proposer["write_proposals"](output, {"track_key": "rerun"}, grid, rows)
+    except FileExistsError:
+        pass
+    else:
+        raise AssertionError("An existing proposal directory must be refused")
+    assert [(output / name).read_bytes() for name in expected] == before
+
+print("Existing placement files preserved")
