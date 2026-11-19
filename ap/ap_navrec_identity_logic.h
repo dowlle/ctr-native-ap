@@ -33,9 +33,8 @@
 //   offlineCustomServing a custom-page load is serving custom bytes
 //                      (MainRaceTrack_OfflineCustomLoad)
 //
-// Only the event race carries a recording identity today: the NAV3 UUID in
-// config.ini describes the custom track PACKAGE bound by the seed, and the
-// bundled Cortex Vortex pair is not that package. A served load with no
+// The event race uses the NAV3 identity bound by the seed. An offline custom
+// page uses the identity of its own verified package. A served load with no
 // identity of its own is BLOCKED rather than retail, which is the difference
 // between "no recorded lanes here" and "the host slot's recorded lanes here".
 // ============================================================================

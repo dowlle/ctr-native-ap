@@ -1110,6 +1110,35 @@ internal void NativeCheckpoint_RelocateSelectProfileLoadSaveObj(const struct Nat
 	}
 }
 
+internal void NativeCheckpoint_RelocateGhostTape(const struct NativeCheckpointHeader *oldHeader, const struct NativeCheckpointHeader *liveHeader,
+                                                 struct GhostTape *tape, int active)
+{
+	if (!NativeCheckpoint_IsLivePointer(liveHeader, tape))
+		return;
+
+	uintptr_t savedStart = (uintptr_t)tape->ptrStart;
+	uintptr_t savedEnd = (uintptr_t)tape->ptrEnd;
+	NativeCheckpoint_RelocatePointerOrImageSlot(oldHeader, liveHeader, &tape->gh);
+	NativeCheckpoint_RelocatePointerOrImageSlot(oldHeader, liveHeader, &tape->gh_again);
+	NativeCheckpoint_RelocatePointerOrImageSlot(oldHeader, liveHeader, &tape->ptrStart);
+
+	// The end can be one past the buffer. Use the start's displacement for
+	// the bound, replay cursor and any cached pointers into the tape.
+	uintptr_t displacement = (uintptr_t)tape->ptrStart - savedStart;
+	tape->ptrEnd = (void *)(savedEnd + displacement);
+	if (!active || displacement == 0)
+		return;
+
+	tape->ptrCurr = (void *)((uintptr_t)tape->ptrCurr + displacement);
+	for (u32 i = 0; i < len(tape->packets); i++)
+	{
+		uintptr_t address;
+		memcpy(&address, &tape->packets[i].bufferPacket, sizeof address);
+		if (address >= savedStart && address <= savedEnd)
+			tape->packets[i].bufferPacket = (u8 *)(address + displacement);
+	}
+}
+
 internal void NativeCheckpoint_RelocateThreadObject(const struct NativeCheckpointHeader *oldHeader, const struct NativeCheckpointHeader *liveHeader,
                                                     struct Thread *thread)
 {
@@ -1118,9 +1147,13 @@ internal void NativeCheckpoint_RelocateThreadObject(const struct NativeCheckpoin
 		return;
 	}
 
-	if (thread->funcThTick == GhostReplay_ThTick)
+	// A ghost retains its model index when its replay tick converts to
+	// BOTS_ThTick_Drive or parks after the end of the tape.
+	if (thread->modelIndex == DYNAMIC_GHOST)
 	{
-		NativeCheckpoint_RelocateDriver(oldHeader, liveHeader, (struct Driver *)thread->object);
+		struct Driver *driver = thread->object;
+		NativeCheckpoint_RelocateDriver(oldHeader, liveHeader, driver);
+		NativeCheckpoint_RelocateGhostTape(oldHeader, liveHeader, driver->ghostTape, driver->ghostBoolInit);
 		return;
 	}
 
@@ -1928,27 +1961,25 @@ internal void NativeCheckpoint_RelocateRuntimePointers(const struct NativeCheckp
 	NativeCheckpoint_RelocateRectMenu(oldHeader, liveHeader, &gGarage.menuGarage);
 	NativeCheckpoint_RelocateCreditsPointers(oldHeader, liveHeader);
 	NativeCheckpoint_RelocateGameTrackerPointers(oldHeader, liveHeader);
+}
 
-#if defined(CTR_AP) || defined(CTR_AI_LAP_RECORDER)
-	// LAST, and specifically after RelocateGameTrackerPointers. Relocating the
-	// nav slots is necessary but not sufficient: recorded AI lanes live in
-	// AP-layer statics, which are in no checkpointed region, so a state restored
-	// into a FRESH process finds them zeroed, with pointers that are
-	// arithmetically right and blank data behind them. This reloads the recording
-	// and republishes, or puts the engine back on the level's own nav data.
-	//
-	// The ordering is load-bearing. That fallback reaches gGT->level1->LevNavTable
-	// through BOTS_InitNavPath, and gGT->level1 is not rebased until
-	// RelocateGameTrackerPointers above. Called from inside
-	// RelocateSDataPointers, where the nav slots themselves are handled, it would
-	// dereference the saving process's level pointer: invisible in-process,
-	// because the two ranges coincide, and a fault on a cross-process restore.
-	// The nav slots it depends on are already done by then, and the success path
-	// touches no level data at all.
-	//
-	// A no-op when no recording is in play.
-	AP_NavRec_AfterCheckpointRestore();
-#endif
+internal void NativeCheckpoint_RepairAuthoredNavEnds(struct GameTracker *gGT)
+{
+	if (gGT == NULL || gGT->level1 == NULL ||
+	    (gGT->gameMode1 & (GAME_CUTSCENE | MAIN_MENU | ADVENTURE_ARENA)) != 0)
+		return;
+	struct NavHeader **table = gGT->level1->LevNavTable;
+	if (table == NULL)
+		return;
+
+	for (u32 lane = 0; lane < len(sdata->NavPath_ptrHeader); lane++)
+	{
+		struct NavHeader *header = table[lane];
+		// BOTS_InitNavPath writes this field at runtime. An authored LEV
+		// need not include it in its pointer map.
+		if (header != NULL && header->magicNumber == (s16)-0x1303 && header->numPoints > 0)
+			header->last = NAVHEADER_GETFRAME(header) + header->numPoints;
+	}
 }
 
 internal int NativeCheckpoint_CapturePointerSlotState(void *dst, int dstSize)
@@ -2408,6 +2439,14 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 	{
 		return 0;
 	}
+
+	// Both the runtime pointers and the LEV's pointer slots now refer to
+	// this process. Authored lanes need live end pointers, and recorded
+	// lanes need to be reloaded or replaced with those authored lanes.
+	NativeCheckpoint_RepairAuthoredNavEnds(sdata->gGT);
+#if defined(CTR_AP) || defined(CTR_AI_LAP_RECORDER)
+	AP_NavRec_AfterCheckpointRestore();
+#endif
 #ifdef CTR_CUSTOM_TRACKS
 	// The restored VRAM may hold another minimap: decide its mode again.
 	UI_Map_CustomAfterRestore(sdata->gGT);

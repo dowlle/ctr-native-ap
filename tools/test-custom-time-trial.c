@@ -1,4 +1,4 @@
-// cc -m32 -ffunction-sections -fdata-sections -Wl,--gc-sections -DCTR_NATIVE -DCTR_CUSTOM_TRACKS -DCTR_CUSTOM_PACKAGES -DBUILD=926 -I include -I . tools/test-custom-time-trial.c
+// cc -m32 -ffunction-sections -fdata-sections -Wl,--gc-sections -DCTR_NATIVE -DCTR_AI_LAP_RECORDER -DCTR_CUSTOM_TRACKS -DCTR_CUSTOM_PACKAGES -DBUILD=926 -I include -I . tools/test-custom-time-trial.c
 // platform/native_custom_offline.c platform/native_custom_records.c platform/native_custom_content_verify.c -lm -o /tmp/test-custom-time-trial
 //
 // A Time Trial on a custom track (box authoring build) never reaches the
@@ -28,6 +28,7 @@
 //   sent every custom start back to the track list).
 #define _XOPEN_SOURCE 700
 #include <stdarg.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,9 +41,19 @@
 #include <platform/native_custom_identity.h>
 #include <platform/native_custom_state_identity.h>
 #include <platform/native_custom_records.h>
+#include <platform/native_custom_tracks.h>
+#include "ap/ap_navrec.h"
+#include "ap/ap_navrec_format.h"
+#include "ap/ap_hooks.h"
 
 struct sData sdata_static; // common.h binds sdata to it
 struct Data data;
+NativeConfig g_config;
+#ifdef CTR_AP
+ctr_seed_config ctr_cfg;
+#endif
+void AP_LogLine(const char *msg) { fputs(msg, stderr); }
+
 static struct GameTracker s_gt;
 static char s_lastLog[512];
 void CustomTrack_Log(const char *fmt, ...)
@@ -156,6 +167,30 @@ void SubmitName_RestoreName(s16 param_1) { (void)param_1; }
 void UI_VsQuipAssignAll(void) {}
 void Podium_InitModels(struct GameTracker *gGT) { (void)gGT; }
 void BOTS_Driver_Convert(struct Driver *driver) { (void)driver; }
+void BOTS_SetGlobalNavData(u16 path) { (void)path; }
+void BOTS_InitNavPath(struct GameTracker *gt, s16 path)
+{
+	sdata->NavPath_ptrHeader[path] = gt->level1->LevNavTable[path];
+	sdata->NavPath_ptrNavFrameArray[path] = NAVHEADER_GETFRAME(sdata->NavPath_ptrHeader[path]);
+}
+void LIST_AddFront(struct LinkedList *list, struct Item *item) { (void)list; (void)item; }
+struct Item *LIST_RemoveMember(struct LinkedList *list, struct Item *item) { (void)list; return item; }
+int CustomTrack_ServingLoad(int level, int cup, int id) { (void)level; (void)cup; (void)id; return 0; }
+int CustomTrack_NavIdentityForLoad(int level, int cup, int id, unsigned char uuid[16], unsigned int *revision)
+{
+	(void)level;
+	(void)cup;
+	(void)id;
+	(void)uuid;
+	(void)revision;
+	return 0;
+}
+int CustomTrack_OxideFinalServing(int level, int boss, int active) { (void)level; (void)boss; (void)active; return 0; }
+int CustomTrack_GarageVenueServing(int level, int boss, int active) { (void)level; (void)boss; (void)active; return -1; }
+int CustomTrack_CortexTrackIntent(int level, int boss) { (void)level; (void)boss; return 0; }
+
+#include "../ap/ap_navrec.c"
+
 void UI_RaceEnd_GetDriverClock(struct Driver *d) { (void)d; }
 void LOAD_LevelFile(int levelID)
 {
@@ -272,9 +307,125 @@ static void end_race(int raceTime)
 	MainGameEnd_SoloRaceGetReward(1);
 }
 
+static void sample_flying_lap(void)
+{
+	s_player.lapIndex = 1;
+	for (int frame = 0; frame < 64; frame++)
+	{
+		double angle = frame * (6.283185307179586 / 63.0);
+		s_player.posCurr.x = (int)(cos(angle) * 4000 * 256);
+		s_player.posCurr.z = (int)(sin(angle) * 4000 * 256);
+		s_player.checkpoint.currentIndex = (frame / 8) % 8;
+		AP_NavRec_Tick(&s_gt);
+	}
+}
+
+static void finish_sampled_lap(void)
+{
+	s_gt.gameMode1 |= END_OF_RACE;
+	AP_NavRec_Tick(&s_gt);
+	s_gt.gameMode1 &= ~END_OF_RACE;
+}
+
+static void check_lap_recording(const unsigned char uuid[16], unsigned int revision)
+{
+	static unsigned char bytes[AP_NAVREC_MAX_FILE_BYTES];
+	static struct AP_NavRecNode nodes[AP_NAVREC_MAX_LAPS][AP_NAVREC_MAX_NODES];
+	static unsigned int stamps[AP_NAVREC_MAX_LAPS][AP_NAVREC_MAX_NODES];
+	struct AP_NavRecFileInfo lap;
+	char path[80];
+	snprintf(path, sizeof path, "ap-navpaths/navpath-%d-001.navlap", HOST);
+	sdata->Loading.stage = LOAD_IDLE;
+	s_gt.trafficLightsTimer = 0;
+	g_config.navRecord = 1;
+
+	// A quickload during a flying lap keeps its index. Even if the
+	// remaining samples happen to form a loop, that lap cannot be saved.
+	s_player.lapIndex = 0;
+	AP_NavRec_Tick(&s_gt);
+	AP_NavRec_Tick(&s_gt);
+	sample_flying_lap();
+	AP_NavRec_AfterCheckpointRestore();
+	sample_flying_lap();
+	finish_sampled_lap();
+	CHECK(access(path, F_OK) != 0);
+
+	AP_NavRec_AfterBotsInit();
+	s_player.lapIndex = 0;
+	AP_NavRec_Tick(&s_gt);
+	sample_flying_lap();
+	finish_sampled_lap();
+	g_config.navRecord = 0;
+	AP_NavRec_Tick(&s_gt);
+	FILE *file = fopen(path, "rb");
+	CHECK(file != NULL);
+	if (file == NULL)
+		return;
+	unsigned int size = (unsigned int)fread(bytes, 1, sizeof bytes, file);
+	fclose(file);
+	CHECK(size > AP_NAVREC_HEADER_BYTES_V3 && AP_NavRecFormat_GetU16(bytes + 4) == AP_NAVREC_FORMAT_VERSION_V3);
+	int decoded = AP_NavRecFormat_Read(bytes, size, &lap, nodes, stamps);
+	CHECK(decoded == AP_NAVREC_OK);
+	if (decoded == AP_NAVREC_OK)
+	{
+		CHECK(lap.lapCount == 1 && lap.laps[0].sampleCount == 64 && lap.laps[0].clean);
+		CHECK(AP_NavRecFormat_IdentityMatches(&lap, HOST, AP_NAVREC_IDENTITY_CUSTOM, uuid, revision));
+	}
+}
+
+static void check_recorded_playback(int mode, const unsigned char uuid[16], unsigned int revision)
+{
+	struct { struct NavHeader header; struct NavFrame frames[2]; } authored = {0};
+	struct NavHeader *lanes[] = {&authored.header, &authored.header, &authored.header};
+	struct Level level = {.LevNavTable = lanes};
+	authored.header.magicNumber = -0x1303;
+	authored.header.numPoints = 2;
+	s_gt.level1 = &level;
+	for (s16 lane = 0; lane < 3; lane++)
+		BOTS_InitNavPath(&s_gt, lane);
+
+	AP_NavRec_SetActiveCustomTrack(uuid, revision);
+	g_config.navUseRecorded = 1;
+	AP_NavRec_AfterBotsInit();
+	if (mode == CTR_OFFLINE_MODE_ARCADE)
+	{
+		CHECK(sdata->NavPath_ptrHeader[0] != &authored.header);
+		CHECK(sdata->NavPath_ptrHeader[0]->numPoints > authored.header.numPoints);
+		sdata->Loading.stage = LOAD_IDLE;
+		s_gt.trafficLightsTimer = 0;
+		g_config.navRecord = 1;
+		s_player.lapIndex = 0;
+		AP_NavRec_Tick(&s_gt);
+		sample_flying_lap();
+		finish_sampled_lap();
+		CHECK(!s_navrecArmed && s_navrecBankCount == 0 && s_navrecCurSamples == 0);
+		CHECK(access("ap-navpaths/navpath-6-002.navlap", F_OK) != 0);
+		g_config.navRecord = 0;
+		AP_NavRec_Tick(&s_gt);
+
+		AP_NavRec_AfterCheckpointRestore();
+		CHECK(sdata->NavPath_ptrHeader[0]->numPoints > authored.header.numPoints);
+		g_config.navUseRecorded = 0;
+		AP_NavRec_AfterCheckpointRestore();
+		CHECK(sdata->NavPath_ptrHeader[0] == &authored.header);
+	}
+	else
+		CHECK(sdata->NavPath_ptrHeader[0] == &authored.header);
+
+	g_config.navUseRecorded = 0;
+	s_gt.level1 = NULL;
+	memset(sdata->NavPath_ptrHeader, 0, sizeof sdata->NavPath_ptrHeader);
+	memset(sdata->NavPath_ptrNavFrameArray, 0, sizeof sdata->NavPath_ptrNavFrameArray);
+}
+
 int main(void)
 {
 	char dir[] = "/tmp/ctr-tt-records-XXXXXX";
+	static const unsigned char expectedUuid[16] = {
+		0x0f, 0x8f, 0xad, 0x5b, 0xd9, 0xcb, 0x46, 0x9f, 0xa1, 0x65, 0x70, 0x86, 0x77, 0x28, 0x95, 0x0e,
+	};
+	unsigned char navUuid[16];
+	unsigned int revision;
 	struct GameProgress before;
 	int i;
 
@@ -308,6 +459,8 @@ int main(void)
 	start_time_trial();
 	CHECK(MainRaceTrack_OfflineCustomLoad());
 	CHECK(MainRaceTrack_OfflineCustomTimeTrial());
+	CHECK(MainRaceTrack_OfflineNavIdentity(navUuid, &revision));
+	CHECK(memcmp(navUuid, expectedUuid, sizeof navUuid) == 0 && revision == 0x11111111u);
 	CHECK(MainRaceTrack_IdentityLevelID() == CTR_CUSTOM_LEVEL_ID);
 	CHECK(s_gt.numLaps == CTR_CUSTOM_DEFAULT_LAPS);
 	// The engine's level load reads the package, not Roo's Tubes, for every
@@ -336,6 +489,7 @@ int main(void)
 		MainRaceTrack_OfflineResidentRestart();
 		CHECK(!CustomOffline_RuntimeCompleted());
 	}
+	check_lap_recording(navUuid, revision);
 	// The table is the package's, not inside the retail save data.
 	CHECK((char *)sdata->ptrActiveHighScoreEntry < (char *)&sdata->gameProgress ||
 	      (char *)sdata->ptrActiveHighScoreEntry >= (char *)(&sdata->gameProgress + 1));
@@ -554,6 +708,9 @@ int main(void)
 				CHECK(strstr(s_lastLog, "refused") == NULL);
 				CHECK(s_servedRoles == 3 && CustomOffline_RuntimeLoaded());
 				CHECK(MainRaceTrack_OfflineCustomLoad());
+				CHECK(MainRaceTrack_OfflineNavIdentity(navUuid, &revision));
+				CHECK(memcmp(navUuid, expectedUuid, sizeof navUuid) == 0 && revision == 0x11111111u);
+				check_recorded_playback(races[r].mode, navUuid, revision);
 				CHECK(MainRaceTrack_IdentityLevelID() == CTR_CUSTOM_LEVEL_ID);
 				CHECK(MainRaceTrack_OfflineCustomTimeTrial() == (races[r].mode == CTR_OFFLINE_MODE_TIME_TRIAL));
 				CHECK(s_gt.numLaps == CustomOffline_RuntimeLaps());
@@ -576,6 +733,7 @@ int main(void)
 				CHECK(!CustomOffline_RuntimeActive() && s_gt.levelID == MAIN_MENU_LEVEL);
 				CHECK(s_gt.numPlyrCurrGame == 4 && s_gt.numPlyrNextGame == 1 && (s_gt.gameMode1 & MAIN_MENU));
 				CHECK(!MainRaceTrack_OfflineCustomLoad());
+				CHECK(!MainRaceTrack_OfflineNavIdentity(navUuid, &revision));
 			}
 		}
 		// Started for Time Trial, the race is Arcade: refused, with the bits.
