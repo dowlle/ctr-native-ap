@@ -62,6 +62,7 @@ NativeConfig g_config = {
 	false, // navRecord (off: this one writes files to the player's disk)
 	false, // navUseRecorded (off: changes how the AI drives)
 	false, // navRepeatLaps (off: one recorded lap per contributor)
+	false, // navOnlyMine
 	"",    // navDriverName (empty = fall back to the Archipelago slot name)
 	false, // discordStatus (off: nothing is opened or sent unless the player opts in)
 	"",    // discordAppId (empty = the built-in AP_DISCORD_APPLICATION_ID)
@@ -73,6 +74,7 @@ NativeConfig g_config = {
 	false, // navRecord
 	false, // navUseRecorded
 	false, // navRepeatLaps
+	false, // navOnlyMine
 	"",    // navDriverName (empty = recordings carry no name)
 #endif
 #endif
@@ -225,6 +227,7 @@ const ConfigEntry g_configEntries[] = {
 	{"Authoring",   "nav_record",               "Save AI Lap Recordings",       CFG_BOOL, &g_config.navRecord},
 	{"Authoring",   "nav_use_recorded",         "Use Recorded AI Laps",         CFG_BOOL, &g_config.navUseRecorded},
 	{"Authoring",   "nav_repeat_laps",          "Several Laps Per Driver",      CFG_BOOL, &g_config.navRepeatLaps},
+	{"Authoring",   "nav_only_mine",            "Only My Recordings",           CFG_BOOL, &g_config.navOnlyMine},
 	// Read-only on the menu, edited in config.ini. Empty renders as "-" and, in
 	// an AP build, means the Archipelago slot name is used instead.
 	{"Authoring",   "nav_driver_name",          "Driver Name",                  CFG_STRING, g_config.navDriverName, 0, (int)sizeof(g_config.navDriverName), 0},

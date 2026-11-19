@@ -386,7 +386,7 @@ void BOTS_Adv_AdjustDifficulty(void)
 	// IS AP_NAVREC_IDENTITY_RETAIL. Clearing it there would be a no-op that cost
 	// this file its guard-off object identity for nothing.
 	//
-	// All THREE serving predicates are gathered, not just the event race's.
+	// Gather the serving predicates for each load, including the event race.
 	// Asking only some of them leaves the loads it skipped resolving to the
 	// borrowed host slot's retail identity, which is issue #356: N. Oxide's
 	// Final Challenge and the Cortex Vortex pad track both borrow LevelID 13,
@@ -394,7 +394,7 @@ void BOTS_Adv_AdjustDifficulty(void)
 	{
 		unsigned char             ctNavUuid[CTR_CT_NAV_UUID_BYTES];
 		unsigned int              ctNavRevision = 0;
-		struct AP_NavRecLoadFacts facts;
+		struct AP_NavRecLoadFacts facts = {0};
 		int                       advCup = (gameMode1 & ADVENTURE_CUP) != 0;
 		int                       advBoss = (gameMode1 & ADVENTURE_BOSS) != 0;
 
@@ -407,13 +407,8 @@ void BOTS_Adv_AdjustDifficulty(void)
 		                          CustomTrack_GarageVenueServing((int)gGT->levelID, gGT->bossID, advBoss) >= 0;
 		facts.cortexTrackIntent = CustomTrack_CortexTrackIntent((int)gGT->levelID, advBoss);
 #ifdef CTR_CUSTOM_PACKAGES
-		// An Arcade custom-page race has no recording identity: block the host
-		// slot's retail lanes rather than replay them on custom geometry.
-		if (MainRaceTrack_OfflineCustomLoad())
-		{
-			facts.eventRaceServing = 1;
-			facts.eventRaceNavIdentity = 0;
-		}
+		// The offline runtime has no navigation identity yet.
+		facts.offlineCustomServing = MainRaceTrack_OfflineCustomLoad();
 #endif
 
 		int navrecOutcome = AP_NavRecIdentity_ForLoad(&facts);

@@ -239,6 +239,13 @@ seed decides, so the same seed gives the same field. With this on, one name can
 appear on more than one opponent. It changes nothing when three or more
 contributors have recordings.
 
+**Only My Recordings** (`nav_only_mine` under `[Authoring]`, off by default)
+keeps recordings whose driver name matches your Driver Name or, when it is
+empty, your configured Archipelago slot name. Matching ignores case, spaces
+at the ends, and repeated spaces. It works with **Several Laps Per Driver**.
+With no matching name or no matching laps, opponents drive the track's own
+lines.
+
 Recorded lines do not guarantee the original lap time. Crate contact and the
 finish blend still need gameplay testing. A separate recorded line for every
 opponent is planned for a later release. In 2P only player 1's laps are saved,

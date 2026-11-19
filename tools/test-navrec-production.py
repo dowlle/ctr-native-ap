@@ -66,6 +66,19 @@ check("g_config.navRepeatLaps" in load and "AP_NAVREC_POOL_WORK_PER_ENTRY" in lo
 cfg = (root / "platform" / "native_config.c").read_text()
 check('"nav_repeat_laps"' in cfg and "&g_config.navRepeatLaps" in cfg, "nav_repeat_laps is a config row in [Authoring]")
 check(re.search(r"false,\s*//\s*navRepeatLaps", cfg) is not None, "nav_repeat_laps defaults to off")
+check(cfg.count("false, // navOnlyMine") == 2, "Only My Recordings defaults off in both client configurations")
+check("AP_NavRec_ResolveDriverName(name, sizeof name)" in load and "g_config.navOnlyMine" in load
+      and "AP_NavRec_BuildPool(levelID, highest, fetchCtx.onlyKey" in load,
+      "the loader gives the pool the same driver identity used to save laps")
+check(0 <= pool.find("AP_NavRecPool_NameMatches(peeked.driverName, onlyKey)") < pool.find("entries[count].fileIndex"),
+      "the pool applies the name filter before admitting a file")
+check("AP_NavRecPool_NameMatches(info->driverName, onlyKey)" in body("AP_NavRec_ReadCandidate")
+      and "c->onlyKey)" in fetch and "buf, &info, fetchCtx.onlyKey)" in load,
+      "full reads recheck the name during both pick and placement")
+bots = (root / "game" / "BOTS.c").read_text()
+check("facts.offlineCustomServing = MainRaceTrack_OfflineCustomLoad();" in bots
+      and "facts.offlineCustomServing = MainRaceTrack_OfflineCustomLoad();" in body("AP_NavRec_RederiveLoadIdentity"),
+      "race initialization and restore both identify custom-page loads separately")
 check("AP_NavRecLane_Select" not in src and "AP_NavRecLane_Plan" not in src, "the newest-first selector is gone")
 check(re.search(r"seed %08x", load) is not None, "the pool log line carries the seed")
 check(re.search(r'lane %d: \\"%s\\" driver', load) is not None, "each recorded lane logs its file and driver")

@@ -2405,6 +2405,206 @@ for count, mode in ((5, "off"), (50, "both")):
             expected_admit = False
         assert not expected_admit, mutation
         cases.append((f"sanity-{count}-{mode}-{mutation}", bad, False))
+for boost in ("off", "shared_global", "per_character"):
+    for tier in range(3):
+        wire = make_world(dict(profile_options(), itemboxsanity=50, shortcut_knowledge=tier,
+                               progressive_boost=boost), seed=3, stop_before="pre_fill").fill_slot_data()
+        assert cp.validate(wire["content_plan"])
+        cases.append((f"sewer-bridge-{boost}-{tier}", wire, True))
+        for version in (0, 7, True, "1"):
+            bad = copy.deepcopy(wire)
+            bad["content_plan"]["sanity"]["rules_version"] = version
+            cases.append((f"sewer-bridge-version-{boost}-{tier}-{version!r}", bad, False))
+from worlds.ctr.test.test_vortex_sanity import vortex_options
+native_cortex_pin = re.search(r'#define CTR_CFG_CORTEX_LEV_SHA256 "([0-9a-f]{64})"',
+                             (root / "ap/ap_seedcfg.h").read_text())[1]
+assert native_cortex_pin == cp.sanity.CORTEX_LEV_SHA256, "Vortex sanity catalog must describe bundled bytes"
+for boost in ("off", "shared_global", "per_character"):
+    wire = make_world(vortex_options(progressive_boost=boost), seed=3, stop_before="pre_fill").fill_slot_data()
+    assert cp.validate(wire["content_plan"])
+    cases.append((f"vortex-shipped-{boost}", wire, True))
+    for digest in ("0" * 64, cp.sanity.CATALOG["cortex_vortex"]["lev_sha256"]):
+        bad = copy.deepcopy(wire)
+        next(r for r in bad["content_plan"]["sanity"]["tracks"] if r["track_id"] == "cortex_vortex")["lev_sha256"] = digest
+        cases.append((f"vortex-new-refuse-digest-{boost}-{digest[:8]}", bad, False))
+    for version in (None, 1):
+        legacy = copy.deepcopy(wire)
+        p = legacy["content_plan"]
+        if version is None:
+            del p["sanity"]["rules_version"]
+        else:
+            p["sanity"]["rules_version"] = version
+        next(r for r in p["sanity"]["tracks"] if r["track_id"] == "cortex_vortex")["lev_sha256"] = cp.sanity.CATALOG["cortex_vortex"]["lev_sha256"]
+        p["checks"] = [c for c in p["checks"] if c["kind"] not in cp.sanity.KINDS]
+        p["checks"].extend(cp.sanity.checks(p["sanity"], p["tracks"], p["entries"], p["pads"], p["encounters"],
+                                          p.get("capability"), {pkg["id"]: pkg for pkg in p["packages"]}))
+        assert cp.validate(p)
+        cases.append((f"vortex-legacy-{boost}-{version}", legacy, True))
+from worlds.ctr.test.test_country_speedway import country_options
+for count in (0, 1, 5, 15, 50):
+    for boost in ("off", "shared_global", "per_character"):
+        for wumpa in ("off", "crates"):
+            wire = make_world(country_options(item_box_count=count, progressive_boost=boost,
+                                             wumpasanity=wumpa), seed=3, stop_before="pre_fill").fill_slot_data()
+            assert cp.validate(wire["content_plan"])
+            cases.append((f"country-{count}-{boost}-{wumpa}", wire, True))
+            if count:
+                for ids in ([], [True], ["retail:0"], ["unknown"],
+                            ["custom/country-speedway/1.3.0"] * 2):
+                    bad = copy.deepcopy(wire)
+                    bad["content_plan"]["item_boxes"]["pickup_rules"] = ids
+                    try:
+                        cp.validate(bad["content_plan"])
+                    except Exception:
+                        pass
+                    else:
+                        raise AssertionError(ids)
+                    cases.append((f"country-marker-{count}-{boost}-{wumpa}-{ids}", bad, False))
+from worlds.ctr.test.test_toasty_terrace import toasty_options
+from worlds.ctr.test.test_country_speedway import PACKAGE as country_package
+for count in (0, 15):
+    for boost in ("off", "shared_global", "per_character"):
+        options = toasty_options(item_box_count=count, progressive_boost=boost)
+        options["content_pool"]["tracks"]["custom"].append(copy.deepcopy(country_package))
+        options["content_pool"]["required_entries"].append("custom/country-speedway/1.3.0")
+        wire = make_world(options, seed=3, stop_before="pre_fill").fill_slot_data()
+        assert cp.validate(wire["content_plan"])
+        cases.append((f"toasty-country-{count}-{boost}", wire, True))
+for count in (0, 1, 5, 15, 50):
+    for boost in ("off", "shared_global", "per_character"):
+        for wumpa in ("off", "crates"):
+            wire = make_world(toasty_options(item_box_count=count, progressive_boost=boost,
+                                            wumpasanity=wumpa), seed=3, stop_before="pre_fill").fill_slot_data()
+            assert cp.validate(wire["content_plan"])
+            cases.append((f"toasty-{count}-{boost}-{wumpa}", wire, True))
+            for mutation in ("version", "hash", "marker"):
+                if mutation == "marker" and not count:
+                    continue
+                bad = copy.deepcopy(wire)
+                plan = bad["content_plan"]
+                if mutation == "version":
+                    plan["sanity"]["rules_version"] = 7
+                elif mutation == "hash":
+                    next(r for r in plan["sanity"]["tracks"]
+                         if r["track_id"] == "custom/toasty-terrace/1.3.0")["lev_sha256"] = "0" * 64
+                else:
+                    plan["item_boxes"]["pickup_rules"] = ["custom/toasty-terrace/1.3.0"] * 2
+                try:
+                    cp.validate(plan)
+                except Exception:
+                    pass
+                else:
+                    raise AssertionError(mutation)
+                cases.append((f"toasty-refuse-{count}-{boost}-{wumpa}-{mutation}", bad, False))
+from worlds.ctr.test.test_royal_raceway import royal_options
+for count in (0, 1, 5, 15, 50):
+    for boost in ("off", "shared_global", "per_character"):
+        for wumpa in ("off", "crates"):
+            wire = make_world(royal_options(item_box_count=count, progressive_boost=boost, wumpasanity=wumpa),
+                              seed=3, stop_before="pre_fill").fill_slot_data()
+            assert cp.validate(wire["content_plan"])
+            cases.append((f"royal-{count}-{boost}-{wumpa}", wire, True))
+            for mutation in ("version", "hash", "marker", "floors-extra", "floors-empty", "floors-unsorted", "floors-missing"):
+                if mutation == "marker" and not count:
+                    continue
+                if mutation.startswith("floors") and boost == "off":
+                    continue
+                bad = copy.deepcopy(wire)
+                plan = bad["content_plan"]
+                if mutation == "version":
+                    plan["sanity"]["rules_version"] = 7
+                elif mutation == "hash":
+                    next(r for r in plan["sanity"]["tracks"]
+                         if r["track_id"] == "custom/royal-raceway/1.0.0")["lev_sha256"] = "0" * 64
+                elif mutation == "marker":
+                    plan["item_boxes"]["pickup_rules"] = ["custom/royal-raceway/1.0.0"] * 2
+                elif mutation == "floors-extra":
+                    plan["capability"]["finish_floors"] = ["custom/royal-raceway/1.0.0", "retail:0"]
+                elif mutation == "floors-empty":
+                    plan["capability"]["finish_floors"] = []
+                elif mutation == "floors-unsorted":
+                    plan["capability"]["finish_floors"] = ["custom/royal-raceway/1.0.0", "custom/royal-raceway/1.0.0"]
+                else:
+                    # Carried new-rule ranks without the marker: the generator refuses; native
+                    # trusts carried ranks, so the parity row is listed as a native trust below.
+                    del plan["capability"]["finish_floors"]
+                try:
+                    cp.validate(plan)
+                except Exception:
+                    pass
+                else:
+                    raise AssertionError(mutation)
+                if mutation == "floors-missing":
+                    native_trusts.add(f"royal-refuse-{count}-{boost}-{wumpa}-{mutation}")
+                cases.append((f"royal-refuse-{count}-{boost}-{wumpa}-{mutation}", bad, False))
+from worlds.ctr.test.test_green_hill_raceway import green_options
+GH = "custom/green-hill-raceway/2.0.0"
+for count in (0, 1, 5, 15, 50):
+    for boost in ("off", "shared_global", "per_character"):
+        for wumpa in ("off", "crates"):
+            wire = make_world(green_options(item_box_count=count, progressive_boost=boost, wumpasanity=wumpa),
+                              seed=3, stop_before="pre_fill").fill_slot_data()
+            assert cp.validate(wire["content_plan"])
+            cases.append((f"green-{count}-{boost}-{wumpa}", wire, True))
+            for mutation in ("version", "hash", "marker", "free-extra", "free-empty", "free-unsorted", "free-missing"):
+                if mutation == "marker" and not count:
+                    continue
+                if mutation.startswith("free") and boost == "off":
+                    continue
+                bad = copy.deepcopy(wire)
+                plan = bad["content_plan"]
+                if mutation == "version":
+                    plan["sanity"]["rules_version"] = 7
+                elif mutation == "hash":
+                    next(r for r in plan["sanity"]["tracks"] if r["track_id"] == GH)["lev_sha256"] = "0" * 64
+                elif mutation == "marker":
+                    plan["item_boxes"]["pickup_rules"] = [GH] * 2
+                elif mutation == "free-extra":
+                    plan["capability"]["finish_free"] = [GH, "retail:0"]
+                elif mutation == "free-empty":
+                    plan["capability"]["finish_free"] = []
+                elif mutation == "free-unsorted":
+                    plan["capability"]["finish_free"] = [GH, GH]
+                else:
+                    # Carried new-rule ranks without the marker: the generator refuses; native
+                    # trusts carried ranks, so the parity row is listed as a native trust below.
+                    del plan["capability"]["finish_free"]
+                try:
+                    cp.validate(plan)
+                except Exception:
+                    pass
+                else:
+                    raise AssertionError(mutation)
+                if mutation == "free-missing":
+                    native_trusts.add(f"green-refuse-{count}-{boost}-{wumpa}-{mutation}")
+                cases.append((f"green-refuse-{count}-{boost}-{wumpa}-{mutation}", bad, False))
+# A mixed Green Hill and Royal room carries both reviewed lists, disjoint.
+from worlds.ctr.test.test_royal_raceway import PACKAGE as royal_package
+options = green_options(item_box_count=5)
+options["content_pool"]["tracks"]["custom"].append(copy.deepcopy(royal_package))
+options["content_pool"]["required_entries"].append("custom/royal-raceway/1.0.0")
+wire = make_world(options, seed=3, stop_before="pre_fill").fill_slot_data()
+assert cp.validate(wire["content_plan"])
+assert wire["content_plan"]["capability"]["finish_free"] == [GH]
+assert wire["content_plan"]["capability"]["finish_floors"] == ["custom/royal-raceway/1.0.0"]
+cases.append(("green-royal-mixed", wire, True))
+bad = copy.deepcopy(wire)
+bad["content_plan"]["capability"]["finish_free"] = [GH, "custom/royal-raceway/1.0.0"]
+cases.append(("green-royal-overlap", bad, False))
+# An unrecognised Green Hill LEV carries neither marker and is admitted with generic terms.
+options = green_options(item_box_count=5)
+options["content_pool"]["tracks"]["custom"][0]["files"][0]["sha256"] = "ab" * 32
+wire = make_world(options, seed=3, stop_before="pre_fill").fill_slot_data()
+assert cp.validate(wire["content_plan"]) and "finish_free" not in wire["content_plan"]["capability"]
+cases.append(("green-unrecognised-lev", wire, True))
+bad = copy.deepcopy(wire)
+bad["content_plan"]["capability"]["finish_free"] = [GH]
+cases.append(("green-unrecognised-lev-marker", bad, False))
+# A marker naming an unreviewed LEV is refused on both sides.
+wire = make_world(royal_options(item_box_count=5), seed=3, stop_before="pre_fill").fill_slot_data()
+bad = copy.deepcopy(wire)
+next(p for p in bad["content_plan"]["packages"] if p["content_id"] == "royal-raceway")["files"][0]["sha256"] = "ab" * 32
+cases.append(("royal-marker-unreviewed-lev", bad, False))
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()
