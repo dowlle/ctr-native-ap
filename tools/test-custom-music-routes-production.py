@@ -500,7 +500,8 @@ int main()
 		expect(!CustomPackage_InstallMusic(directory.c_str(), pin.c_str(), music.data(), music.size(), sha(music).c_str(), 874, nullptr),
 		       "interruption between audio and metadata leaves no publication");
 		CustomPackage_TestInstallFailure(-1);
-		expect(!find_music_for(assets).ok && !exists(directory + "/.saphi-music/source.json"),
+		const auto interrupted = find_music_for(assets);
+		expect(!interrupted.ok && interrupted.refusal.empty() && !exists(directory + "/.saphi-music/source.json"),
 		       "the race lookup ignores interrupted staging");
 		serve();
 		served[path] = music;

@@ -995,8 +995,8 @@ int want_pinned_music(const char *pin, const CustomPackageManifest *manifest, vo
     if (embedded) return 1;
     try
     {
-        Directory directory(search.directory + "/" + pin);
-        return directory.exists(musicDirectory);
+        Directory music(search.directory + "/" + pin + "/" + musicDirectory);
+        return music.exists("source.json");
     }
     catch (const std::exception &) {}
     return 0;
