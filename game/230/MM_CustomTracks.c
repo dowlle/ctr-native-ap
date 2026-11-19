@@ -517,38 +517,34 @@ static void CT_Add(struct CT_Action *a, int *n, int id, const char *label, const
     (*n)++;
 }
 
-/* Why the release-profile relic editor is unavailable. */
-static void CT_PackageReason(const struct CT_LibView *v, char *out, size_t size)
+static int CT_IsManagedRevision(const struct CT_LibItem *item, const struct CT_LibView *v)
 {
     const struct CustomTrackManagerPackage *package = AP_CustomContentPackage();
-    const struct CustomTrackManagerStatus *status = AP_CustomContentStatus();
-    out[0] = 0;
-    if (!v->package)
-        snprintf(out, size, "Relic times are edited in the track package.");
-    else if (status->state != CTR_CT_MANAGER_READY || !status->verifiedPackageSha256[0])
-        snprintf(out, size, "Needs a Ready %s v%s. Use Verify / Setup first.", package->title, package->version);
-    else if (!package->flagRelicCrates)
-        snprintf(out, size, "This track has no relic crates.");
-}
-
-static int CT_UsesManagedExport(const struct CT_LibItem *item, const struct CT_LibView *v)
-{
-    const struct CustomTrackManagerPackage *package = AP_CustomContentPackage();
-    const struct CustomTrackManagerStatus *status = AP_CustomContentStatus();
     return item->kind == CT_ITEM_PACKAGE ||
            (v->package && v->installed && v->installed->installed &&
-            status->state == CTR_CT_MANAGER_READY && status->verifiedPackageSha256[0] &&
             !strcmp(v->installed->version, package->version) &&
             !strcmp(v->installed->local.uuid, package->packageUuid) &&
             !strcmp(v->installed->local.levSha256, package->levSha256) &&
             !strcmp(v->installed->local.vrmSha256, package->vrmSha256));
 }
 
+static int CT_ManagedReady(void)
+{
+    const struct CustomTrackManagerStatus *status = AP_CustomContentStatus();
+    return status->state == CTR_CT_MANAGER_READY && status->verifiedPackageSha256[0];
+}
+
+static const char *CT_RelicReason(const struct CT_LibItem *item, const struct CT_LibView *v)
+{
+    if (!CT_IsManagedRevision(item, v)) return "Relic times are edited in the track package.";
+    if (!CT_ManagedReady()) return "Use Verify / Setup to make this track Ready.";
+    return AP_CustomContentPackage()->flagRelicCrates ? "" : "This track has no relic crates.";
+}
+
 static const char *CT_ExportReason(const struct CT_LibItem *item, const struct CT_LibView *v)
 {
-    if (CT_UsesManagedExport(item, v))
-        return AP_CustomContentStatus()->state == CTR_CT_MANAGER_READY &&
-               AP_CustomContentStatus()->verifiedPackageSha256[0] ? "" : "Use Verify / Setup to make this track Ready.";
+    if (item->kind == CT_ITEM_PACKAGE)
+        return CT_ManagedReady() ? "" : "Use Verify / Setup to make this track Ready.";
     if (!v->installed || !v->installed->installed)
         return "Install and verify this track before exporting.";
     if (v->installed->local.laps && !v->installed->local.arcade && !v->installed->local.timeTrial)
@@ -599,8 +595,7 @@ static int CT_LibraryActions(const struct CT_LibItem *item, const struct CT_LibV
         CT_Add(a, &n, CT_ACT_VERIFY, "Verify / Setup", s_ctLegacyDownload ? "A download is running." : "");
     const char *exportReason = CT_ExportReason(item, v);
     CT_Add(a, &n, CT_ACT_EXPORT, *exportReason ? "Why YAML is unavailable" : "Export YAML", exportReason);
-    CT_PackageReason(v, reason, sizeof reason);
-    CT_Add(a, &n, CT_ACT_RELIC, "Relic times", reason);
+    CT_Add(a, &n, CT_ACT_RELIC, "Relic times", CT_RelicReason(item, v));
     return n;
 }
 
@@ -812,7 +807,7 @@ static void CT_Export(const struct CT_LibItem *item, const struct CT_LibView *v,
         CT_SetMessage(reason);
         return;
     }
-    if (!CT_UsesManagedExport(item, v))
+    if (!CT_IsManagedRevision(item, v) || !CT_ManagedReady())
     {
         AP_Solo_ExportTrackYaml(v->installed, save, s_ctMessage, sizeof s_ctMessage);
         return;
