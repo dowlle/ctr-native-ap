@@ -44,6 +44,8 @@
 //      because a silent fallback is the failure mode this feature exists to
 //      prevent,
 //   5. the two measured flags the loader actually acts on (ai_nav, spawns),
+//      which gate only a race that grids opponents; a solo race (Relic Race,
+//      Time Trial) skips that rule,
 //   6. descriptor lifecycle: idempotence by content (this is called every frame,
 //      so a repeat must not re-hash a multi-MiB file), replacement by a
 //      different seed, and withdrawal,
@@ -747,6 +749,46 @@ static void test_measured_flags(void)
 	d.flagGhosts = 0;
 	arm_with(d);
 	expect_int(CustomTrack_Config()->contentVerified, 1, "the inert flags do not gate the race");
+}
+
+// A standalone content-plan race in a solo mode (Relic Race, Time Trial) runs
+// one kart, so the opponent rule (AI nav paths, grid spawns) does not gate it
+// (A6-23 F1). The same package racing opponents is still refused.
+static void test_standalone_solo_race_capabilities(void)
+{
+	struct CustomTrackSeedDescriptor d = good_descriptor();
+
+	d.standalone = 1;
+	d.replacesCupLevelID = -1;
+	d.boxes = 0;
+	d.flagAiNav = 0;
+	d.flagSpawns = 1;
+	d.soloRace = 1;
+	arm_with(d);
+	expect_log_contains("solo event race", "a solo race skips the opponent rule");
+	expect_int(CustomTrack_Config()->contentVerified, 1, "a Relic-only package arms for a solo race");
+
+	// The same measured shape with opponents on the grid is still refused.
+	d.soloRace = 0;
+	arm_with(d);
+	expect_log_contains("no AI nav paths", "an opponent race still needs AI nav paths");
+	expect_fully_off("ai_nav false for an opponent race");
+
+	d = good_descriptor();
+	d.standalone = 1;
+	d.replacesCupLevelID = -1;
+	d.boxes = 0;
+	d.flagSpawns = 5;
+	arm_with(d);
+	expect_log_contains("fewer driver spawns", "an opponent race still needs the grid spawns");
+	expect_fully_off("5 spawns for a standalone 8-kart opponent race");
+
+	d = good_descriptor();
+	d.flagAiNav = 0;
+	d.soloRace = 1;
+	arm_with(d);
+	expect_log_contains("no AI nav paths", "a legacy cup always needs AI nav paths");
+	expect_fully_off("solo flag cannot bypass legacy cup requirements");
 }
 
 // ---------------------------------------------------------------------------
@@ -2187,6 +2229,7 @@ int main(void)
 	test_bad_cup();
 	test_bad_laps();
 	test_measured_flags();
+	test_standalone_solo_race_capabilities();
 	test_boxes_denied();
 	test_apply_is_idempotent();
 	test_descriptor_replacement();
