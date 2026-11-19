@@ -2604,16 +2604,22 @@ cases.append(("green-royal-mixed", wire, True))
 bad = copy.deepcopy(wire)
 bad["content_plan"]["capability"]["finish_free"] = [GH, "custom/royal-raceway/1.0.0"]
 cases.append(("green-royal-overlap", bad, False))
-# An unrecognised Green Hill LEV carries neither marker and is admitted with generic terms.
+# A pre-change room on an unreviewed Green Hill LEV keeps its generic terms.
 options = green_options(item_box_count=5)
 options["content_pool"]["tracks"]["custom"][0]["files"][0]["sha256"] = "ab" * 32
-wire = make_world(options, seed=3, stop_before="pre_fill").fill_slot_data()
+with mock.patch.dict(track_rulings.REVIEWS, {}, clear=True):
+    wire = make_world(options, seed=3, stop_before="pre_fill").fill_slot_data()
 assert cp.validate(wire["content_plan"]) and "finish_free" not in wire["content_plan"]["capability"]
-cases.append(("green-unrecognised-lev", wire, True))
+cases.append(("green-legacy-unreviewed-lev", wire, True))
 bad = copy.deepcopy(wire)
 bad["content_plan"]["capability"]["finish_free"] = [GH]
-cases.append(("green-unrecognised-lev-marker", bad, False))
-# A marker naming an unreviewed LEV is refused on both sides.
+cases.append(("green-legacy-unreviewed-lev-marker", bad, False))
+# A new room inherits the finish flag and must carry it to the verifier.
+wire = make_world(options, seed=3, stop_before="pre_fill").fill_slot_data()
+assert cp.validate(wire["content_plan"]) and wire["content_plan"]["capability"]["finish_free"] == [GH]
+cases.append(("green-carried-unreviewed-lev", wire, True))
+alter("green-carried-finish-free-missing", lambda p: p["capability"].pop("finish_free"), wire)
+# Switching the LEV in a legacy exact-pin room cannot supply a carried source.
 wire = make_world(royal_options(item_box_count=5), seed=3, stop_before="pre_fill").fill_slot_data()
 bad = copy.deepcopy(wire)
 next(p for p in bad["content_plan"]["packages"] if p["content_id"] == "royal-raceway")["files"][0]["sha256"] = "ab" * 32
