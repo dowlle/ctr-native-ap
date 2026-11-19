@@ -7,7 +7,11 @@ u32 howl_InstrumentPitch(int basePitch, int pitchIndex, u32 distort)
 	// (>> 0) & 0x40 - distortion
 	// (>> 6) & 0xXX - pitch/octave?
 
-	u32 freq = CTR_MipsSrl(CTR_MipsMulLo(data.noteFrequency[pitchIndex + CTR_MipsSra((s32)distort, 6) - 2], basePitch), 12);
+	// Distortion can shift a sequenced pitch beyond the note table.
+	const u32 note = (u32)pitchIndex + (u32)CTR_MipsSra((s32)distort, 6) - 2;
+	if (note >= sizeof data.noteFrequency / sizeof data.noteFrequency[0])
+		return 0;
+	u32 freq = CTR_MipsSrl(CTR_MipsMulLo(data.noteFrequency[note], basePitch), 12);
 
 	distort &= 0x3f;
 	freq &= 0xffff;

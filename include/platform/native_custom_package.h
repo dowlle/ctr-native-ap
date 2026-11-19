@@ -77,10 +77,11 @@ int CustomPackage_GetPairReport(const struct CustomPackageOwned *package, struct
    takes precedence over music restored locally for this exact manifest pin. */
 int CustomPackage_GetAudio(const struct CustomPackageOwned *package, const void **data, size_t *size);
 int CustomPackage_InstallMusic(const char *directory, const char *pin, const void *data,
-    size_t size, const char *sha256, int mediaID);
-/* 0 needs a download, 1 already has audio, 2 refreshed the local source record. */
+    size_t size, const char *sha256, int mediaID, const char *previousSha256);
+/* 0 needs a download, 1 already matches, 2 refreshed the local source record.
+   A stale digest is returned for a compare-and-replace after the download. */
 int CustomPackage_ReconcileMusic(const char *directory, const char *pin, size_t size,
-    const char *sha256, int mediaID);
+    const char *sha256, int mediaID, char previousSha256[65]);
 struct CustomPackageRelicTargets
 {
     unsigned int laps;

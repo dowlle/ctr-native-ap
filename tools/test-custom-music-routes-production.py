@@ -264,12 +264,23 @@ static int install_seed(const std::string &assets, bool by_ids, std::string &det
 	return finish(detail);
 }
 static bool g_registry_alias;
+static int g_registry_state = AP_TRACK_REGISTRY_DONE;
+static std::string g_registry_cache;
+extern "C" int ap_track_registry_status(int *, char *, int) { return g_registry_state; }
+extern "C" int ap_track_registry_refresh(const char *cache)
+{
+	g_registry_cache = cache;
+	g_registry_state = AP_TRACK_REGISTRY_DONE;
+	return 1;
+}
 extern "C" int ap_track_registry_lookup(const char *, uint32_t, const char *, uint32_t, ApTrackRegistryMatch *out)
 {
+	if (g_registry_state == AP_TRACK_REGISTRY_IDLE) return AP_TRACK_REGISTRY_NO_INDEX;
 	if (!g_registry_alias) return AP_TRACK_REGISTRY_NOT_LISTED;
 	out->saphi_track_id = 121;
 	out->lev_download_id = 872;
 	out->vrm_download_id = 873;
+	std::snprintf(out->track_key, sizeof out->track_key, "acid-lake");
 	std::snprintf(out->revision, sizeof out->revision, "1.0.0");
 	return AP_TRACK_REGISTRY_MATCH;
 }
@@ -484,7 +495,7 @@ int main()
 		CustomSaphi_Free(&badSongCatalogue);
 
 		CustomPackage_TestInstallFailure(1);
-		expect(!CustomPackage_InstallMusic(directory.c_str(), pin.c_str(), music.data(), music.size(), sha(music).c_str(), 874),
+		expect(!CustomPackage_InstallMusic(directory.c_str(), pin.c_str(), music.data(), music.size(), sha(music).c_str(), 874, nullptr),
 		       "interruption between audio and metadata leaves no publication");
 		CustomPackage_TestInstallFailure(-1);
 		expect(!find_music_for(assets).ok && !exists(directory + "/.saphi-music/source.json"),
@@ -518,7 +529,8 @@ int main()
 		       "the offline snapshot borrows valid SCA that passes playback admission");
 		CustomPackage_Free(&owned);
 		serve();
-		expect(repair_library(catalogue, assets) == 0 && !asked(path), "repeat repair sends no request");
+		expect(repair_library(catalogue, assets) == 1 && !asked(path),
+		       "already repaired music requests a rescan without another download");
 		if (audio.ok)
 		{
 			std::ofstream broken(audio.path, std::ios::binary | std::ios::trunc);
@@ -543,6 +555,12 @@ int main()
 		expect(repair_library(catalogue, assets) == 1 && !asked(path) &&
 		       nlohmann::json::parse(slurp(sourcePath)).at("media_id") == 874,
 		       "repair reconciles a damaged ID without fetching already verified audio");
+		const auto staleMusic = make_sca(0x77);
+		expect(CustomPackage_InstallMusic(directory.c_str(), pin.c_str(), staleMusic.data(), staleMusic.size(),
+		       sha(staleMusic).c_str(), 874, sha(music).c_str()), "a self-consistent older repair is present");
+		served[path] = music;
+		expect(repair_library(catalogue, assets) == 1 && asked(path) && find_music_for(assets).sha == sha(music),
+		       "catalogue SHA takes precedence over a self-consistent stale record with the same media ID");
 		CustomSaphi_Free(&catalogue);
 		{
 			std::ofstream broken(sourcePath, std::ios::trunc);
@@ -550,7 +568,7 @@ int main()
 		}
 		const auto competingMusic = make_sca(0x77);
 		auto publish = [&](const std::vector<unsigned char> &bytes, int id) {
-			return CustomPackage_InstallMusic(directory.c_str(), pin.c_str(), bytes.data(), bytes.size(), sha(bytes).c_str(), id);
+			return CustomPackage_InstallMusic(directory.c_str(), pin.c_str(), bytes.data(), bytes.size(), sha(bytes).c_str(), id, nullptr);
 		};
 		auto first = std::async(std::launch::async, [&] { return publish(music, 874); });
 		auto second = std::async(std::launch::async, [&] { return publish(competingMusic, 875); });
@@ -610,8 +628,11 @@ int main()
 		auto alias = repair_catalogue("1.1.0", sha(lev));
 		served["/api/v3/tracks/121/downloads/874"] = music;
 		g_registry_alias = true;
+		g_registry_state = AP_TRACK_REGISTRY_IDLE;
 		expect(repair_library(alias, assets) == 1 && find_music_for(assets).ok,
 		       "a verified registry alias restores audio under the unchanged seed revision");
+		expect(g_registry_cache == assets + "/track-registry-cache.json" && g_permission_given_key,
+		       "alias repair loads the registry on a fresh session and uses its verified consent key");
 		g_registry_alias = false;
 		CustomSaphi_Free(&alias);
 	}

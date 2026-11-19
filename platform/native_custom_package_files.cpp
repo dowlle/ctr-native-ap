@@ -481,7 +481,7 @@ extern "C" int CustomPackage_AcquireDirectory(const char *path, const char *expe
 }
 
 extern "C" int CustomPackage_InstallMusic(const char *path, const char *pin, const void *data,
-    size_t size, const char *sha256, int mediaID)
+    size_t size, const char *sha256, int mediaID, const char *previousSha256)
 {
     try
     {
@@ -498,7 +498,8 @@ extern "C" int CustomPackage_InstallMusic(const char *path, const char *pin, con
             std::string hash;
             auto bytes = read_local_music(directory, pin, &hash, &media);
             if (bytes.empty()) return 0;
-            if (bytes.size() != size || hash != sha256) return -1;
+            if (bytes.size() != size || hash != sha256)
+                return previousSha256 && hash == previousSha256 ? 0 : -1;
             return media == mediaID ? 2 : 0;
         };
         directory.mkdir(musicDirectory);
@@ -551,8 +552,10 @@ extern "C" int CustomPackage_InstallMusic(const char *path, const char *pin, con
 }
 
 extern "C" int CustomPackage_ReconcileMusic(const char *path, const char *pin, size_t size,
-    const char *sha256, int mediaID)
+    const char *sha256, int mediaID, char previousSha256[65])
 {
+    if (!previousSha256) return 0;
+    previousSha256[0] = '\0';
     try
     {
         Directory directory(path);
@@ -560,8 +563,13 @@ extern "C" int CustomPackage_ReconcileMusic(const char *path, const char *pin, s
         std::string hash;
         auto bytes = read_local_music(directory, pin, &hash, &media);
         if (bytes.empty()) return 0;
-        if (media == mediaID || bytes.size() != size || hash != sha256) return 1;
-        return CustomPackage_InstallMusic(path, pin, bytes.data(), bytes.size(), sha256, mediaID) ? 2 : 0;
+        if (bytes.size() != size || hash != sha256)
+        {
+            std::memcpy(previousSha256, hash.c_str(), 65);
+            return 0;
+        }
+        if (media == mediaID) return 1;
+        return CustomPackage_InstallMusic(path, pin, bytes.data(), bytes.size(), sha256, mediaID, nullptr) ? 2 : 0;
     }
     catch (const std::exception &) { return 0; }
 }

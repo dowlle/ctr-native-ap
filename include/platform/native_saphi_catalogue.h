@@ -70,7 +70,7 @@ int CustomSaphi_PollRefresh(struct CustomSaphiCatalogue **out, char *error, size
 /* Check installed packages against a fresh catalogue on a worker. Poll
    returns -1 idle, 0 running, or 1 with the number of successful repairs. */
 int CustomSaphi_StartMusicRepair(const struct CustomSaphiCatalogue *catalogue, const char *assets);
-int CustomSaphi_PollMusicRepair(int *repaired);
+int CustomSaphi_PollMusicRepair(int *available);
 /* Explicit download of the copied source revision. Installed result identifies
    the complete immutable package; it does not certify any gameplay mode. */
 int CustomSaphi_StartInstall(const struct CustomSaphiRevision *revision, const char *assets);

@@ -56,6 +56,9 @@ static void build(void)
 	cseq[4] = 1;
 	cseq[5] = 1;
 	put16(cseq + 6, 3);
+	memset(cseq + 8, 0, 20);
+	put16(cseq + 14, 5);
+	put16(cseq + 24, 9);
 	/* Three entries share a complete one-sequence song. */
 	memset(cseq + 28, 0, 20);
 	cseq[37] = 1;
@@ -180,8 +183,26 @@ int main(int argc, char **argv)
 	build(); put32(fx + find("CSEQ") + 8, 4); CHECK(refused_with("CSEQ size out of range"));
 	build(); put16(fx + find("CSEQ") + 8 + 6, 0); CHECK(refused_with("has no song"));
 	build(); fx[find("CSEQ") + 8 + 4] = 4; CHECK(refused_with("tables exceed"));
-	build(); put32(fx + find("CSEQ") + 8, 40); CHECK(refused_with("song or sequence exceeds"));
-	build(); put32(fx + find("CSEQ") + 8, 47); CHECK(refused_with("song or sequence exceeds"));
+	build(); put32(fx + find("CSEQ") + 8, 40); CHECK(refused_with("song or sequence"));
+	build(); put32(fx + find("CSEQ") + 8, 47); CHECK(refused_with("song or sequence"));
+	build(); fx[find("CSEQ") + 8 + 46] = 0; CHECK(refused_with("song or sequence"));
+	build(); put16(fx + find("CSEQ") + 8 + 14, 0xffff); CHECK(refused_with("sample outside"));
+	build(); put16(fx + find("CSEQ") + 8 + 24, SLOTS); CHECK(refused_with("sample outside"));
+	{
+		const unsigned char instrument[] = {0, 9, 1, 1, 3};
+		const unsigned char drum[] = {1, 5, 1, 100, 1, 3};
+		build();
+		unsigned char *cseq = fx + find("CSEQ") + 8;
+		put32(cseq, 46 + sizeof instrument);
+		memcpy(cseq + 46, instrument, sizeof instrument);
+		CHECK(refused_with("song or sequence"));
+		build();
+		cseq = fx + find("CSEQ") + 8;
+		cseq[44] = 1; // drums
+		put32(cseq, 46 + sizeof drum);
+		memcpy(cseq + 46, drum, sizeof drum);
+		CHECK(refused_with("song or sequence"));
+	}
 	{
 		// A bank chunk with only the header sector has no samples.
 		static const unsigned char head[CTR_SCA_SECTOR] = {1, 0, 5, 0};

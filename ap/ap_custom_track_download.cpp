@@ -1512,8 +1512,21 @@ std::future<int> &saphi_music_job()
 struct SaphiMusicRepair
 {
     std::string store;
+    std::string registryCache;
     std::vector<CustomSaphiRevision> revisions;
-    int repaired = 0;
+    bool checkedRegistry = false;
+    int available = 0;
+
+    void ensure_registry()
+    {
+        if (checkedRegistry) return;
+        checkedRegistry = true;
+        const int state = ap_track_registry_status(nullptr, nullptr, 0);
+        if (state == AP_TRACK_REGISTRY_IDLE || state == AP_TRACK_REGISTRY_UNAVAILABLE)
+            ap_track_registry_refresh(registryCache.c_str());
+        while (ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_LOADING)
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
 };
 
 void repair_package_music(const CustomPackageStoreEntry *entry, void *context)
@@ -1532,16 +1545,18 @@ void repair_package_music(const CustomPackageStoreEntry *entry, void *context)
 
     auto &job = *static_cast<SaphiMusicRepair *>(context);
     const CustomSaphiRevision *match = nullptr;
+    std::string registryKey;
     for (const auto &r : job.revisions)
     {
         if ((entry->local.permissionTrackID && entry->local.permissionTrackID != r.trackID) ||
             std::strcmp(entry->local.levSha256, r.lev.sha256) ||
             std::strcmp(entry->local.vrmSha256, r.vrm.sha256)) continue;
+        ApTrackRegistryMatch alias{};
         if (std::strcmp(manifest.version, r.version))
         {
             // Registry aliases such as a mode suffix still require the
             // same Saphi track and both exact hosted media identities.
-            ApTrackRegistryMatch alias{};
+            job.ensure_registry();
             if (ap_track_registry_lookup(entry->local.levSha256, levBytes,
                     entry->local.vrmSha256, vrmBytes, &alias) != AP_TRACK_REGISTRY_MATCH ||
                 std::strcmp(alias.revision, manifest.version) || alias.saphi_track_id != r.trackID ||
@@ -1549,25 +1564,27 @@ void repair_package_music(const CustomPackageStoreEntry *entry, void *context)
         }
         if (match && (match->trackID != r.trackID || match->sca.id != r.sca.id)) return;
         match = &r;
+        registryKey = alias.track_key;
     }
     // The resolver can derive a registry key from this Saphi ID. An installed
     // descriptor's display key must never supply permission for the download.
     if (!match || ap_track_permission(match->trackID, match->authorID, match->saphiPermission,
-                                      nullptr) != AP_TRACK_PERMISSION_ALLOW) return;
+                                      registryKey.empty() ? nullptr : registryKey.c_str()) != AP_TRACK_PERMISSION_ALLOW) return;
 
     const auto directory = job.store + "/" + entry->pin;
+    char previousSha256[65];
     const int local = CustomPackage_ReconcileMusic(directory.c_str(), entry->pin,
-        match->sca.bytes, match->sca.sha256, match->sca.id);
+        match->sca.bytes, match->sca.sha256, match->sca.id, previousSha256);
     if (local)
     {
-        if (local == 2) job.repaired++;
+        job.available++;
         return;
     }
     std::vector<unsigned char> audio;
     if (fetch_saphi_music(match->sca, audio) &&
         CustomPackage_InstallMusic(directory.c_str(), entry->pin,
-            audio.data(), audio.size(), match->sca.sha256, match->sca.id))
-        job.repaired++;
+            audio.data(), audio.size(), match->sca.sha256, match->sca.id, previousSha256))
+        job.available++;
 }
 
 int want_music_repair(const char *, const CustomPackageManifest *manifest, void *)
@@ -1594,6 +1611,7 @@ extern "C" int CustomSaphi_StartMusicRepair(const CustomSaphiCatalogue *catalogu
     {
         SaphiMusicRepair repair;
         repair.store = std::string(assets) + "/tracks/packages";
+        repair.registryCache = std::string(assets) + "/track-registry-cache.json";
         for (size_t i = 0; i < CustomSaphi_Count(catalogue); i++)
         {
             auto r = *CustomSaphi_Row(catalogue, i);
@@ -1605,20 +1623,20 @@ extern "C" int CustomSaphi_StartMusicRepair(const CustomSaphiCatalogue *catalogu
         worker = std::async(std::launch::async, [repair = std::move(repair)]() mutable {
             CustomPackage_ScanStoreMatching(repair.store.c_str(), want_music_repair,
                                             repair_package_music, &repair, nullptr, 0);
-            return repair.repaired;
+            return repair.available;
         });
         return 1;
     }
     catch (const std::exception &) { return 0; }
 }
 
-extern "C" int CustomSaphi_PollMusicRepair(int *repaired)
+extern "C" int CustomSaphi_PollMusicRepair(int *available)
 {
     auto &worker = saphi_music_job();
     if (!worker.valid()) return -1;
-    if (!repaired || worker.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return 0;
-    try { *repaired = worker.get(); }
-    catch (const std::exception &) { *repaired = 0; }
+    if (!available || worker.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return 0;
+    try { *available = worker.get(); }
+    catch (const std::exception &) { *available = 0; }
     return 1;
 }
 

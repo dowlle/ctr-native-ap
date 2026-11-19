@@ -438,15 +438,16 @@ audio download leaves the track available with fallback music.
 **Restoring music.** Custom Tracks checks installed Saphi and seed packages
 after the catalogue refresh. It requires track author permission and matches
 both installed file SHA-256 pins and the revision against the catalogue or
-its verified registry alias.
+its verified registry alias. The worker loads the registry when an alias needs it.
 The worker verifies the audio's size, CRC32, SHA-256 and SCA structure,
-including the CSEQ song and sequence bounds.
+including the CSEQ song, sequence, and sample references.
 It publishes the audio by its Saphi SHA-256 and then commits its source
-record under `.saphi-music/` for that package pin. Concurrent repairs keep
-the first verified publication. The original manifest
+record under `.saphi-music/` for that package pin. Each writer checks that the
+record still matches the digest it read before downloading. The original manifest
 and track files keep their identity. Offline and seed playback verify the
 audio against this local source record and prefer audio pinned by a package
-manifest. Refresh catalogue retries a missed transfer or a damaged repair.
+manifest. Refresh catalogue compares the local digest with Saphi's current
+listing and retries a missed transfer or a damaged or stale repair.
 
 **Which races play it.** The Arcade and Time Trial custom pages, and a
 content-plan race (a Current Seed pad or cup leg) on the package's own host

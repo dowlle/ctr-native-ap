@@ -61,9 +61,9 @@ static int s_saphiFailed; /* s_saphiMessage holds a refresh or install failure, 
 static int s_saphiMusicPending;
 static void MM_CustomManager_Poll(void)
 {
-    int repaired = 0;
-    int musicState = CustomSaphi_PollMusicRepair(&repaired);
-    if (musicState == 1 && repaired > 0) s_contentStoreWanted = 1;
+    int available = 0;
+    int musicState = CustomSaphi_PollMusicRepair(&available);
+    if (musicState == 1 && available > 0) s_contentStoreWanted = 1;
     if (s_saphiRefreshBusy)
     {
         struct CustomSaphiCatalogue *fresh = NULL;
