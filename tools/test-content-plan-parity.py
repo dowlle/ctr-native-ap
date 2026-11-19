@@ -1277,9 +1277,9 @@ with spot_files(retail=["CRASH_COVE"], custom=["baby-t-park"]):
             assert cases[-1][2] is False, name + ": the apworld must refuse a forged spot"
 # A3-35: actual generated Ancient Lake rooms, both measured LEV pins and a
 # small count fixture that crosses the 15-seat ceiling. No track bytes shipped.
-from worlds.ctr import crate_exclusions
+from worlds.ctr import crate_exclusions, sanity
 from unittest import mock
-from worlds.ctr.test.test_crate_exclusions import ANCIENT_LAKE, NORTH_POLE, ancient
+from worlds.ctr.test.test_crate_exclusions import ANCIENT_LAKE, MATSURI, NORTH_POLE, ancient, matsuri
 from worlds.ctr.test.test_content_item_boxes import box_options, first_world
 # Test fallback exclusions without the later community spot override.
 with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):
@@ -1301,6 +1301,14 @@ with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):
                 alter(f"excluded-{digest[:8]}-{count}-{label}", change, wire)
 
 box_env("unchanged copy", lambda c: None)
+with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):
+    options = box_options(custom=[matsuri()], itemboxsanity=50, wumpasanity="both")
+    wire = first_world(options).fill_slot_data()
+    cases.append(("matsuri-current-sanity-seating", wire, True))
+    with mock.patch.dict(crate_exclusions.EXCLUSIONS, {MATSURI: []}):
+        cases.append(("matsuri-alpha5-sanity-seating", first_world(options).fill_slot_data(), True))
+    alter("matsuri-sanity-missing-feature", lambda p: p["required_features"].remove(sanity.EXCLUSIONS_FEATURE), wire)
+    alter("matsuri-sanity-invalid-version", lambda p: p["sanity"].__setitem__("exclusion_version", 1), wire)
 box_env("box_locations false", lambda c: c["ctr_options"].__setitem__("box_locations", False))
 box_env("box_locations dropped", lambda c: c["ctr_options"].pop("box_locations"))
 box_env("box_locations integer", lambda c: c["ctr_options"].__setitem__("box_locations", 1))

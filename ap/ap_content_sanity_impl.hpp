@@ -1,9 +1,12 @@
 // Included inside the content-plan parser namespace. No runtime dependencies.
 static void sanity_checks(const J &p, State &out, const J &registry, std::map<int64_t, J> &expected) {
     const J &s = p.at("sanity");
+    const int exclusion_version = s.contains("exclusion_version") ? number(s["exclusion_version"], 2, 2) : 1;
     const bool context = s.contains("logic_difficulty");
-    if (context) fields(s, {"itemboxsanity", "wumpasanity", "shortcut_knowledge", "tracks", "logic_difficulty", "boost_blue_fire"});
-    else fields(s, {"itemboxsanity", "wumpasanity", "shortcut_knowledge", "tracks"});
+    const size_t field_count = 4 + (context ? 2 : 0) + (exclusion_version == 2 ? 1 : 0);
+    need(s.is_object() && s.size() == field_count && s.contains("itemboxsanity") && s.contains("wumpasanity")
+         && s.contains("shortcut_knowledge") && s.contains("tracks")
+         && (!context || s.contains("boost_blue_fire")), "sanity fields");
     const int difficulty = context ? number(s["logic_difficulty"], 0, 2) : out.capability.present ? out.capability.logic_difficulty : 2;
     if (context) need(s["boost_blue_fire"].is_boolean(), "sanity Blue Fire setting");
     const bool blue = context ? s["boost_blue_fire"].get<bool>() : out.capability.boost_blue_fire != 0;
@@ -103,6 +106,7 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
             const auto &catalog = registry.at("sanity_exclusions");
             const std::string digest = row["lev_sha256"];
             if (catalog.contains(digest)) for (const auto &c : catalog[digest]) {
+                if (c.value("sanity_since", 1) > exclusion_version) continue;
                 const std::string family = c.value("family", std::string("weapon_crate"));
                 for (int f = 0; f < 3; ++f) if (family == kinds[f]) excluded_by_kind[f].insert(number(c["ordinal"], 1, 65536));
             }

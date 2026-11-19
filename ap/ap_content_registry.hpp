@@ -7955,6 +7955,28 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           5680
         ]
       }
+    ],
+    "467f83758d3a0b6aef9f340b144d0d76eb6ca04617aa87d6bc7727fb1d119c96": [
+      {
+        "ordinal": 1,
+        "pos": [
+          0,
+          0,
+          0
+        ],
+        "sanity_since": 2
+      }
+    ],
+    "c978c26a86f5c85d37a665f62ba8b3efd11cb93b71e931b2787f7c7e9f105ae2": [
+      {
+        "ordinal": 1,
+        "pos": [
+          0,
+          0,
+          0
+        ],
+        "sanity_since": 2
+      }
     ]
   },
   "sanity_locations": {
