@@ -77,7 +77,8 @@ enum CustomTrackManagerState
 	CTR_CT_MANAGER_READY,
 	CTR_CT_MANAGER_UNSUPPORTED,
 	CTR_CT_MANAGER_INCOMPATIBLE,
-	CTR_CT_MANAGER_IO_ERROR
+	CTR_CT_MANAGER_IO_ERROR,
+	CTR_CT_MANAGER_LOAD_FAILED
 };
 
 // A release-owned package identity. Public Alpha6 exposes one instance (Baby T

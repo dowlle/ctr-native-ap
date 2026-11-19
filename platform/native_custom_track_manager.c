@@ -818,6 +818,7 @@ const char *CustomTrackManager_StateText(int state)
 	case CTR_CT_MANAGER_UNSUPPORTED: return "Unsupported";
 	case CTR_CT_MANAGER_INCOMPATIBLE: return "Incompatible Version";
 	case CTR_CT_MANAGER_IO_ERROR: return "I/O Error";
+	case CTR_CT_MANAGER_LOAD_FAILED: return "Load failed";
 	default: return "Unknown";
 	}
 }

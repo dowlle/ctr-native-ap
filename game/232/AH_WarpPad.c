@@ -749,7 +749,11 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					                      gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 15 - apLift,
 					                      apMissW, FONT_SMALL, JUSTIFY_CENTER | RED,
 					                      TEXT_MARQUEE, TEXT_SLOT_PAD, NULL);
+#if defined(CTR_CUSTOM_PACKAGES) && !defined(CTR_AP_AUTHORING)
 					DecalFont_DrawLineBox("OPTIONS > CUSTOM TRACKS",
+#else
+					DecalFont_DrawLineBox("OPTIONS > CUSTOM CONTENT",
+#endif
 					                      gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
 					                      gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 15,
 					                      apMissW, FONT_SMALL, JUSTIFY_CENTER | RED,

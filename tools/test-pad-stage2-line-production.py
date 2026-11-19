@@ -41,7 +41,8 @@ assert title < name
 block = warp[title:warp.index("// if track is unlocked, ignore all other ELSE-IFs", title)]
 assert "ap_pad_title_block_lift(apContentMissing ? 2 : (apStage2 != AP_S2LINE_NONE) + (apBoxesLeft > 0)" in block
 assert "rect.h - 30 - apLift, FONT_BIG" in warp
-assert "TEXT_MARQUEE, TEXT_SLOT_PAD, NULL" in block
+stage2_draw = block.split("DecalFont_DrawLineBox(apStage2Line,", 1)[1].split(");", 1)[0]
+assert "TEXT_MARQUEE, TEXT_SLOT_PAD, NULL" in stage2_draw
 assert "int apS2W = gGT->pushBuffer[0].rect.w - 160;" in block
 assert "apStage2 == AP_S2LINE_MET ? LIGHT_GREEN" in block
 assert "apStage2 == AP_S2LINE_DONE ? GRAY : RED" in block

@@ -226,6 +226,7 @@ static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct Custom
 // race on host 13 (AP_ContentPreparePad), so no LevelID-13 site can read it
 // as Oxide Station or as the legacy pad track.
 static int ap_content_cortex_ready;
+static int ap_content_cortex_load_failed;
 static struct AP_ContentFiles ap_content_cortex_files;
 
 static int AP_ContentScanCortex(void)
@@ -234,6 +235,7 @@ static int AP_ContentScanCortex(void)
 	char error[160], why[320], line[640];
 	const char *dir = NativeAssets_GetAssetDir();
 	struct AP_ContentFiles *f = &ap_content_cortex_files;
+	ap_content_cortex_load_failed = 0;
 	memset(f, 0, sizeof *f);
 	if (dir == NULL ||
 	    snprintf(f->levPath, sizeof f->levPath, "%s/tracks/cortex-vortex/CVortex Arcade All.lev", dir) >= (int)sizeof f->levPath ||
@@ -289,6 +291,27 @@ int AP_ContentPadReady(int physicalPad)
 	return AP_ContentTrackReady(pad->retail_id >= 0, pad->cortex, pad->package_index);
 }
 
+static int AP_ContentLoadRefused(int cortex, int packageIndex)
+{
+	if (cortex)
+	{
+		ap_content_cortex_ready = 0;
+		ap_content_cortex_load_failed = 1;
+		ap_cortex_track_content_required = 1;
+	}
+	else
+	{
+		ap_content_package_ready[packageIndex] = 0;
+		ap_content_package_scan[packageIndex] = CTR_CT_MANAGER_LOAD_FAILED + 1;
+		ap_custom_content_required = 1;
+		ap_custom_content_status.state = CTR_CT_MANAGER_LOAD_FAILED;
+		snprintf(ap_custom_content_status.detail, sizeof ap_custom_content_status.detail,
+		         "The race could not load the verified files. Check the client log.");
+	}
+	ap_state_gen++;
+	return 0;
+}
+
 // Locate, hash and measure a Cortex Vortex or custom track again, arm the
 // loader with it for `race` (host, laps) and copy its pins into the race. A
 // retail race needs nothing. Returns 0 on refusal (the content is marked
@@ -309,11 +332,7 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		}
 		m = &ap_content_cortex_files.measured;
 		if (!CustomTrack_UseContentFiles(ap_content_cortex_files.levPath, ap_content_cortex_files.vrmPath, "CORTEX VORTEX"))
-		{
-			ap_content_cortex_ready = 0;
-			ap_state_gen++;
-			return 0;
-		}
+			return AP_ContentLoadRefused(1, -1);
 		memset(&d, 0, sizeof d);
 		d.standalone = 1; d.laps = race->laps; d.hostLevelID = race->hostLevelID;
 		d.replacesCupLevelID = -1; d.boxes = 0;
@@ -326,7 +345,9 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", CTR_CFG_CORTEX_VRM_SHA256);
 		snprintf(race->levSha256, sizeof race->levSha256, "%s", CTR_CFG_CORTEX_LEV_SHA256);
 		snprintf(race->vrmSha256, sizeof race->vrmSha256, "%s", CTR_CFG_CORTEX_VRM_SHA256);
-		return CustomTrack_ApplySeedDescriptor(&d);
+		if (!CustomTrack_ApplySeedDescriptor(&d))
+			return AP_ContentLoadRefused(1, -1);
+		return 1;
 	}
 	{
 		const ctr_content_package *pkg = ap_content_plan_package(packageIndex);
@@ -351,11 +372,7 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		         : CustomTrack_UseContentFiles(ap_content_files[packageIndex].levPath,
 		                                       ap_content_files[packageIndex].vrmPath, raceName);
 		if (!used)
-		{
-			ap_content_package_ready[packageIndex] = 0;
-			ap_state_gen++;
-			return 0;
-		}
+			return AP_ContentLoadRefused(0, packageIndex);
 #ifdef CTR_CUSTOM_PACKAGES
 		// The track's own music, when the shared package this seed resolved pins
 		// a Saphi .sca: the package with the seed's UUID first, then any
@@ -389,7 +406,9 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", pkg->vrm_sha256);
 		snprintf(race->levSha256, sizeof race->levSha256, "%s", pkg->lev_sha256);
 		snprintf(race->vrmSha256, sizeof race->vrmSha256, "%s", pkg->vrm_sha256);
-		return CustomTrack_ApplySeedDescriptor(&d);
+		if (!CustomTrack_ApplySeedDescriptor(&d))
+			return AP_ContentLoadRefused(0, packageIndex);
+		return 1;
 	}
 }
 
@@ -787,6 +806,15 @@ int AP_CustomContentGateEventEntry(int forceVerify)
 void AP_DrawCustomContentWarning(void)
 {
 	const int planActive = ap_content_plan_active();
+	const int cortexMissing = planActive ? ap_content_plan_cortex() && !ap_content_cortex_ready
+	                                    : ap_cortex_track_content_required;
+#if defined(CTR_CUSTOM_PACKAGES) && !defined(CTR_AP_AUTHORING)
+	char *planPath = "OPTIONS > Custom Tracks > This Seed";
+	char *verifyPath = "OPTIONS > Custom Tracks: verify.";
+#else
+	char *planPath = "OPTIONS > Custom Content";
+	char *verifyPath = "OPTIONS > Custom Content: verify.";
+#endif
 	if (planActive && ap_custom_content_required)
 	{
 		int missing = 0;
@@ -796,20 +824,22 @@ void AP_DrawCustomContentWarning(void)
 		if (missing > 0)
 		{
 			char line[48];
-			if (ap_cortex_track_content_required)
+			if (cortexMissing)
 				missing++;
-			snprintf(line, sizeof line, "!! %d CUSTOM TRACK%s MISSING !!",
+			snprintf(line, sizeof line, ap_oxide_final_content_required
+			         ? "%d TRACK%s MISSING. OXIDE 2 LOCKED"
+			         : "!! %d CUSTOM TRACK%s MISSING !!",
 			         missing, missing == 1 ? "" : "S");
 			DecalFont_DrawLine(line, AP_FEED_X, 0x30, FONT_SMALL, RED);
-			DecalFont_DrawLine("OPTIONS > Custom Tracks > This Seed",
-			                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
+			DecalFont_DrawLine(planPath, AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
 			return;
 		}
 	}
-	if (ap_cortex_track_content_required)
+	if (cortexMissing)
 	{
 		DecalFont_DrawLine("!! CORTEX VORTEX REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
-		DecalFont_DrawLine("Install Cortex Vortex: pad locked.",
+		DecalFont_DrawLine(ap_oxide_final_content_required ? "CORTEX PADS AND OXIDE 2 LOCKED"
+		                                                 : "Install Cortex Vortex: pad locked.",
 		                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
 		return;
 	}
@@ -823,8 +853,7 @@ void AP_DrawCustomContentWarning(void)
 	if (!ap_custom_content_required)
 		return;
 	DecalFont_DrawLine("!! CUSTOM CONTENT REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
-	DecalFont_DrawLine(planActive ? "OPTIONS > Custom Tracks > This Seed"
-	                             : "OPTIONS > Custom Tracks: verify.",
+	DecalFont_DrawLine(planActive ? planPath : verifyPath,
 	                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
 }
 #endif

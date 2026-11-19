@@ -1025,6 +1025,18 @@ int main(void)
         room[0].scan = AP_SEED_SCAN_READY;
         CHECK(ap_seed_install_plan(room, roomCount, 0, plan, &queued, &bytes, reason, sizeof reason) == AP_SEED_PLAN_MANUAL_ONLY &&
               strstr(reason, "has not allowed"));
+        const int before = seedStarts;
+        s_ctListSel[CT_TAB_SEED] = 0;
+        revisit(); frame(0, "seed-manual-landing");
+        CHECK(s_ctTab == CT_TAB_SEED && s_ctFocus == CT_FOCUS_TABS && s_ctListSel[CT_TAB_SEED] == 1 &&
+              has("DK Pass") && !has("Install missing") && seedStarts == before);
+        room[1].scan = AP_SEED_SCAN_LOAD_FAILED;
+        revisit(); frame(0, "seed-load-failed");
+        CHECK(s_ctFocus == CT_FOCUS_TABS && has("Load failed") && seedStarts == before);
+        CT_RequiredFiles(&s_ctSeedRows[1]);
+        CHECK(strstr(s_ctInfo, "The race could not load these files."));
+        for (int i = 0; i < 12 && !has("could not load"); i++) frame(BTN_DOWN, NULL);
+        frame(0, "seed-load-failed-details"); CHECK(has("could not load"));
     }
     /* The old single-package room (Baby T Park, not allowed): instructions, never the download. */
     seedActive = 0; seedSelected = 1; roomCount = 0;

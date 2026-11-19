@@ -86,6 +86,7 @@ static int ap_cortex_track_content_required;
 static unsigned ap_state_gen;
 int CustomTrack_StandaloneBusy(void) { return 0; }
 static int used_managed, used_files, applied, staged;
+static int refuse_files;
 static char used_lev[CTR_CT_MANAGER_PATH_MAX], used_vrm[CTR_CT_MANAGER_PATH_MAX], used_name[CTR_CT_NAME_MAX];
 static struct CustomTrackSeedDescriptor applied_descriptor;
 static struct CustomTrackRaceContext staged_race;
@@ -95,7 +96,7 @@ int CustomTrack_UseContentFiles(const char *lev, const char *vrm, const char *na
 	used_files++;
 	snprintf(used_lev, sizeof used_lev, "%s", lev); snprintf(used_vrm, sizeof used_vrm, "%s", vrm);
 	snprintf(used_name, sizeof used_name, "%s", name);
-	return 1;
+	return !refuse_files;
 }
 int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d) { applied++; applied_descriptor = *d; return 1; }
 int CustomTrack_StageStandaloneRace(const struct CustomTrackRaceContext *c) { staged++; staged_race = *c; return 1; }
@@ -201,6 +202,13 @@ int main(void)
 	expect(staged == 1 && staged_race.laps == 3 && staged_race.trophyLocation == 35016300 && staged_race.physicalPad == 3 &&
 	       staged_race.returnHub == 26 && staged_race.seedEpoch == 7 && !staged_race.retail &&
 	       strcmp(staged_race.levSha256, plan_package.lev_sha256) == 0, "race context staged for the pad");
+	reset_calls();
+	refuse_files = 1;
+	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == -1 && !AP_ContentPadReady(3) &&
+	       ap_custom_content_required && ap_content_package_scan[0] == CTR_CT_MANAGER_LOAD_FAILED + 1 &&
+	       used_files == 1 && applied == 0 && staged == 0, "loader refusal updates both pad and seed readiness");
+	refuse_files = 0;
+	expect(preflight() && AP_ContentPadReady(3), "a new verification can restore readiness");
 
 	/* A4-70: a pad whose Relic Race runs other laps than its Trophy Race and CTR
 	   Challenge stages each mode's own laps in the race context. */
@@ -373,6 +381,14 @@ int main(void)
 		       staged_race.trophyLocation == 35026001 && staged_race.physicalPad == 5 && staged_race.returnHub == 27 &&
 		       CustomRaceContext_Valid(&staged_race) &&
 		       strcmp(staged_race.levSha256, CTR_CFG_CORTEX_LEV_SHA256) == 0, "a valid Cortex Vortex race context is staged");
+		reset_calls();
+		refuse_files = 1;
+		expect(AP_ContentPreparePad(5, AP_CONTENT_MODE_RELIC) == -1 && !AP_ContentPadReady(5) &&
+		       ap_cortex_track_content_required && ap_content_cortex_load_failed && staged == 0,
+		       "Cortex Vortex loader refusal also updates pad and seed readiness");
+		refuse_files = 0;
+		ap_content_cortex_ready = AP_ContentScanCortex();
+		expect(AP_ContentPadReady(5) && !ap_content_cortex_load_failed, "a scan clears the Cortex Vortex load failure");
 		/* A changed byte after admission: same size, other hash. */
 		snprintf(cmd, sizeof cmd, "printf 'X' | dd of='%s' bs=1 seek=100 conv=notrunc status=none", cvLev);
 		expect(system(cmd) == 0, "bundled LEV changed in place");

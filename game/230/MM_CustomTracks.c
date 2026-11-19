@@ -817,6 +817,7 @@ static int CT_ScanFromStatus(int state)
     case CTR_CT_MANAGER_UNSUPPORTED:
     case CTR_CT_MANAGER_INCOMPATIBLE: return AP_SEED_SCAN_REFUSED;
     case CTR_CT_MANAGER_IO_ERROR: return AP_SEED_SCAN_IO_ERROR;
+    case CTR_CT_MANAGER_LOAD_FAILED: return AP_SEED_SCAN_LOAD_FAILED;
     default: return AP_SEED_SCAN_UNKNOWN;
     }
 }
@@ -864,6 +865,7 @@ static const char *CT_SeedStateText(const struct AP_SeedContentRow *r)
     case AP_SEED_SCAN_SETUP: return "Setup";
     case AP_SEED_SCAN_REFUSED: return "Refused";
     case AP_SEED_SCAN_IO_ERROR: return "Error";
+    case AP_SEED_SCAN_LOAD_FAILED: return "Load failed";
     default: return "Unknown";
     }
 }
@@ -1734,15 +1736,32 @@ static void MM_ConfigProc_CustomTracks(struct RectMenu *menu, uint32_t *ot, stru
 
     CT_Poll();
     CT_BuildSeed();
-    /* A fresh visit: This Seed when the loaded seed misses tracks, otherwise
-       Library (ruled 2026-11-04 19:38 CET). A6-25 (ruled 2026-11-19): a seed
-       with missing tracks lands on the page controls with Install missing
-       under the cursor, one press to its overview. It never starts by itself. */
+    /* This Seed opens on Install missing when there is a batch to offer.
+       For tracks that need manual attention, show the first affected row. */
     if (now - s_ctLastFrame > 2 && !MM_CustomImport_Active() && !s_contentSearchEditing)
     {
-        s_ctTab = s_ctSeedCount && CT_SeedReady() < s_ctSeedCount ? CT_TAB_SEED : CT_TAB_LIBRARY;
-        s_ctFocus = s_ctTab == CT_TAB_SEED ? CT_FOCUS_CONTROLS : CT_FOCUS_TABS;
-        if (s_ctTab == CT_TAB_SEED) s_ctControlSel[CT_TAB_SEED] = 0;
+        const int needsTracks = CT_SeedReady() < s_ctSeedCount;
+        s_ctTab = needsTracks ? CT_TAB_SEED : CT_TAB_LIBRARY;
+        s_ctFocus = CT_FOCUS_TABS;
+        if (needsTracks)
+        {
+            const int canInstall = s_ctSeedLegacy ? ap_seed_row_downloadable(&s_ctSeedRows[0]) :
+                ap_seed_install_plan(s_ctSeedRows, s_ctSeedCount, 0, NULL, NULL, NULL, NULL, 0) == AP_SEED_PLAN_OK;
+            if (canInstall)
+            {
+                s_ctFocus = CT_FOCUS_CONTROLS;
+                s_ctControlSel[CT_TAB_SEED] = 0;
+            }
+            else
+            {
+                for (int i = 0; i < s_ctSeedCount; i++)
+                {
+                    if (ap_seed_row_state(&s_ctSeedRows[i]) == AP_SEED_STATE_READY) continue;
+                    s_ctListSel[CT_TAB_SEED] = i;
+                    break;
+                }
+            }
+        }
         s_ctSub = CT_SUB_NONE;
         if (!AP_SeedContentInstallBusy() && !s_ctLegacyDownload) s_ctMessage[0] = 0;
     }
