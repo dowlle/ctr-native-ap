@@ -481,8 +481,15 @@ void AP_NavRec_ResetCapture(void)
 // they turn it OFF, not only when they turn it on.
 static void AP_NavRec_SyncArmed(void)
 {
-	const int want = g_config.navRecord ? 1 : 0;
+	int       want = g_config.navRecord ? 1 : 0;
 	char      msg[224];
+
+#ifdef CTR_CUSTOM_PACKAGES
+	// Custom-page Arcade uses the identity for playback only.
+	if (want && sdata != NULL && sdata->gGT != NULL &&
+	    MainRaceTrack_OfflineCustomLoad() && !MainRaceTrack_OfflineCustomTimeTrial())
+		want = 0;
+#endif
 
 	if (want == s_navrecArmed)
 		return;

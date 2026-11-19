@@ -1110,6 +1110,35 @@ internal void NativeCheckpoint_RelocateSelectProfileLoadSaveObj(const struct Nat
 	}
 }
 
+internal void NativeCheckpoint_RelocateGhostTape(const struct NativeCheckpointHeader *oldHeader, const struct NativeCheckpointHeader *liveHeader,
+                                                 struct GhostTape *tape, int active)
+{
+	if (!NativeCheckpoint_IsLivePointer(liveHeader, tape))
+		return;
+
+	uintptr_t savedStart = (uintptr_t)tape->ptrStart;
+	uintptr_t savedEnd = (uintptr_t)tape->ptrEnd;
+	NativeCheckpoint_RelocatePointerOrImageSlot(oldHeader, liveHeader, &tape->gh);
+	NativeCheckpoint_RelocatePointerOrImageSlot(oldHeader, liveHeader, &tape->gh_again);
+	NativeCheckpoint_RelocatePointerOrImageSlot(oldHeader, liveHeader, &tape->ptrStart);
+
+	// The end can be one past the buffer. Use the start's displacement for
+	// the bound, replay cursor and any cached pointers into the tape.
+	uintptr_t displacement = (uintptr_t)tape->ptrStart - savedStart;
+	tape->ptrEnd = (void *)(savedEnd + displacement);
+	if (!active || displacement == 0)
+		return;
+
+	tape->ptrCurr = (void *)((uintptr_t)tape->ptrCurr + displacement);
+	for (u32 i = 0; i < len(tape->packets); i++)
+	{
+		uintptr_t address;
+		memcpy(&address, &tape->packets[i].bufferPacket, sizeof address);
+		if (address >= savedStart && address <= savedEnd)
+			tape->packets[i].bufferPacket = (u8 *)(address + displacement);
+	}
+}
+
 internal void NativeCheckpoint_RelocateThreadObject(const struct NativeCheckpointHeader *oldHeader, const struct NativeCheckpointHeader *liveHeader,
                                                     struct Thread *thread)
 {
@@ -1122,7 +1151,9 @@ internal void NativeCheckpoint_RelocateThreadObject(const struct NativeCheckpoin
 	// BOTS_ThTick_Drive or parks after the end of the tape.
 	if (thread->modelIndex == DYNAMIC_GHOST)
 	{
-		NativeCheckpoint_RelocateDriver(oldHeader, liveHeader, (struct Driver *)thread->object);
+		struct Driver *driver = thread->object;
+		NativeCheckpoint_RelocateDriver(oldHeader, liveHeader, driver);
+		NativeCheckpoint_RelocateGhostTape(oldHeader, liveHeader, driver->ghostTape, driver->ghostBoolInit);
 		return;
 	}
 

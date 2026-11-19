@@ -240,6 +240,9 @@ static void check_local_restore(int expectRecording)
 	drivers[1].botData.botNavFrame = s_navrecLane[0].engine;
 	tracker.drivers[1] = &drivers[1];
 	tracker.numBotsNextGame = 1;
+	g_config.navRecord = 1;
+	AP_NavRec_Tick(&tracker);
+	assert(!s_navrecArmed && !s_navrecScratch && s_navrecBankCount == 0);
 	assert(!s_navrecLanesLive);
 	AP_NavRec_AfterCheckpointRestore();
 	struct NavFrame *lane = sdata->NavPath_ptrNavFrameArray[0];

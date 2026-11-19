@@ -95,8 +95,8 @@ check(checkpoint.count("AP_NavRec_AfterCheckpointRestore();") == 1 and
       checkpoint_restore.find("AP_NavRec_AfterCheckpointRestore();"),
       "lane reload and fallback run after the LEV pointer map and authored lane repair")
 check(0 <= load.find("if (MainRaceTrack_OfflineCustomTimeTrial())") < load.find("AP_NavRec_HighestIndex(")
-      and "MainRaceTrack_OfflineCustomTimeTrial" not in body("AP_NavRec_Write"),
-      "custom Time Trial records laps and keeps ghosts on the track's own paths")
+      and "MainRaceTrack_OfflineCustomLoad() && !MainRaceTrack_OfflineCustomTimeTrial()" in body("AP_NavRec_SyncArmed"),
+      "custom Time Trial keeps authored ghost lanes and custom Arcade skips capture")
 check("AP_NavRecLane_Select" not in src and "AP_NavRecLane_Plan" not in src, "the newest-first selector is gone")
 check(re.search(r"seed %08x", load) is not None, "the pool log line carries the seed")
 check(re.search(r'lane %d: \\"%s\\" driver', load) is not None, "each recorded lane logs its file and driver")
