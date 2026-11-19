@@ -190,6 +190,7 @@ typedef struct
 	// filled with other laps from the same contributors (never the same lap
 	// twice), seeded by the race seed. Reads files only.
 	bool navRepeatLaps;
+	bool navOnlyMine; // Only recordings whose driver name matches ours.
 	char navDriverName[32];
 	// Discord Rich Presence (issue #366). discordStatus is the local "Discord
 	// Status" option (Archipelago page, default off): on, the game shows what
@@ -211,6 +212,7 @@ typedef struct
 	bool navRecord;
 	bool navUseRecorded;
 	bool navRepeatLaps;
+	bool navOnlyMine;
 	char navDriverName[32];
 #endif
 #endif
