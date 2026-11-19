@@ -3,6 +3,8 @@
 #endif
 #include <platform/native_custom_package.h>
 #include <platform/native_custom_offline.h>
+#include "native_track_identity.hpp"
+#include "native_xdelta_names.hpp"
 extern "C" {
 #include <platform/native_custom_content_verify.h>
 }
@@ -591,6 +593,40 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
 }
 
 namespace {
+std::string descriptor_title_key(const char *title);
+
+void resolve_display_title(const CustomPackageOwned *package, CustomPackageStoreEntry &entry)
+{
+    if (!entry.local.xdelta) return;
+    const auto &manifest = entry.manifest;
+    for (unsigned int i = 0; i < manifest.count; ++i)
+    {
+        const auto &file = manifest.files[i];
+        if (std::strcmp(file.role, "lev") != 0) continue;
+        std::string title = manifest.title;
+        std::string key = descriptor_title_key(manifest.title);
+        std::vector<unsigned char> lev(file.bytes);
+        if (!CustomPackage_CopyFile(package, "lev", lev.data(), lev.size(), nullptr)) return;
+        if (!TrackIdentity::resolve(lev.data(), lev.size(), file.sha256, key, title))
+        {
+            // Old importer labels used either a row ordinal or a BIGFILE slot.
+            const auto last = title.find_last_of(' ');
+            if (last == std::string::npos || last + 1 == title.size() ||
+                title.find_first_not_of("0123456789", last + 1) != std::string::npos ||
+                (!(last >= 6 && title.compare(last - 6, 7, " track ") == 0) &&
+                 !(last >= 5 && title.compare(last - 5, 6, " slot ") == 0))) return;
+            for (const auto &row : XdeltaNames::kKnownTracks)
+                if (std::strcmp(file.sha256, row.lev) == 0) title = row.name;
+            for (const auto &row : XdeltaNames::kCuratedTracks)
+                if (row.slot == entry.local.bigfileIndex && std::strcmp(row.patch, entry.local.patchSha256) == 0)
+                    title = row.name;
+        }
+        if (title != manifest.title)
+            std::snprintf(entry.displayTitle, sizeof entry.displayTitle, "%s", title.c_str());
+        return;
+    }
+}
+
 /* One store revision, fully re-acquired, as CustomPackage_ScanStore reports it. */
 CustomPackageStoreEntry scan_entry(const std::string &prefix, const std::string &pin)
 {
@@ -615,6 +651,7 @@ CustomPackageStoreEntry scan_entry(const std::string &prefix, const std::string 
             else if (!std::strcmp(file.role,"vrm")) std::memcpy(entry.local.vrmSha256,file.sha256,sizeof entry.local.vrmSha256);
         }
         package_capabilities(package, entry);
+        resolve_display_title(package, entry);
         for (unsigned int i=0;i<entry.manifest.count;i++)
         {
             const auto &file=entry.manifest.files[i];
@@ -904,6 +941,7 @@ extern "C" int CustomPackage_StoreDescriptor(const char *assets, const char *pin
         CustomPackageStoreEntry entry = {};
         entry.manifest = manifest;
         package_capabilities(owned, entry);
+        resolve_display_title(owned, entry);
         std::string trackKey = key && *key ? key : descriptor_title_key(manifest.title);
         for (unsigned int i = 0; i < manifest.count && (!key || !*key); i++)
         {
@@ -957,7 +995,8 @@ extern "C" int CustomPackage_StoreDescriptor(const char *assets, const char *pin
             {{"role", "lev"}, {"sha256", lev->sha256}, {"bytes", lev->bytes}, {"format", "ctr-lev"}, {"format_version", 1}},
             {{"role", "vrm"}, {"sha256", vrm->sha256}, {"bytes", vrm->bytes}, {"format", "ctr-vrm"}, {"format_version", 1}}});
         nlohmann::json descriptor = {{"id", id}, {"content_id", trackKey}, {"uuid", manifest.uuid},
-            {"revision", manifest.version}, {"display_name", bounded_label(manifest.title)},
+            {"revision", manifest.version},
+            {"display_name", bounded_label(entry.displayTitle[0] ? entry.displayTitle : manifest.title)},
             {"author", entry.local.author[0] ? entry.local.author : "Unknown"},
             {"capabilities", caps}, {"files", files}, {"evidence", nlohmann::json::array()}};
         if (!needsLaps) descriptor["laps"] = laps;

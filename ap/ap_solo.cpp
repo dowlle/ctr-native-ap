@@ -1518,7 +1518,8 @@ void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 		}
 	}
 	else
-		result.descriptors.push_back({kind, key, revision, json, entry->manifest.title, entry->pin});
+		result.descriptors.push_back({kind, key, revision, json,
+			entry->displayTitle[0] ? entry->displayTitle : entry->manifest.title, entry->pin});
 }
 
 // Two installed packages can resolve to one Play Solo entry (same track key

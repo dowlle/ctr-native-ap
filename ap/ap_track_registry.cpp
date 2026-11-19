@@ -4,6 +4,7 @@
 // Project Saphi and GitHub raw.
 
 #include "ap_track_registry.h"
+#include "ap_track_key_aliases.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -43,7 +44,8 @@ struct Index
 	std::vector<Revision> rows;
 	std::unordered_map<int, std::string> key_by_saphi;
 	std::unordered_map<std::string, std::vector<std::string>> credits;
-	void clear() { rows.clear(); key_by_saphi.clear(); credits.clear(); }
+	std::unordered_map<std::string, std::string> titles, lev_keys, roads, aliases;
+	bool has_identity = false;
 };
 constexpr size_t kMaxCredits = 16;     // per track
 constexpr size_t kCreditNameMax = 80;  // bytes, like a Saphi author
@@ -161,7 +163,7 @@ void saphi_downloads(const nlohmann::json &revision, Revision &out)
 
 bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::string &error)
 {
-	index.clear();
+	index = {};
 	if (bytes.empty() || bytes.size() > AP_TRACK_REGISTRY_MAX_BYTES)
 	{
 		error = "The track registry is empty or too large.";
@@ -189,6 +191,13 @@ bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::str
 	for (const auto &track : *tracks)
 	{
 		const std::string key = short_text(member(track, "track_key"));
+		const auto *title = member(track, "display_title");
+		if (!key.empty() && title && title->is_string())
+		{
+			const auto &name = title->get_ref<const std::string &>();
+			if (!name.empty() && name.size() <= 128 && name.find('\0') == std::string::npos)
+				index.titles.emplace(key, name);
+		}
 		const nlohmann::json *credits = member(track, "credits");
 		if (!key.empty() && credits && credits->is_array() && credits->size() <= kMaxCredits)
 		{
@@ -227,6 +236,8 @@ bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::str
 			const nlohmann::json *files = member(revision, "files");
 			if (!file_pin(files, "lev", row.lev, row.lev_size) || !file_pin(files, "vrm", row.vrm, row.vrm_size))
 				continue;
+			auto lev = index.lev_keys.emplace(row.lev, key);
+			if (!lev.second && lev.first->second != key) lev.first->second.clear();
 			row.track_id = static_cast<int>(track_id);
 			row.key = key;
 			row.revision = short_text(member(revision, "revision"));
@@ -234,6 +245,23 @@ bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::str
 			index.rows.push_back(std::move(row));
 		}
 	}
+	auto read_keys = [&](const char *field, auto &out, bool hashes) {
+		const auto *mapping = member(root, field);
+		if (!mapping || !mapping->is_object()) return false;
+		for (auto it = mapping->begin(); it != mapping->end(); ++it)
+		{
+			if (!it->is_string() || !index.titles.count(it->get_ref<const std::string &>())) return false;
+			std::string from = it.key();
+			if (hashes && !hex64(nlohmann::json(it.key()), from)) return false;
+			if (!hashes && index.titles.count(from)) return false;
+			if (!out.emplace(from, it->get<std::string>()).second) return false;
+		}
+		return true;
+	};
+	index.has_identity = read_keys("road_sha256", index.roads, true) &&
+	                     read_keys("track_key_aliases", index.aliases, false) &&
+	                     read_keys("patch_lev_keys", index.lev_keys, true);
+	if (!index.has_identity) index.aliases.clear();
 	return true;
 }
 
@@ -478,9 +506,32 @@ bool ap_track_registry_credits(const std::string &track_key, std::vector<std::st
 	}
 	names.clear();
 	if (!index || track_key.empty()) return false;
-	auto found = index->credits.find(track_key);
+	auto alias = index->aliases.find(track_key);
+	std::string key = alias == index->aliases.end() ? track_key : alias->second;
+	if (!index->has_identity)
+		for (const auto &old : kTrackKeyAliases)
+			if (key == old[0]) { key = old[1]; break; }
+	auto found = index->credits.find(key);
 	if (found == index->credits.end()) return false;
 	names = found->second;
+	return true;
+}
+
+bool ap_track_registry_identity(const std::string &lev, const std::string &road,
+                                std::string &key, std::string &title)
+{
+	auto &state = registry_state();
+	std::lock_guard<std::mutex> lock(state.mutex);
+	const auto &index = state.index;
+	if (!index || !index->has_identity) return false;
+	auto exact = index->lev_keys.find(lev);
+	auto layout = index->roads.find(road);
+	auto alias = index->aliases.find(key);
+	if (exact != index->lev_keys.end() && !exact->second.empty()) key = exact->second;
+	else if (layout != index->roads.end()) key = layout->second;
+	else if (alias != index->aliases.end()) key = alias->second;
+	auto name = index->titles.find(key);
+	title = name == index->titles.end() ? std::string() : name->second;
 	return true;
 }
 

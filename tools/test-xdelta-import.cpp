@@ -2167,20 +2167,20 @@ int main()
         struct Row { int patch, slot; const char *name; }; /* name nullptr: a boss slot, generic. */
         const Row rows[] = {
             {0, 7, "Crazy In Kartmandu"},
-            {0, 15, "N-Gage Android Alley"},
+            {0, 15, "Android Alley N-Gage"},
             {0, 23, "Tomb Temple"},
             {0, 39, "Skull Cave"},
             {0, 41, "Arctic Alleyway"},
-            {0, 47, "N-Gage Deep Sea Driving"},
+            {0, 47, "Deep Sea Driving N-Gage"},
             {0, 49, "Wumpa World"},
-            {0, 57, "Drive-Thru Danger"},
+            {0, 57, "Drive Thru Danger"},
             {0, 79, "Crystal Caves"},
             {0, 119, "Dark Ruins"},
-            {0, 127, "N-Gage Assembly Lane"},
-            {0, 135, "N-Gage Out of Time"},
+            {0, 127, "Assembly Lane N-Gage"},
+            {0, 135, "Out Of Time N-Gage"},
             {1, 7, "Haunted Hovel"},
             {1, 9, nullptr},
-            {1, 23, "Dracula's Castle"},
+            {1, 23, "Draculas Castle"},
             {1, 39, "Lunatic Laboratory"},
             {1, 49, nullptr},
             {1, 55, "Sid's House"},
@@ -2202,7 +2202,7 @@ int main()
             {3, 31, "Hasty Hedges"},
             {3, 39, "Holland"},
             {3, 47, "Motor Sports Land"},
-            {3, 135, "N-Gage Jungle Boogie"},
+            {3, 135, "Jungle Boogie N-Gage"},
         };
         for (const Row &row : rows)
         {
@@ -2346,6 +2346,46 @@ int main()
                     XdeltaImport_Free(&named.scan);
                     XdeltaImportTest_ClearCurated();
                 }
+            }
+            {
+                const std::string assets = root + "/a637-assets";
+                mkdir(assets.c_str(), 0755);
+                auto legacy = scan(patchPath, discPath);
+                const auto *import = XdeltaImport_Summary(legacy.scan);
+                const auto *item = import ? item_for(import, 1) : nullptr;
+                CHECK(item && item->offered, "A6-37 old package fixture is offered");
+                if (item && item->offered)
+                {
+                    unsigned index = unsigned(item - import->items);
+                    char error[256] = {};
+                    std::vector<unsigned char> selected(import->count, 0);
+                    selected[index] = 1;
+                    CHECK(XdeltaImport_RenameItem(legacy.scan, index, "N-Gage Assembly Lane", error, sizeof error),
+                          "A6-37 make a legacy package under its historical name");
+                    CHECK(XdeltaImport_Install(legacy.scan, selected.data(), assets.c_str(),
+                                               CTR_XDELTA_INSTALL_PACKAGES, error, sizeof error) == 1,
+                          "A6-37 install the historical package");
+                    const std::string pin = item->pin;
+                    const std::string store = assets + "/tracks/packages";
+                    const std::string path = store + "/" + pin + "/manifest.json";
+                    const auto manifest = read_file(path);
+                    CustomPackageStoreEntry entry = {};
+                    CHECK(CustomPackage_ScanStore(store.c_str(),
+                          [](const CustomPackageStoreEntry *row, void *context) {
+                              *static_cast<CustomPackageStoreEntry *>(context) = *row;
+                          }, &entry, error, sizeof error), "A6-37 scan the installed copy");
+                    CHECK(entry.verified && pin == entry.pin && manifest == read_file(path) &&
+                          !std::strcmp(entry.manifest.title, "N-Gage Assembly Lane") &&
+                          !std::strcmp(entry.displayTitle, "Assembly Lane N-Gage"),
+                          "A6-37 presentation title changes while manifest and package pin stay intact");
+                    char key[65], revision[65], descriptor[16384];
+                    CHECK(CustomPackage_StoreDescriptor(assets.c_str(), pin.c_str(), nullptr,
+                          key, sizeof key, revision, sizeof revision, descriptor, sizeof descriptor,
+                          error, sizeof error) && !std::strcmp(key, "n-gage-assembly-lane") &&
+                          std::strstr(descriptor, "Assembly Lane N-Gage"),
+                          "A6-37 Play Solo descriptor keeps its prior key and uses the corrected title");
+                }
+                XdeltaImport_Free(&legacy.scan);
             }
             XdeltaImportTest_AddCurated(sha, 1, "Curated Raceway");
             ScanResult r = scan(patchPath, discPath);

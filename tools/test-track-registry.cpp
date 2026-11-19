@@ -97,7 +97,10 @@ static std::string registry(bool with_new_track)
 	tracks.push_back(track("ambiguous", 55, json::array({twice})));
 	if (with_new_track)
 		tracks.push_back(track("tv-world", 100, json::array({revision("1.1.0", '3', '4', 913816, 458808, 715, 716)})));
-	return json({{"schema_version", 1}, {"id_scheme", json::object()}, {"tracks", tracks}}).dump();
+	return json({{"schema_version", 1}, {"id_scheme", json::object()}, {"tracks", tracks},
+	             {"track_key_aliases", {{"old-lake", "acid-lake"}}},
+	             {"road_sha256", {{h('8'), "acid-lake"}}},
+	             {"patch_lev_keys", {{h('9'), "no-saphi"}}}}).dump();
 }
 
 static int wait_done(int *source, std::string *detail = nullptr)
@@ -164,6 +167,15 @@ int main(int argc, char **argv)
 	CHECK(g_asked.size() == 1 && g_asked[0] == "raw.githubusercontent.com/dowlle/ctr-track-registry/main/registry.json");
 	CHECK(slurp(cache) == v1 && !exists(cache + ".part"));
 	CHECK(ap_track_registry_generation() != gen);
+	{
+		std::string key = "old-lake", title;
+		CHECK(ap_track_registry_identity("", "", key, title) && key == "acid-lake" && title == "acid-lake");
+		key.clear();
+		CHECK(ap_track_registry_identity("", h('8'), key, title) && key == "acid-lake" && title == "acid-lake");
+		CHECK(ap_track_registry_identity(h('9'), h('8'), key, title) && key == "no-saphi" && title == "no-saphi");
+		key = "unknown";
+		CHECK(ap_track_registry_identity("", "", key, title) && key == "unknown" && title.empty());
+	}
 
 	// 2. Match by the room's pinned hashes, in any case.
 	std::memset(&m, 0, sizeof m);
