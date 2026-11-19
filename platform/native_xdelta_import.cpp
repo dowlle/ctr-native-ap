@@ -2223,7 +2223,8 @@ std::vector<OldCopy> generic_old_copies(const std::string &assets, const std::st
             if (!generic_slot_title(title, bigfileIndex, patchStem)) continue;
             if (!read_plain_file(it->path() / "metadata" / "xdelta-source.json", 1u << 20, sourceText)) continue;
             const json src = json::parse(sourceText, nullptr, false);
-            if (!src.is_object() || src.value("patch_sha256", std::string()) != patchSha256 ||
+            if (!src.is_object() || src.value("edited_title", false) ||
+                src.value("patch_sha256", std::string()) != patchSha256 ||
                 src.value("bigfile_index", -1) != bigfileIndex)
                 continue;
             c.pin = pin;

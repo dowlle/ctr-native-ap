@@ -15,6 +15,16 @@ extern "C" {
 
 namespace TrackIdentity
 {
+inline void refresh(const std::string &cache)
+{
+#ifdef CTR_TRACK_IDENTITY_LIVE
+    if (ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_IDLE)
+        ap_track_registry_refresh(cache.c_str());
+#else
+    (void)cache;
+#endif
+}
+
 template <size_t N>
 const char *find(const std::string &key, const char *const (&rows)[N][2])
 {

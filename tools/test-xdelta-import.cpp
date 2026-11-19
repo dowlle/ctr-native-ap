@@ -1989,7 +1989,8 @@ int main()
             return assets;
         };
         /* Installs the patch's track 1 under `name` (default label when null); returns its pin. */
-        auto importAs = [&](const std::string &assets, const std::string &patchFile, const char *name, int expectState = -1) {
+        auto importAs = [&](const std::string &assets, const std::string &patchFile, const char *name,
+                            int expectState = -1, bool preserveEdit = false) {
             std::string pin;
             ScanResult r = scan(patchFile, discPath);
             CHECK(r.ok, "A3-20 scan");
@@ -2006,6 +2007,31 @@ int main()
                   "A3-20 install");
             pin = s->items[index].pin;
             XdeltaImport_Free(&r.scan);
+            if (name && !preserveEdit)
+            {
+                const auto store = assets + "/tracks/packages/";
+                const auto folder = store + pin;
+                const auto path = folder + "/metadata/xdelta-source.json";
+                const auto bytes = read_file(path);
+                auto source = nlohmann::json::parse(bytes.begin(), bytes.end());
+                source.erase("edited_title");
+                const auto legacy = source.dump();
+                const Bytes legacyBytes(legacy.begin(), legacy.end());
+                write_path(path, legacyBytes);
+                const auto manifestBytes = read_file(folder + "/manifest.json");
+                auto manifest = nlohmann::json::parse(manifestBytes.begin(), manifestBytes.end());
+                for (auto &file : manifest["files"])
+                    if (file["path"] == "metadata/xdelta-source.json")
+                    {
+                        file["bytes"] = legacyBytes.size();
+                        file["sha256"] = sha_hex(legacyBytes);
+                    }
+                const auto updated = manifest.dump();
+                const Bytes updatedBytes(updated.begin(), updated.end());
+                write_path(folder + "/manifest.json", updatedBytes);
+                pin = sha_hex(updatedBytes);
+                CHECK(std::rename(folder.c_str(), (store + pin).c_str()) == 0, "A3-20 install a historical fixture");
+            }
             return pin;
         };
         auto packages = [&](const std::string &assets) {
@@ -2069,6 +2095,13 @@ int main()
             const std::string newPin = importAs(assets, patch, nullptr, XDELTA_OLD_NONE);
             CHECK(packages(assets).size() == 4 && exists(assets, mine) && exists(assets, wrongSlot) && exists(assets, typed) && exists(assets, newPin),
                   "A3-20 a renamed copy is never replaced, also one that ends in the matching slot");
+        }
+        {
+            const std::string assets = fresh();
+            const std::string named = importAs(assets, patch, "Imported track slot 1", -1, true);
+            const std::string replacement = importAs(assets, patch, "Brand New Name", XDELTA_OLD_NONE);
+            CHECK(packages(assets).size() == 2 && exists(assets, named) && exists(assets, replacement),
+                  "An explicitly typed slot title stays installed on re-import");
         }
         /* A room that names the old copy keeps it. */
         {

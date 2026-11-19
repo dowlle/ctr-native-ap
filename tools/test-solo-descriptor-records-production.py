@@ -44,6 +44,7 @@ fixture = r'''
 #include <vector>
 #include "ap/ap_solo.h"
 #include "ap/ap_solo_logic.hpp"
+#include "ap/ap_track_key_aliases.hpp"
 #include "include/platform/native_custom_package.h"
 namespace fs = std::filesystem;
 #define AP_SOLO_GETPID() getpid()
@@ -55,6 +56,13 @@ static void Log(const std::string &line) { logged.push_back(line); }
 static std::string BaseDir() { return base + "/"; }
 static std::string SoloPath(const std::string &rel) { return BaseDir() + "solo/" + rel; }
 static std::string AssetsDir() { return assets; }
+static std::string ap_track_registry_canonical_key(const std::string &key) {
+    for (const auto &alias : kTrackKeyAliases) if (key == alias[0]) return alias[1];
+    return key;
+}
+static bool storeBusy;
+static bool StorePublicationBusy() { return storeBusy; }
+extern "C" int AP_Solo_PublishInstalledStoreStart() { storeBusy = false; return 1; }
 namespace {
 '''
 for signature in ("bool SoloRootIsLink()", "std::string ReadSmallPlainFile(const fs::path &path, size_t limit)",
@@ -68,7 +76,7 @@ fixture += between("namespace\n{\n// \"<revision>|lev:<sha256>:<bytes>|vrm:<sha2
                    "#ifdef CTR_CUSTOM_PACKAGES\nnamespace {\n// PinSignature of a verified store package")
 fixture += "namespace {\n"
 fixture += between("// PinSignature of a verified store package", "void PublishStoreEntry(")
-fixture += between("// Two installed packages can resolve to one Play Solo entry",
+fixture += between("void KeepOneCopyPerEntry(",
                    "StorePublication CollectInstalledStore(")
 fixture += between("// Writes one collected descriptor.", "std::future<StorePublication> g_trackPublication;")
 fixture += r'''
@@ -134,7 +142,9 @@ int main(int, char **argv) {
     assert(read(std::string("tracks/") + name) == oldA && loggedFile(name));
 
     // Importing the chosen copy can update the active Play Solo entry.
+    storeBusy = true;
     assert(AP_Solo_RecordImportedTrack("nina", "1.0.0", newB.c_str(), 0));
+    assert(!storeBusy); // a worker with an older snapshot must stop publishing
     assert(read(std::string("tracks/") + name) == newB);
     clean(); write(std::string("tracks/") + name, oldA);
 
@@ -229,6 +239,32 @@ int main(int, char **argv) {
     two.descriptors = {entry(1, "Nina", newB, "b"), entry(1, "Nina again", descriptor("Nina", pins("ba", "bb"), 4), "c")};
     KeepOneCopyPerEntry(two);
     assert(two.descriptors.size() == 2); // same files: both stay, as before
+
+    // Different package UUIDs and different pins under two aliases still make
+    // one row. Prefer the recently chosen descriptor over the older alias.
+    clean();
+    auto alias = entry(1, "Lockbox track 11", oldA, "a");
+    auto canonical = entry(1, "Cortex Vortex", newB, "b");
+    alias.key = "lockbox-adventure-track-11";
+    canonical.key = "cortex-vortex";
+    for (auto *d : {&alias, &canonical}) {
+        auto body = nlohmann::json::parse(d->json);
+        body["content_id"] = d->key;
+        body["id"] = "package/" + d->key + "/1.0.0";
+        body["uuid"] = d->pin;
+        d->json = body.dump();
+        write("tracks/" + AP_SoloDescriptorFileName(d->key, d->revision), d->json);
+    }
+    const std::string aliasName = AP_SoloDescriptorFileName(alias.key, alias.revision);
+    fs::last_write_time(base + "/solo/tracks/" + aliasName,
+                        fs::file_time_type::clock::now() - std::chrono::hours(1));
+    two.descriptors = {alias, canonical};
+    two.listed.clear();
+    KeepOneCopyPerEntry(two);
+    assert(two.descriptors.size() == 2 && two.descriptors[0].pin == canonical.pin && two.descriptors[1].kind == 0);
+    for (const auto &d : two.descriptors) assert(ApplyStoreDescriptor(d, two, why));
+    assert(read("tracks/" + aliasName).empty());
+    assert(read("tracks/" + AP_SoloDescriptorFileName(canonical.key, canonical.revision)) == canonical.json);
 
     // 12. A store package's pins read the same as its descriptor's.
     CustomPackageManifest m = {};

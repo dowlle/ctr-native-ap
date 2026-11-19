@@ -59,7 +59,7 @@ extern "C" int CustomPackage_StartStoreScan(const char *store)
             {
                 const auto tracks = path.find_last_of("/\\", packages - 1);
                 if (tracks != std::string::npos)
-                    TrackIdentity::prepare(path.substr(0, tracks + 1) + "track-registry-cache.json");
+                    TrackIdentity::refresh(path.substr(0, tracks + 1) + "track-registry-cache.json");
             }
             StoreResult result;
             result.ok = CustomPackage_ScanStore(path.c_str(), collect_store, &result, result.error, sizeof result.error);
