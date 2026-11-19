@@ -58,8 +58,12 @@ static const struct CustomTrackLibraryEntry *MM_CustomSourceInstalled(const stru
    and the player client's Custom Tracks screen (MM_CustomTracks.c). */
 static int s_saphiRefreshFailed; /* the last refresh failed; an older catalogue may remain */
 static int s_saphiFailed; /* s_saphiMessage holds a refresh or install failure, drawn in full */
+static int s_saphiMusicPending;
 static void MM_CustomManager_Poll(void)
 {
+    int repaired = 0;
+    int musicState = CustomSaphi_PollMusicRepair(&repaired);
+    if (musicState == 1 && repaired > 0) s_contentStoreWanted = 1;
     if (s_saphiRefreshBusy)
     {
         struct CustomSaphiCatalogue *fresh = NULL;
@@ -75,8 +79,15 @@ static void MM_CustomManager_Poll(void)
             {
                 CustomSaphi_Free(&s_saphiCatalogue);
                 s_saphiCatalogue = fresh;
+                s_saphiMusicPending = 1;
             }
         }
+    }
+    if (s_saphiMusicPending && !s_saphiRefreshBusy && !s_saphiDownloading && musicState != 0 &&
+        ap_track_consent_status(NULL, NULL, 0) != AP_TRACK_CONSENT_LOADING)
+    {
+        s_saphiMusicPending = 0;
+        CustomSaphi_StartMusicRepair(s_saphiCatalogue, NativeAssets_GetAssetDir());
     }
     if (s_saphiDownloading)
     {

@@ -73,6 +73,11 @@ int CustomPackage_GetRaceLaps(const struct CustomPackageOwned *package, unsigned
 void CustomPackage_Free(struct CustomPackageOwned **package);
 int CustomPackage_GetManifest(const struct CustomPackageOwned *package, struct CustomPackageManifest *out);
 int CustomPackage_GetPairReport(const struct CustomPackageOwned *package, struct CustomContentVerification *out);
+/* Borrow verified audio for the lifetime of the snapshot. A manifest SCA
+   takes precedence over music restored locally for this exact manifest pin. */
+int CustomPackage_GetAudio(const struct CustomPackageOwned *package, const void **data, size_t *size);
+int CustomPackage_InstallMusic(const char *directory, const char *pin, const void *data,
+    size_t size, const char *sha256, int mediaID);
 struct CustomPackageRelicTargets
 {
     unsigned int laps;

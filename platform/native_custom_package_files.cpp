@@ -3,6 +3,8 @@
 #endif
 #include <platform/native_custom_package.h>
 #include <platform/native_custom_offline.h>
+#include <platform/native_custom_music.h>
+#include <platform/native_sha256.h>
 extern "C" {
 #include <platform/native_custom_content_verify.h>
 }
@@ -361,8 +363,50 @@ struct Directory
     }
 };
 #endif
+constexpr const char *musicDirectory = ".saphi-music";
+constexpr const char *musicPath = ".saphi-music/track.sca";
+
+std::string music_hash(const void *bytes, size_t size)
+{
+    NativeSha256Ctx context;
+    unsigned char digest[32];
+    char hex[65];
+    NativeSha256_Init(&context);
+    NativeSha256_Update(&context, bytes, size);
+    NativeSha256_Final(&context, digest);
+    NativeSha256_ToHex(digest, hex);
+    return hex;
 }
 
+std::vector<unsigned char> read_local_music(Directory &directory, const char *pin,
+                                           std::string *hash = nullptr, int *media = nullptr)
+{
+    try
+    {
+        if (!directory.exists(musicDirectory)) return {};
+        const auto metadata = directory.read(".saphi-music/source.json", 1024);
+        const auto source = nlohmann::json::parse(metadata);
+        if (source.at("schema_version") != 1 || source.at("package_pin") != pin ||
+            !source.at("media_id").is_number_integer() || source["media_id"] <= 0 ||
+            source["media_id"] > 2147483647 || !source.at("bytes").is_number_integer()) return {};
+        auto bytes = directory.read(musicPath, CTR_SCA_MAX_BYTES);
+        const auto sha = music_hash(bytes.data(), bytes.size());
+        if (source["bytes"] != bytes.size() || source.at("sha256") != sha) return {};
+        if (hash) *hash = sha;
+        if (media) *media = source["media_id"].get<int>();
+        return bytes;
+    }
+    catch (const std::exception &) { return {}; }
+}
+
+bool manifest_has_music(const CustomPackageManifest &manifest)
+{
+    return std::any_of(manifest.files, manifest.files + manifest.count,
+        [](const CustomPackageFile &file) { return !std::strcmp(file.role, "sca"); });
+}
+}
+
+extern "C" int CustomPackage_SetLocalAudio(CustomPackageOwned *package, const void *data, size_t size);
 
 extern "C" int CustomPackage_AcquireDirectory(const char *path, const char *expected,
     CustomPackageOwned **out, char *error, size_t errorSize)
@@ -385,14 +429,65 @@ extern "C" int CustomPackage_AcquireDirectory(const char *path, const char *expe
             buffers.push_back(directory.read(file.path, file.bytes));
             inputs.push_back({file.role, buffers.back().data(), buffers.back().size()});
         }
-        return CustomPackage_AcquireBuffers((const char *)json.data(), json.size(), expected,
-            inputs.data(), inputs.size(), out, error, errorSize);
+        if (!CustomPackage_AcquireBuffers((const char *)json.data(), json.size(), expected,
+            inputs.data(), inputs.size(), out, error, errorSize)) return 0;
+        if (!manifest_has_music(manifest))
+        {
+            auto audio = read_local_music(directory, manifest.sha256);
+            if (!audio.empty()) CustomPackage_SetLocalAudio(*out, audio.data(), audio.size());
+        }
+        return 1;
     }
     catch (const std::exception &exception)
     {
         if (error && errorSize) std::snprintf(error, errorSize, "%s", exception.what());
         return 0;
     }
+}
+
+extern "C" int CustomPackage_InstallMusic(const char *path, const char *pin, const void *data,
+    size_t size, const char *sha256, int mediaID)
+{
+    try
+    {
+        if (!path || std::strlen(path) > 32000 || !pin || !revision_name(pin) || !data ||
+            !size || size > CTR_SCA_MAX_BYTES || !sha256 || !revision_name(sha256) || mediaID <= 0 ||
+            music_hash(data, size) != sha256) return 0;
+        Directory directory(path);
+        const auto json = directory.read("manifest.json", 65536);
+        CustomPackageManifest manifest;
+        if (!CustomPackage_ParseManifest((const char *)json.data(), json.size(), pin, &manifest, nullptr, 0) ||
+            manifest_has_music(manifest)) return 0;
+        if (directory.exists(musicDirectory)) return !read_local_music(directory, pin).empty() ? 2 : 0;
+
+        static std::atomic<unsigned long> serial{0};
+#ifdef _WIN32
+        const auto process = GetCurrentProcessId();
+#else
+        const auto process = getpid();
+#endif
+        std::string stageName;
+        bool created = false;
+        for (unsigned int attempt = 0; attempt < 100 && !created; attempt++)
+        {
+            stageName = ".pending-music-" + std::to_string(process) + "-" + std::to_string(++serial);
+            created = directory.mkdir(stageName);
+        }
+        if (!created) return 0;
+        Directory stage(std::string(path) + "/" + stageName, true);
+        const auto source = nlohmann::json({{"schema_version", 1}, {"package_pin", pin},
+            {"media_id", mediaID}, {"bytes", size}, {"sha256", sha256}}).dump();
+        install_checkpoint();
+        stage.write("track.sca", data, size);
+        install_checkpoint();
+        stage.write("source.json", source.data(), source.size());
+        install_checkpoint();
+        try { directory.publish(stage, stageName, musicDirectory); }
+        catch (const std::exception &) { return !read_local_music(directory, pin).empty() ? 2 : 0; }
+        directory.sync_publication();
+        return 1;
+    }
+    catch (const std::exception &) { return 0; }
 }
 
 extern "C" int CustomPackage_Install(const CustomPackageOwned *package, const char *path,
@@ -644,6 +739,15 @@ CustomPackageStoreEntry scan_entry(const std::string &prefix, const std::string 
                 }
             } catch (const std::exception &) { /* Optional display metadata cannot grant admission. */ }
         }
+        if (!entry.local.scaID && !manifest_has_music(entry.manifest))
+        {
+            try
+            {
+                Directory directory(prefix + pin);
+                read_local_music(directory, pin.c_str(), nullptr, &entry.local.scaID);
+            }
+            catch (const std::exception &) {}
+        }
     }
     CustomPackage_Free(&package);
     return entry;
@@ -790,13 +894,18 @@ struct MusicSearch
 };
 /* The first verified revision with the seed's LEV and VRM that also pins a
    .sca. A copy of the same pair installed without music is skipped. */
-int want_pinned_music(const char *, const CustomPackageManifest *manifest, void *opaque)
+int want_pinned_music(const char *pin, const CustomPackageManifest *manifest, void *opaque)
 {
     const auto &search = *static_cast<const MusicSearch *>(opaque);
     if (!search.sca.empty() || !manifest || !pinned_pair(*manifest, search.revision, search.uuid,
         search.levHash, search.levBytes, search.vrmHash, search.vrmBytes)) return 0;
-    for (unsigned int i = 0; i < manifest->count; i++)
-        if (!std::strcmp(manifest->files[i].role, "sca") && manifest->files[i].bytes) return 1;
+    if (manifest_has_music(*manifest)) return 1;
+    try
+    {
+        Directory directory(search.directory + "/" + pin);
+        return directory.exists(musicDirectory);
+    }
+    catch (const std::exception &) {}
     return 0;
 }
 void find_pinned_music(const CustomPackageStoreEntry *entry, void *opaque)
@@ -814,10 +923,26 @@ void find_pinned_music(const CustomPackageStoreEntry *entry, void *opaque)
         if (!std::strcmp(f.role, "vrm") && !std::strcmp(f.sha256, search.vrmHash) && f.bytes == search.vrmBytes) vrm = true;
         if (!std::strcmp(f.role, "sca") && f.bytes) sca = &f;
     }
-    if (!lev || !vrm || !sca) return;
-    search.sca = search.directory + "/" + entry->pin + "/" + sca->path;
-    search.scaSha = sca->sha256;
-    search.scaBytes = static_cast<unsigned long>(sca->bytes);
+    if (!lev || !vrm) return;
+    const auto path = search.directory + "/" + entry->pin;
+    if (sca)
+    {
+        search.sca = path + "/" + sca->path;
+        search.scaSha = sca->sha256;
+        search.scaBytes = sca->bytes;
+        return;
+    }
+    try
+    {
+        Directory directory(path);
+        auto audio = read_local_music(directory, entry->pin, &search.scaSha);
+        if (!audio.empty())
+        {
+            search.sca = path + "/" + musicPath;
+            search.scaBytes = audio.size();
+        }
+    }
+    catch (const std::exception &) {}
 }
 }
 

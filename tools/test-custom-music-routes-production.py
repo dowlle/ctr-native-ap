@@ -12,10 +12,10 @@ and the real package library, and drives:
   3. the lookup the race arm step uses (CustomPackage_FindPinnedMusic).
 
 Cases, each checked against the package store afterwards:
-  a. a current .sca of the LEV's version is fetched and pinned in the manifest
+  a. a current .sca with an independent version is fetched and pinned in the manifest
      (role "sca"), the file is in the store with the pinned bytes, and the
      lookup returns its path, sha256 and size,
-  b. no .sca listed, another version, not current, two current ones, or one
+  b. no .sca listed, a historical track pair, a noncurrent .sca, two current ones, or one
      past the 1 MiB cap: the track installs without music and the .sca is
      never requested,
   c. a failed or short .sca download installs the track without music,
@@ -25,6 +25,8 @@ Cases, each checked against the package store afterwards:
      another revision or uuid, and prefers the package with the asked UUID,
   g. a malformed music row (null download_url, non-numeric file_size, null type) installs
      the track without music.
+  h. the library repair verifies provenance, consent and downloads, preserves the
+     existing package pin and track files, and supplies music to both play paths.
 """
 from pathlib import Path
 import subprocess
@@ -43,6 +45,8 @@ prelude = r'''
 #include "ap_seed_content_logic.h"
 #include <platform/native_saphi_catalogue.h>
 #include <platform/native_custom_package.h>
+#include <platform/native_custom_music.h>
+#include <platform/native_custom_offline.h>
 #include <zlib.h>
 #include <future>
 #include <nlohmann/json.hpp>
@@ -142,6 +146,7 @@ static std::string seed_uuid = UUID;
 
 struct Sca { int id; const char *version; bool current; long long size; };
 static bool malformed_url, malformed_size, malformed_type;
+static bool pair_current = true, wrong_crc;
 static std::vector<Sca> scas;
 static bool serve_sca = true;
 static std::vector<unsigned char> sca_body_override;
@@ -150,9 +155,9 @@ static void serve()
 	std::lock_guard<std::mutex> lock(served_mutex);
 	served.clear(); requested.clear();
 	nlohmann::json rows = nlohmann::json::array({
-		{{"id", 872}, {"type", "lev"}, {"version", "1.0.0"}, {"is_current", true}, {"file_size", (long long)lev.size()},
+		{{"id", 872}, {"type", "lev"}, {"version", "1.0.0"}, {"is_current", pair_current}, {"file_size", (long long)lev.size()},
 		 {"download_url", "/api/v2/tracks/121/downloads/872"}},
-		{{"id", 873}, {"type", "vrm"}, {"version", "1.0.0"}, {"is_current", true}, {"file_size", (long long)vrm.size()},
+		{{"id", 873}, {"type", "vrm"}, {"version", "1.0.0"}, {"is_current", pair_current}, {"file_size", (long long)vrm.size()},
 		 {"download_url", "/api/v2/tracks/121/downloads/873"}},
 		{{"id", 700}, {"type", "lev"}, {"version", "0.9.0"}, {"is_current", false}, {"file_size", 10},
 		 {"download_url", "/api/v2/tracks/121/downloads/700"}},
@@ -162,6 +167,8 @@ static void serve()
 	{
 		nlohmann::json row = {{"id", s.id}, {"type", "sca"}, {"version", s.version}, {"is_current", s.current},
 		                      {"file_size", s.size}, {"download_url", "/api/v2/tracks/121/downloads/" + std::to_string(s.id)}};
+		const auto &payload = sca_body_override.empty() ? music : sca_body_override;
+		row["crc32_hash"] = crc32(0, payload.data(), (uInt)payload.size()) ^ (wrong_crc ? 1u : 0u);
 		if (malformed_url) row["download_url"] = nullptr;
 		if (malformed_size) row["file_size"] = "5000";
 		if (malformed_type) row["type"] = nullptr;
@@ -245,15 +252,44 @@ static bool manifest_has_sca(const std::string &assets)
 	return found;
 }
 
+static CustomSaphiCatalogue *repair_catalogue(const char *trackVersion, const std::string &levHash)
+{
+	auto media = [](int id, const char *type, const char *version,
+	                const std::vector<unsigned char> &bytes, const std::string &hash) {
+		return nlohmann::json{{"id", id}, {"type", type}, {"version", version}, {"is_current", true},
+		    {"file_size", bytes.size()}, {"crc32_hash", crc32(0, bytes.data(), (uInt)bytes.size())},
+		    {"sha256_hash", hash}, {"download_url", "/api/v3/tracks/121/downloads/" + std::to_string(id)},
+		    {"modes", nlohmann::json::array({"arcade"})}};
+	};
+	const nlohmann::json track = {{"id", 121}, {"author_id", 12}, {"author", "Author"},
+	    {"name", "Acid Lake"}, {"type", "race"}, {"is_active", true},
+	    {"downloads", nlohmann::json::array({
+	        media(872, "lev", trackVersion, lev, levHash), media(873, "vrm", trackVersion, vrm, sha(vrm)),
+	        media(874, "sca", "0.9.0", music, sha(music))})}};
+	const auto json = nlohmann::json({{"data", nlohmann::json::array({track})}}).dump();
+	CustomSaphiCatalogue *out = nullptr;
+	char error[256];
+	expect(CustomSaphi_ParseCatalogue(json.data(), json.size(), &out, error, sizeof error), "repair catalogue parsed");
+	return out;
+}
+
+static int repair_library(CustomSaphiCatalogue *catalogue, const std::string &assets)
+{
+	if (!CustomSaphi_StartMusicRepair(catalogue, assets.c_str())) return -1;
+	int repaired = -1, status = 0;
+	for (int i = 0; i < 3000 && (status = CustomSaphi_PollMusicRepair(&repaired)) == 0; i++)
+		std::this_thread::sleep_for(std::chrono::milliseconds(2));
+	return status == 1 ? repaired : -1;
+}
+
 int main()
 {
 	std::string detail;
-	scas = {{874, "1.0.0", true, (long long)music.size()}};
-
 	for (int by_ids = 1; by_ids >= 0; by_ids--)
 	{
 		const std::string route = by_ids ? "registry ids: " : "version: ";
-		// a. The current .sca of the LEV's version is stored with the package.
+		// a. The current .sca has its own version and is stored with the package.
+		scas = {{874, "0.9.0", true, (long long)music.size()}};
 		serve_sca = true;
 		serve();
 		std::string assets = fresh("a");
@@ -279,11 +315,10 @@ int main()
 			       route + "seed-source.json gives the permission check the Saphi ids and the track key");
 		}
 
-		// b. Listings that are not exactly one current .sca of this version.
+		// b. Listings without one eligible current .sca.
 		struct Case { const char *name; std::vector<Sca> list; };
 		const Case cases[] = {
 			{"no .sca listed", {}},
-			{"another version", {{874, "0.9.0", true, 5000}}},
 			{"not current", {{874, "1.0.0", false, 5000}}},
 			{"two current", {{874, "1.0.0", true, 5000}, {875, "1.0.0", true, 5000}}},
 			{"past the 1 MiB cap", {{874, "1.0.0", true, 1024 * 1024 + 1}}},
@@ -296,6 +331,18 @@ int main()
 			expect(!asked(SCA_PATH) && !asked("/api/v2/tracks/121/downloads/875"), route + c.name + ": no .sca requested");
 			expect(!manifest_has_sca(assets) && !find_music_for(assets).ok, route + c.name + ": installed without music");
 		}
+		pair_current = false;
+		scas = {{874, "0.9.0", true, (long long)music.size()}};
+		serve();
+		assets = fresh("historical");
+		expect(install_seed(assets, by_ids, detail) == AP_CT_DOWNLOAD_SUCCEEDED &&
+		       !asked(SCA_PATH) && !find_music_for(assets).ok, route + "historical pair does not take current music");
+		scas = {{874, "1.0.0", true, (long long)music.size()}};
+		serve();
+		assets = fresh("historical-exact");
+		expect(install_seed(assets, by_ids, detail) == AP_CT_DOWNLOAD_SUCCEEDED &&
+		       asked(SCA_PATH) && find_music_for(assets).ok, route + "historical pair retains exact-version music");
+		pair_current = true;
 
 		// b2. A malformed music row costs the music only, never the install.
 		for (int kind = 0; kind < 3; kind++)
@@ -322,6 +369,11 @@ int main()
 		expect(install_seed(assets, by_ids, detail) == AP_CT_DOWNLOAD_SUCCEEDED, route + "short .sca still installs: " + detail);
 		expect(!manifest_has_sca(assets) && !find_music_for(assets).ok, route + "short .sca: no music");
 		sca_body_override.clear();
+		wrong_crc = true; serve();
+		assets = fresh("wrong-crc");
+		expect(install_seed(assets, by_ids, detail) == AP_CT_DOWNLOAD_SUCCEEDED &&
+		       asked(SCA_PATH) && !find_music_for(assets).ok, route + "a same-size CRC mismatch costs only the music");
+		wrong_crc = false;
 
 		// d. A tampered LEV still refuses, whatever the music says.
 		serve();
@@ -332,6 +384,87 @@ int main()
 		assets = fresh("d");
 		expect(install_seed(assets, by_ids, detail) == AP_CT_DOWNLOAD_FAILED && !exists(assets + "/tracks/packages"),
 		       route + "a tampered LEV refuses, nothing installed");
+	}
+
+	// h. Restore optional music into the already installed seed snapshot.
+	{
+		const auto assets = fresh("repair");
+		const auto store = assets + "/tracks/packages";
+		scas.clear(); serve();
+		expect(install_seed(assets, true, detail) == AP_CT_DOWNLOAD_SUCCEEDED, "preexisting seed install has no SCA");
+		std::string pin;
+		CustomPackage_ScanStore(store.c_str(), [](const CustomPackageStoreEntry *entry, void *out) {
+			if (entry->verified) *static_cast<std::string *>(out) = entry->pin;
+		}, &pin, nullptr, 0);
+		expect(pin.size() == 64, "preexisting package pin recorded");
+		const auto directory = store + "/" + pin;
+		const auto manifest = slurp(directory + "/manifest.json");
+		const auto localLev = slurp(directory + "/original/track.lev");
+		const auto localVrm = slurp(directory + "/original/track.vrm");
+		const auto settings = slurp(directory + "/metadata/race-settings.json");
+
+		const std::string path = "/api/v3/tracks/121/downloads/874";
+		auto catalogue = repair_catalogue("1.0.0", sha(lev));
+		auto wrongTrack = repair_catalogue("1.0.0", sha(vrm));
+		served[path] = music;
+		expect(repair_library(wrongTrack, assets) == 0 && !asked(path), "a different LEV pin cannot trigger repair");
+		CustomSaphi_Free(&wrongTrack);
+		auto wrongVersion = repair_catalogue("1.1.0", sha(lev));
+		expect(repair_library(wrongVersion, assets) == 0 && !asked(path), "a different track version cannot trigger repair");
+		CustomSaphi_Free(&wrongVersion);
+		for (int answer : {AP_TRACK_PERMISSION_UNKNOWN, AP_TRACK_PERMISSION_DENY})
+		{
+			g_permission = answer;
+			expect(repair_library(catalogue, assets) == 0 && !asked(path), "repair honors track permission");
+		}
+		g_permission = AP_TRACK_PERMISSION_ALLOW;
+		served.erase(path);
+		expect(repair_library(catalogue, assets) == 0 && asked(path) && !find_music_for(assets).ok,
+		       "network failure leaves the original snapshot usable");
+		served[path] = music;
+		served[path][0] ^= 1;
+		expect(repair_library(catalogue, assets) == 0 && !find_music_for(assets).ok, "corrupt audio cannot publish");
+
+		CustomPackage_TestInstallFailure(1);
+		expect(!CustomPackage_InstallMusic(directory.c_str(), pin.c_str(), music.data(), music.size(), sha(music).c_str(), 874),
+		       "interruption between audio and metadata leaves no publication");
+		CustomPackage_TestInstallFailure(-1);
+		expect(!find_music_for(assets).ok && !exists(directory + "/.saphi-music"), "the race lookup ignores interrupted staging");
+		serve();
+		served[path] = music;
+		expect(repair_library(catalogue, assets) == 1 && asked(path), "repair retries and downloads only the SCA");
+		expect(!asked("/api/v3/tracks/121/downloads/872") && !asked("/api/v3/tracks/121/downloads/873"),
+		       "repair does not download either track file");
+		const auto audio = find_music_for(assets, "1.0.0", UUID.c_str());
+		expect(audio.ok && audio.sha == sha(music) && slurp(audio.path) == music, "seed lookup finds verified repaired audio");
+		expect(slurp(directory + "/manifest.json") == manifest &&
+		       slurp(directory + "/original/track.lev") == localLev && localLev == lev &&
+		       slurp(directory + "/original/track.vrm") == localVrm && localVrm == vrm &&
+		       slurp(directory + "/metadata/race-settings.json") == settings && !manifest_has_sca(assets),
+		       "repair keeps original manifest, pinned geometry and settings byte-identical");
+		char levPath[1024], vrmPath[1024];
+		expect(CustomPackage_FindPinnedFiles(assets.c_str(), "1.0.0", UUID.c_str(), sha(lev).c_str(), lev.size(),
+		      sha(vrm).c_str(), vrm.size(), levPath, sizeof levPath, vrmPath, sizeof vrmPath) &&
+		      levPath == directory + "/original/track.lev" && vrmPath == directory + "/original/track.vrm",
+		      "same seed identity still resolves to the original files");
+		CustomPackageOwned *owned = nullptr;
+		expect(CustomPackage_AcquireDirectory(directory.c_str(), pin.c_str(), &owned, nullptr, 0), "old package pin still verifies");
+		const void *offline = nullptr; size_t size = 0;
+		expect(CustomPackage_GetAudio(owned, &offline, &size) && size == music.size() &&
+		       !std::memcmp(offline, music.data(), size), "the offline snapshot borrows the verified audio");
+		CustomPackage_Free(&owned);
+		serve();
+		expect(repair_library(catalogue, assets) == 0 && !asked(path), "repeat repair sends no request");
+		CustomSaphi_Free(&catalogue);
+		if (audio.ok)
+		{
+			std::ofstream broken(audio.path, std::ios::binary | std::ios::trunc);
+			broken.write("bad", 3);
+		}
+		expect(!find_music_for(assets).ok, "seed lookup refuses damaged restored audio");
+		expect(CustomPackage_AcquireDirectory(directory.c_str(), pin.c_str(), &owned, nullptr, 0) &&
+		       !CustomPackage_GetAudio(owned, &offline, &size), "damaged restored audio leaves the original package usable");
+		CustomPackage_Free(&owned);
 	}
 
 	// f. A copy of the pair without music does not hide the copy with music.
@@ -438,7 +571,7 @@ def build_harness(work, body, extra):
     src.write_text(prelude + part_a + stub + part_b + part_c + extra + body, encoding="utf-8")
     includes = ["-I" + str(root / "ap"), "-I" + str(root / "include"), "-I" + str(root),
                 "-I" + str(root / "ap/vendor/json/include"), "-I" + str(root / "vendor/utf8proc")]
-    defines = ["-DCTR_CUSTOM_TRACKS", "-DCTR_CUSTOM_PACKAGES", "-DUTF8PROC_STATIC"]
+    defines = ["-DCTR_CUSTOM_TRACKS", "-DCTR_CUSTOM_PACKAGES", "-DCTR_PACKAGE_TESTING", "-DUTF8PROC_STATIC"]
     objects = []
     for unit in [src] + [root / u for u in units]:
         obj = work / (unit.stem + ".o")

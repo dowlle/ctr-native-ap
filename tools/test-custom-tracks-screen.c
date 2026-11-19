@@ -110,6 +110,8 @@ void CustomSaphi_Free(struct CustomSaphiCatalogue **p) { *p = NULL; }
 size_t CustomSaphi_Count(const struct CustomSaphiCatalogue *p) { return p ? (size_t)catCount : 0; }
 const struct CustomSaphiRevision *CustomSaphi_Row(const struct CustomSaphiCatalogue *p, size_t i) { (void)p; return &cat[i]; }
 int CustomSaphi_StartInstall(const struct CustomSaphiRevision *r, const char *a) { (void)r; (void)a; installStarts++; return 1; }
+int CustomSaphi_StartMusicRepair(const struct CustomSaphiCatalogue *c, const char *a) { (void)c; (void)a; return 1; }
+int CustomSaphi_PollMusicRepair(int *repaired) { (void)repaired; return -1; }
 int CustomSaphi_PollInstall(char pin[65], char *e, size_t n) { (void)e; (void)n; if (installResult == 1) strcpy(pin, "fixture"); return installResult; }
 
 /* ---- the track author permission check (A4-74) ----
