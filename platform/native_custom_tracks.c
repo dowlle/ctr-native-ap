@@ -1025,11 +1025,9 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 		return 0;
 	}
 
-	if (d->soloRace)
+	if (d->standalone && d->soloRace)
 	{
-		// A Relic Race or Time Trial grids one kart: no bots need nav paths
-		// and a one-kart grid needs one spawn, so the opponent rule below
-		// would refuse a race this build can serve (A6-23 F1).
+		// A solo race needs neither AI paths nor a full starting grid.
 		CustomTrack_Log("[CustomTracks] solo event race: AI nav paths and grid spawns are not required\n");
 	}
 	else if (!CustomTrackPolicy_FlagsSupportRace(d->flagAiNav, d->flagSpawns,

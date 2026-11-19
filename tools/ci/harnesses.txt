@@ -334,7 +334,7 @@ cmd Release assembly boundary checks :: python3 -m unittest discover -s tools/re
 tools/test-standalone-hub-return.py
 tools/test-credits-roll.py
 tools/test-standalone-race-result.py
-tools/test-content-pad-entry.py skip needs the installed Baby T Park package, a built libap_net.a and optionally a live MultiServer; run by hand
+tools/test-content-pad-entry.py skip full parser/network probe needs the installed Baby T Park package and a built libap_net.a; synthetic pad entry runs in test-content-hooks-admission.py
 tools/test-content-plan-parity.py skip needs a paired apworld checkout and the AP virtualenv; run by hand
 tools/test-arcade-crystals-production.py
 tools/test-arcade-room-hold.py

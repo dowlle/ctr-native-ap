@@ -78,11 +78,7 @@ struct CustomTrackSeedDescriptor
 	int flagSpawns;
 	int flagCheckpoints;
 	int standalone; // 1: content-plan race context, 0: legacy Gem Cup placement
-	// 1: the event race runs alone (Relic Race, Time Trial), so the opponent
-	// rule above does not gate it: no bots need nav paths and a one-kart grid
-	// needs one spawn. Defaults to 0, so a caller written before this field
-	// keeps the old check.
-	int soloRace;
+	int soloRace;   // 1: standalone solo race, with no opponent grid
 };
 
 // Stage only after applying a verified standalone descriptor. Entry sites

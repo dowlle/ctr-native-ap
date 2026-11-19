@@ -782,6 +782,13 @@ static void test_standalone_solo_race_capabilities(void)
 	arm_with(d);
 	expect_log_contains("fewer driver spawns", "an opponent race still needs the grid spawns");
 	expect_fully_off("5 spawns for a standalone 8-kart opponent race");
+
+	d = good_descriptor();
+	d.flagAiNav = 0;
+	d.soloRace = 1;
+	arm_with(d);
+	expect_log_contains("no AI nav paths", "a legacy cup always needs AI nav paths");
+	expect_fully_off("solo flag cannot bypass legacy cup requirements");
 }
 
 // ---------------------------------------------------------------------------
