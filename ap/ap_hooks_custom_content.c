@@ -295,6 +295,7 @@ int AP_ContentPadReady(int physicalPad)
 // missing).
 static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRaceContext *race)
 {
+	race->roomIdentity = ap_content_plan_room_identity();
 	if (race->retail) return 1;
 	if (cortex)
 	{
@@ -393,6 +394,7 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		d.soloRace = race->mode == AP_CONTENT_MODE_RELIC;
 		snprintf(d.levSha256, sizeof d.levSha256, "%s", pkg->lev_sha256);
 		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", pkg->vrm_sha256);
+		snprintf(race->packageRevision, sizeof race->packageRevision, "%s", pkg->revision);
 		snprintf(race->levSha256, sizeof race->levSha256, "%s", pkg->lev_sha256);
 		snprintf(race->vrmSha256, sizeof race->vrmSha256, "%s", pkg->vrm_sha256);
 		return CustomTrack_ApplySeedDescriptor(&d);
@@ -561,11 +563,12 @@ static void AP_GarageVenuePreflight(void)
 	{
 		struct GarageVenueDescriptor d;
 		const struct AP_ContentFiles *f = NULL;
+		const ctr_content_package *pkg = NULL;
 		const char *lev = NULL, *vrm = NULL;
 		char line[200];
 		if (b->venue_package[g] >= 0)
 		{
-			const ctr_content_package *pkg = ap_content_plan_package(b->venue_package[g]);
+			pkg = ap_content_plan_package(b->venue_package[g]);
 			if (pkg && ap_content_package_ready[b->venue_package[g]])
 			{
 				f = &ap_content_files[b->venue_package[g]];
@@ -591,6 +594,10 @@ static void AP_GarageVenuePreflight(void)
 		memset(&d, 0, sizeof d);
 		d.enabled = 1;
 		d.hostLevelID = b->venues[g];
+		d.roomIdentity = ap_content_plan_room_identity();
+		snprintf(d.trackID, sizeof d.trackID, "%s", pkg ? pkg->id : "cortex_vortex");
+		if (pkg)
+			snprintf(d.packageRevision, sizeof d.packageRevision, "%s", pkg->revision);
 		snprintf(d.levPath, sizeof d.levPath, "%s", f->levPath);
 		snprintf(d.vrmPath, sizeof d.vrmPath, "%s", f->vrmPath);
 		snprintf(d.levSha256, sizeof d.levSha256, "%s", lev);

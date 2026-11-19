@@ -27,6 +27,7 @@ namespace content_plan {
 using J = nlohmann::json;
 struct State {
     bool parsed = false, bound = false;
+    uint64_t room_identity = 0;
     std::array<ctr_content_pad, 27> pads{};
     std::array<ctr_content_package, AP_CONTENT_MAX_PACKAGES> packages{};
     // Each package's descriptor as the room sent it (#89: solo keeps it once
@@ -3274,6 +3275,9 @@ static int parse_content_plan(const nlohmann::json &j) {
 extern "C" int ap_content_plan_present(void) { return content_plan::state.parsed && ctr_cfg.schema_version == 18 && !ctr_cfg.seed_rejected; }
 extern "C" int ap_content_plan_active(void) { return ap_content_plan_present() && content_plan::state.bound; }
 extern "C" uint64_t ap_content_plan_epoch(void) { return ap_content_plan_active() ? content_plan::epoch : 0; }
+extern "C" uint64_t ap_content_plan_room_identity(void) {
+    return ap_content_plan_active() ? content_plan::state.room_identity : 0;
+}
 extern "C" const ctr_content_pad *ap_content_plan_pad(int physical) {
     if (ap_content_plan_active() && physical >= AP_CONTENT_GARAGE_CUP_PAD && physical < AP_CONTENT_GARAGE_CUP_PAD + 4) {
         const int g = physical - AP_CONTENT_GARAGE_CUP_PAD;
@@ -3366,6 +3370,11 @@ extern "C" int ap_content_plan_bind(const char *seed, int team, int slot, const 
         need(actual == state.checks, "room locations differ from content plan");
         const std::string identity = J::array({seed, team, slot, state.canonical}).dump();
         if (identity != previous_identity) { ++epoch; previous_identity = identity; }
+        // Stable across processes and independent of the current transport.
+        uint64_t hash = UINT64_C(14695981039346656037);
+        for (unsigned char byte : identity)
+            hash = (hash ^ byte) * UINT64_C(1099511628211);
+        state.room_identity = hash ? hash : 1;
         state.bound = true;
         return 1;
     } catch (const std::exception &e) {

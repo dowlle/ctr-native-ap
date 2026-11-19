@@ -458,6 +458,8 @@ static inline int64_t ap_content_mode_route(const ctr_content_pad *pad, int mode
 int ap_content_plan_present(void);
 int ap_content_plan_active(void);
 uint64_t ap_content_plan_epoch(void);
+/* Stable identity of the bound seed, team, slot and plan. Zero before bind. */
+uint64_t ap_content_plan_room_identity(void);
 const ctr_content_pad *ap_content_plan_pad(int physical);
 const ctr_content_package *ap_content_plan_package(int index);
 /* The package's descriptor JSON as the room sent it, "" without one (#89). */
