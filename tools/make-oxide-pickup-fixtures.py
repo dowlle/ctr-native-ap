@@ -106,7 +106,6 @@ def main():
             samples.append(dict(items=[item.code for item in inventory], **verdict(inventory)))
         own = {}
         full_inventory = items
-        focus = {}
         if tag == 'yellow-leg-four':
             key, trophy = world.create_item('Key'), world.create_item('Trophy')
             rest = [item for item in items if item.name not in ('Key', 'Trophy')]
@@ -123,8 +122,6 @@ def main():
             assert target not in verdict(full_inventory)['reachable']
         if tag in MIXED_PREFIXES:
             from worlds.ctr.test.test_oxide_pickups import oxide_checks
-            # These probes isolate the new route from the existing Tizi Cup
-            # and Itemsanity checks, which have separate rules.
             targets = {c['location'] for c in oxide_checks(world.ctr_content_plan)}
             assert targets and targets <= set(verdict(items)['reachable'])
             missing = 'Mask' if tag == 'tizi-before-oxide' else 'Progressive Boost'
@@ -133,11 +130,23 @@ def main():
             result = verdict(removed)
             reached = targets & set(result['reachable'])
             assert reached if tag == 'green-before-oxide' else not reached
-            focus = dict(focus=sorted(targets))
             samples = [dict(items=[item.code for item in removed], **result)]
+            if tag == 'tizi-before-oxide':
+                codes = {c['display_name']: c['location'] for c in world.ctr_content_plan['checks']}
+                mask = world.create_item('Mask')
+                # The sweep must never bank a Mask whose own check needs it.
+                for label, name in (('leg', 'Oxide Station: Cup Leg Victory'),
+                                    ('pad', 'Tizi Madness: Trophy Race'),
+                                    ('cup', 'Red Gem Cup: Gem')):
+                    source = codes[name]
+                    assert source not in result['reachable']
+                    rows.append(dict(tag=f'mask-locked-behind-{label}', slot_data=world.fill_slot_data(),
+                                     locations=sorted(loc.address for loc in locations), precollected=[],
+                                     foreign=[item.code for item in removed], own={str(source): mask.code},
+                                     full=result, samples=[]))
         rows.append(dict(tag=tag, slot_data=world.fill_slot_data(), locations=sorted(loc.address for loc in locations),
                          precollected=[], foreign=[item.code for item in full_inventory], own=own,
-                         full=verdict(full_inventory), samples=samples, **focus))
+                         full=verdict(full_inventory), samples=samples))
     args.output.write_text(''.join(json.dumps(row, separators=(',', ':')) + '\n' for row in rows))
 
 

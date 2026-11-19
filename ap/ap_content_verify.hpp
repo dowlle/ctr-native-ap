@@ -60,7 +60,7 @@ static const int kUsf = 2, kFirstBoost = 1;
 // WUMPA: the goal's `wumpa_banked` arm (J11), met when Wumpa Income is.
 enum Op { ALWAYS, COUNT, SUM, DISTINCT, CHECKED, ALL, ANY, WUMPA };
 struct Node { Op op; int count; std::vector<int64_t> codes; std::vector<int> kids; };
-struct Region { std::vector<int> gates; int lock = -1; bool income = false; };
+struct Region { std::vector<int> gates; int lock = -1; bool income = false, mask = false; };
 struct Route {
     int region = -1, stage = -1, lock = -1, need = 0, encounter = -1;
     bool boss = false, mask = false;
@@ -73,7 +73,7 @@ struct Loc {
     int64_t code = 0;
     Kind kind = PAD;
     int region = -1, lock = -1, boost = 0, arm = ARM_NONE, arm_families = 0, weapon = -1, target = -1;
-    bool stats = false, door = false;
+    bool stats = false, door = false, mask = false;
     std::vector<int> stages;          // PAD: one stage-2 gate per route, all set, else empty
     std::vector<int64_t> first;       // PAD: the first race's checks, one needed, for a check of a later race
     std::vector<Route> routes;        // SHARED, LEG, ITEMSANITY, HIT
@@ -212,10 +212,11 @@ static Model build() {
     for (const auto &x : p.at("packages")) packages[x.at("id").get<std::string>()] = &x;
     for (const auto &x : p.at("entries")) entries[x.at("id").get<std::string>()] = &x;
     const bool repeatable_pickups = content_plan::repeatable_pickups(p);
-    // Pickup routes before and after a Tizi Madness leg have different terms
-    // (apworld tizi_madness.MaskGates). Match the runtime's exact pin pair.
-    std::set<std::string> tizi_tracks;
+    // In repeatable-pickup rooms, match the generator's Tizi Madness gates
+    // throughout the sweep so a blocked check cannot supply its own Mask.
+    std::set<std::string> masked_regions, masked_cups, masked_cup_starts, masked_legs;
     if (repeatable_pickups && m.itemsanity) {
+        std::set<std::string> tizi_tracks;
         for (const auto &[id, track] : tracks) {
             const auto package = packages.find(track->value("package_id", ""));
             if (package == packages.end()) continue;
@@ -226,17 +227,28 @@ static Model build() {
             }
             if (CustomTrack_IsTiziMadness(lev.c_str(), vrm.c_str())) tizi_tracks.insert(id);
         }
-    }
-    auto pickup_needs_mask = [&](const J &route) {
-        if (tizi_tracks.empty()) return false;
-        const auto &entry = *entries.at(route.at("entry_id").get<std::string>());
-        if (route.at("leg_id").is_null()) return tizi_tracks.count(entry.value("track_id", "")) != 0;
-        bool mask = false;
-        for (const auto &leg : entry.at("legs")) {
-            mask = mask || tizi_tracks.count(leg.at("track_id").get<std::string>()) != 0;
-            if (leg.at("id") == route.at("leg_id")) return mask;
+        if (!tizi_tracks.empty()) {
+            for (const auto &[id, entry] : entries) {
+                if (!entry->contains("legs")) {
+                    if (tizi_tracks.count(entry->value("track_id", ""))) masked_regions.insert(id);
+                    continue;
+                }
+                const auto &legs = entry->at("legs");
+                bool mask = false;
+                for (const auto &leg : legs) {
+                    mask = mask || tizi_tracks.count(leg.at("track_id").get<std::string>()) != 0;
+                    if (mask) masked_legs.insert(leg.at("id").get<std::string>());
+                }
+                if (mask) masked_cups.insert(id);
+                if (!legs.empty() && masked_legs.count(legs.front().at("id").get<std::string>()))
+                    masked_cup_starts.insert(id);
+            }
         }
-        return false;
+    }
+    auto needs_mask = [&](const J &route) {
+        if (masked_cups.empty()) return false;
+        return route.at("leg_id").is_null() ? masked_cups.count(route.at("entry_id").get<std::string>()) != 0
+                                            : masked_legs.count(route.at("leg_id").get<std::string>()) != 0;
     };
 
     // Regions by entry id: a pad's entrance requirement, its first stage-1
@@ -254,7 +266,9 @@ static Model build() {
         }
         r.lock = lock_of(pad);
         if (pad.at("entry_id").is_null()) continue;
-        region[pad["entry_id"].get<std::string>()] = (int)m.regions.size();
+        const auto entry_id = pad.at("entry_id").get<std::string>();
+        r.mask = masked_regions.count(entry_id) != 0;
+        region[entry_id] = (int)m.regions.size();
         m.regions.push_back(r);
     }
     std::map<std::string, int> encounter;
@@ -271,7 +285,9 @@ static Model build() {
         // needs Wumpa Income (content_bosses.install).
         r.income = wumpa_goal && p.contains("bosses") && enc.at("completion_location") ==
                    (p.at("bosses").at("oxide_goal") == 1 ? 35011104 : p.at("bosses").at("oxide_goal") == 2 ? 35011105 : 0);
-        region[enc.at("entry_id").get<std::string>()] = (int)m.regions.size();
+        const auto entry_id = enc.at("entry_id").get<std::string>();
+        r.mask = masked_regions.count(entry_id) != 0;
+        region[entry_id] = (int)m.regions.size();
         m.regions.push_back(r);
         encounter_of_code[enc.at("completion_location").get<int64_t>()] = (int)encounter.size();
         encounter[enc.at("id").get<std::string>()] = (int)encounter.size();
@@ -404,6 +420,7 @@ static Model build() {
                 R.lock = lock_of(pad);
                 R.need = std::max(finish_boost(track, packages, o),
                                   leg_boost(entry, leg.at("id").get<std::string>(), false, tracks, packages, o));
+                R.mask = masked_legs.count(leg.at("id").get<std::string>()) != 0;
                 m.income.push_back(R);
             }
         }
@@ -459,6 +476,7 @@ static Model build() {
             L.kind = ENCOUNTER;
             const int e = encounter_of_code.at(L.code);
             L.region = region_of(p.at("encounters").at(e).at("entry_id").get<std::string>());
+            L.mask = needs_mask(first);
             m.encounter_loc[e] = (int)m.locs.size();
             m.locs.push_back(L);
             continue;
@@ -471,6 +489,7 @@ static Model build() {
                 R.lock = lock_of(*pads.at(r.at("own_pad_id").get<std::string>()));
                 R.need = leg_boost(*entries.at(r["entry_id"].get<std::string>()), r.at("leg_id").get<std::string>(), true,
                                    tracks, packages, o);
+                R.mask = needs_mask(r);
                 L.routes.push_back(R);
             }
             m.locs.push_back(L);
@@ -490,7 +509,7 @@ static Model build() {
                 Route R;
                 R.region = region_of(r.at("entry_id").get<std::string>());
                 R.lock = lock_of(*pads.at(r.at("own_pad_id").get<std::string>()));
-                R.mask = kind != "podium" && pickup_needs_mask(r);
+                R.mask = needs_mask(r);
                 R.need = L.boost;
                 if (!r.at("leg_id").is_null())
                     R.need = std::max(R.need, leg_boost(*entries.at(r["entry_id"].get<std::string>()),
@@ -512,6 +531,7 @@ static Model build() {
                 R.region = region_of(r.at("entry_id").get<std::string>());
                 R.lock = lock_of(*pads.at(r.at("own_pad_id").get<std::string>()));
                 R.need = track ? finish_boost(*track, packages, o) : 0;
+                R.mask = needs_mask(r);
                 if (!r.at("leg_id").is_null())
                     R.need = std::max(R.need, leg_boost(*entries.at(r["entry_id"].get<std::string>()),
                                                         r.at("leg_id").get<std::string>(), false, tracks, packages, o));
@@ -529,6 +549,7 @@ static Model build() {
             L.kind = PAD;
             const J &pad = *pads.at(*pads_of.begin());
             L.region = pad.at("entry_id").is_null() ? -1 : region_of(pad["entry_id"].get<std::string>());
+            L.mask = std::all_of(routes.begin(), routes.end(), needs_mask);
             std::vector<int> later;
             for (const auto &r : routes) later.push_back(stage_of(r));
             if (std::all_of(later.begin(), later.end(), [](int s) { return s >= 0; }))
@@ -548,6 +569,8 @@ static Model build() {
             R.lock = lock_of(*pads.at(r.at("own_pad_id").get<std::string>()));
             const std::string mode = r.at("mode").get<std::string>();
             R.boss = mode == "boss_race" || mode == "boss_cup";
+            R.mask = L.kind == HIT && R.boss ? masked_cup_starts.count(r.at("entry_id").get<std::string>()) != 0
+                                              : needs_mask(r);
             if (R.boss) R.encounter = encounter.at(r.at("encounter_id").get<std::string>());
             if ((L.kind == HIT || L.kind == ITEMSANITY) && mode == "cup")
                 R.need = leg_boost(*entries.at(r["entry_id"].get<std::string>()), r.at("leg_id").get<std::string>(), false,
@@ -633,14 +656,13 @@ struct Sweep {
     }
     bool income() const {
         for (const auto &r : m.income)
-            if (region(r.region) && (r.stage < 0 || eval(r.stage)) && first_won(r.first) &&
-                (!r.need || AP_VerifyCapabilityGate(&o, dense, r.lock, r.need, 0)))
+            if (route(r) && (!r.need || AP_VerifyCapabilityGate(&o, dense, r.lock, r.need, 0)))
                 return true;
         return false;
     }
+    bool mask_gate(bool required) const { return !required || AP_VerifyWeaponOwned(dense, kMask); }
     bool route(const Route &r) const {
-        return region(r.region) && (r.stage < 0 || eval(r.stage)) && first_won(r.first) &&
-               (!r.mask || AP_VerifyWeaponOwned(dense, kMask));
+        return region(r.region) && mask_gate(r.mask) && (r.stage < 0 || eval(r.stage)) && first_won(r.first);
     }
     // with_boost: the check's rank and stat term, bound to its racer lock,
     // or the Itemsanity weapon alternative.
@@ -665,15 +687,15 @@ struct Sweep {
         for (auto c : L.letters) if (count(c) <= 0) return false;
         return true;
     }
-    bool encounter_rule(int e) const {
+    bool encounter_rule(int e, bool win = true) const {
         const int i = m.encounter_loc[e];
-        return i >= 0 && region(m.locs[i].region) && boost(m.locs[i]);
+        return i >= 0 && region(m.locs[i].region) && mask_gate(win && m.locs[i].mask) && boost(m.locs[i]);
     }
     bool hit(const Loc &L) const {
         if (m.itemsanity && !AP_VerifyHitMethodOwned(dense)) return false;
         // A boss route and an unlock win read the location's rule
         // (location.can_reach), never its checked state.
-        for (const auto &r : L.routes) if (r.boss && encounter_rule(r.encounter)) return true;
+        for (const auto &r : L.routes) if (r.boss && mask_gate(r.mask) && encounter_rule(r.encounter, false)) return true;
         if (L.target >= kFirstGuest && ctr_cfg.hit.valid && ctr_cfg.hit.triggers[L.target - kFirstGuest].fallback_keys) {
             if (count(kKeyItem) < ctr_cfg.hit.triggers[L.target - kFirstGuest].fallback_keys) return false;
         } else if (!L.triggers.empty()) {
@@ -699,7 +721,7 @@ struct Sweep {
         bool ok = false;
         switch (L.kind) {
         case PAD:
-            ok = region(L.region);
+            ok = region(L.region) && mask_gate(L.mask);
             if (ok && !L.stages.empty()) {
                 ok = false;
                 for (int s : L.stages) ok = ok || eval(s);
@@ -712,18 +734,18 @@ struct Sweep {
             break;
         case LEG:
             for (const auto &r : L.routes)
-                ok = ok || (region(r.region) && (!r.need || AP_VerifyCapabilityGate(&o, dense, r.lock, r.need, 0)));
+                ok = ok || (region(r.region) && mask_gate(r.mask) && (!r.need || AP_VerifyCapabilityGate(&o, dense, r.lock, r.need, 0)));
             break;
         case LAP:
             for (const auto &r : L.routes)
-                ok = ok || (region(r.region) && (r.stage < 0 || eval(r.stage)) &&
+                ok = ok || (region(r.region) && mask_gate(r.mask) && (r.stage < 0 || eval(r.stage)) &&
                             (!r.need || AP_VerifyCapabilityGate(&o, dense, r.lock, r.need, 0)));
             break;
         case RACE:
             for (const auto &r : L.routes) ok = ok || (route(r) && route_boost(L, r));
             break;
         case ENCOUNTER:
-            ok = region(L.region) && boost(L);
+            ok = region(L.region) && mask_gate(L.mask) && boost(L);
             break;
         case ITEMSANITY:
             ok = AP_VerifyWeaponOwned(dense, L.weapon) &&
@@ -767,7 +789,7 @@ static int sweep(const Model &model, const ap_content_verify_io *io, ap_content_
         for (size_t r = 0; r < model.regions.size(); ++r) {
             bool ok = model.regions[r].lock < 0 || AP_VerifyCharacterUnlocked(&s.o, s.dense, model.regions[r].lock);
             for (int g : model.regions[r].gates) ok = ok && s.eval(g);
-            ok = ok && (!model.regions[r].income || s.income());
+            ok = ok && s.mask_gate(model.regions[r].mask) && (!model.regions[r].income || s.income());
             s.open[r] = ok;
         }
         // The companion event (`checked` predicates): the race won in this

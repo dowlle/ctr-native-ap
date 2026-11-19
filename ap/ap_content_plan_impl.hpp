@@ -843,19 +843,19 @@ static std::set<std::string> repeatable_pickup_tracks(const J &p) {
     std::set<std::string> result;
     auto add = [&](const J &entry) {
         if (entry.contains("legs")) {
-            for (const auto &leg : entry["legs"]) result.insert(leg["track_id"]);
-        } else result.insert(entry["track_id"]);
+            for (const auto &leg : entry.at("legs")) result.insert(text(leg.at("track_id")));
+        } else result.insert(text(entry.at("track_id")));
     };
     for (const auto &pad : p.at("pads")) {
-        if (pad["entry_id"].is_null()) continue;
-        const J &entry = *entries.at(pad["entry_id"]);
-        if (entry["kind"] == "cup") add(entry);
-        else if (entry["kind"] == "track")
-            for (const auto &mode : entry["modes"])
+        if (pad.at("entry_id").is_null()) continue;
+        const J &entry = *entries.at(text(pad.at("entry_id")));
+        if (entry.at("kind") == "cup") add(entry);
+        else if (entry.at("kind") == "track")
+            for (const auto &mode : entry.at("modes"))
                 if (mode == "trophy" || mode == "ctr") add(entry);
     }
     for (const auto &enc : p.at("encounters"))
-        if (enc["id"] != "encounter/garage:4/0") add(*entries.at(enc["entry_id"]));
+        if (enc.at("id") != "encounter/garage:4/0") add(*entries.at(text(enc.at("entry_id"))));
     return result;
 }
 

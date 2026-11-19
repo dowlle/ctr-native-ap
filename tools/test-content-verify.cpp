@@ -238,14 +238,6 @@ static void probe(const char *path) {
         std::vector<int64_t> ids;
         for (const auto &l : row["locations"]) ids.push_back(l.get<int64_t>());
         if (!admit(row["slot_data"], ids)) { expect(false, tag + ": room refused"); continue; }
-        const auto focus = row.value("focus", std::set<int64_t>{});
-        auto focused = [&focus](std::set<int64_t> reached) {
-            if (focus.empty()) return reached;
-            for (auto it = reached.begin(); it != reached.end();)
-                if (!focus.count(*it)) it = reached.erase(it);
-                else ++it;
-            return reached;
-        };
         Room base;
         for (auto id : ids) base.present.insert(id);
         for (const auto &c : row["precollected"]) base.foreign[c.get<int64_t>()]++;
@@ -260,7 +252,7 @@ static void probe(const char *path) {
             std::set<int64_t> want;
             for (const auto &c : row["full"]["reachable"]) want.insert(c.get<int64_t>());
             const auto got = reachable_set(room, r);
-            expect(focused(got) == focused(want) && r.goal == row["full"]["goal"].get<bool>(),
+            expect(got == want && r.goal == row["full"]["goal"].get<bool>(),
                    tag + " full placement: goal " + std::to_string(r.goal) + diff(want, got));
         }
         for (const auto &s : row["samples"]) {
@@ -271,7 +263,7 @@ static void probe(const char *path) {
             std::set<int64_t> want;
             for (const auto &c : s["reachable"]) want.insert(c.get<int64_t>());
             const auto got = reachable_set(room, r);
-            expect(focused(got) == focused(want) && r.goal == s["goal"].get<bool>(),
+            expect(got == want && r.goal == s["goal"].get<bool>(),
                    tag + " sample " + std::to_string(samples) + ": goal " + std::to_string(r.goal) + " want " +
                        std::to_string(s["goal"].get<bool>()) + diff(want, got));
         }

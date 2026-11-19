@@ -119,9 +119,15 @@ int main(int argc, char **argv) {
                                 bad["content_plan"]["required_features"].end(), J("repeatable_pickups_v1")),
                     bad["content_plan"]["required_features"].end());
                 refuse(bad, "omitted pickups require the new feature marker");
+                bad = slot;
+                bad["content_plan"]["pads"][0].erase("entry_id");
+                refuse(bad, "missing pickup pad entry id refuses without aborting");
+                bad = slot;
+                bad["content_plan"]["encounters"][0].erase("entry_id");
+                refuse(bad, "missing pickup encounter entry id refuses without aborting");
             }
         }
-        expect(rows == 9, "all nine old/new pickup fixtures run");
+        expect(rows == 12, "all twelve old/new pickup fixtures run");
     }
     {
         J sanity;
