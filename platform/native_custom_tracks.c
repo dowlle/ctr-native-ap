@@ -687,8 +687,8 @@ unsigned char *CustomTrack_ReadBossMusic(int levelID, int bossID, size_t *size, 
 		{
 			char path[512], sha256[NATIVE_SHA256_HEX_BYTES];
 			unsigned long bytes;
-			if (!venue->packageRevision[0] ||
-			    !CustomPackage_FindPinnedMusic(NativeAssets_GetAssetDir(), venue->packageRevision, venue->packageUuid, 0,
+			if (!venue->musicPackageRevision[0] ||
+			    !CustomPackage_FindPinnedMusic(NativeAssets_GetAssetDir(), venue->musicPackageRevision, venue->packageUuid, 0,
 			                                   venue->levSha256, venue->levBytes, venue->vrmSha256, venue->vrmBytes,
 			                                   path, sizeof path, sha256, &bytes))
 				return NULL;

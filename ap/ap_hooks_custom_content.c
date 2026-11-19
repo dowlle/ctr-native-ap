@@ -563,7 +563,7 @@ static void AP_GarageVenuePreflight(void)
 				f = &ap_content_files[b->venue_package[g]];
 				lev = pkg->lev_sha256; vrm = pkg->vrm_sha256;
 #ifdef CTR_CUSTOM_PACKAGES
-				snprintf(d.packageRevision, sizeof d.packageRevision, "%s", pkg->revision);
+				snprintf(d.musicPackageRevision, sizeof d.musicPackageRevision, "%s", pkg->revision);
 				snprintf(d.packageUuid, sizeof d.packageUuid, "%s", pkg->uuid);
 				d.levBytes = pkg->lev_bytes;
 				d.vrmBytes = pkg->vrm_bytes;

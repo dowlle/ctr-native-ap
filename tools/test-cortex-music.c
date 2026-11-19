@@ -409,7 +409,7 @@ static void boss_music(void)
 	snprintf(venue.vrmPath, sizeof venue.vrmPath, "%s", s_pkgVrm);
 	snprintf(venue.levSha256, sizeof venue.levSha256, "%s", s_pkgLevSha);
 	sha_of(s_pkgVrm, venue.vrmSha256);
-	snprintf(venue.packageRevision, sizeof venue.packageRevision, "1.0.0");
+	snprintf(venue.musicPackageRevision, sizeof venue.musicPackageRevision, "1.0.0");
 	snprintf(venue.packageUuid, sizeof venue.packageUuid, "0f8fad5b-d9cb-469f-a165-70867728950e");
 	if (stat(s_pkgLev, &st) != 0) { EXPECT(0, "LEV fixture exists"); return; }
 	venue.levBytes = st.st_size;
@@ -456,7 +456,7 @@ static void boss_music(void)
 	snprintf(venue.vrmPath, sizeof venue.vrmPath, "%s", s_vrm);
 	snprintf(venue.levSha256, sizeof venue.levSha256, "%s", CORTEX_LEV_SHA256);
 	snprintf(venue.vrmSha256, sizeof venue.vrmSha256, "%s", CORTEX_VRM_SHA256);
-	venue.packageRevision[0] = 0;
+	venue.musicPackageRevision[0] = 0;
 	EXPECT(CustomTrack_ApplyGarageVenueDescriptor(0, &venue), "assign an ordinary venue using the Cortex files");
 	EXPECT(!CustomTrack_ReadBossMusic(PKG_HOST, 0, &size, &reason), "matching geometry alone does not select bundled music");
 	venue.cortex = 1;

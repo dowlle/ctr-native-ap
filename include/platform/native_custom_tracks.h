@@ -138,7 +138,7 @@ struct GarageVenueDescriptor
 	char vrmSha256[NATIVE_SHA256_HEX_BYTES];
 #ifdef CTR_CUSTOM_PACKAGES
 	int cortex;
-	char packageRevision[65];
+	char musicPackageRevision[65];
 	char packageUuid[37];
 	unsigned long levBytes, vrmBytes;
 #endif
