@@ -9,6 +9,7 @@
 #include <platform/native_custom_identity.h>
 #include <platform/native_custom_state_identity.h>
 #include <platform/native_custom_records.h>
+#include <platform/native_custom_tracks_policy.h>
 CTR_STATIC_ASSERT(sizeof(((struct GameTracker *)0)->lapTime) / sizeof(int) == CTR_OFFLINE_MAX_LAPS);
 
 // A package chosen on the Arcade or Time Trial custom
@@ -80,6 +81,20 @@ static void MainRaceTrack_OfflineTraceText(char *out, size_t size)
 int MainRaceTrack_OfflineCustomLoad(void)
 {
 	return CustomOffline_RuntimeServing(sdata->gGT->levelID, MainRaceTrack_OfflineSingleRaceMode());
+}
+
+int MainRaceTrack_OfflineNavIdentity(unsigned char uuid[16], unsigned int *revision)
+{
+	struct CustomStateIdentity identity;
+
+	if (!MainRaceTrack_OfflineCustomLoad())
+		return 0;
+	CustomOffline_RuntimeStateIdentity(&identity);
+	if (identity.kind != CTR_CUSTOM_STATE_PACKAGE || !CustomTrackPolicy_ParseNavUuid(identity.uuid, uuid))
+		return 0;
+
+	*revision = CustomTrackPolicy_NavRevision(identity.levSha256);
+	return *revision != 0;
 }
 
 // Engine hooks for the custom runtime. They hand it the engine's race mode

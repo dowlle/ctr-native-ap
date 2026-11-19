@@ -275,6 +275,11 @@ static void end_race(int raceTime)
 int main(void)
 {
 	char dir[] = "/tmp/ctr-tt-records-XXXXXX";
+	static const unsigned char expectedUuid[16] = {
+		0x0f, 0x8f, 0xad, 0x5b, 0xd9, 0xcb, 0x46, 0x9f, 0xa1, 0x65, 0x70, 0x86, 0x77, 0x28, 0x95, 0x0e,
+	};
+	unsigned char navUuid[16];
+	unsigned int revision;
 	struct GameProgress before;
 	int i;
 
@@ -308,6 +313,8 @@ int main(void)
 	start_time_trial();
 	CHECK(MainRaceTrack_OfflineCustomLoad());
 	CHECK(MainRaceTrack_OfflineCustomTimeTrial());
+	CHECK(MainRaceTrack_OfflineNavIdentity(navUuid, &revision));
+	CHECK(memcmp(navUuid, expectedUuid, sizeof navUuid) == 0 && revision == 0x11111111u);
 	CHECK(MainRaceTrack_IdentityLevelID() == CTR_CUSTOM_LEVEL_ID);
 	CHECK(s_gt.numLaps == CTR_CUSTOM_DEFAULT_LAPS);
 	// The engine's level load reads the package, not Roo's Tubes, for every
@@ -554,6 +561,8 @@ int main(void)
 				CHECK(strstr(s_lastLog, "refused") == NULL);
 				CHECK(s_servedRoles == 3 && CustomOffline_RuntimeLoaded());
 				CHECK(MainRaceTrack_OfflineCustomLoad());
+				CHECK(MainRaceTrack_OfflineNavIdentity(navUuid, &revision));
+				CHECK(memcmp(navUuid, expectedUuid, sizeof navUuid) == 0 && revision == 0x11111111u);
 				CHECK(MainRaceTrack_IdentityLevelID() == CTR_CUSTOM_LEVEL_ID);
 				CHECK(MainRaceTrack_OfflineCustomTimeTrial() == (races[r].mode == CTR_OFFLINE_MODE_TIME_TRIAL));
 				CHECK(s_gt.numLaps == CustomOffline_RuntimeLaps());
@@ -576,6 +585,7 @@ int main(void)
 				CHECK(!CustomOffline_RuntimeActive() && s_gt.levelID == MAIN_MENU_LEVEL);
 				CHECK(s_gt.numPlyrCurrGame == 4 && s_gt.numPlyrNextGame == 1 && (s_gt.gameMode1 & MAIN_MENU));
 				CHECK(!MainRaceTrack_OfflineCustomLoad());
+				CHECK(!MainRaceTrack_OfflineNavIdentity(navUuid, &revision));
 			}
 		}
 		// Started for Time Trial, the race is Arcade: refused, with the bits.

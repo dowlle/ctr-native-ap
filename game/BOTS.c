@@ -17,7 +17,6 @@ enum
 	BOTS_ADV_MAX_LOSS_DIFFICULTY_INDEX = 10,
 	BOTS_DIFFICULTY_PARAM_COUNT = 14,
 	BOTS_DIFFICULTY_BLEND_DENOMINATOR = 0xf0,
-	BOTS_NAV_PATH_COUNT = 3,
 	BOTS_MAX_KARTS = 8,
 	BOTS_BATTLE_DRIVER_COUNT = 4,
 	BOTS_GRID_ROW_KART_COUNT = 4,
@@ -112,7 +111,7 @@ void BOTS_InitNavPath(struct GameTracker *gGT, s16 index)
 	struct NavHeader *nh = 0;
 	struct NavHeader **LevNavTable = sdata->gGT->level1->LevNavTable;
 
-	if (LevNavTable != 0)
+	if (LevNavTable != 0 && index < BOTS_NAV_PATH_COUNT)
 	{
 		// nullptr on Nitro Court
 		nh = LevNavTable[index];
@@ -407,8 +406,8 @@ void BOTS_Adv_AdjustDifficulty(void)
 		                          CustomTrack_GarageVenueServing((int)gGT->levelID, gGT->bossID, advBoss) >= 0;
 		facts.cortexTrackIntent = CustomTrack_CortexTrackIntent((int)gGT->levelID, advBoss);
 #ifdef CTR_CUSTOM_PACKAGES
-		// The offline runtime has no navigation identity yet.
 		facts.offlineCustomServing = MainRaceTrack_OfflineCustomLoad();
+		facts.offlineCustomNavIdentity = MainRaceTrack_OfflineNavIdentity(ctNavUuid, &ctNavRevision);
 #endif
 
 		int navrecOutcome = AP_NavRecIdentity_ForLoad(&facts);
@@ -429,7 +428,7 @@ void BOTS_Adv_AdjustDifficulty(void)
 	}
 #endif
 
-	for (s16 i = 0; i < BOTS_NAV_PATH_COUNT; i++)
+	for (s16 i = 0; i < BOTS_NAV_LANE_MAX; i++)
 	{
 		LIST_Clear(&sdata->navBotList[i]);
 
@@ -1676,7 +1675,8 @@ UpdateTireColorTimer:
 
 			int levelID = gGT->levelID; // iVar3
 
-			if ((levelID == HOT_AIR_SKYWAY || levelID == PAPU_PYRAMID) || levelID == POLAR_PASS)
+			if (botDriver->botData.botPath < BOTS_NAV_PATH_COUNT &&
+			    (levelID == HOT_AIR_SKYWAY || levelID == PAPU_PYRAMID || levelID == POLAR_PASS))
 			{
 				int botPathIndex = botDriver->botData.botPath; // iVar3
 
@@ -3251,34 +3251,34 @@ void BOTS_GotoStartingLine(struct Driver *d)
 	d->botData.weaponCooldown = (s16)CTR_MipsAddLo(CTR_MipsSra(rng, 8) & 0xff, 300);
 }
 
+static int BOTS_PathAvailable(int lane)
+{
+	return lane >= 0 && lane < BOTS_NAV_LANE_MAX &&
+	       sdata->NavPath_ptrHeader[lane] != NULL && sdata->NavPath_ptrNavFrameArray[lane] != NULL &&
+	       sdata->NavPath_ptrHeader[lane]->numPoints >= 2;
+}
+
+int BOTS_FindDriverPath(int driverID, int initialLane)
+{
+	if (BOTS_PathAvailable(initialLane))
+		return initialLane;
+
+	int originalPath = sdata->driver_pathIndexIDs[driverID];
+	for (int offset = 0; offset < BOTS_NAV_PATH_COUNT; offset++)
+	{
+		int lane = BOTS_NavFallbackPath(initialLane, originalPath, offset);
+		if (BOTS_PathAvailable(lane))
+			return lane;
+	}
+	return -1;
+}
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80017164-0x80017318.
 struct Driver *BOTS_Driver_Init(int driverID)
 {
-	s8 initialNavPathIndex = sdata->driver_pathIndexIDs[driverID];
-	s8 navPathIndex = initialNavPathIndex;
-	while (1)
-	{
-		s16 navPathPointsCount = sdata->NavPath_ptrHeader[navPathIndex]->numPoints;
-		if (1 < navPathPointsCount)
-		{
-			break; // success
-		}
-
-		navPathIndex--;
-
-		// If subtracted below zero,
-		// go back to highest index (2)
-		if (navPathIndex < 0)
-		{
-			navPathIndex = 2;
-		}
-
-		// If all 3 are checked, quit
-		if (navPathIndex == initialNavPathIndex)
-		{
-			return NULL;
-		}
-	}
+	int navPathIndex = BOTS_FindDriverPath(driverID, sdata->driver_pathIndexIDs[driverID]);
+	if (navPathIndex < 0)
+		return NULL;
 
 	// path data found
 	struct Thread *t = PROC_BirthWithObject(
@@ -3317,31 +3317,9 @@ void BOTS_Driver_Convert(struct Driver *d)
 
 	UI_RaceEnd_GetDriverClock(d);
 
-	s8 initialNavPathIndex = sdata->driver_pathIndexIDs[d->driverID];
-	s8 navPathIndex = initialNavPathIndex;
-	while (1)
-	{
-		s16 navPathPointsCount = sdata->NavPath_ptrHeader[navPathIndex]->numPoints;
-		if (1 < navPathPointsCount)
-		{
-			break; // success
-		}
-
-		navPathIndex--;
-
-		// If subtracted below zero,
-		// go back to highest index (2)
-		if (navPathIndex < 0)
-		{
-			navPathIndex = 2;
-		}
-
-		// If all 3 are checked, quit
-		if (navPathIndex == initialNavPathIndex)
-		{
-			return;
-		}
-	}
+	int navPathIndex = BOTS_FindDriverPath(d->driverID, sdata->driver_pathIndexIDs[d->driverID]);
+	if (navPathIndex < 0)
+		return;
 
 	memset(&d->botData, 0, sizeof(struct BotData));
 

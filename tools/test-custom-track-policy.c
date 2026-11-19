@@ -2011,6 +2011,10 @@ static void test_nav_uuid_parse(void)
 	for (i = 0; i < CTR_CT_NAV_UUID_BYTES; i++)
 		expect_int((int)out[i], (int)babyT[i], "uppercase UUID byte");
 
+	expect_int(CustomTrackPolicy_NavRevision("3aB41239ffffffff") == 0x3ab41239u, 1, "revision uses four digest bytes in order");
+	expect_int(CustomTrackPolicy_NavRevision("00000000ffffffff"), 1, "zero digest prefix maps to a nonzero revision");
+	expect_int(CustomTrackPolicy_NavRevision("abcd"), 0, "short digest prefix is refused");
+
 	// An all-zero UUID is a well-formed value. It is not special-cased here:
 	// navIdentityValid is what says whether an identity exists, so the parser
 	// does not need a second way to say "none".

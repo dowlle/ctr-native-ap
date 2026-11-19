@@ -23,17 +23,22 @@
 
 #define AP_NAVREC_FORMAT_VERSION_V2 2
 #define AP_NAVREC_FORMAT_VERSION_V3 3
+#define AP_NAVREC_FORMAT_VERSION_V4 4
 #define AP_NAVREC_FORMAT_VERSION    AP_NAVREC_FORMAT_VERSION_V2
 #define AP_NAVREC_HEADER_BYTES      96
 #define AP_NAVREC_HEADER_BYTES_V3   128
 #define AP_NAVREC_LAPDIR_BYTES   32
+#define AP_NAVSET_LAPDIR_BYTES   64
+#define AP_NAVSET_MAX_LAPS       7
+#define AP_NAVSET_MAX_FILE_BYTES (AP_NAVREC_HEADER_BYTES_V3 + AP_NAVSET_MAX_LAPS * \
+	(AP_NAVSET_LAPDIR_BYTES + AP_NAVREC_MAX_NODES * (AP_NAVREC_NODE_BYTES + AP_NAVREC_STAMP_BYTES)) + AP_NAVREC_TRAILER_BYTES)
 #define AP_NAVREC_TRAILER_BYTES  8
 #define AP_NAVREC_NODE_BYTES     20
 #define AP_NAVREC_STAMP_BYTES    4
 
-// The engine has three nav lanes (NavPath_ptrHeader[3]) and a submission is up
-// to three laps by one driver, one per lane. The two caps are the same number
-// for that reason, not by coincidence, so they are kept as separate names.
+// Three LEV lanes feed the existing local pool, and a .navlap submission
+// holds up to three laps by one driver. Keep these separate from the larger
+// runtime lane table and the .navset file limit.
 #define AP_NAVREC_LANES    3
 #define AP_NAVREC_MAX_LAPS 3
 
@@ -1114,8 +1119,17 @@ static int AP_NavRecFormat_SpansOverlap(unsigned int aAt, unsigned int aLen, uns
 //
 // The whole file is rejected, never a single lap, and the hash is verified
 // BEFORE any offset is followed so a corrupted offset is never dereferenced.
-static int AP_NavRecFormat_Read(const void *buf, unsigned int size, struct AP_NavRecFileInfo *info,
-                                struct AP_NavRecNode outNodes[][AP_NAVREC_MAX_NODES], unsigned int outStamps[][AP_NAVREC_MAX_NODES])
+struct AP_NavSetInfo
+{
+	struct AP_NavRecFileInfo header;
+	struct AP_NavRecLapInfo laps[AP_NAVSET_MAX_LAPS];
+	char driverNames[AP_NAVSET_MAX_LAPS][AP_NAVREC_NAME_FIELD + 1];
+	unsigned char sourceShaPrefix[AP_NAVSET_MAX_LAPS][4];
+};
+
+static int AP_NavRecFormat_ReadContainer(const void *buf, unsigned int size, struct AP_NavRecFileInfo *info,
+                                        struct AP_NavRecNode outNodes[][AP_NAVREC_MAX_NODES],
+                                        unsigned int outStamps[][AP_NAVREC_MAX_NODES], struct AP_NavSetInfo *set)
 {
 	const unsigned char *p = (const unsigned char *)buf;
 	unsigned int         total;
@@ -1125,8 +1139,10 @@ static int AP_NavRecFormat_Read(const void *buf, unsigned int size, struct AP_Na
 	unsigned int         dirAt;
 	unsigned int         payloadFloor;
 	unsigned int         hashAt;
-	unsigned int         spanAt[AP_NAVREC_MAX_LAPS * 2];
-	unsigned int         spanLen[AP_NAVREC_MAX_LAPS * 2];
+	unsigned int         spanAt[AP_NAVSET_MAX_LAPS * 2];
+	unsigned int         spanLen[AP_NAVSET_MAX_LAPS * 2];
+	unsigned int         entryBytes = set != NULL ? AP_NAVSET_LAPDIR_BYTES : AP_NAVREC_LAPDIR_BYTES;
+	unsigned int         maxLaps = set != NULL ? AP_NAVSET_MAX_LAPS : AP_NAVREC_MAX_LAPS;
 	unsigned int         spans = 0;
 	unsigned int         i;
 	unsigned int         j;
@@ -1141,26 +1157,27 @@ static int AP_NavRecFormat_Read(const void *buf, unsigned int size, struct AP_Na
 		return AP_NAVREC_ERR_MAGIC;
 
 	version = AP_NavRecFormat_GetU16(p + 0x04);
-	if ((version != AP_NAVREC_FORMAT_VERSION_V2) && (version != AP_NAVREC_FORMAT_VERSION_V3))
+	if (set != NULL ? version != AP_NAVREC_FORMAT_VERSION_V4
+	                : version != AP_NAVREC_FORMAT_VERSION_V2 && version != AP_NAVREC_FORMAT_VERSION_V3)
 		return AP_NAVREC_ERR_VERSION;
 
 	headerBytes = AP_NavRecFormat_GetU16(p + 0x06);
 	if (((version == AP_NAVREC_FORMAT_VERSION_V2) && (headerBytes != AP_NAVREC_HEADER_BYTES)) ||
-	    ((version == AP_NAVREC_FORMAT_VERSION_V3) && (headerBytes != AP_NAVREC_HEADER_BYTES_V3)))
+	    ((version != AP_NAVREC_FORMAT_VERSION_V2) && (headerBytes != AP_NAVREC_HEADER_BYTES_V3)))
 		return AP_NAVREC_ERR_HEADER_SHAPE;
 	dirAt = headerBytes;
 	if (p[0x56] != AP_NAVREC_NODE_BYTES)
 		return AP_NAVREC_ERR_HEADER_SHAPE;
 
 	total = AP_NavRecFormat_GetU32(p + 0x08);
-	if ((total != size) || (total > AP_NAVREC_MAX_FILE_BYTES))
+	if ((total != size) || (total > (set != NULL ? AP_NAVSET_MAX_FILE_BYTES : AP_NAVREC_MAX_FILE_BYTES)))
 		return AP_NAVREC_ERR_SIZE;
 
 	lapCount = p[0x55];
-	if ((lapCount == 0u) || (lapCount > AP_NAVREC_MAX_LAPS))
+	if ((lapCount == 0u) || (lapCount > maxLaps))
 		return AP_NAVREC_ERR_LAPCOUNT;
 
-	payloadFloor = dirAt + (AP_NAVREC_LAPDIR_BYTES * lapCount);
+	payloadFloor = dirAt + (entryBytes * lapCount);
 	if (total < (payloadFloor + AP_NAVREC_TRAILER_BYTES))
 		return AP_NAVREC_ERR_SIZE;
 
@@ -1181,19 +1198,23 @@ static int AP_NavRecFormat_Read(const void *buf, unsigned int size, struct AP_Na
 	info->shortcutTier = p[0x54];
 	info->trackKind = AP_NavRecFormat_GetU32(p + 0x58);
 	info->lapCount = lapCount;
-	if (version == AP_NAVREC_FORMAT_VERSION_V3)
+	if (version != AP_NAVREC_FORMAT_VERSION_V2)
 	{
+		const unsigned char zeroUuid[AP_NAVREC_TRACK_UUID_BYTES] = {0};
+
 		if (p[0x60] != AP_NAVREC_IDENTITY_CUSTOM)
 			return AP_NAVREC_ERR_HEADER_SHAPE;
 		info->identityKind = AP_NAVREC_IDENTITY_CUSTOM;
 		memcpy(info->trackUuid, p + 0x64, AP_NAVREC_TRACK_UUID_BYTES);
 		info->navRevision = AP_NavRecFormat_GetU32(p + 0x74);
+		if (set != NULL && (info->navRevision == 0 || memcmp(info->trackUuid, zeroUuid, sizeof zeroUuid) == 0))
+			return AP_NAVREC_ERR_HEADER_SHAPE;
 	}
 
 	// Bounds first, for every lap, before a single byte of payload is read.
 	for (i = 0; i < lapCount; i++)
 	{
-		const unsigned char *d = p + dirAt + (AP_NAVREC_LAPDIR_BYTES * i);
+		const unsigned char *d = p + dirAt + (entryBytes * i);
 		unsigned int         nodeCount = AP_NavRecFormat_GetU32(d + 0x00);
 		unsigned int         framesOffset = AP_NavRecFormat_GetU32(d + 0x0C);
 		unsigned int         stampsOffset = AP_NavRecFormat_GetU32(d + 0x10);
@@ -1229,20 +1250,28 @@ static int AP_NavRecFormat_Read(const void *buf, unsigned int size, struct AP_Na
 
 	for (i = 0; i < lapCount; i++)
 	{
-		const unsigned char *d = p + dirAt + (AP_NAVREC_LAPDIR_BYTES * i);
+		const unsigned char *d = p + dirAt + (entryBytes * i);
 		unsigned int         nodeCount = AP_NavRecFormat_GetU32(d + 0x00);
 		unsigned int         framesOffset = AP_NavRecFormat_GetU32(d + 0x0C);
 		unsigned int         stampsOffset = AP_NavRecFormat_GetU32(d + 0x10);
 		unsigned int         n;
 
-		info->laps[i].nodeCount = nodeCount;
-		info->laps[i].lapFrames = AP_NavRecFormat_GetU32(d + 0x04);
-		info->laps[i].sampleCount = AP_NavRecFormat_GetU32(d + 0x08);
-		info->laps[i].clean = d[0x14];
-		info->laps[i].shortcut = d[0x15];
-		info->laps[i].laneHint = d[0x16];
-		info->laps[i].maskFires = (unsigned short)AP_NavRecFormat_GetU16(d + 0x18);
-		info->laps[i].turboFires = (unsigned short)AP_NavRecFormat_GetU16(d + 0x1A);
+		struct AP_NavRecLapInfo *lap = set != NULL ? &set->laps[i] : &info->laps[i];
+		lap->nodeCount = nodeCount;
+		lap->lapFrames = AP_NavRecFormat_GetU32(d + 0x04);
+		lap->sampleCount = AP_NavRecFormat_GetU32(d + 0x08);
+		lap->clean = d[0x14];
+		lap->shortcut = d[0x15];
+		lap->laneHint = d[0x16];
+		lap->maskFires = (unsigned short)AP_NavRecFormat_GetU16(d + 0x18);
+		lap->turboFires = (unsigned short)AP_NavRecFormat_GetU16(d + 0x1A);
+		if (set != NULL)
+		{
+			char name[AP_NAVREC_NAME_FIELD + 1] = {0};
+			memcpy(name, d + 0x1c, AP_NAVREC_NAME_FIELD);
+			AP_NavRecFormat_SanitizeName(name, set->driverNames[i], sizeof set->driverNames[i]);
+			memcpy(set->sourceShaPrefix[i], d + 0x3c, sizeof set->sourceShaPrefix[i]);
+		}
 
 		for (n = 0; n < nodeCount; n++)
 		{
@@ -1294,6 +1323,22 @@ static int AP_NavRecFormat_Read(const void *buf, unsigned int size, struct AP_Na
 	}
 
 	return AP_NAVREC_OK;
+}
+
+static int AP_NavRecFormat_Read(const void *buf, unsigned int size, struct AP_NavRecFileInfo *info,
+                                struct AP_NavRecNode outNodes[][AP_NAVREC_MAX_NODES], unsigned int outStamps[][AP_NAVREC_MAX_NODES])
+{
+	return AP_NavRecFormat_ReadContainer(buf, size, info, outNodes, outStamps, NULL);
+}
+
+static inline int AP_NavSet_Read(const void *buf, unsigned int size, struct AP_NavSetInfo *set,
+                                struct AP_NavRecNode outNodes[AP_NAVSET_MAX_LAPS][AP_NAVREC_MAX_NODES],
+                                unsigned int outStamps[AP_NAVSET_MAX_LAPS][AP_NAVREC_MAX_NODES])
+{
+	if (set == NULL)
+		return AP_NAVREC_ERR_CAPACITY;
+	memset(set, 0, sizeof *set);
+	return AP_NavRecFormat_ReadContainer(buf, size, &set->header, outNodes, outStamps, set);
 }
 
 // What a pool index needs from a file without decoding it: the header only.
