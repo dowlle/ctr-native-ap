@@ -297,6 +297,7 @@ static int FakeFetch(void *ctx, unsigned int fileIndex, struct AP_NavRecLaneCand
 // exactly this with a file read in place of the array.
 static struct AP_NavRecPoolEntry g_pool[FAKE_MAX_FILES];
 static unsigned int              g_poolWork[AP_NAVREC_POOL_WORK_PER_ENTRY * FAKE_MAX_FILES];
+static const char                *g_onlyKey;
 
 static unsigned int FakePool(void)
 {
@@ -317,6 +318,8 @@ static unsigned int FakePool(void)
 			if (AP_NavRecFormat_Peek(g_folder.bytes[i], len, g_folder.size[i], &peeked) != AP_NAVREC_OK)
 				continue;
 			if (!AP_NavRecPool_EntryCompatible(&peeked, g_folder.levelId, g_folder.identityKind, g_folder.uuid, g_folder.navRevision))
+				continue;
+			if (!AP_NavRecPool_NameMatches(peeked.driverName, g_onlyKey))
 				continue;
 
 			g_pool[count].fileIndex = index;
@@ -1633,6 +1636,36 @@ int main(void)
 	}
 
 	// ---------------------------------------------------------------
+	// Only My Recordings filters the header pool before either picker pass.
+	{
+		struct AP_NavRecPoolPick picks[AP_NAVREC_LANES];
+		unsigned int opened;
+		unsigned int contributors;
+		char key[AP_NAVREC_NAME_FIELD + 1];
+
+		FakeReset(13);
+		FakeAdd(1, "  My  Driver ", 3, 0);
+		FakeAdd(2, "my driver", 1, 0);
+		FakeAdd(3, "Other driver", 3, 0);
+		FakeAdd(4, "", 1, 0);
+		check(FakePool() == 4u, "filter off keeps every compatible header, including anonymous recordings");
+
+		AP_NavRecPool_Key("MY DRIVER", key);
+		g_onlyKey = key;
+		check(FakePool() == 2u, "filter accepts case and space variants of the driver name");
+		check(FakePick(13u, picks, &opened, &contributors) == 1u && contributors == 1u,
+		      "filter with repeat off keeps one lane for the matching driver");
+		check(FakePickRepeat(13u, 1, picks, &opened, &contributors) == 3u && contributors == 1u,
+		      "filter with repeat on fills lanes from matching laps");
+
+		AP_NavRecPool_Key("Missing driver", key);
+		check(FakePick(13u, picks, &opened, &contributors) == 0u && opened == 0u,
+		      "no matching name leaves all lanes available for regular AI without full reads");
+		key[0] = '\0';
+		check(FakePool() == 0u, "missing local name does not claim anonymous recordings");
+		g_onlyKey = NULL;
+	}
+
 	// Several laps per contributor (A5-7, nav_repeat_laps).
 	//
 	// Off is the single-lane rule above, byte for byte. On adds a second pass
@@ -2363,6 +2396,25 @@ int main(void)
 		facts.oxideFinalServing = 1;
 		check(AP_NavRecIdentity_ForLoad(&facts) == AP_NAVREC_LOAD_BLOCKED,
 		      "a configured UUID does not make the bundled pair a custom identity");
+
+		memset(&facts, 0, sizeof facts);
+		facts.offlineCustomServing = 1;
+		check(AP_NavRecIdentity_ForLoad(&facts) == AP_NAVREC_LOAD_BLOCKED,
+		      "custom-page loads without an identity keep the track's own AI");
+		facts.eventRaceServing = 1;
+		facts.eventRaceNavIdentity = 1;
+		check(AP_NavRecIdentity_ForLoad(&facts) == AP_NAVREC_LOAD_BLOCKED,
+		      "a custom-page load cannot borrow the seed package's identity");
+		facts.offlineCustomNavIdentity = 1;
+		check(AP_NavRecIdentity_ForLoad(&facts) == AP_NAVREC_LOAD_CUSTOM,
+		      "a custom-page load with its own identity can use recorded AI");
+		facts.oxideFinalServing = 1;
+		check(AP_NavRecIdentity_ForLoad(&facts) == AP_NAVREC_LOAD_BLOCKED,
+		      "a custom garage or Oxide final stays blocked even with a custom identity");
+		facts.oxideFinalServing = 0;
+		facts.cortexTrackIntent = 1;
+		check(AP_NavRecIdentity_ForLoad(&facts) == AP_NAVREC_LOAD_BLOCKED,
+		      "Cortex Vortex stays blocked even with a custom identity");
 
 		check(AP_NavRecIdentity_LanesMayLoad(AP_NAVREC_LOAD_RETAIL) &&
 		          AP_NavRecIdentity_LanesMayLoad(AP_NAVREC_LOAD_CUSTOM) &&
