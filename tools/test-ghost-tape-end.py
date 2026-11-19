@@ -129,6 +129,10 @@ struct NavFrame { int word; };
 struct NavHeader { s16 magicNumber, numPoints; struct NavFrame *last; };
 struct Level { struct NavHeader **LevNavTable; };
 struct GameTracker { struct Level *level1; unsigned int gameMode1; };
+struct Driver { struct { struct NavFrame *botNavFrame; int botFlags, botPath; } botData; };
+static struct { struct NavHeader *NavPath_ptrHeader[3]; struct NavFrame *NavPath_ptrNavFrameArray[3]; } storage;
+static const typeof(storage) *sdata = &storage;
+#define BOT_FLAG_ESTIMATE_NAV 1
 #define NULL ((void *)0)
 #define BOTS_NAV_PATH_COUNT 3
 #define GAME_CUTSCENE 1u
@@ -137,6 +141,13 @@ struct GameTracker { struct Level *level1; unsigned int gameMode1; };
 #define NAVHEADER_GETFRAME(header) ((struct NavFrame *)((header) + 1))
 """
 fixture += "static void NativeCheckpoint_RepairAuthoredNavEnds(struct GameTracker *gGT)\n" + nav_ends
+drive = body(bots, 'void BOTS_ThTick_Drive(struct Thread *botThread)')
+select_next = 'if ((botDriver->botData.botFlags & BOT_FLAG_ESTIMATE_NAV) == 0)'
+fixture += r"""
+static struct NavFrame *next_frame(struct Driver *botDriver)
+{
+    struct NavFrame *navFrameCurr, *navFrameNext;
+""" + select_next + body(drive, select_next) + "\n    return navFrameNext;\n}\n"
 fixture += r"""
 int main(void)
 {
@@ -145,22 +156,21 @@ int main(void)
     struct Lane live = {.header = {-0x1303, 3, saved.frames + 3}};
     struct NavHeader *table[3] = {NULL, &live.header, NULL};
     struct Level level = {table};
-    struct GameTracker game = {&level, 0};
+    struct GameTracker game = {&level, 0x20000};
     NativeCheckpoint_RepairAuthoredNavEnds(&game);
     if (live.header.last != live.frames + 3)
         return 1;
-    struct NavFrame *next = live.frames + 2;
-    next++;
-    if (next >= live.header.last)
-        next = live.frames;
-    return next != live.frames;
+    storage.NavPath_ptrHeader[1] = &live.header;
+    storage.NavPath_ptrNavFrameArray[1] = live.frames;
+    struct Driver convertedGhost = {.botData = {.botNavFrame = &live.frames[2], .botPath = 1}};
+    return next_frame(&convertedGhost) != live.frames;
 }
 """
 with TemporaryDirectory() as tmp:
     src = Path(tmp) / "ghost-wrap.c"
     exe = Path(tmp) / "ghost-wrap"
     src.write_text(fixture)
-    subprocess.run([os.environ.get("CC", "cc"), "-std=c99", str(src), "-o", str(exe)], check=True)
+    subprocess.run([os.environ.get("CC", "cc"), "-std=gnu99", str(src), "-o", str(exe)], check=True)
     check(subprocess.run([str(exe)]).returncode == 0,
           'authored lane end is rebased and wraps after its last frame')
 

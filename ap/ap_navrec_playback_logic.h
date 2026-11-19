@@ -51,6 +51,18 @@ enum AP_NavRecSeamResult
 	AP_NAVREC_SEAM_TOO_WIDE      // the blend would move a node past the bound
 };
 
+/* Driver metadata, rotation and timing do not make the same positions a
+   different driving line. Compare the prepared positions after seam blend. */
+static inline int AP_NavRecPlayback_SameLine(const struct AP_NavRecNode *a,
+	unsigned int aCount, const struct AP_NavRecNode *b, unsigned int bCount)
+{
+	if (aCount != bCount) return 0;
+	for (unsigned int i = 0; i < aCount; i++)
+		if (a[i].posX != b[i].posX || a[i].posY != b[i].posY || a[i].posZ != b[i].posZ)
+			return 0;
+	return 1;
+}
+
 struct AP_NavRecSeamReport
 {
 	int          result;

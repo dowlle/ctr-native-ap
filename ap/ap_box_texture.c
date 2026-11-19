@@ -39,7 +39,7 @@
 // semi-transparency bits must stay as they are: the primitive writer emits an
 // opaque code word only when they are non-zero.
 
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_RECORDED_RACE)
 
 #include <common.h>
 #include <stdio.h>
@@ -232,6 +232,33 @@ void AP_BoxTexture_Prepare(void)
 	AP_BoxDisc_Read();
 }
 
+#ifdef CTR_RECORDED_RACE
+static void AP_BoxTexture_BuildWeaponSlot(void)
+{
+	// Original question-mark art, drawn over a simple wooden face.
+	static const unsigned char glyph[9] = {0x38, 0x6c, 0x0c, 0x18, 0x30, 0x30, 0, 0x30, 0x30};
+	unsigned char *slot = s_apBoxAtlasLive +
+	    (CTR_WEAPON_CRATE_ATLAS_Y * AP_BOX_ATLAS_W + CTR_WEAPON_CRATE_ATLAS_X) * 4;
+	const unsigned char *wood = &s_apBoxTextureAtlas[
+	    (AP_BOX_TEXTURE_WOOD_Y * AP_BOX_TEXTURE_ATLAS_W + AP_BOX_TEXTURE_WOOD_X) * 4];
+	for (int y = 0; y < 16; y++)
+		memcpy(slot + y * AP_BOX_ATLAS_W * 4, wood + y * AP_BOX_TEXTURE_ATLAS_W * 4, 16 * 4);
+	for (int y = 0; y < 64; y++)
+		for (int x = 0; x < 64; x++)
+		{
+			int gy = (y - 9) / 5;
+			int gx = (x - 12) / 5;
+			int mark = y >= 9 && gy < 9 && x >= 12 && gx < 8 && (glyph[gy] & (0x80 >> gx));
+			unsigned char *pixel = slot + (y * AP_BOX_ATLAS_W + x + AP_BOX_SLOT_FACE_X) * 4;
+			int seam = y % 16 < 2;
+			pixel[0] = mark ? 255 : seam ? 100 : 176;
+			pixel[1] = mark ? 232 : seam ? 56 : 112;
+			pixel[2] = mark ? 138 : seam ? 24 : 49;
+			pixel[3] = 255;
+		}
+}
+#endif
+
 int AP_BoxTexture_Ensure(void)
 {
 	unsigned tex;
@@ -258,6 +285,9 @@ int AP_BoxTexture_Ensure(void)
 		    &s_apBoxTextureAtlas[(AP_BOX_TEXTURE_FACE_Y * AP_BOX_TEXTURE_ATLAS_W + AP_BOX_TEXTURE_FACE_X) * 4],
 		    AP_BOX_TEXTURE_ATLAS_W, s_apBoxLogoMask);
 
+#ifdef CTR_RECORDED_RACE
+	AP_BoxTexture_BuildWeaponSlot();
+#endif
 	tex = (unsigned)NativeRenderer_CreateRGBATexture(AP_BOX_ATLAS_W, AP_BOX_ATLAS_H, s_apBoxAtlasLive);
 	if (tex == 0)
 	{

@@ -15,6 +15,7 @@ struct CustomOfflineRequest;
    CTR_CCV_ARCADE_REASON_MAX bytes are enough). */
 int CustomOffline_PackageArcade(const struct CustomPackageOwned *package);
 int CustomOffline_PackageArcadeReason(const struct CustomPackageOwned *package, char *reason, size_t reasonSize);
+int CustomOffline_PackageSelectorArcadeReason(const struct CustomPackageOwned *package, char *reason, size_t reasonSize);
 int CustomOffline_PackageTimeTrialReason(const struct CustomPackageOwned *package, char *reason, size_t reasonSize);
 /* Which race a custom runtime serves: an Arcade single race (eight karts) or
    a one-kart Time Trial. The engine's race-mode test must name the same mode

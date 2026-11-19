@@ -1,5 +1,11 @@
 #include <platform/native_custom_package.h>
 #include <platform/native_sha256.h>
+extern "C" {
+#include <platform/native_custom_content_verify.h>
+}
+#include <platform/native_custom_tracks_policy.h>
+#include <platform/native_recorded_race_data.h>
+#include "../ap/ap_navrec_playback_logic.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cstdio>
@@ -72,6 +78,186 @@ static unsigned int package_integer(const json &value, unsigned int maximum)
 static bool package_hex(const std::string &text)
 {
     return text.size() == 64 && text.find_first_not_of("0123456789abcdef") == std::string::npos;
+}
+
+static std::vector<unsigned char> recorded_file(const CustomPackageOwned *package,
+    const CustomPackageManifest &manifest, const char *role)
+{
+    for (unsigned int i = 0; i < manifest.count; i++)
+    {
+        const auto &file = manifest.files[i];
+        if (std::strcmp(file.role, role)) continue;
+        std::vector<unsigned char> bytes(file.bytes);
+        if (!CustomPackage_CopyFile(package, role, bytes.data(), bytes.size(), nullptr))
+            throw std::runtime_error("Cannot read owned race file");
+        return bytes;
+    }
+    return {};
+}
+
+static json recorded_json(const std::vector<unsigned char> &bytes, const char *format, const char *lev)
+{
+    std::vector<std::set<std::string>> keys;
+    const auto callback = [&](int depth, json::parse_event_t event, json &value) {
+        if (depth > 8) throw std::runtime_error("Placement file too deeply nested");
+        if (event == json::parse_event_t::object_start) keys.emplace_back();
+        if (event == json::parse_event_t::key && !keys.back().insert(value.get<std::string>()).second)
+            throw std::runtime_error("Duplicate placement key");
+        if (event == json::parse_event_t::object_end) keys.pop_back();
+        return true;
+    };
+    const auto doc = json::parse(bytes.begin(), bytes.end(), callback);
+    if (doc.at("format") != format || package_integer(doc.at("version"), 1) != 1 ||
+        doc.at("track").at("kind") != "custom" || doc.at("track").at("track_key") != "wumpa-world" ||
+        doc.at("track").at("lev_sha256") != json::array({lev}))
+        throw std::runtime_error("Placement identity does not match");
+    return doc;
+}
+
+static int16_t placement_number(const json &value, int low, int high)
+{
+    if (!value.is_number_integer() || value < low || value > high)
+        throw std::runtime_error("Placement coordinate or angle out of range");
+    return value.get<int16_t>();
+}
+
+static void placement_vector(const json &value, int16_t out[3], int low, int high)
+{
+    if (!value.is_array() || value.size() != 3) throw std::runtime_error("Expected a 3-vector");
+    for (int i = 0; i < 3; i++) out[i] = placement_number(value[i], low, high);
+}
+
+static void recorded_grid(const json &doc, CustomRecordedRace &race)
+{
+    package_fields(doc, {"format", "version", "track", "spawns"});
+    const auto &spawns = doc.at("spawns");
+    if (!spawns.is_array() || spawns.size() != CTR_RECORDED_GRID_COUNT)
+        throw std::runtime_error("Expected eight spawns");
+    for (unsigned int i = 0; i < spawns.size(); i++)
+    {
+        const auto &spot = spawns[i];
+        package_fields(spot, {"pos", "rot"});
+        placement_vector(spot.at("pos"), race.grid[i].pos, INT16_MIN, INT16_MAX);
+        placement_vector(spot.at("rot"), race.grid[i].rot, -2048, 4095);
+    }
+}
+
+static void recorded_crates(const json &doc, CustomRecordedRace &race)
+{
+    package_fields(doc, {"format", "version", "track", "rows"});
+    const auto &rows = doc.at("rows");
+    if (!rows.is_array() || rows.size() < 4 || rows.size() > CTR_RECORDED_CRATE_MAX / 4)
+        throw std::runtime_error("Expected four to eight rows");
+    unsigned int rowNumber = 0;
+    for (const auto &row : rows)
+    {
+        package_fields(row, {"row", "crates", "source", "credit", "review"});
+        const auto &crates = row.at("crates");
+        if (package_integer(row.at("row"), CTR_RECORDED_CRATE_MAX / 4) != ++rowNumber ||
+            !crates.is_array() || crates.size() != 4 ||
+            !row.at("source").is_string() || !row.at("credit").is_string() || !row.at("review").is_string())
+            throw std::runtime_error("Invalid crate row");
+        for (const auto &crate : crates)
+        {
+            package_fields(crate, {"pos", "rot_y"});
+            auto &spot = race.crates[race.crateCount++];
+            placement_vector(crate.at("pos"), spot.pos, INT16_MIN, INT16_MAX);
+            spot.rot[1] = placement_number(crate.at("rot_y"), -2048, 4095);
+        }
+    }
+}
+
+extern "C" int CustomPackage_GetRecordedRace(const CustomPackageOwned *package,
+    CustomRecordedRace **out, char *reason, size_t reasonSize)
+{
+    // Slice 1 approves an exact pair. A user-created manifest may pin its
+    // files, but cannot designate unrelated geometry as a recorded race.
+#ifdef CTR_RECORDED_RACE_TEST_PINS
+    static const char wumpaLev[] = CTR_RECORDED_RACE_TEST_LEV;
+    static const char wumpaVrm[] = CTR_RECORDED_RACE_TEST_VRM;
+#else
+    static const char wumpaLev[] = "bbab52f2c65c9c1ad7b697e168013fd849d7fe6ae8f0911ae361999f7c37a132";
+    static const char wumpaVrm[] = "27fe7959a7798c42ead15015a78c9a38f3212507a154f66bec9bc79b79c11ca9";
+#endif
+    if (out && *out) return -1;
+    CustomContentVerification report;
+    if (!CustomPackage_GetPairReport(package, &report)) return 0;
+    const bool levMatches = NativeSha256_HexEquals(report.levSha256, wumpaLev);
+    const bool vrmMatches = NativeSha256_HexEquals(report.vrmSha256, wumpaVrm);
+    if (!levMatches && (!vrmMatches || report.measured.navPaths || report.measured.spawns)) return 0;
+    if (reason && reasonSize) reason[0] = 0;
+    const auto refuse = [&](const char *text) {
+        if (reason && reasonSize) std::snprintf(reason, reasonSize, "%s", text);
+        return -1;
+    };
+    if (!levMatches)
+    {
+        // A VRM can be shared. Refuse a mismatched recorded-race request
+        // without changing the regular mode verdict for another track.
+        CustomPackageManifest manifest;
+        if (!CustomPackage_GetManifest(package, &manifest)) return 0;
+        for (unsigned int i = 0; i < manifest.count; i++)
+            if (!std::strcmp(manifest.files[i].role, "recorded_ai") ||
+                !std::strcmp(manifest.files[i].role, "race_grid") ||
+                !std::strcmp(manifest.files[i].role, "weapon_crate_spots"))
+                return refuse("Wrong LEV hash");
+        return 0;
+    }
+    if (!vrmMatches) return refuse("Wrong VRM hash");
+    if (!CustomContentVerify_TimeTrialReason(&report, nullptr, 0) ||
+        report.measured.navPaths || report.measured.spawns || report.measured.weaponCrates)
+        return refuse("Invalid race files");
+
+    const char *invalid = "Invalid recordings";
+    try
+    {
+        CustomPackageManifest manifest;
+        if (!CustomPackage_GetManifest(package, &manifest)) return refuse("Invalid package");
+        auto bytes = recorded_file(package, manifest, "recorded_ai");
+        if (bytes.empty()) return refuse("Missing recordings");
+        std::unique_ptr<CustomRecordedRace> race(new CustomRecordedRace{});
+        if (AP_NavSet_Read(bytes.data(), bytes.size(), &race->set, race->nodes, race->stamps) != AP_NAVREC_OK)
+            return refuse(invalid);
+        unsigned char uuid[CTR_CT_NAV_UUID_BYTES];
+        const auto &header = race->set.header;
+        if (!CustomTrackPolicy_ParseNavUuid(manifest.uuid, uuid) ||
+            std::memcmp(uuid, header.trackUuid, sizeof uuid) ||
+            header.navRevision != CustomTrackPolicy_NavRevision(wumpaLev))
+            return refuse("Wrong recording ID");
+        if (header.lapCount != AP_NAVSET_MAX_LAPS) return refuse("Need seven laps");
+        for (unsigned int i = 0; i < header.lapCount; i++)
+        {
+            const auto &lap = race->set.laps[i];
+            if (lap.clean != 1 || !AP_NavRecFormat_LapClosed(race->nodes[i], lap.nodeCount) ||
+                AP_NavRecSeam_Process(race->nodes[i], lap.nodeCount, 1, nullptr) != AP_NAVREC_SEAM_SMOOTH)
+                return refuse("Unusable lap");
+            for (unsigned int j = 0; j < i; j++)
+                if (AP_NavRecPlayback_SameLine(race->nodes[i], lap.nodeCount,
+                        race->nodes[j], race->set.laps[j].nodeCount))
+                    return refuse("Duplicate laps");
+        }
+        invalid = "Invalid grid file";
+        bytes = recorded_file(package, manifest, "race_grid");
+        if (bytes.empty()) return refuse("Missing grid");
+        recorded_grid(recorded_json(bytes, "ctr-ap-grid-spots", wumpaLev), *race);
+        invalid = "Invalid crate file";
+        bytes = recorded_file(package, manifest, "weapon_crate_spots");
+        if (bytes.empty()) return refuse("Missing crates");
+        recorded_crates(recorded_json(bytes, "ctr-ap-weapon-crate-spots", wumpaLev), *race);
+        invalid = "Invalid race files";
+        bytes = recorded_file(package, manifest, "lev");
+        if (const char *failure = CustomRecordedRace_CheckGeometry(
+                bytes.data(), bytes.size(), race->grid, race->crates, race->crateCount))
+            return refuse(failure);
+        if (out) *out = race.release();
+        return 1;
+    }
+    catch (const std::exception &) { return refuse(invalid); }
+}
+
+extern "C" void CustomRecordedRace_Free(CustomRecordedRace *race)
+{
+    delete race;
 }
 
 extern "C" int CustomPackage_GetRaceLaps(const CustomPackageOwned *package, unsigned int *laps,
@@ -265,7 +451,8 @@ extern "C" int CustomPackage_ParseManifest(const char *input, size_t size, const
         const std::map<std::string, unsigned int> limits = {{"lev", 16*1024*1024}, {"vrm", 4*1024*1024},
             {"navigation", 16*1024*1024}, {"ap_boxes", 4*1024*1024}, {"ctr_letters", 1024*1024},
             {"relic_targets", 1024*1024}, {"presentation", 4*1024*1024}, {"race_settings", 4096},
-            {"sca", 1024*1024}};
+            {"sca", 1024*1024}, {"recorded_ai", AP_NAVSET_MAX_FILE_BYTES},
+            {"race_grid", 16384}, {"weapon_crate_spots", 16384}};
         std::set<std::string> roles, paths;
         for (const auto &file : files)
         {

@@ -22,7 +22,7 @@ static int store_distinct_nodes(const struct AP_NavRecNode *decoded, unsigned in
 	size_t bytes = count * sizeof *decoded;
 	for (unsigned int i = 0; i < slot; i++)
 	{
-		if (selectedCounts[i] == count && !memcmp(selectedNodes[i], decoded, bytes))
+		if (AP_NavRecPlayback_SameLine(selectedNodes[i], selectedCounts[i], decoded, count))
 			return 0;
 	}
 	selectedCounts[slot] = count;
@@ -78,8 +78,8 @@ static int add_lap(const char *path, const char *index, unsigned int slot, unsig
 	unsigned int frameBytes = count * AP_NAVREC_NODE_BYTES;
 	unsigned int stampBytes = count * AP_NAVREC_STAMP_BYTES;
 	unsigned char *entry = output + AP_NAVREC_HEADER_BYTES_V3 + slot * AP_NAVSET_LAPDIR_BYTES;
-	// Compare what a bot will drive, including the distances recalculated
-	// by the seam blend. The serialized payload keeps its original shape.
+	// Compare the positions a bot will drive after the seam blend. The
+	// serialized payload keeps its original shape.
 	if (!store_distinct_nodes(nodes[lap], count, slot))
 		return 0;
 

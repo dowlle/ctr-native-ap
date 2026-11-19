@@ -603,7 +603,7 @@ CustomPackageStoreEntry scan_entry(const std::string &prefix, const std::string 
     {
         CustomPackage_GetManifest(package, &entry.manifest);
         std::memcpy(entry.local.uuid, entry.manifest.uuid, sizeof entry.local.uuid);
-        entry.local.arcade = CustomOffline_PackageArcadeReason(package, entry.local.arcadeReason,
+        entry.local.arcade = CustomOffline_PackageSelectorArcadeReason(package, entry.local.arcadeReason,
             sizeof entry.local.arcadeReason);
         entry.local.timeTrial = CustomOffline_PackageTimeTrialReason(package, entry.local.timeTrialReason,
             sizeof entry.local.timeTrialReason);

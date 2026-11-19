@@ -1,6 +1,6 @@
 // AP-owned fallback model for tracks without a resident weapon crate.
 
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_RECORDED_RACE)
 
 #include <common.h>
 
@@ -283,6 +283,39 @@ struct Model *AP_BoxModel_ForColour(struct Model *owned, int colour)
 		return owned;
 	return &s_apBoxTintModel[colour - 1];
 }
+
+#ifdef CTR_RECORDED_RACE
+struct Model *AP_BoxModel_GetWeapon(struct GameTracker *gGT)
+{
+	static struct Model model;
+	static struct ModelHeader header;
+	static struct TextureLayout layouts[AP_BOX_FRAMED_NUM_TRIS];
+	static struct TextureLayout *pointers[AP_BOX_FRAMED_NUM_TRIS];
+	static int laidOut;
+	struct Model *owned = AP_BoxModel_GetOwned(gGT);
+	if (!owned || !s_apBoxTextured) return owned;
+	if (!laidOut)
+	{
+		model = *owned;
+		memcpy(model.name, "weapcrate", sizeof "weapcrate");
+		model.headers = &header;
+		for (int i = 0; i < AP_BOX_FRAMED_NUM_TRIS; i++)
+		{
+			struct TextureLayout *layout = &layouts[i];
+			*layout = s_apBoxFramedLayouts[i];
+			layout->u0 += CTR_WEAPON_CRATE_ATLAS_X; layout->v0 += CTR_WEAPON_CRATE_ATLAS_Y;
+			layout->u1 += CTR_WEAPON_CRATE_ATLAS_X; layout->v1 += CTR_WEAPON_CRATE_ATLAS_Y;
+			layout->u2 += CTR_WEAPON_CRATE_ATLAS_X; layout->v2 += CTR_WEAPON_CRATE_ATLAS_Y;
+			layout->u3 += CTR_WEAPON_CRATE_ATLAS_X; layout->v3 += CTR_WEAPON_CRATE_ATLAS_Y;
+			pointers[i] = layout;
+		}
+		laidOut = 1;
+	}
+	header = *owned->headers;
+	header.ptrTexLayout = pointers;
+	return &model;
+}
+#endif
 
 #include "ap_box_spawn_pos.c" // the shared spawn transform
 

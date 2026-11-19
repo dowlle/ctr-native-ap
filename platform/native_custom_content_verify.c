@@ -1,5 +1,6 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_content_verify.h>
+#include <platform/native_recorded_race.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -177,6 +178,115 @@ int CustomContentVerify_TimeTrialReason(const struct CustomContentVerification*r
 	seterr(why,n,text);
 	return !text[0];
 }
+static int64_t ground_cross(const int a[3], const int b[3], int x, int z)
+{
+	return (int64_t)(b[0] - a[0]) * (z - a[2]) -
+	       (int64_t)(b[2] - a[2]) * (x - a[0]);
+}
+
+static int on_triangle(const int a[3], const int b[3], const int c[3], const struct CustomRacePlacement *spot)
+{
+	int x = spot->pos[0], y = spot->pos[1], z = spot->pos[2];
+	int64_t area = ground_cross(a, b, c[0], c[2]);
+	if (!area) return 0;
+	int64_t wa = ground_cross(b, c, x, z);
+	int64_t wb = ground_cross(c, a, x, z);
+	int64_t wc = area - wa - wb;
+	if (area < 0)
+	{
+		area = -area;
+		wa = -wa;
+		wb = -wb;
+		wc = -wc;
+	}
+	if (wa < 0 || wb < 0 || wc < 0) return 0;
+	int64_t dy = wa * (a[1] - y) + wb * (b[1] - y) + wc * (c[1] - y);
+	return dy >= -area && dy <= area; /* Allow rounding to one LEV unit. */
+}
+
+struct RecordedRaceGround
+{
+	const unsigned char *quads, *verts;
+	uint32_t quadCount, vertCount;
+};
+
+static int all_grounded(const struct RecordedRaceGround *mesh, const struct CustomRacePlacement *spots,
+                        unsigned int spotCount)
+{
+	/* High-LOD triangles used by COLL_FIXED_QUADBLK_TestTriangles. */
+	static const unsigned char triangles[8][3] = {
+		{0,4,5}, {4,6,5}, {6,4,1}, {5,6,2}, {8,6,7}, {7,3,8}, {1,7,6}, {2,6,8}
+	};
+	uint32_t grounded = 0;
+	for (unsigned int i = 0; i < spotCount; i++)
+		for (unsigned int j = 0; j < i; j++)
+			if (spots[i].pos[0] == spots[j].pos[0] && spots[i].pos[2] == spots[j].pos[2])
+				return 0;
+	for (uint32_t i = 0; i < mesh->quadCount; i++)
+	{
+		const unsigned char *quad = mesh->quads + i * QUAD_SIZE;
+		unsigned int flags = (uint16_t)rd16s(quad + QUAD_FLAGS);
+		if (!(flags & 0x1000u) || (flags & 0x0210u)) continue;
+		int v[9][3];
+		for (unsigned int j = 0; j < 9; j++)
+		{
+			unsigned int id = (uint16_t)rd16s(quad + j * 2);
+			if (id >= mesh->vertCount) return 0;
+			const unsigned char *vertex = mesh->verts + id * 16;
+			for (int axis = 0; axis < 3; axis++) v[j][axis] = rd16s(vertex + axis * 2);
+		}
+		unsigned int count = rd16s(quad + 4) == rd16s(quad + 6) ? 4 : 8;
+		for (unsigned int j = 0; j < spotCount; j++)
+		{
+			if (grounded & (UINT32_C(1) << j)) continue;
+			for (unsigned int k = 0; k < count; k++)
+			{
+				const unsigned char *t = triangles[k];
+				if (!on_triangle(v[t[0]], v[t[1]], v[t[2]], &spots[j])) continue;
+				grounded |= UINT32_C(1) << j;
+				break;
+			}
+		}
+	}
+	return grounded == (UINT32_MAX >> (32 - spotCount));
+}
+
+const char *CustomRecordedRace_CheckGeometry(const unsigned char *lev, size_t size,
+	const struct CustomRacePlacement *grid, const struct CustomRacePlacement *crates,
+	unsigned int crateCount)
+{
+	struct LevView view;
+	size_t checkpoints, mesh, quads, verts;
+	if (!lev || !lev_map(lev, size, &view, NULL, 0)) return "Invalid LEV";
+	uint32_t count = rd32(view.p + CHECK_N);
+	if (count < 4 || count > 255 ||
+	    !pointer(&view, CHECK_P, count * CHECK_SIZE, &checkpoints, NULL, 0) || !checkpoints)
+		return "Invalid lap cycle";
+	unsigned int at = 0;
+	for (unsigned int i = 0; i < count; i++)
+	{
+		unsigned int next = view.p[checkpoints + at * CHECK_SIZE + 8];
+		if (next >= count || (!next && i + 1 != count) ||
+		    view.p[checkpoints + next * CHECK_SIZE + 10] != at)
+			return "Invalid lap cycle";
+		at = next;
+	}
+	if (at) return "Invalid lap cycle";
+	if (!pointer(&view, MESH_P, MESH_SIZE, &mesh, NULL, 0) || !mesh) return "Invalid ground mesh";
+	uint32_t quadCount = rd32(view.p + mesh);
+	uint32_t vertCount = rd32(view.p + mesh + 4);
+	if (!quadCount || quadCount > QUAD_MAX || !vertCount || vertCount > 65536 ||
+	    !pointer(&view, mesh + 12, quadCount * QUAD_SIZE, &quads, NULL, 0) || !quads ||
+	    !pointer(&view, mesh + 16, vertCount * 16, &verts, NULL, 0) || !verts)
+		return "Invalid ground mesh";
+	struct RecordedRaceGround ground = {view.p + quads, view.p + verts, quadCount, vertCount};
+	if (!grid || !all_grounded(&ground, grid, CTR_RECORDED_GRID_COUNT)) return "Grid off ground";
+	if (!crates || !crateCount || crateCount > CTR_RECORDED_CRATE_MAX ||
+	    !all_grounded(&ground, crates, crateCount))
+		return "Crates off ground";
+	return NULL;
+}
+
 const char*CustomContentVerify_ModeSlug(int m){static const char*s[]={"time_trial","relic_race","ctr_challenge","arcade","crystal_challenge"};return m>=0&&m<5?s[m]:"unknown";}
 const char*CustomContentVerify_EvidenceText(int r){if(r==CTR_CCV_DETECTED)return"Detected";if(r==CTR_CCV_NOT_DETECTED)return"Not detected";if(r==CTR_CCV_ERROR)return"Error";return"Indeterminate";}
 #endif

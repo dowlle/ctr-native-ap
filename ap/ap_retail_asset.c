@@ -5,7 +5,7 @@
 // its own thing: both traps cost a live debugging session each, and neither is
 // visible from the call site.
 
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_RECORDED_RACE)
 
 #include <common.h>
 #include <stdio.h>

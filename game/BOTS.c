@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_RECORDED_RACE
+#include <platform/native_recorded_race.h>
+#endif
 
 #ifdef CTR_AP
 #include "../ap/ap_boss_adapter.h" // J03 boss adapter protection
@@ -517,6 +520,11 @@ void BOTS_Adv_AdjustDifficulty(void)
 	{
 		sdata->driver_pathIndexIDs[i] = pathOrder[(u8)sdata->kartSpawnOrderArray[i]];
 	}
+#ifdef CTR_RECORDED_RACE
+	if (MainRaceTrack_RecordedRace())
+		for (s16 i = 1; i < BOTS_MAX_KARTS; i++)
+			sdata->driver_pathIndexIDs[i] = BOTS_NAV_PATH_COUNT + i - 1;
+#endif
 
 	if ((gameMode1 & ADVENTURE_BOSS) != 0)
 	{

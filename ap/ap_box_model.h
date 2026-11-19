@@ -23,6 +23,9 @@ int AP_BoxModel_EnsureRelic(struct GameTracker *gGT);
 // Runtime AP boxes use this on every race type so resident retail weapon crates
 // keep their own model while AP locations remain visually distinct.
 struct Model *AP_BoxModel_GetOwned(struct GameTracker *gGT);
+#ifdef CTR_RECORDED_RACE
+struct Model *AP_BoxModel_GetWeapon(struct GameTracker *gGT);
+#endif
 
 // The same box in one of the colours of ap_box_colour_logic.h. `owned` is what
 // AP_BoxModel_GetOwned returned; it comes back unchanged for pink, for an

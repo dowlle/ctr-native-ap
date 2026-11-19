@@ -48,7 +48,7 @@ static int AP_BoxModel_MeasureMesh(struct Model *m, AP_BoxMeshBounds *boundsOut,
 	return 1;
 }
 
-#ifdef CTR_AP // the size ruling is the AP crate model's alone
+#if defined(CTR_AP) || defined(CTR_RECORDED_RACE)
 // The size-ruling measurement: max bounding extent (model units) via *extentOut
 // and header scale via *scaleOut; 0 on anything unexpected.
 static int AP_BoxModel_Measure(struct Model *m, int *scaleOut, int *extentOut)
