@@ -76,11 +76,15 @@ check("AP_NavRecPool_NameMatches(info->driverName, onlyKey)" in body("AP_NavRec_
       and "c->onlyKey)" in fetch and "buf, &info, fetchCtx.onlyKey)" in load,
       "full reads recheck the name during both pick and placement")
 bots = (root / "game" / "BOTS.c").read_text()
+main_loop = (root / "game" / "MAIN" / "MainMain.c").read_text()
 check("facts.offlineCustomServing = MainRaceTrack_OfflineCustomLoad();" in bots
       and "facts.offlineCustomServing = MainRaceTrack_OfflineCustomLoad();" in body("AP_NavRec_RederiveLoadIdentity")
       and all("MainRaceTrack_OfflineNavIdentity(ctNavUuid, &ctNavRevision)" in hook
               for hook in (bots, body("AP_NavRec_RederiveLoadIdentity"))),
       "race initialization and restore both identify custom-page loads separately")
+check("AP_NavRec_ResetCapture();" in init and re.search(
+      r"if \(iVar8 == LOAD_RESTART\)[\s\S]*?AP_NavRec_ResetCapture\(\);[\s\S]*?MainRaceTrack_OfflineResidentRestart\(\);",
+      main_loop) is not None, "new loads and resident race restarts both discard the previous capture")
 check("AP_NavRecLane_Select" not in src and "AP_NavRecLane_Plan" not in src, "the newest-first selector is gone")
 check(re.search(r"seed %08x", load) is not None, "the pool log line carries the seed")
 check(re.search(r'lane %d: \\"%s\\" driver', load) is not None, "each recorded lane logs its file and driver")

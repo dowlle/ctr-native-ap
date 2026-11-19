@@ -3192,6 +3192,18 @@ void BOTS_CollideWithOtherAI(struct Driver *robot_1, struct Driver *robot_2)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8001702c-0x80017164.
 void BOTS_GotoStartingLine(struct Driver *d)
 {
+	int oldPath = d->botData.botPath;
+	int path = BOTS_FindDriverPath(d->driverID, oldPath);
+	if (path < 0)
+		return;
+	if (path != oldPath)
+	{
+		if (oldPath >= 0 && oldPath < BOTS_NAV_LANE_MAX)
+			LIST_RemoveMember(&sdata->navBotList[oldPath], &d->botData.item);
+		LIST_AddFront(&sdata->navBotList[path], &d->botData.item);
+		d->botData.botPath = path;
+	}
+
 	sdata->aiCollisionDelayFrameCount = 0;
 
 	VehBirth_TeleportSelf(d, VEH_BIRTH_SPAWN_RACE_START, 0);

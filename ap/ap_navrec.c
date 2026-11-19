@@ -464,6 +464,13 @@ static void AP_NavRec_DropBank(void)
 	s_navrecLapOpenAtLine = 0;
 }
 
+void AP_NavRec_ResetCapture(void)
+{
+	AP_NavRec_DropBank();
+	s_navrecCorridorLevel = -1;
+	s_navrecGridReady = 0;
+}
+
 // The option is re-read EVERY tick rather than latched. Latching it would mean
 // unticking "Save AI Lap Recordings" mid-session left the recorder running until
 // the player restarted, which is exactly the surprise the option exists to
@@ -1517,9 +1524,7 @@ void AP_NavRec_AfterBotsInit(void)
 	int levelID;
 
 	// A restart or another custom package can reuse the same physical slot.
-	AP_NavRec_DropBank();
-	s_navrecCorridorLevel = -1;
-	s_navrecGridReady = 0;
+	AP_NavRec_ResetCapture();
 	s_navrecLanesLive = 0;
 	s_navrecLanesLevel = -1;
 	s_navrecRecordedMask = 0;
@@ -1953,9 +1958,7 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 		// Polar Pass during the 2026-08-17 prototype. A NULL check does not help:
 		// the pointer is stale, not null.
 		s_navrecLevelID = levelID;
-		AP_NavRec_DropBank();
-		s_navrecCorridorLevel = -1;
-		s_navrecGridReady = 0;
+		AP_NavRec_ResetCapture();
 #ifdef CTR_CUSTOM_PACKAGES
 		// Menus get no BOTS init, so without this a custom race's blocked
 		// verdict would still stand there and label the menu a custom track.
