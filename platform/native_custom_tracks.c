@@ -968,6 +968,7 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 {
 	const char *why = NULL;
 	int cupID;
+	int soloRace;
 
 	if (!s_customTracksLoaded)
 		CustomTrack_Load();
@@ -1025,7 +1026,13 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 		return 0;
 	}
 
-	if (!CustomTrackPolicy_FlagsSupportRace(d->flagAiNav, d->flagSpawns,
+	soloRace = d->standalone && d->soloRace;
+	if (soloRace)
+	{
+		// A solo race needs neither AI paths nor a full starting grid.
+		CustomTrack_Log("[CustomTracks] solo event race: AI nav paths and grid spawns are not required\n");
+	}
+	else if (!CustomTrackPolicy_FlagsSupportRace(d->flagAiNav, d->flagSpawns,
 	                                      d->standalone ? 0 : cupID, &why))
 	{
 		CustomTrack_Log("[CustomTracks] REFUSED: %s (ai_nav=%d spawns=%d, this cup's grid needs %d)\n",
@@ -1059,11 +1066,12 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 	// The field follows the track. Derived once, here, so the driver count, the
 	// standings layout and the harnesses all read one number instead of each
 	// re-clamping the raw spawn count.
-	s_customTrackConfig.raceFieldSize = CustomTrackPolicy_FieldSizeForSpawns(d->flagSpawns);
+	s_customTrackConfig.raceFieldSize = soloRace ? 1 : CustomTrackPolicy_FieldSizeForSpawns(d->flagSpawns);
 	s_customTrackConfig.raceEnabled = 1;
 
-	CustomTrack_Log("[CustomTracks] event race grids %d karts (track reports %d spawn slots, clamped to %d..%d)\n",
-	                s_customTrackConfig.raceFieldSize, d->flagSpawns, CTR_CT_FIELD_MIN, CTR_CT_FIELD_MAX);
+	if (!soloRace)
+		CustomTrack_Log("[CustomTracks] event race grids %d karts (track reports %d spawn slots, clamped to %d..%d)\n",
+		                s_customTrackConfig.raceFieldSize, d->flagSpawns, CTR_CT_FIELD_MIN, CTR_CT_FIELD_MAX);
 
 	CustomTrack_VerifySource(&s_customTrackVrm, "vrm");
 	CustomTrack_VerifySource(&s_customTrackLev, "lev");
@@ -1187,6 +1195,38 @@ void CustomTrack_OnRaceLoadRequested(int levelID)
 const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int levelID)
 {
 	return CustomRaceLatch_Intent(&s_standaloneRace, levelID) ? &s_standaloneRace.current : NULL;
+}
+
+int CustomTrack_GetStandaloneSoloSpawn(int levelID, u8 preferred, struct SpawnPosRot *out)
+{
+	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(levelID);
+	const size_t offset = sizeof(u32) + offsetof(struct Level, DriverSpawn);
+	const size_t gridBytes = sizeof(((struct Level *)0)->DriverSpawn);
+	const unsigned char empty[sizeof *out] = {0};
+	const size_t slots = gridBytes / sizeof empty;
+	const unsigned char *grid, *spawn;
+	if (!out || !race || race->retail || race->cup || !s_standaloneLev.bytes ||
+	    s_standaloneLev.size < offset + gridBytes || preferred >= slots)
+		return 0;
+
+	// The fly-in camera adjusts heights in the live level. Read the retained
+	// LEV so both initial placement and retries use the authored spawn.
+	grid = s_standaloneLev.bytes + offset;
+	spawn = grid + preferred * sizeof empty;
+	if (memcmp(spawn, empty, sizeof empty) == 0)
+	{
+		for (size_t i = 0; i < slots; ++i)
+		{
+			const unsigned char *candidate = grid + i * sizeof empty;
+			if (memcmp(candidate, empty, sizeof empty) != 0)
+			{
+				spawn = candidate;
+				break;
+			}
+		}
+	}
+	memcpy(out, spawn, sizeof *out);
+	return 1;
 }
 
 const struct CustomTrackRaceContext *CustomTrack_PreviousStandaloneContext(void)

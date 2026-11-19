@@ -323,6 +323,9 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		d.flagWumpaCollectible = 1; // measured above (AP_CONTENT_CAP_WUMPA)
 		d.flagSpawns = m->spawns > 8 ? 8 : (int)m->spawns;
 		d.flagCheckpoints = m->checkpoints > 255 ? 255 : (int)m->checkpoints;
+		// A Relic Race runs alone: the loader's opponent rule does not apply
+		// (A6-23 F1). Trophy, CTR and cup legs keep it.
+		d.soloRace = race->mode == AP_CONTENT_MODE_RELIC;
 		snprintf(d.levSha256, sizeof d.levSha256, "%s", CTR_CFG_CORTEX_LEV_SHA256);
 		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", CTR_CFG_CORTEX_VRM_SHA256);
 		snprintf(race->levSha256, sizeof race->levSha256, "%s", CTR_CFG_CORTEX_LEV_SHA256);
@@ -386,6 +389,9 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		d.flagWumpaCollectible = (pkg->capabilities & AP_CONTENT_CAP_WUMPA) != 0;
 		d.flagSpawns = m->spawns > 8 ? 8 : (int)m->spawns;
 		d.flagCheckpoints = m->checkpoints > 255 ? 255 : (int)m->checkpoints;
+		// A Relic Race runs alone: the loader's opponent rule does not apply
+		// (A6-23 F1). Trophy, CTR and cup legs keep it.
+		d.soloRace = race->mode == AP_CONTENT_MODE_RELIC;
 		snprintf(d.levSha256, sizeof d.levSha256, "%s", pkg->lev_sha256);
 		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", pkg->vrm_sha256);
 		snprintf(race->packageRevision, sizeof race->packageRevision, "%s", pkg->revision);
