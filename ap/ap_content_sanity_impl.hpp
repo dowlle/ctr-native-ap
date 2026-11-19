@@ -114,8 +114,15 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
         std::set<int> &excluded = excluded_by_kind[0];
         if (track["origin"] == "custom") {
             for (const auto &pad : out.pads) if (standalone.count(tid) && tid == pad.track_id && !pad.box_spots) {
+                const std::set<int> carried(pad.box_excluded, pad.box_excluded + pad.box_excluded_count);
+                if (exclusion_version == 1 && count)
+                    need(std::includes(excluded.begin(), excluded.end(), carried.begin(), carried.end()),
+                         "fallback exclusions require the updated sanity catalog");
+                // Version 1 preserves the historical pool. New plans use
+                // the carried exclusions to reproduce the physical seats.
+                const auto &seat_excluded = exclusion_version == 1 ? excluded : carried;
                 std::vector<int> pool;
-                for (int n = 1; n <= inv["counts"][0].get<int>(); ++n) if (!excluded.count(n)) pool.push_back(n);
+                for (int n = 1; n <= inv["counts"][0].get<int>(); ++n) if (!seat_excluded.count(n)) pool.push_back(n);
                 const int seats = std::min((int)pool.size(), pad.box_count);
                 for (int i = 0; i < seats; ++i) excluded.insert(pool[i * pool.size() / seats]);
             }

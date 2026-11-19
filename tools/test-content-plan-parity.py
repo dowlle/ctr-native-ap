@@ -1306,9 +1306,23 @@ with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):
     wire = first_world(options).fill_slot_data()
     cases.append(("matsuri-current-sanity-seating", wire, True))
     with mock.patch.dict(crate_exclusions.EXCLUSIONS, {MATSURI: []}):
-        cases.append(("matsuri-alpha5-sanity-seating", first_world(options).fill_slot_data(), True))
+        legacy_wire = first_world(options).fill_slot_data()
+        cases.append(("matsuri-alpha5-sanity-seating", legacy_wire, True))
     alter("matsuri-sanity-missing-feature", lambda p: p["required_features"].remove(sanity.EXCLUSIONS_FEATURE), wire)
     alter("matsuri-sanity-invalid-version", lambda p: p["sanity"].__setitem__("exclusion_version", 1), wire)
+
+    def remove_matsuri_seating(plan):
+        plan["item_boxes"].pop(crate_exclusions.KEY)
+        plan["required_features"].remove(crate_exclusions.FEATURE)
+
+    def add_matsuri_seating_to_legacy(plan):
+        current = wire["content_plan"]
+        plan["item_boxes"][crate_exclusions.KEY] = current["item_boxes"][crate_exclusions.KEY]
+        plan["required_features"] = [feature for feature in current["required_features"]
+                                     if feature != sanity.EXCLUSIONS_FEATURE]
+
+    alter("matsuri-sanity-missing-seat-exclusions", remove_matsuri_seating, wire)
+    alter("matsuri-legacy-sanity-with-new-seat-exclusions", add_matsuri_seating_to_legacy, legacy_wire)
 box_env("box_locations false", lambda c: c["ctr_options"].__setitem__("box_locations", False))
 box_env("box_locations dropped", lambda c: c["ctr_options"].pop("box_locations"))
 box_env("box_locations integer", lambda c: c["ctr_options"].__setitem__("box_locations", 1))
