@@ -30,6 +30,10 @@ unit = ap_hooks_unit.read()
 start = unit.index("static int ap_content_package_index;")
 hooks = unit[start:unit.index("static void AP_CustomContentBuildRequirement(", start)]
 
+vehicle_birth = (root / "game/Vehicle/VehBirth.c").read_text(encoding="utf-8")
+start = vehicle_birth.index("static u8 VehBirth_GetStartlineIndex(")
+spawn_index = vehicle_birth[start:vehicle_birth.index("static void VehBirth_SetStartlinePosition(", start)]
+
 verify_test = (root / "tools/test-custom-content-verify.c").read_text(encoding="utf-8")
 lev_start = verify_test.index("#define BODY_INST")
 lev_helper = verify_test[lev_start:verify_test.index("/* The Arcade and Time Trial verdicts", lev_start)]
@@ -419,11 +423,30 @@ int main(void)
 	put32(image, 4 + NAV_P, 0);
 	memset(image + 4 + SPAWN_P + 12, 0, 7 * 12);
 	write_bytes(lev, image, levSize);
+	expect(!CustomContentVerify_Files(lev, vrm, &report, error, sizeof error) &&
+	       strstr(error, "null navigation pointer in relocation map"),
+	       "A6-23: an absent navigation table must not be relocated");
+	/* Remove the navigation table pointer and its three unreachable entries
+	   from the synthetic LEV's relocation map. */
+	size_t map = 4 + BODY_PTRMAP, retained = map + 4;
+	for (size_t i = retained; i < levSize; i += 4)
+	{
+		unsigned slot = rd32(image + i);
+		if (slot != NAV_P && (slot < BODY_NAV || slot >= BODY_NAV + 12))
+		{
+			put32(image, retained, slot);
+			retained += 4;
+		}
+	}
+	levSize = retained;
+	put32(image, map, levSize - map - 4);
+	write_bytes(lev, image, levSize);
 	expect(CustomContentVerify_Files(lev, vrm, &report, error, sizeof error) &&
 	       report.measured.spawns == 1 && report.measured.navPaths == 0 &&
 	       !(AP_ContentMeasuredCapabilities(&report) & AP_CONTENT_CAP_ARCADE),
 	       "A6-23: fixture verifies with one spawn, no AI paths and no Arcade capability");
 	snprintf(plan_package.lev_sha256, sizeof plan_package.lev_sha256, "%s", report.levSha256);
+	plan_package.lev_bytes = (uint32_t)levSize;
 	expect(preflight() && AP_ContentPadReady(3), "A6-23: Relic-only package is Ready");
 	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_RELIC) == 6,
 	       "A6-23: Relic-only pad arms the production loader");
@@ -432,6 +455,26 @@ int main(void)
 	expect(relic && relic->mode == AP_CONTENT_MODE_RELIC && relic->trophyLocation == 35016302 &&
 	       CustomTrack_ServingLoad(6, 0, 0) && CustomTrack_EventFieldSize(6, 0, 0) == 1,
 	       "A6-23: solo Relic Race serves the verified custom package");
+	struct GameTracker game = {0};
+	struct Driver driver = {0};
+	struct Level level = {0};
+	sdata->gGT = &game;
+	game.gameMode1 = ADVENTURE_MODE | RELIC_RACE;
+	game.levelID = 6;
+	sdata->kartSpawnOrderArray[0] = 1; /* P1's retail Relic Race spawn */
+	memcpy(level.DriverSpawn, image + 4 + SPAWN_P, sizeof level.DriverSpawn);
+	expect(VehBirth_GetStartlineIndex(&driver, &level) == 0,
+	       "A6-23: P1 uses the package's only authored spawn");
+	level.DriverSpawn[1].pos.x = 42;
+	expect(VehBirth_GetStartlineIndex(&driver, &level) == 1,
+	       "A6-23: an authored solo slot keeps its priority");
+	memset(level.DriverSpawn, 0, sizeof level.DriverSpawn);
+	expect(VehBirth_GetStartlineIndex(&driver, &level) == 1,
+	       "A6-23: an all-zero grid starts at the origin");
+	game.levelID = 7;
+	level.DriverSpawn[0].pos.x = 12;
+	expect(VehBirth_GetStartlineIndex(&driver, &level) == 1,
+	       "A6-23: a retail Relic Race keeps the original spawn order");
 	reset_calls();
 
 	/* No package record: nothing to scan or enter. */
@@ -448,7 +491,7 @@ int main(void)
 
 with tempfile.TemporaryDirectory() as tmp:
     src, exe = Path(tmp) / "content_hooks.c", Path(tmp) / "content_hooks"
-    src.write_text(prelude + lev_helper + stubs + hooks + tests, encoding="utf-8")
+    src.write_text(prelude + lev_helper + stubs + hooks + spawn_index + tests, encoding="utf-8")
     subprocess.run(["cc", "-m32", "-DCTR_NATIVE", "-DBUILD=926", "-std=gnu99",
                     "-Wall", "-Wextra", "-Werror", "-Wno-unused-function", "-Wno-format-truncation",
                     "-DCTR_REPO_ROOT=\"" + str(root) + "\"",

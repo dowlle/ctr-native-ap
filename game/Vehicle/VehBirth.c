@@ -3,6 +3,9 @@
 #include "../../ap/ap_firstkey_freeze.h"
 #include "../../ap/ap_fasttravel.h"
 #endif
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+#include <platform/native_custom_tracks.h>
+#endif
 
 static int VehBirth_IsDoor5InstDef(struct InstDef *instDef)
 {
@@ -104,14 +107,35 @@ static void VehBirth_SetBottomFromPos(SVec3 *posBottom, const SVec3 *pos)
 	posBottom->z = pos->z;
 }
 
-static u8 VehBirth_GetStartlineIndex(struct Driver *d)
+static u8 VehBirth_GetStartlineIndex(struct Driver *d, const struct Level *level)
 {
-	return sdata->kartSpawnOrderArray[d->driverID];
+	u8 preferred = sdata->kartSpawnOrderArray[d->driverID];
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	const struct GameTracker *gGT = sdata->gGT;
+	if (d->driverID == 0 && (gGT->gameMode1 & RELIC_RACE))
+	{
+		const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(gGT->levelID);
+		const unsigned char empty[sizeof level->DriverSpawn[0]] = {0};
+		// Prefer the retail solo slot, then use the first authored spawn.
+		// An all-zero grid keeps the original start at the origin.
+		if (race && !race->retail && memcmp(&level->DriverSpawn[preferred], empty, sizeof empty) == 0)
+		{
+			for (u8 i = 0; i < sizeof level->DriverSpawn / sizeof level->DriverSpawn[0]; ++i)
+			{
+				if (memcmp(&level->DriverSpawn[i], empty, sizeof empty) != 0)
+					return i;
+			}
+		}
+	}
+#else
+	(void)level;
+#endif
+	return preferred;
 }
 
 static void VehBirth_SetStartlinePosition(struct Driver *d, struct Level *level, SVec3 *posBottom)
 {
-	u8 spawnIndex = VehBirth_GetStartlineIndex(d);
+	u8 spawnIndex = VehBirth_GetStartlineIndex(d, level);
 
 	d->actionsFlagSet |= ACTION_BEHIND_START_LINE;
 #ifdef CTR_NATIVE
@@ -131,7 +155,7 @@ static void VehBirth_SetStartlinePosition(struct Driver *d, struct Level *level,
 
 static void VehBirth_SetStartlineRotation(struct Driver *d, struct Level *level)
 {
-	u8 spawnIndex = VehBirth_GetStartlineIndex(d);
+	u8 spawnIndex = VehBirth_GetStartlineIndex(d, level);
 
 	d->rotCurr.x = level->DriverSpawn[spawnIndex].rot.x;
 	d->rotCurr.y = (level->DriverSpawn[spawnIndex].rot.y + 0x400) & 0xfff;

@@ -319,12 +319,12 @@ int main(void)
 		image[4 + BODY_CHECK + i * CHECK_SIZE + 8] = (unsigned char)((i + 1) % 255);
 	}
 	put32(image, 4 + NAV_P, 0);
-	put32(image, 4 + BODY_PTRMAP, 3 * 4);
-	write_bytes(lev, image, 4 + BODY_PTRMAP + 4 + 3 * 4);
+	put32(image, 4 + BODY_PTRMAP, 2 * 4);
+	write_bytes(lev, image, 4 + BODY_PTRMAP + 4 + 2 * 4);
 	expect(CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "255-checkpoint table accepted");
 	expect(v.measured.checkpoints == 255, "255-checkpoint count retained");
 	put32(image, 4 + CHECK_N, 256);
-	write_bytes(lev, image, 4 + BODY_PTRMAP + 4 + 3 * 4);
+	write_bytes(lev, image, 4 + BODY_PTRMAP + 4 + 2 * 4);
 	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "256-checkpoint table refused");
 	expect(strcmp(error, "invalid checkpoint table") == 0, "256-checkpoint diagnostic retained");
 
