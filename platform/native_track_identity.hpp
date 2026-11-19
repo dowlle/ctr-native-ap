@@ -24,13 +24,22 @@ const char *find(const std::string &key, const char *const (&rows)[N][2])
     return nullptr;
 }
 
-inline void refresh(const std::string &cache)
+inline void prepare(const std::string &cache)
 {
 #ifdef CTR_TRACK_IDENTITY_LIVE
-    if (ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_IDLE)
-        ap_track_registry_refresh(cache.c_str());
+    ap_track_registry_prepare_identity(cache.c_str());
 #else
     (void)cache;
+#endif
+}
+
+inline std::string canonical_key(const std::string &key)
+{
+#ifdef CTR_TRACK_IDENTITY_LIVE
+    return ap_track_registry_canonical_key(key);
+#else
+    const char *alias = find(key, kTrackKeyAliases);
+    return alias ? alias : key;
 #endif
 }
 

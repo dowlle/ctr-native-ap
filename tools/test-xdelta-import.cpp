@@ -408,6 +408,8 @@ static ScanResult scan(const std::string &patch, const std::string &disc, const 
     return r;
 }
 
+extern "C" int XdeltaImportTest_RenameWithoutMarker(XdeltaImportScan *, unsigned int, const char *);
+
 static const XdeltaImportItem *item_for(const XdeltaImportSummary *s, int index)
 {
     for (unsigned i = 0; i < s->count; i++) if (s->items[i].bigfileIndex == index) return &s->items[i];
@@ -2174,6 +2176,7 @@ int main()
             {0, 47, "Deep Sea Driving N-Gage"},
             {0, 49, "Wumpa World"},
             {0, 57, "Drive Thru Danger"},
+            {0, 71, "Hellenic Hijinx"},
             {0, 79, "Crystal Caves"},
             {0, 119, "Dark Ruins"},
             {0, 127, "Assembly Lane N-Gage"},
@@ -2189,6 +2192,7 @@ int main()
             {1, 135, "LEGO Dark Forest Dash"},
             {1, 153, nullptr},
             {1, 169, nullptr},
+            {2, 7, "Super Snocross"},
             {2, 9, "Matsuri"},
             {2, 31, "DK Shipwreck Shore"},
             {2, 39, "Kong Dungeon"},
@@ -2202,6 +2206,8 @@ int main()
             {3, 31, "Hasty Hedges"},
             {3, 39, "Holland"},
             {3, 47, "Motor Sports Land"},
+            {3, 49, "Toxic Dash"},
+            {3, 71, "Hellenic Hijinx"},
             {3, 135, "Jungle Boogie N-Gage"},
         };
         for (const Row &row : rows)
@@ -2210,7 +2216,7 @@ int main()
             const std::string label = "curated slot " + std::to_string(row.patch) + ":" + std::to_string(row.slot);
             CHECK(row.name ? (got && !std::strcmp(got, row.name)) : !got, label.c_str());
         }
-        CHECK(sizeof rows / sizeof rows[0] == 37, "the tester table has 37 rows");
+        CHECK(sizeof rows / sizeof rows[0] == 41, "the slot fixtures cover 41 rows");
         for (int patch = 0; patch < 4; patch++)
         {
             int listed = 0;
@@ -2360,7 +2366,7 @@ int main()
                     char error[256] = {};
                     std::vector<unsigned char> selected(import->count, 0);
                     selected[index] = 1;
-                    CHECK(XdeltaImport_RenameItem(legacy.scan, index, "N-Gage Assembly Lane", error, sizeof error),
+                    CHECK(XdeltaImportTest_RenameWithoutMarker(legacy.scan, index, "N-Gage Assembly Lane"),
                           "A6-37 make a legacy package under its historical name");
                     CHECK(XdeltaImport_Install(legacy.scan, selected.data(), assets.c_str(),
                                                CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM,
@@ -2398,6 +2404,16 @@ int main()
                           "Assembly Lane N-Gage", "1.0.0", item->levSha256, levBytes + 1, item->vrmSha256,
                           vrmBytes, &status) != CTR_CT_MANAGER_READY,
                           "A6-37 alias lookup cannot bypass file pins");
+                    CHECK(XdeltaImport_RenameItem(legacy.scan, index, "My Assembly Lane", error, sizeof error) &&
+                          XdeltaImport_RenameItem(legacy.scan, index, "N-Gage Assembly Lane", error, sizeof error),
+                          "A6-37 explicitly edit the title to a historical spelling");
+                    CHECK(pin != item->pin && XdeltaImport_Install(legacy.scan, selected.data(), assets.c_str(),
+                          CTR_XDELTA_INSTALL_PACKAGES, error, sizeof error) == 1,
+                          "A6-37 install the explicitly edited title");
+                    CHECK(CustomPackage_StoreDescriptor(assets.c_str(), item->pin, nullptr,
+                          key, sizeof key, revision, sizeof revision, descriptor, sizeof descriptor,
+                          error, sizeof error) && std::strstr(descriptor, "N-Gage Assembly Lane"),
+                          "A6-37 player-entered titles take precedence over alias display names");
                 }
                 XdeltaImport_Free(&legacy.scan);
             }

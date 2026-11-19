@@ -180,6 +180,19 @@ int main(int argc, char **argv)
 		key = "unknown";
 		CHECK(ap_track_registry_identity("", "", key, title) && key == "unknown" && title.empty());
 	}
+	{
+		auto legacy = json::parse(v1);
+		for (const char *field : {"road_sha256", "track_key_aliases", "patch_lev_keys"})
+			legacy.erase(field);
+		serve(true, legacy.dump());
+		CHECK(ap_track_registry_refresh(cache.c_str()) == 1);
+		ap_track_registry_prepare_identity(cache.c_str());
+		CHECK(ap_track_registry_status(&source, nullptr, 0) == AP_TRACK_REGISTRY_DONE &&
+		      source == AP_TRACK_REGISTRY_SOURCE_LIVE);
+		std::string key = "old-lake", title;
+		CHECK(ap_track_registry_identity("", "", key, title) && key == "acid-lake" && title == "acid-lake");
+		CHECK(slurp(cache) == v1);
+	}
 
 	// 2. Match by the room's pinned hashes, in any case.
 	std::memset(&m, 0, sizeof m);

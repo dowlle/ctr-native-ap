@@ -2802,7 +2802,6 @@ extern "C" int XdeltaImport_StartScan(const char *patchPath, const char *discPat
     if (s.scanState == 0 || s.installState == 0 || !patchPath || !discPath || !*discPath || !assets ||
         std::strlen(patchPath) > 4096 || std::strlen(assets) > 4096) return 0;
     XdeltaImport_Free(&s.scan);
-    TrackIdentity::refresh(std::string(assets) + "/track-registry-cache.json");
     s.scanState = 0; store_flag(&s.progress, 0); store_flag(&s.cancel, 0); s.error.clear();
     s.titles.clear();
     s.patchName = path_basename(patchPath);
@@ -2816,6 +2815,7 @@ extern "C" int XdeltaImport_StartScan(const char *patchPath, const char *discPat
         std::string patch(patchPath), disc(discPath), root(assets);
         s.scanJob = std::async(std::launch::async, [patch, disc, root] {
             auto &state = job();
+            TrackIdentity::prepare(root + "/track-registry-cache.json");
             std::string tracks = root + "/tracks";
             fs_mkdir(tracks);
             XdeltaImportRequest request = {patch.c_str(), disc.c_str(), nullptr, tracks.c_str(), 0};
@@ -2950,7 +2950,8 @@ extern "C" int XdeltaImport_PollInstall(int *installed, char *error, size_t erro
 /* Replace one offered item's title: rebuild its package under the new name
    and recompute its pin and room folder. Returns 1, or 0 with a short why and
    nothing changed. */
-extern "C" int XdeltaImport_RenameItem(XdeltaImportScan *scan, unsigned int item, const char *title, char *why, size_t whySize)
+static int rename_import_item(XdeltaImportScan *scan, unsigned int item, const char *title,
+                              char *why, size_t whySize, bool edited)
 {
     auto refuse = [&](const char *text) {
         if (why && whySize) std::snprintf(why, whySize, "%s", text);
@@ -2974,7 +2975,7 @@ extern "C" int XdeltaImport_RenameItem(XdeltaImportScan *scan, unsigned int item
         if (!track_key_valid(key)) return refuse("No folder name fits this name");
         std::string failure;
         Built rebuilt = build_package(candidate, name, old.version.empty() ? "1.0.0" : old.version, old.hasMeta ? &old.meta : nullptr,
-                                      scan->summary, old.author, failure, old.curatedKey, true);
+                                      scan->summary, old.author, failure, old.curatedKey, edited);
         if (!rebuilt.owned) return refuse(limit_codepoints("Files failed checks: " + failure, 80).c_str());
         rebuilt.author = old.author;
         rebuilt.version = old.version;
@@ -2992,6 +2993,18 @@ extern "C" int XdeltaImport_RenameItem(XdeltaImportScan *scan, unsigned int item
     }
     catch (const std::exception &) { return refuse("Could not rebuild the track"); }
 }
+
+extern "C" int XdeltaImport_RenameItem(XdeltaImportScan *scan, unsigned int item, const char *title, char *why, size_t whySize)
+{
+    return rename_import_item(scan, item, title, why, whySize, true);
+}
+
+#ifdef CTR_XDELTA_TESTING
+extern "C" int XdeltaImportTest_RenameWithoutMarker(XdeltaImportScan *scan, unsigned int item, const char *title)
+{
+    return rename_import_item(scan, item, title, nullptr, 0, false);
+}
+#endif
 
 /* Remember a name for a review row; applied when the install starts. */
 extern "C" int XdeltaImport_SetItemTitle(unsigned int item, const char *title)

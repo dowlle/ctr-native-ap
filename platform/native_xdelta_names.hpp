@@ -47,6 +47,7 @@ inline constexpr struct { const char *patch; int slot; const char *name; } kCura
     {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 47, "Deep Sea Driving N-Gage"},
     {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 49, "Wumpa World"},
     {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 57, "Drive Thru Danger"},
+    {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 71, "Hellenic Hijinx"},
     {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 79, "Crystal Caves"},
     {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 119, "Dark Ruins"},
     {"92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2", 127, "Assembly Lane N-Gage"},
@@ -60,6 +61,7 @@ inline constexpr struct { const char *patch; int slot; const char *name; } kCura
     {"1e8a796f019c23f7de70c21a00d9fb20ba4c7be0d819c21de3bd84ffcd8397a1", 119, "LEGO Knightmare-A-Thon"},
     {"1e8a796f019c23f7de70c21a00d9fb20ba4c7be0d819c21de3bd84ffcd8397a1", 135, "LEGO Dark Forest Dash"},
     /* Lockbox Adventure */
+    {"836d551d5d213d0aa704083f3c75ed8c0cfe58c9a6c01ef81b4d8a15fdf67180", 7, "Super Snocross"},
     {"836d551d5d213d0aa704083f3c75ed8c0cfe58c9a6c01ef81b4d8a15fdf67180", 9, "Matsuri"},
     {"836d551d5d213d0aa704083f3c75ed8c0cfe58c9a6c01ef81b4d8a15fdf67180", 31, "DK Shipwreck Shore"},
     {"836d551d5d213d0aa704083f3c75ed8c0cfe58c9a6c01ef81b4d8a15fdf67180", 39, "Kong Dungeon"},
@@ -74,6 +76,8 @@ inline constexpr struct { const char *patch; int slot; const char *name; } kCura
     {"748a18082ca0dbc6ff31321e7a75bfa58c3afac80102363fb1385b32e50196df", 31, "Hasty Hedges"},
     {"748a18082ca0dbc6ff31321e7a75bfa58c3afac80102363fb1385b32e50196df", 39, "Holland"},
     {"748a18082ca0dbc6ff31321e7a75bfa58c3afac80102363fb1385b32e50196df", 47, "Motor Sports Land"},
+    {"748a18082ca0dbc6ff31321e7a75bfa58c3afac80102363fb1385b32e50196df", 49, "Toxic Dash"},
+    {"748a18082ca0dbc6ff31321e7a75bfa58c3afac80102363fb1385b32e50196df", 71, "Hellenic Hijinx"},
     {"748a18082ca0dbc6ff31321e7a75bfa58c3afac80102363fb1385b32e50196df", 135, "Jungle Boogie N-Gage"},
     /* Coco Team Racing tracks 3 and 6 (A4-95, A4-95b); their credit and folder keys are in kCuratedExtras. */
     {"17e43e108b7f732cb8302636f6984a3b0df59df6af517fffab0e860d00209b54", 47, "Tizi Madness"},

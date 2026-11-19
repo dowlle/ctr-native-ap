@@ -540,6 +540,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
                                                 item->nameSource == XDELTA_NAME_DESCRIPTOR ? "Name from the pack" :
                                                 item->nameSource == XDELTA_NAME_KNOWN ? "Name of a known track" :
                                                 item->nameSource == XDELTA_NAME_TESTER ? "Name from tester feedback" :
+                                                item->nameSource == XDELTA_NAME_REGISTRY ? "Name from the track registry" :
                                                 item->nameSource == XDELTA_NAME_EDITED ? "Name typed by you" :
                                                 "Placeholder name: SELECT to rename") : item->reason, 305, layout.reasonY, 176,
                                layout.reasonLines, WHITE, ot);

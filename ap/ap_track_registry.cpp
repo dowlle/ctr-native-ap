@@ -9,6 +9,7 @@
 #include <nlohmann/json.hpp>
 
 #include <cctype>
+#include <condition_variable>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -53,10 +54,12 @@ constexpr size_t kCreditNameMax = 80;  // bytes, like a Saphi author
 struct RegistryState
 {
 	std::mutex mutex;
+	std::condition_variable finished;
 	int state = AP_TRACK_REGISTRY_IDLE;
 	int source = AP_TRACK_REGISTRY_SOURCE_NONE;
 	std::string detail;
 	std::shared_ptr<const Index> index;
+	std::shared_ptr<const Index> identity;
 	uint32_t generation = 0;
 };
 
@@ -315,6 +318,7 @@ void publish(Index index, int source)
 	auto shared = std::make_shared<const Index>(std::move(index));
 	RegistryState &s = registry_state();
 	std::lock_guard<std::mutex> lock(s.mutex);
+	if (shared->has_identity) s.identity = shared;
 	s.index = std::move(shared);
 	s.source = source;
 	s.generation++;
@@ -326,6 +330,7 @@ void finish(int state, const std::string &detail)
 	std::lock_guard<std::mutex> lock(s.mutex);
 	s.state = state;
 	s.detail = detail;
+	s.finished.notify_all();
 }
 
 void refresh_worker(std::string cache_path)
@@ -333,12 +338,13 @@ void refresh_worker(std::string cache_path)
 	std::vector<unsigned char> cached, live;
 	std::string error;
 	Index index;
-	bool have_cache = false;
+	bool have_cache = false, cache_has_identity = false;
 	try
 	{
 		if (!cache_path.empty() && read_capped(cache_path, cached) && parse_index(cached, index, error))
 		{
 			have_cache = true;
+			cache_has_identity = index.has_identity;
 			bool empty;
 			{
 				RegistryState &s = registry_state();
@@ -355,8 +361,9 @@ void refresh_worker(std::string cache_path)
 		}
 		else if (parse_index(live, index, error))
 		{
+			const bool preserve_names = cache_has_identity && !index.has_identity;
 			publish(std::move(index), AP_TRACK_REGISTRY_SOURCE_LIVE);
-			if (!cache_path.empty() && (!have_cache || live != cached) && !write_cache(cache_path, live))
+			if (!preserve_names && !cache_path.empty() && (!have_cache || live != cached) && !write_cache(cache_path, live))
 				std::fprintf(stderr, "[CustomTracks] Could not save the track registry cache.\n");
 			finish(AP_TRACK_REGISTRY_DONE, "");
 			return;
@@ -419,6 +426,15 @@ extern "C" int ap_track_registry_refresh(const char *cache_path)
 		       std::string("Could not start the registry check: ") + e.what());
 		return 0;
 	}
+}
+
+extern "C" void ap_track_registry_prepare_identity(const char *cache_path)
+{
+	if (ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_IDLE)
+		ap_track_registry_refresh(cache_path);
+	auto &state = registry_state();
+	std::unique_lock<std::mutex> lock(state.mutex);
+	state.finished.wait(lock, [&] { return state.state != AP_TRACK_REGISTRY_LOADING; });
 }
 
 extern "C" int ap_track_registry_status(int *source, char *detail, int detail_bytes)
@@ -512,20 +528,22 @@ std::string ap_track_registry_canonical_key(const std::string &key)
 {
 	auto &state = registry_state();
 	std::lock_guard<std::mutex> lock(state.mutex);
-	return canonical_key(state.index.get(), key);
+	return canonical_key(state.identity.get(), key);
 }
 
 bool ap_track_registry_credits(const std::string &track_key, std::vector<std::string> &names)
 {
 	std::shared_ptr<const Index> index;
+	std::shared_ptr<const Index> identity;
 	{
 		RegistryState &s = registry_state();
 		std::lock_guard<std::mutex> lock(s.mutex);
 		index = s.index;
+		identity = s.identity;
 	}
 	names.clear();
 	if (!index || track_key.empty()) return false;
-	auto found = index->credits.find(canonical_key(index.get(), track_key));
+	auto found = index->credits.find(canonical_key(identity.get(), track_key));
 	if (found == index->credits.end()) return false;
 	names = found->second;
 	return true;
@@ -536,8 +554,8 @@ bool ap_track_registry_identity(const std::string &lev, const std::string &road,
 {
 	auto &state = registry_state();
 	std::lock_guard<std::mutex> lock(state.mutex);
-	const auto &index = state.index;
-	if (!index || !index->has_identity) return false;
+	const auto &index = state.identity;
+	if (!index) return false;
 	auto exact = index->lev_keys.find(lev);
 	auto layout = index->roads.find(road);
 	auto alias = index->aliases.find(key);
@@ -559,6 +577,7 @@ void ap_track_registry_test_reset()
 	s.source = AP_TRACK_REGISTRY_SOURCE_NONE;
 	s.detail.clear();
 	s.index.reset();
+	s.identity.reset();
 	s.generation++;
 }
 #endif

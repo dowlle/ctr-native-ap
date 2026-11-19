@@ -70,6 +70,10 @@ struct ApTrackRegistryMatch
 // success publish it and replace the cache. Returns 1 when a worker started.
 int ap_track_registry_refresh(const char *cache_path);
 
+// For naming jobs that already run off the game thread. Waits for the current
+// bounded registry fetch, or starts the first fetch if needed.
+void ap_track_registry_prepare_identity(const char *cache_path);
+
 // The refresh state (AP_TRACK_REGISTRY_IDLE...) and the source of the index in
 // use. detail gets a short reason when the live fetch failed.
 int ap_track_registry_status(int *source, char *detail, int detail_bytes);

@@ -514,8 +514,6 @@ extern "C" int CustomPackage_InstallInbox(const char *assets, const char *pin, c
 /* Relic and CTR Challenge capability, plus xdelta provenance. Display and
    admission hints only: a missing or damaged provenance file only clears the
    hints, it never refuses the package. */
-namespace { std::string descriptor_title_key(const char *title); }
-
 static void package_capabilities(CustomPackageOwned *package, CustomPackageStoreEntry &entry)
 {
     bool excludeRelic = false, excludeTokens = false;
@@ -563,8 +561,7 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
             entry.local.xdelta = 1;
             entry.local.bigfileIndex = index;
             std::memcpy(entry.local.patchSha256, patch.c_str(), sizeof entry.local.patchSha256);
-            if (source.contains("edited_title") && source["edited_title"] == true &&
-                !TrackIdentity::find(descriptor_title_key(entry.manifest.title), kTrackKeyAliases))
+            if (source.contains("edited_title") && source["edited_title"] == true)
                 std::memcpy(entry.displayTitle, entry.manifest.title, sizeof entry.displayTitle);
             if (source.contains("excluded"))
                 for (const auto &e : source["excluded"])
@@ -598,6 +595,8 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
 }
 
 namespace {
+std::string descriptor_title_key(const char *title);
+
 void resolve_display_title(const CustomPackageOwned *package, CustomPackageStoreEntry &entry)
 {
     if (!entry.local.xdelta || entry.displayTitle[0]) return;
@@ -613,10 +612,17 @@ void resolve_display_title(const CustomPackageOwned *package, CustomPackageStore
              title.find_first_not_of("0123456789", last + 1) == std::string::npos &&
              ((last >= 6 && title.compare(last - 6, 7, " track ") == 0) ||
               (last >= 5 && title.compare(last - 5, 6, " slot ") == 0));
-        std::string key = generic ? std::string() : descriptor_title_key(manifest.title);
+        const std::string old_key = generic ? std::string() : descriptor_title_key(manifest.title);
+        std::string key = old_key;
         std::vector<unsigned char> lev(file.bytes);
         if (!CustomPackage_CopyFile(package, "lev", lev.data(), lev.size(), nullptr)) return;
-        if (!TrackIdentity::resolve(lev.data(), lev.size(), file.sha256, key, title))
+        if (TrackIdentity::resolve(lev.data(), lev.size(), file.sha256, key, title))
+        {
+            const char *shipped_title = TrackIdentity::find(key, TrackIdentityData::titles);
+            if (!generic && TrackIdentity::canonical_key(old_key) != key &&
+                (!shipped_title || std::strcmp(manifest.title, shipped_title) != 0)) return;
+        }
+        else
         {
             const bool old_known = title == "Luigis Mansion" || title == "Knightmare A Thon" ||
                                    title == "Dark Forest Dash" || title == "Boss race 3";
