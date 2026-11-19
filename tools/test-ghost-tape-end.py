@@ -51,7 +51,7 @@ def body(src, signature):
 
 # 1. The premise: a refused convert leaves the driver exactly as it was.
 convert = body(bots, 'void BOTS_Driver_Convert(struct Driver *d)')
-refuse = convert.index('if (navPathIndex == initialNavPathIndex)')
+refuse = convert.index('if (navPathIndex < 0)')
 refuse_return = convert.index('return;', refuse)
 check(convert.index('memset(&d->botData, 0, sizeof(struct BotData));') > refuse_return,
       'Convert refuses before it clears botData')
@@ -61,7 +61,11 @@ check(convert.index('d->instSelf->thread->funcThTick = BOTS_ThTick_Drive;') > re
       'Convert refuses before it swaps the tick')
 sets_bot = [m.start() for m in re.finditer(r'\|\s*ACTION_BOT;', convert)]
 check(len(sets_bot) == 1 and sets_bot[0] > refuse_return, 'ACTION_BOT is set once, on the success path')
-check('numPoints' in convert[:refuse], 'the refusal is the two-point nav path test')
+find_path = body(bots, 'int BOTS_FindDriverPath(int driverID, int initialLane)')
+available = body(bots, 'static int BOTS_PathAvailable(int lane)')
+check('BOTS_FindDriverPath(' in convert[:refuse] and
+      'BOTS_PathAvailable(' in find_path and '->numPoints >= 2' in available and
+      'return -1;' in find_path, 'the refusal is the shared two-point nav path test')
 
 # 2 and 3. The ghost's end of tape.
 tick = body(ghost, 'void GhostReplay_ThTick(struct Thread *t)')
