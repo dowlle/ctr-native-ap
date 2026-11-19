@@ -87,6 +87,13 @@ check("AP_NavRec_ResetCapture();" in init and re.search(
       main_loop) is not None, "new loads and resident race restarts both discard the previous capture")
 check(0 <= restore.find("AP_NavRec_ResetCapture();") < restore.find("AP_NavRec_RederiveLoadIdentity("),
       "checkpoint restore discards the flying lap even when its index and identity did not change")
+checkpoint = (root / "platform" / "native_checkpoint.c").read_text()
+checkpoint_restore = checkpoint[checkpoint.index("int NativeCheckpoint_Restore(const void *src, int srcSize)"):]
+check(checkpoint.count("AP_NavRec_AfterCheckpointRestore();") == 1 and
+      0 <= checkpoint_restore.find("NativeCheckpoint_ApplyPointerSlotState(") <
+      checkpoint_restore.find("NativeCheckpoint_RepairAuthoredNavEnds(") <
+      checkpoint_restore.find("AP_NavRec_AfterCheckpointRestore();"),
+      "lane reload and fallback run after the LEV pointer map and authored lane repair")
 check(0 <= load.find("if (MainRaceTrack_OfflineCustomTimeTrial())") < load.find("AP_NavRec_HighestIndex(")
       and "MainRaceTrack_OfflineCustomTimeTrial" not in body("AP_NavRec_Write"),
       "custom Time Trial records laps and keeps ghosts on the track's own paths")

@@ -1562,8 +1562,8 @@ void AP_NavRec_AfterBotsInit(void)
 // Savestate restore
 // ============================================================================
 
-// Called at the end of NativeCheckpoint_RelocateSDataPointers, after the nav
-// pointer slots have been relocated.
+// Called after checkpoint restore relocates the runtime and LEV pointer slots
+// and repairs the authored lane ends.
 //
 // Relocation alone is not enough across processes. The lanes live in this
 // module's statics, which are NOT part of any checkpointed region, so a state

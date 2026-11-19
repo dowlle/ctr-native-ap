@@ -20,7 +20,10 @@ This checks the production wiring:
 5. No other caller drives a converted driver directly.
 """
 from pathlib import Path
+import os
 import re
+import subprocess
+from tempfile import TemporaryDirectory
 
 root = Path(__file__).resolve().parents[1]
 bots = (root / 'game/BOTS.c').read_text()
@@ -116,6 +119,50 @@ check('NativeCheckpoint_RelocateDriver(oldHeader, liveHeader, (struct Driver *)t
 check('NATIVE_CHECKPOINT_FIELD_PTR(struct Driver, botData.botNavFrame)' in
       body(checkpoint, 'internal void NativeCheckpoint_RelocateDriver('),
       'relocation covers the ghost bot nav frame')
+nav_ends = body(checkpoint, 'internal void NativeCheckpoint_RepairAuthoredNavEnds(')
+check('header->last = NAVHEADER_GETFRAME(header) + header->numPoints;' in nav_ends,
+      'a restored authored lane gets its end from the live header and frame count')
+
+fixture = r"""
+typedef short s16;
+struct NavFrame { int word; };
+struct NavHeader { s16 magicNumber, numPoints; struct NavFrame *last; };
+struct Level { struct NavHeader **LevNavTable; };
+struct GameTracker { struct Level *level1; unsigned int gameMode1; };
+#define NULL ((void *)0)
+#define BOTS_NAV_PATH_COUNT 3
+#define GAME_CUTSCENE 1u
+#define MAIN_MENU 2u
+#define ADVENTURE_ARENA 4u
+#define NAVHEADER_GETFRAME(header) ((struct NavFrame *)((header) + 1))
+"""
+fixture += "static void NativeCheckpoint_RepairAuthoredNavEnds(struct GameTracker *gGT)\n" + nav_ends
+fixture += r"""
+int main(void)
+{
+    struct Lane { struct NavHeader header; struct NavFrame frames[3]; };
+    struct Lane saved = {.header = {-0x1303, 3, NULL}};
+    struct Lane live = {.header = {-0x1303, 3, saved.frames + 3}};
+    struct NavHeader *table[3] = {NULL, &live.header, NULL};
+    struct Level level = {table};
+    struct GameTracker game = {&level, 0};
+    NativeCheckpoint_RepairAuthoredNavEnds(&game);
+    if (live.header.last != live.frames + 3)
+        return 1;
+    struct NavFrame *next = live.frames + 2;
+    next++;
+    if (next >= live.header.last)
+        next = live.frames;
+    return next != live.frames;
+}
+"""
+with TemporaryDirectory() as tmp:
+    src = Path(tmp) / "ghost-wrap.c"
+    exe = Path(tmp) / "ghost-wrap"
+    src.write_text(fixture)
+    subprocess.run([os.environ.get("CC", "cc"), "-std=c99", str(src), "-o", str(exe)], check=True)
+    check(subprocess.run([str(exe)]).returncode == 0,
+          'authored lane end is rebased and wraps after its last frame')
 
 # 5. Only the ghost calls the drive tick by hand.
 callers = []

@@ -1930,27 +1930,25 @@ internal void NativeCheckpoint_RelocateRuntimePointers(const struct NativeCheckp
 	NativeCheckpoint_RelocateRectMenu(oldHeader, liveHeader, &gGarage.menuGarage);
 	NativeCheckpoint_RelocateCreditsPointers(oldHeader, liveHeader);
 	NativeCheckpoint_RelocateGameTrackerPointers(oldHeader, liveHeader);
+}
 
-#if defined(CTR_AP) || defined(CTR_AI_LAP_RECORDER)
-	// LAST, and specifically after RelocateGameTrackerPointers. Relocating the
-	// nav slots is necessary but not sufficient: recorded AI lanes live in
-	// AP-layer statics, which are in no checkpointed region, so a state restored
-	// into a FRESH process finds them zeroed, with pointers that are
-	// arithmetically right and blank data behind them. This reloads the recording
-	// and republishes, or puts the engine back on the level's own nav data.
-	//
-	// The ordering is load-bearing. That fallback reaches gGT->level1->LevNavTable
-	// through BOTS_InitNavPath, and gGT->level1 is not rebased until
-	// RelocateGameTrackerPointers above. Called from inside
-	// RelocateSDataPointers, where the nav slots themselves are handled, it would
-	// dereference the saving process's level pointer: invisible in-process,
-	// because the two ranges coincide, and a fault on a cross-process restore.
-	// The nav slots it depends on are already done by then, and the success path
-	// touches no level data at all.
-	//
-	// A no-op when no recording is in play.
-	AP_NavRec_AfterCheckpointRestore();
-#endif
+internal void NativeCheckpoint_RepairAuthoredNavEnds(struct GameTracker *gGT)
+{
+	if (gGT == NULL || gGT->level1 == NULL ||
+	    (gGT->gameMode1 & (GAME_CUTSCENE | MAIN_MENU | ADVENTURE_ARENA)) != 0)
+		return;
+	struct NavHeader **table = gGT->level1->LevNavTable;
+	if (table == NULL)
+		return;
+
+	for (int lane = 0; lane < BOTS_NAV_PATH_COUNT; lane++)
+	{
+		struct NavHeader *header = table[lane];
+		// BOTS_InitNavPath writes this field at runtime. An authored LEV
+		// need not include it in its pointer map.
+		if (header != NULL && header->magicNumber == (s16)-0x1303 && header->numPoints > 0)
+			header->last = NAVHEADER_GETFRAME(header) + header->numPoints;
+	}
 }
 
 internal int NativeCheckpoint_CapturePointerSlotState(void *dst, int dstSize)
@@ -2410,6 +2408,14 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 	{
 		return 0;
 	}
+
+	// Both the runtime pointers and the LEV's pointer slots now refer to
+	// this process. Authored lanes need live end pointers, and recorded
+	// lanes need to be reloaded or replaced with those authored lanes.
+	NativeCheckpoint_RepairAuthoredNavEnds(sdata->gGT);
+#if defined(CTR_AP) || defined(CTR_AI_LAP_RECORDER)
+	AP_NavRec_AfterCheckpointRestore();
+#endif
 #ifdef CTR_CUSTOM_TRACKS
 	// The restored VRAM may hold another minimap: decide its mode again.
 	UI_Map_CustomAfterRestore(sdata->gGT);
