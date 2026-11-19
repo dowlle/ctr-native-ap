@@ -7,6 +7,7 @@
 
 #if defined(CTR_NATIVE) && defined(CTR_INTERNAL)
 #include <platform/native_perf.h>
+#include <platform/native_savestate.h>
 #define MAINFRAME_PERF_BEGIN(bucket) NativePerf_BeginScope(bucket)
 #define MAINFRAME_PERF_END(bucket)   NativePerf_EndScope(bucket)
 #else
@@ -675,6 +676,9 @@ void RenderAllHUD(struct GameTracker *gGT)
 			}
 		}
 	}
+#if defined(CTR_NATIVE) && defined(CTR_INTERNAL)
+	NativeSaveState_DrawRefusal();
+#endif
 }
 
 void RenderAllBeakerRain(struct GameTracker *gGT)

@@ -1,7 +1,4 @@
 #include <common.h>
-#if defined(CTR_NATIVE) && defined(CTR_INTERNAL)
-#include <platform/native_savestate.h>
-#endif
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_checkpoint.h>
 #endif
@@ -943,9 +940,6 @@ void UI_RenderFrame_Racing()
 #ifdef CTR_CUSTOM_PACKAGES
 	NativeCheckpoint_DrawCustomRefusal();
 #endif
-#endif
-#if defined(CTR_NATIVE) && defined(CTR_INTERNAL)
-	NativeSaveState_DrawRefusal();
 #endif
 }
 

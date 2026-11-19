@@ -13,7 +13,7 @@ static struct GameTracker tracker;
 static struct CustomTrackRaceLatch latch = {.lastRequested = -1};
 static int restored;
 static char refusal[80];
-static int legacyCortex;
+static struct CustomTrackResidentSource resident;
 
 void Platform_Log(const char *fmt, ...) { (void)fmt; }
 
@@ -48,14 +48,9 @@ const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int levelID)
 	return CustomRaceLatch_Intent(&latch, levelID) ? &latch.current : NULL;
 }
 
-int CustomTrack_SaveStateSource(const struct CustomTrackLoadContext *ctx,
-                                char levSha256[65], char vrmSha256[65])
+const struct CustomTrackResidentSource *CustomTrack_ResidentSource(int levelID)
 {
-	if (!legacyCortex || ctx->levelID != 13)
-		return 0;
-	memset(levSha256, 'a', 64);
-	memset(vrmSha256, 'b', 64);
-	return 1;
+	return resident.kind && resident.levelID == levelID ? &resident : NULL;
 }
 
 static void save(void)
@@ -164,11 +159,32 @@ int main(void)
 	loadExpect(otherRace); // A retail plan pad is distinct from plain retail.
 
 	tracker.levelID = 13;
-	legacyCortex = 1;
+	resident.levelID = 13;
+	resident.kind = 1;
 	save();
 	loadExpect(NULL);
-	legacyCortex = 0;
+	resident.kind = 0;
 	loadExpect(otherRace); // Oxide Station would otherwise supply the recording identity.
+
+	tracker.gameMode1 = ADVENTURE_MODE | ADVENTURE_BOSS;
+	save();
+	resident.kind = 2;
+	strcpy(resident.packageRevision, "1.0.0");
+	loadExpect(otherRace); // A custom garage shares the retail garage's engine host.
+	save();
+	loadExpect(NULL);
+	strcpy(resident.packageRevision, "1.1.0");
+	loadExpect(otherRace);
+	resident.kind = 0;
+
+	tracker.levelID = 18;
+	tracker.gameMode1 = BATTLE_MODE | POINT_LIMIT;
+	save();
+	loadExpect(NULL);
+	tracker.gameMode1 = BATTLE_MODE | LIFE_LIMIT;
+	loadExpect(otherRace);
+	tracker.gameMode1 = BATTLE_MODE | TIME_LIMIT;
+	loadExpect(otherRace);
 
 	assert(NativeCheckpointFile_WriteSingle(NATIVE_SAVESTATE_QUICK_PATH, &oldCheckpoint,
 	                                        sizeof oldCheckpoint, 0, 0));

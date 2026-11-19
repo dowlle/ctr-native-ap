@@ -170,6 +170,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// slot_data was parsed by the callback inside ap_net_poll above. Refuse
 		// gameplay immediately if this seed selects content that is not Ready;
 		// the Options Rescan action can satisfy and unlock this same seed later.
+		AP_ContentPlanRememberRoom();
 		AP_CustomContentPreflightSeed(1);
 		AP_CustomContentLogStatus("seed preflight");
 		AP_OxideFinalContentPreflight();

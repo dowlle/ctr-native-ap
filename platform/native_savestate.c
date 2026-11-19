@@ -71,6 +71,8 @@ internal int NativeSaveState_SnapshotIdentity(struct NativeSaveStateRaceIdentity
 	id->mode1 = gt->gameMode1 & (BATTLE_MODE | MAIN_MENU | TIME_TRIAL | ADVENTURE_MODE |
 	                            ADVENTURE_ARENA | ARCADE_MODE | RELIC_RACE | CRYSTAL_CHALLENGE |
 	                            ADVENTURE_CUP | GAME_CUTSCENE | ADVENTURE_BOSS);
+	if (id->mode1 & BATTLE_MODE)
+		id->mode1 |= gt->gameMode1 & (POINT_LIMIT | TIME_LIMIT | LIFE_LIMIT);
 	id->mode2 = gt->gameMode2 & (TOKEN_RACE | CUP_ANY_KIND | CREDITS);
 	if (id->mode1 & ADVENTURE_BOSS)
 		id->boss = gt->bossID;
@@ -100,14 +102,16 @@ internal int NativeSaveState_SnapshotIdentity(struct NativeSaveStateRaceIdentity
 	}
 	else
 	{
-		struct CustomTrackLoadContext load = {
-			.levelID = gt->levelID,
-			.adventureCupActive = (id->mode1 & ADVENTURE_CUP) != 0,
-			.cupID = gt->cup.cupID,
-			.bossID = gt->bossID,
-			.adventureBossActive = (id->mode1 & ADVENTURE_BOSS) != 0,
-		};
-		id->source = CustomTrack_SaveStateSource(&load, id->levSha256, id->vrmSha256);
+		const struct CustomTrackResidentSource *resident = CustomTrack_ResidentSource(gt->levelID);
+		if (resident)
+		{
+			id->source = resident->kind;
+			id->roomIdentity = resident->roomIdentity;
+			memcpy(id->trackID, resident->trackID, sizeof id->trackID);
+			memcpy(id->revision, resident->packageRevision, sizeof id->revision);
+			memcpy(id->levSha256, resident->levSha256, sizeof id->levSha256);
+			memcpy(id->vrmSha256, resident->vrmSha256, sizeof id->vrmSha256);
+		}
 	}
 #endif
 	return 1;

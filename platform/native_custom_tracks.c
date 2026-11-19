@@ -1451,40 +1451,58 @@ int CustomTrack_FinishTerrain(const struct CustomTrackLoadContext *ctx)
 	       CustomFinish_Terrain(s_descriptor.levSha256, s_descriptor.vrmSha256) : -1;
 }
 
-int CustomTrack_SaveStateSource(const struct CustomTrackLoadContext *ctx,
-                                char levSha256[65], char vrmSha256[65])
+static struct CustomTrackResidentSource s_customTrackResident;
+
+void CustomTrack_ClearResidentSource(void)
+{
+	memset(&s_customTrackResident, 0, sizeof s_customTrackResident);
+}
+
+const struct CustomTrackResidentSource *CustomTrack_ResidentSource(int levelID)
+{
+	return s_customTrackResident.kind && s_customTrackResident.levelID == levelID ? &s_customTrackResident : NULL;
+}
+
+void CustomTrack_NoteLoadedLev(const struct CustomTrackLoadContext *ctx)
 {
 	enum { GARAGE = 1, OXIDE_FINAL, CORTEX_PAD, EVENT };
+	struct CustomTrackResidentSource *resident = &s_customTrackResident;
 	const char *lev;
 	const char *vrm;
-	int source;
 	int garage = CustomTrack_GarageVenueServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive);
 
-	// Follow the loader's precedence. Standalone races use their own latch.
+	// Called at a successful seed-owned LEV read, before another preflight can
+	// change the descriptors. Standalone races have their own route latch.
+	if (CustomTrack_StandaloneContext(ctx->levelID))
+		return;
+	CustomTrack_ClearResidentSource();
 	if (garage >= 0)
 	{
-		source = GARAGE;
+		resident->kind = GARAGE;
+		resident->roomIdentity = s_garageVenue[garage].roomIdentity;
+		memcpy(resident->trackID, s_garageVenue[garage].trackID, sizeof resident->trackID);
+		memcpy(resident->packageRevision, s_garageVenue[garage].packageRevision, sizeof resident->packageRevision);
 		lev = s_garageVenue[garage].levSha256;
 		vrm = s_garageVenue[garage].vrmSha256;
 	}
 	else if (CustomTrack_OxideFinalServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive) ||
-	         CustomTrack_CortexTrackIntent(ctx->levelID, ctx->adventureBossActive))
+	         CustomTrack_CortexTrackServing(ctx->levelID, ctx->adventureBossActive))
 	{
-		source = ctx->adventureBossActive ? OXIDE_FINAL : CORTEX_PAD;
+		resident->kind = ctx->adventureBossActive ? OXIDE_FINAL : CORTEX_PAD;
 		lev = s_oxideFinalDescriptor.levSha256;
 		vrm = s_oxideFinalDescriptor.vrmSha256;
 	}
 	else
 	{
 		if (!CustomTrack_ServingLoad(ctx->levelID, ctx->adventureCupActive, ctx->cupID))
-			return 0;
-		source = EVENT;
+			return;
+		resident->kind = EVENT;
 		lev = s_descriptor.levSha256;
 		vrm = s_descriptor.vrmSha256;
 	}
-	memcpy(levSha256, lev, 65);
-	memcpy(vrmSha256, vrm, 65);
-	return source;
+	resident->levelID = ctx->levelID;
+	memcpy(resident->levSha256, lev, sizeof resident->levSha256);
+	memcpy(resident->vrmSha256, vrm, sizeof resident->vrmSha256);
 }
 
 int CustomTrack_TiziMadness(const struct CustomTrackLoadContext *ctx)
