@@ -10,7 +10,7 @@ and most decisions have a host harness under `tools/test-custom-*`.
 There are two ways a custom track reaches the engine. Both end in the same
 byte-serving hook (section 6).
 
-- **Packages (offline).** A verified, immutable folder per track revision,
+- **Packages (offline).** A verified manifest and immutable files per track revision,
   installed from Project Saphi or by hand, and raced from extra pages on the
   normal Arcade and Time Trial track selector. This is what the authoring
   client and the Archipelago box authoring download use, and what most of this
@@ -79,7 +79,8 @@ directory, the same place as `config.ini`.
 
 | Path | Written by | Contents |
 |---|---|---|
-| `assets/tracks/packages/<pin>/` | Saphi install, inbox import | One installed package revision. Never modified after install |
+| `assets/tracks/packages/<pin>/` | Saphi install, inbox import | One installed package revision. The manifest and its declared files are immutable |
+| `assets/tracks/packages/<pin>/.saphi-music/` | Custom Tracks | Optional restored audio and its verification metadata for this package pin |
 | `assets/tracks/packages/.pending-<pin>-…` | an install in progress | Staging; a failed one is kept for review and never treated as installed |
 | `assets/tracks/inbox/<pin>/` | you | A package to import by hand |
 | `assets/tracks/library.catalog` | an external tool, optional | Metadata-only cache (`CTRLB001`), never treated as installed or verified |
@@ -127,9 +128,8 @@ Rules the parser enforces:
 dump, keys in sorted order, `files` sorted by role then path) and hashed with
 SHA-256. That 64-character lowercase hex digest is the package's pin and its
 directory name. A package is only ever asked for by pin, and a pin that does
-not match the manifest refuses the whole package. Changing any byte of any
-file, the title or the version gives a new pin, so an installed revision is
-immutable.
+not match the manifest refuses the whole package. Changing any declared file,
+the title or the version gives a new pin, so an installed revision is immutable.
 
 **Identity.** Three different identities are used for three jobs:
 
@@ -428,14 +428,21 @@ that is not one of the 18 arcade tracks.
 
 **Where the `.sca` comes from.** The Track Manager install stores it with the
 package (role `sca`, section 5). A Current Seed or This Seed install into the
-shared package store (`ap_custom_track_download_start_shared`) also fetches the
-one current `.sca` Saphi lists for the same version as the LEV, up to 1 MiB, and
-pins it in the package manifest as `original/sca-<id>.sca`. Music is optional:
-a missing, ambiguous, oversized or failed `.sca` installs the track without it.
-A seed does not pin the `.sca`; the package manifest does, and the race reads
-the file only when its size and SHA-256 match that pin
-(`CustomTrack_UseContentMusic`). Tracks installed before this change have no
-`.sca` in the store; install them again to add it.
+shared package store (`ap_custom_track_download_start_shared`) fetches the
+single current `.sca` for a current LEV/VRM pair. Saphi versions the audio
+independently. Historical pairs take a current `.sca` only at the exact LEV
+version. The downloader verifies size and CRC32, caps the audio at 1 MiB and
+pins it in the package manifest as `original/sca-<id>.sca`. A failed or ambiguous
+audio download leaves the track available with fallback music.
+
+**Restoring music.** Custom Tracks checks installed Saphi and seed packages
+after the catalogue refresh. It requires track author permission and matches
+the revision and both installed file SHA-256 pins against the catalogue.
+The worker downloads only missing audio and verifies its size, CRC32 and
+SHA-256. It publishes the audio and verification metadata under
+`.saphi-music/` for that package pin. The original manifest and track files
+keep their identity. Both offline and seed playback verify the local audio
+against the stored SHA-256. Refresh catalogue retries a missed transfer.
 
 **Which races play it.** The Arcade and Time Trial custom pages, and a
 content-plan race (a Current Seed pad or cup leg) on the package's own host
