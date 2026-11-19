@@ -1152,6 +1152,7 @@ static void validate(const J &p, State &out) {
         need(p["sanity"].is_object() && p["sanity"].contains("itemboxsanity") && p["sanity"].contains("wumpasanity"), "sanity settings missing");
         if(number(p["sanity"]["itemboxsanity"],0,50))features.push_back("itemboxsanity_v1");
         if(number(p["sanity"]["wumpasanity"],0,3))features.push_back("wumpasanity_v1");
+        if(p["sanity"].contains("exclusion_version"))features.push_back("sanity_exclusions_v2");
     }
     if(has_shop)features.push_back("wumpa_shop_v1");
     if(has_shop && p["wumpa_shop"].contains("logic_scale"))features.push_back("wumpa_shop_key_tiers_v1");
