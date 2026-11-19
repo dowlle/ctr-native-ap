@@ -12,6 +12,8 @@
 
 struct sData sdata_static;
 struct Data data;
+static u32 scratchpad[CTR_SCRATCHPAD_SIZE / sizeof(u32)];
+u8 *gCTRNativeScratchpadBase = (u8 *)scratchpad;
 static struct GameTracker tracker;
 static struct Level level;
 static struct Driver drivers[8];
@@ -247,14 +249,18 @@ static void check_race(void)
 	assert(bot->botData.botNavFrame == first && bot->botData.distToNextNavXZ > 0);
 	puts("Dedicated bots hold their own seat until green and then approach the assigned line");
 
+	const unsigned int savedSeed = 1;
+	const unsigned int otherSeed = 2;
+	s_navrecSeed = savedSeed;
+	AP_NavRec_PublishRecordedRace(&race, tracker.levelID);
+	AP_NavRec_SaveRecordedShuffle();
 	int savedOrder[BOTS_NAV_LANE_MAX];
 	memcpy(savedOrder, s_navrecLaneLapIndex, sizeof savedOrder);
-	unsigned int savedSeed = sdata->recordedRaceSeed;
 	unsigned int savedSession = sdata->recordedRaceSession;
 	bot->botData.botFlags |= BOT_FLAG_STARTLINE_INIT_DONE;
 	bot->botData.navProgressRemainder = 32 * 256;
 	bot->posCurr.x += 24 * 256;
-	s_navrecSeed = savedSeed ^ 0x60c3f1a5u;
+	s_navrecSeed = otherSeed;
 	AP_NavRec_PublishRecordedRace(&race, tracker.levelID);
 	assert(memcmp(savedOrder, s_navrecLaneLapIndex, sizeof savedOrder) != 0);
 	AP_NavRec_AfterCheckpointRestore();
@@ -264,7 +270,7 @@ static void check_race(void)
 
 	// A checkpoint from another process keeps the running process's new shuffle.
 	sdata->recordedRaceSession = savedSession ^ 1u;
-	s_navrecSeed = savedSeed ^ 0x60c3f1a5u;
+	s_navrecSeed = otherSeed;
 	AP_NavRec_AfterCheckpointRestore();
 	assert(s_navrecSeed != savedSeed && sdata->recordedRaceSession == savedSession);
 	assert(bot->botData.botNavFrame == first && bot->botData.navProgressRemainder == 0);
