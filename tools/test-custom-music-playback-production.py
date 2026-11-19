@@ -62,6 +62,7 @@ void CseqMusic_Stop(u16 id) {}
 '''
 
 for path, signature in [
+    ("HOWL_CustomMusic.c", "static int HOWL_CustomMusic_BossVenueServing(int level)"),
     ("HOWL_CustomMusic.c", "int HOWL_CustomMusic_LoadBank(struct Bank *thisBank)"),
     ("HOWL_CustomMusic.c", "int HOWL_CustomMusic_ContentLoadBank(int level, struct Bank *thisBank)"),
     ("HOWL_Music.c", "u32 Music_AsyncParseBanks(void)"),
@@ -135,6 +136,10 @@ int main(void)
     run_load(ADVENTURE_MODE | ADVENTURE_BOSS, 0, 0);
     assert(!admitted && retail_song == 12 && loaded[0] == 7);
     oxide = 0;
+    seed_track = accept_bank = 1;
+    run_load(ADVENTURE_MODE | ADVENTURE_BOSS | ADVENTURE_CUP, 0, 0);
+    expect_custom(CORTEX_MUSIC_PER_PLAYER, 56);
+    seed_track = 0;
     run_load(ADVENTURE_MODE, 0, TOKEN_RACE);
     assert(planned == CORTEX_MUSIC_OFF && !admitted && retail_song == 12);
     assert(num_loaded == 2 && loaded[0] == 7 && loaded[1] == 54);

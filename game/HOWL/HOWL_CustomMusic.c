@@ -69,6 +69,14 @@ static void HOWL_CustomMusic_Log(const char *what, const char *detail)
 	AP_LogLine(msg);
 }
 
+static int HOWL_CustomMusic_BossVenueServing(int level)
+{
+	const struct GameTracker *gGT = sdata->gGT;
+	return IS_BOSS_RACE(gGT->gameMode1) &&
+	    (CustomTrack_GarageVenueServing(level, gGT->bossID, 1) >= 0 ||
+	     CustomTrack_OxideFinalServing(level, gGT->bossID, 1));
+}
+
 static int HOWL_CustomMusic_Acquire(struct CustomMusicSca *sca, char *error, size_t errorSize)
 {
 	const void *bytes;
@@ -82,7 +90,8 @@ static int HOWL_CustomMusic_Acquire(struct CustomMusicSca *sca, char *error, siz
 			return 0;
 		}
 	}
-	else if (s_bossMusicBytes || IS_BOSS_RACE(sdata->gGT->gameMode1))
+	else if (s_bossMusicBytes ||
+	         (s_cortexBytes == NULL && HOWL_CustomMusic_BossVenueServing(sdata->gGT->levelID)))
 	{
 		if (!s_bossMusicBytes)
 			s_bossMusicBytes = CustomTrack_ReadBossMusic(sdata->gGT->levelID, sdata->gGT->bossID, &s_bossMusicSize);
@@ -261,10 +270,7 @@ int HOWL_CustomMusic_ContentLoadBank(int level, struct Bank *thisBank)
 	struct GameTracker *gGT = sdata->gGT;
 	u32 mode = gGT->gameMode1;
 	int adventureCup = (mode & ADVENTURE_CUP) != 0;
-	int boss = IS_BOSS_RACE(gGT->gameMode1);
-	int servesMusic = boss ?
-	    CustomTrack_GarageVenueServing(level, gGT->bossID, boss) >= 0 ||
-	    CustomTrack_OxideFinalServing(level, gGT->bossID, boss) :
+	int servesMusic = HOWL_CustomMusic_BossVenueServing(level) ||
 	    CustomTrack_CortexMusicServing(level, adventureCup, gGT->cup.cupID);
 	enum CortexMusicBanks laterBanks =
 	    CortexMusic_Banks(servesMusic, mode, gGT->cup.cupID,
