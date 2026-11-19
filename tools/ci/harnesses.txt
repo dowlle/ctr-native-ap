@@ -63,6 +63,7 @@ tools/test-custom-records.c
 tools/test-custom-selector.c
 tools/test-custom-selector-player.c
 tools/test-custom-state-identity.c
+tools/test-quick-savestate-race.c
 tools/test-custom-time-trial.c
 tools/test-custom-time-trial-player.c
 tools/test-custom-track-load.c

@@ -1451,6 +1451,42 @@ int CustomTrack_FinishTerrain(const struct CustomTrackLoadContext *ctx)
 	       CustomFinish_Terrain(s_descriptor.levSha256, s_descriptor.vrmSha256) : -1;
 }
 
+int CustomTrack_SaveStateSource(const struct CustomTrackLoadContext *ctx,
+                                char levSha256[65], char vrmSha256[65])
+{
+	enum { GARAGE = 1, OXIDE_FINAL, CORTEX_PAD, EVENT };
+	const char *lev;
+	const char *vrm;
+	int source;
+	int garage = CustomTrack_GarageVenueServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive);
+
+	// Follow the loader's precedence. Standalone races use their own latch.
+	if (garage >= 0)
+	{
+		source = GARAGE;
+		lev = s_garageVenue[garage].levSha256;
+		vrm = s_garageVenue[garage].vrmSha256;
+	}
+	else if (CustomTrack_OxideFinalServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive) ||
+	         CustomTrack_CortexTrackIntent(ctx->levelID, ctx->adventureBossActive))
+	{
+		source = ctx->adventureBossActive ? OXIDE_FINAL : CORTEX_PAD;
+		lev = s_oxideFinalDescriptor.levSha256;
+		vrm = s_oxideFinalDescriptor.vrmSha256;
+	}
+	else
+	{
+		if (!CustomTrack_ServingLoad(ctx->levelID, ctx->adventureCupActive, ctx->cupID))
+			return 0;
+		source = EVENT;
+		lev = s_descriptor.levSha256;
+		vrm = s_descriptor.vrmSha256;
+	}
+	memcpy(levSha256, lev, 65);
+	memcpy(vrmSha256, vrm, 65);
+	return source;
+}
+
 int CustomTrack_TiziMadness(const struct CustomTrackLoadContext *ctx)
 {
 	int garage;

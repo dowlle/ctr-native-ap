@@ -295,6 +295,9 @@ int AP_ContentPadReady(int physicalPad)
 // missing).
 static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRaceContext *race)
 {
+	unsigned long long roomIdentity = 0;
+	if (ap_net_identity_hash(&roomIdentity))
+		race->roomIdentity = roomIdentity;
 	if (race->retail) return 1;
 	if (cortex)
 	{
@@ -387,6 +390,7 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		d.flagCheckpoints = m->checkpoints > 255 ? 255 : (int)m->checkpoints;
 		snprintf(d.levSha256, sizeof d.levSha256, "%s", pkg->lev_sha256);
 		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", pkg->vrm_sha256);
+		snprintf(race->packageRevision, sizeof race->packageRevision, "%s", pkg->revision);
 		snprintf(race->levSha256, sizeof race->levSha256, "%s", pkg->lev_sha256);
 		snprintf(race->vrmSha256, sizeof race->vrmSha256, "%s", pkg->vrm_sha256);
 		return CustomTrack_ApplySeedDescriptor(&d);

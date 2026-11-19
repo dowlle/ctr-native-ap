@@ -309,6 +309,10 @@ int CustomTrack_RaceFeatureEnabled(void);
 int CustomTrack_ServingLoad(int levelID, int adventureCupActive, int cupID);
 /* Authored one-lap finish terrain, or -1 for ordinary circuit racing. */
 int CustomTrack_FinishTerrain(const struct CustomTrackLoadContext *ctx);
+// Identity of the seed-owned byte override for an idle engine level.
+// Returns 0 for retail, or a nonzero value distinguishing the override routes.
+int CustomTrack_SaveStateSource(const struct CustomTrackLoadContext *ctx,
+                                char levSha256[65], char vrmSha256[65]);
 /* Is the pair served for this load Tizi Madness (native_tizi_madness.h,
    A4-96)? Same precedence as CustomTrack_FinishTerrain. */
 int CustomTrack_TiziMadness(const struct CustomTrackLoadContext *ctx);
