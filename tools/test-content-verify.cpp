@@ -380,7 +380,8 @@ int main(int argc, char **argv) {
     if (argc > 2 && std::string(argv[1]) == "--probe") probe(argv[2]);
     else { fixtures(); chain(); checked_is_not_reached(); first_race_won(); shop_key_budgets(); one_race_pad();
            probe("tools/fixtures/content-plan/sanity-verify.jsonl");
-           probe("tools/fixtures/content-plan/oxide-pickups.jsonl"); sanity_versions(); }
+           probe("tools/fixtures/content-plan/oxide-pickups.jsonl");
+           probe("tools/fixtures/content-plan/mask-verifier.jsonl"); sanity_versions(); }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;
 }
