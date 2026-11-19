@@ -57,7 +57,12 @@ struct State {
     // each spot box's number and position by location code (`spot`).
     struct SpotSet { int pool = 0; std::vector<int> picked; std::string lev_sha256; bool used = false; };
     std::map<std::string, SpotSet> spot_sets;
-    struct CrateExclusions { std::string lev; std::vector<int> ordinals; std::vector<std::array<short, 3>> positions; bool used = false; };
+    struct CrateExclusions {
+        std::string lev;
+        std::vector<int> ordinals;
+        std::vector<std::array<short, 3>> positions;
+        bool carried = false, used = false;
+    };
     std::map<std::string, CrateExclusions> crate_exclusions;
     struct BoxSpot { int number = 0; bool seen = false; short x = 0, y = 0, z = 0, rot_y = 0; };
     std::map<int64_t, BoxSpot> box_spots;
@@ -523,9 +528,14 @@ static void item_box_settings(const J &t, State &out) {
                 int n = number(crate["ordinal"], 1, 65536);
                 need(n > previous, "excluded crate ordinals must be strictly increasing");
                 previous = n;
-                need(crate["pos"].is_array() && crate["pos"].size() == 3, "excluded crate needs three coordinates");
-                std::array<short, 3> pos;
-                for (int axis = 0; axis < 3; ++axis) pos[axis] = (short)number(crate["pos"][axis], -32768, 32767);
+                const bool carried = crate["pos"].is_null();
+                need(ex.ordinals.empty() || ex.carried == carried, "mixed exact and carried crate exclusions");
+                ex.carried = carried;
+                std::array<short, 3> pos{};
+                if (!carried) {
+                    need(crate["pos"].is_array() && crate["pos"].size() == 3, "excluded crate needs three coordinates");
+                    for (int axis = 0; axis < 3; ++axis) pos[axis] = (short)number(crate["pos"][axis], -32768, 32767);
+                }
                 ex.ordinals.push_back(n); ex.positions.push_back(pos);
             }
             need(out.crate_exclusions.emplace(set["track_id"].get<std::string>(), ex).second, "duplicate excluded track");
@@ -839,6 +849,34 @@ static bool has_feature(const J &p, const char *feature) {
 static bool repeatable_pickups(const J &p) {
     return has_feature(p, "repeatable_pickups_v1");
 }
+static constexpr char kCarriedRulings[] = "carried_track_rulings_v1";
+static constexpr char kCountryPickupPin[] = "9fa73436daaf91434ede1d6fb036a8e6dff225c55533cc0be5723d229b5e53bd";
+static constexpr char kToastyPickupPin[] = "2b18c6305d3cfe591e979eabe42e7815fe475479d49f59d5b7b50b06f701ac5d";
+static constexpr char kRoyalPickupPin[] = "fca9e96a57c850e68e0226382645b4d6df5b4e7ebeb61459269ec2427ffab96b";
+static constexpr char kGreenHillPickupPin[] = "50250966e9b31d13b140aaafa9433ffce19269898a0850edd0a1e8cf1207c760";
+
+static const J &content_registry() {
+    static const J registry = J::parse(kContentRegistryJSON);
+    return registry;
+}
+
+static bool is_pickup_ruling_pin(const std::string &pin) {
+    return pin == kCountryPickupPin || pin == kToastyPickupPin || pin == kRoyalPickupPin || pin == kGreenHillPickupPin;
+}
+
+template<class HasRuling>
+static std::string ruling_pin(const std::string &content, const std::string &lev, bool carry, HasRuling has_ruling) {
+    if (!carry || lev.empty() || has_ruling(lev)) return lev;
+    const auto &reviews = content_registry().at("track_ruling_revisions");
+    const auto track = reviews.find(content);
+    if (track == reviews.end()) return lev;
+    for (const auto &review : *track) if (review[0] == lev) return lev;
+    for (const auto &review : *track) {
+        const auto &pin = review[0].get_ref<const std::string &>();
+        if (has_ruling(pin)) return pin;
+    }
+    return lev;
+}
 static constexpr char kTiziMaskFeature[] = "tizi_mask_v1";
 static std::set<std::string> tizi_mask_tracks(const J &p) {
     std::set<std::string> packages, tracks;
@@ -1013,7 +1051,8 @@ static void validate(const J &p, State &out) {
     if (has_bosses) boss_settings(p["bosses"], out.bosses);
     need(p.at("encounters").is_array() && p.at("encounters").empty() == !has_bosses,
          "encounters without the bosses record, or the reverse");
-    static const J registry = J::parse(kContentRegistryJSON);
+    const J &registry = content_registry();
+    const bool carry_rulings = has_feature(p, kCarriedRulings);
     const auto &named_table = named_block_table(registry);
     // Names a generic-slot (B+) room title must not take: every retail track
     // and every named block, whether or not it is in this seed.
@@ -1169,6 +1208,7 @@ static void validate(const J &p, State &out) {
              !tizi_mask_tracks(p).empty(), "Tizi Mask feature without a raced Tizi track and Itemsanity");
         features.push_back(kTiziMaskFeature);
     }
+    if (carry_rulings) features.push_back(kCarriedRulings);
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -1820,7 +1860,21 @@ static void validate(const J &p, State &out) {
                 if (excluded != out.crate_exclusions.end()) {
                     auto &ex = excluded->second;
                     need(ex.lev == pkg.lev_sha256 && pkg.weapon_crates >= ex.ordinals.back(), "crate exclusions disagree with package");
+                    if (ex.carried) {
+                        const auto &catalog = registry.at("sanity_exclusions");
+                        const auto &descriptor = *packages.at(track.at("package_id").get<std::string>());
+                        const std::string source = ruling_pin(text(descriptor.at("content_id")), ex.lev,
+                            carry_rulings, [&](const std::string &pin) { return catalog.contains(pin); });
+                        need(source != ex.lev, "ordinal-only crate exclusions need carried rulings");
+                        std::vector<int> ordinals;
+                        for (const auto &crate : catalog.at(source))
+                            if (crate.value("family", std::string("weapon_crate")) == "weapon_crate"
+                                && crate.at("ordinal").get<int>() <= pkg.weapon_crates)
+                                ordinals.push_back(crate.at("ordinal").get<int>());
+                        need(ordinals == ex.ordinals, "carried crate exclusions disagree with reviewed ordinals");
+                    }
                     dest.box_excluded_count = (int)ex.ordinals.size();
+                    dest.box_excluded_ordinals_only = ex.carried;
                     for (int n = 0; n < dest.box_excluded_count; ++n) {
                         dest.box_excluded[n] = ex.ordinals[n];
                         for (int axis = 0; axis < 3; ++axis) dest.box_excluded_pos[n][axis] = ex.positions[n][axis];
@@ -2521,13 +2575,14 @@ static void validate(const J &p, State &out) {
     // box carried its spot, and the pads take the positions.
     for (const auto &pair : out.spot_sets) need(pair.second.used, "a box spot set names no pad track");
     if (p.contains("capability") && p["capability"].contains("finish_floors")) {
-        // The list names exactly the plan's tracks that carry the reviewed Royal Raceway LEV.
+        // The list names exactly the plan's tracks using the Royal Raceway finish ruling.
         std::vector<std::string> reviewed;
         for (const auto &track : p["tracks"]) {
             if (track["origin"] != "custom") continue;
             for (const auto &pkg : p["packages"]) if (pkg["id"] == track["package_id"])
                 for (const auto &file : pkg["files"]) if (file["role"] == "lev"
-                        && file["sha256"] == "fca9e96a57c850e68e0226382645b4d6df5b4e7ebeb61459269ec2427ffab96b")
+                        && ruling_pin(text(pkg["content_id"]), text(file["sha256"]), carry_rulings,
+                                      [](const std::string &pin) { return pin == kRoyalPickupPin; }) == kRoyalPickupPin)
                     reviewed.push_back(track["id"].get<std::string>());
         }
         std::sort(reviewed.begin(), reviewed.end());
@@ -2536,13 +2591,14 @@ static void validate(const J &p, State &out) {
         need(named == reviewed, "capability.finish_floors does not name exactly the reviewed tracks");
     }
     if (p.contains("capability") && p["capability"].contains("finish_free")) {
-        // The list names exactly the plan's tracks that carry the reviewed Green Hill Raceway LEV.
+        // The list names exactly the plan's tracks using the Green Hill Raceway finish ruling.
         std::vector<std::string> reviewed;
         for (const auto &track : p["tracks"]) {
             if (track["origin"] != "custom") continue;
             for (const auto &pkg : p["packages"]) if (pkg["id"] == track["package_id"])
                 for (const auto &file : pkg["files"]) if (file["role"] == "lev"
-                        && file["sha256"] == "50250966e9b31d13b140aaafa9433ffce19269898a0850edd0a1e8cf1207c760")
+                        && ruling_pin(text(pkg["content_id"]), text(file["sha256"]), carry_rulings,
+                                      [](const std::string &pin) { return pin == kGreenHillPickupPin; }) == kGreenHillPickupPin)
                     reviewed.push_back(track["id"].get<std::string>());
         }
         std::sort(reviewed.begin(), reviewed.end());
@@ -2557,10 +2613,8 @@ static void validate(const J &p, State &out) {
                 bool pin = false, seated = false;
                 for (const auto &pkg : p["packages"]) if (pkg["id"] == track["package_id"])
                     for (const auto &file : pkg["files"]) if (file["role"] == "lev")
-                        pin = file["sha256"] == "9fa73436daaf91434ede1d6fb036a8e6dff225c55533cc0be5723d229b5e53bd"
-                            || file["sha256"] == "2b18c6305d3cfe591e979eabe42e7815fe475479d49f59d5b7b50b06f701ac5d"
-                            || file["sha256"] == "fca9e96a57c850e68e0226382645b4d6df5b4e7ebeb61459269ec2427ffab96b"
-                            || file["sha256"] == "50250966e9b31d13b140aaafa9433ffce19269898a0850edd0a1e8cf1207c760";
+                        pin = is_pickup_ruling_pin(ruling_pin(text(pkg["content_id"]), text(file["sha256"]),
+                                                             carry_rulings, is_pickup_ruling_pin));
                 for (const auto &entry : p["entries"]) if (entry["kind"] == "track" && entry["track_id"] == id)
                     for (const auto &pad : p["pads"]) seated |= pad["entry_id"] == entry["id"];
                 valid = pin && seated && !out.spot_sets.count(id.get<std::string>());

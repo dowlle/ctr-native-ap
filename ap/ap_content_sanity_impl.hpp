@@ -1,6 +1,7 @@
 // Included inside the content-plan parser namespace. No runtime dependencies.
 static void sanity_checks(const J &p, State &out, const J &registry, std::map<int64_t, J> &expected) {
     const J &s = p.at("sanity");
+    const bool carry_rulings = has_feature(p, kCarriedRulings);
     const bool context = s.contains("logic_difficulty");
     const int rules_version = s.contains("rules_version") ? number(s["rules_version"], 1, 6) : 0;
     J shape = s;
@@ -68,7 +69,11 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
             for (const auto &file : pkg["files"]) if (file["role"] == "lev") key = file["sha256"];
             const J &caps = pkg["capabilities"];
             if (!registry.at("sanity").contains(key) && caps.contains("weapon_crates") && caps.contains("fruit_crates") && caps.contains("loose_fruit")) {
-                measured[key] = J{{"lev_sha256", key}, {"counts", J::array({caps["weapon_crates"], caps["fruit_crates"], caps["loose_fruit"]})}, {"needs", J::object()}};
+                const auto &catalog = registry.at("sanity");
+                const std::string source = ruling_pin(text(pkg["content_id"]), key, carry_rulings,
+                    [&](const std::string &pin) { return catalog.contains(pin) || is_pickup_ruling_pin(pin); });
+                const J needs = catalog.contains(source) ? catalog.at(source).at("needs") : J::object();
+                measured[key] = J{{"lev_sha256", key}, {"counts", J::array({caps["weapon_crates"], caps["fruit_crates"], caps["loose_fruit"]})}, {"needs", needs}};
                 return &measured.at(key);
             }
         }
@@ -95,22 +100,38 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
         auto ruled_out = [&](const char *kind, int ordinal) {
             if (track["origin"] != "custom") return false;
             const J &pkg = *packages.at(track["package_id"]);
-            for (const auto &rule : registry.at("object_rulings").at("rulings")) {
-                if (rule["content_id"] == pkg["content_id"] && rule["kind"] == kind && rule["ordinal"] == ordinal)
+            const auto &rules = registry.at("object_rulings").at("rulings");
+            const auto matches = [&](const J &rule) {
+                return rule["content_id"] == pkg["content_id"] && rule["kind"] == kind && rule["ordinal"] == ordinal;
+            };
+            const std::string lev = row["lev_sha256"];
+            bool legacy = false;
+            for (const auto &rule : rules) if (matches(rule)) {
+                if (!rule.contains("revision")) legacy = true;
+                else if (rule["revision"] == pkg["revision"] && rule["lev_sha256"] == lev)
                     return difficulty < 2 && !blue;
             }
-            return false;
+            if (!(difficulty < 2 && !blue)) return false;
+            const std::string source = ruling_pin(text(pkg["content_id"]), lev, carry_rulings, [&](const std::string &pin) {
+                return std::any_of(rules.begin(), rules.end(), [&](const J &rule) {
+                    return matches(rule) && rule.contains("lev_sha256") && rule["lev_sha256"] == pin;
+                });
+            });
+            return legacy || source != lev;
         };
         need(row["lev_sha256"] == inv["lev_sha256"] && row["counts"] == inv["counts"], "sanity revision/count mismatch");
         ctr_content_sanity dest{};
         copy(dest.track_id, row["track_id"]); copy(dest.lev_sha256, row["lev_sha256"]);
         std::set<int> excluded_by_kind[3];
-        // Reviewed exclusions are keyed by exact LEV and model family ("family" defaults to a weapon
-        // crate) and apply to every origin (the retail Roo's Tubes crate and the Hot Air Skyway Wumpa
-        // crate included), even on a track with authored spots.
+        // The current LEV supplies counts. The reviewed LEV supplies exclusions by model family.
         {
             const auto &catalog = registry.at("sanity_exclusions");
-            const std::string digest = row["lev_sha256"];
+            std::string digest = row["lev_sha256"];
+            if (track["origin"] == "custom") {
+                const J &pkg = *packages.at(track["package_id"]);
+                digest = ruling_pin(text(pkg["content_id"]), digest, carry_rulings,
+                                    [&](const std::string &pin) { return catalog.contains(pin); });
+            }
             if (catalog.contains(digest)) for (const auto &c : catalog[digest]) {
                 const std::string family = c.value("family", std::string("weapon_crate"));
                 for (int f = 0; f < 3; ++f) if (family == kinds[f]) excluded_by_kind[f].insert(number(c["ordinal"], 1, 65536));

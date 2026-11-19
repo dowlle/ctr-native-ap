@@ -668,12 +668,13 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 	for (k = 0; k < count; k++)
 		if (defs[k].model != 0 && defs[k].model->id == PU_RANDOM_CRATE)
 			crates++;
-	// Validate every original ordinal and position before hiding ANY crate.
+	// Validate every ordinal and any exact-revision position before hiding a crate.
 	for (i = 0; i < pad->box_excluded_count; ++i)
 	{
 		struct InstDef *def = AP_BoxesCrateDef(defs, count, pad->box_excluded[i] - 1);
-		if (def == 0 || def->pos.x != pad->box_excluded_pos[i][0] ||
-		    def->pos.y != pad->box_excluded_pos[i][1] || def->pos.z != pad->box_excluded_pos[i][2])
+		if (def == 0 || (!pad->box_excluded_ordinals_only &&
+		    (def->pos.x != pad->box_excluded_pos[i][0] ||
+		     def->pos.y != pad->box_excluded_pos[i][1] || def->pos.z != pad->box_excluded_pos[i][2])))
 		{
 			AP_LogLine("[AP BOX] WARNING: excluded crate position disagrees with seed; no Item Box stands\n");
 			return;

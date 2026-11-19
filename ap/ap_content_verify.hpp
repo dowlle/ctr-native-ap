@@ -136,6 +136,7 @@ static int compile(Model &m, const J &n) {
 static std::set<std::string> finish_floor_tracks;
 // Tracks named by `capability.finish_free` (reviewed Green Hill Raceway 2.0.0): no rank for the finish itself.
 static std::set<std::string> finish_free_tracks;
+static bool carry_track_rulings;
 
 // content_capability.finish_boost: the ranks crossing a track's finish line
 // needs, 0 without Progressive Boost.
@@ -158,6 +159,14 @@ static int finish_boost(const J &track, const std::map<std::string, const J *> &
         for (const auto &r : kUsfRulings)
             if (*r.revision && !lev.empty() && content == r.content_id && revision == r.revision && lev == r.lev_sha256)
                 return r.rank;
+        const std::string source = content_plan::ruling_pin(content, lev, carry_track_rulings, [&](const std::string &pin) {
+            for (const auto &r : kUsfRulings)
+                if (*r.revision && content == r.content_id && pin == r.lev_sha256) return true;
+            return false;
+        });
+        if (source != lev)
+            for (const auto &r : kUsfRulings)
+                if (content == r.content_id && source == r.lev_sha256) return r.rank;
         for (const auto &r : kUsfRulings) if (!*r.revision && content == r.content_id) return r.rank;
         const J &caps = pkg->at("capabilities");
         // A package that does not state super_turbo_pads is treated as having one.
@@ -206,6 +215,7 @@ static Model build() {
     using content_plan::state;
     const AP_VerifyOptions o = options();
     const J p = J::parse(state.canonical);
+    carry_track_rulings = content_plan::has_feature(p, content_plan::kCarriedRulings);
     finish_floor_tracks.clear();
     finish_free_tracks.clear();
     if (p.contains("capability") && p["capability"].contains("finish_free"))

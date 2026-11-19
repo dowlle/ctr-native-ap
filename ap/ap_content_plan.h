@@ -142,6 +142,7 @@ typedef struct ctr_content_pad {
     /* Reviewed fallback exclusions carried by the world, one-based original
      * crate ordinals. Authored spots bypass these entirely. */
     int box_excluded_count;
+    int box_excluded_ordinals_only;
     int box_excluded[16];
     short box_excluded_pos[16][3];
     int64_t box_locations[50];
