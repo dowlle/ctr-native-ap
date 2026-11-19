@@ -4,6 +4,7 @@ extern "C" {
 #include <platform/native_custom_content_verify.h>
 }
 #include <platform/native_custom_tracks_policy.h>
+#include "../ap/ap_navrec_format.h" // Manifest size bounds apply in every package build.
 #ifdef CTR_RECORDED_RACE
 #include <platform/native_recorded_race_data.h>
 #include "../ap/ap_navrec_playback_logic.h"
