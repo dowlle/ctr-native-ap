@@ -32,7 +32,7 @@ static struct {
 	int open, hub, tab, focus, pinned, count, loaded;
 	/* #375 activity list for the focused node: open, cursor, rows. */
 	int acts_open, acts_cursor;
-	int checks_open, checks_page;
+	int checks_open, checks_page, checks_detail;
 	ap_padact_list acts;
 	float mouse_x, mouse_y;
 	unsigned mouse_buttons;
@@ -735,6 +735,81 @@ static int AP_TrackerChecksPages(const AP_TrackerNode *n)
 }
 static int AP_TrackerChecksLogic(int64_t code) { return AP_LocationLogicState(code); }
 
+static void AP_TrackerChecksLegTitle(const ctr_content_leg *leg, char *title, size_t size)
+{
+	const ctr_content_pad *track=leg->track_pad>=0 ? ap_content_plan_pad(leg->track_pad) : NULL;
+	const char *name=leg->room_title;
+	if (!name[0] && track) name=track->room_title[0] ? track->room_title : track->display_name;
+	if (!name[0] && leg->cortex) name="CORTEX VORTEX";
+	if (!name[0] && leg->retail_id>=0 && leg->retail_id<18)
+		name=sdata->lngStrings[data.metaDataLEV[leg->retail_id].name_LNG];
+	if (!name[0]) {
+		const ctr_content_package *pkg=ap_content_plan_package(leg->package_index);
+		name=pkg ? pkg->display_name : leg->track_id;
+	}
+	snprintf(title,size,"%s",name);
+}
+
+/* Only room locations are rows. In particular, a frozen boss code does not
+ * imply that the encounter is enabled. Repeated routes share one tick. */
+#define AP_TRACKER_REWARDS_MAX 20
+#define AP_TRACKER_REWARDS_VISIBLE 8
+typedef struct { int64_t code; char name[192]; } AP_TrackerReward;
+typedef struct { int count; AP_TrackerReward rows[AP_TRACKER_REWARDS_MAX]; } AP_TrackerRewards;
+static void AP_TrackerRewardAdd(AP_TrackerRewards *out, int64_t code, const char *name)
+{
+	if (code <= 0 || !ap_net_location_exists(code)) return;
+	for (int i=0;i<out->count;i++) if (out->rows[i].code==code) return;
+	if (out->count >= AP_TRACKER_REWARDS_MAX) return;
+	AP_TrackerReward *row=&out->rows[out->count++];
+	row->code=code; snprintf(row->name,sizeof row->name,"%s",name);
+}
+static void AP_TrackerRewardsBuild(const AP_TrackerNode *n, AP_TrackerRewards *out)
+{
+	static const char *const rungs[]={"HELD 1ST","HELD 3RD","HELD 5TH","FINISH ON PODIUM","FINISH (ANY POSITION)"};
+	static const char *const relics[]={"SAPPHIRE TIME TRIAL","GOLD TIME TRIAL","PLATINUM TIME TRIAL"};
+	const ctr_content_pad *pad=AP_TrackerChecksPad(n);
+	memset(out,0,sizeof *out);
+	if (pad && pad->cup) {
+		const ctr_content_leg *leg=&pad->legs[ap_tracker.checks_page];
+		const ctr_content_pad *track=leg->track_pad>=0 ? ap_content_plan_pad(leg->track_pad) : NULL;
+		AP_TrackerRewardAdd(out,pad->trophy_location,pad->gem_cup ? "GEM CUP WIN" : "CUP WIN");
+		AP_TrackerRewardAdd(out,pad->sweep_location,"CUP: WIN ALL LEGS");
+		for (int i=0;i<AP_CONTENT_CUP_LEGS;i++) {
+			char name[192], title[160]; const ctr_content_leg *l=&pad->legs[i];
+			AP_TrackerChecksLegTitle(l,title,sizeof title);
+			snprintf(name,sizeof name,"LEG %d WIN: %s",i+1,title);
+			AP_TrackerRewardAdd(out,l->victory,name);
+		}
+		/* A boss (garage) cup earns no podium rung, even on a track whose
+		 * standalone Trophy Race has them: AP_StandalonePodiumTrack and
+		 * ap_content_cup_track_checks both exclude it. */
+		if (pad->physical < AP_CONTENT_GARAGE_CUP_PAD) for (int i=0;i<5;i++) {
+			AP_TrackerRewardAdd(out,leg->rungs[i],rungs[i]);
+			if (track) AP_TrackerRewardAdd(out,track->rung_locations[i],rungs[i]);
+		}
+		AP_TrackerRewardAdd(out,leg->lap,"COMPLETE ONE LAP");
+	} else if (pad) {
+		AP_TrackerRewardAdd(out,pad->trophy_location,pad->crystal ? "CRYSTAL CHALLENGE" : "TROPHY RACE");
+		AP_TrackerRewardAdd(out,pad->ctr_location,"CTR TOKEN CHALLENGE");
+		for (int i=0;i<3;i++) AP_TrackerRewardAdd(out,pad->relic_locations[i],relics[i]);
+		for (int i=0;i<5;i++) AP_TrackerRewardAdd(out,pad->rung_locations[i],rungs[i]);
+		AP_TrackerRewardAdd(out,pad->perfect_location,"RELIC RACE PERFECT");
+		AP_TrackerRewardAdd(out,pad->lap_location,"COMPLETE ONE LAP");
+	} else if (n->kind==3 && ap_content_plan_active()) {
+		int boss=ap_tracker.hub ? ap_tracker.hub-1 : 4+ap_tracker.checks_page;
+		AP_TrackerRewardAdd(out,35011100+boss,boss<4 ? "BOSS RACE" : boss==4 ?
+			"N. OXIDE'S CHALLENGE" : "N. OXIDE'S FINAL CHALLENGE");
+		AP_TrackerRewardAdd(out,ap_content_plan_bosses()->lap[boss],"COMPLETE ONE LAP");
+	}
+}
+/* Detail 0 is rewards, the last detail is the existing pickup summary. */
+static int AP_TrackerChecksDetails(const AP_TrackerNode *n)
+{
+	AP_TrackerRewards rewards; AP_TrackerRewardsBuild(n,&rewards);
+	return (rewards.count+AP_TRACKER_REWARDS_VISIBLE-1)/AP_TRACKER_REWARDS_VISIBLE+1;
+}
+
 static void AP_TrackerChecksBuild(const AP_TrackerNode *n, AP_TrackerCheckCount rows[4],
                                   char *title, size_t title_size, char *route, size_t route_size)
 {
@@ -752,15 +827,7 @@ static void AP_TrackerChecksBuild(const AP_TrackerNode *n, AP_TrackerCheckCount 
 		sanity = ap_content_plan_sanity(leg->track_id);
 		wumpa = leg->wumpa;
 		if (!wumpa && track) wumpa = track->wumpa_location;
-		if (leg->room_title[0]) snprintf(title, title_size, "%s", leg->room_title);
-		else if (track) snprintf(title, title_size, "%s", track->room_title[0] ? track->room_title : track->display_name);
-		else if (leg->cortex) snprintf(title, title_size, "CORTEX VORTEX");
-		else if (leg->retail_id >= 0 && leg->retail_id < 18)
-			snprintf(title, title_size, "%s", sdata->lngStrings[data.metaDataLEV[leg->retail_id].name_LNG]);
-		else {
-			const ctr_content_package *pkg=ap_content_plan_package(leg->package_index);
-			snprintf(title,title_size,"%s",pkg?pkg->display_name:leg->track_id);
-		}
+		AP_TrackerChecksLegTitle(leg,title,title_size);
 		snprintf(route, route_size, "%s: LEG %d OF %d", n->title, ap_tracker.checks_page + 1, AP_CONTENT_CUP_LEGS);
 	} else if (pad && !pad->crystal) {
 		sanity = ap_content_plan_sanity(pad->track_id);
@@ -790,6 +857,29 @@ static void AP_TrackerDrawChecks(void)
 	AP_TrackerBorder(90,140,1100,510,TRACKER_MINT,3);
 	AP_TrackerText(title,114,160,28,TRACKER_GOLD,1052);
 	AP_TrackerText(route,114,201,18,TRACKER_WHITE,1052);
+	AP_TrackerRewards rewards; AP_TrackerRewardsBuild(n,&rewards);
+	int reward_pages=(rewards.count+AP_TRACKER_REWARDS_VISIBLE-1)/AP_TRACKER_REWARDS_VISIBLE;
+	ap_tracker.checks_detail%=reward_pages+1;
+	if (ap_tracker.checks_detail<reward_pages) {
+		AP_TrackerCheckCount total={0};
+		AP_TrackerCheckSource source={AP_ContentCodeChecked,AP_TrackerChecksLogic};
+		for (i=0;i<rewards.count;i++) AP_TrackerCheckAdd(&total,rewards.rows[i].code,source);
+		snprintf(text,sizeof text,"REWARDS %d/%d DONE   IN %d   OUT %d   UNKNOWN %d",
+		         total.done,total.total,total.in_logic,total.out_logic,total.unknown);
+		AP_TrackerText(text,114,244,18,TRACKER_WHITE,1052);
+		for (i=ap_tracker.checks_detail*AP_TRACKER_REWARDS_VISIBLE;
+		     i<rewards.count && i<(ap_tracker.checks_detail+1)*AP_TRACKER_REWARDS_VISIBLE;i++) {
+			AP_TrackerReward *r=&rewards.rows[i];
+			int done=AP_ContentCodeChecked(r->code), logic=done ? 2 : AP_TrackerChecksLogic(r->code);
+			int y=282+(i%AP_TRACKER_REWARDS_VISIBLE)*34;
+			uint32_t rgb=AP_PadLookRGB(done ? AP_PAD_LOOK_DONE : logic==1 ? AP_PAD_LOOK_OPEN : AP_PAD_LOOK_STAGE2_WAITING);
+			uint32_t color=logic==2 && !done ? TRACKER_GRAY : AP_TrackerRGBA(AP_PadLookR(rgb),AP_PadLookG(rgb),AP_PadLookB(rgb),255);
+			AP_TrackerTick(116,y+2,done ? 2 : 1);
+			AP_TrackerText(r->name,150,y,20,done ? TRACKER_GRAY : TRACKER_WHITE,725);
+			AP_TrackerText(done ? "DONE" : logic==1 ? "IN LOGIC" : logic==0 ? "OUT" : "UNKNOWN",900,y,18,color,260);
+		}
+		AP_TrackerText("SHARED CHECKS KEEP THE SAME TICK ON EVERY ROUTE",114,575,15,TRACKER_WHITE,1052);
+	} else {
 	AP_TrackerText("CHECK FAMILY",114,251,18,TRACKER_WHITE,310);
 	AP_TrackerText("DONE / TOTAL",434,251,18,TRACKER_WHITE,170);
 	AP_TrackerText("IN LOGIC",654,251,18,TRACKER_WHITE,140);
@@ -811,7 +901,8 @@ static void AP_TrackerDrawChecks(void)
 	}
 	AP_TrackerText("WUMPA CRATES + FRUIT: WUMPASANITY   WEAPON CRATES: ITEMBOXSANITY",114,548,15,TRACKER_WHITE,1052);
 	AP_TrackerText("COUNTS ARE SHARED ACROSS RACE, CUP AND BOSS ROUTES",114,575,15,TRACKER_WHITE,1052);
-	snprintf(text,sizeof text,"PAGE %d/%d   L1/R1 TRACK PAGES   ^ BACK",ap_tracker.checks_page+1,AP_TrackerChecksPages(n));
+	}
+	snprintf(text,sizeof text,"L1/R1 TRACK %d/%d   UP/DOWN CHECKS %d/%d   ^ BACK",ap_tracker.checks_page+1,AP_TrackerChecksPages(n),ap_tracker.checks_detail+1,reward_pages+1);
 	AP_TrackerText(NativeMenu_Labels(text),114,610,18,TRACKER_WHITE,1052);
 }
 static void AP_TrackerDrawActivities(void)
@@ -962,8 +1053,13 @@ int AP_TrackerMenuFrame(void)
 		int pages=AP_TrackerChecksPages(&ap_tracker.nodes[ap_tracker.focus]);
 		ap_tracker.checks_page%=pages;
 		if(tap&(BTN_TRIANGLE|BTN_START)) ap_tracker.checks_open=0;
-		else if(tap&(BTN_L1|BTN_R1))
+		else if(tap&(BTN_L1|BTN_R1)) {
 			ap_tracker.checks_page=(ap_tracker.checks_page+((tap&BTN_L1)?pages-1:1))%pages;
+			ap_tracker.checks_detail=0;
+		} else if(tap&(BTN_UP|BTN_DOWN)) {
+			int details=AP_TrackerChecksDetails(&ap_tracker.nodes[ap_tracker.focus]);
+			ap_tracker.checks_detail=(ap_tracker.checks_detail+((tap&BTN_UP)?details-1:1))%details;
+		}
 	} else if(ap_tracker.acts_open) {
 		/* #375 activity list: it owns input until it closes or starts. */
 		AP_TrackerNode *n=&ap_tracker.nodes[ap_tracker.focus];
@@ -1003,7 +1099,7 @@ int AP_TrackerMenuFrame(void)
 			 * hit-testing, so the hidden map keeps its hub, focus and pin. */
 		} else {
 			if((tap&BTN_SQUARE) && ap_tracker.count) {
-				ap_tracker.checks_open=1; ap_tracker.checks_page=0;
+				ap_tracker.checks_open=1; ap_tracker.checks_page=0; ap_tracker.checks_detail=0;
 			} else {
 			if(tap&(BTN_UP|BTN_DOWN|BTN_LEFT|BTN_RIGHT)) {
 				ap_tracker.focus=(ap_tracker.focus+((tap&(BTN_UP|BTN_LEFT))?ap_tracker.count-1:1))%ap_tracker.count; ap_tracker.pinned=0;
@@ -1035,8 +1131,10 @@ int AP_TrackerMenuFrame(void)
 	ap_tracker.mouse_x=mx; ap_tracker.mouse_y=my; ap_tracker.mouse_buttons=buttons;
 	AP_TrackerBuildNodes();
 	/* A room refresh can replace the focused cup while rebuilding nodes. */
-	if (ap_tracker.checks_open && ap_tracker.count)
+	if (ap_tracker.checks_open && ap_tracker.count) {
 		ap_tracker.checks_page%=AP_TrackerChecksPages(&ap_tracker.nodes[ap_tracker.focus]);
+		ap_tracker.checks_detail%=AP_TrackerChecksDetails(&ap_tracker.nodes[ap_tracker.focus]);
+	}
 	AP_TrackerDraw(); return 1;
 }
 void AP_TrackerPresent(void)
