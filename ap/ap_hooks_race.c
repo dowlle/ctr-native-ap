@@ -1070,16 +1070,20 @@ void AP_LetterCollected(int track, int letter)
 
 void AP_LetterUnavailableTouched(int track, int letter)
 {
-	static const char names[CTR_CFG_LETTER_COUNT] = {'C', 'T', 'R'};
+	const ctr_content_pad *pad = NULL;
 	char msg[160];
 	long code = AP_LetterLocation(track, letter);
 
-	if (track < 0 || track >= CTR_CFG_LETTER_TRACK_COUNT ||
-	    letter < 0 || letter >= CTR_CFG_LETTER_COUNT)
+	if (letter < 0 || letter >= CTR_CFG_LETTER_COUNT)
+		return;
+#ifdef CTR_CUSTOM_TRACKS
+	pad = AP_StandaloneLetterPad(track);
+#endif
+	if (!pad && (track < 0 || track >= CTR_CFG_LETTER_TRACK_COUNT))
 		return;
 	snprintf(msg, sizeof msg,
 	         "[AP LETTER] pickup refused: track=%d%s letter=%c location=%ld; Lettersanity item not received\n",
-	         track, AP_CortexLetterTrack(track) ? " (Cortex Vortex)" : "", names[letter], code);
+	         track, AP_CortexLetterTrack(track) ? " (Cortex Vortex)" : "", ap_content_letter_glyph(pad, letter), code);
 	AP_AppendLog(msg);
 }
 
