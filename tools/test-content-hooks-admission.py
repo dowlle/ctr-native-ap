@@ -459,22 +459,42 @@ int main(void)
 	struct Driver driver = {0};
 	struct Level level = {0};
 	sdata->gGT = &game;
+	game.level1 = &level;
 	game.gameMode1 = ADVENTURE_MODE | RELIC_RACE;
 	game.levelID = 6;
 	sdata->kartSpawnOrderArray[0] = 1; /* P1's retail Relic Race spawn */
 	memcpy(level.DriverSpawn, image + 4 + SPAWN_P, sizeof level.DriverSpawn);
-	expect(VehBirth_GetStartlineIndex(&driver, &level) == 0,
+	expect(VehBirth_GetStartlineIndex(&driver) == 0,
 	       "A6-23: P1 uses the package's only authored spawn");
-	level.DriverSpawn[1].pos.x = 42;
-	expect(VehBirth_GetStartlineIndex(&driver, &level) == 1,
-	       "A6-23: an authored solo slot keeps its priority");
-	memset(level.DriverSpawn, 0, sizeof level.DriverSpawn);
-	expect(VehBirth_GetStartlineIndex(&driver, &level) == 1,
-	       "A6-23: an all-zero grid starts at the origin");
+	level.DriverSpawn[1].pos.y = 42; /* The fly-in adjusts the resident grid. */
+	CustomTrack_OnRaceLoadRequested(6);
+	expect(VehBirth_GetStartlineIndex(&driver) == 0,
+	       "A6-23: retry uses the authored spawn after the fly-in moves the live slot");
 	game.levelID = 7;
-	level.DriverSpawn[0].pos.x = 12;
-	expect(VehBirth_GetStartlineIndex(&driver, &level) == 1,
+	expect(VehBirth_GetStartlineIndex(&driver) == 1,
 	       "A6-23: a retail Relic Race keeps the original spawn order");
+	game.levelID = 6;
+	for (int authoredSolo = 1; authoredSolo >= 0; --authoredSolo)
+	{
+		reset_calls();
+		/* Keep slot 0 as an alternative in the authored-solo case. */
+		memset(image + 4 + SPAWN_P, 0, sizeof level.DriverSpawn);
+		if (authoredSolo)
+		{
+			image[4 + SPAWN_P] = 12;
+			image[4 + SPAWN_P + sizeof level.DriverSpawn[0]] = 42;
+		}
+		write_bytes(lev, image, levSize);
+		expect(CustomContentVerify_Files(lev, vrm, &report, error, sizeof error),
+		       "A6-23: alternate Relic grid verifies");
+		snprintf(plan_package.lev_sha256, sizeof plan_package.lev_sha256, "%s", report.levSha256);
+		expect(preflight() && AP_ContentPreparePad(3, AP_CONTENT_MODE_RELIC) == 6,
+		       "A6-23: alternate Relic grid starts through production pad entry");
+		CustomTrack_OnRaceLoadRequested(6);
+		expect(VehBirth_GetStartlineIndex(&driver) == 1,
+		       authoredSolo ? "A6-23: an authored solo slot keeps its priority"
+		                    : "A6-23: an all-zero grid starts at the origin");
+	}
 	reset_calls();
 
 	/* No package record: nothing to scan or enter. */

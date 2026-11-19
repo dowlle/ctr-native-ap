@@ -328,6 +328,14 @@ int main(void)
 	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "256-checkpoint table refused");
 	expect(strcmp(error, "invalid checkpoint table") == 0, "256-checkpoint diagnostic retained");
 
+	build_lev(image, 1);
+	const size_t navHeader = rd32(image + 4 + BODY_NAV);
+	put16(image, 4 + navHeader + 2, 0xffff);
+	write_bytes(lev, image, IMAGE_BYTES);
+	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error) &&
+	       !strcmp(error, "navigation frame count invalid"),
+	       "negative signed navigation frame count refused");
+
 	build_lev(image, 1); put32(image, 4 + BODY_PTRMAP, 5);
 	write_bytes(lev, image, IMAGE_BYTES);
 	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "non-multiple pointer-map bytes refused");

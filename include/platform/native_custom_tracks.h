@@ -93,6 +93,8 @@ int CustomTrack_StandaloneBusy(void);
 void CustomTrack_SelectRetailRace(void);
 void CustomTrack_OnRaceLoadRequested(int levelID);
 const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int levelID);
+// For a solo race, select an authored spawn from the retained package.
+u8 CustomTrack_StandaloneSoloSpawnIndex(int levelID, u8 preferred);
 // A content-plan race on a custom package, not a retail track (#133 PR 3). It
 // keeps no high scores and never reads, writes or shows its engine host's.
 static inline int CustomTrack_KeepsNoScores(int levelID)
