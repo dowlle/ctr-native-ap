@@ -2634,6 +2634,14 @@ for field in ("finish_floors", "finish_free"):
     reviews.remove(next(row for row in reviews if row["package_id"].removeprefix("package/") == track_id.removeprefix("custom/")))
     plan["item_boxes"]["pickup_rules"].remove(track_id)
     cases.append((f"green-royal-carried-{field}-and-source-missing", bad, False))
+    bad = copy.deepcopy(wire)
+    plan = bad["content_plan"]
+    plan["capability"].pop(field)
+    source = next(row for row in plan["track_ruling_sources"]["packages"]
+                  if row["package_id"].removeprefix("package/") == track_id.removeprefix("custom/"))
+    source["reviews"].pop(0)
+    plan["item_boxes"]["pickup_rules"].remove(track_id)
+    cases.append((f"green-royal-carried-{field}-and-source-truncated", bad, False))
 # Switching the LEV in a legacy exact-pin room cannot supply a carried source.
 wire = make_world(royal_options(item_box_count=5), seed=3, stop_before="pre_fill").fill_slot_data()
 bad = copy.deepcopy(wire)

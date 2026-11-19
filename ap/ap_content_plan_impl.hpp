@@ -913,17 +913,22 @@ static void read_track_ruling_sources(const J &sources, const Table &packages, S
         const J &pkg = *packages.at(id);
         const std::string content = text(pkg.at("content_id"));
         const auto &refs = row.at("reviews");
-        need(refs.is_array() && refs.size() <= 128 && (refs.empty() || reviews.contains(content)),
-             "invalid ruling review history");
-        if (refs.empty()) continue;
-        const auto &known = reviews.at(content);
-        auto next = known.begin();
-        for (const auto &ref : refs) {
-            fields(ref, {"revision", "lev_sha256"});
-            const auto wanted = J::array({text(ref.at("lev_sha256")), text(ref.at("revision"))});
-            next = std::find(next, known.end(), wanted);
-            need(next != known.end(), "unknown or unordered ruling review identity");
-            ++next;
+        need(refs.is_array() && refs.size() <= 128, "invalid ruling review history");
+        J known = J::array();
+        if (reviews.contains(content))
+            for (const auto &review : reviews.at(content))
+                if (review.size() == 2 || review.at(2).get<int>() <= out.track_ruling_version)
+                    known.push_back({{"revision", review[1]}, {"lev_sha256", review[0]}});
+        if (refs != known) {
+            std::string lev;
+            for (const auto &file : pkg.at("files"))
+                if (file.at("role") == "lev") lev = text(file.at("sha256"));
+            const auto &registry = content_registry();
+            const bool exact_geometry = is_pickup_ruling_pin(lev) || registry.at("sanity").contains(lev)
+                || registry.at("sanity_exclusions").contains(lev);
+            const bool indexed = std::any_of(known.begin(), known.end(),
+                [&](const J &review) { return review.at("lev_sha256") == lev; });
+            need(refs.empty() && exact_geometry && !indexed, "incomplete or invalid ruling review history");
         }
         out.track_ruling_sources.emplace(id, refs);
     }
