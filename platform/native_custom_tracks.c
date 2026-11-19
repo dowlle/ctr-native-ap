@@ -1451,6 +1451,13 @@ int CustomTrack_FinishTerrain(const struct CustomTrackLoadContext *ctx)
 	       CustomFinish_Terrain(s_descriptor.levSha256, s_descriptor.vrmSha256) : -1;
 }
 
+enum CustomTrackResidentKind
+{
+	CTR_RESIDENT_GARAGE = 1,
+	CTR_RESIDENT_OXIDE_FINAL,
+	CTR_RESIDENT_CORTEX_PAD,
+	CTR_RESIDENT_EVENT,
+};
 static struct CustomTrackResidentSource s_customTrackResident;
 
 void CustomTrack_ClearResidentSource(void)
@@ -1463,9 +1470,15 @@ const struct CustomTrackResidentSource *CustomTrack_ResidentSource(int levelID)
 	return s_customTrackResident.kind && s_customTrackResident.levelID == levelID ? &s_customTrackResident : NULL;
 }
 
+int CustomTrack_ResidentBlocksRecordedLanes(int levelID)
+{
+	const struct CustomTrackResidentSource *resident = CustomTrack_ResidentSource(levelID);
+	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(levelID);
+	return (resident && resident->kind != CTR_RESIDENT_EVENT) || (race && race->cortex);
+}
+
 void CustomTrack_NoteLoadedLev(const struct CustomTrackLoadContext *ctx)
 {
-	enum { GARAGE = 1, OXIDE_FINAL, CORTEX_PAD, EVENT };
 	struct CustomTrackResidentSource *resident = &s_customTrackResident;
 	const char *lev;
 	const char *vrm;
@@ -1478,7 +1491,7 @@ void CustomTrack_NoteLoadedLev(const struct CustomTrackLoadContext *ctx)
 	CustomTrack_ClearResidentSource();
 	if (garage >= 0)
 	{
-		resident->kind = GARAGE;
+		resident->kind = CTR_RESIDENT_GARAGE;
 		resident->roomIdentity = s_garageVenue[garage].roomIdentity;
 		memcpy(resident->trackID, s_garageVenue[garage].trackID, sizeof resident->trackID);
 		memcpy(resident->packageRevision, s_garageVenue[garage].packageRevision, sizeof resident->packageRevision);
@@ -1488,7 +1501,7 @@ void CustomTrack_NoteLoadedLev(const struct CustomTrackLoadContext *ctx)
 	else if (CustomTrack_OxideFinalServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive) ||
 	         CustomTrack_CortexTrackServing(ctx->levelID, ctx->adventureBossActive))
 	{
-		resident->kind = ctx->adventureBossActive ? OXIDE_FINAL : CORTEX_PAD;
+		resident->kind = ctx->adventureBossActive ? CTR_RESIDENT_OXIDE_FINAL : CTR_RESIDENT_CORTEX_PAD;
 		lev = s_oxideFinalDescriptor.levSha256;
 		vrm = s_oxideFinalDescriptor.vrmSha256;
 	}
@@ -1496,7 +1509,7 @@ void CustomTrack_NoteLoadedLev(const struct CustomTrackLoadContext *ctx)
 	{
 		if (!CustomTrack_ServingLoad(ctx->levelID, ctx->adventureCupActive, ctx->cupID))
 			return;
-		resident->kind = EVENT;
+		resident->kind = CTR_RESIDENT_EVENT;
 		lev = s_descriptor.levSha256;
 		vrm = s_descriptor.vrmSha256;
 	}

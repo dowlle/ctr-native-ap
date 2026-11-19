@@ -2132,8 +2132,12 @@ static void test_finish_terrain_boss_venue(void)
 	resident = CustomTrack_ResidentSource(TEST_HOST);
 	expect_int(resident && strcmp(resident->packageRevision, "1.0.0") == 0, 1,
 	           "clearing garage descriptors cannot relabel the loaded level");
+	expect_int(CustomTrack_ResidentBlocksRecordedLanes(TEST_HOST), 1,
+	           "loaded garage still blocks retail recordings after descriptor withdrawal");
 	CustomTrack_ClearResidentSource();
 	expect_int(CustomTrack_ResidentSource(TEST_HOST) == NULL, 1, "starting a fresh load resets the previous source");
+	expect_int(CustomTrack_ResidentBlocksRecordedLanes(TEST_HOST), 0,
+	           "retail load does not inherit the garage's recording block");
 	s_garageVenue[0] = original;
 	strcpy(s_garageVenue[0].packageRevision, "1.1.0");
 	s_garageVenueVerified[0] = 1;

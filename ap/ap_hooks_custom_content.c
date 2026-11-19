@@ -289,32 +289,13 @@ int AP_ContentPadReady(int physicalPad)
 	return AP_ContentTrackReady(pad->retail_id >= 0, pad->cortex, pad->package_index);
 }
 
-static uint64_t ap_content_room_epoch;
-static uint64_t ap_content_room_identity;
-
-// Bind the room to the admitted plan while its connection identity is
-// available. A transport disconnect clears the socket's seed name.
-static void AP_ContentPlanRememberRoom(void)
-{
-	unsigned long long identity = 0;
-	ap_content_room_epoch = ap_content_plan_epoch();
-	ap_content_room_identity = 0;
-	if (ap_content_room_epoch && ap_net_identity_hash(&identity))
-		ap_content_room_identity = identity;
-}
-
-static uint64_t AP_ContentPlanRoomIdentity(uint64_t epoch)
-{
-	return epoch == ap_content_room_epoch ? ap_content_room_identity : 0;
-}
-
 // Locate, hash and measure a Cortex Vortex or custom track again, arm the
 // loader with it for `race` (host, laps) and copy its pins into the race. A
 // retail race needs nothing. Returns 0 on refusal (the content is marked
 // missing).
 static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRaceContext *race)
 {
-	race->roomIdentity = AP_ContentPlanRoomIdentity(race->seedEpoch);
+	race->roomIdentity = ap_content_plan_room_identity();
 	if (race->retail) return 1;
 	if (cortex)
 	{
@@ -607,7 +588,7 @@ static void AP_GarageVenuePreflight(void)
 		memset(&d, 0, sizeof d);
 		d.enabled = 1;
 		d.hostLevelID = b->venues[g];
-		d.roomIdentity = AP_ContentPlanRoomIdentity(ap_content_plan_epoch());
+		d.roomIdentity = ap_content_plan_room_identity();
 		snprintf(d.trackID, sizeof d.trackID, "%s", pkg ? pkg->id : "cortex_vortex");
 		if (pkg)
 			snprintf(d.packageRevision, sizeof d.packageRevision, "%s", pkg->revision);

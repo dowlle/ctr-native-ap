@@ -36,14 +36,14 @@ struct NativeSaveStateRaceIdentity
 	uint64_t roomIdentity;
 	int64_t routeLocation;
 	u32 magic;
-	s32 levelID, players, laps;
+	s32 levelID, players, laps, demo;
 	u32 mode1, mode2;
 	s32 boss, cup, leg;
 	s32 source, plan, planRetail, planMode, pad, slot;
 	s32 timeLimitTicks;
 	char entryID[65], trackID[65], revision[65];
 	char levSha256[65], vrmSha256[65];
-	char reserved[11];
+	char reserved[7];
 };
 CTR_STATIC_ASSERT(sizeof(struct NativeSaveStateRaceIdentity) == 416);
 
@@ -68,6 +68,7 @@ internal int NativeSaveState_SnapshotIdentity(struct NativeSaveStateRaceIdentity
 	id->levelID = gt->levelID;
 	id->players = gt->numPlyrCurrGame;
 	id->laps = gt->numLaps;
+	id->demo = gt->boolDemoMode != 0;
 	id->mode1 = gt->gameMode1 & (BATTLE_MODE | MAIN_MENU | TIME_TRIAL | ADVENTURE_MODE |
 	                            ADVENTURE_ARENA | ARCADE_MODE | RELIC_RACE | CRYSTAL_CHALLENGE |
 	                            ADVENTURE_CUP | GAME_CUTSCENE | ADVENTURE_BOSS);
@@ -125,12 +126,12 @@ internal int NativeSaveState_Refuse(char *message, const char *reason)
 	return 0;
 }
 
-void NativeSaveState_DrawRefusal(void)
+void NativeSaveState_DrawRefusal(u32 *ot)
 {
 	if (s_quickRefusalFrames > 0)
 	{
 		s_quickRefusalFrames--;
-		DecalFont_DrawLine(s_quickRefusal, 0x100, 0x60, FONT_SMALL, JUSTIFY_CENTER | ORANGE);
+		DecalFont_DrawLineOT(s_quickRefusal, 0x100, 0x60, FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
 	}
 }
 

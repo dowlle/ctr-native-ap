@@ -89,13 +89,7 @@ static int used_managed, used_files, applied, staged;
 static char used_lev[CTR_CT_MANAGER_PATH_MAX], used_vrm[CTR_CT_MANAGER_PATH_MAX], used_name[CTR_CT_NAME_MAX];
 static struct CustomTrackSeedDescriptor applied_descriptor;
 static struct CustomTrackRaceContext staged_race;
-static int connected = 1;
-int ap_net_identity_hash(unsigned long long *out)
-{
-	if (!connected) return 0;
-	*out = 0x123456789abcdef0ULL;
-	return 1;
-}
+uint64_t ap_content_plan_room_identity(void) { return UINT64_C(0x123456789abcdef0); }
 int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *p, struct CustomTrackManagerStatus *s) { (void)p; (void)s; used_managed++; return 1; }
 int CustomTrack_UseContentFiles(const char *lev, const char *vrm, const char *name)
 {
@@ -196,7 +190,6 @@ int main(void)
 	       "rescan recovers after publication succeeds");
 	expect(strcmp(ap_content_files[0].levPath, lev) == 0 && strcmp(ap_content_files[0].vrmPath, vrm) == 0,
 	       "open package located by digest under its track key");
-	AP_ContentPlanRememberRoom();
 	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6, "honest claim enters on host level 6");
 	expect(used_files == 1 && used_managed == 0 && strcmp(used_lev, lev) == 0 && strcmp(used_vrm, vrm) == 0 &&
 	       strcmp(used_name, "Fixture Loop") == 0, "loader gets the located files and the race name");
@@ -212,12 +205,10 @@ int main(void)
 	expect(staged_race.roomIdentity == 0x123456789abcdef0ULL &&
 	       strcmp(staged_race.packageRevision, plan_package.revision) == 0,
 	       "staged race retains the room and package revision for quick saves");
-	connected = 0;
 	reset_calls();
 	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6 &&
 	       staged_race.roomIdentity == 0x123456789abcdef0ULL,
-	       "re-entering the same pad after transport loss retains the admitted room");
-	connected = 1;
+	       "re-entering the same pad uses the admitted room without a socket dependency");
 
 	/* A4-70: a pad whose Relic Race runs other laps than its Trophy Race and CTR
 	   Challenge stages each mode's own laps in the race context. */

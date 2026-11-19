@@ -323,6 +323,7 @@ struct CustomTrackResidentSource
 void CustomTrack_ClearResidentSource(void);
 void CustomTrack_NoteLoadedLev(const struct CustomTrackLoadContext *ctx);
 const struct CustomTrackResidentSource *CustomTrack_ResidentSource(int levelID);
+int CustomTrack_ResidentBlocksRecordedLanes(int levelID);
 /* Is the pair served for this load Tizi Madness (native_tizi_madness.h,
    A4-96)? Same precedence as CustomTrack_FinishTerrain. */
 int CustomTrack_TiziMadness(const struct CustomTrackLoadContext *ctx);

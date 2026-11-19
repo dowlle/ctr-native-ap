@@ -17,9 +17,9 @@ static struct CustomTrackResidentSource resident;
 
 void Platform_Log(const char *fmt, ...) { (void)fmt; }
 
-void DecalFont_DrawLine(char *str, int x, int y, s16 font, int flags)
+void DecalFont_DrawLineOT(char *str, int x, int y, s16 font, int flags, u32 *ot)
 {
-	(void)x; (void)y; (void)font; (void)flags;
+	(void)x; (void)y; (void)font; (void)flags; (void)ot;
 	snprintf(refusal, sizeof refusal, "%s", str);
 }
 
@@ -65,7 +65,7 @@ static void loadExpect(const char *message)
 	refusal[0] = '\0';
 	NativeSaveState_RequestLoad();
 	NativeSaveState_BeginFrame();
-	NativeSaveState_DrawRefusal();
+	NativeSaveState_DrawRefusal(NULL);
 	assert(restored == before + (message == NULL));
 	assert(strcmp(refusal, message ? message : "") == 0);
 }
@@ -184,6 +184,14 @@ int main(void)
 	tracker.gameMode1 = BATTLE_MODE | LIFE_LIMIT;
 	loadExpect(otherRace);
 	tracker.gameMode1 = BATTLE_MODE | TIME_LIMIT;
+	loadExpect(otherRace);
+
+	tracker.levelID = 6;
+	tracker.gameMode1 = ARCADE_MODE;
+	tracker.boolDemoMode = 1;
+	save();
+	loadExpect(NULL);
+	tracker.boolDemoMode = 0;
 	loadExpect(otherRace);
 
 	assert(NativeCheckpointFile_WriteSingle(NATIVE_SAVESTATE_QUICK_PATH, &oldCheckpoint,
