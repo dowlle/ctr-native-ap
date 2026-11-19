@@ -194,6 +194,17 @@ int main(void) {
     g_pad.box_excluded_count = 1; g_pad.box_excluded[0] = 1;
     AP_BoxesSeatCustom(&gGT, &race);
     expect(!s_liveCount && untouched(n), "excluded position mismatch refuses before hiding any crate");
+    n = table(17); reset(17, 15);
+    g_pad.box_excluded_count = 1; g_pad.box_excluded[0] = 1;
+    g_pad.box_excluded_ordinals_only = 1;
+    AP_BoxesSeatCustom(&gGT, &race);
+    expect(s_liveCount == 15 && insts[0].flags == (0x7u | 0x100u),
+           "carried ordinal excludes the crate at its new position");
+    n = table(17); reset(17, 15);
+    g_pad.box_excluded_count = 1; g_pad.box_excluded[0] = 18;
+    g_pad.box_excluded_ordinals_only = 1;
+    AP_BoxesSeatCustom(&gGT, &race);
+    expect(!s_liveCount && untouched(n), "an absent carried ordinal refuses before hiding any crate");
     n = table(3); reset(3, 2);
     g_pad.box_excluded_count = 1; g_pad.box_excluded[0] = 2;
     for (i = 0; i < 3; ++i) g_pad.box_excluded_pos[0][i] = defs[crate_index(1, n)].pos.v[i];
