@@ -117,7 +117,7 @@ enum { START = 0x15, FINISH = 0x23, PU_RANDOM = 8, STATIC_TIME1 = 0x5c, STATIC_T
 #define BODY_MODELS 0xa80
 #define BODY_PTRMAP 0x1200
 
-struct LevSpec { bool race = true; bool crystals = false; bool letters = true; bool relic = true; unsigned seed = 1; size_t junk = 0; };
+struct LevSpec { bool race = true; bool crystals = false; bool letters = true; bool relic = true; unsigned seed = 1; size_t junk = 0; bool navigation = true; };
 
 static Bytes make_lev(const LevSpec &s)
 {
@@ -126,7 +126,9 @@ static Bytes make_lev(const LevSpec &s)
     if (s.letters) { models.push_back(LETTER_C); models.push_back(LETTER_T); models.push_back(LETTER_R); }
     if (s.crystals) for (int i = 0; i < 3; i++) models.push_back(CRYSTAL);
     const uint32_t n = (uint32_t)models.size();
-    std::vector<uint32_t> slots = {0x10, 0x14c, 0x188, BODY_NAV, BODY_NAV + 4, BODY_NAV + 8};
+    std::vector<uint32_t> slots = {0x10, 0x14c};
+    if (s.navigation)
+        slots.insert(slots.end(), {0x188, BODY_NAV, BODY_NAV + 4, BODY_NAV + 8});
     for (uint32_t i = 0; i < n; i++) slots.push_back(BODY_INST + i * 0x40 + 0x10);
     const size_t size = 4 + BODY_PTRMAP + 4 + slots.size() * 4;
     Bytes b(size, 0);
@@ -145,9 +147,12 @@ static Bytes make_lev(const LevSpec &s)
     put32(b, 4 + 0x14c, BODY_CHECK);
     if (s.race)
         for (int i = 0; i < 35; i++) { std::memset(&b[4 + BODY_CHECK + i * 12 + 8], 0xff, 4); b[4 + BODY_CHECK + i * 12 + 8] = (unsigned char)((i + 1) % 35); }
-    put32(b, 4 + 0x188, BODY_NAV);
-    const uint32_t heads[] = {0x740, 0x880, 0x9c0};
-    for (int i = 0; i < 3; i++) { put32(b, 4 + BODY_NAV + i * 4, heads[i]); b[4 + heads[i]] = 0xfd; b[4 + heads[i] + 1] = 0xec; b[4 + heads[i] + 2] = 4; }
+    if (s.navigation)
+    {
+        put32(b, 4 + 0x188, BODY_NAV);
+        const uint32_t heads[] = {0x740, 0x880, 0x9c0};
+        for (int i = 0; i < 3; i++) { put32(b, 4 + BODY_NAV + i * 4, heads[i]); b[4 + heads[i]] = 0xfd; b[4 + heads[i] + 1] = 0xec; b[4 + heads[i] + 2] = 4; }
+    }
     put32(b, 4 + BODY_PTRMAP, (uint32_t)slots.size() * 4);
     for (size_t i = 0; i < slots.size(); i++) put32(b, 4 + BODY_PTRMAP + 4 + i * 4, slots[i]);
     put32(b, 4 + 0x1100, s.seed); /* Distinguishes otherwise equal tracks. */
@@ -551,11 +556,10 @@ int main()
     /* Normalization grants no mode capability and cannot repair bad payloads. */
     {
         DiscSpec changed = base;
-        LevSpec spec; spec.seed = 44;
+        LevSpec spec; spec.seed = 44; spec.navigation = false;
         Bytes ordinary = make_lev(spec);
-        put32(ordinary, 4 + 0x188, 0); /* No AI table, TT remains allowed. */
         changed.bigfile[1] = alternate_lev(ordinary);
-        spec.seed = 45; spec.race = false;
+        spec.seed = 45; spec.race = false; spec.navigation = true;
         ordinary = make_lev(spec);
         changed.bigfile[3] = alternate_lev(ordinary);
         spec.seed = 46; spec.race = true;
