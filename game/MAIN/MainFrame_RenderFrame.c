@@ -7,6 +7,7 @@
 
 #if defined(CTR_NATIVE) && defined(CTR_INTERNAL)
 #include <platform/native_perf.h>
+#include <platform/native_savestate.h>
 #define MAINFRAME_PERF_BEGIN(bucket) NativePerf_BeginScope(bucket)
 #define MAINFRAME_PERF_END(bucket)   NativePerf_EndScope(bucket)
 #else
@@ -223,6 +224,11 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 	}
 
 	MAINFRAME_PERF_BEGIN(NATIVE_PERF_BUCKET_MAINFRAME_UI);
+#if defined(CTR_NATIVE) && defined(CTR_INTERNAL)
+	// The closest ordering bucket is drawn last. A flag added to it below
+	// draws first within that bucket, leaving the refusal visible on top.
+	NativeSaveState_DrawRefusal(gGT->otSwapchainDB[gGT->swapchainIndex]);
+#endif
 	if ((gGT->renderFlags & 0x1000) != 0)
 	{
 		RaceFlag_DrawSelf();

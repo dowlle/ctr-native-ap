@@ -227,8 +227,11 @@ int main(int argc, char **argv) {
     std::ifstream("tools/fixtures/content-plan/baseline.json") >> base;
     std::ifstream("tools/fixtures/content-plan/starts-extras.json") >> extras;
     expect(parse(base) && !ap_content_plan_active() && !ap_content_plan_pad(3), "parsed plan is not admitted before room binding");
+    expect(ap_content_plan_room_identity() == 0, "an unbound plan has no room identity");
     expect(bind_room(base) && ap_content_plan_active(), "actual generated room binds");
     const uint64_t original_epoch = ap_content_plan_epoch();
+    const uint64_t room_identity = ap_content_plan_room_identity();
+    expect(room_identity != 0, "a bound plan supplies a room identity from admission");
     expect(original_epoch != 0, "nonzero admitted epoch");
     int occupied = 0, custom = 0, empty = 0;
     for (int id = 0; id <= 110; ++id) {
@@ -269,11 +272,17 @@ int main(int argc, char **argv) {
     expect(parse(base) && bind_room(base), "return to original plan");
     const uint64_t reconnect_epoch = ap_content_plan_epoch();
     expect(parse(base) && bind_room(base) && ap_content_plan_epoch() == reconnect_epoch, "same room reconnect preserves epoch");
+    expect(ap_content_plan_room_identity() == room_identity, "same plan bind has stable identity across intervening rooms");
     expect(parse(base) && bind_room(base, "seed-B") && ap_content_plan_epoch() != original_epoch, "different seed invalidates old epoch");
+    expect(ap_content_plan_room_identity() != room_identity, "different seed changes the room identity");
     auto previous = ap_content_plan_epoch();
+    auto previous_identity = ap_content_plan_room_identity();
     expect(parse(base) && bind_room(base, "seed-B", 1) && ap_content_plan_epoch() != previous, "different team invalidates old epoch");
+    expect(ap_content_plan_room_identity() != previous_identity, "different team changes the room identity");
     previous = ap_content_plan_epoch();
+    previous_identity = ap_content_plan_room_identity();
     expect(parse(base) && bind_room(base, "seed-B", 1, 2) && ap_content_plan_epoch() != previous, "different slot invalidates old epoch");
+    expect(ap_content_plan_room_identity() != previous_identity, "different slot changes the room identity");
     previous = ap_content_plan_epoch();
     expect(parse(extras) && bind_room(extras, "seed-B", 1, 2) && ap_content_plan_epoch() != previous, "changed plan invalidates epoch");
     const auto *key = ap_content_plan_item(35010014);

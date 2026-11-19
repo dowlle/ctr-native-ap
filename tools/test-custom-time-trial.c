@@ -188,6 +188,7 @@ int CustomTrack_NavIdentityForLoad(int level, int cup, int id, unsigned char uui
 int CustomTrack_OxideFinalServing(int level, int boss, int active) { (void)level; (void)boss; (void)active; return 0; }
 int CustomTrack_GarageVenueServing(int level, int boss, int active) { (void)level; (void)boss; (void)active; return -1; }
 int CustomTrack_CortexTrackIntent(int level, int boss) { (void)level; (void)boss; return 0; }
+int CustomTrack_ResidentBlocksRecordedLanes(int level) { (void)level; return 0; }
 
 #include "../ap/ap_navrec.c"
 
