@@ -28,6 +28,7 @@
 // takes the same path on its own host slot (CustomTrack_UseContentMusic, set
 // when the race is armed). Without one, or when it is refused, the host slot's
 // own bank and song play as before.
+// Custom boss venues use the same path with Boss Music set to TRACK.
 
 #include <platform/native_custom_music.h>
 #include <platform/native_custom_offline.h>
@@ -49,8 +50,11 @@ static struct CustomMusicSca s_customSca; // valid from LoadBank until BankDone
 // Cortex Vortex's bundled .sca, held from LoadBank until SetSong or Reset.
 static const void *s_cortexBytes;
 static size_t s_cortexSize;
+static unsigned char *s_bossMusicBytes;
+static size_t s_bossMusicSize;
 static int s_customBankServing;
 static int s_customBankLoaded; // the level bank of this load is the .sca's
+static int s_customSongReady;
 static u16 s_customSavedIDs[CTR_SCA_MAX_SAMPLES];
 static u16 s_customSavedSizes[CTR_SCA_MAX_SAMPLES];
 static int s_customSavedCount;
@@ -78,6 +82,18 @@ static int HOWL_CustomMusic_Acquire(struct CustomMusicSca *sca, char *error, siz
 			return 0;
 		}
 	}
+	else if (s_bossMusicBytes || IS_BOSS_RACE(sdata->gGT->gameMode1))
+	{
+		if (!s_bossMusicBytes)
+			s_bossMusicBytes = CustomTrack_ReadBossMusic(sdata->gGT->levelID, sdata->gGT->bossID, &s_bossMusicSize);
+		if (!s_bossMusicBytes)
+		{
+			error[0] = '\0';
+			return 0;
+		}
+		bytes = s_bossMusicBytes;
+		size = s_bossMusicSize;
+	}
 	else
 	{
 		// The bank and the song must come from the same bytes, whatever the
@@ -94,13 +110,17 @@ static int HOWL_CustomMusic_Acquire(struct CustomMusicSca *sca, char *error, siz
 	return CustomMusic_Parse(bytes, size, (unsigned int)sdata->ptrHowlHeader->numSpuAddrs, sca, error, errorSize);
 }
 
-static void HOWL_CustomMusic_ReleaseCortex(void)
+static void HOWL_CustomMusic_ReleaseAudio(void)
 {
-	if (s_cortexBytes == NULL)
-		return;
-	s_cortexBytes = NULL;
-	s_cortexSize = 0;
-	CustomTrack_CortexMusicRelease();
+	if (s_cortexBytes != NULL)
+	{
+		s_cortexBytes = NULL;
+		s_cortexSize = 0;
+		CustomTrack_CortexMusicRelease();
+	}
+	free(s_bossMusicBytes);
+	s_bossMusicBytes = NULL;
+	s_bossMusicSize = 0;
 }
 
 // Undo the slot sizes and forget the served bank. Music_LoadBanks calls this
@@ -115,7 +135,8 @@ void HOWL_CustomMusic_Reset(void)
 	memset(&s_customSca, 0, sizeof s_customSca);
 	s_customBankServing = 0;
 	s_customBankLoaded = 0;
-	HOWL_CustomMusic_ReleaseCortex();
+	s_customSongReady = 0;
+	HOWL_CustomMusic_ReleaseAudio();
 }
 
 // The music of a custom-page race that plays no .sca: the retail bank and song
@@ -143,8 +164,7 @@ static int HOWL_CustomMusic_ReadBankHeader(int bankID, s16 *sector)
 
 // Music_AsyncParseBanks stage 0 of a custom race. Returns 1 when the .sca's
 // bank was started with Bank_Load; 0 means use the default bank. laterBanks is
-// what stages 1 and 2 load after it (native_cortex_music_select.h); a custom
-// race always takes bank 54.
+// what stages 1 and 2 load after it (native_cortex_music_select.h).
 static int HOWL_CustomMusic_LoadBankFor(struct Bank *thisBank, enum CortexMusicBanks laterBanks)
 {
 	struct CustomMusicSca sca;
@@ -222,35 +242,40 @@ static int HOWL_CustomMusic_LoadBankFor(struct Bank *thisBank, enum CortexMusicB
 		char detail[96];
 		snprintf(detail, sizeof detail, "%u samples, song %u bytes, SPU end 0x%x of 0x%x", sca.numSamples,
 		         (unsigned int)sca.cseqSize, needed * 8, CTR_SCA_SPU_LIMIT);
-		HOWL_CustomMusic_Log("playing the track's own music", detail);
+		HOWL_CustomMusic_Log("track music bank admitted", detail);
 	}
 	return 1;
 }
 
 int HOWL_CustomMusic_LoadBank(struct Bank *thisBank)
 {
-	return HOWL_CustomMusic_LoadBankFor(thisBank, CORTEX_MUSIC_BANK54);
+	const struct GameTracker *gGT = sdata->gGT;
+	// A custom-page Time Trial uses the character bank. Arcade uses bank 54.
+	return HOWL_CustomMusic_LoadBankFor(thisBank, CortexMusic_Banks(1, gGT->gameMode1, gGT->cup.cupID, 1));
 }
 
-// Stage 0 of any other driving race: the bundled Cortex Vortex music while its
-// content-plan race is served on host level 13 (native_cortex_music_select.h).
-// A boss race never gets here: stage 0 gives it the boss bank first. 0 keeps
-// Oxide Station's bank, and its song in stage 3.
-int HOWL_CustomMusic_CortexLoadBank(int level, struct Bank *thisBank)
+// Stage 0 of a seed race or a custom boss venue with TRACK selected.
+// Missing or refused music uses the borrowed slot's bank and song.
+int HOWL_CustomMusic_ContentLoadBank(int level, struct Bank *thisBank)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	u32 mode = gGT->gameMode1;
 	int adventureCup = (mode & ADVENTURE_CUP) != 0;
+	int boss = IS_BOSS_RACE(gGT->gameMode1);
+	int servesMusic = boss ?
+	    CustomTrack_GarageVenueServing(level, gGT->bossID, boss) >= 0 ||
+	    CustomTrack_OxideFinalServing(level, gGT->bossID, boss) :
+	    CustomTrack_CortexMusicServing(level, adventureCup, gGT->cup.cupID);
 	enum CortexMusicBanks laterBanks =
-	    CortexMusic_Banks(CustomTrack_CortexMusicServing(level, adventureCup, gGT->cup.cupID), mode, gGT->cup.cupID,
+	    CortexMusic_Banks(servesMusic, mode, gGT->cup.cupID,
 	                      CustomTrack_ServingLoad(level, adventureCup, gGT->cup.cupID));
 
 	if (laterBanks == CORTEX_MUSIC_OFF)
 		return 0;
 	if (HOWL_CustomMusic_LoadBankFor(thisBank, laterBanks))
 		return 1;
-	// Refused: Oxide Station's bank and song, and the .sca is let go now.
-	HOWL_CustomMusic_ReleaseCortex();
+	// Release the refused asset before the borrowed slot's bank loads.
+	HOWL_CustomMusic_ReleaseAudio();
 	return 0;
 }
 
@@ -295,7 +320,8 @@ int HOWL_CustomMusic_SetSong(void)
 	memcpy(s_customSong, sca.cseq, sca.cseqSize);
 	howl_ParseCseqHeader((struct CseqHeader *)s_customSong);
 	sdata->songLoadStage = 3;
+	s_customSongReady = 1;
 	// The song is in its own buffer and the bank on the SPU: done with the .sca.
-	HOWL_CustomMusic_ReleaseCortex();
+	HOWL_CustomMusic_ReleaseAudio();
 	return 1;
 }

@@ -346,59 +346,71 @@ static int CustomTrack_DescriptorIsCortex(void)
 	       NativeSha256_HexEquals(CORTEX_VRM_SHA256, s_descriptor.vrmSha256);
 }
 
-// Read the .sca beside the verified LEV whole and keep it only when its sha256
-// is the pinned one.
-static void CustomTrack_LoadCortexMusic(const char *levPath)
+static unsigned char *CustomTrack_ReadMusicFile(const char *path, unsigned long expectedBytes,
+                                                const char *sha256, size_t *size)
 {
-	char path[CUSTOM_TRACK_PATH_MAX];
 	struct NativeSha256Ctx ctx;
 	unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
 	char hex[NATIVE_SHA256_HEX_BYTES];
-	struct stat st;
-	unsigned char *bytes;
-	const char *slash = strrchr(levPath, '/');
-	const char *back = strrchr(levPath, '\\');
-	size_t dirLength;
-	FILE *f;
-
-	CustomTrack_ClearCortexMusic();
-	if (back != NULL && (slash == NULL || back > slash))
-		slash = back;
-	dirLength = slash ? (size_t)(slash - levPath) + 1 : 0;
-	if (dirLength + sizeof CORTEX_SCA_NAME <= sizeof path)
+	long length;
+	*size = 0;
+	FILE *f = fopen(path, "rb");
+	if (!f)
+		return NULL;
+	if (fseek(f, 0, SEEK_END) != 0 || (length = ftell(f)) <= 0 ||
+	    (unsigned long)length > CORTEX_SCA_MAX_BYTES ||
+	    (expectedBytes != 0 && (unsigned long)length != expectedBytes) || fseek(f, 0, SEEK_SET) != 0)
 	{
-		memcpy(path, levPath, dirLength);
-		memcpy(path + dirLength, CORTEX_SCA_NAME, sizeof CORTEX_SCA_NAME);
+		fclose(f);
+		return NULL;
 	}
-	if (dirLength + sizeof CORTEX_SCA_NAME > sizeof path || stat(path, &st) != 0 || st.st_size <= 0 ||
-	    (unsigned long)st.st_size > CORTEX_SCA_MAX_BYTES)
+	unsigned char *bytes = (unsigned char *)malloc((size_t)length);
+	if (!bytes || fread(bytes, 1, (size_t)length, f) != (size_t)length)
 	{
-		CustomTrack_Log("[CortexVortex] music not available, Oxide Station's music plays\n");
-		return;
-	}
-	bytes = (unsigned char *)malloc((size_t)st.st_size);
-	f = bytes ? fopen(path, "rb") : NULL;
-	if (f == NULL || fread(bytes, 1, (size_t)st.st_size, f) != (size_t)st.st_size)
-	{
-		if (f)
-			fclose(f);
+		fclose(f);
 		free(bytes);
-		CustomTrack_Log("[CortexVortex] music could not be read, Oxide Station's music plays\n");
-		return;
+		return NULL;
 	}
 	fclose(f);
 	NativeSha256_Init(&ctx);
-	NativeSha256_Update(&ctx, bytes, (size_t)st.st_size);
+	NativeSha256_Update(&ctx, bytes, (size_t)length);
 	NativeSha256_Final(&ctx, digest);
 	NativeSha256_ToHex(digest, hex);
-	if (!NativeSha256_HexEquals(CORTEX_SCA_SHA256, hex))
+	if (!NativeSha256_HexEquals(sha256, hex))
 	{
 		free(bytes);
-		CustomTrack_Log("[CortexVortex] music REFUSED: sha256 mismatch, Oxide Station's music plays\n");
+		return NULL;
+	}
+	*size = (size_t)length;
+	return bytes;
+}
+
+// The bundled SCA lives beside the verified Cortex Vortex LEV.
+static unsigned char *CustomTrack_ReadCortexMusic(const char *levPath, size_t *size)
+{
+	char path[CUSTOM_TRACK_PATH_MAX];
+	const char *slash = strrchr(levPath, '/');
+	const char *back = strrchr(levPath, '\\');
+	if (back != NULL && (slash == NULL || back > slash))
+		slash = back;
+	size_t dirLength = slash ? (size_t)(slash - levPath) + 1 : 0;
+	*size = 0;
+	if (dirLength + sizeof CORTEX_SCA_NAME > sizeof path)
+		return NULL;
+	memcpy(path, levPath, dirLength);
+	memcpy(path + dirLength, CORTEX_SCA_NAME, sizeof CORTEX_SCA_NAME);
+	return CustomTrack_ReadMusicFile(path, 0, CORTEX_SCA_SHA256, size);
+}
+
+static void CustomTrack_LoadCortexMusic(const char *levPath)
+{
+	CustomTrack_ClearCortexMusic();
+	s_cortexMusic = CustomTrack_ReadCortexMusic(levPath, &s_cortexMusicSize);
+	if (!s_cortexMusic)
+	{
+		CustomTrack_Log("[CortexVortex] music unavailable or failed verification, Oxide Station's music plays\n");
 		return;
 	}
-	s_cortexMusic = bytes;
-	s_cortexMusicSize = (size_t)st.st_size;
 	CustomTrack_Log("[CortexVortex] music verified (%u bytes)\n", (unsigned)s_cortexMusicSize);
 }
 
@@ -407,13 +419,6 @@ static void CustomTrack_LoadCortexMusic(const char *levPath)
 // for. Anything else costs the music only: the host slot's own music plays.
 static void CustomTrack_LoadPackageMusic(void)
 {
-	struct NativeSha256Ctx ctx;
-	unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
-	char hex[NATIVE_SHA256_HEX_BYTES];
-	unsigned char *bytes;
-	FILE *f;
-	long length;
-
 	CustomTrack_ClearCortexMusic();
 	if (s_pendingMusic.path[0] == '\0')
 		return;
@@ -424,30 +429,13 @@ static void CustomTrack_LoadPackageMusic(void)
 		memset(&s_pendingMusic, 0, sizeof s_pendingMusic);
 		return;
 	}
-	bytes = (unsigned char *)malloc((size_t)s_pendingMusic.bytes);
-	f = bytes ? fopen(s_pendingMusic.path, "rb") : NULL;
-	if (f == NULL || fseek(f, 0, SEEK_END) != 0 || (length = ftell(f)) != (long)s_pendingMusic.bytes ||
-	    fseek(f, 0, SEEK_SET) != 0 || fread(bytes, 1, (size_t)length, f) != (size_t)length)
+	s_cortexMusic = CustomTrack_ReadMusicFile(s_pendingMusic.path, s_pendingMusic.bytes,
+	                                        s_pendingMusic.scaSha256, &s_cortexMusicSize);
+	if (!s_cortexMusic)
 	{
-		if (f)
-			fclose(f);
-		free(bytes);
-		CustomTrack_Log("[CustomTracks] track music could not be read, the host slot's music plays\n");
+		CustomTrack_Log("[CustomTracks] track music unavailable or failed verification, the host slot's music plays\n");
 		return;
 	}
-	fclose(f);
-	NativeSha256_Init(&ctx);
-	NativeSha256_Update(&ctx, bytes, (size_t)length);
-	NativeSha256_Final(&ctx, digest);
-	NativeSha256_ToHex(digest, hex);
-	if (!NativeSha256_HexEquals(s_pendingMusic.scaSha256, hex))
-	{
-		free(bytes);
-		CustomTrack_Log("[CustomTracks] track music REFUSED: sha256 mismatch, the host slot's music plays\n");
-		return;
-	}
-	s_cortexMusic = bytes;
-	s_cortexMusicSize = (size_t)length;
 	s_musicIsPackage = 1;
 	CustomTrack_Log("[CustomTracks] track music verified (%u bytes)\n", (unsigned)s_cortexMusicSize);
 }
@@ -648,6 +636,28 @@ int CustomTrack_OxideFinalServing(int levelID, int bossID, int adventureBossActi
 	return s_oxideFinalVerified && s_oxideFinalDescriptor.enabled &&
 	       adventureBossActive && levelID == s_oxideFinalDescriptor.hostLevelID && bossID == 5;
 }
+
+#ifdef CTR_CUSTOM_PACKAGES
+unsigned char *CustomTrack_ReadBossMusic(int levelID, int bossID, size_t *size)
+{
+	int garage = CustomTrack_GarageVenueServing(levelID, bossID, 1);
+	*size = 0;
+	if (garage >= 0)
+	{
+		const struct GarageVenueDescriptor *venue = &s_garageVenue[garage];
+		if (venue->cortex && NativeSha256_HexEquals(CORTEX_LEV_SHA256, venue->levSha256) &&
+		    NativeSha256_HexEquals(CORTEX_VRM_SHA256, venue->vrmSha256))
+			return CustomTrack_ReadCortexMusic(venue->levPath, size);
+		if (venue->scaPath[0] && venue->scaBytes != 0)
+			return CustomTrack_ReadMusicFile(venue->scaPath, venue->scaBytes, venue->scaSha256, size);
+	}
+	else if (CustomTrack_OxideFinalServing(levelID, bossID, 1))
+	{
+		return CustomTrack_ReadCortexMusic(s_oxideFinalLev.path, size);
+	}
+	return NULL;
+}
+#endif
 
 static struct CortexTrackLatch s_cortexTrackLatch = {-1, 0, 0, -1};
 

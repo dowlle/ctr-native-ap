@@ -20,6 +20,7 @@
 #include <sys/stat.h>
 
 #define CTR_CUSTOM_TRACKS 1
+#define CTR_CUSTOM_PACKAGES 1
 
 #include "platform/native_custom_tracks.c"
 #include "platform/native_cortex_music_select.h"
@@ -372,6 +373,48 @@ static void package_music(void)
 	EXPECT(CustomTrack_UseContentMusic(s_pkgSca, s_pkgScaSha, 0, s_pkgLevSha) == 0, "zero size");
 }
 
+static void boss_music(void)
+{
+	struct GarageVenueDescriptor venue = {.enabled = 1, .hostLevelID = PKG_HOST, .scaBytes = SCA_BYTES};
+	size_t size;
+	unsigned char *bytes;
+	snprintf(venue.levPath, sizeof venue.levPath, "%s", s_pkgLev);
+	snprintf(venue.vrmPath, sizeof venue.vrmPath, "%s", s_pkgVrm);
+	snprintf(venue.levSha256, sizeof venue.levSha256, "%s", s_pkgLevSha);
+	sha_of(s_pkgVrm, venue.vrmSha256);
+	snprintf(venue.scaPath, sizeof venue.scaPath, "%s", s_sca);
+	sha_of(s_sca, venue.scaSha256);
+	EXPECT(CustomTrack_ApplyGarageVenueDescriptor(0, &venue), "assign a custom boss venue");
+	bytes = CustomTrack_ReadBossMusic(PKG_HOST, 0, &size);
+	EXPECT(bytes && size == SCA_BYTES, "the matching boss venue reads its pinned SCA");
+	free(bytes);
+	EXPECT(!CustomTrack_ReadBossMusic(PKG_HOST, 1, &size) && size == 0, "another boss has no access to the pin");
+	EXPECT(!CustomTrack_ReadBossMusic(PKG_HOST + 1, 0, &size), "another host has no access to the pin");
+	venue.scaBytes--;
+	EXPECT(CustomTrack_ApplyGarageVenueDescriptor(0, &venue), "the venue remains usable with an invalid audio size");
+	EXPECT(!CustomTrack_ReadBossMusic(PKG_HOST, 0, &size), "a wrong audio size does not play");
+	venue.scaBytes = SCA_BYTES;
+	memset(venue.scaSha256, '0', sizeof venue.scaSha256 - 1);
+	EXPECT(CustomTrack_ApplyGarageVenueDescriptor(0, &venue), "the venue remains usable with an invalid audio hash");
+	EXPECT(!CustomTrack_ReadBossMusic(PKG_HOST, 0, &size), "a wrong audio hash does not play");
+
+	snprintf(venue.levPath, sizeof venue.levPath, "%s", s_lev);
+	snprintf(venue.vrmPath, sizeof venue.vrmPath, "%s", s_vrm);
+	snprintf(venue.levSha256, sizeof venue.levSha256, "%s", CORTEX_LEV_SHA256);
+	snprintf(venue.vrmSha256, sizeof venue.vrmSha256, "%s", CORTEX_VRM_SHA256);
+	venue.scaPath[0] = 0;
+	venue.scaBytes = 0;
+	EXPECT(CustomTrack_ApplyGarageVenueDescriptor(0, &venue), "assign an ordinary venue using the Cortex files");
+	EXPECT(!CustomTrack_ReadBossMusic(PKG_HOST, 0, &size), "matching geometry alone does not select bundled music");
+	venue.cortex = 1;
+	EXPECT(CustomTrack_ApplyGarageVenueDescriptor(0, &venue), "assign the bundled boss venue");
+	bytes = CustomTrack_ReadBossMusic(PKG_HOST, 0, &size);
+	EXPECT(bytes && size == SCA_BYTES, "the bundled boss venue reads its bundled music");
+	free(bytes);
+	CustomTrack_ClearGarageVenueDescriptors();
+	EXPECT(!CustomTrack_ReadBossMusic(PKG_HOST, 0, &size), "withdrawing the venue withdraws its music");
+}
+
 static void pins(void)
 {
 	char line[512];
@@ -444,6 +487,7 @@ int main(void)
 
 	loader();
 	package_music();
+	boss_music();
 	pins();
 	selection();
 
