@@ -591,7 +591,8 @@ static int CT_LibraryActions(const struct CT_LibItem *item, const struct CT_LibV
     CT_Add(a, &n, CT_ACT_VERSIONS, "Versions", !v->source ? "Not in the Project Saphi catalogue." :
            !v->allowed ? ap_track_permission_text() : "");
     CT_Add(a, &n, CT_ACT_SOURCE, "Open source page",
-           CT_SourceTrackID(v) > 0 || item->kind == CT_ITEM_PACKAGE ? "" :
+           CT_SourceTrackID(v) > 0 || item->kind == CT_ITEM_PACKAGE ||
+           (v->installed && v->installed->local.sourceUrl[0]) ? "" :
            v->installed && v->installed->local.xdelta ? "Imported from a patch. No source page is known." :
            "No source page is known for this track.");
     if (v->package)
@@ -605,7 +606,7 @@ static int CT_LibraryActions(const struct CT_LibItem *item, const struct CT_LibV
 
 static void CT_OpenURL(const char *url)
 {
-    CT_SetMessage(Platform_OpenURL(url) ? "Opened the Project Saphi page." : "Could not open the source page.");
+    CT_SetMessage(Platform_OpenURL(url) ? "Opened the source page." : "Could not open the source page.");
 }
 
 static void CT_OpenTrackSource(int trackID)
@@ -1282,7 +1283,9 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
     }
     else if (s_ctFocus == CT_FOCUS_ACTIONS && item)
     {
-        s_ctActionSel = CT_Step(s_ctActionSel, nActions, tapped);
+        const int action = CT_Step(s_ctActionSel, nActions, tapped);
+        if (action != s_ctActionSel) s_ctMessage[0] = 0;
+        s_ctActionSel = action;
         if (tapped & (BTN_TRIANGLE | BTN_START)) { s_ctFocus = CT_FOCUS_LIST; s_ctMessage[0] = 0; OtherFX_Play(2, 1); }
         else if (tapped & (BTN_CROSS | BTN_CIRCLE))
         {
@@ -1307,7 +1310,8 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
                 break;
             case CT_ACT_SOURCE:
                 if (item->kind == CT_ITEM_PACKAGE) CT_OpenURL(AP_CustomContentPackage()->sourceUrl);
-                else CT_OpenTrackSource(CT_SourceTrackID(&v));
+                else if (CT_SourceTrackID(&v) > 0) CT_OpenTrackSource(CT_SourceTrackID(&v));
+                else CT_OpenURL(v.installed->local.sourceUrl);
                 break;
             case CT_ACT_VERIFY:
                 AP_CustomContentVerify();

@@ -861,7 +861,7 @@ extern "C" int AP_Solo_SaveRoomYamlStart(const char *slotName)
 {
 	if (TrackPublicationBusy() || StorePublicationBusy())
 		return 0;
-	std::vector<std::string> args = {"save-room-yaml", "--assets", AssetsDir(), "--name", slotName};
+	std::vector<std::string> args = {"save-room-yaml", "--assets", AssetsDir(), std::string("--name=") + slotName};
 	std::vector<std::pair<std::string, int>> picks;
 	for (const APSoloTrackInfo &track : g_tracks)
 		if (!track.needsLaps)

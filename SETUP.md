@@ -381,13 +381,11 @@ internet. Everything solo is stored in the `solo` folder next to the game, so
 back that folder up together with your memory cards. Multiplayer still uses
 **Connect** as before.
 
-## Experimental custom content
+## Custom tracks
 
-The public archive contains no custom-track files. Version 0.2.0 recognizes one
-experimental Baby T Park package supplied by its creator. Open **OPTIONS →
-Custom Content** to inspect it, follow the creator link and verify the installed
-files. **Ready** means the files are compatible; it does not make a generated
-seed use the track.
+Open **Options > Custom Tracks** to inspect installed tracks, follow their
+source links and verify their files. **Ready** means the track files have
+passed the client's checks.
 
 To use a Ready track with a public source, open **Options > Custom Tracks**,
 select the track and choose **Export YAML**. Copy or save the entry and add it
@@ -397,8 +395,8 @@ Each entry uses `track_key`, and includes file checks, the lap count and the
 track's capabilities. A track with restart points and AI paths
 (`checkpoints` and `ai_nav`) can also race a boss.
 
-A Relic Race on a custom track needs the author's target times. On the Custom
-Content page choose **Relic Times** and enter Sapphire, Gold and Platinum as
+A Relic Race on a custom track needs the author's target times. For the managed
+Baby T Park profile, choose **Relic times** and enter Sapphire, Gold and Platinum as
 M:SS.CC: Up and Down change a digit, Left and Right move, Cross saves, Triangle
 cancels. Sapphire must be slower than Gold and Gold slower than Platinum. The
 times are kept beside the package's manifest, never in the track files, and
