@@ -23,6 +23,7 @@
 // the Hit target rule. Everything else comes from the plan.
 #include "ap_verify_logic.h"
 #include <cstring>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -124,10 +125,18 @@ static int compile(Model &m, const J &n) {
     return (int)m.nodes.size() - 1;
 }
 
+// Tracks named by the plan's `capability.finish_floors` (reviewed Royal Raceway 1.0.0):
+// every finish needs the full rank whatever the descriptor states. Set by build().
+static std::set<std::string> finish_floor_tracks;
+// Tracks named by `capability.finish_free` (reviewed Green Hill Raceway 2.0.0): no rank for the finish itself.
+static std::set<std::string> finish_free_tracks;
+
 // content_capability.finish_boost: the ranks crossing a track's finish line
 // needs, 0 without Progressive Boost.
 static int finish_boost(const J &track, const std::map<std::string, const J *> &packages, const AP_VerifyOptions &o) {
     if (!o.boost_mode) return 0;
+    if (track.at("origin") == "custom" && finish_free_tracks.count(track.at("id").get<std::string>())) return 0;
+    if (track.at("origin") == "custom" && finish_floor_tracks.count(track.at("id").get<std::string>())) return kUsf;
     const std::string origin = track.at("origin").get<std::string>();
     if (origin == "cortex_vortex") return kUsf;
     if (origin == "retail") {
@@ -180,6 +189,12 @@ static Model build() {
     using content_plan::state;
     const AP_VerifyOptions o = options();
     const J p = J::parse(state.canonical);
+    finish_floor_tracks.clear();
+    finish_free_tracks.clear();
+    if (p.contains("capability") && p["capability"].contains("finish_free"))
+        for (const auto &id : p["capability"]["finish_free"]) finish_free_tracks.insert(id.get<std::string>());
+    if (p.contains("capability") && p["capability"].contains("finish_floors"))
+        for (const auto &id : p["capability"]["finish_floors"]) finish_floor_tracks.insert(id.get<std::string>());
     Model m;
     m.epoch = content_plan::epoch;
     const J *gc = p.contains("global_checks") ? &p["global_checks"] : nullptr;
@@ -439,6 +454,8 @@ static Model build() {
              std::any_of(routes.begin(), routes.end(), [](const J &r) { return !r.at("leg_id").is_null() || !r.at("encounter_id").is_null(); }))) {
             L.kind = RACE;
             for (const auto &r : routes) {
+                if (content_plan::repeatable_pickups(p) && kind != "podium" &&
+                    !content_plan::repeatable_pickup_route(r)) continue;
                 Route R;
                 R.region = region_of(r.at("entry_id").get<std::string>());
                 R.lock = lock_of(*pads.at(r.at("own_pad_id").get<std::string>()));

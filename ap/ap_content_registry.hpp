@@ -6376,7 +6376,34 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         6,
         0
       ],
-      "needs": {}
+      "needs": {
+        "weapon_crate": {
+          "8": {
+            "needs": "boost",
+            "shortcut": 1,
+            "reviewed": true,
+            "since": 1
+          },
+          "9": {
+            "needs": "boost",
+            "shortcut": 1,
+            "reviewed": true,
+            "since": 1
+          },
+          "10": {
+            "needs": "boost",
+            "shortcut": 1,
+            "reviewed": true,
+            "since": 1
+          },
+          "11": {
+            "needs": "boost",
+            "shortcut": 1,
+            "reviewed": true,
+            "since": 1
+          }
+        }
+      }
     },
     "retail:8": {
       "lev_sha256": "5be5bfd1a89be3d43ec7c5d607d61c91ca9afdc04ec5cd172fc185608e906dce",
@@ -6385,7 +6412,34 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         6,
         0
       ],
-      "needs": {}
+      "needs": {
+        "weapon_crate": {
+          "8": {
+            "needs": "boost",
+            "shortcut": 1,
+            "reviewed": true,
+            "since": 1
+          },
+          "9": {
+            "needs": "boost",
+            "shortcut": 1,
+            "reviewed": true,
+            "since": 1
+          },
+          "10": {
+            "needs": "boost",
+            "shortcut": 1,
+            "reviewed": true,
+            "since": 1
+          },
+          "11": {
+            "needs": "boost",
+            "shortcut": 1,
+            "reviewed": true,
+            "since": 1
+          }
+        }
+      }
     },
     "e1ba6c76570864f04daf8d345f7cd2664e037e58ee2da43733c28a1b4eb6d509": {
       "lev_sha256": "e1ba6c76570864f04daf8d345f7cd2664e037e58ee2da43733c28a1b4eb6d509",
@@ -7347,7 +7401,347 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         7,
         0
       ],
-      "needs": {}
+      "needs": {
+        "weapon_crate": {
+          "1": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "2": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "3": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "4": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "5": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "6": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "7": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "8": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "9": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "10": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "11": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "12": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "13": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "14": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "15": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "16": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "17": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "18": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "19": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "20": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "21": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "22": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "23": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "24": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "25": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "26": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "27": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "28": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "29": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "30": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "31": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "32": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "33": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "34": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "35": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "36": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "37": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "38": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "39": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "40": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "41": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "42": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "43": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "44": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "45": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "46": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "47": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "48": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "49": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "50": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "51": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "52": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "53": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "54": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "55": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "56": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "57": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "58": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "59": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "60": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "61": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          }
+        },
+        "wumpa_crate": {
+          "2": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "3": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "4": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "5": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "6": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "7": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          }
+        }
+      }
     },
     "9f85b2d5dbc2fe543ce024751fc6e08f77d7ba649f8ddfec936f016804a9bbf3": {
       "lev_sha256": "9f85b2d5dbc2fe543ce024751fc6e08f77d7ba649f8ddfec936f016804a9bbf3",

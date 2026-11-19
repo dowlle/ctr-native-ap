@@ -99,6 +99,31 @@ int main(int argc, char **argv) {
         return 0;
     }
     {
+        std::ifstream fixture("tools/fixtures/content-plan/oxide-pickups.jsonl");
+        std::string line;
+        int rows = 0;
+        while (std::getline(fixture, line)) {
+            const J row = J::parse(line), slot = row["slot_data"];
+            const std::string tag = row["tag"];
+            ++rows;
+            expect(parse(slot) && bind_room(slot), tag + ": pickup room parses and binds");
+            const bool omitted = tag == "first-only";
+            const auto *sanity = ap_content_plan_sanity_boss(4);
+            expect((sanity == nullptr) == omitted, tag + ": early boss pickup table matches location membership");
+            expect((ap_content_plan_bosses()->wumpa[4] == 0) == omitted,
+                   tag + ": early Reach 10 award matches location membership");
+            if (omitted) {
+                auto bad = slot;
+                bad["content_plan"]["required_features"].erase(
+                    std::remove(bad["content_plan"]["required_features"].begin(),
+                                bad["content_plan"]["required_features"].end(), J("repeatable_pickups_v1")),
+                    bad["content_plan"]["required_features"].end());
+                refuse(bad, "omitted pickups require the new feature marker");
+            }
+        }
+        expect(rows == 6, "all six old/new pickup fixtures run");
+    }
+    {
         J sanity;
         std::ifstream("tools/fixtures/content-plan/sanity.json") >> sanity;
         expect(parse(sanity) && bind_room(sanity), "sanity room parses and binds");

@@ -2,8 +2,11 @@
 static void sanity_checks(const J &p, State &out, const J &registry, std::map<int64_t, J> &expected) {
     const J &s = p.at("sanity");
     const bool context = s.contains("logic_difficulty");
-    if (context) fields(s, {"itemboxsanity", "wumpasanity", "shortcut_knowledge", "tracks", "logic_difficulty", "boost_blue_fire"});
-    else fields(s, {"itemboxsanity", "wumpasanity", "shortcut_knowledge", "tracks"});
+    const int rules_version = s.contains("rules_version") ? number(s["rules_version"], 1, 6) : 0;
+    J shape = s;
+    shape.erase("rules_version");
+    if (context) fields(shape, {"itemboxsanity", "wumpasanity", "shortcut_knowledge", "tracks", "logic_difficulty", "boost_blue_fire"});
+    else fields(shape, {"itemboxsanity", "wumpasanity", "shortcut_knowledge", "tracks"});
     const int difficulty = context ? number(s["logic_difficulty"], 0, 2) : out.capability.present ? out.capability.logic_difficulty : 2;
     if (context) need(s["boost_blue_fire"].is_boolean(), "sanity Blue Fire setting");
     const bool blue = context ? s["boost_blue_fire"].get<bool>() : out.capability.boost_blue_fire != 0;
@@ -58,7 +61,8 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
     auto inventory = [&](const J &track) -> const J * {
         std::string key;
         if (track["origin"] == "retail") key = "retail:" + std::to_string(number(track["retail_id"], 0, 17));
-        else if (track["origin"] == "cortex_vortex") key = "cortex_vortex";
+        else if (track["origin"] == "cortex_vortex") key = rules_version >= 2
+            ? "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13" : "cortex_vortex";
         else if (track.contains("named_block")) {
             const J &pkg = *packages.at(track["package_id"]);
             for (const auto &file : pkg["files"]) if (file["role"] == "lev") key = file["sha256"];
@@ -71,7 +75,12 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
         return registry.at("sanity").contains(key) ? &registry.at("sanity").at(key) : nullptr;
     };
     std::set<std::string> wanted;
-    for (const auto &t : tracks) if (!uses[t.first].empty() && inventory(*t.second)) wanted.insert(t.first);
+    for (const auto &t : tracks) {
+        const auto &routes = uses[t.first];
+        const bool eligible = !repeatable_pickups(p) ? !routes.empty() :
+            std::any_of(routes.begin(), routes.end(), repeatable_pickup_route);
+        if (eligible && inventory(*t.second)) wanted.insert(t.first);
+    }
     need(s["tracks"].is_array() && s["tracks"].size() == wanted.size(), "sanity track count mismatch");
     static const char *const kinds[] = {"weapon_crate", "wumpa_crate", "wumpa_fruit"};
     static const char *const suffix[] = {"Weapon Crate", "Wumpa Crate", "Wumpa Fruit"};
@@ -121,7 +130,8 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
             std::set<int> pool;
             const J needs = inv.at("needs").value(kinds[f], J::object());
             for (int n = 1; n <= std::min(dest.counts[f], budgets[f]); ++n) {
-                const J rule = needs.value(std::to_string(n), J::object());
+                const J row_rule = needs.value(std::to_string(n), J::object());
+                const J rule = row_rule.value("since", 0) <= rules_version ? row_rule : J::object();
                 if (!excluded_by_kind[f].count(n) && rule.value("shortcut", 0) <= tier && !ruled_out(kinds[f], n)) pool.insert(n);
             }
             const int selected = f ? ((wumpa & f) ? (int)pool.size() : 0) : std::min((int)pool.size(), count);
