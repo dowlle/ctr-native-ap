@@ -1427,7 +1427,7 @@ int CustomTrackManager_RenderYaml(const struct CustomTrackManagerPackage *packag
 	wrote = snprintf(dst, dstSize,
 		"custom_tracks:\n"
 		"  - id: \"package/%s/%s\"\n"
-		"    content_id: \"%s\"\n"
+		"    track_key: \"%s\"\n"
 		"    uuid: \"%s\"\n"
 		"    revision: \"%s\"\n"
 		"    display_name: \"%s\"\n"

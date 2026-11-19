@@ -131,6 +131,11 @@ int AP_Solo_ImportYamlStart(const char *path);
 /* Installed custom tracks from the shared package store or a legacy room
    folder. Picks survive a new list for the tracks still listed. */
 int AP_Solo_TracksStart(const char *yamlPath);
+int AP_Solo_SaveRoomYamlStart(const char *slotName);
+const char *AP_Solo_JobResultYaml(void);
+struct CustomTrackLibraryEntry;
+int AP_Solo_ExportTrackYaml(const struct CustomTrackLibraryEntry *entry, int save,
+                           char *out, size_t size);
 /* yamlPath: preset or saved/inbox YAML. Options from the options screen are
    passed for every YAML opened on the options screen (useOptions 1).
    The picked custom tracks are passed

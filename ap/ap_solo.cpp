@@ -9,6 +9,7 @@
 #include "ap_net.h"
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_package.h>
+#include <platform/native_custom_track_library.h>
 #include "ap_track_registry.h"
 #include "ap_content_registry.hpp"
 #endif
@@ -48,6 +49,7 @@ extern "C" {
 const char *NativeAssets_GetBaseDir(void);
 const char *NativeAssets_GetAssetDir(void);
 void AP_LogLine(const char *msg);
+int Platform_SetClipboardText(const char *text);
 void AP_Net_Reconnect(const char *uri, const char *slot, const char *password);
 void AP_Net_Shutdown(void);
 void ap_net_set_check_journal(const char *path, const char *seed);
@@ -353,7 +355,7 @@ struct Child
 // ---------------------------------------------------------------------------
 // Jobs
 
-enum JobKind { JOB_NONE, JOB_LIST, JOB_DESCRIBE, JOB_GENERATE, JOB_IMPORT_ROOM, JOB_IMPORT_YAML, JOB_TRACKS };
+enum JobKind { JOB_NONE, JOB_LIST, JOB_DESCRIBE, JOB_GENERATE, JOB_IMPORT_ROOM, JOB_IMPORT_YAML, JOB_TRACKS, JOB_SAVE_ROOM_YAML };
 
 struct Job
 {
@@ -853,6 +855,28 @@ extern "C" int AP_Solo_TracksStart(const char *yamlPath)
 		args.push_back(yamlPath);
 	}
 	return StartTrackPublication(args) ? 1 : 0;
+}
+
+extern "C" int AP_Solo_SaveRoomYamlStart(const char *slotName)
+{
+	if (TrackPublicationBusy() || StorePublicationBusy())
+		return 0;
+	std::vector<std::string> args = {"save-room-yaml", "--assets", AssetsDir(), "--name", slotName};
+	std::vector<std::pair<std::string, int>> picks;
+	for (const APSoloTrackInfo &track : g_tracks)
+		if (!track.needsLaps)
+			picks.emplace_back(track.id, track.pick);
+	for (const auto &arg : AP_SoloTrackArgs(picks))
+		if (arg != "--tracks-page")
+			args.push_back(arg);
+	return JobStart(JOB_SAVE_ROOM_YAML, args, kQuickLimitMs) ? 1 : 0;
+}
+
+extern "C" const char *AP_Solo_JobResultYaml(void)
+{
+	static std::string path;
+	path = AP_SoloJsonString(g_job.result, "yaml_path");
+	return path.c_str();
 }
 
 extern "C" int AP_Solo_GenerateStart(const char *yamlPath, const char *slotName, const char *presetId, int useOptions)
@@ -1458,6 +1482,20 @@ struct StorePublication
 	std::string error;
 	const std::atomic<bool> *cancel = nullptr;
 };
+std::string StoreDescriptorKey(const CustomPackageLocalInfo &local, const char *title)
+{
+	if (local.trackID <= 0)
+		return {};
+	ApTrackRegistryMatch match = {};
+	if (ap_track_registry_lookup(local.levSha256, local.levBytes, local.vrmSha256, local.vrmBytes, &match) == AP_TRACK_REGISTRY_MATCH)
+		return match.track_key;
+	static const auto named = nlohmann::json::parse(kContentRegistryJSON).at("named_blocks");
+	for (const auto &row : named)
+		if (row.value("name", "") == title)
+			return row.value("key", "");
+	return {};
+}
+
 void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 {
 	auto &result = *static_cast<StorePublication *>(opaque);
@@ -1481,29 +1519,7 @@ void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 		return;
 	}
 	char key[65], revision[65], json[16384], error[256];
-	std::string knownKey;
-	if (entry->local.trackID > 0)
-	{
-		const CustomPackageFile *lev = nullptr, *vrm = nullptr;
-		for (unsigned int i = 0; i < entry->manifest.count; i++)
-		{
-			if (!std::strcmp(entry->manifest.files[i].role, "lev")) lev = &entry->manifest.files[i];
-			if (!std::strcmp(entry->manifest.files[i].role, "vrm")) vrm = &entry->manifest.files[i];
-		}
-		ApTrackRegistryMatch match = {};
-		if (lev && vrm && ap_track_registry_lookup(lev->sha256, lev->bytes, vrm->sha256, vrm->bytes, &match) == AP_TRACK_REGISTRY_MATCH)
-			knownKey = match.track_key;
-		if (knownKey.empty())
-		{
-			static const auto named = nlohmann::json::parse(kContentRegistryJSON).at("named_blocks");
-			for (const auto &row : named)
-				if (row.value("name", "") == entry->manifest.title)
-				{
-					knownKey = row.value("key", "");
-					break;
-				}
-		}
-	}
+	const std::string knownKey = StoreDescriptorKey(entry->local, entry->manifest.title);
 	const int kind = CustomPackage_StoreDescriptor(result.assets.c_str(), entry->pin,
 		knownKey.empty() ? nullptr : knownKey.c_str(),
 		key, sizeof key, revision, sizeof revision, json, sizeof json, error, sizeof error);
@@ -2076,6 +2092,61 @@ extern "C" int AP_Solo_StartGet(int index, struct APSoloStartInfo *out)
 }
 
 extern "C" const char *AP_Solo_InboxPath(void) { return g_lists.inbox.c_str(); }
+
+#ifdef CTR_CUSTOM_PACKAGES
+extern "C" int AP_Solo_ExportTrackYaml(const CustomTrackLibraryEntry *entry, int save, char *out, size_t size)
+{
+	char key[65], revision[65], json[16384], error[256];
+	const auto knownKey = StoreDescriptorKey(entry->local, entry->title);
+	const int kind = CustomPackage_StoreDescriptor(AssetsDir().c_str(), entry->manifestSha256,
+		knownKey.c_str(), key, sizeof key, revision, sizeof revision, json, sizeof json, error, sizeof error);
+	if (!kind)
+	{
+		std::snprintf(out, size, "%s", error);
+		return 0;
+	}
+	const auto descriptorName = AP_SoloDescriptorFileName(key, revision);
+	auto descriptor = nlohmann::json::parse(json);
+	if (kind == 2)
+	{
+		const auto kept = nlohmann::json::parse(
+			ReadSmallPlainFile(fs::u8path(SoloPath("tracks/" + descriptorName)), kDescriptorMax), nullptr, false);
+		descriptor = AP_SoloMergeNeedsLaps(kept, descriptor);
+		if (descriptor.is_null())
+		{
+			std::snprintf(out, size, "Pick laps in Play Solo first.");
+			return 0;
+		}
+	}
+	descriptor["track_key"] = descriptor["content_id"];
+	descriptor.erase("content_id");
+	std::string yaml = "custom_tracks:\n  - {";
+	for (auto field = descriptor.begin(); field != descriptor.end(); ++field)
+	{
+		if (field != descriptor.begin()) yaml += ",\n     ";
+		yaml += field.key() + ": " + field.value().dump();
+	}
+	yaml += "}\n";
+	if (!save)
+	{
+		const int copied = Platform_SetClipboardText(yaml.c_str());
+		std::snprintf(out, size, "%s", copied ? "Verified custom_tracks YAML copied." : "Could not copy YAML.");
+		return copied;
+	}
+	const std::string name = descriptorName.empty() ? "" :
+		descriptorName.substr(0, descriptorName.size() - 5) + "-" + entry->manifestSha256 + ".yaml";
+	std::string why;
+	if (!KeepDescriptorFile("exports", name, yaml, &why))
+	{
+		std::snprintf(out, size, "%s", why.c_str());
+		return 0;
+	}
+	const auto path = SoloPath("exports/" + name);
+	Log("saved custom_tracks YAML to " + path);
+	std::snprintf(out, size, "Saved to: %s", path.c_str());
+	return 1;
+}
+#endif
 
 extern "C" int AP_Solo_RoomDelete(const char *roomId)
 {

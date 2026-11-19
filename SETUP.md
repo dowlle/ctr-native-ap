@@ -389,10 +389,12 @@ Custom Content** to inspect it, follow the creator link and verify the installed
 files. **Ready** means the files are compatible; it does not make a generated
 seed use the track.
 
-To use a package, copy or save its YAML from the Custom Content page and add
-that entry to the `custom_tracks` list of the player YAML before generating the
-room. The entry is the track's complete descriptor, including its file checks,
-the lap count and what it can do. A track with restart points and AI paths
+To use a Ready track with a public source, open **Options > Custom Tracks**,
+select the track and choose **Export YAML**. Copy or save the entry and add it
+to the `custom_tracks` list of the player YAML. To export your track selections
+in a player YAML, choose **Save YAML for a room** in **Play Solo > Custom Tracks**.
+Each entry uses `track_key`, and includes file checks, the lap count and the
+track's capabilities. A track with restart points and AI paths
 (`checkpoints` and `ai_nav`) can also race a boss.
 
 A Relic Race on a custom track needs the author's target times. On the Custom
