@@ -935,6 +935,9 @@ static int CustomTrackPolicy_RetailPodiumLevelID(const struct CustomTrackFeature
 
 // Can the engine actually run the event race on a track with these measured
 // capabilities? Returns 1 when it can, or 0 with *outWhy set to a short reason.
+// Callers apply it only to a race that grids opponents (Trophy, CTR Challenge,
+// cup legs): a solo race (Relic Race, Time Trial) skips it, because a one-kart
+// grid needs neither AI paths nor eight spawns.
 //
 // Only two of the eight measured flags are load-bearing today, and both are
 // hard requirements of the ruled semantics rather than preferences:

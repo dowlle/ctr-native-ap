@@ -62,7 +62,8 @@ struct CustomTrackSeedDescriptor
 	char vrmSha256[NATIVE_SHA256_HEX_BYTES];
 
 	// The describe step's measured capabilities. Only aiNav and spawns gate the
-	// race today (see CustomTrackPolicy_FlagsSupportRace); the rest are carried
+	// race today, and only when it grids opponents (see
+	// CustomTrackPolicy_FlagsSupportRace); the rest are carried
 	// so the check rungs above the Gem have an honest input when they land. The
 	// first of those rungs has now landed: flagWumpaCollectible is what the
 	// per-track Reach 10 Wumpa check cross-checks the wire against before it
@@ -77,6 +78,11 @@ struct CustomTrackSeedDescriptor
 	int flagSpawns;
 	int flagCheckpoints;
 	int standalone; // 1: content-plan race context, 0: legacy Gem Cup placement
+	// 1: the event race runs alone (Relic Race, Time Trial), so the opponent
+	// rule above does not gate it: no bots need nav paths and a one-kart grid
+	// needs one spawn. Defaults to 0, so a caller written before this field
+	// keeps the old check.
+	int soloRace;
 };
 
 // Stage only after applying a verified standalone descriptor. Entry sites
