@@ -228,6 +228,9 @@ u32 main(void)
 
 						// Turn off the "Loading..." flag
 						gGT->gameMode1 &= ~LOADING;
+#if defined(CTR_AP) || defined(CTR_AI_LAP_RECORDER)
+						AP_NavRec_ResetCapture();
+#endif
 #ifdef CTR_CUSTOM_PACKAGES
 						MainRaceTrack_OfflineResidentRestart();
 #endif
