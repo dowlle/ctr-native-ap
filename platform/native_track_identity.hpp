@@ -2,7 +2,9 @@
 
 #include "native_track_identity_data.hpp"
 #include "../ap/ap_track_key_aliases.hpp"
+extern "C" {
 #include <platform/native_custom_content_verify.h>
+}
 #include <platform/native_custom_package.h>
 #include <string>
 #include <utility>

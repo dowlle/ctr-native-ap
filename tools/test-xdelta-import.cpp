@@ -2363,7 +2363,8 @@ int main()
                     CHECK(XdeltaImport_RenameItem(legacy.scan, index, "N-Gage Assembly Lane", error, sizeof error),
                           "A6-37 make a legacy package under its historical name");
                     CHECK(XdeltaImport_Install(legacy.scan, selected.data(), assets.c_str(),
-                                               CTR_XDELTA_INSTALL_PACKAGES, error, sizeof error) == 1,
+                                               CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM,
+                                               error, sizeof error) == 1,
                           "A6-37 install the historical package");
                     const std::string pin = item->pin;
                     const std::string store = assets + "/tracks/packages";
@@ -2384,6 +2385,19 @@ int main()
                           error, sizeof error) && !std::strcmp(key, "n-gage-assembly-lane") &&
                           std::strstr(descriptor, "Assembly Lane N-Gage"),
                           "A6-37 Play Solo descriptor keeps its prior key and uses the corrected title");
+                    const std::string original = store + "/" + pin + "/original/";
+                    const auto levBytes = read_file(original + "bigfile-1.lev").size();
+                    const auto vrmBytes = read_file(original + "bigfile-1.vrm").size();
+                    CustomTrackManagerStatus status = {};
+                    for (const char *lookup : {"n-gage-assembly-lane", "assembly-lane-n-gage"})
+                        CHECK(CustomTrackManager_LocateContentFiles(assets.c_str(), lookup, "Assembly Lane N-Gage",
+                              "1.0.0", item->levSha256, levBytes, item->vrmSha256, vrmBytes, &status) ==
+                              CTR_CT_MANAGER_READY && std::strstr(status.levPath, "/n-gage-assembly-lane/"),
+                              "A6-37 original folder resolves through either key with exact pins");
+                    CHECK(CustomTrackManager_LocateContentFiles(assets.c_str(), "assembly-lane-n-gage",
+                          "Assembly Lane N-Gage", "1.0.0", item->levSha256, levBytes + 1, item->vrmSha256,
+                          vrmBytes, &status) != CTR_CT_MANAGER_READY,
+                          "A6-37 alias lookup cannot bypass file pins");
                 }
                 XdeltaImport_Free(&legacy.scan);
             }

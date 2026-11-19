@@ -1,7 +1,12 @@
 // Offline aliases from the track registry.
 #pragma once
 
-inline constexpr const char *kTrackKeyAliases[][2] = {
+#ifdef __cplusplus
+inline constexpr
+#else
+static
+#endif
+const char *const kTrackKeyAliases[][2] = {
     {"boss-race-2", "gossamer-s-castle"},
     {"crash-30anniversary-adventure-track-12", "cortex-vortex"},
     {"crash-30anniversary-adventure-track-16", "papu-s-sg-temple"},
