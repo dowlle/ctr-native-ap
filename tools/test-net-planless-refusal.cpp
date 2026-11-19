@@ -151,6 +151,16 @@ static void test_version_advice(void)
 	room["build_version"] = "0.3.0";
 	expect(ap_seed_refusal::message(room, "").find("USE CLIENT 0.3.0.") != std::string::npos,
 	       "well-formed explicit stable build is retained");
+	APClient *m = start();
+	const nlohmann::json saved = {{"schema_version", 18}, {"content_plan", {{"version", 1}, {"room_compatibility", 2}}},
+	                            {"ctr_options", {{"schema_version", 18}, {"world_version", "0.3.0"}, {"content_plan", true}}}};
+	m->emit_slot_connected(saved);
+	const std::string advice = ap_net_last_error();
+	expect(ap_net_status() == AP_NET_STATUS_ERROR && advice.find("GENERATED WITH 0.3.0. THIS BUILD IS ") == 0,
+	       "a refused saved room shows both versions on the connection screen");
+	expect(advice.size() - advice.find("THIS BUILD IS ") <= 33 &&
+	       advice.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .-") == std::string::npos,
+	       "saved room advice fits the second row and uses credits font glyphs");
 	room["build_version"] = "bad~00\n<script>";
 	room["ctr_options"] = 17;
 	expect(ap_seed_refusal::message(room, "").find("MATCHING CLIENT") != std::string::npos,
