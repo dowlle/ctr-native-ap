@@ -16,7 +16,8 @@ This checks the production wiring:
 3. BOTS_ThTick_Drive runs only under that test, with nothing between the
    convert and the test. A refused ghost is hidden, taken off the map and its
    thread parked on an empty tick, so the next frame cannot retry it.
-4. No other caller drives a converted driver directly.
+4. Checkpoint relocation still recognizes the ghost after its tick changes.
+5. No other caller drives a converted driver directly.
 """
 from pathlib import Path
 import re
@@ -103,7 +104,20 @@ check(re.sub(r'\s+', '', parked) == '{(void)t;}', 'the parked tick does nothing'
 check(ghost.index('static void GhostReplay_ThTickParked') < ghost.index('void GhostReplay_ThTick(struct Thread *t)'),
       'the parked tick is declared before its use')
 
-# 4. Only the ghost calls the drive tick by hand.
+# 4. Relocation identifies ghost driver storage by the stable model index.
+birth = body(ghost, 'void GhostReplay_Init1(void)')
+checkpoint = (root / 'platform/native_checkpoint.c').read_text()
+thread_object = body(checkpoint, 'internal void NativeCheckpoint_RelocateThreadObject(')
+ghost_relocate = body(thread_object, 'if (thread->modelIndex == DYNAMIC_GHOST)')
+check('t->modelIndex = DYNAMIC_GHOST;' in birth and 'modelIndex =' not in end_block,
+      'the model index survives both end-of-tape branches')
+check('NativeCheckpoint_RelocateDriver(oldHeader, liveHeader, (struct Driver *)thread->object);' in ghost_relocate,
+      'a converted or parked ghost still gets driver pointer relocation')
+check('NATIVE_CHECKPOINT_FIELD_PTR(struct Driver, botData.botNavFrame)' in
+      body(checkpoint, 'internal void NativeCheckpoint_RelocateDriver('),
+      'relocation covers the ghost bot nav frame')
+
+# 5. Only the ghost calls the drive tick by hand.
 callers = []
 for path in list((root / 'game').rglob('*.c')) + list((root / 'ap').rglob('*.c')):
     text = path.read_text(errors='replace')

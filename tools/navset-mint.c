@@ -54,7 +54,7 @@ static int add_lap(const char *path, const char *index, unsigned int slot, unsig
 	if (AP_NavRecFormat_Read(input, size, &info, nodes, stamps) != AP_NAVREC_OK ||
 	    info.formatVersion != AP_NAVREC_FORMAT_VERSION_V3 || info.navRevision == 0 || lap >= info.lapCount ||
 	    info.laps[lap].clean != 1 || !AP_NavRecFormat_LapClosed(nodes[lap], info.laps[lap].nodeCount) ||
-	    AP_NavRecSeam_Process(nodes[lap], info.laps[lap].nodeCount, 0, NULL) != AP_NAVREC_SEAM_SMOOTH)
+	    AP_NavRecSeam_Process(nodes[lap], info.laps[lap].nodeCount, 1, NULL) != AP_NAVREC_SEAM_SMOOTH)
 		return 0;
 	const unsigned char zeroUuid[AP_NAVREC_TRACK_UUID_BYTES] = {0};
 	if (!memcmp(info.trackUuid, zeroUuid, sizeof zeroUuid))
@@ -78,6 +78,8 @@ static int add_lap(const char *path, const char *index, unsigned int slot, unsig
 	unsigned int frameBytes = count * AP_NAVREC_NODE_BYTES;
 	unsigned int stampBytes = count * AP_NAVREC_STAMP_BYTES;
 	unsigned char *entry = output + AP_NAVREC_HEADER_BYTES_V3 + slot * AP_NAVSET_LAPDIR_BYTES;
+	// Compare what a bot will drive, including the distances recalculated
+	// by the seam blend. The serialized payload keeps its original shape.
 	if (!store_distinct_nodes(nodes[lap], count, slot))
 		return 0;
 

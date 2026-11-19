@@ -1118,7 +1118,9 @@ internal void NativeCheckpoint_RelocateThreadObject(const struct NativeCheckpoin
 		return;
 	}
 
-	if (thread->funcThTick == GhostReplay_ThTick)
+	// A ghost retains its model index when its replay tick converts to
+	// BOTS_ThTick_Drive or parks after the end of the tape.
+	if (thread->modelIndex == DYNAMIC_GHOST)
 	{
 		NativeCheckpoint_RelocateDriver(oldHeader, liveHeader, (struct Driver *)thread->object);
 		return;

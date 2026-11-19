@@ -1,5 +1,7 @@
+#define _XOPEN_SOURCE 700
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #ifndef CTR_AP
 #define CTR_AP
@@ -68,6 +70,68 @@ static unsigned int makeSet(unsigned int laps)
 	return at;
 }
 
+static int write_mint_fixture(const char *path, unsigned int variant, int differentLine)
+{
+	struct AP_NavRecLapInfo lap = {.nodeCount = 32, .lapFrames = 900, .sampleCount = 900, .clean = 1};
+	struct AP_NavRecNode line[32] = {0};
+	unsigned int time[32];
+	const struct AP_NavRecNode *nodeRows[] = {line};
+	const unsigned int *stampRows[] = {time};
+	struct AP_NavRecMeta meta = {.clientVersion = "harness", .driverName = "Harness driver",
+	                           .identityKind = AP_NAVREC_IDENTITY_CUSTOM, .trackUuid = {1}, .navRevision = 1};
+	unsigned int size;
+
+	for (unsigned int i = 0; i < lap.nodeCount; i++)
+	{
+		double angle = i * (6.283185307179586 / lap.nodeCount);
+		double radius = 1000 + (differentLine ? variant * 20 : 0);
+		line[i].posX = (short)(radius * sin(angle));
+		line[i].posZ = (short)(radius * cos(angle));
+		line[i].goBackCount = i + 1;
+		time[i] = i * 28;
+	}
+	AP_NavRecFormat_FillDistances(line, lap.nodeCount);
+	line[16].distToNextNavXZ += variant;
+	if (AP_NavRecFormat_Write(fixture, sizeof fixture, &meta, &lap, 1, nodeRows, stampRows, &size) != AP_NAVREC_OK)
+		return 0;
+	FILE *file = fopen(path, "wb");
+	if (!file)
+		return 0;
+	int written = fwrite(fixture, 1, size, file) == size;
+	return fclose(file) == 0 && written;
+}
+
+static void check_mint_cli(void)
+{
+	char dir[] = "/tmp/ctr-navset-test-XXXXXX";
+	if (!mkdtemp(dir))
+	{
+		check(0, "create temporary mint fixture directory");
+		return;
+	}
+	char outputPath[96], paths[AP_NAVSET_MAX_LAPS][96];
+	char *args[3 + 2 * AP_NAVSET_MAX_LAPS] = {"navset-mint", outputPath};
+	snprintf(outputPath, sizeof outputPath, "%s/recorded-ai.navset", dir);
+	for (unsigned int i = 0; i < AP_NAVSET_MAX_LAPS; i++)
+	{
+		snprintf(paths[i], sizeof paths[i], "%s/%u.navlap", dir, i);
+		args[2 + 2 * i] = paths[i];
+		args[3 + 2 * i] = "0";
+		check(write_mint_fixture(paths[i], i, 0), "write a distance-only variant");
+	}
+	check(NavSetMintMain(2 + 2 * AP_NAVSET_MAX_LAPS, args) == EXIT_FAILURE &&
+	      access(outputPath, F_OK) != 0, "mint refuses seven copies of the same blended line");
+
+	for (unsigned int i = 0; i < AP_NAVSET_MAX_LAPS; i++)
+		check(write_mint_fixture(paths[i], i, 1), "write a distinct circle");
+	check(NavSetMintMain(2 + 2 * AP_NAVSET_MAX_LAPS, args) == EXIT_SUCCESS &&
+	      access(outputPath, F_OK) == 0, "mint accepts seven distinct blended lines");
+	for (unsigned int i = 0; i < AP_NAVSET_MAX_LAPS; i++)
+		unlink(paths[i]);
+	unlink(outputPath);
+	rmdir(dir);
+}
+
 int main(void)
 {
 	unsigned int size = makeSet(AP_NAVSET_MAX_LAPS);
@@ -112,5 +176,6 @@ int main(void)
 	fixture[0x64] = 0;
 	checksum(size);
 	check(AP_NavSet_Read(fixture, size, &info, setNodes, setStamps) == AP_NAVREC_ERR_HEADER_SHAPE, "rejects an empty track UUID");
+	check_mint_cli();
 	return failures ? EXIT_FAILURE : EXIT_SUCCESS;
 }
