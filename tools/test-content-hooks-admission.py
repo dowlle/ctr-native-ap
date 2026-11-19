@@ -46,12 +46,12 @@ prelude = r'''
 static char log_text[8192];
 void AP_LogLine(const char *msg) { strncat(log_text, msg, sizeof log_text - strlen(log_text) - 1); }
 static void AP_AppendLog(const char *msg) { AP_LogLine(msg); }
+#include "platform/native_custom_tracks.c"
 #include "platform/native_custom_content_verify.c"
 #include "platform/native_custom_track_manager.c"
 #include "ap/ap_content_capability.h"
 #include <platform/native_custom_race_context.h>
 #include <platform/native_custom_tracks_policy.h>
-#include "platform/native_custom_tracks.c"
 struct sData sdata_static;
 NativeConfig g_config;
 '''
@@ -448,7 +448,8 @@ int main(void)
 with tempfile.TemporaryDirectory() as tmp:
     src, exe = Path(tmp) / "content_hooks.c", Path(tmp) / "content_hooks"
     src.write_text(prelude + lev_helper + stubs + hooks + tests, encoding="utf-8")
-    subprocess.run(["cc", "-std=gnu99", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function", "-Wno-format-truncation",
+    subprocess.run(["cc", "-m32", "-DCTR_NATIVE", "-DBUILD=926", "-std=gnu99",
+                    "-Wall", "-Wextra", "-Werror", "-Wno-unused-function", "-Wno-format-truncation",
                     "-DCTR_REPO_ROOT=\"" + str(root) + "\"",
                     "-fsanitize=undefined", "-fno-sanitize-recover=all",
                     "-I" + str(root), "-I" + str(root / "include"), "-I" + str(root / "ap"),
