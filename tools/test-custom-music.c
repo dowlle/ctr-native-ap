@@ -189,19 +189,20 @@ int main(int argc, char **argv)
 	build(); put16(fx + find("CSEQ") + 8 + 14, 0xffff); CHECK(refused_with("sample outside"));
 	build(); put16(fx + find("CSEQ") + 8 + 24, SLOTS); CHECK(refused_with("sample outside"));
 	{
-		const unsigned char instrument[] = {0, 9, 1, 1, 3};
+		// Playback skips undefined voices while keeping the rest of the song.
+		const unsigned char instrument[] = {0, 9, 1, 1, 5, 60, 100, 1, 3};
 		const unsigned char drum[] = {1, 5, 1, 100, 1, 3};
 		build();
 		unsigned char *cseq = fx + find("CSEQ") + 8;
 		put32(cseq, 46 + sizeof instrument);
 		memcpy(cseq + 46, instrument, sizeof instrument);
-		CHECK(refused_with("song or sequence"));
+		CHECK(parse(&sca));
 		build();
 		cseq = fx + find("CSEQ") + 8;
 		cseq[44] = 1; // drums
 		put32(cseq, 46 + sizeof drum);
 		memcpy(cseq + 46, drum, sizeof drum);
-		CHECK(refused_with("song or sequence"));
+		CHECK(parse(&sca));
 	}
 	{
 		// A bank chunk with only the header sector has no samples.

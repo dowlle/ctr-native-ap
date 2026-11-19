@@ -21,13 +21,10 @@ static int refuse(struct CustomMusicSca *out, char *error, size_t errorSize, con
 
 /* The sequencer walks delta-time values followed by fixed-size events.
    Bound the whole walk, including packs that share sequence data. */
-static int cseq_sequence_fits(const unsigned char *data, size_t size, size_t pos,
-                             size_t *budget, unsigned int numLong, unsigned int numDrums)
+static int cseq_sequence_fits(const unsigned char *data, size_t size, size_t pos, size_t *budget)
 {
 	static const unsigned char event_size[] = {1, 2, 2, 1, 2, 3, 2, 2, 2, 2, 2};
-	const int drums = data[pos] & 1;
 	int advances = 0;
-	pos += 2;
 	unsigned int opcode;
 	do
 	{
@@ -45,15 +42,12 @@ static int cseq_sequence_fits(const unsigned char *data, size_t size, size_t pos
 		if (pos >= size) return 0;
 		opcode = data[pos];
 		if (opcode >= sizeof event_size || event_size[opcode] > size - pos) return 0;
-		if (!drums && opcode == 9 && data[pos + 1] >= numLong) return 0;
-		if (opcode == 5 && (drums ? data[pos + 1] >= numDrums : numLong == 0)) return 0;
 		pos += event_size[opcode];
 	} while (opcode != 3);
 	return advances;
 }
 
-static int cseq_songs_fit(const unsigned char *data, size_t size, size_t offsets,
-                        unsigned int count, unsigned int numLong, unsigned int numDrums)
+static int cseq_songs_fit(const unsigned char *data, size_t size, size_t offsets, unsigned int count)
 {
 	const size_t songBase = (offsets + 2 * (size_t)count + 3) & ~(size_t)3;
 	size_t budget = size * 16;
@@ -69,7 +63,7 @@ static int cseq_songs_fit(const unsigned char *data, size_t size, size_t offsets
 		{
 			const size_t sequence = notes + read_u16(data + song + 6 + 2 * j);
 			if (sequence >= size || size - sequence <= 2 ||
-			    !cseq_sequence_fits(data, size, sequence, &budget, numLong, numDrums)) return 0;
+			    !cseq_sequence_fits(data, size, sequence + 2, &budget)) return 0;
 		}
 	}
 	return 1;
@@ -156,7 +150,7 @@ int CustomMusic_Parse(const void *data, size_t size, unsigned int spuSlots,
 		if (slot >= 0x8000 || slot >= spuSlots)
 			return refuse(out, error, errorSize, "SCA CSEQ sample outside the HOWL table");
 	}
-	if (!cseq_songs_fit(cseq, songSize, tables - 2 * (size_t)numSongs, numSongs, numLong, numDrums))
+	if (!cseq_songs_fit(cseq, songSize, tables - 2 * (size_t)numSongs, numSongs))
 		return refuse(out, error, errorSize, "SCA CSEQ song or sequence is invalid");
 
 	out->bank = bank;
