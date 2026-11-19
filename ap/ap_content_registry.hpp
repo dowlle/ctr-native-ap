@@ -9267,6 +9267,12 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         "LRG2Pancho"
       ]
     ],
+    "nina-s-nightmare": [
+      [
+        "7fc42abb12130c546a7b500815a3d3a372c4178f4f063b56460730443f4ea0a0",
+        "1.0.3"
+      ]
+    ],
     "north-pole": [
       [
         "17eafea4884285d2d1b6e684519081955347b96196783d06d984f06d72105e3c",

@@ -1857,22 +1857,25 @@ static void validate(const J &p, State &out) {
             } else if (dest.package_index >= 0) {
                 const auto &pkg = out.packages[dest.package_index];
                 const auto excluded = out.crate_exclusions.find(dest.track_id);
-                if (excluded != out.crate_exclusions.end()) {
-                    auto &ex = excluded->second;
-                    need(ex.lev == pkg.lev_sha256 && pkg.weapon_crates >= ex.ordinals.back(), "crate exclusions disagree with package");
-                    if (ex.carried) {
-                        const auto &catalog = registry.at("sanity_exclusions");
-                        const auto &descriptor = *packages.at(track.at("package_id").get<std::string>());
-                        const std::string source = ruling_pin(text(descriptor.at("content_id")), ex.lev,
-                            carry_rulings, [&](const std::string &pin) { return catalog.contains(pin); });
-                        need(source != ex.lev, "ordinal-only crate exclusions need carried rulings");
-                        std::vector<int> ordinals;
+                std::vector<int> carried_ordinals;
+                if (carry_rulings) {
+                    const auto &catalog = registry.at("sanity_exclusions");
+                    const auto &descriptor = *packages.at(track.at("package_id").get<std::string>());
+                    const std::string source = ruling_pin(text(descriptor.at("content_id")), pkg.lev_sha256,
+                        true, [&](const std::string &pin) { return catalog.contains(pin); });
+                    if (source != pkg.lev_sha256)
                         for (const auto &crate : catalog.at(source))
                             if (crate.value("family", std::string("weapon_crate")) == "weapon_crate"
                                 && crate.at("ordinal").get<int>() <= pkg.weapon_crates)
-                                ordinals.push_back(crate.at("ordinal").get<int>());
-                        need(ordinals == ex.ordinals, "carried crate exclusions disagree with reviewed ordinals");
-                    }
+                                carried_ordinals.push_back(crate.at("ordinal").get<int>());
+                }
+                need(carried_ordinals.empty() || excluded != out.crate_exclusions.end(),
+                     "fallback seating is missing carried crate exclusions");
+                if (excluded != out.crate_exclusions.end()) {
+                    auto &ex = excluded->second;
+                    need(ex.lev == pkg.lev_sha256 && pkg.weapon_crates >= ex.ordinals.back(), "crate exclusions disagree with package");
+                    need(ex.carried == !carried_ordinals.empty() && (!ex.carried || carried_ordinals == ex.ordinals),
+                         "carried crate exclusions disagree with reviewed ordinals");
                     dest.box_excluded_count = (int)ex.ordinals.size();
                     dest.box_excluded_ordinals_only = ex.carried;
                     for (int n = 0; n < dest.box_excluded_count; ++n) {

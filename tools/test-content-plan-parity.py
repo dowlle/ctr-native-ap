@@ -1278,6 +1278,7 @@ with spot_files(retail=["CRASH_COVE"], custom=["baby-t-park"]):
 # A3-35: actual generated Ancient Lake rooms, both measured LEV pins and a
 # small count fixture that crosses the 15-seat ceiling. No track bytes shipped.
 from worlds.ctr import crate_exclusions
+from worlds.ctr import track_rulings
 from unittest import mock
 from worlds.ctr.test.test_crate_exclusions import ANCIENT_LAKE, NORTH_POLE, ancient
 from worlds.ctr.test.test_content_item_boxes import box_options, first_world
@@ -1299,6 +1300,15 @@ with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):
                 ("position", lambda p: p["item_boxes"]["crate_exclusions"][0]["crates"][0]["pos"].__setitem__(0, 32768)),
             ):
                 alter(f"excluded-{digest[:8]}-{count}-{label}", change, wire)
+    carried_wire = first_world(box_options(custom=[ancient(3, "12" * 32)])).fill_slot_data()
+    assert track_rulings.FEATURE in carried_wire["content_plan"]["required_features"]
+    cases.append(("excluded-carried", carried_wire, True))
+    for label, change in (
+        ("feature", lambda p: p["required_features"].remove(track_rulings.FEATURE)),
+        ("ordinal", lambda p: p["item_boxes"]["crate_exclusions"][0]["crates"][0].__setitem__("ordinal", 2)),
+        ("position", lambda p: p["item_boxes"]["crate_exclusions"][0]["crates"][0].__setitem__("pos", [0, 0, 0])),
+    ):
+        alter(f"excluded-carried-{label}", change, carried_wire)
 
 box_env("unchanged copy", lambda c: None)
 box_env("box_locations false", lambda c: c["ctr_options"].__setitem__("box_locations", False))
