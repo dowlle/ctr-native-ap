@@ -76,22 +76,12 @@ extern "C" void CustomPackage_TestInstallFailure(int checkpoints);
 // unless a case sets g_permission, and records which Saphi track was asked.
 static int g_permission = AP_TRACK_PERMISSION_ALLOW, g_permission_track = -1;
 static bool g_permission_given_key;
-static bool g_registry_alias;
 extern "C" int ap_track_permission(int track, int author, int saphi, const char *key)
 { (void)author; (void)saphi; g_permission_given_key = key != nullptr; g_permission_track = track; return g_permission; }
 extern "C" const char *ap_track_permission_text(void) { return "The author has not allowed in-game download."; }
 extern "C" int ap_track_consent_saphi_author(int track) { return track == 121 ? 12 : 0; }
 extern "C" int ap_track_registry_key_for_saphi(int track, char *key, int bytes)
 { if (track != 121 || !key || bytes < 16) return 0; std::snprintf(key, bytes, "acid-lake"); return 1; }
-extern "C" int ap_track_registry_lookup(const char *, uint32_t, const char *, uint32_t, ApTrackRegistryMatch *out)
-{
-	if (!g_registry_alias) return AP_TRACK_REGISTRY_NOT_LISTED;
-	out->saphi_track_id = 121;
-	out->lev_download_id = 872;
-	out->vrm_download_id = 873;
-	std::snprintf(out->revision, sizeof out->revision, "1.0.0");
-	return AP_TRACK_REGISTRY_MATCH;
-}
 extern "C" void ap_track_consent_note_saphi(int track, int author, int saphi) { (void)track; (void)author; (void)saphi; }
 extern "C" int ap_track_saphi_id_from_url(const char *url)
 {
@@ -272,6 +262,16 @@ static int install_seed(const std::string &assets, bool by_ids, std::string &det
 		      "Author", 3, 0, 0, 0, ls.c_str(), (uint32_t)lev.size(), vs.c_str(), (uint32_t)vrm.size(), 0, 0, 0, "acid-lake");
 	if (!ok) { detail = "start refused"; return -1; }
 	return finish(detail);
+}
+static bool g_registry_alias;
+extern "C" int ap_track_registry_lookup(const char *, uint32_t, const char *, uint32_t, ApTrackRegistryMatch *out)
+{
+	if (!g_registry_alias) return AP_TRACK_REGISTRY_NOT_LISTED;
+	out->saphi_track_id = 121;
+	out->lev_download_id = 872;
+	out->vrm_download_id = 873;
+	std::snprintf(out->revision, sizeof out->revision, "1.0.0");
+	return AP_TRACK_REGISTRY_MATCH;
 }
 // The sca role of the installed manifest, if any.
 static bool manifest_has_sca(const std::string &assets)
