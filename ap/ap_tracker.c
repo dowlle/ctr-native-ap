@@ -644,7 +644,7 @@ static void AP_TrackerDrawContentNode(const AP_TrackerNode *n, int x, int y)
 	AP_TrackerText(wumpaGlobal ? "10W*" : "10W",x+130,y+96,16,TRACKER_GOLD,55); AP_TrackerTick(x+179,y+99,AP_TrackerCodeState(wumpa>0?wumpa:-1));
 	if (n->kind == 0) for (i = 0; i < 3; i++) {
 		long code = pad->letter_locations[i] > 0 ? (long)pad->letter_locations[i] : -1;
-		AP_TrackerDrawLetterCell(x+216+i*49,y+95,"CTR"[i],fam->lettersanity,AP_TrackerCodeState(code),
+		AP_TrackerDrawLetterCell(x+216+i*49,y+95,ap_content_letter_glyph(pad,i),fam->lettersanity,AP_TrackerCodeState(code),
 			pad->letter_items[i] <= 0 || AP_ContentLetterItemReceived(pad->letter_items[i]));
 	}
 }
