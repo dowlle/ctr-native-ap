@@ -114,6 +114,8 @@ thread_object = body(checkpoint, 'internal void NativeCheckpoint_RelocateThreadO
 ghost_relocate = body(thread_object, 'if (thread->modelIndex == DYNAMIC_GHOST)')
 check('t->modelIndex = DYNAMIC_GHOST;' in birth and 'modelIndex =' not in end_block,
       'the model index survives both end-of-tape branches')
+check('NativeCheckpoint_RelocateDriver(oldHeader, liveHeader, driver);' in ghost_relocate,
+      'a converted or parked ghost still gets driver pointer relocation')
 check(0 <= ghost_relocate.find('NativeCheckpoint_RelocateDriver(')
       < ghost_relocate.find('NativeCheckpoint_RelocateGhostTape('),
       'the ghost tape is relocated after its driver pointer')

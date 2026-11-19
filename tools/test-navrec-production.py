@@ -97,6 +97,11 @@ check(checkpoint.count("AP_NavRec_AfterCheckpointRestore();") == 1 and
 check(0 <= load.find("if (MainRaceTrack_OfflineCustomTimeTrial())") < load.find("AP_NavRec_HighestIndex(")
       and "MainRaceTrack_OfflineCustomLoad() && !MainRaceTrack_OfflineCustomTimeTrial()" in body("AP_NavRec_SyncArmed"),
       "custom Time Trial keeps authored ghost lanes and custom Arcade skips capture")
+check(re.search(r"if \(!g_config\.navUseRecorded\)\s*return 0;", load) is not None
+      and re.search(r"if \(MainRaceTrack_OfflineCustomTimeTrial\(\)\)\s*return 0;", load) is not None
+      and 0 <= load.find("AP_NavRecIdentity_LanesMayLoad(") < load.find("AP_NavRec_BuildPool(")
+      and "MainRaceTrack_OfflineCustomLoad()" not in load,
+      "an eligible custom Arcade race with recorded AI enabled reaches the existing local pool")
 check("AP_NavRecLane_Select" not in src and "AP_NavRecLane_Plan" not in src, "the newest-first selector is gone")
 check(re.search(r"seed %08x", load) is not None, "the pool log line carries the seed")
 check(re.search(r'lane %d: \\"%s\\" driver', load) is not None, "each recorded lane logs its file and driver")
