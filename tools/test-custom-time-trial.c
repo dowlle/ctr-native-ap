@@ -320,6 +320,13 @@ static void sample_flying_lap(void)
 	}
 }
 
+static void finish_sampled_lap(void)
+{
+	s_gt.gameMode1 |= END_OF_RACE;
+	AP_NavRec_Tick(&s_gt);
+	s_gt.gameMode1 &= ~END_OF_RACE;
+}
+
 static void check_lap_recording(const unsigned char uuid[16], unsigned int revision)
 {
 	static unsigned char bytes[AP_NAVREC_MAX_FILE_BYTES];
@@ -340,18 +347,14 @@ static void check_lap_recording(const unsigned char uuid[16], unsigned int revis
 	sample_flying_lap();
 	AP_NavRec_AfterCheckpointRestore();
 	sample_flying_lap();
-	s_gt.gameMode1 |= END_OF_RACE;
-	AP_NavRec_Tick(&s_gt);
+	finish_sampled_lap();
 	CHECK(access(path, F_OK) != 0);
 
-	s_gt.gameMode1 &= ~END_OF_RACE;
 	AP_NavRec_AfterBotsInit();
 	s_player.lapIndex = 0;
 	AP_NavRec_Tick(&s_gt);
 	sample_flying_lap();
-	s_gt.gameMode1 |= END_OF_RACE;
-	AP_NavRec_Tick(&s_gt);
-	s_gt.gameMode1 &= ~END_OF_RACE;
+	finish_sampled_lap();
 	g_config.navRecord = 0;
 	AP_NavRec_Tick(&s_gt);
 	FILE *file = fopen(path, "rb");
@@ -388,6 +391,18 @@ static void check_recorded_playback(int mode, const unsigned char uuid[16], unsi
 	{
 		CHECK(sdata->NavPath_ptrHeader[0] != &authored.header);
 		CHECK(sdata->NavPath_ptrHeader[0]->numPoints > authored.header.numPoints);
+		sdata->Loading.stage = LOAD_IDLE;
+		s_gt.trafficLightsTimer = 0;
+		g_config.navRecord = 1;
+		s_player.lapIndex = 0;
+		AP_NavRec_Tick(&s_gt);
+		sample_flying_lap();
+		finish_sampled_lap();
+		CHECK(s_navrecBankCount == 1 && !s_navrecBankDirty[0]);
+		CHECK(access("ap-navpaths/navpath-6-002.navlap", F_OK) != 0);
+		g_config.navRecord = 0;
+		AP_NavRec_Tick(&s_gt);
+
 		AP_NavRec_AfterCheckpointRestore();
 		CHECK(sdata->NavPath_ptrHeader[0]->numPoints > authored.header.numPoints);
 		g_config.navUseRecorded = 0;

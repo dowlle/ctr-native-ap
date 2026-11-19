@@ -753,6 +753,16 @@ static void AP_NavRec_Write(int levelID)
 	if (!g_config.navRecord || (s_navrecScratch == NULL))
 		return;
 
+#ifdef CTR_CUSTOM_PACKAGES
+	// Custom-page Arcade uses the identity to play matching local laps.
+	// Recording on the custom pages is limited to Time Trial.
+	if (MainRaceTrack_OfflineCustomLoad() && !MainRaceTrack_OfflineCustomTimeTrial())
+	{
+		AP_LogLine("[AP NAVREC] recording disabled for this load: custom-page recording requires Time Trial\n");
+		return;
+	}
+#endif
+
 	// A served custom load without a navigation identity cannot stamp a lap
 	// truthfully: written as retail it would later inject onto the host slot's
 	// real retail races. Nothing is saved, and the reason is on record.
