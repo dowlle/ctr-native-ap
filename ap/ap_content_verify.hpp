@@ -34,9 +34,10 @@ using J = nlohmann::json;
 // first boost, 0 the generic terms only) by package content id. A row with a
 // revision ("" for every revision) also names the LEV pin and covers only that
 // exact package; it wins over the row for every revision (A2-22).
+// A new scoped row names the first catalog version that enables it.
 // tools/test-content-plan-parity.py compares this table with the paired
 // apworld's.
-static const struct { const char *content_id, *revision, *lev_sha256; int rank; } kUsfRulings[] = {
+static const struct { const char *content_id, *revision, *lev_sha256; int rank; int since = 0; } kUsfRulings[] = {
     {"arabian-heights-night", "", "", 2}, {"baby-t-park", "", "", 0}, {"cortex-vortex", "", "", 2},
     {"north-pole", "", "", 0}, {"tv-world", "", "", 0},
     // Project rulings of 2026-11-05 07:19 CET (A2-27), per registry revision and LEV pin.
@@ -137,6 +138,15 @@ static std::set<std::string> finish_floor_tracks;
 // Tracks named by `capability.finish_free` (reviewed Green Hill Raceway 2.0.0): no rank for the finish itself.
 static std::set<std::string> finish_free_tracks;
 
+static void read_finish_overrides(const J &plan) {
+    finish_floor_tracks.clear();
+    finish_free_tracks.clear();
+    if (!plan.contains("capability")) return;
+    const J &caps = plan.at("capability");
+    for (const auto &id : caps.value("finish_free", J::array())) finish_free_tracks.insert(id.get<std::string>());
+    for (const auto &id : caps.value("finish_floors", J::array())) finish_floor_tracks.insert(id.get<std::string>());
+}
+
 // content_capability.finish_boost: the ranks crossing a track's finish line
 // needs, 0 without Progressive Boost.
 static int finish_boost(const J &track, const std::map<std::string, const J *> &packages, const AP_VerifyOptions &o) {
@@ -155,15 +165,23 @@ static int finish_boost(const J &track, const std::map<std::string, const J *> &
         std::string lev;
         for (const auto &pin : pkg->at("files"))
             if (pin.value("role", "") == "lev") lev = pin.value("sha256", "");
+        const int version = content_plan::state.track_ruling_version;
         const auto matches = [&](const auto &r, const std::string &revision, const std::string &pin) {
-            return *r.revision && content == r.content_id && revision == r.revision && pin == r.lev_sha256;
+            return r.since <= version && *r.revision && content == r.content_id && revision == r.revision
+                && pin == r.lev_sha256;
         };
         const auto source = content_plan::scoped_ruling(content_plan::state, *pkg, lev,
             [&](const std::string &revision, const std::string &pin) {
                 for (const auto &r : kUsfRulings) if (matches(r, revision, pin)) return true;
                 return false;
             });
-        for (const auto &r : kUsfRulings) if (matches(r, source.first, source.second)) return r.rank;
+        int selected_rank = -1, selected_version = -1;
+        for (const auto &r : kUsfRulings)
+            if (matches(r, source.first, source.second) && r.since > selected_version) {
+                selected_rank = r.rank;
+                selected_version = r.since;
+            }
+        if (selected_rank >= 0) return selected_rank;
         for (const auto &r : kUsfRulings) if (!*r.revision && content == r.content_id) return r.rank;
         const std::string free_source = content_plan::ruling_pin(content_plan::state, *pkg, lev, [](const std::string &pin) {
             return pin == content_plan::kCountryPickupPin || pin == content_plan::kToastyPickupPin;
@@ -199,6 +217,70 @@ static int leg_boost(const J &entry, const std::string &leg_id, bool own, const 
     throw std::runtime_error("cup leg route names no leg of its entry");
 }
 
+// Project the exported rule onto Boost with all other requirements satisfied.
+// Both AP boost modes give the same threshold when every racer has the same rank.
+static int exported_finish_rank(int root, std::vector<int> &ranks) {
+    constexpr int unreachable = kUsf + 1;
+    int &rank = ranks.at(root);
+    if (rank >= 0) return rank;
+    const auto &logic = ctr_win_logic;
+    const auto &node = logic.nodes[root];
+    if (node.tag == AP_WL_T_FALSE) rank = unreachable;
+    else if (node.tag == AP_WL_T_CAP || node.tag == AP_WL_T_STATCAP) rank = (int)node.a;
+    else if (node.tag == AP_WL_T_ALL || node.tag == AP_WL_T_ANY) {
+        const bool all = node.tag == AP_WL_T_ALL;
+        rank = all ? 0 : unreachable;
+        for (long i = 0; i < node.b; ++i) {
+            const int term = exported_finish_rank(logic.kids[node.a + i], ranks);
+            rank = all ? std::max(rank, term) : std::min(rank, term);
+        }
+    } else rank = 0;
+    return rank;
+}
+
+static bool markerless_finish_matches() {
+    const auto o = options();
+    if (!o.boost_mode || content_plan::state.track_ruling_version || ctr_win_logic.state != AP_WL_VALID) return true;
+    const J p = J::parse(content_plan::state.canonical);
+    const auto &reviews = content_plan::content_registry().at("track_ruling_revisions");
+    std::map<std::string, const J *> packages;
+    bool has_unreviewed_track = false;
+    for (const auto &pkg : p.at("packages")) {
+        packages.emplace(content_plan::text(pkg.at("id")), &pkg);
+        const std::string key = content_plan::text(pkg.at("content_id"));
+        if (!reviews.contains(key)) continue;
+        std::string lev;
+        for (const auto &file : pkg.at("files"))
+            if (file.at("role") == "lev") lev = content_plan::text(file.at("sha256"));
+        const auto &history = reviews.at(key);
+        if (std::none_of(history.begin(), history.end(), [&](const J &row) {
+                return row.size() == 2 && row[0] == lev && row[1] == pkg.at("revision");
+            })) has_unreviewed_track = true;
+    }
+    if (!has_unreviewed_track) return true;
+    const auto tracks = content_plan::table(p.at("tracks"), 160);
+    const auto entries = content_plan::table(p.at("entries"), 160);
+    read_finish_overrides(p);
+    std::vector<int> ranks(ctr_win_logic.node_count, -1);
+    for (const auto &check : p.at("checks")) {
+        const bool lap = check.at("kind") == "lap";
+        if (!lap && check.at("kind") != "cup_leg") continue;
+        const int index = AP_WinLogicFindCheck(&ctr_win_logic, check.at("location").get<long>());
+        if (index < 0) continue;
+        int expected = kUsf + 1;
+        for (const auto &route : check.at("routes")) {
+            int rank = lap ? finish_boost(*tracks.at(content_plan::text(check.at("owner"))), packages, o) : 0;
+            if (!route.at("leg_id").is_null())
+                rank = std::max(rank, leg_boost(*entries.at(content_plan::text(route.at("entry_id"))),
+                                               content_plan::text(route.at("leg_id")), !lap, tracks, packages, o));
+            expected = std::min(expected, rank);
+        }
+        const int actual = exported_finish_rank(ctr_win_logic.checks[index].rule, ranks);
+        if (actual <= kUsf && expected != actual) return false;
+    }
+    return true;
+}
+
 static int lock_of(const J &pad) { return pad.at("racer_lock").is_null() ? -1 : pad["racer_lock"].get<int>(); }
 
 static bool exported_mask_term(int root) {
@@ -216,12 +298,7 @@ static Model build() {
     using content_plan::state;
     const AP_VerifyOptions o = options();
     const J p = J::parse(state.canonical);
-    finish_floor_tracks.clear();
-    finish_free_tracks.clear();
-    if (p.contains("capability") && p["capability"].contains("finish_free"))
-        for (const auto &id : p["capability"]["finish_free"]) finish_free_tracks.insert(id.get<std::string>());
-    if (p.contains("capability") && p["capability"].contains("finish_floors"))
-        for (const auto &id : p["capability"]["finish_floors"]) finish_floor_tracks.insert(id.get<std::string>());
+    read_finish_overrides(p);
     Model m;
     m.epoch = content_plan::epoch;
     m.parse_revision = s_seedcfg_parse_revision;

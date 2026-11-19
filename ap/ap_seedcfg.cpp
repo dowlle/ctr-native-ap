@@ -1764,7 +1764,11 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 		ctr_cfg.seed_box_locations = json_int(j["ctr_options"], "box_locations", 0) != 0;
 	// One generator row 6: a plan room's race-loss stakes read the exported logic.
 	if (content_result == 2)
+	{
 		ap_seedcfg_parse_win_logic(j);
+		if (!content_verify::markerless_finish_matches())
+			ap_seedcfg_reject_late("content_plan: markerless finish differs from the exported rules");
+	}
 	// One generator row 12: content_result 1 is a room without a content
 	// plan. It comes from v0.2.x, whose reader was deleted with the original
 	// generator. The config stays inactive (schema_version 0) and the slot

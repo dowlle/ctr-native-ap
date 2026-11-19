@@ -1283,17 +1283,18 @@ with spot_files(retail=["CRASH_COVE"], custom=["baby-t-park"]):
 from worlds.ctr import crate_exclusions
 from worlds.ctr import track_rulings
 from unittest import mock
-from worlds.ctr.test.test_crate_exclusions import ANCIENT_LAKE, NORTH_POLE, ancient
+from worlds.ctr.test.test_crate_exclusions import ANCIENT_LAKE, NORTH_POLE, ancient, north_pole
 from worlds.ctr.test.test_content_item_boxes import box_options, first_world
 # Test fallback exclusions without the later community spot override.
 with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):
     for digest in (*ANCIENT_LAKE, NORTH_POLE):  # custom revisions; the retail Roo's Tubes and Skyway pins are sanity only
         for count in (3, 17):
-            world = first_world(box_options(custom=[ancient(count, digest)]))
+            package = north_pole(count) if digest == NORTH_POLE else ancient(count, digest)
+            world = first_world(box_options(custom=[package]))
             wire = world.fill_slot_data()
             cases.append((f"excluded-{digest[:8]}-{count}", wire, True))
             with mock.patch.dict(crate_exclusions.EXCLUSIONS, {}, clear=True):
-                legacy = first_world(box_options(custom=[ancient(count, digest)]))
+                legacy = first_world(box_options(custom=[package]))
                 legacy_wire = legacy.fill_slot_data()
             cases.append((f"excluded-legacy-{digest[:8]}-{count}", legacy_wire, True))
             for label, change in (
@@ -2194,11 +2195,11 @@ for name, change in [
 # The verifier's copy of the per-track USF finish rulings (#133 PR 8,
 # ap/ap_content_verify.hpp kUsfRulings) equals the apworld's table.
 from worlds.ctr import content_capability as ccap
-native_rows = [((k, r or None, h or None), int(v)) for k, r, h, v in re.findall(
-               r'\{"([a-z0-9-]+)", "([^"]*)", "([0-9a-f]*)", ([012])\}',
+native_rows = [((k, r or None, h or None, *((int(s),) if s else ())), int(v)) for k, r, h, v, s in re.findall(
+               r'\{"([a-z0-9-]+)", "([^"]*)", "([0-9a-f]*)", ([012])(?:, (\d+))?\}',
                re.search(r"kUsfRulings\[\] = \{(.*?)\};", (root / "ap/ap_content_verify.hpp").read_text(), re.S)[1])]
 native_rulings = dict(native_rows)
-# finish_boost returns the first matching row, so a repeated key would hide a mismatch.
+# A repeated key at the same catalog version could hide a mismatch.
 assert len(native_rulings) == len(native_rows), native_rows
 assert native_rulings == ccap.USF_FINISH_RULINGS, (native_rulings, ccap.USF_FINISH_RULINGS)
 # Row 10i parity fixes: Reach 10 Wumpa from cup legs and boss races, rungs
