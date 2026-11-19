@@ -196,6 +196,8 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// connect handler, so the tables are already zero before any asynchronous
 		// Retrieved reply for the new slot can land.
 		AP_CharSwap_ConnectReset();
+		AP_CoopConnectReset();
+		ap_net_coop_subscribe();
 		if (ctr_cfg.character_phase_present)
 		{
 			ap_net_character_subscribe(ctr_cfg.starting_character);

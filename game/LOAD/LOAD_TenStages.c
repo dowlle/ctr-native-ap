@@ -213,6 +213,9 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 
 
 		// ========== End of setting numPlyr ================
+#ifdef CTR_AP
+		AP_CoopPrepareLoad(gGT);
+#endif
 		// ========== Set LevelLOD variables ================
 
 

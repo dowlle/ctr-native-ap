@@ -142,7 +142,7 @@ int main(void)
 	stats = body_of(cap, "void AP_CapabilityStats(struct Driver *driver)\n{");
 	expect(stats && strstr(stats, "statsLive = AP_CapabilityStatsActive() && AP_CapabilityRoomStatsRace();") != NULL,
 	       1, "progressive stats: pack live only in Adventure");
-	expect(stats && strstr(stats, "rank = statsLive ? AP_CapabilityAppliedStatRankFor(") != NULL, 1,
+	expect(stats && strstr(stats, "rank = statsLive && driver->driverID < 8 ? AP_CapabilityAppliedRankForCharacter(") != NULL, 1,
 	       "progressive stats: a non-Adventure race takes the vanilla anchor");
 	expect(stats && strstr(stats, "AP_CapabilityStatsActive() && !weakened") == NULL, 1,
 	       "progressive stats: no early test that skips the mode rule");

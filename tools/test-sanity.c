@@ -38,6 +38,11 @@ static int sent, checked, route_valid = 1, notices;
 static int scout_known = 1, own_slot, sent_toasts;
 static AP_FeedLines feed;
 static int logic_state = 1;
+static int coop;
+// This fixture tests the pickup producer. test-coop.c compiles the real
+// ownership predicate against engine structs, including partner/bot isolation.
+static int AP_IsSlotHuman(const struct GameTracker *g, const struct Driver *d)
+{ return d == g->drivers[0] || (coop && d == g->drivers[1]); }
 static int AP_LocationLogicState(long long code) { (void)code; return logic_state; }
 int ctr_cfg_active(void) { return 1; }
 int ap_content_plan_active(void) { return 1; }
@@ -169,6 +174,13 @@ int main(void) {
         assert(feed.vis[feed.vcount - 1].framesLeft == AP_FEED_LIFETIME_FRAMES);
     }
     assert(feed.qcount == 0);
-    puts("sanity runtime: ordinal pick, AI, local player, dedup, reload, race mode, route, feed and mismatch pass");
+    int before_coop = sent;
+    ++epoch; context.seedEpoch = epoch;
+    AP_SanityLevelInstances(defs, 4);
+    gt.drivers[1] = &second; coop = 1;
+    AP_SanityPickup(&objects[1], &second); assert(sent == before_coop + 1);
+    AP_SanityPickup(&objects[1], &player); assert(sent == before_coop + 1); /* shared dedup */
+    AP_SanityPickup(&objects[1], &bot); assert(sent == before_coop + 1);
+    puts("sanity runtime: ordinal pick, AI, both humans, shared dedup, reload, race mode, route, feed and mismatch pass");
     return 0;
 }

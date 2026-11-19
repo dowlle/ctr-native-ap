@@ -196,7 +196,7 @@ static int AP_BoxChecked(long code, void *ctx)
 // practice. Extending to TIME_TRIAL needs its own confirmed report.
 static int AP_BoxesRaceCarriesBoxes(struct GameTracker *gGT)
 {
-	return gGT && gGT->numPlyrCurrGame == 1 && AP_WumpaBankRaceMode(gGT->gameMode1);
+	return gGT && (gGT->numPlyrCurrGame == 1 || AP_CoopRace(gGT)) && AP_WumpaBankRaceMode(gGT->gameMode1);
 }
 
 // ── the alternate-route gate (WO-A3 cup legs; boss races ruled 2026-09-12) ──
@@ -982,7 +982,7 @@ static void AP_BoxBreak(struct GameTracker *gGT, int i, struct Instance *boxInst
 // karts and AI-fired weapons alike.
 static int AP_BoxOwnedByLocalPlayer(struct GameTracker *gGT, struct Driver *d)
 {
-	if (d == 0 || d != gGT->drivers[0])
+	if (!AP_IsSlotHuman(gGT, d))
 		return 0;
 	if ((d->actionsFlagSet & ACTION_BOT) != 0)
 		return 0;

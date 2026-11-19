@@ -201,6 +201,8 @@ typedef struct
 	// feature does nothing. Consumed by AP_Discord_OnFrame (ap/ap_discord.c).
 	bool discordStatus;
 	char discordAppId[32];
+	int coopAdventure;         // Client choice: 0 solo, 1 Lenient co-op.
+	int coopRacer;             // P2 engine racer ID, selected from unlocked racers.
 #else
 	// The authoring client without Archipelago keeps the authoring options it
 	// builds, with the meanings described above (AP block).

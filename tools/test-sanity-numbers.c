@@ -10,6 +10,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "ap_content_plan.h"
+#include "ap_coop.h"
 
 struct sData sdata_static;
 struct Data data;

@@ -452,6 +452,12 @@ static int TrapDuration_Index(int value)
 // entry edits (pointer identity, no string compare).
 static const char *Enum_Label(const ConfigEntry *e)
 {
+#ifdef CTR_AP
+	if (e->valuePtr == &g_config.coopAdventure)
+		return g_config.coopAdventure ? "2P LENIENT" : "1 PLAYER";
+	if (e->valuePtr == &g_config.coopRacer)
+		return data.MetaDataCharacters[(g_config.coopRacer >= 0 && g_config.coopRacer < 16) ? g_config.coopRacer : 0].name_Debug;
+#endif
 	if (e->valuePtr == &g_config.aspectRatio)
 		return s_aspectNames[Aspect_Index(*(int *)e->valuePtr)];
 	if (e->valuePtr == &g_config.renderScale)
@@ -475,6 +481,10 @@ static const char *Enum_Label(const ConfigEntry *e)
 
 static void Enum_Step(const ConfigEntry *e, int dir)
 {
+#ifdef CTR_AP
+	if (e->valuePtr == &g_config.coopAdventure) { AP_CoopStep(dir); return; }
+	if (e->valuePtr == &g_config.coopRacer) { AP_CoopRacerStep(dir); return; }
+#endif
 	if (e->valuePtr == &g_config.aspectRatio)
 	{
 		int i = Aspect_Index(*(int *)e->valuePtr) + dir;
@@ -565,6 +575,16 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 // A did nothing on VSync). Left/right keep their clamped stepping.
 static void Enum_Advance(const ConfigEntry *e)
 {
+#ifdef CTR_AP
+	/* Refused co-op edits must keep their refusal text. The generic wrap
+	 * fallback would interpret a refusal as "already at the last value". */
+	if (e->valuePtr == &g_config.coopAdventure)
+	{
+		AP_CoopStep(g_config.coopAdventure ? -1 : 1);
+		return;
+	}
+	if (e->valuePtr == &g_config.coopRacer) { AP_CoopRacerStep(1); return; }
+#endif
 	const int before = *(int *)e->valuePtr;
 	Enum_Step(e, +1);
 	if (*(int *)e->valuePtr == before)
@@ -615,6 +635,11 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 {
 	const char *first = 0;
 	const char *second = 0;
+	if (e->valuePtr == &g_config.coopAdventure || e->valuePtr == &g_config.coopRacer)
+	{
+		first = AP_CoopHelp();
+		second = "Other events stay solo for now.";
+	}
 
 	if (e->valuePtr == &g_config.itemBoxColours)
 	{

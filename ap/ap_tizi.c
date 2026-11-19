@@ -1,4 +1,5 @@
 #ifdef CTR_AP
+#include "ap_coop.h"
 
 #include <common.h> // structs Driver/GameTracker/Instance/InstDef/Level + sdata + level ids
 
@@ -242,7 +243,8 @@ void AP_TiziTick(struct GameTracker *gGT)
 	// longer rolling and the roll never reached the filter (a restart, a mode
 	// change, a driver that stopped existing), drop it: handing this Mask to
 	// whatever box comes next is the one way this feature could leak.
-	local = (gGT != NULL) ? gGT->drivers[0] : NULL;
+	local = (gGT != NULL && g_tizi_pending >= 1 && g_tizi_pending <= 2)
+	    ? gGT->drivers[g_tizi_pending - 1] : NULL;
 	if (local == NULL || local->heldItemID != 0x10)
 		g_tizi_pending = 0;
 }
@@ -253,19 +255,19 @@ void AP_TiziOnWeaponBoxHit(struct Driver *driver, struct Instance *crateInst)
 
 	// Local player only, same isolation every other AP hook uses: an AI racer
 	// breaking one of the four is none of our business.
-	if (gGT == NULL || driver == NULL || driver != gGT->drivers[0])
+	if (!AP_IsSlotHuman(gGT, driver) || g_tizi_pending)
 		return;
 	if (!AP_TiziActive() || !AP_TiziIsRowCrate(crateInst))
 		return;
 
-	g_tizi_pending = 1;
+	g_tizi_pending = driver == gGT->drivers[0] ? 1 : 2;
 }
 
 int AP_TiziFilterRoll(struct Driver *driver, int rolled)
 {
 	struct GameTracker *gGT = sdata->gGT;
 
-	if (gGT == NULL || driver == NULL || driver != gGT->drivers[0])
+	if (!AP_IsSlotHuman(gGT, driver) || g_tizi_pending != (driver == gGT->drivers[0] ? 1 : 2))
 		return rolled;
 
 	// Any resolved roll for the local player consumes the arm, ours or not, so
