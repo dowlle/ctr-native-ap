@@ -925,7 +925,15 @@ void RenderAllLevelGeometry(struct GameTracker *gGT, struct Level *level1, struc
 		}
 
 		// if SCVert
+#if defined(CTR_CUSTOM_TRACKS) || defined(CTR_EDITOR)
+		// Older custom tracks can set the SCVert config flag with no SCVert
+		// table and no packed visibility list for it; AnimateQuad reads the
+		// list before it checks the vertex count, so that null crashes the
+		// first frame. Same guard condition as the animated-texture check.
+		else if (level1->numSCVert != 0 && gGT->visMem1->visSCVertList[0] != 0)
+#else
 		else
+#endif
 		{
 			// draw SCVert (no primitives generated here
 			AnimateQuad(gGT->timer << 7, level1->numSCVert, level1->ptrSCVert, gGT->visMem1->visSCVertList[0]);
