@@ -563,9 +563,10 @@ static void AP_GarageVenuePreflight(void)
 				f = &ap_content_files[b->venue_package[g]];
 				lev = pkg->lev_sha256; vrm = pkg->vrm_sha256;
 #ifdef CTR_CUSTOM_PACKAGES
-				CustomPackage_FindPinnedMusic(NativeAssets_GetAssetDir(), pkg->revision, pkg->uuid, 0,
-				                             pkg->lev_sha256, pkg->lev_bytes, pkg->vrm_sha256, pkg->vrm_bytes,
-				                             d.scaPath, sizeof d.scaPath, d.scaSha256, &d.scaBytes);
+				snprintf(d.packageRevision, sizeof d.packageRevision, "%s", pkg->revision);
+				snprintf(d.packageUuid, sizeof d.packageUuid, "%s", pkg->uuid);
+				d.levBytes = pkg->lev_bytes;
+				d.vrmBytes = pkg->vrm_bytes;
 #endif
 			}
 		}

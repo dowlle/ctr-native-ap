@@ -94,11 +94,15 @@ static int HOWL_CustomMusic_Acquire(struct CustomMusicSca *sca, char *error, siz
 	         (s_cortexBytes == NULL && HOWL_CustomMusic_BossVenueServing(sdata->gGT->levelID)))
 	{
 		if (!s_bossMusicBytes)
-			s_bossMusicBytes = CustomTrack_ReadBossMusic(sdata->gGT->levelID, sdata->gGT->bossID, &s_bossMusicSize);
-		if (!s_bossMusicBytes)
 		{
-			error[0] = '\0';
-			return 0;
+			const char *reason;
+			s_bossMusicBytes = CustomTrack_ReadBossMusic(sdata->gGT->levelID, sdata->gGT->bossID,
+			                                           &s_bossMusicSize, &reason);
+			if (!s_bossMusicBytes)
+			{
+				snprintf(error, errorSize, "%s", reason ? reason : "");
+				return 0;
+			}
 		}
 		bytes = s_bossMusicBytes;
 		size = s_bossMusicSize;
@@ -145,6 +149,7 @@ void HOWL_CustomMusic_Reset(void)
 	s_customBankServing = 0;
 	s_customBankLoaded = 0;
 	s_customSongReady = 0;
+	CustomTrack_ResetBossVenueLoad();
 	HOWL_CustomMusic_ReleaseAudio();
 }
 
@@ -187,7 +192,7 @@ static int HOWL_CustomMusic_LoadBankFor(struct Bank *thisBank, enum CortexMusicB
 		return 0;
 	if (!HOWL_CustomMusic_Acquire(&sca, error, sizeof error))
 	{
-		HOWL_CustomMusic_Log(error[0] ? "track music refused, default music" : "no track music in this package, default music", error);
+		HOWL_CustomMusic_Log(error[0] ? "track music refused, default music" : "no verified track music, default music", error);
 		return 0;
 	}
 

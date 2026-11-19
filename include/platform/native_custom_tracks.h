@@ -138,9 +138,9 @@ struct GarageVenueDescriptor
 	char vrmSha256[NATIVE_SHA256_HEX_BYTES];
 #ifdef CTR_CUSTOM_PACKAGES
 	int cortex;
-	char scaPath[512];
-	char scaSha256[NATIVE_SHA256_HEX_BYTES];
-	unsigned long scaBytes;
+	char packageRevision[65];
+	char packageUuid[37];
+	unsigned long levBytes, vrmBytes;
 #endif
 };
 int CustomTrack_ApplyGarageVenueDescriptor(int garage, const struct GarageVenueDescriptor *d);
@@ -149,8 +149,10 @@ int CustomTrack_GarageVenueReady(int garage);
 // The garage whose custom venue this load serves, or -1.
 int CustomTrack_GarageVenueServing(int levelID, int bossID, int adventureBossActive);
 #ifdef CTR_CUSTOM_PACKAGES
-// Return verified audio owned by the caller for the duration of the HOWL load.
-unsigned char *CustomTrack_ReadBossMusic(int levelID, int bossID, size_t *size);
+// Pin matching geometry for this load and return verified audio owned by HOWL.
+// A failed pin or read sets a diagnostic. An absent optional SCA leaves it NULL.
+unsigned char *CustomTrack_ReadBossMusic(int levelID, int bossID, size_t *size, const char **error);
+void CustomTrack_ResetBossVenueLoad(void);
 #endif
 
 // ── Cortex Vortex pad track (schema 15) ──────────────────────────────────────
