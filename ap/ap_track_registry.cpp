@@ -234,10 +234,10 @@ bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::str
 		{
 			Revision row;
 			const nlohmann::json *files = member(revision, "files");
-			if (!file_pin(files, "lev", row.lev, row.lev_size) || !file_pin(files, "vrm", row.vrm, row.vrm_size))
-				continue;
+			if (!file_pin(files, "lev", row.lev, row.lev_size)) continue;
 			auto lev = index.lev_keys.emplace(row.lev, key);
 			if (!lev.second && lev.first->second != key) lev.first->second.clear();
+			if (!file_pin(files, "vrm", row.vrm, row.vrm_size)) continue;
 			row.track_id = static_cast<int>(track_id);
 			row.key = key;
 			row.revision = short_text(member(revision, "revision"));

@@ -95,6 +95,9 @@ static std::string registry(bool with_new_track)
 	json twice = revision("2.0.0", '1', '2', 100, 200, 7, 8);
 	twice["provenance"]["saphi_downloads"].push_back({{"kind", "lev"}, {"download_id", 9}});
 	tracks.push_back(track("ambiguous", 55, json::array({twice})));
+	json lev_only = revision("1.0.0", '5', '6', 100, 200, 10, 11);
+	lev_only["files"].erase("vrm");
+	tracks.push_back(track("lev-only", 0, json::array({lev_only})));
 	if (with_new_track)
 		tracks.push_back(track("tv-world", 100, json::array({revision("1.1.0", '3', '4', 913816, 458808, 715, 716)})));
 	return json({{"schema_version", 1}, {"id_scheme", json::object()}, {"tracks", tracks},
@@ -173,6 +176,7 @@ int main(int argc, char **argv)
 		key.clear();
 		CHECK(ap_track_registry_identity("", h('8'), key, title) && key == "acid-lake" && title == "acid-lake");
 		CHECK(ap_track_registry_identity(h('9'), h('8'), key, title) && key == "no-saphi" && title == "no-saphi");
+		CHECK(ap_track_registry_identity(h('5'), "", key, title) && key == "lev-only" && title == "lev-only");
 		key = "unknown";
 		CHECK(ap_track_registry_identity("", "", key, title) && key == "unknown" && title.empty());
 	}
