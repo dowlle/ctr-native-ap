@@ -168,7 +168,7 @@ static int finish_boost(const J &track, const std::map<std::string, const J *> &
         const std::string free_source = content_plan::ruling_pin(content_plan::state, *pkg, lev, [](const std::string &pin) {
             return pin == content_plan::kCountryPickupPin || pin == content_plan::kToastyPickupPin;
         });
-        if (!free_source.empty() && free_source != lev) return 0;
+        if (!free_source.empty() && content_plan::inherited_ruling_history(content_plan::state, *pkg, lev)) return 0;
         const J &caps = pkg->at("capabilities");
         // A package that does not state super_turbo_pads is treated as having one.
         if (caps.contains("super_turbo_pads") && caps["super_turbo_pads"] == false) return 0;

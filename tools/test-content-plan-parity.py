@@ -45,6 +45,8 @@ expected["sanity"] = cp.sanity.CATALOG
 expected["sanity_exclusions"] = cp.sanity.crate_exclusions.EXCLUSIONS
 expected["object_rulings"] = json.loads((args.apworld / "worlds/ctr/data/object_rulings.json").read_text())
 expected["track_ruling_revisions"] = cp.track_rulings.REVIEWS
+native_ruling_version = re.search(r"kTrackRulingVersion = (\d+);", (root / "ap/ap_content_plan_impl.hpp").read_text())
+assert int(native_ruling_version[1]) == cp.track_rulings.RULING_VERSION, "track ruling versions differ across the pair"
 expected["sanity_locations"] = {t: [cp.sanity.code(dict(origin="retail", display_name=t), f, 1) for f in range(3)] for t in cp.sanity.BOX_TRACKS}
 expected["sanity_locations"]["Cortex Vortex"] = [35026100, 35026180, 35026200]
 expected["sanity_locations"].update({t.ap_name: [cp.sanity.code(dict(origin="custom", named_block=t.block_index), f, 1)
@@ -1307,7 +1309,7 @@ with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):
     for label, change in (
         ("feature", lambda p: p["required_features"].remove(track_rulings.FEATURE)),
         ("sources", lambda p: p.pop("track_ruling_sources")),
-        ("source-pin", lambda p: p["track_ruling_sources"][0]["reviews"][0].__setitem__("lev_sha256", "ab" * 32)),
+        ("source-pin", lambda p: p["track_ruling_sources"]["packages"][0]["reviews"][0].__setitem__("lev_sha256", "ab" * 32)),
         ("ordinal", lambda p: p["item_boxes"]["crate_exclusions"][0]["crates"][0].__setitem__("ordinal", 2)),
         ("position", lambda p: p["item_boxes"]["crate_exclusions"][0]["crates"][0].__setitem__("pos", [0, 0, 0])),
     ):
@@ -2619,6 +2621,19 @@ wire = make_world(options, seed=3, stop_before="pre_fill").fill_slot_data()
 assert cp.validate(wire["content_plan"]) and wire["content_plan"]["capability"]["finish_free"] == [GH]
 cases.append(("green-carried-unreviewed-lev", wire, True))
 alter("green-carried-finish-free-missing", lambda p: p["capability"].pop("finish_free"), wire)
+options["content_pool"]["tracks"]["custom"].append(copy.deepcopy(royal_package))
+options["content_pool"]["tracks"]["custom"][-1]["files"][0]["sha256"] = "ac" * 32
+options["content_pool"]["required_entries"].append("custom/royal-raceway/1.0.0")
+wire = make_world(options, seed=3, stop_before="pre_fill").fill_slot_data()
+cases.append(("green-royal-carried", wire, True))
+for field in ("finish_floors", "finish_free"):
+    bad = copy.deepcopy(wire)
+    plan = bad["content_plan"]
+    track_id, = plan["capability"].pop(field)
+    reviews = plan["track_ruling_sources"]["packages"]
+    reviews.remove(next(row for row in reviews if row["package_id"].removeprefix("package/") == track_id.removeprefix("custom/")))
+    plan["item_boxes"]["pickup_rules"].remove(track_id)
+    cases.append((f"green-royal-carried-{field}-and-source-missing", bad, False))
 # Switching the LEV in a legacy exact-pin room cannot supply a carried source.
 wire = make_world(royal_options(item_box_count=5), seed=3, stop_before="pre_fill").fill_slot_data()
 bad = copy.deepcopy(wire)

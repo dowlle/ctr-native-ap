@@ -65,6 +65,7 @@ struct State {
     };
     std::map<std::string, CrateExclusions> crate_exclusions;
     std::map<std::string, J> track_ruling_sources;
+    int track_ruling_version = 0;
     struct BoxSpot { int number = 0; bool seen = false; short x = 0, y = 0, z = 0, rot_y = 0; };
     std::map<int64_t, BoxSpot> box_spots;
     // Boss garages (#133 PR 6): the `bosses` record and the venues its
@@ -851,6 +852,7 @@ static bool repeatable_pickups(const J &p) {
     return has_feature(p, "repeatable_pickups_v1");
 }
 static constexpr char kCarriedRulings[] = "carried_track_rulings_v1";
+static constexpr int kTrackRulingVersion = 1;
 static constexpr char kCountryPickupPin[] = "9fa73436daaf91434ede1d6fb036a8e6dff225c55533cc0be5723d229b5e53bd";
 static constexpr char kToastyPickupPin[] = "2b18c6305d3cfe591e979eabe42e7815fe475479d49f59d5b7b50b06f701ac5d";
 static constexpr char kRoyalPickupPin[] = "fca9e96a57c850e68e0226382645b4d6df5b4e7ebeb61459269ec2427ffab96b";
@@ -865,13 +867,19 @@ static bool is_pickup_ruling_pin(const std::string &pin) {
     return pin == kCountryPickupPin || pin == kToastyPickupPin || pin == kRoyalPickupPin || pin == kGreenHillPickupPin;
 }
 
+static const J *inherited_ruling_history(const State &out, const J &pkg, const std::string &lev) {
+    const auto history = out.track_ruling_sources.find(text(pkg.at("id")));
+    if (history == out.track_ruling_sources.end() || history->second.empty()) return nullptr;
+    for (const auto &review : history->second)
+        if (review.at("lev_sha256") == lev && review.at("revision") == pkg.at("revision")) return nullptr;
+    return &history->second;
+}
+
 template<class HasRuling>
 static std::string ruling_pin(const State &out, const J &pkg, const std::string &lev, HasRuling has_ruling) {
-    const auto history = out.track_ruling_sources.find(text(pkg.at("id")));
-    if (history == out.track_ruling_sources.end()) return lev;
-    if (has_ruling(lev))
-        for (const auto &review : history->second) if (review.at("lev_sha256") == lev) return lev;
-    for (const auto &review : history->second) {
+    const auto *history = inherited_ruling_history(out, pkg, lev);
+    if (!history) return lev;
+    for (const auto &review : *history) {
         const auto &pin = review.at("lev_sha256").get_ref<const std::string &>();
         if (has_ruling(pin)) return pin;
     }
@@ -881,9 +889,9 @@ static std::string ruling_pin(const State &out, const J &pkg, const std::string 
 template<class HasRuling>
 static std::pair<std::string, std::string> scoped_ruling(const State &out, const J &pkg, const std::string &lev,
                                                         HasRuling has_ruling) {
-    const auto history = out.track_ruling_sources.find(text(pkg.at("id")));
-    if (history == out.track_ruling_sources.end()) return {text(pkg.at("revision")), lev};
-    for (const auto &review : history->second) {
+    const auto *history = inherited_ruling_history(out, pkg, lev);
+    if (!history) return {text(pkg.at("revision")), lev};
+    for (const auto &review : *history) {
         const auto ref = std::make_pair(text(review.at("revision")), text(review.at("lev_sha256")));
         if (has_ruling(ref.first, ref.second)) return ref;
     }
@@ -891,10 +899,13 @@ static std::pair<std::string, std::string> scoped_ruling(const State &out, const
 }
 
 static void read_track_ruling_sources(const J &sources, const Table &packages, State &out) {
-    need(sources.is_array() && !sources.empty() && sources.size() <= packages.size(), "invalid track ruling source list");
+    fields(sources, {"version", "packages"});
+    out.track_ruling_version = number(sources.at("version"), 1, kTrackRulingVersion);
+    const auto &rows = sources.at("packages");
+    need(rows.is_array() && !rows.empty() && rows.size() == packages.size(), "missing track ruling source packages");
     const auto &reviews = content_registry().at("track_ruling_revisions");
     std::string previous_id;
-    for (const auto &row : sources) {
+    for (const auto &row : rows) {
         fields(row, {"package_id", "reviews"});
         const std::string id = text(row.at("package_id"));
         need(previous_id < id && packages.count(id), "unknown or unordered source package");
@@ -902,16 +913,14 @@ static void read_track_ruling_sources(const J &sources, const Table &packages, S
         const J &pkg = *packages.at(id);
         const std::string content = text(pkg.at("content_id"));
         const auto &refs = row.at("reviews");
-        need(reviews.contains(content) && refs.is_array() && !refs.empty() && refs.size() <= 128,
+        need(refs.is_array() && refs.size() <= 128 && (refs.empty() || reviews.contains(content)),
              "invalid ruling review history");
+        if (refs.empty()) continue;
         const auto &known = reviews.at(content);
         auto next = known.begin();
         for (const auto &ref : refs) {
             fields(ref, {"revision", "lev_sha256"});
             const auto wanted = J::array({text(ref.at("lev_sha256")), text(ref.at("revision"))});
-            for (const auto &file : pkg.at("files"))
-                need(file.at("role") != "lev" || file.at("sha256") != wanted[0] || pkg.at("revision") != wanted[1],
-                     "ruling history includes the current package revision");
             next = std::find(next, known.end(), wanted);
             need(next != known.end(), "unknown or unordered ruling review identity");
             ++next;
@@ -1909,7 +1918,7 @@ static void validate(const J &p, State &out) {
                     const auto &descriptor = *packages.at(track.at("package_id").get<std::string>());
                     const std::string source = ruling_pin(out, descriptor, pkg.lev_sha256,
                         [&](const std::string &pin) { return catalog.contains(pin); });
-                    if (!source.empty() && source != pkg.lev_sha256)
+                    if (!source.empty() && inherited_ruling_history(out, descriptor, pkg.lev_sha256))
                         for (const auto &crate : catalog.at(source))
                             if (crate.value("family", std::string("weapon_crate")) == "weapon_crate"
                                 && crate.at("ordinal").get<int>() <= pkg.weapon_crates)

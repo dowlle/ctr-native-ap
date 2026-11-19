@@ -69,7 +69,7 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
             const auto &catalog = registry.at("sanity");
             const std::string source = ruling_pin(out, pkg, key,
                 [&](const std::string &pin) { return catalog.contains(pin) || is_pickup_ruling_pin(pin); });
-            if (source == key && catalog.contains(key)) return &catalog.at(key);
+            if (!inherited_ruling_history(out, pkg, key) && catalog.contains(key)) return &catalog.at(key);
             const J &caps = pkg["capabilities"];
             if (caps.contains("weapon_crates") && caps.contains("fruit_crates") && caps.contains("loose_fruit")) {
                 const J needs = catalog.contains(source) ? catalog.at(source).at("needs") : J::object();
@@ -109,17 +109,20 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
             if (!(difficulty < 2 && !blue)) return false;
             const auto source = scoped_ruling(out, pkg, lev, [&](const std::string &revision, const std::string &pin) {
                 return std::any_of(rules.begin(), rules.end(), [&](const J &rule) {
-                    return matches(rule) && rule.contains("revision")
+                    return matches(rule) && rule.contains("revision") && rule.value("since", 65536) <= out.track_ruling_version
                         && rule["revision"] == revision && rule["lev_sha256"] == pin;
                 });
             });
             bool legacy = false;
+            const J *latest = nullptr;
             for (const auto &rule : rules) if (matches(rule)) {
                 if (!rule.contains("revision")) legacy = rule.at("hard_rank") != 0;
-                else if (rule["revision"] == source.first && rule["lev_sha256"] == source.second)
-                    return rule.at("hard_rank") != 0;
+                else if (rule["revision"] == source.first && rule["lev_sha256"] == source.second
+                    && rule.value("since", 65536) <= out.track_ruling_version
+                    && (!latest || rule.at("since").get<int>() > latest->at("since").get<int>()))
+                    latest = &rule;
             }
-            return legacy;
+            return latest ? latest->at("hard_rank") != 0 : legacy;
         };
         need(row["lev_sha256"] == inv["lev_sha256"] && row["counts"] == inv["counts"], "sanity revision/count mismatch");
         ctr_content_sanity dest{};
