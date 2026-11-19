@@ -407,8 +407,8 @@ void BOTS_Adv_AdjustDifficulty(void)
 		                          CustomTrack_GarageVenueServing((int)gGT->levelID, gGT->bossID, advBoss) >= 0;
 		facts.cortexTrackIntent = CustomTrack_CortexTrackIntent((int)gGT->levelID, advBoss);
 #ifdef CTR_CUSTOM_PACKAGES
-		// The offline runtime has no navigation identity yet.
 		facts.offlineCustomServing = MainRaceTrack_OfflineCustomLoad();
+		facts.offlineCustomNavIdentity = MainRaceTrack_OfflineNavIdentity(ctNavUuid, &ctNavRevision);
 #endif
 
 		int navrecOutcome = AP_NavRecIdentity_ForLoad(&facts);

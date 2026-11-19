@@ -49,6 +49,7 @@ void AP_NavRec_Tick(struct GameTracker *gGT);
 // BOTS_InitNavPath is the only place the engine reads level1->LevNavTable, so
 // this is the one point at which retargeting the AI is both complete and safe.
 void AP_NavRec_AfterBotsInit(void);
+void AP_NavRec_ResetCapture(void);
 
 // Called from VehPickupItem_ShootNow when a held item fires. Counts the two
 // items the container records, and only for the local player. Firing the Mask

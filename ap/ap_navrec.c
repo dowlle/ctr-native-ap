@@ -464,6 +464,13 @@ static void AP_NavRec_DropBank(void)
 	s_navrecLapOpenAtLine = 0;
 }
 
+void AP_NavRec_ResetCapture(void)
+{
+	AP_NavRec_DropBank();
+	s_navrecCorridorLevel = -1;
+	s_navrecGridReady = 0;
+}
+
 // The option is re-read EVERY tick rather than latched. Latching it would mean
 // unticking "Save AI Lap Recordings" mid-session left the recorder running until
 // the player restarted, which is exactly the surprise the option exists to
@@ -1299,6 +1306,14 @@ static int AP_NavRec_LoadForLevel(int levelID, unsigned int seed)
 	if (!g_config.navUseRecorded)
 		return 0;
 
+#ifdef CTR_CUSTOM_PACKAGES
+	// Custom Time Trial records laps. Its ghosts may convert to the bot
+	// tick when their tapes end, and are outside the race driver array that
+	// checkpoint restore uses to rebind recorded lanes.
+	if (MainRaceTrack_OfflineCustomTimeTrial())
+		return 0;
+#endif
+
 	AP_NavRec_ClearLaneIdentity();
 
 	// A served custom load without a navigation identity loads NOTHING. The
@@ -1516,6 +1531,8 @@ void AP_NavRec_AfterBotsInit(void)
 {
 	int levelID;
 
+	// A restart or another custom package can reuse the same physical slot.
+	AP_NavRec_ResetCapture();
 	s_navrecLanesLive = 0;
 	s_navrecLanesLevel = -1;
 	s_navrecRecordedMask = 0;
@@ -1545,8 +1562,8 @@ void AP_NavRec_AfterBotsInit(void)
 // Savestate restore
 // ============================================================================
 
-// Called at the end of NativeCheckpoint_RelocateSDataPointers, after the nav
-// pointer slots have been relocated.
+// Called after checkpoint restore relocates the runtime and LEV pointer slots
+// and repairs the authored lane ends.
 //
 // Relocation alone is not enough across processes. The lanes live in this
 // module's statics, which are NOT part of any checkpointed region, so a state
@@ -1576,8 +1593,8 @@ static void AP_NavRec_RederiveLoadIdentity(struct GameTracker *gGT)
 	facts.oxideFinalServing = CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID, advBoss) ||
 	                          CustomTrack_GarageVenueServing((int)gGT->levelID, gGT->bossID, advBoss) >= 0; // #133 PR 6b
 	facts.cortexTrackIntent = CustomTrack_CortexTrackIntent((int)gGT->levelID, advBoss);
-	// The offline runtime has no navigation identity yet.
 	facts.offlineCustomServing = MainRaceTrack_OfflineCustomLoad();
+	facts.offlineCustomNavIdentity = MainRaceTrack_OfflineNavIdentity(ctNavUuid, &ctNavRevision);
 
 	switch (AP_NavRecIdentity_ForLoad(&facts))
 	{
@@ -1702,6 +1719,9 @@ void AP_NavRec_AfterCheckpointRestore(void)
 	if ((sdata == NULL) || (sdata->gGT == NULL))
 		return;
 
+	// Sample storage is process-local. A restore may rewind within a lap,
+	// so discard the capture even when the lap index and identity match.
+	AP_NavRec_ResetCapture();
 	levelID = (int)sdata->gGT->levelID;
 
 #ifdef CTR_CUSTOM_PACKAGES
@@ -1960,9 +1980,7 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 		// Polar Pass during the 2026-08-17 prototype. A NULL check does not help:
 		// the pointer is stale, not null.
 		s_navrecLevelID = levelID;
-		AP_NavRec_DropBank();
-		s_navrecCorridorLevel = -1;
-		s_navrecGridReady = 0;
+		AP_NavRec_ResetCapture();
 #ifdef CTR_CUSTOM_PACKAGES
 		// Menus get no BOTS init, so without this a custom race's blocked
 		// verdict would still stand there and label the menu a custom track.
