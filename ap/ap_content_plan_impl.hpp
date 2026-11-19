@@ -12,7 +12,6 @@
 #include "ap_content_plan.h"
 #include "ap_content_registry.hpp"
 #include "ap_named_blocks.h"
-#include "ap_version.h"
 #include "ap_box_spot_logic.h"
 #include "ap_arena_content.h"
 #include "ap_wumpa_shop.h"
@@ -934,7 +933,9 @@ static void validate(const J &p, State &out) {
                                          (has_structure ? 1u : 0u) + (has_shop ? 1u : 0u) + (has_pad_client ? 1u : 0u) +
                                          (has_sanity ? 1u : 0u) + (has_compatibility ? 1u : 0u),
          "unsupported or incomplete record fields");
-    if (has_compatibility) number(p["room_compatibility"], 1, 1);
+    if (has_compatibility)
+        need(p["room_compatibility"].is_number_integer() && p["room_compatibility"] == 1,
+             "unsupported room compatibility format");
     if (has_structure) need(p["adventure_structure"] == "ctr_first", "adventure_structure must be ctr_first when present");
     out.ctr_first = has_structure;
     out.pad_client = ctr_content_pad_client{};
@@ -1032,6 +1033,13 @@ static void validate(const J &p, State &out) {
         if (track.contains("named_block") && track.contains("room_title"))
             reserved_titles.insert(fold(text(track["room_title"], false)));
     }
+    std::map<std::string, std::string> generic_titles;
+    const auto check_generic_title = [&](const std::string &title, const std::string &track_id) {
+        const std::string key = fold(title);
+        need(!reserved_titles.count(key), "generic-slot room title takes a retail or named track's name");
+        const auto found = generic_titles.emplace(key, track_id).first;
+        need(found->second == track_id, "two custom tracks share a room title");
+    };
     const auto entries = table(p.at("entries"), 33); // 27 pads and six boss encounters
     const auto pads = table(p.at("pads"), 32);
     const auto requirements = table(p.at("requirements"), 70); // 5 hub, 27 manual or stage-1, 27 stage-2, 6 boss
@@ -1315,7 +1323,7 @@ static void validate(const J &p, State &out) {
                      titled && lt.title == owned->second.name, "named block does not match this build's registry");
                 leg.victory = ap_named_location_code(leg.named_block, AP_NAMED_OFF_CUP_LEG_VICTORY);
             } else {
-                need(!reserved_titles.count(fold(lt.title)), "generic-slot room title takes a retail or named track's name");
+                check_generic_title(lt.title, track_id);
                 leg.victory = registry["custom_cup_leg_locations"][leg.custom_slot - 1].get<int64_t>();
             }
         }
@@ -1645,7 +1653,7 @@ static void validate(const J &p, State &out) {
                 codes[AP_CONTENT_MODE_CTR][0] = ap_named_location_code(dest.named_block, AP_NAMED_OFF_CTR_TOKEN);
                 for (int t = 0; t < 3; ++t) codes[AP_CONTENT_MODE_RELIC][t] = ap_named_location_code(dest.named_block, AP_NAMED_OFF_RELIC_SAPPHIRE + t);
             } else {
-                need(!reserved_titles.count(fold(check_title)), "generic-slot room title takes a retail or named track's name");
+                check_generic_title(check_title, track_id);
                 codes[AP_CONTENT_MODE_TROPHY][0] = registry["custom_locations"][slot - 1].get<int64_t>();
                 codes[AP_CONTENT_MODE_CTR][0] = registry["custom_ctr_locations"][slot - 1].get<int64_t>();
                 for (int t = 0; t < 3; ++t) codes[AP_CONTENT_MODE_RELIC][t] = registry["custom_relic_locations"][slot - 1][t].get<int64_t>();
@@ -2569,7 +2577,7 @@ static void validate(const J &p, State &out) {
                             || file["sha256"] == "50250966e9b31d13b140aaafa9433ffce19269898a0850edd0a1e8cf1207c760";
                 for (const auto &entry : p["entries"]) if (entry["kind"] == "track" && entry["track_id"] == id)
                     for (const auto &pad : p["pads"]) seated |= pad["entry_id"] == entry["id"];
-                valid = (has_compatibility || pin) && seated && !out.spot_sets.count(id.get<std::string>());
+                valid = pin && seated && !out.spot_sets.count(id.get<std::string>());
             }
             need(valid, "pickup_rules names an unsupported physical pickup revision");
         }
@@ -3252,19 +3260,8 @@ static int parse_content_plan(const nlohmann::json &j) {
     } catch (const std::exception &e) {
         ctr_cfg.hit.valid = 0; // a Hit block parsed before the refusal never stays active
         std::memset(&ctr_wumpa_shop, 0, sizeof ctr_wumpa_shop);
-        const auto options = j.find("ctr_options");
-        std::string source = "unknown";
-        if (options != j.end() && options->is_object()) {
-            const auto version = options->find("world_version");
-            if (version != options->end() && version->is_string()) {
-                const auto &value = version->get_ref<const std::string &>();
-                if (!value.empty() && value.size() <= 48 &&
-                    std::all_of(value.begin(), value.end(), [](unsigned char c) { return c >= 32 && c < 127; }))
-                    source = value;
-            }
-        }
         forget();
-        hit_reject("content_plan: generated with %s, this build is %s. %s", source.c_str(), CTR_AP_VERSION, e.what());
+        hit_reject("content_plan: %s", e.what());
         return 0;
     }
 }

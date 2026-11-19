@@ -75,15 +75,16 @@ inline std::string message(const nlohmann::json &slot, const std::string &checks
         (plan->contains("version") || plan->contains("room_compatibility"))) {
         // The connection screen has two 33-character lines at its widest font.
         const auto options = slot.find("ctr_options");
-        std::string source = build;
-        if ((source.empty() || source.size() > 17) && options != slot.end() && options->is_object())
+        std::string source;
+        if (options != slot.end() && options->is_object())
             source = version_label(text_field(*options, "world_version"));
-        if (source.empty() || source.size() > 17) source = "UNKNOWN";
+        if (source.empty()) source = build.empty() ? "UNKNOWN" : build;
         std::string current = CTR_AP_VERSION;
         if (!current.empty() && current.front() == 'v') current.erase(0, 1);
         current = version_label(current);
-        if (current.empty() || current.size() > 18) current = "UNKNOWN";
-        return "GENERATED WITH " + source + ". THIS BUILD IS " + current + ".";
+        if (current.empty()) current = "UNKNOWN";
+        return (source.size() > 17 ? "ROOM BUILD " : "GENERATED WITH ") + source +
+               (current.size() > 18 ? ". THIS BUILD " : ". THIS BUILD IS ") + current + ".";
     }
     if (!build.empty()) return "CTR APWORLD VERSION MISMATCH. USE CLIENT " + build + ".";
     const std::string hint = family(checksum);

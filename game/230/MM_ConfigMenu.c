@@ -966,9 +966,8 @@ static void TextEdit_Begin(const ConfigEntry *e, int row, int rowY)
 // centred rows, broken at spaces (the v0.2.x room refusal needs both). A word too
 // wide for the panel is cut, and text past the last row ends in "...". The second
 // row is the edit hint's while a row is being edited.
-static void Conn_DrawLongStatus(const char *status, int labelY, int valueX, int rowSpacing, uint32_t *ot)
+static void Conn_DrawLongStatus(const char *status, int labelY, int valueX, int rowSpacing, int rows, uint32_t *ot)
 {
-	const int rows = s_connEditing ? 1 : 2;
 	int row;
 
 	if (strncmp(status, "Error: ", 7) == 0)
@@ -1199,12 +1198,14 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	// beside the label; anything longer than fits there (the unreachable-host
 	// line, a wordy slot refusal) is centred on the next line instead, where the
 	// full panel width is available, rather than running off the right edge.
+	const char *status = AP_Net_StatusLine();
+	const int editWithRoomVersions = s_connEditing && strncmp(status, "Error: ", 7) == 0 &&
+		(strncmp(status + 7, "GENERATED WITH ", 15) == 0 || strncmp(status + 7, "ROOM BUILD ", 11) == 0);
 	{
 		int y = startY + (numStrings + 2) * rowSpacing;
-		const char *status = AP_Net_StatusLine();
 		DecalFont_DrawLineOT("Status", labelX, y, FONT_SMALL, ORANGE, ot);
 		if ((int)strlen(status) > CONN_STATUS_INLINE_MAX)
-			Conn_DrawLongStatus(status, y, valueX, rowSpacing, ot);
+			Conn_DrawLongStatus(status, y, valueX, rowSpacing, s_connEditing && !editWithRoomVersions ? 1 : 2, ot);
 		else
 			DecalFont_DrawLineOT((char *)status, valueX, y, FONT_SMALL, WHITE, ot);
 	}
@@ -1214,12 +1215,13 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	// line (row 6) and of the edit hint below (row 7), and the last line lands on
 	// 0xC8, still inside the panel. Self-gates: nothing is drawn and no space is
 	// taken unless the connected seed was built by a newer pair.
-	AP_DrawConnUpdateNotice(ot, 0x100, startY + (numStrings + 5) * rowSpacing, rowSpacing);
+	if (!editWithRoomVersions)
+		AP_DrawConnUpdateNotice(ot, 0x100, startY + (numStrings + 5) * rowSpacing, rowSpacing);
 
 	// Use the same bottom footer position as the Options version to explain the
 	// case markers at their point of use. A newer-version notice owns this area
 	// when armed and takes priority over the static hint.
-	if (!AP_ConnUpdateNoticeActive())
+	if (!AP_ConnUpdateNoticeActive() && !editWithRoomVersions)
 	{
 		const char *noticeFirst;
 		const char *noticeSecond;
@@ -1244,7 +1246,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	// left-justified and grows rightward as it is typed, so there is no space
 	// left on the row to put it.
 	if (s_connEditing)
-		TextEdit_DrawHint(startY + (numStrings + 4) * rowSpacing, ot);
+		TextEdit_DrawHint(startY + (numStrings + (editWithRoomVersions ? 5 : 4)) * rowSpacing, ot);
 }
 
 #if defined(CTR_CUSTOM_TRACKS) && !defined(CTR_AP_AUTHORING)

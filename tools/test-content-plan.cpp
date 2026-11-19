@@ -544,8 +544,8 @@ int main(int argc, char **argv) {
         J unknown_format = older;
         unknown_format["content_plan"]["room_compatibility"] = 2;
         refuse(unknown_format, "unknown room compatibility format");
-        expect(std::strstr(ctr_cfg.seed_reject_reason, "generated with ") &&
-               std::strstr(ctr_cfg.seed_reject_reason, "this build is "), "room refusal identifies both versions");
+        expect(std::strstr(ctr_cfg.seed_reject_reason, "unsupported room compatibility format"),
+               "the parser keeps the exact compatibility refusal reason");
         identity_refuses("generic room title equal to a retail track", [&](J &p) { retitle(p, "Crash Cove"); });
         J good = open; retitle(good["content_plan"], "Crash Cove (Custom)");
         expect(parse(good), "track identity: a suffixed generic room title admits");
@@ -1385,6 +1385,13 @@ int main(int argc, char **argv) {
     J boxes;
     std::ifstream("tools/fixtures/content-plan/item-boxes.json") >> boxes;
     {
+        J unreviewed = boxes;
+        auto &plan = unreviewed["content_plan"];
+        plan["room_compatibility"] = 1;
+        plan["item_boxes"]["pickup_rules"] = J::array({"custom/acid-lake/1.0"});
+        refuse(unreviewed, "the compatibility stamp retains the physical pickup revision check");
+    }
+    {
         // A3-35: list comes from the world. Existing 20-crate fixture stays
         // at 15 boxes after one exclusion, but native must retain the entry.
         J ex = boxes;
@@ -1855,6 +1862,21 @@ int main(int argc, char **argv) {
             }
         }
         expect(renamed_legs > 0, "cups: renamed generic track occurs in a cup");
+        J before_mint = cups;
+        auto &older_plan = before_mint["content_plan"];
+        for (auto &track : older_plan["tracks"])
+            if (track["id"] == "custom/tv-world/1.1.0") track.erase("named_block");
+        for (auto &check : older_plan["checks"])
+            if (check["location"] == 35215615) check["location"] = 35016822;
+        older_plan["room_compatibility"] = 1;
+        expect(parse(before_mint) && bind_room(before_mint), "cups: an older generic leg binds after its key is minted");
+        for (auto &track : older_plan["tracks"])
+            if (track["id"] == generic_id) track["room_title"] = "tv world";
+        for (auto &check : older_plan["checks"]) if (check["owner"] == generic_id) {
+            const std::string name = check["display_name"];
+            check["display_name"] = "tv world" + name.substr(std::string("Fixture Loop").size());
+        }
+        refuse(before_mint, "cups: a cup-only and standalone track cannot share a title with different check suffixes");
         // A forged leg refuses the room.
         J forged = cups;
         for (auto &e : forged["content_plan"]["entries"])

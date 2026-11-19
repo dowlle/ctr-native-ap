@@ -156,11 +156,20 @@ static void test_version_advice(void)
 	                            {"ctr_options", {{"schema_version", 18}, {"world_version", "0.3.0"}, {"content_plan", true}}}};
 	m->emit_slot_connected(saved);
 	const std::string advice = ap_net_last_error();
-	expect(ap_net_status() == AP_NET_STATUS_ERROR && advice.find("GENERATED WITH 0.3.0. THIS BUILD IS ") == 0,
+	const std::string current = CTR_AP_VERSION;
+	const std::string build = ap_seed_refusal::version_label(current.substr(current.front() == 'v' ? 1 : 0));
+	const char *reader_label = build.size() > 18 ? ". THIS BUILD " : ". THIS BUILD IS ";
+	expect(ap_net_status() == AP_NET_STATUS_ERROR &&
+	       advice == std::string("GENERATED WITH 0.3.0") + reader_label + build + ".",
 	       "a refused saved room shows both versions on the connection screen");
-	expect(advice.size() - advice.find("THIS BUILD IS ") <= 33 &&
+	expect(advice.size() - advice.find("THIS BUILD ") <= 33 &&
 	       advice.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .-") == std::string::npos,
 	       "saved room advice fits the second row and uses credits font glyphs");
+	nlohmann::json long_version = saved;
+	long_version["ctr_options"]["world_version"] = "0.3.0-12345678901234";
+	long_version["build_version"] = "1.2.3-alpha1";
+	expect(ap_seed_refusal::message(long_version, "").find("ROOM BUILD 0.3.0-12345678901234.") == 0,
+	       "long room versions fit and the generator field takes precedence");
 	room["build_version"] = "bad~00\n<script>";
 	room["ctr_options"] = 17;
 	expect(ap_seed_refusal::message(room, "").find("MATCHING CLIENT") != std::string::npos,
