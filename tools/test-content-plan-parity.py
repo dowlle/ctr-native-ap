@@ -1324,6 +1324,16 @@ with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):
 
     alter("matsuri-sanity-missing-seat-exclusions", remove_matsuri_seating, wire)
     alter("matsuri-legacy-sanity-with-new-seat-exclusions", add_matsuri_seating_to_legacy, legacy_wire)
+    sparse_options = dict(options, itemboxsanity=1)
+    sparse_wire = first_world(sparse_options, seed=1).fill_slot_data()
+    sparse_row = next(r for r in sparse_wire["content_plan"]["sanity"]["tracks"] if r["lev_sha256"] == MATSURI)
+    assert sparse_row["weapon_crate"] == [16]
+    cases.append(("matsuri-sanity-sparse-with-reviewed-seats", sparse_wire, True))
+    alter("matsuri-sanity-sparse-missing-seat-exclusions", remove_matsuri_seating, sparse_wire)
+    alter("matsuri-sanity-sparse-shifted-exclusion",
+          lambda p: p["item_boxes"][crate_exclusions.KEY][0]["crates"][0].__setitem__("pos", [1, 0, 0]), sparse_wire)
+    sanity_only = first_world(dict(sparse_options, box_locations=False), seed=1).fill_slot_data()
+    cases.append(("matsuri-sanity-sparse-with-boxes-off", sanity_only, True))
 box_env("box_locations false", lambda c: c["ctr_options"].__setitem__("box_locations", False))
 box_env("box_locations dropped", lambda c: c["ctr_options"].pop("box_locations"))
 box_env("box_locations integer", lambda c: c["ctr_options"].__setitem__("box_locations", 1))
