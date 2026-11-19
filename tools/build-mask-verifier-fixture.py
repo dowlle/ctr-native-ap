@@ -48,6 +48,11 @@ def main():
                   if check['kind'] == 'trophy' and check['owner'] == TIZI_ID)
     rows = [row('tizi-oxide-disabled-mask-self-lock', world, blocked=(trophy,),
                 own={str(trophy): world.create_item('Mask').code})]
+    assert tizi_madness.FEATURE in rows[0]['slot_data']['content_plan']['required_features']
+    without_export = deepcopy(rows[0])
+    without_export['tag'] = 'tizi-without-win-logic-mask-self-lock'
+    del without_export['slot_data']['win_logic']
+    rows.append(without_export)
     # Model the logic exported before the Mask ruling on the same hard room.
     with patch.object(tizi_madness, 'tizi_track_ids', return_value=set()):
         legacy = make_world(opts, seed=3, stop_before='pre_fill')

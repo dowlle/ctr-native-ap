@@ -22,7 +22,6 @@
 // the finish_boost they read, with the project's per-track USF rulings), and
 // the Hit target rule. Everything else comes from the plan.
 #include "ap_verify_logic.h"
-#include "../include/platform/native_tizi_madness.h"
 #include <cstring>
 #include <set>
 #include <string>
@@ -230,17 +229,7 @@ static Model build() {
     // blocked check cannot supply its own Mask.
     std::set<std::string> masked_regions, masked_cups, masked_cup_starts, masked_legs;
     if (m.itemsanity) {
-        std::set<std::string> tizi_tracks;
-        for (const auto &[id, track] : tracks) {
-            const auto package = packages.find(track->value("package_id", ""));
-            if (package == packages.end()) continue;
-            std::string lev, vrm;
-            for (const auto &file : package->second->at("files")) {
-                if (file.at("role") == "lev") lev = file.at("sha256").get<std::string>();
-                else if (file.at("role") == "vrm") vrm = file.at("sha256").get<std::string>();
-            }
-            if (CustomTrack_IsTiziMadness(lev.c_str(), vrm.c_str())) tizi_tracks.insert(id);
-        }
+        const auto tizi_tracks = content_plan::tizi_mask_tracks(p);
         if (!tizi_tracks.empty()) {
             for (const auto &[id, entry] : entries) {
                 if (!entry->contains("legs")) {
@@ -266,7 +255,8 @@ static Model build() {
     };
     // Tizi Madness was supported before its Mask ruling. Without the new
     // pickup feature, distinguish those older rooms by their carried terms.
-    if (!repeatable_pickups && (!masked_regions.empty() || !masked_cups.empty())) {
+    if (!repeatable_pickups && !content_plan::has_feature(p, content_plan::kTiziMaskFeature) &&
+        (!masked_regions.empty() || !masked_cups.empty())) {
         bool carried = false;
         if (ctr_win_logic.state == AP_WL_VALID) {
             for (const auto &check : p.at("checks")) {

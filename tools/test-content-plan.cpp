@@ -125,6 +125,9 @@ int main(int argc, char **argv) {
                 bad = slot;
                 bad["content_plan"]["encounters"][0].erase("entry_id");
                 refuse(bad, "missing pickup encounter entry id refuses without aborting");
+                bad = slot;
+                bad["content_plan"]["required_features"].push_back("tizi_mask_v1");
+                refuse(bad, "Tizi Mask feature on an unrelated track refuses");
             }
         }
         expect(rows == 12, "all twelve old/new pickup fixtures run");

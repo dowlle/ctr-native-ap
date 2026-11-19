@@ -15,6 +15,7 @@
 #include "ap_box_spot_logic.h"
 #include "ap_arena_content.h"
 #include "ap_wumpa_shop.h"
+#include "../include/platform/native_tizi_madness.h"
 #include <array>
 #include <cstring>
 #include <map>
@@ -831,9 +832,28 @@ static Table table(const J &rows, size_t maximum) {
 }
 // New rooms separate physical pickup awards from repeatable fill routes.
 // Absence preserves the original room's expected locations and logic.
-static bool repeatable_pickups(const J &p) {
+static bool has_feature(const J &p, const char *feature) {
     const auto &features = p.at("required_features");
-    return std::find(features.begin(), features.end(), J("repeatable_pickups_v1")) != features.end();
+    return std::find(features.begin(), features.end(), J(feature)) != features.end();
+}
+static bool repeatable_pickups(const J &p) {
+    return has_feature(p, "repeatable_pickups_v1");
+}
+static constexpr char kTiziMaskFeature[] = "tizi_mask_v1";
+static std::set<std::string> tizi_mask_tracks(const J &p) {
+    std::set<std::string> packages, tracks;
+    for (const auto &pkg : p.at("packages")) {
+        std::string lev, vrm;
+        for (const auto &file : pkg.at("files")) {
+            if (file.at("role") == "lev") lev = text(file.at("sha256"));
+            else if (file.at("role") == "vrm") vrm = text(file.at("sha256"));
+        }
+        if (CustomTrack_IsTiziMadness(lev.c_str(), vrm.c_str())) packages.insert(text(pkg.at("id")));
+    }
+    if (!packages.empty())
+        for (const auto &track : p.at("tracks"))
+            if (packages.count(track.value("package_id", ""))) tracks.insert(text(track.at("id")));
+    return tracks;
 }
 static bool repeatable_pickup_route(const J &route) {
     return route.at("encounter_id") != "encounter/garage:4/0";
@@ -1143,6 +1163,11 @@ static void validate(const J &p, State &out) {
         need(has_bosses && out.bosses.oxide_goal != 3 && (has_sanity || fam.wumpa == 2),
              "repeatable pickup feature without Oxide pickup families");
         features.push_back("repeatable_pickups_v1");
+    }
+    if (has_feature(p, kTiziMaskFeature)) {
+        need(p.contains("global_checks") && p.at("global_checks").at("itemsanity") == true &&
+             !tizi_mask_tracks(p).empty(), "Tizi Mask feature without a raced Tizi track and Itemsanity");
+        features.push_back(kTiziMaskFeature);
     }
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
