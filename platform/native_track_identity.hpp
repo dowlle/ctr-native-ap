@@ -24,12 +24,15 @@ const char *find(const std::string &key, const char *const (&rows)[N][2])
     return nullptr;
 }
 
-inline void prepare(const std::string &cache)
+inline void prepare(const std::string &cache, int (*cancelled)(const void *) = nullptr,
+                    const void *context = nullptr)
 {
 #ifdef CTR_TRACK_IDENTITY_LIVE
-    ap_track_registry_prepare_identity(cache.c_str());
+    ap_track_registry_prepare_identity(cache.c_str(), cancelled, context);
 #else
     (void)cache;
+    (void)cancelled;
+    (void)context;
 #endif
 }
 

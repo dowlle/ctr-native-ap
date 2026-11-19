@@ -38,8 +38,7 @@ static int MM_CustomImport_KeepSoloDescriptors(void)
     for (i = 0; i < count; i++)
         if (XdeltaImport_InstalledDescriptor(i, contentId, revision, json, sizeof json, &needsLaps))
         {
-            int recorded = needsLaps ? AP_Solo_RecordTrackNeedsLaps(contentId, revision, json)
-                                     : AP_Solo_RecordTrackDescriptor(contentId, revision, json);
+            int recorded = AP_Solo_RecordImportedTrack(contentId, revision, json, needsLaps);
             ok &= recorded;
             if (recorded && keptCount < CTR_XDELTA_ITEM_MAX) snprintf(kept[keptCount++], 65, "%s", contentId);
         }

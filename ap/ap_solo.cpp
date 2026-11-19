@@ -1214,10 +1214,10 @@ struct DescriptorScope
 bool MayReplace(const nlohmann::json &kept, const std::string &key, const std::string &revision,
                 const DescriptorScope &scope)
 {
-	if (!scope.live)
-		return false;
 	if (scope.fresh)
 		return true;
+	if (!scope.live)
+		return false;
 	const nlohmann::json files = kept.value("files", nlohmann::json());
 	if (scope.live->count(PinSignature(revision, files)))
 		return false;
@@ -1387,6 +1387,15 @@ extern "C" int AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *r
 {
 	std::string why;
 	return RecordDescriptor(2, contentId, revision, json, DescriptorScope(), why) ? 1 : 0;
+}
+
+extern "C" int AP_Solo_RecordImportedTrack(const char *contentId, const char *revision,
+                                           const char *json, int needsLaps)
+{
+	DescriptorScope scope;
+	scope.fresh = true;
+	std::string why;
+	return RecordDescriptor(needsLaps ? 2 : 1, contentId, revision, json, scope, why) ? 1 : 0;
 }
 
 // The importer replaced an old copy of a track (A3-20): its Play Solo
@@ -1632,7 +1641,14 @@ StorePublication CollectInstalledStore(const std::string &assets, const std::str
 		const fs::path store = fs::u8path(assets) / "tracks/packages";
 		std::error_code ec;
 		if (!fs::exists(store, ec) && result.pin.empty()) return result;
-		ap_track_registry_prepare_identity((fs::u8path(assets) / "track-registry-cache.json").u8string().c_str());
+		const auto cache = (fs::u8path(assets) / "track-registry-cache.json").u8string();
+		if (cancel)
+			ap_track_registry_prepare_identity(cache.c_str(), [](const void *context) -> int {
+				return static_cast<const std::atomic<bool> *>(context)->load();
+			}, cancel);
+		else if (ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_IDLE)
+			ap_track_registry_refresh(cache.c_str());
+		if (cancel && cancel->load()) return result;
 		char scanError[256] = {};
 		// One install publishes only its own revision: no other package is
 		// read or hashed for it (A3-46). `live` is not needed then: a fresh

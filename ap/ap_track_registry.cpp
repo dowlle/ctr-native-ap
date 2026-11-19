@@ -9,6 +9,7 @@
 #include <nlohmann/json.hpp>
 
 #include <cctype>
+#include <chrono>
 #include <condition_variable>
 #include <cstdio>
 #include <cstring>
@@ -428,13 +429,18 @@ extern "C" int ap_track_registry_refresh(const char *cache_path)
 	}
 }
 
-extern "C" void ap_track_registry_prepare_identity(const char *cache_path)
+extern "C" void ap_track_registry_prepare_identity(const char *cache_path,
+                                                    int (*cancelled)(const void *), const void *context)
 {
 	if (ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_IDLE)
 		ap_track_registry_refresh(cache_path);
 	auto &state = registry_state();
 	std::unique_lock<std::mutex> lock(state.mutex);
-	state.finished.wait(lock, [&] { return state.state != AP_TRACK_REGISTRY_LOADING; });
+	while (state.state == AP_TRACK_REGISTRY_LOADING && (!cancelled || !cancelled(context)))
+	{
+		if (cancelled) state.finished.wait_for(lock, std::chrono::milliseconds(25));
+		else state.finished.wait(lock);
+	}
 }
 
 extern "C" int ap_track_registry_status(int *source, char *detail, int detail_bytes)

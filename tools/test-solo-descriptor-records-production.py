@@ -133,6 +133,11 @@ int main(int, char **argv) {
     assert(message.find("reinstall the copy you want to play") != std::string::npos && message.size() <= 170);
     assert(read(std::string("tracks/") + name) == oldA && loggedFile(name));
 
+    // Importing the chosen copy can update the active Play Solo entry.
+    assert(AP_Solo_RecordImportedTrack("nina", "1.0.0", newB.c_str(), 0));
+    assert(read(std::string("tracks/") + name) == newB);
+    clean(); write(std::string("tracks/") + name, oldA);
+
     // 3. The player just installed the new copy: it takes over the entry.
     scan.pin = std::string(64, 'b');
     assert(ApplyStoreDescriptor(entry(1, "Nina", newB, "b"), scan, why));

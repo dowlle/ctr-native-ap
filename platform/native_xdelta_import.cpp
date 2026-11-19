@@ -1159,7 +1159,8 @@ std::string json_dump(const json &value) { return value.dump(-1, ' ', false, jso
 /* Build the package for one cut pair and acquire it through the verifier. */
 Built build_package(const Candidate &c, const std::string &title, const std::string &version, const TrackMeta *meta,
                     const XdeltaImportSummary &summary, const std::string &author, std::string &failure,
-                    const std::string &curatedKey = std::string(), bool editedTitle = false)
+                    const std::string &curatedKey = std::string(), bool editedTitle = false,
+                    bool generatedTitle = false)
 {
     Built b;
     b.curatedKey = curatedKey;
@@ -1174,6 +1175,7 @@ Built build_package(const Candidate &c, const std::string &title, const std::str
                    {"bigfile_index", c.index}, {"cutter_version", CTR_XDELTA_CUTTER_VERSION}};
     if (summary.descriptorSha256[0]) source["descriptor_sha256"] = summary.descriptorSha256;
     if (editedTitle) source["edited_title"] = true;
+    if (generatedTitle) source["generated_title"] = true;
     if (!c.originalLevHash.empty())
     {
         source["lev_normalizer_version"] = 1;
@@ -1561,13 +1563,15 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             }
             std::string failure;
             bool retried = false;
-            Built built = build_package(candidate, title, version, meta, summary, author, failure, curatedKey);
+            const bool generatedTitle = nameSource == XDELTA_NAME_LABEL;
+            Built built = build_package(candidate, title, version, meta, summary, author, failure,
+                                        curatedKey, false, generatedTitle);
             if (!built.owned && meta && (meta->relic || meta->laps || !meta->version.empty()))
             {
                 /* A descriptor value the package rules refuse never costs the track. */
                 std::string retry;
                 built = build_package(candidate, title, "1.0.0", nullptr, summary, author, retry,
-                                      curatedKey.empty() ? meta->trackKey : curatedKey);
+                                      curatedKey.empty() ? meta->trackKey : curatedKey, false, generatedTitle);
                 if (built.owned) { failure.clear(); retried = true; }
             }
             built.author = author;
@@ -2815,7 +2819,16 @@ extern "C" int XdeltaImport_StartScan(const char *patchPath, const char *discPat
         std::string patch(patchPath), disc(discPath), root(assets);
         s.scanJob = std::async(std::launch::async, [patch, disc, root] {
             auto &state = job();
-            TrackIdentity::prepare(root + "/track-registry-cache.json");
+            TrackIdentity::prepare(root + "/track-registry-cache.json", [](const void *context) {
+                return load_flag(&static_cast<const JobState *>(context)->cancel);
+            }, &state);
+            if (load_flag(&state.cancel))
+            {
+                std::lock_guard<std::mutex> lock(state.mutex);
+                state.error = "Cancelled";
+                state.scanState = -2;
+                return;
+            }
             std::string tracks = root + "/tracks";
             fs_mkdir(tracks);
             XdeltaImportRequest request = {patch.c_str(), disc.c_str(), nullptr, tracks.c_str(), 0};

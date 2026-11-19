@@ -5,6 +5,7 @@
 #include <platform/native_custom_offline.h>
 #include "native_track_identity.hpp"
 #include "native_xdelta_names.hpp"
+#include "native_xdelta_legacy_titles.hpp"
 extern "C" {
 #include <platform/native_custom_content_verify.h>
 }
@@ -514,9 +515,9 @@ extern "C" int CustomPackage_InstallInbox(const char *assets, const char *pin, c
 /* Relic and CTR Challenge capability, plus xdelta provenance. Display and
    admission hints only: a missing or damaged provenance file only clears the
    hints, it never refuses the package. */
-static void package_capabilities(CustomPackageOwned *package, CustomPackageStoreEntry &entry)
+static bool package_capabilities(CustomPackageOwned *package, CustomPackageStoreEntry &entry)
 {
-    bool excludeRelic = false, excludeTokens = false;
+    bool excludeRelic = false, excludeTokens = false, generatedTitle = false;
     for (unsigned int i = 0; i < entry.manifest.count; i++)
     {
         const auto &file = entry.manifest.files[i];
@@ -563,6 +564,7 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
             std::memcpy(entry.local.patchSha256, patch.c_str(), sizeof entry.local.patchSha256);
             if (source.contains("edited_title") && source["edited_title"] == true)
                 std::memcpy(entry.displayTitle, entry.manifest.title, sizeof entry.displayTitle);
+            generatedTitle = source.contains("generated_title") && source["generated_title"] == true;
             if (source.contains("excluded"))
                 for (const auto &e : source["excluded"])
                 {
@@ -580,7 +582,7 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
         catch (const std::exception &) { /* Optional display metadata cannot grant admission. */ }
     }
     CustomContentVerification report;
-    if (!CustomPackage_GetPairReport(package, &report)) return;
+    if (!CustomPackage_GetPairReport(package, &report)) return generatedTitle;
     const auto &m = report.measured;
     CustomPackageRelicTargets targets;
     const char *relic = !m.relicCrates ? "No time crates"
@@ -592,26 +594,28 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
     entry.local.ctrChallenge = !*ctr;
     std::snprintf(entry.local.relicReason, sizeof entry.local.relicReason, "%s", relic);
     std::snprintf(entry.local.ctrChallengeReason, sizeof entry.local.ctrChallengeReason, "%s", ctr);
+    return generatedTitle;
 }
 
 namespace {
 std::string descriptor_title_key(const char *title);
 
-void resolve_display_title(const CustomPackageOwned *package, CustomPackageStoreEntry &entry)
+void resolve_display_title(const CustomPackageOwned *package, CustomPackageStoreEntry &entry, bool generatedTitle)
 {
     if (!entry.local.xdelta || entry.displayTitle[0]) return;
     const auto &manifest = entry.manifest;
+    // Labels from before generated_title was recorded need a known patch,
+    // slot and title. An arbitrary player title may also end in "track 1".
+    const bool generic = generatedTitle || std::any_of(
+        std::begin(XdeltaNames::kLegacyLabels), std::end(XdeltaNames::kLegacyLabels), [&](const auto &row) {
+            return row.slot == entry.local.bigfileIndex && !std::strcmp(row.patch, entry.local.patchSha256) &&
+                   !std::strcmp(row.title, manifest.title);
+        });
     for (unsigned int i = 0; i < manifest.count; ++i)
     {
         const auto &file = manifest.files[i];
         if (std::strcmp(file.role, "lev") != 0) continue;
         std::string title = manifest.title;
-        // Old importer labels used either a row ordinal or a BIGFILE slot.
-        const auto last = title.find_last_of(' ');
-        const bool generic = last != std::string::npos && last + 1 < title.size() &&
-             title.find_first_not_of("0123456789", last + 1) == std::string::npos &&
-             ((last >= 6 && title.compare(last - 6, 7, " track ") == 0) ||
-              (last >= 5 && title.compare(last - 5, 6, " slot ") == 0));
         const std::string old_key = generic ? std::string() : descriptor_title_key(manifest.title);
         std::string key = old_key;
         std::vector<unsigned char> lev(file.bytes);
@@ -663,8 +667,8 @@ CustomPackageStoreEntry scan_entry(const std::string &prefix, const std::string 
             if (!std::strcmp(file.role,"lev")) std::memcpy(entry.local.levSha256,file.sha256,sizeof entry.local.levSha256);
             else if (!std::strcmp(file.role,"vrm")) std::memcpy(entry.local.vrmSha256,file.sha256,sizeof entry.local.vrmSha256);
         }
-        package_capabilities(package, entry);
-        resolve_display_title(package, entry);
+        const bool generatedTitle = package_capabilities(package, entry);
+        resolve_display_title(package, entry, generatedTitle);
         for (unsigned int i=0;i<entry.manifest.count;i++)
         {
             const auto &file=entry.manifest.files[i];
@@ -953,8 +957,8 @@ extern "C" int CustomPackage_StoreDescriptor(const char *assets, const char *pin
             throw std::runtime_error("Installed revision has no verified track pair");
         CustomPackageStoreEntry entry = {};
         entry.manifest = manifest;
-        package_capabilities(owned, entry);
-        resolve_display_title(owned, entry);
+        const bool generatedTitle = package_capabilities(owned, entry);
+        resolve_display_title(owned, entry, generatedTitle);
         std::string trackKey = key && *key ? key : descriptor_title_key(manifest.title);
         for (unsigned int i = 0; i < manifest.count && (!key || !*key); i++)
         {

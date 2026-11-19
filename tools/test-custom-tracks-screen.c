@@ -141,6 +141,7 @@ int AP_Solo_PublishInstalledStore(const char *pin, char *error, size_t n) { (voi
 int AP_Solo_RecordTrackNeedsLaps(const char *a, const char *b, const char *c) { (void)a; (void)b; (void)c; return 1; }
 int AP_Solo_RetireReplacedTrack(const char *a, const char *b, const char *c, const char *d, const char *e) { (void)a; (void)b; (void)c; (void)d; (void)e; return 1; }
 int AP_Solo_RecordTrackDescriptor(const char *a, const char *b, const char *c) { (void)a; (void)b; (void)c; return 1; }
+int AP_Solo_RecordImportedTrack(const char *a, const char *b, const char *c, int d) { (void)a; (void)b; (void)c; (void)d; return 1; }
 int AP_Solo_SessionActive(void) { return soloActive; }
 
 /* ---- the room ---- */

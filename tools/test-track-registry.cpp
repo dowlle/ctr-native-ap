@@ -185,8 +185,13 @@ int main(int argc, char **argv)
 		for (const char *field : {"road_sha256", "track_key_aliases", "patch_lev_keys"})
 			legacy.erase(field);
 		serve(true, legacy.dump());
-		CHECK(ap_track_registry_refresh(cache.c_str()) == 1);
-		ap_track_registry_prepare_identity(cache.c_str());
+		{
+			std::lock_guard<std::mutex> blocked_transport(g_mutex);
+			CHECK(ap_track_registry_refresh(cache.c_str()) == 1);
+			ap_track_registry_prepare_identity(cache.c_str(), [](const void *) { return 1; }, nullptr);
+			CHECK(ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_LOADING);
+		}
+		ap_track_registry_prepare_identity(cache.c_str(), nullptr, nullptr);
 		CHECK(ap_track_registry_status(&source, nullptr, 0) == AP_TRACK_REGISTRY_DONE &&
 		      source == AP_TRACK_REGISTRY_SOURCE_LIVE);
 		std::string key = "old-lake", title;

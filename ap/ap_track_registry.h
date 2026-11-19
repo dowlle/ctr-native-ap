@@ -72,7 +72,8 @@ int ap_track_registry_refresh(const char *cache_path);
 
 // For naming jobs that already run off the game thread. Waits for the current
 // bounded registry fetch, or starts the first fetch if needed.
-void ap_track_registry_prepare_identity(const char *cache_path);
+void ap_track_registry_prepare_identity(const char *cache_path,
+                                        int (*cancelled)(const void *), const void *context);
 
 // The refresh state (AP_TRACK_REGISTRY_IDLE...) and the source of the index in
 // use. detail gets a short reason when the live fetch failed.
