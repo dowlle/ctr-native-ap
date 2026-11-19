@@ -149,7 +149,6 @@ void HOWL_CustomMusic_Reset(void)
 	s_customBankServing = 0;
 	s_customBankLoaded = 0;
 	s_customSongReady = 0;
-	CustomTrack_ResetBossVenueLoad();
 	HOWL_CustomMusic_ReleaseAudio();
 }
 

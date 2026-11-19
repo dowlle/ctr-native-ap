@@ -977,6 +977,7 @@ struct MusicSearch
     unsigned long scaBytes;
     int best;
     bool exactUuid;
+    const char *refusal;
 };
 int music_rank(const MusicSearch &search, const CustomPackageManifest &manifest, bool embedded)
 {
@@ -1003,8 +1004,12 @@ int want_pinned_music(const char *pin, const CustomPackageManifest *manifest, vo
 void find_pinned_music(const CustomPackageStoreEntry *entry, void *opaque)
 {
     auto &search = *static_cast<MusicSearch *>(opaque);
-    if (!entry->verified ||
-        std::strcmp(entry->manifest.version, search.revision) ||
+    if (!entry->verified)
+    {
+        search.refusal = "a matching music package failed verification";
+        return;
+    }
+    if (std::strcmp(entry->manifest.version, search.revision) ||
         (search.exactUuid && search.uuid && *search.uuid && std::strcmp(entry->manifest.uuid, search.uuid))) return;
     bool lev = false, vrm = false;
     const CustomPackageFile *sca = nullptr;
@@ -1036,26 +1041,42 @@ void find_pinned_music(const CustomPackageStoreEntry *entry, void *opaque)
             search.sca = path + "/" + musicDirectory + "/" + search.scaSha + ".sca";
             search.scaBytes = audio.size();
             search.best = rank;
+            return;
         }
     }
     catch (const std::exception &) {}
+    search.refusal = "restored music failed verification";
 }
+}
+
+extern "C" int CustomPackage_FindPinnedMusicWithStatus(const char *assets, const char *revision, const char *uuid, int exactUuid,
+    const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
+    char *scaPath, size_t scaCapacity, char scaSha256[65], unsigned long *scaBytes, const char **refusal)
+{
+    if (refusal) *refusal = nullptr;
+    if (!assets || !revision || !levSha256 || !vrmSha256 || !scaPath || !scaCapacity || !scaSha256 || !scaBytes) return 0;
+    MusicSearch search{revision, uuid, levSha256, vrmSha256, levBytes, vrmBytes,
+                       std::string(assets) + "/tracks/packages", {}, {}, 0, -1, exactUuid != 0, nullptr};
+    char error[256];
+    if (!CustomPackage_ScanStoreMatching(search.directory.c_str(), want_pinned_music, find_pinned_music, &search, error, sizeof error))
+        return 0;
+    if (search.sca.empty() || search.sca.size() >= scaCapacity || search.scaSha.size() != 64)
+    {
+        if (refusal) *refusal = search.sca.empty() ? search.refusal : "invalid verified music path or digest";
+        return 0;
+    }
+    std::memcpy(scaPath, search.sca.c_str(), search.sca.size() + 1);
+    std::memcpy(scaSha256, search.scaSha.c_str(), 65);
+    *scaBytes = search.scaBytes;
+    return 1;
 }
 
 extern "C" int CustomPackage_FindPinnedMusic(const char *assets, const char *revision, const char *uuid, int exactUuid,
     const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
     char *scaPath, size_t scaCapacity, char scaSha256[65], unsigned long *scaBytes)
 {
-    if (!assets || !revision || !levSha256 || !vrmSha256 || !scaPath || !scaCapacity || !scaSha256 || !scaBytes) return 0;
-    MusicSearch search{revision, uuid, levSha256, vrmSha256, levBytes, vrmBytes,
-                       std::string(assets) + "/tracks/packages", {}, {}, 0, -1, exactUuid != 0};
-    char error[256];
-    if (!CustomPackage_ScanStoreMatching(search.directory.c_str(), want_pinned_music, find_pinned_music, &search, error, sizeof error) ||
-        search.sca.empty() || search.sca.size() >= scaCapacity || search.scaSha.size() != 64) return 0;
-    std::memcpy(scaPath, search.sca.c_str(), search.sca.size() + 1);
-    std::memcpy(scaSha256, search.scaSha.c_str(), 65);
-    *scaBytes = search.scaBytes;
-    return 1;
+    return CustomPackage_FindPinnedMusicWithStatus(assets, revision, uuid, exactUuid, levSha256, levBytes,
+        vrmSha256, vrmBytes, scaPath, scaCapacity, scaSha256, scaBytes, nullptr);
 }
 
 namespace {

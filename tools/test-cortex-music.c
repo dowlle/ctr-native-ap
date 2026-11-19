@@ -375,13 +375,16 @@ static void package_music(void)
 
 static unsigned long bossMusicBytes;
 static char bossMusicHash[65];
+static unsigned int bossMusicLookups;
 
 const char *NativeAssets_GetAssetDir(void) { return s_dir; }
 
-int CustomPackage_FindPinnedMusic(const char *assets, const char *revision, const char *uuid, int exactUuid,
+int CustomPackage_FindPinnedMusicWithStatus(const char *assets, const char *revision, const char *uuid, int exactUuid,
 	const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
-	char *path, size_t pathSize, char sha256[65], unsigned long *bytes)
+	char *path, size_t pathSize, char sha256[65], unsigned long *bytes, const char **refusal)
 {
+	bossMusicLookups++;
+	*refusal = NULL;
 	EXPECT(!strcmp(assets, s_dir) && !strcmp(revision, "1.0.0") &&
 	       !strcmp(uuid, "0f8fad5b-d9cb-469f-a165-70867728950e") && !exactUuid &&
 	       !strcmp(levSha256, s_pkgLevSha) && levBytes > 0 &&
@@ -418,6 +421,9 @@ static void boss_music(void)
 	sha_of(s_sca, bossMusicHash);
 	EXPECT(CustomTrack_ApplyGarageVenueDescriptor(0, &venue), "assign a custom boss venue");
 	EXPECT(!CustomTrack_ReadBossMusic(PKG_HOST, 0, &size, &reason) && !reason, "an absent SCA is optional");
+	EXPECT(CustomTrack_GetOverride(group + 1, &ctx, &path, &trackSize) &&
+	       !strcmp(path, CUSTOM_TRACK_BOSS_LEV), "reserve the pair even when optional audio is absent");
+	CustomTrack_ResetBossVenueLoad();
 	bossMusicBytes = SCA_BYTES;
 	bytes = CustomTrack_ReadBossMusic(PKG_HOST, 0, &size, &reason);
 	EXPECT(bytes && size == SCA_BYTES && !reason, "a repair becomes available without re-arming the venue");
@@ -435,22 +441,29 @@ static void boss_music(void)
 	       "the geometry loader reads the bytes retained by music admission");
 	free(bytes);
 	CustomTrack_ResetBossVenueLoad();
+	unsigned int lookups = bossMusicLookups;
 	EXPECT(!CustomTrack_ReadBossMusic(PKG_HOST, 0, &size, &reason) && reason && !size,
 	       "a new load with missing geometry cannot play custom music");
+	EXPECT(bossMusicLookups == lookups, "geometry refusal precedes the production lookup boundary");
+	EXPECT(CustomTrack_GarageVenueReady(0), "load failure does not close the garage");
 	EXPECT(!CustomTrack_GetOverride(group, &ctx, &path, &trackSize) &&
 	       !CustomTrack_GetOverride(group + 1, &ctx, &path, &trackSize),
 	       "reject both custom geometry files for that load");
 	if (rename(displaced, s_pkgLev) != 0) { EXPECT(0, "can restore the LEV fixture"); return; }
 	CustomTrack_ResetBossVenueLoad();
-	CustomTrack_ClearGarageVenueDescriptors();
-	EXPECT(CustomTrack_ApplyGarageVenueDescriptor(0, &venue), "restore the venue");
+	bytes = CustomTrack_ReadBossMusic(PKG_HOST, 0, &size, &reason);
+	EXPECT(bytes && !reason, "a restored file can be used at the next load without arming again");
+	free(bytes);
+	CustomTrack_ResetBossVenueLoad();
 	bossMusicBytes--;
 	EXPECT(!CustomTrack_ReadBossMusic(PKG_HOST, 0, &size, &reason) && reason && strstr(reason, "size"),
 	       "size verification failure has a diagnostic");
+	CustomTrack_ResetBossVenueLoad();
 	bossMusicBytes = SCA_BYTES;
 	memset(bossMusicHash, '0', sizeof bossMusicHash - 1);
 	EXPECT(!CustomTrack_ReadBossMusic(PKG_HOST, 0, &size, &reason) && reason && strstr(reason, "SHA-256"),
 	       "digest verification failure has a diagnostic");
+	CustomTrack_ResetBossVenueLoad();
 
 	snprintf(venue.levPath, sizeof venue.levPath, "%s", s_lev);
 	snprintf(venue.vrmPath, sizeof venue.vrmPath, "%s", s_vrm);
@@ -459,6 +472,7 @@ static void boss_music(void)
 	venue.musicPackageRevision[0] = 0;
 	EXPECT(CustomTrack_ApplyGarageVenueDescriptor(0, &venue), "assign an ordinary venue using the Cortex files");
 	EXPECT(!CustomTrack_ReadBossMusic(PKG_HOST, 0, &size, &reason), "matching geometry alone does not select bundled music");
+	CustomTrack_ResetBossVenueLoad();
 	venue.cortex = 1;
 	EXPECT(CustomTrack_ApplyGarageVenueDescriptor(0, &venue), "assign the bundled boss venue");
 	bytes = CustomTrack_ReadBossMusic(PKG_HOST, 0, &size, &reason);

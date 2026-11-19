@@ -132,11 +132,16 @@ static struct
 	struct CustomTrackRetainedFile lev, vrm;
 } s_bossVenueLoad;
 
-void CustomTrack_ResetBossVenueLoad(void)
+static void CustomTrack_ResetBossVenueLoad(void)
 {
 	free(s_bossVenueLoad.lev.bytes);
 	free(s_bossVenueLoad.vrm.bytes);
 	memset(&s_bossVenueLoad, 0, sizeof s_bossVenueLoad);
+}
+
+static int CustomTrack_BossVenueLoadMatches(int levelID, int bossID)
+{
+	return s_bossVenueLoad.active && s_bossVenueLoad.level == levelID && s_bossVenueLoad.boss == bossID;
 }
 #endif
 
@@ -655,12 +660,20 @@ int CustomTrack_GarageVenueServing(int levelID, int bossID, int adventureBossAct
 {
 	if (!adventureBossActive || bossID < 0 || bossID >= CUSTOM_TRACK_GARAGE_VENUES)
 		return -1;
+#ifdef CTR_CUSTOM_PACKAGES
+	if (CustomTrack_BossVenueLoadMatches(levelID, bossID) && !s_bossVenueLoad.lev.bytes)
+		return -1;
+#endif
 	return s_garageVenueVerified[bossID] && s_garageVenue[bossID].enabled &&
 	       s_garageVenue[bossID].hostLevelID == levelID ? bossID : -1;
 }
 
 int CustomTrack_OxideFinalServing(int levelID, int bossID, int adventureBossActive)
 {
+#ifdef CTR_CUSTOM_PACKAGES
+	if (CustomTrack_BossVenueLoadMatches(levelID, bossID) && !s_bossVenueLoad.lev.bytes)
+		return 0;
+#endif
 	return s_oxideFinalVerified && s_oxideFinalDescriptor.enabled &&
 	       adventureBossActive && levelID == s_oxideFinalDescriptor.hostLevelID && bossID == 5;
 }
@@ -669,64 +682,52 @@ int CustomTrack_OxideFinalServing(int levelID, int bossID, int adventureBossActi
 unsigned char *CustomTrack_ReadBossMusic(int levelID, int bossID, size_t *size, const char **error)
 {
 	int garage = CustomTrack_GarageVenueServing(levelID, bossID, 1);
+	const struct GarageVenueDescriptor *venue = NULL;
 	const struct CustomTrackSource *lev, *vrm;
-	unsigned char *music;
 	*size = 0;
 	*error = NULL;
 	if (garage >= 0)
 	{
-		const struct GarageVenueDescriptor *venue = &s_garageVenue[garage];
+		venue = &s_garageVenue[garage];
 		lev = &s_garageVenueLev[garage];
 		vrm = &s_garageVenueVrm[garage];
-		if (venue->cortex && NativeSha256_HexEquals(CORTEX_LEV_SHA256, venue->levSha256) &&
-		    NativeSha256_HexEquals(CORTEX_VRM_SHA256, venue->vrmSha256))
-		{
-			music = CustomTrack_ReadCortexMusic(lev->path, size, error);
-		}
-		else
-		{
-			char path[512], sha256[NATIVE_SHA256_HEX_BYTES];
-			unsigned long bytes;
-			if (!venue->musicPackageRevision[0] ||
-			    !CustomPackage_FindPinnedMusic(NativeAssets_GetAssetDir(), venue->musicPackageRevision, venue->packageUuid, 0,
-			                                   venue->levSha256, venue->levBytes, venue->vrmSha256, venue->vrmBytes,
-			                                   path, sizeof path, sha256, &bytes))
-				return NULL;
-			music = CustomTrack_ReadMusicFile(path, bytes, sha256, size, error);
-		}
 	}
 	else if (CustomTrack_OxideFinalServing(levelID, bossID, 1))
 	{
 		lev = &s_oxideFinalLev;
 		vrm = &s_oxideFinalVrm;
-		music = CustomTrack_ReadCortexMusic(lev->path, size, error);
 	}
 	else
 	{
 		return NULL;
 	}
-	if (!music)
-		return NULL;
-
-	// HOWL runs before the geometry loader. Commit both verified files for
-	// this load so that geometry and music cannot come from different venues.
-	if (!CustomTrack_RetainFile(lev, &s_bossVenueLoad.lev) ||
-	    !CustomTrack_RetainFile(vrm, &s_bossVenueLoad.vrm))
-	{
+	// Choose both geometry files before looking up optional audio. An
+	// incomplete pair takes the retail route for this load only.
+	int retained = CustomTrack_RetainFile(lev, &s_bossVenueLoad.lev) &&
+	               CustomTrack_RetainFile(vrm, &s_bossVenueLoad.vrm);
+	if (!retained)
 		CustomTrack_ResetBossVenueLoad();
-		if (garage >= 0)
-			s_garageVenueVerified[garage] = 0;
-		else
-			s_oxideFinalVerified = 0;
-		free(music);
-		music = NULL;
-		*size = 0;
-		*error = "boss venue geometry failed verification";
-	}
 	s_bossVenueLoad.active = 1;
 	s_bossVenueLoad.level = levelID;
 	s_bossVenueLoad.boss = bossID;
-	return music;
+	if (!retained)
+	{
+		*error = "could not retain the verified boss venue pair";
+		return NULL;
+	}
+
+	if (!venue || (venue->cortex && NativeSha256_HexEquals(CORTEX_LEV_SHA256, venue->levSha256) &&
+	               NativeSha256_HexEquals(CORTEX_VRM_SHA256, venue->vrmSha256)))
+		return CustomTrack_ReadCortexMusic(lev->path, size, error);
+
+	char path[512], sha256[NATIVE_SHA256_HEX_BYTES];
+	unsigned long bytes;
+	if (!venue->musicPackageRevision[0] ||
+	    !CustomPackage_FindPinnedMusicWithStatus(NativeAssets_GetAssetDir(), venue->musicPackageRevision, venue->packageUuid, 0,
+	                                          venue->levSha256, venue->levBytes, venue->vrmSha256, venue->vrmBytes,
+	                                          path, sizeof path, sha256, &bytes, error))
+		return NULL;
+	return CustomTrack_ReadMusicFile(path, bytes, sha256, size, error);
 }
 #endif
 
@@ -1303,8 +1304,7 @@ int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContex
 		CustomTrack_Load();
 
 #ifdef CTR_CUSTOM_PACKAGES
-	if (ctx && ctx->adventureBossActive && s_bossVenueLoad.active &&
-	    ctx->levelID == s_bossVenueLoad.level && ctx->bossID == s_bossVenueLoad.boss)
+	if (ctx && ctx->adventureBossActive && CustomTrack_BossVenueLoadMatches(ctx->levelID, ctx->bossID))
 	{
 		role = CustomTrackPolicy_SubfileRole(subfileIndex, ctx->levelID);
 		if (role == CTR_CT_ROLE_NONE || !s_bossVenueLoad.lev.bytes)
