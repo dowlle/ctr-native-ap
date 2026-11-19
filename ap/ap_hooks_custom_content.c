@@ -128,6 +128,19 @@ static void AP_ContentRaceName(const char *title, char *out, size_t size)
 static int ap_content_package_scan[AP_CONTENT_MAX_PACKAGES];
 static int ap_content_descriptor_publication[AP_CONTENT_MAX_PACKAGES];
 
+static const char ap_content_path_too_long[] = "The track path is too long. Shorten the install path, then Rescan.";
+
+static int AP_ContentPathsTooLong(const char *levPath, const char *vrmPath)
+{
+	return strlen(levPath) >= CUSTOM_TRACK_PATH_MAX || strlen(vrmPath) >= CUSTOM_TRACK_PATH_MAX;
+}
+
+static int AP_ContentArcadeGridMissing(const struct CustomContentVerification *report)
+{
+	const struct CustomContentMeasurements *m = &report->measured;
+	return m->checkpoints && (!m->navPaths || m->spawns < CTR_CT_FIELD_MAX);
+}
+
 static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct CustomTrackManagerStatus *status);
 
 // Locate one package's files (compiled profile folder, or the open track-key
@@ -180,6 +193,14 @@ static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct Custom
 		                                      pkg->revision, pkg->lev_sha256, pkg->lev_bytes,
 		                                      pkg->vrm_sha256, pkg->vrm_bytes, status);
 	if (status->state != CTR_CT_MANAGER_READY) return 0;
+	if (AP_ContentPathsTooLong(status->levPath, status->vrmPath))
+	{
+		status->state = CTR_CT_MANAGER_PATH_TOO_LONG;
+		snprintf(status->detail, sizeof status->detail, "%s", ap_content_path_too_long);
+		snprintf(line, sizeof line, "[CustomTracks] content plan refused %s: %s\n", pkg->id, status->detail);
+		AP_AppendLog(line);
+		return 0;
+	}
 	error[0] = '\0';
 	if (!CustomContentVerify_Files(status->levPath, status->vrmPath, &report, error, sizeof error) ||
 	    strcmp(report.levSha256, pkg->lev_sha256) || strcmp(report.vrmSha256, pkg->vrm_sha256))
@@ -197,7 +218,8 @@ static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct Custom
 	    !AP_ContentSanityCountsHold(pkg, &report, why, sizeof why) ||
 	    !AP_ContentBossVenueFactsHold(pkg->checkpoints, pkg->ai_nav, &report, why, sizeof why))
 	{
-		status->state = CTR_CT_MANAGER_UNSUPPORTED;
+		status->state = (pkg->capabilities & AP_CONTENT_CAP_ARCADE) && AP_ContentArcadeGridMissing(&report)
+		                ? CTR_CT_MANAGER_RACE_GRID_UNSUPPORTED : CTR_CT_MANAGER_UNSUPPORTED;
 		snprintf(status->detail, sizeof status->detail, "%.48s %.24s: %s", pkg->display_name, pkg->revision, why);
 		snprintf(line, sizeof line, "[CustomTracks] content plan refused %s: %s\n", pkg->id, why);
 		AP_AppendLog(line);
@@ -237,12 +259,14 @@ static int AP_ContentScanCortex(void)
 	struct AP_ContentFiles *f = &ap_content_cortex_files;
 	ap_content_cortex_load_error = 0;
 	memset(f, 0, sizeof *f);
-	if (dir == NULL ||
-	    snprintf(f->levPath, sizeof f->levPath, "%s/tracks/cortex-vortex/CVortex Arcade All.lev", dir) >= (int)sizeof f->levPath ||
-	    snprintf(f->vrmPath, sizeof f->vrmPath, "%s/tracks/cortex-vortex/CVortex Arcade All.vrm", dir) >= (int)sizeof f->vrmPath)
+	if (!dir) return 0;
+	if (snprintf(f->levPath, sizeof f->levPath, "%s/tracks/cortex-vortex/CVortex Arcade All.lev", dir) >= (int)sizeof f->levPath ||
+	    snprintf(f->vrmPath, sizeof f->vrmPath, "%s/tracks/cortex-vortex/CVortex Arcade All.vrm", dir) >= (int)sizeof f->vrmPath ||
+	    AP_ContentPathsTooLong(f->levPath, f->vrmPath))
 	{
 		memset(f, 0, sizeof *f);
-		AP_AppendLog("[CustomTracks] content plan refused Cortex Vortex: the bundled asset path is invalid\n");
+		ap_content_cortex_load_error = CTR_CT_MANAGER_PATH_TOO_LONG + 1;
+		AP_AppendLog("[CustomTracks] content plan refused Cortex Vortex: the track path is too long\n");
 		return 0;
 	}
 	error[0] = '\0';
@@ -257,6 +281,8 @@ static int AP_ContentScanCortex(void)
 	}
 	if (!AP_ContentCapabilitiesHold(AP_CONTENT_CAP_ALL, &report, why, sizeof why))
 	{
+		if (AP_ContentArcadeGridMissing(&report))
+			ap_content_cortex_load_error = CTR_CT_MANAGER_RACE_GRID_UNSUPPORTED + 1;
 		snprintf(line, sizeof line, "[CustomTracks] content plan refused Cortex Vortex: %s\n", why);
 		AP_AppendLog(line);
 		memset(f, 0, sizeof *f);
@@ -291,13 +317,6 @@ int AP_ContentPadReady(int physicalPad)
 	return AP_ContentTrackReady(pad->retail_id >= 0, pad->cortex, pad->package_index);
 }
 
-static enum CustomTrackManagerState AP_ContentFileRefusal(const struct AP_ContentFiles *files)
-{
-	if (strlen(files->levPath) >= CUSTOM_TRACK_PATH_MAX || strlen(files->vrmPath) >= CUSTOM_TRACK_PATH_MAX)
-		return CTR_CT_MANAGER_PATH_TOO_LONG;
-	return CTR_CT_MANAGER_LOAD_FAILED;
-}
-
 static enum CustomTrackManagerState AP_ContentDescriptorRefusal(const struct CustomTrackSeedDescriptor *descriptor)
 {
 	if (!descriptor->soloRace &&
@@ -317,9 +336,7 @@ static int AP_ContentLoadRefused(int cortex, int packageIndex, enum CustomTrackM
 	else
 	{
 		const char *detail = "The race could not load the verified files. Check the client log.";
-		if (reason == CTR_CT_MANAGER_PATH_TOO_LONG)
-			detail = "The track path is too long. Shorten the install path, then Rescan.";
-		else if (reason == CTR_CT_MANAGER_RACE_GRID_UNSUPPORTED)
+		if (reason == CTR_CT_MANAGER_RACE_GRID_UNSUPPORTED)
 			detail = "The track cannot support this race's starting grid. Check the client log.";
 		ap_content_package_ready[packageIndex] = 0;
 		ap_content_package_scan[packageIndex] = reason + 1;
@@ -352,7 +369,7 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		}
 		m = &ap_content_cortex_files.measured;
 		if (!CustomTrack_UseContentFiles(ap_content_cortex_files.levPath, ap_content_cortex_files.vrmPath, "CORTEX VORTEX"))
-			return AP_ContentLoadRefused(1, -1, AP_ContentFileRefusal(&ap_content_cortex_files));
+			return AP_ContentLoadRefused(1, -1, CTR_CT_MANAGER_LOAD_FAILED);
 		memset(&d, 0, sizeof d);
 		d.standalone = 1; d.laps = race->laps; d.hostLevelID = race->hostLevelID;
 		d.replacesCupLevelID = -1; d.boxes = 0;
@@ -395,7 +412,7 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		         : CustomTrack_UseContentFiles(ap_content_files[packageIndex].levPath,
 		                                       ap_content_files[packageIndex].vrmPath, raceName);
 		if (!used)
-			return AP_ContentLoadRefused(0, packageIndex, AP_ContentFileRefusal(&ap_content_files[packageIndex]));
+			return AP_ContentLoadRefused(0, packageIndex, CTR_CT_MANAGER_LOAD_FAILED);
 #ifdef CTR_CUSTOM_PACKAGES
 		// The track's own music, when the shared package this seed resolved pins
 		// a Saphi .sca: the package with the seed's UUID first, then any
@@ -847,17 +864,15 @@ void AP_DrawCustomContentWarning(void)
 	char *planPath = "OPTIONS > Custom Content";
 	char *verifyPath = "OPTIONS > Custom Content: verify.";
 #endif
-	if (planActive && ap_custom_content_required)
+	if (planActive && (ap_custom_content_required || cortexMissing))
 	{
-		int missing = 0;
+		int missing = cortexMissing;
 		for (int i = 0; i < AP_CONTENT_MAX_PACKAGES; ++i)
 			if (ap_content_plan_package(i) && !ap_content_package_ready[i])
 				missing++;
 		if (missing > 0)
 		{
 			char line[48];
-			if (cortexMissing)
-				missing++;
 			snprintf(line, sizeof line, ap_oxide_final_content_required
 			         ? "%d TRACK%s MISSING. OXIDE 2 LOCKED"
 			         : "!! %d CUSTOM TRACK%s MISSING !!",
