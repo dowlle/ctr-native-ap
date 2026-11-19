@@ -107,8 +107,6 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
         ctr_content_sanity dest{};
         copy(dest.track_id, row["track_id"]); copy(dest.lev_sha256, row["lev_sha256"]);
         std::set<int> excluded_by_kind[3];
-        std::vector<const J *> reviewed_weapons;
-        bool has_new_weapon_exclusions = false;
         // Reviewed exclusions are keyed by exact LEV and model family ("family" defaults to a weapon
         // crate) and apply to every origin (the retail Roo's Tubes crate and the Hot Air Skyway Wumpa
         // crate included), even on a track with authored spots.
@@ -116,14 +114,9 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
             const auto &catalog = registry.at("sanity_exclusions");
             const std::string digest = row["lev_sha256"];
             if (catalog.contains(digest)) for (const auto &c : catalog[digest]) {
-                const int since = c.value("sanity_since", 1);
-                if (since > exclusion_version) continue;
+                if (c.value("sanity_since", 1) > exclusion_version) continue;
                 const std::string family = c.value("family", std::string("weapon_crate"));
                 for (int f = 0; f < 3; ++f) if (family == kinds[f]) excluded_by_kind[f].insert(number(c["ordinal"], 1, 65536));
-                if (family == kinds[0]) {
-                    reviewed_weapons.push_back(&c);
-                    if (since > 1) has_new_weapon_exclusions = true;
-                }
             }
         }
         std::set<int> &excluded = excluded_by_kind[0];
@@ -133,16 +126,6 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
                 if (exclusion_version == 1 && count)
                     need(std::includes(excluded.begin(), excluded.end(), carried.begin(), carried.end()),
                          "fallback exclusions require the updated sanity catalog");
-                if (has_new_weapon_exclusions && p.contains("item_boxes") && pad.package_index >= 0
-                    && out.packages[pad.package_index].weapon_crates > 0) {
-                    need((size_t)pad.box_excluded_count == reviewed_weapons.size(), "missing reviewed fallback exclusions");
-                    for (size_t i = 0; i < reviewed_weapons.size(); ++i) {
-                        const J &rule = *reviewed_weapons[i];
-                        need(rule.at("ordinal") == pad.box_excluded[i], "mismatched reviewed fallback exclusion ordinal");
-                        for (int axis = 0; axis < 3; ++axis)
-                            need(rule.at("pos")[axis] == pad.box_excluded_pos[i][axis], "mismatched reviewed fallback exclusion position");
-                    }
-                }
                 // Version 1 preserves the historical pool. New plans use
                 // the carried exclusions to reproduce the physical seats.
                 const auto &seat_excluded = exclusion_version == 1 ? excluded : carried;

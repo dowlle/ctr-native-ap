@@ -555,6 +555,28 @@ static void item_box_settings(const J &t, State &out) {
 }
 // The seats a custom track's boxes take: min(crates, 15), spread over the
 // crate table (ap_box_seat_logic.h computes which).
+static void require_reviewed_fallback_exclusions(const J &catalog, const char *lev, const ctr_content_pad &pad)
+{
+    if (!catalog.contains(lev)) return;
+    std::vector<const J *> weapons;
+    bool has_new_exclusions = false;
+    for (const auto &rule : catalog.at(lev)) {
+        if (rule.value("family", std::string("weapon_crate")) != "weapon_crate") continue;
+        const int since = rule.value("sanity_since", 1);
+        if (since > 2) continue;
+        weapons.push_back(&rule);
+        has_new_exclusions = has_new_exclusions || since == 2;
+    }
+    if (!has_new_exclusions) return;
+    need((size_t)pad.box_excluded_count == weapons.size(), "missing reviewed fallback exclusions");
+    for (size_t i = 0; i < weapons.size(); ++i) {
+        const J &rule = *weapons[i];
+        need(rule.at("ordinal") == pad.box_excluded[i], "mismatched reviewed fallback exclusion ordinal");
+        for (int axis = 0; axis < 3; ++axis)
+            need(rule.at("pos")[axis] == pad.box_excluded_pos[i][axis], "mismatched reviewed fallback exclusion position");
+    }
+}
+
 static int box_seats(int crates) {
     return crates <= 0 ? 0 : crates < AP_NAMED_ITEM_BOX_SLOTS ? crates : AP_NAMED_ITEM_BOX_SLOTS;
 }
@@ -1828,6 +1850,8 @@ static void validate(const J &p, State &out) {
                     }
                     ex.used = true;
                 }
+                if (pkg.weapon_crates > 0 && has_sanity && p["sanity"].contains("exclusion_version"))
+                    require_reviewed_fallback_exclusions(registry.at("sanity_exclusions"), pkg.lev_sha256, dest);
                 slots = box_seats(pkg.weapon_crates - dest.box_excluded_count);
                 slots = std::min(slots, out.item_boxes.box_count);
                 dest.box_crates = slots ? pkg.weapon_crates : 0;

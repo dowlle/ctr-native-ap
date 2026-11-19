@@ -1279,7 +1279,7 @@ with spot_files(retail=["CRASH_COVE"], custom=["baby-t-park"]):
 # small count fixture that crosses the 15-seat ceiling. No track bytes shipped.
 from worlds.ctr import crate_exclusions, sanity
 from unittest import mock
-from worlds.ctr.test.test_crate_exclusions import ANCIENT_LAKE, MATSURI, NORTH_POLE, ancient, matsuri
+from worlds.ctr.test.test_crate_exclusions import ANCIENT_LAKE, LOCKBOX_4, MATSURI, NORTH_POLE, ancient, lockbox_track_4, matsuri
 from worlds.ctr.test.test_content_item_boxes import box_options, first_world
 # Test fallback exclusions without the later community spot override.
 with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):
@@ -1334,6 +1334,22 @@ with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):
           lambda p: p["item_boxes"][crate_exclusions.KEY][0]["crates"][0].__setitem__("pos", [1, 0, 0]), sparse_wire)
     sanity_only = first_world(dict(sparse_options, box_locations=False), seed=1).fill_slot_data()
     cases.append(("matsuri-sanity-sparse-with-boxes-off", sanity_only, True))
+
+    mixed_options = box_options(custom=[matsuri(), lockbox_track_4()], itemboxsanity=1, wumpasanity="both")
+    mixed_wire = first_world(mixed_options, seed=1).fill_slot_data()
+    assert all(row["lev_sha256"] != LOCKBOX_4 for row in mixed_wire["content_plan"]["sanity"]["tracks"])
+    cases.append(("matsuri-and-generic-lockbox-reviewed-seats", mixed_wire, True))
+
+    def remove_lockbox_seating(plan):
+        rows = plan["item_boxes"][crate_exclusions.KEY]
+        rows[:] = [row for row in rows if row["lev_sha256"] != LOCKBOX_4]
+
+    def shift_lockbox_exclusion(plan):
+        row = next(r for r in plan["item_boxes"][crate_exclusions.KEY] if r["lev_sha256"] == LOCKBOX_4)
+        row["crates"][0]["pos"][0] = 1
+
+    alter("matsuri-and-generic-lockbox-missing-seat-exclusions", remove_lockbox_seating, mixed_wire)
+    alter("matsuri-and-generic-lockbox-shifted-exclusion", shift_lockbox_exclusion, mixed_wire)
 box_env("box_locations false", lambda c: c["ctr_options"].__setitem__("box_locations", False))
 box_env("box_locations dropped", lambda c: c["ctr_options"].pop("box_locations"))
 box_env("box_locations integer", lambda c: c["ctr_options"].__setitem__("box_locations", 1))
