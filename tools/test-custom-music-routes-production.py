@@ -69,6 +69,7 @@ prelude = r'''
 #include <thread>
 #include <vector>
 #include "ap_track_consent.h"
+extern "C" void CustomPackage_TestInstallFailure(int checkpoints);
 // The track author permission check (A4-74): the real resolver is
 // ap/ap_track_consent.cpp (tools/test-track-consent.cpp). Here it allows,
 // unless a case sets g_permission, and records which Saphi track was asked.
