@@ -81,10 +81,11 @@ int main()
     expect(ap_named_letter_bit(38500301) == 301 && ap_named_letter_bit(38500298) == 298
            && ap_named_letter_bit(35100040) == 290 && ap_named_letter_bit(38500290) == -1
            && ap_named_letter_bit(38859999) == 359999, "old and new item addresses map to the right received bits");
-    for (const auto &bad : {"CNN", "cnk", "CN!", "CNKK", "CTR"}) {
+    expect(load_pad(new_code(old, "CTR")) != nullptr, "an explicit CTR code is valid");
+    for (const auto &bad : {"CNN", "cnk", "CN!", "CNKK"}) {
         J wire = cnk;
         (*named_track(wire["content_plan"]))["letters"] = bad;
-        expect(!load_pad(wire), "reject an invalid or redundant origin code");
+        expect(!load_pad(wire), "reject an invalid origin code");
     }
     J missing_feature = cnk;
     missing_feature["content_plan"]["required_features"].erase(

@@ -1510,7 +1510,7 @@ static void validate(const J &p, State &out) {
             if (titled) base.erase("room_title");
             if (base.contains("letters")) {
                 const auto glyphs = text(base.at("letters"));
-                need(named && glyphs.size() == 3 && glyphs != "CTR" &&
+                need(named && glyphs.size() == 3 &&
                      std::all_of(glyphs.begin(), glyphs.end(), [](char glyph) { return ap_origin_glyph_index(glyph) >= 0; }) &&
                      std::set<char>(glyphs.begin(), glyphs.end()).size() == 3,
                      "invalid origin letter code");
