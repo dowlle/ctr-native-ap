@@ -43,7 +43,7 @@ int ctr_cfg_active(void) { return 1; }
 int ap_content_plan_active(void) { return 1; }
 uint64_t ap_content_plan_epoch(void) { return epoch; }
 const ctr_content_sanity *ap_content_plan_sanity(const char *id) { return strcmp(id, "retail:3") ? NULL : &record; }
-const ctr_content_sanity *ap_content_plan_sanity_boss(int boss) { return boss == 0 ? &boss_record : NULL; }
+const ctr_content_sanity *ap_content_plan_sanity_boss(int boss) { return boss == 0 || boss == 4 ? &boss_record : NULL; }
 int ap_content_plan_sanity_pad(int physical, int family, int64_t *out, int capacity) {
     (void)physical; (void)family; if (capacity && out) out[0] = 123; return capacity > 0;
 }
@@ -169,6 +169,27 @@ int main(void) {
         assert(feed.vis[feed.vcount - 1].framesLeft == AP_FEED_LIFETIME_FRAMES);
     }
     assert(feed.qcount == 0);
+    /* A6-16c: an enabled pickup still dispatches early in Oxide 1 while
+       its repeatable cup/pad route is out of logic. No replay is needed. */
+    ++epoch;
+    context.seedEpoch = epoch;
+    gt.gameMode1 = ADVENTURE_MODE | 128;
+    gt.bossID = 4;
+    boss_record = record;
+    logic_state = 0;
+    AP_SanityLevelInstances(defs, 4);
+    {
+        const int before = sent;
+        AP_SanityPickup(&objects[1], &player);
+        AP_SanityPickup(&objects[1], &player);
+        assert(sent == before + 1);
+        /* An omitted location has no code, and cannot dispatch. */
+        ++epoch;
+        boss_record.locations[0][1] = 0;
+        AP_SanityLevelInstances(defs, 4);
+        AP_SanityPickup(&objects[1], &player);
+        assert(sent == before + 1);
+    }
     puts("sanity runtime: ordinal pick, AI, local player, dedup, reload, race mode, route, feed and mismatch pass");
     return 0;
 }

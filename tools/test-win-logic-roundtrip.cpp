@@ -55,6 +55,8 @@ static int run_fixture(const char *fixture, bool everyRow);
 
 int main(int argc, char **argv)
 {
+	if (argc == 3 && std::string(argv[1]) == "--current")
+		return run_fixture(argv[2], true);
 	if (argc > 1)
 		return run_fixture(argv[1], false);
 	int failed = run_fixture(kFixture, false);

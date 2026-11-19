@@ -42,6 +42,11 @@ def main():
             break
     assert cup is not None
     door = make_world(dict(profile_options(), **common, itemsanity=True), seed=3, stop_before='generate_basic')
+    sewer_options = dict(profile_options(), **common)
+    sewer_options.update(itemboxsanity=50, shortcut_knowledge=1)
+    sewer = make_world(sewer_options, seed=3, stop_before='generate_basic')
+    from worlds.ctr.test.test_vortex_sanity import vortex_options
+    vortex = make_world(vortex_options(progressive_boost='shared_global'), seed=3, stop_before='generate_basic')
     awards = ['Trophy', 'Key', 'Sapphire Relic', 'Gold Relic', 'Platinum Relic',
               'Red CTR Token', 'Green CTR Token', 'Blue CTR Token', 'Yellow CTR Token', 'Purple CTR Token',
               'Red Gem', 'Green Gem', 'Blue Gem', 'Yellow Gem']
@@ -49,10 +54,15 @@ def main():
     weapon = sorted(TIGER_TEMPLE_DOOR_OPENERS)[0]
     rows = []
     revision = subprocess.check_output(['git', '-C', str(args.apworld), 'rev-parse', 'HEAD'], text=True).strip()
-    for tag, world in [('sanity-cup-prefix', cup), ('sanity-tiger-door', door)]:
+    for tag, world in [('sanity-cup-prefix', cup), ('sanity-tiger-door', door), ('sanity-sewer-bridge', sewer),
+                       ('sanity-vortex-jump', vortex)]:
         mw, player, plan = world.multiworld, world.player, world.ctr_content_plan
         checks = [c for c in plan['checks'] if c['kind'] in sanity.KINDS]
-        target = (next(c['location'] for c in checks if c['owner'] == 'retail:0' and c['kind'] == 'weapon_crate')
+        target = (next(c['location'] for c in checks if c['owner'] == 'cortex_vortex' and c.get('boost') == 2)
+                  if tag == 'sanity-vortex-jump' else
+                  next(c['location'] for c in checks if c['display_name'] == 'Sewer Speedway: Weapon Crate 8')
+                  if tag == 'sanity-sewer-bridge' else
+                  next(c['location'] for c in checks if c['owner'] == 'retail:0' and c['kind'] == 'weapon_crate')
                   if tag == 'sanity-cup-prefix' else min(sanity.door_codes(plan)))
         locations = [loc for loc in mw.get_locations(player) if loc.address is not None]
         by_code = {loc.address: loc for loc in locations}
@@ -69,7 +79,7 @@ def main():
                         goal=bool(mw.completion_condition[player](state)))
 
         blocked = rich + (['Progressive Boost'] * 2 if tag == 'sanity-tiger-door' else [])
-        allowed = rich + ['Progressive Boost'] * 2 + ([weapon] if tag == 'sanity-tiger-door' else [])
+        allowed = rich + ['Progressive Boost'] * (1 if tag == 'sanity-sewer-bridge' else 2) + ([weapon] if tag == 'sanity-tiger-door' else [])
         full = verdict(blocked, full=True)
         positive = verdict(allowed, full=True)
         assert target not in full['reachable'] and not full['goal'], tag
