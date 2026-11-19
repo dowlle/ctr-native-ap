@@ -1518,7 +1518,7 @@ struct SaphiMusicRepair
 
 void repair_package_music(const CustomPackageStoreEntry *entry, void *context)
 {
-    if (!entry->verified || entry->local.scaID ||
+    if (!entry->verified ||
         (!entry->local.permissionTrackID && !entry->local.trackKey[0])) return;
     const auto &manifest = entry->manifest;
     for (unsigned int i = 0; i < manifest.count; i++)
@@ -1540,9 +1540,17 @@ void repair_package_music(const CustomPackageStoreEntry *entry, void *context)
     if (!match || ap_track_permission(match->trackID, match->authorID, match->saphiPermission,
                                       nullptr) != AP_TRACK_PERMISSION_ALLOW) return;
 
+    const auto directory = job.store + "/" + entry->pin;
+    const int local = CustomPackage_ReconcileMusic(directory.c_str(), entry->pin,
+        match->sca.bytes, match->sca.sha256, match->sca.id);
+    if (local)
+    {
+        if (local == 2) job.repaired++;
+        return;
+    }
     std::vector<unsigned char> audio;
     if (fetch_saphi_music(match->sca, audio) &&
-        CustomPackage_InstallMusic((job.store + "/" + entry->pin).c_str(), entry->pin,
+        CustomPackage_InstallMusic(directory.c_str(), entry->pin,
             audio.data(), audio.size(), match->sca.sha256, match->sca.id))
         job.repaired++;
 }

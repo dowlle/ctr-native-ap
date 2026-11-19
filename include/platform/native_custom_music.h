@@ -60,7 +60,8 @@ struct CustomMusicSca
 // magic and version, chunk bounds, one each of BANK, CSEQ and SIZE, bank
 // header, SIZE length with every size a whole number of 16-byte blocks,
 // sample data covering the SIZE total, and a CSEQ whose
-// header, instruments, drums and song offset table fit its songSize.
+// header, instruments, drums, song headers, sequence offsets and note
+// streams fit its songSize.
 // Returns 1 on success; on refusal *out is zeroed and error names the reason.
 int CustomMusic_Parse(const void *data, size_t size, unsigned int spuSlots,
                       struct CustomMusicSca *out, char *error, size_t errorSize);

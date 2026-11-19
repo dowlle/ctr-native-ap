@@ -142,7 +142,7 @@ static std::vector<unsigned char> make_vrm()
 	return b;
 }
 static std::vector<unsigned char> lev = make_lev(), vrm = make_vrm();
-static std::vector<unsigned char> make_sca(unsigned char tone)
+static std::vector<unsigned char> make_sca(unsigned char tone, bool truncatedSong = false)
 {
 	std::vector<unsigned char> bytes = {'S', 'C', 'A', 1};
 	auto chunk = [&](const char *tag, const std::vector<unsigned char> &body) {
@@ -157,7 +157,14 @@ static std::vector<unsigned char> make_sca(unsigned char tone)
 	bank[2] = 5;
 	bank.back() = tone;
 	chunk("BANK", bank);
-	chunk("CSEQ", {12, 0, 0, 0, 0, 0, 1, 0, 10, 0, 0, 0});
+	std::vector<unsigned char> cseq(40, 0);
+	cseq[0] = truncatedSong ? 25 : 40;
+	cseq[4] = cseq[6] = 1;
+	cseq[8] = 1; cseq[9] = 127; cseq[12] = 60; cseq[14] = 5;
+	cseq[25] = 1; cseq[26] = 120; cseq[28] = 48;
+	cseq[35] = 5; cseq[36] = 60; cseq[37] = 100;
+	cseq[38] = 1; cseq[39] = 3;
+	chunk("CSEQ", cseq);
 	chunk("SIZE", {2, 0});
 	return bytes;
 }
@@ -222,11 +229,12 @@ static bool asked(const std::string &path)
 static const std::string SCA_PATH = "/api/v2/tracks/121/downloads/874";
 
 struct Found { bool ok; std::string path, sha; unsigned long bytes; };
-static Found find_music_for(const std::string &assets, const char *revision = "1.0.0", const char *uuid = nullptr)
+static Found find_music_for(const std::string &assets, const char *revision = "1.0.0",
+                            const char *uuid = nullptr, int exact = 1)
 {
 	char path[512], digest[65];
 	Found f{};
-	f.ok = CustomPackage_FindPinnedMusic(assets.c_str(), revision, uuid, sha(lev).c_str(), (unsigned long)lev.size(),
+	f.ok = CustomPackage_FindPinnedMusic(assets.c_str(), revision, uuid, exact, sha(lev).c_str(), (unsigned long)lev.size(),
 	                                     sha(vrm).c_str(), (unsigned long)vrm.size(), path, sizeof path, digest, &f.bytes) != 0;
 	if (f.ok) { f.path = path; f.sha = digest; }
 	return f;
@@ -274,7 +282,8 @@ static bool manifest_has_sca(const std::string &assets)
 }
 
 static CustomSaphiCatalogue *repair_catalogue(const char *trackVersion, const std::string &levHash,
-                                             bool current = true, const char *audioVersion = "0.9.0")
+                                             bool current = true, const char *audioVersion = "0.9.0",
+                                             const std::vector<unsigned char> &audio = music)
 {
 	auto media = [current](int id, const char *type, const char *version,
 	                const std::vector<unsigned char> &bytes, const std::string &hash) {
@@ -288,7 +297,7 @@ static CustomSaphiCatalogue *repair_catalogue(const char *trackVersion, const st
 	    {"name", "Acid Lake"}, {"type", "race"}, {"is_active", true},
 	    {"downloads", nlohmann::json::array({
 	        media(872, "lev", trackVersion, lev, levHash), media(873, "vrm", trackVersion, vrm, sha(vrm)),
-	        media(874, "sca", audioVersion, music, sha(music))})}};
+	        media(874, "sca", audioVersion, audio, sha(audio))})}};
 	const auto json = nlohmann::json({{"data", nlohmann::json::array({track})}}).dump();
 	CustomSaphiCatalogue *out = nullptr;
 	char error[256];
@@ -344,6 +353,7 @@ int main()
 			{"no .sca listed", {}},
 			{"not current", {{874, "1.0.0", false, 5000}}},
 			{"two current", {{874, "1.0.0", true, 5000}, {875, "1.0.0", true, 5000}}},
+			{"valid and malformed current", {{874, "1.0.0", true, 5000}, {875, "1.0.0", true, 1024 * 1024 + 1}}},
 			{"past the 1 MiB cap", {{874, "1.0.0", true, 1024 * 1024 + 1}}},
 		};
 		for (const Case &c : cases)
@@ -455,6 +465,12 @@ int main()
 		served[path] = music;
 		served[path][0] ^= 1;
 		expect(repair_library(catalogue, assets) == 0 && !find_music_for(assets).ok, "corrupt audio cannot publish");
+		const auto malformedSong = make_sca(0x5a, true);
+		auto badSongCatalogue = repair_catalogue("1.0.0", sha(lev), true, "0.9.0", malformedSong);
+		served[path] = malformedSong;
+		expect(repair_library(badSongCatalogue, assets) == 0 && !find_music_for(assets).ok,
+		       "checksum-valid audio with a truncated song header cannot publish");
+		CustomSaphi_Free(&badSongCatalogue);
 
 		CustomPackage_TestInstallFailure(1);
 		expect(!CustomPackage_InstallMusic(directory.c_str(), pin.c_str(), music.data(), music.size(), sha(music).c_str(), 874),
@@ -505,20 +521,32 @@ int main()
 		served[path] = music;
 		expect(repair_library(catalogue, assets) == 1 && asked(path) && find_music_for(assets).ok,
 		       "refresh replaces damaged audio using the original pin");
+		const auto sourcePath = directory + "/.saphi-music/source.json";
+		{
+			auto source = nlohmann::json::parse(slurp(sourcePath));
+			source["media_id"] = 875;
+			std::ofstream damaged(sourcePath, std::ios::trunc);
+			damaged << source.dump();
+		}
+		serve();
+		expect(repair_library(catalogue, assets) == 1 && !asked(path) &&
+		       nlohmann::json::parse(slurp(sourcePath)).at("media_id") == 874,
+		       "repair reconciles a damaged ID without fetching already verified audio");
 		CustomSaphi_Free(&catalogue);
 		{
-			std::ofstream broken(directory + "/.saphi-music/source.json", std::ios::trunc);
+			std::ofstream broken(sourcePath, std::ios::trunc);
 			broken << "bad";
 		}
-		const auto digest = sha(music);
-		auto publish = [&] {
-			return CustomPackage_InstallMusic(directory.c_str(), pin.c_str(), music.data(), music.size(), digest.c_str(), 874);
+		const auto competingMusic = make_sca(0x77);
+		auto publish = [&](const std::vector<unsigned char> &bytes, int id) {
+			return CustomPackage_InstallMusic(directory.c_str(), pin.c_str(), bytes.data(), bytes.size(), sha(bytes).c_str(), id);
 		};
-		auto first = std::async(std::launch::async, publish);
-		auto second = std::async(std::launch::async, publish);
+		auto first = std::async(std::launch::async, [&] { return publish(music, 874); });
+		auto second = std::async(std::launch::async, [&] { return publish(competingMusic, 875); });
 		const int firstPublished = first.get(), secondPublished = second.get();
-		expect(firstPublished && secondPublished && find_music_for(assets).ok,
-		       "two writers recover damaged metadata with verified audio");
+		const auto &winner = firstPublished ? music : competingMusic;
+		expect(firstPublished + secondPublished == 1 && find_music_for(assets).sha == sha(winner),
+		       "two writers with different audio preserve the first verified publication");
 		DIR *sidecar = opendir((directory + "/.saphi-music").c_str());
 		int pending = 0;
 		if (sidecar)
@@ -530,13 +558,18 @@ int main()
 		expect(sidecar && !pending && slurp(directory + "/manifest.json") == manifest,
 		       "concurrent repair leaves the original pin and releases staging files");
 		expect(CustomPackage_AcquireDirectory(directory.c_str(), pin.c_str(), &owned, nullptr, 0) &&
-		       CustomPackage_GetAudio(owned, &offline, &size) && size == music.size() &&
-		       !std::memcmp(offline, music.data(), size), "offline audio also recovers under the original pin");
+		       CustomPackage_GetAudio(owned, &offline, &size) && size == winner.size() &&
+		       !std::memcmp(offline, winner.data(), size), "offline audio also recovers under the original pin");
 		CustomPackage_Free(&owned);
 		const auto pinnedMusic = make_sca(0x66);
 		scas = {{874, "0.9.0", true, (long long)pinnedMusic.size()}};
 		sca_body_override = pinnedMusic;
 		serve();
+		seed_uuid = "bbbbbbbb-2222-5333-8444-555555555555";
+		expect(install_seed(assets, true, detail) == AP_CT_DOWNLOAD_SUCCEEDED, "an alternate UUID pins its own audio");
+		expect(find_music_for(assets, "1.0.0", UUID.c_str(), 0).sha == sha(pinnedMusic),
+		       "manifest-pinned audio on the same pair wins even against a restored exact UUID");
+		seed_uuid = UUID;
 		expect(install_seed(assets, true, detail) == AP_CT_DOWNLOAD_SUCCEEDED, "a sibling package pins its own audio");
 		const auto pinned = find_music_for(assets, "1.0.0", UUID.c_str());
 		expect(pinned.ok && pinned.sha == sha(pinnedMusic) && slurp(pinned.path) == pinnedMusic,

@@ -154,16 +154,24 @@ CustomSaphiMedia CustomSaphi_SelectMusic(const json &downloads, int trackID, int
     if (!downloads.is_array() || trackID <= 0) return selected;
     for (const auto &row : downloads)
     {
+        if (!row.is_object() || row.value("is_current", json(false)) != true ||
+            row.value("type", json()) != "sca" || (exactVersion && row.value("version", json()) != exactVersion))
+            continue;
         try
         {
-            if (!row.is_object() || row.at("type") != "sca" || row.at("is_current") != true) continue;
-            if (exactVersion && row.at("version") != exactVersion) continue;
             auto file = source_media(row, trackID, apiVersion);
-            if (!file.bytes || file.bytes > CTR_SCA_MAX_BYTES) continue;
+            if (!file.bytes || file.bytes > CTR_SCA_MAX_BYTES)
+            {
+                if (apiVersion == 2) return {};
+                continue;
+            }
             if (selected.id) return {};
             selected = file;
         }
-        catch (const std::exception &) { /* Invalid optional media cannot block the track. */ }
+        catch (const std::exception &)
+        {
+            if (apiVersion == 2) return {};
+        }
     }
     return selected;
 }

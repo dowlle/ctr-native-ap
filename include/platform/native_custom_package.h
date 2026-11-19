@@ -78,6 +78,9 @@ int CustomPackage_GetPairReport(const struct CustomPackageOwned *package, struct
 int CustomPackage_GetAudio(const struct CustomPackageOwned *package, const void **data, size_t *size);
 int CustomPackage_InstallMusic(const char *directory, const char *pin, const void *data,
     size_t size, const char *sha256, int mediaID);
+/* 0 needs a download, 1 already has audio, 2 refreshed the local source record. */
+int CustomPackage_ReconcileMusic(const char *directory, const char *pin, size_t size,
+    const char *sha256, int mediaID);
 struct CustomPackageRelicTargets
 {
     unsigned int laps;
@@ -173,11 +176,10 @@ int CustomPackage_ScanStoreMatching(const char *store, CustomPackageStoreFilter 
 int CustomPackage_FindPinnedFiles(const char *assets, const char *revision, const char *uuid,
     const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
     char *levPath, size_t levCapacity, char *vrmPath, size_t vrmCapacity);
-/* The same lookup for the track's own music: the .sca path, its pinned sha256
-   and size, from the first verified revision of this pair that pins one. The
-   caller verifies the file against the sha256 before use. Returns 0 when no
-   such revision exists. */
-int CustomPackage_FindPinnedMusic(const char *assets, const char *revision, const char *uuid,
+/* Resolve a verified matching pair's SCA path, SHA-256 and size. Embedded
+   music wins over restored audio. Within either tier, favor uuid when
+   supplied. Require it when exactUuid is set. Returns 0 when none match. */
+int CustomPackage_FindPinnedMusic(const char *assets, const char *revision, const char *uuid, int exactUuid,
     const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
     char *scaPath, size_t scaCapacity, char scaSha256[65], unsigned long *scaBytes);
 /* A descriptor derived from one verified store revision. Return 1 for a

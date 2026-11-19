@@ -56,6 +56,13 @@ static void build(void)
 	cseq[4] = 1;
 	cseq[5] = 1;
 	put16(cseq + 6, 3);
+	/* Three entries share a complete one-sequence song. */
+	memset(cseq + 28, 0, 20);
+	cseq[37] = 1;
+	put16(cseq + 38, 120);
+	put16(cseq + 40, 48);
+	cseq[46] = 1;
+	cseq[47] = 3;
 	at = chunk(at, "BANK", bank, sizeof bank);
 	at = chunk(at, "CSEQ", cseq, sizeof cseq);
 	at = chunk(at, "SIZE", sizes, sizeof sizes);
@@ -173,6 +180,8 @@ int main(int argc, char **argv)
 	build(); put32(fx + find("CSEQ") + 8, 4); CHECK(refused_with("CSEQ size out of range"));
 	build(); put16(fx + find("CSEQ") + 8 + 6, 0); CHECK(refused_with("has no song"));
 	build(); fx[find("CSEQ") + 8 + 4] = 4; CHECK(refused_with("tables exceed"));
+	build(); put32(fx + find("CSEQ") + 8, 40); CHECK(refused_with("song or sequence exceeds"));
+	build(); put32(fx + find("CSEQ") + 8, 47); CHECK(refused_with("song or sequence exceeds"));
 	{
 		// A bank chunk with only the header sector has no samples.
 		static const unsigned char head[CTR_SCA_SECTOR] = {1, 0, 5, 0};
