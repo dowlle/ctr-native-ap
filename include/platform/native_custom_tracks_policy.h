@@ -1,6 +1,8 @@
 #ifndef NATIVE_CUSTOM_TRACKS_POLICY_H
 #define NATIVE_CUSTOM_TRACKS_POLICY_H
 
+#define CUSTOM_TRACK_PATH_MAX 512
+
 // Custom-track loader DECISIONS, ruled for the Baby T Park event spike. Each
 // decision's own heading carries its rung, so this line cannot go stale.
 // Deliberately freestanding, exactly like ap_cup_box_policy.h: the gather and

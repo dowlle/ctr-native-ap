@@ -226,7 +226,7 @@ static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct Custom
 // race on host 13 (AP_ContentPreparePad), so no LevelID-13 site can read it
 // as Oxide Station or as the legacy pad track.
 static int ap_content_cortex_ready;
-static int ap_content_cortex_load_failed;
+static int ap_content_cortex_load_error;
 static struct AP_ContentFiles ap_content_cortex_files;
 
 static int AP_ContentScanCortex(void)
@@ -235,7 +235,7 @@ static int AP_ContentScanCortex(void)
 	char error[160], why[320], line[640];
 	const char *dir = NativeAssets_GetAssetDir();
 	struct AP_ContentFiles *f = &ap_content_cortex_files;
-	ap_content_cortex_load_failed = 0;
+	ap_content_cortex_load_error = 0;
 	memset(f, 0, sizeof *f);
 	if (dir == NULL ||
 	    snprintf(f->levPath, sizeof f->levPath, "%s/tracks/cortex-vortex/CVortex Arcade All.lev", dir) >= (int)sizeof f->levPath ||
@@ -291,22 +291,40 @@ int AP_ContentPadReady(int physicalPad)
 	return AP_ContentTrackReady(pad->retail_id >= 0, pad->cortex, pad->package_index);
 }
 
-static int AP_ContentLoadRefused(int cortex, int packageIndex)
+static enum CustomTrackManagerState AP_ContentFileRefusal(const struct AP_ContentFiles *files)
+{
+	if (strlen(files->levPath) >= CUSTOM_TRACK_PATH_MAX || strlen(files->vrmPath) >= CUSTOM_TRACK_PATH_MAX)
+		return CTR_CT_MANAGER_PATH_TOO_LONG;
+	return CTR_CT_MANAGER_LOAD_FAILED;
+}
+
+static enum CustomTrackManagerState AP_ContentDescriptorRefusal(const struct CustomTrackSeedDescriptor *descriptor)
+{
+	if (!CustomTrackPolicy_FlagsSupportRace(descriptor->flagAiNav, descriptor->flagSpawns, 0, NULL))
+		return CTR_CT_MANAGER_RACE_GRID_UNSUPPORTED;
+	return CTR_CT_MANAGER_LOAD_FAILED;
+}
+
+static int AP_ContentLoadRefused(int cortex, int packageIndex, enum CustomTrackManagerState reason)
 {
 	if (cortex)
 	{
 		ap_content_cortex_ready = 0;
-		ap_content_cortex_load_failed = 1;
+		ap_content_cortex_load_error = reason + 1;
 		ap_cortex_track_content_required = 1;
 	}
 	else
 	{
+		const char *detail = "The race could not load the verified files. Check the client log.";
+		if (reason == CTR_CT_MANAGER_PATH_TOO_LONG)
+			detail = "The track path is too long. Shorten the install path, then Rescan.";
+		else if (reason == CTR_CT_MANAGER_RACE_GRID_UNSUPPORTED)
+			detail = "The track cannot support this race's starting grid. Check the client log.";
 		ap_content_package_ready[packageIndex] = 0;
-		ap_content_package_scan[packageIndex] = CTR_CT_MANAGER_LOAD_FAILED + 1;
+		ap_content_package_scan[packageIndex] = reason + 1;
 		ap_custom_content_required = 1;
-		ap_custom_content_status.state = CTR_CT_MANAGER_LOAD_FAILED;
-		snprintf(ap_custom_content_status.detail, sizeof ap_custom_content_status.detail,
-		         "The race could not load the verified files. Check the client log.");
+		ap_custom_content_status.state = reason;
+		snprintf(ap_custom_content_status.detail, sizeof ap_custom_content_status.detail, "%s", detail);
 	}
 	ap_state_gen++;
 	return 0;
@@ -333,7 +351,7 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		}
 		m = &ap_content_cortex_files.measured;
 		if (!CustomTrack_UseContentFiles(ap_content_cortex_files.levPath, ap_content_cortex_files.vrmPath, "CORTEX VORTEX"))
-			return AP_ContentLoadRefused(1, -1);
+			return AP_ContentLoadRefused(1, -1, AP_ContentFileRefusal(&ap_content_cortex_files));
 		memset(&d, 0, sizeof d);
 		d.standalone = 1; d.laps = race->laps; d.hostLevelID = race->hostLevelID;
 		d.replacesCupLevelID = -1; d.boxes = 0;
@@ -347,7 +365,7 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		snprintf(race->levSha256, sizeof race->levSha256, "%s", CTR_CFG_CORTEX_LEV_SHA256);
 		snprintf(race->vrmSha256, sizeof race->vrmSha256, "%s", CTR_CFG_CORTEX_VRM_SHA256);
 		if (!CustomTrack_ApplySeedDescriptor(&d))
-			return AP_ContentLoadRefused(1, -1);
+			return AP_ContentLoadRefused(1, -1, AP_ContentDescriptorRefusal(&d));
 		return 1;
 	}
 	{
@@ -373,7 +391,7 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		         : CustomTrack_UseContentFiles(ap_content_files[packageIndex].levPath,
 		                                       ap_content_files[packageIndex].vrmPath, raceName);
 		if (!used)
-			return AP_ContentLoadRefused(0, packageIndex);
+			return AP_ContentLoadRefused(0, packageIndex, AP_ContentFileRefusal(&ap_content_files[packageIndex]));
 #ifdef CTR_CUSTOM_PACKAGES
 		// The track's own music, when the shared package this seed resolved pins
 		// a Saphi .sca: the package with the seed's UUID first, then any
@@ -409,7 +427,7 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		snprintf(race->levSha256, sizeof race->levSha256, "%s", pkg->lev_sha256);
 		snprintf(race->vrmSha256, sizeof race->vrmSha256, "%s", pkg->vrm_sha256);
 		if (!CustomTrack_ApplySeedDescriptor(&d))
-			return AP_ContentLoadRefused(0, packageIndex);
+			return AP_ContentLoadRefused(0, packageIndex, AP_ContentDescriptorRefusal(&d));
 		return 1;
 	}
 }

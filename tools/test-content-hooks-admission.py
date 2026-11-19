@@ -218,6 +218,17 @@ int main(void)
 	       used_files == 1 && applied == 0 && staged == 0, "loader refusal updates both pad and seed readiness");
 	refuse_files = 0;
 	expect(preflight() && AP_ContentPadReady(3), "a new verification can restore readiness");
+	{
+		struct AP_ContentFiles longPath = {0};
+		memset(longPath.levPath, 'a', CUSTOM_TRACK_PATH_MAX - 1);
+		expect(AP_ContentFileRefusal(&longPath) == CTR_CT_MANAGER_LOAD_FAILED, "a path that fits gets the generic refusal");
+		longPath.levPath[CUSTOM_TRACK_PATH_MAX - 1] = 'a';
+		expect(AP_ContentFileRefusal(&longPath) == CTR_CT_MANAGER_PATH_TOO_LONG, "a path beyond the loader limit gets specific help");
+		struct CustomTrackSeedDescriptor noGrid = applied_descriptor;
+		noGrid.flagAiNav = 0;
+		expect(AP_ContentDescriptorRefusal(&noGrid) == CTR_CT_MANAGER_RACE_GRID_UNSUPPORTED,
+		       "a verified pair without AI paths gets a grid refusal");
+	}
 
 	/* A4-70: a pad whose Relic Race runs other laps than its Trophy Race and CTR
 	   Challenge stages each mode's own laps in the race context. */
@@ -393,11 +404,11 @@ int main(void)
 		reset_calls();
 		refuse_files = 1;
 		expect(AP_ContentPreparePad(5, AP_CONTENT_MODE_RELIC) == -1 && !AP_ContentPadReady(5) &&
-		       ap_cortex_track_content_required && ap_content_cortex_load_failed && staged == 0,
+		       ap_cortex_track_content_required && ap_content_cortex_load_error == CTR_CT_MANAGER_LOAD_FAILED + 1 && staged == 0,
 		       "Cortex Vortex loader refusal also updates pad and seed readiness");
 		refuse_files = 0;
 		ap_content_cortex_ready = AP_ContentScanCortex();
-		expect(AP_ContentPadReady(5) && !ap_content_cortex_load_failed, "a scan clears the Cortex Vortex load failure");
+		expect(AP_ContentPadReady(5) && !ap_content_cortex_load_error, "a scan clears the Cortex Vortex load failure");
 		/* A changed byte after admission: same size, other hash. */
 		snprintf(cmd, sizeof cmd, "printf 'X' | dd of='%s' bs=1 seek=100 conv=notrunc status=none", cvLev);
 		expect(system(cmd) == 0, "bundled LEV changed in place");

@@ -1037,6 +1037,40 @@ int main(void)
         CHECK(strstr(s_ctInfo, "The race could not load these files."));
         for (int i = 0; i < 12 && !has("could not load"); i++) frame(BTN_DOWN, NULL);
         frame(0, "seed-load-failed-details"); CHECK(has("could not load"));
+
+        room[1].scan = AP_SEED_SCAN_PATH_TOO_LONG;
+        revisit(); frame(0, "seed-path-too-long");
+        CHECK(s_ctFocus == CT_FOCUS_TABS && has("Path too long"));
+        CT_RequiredFiles(&s_ctSeedRows[1]);
+        CHECK(strstr(s_ctInfo, "Shorten the install path"));
+        for (int i = 0; i < 12 && !has("Shorten the install"); i++) frame(BTN_DOWN, NULL);
+        frame(0, "seed-path-too-long-details"); CHECK(has("Shorten the install"));
+
+        room[1].scan = AP_SEED_SCAN_RACE_GRID_UNSUPPORTED;
+        revisit(); frame(0, "seed-grid-refused");
+        CHECK(s_ctFocus == CT_FOCUS_TABS && has("Grid refused"));
+        CT_RequiredFiles(&s_ctSeedRows[1]);
+        CHECK(strstr(s_ctInfo, "lacks AI paths") && !strstr(s_ctInfo, "install path"));
+        for (int i = 0; i < 12 && !has("lacks AI paths"); i++) frame(BTN_DOWN, NULL);
+        frame(0, "seed-grid-refused-details"); CHECK(has("lacks AI paths"));
+
+        /* Availability can change after the first visit, while consent loads. */
+        room[0].scan = AP_SEED_SCAN_NOT_INSTALLED;
+        room[0].source = AP_SEED_SOURCE_NOT_ALLOWED;
+        revisit(); frame(0, NULL);
+        CHECK(s_ctFocus == CT_FOCUS_TABS && !has("Install missing"));
+        room[0].source = AP_SEED_SOURCE_SAPHI;
+        frame(0, "seed-install-shortcut");
+        CHECK(s_ctFocus == CT_FOCUS_TABS && has("Install missing"));
+        frame(BTN_SQUARE, NULL);
+        CHECK(s_ctSub == CT_SUB_INSTALL && seedStarts == before && has("Leaving pauses the install queue."));
+        frame(BTN_TRIANGLE, NULL);
+        frame(BTN_TRIANGLE, NULL);
+        frame(BTN_CROSS, "seed-install-list-shortcut");
+        CHECK(s_ctFocus == CT_FOCUS_LIST && has("Install missing"));
+        frame(BTN_SQUARE, NULL);
+        CHECK(s_ctSub == CT_SUB_INSTALL && seedStarts == before);
+        frame(BTN_TRIANGLE, NULL);
     }
     /* The old single-package room (Baby T Park, not allowed): instructions, never the download. */
     seedActive = 0; seedSelected = 1; roomCount = 0;

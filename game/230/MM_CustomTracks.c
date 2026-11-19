@@ -818,6 +818,8 @@ static int CT_ScanFromStatus(int state)
     case CTR_CT_MANAGER_INCOMPATIBLE: return AP_SEED_SCAN_REFUSED;
     case CTR_CT_MANAGER_IO_ERROR: return AP_SEED_SCAN_IO_ERROR;
     case CTR_CT_MANAGER_LOAD_FAILED: return AP_SEED_SCAN_LOAD_FAILED;
+    case CTR_CT_MANAGER_PATH_TOO_LONG: return AP_SEED_SCAN_PATH_TOO_LONG;
+    case CTR_CT_MANAGER_RACE_GRID_UNSUPPORTED: return AP_SEED_SCAN_RACE_GRID_UNSUPPORTED;
     default: return AP_SEED_SCAN_UNKNOWN;
     }
 }
@@ -866,6 +868,8 @@ static const char *CT_SeedStateText(const struct AP_SeedContentRow *r)
     case AP_SEED_SCAN_REFUSED: return "Refused";
     case AP_SEED_SCAN_IO_ERROR: return "Error";
     case AP_SEED_SCAN_LOAD_FAILED: return "Load failed";
+    case AP_SEED_SCAN_PATH_TOO_LONG: return "Path too long";
+    case AP_SEED_SCAN_RACE_GRID_UNSUPPORTED: return "Grid refused";
     default: return "Unknown";
     }
 }
@@ -884,6 +888,12 @@ static const char *CT_SeedStateLong(const struct AP_SeedContentRow *r)
 }
 
 static int CT_SeedReady(void) { return ap_seed_ready_count(s_ctSeedRows, s_ctSeedCount); }
+
+static int CT_SeedInstallAvailable(void)
+{
+    if (s_ctSeedLegacy) return ap_seed_row_downloadable(&s_ctSeedRows[0]);
+    return ap_seed_install_plan(s_ctSeedRows, s_ctSeedCount, 0, NULL, NULL, NULL, NULL, 0) == AP_SEED_PLAN_OK;
+}
 
 /* Installed Library revisions with the seed track's title: an explanation,
    never a Ready claim (the seed's pins decide). */
@@ -1458,7 +1468,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
 
 /* ---- This Seed tab ------------------------------------------------------ */
 
-static void CT_SeedFrame(int tapped, uint32_t *ot)
+static void CT_SeedFrame(int tapped, int installAvailable, uint32_t *ot)
 {
     struct CT_Action actions[CT_ACTIONS_MAX];
     const struct AP_SeedContentRow *r = NULL;
@@ -1657,7 +1667,9 @@ static void CT_SeedFrame(int tapped, uint32_t *ot)
     if (AP_SeedContentInstallBusy() || s_ctLegacyDownload) snprintf(line, sizeof line, "Installing...");
     const int confirmingInstall = s_ctFocus == CT_FOCUS_SUB && s_ctSub == CT_SUB_INSTALL;
     CT_Footer(confirmingInstall ? "Leaving pauses the install queue." : line,
-                    s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? NativeMenu_Labels("*: Actions   ^: Page controls") :
+                    s_ctFocus == CT_FOCUS_TABS ? NULL :
+                    s_ctFocus == CT_FOCUS_LIST ? NativeMenu_Labels(installAvailable ? "[: Install missing   ^: Controls"
+                                                                                 : "*: Actions   ^: Page controls") :
                     s_ctFocus == CT_FOCUS_CONTROLS ? (s_ctSeedCount ? NativeMenu_Labels("*: Select   [: Tracks   ^: Tabs") : NativeMenu_Labels("*: Select   ^: Tabs")) :
                     s_ctFocus == CT_FOCUS_ACTIONS ? NativeMenu_Labels("*: Select   ^: Tracks") :
                     confirmingInstall ? NativeMenu_Labels("*: Install   ^: Cancel") : NativeMenu_Labels("^: Back"), ot);
@@ -1745,9 +1757,7 @@ static void MM_ConfigProc_CustomTracks(struct RectMenu *menu, uint32_t *ot, stru
         s_ctFocus = CT_FOCUS_TABS;
         if (needsTracks)
         {
-            const int canInstall = s_ctSeedLegacy ? ap_seed_row_downloadable(&s_ctSeedRows[0]) :
-                ap_seed_install_plan(s_ctSeedRows, s_ctSeedCount, 0, NULL, NULL, NULL, NULL, 0) == AP_SEED_PLAN_OK;
-            if (canInstall)
+            if (CT_SeedInstallAvailable())
             {
                 s_ctFocus = CT_FOCUS_CONTROLS;
                 s_ctControlSel[CT_TAB_SEED] = 0;
@@ -1801,7 +1811,16 @@ static void MM_ConfigProc_CustomTracks(struct RectMenu *menu, uint32_t *ot, stru
         tapped = 0;
     }
 
-    if (s_ctFocus == CT_FOCUS_TABS && !MM_CustomImport_Active())
+    const int installAvailable = !CT_JobsBusy() && CT_SeedInstallAvailable();
+    if (s_ctTab == CT_TAB_SEED && (s_ctFocus == CT_FOCUS_TABS || s_ctFocus == CT_FOCUS_LIST) &&
+        (tapped & BTN_SQUARE) && installAvailable)
+    {
+        s_ctControlSel[CT_TAB_SEED] = 0;
+        CT_InstallMissing();
+        OtherFX_Play(1, 1);
+        tapped = 0;
+    }
+    else if (s_ctFocus == CT_FOCUS_TABS && !MM_CustomImport_Active())
     {
         if (tapped & (BTN_LEFT | BTN_L1)) CT_GoTab((s_ctTab + CT_TAB_COUNT - 1) % CT_TAB_COUNT);
         else if (tapped & (BTN_RIGHT | BTN_R1)) CT_GoTab((s_ctTab + 1) % CT_TAB_COUNT);
@@ -1857,7 +1876,7 @@ static void MM_ConfigProc_CustomTracks(struct RectMenu *menu, uint32_t *ot, stru
         DecalFont_DrawLineOT("CUSTOM TRACKS", 256, 24, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
     CT_DrawTabs(ot);
     if (s_ctTab == CT_TAB_LIBRARY) CT_LibraryFrame(tapped, ot);
-    else if (s_ctTab == CT_TAB_SEED) CT_SeedFrame(tapped, ot);
+    else if (s_ctTab == CT_TAB_SEED) CT_SeedFrame(tapped, installAvailable, ot);
     else
     {
         const int importing = MM_CustomImport_Active();
@@ -1867,6 +1886,8 @@ static void MM_ConfigProc_CustomTracks(struct RectMenu *menu, uint32_t *ot, stru
         else if (MM_CustomImport_Active()) CT_Footer(NULL, NativeMenu_Labels("^: Tabs"), ot);
     }
     if (s_ctFocus == CT_FOCUS_TABS && s_ctTab != CT_TAB_IMPORT)
-        CT_Footer(NULL, CT_JobsBusy() ? NativeMenu_Labels("Working...   *: Open") : NativeMenu_Labels("*: Open   ^: Options"), ot);
+        CT_Footer(NULL, NativeMenu_Labels(CT_JobsBusy() ? "Working...   *: Open" :
+                                        s_ctTab == CT_TAB_SEED && installAvailable ? "*: Open [: Install missing ^: Back" :
+                                        "*: Open   ^: Options"), ot);
     CT_DrawPanels(ot);
 }

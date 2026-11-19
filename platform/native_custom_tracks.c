@@ -46,7 +46,6 @@ void CustomTrack_Log(const char *fmt, ...)
 #endif
 }
 
-#define CUSTOM_TRACK_PATH_MAX 512
 #define CUSTOM_TRACK_HASH_CHUNK 65536
 
 // One source file: where it is, what it must hash to, and what verifying it
