@@ -95,8 +95,8 @@ check(checkpoint.count("AP_NavRec_AfterCheckpointRestore();") == 1 and
       checkpoint_restore.find("AP_NavRec_AfterCheckpointRestore();"),
       "lane reload and fallback run after the LEV pointer map and authored lane repair")
 check(0 <= load.find("if (MainRaceTrack_OfflineCustomTimeTrial())") < load.find("AP_NavRec_HighestIndex(")
-      and "MainRaceTrack_OfflineCustomLoad() && !MainRaceTrack_OfflineCustomTimeTrial()" in body("AP_NavRec_Write"),
-      "custom Time Trial keeps authored ghost lanes and custom Arcade keeps its previous recording behavior")
+      and "MainRaceTrack_OfflineCustomLoad() && !MainRaceTrack_OfflineCustomTimeTrial()" in body("AP_NavRec_SyncArmed"),
+      "custom Time Trial keeps authored ghost lanes and custom Arcade skips capture")
 check(re.search(r"if \(!g_config\.navUseRecorded\)\s*return 0;", load) is not None
       and re.search(r"if \(MainRaceTrack_OfflineCustomTimeTrial\(\)\)\s*return 0;", load) is not None
       and 0 <= load.find("AP_NavRecIdentity_LanesMayLoad(") < load.find("AP_NavRec_BuildPool(")

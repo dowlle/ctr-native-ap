@@ -398,7 +398,7 @@ static void check_recorded_playback(int mode, const unsigned char uuid[16], unsi
 		AP_NavRec_Tick(&s_gt);
 		sample_flying_lap();
 		finish_sampled_lap();
-		CHECK(s_navrecBankCount == 1 && !s_navrecBankDirty[0]);
+		CHECK(!s_navrecArmed && s_navrecBankCount == 0 && s_navrecCurSamples == 0);
 		CHECK(access("ap-navpaths/navpath-6-002.navlap", F_OK) != 0);
 		g_config.navRecord = 0;
 		AP_NavRec_Tick(&s_gt);
