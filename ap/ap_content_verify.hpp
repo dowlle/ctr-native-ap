@@ -83,6 +83,7 @@ struct Loc {
 };
 struct Model {
     uint64_t epoch = 0;
+    unsigned int parse_revision = 0;
     std::vector<Node> nodes;
     std::vector<Region> regions;
     std::vector<Loc> locs;
@@ -214,6 +215,7 @@ static Model build() {
         for (const auto &id : p["capability"]["finish_floors"]) finish_floor_tracks.insert(id.get<std::string>());
     Model m;
     m.epoch = content_plan::epoch;
+    m.parse_revision = s_seedcfg_parse_revision;
     const J *gc = p.contains("global_checks") ? &p["global_checks"] : nullptr;
     m.itemsanity = gc && gc->value("itemsanity", false);
     std::map<std::string, int> req;
@@ -867,7 +869,12 @@ extern "C" int ap_content_plan_verify(const ap_content_verify_io *io, ap_content
     std::memset(out, 0, sizeof *out);
     if (!ap_content_plan_active() || !io) return 0;
     try {
-        if (!have || model.epoch != content_plan::epoch) { have = false; model = build(); have = true; }
+        // The carried win logic can change even when the bound plan is identical.
+        if (!have || model.epoch != content_plan::epoch || model.parse_revision != s_seedcfg_parse_revision) {
+            have = false;
+            model = build();
+            have = true;
+        }
         return sweep(model, io, out);
     } catch (const std::exception &e) {
         AP_LogLine((std::string("[AP VERIFY] content-plan sweep refused: ") + e.what() + "\n").c_str());
