@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 
 #include <common.h>
+#include <platform/native_custom_identity.h>
 #include <platform/native_memory.h>
 #include <platform/native_recorded_race_data.h>
 #include "../../platform/native_clip_scratch.h"
@@ -24,6 +25,7 @@ static const unsigned char trackUuid[16] = {1};
 const struct CustomRecordedRace *MainRaceTrack_RecordedRace(void) { return recorded ? &race : NULL; }
 int MainRaceTrack_OfflineCustomLoad(void) { return 1; }
 int MainRaceTrack_OfflineCustomTimeTrial(void) { return 0; }
+int MainRaceTrack_IdentityLevelID(void) { return CTR_CUSTOM_LEVEL_ID; }
 int MainRaceTrack_OfflineNavIdentity(unsigned char uuid[16], unsigned int *revision)
 {
 	memcpy(uuid, trackUuid, sizeof trackUuid);
