@@ -106,6 +106,7 @@ typedef struct ctr_content_pad {
     unsigned wumpa_modes;
     int64_t letter_locations[3];
     int64_t letter_items[3];
+    char letter_glyphs[3];     /* zero for the default C/T/R slots */
     /* Relic Race Perfect (#133 PR 3c, #453): the check for breaking every time
      * crate in this pad's Relic Race; 0 when the seed or entry has none. */
     int64_t perfect_location;
