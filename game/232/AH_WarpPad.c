@@ -704,7 +704,22 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				// stage 2 line is the one addition (A4-59, 2026-11-11).
 				if (ap_content_plan_active())
 					apBoxesLeft = AP_ContentBoxesLine(ap_content_plan_pad(levelID));
-				int apLift = ap_pad_title_block_lift((apStage2 != AP_S2LINE_NONE) + (apBoxesLeft > 0),
+				// A6-25 (ruled 2026-11-19): a pad whose track is not installed
+				// keeps its grey look, but standing on it says so and where to
+				// go. Entering still does nothing. Such a pad reads Done in
+				// AP_PadState, so its stage 2 line is always AP_S2LINE_NONE.
+				// The message takes both small-line slots; a stale AP BOXES
+				// LEFT count (files removed after the trophy) yields to it.
+				int apContentMissing = 0;
+#ifdef CTR_CUSTOM_TRACKS
+				if (ap_content_plan_active())
+				{
+					int apMissingPhys = ctr_cfg_warp_phys(levelID);
+					const ctr_content_pad *apMissingPad = ap_content_plan_pad(apMissingPhys);
+					apContentMissing = apMissingPad && apMissingPad->occupied && !AP_ContentPadReady(apMissingPhys);
+				}
+#endif
+				int apLift = ap_pad_title_block_lift(apContentMissing ? 2 : (apStage2 != AP_S2LINE_NONE) + (apBoxesLeft > 0),
 				                                     data.font_charPixHeight[FONT_SMALL]);
 				AP_FeedHubPadTitle(1);
 #else
@@ -723,7 +738,24 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				// A4-59: what stage 2 asks for, in the A4-10 pad colours: green
 				// met, red not met, grey when its races have nothing left. A long
 				// line scrolls in the shared A4-44 box instead of running off.
-				if (apStage2 != AP_S2LINE_NONE)
+				if (apContentMissing)
+				{
+					// A6-25: two short lines in the unmet red, reusing the stage 2
+					// and boxes slots; both fit the box without scrolling. The pad
+					// takes no kart until the track is installed.
+					int apMissW = gGT->pushBuffer[0].rect.w - 160;
+					DecalFont_DrawLineBox("TRACK NOT INSTALLED",
+					                      gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
+					                      gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 15 - apLift,
+					                      apMissW, FONT_SMALL, JUSTIFY_CENTER | RED,
+					                      TEXT_MARQUEE, TEXT_SLOT_PAD, NULL);
+					DecalFont_DrawLineBox("OPTIONS > CUSTOM TRACKS",
+					                      gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
+					                      gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 15,
+					                      apMissW, FONT_SMALL, JUSTIFY_CENTER | RED,
+					                      TEXT_MARQUEE, TEXT_SLOT_PAD, NULL);
+				}
+				else if (apStage2 != AP_S2LINE_NONE)
 				{
 					// 160 narrower than the view keeps it clear of the
 					// bottom right HUD corner; longer lines scroll.
@@ -737,7 +769,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					                      TEXT_MARQUEE, TEXT_SLOT_PAD, NULL);
 				}
 
-				if (apBoxesLeft > 0)
+				if (apBoxesLeft > 0 && !apContentMissing)
 				{
 					char apBoxLine[32];
 					snprintf(apBoxLine, sizeof apBoxLine, "AP BOXES LEFT: %d", apBoxesLeft);

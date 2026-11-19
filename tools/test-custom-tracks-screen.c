@@ -686,9 +686,17 @@ int main(void)
     room[3].locator.bigfile_index = 57; room[3].registry = AP_SEED_REGISTRY_NOT_LISTED;
     row(4, "Cortex Vortex", "", AP_SEED_SCAN_READY, AP_SEED_SOURCE_BUNDLED); room[4].index = -1;
     roomCount = 5;
-    revisit(); frame(0, "seed-tabs"); CHECK(s_ctTab == CT_TAB_SEED && s_ctFocus == CT_FOCUS_TABS);
+    revisit(); frame(0, "seed-tabs"); CHECK(s_ctTab == CT_TAB_SEED && s_ctFocus == CT_FOCUS_CONTROLS && s_ctControlSel[CT_TAB_SEED] == 0);
+    /* A6-25: a seed with missing tracks lands on the page controls with
+       Install missing under the cursor; one press opens its overview, which
+       names the off-screen pause. */
+    CHECK(has("Install missing") && has("Ready 2/5"));
+    frame(BTN_CROSS, NULL); CHECK(s_ctSub == CT_SUB_INSTALL && has_paged("Leaving this screen pauses the install.", NULL));
+    frame(BTN_TRIANGLE, NULL); CHECK(s_ctFocus == CT_FOCUS_CONTROLS && has("Nothing was installed"));
+    frame(BTN_TRIANGLE, NULL); CHECK(s_ctFocus == CT_FOCUS_TABS);
+    frame(BTN_DOWN, NULL); CHECK(s_ctFocus == CT_FOCUS_LIST);
     CHECK(has("Missing") && has("Mismatch") && has("Ready 2/5"));
-    frame(BTN_DOWN, NULL); frame(BTN_DOWN, "seed-missing"); CHECK(has("Needs v2.0.0"));
+    frame(BTN_DOWN, "seed-missing"); CHECK(has("Needs v2.0.0"));
     frame(BTN_DOWN, NULL); frame(BTN_DOWN, "seed-manual"); CHECK(has("No download"));
     frame(BTN_DOWN, "seed-bundled"); CHECK(has("Comes with the client"));
     /* Track actions. */
@@ -710,7 +718,10 @@ int main(void)
     frame(BTN_TRIANGLE, NULL); frame(0, NULL); CHECK(seedStarts == 0 && s_ctFocus == CT_FOCUS_CONTROLS && has("Nothing was installed"));
     /* Page controls: Install missing shows the overview; Confirm installs once. */
     s_ctControlSel[1] = 0;
-    frame(BTN_CROSS, "seed-install-overview"); CHECK(s_ctSub == CT_SUB_INSTALL && has("Android") && has("Install missing: 1 track"));
+    frame(BTN_CROSS, "seed-install-overview"); CHECK(s_ctSub == CT_SUB_INSTALL && has("Android") && has("Install missing: 1 track") && has_paged("pauses the install", NULL));
+    /* A6-25: the pause sentence sits on a later page; dump that page too. */
+    for (int k = 0; k < 4 * CT_PAGE_FRAMES && !has("pauses the install"); k++) frame(0, NULL);
+    frame(0, "seed-install-overview-pause"); CHECK(has("pauses the install"));
     frame(BTN_CROSS, NULL); CHECK(seedStarts == 1 && s_ctSub == CT_SUB_NONE);
     seedBusy = 1; frame(0, "seed-installing"); CHECK(has("Installing..."));
     { int before = registryRetries; frame(BTN_DOWN, NULL); frame(BTN_CROSS, NULL); frame(0, NULL); CHECK(registryRetries == before && has("Wait for the install")); }
@@ -730,6 +741,7 @@ int main(void)
     {
         int before;
         revisit(); frame(0, NULL); before = scrollBars;
+        s_ctFocus = CT_FOCUS_TABS; /* A6-25 lands on the page controls; the scroll bar lives in the list view */
         s_ctTab = CT_TAB_LIBRARY; frame(0, NULL); CHECK(s_ctItemCount <= 7 && scrollBars == before); /* six items fit */
         s_ctTab = CT_TAB_SEED; frame(0, NULL); CHECK(s_ctSeedCount == 5 && scrollBars == before);
         for (int k = 5; k < 12; k++) { row(k, "Extra track", "1.0.0", AP_SEED_SCAN_READY, AP_SEED_SOURCE_BUNDLED); room[k].index = -1; }
@@ -743,10 +755,12 @@ int main(void)
 
     /* 12. A room without a content plan that names the release profile. */
     seedActive = 0; seedSelected = 1; pkgStatus.state = CTR_CT_MANAGER_NOT_INSTALLED;
-    revisit(); frame(0, "seed-legacy"); CHECK(s_ctTab == CT_TAB_SEED && s_ctSeedCount == 1 && has("Missing"));
-    frame(BTN_DOWN, NULL); frame(BTN_CROSS, NULL); frame(BTN_CROSS, NULL); CHECK(legacyStarts == 2);
+    revisit(); frame(0, "seed-legacy"); CHECK(s_ctTab == CT_TAB_SEED && s_ctSeedCount == 1 && has("Install missing"));
+    /* A6-25: landing puts Install missing under the cursor, one press starts. */
+    frame(BTN_CROSS, NULL); CHECK(legacyStarts == 2 && s_ctLegacyDownload);
     legacyState = AP_CT_DOWNLOAD_FAILED; frame(0, NULL); CHECK(!s_ctLegacyDownload);
     legacyState = AP_CT_DOWNLOAD_IDLE;
+    frame(BTN_SQUARE, NULL); frame(BTN_CROSS, NULL); CHECK(s_ctFocus == CT_FOCUS_ACTIONS);
     CHECK(select_action("Open source page")); frame(BTN_CROSS, NULL); CHECK(!strcmp(lastURL, pkg.sourceUrl));
     seedSelected = 0; seedActive = 1; pkgStatus.state = CTR_CT_MANAGER_READY;
     frame(BTN_TRIANGLE, NULL); frame(BTN_TRIANGLE, NULL); frame(BTN_TRIANGLE, NULL);
@@ -993,7 +1007,8 @@ int main(void)
     room[1].saphi_track_id = 122;
     snprintf(room[1].permission, sizeof room[1].permission, "The author has not allowed in-game download.");
     roomCount = 2;
-    revisit(); frame(0, "permission-seed"); CHECK(s_ctTab == CT_TAB_SEED && has("DK Pass"));
+    revisit(); frame(0, NULL); CHECK(s_ctTab == CT_TAB_SEED && s_ctFocus == CT_FOCUS_CONTROLS); /* A6-25 landing */
+    s_ctFocus = CT_FOCUS_LIST; frame(0, "permission-seed"); CHECK(has("DK Pass"));
     {
         int plan[AP_SEED_ROWS_MAX], queued = 0; uint64_t bytes = 0; char reason[200];
         CHECK(AP_SeedContentInstallPreview(plan, &queued, &bytes, reason, sizeof reason) == AP_SEED_PLAN_OK &&

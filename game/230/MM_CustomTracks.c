@@ -1574,7 +1574,10 @@ static void CT_SeedFrame(int tapped, uint32_t *ot)
             for (i = 0; i < queued; i++)
                 if (s_ctSeedRows[plan[i]].registry == AP_SEED_REGISTRY_CACHED) cached++;
             ap_seed_format_bytes(bytes, size, sizeof size);
-            snprintf(line, sizeof line, "Install missing: %d track%s, %s from Project Saphi.%s%s", queued, queued == 1 ? "" : "s", size,
+            /* A6-25: the install queue only advances while this screen is
+               open, so the player is told before confirming. */
+            snprintf(line, sizeof line, "Install missing: %d track%s, %s from Project Saphi.%s%s "
+                     "Leaving this screen pauses the install.", queued, queued == 1 ? "" : "s", size,
                      manual ? " Tracks without a download need their files added by hand." : "",
                      cached ? " Locations from the cached registry." : "");
             CT_DrawPaged(line, CT_DETAIL_X, 70, CT_DETAIL_W, 7, WHITE, ot);
@@ -1732,11 +1735,14 @@ static void MM_ConfigProc_CustomTracks(struct RectMenu *menu, uint32_t *ot, stru
     CT_Poll();
     CT_BuildSeed();
     /* A fresh visit: This Seed when the loaded seed misses tracks, otherwise
-       Library (ruled 2026-11-04 19:38 CET). */
+       Library (ruled 2026-11-04 19:38 CET). A6-25 (ruled 2026-11-19): a seed
+       with missing tracks lands on the page controls with Install missing
+       under the cursor, one press to its overview. It never starts by itself. */
     if (now - s_ctLastFrame > 2 && !MM_CustomImport_Active() && !s_contentSearchEditing)
     {
         s_ctTab = s_ctSeedCount && CT_SeedReady() < s_ctSeedCount ? CT_TAB_SEED : CT_TAB_LIBRARY;
-        s_ctFocus = CT_FOCUS_TABS;
+        s_ctFocus = s_ctTab == CT_TAB_SEED ? CT_FOCUS_CONTROLS : CT_FOCUS_TABS;
+        if (s_ctTab == CT_TAB_SEED) s_ctControlSel[CT_TAB_SEED] = 0;
         s_ctSub = CT_SUB_NONE;
         if (!AP_SeedContentInstallBusy() && !s_ctLegacyDownload) s_ctMessage[0] = 0;
     }
