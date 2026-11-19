@@ -967,12 +967,15 @@ void BOTS_Killplane(struct Thread *botThread)
 }
 
 #ifdef CTR_RECORDED_RACE
-static int BOTS_RecordedGridTick(struct Driver *bot, int trafficLightsTimer)
+static int BOTS_RecordedGridTick(struct Thread *thread, struct Driver *bot, int trafficLightsTimer)
 {
 	if (bot->botData.botPath < BOTS_NAV_PATH_COUNT)
 		return 1;
 	if (trafficLightsTimer > 0)
+	{
+		VehPhysForce_TranslateMatrix(thread, bot);
 		return 0;
+	}
 	// Reuse the one-off approach frame to aim from the seat to the lap at green.
 	if (!(bot->botData.botFlags & BOT_FLAG_STARTLINE_INIT_DONE))
 		BOTS_SetRotation(bot, 0);
@@ -997,7 +1000,7 @@ void BOTS_ThTick_Drive(struct Thread *botThread)
 	}
 
 #ifdef CTR_RECORDED_RACE
-	if (!BOTS_RecordedGridTick(botDriver, trafficLightsTimer))
+	if (!BOTS_RecordedGridTick(botThread, botDriver, trafficLightsTimer))
 		return;
 #endif
 

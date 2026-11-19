@@ -44,9 +44,10 @@ def build_fixture_lev(*, arcade=False):
               (0, -1000), (-1000, 0), (0, 0), (1000, 0), (0, 1000)]
     for i, (x, z) in enumerate(coords):
         struct.pack_into("<3h", body, vertices + 16 * i, x, 0, z)
-    for i in range(4):
+    checkpoint_positions = [(0, 1000), (1000, 0), (0, -1000), (-1000, 0)]
+    for i, (x, z) in enumerate(checkpoint_positions):
         ahead = (i + 1) % 4
-        struct.pack_into("<3hH4B", body, checkpoints + 12 * i, 0, 0, i * 100,
+        struct.pack_into("<3hH4B", body, checkpoints + 12 * i, x, 0, z,
                          (4 - i) * 100, ahead, 255, (i - 1) % 4, 255)
     slots = [0, 0x14c, mesh + 12, mesh + 16]
     if arcade:
@@ -79,7 +80,8 @@ def course_nodes(lev):
 
 def fixture_navset(lev_hash, *, count=7, wrong_id=False, wrong_revision=False,
                    dirty=False, duplicate=False, open_lap=False,
-                   bad_checkpoint=False, reverse_cycle=False, course=None):
+                   bad_checkpoint=False, reverse_cycle=False,
+                   midcourse=False, reverse_geometry=False, course=None):
     nodes = len(course) if course else 32
     data = bytearray(128 + 64 * count)
     struct.pack_into("<4sHH", data, 0, b"NAV2", 4, 128)
@@ -94,13 +96,14 @@ def fixture_navset(lev_hash, *, count=7, wrong_id=False, wrong_revision=False,
         data[entry + 28:entry + 28 + len(name)] = name
         radius = 1000 + (0 if duplicate else 20 * lap)
         for i in range(nodes):
+            index = (i + nodes // 2) % nodes if midcourse else i
             if course:
-                x, y, z, checkpoint = course[i]
+                x, y, z, checkpoint = course[index]
                 x += lap * 4
             else:
-                angle = math.tau * i / nodes
+                angle = math.tau * (-index if reverse_geometry else index) / nodes
                 x, y, z = round(radius * math.sin(angle)), 0, round(radius * math.cos(angle))
-                checkpoint = (i // 8) % 4
+                checkpoint = (index // 8) % 4
             if reverse_cycle:
                 checkpoint = (-checkpoint) % 4
             if bad_checkpoint and i == 0:
@@ -207,7 +210,9 @@ def main():
                                 (dict(wrong_revision=True), "Wrong recording ID"), (dict(dirty=True), "Unusable lap"),
                                 (dict(open_lap=True), "Unusable lap"), (dict(duplicate=True), "Duplicate laps"),
                                 (dict(bad_checkpoint=True), "Wrong lap checkpoints"),
-                                (dict(reverse_cycle=True), "Wrong lap checkpoints")]:
+                                (dict(reverse_cycle=True), "Wrong lap checkpoints"),
+                                (dict(midcourse=True), "Lap starts off grid"),
+                                (dict(reverse_geometry=True), "Lap leaves course")]:
             nav = fixture_navset(lev_hash, **flags)
             verify(exe, root / next(iter(flags)), dict(valid, recorded_ai=nav), expected)
         verify(exe, root / "bad-navset", dict(valid, recorded_ai=valid["recorded_ai"][:-1]), "Invalid recordings")

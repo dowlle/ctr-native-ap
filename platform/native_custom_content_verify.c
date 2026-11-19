@@ -274,6 +274,61 @@ static int recorded_lap_matches_cycle(const struct AP_NavRecNode *nodes, unsigne
 	return traveled == checkpointCount;
 }
 
+static double recorded_distance_to_edge(const struct AP_NavRecNode *node,
+	const unsigned char *start, const unsigned char *end)
+{
+	double dx = rd16s(end) - rd16s(start);
+	double dy = rd16s(end + 2) - rd16s(start + 2);
+	double dz = rd16s(end + 4) - rd16s(start + 4);
+	double x = node->posX - rd16s(start);
+	double y = node->posY - rd16s(start + 2);
+	double z = node->posZ - rd16s(start + 4);
+	double length = dx * dx + dy * dy + dz * dz;
+	double along = length > 0 ? (x * dx + y * dy + z * dz) / length : 0;
+	if (along < 0) along = 0;
+	if (along > 1) along = 1;
+	x -= dx * along;
+	y -= dy * along;
+	z -= dz * along;
+	return x * x + y * y + z * z;
+}
+
+static int recorded_lap_near_course(const struct AP_NavRecNode *nodes, unsigned int nodeCount,
+	const unsigned char *checkpoints)
+{
+	// Check both edges at the sample's checkpoint. This leaves room for
+	// different lines across the road and for jump height between checkpoints.
+	const double maxDistanceSquared = 1024.0 * 1024.0;
+	for (unsigned int i = 0; i < nodeCount; i++)
+	{
+		const unsigned char *at = checkpoints + nodes[i].goBackCount * CHECK_SIZE;
+		const unsigned char *before = checkpoints + at[10] * CHECK_SIZE;
+		const unsigned char *after = checkpoints + at[8] * CHECK_SIZE;
+		if (recorded_distance_to_edge(&nodes[i], before, at) > maxDistanceSquared &&
+		    recorded_distance_to_edge(&nodes[i], at, after) > maxDistanceSquared)
+			return 0;
+	}
+	return 1;
+}
+
+static int recorded_lap_starts_near_grid(const struct AP_NavRecNode *node,
+	const struct CustomRacePlacement *grid, unsigned int ordinal, unsigned int checkpointCount)
+{
+	if (ordinal > 1 && ordinal != checkpointCount - 1)
+		return 0;
+	// The shuffle can assign this line to any seat. Bound the launch approach
+	// for every seat, including the rear row.
+	for (unsigned int i = 0; i < CTR_RECORDED_GRID_COUNT; i++)
+	{
+		int64_t x = node->posX - grid[i].pos[0];
+		int64_t y = node->posY - grid[i].pos[1];
+		int64_t z = node->posZ - grid[i].pos[2];
+		if (x * x + y * y + z * z > 1536 * 1536)
+			return 0;
+	}
+	return 1;
+}
+
 const char *CustomRecordedRace_CheckGeometry(const unsigned char *lev, size_t size,
 	const struct CustomRecordedRace *race)
 {
@@ -296,9 +351,6 @@ const char *CustomRecordedRace_CheckGeometry(const unsigned char *lev, size_t si
 		at = next;
 	}
 	if (at) return "Invalid lap cycle";
-	for (unsigned int i = 0; i < race->set.header.lapCount; i++)
-		if (!recorded_lap_matches_cycle(race->nodes[i], race->set.laps[i].nodeCount, ordinal, count))
-			return "Wrong lap checkpoints";
 	if (!pointer(&view, MESH_P, MESH_SIZE, &mesh, NULL, 0) || !mesh) return "Invalid ground mesh";
 	uint32_t quadCount = rd32(view.p + mesh);
 	uint32_t vertCount = rd32(view.p + mesh + 4);
@@ -311,6 +363,17 @@ const char *CustomRecordedRace_CheckGeometry(const unsigned char *lev, size_t si
 	if (!race->crateCount || race->crateCount > CTR_RECORDED_CRATE_MAX ||
 	    !all_grounded(&ground, race->crates, race->crateCount))
 		return "Crates off ground";
+	for (unsigned int i = 0; i < race->set.header.lapCount; i++)
+	{
+		const struct AP_NavRecNode *nodes = race->nodes[i];
+		unsigned int nodeCount = race->set.laps[i].nodeCount;
+		if (!recorded_lap_matches_cycle(nodes, nodeCount, ordinal, count))
+			return "Wrong lap checkpoints";
+		if (!recorded_lap_starts_near_grid(nodes, race->grid, ordinal[nodes[0].goBackCount], count))
+			return "Lap starts off grid";
+		if (!recorded_lap_near_course(nodes, nodeCount, view.p + checkpoints))
+			return "Lap leaves course";
+	}
 	return NULL;
 }
 #endif

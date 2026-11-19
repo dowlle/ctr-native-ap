@@ -17,7 +17,7 @@ static struct Level level;
 static struct Driver drivers[8];
 static struct Instance karts[8];
 static struct CustomRecordedRace race;
-static int recorded, born, sounds;
+static int recorded, born, sounds, gridDraws;
 static const unsigned char trackUuid[16] = {1};
 
 /* Keep the production grid, bot preparation, crate lifecycle and allocation.
@@ -47,6 +47,12 @@ void VehBirth_TeleportSelf(struct Driver *driver, u8 spawnFlag, int spawnPosY)
 	assert(spawnFlag == VEH_BIRTH_SPAWN_RACE_START && spawnPosY == 0);
 	const SVec3 *seat = &level.DriverSpawn[sdata->kartSpawnOrderArray[driver->driverID]].pos;
 	CTR_SET_VEC3(driver->posCurr.v, seat->x * 256, (seat->y + 0x80) * 256, seat->z * 256);
+}
+void VehPhysForce_TranslateMatrix(struct Thread *thread, struct Driver *driver)
+{
+	assert(thread->inst == driver->instSelf);
+	CTR_SET_VEC3(thread->inst->matrix.t, driver->posCurr.x >> 8, driver->posCurr.y >> 8, driver->posCurr.z >> 8);
+	gridDraws++;
 }
 void GhostReplay_Init1(void) {}
 void GhostReplay_Init2(void) {}
@@ -78,6 +84,7 @@ void AP_BoxModel_SpawnPos(struct Model *model, int x, int y, int z, Vec3 *out)
 #define BOTS_Driver_Init Unused_BOTS_Driver_Init
 #include "../../game/BOTS.c"
 #undef BOTS_Driver_Init
+#include "recorded-race-tick-prefix.h"
 #include "../../game/MAIN/MainInit.c"
 #include "../../game/231/RB_Crate.c"
 #include "../../ap/ap_navrec.c"
@@ -219,18 +226,50 @@ static void check_race(void)
 	puts("Admitted package restore rebinds all seven bots");
 
 	struct Driver *bot = &drivers[7];
+	bot->instSelf = &karts[7];
+	struct Thread botThread = {.object = bot, .inst = bot->instSelf};
 	bot->driverID = 7;
 	sdata->kartSpawnOrderArray[7] = 7;
 	BOTS_GotoStartingLine(bot);
 	struct NavFrame *first = sdata->NavPath_ptrNavFrameArray[9];
 	assert(bot->botData.botNavFrame == first && (bot->botData.botFlags & BOT_FLAG_ESTIMATE_NAV));
 	assert(bot->rotCurr.y == ((race.grid[7].rot[1] + 0x400) & 0xff0));
-	assert(!BOTS_RecordedGridTick(bot, 1));
+	bot->turbo_MeterRoomLeft = 1;
+	tracker.trafficLightsTimer = 480;
+	ExerciseRecordedTick(&botThread);
+	assert(gridDraws == 1 && bot->turbo_MeterRoomLeft == 1);
+	assert(bot->instSelf->matrix.t[0] == race.grid[7].pos[0]);
 	assert(bot->posCurr.x == race.grid[7].pos[0] * 256);
-	assert(BOTS_RecordedGridTick(bot, 0));
+	tracker.trafficLightsTimer = 0;
+	ExerciseRecordedTick(&botThread);
+	assert(gridDraws == 1 && bot->turbo_MeterRoomLeft == 0);
 	assert(bot->botData.estimatePosition.x == race.grid[7].pos[0]);
 	assert(bot->botData.botNavFrame == first && bot->botData.distToNextNavXZ > 0);
 	puts("Dedicated bots hold their own seat until green and then approach the assigned line");
+
+	int savedOrder[BOTS_NAV_LANE_MAX];
+	memcpy(savedOrder, s_navrecLaneLapIndex, sizeof savedOrder);
+	unsigned int savedSeed = sdata->recordedRaceSeed;
+	unsigned int savedSession = sdata->recordedRaceSession;
+	bot->botData.botFlags |= BOT_FLAG_STARTLINE_INIT_DONE;
+	bot->botData.navProgressRemainder = 32 * 256;
+	bot->posCurr.x += 24 * 256;
+	s_navrecSeed = savedSeed ^ 0x60c3f1a5u;
+	AP_NavRec_PublishRecordedRace(&race, tracker.levelID);
+	assert(memcmp(savedOrder, s_navrecLaneLapIndex, sizeof savedOrder) != 0);
+	AP_NavRec_AfterCheckpointRestore();
+	assert(s_navrecSeed == savedSeed && !memcmp(savedOrder, s_navrecLaneLapIndex, sizeof savedOrder));
+	assert(bot->botData.botNavFrame == first && bot->botData.navProgressRemainder == 32 * 256);
+	assert(bot->botData.estimatePosition.x == race.grid[7].pos[0]);
+
+	// A checkpoint from another process keeps the running process's new shuffle.
+	sdata->recordedRaceSession = savedSession ^ 1u;
+	s_navrecSeed = savedSeed ^ 0x60c3f1a5u;
+	AP_NavRec_AfterCheckpointRestore();
+	assert(s_navrecSeed != savedSeed && sdata->recordedRaceSession == savedSession);
+	assert(bot->botData.botNavFrame == first && bot->botData.navProgressRemainder == 0);
+	assert(bot->botData.estimatePosition.x == race.grid[7].pos[0] + 24);
+	puts("Same-process restore preserves the shuffle and approach progress. A different session rejoins from the saved position.");
 }
 
 static void write_lap(void)

@@ -1545,6 +1545,25 @@ static void AP_NavRec_PointEngineAtLanes(int levelID)
 }
 
 #ifdef CTR_RECORDED_RACE
+static unsigned int s_navrecRecordedSession;
+
+static void AP_NavRec_SaveRecordedShuffle(void)
+{
+	if (!s_navrecRecordedSession)
+	{
+#ifdef _WIN32
+		unsigned int pid = (unsigned int)GetCurrentProcessId();
+#else
+		unsigned int pid = (unsigned int)getpid();
+#endif
+		s_navrecRecordedSession = AP_NavRec_NewSeed() ^ (pid * 0x9E3779B9u);
+		if (!s_navrecRecordedSession)
+			s_navrecRecordedSession = 1;
+	}
+	sdata->recordedRaceSeed = s_navrecSeed;
+	sdata->recordedRaceSession = s_navrecRecordedSession;
+}
+
 static void AP_NavRec_PublishRecordedRace(const struct CustomRecordedRace *race, int levelID)
 {
 	unsigned int order[AP_NAVSET_MAX_LAPS];
@@ -1608,6 +1627,7 @@ void AP_NavRec_AfterBotsInit(void)
 	{
 		s_navrecSeed = AP_NavRec_NewSeed();
 		s_navrecSeedLevel = levelID;
+		AP_NavRec_SaveRecordedShuffle();
 		AP_NavRec_PublishRecordedRace(race, levelID);
 		AP_NavRec_LogLaneSummary(levelID, "active package", 1);
 		return;
@@ -1740,6 +1760,8 @@ static void AP_NavRec_RebindBots(int force)
 #ifdef CTR_RECORDED_RACE
 		if (lane >= BOTS_NAV_PATH_COUNT && (d->botData.botFlags & BOT_FLAG_ESTIMATE_NAV))
 		{
+			if (!force && d->botData.botNavFrame == frames)
+				continue;
 			// A restored bot still approaching its lane must join at the
 			// start, even if the new shuffle gave it a different recording.
 			d->botData.botNavFrame = frames;
@@ -1820,9 +1842,14 @@ void AP_NavRec_AfterCheckpointRestore(void)
 	const struct CustomRecordedRace *race = MainRaceTrack_RecordedRace();
 	if (race)
 	{
+		int sameSession = s_navrecRecordedSession && sdata->recordedRaceSession == s_navrecRecordedSession &&
+		                  sdata->recordedRaceSeed != 0;
+		if (sameSession)
+			s_navrecSeed = sdata->recordedRaceSeed;
+		AP_NavRec_SaveRecordedShuffle();
 		AP_NavRec_ClearLaneIdentity();
 		AP_NavRec_PublishRecordedRace(race, levelID);
-		AP_NavRec_RebindBots(1);
+		AP_NavRec_RebindBots(!sameSession);
 		AP_NavRec_LogLaneSummary(levelID, "package lanes restored", 1);
 		return;
 	}

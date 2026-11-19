@@ -5108,6 +5108,11 @@ struct sData
 
 // NO_BSS
 #endif
+#ifdef CTR_NATIVE
+	// Dedicated recorded Arcade checkpoints reuse the shuffle in one process.
+	u32 recordedRaceSeed;
+	u32 recordedRaceSession;
+#endif
 };
 
 // ".rData"
