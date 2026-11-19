@@ -363,10 +363,25 @@ static void shop_key_budgets() {
     }
 }
 
+static void sanity_versions() {
+    std::ifstream in("tools/fixtures/content-plan/sanity.json");
+    const J legacy = J::parse(in);
+    const auto ids = plan_locations(legacy);
+    expect(!legacy["content_plan"]["sanity"].contains("rules_version") && admit(legacy, ids),
+           "older sanity room retains the Easy bridge selections");
+    for (const J &version : {J(0), J(7), J(true), J("1")}) {
+        J bad = legacy;
+        bad["content_plan"]["sanity"]["rules_version"] = version;
+        expect(!admit(bad, ids), "unsupported or noninteger sanity rules version refused");
+    }
+}
+
 int main(int argc, char **argv) {
     if (argc > 2 && std::string(argv[1]) == "--probe") probe(argv[2]);
     else { fixtures(); chain(); checked_is_not_reached(); first_race_won(); shop_key_budgets(); one_race_pad();
-           probe("tools/fixtures/content-plan/sanity-verify.jsonl"); }
+           probe("tools/fixtures/content-plan/sanity-verify.jsonl");
+           probe("tools/fixtures/content-plan/oxide-pickups.jsonl");
+           probe("tools/fixtures/content-plan/mask-verifier.jsonl"); sanity_versions(); }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;
 }

@@ -15,6 +15,7 @@
 #include "ap_box_spot_logic.h"
 #include "ap_arena_content.h"
 #include "ap_wumpa_shop.h"
+#include "../include/platform/native_tizi_madness.h"
 #include <array>
 #include <cstring>
 #include <map>
@@ -427,7 +428,35 @@ static bool racer_excluded(const State &out, int character) {
 // both modes 0 to 2 and not both off, Blue Fire only with boost, difficulty and
 // knowledge 0 to 2.
 static void capability_settings(const J &t, State &out) {
-    fields(t, {"boost_mode", "boost_blue_fire", "stats_mode", "logic_difficulty", "shortcut_knowledge"});
+    J shape = t;
+    shape.erase("finish_floors");
+    shape.erase("finish_free");
+    fields(shape, {"boost_mode", "boost_blue_fire", "stats_mode", "logic_difficulty", "shortcut_knowledge"});
+    if (t.contains("finish_floors")) {
+        // Reviewed finish floors (Royal Raceway 1.0.0): a sorted, unique, nonempty list of track ids.
+        const auto &ids = t["finish_floors"];
+        need(ids.is_array() && !ids.empty() && ids.size() <= AP_CONTENT_MAX_PACKAGES, "finish_floors needs track ids");
+        std::string previous;
+        for (const auto &id : ids) {
+            need(id.is_string() && (previous.empty() || id.get<std::string>() > previous), "finish_floors needs sorted unique track ids");
+            previous = id.get<std::string>();
+        }
+        need(number(t["boost_mode"], 0, 2) != 0, "finish_floors needs Progressive Boost");
+    }
+    if (t.contains("finish_free")) {
+        // Reviewed free finishes (Green Hill Raceway 2.0.0): a sorted, unique, nonempty list of track ids.
+        const auto &ids = t["finish_free"];
+        need(ids.is_array() && !ids.empty() && ids.size() <= AP_CONTENT_MAX_PACKAGES, "finish_free needs track ids");
+        std::string previous;
+        for (const auto &id : ids) {
+            need(id.is_string() && (previous.empty() || id.get<std::string>() > previous), "finish_free needs sorted unique track ids");
+            previous = id.get<std::string>();
+        }
+        need(number(t["boost_mode"], 0, 2) != 0, "finish_free needs Progressive Boost");
+        if (t.contains("finish_floors"))
+            for (const auto &id : ids) for (const auto &other : t["finish_floors"])
+                need(id != other, "finish_free and finish_floors name the same track");
+    }
     auto &c = out.capability;
     c.present = 1;
     c.boost_mode = number(t["boost_mode"], 0, 2);
@@ -465,8 +494,15 @@ static std::map<int64_t, int> capability_rows(const ctr_content_capability &c) {
 // numbers are eligible only the apworld knows, so the client checks the shape
 // (ap_box_spot_logic.h) and that each named track exists with a box identity.
 static void item_box_settings(const J &t, State &out) {
-    need(t.is_object() && t.contains("shortcut_knowledge") && t.size() == 1u + t.count("spot_sets") + t.count("crate_exclusions") + t.count("box_count"),
+    need(t.is_object() && t.contains("shortcut_knowledge") && t.size() == 1u + t.count("spot_sets") + t.count("crate_exclusions") + t.count("box_count") + t.count("pickup_rules"),
          "unsupported or incomplete record fields");
+    if (t.contains("pickup_rules")) {
+        const auto &ids = t["pickup_rules"];
+        need(ids.is_array() && !ids.empty() && ids.size() <= AP_CONTENT_MAX_PACKAGES, "pickup_rules needs track ids");
+        std::set<std::string> seen;
+        for (const auto &id : ids) need(id.is_string() && seen.insert(id.get<std::string>()).second,
+                                        "pickup_rules needs unique track ids");
+    }
     out.item_boxes.present = 1;
     out.item_boxes.box_count = t.contains("box_count") ? number(t["box_count"], 1, 50) : 15;
     need(!t.contains("box_count") || out.item_boxes.box_count != 15, "default box_count must be omitted");
@@ -794,6 +830,55 @@ static Table table(const J &rows, size_t maximum) {
     }
     return result;
 }
+// New rooms separate physical pickup awards from repeatable fill routes.
+// Absence preserves the original room's expected locations and logic.
+static bool has_feature(const J &p, const char *feature) {
+    const auto &features = p.at("required_features");
+    return std::find(features.begin(), features.end(), J(feature)) != features.end();
+}
+static bool repeatable_pickups(const J &p) {
+    return has_feature(p, "repeatable_pickups_v1");
+}
+static constexpr char kTiziMaskFeature[] = "tizi_mask_v1";
+static std::set<std::string> tizi_mask_tracks(const J &p) {
+    std::set<std::string> packages, tracks;
+    for (const auto &pkg : p.at("packages")) {
+        std::string lev, vrm;
+        for (const auto &file : pkg.at("files")) {
+            if (file.at("role") == "lev") lev = text(file.at("sha256"));
+            else if (file.at("role") == "vrm") vrm = text(file.at("sha256"));
+        }
+        if (CustomTrack_IsTiziMadness(lev.c_str(), vrm.c_str())) packages.insert(text(pkg.at("id")));
+    }
+    if (!packages.empty())
+        for (const auto &track : p.at("tracks"))
+            if (packages.count(track.value("package_id", ""))) tracks.insert(text(track.at("id")));
+    return tracks;
+}
+static bool repeatable_pickup_route(const J &route) {
+    return route.at("encounter_id") != "encounter/garage:4/0";
+}
+static std::set<std::string> repeatable_pickup_tracks(const J &p) {
+    const Table entries = table(p.at("entries"), 160);
+    std::set<std::string> result;
+    auto add = [&](const J &entry) {
+        if (entry.contains("legs")) {
+            for (const auto &leg : entry.at("legs")) result.insert(text(leg.at("track_id")));
+        } else result.insert(text(entry.at("track_id")));
+    };
+    for (const auto &pad : p.at("pads")) {
+        if (pad.at("entry_id").is_null()) continue;
+        const J &entry = *entries.at(text(pad.at("entry_id")));
+        if (entry.at("kind") == "cup") add(entry);
+        else if (entry.at("kind") == "track")
+            for (const auto &mode : entry.at("modes"))
+                if (mode == "trophy" || mode == "ctr") add(entry);
+    }
+    for (const auto &enc : p.at("encounters"))
+        if (enc.at("id") != "encounter/garage:4/0") add(*entries.at(text(enc.at("entry_id"))));
+    return result;
+}
+
 #include "ap_content_sanity_impl.hpp"
 // The optional lap fields of a Cortex Vortex track record, read and set aside so
 // the rest of the record compares as before. `standalone_laps` (A4-13, ruled
@@ -1073,6 +1158,17 @@ static void validate(const J &p, State &out) {
     if(wumpa_goal)features.push_back("wumpa_goal_v1");
     if(has_pad_client)features.push_back("pad_client_v1"); // one generator row 6
     if(plan_laps)features.push_back("lap_checks_v1");             // #344
+    const bool safe_pickups = repeatable_pickups(p);
+    if(safe_pickups) {
+        need(has_bosses && out.bosses.oxide_goal != 3 && (has_sanity || fam.wumpa == 2),
+             "repeatable pickup feature without Oxide pickup families");
+        features.push_back("repeatable_pickups_v1");
+    }
+    if (has_feature(p, kTiziMaskFeature)) {
+        need(p.contains("global_checks") && p.at("global_checks").at("itemsanity") == true &&
+             !tizi_mask_tracks(p).empty(), "Tizi Mask feature without a raced Tizi track and Itemsanity");
+        features.push_back(kTiziMaskFeature);
+    }
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -1241,6 +1337,7 @@ static void validate(const J &p, State &out) {
     // race of a track's Reach 10 Wumpa check, and per cup leg of its rungs.
     struct RaceUse { std::string track, title, entry, pad, mode, leg, encounter; int64_t code; };
     std::vector<RaceUse> wumpa_uses;
+    const auto repeatable_tracks = safe_pickups ? repeatable_pickup_tracks(p) : std::set<std::string>{};
     struct RungUse { std::string track, entry, pad, leg; };
     std::vector<RungUse> rung_uses;
     // A plan track's per-track Reach 10 Wumpa code and room title, 0 without
@@ -2068,6 +2165,7 @@ static void validate(const J &p, State &out) {
             {
                 std::string title;
                 out.bosses.wumpa[k] = wumpa_code(track_id, title);
+                if (safe_pickups && !repeatable_tracks.count(track_id)) out.bosses.wumpa[k] = 0;
                 if (out.bosses.wumpa[k])
                     wumpa_uses.push_back(RaceUse{track_id, title, nid, pad, "boss_race", "", eid, out.bosses.wumpa[k]});
             }
@@ -2422,6 +2520,54 @@ static void validate(const J &p, State &out) {
     // Hand-placed box spots (A3-14): every set names a pad track, every spot
     // box carried its spot, and the pads take the positions.
     for (const auto &pair : out.spot_sets) need(pair.second.used, "a box spot set names no pad track");
+    if (p.contains("capability") && p["capability"].contains("finish_floors")) {
+        // The list names exactly the plan's tracks that carry the reviewed Royal Raceway LEV.
+        std::vector<std::string> reviewed;
+        for (const auto &track : p["tracks"]) {
+            if (track["origin"] != "custom") continue;
+            for (const auto &pkg : p["packages"]) if (pkg["id"] == track["package_id"])
+                for (const auto &file : pkg["files"]) if (file["role"] == "lev"
+                        && file["sha256"] == "fca9e96a57c850e68e0226382645b4d6df5b4e7ebeb61459269ec2427ffab96b")
+                    reviewed.push_back(track["id"].get<std::string>());
+        }
+        std::sort(reviewed.begin(), reviewed.end());
+        std::vector<std::string> named;
+        for (const auto &id : p["capability"]["finish_floors"]) named.push_back(id.get<std::string>());
+        need(named == reviewed, "capability.finish_floors does not name exactly the reviewed tracks");
+    }
+    if (p.contains("capability") && p["capability"].contains("finish_free")) {
+        // The list names exactly the plan's tracks that carry the reviewed Green Hill Raceway LEV.
+        std::vector<std::string> reviewed;
+        for (const auto &track : p["tracks"]) {
+            if (track["origin"] != "custom") continue;
+            for (const auto &pkg : p["packages"]) if (pkg["id"] == track["package_id"])
+                for (const auto &file : pkg["files"]) if (file["role"] == "lev"
+                        && file["sha256"] == "50250966e9b31d13b140aaafa9433ffce19269898a0850edd0a1e8cf1207c760")
+                    reviewed.push_back(track["id"].get<std::string>());
+        }
+        std::sort(reviewed.begin(), reviewed.end());
+        std::vector<std::string> named;
+        for (const auto &id : p["capability"]["finish_free"]) named.push_back(id.get<std::string>());
+        need(named == reviewed, "capability.finish_free does not name exactly the reviewed tracks");
+    }
+    if (has_boxes && p["item_boxes"].contains("pickup_rules")) {
+        for (const auto &id : p["item_boxes"]["pickup_rules"]) {
+            bool valid = false;
+            for (const auto &track : p["tracks"]) if (track["id"] == id && track["origin"] == "custom") {
+                bool pin = false, seated = false;
+                for (const auto &pkg : p["packages"]) if (pkg["id"] == track["package_id"])
+                    for (const auto &file : pkg["files"]) if (file["role"] == "lev")
+                        pin = file["sha256"] == "9fa73436daaf91434ede1d6fb036a8e6dff225c55533cc0be5723d229b5e53bd"
+                            || file["sha256"] == "2b18c6305d3cfe591e979eabe42e7815fe475479d49f59d5b7b50b06f701ac5d"
+                            || file["sha256"] == "fca9e96a57c850e68e0226382645b4d6df5b4e7ebeb61459269ec2427ffab96b"
+                            || file["sha256"] == "50250966e9b31d13b140aaafa9433ffce19269898a0850edd0a1e8cf1207c760";
+                for (const auto &entry : p["entries"]) if (entry["kind"] == "track" && entry["track_id"] == id)
+                    for (const auto &pad : p["pads"]) seated |= pad["entry_id"] == entry["id"];
+                valid = pin && seated && !out.spot_sets.count(id.get<std::string>());
+            }
+            need(valid, "pickup_rules names an unsupported physical pickup revision");
+        }
+    }
     for (const auto &pair : out.crate_exclusions) need(pair.second.used, "crate exclusions name no fallback pad track");
     for (const auto &pair : out.box_spots) need(pair.second.seen, "a box spot check carries no spot");
     for (auto &pad : out.pads) {
