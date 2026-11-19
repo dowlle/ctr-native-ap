@@ -200,6 +200,12 @@ struct Directory
         if (!SetFileInformationByHandle(stage.pinned.back().value, FileRenameInfo, info, (DWORD)storage.size()))
             throw std::runtime_error("Cannot publish package without replacement (Windows error " + std::to_string(GetLastError()) + ")");
     }
+    bool replace_file(const std::string &source, const std::string &target)
+    {
+        return MoveFileExW(child(source).c_str(), child(target).c_str(),
+                           MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+    }
+    void discard_file(const std::string &name) { DeleteFileW(child(name).c_str()); }
     void sync_publication() {} // Payloads were flushed; do not claim a Windows directory-flush guarantee.
     std::vector<unsigned char> read(const std::string &relative, size_t maximum)
     {
@@ -331,6 +337,11 @@ struct Directory
         if (syscall(SYS_renameat2, root.value, stageName.c_str(), root.value, name.c_str(), 1u))
             throw std::runtime_error("Cannot publish package without replacement");
     }
+    bool replace_file(const std::string &source, const std::string &target)
+    {
+        return renameat(root.value, source.c_str(), root.value, target.c_str()) == 0;
+    }
+    void discard_file(const std::string &name) { unlinkat(root.value, name.c_str(), 0); }
     void sync_publication()
     {
         if (fsync(root.value)) throw std::runtime_error("Revision published but store sync failed; verify before retry");
@@ -364,7 +375,6 @@ struct Directory
 };
 #endif
 constexpr const char *musicDirectory = ".saphi-music";
-constexpr const char *musicPath = ".saphi-music/track.sca";
 
 std::string music_hash(const void *bytes, size_t size)
 {
@@ -389,9 +399,10 @@ std::vector<unsigned char> read_local_music(Directory &directory, const char *pi
         if (source.at("schema_version") != 1 || source.at("package_pin") != pin ||
             !source.at("media_id").is_number_integer() || source["media_id"] <= 0 ||
             source["media_id"] > 2147483647 || !source.at("bytes").is_number_integer()) return {};
-        auto bytes = directory.read(musicPath, CTR_SCA_MAX_BYTES);
-        const auto sha = music_hash(bytes.data(), bytes.size());
-        if (source["bytes"] != bytes.size() || source.at("sha256") != sha) return {};
+        const auto sha = source.at("sha256").get<std::string>();
+        if (!revision_name(sha)) return {};
+        auto bytes = directory.read(std::string(musicDirectory) + "/" + sha + ".sca", CTR_SCA_MAX_BYTES);
+        if (source["bytes"] != bytes.size() || music_hash(bytes.data(), bytes.size()) != sha) return {};
         if (hash) *hash = sha;
         if (media) *media = source["media_id"].get<int>();
         return bytes;
@@ -458,7 +469,16 @@ extern "C" int CustomPackage_InstallMusic(const char *path, const char *pin, con
         CustomPackageManifest manifest;
         if (!CustomPackage_ParseManifest((const char *)json.data(), json.size(), pin, &manifest, nullptr, 0) ||
             manifest_has_music(manifest)) return 0;
-        if (directory.exists(musicDirectory)) return !read_local_music(directory, pin).empty() ? 2 : 0;
+        auto existing = [&] {
+            int media = 0;
+            std::string hash;
+            auto bytes = read_local_music(directory, pin, &hash, &media);
+            if (bytes.empty()) return 0;
+            return bytes.size() == size && hash == sha256 && media == mediaID ? 2 : -1;
+        };
+        if (const int result = existing()) return result == 2 ? 2 : 0;
+        directory.mkdir(musicDirectory);
+        Directory music(std::string(path) + "/" + musicDirectory);
 
         static std::atomic<unsigned long> serial{0};
 #ifdef _WIN32
@@ -466,26 +486,40 @@ extern "C" int CustomPackage_InstallMusic(const char *path, const char *pin, con
 #else
         const auto process = getpid();
 #endif
-        std::string stageName;
-        bool created = false;
-        for (unsigned int attempt = 0; attempt < 100 && !created; attempt++)
-        {
-            stageName = ".pending-music-" + std::to_string(process) + "-" + std::to_string(++serial);
-            created = directory.mkdir(stageName);
-        }
-        if (!created) return 0;
-        Directory stage(std::string(path) + "/" + stageName, true);
+        const auto stage = ".pending-" + std::to_string(process) + "-" + std::to_string(++serial);
+        const auto audioStage = stage + ".sca";
+        const auto sourceStage = stage + ".json";
         const auto source = nlohmann::json({{"schema_version", 1}, {"package_pin", pin},
             {"media_id", mediaID}, {"bytes", size}, {"sha256", sha256}}).dump();
-        install_checkpoint();
-        stage.write("track.sca", data, size);
-        install_checkpoint();
-        stage.write("source.json", source.data(), source.size());
-        install_checkpoint();
-        try { directory.publish(stage, stageName, musicDirectory); }
-        catch (const std::exception &) { return !read_local_music(directory, pin).empty() ? 2 : 0; }
-        directory.sync_publication();
-        return 1;
+        bool audioStaged = false, sourceStaged = false;
+        try
+        {
+            install_checkpoint();
+            music.write(audioStage, data, size);
+            audioStaged = true;
+            install_checkpoint();
+            music.write(sourceStage, source.data(), source.size());
+            sourceStaged = true;
+            install_checkpoint();
+            // Publish bytes by digest first. Every committed source record
+            // names complete bytes, including when two clients write at once.
+            if (!music.replace_file(audioStage, std::string(sha256) + ".sca"))
+                throw std::runtime_error("Cannot publish restored audio");
+            audioStaged = false;
+            music.sync_publication();
+            if (!music.replace_file(sourceStage, "source.json"))
+                throw std::runtime_error("Cannot publish restored audio source");
+            sourceStaged = false;
+            music.sync_publication();
+            directory.sync_publication();
+            return 1;
+        }
+        catch (const std::exception &)
+        {
+            if (audioStaged) music.discard_file(audioStage);
+            if (sourceStaged) music.discard_file(sourceStage);
+            return existing() == 2 ? 2 : 0;
+        }
     }
     catch (const std::exception &) { return 0; }
 }
@@ -891,15 +925,17 @@ struct MusicSearch
     unsigned long levBytes, vrmBytes;
     std::string directory, sca, scaSha;
     unsigned long scaBytes;
+    bool local;
 };
-/* The first verified revision with the seed's LEV and VRM that also pins a
-   .sca. A copy of the same pair installed without music is skipped. */
+/* Prefer a manifest-pinned SCA to a local repair for the same seed pair.
+   A repair remains available if no matching manifest pins audio. */
 int want_pinned_music(const char *pin, const CustomPackageManifest *manifest, void *opaque)
 {
     const auto &search = *static_cast<const MusicSearch *>(opaque);
-    if (!search.sca.empty() || !manifest || !pinned_pair(*manifest, search.revision, search.uuid,
+    if ((!search.sca.empty() && !search.local) || !manifest || !pinned_pair(*manifest, search.revision, search.uuid,
         search.levHash, search.levBytes, search.vrmHash, search.vrmBytes)) return 0;
     if (manifest_has_music(*manifest)) return 1;
+    if (search.local) return 0;
     try
     {
         Directory directory(search.directory + "/" + pin);
@@ -911,7 +947,7 @@ int want_pinned_music(const char *pin, const CustomPackageManifest *manifest, vo
 void find_pinned_music(const CustomPackageStoreEntry *entry, void *opaque)
 {
     auto &search = *static_cast<MusicSearch *>(opaque);
-    if (!entry->verified || !search.sca.empty() ||
+    if (!entry->verified || (!search.sca.empty() && !search.local) ||
         std::strcmp(entry->manifest.version, search.revision) ||
         (search.uuid && *search.uuid && std::strcmp(entry->manifest.uuid, search.uuid))) return;
     bool lev = false, vrm = false;
@@ -930,6 +966,7 @@ void find_pinned_music(const CustomPackageStoreEntry *entry, void *opaque)
         search.sca = path + "/" + sca->path;
         search.scaSha = sca->sha256;
         search.scaBytes = sca->bytes;
+        search.local = false;
         return;
     }
     try
@@ -938,8 +975,9 @@ void find_pinned_music(const CustomPackageStoreEntry *entry, void *opaque)
         auto audio = read_local_music(directory, entry->pin, &search.scaSha);
         if (!audio.empty())
         {
-            search.sca = path + "/" + musicPath;
+            search.sca = path + "/" + musicDirectory + "/" + search.scaSha + ".sca";
             search.scaBytes = audio.size();
+            search.local = true;
         }
     }
     catch (const std::exception &) {}
@@ -952,7 +990,7 @@ extern "C" int CustomPackage_FindPinnedMusic(const char *assets, const char *rev
 {
     if (!assets || !revision || !levSha256 || !vrmSha256 || !scaPath || !scaCapacity || !scaSha256 || !scaBytes) return 0;
     MusicSearch search{revision, uuid, levSha256, vrmSha256, levBytes, vrmBytes,
-                       std::string(assets) + "/tracks/packages", {}, {}, 0};
+                       std::string(assets) + "/tracks/packages", {}, {}, 0, false};
     char error[256];
     if (!CustomPackage_ScanStoreMatching(search.directory.c_str(), want_pinned_music, find_pinned_music, &search, error, sizeof error) ||
         search.sca.empty() || search.sca.size() >= scaCapacity || search.scaSha.size() != 64) return 0;

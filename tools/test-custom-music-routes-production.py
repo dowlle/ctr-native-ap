@@ -74,8 +74,9 @@ extern "C" void CustomPackage_TestInstallFailure(int checkpoints);
 // ap/ap_track_consent.cpp (tools/test-track-consent.cpp). Here it allows,
 // unless a case sets g_permission, and records which Saphi track was asked.
 static int g_permission = AP_TRACK_PERMISSION_ALLOW, g_permission_track = -1;
+static bool g_permission_given_key;
 extern "C" int ap_track_permission(int track, int author, int saphi, const char *key)
-{ (void)author; (void)saphi; (void)key; g_permission_track = track; return g_permission; }
+{ (void)author; (void)saphi; g_permission_given_key = key != nullptr; g_permission_track = track; return g_permission; }
 extern "C" const char *ap_track_permission_text(void) { return "The author has not allowed in-game download."; }
 extern "C" int ap_track_consent_saphi_author(int track) { return track == 121 ? 12 : 0; }
 extern "C" int ap_track_registry_key_for_saphi(int track, char *key, int bytes)
@@ -141,7 +142,26 @@ static std::vector<unsigned char> make_vrm()
 	return b;
 }
 static std::vector<unsigned char> lev = make_lev(), vrm = make_vrm();
-static std::vector<unsigned char> music(5000, 0x5a);
+static std::vector<unsigned char> make_sca(unsigned char tone)
+{
+	std::vector<unsigned char> bytes = {'S', 'C', 'A', 1};
+	auto chunk = [&](const char *tag, const std::vector<unsigned char> &body) {
+		bytes.insert(bytes.end(), tag, tag + 4);
+		for (unsigned int shift = 0; shift < 32; shift += 8)
+			bytes.push_back(static_cast<unsigned char>(body.size() >> shift));
+		bytes.insert(bytes.end(), body.begin(), body.end());
+		while (bytes.size() % 4) bytes.push_back(0);
+	};
+	std::vector<unsigned char> bank(CTR_SCA_SECTOR + 16, 0);
+	bank[0] = 1;
+	bank[2] = 5;
+	bank.back() = tone;
+	chunk("BANK", bank);
+	chunk("CSEQ", {12, 0, 0, 0, 0, 0, 1, 0, 10, 0, 0, 0});
+	chunk("SIZE", {2, 0});
+	return bytes;
+}
+static const auto music = make_sca(0x5a);
 static const std::string UUID = "11111111-2222-5333-8444-555555555555";
 static std::string seed_uuid = UUID;
 
@@ -377,6 +397,12 @@ int main()
 		expect(install_seed(assets, by_ids, detail) == AP_CT_DOWNLOAD_SUCCEEDED &&
 		       asked(SCA_PATH) && !find_music_for(assets).ok, route + "a same-size CRC mismatch costs only the music");
 		wrong_crc = false;
+		sca_body_override = std::vector<unsigned char>(music.size(), 0x5a);
+		serve();
+		assets = fresh("bad-container");
+		expect(install_seed(assets, by_ids, detail) == AP_CT_DOWNLOAD_SUCCEEDED &&
+		       asked(SCA_PATH) && !find_music_for(assets).ok, route + "a checksum-valid broken SCA costs only the music");
+		sca_body_override.clear();
 
 		// d. A tampered LEV still refuses, whatever the music says.
 		serve();
@@ -418,7 +444,9 @@ int main()
 		for (int answer : {AP_TRACK_PERMISSION_UNKNOWN, AP_TRACK_PERMISSION_DENY})
 		{
 			g_permission = answer;
-			expect(repair_library(catalogue, assets) == 0 && !asked(path), "repair honors track permission");
+			g_permission_given_key = true;
+			expect(repair_library(catalogue, assets) == 0 && !asked(path) && !g_permission_given_key,
+			       "repair honors source permission without supplying the installed package's key");
 		}
 		g_permission = AP_TRACK_PERMISSION_ALLOW;
 		served.erase(path);
@@ -432,7 +460,8 @@ int main()
 		expect(!CustomPackage_InstallMusic(directory.c_str(), pin.c_str(), music.data(), music.size(), sha(music).c_str(), 874),
 		       "interruption between audio and metadata leaves no publication");
 		CustomPackage_TestInstallFailure(-1);
-		expect(!find_music_for(assets).ok && !exists(directory + "/.saphi-music"), "the race lookup ignores interrupted staging");
+		expect(!find_music_for(assets).ok && !exists(directory + "/.saphi-music/source.json"),
+		       "the race lookup ignores interrupted staging");
 		serve();
 		served[path] = music;
 		expect(repair_library(catalogue, assets) == 1 && asked(path), "repair retries and downloads only the SCA");
@@ -453,12 +482,16 @@ int main()
 		CustomPackageOwned *owned = nullptr;
 		expect(CustomPackage_AcquireDirectory(directory.c_str(), pin.c_str(), &owned, nullptr, 0), "old package pin still verifies");
 		const void *offline = nullptr; size_t size = 0;
+		CustomMusicSca parsed{};
+		uint16_t spuTable[32 * 2] = {};
 		expect(CustomPackage_GetAudio(owned, &offline, &size) && size == music.size() &&
-		       !std::memcmp(offline, music.data(), size), "the offline snapshot borrows the verified audio");
+		       !std::memcmp(offline, music.data(), size) &&
+		       CustomMusic_Parse(offline, size, 32, &parsed, nullptr, 0) &&
+		       CustomMusic_Admit(&parsed, spuTable, 32, 0, nullptr, 0, nullptr, nullptr, 0),
+		       "the offline snapshot borrows valid SCA that passes playback admission");
 		CustomPackage_Free(&owned);
 		serve();
 		expect(repair_library(catalogue, assets) == 0 && !asked(path), "repeat repair sends no request");
-		CustomSaphi_Free(&catalogue);
 		if (audio.ok)
 		{
 			std::ofstream broken(audio.path, std::ios::binary | std::ios::trunc);
@@ -468,6 +501,47 @@ int main()
 		expect(CustomPackage_AcquireDirectory(directory.c_str(), pin.c_str(), &owned, nullptr, 0) &&
 		       !CustomPackage_GetAudio(owned, &offline, &size), "damaged restored audio leaves the original package usable");
 		CustomPackage_Free(&owned);
+		serve();
+		served[path] = music;
+		expect(repair_library(catalogue, assets) == 1 && asked(path) && find_music_for(assets).ok,
+		       "refresh replaces damaged audio using the original pin");
+		CustomSaphi_Free(&catalogue);
+		{
+			std::ofstream broken(directory + "/.saphi-music/source.json", std::ios::trunc);
+			broken << "bad";
+		}
+		const auto digest = sha(music);
+		auto publish = [&] {
+			return CustomPackage_InstallMusic(directory.c_str(), pin.c_str(), music.data(), music.size(), digest.c_str(), 874);
+		};
+		auto first = std::async(std::launch::async, publish);
+		auto second = std::async(std::launch::async, publish);
+		const int firstPublished = first.get(), secondPublished = second.get();
+		expect(firstPublished && secondPublished && find_music_for(assets).ok,
+		       "two writers recover damaged metadata with verified audio");
+		DIR *sidecar = opendir((directory + "/.saphi-music").c_str());
+		int pending = 0;
+		if (sidecar)
+		{
+			while (dirent *file = readdir(sidecar))
+				if (!std::strncmp(file->d_name, ".pending-", 9)) pending++;
+			closedir(sidecar);
+		}
+		expect(sidecar && !pending && slurp(directory + "/manifest.json") == manifest,
+		       "concurrent repair leaves the original pin and releases staging files");
+		expect(CustomPackage_AcquireDirectory(directory.c_str(), pin.c_str(), &owned, nullptr, 0) &&
+		       CustomPackage_GetAudio(owned, &offline, &size) && size == music.size() &&
+		       !std::memcmp(offline, music.data(), size), "offline audio also recovers under the original pin");
+		CustomPackage_Free(&owned);
+		const auto pinnedMusic = make_sca(0x66);
+		scas = {{874, "0.9.0", true, (long long)pinnedMusic.size()}};
+		sca_body_override = pinnedMusic;
+		serve();
+		expect(install_seed(assets, true, detail) == AP_CT_DOWNLOAD_SUCCEEDED, "a sibling package pins its own audio");
+		const auto pinned = find_music_for(assets, "1.0.0", UUID.c_str());
+		expect(pinned.ok && pinned.sha == sha(pinnedMusic) && slurp(pinned.path) == pinnedMusic,
+		       "the seed prefers manifest-pinned audio over a local repair for the same UUID");
+		sca_body_override.clear();
 	}
 
 	{
@@ -500,7 +574,7 @@ int main()
 	// prefers the one asked for and falls back to any.
 	{
 		const std::string assets = fresh("g");
-		std::vector<unsigned char> other(4000, 0x33);
+		const auto other = make_sca(0x33);
 		scas = {{874, "1.0.0", true, (long long)music.size()}}; sca_body_override.clear(); serve();
 		seed_uuid = "aaaaaaaa-2222-5333-8444-555555555555";
 		expect(install_seed(assets, true, detail) == AP_CT_DOWNLOAD_SUCCEEDED, "uuid A installs: " + detail);
@@ -576,7 +650,7 @@ int main()
 units = ["platform/native_custom_package.cpp", "platform/native_custom_package_files.cpp",
          "platform/native_saphi_catalogue.cpp"]
 c_units = ["platform/native_custom_package_owned.c", "platform/native_custom_content_verify.c",
-           "platform/native_custom_offline.c", "platform/native_custom_unicode.c",
+           "platform/native_custom_offline.c", "platform/native_custom_music.c", "platform/native_custom_unicode.c",
            "platform/native_custom_track_manager.c", "vendor/utf8proc/utf8proc.c"]
 
 def run_harness(body=tests, extra=""):

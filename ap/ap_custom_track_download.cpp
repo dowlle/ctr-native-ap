@@ -847,9 +847,13 @@ bool find_media(const nlohmann::json &root, const std::string &prefix, const std
 bool fetch_saphi_music(const CustomSaphiMedia &media, std::vector<unsigned char> &bytes)
 {
 	std::string error;
+	CustomMusicSca sca{};
+	// The container can be checked now. Slot allocation still depends on
+	// the HOWL table and banks of the selected race.
 	return media.id && https_get(media.path, CTR_SCA_MAX_BYTES, bytes, error) &&
 	       bytes.size() == media.bytes && crc32(0, bytes.data(), static_cast<uInt>(bytes.size())) == media.crc32 &&
-	       (!media.sha256[0] || hash_matches(bytes, media.sha256));
+	       (!media.sha256[0] || hash_matches(bytes, media.sha256)) &&
+	       CustomMusic_Parse(bytes.data(), bytes.size(), 1u << 16, &sca, nullptr, 0);
 }
 #endif
 
@@ -1531,13 +1535,15 @@ void repair_package_music(const CustomPackageStoreEntry *entry, void *context)
         if (match && (match->trackID != r.trackID || match->sca.id != r.sca.id)) return;
         match = &r;
     }
+    // The resolver can derive a registry key from this Saphi ID. An installed
+    // descriptor's display key must never supply permission for the download.
     if (!match || ap_track_permission(match->trackID, match->authorID, match->saphiPermission,
-                                      entry->local.trackKey) != AP_TRACK_PERMISSION_ALLOW) return;
+                                      nullptr) != AP_TRACK_PERMISSION_ALLOW) return;
 
     std::vector<unsigned char> audio;
     if (fetch_saphi_music(match->sca, audio) &&
         CustomPackage_InstallMusic((job.store + "/" + entry->pin).c_str(), entry->pin,
-            audio.data(), audio.size(), match->sca.sha256, match->sca.id) == 1)
+            audio.data(), audio.size(), match->sca.sha256, match->sca.id))
         job.repaired++;
 }
 
