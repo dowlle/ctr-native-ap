@@ -3,6 +3,7 @@
 #ifdef CTR_AP
 #include "../ap/ap_ai_difficulty.h"
 #include "../ap/ap_pauserow.h"
+#include "../ap/ap_kartsetup.h"
 #endif
 
 
@@ -461,6 +462,8 @@ static char *RECTMENU_RowString(int index)
 		return (char *)"PLAY SOLO";
 	if (index == AP_LNG_WUMPA_SHOP)
 		return (char *)"WUMPA SHOP";
+	if (index == AP_LNG_KART_SETUP)
+		return (char *)"KART SETUP";
 #endif
 	return sdata->lngStrings[index];
 }
@@ -979,6 +982,8 @@ void RECTMENU_ProcessState()
 	// The map owns input while open, preventing focus/inspect/back from
 	// also selecting Resume, Quit or another underlying pause-menu row.
 	if (AP_TrackerMenuFrame()) return;
+	// In-race Kart Setup (2026-11-18) owns the race pause menu the same way.
+	if (AP_KartSetupMenuFrame()) return;
 	// The #249 Wumpa Shop page owns input and drawing the same way.
 	if (AP_WumpaShopMenuFrame()) return;
 	// A room-link prompt on the settled main menu owns input the same way
