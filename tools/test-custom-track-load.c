@@ -2113,7 +2113,11 @@ static void test_finish_terrain_boss_venue(void)
 	s_garageVenueVerified[0] = 1;
 	original = s_garageVenue[0];
 	expect_int(CustomTrack_FinishTerrain(&ctx), 4, "verified Tizi boss venue uses its finish surface");
-	CustomTrack_NoteLoadedLev(&ctx);
+	CustomTrack_ClearResidentSource();
+	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_VRM, 1);
+	expect_int(CustomTrack_ResidentAssetsMixed(), 1, "a custom VRM with no custom LEV refuses quick states");
+	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_LEV, 1);
+	expect_int(CustomTrack_ResidentAssetsMixed(), 0, "the complete verified pair can use quick states");
 	resident = CustomTrack_ResidentSource(TEST_HOST);
 	expect_int(resident && resident->roomIdentity == 123 && strcmp(resident->trackID, "garage-track") == 0 &&
 	           strcmp(resident->packageRevision, "1.0.0") == 0, 1, "loaded garage remembers room, track and revision");
@@ -2141,11 +2145,17 @@ static void test_finish_terrain_boss_venue(void)
 	s_garageVenue[0] = original;
 	strcpy(s_garageVenue[0].packageRevision, "1.1.0");
 	s_garageVenueVerified[0] = 1;
-	CustomTrack_NoteLoadedLev(&ctx);
+	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_VRM, 1);
+	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_LEV, 1);
 	resident = CustomTrack_ResidentSource(TEST_HOST);
 	expect_int(resident && strcmp(resident->packageRevision, "1.1.0") == 0 &&
 	           strcmp(resident->levSha256, original.levSha256) == 0 && strcmp(resident->vrmSha256, original.vrmSha256) == 0,
 	           1, "new garage load retains a revision change with identical bytes");
+	CustomTrack_ClearResidentSource();
+	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_VRM, 1);
+	strcpy(s_garageVenue[0].packageRevision, "1.2.0");
+	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_LEV, 1);
+	expect_int(CustomTrack_ResidentAssetsMixed(), 1, "subfiles from different revisions refuse quick states");
 	CustomTrack_ClearResidentSource();
 	CustomTrack_ClearGarageVenueDescriptors();
 }

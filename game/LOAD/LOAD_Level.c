@@ -2,6 +2,9 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
 #endif
+#if defined(CTR_NATIVE) && defined(CTR_INTERNAL)
+#include <platform/native_savestate.h>
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800347d0-0x80034874.
 // Dont get confused, packID is LOAD_GetAdvPackIndex(),
@@ -42,6 +45,9 @@ void LOAD_LevelFile(int levelID)
 
 #ifdef CTR_CUSTOM_TRACKS
 	CustomTrack_ClearResidentSource();
+#endif
+#if defined(CTR_NATIVE) && defined(CTR_INTERNAL)
+	NativeSaveState_BeginLevelLoad();
 #endif
 	// why here?
 	sdata->modelMaskHints3D = 0;

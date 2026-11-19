@@ -1,4 +1,4 @@
-// cc -m32 -DCTR_NATIVE -DCTR_INTERNAL -DCTR_CUSTOM_TRACKS -DBUILD=926 -I include -I . tools/test-quick-savestate-race.c platform/native_checkpoint_file.c -o /tmp/test-quick-savestate-race
+// cc -m32 -DCTR_NATIVE -DCTR_INTERNAL -DCTR_CUSTOM_TRACKS -DCTR_CUSTOM_PACKAGES -DCTR_AP -DBUILD=926 -I include -I . tools/test-quick-savestate-race.c platform/native_checkpoint_file.c -o /tmp/test-quick-savestate-race
 //
 // Drive the production F5/F8 frame path and checkpoint container, using the
 // real content race latch and a small stand-in for the engine checkpoint.
@@ -12,6 +12,11 @@ struct sData sdata_static;
 static struct GameTracker tracker;
 static struct CustomTrackRaceLatch latch = {.lastRequested = -1};
 static int restored;
+static int captured;
+static int mixedAssets;
+static int denyOfflinePackage;
+static int checkpointRefusal;
+static uint64_t roomIdentity;
 static char refusal[80];
 static struct CustomTrackResidentSource resident;
 
@@ -30,6 +35,7 @@ int NativeCheckpoint_Capture(void *dst, int size)
 	const u32 marker = 42;
 	assert(size == NativeCheckpoint_GetSize());
 	memcpy(dst, &marker, sizeof marker);
+	captured++;
 	return 1;
 }
 
@@ -39,8 +45,20 @@ int NativeCheckpoint_Restore(const void *src, int size)
 	assert(size == NativeCheckpoint_GetSize());
 	memcpy(&marker, src, sizeof marker);
 	assert(marker == 42);
+	if (denyOfflinePackage)
+	{
+		checkpointRefusal = 1;
+		return 0;
+	}
 	restored++;
 	return 1;
+}
+
+void NativeCheckpoint_DrawCustomRefusal(u32 *ot, int visible)
+{
+	if (checkpointRefusal && visible)
+		DecalFont_DrawLineOT("STATE NOT LOADED: OTHER TRACK", 0, 0, 0, 0, ot);
+	checkpointRefusal = 0;
 }
 
 const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int levelID)
@@ -52,6 +70,9 @@ const struct CustomTrackResidentSource *CustomTrack_ResidentSource(int levelID)
 {
 	return resident.kind && resident.levelID == levelID ? &resident : NULL;
 }
+
+int CustomTrack_ResidentAssetsMixed(void) { return mixedAssets; }
+uint64_t ap_content_plan_room_identity(void) { return roomIdentity; }
 
 static void save(void)
 {
@@ -167,6 +188,13 @@ int main(void)
 	loadExpect(otherRace); // Oxide Station would otherwise supply the recording identity.
 
 	tracker.gameMode1 = ADVENTURE_MODE | ADVENTURE_BOSS;
+	roomIdentity = 123;
+	NativeSaveState_BeginLevelLoad();
+	save();
+	roomIdentity = 124;
+	loadExpect(NULL); // Reconnect while the same boss encounter is resident.
+	NativeSaveState_BeginLevelLoad();
+	loadExpect(otherRace); // Same retail garage, different bound boss encounter.
 	save();
 	resident.kind = 2;
 	strcpy(resident.packageRevision, "1.0.0");
@@ -176,6 +204,15 @@ int main(void)
 	strcpy(resident.packageRevision, "1.1.0");
 	loadExpect(otherRace);
 	resident.kind = 0;
+
+	save();
+	const int beforeMixed = captured;
+	mixedAssets = 1;
+	save();
+	assert(captured == beforeMixed);
+	loadExpect("STATE NOT LOADED: MIXED TRACK");
+	mixedAssets = 0;
+	loadExpect(NULL); // F5 on the mixed load preserved the valid save.
 
 	tracker.levelID = 18;
 	tracker.gameMode1 = BATTLE_MODE | POINT_LIMIT;
@@ -193,6 +230,11 @@ int main(void)
 	loadExpect(NULL);
 	tracker.boolDemoMode = 0;
 	loadExpect(otherRace);
+
+	save();
+	denyOfflinePackage = 1;
+	loadExpect("STATE NOT LOADED: OTHER TRACK");
+	denyOfflinePackage = 0;
 
 	assert(NativeCheckpointFile_WriteSingle(NATIVE_SAVESTATE_QUICK_PATH, &oldCheckpoint,
 	                                        sizeof oldCheckpoint, 0, 0));

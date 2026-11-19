@@ -1459,10 +1459,14 @@ enum CustomTrackResidentKind
 	CTR_RESIDENT_EVENT,
 };
 static struct CustomTrackResidentSource s_customTrackResident;
+static unsigned int s_customTrackResidentParts;
+static int s_customTrackResidentMismatch;
 
 void CustomTrack_ClearResidentSource(void)
 {
 	memset(&s_customTrackResident, 0, sizeof s_customTrackResident);
+	s_customTrackResidentParts = 0;
+	s_customTrackResidentMismatch = 0;
 }
 
 const struct CustomTrackResidentSource *CustomTrack_ResidentSource(int levelID)
@@ -1477,18 +1481,32 @@ int CustomTrack_ResidentBlocksRecordedLanes(int levelID)
 	return (resident && resident->kind != CTR_RESIDENT_EVENT) || (race && race->cortex);
 }
 
-void CustomTrack_NoteLoadedLev(const struct CustomTrackLoadContext *ctx)
+int CustomTrack_ResidentAssetsMixed(void)
 {
-	struct CustomTrackResidentSource *resident = &s_customTrackResident;
+	return s_customTrackResidentMismatch ||
+	       (s_customTrackResidentParts && s_customTrackResidentParts != (CTR_CT_ROLE_LEV | CTR_CT_ROLE_VRM));
+}
+
+void CustomTrack_NoteLoadedAsset(const struct CustomTrackLoadContext *ctx, int role, int seedOwned)
+{
+	struct CustomTrackResidentSource current;
+	struct CustomTrackResidentSource *resident = &current;
+	const unsigned int previousParts = s_customTrackResidentParts;
 	const char *lev;
 	const char *vrm;
-	int garage = CustomTrack_GarageVenueServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive);
+	int garage;
 
-	// Called at a successful seed-owned LEV read, before another preflight can
-	// change the descriptors. Standalone races have their own route latch.
-	if (CustomTrack_StandaloneContext(ctx->levelID))
+	s_customTrackResidentParts |= (unsigned int)role;
+	// Offline and standalone loads already retain their package. For the
+	// other overrides, verify that both subfiles came from the same descriptor.
+	if (!seedOwned || CustomTrack_StandaloneContext(ctx->levelID))
+	{
+		if (s_customTrackResident.kind)
+			s_customTrackResidentMismatch = 1;
 		return;
-	CustomTrack_ClearResidentSource();
+	}
+	memset(resident, 0, sizeof *resident);
+	garage = CustomTrack_GarageVenueServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive);
 	if (garage >= 0)
 	{
 		resident->kind = CTR_RESIDENT_GARAGE;
@@ -1508,7 +1526,10 @@ void CustomTrack_NoteLoadedLev(const struct CustomTrackLoadContext *ctx)
 	else
 	{
 		if (!CustomTrack_ServingLoad(ctx->levelID, ctx->adventureCupActive, ctx->cupID))
+		{
+			s_customTrackResidentMismatch = 1;
 			return;
+		}
 		resident->kind = CTR_RESIDENT_EVENT;
 		lev = s_descriptor.levSha256;
 		vrm = s_descriptor.vrmSha256;
@@ -1516,6 +1537,9 @@ void CustomTrack_NoteLoadedLev(const struct CustomTrackLoadContext *ctx)
 	resident->levelID = ctx->levelID;
 	memcpy(resident->levSha256, lev, sizeof resident->levSha256);
 	memcpy(resident->vrmSha256, vrm, sizeof resident->vrmSha256);
+	if (previousParts && memcmp(&s_customTrackResident, resident, sizeof *resident) != 0)
+		s_customTrackResidentMismatch = 1;
+	memcpy(&s_customTrackResident, resident, sizeof *resident);
 }
 
 int CustomTrack_TiziMadness(const struct CustomTrackLoadContext *ctx)

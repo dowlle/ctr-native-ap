@@ -11,6 +11,9 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include "platform/native_custom_tracks.h"
 #endif
+#ifdef CTR_AP
+#include "ap/ap_content_plan.h"
+#endif
 
 #include <errno.h>
 #include <stdlib.h>
@@ -53,6 +56,15 @@ global_variable u8 *s_quickPayload;
 global_variable int s_quickPayloadSize;
 global_variable int s_quickRefusalFrames;
 global_variable char *s_quickRefusal;
+global_variable uint64_t s_quickBossRoomIdentity;
+
+void NativeSaveState_BeginLevelLoad(void)
+{
+#ifdef CTR_AP
+	// Preserve the admitted encounter through reconnects and resident retries.
+	s_quickBossRoomIdentity = (sdata->gGT->gameMode1 & ADVENTURE_BOSS) ? ap_content_plan_room_identity() : 0;
+#endif
+}
 
 internal int NativeSaveState_SnapshotIdentity(struct NativeSaveStateRaceIdentity *id)
 {
@@ -76,7 +88,10 @@ internal int NativeSaveState_SnapshotIdentity(struct NativeSaveStateRaceIdentity
 		id->mode1 |= gt->gameMode1 & (POINT_LIMIT | TIME_LIMIT | LIFE_LIMIT);
 	id->mode2 = gt->gameMode2 & (TOKEN_RACE | CUP_ANY_KIND | CREDITS);
 	if (id->mode1 & ADVENTURE_BOSS)
+	{
 		id->boss = gt->bossID;
+		id->roomIdentity = s_quickBossRoomIdentity;
+	}
 	if ((id->mode1 & ADVENTURE_CUP) || (id->mode2 & CUP_ANY_KIND))
 	{
 		id->cup = gt->cup.cupID;
@@ -107,7 +122,8 @@ internal int NativeSaveState_SnapshotIdentity(struct NativeSaveStateRaceIdentity
 		if (resident)
 		{
 			id->source = resident->kind;
-			id->roomIdentity = resident->roomIdentity;
+			if (resident->roomIdentity)
+				id->roomIdentity = resident->roomIdentity;
 			memcpy(id->trackID, resident->trackID, sizeof id->trackID);
 			memcpy(id->revision, resident->packageRevision, sizeof id->revision);
 			memcpy(id->levSha256, resident->levSha256, sizeof id->levSha256);
@@ -128,11 +144,15 @@ internal int NativeSaveState_Refuse(char *message, const char *reason)
 
 void NativeSaveState_DrawRefusal(u32 *ot)
 {
-	if (s_quickRefusalFrames > 0)
+	int quickNotice = s_quickRefusalFrames > 0;
+	if (quickNotice)
 	{
 		s_quickRefusalFrames--;
 		DecalFont_DrawLineOT(s_quickRefusal, 0x100, 0x60, FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
 	}
+#ifdef CTR_CUSTOM_PACKAGES
+	NativeCheckpoint_DrawCustomRefusal(ot, !quickNotice);
+#endif
 }
 
 internal s32 NativeSaveState_PathExists(const char *path)
@@ -207,6 +227,13 @@ internal s32 NativeSaveState_SaveQuick(void)
 		Platform_Log("[CTR State] quick save unavailable during level transitions\n");
 		return 0;
 	}
+#ifdef CTR_CUSTOM_TRACKS
+	if (CustomTrack_ResidentAssetsMixed())
+	{
+		Platform_Log("[CTR State] quick save unavailable for a mixed track load\n");
+		return 0;
+	}
+#endif
 	if (!NativeSaveState_PrepareDir())
 	{
 		Platform_Log("[CTR State] failed to create quick state directory: %s\n", NATIVE_SAVESTATE_DIR);
@@ -243,6 +270,10 @@ internal s32 NativeSaveState_LoadQuick(void)
 
 	if (!NativeSaveState_SnapshotIdentity(&live))
 		return NativeSaveState_Refuse("STATE NOT LOADED: LEVEL LOADING", "level transition in progress");
+#ifdef CTR_CUSTOM_TRACKS
+	if (CustomTrack_ResidentAssetsMixed())
+		return NativeSaveState_Refuse("STATE NOT LOADED: MIXED TRACK", "mixed track load");
+#endif
 
 	if (!NativeSaveState_PreparePayload())
 	{
@@ -261,13 +292,13 @@ internal s32 NativeSaveState_LoadQuick(void)
 	if (memcmp(&saved, &live, sizeof saved) != 0)
 		return NativeSaveState_Refuse("STATE NOT LOADED: OTHER RACE", "quick state belongs to a different race");
 
+	s_quickRefusalFrames = 0;
 	if (!NativeCheckpoint_Restore(s_quickPayload, checkpointSize))
 	{
 		Platform_Log("[CTR State] failed to restore quick state: %s\n", NATIVE_SAVESTATE_QUICK_PATH);
 		return 0;
 	}
 
-	s_quickRefusalFrames = 0;
 	Platform_Log("[CTR State] loaded quick state checksum=0x%08x: %s\n", info.checksum, NATIVE_SAVESTATE_QUICK_PATH);
 	return 1;
 }

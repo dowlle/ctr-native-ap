@@ -319,9 +319,11 @@ struct CustomTrackResidentSource
 	uint64_t roomIdentity;
 	char trackID[65], packageRevision[65];
 	char levSha256[65], vrmSha256[65];
+	char reserved[4];
 };
 void CustomTrack_ClearResidentSource(void);
-void CustomTrack_NoteLoadedLev(const struct CustomTrackLoadContext *ctx);
+void CustomTrack_NoteLoadedAsset(const struct CustomTrackLoadContext *ctx, int role, int seedOwned);
+int CustomTrack_ResidentAssetsMixed(void);
 const struct CustomTrackResidentSource *CustomTrack_ResidentSource(int levelID);
 int CustomTrack_ResidentBlocksRecordedLanes(int levelID);
 /* Is the pair served for this load Tizi Madness (native_tizi_madness.h,
