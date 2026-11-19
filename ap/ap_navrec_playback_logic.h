@@ -371,18 +371,18 @@ static unsigned int AP_NavRecLane_GuardOpcodes(struct AP_NavRecNode *nodes, unsi
 // owns at most one lane, a lane has at most one owner, and the owner keeps the
 // name only while it is on that lane. Returns the lane whose name this bot
 // draws, or -1.
-static int AP_NavRecLabel_LaneFor(int laneOwner[AP_NAVREC_LANES], unsigned int recordedMask, int driverIndex, int botLane)
+static int AP_NavRecLabel_LaneFor(int *laneOwner, int laneCount, unsigned int recordedMask, int driverIndex, int botLane)
 {
 	int lane;
 
-	if ((botLane < 0) || (botLane >= AP_NAVREC_LANES))
+	if ((botLane < 0) || (botLane >= laneCount))
 		return -1;
 	if (((recordedMask >> botLane) & 1u) == 0u)
 		return -1;
 
 	if (laneOwner[botLane] < 0)
 	{
-		for (lane = 0; lane < AP_NAVREC_LANES; lane++)
+		for (lane = 0; lane < laneCount; lane++)
 		{
 			if (laneOwner[lane] == driverIndex)
 				return -1; // already carries another lane's name

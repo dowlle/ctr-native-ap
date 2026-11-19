@@ -1737,6 +1737,16 @@ static void AP_NavRec_RebindBots(int force)
 			d->botData.botPath = (s16)to;
 			lane = to;
 		}
+#ifdef CTR_RECORDED_RACE
+		if (lane >= BOTS_NAV_PATH_COUNT && (d->botData.botFlags & BOT_FLAG_ESTIMATE_NAV))
+		{
+			// A restored bot still approaching its lane must join at the
+			// start, even if the new shuffle gave it a different recording.
+			d->botData.botNavFrame = frames;
+			BOTS_SetRotation(d, gGT->trafficLightsTimer > 0);
+			continue;
+		}
+#endif
 		count = (int)hdr->numPoints;
 
 		cur = (uintptr_t)d->botData.botNavFrame;
@@ -1898,7 +1908,7 @@ void AP_NavRec_DrawBotNames(void)
 	if (!s_navrecLanesLive)
 		return;
 
-	for (lane = 0; lane < AP_NAVREC_LANES; lane++)
+	for (lane = 0; lane < BOTS_NAV_LANE_MAX; lane++)
 	{
 		if (((s_navrecRecordedMask >> lane) & 1u) && (s_navrecLaneDriverName[lane][0] != '\0'))
 			named = 1;
@@ -1942,7 +1952,7 @@ void AP_NavRec_DrawBotNames(void)
 
 		// Ownership is settled before any visibility test, so the first bot on
 		// a lane owns its name even while it is off screen.
-		lane = AP_NavRecLabel_LaneFor(s_navrecLaneOwner, s_navrecRecordedMask, i, (int)bot->botData.botPath);
+		lane = AP_NavRecLabel_LaneFor(s_navrecLaneOwner, BOTS_NAV_LANE_MAX, s_navrecRecordedMask, i, (int)bot->botData.botPath);
 		if (lane < 0)
 			continue;
 

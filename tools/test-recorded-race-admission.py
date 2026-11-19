@@ -59,9 +59,28 @@ def build_fixture_lev(*, arcade=False):
     return struct.pack("<I", map_offset) + body + struct.pack(f"<{len(slots) + 1}I", len(slots) * 4, *slots)
 
 
+def course_nodes(lev):
+    """Sample the forward checkpoint edges for the optional real-track fixture."""
+    count, start = struct.unpack_from("<II", lev, 4 + 0x148)
+    entries = [struct.unpack_from("<3hH4B", lev, 4 + start + i * 12) for i in range(count)]
+    result = []
+    checkpoint = 0
+    for _ in range(count):
+        current = entries[checkpoint]
+        next_checkpoint = current[4]
+        following = entries[next_checkpoint]
+        for step in range(4):
+            pos = tuple(round((a * (4 - step) + b * step) / 4) for a, b in zip(current[:3], following[:3]))
+            result.append((*pos, checkpoint))
+        checkpoint = next_checkpoint
+    assert checkpoint == 0
+    return result
+
+
 def fixture_navset(lev_hash, *, count=7, wrong_id=False, wrong_revision=False,
-                   dirty=False, duplicate=False, open_lap=False):
-    nodes = 32
+                   dirty=False, duplicate=False, open_lap=False,
+                   bad_checkpoint=False, reverse_cycle=False, course=None):
+    nodes = len(course) if course else 32
     data = bytearray(128 + 64 * count)
     struct.pack_into("<4sHH", data, 0, b"NAV2", 4, 128)
     data[0x55], data[0x56], data[0x60] = count, 20, 1
@@ -75,13 +94,22 @@ def fixture_navset(lev_hash, *, count=7, wrong_id=False, wrong_revision=False,
         data[entry + 28:entry + 28 + len(name)] = name
         radius = 1000 + (0 if duplicate else 20 * lap)
         for i in range(nodes):
-            angle = math.tau * i / nodes
-            x, z = round(radius * math.sin(angle)), round(radius * math.cos(angle))
+            if course:
+                x, y, z, checkpoint = course[i]
+                x += lap * 4
+            else:
+                angle = math.tau * i / nodes
+                x, y, z = round(radius * math.sin(angle)), 0, round(radius * math.cos(angle))
+                checkpoint = (i // 8) % 4
+            if reverse_cycle:
+                checkpoint = (-checkpoint) % 4
+            if bad_checkpoint and i == 0:
+                checkpoint = 255
             if open_lap and i == nodes - 1:
                 x += 3000
-            data.extend(struct.pack("<3h4B4h2B", x, 0, z, 0, lap, 0, 0,
-                                    200, 200, 0, 0x7fff, i + 1, 0))
-        data.extend(struct.pack(f"<{nodes}I", *(28 * i for i in range(nodes))))
+            data.extend(struct.pack("<3h4B4h2B", x, y, z, 0, lap, 0, 0,
+                                    200, 200, 0, 0x7fff, checkpoint, 0))
+        data.extend(struct.pack(f"<{nodes}I", *(900 * i // nodes for i in range(nodes))))
     struct.pack_into("<I", data, 8, len(data) + 8)
     checksum = 0xcbf29ce484222325
     for value in data:
@@ -177,7 +205,9 @@ def main():
         verify(exe, root / "unrelated", dict(valid, lev=wrong_lev, vrm=vrm[:-1] + b"\x01"), "No AI paths")
         for flags, expected in [(dict(count=6), "Need seven laps"), (dict(wrong_id=True), "Wrong recording ID"),
                                 (dict(wrong_revision=True), "Wrong recording ID"), (dict(dirty=True), "Unusable lap"),
-                                (dict(open_lap=True), "Unusable lap"), (dict(duplicate=True), "Duplicate laps")]:
+                                (dict(open_lap=True), "Unusable lap"), (dict(duplicate=True), "Duplicate laps"),
+                                (dict(bad_checkpoint=True), "Wrong lap checkpoints"),
+                                (dict(reverse_cycle=True), "Wrong lap checkpoints")]:
             nav = fixture_navset(lev_hash, **flags)
             verify(exe, root / next(iter(flags)), dict(valid, recorded_ai=nav), expected)
         verify(exe, root / "bad-navset", dict(valid, recorded_ai=valid["recorded_ai"][:-1]), "Invalid recordings")
@@ -192,7 +222,8 @@ def main():
         if args.wumpa_fixtures:
             folder = args.wumpa_fixtures
             lev = (folder / "wumpa-world.lev").read_bytes()
-            files = dict(lev=lev, vrm=(folder / "wumpa-world.vrm").read_bytes(), recorded_ai=fixture_navset(digest(lev)),
+            files = dict(lev=lev, vrm=(folder / "wumpa-world.vrm").read_bytes(),
+                         recorded_ai=fixture_navset(digest(lev), course=course_nodes(lev)),
                          race_grid=(folder / "grid-spots.json").read_bytes(),
                          weapon_crate_spots=(folder / "weapon-crate-spots.json").read_bytes())
             base = root / "wumpa-base"

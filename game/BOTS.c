@@ -676,7 +676,12 @@ void BOTS_SetRotation(struct Driver *bot, int useSpawnYaw)
 	}
 	else
 	{
-		bot->botData.estimateRotNav[1] = (u8)CTR_MipsSra(CTR_MipsAddLo(sdata->gGT->level1->DriverSpawn[0].rot.y, 0x400), 4);
+		int spawn = 0;
+#ifdef CTR_RECORDED_RACE
+		if (bot->botData.botPath >= BOTS_NAV_PATH_COUNT)
+			spawn = sdata->kartSpawnOrderArray[bot->driverID];
+#endif
+		bot->botData.estimateRotNav[1] = (u8)CTR_MipsSra(CTR_MipsAddLo(sdata->gGT->level1->DriverSpawn[spawn].rot.y, 0x400), 4);
 	}
 
 	s16 v = (s16)CTR_MipsSll(bot->botData.estimateRotNav[1], 4);
@@ -961,6 +966,20 @@ void BOTS_Killplane(struct Thread *botThread)
 	return;
 }
 
+#ifdef CTR_RECORDED_RACE
+static int BOTS_RecordedGridTick(struct Driver *bot, int trafficLightsTimer)
+{
+	if (bot->botData.botPath < BOTS_NAV_PATH_COUNT)
+		return 1;
+	if (trafficLightsTimer > 0)
+		return 0;
+	// Reuse the one-off approach frame to aim from the seat to the lap at green.
+	if (!(bot->botData.botFlags & BOT_FLAG_STARTLINE_INIT_DONE))
+		BOTS_SetRotation(bot, 0);
+	return 1;
+}
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80013c18-0x80016b00 for the retail path.
 
 void BOTS_ThTick_Drive(struct Thread *botThread)
@@ -969,6 +988,18 @@ void BOTS_ThTick_Drive(struct Thread *botThread)
 	struct Driver *botDriver = (struct Driver *)botThread->object;     // iVar17
 	struct Instance *botInstance = (struct Instance *)botThread->inst; // iVar22
 	struct GameTracker *gGT = sdata->gGT;
+
+	int trafficLightsTimer = gGT->trafficLightsTimer;
+	if (data.characterIDs[botDriver->driverID] == NITROS_OXIDE)
+	{
+		// Pretend there is less time (oxide is a cheater)
+		trafficLightsTimer = CTR_MipsSubLo(trafficLightsTimer, 0x1e0);
+	}
+
+#ifdef CTR_RECORDED_RACE
+	if (!BOTS_RecordedGridTick(botDriver, trafficLightsTimer))
+		return;
+#endif
 
 	// local_34 = gGT->elapsedTimeMS;
 
@@ -1162,14 +1193,6 @@ UpdateTireColorTimer:
 
 	if (botDriver->botData.ai_progress_cooldown == 0)
 	{
-		int trafficLightsTimer = gGT->trafficLightsTimer;
-
-		if (data.characterIDs[botDriver->driverID] == NITROS_OXIDE) // check is oxide
-		{
-			// Pretend there is less time (oxide is a cheater)
-			trafficLightsTimer = CTR_MipsSubLo(trafficLightsTimer, 0x1e0);
-		}
-
 		if (0 < trafficLightsTimer)
 		{
 			goto HoldBotBeforeRaceOrCooldown; // if race not started, then skip

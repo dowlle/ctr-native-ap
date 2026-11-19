@@ -308,6 +308,7 @@ int RB_CrateWeapon_ThCollide(struct Thread *crateThread, struct Thread *collidin
 #include "../../ap/ap_box_model.h"
 
 enum { RECORDED_CRATE_HIT_RADIUS = 128, RECORDED_CRATE_COOLDOWN = 30 };
+static char s_recordedCrateName[16] = "recorded crate";
 
 static struct Driver *RB_CrateWeapon_RecordedContact(const struct GameTracker *gGT, const struct Instance *inst)
 {
@@ -359,16 +360,15 @@ static void RB_CrateWeapon_RecordedTick(struct Thread *thread)
 
 void RB_CrateWeapon_SpawnRecorded(struct GameTracker *gGT, const struct CustomRecordedRace *race)
 {
-	static char name[16] = "recorded crate";
 	struct Model *model = AP_BoxModel_GetWeapon(gGT);
 	if (!model) return;
 	for (unsigned int i = 0; i < race->crateCount; i++)
 	{
 		struct Thread *thread = PROC_BirthWithObject(
 		    SIZE_RELATIVE_POOL_BUCKET(sizeof(struct Crate), NONE, SMALL, STATIC),
-		    RB_CrateWeapon_RecordedTick, name, NULL);
+		    RB_CrateWeapon_RecordedTick, s_recordedCrateName, NULL);
 		if (!thread) break;
-		struct Instance *inst = INSTANCE_Birth3D(model, name, thread);
+		struct Instance *inst = INSTANCE_Birth3D(model, s_recordedCrateName, thread);
 		if (!inst)
 		{
 			INSTANCE_RollbackThreadBirth(thread, NULL);
@@ -385,6 +385,22 @@ void RB_CrateWeapon_SpawnRecorded(struct GameTracker *gGT, const struct CustomRe
 		inst->matrix.t[0] = pos.x;
 		inst->matrix.t[1] = pos.y;
 		inst->matrix.t[2] = pos.z;
+	}
+}
+
+void RB_CrateWeapon_RebindRecorded(struct GameTracker *gGT)
+{
+	struct Model *model = AP_BoxModel_GetWeapon(gGT);
+	for (struct Thread *thread = gGT->threadBuckets[STATIC].thread; thread; thread = thread->siblingThread)
+	{
+		if (thread->funcThTick != RB_CrateWeapon_RecordedTick || !thread->inst)
+			continue;
+
+		struct Instance *inst = thread->inst;
+		thread->name = s_recordedCrateName;
+		inst->model = model;
+		// The renderer rebuilds this cache from the current model on draw.
+		*INST_GETIDPP(inst) = (struct InstDrawPerPlayer){.pushBuffer = &gGT->pushBuffer[0]};
 	}
 }
 #endif

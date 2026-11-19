@@ -1,6 +1,6 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_content_verify.h>
-#include <platform/native_recorded_race.h>
+#include <platform/native_recorded_race_data.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -251,9 +251,28 @@ static int all_grounded(const struct RecordedRaceGround *mesh, const struct Cust
 	return grounded == (UINT32_MAX >> (32 - spotCount));
 }
 
+static int recorded_lap_matches_cycle(const struct AP_NavRecNode *nodes, unsigned int nodeCount,
+	const unsigned char *ordinal, unsigned int checkpointCount)
+{
+	unsigned int traveled = 0;
+	unsigned int prev = nodes[nodeCount - 1].goBackCount;
+	for (unsigned int i = 0; i < nodeCount; i++)
+	{
+		unsigned int next = nodes[i].goBackCount;
+		if (prev >= checkpointCount || next >= checkpointCount)
+			return 0;
+		unsigned int step = (checkpointCount + ordinal[next] - ordinal[prev]) % checkpointCount;
+		// Consecutive samples can repeat or skip a checkpoint. Reject a
+		// jump across half the course or more and require one full circuit.
+		if (step * 2 >= checkpointCount || (traveled += step) > checkpointCount)
+			return 0;
+		prev = next;
+	}
+	return traveled == checkpointCount;
+}
+
 const char *CustomRecordedRace_CheckGeometry(const unsigned char *lev, size_t size,
-	const struct CustomRacePlacement *grid, const struct CustomRacePlacement *crates,
-	unsigned int crateCount)
+	const struct CustomRecordedRace *race)
 {
 	struct LevView view;
 	size_t checkpoints, mesh, quads, verts;
@@ -262,9 +281,11 @@ const char *CustomRecordedRace_CheckGeometry(const unsigned char *lev, size_t si
 	if (count < 4 || count > 255 ||
 	    !pointer(&view, CHECK_P, count * CHECK_SIZE, &checkpoints, NULL, 0) || !checkpoints)
 		return "Invalid lap cycle";
+	unsigned char ordinal[UINT8_MAX];
 	unsigned int at = 0;
 	for (unsigned int i = 0; i < count; i++)
 	{
+		ordinal[at] = (unsigned char)i;
 		unsigned int next = view.p[checkpoints + at * CHECK_SIZE + 8];
 		if (next >= count || (!next && i + 1 != count) ||
 		    view.p[checkpoints + next * CHECK_SIZE + 10] != at)
@@ -272,6 +293,9 @@ const char *CustomRecordedRace_CheckGeometry(const unsigned char *lev, size_t si
 		at = next;
 	}
 	if (at) return "Invalid lap cycle";
+	for (unsigned int i = 0; i < race->set.header.lapCount; i++)
+		if (!recorded_lap_matches_cycle(race->nodes[i], race->set.laps[i].nodeCount, ordinal, count))
+			return "Wrong lap checkpoints";
 	if (!pointer(&view, MESH_P, MESH_SIZE, &mesh, NULL, 0) || !mesh) return "Invalid ground mesh";
 	uint32_t quadCount = rd32(view.p + mesh);
 	uint32_t vertCount = rd32(view.p + mesh + 4);
@@ -280,9 +304,9 @@ const char *CustomRecordedRace_CheckGeometry(const unsigned char *lev, size_t si
 	    !pointer(&view, mesh + 16, vertCount * 16, &verts, NULL, 0) || !verts)
 		return "Invalid ground mesh";
 	struct RecordedRaceGround ground = {view.p + quads, view.p + verts, quadCount, vertCount};
-	if (!grid || !all_grounded(&ground, grid, CTR_RECORDED_GRID_COUNT)) return "Grid off ground";
-	if (!crates || !crateCount || crateCount > CTR_RECORDED_CRATE_MAX ||
-	    !all_grounded(&ground, crates, crateCount))
+	if (!all_grounded(&ground, race->grid, CTR_RECORDED_GRID_COUNT)) return "Grid off ground";
+	if (!race->crateCount || race->crateCount > CTR_RECORDED_CRATE_MAX ||
+	    !all_grounded(&ground, race->crates, race->crateCount))
 		return "Crates off ground";
 	return NULL;
 }

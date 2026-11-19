@@ -17,6 +17,9 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include "platform/native_custom_tracks.h" // UI_Map_CustomAfterRestore (A4-64)
 #endif
+#ifdef CTR_RECORDED_RACE
+#include "platform/native_recorded_race.h"
+#endif
 
 #define NATIVE_CHECKPOINT_FOURCC(a, b, c, d) ((u32)(a) | ((u32)(b) << 8) | ((u32)(c) << 16) | ((u32)(d) << 24))
 
@@ -2446,6 +2449,10 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 	NativeCheckpoint_RepairAuthoredNavEnds(sdata->gGT);
 #if defined(CTR_AP) || defined(CTR_AI_LAP_RECORDER)
 	AP_NavRec_AfterCheckpointRestore();
+#endif
+#ifdef CTR_RECORDED_RACE
+	if (MainRaceTrack_RecordedRace())
+		RB_CrateWeapon_RebindRecorded(sdata->gGT);
 #endif
 #ifdef CTR_CUSTOM_TRACKS
 	// The restored VRAM may hold another minimap: decide its mode again.

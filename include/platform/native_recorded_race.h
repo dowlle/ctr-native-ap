@@ -28,10 +28,10 @@ void CustomRecordedRace_Free(struct CustomRecordedRace *race);
 const struct CustomRecordedRace *CustomOffline_RuntimeRecordedRace(int levelID, int mode);
 const struct CustomRecordedRace *MainRaceTrack_RecordedRace(void);
 void RB_CrateWeapon_SpawnRecorded(struct GameTracker *gGT, const struct CustomRecordedRace *race);
+void RB_CrateWeapon_RebindRecorded(struct GameTracker *gGT);
 
 const char *CustomRecordedRace_CheckGeometry(const unsigned char *lev, size_t size,
-    const struct CustomRacePlacement *grid, const struct CustomRacePlacement *crates,
-    unsigned int crateCount);
+    const struct CustomRecordedRace *race);
 
 #ifdef __cplusplus
 }

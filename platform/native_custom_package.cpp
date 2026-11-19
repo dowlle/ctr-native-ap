@@ -247,7 +247,7 @@ extern "C" int CustomPackage_GetRecordedRace(const CustomPackageOwned *package,
         invalid = "Invalid race files";
         bytes = recorded_file(package, manifest, "lev");
         if (const char *failure = CustomRecordedRace_CheckGeometry(
-                bytes.data(), bytes.size(), race->grid, race->crates, race->crateCount))
+                bytes.data(), bytes.size(), race.get()))
             return refuse(failure);
         if (out) *out = race.release();
         return 1;

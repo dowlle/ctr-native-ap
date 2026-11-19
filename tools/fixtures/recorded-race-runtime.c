@@ -40,6 +40,14 @@ int CustomTrack_CortexTrackIntent(int levelID, int boss) { return 0; }
 int CustomTrack_EventFieldSize(int levelID, int cup, int cupID) { return 0; }
 void AP_LogLine(const char *line) { fputs(line, stdout); }
 int RngDeadCoed(struct RngDeadCoedState *state) { return 0; }
+int SquareRoot0_stub(int value) { return value > 0 ? (int)sqrt(value) : 0; }
+int ratan2(int y, int x) { return (int)(atan2(y, x) * (2048.0 / 3.141592653589793)); }
+void VehBirth_TeleportSelf(struct Driver *driver, u8 spawnFlag, int spawnPosY)
+{
+	assert(spawnFlag == VEH_BIRTH_SPAWN_RACE_START && spawnPosY == 0);
+	const SVec3 *seat = &level.DriverSpawn[sdata->kartSpawnOrderArray[driver->driverID]].pos;
+	CTR_SET_VEC3(driver->posCurr.v, seat->x * 256, (seat->y + 0x80) * 256, seat->z * 256);
+}
 void GhostReplay_Init1(void) {}
 void GhostReplay_Init2(void) {}
 void GhostTape_Start(void) {}
@@ -140,9 +148,12 @@ static void check_race(void)
 	}
 	for (int lane = 0; lane < 3; lane++)
 		assert(!memcmp(s_navrecLane[lane].wire, s_navrecLane[lane + 3].wire, 32 * sizeof(struct AP_NavRecNode)));
+	assert(AP_NavRecLabel_LaneFor(s_navrecLaneOwner, BOTS_NAV_LANE_MAX, s_navrecRecordedMask, 7, 9) == 9);
 	puts("Eight spawn transforms precede birth; seven bots use seven lanes and the first three back the track");
 
-	static struct Instance instances[4];
+	struct InstanceSlot { struct Instance inst; struct InstDrawPerPlayer draw; };
+	CTR_STATIC_ASSERT(sizeof(struct InstanceSlot) == sizeof(struct Instance) + sizeof(struct InstDrawPerPlayer));
+	static struct InstanceSlot instances[4];
 	static struct Thread threads[4];
 	static unsigned char stacks[4][0x48] __attribute__((aligned(4)));
 	MainInit_NativePoolAt(&tracker.JitPools.instance, 4, sizeof instances[0], instances);
@@ -166,6 +177,16 @@ static void check_race(void)
 	assert(crate->inst->scale.x == 0);
 	struct Crate *state = crate->object;
 	assert(state->cooldown == 30);
+	struct Model savedModel = {0};
+	struct ModelHeader savedHeader = {0};
+	struct InstDrawPerPlayer *draw = INST_GETIDPP(crate->inst);
+	crate->inst->model = &savedModel;
+	draw->mh = &savedHeader;
+	crate->name = "saved crate address";
+	RB_CrateWeapon_RebindRecorded(&tracker);
+	assert(crate->inst->model == &crateModel && crate->name == s_recordedCrateName);
+	assert(draw->pushBuffer == &tracker.pushBuffer[0] && !draw->mh);
+	assert(state->cooldown == 30 && crate->inst->scale.x == 0);
 	crate->funcThTick(crate);
 	assert(state->cooldown == 30);
 	karts[0].matrix.t[2] = 0;
@@ -196,6 +217,20 @@ static void check_race(void)
 		assert(drivers[i].botData.botNavFrame >= lane && drivers[i].botData.botNavFrame < lane + 32);
 	}
 	puts("Admitted package restore rebinds all seven bots");
+
+	struct Driver *bot = &drivers[7];
+	bot->driverID = 7;
+	sdata->kartSpawnOrderArray[7] = 7;
+	BOTS_GotoStartingLine(bot);
+	struct NavFrame *first = sdata->NavPath_ptrNavFrameArray[9];
+	assert(bot->botData.botNavFrame == first && (bot->botData.botFlags & BOT_FLAG_ESTIMATE_NAV));
+	assert(bot->rotCurr.y == ((race.grid[7].rot[1] + 0x400) & 0xff0));
+	assert(!BOTS_RecordedGridTick(bot, 1));
+	assert(bot->posCurr.x == race.grid[7].pos[0] * 256);
+	assert(BOTS_RecordedGridTick(bot, 0));
+	assert(bot->botData.estimatePosition.x == race.grid[7].pos[0]);
+	assert(bot->botData.botNavFrame == first && bot->botData.distToNextNavXZ > 0);
+	puts("Dedicated bots hold their own seat until green and then approach the assigned line");
 }
 
 static void write_lap(void)

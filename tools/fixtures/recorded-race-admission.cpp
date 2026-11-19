@@ -94,12 +94,10 @@ int main(int argc, const char **argv)
         auto checkpoints = 4 + AP_NavRecFormat_GetU32(raw + 4 + 0x14c);
         auto next = raw[checkpoints + 8];
         raw[checkpoints + 8] = 0;
-        assert(!strcmp(CustomRecordedRace_CheckGeometry(raw, lev.size(), race->grid,
-            race->crates, race->crateCount), "Invalid lap cycle"));
+        assert(!strcmp(CustomRecordedRace_CheckGeometry(raw, lev.size(), race), "Invalid lap cycle"));
         raw[checkpoints + 8] = next;
         memset(raw + 4, 0, 4);
-        assert(!strcmp(CustomRecordedRace_CheckGeometry(raw, lev.size(), race->grid,
-            race->crates, race->crateCount), "Invalid ground mesh"));
+        assert(!strcmp(CustomRecordedRace_CheckGeometry(raw, lev.size(), race), "Invalid ground mesh"));
         puts("Recorded Arcade admitted");
     }
     CustomOffline_EndRuntime();
