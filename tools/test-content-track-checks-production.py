@@ -83,7 +83,7 @@ static long checkedCodes[32]; static int checkedCount;
 static int ap_checkdiag_once;
 static unsigned char ap_letter_received[18][3], ap_custom_letter_received[AP_CUSTOM_LETTER_SLOT_COUNT][3];
 static unsigned char ap_cortex_letter_received[3];
-static unsigned char ap_named_letter_received[(AP_NAMED_BLOCK_LIMIT * 3 + 7) / 8];
+static unsigned char ap_named_letter_received[(AP_NAMED_BLOCK_LIMIT * AP_ORIGIN_GLYPH_COUNT + 7) / 8];
 int ctr_cfg_active(void) { return active; }
 int ap_content_plan_active(void) { return planActive; }
 uint64_t ap_content_plan_epoch(void) { return planActive ? epoch : 0; }
@@ -127,8 +127,7 @@ static int AP_CustomLetterSlot(int track) { (void)track; return 0; }
 static int AP_CortexLetterTrack(int track) { (void)track; return 0; }
 static void AP_CortexLetterCodes(long codes[3]) { codes[0]=codes[1]=codes[2]=-1; }
 '''
-for signature in ("static int AP_NamedLetterBit(int64_t code)",
-                  "static void AP_NamedLetterReceive(int64_t code)",
+for signature in ("static void AP_NamedLetterReceive(int64_t code)",
                   "static int AP_NamedLetterReceived(int64_t code)",
                   "static int AP_ContentLetterItemReceived(int64_t code)",
                   "static int AP_EmitClassCheck(long code,",
@@ -303,6 +302,15 @@ int main(void) {
  AP_NamedLetterReceive(35100041); assert(AP_LetterAvailable(6,1) && !AP_LetterAvailable(6,0));
  AP_NamedLetterReceive(35100040); AP_NamedLetterReceive(35100042); AP_NamedLetterReceive(35100043);
  assert(!AP_NamedLetterReceived(35100043) && AP_LettersRequiredMet(6) && AP_LetterTokenEarned(6,1,3)); cases++;
+ /* Mode 2 on a named custom track with CNK: new item IDs gate the same slots. */
+ reset(AP_CONTENT_MODE_CTR,0); families.lettersanity=2; families.letters_per_track=2;
+ pad.letter_locations[1]=35201754; pad.letter_items[1]=38500301;
+ pad.letter_locations[2]=35201751; pad.letter_items[2]=38500298;
+ assert(!AP_LetterAvailable(6,1) && !AP_LetterAvailable(6,2));
+ AP_NamedLetterReceive(35100041); assert(!AP_LetterAvailable(6,1));
+ AP_NamedLetterReceive(38500301); assert(AP_LetterAvailable(6,1) && !AP_LetterAvailable(6,2));
+ AP_NamedLetterReceive(38500298);
+ assert(AP_LetterAvailable(6,2) && AP_LettersRequiredMet(6) && AP_LetterTokenEarned(6,1,2)); cases++;
  /* Mode 2 on a generic slot: Custom Track 2's letter items. */
  reset(AP_CONTENT_MODE_CTR,0); families.lettersanity=2; families.letters_per_track=1;
  pad.letter_locations[1]=35020004; pad.letter_items[1]=35021004;

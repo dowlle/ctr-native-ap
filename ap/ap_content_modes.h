@@ -126,6 +126,11 @@ static inline void ap_content_letter_codes(const ctr_content_pad *pad, long out[
     for (l = 0; l < 3; ++l) out[l] = pad && pad->letter_locations[l] > 0 ? (long)pad->letter_locations[l] : -1;
 }
 
+static inline char ap_content_letter_glyph(const ctr_content_pad *pad, int slot)
+{
+    return pad && pad->letter_glyphs[slot] ? pad->letter_glyphs[slot] : "CTR"[slot];
+}
+
 // One selector row per mode, in the pad's order, for the in-game tracker's
 // activity list: a locked row stays in that list, grey, with its reasons.
 typedef struct ap_content_selector {
