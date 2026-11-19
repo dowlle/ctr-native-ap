@@ -138,6 +138,7 @@ struct AP_NavRecFetchCtx
 {
 	int                      levelID;
 	struct AP_NavRecLoadBuf *buf;
+	const char              *onlyKey;
 };
 
 static struct AP_NavRecScratch *s_navrecScratch;
@@ -930,7 +931,8 @@ static void AP_NavRec_PublishLane(int lane, unsigned int nodes)
 // usable and `info` describes it, 0 when it is missing or was rejected. Rejection
 // is still whole-file: nothing here salvages part of a bad container, and no lane
 // is touched either way.
-static int AP_NavRec_ReadCandidate(const char *path, int levelID, struct AP_NavRecLoadBuf *into, struct AP_NavRecFileInfo *info)
+static int AP_NavRec_ReadCandidate(const char *path, int levelID, struct AP_NavRecLoadBuf *into, struct AP_NavRecFileInfo *info,
+                                   const char *onlyKey)
 {
 	char                     msg[512];
 	FILE                    *f;
@@ -1013,7 +1015,7 @@ static int AP_NavRec_ReadCandidate(const char *path, int levelID, struct AP_NavR
 		return 0;
 	}
 
-	return 1;
+	return AP_NavRecPool_NameMatches(info->driverName, onlyKey);
 }
 
 // Give one lane a recorded lap out of the load buffer, and the name of the file
@@ -1140,7 +1142,7 @@ static int AP_NavRec_FetchCandidate(void *ctx, unsigned int fileIndex, struct AP
 
 	out->fileIndex = fileIndex;
 
-	if (!AP_NavRec_ReadCandidate(path, c->levelID, c->buf, &info))
+	if (!AP_NavRec_ReadCandidate(path, c->levelID, c->buf, &info, c->onlyKey))
 		return 1;
 
 	// Only closed laps whose finish seam the blend can take count. A file with
@@ -1164,7 +1166,8 @@ static int AP_NavRec_FetchCandidate(void *ctx, unsigned int fileIndex, struct AP
 // The pool index: one header read per file present for this level, kept when
 // the header matches this load's track identity. Returns the entry count; the
 // array is the caller's to free.
-static unsigned int AP_NavRec_BuildPool(int levelID, unsigned int highest, struct AP_NavRecPoolEntry **outEntries, unsigned int *outSkipped)
+static unsigned int AP_NavRec_BuildPool(int levelID, unsigned int highest, const char *onlyKey,
+                                        struct AP_NavRecPoolEntry **outEntries, unsigned int *outSkipped)
 {
 	struct AP_NavRecPoolEntry *entries;
 	unsigned int               count = 0;
@@ -1234,6 +1237,12 @@ static unsigned int AP_NavRec_BuildPool(int levelID, unsigned int highest, struc
 			continue;
 		}
 
+		if (!AP_NavRecPool_NameMatches(peeked.driverName, onlyKey))
+		{
+			skipped++;
+			continue;
+		}
+
 		entries[count].fileIndex = index;
 		AP_NavRecPool_Key(peeked.driverName, entries[count].key);
 		count++;
@@ -1267,6 +1276,7 @@ static unsigned int AP_NavRec_NewSeed(void)
 static int AP_NavRec_LoadForLevel(int levelID, unsigned int seed)
 {
 	struct AP_NavRecFetchCtx   fetchCtx;
+	char                      onlyKey[AP_NAVREC_NAME_FIELD + 1];
 	struct AP_NavRecFileInfo   info;
 	struct AP_NavRecLoadBuf   *buf;
 	struct AP_NavRecPoolEntry *entries = NULL;
@@ -1302,15 +1312,28 @@ static int AP_NavRec_LoadForLevel(int levelID, unsigned int seed)
 		return 0;
 	}
 
+	fetchCtx.onlyKey = NULL;
+	if (g_config.navOnlyMine)
+	{
+		char name[AP_NAVREC_NAME_CHARS + 1];
+
+		AP_NavRec_ResolveDriverName(name, sizeof name);
+		AP_NavRecPool_Key(name, onlyKey);
+		fetchCtx.onlyKey = onlyKey;
+	}
+	snprintf(msg, sizeof msg, "[AP NAVREC] pool for level %d: Only My Recordings %s\n", levelID,
+	         fetchCtx.onlyKey == NULL ? "off" : (onlyKey[0] != '\0' ? "on" : "on (no driver name)"));
+	AP_LogLine(msg);
+
 	highest = AP_NavRec_HighestIndex(levelID);
 	if (highest == 0)
 		return 0;
 
-	poolCount = AP_NavRec_BuildPool(levelID, highest, &entries, &poolSkipped);
+	poolCount = AP_NavRec_BuildPool(levelID, highest, fetchCtx.onlyKey, &entries, &poolSkipped);
 	if (poolCount == 0)
 	{
 		free(entries);
-		snprintf(msg, sizeof msg, "[AP NAVREC] no recording for this track's identity on level %d (%u file(s) skipped)\n", levelID,
+		snprintf(msg, sizeof msg, "[AP NAVREC] no matching recording on level %d (%u file(s) skipped)\n", levelID,
 		         poolSkipped);
 		AP_LogLine(msg);
 		return 0;
@@ -1376,7 +1399,7 @@ static int AP_NavRec_LoadForLevel(int levelID, unsigned int seed)
 
 		// A file that vanished or changed between the two passes leaves its lane
 		// on the track's own line.
-		if (!AP_NavRec_ReadCandidate(path, levelID, buf, &info))
+		if (!AP_NavRec_ReadCandidate(path, levelID, buf, &info, fetchCtx.onlyKey))
 			continue;
 		eligibleCount = AP_NavRecPlayback_EligibleLaps(&info, buf->nodes, eligible);
 		if (picks[c].lapOrdinal >= eligibleCount)
@@ -1533,8 +1556,7 @@ void AP_NavRec_AfterBotsInit(void)
 // and to fall back to the level's own nav data when that is not possible.
 #ifdef CTR_CUSTOM_PACKAGES
 // The load's recording identity, settled again from the live serving
-// predicates: the same four facts, the same override for an Arcade custom-page
-// race, and the same three-way answer as the arm in game/BOTS.c (BOTS_InitData)
+// predicates: the same facts and three-way answer as the arm in game/BOTS.c (BOTS_InitData)
 // that settles it for every race load. Keep the two in step.
 //
 // Used where that arm does not run: after a savestate restore, which brings
@@ -1544,7 +1566,7 @@ static void AP_NavRec_RederiveLoadIdentity(struct GameTracker *gGT)
 {
 	unsigned char             ctNavUuid[CTR_CT_NAV_UUID_BYTES];
 	unsigned int              ctNavRevision = 0;
-	struct AP_NavRecLoadFacts facts;
+	struct AP_NavRecLoadFacts facts = {0};
 	int                       advCup = (gGT->gameMode1 & ADVENTURE_CUP) != 0;
 	int                       advBoss = (gGT->gameMode1 & ADVENTURE_BOSS) != 0;
 
@@ -1554,11 +1576,8 @@ static void AP_NavRec_RederiveLoadIdentity(struct GameTracker *gGT)
 	facts.oxideFinalServing = CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID, advBoss) ||
 	                          CustomTrack_GarageVenueServing((int)gGT->levelID, gGT->bossID, advBoss) >= 0; // #133 PR 6b
 	facts.cortexTrackIntent = CustomTrack_CortexTrackIntent((int)gGT->levelID, advBoss);
-	if (MainRaceTrack_OfflineCustomLoad())
-	{
-		facts.eventRaceServing = 1;
-		facts.eventRaceNavIdentity = 0;
-	}
+	// The offline runtime has no navigation identity yet.
+	facts.offlineCustomServing = MainRaceTrack_OfflineCustomLoad();
 
 	switch (AP_NavRecIdentity_ForLoad(&facts))
 	{

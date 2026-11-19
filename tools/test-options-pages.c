@@ -139,7 +139,7 @@ int main(void)
 			"map_flash", "item_feed", "item_box_colours", "item_box_numbers", "sanity_numbers", "death_link", "dl_send_fall", "dl_send_hit", "dl_send_loss", "trap_duration",
 			"discord_status", NULL};
 		static const char *const authoring[] = {
-			"nav_record", "nav_use_recorded", "nav_repeat_laps", "nav_driver_name", NULL};
+			"nav_record", "nav_use_recorded", "nav_repeat_laps", "nav_only_mine", "nav_driver_name", NULL};
 
 		ExpectPage(0, "Video", video);
 		ExpectPage(1, "Gameplay", gameplay);
