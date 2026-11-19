@@ -691,7 +691,8 @@ int main(void)
        Install missing under the cursor; one press opens its overview, which
        names the off-screen pause. */
     CHECK(has("Install missing") && has("Ready 2/5"));
-    frame(BTN_CROSS, NULL); CHECK(s_ctSub == CT_SUB_INSTALL && has_paged("Leaving this screen pauses the install.", NULL));
+    frame(BTN_CROSS, NULL);
+    CHECK(s_ctSub == CT_SUB_INSTALL && seedStarts == 0 && has("Leaving pauses the install queue."));
     frame(BTN_TRIANGLE, NULL); CHECK(s_ctFocus == CT_FOCUS_CONTROLS && has("Nothing was installed"));
     frame(BTN_TRIANGLE, NULL); CHECK(s_ctFocus == CT_FOCUS_TABS);
     frame(BTN_DOWN, NULL); CHECK(s_ctFocus == CT_FOCUS_LIST);
@@ -718,10 +719,9 @@ int main(void)
     frame(BTN_TRIANGLE, NULL); frame(0, NULL); CHECK(seedStarts == 0 && s_ctFocus == CT_FOCUS_CONTROLS && has("Nothing was installed"));
     /* Page controls: Install missing shows the overview; Confirm installs once. */
     s_ctControlSel[1] = 0;
-    frame(BTN_CROSS, "seed-install-overview"); CHECK(s_ctSub == CT_SUB_INSTALL && has("Android") && has("Install missing: 1 track") && has_paged("pauses the install", NULL));
-    /* A6-25: the pause sentence sits on a later page; dump that page too. */
-    for (int k = 0; k < 4 * CT_PAGE_FRAMES && !has("pauses the install"); k++) frame(0, NULL);
-    frame(0, "seed-install-overview-pause"); CHECK(has("pauses the install"));
+    frame(BTN_CROSS, "seed-install-overview");
+    CHECK(s_ctSub == CT_SUB_INSTALL && has("Android") && has("Install missing: 1 track") &&
+          has("Leaving pauses the install queue."));
     frame(BTN_CROSS, NULL); CHECK(seedStarts == 1 && s_ctSub == CT_SUB_NONE);
     seedBusy = 1; frame(0, "seed-installing"); CHECK(has("Installing..."));
     { int before = registryRetries; frame(BTN_DOWN, NULL); frame(BTN_CROSS, NULL); frame(0, NULL); CHECK(registryRetries == before && has("Wait for the install")); }

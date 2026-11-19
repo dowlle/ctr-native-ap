@@ -1574,10 +1574,8 @@ static void CT_SeedFrame(int tapped, uint32_t *ot)
             for (i = 0; i < queued; i++)
                 if (s_ctSeedRows[plan[i]].registry == AP_SEED_REGISTRY_CACHED) cached++;
             ap_seed_format_bytes(bytes, size, sizeof size);
-            /* A6-25: the install queue only advances while this screen is
-               open, so the player is told before confirming. */
-            snprintf(line, sizeof line, "Install missing: %d track%s, %s from Project Saphi.%s%s "
-                     "Leaving this screen pauses the install.", queued, queued == 1 ? "" : "s", size,
+            snprintf(line, sizeof line, "Install missing: %d track%s, %s from Project Saphi.%s%s",
+                     queued, queued == 1 ? "" : "s", size,
                      manual ? " Tracks without a download need their files added by hand." : "",
                      cached ? " Locations from the cached registry." : "");
             CT_DrawPaged(line, CT_DETAIL_X, 70, CT_DETAIL_W, 7, WHITE, ot);
@@ -1655,10 +1653,12 @@ static void CT_SeedFrame(int tapped, uint32_t *ot)
     }
     else snprintf(line, sizeof line, "No seed loaded");
     if (AP_SeedContentInstallBusy() || s_ctLegacyDownload) snprintf(line, sizeof line, "Installing...");
-    CT_Footer(line, s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? NativeMenu_Labels("*: Actions   ^: Page controls") :
+    const int confirmingInstall = s_ctFocus == CT_FOCUS_SUB && s_ctSub == CT_SUB_INSTALL;
+    CT_Footer(confirmingInstall ? "Leaving pauses the install queue." : line,
+                    s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? NativeMenu_Labels("*: Actions   ^: Page controls") :
                     s_ctFocus == CT_FOCUS_CONTROLS ? (s_ctSeedCount ? NativeMenu_Labels("*: Select   [: Tracks   ^: Tabs") : NativeMenu_Labels("*: Select   ^: Tabs")) :
                     s_ctFocus == CT_FOCUS_ACTIONS ? NativeMenu_Labels("*: Select   ^: Tracks") :
-                    s_ctSub == CT_SUB_INSTALL ? NativeMenu_Labels("*: Install   ^: Cancel") : NativeMenu_Labels("^: Back"), ot);
+                    confirmingInstall ? NativeMenu_Labels("*: Install   ^: Cancel") : NativeMenu_Labels("^: Back"), ot);
 }
 
 /* ---- Import tab --------------------------------------------------------- */

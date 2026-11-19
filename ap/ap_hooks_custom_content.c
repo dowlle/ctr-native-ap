@@ -786,6 +786,26 @@ int AP_CustomContentGateEventEntry(int forceVerify)
 
 void AP_DrawCustomContentWarning(void)
 {
+	const int planActive = ap_content_plan_active();
+	if (planActive && ap_custom_content_required)
+	{
+		int missing = 0;
+		for (int i = 0; i < AP_CONTENT_MAX_PACKAGES; ++i)
+			if (ap_content_plan_package(i) && !ap_content_package_ready[i])
+				missing++;
+		if (missing > 0)
+		{
+			char line[48];
+			if (ap_cortex_track_content_required)
+				missing++;
+			snprintf(line, sizeof line, "!! %d CUSTOM TRACK%s MISSING !!",
+			         missing, missing == 1 ? "" : "S");
+			DecalFont_DrawLine(line, AP_FEED_X, 0x30, FONT_SMALL, RED);
+			DecalFont_DrawLine("OPTIONS > Custom Tracks > This Seed",
+			                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
+			return;
+		}
+	}
 	if (ap_cortex_track_content_required)
 	{
 		DecalFont_DrawLine("!! CORTEX VORTEX REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
@@ -802,34 +822,9 @@ void AP_DrawCustomContentWarning(void)
 	}
 	if (!ap_custom_content_required)
 		return;
-	// A6-25: a content-plan room's banner also says how many of its required
-	// tracks are not ready, counted the same way ap_custom_content_required is
-	// set. Zero happens when only a garage venue failed to arm; keep the old
-	// first line then. "!! 132 CUSTOM TRACKS MISSING !!" is the widest case at
-	// 403 px of the 480 the banner allows.
-	if (ap_content_plan_active())
-	{
-		int i, apMissing = 0;
-		for (i = 0; i < AP_CONTENT_MAX_PACKAGES; ++i)
-			if (ap_content_plan_package(i) && !ap_content_package_ready[i])
-				apMissing++;
-		if (apMissing > 0)
-		{
-			char apMissingLine[48];
-			snprintf(apMissingLine, sizeof apMissingLine, "!! %d CUSTOM TRACK%s MISSING !!",
-			         apMissing, apMissing == 1 ? "" : "S");
-			DecalFont_DrawLine(apMissingLine, AP_FEED_X, 0x30, FONT_SMALL, RED);
-			DecalFont_DrawLine("OPTIONS > Custom Tracks > This Seed",
-			                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
-			return;
-		}
-		DecalFont_DrawLine("!! CUSTOM CONTENT REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
-		DecalFont_DrawLine("OPTIONS > Custom Tracks > This Seed",
-		                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
-		return;
-	}
 	DecalFont_DrawLine("!! CUSTOM CONTENT REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
-	DecalFont_DrawLine("OPTIONS > Custom Tracks: verify.",
+	DecalFont_DrawLine(planActive ? "OPTIONS > Custom Tracks > This Seed"
+	                             : "OPTIONS > Custom Tracks: verify.",
 	                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
 }
 #endif
