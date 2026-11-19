@@ -535,11 +535,10 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
                 if (seed && source.contains("saphi_track_id") && source["saphi_track_id"].is_number_integer() &&
                     source["saphi_track_id"] > 0 && source["saphi_track_id"] <= 100000000)
                     entry.local.permissionTrackID = source["saphi_track_id"].get<int>();
-                const char *authorId = seed ? "saphi_author_id" : "author_id";
-                if (source.contains(authorId) && source[authorId].is_number_integer() &&
-                    source[authorId] > 0 && source[authorId] <= 100000000)
-                    entry.local.authorID = source[authorId].get<int>();
-                if (source.contains("track_key") && source["track_key"].is_string())
+                if (seed && source.contains("saphi_author_id") && source["saphi_author_id"].is_number_integer() &&
+                    source["saphi_author_id"] > 0 && source["saphi_author_id"] <= 100000000)
+                    entry.local.authorID = source["saphi_author_id"].get<int>();
+                if (seed && source.contains("track_key") && source["track_key"].is_string())
                 {
                     auto key = source["track_key"].get<std::string>();
                     if (!key.empty() && key.size() < sizeof entry.local.trackKey &&

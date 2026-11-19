@@ -369,6 +369,7 @@ static void entry(int i, const char *title, const char *version, int trackID, in
     snprintf(lib[i].author, sizeof lib[i].author, "Author %d", i);
     snprintf(lib[i].local.uuid, sizeof lib[i].local.uuid, "uuid-%d", trackID ? trackID : 900 + i);
     lib[i].installed = 1; lib[i].local.trackID = trackID; lib[i].local.arcade = arcade; lib[i].local.timeTrial = 1;
+    lib[i].local.laps = 3;
     lib[i].local.permissionTrackID = trackID;
     lib[i].local.xdelta = xdelta; lib[i].local.levID = trackID * 10; lib[i].local.vrmID = trackID * 10 + 1;
     if (!arcade) snprintf(lib[i].local.arcadeReason, sizeof lib[i].local.arcadeReason, "Grid: 3 of 8");
@@ -463,6 +464,8 @@ int main(void)
     /* A store with four tracks (Baby T Park installed twice), a catalogue of five. */
     entry(0, "Baby T Park", "1.0.2", 101, 1, 0);
     entry(1, "Baby T Park", "1.0.0", 101, 1, 0);
+    strcpy(lib[0].local.uuid, pkg.packageUuid);
+    strcpy(lib[1].local.uuid, pkg.packageUuid);
     entry(2, "Arabian Heights Night", "1.0.0", 120, 0, 0);
     entry(3, "Nightmare Fueled Slot 7", "1.0.0", 0, 1, 1);
     entry(4, "Coco Park 2025", "1.0.0", 130, 1, 0);

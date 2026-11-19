@@ -1482,22 +1482,9 @@ struct StorePublication
 	std::string error;
 	const std::atomic<bool> *cancel = nullptr;
 };
-std::string StoreDescriptorKey(const CustomPackageLocalInfo &local, const char *title)
-{
-	if (local.trackID <= 0)
-		return {};
-	ApTrackRegistryMatch match = {};
-	if (ap_track_registry_lookup(local.levSha256, local.levBytes, local.vrmSha256, local.vrmBytes, &match) == AP_TRACK_REGISTRY_MATCH)
-		return match.track_key;
-	static const auto named = nlohmann::json::parse(kContentRegistryJSON).at("named_blocks");
-	for (const auto &row : named)
-		if (row.value("name", "") == title)
-			return row.value("key", "");
-	return {};
-}
-
 void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 {
+	std::string StoreDescriptorKey(const CustomPackageLocalInfo &local, const char *title);
 	auto &result = *static_cast<StorePublication *>(opaque);
 	if (result.cancel && result.cancel->load())
 		throw std::runtime_error("Track verification cancelled");
@@ -1535,6 +1522,20 @@ void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 	}
 	else
 		result.descriptors.push_back({kind, key, revision, json, entry->manifest.title, entry->pin});
+}
+
+std::string StoreDescriptorKey(const CustomPackageLocalInfo &local, const char *title)
+{
+	if (local.trackID <= 0)
+		return {};
+	ApTrackRegistryMatch match = {};
+	if (ap_track_registry_lookup(local.levSha256, local.levBytes, local.vrmSha256, local.vrmBytes, &match) == AP_TRACK_REGISTRY_MATCH)
+		return match.track_key;
+	static const auto named = nlohmann::json::parse(kContentRegistryJSON).at("named_blocks");
+	for (const auto &row : named)
+		if (row.value("name", "") == title)
+			return row.value("key", "");
+	return {};
 }
 
 // Two installed packages can resolve to one Play Solo entry (same track key

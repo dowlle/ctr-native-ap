@@ -531,16 +531,30 @@ static void CT_PackageReason(const struct CT_LibView *v, char *out, size_t size)
         snprintf(out, size, "This track has no relic crates.");
 }
 
+static int CT_UsesManagedExport(const struct CT_LibItem *item, const struct CT_LibView *v)
+{
+    const struct CustomTrackManagerPackage *package = AP_CustomContentPackage();
+    const struct CustomTrackManagerStatus *status = AP_CustomContentStatus();
+    return item->kind == CT_ITEM_PACKAGE ||
+           (v->package && v->installed && v->installed->installed &&
+            status->state == CTR_CT_MANAGER_READY && status->verifiedPackageSha256[0] &&
+            !strcmp(v->installed->version, package->version) &&
+            !strcmp(v->installed->local.uuid, package->packageUuid) &&
+            !strcmp(v->installed->local.levSha256, package->levSha256) &&
+            !strcmp(v->installed->local.vrmSha256, package->vrmSha256));
+}
+
 static const char *CT_ExportReason(const struct CT_LibItem *item, const struct CT_LibView *v)
 {
-    if (item->kind == CT_ITEM_PACKAGE)
+    if (CT_UsesManagedExport(item, v))
         return AP_CustomContentStatus()->state == CTR_CT_MANAGER_READY &&
                AP_CustomContentStatus()->verifiedPackageSha256[0] ? "" : "Use Verify / Setup to make this track Ready.";
     if (!v->installed || !v->installed->installed)
         return "Install and verify this track before exporting.";
     if (v->installed->local.laps && !v->installed->local.arcade && !v->installed->local.timeTrial)
         return "This track needs a verified race mode before exporting.";
-    if (CT_SourceTrackID(v) <= 0 && !v->installed->local.sourceUrl[0])
+    if (CT_SourceTrackID(v) <= 0 &&
+        !(v->installed->local.sourceUrl[0] && v->installed->local.bigfileIndex <= 4095))
         return "This track has no known public source.";
     return "";
 }
@@ -797,7 +811,7 @@ static void CT_Export(const struct CT_LibItem *item, const struct CT_LibView *v,
         CT_SetMessage(reason);
         return;
     }
-    if (item->kind != CT_ITEM_PACKAGE)
+    if (!CT_UsesManagedExport(item, v))
     {
         AP_Solo_ExportTrackYaml(v->installed, save, s_ctMessage, sizeof s_ctMessage);
         return;

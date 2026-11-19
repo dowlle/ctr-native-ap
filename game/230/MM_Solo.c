@@ -1321,7 +1321,7 @@ static void MM_Solo_PageBusy(uint32_t *ot, struct GamepadBuffer *pad)
 		MM_Solo_Go(s_soloFromTracks ? SOLO_TRACKS : SOLO_REVIEW);
 		break;
 	case SOLO_JOB_SAVE_ROOM_YAML:
-		snprintf(s_soloMsg, sizeof s_soloMsg, "Saved to: %.246s", AP_Solo_JobResultYaml());
+		snprintf(s_soloMsg, sizeof s_soloMsg, "Saved to: %.245s", AP_Solo_JobResultYaml());
 		s_soloPage = SOLO_MESSAGE;
 		s_soloFromOptions = 3;
 		break;
@@ -1374,7 +1374,7 @@ static void MM_Solo_PageMessage(uint32_t *ot, struct GamepadBuffer *pad)
 		else if (s_soloFromOptions == 3)
 		{
 			s_soloFromOptions = AP_Solo_TracksViaOptions(s_soloStart.isPreset);
-			if (AP_Solo_TracksStart(s_soloStart.path))
+			if (s_soloBusyJob != SOLO_JOB_SAVE_ROOM_YAML && AP_Solo_TracksStart(s_soloStart.path))
 				MM_Solo_Busy(SOLO_JOB_TRACKS);
 			else
 				MM_Solo_Go(SOLO_TRACKS);
