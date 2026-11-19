@@ -24,6 +24,9 @@
 #define AP_NAMED_ITEM_BASE       35100000LL
 #define AP_NAMED_ITEM_BUDGET     5
 #define AP_NAMED_BLOCK_LIMIT     10000
+#define AP_ORIGIN_ITEM_BASE      38500000LL
+#define AP_ORIGIN_GLYPH_COUNT    36
+#define AP_ORIGIN_LOCATION_OFFSET 141
 
 /* Location offsets inside a named block (apworld named_tracks.LOCATION_OFFSETS). */
 enum {
@@ -51,13 +54,43 @@ enum {
     AP_NAMED_ITEM_BOX_SLOTS = 15
 };
 
-/* 1 when `code` is a Letter C/T/R item of any named block (item offsets 0..2).
- * Seed independent: used to present the item, never to grant it. */
+static inline int ap_origin_glyph_index(char glyph)
+{
+    if (glyph >= 'A' && glyph <= 'Z') return glyph - 'A';
+    if (glyph >= '0' && glyph <= '9') return 26 + glyph - '0';
+    return -1;
+}
+
+static inline int ap_legacy_letter_slot(char glyph)
+{
+    switch (glyph) {
+    case 'C': return 0;
+    case 'T': return 1;
+    case 'R': return 2;
+    default: return -1;
+    }
+}
+
+/* The received-item bitmap uses one bit per block and glyph. */
+static inline int ap_named_letter_bit(int64_t code)
+{
+    if (code >= AP_NAMED_ITEM_BASE && code < AP_NAMED_ITEM_BASE + (int64_t)AP_NAMED_BLOCK_LIMIT * AP_NAMED_ITEM_BUDGET) {
+        const int offset = (int)(code - AP_NAMED_ITEM_BASE);
+        const int slot = offset % AP_NAMED_ITEM_BUDGET;
+        if (slot < 3)
+            return (offset / AP_NAMED_ITEM_BUDGET) * AP_ORIGIN_GLYPH_COUNT + ap_origin_glyph_index("CTR"[slot]);
+    }
+    if (code >= AP_ORIGIN_ITEM_BASE && code < AP_ORIGIN_ITEM_BASE + (int64_t)AP_NAMED_BLOCK_LIMIT * AP_ORIGIN_GLYPH_COUNT) {
+        const int offset = (int)(code - AP_ORIGIN_ITEM_BASE);
+        const int glyph = offset % AP_ORIGIN_GLYPH_COUNT;
+        if (glyph != 'C' - 'A' && glyph != 'T' - 'A' && glyph != 'R' - 'A') return offset;
+    }
+    return -1;
+}
+
 static inline int ap_named_item_is_letter(int64_t code)
 {
-    if (code < AP_NAMED_ITEM_BASE || code >= AP_NAMED_ITEM_BASE + (int64_t)AP_NAMED_BLOCK_LIMIT * AP_NAMED_ITEM_BUDGET)
-        return 0;
-    return (code - AP_NAMED_ITEM_BASE) % AP_NAMED_ITEM_BUDGET <= 2;
+    return ap_named_letter_bit(code) >= 0;
 }
 
 /* Longest room title in UTF-8 bytes (apworld ROOM_TITLE_MAX_BYTES), plus NUL. */
@@ -77,6 +110,23 @@ static inline int64_t ap_named_item_code(int64_t block, int offset)
     if (block < 0 || block >= AP_NAMED_BLOCK_LIMIT || offset < 0 || offset >= AP_NAMED_ITEM_BUDGET)
         return -1;
     return AP_NAMED_ITEM_BASE + block * AP_NAMED_ITEM_BUDGET + offset;
+}
+
+static inline int64_t ap_named_letter_location(int block, char glyph)
+{
+    const int legacy = ap_legacy_letter_slot(glyph);
+    const int index = ap_origin_glyph_index(glyph);
+    if (index < 0) return -1;
+    return ap_named_location_code(block, legacy >= 0 ? AP_NAMED_OFF_LETTER_C + legacy : AP_ORIGIN_LOCATION_OFFSET + index);
+}
+
+static inline int64_t ap_named_letter_item(int block, char glyph)
+{
+    const int legacy = ap_legacy_letter_slot(glyph);
+    const int index = ap_origin_glyph_index(glyph);
+    if (index < 0 || block < 0 || block >= AP_NAMED_BLOCK_LIMIT) return -1;
+    if (legacy >= 0) return ap_named_item_code(block, legacy);
+    return AP_ORIGIN_ITEM_BASE + (int64_t)block * AP_ORIGIN_GLYPH_COUNT + index;
 }
 
 /* 1 when `text` is a storable room title: 1..105 bytes, no ASCII control

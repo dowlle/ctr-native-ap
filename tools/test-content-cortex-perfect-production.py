@@ -81,7 +81,7 @@ static long sentCodes[8]; static int sentCount, feed;
 static long checkedCodes[8]; static int checkedCount;
 static unsigned char ap_letter_received[18][3], ap_custom_letter_received[AP_CUSTOM_LETTER_SLOT_COUNT][3];
 static unsigned char ap_cortex_letter_received[3];
-static unsigned char ap_named_letter_received[(AP_NAMED_BLOCK_LIMIT * 3 + 7) / 8];
+static unsigned char ap_named_letter_received[(AP_NAMED_BLOCK_LIMIT * AP_ORIGIN_GLYPH_COUNT + 7) / 8];
 int ctr_cfg_active(void) { return active; }
 int ap_content_plan_active(void) { return planActive; }
 uint64_t ap_content_plan_epoch(void) { return planActive ? epoch : 0; }
@@ -106,8 +106,7 @@ void AP_AppendLog(const char *text) { (void)text; }
 void AP_CeremonyLedgerAdd(long code,int bit,int tag) { (void)code; (void)bit; (void)tag; }
 void AP_FeedOnLocationSent(long code) { (void)code; feed++; }
 '''
-for signature in ("static int AP_NamedLetterBit(int64_t code)",
-                  "static int AP_NamedLetterReceived(int64_t code)",
+for signature in ("static int AP_NamedLetterReceived(int64_t code)",
                   "static int AP_ContentLetterItemReceived(int64_t code)",
                   "static int AP_EmitClassCheck(long code,",
                   "static long AP_RelicPerfectCustomCode(int slot)",

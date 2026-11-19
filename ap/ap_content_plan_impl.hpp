@@ -341,7 +341,6 @@ static const int64_t kRelicItems[3] = {35010001, 35010002, 35010003};
 static const char *const rung_keys[5] = {"held_1st", "held_3rd", "held_5th", "finish_podium", "finish_any"};
 static const char *const rung_suffixes[5] = {"Held 1st", "Held 3rd", "Held 5th", "Finish on Podium", "Finish (Any Position)"};
 static const char *const letter_keys[3] = {"letter_c", "letter_t", "letter_r"};
-static const char *const letter_suffixes[3] = {"Letter C", "Letter T", "Letter R"};
 // `podium_rungs` is any nonempty set of rungs, with no parent switches.
 static bool rung_set_ok(int mask) {
     return mask != 0;
@@ -1158,6 +1157,8 @@ static void validate(const J &p, State &out) {
     if(wumpa_goal)features.push_back("wumpa_goal_v1");
     if(has_pad_client)features.push_back("pad_client_v1"); // one generator row 6
     if(plan_laps)features.push_back("lap_checks_v1");             // #344
+    if (std::any_of(p["tracks"].begin(), p["tracks"].end(), [](const J &track) { return track.contains("letters"); }))
+        features.push_back("origin_letters_v1");
     const bool safe_pickups = repeatable_pickups(p);
     if(safe_pickups) {
         need(has_bosses && out.bosses.oxide_goal != 3 && (has_sanity || fam.wumpa == 2),
@@ -1283,7 +1284,12 @@ static void validate(const J &p, State &out) {
             J base = track;
             const bool named = base.is_object() && base.contains("named_block");
             const bool titled = base.is_object() && base.contains("room_title");
-            if (named) base.erase("named_block");
+            if (named) {
+                base.erase("named_block");
+                // A shared track keeps its standalone CTR Challenge code.
+                // The pad parser validates it. The cup only races the trophy leg.
+                base.erase("letters");
+            }
             if (titled) base.erase("room_title");
             fields(base, {"id", "origin", "package_id", "custom_slot", "display_name", "laps", "modes", "capabilities", "field_size"});
             const auto package_id = text(track["package_id"]);
@@ -1604,6 +1610,15 @@ static void validate(const J &p, State &out) {
             const bool titled = base.is_object() && base.contains("room_title");
             if (named) base.erase("named_block");
             if (titled) base.erase("room_title");
+            if (base.contains("letters")) {
+                const auto glyphs = text(base.at("letters"));
+                need(named && glyphs.size() == 3 &&
+                     std::all_of(glyphs.begin(), glyphs.end(), [](char glyph) { return ap_origin_glyph_index(glyph) >= 0; }) &&
+                     std::set<char>(glyphs.begin(), glyphs.end()).size() == 3,
+                     "invalid origin letter code");
+                std::copy(glyphs.begin(), glyphs.end(), dest.letter_glyphs);
+                base.erase("letters");
+            }
             fields(base, {"id", "origin", "package_id", "custom_slot", "display_name", "laps", "modes", "capabilities", "field_size"});
             const auto package_id = text(track["package_id"]);
             need(track["origin"] == "custom" && packages.count(package_id), "unsupported custom origin or package");
@@ -1646,6 +1661,8 @@ static void validate(const J &p, State &out) {
             }
         }
         need((track_bits & ~supported) == 0, "a track mode its capabilities do not allow");
+        need(!dest.letter_glyphs[0] || (track_bits & (1u << AP_CONTENT_MODE_CTR)),
+             "origin letters require a CTR Challenge");
         dest.occupied = 1;
         dest.laps = standalone_laps > 0 ? standalone_laps : number(track["laps"], 1, 7);
         // A4-70: the Relic Race laps of a Cortex Vortex pad when they differ from
@@ -1682,8 +1699,9 @@ static void validate(const J &p, State &out) {
             wumpa = ap_named_location_code(dest.named_block, AP_NAMED_OFF_WUMPA);
             perfect = ap_named_location_code(dest.named_block, AP_NAMED_OFF_RELIC_PERFECT);
             for (int l = 0; l < 3; ++l) {
-                letter[l] = ap_named_location_code(dest.named_block, AP_NAMED_OFF_LETTER_C + l);
-                letter_item[l] = ap_named_item_code(dest.named_block, l);
+                const char glyph = dest.letter_glyphs[0] ? dest.letter_glyphs[l] : "CTR"[l];
+                letter[l] = ap_named_letter_location(dest.named_block, glyph);
+                letter_item[l] = ap_named_letter_item(dest.named_block, glyph);
             }
         } else {
             const int s = dest.custom_slot - 1;
@@ -1738,7 +1756,9 @@ static void validate(const J &p, State &out) {
                     if (plan_codes.count(letter[l])) {
                         ++drawn;
                         dest.letter_locations[l] = letter[l];
-                        family_check(letter[l], "letter", letter_suffixes[l], J::array({route_record(entry_id, "ctr", id, letter_keys[l])}));
+                        const char glyph = dest.letter_glyphs[0] ? dest.letter_glyphs[l] : "CTR"[l];
+                        family_check(letter[l], "letter", std::string("Letter ") + glyph,
+                                     J::array({route_record(entry_id, "ctr", id, letter_keys[l])}));
                     }
                 need(drawn == fam.letters_per_track, "letter checks do not match letters_per_track");
             }
@@ -1858,6 +1878,7 @@ static void validate(const J &p, State &out) {
         if (used_tracks.count(pair.first)) continue;
         const J &track = *tracks.at(pair.first);
         const ctr_content_leg &leg = pair.second.leg;
+        need(!track.contains("letters"), "origin letters require a standalone CTR Challenge");
         need(track.at("modes") == J::array({"trophy"}) && track.at("capabilities") == J::array({"trophy"}) &&
              track.at("field_size") == 8, "a track raced only in cups lists the trophy mode only");
         if (leg.retail_id >= 0) need(retail_ids.insert(leg.retail_id).second, "unknown or duplicate retail track");
