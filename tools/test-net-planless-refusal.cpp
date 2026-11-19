@@ -177,6 +177,16 @@ static void test_version_advice(void)
 	m->emit_slot_connected(incomplete);
 	expect(ap_net_status() == AP_NET_STATUS_ERROR && std::string(ap_net_last_error()) == advice,
 	       "a room with missing plan metadata still shows its known generator version");
+	incomplete.erase("content_plan");
+	incomplete["ctr_options"].erase("content_plan");
+	incomplete["ctr_options"]["world_version"] = "0.3.0.1";
+	m = start();
+	m->emit_slot_connected(incomplete);
+	expect(ap_net_status() == AP_NET_STATUS_ERROR &&
+	       std::string(ap_net_last_error()) == std::string("GENERATED WITH 0.3.0.1") + reader_label + build + ".",
+	       "a missing schema-18 plan shows the four-component generator version");
+	expect(std::strstr(ap_seedcfg_reject_reason(), "content_plan record is missing"),
+	       "a missing schema-18 plan keeps its exact rejection reason");
 	room["build_version"] = "bad~00\n<script>";
 	room["ctr_options"] = 17;
 	expect(ap_seed_refusal::message(room, "").find("MATCHING CLIENT") != std::string::npos,

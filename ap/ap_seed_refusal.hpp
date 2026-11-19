@@ -32,14 +32,20 @@ inline std::string version_label(std::string value, size_t max_length = 20)
         if (c >= 'a' && c <= 'z') c -= 'a' - 'A';
         if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-')) return {};
     }
-    // Require three numeric version components, then an optional nonempty
+    // Require three or four numeric version components, then an optional nonempty
     // prerelease label. Glyph safety alone would accept false advice like 0.
     size_t pos = 0;
-    for (int component = 0; component < 3; ++component) {
+    for (int component = 0; component < 4; ++component) {
         const size_t begin = pos;
         while (pos < value.size() && value[pos] >= '0' && value[pos] <= '9') ++pos;
         if (pos == begin || (pos > begin + 1 && value[begin] == '0')) return {};
-        if (component < 2 && (pos == value.size() || value[pos++] != '.')) return {};
+        if (component < 2) {
+            if (pos == value.size() || value[pos++] != '.') return {};
+        } else if (component == 2 && pos < value.size() && value[pos] == '.') {
+            ++pos;
+        } else {
+            break;
+        }
     }
     if (pos == value.size()) return value;
     if (value[pos++] != '-' || pos == value.size()) return {};
@@ -68,12 +74,24 @@ inline std::string build_label(const nlohmann::json &slot, size_t max_length = 2
     return version_label(value, max_length);
 }
 
+inline bool expects_plan(const nlohmann::json &slot)
+{
+    const auto options = slot.find("ctr_options");
+    if (options == slot.end() || !options->is_object() ||
+        version_label(text_field(*options, "world_version"), CTR_CFG_VERSION_CAP - 1).empty()) return false;
+    const auto has_schema = [](const nlohmann::json &record) {
+        const auto schema = record.find("schema_version");
+        return schema != record.end() && schema->is_number_integer() && *schema >= 18;
+    };
+    return has_schema(slot) || has_schema(*options);
+}
+
 inline std::string message(const nlohmann::json &slot, const std::string &checksum)
 {
     const auto plan = slot.find("content_plan");
     const auto options = slot.find("ctr_options");
     const bool has_options = options != slot.end() && options->is_object();
-    const bool claims_plan = plan != slot.end() || (has_options && options->contains("content_plan"));
+    const bool claims_plan = plan != slot.end() || (has_options && options->contains("content_plan")) || expects_plan(slot);
     constexpr size_t room_version_limit = CTR_CFG_VERSION_CAP - 1;
     const std::string build = build_label(slot, claims_plan ? room_version_limit : 20);
     std::string source;

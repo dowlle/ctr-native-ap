@@ -973,6 +973,23 @@ static const char *Conn_RoomVersionDivider(const char *status)
 	return NULL;
 }
 
+static void Conn_DrawVersionLine(const char *start, int length, const char *shortLabel, int y, uint32_t *ot)
+{
+	char line[128], shorter[64];
+	char *text = line;
+	snprintf(line, sizeof line, "%.*s", length, start);
+	if (DecalFont_GetLineWidth(line, FONT_SMALL) > CONN_STATUS_LINE_WIDTH)
+	{
+		char *version = strrchr(line, ' ');
+		if (version)
+		{
+			snprintf(shorter, sizeof shorter, "%s%s", shortLabel, version + 1);
+			text = DecalFont_GetLineWidth(shorter, FONT_SMALL) <= CONN_STATUS_LINE_WIDTH ? shorter : version + 1;
+		}
+	}
+	DecalFont_DrawLineOT(text, 0x100, y, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+}
+
 static void Conn_DrawLongStatus(const char *status, int labelY, int valueX, int rowSpacing, int rows,
 	const char *versionDivider, uint32_t *ot)
 {
@@ -983,16 +1000,20 @@ static void Conn_DrawLongStatus(const char *status, int labelY, int valueX, int 
 		DecalFont_DrawLineOT((char *)"Error:", valueX, labelY, FONT_SMALL, WHITE, ot);
 		status += 7;
 	}
+	if (versionDivider)
+	{
+		const char *reader = versionDivider + 2;
+		Conn_DrawVersionLine(status, (int)(versionDivider - status + 1), "ROOM ", labelY + rowSpacing, ot);
+		Conn_DrawVersionLine(reader, (int)strlen(reader), "CLIENT ", labelY + 2 * rowSpacing, ot);
+		return;
+	}
 	for (row = 0; row < rows && *status != '\0'; row++)
 	{
-		const char *lineEnd = NULL;
-		if (versionDivider)
-			lineEnd = row == 0 ? versionDivider + 1 : status + strlen(status);
 		char line[128];
 		int end = 0;
 		int i;
 
-		for (i = 0; status[i] != '\0' && i < (int)sizeof line - 4 && (!lineEnd || status + i < lineEnd); i++)
+		for (i = 0; status[i] != '\0' && i < (int)sizeof line - 4; i++)
 		{
 			line[i] = status[i];
 			line[i + 1] = '\0';
@@ -1002,15 +1023,14 @@ static void Conn_DrawLongStatus(const char *status, int labelY, int valueX, int 
 					end = i;
 				break;
 			}
-			if (lineEnd || status[i + 1] == ' ' || status[i + 1] == '\0')
+			if (status[i + 1] == ' ' || status[i + 1] == '\0')
 				end = i + 1;
 		}
 		line[end] = '\0';
-		const int clippedVersion = lineEnd && status + end < lineEnd;
-		status = lineEnd ? lineEnd : status + end;
+		status += end;
 		while (*status == ' ')
 			status++;
-		if (clippedVersion || (row == rows - 1 && *status != '\0'))
+		if (row == rows - 1 && *status != '\0')
 			memcpy(line + (end >= 3 ? end - 3 : end), "...", 4);
 		DecalFont_DrawLineOT(line, 0x100, labelY + (row + 1) * rowSpacing, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 	}

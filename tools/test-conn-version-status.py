@@ -21,6 +21,7 @@ tables = [re.search(r"\." + field + r"\s*=\s*\{([^}]+)\}", data)[1] for field in
 fixture = f"""
 #include <assert.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 typedef short s16;
 typedef unsigned char u8;
@@ -51,6 +52,7 @@ static void DecalFont_DrawLineOT(char *text, int x, int y, int font, int color, 
 }
 """
 fixture += function(menu, "static const char *Conn_RoomVersionDivider(")
+fixture += function(menu, "static void Conn_DrawVersionLine(")
 fixture += function(menu, "static void Conn_DrawLongStatus(")
 fixture += """
 static void expect_rows(const char *message, const char *room)
@@ -68,6 +70,14 @@ int main(void)
     expect_rows("Error: GENERATED WITH 0.3.0. THIS BUILD IS 0.3.0-ALPHA5.", "GENERATED WITH 0.3.0.");
     expect_rows("Error: ROOM BUILD 0.3.0-CONTENT-DEV.123. THIS BUILD IS 0.3.0-ALPHA5.",
                 "ROOM BUILD 0.3.0-CONTENT-DEV.123.");
+    const char *version = "0.3.0-WWWWWWWWWWWWWWWWWWWWWWWWW.";
+    char long_status[128];
+    snprintf(long_status, sizeof long_status, "Error: ROOM BUILD %s THIS BUILD %s", version, version);
+    const char *divider = Conn_RoomVersionDivider(long_status);
+    assert(divider);
+    count = 0;
+    Conn_DrawLongStatus(long_status, 144, 176, 14, 2, divider, NULL);
+    assert(count == 3 && strstr(drawn[1], version) && strstr(drawn[2], version));
 }
 """
 with tempfile.TemporaryDirectory() as tmp:
