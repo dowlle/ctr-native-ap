@@ -1197,29 +1197,36 @@ const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int levelID)
 	return CustomRaceLatch_Intent(&s_standaloneRace, levelID) ? &s_standaloneRace.current : NULL;
 }
 
-u8 CustomTrack_StandaloneSoloSpawnIndex(int levelID, u8 preferred)
+int CustomTrack_GetStandaloneSoloSpawn(int levelID, u8 preferred, struct SpawnPosRot *out)
 {
 	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(levelID);
 	const size_t offset = sizeof(u32) + offsetof(struct Level, DriverSpawn);
 	const size_t gridBytes = sizeof(((struct Level *)0)->DriverSpawn);
-	const unsigned char empty[sizeof(struct SpawnPosRot)] = {0};
+	const unsigned char empty[sizeof *out] = {0};
 	const size_t slots = gridBytes / sizeof empty;
-	const unsigned char *grid;
-	if (!race || race->retail || race->cup || !s_standaloneLev.bytes ||
+	const unsigned char *grid, *spawn;
+	if (!out || !race || race->retail || race->cup || !s_standaloneLev.bytes ||
 	    s_standaloneLev.size < offset + gridBytes || preferred >= slots)
-		return preferred;
+		return 0;
 
 	// The fly-in camera adjusts heights in the live level. Read the retained
-	// LEV so a retry sees the same authored grid as the original load.
+	// LEV so both initial placement and retries use the authored spawn.
 	grid = s_standaloneLev.bytes + offset;
-	if (memcmp(grid + preferred * sizeof empty, empty, sizeof empty) != 0)
-		return preferred;
-	for (u8 i = 0; i < slots; ++i)
+	spawn = grid + preferred * sizeof empty;
+	if (memcmp(spawn, empty, sizeof empty) == 0)
 	{
-		if (memcmp(grid + i * sizeof empty, empty, sizeof empty) != 0)
-			return i;
+		for (size_t i = 0; i < slots; ++i)
+		{
+			const unsigned char *candidate = grid + i * sizeof empty;
+			if (memcmp(candidate, empty, sizeof empty) != 0)
+			{
+				spawn = candidate;
+				break;
+			}
+		}
 	}
-	return preferred;
+	memcpy(out, spawn, sizeof *out);
+	return 1;
 }
 
 const struct CustomTrackRaceContext *CustomTrack_PreviousStandaloneContext(void)

@@ -107,20 +107,24 @@ static void VehBirth_SetBottomFromPos(SVec3 *posBottom, const SVec3 *pos)
 	posBottom->z = pos->z;
 }
 
-static u8 VehBirth_GetStartlineIndex(struct Driver *d)
+static struct SpawnPosRot VehBirth_GetStartlineSpawn(struct Driver *d, const struct Level *level)
 {
 	u8 preferred = sdata->kartSpawnOrderArray[d->driverID];
+	struct SpawnPosRot spawn;
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
 	const struct GameTracker *gGT = sdata->gGT;
-	if (d->driverID == 0 && (gGT->gameMode1 & RELIC_RACE))
-		return CustomTrack_StandaloneSoloSpawnIndex(gGT->levelID, preferred);
+	if (d->driverID == 0 && (gGT->gameMode1 & RELIC_RACE) &&
+	    CustomTrack_GetStandaloneSoloSpawn(gGT->levelID, preferred, &spawn))
+		return spawn;
 #endif
-	return preferred;
+	spawn.pos = level->DriverSpawn[preferred].pos;
+	spawn.rot = level->DriverSpawn[preferred].rot;
+	return spawn;
 }
 
 static void VehBirth_SetStartlinePosition(struct Driver *d, struct Level *level, SVec3 *posBottom)
 {
-	u8 spawnIndex = VehBirth_GetStartlineIndex(d);
+	const struct SpawnPosRot spawn = VehBirth_GetStartlineSpawn(d, level);
 
 	d->actionsFlagSet |= ACTION_BEHIND_START_LINE;
 #ifdef CTR_NATIVE
@@ -135,16 +139,16 @@ static void VehBirth_SetStartlinePosition(struct Driver *d, struct Level *level,
 #endif
 		d->distanceToFinish_checkpoint = level->ptr_restart_points[0].distToFinish << 3;
 	}
-	VehBirth_SetBottomFromPos(posBottom, &level->DriverSpawn[spawnIndex].pos);
+	VehBirth_SetBottomFromPos(posBottom, &spawn.pos);
 }
 
 static void VehBirth_SetStartlineRotation(struct Driver *d, struct Level *level)
 {
-	u8 spawnIndex = VehBirth_GetStartlineIndex(d);
+	const struct SpawnPosRot spawn = VehBirth_GetStartlineSpawn(d, level);
 
-	d->rotCurr.x = level->DriverSpawn[spawnIndex].rot.x;
-	d->rotCurr.y = (level->DriverSpawn[spawnIndex].rot.y + 0x400) & 0xfff;
-	d->rotCurr.z = level->DriverSpawn[spawnIndex].rot.z;
+	d->rotCurr.x = spawn.rot.x;
+	d->rotCurr.y = (spawn.rot.y + 0x400) & 0xfff;
+	d->rotCurr.z = spawn.rot.z;
 }
 
 static int VehBirth_ScaleTrig(int trig, int scale)

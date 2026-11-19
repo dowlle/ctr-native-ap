@@ -31,8 +31,8 @@ start = unit.index("static int ap_content_package_index;")
 hooks = unit[start:unit.index("static void AP_CustomContentBuildRequirement(", start)]
 
 vehicle_birth = (root / "game/Vehicle/VehBirth.c").read_text(encoding="utf-8")
-start = vehicle_birth.index("static u8 VehBirth_GetStartlineIndex(")
-spawn_index = vehicle_birth[start:vehicle_birth.index("static void VehBirth_SetStartlinePosition(", start)]
+start = vehicle_birth.index("static void VehBirth_SetBottomFromPos(")
+spawn_entry = vehicle_birth[start:vehicle_birth.index("static int VehBirth_ScaleTrig(", start)]
 
 verify_test = (root / "tools/test-custom-content-verify.c").read_text(encoding="utf-8")
 lev_start = verify_test.index("#define BODY_INST")
@@ -420,8 +420,14 @@ int main(void)
 	plan_pad.relic_route = plan_pad.relic_locations[0] = 35016302;
 	plan_pad.relic_locations[1] = 35016303;
 	plan_pad.relic_locations[2] = 35016304;
+	enum { authoredSlot = 2 };
+	const size_t spawnBytes = sizeof(struct SpawnPosRot);
+	const size_t authoredSpawn = 4 + SPAWN_P + authoredSlot * spawnBytes;
 	put32(image, 4 + NAV_P, 0);
-	memset(image + 4 + SPAWN_P + 12, 0, 7 * 12);
+	memset(image + 4 + SPAWN_P, 0, 8 * spawnBytes);
+	put16(image, authoredSpawn, 22);
+	put16(image, authoredSpawn + 2, 99);
+	put16(image, authoredSpawn + 8, 0x60);
 	write_bytes(lev, image, levSize);
 	expect(!CustomContentVerify_Files(lev, vrm, &report, error, sizeof error) &&
 	       strstr(error, "null navigation pointer in relocation map"),
@@ -458,21 +464,29 @@ int main(void)
 	struct GameTracker game = {0};
 	struct Driver driver = {0};
 	struct Level level = {0};
+	SVec3 bottom;
 	sdata->gGT = &game;
 	game.level1 = &level;
 	game.gameMode1 = ADVENTURE_MODE | RELIC_RACE;
 	game.levelID = 6;
 	sdata->kartSpawnOrderArray[0] = 1; /* P1's retail Relic Race spawn */
 	memcpy(level.DriverSpawn, image + 4 + SPAWN_P, sizeof level.DriverSpawn);
-	expect(VehBirth_GetStartlineIndex(&driver) == 0,
-	       "A6-23: P1 uses the package's only authored spawn");
-	level.DriverSpawn[1].pos.y = 42; /* The fly-in adjusts the resident grid. */
+	VehBirth_SetStartlinePosition(&driver, &level, &bottom);
+	VehBirth_SetStartlineRotation(&driver, &level);
+	expect(bottom.x == 22 && bottom.y == 99 + 0x80 && driver.rotCurr.y == 0x460,
+	       "A6-23: P1 uses the package's only authored position and rotation");
+	/* The fly-in changes both the usual slot and the selected live slot. */
+	level.DriverSpawn[1].pos.y = 42;
+	level.DriverSpawn[authoredSlot].pos.y = 97;
 	CustomTrack_OnRaceLoadRequested(6);
-	expect(VehBirth_GetStartlineIndex(&driver) == 0,
-	       "A6-23: retry uses the authored spawn after the fly-in moves the live slot");
+	VehBirth_SetStartlinePosition(&driver, &level, &bottom);
+	VehBirth_SetStartlineRotation(&driver, &level);
+	expect(bottom.x == 22 && bottom.y == 99 + 0x80 && driver.rotCurr.y == 0x460,
+	       "A6-23: retry uses the authored height after the fly-in moves the selected slot");
 	game.levelID = 7;
-	expect(VehBirth_GetStartlineIndex(&driver) == 1,
-	       "A6-23: a retail Relic Race keeps the original spawn order");
+	VehBirth_SetStartlinePosition(&driver, &level, &bottom);
+	expect(bottom.x == 0 && bottom.y == 42 + 0x80,
+	       "A6-23: a retail Relic Race keeps its live solo spawn");
 	game.levelID = 6;
 	for (int authoredSolo = 1; authoredSolo >= 0; --authoredSolo)
 	{
@@ -491,7 +505,9 @@ int main(void)
 		expect(preflight() && AP_ContentPreparePad(3, AP_CONTENT_MODE_RELIC) == 6,
 		       "A6-23: alternate Relic grid starts through production pad entry");
 		CustomTrack_OnRaceLoadRequested(6);
-		expect(VehBirth_GetStartlineIndex(&driver) == 1,
+		memcpy(level.DriverSpawn, image + 4 + SPAWN_P, sizeof level.DriverSpawn);
+		VehBirth_SetStartlinePosition(&driver, &level, &bottom);
+		expect(bottom.x == (authoredSolo ? 42 : 0) && bottom.y == 0x80,
 		       authoredSolo ? "A6-23: an authored solo slot keeps its priority"
 		                    : "A6-23: an all-zero grid starts at the origin");
 	}
@@ -511,7 +527,7 @@ int main(void)
 
 with tempfile.TemporaryDirectory() as tmp:
     src, exe = Path(tmp) / "content_hooks.c", Path(tmp) / "content_hooks"
-    src.write_text(prelude + lev_helper + stubs + hooks + spawn_index + tests, encoding="utf-8")
+    src.write_text(prelude + lev_helper + stubs + hooks + spawn_entry + tests, encoding="utf-8")
     subprocess.run(["cc", "-m32", "-DCTR_NATIVE", "-DBUILD=926", "-std=gnu99",
                     "-Wall", "-Wextra", "-Werror", "-Wno-unused-function", "-Wno-format-truncation",
                     "-DCTR_REPO_ROOT=\"" + str(root) + "\"",
