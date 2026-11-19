@@ -21,14 +21,14 @@ static void expect(bool passed, const char *message)
     }
 }
 
-static const ctr_content_pad *load_pad(const J &wire)
+static const ctr_content_pad *load_pad(const J &wire, int physical = 8)
 {
     ap_seedcfg_parse_json(wire);
     if (ap_seedcfg_rejected() || !ap_content_plan_present()) return nullptr;
     std::vector<int64_t> checks;
     for (const auto &row : wire["content_plan"]["checks"]) checks.push_back(row["location"].get<int64_t>());
     return ap_content_plan_bind("origin-letters", 0, 1, checks.data(), checks.size())
-        ? ap_content_plan_pad(8) : nullptr;
+        ? ap_content_plan_pad(physical) : nullptr;
 }
 
 static auto named_track(J &plan)
@@ -91,5 +91,20 @@ int main()
     missing_feature["content_plan"]["required_features"].erase(
         std::prev(missing_feature["content_plan"]["required_features"].end()));
     expect(!load_pad(missing_feature), "reject origin letters without the feature");
+    J cups;
+    std::ifstream("tools/fixtures/content-plan/cups.json") >> cups;
+    auto &cup_plan = cups["content_plan"];
+    auto shared = named_track(cup_plan);
+    (*shared)["letters"] = "CNK";
+    cup_plan["required_features"].push_back("origin_letters_v1");
+    const std::string entry_id = "entry/" + (*shared)["id"].get<std::string>();
+    const auto &pads = cup_plan["pads"];
+    const auto track_pad = std::find_if(pads.begin(), pads.end(), [&](const J &row) {
+        return row["entry_id"] == entry_id;
+    });
+    const int physical = std::stoi(track_pad->at("id").get<std::string>().substr(4));
+    pad = load_pad(cups, physical);
+    expect(pad && ap_content_letter_glyph(pad, 1) == 'N',
+           "a named CTR Challenge still admits when the same track appears in a cup");
     return failures != 0;
 }

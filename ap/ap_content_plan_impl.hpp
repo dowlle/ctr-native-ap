@@ -1188,7 +1188,12 @@ static void validate(const J &p, State &out) {
             J base = track;
             const bool named = base.is_object() && base.contains("named_block");
             const bool titled = base.is_object() && base.contains("room_title");
-            if (named) base.erase("named_block");
+            if (named) {
+                base.erase("named_block");
+                // A shared track keeps its standalone CTR Challenge code.
+                // The pad parser validates it. The cup only races the trophy leg.
+                base.erase("letters");
+            }
             if (titled) base.erase("room_title");
             fields(base, {"id", "origin", "package_id", "custom_slot", "display_name", "laps", "modes", "capabilities", "field_size"});
             const auto package_id = text(track["package_id"]);
@@ -1776,6 +1781,7 @@ static void validate(const J &p, State &out) {
         if (used_tracks.count(pair.first)) continue;
         const J &track = *tracks.at(pair.first);
         const ctr_content_leg &leg = pair.second.leg;
+        need(!track.contains("letters"), "origin letters require a standalone CTR Challenge");
         need(track.at("modes") == J::array({"trophy"}) && track.at("capabilities") == J::array({"trophy"}) &&
              track.at("field_size") == 8, "a track raced only in cups lists the trophy mode only");
         if (leg.retail_id >= 0) need(retail_ids.insert(leg.retail_id).second, "unknown or duplicate retail track");
