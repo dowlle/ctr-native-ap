@@ -479,6 +479,15 @@ void *LOAD_ReadFile_ex(struct BigHeader *bigfile, u32 loadType, int subfileIndex
 #else
 			int ctOk = CustomTrack_ReadFile(ctOverridePath, ptrDst, (u32)ctSectorBytes, ctOverrideSize);
 #endif
+			if (ctOk)
+			{
+				int seedOwned = 1;
+#ifdef CTR_CUSTOM_PACKAGES
+				seedOwned = !offlineRole;
+#endif
+				int role = (subfileIndex & 1) != 0 ? CTR_CT_ROLE_LEV : CTR_CT_ROLE_VRM;
+				CustomTrack_NoteLoadedAsset(&ctCtx, role, seedOwned);
+			}
 			// Odd slots of a host group are the LEV (CustomTrackPolicy_SubfileRole).
 			// Its pointer map has not run yet, so an ST1 entry the map leaves out
 			// can still be told from a real one (policy header, decision 6).

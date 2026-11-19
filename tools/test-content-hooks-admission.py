@@ -89,6 +89,7 @@ static int used_managed, used_files, applied, staged;
 static char used_lev[CTR_CT_MANAGER_PATH_MAX], used_vrm[CTR_CT_MANAGER_PATH_MAX], used_name[CTR_CT_NAME_MAX];
 static struct CustomTrackSeedDescriptor applied_descriptor;
 static struct CustomTrackRaceContext staged_race;
+uint64_t ap_content_plan_room_identity(void) { return UINT64_C(0x123456789abcdef0); }
 int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *p, struct CustomTrackManagerStatus *s) { (void)p; (void)s; used_managed++; return 1; }
 int CustomTrack_UseContentFiles(const char *lev, const char *vrm, const char *name)
 {
@@ -201,6 +202,13 @@ int main(void)
 	expect(staged == 1 && staged_race.laps == 3 && staged_race.trophyLocation == 35016300 && staged_race.physicalPad == 3 &&
 	       staged_race.returnHub == 26 && staged_race.seedEpoch == 7 && !staged_race.retail &&
 	       strcmp(staged_race.levSha256, plan_package.lev_sha256) == 0, "race context staged for the pad");
+	expect(staged_race.roomIdentity == 0x123456789abcdef0ULL &&
+	       strcmp(staged_race.packageRevision, plan_package.revision) == 0,
+	       "staged race retains the room and package revision for quick saves");
+	reset_calls();
+	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6 &&
+	       staged_race.roomIdentity == 0x123456789abcdef0ULL,
+	       "re-entering the same pad uses the admitted room without a socket dependency");
 
 	/* A4-70: a pad whose Relic Race runs other laps than its Trophy Race and CTR
 	   Challenge stages each mode's own laps in the race context. */

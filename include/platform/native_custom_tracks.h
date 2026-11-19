@@ -132,6 +132,9 @@ struct GarageVenueDescriptor
 {
 	int enabled;
 	int hostLevelID;
+	uint64_t roomIdentity;
+	char trackID[65];
+	char packageRevision[65];
 	char levPath[1024];
 	char vrmPath[1024];
 	char levSha256[NATIVE_SHA256_HEX_BYTES];
@@ -309,6 +312,20 @@ int CustomTrack_RaceFeatureEnabled(void);
 int CustomTrack_ServingLoad(int levelID, int adventureCupActive, int cupID);
 /* Authored one-lap finish terrain, or -1 for ordinary circuit racing. */
 int CustomTrack_FinishTerrain(const struct CustomTrackLoadContext *ctx);
+// Provenance of a resident race LEV supplied by the seed-owned loader.
+struct CustomTrackResidentSource
+{
+	int levelID, kind;
+	uint64_t roomIdentity;
+	char trackID[65], packageRevision[65];
+	char levSha256[65], vrmSha256[65];
+	char reserved[4];
+};
+void CustomTrack_ClearResidentSource(void);
+void CustomTrack_NoteLoadedAsset(const struct CustomTrackLoadContext *ctx, int role, int seedOwned);
+int CustomTrack_ResidentAssetsMixed(void);
+const struct CustomTrackResidentSource *CustomTrack_ResidentSource(int levelID);
+int CustomTrack_ResidentBlocksRecordedLanes(int levelID);
 /* Is the pair served for this load Tizi Madness (native_tizi_madness.h,
    A4-96)? Same precedence as CustomTrack_FinishTerrain. */
 int CustomTrack_TiziMadness(const struct CustomTrackLoadContext *ctx);

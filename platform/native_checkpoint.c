@@ -2349,15 +2349,15 @@ internal int NativeCheckpoint_CustomIdentityAllows(const struct NativeCheckpoint
 	return 0;
 }
 
-// The refusal, on screen for a few seconds of race HUD (UI_RenderFrame_Racing).
-void NativeCheckpoint_DrawCustomRefusal(void)
+void NativeCheckpoint_DrawCustomRefusal(u32 *ot, int visible)
 {
 	if (s_nativeCheckpointCustomRefusalFrames <= 0)
 	{
 		return;
 	}
 	s_nativeCheckpointCustomRefusalFrames--;
-	DecalFont_DrawLine(s_nativeCheckpointCustomRefusal, 0x100, 0x60, FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
+	if (visible)
+		DecalFont_DrawLineOT(s_nativeCheckpointCustomRefusal, 0x100, 0x60, FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
 }
 #endif
 
@@ -2379,6 +2379,7 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 		return 0;
 	}
 #ifdef CTR_CUSTOM_PACKAGES
+	s_nativeCheckpointCustomRefusalFrames = 0;
 	if (!NativeCheckpoint_CustomIdentityAllows(header, bytes))
 	{
 		return 0;
