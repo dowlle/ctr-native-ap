@@ -1521,17 +1521,32 @@ void repair_package_music(const CustomPackageStoreEntry *entry, void *context)
     if (!entry->verified ||
         (!entry->local.permissionTrackID && !entry->local.trackKey[0])) return;
     const auto &manifest = entry->manifest;
+    unsigned int levBytes = 0, vrmBytes = 0;
     for (unsigned int i = 0; i < manifest.count; i++)
-        if (!std::strcmp(manifest.files[i].role, "sca")) return;
+    {
+        const auto &file = manifest.files[i];
+        if (!std::strcmp(file.role, "sca")) return;
+        if (!std::strcmp(file.role, "lev")) levBytes = file.bytes;
+        if (!std::strcmp(file.role, "vrm")) vrmBytes = file.bytes;
+    }
 
     auto &job = *static_cast<SaphiMusicRepair *>(context);
     const CustomSaphiRevision *match = nullptr;
     for (const auto &r : job.revisions)
     {
         if ((entry->local.permissionTrackID && entry->local.permissionTrackID != r.trackID) ||
-            std::strcmp(manifest.version, r.version) ||
             std::strcmp(entry->local.levSha256, r.lev.sha256) ||
             std::strcmp(entry->local.vrmSha256, r.vrm.sha256)) continue;
+        if (std::strcmp(manifest.version, r.version))
+        {
+            // Registry aliases such as a mode suffix still require the
+            // same Saphi track and both exact hosted media identities.
+            ApTrackRegistryMatch alias{};
+            if (ap_track_registry_lookup(entry->local.levSha256, levBytes,
+                    entry->local.vrmSha256, vrmBytes, &alias) != AP_TRACK_REGISTRY_MATCH ||
+                std::strcmp(alias.revision, manifest.version) || alias.saphi_track_id != r.trackID ||
+                alias.lev_download_id != r.lev.id || alias.vrm_download_id != r.vrm.id) continue;
+        }
         if (match && (match->trackID != r.trackID || match->sca.id != r.sca.id)) return;
         match = &r;
     }

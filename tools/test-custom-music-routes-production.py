@@ -69,18 +69,29 @@ prelude = r'''
 #include <thread>
 #include <vector>
 #include "ap_track_consent.h"
+#include "ap_track_registry.h"
 extern "C" void CustomPackage_TestInstallFailure(int checkpoints);
 // The track author permission check (A4-74): the real resolver is
 // ap/ap_track_consent.cpp (tools/test-track-consent.cpp). Here it allows,
 // unless a case sets g_permission, and records which Saphi track was asked.
 static int g_permission = AP_TRACK_PERMISSION_ALLOW, g_permission_track = -1;
 static bool g_permission_given_key;
+static bool g_registry_alias;
 extern "C" int ap_track_permission(int track, int author, int saphi, const char *key)
 { (void)author; (void)saphi; g_permission_given_key = key != nullptr; g_permission_track = track; return g_permission; }
 extern "C" const char *ap_track_permission_text(void) { return "The author has not allowed in-game download."; }
 extern "C" int ap_track_consent_saphi_author(int track) { return track == 121 ? 12 : 0; }
 extern "C" int ap_track_registry_key_for_saphi(int track, char *key, int bytes)
 { if (track != 121 || !key || bytes < 16) return 0; std::snprintf(key, bytes, "acid-lake"); return 1; }
+extern "C" int ap_track_registry_lookup(const char *, uint32_t, const char *, uint32_t, ApTrackRegistryMatch *out)
+{
+	if (!g_registry_alias) return AP_TRACK_REGISTRY_NOT_LISTED;
+	out->saphi_track_id = 121;
+	out->lev_download_id = 872;
+	out->vrm_download_id = 873;
+	std::snprintf(out->revision, sizeof out->revision, "1.0.0");
+	return AP_TRACK_REGISTRY_MATCH;
+}
 extern "C" void ap_track_consent_note_saphi(int track, int author, int saphi) { (void)track; (void)author; (void)saphi; }
 extern "C" int ap_track_saphi_id_from_url(const char *url)
 {
@@ -590,6 +601,19 @@ int main()
 		expect(repair_library(exact, assets) == 1 && asked(path) && find_music_for(assets).ok,
 		       "historical repair restores exact-version audio");
 		CustomSaphi_Free(&exact);
+	}
+
+	{
+		const auto assets = fresh("repair-alias");
+		scas.clear(); serve();
+		expect(install_seed(assets, true, detail) == AP_CT_DOWNLOAD_SUCCEEDED, "alias repair starts with a silent package");
+		auto alias = repair_catalogue("1.1.0", sha(lev));
+		served["/api/v3/tracks/121/downloads/874"] = music;
+		g_registry_alias = true;
+		expect(repair_library(alias, assets) == 1 && find_music_for(assets).ok,
+		       "a verified registry alias restores audio under the unchanged seed revision");
+		g_registry_alias = false;
+		CustomSaphi_Free(&alias);
 	}
 
 	// f. A copy of the pair without music does not hide the copy with music.

@@ -437,7 +437,8 @@ audio download leaves the track available with fallback music.
 
 **Restoring music.** Custom Tracks checks installed Saphi and seed packages
 after the catalogue refresh. It requires track author permission and matches
-the revision and both installed file SHA-256 pins against the catalogue.
+both installed file SHA-256 pins and the revision against the catalogue or
+its verified registry alias.
 The worker verifies the audio's size, CRC32, SHA-256 and SCA structure,
 including the CSEQ song and sequence bounds.
 It publishes the audio by its Saphi SHA-256 and then commits its source
