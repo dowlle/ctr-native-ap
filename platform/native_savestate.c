@@ -12,7 +12,7 @@
 #include "platform/native_custom_tracks.h"
 #endif
 #ifdef CTR_AP
-#include "ap/ap_content_plan.h"
+#include "../ap/ap_content_plan.h"
 #endif
 
 #include <errno.h>
