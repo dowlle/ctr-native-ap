@@ -44,6 +44,7 @@ expected = dict(retail=[dict(id=i, name=n, location=L[n + ": Trophy Race"], ctr=
 expected["sanity"] = cp.sanity.CATALOG
 expected["sanity_exclusions"] = cp.sanity.crate_exclusions.EXCLUSIONS
 expected["object_rulings"] = json.loads((args.apworld / "worlds/ctr/data/object_rulings.json").read_text())
+expected["track_ruling_revisions"] = cp.track_rulings.REVIEWS
 expected["sanity_locations"] = {t: [cp.sanity.code(dict(origin="retail", display_name=t), f, 1) for f in range(3)] for t in cp.sanity.BOX_TRACKS}
 expected["sanity_locations"]["Cortex Vortex"] = [35026100, 35026180, 35026200]
 expected["sanity_locations"].update({t.ap_name: [cp.sanity.code(dict(origin="custom", named_block=t.block_index), f, 1)
