@@ -4,8 +4,10 @@ extern "C" {
 #include <platform/native_custom_content_verify.h>
 }
 #include <platform/native_custom_tracks_policy.h>
+#ifdef CTR_RECORDED_RACE
 #include <platform/native_recorded_race_data.h>
 #include "../ap/ap_navrec_playback_logic.h"
+#endif
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cstdio>
@@ -80,6 +82,7 @@ static bool package_hex(const std::string &text)
     return text.size() == 64 && text.find_first_not_of("0123456789abcdef") == std::string::npos;
 }
 
+#ifdef CTR_RECORDED_RACE
 static std::vector<unsigned char> recorded_file(const CustomPackageOwned *package,
     const CustomPackageManifest &manifest, const char *role)
 {
@@ -259,6 +262,7 @@ extern "C" void CustomRecordedRace_Free(CustomRecordedRace *race)
 {
     delete race;
 }
+#endif
 
 extern "C" int CustomPackage_GetRaceLaps(const CustomPackageOwned *package, unsigned int *laps,
     char *error, size_t errorSize)
