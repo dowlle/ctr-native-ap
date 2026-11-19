@@ -1,6 +1,8 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_content_verify.h>
+#ifdef CTR_RECORDED_RACE
 #include <platform/native_recorded_race_data.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -178,6 +180,7 @@ int CustomContentVerify_TimeTrialReason(const struct CustomContentVerification*r
 	seterr(why,n,text);
 	return !text[0];
 }
+#ifdef CTR_RECORDED_RACE
 static int64_t ground_cross(const int a[3], const int b[3], int x, int z)
 {
 	return (int64_t)(b[0] - a[0]) * (z - a[2]) -
@@ -310,6 +313,7 @@ const char *CustomRecordedRace_CheckGeometry(const unsigned char *lev, size_t si
 		return "Crates off ground";
 	return NULL;
 }
+#endif
 
 const char*CustomContentVerify_ModeSlug(int m){static const char*s[]={"time_trial","relic_race","ctr_challenge","arcade","crystal_challenge"};return m>=0&&m<5?s[m]:"unknown";}
 const char*CustomContentVerify_EvidenceText(int r){if(r==CTR_CCV_DETECTED)return"Detected";if(r==CTR_CCV_NOT_DETECTED)return"Not detected";if(r==CTR_CCV_ERROR)return"Error";return"Indeterminate";}
