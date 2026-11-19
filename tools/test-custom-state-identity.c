@@ -3,7 +3,8 @@
 // Savestate identity for custom tracks (box authoring build,
 // native_custom_state_identity.h): a checkpoint restores only into the load
 // context it was saved in. No custom track on both sides, or the same package
-// by UUID, LEV and VRM SHA-256. Everything else refuses, in both directions,
+// by UUID, LEV and VRM SHA-256. Recorded Arcade additionally requires its
+// complete package pin. Everything else refuses, in both directions,
 // including an unusable ("unknown") or damaged record.
 #include <stdio.h>
 #include <string.h>
@@ -39,9 +40,9 @@ int main(void)
 	CustomStateIdentity_Unknown(&unk1);
 	CustomStateIdentity_Unknown(&unk2);
 
-	// The record is a fixed-size checkpoint region; CSD2 added the race mode.
-	CHECK(sizeof(struct CustomStateIdentity) == 188);
-	CHECK(CTR_CUSTOM_STATE_MAGIC == 0x32445343u);
+	// CSD3 adds the complete recorded Arcade package pin.
+	CHECK(sizeof(struct CustomStateIdentity) == 256);
+	CHECK(CTR_CUSTOM_STATE_MAGIC == 0x33445343u);
 	CHECK(a.mode == 0 && none1.mode == 0);
 
 	// Same context restores.
@@ -78,6 +79,13 @@ int main(void)
 		CHECK(strcmp(text, "custom " UUID_A " lev 111111111111 vrm 222222222222 time trial") == 0);
 		CustomStateIdentity_Describe(&arcade, text, sizeof text);
 		CHECK(strcmp(text, "custom " UUID_A " lev 111111111111 vrm 222222222222 arcade") == 0);
+		memcpy(arcade.recordedRacePin, SHA_1, sizeof SHA_1);
+		CHECK(!allowed(&arcade, &arcade2));
+		CHECK(!allowed(&arcade2, &arcade));
+		memcpy(arcade2.recordedRacePin, SHA_1, sizeof SHA_1);
+		CHECK(allowed(&arcade, &arcade2));
+		memcpy(arcade2.recordedRacePin, SHA_2, sizeof SHA_2);
+		CHECK(!allowed(&arcade, &arcade2));
 	}
 
 	// Case does not split one package into two.

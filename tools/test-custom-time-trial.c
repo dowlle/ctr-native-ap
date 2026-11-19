@@ -168,6 +168,13 @@ void UI_VsQuipAssignAll(void) {}
 void Podium_InitModels(struct GameTracker *gGT) { (void)gGT; }
 void BOTS_Driver_Convert(struct Driver *driver) { (void)driver; }
 void BOTS_SetGlobalNavData(u16 path) { (void)path; }
+int BOTS_FindDriverPath(int driverID, int initialLane)
+{
+	(void)driverID;
+	(void)initialLane;
+	CHECK(0 && "The Time Trial fixture does not spawn bots");
+	return -1;
+}
 void BOTS_InitNavPath(struct GameTracker *gt, s16 path)
 {
 	sdata->NavPath_ptrHeader[path] = gt->level1->LevNavTable[path];

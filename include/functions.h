@@ -1365,6 +1365,7 @@ void BOTS_LevInstColl(struct Thread *botThread);
 void BOTS_Killplane(struct Thread *botThread);
 void BOTS_MaskGrab(struct Thread *botThread);
 struct Driver *BOTS_Driver_Init(int driverID);
+int BOTS_FindDriverPath(int driverID, int initialLane);
 void BOTS_Driver_Convert(struct Driver *driver);
 void UI_RaceEnd_GetDriverClock(struct Driver *d);
 void GAMEPAD_JogCon2(struct Driver *d, char val, s16 timeMS);

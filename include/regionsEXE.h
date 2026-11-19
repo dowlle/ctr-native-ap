@@ -1,6 +1,8 @@
 #ifndef CTR_NATIVE_REGIONSEXE_H
 #define CTR_NATIVE_REGIONSEXE_H
 
+#include "bots_nav_lanes.h"
+
 
 enum
 {
@@ -4617,17 +4619,17 @@ struct sData
 	// 8008ca48 -- JpnTrial
 	// 8008de94 -- EurRetail
 	// 80090f50 -- JpnRetail
-	struct NavFrame *NavPath_ptrNavFrameArray[3];
+	struct NavFrame *NavPath_ptrNavFrameArray[BOTS_NAV_LANE_MAX];
 
 	// 8008bf20 -- SepReview
 	// 8008daec -- UsaRetail
 	// 8008ca54 -- JpnTrial
 	// 8008dea0 -- EurRetail
 	// 80090f5c -- JpnRetail
-	struct NavHeader *NavPath_ptrHeader[3];
+	struct NavHeader *NavPath_ptrHeader[BOTS_NAV_LANE_MAX];
 
 	// 8008daf8
-	struct LinkedList navBotList[3];
+	struct LinkedList navBotList[BOTS_NAV_LANE_MAX];
 
 	// 8008DB1C - BSP Search Result
 	struct ScratchpadStruct scratchpadStruct;
@@ -5105,6 +5107,11 @@ struct sData
 	// 8009f6fc end of BSS
 
 // NO_BSS
+#endif
+#ifdef CTR_NATIVE
+	// Dedicated recorded Arcade checkpoints reuse the shuffle in one process.
+	u32 recordedRaceSeed;
+	u32 recordedRaceSession;
 #endif
 };
 

@@ -138,6 +138,10 @@ tools/test-native-ptr-scratch.c
 tools/test-navrec-label.c
 tools/test-navrec.c
 tools/test-navrec-production.py
+tools/test-navset-placements.py
+tools/test-navset.c
+tools/test-recorded-race-admission.py
+tools/test-recorded-race-runtime.py
 tools/test-net-admission.cpp
 tools/test-net-inflight-checks.cpp
 tools/test-net-planless-refusal.cpp

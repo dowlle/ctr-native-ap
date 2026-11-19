@@ -142,9 +142,17 @@ check("levelLane" in commit, "the crate bit is borrowed from the captured level 
 
 # Labels: one bot per recorded lane.
 check("AP_NavRecLabel_LaneFor(" in draw, "labels go through the one-owner rule")
+check("lane < BOTS_NAV_LANE_MAX" in draw and "s_navrecLaneOwner, BOTS_NAV_LANE_MAX" in draw,
+      "label discovery and ownership cover dedicated lanes")
 lane_for = draw.find("AP_NavRecLabel_LaneFor(")
 check(0 <= lane_for < draw.find("invisibleTimer"), "ownership is settled before any visibility test")
 check("s_navrecLaneOwner[lane] = -1" in point, "owners reset whenever lanes are published")
+drive = bots[bots.index("void BOTS_ThTick_Drive(struct Thread *botThread)"):]
+check(0 <= drive.find("BOTS_RecordedGridTick(") < drive.find("positionBackup.x ="),
+      "the production bot tick holds recorded grid positions before movement")
+check(0 <= checkpoint_restore.find("NativeState_Restore(") <
+      checkpoint_restore.find("RB_CrateWeapon_RebindRecorded("),
+      "recorded crate model rebinding follows native state relocation")
 
 if failures:
     print(f"\n{len(failures)} failure(s)")

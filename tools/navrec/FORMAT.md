@@ -1,8 +1,7 @@
 # AI lap recording container, format versions 2 and 3
 
 Status: specification for the 0.2.0 recorder slice. This is the file the client
-writes when `nav_record` is on, and the only file the client reads when
-`nav_use_recorded` is on.
+writes when `nav_record` is on and reads for the local recorded-lap pool.
 
 The container exists because the engine's own nav node struct cannot carry any
 of the information a recorded lap needs. `struct NavFrame`
@@ -626,3 +625,30 @@ shortcut verdict.
 
 Collection in 0.2.0 is manual hand-in. The client does not upload anything, and
 nothing in this format assumes it will.
+
+## NAV2 version 4 set
+
+A `.navset` uses the version 3 header and trailer, the version value 4, and
+one to seven 64-byte directory entries. A complete race set has seven entries.
+The header carries the package UUID and the first four LEV SHA-256 bytes
+interpreted in digest order as a number, with an all-zero prefix mapped to 1.
+The borrowed level ID and header driver name do not identify the set.
+
+Each directory entry keeps version 3 offsets 0x00 through 0x1B. The 32-byte
+driver name starts at 0x1C and the first four bytes of the source `.navlap`
+SHA-256 digest start at 0x3C. Names follow the existing sanitization rule.
+Nodes and timestamps retain their version 3 encoding. The trailing checksum
+covers the entire header, directory and payload. Version 4 is read through
+the set reader. The ordinary `.navlap` reader accepts versions 2 and 3.
+
+Build the local tools with `cc -O2 -o navset-mint tools/navset-mint.c -lm`
+and `cc -O2 -o navrec-inspect tools/navrec-inspect.c -lm`. Inspect candidate
+recordings and pass exactly seven file and zero-based lap-index pairs after
+the mint tool's output filename. The output must be a new file. The tool
+requires matching custom identities, clean closed laps within the finish-blend
+bound, and distinct node payloads after decoding and finish blending.
+
+For a local placement preview, run
+`python3 tools/navrec/propose-placements.py TRACK.lev NEW_OUTPUT_DIR TRACK_KEY TRACK_NAME`.
+This proposes eight grid positions and four rows of four crates. The JSON
+records the LEV SHA-256. Check the placements on the track before using them.

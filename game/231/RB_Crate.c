@@ -224,19 +224,52 @@ static struct Thread *RB_CrateAny_LInC_Birth(struct Instance *crateInst, void *f
 	return crateThread;
 }
 
-// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b3e7c-0x800b4278.
-int RB_CrateWeapon_ThCollide(struct Thread *crateThread, struct Thread *collidingTh, void *funcThCollide, struct ScratchpadStruct *sps)
+static void RB_CrateWeapon_Roll(struct Instance *crateInst, struct Driver *driver)
 {
 	struct PushBuffer *pb;
 	s16 posScreen[2];
-	struct Instance *crateInst;
-	struct Crate *crateObj;
-	int hitModelID;
-	int hitModelIDValue;
-	struct Driver *driver;
 
-	crateInst = crateThread->inst;
-	crateObj = ((struct Crate *)crateThread->object);
+#ifdef CTR_AP
+	if (AP_TrapSuppressCrateReward(driver))
+		return;
+#endif
+	if (((driver->heldItemID != 0xf) && (driver->noItemTimer == 0)) ||
+	    driver->numHeldItems != 0 || (driver->actionsFlagSet & ACTION_WEAPON_FIRE_REQUEST) != 0 ||
+	    (driver->thCloud && ((struct RainCloud *)driver->thCloud->object)->effect == RAIN_CLOUD_EFFECT_ITEM_ROLL) ||
+	    driver->clockReceive != 0)
+		return;
+
+	driver->heldItemID = 0x10;
+	driver->numTimesHitWeaponBox++;
+	driver->itemRollTimer = 90;
+
+#ifdef CTR_AP
+	// The roulette resolves after the crate instance is out of scope.
+	AP_TiziOnWeaponBoxHit(driver, crateInst);
+#endif
+
+	if ((sdata->gGT->gameMode1 & ROLLING_ITEM) == 0)
+	{
+		OtherFX_Play(0x5d, 0);
+		sdata->gGT->gameMode1 |= ROLLING_ITEM;
+	}
+
+	driver->PickupTimeboxHUD.cooldown = 5;
+	driver->noItemTimer = 0;
+	if (driver->numWumpas == 10)
+		driver->BattleHUD.juicedUpCooldown = 10;
+
+	pb = &sdata->gGT->pushBuffer[driver->driverID];
+	RB_Fruit_GetScreenCoords(pb, crateInst, posScreen);
+	driver->PickupTimeboxHUD.startX = pb->rect.x + posScreen[0];
+	driver->PickupTimeboxHUD.startY = pb->rect.y + posScreen[1];
+}
+
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b3e7c-0x800b4278.
+int RB_CrateWeapon_ThCollide(struct Thread *crateThread, struct Thread *collidingTh, void *funcThCollide, struct ScratchpadStruct *sps)
+{
+	struct Instance *crateInst = crateThread->inst;
+	struct Crate *crateObj = (struct Crate *)crateThread->object;
 
 	if ((crateObj->cooldown == 0) && ((crateInst->scale.x == 0) || (crateInst->scale.x == 0x1000)))
 	{
@@ -246,95 +279,19 @@ int RB_CrateWeapon_ThCollide(struct Thread *crateThread, struct Thread *collidin
 		{
 			RB_CrateAny_ExplodeInit(crateInst, 0xfafafa0, true);
 
-			driver = RB_CrateAny_GetDriver(collidingTh, sps);
-			if ((int)driver == 1)
-			{
+			struct Driver *driver = RB_CrateAny_GetDriver(collidingTh, sps);
+			if ((int)driver == 1 || (driver->actionsFlagSet & ACTION_BOT) != 0)
 				return 1;
-			}
-			if ((driver->actionsFlagSet & ACTION_BOT) != 0)
-			{
-				return 1;
-			}
-
 #ifdef CTR_AP
-			// Empty Crates (#280) keeps the break, sound, animation and cooldown,
-			// but gives the receiving local player no roulette. AI and other
-			// drivers remain on the vanilla path.
 			AP_SanityPickup(crateInst, driver);
-			if (AP_TrapSuppressCrateReward(driver))
-			{
-				return 1;
-			}
 #endif
-
-			if ((driver->heldItemID != 0xf) && (driver->noItemTimer == 0))
-			{
-				return 1;
-			}
-
-			if (driver->numHeldItems != 0)
-			{
-				return 1;
-			}
-
-			if ((driver->actionsFlagSet & ACTION_WEAPON_FIRE_REQUEST) != 0)
-			{
-				return 1;
-			}
-
-			if (driver->thCloud != 0)
-			{
-				if (((struct RainCloud *)driver->thCloud->object)->effect == RAIN_CLOUD_EFFECT_ITEM_ROLL)
-				{
-					return 1;
-				}
-			}
-
-			if (driver->clockReceive != 0)
-			{
-				return 1;
-			}
-
-			driver->heldItemID = 0x10;
-			driver->numTimesHitWeaponBox++;
-			driver->itemRollTimer = 90;
-
-#ifdef CTR_AP
-			// Tizi Helper (#223). The roll this line starts resolves ~90 frames
-			// later in VehPhysGeneral_SetHeldItem, which no longer knows WHICH
-			// crate began it -- so the identity has to be recorded here, at the
-			// only point where the crate instance is in hand. Arms nothing
-			// unless this is one of the four Papu's Pyramid start-line boxes and
-			// the helper is active for the local player.
-			AP_TiziOnWeaponBoxHit(driver, crateInst);
-#endif
-
-			if ((sdata->gGT->gameMode1 & ROLLING_ITEM) == 0)
-			{
-				OtherFX_Play(0x5d, 0);
-				sdata->gGT->gameMode1 |= ROLLING_ITEM;
-			}
-
-			driver->PickupTimeboxHUD.cooldown = 5;
-			driver->noItemTimer = 0;
-
-			if (driver->numWumpas == 10)
-			{
-				driver->BattleHUD.juicedUpCooldown = 10;
-			}
-
-			pb = &sdata->gGT->pushBuffer[driver->driverID];
-			RB_Fruit_GetScreenCoords(pb, crateInst, &posScreen[0]);
-
-			driver->PickupTimeboxHUD.startX = pb->rect.x + posScreen[0];
-			driver->PickupTimeboxHUD.startY = pb->rect.y + posScreen[1];
-
+			RB_CrateWeapon_Roll(crateInst, driver);
 			return 1;
 		}
 	}
 
-	hitModelID = sps->Input1.modelID;
-	hitModelIDValue = hitModelID & COLL_MODELID_VALUE_MASK;
+	int hitModelID = sps->Input1.modelID;
+	int hitModelIDValue = hitModelID & COLL_MODELID_VALUE_MASK;
 
 	if ((hitModelID & COLL_MODELID_BLOCKAGE_FLAG) == 0)
 	{
@@ -345,6 +302,108 @@ int RB_CrateWeapon_ThCollide(struct Thread *crateThread, struct Thread *collidin
 	RB_CrateAny_CheckBlockage(crateThread, hitModelIDValue);
 	return 0;
 }
+
+#ifdef CTR_RECORDED_RACE
+#include <platform/native_recorded_race_data.h>
+#include "../../ap/ap_box_model.h"
+
+enum { RECORDED_CRATE_HIT_RADIUS = 128, RECORDED_CRATE_COOLDOWN = 30 };
+static char s_recordedCrateName[16] = "recorded crate";
+
+static struct Driver *RB_CrateWeapon_RecordedContact(const struct GameTracker *gGT, const struct Instance *inst)
+{
+	for (int i = 0; i < 8; i++)
+	{
+		struct Driver *driver = gGT->drivers[i];
+		if (!driver || !driver->instSelf) continue;
+		const struct Instance *kart = driver->instSelf;
+		int64_t dx = (int64_t)kart->matrix.t[0] - inst->matrix.t[0];
+		int64_t dy = (int64_t)kart->matrix.t[1] - inst->matrix.t[1];
+		int64_t dz = (int64_t)kart->matrix.t[2] - inst->matrix.t[2];
+		/* Reject out-of-range differences before squaring. */
+		if (dx <= -RECORDED_CRATE_HIT_RADIUS || dx >= RECORDED_CRATE_HIT_RADIUS ||
+		    dy <= -RECORDED_CRATE_HIT_RADIUS || dy >= RECORDED_CRATE_HIT_RADIUS ||
+		    dz <= -RECORDED_CRATE_HIT_RADIUS || dz >= RECORDED_CRATE_HIT_RADIUS)
+			continue;
+		if (dx * dx + dy * dy + dz * dz < RECORDED_CRATE_HIT_RADIUS * RECORDED_CRATE_HIT_RADIUS)
+			return driver;
+	}
+	return NULL;
+}
+
+static void RB_CrateWeapon_RecordedTick(struct Thread *thread)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	if (gGT->gameMode1 & (PAUSE_ALL | START_OF_RACE | END_OF_RACE)) return;
+	struct Crate *crate = thread->object;
+	struct Instance *inst = thread->inst;
+	struct Driver *hit = RB_CrateWeapon_RecordedContact(gGT, inst);
+	if (crate->cooldown)
+	{
+		if (!hit) crate->cooldown--;
+		return;
+	}
+	if (inst->scale.x < 0x1000)
+	{
+		if (!hit)
+		{
+			s16 scale = inst->scale.x + 0x100;
+			CTR_SET_VEC3(inst->scale.v, scale, scale, scale);
+		}
+		return;
+	}
+	if (!hit) return;
+	RB_CrateAny_ExplodeInit(inst, 0xfafafa0, true);
+	crate->cooldown = RECORDED_CRATE_COOLDOWN;
+	if (!(hit->actionsFlagSet & ACTION_BOT)) RB_CrateWeapon_Roll(inst, hit);
+}
+
+void RB_CrateWeapon_SpawnRecorded(struct GameTracker *gGT, const struct CustomRecordedRace *race)
+{
+	struct Model *model = AP_BoxModel_GetWeapon(gGT);
+	if (!model) return;
+	for (unsigned int i = 0; i < race->crateCount; i++)
+	{
+		struct Thread *thread = PROC_BirthWithObject(
+		    SIZE_RELATIVE_POOL_BUCKET(sizeof(struct Crate), NONE, SMALL, STATIC),
+		    RB_CrateWeapon_RecordedTick, s_recordedCrateName, NULL);
+		if (!thread) break;
+		struct Instance *inst = INSTANCE_Birth3D(model, s_recordedCrateName, thread);
+		if (!inst)
+		{
+			INSTANCE_RollbackThreadBirth(thread, NULL);
+			break;
+		}
+		thread->inst = inst;
+		thread->modelIndex = PU_RANDOM_CRATE;
+		memset(thread->object, 0, sizeof(struct Crate));
+		const struct CustomRacePlacement *spot = &race->crates[i];
+		SVec3 rot = {.x = spot->rot[0], .y = spot->rot[1], .z = spot->rot[2]};
+		Vec3 pos;
+		AP_BoxModel_SpawnPos(model, spot->pos[0], spot->pos[1], spot->pos[2], &pos);
+		ConvertRotToMatrix(&inst->matrix, &rot);
+		inst->matrix.t[0] = pos.x;
+		inst->matrix.t[1] = pos.y;
+		inst->matrix.t[2] = pos.z;
+	}
+}
+
+void RB_CrateWeapon_RebindRecorded(struct GameTracker *gGT)
+{
+	struct Model *model = AP_BoxModel_GetWeapon(gGT);
+	for (struct Thread *thread = gGT->threadBuckets[STATIC].thread; thread; thread = thread->siblingThread)
+	{
+		if (thread->funcThTick != RB_CrateWeapon_RecordedTick || !thread->inst)
+			continue;
+
+		struct Instance *inst = thread->inst;
+		thread->name = s_recordedCrateName;
+		inst->model = model;
+		// The renderer rebuilds this cache from the current model on draw.
+		*INST_GETIDPP(inst) = (struct InstDrawPerPlayer){.pushBuffer = &gGT->pushBuffer[0]};
+	}
+}
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b4278-0x800b432c.
 int RB_CrateWeapon_LInC(struct Instance *crateInst, struct Thread *collidingTh, struct ScratchpadStruct *sps)

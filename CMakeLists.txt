@@ -225,6 +225,10 @@ if(NOT CTR_AP)
             ${CMAKE_SOURCE_DIR}/vendor/utf8proc)
         target_compile_definitions(custom_package PRIVATE
             CTR_CUSTOM_TRACKS CTR_CUSTOM_PACKAGES UTF8PROC_STATIC ASIO_STANDALONE)
+        if(CTR_BOX_AUTHORING AND CTR_AI_LAP_RECORDER)
+            target_compile_definitions(custom_package PRIVATE CTR_RECORDED_RACE)
+            target_compile_definitions(ctr_native PRIVATE CTR_RECORDED_RACE)
+        endif()
         if(WIN32)
             target_compile_definitions(custom_package PRIVATE _WIN32_WINNT=0x0601 WIN32_LEAN_AND_MEAN)
         endif()
@@ -361,7 +365,7 @@ if(CTR_AP)
         target_include_directories(custom_package PRIVATE ${CMAKE_SOURCE_DIR}/include
             ${AP_VENDOR}/json/include ${CMAKE_SOURCE_DIR}/vendor/utf8proc)
         target_compile_definitions(custom_package PRIVATE
-            CTR_CUSTOM_TRACKS CTR_CUSTOM_PACKAGES UTF8PROC_STATIC
+            CTR_CUSTOM_TRACKS CTR_CUSTOM_PACKAGES CTR_RECORDED_RACE UTF8PROC_STATIC
             $<$<BOOL:${CTR_AP_AUTHORING}>:CTR_AP_AUTHORING>)
         target_compile_options(custom_package PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fexceptions;-frtti>)
         target_link_libraries(custom_package PUBLIC Threads::Threads)
@@ -369,6 +373,7 @@ if(CTR_AP)
         # library, so the player and authoring clients build it the same way.
         target_compile_definitions(ctr_native PRIVATE CTR_CUSTOM_PACKAGES CTR_XDELTA_IMPORT)
         target_compile_definitions(ap_net PRIVATE CTR_CUSTOM_PACKAGES)
+        target_compile_definitions(ctr_native PRIVATE CTR_RECORDED_RACE)
         target_include_directories(ap_net PRIVATE ${CMAKE_SOURCE_DIR}/include)
         target_link_libraries(ap_net PUBLIC custom_package)
         target_link_libraries(ctr_native custom_package)

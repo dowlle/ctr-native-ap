@@ -462,8 +462,14 @@
 // The authoring client without Archipelago (see the header block above). Each
 // unit compiles to nothing unless its own option is on.
 #include "../ap/ap_marker_model.c"  // CTR_BOX_AUTHORING: AP-logo fallback marker
+#ifdef CTR_RECORDED_RACE
+#include "../ap/ap_box_model.c"
+#include "../ap/ap_box_texture.c"
+#include "../ap/ap_retail_asset.c"
+#else
 #include "../ap/ap_box_measure.c"   // CTR_BOX_AUTHORING: crate mesh measurement
 #include "../ap/ap_box_spawn_pos.c" // CTR_BOX_AUTHORING: marker spawn height
+#endif
 #include "../ap/ap_spawn.c"         // CTR_BOX_AUTHORING: additive model loader
 #include "../ap/ap_author.c"        // CTR_BOX_AUTHORING: Box Author Mode
 #include "../ap/ap_navrec.c"        // CTR_AI_LAP_RECORDER: AI lap recorder

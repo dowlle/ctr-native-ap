@@ -55,7 +55,7 @@ def body(src, signature):
 
 # 1. The premise: a refused convert leaves the driver exactly as it was.
 convert = body(bots, 'void BOTS_Driver_Convert(struct Driver *d)')
-refuse = convert.index('if (navPathIndex == initialNavPathIndex)')
+refuse = convert.index('if (navPathIndex < 0)')
 refuse_return = convert.index('return;', refuse)
 check(convert.index('memset(&d->botData, 0, sizeof(struct BotData));') > refuse_return,
       'Convert refuses before it clears botData')
@@ -65,7 +65,11 @@ check(convert.index('d->instSelf->thread->funcThTick = BOTS_ThTick_Drive;') > re
       'Convert refuses before it swaps the tick')
 sets_bot = [m.start() for m in re.finditer(r'\|\s*ACTION_BOT;', convert)]
 check(len(sets_bot) == 1 and sets_bot[0] > refuse_return, 'ACTION_BOT is set once, on the success path')
-check('numPoints' in convert[:refuse], 'the refusal is the two-point nav path test')
+find_path = body(bots, 'int BOTS_FindDriverPath(int driverID, int initialLane)')
+available = body(bots, 'static int BOTS_PathAvailable(int lane)')
+check('BOTS_FindDriverPath(' in convert[:refuse] and
+      'BOTS_PathAvailable(' in find_path and '->numPoints >= 2' in available and
+      'return -1;' in find_path, 'the refusal is the shared two-point nav path test')
 
 # 2 and 3. The ghost's end of tape.
 tick = body(ghost, 'void GhostReplay_ThTick(struct Thread *t)')
@@ -136,10 +140,13 @@ struct NavFrame { int word; };
 struct NavHeader { s16 magicNumber, numPoints; struct NavFrame *last; };
 struct Level { struct NavHeader **LevNavTable; };
 struct GameTracker { struct Level *level1; unsigned int gameMode1; };
+struct Driver { struct { struct NavFrame *botNavFrame; int botFlags, botPath; } botData; };
 struct NativeCheckpointHeader { uintptr_t base; struct GhostTape *tape; };
-static struct { struct NavHeader *NavPath_ptrHeader[3]; } fake_sdata;
-#define sdata (&fake_sdata)
+static struct { struct NavHeader *NavPath_ptrHeader[3]; struct NavFrame *NavPath_ptrNavFrameArray[3]; } storage;
+static const typeof(storage) *sdata = &storage;
+#define BOT_FLAG_ESTIMATE_NAV 1
 #define len(array) (sizeof(array) / sizeof((array)[0]))
+#define BOTS_NAV_PATH_COUNT 3
 #define GAME_CUTSCENE 1u
 #define MAIN_MENU 2u
 #define ADVENTURE_ARENA 4u
@@ -162,6 +169,13 @@ static void NativeCheckpoint_RelocatePointerOrImageSlot(const struct NativeCheck
 fixture += "static void NativeCheckpoint_RepairAuthoredNavEnds(struct GameTracker *gGT)\n" + nav_ends
 fixture += ("\nstatic void NativeCheckpoint_RelocateGhostTape(const struct NativeCheckpointHeader *oldHeader, "
             "const struct NativeCheckpointHeader *liveHeader, struct GhostTape *tape, int active)\n" + ghost_tape)
+drive = body(bots, 'void BOTS_ThTick_Drive(struct Thread *botThread)')
+select_next = 'if ((botDriver->botData.botFlags & BOT_FLAG_ESTIMATE_NAV) == 0)'
+fixture += r"""
+static struct NavFrame *next_frame(struct Driver *botDriver)
+{
+    struct NavFrame *navFrameCurr, *navFrameNext;
+""" + select_next + body(drive, select_next) + "\n    return navFrameNext;\n}\n"
 fixture += r"""
 static int check_replay_tape(void)
 {
@@ -193,22 +207,21 @@ int main(void)
     struct Lane live = {.header = {-0x1303, 3, saved.frames + 3}};
     struct NavHeader *table[3] = {NULL, &live.header, NULL};
     struct Level level = {table};
-    struct GameTracker game = {&level, 0};
+    struct GameTracker game = {&level, 0x20000};
     NativeCheckpoint_RepairAuthoredNavEnds(&game);
     if (live.header.last != live.frames + 3)
         return 1;
-    struct NavFrame *next = live.frames + 2;
-    next++;
-    if (next >= live.header.last)
-        next = live.frames;
-    return next != live.frames || !check_replay_tape();
+    storage.NavPath_ptrHeader[1] = &live.header;
+    storage.NavPath_ptrNavFrameArray[1] = live.frames;
+    struct Driver convertedGhost = {.botData = {.botNavFrame = &live.frames[2], .botPath = 1}};
+    return next_frame(&convertedGhost) != live.frames || !check_replay_tape();
 }
 """
 with TemporaryDirectory() as tmp:
     src = Path(tmp) / "ghost-wrap.c"
     exe = Path(tmp) / "ghost-wrap"
     src.write_text(fixture)
-    subprocess.run([os.environ.get("CC", "cc"), "-std=c99", "-I", str(root / "include"),
+    subprocess.run([os.environ.get("CC", "cc"), "-std=gnu99", "-I", str(root / "include"),
                     str(src), "-o", str(exe)], check=True)
     check(subprocess.run([str(exe)]).returncode == 0,
           'restored tape bytes and authored lane ends follow the live addresses')

@@ -3,6 +3,9 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
 #endif
+#ifdef CTR_RECORDED_RACE
+#include <platform/native_recorded_race.h>
+#endif
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_offline.h>
 #include <platform/native_custom_package.h>
@@ -82,6 +85,13 @@ int MainRaceTrack_OfflineCustomLoad(void)
 {
 	return CustomOffline_RuntimeServing(sdata->gGT->levelID, MainRaceTrack_OfflineSingleRaceMode());
 }
+
+#ifdef CTR_RECORDED_RACE
+const struct CustomRecordedRace *MainRaceTrack_RecordedRace(void)
+{
+	return CustomOffline_RuntimeRecordedRace(sdata->gGT->levelID, MainRaceTrack_OfflineSingleRaceMode());
+}
+#endif
 
 int MainRaceTrack_OfflineNavIdentity(unsigned char uuid[16], unsigned int *revision)
 {

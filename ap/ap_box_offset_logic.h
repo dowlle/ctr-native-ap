@@ -137,7 +137,7 @@ static int AP_BoxMesh_Bounds(const unsigned char *verts, int count, AP_BoxMeshBo
 	return 1;
 }
 
-#ifdef CTR_AP // the size ruling below belongs to the AP crate model alone
+#if defined(CTR_AP) || defined(CTR_RECORDED_RACE)
 // The mesh's largest span across the three axes, in model units. This is the
 // "extent" the size ruling (2026-08-21) compares between the AP cube and the
 // retail crate.
@@ -165,7 +165,7 @@ static int AP_BoxOffset_ModelToWorld(int modelUnits, int headerScale)
 	return (modelUnits * headerScale) / AP_BOX_SCALE_ONE;
 }
 
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_RECORDED_RACE)
 // The header scale that renders a mesh of `apExtent` model units at exactly the
 // size a source model of `srcExtent` renders at its own `srcScale`. The ruled
 // AP-box size rule (2026-08-21): the AP crate is the exact size of the retail

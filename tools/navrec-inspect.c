@@ -1,4 +1,4 @@
-// Read-only boundary inspector for AI lap recording containers (NAV2/NAV3).
+// Read-only boundary inspector for AI lap recordings and sets.
 //
 // Compiles the REAL reader: ap/ap_navrec_format.h is freestanding by design, so
 // every container accepted here is one the client would accept, byte for byte.
@@ -6,7 +6,7 @@
 // MEASURED on real artifacts instead of inferred from the follower's behavior.
 //
 //   cc -Wall -Wextra -o /tmp/navrec-inspect tools/navrec-inspect.c -lm
-//   /tmp/navrec-inspect file.navlap [more.navlap ...]
+//   /tmp/navrec-inspect file.navlap [file.navset ...]
 //
 // Output, one FILE line per container and one LAP line per accepted lap:
 //
@@ -43,8 +43,8 @@
 #include "../ap/ap_navrec_format.h"
 #include "../ap/ap_navrec_playback_logic.h"
 
-static struct AP_NavRecNode g_nodes[AP_NAVREC_MAX_LAPS][AP_NAVREC_MAX_NODES];
-static unsigned int         g_stamps[AP_NAVREC_MAX_LAPS][AP_NAVREC_MAX_NODES];
+static struct AP_NavRecNode g_nodes[AP_NAVSET_MAX_LAPS][AP_NAVREC_MAX_NODES];
+static unsigned int         g_stamps[AP_NAVSET_MAX_LAPS][AP_NAVREC_MAX_NODES];
 
 static double SegXZ(const struct AP_NavRecNode *a, const struct AP_NavRecNode *b)
 {
@@ -71,6 +71,8 @@ static int CompareDouble(const void *a, const void *b)
 static void InspectFile(const char *path)
 {
 	struct AP_NavRecFileInfo info;
+	struct AP_NavSetInfo     set;
+	int                     isSet;
 	FILE                    *f;
 	long                     len;
 	unsigned char           *buf;
@@ -112,7 +114,14 @@ static void InspectFile(const char *path)
 	}
 	fclose(f);
 
-	rc = AP_NavRecFormat_Read(buf, (unsigned int)len, &info, g_nodes, g_stamps);
+	isSet = len >= 6 && AP_NavRecFormat_GetU16(buf + 4) == AP_NAVREC_FORMAT_VERSION_V4;
+	if (isSet)
+	{
+		rc = AP_NavSet_Read(buf, (unsigned int)len, &set, g_nodes, g_stamps);
+		info = set.header;
+	}
+	else
+		rc = AP_NavRecFormat_Read(buf, (unsigned int)len, &info, g_nodes, g_stamps);
 	free(buf);
 	if (rc != AP_NAVREC_OK)
 	{
@@ -134,7 +143,8 @@ static void InspectFile(const char *path)
 	for (i = 0; i < info.lapCount; i++)
 	{
 		const struct AP_NavRecNode *nodes = g_nodes[i];
-		unsigned int                count = info.laps[i].nodeCount;
+		const struct AP_NavRecLapInfo *lap = isSet ? &set.laps[i] : &info.laps[i];
+		unsigned int                count = lap->nodeCount;
 		const struct AP_NavRecNode *first = &nodes[0];
 		const struct AP_NavRecNode *last = &nodes[count - 1u];
 		double                      segs[AP_NAVREC_MAX_NODES];
@@ -174,13 +184,17 @@ static void InspectFile(const char *path)
 
 		qsort(segs, count - 1u, sizeof(double), CompareDouble);
 
+		if (isSet)
+			printf("SET  file=%s lap=%u driver=\"%s\" source=%02x%02x%02x%02x\n",
+			       path, i, set.driverNames[i], set.sourceShaPrefix[i][0], set.sourceShaPrefix[i][1],
+			       set.sourceShaPrefix[i][2], set.sourceShaPrefix[i][3]);
 		printf("LAP  file=%s lap=%u closed=%d nodes=%u frames=%u samples=%u clean=%u shortcut=%u hint=%u "
 		       "first=(%d,%d,%d) last=(%d,%d,%d) closeXZ=%.1f closeXYZ=%.1f storedLastDist=%d/%d "
 		       "yawFirst=%d yawLast=%d yawDelta=%d gbFirst=%u gbLast=%u gbDistinct=%u "
 		       "stampLast=%u maxSeg=%.1f maxSegAt=%u medSeg=%.1f\n",
-		       path, i, AP_NavRecFormat_LapClosed(nodes, count), count, info.laps[i].lapFrames, info.laps[i].sampleCount,
-		       info.laps[i].clean, info.laps[i].shortcut,
-		       info.laps[i].laneHint, first->posX, first->posY, first->posZ, last->posX, last->posY, last->posZ,
+		       path, i, AP_NavRecFormat_LapClosed(nodes, count), count, lap->lapFrames, lap->sampleCount,
+		       lap->clean, lap->shortcut,
+		       lap->laneHint, first->posX, first->posY, first->posZ, last->posX, last->posY, last->posZ,
 		       SegXZ(last, first), SegXYZ(last, first), last->distToNextNavXZ, last->distToNextNavXYZ, yawFirst, yawLast, yawDelta,
 		       first->goBackCount, last->goBackCount, gbDistinct, g_stamps[i][count - 1u], maxSeg, maxSegAt,
 		       segs[(count - 1u) / 2u]);
@@ -216,7 +230,7 @@ int main(int argc, char **argv)
 
 	if (argc < 2)
 	{
-		fprintf(stderr, "usage: %s file.navlap [more.navlap ...]\n", argv[0]);
+		fprintf(stderr, "usage: %s file.navlap [file.navset ...]\n", argv[0]);
 		return 1;
 	}
 

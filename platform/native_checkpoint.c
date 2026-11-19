@@ -17,6 +17,9 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include "platform/native_custom_tracks.h" // UI_Map_CustomAfterRestore (A4-64)
 #endif
+#ifdef CTR_RECORDED_RACE
+#include "platform/native_recorded_race.h"
+#endif
 
 #define NATIVE_CHECKPOINT_FOURCC(a, b, c, d) ((u32)(a) | ((u32)(b) << 8) | ((u32)(c) << 16) | ((u32)(d) << 24))
 
@@ -24,7 +27,7 @@
 // and retail globals are defined, so they can snapshot the same process-local
 // regions the game mutates.
 #define NATIVE_CHECKPOINT_MAGIC              NATIVE_CHECKPOINT_FOURCC('C', 'T', 'R', 'C')
-#define NATIVE_CHECKPOINT_VERSION            2u
+#define NATIVE_CHECKPOINT_VERSION            3u
 #define NATIVE_CHECKPOINT_ADDRESS_RANGE_CAP  16u
 #define NATIVE_CHECKPOINT_POINTER_SLOT_CAP   65536u
 #define NATIVE_CHECKPOINT_CREDITS_STRING_CAP 4096u
@@ -1972,7 +1975,7 @@ internal void NativeCheckpoint_RepairAuthoredNavEnds(struct GameTracker *gGT)
 	if (table == NULL)
 		return;
 
-	for (u32 lane = 0; lane < len(sdata->NavPath_ptrHeader); lane++)
+	for (int lane = 0; lane < BOTS_NAV_PATH_COUNT; lane++)
 	{
 		struct NavHeader *header = table[lane];
 		// BOTS_InitNavPath writes this field at runtime. An authored LEV
@@ -2446,6 +2449,10 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 	NativeCheckpoint_RepairAuthoredNavEnds(sdata->gGT);
 #if defined(CTR_AP) || defined(CTR_AI_LAP_RECORDER)
 	AP_NavRec_AfterCheckpointRestore();
+#endif
+#ifdef CTR_RECORDED_RACE
+	if (MainRaceTrack_RecordedRace())
+		RB_CrateWeapon_RebindRecorded(sdata->gGT);
 #endif
 #ifdef CTR_CUSTOM_TRACKS
 	// The restored VRAM may hold another minimap: decide its mode again.

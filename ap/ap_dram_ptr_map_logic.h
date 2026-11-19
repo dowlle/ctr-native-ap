@@ -34,9 +34,7 @@
 // rather than keeping a second copy of the rule, so the harness pins the shipped
 // behaviour.
 //
-// Compiled ONLY when CTR_AP is defined, like the rest of ap/.
-
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_RECORDED_RACE)
 
 // The map is valid when body[ptrMapOffset] holds a numBytes whose offsets array
 // fits in the body and every entry names an aligned, complete word inside it.
@@ -100,5 +98,5 @@ static inline int AP_DramPtrMap_Validate(const unsigned char *body, unsigned int
 	return 1;
 }
 
-#endif // CTR_AP
+#endif
 #endif // AP_DRAM_PTR_MAP_LOGIC_H

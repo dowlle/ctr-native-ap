@@ -1,7 +1,7 @@
 #ifndef AP_BOX_TEXTURE_H
 #define AP_BOX_TEXTURE_H
 
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_RECORDED_RACE)
 
 // The AP box's texture atlas: wood border and crate face built from the
 // player's own disc, recoloured, with the Archipelago logo on the face, in the
@@ -17,5 +17,10 @@ int AP_BoxTexture_Ensure(void);
 // first frame with no load in flight; call it every frame. Sticky on failure.
 void AP_BoxTexture_Prepare(void);
 
-#endif // CTR_AP
+#endif
+#ifdef CTR_RECORDED_RACE
+/* Unused sixth slot of the existing 3-by-2 box atlas. */
+#define CTR_WEAPON_CRATE_ATLAS_X 160
+#define CTR_WEAPON_CRATE_ATLAS_Y 64
+#endif
 #endif // AP_BOX_TEXTURE_H

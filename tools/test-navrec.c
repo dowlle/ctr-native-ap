@@ -2140,7 +2140,7 @@ int main(void)
 			memset(drawn, 0, sizeof drawn);
 			for (i = 1; i < 8; i++)
 			{
-				int l = AP_NavRecLabel_LaneFor(owner, 0x3u, i, botLane[i]);
+				int l = AP_NavRecLabel_LaneFor(owner, AP_NAVREC_LANES, 0x3u, i, botLane[i]);
 				if (l >= 0)
 					drawn[l]++;
 				if ((l >= 0) && (botLane[i] == 2))
@@ -2154,17 +2154,17 @@ int main(void)
 
 		// The owner leaves its lane: it loses the name and nobody takes it over.
 		botLane[1] = 1;
-		check(AP_NavRecLabel_LaneFor(owner, 0x3u, 1, 1) == -1, "a bot cannot carry a second lane's name");
-		check(AP_NavRecLabel_LaneFor(owner, 0x3u, 4, 0) == -1, "a later bot on the owner's old lane stays unnamed");
+		check(AP_NavRecLabel_LaneFor(owner, AP_NAVREC_LANES, 0x3u, 1, 1) == -1, "a bot cannot carry a second lane's name");
+		check(AP_NavRecLabel_LaneFor(owner, AP_NAVREC_LANES, 0x3u, 4, 0) == -1, "a later bot on the owner's old lane stays unnamed");
 		botLane[1] = 0;
-		check(AP_NavRecLabel_LaneFor(owner, 0x3u, 1, 0) == 0, "the owner back on its lane carries the name again");
+		check(AP_NavRecLabel_LaneFor(owner, AP_NAVREC_LANES, 0x3u, 1, 0) == 0, "the owner back on its lane carries the name again");
 
 		// A lane nobody drove at the start is claimed by the first bot to reach it.
 		owner[0] = -1;
 		owner[1] = -1;
 		owner[2] = -1;
-		check(AP_NavRecLabel_LaneFor(owner, 0x4u, 3, 2) == 2, "a lane's first bot can be a late arrival");
-		check(AP_NavRecLabel_LaneFor(owner, 0x4u, 3, 7) == -1, "a lane outside the three is never named");
+		check(AP_NavRecLabel_LaneFor(owner, AP_NAVREC_LANES, 0x4u, 3, 2) == 2, "a lane's first bot can be a late arrival");
+		check(AP_NavRecLabel_LaneFor(owner, AP_NAVREC_LANES, 0x4u, 3, 7) == -1, "a lane outside the pool is never named");
 	}
 
 	// ---------------------------------------------------------------

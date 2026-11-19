@@ -19,6 +19,9 @@
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_tracks.h> // serving predicates, re-read after a restore
 #endif
+#ifdef CTR_RECORDED_RACE
+#include <platform/native_recorded_race_data.h>
+#endif
 
 #if defined(_WIN32)
 #include "platform/native_win32.h"
@@ -112,10 +115,10 @@ union AP_NavRecLane
 	struct AP_NavRecNode wire[AP_NAVREC_MAX_NODES];
 };
 
-static union AP_NavRecLane s_navrecLane[AP_NAVREC_LANES];
-static unsigned int        s_navrecLaneStamps[AP_NAVREC_LANES][AP_NAVREC_MAX_NODES];
-static struct NavHeader    s_navrecLaneHeader[AP_NAVREC_LANES];
-static unsigned int        s_navrecLaneNodes[AP_NAVREC_LANES];
+static union AP_NavRecLane s_navrecLane[BOTS_NAV_LANE_MAX];
+static unsigned int        s_navrecLaneStamps[BOTS_NAV_LANE_MAX][AP_NAVREC_MAX_NODES];
+static struct NavHeader    s_navrecLaneHeader[BOTS_NAV_LANE_MAX];
+static unsigned int        s_navrecLaneNodes[BOTS_NAV_LANE_MAX];
 
 // One candidate container, decoded. This CANNOT be the lane storage any more:
 // the loader now reads several files per level, and decoding the second one into
@@ -188,17 +191,17 @@ static int s_navrecLanesLevel = -1;
 // all (recorded, or a guarded copy of the level's line), and which bot carries
 // each recorded lane's name (-1 until a bot first drives it).
 static unsigned int s_navrecRecordedMask;
-static int          s_navrecLaneOwned[AP_NAVREC_LANES];
-static int          s_navrecLaneOwner[AP_NAVREC_LANES] = {-1, -1, -1};
+static int          s_navrecLaneOwned[BOTS_NAV_LANE_MAX];
+static int          s_navrecLaneOwner[BOTS_NAV_LANE_MAX];
 
 // The seed this race's pick used, and the level it belongs to. A savestate
 // restore in the same session reuses it, so the same field comes back.
 static unsigned int s_navrecSeed;
 static int          s_navrecSeedLevel = -1;
 
-static char         s_navrecLaneDriverName[AP_NAVREC_LANES][AP_NAVREC_NAME_FIELD + 1];
-static unsigned int s_navrecLaneFileIndex[AP_NAVREC_LANES];
-static int          s_navrecLaneLapIndex[AP_NAVREC_LANES];
+static char         s_navrecLaneDriverName[BOTS_NAV_LANE_MAX][AP_NAVREC_NAME_FIELD + 1];
+static unsigned int s_navrecLaneFileIndex[BOTS_NAV_LANE_MAX];
+static int          s_navrecLaneLapIndex[BOTS_NAV_LANE_MAX];
 
 static unsigned char s_navrecActiveIdentityKind;
 static unsigned char s_navrecActiveTrackUuid[AP_NAVREC_TRACK_UUID_BYTES];
@@ -288,7 +291,7 @@ static void AP_NavRec_ClearLaneIdentity(void)
 {
 	int lane;
 
-	for (lane = 0; lane < AP_NAVREC_LANES; lane++)
+	for (lane = 0; lane < BOTS_NAV_LANE_MAX; lane++)
 	{
 		s_navrecLaneDriverName[lane][0] = '\0';
 		s_navrecLaneFileIndex[lane] = 0;
@@ -1405,7 +1408,7 @@ static int AP_NavRec_LoadForLevel(int levelID, unsigned int seed)
 		return 0;
 	}
 
-	for (lane = 0; lane < AP_NAVREC_LANES; lane++)
+	for (lane = 0; lane < BOTS_NAV_LANE_MAX; lane++)
 		s_navrecLaneOwned[lane] = 0;
 
 	// Recorded lanes first, lane c for pick c.
@@ -1472,9 +1475,9 @@ static int AP_NavRec_LoadForLevel(int levelID, unsigned int seed)
 
 // One line per level load: which file and which of its laps each lane drives,
 // and whose name the bot carrying it will show.
-static void AP_NavRec_LogLaneSummary(int levelID, const char *what)
+static void AP_NavRec_LogLaneSummary(int levelID, const char *what, int package)
 {
-	char msg[512];
+	char msg[896];
 	char ident[80];
 	int  at;
 	int  lane;
@@ -1483,9 +1486,16 @@ static void AP_NavRec_LogLaneSummary(int levelID, const char *what)
 	at = snprintf(msg, sizeof msg, "[AP NAVREC] recorded lanes %s on level %d (identity %s, seed %08x):", what, levelID, ident,
 	              s_navrecSeed);
 
-	for (lane = 0; (lane < AP_NAVREC_LANES) && (at > 0) && (at < (int)sizeof msg); lane++)
+	for (lane = 0; (lane < BOTS_NAV_LANE_MAX) && (at > 0) && (at < (int)sizeof msg); lane++)
 	{
-		if (((s_navrecRecordedMask >> lane) & 1u) == 0u)
+		if (package && lane < BOTS_NAV_PATH_COUNT)
+			at += snprintf(msg + at, sizeof msg - (size_t)at, " lane %d backs lane %d;", lane, lane + BOTS_NAV_PATH_COUNT);
+		else if (package)
+			at += snprintf(msg + at, sizeof msg - (size_t)at, " lane %d = package lap %d \"%s\" %u node(s);", lane,
+			               s_navrecLaneLapIndex[lane],
+			               (s_navrecLaneDriverName[lane][0] != '\0') ? s_navrecLaneDriverName[lane] : "(anonymous)",
+			               s_navrecLaneNodes[lane]);
+		else if (((s_navrecRecordedMask >> lane) & 1u) == 0u)
 			at += snprintf(msg + at, sizeof msg - (size_t)at, " lane %d = track's own line;", lane);
 		else
 			at += snprintf(msg + at, sizeof msg - (size_t)at, " lane %d = %03u lap %d \"%s\" %u node(s);", lane,
@@ -1518,7 +1528,7 @@ static void AP_NavRec_PointEngineAtLanes(int levelID)
 {
 	int lane;
 
-	for (lane = 0; lane < AP_NAVREC_LANES; lane++)
+	for (lane = 0; lane < BOTS_NAV_LANE_MAX; lane++)
 	{
 		s_navrecLaneOwner[lane] = -1;
 		if (!s_navrecLaneOwned[lane])
@@ -1534,6 +1544,67 @@ static void AP_NavRec_PointEngineAtLanes(int levelID)
 	s_navrecLanesLevel = levelID;
 }
 
+#ifdef CTR_RECORDED_RACE
+static unsigned int s_navrecRecordedSession;
+
+static void AP_NavRec_SaveRecordedShuffle(void)
+{
+	if (!s_navrecRecordedSession)
+	{
+#ifdef _WIN32
+		unsigned int pid = (unsigned int)GetCurrentProcessId();
+#else
+		unsigned int pid = (unsigned int)getpid();
+#endif
+		s_navrecRecordedSession = AP_NavRec_NewSeed() ^ (pid * 0x9E3779B9u);
+		if (!s_navrecRecordedSession)
+			s_navrecRecordedSession = 1;
+	}
+	sdata->recordedRaceSeed = s_navrecSeed;
+	sdata->recordedRaceSession = s_navrecRecordedSession;
+}
+
+static void AP_NavRec_PublishRecordedRace(const struct CustomRecordedRace *race, int levelID)
+{
+	unsigned int order[AP_NAVSET_MAX_LAPS];
+	unsigned int random = s_navrecSeed;
+	for (unsigned int i = 0; i < AP_NAVSET_MAX_LAPS; i++) order[i] = i;
+	AP_NavRecPool_Shuffle(order, AP_NAVSET_MAX_LAPS, &random);
+	for (int lane = 0; lane < BOTS_NAV_LANE_MAX; lane++)
+	{
+		unsigned int lap = order[lane < BOTS_NAV_PATH_COUNT ? lane : lane - BOTS_NAV_PATH_COUNT];
+		unsigned int count = race->set.laps[lap].nodeCount;
+		memcpy(s_navrecLane[lane].wire, race->nodes[lap], count * sizeof(struct AP_NavRecNode));
+		memcpy(s_navrecLaneStamps[lane], race->stamps[lap], count * sizeof(unsigned int));
+		for (unsigned int i = 0; i < count; i++)
+		{
+			struct AP_NavRecNode *node = &s_navrecLane[lane].wire[i];
+			for (unsigned int j = 0; j < race->crateCount; j++)
+			{
+				const int16_t *pos = race->crates[j].pos;
+				int64_t dx = (int)node->posX - pos[0];
+				int64_t dy = (int)node->posY - pos[1];
+				int64_t dz = (int)node->posZ - pos[2];
+				if (dx * dx + dy * dy + dz * dz <= 320 * 320)
+				{
+					node->specialBits |= AP_NAVREC_SPECIAL_LEVEL_INST_COLL;
+					break;
+				}
+			}
+		}
+		s_navrecLaneOwned[lane] = 1;
+		AP_NavRec_PublishLane(lane, count);
+		if (lane >= BOTS_NAV_PATH_COUNT)
+		{
+			s_navrecRecordedMask |= 1u << lane;
+			s_navrecLaneLapIndex[lane] = (int)lap;
+			memcpy(s_navrecLaneDriverName[lane], race->set.driverNames[lap], sizeof s_navrecLaneDriverName[lane]);
+		}
+	}
+	AP_NavRec_PointEngineAtLanes(levelID);
+}
+#endif
+
 void AP_NavRec_AfterBotsInit(void)
 {
 	int levelID;
@@ -1545,12 +1616,25 @@ void AP_NavRec_AfterBotsInit(void)
 	s_navrecRecordedMask = 0;
 	AP_NavRec_ClearLaneIdentity();
 
-	if (!g_config.navUseRecorded)
-		return;
 	if ((sdata == NULL) || (sdata->gGT == NULL))
 		return;
 
 	levelID = (int)sdata->gGT->levelID;
+
+#ifdef CTR_RECORDED_RACE
+	const struct CustomRecordedRace *race = MainRaceTrack_RecordedRace();
+	if (race)
+	{
+		s_navrecSeed = AP_NavRec_NewSeed();
+		s_navrecSeedLevel = levelID;
+		AP_NavRec_SaveRecordedShuffle();
+		AP_NavRec_PublishRecordedRace(race, levelID);
+		AP_NavRec_LogLaneSummary(levelID, "active package", 1);
+		return;
+	}
+#endif
+	if (!g_config.navUseRecorded)
+		return;
 
 	// "Random every race" (maintainer ruling, 2026-11-07): a new seed per race start. The
 	// seed stays with the level so a savestate restore in this session picks the
@@ -1562,7 +1646,7 @@ void AP_NavRec_AfterBotsInit(void)
 		return;
 
 	AP_NavRec_PointEngineAtLanes(levelID);
-	AP_NavRec_LogLaneSummary(levelID, "active");
+	AP_NavRec_LogLaneSummary(levelID, "active", 0);
 }
 
 // ============================================================================
@@ -1649,7 +1733,7 @@ static void AP_NavRec_RebindBots(int force)
 		if ((d == NULL) || ((d->actionsFlagSet & ACTION_BOT) == 0))
 			continue;
 		lane = (int)d->botData.botPath;
-		if ((lane < 0) || (lane >= AP_NAVREC_LANES))
+		if ((lane < 0) || (lane >= BOTS_NAV_LANE_MAX))
 			continue;
 		hdr = sdata->NavPath_ptrHeader[lane];
 		frames = sdata->NavPath_ptrNavFrameArray[lane];
@@ -1662,28 +1746,29 @@ static void AP_NavRec_RebindBots(int force)
 		if ((hdr == NULL) || (frames == NULL) || (hdr->numPoints < 2))
 		{
 			int from = lane;
-			int to = lane;
-			int tries;
-
-			for (tries = 0; tries < AP_NAVREC_LANES - 1; tries++)
-			{
-				to = (to == 0) ? (AP_NAVREC_LANES - 1) : (to - 1);
-				if ((sdata->NavPath_ptrHeader[to] != NULL) && (sdata->NavPath_ptrNavFrameArray[to] != NULL) &&
-				    (sdata->NavPath_ptrHeader[to]->numPoints >= 2))
-					break;
-			}
-			if (to == from)
-				continue;
+			int to = BOTS_FindDriverPath(d->driverID, from);
+			if (to < 0)
+				continue; // the level has no AI at all
 			hdr = sdata->NavPath_ptrHeader[to];
 			frames = sdata->NavPath_ptrNavFrameArray[to];
-			if ((hdr == NULL) || (frames == NULL) || (hdr->numPoints < 2))
-				continue; // no lane has a line; the level has no AI at all
 
 			LIST_RemoveMember(&sdata->navBotList[from], &d->botData.item);
 			LIST_AddFront(&sdata->navBotList[to], &d->botData.item);
 			d->botData.botPath = (s16)to;
 			lane = to;
 		}
+#ifdef CTR_RECORDED_RACE
+		if (lane >= BOTS_NAV_PATH_COUNT && (d->botData.botFlags & BOT_FLAG_ESTIMATE_NAV))
+		{
+			if (!force && d->botData.botNavFrame == frames)
+				continue;
+			// A restored bot still approaching its lane must join at the
+			// start, even if the new shuffle gave it a different recording.
+			d->botData.botNavFrame = frames;
+			BOTS_SetRotation(d, gGT->trafficLightsTimer > 0);
+			continue;
+		}
+#endif
 		count = (int)hdr->numPoints;
 
 		cur = (uintptr_t)d->botData.botNavFrame;
@@ -1753,11 +1838,27 @@ void AP_NavRec_AfterCheckpointRestore(void)
 		s_navrecSeedLevel = levelID;
 	}
 	s_navrecRecordedMask = 0;
+#ifdef CTR_RECORDED_RACE
+	const struct CustomRecordedRace *race = MainRaceTrack_RecordedRace();
+	if (race)
+	{
+		int sameSession = s_navrecRecordedSession && sdata->recordedRaceSession == s_navrecRecordedSession &&
+		                  sdata->recordedRaceSeed != 0;
+		if (sameSession)
+			s_navrecSeed = sdata->recordedRaceSeed;
+		AP_NavRec_SaveRecordedShuffle();
+		AP_NavRec_ClearLaneIdentity();
+		AP_NavRec_PublishRecordedRace(race, levelID);
+		AP_NavRec_RebindBots(!sameSession);
+		AP_NavRec_LogLaneSummary(levelID, "package lanes restored", 1);
+		return;
+	}
+#endif
 	if (g_config.navUseRecorded && AP_NavRec_LoadForLevel(levelID, s_navrecSeed))
 	{
 		AP_NavRec_PointEngineAtLanes(levelID);
 		AP_NavRec_RebindBots(1);
-		AP_NavRec_LogLaneSummary(levelID, "reloaded after a savestate restore");
+		AP_NavRec_LogLaneSummary(levelID, "reloaded after a savestate restore", 0);
 		return;
 	}
 
@@ -1766,11 +1867,11 @@ void AP_NavRec_AfterCheckpointRestore(void)
 	// state saved with recorded lanes live and restored into a freshly started
 	// game points at this process's (empty) lane statics while the flag is 0.
 	ours = 0;
-	for (lane = 0; lane < AP_NAVREC_LANES; lane++)
+	for (lane = 0; lane < BOTS_NAV_LANE_MAX; lane++)
 	{
 		uintptr_t h = (uintptr_t)sdata->NavPath_ptrHeader[lane];
 
-		if ((h >= (uintptr_t)&s_navrecLaneHeader[0]) && (h < (uintptr_t)&s_navrecLaneHeader[AP_NAVREC_LANES]))
+		if ((h >= (uintptr_t)&s_navrecLaneHeader[0]) && (h < (uintptr_t)&s_navrecLaneHeader[BOTS_NAV_LANE_MAX]))
 			ours = 1;
 	}
 	if (!ours && !s_navrecLanesLive)
@@ -1789,7 +1890,7 @@ void AP_NavRec_AfterCheckpointRestore(void)
 		return;
 	}
 
-	for (lane = 0; lane < AP_NAVREC_LANES; lane++)
+	for (lane = 0; lane < BOTS_NAV_LANE_MAX; lane++)
 		BOTS_InitNavPath(sdata->gGT, (s16)lane);
 	BOTS_SetGlobalNavData(0);
 	AP_NavRec_RebindBots(1);
@@ -1834,7 +1935,7 @@ void AP_NavRec_DrawBotNames(void)
 	if (!s_navrecLanesLive)
 		return;
 
-	for (lane = 0; lane < AP_NAVREC_LANES; lane++)
+	for (lane = 0; lane < BOTS_NAV_LANE_MAX; lane++)
 	{
 		if (((s_navrecRecordedMask >> lane) & 1u) && (s_navrecLaneDriverName[lane][0] != '\0'))
 			named = 1;
@@ -1878,7 +1979,7 @@ void AP_NavRec_DrawBotNames(void)
 
 		// Ownership is settled before any visibility test, so the first bot on
 		// a lane owns its name even while it is off screen.
-		lane = AP_NavRecLabel_LaneFor(s_navrecLaneOwner, s_navrecRecordedMask, i, (int)bot->botData.botPath);
+		lane = AP_NavRecLabel_LaneFor(s_navrecLaneOwner, BOTS_NAV_LANE_MAX, s_navrecRecordedMask, i, (int)bot->botData.botPath);
 		if (lane < 0)
 			continue;
 

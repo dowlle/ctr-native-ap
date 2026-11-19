@@ -1,7 +1,7 @@
 #ifndef AP_RETAIL_ASSET_H
 #define AP_RETAIL_ASSET_H
 
-#ifdef CTR_AP
+#if defined(CTR_AP) || defined(CTR_RECORDED_RACE)
 
 // Read one subfile out of the player's own BIGFILE into a caller-owned buffer.
 //

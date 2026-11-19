@@ -5,12 +5,20 @@
 #include <platform/native_custom_identity.h>
 #include <platform/native_custom_state_identity.h>
 #include <platform/native_custom_content_verify.h>
+#include <platform/native_recorded_race.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
 
-struct CustomOfflineRequest { struct CustomPackageOwned *package; };
+struct CustomOfflineRequest {
+    struct CustomPackageOwned *package;
+#ifdef CTR_RECORDED_RACE
+    struct CustomRecordedRace *recordedRace;
+    int recordedRaceVerdict;
+    char recordedRaceReason[CTR_CCV_ARCADE_REASON_MAX];
+#endif
+};
 static struct CustomOfflineRequest *activeRequest;
 static int activeHost = -1;
 /* Retail arcade track the active package replaces (xdelta import), or -1. */
@@ -101,9 +109,13 @@ int CustomOffline_Prepare(struct CustomPackageOwned **package, const char *expec
         return offline_error(error, errorSize, "Expected owned package, selected pin and empty offline request");
     if (!CustomPackage_GetManifest(*package, &manifest) || strcmp(expectedPin, manifest.sha256))
         return offline_error(error, errorSize, "Offline selection does not match exact package revision");
-    request = malloc(sizeof *request);
+    request = calloc(1, sizeof *request);
     if (!request) return offline_error(error, errorSize, "Cannot allocate offline request");
     request->package = *package;
+#ifdef CTR_RECORDED_RACE
+    request->recordedRaceVerdict = CustomPackage_GetRecordedRace(request->package, &request->recordedRace,
+        request->recordedRaceReason, sizeof request->recordedRaceReason);
+#endif
     *package = NULL;
     *out = request;
     offline_error(error, errorSize, "");
@@ -113,6 +125,9 @@ int CustomOffline_Prepare(struct CustomPackageOwned **package, const char *expec
 void CustomOffline_Free(struct CustomOfflineRequest **request)
 {
     if (!request || !*request) return;
+#ifdef CTR_RECORDED_RACE
+    CustomRecordedRace_Free((*request)->recordedRace);
+#endif
     CustomPackage_Free(&(*request)->package);
     free(*request);
     *request = NULL;
@@ -174,6 +189,20 @@ int CustomOffline_PackageArcadeReason(const struct CustomPackageOwned *package, 
     return package_mode_reason(package, CTR_OFFLINE_MODE_ARCADE, reason, reasonSize);
 }
 
+int CustomOffline_PackageSelectorArcadeReason(const struct CustomPackageOwned *package, char *reason, size_t reasonSize)
+{
+#ifdef CTR_RECORDED_RACE
+    int recorded = CustomPackage_GetRecordedRace(package, NULL, reason, reasonSize);
+    if (recorded)
+    {
+        unsigned int laps;
+        return recorded > 0 && (CustomOffline_PackageLaps(package, &laps, NULL, 0) ||
+            offline_error(reason, reasonSize, "Lap count not supported"));
+    }
+#endif
+    return CustomOffline_PackageArcadeReason(package, reason, reasonSize);
+}
+
 int CustomOffline_PackageTimeTrialReason(const struct CustomPackageOwned *package, char *reason, size_t reasonSize)
 {
     return package_mode_reason(package, CTR_OFFLINE_MODE_TIME_TRIAL, reason, reasonSize);
@@ -194,6 +223,18 @@ int CustomOffline_CheckStructure(const struct CustomOfflineRequest *request, int
     int ok;
     if (!request || !CustomPackage_GetPairReport(request->package, &report) || !report.loadable)
         return offline_error(error, errorSize, "No structurally verified offline package");
+#ifdef CTR_RECORDED_RACE
+    if (mode == CTR_OFFLINE_MODE_ARCADE && request->recordedRaceVerdict)
+    {
+        if (request->recordedRaceVerdict < 0)
+            return offline_error(error, errorSize, request->recordedRaceReason);
+        unsigned int laps;
+        if (!CustomOffline_PackageLaps(request->package, &laps, NULL, 0))
+            return offline_error(error, errorSize, "Lap count not supported");
+        offline_error(error, errorSize, "");
+        return 1;
+    }
+#endif
     ok = mode == CTR_OFFLINE_MODE_ARCADE ? CustomContentVerify_ArcadeRaceReason(&report, reason, sizeof reason)
                                          : CustomContentVerify_TimeTrialReason(&report, reason, sizeof reason);
     if (!ok) return offline_error(error, errorSize, reason);
@@ -291,7 +332,14 @@ void CustomOffline_RuntimeStateIdentity(struct CustomStateIdentity *out)
         if (!strcmp(manifest.files[i].role, "lev")) lev = manifest.files[i].sha256;
         else if (!strcmp(manifest.files[i].role, "vrm")) vrm = manifest.files[i].sha256;
     }
-    if (CustomStateIdentity_Package(out, manifest.uuid, lev, vrm)) out->mode = (unsigned int)activeMode;
+    if (CustomStateIdentity_Package(out, manifest.uuid, lev, vrm))
+    {
+        out->mode = (unsigned int)activeMode;
+#ifdef CTR_RECORDED_RACE
+        if (activeMode == CTR_OFFLINE_MODE_ARCADE && activeRequest->recordedRace)
+            memcpy(out->recordedRacePin, manifest.sha256, sizeof manifest.sha256);
+#endif
+    }
 }
 
 /* singleRace is the engine's current race mode (CTR_OFFLINE_MODE_*, 0 for
@@ -301,6 +349,14 @@ int CustomOffline_RuntimeServing(int levelID, int singleRace)
 {
     return activeRequest && singleRace != 0 && singleRace == activeMode && levelID == activeHost;
 }
+
+#ifdef CTR_RECORDED_RACE
+const struct CustomRecordedRace *CustomOffline_RuntimeRecordedRace(int levelID, int mode)
+{
+    return mode == CTR_OFFLINE_MODE_ARCADE && CustomOffline_RuntimeServing(levelID, mode) ?
+        activeRequest->recordedRace : NULL;
+}
+#endif
 
 static const char *offline_mode_name(int mode)
 {

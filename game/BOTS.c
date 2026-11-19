@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_RECORDED_RACE
+#include <platform/native_recorded_race.h>
+#endif
 
 #ifdef CTR_AP
 #include "../ap/ap_boss_adapter.h" // J03 boss adapter protection
@@ -17,7 +20,6 @@ enum
 	BOTS_ADV_MAX_LOSS_DIFFICULTY_INDEX = 10,
 	BOTS_DIFFICULTY_PARAM_COUNT = 14,
 	BOTS_DIFFICULTY_BLEND_DENOMINATOR = 0xf0,
-	BOTS_NAV_PATH_COUNT = 3,
 	BOTS_MAX_KARTS = 8,
 	BOTS_BATTLE_DRIVER_COUNT = 4,
 	BOTS_GRID_ROW_KART_COUNT = 4,
@@ -112,7 +114,7 @@ void BOTS_InitNavPath(struct GameTracker *gGT, s16 index)
 	struct NavHeader *nh = 0;
 	struct NavHeader **LevNavTable = sdata->gGT->level1->LevNavTable;
 
-	if (LevNavTable != 0)
+	if (LevNavTable != 0 && index < BOTS_NAV_PATH_COUNT)
 	{
 		// nullptr on Nitro Court
 		nh = LevNavTable[index];
@@ -429,7 +431,7 @@ void BOTS_Adv_AdjustDifficulty(void)
 	}
 #endif
 
-	for (s16 i = 0; i < BOTS_NAV_PATH_COUNT; i++)
+	for (s16 i = 0; i < BOTS_NAV_LANE_MAX; i++)
 	{
 		LIST_Clear(&sdata->navBotList[i]);
 
@@ -518,6 +520,11 @@ void BOTS_Adv_AdjustDifficulty(void)
 	{
 		sdata->driver_pathIndexIDs[i] = pathOrder[(u8)sdata->kartSpawnOrderArray[i]];
 	}
+#ifdef CTR_RECORDED_RACE
+	if (MainRaceTrack_RecordedRace())
+		for (s16 i = 1; i < BOTS_MAX_KARTS; i++)
+			sdata->driver_pathIndexIDs[i] = BOTS_NAV_PATH_COUNT + i - 1;
+#endif
 
 	if ((gameMode1 & ADVENTURE_BOSS) != 0)
 	{
@@ -669,7 +676,12 @@ void BOTS_SetRotation(struct Driver *bot, int useSpawnYaw)
 	}
 	else
 	{
-		bot->botData.estimateRotNav[1] = (u8)CTR_MipsSra(CTR_MipsAddLo(sdata->gGT->level1->DriverSpawn[0].rot.y, 0x400), 4);
+		int spawn = 0;
+#ifdef CTR_RECORDED_RACE
+		if (bot->botData.botPath >= BOTS_NAV_PATH_COUNT)
+			spawn = sdata->kartSpawnOrderArray[bot->driverID];
+#endif
+		bot->botData.estimateRotNav[1] = (u8)CTR_MipsSra(CTR_MipsAddLo(sdata->gGT->level1->DriverSpawn[spawn].rot.y, 0x400), 4);
 	}
 
 	s16 v = (s16)CTR_MipsSll(bot->botData.estimateRotNav[1], 4);
@@ -954,6 +966,23 @@ void BOTS_Killplane(struct Thread *botThread)
 	return;
 }
 
+#ifdef CTR_RECORDED_RACE
+static int BOTS_RecordedGridTick(struct Thread *thread, struct Driver *bot, int trafficLightsTimer)
+{
+	if (bot->botData.botPath < BOTS_NAV_PATH_COUNT)
+		return 1;
+	if (trafficLightsTimer > 0)
+	{
+		VehPhysForce_TranslateMatrix(thread, bot);
+		return 0;
+	}
+	// Reuse the one-off approach frame to aim from the seat to the lap at green.
+	if (!(bot->botData.botFlags & BOT_FLAG_STARTLINE_INIT_DONE))
+		BOTS_SetRotation(bot, 0);
+	return 1;
+}
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80013c18-0x80016b00 for the retail path.
 
 void BOTS_ThTick_Drive(struct Thread *botThread)
@@ -962,6 +991,18 @@ void BOTS_ThTick_Drive(struct Thread *botThread)
 	struct Driver *botDriver = (struct Driver *)botThread->object;     // iVar17
 	struct Instance *botInstance = (struct Instance *)botThread->inst; // iVar22
 	struct GameTracker *gGT = sdata->gGT;
+
+	int trafficLightsTimer = gGT->trafficLightsTimer;
+	if (data.characterIDs[botDriver->driverID] == NITROS_OXIDE)
+	{
+		// Pretend there is less time (oxide is a cheater)
+		trafficLightsTimer = CTR_MipsSubLo(trafficLightsTimer, 0x1e0);
+	}
+
+#ifdef CTR_RECORDED_RACE
+	if (!BOTS_RecordedGridTick(botThread, botDriver, trafficLightsTimer))
+		return;
+#endif
 
 	// local_34 = gGT->elapsedTimeMS;
 
@@ -1155,14 +1196,6 @@ UpdateTireColorTimer:
 
 	if (botDriver->botData.ai_progress_cooldown == 0)
 	{
-		int trafficLightsTimer = gGT->trafficLightsTimer;
-
-		if (data.characterIDs[botDriver->driverID] == NITROS_OXIDE) // check is oxide
-		{
-			// Pretend there is less time (oxide is a cheater)
-			trafficLightsTimer = CTR_MipsSubLo(trafficLightsTimer, 0x1e0);
-		}
-
 		if (0 < trafficLightsTimer)
 		{
 			goto HoldBotBeforeRaceOrCooldown; // if race not started, then skip
@@ -1676,7 +1709,8 @@ UpdateTireColorTimer:
 
 			int levelID = gGT->levelID; // iVar3
 
-			if ((levelID == HOT_AIR_SKYWAY || levelID == PAPU_PYRAMID) || levelID == POLAR_PASS)
+			if (botDriver->botData.botPath < BOTS_NAV_PATH_COUNT &&
+			    (levelID == HOT_AIR_SKYWAY || levelID == PAPU_PYRAMID || levelID == POLAR_PASS))
 			{
 				int botPathIndex = botDriver->botData.botPath; // iVar3
 
@@ -3192,6 +3226,18 @@ void BOTS_CollideWithOtherAI(struct Driver *robot_1, struct Driver *robot_2)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8001702c-0x80017164.
 void BOTS_GotoStartingLine(struct Driver *d)
 {
+	int oldPath = d->botData.botPath;
+	int path = BOTS_FindDriverPath(d->driverID, oldPath);
+	if (path < 0)
+		return;
+	if (path != oldPath)
+	{
+		if (oldPath >= 0 && oldPath < BOTS_NAV_LANE_MAX)
+			LIST_RemoveMember(&sdata->navBotList[oldPath], &d->botData.item);
+		LIST_AddFront(&sdata->navBotList[path], &d->botData.item);
+		d->botData.botPath = path;
+	}
+
 	sdata->aiCollisionDelayFrameCount = 0;
 
 	VehBirth_TeleportSelf(d, VEH_BIRTH_SPAWN_RACE_START, 0);
@@ -3251,34 +3297,34 @@ void BOTS_GotoStartingLine(struct Driver *d)
 	d->botData.weaponCooldown = (s16)CTR_MipsAddLo(CTR_MipsSra(rng, 8) & 0xff, 300);
 }
 
+static int BOTS_PathAvailable(int lane)
+{
+	return lane >= 0 && lane < BOTS_NAV_LANE_MAX &&
+	       sdata->NavPath_ptrHeader[lane] != NULL && sdata->NavPath_ptrNavFrameArray[lane] != NULL &&
+	       sdata->NavPath_ptrHeader[lane]->numPoints >= 2;
+}
+
+int BOTS_FindDriverPath(int driverID, int initialLane)
+{
+	if (BOTS_PathAvailable(initialLane))
+		return initialLane;
+
+	int originalPath = sdata->driver_pathIndexIDs[driverID];
+	for (int offset = 0; offset < BOTS_NAV_PATH_COUNT; offset++)
+	{
+		int lane = BOTS_NavFallbackPath(initialLane, originalPath, offset);
+		if (BOTS_PathAvailable(lane))
+			return lane;
+	}
+	return -1;
+}
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80017164-0x80017318.
 struct Driver *BOTS_Driver_Init(int driverID)
 {
-	s8 initialNavPathIndex = sdata->driver_pathIndexIDs[driverID];
-	s8 navPathIndex = initialNavPathIndex;
-	while (1)
-	{
-		s16 navPathPointsCount = sdata->NavPath_ptrHeader[navPathIndex]->numPoints;
-		if (1 < navPathPointsCount)
-		{
-			break; // success
-		}
-
-		navPathIndex--;
-
-		// If subtracted below zero,
-		// go back to highest index (2)
-		if (navPathIndex < 0)
-		{
-			navPathIndex = 2;
-		}
-
-		// If all 3 are checked, quit
-		if (navPathIndex == initialNavPathIndex)
-		{
-			return NULL;
-		}
-	}
+	int navPathIndex = BOTS_FindDriverPath(driverID, sdata->driver_pathIndexIDs[driverID]);
+	if (navPathIndex < 0)
+		return NULL;
 
 	// path data found
 	struct Thread *t = PROC_BirthWithObject(
@@ -3317,31 +3363,9 @@ void BOTS_Driver_Convert(struct Driver *d)
 
 	UI_RaceEnd_GetDriverClock(d);
 
-	s8 initialNavPathIndex = sdata->driver_pathIndexIDs[d->driverID];
-	s8 navPathIndex = initialNavPathIndex;
-	while (1)
-	{
-		s16 navPathPointsCount = sdata->NavPath_ptrHeader[navPathIndex]->numPoints;
-		if (1 < navPathPointsCount)
-		{
-			break; // success
-		}
-
-		navPathIndex--;
-
-		// If subtracted below zero,
-		// go back to highest index (2)
-		if (navPathIndex < 0)
-		{
-			navPathIndex = 2;
-		}
-
-		// If all 3 are checked, quit
-		if (navPathIndex == initialNavPathIndex)
-		{
-			return;
-		}
-	}
+	int navPathIndex = BOTS_FindDriverPath(d->driverID, sdata->driver_pathIndexIDs[d->driverID]);
+	if (navPathIndex < 0)
+		return;
 
 	memset(&d->botData, 0, sizeof(struct BotData));
 

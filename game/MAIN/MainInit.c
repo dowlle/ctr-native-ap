@@ -583,6 +583,21 @@ void MainInit_JitPoolsNew(struct GameTracker *gGT)
 #endif
 }
 
+#ifdef CTR_RECORDED_RACE
+#include <platform/native_recorded_race_data.h>
+
+static void MainInit_WriteRecordedGrid(struct Level *level, const struct CustomRecordedRace *race)
+{
+	CTR_STATIC_ASSERT(CTR_RECORDED_GRID_COUNT == sizeof level->DriverSpawn / sizeof level->DriverSpawn[0]);
+	for (int i = 0; i < CTR_RECORDED_GRID_COUNT; i++)
+	{
+		const struct CustomRacePlacement *spot = &race->grid[i];
+		CTR_SET_VEC3(level->DriverSpawn[i].pos.v, spot->pos[0], spot->pos[1], spot->pos[2]);
+		CTR_SET_VEC3(level->DriverSpawn[i].rot.v, spot->rot[0], spot->rot[1], spot->rot[2]);
+	}
+}
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003b6d0-0x8003b934; CTR_NATIVE gates TT ghost model publication.
 void MainInit_Drivers(struct GameTracker *gGT)
 {
@@ -591,6 +606,11 @@ void MainInit_Drivers(struct GameTracker *gGT)
 	u8 numDrivers;
 	int gameMode = gGT->gameMode1;
 
+#ifdef CTR_RECORDED_RACE
+	const struct CustomRecordedRace *recordedRace = MainRaceTrack_RecordedRace();
+	if (recordedRace)
+		MainInit_WriteRecordedGrid(gGT->level1, recordedRace);
+#endif
 	for (i = 0; i < 8; i++)
 	{
 		gGT->drivers[(s32)i] = NULL;
@@ -835,6 +855,11 @@ void MainInit_FinalizeInit(struct GameTracker *gGT)
 	}
 
 	MainInit_Drivers(gGT);
+#ifdef CTR_RECORDED_RACE
+	const struct CustomRecordedRace *recordedRace = MainRaceTrack_RecordedRace();
+	if (recordedRace)
+		RB_CrateWeapon_SpawnRecorded(gGT, recordedRace);
+#endif
 
 	// assume 1P fov
 	numPlyr = 1;
