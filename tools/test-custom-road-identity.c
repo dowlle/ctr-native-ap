@@ -1,4 +1,4 @@
-// gcc -m32 -std=gnu11 -Wall -Wextra -Werror -DCTR_CUSTOM_TRACKS -I include tools/test-custom-road-identity.c platform/native_custom_content_verify.c -o /tmp/test-custom-road-identity
+// gcc -m32 -std=gnu11 -Wall -Wextra -Werror -Wno-unused-function -DCTR_CUSTOM_TRACKS -I include tools/test-custom-road-identity.c platform/native_custom_content_verify.c -o /tmp/test-custom-road-identity
 #include <platform/native_custom_content_verify.h>
 #include <stdint.h>
 #include <stdio.h>

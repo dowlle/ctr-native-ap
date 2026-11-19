@@ -1159,7 +1159,7 @@ std::string json_dump(const json &value) { return value.dump(-1, ' ', false, jso
 /* Build the package for one cut pair and acquire it through the verifier. */
 Built build_package(const Candidate &c, const std::string &title, const std::string &version, const TrackMeta *meta,
                     const XdeltaImportSummary &summary, const std::string &author, std::string &failure,
-                    const std::string &curatedKey = std::string())
+                    const std::string &curatedKey = std::string(), bool editedTitle = false)
 {
     Built b;
     b.curatedKey = curatedKey;
@@ -1173,6 +1173,7 @@ Built build_package(const Candidate &c, const std::string &title, const std::str
                    {"patch_bytes", summary.patchBytes}, {"base_disc_sha256", summary.discSha256},
                    {"bigfile_index", c.index}, {"cutter_version", CTR_XDELTA_CUTTER_VERSION}};
     if (summary.descriptorSha256[0]) source["descriptor_sha256"] = summary.descriptorSha256;
+    if (editedTitle) source["edited_title"] = true;
     if (!c.originalLevHash.empty())
     {
         source["lev_normalizer_version"] = 1;
@@ -1551,7 +1552,8 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             std::string curatedKey = nameSource == XDELTA_NAME_TESTER && curatedRow.key[0] && !(meta && !meta->trackKey.empty())
                                          ? std::string(curatedRow.key) : std::string();
             std::string registryKey = meta && !meta->trackKey.empty() ? meta->trackKey
-                                    : !curatedKey.empty() ? curatedKey : title_track_key(title);
+                                    : !curatedKey.empty() ? curatedKey
+                                    : nameSource != XDELTA_NAME_LABEL ? title_track_key(title) : std::string();
             if (TrackIdentity::resolve(candidate.lev.data(), candidate.lev.size(), levHash, registryKey, title))
             {
                 curatedKey = registryKey;
@@ -2972,7 +2974,7 @@ extern "C" int XdeltaImport_RenameItem(XdeltaImportScan *scan, unsigned int item
         if (!track_key_valid(key)) return refuse("No folder name fits this name");
         std::string failure;
         Built rebuilt = build_package(candidate, name, old.version.empty() ? "1.0.0" : old.version, old.hasMeta ? &old.meta : nullptr,
-                                      scan->summary, old.author, failure, old.curatedKey);
+                                      scan->summary, old.author, failure, old.curatedKey, true);
         if (!rebuilt.owned) return refuse(limit_codepoints("Files failed checks: " + failure, 80).c_str());
         rebuilt.author = old.author;
         rebuilt.version = old.version;

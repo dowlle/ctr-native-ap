@@ -514,6 +514,8 @@ extern "C" int CustomPackage_InstallInbox(const char *assets, const char *pin, c
 /* Relic and CTR Challenge capability, plus xdelta provenance. Display and
    admission hints only: a missing or damaged provenance file only clears the
    hints, it never refuses the package. */
+namespace { std::string descriptor_title_key(const char *title); }
+
 static void package_capabilities(CustomPackageOwned *package, CustomPackageStoreEntry &entry)
 {
     bool excludeRelic = false, excludeTokens = false;
@@ -561,6 +563,9 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
             entry.local.xdelta = 1;
             entry.local.bigfileIndex = index;
             std::memcpy(entry.local.patchSha256, patch.c_str(), sizeof entry.local.patchSha256);
+            if (source.contains("edited_title") && source["edited_title"] == true &&
+                !TrackIdentity::find(descriptor_title_key(entry.manifest.title), kTrackKeyAliases))
+                std::memcpy(entry.displayTitle, entry.manifest.title, sizeof entry.displayTitle);
             if (source.contains("excluded"))
                 for (const auto &e : source["excluded"])
                 {
@@ -593,33 +598,35 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
 }
 
 namespace {
-std::string descriptor_title_key(const char *title);
-
 void resolve_display_title(const CustomPackageOwned *package, CustomPackageStoreEntry &entry)
 {
-    if (!entry.local.xdelta) return;
+    if (!entry.local.xdelta || entry.displayTitle[0]) return;
     const auto &manifest = entry.manifest;
     for (unsigned int i = 0; i < manifest.count; ++i)
     {
         const auto &file = manifest.files[i];
         if (std::strcmp(file.role, "lev") != 0) continue;
         std::string title = manifest.title;
-        std::string key = descriptor_title_key(manifest.title);
+        // Old importer labels used either a row ordinal or a BIGFILE slot.
+        const auto last = title.find_last_of(' ');
+        const bool generic = last != std::string::npos && last + 1 < title.size() &&
+             title.find_first_not_of("0123456789", last + 1) == std::string::npos &&
+             ((last >= 6 && title.compare(last - 6, 7, " track ") == 0) ||
+              (last >= 5 && title.compare(last - 5, 6, " slot ") == 0));
+        std::string key = generic ? std::string() : descriptor_title_key(manifest.title);
         std::vector<unsigned char> lev(file.bytes);
         if (!CustomPackage_CopyFile(package, "lev", lev.data(), lev.size(), nullptr)) return;
         if (!TrackIdentity::resolve(lev.data(), lev.size(), file.sha256, key, title))
         {
-            // Old importer labels used either a row ordinal or a BIGFILE slot.
-            const auto last = title.find_last_of(' ');
-            if (last == std::string::npos || last + 1 == title.size() ||
-                title.find_first_not_of("0123456789", last + 1) != std::string::npos ||
-                (!(last >= 6 && title.compare(last - 6, 7, " track ") == 0) &&
-                 !(last >= 5 && title.compare(last - 5, 6, " slot ") == 0))) return;
+            const bool old_known = title == "Luigis Mansion" || title == "Knightmare A Thon" ||
+                                   title == "Dark Forest Dash" || title == "Boss race 3";
+            if (!generic && !old_known) return;
             for (const auto &row : XdeltaNames::kKnownTracks)
                 if (std::strcmp(file.sha256, row.lev) == 0) title = row.name;
-            for (const auto &row : XdeltaNames::kCuratedTracks)
-                if (row.slot == entry.local.bigfileIndex && std::strcmp(row.patch, entry.local.patchSha256) == 0)
-                    title = row.name;
+            if (generic)
+                for (const auto &row : XdeltaNames::kCuratedTracks)
+                    if (row.slot == entry.local.bigfileIndex && std::strcmp(row.patch, entry.local.patchSha256) == 0)
+                        title = row.name;
         }
         if (title != manifest.title)
             std::snprintf(entry.displayTitle, sizeof entry.displayTitle, "%s", title.c_str());

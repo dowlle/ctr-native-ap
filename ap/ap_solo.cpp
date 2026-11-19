@@ -1632,6 +1632,8 @@ StorePublication CollectInstalledStore(const std::string &assets, const std::str
 		const fs::path store = fs::u8path(assets) / "tracks/packages";
 		std::error_code ec;
 		if (!fs::exists(store, ec) && result.pin.empty()) return result;
+		if (ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_IDLE)
+			ap_track_registry_refresh((fs::u8path(assets) / "track-registry-cache.json").u8string().c_str());
 		char scanError[256] = {};
 		// One install publishes only its own revision: no other package is
 		// read or hashed for it (A3-46). `live` is not needed then: a fresh

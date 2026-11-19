@@ -3,6 +3,7 @@
 namespace XdeltaNames
 {
 inline constexpr struct { const char *lev; const char *name; } kKnownTracks[] = {
+    {"4c2c2f15f1130677ab60cc94e180dba37e73d0a271c36bf66e2d6a285cbac537", "Acropolis"},
     {"7a090016795b459c3c5029e160e62108ef3931dce712576cdfae0f221203aaf7", "Drive Thru Danger"},
     {"001a3a3a18c74e0b1b11ddf5f1167e767381ce97af3e6cea971e3b047af749eb", "Dark Ruins"},
     {"14ab262ac2aaf3f0157b8d2d39b27bcfe510657fbe7136b42921e49a8ad98e80", "DS Luigi's Mansion"},

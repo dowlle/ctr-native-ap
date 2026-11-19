@@ -496,6 +496,25 @@ extern "C" int ap_track_registry_key_for_saphi(int saphi_track_id, char *key, in
 	return 1;
 }
 
+static std::string canonical_key(const Index *index, const std::string &key)
+{
+	if (index && index->has_identity)
+	{
+		auto alias = index->aliases.find(key);
+		return alias == index->aliases.end() ? key : alias->second;
+	}
+	for (const auto &alias : kTrackKeyAliases)
+		if (key == alias[0]) return alias[1];
+	return key;
+}
+
+std::string ap_track_registry_canonical_key(const std::string &key)
+{
+	auto &state = registry_state();
+	std::lock_guard<std::mutex> lock(state.mutex);
+	return canonical_key(state.index.get(), key);
+}
+
 bool ap_track_registry_credits(const std::string &track_key, std::vector<std::string> &names)
 {
 	std::shared_ptr<const Index> index;
@@ -506,12 +525,7 @@ bool ap_track_registry_credits(const std::string &track_key, std::vector<std::st
 	}
 	names.clear();
 	if (!index || track_key.empty()) return false;
-	auto alias = index->aliases.find(track_key);
-	std::string key = alias == index->aliases.end() ? track_key : alias->second;
-	if (!index->has_identity)
-		for (const auto &old : kTrackKeyAliases)
-			if (key == old[0]) { key = old[1]; break; }
-	auto found = index->credits.find(key);
+	auto found = index->credits.find(canonical_key(index.get(), track_key));
 	if (found == index->credits.end()) return false;
 	names = found->second;
 	return true;
