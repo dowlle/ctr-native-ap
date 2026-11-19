@@ -1,6 +1,7 @@
 #ifndef CTR_AP_SEED_REFUSAL_HPP
 #define CTR_AP_SEED_REFUSAL_HPP
 
+#include "ap_seedcfg.h"
 #include "ap_version.h"
 #include <nlohmann/json.hpp>
 #include <string>
@@ -24,9 +25,9 @@ inline std::string text_field(const nlohmann::json &object, const char *key)
 
 // Only bounded, version-shaped labels enter the credits font. The untrusted
 // metadata is still recorded as escaped JSON in the diagnostic log.
-inline std::string version_label(std::string value)
+inline std::string version_label(std::string value, size_t max_length = 20)
 {
-    if (value.empty() || value.size() > 20 || value[0] < '0' || value[0] > '9') return {};
+    if (value.empty() || value.size() > max_length || value[0] < '0' || value[0] > '9') return {};
     for (char &c : value) {
         if (c >= 'a' && c <= 'z') c -= 'a' - 'A';
         if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-')) return {};
@@ -53,7 +54,7 @@ inline std::string version_label(std::string value)
     return value;
 }
 
-inline std::string build_label(const nlohmann::json &slot)
+inline std::string build_label(const nlohmann::json &slot, size_t max_length = 20)
 {
     std::string value = text_field(slot, "build_version");
     const auto co = slot.find("ctr_options");
@@ -64,24 +65,28 @@ inline std::string build_label(const nlohmann::json &slot)
         // Released 0.3.0 alphas emit only "0.3.0" here, not their build.
         if (world.find('-') != std::string::npos) value = world;
     }
-    return version_label(value);
+    return version_label(value, max_length);
 }
 
 inline std::string message(const nlohmann::json &slot, const std::string &checksum)
 {
-    const std::string build = build_label(slot);
     const auto plan = slot.find("content_plan");
-    if (plan != slot.end() && plan->is_object() &&
-        (plan->contains("version") || plan->contains("room_compatibility"))) {
-        // The connection screen has two 33-character lines at its widest font.
-        const auto options = slot.find("ctr_options");
-        std::string source;
-        if (options != slot.end() && options->is_object())
-            source = version_label(text_field(*options, "world_version"));
+    const auto options = slot.find("ctr_options");
+    const bool has_options = options != slot.end() && options->is_object();
+    const bool claims_plan = plan != slot.end() || (has_options && options->contains("content_plan"));
+    constexpr size_t room_version_limit = CTR_CFG_VERSION_CAP - 1;
+    const std::string build = build_label(slot, claims_plan ? room_version_limit : 20);
+    std::string source;
+    if (claims_plan && has_options)
+        source = version_label(text_field(*options, "world_version"), room_version_limit);
+    const bool has_format = plan != slot.end() && plan->is_object() &&
+        (plan->contains("version") || plan->contains("room_compatibility"));
+    if (claims_plan && (!source.empty() || !build.empty() || has_format)) {
+        // The menu gives each version its own line and measures the pixels.
         if (source.empty()) source = build.empty() ? "UNKNOWN" : build;
         std::string current = CTR_AP_VERSION;
         if (!current.empty() && current.front() == 'v') current.erase(0, 1);
-        current = version_label(current);
+        current = version_label(current, room_version_limit);
         if (current.empty()) current = "UNKNOWN";
         return (source.size() > 17 ? "ROOM BUILD " : "GENERATED WITH ") + source +
                (current.size() > 18 ? ". THIS BUILD " : ". THIS BUILD IS ") + current + ".";

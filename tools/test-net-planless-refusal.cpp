@@ -122,7 +122,7 @@ static void test_version_advice(void)
 		APClient *m = start();
 		m->emit_room_info(checksums[i]);
 		nlohmann::json room = {{"schema_version", 18}, {"content_plan", nlohmann::json::object()},
-		    {"ctr_options", {{"schema_version", 18}, {"world_version", "0.3.0"}, {"content_plan", true}}}};
+		    {"ctr_options", {{"schema_version", 18}, {"content_plan", true}}}};
 		m->emit_slot_connected(room);
 		const std::string message = ap_net_last_error();
 		expect(message.find(hints[i]) != std::string::npos, "correct family or unknown advice");
@@ -157,7 +157,8 @@ static void test_version_advice(void)
 	m->emit_slot_connected(saved);
 	const std::string advice = ap_net_last_error();
 	const std::string current = CTR_AP_VERSION;
-	const std::string build = ap_seed_refusal::version_label(current.substr(current.front() == 'v' ? 1 : 0));
+	const std::string build = ap_seed_refusal::version_label(current.substr(current.front() == 'v' ? 1 : 0),
+	                                                        CTR_CFG_VERSION_CAP - 1);
 	const char *reader_label = build.size() > 18 ? ". THIS BUILD " : ". THIS BUILD IS ";
 	expect(ap_net_status() == AP_NET_STATUS_ERROR &&
 	       advice == std::string("GENERATED WITH 0.3.0") + reader_label + build + ".",
@@ -166,10 +167,16 @@ static void test_version_advice(void)
 	       advice.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .-") == std::string::npos,
 	       "saved room advice fits the second row and uses credits font glyphs");
 	nlohmann::json long_version = saved;
-	long_version["ctr_options"]["world_version"] = "0.3.0-12345678901234";
+	long_version["ctr_options"]["world_version"] = "0.3.0-content-dev.123";
 	long_version["build_version"] = "1.2.3-alpha1";
-	expect(ap_seed_refusal::message(long_version, "").find("ROOM BUILD 0.3.0-12345678901234.") == 0,
+	expect(ap_seed_refusal::message(long_version, "").find("ROOM BUILD 0.3.0-CONTENT-DEV.123.") == 0,
 	       "long room versions fit and the generator field takes precedence");
+	nlohmann::json incomplete = saved;
+	incomplete["content_plan"] = nlohmann::json::object();
+	m = start();
+	m->emit_slot_connected(incomplete);
+	expect(ap_net_status() == AP_NET_STATUS_ERROR && std::string(ap_net_last_error()) == advice,
+	       "a room with missing plan metadata still shows its known generator version");
 	room["build_version"] = "bad~00\n<script>";
 	room["ctr_options"] = 17;
 	expect(ap_seed_refusal::message(room, "").find("MATCHING CLIENT") != std::string::npos,

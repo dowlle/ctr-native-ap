@@ -966,7 +966,15 @@ static void TextEdit_Begin(const ConfigEntry *e, int row, int rowY)
 // centred rows, broken at spaces (the v0.2.x room refusal needs both). A word too
 // wide for the panel is cut, and text past the last row ends in "...". The second
 // row is the edit hint's while a row is being edited.
-static void Conn_DrawLongStatus(const char *status, int labelY, int valueX, int rowSpacing, int rows, uint32_t *ot)
+static const char *Conn_RoomVersionDivider(const char *status)
+{
+	if (strncmp(status, "Error: GENERATED WITH ", 22) == 0 || strncmp(status, "Error: ROOM BUILD ", 18) == 0)
+		return strstr(status, ". THIS BUILD ");
+	return NULL;
+}
+
+static void Conn_DrawLongStatus(const char *status, int labelY, int valueX, int rowSpacing, int rows,
+	const char *versionDivider, uint32_t *ot)
 {
 	int row;
 
@@ -977,11 +985,14 @@ static void Conn_DrawLongStatus(const char *status, int labelY, int valueX, int 
 	}
 	for (row = 0; row < rows && *status != '\0'; row++)
 	{
+		const char *lineEnd = NULL;
+		if (versionDivider)
+			lineEnd = row == 0 ? versionDivider + 1 : status + strlen(status);
 		char line[128];
 		int end = 0;
 		int i;
 
-		for (i = 0; status[i] != '\0' && i < (int)sizeof line - 4; i++)
+		for (i = 0; status[i] != '\0' && i < (int)sizeof line - 4 && (!lineEnd || status + i < lineEnd); i++)
 		{
 			line[i] = status[i];
 			line[i + 1] = '\0';
@@ -991,14 +1002,15 @@ static void Conn_DrawLongStatus(const char *status, int labelY, int valueX, int 
 					end = i;
 				break;
 			}
-			if (status[i + 1] == ' ' || status[i + 1] == '\0')
+			if (lineEnd || status[i + 1] == ' ' || status[i + 1] == '\0')
 				end = i + 1;
 		}
 		line[end] = '\0';
-		status += end;
+		const int clippedVersion = lineEnd && status + end < lineEnd;
+		status = lineEnd ? lineEnd : status + end;
 		while (*status == ' ')
 			status++;
-		if (row == rows - 1 && *status != '\0')
+		if (clippedVersion || (row == rows - 1 && *status != '\0'))
 			memcpy(line + (end >= 3 ? end - 3 : end), "...", 4);
 		DecalFont_DrawLineOT(line, 0x100, labelY + (row + 1) * rowSpacing, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 	}
@@ -1199,13 +1211,14 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	// line, a wordy slot refusal) is centred on the next line instead, where the
 	// full panel width is available, rather than running off the right edge.
 	const char *status = AP_Net_StatusLine();
-	const int editWithRoomVersions = s_connEditing && strncmp(status, "Error: ", 7) == 0 &&
-		(strncmp(status + 7, "GENERATED WITH ", 15) == 0 || strncmp(status + 7, "ROOM BUILD ", 11) == 0);
+	const char *versionDivider = Conn_RoomVersionDivider(status);
+	const int editWithRoomVersions = s_connEditing && versionDivider != NULL;
 	{
 		int y = startY + (numStrings + 2) * rowSpacing;
 		DecalFont_DrawLineOT("Status", labelX, y, FONT_SMALL, ORANGE, ot);
 		if ((int)strlen(status) > CONN_STATUS_INLINE_MAX)
-			Conn_DrawLongStatus(status, y, valueX, rowSpacing, s_connEditing && !editWithRoomVersions ? 1 : 2, ot);
+			Conn_DrawLongStatus(status, y, valueX, rowSpacing, s_connEditing && !editWithRoomVersions ? 1 : 2,
+				versionDivider, ot);
 		else
 			DecalFont_DrawLineOT((char *)status, valueX, y, FONT_SMALL, WHITE, ot);
 	}
