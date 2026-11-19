@@ -22,6 +22,7 @@
 // the finish_boost they read, with the project's per-track USF rulings), and
 // the Hit target rule. Everything else comes from the plan.
 #include "ap_verify_logic.h"
+#include "../include/platform/native_tizi_madness.h"
 #include <cstring>
 #include <set>
 #include <string>
@@ -60,7 +61,11 @@ static const int kUsf = 2, kFirstBoost = 1;
 enum Op { ALWAYS, COUNT, SUM, DISTINCT, CHECKED, ALL, ANY, WUMPA };
 struct Node { Op op; int count; std::vector<int64_t> codes; std::vector<int> kids; };
 struct Region { std::vector<int> gates; int lock = -1; bool income = false; };
-struct Route { int region = -1, stage = -1, lock = -1, need = 0, encounter = -1; bool boss = false; std::vector<int64_t> first; };
+struct Route {
+    int region = -1, stage = -1, lock = -1, need = 0, encounter = -1;
+    bool boss = false, mask = false;
+    std::vector<int64_t> first;
+};
 // SHOP: a Wumpa Shop slot, its hub's Key floor (`target`) and income.
 enum Kind { PAD, SHARED, LEG, ENCOUNTER, ITEMSANITY, HIT, SHOP, LAP, RACE };
 enum Arm { ARM_NONE, ARM_FAMILIES, ARM_PAPU };
@@ -206,6 +211,33 @@ static Model build() {
     for (const auto &x : p.at("tracks")) tracks[x.at("id").get<std::string>()] = &x;
     for (const auto &x : p.at("packages")) packages[x.at("id").get<std::string>()] = &x;
     for (const auto &x : p.at("entries")) entries[x.at("id").get<std::string>()] = &x;
+    const bool repeatable_pickups = content_plan::repeatable_pickups(p);
+    // Pickup routes before and after a Tizi Madness leg have different terms
+    // (apworld tizi_madness.MaskGates). Match the runtime's exact pin pair.
+    std::set<std::string> tizi_tracks;
+    if (repeatable_pickups && m.itemsanity) {
+        for (const auto &[id, track] : tracks) {
+            const auto package = packages.find(track->value("package_id", ""));
+            if (package == packages.end()) continue;
+            std::string lev, vrm;
+            for (const auto &file : package->second->at("files")) {
+                if (file.at("role") == "lev") lev = file.at("sha256").get<std::string>();
+                else if (file.at("role") == "vrm") vrm = file.at("sha256").get<std::string>();
+            }
+            if (CustomTrack_IsTiziMadness(lev.c_str(), vrm.c_str())) tizi_tracks.insert(id);
+        }
+    }
+    auto pickup_needs_mask = [&](const J &route) {
+        if (tizi_tracks.empty()) return false;
+        const auto &entry = *entries.at(route.at("entry_id").get<std::string>());
+        if (route.at("leg_id").is_null()) return tizi_tracks.count(entry.value("track_id", "")) != 0;
+        bool mask = false;
+        for (const auto &leg : entry.at("legs")) {
+            mask = mask || tizi_tracks.count(leg.at("track_id").get<std::string>()) != 0;
+            if (leg.at("id") == route.at("leg_id")) return mask;
+        }
+        return false;
+    };
 
     // Regions by entry id: a pad's entrance requirement, its first stage-1
     // gate and its racer lock; an encounter's garage entrance and requirement.
@@ -454,11 +486,11 @@ static Model build() {
              std::any_of(routes.begin(), routes.end(), [](const J &r) { return !r.at("leg_id").is_null() || !r.at("encounter_id").is_null(); }))) {
             L.kind = RACE;
             for (const auto &r : routes) {
-                if (content_plan::repeatable_pickups(p) && kind != "podium" &&
-                    !content_plan::repeatable_pickup_route(r)) continue;
+                if (repeatable_pickups && kind != "podium" && !content_plan::repeatable_pickup_route(r)) continue;
                 Route R;
                 R.region = region_of(r.at("entry_id").get<std::string>());
                 R.lock = lock_of(*pads.at(r.at("own_pad_id").get<std::string>()));
+                R.mask = kind != "podium" && pickup_needs_mask(r);
                 R.need = L.boost;
                 if (!r.at("leg_id").is_null())
                     R.need = std::max(R.need, leg_boost(*entries.at(r["entry_id"].get<std::string>()),
@@ -606,7 +638,10 @@ struct Sweep {
                 return true;
         return false;
     }
-    bool route(const Route &r) const { return region(r.region) && (r.stage < 0 || eval(r.stage)) && first_won(r.first); }
+    bool route(const Route &r) const {
+        return region(r.region) && (r.stage < 0 || eval(r.stage)) && first_won(r.first) &&
+               (!r.mask || AP_VerifyWeaponOwned(dense, kMask));
+    }
     // with_boost: the check's rank and stat term, bound to its racer lock,
     // or the Itemsanity weapon alternative.
     bool boost(const Loc &L) const {

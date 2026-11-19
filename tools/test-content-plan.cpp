@@ -121,7 +121,7 @@ int main(int argc, char **argv) {
                 refuse(bad, "omitted pickups require the new feature marker");
             }
         }
-        expect(rows == 6, "all six old/new pickup fixtures run");
+        expect(rows == 9, "all nine old/new pickup fixtures run");
     }
     {
         J sanity;

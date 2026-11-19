@@ -8,6 +8,47 @@ import argparse
 import json
 from pathlib import Path
 import sys
+from unittest.mock import patch
+
+
+MIXED_PREFIXES = ('tizi-before-oxide', 'royal-before-oxide', 'green-before-oxide')
+
+
+def mixed_prefix(tag, common):
+    from copy import deepcopy
+    from worlds.ctr import content_plan
+    from worlds.ctr.test.test_content_plan import make_world
+    from worlds.ctr.test.test_green_hill_raceway import PACKAGE as GREEN
+    from worlds.ctr.test.test_royal_raceway import PACKAGE as ROYAL
+    from worlds.ctr.test.test_tizi_madness import tizi_descriptor
+
+    opts = dict(common, retail_tracks=common['retail_tracks'] + ['Oxide Station'],
+                track_modes={'default': ['trophy'], 'Oxide Station': ['relic']},
+                cup_count=1, cup_tracks='random_repeats', shortcut_knowledge=2)
+    if tag == 'tizi-before-oxide':
+        package = tizi_descriptor()
+        package['capabilities'].update(ai_nav=True, checkpoints=35)
+        opts['itemsanity'] = True
+    else:
+        is_royal = tag == 'royal-before-oxide'
+        package = deepcopy(ROYAL if is_royal else GREEN)
+        # Exercise the overrides against the opposite descriptor value.
+        package['capabilities']['super_turbo_pads'] = not is_royal
+        opts.update(progressive_boost='shared_global', logic_difficulty='hard')
+    opts['custom_tracks'] = [package]
+
+    draw = content_plan.content_cups.draw_cups
+
+    def draw_cup(*args, **kwargs):
+        cups = draw(*args, **kwargs)
+        tracks = {track['display_name']: track for pool in args[2:4] for track in pool}
+        cups[0]['legs'] = [tracks[name] for name in (package['display_name'], 'Oxide Station', 'Dingo Canyon', 'Tiny Arena')]
+        return cups
+
+    with patch.object(content_plan.content_cups, 'draw_cups', draw_cup):
+        world = make_world(opts, seed=3, stop_before='pre_fill')
+    assert content_plan.validate(world.ctr_content_plan)
+    return world
 
 
 def main():
@@ -33,9 +74,12 @@ def main():
                   ('cup-only', dict(retail_tracks=common['retail_tracks'] + ['Oxide Station'],
                                     track_modes={'default': ['relic']}, cup_count=1, cup_tracks='random_no_repeats')),
                   ('yellow-leg-four', None)]
+        cases += [(tag, None) for tag in MIXED_PREFIXES]
     rows = []
     for tag, extra in cases:
-        if tag == 'yellow-leg-four':
+        if tag in MIXED_PREFIXES:
+            world = mixed_prefix(tag, common)
+        elif tag == 'yellow-leg-four':
             from worlds.ctr.test.test_oxide_pickups import yellow_fixture, oxide_checks
             from worlds.ctr import content_plan
             world = yellow_fixture()
@@ -62,6 +106,7 @@ def main():
             samples.append(dict(items=[item.code for item in inventory], **verdict(inventory)))
         own = {}
         full_inventory = items
+        focus = {}
         if tag == 'yellow-leg-four':
             key, trophy = world.create_item('Key'), world.create_item('Trophy')
             rest = [item for item in items if item.name not in ('Key', 'Trophy')]
@@ -76,9 +121,23 @@ def main():
             own[str(target)] = trophy.code
             full_inventory = rest + [key] * 4 + [trophy] * 3
             assert target not in verdict(full_inventory)['reachable']
+        if tag in MIXED_PREFIXES:
+            from worlds.ctr.test.test_oxide_pickups import oxide_checks
+            # These probes isolate the new route from the existing Tizi Cup
+            # and Itemsanity checks, which have separate rules.
+            targets = {c['location'] for c in oxide_checks(world.ctr_content_plan)}
+            assert targets and targets <= set(verdict(items)['reachable'])
+            missing = 'Mask' if tag == 'tizi-before-oxide' else 'Progressive Boost'
+            removed = [item for item in items if item.name != missing]
+            assert len(removed) < len(items)
+            result = verdict(removed)
+            reached = targets & set(result['reachable'])
+            assert reached if tag == 'green-before-oxide' else not reached
+            focus = dict(focus=sorted(targets))
+            samples = [dict(items=[item.code for item in removed], **result)]
         rows.append(dict(tag=tag, slot_data=world.fill_slot_data(), locations=sorted(loc.address for loc in locations),
                          precollected=[], foreign=[item.code for item in full_inventory], own=own,
-                         full=verdict(full_inventory), samples=samples))
+                         full=verdict(full_inventory), samples=samples, **focus))
     args.output.write_text(''.join(json.dumps(row, separators=(',', ':')) + '\n' for row in rows))
 
 
