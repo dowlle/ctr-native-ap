@@ -455,6 +455,7 @@ void MainRaceTrack_StartLoad(s16 levelID);
 void MainRaceTrack_RequestLoad(s16 levelID);
 #ifdef CTR_CUSTOM_PACKAGES
 int MainRaceTrack_OfflineCustomLoad(void);
+int MainRaceTrack_OfflineNavIdentity(unsigned char uuid[16], unsigned int *revision);
 // Custom runtime engine hooks: they pass the engine's race mode, never the
 // serving yes/no (MainRaceTrack.c).
 int MainRaceTrack_OfflineRuntimeFile(int subfileIndex, size_t *size);

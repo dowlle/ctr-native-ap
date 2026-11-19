@@ -494,6 +494,20 @@ static int CustomTrackPolicy_HexDigit(unsigned char c)
 	return -1;
 }
 
+// The first four bytes of the LEV SHA-256 are interpreted in digest order.
+static inline unsigned int CustomTrackPolicy_NavRevision(const char *levSha)
+{
+	unsigned int revision = 0;
+	for (int i = 0; i < 8; i++)
+	{
+		int digit = CustomTrackPolicy_HexDigit((unsigned char)levSha[i]);
+		if (digit < 0)
+			return 0;
+		revision = (revision << 4) | (unsigned int)digit;
+	}
+	return revision != 0 ? revision : 1;
+}
+
 // Parse the canonical hyphenated UUID text into 16 bytes. Returns 1 only for a
 // completely well-formed value; every malformed shape returns 0 and leaves out
 // untouched, which the caller turns into "no NAV3 identity" rather than into a
