@@ -806,6 +806,7 @@ struct MediaFile
 	std::string path;
 	size_t size = 0;
 	bool current = false;
+	std::string version;
 };
 
 // One file in Saphi's listing for a track. `prefix` is the track's own
@@ -835,8 +836,8 @@ bool find_media(const nlohmann::json &root, const std::string &prefix, const std
 			continue;
 		media.path = path;
 		media.size = static_cast<size_t>(size);
-		media.current = row.contains("is_current") && row["is_current"] == true &&
-		                row.contains("version") && row["version"] == version;
+		media.current = row.contains("is_current") && row["is_current"] == true;
+		media.version = row.contains("version") && row["version"].is_string() ? row["version"].get<std::string>() : "";
 		matches++;
 	}
 	return matches == 1;
@@ -1081,8 +1082,9 @@ void worker(std::string package_root, std::string api_url, std::string version,
 			std::vector<unsigned char> sca_bytes;
 			int sca_id = 0;
 			const int saphi_track = ap_track_saphi_id_from_url(api_url.c_str());
-			const auto sca = CustomSaphi_SelectMusic(root["data"], saphi_track, 2,
-				lev.current && vrm.current ? nullptr : version.c_str());
+			const bool current_pair = lev.current && vrm.current && lev.version == vrm.version;
+			const auto sca = lev.version.empty() ? CustomSaphiMedia{} :
+				CustomSaphi_SelectMusic(root["data"], saphi_track, 2, current_pair ? nullptr : lev.version.c_str());
 			if (sca.id)
 			{
 				set_state(AP_CT_DOWNLOAD_RUNNING, "Downloading the track's music from Project Saphi...");
@@ -1565,9 +1567,9 @@ extern "C" int CustomSaphi_StartMusicRepair(const CustomSaphiCatalogue *catalogu
         repair.store = std::string(assets) + "/tracks/packages";
         for (size_t i = 0; i < CustomSaphi_Count(catalogue); i++)
         {
-            const auto &r = *CustomSaphi_Row(catalogue, i);
-            if (r.current && !r.disabledReason[0] && r.sca.id &&
-                r.lev.sha256[0] && r.vrm.sha256[0] && r.sca.sha256[0])
+            auto r = *CustomSaphi_Row(catalogue, i);
+            if (!r.current) r.sca = r.historicalSca;
+            if (!r.disabledReason[0] && r.sca.id && r.lev.sha256[0] && r.vrm.sha256[0] && r.sca.sha256[0])
                 repair.revisions.push_back(r);
         }
         if (repair.revisions.empty()) return 0;

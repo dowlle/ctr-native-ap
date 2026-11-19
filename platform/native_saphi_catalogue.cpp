@@ -238,6 +238,8 @@ extern "C" int CustomSaphi_ParseCatalogue(const char *input, size_t size,
                 pair.revision.current = pair.levCurrent && pair.vrmCurrent;
                 pair.revision.saphiPermission = saphi_revision_permission(trackPermission, pair.levPermission, pair.vrmPermission);
                 if (pair.revision.current) pair.revision.sca = sca;
+                else if (!pair.revision.disabledReason[0])
+                    pair.revision.historicalSca = CustomSaphi_SelectMusic(downloads, id, 3, pair.revision.version);
                 result->rows.push_back(pair.revision);
                 if (result->rows.size() > 1024) throw std::runtime_error("Too many Saphi revisions");
             }

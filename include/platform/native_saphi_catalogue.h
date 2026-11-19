@@ -25,6 +25,8 @@ struct CustomSaphiRevision
        current revisions, and only when Saphi lists exactly one current .sca
        with a download; id zero otherwise. Optional: never disables a row. */
     struct CustomSaphiMedia sca;
+    /* A historical pair can be repaired only with an exact-version SCA. */
+    struct CustomSaphiMedia historicalSca;
     unsigned int modeTags;
     int current;
     int sourceLaps; /* Track-level source metadata, zero if unspecified. */

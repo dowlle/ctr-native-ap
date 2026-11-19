@@ -252,11 +252,13 @@ static bool manifest_has_sca(const std::string &assets)
 	return found;
 }
 
-static CustomSaphiCatalogue *repair_catalogue(const char *trackVersion, const std::string &levHash)
+static CustomSaphiCatalogue *repair_catalogue(const char *trackVersion, const std::string &levHash,
+                                             bool current = true, const char *audioVersion = "0.9.0")
 {
-	auto media = [](int id, const char *type, const char *version,
+	auto media = [current](int id, const char *type, const char *version,
 	                const std::vector<unsigned char> &bytes, const std::string &hash) {
-		return nlohmann::json{{"id", id}, {"type", type}, {"version", version}, {"is_current", true},
+		return nlohmann::json{{"id", id}, {"type", type}, {"version", version},
+		    {"is_current", current || !std::strcmp(type, "sca")},
 		    {"file_size", bytes.size()}, {"crc32_hash", crc32(0, bytes.data(), (uInt)bytes.size())},
 		    {"sha256_hash", hash}, {"download_url", "/api/v3/tracks/121/downloads/" + std::to_string(id)},
 		    {"modes", nlohmann::json::array({"arcade"})}};
@@ -265,7 +267,7 @@ static CustomSaphiCatalogue *repair_catalogue(const char *trackVersion, const st
 	    {"name", "Acid Lake"}, {"type", "race"}, {"is_active", true},
 	    {"downloads", nlohmann::json::array({
 	        media(872, "lev", trackVersion, lev, levHash), media(873, "vrm", trackVersion, vrm, sha(vrm)),
-	        media(874, "sca", "0.9.0", music, sha(music))})}};
+	        media(874, "sca", audioVersion, music, sha(music))})}};
 	const auto json = nlohmann::json({{"data", nlohmann::json::array({track})}}).dump();
 	CustomSaphiCatalogue *out = nullptr;
 	char error[256];
@@ -465,6 +467,21 @@ int main()
 		expect(CustomPackage_AcquireDirectory(directory.c_str(), pin.c_str(), &owned, nullptr, 0) &&
 		       !CustomPackage_GetAudio(owned, &offline, &size), "damaged restored audio leaves the original package usable");
 		CustomPackage_Free(&owned);
+	}
+
+	{
+		const auto assets = fresh("repair-historical");
+		scas.clear(); serve();
+		expect(install_seed(assets, true, detail) == AP_CT_DOWNLOAD_SUCCEEDED, "historical repair starts with a silent package");
+		const std::string path = "/api/v3/tracks/121/downloads/874";
+		served[path] = music;
+		auto different = repair_catalogue("1.0.0", sha(lev), false);
+		expect(repair_library(different, assets) == -1 && !asked(path), "historical repair skips another audio version");
+		CustomSaphi_Free(&different);
+		auto exact = repair_catalogue("1.0.0", sha(lev), false, "1.0.0");
+		expect(repair_library(exact, assets) == 1 && asked(path) && find_music_for(assets).ok,
+		       "historical repair restores exact-version audio");
+		CustomSaphi_Free(&exact);
 	}
 
 	// f. A copy of the pair without music does not hide the copy with music.
