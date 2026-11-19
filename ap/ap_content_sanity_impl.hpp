@@ -1,7 +1,6 @@
 // Included inside the content-plan parser namespace. No runtime dependencies.
 static void sanity_checks(const J &p, State &out, const J &registry, std::map<int64_t, J> &expected) {
     const J &s = p.at("sanity");
-    const bool carry_rulings = has_feature(p, kCarriedRulings);
     const bool context = s.contains("logic_difficulty");
     const int rules_version = s.contains("rules_version") ? number(s["rules_version"], 1, 6) : 0;
     J shape = s;
@@ -67,15 +66,17 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
         else if (track.contains("named_block")) {
             const J &pkg = *packages.at(track["package_id"]);
             for (const auto &file : pkg["files"]) if (file["role"] == "lev") key = file["sha256"];
+            const auto &catalog = registry.at("sanity");
+            const std::string source = ruling_pin(out, pkg, key,
+                [&](const std::string &pin) { return catalog.contains(pin) || is_pickup_ruling_pin(pin); });
+            if (source == key && catalog.contains(key)) return &catalog.at(key);
             const J &caps = pkg["capabilities"];
-            if (!registry.at("sanity").contains(key) && caps.contains("weapon_crates") && caps.contains("fruit_crates") && caps.contains("loose_fruit")) {
-                const auto &catalog = registry.at("sanity");
-                const std::string source = ruling_pin(text(pkg["content_id"]), key, carry_rulings,
-                    [&](const std::string &pin) { return catalog.contains(pin) || is_pickup_ruling_pin(pin); });
+            if (caps.contains("weapon_crates") && caps.contains("fruit_crates") && caps.contains("loose_fruit")) {
                 const J needs = catalog.contains(source) ? catalog.at(source).at("needs") : J::object();
                 measured[key] = J{{"lev_sha256", key}, {"counts", J::array({caps["weapon_crates"], caps["fruit_crates"], caps["loose_fruit"]})}, {"needs", needs}};
                 return &measured.at(key);
             }
+            return nullptr;
         }
         return registry.at("sanity").contains(key) ? &registry.at("sanity").at(key) : nullptr;
     };
@@ -105,19 +106,20 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
                 return rule["content_id"] == pkg["content_id"] && rule["kind"] == kind && rule["ordinal"] == ordinal;
             };
             const std::string lev = row["lev_sha256"];
-            bool legacy = false;
-            for (const auto &rule : rules) if (matches(rule)) {
-                if (!rule.contains("revision")) legacy = true;
-                else if (rule["revision"] == pkg["revision"] && rule["lev_sha256"] == lev)
-                    return difficulty < 2 && !blue;
-            }
             if (!(difficulty < 2 && !blue)) return false;
-            const std::string source = ruling_pin(text(pkg["content_id"]), lev, carry_rulings, [&](const std::string &pin) {
+            const auto source = scoped_ruling(out, pkg, lev, [&](const std::string &revision, const std::string &pin) {
                 return std::any_of(rules.begin(), rules.end(), [&](const J &rule) {
-                    return matches(rule) && rule.contains("lev_sha256") && rule["lev_sha256"] == pin;
+                    return matches(rule) && rule.contains("revision")
+                        && rule["revision"] == revision && rule["lev_sha256"] == pin;
                 });
             });
-            return legacy || source != lev;
+            bool legacy = false;
+            for (const auto &rule : rules) if (matches(rule)) {
+                if (!rule.contains("revision")) legacy = rule.at("hard_rank") != 0;
+                else if (rule["revision"] == source.first && rule["lev_sha256"] == source.second)
+                    return rule.at("hard_rank") != 0;
+            }
+            return legacy;
         };
         need(row["lev_sha256"] == inv["lev_sha256"] && row["counts"] == inv["counts"], "sanity revision/count mismatch");
         ctr_content_sanity dest{};
@@ -129,7 +131,7 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
             std::string digest = row["lev_sha256"];
             if (track["origin"] == "custom") {
                 const J &pkg = *packages.at(track["package_id"]);
-                digest = ruling_pin(text(pkg["content_id"]), digest, carry_rulings,
+                digest = ruling_pin(out, pkg, digest,
                                     [&](const std::string &pin) { return catalog.contains(pin); });
             }
             if (catalog.contains(digest)) for (const auto &c : catalog[digest]) {

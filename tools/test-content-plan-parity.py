@@ -1305,6 +1305,8 @@ with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):
     cases.append(("excluded-carried", carried_wire, True))
     for label, change in (
         ("feature", lambda p: p["required_features"].remove(track_rulings.FEATURE)),
+        ("sources", lambda p: p.pop("track_ruling_sources")),
+        ("source-pin", lambda p: p["track_ruling_sources"][0]["reviews"][0].__setitem__("lev_sha256", "ab" * 32)),
         ("ordinal", lambda p: p["item_boxes"]["crate_exclusions"][0]["crates"][0].__setitem__("ordinal", 2)),
         ("position", lambda p: p["item_boxes"]["crate_exclusions"][0]["crates"][0].__setitem__("pos", [0, 0, 0])),
     ):

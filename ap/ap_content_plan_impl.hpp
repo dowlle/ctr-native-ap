@@ -64,6 +64,7 @@ struct State {
         bool carried = false, used = false;
     };
     std::map<std::string, CrateExclusions> crate_exclusions;
+    std::map<std::string, J> track_ruling_sources;
     struct BoxSpot { int number = 0; bool seen = false; short x = 0, y = 0, z = 0, rot_y = 0; };
     std::map<int64_t, BoxSpot> box_spots;
     // Boss garages (#133 PR 6): the `bosses` record and the venues its
@@ -865,17 +866,58 @@ static bool is_pickup_ruling_pin(const std::string &pin) {
 }
 
 template<class HasRuling>
-static std::string ruling_pin(const std::string &content, const std::string &lev, bool carry, HasRuling has_ruling) {
-    if (!carry || lev.empty() || has_ruling(lev)) return lev;
-    const auto &reviews = content_registry().at("track_ruling_revisions");
-    const auto track = reviews.find(content);
-    if (track == reviews.end()) return lev;
-    for (const auto &review : *track) if (review[0] == lev) return lev;
-    for (const auto &review : *track) {
-        const auto &pin = review[0].get_ref<const std::string &>();
+static std::string ruling_pin(const State &out, const J &pkg, const std::string &lev, HasRuling has_ruling) {
+    const auto history = out.track_ruling_sources.find(text(pkg.at("id")));
+    if (history == out.track_ruling_sources.end()) return lev;
+    if (has_ruling(lev))
+        for (const auto &review : history->second) if (review.at("lev_sha256") == lev) return lev;
+    for (const auto &review : history->second) {
+        const auto &pin = review.at("lev_sha256").get_ref<const std::string &>();
         if (has_ruling(pin)) return pin;
     }
-    return lev;
+    return {};
+}
+
+template<class HasRuling>
+static std::pair<std::string, std::string> scoped_ruling(const State &out, const J &pkg, const std::string &lev,
+                                                        HasRuling has_ruling) {
+    const auto history = out.track_ruling_sources.find(text(pkg.at("id")));
+    if (history == out.track_ruling_sources.end()) return {text(pkg.at("revision")), lev};
+    for (const auto &review : history->second) {
+        const auto ref = std::make_pair(text(review.at("revision")), text(review.at("lev_sha256")));
+        if (has_ruling(ref.first, ref.second)) return ref;
+    }
+    return {};
+}
+
+static void read_track_ruling_sources(const J &sources, const Table &packages, State &out) {
+    need(sources.is_array() && !sources.empty() && sources.size() <= packages.size(), "invalid track ruling source list");
+    const auto &reviews = content_registry().at("track_ruling_revisions");
+    std::string previous_id;
+    for (const auto &row : sources) {
+        fields(row, {"package_id", "reviews"});
+        const std::string id = text(row.at("package_id"));
+        need(previous_id < id && packages.count(id), "unknown or unordered source package");
+        previous_id = id;
+        const J &pkg = *packages.at(id);
+        const std::string content = text(pkg.at("content_id"));
+        const auto &refs = row.at("reviews");
+        need(reviews.contains(content) && refs.is_array() && !refs.empty() && refs.size() <= 128,
+             "invalid ruling review history");
+        const auto &known = reviews.at(content);
+        auto next = known.begin();
+        for (const auto &ref : refs) {
+            fields(ref, {"revision", "lev_sha256"});
+            const auto wanted = J::array({text(ref.at("lev_sha256")), text(ref.at("revision"))});
+            for (const auto &file : pkg.at("files"))
+                need(file.at("role") != "lev" || file.at("sha256") != wanted[0] || pkg.at("revision") != wanted[1],
+                     "ruling history includes the current package revision");
+            next = std::find(next, known.end(), wanted);
+            need(next != known.end(), "unknown or unordered ruling review identity");
+            ++next;
+        }
+        out.track_ruling_sources.emplace(id, refs);
+    }
 }
 static constexpr char kTiziMaskFeature[] = "tizi_mask_v1";
 static std::set<std::string> tizi_mask_tracks(const J &p) {
@@ -964,10 +1006,12 @@ static void validate(const J &p, State &out) {
     // One generator row 4: items fixed to their own check. Declares
     // `fixed_items_v1`. The ledger's locked fields are recomputed from it.
     const bool has_fixed = p.is_object() && p.contains("fixed_items");
+    const bool has_ruling_sources = p.is_object() && p.contains("track_ruling_sources");
     need(p.is_object() && p.size() == 11u + (has_families ? 1u : 0u) + (has_packs ? 1u : 0u) + (has_racers ? 1u : 0u) +
                                          (has_capability ? 1u : 0u) + (has_global ? 1u : 0u) + (has_boxes ? 1u : 0u) +
                                          (has_bosses ? 1u : 0u) + (has_pad_requirements ? 1u : 0u) + (has_fixed ? 1u : 0u) +
-                                         (has_structure ? 1u : 0u) + (has_shop ? 1u : 0u) + (has_pad_client ? 1u : 0u) + (has_sanity ? 1u : 0u),
+                                         (has_structure ? 1u : 0u) + (has_shop ? 1u : 0u) + (has_pad_client ? 1u : 0u) + (has_sanity ? 1u : 0u) +
+                                         (has_ruling_sources ? 1u : 0u),
          "unsupported or incomplete record fields");
     if (has_structure) need(p["adventure_structure"] == "ctr_first", "adventure_structure must be ctr_first when present");
     out.ctr_first = has_structure;
@@ -1061,6 +1105,8 @@ static void validate(const J &p, State &out) {
     for (const auto &row : named_table) reserved_titles.insert(fold(row.second.name));
     reserved_titles.insert(fold(registry["cortex_vortex"]["name"].get<std::string>()));
     const auto packages = table(p.at("packages"), AP_CONTENT_MAX_PACKAGES);
+    need(carry_rulings == has_ruling_sources, "inconsistent carried track ruling feature");
+    if (has_ruling_sources) read_track_ruling_sources(p.at("track_ruling_sources"), packages, out);
     // Cups (#133 PR 5) add tracks raced only as legs.
     const auto tracks = table(p.at("tracks"), AP_CONTENT_MAX_TRACKS);
     const auto entries = table(p.at("entries"), 33); // 27 pads and six boss encounters
@@ -1861,9 +1907,9 @@ static void validate(const J &p, State &out) {
                 if (carry_rulings) {
                     const auto &catalog = registry.at("sanity_exclusions");
                     const auto &descriptor = *packages.at(track.at("package_id").get<std::string>());
-                    const std::string source = ruling_pin(text(descriptor.at("content_id")), pkg.lev_sha256,
-                        true, [&](const std::string &pin) { return catalog.contains(pin); });
-                    if (source != pkg.lev_sha256)
+                    const std::string source = ruling_pin(out, descriptor, pkg.lev_sha256,
+                        [&](const std::string &pin) { return catalog.contains(pin); });
+                    if (!source.empty() && source != pkg.lev_sha256)
                         for (const auto &crate : catalog.at(source))
                             if (crate.value("family", std::string("weapon_crate")) == "weapon_crate"
                                 && crate.at("ordinal").get<int>() <= pkg.weapon_crates)
@@ -2577,36 +2623,36 @@ static void validate(const J &p, State &out) {
     // Hand-placed box spots (A3-14): every set names a pad track, every spot
     // box carried its spot, and the pads take the positions.
     for (const auto &pair : out.spot_sets) need(pair.second.used, "a box spot set names no pad track");
-    if (p.contains("capability") && p["capability"].contains("finish_floors")) {
+    if (p.contains("capability") && (p["capability"].contains("finish_floors") || (carry_rulings && out.capability.boost_mode))) {
         // The list names exactly the plan's tracks using the Royal Raceway finish ruling.
         std::vector<std::string> reviewed;
         for (const auto &track : p["tracks"]) {
             if (track["origin"] != "custom") continue;
             for (const auto &pkg : p["packages"]) if (pkg["id"] == track["package_id"])
                 for (const auto &file : pkg["files"]) if (file["role"] == "lev"
-                        && ruling_pin(text(pkg["content_id"]), text(file["sha256"]), carry_rulings,
+                        && ruling_pin(out, pkg, text(file["sha256"]),
                                       [](const std::string &pin) { return pin == kRoyalPickupPin; }) == kRoyalPickupPin)
                     reviewed.push_back(track["id"].get<std::string>());
         }
         std::sort(reviewed.begin(), reviewed.end());
         std::vector<std::string> named;
-        for (const auto &id : p["capability"]["finish_floors"]) named.push_back(id.get<std::string>());
+        for (const auto &id : p["capability"].value("finish_floors", J::array())) named.push_back(id.get<std::string>());
         need(named == reviewed, "capability.finish_floors does not name exactly the reviewed tracks");
     }
-    if (p.contains("capability") && p["capability"].contains("finish_free")) {
+    if (p.contains("capability") && (p["capability"].contains("finish_free") || (carry_rulings && out.capability.boost_mode))) {
         // The list names exactly the plan's tracks using the Green Hill Raceway finish ruling.
         std::vector<std::string> reviewed;
         for (const auto &track : p["tracks"]) {
             if (track["origin"] != "custom") continue;
             for (const auto &pkg : p["packages"]) if (pkg["id"] == track["package_id"])
                 for (const auto &file : pkg["files"]) if (file["role"] == "lev"
-                        && ruling_pin(text(pkg["content_id"]), text(file["sha256"]), carry_rulings,
+                        && ruling_pin(out, pkg, text(file["sha256"]),
                                       [](const std::string &pin) { return pin == kGreenHillPickupPin; }) == kGreenHillPickupPin)
                     reviewed.push_back(track["id"].get<std::string>());
         }
         std::sort(reviewed.begin(), reviewed.end());
         std::vector<std::string> named;
-        for (const auto &id : p["capability"]["finish_free"]) named.push_back(id.get<std::string>());
+        for (const auto &id : p["capability"].value("finish_free", J::array())) named.push_back(id.get<std::string>());
         need(named == reviewed, "capability.finish_free does not name exactly the reviewed tracks");
     }
     if (has_boxes && p["item_boxes"].contains("pickup_rules")) {
@@ -2616,8 +2662,7 @@ static void validate(const J &p, State &out) {
                 bool pin = false, seated = false;
                 for (const auto &pkg : p["packages"]) if (pkg["id"] == track["package_id"])
                     for (const auto &file : pkg["files"]) if (file["role"] == "lev")
-                        pin = is_pickup_ruling_pin(ruling_pin(text(pkg["content_id"]), text(file["sha256"]),
-                                                             carry_rulings, is_pickup_ruling_pin));
+                        pin = is_pickup_ruling_pin(ruling_pin(out, pkg, text(file["sha256"]), is_pickup_ruling_pin));
                 for (const auto &entry : p["entries"]) if (entry["kind"] == "track" && entry["track_id"] == id)
                     for (const auto &pad : p["pads"]) seated |= pad["entry_id"] == entry["id"];
                 valid = pin && seated && !out.spot_sets.count(id.get<std::string>());

@@ -136,7 +136,6 @@ static int compile(Model &m, const J &n) {
 static std::set<std::string> finish_floor_tracks;
 // Tracks named by `capability.finish_free` (reviewed Green Hill Raceway 2.0.0): no rank for the finish itself.
 static std::set<std::string> finish_free_tracks;
-static bool carry_track_rulings;
 
 // content_capability.finish_boost: the ranks crossing a track's finish line
 // needs, 0 without Progressive Boost.
@@ -152,21 +151,19 @@ static int finish_boost(const J &track, const std::map<std::string, const J *> &
     }
     const J *pkg = packages.count(track.value("package_id", "")) ? packages.at(track.value("package_id", "")) : nullptr;
     if (pkg) {
-        const std::string content = pkg->value("content_id", ""), revision = pkg->value("revision", "");
+        const std::string content = pkg->value("content_id", "");
         std::string lev;
         for (const auto &pin : pkg->at("files"))
             if (pin.value("role", "") == "lev") lev = pin.value("sha256", "");
-        for (const auto &r : kUsfRulings)
-            if (*r.revision && !lev.empty() && content == r.content_id && revision == r.revision && lev == r.lev_sha256)
-                return r.rank;
-        const std::string source = content_plan::ruling_pin(content, lev, carry_track_rulings, [&](const std::string &pin) {
-            for (const auto &r : kUsfRulings)
-                if (*r.revision && content == r.content_id && pin == r.lev_sha256) return true;
-            return false;
-        });
-        if (source != lev)
-            for (const auto &r : kUsfRulings)
-                if (content == r.content_id && source == r.lev_sha256) return r.rank;
+        const auto matches = [&](const auto &r, const std::string &revision, const std::string &pin) {
+            return *r.revision && content == r.content_id && revision == r.revision && pin == r.lev_sha256;
+        };
+        const auto source = content_plan::scoped_ruling(content_plan::state, *pkg, lev,
+            [&](const std::string &revision, const std::string &pin) {
+                for (const auto &r : kUsfRulings) if (matches(r, revision, pin)) return true;
+                return false;
+            });
+        for (const auto &r : kUsfRulings) if (matches(r, source.first, source.second)) return r.rank;
         for (const auto &r : kUsfRulings) if (!*r.revision && content == r.content_id) return r.rank;
         const J &caps = pkg->at("capabilities");
         // A package that does not state super_turbo_pads is treated as having one.
@@ -215,7 +212,6 @@ static Model build() {
     using content_plan::state;
     const AP_VerifyOptions o = options();
     const J p = J::parse(state.canonical);
-    carry_track_rulings = content_plan::has_feature(p, content_plan::kCarriedRulings);
     finish_floor_tracks.clear();
     finish_free_tracks.clear();
     if (p.contains("capability") && p["capability"].contains("finish_free"))
