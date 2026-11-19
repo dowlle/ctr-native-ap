@@ -430,7 +430,8 @@ int main(void)
 	CustomTrack_OnRaceLoadRequested(6);
 	const struct CustomTrackRaceContext *relic = CustomTrack_StandaloneContext(6);
 	expect(relic && relic->mode == AP_CONTENT_MODE_RELIC && relic->trophyLocation == 35016302 &&
-	       CustomTrack_ServingLoad(6, 0, 0), "A6-23: Relic Race serves the verified custom package");
+	       CustomTrack_ServingLoad(6, 0, 0) && CustomTrack_EventFieldSize(6, 0, 0) == 1,
+	       "A6-23: solo Relic Race serves the verified custom package");
 	reset_calls();
 
 	/* No package record: nothing to scan or enter. */

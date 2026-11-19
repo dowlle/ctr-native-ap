@@ -968,6 +968,7 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 {
 	const char *why = NULL;
 	int cupID;
+	int soloRace;
 
 	if (!s_customTracksLoaded)
 		CustomTrack_Load();
@@ -1025,7 +1026,8 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 		return 0;
 	}
 
-	if (d->standalone && d->soloRace)
+	soloRace = d->standalone && d->soloRace;
+	if (soloRace)
 	{
 		// A solo race needs neither AI paths nor a full starting grid.
 		CustomTrack_Log("[CustomTracks] solo event race: AI nav paths and grid spawns are not required\n");
@@ -1064,11 +1066,12 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 	// The field follows the track. Derived once, here, so the driver count, the
 	// standings layout and the harnesses all read one number instead of each
 	// re-clamping the raw spawn count.
-	s_customTrackConfig.raceFieldSize = CustomTrackPolicy_FieldSizeForSpawns(d->flagSpawns);
+	s_customTrackConfig.raceFieldSize = soloRace ? 1 : CustomTrackPolicy_FieldSizeForSpawns(d->flagSpawns);
 	s_customTrackConfig.raceEnabled = 1;
 
-	CustomTrack_Log("[CustomTracks] event race grids %d karts (track reports %d spawn slots, clamped to %d..%d)\n",
-	                s_customTrackConfig.raceFieldSize, d->flagSpawns, CTR_CT_FIELD_MIN, CTR_CT_FIELD_MAX);
+	if (!soloRace)
+		CustomTrack_Log("[CustomTracks] event race grids %d karts (track reports %d spawn slots, clamped to %d..%d)\n",
+		                s_customTrackConfig.raceFieldSize, d->flagSpawns, CTR_CT_FIELD_MIN, CTR_CT_FIELD_MAX);
 
 	CustomTrack_VerifySource(&s_customTrackVrm, "vrm");
 	CustomTrack_VerifySource(&s_customTrackLev, "lev");
