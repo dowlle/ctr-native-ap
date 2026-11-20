@@ -139,7 +139,7 @@ struct GarageVenueDescriptor
 	uint64_t roomIdentity;
 	char trackID[65];
 	char packageRevision[65];
-	char packageUuid[37];
+	char navPackageUuid[37];
 	char levPath[1024];
 	char vrmPath[1024];
 	char levSha256[NATIVE_SHA256_HEX_BYTES];
@@ -147,6 +147,7 @@ struct GarageVenueDescriptor
 #ifdef CTR_CUSTOM_PACKAGES
 	int cortex;
 	char musicPackageRevision[65];
+	char packageUuid[37];
 	unsigned long levBytes, vrmBytes;
 #endif
 };

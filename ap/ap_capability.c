@@ -9,6 +9,7 @@
 #include "ap_stat_select_logic.h"
 #include "ap_race_stats_logic.h" // only Adventure drives the room's stats (ruling of 2026-11-02)
 #include "ap_net.h"      // ap_net_statselect_* (per-slot data storage)
+#include "ap_navrec.h"
 #include "ap_retro_fueled_logic.h"
 #include "ap_hooks.h"    // AP_LogLine
 #include "ap_seedcfg.h"  // ctr_cfg + ctr_cfg_active()
@@ -813,29 +814,21 @@ int AP_CapabilityRankValueForOffset(int offset, int rank)
 // Write one stat into the driver exactly the way VehBirth_SetConsts does -- by
 // the row's own offset and size -- so a u8 / s8 / s16 field lands byte-identical
 // to an engine write and no field is named twice.
-static void AP_CapabilityWriteStat(struct Driver *driver, const struct MetaPhys *row, int value)
+static int AP_CapabilityWriteStat(struct Driver *driver, const struct MetaPhys *row, int value)
 {
 	u8 *dst = (u8 *)driver + row->offset;
 	u32 raw = (u32)value;
+	int changed = 0;
 
-	if (row->size == 1)
+	if (row->size != 1 && row->size != 2 && row->size != 4)
+		return 0;
+	for (int i = 0; i < row->size; i++)
 	{
-		dst[0] = (u8)raw;
-		return;
+		u8 byte = (u8)(raw >> (8 * i));
+		changed |= dst[i] != byte;
+		dst[i] = byte;
 	}
-	if (row->size == 2)
-	{
-		dst[0] = (u8)raw;
-		dst[1] = (u8)(raw >> 8);
-		return;
-	}
-	if (row->size == 4)
-	{
-		dst[0] = (u8)raw;
-		dst[1] = (u8)(raw >> 8);
-		dst[2] = (u8)(raw >> 16);
-		dst[3] = (u8)(raw >> 24);
-	}
+	return changed;
 }
 
 void AP_CapabilityStats(struct Driver *driver)
@@ -843,6 +836,7 @@ void AP_CapabilityStats(struct Driver *driver)
 	int i;
 	int weakened;
 	int statsLive;
+	int changed = 0;
 
 	if (!AP_CapabilityIsLocal(driver))
 		return;
@@ -884,8 +878,10 @@ void AP_CapabilityStats(struct Driver *driver)
 		if (weakened && rank > 0)
 			rank--;
 
-		AP_CapabilityWriteStat(driver, row, AP_CapabilityStatRankValue(row, rank));
+		changed |= AP_CapabilityWriteStat(driver, row, AP_CapabilityStatRankValue(row, rank));
 	}
+	if (statsLive && changed)
+		AP_NavRec_NotePhysicsEffect();
 	g_cap_weaken_stats_applied = weakened;
 }
 

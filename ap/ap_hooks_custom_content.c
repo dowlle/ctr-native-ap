@@ -94,6 +94,7 @@ struct AP_ContentFiles
 {
 	char levPath[CTR_CT_MANAGER_PATH_MAX];
 	char vrmPath[CTR_CT_MANAGER_PATH_MAX];
+	char packageUuid[37];
 	struct CustomContentMeasurements measured;
 };
 static struct AP_ContentFiles ap_content_files[AP_CONTENT_MAX_PACKAGES];
@@ -166,10 +167,10 @@ static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct Custom
 	memset(status, 0, sizeof *status);
 	ap_content_descriptor_publication[index] = 0;
 #ifdef CTR_CUSTOM_PACKAGES
-	shared = CustomPackage_FindPinnedFiles(NativeAssets_GetAssetDir(), pkg->revision, NULL,
+	shared = CustomPackage_FindPinnedFilesWithIdentity(NativeAssets_GetAssetDir(), pkg->revision, pkg->uuid,
 	                                      pkg->lev_sha256, pkg->lev_bytes, pkg->vrm_sha256, pkg->vrm_bytes,
 	                                      status->levPath, sizeof status->levPath,
-	                                      status->vrmPath, sizeof status->vrmPath);
+	                                      status->vrmPath, sizeof status->vrmPath, ap_content_files[index].packageUuid);
 #endif
 	if (shared)
 	{
@@ -193,6 +194,8 @@ static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct Custom
 		                                      pkg->revision, pkg->lev_sha256, pkg->lev_bytes,
 		                                      pkg->vrm_sha256, pkg->vrm_bytes, status);
 	if (status->state != CTR_CT_MANAGER_READY) return 0;
+	if (!shared && compiled)
+		snprintf(ap_content_files[index].packageUuid, sizeof ap_content_files[index].packageUuid, "%s", compiled->packageUuid);
 	if (AP_ContentPathsTooLong(status->levPath, status->vrmPath))
 	{
 		status->state = CTR_CT_MANAGER_PATH_TOO_LONG;
@@ -445,7 +448,7 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		snprintf(d.levSha256, sizeof d.levSha256, "%s", pkg->lev_sha256);
 		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", pkg->vrm_sha256);
 		snprintf(race->packageRevision, sizeof race->packageRevision, "%s", pkg->revision);
-		snprintf(race->packageUuid, sizeof race->packageUuid, "%s", pkg->uuid);
+		snprintf(race->packageUuid, sizeof race->packageUuid, "%s", ap_content_files[packageIndex].packageUuid);
 		snprintf(race->levSha256, sizeof race->levSha256, "%s", pkg->lev_sha256);
 		snprintf(race->vrmSha256, sizeof race->vrmSha256, "%s", pkg->vrm_sha256);
 		if (!CustomTrack_ApplySeedDescriptor(&d))
@@ -627,8 +630,9 @@ static void AP_GarageVenuePreflight(void)
 			{
 				f = &ap_content_files[b->venue_package[g]];
 				lev = pkg->lev_sha256; vrm = pkg->vrm_sha256;
-				snprintf(d.packageUuid, sizeof d.packageUuid, "%s", pkg->uuid);
+				snprintf(d.navPackageUuid, sizeof d.navPackageUuid, "%s", f->packageUuid);
 #ifdef CTR_CUSTOM_PACKAGES
+				snprintf(d.packageUuid, sizeof d.packageUuid, "%s", pkg->uuid);
 				snprintf(d.musicPackageRevision, sizeof d.musicPackageRevision, "%s", pkg->revision);
 				d.levBytes = pkg->lev_bytes;
 				d.vrmBytes = pkg->vrm_bytes;

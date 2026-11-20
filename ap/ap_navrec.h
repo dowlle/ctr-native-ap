@@ -57,6 +57,8 @@ void AP_NavRec_ResetCapture(void);
 void AP_NavRec_NoteItemFire(struct Driver *d, int weaponID);
 // Report a direct AP effect on player one's kart for the next recorder tick.
 void AP_NavRec_NoteKartEffect(void);
+// Report a change during gameplay, before the next sampled lap boundary.
+void AP_NavRec_NotePhysicsEffect(void);
 
 // Called at the end of NativeCheckpoint_RelocateSDataPointers. Relocation cannot
 // repair a state restored into a fresh process, where these lanes are zeroed, so

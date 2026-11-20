@@ -221,6 +221,7 @@ static unsigned int  s_navrecActiveNavRevision;
 static int s_navrecIdentityBlocked;
 static int s_navrecGarageCaptureOnly;
 static int s_navrecFrameKartEffect;
+static int s_navrecPhysicsEffect;
 static int s_navrecLoggedBlocked;
 
 // Whether the lap currently being driven started with a forward crossing of
@@ -228,6 +229,7 @@ static int s_navrecLoggedBlocked;
 // and are dropped at the boundary instead of banked; see
 // AP_NavRecFormat_LapBoundaryBanks.
 static int s_navrecLapOpenAtLine;
+static int s_navrecWaitingForRecross;
 
 // ============================================================================
 // Small helpers
@@ -526,12 +528,14 @@ static void AP_NavRec_DropBank(void)
 	s_navrecWrittenThisRace = 0;
 	s_navrecEndSeen = 0;
 	s_navrecLapOpenAtLine = 0;
+	s_navrecWaitingForRecross = 0;
 }
 
 void AP_NavRec_ResetCapture(void)
 {
 	AP_NavRec_DropBank();
 	s_navrecFrameKartEffect = 0;
+	s_navrecPhysicsEffect = 0;
 	s_navrecLoggedBlocked = 0;
 	s_navrecCorridorLevel = -1;
 	s_navrecGridReady = 0;
@@ -1067,13 +1071,6 @@ static int AP_NavRec_ReadCandidate(const char *path, int levelID, struct AP_NavR
 	if (rc != AP_NAVREC_OK)
 	{
 		snprintf(msg, sizeof msg, "[AP NAVREC] load: rejecting \"%s\": %s\n", path, AP_NavRecFormat_ErrorText(rc));
-		AP_LogLine(msg);
-		return 0;
-	}
-
-	if (info->levelId != levelID)
-	{
-		snprintf(msg, sizeof msg, "[AP NAVREC] load: \"%s\" was recorded on level %d, not %d\n", path, info->levelId, levelID);
 		AP_LogLine(msg);
 		return 0;
 	}
@@ -2050,6 +2047,20 @@ void AP_NavRec_NoteKartEffect(void)
 	s_navrecFrameKartEffect = 1;
 }
 
+void AP_NavRec_NotePhysicsEffect(void)
+{
+	s_navrecPhysicsEffect = 1;
+}
+
+static int AP_NavRec_KartImpaired(const struct Driver *d)
+{
+	u8 ks = d->kartState;
+	return ks == KS_MASK_GRABBED || ks == KS_BLASTED || ks == KS_SPINNING ||
+	       ks == KS_CRASHING || d->squishTimer != 0 || d->clockReceive != 0 ||
+	       d->burnTimer != 0 || d->instTntRecv ||
+	       (d->thCloud && d->rainCloudEffect != RAIN_CLOUD_EFFECT_NONE);
+}
+
 // ============================================================================
 // Per-frame recording
 // ============================================================================
@@ -2060,8 +2071,11 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 	int            levelID;
 	int            atEnd;
 	int            kartEffect = s_navrecFrameKartEffect;
+	int            physicsEffect = s_navrecPhysicsEffect;
+	int            impaired;
 
 	s_navrecFrameKartEffect = 0;
+	s_navrecPhysicsEffect = 0;
 	AP_NavRec_SyncArmed();
 
 	if (!s_navrecArmed || (gGT == NULL) || (s_navrecScratch == NULL))
@@ -2113,6 +2127,22 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 	s_navrecCharacterId = (short)d->driverID;
 
 	atEnd = ((gGT->gameMode1 & END_OF_RACE) != 0);
+	impaired = AP_NavRec_KartImpaired(d);
+
+	// The engine's backward crossing flag changes even when lapIndex does not.
+	// Only an already open flying lap can resume on an uncounted recross.
+	if (s_navrecLapOpenAtLine && (d->actionsFlagSet & ACTION_BEHIND_START_LINE))
+	{
+		AP_NavRec_DropCurrentLap();
+		s_navrecLapOpenAtLine = 0;
+		s_navrecWaitingForRecross = 1;
+		AP_LogLine("[AP NAVREC] crossed the start line backwards; dropping the samples\n");
+	}
+
+	// These observations come from the physics frame that just ran. Credit
+	// them to the outgoing lap before a boundary or finish can bank it.
+	if (impaired || physicsEffect)
+		s_navrecCurDirty = 1;
 
 	if (atEnd)
 	{
@@ -2178,19 +2208,18 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 		s_navrecLastLapIndex = lapIndex;
 	}
 
-	// Anything that means this lap is not a line worth copying. KS_MASK_GRABBED
-	// covers both a respawn and a mask reset; KS_CRASHING is a wall crash, which
-	// zeroes the driver's speed and leaves a line no bot should be asked to
-	// follow. Firing the Mask item is deliberately NOT here: it is counted
-	// instead, in AP_NavRec_NoteItemFire.
+	if (s_navrecWaitingForRecross)
 	{
-		u8 ks = d->kartState;
-		if (kartEffect || (ks == KS_MASK_GRABBED) || (ks == KS_BLASTED) ||
-		    (ks == KS_SPINNING) || (ks == KS_CRASHING) || d->squishTimer != 0 ||
-		    d->clockReceive != 0 || d->burnTimer != 0 ||
-		    (d->thCloud && d->rainCloudEffect != RAIN_CLOUD_EFFECT_NONE))
-			s_navrecCurDirty = 1;
+		if (d->actionsFlagSet & ACTION_BEHIND_START_LINE)
+			return;
+		s_navrecWaitingForRecross = 0;
+		AP_NavRec_DropCurrentLap();
+		s_navrecLapOpenAtLine = 1;
 	}
+
+	// Persisting kart effects also spoil the first sample of the new lap.
+	if (kartEffect || impaired)
+		s_navrecCurDirty = 1;
 #ifdef CTR_AP
 	if (AP_TrapAffectsRecordedLap(d))
 		s_navrecCurDirty = 1;

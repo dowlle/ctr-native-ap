@@ -19,17 +19,21 @@ fixture = r'''
 struct sData sdata_static;
 static struct Driver local, other;
 static int adventure, g_fp_applied = 1, g_trap_paused, g_trap_reroll_excluded = 5;
+static int g_trap_boost_tainted, g_trap_use_pending, physics_effects;
 static unsigned char g_active[AP_TRAP_EFFECT_COUNT];
 static AP_TrapSched g_sched;
 static struct Driver *AP_TrapLocalDriver(void) { return &local; }
 int AP_CapabilityRoomStatsRace(void) { return adventure; }
+void AP_NavRec_NotePhysicsEffect(void) { physics_effects++; }
 '''
-fixture += next(line for line in source.splitlines() if line.startswith("#define AP_TRAP_GRAV_SCALE")) + "\n"
+for constant in ("AP_TRAP_GRAV_SCALE", "AP_TRAP_BOOST_RESERVES", "AP_TRAP_USF_FIRELEVEL"):
+    fixture += next(line for line in source.splitlines() if line.startswith(f"#define {constant} ")) + "\n"
 for signature in ("static int AP_TrapIsLocal(", "int AP_TrapSuppressCrateReward(",
                   "int AP_TrapAllowBoostGrant(", "int AP_TrapWeakenedActive(",
                   "int AP_TrapWeakenBoostTier(", "int AP_TrapRerollExcludedItem(",
                   "int AP_TrapOwnsCamera(", "void AP_TrapRenderTransform(",
-                  "int AP_TrapMirrorCullFlip(", "int AP_TrapGravity("):
+                  "int AP_TrapMirrorCullFlip(", "int AP_TrapGravity(",
+                  "int AP_TrapAffectsRecordedLap(", "static void AP_TrapFloorReserves(", "void AP_TrapForceBoost("):
     fixture += function(signature)
 fixture += r'''
 int main(void) {
@@ -57,6 +61,23 @@ int main(void) {
     assert(AP_TrapRerollExcludedItem() == 5);
     assert(AP_TrapOwnsCamera() && AP_TrapMirrorCullFlip());
     assert(AP_TrapGravity(&local, 1000) < 1000);
+    for (int effect = AP_TRAP_USF_NOBRAKE; effect <= AP_TRAP_BOOST; effect++) {
+        memset(g_active, 0, sizeof g_active);
+        local.const_SingleTurboSpeed = 1200;
+        local.const_SacredFireSpeed = 1300;
+        local.reserves = local.fireSpeedCap = 0;
+        physics_effects = 0;
+        g_active[effect] = 1;
+        AP_TrapForceBoost(&local);
+        assert(physics_effects == 1 && local.reserves > 0);
+        g_active[effect] = 0;
+        assert(AP_TrapAffectsRecordedLap(&local));
+        AP_TrapForceBoost(&local);
+        assert(physics_effects == 2);
+        local.reserves = 0;
+        AP_TrapForceBoost(&local);
+        assert(physics_effects == 2 && !AP_TrapAffectsRecordedLap(&local));
+    }
     puts("PASS: active trap consumers cannot affect a non-Adventure race");
 }
 '''

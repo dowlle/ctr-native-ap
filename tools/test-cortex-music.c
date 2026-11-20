@@ -414,6 +414,7 @@ static void boss_music(void)
 	sha_of(s_pkgVrm, venue.vrmSha256);
 	snprintf(venue.musicPackageRevision, sizeof venue.musicPackageRevision, "1.0.0");
 	snprintf(venue.packageUuid, sizeof venue.packageUuid, "0f8fad5b-d9cb-469f-a165-70867728950e");
+	snprintf(venue.navPackageUuid, sizeof venue.navPackageUuid, "%s", venue.packageUuid);
 	if (stat(s_pkgLev, &st) != 0) { EXPECT(0, "LEV fixture exists"); return; }
 	venue.levBytes = st.st_size;
 	if (stat(s_pkgVrm, &st) != 0) { EXPECT(0, "VRM fixture exists"); return; }
@@ -429,7 +430,7 @@ static void boss_music(void)
 	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_VRM, 1);
 	unsigned char uuid[CTR_CT_NAV_UUID_BYTES], expectedUuid[CTR_CT_NAV_UUID_BYTES];
 	unsigned int revision;
-	EXPECT(CustomTrackPolicy_ParseNavUuid(venue.packageUuid, expectedUuid) &&
+	EXPECT(CustomTrackPolicy_ParseNavUuid(venue.navPackageUuid, expectedUuid) &&
 	       CustomTrack_ResidentGarageNavIdentity(PKG_HOST, uuid, &revision) &&
 	       memcmp(uuid, expectedUuid, sizeof uuid) == 0 &&
 	       revision == CustomTrackPolicy_NavRevision(venue.levSha256),

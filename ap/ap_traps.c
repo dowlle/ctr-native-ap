@@ -88,6 +88,7 @@ static int g_sched_ready = 0;
 // call-sites read this instead of scanning the registry, which keeps them O(1) and
 // keeps their behaviour identical between two calls in one frame.
 static unsigned char g_active[AP_TRAP_EFFECT_COUNT];
+static int g_trap_boost_tainted;
 
 // Camera latch: 1 while we own cameraDC[0], so chase is restored exactly once.
 static int g_fp_applied = 0;
@@ -1412,6 +1413,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 		int refireWarpball = g_trap_spawn_pending[AP_TRAP_WARPBALL_AMBUSH];
 
 		g_epoch++;
+		g_trap_boost_tainted = 0;
 		AP_TrapSchedMapChange(&g_sched);
 		for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 			g_active[e] = 0;
@@ -1492,7 +1494,8 @@ int AP_TrapAffectsRecordedLap(struct Driver *driver)
 {
 	if (!AP_TrapIsLocal(driver) || g_trap_paused)
 		return 0;
-	return g_active[AP_TRAP_ICY] || g_active[AP_TRAP_LOWGRAV] ||
+	return (g_trap_boost_tainted && driver->reserves != 0) ||
+	       g_active[AP_TRAP_ICY] || g_active[AP_TRAP_LOWGRAV] ||
 	       g_active[AP_TRAP_USF_NOBRAKE] || g_active[AP_TRAP_BOOST] ||
 	       g_active[AP_TRAP_WEAKENED_KART] || g_active[AP_TRAP_BOOST_BLOCKER] ||
 	       g_active[AP_TRAP_REVERSE_STEERING] || g_active[AP_TRAP_ALWAYS_JUMPING] ||
@@ -1618,6 +1621,10 @@ void AP_TrapForceBoost(struct Driver *driver)
 {
 	if (!AP_TrapIsLocal(driver))
 		return;
+	int oldReserves = driver->reserves;
+	int oldCap = driver->fireSpeedCap;
+	if (oldReserves == 0)
+		g_trap_boost_tainted = 0;
 	if (g_active[AP_TRAP_USF_NOBRAKE])
 	{
 		// Genuinely USF-tier cap, derived from the real fire-level formula
@@ -1645,6 +1652,12 @@ void AP_TrapForceBoost(struct Driver *driver)
 		if (driver->fireSpeedCap < driver->const_SingleTurboSpeed)
 			driver->fireSpeedCap = driver->const_SingleTurboSpeed;
 	}
+	// A forced floor can survive the scheduler's expiry. Keep this boost
+	// marked until its reserves run out or the kart is reset on a new load.
+	if (driver->reserves != oldReserves || driver->fireSpeedCap != oldCap)
+		g_trap_boost_tainted = 1;
+	if (g_trap_boost_tainted)
+		AP_NavRec_NotePhysicsEffect();
 }
 
 // Mirror one steering axis about the centre the engine will measure it from.

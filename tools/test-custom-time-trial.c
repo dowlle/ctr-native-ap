@@ -345,12 +345,17 @@ static void finish_sampled_lap(void)
 	s_gt.gameMode1 &= ~END_OF_RACE;
 }
 
-static void sample_seed_lap(int flying, int directEffect)
+static void begin_seed_attempt(void)
 {
 	AP_NavRec_RederiveLoadIdentity(&s_gt);
 	AP_NavRec_AfterBotsInit();
 	s_player.lapIndex = 0;
 	AP_NavRec_Tick(&s_gt);
+}
+
+static void sample_seed_lap(int flying, int directEffect)
+{
+	begin_seed_attempt();
 	if (directEffect)
 		AP_NavRec_NoteKartEffect();
 	if (flying)
@@ -400,11 +405,62 @@ static void check_seed_lap_recording(void)
 		}
 	}
 
-	// The pool on the Time Trial host also finds a file from the seed host.
-	struct AP_NavRecPoolEntry *entries;
-	unsigned int skipped;
-	CHECK(AP_NavRec_BuildPool(HOST, 0, NULL, &entries, &skipped) == 2);
-	free(entries);
+	// Publish the foreign-slot recording as the only candidate, rather
+	// than stopping once a header peek has admitted it to the pool.
+	const char *parked = "ap-navpaths/time-trial-fixture.saved";
+	struct { struct NavHeader header; struct NavFrame frames[2]; } authored = {0};
+	struct NavHeader *lanes[] = {&authored.header, &authored.header, &authored.header};
+	struct Level level = {.LevNavTable = lanes};
+	authored.header.magicNumber = -0x1303;
+	authored.header.numPoints = 2;
+	CHECK(rename(tt, parked) == 0);
+	s_gt.levelID = HOST;
+	s_gt.level1 = &level;
+	for (s16 lane = 0; lane < 3; lane++)
+		BOTS_InitNavPath(&s_gt, lane);
+	g_config.navUseRecorded = 1;
+	AP_NavRec_RederiveLoadIdentity(&s_gt);
+	AP_NavRec_AfterBotsInit();
+	CHECK(s_navrecRecordedMask == 1 && sdata->NavPath_ptrHeader[0] == &s_navrecLaneHeader[0]);
+	CHECK(s_navrecLaneFileIndex[0] == 10 * AP_NAVREC_FILE_INDEX_STRIDE + 1);
+	CHECK(rename(parked, tt) == 0);
+	g_config.navUseRecorded = 0;
+	s_gt.level1 = NULL;
+	s_gt.levelID = 10;
+
+	begin_seed_attempt();
+	sample_flying_lap();
+	s_player.clockReceive = 32;
+	finish_sampled_lap(); // Only the finish frame sees the Clock.
+	CHECK(access(extra, F_OK) != 0);
+	s_player.clockReceive = 0;
+	begin_seed_attempt();
+	sample_flying_lap();
+	s_player.clockReceive = 32;
+	s_player.lapIndex++;
+	AP_NavRec_Tick(&s_gt);
+	CHECK(s_navrecBankCount == 1 && s_navrecBankDirty[0] && s_navrecCurDirty);
+	s_player.clockReceive = 0;
+	finish_sampled_lap();
+
+	begin_seed_attempt();
+	sample_flying_lap();
+	s_player.instTntRecv = &s_playerInst;
+	AP_NavRec_Tick(&s_gt);
+	s_player.instTntRecv = NULL;
+	finish_sampled_lap(); // The helmet was shaken off cleanly before the line.
+	CHECK(access(extra, F_OK) != 0);
+
+	begin_seed_attempt();
+	sample_flying_lap();
+	s_player.actionsFlagSet |= ACTION_BEHIND_START_LINE;
+	AP_NavRec_Tick(&s_gt);
+	CHECK(s_navrecWaitingForRecross && !s_navrecLapOpenAtLine && s_navrecCurSamples == 0);
+	s_player.actionsFlagSet &= ~ACTION_BEHIND_START_LINE;
+	AP_NavRec_Tick(&s_gt);
+	CHECK(!s_navrecWaitingForRecross && s_navrecLapOpenAtLine && s_navrecCurSamples == 1);
+	finish_sampled_lap();
+	CHECK(access(extra, F_OK) != 0);
 	s_player.clockReceive = 32;
 	sample_seed_lap(1, 0);
 	s_player.clockReceive = 0;

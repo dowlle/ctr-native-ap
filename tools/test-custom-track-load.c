@@ -2169,7 +2169,7 @@ static void test_finish_terrain_boss_venue(void)
 	s_garageVenue[0].roomIdentity = 123;
 	strcpy(s_garageVenue[0].trackID, "garage-track");
 	strcpy(s_garageVenue[0].packageRevision, "1.0.0");
-	strcpy(s_garageVenue[0].packageUuid, "0f8fad5b-d9cb-469f-a165-70867728950e");
+	strcpy(s_garageVenue[0].navPackageUuid, "0f8fad5b-d9cb-469f-a165-70867728950e");
 	strcpy(s_garageVenue[0].levSha256, "e22b87a73009b94251f5216424cf07875a02e076eb8461b902624c2b5277ad45");
 	strcpy(s_garageVenue[0].vrmSha256, "5de0e46152d8fdce3e0cbe7cdd860516d98d98105106f5d81c043b39df9f0753");
 	/* Simulate the verified pair, without including third-party level bytes. */
@@ -2185,7 +2185,7 @@ static void test_finish_terrain_boss_venue(void)
 	expect_int(CustomTrack_ResidentAssetsMixed(), 0, "the complete verified pair can use quick states");
 	expect_int(CustomTrack_ResidentGarageNavIdentity(TEST_HOST, navUuid, &navRevision), 1,
 	           "the complete garage load supplies a recording identity");
-	CustomTrackPolicy_ParseNavUuid(original.packageUuid, expectedUuid);
+	CustomTrackPolicy_ParseNavUuid(original.navPackageUuid, expectedUuid);
 	expect_int(memcmp(navUuid, expectedUuid, sizeof navUuid) == 0 && navRevision == 0xe22b87a7u, 1,
 	           "garage navigation uses the loaded package UUID and LEV digest");
 	resident = CustomTrack_ResidentSource(TEST_HOST);

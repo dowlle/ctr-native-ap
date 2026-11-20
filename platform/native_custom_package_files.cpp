@@ -923,7 +923,7 @@ struct PinnedSearch
 {
     const char *revision, *uuid, *levHash, *vrmHash;
     unsigned long levBytes, vrmBytes;
-    std::string directory, lev, vrm;
+    std::string directory, lev, vrm, matchedUuid;
 };
 /* The pins a revision must carry for find_pinned; any other revision is never
    acquired. Once a pair is found the walk acquires nothing more. */
@@ -965,24 +965,49 @@ void find_pinned(const CustomPackageStoreEntry *entry, void *opaque)
     {
         search.lev = search.directory + "/" + entry->pin + "/" + lev;
         search.vrm = search.directory + "/" + entry->pin + "/" + vrm;
+        search.matchedUuid = entry->manifest.uuid;
     }
 }
+}
+
+static int resolve_pinned_files(const char *assets, const char *revision, const char *uuid,
+    const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
+    char *levPath, size_t levCapacity, char *vrmPath, size_t vrmCapacity, char *outUuid)
+{
+    if (!assets || !revision || !levSha256 || !vrmSha256 || !levPath || !vrmPath ||
+        !levCapacity || !vrmCapacity) return 0;
+    PinnedSearch search{revision, uuid, levSha256, vrmSha256, levBytes, vrmBytes,
+                        std::string(assets) + "/tracks/packages", {}, {}, {}};
+    char error[256];
+    if (!CustomPackage_ScanStoreMatching(search.directory.c_str(), want_pinned, find_pinned, &search, error, sizeof error) ||
+        search.lev.empty() || search.lev.size() >= levCapacity || search.vrm.size() >= vrmCapacity) return 0;
+    std::memcpy(levPath, search.lev.c_str(), search.lev.size() + 1);
+    std::memcpy(vrmPath, search.vrm.c_str(), search.vrm.size() + 1);
+    if (outUuid)
+        std::memcpy(outUuid, search.matchedUuid.c_str(), search.matchedUuid.size() + 1);
+    return 1;
 }
 
 extern "C" int CustomPackage_FindPinnedFiles(const char *assets, const char *revision, const char *uuid,
     const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
     char *levPath, size_t levCapacity, char *vrmPath, size_t vrmCapacity)
 {
-    if (!assets || !revision || !levSha256 || !vrmSha256 || !levPath || !vrmPath ||
-        !levCapacity || !vrmCapacity) return 0;
-    PinnedSearch search{revision, uuid, levSha256, vrmSha256, levBytes, vrmBytes,
-                        std::string(assets) + "/tracks/packages", {}, {}};
-    char error[256];
-    if (!CustomPackage_ScanStoreMatching(search.directory.c_str(), want_pinned, find_pinned, &search, error, sizeof error) ||
-        search.lev.empty() || search.lev.size() >= levCapacity || search.vrm.size() >= vrmCapacity) return 0;
-    std::memcpy(levPath, search.lev.c_str(), search.lev.size() + 1);
-    std::memcpy(vrmPath, search.vrm.c_str(), search.vrm.size() + 1);
-    return 1;
+    return resolve_pinned_files(assets, revision, uuid, levSha256, levBytes, vrmSha256, vrmBytes,
+                               levPath, levCapacity, vrmPath, vrmCapacity, nullptr);
+}
+
+extern "C" int CustomPackage_FindPinnedFilesWithIdentity(const char *assets, const char *revision, const char *preferredUuid,
+    const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
+    char *levPath, size_t levCapacity, char *vrmPath, size_t vrmCapacity, char outUuid[37])
+{
+    if (!outUuid) return 0;
+    outUuid[0] = '\0';
+    if (preferredUuid && *preferredUuid &&
+        resolve_pinned_files(assets, revision, preferredUuid, levSha256, levBytes, vrmSha256, vrmBytes,
+                             levPath, levCapacity, vrmPath, vrmCapacity, outUuid))
+        return 1;
+    return resolve_pinned_files(assets, revision, nullptr, levSha256, levBytes, vrmSha256, vrmBytes,
+                               levPath, levCapacity, vrmPath, vrmCapacity, outUuid);
 }
 
 namespace {

@@ -696,7 +696,7 @@ static void CustomTrack_DescribeGarage(const struct GarageVenueDescriptor *venue
 	resident->roomIdentity = venue->roomIdentity;
 	memcpy(resident->trackID, venue->trackID, sizeof resident->trackID);
 	memcpy(resident->packageRevision, venue->packageRevision, sizeof resident->packageRevision);
-	memcpy(resident->packageUuid, venue->packageUuid, sizeof resident->packageUuid);
+	memcpy(resident->packageUuid, venue->navPackageUuid, sizeof resident->packageUuid);
 	memcpy(resident->levSha256, venue->levSha256, sizeof resident->levSha256);
 	memcpy(resident->vrmSha256, venue->vrmSha256, sizeof resident->vrmSha256);
 }
