@@ -27,4 +27,11 @@ inline std::string ap_client_user_agent_header()
 	return "User-Agent: " + ap_client_user_agent();
 }
 
+// A request path comes from server metadata; a line break in it would inject
+// extra headers into the raw request. Refuse before connecting.
+inline bool ap_client_request_path_safe(const std::string &path)
+{
+	return path.find_first_of("\r\n") == std::string::npos;
+}
+
 #endif // AP_CLIENT_IDENTITY_H

@@ -15,10 +15,14 @@ Cases:
   2. the old fixed text CTR-AP-alpha7 appears nowhere in the client source,
   3. the wire value comes only from the helper: the one WinHttpOpen call
      (spelling-tolerant) takes exactly the widened helper result, whatever the
-     variable is named; the portable request's User-Agent line is exactly
-     ap_client_user_agent_header() and every socket write sends that one
-     buffer; a server path containing a line break is refused in both
-     transports so no extra header can be injected.
+     variable is named; the transport source holds no User-Agent literal at
+     all, so no request-level override can hide in it; the portable request's
+     header line is exactly ap_client_user_agent_header() and every socket
+     write sends that one buffer,
+  4. the compiled ap_client_request_path_safe refuses lone CR, lone LF and
+     CRLF in a server path and takes a clean path, and both transports call
+     it, so no extra header can be injected,
+  5. the authoring-branch generator keeps ap_client_identity.h.
 """
 from pathlib import Path
 import re
@@ -37,7 +41,13 @@ probe = r'''
 #include <cstdio>
 int main()
 {
-	std::printf("%s\n%s", ap_client_user_agent().c_str(), ap_client_user_agent_header().c_str());
+	std::printf("%s\n%s\n", ap_client_user_agent().c_str(), ap_client_user_agent_header().c_str());
+	std::printf("%d%d%d%d%d\n",
+	            ap_client_request_path_safe("/api/v2/tracks/7/downloads/11"),
+	            ap_client_request_path_safe("/api/v2/tracks/7\r/downloads/11"),
+	            ap_client_request_path_safe("/api/v2/tracks/7\n/downloads/11"),
+	            ap_client_request_path_safe("/api/v2/tracks/7\r\n/downloads/11"),
+	            ap_client_request_path_safe(""));
 	return 0;
 }
 '''
@@ -61,14 +71,16 @@ def compile_probe(defines):
         out = subprocess.run([str(exe)], check=True, capture_output=True, text=True, cwd=root).stdout
         return out.splitlines()
 
-# 1. The compiled helpers say the client's real name and version, per build.
-agent, header = compile_probe(["-DCTR_AP"])
+# 1 and 4. The compiled helpers behave, per build.
+agent, header, safety = compile_probe(["-DCTR_AP"])
 expect(agent == expected_ap, f"an AP build sends {expected_ap!r}, got {agent!r}")
 expect(header == f"User-Agent: {expected_ap}", f"the header line is User-Agent: {expected_ap!r}, got {header!r}")
-agent, header = compile_probe(['-DCTR_NATIVE_VERSION="9.9.9-harness"'])
+expect(safety == "10001", f"a clean path and the empty path pass, lone CR, lone LF and CRLF refuse, got {safety!r}")
+agent, header, safety = compile_probe(['-DCTR_NATIVE_VERSION="9.9.9-harness"'])
 expect(agent == expected_authoring, f"the authoring client sends {expected_authoring!r}, got {agent!r}")
 expect(header == f"User-Agent: {expected_authoring}",
        f"the authoring header line is User-Agent: {expected_authoring!r}, got {header!r}")
+expect(safety == "10001", f"the path guard behaves the same in the authoring build, got {safety!r}")
 
 # 2. The old fixed text is gone from the whole client source. (Only the
 #    contiguous old value: the structural checks below catch attempts to hide
@@ -96,6 +108,8 @@ else:
     expect(False, "the WinHttpOpen argument variable is identifiable")
 expect(transport.count("widen_ascii(ap_client_user_agent())") == 1,
        "the helper is widened exactly once, for the one WinHttpOpen call")
+expect("User-Agent" not in transport,
+       "the transport holds no User-Agent literal, so no request-level override can hide in it")
 
 request = ('const std::string request = "GET " + path + " HTTP/1.1\\r\\nHost: " + host + "\\r\\n" + '
            'ap_client_user_agent_header() + '
@@ -104,20 +118,24 @@ expect(re.sub(r"\s+", "", request) in flat,
        "the portable request's User-Agent line is exactly ap_client_user_agent_header()")
 expect(transport.count("ap_client_user_agent_header()") == 1,
        "the header helper is used exactly once in the transport")
-buffers = set(re.findall(r"(?:async_)?write\s*\(\s*stream\s*,\s*asio::buffer\(\s*(\w+)\s*\)", transport))
-expect(buffers == {"request"},
-       f"every socket write sends the one checked request buffer, found: {sorted(buffers)}")
+buffers = re.findall(r"(?:async_)?write\s*\(\s*stream\s*,\s*asio::buffer\(\s*([^,)]+)", transport)
+expect(buffers and set(buffers) == {"request"},
+       f"every socket write sends the one checked request buffer, found: {sorted(set(buffers))}")
 
-# A server path containing a line break is refused in both transports, so a
-# malformed listing cannot inject a second User-Agent header.
-expect(transport.count("if (!path_safe(path))") == 2 and
-       'find_first_of("\\r\\n")' in transport,
+# 4. Both transports call the compiled path guard.
+expect(transport.count("if (!ap_client_request_path_safe(path))") == 2,
        "both transports refuse a path containing a line break")
+
+# 5. The authoring-branch generator keeps the downloader's new dependency.
+make_branch = (root / "tools/authoring-branch/make-branch.py").read_text(encoding="utf-8")
+expect('"ap/ap_client_identity.h"' in make_branch,
+       "tools/authoring-branch/make-branch.py keeps ap/ap_client_identity.h")
 
 print(f"{checks} checks, {failures} failures")
 if failures:
     raise SystemExit(1)
 print("PASS: the download transport identifies the client honestly on every request: "
       "CTR-AP/<title and log version> in an AP build, CTR-Native-Authoring/<engine version> in the "
-      "authoring client, both with the repository link; the old fixed text is gone, every socket "
-      "write sends the checked buffer, and no server path can inject a header")
+      "authoring client, both with the repository link; the old fixed text is gone, the transport "
+      "holds no User-Agent literal of its own, every socket write sends the checked buffer, and no "
+      "server path can inject a header")
