@@ -460,6 +460,24 @@ void JobFail(const std::string &kind, const std::string &message, const std::str
 }
 
 void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows); // below, by its writer
+std::string NeedsLapsFileName(const APSoloTrackInfo &t);
+
+void ReadTrackCreditPins(APSoloTrackInfo &info, const nlohmann::json &descriptor)
+{
+	if (!descriptor.is_object() || AP_SoloJsonString(descriptor, "id") != info.id) return;
+	const auto files = descriptor.find("files");
+	if (files != descriptor.end() && files->is_array())
+		for (const auto &file : *files)
+		{
+			const auto role = AP_SoloJsonString(file, "role");
+			const auto hash = AP_SoloJsonString(file, "sha256");
+			if (role == "lev") CopyText(info.creditLev, sizeof info.creditLev, hash);
+			if (role == "vrm") CopyText(info.creditVrm, sizeof info.creditVrm, hash);
+		}
+	const auto locator = descriptor.find("locator");
+	if (locator != descriptor.end())
+		CopyText(info.creditSource, sizeof info.creditSource, AP_SoloJsonString(*locator, "patch_name"));
+}
 
 // A new track list keeps the picks of the tracks still in it. The first list of a
 // start begins as the YAML has each track.
@@ -478,6 +496,11 @@ void ParseTracks(const nlohmann::json &r)
 			CopyText(info.title, sizeof info.title, AP_SoloJsonString(t, "display_name"));
 			CopyText(info.revision, sizeof info.revision, AP_SoloJsonString(t, "revision"));
 			CopyText(info.author, sizeof info.author, AP_SoloJsonString(t, "author"));
+			const auto descriptorName = NeedsLapsFileName(info);
+			if (!descriptorName.empty() && AP_SoloJsonString(t, "source") == "file")
+				ReadTrackCreditPins(info, nlohmann::json::parse(
+					ReadSmallPlainFile(fs::u8path(SoloPath("tracks")) / fs::u8path(descriptorName), kDescriptorMax),
+					nullptr, false));
 			CopyText(info.modes, sizeof info.modes, AP_SoloTrackModes(t.value("modes", nlohmann::json())));
 			info.timeTrial = t.value("time_trial", false) ? 1 : 0;
 			info.pick = AP_SoloTrackStart(t);
@@ -1166,6 +1189,7 @@ void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows)
 			continue;
 		CopyText(info.title, sizeof info.title, AP_SoloJsonString(d, "display_name"));
 		CopyText(info.author, sizeof info.author, AP_SoloJsonString(d, "author"));
+		ReadTrackCreditPins(info, d);
 		bool listed = false;
 		for (const APSoloTrackInfo &row : rows)
 			listed = listed || std::strcmp(row.id, info.id) == 0;

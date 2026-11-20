@@ -725,7 +725,21 @@ void AH_WarpPad_ThTick(struct Thread *t)
 #else
 				int apLift = 0;
 #endif
-				// midpoing X,
+#if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
+				const char *credit = UI_TrackCredit(ctr_cfg_warp_phys(levelID));
+				if (credit)
+				{
+					const RECT *view = &gGT->pushBuffer[0].rect;
+					const int x = view->x + view->w / 2;
+					const int bottom = view->y + view->h - apLift;
+					if (levelID == AP_CORTEX_DEST) warppadLNG = "CORTEX VORTEX";
+					DecalFont_DrawLineBox(warppadLNG, x, bottom - 30 - 11, view->w - 160,
+					                      FONT_BIG, JUSTIFY_CENTER | ORANGE, TEXT_MARQUEE, TEXT_SLOT_PAD_TITLE, NULL);
+					UI_DrawTrackCredit(credit, x, bottom - 23, view->w - 160);
+				}
+				else
+#endif
+				// midpoint X,
 				// 30 pixels above botttom Y
 				DecalFont_DrawLine(warppadLNG, gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
 				                   gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 30 - apLift, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
@@ -804,6 +818,10 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 					if (apLockRacer >= 0)
 					{
+						int racerLift = apLift;
+#ifdef CTR_CUSTOM_PACKAGES
+						if (credit) racerLift += 11;
+#endif
 						char apRacerLine[32];
 						int apHave = AP_CharacterUnlocked(apLockRacer);
 						short apCx = (short)(gGT->pushBuffer[0].rect.x
@@ -815,7 +833,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						// h-62 planted the icon straight through the text (Deck
 						// field check, 2026-08-17).
 						short apCy = (short)(gGT->pushBuffer[0].rect.y
-						                     + gGT->pushBuffer[0].rect.h - 82 - apLift);
+						                     + gGT->pushBuffer[0].rect.h - 82 - racerLift);
 
 						// Portrait centred above the title, dimmed until owned so
 						// "can I use this pad yet" reads without counting items.
@@ -838,7 +856,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						DecalFont_DrawLine(apHave ? "RACER READY" : apRacerLine,
 						                   apCx,
 						                   (short)(gGT->pushBuffer[0].rect.y
-						                           + gGT->pushBuffer[0].rect.h - 45 - apLift),
+						                           + gGT->pushBuffer[0].rect.h - 45 - racerLift),
 						                   FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
 					}
 				}

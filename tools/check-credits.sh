@@ -46,11 +46,10 @@ fail=0
 [ -f "$notices" ] || { echo "FAIL: $notices not found"; exit 1; }
 [ -f "$credits" ] || { echo "FAIL: $credits not found"; exit 1; }
 
-# The credits text literals, one per line, uppercased. Text lives only in the
-# {header, "TEXT"} table rows.
-credit_lines="$(grep -o '{[01], "[^"]*"' "$credits" \
-	| sed 's/^{[01], "//; s/"$//' \
-	| tr '[:lower:]' '[:upper:]')"
+# Expand shared display strings before checking the credits table.
+credit_src="$(cc -E -P -DCTR_AP -I"$root/include" -x c "$credits")" || exit 1
+credit_text="$(printf '%s\n' "$credit_src" | grep -o '{[01], "[^"]*"' | sed 's/^{[01], "//; s/"$//')"
+credit_lines="$(printf '%s\n' "$credit_text" | tr '[:lower:]' '[:upper:]')"
 
 # name_present NAME -- true when NAME appears in a credits line as a whole token
 # run, i.e. bounded by a non-alphanumeric character or a line edge on both sides.
@@ -195,6 +194,7 @@ GRAPHICS OPTIONS - THECODINGBOB
 RESERVES METER - SUPERSTARXALIEN
 ALWAYS JUMPING TRAP - ALIENGENIE
 ARCHIPELAGO - LLCOOLDAVE
+TRACK AND MUSIC BY LOCKHEART
 EOF
 
 # --- 4. Glyph set + line width ----------------------------------------------
@@ -202,7 +202,7 @@ width="$(sed -n 's/^#define AP_CREDITS_FIELD_WIDTH \([0-9]*\).*/\1/p' "$credits"
 [ -n "$width" ] || { echo "FAIL: AP_CREDITS_FIELD_WIDTH not found in $credits"; exit 1; }
 
 # Text literals live only in the {header, "TEXT"} table rows.
-glyph_fail="$(grep -o '{[01], "[^"]*"' "$credits" | sed 's/^{[01], "//; s/"$//' | awk -v w="$width" '
+glyph_fail="$(printf '%s\n' "$credit_text" | awk -v w="$width" '
 	{
 		if (length($0) > w) {
 			printf "FAIL: credits line longer than %d chars: %s\n", w, $0

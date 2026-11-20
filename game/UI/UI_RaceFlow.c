@@ -293,6 +293,19 @@ LAB_80055930:
 
 		// Print the name of the level
 		// Crash Cove, Roos Tubes, etc
+#ifdef CTR_CUSTOM_PACKAGES
+		const char *credit = UI_TrackCredit(-1);
+		if (credit)
+		{
+			const RECT *view = &gGT->pushBuffer[0].rect;
+			const int center = view->x + view->w / 2;
+			const int bottom = view->y + view->h + transition;
+			DecalFont_DrawLineBox(UI_TrackName(-1), center, bottom - 29, view->w - 64,
+			                      FONT_BIG, JUSTIFY_CENTER | ORANGE, TEXT_MARQUEE, TEXT_SLOT_BANNER, NULL);
+			UI_DrawTrackCredit(credit, center, bottom - 11, view->w - 64);
+		}
+		else
+#endif
 		DecalFont_DrawLineBox(
 
 		    // 83a88 = 110

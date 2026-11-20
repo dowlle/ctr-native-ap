@@ -413,7 +413,7 @@ void AP_FeedDrawHub(void)
 //     just the draw) also FREEZES the lifetimes: a line does not burn its four
 //     seconds behind a pause menu, it resumes where it was. That mirrors how a
 //     line queued in a menu keeps its full dwell for later.
-void AP_FeedDrawRace(void)
+static void AP_FeedDrawRaceAt(int y)
 {
 	struct GameTracker *gGT = sdata->gGT;
 
@@ -424,7 +424,17 @@ void AP_FeedDrawRace(void)
 	if ((gGT->gameMode1 & PAUSE_ALL) != 0)
 		return;
 
-	AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_BASE_Y, 1);
+	AP_FeedTickAndDraw(AP_FEED_X, y, 1);
+}
+
+void AP_FeedDrawRace(void)
+{
+	AP_FeedDrawRaceAt(AP_FEED_BASE_Y);
+}
+
+void AP_FeedDrawRaceIntro(void)
+{
+	AP_FeedDrawRaceAt(AP_FEED_RESULTS_BASE_Y);
 }
 
 // End-of-race screens: the race HUD pass returns before AP_FeedDrawRace, so the

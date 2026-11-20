@@ -4,9 +4,13 @@
 // Project Saphi and GitHub raw.
 
 #include "ap_track_registry.h"
+#include <platform/native_track_credit.h>
+#include <platform/native_custom_package.h>
+#include <platform/native_track_sources.h>
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstring>
@@ -42,7 +46,8 @@ struct Index
 {
 	std::vector<Revision> rows;
 	std::unordered_map<int, std::string> key_by_saphi;
-	std::unordered_map<std::string, std::vector<std::string>> credits;
+	struct Credit { std::string name, role; };
+	std::unordered_map<std::string, std::vector<Credit>> credits;
 	void clear() { rows.clear(); key_by_saphi.clear(); credits.clear(); }
 };
 constexpr size_t kMaxCredits = 16;     // per track
@@ -192,18 +197,26 @@ bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::str
 		const nlohmann::json *credits = member(track, "credits");
 		if (!key.empty() && credits && credits->is_array() && credits->size() <= kMaxCredits)
 		{
-			std::vector<std::string> names;
+			std::vector<Index::Credit> names;
 			bool ok = true;
 			for (const auto &credit : *credits)
 			{
 				const nlohmann::json *name = member(credit, "name");
 				if (!name || !name->is_string() || name->get_ref<const std::string &>().empty() ||
-				    name->get_ref<const std::string &>().size() > kCreditNameMax)
+				    name->get_ref<const std::string &>().size() > kCreditNameMax ||
+				    name->get_ref<const std::string &>().find_first_not_of(" \t") == std::string::npos)
 				{
 					ok = false; // a credit this client cannot read: no names, so no permission by name
 					break;
 				}
-				names.push_back(name->get<std::string>());
+				const auto *role = member(credit, "role");
+				const auto &text = name->get_ref<const std::string &>();
+				if (std::any_of(text.begin(), text.end(), [](unsigned char c) { return c < 32 || c == 127; }))
+				{
+					ok = false;
+					break;
+				}
+				names.push_back({text, role && role->is_string() ? role->get<std::string>() : ""});
 			}
 			if (ok && !names.empty() && !index.credits.count(key)) index.credits.emplace(key, std::move(names));
 		}
@@ -468,20 +481,104 @@ extern "C" int ap_track_registry_key_for_saphi(int saphi_track_id, char *key, in
 	return 1;
 }
 
+static std::shared_ptr<const Index> current_index()
+{
+	RegistryState &s = registry_state();
+	std::lock_guard<std::mutex> lock(s.mutex);
+	return s.index;
+}
+
 bool ap_track_registry_credits(const std::string &track_key, std::vector<std::string> &names)
 {
-	std::shared_ptr<const Index> index;
-	{
-		RegistryState &s = registry_state();
-		std::lock_guard<std::mutex> lock(s.mutex);
-		index = s.index;
-	}
+	const auto index = current_index();
 	names.clear();
 	if (!index || track_key.empty()) return false;
 	auto found = index->credits.find(track_key);
 	if (found == index->credits.end()) return false;
-	names = found->second;
+	for (const auto &credit : found->second) names.push_back(credit.name);
 	return true;
+}
+
+static void add_credit_name(std::string &names, const std::string &name)
+{
+	if (!names.empty()) names += " and ";
+	names += name;
+}
+
+extern "C" void CustomTrackCredit_Format(char *out, size_t size, const char *lev, const char *vrm,
+                                         int saphiID, const char *author, const char *source)
+{
+	if (!out || !size) return;
+	const auto index = current_index();
+	std::string key, track, music;
+	if (index)
+	{
+		if (lev && vrm && *lev && *vrm)
+		{
+			for (const auto &row : index->rows)
+			{
+				if (row.lev != lev || row.vrm != vrm || row.key.empty()) continue;
+				if (!key.empty() && key != row.key)
+				{
+					key.clear();
+					break;
+				}
+				key = row.key;
+			}
+		}
+		else if (const auto found = index->key_by_saphi.find(saphiID); found != index->key_by_saphi.end())
+			key = found->second;
+		if (key == "cortex-vortex")
+		{
+			std::snprintf(out, size, "%s", CTR_CORTEX_CREDIT);
+			return;
+		}
+		const auto found = index->credits.find(key);
+		if (found != index->credits.end())
+		{
+			for (const auto &credit : found->second)
+			{
+				if (credit.role == "track") add_credit_name(track, credit.name);
+				if (credit.role == "music") add_credit_name(music, credit.name);
+			}
+		}
+	}
+	if (track.empty() && author && *author && std::strcmp(author, "Unknown") &&
+	    std::strcmp(author, "Unknown author"))
+		track = author;
+	struct TrackSource known;
+	if (track.empty() && (!source || !*source) && TrackSources_Find(lev, vrm, &known))
+		source = known.kind == TRACK_SOURCE_PATCH ? known.patchFile : "Project Saphi";
+	if (track.empty())
+		std::snprintf(out, size, "From %s", source && *source ? source : "a local custom track package");
+	else if (!music.empty() && track == music)
+		std::snprintf(out, size, "Track and music by %s", track.c_str());
+	else
+		std::snprintf(out, size, "Track by %s", track.c_str());
+	if (!music.empty() && track != music)
+	{
+		const size_t used = std::strlen(out);
+		std::snprintf(out + used, size - used, " / Music by %s", music.c_str());
+	}
+}
+
+extern "C" void CustomPackage_TrackCredit(const struct CustomPackageLocalInfo *local, char *out, size_t size)
+{
+	CustomTrackCredit_Format(out, size, local->levSha256, local->vrmSha256, local->permissionTrackID,
+	                         local->author, local->permissionTrackID ? "Project Saphi" : nullptr);
+	if (local->xdelta && !std::strcmp(out, "From a local custom track package"))
+		std::snprintf(out, size, "From an imported xdelta pack");
+}
+
+extern "C" void CustomTrackCredit_EnsureRegistry(const char *assets)
+{
+	if (assets && *assets && ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_IDLE)
+	{
+		std::string path(assets);
+		if (path.back() != '/' && path.back() != '\\') path += '/';
+		path += "track-registry-cache.json";
+		ap_track_registry_refresh(path.c_str());
+	}
 }
 
 #ifdef AP_TRACK_REGISTRY_TEST

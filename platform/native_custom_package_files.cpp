@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include <platform/native_custom_package.h>
+#include <platform/native_track_credit.h>
 #include <platform/native_custom_offline.h>
 #include <platform/native_custom_music.h>
 #include <platform/native_sha256.h>
@@ -697,6 +698,10 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
     for (unsigned int i = 0; i < entry.manifest.count; i++)
     {
         const auto &file = entry.manifest.files[i];
+        if (!std::strcmp(file.role, "lev"))
+            std::memcpy(entry.local.levSha256, file.sha256, sizeof entry.local.levSha256);
+        if (!std::strcmp(file.role, "vrm"))
+            std::memcpy(entry.local.vrmSha256, file.sha256, sizeof entry.local.vrmSha256);
         if (std::strcmp(file.role, "presentation") || file.bytes > 4096) continue;
         std::string bytes(file.bytes, '\0');
         if (!CustomPackage_CopyFile(package, "presentation", bytes.data(), bytes.size(), nullptr)) continue;
@@ -710,6 +715,9 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
                                source.at("version") == entry.manifest.version;
             if (seed || saphi)
             {
+                if (saphi && source.contains("track_id") && source["track_id"].is_number_integer() &&
+                    source["track_id"] > 0 && source["track_id"] <= 100000000)
+                    entry.local.permissionTrackID = source["track_id"].get<int>();
                 /* A4-74: the ids a seed install recorded, for the permission check. */
                 if (seed && source.contains("saphi_track_id") && source["saphi_track_id"].is_number_integer() &&
                     source["saphi_track_id"] > 0 && source["saphi_track_id"] <= 100000000)
@@ -776,6 +784,14 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
     entry.local.ctrChallenge = !*ctr;
     std::snprintf(entry.local.relicReason, sizeof entry.local.relicReason, "%s", relic);
     std::snprintf(entry.local.ctrChallengeReason, sizeof entry.local.ctrChallengeReason, "%s", ctr);
+}
+
+extern "C" void CustomPackage_TrackCreditInfo(CustomPackageOwned *package, CustomPackageLocalInfo *out)
+{
+    CustomPackageStoreEntry entry{};
+    if (CustomPackage_GetManifest(package, &entry.manifest))
+        package_capabilities(package, entry);
+    *out = entry.local;
 }
 
 namespace {

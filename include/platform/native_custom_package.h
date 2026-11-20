@@ -157,6 +157,9 @@ struct CustomPackageStoreEntry
     struct CustomPackageLocalInfo local;
 };
 typedef void (*CustomPackageStoreVisitor)(const struct CustomPackageStoreEntry *entry, void *context);
+/* Read the author and provenance from an already verified snapshot. */
+void CustomPackage_TrackCreditInfo(struct CustomPackageOwned *package, struct CustomPackageLocalInfo *out);
+void CustomPackage_TrackCredit(const struct CustomPackageLocalInfo *local, char *out, size_t size);
 /* Sorted, bounded read-only discovery of exact lowercase hash names. Staging
    and unrelated names are ignored. Each revision is fully re-acquired; damaged
    entries remain visible with a reason. Copy callback data before returning.

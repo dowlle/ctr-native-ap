@@ -1,4 +1,4 @@
-// g++ -m32 -std=c++17 -Wall -Wextra -Werror -DAP_TRACK_REGISTRY_TEST -I ap -I ap/vendor/json/include tools/test-track-registry.cpp ap/ap_track_registry.cpp -o /tmp/test-track-registry -pthread
+// g++ -m32 -std=c++17 -Wall -Wextra -Werror -DAP_TRACK_REGISTRY_TEST -I ap -I include -I ap/vendor/json/include tools/test-track-registry.cpp ap/ap_track_registry.cpp -o /tmp/test-track-registry -pthread
 //
 // Live track registry lookup for Current Seed (one generator row 10k), with a
 // local fixture registry and a stub transport in place of GitHub:
@@ -17,6 +17,7 @@
 //      with the next live fetch (no client release).
 // With one argument it parses that registry file and prints what it indexes.
 #include "ap_track_registry.h"
+#include <platform/native_track_credit.h>
 
 #include <nlohmann/json.hpp>
 
@@ -164,6 +165,29 @@ int main(int argc, char **argv)
 	CHECK(g_asked.size() == 1 && g_asked[0] == "raw.githubusercontent.com/dowlle/ctr-track-registry/main/registry.json");
 	CHECK(slurp(cache) == v1 && !exists(cache + ".part"));
 	CHECK(ap_track_registry_generation() != gen);
+
+	// Credits are pinned independently of the registry's download eligibility.
+	{
+		auto credited = json::parse(v1);
+		credited["tracks"][0]["credits"] = json::array({
+			{{"name", "PanchoPew"}, {"role", "track"}},
+			{{"name", "Music Writer"}, {"role", "music"}},
+			{{"name", "SecondAuthor"}, {"role", "track"}},
+		});
+		serve(true, credited.dump());
+		CHECK(ap_track_registry_refresh(nullptr) == 1);
+		CHECK(wait_done(&source) == AP_TRACK_REGISTRY_DONE);
+		char credit[CTR_TRACK_CREDIT_MAX];
+		CustomTrackCredit_Format(credit, sizeof credit, h('a').c_str(), h('b').c_str(), 0, "Old name", nullptr);
+		CHECK(!std::strcmp(credit, "Track by PanchoPew and SecondAuthor / Music by Music Writer"));
+		CustomTrackCredit_Format(credit, sizeof credit, h('c').c_str(), h('d').c_str(), 0, nullptr, nullptr);
+		CHECK(!std::strcmp(credit, "Track by PanchoPew and SecondAuthor / Music by Music Writer"));
+		CustomTrackCredit_Format(credit, sizeof credit, h('a').c_str(), h('f').c_str(), 121, "Unknown", "Example Pack");
+		CHECK(!std::strcmp(credit, "From Example Pack"));
+		serve(true, v1);
+		CHECK(ap_track_registry_refresh(cache.c_str()) == 1);
+		CHECK(wait_done(&source) == AP_TRACK_REGISTRY_DONE);
+	}
 
 	// 2. Match by the room's pinned hashes, in any case.
 	std::memset(&m, 0, sizeof m);

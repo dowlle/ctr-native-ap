@@ -1,7 +1,11 @@
 #include <common.h>
 #include <platform/native_custom_identity.h>
 #ifdef CTR_CUSTOM_PACKAGES
+#include <platform/native_assets.h>
 #include <platform/native_custom_package.h>
+#include <platform/native_custom_offline.h>
+#include <platform/native_track_credit.h>
+#include <text_box.h>
 #endif
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
@@ -69,3 +73,97 @@ const char *UI_TrackName(int physicalPad)
 	}
 	return level >= 0 && level < 65 ? sdata->lngStrings[data.metaDataLEV[level].name_LNG] : "?";
 }
+
+#ifdef CTR_CUSTOM_PACKAGES
+#ifdef CTR_AP
+static const ctr_content_package *UI_TrackCreditPackage(int physicalPad, int *cortex)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	const ctr_content_pad *pad;
+	if (physicalPad >= 0)
+	{
+		if (!ap_content_plan_active())
+		{
+			*cortex = ctr_cfg_active() && ctr_cfg.cortex_track.option && physicalPad == AP_CORTEX_DEST;
+			return NULL;
+		}
+		pad = ap_content_plan_pad(physicalPad);
+		if (!pad || !pad->occupied || pad->cup || pad->retail_id >= 0) return NULL;
+		*cortex = pad->cortex;
+		return ap_content_plan_package(pad->package_index);
+	}
+
+	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(gGT->levelID);
+	if (race)
+	{
+		if (race->retail || !ap_content_plan_active() || race->seedEpoch != ap_content_plan_epoch())
+			return NULL;
+		pad = ap_content_plan_pad(race->physicalPad);
+		if (!pad || !pad->occupied || strcmp(pad->entry_id, race->entryID)) return NULL;
+		*cortex = race->cortex;
+		if (race->cup)
+		{
+			if (!pad->cup || race->leg < 0 || race->leg >= AP_CONTENT_CUP_LEGS) return NULL;
+			const ctr_content_leg *leg = &pad->legs[race->leg];
+			return !strcmp(leg->track_id, race->trackID) ? ap_content_plan_package(leg->package_index) : NULL;
+		}
+		return !pad->cup && !strcmp(pad->track_id, race->trackID) ? ap_content_plan_package(pad->package_index) : NULL;
+	}
+
+	const int garage = CustomTrack_GarageVenueServing(gGT->levelID, gGT->bossID, gGT->gameMode1 & ADVENTURE_BOSS);
+	if (garage >= 0 && ap_content_plan_active())
+	{
+		const ctr_content_bosses *bosses = ap_content_plan_bosses();
+		*cortex = bosses->venue_cortex[garage];
+		return ap_content_plan_package(bosses->venue_package[garage]);
+	}
+	*cortex = AP_CortexTrackActive() ||
+		CustomTrack_OxideFinalServing(gGT->levelID, gGT->bossID, gGT->gameMode1 & ADVENTURE_BOSS);
+	return NULL;
+}
+#endif
+
+const char *UI_TrackCredit(int physicalPad)
+{
+	static char credit[CTR_TRACK_CREDIT_MAX];
+#ifdef CTR_AP
+	int cortex = 0;
+	const ctr_content_package *pkg = UI_TrackCreditPackage(physicalPad, &cortex);
+	if (cortex) return CTR_CORTEX_CREDIT;
+	if (pkg)
+	{
+		CustomTrackCredit_EnsureRegistry(NativeAssets_GetAssetDir());
+		CustomTrackCredit_Format(credit, sizeof credit, pkg->lev_sha256, pkg->vrm_sha256,
+		                         0, pkg->author, pkg->locator_name);
+		return credit;
+	}
+#endif
+	if (physicalPad < 0 && MainRaceTrack_OfflineCustomLoad())
+	{
+		static uint64_t generation;
+		static struct CustomPackageLocalInfo info;
+		if (generation != CustomOffline_RuntimeGeneration())
+		{
+			CustomPackage_TrackCreditInfo(CustomOffline_RuntimePackage(), &info);
+			generation = CustomOffline_RuntimeGeneration();
+		}
+		CustomTrackCredit_EnsureRegistry(NativeAssets_GetAssetDir());
+		CustomPackage_TrackCredit(&info, credit, sizeof credit);
+		return credit;
+	}
+	return NULL;
+}
+
+void UI_DrawTrackCredit(const char *credit, int x, int y, int width)
+{
+	char plain[CTR_TRACK_CREDIT_MAX];
+	if (credit && CustomPackage_AsciiFold(credit, strlen(credit), plain, sizeof plain))
+	{
+		/* The byte font treats these glyphs as controls and controller icons. */
+		for (char *c = plain; *c; ++c)
+			if ((unsigned char)*c < 32 || strchr("~@[^*", *c)) *c = ' ';
+		DecalFont_DrawLineBox(plain, x, y, width, FONT_SMALL, WHITE | JUSTIFY_CENTER,
+		                      TEXT_MARQUEE, TEXT_SLOT_TRACK_CREDIT, NULL);
+	}
+}
+#endif

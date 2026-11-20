@@ -1,5 +1,8 @@
 #include <common.h>
 #include "../RenderLevel/RenderLevelLod.h"
+#ifdef CTR_CUSTOM_PACKAGES
+#include <text_box.h>
+#endif
 
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
@@ -515,7 +518,12 @@ void RenderAllHUD(struct GameTracker *gGT)
 #ifdef CTR_AP
 		// AP feed: a DeathLink received during the intro / countdown is shown as
 		// ignored right away instead of surfacing after the lights.
-		AP_FeedDrawRace();
+#ifdef CTR_CUSTOM_PACKAGES
+		if (UI_TrackCredit(-1))
+			AP_FeedDrawRaceIntro();
+		else
+#endif
+			AP_FeedDrawRace();
 #endif
 	}
 
@@ -529,6 +537,10 @@ void RenderAllHUD(struct GameTracker *gGT)
 			if ((hudFlags & 4) != 0)
 			{
 				UI_CupStandings_InputAndDraw();
+#ifdef CTR_CUSTOM_PACKAGES
+				const RECT *view = &gGT->pushBuffer_UI.rect;
+				UI_DrawTrackCredit(UI_TrackCredit(-1), view->w / 2, view->h - 11, view->w - 64);
+#endif
 #ifdef CTR_AP
 				// AP feed: a race_loss DeathLink popup must survive the leg ending
 				// straight into the standings.
@@ -555,6 +567,21 @@ void RenderAllHUD(struct GameTracker *gGT)
 					if ((gameMode1 & CRYSTAL_CHALLENGE) == 0)
 					{
 						UI_RenderFrame_Racing();
+#ifdef CTR_CUSTOM_PACKAGES
+						/* A split intro shares one central label. */
+						if (gGT->numPlyrCurrGame == 2 && (gameMode1 & START_OF_RACE) &&
+						    !(gameMode1 & PAUSE_ALL))
+						{
+							const char *credit = UI_TrackCredit(-1);
+							if (credit)
+							{
+								const int x = gGT->pushBuffer_UI.rect.w / 2;
+								DecalFont_DrawLineBox(UI_TrackName(-1), x, 50, 320, FONT_BIG,
+								                      ORANGE | JUSTIFY_CENTER, TEXT_MARQUEE, TEXT_SLOT_BANNER, NULL);
+								UI_DrawTrackCredit(credit, x, 68, 320);
+							}
+						}
+#endif
 					}
 
 					// if crystal challenge
@@ -569,6 +596,10 @@ void RenderAllHUD(struct GameTracker *gGT)
 				{
 					if ((u32)(sdata->Loading.stage + 5) > 1)
 					{
+#ifdef CTR_CUSTOM_PACKAGES
+						const RECT *view = &gGT->pushBuffer_UI.rect;
+						UI_DrawTrackCredit(UI_TrackCredit(-1), view->w / 2, view->h - 11, view->w - 64);
+#endif
 						if ((gameMode1 & CRYSTAL_CHALLENGE) == 0)
 						{
 							if ((gameMode1 & TIME_TRIAL) == 0)
