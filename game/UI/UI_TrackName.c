@@ -134,7 +134,7 @@ const char *UI_TrackCredit(int physicalPad)
 	{
 		CustomTrackCredit_EnsureRegistry(NativeAssets_GetAssetDir());
 		CustomTrackCredit_Format(credit, sizeof credit, pkg->lev_sha256, pkg->vrm_sha256,
-		                         0, pkg->author, pkg->locator_name);
+		                         0, pkg->author, CustomTrackCredit_PatchSource(pkg->locator_name, pkg->locator_sha256));
 		return credit;
 	}
 	/* Older schema rooms can redirect a gem cup to a compiled package. */

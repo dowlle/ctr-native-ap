@@ -203,19 +203,13 @@ bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::str
 			{
 				const nlohmann::json *name = member(credit, "name");
 				if (!name || !name->is_string() || name->get_ref<const std::string &>().empty() ||
-				    name->get_ref<const std::string &>().size() > kCreditNameMax ||
-				    name->get_ref<const std::string &>().find_first_not_of(" \t") == std::string::npos)
+				    name->get_ref<const std::string &>().size() > kCreditNameMax)
 				{
 					ok = false; // a credit this client cannot read: no names, so no permission by name
 					break;
 				}
 				const auto *role = member(credit, "role");
 				const auto &text = name->get_ref<const std::string &>();
-				if (std::any_of(text.begin(), text.end(), [](unsigned char c) { return c < 32 || c == 127; }))
-				{
-					ok = false;
-					break;
-				}
 				names.push_back({text, role && role->is_string() ? role->get<std::string>() : ""});
 			}
 			if (ok && !names.empty() && !index.credits.count(key)) index.credits.emplace(key, std::move(names));
@@ -501,6 +495,10 @@ bool ap_track_registry_credits(const std::string &track_key, std::vector<std::st
 
 static void add_credit_name(std::string &names, const std::string &name)
 {
+	/* Presentation validation is independent of the names used for consent. */
+	if (name.find_first_not_of(' ') == std::string::npos ||
+	    std::any_of(name.begin(), name.end(), [](unsigned char c) { return c < 32 || c == 127; }))
+		return;
 	if (!names.empty()) names += " and ";
 	names += name;
 }
@@ -543,9 +541,9 @@ extern "C" void CustomTrackCredit_Format(char *out, size_t size, const char *lev
 			}
 		}
 	}
-	if (track.empty() && author && *author && std::strcmp(author, "Unknown") &&
+	if (track.empty() && author && std::strcmp(author, "Unknown") &&
 	    std::strcmp(author, "Unknown author"))
-		track = author;
+		add_credit_name(track, author);
 	struct TrackSource known;
 	if ((key.empty() || (track.empty() && (!source || !*source))) &&
 	    lev && *lev && vrm && *vrm && TrackSources_Find(lev, vrm, &known))
@@ -557,7 +555,9 @@ extern "C" void CustomTrackCredit_Format(char *out, size_t size, const char *lev
 			return;
 		}
 		if (track.empty() && (!source || !*source))
-			source = known.kind == TRACK_SOURCE_PATCH ? known.patchFile : "Project Saphi";
+			source = known.kind == TRACK_SOURCE_PATCH
+				? (known.alsoPatch ? "an imported xdelta pack" : known.patchFile)
+				: "Project Saphi";
 	}
 	if (track.empty())
 		std::snprintf(out, size, "From %s", source && *source ? source : "a local custom track package");
@@ -572,21 +572,23 @@ extern "C" void CustomTrackCredit_Format(char *out, size_t size, const char *lev
 	}
 }
 
+extern "C" const char *CustomTrackCredit_PatchSource(const char *name, const char *sha256)
+{
+	if (name && *name) return name;
+	if (!sha256 || !*sha256) return nullptr;
+	for (const auto &row : g_trackSources)
+		if (row.kind == TRACK_SOURCE_PATCH && TrackSources_HexEqual(row.patchSha256, sha256))
+			return row.patchFile;
+	return "an imported xdelta pack";
+}
+
 extern "C" void CustomPackage_TrackCredit(const struct CustomPackageLocalInfo *local, const char *fallbackAuthor,
                                           char *out, size_t size)
 {
 	if (!out || !size) return;
 	const char *source = nullptr;
 	if (local->xdelta)
-	{
-		source = "an imported xdelta pack";
-		for (const auto &row : g_trackSources)
-			if (row.kind == TRACK_SOURCE_PATCH && TrackSources_HexEqual(row.patchSha256, local->patchSha256))
-			{
-				source = row.patchFile;
-				break;
-			}
-	}
+		source = CustomTrackCredit_PatchSource(nullptr, local->patchSha256);
 	else if (local->saphi || local->permissionTrackID)
 		source = "Project Saphi";
 	CustomTrackCredit_Format(out, size, local->levSha256, local->vrmSha256, local->permissionTrackID,

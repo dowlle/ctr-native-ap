@@ -1697,11 +1697,11 @@ static void CT_SeedFrame(int tapped, int installAvailable, uint32_t *ot)
             {
                 CustomTrackCredit_EnsureRegistry(NativeAssets_GetAssetDir());
                 CustomTrackCredit_Format(credit, sizeof credit, p->lev_sha256, p->vrm_sha256,
-                                         0, p->author, p->locator_name);
+                                         0, p->author, CustomTrackCredit_PatchSource(p->locator_name, p->locator_sha256));
             }
             else if (r->source != AP_SEED_SOURCE_BUNDLED)
                 CustomTrackCredit_Format(credit, sizeof credit, NULL, NULL, r->saphi_track_id,
-                                         r->author, r->locator.patch_name);
+                                         r->author, CustomTrackCredit_PatchSource(r->locator.patch_name, r->locator.patch_sha256));
             UI_DrawTrackCredit(credit, CT_DETAIL_X + CT_DETAIL_W / 2, 108, CT_DETAIL_W);
             MM_CustomText_Draw(CT_SeedStateLong(r), CT_DETAIL_X, 120, CT_DETAIL_W, 1, ready ? ORANGE : RED, ot);
             ap_seed_instruction(r, instruction, sizeof instruction);

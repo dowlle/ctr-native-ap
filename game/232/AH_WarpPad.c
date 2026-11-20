@@ -736,22 +736,26 @@ void AH_WarpPad_ThTick(struct Thread *t)
 #else
 				int apLift = 0;
 #endif
+				const RECT *padView = &gGT->pushBuffer[0].rect;
+				int padX = padView->x + padView->w / 2;
 #if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
 				const char *credit = UI_TrackCredit(ap_content_plan_active() ? ctr_cfg_warp_phys(levelID) : levelID);
 				if (credit)
 				{
-					const RECT *view = &gGT->pushBuffer[0].rect;
-					const int x = view->x + view->w / 2;
-					const int bottom = view->y + view->h - apLift;
-					DecalFont_DrawLineBox(warppadLNG, x, bottom - 30 - 11, view->w - 160,
+					// Custom titles and credits can fill their whole marquee.
+					// Keep the block left of the hub map and its pad markers.
+					padX = padView->x + 3 * padView->w / 8;
+					const int width = padView->w - 144;
+					const int bottom = padView->y + padView->h - apLift;
+					DecalFont_DrawLineBox(warppadLNG, padX, bottom - 30 - 11, width,
 					                      FONT_BIG, JUSTIFY_CENTER | ORANGE, TEXT_MARQUEE, TEXT_SLOT_PAD_TITLE, NULL);
-					UI_DrawTrackCredit(credit, x, bottom - 23, view->w - 128);
+					UI_DrawTrackCredit(credit, padX, bottom - 23, width);
 				}
 				else
 #endif
 				// midpoint X,
 				// 30 pixels above botttom Y
-				DecalFont_DrawLine(warppadLNG, gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
+				DecalFont_DrawLine(warppadLNG, padX,
 				                   gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 30 - apLift, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
 
 #ifdef CTR_AP
@@ -769,7 +773,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					// takes no kart until the track is installed.
 					int apMissW = gGT->pushBuffer[0].rect.w - 160;
 					DecalFont_DrawLineBox("TRACK NOT INSTALLED",
-					                      gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
+					                      padX,
 					                      gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 15 - apLift,
 					                      apMissW, FONT_SMALL, JUSTIFY_CENTER | RED,
 					                      TEXT_MARQUEE, TEXT_SLOT_PAD, NULL);
@@ -778,7 +782,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 #else
 					DecalFont_DrawLineBox("OPTIONS > CUSTOM CONTENT",
 #endif
-					                      gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
+					                      padX,
 					                      gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 15,
 					                      apMissW, FONT_SMALL, JUSTIFY_CENTER | RED,
 					                      TEXT_MARQUEE, TEXT_SLOT_PAD, NULL);
@@ -789,7 +793,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					// bottom right HUD corner; longer lines scroll.
 					int apS2W = gGT->pushBuffer[0].rect.w - 160;
 					DecalFont_DrawLineBox(apStage2Line,
-					                      gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
+					                      padX,
 					                      gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 15 - apLift,
 					                      apS2W, FONT_SMALL,
 					                      JUSTIFY_CENTER | (apStage2 == AP_S2LINE_MET ? LIGHT_GREEN
@@ -802,7 +806,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					char apBoxLine[32];
 					snprintf(apBoxLine, sizeof apBoxLine, "AP BOXES LEFT: %d", apBoxesLeft);
 					DecalFont_DrawLine(apBoxLine,
-					                   gGT->pushBuffer[0].rect.x + gGT->pushBuffer[0].rect.w / 2,
+					                   padX,
 					                   gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 15,
 					                   FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
 				}
@@ -834,8 +838,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 #endif
 						char apRacerLine[32];
 						int apHave = AP_CharacterUnlocked(apLockRacer);
-						short apCx = (short)(gGT->pushBuffer[0].rect.x
-						                     + gGT->pushBuffer[0].rect.w / 2);
+						short apCx = (short)padX;
 						// The icon anchors at its TOP-LEFT and is up to ~32 high
 						// (DecalHUD_DrawPolyGT4 sizes it from the icon's own
 						// texture layout), so its bottom lands near y + 32. The

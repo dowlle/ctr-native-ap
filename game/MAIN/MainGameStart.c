@@ -4,6 +4,9 @@
 void MainGameStart_Initialize(struct GameTracker *gGT, char boolStopAudio)
 {
 	u32 gameModeFlag;
+#ifdef CTR_CUSTOM_PACKAGES
+	UI_ResetTrackCreditBanner();
+#endif
 
 	// DotLights_AudioAndVideo wont execute
 	// if (gGT & 0x20102000 == 0), but if it did execute,

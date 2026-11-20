@@ -10,6 +10,7 @@
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_package.h>
 #include <platform/native_custom_track_library.h>
+#include <platform/native_track_credit.h>
 #include "ap_track_registry.h"
 #include "ap_content_registry.hpp"
 #endif
@@ -474,9 +475,16 @@ void ReadTrackCreditPins(APSoloTrackInfo &info, const nlohmann::json &descriptor
 			if (role == "lev") CopyText(info.creditLev, sizeof info.creditLev, hash);
 			if (role == "vrm") CopyText(info.creditVrm, sizeof info.creditVrm, hash);
 		}
+#ifdef CTR_CUSTOM_PACKAGES
 	const auto locator = descriptor.find("locator");
 	if (locator != descriptor.end())
-		CopyText(info.creditSource, sizeof info.creditSource, AP_SoloJsonString(*locator, "patch_name"));
+	{
+		const auto name = AP_SoloJsonString(*locator, "patch_name");
+		const auto sha256 = AP_SoloJsonString(*locator, "patch_sha256");
+		const char *source = CustomTrackCredit_PatchSource(name.c_str(), sha256.c_str());
+		if (source) CopyText(info.creditSource, sizeof info.creditSource, source);
+	}
+#endif
 }
 
 // A new track list keeps the picks of the tracks still in it. The first list of a

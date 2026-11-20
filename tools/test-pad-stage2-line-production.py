@@ -55,6 +55,7 @@ assert "if (apBoxesLeft > 0 && !apContentMissing)" in block
 assert "int racerLift = apLift;" in block and "if (credit) racerLift += 11;" in block
 assert "rect.h - 82 - racerLift" in block and "rect.h - 45 - racerLift" in block
 assert "bottom - 30 - 11" in block and "bottom - 23" in block
+assert "padX = padView->x + 3 * padView->w / 8;" in block and "width = padView->w - 144;" in block
 # The pad and credit clocks stay outside the feed's five contiguous slots.
 assert "TEXT_SLOT_PAD, TEXT_SLOT_FEED," in box
 assert "TEXT_SLOT_TRACK_CREDIT = TEXT_SLOT_FEED + 5, TEXT_SLOT_PAD_TITLE," in box

@@ -290,6 +290,7 @@ void CTR_MenuDrawScrollBar(int x, int y, int h, int total, int visible, int top,
 
 #include "text-box-layout-stub.h"
 void CustomTrackCredit_EnsureRegistry(const char *assets) { (void)assets; }
+const char *CustomTrackCredit_PatchSource(const char *name, const char *sha256) { (void)sha256; return name; }
 void CustomTrackCredit_Format(char *out, size_t size, const char *lev, const char *vrm,
                               int id, const char *author, const char *source)
 {

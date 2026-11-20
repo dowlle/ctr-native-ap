@@ -164,6 +164,19 @@ int main(int argc, char **argv)
 		    0, "Lockheart", nullptr);
 		CHECK(!std::strcmp(credit, CTR_CORTEX_CREDIT));
 	}
+	{
+		// Identical geometry shipped in two packs. A room's locator names
+		// its import even when it has no filename.
+		const char *lev = "185e0a49a9cd7b0f1ffd84abed1d01195937cac305f9119bf1d4d98cd4a081d4";
+		const char *vrm = "39d80a29475891fa9b236fe8483fd775a732788acaf6ab9577caae6e75112e92";
+		const char *patch = "92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2";
+		char credit[CTR_TRACK_CREDIT_MAX];
+		CustomTrackCredit_Format(credit, sizeof credit, lev, vrm, 0, "Unknown",
+		                         CustomTrackCredit_PatchSource("", patch));
+		CHECK(!std::strcmp(credit, "From Crash-30Anniversary_Adventure.xdelta"));
+		CustomTrackCredit_Format(credit, sizeof credit, lev, vrm, 0, "Unknown", nullptr);
+		CHECK(!std::strcmp(credit, "From an imported xdelta pack"));
+	}
 
 	// 1. Live fetch: the fixed URL only, published live, cached.
 	serve(true, v1);

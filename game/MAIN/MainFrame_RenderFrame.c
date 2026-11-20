@@ -573,13 +573,13 @@ void RenderAllHUD(struct GameTracker *gGT)
 						   lights and above the second viewport's item slot. */
 						if (gGT->numPlyrCurrGame <= 2 && gGT->trafficLightsTimer > 0 &&
 						    !(gameMode1 & (PAUSE_ALL | END_OF_RACE | START_OF_RACE)) &&
-						    RaceFlag_IsFullyOffScreen())
+						    RaceFlag_IsFullyOffScreen() && UI_TrackCreditNeedsCountdown())
 						{
 							const char *credit = UI_TrackCredit(-1);
 							if (credit)
 							{
 								const int viewWidth = gGT->pushBuffer_UI.rect.w;
-								const int width = viewWidth - (gGT->numPlyrCurrGame == 2 ? 192 : 64);
+								const int width = viewWidth - (gGT->numPlyrCurrGame == 2 ? 192 : 128);
 								const int x = viewWidth / 2;
 								DecalFont_DrawLineBox(UI_TrackName(-1), x, 76, width, FONT_BIG,
 								                      ORANGE | JUSTIFY_CENTER, TEXT_MARQUEE, TEXT_SLOT_BANNER, NULL);
