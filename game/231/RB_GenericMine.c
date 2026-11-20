@@ -90,7 +90,8 @@ void RB_GenericMine_ThTick(struct Thread *t)
 #ifdef CTR_AP
 	if ((t->flags & THREAD_FLAG_DEAD) != 0)
 		return;
-	if (mw->boolDestroyed)
+	if (mw->boolDestroyed == MINE_DESTROYED_EXPIRED ||
+	    (mw->boolDestroyed && (mw->extraFlags & 2)))
 	{
 		RB_GenericMine_ThDestroy(t, inst, mw);
 		return;

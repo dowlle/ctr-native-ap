@@ -9,7 +9,9 @@ struct BossMineProgress
 	SVec3 backward;
 	int remaining;
 	int checkpoint;
+	int pendingCheckpoint;
 	int valid;
+	int readyForDrop;
 };
 
 struct BossMine
@@ -45,7 +47,7 @@ void RB_MinePool_BossMine(struct MineWeapon *mw, struct Instance *inst)
 	if (owner == NULL || mw->instParent != owner->instSelf || owner->driverID >= 8)
 		return;
 	struct BossMineProgress *progress = &s_bossMineState.progress[owner->driverID];
-	if (!progress->valid)
+	if (!progress->readyForDrop)
 		return;
 
 	struct BossMine *mine = &s_bossMineState.mines[mw->weaponSlot231 - D231.minePoolItem];
@@ -74,6 +76,7 @@ void RB_MinePool_BossProgress(struct Driver *driver, int remaining, int length, 
 	if (!backward || length <= 0 || driver->kartState == KS_MASK_GRABBED || !(backward->x || backward->y || backward->z))
 	{
 		progress->valid = 0;
+		progress->readyForDrop = 0;
 		return;
 	}
 
@@ -93,8 +96,10 @@ void RB_MinePool_BossProgress(struct Driver *driver, int remaining, int length, 
 	else if (advance < -length / 2)
 		advance += length;
 
-	int continuous = progress->valid && movement <= 1024 && movement != 0 && abs(advance) * 2 < length;
-	if (continuous && abs(advance) > movement + 64)
+	int relocation = !progress->valid || movement > 1024;
+	int continuous = !relocation && movement != 0 && abs(advance) * 2 < length;
+	int opposite = 0;
+	if (!relocation && movement != 0 && abs(advance) > movement + 64)
 	{
 		// Authored distances can jump when a short piece of road hands off to
 		// its next checkpoint. Allow the jump when the graph and the kart's
@@ -105,18 +110,33 @@ void RB_MinePool_BossProgress(struct Driver *driver, int remaining, int length, 
 		                motion.z * (progress->backward.z + backward->z));
 		int from = advance > 0 ? progress->checkpoint : checkpoint;
 		int to = advance > 0 ? checkpoint : progress->checkpoint;
-		continuous = from != to && abs(advance) < length / 4 &&
+		opposite = (advance > 0 && forward < 0) || (advance < 0 && forward > 0);
+		continuous = continuous && from != to && abs(advance) < length / 4 &&
 		             ((advance > 0 && forward > 0) || (advance < 0 && forward < 0)) &&
 		             level && level->ptr_restart_points &&
 		             RB_MinePool_LeadsTo(level->ptr_restart_points, level->cnt_restart_points, from, to, 4);
 	}
+	progress->position = position;
+	if (!relocation && !continuous && advance != 0)
+	{
+		// Retain the accepted reference when the label flickers or disagrees
+		// with motion. An unconnected label must persist over moving samples
+		// before it can become the new reference, without crediting its jump.
+		if (opposite || movement == 0 || checkpoint != progress->pendingCheckpoint)
+		{
+			progress->pendingCheckpoint = opposite || movement == 0 ? -1 : checkpoint;
+			progress->readyForDrop = 0;
+			return;
+		}
+	}
 	if (continuous)
 		progress->distance += advance;
-	progress->position = position;
 	progress->remaining = remaining;
 	progress->checkpoint = checkpoint;
+	progress->pendingCheckpoint = -1;
 	progress->backward = *backward;
 	progress->valid = 1;
+	progress->readyForDrop = 1;
 	if (!continuous || advance <= 0)
 		return;
 
@@ -137,7 +157,11 @@ void RB_MinePool_BossProgress(struct Driver *driver, int remaining, int length, 
 			if (offset > length / 8)
 				offset = length / 8;
 			if (2 * (progress->distance - mine->dropDistance - offset) >= length)
-				RB_MinePool_Remove(slot->mineWeapon);
+			{
+				struct MineWeapon *weapon = slot->mineWeapon;
+				RB_MinePool_Remove(weapon);
+				weapon->boolDestroyed = MINE_DESTROYED_EXPIRED;
+			}
 		}
 		slot = next;
 	}
@@ -207,6 +231,15 @@ void RB_MinePool_Remove(struct MineWeapon *mw)
 
 #ifdef CTR_AP
 	s_bossMineState.mines[ws - D231.minePoolItem] = (struct BossMine){0};
+	struct Instance *crateInst = mw->crateInst;
+	if (crateInst && crateInst->model &&
+	    (crateInst->model->id == PU_FRUIT_CRATE || crateInst->model->id == PU_RANDOM_CRATE) &&
+	    crateInst->thread && crateInst->thread->object)
+	{
+		struct Crate *crate = crateInst->thread->object;
+		crate->boolPauseCooldown = 0;
+	}
+	mw->crateInst = NULL;
 #endif
 	// remove from taken, add to free
 	LIST_RemoveMember(&D231.minePoolTaken, (struct Item *)ws);

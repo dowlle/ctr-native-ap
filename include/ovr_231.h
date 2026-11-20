@@ -233,6 +233,12 @@ struct WeaponSlot231
 	struct MineWeapon *mineWeapon;
 };
 
+// AP expiry shatters before contact. Ordinary pool overflow keeps its
+// existing final contact check for settled mines.
+#ifdef CTR_AP
+#define MINE_DESTROYED_EXPIRED 2
+#endif
+
 // Tnt, Nitro, Beaker
 struct MineWeapon
 {

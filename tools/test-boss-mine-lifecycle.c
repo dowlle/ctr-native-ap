@@ -20,6 +20,9 @@ static struct Model models[256];
 static struct MineWeapon mines[16];
 static struct Thread threads[16];
 static struct Instance instances[16];
+static struct Crate pickupCrate;
+static struct Thread pickupCrateThread;
+static struct Instance pickupCrateInst;
 static u8 scratch[4096];
 u8 *gCTRNativeScratchpadBase = scratch;
 
@@ -149,6 +152,16 @@ static void bossDrop(int i, int model, int x, int thrown)
     RB_MinePool_BossShot(NULL);
 }
 
+static void blockPickupCrate(int i)
+{
+    pickupCrate.boolPauseCooldown = 1;
+    pickupCrateThread.object = &pickupCrate;
+    models[PU_RANDOM_CRATE].id = PU_RANDOM_CRATE;
+    pickupCrateInst.model = &models[PU_RANDOM_CRATE];
+    pickupCrateInst.thread = &pickupCrateThread;
+    mines[i].crateInst = &pickupCrateInst;
+}
+
 static void testHalfLap(void)
 {
     setup(TURBO_TRACK, PAPU_PYRAMID);
@@ -156,6 +169,7 @@ static void testHalfLap(void)
     move(0, 100);
     bossDrop(0, STATIC_BEAKER_GREEN, -20, 0);
     bossDrop(1, STATIC_CRATE_TNT, 0, 0);
+    blockPickupCrate(1);
     bossDrop(2, PU_EXPLOSIVE_CRATE, 0, 0);
     add(3, STATIC_BEAKER_RED, 0);  // Ordinary shot, outside the boss firing path.
     move(80, 20);
@@ -168,9 +182,12 @@ static void testHalfLap(void)
     assert(mines[0].boolDestroyed && !mines[1].boolDestroyed && !mines[2].boolDestroyed);
     move(400, 500);
     assert(mines[1].boolDestroyed && mines[2].boolDestroyed && !mines[3].boolDestroyed);
+    assert(!pickupCrate.boolPauseCooldown && !mines[1].crateInst);
     assert(D231.minePoolTaken.count == 1 && D231.minePoolTaken.first == &mines[3].weaponSlot231->item);
+    kart.matrix.t[0] = -20;
+    mines[0].frameCount_DontHurtParent = 0;
     RB_GenericMine_ThTick(&threads[0]);
-    assert(shatters == 1 && lastSound == 0x3f && doorSearches == 1);
+    assert(shatters == 1 && lastSound == 0x3f && doorSearches == 1 && hurtCount == 0);
     RB_GenericMine_ThTick(&threads[1]);
     assert(blasts == 1 && lastSound == 0x3d);
     RB_GenericMine_ThTick(&threads[2]);
@@ -245,13 +262,16 @@ static void testShortCustomCheckpointGaps(void)
     moveAtCheckpoint(0, 799, 0);
     bossDrop(0, STATIC_BEAKER_GREEN, 0, 0);
     moveAtCheckpoint(30, 649, 1);  // The reported 150-unit change is larger than the world movement.
-    moveAtCheckpoint(60, 499, 4);  // An unrelated checkpoint cannot claim the jump.
-    moveAtCheckpoint(90, 649, 1);  // Still driving forward, so the bounce is not reverse travel.
-    moveAtCheckpoint(120, 499, 2);
-    moveAtCheckpoint(90, 649, 1);  // Connected reverse motion does subtract the distance.
-    moveAtCheckpoint(120, 499, 2);
+    moveAtCheckpoint(60, 799, 0);  // The road label flickers backwards while the boss drives forward.
+    moveAtCheckpoint(90, 649, 1);
+    assert(s_bossMineState.progress[owner.driverID].distance == 150); // The transition counts once.
+    moveAtCheckpoint(120, 499, 4);  // An unrelated checkpoint cannot claim the jump.
+    moveAtCheckpoint(150, 649, 1);
+    moveAtCheckpoint(180, 499, 2);
+    moveAtCheckpoint(150, 649, 1);  // Connected reverse motion does subtract the distance.
+    moveAtCheckpoint(180, 499, 2);
     assert(!mines[0].boolDestroyed);
-    moveAtCheckpoint(150, 399, 3);
+    moveAtCheckpoint(210, 399, 3);
     assert(mines[0].boolDestroyed);
 }
 
@@ -335,6 +355,14 @@ int main(void)
     assert(shatters == 1 && (threads[0].flags & THREAD_FLAG_DEAD) && D231.minePoolTaken.count == 3);
     puts("PASS settled mine overflow: drop 4 evicts and shatters drop 1; three slots remain occupied");
 
+    setup(DRAGON_MINES, DRAGON_MINES);
+    for (int i = 0; i < 4; ++i) add(i, STATIC_BEAKER_GREEN, 0);
+    kart.matrix.t[0] = 0;
+    mines[0].frameCount_DontHurtParent = 0;
+    RB_GenericMine_ThTick(&threads[0]);
+    assert(hurtCount == 1 && shatters == 1 && (threads[0].flags & THREAD_FLAG_DEAD));
+    puts("PASS settled retail overflow still checks for kart contact before shattering");
+
     setup(TURBO_TRACK, DRAGON_MINES);
     ground = 1;
     add(0, STATIC_BEAKER_GREEN, 1);
@@ -350,10 +378,11 @@ int main(void)
 
     setup(TURBO_TRACK, DRAGON_MINES);
     add(0, STATIC_CRATE_TNT, 1);
+    blockPickupCrate(0);
     for (int frame = 0; frame < 100 && !(threads[0].flags & THREAD_FLAG_DEAD); ++frame)
         threads[0].funcThTick(&threads[0]);
     assert((threads[0].flags & THREAD_FLAG_DEAD) && blasts == 1 && !mines[0].weaponSlot231);
-    assert(D231.minePoolTaken.count == 0);
+    assert(D231.minePoolTaken.count == 0 && !pickupCrate.boolPauseCooldown && !mines[0].crateInst);
     memset(&mines[0], 0, sizeof mines[0]);
     threads[0].flags = 0;
     add(0, STATIC_BEAKER_GREEN, 0);  /* Model stack allocator reuse of the same object. */
