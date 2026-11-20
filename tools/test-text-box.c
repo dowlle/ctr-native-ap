@@ -20,6 +20,11 @@ int main(void)
     assert(TextBox_Offset(425,240,7124)==185);
     assert(TextBox_Offset(425,240,7125)==0);
     assert(TextBox_Offset(240,240,9000)==0);
+    assert(TextBox_BannerOffset(481,320,500)==0);
+    assert(TextBox_BannerOffset(481,320,1400)==80);
+    assert(TextBox_BannerOffset(481,320,2300)==161);
+    assert(TextBox_BannerOffset(481,320,4000)==161);
+    assert(TextBox_BannerOffset(320,320,2300)==0);
     for (int fps=30;fps<=60;fps+=30) {
         TextBoxClock paused={0}, playback={0};
         for (unsigned frame=0;frame<=(unsigned)fps*3;frame++) {

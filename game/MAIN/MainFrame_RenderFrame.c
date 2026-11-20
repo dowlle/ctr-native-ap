@@ -539,7 +539,7 @@ void RenderAllHUD(struct GameTracker *gGT)
 				UI_CupStandings_InputAndDraw();
 #ifdef CTR_CUSTOM_PACKAGES
 				const RECT *view = &gGT->pushBuffer_UI.rect;
-				UI_DrawTrackCredit(UI_TrackCredit(-1), view->w / 2, view->h - 11, view->w - 64);
+				UI_DrawTrackCredit(UI_TrackCredit(-1), view->w / 2, view->h - 11, view->w - 64, TEXT_MARQUEE);
 #endif
 #ifdef CTR_AP
 				// AP feed: a race_loss DeathLink popup must survive the leg ending
@@ -582,8 +582,8 @@ void RenderAllHUD(struct GameTracker *gGT)
 								const int width = viewWidth - (gGT->numPlyrCurrGame == 2 ? 192 : 128);
 								const int x = viewWidth / 2;
 								DecalFont_DrawLineBox(UI_TrackName(-1), x, 76, width, FONT_BIG,
-								                      ORANGE | JUSTIFY_CENTER, TEXT_MARQUEE, TEXT_SLOT_BANNER, NULL);
-								UI_DrawTrackCredit(credit, x, 94, width);
+								                      ORANGE | JUSTIFY_CENTER, TEXT_BANNER_MARQUEE, TEXT_SLOT_BANNER, NULL);
+								UI_DrawTrackCredit(credit, x, 94, width, TEXT_BANNER_MARQUEE);
 							}
 						}
 #endif
@@ -603,7 +603,7 @@ void RenderAllHUD(struct GameTracker *gGT)
 					{
 #ifdef CTR_CUSTOM_PACKAGES
 						const RECT *view = &gGT->pushBuffer_UI.rect;
-						UI_DrawTrackCredit(UI_TrackCredit(-1), view->w / 2, view->h - 11, view->w - 64);
+						UI_DrawTrackCredit(UI_TrackCredit(-1), view->w / 2, view->h - 11, view->w - 64, TEXT_MARQUEE);
 #endif
 						if ((gameMode1 & CRYSTAL_CHALLENGE) == 0)
 						{

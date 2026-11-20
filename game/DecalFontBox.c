@@ -78,12 +78,13 @@ void DecalFont_DrawLineBox(const char *text, int x, int y, int width,
     struct PushBuffer *pb = &gt->pushBuffer_UI;
     uint32_t ms = 0;
     int len, textW;
+    const int scroll = mode == TEXT_MARQUEE || mode == TEXT_BANNER_MARQUEE;
     if (!text || width <= 0) return;
     if (!ot) ot = pb->ptrOT;
     len = (int)strlen(text);
     /* Strlen width avoids GetLineWidth's legacy signed 16-bit narrowing. */
     textW = DecalFont_GetLineWidthStrlen((char *)text, len, font);
-    if (mode == TEXT_MARQUEE && slot >= 0 && slot < TEXT_SLOT_COUNT)
+    if (scroll && slot >= 0 && slot < TEXT_SLOT_COUNT)
         ms = TextBox_TickVBlank(&textBoxClocks[slot], TextBox_Key(text), sdata->frameCounter,
             gt->frameTimer_VsyncCallback, width, pb->rect.x, pb->rect.y, pb->rect.w,
             pb->rect.h, gt->numPlyrCurrGame);
@@ -97,7 +98,7 @@ void DecalFont_DrawLineBox(const char *text, int x, int y, int width,
     if (flags & JUSTIFY_CENTER) x -= width / 2;
     else if (flags & JUSTIFY_RIGHT) x -= width;
     flags &= ~(JUSTIFY_CENTER | JUSTIFY_RIGHT);
-    if (mode != TEXT_MARQUEE)
+    if (!scroll)
     {
         int n = DecalFont_LineBoxPrefixLen(text, width, font);
         int used = DecalFont_GetLineWidthStrlen((char *)text, n, font);
@@ -110,7 +111,9 @@ void DecalFont_DrawLineBox(const char *text, int x, int y, int width,
         pb->ptrOT = saved;
         return;
     }
-    int shift = TextBox_Offset(textW, width, ms);
+    int shift = mode == TEXT_BANNER_MARQUEE
+        ? TextBox_BannerOffset(textW, width, ms)
+        : TextBox_Offset(textW, width, ms);
     int pos = x - shift, first = -1, firstX = 0, count = 0;
     for (int i = 0; i < len; i++)
     {

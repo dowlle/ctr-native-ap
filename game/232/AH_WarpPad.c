@@ -749,7 +749,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					const int bottom = padView->y + padView->h - apLift;
 					DecalFont_DrawLineBox(warppadLNG, padX, bottom - 30 - 11, width,
 					                      FONT_BIG, JUSTIFY_CENTER | ORANGE, TEXT_MARQUEE, TEXT_SLOT_PAD_TITLE, NULL);
-					UI_DrawTrackCredit(credit, padX, bottom - 23, width);
+					UI_DrawTrackCredit(credit, padX, bottom - 23, width, TEXT_MARQUEE);
 				}
 				else
 #endif

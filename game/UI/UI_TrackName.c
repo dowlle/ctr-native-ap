@@ -170,7 +170,7 @@ const char *UI_TrackCredit(int physicalPad)
 	return NULL;
 }
 
-void UI_DrawTrackCredit(const char *credit, int x, int y, int width)
+void UI_DrawTrackCredit(const char *credit, int x, int y, int width, int mode)
 {
 	char plain[CTR_TRACK_CREDIT_MAX];
 	if (credit && CustomPackage_AsciiFold(credit, strlen(credit), plain, sizeof plain))
@@ -179,7 +179,7 @@ void UI_DrawTrackCredit(const char *credit, int x, int y, int width)
 		for (char *c = plain; *c; ++c)
 			if ((unsigned char)*c < 32 || strchr("~@[^*", *c)) *c = ' ';
 		DecalFont_DrawLineBox(plain, x, y, width, FONT_SMALL, WHITE | JUSTIFY_CENTER,
-		                      TEXT_MARQUEE, TEXT_SLOT_TRACK_CREDIT, NULL);
+		                      mode, TEXT_SLOT_TRACK_CREDIT, NULL);
 	}
 }
 #endif

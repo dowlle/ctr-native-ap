@@ -32,6 +32,16 @@ static inline int TextBox_Offset(int textW, int boxW, uint32_t ms)
     return t < (unsigned)overflow ? (int)t : overflow;
 }
 
+/* The race-start banner has only a few seconds on screen. Show the start,
+   cover the full line once, and hold on the end until the banner leaves. */
+static inline int TextBox_BannerOffset(int textW, int boxW, uint32_t ms)
+{
+    if (textW <= boxW || ms <= 500) return 0;
+    const int overflow = textW - boxW;
+    if (ms >= 2300) return overflow;
+    return overflow * (int)(ms - 500) / 1800;
+}
+
 /* Called once per drawn frame, even for fitting text. Never advances twice in
    one frame. A hidden frame, new text/box or viewport starts the first hold. */
 static inline uint32_t TextBox_Tick(TextBoxClock *s, uint32_t key, uint32_t frame,

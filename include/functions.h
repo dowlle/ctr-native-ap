@@ -4,7 +4,7 @@
 const char *UI_TrackName(int physicalPad);
 #ifdef CTR_CUSTOM_PACKAGES
 const char *UI_TrackCredit(int physicalPad);
-void UI_DrawTrackCredit(const char *credit, int x, int y, int width);
+void UI_DrawTrackCredit(const char *credit, int x, int y, int width, int mode);
 void UI_ResetTrackCreditBanner(void);
 int UI_TrackCreditNeedsCountdown(void);
 #endif

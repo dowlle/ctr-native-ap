@@ -119,9 +119,9 @@ void CustomPackage_TrackCredit(const struct CustomPackageLocalInfo *local, const
 {
     CustomTrackCredit_Format(out, size, NULL, NULL, 0, local->author[0] ? local->author : fallbackAuthor, NULL);
 }
-void UI_DrawTrackCredit(const char *credit, int x, int y, int width)
+void UI_DrawTrackCredit(const char *credit, int x, int y, int width, int mode)
 {
-    DecalFont_DrawLineBox(credit, x, y, width, FONT_SMALL, JUSTIFY_CENTER | WHITE, TEXT_MARQUEE, 0, NULL);
+    DecalFont_DrawLineBox(credit, x, y, width, FONT_SMALL, JUSTIFY_CENTER | WHITE, mode, 0, NULL);
 }
 #include "../game/230/MM_CustomTrackSelect.c"
 

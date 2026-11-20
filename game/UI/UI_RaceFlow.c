@@ -316,8 +316,8 @@ LAB_80055930:
 			const int center = view->x + view->w / 2;
 			const int bottom = view->y + view->h + transition;
 			DecalFont_DrawLineBox(UI_TrackName(-1), center, bottom - 29, view->w - 64,
-			                      FONT_BIG, JUSTIFY_CENTER | ORANGE, TEXT_MARQUEE, TEXT_SLOT_BANNER, NULL);
-			UI_DrawTrackCredit(credit, center, bottom - 11, view->w - 64);
+			                      FONT_BIG, JUSTIFY_CENTER | ORANGE, TEXT_BANNER_MARQUEE, TEXT_SLOT_BANNER, NULL);
+			UI_DrawTrackCredit(credit, center, bottom - 11, view->w - 64, TEXT_BANNER_MARQUEE);
 		}
 		else
 #endif
