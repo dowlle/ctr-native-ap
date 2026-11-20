@@ -36,6 +36,13 @@ def yaml_names(descriptor, descriptors):
     return {name for name in (descriptor.get('content_id'), descriptor.get('display_name'))
             if isinstance(name, str)}
 
+def enabled_names(setting, names):
+    if isinstance(setting, str):
+        setting = [name.strip() for name in setting.split(',')]
+    if not isinstance(setting, (list, tuple, set, frozenset)) or 'all' in setting:
+        return names
+    return {name for name in setting if isinstance(name, str) and name in names}
+
 def apply_visible_tracks(paths, doc, assets, picked, guaranteed, page=False):
     section = scope['_section'](doc)
     descriptors = section.get('custom_tracks')
@@ -44,11 +51,20 @@ def apply_visible_tracks(paths, doc, assets, picked, guaranteed, page=False):
         if removed:
             kept = [d for d in descriptors if not is_hidden(d)]
             plan = scope['_world_module']('content_plan')
-            protected = {'default', 'Cortex Vortex', *plan.RETAIL.values(), *plan.arena_content.ARENAS.values()}
+            retail = set(plan.RETAIL.values())
+            required_names = enabled_names(section.get('retail_tracks'), retail)
+            if section.get('crystal_challenge_count') not in (0, '0'):
+                arenas = set(plan.arena_content.ARENAS.values())
+                required_names = required_names | enabled_names(section.get('crystal_arenas'), arenas)
+            mode_names = {'default'} | retail
+            if scope['_cortex_pick'](section):
+                mode_names.add('Cortex Vortex')
+            shared_names = set()
             for d in kept:
                 if isinstance(d, dict):
-                    protected.update(yaml_names(d, descriptors))
-            names = set().union(*(yaml_names(d, descriptors) for d in removed)) - protected
+                    shared_names.update(yaml_names(d, descriptors))
+            names = set().union(*(yaml_names(d, descriptors) for d in removed)) - shared_names
+            removed_required = names - required_names
             doc = copy.deepcopy(doc)
             section = scope['_section'](doc)
             if kept:
@@ -58,10 +74,10 @@ def apply_visible_tracks(paths, doc, assets, picked, guaranteed, page=False):
             if isinstance(section.get('required_entries'), list):
                 section['required_entries'] = [
                     name for name in section['required_entries']
-                    if not isinstance(name, str) or name not in names
+                    if not isinstance(name, str) or name not in removed_required
                 ]
             if isinstance(section.get('track_modes'), dict):
-                for name in names:
+                for name in names - mode_names:
                     section['track_modes'].pop(name, None)
     return apply_tracks(paths, doc, assets, picked, guaranteed, page)
 

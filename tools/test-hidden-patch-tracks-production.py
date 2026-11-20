@@ -31,7 +31,11 @@ def _section(doc):
 
 def _world_module(name):
     assert name == 'content_plan'
-    return SimpleNamespace(RETAIL={0: 'Crash Cove'}, arena_content=SimpleNamespace(ARENAS={}))
+    return SimpleNamespace(RETAIL={0: 'Crash Cove'},
+                           arena_content=SimpleNamespace(ARENAS={0: 'Skull Rock', 1: 'Rocky Road'}))
+
+def _cortex_pick(section):
+    return section.get('cortex_vortex_track', 'off') in ('in_pool', 'own_pad')
 
 def _yaml_pick_names(descriptor, descriptors, owners):
     return {descriptor['content_id'], descriptor['display_name'],
@@ -61,6 +65,13 @@ def main():
     assert source[GAME]['custom_tracks'] == [hidden, keep] and 'a' in source[GAME]['track_modes']
     empty = apply_tracks([], {GAME: {'custom_tracks': [hidden], 'required_entries': ['a']}}, 'assets', [], [])
     assert 'custom_tracks' not in empty[GAME] and empty[GAME]['required_entries'] == []
+    named_like_arena = package('arena-name', HIDDEN, 'Skull Rock')
+    for arenas, expected in [(['Rocky Road'], []), (['Skull Rock'], ['Skull Rock'])]:
+        old = {GAME: {'custom_tracks': [named_like_arena], 'required_entries': ['Skull Rock'],
+                      'crystal_arenas': arenas, 'track_modes': {'Skull Rock': ['trophy']}}}
+        result = apply_tracks([], old, 'assets', [], [])
+        assert result[GAME]['required_entries'] == expected
+        assert result[GAME]['track_modes'] == {}
     return 0
 '''
 
