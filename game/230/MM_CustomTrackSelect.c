@@ -444,7 +444,7 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
             CustomPackage_TrackCredit(&entry->local, entry->author, credit, sizeof credit);
         else
             CustomTrackCredit_Format(credit, sizeof credit, NULL, NULL, 0, entry->author, "Project Saphi");
-        UI_DrawTrackCredit(credit, 396 + dx, 110 + dy, 174);
+        UI_DrawTrackCredit(credit, 396 + dx, 110 + dy, 174, TEXT_MARQUEE);
         if (entry->installed && entry->local.laps)
         {
             snprintf(line, sizeof line, "%u laps%s", entry->local.laps, entry->local.timeTrial ? " TT" : "");

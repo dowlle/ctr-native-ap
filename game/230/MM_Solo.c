@@ -1139,7 +1139,7 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 				CustomTrackCredit_Format(credit, sizeof credit, info.creditLev, info.creditVrm,
 				                         0, info.author, info.creditSource);
 			}
-			UI_DrawTrackCredit(credit, 0x100, SOLO_HELP_Y + SOLO_ROW_H, SOLO_TEXT_W);
+			UI_DrawTrackCredit(credit, 0x100, SOLO_HELP_Y + SOLO_ROW_H, SOLO_TEXT_W, TEXT_MARQUEE);
 			if (legendLines)
 			{
 				legend = "In pool: random. Own pad: fixed.";

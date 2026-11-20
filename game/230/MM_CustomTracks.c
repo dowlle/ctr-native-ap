@@ -1482,7 +1482,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
             else
                 CustomTrackCredit_Format(credit, sizeof credit, v.source->lev.sha256, v.source->vrm.sha256,
                                          v.trackID, v.author, "Project Saphi");
-            UI_DrawTrackCredit(credit, CT_DETAIL_X + CT_DETAIL_W / 2, 108, CT_DETAIL_W);
+            UI_DrawTrackCredit(credit, CT_DETAIL_X + CT_DETAIL_W / 2, 108, CT_DETAIL_W, TEXT_MARQUEE);
             CT_Badges(&v, item->kind, badges, sizeof badges);
             MM_CustomText_Draw(badges, CT_DETAIL_X, 120, CT_DETAIL_W, 1, ORANGE, ot);
             {
@@ -1702,7 +1702,7 @@ static void CT_SeedFrame(int tapped, int installAvailable, uint32_t *ot)
             else if (r->source != AP_SEED_SOURCE_BUNDLED)
                 CustomTrackCredit_Format(credit, sizeof credit, NULL, NULL, r->saphi_track_id,
                                          r->author, CustomTrackCredit_PatchSource(r->locator.patch_name, r->locator.patch_sha256));
-            UI_DrawTrackCredit(credit, CT_DETAIL_X + CT_DETAIL_W / 2, 108, CT_DETAIL_W);
+            UI_DrawTrackCredit(credit, CT_DETAIL_X + CT_DETAIL_W / 2, 108, CT_DETAIL_W, TEXT_MARQUEE);
             MM_CustomText_Draw(CT_SeedStateLong(r), CT_DETAIL_X, 120, CT_DETAIL_W, 1, ready ? ORANGE : RED, ot);
             ap_seed_instruction(r, instruction, sizeof instruction);
             if (r->index == -2 && s_ctLegacyDownload) snprintf(instruction, sizeof instruction, "%s", s_ctMessage);
