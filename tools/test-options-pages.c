@@ -69,6 +69,42 @@ static void ExpectSection(const char *key, const char *section)
 	EXPECT_TRUE(label, i >= 0 && strcmp(g_configEntries[i].section, section) == 0);
 }
 
+static void ExpectFeedConfig(void)
+{
+	char dir[] = "/tmp/ctr-feed-config-XXXXXX";
+	const int entry = CTR_MenuFindEntry(g_configEntries, g_numConfigEntries, "item_feed");
+	EXPECT_TRUE("Item Feed is a three-way enum", entry >= 0 &&
+	            g_configEntries[entry].type == CFG_ENUM);
+	EXPECT_TRUE("Item Feed defaults to ALL", g_config.itemFeed == AP_ITEM_FEED_ALL);
+	if (!mkdtemp(dir) || chdir(dir) != 0)
+	{
+		EXPECT_TRUE("isolated config directory", 0);
+		return;
+	}
+	const char *oldValues[] = { "true", "false", "1", "0" };
+	for (int i = 0; i < 4; ++i)
+	{
+		FILE *f = fopen("config.ini", "w");
+		if (!f)
+		{
+			EXPECT_TRUE("write legacy Item Feed config", 0);
+			return;
+		}
+		fprintf(f, "[Archipelago]\nitem_feed = %s\n", oldValues[i]);
+		fclose(f);
+		NativeConfig_Load();
+		EXPECT_TRUE(oldValues[i], g_config.itemFeed == (i % 2 ? AP_ITEM_FEED_OFF : AP_ITEM_FEED_ALL));
+	}
+	g_config.itemFeed = AP_ITEM_FEED_IMPORTANT;
+	NativeConfig_Save();
+	g_config.itemFeed = AP_ITEM_FEED_OFF;
+	NativeConfig_Load();
+	EXPECT_TRUE("IMPORTANT survives a config round trip", g_config.itemFeed == AP_ITEM_FEED_IMPORTANT);
+	unlink("config.ini");
+	if (chdir("/") == 0)
+		rmdir(dir);
+}
+
 int main(void)
 {
 	const int numPages = CTR_MenuBuildPages(g_configEntries, g_numConfigEntries,
@@ -159,6 +195,7 @@ int main(void)
 	ExpectSection("ai_difficulty", "Archipelago");
 	ExpectSection("discord_status", "Archipelago");
 	ExpectSection("application_id", "Discord");
+	ExpectFeedConfig();
 
 	if (g_failures == 0)
 		printf("options pages: all assertions passed (%d pages)\n", numPages);

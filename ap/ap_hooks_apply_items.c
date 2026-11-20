@@ -199,8 +199,8 @@ static void AP_ReadConfig(char *uri, int uriN, char *slot, int slotN,
 		else if (!strncmp(line, "hud_reserves_fx=", 16))
 			ap_hud_reserves_fx = (line[16] == '1'); // keep power-slide fire when holding reserves
 
-		else if (!strncmp(line, "hub_feed=", 9))
-			ap_hub_feed_on = (line[9] != '0'); // 0 = hide the AP item feed everywhere
+		else if (!strncmp(line, "hub_feed=", 9) && !NativeConfig_HasIni())
+			g_config.itemFeed = line[9] == '0' ? AP_ITEM_FEED_OFF : AP_ITEM_FEED_ALL;
 	}
 	fclose(f);
 }
