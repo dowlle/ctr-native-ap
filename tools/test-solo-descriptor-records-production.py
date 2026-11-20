@@ -73,6 +73,7 @@ fixture += between("// Keeps `json` as solo/<folder>/<name>; true once the file 
                    "// solo/needs-laps/<track key>__<revision>.json of a listed row")
 fixture += function("bool PinnedFilePresent(const std::string &key, const nlohmann::json &pin)")
 fixture += function("bool HiddenTrackDescriptor(")
+fixture += function("static const char *ExportTrackLapsMessage(")
 fixture += "}\n"
 fixture += between("namespace\n{\n// \"<revision>|lev:<sha256>:<bytes>|vrm:<sha256>:<bytes>\"",
                    "#ifdef CTR_CUSTOM_PACKAGES\nnamespace {\n// PinSignature of a verified store package")
@@ -124,6 +125,15 @@ int main(int, char **argv) {
     const std::string oldA = descriptor("Nina", pins("aa", "ab")), newB = descriptor("Nina", pins("ba", "bb"));
     std::set<std::string> liveB = {sig("ba", "bb")}, liveAB = {sig("aa", "ab"), sig("ba", "bb")};
     std::string why;
+
+    // Export should only give the direct lap-pick instruction for the file
+    // pins of the pending Play Solo row.
+    clean();
+    const auto pending = descriptor("Nina", pins("aa", "ab"), 0);
+    write(std::string("needs-laps/") + name, pending);
+    assert(std::strstr(ExportTrackLapsMessage(name, nlohmann::json::parse(pending)), "Pick laps"));
+    assert(std::strstr(ExportTrackLapsMessage(name, nlohmann::json::parse(newB)), "reinstall this copy"));
+    assert(std::strstr(ExportTrackLapsMessage("nina-alias__1.0.0.json", nlohmann::json::parse(pending)), "reinstall this copy"));
 
     // 1. The tester's likely path: the track was reinstalled with new files
     // under the same version. The old files are gone: the stale entry is replaced.
