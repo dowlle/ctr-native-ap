@@ -176,7 +176,15 @@ int ap_net_seed_name(char *buf, int n) { snprintf(buf, (size_t)n, "%s", seedName
 int ap_net_slot_name(char *buf, int n) { snprintf(buf, (size_t)n, "AppieCTR"); return 1; }
 
 /* ---- release-profile package files ---- */
-static int relicSet, relicTicks[3], relicSaves, relicClears, yamlSaves;
+static int relicSet, relicTicks[3], relicSaves, relicClears, yamlSaves, storeYamlCopies, storeYamlSaves;
+int AP_Solo_ExportTrackYaml(const struct CustomTrackLibraryEntry *entry, int save, char *out, size_t size)
+{
+    CHECK(entry && entry->installed);
+    storeYamlSaves += save;
+    storeYamlCopies += !save;
+    snprintf(out, size, "%s", save ? "Saved to: example.yaml" : "Verified custom_tracks YAML copied.");
+    return 1;
+}
 const char *CustomTrackManager_StateText(int s) { return s == CTR_CT_MANAGER_READY ? "Ready" : "Not installed"; }
 int CustomTrackManager_RelicTicksFromCentis(int c) { return c < 1 ? -1 : (c * 96 + 9) / 10; }
 int CustomTrackManager_RelicCentisFromTicks(int t) { return t * 10 / 96; }
@@ -361,6 +369,7 @@ static void entry(int i, const char *title, const char *version, int trackID, in
     snprintf(lib[i].author, sizeof lib[i].author, "Author %d", i);
     snprintf(lib[i].local.uuid, sizeof lib[i].local.uuid, "uuid-%d", trackID ? trackID : 900 + i);
     lib[i].installed = 1; lib[i].local.trackID = trackID; lib[i].local.arcade = arcade; lib[i].local.timeTrial = 1;
+    lib[i].local.laps = 3;
     lib[i].local.permissionTrackID = trackID;
     lib[i].local.xdelta = xdelta; lib[i].local.levID = trackID * 10; lib[i].local.vrmID = trackID * 10 + 1;
     if (!arcade) snprintf(lib[i].local.arcadeReason, sizeof lib[i].local.arcadeReason, "Grid: 3 of 8");
@@ -455,6 +464,8 @@ int main(void)
     /* A store with four tracks (Baby T Park installed twice), a catalogue of five. */
     entry(0, "Baby T Park", "1.0.2", 101, 1, 0);
     entry(1, "Baby T Park", "1.0.0", 101, 1, 0);
+    strcpy(lib[0].local.uuid, pkg.packageUuid);
+    strcpy(lib[1].local.uuid, pkg.packageUuid);
     entry(2, "Arabian Heights Night", "1.0.0", 120, 0, 0);
     entry(3, "Nightmare Fueled Slot 7", "1.0.0", 0, 1, 1);
     entry(4, "Coco Park 2025", "1.0.0", 130, 1, 0);
@@ -547,9 +558,12 @@ int main(void)
     frame(BTN_TRIANGLE, NULL); CHECK(s_ctFocus == CT_FOCUS_ACTIONS && s_ctSub == CT_SUB_NONE && s_ctListSel[0] >= 0);
     CHECK(select_action("Open source page")); frame(BTN_CROSS, NULL);
     CHECK(urlOpens == 1 && !strcmp(lastURL, "https://www.projectsaphi.com/tracks/130"));
-    /* Export is only for the release profile: reason shown, nothing exported. */
-    CHECK(select_action("Export YAML")); frame(BTN_CROSS, "library-export-unavailable");
-    CHECK(clipboardSets == 0 && s_ctSub == CT_SUB_NONE && has("Only Baby T Park"));
+    /* A Ready installed revision has both export actions. */
+    CHECK(select_action("Export YAML")); frame(BTN_CROSS, "library-export-store");
+    CHECK(s_ctSub == CT_SUB_EXPORT);
+    frame(BTN_CROSS, NULL); CHECK(storeYamlCopies == 1 && has("YAML copied"));
+    frame(BTN_DOWN, NULL); frame(BTN_CROSS, NULL); CHECK(storeYamlSaves == 1 && has("Saved to:"));
+    frame(BTN_TRIANGLE, NULL);
     frame(BTN_TRIANGLE, NULL); CHECK(s_ctFocus == CT_FOCUS_LIST);
 
     /* 5. A disabled catalogue revision stays listed with its reason. */
@@ -563,6 +577,8 @@ int main(void)
     frame(0, NULL); CHECK(has("Imported"));
     frame(BTN_CROSS, NULL); CHECK(has("Recheck files"));
     CHECK(select_action("Open source page")); frame(BTN_CROSS, NULL); CHECK(urlOpens == 1 && has("Imported from a patch"));
+    CHECK(select_action("Why YAML is unavailable"));
+    frame(BTN_CROSS, NULL); CHECK(s_ctSub == CT_SUB_NONE && has("no known public source"));
     frame(BTN_TRIANGLE, NULL);
 
     /* 7. Baby T Park: the release profile. Verify, export, relic times. */

@@ -148,6 +148,8 @@ int AP_Solo_DescribeStart(const char *y) { (void)y; describes++; return 1; }
 int AP_Solo_ImportRoomStart(const char *p) { (void)p; return 0; }
 int AP_Solo_ImportYamlStart(const char *p) { (void)p; return 0; }
 int AP_Solo_TracksStart(const char *y) { (void)y; return 0; }
+int AP_Solo_SaveRoomYamlStart(const char *name) { (void)name; return 0; }
+const char *AP_Solo_JobResultYaml(void) { return ""; }
 int AP_Solo_GenerateStart(const char *a, const char *b, const char *c, int d) { (void)a; (void)c; (void)d; snprintf(generatedName, sizeof generatedName, "%s", b); return 0; }
 int AP_Solo_JobState(void) { return jobState; }
 const char *AP_Solo_JobPhase(void) { return "Filling the multiworld with items, this takes a few seconds"; }
