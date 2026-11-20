@@ -27,6 +27,8 @@ static unsigned rev;
 static int ap_net_is_connected(void){return connected;}
 static int ctr_cfg_active(void){return active;}
 static int LOAD_IsOpen_RacingOrBattle(void){return onTrack;}
+#include "ap_navrec.h"
+void AP_NavRec_NoteBoostGrant(enum AP_NavRecBoostGrant grant){assert(grant==AP_NAVREC_GRANT_RESERVES);}
 static int ap_net_fx_store(int key,long long *v,unsigned *r){
  assert(key==AP_NET_FX_RESERVE_SPENT);if(v)*v=stored;if(r)*r=rev;return state;
 }

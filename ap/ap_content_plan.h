@@ -376,10 +376,16 @@ static inline int ap_content_rule_owned(const ctr_content_pad *pad, const int *c
         if (pad->rule_mask & (1u << i)) owned += pad->rule_distinct ? counts[i] > 0 : counts[i];
     return owned;
 }
+/* The pad's own requirement, independent of access to its hub. */
+static inline int ap_content_pad_rule_met(const ctr_content_pad *pad, const int *counts)
+{
+    return pad && pad->occupied &&
+           (!pad->has_rule || ap_content_rule_owned(pad, counts) >= pad->rule_count);
+}
+
 static inline int ap_content_pad_open(const ctr_content_pad *pad, const int *counts)
 {
-    return pad && pad->occupied && counts[14] >= pad->keys &&
-           (!pad->has_rule || ap_content_rule_owned(pad, counts) >= pad->rule_count);
+    return ap_content_pad_rule_met(pad, counts) && counts[14] >= pad->keys;
 }
 /* Position of a mode in the pad's order, or -1 when the entry lacks it. */
 static inline int ap_content_mode_slot(const ctr_content_pad *pad, int mode)

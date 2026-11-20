@@ -22,6 +22,7 @@ enum AP_SurfaceItem
 // Rebuilt from the server's authoritative ReceivedItems replay every connect.
 void AP_SurfaceReset(void);
 void AP_SurfaceReceive(int item);
+void AP_SurfaceResetLapObservation(void);
 
 // Return the terrain whose metadata should drive this local player. Natural
 // covered surfaces become asphalt while held. Forced ice from a weapon or cheat

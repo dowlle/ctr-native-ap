@@ -450,6 +450,19 @@ static int TrapDuration_Index(int value)
 
 // CFG_ENUM dispatch: each enum entry owns a ladder; picked by the field the
 // entry edits (pointer identity, no string compare).
+#ifdef CTR_AP
+static const int s_itemFeedValues[] = { AP_ITEM_FEED_ALL, AP_ITEM_FEED_IMPORTANT, AP_ITEM_FEED_OFF };
+static const char *const s_itemFeedNames[] = { "ALL", "IMPORTANT", "OFF" };
+
+static int ItemFeed_Index(int value)
+{
+	for (int i = 0; i < 3; ++i)
+		if (s_itemFeedValues[i] == value)
+			return i;
+	return 0;
+}
+#endif
+
 static const char *Enum_Label(const ConfigEntry *e)
 {
 	if (e->valuePtr == &g_config.aspectRatio)
@@ -459,6 +472,8 @@ static const char *Enum_Label(const ConfigEntry *e)
 	if (e->valuePtr == &g_config.vsync)
 		return s_vsyncNames[Vsync_Index(*(int *)e->valuePtr)];
 #ifdef CTR_AP
+	if (e->valuePtr == &g_config.itemFeed)
+		return s_itemFeedNames[ItemFeed_Index(*(int *)e->valuePtr)];
 	if (e->valuePtr == &g_config.deathLink)
 		return s_dlinkNames[Dlink_Index(AP_DeathLinkRowValue(*(int *)e->valuePtr))];
 	if (IsDlSendField((const int *)e->valuePtr))
@@ -506,6 +521,17 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 		return;
 	}
 #ifdef CTR_AP
+	if (e->valuePtr == &g_config.itemFeed)
+	{
+		const int before = *(int *)e->valuePtr;
+		int index = ItemFeed_Index(*(int *)e->valuePtr) + dir;
+		if (index < 0) index = 0;
+		if (index > 2) index = 2;
+		*(int *)e->valuePtr = s_itemFeedValues[index];
+		if (before != AP_ITEM_FEED_IMPORTANT && s_itemFeedValues[index] == AP_ITEM_FEED_IMPORTANT)
+			AP_FeedDiscardUnimportant();
+		return;
+	}
 	if (e->valuePtr == &g_config.deathLink)
 	{
 		int i = Dlink_Index(*(int *)e->valuePtr) + dir;
@@ -651,8 +677,8 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 	}
 	if (e->valuePtr == &g_config.itemFeed)
 	{
-		first = "Items sent and received,";
-		second = "shown at the bottom left.";
+		first = "IMPORTANT hides filler items";
+		second = "and shop stock notices.";
 	}
 	if (first == 0)
 		return;
@@ -966,15 +992,46 @@ static void TextEdit_Begin(const ConfigEntry *e, int row, int rowY)
 // centred rows, broken at spaces (the v0.2.x room refusal needs both). A word too
 // wide for the panel is cut, and text past the last row ends in "...". The second
 // row is the edit hint's while a row is being edited.
-static void Conn_DrawLongStatus(const char *status, int labelY, int valueX, int rowSpacing, uint32_t *ot)
+static const char *Conn_RoomVersionDivider(const char *status)
 {
-	const int rows = s_connEditing ? 1 : 2;
+	if (strncmp(status, "Error: GENERATED WITH ", 22) == 0 || strncmp(status, "Error: ROOM BUILD ", 18) == 0)
+		return strstr(status, ". THIS BUILD ");
+	return NULL;
+}
+
+static void Conn_DrawVersionLine(const char *start, int length, const char *shortLabel, int y, uint32_t *ot)
+{
+	char line[128], shorter[64];
+	char *text = line;
+	snprintf(line, sizeof line, "%.*s", length, start);
+	if (DecalFont_GetLineWidth(line, FONT_SMALL) > CONN_STATUS_LINE_WIDTH)
+	{
+		char *version = strrchr(line, ' ');
+		if (version)
+		{
+			snprintf(shorter, sizeof shorter, "%s%s", shortLabel, version + 1);
+			text = DecalFont_GetLineWidth(shorter, FONT_SMALL) <= CONN_STATUS_LINE_WIDTH ? shorter : version + 1;
+		}
+	}
+	DecalFont_DrawLineOT(text, 0x100, y, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+}
+
+static void Conn_DrawLongStatus(const char *status, int labelY, int valueX, int rowSpacing, int rows,
+	const char *versionDivider, uint32_t *ot)
+{
 	int row;
 
 	if (strncmp(status, "Error: ", 7) == 0)
 	{
 		DecalFont_DrawLineOT((char *)"Error:", valueX, labelY, FONT_SMALL, WHITE, ot);
 		status += 7;
+	}
+	if (versionDivider)
+	{
+		const char *reader = versionDivider + 2;
+		Conn_DrawVersionLine(status, (int)(versionDivider - status + 1), "ROOM ", labelY + rowSpacing, ot);
+		Conn_DrawVersionLine(reader, (int)strlen(reader), "CLIENT ", labelY + 2 * rowSpacing, ot);
+		return;
 	}
 	for (row = 0; row < rows && *status != '\0'; row++)
 	{
@@ -1199,12 +1256,15 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	// beside the label; anything longer than fits there (the unreachable-host
 	// line, a wordy slot refusal) is centred on the next line instead, where the
 	// full panel width is available, rather than running off the right edge.
+	const char *status = AP_Net_StatusLine();
+	const char *versionDivider = Conn_RoomVersionDivider(status);
+	const int editWithRoomVersions = s_connEditing && versionDivider != NULL;
 	{
 		int y = startY + (numStrings + 2) * rowSpacing;
-		const char *status = AP_Net_StatusLine();
 		DecalFont_DrawLineOT("Status", labelX, y, FONT_SMALL, ORANGE, ot);
 		if ((int)strlen(status) > CONN_STATUS_INLINE_MAX)
-			Conn_DrawLongStatus(status, y, valueX, rowSpacing, ot);
+			Conn_DrawLongStatus(status, y, valueX, rowSpacing, s_connEditing && !editWithRoomVersions ? 1 : 2,
+				versionDivider, ot);
 		else
 			DecalFont_DrawLineOT((char *)status, valueX, y, FONT_SMALL, WHITE, ot);
 	}
@@ -1214,12 +1274,13 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	// line (row 6) and of the edit hint below (row 7), and the last line lands on
 	// 0xC8, still inside the panel. Self-gates: nothing is drawn and no space is
 	// taken unless the connected seed was built by a newer pair.
-	AP_DrawConnUpdateNotice(ot, 0x100, startY + (numStrings + 5) * rowSpacing, rowSpacing);
+	if (!editWithRoomVersions)
+		AP_DrawConnUpdateNotice(ot, 0x100, startY + (numStrings + 5) * rowSpacing, rowSpacing);
 
 	// Use the same bottom footer position as the Options version to explain the
 	// case markers at their point of use. A newer-version notice owns this area
 	// when armed and takes priority over the static hint.
-	if (!AP_ConnUpdateNoticeActive())
+	if (!AP_ConnUpdateNoticeActive() && !editWithRoomVersions)
 	{
 		const char *noticeFirst;
 		const char *noticeSecond;
@@ -1244,7 +1305,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	// left-justified and grows rightward as it is typed, so there is no space
 	// left on the row to put it.
 	if (s_connEditing)
-		TextEdit_DrawHint(startY + (numStrings + 4) * rowSpacing, ot);
+		TextEdit_DrawHint(startY + (numStrings + (editWithRoomVersions ? 5 : 4)) * rowSpacing, ot);
 }
 
 #if defined(CTR_CUSTOM_TRACKS) && !defined(CTR_AP_AUTHORING)

@@ -556,6 +556,8 @@ int main(void)
 		check(info.navRevision == 7, "navigation compatibility revision survives the round trip");
 		check(AP_NavRecFormat_IdentityMatches(&info, 6, AP_NAVREC_IDENTITY_CUSTOM, babyUuid, 7),
 		      "the same custom UUID and navigation revision match");
+		check(AP_NavRecFormat_IdentityMatches(&info, 10, AP_NAVREC_IDENTITY_CUSTOM, babyUuid, 7),
+		      "the same custom package matches on another physical slot");
 		check(!AP_NavRecFormat_IdentityMatches(&info, 6, AP_NAVREC_IDENTITY_CUSTOM, babyUuid, 8),
 		      "a navigation revision change invalidates the old line");
 		check(!AP_NavRecFormat_IdentityMatches(&info, 6, AP_NAVREC_IDENTITY_RETAIL, NULL, 0),

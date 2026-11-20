@@ -1071,12 +1071,16 @@ static void validate(const J &p, State &out) {
     // `fixed_items_v1`. The ledger's locked fields are recomputed from it.
     const bool has_fixed = p.is_object() && p.contains("fixed_items");
     const bool has_ruling_sources = p.is_object() && p.contains("track_ruling_sources");
+    const bool has_compatibility = p.is_object() && p.contains("room_compatibility");
     need(p.is_object() && p.size() == 11u + (has_families ? 1u : 0u) + (has_packs ? 1u : 0u) + (has_racers ? 1u : 0u) +
                                          (has_capability ? 1u : 0u) + (has_global ? 1u : 0u) + (has_boxes ? 1u : 0u) +
                                          (has_bosses ? 1u : 0u) + (has_pad_requirements ? 1u : 0u) + (has_fixed ? 1u : 0u) +
-                                         (has_structure ? 1u : 0u) + (has_shop ? 1u : 0u) + (has_pad_client ? 1u : 0u) + (has_sanity ? 1u : 0u) +
-                                         (has_ruling_sources ? 1u : 0u),
+                                         (has_structure ? 1u : 0u) + (has_shop ? 1u : 0u) + (has_pad_client ? 1u : 0u) +
+                                         (has_sanity ? 1u : 0u) + (has_compatibility ? 1u : 0u) + (has_ruling_sources ? 1u : 0u),
          "unsupported or incomplete record fields");
+    if (has_compatibility)
+        need(p["room_compatibility"].is_number_integer() && p["room_compatibility"] == 1,
+             "unsupported room compatibility format");
     if (has_structure) need(p["adventure_structure"] == "ctr_first", "adventure_structure must be ctr_first when present");
     out.ctr_first = has_structure;
     out.pad_client = ctr_content_pad_client{};
@@ -1162,17 +1166,28 @@ static void validate(const J &p, State &out) {
     const J &registry = content_registry();
     const bool carry_rulings = has_feature(p, kCarriedRulings);
     const auto &named_table = named_block_table(registry);
-    // Names a generic-slot (B+) room title must not take: every retail track
-    // and every named block, whether or not it is in this seed.
+    // Generic room titles reserve stable retail names and names used in this
+    // room. A title registered to an unused block after generation is fine.
     std::set<std::string> reserved_titles;
     for (const auto &row : registry["retail"]) reserved_titles.insert(fold(row["name"].get<std::string>()));
-    for (const auto &row : named_table) reserved_titles.insert(fold(row.second.name));
     reserved_titles.insert(fold(registry["cortex_vortex"]["name"].get<std::string>()));
     const auto packages = table(p.at("packages"), AP_CONTENT_MAX_PACKAGES);
     need(carry_rulings == has_ruling_sources, "inconsistent carried track ruling feature");
     if (has_ruling_sources) read_track_ruling_sources(p.at("track_ruling_sources"), packages, out);
     // Cups (#133 PR 5) add tracks raced only as legs.
     const auto tracks = table(p.at("tracks"), AP_CONTENT_MAX_TRACKS);
+    for (const auto &row : tracks) {
+        const J &track = *row.second;
+        if (track.contains("named_block") && track.contains("room_title"))
+            reserved_titles.insert(fold(text(track["room_title"], false)));
+    }
+    std::map<std::string, std::string> generic_titles;
+    const auto check_generic_title = [&](const std::string &title, const std::string &track_id) {
+        const std::string key = fold(title);
+        need(!reserved_titles.count(key), "generic-slot room title takes a retail or named track's name");
+        const auto found = generic_titles.emplace(key, track_id).first;
+        need(found->second == track_id, "two custom tracks share a room title");
+    };
     const auto entries = table(p.at("entries"), 33); // 27 pads and six boss encounters
     const auto pads = table(p.at("pads"), 32);
     const auto requirements = table(p.at("requirements"), 70); // 5 hub, 27 manual or stage-1, 27 stage-2, 6 boss
@@ -1470,8 +1485,7 @@ static void validate(const J &p, State &out) {
                      titled && lt.title == owned->second.name, "named block does not match this build's registry");
                 leg.victory = ap_named_location_code(leg.named_block, AP_NAMED_OFF_CUP_LEG_VICTORY);
             } else {
-                need(owned == named_table.end(), "a track with a named block must use it");
-                need(!reserved_titles.count(fold(lt.title)), "generic-slot room title takes a retail or named track's name");
+                check_generic_title(lt.title, track_id);
                 leg.victory = registry["custom_cup_leg_locations"][leg.custom_slot - 1].get<int64_t>();
             }
         }
@@ -1798,8 +1812,8 @@ static void validate(const J &p, State &out) {
                 need(ap_room_title_ok(room.c_str(), room.size()), "invalid room title");
                 check_title = room;
             }
-            // A key with a named block must use that block under its frozen
-            // name; any other key takes its generic slot (apworld content_plan.validate).
+            // The saved room selects its ID family. A named block retains its
+            // frozen ownership even after its key becomes available for new rooms.
             const auto owned = named_table.find(record.content_id);
             if (named) {
                 dest.named_block = number(track["named_block"], 0, AP_NAMED_BLOCK_LIMIT - 1);
@@ -1810,8 +1824,7 @@ static void validate(const J &p, State &out) {
                 codes[AP_CONTENT_MODE_CTR][0] = ap_named_location_code(dest.named_block, AP_NAMED_OFF_CTR_TOKEN);
                 for (int t = 0; t < 3; ++t) codes[AP_CONTENT_MODE_RELIC][t] = ap_named_location_code(dest.named_block, AP_NAMED_OFF_RELIC_SAPPHIRE + t);
             } else {
-                need(owned == named_table.end(), "a track with a named block must use it");
-                need(!reserved_titles.count(fold(check_title)), "generic-slot room title takes a retail or named track's name");
+                check_generic_title(check_title, track_id);
                 codes[AP_CONTENT_MODE_TROPHY][0] = registry["custom_locations"][slot - 1].get<int64_t>();
                 codes[AP_CONTENT_MODE_CTR][0] = registry["custom_ctr_locations"][slot - 1].get<int64_t>();
                 for (int t = 0; t < 3; ++t) codes[AP_CONTENT_MODE_RELIC][t] = registry["custom_relic_locations"][slot - 1][t].get<int64_t>();
@@ -3455,7 +3468,9 @@ static int parse_content_plan(const nlohmann::json &j) {
     } catch (const std::exception &e) {
         ctr_cfg.hit.valid = 0; // a Hit block parsed before the refusal never stays active
         std::memset(&ctr_wumpa_shop, 0, sizeof ctr_wumpa_shop);
-        forget(); hit_reject("content_plan: %s", e.what()); return 0;
+        forget();
+        hit_reject("content_plan: %s", e.what());
+        return 0;
     }
 }
 

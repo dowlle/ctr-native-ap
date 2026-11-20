@@ -414,16 +414,57 @@ static void boss_music(void)
 	sha_of(s_pkgVrm, venue.vrmSha256);
 	snprintf(venue.musicPackageRevision, sizeof venue.musicPackageRevision, "1.0.0");
 	snprintf(venue.packageUuid, sizeof venue.packageUuid, "0f8fad5b-d9cb-469f-a165-70867728950e");
+	snprintf(venue.navPackageUuid, sizeof venue.navPackageUuid, "%s", venue.packageUuid);
 	if (stat(s_pkgLev, &st) != 0) { EXPECT(0, "LEV fixture exists"); return; }
 	venue.levBytes = st.st_size;
 	if (stat(s_pkgVrm, &st) != 0) { EXPECT(0, "VRM fixture exists"); return; }
 	venue.vrmBytes = st.st_size;
 	sha_of(s_sca, bossMusicHash);
 	EXPECT(CustomTrack_ApplyGarageVenueDescriptor(0, &venue), "assign a custom boss venue");
+	EXPECT(CustomTrack_PrepareGarageVenueEntry(PKG_HOST, 0), "verify the exact pair before entering the garage race");
+	CustomTrack_OnRaceLoadRequested(PKG_HOST);
+	EXPECT(CustomTrack_GetOverride(group + 1, &ctx, &path, &trackSize) &&
+	       !strcmp(path, CUSTOM_TRACK_BOSS_LEV), "the default Boss Theme retains verified geometry without any music lookup");
+	FILE *levFile = fopen(s_pkgLev, "r+b");
+	if (levFile != NULL)
+	{
+		int first = fgetc(levFile);
+		rewind(levFile);
+		fputc(first ^ 1, levFile);
+		fflush(levFile);
+		CustomTrack_OnRaceLoadRequested(PKG_HOST);
+		EXPECT(CustomTrack_GetOverride(group + 1, &ctx, &path, &trackSize) &&
+		       !strcmp(path, CUSTOM_TRACK_BOSS_LEV), "same-level retry keeps the pair verified at garage entry");
+		CustomTrack_OnRaceLoadRequested(26);
+		EXPECT(!CustomTrack_PrepareGarageVenueEntry(PKG_HOST, 0),
+		       "a same-size LEV replacement is refused before the garage requests the load");
+		EXPECT(!CustomTrack_GetOverride(group + 1, &ctx, &path, &trackSize) &&
+		       !CustomTrack_GetOverride(group, &ctx, &path, &trackSize),
+		       "a same-size LEV replacement refuses both custom files with Boss Theme");
+		rewind(levFile);
+		fputc(first, levFile);
+		fclose(levFile);
+	}
+	else
+		EXPECT(0, "open the fixture to replace the LEV");
+	CustomTrack_ResetBossVenueLoad();
 	EXPECT(!CustomTrack_ReadBossMusic(PKG_HOST, 0, &size, &reason) && !reason, "an absent SCA is optional");
 	EXPECT(CustomTrack_GetOverride(group + 1, &ctx, &path, &trackSize) &&
 	       !strcmp(path, CUSTOM_TRACK_BOSS_LEV), "reserve the pair even when optional audio is absent");
+	CustomTrack_ClearGarageVenueDescriptors();
+	CustomTrack_ClearResidentSource();
+	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_LEV, 1);
+	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_VRM, 1);
+	unsigned char uuid[CTR_CT_NAV_UUID_BYTES], expectedUuid[CTR_CT_NAV_UUID_BYTES];
+	unsigned int revision;
+	EXPECT(CustomTrackPolicy_ParseNavUuid(venue.navPackageUuid, expectedUuid) &&
+	       CustomTrack_ResidentGarageNavIdentity(PKG_HOST, uuid, &revision) &&
+	       memcmp(uuid, expectedUuid, sizeof uuid) == 0 &&
+	       revision == CustomTrackPolicy_NavRevision(venue.levSha256),
+	       "the exact retained pair keeps its identity when preflight withdraws the descriptor");
+	CustomTrack_ClearResidentSource();
 	CustomTrack_ResetBossVenueLoad();
+	EXPECT(CustomTrack_ApplyGarageVenueDescriptor(0, &venue), "re-arm the fixture for a new load");
 	bossMusicBytes = SCA_BYTES;
 	bytes = CustomTrack_ReadBossMusic(PKG_HOST, 0, &size, &reason);
 	EXPECT(bytes && size == SCA_BYTES && !reason, "a repair becomes available without re-arming the venue");

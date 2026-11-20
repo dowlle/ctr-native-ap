@@ -224,7 +224,8 @@ if(NOT CTR_AP)
             ${CMAKE_SOURCE_DIR}/ap ${AP_VENDOR}/json/include ${AP_VENDOR}/asio/include
             ${CMAKE_SOURCE_DIR}/vendor/utf8proc)
         target_compile_definitions(custom_package PRIVATE
-            CTR_CUSTOM_TRACKS CTR_CUSTOM_PACKAGES UTF8PROC_STATIC ASIO_STANDALONE)
+            CTR_CUSTOM_TRACKS CTR_CUSTOM_PACKAGES UTF8PROC_STATIC ASIO_STANDALONE
+            CTR_NATIVE_VERSION=\"${CTR_NATIVE_VERSION}\")
         if(WIN32)
             target_compile_definitions(custom_package PRIVATE _WIN32_WINNT=0x0601 WIN32_LEAN_AND_MEAN)
         endif()

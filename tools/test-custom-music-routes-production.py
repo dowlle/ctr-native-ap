@@ -520,6 +520,16 @@ int main()
 		      sha(vrm).c_str(), vrm.size(), levPath, sizeof levPath, vrmPath, sizeof vrmPath) &&
 		      levPath == directory + "/original/track.lev" && vrmPath == directory + "/original/track.vrm",
 		      "same seed identity still resolves to the original files");
+		char pickedUuid[37];
+		expect(CustomPackage_FindPinnedFilesWithIdentity(assets.c_str(), "1.0.0", UUID.c_str(),
+		      sha(lev).c_str(), lev.size(), sha(vrm).c_str(), vrm.size(),
+		      levPath, sizeof levPath, vrmPath, sizeof vrmPath, pickedUuid) && UUID == pickedUuid,
+		      "exact seed identity is returned with the package");
+		expect(CustomPackage_FindPinnedFilesWithIdentity(assets.c_str(), "1.0.0",
+		      "b1629aa9-efab-4665-8c63-d58a4dbe6073", sha(lev).c_str(), lev.size(),
+		      sha(vrm).c_str(), vrm.size(), levPath, sizeof levPath, vrmPath, sizeof vrmPath,
+		      pickedUuid) && UUID == pickedUuid && levPath == directory + "/original/track.lev",
+		      "a geometry fallback returns the installed manifest identity");
 		CustomPackageOwned *owned = nullptr;
 		expect(CustomPackage_AcquireDirectory(directory.c_str(), pin.c_str(), &owned, nullptr, 0), "old package pin still verifies");
 		const void *offline = nullptr; size_t size = 0;

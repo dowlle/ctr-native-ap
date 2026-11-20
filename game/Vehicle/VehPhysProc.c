@@ -541,6 +541,9 @@ void VehPhysProc_Driving_PhysLinear(struct Thread *thread, struct Driver *driver
 		{
 			// This driver wants to fire a weapon
 			actionsFlagSetCopy |= ACTION_WEAPON_FIRE_REQUEST;
+#ifdef CTR_AP
+			AP_TrapNoteWeaponRequest(driver);
+#endif
 
 			// if numHeldItems == 0
 			// wait a full second before next weapon
