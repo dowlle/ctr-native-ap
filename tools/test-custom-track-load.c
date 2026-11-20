@@ -1358,7 +1358,21 @@ static void test_prim_arena_for_served_load(void)
 
 	// With the feature disarmed the serving term expands nothing, whatever the
 	// load says.
+	unsigned char navUuid[CTR_CT_NAV_UUID_BYTES] = {0};
+	unsigned int navRevision = 0;
+	s_customTrackConfig.navIdentityValid = 1;
+	s_customTrackConfig.navTrackUuid[0] = 0x42;
+	s_customTrackConfig.navRevision = 17;
+	CustomTrack_ClearResidentSource();
+	CustomTrack_NoteLoadedAsset(&eventLoad, CTR_CT_ROLE_LEV, 1);
+	CustomTrack_NoteLoadedAsset(&eventLoad, CTR_CT_ROLE_VRM, 1);
 	CustomTrack_ClearSeedDescriptor();
+	expect_int(CustomTrack_ResidentSeedRace(TEST_HOST), 1,
+	           "a completed legacy cup load is still custom after descriptor withdrawal");
+	expect_int(CustomTrack_NavIdentityForLoad(TEST_HOST, 1, TEST_CUP, navUuid, &navRevision) &&
+	           navUuid[0] == 0x42 && navRevision == 17, 1,
+	           "the legacy cup retains its admitted identity after descriptor withdrawal");
+	CustomTrack_ClearResidentSource();
 	expect_int(CustomTrack_ServingLoad(eventLoad.levelID, eventLoad.adventureCupActive, eventLoad.cupID), 0,
 	           "a withdrawn descriptor serves no load");
 	expect_int(CustomTrackPolicy_PrimArenaBytes(0, 2, retailArena) == retailArena, 1,

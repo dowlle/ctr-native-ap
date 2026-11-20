@@ -16,6 +16,7 @@
 #include "ap_hooks.h"               // AP_LogLine, ctr_cfg
 #include "ap_version.h"             // CTR_AP_VERSION
 #ifdef CTR_AP
+#include "ap_capability.h"
 #include "ap_deathlink.h"
 #include "ap_surface.h"
 #include "ap_traps.h"
@@ -226,6 +227,9 @@ static int s_navrecPhysicsEffect;
 static int s_navrecPhysicsImpaired = -1;
 static unsigned int s_navrecGrantedBoost;
 static unsigned int s_navrecFreshBoost;
+static int s_navrecFreshWumpa;
+static int s_navrecLiveWumpa;
+static int s_navrecLastWumpa;
 static int s_navrecLoggedBlocked;
 
 // Whether the lap currently being driven started with a forward crossing of
@@ -543,7 +547,11 @@ void AP_NavRec_ResetCapture(void)
 	s_navrecPhysicsImpaired = -1;
 	s_navrecGrantedBoost = 0;
 	s_navrecFreshBoost = 0;
+	s_navrecFreshWumpa = 0;
+	s_navrecLiveWumpa = 0;
+	s_navrecLastWumpa = 0;
 #ifdef CTR_AP
+	AP_CapabilityResetLapObservation();
 	AP_SurfaceResetLapObservation();
 #endif
 	s_navrecLoggedBlocked = 0;
@@ -1687,7 +1695,7 @@ int AP_NavRec_RederiveLoadIdentity(struct GameTracker *gGT)
 
 	facts.eventRaceServing = CustomTrack_ServingLoad((int)gGT->levelID, advCup, gGT->cup.cupID) ||
 	                         CustomTrack_KeepsNoScores(gGT->levelID) ||
-	                         CustomTrack_ResidentStandalone(gGT->levelID);
+	                         CustomTrack_ResidentSeedRace(gGT->levelID);
 	facts.eventRaceNavIdentity =
 	    CustomTrack_NavIdentityForLoad((int)gGT->levelID, advCup, gGT->cup.cupID, ctNavUuid, &ctNavRevision);
 	facts.oxideFinalServing = CustomTrack_ResidentBlocksRecordedLanes(gGT->levelID) ||
@@ -2076,6 +2084,12 @@ void AP_NavRec_NoteBoostGrant(enum AP_NavRecBoostGrant grant)
 	AP_NavRec_NoteKartEffect();
 }
 
+void AP_NavRec_NoteWumpaGrant(int amount)
+{
+	s_navrecFreshWumpa += amount;
+	AP_NavRec_NoteKartEffect();
+}
+
 void AP_NavRec_NotePhysicsEffect(void)
 {
 	s_navrecPhysicsEffect = 1;
@@ -2114,12 +2128,14 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 	int            physicsEffect = s_navrecPhysicsEffect;
 	int            physicsImpaired = s_navrecPhysicsImpaired;
 	unsigned int   freshBoost = s_navrecFreshBoost;
+	int            freshWumpa = s_navrecFreshWumpa;
 	int            impaired;
 
 	s_navrecFrameKartEffect = 0;
 	s_navrecPhysicsEffect = 0;
 	s_navrecPhysicsImpaired = -1;
 	s_navrecFreshBoost = 0;
+	s_navrecFreshWumpa = 0;
 	AP_NavRec_SyncArmed();
 
 	if (!s_navrecArmed || (gGT == NULL) || (s_navrecScratch == NULL))
@@ -2173,6 +2189,13 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 	atEnd = ((gGT->gameMode1 & END_OF_RACE) != 0);
 	impaired = AP_NavRec_KartImpaired(d);
 	s_navrecGrantedBoost = (s_navrecGrantedBoost | freshBoost) & (AP_NavRec_ActiveBoosts(d) | freshBoost);
+	// Fruit pools together on the kart. Attribute observed losses to live AP
+	// grants first, and never treat a normal pickup as an AP grant.
+	int fruitLoss = s_navrecLastWumpa - (d->numWumpas - freshWumpa);
+	if (fruitLoss > 0)
+		s_navrecLiveWumpa = s_navrecLiveWumpa > fruitLoss ? s_navrecLiveWumpa - fruitLoss : 0;
+	s_navrecLiveWumpa += freshWumpa;
+	s_navrecLastWumpa = d->numWumpas;
 
 	// The engine's backward crossing flag changes even when lapIndex does not.
 	// Only an already open flying lap can resume on an uncounted recross.
@@ -2263,7 +2286,7 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 	}
 
 	// Persisting kart effects also spoil the first sample of the new lap.
-	if (kartEffect || impaired || s_navrecGrantedBoost)
+	if (kartEffect || impaired || s_navrecGrantedBoost || s_navrecLiveWumpa)
 		s_navrecCurDirty = 1;
 #ifdef CTR_AP
 	if (AP_TrapAffectsRecordedLap(d))

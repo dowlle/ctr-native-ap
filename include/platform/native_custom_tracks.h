@@ -152,6 +152,9 @@ struct GarageVenueDescriptor
 #endif
 };
 int CustomTrack_ApplyGarageVenueDescriptor(int garage, const struct GarageVenueDescriptor *d);
+#ifdef CTR_CUSTOM_PACKAGES
+int CustomTrack_PrepareGarageVenueEntry(int levelID, int bossID);
+#endif
 void CustomTrack_ClearGarageVenueDescriptors(void);
 int CustomTrack_GarageVenueReady(int garage);
 // The garage whose custom venue this load serves, or -1.
@@ -343,13 +346,15 @@ struct CustomTrackResidentSource
 	char trackID[65], packageRevision[65];
 	char packageUuid[37];
 	char levSha256[65], vrmSha256[65];
+	unsigned char legacyNavUuid[CTR_CT_NAV_UUID_BYTES];
+	unsigned int legacyNavRevision;
 	char reserved[4];
 };
 void CustomTrack_ClearResidentSource(void);
 void CustomTrack_NoteLoadedAsset(const struct CustomTrackLoadContext *ctx, int role, int seedOwned);
 int CustomTrack_ResidentAssetsMixed(void);
 const struct CustomTrackResidentSource *CustomTrack_ResidentSource(int levelID);
-int CustomTrack_ResidentStandalone(int levelID);
+int CustomTrack_ResidentSeedRace(int levelID);
 int CustomTrack_ResidentBlocksRecordedLanes(int levelID);
 int CustomTrack_ResidentGarageNavIdentity(int levelID, unsigned char uuid[CTR_CT_NAV_UUID_BYTES],
                                          unsigned int *revision);

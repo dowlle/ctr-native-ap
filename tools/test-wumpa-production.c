@@ -4,7 +4,7 @@
 #include <common.h>
 
 struct sData sdata_static;
-void AP_NavRec_NoteKartEffect(void) {}
+void AP_NavRec_NoteWumpaGrant(int amount) { (void)amount; }
 
 static int onTrack;
 static int modifyCalls;

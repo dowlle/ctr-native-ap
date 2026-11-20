@@ -39,6 +39,8 @@ static int g_cap_pc_logged;
 // behaviour silently is the exact pattern Lessons Learned #4 is about.
 static int g_cap_pc_unknown_logged;
 static int g_cap_weaken_stats_applied;
+static int g_cap_observed_boost_tier;
+static int g_cap_boost_observed;
 
 // ── Roster order: WIRE order, not engine order ──────────────────────────────
 //
@@ -831,6 +833,11 @@ static int AP_CapabilityWriteStat(struct Driver *driver, const struct MetaPhys *
 	return changed;
 }
 
+void AP_CapabilityResetLapObservation(void)
+{
+	g_cap_boost_observed = 0;
+}
+
 void AP_CapabilityStats(struct Driver *driver)
 {
 	int i;
@@ -840,6 +847,11 @@ void AP_CapabilityStats(struct Driver *driver)
 
 	if (!AP_CapabilityIsLocal(driver))
 		return;
+	int boostTier = AP_CapabilityAppliedBoostTier();
+	if (g_cap_boost_observed && g_cap_observed_boost_tier != boostTier)
+		AP_NavRec_NotePhysicsEffect();
+	g_cap_observed_boost_tier = boostTier;
+	g_cap_boost_observed = 1;
 	weakened = AP_TrapWeakenedActive(driver);
 	// Outside Adventure a race drives vanilla stats: the pack counts as off there.
 	statsLive = AP_CapabilityStatsActive() && AP_CapabilityRoomStatsRace();

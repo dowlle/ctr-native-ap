@@ -137,7 +137,7 @@ enum CustomTrackResidentKind
 #define CUSTOM_TRACK_BOSS_VRM "@ctr/boss/vrm"
 static struct
 {
-	int active, level, boss;
+	int active, level, boss, pinnedAtEntry;
 	struct CustomTrackRetainedFile lev, vrm;
 	struct CustomTrackResidentSource source;
 } s_bossVenueLoad;
@@ -762,7 +762,7 @@ static int CustomTrack_PrepareBossVenueLoad(int levelID, int bossID)
 		return 0;
 
 	// Bind the pair before either the geometry or optional track audio uses it.
-	// A failed pair takes the retail route for this load only.
+	// The garage refuses entry if it cannot retain the advertised pair.
 	int retained = CustomTrack_RetainFile(lev, &s_bossVenueLoad.lev) &&
 	               CustomTrack_RetainFile(vrm, &s_bossVenueLoad.vrm);
 	if (!retained)
@@ -784,6 +784,20 @@ static int CustomTrack_PrepareBossVenueLoad(int levelID, int bossID)
 		memcpy(s_bossVenueLoad.source.levSha256, lev->expectedHash, sizeof s_bossVenueLoad.source.levSha256);
 		memcpy(s_bossVenueLoad.source.vrmSha256, vrm->expectedHash, sizeof s_bossVenueLoad.source.vrmSha256);
 	}
+	return 1;
+}
+
+int CustomTrack_PrepareGarageVenueEntry(int levelID, int bossID)
+{
+	CustomTrack_ResetBossVenueLoad();
+	if (CustomTrack_GarageVenueServing(levelID, bossID, 1) < 0)
+		return 1; // A retail garage venue has no package to retain.
+	if (!CustomTrack_PrepareBossVenueLoad(levelID, bossID))
+	{
+		CustomTrack_Log("[CustomTracks] boss garage entry refused: the venue pair could not be verified\n");
+		return 0;
+	}
+	s_bossVenueLoad.pinnedAtEntry = 1;
 	return 1;
 }
 
@@ -1362,7 +1376,9 @@ void CustomTrack_SelectRetailRace(void) { CustomRaceLatch_Retail(&s_standaloneRa
 void CustomTrack_OnRaceLoadRequested(int levelID)
 {
 #ifdef CTR_CUSTOM_PACKAGES
-	CustomTrack_ResetBossVenueLoad();
+	// An admitted garage race keeps the pair through same-level retries.
+	if (!s_bossVenueLoad.pinnedAtEntry || s_bossVenueLoad.level != levelID)
+		CustomTrack_ResetBossVenueLoad();
 #endif
 	CustomRaceLatch_OnRequest(&s_standaloneRace, levelID);
 	if (!s_standaloneRace.active) CustomTrack_ReleaseStandaloneBytes();
@@ -1708,10 +1724,10 @@ const struct CustomTrackResidentSource *CustomTrack_ResidentSource(int levelID)
 	return s_customTrackResident.kind && s_customTrackResident.levelID == levelID ? &s_customTrackResident : NULL;
 }
 
-int CustomTrack_ResidentStandalone(int levelID)
+int CustomTrack_ResidentSeedRace(int levelID)
 {
 	const struct CustomTrackResidentSource *resident = CustomTrack_ResidentSource(levelID);
-	return resident && resident->kind == CTR_RESIDENT_STANDALONE;
+	return resident && (resident->kind == CTR_RESIDENT_STANDALONE || resident->kind == CTR_RESIDENT_EVENT);
 }
 
 int CustomTrack_ResidentBlocksRecordedLanes(int levelID)
@@ -1792,6 +1808,11 @@ void CustomTrack_NoteLoadedAsset(const struct CustomTrackLoadContext *ctx, int r
 		memset(&current, 0, sizeof current);
 		current.kind = CTR_RESIDENT_EVENT;
 		current.levelID = ctx->levelID;
+		if (s_customTrackConfig.navIdentityValid)
+		{
+			memcpy(current.legacyNavUuid, s_customTrackConfig.navTrackUuid, sizeof current.legacyNavUuid);
+			current.legacyNavRevision = s_customTrackConfig.navRevision;
+		}
 		memcpy(current.levSha256, s_descriptor.levSha256, sizeof current.levSha256);
 		memcpy(current.vrmSha256, s_descriptor.vrmSha256, sizeof current.vrmSha256);
 	}
@@ -1839,6 +1860,14 @@ int CustomTrack_NavIdentityForLoad(int levelID, int adventureCupActive, int cupI
 		return 0;
 
 	const struct CustomTrackResidentSource *resident = CustomTrack_ResidentSource(levelID);
+	if (resident && resident->kind == CTR_RESIDENT_EVENT)
+	{
+		if (CustomTrack_ResidentAssetsMixed() || !resident->legacyNavRevision)
+			return 0;
+		memcpy(outUuid, resident->legacyNavUuid, sizeof resident->legacyNavUuid);
+		*outRevision = resident->legacyNavRevision;
+		return 1;
+	}
 	if (resident && resident->kind == CTR_RESIDENT_STANDALONE)
 	{
 		if (CustomTrack_ResidentAssetsMixed() || !CustomTrackPolicy_ParseNavUuid(resident->packageUuid, outUuid))

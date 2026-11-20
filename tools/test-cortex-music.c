@@ -421,9 +421,10 @@ static void boss_music(void)
 	venue.vrmBytes = st.st_size;
 	sha_of(s_sca, bossMusicHash);
 	EXPECT(CustomTrack_ApplyGarageVenueDescriptor(0, &venue), "assign a custom boss venue");
+	EXPECT(CustomTrack_PrepareGarageVenueEntry(PKG_HOST, 0), "verify the exact pair before entering the garage race");
+	CustomTrack_OnRaceLoadRequested(PKG_HOST);
 	EXPECT(CustomTrack_GetOverride(group + 1, &ctx, &path, &trackSize) &&
 	       !strcmp(path, CUSTOM_TRACK_BOSS_LEV), "the default Boss Theme retains verified geometry without any music lookup");
-	CustomTrack_ResetBossVenueLoad();
 	FILE *levFile = fopen(s_pkgLev, "r+b");
 	if (levFile != NULL)
 	{
@@ -431,6 +432,12 @@ static void boss_music(void)
 		rewind(levFile);
 		fputc(first ^ 1, levFile);
 		fflush(levFile);
+		CustomTrack_OnRaceLoadRequested(PKG_HOST);
+		EXPECT(CustomTrack_GetOverride(group + 1, &ctx, &path, &trackSize) &&
+		       !strcmp(path, CUSTOM_TRACK_BOSS_LEV), "same-level retry keeps the pair verified at garage entry");
+		CustomTrack_OnRaceLoadRequested(26);
+		EXPECT(!CustomTrack_PrepareGarageVenueEntry(PKG_HOST, 0),
+		       "a same-size LEV replacement is refused before the garage requests the load");
 		EXPECT(!CustomTrack_GetOverride(group + 1, &ctx, &path, &trackSize) &&
 		       !CustomTrack_GetOverride(group, &ctx, &path, &trackSize),
 		       "a same-size LEV replacement refuses both custom files with Boss Theme");

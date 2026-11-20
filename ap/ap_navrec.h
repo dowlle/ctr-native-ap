@@ -63,6 +63,7 @@ enum AP_NavRecBoostGrant
 	AP_NAVREC_GRANT_MASK = 2
 };
 void AP_NavRec_NoteBoostGrant(enum AP_NavRecBoostGrant grant);
+void AP_NavRec_NoteWumpaGrant(int amount);
 // Report a change during gameplay, before the next sampled lap boundary.
 void AP_NavRec_NotePhysicsEffect(void);
 void AP_NavRec_ObservePhysics(const struct GameTracker *gGT);

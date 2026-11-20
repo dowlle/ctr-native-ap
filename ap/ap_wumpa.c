@@ -442,8 +442,8 @@ void AP_WumpaTick(struct GameTracker *gGT)
 		AP_LogLine(msg);
 		g_wumpa_pending = 0;
 	}
-	if (local->numWumpas != before)
-		AP_NavRec_NoteKartEffect();
+	if (local->numWumpas > before)
+		AP_NavRec_NoteWumpaGrant(local->numWumpas - before);
 }
 
 #endif // CTR_AP

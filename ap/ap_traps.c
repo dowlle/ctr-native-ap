@@ -89,6 +89,8 @@ static int g_sched_ready = 0;
 // keeps their behaviour identical between two calls in one frame.
 static unsigned char g_active[AP_TRAP_EFFECT_COUNT];
 static int g_trap_boost_tainted;
+static int g_trap_forced_press;
+static int g_trap_forced_fire_pending;
 
 // Camera latch: 1 while we own cameraDC[0], so chase is restored exactly once.
 static int g_fp_applied = 0;
@@ -1100,6 +1102,7 @@ void AP_Trap_ConnectReset(void)
 	g_trap_reroll_wait = 0;
 	g_trap_use_pending = 0;
 	g_trap_use_wait = 0;
+	g_trap_forced_fire_pending = 0;
 	g_trap_steer_mirrored = 0;
 	g_trap_jump_owned = 0;
 	AP_TrapClockedOutReset(AP_TrapLocalDriver());
@@ -1414,6 +1417,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 
 		g_epoch++;
 		g_trap_boost_tainted = 0;
+		g_trap_forced_fire_pending = 0;
 		AP_TrapSchedMapChange(&g_sched);
 		for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 			g_active[e] = 0;
@@ -1712,7 +1716,9 @@ void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
 	// held item keeps whatever juiced state it had. An incompatible state simply
 	// ignores the press, and the effect stays active and tries again next frame,
 	// which is the ruled "wait rather than consume unsuccessfully" behaviour.
-	if (g_trap_use_pending && g_active[AP_TRAP_FORCED_USE] && buttonsTapped != 0)
+	g_trap_forced_press = g_trap_use_pending && g_active[AP_TRAP_FORCED_USE] &&
+	                      buttonsTapped != 0 && !(*buttonsTapped & BTN_CIRCLE);
+	if (g_trap_forced_press)
 		*buttonsTapped |= BTN_CIRCLE;
 
 	// No Drifting. L1 and R1 are the hop and power-slide buttons, read from
@@ -1774,6 +1780,24 @@ void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
 		pad->stickLY = AP_STICK_NEUTRAL;
 		pad->stickRY = AP_STICK_NEUTRAL;
 	}
+}
+
+void AP_TrapNoteWeaponRequest(struct Driver *driver)
+{
+	if (AP_TrapIsLocal(driver))
+		g_trap_forced_fire_pending = g_trap_forced_press;
+}
+
+void AP_TrapNoteWeaponFire(struct Driver *driver, int weaponID)
+{
+	if (!AP_TrapIsLocal(driver) || !g_trap_forced_fire_pending)
+		return;
+	g_trap_forced_fire_pending = 0;
+	AP_NavRec_NotePhysicsEffect();
+	if (weaponID == 0) // Turbo
+		AP_NavRec_NoteBoostGrant(AP_NAVREC_GRANT_RESERVES);
+	if (weaponID == 7) // Mask
+		AP_NavRec_NoteBoostGrant(AP_NAVREC_GRANT_MASK);
 }
 
 // Limp Mode: the local kart's speed is held to half its class top speed, boosts

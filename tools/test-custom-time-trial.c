@@ -50,7 +50,12 @@ struct sData sdata_static; // common.h binds sdata to it
 struct Data data;
 NativeConfig g_config;
 #ifdef CTR_AP
+#include "ap/ap_deathlink.h"
 ctr_seed_config ctr_cfg;
+void AP_HubSaveBoxCloseForLoad(void) {}
+void AP_CupSweepOnLoadRequested(int level) { (void)level; }
+void AP_ContentCupOnLoadRequested(int level) { (void)level; }
+void AP_DeathLinkOnRaceEnd(struct GameTracker *gt, struct Driver *driver) { (void)gt; (void)driver; }
 #endif
 void AP_LogLine(const char *msg) { fputs(msg, stderr); }
 
@@ -195,7 +200,7 @@ int CustomTrack_OxideFinalServing(int level, int boss, int active) { (void)level
 int CustomTrack_GarageVenueServing(int level, int boss, int active) { (void)level; (void)boss; (void)active; return -1; }
 int CustomTrack_CortexTrackIntent(int level, int boss) { (void)level; (void)boss; return 0; }
 int CustomTrack_ResidentBlocksRecordedLanes(int level) { (void)level; return 0; }
-int CustomTrack_ResidentStandalone(int level) { (void)level; return 0; }
+int CustomTrack_ResidentSeedRace(int level) { (void)level; return 0; }
 int CustomTrack_ResidentGarageNavIdentity(int level, unsigned char uuid[16], unsigned int *revision)
 {
 	(void)level;
@@ -207,6 +212,7 @@ int CustomTrack_ResidentGarageNavIdentity(int level, unsigned char uuid[16], uns
 int AP_TrapAffectsRecordedLap(struct Driver *driver) { return driver == s_gt.drivers[0] && s_testTrap; }
 int AP_RaceAttemptIsForcedLoss(void) { return s_testForcedLoss; }
 void AP_SurfaceResetLapObservation(void) {}
+void AP_CapabilityResetLapObservation(void) {}
 #endif
 
 #include "../ap/ap_navrec.c"
@@ -480,6 +486,22 @@ static void check_seed_lap_recording(void)
 	AP_NavRec_Tick(&s_gt);
 	CHECK(s_navrecBankCount == 1 && s_navrecBankDirty[0] && s_navrecCurDirty);
 	s_player.actionsFlagSet &= ~ACTION_MASK_WEAPON;
+
+	begin_seed_attempt();
+	sample_flying_lap();
+	s_player.numWumpas = 3;
+	AP_NavRec_NoteWumpaGrant(3);
+	AP_NavRec_Tick(&s_gt);
+	s_player.lapIndex++;
+	AP_NavRec_Tick(&s_gt);
+	CHECK(s_navrecBankCount == 1 && s_navrecBankDirty[0] && s_navrecCurDirty);
+	s_player.numWumpas = 0;
+	AP_NavRec_Tick(&s_gt);
+	s_player.numWumpas = 3; // Normal pickups after the AP fruit is gone.
+	s_player.lapIndex++;
+	AP_NavRec_Tick(&s_gt);
+	CHECK(!s_navrecLiveWumpa && !s_navrecCurDirty);
+	s_player.numWumpas = 0;
 
 	begin_seed_attempt();
 	s_player.reserves = 100;

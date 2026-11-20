@@ -9,11 +9,12 @@
 #include "ap_traps.h" // AP_TrapMudSeason
 
 static int g_surface_held[AP_SURFACE_ITEM_COUNT];
-static unsigned int g_surface_new_for_lap;
+static int g_surface_observed[AP_SURFACE_ITEM_COUNT];
 
 void AP_SurfaceResetLapObservation(void)
 {
-	g_surface_new_for_lap = 0;
+	for (int i = 0; i < AP_SURFACE_ITEM_COUNT; i++)
+		g_surface_observed[i] = g_surface_held[i];
 }
 
 void AP_SurfaceReset(void)
@@ -21,7 +22,6 @@ void AP_SurfaceReset(void)
 	int i;
 	for (i = 0; i < AP_SURFACE_ITEM_COUNT; i++)
 		g_surface_held[i] = 0;
-	AP_SurfaceResetLapObservation();
 }
 
 void AP_SurfaceReceive(int item)
@@ -29,9 +29,6 @@ void AP_SurfaceReceive(int item)
 	if (item < 0 || item >= AP_SURFACE_ITEM_COUNT || g_surface_held[item])
 		return;
 	g_surface_held[item] = 1;
-	if (sdata != NULL && sdata->gGT != NULL && sdata->Loading.stage == LOAD_IDLE &&
-	    sdata->gGT->trafficLightsTimer <= 0 && AP_CapabilityRoomStatsRace())
-		g_surface_new_for_lap |= 1u << item;
 }
 
 int AP_SurfaceTerrain(struct Driver *driver, int terrain, int naturalTerrain)
@@ -39,12 +36,12 @@ int AP_SurfaceTerrain(struct Driver *driver, int terrain, int naturalTerrain)
 	int localDriver = driver != 0 && sdata != 0 && sdata->gGT != 0 &&
 	                  driver == sdata->gGT->drivers[0] && AP_CapabilityRoomStatsRace();
 	int mud = localDriver && AP_TrapMudSeason(driver);
-	if (g_surface_new_for_lap && localDriver && naturalTerrain)
+	if (localDriver && naturalTerrain)
 	{
 		int item = AP_SurfaceItemForTerrain(mud ? TERRAIN_DIRT : terrain);
-		if (item >= 0 && (g_surface_new_for_lap & (1u << item)))
+		if (item >= 0 && g_surface_observed[item] != g_surface_held[item])
 		{
-			g_surface_new_for_lap &= ~(1u << item);
+			g_surface_observed[item] = g_surface_held[item];
 			AP_NavRec_NotePhysicsEffect();
 		}
 	}

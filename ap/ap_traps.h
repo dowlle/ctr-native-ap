@@ -77,6 +77,8 @@ void AP_Trap_ConnectReset(void);
 // scheduler, drains its events and owns the forced camera. gGT is the live
 // GameTracker.
 void AP_TrapTick(struct GameTracker *gGT);
+void AP_TrapNoteWeaponRequest(struct Driver *driver);
+void AP_TrapNoteWeaponFire(struct Driver *driver, int weaponID);
 int AP_TrapAffectsRecordedLap(struct Driver *driver);
 
 // Poll debug keybinds (Numpad 1..6) to test-fire traps without an AP server. Called

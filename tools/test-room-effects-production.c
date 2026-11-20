@@ -32,6 +32,7 @@ int main(void)
     AP_CapabilityReset();
     AP_CapabilitySelectConnectReset();
     AP_SurfaceReceive(AP_SURFACE_WATER);
+    AP_SurfaceResetLapObservation();
     for (unsigned i = 0; i < sizeof outside / sizeof outside[0]; ++i)
     {
         int reserve = 50000, fire = 0x800;
@@ -71,6 +72,11 @@ int main(void)
     AP_SurfaceReceive(AP_SURFACE_DIRT);
     AP_SurfaceResetLapObservation();
     assert(AP_SurfaceTerrain(&local, TERRAIN_DIRT, 1) == TERRAIN_ASPHALT && recorded_surface_changes == 1);
+    AP_SurfaceReset();
+    AP_SurfaceReceive(AP_SURFACE_ICE);
+    assert(AP_SurfaceTerrain(&local, TERRAIN_ICE, 1) == TERRAIN_ASPHALT && recorded_surface_changes == 1);
+    AP_SurfaceReset();
+    assert(AP_SurfaceTerrain(&local, TERRAIN_ICE, 1) == TERRAIN_ICE && recorded_surface_changes == 2);
     puts("PASS: production boost and surface effects stay in Adventure; inventory survives");
     return 0;
 }

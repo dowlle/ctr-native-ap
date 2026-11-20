@@ -6,7 +6,7 @@
 #include "ap/ap_wumpa_shop.h"
 
 struct sData sdata_static;
-void AP_NavRec_NoteKartEffect(void) {}
+void AP_NavRec_NoteWumpaGrant(int amount) { (void)amount; }
 ctr_seed_config ctr_cfg;
 AP_WumpaShopConfig ctr_wumpa_shop;
 static int onTrack = 1, credited, forcedLoss;
