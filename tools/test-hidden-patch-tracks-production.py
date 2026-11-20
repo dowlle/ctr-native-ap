@@ -11,7 +11,8 @@ source = (root / "ap/ap_solo.cpp").read_text()
 header = (root / "include/platform/native_custom_track_visibility.h").read_text()
 adapter = (root / "ap/ap_solo_track_visibility.hpp").read_text().split('R"PY(', 1)[1].split(')PY"', 1)[0]
 hashes = re.findall(r'"([0-9a-f]{64})"', header)
-assert len(set(hashes)) == 5
+assert len(set(hashes)) == 6
+assert hashes[-1] == "76d6a70097f68c80aa84929edd26bf13cc165caf3e7c099156121b9583c5a4da"
 visible = "60982d262c4a150f0b625495b353795386609217b40837b47bcc395507e66cd1"
 assert visible not in hashes
 
