@@ -243,6 +243,18 @@ static void generic_scenarios(const struct CustomTrackLibraryEntry *start)
     MM_CustomTrackSelect_Init(); CHECK(s_arcadeLibrary.visibleCount == 17);
     D230.trackSel_transitionState = IN_MENU; tick(0);
 
+    {
+        struct CustomTrackLibraryEntry installed[2];
+        memcpy(installed, entries, sizeof installed);
+        strcpy(installed[0].local.levSha256, "87f416ec29a93f16013f7497de35c0832c13712aaf94695b6597d309e37edf80");
+        installed[0].local.timeTrial = installed[1].local.timeTrial = 1;
+        installed[1].local.arcade = 0;
+        publish(installed, 2);
+        MM_CustomTrackSelect_Init(); D230.trackSel_transitionState = IN_MENU; tick(0);
+        CHECK(s_contentLibrary.count == 2 && s_arcadeLibrary.count == 1);
+        CHECK(!strcmp(CustomTrackLibrary_Row(&s_arcadeLibrary, 0)->manifestSha256, installed[1].manifestSha256));
+    }
+
     /* A revision that failed its checks stays visible, says why, and cannot
        start; Ready is the only state that prepares a launch. */
     {

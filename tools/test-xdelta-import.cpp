@@ -49,6 +49,7 @@ extern "C" int XdeltaImportTest_InstallDescriptors(const XdeltaImportScan *scan,
                                                    const char *assets, int *kept, int *needsLaps, char *note,
                                                    size_t noteSize);
 extern "C" const char *XdeltaImportTest_KnownName(const char *levSha256);
+extern "C" void XdeltaImportTest_HideLev(const char *hash);
 extern "C" const char *XdeltaImportTest_CuratedName(const char *patchSha256, int bigfileIndex);
 extern "C" int XdeltaImport_TestOldCopyState(const XdeltaImportScan *scan, unsigned int item, const char *assets);
 extern "C" void XdeltaImportTest_AddCurated(const char *patchSha256, int bigfileIndex, const char *name);
@@ -1223,6 +1224,25 @@ int main()
         CHECK(t7 && !t7->offered && !std::strcmp(t7->reason, "Same track as Pack track 1"), "duplicate pair deduplicated");
         const XdeltaImportItem *t9 = item_for(s, 9);
         CHECK(t9 && t9->offered && !std::strcmp(t9->tags, "Race TT Arcade"), "grown entry offered; moved entries are not changes");
+        XdeltaImportTest_HideLev(sha_hex(cutLev).c_str());
+        ScanResult hidden = scan(patchPath, discPath);
+        XdeltaImportTest_HideLev("");
+        CHECK(hidden.ok, "scan succeeds with one hidden LEV");
+        if (hidden.ok)
+        {
+            const XdeltaImportSummary *hiddenSummary = XdeltaImport_Summary(hidden.scan);
+            for (int index : {1, 7})
+            {
+                const auto *item = item_for(hiddenSummary, index);
+                CHECK(item && !item->offered && !item->pin[0] &&
+                    !std::strcmp(item->reason, "This level was left unused in the adventure."),
+                    "the same LEV is skipped in either slot");
+            }
+            const auto *other = item_for(hiddenSummary, 9);
+            CHECK(other && t9 && other->offered && !std::strcmp(other->pin, t9->pin),
+                  "the next offered track keeps its original package pin");
+        }
+        XdeltaImport_Free(&hidden.scan);
         CHECK(!item_for(s, 11), "unchanged LEV after a moved entry is not offered");
         const XdeltaImportItem *code = line_with(s, "Game code (");
         CHECK(code && !std::strcmp(code->reason, "Code does not run in this client"), "code line");

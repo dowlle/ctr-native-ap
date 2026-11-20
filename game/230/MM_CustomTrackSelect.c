@@ -19,6 +19,7 @@
    and writes its best times and ghost in custom-records/
    (native_custom_records.h), never the memory card. */
 #include <platform/native_custom_track_library.h>
+#include <platform/native_custom_track_visibility.h>
 #include <platform/native_custom_offline.h>
 #include <platform/native_custom_music.h>
 #include <platform/native_assets.h>
@@ -229,6 +230,7 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
             for (size_t i=0;i<s_contentLibrary.count;i++)
             {
                 const struct CustomTrackLibraryEntry *item=&s_contentLibrary.entries[i];
+                if (CustomTrack_IsHiddenLev(item->local.levSha256)) continue;
                 size_t at=0;
                 for (;at<count;at++)
                     if (item->local.uuid[0] && !strcmp(item->local.uuid,eligible[at].local.uuid)) break;

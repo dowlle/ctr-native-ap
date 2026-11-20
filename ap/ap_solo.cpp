@@ -7,6 +7,7 @@
 #include "ap_solo.h"
 #include "ap_solo_logic.hpp"
 #include "ap_net.h"
+#include <platform/native_custom_track_visibility.h>
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_package.h>
 #include "ap_track_registry.h"
@@ -18,6 +19,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -459,15 +461,81 @@ void JobFail(const std::string &kind, const std::string &message, const std::str
 
 void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows); // below, by its writer
 
+bool HiddenTrackDescriptor(const nlohmann::json &descriptor)
+{
+	const auto files = descriptor.find("files");
+	if (files == descriptor.end() || !files->is_array()) return false;
+	for (const auto &pin : *files)
+		if (AP_SoloJsonString(pin, "role") == "lev")
+			return CustomTrack_IsHiddenLev(AP_SoloJsonString(pin, "sha256").c_str());
+	return false;
+}
+
+// The bundled wrapper reports the source and labels of a row without its file
+// pins. Match against the descriptors it could have read. Keep an ambiguous
+// row visible if a visible revision has the same source and metadata.
+using TrackListIdentity = std::tuple<std::string, std::string, std::string, std::string>;
+TrackListIdentity TrackListKey(const nlohmann::json &row, const std::string &source)
+{
+	return {source, AP_SoloJsonString(row, "id"), AP_SoloJsonString(row, "display_name"),
+	        AP_SoloJsonString(row, "author")};
+}
+
+std::set<TrackListIdentity> HiddenTrackListRows(const nlohmann::json &rows)
+{
+	std::set<TrackListIdentity> hidden, visible;
+	if (SoloRootIsLink()) return hidden;
+	const auto collect = [&](const nlohmann::json &d, const char *source) {
+		if (!d.is_object() || AP_SoloJsonString(d, "id").empty()) return;
+		auto &keys = HiddenTrackDescriptor(d) ? hidden : visible;
+		keys.insert(TrackListKey(d, source));
+	};
+	for (const char *source : {"file", "room"})
+	{
+		if (std::none_of(rows.begin(), rows.end(), [&](const auto &row) {
+		    return AP_SoloJsonString(row, "source") == source;
+		})) continue;
+		const bool room = std::strcmp(source, "room") == 0;
+		const fs::path folder = fs::u8path(SoloPath(room ? "rooms" : "tracks"));
+		std::error_code ec;
+		if (fs::is_symlink(folder, ec)) continue;
+		for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec))
+		{
+			const fs::path path = it->path();
+			if (room)
+			{
+				std::error_code status;
+				if (!fs::is_directory(it->symlink_status(status))) continue;
+				const auto meta = nlohmann::json::parse(ReadSmallPlainFile(path / "room.json", 4 * 1024 * 1024), nullptr, false);
+				const auto tracks = meta.find("custom_tracks");
+				if (tracks != meta.end() && tracks->is_array())
+					for (const auto &d : *tracks) collect(d, source);
+			}
+			else
+			{
+				auto ext = path.extension().u8string();
+				std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+				if (ext != ".json") continue;
+				collect(nlohmann::json::parse(ReadSmallPlainFile(path, kDescriptorMax), nullptr, false), source);
+			}
+		}
+	}
+	for (const auto &key : visible) hidden.erase(key);
+	return hidden;
+}
+
 // A new track list keeps the picks of the tracks still in it. The first list of a
 // start begins as the YAML has each track.
 void ParseTracks(const nlohmann::json &r)
 {
 	std::vector<APSoloTrackInfo> next;
+	g_trackStarts.clear();
 	if (r.contains("tracks") && r["tracks"].is_array())
+	{
+		const auto hidden = HiddenTrackListRows(r["tracks"]);
 		for (const auto &t : r["tracks"])
 		{
-			if (!t.is_object())
+			if (!t.is_object() || hidden.count(TrackListKey(t, AP_SoloJsonString(t, "source"))))
 				continue;
 			APSoloTrackInfo info;
 			std::memset(&info, 0, sizeof info);
@@ -485,6 +553,7 @@ void ParseTracks(const nlohmann::json &r)
 					info.pick = old.pick;
 			next.push_back(info);
 		}
+	}
 	AddNeedsLapsRows(next);
 	for (APSoloTrackInfo &info : next)
 		for (const auto &old : g_tracks)
@@ -1133,7 +1202,7 @@ void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows)
 	{
 		const nlohmann::json d = nlohmann::json::parse(ReadSmallPlainFile(dir / fs::u8path(name), kDescriptorMax),
 		                                               nullptr, false);
-		if (!AP_SoloNeedsLapsDescriptor(d, name))
+		if (!AP_SoloNeedsLapsDescriptor(d, name) || HiddenTrackDescriptor(d))
 			continue;
 		APSoloTrackInfo info;
 		std::memset(&info, 0, sizeof info);
@@ -1492,6 +1561,7 @@ void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 		}
 		return;
 	}
+	if (CustomTrack_IsHiddenLev(entry->local.levSha256)) return;
 	char key[65], revision[65], json[16384], error[256];
 	std::string knownKey;
 	if (entry->local.trackID > 0)

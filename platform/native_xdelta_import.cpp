@@ -25,6 +25,7 @@ extern "C" {
 }
 #include <platform/native_custom_offline.h>
 #include <platform/native_sha256.h>
+#include <platform/native_custom_track_visibility.h>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -1068,6 +1069,7 @@ const struct { const char *patch; int slot; const char *author; const char *key;
 #ifdef CTR_XDELTA_TESTING
 struct TestCurated { std::string patch; int slot; std::string name, author, key; };
 std::vector<TestCurated> g_testCurated; /* Harness-only extra rows. */
+std::string g_testHiddenLev;
 #endif
 
 /* One curated row's display data. author and key are empty when the row sets
@@ -1502,6 +1504,16 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             if (embeddedSources.count(c.index)) candidate.embedded = embeddedSources[c.index];
             lev.clear(); lev.shrink_to_fit(); vrm.clear(); vrm.shrink_to_fit();
             const std::string levHash = hex_sha256(candidate.lev.data(), candidate.lev.size());
+            if (CustomTrack_IsHiddenLev(levHash.c_str())
+#ifdef CTR_XDELTA_TESTING
+                || levHash == g_testHiddenLev
+#endif
+            )
+            {
+                if (following) ordinal--;
+                add_item(*scan, skip_item((int)c.index, level_label(c.index), "This level was left unused in the adventure."));
+                return;
+            }
             const std::string vrmHash = hex_sha256(candidate.vrm.data(), candidate.vrm.size());
             /* Name sources in order: the pack descriptor, the curated table of
                tester names (patch hash and slot), the known-track table,
@@ -3141,6 +3153,7 @@ extern "C" void XdeltaImportTest_AddCuratedFull(const char *patchSha256, int big
     g_testCurated.push_back({patchSha256, bigfileIndex, name, author ? author : "", key ? key : ""});
 }
 extern "C" void XdeltaImportTest_ClearCurated() { g_testCurated.clear(); }
+extern "C" void XdeltaImportTest_HideLev(const char *hash) { g_testHiddenLev = hash; }
 extern "C" const char *XdeltaImportTest_CuratedAuthor(const char *patchSha256, int bigfileIndex)
 {
     Curated c;
