@@ -23,6 +23,9 @@ fixture = r'''
 #include <text_box.h>
 #include <ctr_menu_ux.h>
 #include "ap/ap_feed_lines_logic.h"
+#define CTR_AP
+#include "include/platform/native_config.h"
+static int AP_ItemFeedMode(void) { return AP_ITEM_FEED_ALL; }
 typedef short s16; typedef unsigned char u8; typedef unsigned int u32;
 #define UsaRetail 926
 #define EurRetail 1020

@@ -25,6 +25,7 @@ fixture = r'''
 #include "include/ctr_menu_scrollbar.h"
 #include "include/text_box.h"
 #define CTR_AP
+#include "include/platform/native_config.h"
 #define CTR_NATIVE
 #define CTR_CUSTOM_TRACKS
 #define CTR_CUSTOM_PACKAGES
@@ -70,6 +71,8 @@ static char lastText[128];
 static int ctr_cfg_active(void) { return active; }
 static int AP_GateCount(int i) { assert(i==AP_IDX_TROPHY); return received; }
 static int AP_HubFeedOn(void) { return enabled; }
+static int feedMode = AP_ITEM_FEED_ALL;
+static int AP_ItemFeedMode(void) { return feedMode; }
 static int AP_CharSwap_HubHudHidden(void) { return hidden; }
 static void OtherFX_Play(int fx,int volume) { assert(fx==0x41&&volume==1); }
 static void DecalFont_DrawLine(char *s,int x,int y,int font,int flags) { snprintf(lastText,sizeof lastText,"%s",s);if(draws<8)drawnY[draws]=y;draws++;lastY=y; }
@@ -125,6 +128,16 @@ int main(void) {
     }
     // Warning capacity is hub-only: races still draw five lines.
     draws=0;AP_FeedTickAndDraw(8,200,1);assert(draws==5&&drawnY[0]==152);
+    AP_FeedLinesReset(&ap_feed);
+    AP_FeedLinesEnqueue(&ap_feed,"FILLER",WHITE,0)->unimportant = 1;
+    AP_FeedLinesPromote(&ap_feed);
+    AP_FeedLinesEnqueue(&ap_feed,"STOCK",WHITE,0)->unimportant = 1;
+    AP_FeedLinesEnqueue(&ap_feed,"UNLOCK",WHITE,0);
+    ap_feed.stagger = 0;
+    feedMode = AP_ITEM_FEED_IMPORTANT;
+    draws=0;AP_FeedTickAndDraw(8,200,0);
+    assert(draws == 1 && !strcmp(lastText,"UNLOCK") && !ap_feed.qcount);
+    feedMode = AP_ITEM_FEED_ALL;
     // A4-36: a slim bar, no text, only when the page scrolls; track and thumb inside the nine-row window.
     draws=0;
     for(int count=0;count<=9;count++) { boxes=0;Config_DrawScrollBar(0,count,NULL);assert(!boxes); }
