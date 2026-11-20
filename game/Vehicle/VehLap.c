@@ -32,7 +32,7 @@ void VehLap_UpdateProgress(struct Driver *driver)
 	if (((u32)(level->cnt_restart_points - 1) >= 0xff) || (checkpointIndex < 0))
 	{
 #ifdef CTR_AP
-		RB_MinePool_BossProgress(driver, 0, 0, NULL);
+		RB_MinePool_BossProgress(driver, 0, 0, -1, NULL);
 #endif
 		return;
 	}
@@ -58,7 +58,7 @@ void VehLap_UpdateProgress(struct Driver *driver)
 	    !AP_LapProgress_IndexUsable(nodes[nodes[checkpointIndex].nextIndex_forward].nextIndex_forward, level->cnt_restart_points) ||
 	    nodes[0].distToFinish == 0)
 	{
-		RB_MinePool_BossProgress(driver, 0, 0, NULL);
+		RB_MinePool_BossProgress(driver, 0, 0, -1, NULL);
 		return;
 	}
 #endif
@@ -94,7 +94,7 @@ void VehLap_UpdateProgress(struct Driver *driver)
 	// NOTE(aalhendi): Retail uses signed div/mfhi for this remainder.
 	driver->distanceToFinish_curr = progress % trackLength;
 #ifdef CTR_AP
-	RB_MinePool_BossProgress(driver, (s32)driver->distanceToFinish_curr, trackLength, &nodeDelta.vec);
+	RB_MinePool_BossProgress(driver, (s32)driver->distanceToFinish_curr, trackLength, checkpointIndex, &nodeDelta.vec);
 #endif
 
 	if (wrongWayTest < 0x5a801)

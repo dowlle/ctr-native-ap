@@ -780,6 +780,9 @@ void BOTS_ThTick_RevEngine(struct Thread *botThread)
 void BOTS_MaskGrab(struct Thread *botThread)
 {
 	struct Driver *bot = botThread->object;
+#ifdef CTR_AP
+	RB_MinePool_BossProgress(bot, 0, 0, -1, NULL);
+#endif
 	struct NavFrame *frame = bot->botData.botNavFrame;
 	struct NavFrame *nextFrame = frame + 1;
 

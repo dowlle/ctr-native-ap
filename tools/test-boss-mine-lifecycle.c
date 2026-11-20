@@ -86,6 +86,7 @@ void MatrixRotate(MATRIX *dst, MATRIX *src, MATRIX *rot)
 static void setup(int venue, int garageHome)
 {
     memset(&tracker, 0, sizeof tracker);
+    memset(&level, 0, sizeof level);
     memset(&owner, 0, sizeof owner);
     memset(&kart, 0, sizeof kart);
     memset(mines, 0, sizeof mines);
@@ -127,11 +128,16 @@ static void add(int i, int model, int thrown)
     RB_MinePool_Add(&mines[i]);
 }
 
-static void move(int x, int remaining)
+static void moveAtCheckpoint(int x, int remaining, int checkpoint)
 {
     const SVec3 backward = {.x = -4096};
     owner.posCurr.x = x * 256;
-    RB_MinePool_BossProgress(&owner, remaining, 800, &backward);
+    RB_MinePool_BossProgress(&owner, remaining, 800, checkpoint, &backward);
+}
+
+static void move(int x, int remaining)
+{
+    moveAtCheckpoint(x, remaining, 0);
 }
 
 static void bossDrop(int i, int model, int x, int thrown)
@@ -199,7 +205,7 @@ static void testScopeAndDiscontinuities(void)
     move(10050, 700);
     move(10200, 550);
     assert(!mines[0].boolDestroyed);
-    RB_MinePool_BossProgress(&owner, 0, 0, NULL);
+    RB_MinePool_BossProgress(&owner, 0, 0, -1, NULL);
     move(10201, 500);  // First valid sample after the missing checkpoint.
     assert(!mines[0].boolDestroyed);
     owner.actionsFlagSet |= ACTION_RACE_FINISHED;  // The player is still racing.
@@ -222,15 +228,31 @@ static void testScopeAndDiscontinuities(void)
     move(400, 399);
     assert(mines[0].boolDestroyed);
 
+}
+
+static void testShortCustomCheckpointGaps(void)
+{
     setup(TURBO_TRACK, PAPU_PYRAMID);
     expiryEnabled = 1;
-    move(0, 799);
+    struct CheckpointNode nodes[5];
+    memset(nodes, 0xff, sizeof nodes);
+    nodes[0].nextIndex_forward = 1;
+    nodes[1].nextIndex_left = 2;
+    nodes[2].nextIndex_forward = 3;
+    level.cnt_restart_points = 5;
+    level.ptr_restart_points = nodes;
+
+    moveAtCheckpoint(0, 799, 0);
     bossDrop(0, STATIC_BEAKER_GREEN, 0, 0);
-    RB_MinePool_ResetBossProgress();  // A legacy snapshot has no mine region.
-    move(200, 599);
-    move(400, 399);
-    move(600, 199);
-    assert(!mines[0].boolDestroyed && D231.minePoolTaken.count == 1);
+    moveAtCheckpoint(30, 649, 1);  // The reported 150-unit change is larger than the world movement.
+    moveAtCheckpoint(60, 499, 4);  // An unrelated checkpoint cannot claim the jump.
+    moveAtCheckpoint(90, 649, 1);  // Still driving forward, so the bounce is not reverse travel.
+    moveAtCheckpoint(120, 499, 2);
+    moveAtCheckpoint(90, 649, 1);  // Connected reverse motion does subtract the distance.
+    moveAtCheckpoint(120, 499, 2);
+    assert(!mines[0].boolDestroyed);
+    moveAtCheckpoint(150, 399, 3);
+    assert(mines[0].boolDestroyed);
 }
 
 static void testBlastBeforeMineTick(void)
@@ -281,6 +303,7 @@ int main(void)
 {
     testHalfLap();
     testScopeAndDiscontinuities();
+    testShortCustomCheckpointGaps();
     testAirborneExpiry();
     testBlastBeforeMineTick();
     puts("PASS half-lap expiry by mine position, finish wrap, reverse, invalid samples and race scope");

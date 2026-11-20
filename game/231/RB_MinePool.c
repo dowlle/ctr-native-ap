@@ -8,6 +8,7 @@ struct BossMineProgress
 	Vec3 position;
 	SVec3 backward;
 	int remaining;
+	int checkpoint;
 	int valid;
 };
 
@@ -51,7 +52,20 @@ void RB_MinePool_BossMine(struct MineWeapon *mw, struct Instance *inst)
 	*mine = (struct BossMine){inst, owner, progress->distance, progress->position, progress->backward};
 }
 
-void RB_MinePool_BossProgress(struct Driver *driver, int remaining, int length, const SVec3 *backward)
+static int RB_MinePool_LeadsTo(const struct CheckpointNode *nodes, int count, int from, int to, int hops)
+{
+	if (from < 0 || from >= count)
+		return 0;
+	if (from == to)
+		return 1;
+	if (hops == 0)
+		return 0;
+	return RB_MinePool_LeadsTo(nodes, count, nodes[from].nextIndex_forward, to, hops - 1) ||
+	       RB_MinePool_LeadsTo(nodes, count, nodes[from].nextIndex_left, to, hops - 1) ||
+	       RB_MinePool_LeadsTo(nodes, count, nodes[from].nextIndex_right, to, hops - 1);
+}
+
+void RB_MinePool_BossProgress(struct Driver *driver, int remaining, int length, int checkpoint, const SVec3 *backward)
 {
 	if ((sdata->gGT->gameMode1 & (ADVENTURE_BOSS | END_OF_RACE | PAUSE_ALL)) != ADVENTURE_BOSS ||
 	    !(driver->actionsFlagSet & ACTION_BOT) || driver->driverID >= 8)
@@ -70,22 +84,37 @@ void RB_MinePool_BossProgress(struct Driver *driver, int remaining, int length, 
 		remaining += length;
 	Vec3 position = { .x = CTR_MipsSra(driver->posCurr.x, 8), .y = CTR_MipsSra(driver->posCurr.y, 8),
 	                  .z = CTR_MipsSra(driver->posCurr.z, 8) };
-	int movement = abs(position.x - progress->position.x) + abs(position.y - progress->position.y) +
-	               abs(position.z - progress->position.z);
+	Vec3 motion = { .x = position.x - progress->position.x, .y = position.y - progress->position.y,
+	                .z = position.z - progress->position.z };
+	int movement = abs(motion.x) + abs(motion.y) + abs(motion.z);
 	int advance = progress->remaining - remaining;
 	if (advance > length / 2)
 		advance -= length;
 	else if (advance < -length / 2)
 		advance += length;
 
-	// A jump in the checkpoint projection or the kart's position is not
-	// distance driven. Re-anchor the next sample and give no forward credit.
-	int continuous = progress->valid && movement <= 1024 && movement != 0 &&
-	                 abs(advance) <= movement + 64 && abs(advance) * 2 < length;
+	int continuous = progress->valid && movement <= 1024 && movement != 0 && abs(advance) * 2 < length;
+	if (continuous && abs(advance) > movement + 64)
+	{
+		// Authored distances can jump when a short piece of road hands off to
+		// its next checkpoint. Allow the jump when the graph and the kart's
+		// movement agree. Keep the search bounded for forks and dense layouts.
+		const struct Level *level = sdata->gGT->level1;
+		int forward = -(motion.x * (progress->backward.x + backward->x) +
+		                motion.y * (progress->backward.y + backward->y) +
+		                motion.z * (progress->backward.z + backward->z));
+		int from = advance > 0 ? progress->checkpoint : checkpoint;
+		int to = advance > 0 ? checkpoint : progress->checkpoint;
+		continuous = from != to && abs(advance) < length / 4 &&
+		             ((advance > 0 && forward > 0) || (advance < 0 && forward < 0)) &&
+		             level && level->ptr_restart_points &&
+		             RB_MinePool_LeadsTo(level->ptr_restart_points, level->cnt_restart_points, from, to, 4);
+	}
 	if (continuous)
 		progress->distance += advance;
 	progress->position = position;
 	progress->remaining = remaining;
+	progress->checkpoint = checkpoint;
 	progress->backward = *backward;
 	progress->valid = 1;
 	if (!continuous || advance <= 0)

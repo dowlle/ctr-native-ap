@@ -24,7 +24,11 @@
 // and retail globals are defined, so they can snapshot the same process-local
 // regions the game mutates.
 #define NATIVE_CHECKPOINT_MAGIC              NATIVE_CHECKPOINT_FOURCC('C', 'T', 'R', 'C')
+#ifdef CTR_AP
+#define NATIVE_CHECKPOINT_VERSION            3u  // captures boss mine expiry state
+#else
 #define NATIVE_CHECKPOINT_VERSION            2u
+#endif
 #define NATIVE_CHECKPOINT_ADDRESS_RANGE_CAP  16u
 #define NATIVE_CHECKPOINT_POINTER_SLOT_CAP   65536u
 #define NATIVE_CHECKPOINT_CREDITS_STRING_CAP 4096u
@@ -2210,10 +2214,8 @@ internal int NativeCheckpoint_ValidateHeader(const struct NativeCheckpointHeader
 {
 	struct NativeCheckpointHeader liveHeader;
 	u32 i;
-	u32 headerDelta = 0;
-	u32 expectedSize;
 
-	if ((header == NULL) || (srcSize < (int)OFFSETOF(struct NativeCheckpointHeader, regions)))
+	if ((header == NULL) || (srcSize < (int)sizeof(*header)))
 	{
 		return 0;
 	}
@@ -2221,27 +2223,18 @@ internal int NativeCheckpoint_ValidateHeader(const struct NativeCheckpointHeader
 	{
 		return 0;
 	}
+	if ((header->size < sizeof(*header)) || (header->size > (u32)srcSize))
+	{
+		return 0;
+	}
 	if (!NativeCheckpoint_InitHeader(&liveHeader))
 	{
 		return 0;
 	}
-	expectedSize = liveHeader.size;
-	if (header->regionCount != liveHeader.regionCount)
+	if ((header->size != liveHeader.size) || (header->regionCount != liveHeader.regionCount))
 	{
-#ifdef CTR_AP
-		// Older AP checkpoints omitted BMIN, the final region. The header
-		// table and each region offset were one entry shorter.
-		if (header->regionCount != liveHeader.regionCount - 1)
-			return 0;
-		headerDelta = sizeof(struct NativeCheckpointRegion);
-		expectedSize = liveHeader.regions[header->regionCount].offset - headerDelta;
-#else
 		return 0;
-#endif
 	}
-	const u32 headerSize = sizeof(*header) - headerDelta;
-	if (header->size != expectedSize || header->size > (u32)srcSize || header->size < headerSize)
-		return 0;
 	if (header->addressRangeCount != liveHeader.addressRangeCount)
 	{
 		return 0;
@@ -2268,11 +2261,11 @@ internal int NativeCheckpoint_ValidateHeader(const struct NativeCheckpointHeader
 		const struct NativeCheckpointRegion *liveRegion = &liveHeader.regions[i];
 		const u32 end = region->offset + region->size;
 
-		if ((region->kind != liveRegion->kind) || (region->offset != liveRegion->offset - headerDelta) || (region->size != liveRegion->size))
+		if ((region->kind != liveRegion->kind) || (region->offset != liveRegion->offset) || (region->size != liveRegion->size))
 		{
 			return 0;
 		}
-		if ((region->size == 0) || (region->offset < headerSize) || (end < region->offset) || (end > header->size))
+		if ((region->size == 0) || (region->offset < sizeof(*header)) || (end < region->offset) || (end > header->size))
 		{
 			return 0;
 		}
@@ -2419,8 +2412,8 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 	// fields below.
 	OVR233_ResetRuntimeState();
 #ifdef CTR_AP
-	// Older states have no expiry records. Their existing mines still use
-	// the ordinary pool until removed, and new boss shots get fresh records.
+	// A checkpoint is taken between shots. Clear the live shooter before
+	// restoring the saved progress and mine records.
 	RB_MinePool_ResetBossProgress();
 #endif
 
