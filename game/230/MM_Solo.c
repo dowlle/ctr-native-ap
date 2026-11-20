@@ -1099,6 +1099,7 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 	{
 		const int helpY = SOLO_HELP_Y - SOLO_ROW_H;
 		int legendLines = 2;
+		const char *legend = "In pool: the seed may use it. Own pad: it gets a pad.";
 		if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info) && info.needsLaps)
 		{
 			if (s_soloLapsFailed)
@@ -1139,11 +1140,16 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 				                         0, info.author, info.creditSource);
 			}
 			UI_DrawTrackCredit(credit, 0x100, SOLO_HELP_Y + SOLO_ROW_H, SOLO_TEXT_W);
+			if (legendLines)
+			{
+				legend = "In pool: random. Own pad: fixed.";
+				legendLines = 1;
+			}
 		}
 #endif
 		if (legendLines)
-			MM_Solo_DrawWrapped("In pool: random. Own pad: fixed.", 0x100, SOLO_HELP_Y,
-			                    SOLO_TEXT_W, 1, JUSTIFY_CENTER | GRAY, ot);
+			MM_Solo_DrawWrapped(legend, 0x100, SOLO_HELP_Y,
+			                    SOLO_TEXT_W, legendLines, JUSTIFY_CENTER | GRAY, ot);
 	}
 	if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info) && info.needsLaps)
 		MM_Solo_Footer(NativeMenu_Labels("LEFT/RIGHT: LAPS  *: KEEP  ^: BACK"), ot);

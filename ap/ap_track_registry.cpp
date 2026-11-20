@@ -547,8 +547,18 @@ extern "C" void CustomTrackCredit_Format(char *out, size_t size, const char *lev
 	    std::strcmp(author, "Unknown author"))
 		track = author;
 	struct TrackSource known;
-	if (track.empty() && (!source || !*source) && TrackSources_Find(lev, vrm, &known))
-		source = known.kind == TRACK_SOURCE_PATCH ? known.patchFile : "Project Saphi";
+	if ((key.empty() || (track.empty() && (!source || !*source))) &&
+	    lev && *lev && vrm && *vrm && TrackSources_Find(lev, vrm, &known))
+	{
+		/* A cold offline library can still identify a shipped Cortex pair. */
+		if (key.empty() && known.kind == TRACK_SOURCE_SAPHI && known.saphiTrack == 44)
+		{
+			std::snprintf(out, size, "%s", CTR_CORTEX_CREDIT);
+			return;
+		}
+		if (track.empty() && (!source || !*source))
+			source = known.kind == TRACK_SOURCE_PATCH ? known.patchFile : "Project Saphi";
+	}
 	if (track.empty())
 		std::snprintf(out, size, "From %s", source && *source ? source : "a local custom track package");
 	else if (!music.empty() && track == music)

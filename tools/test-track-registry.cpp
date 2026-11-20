@@ -156,6 +156,14 @@ int main(int argc, char **argv)
 	// Before any fetch nothing is located.
 	CHECK(ap_track_registry_status(&source, nullptr, 0) == AP_TRACK_REGISTRY_IDLE);
 	CHECK(lookup('a', 810876, 'b', 458808) == AP_TRACK_REGISTRY_NO_INDEX);
+	{
+		char credit[CTR_TRACK_CREDIT_MAX];
+		CustomTrackCredit_Format(credit, sizeof credit,
+		    "cc0aaa1dacfbc6f43f1efc73989e7b7e2479ba8f81583784d507bac97f3d0a87",
+		    "e7a6a0b82cef9ec3e5c4bb5ab9ce2317b28aab198d7cb5263ef0b883c555e2e6",
+		    0, "Lockheart", nullptr);
+		CHECK(!std::strcmp(credit, CTR_CORTEX_CREDIT));
+	}
 
 	// 1. Live fetch: the fixed URL only, published live, cached.
 	serve(true, v1);

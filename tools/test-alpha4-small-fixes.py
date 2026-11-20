@@ -168,4 +168,6 @@ warp = source("game/232/AH_WarpPad.c")
 title = warp.index("AP_FeedHubPadTitle(1)")
 assert warp.rindex("sdata->AkuAkuHintState == 0", 0, title) < title
 assert "AP_CharSwap_HubHudHidden()" in warp[warp.rindex("sdata->AkuAkuHintState == 0", 0, title):title]
-assert "DecalFont_DrawLine(warppadLNG" in warp[title:title+300]
+draws = warp[title:warp.index("AP_PadApproachHints(levelID)", title)]
+assert "DecalFont_DrawLine(warppadLNG" in draws
+assert "DecalFont_DrawLineBox(warppadLNG" in draws

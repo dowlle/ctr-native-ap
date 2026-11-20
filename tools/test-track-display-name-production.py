@@ -4,6 +4,7 @@ CTR_NAME_SOURCE_ROOT selects a baseline checkout for negative controls.
 """
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 
@@ -70,12 +71,18 @@ for signature in ("const ctr_content_pad *AP_ContentCupPad(void)",
     fixture += function(cups, signature)
 helper = root / "game/UI/UI_TrackName.c"
 if helper.exists():
-    fixture += helper.read_text().replace("#include <common.h>", "").replace(
-        "#include <platform/native_custom_tracks.h>", "")
+    fixture += function("game/UI/UI_TrackName.c", "const char *UI_TrackName(int physicalPad)")
 banner = source("game/UI/UI_RaceFlow.c")
-start = banner.index("DecalFont_DrawLineBox(") + len("DecalFont_DrawLineBox(")
-end = banner.index("gGT->pushBuffer[0].rect.x", start)
-expr = banner[start:end].rstrip().removesuffix(",")
+if helper.exists():
+    # The fly-in title has a custom pair of rows and the existing retail row.
+    # Both must still resolve the same race identity.
+    calls = re.findall(r'DecalFont_DrawLineBox\(\s*(?://[^\n]*\n\s*)*((?:\(char \*\))?UI_TrackName\(-1\)),', banner)
+    assert calls and len(calls) == banner.count("DecalFont_DrawLineBox(")
+    expr = calls[0]
+else:
+    start = banner.index("DecalFont_DrawLineBox(") + len("DecalFont_DrawLineBox(")
+    end = banner.index("gGT->pushBuffer[0].rect.x", start)
+    expr = banner[start:end].rstrip().removesuffix(",")
 fixture += "\nstatic const char *banner_name(void) {struct GameTracker *gGT=&game;return " + expr + ";}\n"
 standings = source("game/UI/UI_CupStandings.c")
 start = standings.index("\tint index = 0x22E;")
@@ -97,7 +104,7 @@ for tag, row in (("pause_track", "rowY + 0x26"), ("pause_crystal", "crystalRowY 
         line += lines[i + 1]
     fixture += f"static const char *{tag}(int id) {{int trackID=id,crystalID=id,posX=0,textX=0,iconX=320,rowY=0,crystalRowY=0;struct MetaDataLEV *mdLev=&data.metaDataLEV[id];{line}return drawn;}}\n"
 warp = source("game/232/AH_WarpPad.c")
-start = warp.index("\t\t\t\t\twarppadLNG =", warp.index("if (ap_content_plan_active())"))
+start = warp.index("\t\t\t\t\twarppadLNG =", warp.index("if (ap_content_plan_active())", warp.index("// default", warp.index("// if near a portal"))))
 line = warp[start:warp.index("\n", start)]
 fixture += "static const char *pad_name(int levelID) {const ctr_content_pad *pad=ap_content_plan_pad(levelID);char *warppadLNG;" + line + "return warppadLNG;}\n"
 frame = source("ap/ap_hooks_frame.c")
