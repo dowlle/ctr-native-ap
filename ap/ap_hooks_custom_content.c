@@ -618,6 +618,7 @@ static void AP_GarageVenuePreflight(void)
 		const ctr_content_package *pkg = NULL;
 		const char *lev = NULL, *vrm = NULL;
 		char line[200];
+		memset(&d, 0, sizeof d);
 		if (b->venue_package[g] >= 0)
 		{
 			pkg = ap_content_plan_package(b->venue_package[g]);
@@ -625,12 +626,21 @@ static void AP_GarageVenuePreflight(void)
 			{
 				f = &ap_content_files[b->venue_package[g]];
 				lev = pkg->lev_sha256; vrm = pkg->vrm_sha256;
+#ifdef CTR_CUSTOM_PACKAGES
+				snprintf(d.musicPackageRevision, sizeof d.musicPackageRevision, "%s", pkg->revision);
+				snprintf(d.packageUuid, sizeof d.packageUuid, "%s", pkg->uuid);
+				d.levBytes = pkg->lev_bytes;
+				d.vrmBytes = pkg->vrm_bytes;
+#endif
 			}
 		}
 		else if (b->venue_cortex[g] && ap_content_cortex_ready)
 		{
 			f = &ap_content_cortex_files;
 			lev = CTR_CFG_CORTEX_LEV_SHA256; vrm = CTR_CFG_CORTEX_VRM_SHA256;
+#ifdef CTR_CUSTOM_PACKAGES
+			d.cortex = 1;
+#endif
 		}
 		else if (!b->venue_cortex[g])
 			continue; // a retail venue
@@ -643,7 +653,6 @@ static void AP_GarageVenuePreflight(void)
 			ap_custom_content_required = 1;
 			continue;
 		}
-		memset(&d, 0, sizeof d);
 		d.enabled = 1;
 		d.hostLevelID = b->venues[g];
 		d.roomIdentity = ap_content_plan_room_identity();

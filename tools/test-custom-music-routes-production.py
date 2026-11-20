@@ -229,15 +229,17 @@ static bool asked(const std::string &path)
 }
 static const std::string SCA_PATH = "/api/v2/tracks/121/downloads/874";
 
-struct Found { bool ok; std::string path, sha; unsigned long bytes; };
+struct Found { bool ok; std::string path, sha, refusal; unsigned long bytes; };
 static Found find_music_for(const std::string &assets, const char *revision = "1.0.0",
                             const char *uuid = nullptr, int exact = 1)
 {
 	char path[512], digest[65];
+	const char *refusal;
 	Found f{};
-	f.ok = CustomPackage_FindPinnedMusic(assets.c_str(), revision, uuid, exact, sha(lev).c_str(), (unsigned long)lev.size(),
-	                                     sha(vrm).c_str(), (unsigned long)vrm.size(), path, sizeof path, digest, &f.bytes) != 0;
+	f.ok = CustomPackage_FindPinnedMusicWithStatus(assets.c_str(), revision, uuid, exact, sha(lev).c_str(),
+	        (unsigned long)lev.size(), sha(vrm).c_str(), (unsigned long)vrm.size(), path, sizeof path, digest, &f.bytes, &refusal) != 0;
 	if (f.ok) { f.path = path; f.sha = digest; }
+	if (refusal) f.refusal = refusal;
 	return f;
 }
 // One seed install into a fresh assets folder.
@@ -498,7 +500,8 @@ int main()
 		expect(!CustomPackage_InstallMusic(directory.c_str(), pin.c_str(), music.data(), music.size(), sha(music).c_str(), 874, nullptr),
 		       "interruption between audio and metadata leaves no publication");
 		CustomPackage_TestInstallFailure(-1);
-		expect(!find_music_for(assets).ok && !exists(directory + "/.saphi-music/source.json"),
+		const auto interrupted = find_music_for(assets);
+		expect(!interrupted.ok && interrupted.refusal.empty() && !exists(directory + "/.saphi-music/source.json"),
 		       "the race lookup ignores interrupted staging");
 		serve();
 		served[path] = music;
@@ -531,12 +534,23 @@ int main()
 		serve();
 		expect(repair_library(catalogue, assets) == 1 && !asked(path),
 		       "already repaired music requests a rescan without another download");
+		const auto levFile = directory + "/original/track.lev";
+		if (std::rename(levFile.c_str(), (levFile + ".moved").c_str()) == 0)
+		{
+			auto missingLev = find_music_for(assets);
+			expect(!missingLev.ok && !missingLev.refusal.empty(),
+			       "the production lookup rejects a music package whose LEV went missing");
+			expect(std::rename((levFile + ".moved").c_str(), levFile.c_str()) == 0, "restore the test LEV");
+		}
+		else expect(false, "move the test LEV");
 		if (audio.ok)
 		{
 			std::ofstream broken(audio.path, std::ios::binary | std::ios::trunc);
 			broken.write("bad", 3);
 		}
-		expect(!find_music_for(assets).ok, "seed lookup refuses damaged restored audio");
+		const auto damaged = find_music_for(assets);
+		expect(!damaged.ok && damaged.refusal == "restored music failed verification",
+		       "production lookup diagnoses damaged restored audio");
 		expect(CustomPackage_AcquireDirectory(directory.c_str(), pin.c_str(), &owned, nullptr, 0) &&
 		       !CustomPackage_GetAudio(owned, &offline, &size), "damaged restored audio leaves the original package usable");
 		CustomPackage_Free(&owned);

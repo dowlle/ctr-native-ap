@@ -185,6 +185,10 @@ int CustomPackage_FindPinnedFiles(const char *assets, const char *revision, cons
 int CustomPackage_FindPinnedMusic(const char *assets, const char *revision, const char *uuid, int exactUuid,
     const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
     char *scaPath, size_t scaCapacity, char scaSha256[65], unsigned long *scaBytes);
+/* Same lookup, with a static diagnostic when a matching audio candidate is refused. */
+int CustomPackage_FindPinnedMusicWithStatus(const char *assets, const char *revision, const char *uuid, int exactUuid,
+    const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
+    char *scaPath, size_t scaCapacity, char scaSha256[65], unsigned long *scaBytes, const char **refusal);
 /* A descriptor derived from one verified store revision. Return 1 for a
    complete descriptor, 2 when author laps must be picked, or 0 with a reason.
    `key` is the seed key when known; otherwise source metadata or the title
