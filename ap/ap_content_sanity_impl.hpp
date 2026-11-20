@@ -86,8 +86,8 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
     std::set<std::string> wanted;
     for (const auto &t : tracks) {
         const auto &routes = uses[t.first];
-        const bool eligible = !repeatable_pickups(p) ? !routes.empty() :
-            std::any_of(routes.begin(), routes.end(), repeatable_pickup_route);
+        const bool eligible = std::any_of(routes.begin(), routes.end(),
+                                          [&](const J &route) { return allowed_pickup_route(p, route); });
         if (eligible && inventory(*t.second)) wanted.insert(t.first);
     }
     need(s["tracks"].is_array() && s["tracks"].size() == wanted.size(), "sanity track count mismatch");

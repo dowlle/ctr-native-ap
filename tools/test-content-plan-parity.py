@@ -1751,9 +1751,18 @@ for name, change in [
         ("mode", lambda p: lap_boss_route(p).__setitem__("mode", "boss_cup")),
         ("pad", lambda p: lap_boss_route(p).__setitem__("own_pad_id", "garage:1" if lap_boss_route(p)["own_pad_id"] != "garage:1" else "garage:2")),
         ("award", lambda p: lap_boss_route(p).__setitem__("award", "win")),
-        ("venue check dropped", lambda p: p["checks"].remove(next(c for c in p["checks"] if c["kind"] == "lap" and all(r["encounter_id"] for r in c["routes"])))),
+        ("venue check dropped", lambda p: p["checks"].remove(lap_boss_check(p))),
+        # A6-48: Cortex Vortex raced only by the final has no lap check; one
+        # forged back with the final's route alone is refused.
+        ("final-only venue lap added", lambda p: p["checks"].insert(0, dict(
+            location=registry["cortex_vortex"]["lap"], owner="cortex_vortex", kind="lap",
+            display_name="Cortex Vortex: Complete One Lap",
+            routes=[dict(entry_id="entry/boss:4/1", mode="boss_race", leg_id=None, encounter_id="encounter/garage:4/1",
+                         own_pad_id="garage:4", award="lap")]))),
+        ("final-only venue marker dropped", lambda p: p["required_features"].remove("final_only_venue_v1")),
         ]:
     alter("lap-boss-" + name, change, lap_boss_base)
+assert "final_only_venue_v1" in lap_boss_base["content_plan"]["required_features"]
 # A plan with laps off that declares the feature.
 alter("lap-feature on a plan without laps", lambda p: p["required_features"].append("lap_checks_v1"))
 # One generator row 2: Gem Cups first, surface items and relic checks that

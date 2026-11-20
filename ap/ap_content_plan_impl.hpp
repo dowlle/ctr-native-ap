@@ -984,6 +984,22 @@ static std::set<std::string> tizi_mask_tracks(const J &p) {
 static bool repeatable_pickup_route(const J &route) {
     return route.at("encounter_id") != "encounter/garage:4/0";
 }
+// A6-48 (ruling of 2026-11-20): with `final_only_venue_v1` a venue whose only
+// allowed route is N. Oxide's Final Challenge gets no lap, Reach 10 Wumpa or
+// pickup checks of its own. A pickup's First Challenge route does not count
+// (A6-16c), a lap's does. A check with another route keeps its final route.
+// Absence preserves the original room's checks.
+static constexpr char kFinalOnlyVenueFeature[] = "final_only_venue_v1";
+static constexpr char kFinalEncounter[] = "encounter/garage:4/1";
+static bool final_only_venue(const J &p) {
+    return has_feature(p, kFinalOnlyVenueFeature);
+}
+// A route that may keep a pickup check: not the one-shot First Challenge in a
+// repeatable-pickup room, and not the Final Challenge in a final-only-venue room.
+static bool allowed_pickup_route(const J &p, const J &route) {
+    return (!repeatable_pickups(p) || repeatable_pickup_route(route)) &&
+           !(final_only_venue(p) && route.at("encounter_id") == kFinalEncounter);
+}
 static std::set<std::string> repeatable_pickup_tracks(const J &p) {
     const Table entries = table(p.at("entries"), 160);
     std::set<std::string> result;
@@ -1000,8 +1016,10 @@ static std::set<std::string> repeatable_pickup_tracks(const J &p) {
             for (const auto &mode : entry.at("modes"))
                 if (mode == "trophy" || mode == "ctr") add(entry);
     }
+    const bool skip_first = repeatable_pickups(p), skip_final = final_only_venue(p);
     for (const auto &enc : p.at("encounters"))
-        if (enc.at("id") != "encounter/garage:4/0") add(*entries.at(text(enc.at("entry_id"))));
+        if (!(skip_first && enc.at("id") == "encounter/garage:4/0") && !(skip_final && enc.at("id") == kFinalEncounter))
+            add(*entries.at(text(enc.at("entry_id"))));
     return result;
 }
 
@@ -1303,6 +1321,11 @@ static void validate(const J &p, State &out) {
              !tizi_mask_tracks(p).empty(), "Tizi Mask feature without a raced Tizi track and Itemsanity");
         features.push_back(kTiziMaskFeature);
     }
+    const bool final_only = final_only_venue(p);
+    if (final_only) {
+        need(has_bosses && out.bosses.oxide_goal != 3, "final-only venue feature without N. Oxide's races");
+        features.push_back(kFinalOnlyVenueFeature);
+    }
     if (carry_rulings) features.push_back(kCarriedRulings);
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
@@ -1477,7 +1500,7 @@ static void validate(const J &p, State &out) {
     // race of a track's Reach 10 Wumpa check, and per cup leg of its rungs.
     struct RaceUse { std::string track, title, entry, pad, mode, leg, encounter; int64_t code; };
     std::vector<RaceUse> wumpa_uses;
-    const auto repeatable_tracks = safe_pickups ? repeatable_pickup_tracks(p) : std::set<std::string>{};
+    const auto repeatable_tracks = safe_pickups || final_only ? repeatable_pickup_tracks(p) : std::set<std::string>{};
     struct RungUse { std::string track, entry, pad, leg; };
     std::vector<RungUse> rung_uses;
     // A plan track's per-track Reach 10 Wumpa code and room title, 0 without
@@ -2341,12 +2364,18 @@ static void validate(const J &p, State &out) {
             if (plan_laps) {
                 std::string title;
                 out.bosses.lap[k] = venue_lap(track_id, title);
-                lap_uses.push_back(LapUse{track_id, title, nid, pad, "boss_race", "", eid, out.bosses.lap[k]});
+                // A6-48: the Final Challenge (k 5, after every other lap
+                // route) pays a lap only for a track some other race reaches.
+                if (final_only && eid == kFinalEncounter &&
+                    std::none_of(lap_uses.begin(), lap_uses.end(), [&](const LapUse &u) { return u.track == track_id; }))
+                    out.bosses.lap[k] = 0;
+                if (out.bosses.lap[k])
+                    lap_uses.push_back(LapUse{track_id, title, nid, pad, "boss_race", "", eid, out.bosses.lap[k]});
             }
             {
                 std::string title;
                 out.bosses.wumpa[k] = wumpa_code(track_id, title);
-                if (safe_pickups && !repeatable_tracks.count(track_id)) out.bosses.wumpa[k] = 0;
+                if ((safe_pickups || final_only) && !repeatable_tracks.count(track_id)) out.bosses.wumpa[k] = 0;
                 if (out.bosses.wumpa[k])
                     wumpa_uses.push_back(RaceUse{track_id, title, nid, pad, "boss_race", "", eid, out.bosses.wumpa[k]});
             }
