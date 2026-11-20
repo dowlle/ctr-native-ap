@@ -57,6 +57,7 @@ static const int kFirstGuest = 8, kTigerTemple = 4, kPapusPyramid = 5;
 static const int kTurbo = 0, kMask = 6; // AP_VerifyWeaponOwned indices
 static const long kMaskItem = kItemBase + AP_VF_WEAPON_FIRST + kMask;
 static const int kUsf = 2, kFirstBoost = 1;
+static constexpr int kNoFinishRank = 4;  // the exported Boost range is 0 to 3
 
 // WUMPA: the goal's `wumpa_banked` arm (J11), met when Wumpa Income is.
 enum Op { ALWAYS, COUNT, SUM, DISTINCT, CHECKED, ALL, ANY, WUMPA };
@@ -219,24 +220,25 @@ static int leg_boost(const J &entry, const std::string &leg_id, bool own, const 
 
 // Project the exported rule onto Boost with all other requirements satisfied.
 // Both AP boost modes give the same threshold when every racer has the same rank.
-static int exported_finish_rank(int root, std::vector<int> &ranks) {
-    constexpr int unreachable = kUsf + 1;
+static int exported_finish_rank(int root, std::vector<int> &ranks, const AP_WinLogicEnv *inventory = nullptr) {
     int &rank = ranks.at(root);
     if (rank >= 0) return rank;
     const auto &logic = ctr_win_logic;
     const auto &node = logic.nodes[root];
-    if (node.tag == AP_WL_T_FALSE) rank = unreachable;
+    if (node.tag == AP_WL_T_FALSE) rank = kNoFinishRank;
     else if (node.tag == AP_WL_T_CAP || node.tag == AP_WL_T_STATCAP) rank = (int)node.a;
     else if (node.tag == AP_WL_T_ALL || node.tag == AP_WL_T_ANY) {
         const bool all = node.tag == AP_WL_T_ALL;
-        rank = all ? 0 : unreachable;
+        rank = all ? 0 : kNoFinishRank;
         for (long i = 0; i < node.b; ++i) {
-            const int term = exported_finish_rank(logic.kids[node.a + i], ranks);
+            const int term = exported_finish_rank(logic.kids[node.a + i], ranks, inventory);
             rank = all ? std::max(rank, term) : std::min(rank, term);
         }
-    } else rank = 0;
+    } else rank = inventory && !AP_WinLogicEval(&logic, inventory, root, 0) ? kNoFinishRank : 0;
     return rank;
 }
+
+static bool markerless_route_ranks_match();
 
 static bool markerless_finish_matches() {
     const auto o = options();
@@ -253,6 +255,8 @@ static bool markerless_finish_matches() {
         for (const auto &file : pkg.at("files"))
             if (file.at("role") == "lev") lev = content_plan::text(file.at("sha256"));
         const auto &history = reviews.at(key);
+        // Reviews added after the first catalog never affect markerless rooms.
+        if (std::none_of(history.begin(), history.end(), [](const J &row) { return row.size() == 2; })) continue;
         if (std::none_of(history.begin(), history.end(), [&](const J &row) {
                 return row.size() == 2 && row[0] == lev && row[1] == pkg.at("revision");
             })) has_unreviewed_track = true;
@@ -267,7 +271,7 @@ static bool markerless_finish_matches() {
         if (!lap && check.at("kind") != "cup_leg") continue;
         const int index = AP_WinLogicFindCheck(&ctr_win_logic, check.at("location").get<long>());
         if (index < 0) continue;
-        int expected = kUsf + 1;
+        int expected = kNoFinishRank;
         for (const auto &route : check.at("routes")) {
             int rank = lap ? finish_boost(*tracks.at(content_plan::text(check.at("owner"))), packages, o) : 0;
             if (!route.at("leg_id").is_null())
@@ -276,9 +280,9 @@ static bool markerless_finish_matches() {
             expected = std::min(expected, rank);
         }
         const int actual = exported_finish_rank(ctr_win_logic.checks[index].rule, ranks);
-        if (actual <= kUsf && expected != actual) return false;
+        if (actual < kNoFinishRank && expected != actual) return false;
     }
-    return true;
+    return markerless_route_ranks_match();
 }
 
 static int lock_of(const J &pad) { return pad.at("racer_lock").is_null() ? -1 : pad["racer_lock"].get<int>(); }
@@ -884,6 +888,82 @@ struct Sweep {
         return ok && (!L.door || AP_VerifyTigerDoorWeapon(dense));
     }
 };
+
+static bool finish_route_open(const Sweep &s, const Route &route) {
+    if (route.region < 0) return false;
+    const Region &region = s.m.regions[route.region];
+    return std::all_of(region.gates.begin(), region.gates.end(), [&](int gate) { return s.eval(gate); })
+        && (route.stage < 0 || s.eval(route.stage))
+        && (!(route.mask || region.mask) || s.count(kMaskItem) > 0);
+}
+
+static void finish_gate_items(const Model &model, int gate, std::set<int64_t> &items) {
+    const Node &node = model.nodes[gate];
+    if (node.op == COUNT || node.op == SUM || node.op == DISTINCT)
+        items.insert(node.codes.begin(), node.codes.end());
+    for (int child : node.kids) finish_gate_items(model, child, items);
+}
+
+static bool markerless_route_ranks_match() {
+    // Test each alternative with the inventory reduced to its own gates.
+    // A rank change on an early route can disappear when every route is open.
+    const Model model = build();
+    Sweep probe(model);
+    constexpr int full = 65536;
+    for (auto item : model.items) probe.held[item] = full;
+    std::fill(probe.event.begin(), probe.event.end(), true);
+    AP_WinLogicEnv inventory{};
+    inventory.user = &probe;
+    inventory.item_count = [](void *user, long code) {
+        return std::max(0, static_cast<Sweep *>(user)->count(code) - AP_WinLogicStartCount(&ctr_win_logic, code));
+    };
+    inventory.bosses_won = [](void *) { return 6; };
+    inventory.collected = [](void *, long) { return 1; };
+    const auto &logic = ctr_win_logic;
+    std::vector<int> ranks(logic.node_count, -1);
+    for (const Loc &loc : model.locs) {
+        if ((loc.kind != LAP && loc.kind != LEG) || loc.routes.size() < 2) continue;
+        const int check_index = AP_WinLogicFindCheck(&logic, loc.code);
+        if (check_index < 0) continue;
+        const auto &check = logic.checks[check_index];
+        std::set<int64_t> gate_items;
+        for (const Route &route : loc.routes) {
+            if (route.region < 0) continue;
+            const auto &region = model.regions[route.region];
+            for (int gate : region.gates) finish_gate_items(model, gate, gate_items);
+            if (route.stage >= 0) finish_gate_items(model, route.stage, gate_items);
+            if (route.mask || region.mask) gate_items.insert(kMaskItem);
+        }
+        std::vector<int64_t> order(gate_items.begin(), gate_items.end());
+        for (const Route &target : loc.routes) {
+            for (auto item : order) probe.held[item] = full;
+            if (!finish_route_open(probe, target)) continue;
+            for (bool reverse : {false, true}) {
+                if (reverse) std::reverse(order.begin(), order.end());
+                for (auto item : order) {
+                    int low = AP_WinLogicStartCount(&logic, item), high = full;
+                    while (low < high) {
+                        const int mid = low + (high - low) / 2;
+                        probe.held[item] = mid;
+                        if (finish_route_open(probe, target)) high = mid;
+                        else low = mid + 1;
+                    }
+                    probe.held[item] = low;
+                }
+                int expected = kNoFinishRank;
+                for (const Route &route : loc.routes)
+                    if (finish_route_open(probe, route)) expected = std::min(expected, route.need);
+                std::fill(ranks.begin(), ranks.end(), -1);
+                const int actual = std::max(exported_finish_rank(check.rule, ranks, &inventory),
+                    exported_finish_rank(logic.region_root[check.region], ranks, &inventory));
+                if (actual < kNoFinishRank && expected != actual) return false;
+                for (auto item : order) probe.held[item] = full;
+                if (reverse) std::reverse(order.begin(), order.end());
+            }
+        }
+    }
+    return true;
+}
 
 static int sweep(const Model &model, const ap_content_verify_io *io, ap_content_verify_result *out) {
     Sweep s(model);

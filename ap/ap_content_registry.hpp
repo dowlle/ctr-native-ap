@@ -9241,6 +9241,13 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         "1.0.0"
       ]
     ],
+    "lockbox-adventure-track-4": [
+      [
+        "c978c26a86f5c85d37a665f62ba8b3efd11cb93b71e931b2787f7c7e9f105ae2",
+        "1.0.0",
+        2
+      ]
+    ],
     "mario-circuit-1": [
       [
         "a9c8989b857d547eec29b0728899c8f34a878401c2c6dfb2a4b49b9301ab4e83",
@@ -9261,6 +9268,13 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       [
         "d30c47c13da5b3592891397327b41ce398ecbea3a81df7ead8d76ed9d11d6bf4",
         "1.0.0"
+      ]
+    ],
+    "matsuri": [
+      [
+        "467f83758d3a0b6aef9f340b144d0d76eb6ca04617aa87d6bc7727fb1d119c96",
+        "1.0.0",
+        2
       ]
     ],
     "namek": [
@@ -9535,6 +9549,16 @@ static const char kContentRegistryJSON[] = R"CTRREG(
     "50250966e9b31d13b140aaafa9433ffce19269898a0850edd0a1e8cf1207c760": [
       20,
       9,
+      0
+    ],
+    "467f83758d3a0b6aef9f340b144d0d76eb6ca04617aa87d6bc7727fb1d119c96": [
+      27,
+      3,
+      0
+    ],
+    "c978c26a86f5c85d37a665f62ba8b3efd11cb93b71e931b2787f7c7e9f105ae2": [
+      29,
+      3,
       0
     ]
   }

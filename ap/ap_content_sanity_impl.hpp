@@ -69,8 +69,9 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
             const J &pkg = *packages.at(track["package_id"]);
             for (const auto &file : pkg["files"]) if (file["role"] == "lev") key = file["sha256"];
             const auto &catalog = registry.at("sanity");
+            const auto &reviewed_counts = registry.at("pickup_ruling_counts");
             const std::string source = ruling_pin(out, pkg, key,
-                [&](const std::string &pin) { return catalog.contains(pin) || is_pickup_ruling_pin(pin); });
+                [&](const std::string &pin) { return catalog.contains(pin) || reviewed_counts.contains(pin); });
             if (!inherited_ruling_history(out, pkg, key) && catalog.contains(key)) return &catalog.at(key);
             const J &caps = pkg["capabilities"];
             if (caps.contains("weapon_crates") && caps.contains("fruit_crates") && caps.contains("loose_fruit")) {

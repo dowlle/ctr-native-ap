@@ -392,6 +392,13 @@ static void markerless_finish_rules() {
         expect(!admit(bad, ids) && std::string(ctr_cfg.seed_reject_reason).find("finish") != std::string::npos,
                std::string("markerless room refuses a different exported rank for ") + check.second);
     }
+    for (int rank : {2, 3}) {
+        J hidden = legacy;
+        auto &cup_route = hidden.at("win_logic").at("checks").at("35211816").at("rule").at(1);
+        cup_route = J::array({"all", cup_route, J::array({"cap", rank, -1})});
+        expect(!admit(hidden, ids) && std::string(ctr_cfg.seed_reject_reason).find("finish") != std::string::npos,
+               "the four-Key pad does not hide a different rank on the two-Key cup route");
+    }
 }
 
 int main(int argc, char **argv) {

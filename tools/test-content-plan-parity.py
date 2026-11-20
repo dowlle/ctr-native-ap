@@ -2710,6 +2710,26 @@ assert row["counts"] == [40, 10, 2] and row["wumpa_crate"] == list(range(1, 7)) 
 cases.append(("royal-foreign-reviewed-lev-with-added-pickups", wire, True))
 alter("royal-foreign-lev-legacy-pool-mismatch", lambda p: p["track_ruling_sources"].pop("pickup_limits"), wire)
 
+for fixture, reviewed in ((matsuri, 27), (lockbox_track_4, 29)):
+    options = box_options(custom=[fixture()], itemboxsanity=50, wumpasanity="both", item_box_count=5)
+    tid, package = later_revision(options, "ab" * 32)
+    package["capabilities"].update(weapon_crates=reviewed + 1, fruit_crates=3, loose_fruit=0)
+    wire = first_world(options, seed=3).fill_slot_data()
+    plan = wire["content_plan"]
+    assert plan["track_ruling_sources"]["version"] == 2 and plan["track_ruling_sources"]["pickup_limits"] is True
+    [excluded] = plan["item_boxes"][crate_exclusions.KEY]
+    assert excluded["track_id"] == tid and excluded["crates"] == [{"ordinal": 1, "pos": None}]
+    cases.append((f"a6-15-carried-{package['content_id']}", wire, True))
+    alter(f"a6-15-carried-{package['content_id']}-forged-position",
+          lambda p: p["item_boxes"][crate_exclusions.KEY][0]["crates"][0].__setitem__("pos", [0, 0, 0]), wire)
+
+nina = lockbox_track_4()
+nina.update(id="package/nina-s-nightmare/9.0.0", revision="9.0.0", content_id="nina-s-nightmare",
+            display_name="Nina's Nightmare")
+wire = first_world(box_options(custom=[nina, matsuri()], itemboxsanity=50, progressive_boost="off"),
+                   seed=3).fill_slot_data()
+cases.append(("mixed-exclusions-foreign-lockbox-pin-keeps-nina-source", wire, True))
+
 # Switching the LEV in a legacy exact-pin room cannot supply a carried source.
 wire = make_world(royal_options(item_box_count=5), seed=3, stop_before="pre_fill").fill_slot_data()
 bad = copy.deepcopy(wire)
