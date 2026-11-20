@@ -1,6 +1,7 @@
 #ifdef CTR_AP
 
 #include <common.h> // structs Driver/GameTracker + sdata + gameMode/enum flags + functions.h (RB_Player_ModifyWumpa)
+#include "ap_navrec.h"
 
 #include "ap_wumpa.h"
 #include "ap_hooks.h" // AP_LogLine (non-static log shim)
@@ -426,23 +427,23 @@ void AP_WumpaTick(struct GameTracker *gGT)
 		g_starting_applied = 1;
 	}
 
+	int before = local->numWumpas;
 	if (g_wumpa_race_pending > 0)
 	{
 		RB_Player_ModifyWumpa(local, g_wumpa_race_pending);
 		g_wumpa_race_pending = 0;
 	}
-	if (g_wumpa_pending <= 0)
-		return;
-
-	// Hand the whole bank over in one call. RB_Player_ModifyWumpa caps at 10, plays
-	// the "juiced up" jingle if this crossing hits 10, tallies numTimesWumpa for the
-	// end-of-race comments, and no-ops under the unlimited-wumpa cheat -- exactly the
-	// canonical fruit-grant path every pickup uses (game/231/RB_Player.c).
-	RB_Player_ModifyWumpa(local, g_wumpa_pending);
-	snprintf(msg, sizeof msg, "[AP WUMPA] granted +%d in-race (now %d)\n",
-	         g_wumpa_pending, (int)local->numWumpas);
-	AP_LogLine(msg);
-	g_wumpa_pending = 0;
+	if (g_wumpa_pending > 0)
+	{
+		// The usual fruit-grant path handles the cap, jingle and cheat veto.
+		RB_Player_ModifyWumpa(local, g_wumpa_pending);
+		snprintf(msg, sizeof msg, "[AP WUMPA] granted +%d in-race (now %d)\n",
+		         g_wumpa_pending, (int)local->numWumpas);
+		AP_LogLine(msg);
+		g_wumpa_pending = 0;
+	}
+	if (local->numWumpas != before)
+		AP_NavRec_NoteKartEffect();
 }
 
 #endif // CTR_AP

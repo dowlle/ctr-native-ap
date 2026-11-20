@@ -1665,6 +1665,17 @@ int CustomTrack_ResidentBlocksRecordedLanes(int levelID)
 	return (resident && resident->kind != CTR_RESIDENT_EVENT) || (race && race->cortex);
 }
 
+int CustomTrack_ResidentGarageNavIdentity(int levelID, unsigned char uuid[CTR_CT_NAV_UUID_BYTES],
+                                         unsigned int *revision)
+{
+	const struct CustomTrackResidentSource *resident = CustomTrack_ResidentSource(levelID);
+	if (!resident || resident->kind != CTR_RESIDENT_GARAGE || CustomTrack_ResidentAssetsMixed() ||
+	    !CustomTrackPolicy_ParseNavUuid(resident->packageUuid, uuid))
+		return 0;
+	*revision = CustomTrackPolicy_NavRevision(resident->levSha256);
+	return *revision != 0;
+}
+
 int CustomTrack_ResidentAssetsMixed(void)
 {
 	return s_customTrackResidentMismatch ||
@@ -1697,6 +1708,7 @@ void CustomTrack_NoteLoadedAsset(const struct CustomTrackLoadContext *ctx, int r
 		resident->roomIdentity = s_garageVenue[garage].roomIdentity;
 		memcpy(resident->trackID, s_garageVenue[garage].trackID, sizeof resident->trackID);
 		memcpy(resident->packageRevision, s_garageVenue[garage].packageRevision, sizeof resident->packageRevision);
+		memcpy(resident->packageUuid, s_garageVenue[garage].packageUuid, sizeof resident->packageUuid);
 		lev = s_garageVenue[garage].levSha256;
 		vrm = s_garageVenue[garage].vrmSha256;
 	}
@@ -1771,6 +1783,17 @@ int CustomTrack_NavIdentityForLoad(int levelID, int adventureCupActive, int cupI
 	// identity, whatever config.ini holds.
 	if (!CustomTrack_ServingLoad(levelID, adventureCupActive, cupID))
 		return 0;
+
+	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(levelID);
+	if (race)
+	{
+		if (race->cortex || s_customTrackResidentParts != (CTR_CT_ROLE_LEV | CTR_CT_ROLE_VRM) ||
+		    CustomTrack_ResidentAssetsMixed() ||
+		    !CustomTrackPolicy_ParseNavUuid(race->packageUuid, outUuid))
+			return 0;
+		*outRevision = CustomTrackPolicy_NavRevision(race->levSha256);
+		return *outRevision != 0;
+	}
 
 	cfg = CustomTrack_Config();
 	if (!cfg->navIdentityValid)

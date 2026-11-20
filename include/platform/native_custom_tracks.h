@@ -139,6 +139,7 @@ struct GarageVenueDescriptor
 	uint64_t roomIdentity;
 	char trackID[65];
 	char packageRevision[65];
+	char packageUuid[37];
 	char levPath[1024];
 	char vrmPath[1024];
 	char levSha256[NATIVE_SHA256_HEX_BYTES];
@@ -146,7 +147,6 @@ struct GarageVenueDescriptor
 #ifdef CTR_CUSTOM_PACKAGES
 	int cortex;
 	char musicPackageRevision[65];
-	char packageUuid[37];
 	unsigned long levBytes, vrmBytes;
 #endif
 };
@@ -340,6 +340,7 @@ struct CustomTrackResidentSource
 	int levelID, kind;
 	uint64_t roomIdentity;
 	char trackID[65], packageRevision[65];
+	char packageUuid[37];
 	char levSha256[65], vrmSha256[65];
 	char reserved[4];
 };
@@ -348,6 +349,8 @@ void CustomTrack_NoteLoadedAsset(const struct CustomTrackLoadContext *ctx, int r
 int CustomTrack_ResidentAssetsMixed(void);
 const struct CustomTrackResidentSource *CustomTrack_ResidentSource(int levelID);
 int CustomTrack_ResidentBlocksRecordedLanes(int levelID);
+int CustomTrack_ResidentGarageNavIdentity(int levelID, unsigned char uuid[CTR_CT_NAV_UUID_BYTES],
+                                         unsigned int *revision);
 /* Is the pair served for this load Tizi Madness (native_tizi_madness.h,
    A4-96)? Same precedence as CustomTrack_FinishTerrain. */
 int CustomTrack_TiziMadness(const struct CustomTrackLoadContext *ctx);
@@ -357,17 +360,10 @@ int CustomTrack_TiziMadness(const struct CustomTrackLoadContext *ctx);
 // vehicle, not the custom track's AP identity.
 int CustomTrack_RetailPodiumLevelID(int levelID, int adventureCupActive, int cupID);
 
-// The recording identity this load races under, for the AI-recording seam in
-// ap/ap_navrec.h. Returns 1 and fills outUuid/outRevision only when this load
-// serves the custom track AND config.ini gave the package a well-formed
-// identity. Returns 0 for every retail load -- including the race pad to the
-// host slot in an armed session, and a cup exit -- and for a build whose
-// identity is missing or malformed.
-//
-// The caller turns 0 into AP_NavRec_ClearActiveCustomTrack(), so a 0 always
-// means "this is a retail line's world", never "leave the last answer
-// standing". Keyed on CustomTrack_ServingLoad so a recording's identity cannot
-// disagree with the bytes, the arena, or the character pack.
+// Identity of a served custom pad or cup leg. Content-plan tracks use the
+// staged package UUID and LEV digest. Legacy event races use their configured
+// identity. A zero result leaves it to the caller to distinguish retail from
+// a custom load without usable identity.
 int CustomTrack_NavIdentityForLoad(int levelID, int adventureCupActive, int cupID, unsigned char outUuid[CTR_CT_NAV_UUID_BYTES],
                                    unsigned int *outRevision);
 

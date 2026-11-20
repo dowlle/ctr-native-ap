@@ -445,6 +445,7 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		snprintf(d.levSha256, sizeof d.levSha256, "%s", pkg->lev_sha256);
 		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", pkg->vrm_sha256);
 		snprintf(race->packageRevision, sizeof race->packageRevision, "%s", pkg->revision);
+		snprintf(race->packageUuid, sizeof race->packageUuid, "%s", pkg->uuid);
 		snprintf(race->levSha256, sizeof race->levSha256, "%s", pkg->lev_sha256);
 		snprintf(race->vrmSha256, sizeof race->vrmSha256, "%s", pkg->vrm_sha256);
 		if (!CustomTrack_ApplySeedDescriptor(&d))
@@ -626,9 +627,9 @@ static void AP_GarageVenuePreflight(void)
 			{
 				f = &ap_content_files[b->venue_package[g]];
 				lev = pkg->lev_sha256; vrm = pkg->vrm_sha256;
+				snprintf(d.packageUuid, sizeof d.packageUuid, "%s", pkg->uuid);
 #ifdef CTR_CUSTOM_PACKAGES
 				snprintf(d.musicPackageRevision, sizeof d.musicPackageRevision, "%s", pkg->revision);
-				snprintf(d.packageUuid, sizeof d.packageUuid, "%s", pkg->uuid);
 				d.levBytes = pkg->lev_bytes;
 				d.vrmBytes = pkg->vrm_bytes;
 #endif

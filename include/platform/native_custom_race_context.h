@@ -21,6 +21,7 @@ struct CustomTrackRaceContext
 	char entryID[65];
 	char trackID[65];
 	char packageRevision[65];
+	char packageUuid[37];
 	char levSha256[65];
 	char vrmSha256[65];
 	int crystal, timeLimitTicks;

@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "ap_hooks.h"
+#include "ap_navrec.h"
 #include "ap_net.h"
 #include "ap_useful.h"
 #include "ap_useful_logic.h"
@@ -117,6 +118,8 @@ void AP_UsefulTick(struct GameTracker *gGT)
 		// is outside that frozen weapon set and is therefore always available.
 		if (!AP_ItemsanityWeaponAvailable(weaponIDs[effect])) continue;
 		VehPickupItem_ShootNow(driver, weaponIDs[effect], 0);
+		if (weaponIDs[effect] == 7) // Direct Mask grant applies its boost immediately.
+			AP_NavRec_NoteKartEffect();
 		g_usefulApplied |= bit;
 		AP_UsefulStore();
 		snprintf(msg, sizeof msg, "[AP USEFUL] applied %s\n", names[effect]);

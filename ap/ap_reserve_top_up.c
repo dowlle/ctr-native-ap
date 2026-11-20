@@ -3,6 +3,7 @@
 #include <common.h>
 #include "ap_reserve_top_up.h"
 #include "ap_fxmarker_logic.h"
+#include "ap_navrec.h"
 #include "ap_net.h"
 #include "ap_seedcfg.h"
 
@@ -68,6 +69,7 @@ void AP_ReserveTopUpTick(struct GameTracker *gGT)
 	// and cannot wrap through zero. Negative Saffi reserves never reach here.
 	sum = (int)local->reserves + AP_RESERVE_TOP_UP_AMOUNT;
 	local->reserves = (short)(sum > 0x7fff ? sum - 0x10000 : sum);
+	AP_NavRec_NoteKartEffect();
 	// Direct reserve addition preserves the current fire cap and bypasses the
 	// separate Progressive Boost grant clamp, as ruled for this filler item.
 	AP_FxMarkerIncrement(&ap_rtu_spent);

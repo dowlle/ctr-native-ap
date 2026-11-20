@@ -27,6 +27,7 @@ static unsigned rev;
 static int ap_net_is_connected(void){return connected;}
 static int ctr_cfg_active(void){return active;}
 static int LOAD_IsOpen_RacingOrBattle(void){return onTrack;}
+void AP_NavRec_NoteKartEffect(void){}
 static int ap_net_fx_store(int key,long long *v,unsigned *r){
  assert(key==AP_NET_FX_RESERVE_SPENT);if(v)*v=stored;if(r)*r=rev;return state;
 }

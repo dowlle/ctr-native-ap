@@ -15,8 +15,12 @@
 #include "ap_navrec_playback_logic.h"
 #include "ap_hooks.h"               // AP_LogLine, ctr_cfg
 #include "ap_version.h"             // CTR_AP_VERSION
+#ifdef CTR_AP
+#include "ap_deathlink.h"
+#include "ap_traps.h"
+#endif
 #include "platform/native_config.h" // g_config.navRecord / navUseRecorded / navDriverName
-#ifdef CTR_CUSTOM_PACKAGES
+#ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h> // serving predicates, re-read after a restore
 #endif
 
@@ -25,6 +29,7 @@
 #include <fcntl.h>
 #include <io.h>
 #else
+#include <dirent.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -58,6 +63,9 @@ CTR_STATIC_ASSERT(OFFSETOF(struct NavFrame, specialBits) == OFFSETOF(struct AP_N
 // Recordings are NUMBERED and never overwritten, so no run is ever destroyed by
 // the next one. The reader takes the highest number present for the level.
 #define AP_NAVREC_MAX_FILE_INDEX 999
+#define AP_NAVREC_FILE_INDEX_STRIDE (AP_NAVREC_MAX_FILE_INDEX + 1u)
+// Custom packages can be served in any of the 18 race slots.
+#define AP_NAVREC_CUSTOM_FILE_SLOTS (18u * AP_NAVREC_FILE_INDEX_STRIDE)
 
 // The loader's open budget, AP_NAVREC_MAX_LOAD_ATTEMPTS, lives with the
 // selection rule in ap_navrec_lane_logic.h so the harness asserts the same
@@ -211,6 +219,9 @@ static unsigned int  s_navrecActiveNavRevision;
 // be stamped as retail lines of the host slot. Blocked means neither happens:
 // no recording loads, no recording is written, and the level's own lanes run.
 static int s_navrecIdentityBlocked;
+static int s_navrecGarageCaptureOnly;
+static int s_navrecFrameKartEffect;
+static int s_navrecLoggedBlocked;
 
 // Whether the lap currently being driven started with a forward crossing of
 // the start line. The standing-start lap and post-reversal fragments do not,
@@ -233,6 +244,7 @@ void AP_NavRec_SetActiveCustomTrack(const unsigned char uuid[16], unsigned int n
 	memcpy(s_navrecActiveTrackUuid, uuid, AP_NAVREC_TRACK_UUID_BYTES);
 	s_navrecActiveNavRevision = navRevision;
 	s_navrecIdentityBlocked = 0;
+	s_navrecGarageCaptureOnly = 0;
 }
 
 void AP_NavRec_ClearActiveCustomTrack(void)
@@ -241,6 +253,7 @@ void AP_NavRec_ClearActiveCustomTrack(void)
 	memset(s_navrecActiveTrackUuid, 0, sizeof s_navrecActiveTrackUuid);
 	s_navrecActiveNavRevision = 0;
 	s_navrecIdentityBlocked = 0;
+	s_navrecGarageCaptureOnly = 0;
 }
 
 void AP_NavRec_BlockRecordedLanes(void)
@@ -252,6 +265,7 @@ void AP_NavRec_BlockRecordedLanes(void)
 	memset(s_navrecActiveTrackUuid, 0, sizeof s_navrecActiveTrackUuid);
 	s_navrecActiveNavRevision = 0;
 	s_navrecIdentityBlocked = 1;
+	s_navrecGarageCaptureOnly = 0;
 }
 
 // The three-way answer of ap_navrec_identity_logic.h, recovered from the
@@ -315,6 +329,56 @@ static int AP_NavRec_MakeDir(const char *path)
 static void AP_NavRec_PathForIndex(int levelID, unsigned int index, char *out, size_t cap)
 {
 	snprintf(out, cap, AP_NAVREC_DIR "/navpath-%d-%03u.navlap", levelID, index);
+}
+
+static void AP_NavRec_PoolPath(int levelID, unsigned int fileIndex, char *out, size_t cap)
+{
+	if (s_navrecActiveIdentityKind == AP_NAVREC_IDENTITY_CUSTOM)
+	{
+		levelID = (int)(fileIndex / AP_NAVREC_FILE_INDEX_STRIDE);
+		fileIndex %= AP_NAVREC_FILE_INDEX_STRIDE;
+	}
+	AP_NavRec_PathForIndex(levelID, fileIndex, out, cap);
+}
+
+static void AP_NavRec_MarkCustomFile(unsigned char *files, const char *name)
+{
+	unsigned int level, index;
+	char canonical[32];
+
+	if (sscanf(name, "navpath-%2u-%3u.navlap", &level, &index) != 2 ||
+	    level >= AP_NAVREC_CUSTOM_FILE_SLOTS / AP_NAVREC_FILE_INDEX_STRIDE ||
+	    index == 0 || index > AP_NAVREC_MAX_FILE_INDEX)
+		return;
+	snprintf(canonical, sizeof canonical, "navpath-%u-%03u.navlap", level, index);
+	if (strcmp(name, canonical) == 0)
+		files[level * AP_NAVREC_FILE_INDEX_STRIDE + index] = 1;
+}
+
+// Enumerate existing files once, then visit them in slot and file-number order
+// so the same race seed picks the same lanes regardless of directory order.
+static void AP_NavRec_ScanCustomFiles(unsigned char *files)
+{
+#if defined(_WIN32)
+	WIN32_FIND_DATAA entry;
+	HANDLE find = FindFirstFileA(AP_NAVREC_DIR "/navpath-*.navlap", &entry);
+	if (find == INVALID_HANDLE_VALUE)
+		return;
+	do
+	{
+		if (!(entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+			AP_NavRec_MarkCustomFile(files, entry.cFileName);
+	} while (FindNextFileA(find, &entry));
+	FindClose(find);
+#else
+	DIR *dir = opendir(AP_NAVREC_DIR);
+	struct dirent *entry;
+	if (dir == NULL)
+		return;
+	while ((entry = readdir(dir)) != NULL)
+		AP_NavRec_MarkCustomFile(files, entry->d_name);
+	closedir(dir);
+#endif
 }
 
 static int AP_NavRec_FileExists(const char *path)
@@ -467,6 +531,8 @@ static void AP_NavRec_DropBank(void)
 void AP_NavRec_ResetCapture(void)
 {
 	AP_NavRec_DropBank();
+	s_navrecFrameKartEffect = 0;
+	s_navrecLoggedBlocked = 0;
 	s_navrecCorridorLevel = -1;
 	s_navrecGridReady = 0;
 }
@@ -762,12 +828,9 @@ static void AP_NavRec_Write(int levelID)
 
 	// A served custom load without a navigation identity cannot stamp a lap
 	// truthfully: written as retail it would later inject onto the host slot's
-	// real retail races. Nothing is saved, and the reason is on record.
+	// real retail races. The sampling gate already logs this outcome.
 	if (!AP_NavRecIdentity_MayRecord(AP_NavRec_LoadIdentityOutcome()))
-	{
-		AP_LogLine("[AP NAVREC] recording disabled for this load: the served custom track supplies no navigation identity\n");
 		return;
-	}
 
 	selected = AP_NavRec_SelectLaps(order);
 	if (selected == 0)
@@ -1150,7 +1213,7 @@ static int AP_NavRec_FetchCandidate(void *ctx, unsigned int fileIndex, struct AP
 	char                      path[160];
 	char                      msg[288];
 
-	AP_NavRec_PathForIndex(c->levelID, fileIndex, path, sizeof path);
+	AP_NavRec_PoolPath(c->levelID, fileIndex, path, sizeof path);
 	if (!AP_NavRec_FileExists(path))
 		return 0;
 
@@ -1177,9 +1240,8 @@ static int AP_NavRec_FetchCandidate(void *ctx, unsigned int fileIndex, struct AP
 	return 1;
 }
 
-// The pool index: one header read per file present for this level, kept when
-// the header matches this load's track identity. Returns the entry count; the
-// array is the caller's to free.
+// The pool index peeks at this slot's files for retail and every race slot's
+// files for custom packages. The returned entries belong to the caller.
 static unsigned int AP_NavRec_BuildPool(int levelID, unsigned int highest, const char *onlyKey,
                                         struct AP_NavRecPoolEntry **outEntries, unsigned int *outSkipped)
 {
@@ -1187,13 +1249,25 @@ static unsigned int AP_NavRec_BuildPool(int levelID, unsigned int highest, const
 	unsigned int               count = 0;
 	unsigned int               skipped = 0;
 	unsigned int               index;
+	unsigned int               capacity = highest;
+	unsigned char              customFiles[AP_NAVREC_CUSTOM_FILE_SLOTS] = {0};
+	int                        custom = s_navrecActiveIdentityKind == AP_NAVREC_IDENTITY_CUSTOM;
 	char                       path[160];
 	char                       msg[448];
 
 	*outEntries = NULL;
 	*outSkipped = 0;
 
-	entries = (struct AP_NavRecPoolEntry *)malloc(sizeof *entries * (size_t)highest);
+	if (custom)
+	{
+		AP_NavRec_ScanCustomFiles(customFiles);
+		highest = AP_NAVREC_CUSTOM_FILE_SLOTS - 1;
+		for (index = 1; index <= highest; index++)
+			capacity += customFiles[index];
+	}
+	if (capacity == 0)
+		return 0;
+	entries = (struct AP_NavRecPoolEntry *)malloc(sizeof *entries * (size_t)capacity);
 	if (entries == NULL)
 	{
 		AP_LogLine("[AP NAVREC] load: out of memory for the recording pool\n");
@@ -1209,7 +1283,9 @@ static unsigned int AP_NavRec_BuildPool(int levelID, unsigned int highest, const
 		size_t                   got;
 		int                      rc;
 
-		AP_NavRec_PathForIndex(levelID, index, path, sizeof path);
+		if (custom && !customFiles[index])
+			continue;
+		AP_NavRec_PoolPath(levelID, index, path, sizeof path);
 		f = fopen(path, "rb");
 		if (f == NULL)
 			continue;
@@ -1333,6 +1409,8 @@ static int AP_NavRec_LoadForLevel(int levelID, unsigned int seed)
 		           "the level's own lanes stay\n");
 		return 0;
 	}
+	if (s_navrecGarageCaptureOnly)
+		return 0; // Custom garage opponents keep their authored lanes and lane switches.
 
 	fetchCtx.onlyKey = NULL;
 	if (g_config.navOnlyMine)
@@ -1347,8 +1425,8 @@ static int AP_NavRec_LoadForLevel(int levelID, unsigned int seed)
 	         fetchCtx.onlyKey == NULL ? "off" : (onlyKey[0] != '\0' ? "on" : "on (no driver name)"));
 	AP_LogLine(msg);
 
-	highest = AP_NavRec_HighestIndex(levelID);
-	if (highest == 0)
+	highest = s_navrecActiveIdentityKind == AP_NAVREC_IDENTITY_CUSTOM ? 0 : AP_NavRec_HighestIndex(levelID);
+	if (highest == 0 && s_navrecActiveIdentityKind == AP_NAVREC_IDENTITY_RETAIL)
 		return 0;
 
 	poolCount = AP_NavRec_BuildPool(levelID, highest, fetchCtx.onlyKey, &entries, &poolSkipped);
@@ -1417,7 +1495,7 @@ static int AP_NavRec_LoadForLevel(int levelID, unsigned int seed)
 		unsigned int               crateNodes = 0;
 
 		lane = (int)c;
-		AP_NavRec_PathForIndex(levelID, picks[c].fileIndex, path, sizeof path);
+		AP_NavRec_PoolPath(levelID, picks[c].fileIndex, path, sizeof path);
 
 		// A file that vanished or changed between the two passes leaves its lane
 		// on the track's own line.
@@ -1488,10 +1566,14 @@ static void AP_NavRec_LogLaneSummary(int levelID, const char *what)
 		if (((s_navrecRecordedMask >> lane) & 1u) == 0u)
 			at += snprintf(msg + at, sizeof msg - (size_t)at, " lane %d = track's own line;", lane);
 		else
-			at += snprintf(msg + at, sizeof msg - (size_t)at, " lane %d = %03u lap %d \"%s\" %u node(s);", lane,
-			               s_navrecLaneFileIndex[lane], s_navrecLaneLapIndex[lane],
+		{
+			char path[64];
+			AP_NavRec_PoolPath(levelID, s_navrecLaneFileIndex[lane], path, sizeof path);
+			at += snprintf(msg + at, sizeof msg - (size_t)at, " lane %d = %s lap %d \"%s\" %u node(s);", lane,
+			               path, s_navrecLaneLapIndex[lane],
 			               (s_navrecLaneDriverName[lane][0] != '\0') ? s_navrecLaneDriverName[lane] : "(anonymous)",
 			               s_navrecLaneNodes[lane]);
+		}
 	}
 
 	// Turn the trailing separator into the newline every log line ends with, or
@@ -1578,15 +1660,10 @@ void AP_NavRec_AfterBotsInit(void)
 // arithmetically correct and the data behind them is blank (magicNumber 0,
 // numPoints 0). The only sound repair is to load the file again and republish,
 // and to fall back to the level's own nav data when that is not possible.
-#ifdef CTR_CUSTOM_PACKAGES
-// The load's recording identity, settled again from the live serving
-// predicates: the same facts and three-way answer as the arm in game/BOTS.c (BOTS_InitData)
-// that settles it for every race load. Keep the two in step.
-//
-// Used where that arm does not run: after a savestate restore, which brings
-// back the level but not the verdict, and on entering a level BOTS does not
-// initialise (menus), so a custom race's blocked verdict does not outlive it.
-static void AP_NavRec_RederiveLoadIdentity(struct GameTracker *gGT)
+#ifdef CTR_CUSTOM_TRACKS
+// Resolve the loaded track before bot initialization, after checkpoint restore
+// and on entering levels without bots. Return the verdict for boss lane switching.
+int AP_NavRec_RederiveLoadIdentity(struct GameTracker *gGT)
 {
 	unsigned char             ctNavUuid[CTR_CT_NAV_UUID_BYTES];
 	unsigned int              ctNavRevision = 0;
@@ -1594,17 +1671,28 @@ static void AP_NavRec_RederiveLoadIdentity(struct GameTracker *gGT)
 	int                       advCup = (gGT->gameMode1 & ADVENTURE_CUP) != 0;
 	int                       advBoss = (gGT->gameMode1 & ADVENTURE_BOSS) != 0;
 
-	facts.eventRaceServing = CustomTrack_ServingLoad((int)gGT->levelID, advCup, gGT->cup.cupID);
+	if (advBoss && CustomTrack_ResidentGarageNavIdentity(gGT->levelID, ctNavUuid, &ctNavRevision))
+	{
+		AP_NavRec_SetActiveCustomTrack(ctNavUuid, ctNavRevision);
+		s_navrecGarageCaptureOnly = 1;
+		return AP_NAVREC_LOAD_CUSTOM;
+	}
+
+	facts.eventRaceServing = CustomTrack_ServingLoad((int)gGT->levelID, advCup, gGT->cup.cupID) ||
+	                         CustomTrack_KeepsNoScores(gGT->levelID);
 	facts.eventRaceNavIdentity =
 	    CustomTrack_NavIdentityForLoad((int)gGT->levelID, advCup, gGT->cup.cupID, ctNavUuid, &ctNavRevision);
 	facts.oxideFinalServing = CustomTrack_ResidentBlocksRecordedLanes(gGT->levelID) ||
 	                          CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID, advBoss) ||
 	                          CustomTrack_GarageVenueServing((int)gGT->levelID, gGT->bossID, advBoss) >= 0; // #133 PR 6b
 	facts.cortexTrackIntent = CustomTrack_CortexTrackIntent((int)gGT->levelID, advBoss);
+#ifdef CTR_CUSTOM_PACKAGES
 	facts.offlineCustomServing = MainRaceTrack_OfflineCustomLoad();
 	facts.offlineCustomNavIdentity = MainRaceTrack_OfflineNavIdentity(ctNavUuid, &ctNavRevision);
+#endif
 
-	switch (AP_NavRecIdentity_ForLoad(&facts))
+	int outcome = AP_NavRecIdentity_ForLoad(&facts);
+	switch (outcome)
 	{
 	case AP_NAVREC_LOAD_CUSTOM:
 		AP_NavRec_SetActiveCustomTrack(ctNavUuid, ctNavRevision);
@@ -1616,6 +1704,7 @@ static void AP_NavRec_RederiveLoadIdentity(struct GameTracker *gGT)
 		AP_NavRec_ClearActiveCustomTrack();
 		break;
 	}
+	return outcome;
 }
 #endif
 
@@ -1732,7 +1821,7 @@ void AP_NavRec_AfterCheckpointRestore(void)
 	AP_NavRec_ResetCapture();
 	levelID = (int)sdata->gGT->levelID;
 
-#ifdef CTR_CUSTOM_PACKAGES
+#ifdef CTR_CUSTOM_TRACKS
 	// A savestate restore does not restore the load's identity verdict. Settle
 	// it again, in full, before any lane file for the host slot could be read
 	// onto custom geometry or a custom track's lanes onto retail geometry.
@@ -1956,6 +2045,11 @@ void AP_NavRec_NoteItemFire(struct Driver *d, int weaponID)
 	}
 }
 
+void AP_NavRec_NoteKartEffect(void)
+{
+	s_navrecFrameKartEffect = 1;
+}
+
 // ============================================================================
 // Per-frame recording
 // ============================================================================
@@ -1965,7 +2059,9 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 	struct Driver *d;
 	int            levelID;
 	int            atEnd;
+	int            kartEffect = s_navrecFrameKartEffect;
 
+	s_navrecFrameKartEffect = 0;
 	AP_NavRec_SyncArmed();
 
 	if (!s_navrecArmed || (gGT == NULL) || (s_navrecScratch == NULL))
@@ -1989,7 +2085,7 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 		// the pointer is stale, not null.
 		s_navrecLevelID = levelID;
 		AP_NavRec_ResetCapture();
-#ifdef CTR_CUSTOM_PACKAGES
+#ifdef CTR_CUSTOM_TRACKS
 		// Menus get no BOTS init, so without this a custom race's blocked
 		// verdict would still stand there and label the menu a custom track.
 		AP_NavRec_RederiveLoadIdentity(gGT);
@@ -1999,6 +2095,16 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 
 	if (s_navrecCorridorLevel != levelID)
 		AP_NavRec_SnapshotCorridor(gGT, levelID);
+
+	if (!AP_NavRecIdentity_MayRecord(AP_NavRec_LoadIdentityOutcome()))
+	{
+		if (!s_navrecLoggedBlocked)
+		{
+			s_navrecLoggedBlocked = 1;
+			AP_LogLine("[AP NAVREC] recording disabled for this load: the served custom track supplies no navigation identity\n");
+		}
+		return;
+	}
 
 	d = gGT->drivers[0];
 	if (d == NULL)
@@ -2022,6 +2128,11 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 		if (!s_navrecWrittenThisRace)
 		{
 			s_navrecWrittenThisRace = 1;
+#ifdef CTR_AP
+			if (AP_RaceAttemptIsForcedLoss())
+				AP_NavRec_DropCurrentLap();
+			else
+#endif
 			if (s_navrecLapOpenAtLine)
 				AP_NavRec_BankLap();
 			else if (s_navrecCurSamples > 0)
@@ -2074,9 +2185,16 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 	// instead, in AP_NavRec_NoteItemFire.
 	{
 		u8 ks = d->kartState;
-		if ((ks == KS_MASK_GRABBED) || (ks == KS_BLASTED) || (ks == KS_SPINNING) || (ks == KS_CRASHING))
+		if (kartEffect || (ks == KS_MASK_GRABBED) || (ks == KS_BLASTED) ||
+		    (ks == KS_SPINNING) || (ks == KS_CRASHING) || d->squishTimer != 0 ||
+		    d->clockReceive != 0 || d->burnTimer != 0 ||
+		    (d->thCloud && d->rainCloudEffect != RAIN_CLOUD_EFFECT_NONE))
 			s_navrecCurDirty = 1;
 	}
+#ifdef CTR_AP
+	if (AP_TrapAffectsRecordedLap(d))
+		s_navrecCurDirty = 1;
+#endif
 
 	s_navrecCurFrames++;
 

@@ -2057,6 +2057,7 @@ static void test_standalone_context(void)
 	race.trophyLocation = 35016300;
 	strcpy(race.entryID, "entry/custom-1");
 	strcpy(race.trackID, "custom/baby-t-park/1.0.2");
+	strcpy(race.packageUuid, "0f8fad5b-d9cb-469f-a165-70867728950e");
 	strcpy(race.levSha256, d.levSha256);
 	strcpy(race.vrmSha256, d.vrmSha256);
 	load.levelID = TEST_HOST;
@@ -2077,6 +2078,12 @@ static void test_standalone_context(void)
 	expect_int(CustomTrack_GetOverride(TEST_BASE+1, &load, &path, &size), 0, "pending route cannot serve before its load request");
 	CustomTrack_OnRaceLoadRequested(TEST_HOST);
 	expect_int(CustomTrack_GetOverride(TEST_BASE+1, &load, &path, &size), 1, "standalone request serves the verified LEV without a cup flag");
+	unsigned char navUuid[CTR_CT_NAV_UUID_BYTES], expectedUuid[CTR_CT_NAV_UUID_BYTES];
+	unsigned int navRevision;
+	CustomTrack_ClearResidentSource();
+	CustomTrack_NoteLoadedAsset(&load, CTR_CT_ROLE_LEV, 1);
+	expect_int(CustomTrack_NavIdentityForLoad(TEST_HOST, 0, 0, navUuid, &navRevision), 0,
+	           "an incomplete served pair cannot stamp a package identity");
 	{
 		unsigned char buffer[TEST_LEV_BYTES + 1];
 		struct NativeSha256Ctx hash;
@@ -2094,6 +2101,17 @@ static void test_standalone_context(void)
 		expect_int(CustomTrack_GetOverride(TEST_BASE, &load, &path, &size), 1, "captured VRM survives disk removal");
 		expect_int(CustomTrack_ReadFile(path, buffer, sizeof buffer, size), 1, "removed VRM is read from the retained package");
 	}
+	CustomTrack_NoteLoadedAsset(&load, CTR_CT_ROLE_VRM, 1);
+	expect_int(CustomTrack_NavIdentityForLoad(TEST_HOST, 0, 0, navUuid, &navRevision), 1,
+	           "the complete seed load supplies a navigation identity");
+	CustomTrackPolicy_ParseNavUuid(race.packageUuid, expectedUuid);
+	expect_int(memcmp(navUuid, expectedUuid, sizeof navUuid) == 0 &&
+	           navRevision == CustomTrackPolicy_NavRevision(d.levSha256), 1,
+	           "seed navigation uses the staged UUID and the verified LEV digest");
+	s_standaloneRace.current.packageUuid[0] = 0;
+	expect_int(CustomTrack_NavIdentityForLoad(TEST_HOST, 0, 0, navUuid, &navRevision), 0,
+	           "a content-plan load cannot inherit the legacy config identity");
+	strcpy(s_standaloneRace.current.packageUuid, race.packageUuid);
 	make_track_files();
 	expect_int(CustomTrack_EventFieldSize(TEST_HOST, 0, 0), 8, "standalone race uses measured eight-kart field");
 	expect_int(CustomTrack_RetailPodiumLevelID(TEST_HOST, 0, 0), -1, "standalone excludes retail host checks");
@@ -2138,6 +2156,8 @@ static void test_finish_terrain_boss_venue(void)
 	struct CustomTrackLoadContext ctx = {0};
 	const struct CustomTrackResidentSource *resident;
 	struct GarageVenueDescriptor original;
+	unsigned char navUuid[CTR_CT_NAV_UUID_BYTES], expectedUuid[CTR_CT_NAV_UUID_BYTES];
+	unsigned int navRevision;
 	reset_loader();
 	s_customTracksLoaded = 1;
 	CustomTrack_ClearGarageVenueDescriptors();
@@ -2149,6 +2169,7 @@ static void test_finish_terrain_boss_venue(void)
 	s_garageVenue[0].roomIdentity = 123;
 	strcpy(s_garageVenue[0].trackID, "garage-track");
 	strcpy(s_garageVenue[0].packageRevision, "1.0.0");
+	strcpy(s_garageVenue[0].packageUuid, "0f8fad5b-d9cb-469f-a165-70867728950e");
 	strcpy(s_garageVenue[0].levSha256, "e22b87a73009b94251f5216424cf07875a02e076eb8461b902624c2b5277ad45");
 	strcpy(s_garageVenue[0].vrmSha256, "5de0e46152d8fdce3e0cbe7cdd860516d98d98105106f5d81c043b39df9f0753");
 	/* Simulate the verified pair, without including third-party level bytes. */
@@ -2158,8 +2179,15 @@ static void test_finish_terrain_boss_venue(void)
 	CustomTrack_ClearResidentSource();
 	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_VRM, 1);
 	expect_int(CustomTrack_ResidentAssetsMixed(), 1, "a custom VRM with no custom LEV refuses quick states");
+	expect_int(CustomTrack_ResidentGarageNavIdentity(TEST_HOST, navUuid, &navRevision), 0,
+	           "incomplete garage assets have no recording identity");
 	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_LEV, 1);
 	expect_int(CustomTrack_ResidentAssetsMixed(), 0, "the complete verified pair can use quick states");
+	expect_int(CustomTrack_ResidentGarageNavIdentity(TEST_HOST, navUuid, &navRevision), 1,
+	           "the complete garage load supplies a recording identity");
+	CustomTrackPolicy_ParseNavUuid(original.packageUuid, expectedUuid);
+	expect_int(memcmp(navUuid, expectedUuid, sizeof navUuid) == 0 && navRevision == 0xe22b87a7u, 1,
+	           "garage navigation uses the loaded package UUID and LEV digest");
 	resident = CustomTrack_ResidentSource(TEST_HOST);
 	expect_int(resident && resident->roomIdentity == 123 && strcmp(resident->trackID, "garage-track") == 0 &&
 	           strcmp(resident->packageRevision, "1.0.0") == 0, 1, "loaded garage remembers room, track and revision");
@@ -2180,6 +2208,8 @@ static void test_finish_terrain_boss_venue(void)
 	           "clearing garage descriptors cannot relabel the loaded level");
 	expect_int(CustomTrack_ResidentBlocksRecordedLanes(TEST_HOST), 1,
 	           "loaded garage still blocks retail recordings after descriptor withdrawal");
+	expect_int(CustomTrack_ResidentGarageNavIdentity(TEST_HOST, navUuid, &navRevision), 1,
+	           "descriptor withdrawal leaves the resident garage recording identity intact");
 	CustomTrack_ClearResidentSource();
 	expect_int(CustomTrack_ResidentSource(TEST_HOST) == NULL, 1, "starting a fresh load resets the previous source");
 	expect_int(CustomTrack_ResidentBlocksRecordedLanes(TEST_HOST), 0,

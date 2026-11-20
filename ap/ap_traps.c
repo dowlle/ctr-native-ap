@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include "ap_traps.h"
+#include "ap_navrec.h"
 #include "ap_wumpa.h"
 #include "ap_capability.h"
 #include "ap_democam.h"
@@ -545,6 +546,7 @@ static int AP_TrapCanActNow(struct GameTracker *gGT, struct Driver *local)
 // the result is juiced.
 static void AP_TrapStartReroll(struct GameTracker *gGT, struct Driver *local)
 {
+	AP_NavRec_NoteKartEffect();
 	AP_TrapReleaseHeldItemClaims(gGT, local);
 	g_trap_reroll_excluded = (int)local->heldItemID;
 
@@ -929,6 +931,7 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, i
 		// normal hit. The predicate has already established that nothing is
 		// protecting the fruit, so this genuinely takes it.
 		RB_Player_ModifyWumpa(local, -AP_WumpaRaceCount(local));
+		AP_NavRec_NoteKartEffect();
 		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_WUMPA_WIPEOUT);
 		break;
 	case AP_TRAP_ITEM_REROLL:
@@ -953,6 +956,7 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, i
 		// and the mask veto behave as for a normal hit. Half, rounded down: 11
 		// fruit leave 6.
 		RB_Player_ModifyWumpa(local, -AP_TrapWumpaLeakAmount(AP_WumpaRaceCount(local)));
+		AP_NavRec_NoteKartEffect();
 		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_WUMPA_LEAK);
 		break;
 	case AP_TRAP_STUCK_STEERING:
@@ -1483,6 +1487,19 @@ void AP_TrapTick(struct GameTracker *gGT)
 }
 
 // ── Engine physics/input call-sites ──
+
+int AP_TrapAffectsRecordedLap(struct Driver *driver)
+{
+	if (!AP_TrapIsLocal(driver) || g_trap_paused)
+		return 0;
+	return g_active[AP_TRAP_ICY] || g_active[AP_TRAP_LOWGRAV] ||
+	       g_active[AP_TRAP_USF_NOBRAKE] || g_active[AP_TRAP_BOOST] ||
+	       g_active[AP_TRAP_WEAKENED_KART] || g_active[AP_TRAP_BOOST_BLOCKER] ||
+	       g_active[AP_TRAP_REVERSE_STEERING] || g_active[AP_TRAP_ALWAYS_JUMPING] ||
+	       g_active[AP_TRAP_NO_DRIFTING] || g_active[AP_TRAP_MUD_SEASON] ||
+	       g_active[AP_TRAP_LIMP_MODE] || g_active[AP_TRAP_STUCK_STEERING] ||
+	       (g_trap_use_pending && g_active[AP_TRAP_FORCED_USE]);
+}
 
 // The Demo Camera prototype must not engage while the First Person trap owns
 // cameraMode (it forces the mode every frame while active), and must force-
