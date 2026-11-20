@@ -21,4 +21,10 @@ inline std::string ap_client_user_agent()
 #endif
 }
 
+// The complete User-Agent header line, for the transport that writes raw HTTP.
+inline std::string ap_client_user_agent_header()
+{
+	return "User-Agent: " + ap_client_user_agent();
+}
+
 #endif // AP_CLIENT_IDENTITY_H

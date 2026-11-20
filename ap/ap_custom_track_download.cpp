@@ -406,6 +406,13 @@ bool decode_http_response(const std::vector<unsigned char> &raw, size_t max_byte
 	return false;
 }
 
+// A path comes from server metadata; a line break in it would inject extra
+// headers into the raw request (review round 2). Refuse before connecting.
+bool path_safe(const std::string &path)
+{
+	return path.find_first_of("\r\n") == std::string::npos;
+}
+
 #ifdef _WIN32
 std::wstring widen_ascii(const std::string &text)
 {
@@ -421,6 +428,11 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 		return false;
 	}
 	const std::string label = host_label(host);
+	if (!path_safe(path))
+	{
+		error = label + " returned an unsafe download path.";
+		return false;
+	}
 	const std::wstring user_agent = widen_ascii(ap_client_user_agent());
 	HINTERNET session = WinHttpOpen(user_agent.c_str(), WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
 	                                WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
@@ -632,6 +644,11 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 		return false;
 	}
 	const std::string label = host_label(host);
+	if (!path_safe(path))
+	{
+		error = label + " returned an unsafe download path.";
+		return false;
+	}
 	try
 	{
 		asio::io_context io;
@@ -656,8 +673,8 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 		asio::connect(stream.next_layer(), resolver.resolve(host, "443"));
 		stream.handshake(asio::ssl::stream_base::client);
 #endif
-		const std::string request = "GET " + path + " HTTP/1.1\r\nHost: " + host +
-		                            "\r\nUser-Agent: " + ap_client_user_agent() +
+		const std::string request = "GET " + path + " HTTP/1.1\r\nHost: " + host + "\r\n" +
+		                            ap_client_user_agent_header() +
 		                            "\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n";
 #ifdef CTR_CUSTOM_PACKAGES
 		saphi_await(io, asio::async_write(stream, asio::buffer(request), asio::use_future), deadline);
