@@ -31,6 +31,7 @@
 #include "../../ap/ap_net.h" // ap_net_seed_name, ap_net_slot_name: Seed identity
 #include "../../ap/ap_track_consent.h" // the track author permission check (A4-74)
 #include "../../ap/ap_solo.h"
+#include "../../ap/ap_content_plan.h"
 #include <platform/native_track_credit.h>
 
 enum { CT_TAB_LIBRARY, CT_TAB_SEED, CT_TAB_IMPORT, CT_TAB_COUNT };
@@ -1471,7 +1472,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
             char credit[CTR_TRACK_CREDIT_MAX];
             CustomTrackCredit_EnsureRegistry(NativeAssets_GetAssetDir());
             if (item->kind == CT_ITEM_INSTALLED)
-                CustomPackage_TrackCredit(&v.installed->local, credit, sizeof credit);
+                CustomPackage_TrackCredit(&v.installed->local, v.author, credit, sizeof credit);
             else if (item->kind == CT_ITEM_PACKAGE)
             {
                 const struct CustomTrackManagerPackage *p = AP_CustomContentPackage();

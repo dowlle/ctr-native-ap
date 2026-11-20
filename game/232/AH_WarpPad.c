@@ -726,7 +726,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				int apLift = 0;
 #endif
 #if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
-				const char *credit = UI_TrackCredit(ctr_cfg_warp_phys(levelID));
+				const char *credit = UI_TrackCredit(ap_content_plan_active() ? ctr_cfg_warp_phys(levelID) : levelID);
 				if (credit)
 				{
 					const RECT *view = &gGT->pushBuffer[0].rect;
@@ -735,7 +735,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					if (levelID == AP_CORTEX_DEST) warppadLNG = "CORTEX VORTEX";
 					DecalFont_DrawLineBox(warppadLNG, x, bottom - 30 - 11, view->w - 160,
 					                      FONT_BIG, JUSTIFY_CENTER | ORANGE, TEXT_MARQUEE, TEXT_SLOT_PAD_TITLE, NULL);
-					UI_DrawTrackCredit(credit, x, bottom - 23, view->w - 160);
+					UI_DrawTrackCredit(credit, x, bottom - 23, view->w - 128);
 				}
 				else
 #endif

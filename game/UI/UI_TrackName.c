@@ -137,6 +137,22 @@ const char *UI_TrackCredit(int physicalPad)
 		                         0, pkg->author, pkg->locator_name);
 		return credit;
 	}
+	/* Older schema rooms can redirect a gem cup to a compiled package. */
+	if (!ap_content_plan_active() && ctr_cfg_active() && ctr_cfg.custom_tracks_ok)
+	{
+		const struct GameTracker *gt = sdata->gGT;
+		const int legacyCup = physicalPad >= 100 && physicalPad < 105
+			? CustomTrack_CupDisplayName(physicalPad - 100, 1) != NULL
+			: physicalPad < 0 && CustomTrack_ServingLoad(gt->levelID, gt->gameMode1 & ADVENTURE_CUP, gt->cup.cupID);
+		const struct CustomTrackManagerPackage *legacy = legacyCup ? AP_CustomContentPackage() : NULL;
+		if (legacy)
+		{
+			CustomTrackCredit_EnsureRegistry(NativeAssets_GetAssetDir());
+			CustomTrackCredit_Format(credit, sizeof credit, legacy->levSha256, legacy->vrmSha256,
+			                         0, legacy->author, "Project Saphi");
+			return credit;
+		}
+	}
 #endif
 	if (physicalPad < 0 && MainRaceTrack_OfflineCustomLoad())
 	{
@@ -148,7 +164,7 @@ const char *UI_TrackCredit(int physicalPad)
 			generation = CustomOffline_RuntimeGeneration();
 		}
 		CustomTrackCredit_EnsureRegistry(NativeAssets_GetAssetDir());
-		CustomPackage_TrackCredit(&info, credit, sizeof credit);
+		CustomPackage_TrackCredit(&info, NULL, credit, sizeof credit);
 		return credit;
 	}
 	return NULL;

@@ -145,6 +145,7 @@ struct CustomPackageLocalInfo
     char relicReason[48], ctrChallengeReason[48];
     /* Provenance of an imported package (metadata/xdelta-source.json). */
     int xdelta, bigfileIndex;
+    int saphi; /* Verified source metadata identifies Project Saphi. */
     char patchSha256[65];
     char sourceUrl[129]; /* Public xdelta source page, when the descriptor names one. */
 };
@@ -159,7 +160,8 @@ struct CustomPackageStoreEntry
 typedef void (*CustomPackageStoreVisitor)(const struct CustomPackageStoreEntry *entry, void *context);
 /* Read the author and provenance from an already verified snapshot. */
 void CustomPackage_TrackCreditInfo(struct CustomPackageOwned *package, struct CustomPackageLocalInfo *out);
-void CustomPackage_TrackCredit(const struct CustomPackageLocalInfo *local, char *out, size_t size);
+void CustomPackage_TrackCredit(const struct CustomPackageLocalInfo *local, const char *fallbackAuthor,
+                               char *out, size_t size);
 /* Sorted, bounded read-only discovery of exact lowercase hash names. Staging
    and unrelated names are ignored. Each revision is fully re-acquired; damaged
    entries remain visible with a reason. Copy callback data before returning.

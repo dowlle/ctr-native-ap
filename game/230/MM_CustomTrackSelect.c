@@ -441,7 +441,7 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
         char credit[CTR_TRACK_CREDIT_MAX];
         CustomTrackCredit_EnsureRegistry(NativeAssets_GetAssetDir());
         if (entry->installed)
-            CustomPackage_TrackCredit(&entry->local, credit, sizeof credit);
+            CustomPackage_TrackCredit(&entry->local, entry->author, credit, sizeof credit);
         else
             CustomTrackCredit_Format(credit, sizeof credit, NULL, NULL, 0, entry->author, "Project Saphi");
         UI_DrawTrackCredit(credit, 396 + dx, 110 + dy, 174);

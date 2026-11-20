@@ -562,10 +562,13 @@ extern "C" void CustomTrackCredit_Format(char *out, size_t size, const char *lev
 	}
 }
 
-extern "C" void CustomPackage_TrackCredit(const struct CustomPackageLocalInfo *local, char *out, size_t size)
+extern "C" void CustomPackage_TrackCredit(const struct CustomPackageLocalInfo *local, const char *fallbackAuthor,
+                                          char *out, size_t size)
 {
+	if (!out || !size) return;
 	CustomTrackCredit_Format(out, size, local->levSha256, local->vrmSha256, local->permissionTrackID,
-	                         local->author, local->permissionTrackID ? "Project Saphi" : nullptr);
+	                         local->author[0] ? local->author : fallbackAuthor,
+	                         local->saphi || local->permissionTrackID ? "Project Saphi" : nullptr);
 	if (local->xdelta && !std::strcmp(out, "From a local custom track package"))
 		std::snprintf(out, size, "From an imported xdelta pack");
 }

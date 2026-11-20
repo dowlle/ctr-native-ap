@@ -107,6 +107,22 @@ int MainRaceTrack_CustomLoadGhost(struct GhostHeader *dst)
 }
 char *RECTMENU_DrawTime(int time) { static char t[16]; snprintf(t, sizeof t, "T%d", time); return t; }
 #include "text-box-layout-stub.h"
+void CustomTrackCredit_EnsureRegistry(const char *assets) { (void)assets; }
+void CustomTrackCredit_Format(char *out, size_t size, const char *lev, const char *vrm,
+                              int id, const char *author, const char *source)
+{
+    (void)lev; (void)vrm; (void)id;
+    snprintf(out, size, "%s", author && *author ? author : source && *source ? source : "Local package");
+}
+void CustomPackage_TrackCredit(const struct CustomPackageLocalInfo *local, const char *fallbackAuthor,
+                               char *out, size_t size)
+{
+    CustomTrackCredit_Format(out, size, NULL, NULL, 0, local->author[0] ? local->author : fallbackAuthor, NULL);
+}
+void UI_DrawTrackCredit(const char *credit, int x, int y, int width)
+{
+    DecalFont_DrawLineBox(credit, x, y, width, FONT_SMALL, JUSTIFY_CENTER | WHITE, TEXT_MARQUEE, 0, NULL);
+}
 #include "../game/230/MM_CustomTrackSelect.c"
 
 /* What a finished store scan leaves behind. */
