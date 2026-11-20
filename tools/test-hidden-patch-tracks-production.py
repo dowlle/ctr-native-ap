@@ -1,28 +1,78 @@
-"""Exercise Play Solo discovery against saved descriptors and room metadata."""
+"""Exercise the embedded Play Solo adapter and native needs-laps filter."""
 
+import re
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
 source = (root / "ap/ap_solo.cpp").read_text()
+header = (root / "include/platform/native_custom_track_visibility.h").read_text()
+adapter = (root / "ap/ap_solo_track_visibility.hpp").read_text().split('R"PY(', 1)[1].split(')PY"', 1)[0]
+hashes = re.findall(r'"([0-9a-f]{64})"', header)
+assert len(set(hashes)) == 5
+visible = "60982d262c4a150f0b625495b353795386609217b40837b47bcc395507e66cd1"
+assert visible not in hashes
 
+wrapper = r'''
+import sys
+from types import SimpleNamespace
+
+GAME = 'Crash Team Racing'
+HIDDEN, VISIBLE = sys.argv[2:4]
+
+def package(key, digest, name=None):
+    return {'id': f'package/{key}/1.0.0', 'content_id': key, 'display_name': name or key,
+            'files': [{'role': 'lev', 'sha256': digest}]}
+
+def _section(doc):
+    return doc[GAME]
+
+def _world_module(name):
+    assert name == 'content_plan'
+    return SimpleNamespace(RETAIL={0: 'Crash Cove'}, arena_content=SimpleNamespace(ARENAS={}))
+
+def _yaml_pick_names(descriptor, descriptors, owners):
+    return {descriptor['content_id'], descriptor['display_name'],
+            'old-key' if descriptor['content_id'] == 'a' else descriptor['content_id']}
+
+def _descriptor_sources(paths):
+    return paths
+
+def apply_tracks(paths, doc, assets, picked, guaranteed, page=False):
+    assert not page and picked == guaranteed == []  # no visible rows or player edits
+    return doc
+
+def main():
+    hidden = package('a', HIDDEN, 'Crash Cove')
+    same_label = package('a', VISIBLE, 'Crash Cove')
+    keep = package('b', VISIBLE, 'Shared')
+    for rows in ([(hidden, 'room')], [(hidden, 'room'), (same_label, 'room')],
+                 [(same_label, 'room'), (hidden, 'room')]):
+        expected = [(same_label, 'room')] if len(rows) > 1 else []
+        assert _descriptor_sources(rows) == expected
+    source = {GAME: {'custom_tracks': [hidden, keep], 'required_entries': ['a', 'old-key', 'Crash Cove', 'b'],
+                     'track_modes': {'a': ['relic'], 'Crash Cove': ['trophy'], 'b': ['trophy']}}}
+    result = apply_tracks([], source, 'assets', [], [])
+    assert result[GAME]['custom_tracks'] == [keep]
+    assert result[GAME]['required_entries'] == ['Crash Cove', 'b']
+    assert result[GAME]['track_modes'] == {'Crash Cove': ['trophy'], 'b': ['trophy']}
+    assert source[GAME]['custom_tracks'] == [hidden, keep] and 'a' in source[GAME]['track_modes']
+    empty = apply_tracks([], {GAME: {'custom_tracks': [hidden], 'required_entries': ['a']}}, 'assets', [], [])
+    assert 'custom_tracks' not in empty[GAME] and empty[GAME]['required_entries'] == []
+    return 0
+'''
 
 def function(signature):
     start = source.index(signature)
     return source[start:source.index("\n}\n", start) + 3]
 
-
 fixture = r'''
-#include <algorithm>
 #include <cassert>
-#include <cctype>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <map>
-#include <set>
-#include <tuple>
 #include <vector>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -37,92 +87,55 @@ static std::string base;
 static std::string BaseDir() { return base + "/"; }
 static std::string SoloPath(const std::string &rel) { return BaseDir() + "solo/" + rel; }
 static const std::string &AssetsDir() { return base; }
-static std::vector<APSoloTrackInfo> g_tracks;
-static std::map<std::string, int> g_trackStarts;
 '''
 for signature in (
-    "bool SoloRootIsLink()", "std::string ReadSmallPlainFile(",
-    "bool CopyText(", "bool PinnedFilePresent(",
+    "bool SoloRootIsLink()", "std::string ReadSmallPlainFile(", "bool CopyText(",
+    "bool HiddenTrackDescriptor(", "bool PinnedFilePresent(",
+    "void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows)\n",
 ):
     fixture += function(signature)
-start = source.index("void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows);")
-fixture += source[start:source.index("void ParseList(", start)]
-fixture += function("void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows)\n")
 fixture += r'''
-static void put(const fs::path &path, const std::string &bytes)
-{
-    fs::create_directories(path.parent_path());
-    std::ofstream(path, std::ios::binary) << bytes;
-}
-
 int main(int argc, char **argv)
 {
-    assert(argc == 2);
+    assert(argc == 4);
     base = argv[1];
-    const char *hidden[] = {
-        "268064f31236405f384778077e544c69079fb39587ebea60368102fa99ce945a",
-        "e9c3b0bb1793809a0bf7e396897ddb54058c94e8dc796b3f587d0921d543857c",
-        "b1754b2e860f94938de583be6be6e0b66976f843f1aa8805d8dc6c67fcad270d",
-        "20576dcd3f777402c3c39e7532ccbd71b2a2f3368d813bfcbb479cd1300810f3",
-        "87f416ec29a93f16013f7497de35c0832c13712aaf94695b6597d309e37edf80",
-    };
-    for (const char *hash : hidden) assert(CustomTrack_IsHiddenLev(hash));
-    const std::string visibleHash = "60982d262c4a150f0b625495b353795386609217b40837b47bcc395507e66cd1";
-    assert(!CustomTrack_IsHiddenLev(visibleHash.c_str()));
-    auto descriptor = [](const std::string &key, const std::string &hash) {
-        return json{{"id", "package/" + key + "/1.0.0"}, {"content_id", key},
-                    {"revision", "1.0.0"}, {"display_name", key}, {"author", "Tester"},
-                    {"uuid", "07395277-d2c2-5544-9cde-5ad9976c06fd"},
-                    {"files", json::array({{{"role", "lev"}, {"sha256", hash}, {"bytes", 4u}},
-                                           {{"role", "vrm"}, {"sha256", std::string(64, 'a')}, {"bytes", 4u}}})}};
-    };
-    const auto installed = descriptor("lockbox", hidden[4]);
-    const auto oldRoom = descriptor("anniversary", hidden[4]);
-    const auto visible = descriptor("time-trial", visibleHash);
-    const auto waiting = descriptor("waiting", hidden[0]);
-    const auto unhiddenWaiting = descriptor("other-waiting", visibleHash);
-    const fs::path installedPath = SoloPath("tracks/lockbox__1.0.0.json");
-    const fs::path roomPath = SoloPath("rooms/existing/room.json");
-    const auto room = json{{"custom_tracks", json::array({oldRoom})}}.dump();
-    put(installedPath, installed.dump());
-    put(roomPath, room);
-    put(SoloPath("tracks/time-trial__1.0.0.json"), visible.dump());
-    for (const auto &d : {waiting, unhiddenWaiting})
+    assert(CustomTrack_IsHiddenLev(argv[2]) && !CustomTrack_IsHiddenLev(argv[3]));
+    for (unsigned i = 0; i < 2; ++i)
     {
-        const std::string key = d["content_id"];
-        put(SoloPath("needs-laps/" + key + "__1.0.0.json"), d.dump());
-        put(fs::path(base) / "tracks" / key / "original/level.lev", "lev!");
-        put(fs::path(base) / "tracks" / key / "original/level.vrm", "vrm!");
+        const std::string key = i ? "visible" : "hidden";
+        const auto d = json{{"id", "package/" + key + "/1.0.0"}, {"content_id", key}, {"revision", "1.0.0"},
+                            {"display_name", key}, {"author", "Tester"},
+                            {"files", json::array({{{"role", "lev"}, {"sha256", argv[i + 2]}, {"bytes", 4u}},
+                                                   {{"role", "vrm"}, {"sha256", std::string(64, 'a')}, {"bytes", 4u}}})}};
+        const fs::path folder = fs::path(base) / "tracks" / key / "original";
+        fs::create_directories(folder);
+        std::ofstream(folder / "level.lev") << "lev!";
+        std::ofstream(folder / "level.vrm") << "vrm!";
+        fs::create_directories(SoloPath("needs-laps"));
+        std::ofstream(SoloPath("needs-laps/" + key + "__1.0.0.json")) << d.dump();
     }
-    put(fs::path(base) / "tracks/lockbox/original/level.lev", "lev!");
-    json rows = json::array();
-    for (const auto &d : {installed, oldRoom, visible})
-    {
-        auto row = d;
-        row.erase("files"); // The bundled runtime omits pins in list output.
-        row["source"] = d == oldRoom ? "room" : "file";
-        row["time_trial"] = true;
-        rows.push_back(row);
-    }
-    ParseTracks(json{{"tracks", rows}});
-    assert(g_tracks.size() == 2 && g_tracks[0].timeTrial && g_tracks[1].needsLaps);
-    assert(std::strcmp(g_tracks[0].id, "package/time-trial/1.0.0") == 0);
-    assert(std::strcmp(g_tracks[1].id, "package/other-waiting/1.0.0") == 0);
-    assert(g_trackStarts.size() == 1);
-    assert(ReadSmallPlainFile(installedPath, kDescriptorMax) == installed.dump());
-    assert(ReadSmallPlainFile(roomPath, kDescriptorMax) == room);
-    assert(ReadSmallPlainFile(fs::path(base) / "tracks/lockbox/original/level.lev", 64) == "lev!");
-    assert(fs::is_regular_file(SoloPath("needs-laps/waiting__1.0.0.json")));
+    std::vector<APSoloTrackInfo> rows;
+    AddNeedsLapsRows(rows);
+    assert(rows.size() == 1 && std::strcmp(rows[0].id, "package/visible/1.0.0") == 0);
+    assert(fs::is_regular_file(SoloPath("needs-laps/hidden__1.0.0.json")));
+    assert(ReadSmallPlainFile(fs::path(base) / "tracks/hidden/original/level.lev", 64) == "lev!");
 }
 '''
 with tempfile.TemporaryDirectory(prefix="ctr-hidden-patch-tracks-") as temp:
     work = Path(temp)
-    src = work / "probe.cpp"
-    exe = work / "probe"
+    fake = work / "solo wrapper.py"
+    fake.write_text(wrapper)
+    subprocess.run([sys.executable, "-I", "-B", "-c", adapter, str(fake), ",".join(hashes),
+                    "generate", hashes[-1], visible], check=True)
+    fake.write_text(wrapper.replace("def _yaml_pick_names", "def unused_alias_resolver")
+                    .replace("'old-key', ", ""))
+    subprocess.run([sys.executable, "-I", "-B", "-c", adapter, str(fake), ",".join(hashes),
+                    "generate", hashes[-1], visible], check=True)
+    src, exe = work / "probe.cpp", work / "probe"
     src.write_text(fixture)
     subprocess.run(
         ["g++", "-std=c++17", "-Wall", "-Wextra", "-Werror", "-I.", "-Iinclude",
          "-Iap/vendor/json/include", str(src), "-o", str(exe)],
         cwd=root, check=True,
     )
-    subprocess.run([str(exe), str(work)], check=True)
+    subprocess.run([str(exe), str(work), hashes[-1], visible], check=True)

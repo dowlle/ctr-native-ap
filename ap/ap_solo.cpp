@@ -6,6 +6,7 @@
 // SDL_Process handle, never by name or PID lookup.
 #include "ap_solo.h"
 #include "ap_solo_logic.hpp"
+#include "ap_solo_track_visibility.hpp"
 #include "ap_net.h"
 #include <platform/native_custom_track_visibility.h>
 #ifdef CTR_CUSTOM_PACKAGES
@@ -19,7 +20,6 @@
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
-#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -202,7 +202,7 @@ struct Child
 
 	bool running() const { return proc != nullptr && !exited; }
 
-	bool start(const std::vector<std::string> &args, const std::string &logPath)
+	bool start(const std::vector<std::string> &args, const std::string &logPath, bool filterTracks = false)
 	{
 		std::vector<const char *> argv;
 		argv.push_back(nullptr); // interpreter, set below
@@ -212,7 +212,19 @@ struct Child
 		for (const char *f : flags)
 			argv.push_back(f);
 		std::string script = ClientPath(kScript);
+		std::string hiddenHashes;
+		if (filterTracks)
+		{
+			for (const char *hash : kCustomTrackHiddenLevs)
+			{
+				if (!hiddenHashes.empty()) hiddenHashes += ',';
+				hiddenHashes += hash;
+			}
+			argv.push_back("-c");
+			argv.push_back(kSoloTrackVisibility);
+		}
 		argv.push_back(script.c_str());
+		if (filterTracks) argv.push_back(hiddenHashes.c_str());
 		for (const auto &a : args)
 			argv.push_back(a.c_str());
 		argv.push_back(nullptr);
@@ -471,71 +483,15 @@ bool HiddenTrackDescriptor(const nlohmann::json &descriptor)
 	return false;
 }
 
-// The bundled wrapper reports the source and labels of a row without its file
-// pins. Match against the descriptors it could have read. Keep an ambiguous
-// row visible if a visible revision has the same source and metadata.
-using TrackListIdentity = std::tuple<std::string, std::string, std::string, std::string>;
-TrackListIdentity TrackListKey(const nlohmann::json &row, const std::string &source)
-{
-	return {source, AP_SoloJsonString(row, "id"), AP_SoloJsonString(row, "display_name"),
-	        AP_SoloJsonString(row, "author")};
-}
-
-std::set<TrackListIdentity> HiddenTrackListRows(const nlohmann::json &rows)
-{
-	std::set<TrackListIdentity> hidden, visible;
-	if (SoloRootIsLink()) return hidden;
-	const auto collect = [&](const nlohmann::json &d, const char *source) {
-		if (!d.is_object() || AP_SoloJsonString(d, "id").empty()) return;
-		auto &keys = HiddenTrackDescriptor(d) ? hidden : visible;
-		keys.insert(TrackListKey(d, source));
-	};
-	for (const char *source : {"file", "room"})
-	{
-		if (std::none_of(rows.begin(), rows.end(), [&](const auto &row) {
-		    return AP_SoloJsonString(row, "source") == source;
-		})) continue;
-		const bool room = std::strcmp(source, "room") == 0;
-		const fs::path folder = fs::u8path(SoloPath(room ? "rooms" : "tracks"));
-		std::error_code ec;
-		if (fs::is_symlink(folder, ec)) continue;
-		for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec))
-		{
-			const fs::path path = it->path();
-			if (room)
-			{
-				std::error_code status;
-				if (!fs::is_directory(it->symlink_status(status))) continue;
-				const auto meta = nlohmann::json::parse(ReadSmallPlainFile(path / "room.json", 4 * 1024 * 1024), nullptr, false);
-				const auto tracks = meta.find("custom_tracks");
-				if (tracks != meta.end() && tracks->is_array())
-					for (const auto &d : *tracks) collect(d, source);
-			}
-			else
-			{
-				auto ext = path.extension().u8string();
-				std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return (char)std::tolower(c); });
-				if (ext != ".json") continue;
-				collect(nlohmann::json::parse(ReadSmallPlainFile(path, kDescriptorMax), nullptr, false), source);
-			}
-		}
-	}
-	for (const auto &key : visible) hidden.erase(key);
-	return hidden;
-}
-
 // A new track list keeps the picks of the tracks still in it. The first list of a
 // start begins as the YAML has each track.
 void ParseTracks(const nlohmann::json &r)
 {
 	std::vector<APSoloTrackInfo> next;
-	g_trackStarts.clear();
 	if (r.contains("tracks") && r["tracks"].is_array())
-	{
-		const auto hidden = HiddenTrackListRows(r["tracks"]);
 		for (const auto &t : r["tracks"])
 		{
-			if (!t.is_object() || hidden.count(TrackListKey(t, AP_SoloJsonString(t, "source"))))
+			if (!t.is_object())
 				continue;
 			APSoloTrackInfo info;
 			std::memset(&info, 0, sizeof info);
@@ -553,7 +509,6 @@ void ParseTracks(const nlohmann::json &r)
 					info.pick = old.pick;
 			next.push_back(info);
 		}
-	}
 	AddNeedsLapsRows(next);
 	for (APSoloTrackInfo &info : next)
 		for (const auto &old : g_tracks)
@@ -650,7 +605,7 @@ bool JobStart(JobKind kind, const std::vector<std::string> &args, uint64_t limit
 	g_job.resultRoom.clear();
 	g_job.result = nlohmann::json();
 	g_job.limitMs = limitMs;
-	if (!g_job.child.start(args, SoloPath("runtime.log")))
+	if (!g_job.child.start(args, SoloPath("runtime.log"), kind == JOB_TRACKS || kind == JOB_GENERATE))
 	{
 		JobFail("start", "", "");
 		return true; // started and failed: the menu shows the error

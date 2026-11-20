@@ -38,6 +38,7 @@ extern "C" {
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <random>
 #include <set>
 #include <stdexcept>
@@ -2646,6 +2647,7 @@ struct PatchRecord
     std::string sha256, file;
     unsigned long long bytes = 0;
     unsigned offered = 0;
+    std::optional<std::set<int>> offeredSlots;
     std::set<int> tracks;
     std::string failed;
 };
@@ -2674,6 +2676,13 @@ std::vector<PatchRecord> load_records(const std::string &assets)
             if (e.contains("file") && e["file"].is_string()) r.file = e["file"].get<std::string>().substr(0, 200);
             if (e.contains("bytes") && e["bytes"].is_number_unsigned()) r.bytes = e["bytes"].get<unsigned long long>();
             if (e.contains("offered") && e["offered"].is_number_unsigned()) r.offered = e["offered"].get<unsigned>();
+            if (e.contains("offered_slots") && e["offered_slots"].is_array() && e["offered_slots"].size() <= 256)
+            {
+                std::set<int> slots;
+                for (const auto &i : e["offered_slots"])
+                    if (i.is_number_integer()) slots.insert(i.get<int>());
+                if (slots.size() == e["offered_slots"].size()) r.offeredSlots = std::move(slots);
+            }
             if (e.contains("failed") && e["failed"].is_string()) r.failed = e["failed"].get<std::string>().substr(0, 90);
             if (e.contains("tracks") && e["tracks"].is_array())
                 for (const auto &t : e["tracks"])
@@ -2693,6 +2702,7 @@ bool save_records(const std::string &assets, const std::vector<PatchRecord> &lis
     {
         json e = {{"sha256", r.sha256}, {"file", r.file}, {"bytes", r.bytes}, {"offered", r.offered},
                   {"tracks", std::vector<int>(r.tracks.begin(), r.tracks.end())}};
+        if (r.offeredSlots) e["offered_slots"] = *r.offeredSlots;
         if (!r.failed.empty()) e["failed"] = r.failed;
         patches.push_back(std::move(e));
     }
@@ -2709,13 +2719,24 @@ bool save_records(const std::string &assets, const std::vector<PatchRecord> &lis
     return false;
 }
 
-void fill_state(XdeltaPatchState *state, const PatchRecord &r)
+std::set<int> offered_slots(const XdeltaImportSummary &summary)
+{
+    std::set<int> slots;
+    for (unsigned i = 0; i < summary.count; i++)
+        if (summary.items[i].offered) slots.insert(summary.items[i].bigfileIndex);
+    return slots;
+}
+
+void fill_state(XdeltaPatchState *state, const PatchRecord &r, const std::set<int> *current = nullptr)
 {
     *state = {};
-    state->offered = (int)r.offered;
-    state->imported = (int)r.tracks.size();
-    state->state = r.tracks.empty() ? (r.failed.empty() ? XDELTA_STATE_NEW : XDELTA_STATE_FAILED)
-                 : (r.offered && r.tracks.size() >= r.offered) ? XDELTA_STATE_IMPORTED
+    if (!current && r.offeredSlots) current = &*r.offeredSlots;
+    state->offered = current ? (int)current->size() : (int)r.offered;
+    state->imported = current ? (int)std::count_if(current->begin(), current->end(), [&](int slot) {
+        return r.tracks.count(slot) != 0;
+    }) : (int)r.tracks.size();
+    state->state = !state->imported ? (r.failed.empty() ? XDELTA_STATE_NEW : XDELTA_STATE_FAILED)
+                 : (state->offered && state->imported >= state->offered) ? XDELTA_STATE_IMPORTED
                  : XDELTA_STATE_PARTLY;
     set_text(state->reason, sizeof state->reason, r.failed);
 }
@@ -2732,10 +2753,10 @@ PatchRecord *find_record(std::vector<PatchRecord> &list, const std::string &sha,
 }
 
 /* Note the outcome of a scan or install. `installed` are BIGFILE indexes this
-   install wrote; `offered` is the review list's count (0 keeps the old one);
+   install wrote; a null summary keeps the previous offer list.
    `failure` is "" on success. Never throws. */
 void record_outcome(const std::string &assets, const std::string &sha, const std::string &file, unsigned long long bytes,
-                    unsigned offered, const std::vector<int> &installed, const std::string &failure)
+                    const XdeltaImportSummary *summary, const std::vector<int> &installed, const std::string &failure)
 {
     try
     {
@@ -2762,7 +2783,11 @@ void record_outcome(const std::string &assets, const std::string &sha, const std
         }
         r->file = file.substr(0, 200);
         r->bytes = bytes;
-        if (offered) r->offered = offered;
+        if (summary)
+        {
+            r->offeredSlots = offered_slots(*summary);
+            r->offered = (unsigned)r->offeredSlots->size();
+        }
         for (int i : installed) r->tracks.insert(i);
         r->failed = limit_codepoints(failure, 90);
         if (list.size() > 256) list.erase(list.begin(), list.begin() + (long)(list.size() - 256));
@@ -2772,14 +2797,18 @@ void record_outcome(const std::string &assets, const std::string &sha, const std
 }
 
 /* "Imported before: 3 of 5 tracks" for a scanned patch, or "". */
-std::string history_note(const std::string &assets, const std::string &sha)
+std::string history_note(const std::string &assets, const std::string &sha, const XdeltaImportSummary *summary = nullptr)
 {
     std::lock_guard<std::mutex> lock(record_mutex());
     auto list = load_records(assets);
     PatchRecord *r = find_record(list, sha, "", 0);
     if (!r || r->sha256 != sha || r->tracks.empty()) return "";
-    return "Imported before: " + std::to_string(r->tracks.size()) + (r->offered ? " of " + std::to_string(r->offered) : std::string()) +
-           " track" + (r->tracks.size() == 1 && !r->offered ? "" : "s");
+    const auto current = summary ? offered_slots(*summary) : std::set<int>{};
+    XdeltaPatchState state;
+    fill_state(&state, *r, summary ? &current : nullptr);
+    if (!state.imported) return "";
+    return "Imported before: " + std::to_string(state.imported) + (state.offered ? " of " + std::to_string(state.offered) : std::string()) +
+           " track" + (state.imported == 1 && !state.offered ? "" : "s");
 }
 
 struct JobState
@@ -2858,7 +2887,7 @@ extern "C" int XdeltaImport_StartScan(const char *patchPath, const char *discPat
             if (ok && result)
             {
                 sha = result->summary.patchSha256;
-                set_text(result->summary.history, sizeof result->summary.history, history_note(root, sha));
+                set_text(result->summary.history, sizeof result->summary.history, history_note(root, sha, &result->summary));
                 for (unsigned i = 0; i < result->summary.count && i < result->built.size(); i++)
                 {
                     try { result->summary.items[i].oldCopy = old_copy_state(root, result->summary, result->patchStem, result->summary.items[i], result->built[i]); }
@@ -2866,7 +2895,7 @@ extern "C" int XdeltaImport_StartScan(const char *patchPath, const char *discPat
                 }
             }
             else if (std::strcmp(error, "Cancelled"))
-                record_outcome(root, "", name, bytes, 0, {}, error);
+                record_outcome(root, "", name, bytes, nullptr, {}, error);
             std::lock_guard<std::mutex> lock(state.mutex);
             state.scan = result;
             state.error = ok ? "" : error;
@@ -2924,7 +2953,6 @@ extern "C" int XdeltaImport_StartInstall(const unsigned char *selected, unsigned
             {
                 std::string name, sha = state.scan ? state.scan->summary.patchSha256 : "";
                 unsigned long long bytes;
-                unsigned offered = 0;
                 std::vector<int> indexes;
                 {
                     std::lock_guard<std::mutex> lock(state.mutex);
@@ -2933,10 +2961,9 @@ extern "C" int XdeltaImport_StartInstall(const unsigned char *selected, unsigned
                 }
                 if (state.scan)
                 {
-                    for (unsigned i = 0; i < state.scan->summary.count; i++) offered += state.scan->summary.items[i].offered != 0;
                     for (unsigned i : done) indexes.push_back(state.scan->summary.items[i].bigfileIndex);
                 }
-                record_outcome(root, sha, name, bytes, offered, indexes, n < 0 ? error : "");
+                record_outcome(root, sha, name, bytes, state.scan ? &state.scan->summary : nullptr, indexes, n < 0 ? error : "");
             }
             /* Every installed package, including a partial batch, gets its
                Play Solo descriptor from the same verified snapshot. */
@@ -3130,11 +3157,10 @@ extern "C" void XdeltaImport_RecordResult(const char *assets, const char *patchN
                                           const int *installedIndexes, int installedCount, const char *failure)
 {
     if (!assets || !summary) return;
-    unsigned offered = 0;
-    for (unsigned i = 0; i < summary->count; i++) offered += summary->items[i].offered != 0;
     std::vector<int> installed;
     for (int i = 0; installedIndexes && i < installedCount; i++) installed.push_back(installedIndexes[i]);
-    record_outcome(assets, summary->patchSha256, patchName ? patchName : "", summary->patchBytes, offered, installed, failure ? failure : "");
+    record_outcome(assets, summary->patchSha256, patchName ? patchName : "", summary->patchBytes,
+                   summary->patchSha256[0] ? summary : nullptr, installed, failure ? failure : "");
 }
 
 #ifdef CTR_XDELTA_TESTING

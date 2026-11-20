@@ -2555,6 +2555,26 @@ int main()
             int pollState = 0;
             for (int i = 0; i < 2000 && (pollState = XdeltaImport_PollPatchStates(polled, CTR_XDELTA_FOLDER_MAX)) == 0; i++) usleep(5000);
             CHECK(pollState == 1 && polled[0].state == XDELTA_STATE_FAILED && polled[2].state == XDELTA_STATE_IMPORTED, "the worker reports the same states");
+            /* Previously installed slots can fall out of the offer list. Keep their
+               history, but do not count them as installed among the current offers. */
+            XdeltaImportSummary previous = *s;
+            const int retiredSlot = 4000;
+            previous.items[previous.count].bigfileIndex = retiredSlot;
+            previous.items[previous.count++].offered = 1;
+            const std::string recordPath = assets + "/tracks/import-record.json";
+            write_path(recordPath, Bytes{});
+            const int oldInstalls[] = {offered[0], retiredSlot};
+            XdeltaImport_RecordResult(assets.c_str(), "Pack.xdelta", &previous, oldInstalls, 2, "");
+            XdeltaImport_RecordResult(assets.c_str(), "Pack.xdelta", s, offered.data(), 1, "");
+            XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr);
+            CHECK(st[2].state == XDELTA_STATE_PARTLY && st[2].imported == 1 &&
+                  st[2].offered == (int)offered.size(), "an installed hidden slot cannot complete a partial import");
+            XdeltaImportTest_History(assets.c_str(), s->patchSha256, note, sizeof note);
+            CHECK(std::strstr(note, "Imported before: 1 of") != nullptr, "history counts the current offers");
+            auto historyBytes = read_file(recordPath);
+            const auto recorded = nlohmann::json::parse(historyBytes);
+            CHECK(recorded["patches"][0]["tracks"] == nlohmann::json({offered[0], retiredSlot}),
+                  "the hidden slot stays in installation history");
             /* A corrupt record is ignored, not fatal. */
             write_path(assets + "/tracks/import-record.json", Bytes(20, '{'));
             CHECK(XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr) && st[2].state == XDELTA_STATE_NEW, "a damaged record reads as empty");
