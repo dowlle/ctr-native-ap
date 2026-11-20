@@ -523,7 +523,7 @@ static std::string canonical_key(const Index *index, const std::string &key)
 	if (index && index->has_identity)
 	{
 		auto alias = index->aliases.find(key);
-		return alias == index->aliases.end() ? key : alias->second;
+		if (alias != index->aliases.end()) return alias->second;
 	}
 	for (const auto &alias : kTrackKeyAliases)
 		if (key == alias[0]) return alias[1];
@@ -570,7 +570,7 @@ bool ap_track_registry_identity(const std::string &lev, const std::string &road,
 	else if (alias != index->aliases.end()) key = alias->second;
 	auto name = index->titles.find(key);
 	title = name == index->titles.end() ? std::string() : name->second;
-	return true;
+	return !title.empty();
 }
 
 #ifdef AP_TRACK_REGISTRY_TEST

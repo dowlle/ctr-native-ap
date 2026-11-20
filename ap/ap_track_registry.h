@@ -114,8 +114,7 @@ int ap_track_registry_parse_check(const std::vector<unsigned char> &bytes, std::
 bool ap_track_registry_credits(const std::string &track_key, std::vector<std::string> &names);
 std::string ap_track_registry_canonical_key(const std::string &key);
 
-// Returns true once a live/cached naming table is available. A missing match
-// leaves title empty. A present table supersedes the shipped offline snapshot.
+// Returns true when the live or cached naming table can supply a title.
 bool ap_track_registry_identity(const std::string &lev, const std::string &road,
                                 std::string &key, std::string &title);
 #endif
