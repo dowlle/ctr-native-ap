@@ -607,7 +607,8 @@ bool JobStart(JobKind kind, const std::vector<std::string> &args, uint64_t limit
 	g_job.resultRoom.clear();
 	g_job.result = nlohmann::json();
 	g_job.limitMs = limitMs;
-	if (!g_job.child.start(args, SoloPath("runtime.log"), kind == JOB_TRACKS || kind == JOB_GENERATE))
+	const bool filterTracks = kind == JOB_TRACKS || kind == JOB_GENERATE || kind == JOB_SAVE_ROOM_YAML;
+	if (!g_job.child.start(args, SoloPath("runtime.log"), filterTracks))
 	{
 		JobFail("start", "", "");
 		return true; // started and failed: the menu shows the error

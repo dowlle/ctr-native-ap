@@ -52,6 +52,11 @@ def main():
     hidden = package('a', HIDDEN, 'Crash Cove')
     same_label = package('a', VISIBLE, 'Crash Cove')
     keep = package('b', VISIBLE, 'Shared')
+    if sys.argv[1] == 'save-room-yaml':
+        sources = _descriptor_sources([(hidden, 'room'), (same_label, 'room')])
+        selected = next(d for d, _ in sources if d['id'] == same_label['id'])
+        assert selected['files'] == same_label['files']
+        return 0
     for rows in ([(hidden, 'room')], [(hidden, 'room'), (same_label, 'room')],
                  [(same_label, 'room'), (hidden, 'room')]):
         expected = [(same_label, 'room')] if len(rows) > 1 else []
@@ -78,6 +83,8 @@ def main():
 def function(signature):
     start = source.index(signature)
     return source[start:source.index("\n}\n", start) + 3]
+
+assert "|| kind == JOB_SAVE_ROOM_YAML" in function("bool JobStart(")
 
 fixture = r'''
 #include <cassert>
@@ -138,6 +145,8 @@ with tempfile.TemporaryDirectory(prefix="ctr-hidden-patch-tracks-") as temp:
     fake.write_text(wrapper)
     subprocess.run([sys.executable, "-I", "-B", "-c", adapter, str(fake), ",".join(hashes),
                     "generate", hashes[-1], visible], check=True)
+    subprocess.run([sys.executable, "-I", "-B", "-c", adapter, str(fake), ",".join(hashes),
+                    "save-room-yaml", hashes[-1], visible], check=True)
     fake.write_text(wrapper.replace("def _yaml_pick_names", "def unused_alias_resolver")
                     .replace("'old-key', ", ""))
     subprocess.run([sys.executable, "-I", "-B", "-c", adapter, str(fake), ",".join(hashes),
