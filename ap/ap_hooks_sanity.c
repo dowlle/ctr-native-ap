@@ -21,7 +21,7 @@ static struct {
     unsigned short recolour;
 } ap_sanity_objects[512];
 static long ap_sanity_sent[16384];
-static int ap_sanity_sent_count, ap_sanity_feed[3], ap_sanity_feed_ticks;
+static int ap_sanity_sent_count;
 
 void AP_SanityLevelInstances(struct InstDef *defs, int count)
 {
@@ -99,8 +99,6 @@ static int AP_SanityEnsure(struct GameTracker *gt)
         }
         ap_sanity_epoch = epoch;
         ap_sanity_ready = ap_sanity_sent_count = 0;
-        memset(ap_sanity_feed, 0, sizeof ap_sanity_feed);
-        ap_sanity_feed_ticks = 0;
     }
     if (!row || !ap_sanity_defs || ap_sanity_defs_count < 0 || ap_sanity_defs_count > 512) return 0;
     if (ap_sanity_ready) return ap_sanity_ready > 0;
@@ -154,8 +152,6 @@ int AP_SanityPickup(struct Instance *inst, struct Driver *driver)
             ap_sanity_sent[at] = code;
             ++ap_sanity_sent_count;
             ap_sanity_objects[i].open = 0;
-            ++ap_sanity_feed[ap_sanity_objects[i].family];
-            if (!ap_sanity_feed_ticks) ap_sanity_feed_ticks = 240;
             inst->colorRGBA = ap_sanity_objects[i].color;
             inst->alphaScale = ap_sanity_objects[i].alpha;
             ap_sanity_objects[i].recolour = AP_SanityTag(AP_PAD_LOOK_DONE, AP_SANITY_VISIBILITY);
@@ -173,15 +169,6 @@ void AP_SanityTick(struct GameTracker *gt)
         ap_sanity_objects[i].open = (unsigned char)open;
         int look = AP_SanityLook(!open, AP_LocationLogicState(ap_sanity_objects[i].code));
         ap_sanity_objects[i].recolour = AP_SanityTag(look, AP_SANITY_VISIBILITY);
-    }
-    if (ap_sanity_feed_ticks > 0 && --ap_sanity_feed_ticks == 0) {
-        static const char *const labels[] = {"WEAPON CRATES", "WUMPA CRATES", "WUMPA FRUIT"};
-        for (i = 0; i < 3; ++i) if (ap_sanity_feed[i]) {
-            char line[64];
-            snprintf(line, sizeof line, "%d %s CHECKED", ap_sanity_feed[i], labels[i]);
-            AP_FeedNoticeLine(line);
-            ap_sanity_feed[i] = 0;
-        }
     }
 }
 
