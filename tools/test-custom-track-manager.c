@@ -311,7 +311,7 @@ int main(void)
 	           "Ready package renders YAML");
 	expect_contains(yaml, "custom_tracks:\n  - id: \"package/fixture-track/1.2.3\"",
 	                "YAML is one plan descriptor in a custom_tracks list");
-	expect_contains(yaml, "    content_id: \"fixture-track\"\n", "YAML names the track key");
+	expect_contains(yaml, "    track_key: \"fixture-track\"\n", "YAML names the track key");
 	expect_contains(yaml, "    uuid: \"11111111-2222-4333-8444-555555555555\"",
 	                "YAML carries package provenance");
 	expect_contains(yaml, "    revision: \"1.2.3\"\n", "revision is quoted so 1.0 stays text");

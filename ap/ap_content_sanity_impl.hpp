@@ -1,10 +1,12 @@
 // Included inside the content-plan parser namespace. No runtime dependencies.
 static void sanity_checks(const J &p, State &out, const J &registry, std::map<int64_t, J> &expected) {
     const J &s = p.at("sanity");
+    const int exclusion_version = s.contains("exclusion_version") ? number(s["exclusion_version"], 2, 2) : 1;
     const bool context = s.contains("logic_difficulty");
     const int rules_version = s.contains("rules_version") ? number(s["rules_version"], 1, 6) : 0;
     J shape = s;
     shape.erase("rules_version");
+    shape.erase("exclusion_version");
     if (context) fields(shape, {"itemboxsanity", "wumpasanity", "shortcut_knowledge", "tracks", "logic_difficulty", "boost_blue_fire"});
     else fields(shape, {"itemboxsanity", "wumpasanity", "shortcut_knowledge", "tracks"});
     const int difficulty = context ? number(s["logic_difficulty"], 0, 2) : out.capability.present ? out.capability.logic_difficulty : 2;
@@ -118,6 +120,7 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
             const auto &catalog = registry.at("sanity_exclusions");
             const std::string digest = row["lev_sha256"];
             if (catalog.contains(digest)) for (const auto &c : catalog[digest]) {
+                if (c.value("sanity_since", 1) > exclusion_version) continue;
                 const std::string family = c.value("family", std::string("weapon_crate"));
                 for (int f = 0; f < 3; ++f) if (family == kinds[f]) excluded_by_kind[f].insert(number(c["ordinal"], 1, 65536));
             }
@@ -125,8 +128,16 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
         std::set<int> &excluded = excluded_by_kind[0];
         if (track["origin"] == "custom") {
             for (const auto &pad : out.pads) if (standalone.count(tid) && tid == pad.track_id && !pad.box_spots) {
+                const std::set<int> carried(pad.box_excluded, pad.box_excluded + pad.box_excluded_count);
+                if (exclusion_version == 1 && count)
+                    need(std::includes(excluded.begin(), excluded.end(), carried.begin(), carried.end()),
+                         "fallback exclusions require the updated sanity catalog");
+                // Version 1 preserves the historical pool. New plans use
+                // the carried exclusions to reproduce the physical seats.
+                const auto &seat_excluded = exclusion_version == 1 ? excluded : carried;
+                const int raw_count = exclusion_version == 1 ? inv["counts"][0].get<int>() : pad.box_crates;
                 std::vector<int> pool;
-                for (int n = 1; n <= inv["counts"][0].get<int>(); ++n) if (!excluded.count(n)) pool.push_back(n);
+                for (int n = 1; n <= raw_count; ++n) if (!seat_excluded.count(n)) pool.push_back(n);
                 const int seats = std::min((int)pool.size(), pad.box_count);
                 for (int i = 0; i < seats; ++i) excluded.insert(pool[i * pool.size() / seats]);
             }

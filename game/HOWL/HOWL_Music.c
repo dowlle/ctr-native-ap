@@ -174,9 +174,8 @@ u32 Music_AsyncParseBanks(void)
 					break;
 				index = HOWL_CustomMusic_FallbackFXBank();
 			}
-			// The Cortex Vortex race: its bundled music when it fits,
-			// Oxide Station's bank (the host level) otherwise.
-			else if (HOWL_CustomMusic_CortexLoadBank(level, &thisBank))
+			// A seed race or a custom boss venue with Boss Music set to TRACK.
+			else if (HOWL_CustomMusic_ContentLoadBank(level, &thisBank))
 				break;
 			else
 #endif
@@ -457,8 +456,7 @@ u32 Music_AsyncParseBanks(void)
 					break;
 				index = HOWL_CustomMusic_FallbackSongBank();
 			}
-			// Cortex Vortex's song goes with its bank: SetSong answers 0
-			// unless stage 0 loaded the bundled bank.
+			// Seed races and boss venues use the .sca paired with their bank.
 			else if (HOWL_CustomMusic_SetSong())
 				break;
 			else
@@ -570,7 +568,21 @@ void Music_Adjust(u32 songID, int newTempo, struct SongSet *set, u32 songSetActi
 	if (sdata->cseqHighestIndex != songID)
 	{
 		//  (loopAtEnd)
-		CseqMusic_Start(songID, newTempo, set, songSetActiveBits, 1);
+		int started = CseqMusic_Start(songID, newTempo, set, songSetActiveBits, 1);
+#ifdef CTR_CUSTOM_PACKAGES
+		if (songID == CSEQ_SONG_LEVEL && s_customSongReady)
+		{
+			// The next race audio update can retry if the sequencer was busy.
+			if (!started)
+			{
+				Music_End();
+				return;
+			}
+			HOWL_CustomMusic_Log("started the track's own music", NULL);
+		}
+#else
+		(void)started;
+#endif
 
 		sdata->cseqBoolPlay = true;
 

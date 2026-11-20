@@ -73,6 +73,14 @@ int CustomPackage_GetPairReport(const struct CustomPackageOwned *package, struct
 	return 1;
 }
 
+int CustomPackage_GetAudio(const struct CustomPackageOwned *package, const void **data, size_t *size)
+{
+	(void)package;
+	if (data) *data = NULL;
+	if (size) *size = 0;
+	return 0;
+}
+
 int CustomPackage_GetRaceLaps(const struct CustomPackageOwned *package, unsigned int *laps, char *error, size_t errorSize)
 {
 	(void)package, (void)error, (void)errorSize;

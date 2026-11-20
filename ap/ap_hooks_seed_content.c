@@ -38,6 +38,9 @@ static int AP_SeedScanFromManager(int stored)
 	case CTR_CT_MANAGER_UNSUPPORTED:
 	case CTR_CT_MANAGER_INCOMPATIBLE: return AP_SEED_SCAN_REFUSED;
 	case CTR_CT_MANAGER_IO_ERROR: return AP_SEED_SCAN_IO_ERROR;
+	case CTR_CT_MANAGER_LOAD_FAILED: return AP_SEED_SCAN_LOAD_FAILED;
+	case CTR_CT_MANAGER_PATH_TOO_LONG: return AP_SEED_SCAN_PATH_TOO_LONG;
+	case CTR_CT_MANAGER_RACE_GRID_UNSUPPORTED: return AP_SEED_SCAN_RACE_GRID_UNSUPPORTED;
 	default: return AP_SEED_SCAN_UNKNOWN;
 	}
 }
@@ -310,6 +313,7 @@ int AP_SeedContentRows(struct AP_SeedContentRow *rows, int max)
 		snprintf(row->folder, sizeof row->folder, "cortex-vortex");
 		row->scan = ap_custom_content_scanned ? (ap_content_cortex_ready ? AP_SEED_SCAN_READY : AP_SEED_SCAN_NOT_INSTALLED)
 		                                      : AP_SEED_SCAN_UNKNOWN;
+		if (ap_content_cortex_load_error) row->scan = AP_SeedScanFromManager(ap_content_cortex_load_error);
 		row->source = AP_SEED_SOURCE_BUNDLED;
 		row->index = -1;
 		row->locator.bigfile_index = -1;

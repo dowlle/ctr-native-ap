@@ -61,7 +61,7 @@ NativeConfig g_config;
 '''
 
 stubs = r'''
-static char assets_root[256];
+static char assets_root[CTR_CT_MANAGER_PATH_MAX];
 const char *NativeAssets_GetAssetDir(void) { return assets_root; }
 static ctr_content_package plan_package;
 static ctr_content_pad plan_pad;
@@ -88,6 +88,7 @@ static int ap_cortex_track_content_required;
 #define CTR_CFG_CORTEX_VRM_SHA256 "4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d"
 static unsigned ap_state_gen;
 static int used_managed, used_files, applied, staged;
+static int refuse_files;
 static char used_lev[CTR_CT_MANAGER_PATH_MAX], used_vrm[CTR_CT_MANAGER_PATH_MAX], used_name[CTR_CT_NAME_MAX];
 static struct CustomTrackSeedDescriptor applied_descriptor;
 static struct CustomTrackRaceContext staged_race;
@@ -102,6 +103,7 @@ static int record_files(const char *lev, const char *vrm, const char *name)
 	used_files++;
 	snprintf(used_lev, sizeof used_lev, "%s", lev); snprintf(used_vrm, sizeof used_vrm, "%s", vrm);
 	snprintf(used_name, sizeof used_name, "%s", name);
+	if (refuse_files) return 0;
 	return CustomTrack_UseContentFiles(lev, vrm, name);
 }
 static int record_descriptor(const struct CustomTrackSeedDescriptor *d)
@@ -146,6 +148,17 @@ static void reset_calls(void)
 	used_managed = used_files = applied = staged = 0;
 	log_text[0] = 0;
 }
+/* Use a longer spelling of the same real directory and its verified files. */
+static void lengthen_assets_root(void)
+{
+	size_t n = strlen(assets_root);
+	while (n < CUSTOM_TRACK_PATH_MAX)
+	{
+		assets_root[n++] = '/';
+		assets_root[n++] = '.';
+	}
+	assets_root[n] = 0;
+}
 /* Connect and Rescan: the content-plan branch of AP_CustomContentPreflightSeed. */
 static int preflight(void)
 {
@@ -159,6 +172,7 @@ static int preflight(void)
 int main(void)
 {
 	char dir[512], lev[600], vrm[600], error[256];
+	char short_root[sizeof assets_root];
 	unsigned char image[IMAGE_BYTES], changed[IMAGE_BYTES];
 	unsigned char vrmBytes[22] = {0};
 	struct CustomContentVerification report;
@@ -166,6 +180,7 @@ int main(void)
 	size_t levSize;
 	snprintf(assets_root, sizeof assets_root, "/tmp/ctr-content-hooks-XXXXXX");
 	if (!mkdtemp(assets_root)) return 2;
+	strcpy(short_root, assets_root);
 	snprintf(dir, sizeof dir, "%s/tracks", assets_root); mkdir(dir, 0700);
 	snprintf(dir, sizeof dir, "%s/tracks/fixture-loop", assets_root); mkdir(dir, 0700);
 	snprintf(dir, sizeof dir, "%s/tracks/fixture-loop/original", assets_root); mkdir(dir, 0700);
@@ -235,6 +250,31 @@ int main(void)
 	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6 &&
 	       staged_race.roomIdentity == 0x123456789abcdef0ULL,
 	       "re-entering the same pad uses the admitted room without a socket dependency");
+
+	reset_calls();
+	refuse_files = 1;
+	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == -1 && !AP_ContentPadReady(3) &&
+	       ap_custom_content_required && ap_content_package_scan[0] == CTR_CT_MANAGER_LOAD_FAILED + 1 &&
+	       used_files == 1 && applied == 0 && staged == 0, "loader refusal updates both pad and seed readiness");
+	refuse_files = 0;
+	expect(preflight() && AP_ContentPadReady(3), "a new verification can restore readiness");
+	{
+		lengthen_assets_root();
+		expect(!preflight() && !AP_ContentPadReady(3) &&
+		       ap_content_package_scan[0] == CTR_CT_MANAGER_PATH_TOO_LONG + 1,
+		       "verified files at an overlong package path are refused at preflight");
+		expect(!preflight() && ap_custom_content_status.state == CTR_CT_MANAGER_PATH_TOO_LONG,
+		       "rescanning the same long path leaves the package refused");
+		strcpy(assets_root, short_root);
+		expect(preflight() && AP_ContentPadReady(3), "rescanning a shorter path restores package readiness");
+		struct CustomTrackSeedDescriptor noGrid = applied_descriptor;
+		noGrid.flagAiNav = 0;
+		expect(AP_ContentDescriptorRefusal(&noGrid) == CTR_CT_MANAGER_RACE_GRID_UNSUPPORTED,
+		       "a verified pair without AI paths gets a grid refusal");
+		noGrid.soloRace = 1;
+		expect(AP_ContentDescriptorRefusal(&noGrid) == CTR_CT_MANAGER_LOAD_FAILED,
+		       "a solo race does not require an opponent grid");
+	}
 
 	/* A4-70: a pad whose Relic Race runs other laps than its Trophy Race and CTR
 	   Challenge stages each mode's own laps in the race context. */
@@ -408,6 +448,23 @@ int main(void)
 		       staged_race.trophyLocation == 35026001 && staged_race.physicalPad == 5 && staged_race.returnHub == 27 &&
 		       CustomRaceContext_Valid(&staged_race) &&
 		       strcmp(staged_race.levSha256, CTR_CFG_CORTEX_LEV_SHA256) == 0, "a valid Cortex Vortex race context is staged");
+		reset_calls();
+		refuse_files = 1;
+		expect(AP_ContentPreparePad(5, AP_CONTENT_MODE_RELIC) == -1 && !AP_ContentPadReady(5) &&
+		       ap_cortex_track_content_required && ap_content_cortex_load_error == CTR_CT_MANAGER_LOAD_FAILED + 1 && staged == 0,
+		       "Cortex Vortex loader refusal also updates pad and seed readiness");
+		refuse_files = 0;
+		ap_content_cortex_ready = AP_ContentScanCortex();
+		expect(AP_ContentPadReady(5) && !ap_content_cortex_load_error, "a scan clears the Cortex Vortex load failure");
+		lengthen_assets_root();
+		ap_content_cortex_ready = AP_ContentScanCortex();
+		expect(!AP_ContentPadReady(5) && ap_content_cortex_load_error == CTR_CT_MANAGER_PATH_TOO_LONG + 1,
+		       "bundled files at an overlong path are refused");
+		expect(!AP_ContentScanCortex() && ap_content_cortex_load_error == CTR_CT_MANAGER_PATH_TOO_LONG + 1,
+		       "rescanning the same long path leaves Cortex Vortex refused");
+		strcpy(assets_root, short_root);
+		ap_content_cortex_ready = AP_ContentScanCortex();
+		expect(AP_ContentPadReady(5) && !ap_content_cortex_load_error, "the shorter path restores Cortex Vortex readiness");
 		/* A changed byte after admission: same size, other hash. */
 		snprintf(cmd, sizeof cmd, "printf 'X' | dd of='%s' bs=1 seek=100 conv=notrunc status=none", cvLev);
 		expect(system(cmd) == 0, "bundled LEV changed in place");
@@ -461,6 +518,13 @@ int main(void)
 	       "A6-23: fixture verifies with one spawn, no AI paths and no Arcade capability");
 	snprintf(plan_package.lev_sha256, sizeof plan_package.lev_sha256, "%s", report.levSha256);
 	plan_package.lev_bytes = (uint32_t)levSize;
+	plan_package.capabilities |= AP_CONTENT_CAP_ARCADE;
+	plan_pad.modes[0] = AP_CONTENT_MODE_TROPHY;
+	expect(!preflight() && ap_content_package_scan[0] == CTR_CT_MANAGER_RACE_GRID_UNSUPPORTED + 1 &&
+	       AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == -1 && used_files == 0,
+	       "the package without AI paths is refused for an opponent race during preflight");
+	plan_package.capabilities &= ~AP_CONTENT_CAP_ARCADE;
+	plan_pad.modes[0] = AP_CONTENT_MODE_RELIC;
 	expect(preflight() && AP_ContentPadReady(3), "A6-23: Relic-only package is Ready");
 	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_RELIC) == 6,
 	       "A6-23: Relic-only pad arms the production loader");
