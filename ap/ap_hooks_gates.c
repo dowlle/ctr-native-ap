@@ -1675,7 +1675,7 @@ int ctr_cfg_warp_stage2_unlocked(int physPadLevelID)
 // ── A3-17: unlock reasons in the AP log feed ────────────────────────────────
 // The engine half of ap_unlock_reasons_logic.h: snapshot what is open (pads,
 // stage 2, hub doors, Wumpa Shop shelves, boss garages), diff against the last
-// snapshot, and queue at most one reason line per call. Runs after each
+// snapshot, and queue the unlock reasons. Runs after each
 // drained received item (AP_UnlockReasonsAfterItem, from the drain loop in
 // ap_hooks_net.c) and once per frame after AP_FeedEndDrain
 // (AP_UnlockReasonsEndDrain), so the reason line lands directly behind the
@@ -1686,10 +1686,18 @@ int ctr_cfg_warp_stage2_unlocked(int physPadLevelID)
 // from race finishes and whose AP-fruit credit lands after the loop
 // (AP_WumpaCommitReceived); shelves are therefore only diffed in the
 // per-frame call. While the feed is unprimed (initial inventory absorb) the
-// snapshot is rebased silently, so a reconnect's replay never re-toasts.
+// snapshot is rebased silently. Held pads are reconciled only when it goes live.
 
 static AP_UnlockWatch ap_unlock_watch;
 static int ap_unlock_watch_valid = 0;
+static unsigned ap_unlock_held_pads[AP_UNLOCK_DOOR_COUNT];
+
+static void AP_UnlockReasonsConnectReset(int sameRoom)
+{
+	ap_unlock_watch_valid = 0;
+	if (!sameRoom)
+		memset(ap_unlock_held_pads, 0, sizeof ap_unlock_held_pads);
+}
 
 // What a pad leads to this seed, same naming as the tracker's map nodes: the
 // plan's room title, the shuffled destination's track or cup name, then the
@@ -1776,6 +1784,12 @@ static void AP_UnlockWatchCapture(AP_UnlockWatch *w)
 		int open = ctr_cfg_warp_unlocked(phys) && ctr_cfg_racer_lock_met(phys);
 		if (open)
 			w->padOpen |= 1u << slot;
+		else if (pad && ap_content_pad_rule_met(pad, ap_recv_count) && AP_ContentPadRacerMet(pad))
+		{
+			int door = AP_UnlockPadDoor(pad->hub, pad->keys);
+			if (door >= 0)
+				w->padsBehindDoor[door] |= 1u << slot;
+		}
 		// Stage 2 counts as open only once the pad itself is open and the
 		// plan pad really has a second stage: receiving the stage-2 items
 		// while the pad is still locked announces nothing, and the later
@@ -1809,7 +1823,7 @@ static void AP_UnlockWatchCapture(AP_UnlockWatch *w)
 	}
 }
 
-// Capture, diff against the last snapshot, queue the one reason line when
+// Capture, diff against the last snapshot, queue reason lines when
 // something newly opened, and adopt the new snapshot either way. Three modes:
 //
 //   ITEM (after each drained receipt): reports pads, stage 2, doors and
@@ -1818,7 +1832,7 @@ static void AP_UnlockWatchCapture(AP_UnlockWatch *w)
 //   per-item diff can only contain item-caused transitions.
 //
 //   FRAME_QUIET (before the drain, and after it when nothing was drained):
-//   reports shop shelves only (race-finish banking is the one announced
+//   reports ordinary shop shelves only (race-finish banking is the one announced
 //   non-item opening) and silently adopts every other change. Running it
 //   right BEFORE the drain rebases whatever the poll or a reconcile resolved
 //   since the last frame (a boss win, a venue download finishing), so it can
@@ -1855,12 +1869,43 @@ static void AP_UnlockReasonsUpdate(int mode)
 	        : 0;
 	if (mode == AP_UNLOCK_MODE_FRAME_QUIET)
 		count = AP_UnlockEventsOnly(ev, count, AP_UNLOCK_SHOP);
-	if (count > 0 && ap_feed_primed && AP_HubFeedOn())
+	if (ap_feed_primed && ap_content_plan_active())
 	{
-		char line[AP_FEED_TEXT_CAP];
-		AP_UnlockReasonLine(line, (int)sizeof line, ev[0].kind,
-		                    AP_UnlockEventName(&ev[0]), count - 1);
-		AP_FeedEnqueue(line, LIGHT_GREEN, 1);
+		unsigned foldedPads = 0, foldedDoors = 0;
+		int remaining = 0;
+		const int feedMode = AP_ItemFeedMode();
+		for (int d = 0; d < AP_UNLOCK_DOOR_COUNT; ++d)
+		{
+			unsigned opened = AP_UnlockHeldForDoor(&ap_unlock_held_pads[d], &now, d);
+			if (!opened)
+				continue;
+			foldedPads |= opened;
+			foldedDoors |= 1u << d;
+			if (feedMode != AP_ITEM_FEED_OFF)
+			{
+				char line[AP_FEED_TEXT_CAP];
+				AP_UnlockReasonLine(line, sizeof line, AP_UNLOCK_DOOR,
+				                    ap_unlock_door_names[d], 0, __builtin_popcount(opened));
+				AP_FeedEnqueueHeld(line, LIGHT_GREEN, 1);
+			}
+		}
+		for (int i = 0; i < count; ++i)
+		{
+			const AP_UnlockEvent e = ev[i];
+			if ((e.kind == AP_UNLOCK_PAD && (foldedPads & (1u << e.index))) ||
+			    (e.kind == AP_UNLOCK_DOOR && (foldedDoors & (1u << e.index))) ||
+			    (e.kind == AP_UNLOCK_SHOP && feedMode == AP_ITEM_FEED_IMPORTANT))
+				continue;
+			ev[remaining++] = e;
+		}
+		if (remaining > 0 && feedMode != AP_ITEM_FEED_OFF)
+		{
+			char line[AP_FEED_TEXT_CAP];
+			AP_UnlockReasonLine(line, sizeof line, ev[0].kind,
+			                    AP_UnlockEventName(&ev[0]), remaining - 1, 0);
+			AP_FeedLinesEnqueue(&ap_feed, line, LIGHT_GREEN, 1)->unimportant =
+				ev[0].kind == AP_UNLOCK_SHOP;
+		}
 	}
 
 	ap_unlock_watch = now;

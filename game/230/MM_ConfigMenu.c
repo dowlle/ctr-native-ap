@@ -450,6 +450,19 @@ static int TrapDuration_Index(int value)
 
 // CFG_ENUM dispatch: each enum entry owns a ladder; picked by the field the
 // entry edits (pointer identity, no string compare).
+#ifdef CTR_AP
+static const int s_itemFeedValues[] = { AP_ITEM_FEED_ALL, AP_ITEM_FEED_IMPORTANT, AP_ITEM_FEED_OFF };
+static const char *const s_itemFeedNames[] = { "ALL", "IMPORTANT", "OFF" };
+
+static int ItemFeed_Index(int value)
+{
+	for (int i = 0; i < 3; ++i)
+		if (s_itemFeedValues[i] == value)
+			return i;
+	return 0;
+}
+#endif
+
 static const char *Enum_Label(const ConfigEntry *e)
 {
 	if (e->valuePtr == &g_config.aspectRatio)
@@ -459,6 +472,8 @@ static const char *Enum_Label(const ConfigEntry *e)
 	if (e->valuePtr == &g_config.vsync)
 		return s_vsyncNames[Vsync_Index(*(int *)e->valuePtr)];
 #ifdef CTR_AP
+	if (e->valuePtr == &g_config.itemFeed)
+		return s_itemFeedNames[ItemFeed_Index(*(int *)e->valuePtr)];
 	if (e->valuePtr == &g_config.deathLink)
 		return s_dlinkNames[Dlink_Index(AP_DeathLinkRowValue(*(int *)e->valuePtr))];
 	if (IsDlSendField((const int *)e->valuePtr))
@@ -506,6 +521,14 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 		return;
 	}
 #ifdef CTR_AP
+	if (e->valuePtr == &g_config.itemFeed)
+	{
+		int index = ItemFeed_Index(*(int *)e->valuePtr) + dir;
+		if (index < 0) index = 0;
+		if (index > 2) index = 2;
+		*(int *)e->valuePtr = s_itemFeedValues[index];
+		return;
+	}
 	if (e->valuePtr == &g_config.deathLink)
 	{
 		int i = Dlink_Index(*(int *)e->valuePtr) + dir;
@@ -651,8 +674,8 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 	}
 	if (e->valuePtr == &g_config.itemFeed)
 	{
-		first = "Items sent and received,";
-		second = "shown at the bottom left.";
+		first = "IMPORTANT hides filler items";
+		second = "and shop stock notices.";
 	}
 	if (first == 0)
 		return;

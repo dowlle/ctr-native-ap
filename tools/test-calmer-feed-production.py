@@ -40,22 +40,35 @@ stubs = r'''
 #include <string.h>
 #include "ap/ap_feed_lines_logic.h"
 #include "ap/ap_item_flags.h"
+#include "ap/ap_class_check_policy.h"
 #include "ap/ap_trap_sched_logic.h"
+#define CTR_AP
+#include "include/platform/native_config.h"
 #define AP_FEED_ITEM_CAP 32
 #define AP_FEED_PLAYER_CAP 24
 #define AP_FEED_FMT_OWN "%s"
 #define AP_FEED_FMT_FOREIGN "%s FROM %s"
+#define AP_FEED_FMT_SENT "%s TO %s"
 #define AP_FEED_ITEM_UNKNOWN "AP ITEM"
 #define CORTEX_RED 7
 static AP_FeedLines ap_feed;
 static AP_TrapSched g_sched;
 static int active=1, ap_feed_primed=1;
+static int mode=AP_ITEM_FEED_ALL;
+static int AP_ItemFeedMode(void) { return mode; }
 static long long ap_feed_hwm=-1;
 static int ctr_cfg_active(void) { return active; }
 static int AP_FeedConsumeSelfRung(long long item) { (void)item;return 0; }
 static int ap_net_self_slot(void) { return 1; }
 static int ap_net_item_text(long long item,int player,char *a,int ac,char *b,int bc) {
     (void)item;(void)player;snprintf(a,ac,"WUMPA FRUIT");snprintf(b,bc,"OTHER");return 1;
+}
+static unsigned scout_flags;
+static int ap_net_scout_known(long code, long long *item, int *player, unsigned *flags) {
+    *item=10; *player=2; *flags=scout_flags; return code==100;
+}
+static int ap_net_scout_text(long code, char *a, int ac, char *b, int bc) {
+    (void)code; return ap_net_item_text(10,2,a,ac,b,bc);
 }
 static void AP_CeremonySanitize(const char *s,char *d,int n) { snprintf(d,n,"%s",s); }
 static int AP_ItemDisplayAlias(long long item,char *d,int n) { (void)item;(void)d;(void)n;return 0; }
@@ -88,6 +101,22 @@ int main(void) {
     AP_FeedOnItemReceived(10,2,8,0);
     AP_FeedOnItemReceived(10,2,9,0);
     assert(ap_feed.qcount==7 && strstr(ap_feed.queue[6].text,"2 WUMPA FRUIT FROM OTHER"));
+    mode=AP_ITEM_FEED_IMPORTANT;
+    AP_FeedLinesFilterImportant(&ap_feed);
+    assert(ap_feed.qcount==4);
+    AP_FeedOnItemReceived(10,2,10,0);
+    assert(ap_feed.qcount==4);
+    AP_FeedOnItemReceived(10,2,11,AP_ITEM_FLAG_TRAP);
+    assert(ap_feed.qcount==5);
+    AP_FeedOnLocationSent(100);
+    assert(ap_feed.qcount==5);
+    scout_flags=AP_ITEM_FLAG_USEFUL;
+    AP_FeedOnLocationSent(100);
+    assert(ap_feed.qcount==6 && !strcmp(ap_feed.queue[5].text,"WUMPA FRUIT TO OTHER"));
+    mode=AP_ITEM_FEED_ALL;
+    scout_flags=0;
+    AP_FeedOnLocationSent(100);
+    assert(ap_feed.qcount==7);
     AP_FeedLinesReset(&ap_feed);
     AP_FeedTrapLine(13,0,1,AP_FEED_TRAP_ARMED,"NITRO DROP ARMED",1);
     assert(!ap_feed.qcount);
@@ -167,7 +196,9 @@ int main(void) {
 '''
 with tempfile.TemporaryDirectory() as tmp:
     path = Path(tmp)
-    (path/'test.c').write_text(stubs + function('AP_FeedOnItemReceived') +
+    (path/'test.c').write_text(stubs + function('AP_FeedFiltersItem', src, 'static int ') +
+                              function('AP_FeedOnItemReceived') +
+                              function('AP_FeedOnLocationSent', src, 'static void ') +
                               function('AP_FeedTrapLine') +
                               function('AP_FeedTrapReissue') +
                               function('AP_TrapSaveFeedIdentities',runtime,'static void ') +
