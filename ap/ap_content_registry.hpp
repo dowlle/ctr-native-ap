@@ -9431,6 +9431,11 @@ static const char kContentRegistryJSON[] = R"CTRREG(
     ],
     "sunset-vista": [
       [
+        "97fd76f06e3c57207560751728eb23dbf81980887e5f7e25f2296917578735b5",
+        "1.2.0",
+        3
+      ],
+      [
         "3c4ac895bf8c11ecd44730b40bab7a8d86471f3af55f6ea10146740b90cf37d9",
         "1.0.0"
       ]

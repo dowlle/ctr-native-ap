@@ -875,7 +875,7 @@ static bool repeatable_pickups(const J &p) {
     return has_feature(p, "repeatable_pickups_v1");
 }
 static constexpr char kCarriedRulings[] = "carried_track_rulings_v1";
-static constexpr int kTrackRulingVersion = 2;
+static constexpr int kTrackRulingVersion = 3;
 static constexpr char kCountryPickupPin[] = "9fa73436daaf91434ede1d6fb036a8e6dff225c55533cc0be5723d229b5e53bd";
 static constexpr char kToastyPickupPin[] = "2b18c6305d3cfe591e979eabe42e7815fe475479d49f59d5b7b50b06f701ac5d";
 static constexpr char kRoyalPickupPin[] = "fca9e96a57c850e68e0226382645b4d6df5b4e7ebeb61459269ec2427ffab96b";

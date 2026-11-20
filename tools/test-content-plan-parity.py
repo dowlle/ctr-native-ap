@@ -2695,7 +2695,7 @@ for field in ("finish_floors", "finish_free"):
     plan["item_boxes"]["pickup_rules"].remove(track_id)
     cases.append((f"green-royal-carried-{field}-and-source-truncated", bad, False))
 # A LEV reviewed under a different track key must not hide Royal's source.
-from worlds.ctr.test.test_carried_pickup_limits import later_revision
+from worlds.ctr.test.test_carried_pickup_limits import later_revision, sunset_mixed_options
 from worlds.ctr.test.test_green_hill_raceway import PACKAGE as green_package
 
 options = royal_options(item_box_count=5, wumpasanity="both")
@@ -2716,7 +2716,8 @@ for fixture, reviewed in ((matsuri, 27), (lockbox_track_4, 29)):
     package["capabilities"].update(weapon_crates=reviewed + 1, fruit_crates=3, loose_fruit=0)
     wire = first_world(options, seed=3).fill_slot_data()
     plan = wire["content_plan"]
-    assert plan["track_ruling_sources"]["version"] == 2 and plan["track_ruling_sources"]["pickup_limits"] is True
+    assert plan["track_ruling_sources"]["version"] == track_rulings.RULING_VERSION
+    assert plan["track_ruling_sources"]["pickup_limits"] is True
     [excluded] = plan["item_boxes"][crate_exclusions.KEY]
     assert excluded["track_id"] == tid and excluded["crates"] == [{"ordinal": 1, "pos": None}]
     cases.append((f"a6-15-carried-{package['content_id']}", wire, True))
@@ -2729,6 +2730,10 @@ nina.update(id="package/nina-s-nightmare/9.0.0", revision="9.0.0", content_id="n
 wire = first_world(box_options(custom=[nina, matsuri()], itemboxsanity=50, progressive_boost="off"),
                    seed=3).fill_slot_data()
 cases.append(("mixed-exclusions-foreign-lockbox-pin-keeps-nina-source", wire, True))
+
+for revision, pin in (("1.2.0", None), ("9.0.0", "cd" * 32)):
+    wire = make_world(sunset_mixed_options(revision, pin), seed=3, stop_before="pre_fill").fill_slot_data()
+    cases.append((f"sunset-vista-{revision}-with-carried-royal", wire, True))
 
 # Switching the LEV in a legacy exact-pin room cannot supply a carried source.
 wire = make_world(royal_options(item_box_count=5), seed=3, stop_before="pre_fill").fill_slot_data()
