@@ -591,6 +591,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	dist = x * x + y * y + z * z;
 
 	levelID = warppadObj->levelID;
+#if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
+	const int legacyCortex = ctr_cfg_active() && ctr_cfg.cortex_track.option && levelID == AP_CORTEX_DEST;
+#endif
 
 #ifdef CTR_AP
 	// #375: a start from the in-game tracker arrives at this pad. The kart is
@@ -619,6 +622,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 	// if near a portal
 	if (
+#if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
+	    (legacyCortex && dist < 0x144000) ||
+#endif
 	    // Trophy tracks (-16)
 	    ((levelID < AH_WP_SLIDE_COLISEUM) && (dist < 0x144000)) ||
 
@@ -653,6 +659,11 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			)
 			{
 				// default
+#if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
+				if (legacyCortex)
+					warppadLNG = "CORTEX VORTEX";
+				else
+#endif
 #ifdef CTR_AP
 				if (ap_content_plan_active())
 				{
@@ -732,7 +743,6 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					const RECT *view = &gGT->pushBuffer[0].rect;
 					const int x = view->x + view->w / 2;
 					const int bottom = view->y + view->h - apLift;
-					if (levelID == AP_CORTEX_DEST) warppadLNG = "CORTEX VORTEX";
 					DecalFont_DrawLineBox(warppadLNG, x, bottom - 30 - 11, view->w - 160,
 					                      FONT_BIG, JUSTIFY_CENTER | ORANGE, TEXT_MARQUEE, TEXT_SLOT_PAD_TITLE, NULL);
 					UI_DrawTrackCredit(credit, x, bottom - 23, view->w - 128);

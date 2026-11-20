@@ -566,11 +566,21 @@ extern "C" void CustomPackage_TrackCredit(const struct CustomPackageLocalInfo *l
                                           char *out, size_t size)
 {
 	if (!out || !size) return;
+	const char *source = nullptr;
+	if (local->xdelta)
+	{
+		source = "an imported xdelta pack";
+		for (const auto &row : g_trackSources)
+			if (row.kind == TRACK_SOURCE_PATCH && TrackSources_HexEqual(row.patchSha256, local->patchSha256))
+			{
+				source = row.patchFile;
+				break;
+			}
+	}
+	else if (local->saphi || local->permissionTrackID)
+		source = "Project Saphi";
 	CustomTrackCredit_Format(out, size, local->levSha256, local->vrmSha256, local->permissionTrackID,
-	                         local->author[0] ? local->author : fallbackAuthor,
-	                         local->saphi || local->permissionTrackID ? "Project Saphi" : nullptr);
-	if (local->xdelta && !std::strcmp(out, "From a local custom track package"))
-		std::snprintf(out, size, "From an imported xdelta pack");
+	                         local->author[0] ? local->author : fallbackAuthor, source);
 }
 
 extern "C" void CustomTrackCredit_EnsureRegistry(const char *assets)
