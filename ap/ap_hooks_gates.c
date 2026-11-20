@@ -817,7 +817,14 @@ int AP_BossMineExpiryNow(void)
 	if (gGT == NULL || !ctr_cfg_active() || (gGT->gameMode1 & ADVENTURE_BOSS) == 0)
 		return 0;
 	if (gGT->bossID == 4 || gGT->bossID == 5)
+	{
+#ifdef CTR_CUSTOM_TRACKS
+		// Cortex Vortex can use Oxide Station's engine slot.
+		if (CustomTrack_OxideFinalServing(gGT->levelID, gGT->bossID, 1))
+			return 1;
+#endif
 		return gGT->levelID != OXIDE_STATION || AP_BossFinalComposedNow();
+	}
 	return AP_BossShuffledGarageNow() >= 0 || AP_BossKitGarageNow() >= 0;
 }
 

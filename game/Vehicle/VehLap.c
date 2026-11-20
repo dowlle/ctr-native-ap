@@ -94,7 +94,7 @@ void VehLap_UpdateProgress(struct Driver *driver)
 	// NOTE(aalhendi): Retail uses signed div/mfhi for this remainder.
 	driver->distanceToFinish_curr = progress % trackLength;
 #ifdef CTR_AP
-	RB_MinePool_BossProgress(driver, progress % trackLength, trackLength, &nodeDelta.vec);
+	RB_MinePool_BossProgress(driver, (s32)driver->distanceToFinish_curr, trackLength, &nodeDelta.vec);
 #endif
 
 	if (wrongWayTest < 0x5a801)
