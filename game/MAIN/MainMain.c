@@ -339,6 +339,7 @@ u32 main(void)
 
 			// Archipelago per-frame hook (CTR_AP build only; see ap/ap_hooks.c)
 #ifdef CTR_AP
+			AP_NavRec_ObservePhysics(gGT);
 			AP_OnFrame(gGT);
 #elif defined(CTR_BOX_AUTHORING) || defined(CTR_AI_LAP_RECORDER)
 			// The authoring client without Archipelago drives the same

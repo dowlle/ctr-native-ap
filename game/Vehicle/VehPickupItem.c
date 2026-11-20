@@ -1190,6 +1190,7 @@ void VehPickupItem_ShootOnCirclePress(struct Driver *d)
 	d->actionsFlagSet &= ~ACTION_WEAPON_FIRE_REQUEST;
 
 #ifdef CTR_AP
+	AP_TrapNoteWeaponFire(d, (int)d->heldItemID);
 	// #145 itemsanity: the live choke point for a player-initiated use. The
 	// request flag is only raised by VehPhysProc after it has already spent the
 	// item (numHeldItems--/noItemTimer), and it is cleared just above, so this

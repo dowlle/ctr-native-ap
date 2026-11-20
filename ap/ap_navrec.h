@@ -55,6 +55,18 @@ void AP_NavRec_ResetCapture(void);
 // items the container records, and only for the local player. Firing the Mask
 // does not make a lap dirty; it is counted so a later consumer can judge it.
 void AP_NavRec_NoteItemFire(struct Driver *d, int weaponID);
+// Report a direct AP effect on player one's kart for the next recorder tick.
+void AP_NavRec_NoteKartEffect(void);
+enum AP_NavRecBoostGrant
+{
+	AP_NAVREC_GRANT_RESERVES = 1,
+	AP_NAVREC_GRANT_MASK = 2
+};
+void AP_NavRec_NoteBoostGrant(enum AP_NavRecBoostGrant grant);
+void AP_NavRec_NoteWumpaGrant(int amount);
+// Report a change during gameplay, before the next sampled lap boundary.
+void AP_NavRec_NotePhysicsEffect(void);
+void AP_NavRec_ObservePhysics(const struct GameTracker *gGT);
 
 // Called at the end of NativeCheckpoint_RelocateSDataPointers. Relocation cannot
 // repair a state restored into a fresh process, where these lanes are zeroed, so
@@ -83,5 +95,6 @@ void AP_NavRec_DrawBotNames(void);
 void AP_NavRec_SetActiveCustomTrack(const unsigned char uuid[16], unsigned int navRevision);
 void AP_NavRec_ClearActiveCustomTrack(void);
 void AP_NavRec_BlockRecordedLanes(void);
+int AP_NavRec_RederiveLoadIdentity(struct GameTracker *gGT);
 
 #endif // AP_NAVREC_H

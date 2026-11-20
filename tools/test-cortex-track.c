@@ -378,9 +378,10 @@ static const struct guard_row rows[] = {
 	 "if (!s_customTrackConfig.contentVerified)"},
 	// Issue #356: the recorded-lane arm must ask every serving predicate before
 	// it can fall through to the retail identity of the borrowed host slot.
-	{"game/BOTS.c", "// Which track's recordings may replay on this load.", "CustomTrack_CortexTrackIntent((int)gGT->levelID",
+	{"game/BOTS.c", "void BOTS_Adv_AdjustDifficulty(", "AP_NavRec_RederiveLoadIdentity(gGT)", "BOTS_InitNavPath(gGT, i)"},
+	{"ap/ap_navrec.c", "int AP_NavRec_RederiveLoadIdentity(", "CustomTrack_CortexTrackIntent((int)gGT->levelID",
 	 "AP_NavRec_ClearActiveCustomTrack()"},
-	{"game/BOTS.c", "// Which track's recordings may replay on this load.", "CustomTrack_OxideFinalServing((int)gGT->levelID",
+	{"ap/ap_navrec.c", "int AP_NavRec_RederiveLoadIdentity(", "CustomTrack_OxideFinalServing((int)gGT->levelID",
 	 "AP_NavRec_ClearActiveCustomTrack()"},
 };
 

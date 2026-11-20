@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include "ap_traps.h"
+#include "ap_navrec.h"
 #include "ap_wumpa.h"
 #include "ap_capability.h"
 #include "ap_democam.h"
@@ -87,6 +88,9 @@ static int g_sched_ready = 0;
 // call-sites read this instead of scanning the registry, which keeps them O(1) and
 // keeps their behaviour identical between two calls in one frame.
 static unsigned char g_active[AP_TRAP_EFFECT_COUNT];
+static int g_trap_boost_tainted;
+static int g_trap_forced_press;
+static int g_trap_forced_fire_pending;
 
 // Camera latch: 1 while we own cameraDC[0], so chase is restored exactly once.
 static int g_fp_applied = 0;
@@ -545,6 +549,7 @@ static int AP_TrapCanActNow(struct GameTracker *gGT, struct Driver *local)
 // the result is juiced.
 static void AP_TrapStartReroll(struct GameTracker *gGT, struct Driver *local)
 {
+	AP_NavRec_NoteKartEffect();
 	AP_TrapReleaseHeldItemClaims(gGT, local);
 	g_trap_reroll_excluded = (int)local->heldItemID;
 
@@ -929,6 +934,7 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, i
 		// normal hit. The predicate has already established that nothing is
 		// protecting the fruit, so this genuinely takes it.
 		RB_Player_ModifyWumpa(local, -AP_WumpaRaceCount(local));
+		AP_NavRec_NoteKartEffect();
 		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_WUMPA_WIPEOUT);
 		break;
 	case AP_TRAP_ITEM_REROLL:
@@ -953,6 +959,7 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, i
 		// and the mask veto behave as for a normal hit. Half, rounded down: 11
 		// fruit leave 6.
 		RB_Player_ModifyWumpa(local, -AP_TrapWumpaLeakAmount(AP_WumpaRaceCount(local)));
+		AP_NavRec_NoteKartEffect();
 		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_WUMPA_LEAK);
 		break;
 	case AP_TRAP_STUCK_STEERING:
@@ -1095,6 +1102,7 @@ void AP_Trap_ConnectReset(void)
 	g_trap_reroll_wait = 0;
 	g_trap_use_pending = 0;
 	g_trap_use_wait = 0;
+	g_trap_forced_fire_pending = 0;
 	g_trap_steer_mirrored = 0;
 	g_trap_jump_owned = 0;
 	AP_TrapClockedOutReset(AP_TrapLocalDriver());
@@ -1408,6 +1416,8 @@ void AP_TrapTick(struct GameTracker *gGT)
 		int refireWarpball = g_trap_spawn_pending[AP_TRAP_WARPBALL_AMBUSH];
 
 		g_epoch++;
+		g_trap_boost_tainted = 0;
+		g_trap_forced_fire_pending = 0;
 		AP_TrapSchedMapChange(&g_sched);
 		for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 			g_active[e] = 0;
@@ -1483,6 +1493,20 @@ void AP_TrapTick(struct GameTracker *gGT)
 }
 
 // ── Engine physics/input call-sites ──
+
+int AP_TrapAffectsRecordedLap(struct Driver *driver)
+{
+	if (!AP_TrapIsLocal(driver) || g_trap_paused)
+		return 0;
+	return (g_trap_boost_tainted && driver->reserves != 0) ||
+	       g_active[AP_TRAP_ICY] || g_active[AP_TRAP_LOWGRAV] ||
+	       g_active[AP_TRAP_USF_NOBRAKE] || g_active[AP_TRAP_BOOST] ||
+	       g_active[AP_TRAP_WEAKENED_KART] || g_active[AP_TRAP_BOOST_BLOCKER] ||
+	       g_active[AP_TRAP_REVERSE_STEERING] || g_active[AP_TRAP_ALWAYS_JUMPING] ||
+	       g_active[AP_TRAP_NO_DRIFTING] || g_active[AP_TRAP_MUD_SEASON] ||
+	       g_active[AP_TRAP_LIMP_MODE] || g_active[AP_TRAP_STUCK_STEERING] ||
+	       (g_trap_use_pending && g_active[AP_TRAP_FORCED_USE]);
+}
 
 // The Demo Camera prototype must not engage while the First Person trap owns
 // cameraMode (it forces the mode every frame while active), and must force-
@@ -1601,6 +1625,10 @@ void AP_TrapForceBoost(struct Driver *driver)
 {
 	if (!AP_TrapIsLocal(driver))
 		return;
+	int oldReserves = driver->reserves;
+	int oldCap = driver->fireSpeedCap;
+	if (oldReserves == 0)
+		g_trap_boost_tainted = 0;
 	if (g_active[AP_TRAP_USF_NOBRAKE])
 	{
 		// Genuinely USF-tier cap, derived from the real fire-level formula
@@ -1628,6 +1656,12 @@ void AP_TrapForceBoost(struct Driver *driver)
 		if (driver->fireSpeedCap < driver->const_SingleTurboSpeed)
 			driver->fireSpeedCap = driver->const_SingleTurboSpeed;
 	}
+	// A forced floor can survive the scheduler's expiry. Keep this boost
+	// marked until its reserves run out or the kart is reset on a new load.
+	if (driver->reserves != oldReserves || driver->fireSpeedCap != oldCap)
+		g_trap_boost_tainted = 1;
+	if (g_trap_boost_tainted)
+		AP_NavRec_NotePhysicsEffect();
 }
 
 // Mirror one steering axis about the centre the engine will measure it from.
@@ -1682,7 +1716,9 @@ void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
 	// held item keeps whatever juiced state it had. An incompatible state simply
 	// ignores the press, and the effect stays active and tries again next frame,
 	// which is the ruled "wait rather than consume unsuccessfully" behaviour.
-	if (g_trap_use_pending && g_active[AP_TRAP_FORCED_USE] && buttonsTapped != 0)
+	g_trap_forced_press = g_trap_use_pending && g_active[AP_TRAP_FORCED_USE] &&
+	                      buttonsTapped != 0 && !(*buttonsTapped & BTN_CIRCLE);
+	if (g_trap_forced_press)
 		*buttonsTapped |= BTN_CIRCLE;
 
 	// No Drifting. L1 and R1 are the hop and power-slide buttons, read from
@@ -1744,6 +1780,24 @@ void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
 		pad->stickLY = AP_STICK_NEUTRAL;
 		pad->stickRY = AP_STICK_NEUTRAL;
 	}
+}
+
+void AP_TrapNoteWeaponRequest(struct Driver *driver)
+{
+	if (AP_TrapIsLocal(driver))
+		g_trap_forced_fire_pending = g_trap_forced_press;
+}
+
+void AP_TrapNoteWeaponFire(struct Driver *driver, int weaponID)
+{
+	if (!AP_TrapIsLocal(driver) || !g_trap_forced_fire_pending)
+		return;
+	g_trap_forced_fire_pending = 0;
+	AP_NavRec_NotePhysicsEffect();
+	if (weaponID == 0) // Turbo
+		AP_NavRec_NoteBoostGrant(AP_NAVREC_GRANT_RESERVES);
+	if (weaponID == 7) // Mask
+		AP_NavRec_NoteBoostGrant(AP_NAVREC_GRANT_MASK);
 }
 
 // Limp Mode: the local kart's speed is held to half its class top speed, boosts
