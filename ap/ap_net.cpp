@@ -960,11 +960,16 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			refuse_plan();
 			return;
 		}
-		// One generator: every 0.3.0 room carries a content plan, so a room
-		// without one comes from v0.2.x. Its reader was deleted in row 12; the
-		// parser leaves such a room inactive and it is refused here.
+		// Schema-18 rooms with known generation versions require a plan.
+		// Retain the legacy client advice for the older room envelope.
 		if (!ap_content_plan_present())
 		{
+			if (ap_seed_refusal::expects_plan(slotData))
+			{
+				ap_seedcfg_reject_late("content_plan record is missing");
+				refuse_plan();
+				return;
+			}
 			ap_seedcfg_reject_late("This room was made with v0.2.x. Play it on the v0.2.4 client.");
 			ap_net_refuse_seed(ap_seedcfg_reject_reason());
 			return;

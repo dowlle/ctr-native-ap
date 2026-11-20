@@ -279,8 +279,8 @@ static void test_malformed_block_refused(void)
 	m->emit_slot_connected(d);
 	expect(ap_net_is_connected() == 0, "malformed: not admitted");
 	expect(ap_net_status() == AP_NET_STATUS_ERROR, "malformed: ERROR");
-	expect(std::string(ap_net_last_error()).find("CTR APWORLD VERSION MISMATCH") != std::string::npos,
-	       "malformed: the visible error gives matching-client advice");
+	expect(std::string(ap_net_last_error()).find("GENERATED WITH 0.3.0-CONTENT-DEV. THIS BUILD IS ") == 0,
+	       "malformed: the visible error shows the room and client versions");
 	const std::string technical_reason = ap_seedcfg_reject_reason();
 	expect(technical_reason.find("block schema") != std::string::npos,
 	       "malformed: technical reason names the block schema");
@@ -379,8 +379,8 @@ static void test_fallback_consistency(void)
 		m->emit_slot_connected(fallback_seed());
 		expect(ap_net_is_connected() == 0, "conflict: not admitted");
 		expect(ap_net_status() == AP_NET_STATUS_ERROR, "conflict: ERROR");
-		expect(std::string(ap_net_last_error()).find("CTR APWORLD VERSION MISMATCH") != std::string::npos,
-		       "conflict: exact plan binding refusal gives matching-client advice");
+		expect(std::string(ap_net_last_error()).find("GENERATED WITH 0.3.0-CONTENT-DEV. THIS BUILD IS ") == 0,
+		       "conflict: exact plan binding refusal shows the room and client versions");
 		const std::string technical_reason = ap_seedcfg_reject_reason();
 		expect(technical_reason.find("content plan") != std::string::npos,
 		       "conflict: extra unlock win retains the exact plan binding reason");
