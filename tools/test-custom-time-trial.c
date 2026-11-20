@@ -52,10 +52,6 @@ NativeConfig g_config;
 #ifdef CTR_AP
 #include "ap/ap_deathlink.h"
 ctr_seed_config ctr_cfg;
-void AP_HubSaveBoxCloseForLoad(void) {}
-void AP_CupSweepOnLoadRequested(int level) { (void)level; }
-void AP_ContentCupOnLoadRequested(int level) { (void)level; }
-void AP_DeathLinkOnRaceEnd(struct GameTracker *gt, struct Driver *driver) { (void)gt; (void)driver; }
 #endif
 void AP_LogLine(const char *msg) { fputs(msg, stderr); }
 
