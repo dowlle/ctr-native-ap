@@ -83,15 +83,9 @@ static int       ap_feed_quiet = 0;   // consecutive no-new-item frames (priming
 static long long ap_feed_self_rung_items[AP_FEED_SELF_RUNG_MAX];
 static int ap_feed_self_rung_count = 0;
 
-static int ap_hub_feed_on = 1; // ap-config.txt "hub_feed=" (default on; governs
-                               // BOTH feed surfaces since #192, key name kept)
 static int AP_ItemFeedMode(void)
 {
-	// Options > Archipelago > Item Feed (ruling of 2026-11-02), with the same
-	// config.ini-over-ap-config.txt precedence as AP_MapFlashOn.
-	if (NativeConfig_HasIni())
-		return g_config.itemFeed;
-	return ap_hub_feed_on ? AP_ITEM_FEED_ALL : AP_ITEM_FEED_OFF;
+	return g_config.itemFeed;
 }
 
 int AP_HubFeedOn(void)
@@ -144,7 +138,8 @@ static int AP_FeedConsumeSelfRung(long long item)
 // Keep held notices scoped to the same room and slot. All other toasts are
 // cleared and the initial-inventory absorb window is re-armed on connect.
 static uint64_t ap_feed_room;
-static uint64_t ap_feed_endpoint;
+static uint64_t ap_feed_room_instance;
+static int ap_feed_resume_pending;
 static unsigned ap_feed_letters_held, ap_feed_letters_announced;
 static int ap_feed_letters_baseline;
 static void AP_FeedLetterReadyUpdates(void);
@@ -154,19 +149,19 @@ static void AP_UnlockReasonsConnectReset(int sameRoom);
 void AP_FeedConnectReset(void)
 {
 	uint64_t room = ap_content_plan_room_identity();
-	uint64_t endpoint = ap_net_feed_endpoint_identity();
-	int sameRoom = room && room == ap_feed_room && endpoint && endpoint == ap_feed_endpoint;
+	int mayResume = room && room == ap_feed_room && ap_feed_room_instance;
 	ap_feed_room = room;
-	ap_feed_endpoint = endpoint;
-	if (sameRoom)
+	ap_feed_resume_pending = mayResume;
+	if (mayResume)
 		AP_FeedLinesReconnect(&ap_feed);
 	else
 	{
 		AP_FeedLinesReset(&ap_feed);
+		ap_feed_room_instance = 0;
 		ap_feed_letters_held = 0;
 		ap_feed_letters_announced = 0;
 	}
-	AP_UnlockReasonsConnectReset(sameRoom);
+	AP_UnlockReasonsConnectReset(mayResume);
 	ap_feed_letters_baseline = 1;
 	ap_feed_primed = 0;
 	ap_feed_hwm = -1;
@@ -358,12 +353,28 @@ void AP_FeedEndDrain(int drainedThisFrame)
 	AP_FeedOxideFinalOpenUpdate();
 	if (ap_feed_primed)
 		return;
+	uint64_t instance;
+	int roomKnown = ap_net_feed_room_instance(&instance);
+	if (roomKnown)
+	{
+		if (ap_feed_resume_pending && instance != ap_feed_room_instance)
+		{
+			AP_FeedLinesDiscardHeld(&ap_feed);
+			ap_feed_letters_held = 0;
+			ap_feed_letters_announced = 0;
+			AP_UnlockReasonsConnectReset(0);
+		}
+		ap_feed_room_instance = instance;
+		ap_feed_resume_pending = 0;
+	}
 	if (drainedThisFrame > 0 || !ap_net_is_connected())
 	{
 		ap_feed_quiet = 0;
 		return;
 	}
-	if (++ap_feed_quiet >= AP_FEED_PRIME_QUIET_FRAMES)
+	if (ap_feed_quiet < AP_FEED_PRIME_QUIET_FRAMES)
+		ap_feed_quiet++;
+	if (roomKnown && ap_feed_quiet >= AP_FEED_PRIME_QUIET_FRAMES)
 		ap_feed_primed = 1;
 }
 
@@ -400,6 +411,8 @@ static const char *AP_FeedRaceText(AP_FeedLine *line, char text[AP_FEED_TEXT_CAP
 // most once per frame (see the block comment above).
 static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 {
+	if (ap_feed_resume_pending)
+		return; // the queued lines could belong to a previous room instance
 	if (playableRace != 0)
 	{
 		int armedMoved = AP_FeedLinesRetireArmed(&ap_feed);

@@ -35,6 +35,9 @@
 #include "ap_stat_select_logic.h" // AP_StatSel_ValueOk: the stored rank selection bound
 #include "ap_solo_logic.hpp" // #89 solo check journal parse and resend set
 
+#include <chrono>
+#include <random>
+
 static APDoorHistory g_doors;
 static unsigned g_doors_sent = 0;
 static void ap_doors_flush();
@@ -202,7 +205,9 @@ static APRetryBudget         g_retry(AP_NET_UNREACHABLE_FAILS);
 static bool                  g_stop_pending = false; // deferred retry-stop teardown
 static std::string           g_host;
 static std::string           g_room_endpoint;
-static uint64_t              g_feed_endpoint;
+static std::string           g_feed_room_key;
+static uint64_t              g_feed_room_instance;
+static bool                  g_feed_room_known;
 
 // Seed admission (ticket 05). A slot_data the parser refuses (a REQUIRED block
 // absent/contradictory/malformed/unknown) must never activate: no door storage,
@@ -254,28 +259,22 @@ static std::string ap_net_endpoint_of(const std::string &uri)
 	return endpoint;
 }
 
-// The feed keeps only in-process state. Match the transport's default port
-// without changing the legacy endpoint keys used for saved room state.
-static uint64_t ap_net_feed_endpoint_of(const std::string &uri)
+// DataStorage belongs to the saved room. A new server using the same seed
+// and address gets a new token. Atomic Set with a default and no operations
+// creates the token once, even if two clients connect to the slot together.
+static void ap_net_feed_room_connect(int team, int slot)
 {
-	const auto split = uri.find("://");
-	const bool hasScheme = split != std::string::npos;
-	const auto begin = hasScheme ? split + 3 : 0;
-	const auto path = uri.find_first_of("/?#", begin);
-	std::string authority = uri.substr(begin, path - begin);
-	std::transform(authority.begin(), authority.end(), authority.begin(),
-	               [](unsigned char c) { return (char)std::tolower(c); });
-	if (authority.find(':') == std::string::npos)
-		authority += ":38281";
-	std::string key = (hasScheme ? uri.substr(0, begin) : "wss://") + authority;
-	if (path == std::string::npos || uri[path] != '/')
-		key += '/';
-	if (path != std::string::npos)
-		key += uri.substr(path); // a WebSocket resource is case-sensitive
-	uint64_t hash = UINT64_C(14695981039346656037);
-	for (unsigned char c : key)
-		hash = (hash ^ c) * UINT64_C(1099511628211);
-	return hash ? hash : 1;
+	g_feed_room_key = "ctr_feed_room_v1:" + std::to_string(team) + "_" + std::to_string(slot);
+	g_feed_room_instance = 0;
+	g_feed_room_known = false;
+	uint64_t token = std::chrono::system_clock::now().time_since_epoch().count();
+	try {
+		std::random_device entropy;
+		token ^= (uint64_t(entropy()) << 32) ^ entropy();
+	} catch (...) {
+		// The clock still gives a room token if the OS RNG is unavailable.
+	}
+	g_ap->Set(g_feed_room_key, token ? token : 1, true, {});
 }
 
 // Set true on every fresh slot-connect (new seed, reconnect, or server switch).
@@ -1109,6 +1108,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		// discarded rather than risk delivering them to the wrong world
 		// (requirement 5).
 		const std::string connectedSeed = g_ap->get_seed();
+		ap_net_feed_room_connect(g_ap->get_team_number(), g_ap->get_player_number());
 		g_doors.connect(g_room_endpoint, connectedSeed, g_ap->get_team_number(), g_ap->get_player_number());
 		g_doors_sent = 0;
 		AP_LogLine("[AP DOOR] connected: session reset, inventory/storage barrier pending\n");
@@ -1356,6 +1356,11 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	                               const nlohmann::json &original) {
 		if (g_rejected)
 			return; // no rejected-seed state may activate
+		if (g_connected && !g_feed_room_key.empty() && key == g_feed_room_key)
+		{
+			g_feed_room_instance = value.is_number_unsigned() ? value.get<uint64_t>() : 0;
+			g_feed_room_known = true;
+		}
 		if (g_connected && key == g_doors.key) {
 			g_doors.reply(value);
 			char line[128];
@@ -1492,7 +1497,6 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	});
 	g_host = ap_net_host_of(uri ? uri : "localhost"); // #146: named by the status line
 	g_room_endpoint = ap_net_endpoint_of(uri ? uri : "localhost");
-	g_feed_endpoint = ap_net_feed_endpoint_of(uri ? uri : "ws://localhost:38281");
 	g_retry.start(false); // fresh bounded startup budget for this client run
 	g_stop_pending = false;
 	g_rejected = false;            // a fresh client run starts admissible
@@ -2023,9 +2027,12 @@ extern "C" int ap_net_room_endpoint(char *buf, int n)
 	return !g_room_endpoint.empty();
 }
 
-extern "C" uint64_t ap_net_feed_endpoint_identity(void)
+extern "C" int ap_net_feed_room_instance(uint64_t *instance)
 {
-	return g_feed_endpoint;
+	if (!g_connected || !g_feed_room_known)
+		return 0;
+	*instance = g_feed_room_instance;
+	return 1;
 }
 
 extern "C" int ap_net_drain_items(long long *out, int max)
@@ -2905,7 +2912,8 @@ extern "C" void ap_net_shutdown(void)
 	g_reject_stop_pending = false;
 	g_uri_secure = false;
 	g_room_endpoint.clear();
-	g_feed_endpoint = 0;
+	g_feed_room_key.clear();
+	g_feed_room_known = false;
 	// Closing marker for field logs. The Steam Deck report of 2026-08-05 turned on
 	// "a reconnect line, then a fresh client run start with no shutdown lines",
 	// and the log had no way to say whether the teardown had completed. Now it

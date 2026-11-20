@@ -110,6 +110,19 @@ static inline void AP_FeedLinesReconnect(AP_FeedLines *f)
 	f->receiptWindow = 0;
 }
 
+// Drop the quarantined notices when the server confirms a different room.
+static inline void AP_FeedLinesDiscardHeld(AP_FeedLines *f)
+{
+	int kept = 0;
+	for (int i = 0; i < f->qcount; ++i)
+	{
+		const AP_FeedLine *q = &f->queue[(f->qhead + i) % AP_FEED_QUEUE_MAX];
+		if (!q->reconnectHeld)
+			f->queue[(f->qhead + kept++) % AP_FEED_QUEUE_MAX] = *q;
+	}
+	f->qcount = kept;
+}
+
 static inline int AP_FeedLinesFilterImportant(AP_FeedLines *f)
 {
 	int kept = 0;

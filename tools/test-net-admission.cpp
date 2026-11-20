@@ -84,12 +84,12 @@ static void expect(bool ok, const char *what)
 	}
 }
 
-static APClient *start(const std::string &seed)
+static APClient *start(const std::string &seed, const char *uri = "ws://127.0.0.1:1")
 {
 	ap_net_shutdown();
 	ap_mock_seed() = seed;
 	ap_mock_slot() = "Harness";
-	if (ap_net_init("ctr-native", "Crash Team Racing", "ws://127.0.0.1:1") != 0)
+	if (ap_net_init("ctr-native", "Crash Team Racing", uri) != 0)
 		return nullptr;
 	ap_net_connect_slot("Harness", "");
 	if (g_ap)
@@ -183,6 +183,14 @@ static void test_accepted_side_effects(void)
 	expect(m->calls.set_notify >= 1, "accept: door SetNotify sent");
 	expect(m->calls.location_scouts >= 1, "accept: scout sent");
 	expect(ap_net_location_checked(35025000) == 1, "accept: location_checked live");
+	uint64_t feedInstance = 0;
+	const char *feedKey = "ctr_feed_room_v1:0_1";
+	expect(std::find(m->calls.set_keys.begin(), m->calls.set_keys.end(), feedKey) != m->calls.set_keys.end(),
+	       "accept: feed asks the room for its own saved token");
+	expect(!ap_net_feed_room_instance(&feedInstance), "accept: feed waits for the room token reply");
+	m->emit_set_reply(feedKey, uint64_t(31337));
+	expect(ap_net_feed_room_instance(&feedInstance) && feedInstance == 31337,
+	       "accept: feed uses the server's token instead of the connection address");
 
 	std::list<APClient::NetworkItem> items;
 	items.push_back(make_item(35000042, 35010000, 0));
@@ -191,6 +199,20 @@ static void test_accepted_side_effects(void)
 	int n = ap_net_drain_items(out, 8);
 	expect(n == 1 && out[0] == 35000042, "accept: ReceivedItems activated");
 
+	ap_net_shutdown();
+	m = start("2101", "ws://127.0.0.1:00001");
+	expect(m != nullptr, "feed: client up with equivalent URI spelling");
+	if (!m)
+		return;
+	m->emit_slot_connected(g_fixture);
+	expect(!ap_net_feed_room_instance(&feedInstance), "feed: reconnect requires a fresh reply");
+	m->emit_set_reply(feedKey, uint64_t(31337));
+	expect(ap_net_feed_room_instance(&feedInstance) && feedInstance == 31337,
+	       "feed: the same saved room identifies a transport alias");
+	m->emit_slot_connected(g_fixture);
+	m->emit_set_reply(feedKey, uint64_t(31338));
+	expect(ap_net_feed_room_instance(&feedInstance) && feedInstance == 31338,
+	       "feed: a fresh room using the same seed gets a distinct token");
 	ap_net_shutdown();
 }
 

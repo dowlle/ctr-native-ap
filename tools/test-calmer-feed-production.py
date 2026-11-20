@@ -54,8 +54,7 @@ stubs = r'''
 static AP_FeedLines ap_feed;
 static AP_TrapSched g_sched;
 static int active=1, ap_feed_primed=1;
-static int mode=AP_ITEM_FEED_ALL;
-static int AP_ItemFeedMode(void) { return mode; }
+NativeConfig g_config = { .itemFeed = AP_ITEM_FEED_ALL };
 static long long ap_feed_hwm=-1;
 static int ctr_cfg_active(void) { return active; }
 static int AP_FeedConsumeSelfRung(long long item) { (void)item;return 0; }
@@ -101,7 +100,7 @@ int main(void) {
     AP_FeedOnItemReceived(10,2,8,0);
     AP_FeedOnItemReceived(10,2,9,0);
     assert(ap_feed.qcount==7 && strstr(ap_feed.queue[6].text,"2 WUMPA FRUIT FROM OTHER"));
-    mode=AP_ITEM_FEED_IMPORTANT;
+    g_config.itemFeed=AP_ITEM_FEED_IMPORTANT;
     AP_FeedLinesFilterImportant(&ap_feed);
     assert(ap_feed.qcount==4);
     AP_FeedOnItemReceived(10,2,10,0);
@@ -113,7 +112,7 @@ int main(void) {
     scout_flags=AP_ITEM_FLAG_USEFUL;
     AP_FeedOnLocationSent(100);
     assert(ap_feed.qcount==6 && !strcmp(ap_feed.queue[5].text,"WUMPA FRUIT TO OTHER"));
-    mode=AP_ITEM_FEED_ALL;
+    g_config.itemFeed=AP_ITEM_FEED_ALL;
     scout_flags=0;
     AP_FeedOnLocationSent(100);
     assert(ap_feed.qcount==7);
@@ -196,7 +195,8 @@ int main(void) {
 '''
 with tempfile.TemporaryDirectory() as tmp:
     path = Path(tmp)
-    (path/'test.c').write_text(stubs + function('AP_FeedFiltersItem', src, 'static int ') +
+    (path/'test.c').write_text(stubs + function('AP_ItemFeedMode', src, 'static int ') +
+                              function('AP_FeedFiltersItem', src, 'static int ') +
                               function('AP_FeedOnItemReceived') +
                               function('AP_FeedOnLocationSent', src, 'static void ') +
                               function('AP_FeedTrapLine') +

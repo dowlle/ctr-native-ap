@@ -68,6 +68,7 @@ static int active=1,received,hidden,enabled=1,draws,lastY,custom,offline;
 static int drawnY[8];
 static struct { int box_placement_refused; } ctr_cfg;
 static AP_FeedLines ap_feed;
+static int ap_feed_resume_pending;
 static char lastText[128];
 static int ctr_cfg_active(void) { return active; }
 static int AP_GateCount(int i) { assert(i==AP_IDX_TROPHY); return received; }
@@ -155,6 +156,10 @@ int main(void) {
     AP_FeedDiscardUnimportant();
     AP_FeedLinesEnqueue(&ap_feed,"NEW USEFUL",WHITE,0);
     assert(ap_feed.qcount == 2 && !strcmp(ap_feed.queue[ap_feed.qhead].text,"PROGRESSION"));
+    ap_feed_resume_pending = 1;
+    draws=0;AP_FeedTickAndDraw(8,200,0);
+    assert(draws == 0 && ap_feed.qcount == 2);
+    ap_feed_resume_pending = 0;
     feedMode = AP_ITEM_FEED_ALL;
     // A4-36: a slim bar, no text, only when the page scrolls; track and thumb inside the nine-row window.
     draws=0;
