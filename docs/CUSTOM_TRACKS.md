@@ -454,14 +454,16 @@ listing and retries a missed transfer or a damaged or stale repair.
 **Which races play it.** The Arcade and Time Trial custom pages, and a
 content-plan race (a Current Seed pad or cup leg) on the package's own host
 slot. Cortex Vortex keeps its bundled music. A content-plan package without a
-pinned `.sca` plays its host slot's own music, as before.
+pinned `.sca` plays a random retail track's music (see above). The Oxide Final
+venue and the bundled Cortex Vortex pad track pick from their bundled LEV pin,
+not the room, because those routes carry no room identity.
 
 **Sound memory.** Builds with `CTR_CUSTOM_PACKAGES`, which includes the
 player client built with `CTR_CUSTOM_TRACKS`, have 1 MiB of SPU memory
 (`include/platform/native_spu_memory.h`). Before a `.sca` replaces the level
 bank, `CustomMusic_Admit` checks that it fits next to bank 0, bank 54 and the
 character banks; if not, the race keeps the default music and logs
-`[CUSTOM MUSIC] track music refused, default music`.
+`[CUSTOM MUSIC] track music refused, fallback music`.
 
 ## 11. Box Author Mode and the AI lap recorder
 

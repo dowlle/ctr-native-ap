@@ -89,6 +89,7 @@ for path, signature in [
     ("HOWL_CustomMusic.c", "int HOWL_CustomMusic_ContentLoadBank(int level, struct Bank *thisBank)"),
     ("HOWL_Music.c", "u32 Music_AsyncParseBanks(void)"),
     ("HOWL_Music.c", "void Music_End(void)"),
+    ("HOWL_Music.c", "void Music_Stop(void)"),
     ("HOWL_Music.c", "void Music_Adjust(u32 songID, int newTempo, struct SongSet *set, u32 songSetActiveBits)"),
 ]:
     fixture += function(path, signature)
@@ -263,13 +264,17 @@ int main(void)
     Music_End();
     Music_Adjust(CSEQ_SONG_LEVEL, 0, NULL, 0);
     assert(start_calls == 8 && start_logs == 3);
+    // A paused Retry reaches the traffic-light stop without Music_End.
+    Music_Stop();
+    Music_Adjust(CSEQ_SONG_LEVEL, 0, NULL, 0);
+    assert(start_calls == 9 && start_logs == 4);
 
     // A retail race logs nothing when its song starts.
     s_fallbackLevel = -1;
     s_songStartLogged = 0;
     Music_End();
     Music_Adjust(CSEQ_SONG_LEVEL, 0, NULL, 0);
-    assert(start_calls == 9 && start_logs == 3);
+    assert(start_calls == 10 && start_logs == 4);
 
     puts("PASS: custom and retail race bank selection, boss music preference, random fallback and decision logs, custom song start retry");
 }

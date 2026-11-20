@@ -78,7 +78,7 @@ static int s_oxideFinalVerified;
 // beside the bundled LEV and VRM. It is read when a content-plan race arms that
 // exact pair (the LEV and VRM pins of ap/ap_seedcfg.h) and kept only when its
 // sha256 is the pinned one. Optional by design: a missing, changed or unreadable
-// file costs the music only (Oxide Station's plays), never the track.
+// file costs the music only (a random retail track's music plays), never the track.
 #define CORTEX_LEV_SHA256 "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13"
 #define CORTEX_VRM_SHA256 "4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d"
 #define CORTEX_SCA_SHA256 "ddde81cf1be8042400c717edeeded0d8727e3bb8ba24f0100201708372ef8b1c"
@@ -441,7 +441,7 @@ static void CustomTrack_LoadCortexMusic(const char *levPath)
 	s_cortexMusic = CustomTrack_ReadCortexMusic(levPath, &s_cortexMusicSize, NULL);
 	if (!s_cortexMusic)
 	{
-		CustomTrack_Log("[CortexVortex] music unavailable or failed verification, Oxide Station's music plays\n");
+		CustomTrack_Log("[CortexVortex] music unavailable or failed verification, a random retail track's music plays\n");
 		return;
 	}
 	CustomTrack_Log("[CortexVortex] music verified (%u bytes)\n", (unsigned)s_cortexMusicSize);
@@ -449,7 +449,7 @@ static void CustomTrack_LoadCortexMusic(const char *levPath)
 
 // Read the pending package .sca whole and keep it only when its size and sha256
 // are the package's pin and the descriptor's LEV is the one the pin was made
-// for. Anything else costs the music only: the host slot's own music plays.
+// for. Anything else costs the music only: a random retail track's music plays.
 static void CustomTrack_LoadPackageMusic(void)
 {
 	CustomTrack_ClearCortexMusic();
@@ -466,7 +466,7 @@ static void CustomTrack_LoadPackageMusic(void)
 	                                        s_pendingMusic.scaSha256, &s_cortexMusicSize, NULL);
 	if (!s_cortexMusic)
 	{
-		CustomTrack_Log("[CustomTracks] track music unavailable or failed verification, the host slot's music plays\n");
+		CustomTrack_Log("[CustomTracks] track music unavailable or failed verification, a random retail track's music plays\n");
 		return;
 	}
 	s_musicIsPackage = 1;

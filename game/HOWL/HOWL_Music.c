@@ -666,6 +666,11 @@ void Music_Restart(void)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002e4ec-0x8002e524
 void Music_Stop(void)
 {
+#ifdef CTR_CUSTOM_PACKAGES
+	// A paused Retry reaches the traffic-light stop without Music_End: the
+	// next song start logs its song data again.
+	s_songStartLogged = 0;
+#endif
 	// quit if no music is playing
 	if (sdata->cseqBoolPlay == 0)
 	{
