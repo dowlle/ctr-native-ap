@@ -113,8 +113,9 @@ static struct {
 static ctr_content_pad pad = {.occupied = 1}, boss_cup = {.cup = 1};
 static ctr_content_sanity leg_rows[4], boss_rows[6];
 static ctr_content_bosses bosses = {.present = 1};
-static int preview, open = 1, final, ready = 1;
-static int64_t sent[AP_PAD_DISPLAY_BITS_MAX];
+static int preview, open = 1, final, ready = 1, pickup_mode_open = 1;
+static int64_t blocked_code = 303;
+static int64_t sent[1024];
 static int sent_count, source;
 
 static int ctr_cfg_active(void) { return 1; }
@@ -123,6 +124,10 @@ static int ap_net_pad_hints_ready(void) { return 1; }
 static int AP_SpoilerPadPreviewShown(void) { return preview; }
 static int AP_ContentPadReady(int id) { assert(id == 7); return ready; }
 static int AP_ContentPadOpen(const ctr_content_pad *p) { assert(p == &pad); return open; }
+static int AP_ContentModeOpen(const ctr_content_pad *p, int mode) {
+    assert(p == &pad && (mode == AP_CONTENT_MODE_TROPHY || mode == AP_CONTENT_MODE_CTR));
+    return pickup_mode_open && mode == AP_CONTENT_MODE_CTR;
+}
 const ctr_content_pad *ap_content_plan_pad(int id) {
     return id == 7 ? &pad : id == AP_CONTENT_GARAGE_CUP_PAD ? &boss_cup : NULL;
 }
@@ -146,9 +151,9 @@ static int ap_net_scout_known(int64_t code, void *item, void *player, unsigned *
     *flags = code == 202 ? 0 : AP_HINT_FLAG_PROGRESSION;
     return code != 302;
 }
-static int AP_LocationInLogic(int64_t code) { return code != 303; }
+static int AP_LocationInLogic(int64_t code) { return code != blocked_code; }
 static int ap_net_pad_approach_hint(int id, const int64_t *codes, int count) {
-    assert(count > 0 && count <= AP_PAD_DISPLAY_BITS_MAX);
+    assert(count > 0 && (size_t)count <= sizeof sent / sizeof *sent);
     memcpy(sent, codes, count * sizeof *codes);
     source = id;
     return sent_count = count;
@@ -169,7 +174,10 @@ int main(void) {
     preview = 1;
     open = 0; AP_PadApproachHints(7); assert(!sent_count);
     open = 1; ready = 0; AP_PadApproachHints(7); assert(!sent_count);
-    ready = 1; AP_PadApproachHints(7); EXPECT(7, 100, 200);
+    ready = 1; pickup_mode_open = 0;
+    AP_PadApproachHints(7); EXPECT(7, 100);
+    pickup_mode_open = 1;
+    AP_PadApproachHints(7); EXPECT(7, 100, 200);
     ctr_cfg.pad_hints_progression_only = 0;
     AP_PadApproachHints(7); EXPECT(7, 100, 200, 202);
     ctr_cfg.pad_hints_progression_only = 1;
@@ -196,6 +204,22 @@ int main(void) {
     AP_BossGarageApproachHints(0); EXPECT(AP_CONTENT_GARAGE_CUP_PAD + 4, 35011104, 405);
     final = 1;
     AP_BossGarageApproachHints(0); EXPECT(AP_CONTENT_GARAGE_CUP_PAD + 4, 35011105, 406);
+    bosses.oxide_goal = 2; bosses.oxide_1_optional = 1;
+    AP_BossGarageApproachHints(0); EXPECT(AP_CONTENT_GARAGE_CUP_PAD + 4, 35011105, 35011104, 406);
+
+    blocked_code = 0;
+    AP_PadApproachHints(7); EXPECT(7, 100, 300, 301, 302, 303);
+    const int slots[] = {50, 16, 32};
+    int64_t code = 1000;
+    memset(leg_rows, 0, sizeof leg_rows);
+    for (int leg = 0; leg < AP_CONTENT_CUP_LEGS; ++leg)
+        for (int family = 0; family < 3; ++family)
+            for (int ordinal = 0; ordinal < slots[family]; ++ordinal)
+                leg_rows[leg].locations[family][ordinal] = code++;
+    AP_PadApproachHints(7);
+    assert(source == 7 && sent_count == 1 + AP_CONTENT_CUP_LEGS * (50 + 16 + 32));
+    assert(sent[0] == 100);
+    for (int i = 1; i < sent_count; ++i) assert(sent[i] == 1000 + i - 1);
 }
 """
 with tempfile.TemporaryDirectory(prefix="ctr-approach-hints-") as folder:

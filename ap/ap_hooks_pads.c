@@ -313,8 +313,12 @@ void AP_PadApproachHints(int levelID)
 		for (i = 0; i < AP_CONTENT_CUP_LEGS; ++i)
 			n += AP_ApproachAppendPickups(codes + n, ap_content_plan_sanity(pad->legs[i].track_id));
 	}
-	else if (!pad->crystal)
+	else if (!pad->crystal &&
+	         (AP_ContentModeOpen(pad, AP_CONTENT_MODE_TROPHY) ||
+	          AP_ContentModeOpen(pad, AP_CONTENT_MODE_CTR)))
 	{
+		// A pickup can be globally in logic through a cup or boss race even
+		// while the standalone pad offers only its Relic Race.
 		for (i = 0; i < 3; ++i)
 			n += ap_content_plan_sanity_pad(levelID, i, codes + n, AP_APPROACH_HINT_CODES_MAX - n);
 	}
@@ -334,6 +338,9 @@ void AP_BossGarageApproachHints(int hubID)
 	garage = hubID ? hubID - 1 : 4;
 	boss = hubID ? garage : 4 + AP_OxideOffersFinalChallenge();
 	codes[n++] = AP_BOSS_WON_LOCATION_CODE(boss);
+	// As in AP_NotifyGoal, an optional first challenge also pays on a final win.
+	if (boss == 5 && bosses->oxide_goal == 2 && bosses->oxide_1_optional)
+		codes[n++] = AP_BOSS_WON_LOCATION_CODE(4);
 	if (garage < 4 && bosses->cup[garage])
 	{
 		const ctr_content_pad *cup = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + garage);
