@@ -1012,6 +1012,7 @@ struct XdeltaImportScan
     unsigned dropped = 0; /* Items past CTR_XDELTA_ITEM_MAX. */
     std::vector<Built> built; /* Parallel to summary.items. */
     std::string patchStem;    /* The patch file's name without its extension (A3-20). */
+    std::string sourceUrl;
     ~XdeltaImportScan() { for (auto &b : built) CustomPackage_Free(&b.owned); }
 };
 
@@ -1162,8 +1163,8 @@ std::string json_dump(const json &value) { return value.dump(-1, ' ', false, jso
 /* Build the package for one cut pair and acquire it through the verifier. */
 Built build_package(const Candidate &c, const std::string &title, const std::string &version, const TrackMeta *meta,
                     const XdeltaImportSummary &summary, const std::string &author, std::string &failure,
-                    const std::string &curatedKey = std::string(), bool editedTitle = false,
-                    bool generatedTitle = false)
+                    const std::string &curatedKey, const std::string &sourceUrl,
+                    bool editedTitle = false, bool generatedTitle = false)
 {
     Built b;
     b.curatedKey = curatedKey;
@@ -1179,6 +1180,7 @@ Built build_package(const Candidate &c, const std::string &title, const std::str
     if (summary.descriptorSha256[0]) source["descriptor_sha256"] = summary.descriptorSha256;
     if (editedTitle) source["edited_title"] = true;
     if (generatedTitle) source["generated_title"] = true;
+    if (!sourceUrl.empty()) source["source_url"] = sourceUrl;
     if (!c.originalLevHash.empty())
     {
         source["lev_normalizer_version"] = 1;
@@ -1338,6 +1340,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                     if (size && std::fread(bytes.data(), 1, bytes.size(), file.get()) != bytes.size())
                         throw std::runtime_error("Cannot read the descriptor");
                     descriptor = parse_descriptor(bytes, summary.patchSha256);
+                    scan->sourceUrl = descriptor.sourceUrl;
                     haveDescriptor = true;
                     set_text(summary.descriptorSha256, sizeof summary.descriptorSha256, descriptor.sha256);
                 }
@@ -1573,13 +1576,14 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             bool retried = false;
             const bool generatedTitle = nameSource == XDELTA_NAME_LABEL;
             Built built = build_package(candidate, title, version, meta, summary, author, failure,
-                                        curatedKey, false, generatedTitle);
+                                        curatedKey, scan->sourceUrl, false, generatedTitle);
             if (!built.owned && meta && (meta->relic || meta->laps || !meta->version.empty()))
             {
                 /* A descriptor value the package rules refuse never costs the track. */
                 std::string retry;
                 built = build_package(candidate, title, "1.0.0", nullptr, summary, author, retry,
-                                      curatedKey.empty() ? meta->trackKey : curatedKey, false, generatedTitle);
+                                      curatedKey.empty() ? meta->trackKey : curatedKey,
+                                      scan->sourceUrl, false, generatedTitle);
                 if (built.owned) { failure.clear(); retried = true; }
             }
             built.author = author;
@@ -3039,7 +3043,7 @@ static int rename_import_item(XdeltaImportScan *scan, unsigned int item, const c
         if (!track_key_valid(key)) return refuse("No folder name fits this name");
         std::string failure;
         Built rebuilt = build_package(candidate, name, old.version.empty() ? "1.0.0" : old.version, old.hasMeta ? &old.meta : nullptr,
-                                      scan->summary, old.author, failure, old.curatedKey, edited);
+                                      scan->summary, old.author, failure, old.curatedKey, scan->sourceUrl, edited);
         if (!rebuilt.owned) return refuse(limit_codepoints("Files failed checks: " + failure, 80).c_str());
         rebuilt.author = old.author;
         rebuilt.version = old.version;

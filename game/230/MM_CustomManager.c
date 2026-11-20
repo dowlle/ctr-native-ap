@@ -48,7 +48,7 @@ static const struct CustomTrackLibraryEntry *MM_CustomSourceInstalled(const stru
         if(!r->installed || r->local.trackID!=source->trackID) continue;
         int sameTrackFiles=r->local.levID==source->lev.id && r->local.vrmID==source->vrm.id && !strcmp(r->version,source->version);
         /* The same track files without the track's current music is an update. */
-        if(sameTrackFiles && r->local.scaID==source->sca.id) exact=r;
+        if(sameTrackFiles && (!source->sca.id || r->local.scaID==source->sca.id)) exact=r;
         else if(sameTrackFiles || CustomRevision_Compare(source->version,r->version)>0) *older=1;
     }
     return exact;
@@ -58,8 +58,12 @@ static const struct CustomTrackLibraryEntry *MM_CustomSourceInstalled(const stru
    and the player client's Custom Tracks screen (MM_CustomTracks.c). */
 static int s_saphiRefreshFailed; /* the last refresh failed; an older catalogue may remain */
 static int s_saphiFailed; /* s_saphiMessage holds a refresh or install failure, drawn in full */
+static int s_saphiMusicPending;
 static void MM_CustomManager_Poll(void)
 {
+    int available = 0;
+    int musicState = CustomSaphi_PollMusicRepair(&available);
+    if (musicState == 1 && available > 0) s_contentStoreWanted = 1;
     if (s_saphiRefreshBusy)
     {
         struct CustomSaphiCatalogue *fresh = NULL;
@@ -75,8 +79,15 @@ static void MM_CustomManager_Poll(void)
             {
                 CustomSaphi_Free(&s_saphiCatalogue);
                 s_saphiCatalogue = fresh;
+                s_saphiMusicPending = 1;
             }
         }
+    }
+    if (s_saphiMusicPending && !s_saphiRefreshBusy && !s_saphiDownloading && musicState != 0 &&
+        ap_track_consent_status(NULL, NULL, 0) != AP_TRACK_CONSENT_LOADING)
+    {
+        s_saphiMusicPending = 0;
+        CustomSaphi_StartMusicRepair(s_saphiCatalogue, NativeAssets_GetAssetDir());
     }
     if (s_saphiDownloading)
     {

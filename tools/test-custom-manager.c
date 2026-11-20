@@ -25,6 +25,7 @@ static int s_saphiRefreshBusy, s_saphiLoaded, s_saphiDownloading;
 static char s_saphiMessage[512], s_saphiQuery[81];
 static size_t s_saphiSelection[2];
 static int checks, failures, refreshResult, installResult, starts, textResult;
+static int musicStarts, musicResult = -1;
 static int publishOK=1, publishCalls;
 static struct CustomSaphiRevision rows[9];
 #define CHECK(x) do { checks++; if (!(x)) { failures++; printf("FAIL %d: %s\n",__LINE__,#x); } } while (0)
@@ -55,6 +56,10 @@ const struct CustomSaphiRevision *CustomSaphi_Row(const struct CustomSaphiCatalo
 { (void)p;return &rows[i]; }
 int CustomSaphi_StartInstall(const struct CustomSaphiRevision *r,const char *a)
 { (void)r;(void)a;starts++;return 1; }
+int CustomSaphi_StartMusicRepair(const struct CustomSaphiCatalogue *c,const char *a)
+{ (void)c;(void)a;musicStarts++;musicResult=0;return 1; }
+int CustomSaphi_PollMusicRepair(int *repaired)
+{ int s=musicResult;if(s==1){*repaired=1;musicResult=-1;}return s; }
 int CustomSaphi_PollInstall(char pin[65],char *e,size_t n)
 { (void)e;(void)n;if(installResult==1)strcpy(pin,"fixture");return installResult; }
 int AP_Solo_PublishInstalledStore(const char *pin,char *error,size_t n)
@@ -113,7 +118,9 @@ int ap_custom_track_download_busy(char *text, int size)
    ap/ap_track_consent.cpp (tools/test-track-consent.cpp); here one Saphi
    track id is refused and the list can be missing. */
 #include "../ap/ap_track_consent.h"
-static int permDenied=-1, permListed=1, consentRefreshes;
+static int permDenied=-1, permListed=1, consentRefreshes, permState=AP_TRACK_CONSENT_DONE;
+int ap_track_consent_status(int *source,char *detail,int n)
+{ if(source)*source=AP_TRACK_CONSENT_SOURCE_LIVE; if(detail&&n>0)detail[0]=0; return permState; }
 int ap_track_permission(int track,int author,int saphi,const char *key)
 { (void)author;(void)saphi;(void)key; return !permListed ? AP_TRACK_PERMISSION_UNKNOWN : track==permDenied ? AP_TRACK_PERMISSION_DENY : AP_TRACK_PERMISSION_ALLOW; }
 const char *ap_track_permission_text(void)
@@ -130,7 +137,11 @@ int main(void)
  tick(0);CHECK(s_saphiRefreshBusy);
  saphiBusy=60;tick(0);CHECK(strstr(drawn,"Project Saphi is busy, waiting 60s"));
  saphiBusy=0;tick(0);CHECK(!strstr(drawn,"Project Saphi is busy"));
- refreshResult=1;tick(0);CHECK(s_saphiCatalogue==(void*)2);
+ permState=AP_TRACK_CONSENT_LOADING;
+ refreshResult=1;tick(0);CHECK(s_saphiCatalogue==(void*)2&&musicStarts==0);
+ permState=AP_TRACK_CONSENT_DONE;tick(0);CHECK(musicStarts==1);
+ musicResult=1;tick(0);CHECK(s_contentStoreWanted&&musicStarts==1);
+ s_contentStoreWanted=0;
  tick(BTN_UP);CHECK(s_saphiSelection[0]==8);tick(BTN_DOWN);CHECK(s_saphiSelection[0]==0);
  tick(BTN_L2);refreshResult=-2;tick(0);CHECK(s_saphiCatalogue==(void*)2&&!s_saphiRefreshBusy);
  strcpy(rows[0].disabledReason,"Files not hosted");tick(BTN_CROSS);CHECK(starts==0);
@@ -161,7 +172,8 @@ int main(void)
  /* Same track files, but Saphi now lists the track's music: an update, not installed. */
  rows[1].sca.id=77;CHECK(MM_CustomSourceInstalled(&rows[1],&older)==NULL && older==1);
  installed.local.scaID=77;CHECK(MM_CustomSourceInstalled(&rows[1],&older)==&installed && older==0);
- rows[1].sca.id=0;installed.local.scaID=0;
+ rows[1].sca.id=0;CHECK(MM_CustomSourceInstalled(&rows[1],&older)==&installed && older==0);
+ installed.local.scaID=0;
  /* Installed tab: which pages list the track, and why not Arcade (two lines). */
  tick(BTN_R1);CHECK(s_contentLibraryTab==1);s_saphiMessage[0]=0;
  installed.local.arcade=1;installed.local.timeTrial=1;tick(0);

@@ -76,6 +76,7 @@ uint64_t ap_content_plan_epoch(void) { return plan_active ? plan_epoch : 0; }
 static int ap_content_package_scan[AP_CONTENT_MAX_PACKAGES];
 static int ap_content_descriptor_publication[AP_CONTENT_MAX_PACKAGES];
 static int ap_content_cortex_ready, ap_custom_content_scanned = 1;
+static int ap_content_cortex_load_error;
 static const struct CustomTrackManagerPackage *compiled_for[4];
 static const struct CustomTrackManagerPackage *AP_ContentPackage(int i) { return i >= 0 && i < package_count ? compiled_for[i] : NULL; }
 static int dl_state = AP_CT_DOWNLOAD_IDLE, starts, refuse_start;
@@ -545,6 +546,20 @@ int main(void)
 	plan_cortex = 1; ap_content_cortex_ready = 1;
 	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
 	expect(n == 3 && rows[2].source == AP_SEED_SOURCE_BUNDLED && !rows[2].permission[0], "Cortex Vortex is untouched");
+	ap_content_cortex_ready = 0;
+	ap_content_cortex_load_error = CTR_CT_MANAGER_LOAD_FAILED + 1;
+	ap_content_package_scan[0] = CTR_CT_MANAGER_LOAD_FAILED + 1;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(n == 3 && rows[0].scan == AP_SEED_SCAN_LOAD_FAILED && rows[2].scan == AP_SEED_SCAN_LOAD_FAILED &&
+	       ap_seed_row_state(&rows[0]) == AP_SEED_STATE_ATTENTION && !ap_seed_row_downloadable(&rows[0]),
+	       "a loader refusal stays distinct from missing files for packages and Cortex Vortex");
+	ap_seed_instruction(&rows[2], message, sizeof message);
+	expect(strstr(message, "client log") && !strstr(message, "install path"), "a generic refusal points to the reason in the log");
+	ap_content_package_scan[0] = CTR_CT_MANAGER_PATH_TOO_LONG + 1;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	ap_seed_instruction(&rows[0], message, sizeof message);
+	expect(n == 3 && rows[0].scan == AP_SEED_SCAN_PATH_TOO_LONG && strstr(message, "Shorten the install path"),
+	       "a confirmed path length refusal offers the path workaround");
 	plan_cortex = 0;
 	{
 		const int before = consent_refreshes;

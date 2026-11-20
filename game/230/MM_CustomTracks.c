@@ -9,9 +9,8 @@
                 catalogue. Filter All / Installed / Browse, Search, Refresh
                 catalogue, Rescan local files. Confirm on a track opens its
                 actions: download, update or recheck, versions, source page,
-                and for a track with a release profile also Verify / Finish
-                setup, Export YAML and Relic times (ruled 2026-11-04: export
-                and relic times only inside a track's details).
+                Export YAML, and for a track with a release profile also
+                Verify / Finish setup and Relic times.
      This Seed  the tracks the connected room or Play Solo seed needs, Ready,
                 Missing, Wrong version and so on, against the same store.
                 Install missing, Rescan, Seed identity; per track Resolve,
@@ -31,6 +30,7 @@
 
 #include "../../ap/ap_net.h" // ap_net_seed_name, ap_net_slot_name: Seed identity
 #include "../../ap/ap_track_consent.h" // the track author permission check (A4-74)
+#include "../../ap/ap_solo.h"
 
 enum { CT_TAB_LIBRARY, CT_TAB_SEED, CT_TAB_IMPORT, CT_TAB_COUNT };
 enum { CT_FOCUS_TABS, CT_FOCUS_LIST, CT_FOCUS_CONTROLS, CT_FOCUS_ACTIONS, CT_FOCUS_SUB };
@@ -211,7 +211,7 @@ struct CT_LibView
     const struct CustomTrackLibraryEntry *exact;     /* installed copy of exactly that revision */
     int older;      /* an older revision is installed: Update */
     int trackID;    /* Saphi track id, 0 when unknown */
-    int package;    /* the track has the release profile (export, relic times) */
+    int package;    /* the track has the release profile (setup, relic times) */
     int allowed;    /* A4-74: its author allowed in-game download (Download, Update, Versions) */
     const char *title, *version, *author;
 };
@@ -517,19 +517,42 @@ static void CT_Add(struct CT_Action *a, int *n, int id, const char *label, const
     (*n)++;
 }
 
-/* Why the release-profile actions (export, relic times) are unavailable, or
-   "" when they can run. */
-static void CT_PackageReason(const struct CT_LibView *v, int relic, char *out, size_t size)
+static int CT_IsManagedRevision(const struct CT_LibItem *item, const struct CT_LibView *v)
 {
     const struct CustomTrackManagerPackage *package = AP_CustomContentPackage();
+    return item->kind == CT_ITEM_PACKAGE ||
+           (v->package && v->installed && v->installed->installed &&
+            !strcmp(v->installed->version, package->version) &&
+            !strcmp(v->installed->local.uuid, package->packageUuid) &&
+            !strcmp(v->installed->local.levSha256, package->levSha256) &&
+            !strcmp(v->installed->local.vrmSha256, package->vrmSha256));
+}
+
+static int CT_ManagedReady(void)
+{
     const struct CustomTrackManagerStatus *status = AP_CustomContentStatus();
-    out[0] = 0;
-    if (!v->package)
-        snprintf(out, size, "Not available for this track yet. Only %s has an export profile.", package->title);
-    else if (status->state != CTR_CT_MANAGER_READY || !status->verifiedPackageSha256[0])
-        snprintf(out, size, "Needs a Ready %s v%s. Use Verify / Setup first.", package->title, package->version);
-    else if (relic && !package->flagRelicCrates)
-        snprintf(out, size, "This track has no relic crates.");
+    return status->state == CTR_CT_MANAGER_READY && status->verifiedPackageSha256[0];
+}
+
+static const char *CT_RelicReason(const struct CT_LibItem *item, const struct CT_LibView *v)
+{
+    if (!CT_IsManagedRevision(item, v)) return "Relic times are edited in the track package.";
+    if (!CT_ManagedReady()) return "Use Verify / Setup to make this track Ready.";
+    return AP_CustomContentPackage()->flagRelicCrates ? "" : "This track has no relic crates.";
+}
+
+static const char *CT_ExportReason(const struct CT_LibItem *item, const struct CT_LibView *v)
+{
+    if (item->kind == CT_ITEM_PACKAGE)
+        return CT_ManagedReady() ? "" : "Use Verify / Setup to make this track Ready.";
+    if (!v->installed || !v->installed->installed)
+        return "Install and verify this track before exporting.";
+    if (v->installed->local.laps && !v->installed->local.arcade && !v->installed->local.timeTrial)
+        return "This track needs a verified race mode before exporting.";
+    if (CT_SourceTrackID(v) <= 0 &&
+        !(v->installed->local.sourceUrl[0] && v->installed->local.bigfileIndex <= 4095))
+        return "This track has no known public source.";
+    return "";
 }
 
 static int CT_LibraryActions(const struct CT_LibItem *item, const struct CT_LibView *v, struct CT_Action *a)
@@ -564,21 +587,21 @@ static int CT_LibraryActions(const struct CT_LibItem *item, const struct CT_LibV
     CT_Add(a, &n, CT_ACT_VERSIONS, "Versions", !v->source ? "Not in the Project Saphi catalogue." :
            !v->allowed ? ap_track_permission_text() : "");
     CT_Add(a, &n, CT_ACT_SOURCE, "Open source page",
-           CT_SourceTrackID(v) > 0 || item->kind == CT_ITEM_PACKAGE ? "" :
+           CT_SourceTrackID(v) > 0 || item->kind == CT_ITEM_PACKAGE ||
+           (v->installed && v->installed->local.sourceUrl[0]) ? "" :
            v->installed && v->installed->local.xdelta ? "Imported from a patch. No source page is known." :
            "No source page is known for this track.");
     if (v->package)
         CT_Add(a, &n, CT_ACT_VERIFY, "Verify / Setup", s_ctLegacyDownload ? "A download is running." : "");
-    CT_PackageReason(v, 0, reason, sizeof reason);
-    CT_Add(a, &n, CT_ACT_EXPORT, "Export YAML", reason);
-    CT_PackageReason(v, 1, reason, sizeof reason);
-    CT_Add(a, &n, CT_ACT_RELIC, "Relic times", reason);
+    const char *exportReason = CT_ExportReason(item, v);
+    CT_Add(a, &n, CT_ACT_EXPORT, *exportReason ? "Why YAML is unavailable" : "Export YAML", exportReason);
+    CT_Add(a, &n, CT_ACT_RELIC, "Relic times", CT_RelicReason(item, v));
     return n;
 }
 
 static void CT_OpenURL(const char *url)
 {
-    CT_SetMessage(Platform_OpenURL(url) ? "Opened the Project Saphi page." : "Could not open the source page.");
+    CT_SetMessage(Platform_OpenURL(url) ? "Opened the source page." : "Could not open the source page.");
 }
 
 static void CT_OpenTrackSource(int trackID)
@@ -776,8 +799,19 @@ static void CT_RelicDraw(uint32_t *ot)
 
 /* ---- export (Copy YAML / Save YAML) ------------------------------------- */
 
-static void CT_Export(int save)
+static void CT_Export(const struct CT_LibItem *item, const struct CT_LibView *v, int save)
 {
+    const char *reason = CT_ExportReason(item, v);
+    if (*reason)
+    {
+        CT_SetMessage(reason);
+        return;
+    }
+    if (!CT_IsManagedRevision(item, v) || !CT_ManagedReady())
+    {
+        AP_Solo_ExportTrackYaml(v->installed, save, s_ctMessage, sizeof s_ctMessage);
+        return;
+    }
     const struct CustomTrackManagerPackage *package = AP_CustomContentPackage();
     const struct CustomTrackManagerStatus *status = AP_CustomContentStatus();
     struct CustomTrackRelicTimes relic;
@@ -817,6 +851,9 @@ static int CT_ScanFromStatus(int state)
     case CTR_CT_MANAGER_UNSUPPORTED:
     case CTR_CT_MANAGER_INCOMPATIBLE: return AP_SEED_SCAN_REFUSED;
     case CTR_CT_MANAGER_IO_ERROR: return AP_SEED_SCAN_IO_ERROR;
+    case CTR_CT_MANAGER_LOAD_FAILED: return AP_SEED_SCAN_LOAD_FAILED;
+    case CTR_CT_MANAGER_PATH_TOO_LONG: return AP_SEED_SCAN_PATH_TOO_LONG;
+    case CTR_CT_MANAGER_RACE_GRID_UNSUPPORTED: return AP_SEED_SCAN_RACE_GRID_UNSUPPORTED;
     default: return AP_SEED_SCAN_UNKNOWN;
     }
 }
@@ -864,6 +901,9 @@ static const char *CT_SeedStateText(const struct AP_SeedContentRow *r)
     case AP_SEED_SCAN_SETUP: return "Setup";
     case AP_SEED_SCAN_REFUSED: return "Refused";
     case AP_SEED_SCAN_IO_ERROR: return "Error";
+    case AP_SEED_SCAN_LOAD_FAILED: return "Load failed";
+    case AP_SEED_SCAN_PATH_TOO_LONG: return "Path too long";
+    case AP_SEED_SCAN_RACE_GRID_UNSUPPORTED: return "Grid refused";
     default: return "Unknown";
     }
 }
@@ -882,6 +922,12 @@ static const char *CT_SeedStateLong(const struct AP_SeedContentRow *r)
 }
 
 static int CT_SeedReady(void) { return ap_seed_ready_count(s_ctSeedRows, s_ctSeedCount); }
+
+static int CT_SeedInstallAvailable(void)
+{
+    if (s_ctSeedLegacy) return ap_seed_row_downloadable(&s_ctSeedRows[0]);
+    return ap_seed_install_plan(s_ctSeedRows, s_ctSeedCount, 0, NULL, NULL, NULL, NULL, 0) == AP_SEED_PLAN_OK;
+}
 
 /* Installed Library revisions with the seed track's title: an explanation,
    never a Ready claim (the seed's pins decide). */
@@ -1152,7 +1198,7 @@ static void CT_DrawActions(const struct CT_Action *a, int n, uint32_t *ot)
 {
     int i, first = CT_First(s_ctActionSel);
     for (i = first; i < first + CT_ROWS && i < n; i++)
-        CT_Row(i - first, a[i].label, i == s_ctActionSel, a[i].reason[0] ? GRAY : WHITE, ot);
+        CT_Row(i - first, a[i].label, i == s_ctActionSel, a[i].reason[0] && a[i].id != CT_ACT_EXPORT ? GRAY : WHITE, ot);
     CT_ScrollBar(n, first, ot);
 }
 
@@ -1244,7 +1290,9 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
     }
     else if (s_ctFocus == CT_FOCUS_ACTIONS && item)
     {
-        s_ctActionSel = CT_Step(s_ctActionSel, nActions, tapped);
+        const int action = CT_Step(s_ctActionSel, nActions, tapped);
+        if (action != s_ctActionSel) s_ctMessage[0] = 0;
+        s_ctActionSel = action;
         if (tapped & (BTN_TRIANGLE | BTN_START)) { s_ctFocus = CT_FOCUS_LIST; s_ctMessage[0] = 0; OtherFX_Play(2, 1); }
         else if (tapped & (BTN_CROSS | BTN_CIRCLE))
         {
@@ -1269,7 +1317,8 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
                 break;
             case CT_ACT_SOURCE:
                 if (item->kind == CT_ITEM_PACKAGE) CT_OpenURL(AP_CustomContentPackage()->sourceUrl);
-                else CT_OpenTrackSource(CT_SourceTrackID(&v));
+                else if (CT_SourceTrackID(&v) > 0) CT_OpenTrackSource(CT_SourceTrackID(&v));
+                else CT_OpenURL(v.installed->local.sourceUrl);
                 break;
             case CT_ACT_VERIFY:
                 AP_CustomContentVerify();
@@ -1306,7 +1355,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
         {
             s_ctSubSel = CT_Step(s_ctSubSel, 2, tapped);
             if (tapped & (BTN_TRIANGLE | BTN_START)) { s_ctFocus = CT_FOCUS_ACTIONS; s_ctSub = CT_SUB_NONE; OtherFX_Play(2, 1); }
-            else if (tapped & (BTN_CROSS | BTN_CIRCLE)) { OtherFX_Play(1, 1); CT_Export(s_ctSubSel); }
+            else if (tapped & (BTN_CROSS | BTN_CIRCLE)) { OtherFX_Play(1, 1); CT_Export(item, &v, s_ctSubSel); }
         }
         else if (s_ctSub == CT_SUB_RELIC)
         {
@@ -1456,7 +1505,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
 
 /* ---- This Seed tab ------------------------------------------------------ */
 
-static void CT_SeedFrame(int tapped, uint32_t *ot)
+static void CT_SeedFrame(int tapped, int installAvailable, uint32_t *ot)
 {
     struct CT_Action actions[CT_ACTIONS_MAX];
     const struct AP_SeedContentRow *r = NULL;
@@ -1574,7 +1623,8 @@ static void CT_SeedFrame(int tapped, uint32_t *ot)
             for (i = 0; i < queued; i++)
                 if (s_ctSeedRows[plan[i]].registry == AP_SEED_REGISTRY_CACHED) cached++;
             ap_seed_format_bytes(bytes, size, sizeof size);
-            snprintf(line, sizeof line, "Install missing: %d track%s, %s from Project Saphi.%s%s", queued, queued == 1 ? "" : "s", size,
+            snprintf(line, sizeof line, "Install missing: %d track%s, %s from Project Saphi.%s%s",
+                     queued, queued == 1 ? "" : "s", size,
                      manual ? " Tracks without a download need their files added by hand." : "",
                      cached ? " Locations from the cached registry." : "");
             CT_DrawPaged(line, CT_DETAIL_X, 70, CT_DETAIL_W, 7, WHITE, ot);
@@ -1652,10 +1702,14 @@ static void CT_SeedFrame(int tapped, uint32_t *ot)
     }
     else snprintf(line, sizeof line, "No seed loaded");
     if (AP_SeedContentInstallBusy() || s_ctLegacyDownload) snprintf(line, sizeof line, "Installing...");
-    CT_Footer(line, s_ctFocus == CT_FOCUS_TABS ? NULL : s_ctFocus == CT_FOCUS_LIST ? NativeMenu_Labels("*: Actions   ^: Page controls") :
+    const int confirmingInstall = s_ctFocus == CT_FOCUS_SUB && s_ctSub == CT_SUB_INSTALL;
+    CT_Footer(confirmingInstall ? "Leaving pauses the install queue." : line,
+                    s_ctFocus == CT_FOCUS_TABS ? NULL :
+                    s_ctFocus == CT_FOCUS_LIST ? NativeMenu_Labels(installAvailable ? "[: Install missing   ^: Controls"
+                                                                                 : "*: Actions   ^: Page controls") :
                     s_ctFocus == CT_FOCUS_CONTROLS ? (s_ctSeedCount ? NativeMenu_Labels("*: Select   [: Tracks   ^: Tabs") : NativeMenu_Labels("*: Select   ^: Tabs")) :
                     s_ctFocus == CT_FOCUS_ACTIONS ? NativeMenu_Labels("*: Select   ^: Tracks") :
-                    s_ctSub == CT_SUB_INSTALL ? NativeMenu_Labels("*: Install   ^: Cancel") : NativeMenu_Labels("^: Back"), ot);
+                    confirmingInstall ? NativeMenu_Labels("*: Install   ^: Cancel") : NativeMenu_Labels("^: Back"), ot);
 }
 
 /* ---- Import tab --------------------------------------------------------- */
@@ -1731,12 +1785,30 @@ static void MM_ConfigProc_CustomTracks(struct RectMenu *menu, uint32_t *ot, stru
 
     CT_Poll();
     CT_BuildSeed();
-    /* A fresh visit: This Seed when the loaded seed misses tracks, otherwise
-       Library (ruled 2026-11-04 19:38 CET). */
+    /* This Seed opens on Install missing when there is a batch to offer.
+       For tracks that need manual attention, show the first affected row. */
     if (now - s_ctLastFrame > 2 && !MM_CustomImport_Active() && !s_contentSearchEditing)
     {
-        s_ctTab = s_ctSeedCount && CT_SeedReady() < s_ctSeedCount ? CT_TAB_SEED : CT_TAB_LIBRARY;
+        const int needsTracks = CT_SeedReady() < s_ctSeedCount;
+        s_ctTab = needsTracks ? CT_TAB_SEED : CT_TAB_LIBRARY;
         s_ctFocus = CT_FOCUS_TABS;
+        if (needsTracks)
+        {
+            if (CT_SeedInstallAvailable())
+            {
+                s_ctFocus = CT_FOCUS_CONTROLS;
+                s_ctControlSel[CT_TAB_SEED] = 0;
+            }
+            else
+            {
+                for (int i = 0; i < s_ctSeedCount; i++)
+                {
+                    if (ap_seed_row_state(&s_ctSeedRows[i]) == AP_SEED_STATE_READY) continue;
+                    s_ctListSel[CT_TAB_SEED] = i;
+                    break;
+                }
+            }
+        }
         s_ctSub = CT_SUB_NONE;
         if (!AP_SeedContentInstallBusy() && !s_ctLegacyDownload) s_ctMessage[0] = 0;
     }
@@ -1776,7 +1848,16 @@ static void MM_ConfigProc_CustomTracks(struct RectMenu *menu, uint32_t *ot, stru
         tapped = 0;
     }
 
-    if (s_ctFocus == CT_FOCUS_TABS && !MM_CustomImport_Active())
+    const int installAvailable = !CT_JobsBusy() && CT_SeedInstallAvailable();
+    if (s_ctTab == CT_TAB_SEED && (s_ctFocus == CT_FOCUS_TABS || s_ctFocus == CT_FOCUS_LIST) &&
+        (tapped & BTN_SQUARE) && installAvailable)
+    {
+        s_ctControlSel[CT_TAB_SEED] = 0;
+        CT_InstallMissing();
+        OtherFX_Play(1, 1);
+        tapped = 0;
+    }
+    else if (s_ctFocus == CT_FOCUS_TABS && !MM_CustomImport_Active())
     {
         if (tapped & (BTN_LEFT | BTN_L1)) CT_GoTab((s_ctTab + CT_TAB_COUNT - 1) % CT_TAB_COUNT);
         else if (tapped & (BTN_RIGHT | BTN_R1)) CT_GoTab((s_ctTab + 1) % CT_TAB_COUNT);
@@ -1832,7 +1913,7 @@ static void MM_ConfigProc_CustomTracks(struct RectMenu *menu, uint32_t *ot, stru
         DecalFont_DrawLineOT("CUSTOM TRACKS", 256, 24, FONT_BIG, JUSTIFY_CENTER | ORANGE, ot);
     CT_DrawTabs(ot);
     if (s_ctTab == CT_TAB_LIBRARY) CT_LibraryFrame(tapped, ot);
-    else if (s_ctTab == CT_TAB_SEED) CT_SeedFrame(tapped, ot);
+    else if (s_ctTab == CT_TAB_SEED) CT_SeedFrame(tapped, installAvailable, ot);
     else
     {
         const int importing = MM_CustomImport_Active();
@@ -1842,6 +1923,8 @@ static void MM_ConfigProc_CustomTracks(struct RectMenu *menu, uint32_t *ot, stru
         else if (MM_CustomImport_Active()) CT_Footer(NULL, NativeMenu_Labels("^: Tabs"), ot);
     }
     if (s_ctFocus == CT_FOCUS_TABS && s_ctTab != CT_TAB_IMPORT)
-        CT_Footer(NULL, CT_JobsBusy() ? NativeMenu_Labels("Working...   *: Open") : NativeMenu_Labels("*: Open   ^: Options"), ot);
+        CT_Footer(NULL, NativeMenu_Labels(CT_JobsBusy() ? "Working...   *: Open" :
+                                        s_ctTab == CT_TAB_SEED && installAvailable ? "*: Open [: Install missing ^: Back" :
+                                        "*: Open   ^: Options"), ot);
     CT_DrawPanels(ot);
 }
