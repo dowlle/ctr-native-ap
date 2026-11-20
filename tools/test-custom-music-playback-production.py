@@ -47,7 +47,8 @@ int CustomTrack_ServingLoad(int level, int cup, int id) { return serving_load; }
 int CustomTrack_CortexMusicServing(int level, int cup, int id) { return cortex_serving; }
 int CustomTrack_GarageVenueServing(int level, int boss, int active) { return garage && active ? boss : -1; }
 int CustomTrack_OxideFinalServing(int level, int boss, int active) { return oxide && active; }
-int CustomTrack_MusicFallbackLevel(int level, int cup, int id, int boss, int bossActive) { return content_fallback; }
+static int fallback_bossActive_seen;
+int CustomTrack_MusicFallbackLevel(int level, int cup, int id, int boss, int bossActive) { fallback_bossActive_seen = bossActive; return content_fallback; }
 int CustomOffline_MusicFallbackLevel(void) { return offline_fallback; }
 int Bank_AssignSpuAddrs(void) { return 1; }
 int Bank_Load(int id, struct Bank *bank) { loaded[num_loaded++] = id; return 1; }
@@ -179,10 +180,10 @@ int main(void)
     accept_bank = 0;
     run_load(ADVENTURE_MODE | ADVENTURE_BOSS, 0, 0);
     assert(!admitted && !s_customSongReady);
+    assert(fallback_bossActive_seen == 1); // IS_BOSS_RACE on the signed game mode
     assert(num_loaded == 2 && loaded[0] == 33 && loaded[1] == 56);
     assert(retail_song == 44);
     assert(logged("track music not used, random fallback: level 3 (FX bank 33, song bank 44)"));
-    assert(logged("song for this race: level 3 (FX bank 33, song bank 44)"));
     oxide = 0;
 
     // A custom cup leg with its own music: unchanged.
@@ -211,7 +212,6 @@ int main(void)
     assert(num_loaded == 2 && loaded[0] == 33 && loaded[1] == 54);
     assert(retail_song == 44);
     assert(logged("no track music served, random fallback: level 3 (FX bank 33, song bank 44)"));
-    assert(logged("song for this race: level 3 (FX bank 33, song bank 44)"));
 
     // An offline custom race without music plays its own pick in Arcade.
     serving_load = 0;
@@ -222,7 +222,6 @@ int main(void)
     assert(num_loaded == 2 && loaded[0] == 55 && loaded[1] == 54);
     assert(retail_song == 66);
     assert(logged("no verified track music, random fallback: level 5 (FX bank 55, song bank 66)"));
-    assert(logged("song for this race: level 5 (FX bank 55, song bank 66)"));
     // ... and in Time Trial.
     run_load(TIME_TRIAL, 0, 0);
     assert(loaded[0] == 55 && retail_song == 66);
@@ -260,13 +259,17 @@ int main(void)
     Music_Adjust(1, 0, NULL, 0);
     Music_Adjust(CSEQ_SONG_LEVEL, 0, NULL, 0);
     assert(start_calls == 7 && start_logs == 2);
+    // A Retry stops the music and starts the song again: logged again.
+    Music_End();
+    Music_Adjust(CSEQ_SONG_LEVEL, 0, NULL, 0);
+    assert(start_calls == 8 && start_logs == 3);
 
     // A retail race logs nothing when its song starts.
     s_fallbackLevel = -1;
     s_songStartLogged = 0;
     Music_End();
     Music_Adjust(CSEQ_SONG_LEVEL, 0, NULL, 0);
-    assert(start_calls == 8 && start_logs == 2);
+    assert(start_calls == 9 && start_logs == 3);
 
     puts("PASS: custom and retail race bank selection, boss music preference, random fallback and decision logs, custom song start retry");
 }

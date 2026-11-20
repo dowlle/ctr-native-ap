@@ -459,7 +459,6 @@ u32 Music_AsyncParseBanks(void)
 				if (HOWL_CustomMusic_SetSong())
 					break;
 				index = HOWL_CustomMusic_FallbackSongBank();
-				HOWL_CustomMusic_LogFallback("song for this race");
 			}
 			// Seed races and boss venues use the .sca paired with their bank,
 			// or the picked fallback's song when there is none.
@@ -468,7 +467,6 @@ u32 Music_AsyncParseBanks(void)
 			else if (HOWL_CustomMusic_FallbackLevel() >= 0)
 			{
 				index = HOWL_CustomMusic_FallbackSongBank();
-				HOWL_CustomMusic_LogFallback("song for this race");
 			}
 			else
 #endif
@@ -692,6 +690,11 @@ void Music_Start(u32 songID)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002e53c-0x8002e550
 void Music_End(void)
 {
+#ifdef CTR_CUSTOM_PACKAGES
+	// A Retry stops the music and starts the song again on banks that stay
+	// loaded: the next start logs its song data again.
+	s_songStartLogged = 0;
+#endif
 	sdata->cseqBoolPlay = false;
 
 	// no songs are playing

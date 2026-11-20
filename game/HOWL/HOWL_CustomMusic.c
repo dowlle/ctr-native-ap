@@ -327,7 +327,7 @@ int HOWL_CustomMusic_ContentLoadBank(int level, struct Bank *thisBank)
 		// No music route: a retail race (fallback -1, silent and unchanged)
 		// or a custom race whose package serves no music.
 		s_fallbackLevel = CustomTrack_MusicFallbackLevel(level, adventureCup, gGT->cup.cupID,
-		                                                 gGT->bossID, IS_BOSS_RACE(mode));
+		                                                 gGT->bossID, IS_BOSS_RACE(gGT->gameMode1));
 		if (s_fallbackLevel >= 0)
 			HOWL_CustomMusic_LogFallback("no track music served, random fallback");
 		return 0;
@@ -340,7 +340,7 @@ int HOWL_CustomMusic_ContentLoadBank(int level, struct Bank *thisBank)
 	// Release the refused asset before the fallback bank loads.
 	HOWL_CustomMusic_ReleaseAudio();
 	s_fallbackLevel = CustomTrack_MusicFallbackLevel(level, adventureCup, gGT->cup.cupID,
-	                                                 gGT->bossID, IS_BOSS_RACE(mode));
+	                                                 gGT->bossID, IS_BOSS_RACE(gGT->gameMode1));
 	if (s_fallbackLevel >= 0)
 		HOWL_CustomMusic_LogFallback("track music not used, random fallback");
 	return 0;

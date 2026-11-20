@@ -679,10 +679,21 @@ int CustomTrack_OxideFinalServing(int levelID, int bossID, int adventureBossActi
 }
 
 #ifdef CTR_CUSTOM_PACKAGES
+// A track's id carries a "package/" or "custom/" prefix depending on the
+// route that armed it; the pick ignores the prefix so one track gets one song
+// on a pad, in a cup leg and in a garage venue of the same room.
+static const char *CustomTrack_MusicKey(const char *id)
+{
+	if (!strncmp(id, "package/", 8)) return id + 8;
+	if (!strncmp(id, "custom/", 7)) return id + 7;
+	return id;
+}
+
 // See native_custom_tracks.h. The pick key is the race context's track key for
 // a pad or cup leg, the venue's track key for a garage venue, the bundled
-// pair's LEV pin for the Oxide Final venue, and the armed descriptor's LEV pin
-// for a legacy event race, which has no standalone context.
+// pair's LEV pin for the Oxide Final venue and the bundled Cortex Vortex pad
+// track, and the armed descriptor's LEV pin for a legacy event race, which has
+// no standalone context.
 int CustomTrack_MusicFallbackLevel(int levelID, int adventureCupActive, int cupID, int bossID, int adventureBossActive)
 {
 	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(levelID);
@@ -690,13 +701,14 @@ int CustomTrack_MusicFallbackLevel(int levelID, int adventureCupActive, int cupI
 
 	if (race != NULL)
 		return !race->retail && CustomTrack_ServingLoad(levelID, adventureCupActive, cupID)
-		       ? CustomMusic_FallbackPick(race->roomIdentity, race->trackID) : -1;
+		       ? CustomMusic_FallbackPick(race->roomIdentity, CustomTrack_MusicKey(race->trackID)) : -1;
 	if (CustomTrack_ServingLoad(levelID, adventureCupActive, cupID))
 		return CustomMusic_FallbackPick(0, s_descriptor.levSha256);
 	garage = CustomTrack_GarageVenueServing(levelID, bossID, adventureBossActive);
 	if (garage >= 0)
-		return CustomMusic_FallbackPick(s_garageVenue[garage].roomIdentity, s_garageVenue[garage].trackID);
-	if (CustomTrack_OxideFinalServing(levelID, bossID, adventureBossActive))
+		return CustomMusic_FallbackPick(s_garageVenue[garage].roomIdentity, CustomTrack_MusicKey(s_garageVenue[garage].trackID));
+	if (CustomTrack_OxideFinalServing(levelID, bossID, adventureBossActive) ||
+	    CustomTrack_CortexTrackServing(levelID, adventureBossActive))
 		return CustomMusic_FallbackPick(0, s_oxideFinalDescriptor.levSha256);
 	return -1;
 }
