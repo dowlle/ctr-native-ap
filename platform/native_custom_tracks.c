@@ -7,6 +7,7 @@
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_assets.h>
 #include <platform/native_custom_package.h>
+#include <platform/native_custom_music.h>
 #endif
 
 #include <stdio.h>
@@ -676,6 +677,30 @@ int CustomTrack_OxideFinalServing(int levelID, int bossID, int adventureBossActi
 	return s_oxideFinalVerified && s_oxideFinalDescriptor.enabled &&
 	       adventureBossActive && levelID == s_oxideFinalDescriptor.hostLevelID && bossID == 5;
 }
+
+#ifdef CTR_CUSTOM_PACKAGES
+// See native_custom_tracks.h. The pick key is the race context's track key for
+// a pad or cup leg, the venue's track key for a garage venue, the bundled
+// pair's LEV pin for the Oxide Final venue, and the armed descriptor's LEV pin
+// for a legacy event race, which has no standalone context.
+int CustomTrack_MusicFallbackLevel(int levelID, int adventureCupActive, int cupID, int bossID, int adventureBossActive)
+{
+	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(levelID);
+	int garage;
+
+	if (race != NULL)
+		return !race->retail && CustomTrack_ServingLoad(levelID, adventureCupActive, cupID)
+		       ? CustomMusic_FallbackPick(race->roomIdentity, race->trackID) : -1;
+	if (CustomTrack_ServingLoad(levelID, adventureCupActive, cupID))
+		return CustomMusic_FallbackPick(0, s_descriptor.levSha256);
+	garage = CustomTrack_GarageVenueServing(levelID, bossID, adventureBossActive);
+	if (garage >= 0)
+		return CustomMusic_FallbackPick(s_garageVenue[garage].roomIdentity, s_garageVenue[garage].trackID);
+	if (CustomTrack_OxideFinalServing(levelID, bossID, adventureBossActive))
+		return CustomMusic_FallbackPick(0, s_oxideFinalDescriptor.levSha256);
+	return -1;
+}
+#endif
 
 #ifdef CTR_CUSTOM_PACKAGES
 unsigned char *CustomTrack_ReadBossMusic(int levelID, int bossID, size_t *size, const char **error)

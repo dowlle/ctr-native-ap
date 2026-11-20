@@ -167,7 +167,7 @@ u32 Music_AsyncParseBanks(void)
 		{
 #ifdef CTR_CUSTOM_PACKAGES
 			// A custom-page race: the package's own .sca bank when it has one
-			// that fits, the fixed default otherwise (HOWL_CustomMusic.c).
+			// that fits, the picked fallback bank otherwise (HOWL_CustomMusic.c).
 			if (MainRaceTrack_OfflineCustomLoad())
 			{
 				if (HOWL_CustomMusic_LoadBank(&thisBank))
@@ -177,6 +177,10 @@ u32 Music_AsyncParseBanks(void)
 			// A seed race or a custom boss venue with Boss Music set to TRACK.
 			else if (HOWL_CustomMusic_ContentLoadBank(level, &thisBank))
 				break;
+			// A custom race without verified music plays the picked retail
+			// level's bank; a retail race keeps its own.
+			else if (HOWL_CustomMusic_FallbackLevel() >= 0)
+				index = HOWL_CustomMusic_FallbackFXBank();
 			else
 #endif
 			index = data.levBank_FX[level];
@@ -455,10 +459,17 @@ u32 Music_AsyncParseBanks(void)
 				if (HOWL_CustomMusic_SetSong())
 					break;
 				index = HOWL_CustomMusic_FallbackSongBank();
+				HOWL_CustomMusic_LogFallback("song for this race");
 			}
-			// Seed races and boss venues use the .sca paired with their bank.
+			// Seed races and boss venues use the .sca paired with their bank,
+			// or the picked fallback's song when there is none.
 			else if (HOWL_CustomMusic_SetSong())
 				break;
+			else if (HOWL_CustomMusic_FallbackLevel() >= 0)
+			{
+				index = HOWL_CustomMusic_FallbackSongBank();
+				HOWL_CustomMusic_LogFallback("song for this race");
+			}
 			else
 #endif
 			index = data.levBank_Song[level];
@@ -578,7 +589,17 @@ void Music_Adjust(u32 songID, int newTempo, struct SongSet *set, u32 songSetActi
 				Music_End();
 				return;
 			}
-			HOWL_CustomMusic_Log("started the track's own music", NULL);
+			// Once per race: which song data is active when the song starts.
+			if (!s_songStartLogged)
+			{
+				s_songStartLogged = 1;
+				HOWL_CustomMusic_Log("started the track's own music", NULL);
+			}
+		}
+		else if (songID == CSEQ_SONG_LEVEL && started && !s_songStartLogged && s_fallbackLevel >= 0)
+		{
+			s_songStartLogged = 1;
+			HOWL_CustomMusic_LogFallback("started fallback music");
 		}
 #else
 		(void)started;

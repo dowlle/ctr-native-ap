@@ -159,6 +159,13 @@ int CustomTrack_GarageVenueServing(int levelID, int bossID, int adventureBossAct
 // Pin the geometry pair first and return optional verified audio owned by HOWL.
 // A failed pin or read sets a diagnostic. An absent optional SCA leaves it NULL.
 unsigned char *CustomTrack_ReadBossMusic(int levelID, int bossID, size_t *size, const char **error);
+// The retail race level (0..17) whose bank and song this load falls back to
+// when a custom race has no verified music of its own (A6-47): a deterministic
+// pick per track from the room identity and the track's key
+// (CustomMusic_FallbackPick, native_custom_music.h), stable across retries and
+// across sessions of one room. -1 when this load is not a custom race, so a
+// retail track keeps its own music.
+int CustomTrack_MusicFallbackLevel(int levelID, int adventureCupActive, int cupID, int bossID, int adventureBossActive);
 #endif
 
 // ── Cortex Vortex pad track (schema 15) ──────────────────────────────────────
