@@ -9,6 +9,7 @@
 // exactly.
 #include "ap_seedcfg.h"
 #include "ap_content_plan.h"
+#include "ap_verify_logic.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <iostream>
@@ -377,6 +378,36 @@ static void sanity_versions() {
 }
 
 static void markerless_finish_rules() {
+    constexpr int64_t sunset_lap = 35214016;
+    constexpr int64_t shared_boost = 35010000 + AP_VF_BOOST_SHARED;
+    for (const char *name : {"sunset-before-ruling", "sunset-after-ruling"}) {
+        std::ifstream sunset_in(std::string("tools/fixtures/content-plan/") + name + ".json");
+        const J sunset = J::parse(sunset_in);
+        const auto sunset_ids = plan_locations(sunset);
+        const bool admitted = !sunset.at("content_plan").contains("track_ruling_sources") && admit(sunset, sunset_ids);
+        expect(admitted,
+               std::string(name) + ": original markerless room admits");
+        if (admitted) {
+            Room room;
+            room.present.insert(sunset_ids.begin(), sunset_ids.end());
+            for (const auto &row : sunset.at("content_plan").at("items").at("rows"))
+                room.foreign[row.at("item").get<int64_t>()] = 99;
+            room.foreign.erase(shared_boost);
+            const bool free_finish = std::string(name) == "sunset-after-ruling";
+            ap_content_verify_result result;
+            expect((reachable_set(room, result).count(sunset_lap) != 0) == free_finish,
+                   std::string(name) + ": verifier uses the room's finish rank");
+            room.foreign[shared_boost] = 2;
+            expect(reachable_set(room, result).count(sunset_lap) != 0,
+                   std::string(name) + ": Sunset lap is reachable with USF");
+        }
+        J bad = sunset;
+        auto &rule = bad.at("win_logic").at("checks").at(std::to_string(sunset_lap)).at("rule");
+        rule = J::array({"all", rule, J::array({"cap", 3, -1})});
+        expect(!admit(bad, sunset_ids) && std::string(ctr_cfg.seed_reject_reason).find("finish") != std::string::npos,
+               std::string(name) + ": an unrecognized finish rank is refused");
+    }
+
     // A genuine pre-carry room with Royal Raceway first in a cup and a
     // standalone Royal pad. Its descriptor has ordinary turbo pads.
     std::ifstream in("tools/fixtures/content-plan/markerless-finish.json");

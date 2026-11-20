@@ -60,6 +60,10 @@ static const long kMaskItem = kItemBase + AP_VF_WEAPON_FIRST + kMask;
 static const int kUsf = 2, kFirstBoost = 1;
 static constexpr int kNoFinishRank = 4;  // the exported Boost range is 0 to 3
 
+static bool is_sunset_finish_ruling(const char *content, const char *revision) {
+    return std::strcmp(content, "sunset-vista") == 0 && std::strcmp(revision, "1.2.0") == 0;
+}
+
 // WUMPA: the goal's `wumpa_banked` arm (J11), met when Wumpa Income is.
 enum Op { ALWAYS, COUNT, SUM, DISTINCT, CHECKED, ALL, ANY, WUMPA };
 struct Node { Op op; int count; std::vector<int64_t> codes; std::vector<int> kids; };
@@ -170,7 +174,8 @@ static int finish_boost(const J &track, const std::map<std::string, const J *> &
         const int version = content_plan::state.track_ruling_version;
         const auto matches = [&](const auto &r, const std::string &revision, const std::string &pin) {
             return r.since <= version && *r.revision && content == r.content_id && revision == r.revision
-                && pin == r.lev_sha256;
+                && pin == r.lev_sha256
+                && !(content_plan::state.pre_sunset_finish_ruling && is_sunset_finish_ruling(r.content_id, r.revision));
         };
         const auto source = content_plan::scoped_ruling(content_plan::state, *pkg, lev,
             [&](const std::string &revision, const std::string &pin) {
@@ -251,6 +256,7 @@ static bool markerless_finish_matches() {
     const auto &reviews = content_plan::content_registry().at("track_ruling_revisions");
     std::map<std::string, const J *> packages;
     bool has_unreviewed_track = false;
+    bool has_sunset_finish_ruling = false;
     for (const auto &pkg : p.at("packages")) {
         packages.emplace(content_plan::text(pkg.at("id")), &pkg);
         const std::string key = content_plan::text(pkg.at("content_id"));
@@ -258,6 +264,11 @@ static bool markerless_finish_matches() {
         std::string lev;
         for (const auto &file : pkg.at("files"))
             if (file.at("role") == "lev") lev = content_plan::text(file.at("sha256"));
+        if (!has_sunset_finish_ruling && key == "sunset-vista")
+            has_sunset_finish_ruling = std::any_of(std::begin(kUsfRulings), std::end(kUsfRulings), [&](const auto &r) {
+                return is_sunset_finish_ruling(r.content_id, r.revision) && pkg.at("revision") == r.revision
+                    && lev == r.lev_sha256;
+            });
         const auto &history = reviews.at(key);
         // Reviews added after the first catalog never affect markerless rooms.
         if (std::none_of(history.begin(), history.end(), [](const J &row) { return row.size() == 2; })) continue;
@@ -269,24 +280,35 @@ static bool markerless_finish_matches() {
     const auto tracks = content_plan::table(p.at("tracks"), 160);
     const auto entries = content_plan::table(p.at("entries"), 160);
     read_finish_overrides(p);
-    std::vector<int> ranks(ctr_win_logic.node_count, -1);
-    for (const auto &check : p.at("checks")) {
-        const bool lap = check.at("kind") == "lap";
-        if (!lap && check.at("kind") != "cup_leg") continue;
-        const int index = AP_WinLogicFindCheck(&ctr_win_logic, check.at("location").get<long>());
-        if (index < 0) continue;
-        int expected = kNoFinishRank;
-        for (const auto &route : check.at("routes")) {
-            int rank = lap ? finish_boost(*tracks.at(content_plan::text(check.at("owner"))), packages, o) : 0;
-            if (!route.at("leg_id").is_null())
-                rank = std::max(rank, leg_boost(*entries.at(content_plan::text(route.at("entry_id"))),
-                                               content_plan::text(route.at("leg_id")), !lap, tracks, packages, o));
-            expected = std::min(expected, rank);
+    const auto matches_export = [&] {
+        std::vector<int> ranks(ctr_win_logic.node_count, -1);
+        for (const auto &check : p.at("checks")) {
+            const bool lap = check.at("kind") == "lap";
+            if (!lap && check.at("kind") != "cup_leg") continue;
+            const int index = AP_WinLogicFindCheck(&ctr_win_logic, check.at("location").get<long>());
+            if (index < 0) continue;
+            int expected = kNoFinishRank;
+            for (const auto &route : check.at("routes")) {
+                int rank = lap ? finish_boost(*tracks.at(content_plan::text(check.at("owner"))), packages, o) : 0;
+                if (!route.at("leg_id").is_null())
+                    rank = std::max(rank, leg_boost(*entries.at(content_plan::text(route.at("entry_id"))),
+                                                   content_plan::text(route.at("leg_id")), !lap, tracks, packages, o));
+                expected = std::min(expected, rank);
+            }
+            const int actual = exported_finish_rank(ctr_win_logic.checks[index].rule, ranks);
+            if (actual < kNoFinishRank && expected != actual) return false;
         }
-        const int actual = exported_finish_rank(ctr_win_logic.checks[index].rule, ranks);
-        if (actual < kNoFinishRank && expected != actual) return false;
-    }
-    return markerless_route_ranks_match();
+        return markerless_route_ranks_match();
+    };
+    if (matches_export()) return true;
+    if (!has_sunset_finish_ruling) return false;
+    // The pinned 1.2.0 package was playable before its free-finish ruling.
+    // Check its previous rules across the whole room, including cup routes,
+    // and keep the matching interpretation for the verifier's later sweep.
+    content_plan::state.pre_sunset_finish_ruling = true;
+    if (matches_export()) return true;
+    content_plan::state.pre_sunset_finish_ruling = false;
+    return false;
 }
 
 static int lock_of(const J &pad) { return pad.at("racer_lock").is_null() ? -1 : pad["racer_lock"].get<int>(); }

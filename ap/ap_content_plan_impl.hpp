@@ -68,6 +68,7 @@ struct State {
     std::map<std::string, J> track_ruling_sources;
     int track_ruling_version = 0;
     bool track_pickup_limits = false;
+    bool pre_sunset_finish_ruling = false;
     struct BoxSpot { int number = 0; bool seen = false; short x = 0, y = 0, z = 0, rot_y = 0; };
     std::map<int64_t, BoxSpot> box_spots;
     // Boss garages (#133 PR 6): the `bosses` record and the venues its
