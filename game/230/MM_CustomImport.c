@@ -304,6 +304,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             XdeltaImport_DiscardScan();
             s_importAuto = 0;
             s_importStage = IMPORT_CHOOSE;
+            if (state == 1) MM_CustomImport_Rescan();
             snprintf(s_importMessage, sizeof s_importMessage, "Import cancelled.");
             OtherFX_Play(2, 1);
         }
@@ -399,6 +400,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
             s_importStage = IMPORT_CHOOSE;
             s_importRow = 0;
             s_importMessage[0] = 0;
+            MM_CustomImport_Rescan();
             OtherFX_Play(2, 1);
             return;
         }

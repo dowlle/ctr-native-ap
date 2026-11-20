@@ -57,7 +57,8 @@ extern "C" void XdeltaImportTest_AddCuratedFull(const char *patchSha256, int big
 extern "C" void XdeltaImportTest_ClearCurated();
 extern "C" const char *XdeltaImportTest_CuratedAuthor(const char *patchSha256, int bigfileIndex);
 extern "C" const char *XdeltaImportTest_CuratedKey(const char *patchSha256, int bigfileIndex);
-extern "C" void XdeltaImportTest_History(const char *assets, const char *sha, char *out, size_t size);
+extern "C" void XdeltaImportTest_History(const char *assets, const char *sha, char *out, size_t size,
+                                        const XdeltaImportSummary *summary = nullptr);
 extern "C" void XdeltaImportTest_PackLabel(const char *stem, char *out, size_t size);
 using Bytes = std::vector<unsigned char>;
 static int checks, failures;
@@ -697,7 +698,8 @@ int main()
         changed.bigfile.push_back(filler);                     /* 259 */
         CHECK(XdeltaImport_CutVrm(changed.bigfile[237].data(), changed.bigfile[237].size()) != changed.bigfile[237].size(),
               "fixture: VRM with trailing bytes cuts short");
-        ScanResult r = scan(write_file("Following.xdelta", encode(baseDisc, make_disc(changed))), discPath);
+        const std::string followingPatch = write_file("Following.xdelta", encode(baseDisc, make_disc(changed)));
+        ScanResult r = scan(followingPatch, discPath);
         CHECK(r.ok, "following-texture scan succeeds");
         if (r.ok)
         {
@@ -721,6 +723,24 @@ int main()
                   "following pairs are numbered after every ordinary pair");
             CHECK(last && last->offered && !std::strcmp(last->title, "Following track 6") && !std::strcmp(last->trackKey, "following-track-6"),
                   "a following pair after refused ones takes the next number");
+            if (normalized && last)
+            {
+                XdeltaImportTest_HideLev(normalized->levSha256);
+                ScanResult hidden = scan(followingPatch, discPath);
+                XdeltaImportTest_HideLev("");
+                CHECK(hidden.ok, "the following-texture scan with a hidden LEV succeeds");
+                if (hidden.ok)
+                {
+                    const auto *summary = XdeltaImport_Summary(hidden.scan);
+                    const auto *skip = item_for(summary, 230);
+                    const auto *next = item_for(summary, 257);
+                    CHECK(skip && !skip->offered && !std::strcmp(skip->reason, "This level was left unused in the adventure."),
+                          "a hidden following pair is skipped");
+                    CHECK(next && next->offered && !std::strcmp(next->pin, last->pin),
+                          "a later following pair keeps its package pin");
+                }
+                XdeltaImport_Free(&hidden.scan);
+            }
             const auto *failed = item_for(s, 242);
             CHECK(failed && !failed->offered && !std::strcmp(failed->title, "Following track 5") &&
                   !std::strncmp(failed->reason, "Files failed checks: ", 21),
@@ -2565,6 +2585,14 @@ int main()
             write_path(recordPath, Bytes{});
             const int oldInstalls[] = {offered[0], retiredSlot};
             XdeltaImport_RecordResult(assets.c_str(), "Pack.xdelta", &previous, oldInstalls, 2, "");
+            auto legacy = nlohmann::json::parse(read_file(recordPath));
+            legacy["patches"][0].erase("offered_slots");
+            const auto legacyText = legacy.dump();
+            write_path(recordPath, Bytes(legacyText.begin(), legacyText.end()));
+            XdeltaImportTest_History(assets.c_str(), s->patchSha256, note, sizeof note, s);
+            XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr);
+            CHECK(st[2].state == XDELTA_STATE_PARTLY && st[2].imported == 1 &&
+                  st[2].offered == (int)offered.size(), "a rescan updates the chooser before another install");
             XdeltaImport_RecordResult(assets.c_str(), "Pack.xdelta", s, offered.data(), 1, "");
             XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr);
             CHECK(st[2].state == XDELTA_STATE_PARTLY && st[2].imported == 1 &&

@@ -46,6 +46,7 @@ fixture = r'''
 #include "ap/ap_solo_logic.hpp"
 #include "ap/ap_track_key_aliases.hpp"
 #include "include/platform/native_custom_package.h"
+#include "include/platform/native_custom_track_visibility.h"
 namespace fs = std::filesystem;
 #define AP_SOLO_GETPID() getpid()
 static const size_t kDescriptorMax = 64 * 1024;
@@ -71,6 +72,7 @@ for signature in ("bool SoloRootIsLink()", "std::string ReadSmallPlainFile(const
 fixture += between("// Keeps `json` as solo/<folder>/<name>; true once the file holds it.",
                    "// solo/needs-laps/<track key>__<revision>.json of a listed row")
 fixture += function("bool PinnedFilePresent(const std::string &key, const nlohmann::json &pin)")
+fixture += function("bool HiddenTrackDescriptor(")
 fixture += "}\n"
 fixture += between("namespace\n{\n// \"<revision>|lev:<sha256>:<bytes>|vrm:<sha256>:<bytes>\"",
                    "#ifdef CTR_CUSTOM_PACKAGES\nnamespace {\n// PinSignature of a verified store package")
@@ -140,6 +142,22 @@ int main(int, char **argv) {
     assert(message.rfind("Nina's Nightmare 99 1.0.0: another installed copy", 0) == 0);
     assert(message.find("reinstall the copy you want to play") != std::string::npos && message.size() <= 170);
     assert(read(std::string("tracks/") + name) == oldA && loggedFile(name));
+
+    // A hidden copy retains its pinned files, and its discovery entry can be
+    // replaced by an eligible copy sharing its key and version.
+    const char *hidden = kCustomTrackHiddenLevs[0];
+    const auto hiddenPins = pins(hidden, "ab");
+    for (const char *folder : {"tracks/", "needs-laps/"}) {
+        clean();
+        write(std::string(folder) + name, descriptor("Nina", hiddenPins, std::strcmp(folder, "tracks/") == 0 ? 3 : 0));
+        write("rooms/old/room.json", hiddenPins);
+        scan.live = {sig(hidden, "ab"), sig("ba", "bb")};
+        assert(ApplyStoreDescriptor(entry(1, "Nina", newB, "b"), scan, why));
+        assert(read(std::string("tracks/") + name) == newB);
+        assert(read("rooms/old/room.json") == hiddenPins && scan.live.count(sig(hidden, "ab")));
+        assert(loggedFile("the previous copy is hidden"));
+    }
+    clean(); write(std::string("tracks/") + name, oldA);
 
     // Importing the chosen copy can update the active Play Solo entry.
     storeBusy = true;

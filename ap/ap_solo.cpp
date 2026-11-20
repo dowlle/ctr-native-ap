@@ -1242,6 +1242,8 @@ bool MayReplace(const nlohmann::json &kept, const std::string &key, const std::s
 		return true;
 	if (!scope.live)
 		return false;
+	if (HiddenTrackDescriptor(kept))
+		return true; // Only the discovery entry changes. The pinned package remains installed.
 	const nlohmann::json files = kept.value("files", nlohmann::json());
 	if (scope.live->count(PinSignature(revision, files)))
 		return false;
@@ -1367,7 +1369,8 @@ bool RecordDescriptor(int kind, const char *contentId, const char *revision, con
 			              "reinstall the copy you want to play",
 			              std::string(folder) + " holds other file pins of a copy that is still installed");
 		Log(std::string("replacing ") + folder + "/" + name + ": " +
-		    (scope.fresh ? "a copy with other files was just installed" : "its files are no longer installed"));
+		    (scope.fresh ? "a copy with other files was just installed" :
+		     HiddenTrackDescriptor(*d) ? "the previous copy is hidden" : "its files are no longer installed"));
 	}
 	// A replaced entry for other files goes first, so a file that cannot be
 	// removed (in use, antivirus) leaves one state, not both.

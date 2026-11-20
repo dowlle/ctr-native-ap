@@ -1505,16 +1505,11 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             if (embeddedSources.count(c.index)) candidate.embedded = embeddedSources[c.index];
             lev.clear(); lev.shrink_to_fit(); vrm.clear(); vrm.shrink_to_fit();
             const std::string levHash = hex_sha256(candidate.lev.data(), candidate.lev.size());
-            if (CustomTrack_IsHiddenLev(levHash.c_str())
+            bool hidden = CustomTrack_IsHiddenLev(levHash.c_str());
 #ifdef CTR_XDELTA_TESTING
-                || levHash == g_testHiddenLev
+            hidden = hidden || levHash == g_testHiddenLev;
 #endif
-            )
-            {
-                if (following) ordinal--;
-                add_item(*scan, skip_item((int)c.index, level_label(c.index), "This level was left unused in the adventure."));
-                return;
-            }
+            const char *hiddenReason = "This level was left unused in the adventure.";
             const std::string vrmHash = hex_sha256(candidate.vrm.data(), candidate.vrm.size());
             /* Name sources in order: the pack descriptor, the curated table of
                tester names (patch hash and slot), the known-track table,
@@ -1548,7 +1543,7 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
             if (duplicate != seen.end())
             {
                 if (following) { undo_following(); return; }
-                add_item(*scan, skip_item((int)c.index, title, "Same track as " + duplicate->second));
+                add_item(*scan, skip_item((int)c.index, title, hidden ? hiddenReason : "Same track as " + duplicate->second));
                 return;
             }
             if (offeredBytes + candidate.lev.size() + candidate.vrm.size() > kOfferedBytesMax)
@@ -1675,9 +1670,16 @@ extern "C" int XdeltaImport_Scan(const XdeltaImportRequest *request, XdeltaImpor
                 undo_following();
                 return;
             }
-            item.offered = 1;
             offeredBytes += candidate.lev.size() + candidate.vrm.size();
             seen[{levHash, vrmHash}] = title;
+            if (hidden)
+            {
+                // Keep the ordinal of a pair that used to be offered, even in the deferred pass.
+                CustomPackage_Free(&built.owned);
+                add_item(*scan, skip_item((int)c.index, level_label(c.index), hiddenReason));
+                return;
+            }
+            item.offered = 1;
             add_item(*scan, item, std::move(built));
         };
         for (const auto &c : ex.changed) consider(c);
@@ -2727,10 +2729,10 @@ std::set<int> offered_slots(const XdeltaImportSummary &summary)
     return slots;
 }
 
-void fill_state(XdeltaPatchState *state, const PatchRecord &r, const std::set<int> *current = nullptr)
+void fill_state(XdeltaPatchState *state, const PatchRecord &r)
 {
     *state = {};
-    if (!current && r.offeredSlots) current = &*r.offeredSlots;
+    const auto *current = r.offeredSlots ? &*r.offeredSlots : nullptr;
     state->offered = current ? (int)current->size() : (int)r.offered;
     state->imported = current ? (int)std::count_if(current->begin(), current->end(), [&](int slot) {
         return r.tracks.count(slot) != 0;
@@ -2803,9 +2805,18 @@ std::string history_note(const std::string &assets, const std::string &sha, cons
     auto list = load_records(assets);
     PatchRecord *r = find_record(list, sha, "", 0);
     if (!r || r->sha256 != sha || r->tracks.empty()) return "";
-    const auto current = summary ? offered_slots(*summary) : std::set<int>{};
+    if (summary)
+    {
+        auto current = offered_slots(*summary);
+        if (!r->offeredSlots || *r->offeredSlots != current)
+        {
+            r->offered = (unsigned)current.size();
+            r->offeredSlots = std::move(current);
+            save_records(assets, list);
+        }
+    }
     XdeltaPatchState state;
-    fill_state(&state, *r, summary ? &current : nullptr);
+    fill_state(&state, *r);
     if (!state.imported) return "";
     return "Imported before: " + std::to_string(state.imported) + (state.offered ? " of " + std::to_string(state.offered) : std::string()) +
            " track" + (state.imported == 1 && !state.offered ? "" : "s");
@@ -3191,9 +3202,10 @@ extern "C" const char *XdeltaImportTest_CuratedKey(const char *patchSha256, int 
     return patchSha256 && curated_track(patchSha256, bigfileIndex, c) && c.key[0] ? c.key : nullptr;
 }
 extern "C" const char *XdeltaImportTest_KnownName(const char *levSha256) { return levSha256 ? known_track_name(levSha256) : nullptr; }
-extern "C" void XdeltaImportTest_History(const char *assets, const char *sha, char *out, size_t size)
+extern "C" void XdeltaImportTest_History(const char *assets, const char *sha, char *out, size_t size,
+                                        const XdeltaImportSummary *summary)
 {
-    std::snprintf(out, size, "%s", history_note(assets, sha).c_str());
+    std::snprintf(out, size, "%s", history_note(assets, sha, summary).c_str());
 }
 extern "C" void XdeltaImportTest_PackLabel(const char *stem, char *out, size_t size)
 {
