@@ -41,7 +41,10 @@ enum
 	AP_SEED_SCAN_MISMATCH,      /* files present, none is the pinned revision */
 	AP_SEED_SCAN_SETUP,         /* verified, local setup (manifest) unfinished */
 	AP_SEED_SCAN_REFUSED,       /* bytes lack what the room claims */
-	AP_SEED_SCAN_IO_ERROR       /* could not read the folder or files */
+	AP_SEED_SCAN_IO_ERROR,      /* could not read the folder or files */
+	AP_SEED_SCAN_LOAD_FAILED,   /* the race loader refused the verified pair */
+	AP_SEED_SCAN_PATH_TOO_LONG, /* a path exceeds the race loader's buffer */
+	AP_SEED_SCAN_RACE_GRID_UNSUPPORTED /* the race requires AI paths and driver spawns */
 };
 
 /* Where a missing track can come from. */
@@ -307,6 +310,21 @@ static inline void ap_seed_instruction(const struct AP_SeedContentRow *row, char
 	if (!out || size == 0) return;
 	ap_seed_plain_text(row->folder, folder, sizeof folder);
 	ap_seed_plain_text(row->revision, rev, sizeof rev);
+	if (row->scan == AP_SEED_SCAN_LOAD_FAILED)
+	{
+		snprintf(out, size, "The race could not load these files. Check the client log for the reason.");
+		return;
+	}
+	if (row->scan == AP_SEED_SCAN_PATH_TOO_LONG)
+	{
+		snprintf(out, size, "The track path is too long. Shorten the install path, then Rescan.");
+		return;
+	}
+	if (row->scan == AP_SEED_SCAN_RACE_GRID_UNSUPPORTED)
+	{
+		snprintf(out, size, "The track lacks AI paths or starting positions needed for this race. Ask the room host.");
+		return;
+	}
 	if (row->source == AP_SEED_SOURCE_BUNDLED)
 	{
 		snprintf(out, size, "%s", row->scan == AP_SEED_SCAN_READY ? "Comes with the client. Files verified." :
