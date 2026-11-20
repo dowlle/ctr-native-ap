@@ -690,6 +690,9 @@ void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags)
 		mw->extraFlags = 0;
 
 		RB_MinePool_Add(mw);
+#ifdef CTR_AP
+		RB_MinePool_BossMine(mw, weaponInst);
+#endif
 		VehPickupItem_PotionThrow(mw, weaponInst, flags);
 		mineHitModel = weaponInst->model->id | COLL_MODELID_BLOCKAGE_FLAG;
 		mineShouldInitFollower = (flags == 0);
@@ -839,6 +842,9 @@ void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags)
 		}
 
 		RB_MinePool_Add(mw);
+#ifdef CTR_AP
+		RB_MinePool_BossMine(mw, weaponInst);
+#endif
 		int ret = VehPickupItem_PotionThrow(mw, weaponInst, flags);
 
 		if (ret == 0)

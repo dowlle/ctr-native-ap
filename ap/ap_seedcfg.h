@@ -1079,6 +1079,7 @@ int AP_BossGarageVenue(int bossIdx);
 // asks this so the boss keeps its own inherited attack on any venue.
 // IMPLEMENTED C-SIDE in ap_hooks_gates.c.
 int AP_BossRetailRulesLevel(int levelID);
+int AP_BossMineExpiryNow(void);
 
 // "Track: <name>" for the four garages when the seed drew their venues; 0
 // otherwise (retail seed, refused record). Shown on the garage panel whether
