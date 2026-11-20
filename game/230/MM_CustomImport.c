@@ -338,7 +338,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
                 if (skipped)
                 {
                     size_t used = strlen(s_importMessage);
-                    snprintf(s_importMessage + used, sizeof s_importMessage - used, " Skipped: %u.", skipped);
+                    snprintf(s_importMessage + used, sizeof s_importMessage - used, " Not imported: %u.", skipped);
                 }
                 {
                     const int replaced = XdeltaImport_ReplacedCount(), kept = XdeltaImport_KeptOldCopies();
