@@ -178,7 +178,9 @@ int main(int argc, char **argv)
 		CHECK(ap_track_registry_identity(h('9'), h('8'), key, title) && key == "no-saphi" && title == "no-saphi");
 		CHECK(ap_track_registry_identity(h('5'), "", key, title) && key == "lev-only" && title == "lev-only");
 		key = "unknown";
-		CHECK(ap_track_registry_identity("", "", key, title) && key == "unknown" && title.empty());
+		CHECK(!ap_track_registry_identity("", "", key, title) && key == "unknown" && title.empty());
+		CHECK(ap_track_registry_canonical_key("release-st-patrick-adventure-slot-7") ==
+		      "lego-alien-rally-asteroid");
 	}
 	{
 		auto legacy = json::parse(v1);

@@ -61,7 +61,9 @@ inline bool resolve(const unsigned char *lev, size_t bytes, const std::string &l
 {
     char road[NATIVE_SHA256_HEX_BYTES] = {};
     CustomContentVerify_RoadHash(lev, bytes, road);
-    std::string candidate = key, name;
+    const char *shipped = find(levSha, TrackIdentityData::levs);
+    if (!shipped) shipped = find(road, TrackIdentityData::roads);
+    std::string candidate = shipped ? shipped : key.c_str(), name;
 #ifdef CTR_TRACK_IDENTITY_LIVE
     const bool have_live = ap_track_registry_identity(levSha, road, candidate, name);
 #else
@@ -69,9 +71,7 @@ inline bool resolve(const unsigned char *lev, size_t bytes, const std::string &l
 #endif
     if (!have_live)
     {
-        const char *match = find(levSha, TrackIdentityData::levs);
-        if (!match) match = find(road, TrackIdentityData::roads);
-        if (!match) match = find(candidate, kTrackKeyAliases);
+        const char *match = shipped ? shipped : find(candidate, kTrackKeyAliases);
         if (match) candidate = match;
         if (const char *known = find(candidate, TrackIdentityData::titles)) name = known;
     }
