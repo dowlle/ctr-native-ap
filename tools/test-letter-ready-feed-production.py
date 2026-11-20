@@ -25,8 +25,7 @@ fixture = r'''
 #define AP_FEED_PRIME_QUIET_FRAMES 30
 static AP_FeedLines ap_feed;
 static uint64_t ap_feed_room, room = 1;
-static char ap_feed_endpoint[512];
-static const char *server = "first";
+static uint64_t ap_feed_endpoint, server = 1;
 static unsigned ap_feed_letters_held, ap_feed_letters_announced, received;
 static int ap_feed_letters_baseline, ap_feed_primed, ap_feed_quiet, ap_feed_self_rung_count;
 static int feedOn = 1, racerMet = 1, firstWin;
@@ -36,7 +35,7 @@ static ctr_content_pad pad;
 static ctr_content_checks checks;
 int ap_content_plan_active(void) { return 1; }
 uint64_t ap_content_plan_room_identity(void) { return room; }
-static int ap_net_room_endpoint(char *s, int n) { snprintf(s, n, "%s", server); return 1; }
+static uint64_t ap_net_feed_endpoint_identity(void) { return server; }
 static int ap_net_is_connected(void) { return 1; }
 static void AP_FeedOxideFinalOpenUpdate(void) {}
 static void AP_UnlockReasonsConnectReset(int sameRoom) { (void)sameRoom; }
@@ -100,8 +99,8 @@ int main(void) {
     settle();
     assert(!ap_feed.qcount && !ap_feed.vcount);
 
-    AP_FeedEnqueueHeld("old room", 0, 0);
-    server = "other";
+    AP_FeedEnqueueHeld("old room", 0, 0, 0);
+    ++server;
     AP_FeedConnectReset();
     settle();
     assert(!ap_feed.qcount && !ap_feed_letters_held && ap_feed_letters_announced);
@@ -137,7 +136,7 @@ int main(void) {
 }
 '''
 signatures = (
-    "static void AP_FeedEnqueueHeld(const char *text, int color, int playCue)",
+    "static void AP_FeedEnqueueHeld(const char *text, int suffixOffset, int color, int playCue)",
     "void AP_FeedConnectReset(void)",
     "void AP_FeedEndDrain(int drainedThisFrame)",
     "static void AP_ContentLetterState(const ctr_content_pad *pad, long codes[3], unsigned char received[3])",
@@ -150,4 +149,28 @@ with tempfile.TemporaryDirectory() as tmp:
     exe = Path(tmp) / "fixture"
     src.write_text(fixture + "\n".join(function(sig) for sig in signatures) + tests)
     subprocess.run(["cc", "-std=c11", "-fsanitize=undefined", "-I", str(root), str(src), "-o", str(exe)], check=True)
+    subprocess.run([str(exe)], check=True)
+
+    # Compile the transport-facing endpoint key separately to exercise URI
+    # equivalence and preserve case-sensitive WebSocket resources.
+    net = (root / "ap/ap_net.cpp").read_text()
+    start = net.index("static uint64_t ap_net_feed_endpoint_of(")
+    end = net.index("\n}\n", start) + 3
+    source_cpp = src.with_suffix(".cpp")
+    source_cpp.write_text(r'''
+#include <algorithm>
+#include <cassert>
+#include <cctype>
+#include <cstdint>
+#include <string>
+''' + net[start:end] + r'''
+int main() {
+    assert(ap_net_feed_endpoint_of("Example.Test") == ap_net_feed_endpoint_of("wss://example.test:38281/"));
+    assert(ap_net_feed_endpoint_of("ws://example.test/Room") == ap_net_feed_endpoint_of("ws://EXAMPLE.test:38281/Room"));
+    assert(ap_net_feed_endpoint_of("ws://example.test/Room") != ap_net_feed_endpoint_of("ws://example.test/room"));
+    assert(ap_net_feed_endpoint_of("ws://example.test/room") != ap_net_feed_endpoint_of("ws://example.test/room/"));
+    assert(ap_net_feed_endpoint_of("example.test:38282") != ap_net_feed_endpoint_of("example.test"));
+}
+''')
+    subprocess.run(["c++", "-std=c++17", str(source_cpp), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)

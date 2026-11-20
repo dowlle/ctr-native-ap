@@ -202,6 +202,7 @@ static APRetryBudget         g_retry(AP_NET_UNREACHABLE_FAILS);
 static bool                  g_stop_pending = false; // deferred retry-stop teardown
 static std::string           g_host;
 static std::string           g_room_endpoint;
+static uint64_t              g_feed_endpoint;
 
 // Seed admission (ticket 05). A slot_data the parser refuses (a REQUIRED block
 // absent/contradictory/malformed/unknown) must never activate: no door storage,
@@ -251,6 +252,30 @@ static std::string ap_net_endpoint_of(const std::string &uri)
 		if (c == '\t' || c == '\r' || c == '\n')
 			c = '_';
 	return endpoint;
+}
+
+// The feed keeps only in-process state. Match the transport's default port
+// without changing the legacy endpoint keys used for saved room state.
+static uint64_t ap_net_feed_endpoint_of(const std::string &uri)
+{
+	const auto split = uri.find("://");
+	const bool hasScheme = split != std::string::npos;
+	const auto begin = hasScheme ? split + 3 : 0;
+	const auto path = uri.find_first_of("/?#", begin);
+	std::string authority = uri.substr(begin, path - begin);
+	std::transform(authority.begin(), authority.end(), authority.begin(),
+	               [](unsigned char c) { return (char)std::tolower(c); });
+	if (authority.find(':') == std::string::npos)
+		authority += ":38281";
+	std::string key = (hasScheme ? uri.substr(0, begin) : "wss://") + authority;
+	if (path == std::string::npos || uri[path] != '/')
+		key += '/';
+	if (path != std::string::npos)
+		key += uri.substr(path); // a WebSocket resource is case-sensitive
+	uint64_t hash = UINT64_C(14695981039346656037);
+	for (unsigned char c : key)
+		hash = (hash ^ c) * UINT64_C(1099511628211);
+	return hash ? hash : 1;
 }
 
 // Set true on every fresh slot-connect (new seed, reconnect, or server switch).
@@ -1467,6 +1492,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	});
 	g_host = ap_net_host_of(uri ? uri : "localhost"); // #146: named by the status line
 	g_room_endpoint = ap_net_endpoint_of(uri ? uri : "localhost");
+	g_feed_endpoint = ap_net_feed_endpoint_of(uri ? uri : "ws://localhost:38281");
 	g_retry.start(false); // fresh bounded startup budget for this client run
 	g_stop_pending = false;
 	g_rejected = false;            // a fresh client run starts admissible
@@ -1995,6 +2021,11 @@ extern "C" int ap_net_room_endpoint(char *buf, int n)
 		return 0;
 	std::snprintf(buf, (size_t)n, "%s", g_room_endpoint.c_str());
 	return !g_room_endpoint.empty();
+}
+
+extern "C" uint64_t ap_net_feed_endpoint_identity(void)
+{
+	return g_feed_endpoint;
 }
 
 extern "C" int ap_net_drain_items(long long *out, int max)
@@ -2874,6 +2905,7 @@ extern "C" void ap_net_shutdown(void)
 	g_reject_stop_pending = false;
 	g_uri_secure = false;
 	g_room_endpoint.clear();
+	g_feed_endpoint = 0;
 	// Closing marker for field logs. The Steam Deck report of 2026-08-05 turned on
 	// "a reconnect line, then a fresh client run start with no shutdown lines",
 	// and the log had no way to say whether the teardown had completed. Now it

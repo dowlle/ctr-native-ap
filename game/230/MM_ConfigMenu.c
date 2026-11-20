@@ -523,10 +523,13 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 #ifdef CTR_AP
 	if (e->valuePtr == &g_config.itemFeed)
 	{
+		const int before = *(int *)e->valuePtr;
 		int index = ItemFeed_Index(*(int *)e->valuePtr) + dir;
 		if (index < 0) index = 0;
 		if (index > 2) index = 2;
 		*(int *)e->valuePtr = s_itemFeedValues[index];
+		if (before != AP_ITEM_FEED_IMPORTANT && s_itemFeedValues[index] == AP_ITEM_FEED_IMPORTANT)
+			AP_FeedDiscardUnimportant();
 		return;
 	}
 	if (e->valuePtr == &g_config.deathLink)

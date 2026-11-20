@@ -58,6 +58,7 @@ typedef struct
 	int  playCue;    // received-item cue, consumed only when promoted in a race
 	unsigned char unimportant;   // filler receipt/send or shop stock
 	unsigned char reconnectHeld; // released pad or letter notice awaiting its first draw
+	unsigned char suffixOffset;  // held notice text to preserve in the race HUD
 	int  trapSlot;   // scheduler slot of the trap this line belongs to, or AP_FEED_NO_TRAP
 	int  trapStage;  // AP_FEED_TRAP_* while trapSlot is set
 	unsigned trapSeq; // receipt sequence of the trap copy, while trapSlot is set

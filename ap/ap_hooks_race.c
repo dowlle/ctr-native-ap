@@ -1351,7 +1351,7 @@ static void AP_FeedLetterReadyUpdates(void)
 			char line[AP_FEED_TEXT_CAP];
 			snprintf(line, sizeof line, "%.*s: Got CTR letters",
 			         (int)(sizeof line - sizeof ": Got CTR letters"), AP_UnlockPadName(phys));
-			AP_FeedEnqueueHeld(line, LIGHT_GREEN, 1);
+			AP_FeedEnqueueHeld(line, (int)(strlen(line) - strlen(": Got CTR letters")), LIGHT_GREEN, 1);
 		}
 		ap_feed_letters_held &= ~bit;
 		ap_feed_letters_announced |= bit;

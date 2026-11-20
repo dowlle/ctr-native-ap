@@ -1886,13 +1886,14 @@ static void AP_UnlockReasonsUpdate(int mode)
 				char line[AP_FEED_TEXT_CAP];
 				AP_UnlockReasonLine(line, sizeof line, AP_UNLOCK_DOOR,
 				                    ap_unlock_door_names[d], 0, __builtin_popcount(opened));
-				AP_FeedEnqueueHeld(line, LIGHT_GREEN, 1);
+				AP_FeedEnqueueHeld(line, (int)strlen(ap_unlock_door_names[d]), LIGHT_GREEN, 1);
 			}
 		}
 		for (int i = 0; i < count; ++i)
 		{
 			const AP_UnlockEvent e = ev[i];
-			if ((e.kind == AP_UNLOCK_PAD && (foldedPads & (1u << e.index))) ||
+			if (((e.kind == AP_UNLOCK_PAD || e.kind == AP_UNLOCK_STAGE2) &&
+			     (foldedPads & (1u << e.index))) ||
 			    (e.kind == AP_UNLOCK_DOOR && (foldedDoors & (1u << e.index))) ||
 			    (e.kind == AP_UNLOCK_SHOP && feedMode == AP_ITEM_FEED_IMPORTANT))
 				continue;

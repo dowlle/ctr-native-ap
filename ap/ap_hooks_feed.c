@@ -48,6 +48,7 @@
 #define AP_FEED_X                  0x10
 #define AP_FEED_BASE_Y             0xC8 // bottom (newest) line anchor
 #define AP_FEED_RESULTS_BASE_Y     0xAC // same anchor on the results screens: clears the prompt
+#define AP_FEED_RACE_WIDTH         364
 
 // ── RACE anchor (bottom-left, matches the hub) ──────────────────────────────
 // Previously the race surface used its own mid-screen band (upper-left of the
@@ -110,9 +111,9 @@ static void AP_FeedEnqueue(const char *text, int color, int playCue)
 	AP_FeedLinesEnqueue(&ap_feed, text, color, playCue);
 }
 
-static void AP_FeedEnqueueHeld(const char *text, int color, int playCue)
+static void AP_FeedEnqueueHeld(const char *text, int suffixOffset, int color, int playCue)
 {
-	AP_FeedLinesEnqueueNotice(&ap_feed, text, color, playCue, 1);
+	AP_FeedLinesEnqueueNotice(&ap_feed, text, color, playCue, 1)->suffixOffset = suffixOffset;
 }
 
 static void AP_FeedRememberSelfRung(long long item)
@@ -143,7 +144,7 @@ static int AP_FeedConsumeSelfRung(long long item)
 // Keep held notices scoped to the same room and slot. All other toasts are
 // cleared and the initial-inventory absorb window is re-armed on connect.
 static uint64_t ap_feed_room;
-static char ap_feed_endpoint[512];
+static uint64_t ap_feed_endpoint;
 static unsigned ap_feed_letters_held, ap_feed_letters_announced;
 static int ap_feed_letters_baseline;
 static void AP_FeedLetterReadyUpdates(void);
@@ -153,11 +154,10 @@ static void AP_UnlockReasonsConnectReset(int sameRoom);
 void AP_FeedConnectReset(void)
 {
 	uint64_t room = ap_content_plan_room_identity();
-	char endpoint[sizeof ap_feed_endpoint] = {0};
-	int sameRoom = ap_net_room_endpoint(endpoint, sizeof endpoint) &&
-	               room && room == ap_feed_room && strcmp(endpoint, ap_feed_endpoint) == 0;
+	uint64_t endpoint = ap_net_feed_endpoint_identity();
+	int sameRoom = room && room == ap_feed_room && endpoint && endpoint == ap_feed_endpoint;
 	ap_feed_room = room;
-	memcpy(ap_feed_endpoint, endpoint, sizeof endpoint);
+	ap_feed_endpoint = endpoint;
 	if (sameRoom)
 		AP_FeedLinesReconnect(&ap_feed);
 	else
@@ -367,6 +367,29 @@ void AP_FeedEndDrain(int drainedThisFrame)
 		ap_feed_primed = 1;
 }
 
+void AP_FeedDiscardUnimportant(void)
+{
+	if (AP_FeedLinesFilterImportant(&ap_feed))
+		for (int i = 0; i < AP_FEED_MAX_VISIBLE; ++i)
+			DecalFont_ResetLineBox(TEXT_SLOT_FEED + i);
+}
+
+// Keep the action and count readable in races. Only shorten the destination
+// name; the hub and results still get the full text.
+static const char *AP_FeedRaceText(AP_FeedLine *line, char text[AP_FEED_TEXT_CAP])
+{
+	if (!line->suffixOffset ||
+	    DecalFont_GetLineWidthStrlen(line->text, -1, FONT_SMALL) <= AP_FEED_RACE_WIDTH)
+		return line->text;
+	const char *suffix = line->text + line->suffixOffset;
+	int width = AP_FEED_RACE_WIDTH - DecalFont_GetLineWidthStrlen((char *)suffix, -1, FONT_SMALL);
+	memcpy(text, line->text, line->suffixOffset);
+	text[line->suffixOffset] = '\0';
+	int keep = DecalFont_LineBoxPrefixLen(text, width, FONT_SMALL);
+	snprintf(text, AP_FEED_TEXT_CAP, "%.*s...%s", keep, line->text, suffix);
+	return text;
+}
+
 // Tick + render the feed at one anchor: promote one pending line per stagger into
 // a free visible slot (oldest first), age + expire visible lines from the top,
 // and draw newest at baseY with older lines stacked upward.
@@ -384,9 +407,8 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 			for (int i = armedMoved; i < AP_FEED_MAX_VISIBLE; ++i)
 				DecalFont_ResetLineBox(TEXT_SLOT_FEED + i);
 	}
-	if (AP_ItemFeedMode() == AP_ITEM_FEED_IMPORTANT && AP_FeedLinesFilterImportant(&ap_feed))
-		for (int i = 0; i < AP_FEED_MAX_VISIBLE; ++i)
-			DecalFont_ResetLineBox(TEXT_SLOT_FEED + i);
+	if (AP_ItemFeedMode() == AP_ITEM_FEED_IMPORTANT)
+		AP_FeedDiscardUnimportant();
 	// The hub's persistent box warning occupies y=72 and y=84. Keep the
 	// newest three lines at 96..120 while it is present; new lines wait in
 	// the queue rather than being promoted into the warning's band.
@@ -418,7 +440,10 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 	{
 		int fromBottom = ap_feed.vcount - 1 - i;
 		int y = baseY - fromBottom * AP_FEED_LINE_H;
-		DecalFont_DrawLineBox(ap_feed.vis[i].text, x, y, playableRace == 1 ? 364 : 480,
+		char shortened[AP_FEED_TEXT_CAP];
+		const char *text = playableRace == 1 ? AP_FeedRaceText(&ap_feed.vis[i], shortened)
+		                                    : ap_feed.vis[i].text;
+		DecalFont_DrawLineBox(text, x, y, playableRace == 1 ? AP_FEED_RACE_WIDTH : 480,
 		    FONT_SMALL, ap_feed.vis[i].color, playableRace == 1 ? TEXT_ELLIPSIS : TEXT_MARQUEE,
 		    TEXT_SLOT_FEED + i, NULL);
 	}

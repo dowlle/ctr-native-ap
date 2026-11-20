@@ -177,6 +177,7 @@ int  ap_net_host(char *buf, int n);
 // short status host above, this distinguishes two separately hosted instances
 // of the same generated seed. Scheme and a trailing slash are normalized away.
 int  ap_net_room_endpoint(char *buf, int n);
+uint64_t ap_net_feed_endpoint_identity(void);
 
 // ── AI-difficulty option sync (data storage) ──
 // Per-slot difficulty override lives in the server's data storage under the key
