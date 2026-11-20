@@ -7,8 +7,8 @@ int NativeCheckpoint_GetSize(void);
 int NativeCheckpoint_Capture(void *dst, int dstSize);
 int NativeCheckpoint_Restore(const void *src, int srcSize);
 #ifdef CTR_CUSTOM_PACKAGES
-// A restore refused for another custom track, on the race HUD for a few seconds.
-void NativeCheckpoint_DrawCustomRefusal(void);
+// Age the offline-package refusal every frame, with the common notice's priority.
+void NativeCheckpoint_DrawCustomRefusal(u32 *ot, int visible);
 #endif
 #if defined(CTR_INTERNAL)
 void NativeCheckpoint_OnMempackArenaReset(void);

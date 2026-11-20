@@ -7,6 +7,7 @@
 
 #if defined(CTR_NATIVE) && defined(CTR_INTERNAL)
 #include <platform/native_perf.h>
+#include <platform/native_savestate.h>
 #define MAINFRAME_PERF_BEGIN(bucket) NativePerf_BeginScope(bucket)
 #define MAINFRAME_PERF_END(bucket)   NativePerf_EndScope(bucket)
 #else
@@ -44,7 +45,7 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 	{
 		if (gGT->visMem1 != 0)
 		{
-#ifdef CTR_CUSTOM_TRACKS
+#if defined(CTR_CUSTOM_TRACKS) || defined(CTR_EDITOR)
 			// Every retail LEV has an animated-texture table, so retail can
 			// dereference ptr_anim_tex unconditionally. A custom track need not:
 			// CrashTeamEditor emits a null ptr_anim_tex for a track that authored
@@ -53,7 +54,8 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 			// on load. Written as an extra term on the existing condition rather
 			// than a nested if so the guard-off preprocessor output is unchanged
 			// down to the brace. (Baby T Park itself has a non-null table; the
-			// guard covers the custom-track class, not this one track.)
+			// guard covers the custom-track class, not this one track.) The editor
+			// build loads the same files, so it takes the guard too.
 			if (lev != 0 && lev->ptr_anim_tex != 0)
 #else
 			if (lev != 0)
@@ -223,6 +225,11 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 	}
 
 	MAINFRAME_PERF_BEGIN(NATIVE_PERF_BUCKET_MAINFRAME_UI);
+#if defined(CTR_NATIVE) && defined(CTR_INTERNAL)
+	// The closest ordering bucket is drawn last. A flag added to it below
+	// draws first within that bucket, leaving the refusal visible on top.
+	NativeSaveState_DrawRefusal(gGT->otSwapchainDB[gGT->swapchainIndex]);
+#endif
 	if ((gGT->renderFlags & 0x1000) != 0)
 	{
 		RaceFlag_DrawSelf();
@@ -918,7 +925,15 @@ void RenderAllLevelGeometry(struct GameTracker *gGT, struct Level *level1, struc
 		}
 
 		// if SCVert
+#if defined(CTR_CUSTOM_TRACKS) || defined(CTR_EDITOR)
+		// Older custom tracks can set the SCVert config flag with no SCVert
+		// table and no packed visibility list for it; AnimateQuad reads the
+		// list before it checks the vertex count, so that null crashes the
+		// first frame. Same guard condition as the animated-texture check.
+		else if (level1->numSCVert != 0 && gGT->visMem1->visSCVertList[0] != 0)
+#else
 		else
+#endif
 		{
 			// draw SCVert (no primitives generated here
 			AnimateQuad(gGT->timer << 7, level1->numSCVert, level1->ptrSCVert, gGT->visMem1->visSCVertList[0]);

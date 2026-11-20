@@ -968,6 +968,7 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 {
 	const char *why = NULL;
 	int cupID;
+	int soloRace;
 
 	if (!s_customTracksLoaded)
 		CustomTrack_Load();
@@ -1025,7 +1026,13 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 		return 0;
 	}
 
-	if (!CustomTrackPolicy_FlagsSupportRace(d->flagAiNav, d->flagSpawns,
+	soloRace = d->standalone && d->soloRace;
+	if (soloRace)
+	{
+		// A solo race needs neither AI paths nor a full starting grid.
+		CustomTrack_Log("[CustomTracks] solo event race: AI nav paths and grid spawns are not required\n");
+	}
+	else if (!CustomTrackPolicy_FlagsSupportRace(d->flagAiNav, d->flagSpawns,
 	                                      d->standalone ? 0 : cupID, &why))
 	{
 		CustomTrack_Log("[CustomTracks] REFUSED: %s (ai_nav=%d spawns=%d, this cup's grid needs %d)\n",
@@ -1059,11 +1066,12 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 	// The field follows the track. Derived once, here, so the driver count, the
 	// standings layout and the harnesses all read one number instead of each
 	// re-clamping the raw spawn count.
-	s_customTrackConfig.raceFieldSize = CustomTrackPolicy_FieldSizeForSpawns(d->flagSpawns);
+	s_customTrackConfig.raceFieldSize = soloRace ? 1 : CustomTrackPolicy_FieldSizeForSpawns(d->flagSpawns);
 	s_customTrackConfig.raceEnabled = 1;
 
-	CustomTrack_Log("[CustomTracks] event race grids %d karts (track reports %d spawn slots, clamped to %d..%d)\n",
-	                s_customTrackConfig.raceFieldSize, d->flagSpawns, CTR_CT_FIELD_MIN, CTR_CT_FIELD_MAX);
+	if (!soloRace)
+		CustomTrack_Log("[CustomTracks] event race grids %d karts (track reports %d spawn slots, clamped to %d..%d)\n",
+		                s_customTrackConfig.raceFieldSize, d->flagSpawns, CTR_CT_FIELD_MIN, CTR_CT_FIELD_MAX);
 
 	CustomTrack_VerifySource(&s_customTrackVrm, "vrm");
 	CustomTrack_VerifySource(&s_customTrackLev, "lev");
@@ -1187,6 +1195,38 @@ void CustomTrack_OnRaceLoadRequested(int levelID)
 const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int levelID)
 {
 	return CustomRaceLatch_Intent(&s_standaloneRace, levelID) ? &s_standaloneRace.current : NULL;
+}
+
+int CustomTrack_GetStandaloneSoloSpawn(int levelID, u8 preferred, struct SpawnPosRot *out)
+{
+	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(levelID);
+	const size_t offset = sizeof(u32) + offsetof(struct Level, DriverSpawn);
+	const size_t gridBytes = sizeof(((struct Level *)0)->DriverSpawn);
+	const unsigned char empty[sizeof *out] = {0};
+	const size_t slots = gridBytes / sizeof empty;
+	const unsigned char *grid, *spawn;
+	if (!out || !race || race->retail || race->cup || !s_standaloneLev.bytes ||
+	    s_standaloneLev.size < offset + gridBytes || preferred >= slots)
+		return 0;
+
+	// The fly-in camera adjusts heights in the live level. Read the retained
+	// LEV so both initial placement and retries use the authored spawn.
+	grid = s_standaloneLev.bytes + offset;
+	spawn = grid + preferred * sizeof empty;
+	if (memcmp(spawn, empty, sizeof empty) == 0)
+	{
+		for (size_t i = 0; i < slots; ++i)
+		{
+			const unsigned char *candidate = grid + i * sizeof empty;
+			if (memcmp(candidate, empty, sizeof empty) != 0)
+			{
+				spawn = candidate;
+				break;
+			}
+		}
+	}
+	memcpy(out, spawn, sizeof *out);
+	return 1;
 }
 
 const struct CustomTrackRaceContext *CustomTrack_PreviousStandaloneContext(void)
@@ -1449,6 +1489,97 @@ int CustomTrack_FinishTerrain(const struct CustomTrackLoadContext *ctx)
 		return CustomFinish_Terrain(s_oxideFinalDescriptor.levSha256, s_oxideFinalDescriptor.vrmSha256);
 	return CustomTrack_LoadServes(ctx) ?
 	       CustomFinish_Terrain(s_descriptor.levSha256, s_descriptor.vrmSha256) : -1;
+}
+
+enum CustomTrackResidentKind
+{
+	CTR_RESIDENT_GARAGE = 1,
+	CTR_RESIDENT_OXIDE_FINAL,
+	CTR_RESIDENT_CORTEX_PAD,
+	CTR_RESIDENT_EVENT,
+};
+static struct CustomTrackResidentSource s_customTrackResident;
+static unsigned int s_customTrackResidentParts;
+static int s_customTrackResidentMismatch;
+
+void CustomTrack_ClearResidentSource(void)
+{
+	memset(&s_customTrackResident, 0, sizeof s_customTrackResident);
+	s_customTrackResidentParts = 0;
+	s_customTrackResidentMismatch = 0;
+}
+
+const struct CustomTrackResidentSource *CustomTrack_ResidentSource(int levelID)
+{
+	return s_customTrackResident.kind && s_customTrackResident.levelID == levelID ? &s_customTrackResident : NULL;
+}
+
+int CustomTrack_ResidentBlocksRecordedLanes(int levelID)
+{
+	const struct CustomTrackResidentSource *resident = CustomTrack_ResidentSource(levelID);
+	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(levelID);
+	return (resident && resident->kind != CTR_RESIDENT_EVENT) || (race && race->cortex);
+}
+
+int CustomTrack_ResidentAssetsMixed(void)
+{
+	return s_customTrackResidentMismatch ||
+	       (s_customTrackResidentParts && s_customTrackResidentParts != (CTR_CT_ROLE_LEV | CTR_CT_ROLE_VRM));
+}
+
+void CustomTrack_NoteLoadedAsset(const struct CustomTrackLoadContext *ctx, int role, int seedOwned)
+{
+	struct CustomTrackResidentSource current;
+	struct CustomTrackResidentSource *resident = &current;
+	const unsigned int previousParts = s_customTrackResidentParts;
+	const char *lev;
+	const char *vrm;
+	int garage;
+
+	s_customTrackResidentParts |= (unsigned int)role;
+	// Offline and standalone loads already retain their package. For the
+	// other overrides, verify that both subfiles came from the same descriptor.
+	if (!seedOwned || CustomTrack_StandaloneContext(ctx->levelID))
+	{
+		if (s_customTrackResident.kind)
+			s_customTrackResidentMismatch = 1;
+		return;
+	}
+	memset(resident, 0, sizeof *resident);
+	garage = CustomTrack_GarageVenueServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive);
+	if (garage >= 0)
+	{
+		resident->kind = CTR_RESIDENT_GARAGE;
+		resident->roomIdentity = s_garageVenue[garage].roomIdentity;
+		memcpy(resident->trackID, s_garageVenue[garage].trackID, sizeof resident->trackID);
+		memcpy(resident->packageRevision, s_garageVenue[garage].packageRevision, sizeof resident->packageRevision);
+		lev = s_garageVenue[garage].levSha256;
+		vrm = s_garageVenue[garage].vrmSha256;
+	}
+	else if (CustomTrack_OxideFinalServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive) ||
+	         CustomTrack_CortexTrackServing(ctx->levelID, ctx->adventureBossActive))
+	{
+		resident->kind = ctx->adventureBossActive ? CTR_RESIDENT_OXIDE_FINAL : CTR_RESIDENT_CORTEX_PAD;
+		lev = s_oxideFinalDescriptor.levSha256;
+		vrm = s_oxideFinalDescriptor.vrmSha256;
+	}
+	else
+	{
+		if (!CustomTrack_ServingLoad(ctx->levelID, ctx->adventureCupActive, ctx->cupID))
+		{
+			s_customTrackResidentMismatch = 1;
+			return;
+		}
+		resident->kind = CTR_RESIDENT_EVENT;
+		lev = s_descriptor.levSha256;
+		vrm = s_descriptor.vrmSha256;
+	}
+	resident->levelID = ctx->levelID;
+	memcpy(resident->levSha256, lev, sizeof resident->levSha256);
+	memcpy(resident->vrmSha256, vrm, sizeof resident->vrmSha256);
+	if (previousParts && memcmp(&s_customTrackResident, resident, sizeof *resident) != 0)
+		s_customTrackResidentMismatch = 1;
+	memcpy(&s_customTrackResident, resident, sizeof *resident);
 }
 
 int CustomTrack_TiziMadness(const struct CustomTrackLoadContext *ctx)

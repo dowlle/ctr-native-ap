@@ -681,7 +681,11 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 		}
 	}
 	seats = pad->box_count;
-	if (crates != pad->box_crates || seats <= 0 || seats > AP_BoxSeat_Count(crates - pad->box_excluded_count))
+	const long limit = pad->box_reviewed_crates ? pad->box_reviewed_crates : crates;
+	int excluded = 0;
+	while (excluded < pad->box_excluded_count && pad->box_excluded[excluded] <= limit)
+		excluded++;
+	if (crates != pad->box_crates || seats <= 0 || seats > AP_BoxSeat_Count(limit - excluded))
 	{
 		snprintf(msg, sizeof msg,
 		         "[AP BOX] WARNING: custom track on pad %d has %ld weapon crate(s), the seed was built for %d "
@@ -701,7 +705,7 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 		if (code <= 0 || !AP_BoxInSeed(code, 0) || AP_BoxChecked(code, 0))
 			continue;
 		def = AP_BoxesCrateDef(defs, count, AP_BoxSeat_Original(
-		    (long)(((long long)i * (crates - pad->box_excluded_count)) / seats), pad->box_excluded, pad->box_excluded_count));
+		    (long)(((long long)i * (limit - excluded)) / seats), pad->box_excluded, excluded));
 		if (def == 0)
 			continue;
 		s_live[i].used = 1;

@@ -8349,6 +8349,28 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           5680
         ]
       }
+    ],
+    "467f83758d3a0b6aef9f340b144d0d76eb6ca04617aa87d6bc7727fb1d119c96": [
+      {
+        "ordinal": 1,
+        "pos": [
+          0,
+          0,
+          0
+        ],
+        "sanity_since": 2
+      }
+    ],
+    "c978c26a86f5c85d37a665f62ba8b3efd11cb93b71e931b2787f7c7e9f105ae2": [
+      {
+        "ordinal": 1,
+        "pos": [
+          0,
+          0,
+          0
+        ],
+        "sanity_since": 2
+      }
     ]
   },
   "sanity_locations": {
@@ -9492,6 +9514,28 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         "ab3e0f8d0abbae1b0aa64efe50de0d5d1cbd0b3ab27967b4132f76b99f557970",
         "1.1.0"
       ]
+    ]
+  },
+  "pickup_ruling_counts": {
+    "9fa73436daaf91434ede1d6fb036a8e6dff225c55533cc0be5723d229b5e53bd": [
+      25,
+      5,
+      0
+    ],
+    "2b18c6305d3cfe591e979eabe42e7815fe475479d49f59d5b7b50b06f701ac5d": [
+      20,
+      4,
+      0
+    ],
+    "fca9e96a57c850e68e0226382645b4d6df5b4e7ebeb61459269ec2427ffab96b": [
+      28,
+      6,
+      0
+    ],
+    "50250966e9b31d13b140aaafa9433ffce19269898a0850edd0a1e8cf1207c760": [
+      20,
+      9,
+      0
     ]
   }
 }

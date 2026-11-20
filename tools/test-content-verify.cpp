@@ -376,12 +376,30 @@ static void sanity_versions() {
     }
 }
 
+static void markerless_finish_rules() {
+    // A genuine pre-carry room with Royal Raceway first in a cup and a
+    // standalone Royal pad. Its descriptor has ordinary turbo pads.
+    std::ifstream in("tools/fixtures/content-plan/markerless-finish.json");
+    const J legacy = J::parse(in);
+    const auto ids = plan_locations(legacy);
+    expect(!legacy.at("content_plan").contains("track_ruling_sources") && admit(legacy, ids),
+           "legacy Royal lap and cup finish agree with the exported rules");
+    for (const auto &check : {std::make_pair("35211816", "Royal lap"),
+                              std::make_pair("35016815", "cup leg after Royal")}) {
+        J bad = legacy;
+        auto &rule = bad.at("win_logic").at("checks").at(check.first).at("rule");
+        rule = J::array({"all", rule, J::array({"cap", 2, -1})});
+        expect(!admit(bad, ids) && std::string(ctr_cfg.seed_reject_reason).find("finish") != std::string::npos,
+               std::string("markerless room refuses a different exported rank for ") + check.second);
+    }
+}
+
 int main(int argc, char **argv) {
     if (argc > 2 && std::string(argv[1]) == "--probe") probe(argv[2]);
     else { fixtures(); chain(); checked_is_not_reached(); first_race_won(); shop_key_budgets(); one_race_pad();
            probe("tools/fixtures/content-plan/sanity-verify.jsonl");
            probe("tools/fixtures/content-plan/oxide-pickups.jsonl");
-           probe("tools/fixtures/content-plan/mask-verifier.jsonl"); sanity_versions(); }
+           probe("tools/fixtures/content-plan/mask-verifier.jsonl"); sanity_versions(); markerless_finish_rules(); }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;
 }

@@ -140,6 +140,8 @@ typedef struct ctr_content_pad {
      * (ap_box_seat_logic.h); box_crates is the package's measured weapon
      * crate count those seats are taken from (0 when it has no boxes). */
     int box_count, box_crates;
+    /* Reviewed prefix of the measured crate table when seating is capped. */
+    int box_reviewed_crates;
     /* Reviewed fallback exclusions carried by the world, one-based original
      * crate ordinals. Authored spots bypass these entirely. */
     int box_excluded_count;
@@ -459,6 +461,8 @@ static inline int64_t ap_content_mode_route(const ctr_content_pad *pad, int mode
 int ap_content_plan_present(void);
 int ap_content_plan_active(void);
 uint64_t ap_content_plan_epoch(void);
+/* Stable identity of the bound seed, team, slot and plan. Zero before bind. */
+uint64_t ap_content_plan_room_identity(void);
 const ctr_content_pad *ap_content_plan_pad(int physical);
 const ctr_content_package *ap_content_plan_package(int index);
 /* The package's descriptor JSON as the room sent it, "" without one (#89). */

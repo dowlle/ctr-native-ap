@@ -9,9 +9,8 @@
                 catalogue. Filter All / Installed / Browse, Search, Refresh
                 catalogue, Rescan local files. Confirm on a track opens its
                 actions: download, update or recheck, versions, source page,
-                and for a track with a release profile also Verify / Finish
-                setup, Export YAML and Relic times (ruled 2026-11-04: export
-                and relic times only inside a track's details).
+                Export YAML, and for a track with a release profile also
+                Verify / Finish setup and Relic times.
      This Seed  the tracks the connected room or Play Solo seed needs, Ready,
                 Missing, Wrong version and so on, against the same store.
                 Install missing, Rescan, Seed identity; per track Resolve,
@@ -31,6 +30,7 @@
 
 #include "../../ap/ap_net.h" // ap_net_seed_name, ap_net_slot_name: Seed identity
 #include "../../ap/ap_track_consent.h" // the track author permission check (A4-74)
+#include "../../ap/ap_solo.h"
 
 enum { CT_TAB_LIBRARY, CT_TAB_SEED, CT_TAB_IMPORT, CT_TAB_COUNT };
 enum { CT_FOCUS_TABS, CT_FOCUS_LIST, CT_FOCUS_CONTROLS, CT_FOCUS_ACTIONS, CT_FOCUS_SUB };
@@ -211,7 +211,7 @@ struct CT_LibView
     const struct CustomTrackLibraryEntry *exact;     /* installed copy of exactly that revision */
     int older;      /* an older revision is installed: Update */
     int trackID;    /* Saphi track id, 0 when unknown */
-    int package;    /* the track has the release profile (export, relic times) */
+    int package;    /* the track has the release profile (setup, relic times) */
     int allowed;    /* A4-74: its author allowed in-game download (Download, Update, Versions) */
     const char *title, *version, *author;
 };
@@ -517,19 +517,42 @@ static void CT_Add(struct CT_Action *a, int *n, int id, const char *label, const
     (*n)++;
 }
 
-/* Why the release-profile actions (export, relic times) are unavailable, or
-   "" when they can run. */
-static void CT_PackageReason(const struct CT_LibView *v, int relic, char *out, size_t size)
+static int CT_IsManagedRevision(const struct CT_LibItem *item, const struct CT_LibView *v)
 {
     const struct CustomTrackManagerPackage *package = AP_CustomContentPackage();
+    return item->kind == CT_ITEM_PACKAGE ||
+           (v->package && v->installed && v->installed->installed &&
+            !strcmp(v->installed->version, package->version) &&
+            !strcmp(v->installed->local.uuid, package->packageUuid) &&
+            !strcmp(v->installed->local.levSha256, package->levSha256) &&
+            !strcmp(v->installed->local.vrmSha256, package->vrmSha256));
+}
+
+static int CT_ManagedReady(void)
+{
     const struct CustomTrackManagerStatus *status = AP_CustomContentStatus();
-    out[0] = 0;
-    if (!v->package)
-        snprintf(out, size, "Not available for this track yet. Only %s has an export profile.", package->title);
-    else if (status->state != CTR_CT_MANAGER_READY || !status->verifiedPackageSha256[0])
-        snprintf(out, size, "Needs a Ready %s v%s. Use Verify / Setup first.", package->title, package->version);
-    else if (relic && !package->flagRelicCrates)
-        snprintf(out, size, "This track has no relic crates.");
+    return status->state == CTR_CT_MANAGER_READY && status->verifiedPackageSha256[0];
+}
+
+static const char *CT_RelicReason(const struct CT_LibItem *item, const struct CT_LibView *v)
+{
+    if (!CT_IsManagedRevision(item, v)) return "Relic times are edited in the track package.";
+    if (!CT_ManagedReady()) return "Use Verify / Setup to make this track Ready.";
+    return AP_CustomContentPackage()->flagRelicCrates ? "" : "This track has no relic crates.";
+}
+
+static const char *CT_ExportReason(const struct CT_LibItem *item, const struct CT_LibView *v)
+{
+    if (item->kind == CT_ITEM_PACKAGE)
+        return CT_ManagedReady() ? "" : "Use Verify / Setup to make this track Ready.";
+    if (!v->installed || !v->installed->installed)
+        return "Install and verify this track before exporting.";
+    if (v->installed->local.laps && !v->installed->local.arcade && !v->installed->local.timeTrial)
+        return "This track needs a verified race mode before exporting.";
+    if (CT_SourceTrackID(v) <= 0 &&
+        !(v->installed->local.sourceUrl[0] && v->installed->local.bigfileIndex <= 4095))
+        return "This track has no known public source.";
+    return "";
 }
 
 static int CT_LibraryActions(const struct CT_LibItem *item, const struct CT_LibView *v, struct CT_Action *a)
@@ -564,21 +587,21 @@ static int CT_LibraryActions(const struct CT_LibItem *item, const struct CT_LibV
     CT_Add(a, &n, CT_ACT_VERSIONS, "Versions", !v->source ? "Not in the Project Saphi catalogue." :
            !v->allowed ? ap_track_permission_text() : "");
     CT_Add(a, &n, CT_ACT_SOURCE, "Open source page",
-           CT_SourceTrackID(v) > 0 || item->kind == CT_ITEM_PACKAGE ? "" :
+           CT_SourceTrackID(v) > 0 || item->kind == CT_ITEM_PACKAGE ||
+           (v->installed && v->installed->local.sourceUrl[0]) ? "" :
            v->installed && v->installed->local.xdelta ? "Imported from a patch. No source page is known." :
            "No source page is known for this track.");
     if (v->package)
         CT_Add(a, &n, CT_ACT_VERIFY, "Verify / Setup", s_ctLegacyDownload ? "A download is running." : "");
-    CT_PackageReason(v, 0, reason, sizeof reason);
-    CT_Add(a, &n, CT_ACT_EXPORT, "Export YAML", reason);
-    CT_PackageReason(v, 1, reason, sizeof reason);
-    CT_Add(a, &n, CT_ACT_RELIC, "Relic times", reason);
+    const char *exportReason = CT_ExportReason(item, v);
+    CT_Add(a, &n, CT_ACT_EXPORT, *exportReason ? "Why YAML is unavailable" : "Export YAML", exportReason);
+    CT_Add(a, &n, CT_ACT_RELIC, "Relic times", CT_RelicReason(item, v));
     return n;
 }
 
 static void CT_OpenURL(const char *url)
 {
-    CT_SetMessage(Platform_OpenURL(url) ? "Opened the Project Saphi page." : "Could not open the source page.");
+    CT_SetMessage(Platform_OpenURL(url) ? "Opened the source page." : "Could not open the source page.");
 }
 
 static void CT_OpenTrackSource(int trackID)
@@ -776,8 +799,19 @@ static void CT_RelicDraw(uint32_t *ot)
 
 /* ---- export (Copy YAML / Save YAML) ------------------------------------- */
 
-static void CT_Export(int save)
+static void CT_Export(const struct CT_LibItem *item, const struct CT_LibView *v, int save)
 {
+    const char *reason = CT_ExportReason(item, v);
+    if (*reason)
+    {
+        CT_SetMessage(reason);
+        return;
+    }
+    if (!CT_IsManagedRevision(item, v) || !CT_ManagedReady())
+    {
+        AP_Solo_ExportTrackYaml(v->installed, save, s_ctMessage, sizeof s_ctMessage);
+        return;
+    }
     const struct CustomTrackManagerPackage *package = AP_CustomContentPackage();
     const struct CustomTrackManagerStatus *status = AP_CustomContentStatus();
     struct CustomTrackRelicTimes relic;
@@ -1152,7 +1186,7 @@ static void CT_DrawActions(const struct CT_Action *a, int n, uint32_t *ot)
 {
     int i, first = CT_First(s_ctActionSel);
     for (i = first; i < first + CT_ROWS && i < n; i++)
-        CT_Row(i - first, a[i].label, i == s_ctActionSel, a[i].reason[0] ? GRAY : WHITE, ot);
+        CT_Row(i - first, a[i].label, i == s_ctActionSel, a[i].reason[0] && a[i].id != CT_ACT_EXPORT ? GRAY : WHITE, ot);
     CT_ScrollBar(n, first, ot);
 }
 
@@ -1244,7 +1278,9 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
     }
     else if (s_ctFocus == CT_FOCUS_ACTIONS && item)
     {
-        s_ctActionSel = CT_Step(s_ctActionSel, nActions, tapped);
+        const int action = CT_Step(s_ctActionSel, nActions, tapped);
+        if (action != s_ctActionSel) s_ctMessage[0] = 0;
+        s_ctActionSel = action;
         if (tapped & (BTN_TRIANGLE | BTN_START)) { s_ctFocus = CT_FOCUS_LIST; s_ctMessage[0] = 0; OtherFX_Play(2, 1); }
         else if (tapped & (BTN_CROSS | BTN_CIRCLE))
         {
@@ -1269,7 +1305,8 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
                 break;
             case CT_ACT_SOURCE:
                 if (item->kind == CT_ITEM_PACKAGE) CT_OpenURL(AP_CustomContentPackage()->sourceUrl);
-                else CT_OpenTrackSource(CT_SourceTrackID(&v));
+                else if (CT_SourceTrackID(&v) > 0) CT_OpenTrackSource(CT_SourceTrackID(&v));
+                else CT_OpenURL(v.installed->local.sourceUrl);
                 break;
             case CT_ACT_VERIFY:
                 AP_CustomContentVerify();
@@ -1306,7 +1343,7 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
         {
             s_ctSubSel = CT_Step(s_ctSubSel, 2, tapped);
             if (tapped & (BTN_TRIANGLE | BTN_START)) { s_ctFocus = CT_FOCUS_ACTIONS; s_ctSub = CT_SUB_NONE; OtherFX_Play(2, 1); }
-            else if (tapped & (BTN_CROSS | BTN_CIRCLE)) { OtherFX_Play(1, 1); CT_Export(s_ctSubSel); }
+            else if (tapped & (BTN_CROSS | BTN_CIRCLE)) { OtherFX_Play(1, 1); CT_Export(item, &v, s_ctSubSel); }
         }
         else if (s_ctSub == CT_SUB_RELIC)
         {

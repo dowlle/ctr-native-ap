@@ -42,6 +42,7 @@ expected = dict(retail=[dict(id=i, name=n, location=L[n + ": Trophy Race"], ctr=
                 named_blocks=[dict(key=t.track_key, block=t.block_index, name=t.ap_name)
                               for t in sorted(cp.destinations.NAMED_TRACKS, key=lambda t: t.track_key)])
 expected["sanity"] = cp.sanity.CATALOG
+expected["pickup_ruling_counts"] = cp.sanity.PICKUP_RULING_COUNTS
 expected["sanity_exclusions"] = cp.sanity.crate_exclusions.EXCLUSIONS
 expected["object_rulings"] = json.loads((args.apworld / "worlds/ctr/data/object_rulings.json").read_text())
 expected["track_ruling_revisions"] = cp.track_rulings.REVIEWS
@@ -1280,10 +1281,9 @@ with spot_files(retail=["CRASH_COVE"], custom=["baby-t-park"]):
             assert cases[-1][2] is False, name + ": the apworld must refuse a forged spot"
 # A3-35: actual generated Ancient Lake rooms, both measured LEV pins and a
 # small count fixture that crosses the 15-seat ceiling. No track bytes shipped.
-from worlds.ctr import crate_exclusions
-from worlds.ctr import track_rulings
+from worlds.ctr import crate_exclusions, sanity, track_rulings
 from unittest import mock
-from worlds.ctr.test.test_crate_exclusions import ANCIENT_LAKE, NORTH_POLE, ancient, north_pole
+from worlds.ctr.test.test_crate_exclusions import ANCIENT_LAKE, LOCKBOX_4, MATSURI, NORTH_POLE, ancient, lockbox_track_4, matsuri
 from worlds.ctr.test.test_content_item_boxes import box_options, first_world
 # Test fallback exclusions without the later community spot override.
 with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):
@@ -1317,6 +1317,55 @@ with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):
         alter(f"excluded-carried-{label}", change, carried_wire)
 
 box_env("unchanged copy", lambda c: None)
+with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):
+    options = box_options(custom=[matsuri()], itemboxsanity=50, wumpasanity="both")
+    wire = first_world(options).fill_slot_data()
+    assert wire["content_plan"]["sanity"]["rules_version"] >= 1
+    cases.append(("matsuri-current-sanity-seating", wire, True))
+    with mock.patch.dict(crate_exclusions.EXCLUSIONS, {MATSURI: []}):
+        legacy_wire = first_world(options).fill_slot_data()
+        cases.append(("matsuri-prior-catalog-sanity-seating", legacy_wire, True))
+    alter("matsuri-sanity-missing-feature", lambda p: p["required_features"].remove(sanity.EXCLUSIONS_FEATURE), wire)
+    alter("matsuri-sanity-invalid-version", lambda p: p["sanity"].__setitem__("exclusion_version", 1), wire)
+
+    def remove_matsuri_seating(plan):
+        plan["item_boxes"].pop(crate_exclusions.KEY)
+        plan["required_features"].remove(crate_exclusions.FEATURE)
+
+    def add_matsuri_seating_to_legacy(plan):
+        current = wire["content_plan"]
+        plan["item_boxes"][crate_exclusions.KEY] = current["item_boxes"][crate_exclusions.KEY]
+        plan["required_features"] = [feature for feature in current["required_features"]
+                                     if feature != sanity.EXCLUSIONS_FEATURE]
+
+    alter("matsuri-sanity-missing-seat-exclusions", remove_matsuri_seating, wire)
+    alter("matsuri-legacy-sanity-with-new-seat-exclusions", add_matsuri_seating_to_legacy, legacy_wire)
+    sparse_options = dict(options, itemboxsanity=1)
+    sparse_wire = first_world(sparse_options, seed=1).fill_slot_data()
+    sparse_row = next(r for r in sparse_wire["content_plan"]["sanity"]["tracks"] if r["lev_sha256"] == MATSURI)
+    assert sparse_row["weapon_crate"] == [16]
+    cases.append(("matsuri-sanity-sparse-with-reviewed-seats", sparse_wire, True))
+    alter("matsuri-sanity-sparse-missing-seat-exclusions", remove_matsuri_seating, sparse_wire)
+    alter("matsuri-sanity-sparse-shifted-exclusion",
+          lambda p: p["item_boxes"][crate_exclusions.KEY][0]["crates"][0].__setitem__("pos", [1, 0, 0]), sparse_wire)
+    sanity_only = first_world(dict(sparse_options, box_locations=False), seed=1).fill_slot_data()
+    cases.append(("matsuri-sanity-sparse-with-boxes-off", sanity_only, True))
+
+    mixed_options = box_options(custom=[matsuri(), lockbox_track_4()], itemboxsanity=1, wumpasanity="both")
+    mixed_wire = first_world(mixed_options, seed=1).fill_slot_data()
+    assert all(row["lev_sha256"] != LOCKBOX_4 for row in mixed_wire["content_plan"]["sanity"]["tracks"])
+    cases.append(("matsuri-and-generic-lockbox-reviewed-seats", mixed_wire, True))
+
+    def remove_lockbox_seating(plan):
+        rows = plan["item_boxes"][crate_exclusions.KEY]
+        rows[:] = [row for row in rows if row["lev_sha256"] != LOCKBOX_4]
+
+    def shift_lockbox_exclusion(plan):
+        row = next(r for r in plan["item_boxes"][crate_exclusions.KEY] if r["lev_sha256"] == LOCKBOX_4)
+        row["crates"][0]["pos"][0] = 1
+
+    alter("matsuri-and-generic-lockbox-missing-seat-exclusions", remove_lockbox_seating, mixed_wire)
+    alter("matsuri-and-generic-lockbox-shifted-exclusion", shift_lockbox_exclusion, mixed_wire)
 box_env("box_locations false", lambda c: c["ctr_options"].__setitem__("box_locations", False))
 box_env("box_locations dropped", lambda c: c["ctr_options"].pop("box_locations"))
 box_env("box_locations integer", lambda c: c["ctr_options"].__setitem__("box_locations", 1))
@@ -2643,6 +2692,22 @@ for field in ("finish_floors", "finish_free"):
     source["reviews"].pop(0)
     plan["item_boxes"]["pickup_rules"].remove(track_id)
     cases.append((f"green-royal-carried-{field}-and-source-truncated", bad, False))
+# A LEV reviewed under a different track key must not hide Royal's source.
+from worlds.ctr.test.test_carried_pickup_limits import later_revision
+from worlds.ctr.test.test_green_hill_raceway import PACKAGE as green_package
+
+options = royal_options(item_box_count=5, wumpasanity="both")
+tid, package = later_revision(options, green_package["files"][0]["sha256"])
+package["capabilities"].update(weapon_crates=40, fruit_crates=10, loose_fruit=2)
+wire = make_world(options, seed=3, stop_before="pre_fill").fill_slot_data()
+plan = wire["content_plan"]
+assert tid in plan["capability"]["finish_floors"]
+assert plan["track_ruling_sources"]["pickup_limits"] is True
+row = next(r for r in plan["sanity"]["tracks"] if r["track_id"] == tid)
+assert row["counts"] == [40, 10, 2] and row["wumpa_crate"] == list(range(1, 7)) and not row["wumpa_fruit"]
+cases.append(("royal-foreign-reviewed-lev-with-added-pickups", wire, True))
+alter("royal-foreign-lev-legacy-pool-mismatch", lambda p: p["track_ruling_sources"].pop("pickup_limits"), wire)
+
 # Switching the LEV in a legacy exact-pin room cannot supply a carried source.
 wire = make_world(royal_options(item_box_count=5), seed=3, stop_before="pre_fill").fill_slot_data()
 bad = copy.deepcopy(wire)

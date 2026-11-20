@@ -89,6 +89,7 @@ enum SoloBusyJob
 	SOLO_JOB_IMPORT_ROOM,
 	SOLO_JOB_IMPORT_YAML,
 	SOLO_JOB_TRACKS,
+	SOLO_JOB_SAVE_ROOM_YAML,
 };
 
 static int s_soloPage;
@@ -1002,7 +1003,7 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 {
 	static const char *const picks[] = {"-", "In pool", "Own pad"};
 	const int rows = AP_Solo_TrackCount();
-	const int count = rows + 1;
+	const int count = rows + 2;
 	struct APSoloTrackInfo info;
 	char line[200], fit[200];
 	int i;
@@ -1044,6 +1045,16 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 	}
 	else if (s_soloSel == rows && (pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
 	{
+		if (AP_Solo_SaveRoomYamlStart(s_soloName))
+		{
+			OtherFX_Play(1, 1);
+			MM_Solo_Busy(SOLO_JOB_SAVE_ROOM_YAML);
+			return;
+		}
+		OtherFX_Play(5, 1);
+	}
+	else if (s_soloSel == rows + 1 && (pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
+	{
 		OtherFX_Play(1, 1);
 		s_soloFromTracks = 1;
 		MM_Solo_Go(SOLO_REVIEW);
@@ -1055,6 +1066,8 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 	{
 		const int y = SOLO_LIST_Y + (i - s_soloTop) * SOLO_ROW_H;
 		if (i == rows)
+			DecalFont_DrawLineOT("Save YAML for a room", SOLO_ROW_X, y, FONT_SMALL, ORANGE, ot);
+		else if (i == rows + 1)
 			DecalFont_DrawLineOT("Continue", SOLO_ROW_X, y, FONT_SMALL, ORANGE, ot);
 		else
 		{
@@ -1108,6 +1121,9 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 			MM_Solo_Fit(line, fit, sizeof fit, SOLO_TEXT_W);
 			DecalFont_DrawLineOT(fit, 0x100, helpY, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 		}
+		else if (s_soloSel == rows)
+			MM_Solo_DrawWrapped("Save your selected tracks in a player YAML for a room.", 0x100, helpY,
+			                    SOLO_TEXT_W, 1, JUSTIFY_CENTER | WHITE, ot);
 		else if (!s_soloStart.isPreset)
 			MM_Solo_DrawWrapped("The YAML's own settings stay; the tracks are added.", 0x100, helpY, SOLO_TEXT_W, 1,
 			                    JUSTIFY_CENTER | WHITE, ot);
@@ -1239,7 +1255,7 @@ static void MM_Solo_PageBusy(uint32_t *ot, struct GamepadBuffer *pad)
 {
 	const int state = AP_Solo_JobState();
 	static const char *const titles[] = {"Loading", "Loading Options", "Generating", "Importing Room",
-	                                     "Importing YAML", "Finding Custom Tracks"};
+	                                     "Importing YAML", "Finding Custom Tracks", "Saving YAML"};
 	if (state == AP_SOLO_JOB_RUNNING)
 	{
 		if (s_soloBusyJob == SOLO_JOB_GENERATE && (pad->buttonsTapped & (BTN_TRIANGLE | BTN_START)) != 0)
@@ -1274,6 +1290,12 @@ static void MM_Solo_PageBusy(uint32_t *ot, struct GamepadBuffer *pad)
 			s_soloFromOptions = 2; /* the message returns to Options, or to the YAML list */
 			return;
 		}
+		if (s_soloBusyJob == SOLO_JOB_SAVE_ROOM_YAML)
+		{
+			s_soloPage = SOLO_MESSAGE;
+			s_soloFromOptions = 3;
+			return;
+		}
 		if (s_soloBusyJob == SOLO_JOB_GENERATE && s_soloFromTracks)
 		{
 			/* For example a picked track was removed: list the tracks again. */
@@ -1297,6 +1319,11 @@ static void MM_Solo_PageBusy(uint32_t *ot, struct GamepadBuffer *pad)
 		/* The step is only shown when there is a track to pick. */
 		s_soloFromTracks = AP_Solo_TrackCount() > 0;
 		MM_Solo_Go(s_soloFromTracks ? SOLO_TRACKS : SOLO_REVIEW);
+		break;
+	case SOLO_JOB_SAVE_ROOM_YAML:
+		snprintf(s_soloMsg, sizeof s_soloMsg, "Saved to: %.245s", AP_Solo_JobResultYaml());
+		s_soloPage = SOLO_MESSAGE;
+		s_soloFromOptions = 3;
 		break;
 	case SOLO_JOB_GENERATE:
 	{
@@ -1347,7 +1374,7 @@ static void MM_Solo_PageMessage(uint32_t *ot, struct GamepadBuffer *pad)
 		else if (s_soloFromOptions == 3)
 		{
 			s_soloFromOptions = AP_Solo_TracksViaOptions(s_soloStart.isPreset);
-			if (AP_Solo_TracksStart(s_soloStart.path))
+			if (s_soloBusyJob != SOLO_JOB_SAVE_ROOM_YAML && AP_Solo_TracksStart(s_soloStart.path))
 				MM_Solo_Busy(SOLO_JOB_TRACKS);
 			else
 				MM_Solo_Go(SOLO_TRACKS);

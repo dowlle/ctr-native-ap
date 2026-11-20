@@ -319,14 +319,22 @@ int main(void)
 		image[4 + BODY_CHECK + i * CHECK_SIZE + 8] = (unsigned char)((i + 1) % 255);
 	}
 	put32(image, 4 + NAV_P, 0);
-	put32(image, 4 + BODY_PTRMAP, 3 * 4);
-	write_bytes(lev, image, 4 + BODY_PTRMAP + 4 + 3 * 4);
+	put32(image, 4 + BODY_PTRMAP, 2 * 4);
+	write_bytes(lev, image, 4 + BODY_PTRMAP + 4 + 2 * 4);
 	expect(CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "255-checkpoint table accepted");
 	expect(v.measured.checkpoints == 255, "255-checkpoint count retained");
 	put32(image, 4 + CHECK_N, 256);
-	write_bytes(lev, image, 4 + BODY_PTRMAP + 4 + 3 * 4);
+	write_bytes(lev, image, 4 + BODY_PTRMAP + 4 + 2 * 4);
 	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error), "256-checkpoint table refused");
 	expect(strcmp(error, "invalid checkpoint table") == 0, "256-checkpoint diagnostic retained");
+
+	build_lev(image, 1);
+	const size_t navHeader = rd32(image + 4 + BODY_NAV);
+	put16(image, 4 + navHeader + 2, 0xffff);
+	write_bytes(lev, image, IMAGE_BYTES);
+	expect(!CustomContentVerify_Files(lev, vrm, &v, error, sizeof error) &&
+	       !strcmp(error, "navigation frame count invalid"),
+	       "negative signed navigation frame count refused");
 
 	build_lev(image, 1); put32(image, 4 + BODY_PTRMAP, 5);
 	write_bytes(lev, image, IMAGE_BYTES);

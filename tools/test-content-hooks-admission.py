@@ -4,9 +4,9 @@ Compiles AP_ContentScanPackage, AP_ContentPadReady and AP_ContentPreparePad
 out of the ap_hooks unit together with the real structural verifier
 (platform/native_custom_content_verify.c), the real track manager
 (platform/native_custom_track_manager.c, which locates open packages by
-digest) and the real capability check (ap/ap_content_capability.h). The seed
-side (content-plan records), the loader and the race stager are stubs that
-record what the hooks hand them. Fixture LEVs come from the build_lev helper of
+digest), the real capability check (ap/ap_content_capability.h) and the real
+loader and race stager. The seed side (content-plan records) uses stubs.
+Fixture LEVs come from the build_lev helper of
 tools/test-custom-content-verify.c; no third-party track asset is used.
 
 Cases: an honest capability claim is Ready and enters with the measured flags;
@@ -30,13 +30,13 @@ unit = ap_hooks_unit.read()
 start = unit.index("static int ap_content_package_index;")
 hooks = unit[start:unit.index("static void AP_CustomContentBuildRequirement(", start)]
 
+vehicle_birth = (root / "game/Vehicle/VehBirth.c").read_text(encoding="utf-8")
+start = vehicle_birth.index("static void VehBirth_SetBottomFromPos(")
+spawn_entry = vehicle_birth[start:vehicle_birth.index("static int VehBirth_ScaleTrig(", start)]
+
 verify_test = (root / "tools/test-custom-content-verify.c").read_text(encoding="utf-8")
 lev_start = verify_test.index("#define BODY_INST")
 lev_helper = verify_test[lev_start:verify_test.index("/* The Arcade and Time Trial verdicts", lev_start)]
-
-tracks_header = (root / "include/platform/native_custom_tracks.h").read_text(encoding="utf-8")
-seed_start = tracks_header.index("struct CustomTrackSeedDescriptor\n{")
-seed_struct = tracks_header[seed_start:tracks_header.index("};", seed_start) + 2]
 
 prelude = r'''
 #define _XOPEN_SOURCE 700
@@ -50,11 +50,14 @@ prelude = r'''
 static char log_text[8192];
 void AP_LogLine(const char *msg) { strncat(log_text, msg, sizeof log_text - strlen(log_text) - 1); }
 static void AP_AppendLog(const char *msg) { AP_LogLine(msg); }
+#include "platform/native_custom_tracks.c"
 #include "platform/native_custom_content_verify.c"
 #include "platform/native_custom_track_manager.c"
 #include "ap/ap_content_capability.h"
 #include <platform/native_custom_race_context.h>
 #include <platform/native_custom_tracks_policy.h>
+struct sData sdata_static;
+NativeConfig g_config;
 '''
 
 stubs = r'''
@@ -84,22 +87,40 @@ static int ap_cortex_track_content_required;
 #define CTR_CFG_CORTEX_LEV_SHA256 "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13"
 #define CTR_CFG_CORTEX_VRM_SHA256 "4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d"
 static unsigned ap_state_gen;
-int CustomTrack_StandaloneBusy(void) { return 0; }
 static int used_managed, used_files, applied, staged;
 static char used_lev[CTR_CT_MANAGER_PATH_MAX], used_vrm[CTR_CT_MANAGER_PATH_MAX], used_name[CTR_CT_NAME_MAX];
 static struct CustomTrackSeedDescriptor applied_descriptor;
 static struct CustomTrackRaceContext staged_race;
-int CustomTrack_UseManagedPackage(const struct CustomTrackManagerPackage *p, struct CustomTrackManagerStatus *s) { (void)p; (void)s; used_managed++; return 1; }
-int CustomTrack_UseContentFiles(const char *lev, const char *vrm, const char *name)
+uint64_t ap_content_plan_room_identity(void) { return UINT64_C(0x123456789abcdef0); }
+static int record_managed(const struct CustomTrackManagerPackage *p, struct CustomTrackManagerStatus *s)
+{
+	used_managed++;
+	return CustomTrack_UseManagedPackage(p, s);
+}
+static int record_files(const char *lev, const char *vrm, const char *name)
 {
 	used_files++;
 	snprintf(used_lev, sizeof used_lev, "%s", lev); snprintf(used_vrm, sizeof used_vrm, "%s", vrm);
 	snprintf(used_name, sizeof used_name, "%s", name);
+	return CustomTrack_UseContentFiles(lev, vrm, name);
+}
+static int record_descriptor(const struct CustomTrackSeedDescriptor *d)
+{
+	applied++;
+	applied_descriptor = *d;
+	return CustomTrack_ApplySeedDescriptor(d);
+}
+static int record_staging(const struct CustomTrackRaceContext *c)
+{
+	if (!CustomTrack_StageStandaloneRace(c)) return 0;
+	staged++;
+	staged_race = *c;
 	return 1;
 }
-int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d) { applied++; applied_descriptor = *d; return 1; }
-int CustomTrack_StageStandaloneRace(const struct CustomTrackRaceContext *c) { staged++; staged_race = *c; return 1; }
-void CustomTrack_CortexTrackSelectNextLoad(int cortex) { (void)cortex; }
+#define CustomTrack_UseManagedPackage record_managed
+#define CustomTrack_UseContentFiles record_files
+#define CustomTrack_ApplySeedDescriptor record_descriptor
+#define CustomTrack_StageStandaloneRace record_staging
 /* Between locating the files and measuring them: optionally replace the LEV. */
 static const unsigned char *swap_after_locate;
 static size_t swap_bytes;
@@ -118,7 +139,13 @@ static int harness_locate(const char *assetsRoot, const char *trackKey, const ch
 
 tests = r'''
 #undef CustomTrackManager_LocateContentFiles
-static void reset_calls(void) { used_managed = used_files = applied = staged = 0; log_text[0] = 0; }
+static void reset_calls(void)
+{
+	CustomTrack_OnRaceLoadRequested(-1);
+	CustomTrack_ClearSeedDescriptor();
+	used_managed = used_files = applied = staged = 0;
+	log_text[0] = 0;
+}
 /* Connect and Rescan: the content-plan branch of AP_CustomContentPreflightSeed. */
 static int preflight(void)
 {
@@ -201,6 +228,13 @@ int main(void)
 	expect(staged == 1 && staged_race.laps == 3 && staged_race.trophyLocation == 35016300 && staged_race.physicalPad == 3 &&
 	       staged_race.returnHub == 26 && staged_race.seedEpoch == 7 && !staged_race.retail &&
 	       strcmp(staged_race.levSha256, plan_package.lev_sha256) == 0, "race context staged for the pad");
+	expect(staged_race.roomIdentity == 0x123456789abcdef0ULL &&
+	       strcmp(staged_race.packageRevision, plan_package.revision) == 0,
+	       "staged race retains the room and package revision for quick saves");
+	reset_calls();
+	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6 &&
+	       staged_race.roomIdentity == 0x123456789abcdef0ULL,
+	       "re-entering the same pad uses the admitted room without a socket dependency");
 
 	/* A4-70: a pad whose Relic Race runs other laps than its Trophy Race and CTR
 	   Challenge stages each mode's own laps in the race context. */
@@ -328,6 +362,7 @@ int main(void)
 
 	/* Cortex Vortex (#133 PR 3c): the bundled pair, copied from the repository. */
 	{
+		ctr_content_pad saved = plan_pad;
 		char cvDir[600], cvLev[700], cvVrm[700], cmd[2048];
 		snprintf(cvDir, sizeof cvDir, "%s/tracks/cortex-vortex", assets_root); mkdir(cvDir, 0700);
 		snprintf(cvLev, sizeof cvLev, "%s/CVortex Arcade All.lev", cvDir);
@@ -381,7 +416,110 @@ int main(void)
 		       ap_cortex_track_content_required && used_files == 0 && applied == 0 && staged == 0,
 		       "a changed bundled LEV is refused at pad entry");
 		unlink(cvLev); unlink(cvVrm); rmdir(cvDir);
+		plan_pad = saved;
 	}
+
+	/* A6-23: the same package has relic crates and a lap graph, with one
+	   measured spawn and no AI paths. Drive pad entry into the loader. */
+	reset_calls();
+	plan_package.capabilities = AP_CONTENT_CAP_TIME_TRIAL | AP_CONTENT_CAP_RELIC;
+	plan_pad.mode_count = 1;
+	plan_pad.modes[0] = AP_CONTENT_MODE_RELIC;
+	plan_pad.relic_route = plan_pad.relic_locations[0] = 35016302;
+	plan_pad.relic_locations[1] = 35016303;
+	plan_pad.relic_locations[2] = 35016304;
+	enum { authoredSlot = 2 };
+	const size_t spawnBytes = sizeof(struct SpawnPosRot);
+	const size_t authoredSpawn = 4 + SPAWN_P + authoredSlot * spawnBytes;
+	put32(image, 4 + NAV_P, 0);
+	memset(image + 4 + SPAWN_P, 0, 8 * spawnBytes);
+	put16(image, authoredSpawn, 22);
+	put16(image, authoredSpawn + 2, 99);
+	put16(image, authoredSpawn + 8, 0x60);
+	write_bytes(lev, image, levSize);
+	expect(!CustomContentVerify_Files(lev, vrm, &report, error, sizeof error) &&
+	       strstr(error, "null navigation pointer in relocation map"),
+	       "A6-23: an absent navigation table must not be relocated");
+	/* Remove the navigation table pointer and its three unreachable entries
+	   from the synthetic LEV's relocation map. */
+	size_t map = 4 + BODY_PTRMAP, retained = map + 4;
+	for (size_t i = retained; i < levSize; i += 4)
+	{
+		unsigned slot = rd32(image + i);
+		if (slot != NAV_P && (slot < BODY_NAV || slot >= BODY_NAV + 12))
+		{
+			put32(image, retained, slot);
+			retained += 4;
+		}
+	}
+	levSize = retained;
+	put32(image, map, levSize - map - 4);
+	write_bytes(lev, image, levSize);
+	expect(CustomContentVerify_Files(lev, vrm, &report, error, sizeof error) &&
+	       report.measured.spawns == 1 && report.measured.navPaths == 0 &&
+	       !(AP_ContentMeasuredCapabilities(&report) & AP_CONTENT_CAP_ARCADE),
+	       "A6-23: fixture verifies with one spawn, no AI paths and no Arcade capability");
+	snprintf(plan_package.lev_sha256, sizeof plan_package.lev_sha256, "%s", report.levSha256);
+	plan_package.lev_bytes = (uint32_t)levSize;
+	expect(preflight() && AP_ContentPadReady(3), "A6-23: Relic-only package is Ready");
+	expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_RELIC) == 6,
+	       "A6-23: Relic-only pad arms the production loader");
+	CustomTrack_OnRaceLoadRequested(6);
+	const struct CustomTrackRaceContext *relic = CustomTrack_StandaloneContext(6);
+	expect(relic && relic->mode == AP_CONTENT_MODE_RELIC && relic->trophyLocation == 35016302 &&
+	       CustomTrack_ServingLoad(6, 0, 0) && CustomTrack_EventFieldSize(6, 0, 0) == 1,
+	       "A6-23: solo Relic Race serves the verified custom package");
+	struct GameTracker game = {0};
+	struct Driver driver = {0};
+	struct Level level = {0};
+	SVec3 bottom;
+	sdata->gGT = &game;
+	game.level1 = &level;
+	game.gameMode1 = ADVENTURE_MODE | RELIC_RACE;
+	game.levelID = 6;
+	sdata->kartSpawnOrderArray[0] = 1; /* P1's retail Relic Race spawn */
+	memcpy(level.DriverSpawn, image + 4 + SPAWN_P, sizeof level.DriverSpawn);
+	VehBirth_SetStartlinePosition(&driver, &level, &bottom);
+	VehBirth_SetStartlineRotation(&driver, &level);
+	expect(bottom.x == 22 && bottom.y == 99 + 0x80 && driver.rotCurr.y == 0x460,
+	       "A6-23: P1 uses the package's only authored position and rotation");
+	/* The fly-in changes both the usual slot and the selected live slot. */
+	level.DriverSpawn[1].pos.y = 42;
+	level.DriverSpawn[authoredSlot].pos.y = 97;
+	CustomTrack_OnRaceLoadRequested(6);
+	VehBirth_SetStartlinePosition(&driver, &level, &bottom);
+	VehBirth_SetStartlineRotation(&driver, &level);
+	expect(bottom.x == 22 && bottom.y == 99 + 0x80 && driver.rotCurr.y == 0x460,
+	       "A6-23: retry uses the authored height after the fly-in moves the selected slot");
+	game.levelID = 7;
+	VehBirth_SetStartlinePosition(&driver, &level, &bottom);
+	expect(bottom.x == 0 && bottom.y == 42 + 0x80,
+	       "A6-23: a retail Relic Race keeps its live solo spawn");
+	game.levelID = 6;
+	for (int authoredSolo = 1; authoredSolo >= 0; --authoredSolo)
+	{
+		reset_calls();
+		/* Keep slot 0 as an alternative in the authored-solo case. */
+		memset(image + 4 + SPAWN_P, 0, sizeof level.DriverSpawn);
+		if (authoredSolo)
+		{
+			image[4 + SPAWN_P] = 12;
+			image[4 + SPAWN_P + sizeof level.DriverSpawn[0]] = 42;
+		}
+		write_bytes(lev, image, levSize);
+		expect(CustomContentVerify_Files(lev, vrm, &report, error, sizeof error),
+		       "A6-23: alternate Relic grid verifies");
+		snprintf(plan_package.lev_sha256, sizeof plan_package.lev_sha256, "%s", report.levSha256);
+		expect(preflight() && AP_ContentPreparePad(3, AP_CONTENT_MODE_RELIC) == 6,
+		       "A6-23: alternate Relic grid starts through production pad entry");
+		CustomTrack_OnRaceLoadRequested(6);
+		memcpy(level.DriverSpawn, image + 4 + SPAWN_P, sizeof level.DriverSpawn);
+		VehBirth_SetStartlinePosition(&driver, &level, &bottom);
+		expect(bottom.x == (authoredSolo ? 42 : 0) && bottom.y == 0x80,
+		       authoredSolo ? "A6-23: an authored solo slot keeps its priority"
+		                    : "A6-23: an all-zero grid starts at the origin");
+	}
+	reset_calls();
 
 	/* No package record: nothing to scan or enter. */
 	plan_has_package = 0;
@@ -397,8 +535,9 @@ int main(void)
 
 with tempfile.TemporaryDirectory() as tmp:
     src, exe = Path(tmp) / "content_hooks.c", Path(tmp) / "content_hooks"
-    src.write_text(prelude + seed_struct + "\n" + lev_helper + stubs + hooks + tests, encoding="utf-8")
-    subprocess.run(["cc", "-std=gnu99", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function", "-Wno-format-truncation",
+    src.write_text(prelude + lev_helper + stubs + hooks + spawn_entry + tests, encoding="utf-8")
+    subprocess.run(["cc", "-m32", "-DCTR_NATIVE", "-DBUILD=926", "-std=gnu99",
+                    "-Wall", "-Wextra", "-Werror", "-Wno-unused-function", "-Wno-format-truncation",
                     "-DCTR_REPO_ROOT=\"" + str(root) + "\"",
                     "-fsanitize=undefined", "-fno-sanitize-recover=all",
                     "-I" + str(root), "-I" + str(root / "include"), "-I" + str(root / "ap"),

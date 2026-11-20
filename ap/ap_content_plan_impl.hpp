@@ -27,6 +27,7 @@ namespace content_plan {
 using J = nlohmann::json;
 struct State {
     bool parsed = false, bound = false;
+    uint64_t room_identity = 0;
     std::array<ctr_content_pad, 27> pads{};
     std::array<ctr_content_package, AP_CONTENT_MAX_PACKAGES> packages{};
     // Each package's descriptor as the room sent it (#89: solo keeps it once
@@ -66,6 +67,7 @@ struct State {
     std::map<std::string, CrateExclusions> crate_exclusions;
     std::map<std::string, J> track_ruling_sources;
     int track_ruling_version = 0;
+    bool track_pickup_limits = false;
     struct BoxSpot { int number = 0; bool seen = false; short x = 0, y = 0, z = 0, rot_y = 0; };
     std::map<int64_t, BoxSpot> box_spots;
     // Boss garages (#133 PR 6): the `bosses` record and the venues its
@@ -566,6 +568,28 @@ static void item_box_settings(const J &t, State &out) {
 }
 // The seats a custom track's boxes take: min(crates, 15), spread over the
 // crate table (ap_box_seat_logic.h computes which).
+static void require_reviewed_fallback_exclusions(const J &catalog, const char *lev, const ctr_content_pad &pad)
+{
+    if (!catalog.contains(lev)) return;
+    std::vector<const J *> weapons;
+    bool has_new_exclusions = false;
+    for (const auto &rule : catalog.at(lev)) {
+        if (rule.value("family", std::string("weapon_crate")) != "weapon_crate") continue;
+        const int since = rule.value("sanity_since", 1);
+        if (since > 2) continue;
+        weapons.push_back(&rule);
+        has_new_exclusions = has_new_exclusions || since == 2;
+    }
+    if (!has_new_exclusions) return;
+    need((size_t)pad.box_excluded_count == weapons.size(), "missing reviewed fallback exclusions");
+    for (size_t i = 0; i < weapons.size(); ++i) {
+        const J &rule = *weapons[i];
+        need(rule.at("ordinal") == pad.box_excluded[i], "mismatched reviewed fallback exclusion ordinal");
+        for (int axis = 0; axis < 3; ++axis)
+            need(rule.at("pos")[axis] == pad.box_excluded_pos[i][axis], "mismatched reviewed fallback exclusion position");
+    }
+}
+
 static int box_seats(int crates) {
     return crates <= 0 ? 0 : crates < AP_NAMED_ITEM_BOX_SLOTS ? crates : AP_NAMED_ITEM_BOX_SLOTS;
 }
@@ -897,8 +921,27 @@ static std::pair<std::string, std::string> scoped_ruling(const State &out, const
     return {};
 }
 
+static const J *reviewed_pickup_counts(const State &out, const J &pkg, const std::string &lev) {
+    if (!out.track_pickup_limits || !inherited_ruling_history(out, pkg, lev))
+        return nullptr;
+    const auto &registry = content_registry();
+    const auto &sanity = registry.at("sanity");
+    const auto &counts = registry.at("pickup_ruling_counts");
+    const auto source = ruling_pin(out, pkg, lev, [&](const std::string &pin) {
+        return sanity.contains(pin) || counts.contains(pin);
+    });
+    if (sanity.contains(source)) return &sanity.at(source).at("counts");
+    return counts.contains(source) ? &counts.at(source) : nullptr;
+}
+
 static void read_track_ruling_sources(const J &sources, const Table &packages, State &out) {
-    fields(sources, {"version", "packages"});
+    if (sources.contains("pickup_limits")) {
+        fields(sources, {"version", "packages", "pickup_limits"});
+        need(sources["pickup_limits"] == J(true), "pickup limits must be true when present");
+        out.track_pickup_limits = true;
+    } else {
+        fields(sources, {"version", "packages"});
+    }
     out.track_ruling_version = number(sources.at("version"), 1, kTrackRulingVersion);
     const auto &rows = sources.at("packages");
     need(rows.is_array() && !rows.empty() && rows.size() == packages.size(), "missing track ruling source packages");
@@ -1240,6 +1283,7 @@ static void validate(const J &p, State &out) {
         need(p["sanity"].is_object() && p["sanity"].contains("itemboxsanity") && p["sanity"].contains("wumpasanity"), "sanity settings missing");
         if(number(p["sanity"]["itemboxsanity"],0,50))features.push_back("itemboxsanity_v1");
         if(number(p["sanity"]["wumpasanity"],0,3))features.push_back("wumpasanity_v1");
+        if(p["sanity"].contains("exclusion_version"))features.push_back("sanity_exclusions_v2");
     }
     if(has_shop)features.push_back("wumpa_shop_v1");
     if(has_shop && p["wumpa_shop"].contains("logic_scale"))features.push_back("wumpa_shop_key_tiers_v1");
@@ -1926,11 +1970,11 @@ static void validate(const J &p, State &out) {
                     }
             } else if (dest.package_index >= 0) {
                 const auto &pkg = out.packages[dest.package_index];
+                const auto &descriptor = *packages.at(track.at("package_id").get<std::string>());
                 const auto excluded = out.crate_exclusions.find(dest.track_id);
                 std::vector<int> carried_ordinals;
                 if (carry_rulings) {
                     const auto &catalog = registry.at("sanity_exclusions");
-                    const auto &descriptor = *packages.at(track.at("package_id").get<std::string>());
                     const std::string source = ruling_pin(out, descriptor, pkg.lev_sha256,
                         [&](const std::string &pin) { return catalog.contains(pin); });
                     if (!source.empty() && inherited_ruling_history(out, descriptor, pkg.lev_sha256))
@@ -1954,9 +1998,18 @@ static void validate(const J &p, State &out) {
                     }
                     ex.used = true;
                 }
-                slots = box_seats(pkg.weapon_crates - dest.box_excluded_count);
+                if (pkg.weapon_crates > 0 && has_sanity && p["sanity"].contains("exclusion_version")
+                    && !inherited_ruling_history(out, descriptor, pkg.lev_sha256))
+                    require_reviewed_fallback_exclusions(registry.at("sanity_exclusions"), pkg.lev_sha256, dest);
+                int limit = pkg.weapon_crates;
+                if (const auto *counts = reviewed_pickup_counts(out, descriptor, pkg.lev_sha256))
+                    limit = std::min(limit, counts->at(0).get<int>());
+                const auto *past_prefix = std::upper_bound(dest.box_excluded,
+                    dest.box_excluded + dest.box_excluded_count, limit);
+                slots = box_seats(limit - (int)(past_prefix - dest.box_excluded));
                 slots = std::min(slots, out.item_boxes.box_count);
                 dest.box_crates = slots ? pkg.weapon_crates : 0;
+                dest.box_reviewed_crates = slots && limit < pkg.weapon_crates ? limit : 0;
                 for (int b = 0; b < slots; ++b)
                     dest.box_locations[b] = dest.named_block >= 0
                         ? ap_named_location_code(dest.named_block, AP_NAMED_OFF_ITEM_BOX_1 + b)
@@ -3380,6 +3433,9 @@ static int parse_content_plan(const nlohmann::json &j) {
 extern "C" int ap_content_plan_present(void) { return content_plan::state.parsed && ctr_cfg.schema_version == 18 && !ctr_cfg.seed_rejected; }
 extern "C" int ap_content_plan_active(void) { return ap_content_plan_present() && content_plan::state.bound; }
 extern "C" uint64_t ap_content_plan_epoch(void) { return ap_content_plan_active() ? content_plan::epoch : 0; }
+extern "C" uint64_t ap_content_plan_room_identity(void) {
+    return ap_content_plan_active() ? content_plan::state.room_identity : 0;
+}
 extern "C" const ctr_content_pad *ap_content_plan_pad(int physical) {
     if (ap_content_plan_active() && physical >= AP_CONTENT_GARAGE_CUP_PAD && physical < AP_CONTENT_GARAGE_CUP_PAD + 4) {
         const int g = physical - AP_CONTENT_GARAGE_CUP_PAD;
@@ -3472,6 +3528,11 @@ extern "C" int ap_content_plan_bind(const char *seed, int team, int slot, const 
         need(actual == state.checks, "room locations differ from content plan");
         const std::string identity = J::array({seed, team, slot, state.canonical}).dump();
         if (identity != previous_identity) { ++epoch; previous_identity = identity; }
+        // Stable across processes and independent of the current transport.
+        uint64_t hash = UINT64_C(14695981039346656037);
+        for (unsigned char byte : identity)
+            hash = (hash ^ byte) * UINT64_C(1099511628211);
+        state.room_identity = hash ? hash : 1;
         state.bound = true;
         return 1;
     } catch (const std::exception &e) {

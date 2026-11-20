@@ -1,7 +1,4 @@
 #include <common.h>
-#ifdef CTR_CUSTOM_PACKAGES
-#include <platform/native_checkpoint.h>
-#endif
 
 // To do: add a header
 
@@ -925,10 +922,6 @@ void UI_RenderFrame_Racing()
 	// compare for everyone else. Drawn after the feed so the authoring
 	// diagnostic stays legible on top of it.
 	AP_Author_DrawHud();
-#ifdef CTR_CUSTOM_PACKAGES
-	// A savestate refused because it belongs to another track (F8).
-	NativeCheckpoint_DrawCustomRefusal();
-#endif
 #else
 	// The authoring client without Archipelago: the same passes, minus the feed.
 #ifdef CTR_AI_LAP_RECORDER
@@ -936,9 +929,6 @@ void UI_RenderFrame_Racing()
 #endif
 #ifdef CTR_BOX_AUTHORING
 	AP_Author_DrawHud();
-#endif
-#ifdef CTR_CUSTOM_PACKAGES
-	NativeCheckpoint_DrawCustomRefusal();
 #endif
 #endif
 }

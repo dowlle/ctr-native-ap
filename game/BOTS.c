@@ -403,7 +403,8 @@ void BOTS_Adv_AdjustDifficulty(void)
 		    CustomTrack_NavIdentityForLoad((int)gGT->levelID, advCup, gGT->cup.cupID, ctNavUuid, &ctNavRevision);
 		// A garage venue on custom bytes (#133 PR 6b) blocks the host's
 		// retail lanes the same way.
-		facts.oxideFinalServing = CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID, advBoss) ||
+		facts.oxideFinalServing = CustomTrack_ResidentBlocksRecordedLanes(gGT->levelID) ||
+		                          CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID, advBoss) ||
 		                          CustomTrack_GarageVenueServing((int)gGT->levelID, gGT->bossID, advBoss) >= 0;
 		facts.cortexTrackIntent = CustomTrack_CortexTrackIntent((int)gGT->levelID, advBoss);
 #ifdef CTR_CUSTOM_PACKAGES

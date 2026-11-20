@@ -518,25 +518,27 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
     for (unsigned int i = 0; i < entry.manifest.count; i++)
     {
         const auto &file = entry.manifest.files[i];
-        if (std::strcmp(file.role, "presentation") || file.bytes > 4096 ||
-            (std::strcmp(file.path, "metadata/xdelta-source.json") &&
-             std::strcmp(file.path, "metadata/seed-source.json"))) continue;
+        if (std::strcmp(file.role, "presentation") || file.bytes > 4096) continue;
         std::string bytes(file.bytes, '\0');
         if (!CustomPackage_CopyFile(package, "presentation", bytes.data(), bytes.size(), nullptr)) continue;
         try
         {
             auto source = nlohmann::json::parse(bytes);
             if (source.at("schema_version") != 1) continue;
-            if (source.at("provider") == "ctr-seed")
+            const auto &provider = source.at("provider");
+            const bool seed = provider == "ctr-seed" && !std::strcmp(file.path, "metadata/seed-source.json");
+            const bool saphi = provider == "projectsaphi" && !std::strcmp(file.path, "metadata/saphi-source.json") &&
+                               source.at("version") == entry.manifest.version;
+            if (seed || saphi)
             {
                 /* A4-74: the ids a seed install recorded, for the permission check. */
-                if (source.contains("saphi_track_id") && source["saphi_track_id"].is_number_integer() &&
+                if (seed && source.contains("saphi_track_id") && source["saphi_track_id"].is_number_integer() &&
                     source["saphi_track_id"] > 0 && source["saphi_track_id"] <= 100000000)
                     entry.local.permissionTrackID = source["saphi_track_id"].get<int>();
-                if (source.contains("saphi_author_id") && source["saphi_author_id"].is_number_integer() &&
+                if (seed && source.contains("saphi_author_id") && source["saphi_author_id"].is_number_integer() &&
                     source["saphi_author_id"] > 0 && source["saphi_author_id"] <= 100000000)
                     entry.local.authorID = source["saphi_author_id"].get<int>();
-                if (source.contains("track_key") && source["track_key"].is_string())
+                if (seed && source.contains("track_key") && source["track_key"].is_string())
                 {
                     auto key = source["track_key"].get<std::string>();
                     if (!key.empty() && key.size() < sizeof entry.local.trackKey &&
@@ -552,13 +554,20 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
                 }
                 continue;
             }
-            if (source.at("provider") != "xdelta") continue;
+            if (provider != "xdelta" || std::strcmp(file.path, "metadata/xdelta-source.json")) continue;
             auto patch = source.at("patch_sha256").get<std::string>();
             int index = source.at("bigfile_index").get<int>();
             if (patch.size() != 64 || patch.find_first_not_of("0123456789abcdef") != std::string::npos || index < 0) continue;
             entry.local.xdelta = 1;
             entry.local.bigfileIndex = index;
             std::memcpy(entry.local.patchSha256, patch.c_str(), sizeof entry.local.patchSha256);
+            if (source.contains("source_url") && source["source_url"].is_string())
+            {
+                const auto url = source["source_url"].get<std::string>();
+                if (url.size() > 8 && url.size() <= 128 && url.compare(0, 8, "https://") == 0 &&
+                    std::all_of(url.begin(), url.end(), [](unsigned char c) { return c >= 0x21 && c <= 0x7e; }))
+                    std::memcpy(entry.local.sourceUrl, url.c_str(), url.size() + 1);
+            }
             if (source.contains("excluded"))
                 for (const auto &e : source["excluded"])
                 {
@@ -611,8 +620,16 @@ CustomPackageStoreEntry scan_entry(const std::string &prefix, const std::string 
         for (unsigned int i=0;i<entry.manifest.count && i<CTR_PACKAGE_FILE_MAX;i++)
         {
             const auto &file=entry.manifest.files[i];
-            if (!std::strcmp(file.role,"lev")) std::memcpy(entry.local.levSha256,file.sha256,sizeof entry.local.levSha256);
-            else if (!std::strcmp(file.role,"vrm")) std::memcpy(entry.local.vrmSha256,file.sha256,sizeof entry.local.vrmSha256);
+            if (!std::strcmp(file.role,"lev"))
+            {
+                std::memcpy(entry.local.levSha256, file.sha256, sizeof entry.local.levSha256);
+                entry.local.levBytes = file.bytes;
+            }
+            else if (!std::strcmp(file.role,"vrm"))
+            {
+                std::memcpy(entry.local.vrmSha256, file.sha256, sizeof entry.local.vrmSha256);
+                entry.local.vrmBytes = file.bytes;
+            }
         }
         package_capabilities(package, entry);
         for (unsigned int i=0;i<entry.manifest.count;i++)
@@ -960,6 +977,12 @@ extern "C" int CustomPackage_StoreDescriptor(const char *assets, const char *pin
             {"revision", manifest.version}, {"display_name", bounded_label(manifest.title)},
             {"author", entry.local.author[0] ? entry.local.author : "Unknown"},
             {"capabilities", caps}, {"files", files}, {"evidence", nlohmann::json::array()}};
+        if (entry.local.xdelta && entry.local.bigfileIndex <= 4095)
+        {
+            descriptor["locator"] = {{"kind", "xdelta"}, {"patch_sha256", entry.local.patchSha256},
+                                     {"bigfile_index", entry.local.bigfileIndex}};
+            if (entry.local.sourceUrl[0]) descriptor["locator"]["source_url"] = entry.local.sourceUrl;
+        }
         if (!needsLaps) descriptor["laps"] = laps;
         CustomPackageRelicTargets targets = {};
         if (!needsLaps && entry.local.relic && CustomPackage_GetRelicTargets(owned, &targets, nullptr, 0) &&

@@ -44,6 +44,8 @@
 //      because a silent fallback is the failure mode this feature exists to
 //      prevent,
 //   5. the two measured flags the loader actually acts on (ai_nav, spawns),
+//      which gate only a race that grids opponents; a solo race (Relic Race,
+//      Time Trial) skips that rule,
 //   6. descriptor lifecycle: idempotence by content (this is called every frame,
 //      so a repeat must not re-hash a multi-MiB file), replacement by a
 //      different seed, and withdrawal,
@@ -747,6 +749,46 @@ static void test_measured_flags(void)
 	d.flagGhosts = 0;
 	arm_with(d);
 	expect_int(CustomTrack_Config()->contentVerified, 1, "the inert flags do not gate the race");
+}
+
+// A standalone content-plan race in a solo mode (Relic Race, Time Trial) runs
+// one kart, so the opponent rule (AI nav paths, grid spawns) does not gate it
+// (A6-23 F1). The same package racing opponents is still refused.
+static void test_standalone_solo_race_capabilities(void)
+{
+	struct CustomTrackSeedDescriptor d = good_descriptor();
+
+	d.standalone = 1;
+	d.replacesCupLevelID = -1;
+	d.boxes = 0;
+	d.flagAiNav = 0;
+	d.flagSpawns = 1;
+	d.soloRace = 1;
+	arm_with(d);
+	expect_log_contains("solo event race", "a solo race skips the opponent rule");
+	expect_int(CustomTrack_Config()->contentVerified, 1, "a Relic-only package arms for a solo race");
+
+	// The same measured shape with opponents on the grid is still refused.
+	d.soloRace = 0;
+	arm_with(d);
+	expect_log_contains("no AI nav paths", "an opponent race still needs AI nav paths");
+	expect_fully_off("ai_nav false for an opponent race");
+
+	d = good_descriptor();
+	d.standalone = 1;
+	d.replacesCupLevelID = -1;
+	d.boxes = 0;
+	d.flagSpawns = 5;
+	arm_with(d);
+	expect_log_contains("fewer driver spawns", "an opponent race still needs the grid spawns");
+	expect_fully_off("5 spawns for a standalone 8-kart opponent race");
+
+	d = good_descriptor();
+	d.flagAiNav = 0;
+	d.soloRace = 1;
+	arm_with(d);
+	expect_log_contains("no AI nav paths", "a legacy cup always needs AI nav paths");
+	expect_fully_off("solo flag cannot bypass legacy cup requirements");
 }
 
 // ---------------------------------------------------------------------------
@@ -2094,6 +2136,8 @@ static void test_standalone_context(void)
 static void test_finish_terrain_boss_venue(void)
 {
 	struct CustomTrackLoadContext ctx = {0};
+	const struct CustomTrackResidentSource *resident;
+	struct GarageVenueDescriptor original;
 	reset_loader();
 	s_customTracksLoaded = 1;
 	CustomTrack_ClearGarageVenueDescriptors();
@@ -2102,11 +2146,23 @@ static void test_finish_terrain_boss_venue(void)
 	ctx.adventureBossActive = 1;
 	s_garageVenue[0].enabled = 1;
 	s_garageVenue[0].hostLevelID = TEST_HOST;
+	s_garageVenue[0].roomIdentity = 123;
+	strcpy(s_garageVenue[0].trackID, "garage-track");
+	strcpy(s_garageVenue[0].packageRevision, "1.0.0");
 	strcpy(s_garageVenue[0].levSha256, "e22b87a73009b94251f5216424cf07875a02e076eb8461b902624c2b5277ad45");
 	strcpy(s_garageVenue[0].vrmSha256, "5de0e46152d8fdce3e0cbe7cdd860516d98d98105106f5d81c043b39df9f0753");
 	/* Simulate the verified pair, without including third-party level bytes. */
 	s_garageVenueVerified[0] = 1;
+	original = s_garageVenue[0];
 	expect_int(CustomTrack_FinishTerrain(&ctx), 4, "verified Tizi boss venue uses its finish surface");
+	CustomTrack_ClearResidentSource();
+	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_VRM, 1);
+	expect_int(CustomTrack_ResidentAssetsMixed(), 1, "a custom VRM with no custom LEV refuses quick states");
+	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_LEV, 1);
+	expect_int(CustomTrack_ResidentAssetsMixed(), 0, "the complete verified pair can use quick states");
+	resident = CustomTrack_ResidentSource(TEST_HOST);
+	expect_int(resident && resident->roomIdentity == 123 && strcmp(resident->trackID, "garage-track") == 0 &&
+	           strcmp(resident->packageRevision, "1.0.0") == 0, 1, "loaded garage remembers room, track and revision");
 	ctx.adventureBossActive = 0;
 	expect_int(CustomTrack_FinishTerrain(&ctx), -1, "same-host retail race does not inherit a boss finish");
 	ctx.adventureBossActive = 1;
@@ -2118,6 +2174,31 @@ static void test_finish_terrain_boss_venue(void)
 	s_garageVenueVerified[0] = 1;
 	s_garageVenue[0].vrmSha256[0] = '0';
 	expect_int(CustomTrack_FinishTerrain(&ctx), -1, "mismatched boss texture hash cannot enable a finish");
+	CustomTrack_ClearGarageVenueDescriptors();
+	resident = CustomTrack_ResidentSource(TEST_HOST);
+	expect_int(resident && strcmp(resident->packageRevision, "1.0.0") == 0, 1,
+	           "clearing garage descriptors cannot relabel the loaded level");
+	expect_int(CustomTrack_ResidentBlocksRecordedLanes(TEST_HOST), 1,
+	           "loaded garage still blocks retail recordings after descriptor withdrawal");
+	CustomTrack_ClearResidentSource();
+	expect_int(CustomTrack_ResidentSource(TEST_HOST) == NULL, 1, "starting a fresh load resets the previous source");
+	expect_int(CustomTrack_ResidentBlocksRecordedLanes(TEST_HOST), 0,
+	           "retail load does not inherit the garage's recording block");
+	s_garageVenue[0] = original;
+	strcpy(s_garageVenue[0].packageRevision, "1.1.0");
+	s_garageVenueVerified[0] = 1;
+	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_VRM, 1);
+	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_LEV, 1);
+	resident = CustomTrack_ResidentSource(TEST_HOST);
+	expect_int(resident && strcmp(resident->packageRevision, "1.1.0") == 0 &&
+	           strcmp(resident->levSha256, original.levSha256) == 0 && strcmp(resident->vrmSha256, original.vrmSha256) == 0,
+	           1, "new garage load retains a revision change with identical bytes");
+	CustomTrack_ClearResidentSource();
+	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_VRM, 1);
+	strcpy(s_garageVenue[0].packageRevision, "1.2.0");
+	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_LEV, 1);
+	expect_int(CustomTrack_ResidentAssetsMixed(), 1, "subfiles from different revisions refuse quick states");
+	CustomTrack_ClearResidentSource();
 	CustomTrack_ClearGarageVenueDescriptors();
 }
 
@@ -2148,6 +2229,7 @@ int main(void)
 	test_bad_cup();
 	test_bad_laps();
 	test_measured_flags();
+	test_standalone_solo_race_capabilities();
 	test_boxes_denied();
 	test_apply_is_idempotent();
 	test_descriptor_replacement();
