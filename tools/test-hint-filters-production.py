@@ -21,13 +21,19 @@ KEYS = ("pad_hints_wait_for_spoiler", "pad_hints_progression_only", "shop_hints_
 assert '#include "ap_hint_filters_logic.h"' in hooks
 
 hook = body(pads, "void AP_PadApproachHints(int levelID)")
-wait = hook.index("AP_HintFilter_PadWaits(ctr_cfg.pad_hints_wait_for_spoiler, ctr_cfg.spoiler_items, AP_SpoilerPadPreviewShown())")
+garage = body(pads, "void AP_BossGarageApproachHints(int hubID)")
+ready = body(pads, "static int AP_ApproachHintsReady(void)")
+send = body(pads, "static void AP_ApproachSendHints(")
+assert "!AP_HintFilter_PadWaits(ctr_cfg.pad_hints_wait_for_spoiler, ctr_cfg.spoiler_items," in ready
+assert "AP_SpoilerPadPreviewShown()" in ready
 # The wait returns before any glow enumeration or send, so nothing is latched.
-assert wait < hook.index("AP_ContentPadGlowBits(") < hook.index("ap_net_pad_approach_hint(")
+assert hook.index("if (!AP_ApproachHintsReady()) return;") < hook.index("AP_ContentPadGlowBits(")
+assert hook.index("AP_ContentPadGlowBits(") < hook.index("AP_ApproachSendHints(")
+assert garage.index("!AP_ApproachHintsReady()") < garage.index("AP_ApproachSendHints(")
 # The progression filter sits in the per-code loop, before the send that latches.
-assert "AP_HintFilter_Progression(ctr_cfg.pad_hints_progression_only" in hook
-assert hook.index("AP_HintFilter_Progression(") < hook.index("ap_net_pad_approach_hint(")
-assert "ap_net_scout_known(codes[i]" in hook
+assert "AP_HintFilter_Progression(ctr_cfg.pad_hints_progression_only" in send
+assert send.index("ap_net_scout_known(codes[i]") < send.index("AP_HintFilter_Progression(")
+assert send.index("AP_HintFilter_Progression(") < send.index("ap_net_pad_approach_hint(")
 
 sh = body(shop, "static void AP_WShopHint(int hub)")
 assert "AP_HintFilter_Progression(ctr_cfg.shop_hints_progression_only" in sh
