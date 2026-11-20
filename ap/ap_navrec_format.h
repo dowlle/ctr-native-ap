@@ -260,10 +260,10 @@ static int AP_NavRecFormat_IdentityMatches(const struct AP_NavRecFileInfo *info,
                                            unsigned char identityKind, const unsigned char trackUuid[AP_NAVREC_TRACK_UUID_BYTES],
                                            unsigned int navRevision)
 {
-	if ((info == NULL) || (info->levelId != levelId))
+	if (info == NULL)
 		return 0;
 	if (identityKind == AP_NAVREC_IDENTITY_RETAIL)
-		return info->identityKind == AP_NAVREC_IDENTITY_RETAIL;
+		return info->identityKind == AP_NAVREC_IDENTITY_RETAIL && info->levelId == levelId;
 	if ((identityKind != AP_NAVREC_IDENTITY_CUSTOM) || (trackUuid == NULL))
 		return 0;
 	return (info->identityKind == AP_NAVREC_IDENTITY_CUSTOM) &&

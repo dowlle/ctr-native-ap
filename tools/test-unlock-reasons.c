@@ -177,34 +177,53 @@ int main(void)
 	expect("cap keeps priority order", ev[2].kind, AP_UNLOCK_GARAGE);
 
 	// ── wording: one line per kind ──
-	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_PAD, "Crash Cove", 0);
+	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_PAD, "Crash Cove", 0, 0);
 	expect_str("pad line", line, "Crash Cove OPEN");
-	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_STAGE2, "Papu's Pyramid", 0);
+	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_STAGE2, "Papu's Pyramid", 0, 0);
 	expect_str("stage 2 line", line, "Papu's Pyramid STAGE 2 OPEN");
-	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_DOOR, "Glacier Park", 0);
+	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_DOOR, "Glacier Park", 0, 0);
 	expect_str("door line", line, "Glacier Park DOOR OPEN");
-	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_GARAGE, "Ripper Roo", 0);
+	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_GARAGE, "Ripper Roo", 0, 0);
 	expect_str("garage line", line, "Ripper Roo GARAGE OPEN");
-	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_GARAGE, "Oxide", 0);
+	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_GARAGE, "Oxide", 0, 0);
 	expect_str("oxide garage line", line, "Oxide GARAGE OPEN");
-	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_SHOP, "The Lost Ruins", 0);
+	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_SHOP, "The Lost Ruins", 0, 0);
 	expect_str("shop line", line, "The Lost Ruins SHOP STOCK OPEN");
 
 	// the one-line-per-item summary of further openings
-	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_PAD, "Crash Cove", 1);
+	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_PAD, "Crash Cove", 1, 0);
 	expect_str("one more opening", line, "Crash Cove OPEN (+1 MORE)");
-	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_PAD, "Crash Cove", 3);
+	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_PAD, "Crash Cove", 3, 0);
 	expect_str("three more openings", line, "Crash Cove OPEN (+3 MORE)");
 
 	// long custom-track names are cut so the suffix always fits
 	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_PAD,
-	                    "30thAnniversaryAdventureSlot7: CNK Challenge", 0);
+	                    "30thAnniversaryAdventureSlot7: CNK Challenge", 0, 0);
 	expect_str("long name cut at 24", line, "30thAnniversaryAdventure OPEN");
-	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_PAD, 0, 0);
+	AP_UnlockReasonLine(line, (int)sizeof line, AP_UNLOCK_PAD, 0, 0, 0);
 	expect_str("missing name", line, "? OPEN");
-	AP_UnlockReasonLine(line, (int)sizeof line, 99, "Odd Kind", 0);
+	AP_UnlockReasonLine(line, (int)sizeof line, 99, "Odd Kind", 0, 0);
 	expect_str("unknown kind falls back", line, "Odd Kind OPEN");
 
-	printf("%s: 70 checks\n", failures ? "FAIL" : "PASS");
+	expect("N. Sanity Beach has no door", AP_UnlockPadDoor(26, 0), -1);
+	expect("Lost Ruins shares the one-Key gate", AP_UnlockPadDoor(27, 1), 0);
+	expect("Glacier Park uses its own two-Key door", AP_UnlockPadDoor(28, 2), 1);
+	expect("Citadel City uses the three-Key door", AP_UnlockPadDoor(29, 3), 2);
+	expect("Gem cups use the cup room door", AP_UnlockPadDoor(25, 2), 3);
+	memset(&b, 0, sizeof b);
+	unsigned held = 0;
+	b.padsBehindDoor[1] = 7;
+	expect("async baseline holds only ready pads", AP_UnlockHeldForDoor(&held, &b, 1), 0);
+	expect("three pads remain held", held, 7);
+	b.doorsReady = (1u << 1) | (1u << 3);
+	b.padOpen = 15; // an additional pad was never held
+	expect("door opens during replay and releases earlier holds", AP_UnlockHeldForDoor(&held, &b, 1), 7);
+	expect("held pads release only once", AP_UnlockHeldForDoor(&held, &b, 1), 0);
+	AP_UnlockReasonLine(line, sizeof line, AP_UNLOCK_DOOR, "Glacier Park", 0, 3);
+	expect_str("folded door line", line, "Glacier Park DOOR OPEN (+3 PADS)");
+	AP_UnlockReasonLine(line, sizeof line, AP_UNLOCK_DOOR, "Cup Room", 0, 1);
+	expect_str("singular folded door line", line, "Cup Room DOOR OPEN (+1 PAD)");
+
+	printf("%s unlock reasons\n", failures ? "FAIL" : "PASS");
 	return failures != 0;
 }

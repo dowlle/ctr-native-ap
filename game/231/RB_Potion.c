@@ -59,6 +59,16 @@ void RB_Potion_ThTick_InAir(struct Thread *t)
 	inst = t->inst;
 	mw = t->object;
 
+#ifdef CTR_AP
+	if ((t->flags & THREAD_FLAG_DEAD) != 0)
+		return;
+	if (mw->boolDestroyed)
+	{
+		RB_GenericMine_ThDestroy(t, inst, mw);
+		return;
+	}
+#endif
+
 	// adjust position, by velocity, do NOT use parenthesis
 	inst->matrix.t[0] += mw->velocity.x * gGT->elapsedTimeMS >> 5;
 	inst->matrix.t[1] += mw->velocity.y * gGT->elapsedTimeMS >> 5;
@@ -106,6 +116,9 @@ void RB_Potion_ThTick_InAir(struct Thread *t)
 	if ((sps->collision.stepFlags & COLL_STEP_TRIGGER_WEAPON_REACT) != 0)
 	{
 		RB_GenericMine_ThDestroy(t, inst, mw);
+#ifdef CTR_AP
+		return;
+#endif
 	}
 
 	int iVar4;

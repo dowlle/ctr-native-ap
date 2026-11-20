@@ -40,6 +40,8 @@
 struct sData sdata_static;
 struct Data data;
 ctr_seed_config ctr_cfg;
+static int recorded_stat_changes;
+void AP_NavRec_NotePhysicsEffect(void) { recorded_stat_changes++; }
 static int cfg_active = 1, dev_keys;
 static struct GameTracker gt;
 static struct Driver drv;
@@ -260,6 +262,28 @@ static int frame(int tap)
 
 int main(void)
 {
+	reset_world();
+	ctr_cfg.stats_mode = AP_CAP_MODE_SHARED_GLOBAL;
+	ctr_cfg.boost_mode = AP_CAP_MODE_SHARED_GLOBAL;
+	AP_CapabilityStats(&drv);
+	recorded_stat_changes = 0;
+	AP_CapabilityStats(&drv);
+	EXPECT(recorded_stat_changes == 0, "identical physics writes keep the current lap clean");
+	AP_CapabilityReceive(AP_CAP_CHAIN_TOP_SPEED);
+	AP_CapabilityStats(&drv);
+	EXPECT(recorded_stat_changes == 1, "a live increase in effective Top Speed dirties the lap");
+	hub_press(CRASH_BANDICOOT, ROW_SPEED, -1);
+	AP_CapabilityStats(&drv);
+	recorded_stat_changes = 0;
+	AP_CapabilityReceive(AP_CAP_CHAIN_TOP_SPEED);
+	AP_CapabilityStats(&drv);
+	EXPECT(recorded_stat_changes == 0, "receiving a ceiling increase above a fixed selection keeps the lap clean");
+	AP_CapabilityReceive(AP_CAP_CHAIN_BOOST);
+	AP_CapabilityStats(&drv);
+	EXPECT(recorded_stat_changes == 1, "a live increase in the effective Progressive Boost tier dirties the lap");
+	AP_CapabilityStats(&drv);
+	EXPECT(recorded_stat_changes == 1, "holding the same effective boost tier keeps the lap clean");
+
 	// ── Row gate: single-player Adventure race or cup only ──
 	reset_world();
 	EXPECT(AP_KartSetupRowLive(), "Adventure race with the character phase carries KART SETUP");

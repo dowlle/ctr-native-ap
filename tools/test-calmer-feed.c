@@ -57,10 +57,10 @@ static void hub_to_race(void)
     assert(f.vcount==2 && !strcmp(f.vis[1].text,"KEEP AFTER"));
     assert(f.qcount==1 && !strcmp(f.queue[f.qhead].text,"QUEUED KEEP"));
     trap(1,0,1,AP_FEED_TRAP_INCOMING,"FORCED USF INCOMING",1);
-    assert(f.qcount==2 && !strcmp(f.queue[(f.qhead+1)%24].text,"FORCED USF INCOMING"));
+    assert(f.qcount==2 && !strcmp(f.queue[(f.qhead+1)%AP_FEED_QUEUE_MAX].text,"FORCED USF INCOMING"));
     // A full wrapped ring compacts in FIFO order and keeps non-trap ARMED text.
     AP_FeedLinesReset(&f);
-    f.qhead=23;
+    f.qhead=AP_FEED_QUEUE_MAX-1;
     for(int i=0;i<24;i++) {
         char text[32];snprintf(text,sizeof text,"ITEM %d ARMED",i);
         if(i%2) trap(i,i,i+1,AP_FEED_TRAP_ARMED,text,0);
@@ -70,14 +70,30 @@ static void hub_to_race(void)
     assert(f.qcount==12);
     for(int i=0;i<12;i++) {
         char text[32];snprintf(text,sizeof text,"ITEM %d ARMED",i*2);
-        assert(!strcmp(f.queue[(f.qhead+i)%24].text,text));
+        assert(!strcmp(f.queue[(f.qhead+i)%AP_FEED_QUEUE_MAX].text,text));
     }
 }
+static void held_notice_survives_burst(void)
+{
+    AP_FeedLinesReset(&f);
+    f.qhead = AP_FEED_QUEUE_MAX - 2;
+    AP_FeedLinesEnqueue(&f, "OLD", 0, 0);
+    AP_FeedLinesEnqueueNotice(&f, "Glacier Park DOOR OPEN (+3 PADS)", 0, 0, 1);
+    for (int i = 0; i < 2 * AP_FEED_NORMAL_LIMIT; ++i)
+        AP_FeedLinesEnqueue(&f, "ORDINARY", 0, 0);
+    assert(f.qcount == AP_FEED_NORMAL_LIMIT + 1);
+    assert(f.queue[f.qhead].reconnectHeld);
+    AP_FeedLinesReconnect(&f);
+    assert(f.qcount == 1);
+    assert(!strcmp(f.queue[f.qhead].text, "Glacier Park DOOR OPEN (+3 PADS)"));
+}
+
 int main(void)
 {
     int i;
     hub_to_race();
     refreshing_copies();
+    held_notice_survives_burst();
     assert(AP_TRAP_SCHED_CAP == 32);
     AP_FeedLinesReset(&f);
     trap(1, 0, 1, AP_FEED_TRAP_ARMED, "NITRO DROP ARMED", 1);
@@ -103,7 +119,7 @@ int main(void)
     assert(!strcmp(f.vis[0].text, "4 NITRO DROP INCOMING"));
     for (i = 0; i < 240; ++i) AP_FeedLinesAge(&f);
     trap(1, 0, 5, AP_FEED_TRAP_FIRED, "NITRO DROP", 1);
-    assert(f.qcount == 2 && f.queue[(f.qhead + 1) % 24].copies == 1);
+    assert(f.qcount == 2 && f.queue[(f.qhead + 1) % AP_FEED_QUEUE_MAX].copies == 1);
 
     AP_FeedLinesReset(&f);
     AP_FeedLinesReceipt(&f, 10, 1, 1, "WUMPA FRUIT", 3);
@@ -124,7 +140,7 @@ int main(void)
     assert(f.qcount == 7);
     AP_FeedLinesReceipt(&f, 10, 1, 1, "WUMPA FRUIT", 3);
     AP_FeedLinesReceipt(&f, 10, 1, 1, "WUMPA FRUIT", 3);
-    assert(f.qcount == 8 && f.queue[(f.qhead + 7) % 24].copies == 2);
+    assert(f.qcount == 8 && f.queue[(f.qhead + 7) % AP_FEED_QUEUE_MAX].copies == 2);
     AP_FeedLinesReset(&f);
     assert(f.receiptWindow == 0 && f.qcount == 0);
     puts("calmer feed: stacking, race/hub, identity reuse, expiry, filler window and classes PASS");

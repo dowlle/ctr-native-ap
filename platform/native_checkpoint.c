@@ -24,7 +24,11 @@
 // and retail globals are defined, so they can snapshot the same process-local
 // regions the game mutates.
 #define NATIVE_CHECKPOINT_MAGIC              NATIVE_CHECKPOINT_FOURCC('C', 'T', 'R', 'C')
+#ifdef CTR_AP
+#define NATIVE_CHECKPOINT_VERSION            3u  // captures boss mine expiry state
+#else
 #define NATIVE_CHECKPOINT_VERSION            2u
+#endif
 #define NATIVE_CHECKPOINT_ADDRESS_RANGE_CAP  16u
 #define NATIVE_CHECKPOINT_POINTER_SLOT_CAP   65536u
 #define NATIVE_CHECKPOINT_CREDITS_STRING_CAP 4096u
@@ -52,6 +56,9 @@ enum NativeCheckpointRegionKind
 	NATIVE_CHECKPOINT_REGION_NATS = NATIVE_CHECKPOINT_FOURCC('N', 'A', 'T', 'S'),  // native subsystem state bundle
 #ifdef CTR_CUSTOM_PACKAGES
 	NATIVE_CHECKPOINT_REGION_CUST = NATIVE_CHECKPOINT_FOURCC('C', 'U', 'S', 'T'),  // loaded custom package identity
+#endif
+#ifdef CTR_AP
+	NATIVE_CHECKPOINT_REGION_BMIN = NATIVE_CHECKPOINT_FOURCC('B', 'M', 'I', 'N'),  // boss mine expiry
 #endif
 };
 
@@ -111,11 +118,14 @@ struct NativeCheckpointHeader
 	u32 addressRangeCount;
 	u32 codeAnchor;
 	struct NativeCheckpointAddressRange addressRanges[NATIVE_CHECKPOINT_ADDRESS_RANGE_CAP];
+	struct NativeCheckpointRegion regions[14
 #ifdef CTR_CUSTOM_PACKAGES
-	struct NativeCheckpointRegion regions[15];
-#else
-	struct NativeCheckpointRegion regions[14];
+	                                      + 1
 #endif
+#ifdef CTR_AP
+	                                      + 1
+#endif
+	];
 };
 
 global_variable void *s_nativeCheckpointPointerSlots[NATIVE_CHECKPOINT_POINTER_SLOT_CAP];
@@ -250,6 +260,10 @@ internal int NativeCheckpoint_GetRegionSize(u32 kind)
 	case NATIVE_CHECKPOINT_REGION_CUST:
 		return (int)sizeof(struct CustomStateIdentity);
 #endif
+#ifdef CTR_AP
+	case NATIVE_CHECKPOINT_REGION_BMIN:
+		return (int)sizeof(s_bossMineState);
+#endif
 	}
 
 	return 0;
@@ -291,6 +305,10 @@ internal void *NativeCheckpoint_GetRegionPtr(u32 kind)
 		return Platform_GetMempackBacking();
 	case NATIVE_CHECKPOINT_REGION_SCRP:
 		return CTR_SCRATCHPAD_BASE;
+#ifdef CTR_AP
+	case NATIVE_CHECKPOINT_REGION_BMIN:
+		return &s_bossMineState;
+#endif
 	}
 
 	return NULL;
@@ -2150,6 +2168,9 @@ internal int NativeCheckpoint_InitHeader(struct NativeCheckpointHeader *header)
 #ifdef CTR_CUSTOM_PACKAGES
 	    NATIVE_CHECKPOINT_REGION_CUST,
 #endif
+#ifdef CTR_AP
+	    NATIVE_CHECKPOINT_REGION_BMIN,
+#endif
 	};
 
 	memset(header, 0, sizeof(*header));
@@ -2390,6 +2411,11 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 	// the source-owned static image first, then overlay the captured runtime
 	// fields below.
 	OVR233_ResetRuntimeState();
+#ifdef CTR_AP
+	// A checkpoint is taken between shots. Clear the live shooter before
+	// restoring the saved progress and mine records.
+	RB_MinePool_ResetBossProgress();
+#endif
 
 	for (i = 0; i < header->regionCount; i++)
 	{
@@ -2422,6 +2448,13 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 	Platform_ConfigureMempackArena();
 	NativeCheckpoint_RelocateMempackPointers(header, &liveHeader);
 	NativeCheckpoint_RelocateRuntimePointers(header, &liveHeader);
+#ifdef CTR_AP
+	for (u32 mine = 0; mine < len(s_bossMineState.mines); ++mine)
+	{
+		NativeCheckpoint_RelocatePointerSlot(header, &liveHeader, &s_bossMineState.mines[mine].inst);
+		NativeCheckpoint_RelocatePointerSlot(header, &liveHeader, &s_bossMineState.mines[mine].owner);
+	}
+#endif
 	if (pointerMapRegion == NULL)
 	{
 		return 0;

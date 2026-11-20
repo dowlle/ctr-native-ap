@@ -105,8 +105,10 @@ int main() {
     bad = generic; custom_track(bad)["named_block"] = 0; custom_track(bad)["room_title"] = "Acid Lake";
     custom_check(bad)["location"] = 35200000; custom_check(bad)["display_name"] = "Acid Lake: Trophy Race";
     refuse(bad, "unregistered key claims Acid Lake's block");
-    bad = named; custom_track(bad).erase("named_block"); custom_check(bad)["location"] = 35016300;
-    refuse(bad, "Baby T Park moved off its named block");
+    J before_mint = named;
+    custom_track(before_mint).erase("named_block");
+    custom_check(before_mint)["location"] = 35016300;
+    expect(admit(before_mint), "a saved room with Baby T Park on a generic slot still binds after minting");
     bad = generic; custom_track(bad)["room_title"] = "Other"; refuse(bad, "check label disagrees with room title");
     bad = generic; custom_track(bad)["room_title"] = "Bad [x]";
     custom_check(bad)["display_name"] = "Bad [x]: Trophy Race"; refuse(bad, "markup bracket in room title");

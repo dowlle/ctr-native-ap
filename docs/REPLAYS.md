@@ -52,8 +52,12 @@ build/ctr_native --replay "debug/reports/20260605/ctr-123456/input.ctrreplay"
 
 Playback creates a fresh writable `memcard.playback` from `memcard.seed` every run and does not touch your real saves.
 
+Use the build that created a quick state or replay checkpoint. The AP checkpoint format now includes active boss mine progress. Older AP checkpoint layouts need their original build because checkpoints store live engine pointers.
+
 If a developer asks you to bypass header identity checks:
 
 ```sh
 build/ctr_native --replay "debug/reports/20260605/ctr-123456/input.ctrreplay" --replay-bypass-header
 ```
+
+The bypass leaves checkpoint layout validation in place.

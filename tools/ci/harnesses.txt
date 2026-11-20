@@ -21,6 +21,7 @@ tools/test-boss-lane-ahead.c
 tools/test-boss-lane-production.py
 tools/test-boss-kit-target.c
 tools/test-boss-kit-target-production.py
+tools/test-boss-mine-lifecycle.c
 tools/test-boss-music.c
 tools/test-boss-venue.cpp
 tools/test-boss-venue-production.py
@@ -37,6 +38,7 @@ tools/test-box-seat-production.py
 tools/test-box-spots.cpp
 tools/test-alpha2-presentation-production.py
 tools/test-alpha4-small-fixes.py
+tools/test-client-user-agent.py
 tools/test-clip-record-space.py
 tools/test-draw-distance.py
 tools/test-hub-box-warning.py
@@ -143,6 +145,7 @@ tools/test-navrec-production.py
 tools/test-net-admission.cpp
 tools/test-net-inflight-checks.cpp
 tools/test-net-planless-refusal.cpp
+tools/test-conn-version-status.py
 tools/test-solo-deathlink.cpp
 tools/test-options-pages.c
 tools/test-oxide-cutscene.c
