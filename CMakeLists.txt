@@ -333,8 +333,7 @@ if(CTR_AP)
         ${AP_VENDOR}/websocketpp
         ${AP_VENDOR}/asio/include
         ${AP_VENDOR}/json/include
-        ${CMAKE_SOURCE_DIR}/ap
-        ${CMAKE_SOURCE_DIR}/include)
+        ${CMAKE_SOURCE_DIR}/ap)
     find_package(Threads REQUIRED)
     target_link_libraries(ap_net PUBLIC OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB Threads::Threads)
     target_compile_definitions(ap_net PRIVATE
@@ -370,6 +369,7 @@ if(CTR_AP)
         # library, so the player and authoring clients build it the same way.
         target_compile_definitions(ctr_native PRIVATE CTR_CUSTOM_PACKAGES CTR_XDELTA_IMPORT)
         target_compile_definitions(ap_net PRIVATE CTR_CUSTOM_PACKAGES)
+        target_include_directories(ap_net PRIVATE ${CMAKE_SOURCE_DIR}/include)
         target_link_libraries(ap_net PUBLIC custom_package)
         target_link_libraries(ctr_native custom_package)
     endif()

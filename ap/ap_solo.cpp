@@ -8,7 +8,7 @@
 #include "ap_solo_logic.hpp"
 #include "ap_solo_track_visibility.hpp"
 #include "ap_net.h"
-#include <platform/native_custom_track_visibility.h>
+#include "../include/platform/native_custom_track_visibility.h"
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_package.h>
 #include <platform/native_custom_track_library.h>
