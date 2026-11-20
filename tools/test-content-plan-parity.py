@@ -2475,7 +2475,7 @@ for boost in ("off", "shared_global", "per_character"):
             cases.append((f"sewer-bridge-version-{boost}-{tier}-{version!r}", bad, False))
 from worlds.ctr.test.test_vortex_sanity import vortex_options
 native_cortex_pin = re.search(r'#define CTR_CFG_CORTEX_LEV_SHA256 "([0-9a-f]{64})"',
-                             (root / "ap/ap_seedcfg.h").read_text())[1]
+                             (root / "include/platform/native_cortex_asset_pins.h").read_text())[1]
 assert native_cortex_pin == cp.sanity.CORTEX_LEV_SHA256, "Vortex sanity catalog must describe bundled bytes"
 for boost in ("off", "shared_global", "per_character"):
     wire = make_world(vortex_options(progressive_boost=boost), seed=3, stop_before="pre_fill").fill_slot_data()

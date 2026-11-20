@@ -49,6 +49,11 @@
 #define AP_FEED_BASE_Y             0xC8 // bottom (newest) line anchor
 #define AP_FEED_RESULTS_BASE_Y     0xAC // same anchor on the results screens: clears the prompt
 #define AP_FEED_BOX_WARNING_Y      0x48
+#define AP_FEED_CONTENT_WARNING_Y  0x30
+
+#ifdef CTR_CUSTOM_TRACKS
+static int AP_CustomContentWarningVisible(void);
+#endif
 
 // ── RACE anchor (bottom-left, matches the hub) ──────────────────────────────
 // Previously the race surface used its own mid-screen band (upper-left of the
@@ -344,14 +349,26 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 			for (int i = armedMoved; i < AP_FEED_MAX_VISIBLE; ++i)
 				DecalFont_ResetLineBox(TEXT_SLOT_FEED + i);
 	}
-	// Leave room for the hub's two-line box warning, even when a pad
-	// has moved the feed higher to clear its requirements.
+	// Leave room below the lowest active hub warning and above the pad.
 	int visibleLimit = AP_FEED_MAX_VISIBLE;
-	if (!playableRace && ctr_cfg.box_placement_refused)
+	if (!playableRace)
 	{
-		const int firstFeedY = AP_FEED_BOX_WARNING_Y + AP_FEED_LINE_H + 8; // FONT_SMALL height
-		const int rows = baseY >= firstFeedY ? 1 + (baseY - firstFeedY) / AP_FEED_LINE_H : 0;
-		visibleLimit = rows < 3 ? rows : 3;
+		int warningY = 0;
+		if (ctr_cfg.box_placement_refused)
+		{
+			warningY = AP_FEED_BOX_WARNING_Y;
+			visibleLimit = 3;
+		}
+#ifdef CTR_CUSTOM_TRACKS
+		else if (AP_CustomContentWarningVisible())
+			warningY = AP_FEED_CONTENT_WARNING_Y;
+#endif
+		if (warningY)
+		{
+			const int firstFeedY = warningY + AP_FEED_LINE_H + 8; // FONT_SMALL height
+			const int rows = baseY >= firstFeedY ? 1 + (baseY - firstFeedY) / AP_FEED_LINE_H : 0;
+			if (rows < visibleLimit) visibleLimit = rows;
+		}
 	}
 	// Promote a pending line into a free slot, rate-limited so a deep queue
 	// cascades in rather than snapping full in one frame.

@@ -544,10 +544,14 @@ void RenderAllHUD(struct GameTracker *gGT)
 			// if standings
 			if ((hudFlags & 4) != 0)
 			{
+#ifdef CTR_CUSTOM_PACKAGES
+				// Continuing a cup can arm the next leg on the same host level.
+				const char *credit = UI_TrackCredit(-1);
+#endif
 				UI_CupStandings_InputAndDraw();
 #ifdef CTR_CUSTOM_PACKAGES
 				const RECT *view = &gGT->pushBuffer_UI.rect;
-				UI_DrawTrackCredit(UI_TrackCredit(-1), view->w / 2, view->h - 11, view->w - 64, TEXT_MARQUEE);
+				UI_DrawTrackCredit(credit, view->w / 2, view->h - 11, view->w - 64, TEXT_MARQUEE);
 #endif
 #ifdef CTR_AP
 				// AP feed: a race_loss DeathLink popup must survive the leg ending

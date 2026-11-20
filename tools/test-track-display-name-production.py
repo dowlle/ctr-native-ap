@@ -85,6 +85,11 @@ else:
     expr = banner[start:end].rstrip().removesuffix(",")
 fixture += "\nstatic const char *banner_name(void) {struct GameTracker *gGT=&game;return " + expr + ";}\n"
 standings = source("game/UI/UI_CupStandings.c")
+render = source("game/MAIN/MainFrame_RenderFrame.c")
+standings_hud = render[render.index("if ((hudFlags & 4) != 0)"):]
+assert (standings_hud.index("const char *credit = UI_TrackCredit(-1);")
+        < standings_hud.index("UI_CupStandings_InputAndDraw();")
+        < standings_hud.index("UI_DrawTrackCredit(credit,"))
 start = standings.index("\tint index = 0x22E;")
 end = standings.index("\t// title text", start)
 fixture += "\nstatic const char *standings_name(void) {struct GameTracker *gGT=&game;" + standings[start:end]

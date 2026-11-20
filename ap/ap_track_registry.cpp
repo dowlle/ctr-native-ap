@@ -4,6 +4,7 @@
 // Project Saphi and GitHub raw.
 
 #include "ap_track_registry.h"
+#include <platform/native_cortex_asset_pins.h>
 #include <platform/native_track_credit.h>
 #include <platform/native_custom_package.h>
 #include <platform/native_track_sources.h>
@@ -507,6 +508,12 @@ extern "C" void CustomTrackCredit_Format(char *out, size_t size, const char *lev
                                          int saphiID, const char *author, const char *source)
 {
 	if (!out || !size) return;
+	if (lev && vrm && TrackSources_HexEqual(lev, CTR_CFG_CORTEX_LEV_SHA256) &&
+	    TrackSources_HexEqual(vrm, CTR_CFG_CORTEX_VRM_SHA256))
+	{
+		std::snprintf(out, size, "%s", CTR_CORTEX_CREDIT);
+		return;
+	}
 	const auto index = current_index();
 	std::string key, track, music;
 	bool matchedSaphi = false;

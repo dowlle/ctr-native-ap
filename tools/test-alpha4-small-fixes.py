@@ -47,6 +47,7 @@ typedef struct { unsigned char r,g,b,code; } Color;
 #define AP_FEED_BASE_Y 200
 #define AP_FEED_LINE_H 12
 #define AP_FEED_BOX_WARNING_Y 72
+#define AP_FEED_CONTENT_WARNING_Y 48
 #define PARKING_LOT 20
 #define ADVENTURE_CUP 0x10000000
 typedef short s16;
@@ -81,6 +82,7 @@ static int CustomTrack_ServingLoad(int level,int cup,int id) { return custom; }
 static int MainRaceTrack_OfflineCustomLoad(void) { return offline; }
 '''
 fixture += function("game/UI/UI_DrawNum.c", "void UI_DrawNumTrophy(s16 posX, s16 posY)")
+fixture += "\nstatic int missingContent;\nstatic int AP_CustomContentWarningVisible(void) {return missingContent;}\n"
 fixture += function("ap/ap_hooks_feed.c", "static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)")
 fixture += "\nstatic int ap_feed_hub_pad_y;\n"
 fixture += function("ap/ap_hooks_feed.c", "void AP_FeedHubPadTitle(int feedY)")
@@ -129,6 +131,11 @@ int main(void) {
     // Warning capacity is hub-only: races still draw five lines.
     draws=0;AP_FeedTickAndDraw(8,200,1);assert(draws==5&&drawnY[0]==152);
     // A raised custom-pad anchor leaves one row below the two warning lines.
+    draws=0;AP_FeedTickAndDraw(8,103,0);assert(draws==1&&drawnY[0]==103&&ap_feed.qcount==1);
+    // Missing content alone leaves three rows. The lower box warning wins when both are drawn.
+    missingContent=1;ctr_cfg.box_placement_refused=0;
+    draws=0;AP_FeedTickAndDraw(8,103,0);assert(draws==3&&drawnY[0]==79&&drawnY[2]==103&&ap_feed.qcount==1);
+    ctr_cfg.box_placement_refused=1;
     draws=0;AP_FeedTickAndDraw(8,103,0);assert(draws==1&&drawnY[0]==103&&ap_feed.qcount==1);
     // A4-36: a slim bar, no text, only when the page scrolls; track and thumb inside the nine-row window.
     draws=0;

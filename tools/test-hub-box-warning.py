@@ -81,8 +81,11 @@ warn_y = int(re.search(r"#define AP_FEED_BOX_WARNING_Y\s+(0x[0-9A-Fa-f]+|\d+)", 
 assert "boxWarn1, AP_FEED_X, AP_FEED_BOX_WARNING_Y" in feed
 assert "boxWarn2, AP_FEED_X, AP_FEED_BOX_WARNING_Y + AP_FEED_LINE_H" in feed
 schema_y = int(re.search(r"DecalFont_DrawLine\(warn1, AP_FEED_X, (0x[0-9A-Fa-f]+),", feed).group(1), 0)
-custom_ys = [int(v, 0) + (line_h if plus else 0) for v, plus in re.findall(r"AP_FEED_X, (0x[0-9A-Fa-f]+)( \+ AP_FEED_LINE_H)?, FONT_SMALL", custom)]
-visible = int(re.search(r"visibleLimit = rows < (\d+) \? rows", feed).group(1))
+content_y = int(define("AP_FEED_CONTENT_WARNING_Y"), 0)
+assert "AP_FEED_CONTENT_WARNING_Y, FONT_SMALL" in custom
+assert "AP_FEED_CONTENT_WARNING_Y + AP_FEED_LINE_H, FONT_SMALL" in custom
+custom_ys = [content_y, content_y + line_h]
+visible = int(re.search(r"warningY = AP_FEED_BOX_WARNING_Y;\s*visibleLimit = (\d+);", feed).group(1))
 assert "ap_feed_hub_pad_y ? ap_feed_hub_pad_y : AP_FEED_BASE_Y" in feed
 glyph = 8
 assert schema_y + line_h + glyph <= min(custom_ys), (schema_y, custom_ys)
