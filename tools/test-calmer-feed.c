@@ -81,7 +81,7 @@ static void held_notice_survives_burst(void)
     AP_FeedLinesEnqueueNotice(&f, "Glacier Park DOOR OPEN (+3 PADS)", 0, 0, 1);
     for (int i = 0; i < 2 * AP_FEED_NORMAL_LIMIT; ++i)
         AP_FeedLinesEnqueue(&f, "ORDINARY", 0, 0);
-    assert(f.qcount == AP_FEED_NORMAL_LIMIT);
+    assert(f.qcount == AP_FEED_NORMAL_LIMIT + 1);
     assert(f.queue[f.qhead].reconnectHeld);
     AP_FeedLinesReconnect(&f);
     assert(f.qcount == 1);

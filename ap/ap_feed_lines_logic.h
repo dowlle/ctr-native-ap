@@ -138,12 +138,18 @@ static inline AP_FeedLine *AP_FeedLinesEnqueueNotice(AP_FeedLines *f, const char
 	int slot;
 	if (!held && f->qcount >= AP_FEED_NORMAL_LIMIT)
 	{
-		int i = 0;
-		while (i < f->qcount && f->queue[(f->qhead + i) % AP_FEED_QUEUE_MAX].reconnectHeld)
-			++i;
-		if (i < f->qcount)
+		int oldest = -1, ordinary = 0;
+		for (int i = 0; i < f->qcount; ++i)
 		{
-			for (; i > 0; --i)
+			if (f->queue[(f->qhead + i) % AP_FEED_QUEUE_MAX].reconnectHeld)
+				continue;
+			if (oldest < 0)
+				oldest = i;
+			++ordinary;
+		}
+		if (ordinary == AP_FEED_NORMAL_LIMIT)
+		{
+			for (int i = oldest; i > 0; --i)
 				f->queue[(f->qhead + i) % AP_FEED_QUEUE_MAX] =
 					f->queue[(f->qhead + i - 1) % AP_FEED_QUEUE_MAX];
 			f->qhead = (f->qhead + 1) % AP_FEED_QUEUE_MAX;
