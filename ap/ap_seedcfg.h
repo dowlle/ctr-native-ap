@@ -23,7 +23,7 @@
 #include "ap_cup_sweeps.h"
 #include "ap_lap_checks.h"
 #include "ap_wumpa_shop.h"
-#include <platform/native_cortex_asset_pins.h>
+#include "../include/platform/native_cortex_asset_pins.h"
 
 #ifdef __cplusplus
 extern "C" {
