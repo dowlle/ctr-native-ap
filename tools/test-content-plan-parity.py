@@ -2381,6 +2381,18 @@ with fifty_spots(custom=True):
             forged = copy.deepcopy(wire)
             forged["content_plan"]["required_features"].remove("box_count_v1")
             cases.append((f"box-count-{count}-feature", forged, False))
+from worlds.ctr.test.test_object_rulings import options as object_ruling_options
+
+for reviewed in (True, False):
+    options = object_ruling_options()
+    if not reviewed:
+        options["content_pool"]["tracks"]["custom"][0]["files"][0]["sha256"] = "ab" * 32
+    wire = make_world(options, seed=52, stop_before="pre_fill").fill_slot_data()
+    picked = next(row["wumpa_crate"] for row in wire["content_plan"]["sanity"]["tracks"]
+                  if row["track_id"] == "custom/tv-world/1.1.0")
+    assert picked == ([1, 2, 7, 8, 9] if reviewed else list(range(1, 10)))
+    cases.append((f"tv-world-pickup-ruling-exact-lev-{reviewed}", wire, True))
+
 for count, mode in ((5, "off"), (50, "both")):
     wire = make_world(dict(profile_options(), itemboxsanity=count, wumpasanity=mode), seed=3).fill_slot_data()
     assert cp.validate(wire["content_plan"])
