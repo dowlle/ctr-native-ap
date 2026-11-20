@@ -48,6 +48,7 @@
 #define AP_FEED_X                  0x10
 #define AP_FEED_BASE_Y             0xC8 // bottom (newest) line anchor
 #define AP_FEED_RESULTS_BASE_Y     0xAC // same anchor on the results screens: clears the prompt
+#define AP_FEED_BOX_WARNING_Y      0x48
 
 // ── RACE anchor (bottom-left, matches the hub) ──────────────────────────────
 // Previously the race surface used its own mid-screen band (upper-left of the
@@ -343,10 +344,15 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 			for (int i = armedMoved; i < AP_FEED_MAX_VISIBLE; ++i)
 				DecalFont_ResetLineBox(TEXT_SLOT_FEED + i);
 	}
-	// The hub's persistent box warning occupies y=72 and y=84. Keep the
-	// newest three lines at 96..120 while it is present; new lines wait in
-	// the queue rather than being promoted into the warning's band.
-	const int visibleLimit = !playableRace && ctr_cfg.box_placement_refused ? 3 : AP_FEED_MAX_VISIBLE;
+	// Leave room for the hub's two-line box warning, even when a pad
+	// has moved the feed higher to clear its requirements.
+	int visibleLimit = AP_FEED_MAX_VISIBLE;
+	if (!playableRace && ctr_cfg.box_placement_refused)
+	{
+		const int firstFeedY = AP_FEED_BOX_WARNING_Y + AP_FEED_LINE_H + 8; // FONT_SMALL height
+		const int rows = baseY >= firstFeedY ? 1 + (baseY - firstFeedY) / AP_FEED_LINE_H : 0;
+		visibleLimit = rows < 3 ? rows : 3;
+	}
 	// Promote a pending line into a free slot, rate-limited so a deep queue
 	// cascades in rather than snapping full in one frame.
 	if (ap_feed.vcount < visibleLimit)
@@ -476,8 +482,8 @@ void AP_DrawSchemaWarning(void)
 	{
 		static char boxWarn1[] = AP_BOX_WARN_LINE1;
 		static char boxWarn2[] = AP_BOX_WARN_LINE2;
-		DecalFont_DrawLine(boxWarn1, AP_FEED_X, 0x48, FONT_SMALL, RED);
-		DecalFont_DrawLine(boxWarn2, AP_FEED_X, 0x48 + AP_FEED_LINE_H, FONT_SMALL, RED);
+		DecalFont_DrawLine(boxWarn1, AP_FEED_X, AP_FEED_BOX_WARNING_Y, FONT_SMALL, RED);
+		DecalFont_DrawLine(boxWarn2, AP_FEED_X, AP_FEED_BOX_WARNING_Y + AP_FEED_LINE_H, FONT_SMALL, RED);
 	}
 	if (!ctr_cfg.schema_newer)
 		return;
