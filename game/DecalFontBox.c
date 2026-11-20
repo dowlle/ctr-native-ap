@@ -9,6 +9,13 @@ void DecalFont_ResetLineBox(int slot)
     if (slot >= 0 && slot < TEXT_SLOT_COUNT) textBoxClocks[slot].valid = 0;
 }
 
+void DecalFont_PauseLineBox(int slot)
+{
+    if (slot >= 0 && slot < TEXT_SLOT_COUNT)
+        TextBox_PauseVBlank(&textBoxClocks[slot], sdata->frameCounter,
+                            sdata->gGT->frameTimer_VsyncCallback);
+}
+
 int DecalFont_LineBoxOffset(const char *text, int width, s16 font, int slot)
 {
     if (slot < 0 || slot >= TEXT_SLOT_COUNT) return 0;

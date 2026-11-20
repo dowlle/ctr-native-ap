@@ -186,6 +186,15 @@ int main(int argc, char **argv)
 	CHECK(g_asked.size() == 1 && g_asked[0] == "raw.githubusercontent.com/dowlle/ctr-track-registry/main/registry.json");
 	CHECK(slurp(cache) == v1 && !exists(cache + ".part"));
 	CHECK(ap_track_registry_generation() != gen);
+	{
+		char credit[CTR_TRACK_CREDIT_MAX];
+		CustomTrackCredit_Format(credit, sizeof credit, h('a').c_str(), h('b').c_str(), 0, "Unknown", nullptr);
+		CHECK(!std::strcmp(credit, "From Project Saphi"));
+		CustomTrackCredit_Format(credit, sizeof credit, h('a').c_str(), h('b').c_str(), 0, "Unknown", "Example Pack");
+		CHECK(!std::strcmp(credit, "From Example Pack"));
+		CustomTrackCredit_Format(credit, sizeof credit, h('e').c_str(), h('f').c_str(), 0, "Unknown", nullptr);
+		CHECK(!std::strcmp(credit, "From a local custom track package"));
+	}
 
 	// Credits are pinned independently of the registry's download eligibility.
 	{

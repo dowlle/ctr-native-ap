@@ -25,7 +25,7 @@ assert 'if (AP_FeedConsumeSelfRung(item))' in source
 assert 'if (AP_FeedLinesPromote(&ap_feed) && playableRace)' in source
 assert 'OtherFX_Play(0x41, 1);' in source
 # The hub lifts above pad portraits and the custom fly-in clears the banner.
-assert 'AP_FeedTickAndDraw(AP_FEED_X, ap_feed_hub_pad_title ? 120 : AP_FEED_BASE_Y, 0);' in source
+assert 'AP_FeedTickAndDraw(AP_FEED_X, ap_feed_hub_pad_y ? ap_feed_hub_pad_y : AP_FEED_BASE_Y, 0);' in source
 assert 'AP_FeedTickAndDraw(AP_FEED_X, y, 1);' in source
 assert 'void AP_FeedDrawRace(void)\n{\n\tAP_FeedDrawRaceAt(AP_FEED_BASE_Y);' in source
 assert 'void AP_FeedDrawRaceIntro(void)\n{\n\tAP_FeedDrawRaceAt(AP_FEED_RESULTS_BASE_Y);' in source

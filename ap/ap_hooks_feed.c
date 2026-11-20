@@ -380,12 +380,12 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 	}
 }
 
-static int ap_feed_hub_pad_title;
+static int ap_feed_hub_pad_y;
 
 // Reset before hub threads run; the pad sets this only when it draws its title.
-void AP_FeedHubPadTitle(int visible)
+void AP_FeedHubPadTitle(int feedY)
 {
-	ap_feed_hub_pad_title = visible;
+	ap_feed_hub_pad_y = feedY;
 }
 
 // Leave the bottom title/racer block clear only while it is drawn.
@@ -396,7 +396,7 @@ void AP_FeedDrawHub(void)
 	if (!ctr_cfg_active() || !AP_HubFeedOn() || AP_CharSwap_HubHudHidden())
 		return;
 
-	AP_FeedTickAndDraw(AP_FEED_X, ap_feed_hub_pad_title ? 120 : AP_FEED_BASE_Y, 0);
+	AP_FeedTickAndDraw(AP_FEED_X, ap_feed_hub_pad_y ? ap_feed_hub_pad_y : AP_FEED_BASE_Y, 0);
 }
 
 // In-race surface (issue #192): the same feed, on the race HUD, so an item sent

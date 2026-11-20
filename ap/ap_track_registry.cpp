@@ -509,6 +509,7 @@ extern "C" void CustomTrackCredit_Format(char *out, size_t size, const char *lev
 	if (!out || !size) return;
 	const auto index = current_index();
 	std::string key, track, music;
+	bool matchedSaphi = false;
 	if (index)
 	{
 		if (lev && vrm && *lev && *vrm)
@@ -519,13 +520,18 @@ extern "C" void CustomTrackCredit_Format(char *out, size_t size, const char *lev
 				if (!key.empty() && key != row.key)
 				{
 					key.clear();
+					matchedSaphi = false;
 					break;
 				}
 				key = row.key;
+				matchedSaphi = matchedSaphi || row.track_id > 0;
 			}
 		}
 		else if (const auto found = index->key_by_saphi.find(saphiID); found != index->key_by_saphi.end())
+		{
 			key = found->second;
+			matchedSaphi = !key.empty();
+		}
 		if (key == "cortex-vortex")
 		{
 			std::snprintf(out, size, "%s", CTR_CORTEX_CREDIT);
@@ -544,6 +550,8 @@ extern "C" void CustomTrackCredit_Format(char *out, size_t size, const char *lev
 	if (track.empty() && author && std::strcmp(author, "Unknown") &&
 	    std::strcmp(author, "Unknown author"))
 		add_credit_name(track, author);
+	if (matchedSaphi && (!source || !*source))
+		source = "Project Saphi";
 	struct TrackSource known;
 	if ((key.empty() || (track.empty() && (!source || !*source))) &&
 	    lev && *lev && vrm && *vrm && TrackSources_Find(lev, vrm, &known))

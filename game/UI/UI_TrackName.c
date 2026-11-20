@@ -178,8 +178,8 @@ void UI_DrawTrackCredit(const char *credit, int x, int y, int width, int mode)
 		/* The byte font treats these glyphs as controls and controller icons. */
 		for (char *c = plain; *c; ++c)
 			if ((unsigned char)*c < 32 || strchr("~@[^*", *c)) *c = ' ';
-		DecalFont_DrawLineBox(plain, x, y, width, FONT_SMALL, WHITE | JUSTIFY_CENTER,
-		                      mode, TEXT_SLOT_TRACK_CREDIT, NULL);
+		const int slot = mode == TEXT_BANNER_MARQUEE ? TEXT_SLOT_RACE_CREDIT : TEXT_SLOT_TRACK_CREDIT;
+		DecalFont_DrawLineBox(plain, x, y, width, FONT_SMALL, WHITE | JUSTIFY_CENTER, mode, slot, NULL);
 	}
 }
 #endif

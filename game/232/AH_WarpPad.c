@@ -732,7 +732,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 #endif
 				int apLift = ap_pad_title_block_lift(apContentMissing ? 2 : (apStage2 != AP_S2LINE_NONE) + (apBoxesLeft > 0),
 				                                     data.font_charPixHeight[FONT_SMALL]);
-				AP_FeedHubPadTitle(1);
+				int apPadFeedY = 120;
 #else
 				int apLift = 0;
 #endif
@@ -848,6 +848,13 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						short apCy = (short)(gGT->pushBuffer[0].rect.y
 						                     + gGT->pushBuffer[0].rect.h - 82 - racerLift);
 
+#ifdef CTR_CUSTOM_PACKAGES
+						if (credit)
+						{
+							const int clearY = apCy - data.font_charPixHeight[FONT_SMALL] - 4;
+							if (clearY < apPadFeedY) apPadFeedY = clearY;
+						}
+#endif
 						// Portrait centred above the title, dimmed until owned so
 						// "can I use this pad yet" reads without counting items.
 						AP_CharSwap_DrawPortraitAt(apLockRacer,
@@ -873,6 +880,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						                   FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
 					}
 				}
+				AP_FeedHubPadTitle(apPadFeedY);
 #endif
 			}
 

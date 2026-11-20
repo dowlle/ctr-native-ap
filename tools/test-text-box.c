@@ -35,6 +35,18 @@ int main(void)
             assert(!memcmp(&paused,&playback,sizeof paused));
         }
         assert(TextBox_Offset(425,240,paused.ms)==60);
+        TextBoxClock banner={0};
+        unsigned pauseAt = fps;
+        for (unsigned frame=0;frame<=pauseAt;frame++)
+            TextBox_TickVBlank(&banner,2,frame,frame*60/fps,320,0,0,512,216,2);
+        assert(banner.ms==1000);
+        for (unsigned frame=pauseAt+1;frame<=pauseAt*3;frame++)
+            TextBox_PauseVBlank(&banner,frame,frame*60/fps);
+        assert(banner.ms==1000);
+        unsigned resumed = TextBox_TickVBlank(&banner,2,3*pauseAt+1,
+            (3*pauseAt+1)*60/fps,320,0,0,512,216,2);
+        assert(resumed==1000+1000/(unsigned)fps);
+        assert(TextBox_BannerOffset(481,320,resumed)>0);
         TextBoxClock a={0}, replay={0};
         unsigned previous=0;
         tick(&a,0,0,1);tick(&replay,0,0,1);

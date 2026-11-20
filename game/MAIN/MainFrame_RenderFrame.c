@@ -511,6 +511,14 @@ void RenderAllHUD(struct GameTracker *gGT)
 	hudFlags = gGT->hudFlags;
 	gameMode1 = gGT->gameMode1;
 
+#ifdef CTR_CUSTOM_PACKAGES
+	if (gameMode1 & PAUSE_ALL)
+	{
+		DecalFont_PauseLineBox(TEXT_SLOT_RACE_TITLE);
+		DecalFont_PauseLineBox(TEXT_SLOT_RACE_CREDIT);
+	}
+#endif
+
 	// if drawing intro-race title bars
 	if ((gGT->numPlyrCurrGame == 1) && ((hudFlags & 8) != 0) && ((gameMode1 & START_OF_RACE) != 0))
 	{
@@ -582,7 +590,7 @@ void RenderAllHUD(struct GameTracker *gGT)
 								const int width = viewWidth - (gGT->numPlyrCurrGame == 2 ? 192 : 128);
 								const int x = viewWidth / 2;
 								DecalFont_DrawLineBox(UI_TrackName(-1), x, 76, width, FONT_BIG,
-								                      ORANGE | JUSTIFY_CENTER, TEXT_BANNER_MARQUEE, TEXT_SLOT_BANNER, NULL);
+								                      ORANGE | JUSTIFY_CENTER, TEXT_BANNER_MARQUEE, TEXT_SLOT_RACE_TITLE, NULL);
 								UI_DrawTrackCredit(credit, x, 94, width, TEXT_BANNER_MARQUEE);
 							}
 						}

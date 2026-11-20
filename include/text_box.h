@@ -7,6 +7,7 @@ enum {
     TEXT_SLOT_SOLO, TEXT_SLOT_SOLO_VALUE, TEXT_SLOT_CONNECTION,
     TEXT_SLOT_SHOP, TEXT_SLOT_BANNER, TEXT_SLOT_PAD, TEXT_SLOT_FEED,
     TEXT_SLOT_TRACK_CREDIT = TEXT_SLOT_FEED + 5, TEXT_SLOT_PAD_TITLE,
+    TEXT_SLOT_RACE_TITLE, TEXT_SLOT_RACE_CREDIT,
     TEXT_SLOT_COUNT
 };
 
@@ -16,5 +17,6 @@ void DecalFont_DrawLineBox(const char *text, int x, int y, int width,
 int DecalFont_LineBoxOffset(const char *text, int width, short font, int slot);
 int DecalFont_LineBoxPrefixLen(const char *text, int width, short font);
 void DecalFont_ResetLineBox(int slot);
+void DecalFont_PauseLineBox(int slot);
 
 #endif

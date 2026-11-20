@@ -81,6 +81,13 @@ static inline uint32_t TextBox_TickVBlank(TextBoxClock *s, uint32_t key, uint32_
     return TextBox_Tick(s, key, frame, (int)elapsed, width, vx, vy, vw, vh, players);
 }
 
+static inline void TextBox_PauseVBlank(TextBoxClock *s, uint32_t frame, uint32_t ticks)
+{
+    if (!s->valid) return;
+    s->frame = frame;
+    s->ticks = ticks;
+}
+
 /* Intersect with the UI viewport, including negative fly-in coordinates. */
 static inline void TextBox_Clip(int x, int y, int w, int h, int vw, int vh,
     int *left, int *top, int *right, int *bottom)
