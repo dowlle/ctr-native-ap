@@ -23,7 +23,7 @@ static struct Instance instances[16];
 static u8 scratch[4096];
 u8 *gCTRNativeScratchpadBase = scratch;
 
-static int rulesLevel, expiryEnabled, ground, hurtCount, shatters, blasts, lastSound, doorSearches;
+static int rulesLevel, expiryEnabled, ground, hurtCount, shatters, blasts, lastSound, doorSearches, genericExplosions;
 int AP_BossRetailRulesLevel(int levelID) { return rulesLevel < 0 ? levelID : rulesLevel; }
 int AP_BossMineExpiryNow(void) { return expiryEnabled && (tracker.gameMode1 & ADVENTURE_BOSS); }
 int PickupBots_AdapterProtect(struct Driver *d) { (void)d; return 0; }
@@ -33,7 +33,6 @@ void PROC_StartSearch_Self(struct ScratchpadStruct *sps)
     assert(sps->Union.ThBuckColl.funcCallback == RB_Potion_OnShatter_TeethCallback);
     ++doorSearches;
 }
-void RB_Explosion_InitPotion(struct Instance *inst) { (void)inst; ++shatters; }
 void RB_Blowup_Init(struct Instance *inst) { (void)inst; ++blasts; }
 void RB_RainCloud_Init(struct Driver *d) { (void)d; assert(0); }
 int VehPickState_NewState(struct Driver *d, int type, struct Driver *attacker, int reason)
@@ -53,10 +52,22 @@ void COLL_SearchBSP_CallbackQUADBLK(const SVec3 *a, const SVec3 *b, struct Scrat
 }
 struct Instance *INSTANCE_BirthWithThread(int id, const char *name, int pool, int bucket,
                                           void *tick, int size, struct Thread *parent)
-{ (void)id; (void)name; (void)pool; (void)bucket; (void)tick; (void)size; (void)parent; assert(0); return NULL; }
+{
+    (void)name; (void)pool; (void)bucket; (void)tick; (void)size; (void)parent;
+    if (id == STATIC_SHOCKWAVE_GREEN || id == STATIC_SHOCKWAVE_RED)
+        ++shatters;
+    else {
+        assert(id == 0x26);
+        ++genericExplosions;
+    }
+    return NULL; // Exhaust the cosmetic instance pool, while keeping door search live.
+}
 void ThTick_SetAndExec(struct Thread *t, void (*tick)(struct Thread *)) { t->funcThTick = tick; tick(t); }
+void ThTick_FastRET(struct Thread *t) { (void)t; }
 void PROC_DestroyInstance(struct Thread *t) { (void)t; assert(0); }
-void RB_Explosion_InitGeneric(struct Instance *inst) { (void)inst; assert(0); }
+struct Particle *Particle_Init(u32 num, struct IconGroup *group, struct ParticleEmitter *emit)
+{ (void)num; (void)group; (void)emit; return NULL; }
+void Particle_FuncPtr_PotionShatter(struct Particle *p) { (void)p; assert(0); }
 void LHMatrix_Parent(struct Instance *dst, struct Instance *src, const SVec3 *v)
 { (void)dst; (void)src; (void)v; assert(0); }
 int MixRNG_Scramble(void) { assert(0); return 0; }
@@ -68,6 +79,7 @@ void MatrixRotate(MATRIX *dst, MATRIX *src, MATRIX *rot)
 #include "game/231/RB_MinePool.c"
 #include "game/231/RB_GenericMine.c"
 #include "game/231/RB_Hazard.c"
+#include "game/231/RB_Explosion.c"
 #include "game/231/RB_Potion.c"
 #include "game/231/RB_TNT.c"
 
@@ -81,7 +93,7 @@ static void setup(int venue, int garageHome)
     memset(instances, 0, sizeof instances);
     memset(scratch, 0, sizeof scratch);
     rulesLevel = garageHome;
-    expiryEnabled = ground = hurtCount = shatters = blasts = lastSound = doorSearches = 0;
+    expiryEnabled = ground = hurtCount = shatters = blasts = lastSound = doorSearches = genericExplosions = 0;
     sdata->gGT = &tracker;
     tracker.levelID = venue;
     tracker.level1 = &level;
@@ -179,16 +191,18 @@ static void testScopeAndDiscontinuities(void)
     bossDrop(0, STATIC_BEAKER_GREEN, 0, 0);
     move(100, 699);
     move(100, 399);  // An irregular checkpoint changes the projection without movement.
+    move(100, 699);  // Neither direction of the jump counts.
     owner.kartState = KS_MASK_GRABBED;
     move(9000, 150);
     owner.kartState = KS_NORMAL;
-    move(10000, 50);
-    move(10050, 0);
-    move(10200, 650);
+    move(10000, 750);  // The recovery sample is behind the old reference.
+    move(10050, 700);
+    move(10200, 550);
     assert(!mines[0].boolDestroyed);
     RB_MinePool_BossProgress(&owner, 0, 0, NULL);
     move(10201, 500);  // First valid sample after the missing checkpoint.
     assert(!mines[0].boolDestroyed);
+    owner.actionsFlagSet |= ACTION_RACE_FINISHED;  // The player is still racing.
     move(10300, 401);
     assert(!mines[0].boolDestroyed);
     move(10301, 400);
@@ -198,11 +212,44 @@ static void testScopeAndDiscontinuities(void)
     expiryEnabled = 1;
     move(0, 799);
     bossDrop(0, STATIC_BEAKER_GREEN, 0, 0);
-    RB_MinePool_ResetBossProgress();  // Simulate restoring an earlier race checkpoint.
+    move(100, 699);
+    const struct BossMineState saved = s_bossMineState;
+    RB_MinePool_ResetBossProgress();
+    s_bossMineState = saved;
+    move(300, 499);
+    move(399, 400);
+    assert(!mines[0].boolDestroyed);
+    move(400, 399);
+    assert(mines[0].boolDestroyed);
+
+    setup(TURBO_TRACK, PAPU_PYRAMID);
+    expiryEnabled = 1;
+    move(0, 799);
+    bossDrop(0, STATIC_BEAKER_GREEN, 0, 0);
+    RB_MinePool_ResetBossProgress();  // A legacy snapshot has no mine region.
     move(200, 599);
     move(400, 399);
     move(600, 199);
     assert(!mines[0].boolDestroyed && D231.minePoolTaken.count == 1);
+}
+
+static void testBlastBeforeMineTick(void)
+{
+    setup(TURBO_TRACK, PAPU_PYRAMID);
+    ground = 1;
+    add(0, STATIC_CRATE_TNT, 0);
+    add(1, STATIC_BEAKER_GREEN, 1);
+    add(2, STATIC_CRATE_TNT, 1);
+    RB_GenericMine_ThTick(&threads[1]);
+    RB_GenericMine_ThTick(&threads[2]);
+
+    // A collision callback killed all three neighbors before their bucket ticks.
+    for (int i = 0; i < 3; ++i)
+        RB_Hazard_ThCollide_Generic(&threads[i]);
+    assert(genericExplosions == 2 && D231.minePoolTaken.count == 0);
+    for (int i = 0; i < 3; ++i)
+        threads[i].funcThTick(&threads[i]);
+    assert(!blasts && !shatters && !doorSearches && genericExplosions == 2);
 }
 
 static void testAirborneExpiry(void)
@@ -235,6 +282,7 @@ int main(void)
     testHalfLap();
     testScopeAndDiscontinuities();
     testAirborneExpiry();
+    testBlastBeforeMineTick();
     puts("PASS half-lap expiry by mine position, finish wrap, reverse, invalid samples and race scope");
     setup(TURBO_TRACK, PAPU_PYRAMID);
     assert(D231.minePoolFree.count == 10);

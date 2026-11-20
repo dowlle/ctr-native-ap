@@ -88,10 +88,10 @@ void RB_GenericMine_ThTick(struct Thread *t)
 	boolPotion = (u32)(model - 0x46) < 2;
 
 #ifdef CTR_AP
+	if ((t->flags & THREAD_FLAG_DEAD) != 0)
+		return;
 	if (mw->boolDestroyed)
 	{
-		if (boolPotion)
-			RB_Potion_OnShatter_TeethSearch(inst);
 		RB_GenericMine_ThDestroy(t, inst, mw);
 		return;
 	}

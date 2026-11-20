@@ -53,6 +53,9 @@ enum NativeCheckpointRegionKind
 #ifdef CTR_CUSTOM_PACKAGES
 	NATIVE_CHECKPOINT_REGION_CUST = NATIVE_CHECKPOINT_FOURCC('C', 'U', 'S', 'T'),  // loaded custom package identity
 #endif
+#ifdef CTR_AP
+	NATIVE_CHECKPOINT_REGION_BMIN = NATIVE_CHECKPOINT_FOURCC('B', 'M', 'I', 'N'),  // boss mine expiry
+#endif
 };
 
 struct NativeCheckpointRegion
@@ -111,11 +114,14 @@ struct NativeCheckpointHeader
 	u32 addressRangeCount;
 	u32 codeAnchor;
 	struct NativeCheckpointAddressRange addressRanges[NATIVE_CHECKPOINT_ADDRESS_RANGE_CAP];
+	struct NativeCheckpointRegion regions[14
 #ifdef CTR_CUSTOM_PACKAGES
-	struct NativeCheckpointRegion regions[15];
-#else
-	struct NativeCheckpointRegion regions[14];
+	                                      + 1
 #endif
+#ifdef CTR_AP
+	                                      + 1
+#endif
+	];
 };
 
 global_variable void *s_nativeCheckpointPointerSlots[NATIVE_CHECKPOINT_POINTER_SLOT_CAP];
@@ -250,6 +256,10 @@ internal int NativeCheckpoint_GetRegionSize(u32 kind)
 	case NATIVE_CHECKPOINT_REGION_CUST:
 		return (int)sizeof(struct CustomStateIdentity);
 #endif
+#ifdef CTR_AP
+	case NATIVE_CHECKPOINT_REGION_BMIN:
+		return (int)sizeof(s_bossMineState);
+#endif
 	}
 
 	return 0;
@@ -291,6 +301,10 @@ internal void *NativeCheckpoint_GetRegionPtr(u32 kind)
 		return Platform_GetMempackBacking();
 	case NATIVE_CHECKPOINT_REGION_SCRP:
 		return CTR_SCRATCHPAD_BASE;
+#ifdef CTR_AP
+	case NATIVE_CHECKPOINT_REGION_BMIN:
+		return &s_bossMineState;
+#endif
 	}
 
 	return NULL;
@@ -2150,6 +2164,9 @@ internal int NativeCheckpoint_InitHeader(struct NativeCheckpointHeader *header)
 #ifdef CTR_CUSTOM_PACKAGES
 	    NATIVE_CHECKPOINT_REGION_CUST,
 #endif
+#ifdef CTR_AP
+	    NATIVE_CHECKPOINT_REGION_BMIN,
+#endif
 	};
 
 	memset(header, 0, sizeof(*header));
@@ -2193,8 +2210,10 @@ internal int NativeCheckpoint_ValidateHeader(const struct NativeCheckpointHeader
 {
 	struct NativeCheckpointHeader liveHeader;
 	u32 i;
+	u32 headerDelta = 0;
+	u32 expectedSize;
 
-	if ((header == NULL) || (srcSize < (int)sizeof(*header)))
+	if ((header == NULL) || (srcSize < (int)OFFSETOF(struct NativeCheckpointHeader, regions)))
 	{
 		return 0;
 	}
@@ -2202,18 +2221,27 @@ internal int NativeCheckpoint_ValidateHeader(const struct NativeCheckpointHeader
 	{
 		return 0;
 	}
-	if ((header->size < sizeof(*header)) || (header->size > (u32)srcSize))
-	{
-		return 0;
-	}
 	if (!NativeCheckpoint_InitHeader(&liveHeader))
 	{
 		return 0;
 	}
-	if ((header->size != liveHeader.size) || (header->regionCount != liveHeader.regionCount))
+	expectedSize = liveHeader.size;
+	if (header->regionCount != liveHeader.regionCount)
 	{
+#ifdef CTR_AP
+		// Older AP checkpoints omitted BMIN, the final region. The header
+		// table and each region offset were one entry shorter.
+		if (header->regionCount != liveHeader.regionCount - 1)
+			return 0;
+		headerDelta = sizeof(struct NativeCheckpointRegion);
+		expectedSize = liveHeader.regions[header->regionCount].offset - headerDelta;
+#else
 		return 0;
+#endif
 	}
+	const u32 headerSize = sizeof(*header) - headerDelta;
+	if (header->size != expectedSize || header->size > (u32)srcSize || header->size < headerSize)
+		return 0;
 	if (header->addressRangeCount != liveHeader.addressRangeCount)
 	{
 		return 0;
@@ -2240,11 +2268,11 @@ internal int NativeCheckpoint_ValidateHeader(const struct NativeCheckpointHeader
 		const struct NativeCheckpointRegion *liveRegion = &liveHeader.regions[i];
 		const u32 end = region->offset + region->size;
 
-		if ((region->kind != liveRegion->kind) || (region->offset != liveRegion->offset) || (region->size != liveRegion->size))
+		if ((region->kind != liveRegion->kind) || (region->offset != liveRegion->offset - headerDelta) || (region->size != liveRegion->size))
 		{
 			return 0;
 		}
-		if ((region->size == 0) || (region->offset < sizeof(*header)) || (end < region->offset) || (end > header->size))
+		if ((region->size == 0) || (region->offset < headerSize) || (end < region->offset) || (end > header->size))
 		{
 			return 0;
 		}
@@ -2390,6 +2418,11 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 	// the source-owned static image first, then overlay the captured runtime
 	// fields below.
 	OVR233_ResetRuntimeState();
+#ifdef CTR_AP
+	// Older states have no expiry records. Their existing mines still use
+	// the ordinary pool until removed, and new boss shots get fresh records.
+	RB_MinePool_ResetBossProgress();
+#endif
 
 	for (i = 0; i < header->regionCount; i++)
 	{
@@ -2418,15 +2451,17 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 		}
 	}
 
-#ifdef CTR_AP
-	// Restored mines keep their pool slots. Live progress belongs to the
-	// pre-restore race and may refer to instances that no longer exist.
-	RB_MinePool_ResetBossProgress();
-#endif
 	PSX_BIOS_SetRandSeed(header->psxRandSeed);
 	Platform_ConfigureMempackArena();
 	NativeCheckpoint_RelocateMempackPointers(header, &liveHeader);
 	NativeCheckpoint_RelocateRuntimePointers(header, &liveHeader);
+#ifdef CTR_AP
+	for (u32 mine = 0; mine < len(s_bossMineState.mines); ++mine)
+	{
+		NativeCheckpoint_RelocatePointerSlot(header, &liveHeader, &s_bossMineState.mines[mine].inst);
+		NativeCheckpoint_RelocatePointerSlot(header, &liveHeader, &s_bossMineState.mines[mine].owner);
+	}
+#endif
 	if (pointerMapRegion == NULL)
 	{
 		return 0;

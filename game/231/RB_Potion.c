@@ -60,10 +60,10 @@ void RB_Potion_ThTick_InAir(struct Thread *t)
 	mw = t->object;
 
 #ifdef CTR_AP
+	if ((t->flags & THREAD_FLAG_DEAD) != 0)
+		return;
 	if (mw->boolDestroyed)
 	{
-		if ((u32)(inst->model->id - STATIC_BEAKER_RED) < 2)
-			RB_Potion_OnShatter_TeethSearch(inst);
 		RB_GenericMine_ThDestroy(t, inst, mw);
 		return;
 	}
@@ -116,6 +116,9 @@ void RB_Potion_ThTick_InAir(struct Thread *t)
 	if ((sps->collision.stepFlags & COLL_STEP_TRIGGER_WEAPON_REACT) != 0)
 	{
 		RB_GenericMine_ThDestroy(t, inst, mw);
+#ifdef CTR_AP
+		return;
+#endif
 	}
 
 	int iVar4;

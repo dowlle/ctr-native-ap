@@ -15,6 +15,8 @@ void RB_TNT_ThTick_ThrowOffHead(struct Thread *t)
 	mw = t->object;
 
 #ifdef CTR_AP
+	if ((t->flags & THREAD_FLAG_DEAD) != 0)
+		return;
 	// A pooled projectile can be evicted while airborne. TNT thrown off a
 	// kart's head has no mine slot and keeps its original landing behavior.
 	if (mw->driverTarget == NULL && mw->boolDestroyed)

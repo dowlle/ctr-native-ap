@@ -937,7 +937,6 @@ void RB_MinePool_Init(void);
 void RB_MinePool_Remove(struct MineWeapon *mw);
 void RB_MinePool_Add(struct MineWeapon *mw);
 #ifdef CTR_AP
-void RB_MinePool_ResetBossProgress(void);
 void RB_MinePool_BossShot(struct Driver *driver);
 void RB_MinePool_BossMine(struct MineWeapon *mw, struct Instance *inst);
 void RB_MinePool_BossProgress(struct Driver *driver, int progress, int length, const SVec3 *backward);
