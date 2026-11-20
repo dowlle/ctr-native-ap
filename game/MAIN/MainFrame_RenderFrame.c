@@ -568,17 +568,22 @@ void RenderAllHUD(struct GameTracker *gGT)
 					{
 						UI_RenderFrame_Racing();
 #ifdef CTR_CUSTOM_PACKAGES
-						/* A split intro shares one central label. */
-						if (gGT->numPlyrCurrGame == 2 && (gameMode1 & START_OF_RACE) &&
-						    !(gameMode1 & PAUSE_ALL))
+						/* A race can start at the lights without a fly-in, including
+						   split screen. Show one banner below the first viewport's
+						   lights and above the second viewport's item slot. */
+						if (gGT->numPlyrCurrGame <= 2 && gGT->trafficLightsTimer > 0 &&
+						    !(gameMode1 & (PAUSE_ALL | END_OF_RACE | START_OF_RACE)) &&
+						    RaceFlag_IsFullyOffScreen())
 						{
 							const char *credit = UI_TrackCredit(-1);
 							if (credit)
 							{
-								const int x = gGT->pushBuffer_UI.rect.w / 2;
-								DecalFont_DrawLineBox(UI_TrackName(-1), x, 50, 320, FONT_BIG,
+								const int viewWidth = gGT->pushBuffer_UI.rect.w;
+								const int width = viewWidth - (gGT->numPlyrCurrGame == 2 ? 192 : 64);
+								const int x = viewWidth / 2;
+								DecalFont_DrawLineBox(UI_TrackName(-1), x, 76, width, FONT_BIG,
 								                      ORANGE | JUSTIFY_CENTER, TEXT_MARQUEE, TEXT_SLOT_BANNER, NULL);
-								UI_DrawTrackCredit(credit, x, 68, 320);
+								UI_DrawTrackCredit(credit, x, 94, width);
 							}
 						}
 #endif
