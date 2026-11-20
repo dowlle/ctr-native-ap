@@ -34,8 +34,7 @@ def function(signature):
 cortex = (root / "ap/ap_cortex_track.h").read_text(encoding="utf-8")
 targets = cortex[cortex.index("struct AP_CortexRelicTargets\n{"):cortex.index("// The relic tiers a finished run beat")]
 letters = cortex[cortex.index("#define AP_CV_LETTER_ITEM_FIRST_INDEX"):cortex.index("#endif // AP_CORTEX_TRACK_H")]
-seedcfg = (root / "ap/ap_seedcfg.h").read_text(encoding="utf-8")
-pins = "\n".join(re.findall(r"^#define CTR_CFG_CORTEX_(?:LEV|VRM)_SHA256 .*$", seedcfg, re.M))
+pins = '#include "platform/native_cortex_asset_pins.h"'
 
 fixture = r'''
 #include <assert.h>

@@ -858,11 +858,22 @@ int AP_CustomContentGateEventEntry(int forceVerify)
 	return 1;
 }
 
+static int AP_CustomContentCortexMissing(int planActive)
+{
+	return planActive ? ap_content_plan_cortex() && !ap_content_cortex_ready
+	                  : ap_cortex_track_content_required;
+}
+
+static int AP_CustomContentWarningVisible(void)
+{
+	return ap_custom_content_required || ap_oxide_final_content_required ||
+	       AP_CustomContentCortexMissing(ap_content_plan_active());
+}
+
 void AP_DrawCustomContentWarning(void)
 {
 	const int planActive = ap_content_plan_active();
-	const int cortexMissing = planActive ? ap_content_plan_cortex() && !ap_content_cortex_ready
-	                                    : ap_cortex_track_content_required;
+	const int cortexMissing = AP_CustomContentCortexMissing(planActive);
 #if defined(CTR_CUSTOM_PACKAGES) && !defined(CTR_AP_AUTHORING)
 	char *planPath = "OPTIONS > Custom Tracks > This Seed";
 	char *verifyPath = "OPTIONS > Custom Tracks: verify.";
@@ -883,31 +894,31 @@ void AP_DrawCustomContentWarning(void)
 			         ? "%d TRACK%s MISSING. OXIDE 2 LOCKED"
 			         : "!! %d CUSTOM TRACK%s MISSING !!",
 			         missing, missing == 1 ? "" : "S");
-			DecalFont_DrawLine(line, AP_FEED_X, 0x30, FONT_SMALL, RED);
-			DecalFont_DrawLine(planPath, AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
+			DecalFont_DrawLine(line, AP_FEED_X, AP_FEED_CONTENT_WARNING_Y, FONT_SMALL, RED);
+			DecalFont_DrawLine(planPath, AP_FEED_X, AP_FEED_CONTENT_WARNING_Y + AP_FEED_LINE_H, FONT_SMALL, RED);
 			return;
 		}
 	}
 	if (cortexMissing)
 	{
-		DecalFont_DrawLine("!! CORTEX VORTEX REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
+		DecalFont_DrawLine("!! CORTEX VORTEX REQUIRED !!", AP_FEED_X, AP_FEED_CONTENT_WARNING_Y, FONT_SMALL, RED);
 		DecalFont_DrawLine(ap_oxide_final_content_required ? "CORTEX PADS AND OXIDE 2 LOCKED"
 		                                                 : "Install Cortex Vortex: pad locked.",
-		                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
+		                   AP_FEED_X, AP_FEED_CONTENT_WARNING_Y + AP_FEED_LINE_H, FONT_SMALL, RED);
 		return;
 	}
 	if (ap_oxide_final_content_required)
 	{
-		DecalFont_DrawLine("!! CORTEX VORTEX REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
+		DecalFont_DrawLine("!! CORTEX VORTEX REQUIRED !!", AP_FEED_X, AP_FEED_CONTENT_WARNING_Y, FONT_SMALL, RED);
 		DecalFont_DrawLine("Verify Cortex Vortex: Oxide 2 locked.",
-		                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
+		                   AP_FEED_X, AP_FEED_CONTENT_WARNING_Y + AP_FEED_LINE_H, FONT_SMALL, RED);
 		return;
 	}
 	if (!ap_custom_content_required)
 		return;
-	DecalFont_DrawLine("!! CUSTOM CONTENT REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
+	DecalFont_DrawLine("!! CUSTOM CONTENT REQUIRED !!", AP_FEED_X, AP_FEED_CONTENT_WARNING_Y, FONT_SMALL, RED);
 	DecalFont_DrawLine(planActive ? planPath : verifyPath,
-	                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
+	                   AP_FEED_X, AP_FEED_CONTENT_WARNING_Y + AP_FEED_LINE_H, FONT_SMALL, RED);
 }
 #endif
 

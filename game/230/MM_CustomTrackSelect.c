@@ -22,6 +22,7 @@
 #include <platform/native_custom_offline.h>
 #include <platform/native_assets.h>
 #include <platform/native_custom_revision.h>
+#include <platform/native_track_credit.h>
 #include <platform/native_input.h> // Platform_InputRawGamepadButtons
 
 #include <platform/native_custom_identity.h>
@@ -437,7 +438,13 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
         DecalFont_DrawLineBox(entry->title, 309 + dx, 85 + dy, 174, FONT_SMALL,
             ORANGE, TEXT_MARQUEE, TEXT_SLOT_ARCADE_DETAIL, ot);
         MM_CustomTrackSelect_Text(line, 309 + dx, 98 + dy, 174, 1, WHITE, ot);
-        if (entry->author[0]) MM_CustomTrackSelect_Text(entry->author, 309 + dx, 110 + dy, 174, 1, WHITE, ot);
+        char credit[CTR_TRACK_CREDIT_MAX];
+        CustomTrackCredit_EnsureRegistry(NativeAssets_GetAssetDir());
+        if (entry->installed)
+            CustomPackage_TrackCredit(&entry->local, entry->author, credit, sizeof credit);
+        else
+            CustomTrackCredit_Format(credit, sizeof credit, NULL, NULL, 0, entry->author, "Project Saphi");
+        UI_DrawTrackCredit(credit, 396 + dx, 110 + dy, 174, TEXT_MARQUEE);
         if (entry->installed && entry->local.laps)
         {
             snprintf(line, sizeof line, "%u laps%s", entry->local.laps, entry->local.timeTrial ? " TT" : "");

@@ -1,5 +1,8 @@
 #include <common.h>
 #include "../RenderLevel/RenderLevelLod.h"
+#ifdef CTR_CUSTOM_PACKAGES
+#include <text_box.h>
+#endif
 
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
@@ -508,6 +511,14 @@ void RenderAllHUD(struct GameTracker *gGT)
 	hudFlags = gGT->hudFlags;
 	gameMode1 = gGT->gameMode1;
 
+#ifdef CTR_CUSTOM_PACKAGES
+	if (gameMode1 & PAUSE_ALL)
+	{
+		DecalFont_PauseLineBox(TEXT_SLOT_RACE_TITLE);
+		DecalFont_PauseLineBox(TEXT_SLOT_RACE_CREDIT);
+	}
+#endif
+
 	// if drawing intro-race title bars
 	if ((gGT->numPlyrCurrGame == 1) && ((hudFlags & 8) != 0) && ((gameMode1 & START_OF_RACE) != 0))
 	{
@@ -515,7 +526,12 @@ void RenderAllHUD(struct GameTracker *gGT)
 #ifdef CTR_AP
 		// AP feed: a DeathLink received during the intro / countdown is shown as
 		// ignored right away instead of surfacing after the lights.
-		AP_FeedDrawRace();
+#ifdef CTR_CUSTOM_PACKAGES
+		if (UI_TrackCredit(-1))
+			AP_FeedDrawRaceIntro();
+		else
+#endif
+			AP_FeedDrawRace();
 #endif
 	}
 
@@ -528,7 +544,15 @@ void RenderAllHUD(struct GameTracker *gGT)
 			// if standings
 			if ((hudFlags & 4) != 0)
 			{
+#ifdef CTR_CUSTOM_PACKAGES
+				// Continuing a cup can arm the next leg on the same host level.
+				const char *credit = UI_TrackCredit(-1);
+#endif
 				UI_CupStandings_InputAndDraw();
+#ifdef CTR_CUSTOM_PACKAGES
+				const RECT *view = &gGT->pushBuffer_UI.rect;
+				UI_DrawTrackCredit(credit, view->w / 2, view->h - 11, view->w - 64, TEXT_MARQUEE);
+#endif
 #ifdef CTR_AP
 				// AP feed: a race_loss DeathLink popup must survive the leg ending
 				// straight into the standings.
@@ -555,6 +579,26 @@ void RenderAllHUD(struct GameTracker *gGT)
 					if ((gameMode1 & CRYSTAL_CHALLENGE) == 0)
 					{
 						UI_RenderFrame_Racing();
+#ifdef CTR_CUSTOM_PACKAGES
+						/* A race can start at the lights without a fly-in, including
+						   split screen. Show one banner below the first viewport's
+						   lights and above the second viewport's item slot. */
+						if (gGT->numPlyrCurrGame <= 2 && gGT->trafficLightsTimer > 0 &&
+						    !(gameMode1 & (PAUSE_ALL | END_OF_RACE | START_OF_RACE)) &&
+						    RaceFlag_IsFullyOffScreen() && UI_TrackCreditNeedsCountdown())
+						{
+							const char *credit = UI_TrackCredit(-1);
+							if (credit)
+							{
+								const int viewWidth = gGT->pushBuffer_UI.rect.w;
+								const int width = viewWidth - (gGT->numPlyrCurrGame == 2 ? 192 : 128);
+								const int x = viewWidth / 2;
+								DecalFont_DrawLineBox(UI_TrackName(-1), x, 76, width, FONT_BIG,
+								                      ORANGE | JUSTIFY_CENTER, TEXT_BANNER_MARQUEE, TEXT_SLOT_RACE_TITLE, NULL);
+								UI_DrawTrackCredit(credit, x, 94, width, TEXT_BANNER_MARQUEE);
+							}
+						}
+#endif
 					}
 
 					// if crystal challenge
@@ -569,6 +613,10 @@ void RenderAllHUD(struct GameTracker *gGT)
 				{
 					if ((u32)(sdata->Loading.stage + 5) > 1)
 					{
+#ifdef CTR_CUSTOM_PACKAGES
+						const RECT *view = &gGT->pushBuffer_UI.rect;
+						UI_DrawTrackCredit(UI_TrackCredit(-1), view->w / 2, view->h - 11, view->w - 64, TEXT_MARQUEE);
+#endif
 						if ((gameMode1 & CRYSTAL_CHALLENGE) == 0)
 						{
 							if ((gameMode1 & TIME_TRIAL) == 0)

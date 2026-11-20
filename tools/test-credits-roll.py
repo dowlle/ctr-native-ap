@@ -26,6 +26,10 @@ assert lint.returncode == 0, "tools/check-credits.sh failed"
 
 src = (root / "ap/ap_credits_data.h").read_text(encoding="utf-8")
 width = int(re.search(r"#define AP_CREDITS_FIELD_WIDTH (\d+)", src).group(1))
+src = subprocess.check_output(
+    ["cc", "-E", "-P", "-DCTR_AP", "-I", str(root / "include"), "-x", "c", str(root / "ap/ap_credits_data.h")],
+    text=True,
+)
 rows = [(int(h), t) for h, t in re.findall(r'\{([01]), "([^"]*)"\}', src)]
 assert rows, "no credit rows parsed"
 
@@ -41,6 +45,7 @@ for header, text in rows:
 assert all(len(r.replace("~00", "").replace("~04", "")) <= width for r in rendered)
 joined = "\n".join(rendered)
 assert "ALWAYS JUMPING TRAP - ALIENGENIE" in joined
+assert "Track and music by Lockheart" in joined
 assert "~00" in joined and "~04" in joined
 
 (out_dir / "credits-roll.txt").write_text(joined + "\n", encoding="utf-8")

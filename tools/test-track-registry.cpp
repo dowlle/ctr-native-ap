@@ -1,4 +1,4 @@
-// g++ -m32 -std=c++17 -Wall -Wextra -Werror -DAP_TRACK_REGISTRY_TEST -I ap -I ap/vendor/json/include tools/test-track-registry.cpp ap/ap_track_registry.cpp -o /tmp/test-track-registry -pthread
+// g++ -m32 -std=c++17 -Wall -Wextra -Werror -DAP_TRACK_REGISTRY_TEST -I ap -I include -I ap/vendor/json/include tools/test-track-registry.cpp ap/ap_track_registry.cpp -o /tmp/test-track-registry -pthread
 //
 // Live track registry lookup for Current Seed (one generator row 10k), with a
 // local fixture registry and a stub transport in place of GitHub:
@@ -17,6 +17,8 @@
 //      with the next live fetch (no client release).
 // With one argument it parses that registry file and prints what it indexes.
 #include "ap_track_registry.h"
+#include <platform/native_track_credit.h>
+#include <platform/native_cortex_asset_pins.h>
 
 #include <nlohmann/json.hpp>
 
@@ -155,6 +157,30 @@ int main(int argc, char **argv)
 	// Before any fetch nothing is located.
 	CHECK(ap_track_registry_status(&source, nullptr, 0) == AP_TRACK_REGISTRY_IDLE);
 	CHECK(lookup('a', 810876, 'b', 458808) == AP_TRACK_REGISTRY_NO_INDEX);
+	{
+		char credit[CTR_TRACK_CREDIT_MAX];
+		CustomTrackCredit_Format(credit, sizeof credit,
+		    "cc0aaa1dacfbc6f43f1efc73989e7b7e2479ba8f81583784d507bac97f3d0a87",
+		    "e7a6a0b82cef9ec3e5c4bb5ab9ce2317b28aab198d7cb5263ef0b883c555e2e6",
+		    0, "Lockheart", nullptr);
+		CHECK(!std::strcmp(credit, CTR_CORTEX_CREDIT));
+		CustomTrackCredit_Format(credit, sizeof credit,
+		    CTR_CFG_CORTEX_LEV_SHA256, CTR_CFG_CORTEX_VRM_SHA256, 0, nullptr, nullptr);
+		CHECK(!std::strcmp(credit, CTR_CORTEX_CREDIT));
+	}
+	{
+		// Identical geometry shipped in two packs. A room's locator names
+		// its import even when it has no filename.
+		const char *lev = "185e0a49a9cd7b0f1ffd84abed1d01195937cac305f9119bf1d4d98cd4a081d4";
+		const char *vrm = "39d80a29475891fa9b236fe8483fd775a732788acaf6ab9577caae6e75112e92";
+		const char *patch = "92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2";
+		char credit[CTR_TRACK_CREDIT_MAX];
+		CustomTrackCredit_Format(credit, sizeof credit, lev, vrm, 0, "Unknown",
+		                         CustomTrackCredit_PatchSource("", patch));
+		CHECK(!std::strcmp(credit, "From Crash-30Anniversary_Adventure.xdelta"));
+		CustomTrackCredit_Format(credit, sizeof credit, lev, vrm, 0, "Unknown", nullptr);
+		CHECK(!std::strcmp(credit, "From an imported xdelta pack"));
+	}
 
 	// 1. Live fetch: the fixed URL only, published live, cached.
 	serve(true, v1);
@@ -164,6 +190,38 @@ int main(int argc, char **argv)
 	CHECK(g_asked.size() == 1 && g_asked[0] == "raw.githubusercontent.com/dowlle/ctr-track-registry/main/registry.json");
 	CHECK(slurp(cache) == v1 && !exists(cache + ".part"));
 	CHECK(ap_track_registry_generation() != gen);
+	{
+		char credit[CTR_TRACK_CREDIT_MAX];
+		CustomTrackCredit_Format(credit, sizeof credit, h('a').c_str(), h('b').c_str(), 0, "Unknown", nullptr);
+		CHECK(!std::strcmp(credit, "From Project Saphi"));
+		CustomTrackCredit_Format(credit, sizeof credit, h('a').c_str(), h('b').c_str(), 0, "Unknown", "Example Pack");
+		CHECK(!std::strcmp(credit, "From Example Pack"));
+		CustomTrackCredit_Format(credit, sizeof credit, h('e').c_str(), h('f').c_str(), 0, "Unknown", nullptr);
+		CHECK(!std::strcmp(credit, "From a local custom track package"));
+	}
+
+	// Credits are pinned independently of the registry's download eligibility.
+	{
+		auto credited = json::parse(v1);
+		credited["tracks"][0]["credits"] = json::array({
+			{{"name", "PanchoPew"}, {"role", "track"}},
+			{{"name", "Music Writer"}, {"role", "music"}},
+			{{"name", "SecondAuthor"}, {"role", "track"}},
+		});
+		serve(true, credited.dump());
+		CHECK(ap_track_registry_refresh(nullptr) == 1);
+		CHECK(wait_done(&source) == AP_TRACK_REGISTRY_DONE);
+		char credit[CTR_TRACK_CREDIT_MAX];
+		CustomTrackCredit_Format(credit, sizeof credit, h('a').c_str(), h('b').c_str(), 0, "Old name", nullptr);
+		CHECK(!std::strcmp(credit, "Track by PanchoPew and SecondAuthor / Music by Music Writer"));
+		CustomTrackCredit_Format(credit, sizeof credit, h('c').c_str(), h('d').c_str(), 0, nullptr, nullptr);
+		CHECK(!std::strcmp(credit, "Track by PanchoPew and SecondAuthor / Music by Music Writer"));
+		CustomTrackCredit_Format(credit, sizeof credit, h('a').c_str(), h('f').c_str(), 121, "Unknown", "Example Pack");
+		CHECK(!std::strcmp(credit, "From Example Pack"));
+		serve(true, v1);
+		CHECK(ap_track_registry_refresh(cache.c_str()) == 1);
+		CHECK(wait_done(&source) == AP_TRACK_REGISTRY_DONE);
+	}
 
 	// 2. Match by the room's pinned hashes, in any case.
 	std::memset(&m, 0, sizeof m);

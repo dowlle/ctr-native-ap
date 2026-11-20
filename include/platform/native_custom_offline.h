@@ -84,6 +84,7 @@ void CustomOffline_OnRaceFinished(int levelID, int singleRace, int humanDriver);
 int CustomOffline_RuntimeLoaded(void);
 int CustomOffline_RuntimeCompleted(void);
 int CustomOffline_RuntimeManifest(struct CustomPackageManifest *out);
+struct CustomPackageOwned *CustomOffline_RuntimePackage(void);
 struct CustomOfflineObservation
 {
     int64_t attemptStarted;

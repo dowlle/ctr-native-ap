@@ -1,6 +1,7 @@
 #ifdef CTR_CUSTOM_TRACKS
 
 #include <platform/native_custom_tracks.h>
+#include <platform/native_cortex_asset_pins.h>
 #include <platform/native_sha256.h>
 #include <platform/native_custom_finish.h>
 #include <platform/native_tizi_madness.h>
@@ -76,11 +77,11 @@ static int s_oxideFinalVerified;
 
 // Cortex Vortex's own music: the .sca Lockheart published with the track, shipped
 // beside the bundled LEV and VRM. It is read when a content-plan race arms that
-// exact pair (the LEV and VRM pins of ap/ap_seedcfg.h) and kept only when its
+// exact geometry pair and kept only when its
 // sha256 is the pinned one. Optional by design: a missing, changed or unreadable
 // file costs the music only (a random retail track's music plays), never the track.
-#define CORTEX_LEV_SHA256 "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13"
-#define CORTEX_VRM_SHA256 "4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d"
+#define CORTEX_LEV_SHA256 CTR_CFG_CORTEX_LEV_SHA256
+#define CORTEX_VRM_SHA256 CTR_CFG_CORTEX_VRM_SHA256
 #define CORTEX_SCA_SHA256 "ddde81cf1be8042400c717edeeded0d8727e3bb8ba24f0100201708372ef8b1c"
 #define CORTEX_SCA_NAME "CVortex Arcade All.sca"
 #define CORTEX_SCA_MAX_BYTES (2u * 1024u * 1024u)

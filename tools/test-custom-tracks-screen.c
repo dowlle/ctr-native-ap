@@ -28,6 +28,7 @@
 #include <platform/native_custom_revision.h>
 #include "../ap/ap_solo.h"
 #include "../ap/ap_seed_content.h"
+#include "../ap/ap_content_plan.h"
 #include "../ap/ap_custom_track_download.h"
 #include "../include/platform/native_text_edit_logic.h"
 struct sData sdata_static;
@@ -152,6 +153,7 @@ static struct AP_SeedContentRow room[AP_SEED_ROWS_MAX];
 static int roomCount;
 static char seedName[64] = "";
 int AP_SeedContentActive(void) { return seedActive; }
+const ctr_content_package *ap_content_plan_package(int i) { (void)i; return NULL; }
 int ap_net_is_connected(void) { return seedConnected; }
 int AP_SeedContentRows(struct AP_SeedContentRow *rows, int max) { int i; for (i = 0; i < roomCount && i < max; i++) rows[i] = room[i]; return i; }
 int AP_SeedContentInstallPreview(int *plan, int *count, uint64_t *bytes, char *reason, size_t reasonSize)
@@ -287,6 +289,23 @@ void CTR_MenuDrawScrollBar(int x, int y, int h, int total, int visible, int top,
 }
 
 #include "text-box-layout-stub.h"
+void CustomTrackCredit_EnsureRegistry(const char *assets) { (void)assets; }
+const char *CustomTrackCredit_PatchSource(const char *name, const char *sha256) { (void)sha256; return name; }
+void CustomTrackCredit_Format(char *out, size_t size, const char *lev, const char *vrm,
+                              int id, const char *author, const char *source)
+{
+    (void)lev; (void)vrm; (void)id;
+    snprintf(out, size, "%s", author && *author ? author : source && *source ? source : "Local package");
+}
+void CustomPackage_TrackCredit(const struct CustomPackageLocalInfo *local, const char *fallbackAuthor,
+                               char *out, size_t size)
+{
+    CustomTrackCredit_Format(out, size, NULL, NULL, 0, local->author[0] ? local->author : fallbackAuthor, NULL);
+}
+void UI_DrawTrackCredit(const char *credit, int x, int y, int width, int mode)
+{
+    DecalFont_DrawLineBox(credit, x, y, width, FONT_SMALL, JUSTIFY_CENTER | WHITE, mode, 0, NULL);
+}
 #include "../game/230/MM_CustomImport.c"
 #include "../game/230/MM_CustomManager.c"
 #include "../game/230/MM_CustomTracks.c"
