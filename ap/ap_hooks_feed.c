@@ -71,6 +71,7 @@
 #define AP_FEED_ITEM_UNKNOWN "AP ITEM"
 
 static AP_FeedLines ap_feed; // pending ring + visible lines (ap_feed_lines_logic.h)
+static AP_FeedLines ap_feed_saved; // held lines from the previous connection
 
 static int       ap_feed_primed = 0;  // 0 while absorbing the initial inventory
 static long long ap_feed_hwm = -1;    // highest already-known server index
@@ -141,27 +142,37 @@ static uint64_t ap_feed_room;
 static uint64_t ap_feed_room_instance;
 static int ap_feed_resume_pending;
 static unsigned ap_feed_letters_held, ap_feed_letters_announced;
+static unsigned ap_feed_saved_letters_held, ap_feed_saved_letters_announced;
+static unsigned ap_feed_letters_reported;
 static int ap_feed_letters_baseline;
 static void AP_FeedLetterReadyUpdates(void);
 static void AP_FeedOxideFinalOpenUpdate(void);
-static void AP_UnlockReasonsConnectReset(int sameRoom);
+static void AP_UnlockReasonsConnectReset(int mayResume, int alreadyPending);
+static void AP_UnlockReasonsResolveReconnect(int sameRoom);
 
 void AP_FeedConnectReset(void)
 {
 	uint64_t room = ap_content_plan_room_identity();
 	int mayResume = room && room == ap_feed_room && ap_feed_room_instance;
+	if (mayResume && !ap_feed_resume_pending)
+	{
+		ap_feed_saved = ap_feed;
+		AP_FeedLinesReconnect(&ap_feed_saved);
+		ap_feed_saved_letters_held = ap_feed_letters_held;
+		ap_feed_saved_letters_announced = ap_feed_letters_announced;
+	}
+	if (!mayResume)
+	{
+		AP_FeedLinesReset(&ap_feed_saved);
+		ap_feed_room_instance = 0;
+	}
+	AP_UnlockReasonsConnectReset(mayResume, ap_feed_resume_pending);
 	ap_feed_room = room;
 	ap_feed_resume_pending = mayResume;
-	if (mayResume)
-		AP_FeedLinesReconnect(&ap_feed);
-	else
-	{
-		AP_FeedLinesReset(&ap_feed);
-		ap_feed_room_instance = 0;
-		ap_feed_letters_held = 0;
-		ap_feed_letters_announced = 0;
-	}
-	AP_UnlockReasonsConnectReset(mayResume);
+	AP_FeedLinesReset(&ap_feed);
+	ap_feed_letters_held = 0;
+	ap_feed_letters_announced = 0;
+	ap_feed_letters_reported = 0;
 	ap_feed_letters_baseline = 1;
 	ap_feed_primed = 0;
 	ap_feed_hwm = -1;
@@ -342,39 +353,49 @@ static void AP_FeedOnLocationSent(long code)
 		AP_ItemFlagsClass(flags) == AP_ITEM_CLASS_FILLER;
 }
 
-// Called once after each frame's received-item drain (n = items drained this
-// frame). Handles the go-live transition: once connected and the initial dump
-// has gone quiet for AP_FEED_PRIME_QUIET_FRAMES, the feed primes and starts
-// toasting. Any item that arrives while unprimed keeps resetting the window (and
-// is absorbed by AP_FeedOnItemReceived), so a chunked initial sync stays silent.
+// The room token validates only previous-connection notices. The live
+// inventory barrier has its own clock, including for goal presentation.
+static void AP_FeedResolveReconnect(void)
+{
+	uint64_t instance;
+	if (!ap_net_feed_room_instance(&instance))
+		return;
+	if (ap_feed_resume_pending)
+	{
+		int sameRoom = instance == ap_feed_room_instance;
+		if (sameRoom)
+		{
+			for (int i = 0; i < ap_feed_saved.qcount; ++i)
+			{
+				const AP_FeedLine *line = &ap_feed_saved.queue[(ap_feed_saved.qhead + i) % AP_FEED_QUEUE_MAX];
+				AP_FeedEnqueueHeld(line->text, line->suffixOffset, line->color, line->playCue);
+			}
+			unsigned released = ap_feed_saved_letters_held & ~ap_feed_letters_reported;
+			ap_feed_letters_held |= released;
+			ap_feed_letters_announced = (ap_feed_letters_announced | ap_feed_saved_letters_announced) & ~released;
+		}
+		AP_FeedLinesReset(&ap_feed_saved);
+		AP_UnlockReasonsResolveReconnect(sameRoom);
+		ap_feed_resume_pending = 0;
+	}
+	ap_feed_room_instance = instance;
+}
+
+// Any item while unprimed resets the quiet window, so a chunked initial
+// inventory stays silent. A room token never changes the live threshold.
 void AP_FeedEndDrain(int drainedThisFrame)
 {
 	AP_FeedLinesReceiptTick(&ap_feed);
+	AP_FeedResolveReconnect();
 	AP_FeedOxideFinalOpenUpdate();
 	if (ap_feed_primed)
 		return;
-	uint64_t instance;
-	int roomKnown = ap_net_feed_room_instance(&instance);
-	if (roomKnown)
-	{
-		if (ap_feed_resume_pending && instance != ap_feed_room_instance)
-		{
-			AP_FeedLinesDiscardHeld(&ap_feed);
-			ap_feed_letters_held = 0;
-			ap_feed_letters_announced = 0;
-			AP_UnlockReasonsConnectReset(0);
-		}
-		ap_feed_room_instance = instance;
-		ap_feed_resume_pending = 0;
-	}
 	if (drainedThisFrame > 0 || !ap_net_is_connected())
 	{
 		ap_feed_quiet = 0;
 		return;
 	}
-	if (ap_feed_quiet < AP_FEED_PRIME_QUIET_FRAMES)
-		ap_feed_quiet++;
-	if (roomKnown && ap_feed_quiet >= AP_FEED_PRIME_QUIET_FRAMES)
+	if (++ap_feed_quiet >= AP_FEED_PRIME_QUIET_FRAMES)
 		ap_feed_primed = 1;
 }
 
@@ -411,8 +432,6 @@ static const char *AP_FeedRaceText(AP_FeedLine *line, char text[AP_FEED_TEXT_CAP
 // most once per frame (see the block comment above).
 static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 {
-	if (ap_feed_resume_pending)
-		return; // the queued lines could belong to a previous room instance
 	if (playableRace != 0)
 	{
 		int armedMoved = AP_FeedLinesRetireArmed(&ap_feed);

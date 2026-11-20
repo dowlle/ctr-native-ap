@@ -88,7 +88,7 @@ static const struct CustomTrackManagerPackage *AP_CustomContentPackage(void) { r
 '''
 fixture += function("game/230/MM_CustomTracks.c", "static void CT_LibraryMarqueeOwner(const struct CT_LibItem *item, const struct CT_LibView *view)")
 fixture += function("game/230/MM_CustomTrackSelect.c", "static void MM_CustomTrackSelect_MarqueePin(const char *pin)")
-fixture += "\n#define AP_FEED_LINE_H 12\n#define AP_FEED_RACE_WIDTH 364\nstatic AP_FeedLines ap_feed;\nstatic int ap_feed_resume_pending;\nstatic struct {int box_placement_refused;} ctr_cfg;\n"
+fixture += "\n#define AP_FEED_LINE_H 12\n#define AP_FEED_RACE_WIDTH 364\nstatic AP_FeedLines ap_feed;\nstatic struct {int box_placement_refused;} ctr_cfg;\n"
 fixture += function("ap/ap_hooks_feed.c", "void AP_FeedDiscardUnimportant(void)")
 fixture += function("ap/ap_hooks_feed.c", "static const char *AP_FeedRaceText(AP_FeedLine *line, char text[AP_FEED_TEXT_CAP])")
 fixture += function("ap/ap_hooks_feed.c", "static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)")

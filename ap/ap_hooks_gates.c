@@ -1691,12 +1691,25 @@ int ctr_cfg_warp_stage2_unlocked(int physPadLevelID)
 static AP_UnlockWatch ap_unlock_watch;
 static int ap_unlock_watch_valid = 0;
 static unsigned ap_unlock_held_pads[AP_UNLOCK_DOOR_COUNT];
+static unsigned ap_unlock_saved_pads[AP_UNLOCK_DOOR_COUNT];
+static unsigned ap_unlock_reported_pads;
 
-static void AP_UnlockReasonsConnectReset(int sameRoom)
+static void AP_UnlockReasonsConnectReset(int mayResume, int alreadyPending)
 {
 	ap_unlock_watch_valid = 0;
-	if (!sameRoom)
-		memset(ap_unlock_held_pads, 0, sizeof ap_unlock_held_pads);
+	if (!mayResume)
+		memset(ap_unlock_saved_pads, 0, sizeof ap_unlock_saved_pads);
+	else if (!alreadyPending)
+		memcpy(ap_unlock_saved_pads, ap_unlock_held_pads, sizeof ap_unlock_saved_pads);
+	memset(ap_unlock_held_pads, 0, sizeof ap_unlock_held_pads);
+	ap_unlock_reported_pads = 0;
+}
+
+static void AP_UnlockReasonsResolveReconnect(int sameRoom)
+{
+	if (sameRoom)
+		for (int d = 0; d < AP_UNLOCK_DOOR_COUNT; ++d)
+			ap_unlock_held_pads[d] |= ap_unlock_saved_pads[d] & ~ap_unlock_reported_pads;
 }
 
 // What a pad leads to this seed, same naming as the tracker's map nodes: the
@@ -1879,6 +1892,7 @@ static void AP_UnlockReasonsUpdate(int mode)
 			unsigned opened = AP_UnlockHeldForDoor(&ap_unlock_held_pads[d], &now, d);
 			if (!opened)
 				continue;
+			ap_unlock_reported_pads |= opened;
 			foldedPads |= opened;
 			foldedDoors |= 1u << d;
 			if (feedMode != AP_ITEM_FEED_OFF)

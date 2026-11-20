@@ -1341,17 +1341,34 @@ static void AP_FeedLetterReadyUpdates(void)
 		    ap_content_mode_slot(pad, AP_CONTENT_MODE_CTR) < 0 ||
 		    AP_PlanLettersRequiredCount(pad) == 0 || !AP_PlanLettersRequiredMet(pad))
 			continue;
-		if (!AP_ContentPadRacerMet(pad) || !AP_ContentModeOpen(pad, AP_CONTENT_MODE_CTR))
+		if (!AP_ContentPadRacerMet(pad) || !AP_ContentModeOpen(pad, AP_CONTENT_MODE_CTR)
+#ifdef CTR_CUSTOM_TRACKS
+		    || !AP_ContentPadReady(phys)
+#endif
+		   )
 		{
 			ap_feed_letters_held |= bit;
 			continue;
 		}
-		if ((!ap_feed_letters_baseline || (ap_feed_letters_held & bit)) && AP_HubFeedOn())
+		if (!ap_feed_letters_baseline && ap_feed_resume_pending &&
+		    (ap_feed_saved_letters_announced & bit))
+			continue; // the previous connection may already have announced it
+		if (!ap_feed_letters_baseline || (ap_feed_letters_held & bit))
 		{
-			char line[AP_FEED_TEXT_CAP];
-			snprintf(line, sizeof line, "%.*s: Got CTR letters",
-			         (int)(sizeof line - sizeof ": Got CTR letters"), AP_UnlockPadName(phys));
-			AP_FeedEnqueueHeld(line, (int)(strlen(line) - strlen(": Got CTR letters")), LIGHT_GREEN, 1);
+			ap_feed_letters_reported |= bit;
+			if (AP_HubFeedOn())
+			{
+				const char *name = AP_UnlockPadName(phys);
+				char line[AP_FEED_TEXT_CAP];
+#ifdef CTR_CUSTOM_PACKAGES
+				char folded[sizeof pad->room_title];
+				if (CustomPackage_AsciiFold(name, strlen(name), folded, sizeof folded))
+					name = folded;
+#endif
+				snprintf(line, sizeof line, "%.*s: Got CTR letters",
+				         (int)(sizeof line - sizeof ": Got CTR letters"), name);
+				AP_FeedEnqueueHeld(line, (int)(strlen(line) - strlen(": Got CTR letters")), LIGHT_GREEN, 1);
+			}
 		}
 		ap_feed_letters_held &= ~bit;
 		ap_feed_letters_announced |= bit;
