@@ -421,6 +421,26 @@ static void boss_music(void)
 	venue.vrmBytes = st.st_size;
 	sha_of(s_sca, bossMusicHash);
 	EXPECT(CustomTrack_ApplyGarageVenueDescriptor(0, &venue), "assign a custom boss venue");
+	EXPECT(CustomTrack_GetOverride(group + 1, &ctx, &path, &trackSize) &&
+	       !strcmp(path, CUSTOM_TRACK_BOSS_LEV), "the default Boss Theme retains verified geometry without any music lookup");
+	CustomTrack_ResetBossVenueLoad();
+	FILE *levFile = fopen(s_pkgLev, "r+b");
+	if (levFile != NULL)
+	{
+		int first = fgetc(levFile);
+		rewind(levFile);
+		fputc(first ^ 1, levFile);
+		fflush(levFile);
+		EXPECT(!CustomTrack_GetOverride(group + 1, &ctx, &path, &trackSize) &&
+		       !CustomTrack_GetOverride(group, &ctx, &path, &trackSize),
+		       "a same-size LEV replacement refuses both custom files with Boss Theme");
+		rewind(levFile);
+		fputc(first, levFile);
+		fclose(levFile);
+	}
+	else
+		EXPECT(0, "open the fixture to replace the LEV");
+	CustomTrack_ResetBossVenueLoad();
 	EXPECT(!CustomTrack_ReadBossMusic(PKG_HOST, 0, &size, &reason) && !reason, "an absent SCA is optional");
 	EXPECT(CustomTrack_GetOverride(group + 1, &ctx, &path, &trackSize) &&
 	       !strcmp(path, CUSTOM_TRACK_BOSS_LEV), "reserve the pair even when optional audio is absent");

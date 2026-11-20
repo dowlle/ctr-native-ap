@@ -349,6 +349,7 @@ void CustomTrack_ClearResidentSource(void);
 void CustomTrack_NoteLoadedAsset(const struct CustomTrackLoadContext *ctx, int role, int seedOwned);
 int CustomTrack_ResidentAssetsMixed(void);
 const struct CustomTrackResidentSource *CustomTrack_ResidentSource(int levelID);
+int CustomTrack_ResidentStandalone(int levelID);
 int CustomTrack_ResidentBlocksRecordedLanes(int levelID);
 int CustomTrack_ResidentGarageNavIdentity(int levelID, unsigned char uuid[CTR_CT_NAV_UUID_BYTES],
                                          unsigned int *revision);

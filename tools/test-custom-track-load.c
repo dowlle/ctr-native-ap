@@ -2108,10 +2108,14 @@ static void test_standalone_context(void)
 	expect_int(memcmp(navUuid, expectedUuid, sizeof navUuid) == 0 &&
 	           navRevision == CustomTrackPolicy_NavRevision(d.levSha256), 1,
 	           "seed navigation uses the staged UUID and the verified LEV digest");
-	s_standaloneRace.current.packageUuid[0] = 0;
+	s_customTrackResident.packageUuid[0] = 0;
 	expect_int(CustomTrack_NavIdentityForLoad(TEST_HOST, 0, 0, navUuid, &navRevision), 0,
 	           "a content-plan load cannot inherit the legacy config identity");
-	strcpy(s_standaloneRace.current.packageUuid, race.packageUuid);
+	strcpy(s_customTrackResident.packageUuid, race.packageUuid);
+	s_customTrackConfig.contentVerified = 0;
+	expect_int(CustomTrack_NavIdentityForLoad(TEST_HOST, 0, 0, navUuid, &navRevision), 1,
+	           "a loaded package retains navigation identity after the live descriptor goes away");
+	s_customTrackConfig.contentVerified = 1;
 	make_track_files();
 	expect_int(CustomTrack_EventFieldSize(TEST_HOST, 0, 0), 8, "standalone race uses measured eight-kart field");
 	expect_int(CustomTrack_RetailPodiumLevelID(TEST_HOST, 0, 0), -1, "standalone excludes retail host checks");

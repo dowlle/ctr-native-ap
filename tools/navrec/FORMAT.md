@@ -504,10 +504,13 @@ progress dirty when, on any sampled frame, the driver's `kartState` is one of:
 - `KS_CRASHING`, a wall crash. This one zeroes the driver's speed, so the line
   through it is one no bot should be asked to follow.
 
-Squish, burn, Clock, moving rain-cloud effects, AP traps that alter kart
-handling or force an inventory change, and direct live AP grants that change
-the kart's Mask, reserves or carried Wumpa also spoil a sample. A forced
-DeathLink race loss drops the partial lap and keeps previously banked laps.
+Squish, burn, Clock, TNT helmets and rain-cloud effects also spoil a sample.
+AP traps that alter kart handling or force an inventory change spoil a sample.
+Direct AP Mask and reserve boosts can keep doing so until they clear, including
+boost carried through a checkpoint restore where its source is unknown. A
+change in carried Wumpa, applied stats or effective terrain from a live AP
+item also spoils a sample. A forced DeathLink race loss drops the partial lap
+and keeps previously banked laps.
 
 The lap is also marked dirty if it runs past the recorder's per-lap sample cap,
 because a truncated line is not a line. In that case frames keep being counted so

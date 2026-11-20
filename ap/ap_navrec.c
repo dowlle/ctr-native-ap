@@ -17,6 +17,7 @@
 #include "ap_version.h"             // CTR_AP_VERSION
 #ifdef CTR_AP
 #include "ap_deathlink.h"
+#include "ap_surface.h"
 #include "ap_traps.h"
 #endif
 #include "platform/native_config.h" // g_config.navRecord / navUseRecorded / navDriverName
@@ -219,9 +220,12 @@ static unsigned int  s_navrecActiveNavRevision;
 // be stamped as retail lines of the host slot. Blocked means neither happens:
 // no recording loads, no recording is written, and the level's own lanes run.
 static int s_navrecIdentityBlocked;
-static int s_navrecGarageCaptureOnly;
+static int s_navrecBossCaptureOnly;
 static int s_navrecFrameKartEffect;
 static int s_navrecPhysicsEffect;
+static int s_navrecPhysicsImpaired = -1;
+static unsigned int s_navrecGrantedBoost;
+static unsigned int s_navrecFreshBoost;
 static int s_navrecLoggedBlocked;
 
 // Whether the lap currently being driven started with a forward crossing of
@@ -246,7 +250,7 @@ void AP_NavRec_SetActiveCustomTrack(const unsigned char uuid[16], unsigned int n
 	memcpy(s_navrecActiveTrackUuid, uuid, AP_NAVREC_TRACK_UUID_BYTES);
 	s_navrecActiveNavRevision = navRevision;
 	s_navrecIdentityBlocked = 0;
-	s_navrecGarageCaptureOnly = 0;
+	s_navrecBossCaptureOnly = 0;
 }
 
 void AP_NavRec_ClearActiveCustomTrack(void)
@@ -255,7 +259,7 @@ void AP_NavRec_ClearActiveCustomTrack(void)
 	memset(s_navrecActiveTrackUuid, 0, sizeof s_navrecActiveTrackUuid);
 	s_navrecActiveNavRevision = 0;
 	s_navrecIdentityBlocked = 0;
-	s_navrecGarageCaptureOnly = 0;
+	s_navrecBossCaptureOnly = 0;
 }
 
 void AP_NavRec_BlockRecordedLanes(void)
@@ -267,7 +271,7 @@ void AP_NavRec_BlockRecordedLanes(void)
 	memset(s_navrecActiveTrackUuid, 0, sizeof s_navrecActiveTrackUuid);
 	s_navrecActiveNavRevision = 0;
 	s_navrecIdentityBlocked = 1;
-	s_navrecGarageCaptureOnly = 0;
+	s_navrecBossCaptureOnly = 0;
 }
 
 // The three-way answer of ap_navrec_identity_logic.h, recovered from the
@@ -536,6 +540,12 @@ void AP_NavRec_ResetCapture(void)
 	AP_NavRec_DropBank();
 	s_navrecFrameKartEffect = 0;
 	s_navrecPhysicsEffect = 0;
+	s_navrecPhysicsImpaired = -1;
+	s_navrecGrantedBoost = 0;
+	s_navrecFreshBoost = 0;
+#ifdef CTR_AP
+	AP_SurfaceResetLapObservation();
+#endif
 	s_navrecLoggedBlocked = 0;
 	s_navrecCorridorLevel = -1;
 	s_navrecGridReady = 0;
@@ -1406,8 +1416,8 @@ static int AP_NavRec_LoadForLevel(int levelID, unsigned int seed)
 		           "the level's own lanes stay\n");
 		return 0;
 	}
-	if (s_navrecGarageCaptureOnly)
-		return 0; // Custom garage opponents keep their authored lanes and lane switches.
+	if (s_navrecBossCaptureOnly)
+		return 0; // Custom bosses keep their authored lanes and lane switches.
 
 	fetchCtx.onlyKey = NULL;
 	if (g_config.navOnlyMine)
@@ -1671,12 +1681,13 @@ int AP_NavRec_RederiveLoadIdentity(struct GameTracker *gGT)
 	if (advBoss && CustomTrack_ResidentGarageNavIdentity(gGT->levelID, ctNavUuid, &ctNavRevision))
 	{
 		AP_NavRec_SetActiveCustomTrack(ctNavUuid, ctNavRevision);
-		s_navrecGarageCaptureOnly = 1;
+		s_navrecBossCaptureOnly = 1;
 		return AP_NAVREC_LOAD_CUSTOM;
 	}
 
 	facts.eventRaceServing = CustomTrack_ServingLoad((int)gGT->levelID, advCup, gGT->cup.cupID) ||
-	                         CustomTrack_KeepsNoScores(gGT->levelID);
+	                         CustomTrack_KeepsNoScores(gGT->levelID) ||
+	                         CustomTrack_ResidentStandalone(gGT->levelID);
 	facts.eventRaceNavIdentity =
 	    CustomTrack_NavIdentityForLoad((int)gGT->levelID, advCup, gGT->cup.cupID, ctNavUuid, &ctNavRevision);
 	facts.oxideFinalServing = CustomTrack_ResidentBlocksRecordedLanes(gGT->levelID) ||
@@ -1693,6 +1704,7 @@ int AP_NavRec_RederiveLoadIdentity(struct GameTracker *gGT)
 	{
 	case AP_NAVREC_LOAD_CUSTOM:
 		AP_NavRec_SetActiveCustomTrack(ctNavUuid, ctNavRevision);
+		s_navrecBossCaptureOnly = advBoss;
 		break;
 	case AP_NAVREC_LOAD_BLOCKED:
 		AP_NavRec_BlockRecordedLanes();
@@ -1804,6 +1816,12 @@ static void AP_NavRec_RebindBots(int force)
 	}
 }
 
+static unsigned int AP_NavRec_ActiveBoosts(const struct Driver *d)
+{
+	return (d->reserves != 0 ? AP_NAVREC_GRANT_RESERVES : 0u) |
+	       (d->actionsFlagSet & ACTION_MASK_WEAPON ? AP_NAVREC_GRANT_MASK : 0u);
+}
+
 void AP_NavRec_AfterCheckpointRestore(void)
 {
 	int levelID;
@@ -1817,6 +1835,11 @@ void AP_NavRec_AfterCheckpointRestore(void)
 	// so discard the capture even when the lap index and identity match.
 	AP_NavRec_ResetCapture();
 	levelID = (int)sdata->gGT->levelID;
+	s_navrecLevelID = levelID;
+	// A checkpoint restores the kart's boost but does not record its origin.
+	// Treat restored reserves or a restored Mask as affected until they clear.
+	if (sdata->gGT->drivers[0] != NULL)
+		s_navrecGrantedBoost = AP_NavRec_ActiveBoosts(sdata->gGT->drivers[0]);
 
 #ifdef CTR_CUSTOM_TRACKS
 	// A savestate restore does not restore the load's identity verdict. Settle
@@ -2047,6 +2070,12 @@ void AP_NavRec_NoteKartEffect(void)
 	s_navrecFrameKartEffect = 1;
 }
 
+void AP_NavRec_NoteBoostGrant(enum AP_NavRecBoostGrant grant)
+{
+	s_navrecFreshBoost |= (unsigned int)grant;
+	AP_NavRec_NoteKartEffect();
+}
+
 void AP_NavRec_NotePhysicsEffect(void)
 {
 	s_navrecPhysicsEffect = 1;
@@ -2061,6 +2090,17 @@ static int AP_NavRec_KartImpaired(const struct Driver *d)
 	       (d->thCloud && d->rainCloudEffect != RAIN_CLOUD_EFFECT_NONE);
 }
 
+void AP_NavRec_ObservePhysics(const struct GameTracker *gGT)
+{
+	if (!g_config.navRecord || gGT == NULL || sdata == NULL || sdata->Loading.stage != LOAD_IDLE)
+	{
+		s_navrecPhysicsImpaired = -1;
+		return;
+	}
+	const struct Driver *d = gGT->drivers[0];
+	s_navrecPhysicsImpaired = d != NULL && AP_NavRec_KartImpaired(d);
+}
+
 // ============================================================================
 // Per-frame recording
 // ============================================================================
@@ -2072,10 +2112,14 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 	int            atEnd;
 	int            kartEffect = s_navrecFrameKartEffect;
 	int            physicsEffect = s_navrecPhysicsEffect;
+	int            physicsImpaired = s_navrecPhysicsImpaired;
+	unsigned int   freshBoost = s_navrecFreshBoost;
 	int            impaired;
 
 	s_navrecFrameKartEffect = 0;
 	s_navrecPhysicsEffect = 0;
+	s_navrecPhysicsImpaired = -1;
+	s_navrecFreshBoost = 0;
 	AP_NavRec_SyncArmed();
 
 	if (!s_navrecArmed || (gGT == NULL) || (s_navrecScratch == NULL))
@@ -2128,6 +2172,7 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 
 	atEnd = ((gGT->gameMode1 & END_OF_RACE) != 0);
 	impaired = AP_NavRec_KartImpaired(d);
+	s_navrecGrantedBoost = (s_navrecGrantedBoost | freshBoost) & (AP_NavRec_ActiveBoosts(d) | freshBoost);
 
 	// The engine's backward crossing flag changes even when lapIndex does not.
 	// Only an already open flying lap can resume on an uncounted recross.
@@ -2141,7 +2186,7 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 
 	// These observations come from the physics frame that just ran. Credit
 	// them to the outgoing lap before a boundary or finish can bank it.
-	if (impaired || physicsEffect)
+	if ((physicsImpaired < 0 ? impaired : physicsImpaired) || physicsEffect)
 		s_navrecCurDirty = 1;
 
 	if (atEnd)
@@ -2218,7 +2263,7 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 	}
 
 	// Persisting kart effects also spoil the first sample of the new lap.
-	if (kartEffect || impaired)
+	if (kartEffect || impaired || s_navrecGrantedBoost)
 		s_navrecCurDirty = 1;
 #ifdef CTR_AP
 	if (AP_TrapAffectsRecordedLap(d))

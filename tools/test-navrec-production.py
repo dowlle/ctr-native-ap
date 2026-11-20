@@ -77,6 +77,8 @@ check("AP_NavRecPool_NameMatches(info->driverName, onlyKey)" in body("AP_NavRec_
       "full reads recheck the name during both pick and placement")
 bots = (root / "game" / "BOTS.c").read_text()
 main_loop = (root / "game" / "MAIN" / "MainMain.c").read_text()
+check(main_loop.index("AP_NavRec_ObservePhysics(gGT);") < main_loop.index("AP_OnFrame(gGT);"),
+      "outgoing lap damage is sampled before AP applies new effects")
 check("AP_NavRec_RederiveLoadIdentity(gGT)" in bots
       and "facts.offlineCustomServing = MainRaceTrack_OfflineCustomLoad();" in body("AP_NavRec_RederiveLoadIdentity")
       and "MainRaceTrack_OfflineNavIdentity(ctNavUuid, &ctNavRevision)" in body("AP_NavRec_RederiveLoadIdentity"),

@@ -195,6 +195,7 @@ int CustomTrack_OxideFinalServing(int level, int boss, int active) { (void)level
 int CustomTrack_GarageVenueServing(int level, int boss, int active) { (void)level; (void)boss; (void)active; return -1; }
 int CustomTrack_CortexTrackIntent(int level, int boss) { (void)level; (void)boss; return 0; }
 int CustomTrack_ResidentBlocksRecordedLanes(int level) { (void)level; return 0; }
+int CustomTrack_ResidentStandalone(int level) { (void)level; return 0; }
 int CustomTrack_ResidentGarageNavIdentity(int level, unsigned char uuid[16], unsigned int *revision)
 {
 	(void)level;
@@ -205,6 +206,7 @@ int CustomTrack_ResidentGarageNavIdentity(int level, unsigned char uuid[16], uns
 #ifdef CTR_AP
 int AP_TrapAffectsRecordedLap(struct Driver *driver) { return driver == s_gt.drivers[0] && s_testTrap; }
 int AP_RaceAttemptIsForcedLoss(void) { return s_testForcedLoss; }
+void AP_SurfaceResetLapObservation(void) {}
 #endif
 
 #include "../ap/ap_navrec.c"
@@ -423,6 +425,13 @@ static void check_seed_lap_recording(void)
 	AP_NavRec_AfterBotsInit();
 	CHECK(s_navrecRecordedMask == 1 && sdata->NavPath_ptrHeader[0] == &s_navrecLaneHeader[0]);
 	CHECK(s_navrecLaneFileIndex[0] == 10 * AP_NAVREC_FILE_INDEX_STRIDE + 1);
+	s_gt.gameMode1 = ADVENTURE_MODE | ADVENTURE_BOSS | ADVENTURE_CUP;
+	for (s16 lane = 0; lane < 3; lane++)
+		BOTS_InitNavPath(&s_gt, lane);
+	CHECK(AP_NavRec_RederiveLoadIdentity(&s_gt) == AP_NAVREC_LOAD_CUSTOM);
+	AP_NavRec_AfterBotsInit();
+	CHECK(s_navrecRecordedMask == 0 && sdata->NavPath_ptrHeader[0] == &authored.header);
+	s_gt.gameMode1 = ADVENTURE_MODE;
 	CHECK(rename(parked, tt) == 0);
 	g_config.navUseRecorded = 0;
 	s_gt.level1 = NULL;
@@ -442,6 +451,44 @@ static void check_seed_lap_recording(void)
 	CHECK(s_navrecBankCount == 1 && s_navrecBankDirty[0] && s_navrecCurDirty);
 	s_player.clockReceive = 0;
 	finish_sampled_lap();
+
+	begin_seed_attempt();
+	sample_flying_lap();
+	s_player.lapIndex++;
+	AP_NavRec_ObservePhysics(&s_gt);
+	s_player.clockReceive = 32; // Clocked Out applies on this AP tick.
+	AP_NavRec_Tick(&s_gt);
+	CHECK(s_navrecBankCount == 1 && !s_navrecBankDirty[0] && s_navrecCurDirty);
+	s_player.clockReceive = 0;
+
+	begin_seed_attempt();
+	sample_flying_lap();
+	s_player.reserves = 100;
+	AP_NavRec_NoteBoostGrant(AP_NAVREC_GRANT_RESERVES);
+	AP_NavRec_Tick(&s_gt);
+	s_player.lapIndex++;
+	AP_NavRec_Tick(&s_gt);
+	CHECK(s_navrecBankCount == 1 && s_navrecBankDirty[0] && s_navrecCurDirty);
+	s_player.reserves = 0;
+
+	begin_seed_attempt();
+	sample_flying_lap();
+	AP_NavRec_NoteBoostGrant(AP_NAVREC_GRANT_MASK);
+	AP_NavRec_Tick(&s_gt);
+	s_player.actionsFlagSet |= ACTION_MASK_WEAPON;
+	s_player.lapIndex++;
+	AP_NavRec_Tick(&s_gt);
+	CHECK(s_navrecBankCount == 1 && s_navrecBankDirty[0] && s_navrecCurDirty);
+	s_player.actionsFlagSet &= ~ACTION_MASK_WEAPON;
+
+	begin_seed_attempt();
+	s_player.reserves = 100;
+	g_config.navUseRecorded = 0;
+	AP_NavRec_AfterCheckpointRestore();
+	AP_NavRec_Tick(&s_gt);
+	sample_flying_lap();
+	CHECK(s_navrecCurDirty); // The restored reserve origin is unknown.
+	s_player.reserves = 0;
 
 	begin_seed_attempt();
 	sample_flying_lap();
