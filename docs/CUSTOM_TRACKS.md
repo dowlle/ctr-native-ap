@@ -419,12 +419,14 @@ Saphi's files; there is no public specification
 sectors from the package (`game/HOWL/HOWL_CustomMusic.c:
 HOWL_CustomMusic_ServeSectors`), and `game/HOWL/HOWL_Music.c:
 Music_AsyncParseBanks` takes the level bank and song from the `.sca`
-(`HOWL_CustomMusic_LoadBank`, `HOWL_CustomMusic_SetSong`). A missing or refused `.sca` keeps the
-default: Crash Cove's song and sound bank. A package imported from an xdelta
-patch has no `.sca`; it falls back to the retail bank and song of the arcade
-track whose BIGFILE group holds the patched LEV
-(`CustomMusic_ReplacedLevel`, set by the custom page), or Crash Cove's when
-that is not one of the 18 arcade tracks.
+(`HOWL_CustomMusic_LoadBank`, `HOWL_CustomMusic_SetSong`). A missing or refused `.sca` plays the
+bank and song of a random retail race level instead (`CustomMusic_FallbackPick`,
+one of the 18 race tracks, bank and song from the same level). The pick is
+made per track from the room identity and the track key (offline: from the
+package pin), so it is stable across Retry and across sessions of one room and
+the same in Arcade, Time Trial, seed races and boss venues. Every music
+decision logs one line with its reason, and each race logs once which song data
+is active when the song starts.
 
 **Where the `.sca` comes from.** The Track Manager install stores it with the
 package (role `sca`, section 5). A Current Seed or This Seed install into the
@@ -452,14 +454,16 @@ listing and retries a missed transfer or a damaged or stale repair.
 **Which races play it.** The Arcade and Time Trial custom pages, and a
 content-plan race (a Current Seed pad or cup leg) on the package's own host
 slot. Cortex Vortex keeps its bundled music. A content-plan package without a
-pinned `.sca` plays its host slot's own music, as before.
+pinned `.sca` plays a random retail track's music (see above). The Oxide Final
+venue and the bundled Cortex Vortex pad track pick from their bundled LEV pin,
+not the room, because those routes carry no room identity.
 
 **Sound memory.** Builds with `CTR_CUSTOM_PACKAGES`, which includes the
 player client built with `CTR_CUSTOM_TRACKS`, have 1 MiB of SPU memory
 (`include/platform/native_spu_memory.h`). Before a `.sca` replaces the level
 bank, `CustomMusic_Admit` checks that it fits next to bank 0, bank 54 and the
 character banks; if not, the race keeps the default music and logs
-`[CUSTOM MUSIC] track music refused, default music`.
+`[CUSTOM MUSIC] track music refused, fallback music`.
 
 ## 11. Box Author Mode and the AI lap recorder
 
