@@ -284,13 +284,31 @@ int main(int argc, char **argv)
 	CHECK(CTR_SPU_CEILING == CTR_SPU_RETAIL_CEILING && CTR_SPU_BYTES == CTR_SPU_RETAIL_BYTES);
 #endif
 
-	// The retail music an imported package falls back to: the arcade track whose
-	// BIGFILE group (8 files per track) holds the patched LEV.
-	CHECK(CustomMusic_ReplacedLevel(0) == 0 && CustomMusic_ReplacedLevel(7) == 0);
-	CHECK(CustomMusic_ReplacedLevel(8) == 1 && CustomMusic_ReplacedLevel(13 * 8 + 3) == 13);
-	CHECK(CustomMusic_ReplacedLevel(17 * 8 + 7) == 17);
-	CHECK(CustomMusic_ReplacedLevel(18 * 8) == -1 && CustomMusic_ReplacedLevel(-1) == -1);
-	CHECK(CustomMusic_ReplacedLevel(4095) == -1);
+	// The fallback pick for a custom race without verified music (A6-47): a
+	// deterministic retail race level per key, stable for one room and track.
+	CHECK(CTR_CUSTOM_MUSIC_FALLBACK_TRACKS == 18);
+	for (i = 0; i < 64; i++)
+	{
+		char key[16];
+		int level;
+		snprintf(key, sizeof key, "track-%u", i);
+		level = CustomMusic_FallbackPick(0x123456789abcdef0ULL, key);
+		CHECK(level >= 0 && level < 18);
+		// Same room and track: the same pick, every time.
+		CHECK(level == CustomMusic_FallbackPick(0x123456789abcdef0ULL, key));
+	}
+	// Different tracks differ somewhere: seven keys must not all pick one level.
+	{
+		int first = CustomMusic_FallbackPick(7, "track-a");
+		int differ = 0;
+		const char *keys[] = {"track-b", "track-c", "track-d", "track-e", "track-f", "track-g", "track-h"};
+		for (i = 0; i < 7; i++)
+			differ |= CustomMusic_FallbackPick(7, keys[i]) != first;
+		CHECK(differ);
+	}
+	// No key still picks a level; an empty key is not special.
+	CHECK(CustomMusic_FallbackPick(0, NULL) >= 0 && CustomMusic_FallbackPick(0, NULL) < 18);
+	CHECK(CustomMusic_FallbackPick(0, "") >= 0 && CustomMusic_FallbackPick(0, "") < 18);
 
 	printf("custom music: %d checks, %d failures\n", checks, failures);
 	return failures != 0;

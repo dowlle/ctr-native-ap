@@ -7,6 +7,7 @@
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_assets.h>
 #include <platform/native_custom_package.h>
+#include <platform/native_custom_music.h>
 #endif
 
 #include <stdio.h>
@@ -77,7 +78,7 @@ static int s_oxideFinalVerified;
 // beside the bundled LEV and VRM. It is read when a content-plan race arms that
 // exact pair (the LEV and VRM pins of ap/ap_seedcfg.h) and kept only when its
 // sha256 is the pinned one. Optional by design: a missing, changed or unreadable
-// file costs the music only (Oxide Station's plays), never the track.
+// file costs the music only (a random retail track's music plays), never the track.
 #define CORTEX_LEV_SHA256 "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13"
 #define CORTEX_VRM_SHA256 "4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d"
 #define CORTEX_SCA_SHA256 "ddde81cf1be8042400c717edeeded0d8727e3bb8ba24f0100201708372ef8b1c"
@@ -440,7 +441,7 @@ static void CustomTrack_LoadCortexMusic(const char *levPath)
 	s_cortexMusic = CustomTrack_ReadCortexMusic(levPath, &s_cortexMusicSize, NULL);
 	if (!s_cortexMusic)
 	{
-		CustomTrack_Log("[CortexVortex] music unavailable or failed verification, Oxide Station's music plays\n");
+		CustomTrack_Log("[CortexVortex] music unavailable or failed verification, a random retail track's music plays\n");
 		return;
 	}
 	CustomTrack_Log("[CortexVortex] music verified (%u bytes)\n", (unsigned)s_cortexMusicSize);
@@ -448,7 +449,7 @@ static void CustomTrack_LoadCortexMusic(const char *levPath)
 
 // Read the pending package .sca whole and keep it only when its size and sha256
 // are the package's pin and the descriptor's LEV is the one the pin was made
-// for. Anything else costs the music only: the host slot's own music plays.
+// for. Anything else costs the music only: a random retail track's music plays.
 static void CustomTrack_LoadPackageMusic(void)
 {
 	CustomTrack_ClearCortexMusic();
@@ -465,7 +466,7 @@ static void CustomTrack_LoadPackageMusic(void)
 	                                        s_pendingMusic.scaSha256, &s_cortexMusicSize, NULL);
 	if (!s_cortexMusic)
 	{
-		CustomTrack_Log("[CustomTracks] track music unavailable or failed verification, the host slot's music plays\n");
+		CustomTrack_Log("[CustomTracks] track music unavailable or failed verification, a random retail track's music plays\n");
 		return;
 	}
 	s_musicIsPackage = 1;
@@ -676,6 +677,42 @@ int CustomTrack_OxideFinalServing(int levelID, int bossID, int adventureBossActi
 	return s_oxideFinalVerified && s_oxideFinalDescriptor.enabled &&
 	       adventureBossActive && levelID == s_oxideFinalDescriptor.hostLevelID && bossID == 5;
 }
+
+#ifdef CTR_CUSTOM_PACKAGES
+// A track's id carries a "package/" or "custom/" prefix depending on the
+// route that armed it; the pick ignores the prefix so one track gets one song
+// on a pad, in a cup leg and in a garage venue of the same room.
+static const char *CustomTrack_MusicKey(const char *id)
+{
+	if (!strncmp(id, "package/", 8)) return id + 8;
+	if (!strncmp(id, "custom/", 7)) return id + 7;
+	return id;
+}
+
+// See native_custom_tracks.h. The pick key is the race context's track key for
+// a pad or cup leg, the venue's track key for a garage venue, the bundled
+// pair's LEV pin for the Oxide Final venue and the bundled Cortex Vortex pad
+// track, and the armed descriptor's LEV pin for a legacy event race, which has
+// no standalone context.
+int CustomTrack_MusicFallbackLevel(int levelID, int adventureCupActive, int cupID, int bossID, int adventureBossActive)
+{
+	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(levelID);
+	int garage;
+
+	if (race != NULL)
+		return !race->retail && CustomTrack_ServingLoad(levelID, adventureCupActive, cupID)
+		       ? CustomMusic_FallbackPick(race->roomIdentity, CustomTrack_MusicKey(race->trackID)) : -1;
+	if (CustomTrack_ServingLoad(levelID, adventureCupActive, cupID))
+		return CustomMusic_FallbackPick(0, s_descriptor.levSha256);
+	garage = CustomTrack_GarageVenueServing(levelID, bossID, adventureBossActive);
+	if (garage >= 0)
+		return CustomMusic_FallbackPick(s_garageVenue[garage].roomIdentity, CustomTrack_MusicKey(s_garageVenue[garage].trackID));
+	if (CustomTrack_OxideFinalServing(levelID, bossID, adventureBossActive) ||
+	    CustomTrack_CortexTrackServing(levelID, adventureBossActive))
+		return CustomMusic_FallbackPick(0, s_oxideFinalDescriptor.levSha256);
+	return -1;
+}
+#endif
 
 #ifdef CTR_CUSTOM_PACKAGES
 unsigned char *CustomTrack_ReadBossMusic(int levelID, int bossID, size_t *size, const char **error)

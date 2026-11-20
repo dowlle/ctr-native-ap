@@ -5,6 +5,7 @@
 #include <platform/native_custom_identity.h>
 #include <platform/native_custom_state_identity.h>
 #include <platform/native_custom_content_verify.h>
+#include <platform/native_custom_music.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -13,8 +14,6 @@
 struct CustomOfflineRequest { struct CustomPackageOwned *package; };
 static struct CustomOfflineRequest *activeRequest;
 static int activeHost = -1;
-/* Retail arcade track the active package replaces (xdelta import), or -1. */
-static int musicFallbackLevel = -1;
 static int activeMode;
 static int activeLaps;
 static int activeFinishTerrain = -1;
@@ -232,7 +231,6 @@ int CustomOffline_BeginRuntime(struct CustomOfflineRequest **request, int hostLe
 void CustomOffline_EndRuntime(void)
 {
     CustomOffline_Free(&activeRequest);
-    musicFallbackLevel = -1;
     activeHost = -1;
     activeMode = 0;
     activeLaps = 0;
@@ -241,8 +239,16 @@ void CustomOffline_EndRuntime(void)
 }
 
 int CustomOffline_RuntimeActive(void) { return activeRequest != NULL; }
-int CustomOffline_MusicFallbackLevel(void) { return musicFallbackLevel; }
-void CustomOffline_SetMusicFallbackLevel(int level) { musicFallbackLevel = activeRequest && level >= 0 && level < 18 ? level : -1; }
+// The pick is stable for one package (its complete manifest pin is the key),
+// so one track plays the same retail music in offline Arcade and Time Trial.
+int CustomOffline_MusicFallbackLevel(void)
+{
+    struct CustomPackageManifest manifest;
+    if (!activeRequest) return -1;
+    if (!CustomOffline_RuntimeManifest(&manifest) || !manifest.sha256[0])
+        return CustomMusic_FallbackPick(0, "offline-custom");
+    return CustomMusic_FallbackPick(0, manifest.sha256);
+}
 uint64_t CustomOffline_RuntimeGeneration(void) { return runtimeGeneration; }
 int CustomOffline_RuntimeLaps(void) { return activeLaps; }
 int CustomOffline_RuntimeFinishTerrain(void) { return activeRequest ? activeFinishTerrain : -1; }
