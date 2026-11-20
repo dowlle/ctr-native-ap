@@ -818,6 +818,9 @@ const char *CustomTrackManager_StateText(int state)
 	case CTR_CT_MANAGER_UNSUPPORTED: return "Unsupported";
 	case CTR_CT_MANAGER_INCOMPATIBLE: return "Incompatible Version";
 	case CTR_CT_MANAGER_IO_ERROR: return "I/O Error";
+	case CTR_CT_MANAGER_LOAD_FAILED: return "Load failed";
+	case CTR_CT_MANAGER_PATH_TOO_LONG: return "Path too long";
+	case CTR_CT_MANAGER_RACE_GRID_UNSUPPORTED: return "Grid refused";
 	default: return "Unknown";
 	}
 }

@@ -326,6 +326,17 @@ int main(int argc, char **argv)
 	// 3. Matching without an author id: first nothing (no catalogue, no
 	// registry), then by registry credits, then by what the catalogue taught.
 	CHECK(ap_track_permission(2, 0, U, nullptr) == U);
+	{
+		json c = json::parse(v1);
+		c["tracks"].push_back({{"track_key", "unrelated-track"}, {"client_listing", grant("granted", nullptr)}});
+		serve(true, c.dump(), registry_fixture());
+		CHECK(ap_track_consent_refresh(cache.c_str()) == 1 && wait_consent(&source) == AP_TRACK_CONSENT_DONE);
+		CHECK(ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_IDLE);
+		CHECK(ap_track_permission(999, 7, D, "unrelated-track") == A);
+		CHECK(ap_track_permission(999, 7, D, nullptr) == D); // repair only supplies the matched Saphi identity
+		serve(true, v1, registry_fixture());
+		CHECK(ap_track_consent_refresh(cache.c_str()) == 1 && wait_consent(&source) == AP_TRACK_CONSENT_DONE);
+	}
 	ap_track_registry_refresh("");
 	CHECK(wait_registry() == AP_TRACK_REGISTRY_DONE);
 	CHECK(ap_track_permission(2, 0, U, nullptr) == A);            // dreamy-heights, credited to Boxic

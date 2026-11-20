@@ -1283,7 +1283,9 @@ with spot_files(retail=["CRASH_COVE"], custom=["baby-t-park"]):
 # small count fixture that crosses the 15-seat ceiling. No track bytes shipped.
 from worlds.ctr import crate_exclusions, sanity, track_rulings
 from unittest import mock
-from worlds.ctr.test.test_crate_exclusions import ANCIENT_LAKE, LOCKBOX_4, MATSURI, NORTH_POLE, ancient, lockbox_track_4, matsuri
+from worlds.ctr.test.test_crate_exclusions import (
+    ANCIENT_LAKE, LOCKBOX_4, MATSURI, NORTH_POLE, ancient, lockbox_track_4, matsuri, north_pole,
+)
 from worlds.ctr.test.test_content_item_boxes import box_options, first_world
 # Test fallback exclusions without the later community spot override.
 with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):

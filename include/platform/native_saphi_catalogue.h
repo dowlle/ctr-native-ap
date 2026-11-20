@@ -14,6 +14,7 @@ struct CustomSaphiMedia
     unsigned int bytes;
     uint32_t crc32;
     char path[241];
+    char sha256[65]; /* v3 supplies this for hosted files; v2 uses CRC32. */
 };
 struct CustomSaphiRevision
 {
@@ -24,6 +25,8 @@ struct CustomSaphiRevision
        current revisions, and only when Saphi lists exactly one current .sca
        with a download; id zero otherwise. Optional: never disables a row. */
     struct CustomSaphiMedia sca;
+    /* A historical pair can be repaired only with an exact-version SCA. */
+    struct CustomSaphiMedia historicalSca;
     unsigned int modeTags;
     int current;
     int sourceLaps; /* Track-level source metadata, zero if unspecified. */
@@ -64,11 +67,18 @@ void CustomSaphi_Free(struct CustomSaphiCatalogue **catalogue);
    -1 idle, -2 failed. On failure the caller's prior catalogue is untouched. */
 int CustomSaphi_StartRefresh(void);
 int CustomSaphi_PollRefresh(struct CustomSaphiCatalogue **out, char *error, size_t errorSize);
+/* Check installed packages against a fresh catalogue on a worker. Poll
+   returns -1 idle, 0 running, or 1 with the number of successful repairs. */
+int CustomSaphi_StartMusicRepair(const struct CustomSaphiCatalogue *catalogue, const char *assets);
+int CustomSaphi_PollMusicRepair(int *available);
 /* Explicit download of the copied source revision. Installed result identifies
    the complete immutable package; it does not certify any gameplay mode. */
 int CustomSaphi_StartInstall(const struct CustomSaphiRevision *revision, const char *assets);
 int CustomSaphi_PollInstall(char pin[65], char *error, size_t errorSize);
 #ifdef __cplusplus
 }
+#include <nlohmann/json_fwd.hpp>
+CustomSaphiMedia CustomSaphi_SelectMusic(const nlohmann::json &downloads, int trackID, int apiVersion,
+                                        const char *exactVersion = nullptr);
 #endif
 #endif

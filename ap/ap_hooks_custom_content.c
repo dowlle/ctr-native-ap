@@ -128,6 +128,19 @@ static void AP_ContentRaceName(const char *title, char *out, size_t size)
 static int ap_content_package_scan[AP_CONTENT_MAX_PACKAGES];
 static int ap_content_descriptor_publication[AP_CONTENT_MAX_PACKAGES];
 
+static const char ap_content_path_too_long[] = "The track path is too long. Shorten the install path, then Rescan.";
+
+static int AP_ContentPathsTooLong(const char *levPath, const char *vrmPath)
+{
+	return strlen(levPath) >= CUSTOM_TRACK_PATH_MAX || strlen(vrmPath) >= CUSTOM_TRACK_PATH_MAX;
+}
+
+static int AP_ContentArcadeGridMissing(const struct CustomContentVerification *report)
+{
+	const struct CustomContentMeasurements *m = &report->measured;
+	return m->checkpoints && (!m->navPaths || m->spawns < CTR_CT_FIELD_MAX);
+}
+
 static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct CustomTrackManagerStatus *status);
 
 // Locate one package's files (compiled profile folder, or the open track-key
@@ -180,6 +193,14 @@ static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct Custom
 		                                      pkg->revision, pkg->lev_sha256, pkg->lev_bytes,
 		                                      pkg->vrm_sha256, pkg->vrm_bytes, status);
 	if (status->state != CTR_CT_MANAGER_READY) return 0;
+	if (AP_ContentPathsTooLong(status->levPath, status->vrmPath))
+	{
+		status->state = CTR_CT_MANAGER_PATH_TOO_LONG;
+		snprintf(status->detail, sizeof status->detail, "%s", ap_content_path_too_long);
+		snprintf(line, sizeof line, "[CustomTracks] content plan refused %s: %s\n", pkg->id, status->detail);
+		AP_AppendLog(line);
+		return 0;
+	}
 	error[0] = '\0';
 	if (!CustomContentVerify_Files(status->levPath, status->vrmPath, &report, error, sizeof error) ||
 	    strcmp(report.levSha256, pkg->lev_sha256) || strcmp(report.vrmSha256, pkg->vrm_sha256))
@@ -197,7 +218,8 @@ static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct Custom
 	    !AP_ContentSanityCountsHold(pkg, &report, why, sizeof why) ||
 	    !AP_ContentBossVenueFactsHold(pkg->checkpoints, pkg->ai_nav, &report, why, sizeof why))
 	{
-		status->state = CTR_CT_MANAGER_UNSUPPORTED;
+		status->state = (pkg->capabilities & AP_CONTENT_CAP_ARCADE) && AP_ContentArcadeGridMissing(&report)
+		                ? CTR_CT_MANAGER_RACE_GRID_UNSUPPORTED : CTR_CT_MANAGER_UNSUPPORTED;
 		snprintf(status->detail, sizeof status->detail, "%.48s %.24s: %s", pkg->display_name, pkg->revision, why);
 		snprintf(line, sizeof line, "[CustomTracks] content plan refused %s: %s\n", pkg->id, why);
 		AP_AppendLog(line);
@@ -226,6 +248,7 @@ static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct Custom
 // race on host 13 (AP_ContentPreparePad), so no LevelID-13 site can read it
 // as Oxide Station or as the legacy pad track.
 static int ap_content_cortex_ready;
+static int ap_content_cortex_load_error;
 static struct AP_ContentFiles ap_content_cortex_files;
 
 static int AP_ContentScanCortex(void)
@@ -234,13 +257,16 @@ static int AP_ContentScanCortex(void)
 	char error[160], why[320], line[640];
 	const char *dir = NativeAssets_GetAssetDir();
 	struct AP_ContentFiles *f = &ap_content_cortex_files;
+	ap_content_cortex_load_error = 0;
 	memset(f, 0, sizeof *f);
-	if (dir == NULL ||
-	    snprintf(f->levPath, sizeof f->levPath, "%s/tracks/cortex-vortex/CVortex Arcade All.lev", dir) >= (int)sizeof f->levPath ||
-	    snprintf(f->vrmPath, sizeof f->vrmPath, "%s/tracks/cortex-vortex/CVortex Arcade All.vrm", dir) >= (int)sizeof f->vrmPath)
+	if (!dir) return 0;
+	if (snprintf(f->levPath, sizeof f->levPath, "%s/tracks/cortex-vortex/CVortex Arcade All.lev", dir) >= (int)sizeof f->levPath ||
+	    snprintf(f->vrmPath, sizeof f->vrmPath, "%s/tracks/cortex-vortex/CVortex Arcade All.vrm", dir) >= (int)sizeof f->vrmPath ||
+	    AP_ContentPathsTooLong(f->levPath, f->vrmPath))
 	{
 		memset(f, 0, sizeof *f);
-		AP_AppendLog("[CustomTracks] content plan refused Cortex Vortex: the bundled asset path is invalid\n");
+		ap_content_cortex_load_error = CTR_CT_MANAGER_PATH_TOO_LONG + 1;
+		AP_AppendLog("[CustomTracks] content plan refused Cortex Vortex: the track path is too long\n");
 		return 0;
 	}
 	error[0] = '\0';
@@ -255,6 +281,8 @@ static int AP_ContentScanCortex(void)
 	}
 	if (!AP_ContentCapabilitiesHold(AP_CONTENT_CAP_ALL, &report, why, sizeof why))
 	{
+		if (AP_ContentArcadeGridMissing(&report))
+			ap_content_cortex_load_error = CTR_CT_MANAGER_RACE_GRID_UNSUPPORTED + 1;
 		snprintf(line, sizeof line, "[CustomTracks] content plan refused Cortex Vortex: %s\n", why);
 		AP_AppendLog(line);
 		memset(f, 0, sizeof *f);
@@ -289,6 +317,37 @@ int AP_ContentPadReady(int physicalPad)
 	return AP_ContentTrackReady(pad->retail_id >= 0, pad->cortex, pad->package_index);
 }
 
+static enum CustomTrackManagerState AP_ContentDescriptorRefusal(const struct CustomTrackSeedDescriptor *descriptor)
+{
+	if (!descriptor->soloRace &&
+	    !CustomTrackPolicy_FlagsSupportRace(descriptor->flagAiNav, descriptor->flagSpawns, 0, NULL))
+		return CTR_CT_MANAGER_RACE_GRID_UNSUPPORTED;
+	return CTR_CT_MANAGER_LOAD_FAILED;
+}
+
+static int AP_ContentLoadRefused(int cortex, int packageIndex, enum CustomTrackManagerState reason)
+{
+	if (cortex)
+	{
+		ap_content_cortex_ready = 0;
+		ap_content_cortex_load_error = reason + 1;
+		ap_cortex_track_content_required = 1;
+	}
+	else
+	{
+		const char *detail = "The race could not load the verified files. Check the client log.";
+		if (reason == CTR_CT_MANAGER_RACE_GRID_UNSUPPORTED)
+			detail = "The track cannot support this race's starting grid. Check the client log.";
+		ap_content_package_ready[packageIndex] = 0;
+		ap_content_package_scan[packageIndex] = reason + 1;
+		ap_custom_content_required = 1;
+		ap_custom_content_status.state = reason;
+		snprintf(ap_custom_content_status.detail, sizeof ap_custom_content_status.detail, "%s", detail);
+	}
+	ap_state_gen++;
+	return 0;
+}
+
 // Locate, hash and measure a Cortex Vortex or custom track again, arm the
 // loader with it for `race` (host, laps) and copy its pins into the race. A
 // retail race needs nothing. Returns 0 on refusal (the content is marked
@@ -310,11 +369,7 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		}
 		m = &ap_content_cortex_files.measured;
 		if (!CustomTrack_UseContentFiles(ap_content_cortex_files.levPath, ap_content_cortex_files.vrmPath, "CORTEX VORTEX"))
-		{
-			ap_content_cortex_ready = 0;
-			ap_state_gen++;
-			return 0;
-		}
+			return AP_ContentLoadRefused(1, -1, CTR_CT_MANAGER_LOAD_FAILED);
 		memset(&d, 0, sizeof d);
 		d.standalone = 1; d.laps = race->laps; d.hostLevelID = race->hostLevelID;
 		d.replacesCupLevelID = -1; d.boxes = 0;
@@ -330,7 +385,9 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", CTR_CFG_CORTEX_VRM_SHA256);
 		snprintf(race->levSha256, sizeof race->levSha256, "%s", CTR_CFG_CORTEX_LEV_SHA256);
 		snprintf(race->vrmSha256, sizeof race->vrmSha256, "%s", CTR_CFG_CORTEX_VRM_SHA256);
-		return CustomTrack_ApplySeedDescriptor(&d);
+		if (!CustomTrack_ApplySeedDescriptor(&d))
+			return AP_ContentLoadRefused(1, -1, AP_ContentDescriptorRefusal(&d));
+		return 1;
 	}
 	{
 		const ctr_content_package *pkg = ap_content_plan_package(packageIndex);
@@ -355,24 +412,17 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		         : CustomTrack_UseContentFiles(ap_content_files[packageIndex].levPath,
 		                                       ap_content_files[packageIndex].vrmPath, raceName);
 		if (!used)
-		{
-			ap_content_package_ready[packageIndex] = 0;
-			ap_state_gen++;
-			return 0;
-		}
+			return AP_ContentLoadRefused(0, packageIndex, CTR_CT_MANAGER_LOAD_FAILED);
 #ifdef CTR_CUSTOM_PACKAGES
 		// The track's own music, when the shared package this seed resolved pins
-		// a Saphi .sca: the package with the seed's UUID first, then any
-		// verified revision of the same pair. Optional: no file, no pin or a
+		// a Saphi .sca. Prefer manifest-pinned music, and the seed's UUID
+		// within each tier of verified matches. Optional: no file, no pin or a
 		// refused file plays the host slot's music (native_custom_tracks.c
 		// verifies the digest and forgets any pin of an earlier package).
 		{
 			char scaPath[512], scaSha[65];
 			unsigned long scaBytes = 0;
-			if ((pkg->uuid[0] && CustomPackage_FindPinnedMusic(NativeAssets_GetAssetDir(), pkg->revision, pkg->uuid,
-			                                  pkg->lev_sha256, pkg->lev_bytes, pkg->vrm_sha256, pkg->vrm_bytes,
-			                                  scaPath, sizeof scaPath, scaSha, &scaBytes)) ||
-			    CustomPackage_FindPinnedMusic(NativeAssets_GetAssetDir(), pkg->revision, NULL,
+			if (CustomPackage_FindPinnedMusic(NativeAssets_GetAssetDir(), pkg->revision, pkg->uuid, 0,
 			                                  pkg->lev_sha256, pkg->lev_bytes, pkg->vrm_sha256, pkg->vrm_bytes,
 			                                  scaPath, sizeof scaPath, scaSha, &scaBytes))
 				CustomTrack_UseContentMusic(scaPath, scaSha, scaBytes, pkg->lev_sha256);
@@ -397,7 +447,9 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		snprintf(race->packageRevision, sizeof race->packageRevision, "%s", pkg->revision);
 		snprintf(race->levSha256, sizeof race->levSha256, "%s", pkg->lev_sha256);
 		snprintf(race->vrmSha256, sizeof race->vrmSha256, "%s", pkg->vrm_sha256);
-		return CustomTrack_ApplySeedDescriptor(&d);
+		if (!CustomTrack_ApplySeedDescriptor(&d))
+			return AP_ContentLoadRefused(0, packageIndex, AP_ContentDescriptorRefusal(&d));
+		return 1;
 	}
 }
 
@@ -566,6 +618,7 @@ static void AP_GarageVenuePreflight(void)
 		const ctr_content_package *pkg = NULL;
 		const char *lev = NULL, *vrm = NULL;
 		char line[200];
+		memset(&d, 0, sizeof d);
 		if (b->venue_package[g] >= 0)
 		{
 			pkg = ap_content_plan_package(b->venue_package[g]);
@@ -573,12 +626,21 @@ static void AP_GarageVenuePreflight(void)
 			{
 				f = &ap_content_files[b->venue_package[g]];
 				lev = pkg->lev_sha256; vrm = pkg->vrm_sha256;
+#ifdef CTR_CUSTOM_PACKAGES
+				snprintf(d.musicPackageRevision, sizeof d.musicPackageRevision, "%s", pkg->revision);
+				snprintf(d.packageUuid, sizeof d.packageUuid, "%s", pkg->uuid);
+				d.levBytes = pkg->lev_bytes;
+				d.vrmBytes = pkg->vrm_bytes;
+#endif
 			}
 		}
 		else if (b->venue_cortex[g] && ap_content_cortex_ready)
 		{
 			f = &ap_content_cortex_files;
 			lev = CTR_CFG_CORTEX_LEV_SHA256; vrm = CTR_CFG_CORTEX_VRM_SHA256;
+#ifdef CTR_CUSTOM_PACKAGES
+			d.cortex = 1;
+#endif
 		}
 		else if (!b->venue_cortex[g])
 			continue; // a retail venue
@@ -591,7 +653,6 @@ static void AP_GarageVenuePreflight(void)
 			ap_custom_content_required = 1;
 			continue;
 		}
-		memset(&d, 0, sizeof d);
 		d.enabled = 1;
 		d.hostLevelID = b->venues[g];
 		d.roomIdentity = ap_content_plan_room_identity();
@@ -799,10 +860,39 @@ int AP_CustomContentGateEventEntry(int forceVerify)
 
 void AP_DrawCustomContentWarning(void)
 {
-	if (ap_cortex_track_content_required)
+	const int planActive = ap_content_plan_active();
+	const int cortexMissing = planActive ? ap_content_plan_cortex() && !ap_content_cortex_ready
+	                                    : ap_cortex_track_content_required;
+#if defined(CTR_CUSTOM_PACKAGES) && !defined(CTR_AP_AUTHORING)
+	char *planPath = "OPTIONS > Custom Tracks > This Seed";
+	char *verifyPath = "OPTIONS > Custom Tracks: verify.";
+#else
+	char *planPath = "OPTIONS > Custom Content";
+	char *verifyPath = "OPTIONS > Custom Content: verify.";
+#endif
+	if (planActive && (ap_custom_content_required || cortexMissing))
+	{
+		int missing = cortexMissing;
+		for (int i = 0; i < AP_CONTENT_MAX_PACKAGES; ++i)
+			if (ap_content_plan_package(i) && !ap_content_package_ready[i])
+				missing++;
+		if (missing > 0)
+		{
+			char line[48];
+			snprintf(line, sizeof line, ap_oxide_final_content_required
+			         ? "%d TRACK%s MISSING. OXIDE 2 LOCKED"
+			         : "!! %d CUSTOM TRACK%s MISSING !!",
+			         missing, missing == 1 ? "" : "S");
+			DecalFont_DrawLine(line, AP_FEED_X, 0x30, FONT_SMALL, RED);
+			DecalFont_DrawLine(planPath, AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
+			return;
+		}
+	}
+	if (cortexMissing)
 	{
 		DecalFont_DrawLine("!! CORTEX VORTEX REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
-		DecalFont_DrawLine("Install Cortex Vortex: pad locked.",
+		DecalFont_DrawLine(ap_oxide_final_content_required ? "CORTEX PADS AND OXIDE 2 LOCKED"
+		                                                 : "Install Cortex Vortex: pad locked.",
 		                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
 		return;
 	}
@@ -816,9 +906,7 @@ void AP_DrawCustomContentWarning(void)
 	if (!ap_custom_content_required)
 		return;
 	DecalFont_DrawLine("!! CUSTOM CONTENT REQUIRED !!", AP_FEED_X, 0x30, FONT_SMALL, RED);
-	// A content-plan room lists every required track on its own tab.
-	DecalFont_DrawLine(ap_content_plan_active() ? "OPTIONS > Custom Tracks > This Seed"
-	                                            : "OPTIONS > Custom Tracks: verify.",
+	DecalFont_DrawLine(planActive ? planPath : verifyPath,
 	                   AP_FEED_X, 0x30 + AP_FEED_LINE_H, FONT_SMALL, RED);
 }
 #endif
