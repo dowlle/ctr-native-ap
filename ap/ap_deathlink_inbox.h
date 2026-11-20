@@ -14,8 +14,8 @@
 // The inbox is bounded. ap_net_poll runs once per frame (AP_NetTick) and the tick
 // drains the inbox later in the same frame, so it only fills if more than
 // AP_DL_INBOX_CAP deaths arrive in one poll. The cap is sized to the feed: each
-// popup is two lines and the feed's pending ring holds 24 (AP_FEED_QUEUE_MAX in
-// ap_hooks_feed.c). A full drain shows the overflow summary (2 lines), one ignored
+// popup is two lines and the feed has 24 ordinary slots (AP_FEED_NORMAL_LIMIT in
+// ap_feed_lines_logic.h). A full drain shows the overflow summary (2 lines), one ignored
 // popup for each of the CAP-1 replaced deaths, and the newest death's own popup:
 // 2 + 2 * CAP lines, so CAP 11 fills the ring exactly and nothing is evicted.
 // Past the cap the oldest death is discarded without a popup of its own; it is

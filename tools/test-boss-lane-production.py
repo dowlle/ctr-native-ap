@@ -28,15 +28,15 @@ def check(cond, what):
 
 check('#include "../ap/ap_boss_lane_logic.h"' in bots, 'BOTS.c includes the rule')
 
-# 1. The gate is set once, from the load's navrec answer, before the switch on it.
+# 1. The gate is set once from the shared resolver before paths initialize.
 sets = re.findall(r'\bs_bossLaneAhead\s*=[^=]', bots)
 check(len(sets) == 1, 'the gate is assigned in exactly one place')
-check('s_bossLaneAhead = AP_BossLane_Applies(navrecOutcome);' in bots, 'the gate comes from AP_BossLane_Applies')
-outcome = bots.index('int navrecOutcome = AP_NavRecIdentity_ForLoad(&facts);')
-gate = bots.index('s_bossLaneAhead = AP_BossLane_Applies(navrecOutcome);')
-switch = bots.index('switch (navrecOutcome)')
-check(outcome < gate < switch, 'the gate is settled with the identity, before its switch')
-check(bots.count('AP_NavRecIdentity_ForLoad(') == 1, 'one identity answer per load')
+identity_hook = 's_bossLaneAhead = AP_BossLane_Applies(AP_NavRec_RederiveLoadIdentity(gGT));'
+check(identity_hook in bots, 'the gate comes from AP_BossLane_Applies')
+gate = bots.index(identity_hook)
+check(gate < bots.index('BOTS_InitNavPath(gGT, i);', gate),
+      'the gate is settled with the identity before path setup')
+check(bots.count('AP_NavRec_RederiveLoadIdentity(') == 1, 'one identity answer per load')
 
 # 2. The search runs only in the boss branch, under the gate.
 boss = bots.index('if ((botFlags & (BOT_FLAG_BOSS_PATH_REQUESTED | BOT_FLAG_BOSS_PATH_ACTIVE)) == BOT_FLAG_BOSS_PATH_REQUESTED)')

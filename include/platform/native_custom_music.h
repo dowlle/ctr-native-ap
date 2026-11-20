@@ -35,13 +35,33 @@ extern "C" {
 #include <platform/native_spu_memory.h>
 #define CTR_SCA_SPU_LIMIT CTR_SPU_WIDE_CEILING
 
-// The retail arcade track an xdelta-imported package replaces, from the BIGFILE
-// index of its LEV (BI_ARCADETRACKS + levelID * 8 + file, 18 tracks; arenas and
-// the rest are not race music). -1 when the index is none of those. A package
-// without its own .sca plays that track's retail bank and song.
-static inline int CustomMusic_ReplacedLevel(int bigfileIndex)
+// The retail race level whose music a custom track without its own verified
+// .sca plays, picked deterministically: FNV-1a over the seed's bytes and the
+// track key, modulo the 18 retail race tracks (the same 32-bit FNV-1a as
+// native_replay_scheduler.c). A seed race passes the room identity as seed and
+// the content-plan track key; an offline race passes 0 and the package pin.
+// The pick is stable across retries and sessions of one room, and differs
+// between tracks. Boss, menu and cutscene songs are never picked, because the
+// candidates are exactly the 18 levels that have a race bank pair
+// (data.levBank_FX/levBank_Song), and every such pair fits the SPU budget by
+// construction: it is the combination retail itself loads on that level.
+#define CTR_CUSTOM_MUSIC_FALLBACK_TRACKS 18
+static inline int CustomMusic_FallbackPick(uint64_t seed, const char *key)
 {
-	return bigfileIndex >= 0 && bigfileIndex < 18 * 8 ? bigfileIndex / 8 : -1;
+	uint32_t h = 2166136261u;
+	int i;
+	for (i = 0; i < 8; i++)
+	{
+		h ^= (unsigned char)(seed >> (8 * i));
+		h *= 16777619u;
+	}
+	if (key)
+		for (; *key; key++)
+		{
+			h ^= (unsigned char)*key;
+			h *= 16777619u;
+		}
+	return (int)(h % CTR_CUSTOM_MUSIC_FALLBACK_TRACKS);
 }
 
 struct CustomMusicSca

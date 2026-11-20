@@ -209,7 +209,7 @@ static void AP_FeedOnRungSent(long code, int rungTag)
 	long long item = 0;
 	int player = -1;
 	unsigned flags = 0;
-	if (!ap_net_scout_known(code, &item, &player, &flags))
+	if (!ap_net_scout_known(code, &item, &player, &flags) || AP_FeedFiltersItem(flags))
 		return;
 
 	char itemRaw[64], playerRaw[64];
@@ -235,18 +235,19 @@ static void AP_FeedOnRungSent(long code, int rungTag)
 		snprintf(itemS, sizeof itemS, "%s", AP_FEED_ITEM_UNKNOWN);
 
 	const char *reason = AP_RungFeedReason(rungTag);
+	const int filler = AP_ItemFlagsClass(flags) == AP_ITEM_CLASS_FILLER;
 	if (player == ap_net_self_slot())
 	{
 		snprintf(line, sizeof line, "%s (%s)", itemS, reason);
 		AP_FeedRememberSelfRung(item);
-		AP_FeedEnqueue(line, AP_ClassFontColor(flags), 1);
+		AP_FeedLinesEnqueue(&ap_feed, line, AP_ClassFontColor(flags), 1)->unimportant = filler;
 	}
 	else
 	{
 		if (playerS[0] == '\0')
 			snprintf(playerS, sizeof playerS, "%s", "PLAYER");
 		snprintf(line, sizeof line, "%s TO %s (%s)", itemS, playerS, reason);
-		AP_FeedEnqueue(line, AP_ClassFontColor(flags), 0);
+		AP_FeedLinesEnqueue(&ap_feed, line, AP_ClassFontColor(flags), 0)->unimportant = filler;
 	}
 }
 
@@ -480,6 +481,29 @@ void AP_CortexTrackRelicAward(int raceTime)
 	ap_state_gen++;
 }
 
+// A content-plan CTR Challenge's letters in the legacy Lettersanity encoding.
+static void AP_ContentLetterState(const ctr_content_pad *pad, long codes[3], unsigned char received[3])
+{
+	ap_content_letter_codes(pad, codes);
+	for (int l = 0; l < 3; ++l)
+		received[l] = (unsigned char)AP_ContentLetterItemReceived(pad->letter_items[l]);
+}
+
+static int AP_PlanLettersRequiredCount(const ctr_content_pad *pad)
+{
+	long codes[3];
+	ap_content_letter_codes(pad, codes);
+	return AP_LettersRequiredCountPure(1, ap_content_plan_checks()->lettersanity, codes);
+}
+
+static int AP_PlanLettersRequiredMet(const ctr_content_pad *pad)
+{
+	long codes[3];
+	unsigned char received[3];
+	AP_ContentLetterState(pad, codes, received);
+	return AP_LettersRequiredMetPure(1, ap_content_plan_checks()->lettersanity, codes, received);
+}
+
 #ifdef CTR_CUSTOM_TRACKS
 int AP_StandaloneRaceActive(void)
 {
@@ -664,15 +688,6 @@ static const ctr_content_pad *AP_StandaloneLetterPad(int track)
 	if (!context || context->mode != AP_CONTENT_MODE_CTR || !ap_content_plan_active())
 		return NULL;
 	return AP_StandaloneRoutePad(context);
-}
-
-// A content-plan CTR Challenge's letters in the legacy Lettersanity encoding.
-static void AP_ContentLetterState(const ctr_content_pad *pad, long codes[3], unsigned char received[3])
-{
-	int l;
-	ap_content_letter_codes(pad, codes);
-	for (l = 0; l < 3; ++l)
-		received[l] = (unsigned char)AP_ContentLetterItemReceived(pad->letter_items[l]);
 }
 
 int AP_StandaloneCtrBit(void)
@@ -1264,12 +1279,7 @@ int AP_LettersRequiredMet(int track)
 	{
 		const ctr_content_pad *pad = AP_StandaloneLetterPad(track);
 		if (pad)
-		{
-			long codes[3];
-			unsigned char received[3];
-			AP_ContentLetterState(pad, codes, received);
-			return AP_LettersRequiredMetPure(1, ap_content_plan_checks()->lettersanity, codes, received);
-		}
+			return AP_PlanLettersRequiredMet(pad);
 	}
 #endif
 	if (AP_CortexLetterTrack(track))
@@ -1297,11 +1307,7 @@ int AP_LettersRequiredCount(int track)
 	{
 		const ctr_content_pad *pad = AP_StandaloneLetterPad(track);
 		if (pad)
-		{
-			long codes[3];
-			ap_content_letter_codes(pad, codes);
-			return AP_LettersRequiredCountPure(1, ap_content_plan_checks()->lettersanity, codes);
-		}
+			return AP_PlanLettersRequiredCount(pad);
 	}
 #endif
 	if (AP_CortexLetterTrack(track))
@@ -1321,33 +1327,53 @@ int AP_LettersRequiredCount(int track)
 
 static void AP_FeedLetterReadyUpdates(void)
 {
-	// Track-wide receipt events, not current-race events. Initial inventory is
-	// baselined while the shared feed is unprimed, including reconnect replay.
-	static const char *const names[CTR_CFG_LETTER_TRACK_COUNT] = {
-		"Dingo Canyon", "Dragon Mines", "Blizzard Bluff", "Crash Cove",
-		"Tiger Temple", "Papu's Pyramid", "Roo's Tubes", "Hot Air Skyway",
-		"Sewer Speedway", "Mystery Caves", "Cortex Castle", "N. Gin Labs",
-		"Polar Pass", "Oxide Station", "Coco Park", "Tiny Arena",
-		"Slide Coliseum", "Turbo Track"
-	};
-	int track;
-	for (track = 0; track < CTR_CFG_LETTER_TRACK_COUNT; track++)
+	if (!ap_content_plan_active() || ap_content_plan_checks()->lettersanity < 2)
+		return;
+	// Use the physical pad to identify the challenge, even outside a race.
+	// Already reachable challenges at initial sync are silent. A complete
+	// set behind a gate stays held across a reconnect to this room.
+	for (int slot = 0; slot < AP_UNLOCK_PAD_COUNT; ++slot)
 	{
-		int ready = ctr_cfg_active() && ctr_cfg.lettersanity_mode >= 2 &&
-			AP_LettersRequiredCountPure(1, ctr_cfg.lettersanity_mode,
-			                          ctr_cfg.lettersanity_locations[track]) > 0 &&
-			AP_LettersRequiredMetPure(1, ctr_cfg.lettersanity_mode,
-			                        ctr_cfg.lettersanity_locations[track],
-			                        ap_letter_received[track]);
-		if (ready && !ap_feed_letters_ready[track] && ap_feed_primed && AP_HubFeedOn())
+		const int phys = AP_UnlockSlotPad(slot);
+		const ctr_content_pad *pad = ap_content_plan_pad(phys);
+		const unsigned bit = 1u << slot;
+		if ((ap_feed_letters_announced & bit) ||
+		    ap_content_mode_slot(pad, AP_CONTENT_MODE_CTR) < 0 ||
+		    AP_PlanLettersRequiredCount(pad) == 0 || !AP_PlanLettersRequiredMet(pad))
+			continue;
+		if (!AP_ContentPadRacerMet(pad) || !AP_ContentModeOpen(pad, AP_CONTENT_MODE_CTR)
+#ifdef CTR_CUSTOM_TRACKS
+		    || !AP_ContentPadReady(phys)
+#endif
+		   )
 		{
-			char line[128];
-			snprintf(line, sizeof line, "%s: Got CTR letters",
-			         names[track]);
-			AP_FeedEnqueue(line, LIGHT_GREEN, 1);
+			ap_feed_letters_held |= bit;
+			continue;
 		}
-		ap_feed_letters_ready[track] = (unsigned char)ready;
+		if (!ap_feed_letters_baseline && ap_feed_resume_pending &&
+		    (ap_feed_saved_letters_announced & bit))
+			continue; // the previous connection may already have announced it
+		if (!ap_feed_letters_baseline || (ap_feed_letters_held & bit))
+		{
+			ap_feed_letters_reported |= bit;
+			if (AP_HubFeedOn())
+			{
+				const char *name = AP_UnlockPadName(phys);
+				char line[AP_FEED_TEXT_CAP];
+#ifdef CTR_CUSTOM_PACKAGES
+				char folded[sizeof pad->room_title];
+				if (CustomPackage_AsciiFold(name, strlen(name), folded, sizeof folded))
+					name = folded;
+#endif
+				snprintf(line, sizeof line, "%.*s: Got CTR letters",
+				         (int)(sizeof line - sizeof ": Got CTR letters"), name);
+				AP_FeedEnqueueHeld(line, (int)(strlen(line) - strlen(": Got CTR letters")), LIGHT_GREEN, 1);
+			}
+		}
+		ap_feed_letters_held &= ~bit;
+		ap_feed_letters_announced |= bit;
 	}
+	ap_feed_letters_baseline = 0;
 }
 
 // Issue #377: "Oxide Final Challenge is open", once per seed, on reaching go

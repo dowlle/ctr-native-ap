@@ -67,7 +67,7 @@ so would be trusting the writer instead of checking the file.
 | 0x04   | 2    | u16    | formatVersion    | 2 for retail/legacy recordings; 3 for custom-track recordings. |
 | 0x06   | 2    | u16    | headerSize       | 96 for v2; 128 for v3. The lap directory begins here. |
 | 0x08   | 4    | u32    | totalSize        | Total file size in bytes, including the 8-byte trailer. |
-| 0x0C   | 4    | s32    | levelId          | Engine `gGT->levelID` at record time. The reader uses it to confirm the file belongs to the level being loaded. |
+| 0x0C   | 4    | s32    | levelId          | Engine `gGT->levelID` at record time. Retail recordings match this slot. For a custom recording it identifies which slot served the package. |
 | 0x10   | 32   | u8[32] | clientVersion    | `CTR_AP_VERSION` from `ap/ap_version.h` at record time, NUL padded. Informational: a reader must not reject on it. It exists so a physics or recorder change in a later build can be traced to the laps it invalidated. |
 | 0x30   | 32   | u8[32] | driverName       | Sanitized driver name, NUL padded. See "Driver name" below. May be all-NUL, meaning the recorder had no name to write. |
 | 0x50   | 2    | s16    | characterId      | `driver->driverID` of the recording player (`include/namespace_Vehicle.h`, offset 0x4A in `struct Driver`). -1 when unknown. |
@@ -86,7 +86,7 @@ Version 3 adds:
 | 0x60 | 1 | u8 | identityKind | 1, meaning a custom-track identity. |
 | 0x61 | 3 | u8[3] | reserved | 0. |
 | 0x64 | 16 | u8[16] | trackUuid | Permanent author-controlled package UUID. Renames, translations, textures and music do not change it. |
-| 0x74 | 4 | u32 | navRevision | Navigation compatibility revision. Increment only when geometry, checkpoints or navigation compatibility invalidate old lines. |
+| 0x74 | 4 | u32 | navRevision | Navigation compatibility revision. The custom pages and content-plan races use the first four bytes of the LEV SHA-256 in digest order, with zero mapped to 1. Legacy event packages can configure a revision. |
 | 0x78 | 8 | u8[8] | reserved | 0. |
 
 A custom loader sets the active UUID and revision before bot navigation is
@@ -504,7 +504,15 @@ progress dirty when, on any sampled frame, the driver's `kartState` is one of:
 - `KS_CRASHING`, a wall crash. This one zeroes the driver's speed, so the line
   through it is one no bot should be asked to follow.
 
-It is also marked dirty if the lap runs past the recorder's per-lap sample cap,
+Squish, burn, Clock, TNT helmets and rain-cloud effects also spoil a sample.
+AP traps that alter kart handling or force an inventory change spoil a sample.
+Direct AP Mask and reserve boosts can keep doing so until they clear, including
+boost carried through a checkpoint restore where its source is unknown. A
+change in carried Wumpa, applied stats or effective terrain from a live AP
+item also spoils a sample. A forced DeathLink race loss drops the partial lap
+and keeps previously banked laps.
+
+The lap is also marked dirty if it runs past the recorder's per-lap sample cap,
 because a truncated line is not a line. In that case frames keep being counted so
 the recorded lap time stays true.
 

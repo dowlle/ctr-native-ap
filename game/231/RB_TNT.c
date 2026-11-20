@@ -14,6 +14,18 @@ void RB_TNT_ThTick_ThrowOffHead(struct Thread *t)
 	//  object (tnt)
 	mw = t->object;
 
+#ifdef CTR_AP
+	if ((t->flags & THREAD_FLAG_DEAD) != 0)
+		return;
+	// A pooled projectile can be evicted while airborne. TNT thrown off a
+	// kart's head has no mine slot and keeps its original landing behavior.
+	if (mw->driverTarget == NULL && mw->boolDestroyed)
+	{
+		RB_GenericMine_ThDestroy(t, inst, mw);
+		return;
+	}
+#endif
+
 	// do NOT use parenthesis
 	inst->matrix.t[1] += (mw->velocity.y * gGT->elapsedTimeMS) >> 5;
 
@@ -30,6 +42,10 @@ void RB_TNT_ThTick_ThrowOffHead(struct Thread *t)
 
 	if (inst->matrix.t[1] <= mw->stopFallAtY)
 	{
+#ifdef CTR_AP
+		RB_MinePool_Remove(mw);
+#endif
+
 		// plays tnt explosion sound 3D
 		PlaySound3D(0x3d, inst);
 

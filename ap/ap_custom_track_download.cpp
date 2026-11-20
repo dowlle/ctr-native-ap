@@ -3,6 +3,7 @@
 // real thread runtime; the C unity build only sees the narrow API above.
 
 #include "ap_custom_track_download.h"
+#include "ap_client_identity.h"    // ap_client_user_agent (A6-52)
 #include "ap_seed_content_logic.h" // ap_seed_size_agrees, ap_seed_root_safe (Current Seed, #133 PR 7)
 #include "ap_track_registry.h"     // ap_https_get (row 10k)
 #include "ap_track_consent.h"      // the track author permission check (A4-74)
@@ -420,7 +421,13 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 		return false;
 	}
 	const std::string label = host_label(host);
-	HINTERNET session = WinHttpOpen(L"CTR-AP-alpha7/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+	if (!ap_client_request_path_safe(path))
+	{
+		error = label + " returned an unsafe download path.";
+		return false;
+	}
+	const std::wstring user_agent = widen_ascii(ap_client_user_agent());
+	HINTERNET session = WinHttpOpen(user_agent.c_str(), WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
 	                                WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
 	if (!session)
 	{
@@ -630,6 +637,11 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 		return false;
 	}
 	const std::string label = host_label(host);
+	if (!ap_client_request_path_safe(path))
+	{
+		error = label + " returned an unsafe download path.";
+		return false;
+	}
 	try
 	{
 		asio::io_context io;
@@ -654,8 +666,9 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 		asio::connect(stream.next_layer(), resolver.resolve(host, "443"));
 		stream.handshake(asio::ssl::stream_base::client);
 #endif
-		const std::string request = "GET " + path + " HTTP/1.1\r\nHost: " + host +
-		                            "\r\nUser-Agent: CTR-AP-alpha7/1.0\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n";
+		const std::string request = "GET " + path + " HTTP/1.1\r\nHost: " + host + "\r\n" +
+		                            ap_client_user_agent_header() +
+		                            "\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n";
 #ifdef CTR_CUSTOM_PACKAGES
 		saphi_await(io, asio::async_write(stream, asio::buffer(request), asio::use_future), deadline);
 #else

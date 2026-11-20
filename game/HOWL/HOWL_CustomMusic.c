@@ -13,21 +13,25 @@
 //   song        the CSEQ pack is copied to a buffer of its own and parsed in
 //               place of howl_SetSong/howl_LoadSong
 //
-// Without an .sca, or when it is refused, the race keeps the fixed default
-// (Crash Cove's bank and song, native_custom_identity.h), or the retail bank
-// and song of the track an xdelta-imported package replaces
-// (CustomOffline_MusicFallbackLevel).
+// Without an .sca, or when it is refused, the race plays a random retail
+// track's music: a deterministic per-track pick from the 18 retail race
+// levels (CustomMusic_FallbackPick, native_custom_music.h), seeded by the
+// room identity and the track's content-plan key for a seed race, or by the
+// package pin offline. The pick is stable across Retry and across sessions of
+// one room, differs between tracks, and never lands on a boss, menu or
+// cutscene song. Bank and song always come from the same level.
 //
 // The Cortex Vortex race of a content plan (a pad or a cup leg, on host level 13)
 // uses the same path with the .sca that ships with the project
 // (CustomTrack_CortexMusic). Whenever the bundled file is missing,
 // changed or refused, or the race is one this file does not size (below), the
-// host level's (Oxide Station's) bank and song play as before, with no error.
+// picked fallback plays instead of the host level's (Oxide Station's) bank and
+// song, with no error.
 //
 // Any other content-plan package whose shared store entry pins a Saphi .sca
 // takes the same path on its own host slot (CustomTrack_UseContentMusic, set
-// when the race is armed). Without one, or when it is refused, the host slot's
-// own bank and song play as before.
+// when the race is armed). Without one, or when it is refused, the picked
+// fallback plays instead of the host slot's own bank and song.
 // Custom boss venues use the same path with Boss Music set to TRACK.
 
 #include <platform/native_custom_music.h>
@@ -55,6 +59,12 @@ static size_t s_bossMusicSize;
 static int s_customBankServing;
 static int s_customBankLoaded; // the level bank of this load is the .sca's
 static int s_customSongReady;
+// The retail race level this load's fallback music comes from, picked per
+// track at the stage-0 decision; -1 when this load is not a custom race on
+// fallback music. Bank and song both come from it.
+static int s_fallbackLevel = -1;
+// One "which song data is active" line per race load.
+static int s_songStartLogged;
 static u16 s_customSavedIDs[CTR_SCA_MAX_SAMPLES];
 static u16 s_customSavedSizes[CTR_SCA_MAX_SAMPLES];
 static int s_customSavedCount;
@@ -149,22 +159,41 @@ void HOWL_CustomMusic_Reset(void)
 	s_customBankServing = 0;
 	s_customBankLoaded = 0;
 	s_customSongReady = 0;
+	s_fallbackLevel = -1;
+	s_songStartLogged = 0;
 	HOWL_CustomMusic_ReleaseAudio();
 }
 
-// The music of a custom-page race that plays no .sca: the retail bank and song
-// of the track an imported package replaces, Crash Cove's when that is not
-// known. Bank and song always come from the same level.
+// The retail level this load's fallback music comes from, or -1 when this
+// load is not a custom race on fallback music (a retail race keeps its own
+// bank and song). Set by the stage-0 decision, cleared by Reset.
+int HOWL_CustomMusic_FallbackLevel(void)
+{
+	return s_fallbackLevel;
+}
+
+// The music of a custom race that plays no .sca: the bank and song of the
+// picked retail level (s_fallbackLevel). Bank and song always come from the
+// same level. The fixed defaults (native_custom_identity.h) cover a custom
+// load with no pick, which the offline runtime never produces.
 int HOWL_CustomMusic_FallbackFXBank(void)
 {
-	int level = CustomOffline_MusicFallbackLevel();
-	return level >= 0 ? data.levBank_FX[level] : CTR_CUSTOM_FX_BANK;
+	return s_fallbackLevel >= 0 ? data.levBank_FX[s_fallbackLevel] : CTR_CUSTOM_FX_BANK;
 }
 
 int HOWL_CustomMusic_FallbackSongBank(void)
 {
-	int level = CustomOffline_MusicFallbackLevel();
-	return level >= 0 ? data.levBank_Song[level] : CTR_CUSTOM_SONG_BANK;
+	return s_fallbackLevel >= 0 ? data.levBank_Song[s_fallbackLevel] : CTR_CUSTOM_SONG_BANK;
+}
+
+// One line naming the fallback level and its bank pair. Call only with a pick
+// made (s_fallbackLevel >= 0).
+static void HOWL_CustomMusic_LogFallback(const char *what)
+{
+	char detail[96];
+	snprintf(detail, sizeof detail, "level %d (FX bank %d, song bank %d)", s_fallbackLevel,
+	         data.levBank_FX[s_fallbackLevel], data.levBank_Song[s_fallbackLevel]);
+	HOWL_CustomMusic_Log(what, detail);
 }
 
 // Read one retail bank's header sector for the admission check.
@@ -191,7 +220,7 @@ static int HOWL_CustomMusic_LoadBankFor(struct Bank *thisBank, enum CortexMusicB
 		return 0;
 	if (!HOWL_CustomMusic_Acquire(&sca, error, sizeof error))
 	{
-		HOWL_CustomMusic_Log(error[0] ? "track music refused, default music" : "no verified track music, default music", error);
+		HOWL_CustomMusic_Log(error[0] ? "track music refused, fallback music" : "no verified track music, fallback music", error);
 		return 0;
 	}
 
@@ -203,7 +232,7 @@ static int HOWL_CustomMusic_LoadBankFor(struct Bank *thisBank, enum CortexMusicB
 	{
 		if (!HOWL_CustomMusic_ReadBankHeader(54, s_customLaterBanks[laterCount]))
 		{
-			HOWL_CustomMusic_Log("track music refused, default music", "cannot read the driver bank");
+			HOWL_CustomMusic_Log("track music refused, fallback music", "cannot read the driver bank");
 			return 0;
 		}
 		later[laterCount] = s_customLaterBanks[laterCount];
@@ -216,7 +245,7 @@ static int HOWL_CustomMusic_LoadBankFor(struct Bank *thisBank, enum CortexMusicB
 			continue;
 		if (!HOWL_CustomMusic_ReadBankHeader(data.characterIDs[i] + 0x37, s_customLaterBanks[laterCount]))
 		{
-			HOWL_CustomMusic_Log("track music refused, default music", "cannot read a character bank");
+			HOWL_CustomMusic_Log("track music refused, fallback music", "cannot read a character bank");
 			return 0;
 		}
 		later[laterCount] = s_customLaterBanks[laterCount];
@@ -226,7 +255,7 @@ static int HOWL_CustomMusic_LoadBankFor(struct Bank *thisBank, enum CortexMusicB
 	if (!CustomMusic_Admit(&sca, (const uint16_t *)sdata->howl_spuAddrs, (unsigned int)sdata->ptrHowlHeader->numSpuAddrs,
 	                       (unsigned int)sdata->audioAllocPtr << (CTR_SPU_ADDR_SHIFT - 3), later, laterCount, &needed, error, sizeof error))
 	{
-		HOWL_CustomMusic_Log("track music refused, default music", error);
+		HOWL_CustomMusic_Log("track music refused, fallback music", error);
 		return 0;
 	}
 
@@ -244,7 +273,7 @@ static int HOWL_CustomMusic_LoadBankFor(struct Bank *thisBank, enum CortexMusicB
 	if (Bank_Load(CTR_CUSTOM_FX_BANK, thisBank) == 0)
 	{
 		HOWL_CustomMusic_Reset();
-		HOWL_CustomMusic_Log("track music refused, default music", "no free bank slot");
+		HOWL_CustomMusic_Log("track music refused, fallback music", "no free bank slot");
 		return 0;
 	}
 	s_customSca = sca;
@@ -263,12 +292,25 @@ static int HOWL_CustomMusic_LoadBankFor(struct Bank *thisBank, enum CortexMusicB
 int HOWL_CustomMusic_LoadBank(struct Bank *thisBank)
 {
 	const struct GameTracker *gGT = sdata->gGT;
+	// Pick the fallback before the bank decision (LoadBankFor resets it), so
+	// stages 0 and 3 and the offline Arcade and Time Trial of one package all
+	// agree on the same retail level.
+	int fallback = CustomOffline_MusicFallbackLevel();
 	// A custom-page Time Trial uses the character bank. Arcade uses bank 54.
-	return HOWL_CustomMusic_LoadBankFor(thisBank, CortexMusic_Banks(1, gGT->gameMode1, gGT->cup.cupID, 1));
+	if (HOWL_CustomMusic_LoadBankFor(thisBank, CortexMusic_Banks(1, gGT->gameMode1, gGT->cup.cupID, 1)))
+	{
+		s_fallbackLevel = -1;
+		return 1;
+	}
+	s_fallbackLevel = fallback;
+	if (s_fallbackLevel >= 0)
+		HOWL_CustomMusic_LogFallback("no verified track music, random fallback");
+	return 0;
 }
 
-// Stage 0 of a seed race or a custom boss venue with TRACK selected.
-// Missing or refused music uses the borrowed slot's bank and song.
+// Stage 0 of a seed race or a custom boss venue with TRACK selected. A race
+// without verified music of its own plays the picked fallback: one log line
+// per decision, including the no-music branch that used to be silent.
 int HOWL_CustomMusic_ContentLoadBank(int level, struct Bank *thisBank)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -281,11 +323,26 @@ int HOWL_CustomMusic_ContentLoadBank(int level, struct Bank *thisBank)
 	                      CustomTrack_ServingLoad(level, adventureCup, gGT->cup.cupID));
 
 	if (laterBanks == CORTEX_MUSIC_OFF)
+	{
+		// No music route: a retail race (fallback -1, silent and unchanged)
+		// or a custom race whose package serves no music.
+		s_fallbackLevel = CustomTrack_MusicFallbackLevel(level, adventureCup, gGT->cup.cupID,
+		                                                 gGT->bossID, IS_BOSS_RACE(gGT->gameMode1));
+		if (s_fallbackLevel >= 0)
+			HOWL_CustomMusic_LogFallback("no track music served, random fallback");
 		return 0;
+	}
 	if (HOWL_CustomMusic_LoadBankFor(thisBank, laterBanks))
+	{
+		s_fallbackLevel = -1;
 		return 1;
-	// Release the refused asset before the borrowed slot's bank loads.
+	}
+	// Release the refused asset before the fallback bank loads.
 	HOWL_CustomMusic_ReleaseAudio();
+	s_fallbackLevel = CustomTrack_MusicFallbackLevel(level, adventureCup, gGT->cup.cupID,
+	                                                 gGT->bossID, IS_BOSS_RACE(gGT->gameMode1));
+	if (s_fallbackLevel >= 0)
+		HOWL_CustomMusic_LogFallback("track music not used, random fallback");
 	return 0;
 }
 

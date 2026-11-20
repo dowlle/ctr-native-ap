@@ -10,11 +10,9 @@
 // immediately before, so the pairing carries the cause; the reason line stays
 // free of the item name.
 //
-// Spam rules (the 2026-11-06 work order): keep the five-line feed and the
-// A3-21 one-line trap rule; at most ONE reason line per drained item, and only
-// when something actually opened. One line names the first new opening in a
-// fixed priority order (garage, door, pad, stage 2, shop) and summarizes the
-// rest as " (+N MORE)".
+// Ordinary unlocks use one line per drained item. It names the first new
+// opening in priority order (garage, door, pad, stage 2, shop) and summarizes
+// the rest as " (+N MORE)". A door releasing held pads gets its own line.
 //
 // This header is the pure half: the watch layout, the pad-slot mapping, the
 // before/after diff and the line wording. The engine half lives in
@@ -43,6 +41,7 @@ typedef struct AP_UnlockWatch
 	unsigned padOpen;     // bit per pad slot: stage 1 + racer lock met
 	unsigned padStage2;   // bit per pad slot: stage-2 requirement met
 	unsigned doorsReady;  // bit per door: received Keys reach its requirement
+	unsigned padsBehindDoor[AP_UNLOCK_DOOR_COUNT]; // pad rules met, Key gate closed
 	unsigned garagesOpen; // bit per garage: requirement met
 	unsigned char shopOpen[AP_UNLOCK_SHOP_HUBS]; // unlocked (on-sale) slots per hub
 	unsigned char shopKnown; // the lifetime storage has resolved; 0 -> shop diff silent
@@ -62,6 +61,35 @@ typedef struct AP_UnlockEvent
 	int kind;  // enum AP_UnlockKind
 	int index; // pad slot, door slot, garage index or shop hub
 } AP_UnlockEvent;
+
+// The physical door gate is independent of the shuffled destination. Lost
+// Ruins shares the one-Key gate, and Gem Stone Valley also hosts the two-Key
+// cup room. The content registry supplies the pad's required Key count.
+static inline int AP_UnlockPadDoor(int hub, int keys)
+{
+	switch (keys)
+	{
+	case 1: return 0;
+	case 2: return hub == 25 ? 3 : 1; // GEM_STONE_VALLEY
+	case 3: return 2;
+	default: return -1;
+	}
+}
+
+// Catch-up adopts a settled inventory once. Preserve pads held before a
+// reconnect, even if their door opened while the client was offline.
+static inline unsigned AP_UnlockHeldForDoor(unsigned *held, const AP_UnlockWatch *now, int door)
+{
+	unsigned opened = 0;
+	if (now->doorsReady & (1u << door))
+	{
+		opened = *held & now->padOpen;
+		*held = 0;
+	}
+	else
+		*held = now->padsBehindDoor[door];
+	return opened;
+}
 
 // Physical pad LevelID -> watch bit slot, or -1 when the id is no warp pad.
 static inline int AP_UnlockPadSlot(int physLevelID)
@@ -175,7 +203,7 @@ static inline int AP_UnlockEventsOnly(AP_UnlockEvent *ev, int n, int kind)
 // destination track, hub, boss or shop hub, trimmed to 24 characters so the
 // kind suffix and the " (+N MORE)" summary always fit the feed's small font.
 // `extra` is how many further openings the same item caused (events - 1).
-static inline int AP_UnlockReasonLine(char *out, int cap, int kind, const char *name, int extra)
+static inline int AP_UnlockReasonLine(char *out, int cap, int kind, const char *name, int extra, int pads)
 {
 	const char *suffix;
 	int n;
@@ -203,6 +231,8 @@ static inline int AP_UnlockReasonLine(char *out, int cap, int kind, const char *
 	}
 
 	n = snprintf(out, (size_t)cap, "%.*s %s", 24, name != 0 ? name : "?", suffix);
+	if (pads > 0 && n > 0 && n < cap)
+		n += snprintf(out + n, (size_t)(cap - n), " (+%d %s)", pads, pads == 1 ? "PAD" : "PADS");
 	if (extra > 0 && n > 0 && n < cap)
 		n += snprintf(out + n, (size_t)(cap - n), " (+%d MORE)", extra);
 	return n;

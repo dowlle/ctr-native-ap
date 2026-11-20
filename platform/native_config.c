@@ -43,7 +43,7 @@ NativeConfig g_config = {
 	true,  // itemBoxColours (default on: follow the seed's item box colours)
 	true,  // itemBoxNumbers (default on: show the authored location number)
 	false, // sanityNumbers (default off: ordinary check object ordinals)
-	true,  // itemFeed (default on: the item feed shows, as before)
+	AP_ITEM_FEED_ALL, // itemFeed
 	0,     // aiDifficulty (0 = vanilla)
 	-1,    // deathLink (-1 = follow the seed option)
 	-1,    // dlSendFall (-1 = follow the seed's send triggers)
@@ -176,7 +176,7 @@ const ConfigEntry g_configEntries[] = {
 	{"Archipelago", "item_box_colours",         "Item Box Colours",             CFG_BOOL, &g_config.itemBoxColours},
 	{"Archipelago", "item_box_numbers",         "Item Box Numbers",             CFG_BOOL, &g_config.itemBoxNumbers},
 	{"Archipelago", "sanity_numbers",           "Crate / Fruit Numbers",        CFG_BOOL, &g_config.sanityNumbers},
-	{"Archipelago", "item_feed",                "Item Feed",                    CFG_BOOL, &g_config.itemFeed},
+	{"Archipelago", "item_feed",                "Item Feed",                    CFG_ENUM, &g_config.itemFeed},
 	// CFG_ENUM: AI-difficulty preset, stepped through a fixed value ladder and
 	// rendered as a preset name (see MM_ConfigMenu.c). Stored as its raw value.
 	{"Archipelago", "ai_difficulty",            "AI Difficulty",                CFG_ENUM, &g_config.aiDifficulty},
@@ -334,6 +334,15 @@ void NativeConfig_Load(void)
 			if (strcmp(section, e->section) == 0 &&
 			    strcmp(key, e->key) == 0)
 			{
+#ifdef CTR_AP
+				if (e->valuePtr == &g_config.itemFeed)
+				{
+					// Old configs saved true/false and also accepted 1/0.
+					g_config.itemFeed = strcmp(value, "2") == 0 ? AP_ITEM_FEED_IMPORTANT :
+					                    ParseBool(value) ? AP_ITEM_FEED_ALL : AP_ITEM_FEED_OFF;
+				}
+				else
+#endif
 				if (e->type == CFG_BOOL)
 					*(bool *)e->valuePtr = ParseBool(value);
 				else if (e->type == CFG_STRING)

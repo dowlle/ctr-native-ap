@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "ap_hooks.h"
+#include "ap_navrec.h"
 #include "ap_net.h"
 #include "ap_useful.h"
 #include "ap_useful_logic.h"
@@ -116,7 +117,14 @@ void AP_UsefulTick(struct GameTracker *gGT)
 		// pending until the corresponding weapon unlock is owned; invisibility
 		// is outside that frozen weapon set and is therefore always available.
 		if (!AP_ItemsanityWeaponAvailable(weaponIDs[effect])) continue;
-		VehPickupItem_ShootNow(driver, weaponIDs[effect], 0);
+		if (weaponIDs[effect] == 7)
+		{
+			AP_NavRec_NoteItemFire(driver, 7);
+			if (VehPickupItem_MaskUseWeapon(driver, 1))
+				AP_NavRec_NoteBoostGrant(AP_NAVREC_GRANT_MASK);
+		}
+		else
+			VehPickupItem_ShootNow(driver, weaponIDs[effect], 0);
 		g_usefulApplied |= bit;
 		AP_UsefulStore();
 		snprintf(msg, sizeof msg, "[AP USEFUL] applied %s\n", names[effect]);
