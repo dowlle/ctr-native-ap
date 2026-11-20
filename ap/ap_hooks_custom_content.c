@@ -415,17 +415,14 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 			return AP_ContentLoadRefused(0, packageIndex, CTR_CT_MANAGER_LOAD_FAILED);
 #ifdef CTR_CUSTOM_PACKAGES
 		// The track's own music, when the shared package this seed resolved pins
-		// a Saphi .sca: the package with the seed's UUID first, then any
-		// verified revision of the same pair. Optional: no file, no pin or a
+		// a Saphi .sca. Prefer manifest-pinned music, and the seed's UUID
+		// within each tier of verified matches. Optional: no file, no pin or a
 		// refused file plays the host slot's music (native_custom_tracks.c
 		// verifies the digest and forgets any pin of an earlier package).
 		{
 			char scaPath[512], scaSha[65];
 			unsigned long scaBytes = 0;
-			if ((pkg->uuid[0] && CustomPackage_FindPinnedMusic(NativeAssets_GetAssetDir(), pkg->revision, pkg->uuid,
-			                                  pkg->lev_sha256, pkg->lev_bytes, pkg->vrm_sha256, pkg->vrm_bytes,
-			                                  scaPath, sizeof scaPath, scaSha, &scaBytes)) ||
-			    CustomPackage_FindPinnedMusic(NativeAssets_GetAssetDir(), pkg->revision, NULL,
+			if (CustomPackage_FindPinnedMusic(NativeAssets_GetAssetDir(), pkg->revision, pkg->uuid, 0,
 			                                  pkg->lev_sha256, pkg->lev_bytes, pkg->vrm_sha256, pkg->vrm_bytes,
 			                                  scaPath, sizeof scaPath, scaSha, &scaBytes))
 				CustomTrack_UseContentMusic(scaPath, scaSha, scaBytes, pkg->lev_sha256);
