@@ -753,7 +753,7 @@ static void AP_NavRec_BankLap(void)
 	s_navrecBankTurboFires[slot] = s_navrecCurTurboFires;
 
 	snprintf(msg, sizeof msg, "[AP NAVREC] banked lap: %u sample(s), %u frame(s), mask %u turbo %u, %s\n", s_navrecCurSamples, s_navrecCurFrames,
-	         s_navrecCurMaskFires, s_navrecCurTurboFires, s_navrecCurDirty ? "DIRTY (respawn, hit or crash), will not be written" : "clean");
+	         s_navrecCurMaskFires, s_navrecCurTurboFires, s_navrecCurDirty ? "DIRTY, will not be written" : "clean");
 	AP_LogLine(msg);
 
 	AP_NavRec_DropCurrentLap();
