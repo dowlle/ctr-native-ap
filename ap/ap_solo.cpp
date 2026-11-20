@@ -2161,8 +2161,8 @@ extern "C" int AP_Solo_ExportTrackYaml(const CustomTrackLibraryEntry *entry, int
 		descriptor = AP_SoloMergeNeedsLaps(kept, descriptor);
 		if (descriptor.is_null())
 		{
-			std::snprintf(out, size, "This copy needs laps. Set laps in Play Solo if this copy is listed. "
-			              "If Play Solo shows another copy, you can export that copy instead.");
+			std::snprintf(out, size, "This copy has no lap count for export. "
+			              "Use Play Solo's lap controls if they appear for this copy.");
 			return 0;
 		}
 	}
