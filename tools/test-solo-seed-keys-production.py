@@ -22,6 +22,7 @@ extra = r'''
 #include <cassert>
 #include <filesystem>
 #include <set>
+#include <platform/native_custom_track_visibility.h>
 #include "ap/ap_track_registry.h"
 #include "ap/ap_content_registry.hpp"
 #include "ap/ap_solo_logic.hpp"
