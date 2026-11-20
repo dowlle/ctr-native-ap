@@ -226,7 +226,10 @@ static int exported_finish_rank(int root, std::vector<int> &ranks, const AP_WinL
     const auto &logic = ctr_win_logic;
     const auto &node = logic.nodes[root];
     if (node.tag == AP_WL_T_FALSE) rank = kNoFinishRank;
-    else if (node.tag == AP_WL_T_CAP || node.tag == AP_WL_T_STATCAP) rank = (int)node.a;
+    else if (node.tag == AP_WL_T_CAP || node.tag == AP_WL_T_STATCAP) {
+        // Probe inventories use Boost mode off to test the non-Boost part of a cap.
+        rank = inventory && !AP_WinLogicEval(&logic, inventory, root, 0) ? kNoFinishRank : (int)node.a;
+    }
     else if (node.tag == AP_WL_T_ALL || node.tag == AP_WL_T_ANY) {
         const bool all = node.tag == AP_WL_T_ALL;
         rank = all ? 0 : kNoFinishRank;
@@ -892,7 +895,9 @@ struct Sweep {
 static bool finish_route_open(const Sweep &s, const Route &route) {
     if (route.region < 0) return false;
     const Region &region = s.m.regions[route.region];
-    return std::all_of(region.gates.begin(), region.gates.end(), [&](int gate) { return s.eval(gate); })
+    const bool driveable = region.lock < 0 || !s.o.character_unlocks || region.lock == s.o.starting_character
+        || s.count(AP_WL_UNLOCK_ITEM[region.lock]) > 0;
+    return driveable && std::all_of(region.gates.begin(), region.gates.end(), [&](int gate) { return s.eval(gate); })
         && (route.stage < 0 || s.eval(route.stage))
         && (!(route.mask || region.mask) || s.count(kMaskItem) > 0);
 }
@@ -919,6 +924,8 @@ static bool markerless_route_ranks_match() {
     };
     inventory.bosses_won = [](void *) { return 6; };
     inventory.collected = [](void *, long) { return 1; };
+    inventory.character_unlocks = probe.o.character_unlocks;
+    inventory.starting_character = probe.o.starting_character;
     const auto &logic = ctr_win_logic;
     std::vector<int> ranks(logic.node_count, -1);
     for (const Loc &loc : model.locs) {
@@ -933,6 +940,8 @@ static bool markerless_route_ranks_match() {
             for (int gate : region.gates) finish_gate_items(model, gate, gate_items);
             if (route.stage >= 0) finish_gate_items(model, route.stage, gate_items);
             if (route.mask || region.mask) gate_items.insert(kMaskItem);
+            if (probe.o.character_unlocks && region.lock >= 0 && region.lock != probe.o.starting_character)
+                gate_items.insert(AP_WL_UNLOCK_ITEM[region.lock]);
         }
         std::vector<int64_t> order(gate_items.begin(), gate_items.end());
         for (const Route &target : loc.routes) {
