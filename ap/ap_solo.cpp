@@ -2141,6 +2141,15 @@ extern "C" int AP_Solo_StartGet(int index, struct APSoloStartInfo *out)
 extern "C" const char *AP_Solo_InboxPath(void) { return g_lists.inbox.c_str(); }
 
 #ifdef CTR_CUSTOM_PACKAGES
+static const char *ExportTrackLapsMessage(const std::string &name, const nlohmann::json &descriptor)
+{
+	const auto pending = nlohmann::json::parse(
+		ReadSmallPlainFile(fs::u8path(SoloPath("needs-laps")) / fs::u8path(name), kDescriptorMax), nullptr, false);
+	if (AP_SoloNeedsLapsDescriptor(pending, name) && pending.contains("files") && pending["files"] == descriptor["files"])
+		return "Pick laps for this copy in Play Solo first.";
+	return "This copy needs laps. If Play Solo shows another copy instead, reinstall this copy to make it active.";
+}
+
 extern "C" int AP_Solo_ExportTrackYaml(const CustomTrackLibraryEntry *entry, int save, char *out, size_t size)
 {
 	char key[65], revision[65], json[16384], error[256];
@@ -2158,12 +2167,13 @@ extern "C" int AP_Solo_ExportTrackYaml(const CustomTrackLibraryEntry *entry, int
 	{
 		const auto kept = nlohmann::json::parse(
 			ReadSmallPlainFile(fs::u8path(SoloPath("tracks/" + descriptorName)), kDescriptorMax), nullptr, false);
-		descriptor = AP_SoloMergeNeedsLaps(kept, descriptor);
-		if (descriptor.is_null())
+		auto withLaps = AP_SoloMergeNeedsLaps(kept, descriptor);
+		if (withLaps.is_null())
 		{
-			std::snprintf(out, size, "Pick laps in Play Solo first.");
+			std::snprintf(out, size, "%s", ExportTrackLapsMessage(descriptorName, descriptor));
 			return 0;
 		}
+		descriptor = std::move(withLaps);
 	}
 	descriptor["track_key"] = descriptor["content_id"];
 	descriptor.erase("content_id");
