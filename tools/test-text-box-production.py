@@ -85,7 +85,7 @@ static const struct CustomTrackManagerPackage *AP_CustomContentPackage(void) { r
 '''
 fixture += function("game/230/MM_CustomTracks.c", "static void CT_LibraryMarqueeOwner(const struct CT_LibItem *item, const struct CT_LibView *view)")
 fixture += function("game/230/MM_CustomTrackSelect.c", "static void MM_CustomTrackSelect_MarqueePin(const char *pin)")
-fixture += "\n#define AP_FEED_LINE_H 12\nstatic AP_FeedLines ap_feed;\nstatic struct {int box_placement_refused;} ctr_cfg;\n"
+fixture += "\n#define AP_FEED_LINE_H 12\n#define AP_FEED_BOX_WARNING_Y 72\nstatic AP_FeedLines ap_feed;\nstatic struct {int box_placement_refused;} ctr_cfg;\n"
 fixture += function("ap/ap_hooks_feed.c", "static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)")
 fixture += r'''
 static void reset(void) { db.primMem.cursor=arena;ne=envCount=drawWidth=0; }
