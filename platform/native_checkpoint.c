@@ -2418,6 +2418,11 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 		}
 	}
 
+#ifdef CTR_AP
+	// Restored mines keep their pool slots. Live progress belongs to the
+	// pre-restore race and may refer to instances that no longer exist.
+	RB_MinePool_ResetBossProgress();
+#endif
 	PSX_BIOS_SetRandSeed(header->psxRandSeed);
 	Platform_ConfigureMempackArena();
 	NativeCheckpoint_RelocateMempackPointers(header, &liveHeader);

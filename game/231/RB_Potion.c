@@ -59,6 +59,16 @@ void RB_Potion_ThTick_InAir(struct Thread *t)
 	inst = t->inst;
 	mw = t->object;
 
+#ifdef CTR_AP
+	if (mw->boolDestroyed)
+	{
+		if ((u32)(inst->model->id - STATIC_BEAKER_RED) < 2)
+			RB_Potion_OnShatter_TeethSearch(inst);
+		RB_GenericMine_ThDestroy(t, inst, mw);
+		return;
+	}
+#endif
+
 	// adjust position, by velocity, do NOT use parenthesis
 	inst->matrix.t[0] += mw->velocity.x * gGT->elapsedTimeMS >> 5;
 	inst->matrix.t[1] += mw->velocity.y * gGT->elapsedTimeMS >> 5;

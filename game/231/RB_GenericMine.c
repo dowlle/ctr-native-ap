@@ -87,6 +87,16 @@ void RB_GenericMine_ThTick(struct Thread *t)
 
 	boolPotion = (u32)(model - 0x46) < 2;
 
+#ifdef CTR_AP
+	if (mw->boolDestroyed)
+	{
+		if (boolPotion)
+			RB_Potion_OnShatter_TeethSearch(inst);
+		RB_GenericMine_ThDestroy(t, inst, mw);
+		return;
+	}
+#endif
+
 	// if weapon is "thrown" like Komodo Joe
 	if ((mw->extraFlags & 2) != 0)
 	{
@@ -381,6 +391,9 @@ void RB_GenericMine_ThTick(struct Thread *t)
 				tnt->tntSpinY = 0;
 				tnt->crateInst = 0;
 				tnt->extraFlags = 0;
+#ifdef CTR_AP
+				tnt->weaponSlot231 = NULL;
+#endif
 
 				// give driver to tnt object
 				tnt->driverTarget = d;
