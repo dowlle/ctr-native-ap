@@ -123,6 +123,14 @@ static char s_customTrackServeFault[128];
 struct CustomTrackRetainedFile { unsigned char *bytes; u32 size; };
 static struct CustomTrackRetainedFile s_standaloneLev, s_standaloneVrm;
 
+enum CustomTrackResidentKind
+{
+	CTR_RESIDENT_GARAGE = 1,
+	CTR_RESIDENT_OXIDE_FINAL,
+	CTR_RESIDENT_CORTEX_PAD,
+	CTR_RESIDENT_EVENT,
+};
+
 #ifdef CTR_CUSTOM_PACKAGES
 #define CUSTOM_TRACK_BOSS_LEV "@ctr/boss/lev"
 #define CUSTOM_TRACK_BOSS_VRM "@ctr/boss/vrm"
@@ -130,6 +138,7 @@ static struct
 {
 	int active, level, boss;
 	struct CustomTrackRetainedFile lev, vrm;
+	struct CustomTrackResidentSource source;
 } s_bossVenueLoad;
 
 static void CustomTrack_ResetBossVenueLoad(void)
@@ -678,6 +687,20 @@ int CustomTrack_OxideFinalServing(int levelID, int bossID, int adventureBossActi
 	       adventureBossActive && levelID == s_oxideFinalDescriptor.hostLevelID && bossID == 5;
 }
 
+static void CustomTrack_DescribeGarage(const struct GarageVenueDescriptor *venue,
+                                      struct CustomTrackResidentSource *resident)
+{
+	memset(resident, 0, sizeof *resident);
+	resident->kind = CTR_RESIDENT_GARAGE;
+	resident->levelID = venue->hostLevelID;
+	resident->roomIdentity = venue->roomIdentity;
+	memcpy(resident->trackID, venue->trackID, sizeof resident->trackID);
+	memcpy(resident->packageRevision, venue->packageRevision, sizeof resident->packageRevision);
+	memcpy(resident->packageUuid, venue->packageUuid, sizeof resident->packageUuid);
+	memcpy(resident->levSha256, venue->levSha256, sizeof resident->levSha256);
+	memcpy(resident->vrmSha256, venue->vrmSha256, sizeof resident->vrmSha256);
+}
+
 #ifdef CTR_CUSTOM_PACKAGES
 // A track's id carries a "package/" or "custom/" prefix depending on the
 // route that armed it; the pick ignores the prefix so one track gets one song
@@ -750,6 +773,18 @@ unsigned char *CustomTrack_ReadBossMusic(int levelID, int bossID, size_t *size, 
 	{
 		*error = "could not retain the verified boss venue pair";
 		return NULL;
+	}
+
+	// Keep the provenance with the retained pair across seed preflight refreshes.
+	if (venue)
+		CustomTrack_DescribeGarage(venue, &s_bossVenueLoad.source);
+	else
+	{
+		memset(&s_bossVenueLoad.source, 0, sizeof s_bossVenueLoad.source);
+		s_bossVenueLoad.source.kind = CTR_RESIDENT_OXIDE_FINAL;
+		s_bossVenueLoad.source.levelID = levelID;
+		memcpy(s_bossVenueLoad.source.levSha256, lev->expectedHash, sizeof s_bossVenueLoad.source.levSha256);
+		memcpy(s_bossVenueLoad.source.vrmSha256, vrm->expectedHash, sizeof s_bossVenueLoad.source.vrmSha256);
 	}
 
 	if (!venue || (venue->cortex && NativeSha256_HexEquals(CORTEX_LEV_SHA256, venue->levSha256) &&
@@ -1635,13 +1670,6 @@ int CustomTrack_FinishTerrain(const struct CustomTrackLoadContext *ctx)
 	       CustomFinish_Terrain(s_descriptor.levSha256, s_descriptor.vrmSha256) : -1;
 }
 
-enum CustomTrackResidentKind
-{
-	CTR_RESIDENT_GARAGE = 1,
-	CTR_RESIDENT_OXIDE_FINAL,
-	CTR_RESIDENT_CORTEX_PAD,
-	CTR_RESIDENT_EVENT,
-};
 static struct CustomTrackResidentSource s_customTrackResident;
 static unsigned int s_customTrackResidentParts;
 static int s_customTrackResidentMismatch;
@@ -1685,10 +1713,7 @@ int CustomTrack_ResidentAssetsMixed(void)
 void CustomTrack_NoteLoadedAsset(const struct CustomTrackLoadContext *ctx, int role, int seedOwned)
 {
 	struct CustomTrackResidentSource current;
-	struct CustomTrackResidentSource *resident = &current;
 	const unsigned int previousParts = s_customTrackResidentParts;
-	const char *lev;
-	const char *vrm;
 	int garage;
 
 	s_customTrackResidentParts |= (unsigned int)role;
@@ -1700,24 +1725,21 @@ void CustomTrack_NoteLoadedAsset(const struct CustomTrackLoadContext *ctx, int r
 			s_customTrackResidentMismatch = 1;
 		return;
 	}
-	memset(resident, 0, sizeof *resident);
-	garage = CustomTrack_GarageVenueServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive);
-	if (garage >= 0)
-	{
-		resident->kind = CTR_RESIDENT_GARAGE;
-		resident->roomIdentity = s_garageVenue[garage].roomIdentity;
-		memcpy(resident->trackID, s_garageVenue[garage].trackID, sizeof resident->trackID);
-		memcpy(resident->packageRevision, s_garageVenue[garage].packageRevision, sizeof resident->packageRevision);
-		memcpy(resident->packageUuid, s_garageVenue[garage].packageUuid, sizeof resident->packageUuid);
-		lev = s_garageVenue[garage].levSha256;
-		vrm = s_garageVenue[garage].vrmSha256;
-	}
+#ifdef CTR_CUSTOM_PACKAGES
+	if (ctx->adventureBossActive && CustomTrack_BossVenueLoadMatches(ctx->levelID, ctx->bossID))
+		memcpy(&current, &s_bossVenueLoad.source, sizeof current);
+	else
+#endif
+	if ((garage = CustomTrack_GarageVenueServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive)) >= 0)
+		CustomTrack_DescribeGarage(&s_garageVenue[garage], &current);
 	else if (CustomTrack_OxideFinalServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive) ||
 	         CustomTrack_CortexTrackServing(ctx->levelID, ctx->adventureBossActive))
 	{
-		resident->kind = ctx->adventureBossActive ? CTR_RESIDENT_OXIDE_FINAL : CTR_RESIDENT_CORTEX_PAD;
-		lev = s_oxideFinalDescriptor.levSha256;
-		vrm = s_oxideFinalDescriptor.vrmSha256;
+		memset(&current, 0, sizeof current);
+		current.kind = ctx->adventureBossActive ? CTR_RESIDENT_OXIDE_FINAL : CTR_RESIDENT_CORTEX_PAD;
+		current.levelID = ctx->levelID;
+		memcpy(current.levSha256, s_oxideFinalDescriptor.levSha256, sizeof current.levSha256);
+		memcpy(current.vrmSha256, s_oxideFinalDescriptor.vrmSha256, sizeof current.vrmSha256);
 	}
 	else
 	{
@@ -1726,16 +1748,15 @@ void CustomTrack_NoteLoadedAsset(const struct CustomTrackLoadContext *ctx, int r
 			s_customTrackResidentMismatch = 1;
 			return;
 		}
-		resident->kind = CTR_RESIDENT_EVENT;
-		lev = s_descriptor.levSha256;
-		vrm = s_descriptor.vrmSha256;
+		memset(&current, 0, sizeof current);
+		current.kind = CTR_RESIDENT_EVENT;
+		current.levelID = ctx->levelID;
+		memcpy(current.levSha256, s_descriptor.levSha256, sizeof current.levSha256);
+		memcpy(current.vrmSha256, s_descriptor.vrmSha256, sizeof current.vrmSha256);
 	}
-	resident->levelID = ctx->levelID;
-	memcpy(resident->levSha256, lev, sizeof resident->levSha256);
-	memcpy(resident->vrmSha256, vrm, sizeof resident->vrmSha256);
-	if (previousParts && memcmp(&s_customTrackResident, resident, sizeof *resident) != 0)
+	if (previousParts && memcmp(&s_customTrackResident, &current, sizeof current) != 0)
 		s_customTrackResidentMismatch = 1;
-	memcpy(&s_customTrackResident, resident, sizeof *resident);
+	memcpy(&s_customTrackResident, &current, sizeof current);
 }
 
 int CustomTrack_TiziMadness(const struct CustomTrackLoadContext *ctx)

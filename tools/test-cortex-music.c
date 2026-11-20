@@ -423,7 +423,20 @@ static void boss_music(void)
 	EXPECT(!CustomTrack_ReadBossMusic(PKG_HOST, 0, &size, &reason) && !reason, "an absent SCA is optional");
 	EXPECT(CustomTrack_GetOverride(group + 1, &ctx, &path, &trackSize) &&
 	       !strcmp(path, CUSTOM_TRACK_BOSS_LEV), "reserve the pair even when optional audio is absent");
+	CustomTrack_ClearGarageVenueDescriptors();
+	CustomTrack_ClearResidentSource();
+	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_LEV, 1);
+	CustomTrack_NoteLoadedAsset(&ctx, CTR_CT_ROLE_VRM, 1);
+	unsigned char uuid[CTR_CT_NAV_UUID_BYTES], expectedUuid[CTR_CT_NAV_UUID_BYTES];
+	unsigned int revision;
+	EXPECT(CustomTrackPolicy_ParseNavUuid(venue.packageUuid, expectedUuid) &&
+	       CustomTrack_ResidentGarageNavIdentity(PKG_HOST, uuid, &revision) &&
+	       memcmp(uuid, expectedUuid, sizeof uuid) == 0 &&
+	       revision == CustomTrackPolicy_NavRevision(venue.levSha256),
+	       "the exact retained pair keeps its identity when preflight withdraws the descriptor");
+	CustomTrack_ClearResidentSource();
 	CustomTrack_ResetBossVenueLoad();
+	EXPECT(CustomTrack_ApplyGarageVenueDescriptor(0, &venue), "re-arm the fixture for a new load");
 	bossMusicBytes = SCA_BYTES;
 	bytes = CustomTrack_ReadBossMusic(PKG_HOST, 0, &size, &reason);
 	EXPECT(bytes && size == SCA_BYTES && !reason, "a repair becomes available without re-arming the venue");
