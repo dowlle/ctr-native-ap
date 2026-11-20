@@ -368,6 +368,10 @@ LAB_800aec34:
 		    (char *)challenge,
 
 		    (view.x + (view.w >> 1)), challengeY, 1, 0xffff8000);
+#ifdef CTR_AP
+		if (bossIsOpen)
+			AP_BossGarageApproachHints(hubID);
+#endif
 	}
 
 #ifdef CTR_AP
