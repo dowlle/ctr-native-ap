@@ -166,7 +166,7 @@ static int AP_GlowPush(int *outBits, int64_t *outCodes, int count, int bit, int6
 }
 
 // outCodes, when not NULL, gets the location code of each listed bit at the
-// same index, so Pad Approach Hints (#124) hint exactly what the glow lists.
+// same index, so Pad Approach Hints (#124) can reuse the glow's locations.
 static int AP_ContentPadGlowBits(int destLevelID, int *outBits, int64_t *outCodes, int cap, int openOnly)
 {
 		const ctr_content_pad *pad = ap_content_plan_pad(destLevelID);
@@ -252,21 +252,53 @@ static int AP_ContentPadGlowBits(int destLevelID, int *outBits, int64_t *outCode
         return count;
 }
 
-// Pad Approach Hints (#124, ap_pad_hints_logic.h). Called every frame the
-// pad's name shows. Filters the glow's open, unchecked locations through
-// each exported location rule on an open content-plan pad; the net side
-// drops codes the room latch already holds, so a standing kart sends nothing
-// after the first frame.
+// Leave room for the glow list and a full pickup row for every cup leg.
+#define AP_APPROACH_HINT_CODES_MAX (AP_PAD_DISPLAY_BITS_MAX + AP_CONTENT_CUP_LEGS * \
+    sizeof(((ctr_content_sanity *)0)->locations) / sizeof(int64_t))
+
+static int AP_ApproachHintsReady(void)
+{
+	return ctr_cfg_active() && ctr_cfg.pad_approach_hints && ap_net_pad_hints_ready() &&
+	       !AP_HintFilter_PadWaits(ctr_cfg.pad_hints_wait_for_spoiler, ctr_cfg.spoiler_items,
+	                               AP_SpoilerPadPreviewShown());
+}
+
+static int AP_ApproachAppendPickups(int64_t *out, const ctr_content_sanity *row)
+{
+	size_t family, ordinal;
+	int count = 0;
+	if (!row) return 0;
+	for (family = 0; family < sizeof row->locations / sizeof row->locations[0]; ++family)
+		for (ordinal = 0; ordinal < sizeof row->locations[family] / sizeof row->locations[family][0]; ++ordinal)
+			if (row->locations[family][ordinal] > 0)
+				out[count++] = row->locations[family][ordinal];
+	return count;
+}
+
+static void AP_ApproachSendHints(int source, int64_t *codes, int count)
+{
+	int i, eligible = 0;
+	for (i = 0; i < count; ++i)
+	{
+		unsigned flags = 0;
+		int known;
+		if (codes[i] <= 0 || AP_ContentCodeChecked(codes[i])) continue;
+		known = ap_net_scout_known(codes[i], NULL, NULL, &flags);
+		// An unknown or filtered scout stays eligible for a later frame.
+		if (AP_HintFilter_Progression(ctr_cfg.pad_hints_progression_only, known, flags) != AP_HINT_KEEP) continue;
+		if (AP_LocationInLogic(codes[i])) codes[eligible++] = codes[i];
+	}
+	if (eligible > 0) ap_net_pad_approach_hint(source, codes, eligible);
+}
+
+// Called while the pad name is drawn. Pickups supplement its glow codes.
 void AP_PadApproachHints(int levelID)
 {
 	int bits[AP_PAD_DISPLAY_BITS_MAX];
-	int64_t codes[AP_PAD_DISPLAY_BITS_MAX];
+	int64_t codes[AP_APPROACH_HINT_CODES_MAX];
 	const ctr_content_pad *pad;
-	int n, i, eligible = 0, contentReady = 1;
-	if (!ctr_cfg_active() || !ctr_cfg.pad_approach_hints || !ap_net_pad_hints_ready()) return;
-	// A2-23: held back until Warp Pad Preview, when asked. Nothing is latched.
-	if (AP_HintFilter_PadWaits(ctr_cfg.pad_hints_wait_for_spoiler, ctr_cfg.spoiler_items, AP_SpoilerPadPreviewShown()))
-		return;
+	int n, i, contentReady = 1;
+	if (!AP_ApproachHintsReady()) return;
 	pad = ap_content_plan_active() ? ap_content_plan_pad(levelID) : NULL;
 #ifdef CTR_CUSTOM_TRACKS
 	contentReady = AP_ContentPadReady(levelID);
@@ -275,16 +307,60 @@ void AP_PadApproachHints(int levelID)
 	                         contentReady, pad && AP_ContentPadOpen(pad)))
 		return;
 	n = AP_ContentPadGlowBits(levelID, bits, codes, AP_PAD_DISPLAY_BITS_MAX, 1);
-	for (i = 0; i < n; ++i)
+	if (pad->cup)
 	{
-		unsigned flags = 0;
-		int known = ap_net_scout_known(codes[i], NULL, NULL, &flags);
-		// A2-23: a skipped location is not latched, so it stays hintable. One
-		// whose item is still unknown waits for the connect-time scouts.
-		if (AP_HintFilter_Progression(ctr_cfg.pad_hints_progression_only, known, flags) != AP_HINT_KEEP) continue;
-		if (AP_LocationInLogic(codes[i])) codes[eligible++] = codes[i];
+		// A leg can earn pickups while the same track's standalone pad is shut.
+		for (i = 0; i < AP_CONTENT_CUP_LEGS; ++i)
+			n += AP_ApproachAppendPickups(codes + n, ap_content_plan_sanity(pad->legs[i].track_id));
 	}
-	if (eligible > 0) ap_net_pad_approach_hint(levelID, codes, eligible);
+	else if (!pad->crystal &&
+	         (AP_ContentModeOpen(pad, AP_CONTENT_MODE_TROPHY) ||
+	          AP_ContentModeOpen(pad, AP_CONTENT_MODE_CTR)))
+	{
+		// A pickup can be globally in logic through a cup or boss race even
+		// while the standalone pad offers only its Relic Race.
+		for (i = 0; i < 3; ++i)
+			n += ap_content_plan_sanity_pad(levelID, i, codes + n, AP_APPROACH_HINT_CODES_MAX - n);
+	}
+	AP_ApproachSendHints(levelID, codes, n);
+}
+
+// Called from the open garage's title draw. Oxide uses the same encounter
+// selector as race entry. The four ordinary garages may hold a boss cup.
+void AP_BossGarageApproachHints(int hubID)
+{
+	int64_t codes[AP_APPROACH_HINT_CODES_MAX];
+	const ctr_content_bosses *bosses;
+	int garage, boss, n = 0;
+	if (hubID < 0 || hubID > 4 || !AP_ApproachHintsReady() || !ap_content_plan_active()) return;
+	bosses = ap_content_plan_bosses();
+	if (!bosses->present) return;
+	garage = hubID ? hubID - 1 : 4;
+	boss = hubID ? garage : 4 + AP_OxideOffersFinalChallenge();
+	codes[n++] = AP_BOSS_WON_LOCATION_CODE(boss);
+	// As in AP_NotifyGoal, an optional first challenge also pays on a final win.
+	if (boss == 5 && bosses->oxide_goal == 2 && bosses->oxide_1_optional)
+		codes[n++] = AP_BOSS_WON_LOCATION_CODE(4);
+	if (garage < 4 && bosses->cup[garage])
+	{
+		const ctr_content_pad *cup = ap_content_plan_pad(AP_CONTENT_GARAGE_CUP_PAD + garage);
+		int i;
+		if (!cup) return;
+		for (i = 0; i < AP_CONTENT_CUP_LEGS; ++i)
+		{
+			const ctr_content_leg *leg = &cup->legs[i];
+			codes[n++] = leg->lap;
+			codes[n++] = leg->wumpa;
+			n += AP_ApproachAppendPickups(codes + n, ap_content_plan_sanity(leg->track_id));
+		}
+	}
+	else
+	{
+		codes[n++] = bosses->lap[boss];
+		codes[n++] = bosses->wumpa[boss];
+		n += AP_ApproachAppendPickups(codes + n, ap_content_plan_sanity_boss(boss));
+	}
+	AP_ApproachSendHints(AP_CONTENT_GARAGE_CUP_PAD + garage, codes, n);
 }
 
 // A4-59: what the pad's stage 2 asks for, under its name, from the first
