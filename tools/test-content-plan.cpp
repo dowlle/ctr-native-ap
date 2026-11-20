@@ -133,6 +133,42 @@ int main(int argc, char **argv) {
         expect(rows == 12, "all twelve old/new pickup fixtures run");
     }
     {
+        // A6-48: a venue whose only route is the Final Challenge (garage 4,
+        // encounter 5) has no lap, Reach 10 Wumpa or pickup checks of its own
+        // in a new room; a pre-feature room keeps them.
+        std::ifstream fixture("tools/fixtures/content-plan/final-only-venue.jsonl");
+        std::string line;
+        int rows = 0;
+        while (std::getline(fixture, line)) {
+            const J row = J::parse(line), slot = row["slot_data"];
+            const std::string tag = row["tag"];
+            ++rows;
+            expect(parse(slot) && bind_room(slot), tag + ": final venue room parses and binds");
+            const bool legacy = tag.rfind("legacy-", 0) == 0, station = tag.find("station-final") != std::string::npos;
+            const bool omitted = !legacy && tag != "vortex-pad";
+            const auto &features = slot["content_plan"]["required_features"];
+            const bool marked = std::find(features.begin(), features.end(), J("final_only_venue_v1")) != features.end();
+            expect(marked == omitted, tag + ": feature marker matches the omission");
+            expect((ap_content_plan_sanity_boss(5) == nullptr) == omitted, tag + ": final pickup table matches location membership");
+            expect((ap_content_plan_bosses()->wumpa[5] == 0) == omitted, tag + ": final Reach 10 award matches location membership");
+            // Oxide Station's lap keeps its First Challenge route, so the final still pays it.
+            expect((ap_content_plan_bosses()->lap[5] == 0) == (omitted && !station), tag + ": final lap award matches location membership");
+            expect(ap_content_plan_bosses()->lap[4] != 0, tag + ": the First Challenge lap stays");
+            auto bad = slot;
+            if (marked) {
+                bad["content_plan"]["required_features"].erase(
+                    std::remove(bad["content_plan"]["required_features"].begin(),
+                                bad["content_plan"]["required_features"].end(), J("final_only_venue_v1")),
+                    bad["content_plan"]["required_features"].end());
+                refuse(bad, tag + ": omitted final venue checks require the feature marker");
+            } else if (legacy) {
+                bad["content_plan"]["required_features"].push_back("final_only_venue_v1");
+                refuse(bad, tag + ": the marker on a room that kept its final venue checks refuses");
+            }
+        }
+        expect(rows == 7, "all seven final venue fixtures run");
+    }
+    {
         J sanity;
         std::ifstream("tools/fixtures/content-plan/sanity.json") >> sanity;
         expect(parse(sanity) && bind_room(sanity), "sanity room parses and binds");
