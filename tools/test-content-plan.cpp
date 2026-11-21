@@ -3,6 +3,7 @@
 #include "ap_seedcfg.h"
 #include "ap_content_plan.h"
 #include "ap_content_modes.h"
+#include "ap_content_object_rulings.hpp"
 #include "ap_trap_items.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
@@ -258,6 +259,26 @@ int main(int argc, char **argv) {
             ++rows;
         }
         expect(rows == 18, "all object ruling fixtures exercised");
+    }
+    {
+        // Synthetic catalog rows exercise the production lookup without
+        // publishing a ruling for either historical Coco Park copy.
+        const std::string st_patrick_pin(64, 'a'), anniversary_pin(64, 'b'), new_pin(64, 'c');
+        const J rules = J::array({{
+            {"content_id", "coco-park-2025"}, {"kind", "wumpa_crate"}, {"ordinal", 1},
+            {"revision", "1.0.0"}, {"lev_sha256", st_patrick_pin}, {"since", 2}, {"hard_rank", 2}
+        }});
+        const J st_patrick_review = J::array({{{"revision", "1.0.0"}, {"lev_sha256", st_patrick_pin}}});
+        const J anniversary_review = J::array({{{"revision", "1.0.0"}, {"lev_sha256", anniversary_pin}}});
+        const auto *carried = content_plan::object_ruling(rules, "release-st-patrick-adventure-slot-55",
+            "wumpa_crate", 1, "2.0.0", new_pin, &st_patrick_review, 2, false);
+        expect(carried && carried->at("hard_rank") == 2, "historical key carries its own reviewed object ruling");
+        expect(!content_plan::object_ruling(rules, "crash-30anniversary-adventure-track-26",
+            "wumpa_crate", 1, "2.0.0", new_pin, &anniversary_review, 2, false),
+            "patch copies sharing a block keep their reviewed object rulings separate");
+        expect(!content_plan::object_ruling(rules, "release-st-patrick-adventure-slot-55",
+            "wumpa_crate", 1, "2.0.0", new_pin, &st_patrick_review, 1, false),
+            "historical key cannot carry a row added after the room's catalog version");
     }
     J base, extras;
     std::ifstream("tools/fixtures/content-plan/baseline.json") >> base;

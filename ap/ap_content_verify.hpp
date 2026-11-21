@@ -34,9 +34,10 @@ using J = nlohmann::json;
 // first boost, 0 the generic terms only) by package content id. A row with a
 // revision ("" for every revision) also names the LEV pin and covers only that
 // exact package; it wins over the row for every revision (A2-22).
+// A new scoped row names the first catalog version that enables it.
 // tools/test-content-plan-parity.py compares this table with the paired
 // apworld's.
-static const struct { const char *content_id, *revision, *lev_sha256; int rank; } kUsfRulings[] = {
+static const struct { const char *content_id, *revision, *lev_sha256; int rank; int since = 0; } kUsfRulings[] = {
     {"arabian-heights-night", "", "", 2}, {"baby-t-park", "", "", 0}, {"cortex-vortex", "", "", 2},
     {"north-pole", "", "", 0}, {"tv-world", "", "", 0},
     // Project rulings of 2026-11-05 07:19 CET (A2-27), per registry revision and LEV pin.
@@ -48,6 +49,7 @@ static const struct { const char *content_id, *revision, *lev_sha256; int rank; 
     {"lights-out", "1.0.0", "5ebdb9f235ba0c07ba5c72b715c949afdd6062fcf3208f45a1c13936ffb529c6", 1},
     {"neon-paradise", "1.0.0", "665d19819c437ab9ab6cbccac7c0202979405f16e1af39e06d9ea1d3286be9d0", 0},
     {"neon-paradise", "1.1.0", "639434d84fe6de4ba88a31a1dd5a11291d640617ab25af9c7bfbd5d383b53d5d", 0},
+    {"sunset-vista", "1.2.0", "97fd76f06e3c57207560751728eb23dbf81980887e5f7e25f2296917578735b5", 0},
 };
 static const int64_t kItemBase = 35010000, kKeyItem = 35010014;
 static const int64_t kItemsanityFirst = 35016000, kItemsanityLast = 35016021;
@@ -56,6 +58,11 @@ static const int kFirstGuest = 8, kTigerTemple = 4, kPapusPyramid = 5;
 static const int kTurbo = 0, kMask = 6; // AP_VerifyWeaponOwned indices
 static const long kMaskItem = kItemBase + AP_VF_WEAPON_FIRST + kMask;
 static const int kUsf = 2, kFirstBoost = 1;
+static constexpr int kNoFinishRank = 4;  // the exported Boost range is 0 to 3
+
+static bool is_sunset_finish_ruling(const char *content, const char *revision) {
+    return std::strcmp(content, "sunset-vista") == 0 && std::strcmp(revision, "1.2.0") == 0;
+}
 
 // WUMPA: the goal's `wumpa_banked` arm (J11), met when Wumpa Income is.
 enum Op { ALWAYS, COUNT, SUM, DISTINCT, CHECKED, ALL, ANY, WUMPA };
@@ -137,6 +144,15 @@ static std::set<std::string> finish_floor_tracks;
 // Tracks named by `capability.finish_free` (reviewed Green Hill Raceway 2.0.0): no rank for the finish itself.
 static std::set<std::string> finish_free_tracks;
 
+static void read_finish_overrides(const J &plan) {
+    finish_floor_tracks.clear();
+    finish_free_tracks.clear();
+    if (!plan.contains("capability")) return;
+    const J &caps = plan.at("capability");
+    for (const auto &id : caps.value("finish_free", J::array())) finish_free_tracks.insert(id.get<std::string>());
+    for (const auto &id : caps.value("finish_floors", J::array())) finish_floor_tracks.insert(id.get<std::string>());
+}
+
 // content_capability.finish_boost: the ranks crossing a track's finish line
 // needs, 0 without Progressive Boost.
 static int finish_boost(const J &track, const std::map<std::string, const J *> &packages, const AP_VerifyOptions &o) {
@@ -151,14 +167,33 @@ static int finish_boost(const J &track, const std::map<std::string, const J *> &
     }
     const J *pkg = packages.count(track.value("package_id", "")) ? packages.at(track.value("package_id", "")) : nullptr;
     if (pkg) {
-        const std::string content = pkg->value("content_id", ""), revision = pkg->value("revision", "");
+        const std::string content = pkg->value("content_id", "");
         std::string lev;
         for (const auto &pin : pkg->at("files"))
             if (pin.value("role", "") == "lev") lev = pin.value("sha256", "");
+        const int version = content_plan::state.track_ruling_version;
+        const auto matches = [&](const auto &r, const std::string &revision, const std::string &pin) {
+            return r.since <= version && *r.revision && content == r.content_id && revision == r.revision
+                && pin == r.lev_sha256
+                && !(content_plan::state.pre_sunset_finish_ruling && is_sunset_finish_ruling(r.content_id, r.revision));
+        };
+        const auto source = content_plan::scoped_ruling(content_plan::state, *pkg, lev,
+            [&](const std::string &revision, const std::string &pin) {
+                for (const auto &r : kUsfRulings) if (matches(r, revision, pin)) return true;
+                return false;
+            });
+        int selected_rank = -1, selected_version = -1;
         for (const auto &r : kUsfRulings)
-            if (*r.revision && !lev.empty() && content == r.content_id && revision == r.revision && lev == r.lev_sha256)
-                return r.rank;
+            if (matches(r, source.first, source.second) && r.since > selected_version) {
+                selected_rank = r.rank;
+                selected_version = r.since;
+            }
+        if (selected_rank >= 0) return selected_rank;
         for (const auto &r : kUsfRulings) if (!*r.revision && content == r.content_id) return r.rank;
+        const std::string free_source = content_plan::ruling_pin(content_plan::state, *pkg, lev, [](const std::string &pin) {
+            return pin == content_plan::kCountryPickupPin || pin == content_plan::kToastyPickupPin;
+        });
+        if (!free_source.empty() && content_plan::inherited_ruling_history(content_plan::state, *pkg, lev)) return 0;
         const J &caps = pkg->at("capabilities");
         // A package that does not state super_turbo_pads is treated as having one.
         if (caps.contains("super_turbo_pads") && caps["super_turbo_pads"] == false) return 0;
@@ -189,6 +224,93 @@ static int leg_boost(const J &entry, const std::string &leg_id, bool own, const 
     throw std::runtime_error("cup leg route names no leg of its entry");
 }
 
+// Project the exported rule onto Boost with all other requirements satisfied.
+// Both AP boost modes give the same threshold when every racer has the same rank.
+static int exported_finish_rank(int root, std::vector<int> &ranks, const AP_WinLogicEnv *inventory = nullptr) {
+    int &rank = ranks.at(root);
+    if (rank >= 0) return rank;
+    const auto &logic = ctr_win_logic;
+    const auto &node = logic.nodes[root];
+    if (node.tag == AP_WL_T_FALSE) rank = kNoFinishRank;
+    else if (node.tag == AP_WL_T_CAP || node.tag == AP_WL_T_STATCAP) {
+        // Probe inventories use Boost mode off to test the non-Boost part of a cap.
+        rank = inventory && !AP_WinLogicEval(&logic, inventory, root, 0) ? kNoFinishRank : (int)node.a;
+    }
+    else if (node.tag == AP_WL_T_ALL || node.tag == AP_WL_T_ANY) {
+        const bool all = node.tag == AP_WL_T_ALL;
+        rank = all ? 0 : kNoFinishRank;
+        for (long i = 0; i < node.b; ++i) {
+            const int term = exported_finish_rank(logic.kids[node.a + i], ranks, inventory);
+            rank = all ? std::max(rank, term) : std::min(rank, term);
+        }
+    } else rank = inventory && !AP_WinLogicEval(&logic, inventory, root, 0) ? kNoFinishRank : 0;
+    return rank;
+}
+
+static bool markerless_route_ranks_match();
+
+static bool markerless_finish_matches() {
+    const auto o = options();
+    if (!o.boost_mode || content_plan::state.track_ruling_version || ctr_win_logic.state != AP_WL_VALID) return true;
+    const J p = J::parse(content_plan::state.canonical);
+    const auto &reviews = content_plan::content_registry().at("track_ruling_revisions");
+    std::map<std::string, const J *> packages;
+    bool has_unreviewed_track = false;
+    bool has_sunset_finish_ruling = false;
+    for (const auto &pkg : p.at("packages")) {
+        packages.emplace(content_plan::text(pkg.at("id")), &pkg);
+        const std::string key = content_plan::text(pkg.at("content_id"));
+        if (!reviews.contains(key)) continue;
+        std::string lev;
+        for (const auto &file : pkg.at("files"))
+            if (file.at("role") == "lev") lev = content_plan::text(file.at("sha256"));
+        if (!has_sunset_finish_ruling && key == "sunset-vista")
+            has_sunset_finish_ruling = std::any_of(std::begin(kUsfRulings), std::end(kUsfRulings), [&](const auto &r) {
+                return is_sunset_finish_ruling(r.content_id, r.revision) && pkg.at("revision") == r.revision
+                    && lev == r.lev_sha256;
+            });
+        const auto &history = reviews.at(key);
+        // Reviews added after the first catalog never affect markerless rooms.
+        if (std::none_of(history.begin(), history.end(), [](const J &row) { return row.size() == 2; })) continue;
+        if (std::none_of(history.begin(), history.end(), [&](const J &row) {
+                return row.size() == 2 && row[0] == lev && row[1] == pkg.at("revision");
+            })) has_unreviewed_track = true;
+    }
+    if (!has_unreviewed_track) return true;
+    const auto tracks = content_plan::table(p.at("tracks"), 160);
+    const auto entries = content_plan::table(p.at("entries"), 160);
+    read_finish_overrides(p);
+    const auto matches_export = [&] {
+        std::vector<int> ranks(ctr_win_logic.node_count, -1);
+        for (const auto &check : p.at("checks")) {
+            const bool lap = check.at("kind") == "lap";
+            if (!lap && check.at("kind") != "cup_leg") continue;
+            const int index = AP_WinLogicFindCheck(&ctr_win_logic, check.at("location").get<long>());
+            if (index < 0) continue;
+            int expected = kNoFinishRank;
+            for (const auto &route : check.at("routes")) {
+                int rank = lap ? finish_boost(*tracks.at(content_plan::text(check.at("owner"))), packages, o) : 0;
+                if (!route.at("leg_id").is_null())
+                    rank = std::max(rank, leg_boost(*entries.at(content_plan::text(route.at("entry_id"))),
+                                                   content_plan::text(route.at("leg_id")), !lap, tracks, packages, o));
+                expected = std::min(expected, rank);
+            }
+            const int actual = exported_finish_rank(ctr_win_logic.checks[index].rule, ranks);
+            if (actual < kNoFinishRank && expected != actual) return false;
+        }
+        return markerless_route_ranks_match();
+    };
+    if (matches_export()) return true;
+    if (!has_sunset_finish_ruling) return false;
+    // The pinned 1.2.0 package was playable before its free-finish ruling.
+    // Check its previous rules across the whole room, including cup routes,
+    // and keep the matching interpretation for the verifier's later sweep.
+    content_plan::state.pre_sunset_finish_ruling = true;
+    if (matches_export()) return true;
+    content_plan::state.pre_sunset_finish_ruling = false;
+    return false;
+}
+
 static int lock_of(const J &pad) { return pad.at("racer_lock").is_null() ? -1 : pad["racer_lock"].get<int>(); }
 
 static bool exported_mask_term(int root) {
@@ -206,12 +328,7 @@ static Model build() {
     using content_plan::state;
     const AP_VerifyOptions o = options();
     const J p = J::parse(state.canonical);
-    finish_floor_tracks.clear();
-    finish_free_tracks.clear();
-    if (p.contains("capability") && p["capability"].contains("finish_free"))
-        for (const auto &id : p["capability"]["finish_free"]) finish_free_tracks.insert(id.get<std::string>());
-    if (p.contains("capability") && p["capability"].contains("finish_floors"))
-        for (const auto &id : p["capability"]["finish_floors"]) finish_floor_tracks.insert(id.get<std::string>());
+    read_finish_overrides(p);
     Model m;
     m.epoch = content_plan::epoch;
     m.parse_revision = s_seedcfg_parse_revision;
@@ -797,6 +914,88 @@ struct Sweep {
         return ok && (!L.door || AP_VerifyTigerDoorWeapon(dense));
     }
 };
+
+static bool finish_route_open(const Sweep &s, const Route &route) {
+    if (route.region < 0) return false;
+    const Region &region = s.m.regions[route.region];
+    const bool driveable = region.lock < 0 || !s.o.character_unlocks || region.lock == s.o.starting_character
+        || s.count(AP_WL_UNLOCK_ITEM[region.lock]) > 0;
+    return driveable && std::all_of(region.gates.begin(), region.gates.end(), [&](int gate) { return s.eval(gate); })
+        && (route.stage < 0 || s.eval(route.stage))
+        && (!(route.mask || region.mask) || s.count(kMaskItem) > 0);
+}
+
+static void finish_gate_items(const Model &model, int gate, std::set<int64_t> &items) {
+    const Node &node = model.nodes[gate];
+    if (node.op == COUNT || node.op == SUM || node.op == DISTINCT)
+        items.insert(node.codes.begin(), node.codes.end());
+    for (int child : node.kids) finish_gate_items(model, child, items);
+}
+
+static bool markerless_route_ranks_match() {
+    // Test each alternative with the inventory reduced to its own gates.
+    // A rank change on an early route can disappear when every route is open.
+    const Model model = build();
+    Sweep probe(model);
+    constexpr int full = 65536;
+    for (auto item : model.items) probe.held[item] = full;
+    std::fill(probe.event.begin(), probe.event.end(), true);
+    AP_WinLogicEnv inventory{};
+    inventory.user = &probe;
+    inventory.item_count = [](void *user, long code) {
+        return std::max(0, static_cast<Sweep *>(user)->count(code) - AP_WinLogicStartCount(&ctr_win_logic, code));
+    };
+    inventory.bosses_won = [](void *) { return 6; };
+    inventory.collected = [](void *, long) { return 1; };
+    inventory.character_unlocks = probe.o.character_unlocks;
+    inventory.starting_character = probe.o.starting_character;
+    const auto &logic = ctr_win_logic;
+    std::vector<int> ranks(logic.node_count, -1);
+    for (const Loc &loc : model.locs) {
+        if ((loc.kind != LAP && loc.kind != LEG) || loc.routes.size() < 2) continue;
+        const int check_index = AP_WinLogicFindCheck(&logic, loc.code);
+        if (check_index < 0) continue;
+        const auto &check = logic.checks[check_index];
+        std::set<int64_t> gate_items;
+        for (const Route &route : loc.routes) {
+            if (route.region < 0) continue;
+            const auto &region = model.regions[route.region];
+            for (int gate : region.gates) finish_gate_items(model, gate, gate_items);
+            if (route.stage >= 0) finish_gate_items(model, route.stage, gate_items);
+            if (route.mask || region.mask) gate_items.insert(kMaskItem);
+            if (probe.o.character_unlocks && region.lock >= 0 && region.lock != probe.o.starting_character)
+                gate_items.insert(AP_WL_UNLOCK_ITEM[region.lock]);
+        }
+        std::vector<int64_t> order(gate_items.begin(), gate_items.end());
+        for (const Route &target : loc.routes) {
+            for (auto item : order) probe.held[item] = full;
+            if (!finish_route_open(probe, target)) continue;
+            for (bool reverse : {false, true}) {
+                if (reverse) std::reverse(order.begin(), order.end());
+                for (auto item : order) {
+                    int low = AP_WinLogicStartCount(&logic, item), high = full;
+                    while (low < high) {
+                        const int mid = low + (high - low) / 2;
+                        probe.held[item] = mid;
+                        if (finish_route_open(probe, target)) high = mid;
+                        else low = mid + 1;
+                    }
+                    probe.held[item] = low;
+                }
+                int expected = kNoFinishRank;
+                for (const Route &route : loc.routes)
+                    if (finish_route_open(probe, route)) expected = std::min(expected, route.need);
+                std::fill(ranks.begin(), ranks.end(), -1);
+                const int actual = std::max(exported_finish_rank(check.rule, ranks, &inventory),
+                    exported_finish_rank(logic.region_root[check.region], ranks, &inventory));
+                if (actual < kNoFinishRank && expected != actual) return false;
+                for (auto item : order) probe.held[item] = full;
+                if (reverse) std::reverse(order.begin(), order.end());
+            }
+        }
+    }
+    return true;
+}
 
 static int sweep(const Model &model, const ap_content_verify_io *io, ap_content_verify_result *out) {
     Sweep s(model);
