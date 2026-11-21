@@ -222,6 +222,7 @@ tools/test-solo-layout.c
 tools/test-menu-labels.c
 tools/test-menu-actions.py
 tools/test-solo-selection-production.py
+tools/test-hidden-patch-tracks-production.py
 tools/test-solo-publication-production.py
 tools/test-solo-descriptor-records-production.py
 tools/test-solo-toggle-wording-production.py

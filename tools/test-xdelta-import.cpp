@@ -49,6 +49,7 @@ extern "C" int XdeltaImportTest_InstallDescriptors(const XdeltaImportScan *scan,
                                                    const char *assets, int *kept, int *needsLaps, char *note,
                                                    size_t noteSize);
 extern "C" const char *XdeltaImportTest_KnownName(const char *levSha256);
+extern "C" void XdeltaImportTest_HideLev(const char *hash);
 extern "C" const char *XdeltaImportTest_CuratedName(const char *patchSha256, int bigfileIndex);
 extern "C" int XdeltaImport_TestOldCopyState(const XdeltaImportScan *scan, unsigned int item, const char *assets);
 extern "C" void XdeltaImportTest_AddCurated(const char *patchSha256, int bigfileIndex, const char *name);
@@ -56,7 +57,8 @@ extern "C" void XdeltaImportTest_AddCuratedFull(const char *patchSha256, int big
 extern "C" void XdeltaImportTest_ClearCurated();
 extern "C" const char *XdeltaImportTest_CuratedAuthor(const char *patchSha256, int bigfileIndex);
 extern "C" const char *XdeltaImportTest_CuratedKey(const char *patchSha256, int bigfileIndex);
-extern "C" void XdeltaImportTest_History(const char *assets, const char *sha, char *out, size_t size);
+extern "C" void XdeltaImportTest_History(const char *assets, const char *sha, char *out, size_t size,
+                                        const XdeltaImportSummary *summary = nullptr);
 extern "C" void XdeltaImportTest_PackLabel(const char *stem, char *out, size_t size);
 using Bytes = std::vector<unsigned char>;
 static int checks, failures;
@@ -696,7 +698,8 @@ int main()
         changed.bigfile.push_back(filler);                     /* 259 */
         CHECK(XdeltaImport_CutVrm(changed.bigfile[237].data(), changed.bigfile[237].size()) != changed.bigfile[237].size(),
               "fixture: VRM with trailing bytes cuts short");
-        ScanResult r = scan(write_file("Following.xdelta", encode(baseDisc, make_disc(changed))), discPath);
+        const std::string followingPatch = write_file("Following.xdelta", encode(baseDisc, make_disc(changed)));
+        ScanResult r = scan(followingPatch, discPath);
         CHECK(r.ok, "following-texture scan succeeds");
         if (r.ok)
         {
@@ -720,6 +723,24 @@ int main()
                   "following pairs are numbered after every ordinary pair");
             CHECK(last && last->offered && !std::strcmp(last->title, "Following track 6") && !std::strcmp(last->trackKey, "following-track-6"),
                   "a following pair after refused ones takes the next number");
+            if (normalized && last)
+            {
+                XdeltaImportTest_HideLev(normalized->levSha256);
+                ScanResult hidden = scan(followingPatch, discPath);
+                XdeltaImportTest_HideLev("");
+                CHECK(hidden.ok, "the following-texture scan with a hidden LEV succeeds");
+                if (hidden.ok)
+                {
+                    const auto *summary = XdeltaImport_Summary(hidden.scan);
+                    const auto *skip = item_for(summary, 230);
+                    const auto *next = item_for(summary, 257);
+                    CHECK(skip && !skip->offered && !std::strcmp(skip->reason, "This level was left unused in the adventure."),
+                          "a hidden following pair is skipped");
+                    CHECK(next && next->offered && !std::strcmp(next->pin, last->pin),
+                          "a later following pair keeps its package pin");
+                }
+                XdeltaImport_Free(&hidden.scan);
+            }
             const auto *failed = item_for(s, 242);
             CHECK(failed && !failed->offered && !std::strcmp(failed->title, "Following track 5") &&
                   !std::strncmp(failed->reason, "Files failed checks: ", 21),
@@ -1223,6 +1244,25 @@ int main()
         CHECK(t7 && !t7->offered && !std::strcmp(t7->reason, "Same track as Pack track 1"), "duplicate pair deduplicated");
         const XdeltaImportItem *t9 = item_for(s, 9);
         CHECK(t9 && t9->offered && !std::strcmp(t9->tags, "Race TT Arcade"), "grown entry offered; moved entries are not changes");
+        XdeltaImportTest_HideLev(sha_hex(cutLev).c_str());
+        ScanResult hidden = scan(patchPath, discPath);
+        XdeltaImportTest_HideLev("");
+        CHECK(hidden.ok, "scan succeeds with one hidden LEV");
+        if (hidden.ok)
+        {
+            const XdeltaImportSummary *hiddenSummary = XdeltaImport_Summary(hidden.scan);
+            for (int index : {1, 7})
+            {
+                const auto *item = item_for(hiddenSummary, index);
+                CHECK(item && !item->offered && !item->pin[0] &&
+                    !std::strcmp(item->reason, "This level was left unused in the adventure."),
+                    "the same LEV is skipped in either slot");
+            }
+            const auto *other = item_for(hiddenSummary, 9);
+            CHECK(other && t9 && other->offered && !std::strcmp(other->pin, t9->pin),
+                  "the next offered track keeps its original package pin");
+        }
+        XdeltaImport_Free(&hidden.scan);
         CHECK(!item_for(s, 11), "unchanged LEV after a moved entry is not offered");
         const XdeltaImportItem *code = line_with(s, "Game code (");
         CHECK(code && !std::strcmp(code->reason, "Code does not run in this client"), "code line");
@@ -2535,6 +2575,34 @@ int main()
             int pollState = 0;
             for (int i = 0; i < 2000 && (pollState = XdeltaImport_PollPatchStates(polled, CTR_XDELTA_FOLDER_MAX)) == 0; i++) usleep(5000);
             CHECK(pollState == 1 && polled[0].state == XDELTA_STATE_FAILED && polled[2].state == XDELTA_STATE_IMPORTED, "the worker reports the same states");
+            /* Previously installed slots can fall out of the offer list. Keep their
+               history, but do not count them as installed among the current offers. */
+            XdeltaImportSummary previous = *s;
+            const int retiredSlot = 4000;
+            previous.items[previous.count].bigfileIndex = retiredSlot;
+            previous.items[previous.count++].offered = 1;
+            const std::string recordPath = assets + "/tracks/import-record.json";
+            write_path(recordPath, Bytes{});
+            const int oldInstalls[] = {offered[0], retiredSlot};
+            XdeltaImport_RecordResult(assets.c_str(), "Pack.xdelta", &previous, oldInstalls, 2, "");
+            auto legacy = nlohmann::json::parse(read_file(recordPath));
+            legacy["patches"][0].erase("offered_slots");
+            const auto legacyText = legacy.dump();
+            write_path(recordPath, Bytes(legacyText.begin(), legacyText.end()));
+            XdeltaImportTest_History(assets.c_str(), s->patchSha256, note, sizeof note, s);
+            XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr);
+            CHECK(st[2].state == XDELTA_STATE_PARTLY && st[2].imported == 1 &&
+                  st[2].offered == (int)offered.size(), "a rescan updates the chooser before another install");
+            XdeltaImport_RecordResult(assets.c_str(), "Pack.xdelta", s, offered.data(), 1, "");
+            XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr);
+            CHECK(st[2].state == XDELTA_STATE_PARTLY && st[2].imported == 1 &&
+                  st[2].offered == (int)offered.size(), "an installed hidden slot cannot complete a partial import");
+            XdeltaImportTest_History(assets.c_str(), s->patchSha256, note, sizeof note);
+            CHECK(std::strstr(note, "Imported before: 1 of") != nullptr, "history counts the current offers");
+            auto historyBytes = read_file(recordPath);
+            const auto recorded = nlohmann::json::parse(historyBytes);
+            CHECK(recorded["patches"][0]["tracks"] == nlohmann::json({offered[0], retiredSlot}),
+                  "the hidden slot stays in installation history");
             /* A corrupt record is ignored, not fatal. */
             write_path(assets + "/tracks/import-record.json", Bytes(20, '{'));
             CHECK(XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr) && st[2].state == XDELTA_STATE_NEW, "a damaged record reads as empty");

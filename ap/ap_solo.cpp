@@ -6,7 +6,9 @@
 // SDL_Process handle, never by name or PID lookup.
 #include "ap_solo.h"
 #include "ap_solo_logic.hpp"
+#include "ap_solo_track_visibility.hpp"
 #include "ap_net.h"
+#include "../include/platform/native_custom_track_visibility.h"
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_package.h>
 #include <platform/native_custom_track_library.h>
@@ -202,7 +204,7 @@ struct Child
 
 	bool running() const { return proc != nullptr && !exited; }
 
-	bool start(const std::vector<std::string> &args, const std::string &logPath)
+	bool start(const std::vector<std::string> &args, const std::string &logPath, bool filterTracks = false)
 	{
 		std::vector<const char *> argv;
 		argv.push_back(nullptr); // interpreter, set below
@@ -212,7 +214,19 @@ struct Child
 		for (const char *f : flags)
 			argv.push_back(f);
 		std::string script = ClientPath(kScript);
+		std::string hiddenHashes;
+		if (filterTracks)
+		{
+			for (const char *hash : kCustomTrackHiddenLevs)
+			{
+				if (!hiddenHashes.empty()) hiddenHashes += ',';
+				hiddenHashes += hash;
+			}
+			argv.push_back("-c");
+			argv.push_back(kSoloTrackVisibility);
+		}
 		argv.push_back(script.c_str());
+		if (filterTracks) argv.push_back(hiddenHashes.c_str());
 		for (const auto &a : args)
 			argv.push_back(a.c_str());
 		argv.push_back(nullptr);
@@ -461,6 +475,16 @@ void JobFail(const std::string &kind, const std::string &message, const std::str
 
 void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows); // below, by its writer
 
+bool HiddenTrackDescriptor(const nlohmann::json &descriptor)
+{
+	const auto files = descriptor.find("files");
+	if (files == descriptor.end() || !files->is_array()) return false;
+	for (const auto &pin : *files)
+		if (AP_SoloJsonString(pin, "role") == "lev")
+			return CustomTrack_IsHiddenLev(AP_SoloJsonString(pin, "sha256").c_str());
+	return false;
+}
+
 // A new track list keeps the picks of the tracks still in it. The first list of a
 // start begins as the YAML has each track.
 void ParseTracks(const nlohmann::json &r)
@@ -583,7 +607,8 @@ bool JobStart(JobKind kind, const std::vector<std::string> &args, uint64_t limit
 	g_job.resultRoom.clear();
 	g_job.result = nlohmann::json();
 	g_job.limitMs = limitMs;
-	if (!g_job.child.start(args, SoloPath("runtime.log")))
+	const bool filterTracks = kind == JOB_TRACKS || kind == JOB_GENERATE || kind == JOB_SAVE_ROOM_YAML;
+	if (!g_job.child.start(args, SoloPath("runtime.log"), filterTracks))
 	{
 		JobFail("start", "", "");
 		return true; // started and failed: the menu shows the error
@@ -1157,7 +1182,7 @@ void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows)
 	{
 		const nlohmann::json d = nlohmann::json::parse(ReadSmallPlainFile(dir / fs::u8path(name), kDescriptorMax),
 		                                               nullptr, false);
-		if (!AP_SoloNeedsLapsDescriptor(d, name))
+		if (!AP_SoloNeedsLapsDescriptor(d, name) || HiddenTrackDescriptor(d))
 			continue;
 		APSoloTrackInfo info;
 		std::memset(&info, 0, sizeof info);
@@ -1242,6 +1267,8 @@ bool MayReplace(const nlohmann::json &kept, const std::string &key, const std::s
 		return true;
 	if (!scope.live)
 		return false;
+	if (HiddenTrackDescriptor(kept))
+		return true; // Only the discovery entry changes. The pinned package remains installed.
 	const nlohmann::json files = kept.value("files", nlohmann::json());
 	if (scope.live->count(PinSignature(revision, files)))
 		return false;
@@ -1367,7 +1394,8 @@ bool RecordDescriptor(int kind, const char *contentId, const char *revision, con
 			              "reinstall the copy you want to play",
 			              std::string(folder) + " holds other file pins of a copy that is still installed");
 		Log(std::string("replacing ") + folder + "/" + name + ": " +
-		    (scope.fresh ? "a copy with other files was just installed" : "its files are no longer installed"));
+		    (scope.fresh ? "a copy with other files was just installed" :
+		     HiddenTrackDescriptor(*d) ? "the previous copy is hidden" : "its files are no longer installed"));
 	}
 	// A replaced entry for other files goes first, so a file that cannot be
 	// removed (in use, antivirus) leaves one state, not both.
@@ -1517,6 +1545,7 @@ void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 		}
 		return;
 	}
+	if (CustomTrack_IsHiddenLev(entry->local.levSha256)) return;
 	char key[65], revision[65], json[16384], error[256];
 	const std::string knownKey = StoreDescriptorKey(entry->local, entry->manifest.title);
 	const int kind = CustomPackage_StoreDescriptor(result.assets.c_str(), entry->pin,
