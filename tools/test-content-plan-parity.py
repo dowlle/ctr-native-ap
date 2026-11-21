@@ -2771,7 +2771,7 @@ for pin, weapon, wumpa in (
                    revision="1.0.0", display_name="Coco Park 2025", laps=3)
     package["files"][0]["sha256"] = pin
     package["capabilities"].update(weapon_crates=weapon, fruit_crates=wumpa, loose_fruit=0)
-    options = royal_options(itemboxsanity=50, wumpasanity="both")
+    options = royal_options(itemboxsanity=50, wumpasanity="both", item_box_count=0)
     later_revision(options, "ab" * 32)
     options["content_pool"]["tracks"]["custom"].append(package)
     options["content_pool"]["required_entries"].append("custom/coco-park-2025/1.0.0")
