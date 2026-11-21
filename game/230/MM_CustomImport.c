@@ -38,8 +38,7 @@ static int MM_CustomImport_KeepSoloDescriptors(void)
     for (i = 0; i < count; i++)
         if (XdeltaImport_InstalledDescriptor(i, contentId, revision, json, sizeof json, &needsLaps))
         {
-            int recorded = needsLaps ? AP_Solo_RecordTrackNeedsLaps(contentId, revision, json)
-                                     : AP_Solo_RecordTrackDescriptor(contentId, revision, json);
+            int recorded = AP_Solo_RecordImportedTrack(contentId, revision, json, needsLaps);
             ok &= recorded;
             if (recorded && keptCount < CTR_XDELTA_ITEM_MAX) snprintf(kept[keptCount++], 65, "%s", contentId);
         }
@@ -540,6 +539,7 @@ static void MM_CustomImport_Proc(uint32_t *ot, struct GamepadBuffer *pad)
                                                 item->nameSource == XDELTA_NAME_DESCRIPTOR ? "Name from the pack" :
                                                 item->nameSource == XDELTA_NAME_KNOWN ? "Name of a known track" :
                                                 item->nameSource == XDELTA_NAME_TESTER ? "Name from tester feedback" :
+                                                item->nameSource == XDELTA_NAME_REGISTRY ? "Name from the track registry" :
                                                 item->nameSource == XDELTA_NAME_EDITED ? "Name typed by you" :
                                                 "Placeholder name: SELECT to rename") : item->reason, 305, layout.reasonY, 176,
                                layout.reasonLines, WHITE, ot);

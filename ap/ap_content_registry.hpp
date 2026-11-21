@@ -8910,6 +8910,7 @@ static const char kContentRegistryJSON[] = R"CTRREG(
     "rulings": [
       {
         "content_id": "tv-world",
+        "lev_sha256": "e3d765e824a2de96d06d1f34951b6d2ab51c027fb3353c62d8e7086b8ce1e33a",
         "kind": "wumpa_crate",
         "ordinal": 3,
         "hard_rank": 2,
@@ -8918,6 +8919,7 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       },
       {
         "content_id": "tv-world",
+        "lev_sha256": "e3d765e824a2de96d06d1f34951b6d2ab51c027fb3353c62d8e7086b8ce1e33a",
         "kind": "wumpa_crate",
         "ordinal": 4,
         "hard_rank": 2,
@@ -8926,6 +8928,7 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       },
       {
         "content_id": "tv-world",
+        "lev_sha256": "e3d765e824a2de96d06d1f34951b6d2ab51c027fb3353c62d8e7086b8ce1e33a",
         "kind": "wumpa_crate",
         "ordinal": 5,
         "hard_rank": 2,
@@ -8934,6 +8937,7 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       },
       {
         "content_id": "tv-world",
+        "lev_sha256": "e3d765e824a2de96d06d1f34951b6d2ab51c027fb3353c62d8e7086b8ce1e33a",
         "kind": "wumpa_crate",
         "ordinal": 6,
         "hard_rank": 2,

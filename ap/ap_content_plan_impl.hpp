@@ -12,6 +12,7 @@
 #include "ap_content_plan.h"
 #include "ap_content_registry.hpp"
 #include "ap_named_blocks.h"
+#include "ap_track_key_aliases.hpp"
 #include "ap_box_spot_logic.h"
 #include "ap_arena_content.h"
 #include "ap_wumpa_shop.h"
@@ -331,6 +332,12 @@ static const std::map<std::string, NamedBlock> &named_block_table(const J &regis
     }();
     need(!table.empty(), "compiled named-block table is malformed");
     return table;
+}
+
+static const char *canonical_track_key(const char *key) {
+    for (const auto &alias : kTrackKeyAliases)
+        if (std::strcmp(key, alias[0]) == 0) return alias[1];
+    return key;
 }
 // The five surface items (35010021..25) and the three relic items, Sapphire,
 // Gold and Platinum (one generator row 2).
@@ -1369,7 +1376,7 @@ static void validate(const J &p, State &out) {
                 lt.title = text(track["room_title"], false);
                 need(ap_room_title_ok(lt.title.c_str(), lt.title.size()), "invalid room title");
             }
-            const auto owned = named_table.find(record.content_id);
+            const auto owned = named_table.find(canonical_track_key(record.content_id));
             if (named) {
                 leg.named_block = number(track["named_block"], 0, AP_NAMED_BLOCK_LIMIT - 1);
                 need(owned != named_table.end() && leg.named_block == owned->second.block &&
@@ -1703,9 +1710,8 @@ static void validate(const J &p, State &out) {
                 need(ap_room_title_ok(room.c_str(), room.size()), "invalid room title");
                 check_title = room;
             }
-            // The saved room selects its ID family. A named block retains its
-            // frozen ownership even after its key becomes available for new rooms.
-            const auto owned = named_table.find(record.content_id);
+            // Keep the room's ID family and resolve named ownership through aliases.
+            const auto owned = named_table.find(canonical_track_key(record.content_id));
             if (named) {
                 dest.named_block = number(track["named_block"], 0, AP_NAMED_BLOCK_LIMIT - 1);
                 need(owned != named_table.end() && dest.named_block == owned->second.block &&

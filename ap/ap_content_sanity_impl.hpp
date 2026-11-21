@@ -92,18 +92,24 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
         const std::string tid = text(row["track_id"]);
         need(wanted.erase(tid) == 1, "unknown or duplicate sanity track");
         const J &track = *tracks.at(tid), &inv = *inventory(track);
+        need(row["lev_sha256"] == inv["lev_sha256"] && row["counts"] == inv["counts"], "sanity revision/count mismatch");
+        std::string raw_key, canonical;
+        if (track["origin"] == "custom") {
+            raw_key = packages.at(track["package_id"])->at("content_id").get<std::string>();
+            canonical = canonical_track_key(raw_key.c_str());
+        }
         // A4-52, project ruling 2026-11-11: use the same data-driven eligibility
-        // filter as reviewed shortcut objects. Zero location slots never show or send checks.
+        // filter as the apworld. Older rooms that applied a raw-key ruling
+        // persisted its settings, so keep their original selection.
         auto ruled_out = [&](const char *kind, int ordinal) {
-            if (track["origin"] != "custom") return false;
-            const J &pkg = *packages.at(track["package_id"]);
+            if (canonical.empty()) return false;
             for (const auto &rule : registry.at("object_rulings").at("rulings")) {
-                if (rule["content_id"] == pkg["content_id"] && rule["kind"] == kind && rule["ordinal"] == ordinal)
+                if (rule["content_id"] == canonical && rule["kind"] == kind && rule["ordinal"] == ordinal
+                    && (rule["lev_sha256"] == inv["lev_sha256"] || (context && rule["content_id"] == raw_key)))
                     return difficulty < 2 && !blue;
             }
             return false;
         };
-        need(row["lev_sha256"] == inv["lev_sha256"] && row["counts"] == inv["counts"], "sanity revision/count mismatch");
         ctr_content_sanity dest{};
         copy(dest.track_id, row["track_id"]); copy(dest.lev_sha256, row["lev_sha256"]);
         std::set<int> excluded_by_kind[3];

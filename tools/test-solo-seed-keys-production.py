@@ -34,8 +34,10 @@ extra += between("// PinSignature of a verified store package", "// Writes one c
 extra += r'''
 extern "C" int ap_track_registry_lookup(const char *, uint32_t, const char *, uint32_t,
                                         ApTrackRegistryMatch *) { return AP_TRACK_REGISTRY_NO_INDEX; }
+extern "C" void ap_track_registry_prepare_identity(const char *, int (*)(const void *), const void *) {}
 extern "C" int ap_track_registry_status(int *, char *, int) { return AP_TRACK_REGISTRY_UNAVAILABLE; }
 extern "C" int ap_track_registry_refresh(const char *) { return 0; }
+std::string ap_track_registry_canonical_key(const std::string &key) { return key; }
 '''
 
 body = helper["tests"].split("static int install_seed(")[0]
