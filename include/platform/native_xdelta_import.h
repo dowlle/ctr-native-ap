@@ -28,6 +28,7 @@ extern "C" {
 #define XDELTA_NAME_KNOWN 2      /* The table of tracks whose names were read from pack code. */
 #define XDELTA_NAME_EDITED 3     /* The player typed it at import. */
 #define XDELTA_NAME_TESTER 4     /* The curated table (patch hash and slot), from tester feedback. */
+#define XDELTA_NAME_REGISTRY 5   /* The canonical registry identity. */
 
 /* What installing an item does to an older copy of the same patch track that
    still has alpha1's generic "slot" title (XdeltaImportItem.oldCopy, A3-20). */

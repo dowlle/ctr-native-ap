@@ -848,6 +848,25 @@ int main(void)
 		expect_int(CustomTrackManager_LocateContentFiles(root, "open-key", "Open\nTrack", "2.1", s_fixtureLevSha,
 		           (unsigned long)s_fixtureLevLen, vrmSha, 3, &open), CTR_CT_MANAGER_READY, "an unprintable title is not echoed");
 		expect_int(strchr(open.detail, '\n') == NULL, 1, "status detail stays one line");
+		{
+			char aliasDir[2048], aliasOriginal[2048], aliasLev[2048], aliasVrm[2048];
+			if (!Manager_Join(aliasDir, sizeof aliasDir, tracks, "n-gage-assembly-lane-2.1") ||
+			    !Manager_Join(aliasOriginal, sizeof aliasOriginal, aliasDir, "original") ||
+			    !Manager_Join(aliasLev, sizeof aliasLev, aliasOriginal, "lane.lev") ||
+			    !Manager_Join(aliasVrm, sizeof aliasVrm, aliasOriginal, "lane.vrm") ||
+			    !Manager_CreateDirectory(aliasDir) || !Manager_CreateDirectory(aliasOriginal))
+				return 2;
+			write_bytes(aliasLev, s_fixtureLev, s_fixtureLevLen);
+			write_file(aliasVrm, "def");
+			expect_int(CustomTrackManager_LocateContentFiles(root, "assembly-lane-n-gage", "Assembly Lane", "2.1",
+			           s_fixtureLevSha, (unsigned long)s_fixtureLevLen, vrmSha, 3, &open),
+			           CTR_CT_MANAGER_READY, "versioned alias resolves both pinned files");
+			expect_int(strcmp(open.levPath, aliasLev) == 0 && strcmp(open.vrmPath, aliasVrm) == 0,
+			           1, "versioned alias uses the whole pair in one folder");
+			expect_int(CustomTrackManager_LocateContentFiles(root, "assembly-lane-n-gage", "Assembly Lane", "2.2",
+			           s_fixtureLevSha, (unsigned long)s_fixtureLevLen, vrmSha, 3, &open),
+			           CTR_CT_MANAGER_NOT_INSTALLED, "a different version folder is not used");
+		}
 		// A4-95: a room made before the track was named "Tizi Madness" still says "CocoTeamRacing track 3".
 		// The files are found by the folder key and the pinned hashes, so either title resolves the same
 		// pair, and the title is only shown.

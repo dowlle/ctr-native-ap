@@ -12,6 +12,7 @@
 #include "ap_content_plan.h"
 #include "ap_content_registry.hpp"
 #include "ap_named_blocks.h"
+#include "ap_content_object_rulings.hpp"
 #include "ap_box_spot_logic.h"
 #include "ap_arena_content.h"
 #include "ap_wumpa_shop.h"
@@ -341,6 +342,7 @@ static const std::map<std::string, NamedBlock> &named_block_table(const J &regis
     need(!table.empty(), "compiled named-block table is malformed");
     return table;
 }
+
 // The five surface items (35010021..25) and the three relic items, Sapphire,
 // Gold and Platinum (one generator row 2).
 static const int64_t kSurfaceFirst = 35010021, kSurfaceLast = 35010025;
@@ -876,7 +878,12 @@ static bool repeatable_pickups(const J &p) {
     return has_feature(p, "repeatable_pickups_v1");
 }
 static constexpr char kCarriedRulings[] = "carried_track_rulings_v1";
-static constexpr int kTrackRulingVersion = 3;
+static constexpr int kTrackRulingVersion = 4;
+// These exact patch copies share the registry key, but keep their own pickups.
+static constexpr const char *kCocoPatchPins[] = {
+    "af764b90d10fa952aac4502c89c5f0466dd4afdbaee7c3a65279624dfeb18aa2", // St. Patrick 55
+    "65ab90d0024aae57ac09f23932f7bf46e5b6b4640a4fb5d16a214a36063a15a8", // 30th Anniversary 169
+};
 static constexpr char kCountryPickupPin[] = "9fa73436daaf91434ede1d6fb036a8e6dff225c55533cc0be5723d229b5e53bd";
 static constexpr char kToastyPickupPin[] = "2b18c6305d3cfe591e979eabe42e7815fe475479d49f59d5b7b50b06f701ac5d";
 static constexpr char kRoyalPickupPin[] = "fca9e96a57c850e68e0226382645b4d6df5b4e7ebeb61459269ec2427ffab96b";
@@ -958,7 +965,12 @@ static void read_track_ruling_sources(const J &sources, const Table &packages, S
         const auto &refs = row.at("reviews");
         need(refs.is_array() && refs.size() <= 128, "invalid ruling review history");
         J known = J::array();
-        if (reviews.contains(content))
+        const bool isolated = out.track_ruling_version >= 4 && content == "coco-park-2025" &&
+            std::any_of(pkg.at("files").begin(), pkg.at("files").end(), [](const J &file) {
+                return file.at("role") == "lev" && (file.at("sha256") == kCocoPatchPins[0] ||
+                                                    file.at("sha256") == kCocoPatchPins[1]);
+            });
+        if (!isolated && reviews.contains(content))
             for (const auto &review : reviews.at(content))
                 if (review.size() == 2 || review.at(2).get<int>() <= out.track_ruling_version)
                     known.push_back({{"revision", review[1]}, {"lev_sha256", review[0]}});
@@ -1479,7 +1491,7 @@ static void validate(const J &p, State &out) {
                 lt.title = text(track["room_title"], false);
                 need(ap_room_title_ok(lt.title.c_str(), lt.title.size()), "invalid room title");
             }
-            const auto owned = named_table.find(record.content_id);
+            const auto owned = named_table.find(canonical_track_key(record.content_id));
             if (named) {
                 leg.named_block = number(track["named_block"], 0, AP_NAMED_BLOCK_LIMIT - 1);
                 need(owned != named_table.end() && leg.named_block == owned->second.block &&
@@ -1813,9 +1825,8 @@ static void validate(const J &p, State &out) {
                 need(ap_room_title_ok(room.c_str(), room.size()), "invalid room title");
                 check_title = room;
             }
-            // The saved room selects its ID family. A named block retains its
-            // frozen ownership even after its key becomes available for new rooms.
-            const auto owned = named_table.find(record.content_id);
+            // Keep the room's ID family and resolve named ownership through aliases.
+            const auto owned = named_table.find(canonical_track_key(record.content_id));
             if (named) {
                 dest.named_block = number(track["named_block"], 0, AP_NAMED_BLOCK_LIMIT - 1);
                 need(owned != named_table.end() && dest.named_block == owned->second.block &&

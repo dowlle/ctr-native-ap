@@ -99,37 +99,22 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
         const std::string tid = text(row["track_id"]);
         need(wanted.erase(tid) == 1, "unknown or duplicate sanity track");
         const J &track = *tracks.at(tid), &inv = *inventory(track);
-        const J *reviewed_counts = track["origin"] == "custom"
-            ? reviewed_pickup_counts(out, *packages.at(track["package_id"]), row["lev_sha256"]) : nullptr;
-        // A4-52, project ruling 2026-11-11: use the same data-driven eligibility
-        // filter as reviewed shortcut objects. Zero location slots never show or send checks.
-        auto ruled_out = [&](const char *kind, int ordinal) {
-            if (track["origin"] != "custom") return false;
-            const J &pkg = *packages.at(track["package_id"]);
-            const auto &rules = registry.at("object_rulings").at("rulings");
-            const auto matches = [&](const J &rule) {
-                return rule["content_id"] == pkg["content_id"] && rule["kind"] == kind && rule["ordinal"] == ordinal;
-            };
-            const std::string lev = row["lev_sha256"];
-            if (!(difficulty < 2 && !blue)) return false;
-            const auto source = scoped_ruling(out, pkg, lev, [&](const std::string &revision, const std::string &pin) {
-                return std::any_of(rules.begin(), rules.end(), [&](const J &rule) {
-                    return matches(rule) && rule.contains("revision") && rule.value("since", 65536) <= out.track_ruling_version
-                        && rule["revision"] == revision && rule["lev_sha256"] == pin;
-                });
-            });
-            bool legacy = false;
-            const J *latest = nullptr;
-            for (const auto &rule : rules) if (matches(rule)) {
-                if (!rule.contains("revision")) legacy = rule.at("hard_rank") != 0;
-                else if (rule["revision"] == source.first && rule["lev_sha256"] == source.second
-                    && rule.value("since", 65536) <= out.track_ruling_version
-                    && (!latest || rule.at("since").get<int>() > latest->at("since").get<int>()))
-                    latest = &rule;
-            }
-            return latest ? latest->at("hard_rank") != 0 : legacy;
-        };
         need(row["lev_sha256"] == inv["lev_sha256"] && row["counts"] == inv["counts"], "sanity revision/count mismatch");
+        const J *pkg = track["origin"] == "custom" ? packages.at(track["package_id"]) : nullptr;
+        const std::string lev = row["lev_sha256"];
+        const J *reviewed_counts = pkg ? reviewed_pickup_counts(out, *pkg, lev) : nullptr;
+        const J *history = pkg ? inherited_ruling_history(out, *pkg, lev) : nullptr;
+        const std::string raw_key = pkg ? text(pkg->at("content_id")) : std::string{};
+        // A4-52, project ruling 2026-11-11: use the same data-driven eligibility
+        // filter as the apworld. Older rooms that applied a raw-key ruling
+        // persisted its settings, so keep their original selection.
+        auto ruled_out = [&](const char *kind, int ordinal) {
+            if (!pkg || difficulty >= 2 || blue) return false;
+            const auto &rules = registry.at("object_rulings").at("rulings");
+            const J *row = object_ruling(rules, raw_key, kind, ordinal, pkg->at("revision"), lev,
+                                         history, out.track_ruling_version, context);
+            return row && row->at("hard_rank") != 0;
+        };
         ctr_content_sanity dest{};
         copy(dest.track_id, row["track_id"]); copy(dest.lev_sha256, row["lev_sha256"]);
         std::set<int> excluded_by_kind[3];

@@ -194,6 +194,9 @@ int AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, c
    An entry for the same track key and version in solo/tracks stays when it
    pins the same files (its laps were picked before); conflicting pins fail. */
 int AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *revision, const char *json);
+/* Explicit import selects the verified copy for that key and revision in
+   future Play Solo rooms. Previously installed packages keep their pins. */
+int AP_Solo_RecordImportedTrack(const char *contentId, const char *revision, const char *json, int needsLaps);
 /* The importer replaced an old copy of a track (A3-20): drop the descriptor
    files its track key used, keeping the laps the player picked on the key of
    the copy that took its place (under its own revision). 1 when nothing is left to retire. */

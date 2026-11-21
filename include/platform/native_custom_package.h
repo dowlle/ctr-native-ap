@@ -153,6 +153,7 @@ struct CustomPackageStoreEntry
     char pin[65];
     int verified;
     struct CustomPackageManifest manifest; /* Zero on refusal, not guessed from directory name. */
+    char displayTitle[641]; /* Optional corrected label, outside the pinned manifest. */
     char error[257];
     struct CustomPackageLocalInfo local;
 };

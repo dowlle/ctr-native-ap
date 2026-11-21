@@ -6,7 +6,9 @@
 // SDL_Process handle, never by name or PID lookup.
 #include "ap_solo.h"
 #include "ap_solo_logic.hpp"
+#include "ap_solo_track_visibility.hpp"
 #include "ap_net.h"
+#include "../include/platform/native_custom_track_visibility.h"
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_package.h>
 #include <platform/native_custom_track_library.h>
@@ -202,7 +204,7 @@ struct Child
 
 	bool running() const { return proc != nullptr && !exited; }
 
-	bool start(const std::vector<std::string> &args, const std::string &logPath)
+	bool start(const std::vector<std::string> &args, const std::string &logPath, bool filterTracks = false)
 	{
 		std::vector<const char *> argv;
 		argv.push_back(nullptr); // interpreter, set below
@@ -212,7 +214,19 @@ struct Child
 		for (const char *f : flags)
 			argv.push_back(f);
 		std::string script = ClientPath(kScript);
+		std::string hiddenHashes;
+		if (filterTracks)
+		{
+			for (const char *hash : kCustomTrackHiddenLevs)
+			{
+				if (!hiddenHashes.empty()) hiddenHashes += ',';
+				hiddenHashes += hash;
+			}
+			argv.push_back("-c");
+			argv.push_back(kSoloTrackVisibility);
+		}
 		argv.push_back(script.c_str());
+		if (filterTracks) argv.push_back(hiddenHashes.c_str());
 		for (const auto &a : args)
 			argv.push_back(a.c_str());
 		argv.push_back(nullptr);
@@ -461,6 +475,16 @@ void JobFail(const std::string &kind, const std::string &message, const std::str
 
 void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows); // below, by its writer
 
+bool HiddenTrackDescriptor(const nlohmann::json &descriptor)
+{
+	const auto files = descriptor.find("files");
+	if (files == descriptor.end() || !files->is_array()) return false;
+	for (const auto &pin : *files)
+		if (AP_SoloJsonString(pin, "role") == "lev")
+			return CustomTrack_IsHiddenLev(AP_SoloJsonString(pin, "sha256").c_str());
+	return false;
+}
+
 // A new track list keeps the picks of the tracks still in it. The first list of a
 // start begins as the YAML has each track.
 void ParseTracks(const nlohmann::json &r)
@@ -583,7 +607,8 @@ bool JobStart(JobKind kind, const std::vector<std::string> &args, uint64_t limit
 	g_job.resultRoom.clear();
 	g_job.result = nlohmann::json();
 	g_job.limitMs = limitMs;
-	if (!g_job.child.start(args, SoloPath("runtime.log")))
+	const bool filterTracks = kind == JOB_TRACKS || kind == JOB_GENERATE || kind == JOB_SAVE_ROOM_YAML;
+	if (!g_job.child.start(args, SoloPath("runtime.log"), filterTracks))
 	{
 		JobFail("start", "", "");
 		return true; // started and failed: the menu shows the error
@@ -1157,7 +1182,7 @@ void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows)
 	{
 		const nlohmann::json d = nlohmann::json::parse(ReadSmallPlainFile(dir / fs::u8path(name), kDescriptorMax),
 		                                               nullptr, false);
-		if (!AP_SoloNeedsLapsDescriptor(d, name))
+		if (!AP_SoloNeedsLapsDescriptor(d, name) || HiddenTrackDescriptor(d))
 			continue;
 		APSoloTrackInfo info;
 		std::memset(&info, 0, sizeof info);
@@ -1238,10 +1263,12 @@ struct DescriptorScope
 bool MayReplace(const nlohmann::json &kept, const std::string &key, const std::string &revision,
                 const DescriptorScope &scope)
 {
-	if (!scope.live)
-		return false;
 	if (scope.fresh)
 		return true;
+	if (!scope.live)
+		return false;
+	if (HiddenTrackDescriptor(kept))
+		return true; // Only the discovery entry changes. The pinned package remains installed.
 	const nlohmann::json files = kept.value("files", nlohmann::json());
 	if (scope.live->count(PinSignature(revision, files)))
 		return false;
@@ -1268,11 +1295,10 @@ bool RemoveDescriptorFile(const fs::path &target, std::string &detail)
 }
 
 // Removes the solo/tracks and solo/needs-laps files of a track key that an
-// older import of the same package (same uuid) used, once a newer install of
-// that package lists the track under `keeperKey`. A file of a different
-// package that happens to use the key is left alone. Laps the player picked
-// for the old key move to the new one when it still waits for its laps and
-// pins the same files.
+// verified old package used, once the active copy lists the track under
+// `keeperKey`. A descriptor owned by an unrelated package is left alone.
+// Laps move to the active descriptor when it still needs them and its file
+// pins match.
 bool RetireDescriptor(const std::string &key, const std::string &revision, const std::string &uuid,
                       const std::string &keeperKey, std::string &why, bool strict = false,
                       const std::string &keeperRevision = std::string())
@@ -1311,7 +1337,7 @@ bool RetireDescriptor(const std::string &key, const std::string &revision, const
 			}
 		}
 		if (RemoveDescriptorFile(target, detail))
-			Log(std::string("retired solo/") + folder + "/" + name + ": a newer install of the same package lists the track under another key");
+			Log(std::string("retired solo/") + folder + "/" + name + ": the active copy lists the track under another key");
 		else
 		{
 			Log(std::string("could not retire solo/") + folder + "/" + name + ": " + detail);
@@ -1368,7 +1394,8 @@ bool RecordDescriptor(int kind, const char *contentId, const char *revision, con
 			              "reinstall the copy you want to play",
 			              std::string(folder) + " holds other file pins of a copy that is still installed");
 		Log(std::string("replacing ") + folder + "/" + name + ": " +
-		    (scope.fresh ? "a copy with other files was just installed" : "its files are no longer installed"));
+		    (scope.fresh ? "a copy with other files was just installed" :
+		     HiddenTrackDescriptor(*d) ? "the previous copy is hidden" : "its files are no longer installed"));
 	}
 	// A replaced entry for other files goes first, so a file that cannot be
 	// removed (in use, antivirus) leaves one state, not both.
@@ -1411,6 +1438,19 @@ extern "C" int AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *r
 {
 	std::string why;
 	return RecordDescriptor(2, contentId, revision, json, DescriptorScope(), why) ? 1 : 0;
+}
+
+extern "C" int AP_Solo_RecordImportedTrack(const char *contentId, const char *revision,
+                                           const char *json, int needsLaps)
+{
+	DescriptorScope scope;
+	scope.fresh = true;
+	std::string why;
+	if (!RecordDescriptor(needsLaps ? 2 : 1, contentId, revision, json, scope, why))
+		return 0;
+	if (StorePublicationBusy())
+		AP_Solo_PublishInstalledStoreStart();
+	return 1;
 }
 
 // The importer replaced an old copy of a track (A3-20): its Play Solo
@@ -1505,6 +1545,7 @@ void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 		}
 		return;
 	}
+	if (CustomTrack_IsHiddenLev(entry->local.levSha256)) return;
 	char key[65], revision[65], json[16384], error[256];
 	const std::string knownKey = StoreDescriptorKey(entry->local, entry->manifest.title);
 	const int kind = CustomPackage_StoreDescriptor(result.assets.c_str(), entry->pin,
@@ -1521,7 +1562,8 @@ void PublishStoreEntry(const CustomPackageStoreEntry *entry, void *opaque)
 		}
 	}
 	else
-		result.descriptors.push_back({kind, key, revision, json, entry->manifest.title, entry->pin});
+		result.descriptors.push_back({kind, key, revision, json,
+			entry->displayTitle[0] ? entry->displayTitle : entry->manifest.title, entry->pin});
 }
 
 std::string StoreDescriptorKey(const CustomPackageLocalInfo &local, const char *title)
@@ -1538,13 +1580,9 @@ std::string StoreDescriptorKey(const CustomPackageLocalInfo &local, const char *
 	return {};
 }
 
-// Two installed packages can resolve to one Play Solo entry (same track key
-// and version) with different files: a track reinstalled after its files
-// changed without a new version, or two copies whose titles fold to the same
-// key. Only one can own solo/tracks/<key>__<version>.json: the copy that owns
-// it now while it is still installed, otherwise the newest install. The others
-// stay installed, so seeds that pin them still load; Play Solo leaves them out
-// and the log says which and why.
+// One Play Solo entry per canonical key and declared version. Keep the most
+// recently published owner while it is installed, otherwise the newest
+// install. Other copies stay in the store for the rooms that pin them.
 void KeepOneCopyPerEntry(StorePublication &result)
 {
 	using Descriptor = StorePublication::Descriptor;
@@ -1559,6 +1597,24 @@ void KeepOneCopyPerEntry(StorePublication &result)
 		std::error_code ec;
 		const auto t = fs::last_write_time(fs::u8path(result.assets) / "tracks/packages" / d.pin / "manifest.json", ec);
 		return ec ? fs::file_time_type::min() : t;
+	};
+	std::vector<std::string> entryNames;
+	for (const Descriptor &d : all)
+		entryNames.push_back(AP_SoloDescriptorFileName(ap_track_registry_canonical_key(d.key), d.revision));
+	auto descriptorTime = [&](const Descriptor &d) {
+		auto newest = fs::file_time_type::min();
+		const auto name = AP_SoloDescriptorFileName(d.key, d.revision);
+		for (const char *folder : {"tracks", "needs-laps"})
+		{
+			const fs::path path = fs::u8path(SoloPath(folder)) / fs::u8path(name);
+			if (pins(ReadSmallPlainFile(path, kDescriptorMax)) != files(d))
+				continue;
+			std::error_code ec;
+			const auto time = fs::last_write_time(path, ec);
+			if (!ec && time > newest)
+				newest = time;
+		}
+		return newest;
 	};
 	// One track imported again under another name has one package uuid and
 	// revision but two packages and, when the name sets the key, two keys. Only
@@ -1587,46 +1643,55 @@ void KeepOneCopyPerEntry(StorePublication &result)
 				                   all[into[i]].pin, all[into[i]].key});
 		}
 	}
+	std::set<std::string> grouped;
 	for (size_t i = 0; i < all.size(); i++)
 	{
-		if (skip[i])
+		const std::string &name = entryNames[i];
+		if (skip[i] || name.empty() || !grouped.insert(name).second)
 			continue;
-		const std::string name = AP_SoloDescriptorFileName(all[i].key, all[i].revision);
 		std::vector<size_t> same;
-		bool differ = false;
 		for (size_t j = i; j < all.size(); j++)
-			if (!skip[j] && AP_SoloDescriptorFileName(all[j].key, all[j].revision) == name)
-			{
+			if (!skip[j] && entryNames[j] == name)
 				same.push_back(j);
-				differ = differ || files(all[j]) != files(all[i]);
-			}
-		if (!differ || name.empty())
+		if (same.size() < 2)
 			continue;
-		nlohmann::json owner;
-		for (const char *folder : {"tracks", "needs-laps"})
-			if (owner.is_null())
-				owner = pins(ReadSmallPlainFile(fs::u8path(SoloPath(folder)) / fs::u8path(name), kDescriptorMax));
 		size_t keep = same[0];
-		bool current = false;
+		auto ownerTime = fs::file_time_type::min();
 		for (size_t j : same)
-			if (!current && !owner.is_null() && files(all[j]) == owner)
+		{
+			const auto time = descriptorTime(all[j]);
+			if (time > ownerTime)
 			{
 				keep = j;
-				current = true;
+				ownerTime = time;
 			}
-		if (!current)
+		}
+		if (ownerTime == fs::file_time_type::min())
 			for (size_t j : same)
 				if (installed(all[j]) > installed(all[keep]) ||
 				    (installed(all[j]) == installed(all[keep]) && all[j].pin > all[keep].pin))
 					keep = j;
 		const nlohmann::json kept = files(all[keep]);
 		for (size_t j : same)
-			if (files(all[j]) != kept)
+			if (j != keep && (all[j].key != all[keep].key || files(all[j]) != kept))
 			{
 				skip[j] = true;
+				for (Descriptor &old : retired)
+					if (old.keeper == all[j].pin)
+					{
+						old.keeper = all[keep].pin;
+						old.keeperKey = all[keep].key;
+					}
 				result.notes.push_back("left " + all[j].title + " (package " + all[j].pin.substr(0, 12) + ") out of Play Solo: " + name +
 				    " belongs to " + all[keep].title + " (package " + all[keep].pin.substr(0, 12) + "), " +
-				    (current ? "which owns it now" : "the newest install") + "; same id and version, other files");
+				    (ownerTime != fs::file_time_type::min() ? "which owns it now" : "the newest install"));
+				if (all[j].key != all[keep].key)
+				{
+					const auto parsed = nlohmann::json::parse(all[j].json, nullptr, false);
+					if (parsed.is_object())
+						retired.push_back({0, all[j].key, all[j].revision, AP_SoloJsonString(parsed, "uuid"),
+						                   all[j].title, all[j].pin, all[keep].pin, all[keep].key});
+				}
 			}
 	}
 	std::vector<Descriptor> out;
@@ -1648,6 +1713,14 @@ StorePublication CollectInstalledStore(const std::string &assets, const std::str
 		const fs::path store = fs::u8path(assets) / "tracks/packages";
 		std::error_code ec;
 		if (!fs::exists(store, ec) && result.pin.empty()) return result;
+		const auto cache = (fs::u8path(assets) / "track-registry-cache.json").u8string();
+		if (cancel)
+			ap_track_registry_prepare_identity(cache.c_str(), [](const void *context) -> int {
+				return static_cast<const std::atomic<bool> *>(context)->load();
+			}, cancel);
+		else if (ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_IDLE)
+			ap_track_registry_refresh(cache.c_str());
+		if (cancel && cancel->load()) return result;
 		char scanError[256] = {};
 		// One install publishes only its own revision: no other package is
 		// read or hashed for it (A3-46). `live` is not needed then: a fresh
@@ -1991,6 +2064,8 @@ extern "C" int AP_Solo_PublishInstalledStore(const char *pin, char *error, size_
 	if (error && errorSize) error[0] = 0;
 #ifdef CTR_CUSTOM_PACKAGES
 	auto result = CollectInstalledStore(AssetsDir(), pin ? pin : "");
+	if (pin && *pin && !result.failed && StorePublicationBusy())
+		AP_Solo_PublishInstalledStoreStart();
 	for (const std::string &note : result.notes)
 		Log(note);
 	for (const auto &d : result.descriptors)
@@ -2115,7 +2190,8 @@ extern "C" int AP_Solo_ExportTrackYaml(const CustomTrackLibraryEntry *entry, int
 		descriptor = AP_SoloMergeNeedsLaps(kept, descriptor);
 		if (descriptor.is_null())
 		{
-			std::snprintf(out, size, "Pick laps in Play Solo first.");
+			std::snprintf(out, size, "This copy has no lap count for export. "
+			              "Use Play Solo's lap controls if they appear for this copy.");
 			return 0;
 		}
 	}

@@ -3,6 +3,7 @@
 #include "ap_seedcfg.h"
 #include "ap_content_plan.h"
 #include "ap_content_modes.h"
+#include "ap_content_object_rulings.hpp"
 #include "ap_trap_items.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
@@ -258,6 +259,26 @@ int main(int argc, char **argv) {
             ++rows;
         }
         expect(rows == 18, "all object ruling fixtures exercised");
+    }
+    {
+        // Synthetic catalog rows exercise the production lookup without
+        // publishing a ruling for either historical Coco Park copy.
+        const std::string st_patrick_pin(64, 'a'), anniversary_pin(64, 'b'), new_pin(64, 'c');
+        const J rules = J::array({{
+            {"content_id", "coco-park-2025"}, {"kind", "wumpa_crate"}, {"ordinal", 1},
+            {"revision", "1.0.0"}, {"lev_sha256", st_patrick_pin}, {"since", 2}, {"hard_rank", 2}
+        }});
+        const J st_patrick_review = J::array({{{"revision", "1.0.0"}, {"lev_sha256", st_patrick_pin}}});
+        const J anniversary_review = J::array({{{"revision", "1.0.0"}, {"lev_sha256", anniversary_pin}}});
+        const auto *carried = content_plan::object_ruling(rules, "release-st-patrick-adventure-slot-55",
+            "wumpa_crate", 1, "2.0.0", new_pin, &st_patrick_review, 2, false);
+        expect(carried && carried->at("hard_rank") == 2, "historical key carries its own reviewed object ruling");
+        expect(!content_plan::object_ruling(rules, "crash-30anniversary-adventure-track-26",
+            "wumpa_crate", 1, "2.0.0", new_pin, &anniversary_review, 2, false),
+            "patch copies sharing a block keep their reviewed object rulings separate");
+        expect(!content_plan::object_ruling(rules, "release-st-patrick-adventure-slot-55",
+            "wumpa_crate", 1, "2.0.0", new_pin, &st_patrick_review, 1, false),
+            "historical key cannot carry a row added after the room's catalog version");
     }
     J base, extras;
     std::ifstream("tools/fixtures/content-plan/baseline.json") >> base;
@@ -569,6 +590,34 @@ int main(int argc, char **argv) {
         promoted.erase("named_block");
         check_of(older_plan, promoted["id"])["location"] = 35016301;
         expect(parse(older) && bind_room(older), "legacy generic room binds after its track key gets a block");
+        J alias_room = open;
+        J &alias_plan = alias_room["content_plan"];
+        const std::string key = "release-st-patrick-adventure-slot-55";
+        const std::string package_id = "package/" + key + "/1.1.0";
+        const std::string track_id = "custom/" + key + "/1.1.0";
+        const std::string entry_id = "entry/" + track_id;
+        J &package = alias_plan["packages"][1];
+        package["content_id"] = key;
+        package["id"] = package_id;
+        J &track = track_of(alias_plan, "tv-world");
+        track["package_id"] = package_id;
+        track["id"] = track_id;
+        track["named_block"] = 15;
+        track["room_title"] = "Coco Park 2025";
+        for (auto &entry : alias_plan["entries"]) {
+            if (entry.value("track_id", "") == "custom/tv-world/1.1.0") {
+                entry["track_id"] = track_id;
+                entry["id"] = entry_id;
+            }
+        }
+        for (auto &pad : alias_plan["pads"])
+            if (pad["entry_id"] == "entry/custom/tv-world/1.1.0") pad["entry_id"] = entry_id;
+        J &check = check_of(alias_plan, "custom/tv-world/1.1.0");
+        check["owner"] = track_id;
+        check["location"] = 35200000 + 200 * 15;
+        check["display_name"] = "Coco Park 2025: Trophy Race";
+        check["routes"][0]["entry_id"] = entry_id;
+        expect(parse(alias_room) && bind_room(alias_room), "historical Coco Park key binds on named block 15");
         identity_refuses("unnamed key given North Pole's block, name and check", [&](J &p) {
             J &t = track_of(p, "fixture-loop"); t["named_block"] = 53; t["room_title"] = "North Pole";
             J &c = check_of(p, t["id"]); c["location"] = 35200000 + 200 * 53; c["display_name"] = "North Pole: Trophy Race"; });

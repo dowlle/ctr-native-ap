@@ -106,6 +106,67 @@ static int lev_map(const unsigned char*f,size_t n,struct LevView*l,char*e,size_t
 }
 static int pointer(const struct LevView*l,size_t slot,size_t need,size_t*out,char*e,size_t en){uint32_t v;if(!fits(slot,4,l->map)){seterr(e,en,"required pointer slot outside LEV");return 0;}v=rd32(l->p+slot);if(!v){*out=0;return 1;}if(!has_slot(l,slot)||!fits(v,need,l->map)){seterr(e,en,"required pointer missing from map or out of range");return 0;}*out=v;return 1;}
 
+struct RoadVertex { unsigned char position[6]; };
+
+static int compare_road_vertices(const void *left, const void *right)
+{
+	const struct RoadVertex *a = left, *b = right;
+	for (int lane = 0; lane < 6; lane += 2)
+	{
+		int difference = rd16s(a->position + lane) - rd16s(b->position + lane);
+		if (difference) return difference;
+	}
+	return 0;
+}
+
+int CustomContentVerify_RoadHash(const unsigned char *lev, size_t bytes,
+                                char out[NATIVE_SHA256_HEX_BYTES])
+{
+	static const char domain[] = "CTR road v1";
+	struct LevView view;
+	size_t mesh, quads, vertices, count = 0;
+	unsigned char seen[65536 / 8] = {0};
+	struct NativeSha256Ctx hash;
+	unsigned char result[NATIVE_SHA256_DIGEST_BYTES];
+	if (!out) return 0;
+	out[0] = 0;
+	if (!lev || bytes > LEV_MAX || !lev_map(lev, bytes, &view, NULL, 0) ||
+	    !pointer(&view, MESH_P, MESH_SIZE, &mesh, NULL, 0) || !mesh) return 0;
+	uint32_t quad_count = rd32(view.p + mesh + MESH_QUAD_N);
+	uint32_t vertex_count = rd32(view.p + mesh + 4);
+	if (!quad_count || quad_count > QUAD_MAX || !vertex_count || vertex_count > view.map / 16 ||
+	    !pointer(&view, mesh + MESH_QUAD_P, quad_count * QUAD_SIZE, &quads, NULL, 0) || !quads ||
+	    !pointer(&view, mesh + 0x10, vertex_count * 16, &vertices, NULL, 0) || !vertices) return 0;
+	size_t capacity = vertex_count < 65536 ? vertex_count : 65536;
+	struct RoadVertex *road = malloc(capacity * sizeof(*road));
+	if (!road) return 0;
+	for (uint32_t q = 0; q < quad_count; ++q)
+	{
+		const unsigned char *quad = view.p + quads + q * QUAD_SIZE;
+		if (!(quad[QUAD_FLAGS + 1] & 0x10)) continue;
+		for (int lane = 0; lane < 18; lane += 2)
+		{
+			unsigned index = quad[lane] | ((unsigned)quad[lane + 1] << 8);
+			if (index >= vertex_count) { free(road); return 0; }
+			unsigned mask = 1u << (index % 8);
+			if (seen[index / 8] & mask) continue;
+			seen[index / 8] |= mask;
+			memcpy(road[count++].position, view.p + vertices + index * 16, 6);
+		}
+	}
+	if (!count) { free(road); return 0; }
+	qsort(road, count, sizeof(*road), compare_road_vertices);
+	NativeSha256_Init(&hash);
+	NativeSha256_Update(&hash, domain, sizeof domain);
+	for (size_t i = 0; i < count; ++i)
+		if (!i || compare_road_vertices(&road[i - 1], &road[i]))
+			NativeSha256_Update(&hash, road[i].position, sizeof road[i].position);
+	NativeSha256_Final(&hash, result);
+	NativeSha256_ToHex(result, out);
+	free(road);
+	return 1;
+}
+
 static int nav_pointer(const struct LevView *l, size_t slot, size_t need, size_t *out, char *e, size_t en)
 {
 	if (!pointer(l, slot, need, out, e, en))

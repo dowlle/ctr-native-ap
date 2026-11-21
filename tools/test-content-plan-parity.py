@@ -2460,6 +2460,19 @@ with fifty_spots(custom=True):
             forged = copy.deepcopy(wire)
             forged["content_plan"]["required_features"].remove("box_count_v1")
             cases.append((f"box-count-{count}-feature", forged, False))
+from worlds.ctr.test.test_object_rulings import options as object_ruling_options
+
+for reviewed in (True, False):
+    options = object_ruling_options()
+    if not reviewed:
+        options["content_pool"]["tracks"]["custom"][0]["files"][0]["sha256"] = "ab" * 32
+    wire = make_world(options, seed=52, stop_before="pre_fill").fill_slot_data()
+    picked = next(row["wumpa_crate"] for row in wire["content_plan"]["sanity"]["tracks"]
+                  if row["track_id"] == "custom/tv-world/1.1.0")
+    assert picked == [1, 2, 7, 8, 9]
+    assert ("track_ruling_sources" in wire["content_plan"]) is not reviewed
+    cases.append((f"tv-world-pickup-ruling-exact-lev-{reviewed}", wire, True))
+
 for count, mode in ((5, "off"), (50, "both")):
     wire = make_world(dict(profile_options(), itemboxsanity=count, wumpasanity=mode), seed=3).fill_slot_data()
     assert cp.validate(wire["content_plan"])
@@ -2746,6 +2759,31 @@ cases.append(("mixed-exclusions-foreign-lockbox-pin-keeps-nina-source", wire, Tr
 for revision, pin in (("1.2.0", None), ("9.0.0", "cd" * 32)):
     wire = make_world(sunset_mixed_options(revision, pin), seed=3, stop_before="pre_fill").fill_slot_data()
     cases.append((f"sunset-vista-{revision}-with-carried-royal", wire, True))
+
+from worlds.ctr.test.test_custom_packages import named_fixture
+
+for pin, weapon, wumpa in (
+    ("af764b90d10fa952aac4502c89c5f0466dd4afdbaee7c3a65279624dfeb18aa2", 0, 0),
+    ("65ab90d0024aae57ac09f23932f7bf46e5b6b4640a4fb5d16a214a36063a15a8", 12, 2),
+):
+    package = named_fixture()
+    package.update(id="package/coco-park-2025/1.0.0", content_id="coco-park-2025",
+                   revision="1.0.0", display_name="Coco Park 2025", laps=3)
+    package["files"][0]["sha256"] = pin
+    package["capabilities"].update(weapon_crates=weapon, fruit_crates=wumpa, loose_fruit=0)
+    options = royal_options(itemboxsanity=50, wumpasanity="both")
+    later_revision(options, "ab" * 32)
+    options["content_pool"]["tracks"]["custom"].append(package)
+    options["content_pool"]["required_entries"].append("custom/coco-park-2025/1.0.0")
+    wire = make_world(options, seed=3, stop_before="pre_fill").fill_slot_data()
+    plan = wire["content_plan"]
+    row = next(row for row in plan["sanity"]["tracks"] if row["track_id"] == "custom/coco-park-2025/1.0.0")
+    assert row["counts"] == [weapon, wumpa, 0]
+    assert row["weapon_crate"] == list(range(1, weapon + 1))
+    assert row["wumpa_crate"] == list(range(1, wumpa + 1))
+    source = next(row for row in plan["track_ruling_sources"]["packages"] if row["package_id"] == package["id"])
+    assert source["reviews"] == []
+    cases.append((f"coco-park-patch-copy-{pin[:8]}-with-carried-royal", wire, True))
 
 # Switching the LEV in a legacy exact-pin room cannot supply a carried source.
 wire = make_world(royal_options(item_box_count=5), seed=3, stop_before="pre_fill").fill_slot_data()
