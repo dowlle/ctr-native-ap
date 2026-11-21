@@ -198,11 +198,11 @@ for seed in range(12):
 cases.append(("custom-132-fixture", json.loads((root / "tools/fixtures/content-plan/custom-132.json").read_text()), True))
 
 base = cases[0][1]
-def alter(name, change, source=None):
+def alter(name, change, source=None, *, restoring=False):
     case = copy.deepcopy(source or base)
     change(case["content_plan"])
     try:
-        cp.validate(case["content_plan"])
+        cp.validate(case["content_plan"], restoring=restoring)
         accepted = True
     except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
         accepted = False
@@ -353,14 +353,17 @@ def retitle(title):
         t = open_track(p, "fixture-loop"); t["room_title"] = title
         open_check(p, t)["display_name"] = title + ": Trophy Race"
     return change
-alter("identity: named key moved to a generic slot", drop_named, open_base)
+# The slot and title of a saved room predate later registry allocations.
+alter("identity: saved generic slot after its key gains a named block", drop_named, open_base, restoring=True)
 alter("identity: unnamed key claims North Pole's block, name and check", claim_north_pole, open_base)
 alter("identity: named key under another title", lambda p: (open_track(p, "tv-world").__setitem__("room_title", "TV World 2"),
       open_check(p, open_track(p, "tv-world")).__setitem__("display_name", "TV World 2: Trophy Race")), open_base)
 # Clashes only: the apworld also refuses any other title that is not the one it
 # derives (for example a changed case), which native does not recompute.
-for title in ("Crash Cove", "TV World", "North Pole", "tv world", "Fixture Loop"):
+for title in ("Crash Cove", "TV World", "tv world", "Fixture Loop"):
     alter(f"identity: generic room title {title}", retitle(title), open_base)
+alter("identity: saved generic title after an unrelated block is named North Pole",
+      retitle("North Pole"), open_base, restoring=True)
 def two_generic(title):
     def change(p):
         text = json.dumps(p).replace("tv-world", "tv-park")
