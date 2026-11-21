@@ -92,6 +92,16 @@ struct CustomContentOwnedPair
 	struct CustomContentVerification report;
 };
 
+/* Exact road identity, independent of vertex order, textures and pickups. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+int CustomContentVerify_RoadHash(const unsigned char *lev, size_t bytes,
+                                char out[NATIVE_SHA256_HEX_BYTES]);
+#ifdef __cplusplus
+}
+#endif
+
 // Analysis and loader authority are deliberately separate. AcquirePair owns
 // and hashes the exact bytes once. AnalyzePair may report cautious structural
 // evidence but never grants loader authority. Only ValidateLoadablePair sets

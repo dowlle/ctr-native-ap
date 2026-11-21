@@ -1,52 +1,196 @@
-"""Actual feed readiness scan: global/hub transitions and reconnect baseline."""
+"""Run the production letter feed with actual plan mode gates."""
 from pathlib import Path
-import tempfile
 import subprocess
+import tempfile
+
 import ap_hooks_unit
-root=Path(__file__).resolve().parents[1]
-source=ap_hooks_unit.read()
-start=source.index('static void AP_FeedLetterReadyUpdates(void)\n{')
-end=source.index('\n}\n',start)+3
-fixture=r'''
+
+root = Path(__file__).resolve().parents[1]
+source = ap_hooks_unit.read()
+
+
+def function(signature):
+    start = source.index(signature + "\n{")
+    return source[start:source.index("\n}\n", start) + 3]
+
+
+fixture = r'''
 #include <assert.h>
-#include <stdio.h>
 #include <string.h>
-#define CTR_AP 1
-#include "ap_lettersanity.h"
-#define CTR_CFG_LETTER_TRACK_COUNT 18
+#include "ap/ap_content_modes.h"
+#include "ap/ap_feed_lines_logic.h"
+#include "ap/ap_lettersanity.h"
+#include "ap/ap_unlock_reasons_logic.h"
 #define LIGHT_GREEN 1
-struct {int lettersanity_mode;long lettersanity_locations[18][3];} ctr_cfg;
-static unsigned char ap_letter_received[18][3],ap_feed_letters_ready[18];
-static int ap_feed_primed,ap_hub_feed_on=1,count;
-int AP_HubFeedOn(void){return ap_hub_feed_on;}
-int ctr_cfg_active(void){return 1;}
-void AP_FeedEnqueue(const char *s,int color,int sound){
- assert(!strcmp(s,count==0?"Slide Coliseum: Got CTR letters":"Turbo Track: Got CTR letters"));count++;
+#define AP_FEED_PRIME_QUIET_FRAMES 30
+#define CTR_CUSTOM_TRACKS
+#define CTR_CUSTOM_PACKAGES
+static AP_FeedLines ap_feed, ap_feed_saved;
+static uint64_t ap_feed_room, room = 1;
+static uint64_t ap_feed_room_instance, server = 1;
+static int ap_feed_resume_pending, instanceKnown = 1;
+static unsigned ap_feed_letters_held, ap_feed_letters_announced, received;
+static unsigned ap_feed_saved_letters_held, ap_feed_saved_letters_announced, ap_feed_letters_reported;
+static int ap_feed_letters_baseline, ap_feed_primed, ap_feed_quiet, ap_feed_self_rung_count;
+static int feedOn = 1, racerMet = 1, firstWin, packageReady = 1;
+static long long ap_feed_hwm;
+static int counts[15];
+static ctr_content_pad pad;
+static ctr_content_checks checks;
+int ap_content_plan_active(void) { return 1; }
+uint64_t ap_content_plan_room_identity(void) { return room; }
+static int ap_net_feed_room_instance(uint64_t *instance) {
+    if (!instanceKnown) return 0;
+    *instance = server;
+    return 1;
+}
+static int ap_net_is_connected(void) { return 1; }
+static void AP_FeedOxideFinalOpenUpdate(void) {}
+static void AP_UnlockReasonsConnectReset(int mayResume, int alreadyPending) {
+    (void)mayResume; (void)alreadyPending;
+}
+static void AP_UnlockReasonsResolveReconnect(int sameRoom) { (void)sameRoom; }
+const ctr_content_pad *ap_content_plan_pad(int phys) { return phys == pad.physical ? &pad : NULL; }
+const ctr_content_checks *ap_content_plan_checks(void) { return &checks; }
+static int AP_ContentLetterItemReceived(int64_t code) { return code > 0 && (received & (1u << code)); }
+static int AP_ContentPadRacerMet(const ctr_content_pad *p) { assert(p == &pad); return racerMet; }
+static int AP_ContentPadReady(int phys) { assert(phys == 16); return packageReady; }
+static int checked(int64_t code) { return firstWin && code == pad.trophy_location; }
+static int AP_ContentModeOpen(const ctr_content_pad *p, int mode) {
+    return ap_content_mode_open(p, mode, counts, checked);
+}
+static int AP_HubFeedOn(void) { return feedOn; }
+static const char *AP_UnlockPadName(int phys) { assert(phys == 16); return "Caf\xc3\xa9 Circuit"; }
+static int CustomPackage_AsciiFold(const char *name, size_t len, char *out, size_t size) {
+    assert(len == strlen(name) && !strcmp(name, "Caf\xc3\xa9 Circuit"));
+    snprintf(out, size, "%s", "Cafe Circuit");
+    return 1;
 }
 '''
-tests=r'''
-int main(void){
- ctr_cfg.lettersanity_mode=2;
- for(int t=16;t<18;t++)for(int l=0;l<3;l++)ctr_cfg.lettersanity_locations[t][l]=100+t*3+l;
- AP_FeedLetterReadyUpdates();assert(!count);
- ap_feed_primed=1;
- ap_letter_received[16][0]=ap_letter_received[16][1]=1;
- AP_FeedLetterReadyUpdates();assert(!count);
- ap_letter_received[16][2]=1;AP_FeedLetterReadyUpdates();assert(count==1);
- for(int i=0;i<50;i++)AP_FeedLetterReadyUpdates();assert(count==1);
- memset(ap_letter_received[17],1,3);AP_FeedLetterReadyUpdates();assert(count==2);
- /* Reconnect initial inventory is absorbed, not announced again. */
- ap_feed_primed=0;memset(ap_feed_letters_ready,0,18);AP_FeedLetterReadyUpdates();
- ap_feed_primed=1;AP_FeedLetterReadyUpdates();assert(count==2);
- /* Feed off and vanilla/location-only modes do not produce notices. */
- ap_hub_feed_on=0;memset(ap_feed_letters_ready,0,18);AP_FeedLetterReadyUpdates();assert(count==2);
- ap_hub_feed_on=1;ctr_cfg.lettersanity_mode=1;memset(ap_feed_letters_ready,0,18);
- AP_FeedLetterReadyUpdates();assert(count==2);
- puts("Production all-track letter-ready feed transitions passed");
+tests = r'''
+static void update(int drained) {
+    AP_FeedEndDrain(drained);
+    if (ap_feed_primed)
+        AP_FeedLetterReadyUpdates();
+}
+
+static void settle(void) {
+    for (int i = 0; i < AP_FEED_PRIME_QUIET_FRAMES; ++i)
+        update(0);
+}
+
+int main(void) {
+    checks.lettersanity = 2;
+    pad.physical = 16; pad.occupied = 1; pad.keys = 1;
+    pad.mode_count = 2; pad.modes[0] = AP_CONTENT_MODE_TROPHY;
+    pad.modes[1] = AP_CONTENT_MODE_CTR; pad.stages[1] = 2;
+    pad.first_race_rule = 1; pad.trophy_location = 100; pad.has_stage2 = 1;
+    pad.stage2_count = 1; pad.stage2_mask = 1u;
+    pad.letter_locations[0] = 1; pad.letter_locations[2] = 3;
+    pad.letter_items[0] = 1; pad.letter_items[2] = 3;
+    AP_FeedConnectReset();
+    received = (1u << 1) | (1u << 3);
+    update(2);
+    assert(!ap_feed_letters_held && !ap_feed.qcount);
+    settle();
+    assert(ap_feed_letters_held && !ap_feed.qcount);
+    counts[14] = 1; counts[0] = 1;
+    update(1);
+    assert(!ap_feed.qcount); // first race still needs to be won
+    firstWin = 1; racerMet = 0;
+    update(0);
+    assert(!ap_feed.qcount);
+    AP_FeedConnectReset();
+    update(2);
+    racerMet = 1;
+    packageReady = 0;
+    settle();
+    assert(!ap_feed.qcount && ap_feed_letters_held);
+    packageReady = 1;
+    update(0);
+    assert(ap_feed.qcount == 1 && !ap_feed_letters_held);
+    assert(!strcmp(ap_feed.queue[ap_feed.qhead].text, "Cafe Circuit: Got CTR letters"));
+    AP_FeedLinesEnqueue(&ap_feed, "ordinary", 0, 0);
+    instanceKnown = 0;
+    AP_FeedConnectReset();
+    settle();
+    assert(ap_feed_resume_pending && ap_feed_primed && !ap_feed.qcount);
+    assert(ap_feed_saved.qcount == 1);
+    AP_FeedLinesEnqueue(&ap_feed, "LIVE RECEIPT", 0, 0);
+    assert(ap_feed.qcount == 1 && !strcmp(ap_feed.queue[ap_feed.qhead].text, "LIVE RECEIPT"));
+    AP_FeedLinesPromote(&ap_feed);
+    assert(ap_feed.vcount == 1 && !ap_feed.qcount);
+    instanceKnown = 1;
+    update(0);
+    assert(!ap_feed_resume_pending && ap_feed_primed);
+    assert(!strcmp(ap_feed.queue[ap_feed.qhead].text, "Cafe Circuit: Got CTR letters"));
+    ap_feed.stagger = 0;
+    AP_FeedLinesPromote(&ap_feed);
+    AP_FeedConnectReset();
+    settle();
+    assert(!ap_feed.qcount && !ap_feed.vcount);
+
+    AP_FeedEnqueueHeld("old room", 0, 0, 0);
+    // Same seed and slot, but the server started from a fresh room.
+    ++server;
+    received = 0;
+    instanceKnown = 0;
+    AP_FeedConnectReset();
+    settle();
+    assert(ap_feed_resume_pending && ap_feed_primed && !ap_feed.qcount);
+    AP_FeedLinesEnqueue(&ap_feed, "NEW ROOM NOTICE", 0, 0);
+    instanceKnown = 1;
+    update(0);
+    assert(!ap_feed_resume_pending && ap_feed.qcount == 1);
+    assert(!strcmp(ap_feed.queue[ap_feed.qhead].text, "NEW ROOM NOTICE"));
+    assert(!ap_feed_letters_held && !ap_feed_letters_announced);
+    received = (1u << 1) | (1u << 3);
+    update(2);
+    assert(ap_feed.qcount == 2); // the new room can earn its letter notice
+
+    ++room;
+    checks.lettersanity = 3;
+    pad.letter_locations[0] = pad.letter_locations[2] = 0;
+    pad.letter_items[1] = 2;
+    AP_FeedConnectReset();
+    settle();
+    assert(!ap_feed_letters_announced);
+    received |= 1u << 2;
+    update(1);
+    assert(ap_feed.qcount == 1);
+
+    ++room;
+    checks.lettersanity = 1;
+    AP_FeedConnectReset();
+    settle();
+    assert(!ap_feed_letters_announced && !ap_feed.qcount);
+    ++room;
+    checks.lettersanity = 3;
+    received = 0;
+    AP_FeedConnectReset();
+    settle();
+    feedOn = 0;
+    received = (1u << 1) | (1u << 2) | (1u << 3);
+    update(1);
+    feedOn = 1;
+    update(0);
+    assert(!ap_feed.qcount);
+    puts("Production letter readiness, plan gates, async baseline and reconnect passed");
 }
 '''
+signatures = (
+    "static void AP_FeedEnqueueHeld(const char *text, int suffixOffset, int color, int playCue)",
+    "void AP_FeedConnectReset(void)",
+    "static void AP_FeedResolveReconnect(void)",
+    "void AP_FeedEndDrain(int drainedThisFrame)",
+    "static void AP_ContentLetterState(const ctr_content_pad *pad, long codes[3], unsigned char received[3])",
+    "static int AP_PlanLettersRequiredCount(const ctr_content_pad *pad)",
+    "static int AP_PlanLettersRequiredMet(const ctr_content_pad *pad)",
+    "static void AP_FeedLetterReadyUpdates(void)",
+)
 with tempfile.TemporaryDirectory() as tmp:
- src=Path(tmp)/'fixture.c';exe=Path(tmp)/'fixture'
- src.write_text(fixture+source[start:end]+tests)
- subprocess.run(['cc','-std=c11','-fsanitize=undefined','-I',str(root/'ap'),str(src),'-o',str(exe)],check=True)
- subprocess.run([str(exe)],check=True)
+    src = Path(tmp) / "fixture.c"
+    exe = Path(tmp) / "fixture"
+    src.write_text(fixture + "\n".join(function(sig) for sig in signatures) + tests)
+    subprocess.run(["cc", "-std=c11", "-fsanitize=undefined", "-I", str(root), str(src), "-o", str(exe)], check=True)
+    subprocess.run([str(exe)], check=True)

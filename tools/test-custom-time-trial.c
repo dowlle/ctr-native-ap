@@ -50,6 +50,7 @@ struct sData sdata_static; // common.h binds sdata to it
 struct Data data;
 NativeConfig g_config;
 #ifdef CTR_AP
+#include "ap/ap_deathlink.h"
 ctr_seed_config ctr_cfg;
 #endif
 void AP_LogLine(const char *msg) { fputs(msg, stderr); }
@@ -175,20 +176,40 @@ void BOTS_InitNavPath(struct GameTracker *gt, s16 path)
 }
 void LIST_AddFront(struct LinkedList *list, struct Item *item) { (void)list; (void)item; }
 struct Item *LIST_RemoveMember(struct LinkedList *list, struct Item *item) { (void)list; return item; }
-int CustomTrack_ServingLoad(int level, int cup, int id) { (void)level; (void)cup; (void)id; return 0; }
+static int s_seedLoad, s_seedHasIdentity;
+#ifdef CTR_AP
+static int s_testTrap, s_testForcedLoss;
+#endif
+int CustomTrack_ServingLoad(int level, int cup, int id) { (void)level; (void)cup; (void)id; return s_seedLoad; }
 int CustomTrack_NavIdentityForLoad(int level, int cup, int id, unsigned char uuid[16], unsigned int *revision)
 {
 	(void)level;
 	(void)cup;
 	(void)id;
-	(void)uuid;
-	(void)revision;
-	return 0;
+	if (!s_seedLoad || !s_seedHasIdentity)
+		return 0;
+	*revision = CustomTrackPolicy_NavRevision(LEV_SHA);
+	return CustomTrackPolicy_ParseNavUuid(UUID, uuid);
 }
+const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int levelID) { (void)levelID; return NULL; }
 int CustomTrack_OxideFinalServing(int level, int boss, int active) { (void)level; (void)boss; (void)active; return 0; }
 int CustomTrack_GarageVenueServing(int level, int boss, int active) { (void)level; (void)boss; (void)active; return -1; }
 int CustomTrack_CortexTrackIntent(int level, int boss) { (void)level; (void)boss; return 0; }
 int CustomTrack_ResidentBlocksRecordedLanes(int level) { (void)level; return 0; }
+int CustomTrack_ResidentSeedRace(int level) { (void)level; return 0; }
+int CustomTrack_ResidentGarageNavIdentity(int level, unsigned char uuid[16], unsigned int *revision)
+{
+	(void)level;
+	(void)uuid;
+	(void)revision;
+	return 0;
+}
+#ifdef CTR_AP
+int AP_TrapAffectsRecordedLap(struct Driver *driver) { return driver == s_gt.drivers[0] && s_testTrap; }
+int AP_RaceAttemptIsForcedLoss(void) { return s_testForcedLoss; }
+void AP_SurfaceResetLapObservation(void) {}
+void AP_CapabilityResetLapObservation(void) {}
+#endif
 
 #include "../ap/ap_navrec.c"
 
@@ -326,6 +347,206 @@ static void finish_sampled_lap(void)
 	s_gt.gameMode1 |= END_OF_RACE;
 	AP_NavRec_Tick(&s_gt);
 	s_gt.gameMode1 &= ~END_OF_RACE;
+}
+
+static void begin_seed_attempt(void)
+{
+	AP_NavRec_RederiveLoadIdentity(&s_gt);
+	AP_NavRec_AfterBotsInit();
+	s_player.lapIndex = 0;
+	AP_NavRec_Tick(&s_gt);
+}
+
+static void sample_seed_lap(int flying, int directEffect)
+{
+	begin_seed_attempt();
+	if (directEffect)
+		AP_NavRec_NoteKartEffect();
+	if (flying)
+		sample_flying_lap();
+	finish_sampled_lap();
+}
+
+static void check_seed_lap_recording(void)
+{
+	const char *tt = "ap-navpaths/navpath-6-001.navlap";
+	const char *seed = "ap-navpaths/navpath-10-001.navlap";
+	const char *extra = "ap-navpaths/navpath-10-002.navlap";
+	unsigned char ttHeader[AP_NAVREC_HEADER_BYTES_V3] = {0}, seedHeader[AP_NAVREC_HEADER_BYTES_V3] = {0};
+	FILE *file;
+
+	s_gt.gameMode1 = ADVENTURE_MODE;
+	s_gt.levelID = 10; // Deliberately use a different host slot than Time Trial.
+	s_gt.level1 = NULL;
+	s_gt.trafficLightsTimer = 0;
+	sdata->Loading.stage = LOAD_IDLE;
+	g_config.navRecord = 1;
+	g_config.navUseRecorded = 0;
+	s_seedLoad = 1;
+	sample_seed_lap(1, 0);
+	CHECK(access(seed, F_OK) != 0 && s_navrecLoggedBlocked && s_navrecCurSamples == 0 && s_navrecBankCount == 0);
+
+	s_seedHasIdentity = 1;
+	sample_seed_lap(0, 0);
+	CHECK(access(seed, F_OK) != 0); // A one-lap race still yields no line.
+	sample_seed_lap(1, 0);
+	CHECK(access(seed, F_OK) == 0);
+	file = fopen(tt, "rb");
+	CHECK(file != NULL);
+	if (file != NULL)
+	{
+		CHECK(fread(ttHeader, sizeof ttHeader, 1, file) == 1);
+		fclose(file);
+		file = fopen(seed, "rb");
+		CHECK(file != NULL);
+		if (file != NULL)
+		{
+			CHECK(fread(seedHeader, sizeof seedHeader, 1, file) == 1);
+			fclose(file);
+			CHECK(memcmp(ttHeader + 0x60, seedHeader + 0x60, 24) == 0);
+			CHECK(AP_NavRecFormat_GetU16(seedHeader + 4) == AP_NAVREC_FORMAT_VERSION_V3);
+			CHECK(AP_NavRecFormat_GetU32(seedHeader + 0x0c) == 10);
+		}
+	}
+
+	// Publish the foreign-slot recording as the only candidate, rather
+	// than stopping once a header peek has admitted it to the pool.
+	const char *parked = "ap-navpaths/time-trial-fixture.saved";
+	struct { struct NavHeader header; struct NavFrame frames[2]; } authored = {0};
+	struct NavHeader *lanes[] = {&authored.header, &authored.header, &authored.header};
+	struct Level level = {.LevNavTable = lanes};
+	authored.header.magicNumber = -0x1303;
+	authored.header.numPoints = 2;
+	CHECK(rename(tt, parked) == 0);
+	s_gt.levelID = HOST;
+	s_gt.level1 = &level;
+	for (s16 lane = 0; lane < 3; lane++)
+		BOTS_InitNavPath(&s_gt, lane);
+	g_config.navUseRecorded = 1;
+	AP_NavRec_RederiveLoadIdentity(&s_gt);
+	AP_NavRec_AfterBotsInit();
+	CHECK(s_navrecRecordedMask == 1 && sdata->NavPath_ptrHeader[0] == &s_navrecLaneHeader[0]);
+	CHECK(s_navrecLaneFileIndex[0] == 10 * AP_NAVREC_FILE_INDEX_STRIDE + 1);
+	s_gt.gameMode1 = ADVENTURE_MODE | ADVENTURE_BOSS | ADVENTURE_CUP;
+	for (s16 lane = 0; lane < 3; lane++)
+		BOTS_InitNavPath(&s_gt, lane);
+	CHECK(AP_NavRec_RederiveLoadIdentity(&s_gt) == AP_NAVREC_LOAD_CUSTOM);
+	AP_NavRec_AfterBotsInit();
+	CHECK(s_navrecRecordedMask == 0 && sdata->NavPath_ptrHeader[0] == &authored.header);
+	s_gt.gameMode1 = ADVENTURE_MODE;
+	CHECK(rename(parked, tt) == 0);
+	g_config.navUseRecorded = 0;
+	s_gt.level1 = NULL;
+	s_gt.levelID = 10;
+
+	begin_seed_attempt();
+	sample_flying_lap();
+	s_player.clockReceive = 32;
+	finish_sampled_lap(); // Only the finish frame sees the Clock.
+	CHECK(access(extra, F_OK) != 0);
+	s_player.clockReceive = 0;
+	begin_seed_attempt();
+	sample_flying_lap();
+	s_player.clockReceive = 32;
+	s_player.lapIndex++;
+	AP_NavRec_Tick(&s_gt);
+	CHECK(s_navrecBankCount == 1 && s_navrecBankDirty[0] && s_navrecCurDirty);
+	s_player.clockReceive = 0;
+	finish_sampled_lap();
+
+	begin_seed_attempt();
+	sample_flying_lap();
+	s_player.lapIndex++;
+	AP_NavRec_ObservePhysics(&s_gt);
+	s_player.clockReceive = 32; // Clocked Out applies on this AP tick.
+	AP_NavRec_Tick(&s_gt);
+	CHECK(s_navrecBankCount == 1 && !s_navrecBankDirty[0] && s_navrecCurDirty);
+	s_player.clockReceive = 0;
+
+	begin_seed_attempt();
+	sample_flying_lap();
+	s_player.reserves = 100;
+	AP_NavRec_NoteBoostGrant(AP_NAVREC_GRANT_RESERVES);
+	AP_NavRec_Tick(&s_gt);
+	s_player.lapIndex++;
+	AP_NavRec_Tick(&s_gt);
+	CHECK(s_navrecBankCount == 1 && s_navrecBankDirty[0] && s_navrecCurDirty);
+	s_player.reserves = 0;
+
+	begin_seed_attempt();
+	sample_flying_lap();
+	AP_NavRec_NoteBoostGrant(AP_NAVREC_GRANT_MASK);
+	AP_NavRec_Tick(&s_gt);
+	s_player.actionsFlagSet |= ACTION_MASK_WEAPON;
+	s_player.lapIndex++;
+	AP_NavRec_Tick(&s_gt);
+	CHECK(s_navrecBankCount == 1 && s_navrecBankDirty[0] && s_navrecCurDirty);
+	s_player.actionsFlagSet &= ~ACTION_MASK_WEAPON;
+
+	begin_seed_attempt();
+	sample_flying_lap();
+	s_player.numWumpas = 3;
+	AP_NavRec_NoteWumpaGrant(3);
+	AP_NavRec_Tick(&s_gt);
+	s_player.lapIndex++;
+	AP_NavRec_Tick(&s_gt);
+	CHECK(s_navrecBankCount == 1 && s_navrecBankDirty[0] && s_navrecCurDirty);
+	s_player.numWumpas = 0;
+	AP_NavRec_Tick(&s_gt);
+	s_player.numWumpas = 3; // Normal pickups after the AP fruit is gone.
+	s_player.lapIndex++;
+	AP_NavRec_Tick(&s_gt);
+	CHECK(!s_navrecLiveWumpa && !s_navrecCurDirty);
+	s_player.numWumpas = 0;
+
+	begin_seed_attempt();
+	s_player.reserves = 100;
+	g_config.navUseRecorded = 0;
+	AP_NavRec_AfterCheckpointRestore();
+	AP_NavRec_Tick(&s_gt);
+	sample_flying_lap();
+	CHECK(s_navrecCurDirty); // The restored reserve origin is unknown.
+	s_player.reserves = 0;
+
+	begin_seed_attempt();
+	sample_flying_lap();
+	s_player.instTntRecv = &s_playerInst;
+	AP_NavRec_Tick(&s_gt);
+	s_player.instTntRecv = NULL;
+	finish_sampled_lap(); // The helmet was shaken off cleanly before the line.
+	CHECK(access(extra, F_OK) != 0);
+
+	begin_seed_attempt();
+	sample_flying_lap();
+	s_player.actionsFlagSet |= ACTION_BEHIND_START_LINE;
+	AP_NavRec_Tick(&s_gt);
+	CHECK(s_navrecWaitingForRecross && !s_navrecLapOpenAtLine && s_navrecCurSamples == 0);
+	s_player.actionsFlagSet &= ~ACTION_BEHIND_START_LINE;
+	AP_NavRec_Tick(&s_gt);
+	CHECK(!s_navrecWaitingForRecross && s_navrecLapOpenAtLine && s_navrecCurSamples == 1);
+	finish_sampled_lap();
+	CHECK(access(extra, F_OK) != 0);
+	s_player.clockReceive = 32;
+	sample_seed_lap(1, 0);
+	s_player.clockReceive = 0;
+	s_player.squishTimer = 32;
+	sample_seed_lap(1, 0);
+	s_player.squishTimer = 0;
+	sample_seed_lap(1, 1);
+#ifdef CTR_AP
+	s_testTrap = 1;
+	sample_seed_lap(1, 0);
+	s_testTrap = 0;
+	s_testForcedLoss = 1;
+	sample_seed_lap(1, 0);
+	s_testForcedLoss = 0;
+#endif
+	CHECK(access(extra, F_OK) != 0);
+	g_config.navRecord = 0;
+	sample_seed_lap(1, 0);
+	CHECK(access(extra, F_OK) != 0);
+	unlink(seed);
+	s_seedLoad = s_seedHasIdentity = 0;
 }
 
 static void check_lap_recording(const unsigned char uuid[16], unsigned int revision)
@@ -773,6 +994,7 @@ int main(void)
 	}
 
 	// Control: a retail Time Trial on the same slot writes retail data.
+	check_seed_lap_recording();
 	s_gt.levelID = HOST;
 	s_gt.numPlyrCurrGame = 1;
 	s_gt.gameMode1 = TIME_TRIAL;

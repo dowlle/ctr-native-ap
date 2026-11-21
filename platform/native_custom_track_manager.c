@@ -1,7 +1,9 @@
 #ifdef CTR_CUSTOM_TRACKS
 
 #include <platform/native_custom_track_manager.h>
+#include "../ap/ap_track_key_aliases.hpp"
 
+#include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -716,7 +718,7 @@ const struct CustomTrackManagerPackage *CustomTrackManager_FindPackage(
 	return NULL;
 }
 
-int CustomTrackManager_LocateContentFiles(const char *assetsRoot, const char *trackKey,
+static int Manager_LocateContentFiles(const char *assetsRoot, const char *trackKey, const char *folder,
 	                                       const char *title, const char *revision,
 	                                       const char *levSha256, unsigned long levBytes,
 	                                       const char *vrmSha256, unsigned long vrmBytes,
@@ -744,7 +746,7 @@ int CustomTrackManager_LocateContentFiles(const char *assetsRoot, const char *tr
 		return outStatus->state;
 	}
 	if (!Manager_Join(tracks, sizeof tracks, assetsRoot, "tracks") ||
-	    !Manager_Join(outStatus->packageRoot, sizeof outStatus->packageRoot, tracks, trackKey) ||
+	    !Manager_Join(outStatus->packageRoot, sizeof outStatus->packageRoot, tracks, folder) ||
 	    !Manager_Join(original, sizeof original, outStatus->packageRoot, "original"))
 	{
 		Manager_SetDetail(outStatus, CTR_CT_MANAGER_IO_ERROR, "Installed-content path is empty or too long.");
@@ -802,6 +804,59 @@ int CustomTrackManager_LocateContentFiles(const char *assetsRoot, const char *tr
 	outStatus->vrmBytes = foundVrmBytes;
 	Manager_SetDetail(outStatus, CTR_CT_MANAGER_READY, "%.64s %.32s files match the seed.", shownTitle, shownRevision);
 	return outStatus->state;
+}
+
+static int Manager_LocateRevisionFiles(const char *assetsRoot, const char *key, const char *title,
+                                       const char *revision, const char *levSha256, unsigned long levBytes,
+                                       const char *vrmSha256, unsigned long vrmBytes,
+                                       struct CustomTrackManagerStatus *match)
+{
+	static const char allowed[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._+-";
+	char folder[130];
+	if (!revision || !revision[0] || !isalnum((unsigned char)revision[0]) ||
+	    strlen(revision) > 64 || strspn(revision, allowed) != strlen(revision))
+		return CTR_CT_MANAGER_UNSUPPORTED;
+	snprintf(folder, sizeof folder, "%s-%s", key, revision);
+	return Manager_LocateContentFiles(assetsRoot, key, folder, title, revision,
+	                                  levSha256, levBytes, vrmSha256, vrmBytes, match);
+}
+
+int CustomTrackManager_LocateContentFiles(const char *assetsRoot, const char *trackKey,
+                                        const char *title, const char *revision,
+                                        const char *levSha256, unsigned long levBytes,
+                                        const char *vrmSha256, unsigned long vrmBytes,
+                                        struct CustomTrackManagerStatus *outStatus)
+{
+	int state = Manager_LocateContentFiles(assetsRoot, trackKey, trackKey, title, revision,
+	                                     levSha256, levBytes, vrmSha256, vrmBytes, outStatus);
+	if (state == CTR_CT_MANAGER_READY || state == CTR_CT_MANAGER_UNSUPPORTED || !outStatus) return state;
+	const size_t count = sizeof kTrackKeyAliases / sizeof kTrackKeyAliases[0];
+	const char *canonical = trackKey;
+	for (size_t i = 0; i < count; ++i)
+		if (!strcmp(trackKey, kTrackKeyAliases[i][0])) { canonical = kTrackKeyAliases[i][1]; break; }
+	struct CustomTrackManagerStatus match;
+	if (Manager_LocateRevisionFiles(assetsRoot, trackKey, title, revision,
+	                                levSha256, levBytes, vrmSha256, vrmBytes, &match) == CTR_CT_MANAGER_READY ||
+	    (canonical != trackKey &&
+	     (Manager_LocateContentFiles(assetsRoot, canonical, canonical, title, revision,
+	                               levSha256, levBytes, vrmSha256, vrmBytes, &match) == CTR_CT_MANAGER_READY ||
+	      Manager_LocateRevisionFiles(assetsRoot, canonical, title, revision,
+	                                 levSha256, levBytes, vrmSha256, vrmBytes, &match) == CTR_CT_MANAGER_READY)))
+	{
+		*outStatus = match;
+		return match.state;
+	}
+	for (size_t i = 0; i < count; ++i)
+		if (!strcmp(canonical, kTrackKeyAliases[i][1]) && strcmp(trackKey, kTrackKeyAliases[i][0]) &&
+		    (Manager_LocateContentFiles(assetsRoot, kTrackKeyAliases[i][0], kTrackKeyAliases[i][0], title, revision,
+		                               levSha256, levBytes, vrmSha256, vrmBytes, &match) == CTR_CT_MANAGER_READY ||
+		     Manager_LocateRevisionFiles(assetsRoot, kTrackKeyAliases[i][0], title, revision,
+		                                 levSha256, levBytes, vrmSha256, vrmBytes, &match) == CTR_CT_MANAGER_READY))
+		{
+			*outStatus = match;
+			return match.state;
+		}
+	return state;
 }
 
 const char *CustomTrackManager_StateText(int state)

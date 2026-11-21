@@ -48,6 +48,7 @@
 #define AP_FEED_X                  0x10
 #define AP_FEED_BASE_Y             0xC8 // bottom (newest) line anchor
 #define AP_FEED_RESULTS_BASE_Y     0xAC // same anchor on the results screens: clears the prompt
+#define AP_FEED_RACE_WIDTH         364
 #define AP_FEED_BOX_WARNING_Y      0x48
 #define AP_FEED_CONTENT_WARNING_Y  0x30
 
@@ -76,6 +77,7 @@ static int AP_CustomContentWarningVisible(void);
 #define AP_FEED_ITEM_UNKNOWN "AP ITEM"
 
 static AP_FeedLines ap_feed; // pending ring + visible lines (ap_feed_lines_logic.h)
+static AP_FeedLines ap_feed_saved; // held lines from the previous connection
 
 static int       ap_feed_primed = 0;  // 0 while absorbing the initial inventory
 static long long ap_feed_hwm = -1;    // highest already-known server index
@@ -88,21 +90,31 @@ static int       ap_feed_quiet = 0;   // consecutive no-new-item frames (priming
 static long long ap_feed_self_rung_items[AP_FEED_SELF_RUNG_MAX];
 static int ap_feed_self_rung_count = 0;
 
-static int ap_hub_feed_on = 1; // ap-config.txt "hub_feed=" (default on; governs
-                               // BOTH feed surfaces since #192, key name kept)
-int AP_HubFeedOn(void)
+static int AP_ItemFeedMode(void)
 {
-	// Options > Archipelago > Item Feed (ruling of 2026-11-02), with the same
-	// config.ini-over-ap-config.txt precedence as AP_MapFlashOn.
-	if (NativeConfig_HasIni())
-		return g_config.itemFeed;
-	return ap_hub_feed_on;
+	return g_config.itemFeed;
 }
 
-// Append a ready-formatted line to the pending queue. Oldest is dropped if full.
+int AP_HubFeedOn(void)
+{
+	return AP_ItemFeedMode() != AP_ITEM_FEED_OFF;
+}
+
+static int AP_FeedFiltersItem(unsigned flags)
+{
+	return AP_ItemFeedMode() == AP_ITEM_FEED_IMPORTANT &&
+	       AP_ItemFlagsClass(flags) == AP_ITEM_CLASS_FILLER;
+}
+
+// Append a ready-formatted line to the pending queue.
 static void AP_FeedEnqueue(const char *text, int color, int playCue)
 {
 	AP_FeedLinesEnqueue(&ap_feed, text, color, playCue);
+}
+
+static void AP_FeedEnqueueHeld(const char *text, int suffixOffset, int color, int playCue)
+{
+	AP_FeedLinesEnqueueNotice(&ap_feed, text, color, playCue, 1)->suffixOffset = suffixOffset;
 }
 
 static void AP_FeedRememberSelfRung(long long item)
@@ -130,19 +142,47 @@ static int AP_FeedConsumeSelfRung(long long item)
 	return 0;
 }
 
-// Clear feed state on a fresh (re)connect: drop stale toasts and re-arm the
-// initial-inventory absorb window. Called from the connect-reset block.
-static unsigned char ap_feed_letters_ready[CTR_CFG_LETTER_TRACK_COUNT];
+// Keep held notices scoped to the same room and slot. All other toasts are
+// cleared and the initial-inventory absorb window is re-armed on connect.
+static uint64_t ap_feed_room;
+static uint64_t ap_feed_room_instance;
+static int ap_feed_resume_pending;
+static unsigned ap_feed_letters_held, ap_feed_letters_announced;
+static unsigned ap_feed_saved_letters_held, ap_feed_saved_letters_announced;
+static unsigned ap_feed_letters_reported;
+static int ap_feed_letters_baseline;
 static void AP_FeedLetterReadyUpdates(void);
 static void AP_FeedOxideFinalOpenUpdate(void);
+static void AP_UnlockReasonsConnectReset(int mayResume, int alreadyPending);
+static void AP_UnlockReasonsResolveReconnect(int sameRoom);
 
 void AP_FeedConnectReset(void)
 {
-	memset(ap_feed_letters_ready, 0, sizeof ap_feed_letters_ready);
+	uint64_t room = ap_content_plan_room_identity();
+	int mayResume = room && room == ap_feed_room && ap_feed_room_instance;
+	if (mayResume && !ap_feed_resume_pending)
+	{
+		ap_feed_saved = ap_feed;
+		AP_FeedLinesReconnect(&ap_feed_saved);
+		ap_feed_saved_letters_held = ap_feed_letters_held;
+		ap_feed_saved_letters_announced = ap_feed_letters_announced;
+	}
+	if (!mayResume)
+	{
+		AP_FeedLinesReset(&ap_feed_saved);
+		ap_feed_room_instance = 0;
+	}
+	AP_UnlockReasonsConnectReset(mayResume, ap_feed_resume_pending);
+	ap_feed_room = room;
+	ap_feed_resume_pending = mayResume;
+	AP_FeedLinesReset(&ap_feed);
+	ap_feed_letters_held = 0;
+	ap_feed_letters_announced = 0;
+	ap_feed_letters_reported = 0;
+	ap_feed_letters_baseline = 1;
 	ap_feed_primed = 0;
 	ap_feed_hwm = -1;
 	ap_feed_quiet = 0;
-	AP_FeedLinesReset(&ap_feed);
 	ap_feed_self_rung_count = 0;
 }
 
@@ -170,6 +210,11 @@ void AP_FeedOnItemReceived(long long item, int player, long long index, unsigned
 	{
 		ap_feed.receiptWindow = 0; // a distinct receipt ends a filler run
 		return; // descriptive podium-rung line already queued
+	}
+	if (AP_FeedFiltersItem(flags))
+	{
+		ap_feed.receiptWindow = 0;
+		return;
 	}
 
 	int self = ap_net_self_slot();
@@ -280,6 +325,8 @@ static void AP_FeedOnLocationSent(long code)
 	int scoutKnown = ap_net_scout_known(code, &item, &player, &flags);
 	if (!AP_LocationSentShouldToastPure(scoutKnown, player == ap_net_self_slot()))
 		return; // unscouted: cannot attribute; own item: the ReceivedItems echo already toasts it
+	if (AP_FeedFiltersItem(flags))
+		return;
 
 	char itemRaw[64], playerRaw[64];
 	char itemS[AP_FEED_ITEM_CAP], playerS[AP_FEED_PLAYER_CAP];
@@ -308,18 +355,44 @@ static void AP_FeedOnLocationSent(long code)
 	// so it never truncates. Class-coloured like a received line; a sent item is
 	// never our own, but that no longer drives the colour.
 	snprintf(line, sizeof line, AP_FEED_FMT_SENT, itemS, playerS);
-	AP_FeedEnqueue(line, AP_ClassFontColor(flags), 0);
+	AP_FeedLinesEnqueue(&ap_feed, line, AP_ClassFontColor(flags), 0)->unimportant =
+		AP_ItemFlagsClass(flags) == AP_ITEM_CLASS_FILLER;
 }
 
-// Called once after each frame's received-item drain (n = items drained this
-// frame). Handles the go-live transition: once connected and the initial dump
-// has gone quiet for AP_FEED_PRIME_QUIET_FRAMES, the feed primes and starts
-// toasting. Any item that arrives while unprimed keeps resetting the window (and
-// is absorbed by AP_FeedOnItemReceived), so a chunked initial sync stays silent.
+// The room token validates only previous-connection notices. The live
+// inventory barrier has its own clock, including for goal presentation.
+static void AP_FeedResolveReconnect(void)
+{
+	uint64_t instance;
+	if (!ap_net_feed_room_instance(&instance))
+		return;
+	if (ap_feed_resume_pending)
+	{
+		int sameRoom = instance == ap_feed_room_instance;
+		if (sameRoom)
+		{
+			for (int i = 0; i < ap_feed_saved.qcount; ++i)
+			{
+				const AP_FeedLine *line = &ap_feed_saved.queue[(ap_feed_saved.qhead + i) % AP_FEED_QUEUE_MAX];
+				AP_FeedEnqueueHeld(line->text, line->suffixOffset, line->color, line->playCue);
+			}
+			unsigned released = ap_feed_saved_letters_held & ~ap_feed_letters_reported;
+			ap_feed_letters_held |= released;
+			ap_feed_letters_announced = (ap_feed_letters_announced | ap_feed_saved_letters_announced) & ~released;
+		}
+		AP_FeedLinesReset(&ap_feed_saved);
+		AP_UnlockReasonsResolveReconnect(sameRoom);
+		ap_feed_resume_pending = 0;
+	}
+	ap_feed_room_instance = instance;
+}
+
+// Any item while unprimed resets the quiet window, so a chunked initial
+// inventory stays silent. A room token never changes the live threshold.
 void AP_FeedEndDrain(int drainedThisFrame)
 {
 	AP_FeedLinesReceiptTick(&ap_feed);
-	AP_FeedLetterReadyUpdates();
+	AP_FeedResolveReconnect();
 	AP_FeedOxideFinalOpenUpdate();
 	if (ap_feed_primed)
 		return;
@@ -330,6 +403,29 @@ void AP_FeedEndDrain(int drainedThisFrame)
 	}
 	if (++ap_feed_quiet >= AP_FEED_PRIME_QUIET_FRAMES)
 		ap_feed_primed = 1;
+}
+
+void AP_FeedDiscardUnimportant(void)
+{
+	if (AP_FeedLinesFilterImportant(&ap_feed))
+		for (int i = 0; i < AP_FEED_MAX_VISIBLE; ++i)
+			DecalFont_ResetLineBox(TEXT_SLOT_FEED + i);
+}
+
+// Keep the action and count readable in races. Only shorten the destination
+// name; the hub and results still get the full text.
+static const char *AP_FeedRaceText(AP_FeedLine *line, char text[AP_FEED_TEXT_CAP])
+{
+	if (!line->suffixOffset ||
+	    DecalFont_GetLineWidthStrlen(line->text, -1, FONT_SMALL) <= AP_FEED_RACE_WIDTH)
+		return line->text;
+	const char *suffix = line->text + line->suffixOffset;
+	int width = AP_FEED_RACE_WIDTH - DecalFont_GetLineWidthStrlen((char *)suffix, -1, FONT_SMALL);
+	memcpy(text, line->text, line->suffixOffset);
+	text[line->suffixOffset] = '\0';
+	int keep = DecalFont_LineBoxPrefixLen(text, width, FONT_SMALL);
+	snprintf(text, AP_FEED_TEXT_CAP, "%.*s...%s", keep, line->text, suffix);
+	return text;
 }
 
 // Tick + render the feed at one anchor: promote one pending line per stagger into
@@ -349,6 +445,8 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 			for (int i = armedMoved; i < AP_FEED_MAX_VISIBLE; ++i)
 				DecalFont_ResetLineBox(TEXT_SLOT_FEED + i);
 	}
+	if (AP_ItemFeedMode() == AP_ITEM_FEED_IMPORTANT)
+		AP_FeedDiscardUnimportant();
 	// Leave room below the lowest active hub warning and above the pad.
 	int visibleLimit = AP_FEED_MAX_VISIBLE;
 	if (!playableRace)
@@ -397,7 +495,10 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 	{
 		int fromBottom = ap_feed.vcount - 1 - i;
 		int y = baseY - fromBottom * AP_FEED_LINE_H;
-		DecalFont_DrawLineBox(ap_feed.vis[i].text, x, y, playableRace == 1 ? 364 : 480,
+		char shortened[AP_FEED_TEXT_CAP];
+		const char *text = playableRace == 1 ? AP_FeedRaceText(&ap_feed.vis[i], shortened)
+		                                    : ap_feed.vis[i].text;
+		DecalFont_DrawLineBox(text, x, y, playableRace == 1 ? AP_FEED_RACE_WIDTH : 480,
 		    FONT_SMALL, ap_feed.vis[i].color, playableRace == 1 ? TEXT_ELLIPSIS : TEXT_MARQUEE,
 		    TEXT_SLOT_FEED + i, NULL);
 	}

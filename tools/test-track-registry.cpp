@@ -97,9 +97,15 @@ static std::string registry(bool with_new_track)
 	json twice = revision("2.0.0", '1', '2', 100, 200, 7, 8);
 	twice["provenance"]["saphi_downloads"].push_back({{"kind", "lev"}, {"download_id", 9}});
 	tracks.push_back(track("ambiguous", 55, json::array({twice})));
+	json lev_only = revision("1.0.0", '5', '6', 100, 200, 10, 11);
+	lev_only["files"].erase("vrm");
+	tracks.push_back(track("lev-only", 0, json::array({lev_only})));
 	if (with_new_track)
 		tracks.push_back(track("tv-world", 100, json::array({revision("1.1.0", '3', '4', 913816, 458808, 715, 716)})));
-	return json({{"schema_version", 1}, {"id_scheme", json::object()}, {"tracks", tracks}}).dump();
+	return json({{"schema_version", 1}, {"id_scheme", json::object()}, {"tracks", tracks},
+	             {"track_key_aliases", {{"old-lake", "acid-lake"}}},
+	             {"road_sha256", {{h('8'), "acid-lake"}}},
+	             {"patch_lev_keys", {{h('9'), "no-saphi"}}}}).dump();
 }
 
 static int wait_done(int *source, std::string *detail = nullptr)
@@ -221,6 +227,36 @@ int main(int argc, char **argv)
 		serve(true, v1);
 		CHECK(ap_track_registry_refresh(cache.c_str()) == 1);
 		CHECK(wait_done(&source) == AP_TRACK_REGISTRY_DONE);
+	}
+	{
+		std::string key = "old-lake", title;
+		CHECK(ap_track_registry_identity("", "", key, title) && key == "acid-lake" && title == "acid-lake");
+		key.clear();
+		CHECK(ap_track_registry_identity("", h('8'), key, title) && key == "acid-lake" && title == "acid-lake");
+		CHECK(ap_track_registry_identity(h('9'), h('8'), key, title) && key == "no-saphi" && title == "no-saphi");
+		CHECK(ap_track_registry_identity(h('5'), "", key, title) && key == "lev-only" && title == "lev-only");
+		key = "unknown";
+		CHECK(!ap_track_registry_identity("", "", key, title) && key == "unknown" && title.empty());
+		CHECK(ap_track_registry_canonical_key("release-st-patrick-adventure-slot-7") ==
+		      "lego-alien-rally-asteroid");
+	}
+	{
+		auto legacy = json::parse(v1);
+		for (const char *field : {"road_sha256", "track_key_aliases", "patch_lev_keys"})
+			legacy.erase(field);
+		serve(true, legacy.dump());
+		{
+			std::lock_guard<std::mutex> blocked_transport(g_mutex);
+			CHECK(ap_track_registry_refresh(cache.c_str()) == 1);
+			ap_track_registry_prepare_identity(cache.c_str(), [](const void *) { return 1; }, nullptr);
+			CHECK(ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_LOADING);
+		}
+		ap_track_registry_prepare_identity(cache.c_str(), nullptr, nullptr);
+		CHECK(ap_track_registry_status(&source, nullptr, 0) == AP_TRACK_REGISTRY_DONE &&
+		      source == AP_TRACK_REGISTRY_SOURCE_LIVE);
+		std::string key = "old-lake", title;
+		CHECK(ap_track_registry_identity("", "", key, title) && key == "acid-lake" && title == "acid-lake");
+		CHECK(slurp(cache) == v1);
 	}
 
 	// 2. Match by the room's pinned hashes, in any case.

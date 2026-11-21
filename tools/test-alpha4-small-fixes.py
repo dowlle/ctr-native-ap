@@ -25,6 +25,7 @@ fixture = r'''
 #include "include/ctr_menu_scrollbar.h"
 #include "include/text_box.h"
 #define CTR_AP
+#include "include/platform/native_config.h"
 #define CTR_NATIVE
 #define CTR_CUSTOM_TRACKS
 #define CTR_CUSTOM_PACKAGES
@@ -45,6 +46,7 @@ typedef struct { unsigned char r,g,b,code; } Color;
 #define INC_TROPHY 1
 #define AP_FEED_X 8
 #define AP_FEED_BASE_Y 200
+#define AP_FEED_RACE_WIDTH 364
 #define AP_FEED_LINE_H 12
 #define AP_FEED_BOX_WARNING_Y 72
 #define AP_FEED_CONTENT_WARNING_Y 48
@@ -72,8 +74,16 @@ static char lastText[128];
 static int ctr_cfg_active(void) { return active; }
 static int AP_GateCount(int i) { assert(i==AP_IDX_TROPHY); return received; }
 static int AP_HubFeedOn(void) { return enabled; }
+static int feedMode = AP_ITEM_FEED_ALL;
+static int AP_ItemFeedMode(void) { return feedMode; }
 static int AP_CharSwap_HubHudHidden(void) { return hidden; }
 static void OtherFX_Play(int fx,int volume) { assert(fx==0x41&&volume==1); }
+static int DecalFont_GetLineWidthStrlen(char *s,int n,int font) {
+    (void)font; return n < 0 ? (int)strlen(s) * 8 : n * 8;
+}
+int DecalFont_LineBoxPrefixLen(const char *s,int w,short font) {
+    (void)font; return (int)strlen(s) * 8 <= w ? (int)strlen(s) : (w > 24 ? w / 8 - 3 : 0);
+}
 static void DecalFont_DrawLine(char *s,int x,int y,int font,int flags) { snprintf(lastText,sizeof lastText,"%s",s);if(draws<8)drawnY[draws]=y;draws++;lastY=y; }
 static void DecalFont_DrawLineOT(char *s,int x,int y,int font,int flags,uint32_t *ot) { DecalFont_DrawLine(s,x,y,font,flags); }
 void DecalFont_DrawLineBox(const char *s,int x,int y,int width,short font,int flags,int mode,int slot,unsigned int *ot) { assert(width==(mode==TEXT_ELLIPSIS?364:480));DecalFont_DrawLine((char *)s,x,y,font,flags); }
@@ -83,6 +93,8 @@ static int MainRaceTrack_OfflineCustomLoad(void) { return offline; }
 '''
 fixture += function("game/UI/UI_DrawNum.c", "void UI_DrawNumTrophy(s16 posX, s16 posY)")
 fixture += "\nstatic int missingContent;\nstatic int AP_CustomContentWarningVisible(void) {return missingContent;}\n"
+fixture += function("ap/ap_hooks_feed.c", "void AP_FeedDiscardUnimportant(void)")
+fixture += function("ap/ap_hooks_feed.c", "static const char *AP_FeedRaceText(AP_FeedLine *line, char text[AP_FEED_TEXT_CAP])")
 fixture += function("ap/ap_hooks_feed.c", "static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)")
 fixture += "\nstatic int ap_feed_hub_pad_y;\n"
 fixture += function("ap/ap_hooks_feed.c", "void AP_FeedHubPadTitle(int feedY)")
@@ -137,6 +149,25 @@ int main(void) {
     draws=0;AP_FeedTickAndDraw(8,103,0);assert(draws==3&&drawnY[0]==79&&drawnY[2]==103&&ap_feed.qcount==1);
     ctr_cfg.box_placement_refused=1;
     draws=0;AP_FeedTickAndDraw(8,103,0);assert(draws==1&&drawnY[0]==103&&ap_feed.qcount==1);
+    AP_FeedLinesReset(&ap_feed);
+    AP_FeedLinesEnqueue(&ap_feed,"FILLER",WHITE,0)->unimportant = 1;
+    AP_FeedLinesPromote(&ap_feed);
+    AP_FeedLinesEnqueue(&ap_feed,"STOCK",WHITE,0)->unimportant = 1;
+    AP_FeedLinesEnqueue(&ap_feed,"UNLOCK",WHITE,0);
+    ap_feed.stagger = 0;
+    feedMode = AP_ITEM_FEED_IMPORTANT;
+    draws=0;AP_FeedTickAndDraw(8,200,0);
+    assert(draws == 1 && !strcmp(lastText,"UNLOCK") && !ap_feed.qcount);
+    /* The menu applies this discard before the next receipt can evict
+       a progression line from an old, full ALL queue. */
+    AP_FeedLinesReset(&ap_feed);
+    AP_FeedLinesEnqueue(&ap_feed,"PROGRESSION",WHITE,0);
+    for (int i = 1; i < AP_FEED_NORMAL_LIMIT; ++i)
+        AP_FeedLinesEnqueue(&ap_feed,"FILLER",WHITE,0)->unimportant = 1;
+    AP_FeedDiscardUnimportant();
+    AP_FeedLinesEnqueue(&ap_feed,"NEW USEFUL",WHITE,0);
+    assert(ap_feed.qcount == 2 && !strcmp(ap_feed.queue[ap_feed.qhead].text,"PROGRESSION"));
+    feedMode = AP_ITEM_FEED_ALL;
     // A4-36: a slim bar, no text, only when the page scrolls; track and thumb inside the nine-row window.
     draws=0;
     for(int count=0;count<=9;count++) { boxes=0;Config_DrawScrollBar(0,count,NULL);assert(!boxes); }

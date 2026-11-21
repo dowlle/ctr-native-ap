@@ -17,7 +17,7 @@ ConvertRotToMatrix MATH_HitboxMatrix MixRNG_Scramble GAMEPAD_ShockFreq
 GAMEPAD_ShockForce1 VehPhysForce_RotAxisAngle PROC_DestroyTracker
 RB_Hazard_ThCollide_Missile CTR_MatrixToRot PlaySound3D RB_GetThread_ClosestTracker
 Voiceline_RequestPlay RB_GenericMine_ThTick RB_Hazard_ThCollide_Generic
-RB_MinePool_Add RB_Hazard_CollLevInst RB_GenericMine_ThDestroy
+RB_MinePool_Add RB_MinePool_BossMine RB_Hazard_CollLevInst RB_GenericMine_ThDestroy
 RB_MakeInstanceReflective RB_Follower_Init RB_ShieldDark_ThTick_Grow
 OtherFX_Play RB_Hazard_HurtDriver RB_MaskWeapon_ThTick RB_MovingExplosive_ThTick""".split()
 fixture = r'''
@@ -31,7 +31,8 @@ void AP_NavRec_NoteItemFire(struct Driver *d, int id) { (void)d; (void)id; }
 struct Driver *AP_BossKitShotTarget(struct Driver *d) {
     (void)d; assert(!IS_BOSS_RACE(sdata->gGT->gameMode1)); return NULL;
 }
-static int useId, useCount, boost;
+static int useId, useCount, trapFireId, trapFireCount, boost;
+void AP_TrapNoteWeaponFire(struct Driver *d, int id) { (void)d; trapFireId=id; trapFireCount++; }
 void AP_ItemsanityOnUse(struct Driver *d, int id) { (void)d; useId=id; useCount++; }
 #include "game/Vehicle/VehPickupItem.c"
 struct sData sdata_static;
@@ -97,7 +98,7 @@ static void setup(int arena,int fruit,int mode) {
     memset(&level,0,sizeof level);memset(&kart,0,sizeof kart);
     memset(&kartTh,0,sizeof kartTh);memset(births,0,sizeof births);
     memset(threads,0,sizeof threads);memset(objects,0xa5,sizeof objects);
-    memset(scratch,0,sizeof scratch);born=failBirth=boost=useCount=0;useId=-1;
+    memset(scratch,0,sizeof scratch);born=failBirth=boost=useCount=trapFireCount=0;useId=trapFireId=-1;
     sdata->gGT=&gt;sdata->gGamepads=&pads;
     gt.level1=&level;gt.levelID=arena;gt.numPlyrCurrGame=1;
     gt.gameMode1=ADVENTURE_MODE|mode;gt.drivers[0]=&driver;
@@ -114,7 +115,8 @@ static void fire(int id) {
     VehPickupItem_ShootOnCirclePress(&driver);
     assert(!(driver.actionsFlagSet&ACTION_WEAPON_FIRE_REQUEST));
     assert(useId==id && useCount==1);
-    VehPickupItem_ShootOnCirclePress(&driver);assert(useCount==1);
+    assert(trapFireId==id && trapFireCount==1);
+    VehPickupItem_ShootOnCirclePress(&driver);assert(useCount==1 && trapFireCount==1);
 }
 int main(void) {
     const int ids[]={0,1,2,3,4,6,7,8,10,11,12,13,9};

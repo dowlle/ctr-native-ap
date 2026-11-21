@@ -35,7 +35,9 @@
 
 #define AP_FEED_LIFETIME_FRAMES    240 // per-line visible dwell (~4s), tunable
 #define AP_FEED_MAX_VISIBLE        5   // lines on screen at once
-#define AP_FEED_QUEUE_MAX          24  // pending (not-yet-visible) ring capacity
+#define AP_FEED_NORMAL_LIMIT       24  // original pending limit for ordinary notices
+// One letter notice per physical pad plus four door notices may be held.
+#define AP_FEED_QUEUE_MAX          (AP_FEED_NORMAL_LIMIT + 31)
 #define AP_FEED_STAGGER_FRAMES     12  // min frames between promotions (cascade)
 #define AP_FEED_TEXT_CAP           96
 
@@ -54,6 +56,9 @@ typedef struct
 	int  color;      // DecalFontStyle index resolved from the item's AP class (#195)
 	int  framesLeft; // visible lifetime remaining
 	int  playCue;    // received-item cue, consumed only when promoted in a race
+	unsigned char unimportant;   // filler receipt/send or shop stock
+	unsigned char reconnectHeld; // released pad or letter notice awaiting its first draw
+	unsigned char suffixOffset;  // held notice text to preserve in the race HUD
 	int  trapSlot;   // scheduler slot of the trap this line belongs to, or AP_FEED_NO_TRAP
 	int  trapStage;  // AP_FEED_TRAP_* while trapSlot is set
 	unsigned trapSeq; // receipt sequence of the trap copy, while trapSlot is set
@@ -87,16 +92,70 @@ static inline void AP_FeedLinesReset(AP_FeedLines *f)
 	f->receiptWindow = 0;
 }
 
-// Append a ready-formatted line to the pending ring. Oldest is dropped if full.
-static inline AP_FeedLine *AP_FeedLinesEnqueue(AP_FeedLines *f, const char *text,
-                                               int color, int playCue)
+// Keep pending held notices on a same-room reconnect. A visible line has
+// already been shown, and trap lines belong to the previous scheduler.
+static inline void AP_FeedLinesReconnect(AP_FeedLines *f)
+{
+	int kept = 0;
+	for (int i = 0; i < f->qcount; ++i)
+	{
+		const AP_FeedLine *q = &f->queue[(f->qhead + i) % AP_FEED_QUEUE_MAX];
+		if (q->reconnectHeld)
+			f->queue[(f->qhead + kept++) % AP_FEED_QUEUE_MAX] = *q;
+	}
+	f->qcount = kept;
+	f->vcount = 0;
+	f->stagger = 0;
+	f->receiptID = 0;
+	f->receiptWindow = 0;
+}
+
+static inline int AP_FeedLinesFilterImportant(AP_FeedLines *f)
+{
+	int kept = 0;
+	for (int i = 0; i < f->qcount; ++i)
+	{
+		const AP_FeedLine *q = &f->queue[(f->qhead + i) % AP_FEED_QUEUE_MAX];
+		if (!q->unimportant)
+			f->queue[(f->qhead + kept++) % AP_FEED_QUEUE_MAX] = *q;
+	}
+	f->qcount = kept;
+	kept = 0;
+	for (int i = 0; i < f->vcount; ++i)
+		if (!f->vis[i].unimportant)
+			f->vis[kept++] = f->vis[i];
+	const int moved = kept != f->vcount;
+	f->vcount = kept;
+	f->receiptWindow = 0;
+	return moved;
+}
+
+// Ordinary bursts drop the oldest ordinary line. Reserve room for the held
+// notices until their first draw, including through a same-room reconnect.
+static inline AP_FeedLine *AP_FeedLinesEnqueueNotice(AP_FeedLines *f, const char *text,
+                                                      int color, int playCue, int held)
 {
 	AP_FeedLine *q;
 	int slot;
-	if (f->qcount >= AP_FEED_QUEUE_MAX)
+	if (!held && f->qcount >= AP_FEED_NORMAL_LIMIT)
 	{
-		f->qhead = (f->qhead + 1) % AP_FEED_QUEUE_MAX;
-		f->qcount--;
+		int oldest = -1, ordinary = 0;
+		for (int i = 0; i < f->qcount; ++i)
+		{
+			if (f->queue[(f->qhead + i) % AP_FEED_QUEUE_MAX].reconnectHeld)
+				continue;
+			if (oldest < 0)
+				oldest = i;
+			++ordinary;
+		}
+		if (ordinary == AP_FEED_NORMAL_LIMIT)
+		{
+			for (int i = oldest; i > 0; --i)
+				f->queue[(f->qhead + i) % AP_FEED_QUEUE_MAX] =
+					f->queue[(f->qhead + i - 1) % AP_FEED_QUEUE_MAX];
+			f->qhead = (f->qhead + 1) % AP_FEED_QUEUE_MAX;
+			--f->qcount;
+		}
 	}
 	slot = (f->qhead + f->qcount) % AP_FEED_QUEUE_MAX;
 	q = &f->queue[slot];
@@ -106,11 +165,18 @@ static inline AP_FeedLine *AP_FeedLinesEnqueue(AP_FeedLines *f, const char *text
 	q->color = color;
 	q->framesLeft = 0;
 	q->playCue = playCue;
+	q->reconnectHeld = held;
 	q->trapSlot = AP_FEED_NO_TRAP;
 	q->trapStage = 0;
 	q->trapSeq = 0;
 	f->qcount++;
 	return q;
+}
+
+static inline AP_FeedLine *AP_FeedLinesEnqueue(AP_FeedLines *f, const char *text,
+                                               int color, int playCue)
+{
+	return AP_FeedLinesEnqueueNotice(f, text, color, playCue, 0);
 }
 
 // Newest line (queued first, then visible) that belongs to this trap copy.
@@ -212,6 +278,7 @@ static inline void AP_FeedLinesReceipt(AP_FeedLines *f, long long item, int play
 	l = AP_FeedLinesEnqueue(f, text, color, 1);
 	if (++f->receiptID == 0) ++f->receiptID;
 	f->receiptWindow = filler ? AP_FEED_LIFETIME_FRAMES : 0;
+	l->unimportant = filler;
 	l->receiptID = f->receiptID;
 	l->receiptItem = item;
 	l->receiptPlayer = player;

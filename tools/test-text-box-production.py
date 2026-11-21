@@ -23,6 +23,9 @@ fixture = r'''
 #include <text_box.h>
 #include <ctr_menu_ux.h>
 #include "ap/ap_feed_lines_logic.h"
+#define CTR_AP
+#include "include/platform/native_config.h"
+static int AP_ItemFeedMode(void) { return AP_ITEM_FEED_ALL; }
 typedef short s16; typedef unsigned char u8; typedef unsigned int u32;
 #define UsaRetail 926
 #define EurRetail 1020
@@ -87,12 +90,15 @@ fixture += function("game/230/MM_CustomTracks.c", "static void CT_LibraryMarquee
 fixture += function("game/230/MM_CustomTrackSelect.c", "static void MM_CustomTrackSelect_MarqueePin(const char *pin)")
 fixture += """
 #define AP_FEED_LINE_H 12
+#define AP_FEED_RACE_WIDTH 364
 #define AP_FEED_BOX_WARNING_Y 72
 #define AP_FEED_CONTENT_WARNING_Y 48
 static AP_FeedLines ap_feed;
 static struct {int box_placement_refused;} ctr_cfg;
 static int AP_CustomContentWarningVisible(void) { return 0; }
 """
+fixture += function("ap/ap_hooks_feed.c", "void AP_FeedDiscardUnimportant(void)")
+fixture += function("ap/ap_hooks_feed.c", "static const char *AP_FeedRaceText(AP_FeedLine *line, char text[AP_FEED_TEXT_CAP])")
 fixture += function("ap/ap_hooks_feed.c", "static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)")
 fixture += r'''
 static void reset(void) { db.primMem.cursor=arena;ne=envCount=drawWidth=0; }
@@ -100,6 +106,20 @@ int main(void) {
     uint32_t ot;
     game.backBuffer=&db;game.pushBuffer_UI.rect.w=512;game.pushBuffer_UI.rect.h=216;game.pushBuffer_UI.ptrOT=&ot;
     game.numPlyrCurrGame=1;db.primMem.guardEnd=arena+sizeof arena-64;
+    {
+        AP_FeedLine notice = {0};
+        char shortened[AP_FEED_TEXT_CAP];
+        const char *suffixes[] = {" DOOR OPEN (+3 PADS)", ": Got CTR letters"};
+        const char *names[] = {"Gem Stone Valley", "Haunted Speedway Through the Long Forest"};
+        for (int i = 0; i < 2; ++i) {
+            snprintf(notice.text, sizeof notice.text, "%s%s", names[i], suffixes[i]);
+            notice.suffixOffset = strlen(names[i]);
+            const char *text = AP_FeedRaceText(&notice, shortened);
+            assert(strstr(text, suffixes[i]));
+            assert(DecalFont_GetLineWidthStrlen((char *)text, -1, FONT_SMALL) <= AP_FEED_RACE_WIDTH);
+            assert(!strncmp(notice.text, names[i], strlen(names[i])));
+        }
+    }
     for(int w=1;w<=480;w++) {
         reset();DecalFont_DrawLineBox("Long title with @ [ ^ * and punctuation: ...",16,80,w,FONT_SMALL,0,TEXT_ELLIPSIS,0,&ot);
         assert(drawWidth<=w);assert(envCount==0);

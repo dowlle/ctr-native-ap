@@ -4,6 +4,7 @@
 // Project Saphi and GitHub raw.
 
 #include "ap_track_registry.h"
+#include "ap_track_key_aliases.hpp"
 #include <platform/native_cortex_asset_pins.h>
 #include <platform/native_track_credit.h>
 #include <platform/native_custom_package.h>
@@ -13,6 +14,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -49,7 +52,8 @@ struct Index
 	std::unordered_map<int, std::string> key_by_saphi;
 	struct Credit { std::string name, role; };
 	std::unordered_map<std::string, std::vector<Credit>> credits;
-	void clear() { rows.clear(); key_by_saphi.clear(); credits.clear(); }
+	std::unordered_map<std::string, std::string> titles, lev_keys, roads, aliases;
+	bool has_identity = false;
 };
 constexpr size_t kMaxCredits = 16;     // per track
 constexpr size_t kCreditNameMax = 80;  // bytes, like a Saphi author
@@ -57,10 +61,12 @@ constexpr size_t kCreditNameMax = 80;  // bytes, like a Saphi author
 struct RegistryState
 {
 	std::mutex mutex;
+	std::condition_variable finished;
 	int state = AP_TRACK_REGISTRY_IDLE;
 	int source = AP_TRACK_REGISTRY_SOURCE_NONE;
 	std::string detail;
 	std::shared_ptr<const Index> index;
+	std::shared_ptr<const Index> identity;
 	uint32_t generation = 0;
 };
 
@@ -167,7 +173,7 @@ void saphi_downloads(const nlohmann::json &revision, Revision &out)
 
 bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::string &error)
 {
-	index.clear();
+	index = {};
 	if (bytes.empty() || bytes.size() > AP_TRACK_REGISTRY_MAX_BYTES)
 	{
 		error = "The track registry is empty or too large.";
@@ -195,6 +201,13 @@ bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::str
 	for (const auto &track : *tracks)
 	{
 		const std::string key = short_text(member(track, "track_key"));
+		const auto *title = member(track, "display_title");
+		if (!key.empty() && title && title->is_string())
+		{
+			const auto &name = title->get_ref<const std::string &>();
+			if (!name.empty() && name.size() <= 128 && name.find('\0') == std::string::npos)
+				index.titles.emplace(key, name);
+		}
 		const nlohmann::json *credits = member(track, "credits");
 		if (!key.empty() && credits && credits->is_array() && credits->size() <= kMaxCredits)
 		{
@@ -233,8 +246,10 @@ bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::str
 		{
 			Revision row;
 			const nlohmann::json *files = member(revision, "files");
-			if (!file_pin(files, "lev", row.lev, row.lev_size) || !file_pin(files, "vrm", row.vrm, row.vrm_size))
-				continue;
+			if (!file_pin(files, "lev", row.lev, row.lev_size)) continue;
+			auto lev = index.lev_keys.emplace(row.lev, key);
+			if (!lev.second && lev.first->second != key) lev.first->second.clear();
+			if (!file_pin(files, "vrm", row.vrm, row.vrm_size)) continue;
 			row.track_id = static_cast<int>(track_id);
 			row.key = key;
 			row.revision = short_text(member(revision, "revision"));
@@ -242,6 +257,23 @@ bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::str
 			index.rows.push_back(std::move(row));
 		}
 	}
+	auto read_keys = [&](const char *field, auto &out, bool hashes) {
+		const auto *mapping = member(root, field);
+		if (!mapping || !mapping->is_object()) return false;
+		for (auto it = mapping->begin(); it != mapping->end(); ++it)
+		{
+			if (!it->is_string() || !index.titles.count(it->get_ref<const std::string &>())) return false;
+			std::string from = it.key();
+			if (hashes && !hex64(nlohmann::json(it.key()), from)) return false;
+			if (!hashes && index.titles.count(from)) return false;
+			if (!out.emplace(from, it->get<std::string>()).second) return false;
+		}
+		return true;
+	};
+	index.has_identity = read_keys("road_sha256", index.roads, true) &&
+	                     read_keys("track_key_aliases", index.aliases, false) &&
+	                     read_keys("patch_lev_keys", index.lev_keys, true);
+	if (!index.has_identity) index.aliases.clear();
 	return true;
 }
 
@@ -295,6 +327,7 @@ void publish(Index index, int source)
 	auto shared = std::make_shared<const Index>(std::move(index));
 	RegistryState &s = registry_state();
 	std::lock_guard<std::mutex> lock(s.mutex);
+	if (shared->has_identity) s.identity = shared;
 	s.index = std::move(shared);
 	s.source = source;
 	s.generation++;
@@ -306,6 +339,7 @@ void finish(int state, const std::string &detail)
 	std::lock_guard<std::mutex> lock(s.mutex);
 	s.state = state;
 	s.detail = detail;
+	s.finished.notify_all();
 }
 
 void refresh_worker(std::string cache_path)
@@ -313,12 +347,13 @@ void refresh_worker(std::string cache_path)
 	std::vector<unsigned char> cached, live;
 	std::string error;
 	Index index;
-	bool have_cache = false;
+	bool have_cache = false, cache_has_identity = false;
 	try
 	{
 		if (!cache_path.empty() && read_capped(cache_path, cached) && parse_index(cached, index, error))
 		{
 			have_cache = true;
+			cache_has_identity = index.has_identity;
 			bool empty;
 			{
 				RegistryState &s = registry_state();
@@ -335,8 +370,9 @@ void refresh_worker(std::string cache_path)
 		}
 		else if (parse_index(live, index, error))
 		{
+			const bool preserve_names = cache_has_identity && !index.has_identity;
 			publish(std::move(index), AP_TRACK_REGISTRY_SOURCE_LIVE);
-			if (!cache_path.empty() && (!have_cache || live != cached) && !write_cache(cache_path, live))
+			if (!preserve_names && !cache_path.empty() && (!have_cache || live != cached) && !write_cache(cache_path, live))
 				std::fprintf(stderr, "[CustomTracks] Could not save the track registry cache.\n");
 			finish(AP_TRACK_REGISTRY_DONE, "");
 			return;
@@ -398,6 +434,20 @@ extern "C" int ap_track_registry_refresh(const char *cache_path)
 		finish(usable ? AP_TRACK_REGISTRY_DONE : AP_TRACK_REGISTRY_UNAVAILABLE,
 		       std::string("Could not start the registry check: ") + e.what());
 		return 0;
+	}
+}
+
+extern "C" void ap_track_registry_prepare_identity(const char *cache_path,
+                                                    int (*cancelled)(const void *), const void *context)
+{
+	if (ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_IDLE)
+		ap_track_registry_refresh(cache_path);
+	auto &state = registry_state();
+	std::unique_lock<std::mutex> lock(state.mutex);
+	while (state.state == AP_TRACK_REGISTRY_LOADING && (!cancelled || !cancelled(context)))
+	{
+		if (cancelled) state.finished.wait_for(lock, std::chrono::milliseconds(25));
+		else state.finished.wait(lock);
 	}
 }
 
@@ -483,12 +533,38 @@ static std::shared_ptr<const Index> current_index()
 	return s.index;
 }
 
+static std::string canonical_key(const Index *index, const std::string &key)
+{
+	if (index && index->has_identity)
+	{
+		auto alias = index->aliases.find(key);
+		if (alias != index->aliases.end()) return alias->second;
+	}
+	for (const auto &alias : kTrackKeyAliases)
+		if (key == alias[0]) return alias[1];
+	return key;
+}
+
+std::string ap_track_registry_canonical_key(const std::string &key)
+{
+	auto &state = registry_state();
+	std::lock_guard<std::mutex> lock(state.mutex);
+	return canonical_key(state.identity.get(), key);
+}
+
 bool ap_track_registry_credits(const std::string &track_key, std::vector<std::string> &names)
 {
-	const auto index = current_index();
+	std::shared_ptr<const Index> index;
+	std::shared_ptr<const Index> identity;
+	{
+		RegistryState &s = registry_state();
+		std::lock_guard<std::mutex> lock(s.mutex);
+		index = s.index;
+		identity = s.identity;
+	}
 	names.clear();
 	if (!index || track_key.empty()) return false;
-	auto found = index->credits.find(track_key);
+	auto found = index->credits.find(canonical_key(identity.get(), track_key));
 	if (found == index->credits.end()) return false;
 	for (const auto &credit : found->second) names.push_back(credit.name);
 	return true;
@@ -621,6 +697,24 @@ extern "C" void CustomTrackCredit_EnsureRegistry(const char *assets)
 	}
 }
 
+bool ap_track_registry_identity(const std::string &lev, const std::string &road,
+                                std::string &key, std::string &title)
+{
+	auto &state = registry_state();
+	std::lock_guard<std::mutex> lock(state.mutex);
+	const auto &index = state.identity;
+	if (!index) return false;
+	auto exact = index->lev_keys.find(lev);
+	auto layout = index->roads.find(road);
+	auto alias = index->aliases.find(key);
+	if (exact != index->lev_keys.end() && !exact->second.empty()) key = exact->second;
+	else if (layout != index->roads.end()) key = layout->second;
+	else if (alias != index->aliases.end()) key = alias->second;
+	auto name = index->titles.find(key);
+	title = name == index->titles.end() ? std::string() : name->second;
+	return !title.empty();
+}
+
 #ifdef AP_TRACK_REGISTRY_TEST
 // Harness only: forget everything, as a fresh client start would.
 void ap_track_registry_test_reset()
@@ -631,6 +725,7 @@ void ap_track_registry_test_reset()
 	s.source = AP_TRACK_REGISTRY_SOURCE_NONE;
 	s.detail.clear();
 	s.index.reset();
+	s.identity.reset();
 	s.generation++;
 }
 #endif

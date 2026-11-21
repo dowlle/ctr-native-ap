@@ -194,11 +194,38 @@ int main(void) {
     g_pad.box_excluded_count = 1; g_pad.box_excluded[0] = 1;
     AP_BoxesSeatCustom(&gGT, &race);
     expect(!s_liveCount && untouched(n), "excluded position mismatch refuses before hiding any crate");
+    n = table(17); reset(17, 15);
+    g_pad.box_excluded_count = 1; g_pad.box_excluded[0] = 1;
+    g_pad.box_excluded_ordinals_only = 1;
+    AP_BoxesSeatCustom(&gGT, &race);
+    expect(s_liveCount == 15 && insts[0].flags == (0x7u | 0x100u),
+           "carried ordinal excludes the crate at its new position");
+    n = table(17); reset(17, 15);
+    g_pad.box_excluded_count = 1; g_pad.box_excluded[0] = 18;
+    g_pad.box_excluded_ordinals_only = 1;
+    AP_BoxesSeatCustom(&gGT, &race);
+    expect(!s_liveCount && untouched(n), "an absent carried ordinal refuses before hiding any crate");
     n = table(3); reset(3, 2);
     g_pad.box_excluded_count = 1; g_pad.box_excluded[0] = 2;
     for (i = 0; i < 3; ++i) g_pad.box_excluded_pos[0][i] = defs[crate_index(1, n)].pos.v[i];
     AP_BoxesSeatCustom(&gGT, &race);
     expect(s_liveCount == 2 && s_live[1].seatInst == &insts[crate_index(2, n)], "interior exclusion maps back to original ordinal");
+
+    /* A later revision has five added crates. A carried exclusion outside
+       the reviewed prefix must not shrink the pool inside it. */
+    n = table(12); reset(12, 3);
+    g_pad.box_reviewed_crates = 7;
+    g_pad.box_excluded_count = 2;
+    g_pad.box_excluded_ordinals_only = 1;
+    g_pad.box_excluded[0] = 2; g_pad.box_excluded[1] = 9;
+    AP_BoxesSeatCustom(&gGT, &race);
+    expect(s_liveCount == 3, "reviewed prefix seats three AP boxes");
+    expect(s_live[0].seatInst == &insts[crate_index(0, n)] &&
+           s_live[1].seatInst == &insts[crate_index(3, n)] &&
+           s_live[2].seatInst == &insts[crate_index(5, n)], "seats use only the reviewed prefix after exclusions");
+    for (i = 7; i < 12; i++)
+        expect(insts[crate_index(i, n)].flags == (0x7u | 0x100u), "added crate keeps its gameplay instance");
+
     /* 1. Eight crates, eight boxes: every crate seated, in order. */
     n = table(8); reset(8, 8);
     AP_BoxesSeatCustom(&gGT, &race);

@@ -690,6 +690,9 @@ void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags)
 		mw->extraFlags = 0;
 
 		RB_MinePool_Add(mw);
+#ifdef CTR_AP
+		RB_MinePool_BossMine(mw, weaponInst);
+#endif
 		VehPickupItem_PotionThrow(mw, weaponInst, flags);
 		mineHitModel = weaponInst->model->id | COLL_MODELID_BLOCKAGE_FLAG;
 		mineShouldInitFollower = (flags == 0);
@@ -839,6 +842,9 @@ void VehPickupItem_ShootNow(struct Driver *d, int weaponID, int flags)
 		}
 
 		RB_MinePool_Add(mw);
+#ifdef CTR_AP
+		RB_MinePool_BossMine(mw, weaponInst);
+#endif
 		int ret = VehPickupItem_PotionThrow(mw, weaponInst, flags);
 
 		if (ret == 0)
@@ -1184,6 +1190,7 @@ void VehPickupItem_ShootOnCirclePress(struct Driver *d)
 	d->actionsFlagSet &= ~ACTION_WEAPON_FIRE_REQUEST;
 
 #ifdef CTR_AP
+	AP_TrapNoteWeaponFire(d, (int)d->heldItemID);
 	// #145 itemsanity: the live choke point for a player-initiated use. The
 	// request flag is only raised by VehPhysProc after it has already spent the
 	// item (numHeldItems--/noItemTimer), and it is cleared just above, so this

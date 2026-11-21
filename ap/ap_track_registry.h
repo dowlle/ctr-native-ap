@@ -70,6 +70,11 @@ struct ApTrackRegistryMatch
 // success publish it and replace the cache. Returns 1 when a worker started.
 int ap_track_registry_refresh(const char *cache_path);
 
+// For naming jobs that already run off the game thread. Waits for the current
+// bounded registry fetch, or starts the first fetch if needed.
+void ap_track_registry_prepare_identity(const char *cache_path,
+                                        int (*cancelled)(const void *), const void *context);
+
 // The refresh state (AP_TRACK_REGISTRY_IDLE...) and the source of the index in
 // use. detail gets a short reason when the live fetch failed.
 int ap_track_registry_status(int *source, char *detail, int detail_bytes);
@@ -107,6 +112,11 @@ int ap_track_registry_parse_check(const std::vector<unsigned char> &bytes, std::
 // The names a registry track credits, in registry order (permission check,
 // A4-74). False when the track is unknown or a credit is unreadable.
 bool ap_track_registry_credits(const std::string &track_key, std::vector<std::string> &names);
+std::string ap_track_registry_canonical_key(const std::string &key);
+
+// Returns true when the live or cached naming table can supply a title.
+bool ap_track_registry_identity(const std::string &lev, const std::string &road,
+                                std::string &key, std::string &title);
 #endif
 
 #endif

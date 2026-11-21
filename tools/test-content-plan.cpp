@@ -3,6 +3,7 @@
 #include "ap_seedcfg.h"
 #include "ap_content_plan.h"
 #include "ap_content_modes.h"
+#include "ap_content_object_rulings.hpp"
 #include "ap_trap_items.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
@@ -258,6 +259,26 @@ int main(int argc, char **argv) {
             ++rows;
         }
         expect(rows == 18, "all object ruling fixtures exercised");
+    }
+    {
+        // Synthetic catalog rows exercise the production lookup without
+        // publishing a ruling for either historical Coco Park copy.
+        const std::string st_patrick_pin(64, 'a'), anniversary_pin(64, 'b'), new_pin(64, 'c');
+        const J rules = J::array({{
+            {"content_id", "coco-park-2025"}, {"kind", "wumpa_crate"}, {"ordinal", 1},
+            {"revision", "1.0.0"}, {"lev_sha256", st_patrick_pin}, {"since", 2}, {"hard_rank", 2}
+        }});
+        const J st_patrick_review = J::array({{{"revision", "1.0.0"}, {"lev_sha256", st_patrick_pin}}});
+        const J anniversary_review = J::array({{{"revision", "1.0.0"}, {"lev_sha256", anniversary_pin}}});
+        const auto *carried = content_plan::object_ruling(rules, "release-st-patrick-adventure-slot-55",
+            "wumpa_crate", 1, "2.0.0", new_pin, &st_patrick_review, 2, false);
+        expect(carried && carried->at("hard_rank") == 2, "historical key carries its own reviewed object ruling");
+        expect(!content_plan::object_ruling(rules, "crash-30anniversary-adventure-track-26",
+            "wumpa_crate", 1, "2.0.0", new_pin, &anniversary_review, 2, false),
+            "patch copies sharing a block keep their reviewed object rulings separate");
+        expect(!content_plan::object_ruling(rules, "release-st-patrick-adventure-slot-55",
+            "wumpa_crate", 1, "2.0.0", new_pin, &st_patrick_review, 1, false),
+            "historical key cannot carry a row added after the room's catalog version");
     }
     J base, extras;
     std::ifstream("tools/fixtures/content-plan/baseline.json") >> base;
@@ -549,10 +570,8 @@ int main(int argc, char **argv) {
         bad = open; bad["content_plan"]["packages"][1]["capabilities"]["arcade"] = false;
         refuse(bad, "open package: Trophy track without the arcade capability");
     }
-    // Track identity (#133 PR 2 review): native holds the apworld's named-block
-    // table, so a key with a block must use exactly that block and name, a key
-    // without one takes its generic slot, and a generic room title never takes
-    // a retail or named track's name or repeats another check's name.
+    // Named ownership is frozen. A room generated before a block was minted
+    // keeps its generic slot and may use a title that was reserved later.
     {
         auto track_of = [](J &plan, const std::string &key) -> J & {
             for (auto &t : plan["tracks"]) if (t.value("package_id", "").rfind("package/" + key + "/", 0) == 0) return t;
@@ -565,9 +584,40 @@ int main(int argc, char **argv) {
         auto identity_refuses = [&](const std::string &why, const std::function<void(J &)> &change) {
             J bad = open; change(bad["content_plan"]); refuse(bad, "track identity: " + why);
         };
-        identity_refuses("named key moved to a generic slot", [&](J &p) {
-            J &t = track_of(p, "tv-world"); t.erase("named_block");
-            J &c = check_of(p, t["id"]); c["location"] = 35016301; });
+        J older = open;
+        J &older_plan = older["content_plan"];
+        J &promoted = track_of(older_plan, "tv-world");
+        promoted.erase("named_block");
+        check_of(older_plan, promoted["id"])["location"] = 35016301;
+        expect(parse(older) && bind_room(older), "legacy generic room binds after its track key gets a block");
+        J alias_room = open;
+        J &alias_plan = alias_room["content_plan"];
+        const std::string key = "release-st-patrick-adventure-slot-55";
+        const std::string package_id = "package/" + key + "/1.1.0";
+        const std::string track_id = "custom/" + key + "/1.1.0";
+        const std::string entry_id = "entry/" + track_id;
+        J &package = alias_plan["packages"][1];
+        package["content_id"] = key;
+        package["id"] = package_id;
+        J &track = track_of(alias_plan, "tv-world");
+        track["package_id"] = package_id;
+        track["id"] = track_id;
+        track["named_block"] = 15;
+        track["room_title"] = "Coco Park 2025";
+        for (auto &entry : alias_plan["entries"]) {
+            if (entry.value("track_id", "") == "custom/tv-world/1.1.0") {
+                entry["track_id"] = track_id;
+                entry["id"] = entry_id;
+            }
+        }
+        for (auto &pad : alias_plan["pads"])
+            if (pad["entry_id"] == "entry/custom/tv-world/1.1.0") pad["entry_id"] = entry_id;
+        J &check = check_of(alias_plan, "custom/tv-world/1.1.0");
+        check["owner"] = track_id;
+        check["location"] = 35200000 + 200 * 15;
+        check["display_name"] = "Coco Park 2025: Trophy Race";
+        check["routes"][0]["entry_id"] = entry_id;
+        expect(parse(alias_room) && bind_room(alias_room), "historical Coco Park key binds on named block 15");
         identity_refuses("unnamed key given North Pole's block, name and check", [&](J &p) {
             J &t = track_of(p, "fixture-loop"); t["named_block"] = 53; t["room_title"] = "North Pole";
             J &c = check_of(p, t["id"]); c["location"] = 35200000 + 200 * 53; c["display_name"] = "North Pole: Trophy Race"; });
@@ -582,7 +632,14 @@ int main(int argc, char **argv) {
             J &t = track_of(p, "fixture-loop"); t["room_title"] = title;
             check_of(p, t["id"])["display_name"] = title + ": Trophy Race"; };
         identity_refuses("generic room title equal to the named track in the seed", [&](J &p) { retitle(p, "TV World"); });
-        identity_refuses("generic room title equal to a named track outside the seed", [&](J &p) { retitle(p, "north pole"); });
+        retitle(older_plan, "north pole");
+        older_plan["room_compatibility"] = 1;
+        expect(parse(older) && bind_room(older), "stamped generic room keeps its title after an unrelated block is added");
+        J unknown_format = older;
+        unknown_format["content_plan"]["room_compatibility"] = 2;
+        refuse(unknown_format, "unknown room compatibility format");
+        expect(std::strstr(ctr_cfg.seed_reject_reason, "unsupported room compatibility format"),
+               "the parser keeps the exact compatibility refusal reason");
         identity_refuses("generic room title equal to a retail track", [&](J &p) { retitle(p, "Crash Cove"); });
         J good = open; retitle(good["content_plan"], "Crash Cove (Custom)");
         expect(parse(good), "track identity: a suffixed generic room title admits");
@@ -601,6 +658,28 @@ int main(int argc, char **argv) {
         expect(parse(two_generic("TV Park")), "track identity: two generic tracks with distinct titles admit");
         refuse(two_generic("Fixture Loop"), "track identity: two generic tracks with one room title");
         refuse(two_generic("FIXTURE LOOP"), "track identity: room titles compare without case");
+    }
+    // The paired apworld froze this wire before TV World and North Pole were
+    // added to the named registry. Native has always read box spots from it.
+    {
+        J older;
+        std::ifstream("tools/fixtures/content-plan/older-room.json") >> older;
+        const bool bound = parse(older) && bind_room(older);
+        expect(bound, "saved room parses and binds after a key and a title are registered");
+        int generic = 0, spot_pads = 0;
+        for (int physical = 0; bound && physical <= 102; ++physical) {
+            const auto *pad = ap_content_plan_pad(physical);
+            if (!pad || !pad->occupied) continue;
+            if (std::string(pad->room_title) == "TV World" || std::string(pad->room_title) == "North Pole") {
+                expect(pad->named_block == -1 && pad->custom_slot > 0, "saved track keeps its generic identity");
+                ++generic;
+            }
+            if (pad->box_spots) {
+                expect(pad->box_count == 7, "saved spot count remains seven");
+                ++spot_pads;
+            }
+        }
+        expect(generic == 2 && spot_pads == 1, "saved room exposes its two tracks and its retail spots");
     }
     // Track modes (#133 PR 3): the paired apworld's plan with all three modes,
     // two stages and a mode order drawn per pad, on the 18 retail tracks and
@@ -1400,6 +1479,13 @@ int main(int argc, char **argv) {
     J boxes;
     std::ifstream("tools/fixtures/content-plan/item-boxes.json") >> boxes;
     {
+        J unreviewed = boxes;
+        auto &plan = unreviewed["content_plan"];
+        plan["room_compatibility"] = 1;
+        plan["item_boxes"]["pickup_rules"] = J::array({"custom/acid-lake/1.0"});
+        refuse(unreviewed, "the compatibility stamp retains the physical pickup revision check");
+    }
+    {
         // A3-35: list comes from the world. Existing 20-crate fixture stays
         // at 15 boxes after one exclusion, but native must retain the entry.
         J ex = boxes;
@@ -1870,6 +1956,21 @@ int main(int argc, char **argv) {
             }
         }
         expect(renamed_legs > 0, "cups: renamed generic track occurs in a cup");
+        J before_mint = cups;
+        auto &older_plan = before_mint["content_plan"];
+        for (auto &track : older_plan["tracks"])
+            if (track["id"] == "custom/tv-world/1.1.0") track.erase("named_block");
+        for (auto &check : older_plan["checks"])
+            if (check["location"] == 35215615) check["location"] = 35016822;
+        older_plan["room_compatibility"] = 1;
+        expect(parse(before_mint) && bind_room(before_mint), "cups: an older generic leg binds after its key is minted");
+        for (auto &track : older_plan["tracks"])
+            if (track["id"] == generic_id) track["room_title"] = "tv world";
+        for (auto &check : older_plan["checks"]) if (check["owner"] == generic_id) {
+            const std::string name = check["display_name"];
+            check["display_name"] = "tv world" + name.substr(std::string("Fixture Loop").size());
+        }
+        refuse(before_mint, "cups: a cup-only and standalone track cannot share a title with different check suffixes");
         // A forged leg refuses the room.
         J forged = cups;
         for (auto &e : forged["content_plan"]["entries"])

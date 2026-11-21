@@ -154,6 +154,7 @@ struct CustomPackageStoreEntry
     char pin[65];
     int verified;
     struct CustomPackageManifest manifest; /* Zero on refusal, not guessed from directory name. */
+    char displayTitle[641]; /* Optional corrected label, outside the pinned manifest. */
     char error[257];
     struct CustomPackageLocalInfo local;
 };
@@ -184,6 +185,10 @@ int CustomPackage_ScanStoreMatching(const char *store, CustomPackageStoreFilter 
 int CustomPackage_FindPinnedFiles(const char *assets, const char *revision, const char *uuid,
     const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
     char *levPath, size_t levCapacity, char *vrmPath, size_t vrmCapacity);
+/* Prefer the seed UUID, then accept another manifest with the exact pair. */
+int CustomPackage_FindPinnedFilesWithIdentity(const char *assets, const char *revision, const char *preferredUuid,
+    const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
+    char *levPath, size_t levCapacity, char *vrmPath, size_t vrmCapacity, char outUuid[37]);
 /* Resolve a verified matching pair's SCA path, SHA-256 and size. Embedded
    music wins over restored audio. Within either tier, favor uuid when
    supplied. Require it when exactUuid is set. Returns 0 when none match. */

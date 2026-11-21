@@ -223,6 +223,7 @@ void AP_FeedDrawRaceIntro(void);
 // higher so it clears the "PRESS X TO CONTINUE" prompt. Same 1P / unpaused gates.
 void AP_FeedDrawResults(void);
 int  AP_HubFeedOn(void);
+void AP_FeedDiscardUnimportant(void);
 // One trap-state notice (armed, incoming, active) on the same two surfaces, in the
 // trap class colour. The trap scheduler owns the wording; this is only delivery,
 // so trap presentation cannot drift from the item feed's look. trapSlot and
