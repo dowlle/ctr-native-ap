@@ -147,7 +147,7 @@ void AP_TrophyPodiumCeremonyDraw(int x, int y);
 // (AP_ContentCupFinish). The finish arms this latch with the cup's Win
 // location code; the podium gates and draws read it so the cup podium shows
 // the cup's own check ("CUP WON" + the scouted item sentence) instead of the
-// ordinary-Trophy presentation's "TROPHIES: n" and the last leg's trophy
+// ordinary-Trophy presentation's "TROPHIES: n" and unrelated Trophy
 // text. The camera clears the latch after podium exit. A fresh connect
 // clears the location while keeping the cup heading visible until exit.
 void AP_CupPodiumArm(long winCode);

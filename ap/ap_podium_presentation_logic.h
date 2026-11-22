@@ -42,8 +42,8 @@ static inline int AP_PodiumIsApTrophyPresentation(int apActive, int rewardId,
 // ceremony reuses the Trophy model as its podium prop (AP_ContentCupFinish,
 // ap_hooks_content_cups.c), so without this the podium would fall into the AP
 // Trophy presentation above and announce a Trophy the player did not win:
-// "TROPHIES: n" plus the #330 item sentence of the LAST LEG's trophy location
-// (prevLEV + ADV_REWARD_FIRST_TROPHY), or the retail "CONGRATULATIONS! YOU
+// "TROPHIES: n" plus the #330 item sentence for the return pad treated as a
+// track (prevLEV + ADV_REWARD_FIRST_TROPHY), or the retail "CONGRATULATIONS! YOU
 // WIN A TROPHY!" fallback when that location is not in the seed. cupPodium is
 // the cup podium latch (AP_CupPodiumActive), set by the cup finish and
 // consumed when the podium ends. The cup presentation owns its own text, so

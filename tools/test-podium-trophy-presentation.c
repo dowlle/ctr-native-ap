@@ -218,9 +218,8 @@ int main(void)
 		expect(work.stopDanceLoops, 0, "AP special-track Trophy keeps its prize stops");
 
 		// A6-77: the content-plan cup podium births no prize thread, so its exit
-		// reproduces the same terminal work exactly once, including when the last
-		// leg made prevLEV special (a custom leg, where the ordinary-Trophy
-		// presentation would not fire).
+		// reproduces the same terminal work exactly once, including on a return
+		// pad outside the ordinary-Trophy presentation's retail track range.
 		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 0, 1));
 		work = AP_PodiumExitWork(&state);
 		expect(work.overlayTransition, 2, "AP cup podium exit requests overlay 2");

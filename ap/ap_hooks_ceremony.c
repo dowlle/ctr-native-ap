@@ -535,7 +535,7 @@ int AP_PodiumSpecialTrack(void)
 // (AP_ContentCupFinish) arms the latch with the Win location code and reuses
 // the Trophy model as the podium prop; without this branch the podium would
 // announce a Trophy the player did not win ("TROPHIES: n" plus the #330
-// sentence of the LAST LEG's trophy location, or the retail
+// sentence for prevLEV, which holds the cup's return pad, or the retail
 // "CONGRATULATIONS! YOU WIN A TROPHY!" fallback when that location is not in
 // the seed). Display-only: the check itself was already sent by the finish.
 void AP_ContentCupPodiumCeremonyDraw(int x, int y)
