@@ -92,6 +92,7 @@ static void AH_WarpPad_PlaceKartOnPad(struct Driver *driver, struct Instance *dr
 // kart leaves the pad's entry radius. Kept out of the snapshot block above,
 // which tools/test-custom-race-picker.py compiles on its own.
 static int apEntryRefusedDest = -1;
+static unsigned apCoopPromptFrame[2];
 #endif
 
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
@@ -101,7 +102,6 @@ static int apEntryRefusedDest = -1;
 // RECTMENU_APSetReplayRows). The cursor starts on the first row with an open
 // check. Rebuilt on every entry.
 static int apRaceTypeChoice = -2;
-static unsigned apCoopPromptFrame[2];
 static int apRaceTypeRowMode[AP_RS_COUNT];
 static struct MenuRow apRaceTypeRows[AP_RS_COUNT + 1];
 static void AH_WarpPad_RaceTypeMenuProc(struct RectMenu *menu)
@@ -122,14 +122,6 @@ static struct RectMenu apRaceTypeMenu = {
 	.funcPtr = AH_WarpPad_RaceTypeMenuProc, .drawStyle = 4
 };
 
-int AH_WarpPad_CoopMenuPlayer(const struct RectMenu *menu)
-{
-	const struct GameTracker *gt = sdata->gGT;
-	if (!AP_CoopHub(gt) || (menu != &apRaceTypeMenu && menu != &D232.menuTokenRelic))
-		return 0;
-	return AP_CoopHubWarpDriver(gt) == 1;
-}
-
 static void AH_WarpPad_RaceTypeRows(const ap_rs_rows *rows)
 {
 	static const s16 strings[AP_RS_COUNT] = {LNG_TROPHY_RACE, LNG_CTR_CHALLENGE_TITLE, LNG_RELIC_RACE};
@@ -148,6 +140,22 @@ static void AH_WarpPad_RaceTypeRows(const ap_rs_rows *rows)
 	apRaceTypeRows[i].rowOnPressLeft = apRaceTypeRows[i].rowOnPressRight = 0;
 	apRaceTypeMenu.rowSelected = (s16)rows->cursor;
 	RECTMENU_APSetReplayRows(&apRaceTypeMenu, AP_RaceSelectorReplayMask(rows));
+}
+#endif
+
+#ifdef CTR_AP
+int AH_WarpPad_CoopMenuPlayer(const struct RectMenu *menu)
+{
+	const struct GameTracker *gt = sdata->gGT;
+	if (!AP_CoopHub(gt))
+		return 0;
+	if (menu != &D232.menuTokenRelic
+#ifdef CTR_CUSTOM_TRACKS
+	    && menu != &apRaceTypeMenu
+#endif
+	)
+		return 0;
+	return AP_CoopHubWarpDriver(gt) == 1;
 }
 #endif
 
@@ -1190,9 +1198,11 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	if (padPlayer == 1 && warppadObj->boolEnteredWarppad &&
 	    !AP_CoopP2Available() && sdata->Loading.stage == LOAD_IDLE)
 	{
+#ifdef CTR_CUSTOM_TRACKS
 		RECTMENU_Hide(&apRaceTypeMenu);
 		RECTMENU_APSetReplayRows(0, 0);
 		apRaceTypeChoice = -2;
+#endif
 		goto WarpPad_RefuseEntry;
 	}
 
