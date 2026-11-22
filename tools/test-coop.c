@@ -24,6 +24,7 @@ static u64 assignedPartner;
 static int feedOn = 1;
 static int hubSafe = 1;
 static int transportReady = 1;
+static int savePending, saveLost;
 static s16 requestedLevel = -1;
 static int gridSize = 8;
 static int pendingPadRemoval;
@@ -76,6 +77,8 @@ int ap_net_coop_set(int packed)
 }
 int ap_net_coop_known(int *out) { *out = packedValue; return known; }
 unsigned ap_net_coop_revision(void) { return revision; }
+int ap_net_coop_save_pending(void) { return savePending; }
+int ap_net_coop_save_lost(void) { return saveLost; }
 #include "../ap/ap_capability.c"
 #include "../ap/ap_coop.c"
 
@@ -192,15 +195,36 @@ static void testDelayedPreference(struct GameTracker *gt)
 	int before = writes;
 	tapPartner(gt, 2, RAW_BTN_START);
 	assert(g_config.coopAdventure && assignedPartner == 102 && writes == before);
+	assert(!AP_CoopPadReady());
 	AP_CoopRulesStep(0);
 	assert(!g_config.coopRules && writes == before);
+	u64 previousDevice = p2Device;
+	p2Device = assignedPartner;
+	sdata->gGamepads->gamepadsConnectedByFlag = 3;
+	gt->levelID = CRASH_COVE;
+	gt->gameMode1 = ADVENTURE_MODE;
+	AP_CoopPrepareLoad(gt);
+	assert(AP_CoopRace(gt) && AP_CoopHardRace());
+	gt->drivers[0]->driverRank = 0;
+	gt->drivers[1]->driverRank = 2;
+	assert(!AP_CoopWon(gt) && AP_CoopRank(gt, 0) == 2);
 	/* The AP poll delivered the saved value after the frame's co-op tick. */
 	packedValue = 32 | 10;
 	known = 1;
 	revision++;
+	AP_CoopPrepareLoad(gt);
+	assert(data.characterIDs[1] == 10 && AP_CoopHardRace() && !AP_CoopWon(gt));
+	p2Device = previousDevice;
+	gt->gameMode1 |= ADVENTURE_ARENA;
 	AP_CoopRulesStep(0);
 	assert(g_config.coopRacer == 10 && !g_config.coopRules && packedValue == 10);
 	assert(writes == before + 1);
+	savePending = 1;
+	assert(!AP_CoopPadReady() && strstr(AP_CoopHelp(), "awaiting"));
+	savePending = 0;
+	saveLost = 1;
+	assert(AP_CoopPadReady() && strstr(AP_CoopHelp(), "not saved"));
+	saveLost = 0;
 	g_config.coopAdventure = 0;
 	AP_CoopConnectReset();
 	assert(g_config.coopRacer == 10); /* Same-room reconnect while P2 is out. */

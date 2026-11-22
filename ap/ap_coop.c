@@ -125,13 +125,23 @@ static void AP_CoopRestorePreference(void)
 	if (ap_net_coop_revision() == ap_coop_restored || !ap_net_coop_known(&packed)) return;
 	ap_coop_restored = ap_net_coop_revision();
 	ap_coop_restore_pending = 0;
+	if (ap_net_coop_save_lost())
+		AP_CoopNotice("CO-OP SETTINGS NOT SAVED", "");
 	g_config.coopRules = (packed & 32) != 0;
 	if (!(packed & 64))
 		g_config.coopRacer = packed & 15;
 	else if (!g_config.coopAdventure)
 		g_config.coopRacer = -1;
-	else if (AP_CoopRacerUnlocked(g_config.coopRacer))
+	else if (!ap_net_coop_save_lost() && AP_CoopRacerUnlocked(g_config.coopRacer))
 		AP_CoopPersist(g_config.coopRacer, g_config.coopRules);
+}
+
+int AP_CoopPadReady(void)
+{
+	if (!g_config.coopAdventure)
+		return 1;
+	AP_CoopRestorePreference();
+	return !ap_coop_restore_pending && !ap_net_coop_save_pending();
 }
 
 static int AP_CoopNextRacer(int racer, int direction)
@@ -217,6 +227,8 @@ static void AP_CoopMenuInput(struct GameTracker *gt, u16 tap)
 			return;
 		if (!AP_CoopPersist(ap_coop_selection, g_config.coopRules))
 			AP_FeedNoticeLine("RECONNECT TO SAVE");
+		else if (ap_net_coop_save_pending())
+			AP_CoopNotice("CO-OP SETTINGS: SAVING", "");
 	}
 	AP_CoopCloseMenu(gt);
 }
@@ -381,7 +393,14 @@ void AP_CoopRulesStep(int direction)
 	}
 }
 
-const char *AP_CoopHelp(void) { return ap_coop_help; }
+const char *AP_CoopHelp(void)
+{
+	if (ap_net_coop_save_pending())
+		return "Co-op settings: awaiting save confirmation.";
+	if (ap_net_coop_save_lost())
+		return "Co-op settings not saved. Change them again.";
+	return ap_coop_help;
+}
 int AP_CoopHardRace(void) { return ap_coop_hard_race; }
 
 void AP_CoopPrepareLoad(struct GameTracker *gt)
@@ -409,11 +428,16 @@ void AP_CoopPrepareLoad(struct GameTracker *gt)
 	    CRYSTAL_CHALLENGE | ARCADE_MODE | TIME_TRIAL | BATTLE_MODE | MAIN_MENU |
 	    GAME_CUTSCENE)) && !(gt->gameMode2 & TOKEN_RACE);
 	if (!ctr_cfg_active() || !(mode & ADVENTURE_MODE)) return;
+	if (trophy && g_config.coopAdventure)
+		AP_CoopRestorePreference();
 	int two = !soloRetry && AP_CoopSeatsTwo(g_config.coopAdventure == 1, AP_CoopControllers(), 1,
 	                         trophy, retail, (mode & ADVENTURE_CUP) != 0) &&
 	          AP_CoopRacerUnlocked(g_config.coopRacer);
 	gt->numPlyrCurrGame = two ? 2 : 1;
-	ap_coop_hard_race = two && g_config.coopRules;
+	// If a reconnect starts during the warp, never award a Lenient result
+	// from a provisional or unconfirmed preference.
+	ap_coop_hard_race = two && (g_config.coopRules || ap_coop_restore_pending ||
+	                           ap_net_coop_save_pending());
 	/* Hub and unsupported races are always solo, without losing the preference. */
 	gt->numPlyrNextGame = 1;
 	if ((soloRetry || g_config.coopAdventure == 1) && !two &&

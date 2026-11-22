@@ -1124,6 +1124,16 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		goto WarpPad_AnimateOpen;
 	}
 
+#ifdef CTR_AP
+	if (!warppadObj->boolEnteredWarppad && ctr_cfg_active() && !AP_CoopPadReady())
+	{
+		apEntryRefusedDest = levelID;
+		AP_TrackerLaunchTaken();
+		AP_FeedNoticeLine("CO-OP SETTINGS SYNCING: TRY THE PAD AGAIN");
+		goto WarpPad_AnimateOpen;
+	}
+#endif
+
 	// Retail repeats this setup every close/warping frame before the
 	// transition/load gate.
 	LOAD_Robots1P(data.characterIDs[0]);

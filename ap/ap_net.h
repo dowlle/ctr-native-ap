@@ -233,6 +233,8 @@ void ap_net_coop_subscribe(void);
 int ap_net_coop_set(int packed);
 int ap_net_coop_known(int *packed);
 unsigned ap_net_coop_revision(void);
+int ap_net_coop_save_pending(void);
+int ap_net_coop_save_lost(void);
 
 // ── Editable stat package sync (issues #54/#209, data storage) ──
 // AP_NET_EDITSTAT_COUNT signed ints (4 global + 16 racers x 4), under

@@ -366,12 +366,20 @@ static bool g_coop_known = false;
 static unsigned g_coop_rev = 0;
 static uint64_t g_coop_writer = 0;
 static uint64_t g_coop_write = 0;
+static bool g_coop_save_pending = false;
+static bool g_coop_save_lost = false;
+static std::string g_coop_save_endpoint, g_coop_save_seed, g_coop_save_slot;
 static std::string ap_coop_key() { return "ctr_coop_" + g_slot; }
 static void ap_coop_accept(const nlohmann::json &value, bool fromGet)
 {
 	const bool valid = value.is_number_integer() && value >= 0 &&
 	                   (value <= 63 || value == 64 || value == 96);
 	const int packed = valid ? value.get<int>() : 64;
+	if (fromGet && !g_coop_known && g_coop_save_pending)
+	{
+		g_coop_save_lost = packed != g_coop_value;
+		g_coop_save_pending = false;
+	}
 	if (!fromGet && (!g_coop_known || !valid || packed == g_coop_value)) return;
 	g_coop_value = packed;
 	g_coop_known = true;
@@ -1135,6 +1143,13 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		// discarded rather than risk delivering them to the wrong world
 		// (requirement 5).
 		const std::string connectedSeed = g_ap->get_seed();
+		g_coop_known = false;
+		if (g_coop_save_endpoint != g_room_endpoint || g_coop_save_seed != connectedSeed ||
+		    g_coop_save_slot != g_slot)
+		{
+			g_coop_save_pending = false;
+			g_coop_save_lost = false;
+		}
 		ap_net_feed_room_connect(g_ap->get_team_number(), g_ap->get_player_number());
 		g_doors.connect(g_room_endpoint, connectedSeed, g_ap->get_team_number(), g_ap->get_player_number());
 		g_doors_sent = 0;
@@ -1359,7 +1374,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			std::fprintf(stderr, "[AP NET] difficulty override retrieved: %d\n", g_diff_value);
 		}
 		auto coop = keys.find(ap_coop_key());
-		if (coop != keys.end()) ap_coop_accept(coop->second, true);
+		if (coop != keys.end() && !g_coop_known) ap_coop_accept(coop->second, true);
 		auto ch = keys.find(ap_char_key());
 		int  cv = 0;
 		// A stored racer outside the roster is a key some other tool wrote.
@@ -1472,8 +1487,11 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			// to an earlier local edit cannot roll back the latest local edit.
 			auto writer = reply.find("ctr_coop_writer");
 			auto write = reply.find("ctr_coop_write");
-			if (!g_coop_writer || writer == reply.end() || *writer != g_coop_writer ||
-			    (write != reply.end() && *write == g_coop_write))
+			const bool local = g_coop_writer && writer != reply.end() && *writer == g_coop_writer;
+			if (local && g_coop_known && write != reply.end() && *write == g_coop_write &&
+			    value == g_coop_value)
+				g_coop_save_pending = false;
+			if (!local && !g_coop_save_pending)
 				ap_coop_accept(value, false);
 		}
 		if (key == ap_char_key() && ap_char_accept(value, &cv))
@@ -2577,7 +2595,11 @@ extern "C" int ap_net_coop_set(int packed)
 	if (!queued) return 0;
 	g_coop_write = write;
 	g_coop_value = packed;
-	g_coop_known = true;
+	g_coop_save_pending = true;
+	g_coop_save_lost = false;
+	g_coop_save_endpoint = g_room_endpoint;
+	g_coop_save_seed = g_ap->get_seed();
+	g_coop_save_slot = g_slot;
 	return 1;
 }
 
@@ -2588,6 +2610,8 @@ extern "C" int ap_net_coop_known(int *out)
 	return 1;
 }
 extern "C" unsigned ap_net_coop_revision(void) { return g_coop_rev; }
+extern "C" int ap_net_coop_save_pending(void) { return g_coop_save_pending; }
+extern "C" int ap_net_coop_save_lost(void) { return g_coop_save_lost; }
 
 extern "C" void ap_net_editstats_subscribe(void)
 {

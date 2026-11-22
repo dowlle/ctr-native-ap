@@ -199,13 +199,33 @@ static void test_coop_preference_replies(void)
 	m->emit_set_reply(key, 32 | 10, m->calls.set_extras.at(0));
 	expect(ap_net_coop_known(&latest) && latest == 11 && ap_net_coop_revision() == revision,
 	       "co-op: first echo cannot restore the old racer or rules");
+	m->emit_set_reply(key, 2);
+	expect(ap_net_coop_known(&latest) && latest == 11 && ap_net_coop_revision() == revision,
+	       "co-op: another client cannot change the input to the next toggle");
 	expect(ap_net_coop_set(latest | 32), "co-op: next toggle keeps the newest racer");
 	m->emit_set_reply(key, 11, m->calls.set_extras.at(1));
 	expect(ap_net_coop_known(&latest) && latest == (32 | 11), "co-op: second echo cannot eat the toggle");
-	m->emit_set_reply(key, 2);
-	expect(ap_net_coop_known(&latest) && latest == 2, "co-op: an external write updates the cache");
 	m->emit_set_reply(key, 32 | 11, m->calls.set_extras.at(2));
-	expect(ap_net_coop_known(&latest) && latest == (32 | 11), "co-op: newest confirmed server edit wins");
+	expect(!ap_net_coop_save_pending(), "co-op: latest matching echo confirms the save");
+	m->emit_set_reply(key, 2);
+	expect(ap_net_coop_known(&latest) && latest == 2, "co-op: subsequent external edit updates the cache");
+
+	// A queued write into a lost socket has no SetReply. The same room's
+	// next Get can confirm the value or expose the failed save.
+	expect(ap_net_coop_set(32 | 2) && ap_net_coop_save_pending(), "co-op: queued save is visibly pending");
+	m->emit_socket_disconnected();
+	m->emit_slot_connected(g_fixture);
+	ap_net_coop_subscribe();
+	m->emit_retrieved({{key, 2}});
+	expect(ap_net_coop_known(&latest) && latest == 2 && ap_net_coop_save_lost() &&
+	       !ap_net_coop_save_pending(), "co-op: dead-socket write is reported unsaved on reconnect");
+	expect(ap_net_coop_set(32 | 2) && !ap_net_coop_save_lost(), "co-op: player can retry the save");
+	m->emit_socket_disconnected();
+	m->emit_slot_connected(g_fixture);
+	ap_net_coop_subscribe();
+	m->emit_retrieved({{key, 32 | 2}});
+	expect(ap_net_coop_known(&latest) && latest == (32 | 2) &&
+	       !ap_net_coop_save_pending() && !ap_net_coop_save_lost(), "co-op: reconnect confirms a save whose echo was lost");
 	ap_net_shutdown();
 }
 
