@@ -1178,6 +1178,12 @@ LAB_800545e8:
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005465c-0x80054a08 for the retail path.
 void UI_RenderFrame_Wumpa3D_2P3P4P(struct GameTracker *gGT)
 {
+#ifdef CTR_AP
+	// Adventure hubs draw the shared wallet as text. They never populate
+	// the offscreen texture that the multiplayer race HUD copies here.
+	if (AP_CoopHub(gGT))
+		return;
+#endif
 	RECT viewport2P;
 	RECT viewport3P4P;
 	RECT *viewport;
