@@ -1396,7 +1396,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			mode = pad->modes[0];
 		coopTrophy = !pad->cup && !pad->crystal && !pad->cortex && pad->retail_id >= 0 &&
 		             mode == AP_CONTENT_MODE_TROPHY;
-		if (coopTrophy && !AP_CoopPadReady())
+		if (coopTrophy && !AP_CoopPadReady(pad->retail_id))
 			goto WarpPad_CoopSync;
 		host = AP_ContentPreparePad(physLevelID, mode);
 		if (host < 0)
@@ -1653,7 +1653,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	             && !legacyCortex
 #endif
 		;
-	if (coopTrophy && !AP_CoopPadReady())
+	if (coopTrophy && !AP_CoopPadReady(levelID))
 		goto WarpPad_CoopSync;
 #endif
 

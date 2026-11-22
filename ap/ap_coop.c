@@ -5,6 +5,7 @@
 #include "ap_capability.h"
 #include "ap_charswap.h"
 #include "ap_hooks.h"
+#include "ap_hit_encounter.h"
 #include "ap_net.h"
 #include "ap_tracker.h"
 #include <platform/native_controls.h>
@@ -183,9 +184,14 @@ void AP_CoopCapturePadRules(void)
 	                    -1 : g_config.coopRules != 0;
 }
 
-int AP_CoopPadReady(void)
+static int AP_CoopSpecialTrophyRoster(int level)
 {
-	if (!g_config.coopAdventure || AP_CoopControllers() != 2)
+	return AP_HitEncounterShouldApply(1, level, 0, 0, 0, 0, 0, 0, 1);
+}
+
+int AP_CoopPadReady(int level)
+{
+	if (!g_config.coopAdventure || AP_CoopControllers() != 2 || AP_CoopSpecialTrophyRoster(level))
 		return 1;
 	if (ap_coop_warp_rules < 0)
 		AP_CoopCapturePadRules();
@@ -563,8 +569,10 @@ void AP_CoopPrepareLoad(struct GameTracker *gt)
 	int controllers = AP_CoopControllers();
 	int hub = (mode & ADVENTURE_ARENA) != 0;
 	int racer = g_config.coopRacer;
+	int specialRoster = trophy && retail && !(mode & ADVENTURE_CUP) &&
+	                    AP_CoopSpecialTrophyRoster(gt->levelID);
 	int two = !soloRetry && AP_CoopSeatsTwo(g_config.coopAdventure == 1, controllers, 1,
-	                                      trophy, retail, (mode & ADVENTURE_CUP) != 0);
+	                                      trophy, retail && !specialRoster, (mode & ADVENTURE_CUP) != 0);
 #ifdef CTR_CUSTOM_TRACKS
 	if (hub && g_config.coopAdventure && controllers == 2)
 		two = 1;
@@ -582,10 +590,12 @@ void AP_CoopPrepareLoad(struct GameTracker *gt)
 	{
 		const char *reason = two ? (ap_coop_hard_race ? "Hard" : "Lenient") :
 		    soloRetry || controllers < 2 ? "controller unavailable" :
+		    specialRoster ? "special opponents" :
 		    !AP_CoopRacerUnlocked(racer) ? "racer locked" : "solo event";
 		AP_CoopLog("race seats", reason, gt->levelID, gt->numPlyrCurrGame);
 		if (!two)
 			AP_FeedNoticeLine(soloRetry || controllers < 2 ? "P2 DISCONNECTED: SOLO RACE" :
+			    specialRoster ? "SPECIAL OPPONENTS: SOLO RACE" :
 			    !AP_CoopRacerUnlocked(racer) ? "P2 RACER LOCKED: SOLO RACE" : "P2 SITS THIS RACE OUT");
 	}
 	ap_coop_p2_device = two ? NativeControls_GetPlayerDeviceIdentity(1) : 0;

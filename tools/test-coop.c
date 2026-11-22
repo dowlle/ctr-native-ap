@@ -28,6 +28,14 @@ static int savePending, saveLost;
 static s16 requestedLevel = -1;
 static int gridSize = 8;
 static int pendingPadRemoval;
+static enum { STOCK_ROSTER, HIT_GUEST, HELD_BOSS, GAUNTLET_ONLY } roster;
+int AP_HitEncounterShouldApply(int adventure, int level, int cup, int boss,
+                               int arcade, int relic, int token, int crystal, int players)
+{
+	assert(adventure && level == CRASH_COVE && !cup && !boss && !arcade &&
+	       !relic && !token && !crystal && players == 1);
+	return roster == HIT_GUEST || roster == HELD_BOSS;
+}
 int LOAD_CoopGridSize(void) { return gridSize; }
 u64 NativeControls_GetPlayerDeviceIdentity(int player) { return player == 1 ? p2Device : 100; }
 u64 NativeControls_GetGamepadIdentity(int device) { return device < 3 ? 100 + device : 0; }
@@ -216,15 +224,26 @@ static void testDelayedPreference(struct GameTracker *gt)
 	assert(g_config.coopAdventure && assignedPartner == 102 && writes == before);
 	u64 previousDevice = p2Device;
 	p2Device = 0;
-	assert(AP_CoopPadReady()); /* A missing partner can still start a solo race. */
+	assert(AP_CoopPadReady(CRASH_COVE)); /* A missing partner can still start a solo race. */
 	p2Device = assignedPartner;
 	sdata->gGamepads->gamepadsConnectedByFlag = 3;
 	AP_CoopCapturePadRules();
-	assert(!AP_CoopPadReady());
+	assert(!AP_CoopPadReady(CRASH_COVE));
 	AP_CoopRulesStep(0);
 	assert(!g_config.coopRules && writes == before);
 	gt->levelID = CRASH_COVE;
 	gt->gameMode1 = ADVENTURE_MODE;
+	for (int seed = HIT_GUEST; seed <= GAUNTLET_ONLY; seed++)
+	{
+		roster = seed;
+		int special = seed != GAUNTLET_ONLY;
+		assert(AP_CoopPadReady(CRASH_COVE) == special);
+		AP_CoopPrepareLoad(gt);
+		assert(gt->numPlyrCurrGame == (special ? 1 : 2));
+		if (special)
+			assert(strstr(notice, "SPECIAL OPPONENTS"));
+	}
+	roster = STOCK_ROSTER;
 	AP_CoopPrepareLoad(gt);
 	assert(AP_CoopRace(gt) && AP_CoopHardRace());
 	gt->drivers[0]->driverRank = 0;
@@ -242,15 +261,15 @@ static void testDelayedPreference(struct GameTracker *gt)
 	assert(writes == before + 1);
 	savePending = 1;
 	AP_CoopCapturePadRules();
-	assert(!AP_CoopPadReady() && strstr(AP_CoopHelp(), "Waiting"));
+	assert(!AP_CoopPadReady(CRASH_COVE) && strstr(AP_CoopHelp(), "Waiting"));
 	savePending = 0;
 	saveLost = 1;
-	assert(AP_CoopPadReady() && strstr(AP_CoopHelp(), "not saved"));
+	assert(AP_CoopPadReady(CRASH_COVE) && strstr(AP_CoopHelp(), "not saved"));
 	saveLost = 0;
 	AP_CoopCapturePadRules(); /* Confirm Lenient on entering the beam. */
 	known = 0;
 	AP_CoopConnectReset();
-	assert(AP_CoopPadReady()); /* Reconnect while the kart is warping. */
+	assert(AP_CoopPadReady(CRASH_COVE)); /* Reconnect while the kart is warping. */
 	AP_CoopConfirmPad();
 	gt->gameMode1 = ADVENTURE_MODE;
 	AP_CoopPrepareLoad(gt);

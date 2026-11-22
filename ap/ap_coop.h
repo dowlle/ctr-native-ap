@@ -67,7 +67,7 @@ void AP_CoopPrepareLoad(struct GameTracker *gt);
 int AP_CoopP2Available(void);
 int AP_CoopReloadOnRetry(struct GameTracker *gt);
 int AP_CoopHubAvailable(const struct GameTracker *gt);
-int AP_CoopPadReady(void);
+int AP_CoopPadReady(int level);
 void AP_CoopCapturePadRules(void);
 void AP_CoopConfirmPad(void);
 void AP_CoopPrepareGrid(struct GameTracker *gt);
