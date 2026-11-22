@@ -26,6 +26,8 @@ for signature in ('int BOTS_Adv_NumTimesLostEvent(',
                   'internal void BOTS_Adv_CopySpawnOrder(',
                   'void BOTS_Adv_AdjustDifficulty('):
     fixture += function('game/BOTS.c', signature)
+decal = (root / 'game/DecalMP.c').read_text()
+fixture += decal[decal.index('struct DecalMPEntry'):decal.index('void DecalMP_02(')]
 fixture += r'''
 static void set_order(s32 *first, s32 *second, const unsigned char order[8])
 { memcpy(first, order, 4); memcpy(second, order + 4, 4); }
@@ -63,7 +65,28 @@ int main(void) {
     memcpy(sdata->kartSpawnOrderArray, stock, 8);
     BOTS_Adv_AdjustDifficulty();
     assert(!memcmp(sdata->kartSpawnOrderArray, stock, 8));
-    puts("PASS production co-op grid: eight seats, six-seat fallback, paths and launch use final order, solo and Arcade unchanged");
+    static struct Driver field[8];
+    static struct {
+        struct Instance inst;
+        struct InstDrawPerPlayer views[2];
+    } karts[8];
+    for (int i = 0; i < 8; i++) {
+        gt.drivers[i] = &field[i];
+        field[i].instSelf = &karts[i].inst;
+    }
+    gt.numPlyrCurrGame = 2;
+    gt.cameraDC[0].pushBuffer = &gt.pushBuffer[0];
+    gt.cameraDC[1].pushBuffer = &gt.pushBuffer[1];
+    assert(!DecalMP_FieldFits(&gt));
+    DecalMP_01(&gt);
+    assert(gt.cameraDC[0].pushBuffer == &gt.pushBuffer[0]);
+    assert(gt.cameraDC[1].pushBuffer == &gt.pushBuffer[1]);
+    assert(karts[7].inst.flags == 0);
+    gt.drivers[6] = gt.drivers[7] = NULL;
+    assert(DecalMP_FieldFits(&gt));
+    DecalMP_01(&gt);
+    assert(karts[5].inst.flags & PIXEL_LOD);
+    puts("PASS production co-op grid: eight seats use direct rendering; six-seat fallback, paths, launch, solo and Arcade preserved");
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:
