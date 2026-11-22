@@ -13,6 +13,7 @@
 // launch while CustomTrack_StandaloneBusy, so CustomTrack_StandaloneContext
 // answers "none" and CustomTrack_KeepsNoScores stays 0, as in the authoring
 // builds.
+#include <assert.h>
 struct GameTracker;
 struct Driver;
 void AP_CupSweepOnLoadRequested(int levelID);
@@ -39,6 +40,12 @@ void AP_DeathLinkOnRaceEnd(struct GameTracker *gGT, struct Driver *player)
 {
 	(void)gGT;
 	(void)player;
+}
+
+void AP_CoopCrystalLogResult(const struct GameTracker *gGT)
+{
+	/* The shared result dispatcher is also compiled for offline races. */
+	assert(!AP_CoopCrystal(gGT));
 }
 
 int AP_CoopHardRace(void)
