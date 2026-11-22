@@ -923,6 +923,8 @@ static int ap_cs_safeToOpen(struct GameTracker *gGT)
 	// that test.
 	if (sdata->ptrActiveMenu != NULL)
 		return 0;
+	if (AP_CoopHub(gGT) && AP_CoopHubHeldDriver(gGT) >= 0)
+		return 0;
 	return 1;
 }
 
@@ -930,8 +932,7 @@ static int ap_cs_safeToOpen(struct GameTracker *gGT)
 // lets a pad take the kart (ap_tracker_launch.c).
 int AP_HubSafeForRequest(struct GameTracker *gGT)
 {
-	return gGT != NULL && gGT->drivers[0] != NULL && !ap_cs_restorePos && ap_cs_safeToOpen(gGT) &&
-	       (!AP_CoopHub(gGT) || AP_CoopHubHeldDriver(gGT) < 0);
+	return gGT != NULL && gGT->drivers[0] != NULL && !ap_cs_restorePos && ap_cs_safeToOpen(gGT);
 }
 
 // The engine half of the hold, in both directions. See ap/ap_charfreeze.h for

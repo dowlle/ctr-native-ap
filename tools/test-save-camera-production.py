@@ -59,9 +59,14 @@ int main(void) {
     gt.cameraDC[0].flags = 0;
     assert(AP_HubSafeForRequest(&gt));
     gt.numPlyrCurrGame = 2;
-    heldDriver = 1;
-    assert(!AP_HubSafeForRequest(&gt));
+    /* Player 2 owns a warp (P1 held), then P1's garage fade holds P2.
+       A late stored racer uses the common gate directly. */
+    for (heldDriver = 0; heldDriver < 2; heldDriver++) {
+        assert(!ap_cs_safeToOpen(&gt));
+        assert(!AP_HubSafeForRequest(&gt));
+    }
     heldDriver = -1;
+    assert(ap_cs_safeToOpen(&gt));
     ap_cs_restorePos = 1;
     assert(!AP_HubSafeForRequest(&gt));
     ap_cs_restorePos = 0;
