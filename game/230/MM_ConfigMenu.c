@@ -290,16 +290,32 @@ struct RectMenu g_configMenu = {
 
 static struct RectMenu *s_configParent;
 static struct RectMenu *s_configChild;
+#ifdef CTR_AP
+static int s_configDifficultyEdited;
+#endif
 
 static int Config_FromHub(void)
 {
 	return s_configParent == &data.menuAdvHub;
 }
 
+static int Config_HubSectionLocked(int sec)
+{
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	return Config_FromHub() && sec == s_customContentSection;
+#else
+	(void)sec;
+	return 0;
+#endif
+}
+
 void MM_ConfigOpen(struct RectMenu *parent)
 {
 	s_configParent = parent;
 	s_configChild = NULL;
+#ifdef CTR_AP
+	s_configDifficultyEdited = 0;
+#endif
 	s_currentSection = -1;
 	s_configTop = 0;
 	g_configMenu.rowSelected = 0;
@@ -332,7 +348,8 @@ static void Config_Close(void)
 	NativeConfig_Save();
 	NativeControls_Save();
 #ifdef CTR_AP
-	AP_AiDifficultyCommit();
+	if (!Config_FromHub() || s_configDifficultyEdited)
+		AP_AiDifficultyCommit();
 #endif
 	sdata->ptrDesiredMenu = Config_FromHub() ? MainFreeze_GetMenuPtr() : &D230.menuMainMenu;
 	s_configParent = NULL;
@@ -634,7 +651,14 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 		return;
 	}
 #endif
-	AiDiff_Step((int *)e->valuePtr, dir);
+	int *difficulty = (int *)e->valuePtr;
+#ifdef CTR_AP
+	int before = *difficulty;
+#endif
+	AiDiff_Step(difficulty, dir);
+#ifdef CTR_AP
+	s_configDifficultyEdited |= *difficulty != before;
+#endif
 }
 
 // Cross/Circle on an enum row: the next value, wrapping from the last back to
@@ -672,6 +696,11 @@ static int Config_RowLockedBySeed(const ConfigEntry *e)
 static int Config_RowLockedBySolo(const ConfigEntry *e)
 {
 	return (e->valuePtr == &g_config.deathLink || IsDlSendField((const int *)e->valuePtr)) && AP_Solo_SessionOwnsConnection();
+}
+
+static int Config_RowLockedByHub(const ConfigEntry *e)
+{
+	return Config_FromHub() && e->valuePtr == &g_config.boxAuthor;
 }
 
 static int Config_RowLockedByItem(const ConfigEntry *e)
@@ -731,6 +760,11 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 		first = "Applies from the next race.";
 		second = "Saved with your settings.";
 	}
+	if (Config_RowLockedByHub(e))
+	{
+		first = "Return to the main menu";
+		second = "to change Box Author Mode.";
+	}
 	if (e->valuePtr == &g_config.itemFeed)
 	{
 		first = "IMPORTANT hides filler items";
@@ -754,7 +788,7 @@ static int Config_LinkRow(int sec, int numRows)
 
 static void Config_DrawLinkRow(int y, int labelX, int valueX, uint32_t *ot)
 {
-	DecalFont_DrawLineOT("Room links", labelX, y, FONT_SMALL, ORANGE, ot);
+	DecalFont_DrawLineOT("Room links", labelX, y, FONT_SMALL, Config_FromHub() ? GRAY : ORANGE, ot);
 	DecalFont_DrawLineOT((char *)AP_LinkRegStatusText(), valueX, y, FONT_SMALL, JUSTIFY_RIGHT | WHITE, ot);
 }
 
@@ -1193,7 +1227,8 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 
 	// The Room links row lives on Options > Archipelago; this page only keeps
 	// the one-time notice for when another program owns room links (#334).
-	AP_LinkRegNoticeFrame();
+	if (!Config_FromHub())
+		AP_LinkRegNoticeFrame();
 
 	const int justResolved = TextEdit_Update();
 
@@ -1593,7 +1628,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		const int linkRow = Config_LinkRow(sec, numRows);
 		const int authorRow = Config_AuthorRow(sec, numRows);
 		const int hintsRow = Config_FromHub() && strcmp(s_sectionName[sec], "Gameplay") == 0 ? numRows : -1;
-		if (linkRow >= 0)
+		if (linkRow >= 0 && !Config_FromHub())
 			AP_LinkRegPageFrame();
 #else
 #ifdef CTR_CUSTOM_PACKAGES
@@ -1673,8 +1708,11 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			else
 #endif
 			if (e == NULL)
-				AP_LinkRegAction(); // Room links: use this client for ctr-ap:// links, or stop
-			else if (Config_RowLockedBySeed(e))
+			{
+				if (!Config_FromHub())
+					AP_LinkRegAction();
+			}
+			else if (Config_RowLockedBySeed(e) || Config_RowLockedByHub(e))
 				; // the seed has item box colours off: nothing to toggle
 			else if (Config_RowLockedBySolo(e))
 				; // no DeathLink in a solo session: nothing to toggle
@@ -1696,7 +1734,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		{
 			const ConfigEntry *e = selEntry;
 #ifdef CTR_AP
-			if (e != NULL && e->type == CFG_BOOL && !Config_RowLockedBySeed(e))
+			if (e != NULL && e->type == CFG_BOOL && !Config_RowLockedBySeed(e) && !Config_RowLockedByHub(e))
 #else
 			if (e != NULL && e->type == CFG_BOOL)
 #endif
@@ -1766,7 +1804,8 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 #endif
 
 #ifdef CTR_AP
-			DecalFont_DrawLineOT((char *)e->label, labelX, y, FONT_SMALL, Config_RowLockedBySolo(e) ? GRAY : ORANGE, ot);
+			const int locked = Config_RowLockedBySolo(e) || Config_RowLockedByHub(e);
+			DecalFont_DrawLineOT((char *)e->label, labelX, y, FONT_SMALL, locked ? GRAY : ORANGE, ot);
 #else
 			DecalFont_DrawLineOT((char *)e->label, labelX, y, FONT_SMALL, ORANGE, ot);
 #endif
@@ -1825,7 +1864,12 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		}
 #endif
 		else if (menu->rowSelected == linkRow)
-			Config_DrawHelpLines("Which program opens room links.", AP_LinkRegActionHint(), ot);
+		{
+			if (Config_FromHub())
+				Config_DrawHelpLines("Return to the main menu", "to change room links.", ot);
+			else
+				Config_DrawHelpLines("Which program opens room links.", AP_LinkRegActionHint(), ot);
+		}
 		else if (numRows > 0 && menu->rowSelected < numRows)
 			Config_DrawRowHelp(Section_Entry(sec, menu->rowSelected), ot);
 		} // end generic (non-Connection) section
@@ -1846,7 +1890,7 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 			OtherFX_Play(0, 1);
 		}
 
-		if ((pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
+		if (!Config_HubSectionLocked(menu->rowSelected) && (pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
 		{
 			OtherFX_Play(1, 1);
 			if (strcmp(s_sectionName[menu->rowSelected], CTR_MENU_PAGE_SOUND) == 0)
@@ -1872,9 +1916,9 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 		for (int i = 0; i < s_numSections; i++)
 		{
 			int y = startY + i * spacing;
-			int color = ORANGE;
+			int color = Config_HubSectionLocked(i) ? GRAY : ORANGE;
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
-			if (i == s_customContentSection && AP_CustomContentRequired())
+			if (color != GRAY && i == s_customContentSection && AP_CustomContentRequired())
 				color = RED;
 #endif
 			DecalFont_DrawLineOT((char *)s_sectionName[i], labelX, y, FONT_SMALL, color, ot);
@@ -1888,8 +1932,11 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 #ifdef CTR_AP
 		// Keep the tester-visible pair identity available in-game, without using a
 		// main-menu row or colliding with the denser section submenus.
-		DecalFont_DrawLineOT("CTR-AP " CTR_AP_VERSION,
-			0x100, 0xC0, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
+		if (Config_HubSectionLocked(menu->rowSelected))
+			Config_DrawHelpLines("Return to the main menu", "to manage custom tracks.", ot);
+		else
+			DecalFont_DrawLineOT("CTR-AP " CTR_AP_VERSION,
+				0x100, 0xC0, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 #endif
 	}
 

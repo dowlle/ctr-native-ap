@@ -637,16 +637,6 @@ force_inline b32 PROCESSINPUTS_MainFreeze_MenuPtrOptions(struct RectMenu *menu, 
 			{
 				OtherFX_Play(1, 1);
 				exitMenu = true;
-
-				// Capture the audio screen's live volumes / stereo mode into
-				// config.ini (see platform/native_config.c). config.ini is
-				// authoritative over the adventure-profile card, so persisting on
-				// exit makes the choice survive a launch even with no adventure save.
-				g_config.volFx    = howl_VolumeGet(0);
-				g_config.volMusic = howl_VolumeGet(1);
-				g_config.volVoice = howl_VolumeGet(2);
-				g_config.stereo   = howl_ModeGet();
-				NativeConfig_Save();
 			}
 			break;
 		}
@@ -895,7 +885,18 @@ void MainFreeze_MenuPtrOptions(struct RectMenu *menu)
 		OtherFX_Play(1, 1);
 		OptionsMenu_TestSound(0, 0);
 		RECTMENU_ClearInput();
-		if (!MM_ConfigReturnFromChild(menu))
+		const int fromOptions = MM_ConfigReturnFromChild(menu);
+		if (exitMenu || fromOptions)
+		{
+			// Back from shared Options saves the live audio settings, as does
+			// the retail Exit row. config.ini takes precedence over the card.
+			g_config.volFx    = howl_VolumeGet(0);
+			g_config.volMusic = howl_VolumeGet(1);
+			g_config.volVoice = howl_VolumeGet(2);
+			g_config.stereo   = howl_ModeGet();
+			NativeConfig_Save();
+		}
+		if (!fromOptions)
 			sdata->ptrDesiredMenu = MainFreeze_GetMenuPtr();
 	}
 }
@@ -1398,7 +1399,7 @@ struct RectMenu *MainFreeze_GetMenuPtr(void)
 			int count = AP_PauseRow_Build(apHub, character, tracker, travel, kinds);
 			int onAp = data.menuAdvHub.rows == &apRowsAdvHub[0];
 
-			if (apHub)
+			if (apHub || character)
 			{
 				int r;
 				s16 row = data.menuAdvHub.rowSelected;
@@ -1410,6 +1411,7 @@ struct RectMenu *MainFreeze_GetMenuPtr(void)
 					             : kinds[r] == AP_PAUSEROW_CHARACTER ? LNG_SELECT_CHARACTER
 					             : kinds[r] == AP_PAUSEROW_TRACKER   ? AP_LNG_TRACKER
 					             : kinds[r] == AP_PAUSEROW_TRAVEL    ? AP_LNG_TRAVEL
+					             : kinds[r] == AP_PAUSEROW_HINTS     ? (s16)hintString
 					             : kinds[r] == AP_PAUSEROW_QUIT      ? LNG_QUIT
 					                                                 : LNG_OPTIONS;
 					apRowsAdvHub[r].stringIndex = string;

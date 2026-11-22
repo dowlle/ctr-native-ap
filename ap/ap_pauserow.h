@@ -69,6 +69,8 @@ static inline int AP_PauseRow_Build(int apHub, int character, int tracker, int t
 	}
 	else
 	{
+		if (character)
+			kinds[n++] = AP_PAUSEROW_CHARACTER;
 		kinds[n++] = AP_PAUSEROW_HINTS;
 		kinds[n++] = AP_PAUSEROW_QUIT;
 		kinds[n++] = AP_PAUSEROW_OPTIONS;

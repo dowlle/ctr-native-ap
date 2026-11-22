@@ -87,6 +87,11 @@ static void pause_rows(void)
 	int retailCount = AP_PauseRow_Build(0, 0, 0, 0, retail);
 	EXPECT(retailCount == 4 && retail[0] == AP_PAUSEROW_RESUME && retail[1] == AP_PAUSEROW_HINTS &&
 		retail[2] == AP_PAUSEROW_QUIT && retail[3] == AP_PAUSEROW_OPTIONS, "retail order");
+	signed char devRows[AP_PAUSEROW_KINDS];
+	int devCount = AP_PauseRow_Build(0, 1, 0, 0, devRows);
+	EXPECT(devCount == 5 && devRows[1] == AP_PAUSEROW_CHARACTER && devRows[2] == AP_PAUSEROW_HINTS &&
+	       devRows[3] == AP_PAUSEROW_QUIT && devRows[4] == AP_PAUSEROW_OPTIONS,
+	       "offline dev keys retain the character row and retail layout");
 	for (int flags = 0; flags < 8; ++flags) {
 		int character = !!(flags & 1), tracker = !!(flags & 2), travel = !!(flags & 4);
 		signed char kinds[AP_PAUSEROW_KINDS];

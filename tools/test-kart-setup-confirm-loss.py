@@ -90,6 +90,9 @@ NativeConfig g_config;
 
 // ---- the connection: KART SETUP is live while `live` is set ----------------
 static int live = 1;
+static int shared_sound, config_saves;
+static int volume[3] = {80, 96, 112};
+static struct RectMenu config_menu;
 int AP_CharSwap_PauseRowLive(void) { return live; }
 int AP_CapabilityRoomStatsRace(void) { return 1; }
 unsigned AP_CharSwap_KartSetupRows(void) { return 0x7; }
@@ -109,7 +112,11 @@ void AH_Pause_Destroy(void) {}
 void AH_Pause_Update(void) {}
 int ctr_cfg_active(void) { return live; }
 void MM_ConfigOpen(struct RectMenu *parent) { (void)parent; }
-int MM_ConfigReturnFromChild(struct RectMenu *child) { (void)child; return 0; }
+int MM_ConfigReturnFromChild(struct RectMenu *child) {
+	if (!shared_sound || child != &data.menuRacingWheelConfig) return 0;
+	sdata->ptrDesiredMenu = &config_menu;
+	return 1;
+}
 void AP_AiDifficultyCommit(void) {}
 int AP_CharSwap_PickerOpen(void) { return 0; }
 void AP_CharSwap_RequestPickerFromPause(void) {}
@@ -136,15 +143,15 @@ void DecalHUD_DrawPolyGT4(struct Icon *i, s16 x, s16 y, struct PrimMem *p, uint3
 { (void)i; (void)x; (void)y; (void)p; (void)ot; (void)a; (void)b; (void)c; (void)d; (void)t; (void)s; }
 void ElimBG_Activate(struct GameTracker *g) { (void)g; }
 void GhostTape_Destroy(void) {}
-int howl_ModeGet(void) { return 0; }
+int howl_ModeGet(void) { return 1; }
 void howl_ModeSet(int m) { (void)m; }
-int howl_VolumeGet(int t) { (void)t; return 0; }
-void howl_VolumeSet(int t, u8 v) { (void)t; (void)v; }
+int howl_VolumeGet(int t) { return volume[t]; }
+void howl_VolumeSet(int t, u8 v) { volume[t] = v; }
 int LOAD_IsOpen_AdvHub(void) { return 0; }
 void MainRaceTrack_RequestLoad(s16 l) { (void)l; }
 int MATH_Cos(u32 a) { (void)a; return 0x1000; }
 int MATH_Sin(u32 a) { (void)a; return 0; }
-void NativeConfig_Save(void) {}
+void NativeConfig_Save(void) { config_saves++; }
 uint32_t NativeGpuLinks_FromHostPointer(const void *p) { (void)p; return 0; }
 char *NativeMenu_Labels(const char *t) { return (char *)t; }
 void NativeRenderer_CaptureWindowGeometry(void) {}
@@ -370,6 +377,27 @@ int main(void)
 	assert(menu->rows == &data.rowsAdvRace[0] && row_is(LNG_RESUME));
 	still_paused();
 	puts("ok    a junk restored row index is read within the table");
+
+	struct RectMenu *sound = &data.menuRacingWheelConfig;
+	for (int shared = 0; shared < 2; ++shared)
+	{
+		const int taps[] = {BTN_START, BTN_TRIANGLE, BTN_SQUARE_one, BTN_CROSS_one};
+		shared_sound = shared;
+		for (int i = 0; i < 4; ++i)
+		{
+			sdata->AnyPlayerTap = taps[i];
+			sound->rowSelected = 8;
+			config_saves = 0;
+			g_config.volFx = 0;
+			MainFreeze_MenuPtrOptions(sound);
+			assert(sdata->ptrDesiredMenu == (shared ? &config_menu : menu));
+			const int saves = shared || taps[i] == BTN_CROSS_one;
+			assert(config_saves == saves && g_config.volFx == (saves ? volume[0] : 0));
+			if (saves)
+				assert(g_config.volMusic == volume[1] && g_config.volVoice == volume[2] && g_config.stereo == 1);
+		}
+	}
+	puts("ok    shared Sound saves on every Back or Exit path and retail keeps its existing behavior");
 
 	puts("kart setup confirm on a disappearing row: PASS");
 	return 0;
