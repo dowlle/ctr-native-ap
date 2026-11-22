@@ -39,6 +39,7 @@ title = warp.index("AP_PadStage2Line(levelID, apStage2Line, (int)sizeof apStage2
 name = warp.index("DecalFont_DrawLine(warppadLNG")
 assert title < name
 block = warp[title:warp.index("// if track is unlocked, ignore all other ELSE-IFs", title)]
+assert "const RECT *padView = &gGT->pushBuffer[padPlayer].rect;" in block
 assert "ap_pad_title_block_lift(apContentMissing ? 2 : (apStage2 != AP_S2LINE_NONE) + (apBoxesLeft > 0)" in block
 assert "padView->h - 30 - apLift, FONT_BIG" in warp
 stage2_draw = block.split("DecalFont_DrawLineBox(apStage2Line,", 1)[1].split(");", 1)[0]
@@ -47,13 +48,13 @@ assert "int apS2W = padView->w - 160;" in block
 assert "apStage2 == AP_S2LINE_MET ? LIGHT_GREEN" in block
 assert "apStage2 == AP_S2LINE_DONE ? GRAY : RED" in block
 # Stage 2 sits directly under the name; AP BOXES LEFT keeps the bottom line.
-assert block.count("rect.h - 15 - apLift,\n") == 2
-assert block.count("rect.h - 15,\n") == 2
+assert block.count("padView->h - 15 - apLift,\n") == 2
+assert block.count("padView->h - 15,\n") == 2
 assert "apMissingPad->occupied && !AP_ContentPadReady(apMissingPhys)" in block
 assert "if (apBoxesLeft > 0 && !apContentMissing)" in block
 # Racer line and portrait move with the name.
 assert "int racerLift = apLift;" in block and "if (credit) racerLift += 11;" in block
-assert "rect.h - 82 - racerLift" in block and "rect.h - 45 - racerLift" in block
+assert "padView->h - 82 - racerLift" in block and "padView->h - 45 - racerLift" in block
 assert "apCy - data.font_charPixHeight[FONT_SMALL] - 4" in block
 assert "AP_FeedHubPadTitle(apPadFeedY)" in block
 assert "bottom - 30 - 11" in block and "bottom - 23" in block
