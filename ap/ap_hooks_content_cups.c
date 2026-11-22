@@ -311,6 +311,15 @@ int AP_ContentCupFinish(struct GameTracker *gGT, int won)
 		AP_EmitClassCheck(sweep, 0, -1, -1, 1, "[AP CHECK] cup %s Win All Legs location=%ld\n", pad->entry_id, sweep);
 	gGT->podiumRewardID = STATIC_TROPHY;
 	AP_SkipPodium(gGT->podiumRewardID);
+	// A6-77: the podium reuses the Trophy model, so arm its own presentation
+	// with the cup's Win location. Without the latch the podium would draw the
+	// ordinary-Trophy presentation: "TROPHIES: n" and the #330 sentence of the
+	// LAST LEG's trophy location (or the retail "CONGRATULATIONS! YOU WIN A
+	// TROPHY!" fallback), none of which the cup paid. When the local skip
+	// option consumed the podium (reward id now NOFUNC) there is nothing to
+	// present and the latch stays clear.
+	if (gGT->podiumRewardID == STATIC_TROPHY)
+		AP_CupPodiumArm(win);
 	return 1;
 }
 
