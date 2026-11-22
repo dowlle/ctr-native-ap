@@ -102,7 +102,7 @@ int AP_ContentCupHitDestination(void)
 {
 	const ctr_content_pad *pad = AP_ContentCupPad();
 	if (!pad || AP_ContentGarageCupRunning() >= 0) return -1;
-	return pad->gem_cup ? pad->gem_cup : CTR_CFG_HIT_CONTENT_CUP_DEST + pad->cup_index;
+	return AP_ContentCupPadHitDestination(pad);
 }
 
 // The running cup leg's index, or -1.

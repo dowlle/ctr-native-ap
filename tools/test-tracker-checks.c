@@ -37,6 +37,12 @@ int AP_ContentPadSharedChecks(const ctr_content_pad *pad, unsigned modes, ap_pad
         out[0] = (ap_pad_shared_check){35016002, AP_PAD_SHARED_ITEMSANITY};
     return shared_pending;
 }
+int AP_ContentCupLegSharedChecks(const ctr_content_pad *pad, int leg, ap_pad_shared_check *out) {
+    assert(pad == &pads[1]);
+    if (!shared_pending || leg != 2) return 0;
+    out[0] = (ap_pad_shared_check){35016002, AP_PAD_SHARED_ITEMSANITY};
+    return 1;
+}
 
 int ap_content_plan_active(void) { return active; }
 const ctr_content_pad *ap_content_plan_pad(int physical) {
@@ -247,8 +253,10 @@ int main(int argc,char **argv) {
     for(int i=0;i<4;i++) { pads[1].legs[i].track_pad=-1; pads[1].legs[i].retail_id=-1; }
     strcpy(pads[1].legs[2].track_id,"retail:7"); pads[1].legs[2].wumpa=100;
     ap_tracker.checks_page=2;
+    shared_pending=1;
     AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
     expect(&rows[0],1,1,0,0,0); expect(&rows[1],3,0,1,1,1);
+    expect(&rows[4],1,0,0,0,1);
     assert(strstr(route,"LEG 3 OF 4") && AP_TrackerChecksPages(&node)==4);
     /* A cup-only custom leg keeps the accepted room title, not its package name. */
     strcpy(pads[1].legs[2].room_title,"CRASH COVE (CUSTOM)");
@@ -258,6 +266,8 @@ int main(int argc,char **argv) {
     ap_tracker.checks_page=1;
     AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
     expect(&rows[0],0,0,0,0,0); expect(&rows[1],0,0,0,0,0);
+    expect(&rows[4],0,0,0,0,0);
+    shared_pending=0;
     /* Ripper Roo's garage has no physical track pad. */
     node.kind=3; node.physical=-1; ap_tracker.hub=1; ap_tracker.checks_page=0;
     strcpy(node.title,"RIPPER ROO"); bosses.wumpa[0]=100;

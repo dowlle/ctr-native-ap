@@ -75,7 +75,9 @@ plain = body(pads, "int AP_ContentPadPlainLeft(")
 assert "AP_ContentPadSharedChecks(pad, AP_CONTENT_PLAIN_MODES, NULL)" in plain
 shared = body(pads, "int AP_ContentPadSharedChecks(")
 assert "fam->wumpa == 1 && (pad->wumpa_modes & modes)" in shared
-assert "AP_HitEncounterPendingMask(" in shared and "AP_ItemsanityPadPending(host," in shared
+assert "AP_ContentCupLegSharedChecks(pad, -1, out)" in shared
+weapons = body(pads, "static int AP_SharedWeaponChecks(")
+assert "AP_HitEncounterPendingMask(" in weapons and "AP_ItemsanityPendingUseChecks(" in weapons
 # A start after a cancelled menu on the same pad is a new entry.
 assert "apEntryRefusedDest = -1;\n\t\t\tdist = 0;" in tick
 

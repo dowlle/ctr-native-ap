@@ -827,6 +827,8 @@ static void AP_TrackerChecksBuild(const AP_TrackerNode *n, AP_TrackerCheckCount 
 	const ctr_content_checks *fam = ap_content_plan_checks();
 	const ctr_content_sanity *sanity = NULL;
 	AP_TrackerCheckSource source = { AP_ContentCodeChecked, AP_TrackerChecksLogic };
+	ap_pad_shared_check shared[AP_PAD_SHARED_CHECKS_MAX];
+	int shared_count = 0;
 	int64_t wumpa = 0;
 	memset(rows, 0, (AP_TRACKER_PICKUP_ROWS + AP_TRACKER_SHARED_ROWS) * sizeof *rows);
 	snprintf(title, title_size, "%s", n->title);
@@ -837,17 +839,13 @@ static void AP_TrackerChecksBuild(const AP_TrackerNode *n, AP_TrackerCheckCount 
 		sanity = ap_content_plan_sanity(leg->track_id);
 		wumpa = leg->wumpa;
 		if (!wumpa && track) wumpa = track->wumpa_location;
+		shared_count = AP_ContentCupLegSharedChecks(pad, ap_tracker.checks_page, shared);
 		AP_TrackerChecksLegTitle(leg,title,title_size);
 		snprintf(route, route_size, "%s: LEG %d OF %d", n->title, ap_tracker.checks_page + 1, AP_CONTENT_CUP_LEGS);
 	} else if (pad && !pad->crystal) {
-		ap_pad_shared_check shared[AP_PAD_SHARED_CHECKS_MAX];
-		int count = AP_ContentPadSharedChecks(pad, AP_CONTENT_PLAIN_MODES, shared);
+		shared_count = AP_ContentPadSharedChecks(pad, AP_CONTENT_PLAIN_MODES, shared);
 		sanity = ap_content_plan_sanity(pad->track_id);
 		wumpa = pad->wumpa_modes ? (fam->wumpa == 1 ? fam->wumpa_global : pad->wumpa_location) : 0;
-		for (int i = 0; i < count; ++i)
-			if (shared[i].family != AP_PAD_SHARED_WUMPA)
-				AP_TrackerCheckAdd(&rows[AP_TRACKER_PICKUP_ROWS + (shared[i].family == AP_PAD_SHARED_HIT)],
-				                   shared[i].code, source);
 	} else if (n->kind == 3 && ap_content_plan_active()) {
 		int boss = ap_tracker.hub ? ap_tracker.hub - 1 : 4 + ap_tracker.checks_page;
 		sanity = ap_content_plan_sanity_boss(boss);
@@ -861,6 +859,10 @@ static void AP_TrackerChecksBuild(const AP_TrackerNode *n, AP_TrackerCheckCount 
 	}
 	AP_TrackerCheckAdd(&rows[0], wumpa, source);
 	AP_TrackerCheckSanity(&rows[1], sanity, source);
+	for (int i = 0; i < shared_count; ++i)
+		if (shared[i].family != AP_PAD_SHARED_WUMPA)
+			AP_TrackerCheckAdd(&rows[AP_TRACKER_PICKUP_ROWS + (shared[i].family == AP_PAD_SHARED_HIT)],
+			                   shared[i].code, source);
 }
 
 static void AP_TrackerDrawChecks(void)

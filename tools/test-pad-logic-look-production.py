@@ -161,7 +161,7 @@ int AP_ContentCodeChecked(int64_t code) {
 }
 static int ap_net_location_checked(long long code) { return AP_ContentCodeChecked(code); }
 int AP_SanityPadPending(int physical, int family) {
-    assert(physical == 9 || physical == 6 || physical == 102);
+    assert(physical == 9 || physical == 6 || physical == 102 || physical == 16 || physical == 17);
     return family == 0 && have_pickups;
 }
 const ctr_content_checks *ap_content_plan_checks(void) { return &families; }
@@ -169,13 +169,15 @@ const ctr_content_package *ap_content_plan_package(int index) { return index == 
 const ctr_hit_encounters *ap_seedcfg_hit_encounters(void) { return &encounter; }
 static int AP_HitEffectivePlayer(int physical) { (void)physical; return 0; }
 static unsigned AP_HitEncounterPendingMask(int host, int player) {
-    assert((host == 6 || host == 8) && player == 0);
+    assert((host == 6 || host == 8 || host == 16 || host == 17 || host == 100 || host == 205) && player == 0);
     return hit_mask;
 }
 static int AP_ItemsanityActive(void) { return 1; }
 '''
 for implementation, signature in [
-    (items, "int AP_ItemsanityPadPending("),
+    (items, "int AP_ItemsanityPendingUseChecks("),
+    (pads, "static int AP_SharedWeaponChecks("),
+    (pads, "int AP_ContentCupLegSharedChecks("),
     (pads, "int AP_ContentPadSharedChecks("),
     (pads, "int AP_ContentPadPickupsLeft("),
     (pads, "int AP_ContentPadPlainLeft("),
@@ -184,12 +186,13 @@ for implementation, signature in [
 program += r'''
 int main(void) {
     const unsigned ctr = 1u << AP_CONTENT_MODE_CTR, relic = 1u << AP_CONTENT_MODE_RELIC;
-    const int ids[] = {102, 6, 9}; /* Baby T Park, Sewer Speedway and Roo's Tubes */
-    const int hosts[] = {-1, 8, 6};
+    /* Reported tracks, plus the trial hosts with Trophy or CTR routes. */
+    const int ids[] = {102, 6, 9, 16, 17};
+    const int hosts[] = {-1, 8, 6, 16, 17};
     int counts[15] = {0};
     ap_pad_shared_check rows[AP_PAD_SHARED_CHECKS_MAX];
     package.weapon_crates = 8;
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 5; ++i) {
         ctr_content_pad pad = {
             .physical = ids[i], .occupied = 1, .retail_id = hosts[i],
             .package_index = i == 0 ? 0 : -1, .racer_lock = -1,
@@ -227,6 +230,22 @@ int main(void) {
             package.weapon_crates = 8;
         }
     }
+    ctr_content_pad cup = {.physical = 100, .occupied = 1, .cup = 1, .gem_cup = 100};
+    cup.legs[1].shared_weapon_route = cup.legs[3].shared_weapon_route = 1;
+    plain_done = juiced_done = 0;
+    hit_mask = 2u;
+    assert(AP_ContentPadSharedChecks(&cup, 0, rows) == 1 && rows[0].family == AP_PAD_SHARED_HIT);
+    families.itemsanity_cup_routes = 1;
+    assert(!AP_ContentCupLegSharedChecks(&cup, 0, rows)); /* crate-free leg */
+    assert(AP_ContentCupLegSharedChecks(&cup, 1, rows) == 3);
+    assert(AP_ContentPadSharedChecks(&cup, 0, rows) == 3); /* both eligible legs share the same codes */
+    assert(rows[0].code == plain && rows[1].code == juiced && rows[2].code == 35025001);
+    cup.gem_cup = 0; cup.cup_index = 5;
+    assert(AP_ContentPadSharedChecks(&cup, 0, rows) == 3); /* non-Gem Cup field */
+    hit_mask = 0; plain_done = juiced_done = 1;
+    assert(!AP_ContentPadSharedChecks(&cup, 0, rows));
+    cup.physical = AP_CONTENT_GARAGE_CUP_PAD; plain_done = juiced_done = 0;
+    assert(!AP_ContentPadSharedChecks(&cup, 0, rows)); /* boss cups have no shared field */
     return 0;
 }
 '''
@@ -237,4 +256,4 @@ with tempfile.TemporaryDirectory(prefix='ctr-pad-shared-') as folder:
                     '-I', str(root / 'ap'), '-I', str(root / 'include'),
                     str(source), '-o', str(executable)], check=True)
     subprocess.run([str(executable)], check=True)
-print("shared pad checks: custom and retail routes, per-mode eligibility, pickups, completion, global Wumpa and Hit Character pass")
+print("shared pad checks: custom, retail, trials and cup legs, per-mode eligibility, completion, global Wumpa and Hit Character pass")

@@ -26,7 +26,7 @@ fixture = r'''
 #define AP_IDX_KEY 14
 static ctr_content_pad p;
 static int active = 1, ready = 1, racer = 1, left, ap_recv_count[200];
-static int sanity_left;
+static int sanity_left, shared_left;
 int AP_SanityPadPending(int physical, int family) { (void)physical; return family == 0 ? sanity_left : 0; }
 int ap_content_plan_active(void) { return active; }
 const ctr_content_pad *ap_content_plan_pad(int physical) {
@@ -48,7 +48,7 @@ void AP_ContentSelectorBuild(const ctr_content_pad *pad, ap_content_selector *se
 }
 int AP_ContentPadPickupsLeft(const ctr_content_pad *pad) { (void)pad; return 0; }
 int AP_ContentPadSharedChecks(const ctr_content_pad *pad, unsigned modes, void *out) {
-    (void)pad; (void)modes; (void)out; return 0;
+    (void)modes; (void)out; return pad && pad->cup && shared_left;
 }
 int AP_ContentStage2Owned(const ctr_content_pad *pad) {
     (void)pad; assert(0 && "Crystal Challenges have no second stage"); return 0;
@@ -110,6 +110,15 @@ int main(void) {
     assert(AP_PadState(3, 0) == 2); /* Sanity keeps a cup open outside the glow cycle. */
     sanity_left = 0;
     assert(AP_PadState(3, 0) == 5);
+    ap_padact_list cup_routes;
+    shared_left = 1;
+    assert(AP_PadState(3, 0) == 2);
+    assert(AP_PadActivities(1, 3, 0, &cup_routes));
+    assert(cup_routes.count == 1 && cup_routes.reason[0] == AP_PADACT_OPEN && cup_routes.left[0]);
+    shared_left = 0;
+    assert(AP_PadState(3, 0) == 5);
+    assert(AP_PadActivities(1, 3, 0, &cup_routes));
+    assert(cup_routes.count == 1 && cup_routes.reason[0] == AP_PADACT_OPEN && !cup_routes.left[0]);
     printf("PASS: %d Crystal Challenge replay/tracker gate cases across seven arenas, plus cup sanity state\n", cases);
     return 0;
 }

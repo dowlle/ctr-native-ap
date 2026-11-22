@@ -78,6 +78,7 @@ int main()
 	expect(!ap_seedcfg_rejected() && ap_content_plan_bind("seed", 0, 1, ids.data(), ids.size()) && ap_content_plan_active(),
 	       "the global-checks room parses and binds");
 	expect(ctr_cfg_active() && ctr_cfg.itemsanity == 1, "Itemsanity is on for the tracker panel");
+	expect(!ap_content_plan_checks()->itemsanity_cup_routes, "standalone races take the Itemsanity routes when present");
 	expect(ap_net_location_exists(35016000) && ap_net_location_exists(35016021),
 	       "the room holds the Itemsanity use checks the runtime keys on");
 	expect(AP_HitEncounterEnabled() == 1, "Hit Character is live on the content-plan room");
@@ -111,6 +112,16 @@ int main()
 	       "a hit on Fake Crash sends Hit Fake Crash");
 	expect(AP_HitEncounterOnDamage(14, 1, kAccepted) == 1 && g_emitCount == 1, "a second hit sends nothing more");
 	expect(AP_HitEncounterOnDamage(3, 1, kAccepted) == 1 && g_lastEmit == 35025003, "a default racer's hit sends its check");
+
+	std::ifstream("tools/fixtures/content-plan/twenty-seven-cups.json") >> room;
+	ap_seedcfg_parse_json(room);
+	ids.clear();
+	for (const auto &c : room["content_plan"]["checks"]) ids.push_back(c["location"].get<int64_t>());
+	expect(!ap_seedcfg_rejected() && ap_content_plan_bind("cups", 0, 1, ids.data(), ids.size()),
+	       "the twenty-seven-cup room parses and binds");
+	expect(ap_content_plan_checks()->itemsanity_cup_routes, "cup legs take the Itemsanity routes when no standalone race can");
+	const auto *cup = ap_content_plan_pad(100);
+	expect(cup && cup->cup && cup->legs[0].shared_weapon_route, "a weapon-capable ordinary cup leg has a shared route");
 
 	std::printf("%d checks, %d failures\n", g_checks, g_failures);
 	return g_failures ? 1 : 0;

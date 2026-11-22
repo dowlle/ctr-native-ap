@@ -16,14 +16,11 @@ static int AP_ItemsanityActive(void)
 	return ctr_cfg_active() && ap_net_location_exists(35016000L);
 }
 
-int AP_ItemsanityPadPending(int destLevelID, long *out)
+int AP_ItemsanityPendingUseChecks(long *out)
 {
 	int i, count = 0;
 
-	// Retail race tracks only: each has item crates and a plain re-race route,
-	// and any of them can serve a pending use check. Cups, trials, arenas,
-	// boss garages and custom destinations keep their own lifecycle.
-	if (destLevelID < 0 || destLevelID > 15 || !AP_ItemsanityActive())
+	if (!AP_ItemsanityActive())
 		return 0;
 
 	for (i = 0; i < AP_ITEMSANITY_WEAPON_COUNT; i++)

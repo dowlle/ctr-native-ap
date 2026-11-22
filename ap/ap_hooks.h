@@ -387,6 +387,11 @@ typedef struct {
 	int family;
 } ap_pad_shared_check;
 int AP_ContentPadSharedChecks(const ctr_content_pad *pad, unsigned modes, ap_pad_shared_check *out);
+int AP_ContentCupLegSharedChecks(const ctr_content_pad *pad, int leg, ap_pad_shared_check *out);
+static inline int AP_ContentCupPadHitDestination(const ctr_content_pad *pad)
+{
+	return pad->gem_cup ? pad->gem_cup : CTR_CFG_HIT_CONTENT_CUP_DEST + pad->cup_index;
+}
 void AP_ContentLogMenu(const ctr_content_pad *pad, const ap_rs_rows *rows, int decision);
 
 // Per-frame verdict tick + the solo-seed "not completable" banner (drawn at the
@@ -941,7 +946,7 @@ int AP_PadReplayable(int physLevelID, int destLevelID);
 // still has an unchecked plain or juiced use check. Like the Hit opportunity it
 // feeds both AP_PadState counters, so a done pad stays raceable instead of
 // stranding the check, and it counts as a re-race reason in the tier-2 chooser.
-int AP_ItemsanityPadPending(int destLevelID, long *out);
+int AP_ItemsanityPendingUseChecks(long *out);
 
 // Number of unchecked item-box locations owned by a race destination. This is
 // the same server-truth count used by AP_PadState, exposed so the warp-pad HUD

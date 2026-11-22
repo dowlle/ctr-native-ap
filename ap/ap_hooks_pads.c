@@ -601,6 +601,7 @@ int AP_PadState(int physLevelID, int destLevelID)
         if(pad->cup) {
             int bits[6+AP_CONTENT_CUP_TRACK_CHECKS];
             return (AP_PadUncollectedGlowBits(physLevelID,bits,6+AP_CONTENT_CUP_TRACK_CHECKS) ||
+                    AP_ContentPadSharedChecks(pad, 0, NULL) ||
                     AP_SanityPadPending(physLevelID,0) || AP_SanityPadPending(physLevelID,1) || AP_SanityPadPending(physLevelID,2)) ? 2 : 5;
         }
 		// Track modes (#133 PR 3), the states of ap_pad_state.h.
@@ -680,37 +681,14 @@ int AP_PadLook(int physLevelID, int destLevelID)
 	return AP_PadLogicLook(physLevelID, AP_PadLookFromState(state, racerMissing));
 }
 
-// Shared checks that still have a route in the supplied race modes.
-int AP_ContentPadSharedChecks(const ctr_content_pad *pad, unsigned modes, ap_pad_shared_check *out)
+static int AP_SharedWeaponChecks(int hitDest, int player, int itemsanity, ap_pad_shared_check *out)
 {
-	const ctr_content_checks *fam = ap_content_plan_checks();
-	const ctr_content_package *package;
 	long itemCodes[AP_ITEMSANITY_WEAPON_COUNT * 2];
-	unsigned hits;
-	int host, itemCount, count = 0;
-	if (!pad || !pad->occupied || pad->crystal || pad->cup)
-		return 0;
-	modes &= ap_content_pad_plain_modes(pad);
-	if (!modes)
-		return 0;
-	if (fam->wumpa == 1 && (pad->wumpa_modes & modes) &&
-	    fam->wumpa_global > 0 && !AP_ContentCodeChecked(fam->wumpa_global))
-	{
-		if (out)
-			out[count] = (ap_pad_shared_check){fam->wumpa_global, AP_PAD_SHARED_WUMPA};
-		++count;
-	}
-	package = ap_content_plan_package(pad->package_index);
-	if (package && package->weapon_crates == 0)
-		return count; // The plan excludes crate-free packages from these routes.
-
-	host = ap_content_pad_host(pad);
-	itemCount = AP_ItemsanityPadPending(host, out ? itemCodes : NULL);
+	unsigned hits = AP_HitEncounterPendingMask(hitDest, player);
+	int count = itemsanity ? AP_ItemsanityPendingUseChecks(out ? itemCodes : NULL) : 0;
 	if (out)
-		for (int i = 0; i < itemCount; ++i)
-			out[count + i] = (ap_pad_shared_check){itemCodes[i], AP_PAD_SHARED_ITEMSANITY};
-	count += itemCount;
-	hits = AP_HitEncounterPendingMask(host, AP_HitEffectivePlayer(pad->physical));
+		for (int i = 0; i < count; ++i)
+			out[i] = (ap_pad_shared_check){itemCodes[i], AP_PAD_SHARED_ITEMSANITY};
 	if (hits)
 	{
 		const ctr_hit_encounters *hit = ap_seedcfg_hit_encounters();
@@ -723,6 +701,49 @@ int AP_ContentPadSharedChecks(const ctr_content_pad *pad, unsigned modes, ap_pad
 			}
 	}
 	return count;
+}
+
+// One leg for the Checks page, or any of the legs for the pad and its activity.
+// Every eligible leg uses the cup's same field and shared location codes.
+int AP_ContentCupLegSharedChecks(const ctr_content_pad *pad, int leg, ap_pad_shared_check *out)
+{
+	if (!pad || !pad->cup || pad->physical >= AP_CONTENT_GARAGE_CUP_PAD || leg >= AP_CONTENT_CUP_LEGS)
+		return 0;
+	int first = leg < 0 ? 0 : leg;
+	int end = leg < 0 ? AP_CONTENT_CUP_LEGS : leg + 1;
+	for (int i = first; i < end; ++i)
+		if (pad->legs[i].shared_weapon_route)
+			return AP_SharedWeaponChecks(AP_ContentCupPadHitDestination(pad), AP_HitEffectivePlayer(pad->physical),
+			                             ap_content_plan_checks()->itemsanity_cup_routes, out);
+	return 0;
+}
+
+// Shared checks that still have a route in the supplied race modes, or in
+// any leg of a cup. This follows the accepted plan, including crate-free tracks.
+int AP_ContentPadSharedChecks(const ctr_content_pad *pad, unsigned modes, ap_pad_shared_check *out)
+{
+	const ctr_content_checks *fam = ap_content_plan_checks();
+	const ctr_content_package *package;
+	int count = 0;
+	if (!pad || !pad->occupied || pad->crystal)
+		return 0;
+	if (pad->cup)
+		return AP_ContentCupLegSharedChecks(pad, -1, out);
+	modes &= ap_content_pad_plain_modes(pad);
+	if (!modes)
+		return 0;
+	if (fam->wumpa == 1 && (pad->wumpa_modes & modes) &&
+	    fam->wumpa_global > 0 && !AP_ContentCodeChecked(fam->wumpa_global))
+	{
+		if (out)
+			out[count] = (ap_pad_shared_check){fam->wumpa_global, AP_PAD_SHARED_WUMPA};
+		++count;
+	}
+	package = ap_content_plan_package(pad->package_index);
+	if (package && package->weapon_crates == 0)
+		return count;
+	return count + AP_SharedWeaponChecks(ap_content_pad_host(pad), AP_HitEffectivePlayer(pad->physical),
+	                                     1, out ? out + count : NULL);
 }
 
 int AP_ContentPadPickupsLeft(const ctr_content_pad *pad)
