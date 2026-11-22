@@ -2129,7 +2129,7 @@ static const char *ap_cs_shortName(int characterID)
 // table is populated from the hub LEV plus the resident adventure MPK, so a
 // portrait may simply not be here, and drawing the short name is better than
 // drawing nothing. `dim` renders the not-yet-owned state.
-void AP_CharSwap_DrawPortraitAt(int characterID, short x, short y, int dim)
+void AP_CharSwap_DrawPortraitAt(int characterID, short x, short y, int dim, int centered)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	int iconID;
@@ -2141,6 +2141,7 @@ void AP_CharSwap_DrawPortraitAt(int characterID, short x, short y, int dim)
 
 	iconID = data.MetaDataCharacters[characterID].iconID;
 	icon = ((unsigned)iconID < 0x88) ? gGT->ptrIcons[iconID] : NULL;
+	if (!centered) x -= 16;
 	// 0x808080, not 0xffffff, for the owned case: the renderer doubles the
 	// texel-times-vertex-colour product, so 128 is the identity tint and 255 was
 	// 2x overbright, washing the portrait toward white. Same constant and the
@@ -2150,6 +2151,7 @@ void AP_CharSwap_DrawPortraitAt(int characterID, short x, short y, int dim)
 
 	if (icon != NULL)
 	{
+		if (centered) x -= (icon->texLayout.u1 - icon->texLayout.u0) / 2;
 		RECTMENU_DrawPolyGT4(icon, x, y, &gGT->backBuffer->primMem,
 		                     gGT->pushBuffer_UI.ptrOT, tint, tint, tint, tint,
 		                     TRANS_50_DECAL, FP(1.0));

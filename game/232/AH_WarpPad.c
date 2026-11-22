@@ -11,9 +11,9 @@
 #if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
 static int AH_WarpPad_TextWidth(const struct GameTracker *gGT, int center, int y, int width)
 {
-	// The map's arrows and dots can extend past the map texture. Below
-	// them the usual requirement box already clears the slide meter.
-	if (y > AH_MAP_BOTTOM + 12) return width;
+	// Leave room for arrows alongside the map texture. Below its bottom
+	// edge and outline, the usual box clears the corner HUD.
+	if (y > AH_MAP_BOTTOM + 4) return width;
 
 	const struct Icon *top = gGT->ptrIcons[3];
 	const struct Icon *bottom = gGT->ptrIcons[4];
@@ -856,9 +856,8 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						char apRacerLine[32];
 						int apHave = AP_CharacterUnlocked(apLockRacer);
 						short apCx = (short)padX;
-						// The icon anchors at its TOP-LEFT and is up to ~32 high
-						// (DecalHUD_DrawPolyGT4 sizes it from the icon's own
-						// texture layout), so its bottom lands near y + 32. The
+						// The icon anchors at its TOP-LEFT and is up to ~32 high,
+						// so its bottom lands near y + 32. The
 						// RACER text below sits at h-45; h-82 keeps a clear gap.
 						// h-62 planted the icon straight through the text (Deck
 						// field check, 2026-08-17).
@@ -872,10 +871,14 @@ void AH_WarpPad_ThTick(struct Thread *t)
 							if (clearY < apPadFeedY) apPadFeedY = clearY;
 						}
 #endif
-						// Portrait centred above the title, dimmed until owned so
-						// "can I use this pad yet" reads without counting items.
+						// The credited pad uses the portrait's own width to
+						// align it with the text.
+						int centerPortrait = 0;
+#ifdef CTR_CUSTOM_PACKAGES
+						centerPortrait = credit != NULL;
+#endif
 						AP_CharSwap_DrawPortraitAt(apLockRacer,
-						                           (short)(apCx - 16), apCy, !apHave);
+						                           apCx, apCy, !apHave, centerPortrait);
 
 						if (!apHave)
 						{
