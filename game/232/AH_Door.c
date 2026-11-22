@@ -57,6 +57,31 @@ static char AH_Door_IsOpenByRewards(s16 levelID, s16 doorID)
 }
 
 #ifdef CTR_AP
+int AH_Door_CoopOpenAt(const SVec3 *pos)
+{
+	const struct GameTracker *gt = sdata->gGT;
+	s64 nearest = 0x90000;
+	int open = 0;
+	for (const struct Thread *t = gt->threadBuckets[STATIC].thread; t; t = t->siblingThread)
+	{
+		if (t->funcThTick != AH_Door_ThTick || !t->inst || !t->inst->instDef)
+			continue;
+		const struct InstDef *def = t->inst->instDef;
+		const struct WoodDoor *door = t->object;
+		const int dx = def->pos.x + (MATH_Cos(def->rot.y) * 0x300 >> 12) - pos->x;
+		const int dz = def->pos.z + (MATH_Sin(def->rot.y) * 0x300 >> 12) - pos->z;
+		const s64 distance = (s64)dx * dx + (s64)dz * dz;
+		if (distance < nearest)
+		{
+			nearest = distance;
+			open = AH_Door_IsOpenByRewards(gt->levelID, door->doorID);
+		}
+	}
+	return open;
+}
+#endif
+
+#ifdef CTR_AP
 /* Late server replies use the same pose as birth. Never steal a cutscene. */
 static void AH_Door_ApplyHistoryPose(struct Instance *inst, struct WoodDoor *door)
 {
@@ -144,6 +169,12 @@ void AH_Door_ThTick(struct Thread *t)
 
 	// distance from player and door
 	dist = distX * distX + distZ * distZ;
+
+#ifdef CTR_AP
+	if (AP_CoopHub(gGT) && (AP_CoopHubWarpDriver(gGT) >= 0 || AP_CoopMenuOpen() ||
+	    AP_CharSwap_PickerOpen() || AP_TrackerOpen() || AP_WumpaShopPageOpen()))
+		return;
+#endif
 
 	// If player is close to a door
 	if (dist < 0x90000)

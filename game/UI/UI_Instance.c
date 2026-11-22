@@ -263,10 +263,16 @@ void UI_INSTANCE_InitAll(void)
 	// If you're in Adventure Arena
 	if ((gameMode1 & ADVENTURE_ARENA) != 0)
 	{
-		// is ignoring the return value of these calls intentional?
-		UI_INSTANCE_BirthWithThread(0x61, (int)UI_ThTick_Reward, 0xe, 1, 0, (int)sdata->s_relic1);
-		UI_INSTANCE_BirthWithThread(99, (int)UI_ThTick_Reward, 0xf, 1, 0, (int)sdata->s_key1);
-		UI_INSTANCE_BirthWithThread(0x62, (int)UI_ThTick_Reward, 0x10, 0, 0, (int)sdata->s_trophy1);
+#ifdef CTR_AP
+		// The split hub uses labeled text in each view. The stock 2P
+		// HUD layout has no positions for these three Adventure models.
+		if (!AP_CoopHub(gGT))
+#endif
+		{
+			UI_INSTANCE_BirthWithThread(0x61, (int)UI_ThTick_Reward, 0xe, 1, 0, (int)sdata->s_relic1);
+			UI_INSTANCE_BirthWithThread(99, (int)UI_ThTick_Reward, 0xf, 1, 0, (int)sdata->s_key1);
+			UI_INSTANCE_BirthWithThread(0x62, (int)UI_ThTick_Reward, 0x10, 0, 0, (int)sdata->s_trophy1);
+		}
 
 		GAMEPROG_AdvPercent(&sdata->advProgress);
 

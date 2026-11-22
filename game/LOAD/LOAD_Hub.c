@@ -132,21 +132,27 @@ void LOAD_Hub_SwapNow()
 	MEMPACK_SwapPacks(gGT->activeMempackIndex);
 	MainInit_VisMem(gGT);
 
-	cDC = &gGT->cameraDC[0];
-	cDC->ptrQuadBlock = 0;
-	cDC->visLeafSrc = 0;
-	cDC->visFaceSrc = 0;
-	cDC->visInstSrc = 0;
-	cDC->visOVertSrc = 0;
-	cDC->visSCVertSrc = 0;
-
 	visMem = gGT->visMem1;
-	visMem->visLeafSrc[0] = 0;
-	visMem->visFaceSrc[0] = 0;
-	visMem->visOVertSrc[0] = 0;
-	visMem->visSCVertSrc[0] = 0;
-
-	gGT->drivers[0]->underDriver = 0;
+	int views = 1;
+#ifdef CTR_AP
+	if (AP_CoopHub(gGT))
+		views = 2;
+#endif
+	for (int i = 0; i < views; i++)
+	{
+		cDC = &gGT->cameraDC[i];
+		cDC->ptrQuadBlock = 0;
+		cDC->visLeafSrc = 0;
+		cDC->visFaceSrc = 0;
+		cDC->visInstSrc = 0;
+		cDC->visOVertSrc = 0;
+		cDC->visSCVertSrc = 0;
+		visMem->visLeafSrc[i] = 0;
+		visMem->visFaceSrc[i] = 0;
+		visMem->visOVertSrc[i] = 0;
+		visMem->visSCVertSrc[i] = 0;
+		gGT->drivers[i]->underDriver = 0;
+	}
 
 	gGT->framesInThisLEV = 0;
 	gGT->msInThisLEV = 0;
@@ -167,6 +173,65 @@ static const int s_advHubConnectedLevID[5][3] = {
 #define LOAD_HUB_CONNECTED_LEV(hub, index) rdata.MetaDataHubs[(hub)].connectedHub_LevID[(index)]
 #endif
 
+#ifdef CTR_AP
+static void LOAD_Hub_Coop(struct BigHeader *bigfile, struct GameTracker *gt)
+{
+	const int hub = gt->levelID - GEM_STONE_VALLEY;
+	const int otherPack = 3 - gt->activeMempackIndex;
+	const int held = AP_CoopHubHeldDriver(gt);
+	if (hub < 0 || hub >= 5 || held >= 0 || !gt->drivers[0] || !gt->drivers[1])
+		return;
+
+	// Keep each driver's last tunnel target. Either player can prefetch,
+	// but swapping waits for the hub requested by the driver who crossed.
+	static int targets[2] = {-1, -1};
+	if (gt->framesInThisLEV == 0)
+		targets[0] = targets[1] = -1;
+	for (int i = 0; i < 2; i++)
+	{
+		const CollStepFlags flags = gt->drivers[i]->stepFlagSet;
+		const int entry = (flags & COLL_STEP_TRIGGER_HUB_LEVEL_ID_MASK) >> COLL_STEP_TRIGGER_HUB_LEVEL_ID_SHIFT;
+		if (entry > 0 && entry <= 3)
+			targets[i] = LOAD_HUB_CONNECTED_LEV(hub, entry - 1);
+	}
+	for (int i = 0; i < 2; i++)
+	{
+		const CollStepFlags flags = gt->drivers[i]->stepFlagSet;
+		if (!(flags & COLL_STEP_TRIGGER_HUB_SWAP_NOW_MASK))
+			continue;
+		const int target = targets[i] >= 0 ? targets[i] : gt->levID_in_each_mempack[otherPack];
+		if (target < GEM_STONE_VALLEY || target > CITADEL_CITY || target == gt->levelID)
+			continue;
+		if (sdata->queueLength || !sdata->queueReady)
+			return;
+		if (!gt->level2)
+			gt->levID_in_each_mempack[otherPack] = -1;
+		LOAD_Hub_ReadFile(bigfile, target, otherPack);
+		LOAD_Hub_SwapNow();
+		for (int p = 0; p < 2; p++)
+		{
+			gt->drivers[p]->currBlockTouching = NULL;
+			gt->drivers[p]->lastValid = NULL;
+			gt->drivers[p]->stepFlagSet = 0;
+		}
+		AP_CoopPlaceBeside(gt, i);
+		targets[0] = targets[1] = -1;
+		return;
+	}
+	if (sdata->queueLength || !sdata->queueReady)
+		return;
+	for (int i = 0; i < 2; i++)
+	{
+		const CollStepFlags flags = gt->drivers[i]->stepFlagSet;
+		if (targets[i] >= 0 && (flags & COLL_STEP_TRIGGER_HUB_LEVEL_ID_MASK))
+		{
+			LOAD_Hub_ReadFile(bigfile, targets[i], otherPack);
+			return;
+		}
+	}
+}
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80033318-0x80033474.
 void LOAD_Hub_Main(struct BigHeader *bigfilePtr)
 {
@@ -181,6 +246,12 @@ void LOAD_Hub_Main(struct BigHeader *bigfilePtr)
 	gGT = sdata->gGT;
 
 #ifdef CTR_AP
+	if (AP_CoopHub(gGT) && !gGT->bool_AdvHub_NeedToSwapLEV)
+	{
+		LOAD_Hub_Coop(bigfilePtr, gGT);
+		return;
+	}
+
 	// A read held for a mask hint goes first once the hint is over; a held
 	// swap follows on a later tick, after the read is queued, and only into a
 	// hub (ap/ap_hub_hint_hold.h).

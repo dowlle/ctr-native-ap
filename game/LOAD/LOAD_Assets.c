@@ -377,6 +377,13 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 		    )
 		{
 			lastFileIndexMPK = BI_ADVENTUREPACK + data.characterIDs[0];
+#ifdef CTR_AP
+			if (AP_CoopHub(gGT) && data.characterIDs[1] != data.characterIDs[0])
+			{
+				LOAD_AppendQueue(bigfile, LT_GETADDR, BI_RACERMODELHI + data.characterIDs[1],
+				                 &data.driverModelExtras[1].fileBase, LOAD_DriverMPK_SetPointer);
+			}
+#endif
 			goto QueueLastPack;
 		}
 

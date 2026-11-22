@@ -834,7 +834,11 @@ int RECTMENU_ProcessInput(struct RectMenu *m)
 	if ((m->state & ALL_PLAYERS_USE_MENU) == 0)
 	{
 		// get button from P1
+#ifdef CTR_AP
+		button = sdata->buttonTapPerPlayer[AH_WarpPad_CoopMenuPlayer(m)];
+#else
 		button = sdata->buttonTapPerPlayer[0];
+#endif
 	}
 
 #ifdef CTR_AP
@@ -1059,7 +1063,16 @@ void RECTMENU_ProcessState()
 			RECTMENU_GetWidth(currMenu, &width, 1);
 
 			// draw
-			RECTMENU_DrawSelf(currMenu, 0, 0, (int)width);
+			int offsetY = 0;
+#ifdef CTR_AP
+			if (AP_CoopHub(sdata->gGT) && currMenu->stringIndexTitle == LNG_CHOOSE_RACE_TYPE)
+			{
+				int owner = AH_WarpPad_CoopMenuPlayer(currMenu);
+				const RECT *view = &sdata->gGT->pushBuffer[owner].rect;
+				offsetY = view->y + view->h / 2 - currMenu->posY_curr;
+			}
+#endif
+			RECTMENU_DrawSelf(currMenu, 0, offsetY, (int)width);
 		}
 	}
 

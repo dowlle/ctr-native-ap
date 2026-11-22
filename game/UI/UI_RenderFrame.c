@@ -951,7 +951,12 @@ void UI_RenderFrame_AdvHub(void)
 	// (game/232/AH_Map.c). This pass and that one are mutually exclusive per
 	// frame, so both have to carry the test or the counters come back on
 	// whichever of the two the frame happens to take.
-	if (!AP_CharSwap_HubHudHidden())
+	if (AP_CoopHub(gGT) && !AP_CharSwap_HubHudHidden() && !AP_CoopMenuOpen())
+	{
+		AP_CoopDrawHubCounters(gGT);
+		AP_WumpaDrawHub();
+	}
+	else if (!AP_CoopHub(gGT) && !AP_CharSwap_HubHudHidden())
 #endif
 	{
 		UI_DrawNumRelic(hudStructPtr[0xE].x + 0x10, hudStructPtr[0xE].y - 10);

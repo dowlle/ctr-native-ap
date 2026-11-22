@@ -928,7 +928,8 @@ static int ap_cs_safeToOpen(struct GameTracker *gGT)
 // lets a pad take the kart (ap_tracker_launch.c).
 int AP_HubSafeForRequest(struct GameTracker *gGT)
 {
-	return gGT != NULL && gGT->drivers[0] != NULL && ap_cs_safeToOpen(gGT);
+	return gGT != NULL && gGT->drivers[0] != NULL && !ap_cs_restorePos && ap_cs_safeToOpen(gGT) &&
+	       (!AP_CoopHub(gGT) || AP_CoopHubHeldDriver(gGT) < 0);
 }
 
 // The engine half of the hold, in both directions. See ap/ap_charfreeze.h for
@@ -1067,6 +1068,19 @@ static int ap_cs_neighborReadyForRestore(struct GameTracker *gGT)
 	return 0;
 }
 
+void AP_HubReloadInPlace(struct GameTracker *gGT)
+{
+	const struct Driver *driver = gGT->drivers[0];
+	ap_cs_savedPos[0] = driver->posCurr.x;
+	ap_cs_savedPos[1] = driver->posCurr.y;
+	ap_cs_savedPos[2] = driver->posCurr.z;
+	ap_cs_savedRotY = driver->rotCurr.y;
+	ap_cs_savedLevel = gGT->levelID;
+	ap_cs_savedNeighborHub = ap_cs_neighborHub(gGT);
+	ap_cs_restorePos = 1;
+	MainRaceTrack_RequestLoad(gGT->levelID);
+}
+
 static void ap_cs_requestSwap(struct GameTracker *gGT, int characterID)
 {
 	struct Driver *d;
@@ -1143,6 +1157,8 @@ static void ap_cs_completeSwap(struct GameTracker *gGT)
 		d->posCurr.z = ap_cs_savedPos[2];
 		d->rotCurr.y = (short)ap_cs_savedRotY;
 		VehBirth_TeleportSelf(d, 0, 0);
+		if (AP_CoopHub(gGT))
+			AP_CoopPlaceBeside(gGT, 0);
 	}
 
 	// The package post-pass normally rides on the birth-time SetConsts call.
@@ -1888,7 +1904,7 @@ void AP_CharSwap_Tick(struct GameTracker *gGT)
 	// browse-only roster (see AP_CharSwap_RosterBrowseLive); the dev-key path
 	// survives only as a way in when no seed is connected at all, so the
 	// prototype's manual matrix stays runnable on a bare build.
-	if (!AP_CharSwap_RosterBrowseLive() && !AP_DevKeysEnabled())
+	if (!ap_cs_restorePos && !AP_CharSwap_RosterBrowseLive() && !AP_DevKeysEnabled())
 		return;
 
 	// Apply any editable-stat package that has arrived from the server since the

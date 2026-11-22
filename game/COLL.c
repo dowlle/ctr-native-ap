@@ -1902,9 +1902,17 @@ void COLL_MOVED_TRIANGL_TestPoint(struct ScratchpadStruct *sps, struct BspSearch
 	struct QuadBlock *quad = sps->candidate.ptrQuadblock;
 	s32 normalZW = (s32)CTR_PackS16Pair(sps->candidate.plane.normal.z, sps->candidate.plane.halfDistance);
 
-	if (((quad->quadFlags & QUADBLOCK_FLAG_DOOR) != 0) && (((s32)(s8)quad->terrain_type & sdata->doorAccessFlags) != 0))
+	if ((quad->quadFlags & QUADBLOCK_FLAG_DOOR) != 0)
 	{
-		return;
+		int access = sdata->doorAccessFlags;
+#ifdef CTR_AP
+		// Several wooden doors share terrain bit 2. A kart at an open
+		// door cannot enable passage for a partner standing at a locked one.
+		if ((quad->terrain_type & 2) && AP_CoopHub(sdata->gGT))
+			access = (access & ~2) | (AH_Door_CoopOpenAt(&sps->Union.QuadBlockColl.pos) ? 2 : 0);
+#endif
+		if ((s32)(s8)quad->terrain_type & access)
+			return;
 	}
 
 	CollFixed_GteLoadR11R12(CTR_PackS16Pair(sps->Input1.pos.x, sps->Input1.pos.y));

@@ -257,7 +257,11 @@ void UI_Map_DrawDrivers(int ptrMap, struct Thread *bucket, s16 *param_3)
 	for (/* bucket */; bucket != 0; bucket = bucket->siblingThread, *param_3 = *param_3 + 1)
 	{
 		// if 2P or 4P
-		if ((gGT->numPlyrCurrGame & 1) == 0)
+		if ((gGT->numPlyrCurrGame & 1) == 0
+#ifdef CTR_AP
+		    && !AP_CoopHub(gGT)
+#endif
+		)
 		{
 			// no map icon drawn, but the icon counter still advances
 			continue;
@@ -284,6 +288,10 @@ void UI_Map_DrawDrivers(int ptrMap, struct Thread *bucket, s16 *param_3)
 			{
 				kartColor = WHITE;
 			}
+#ifdef CTR_AP
+			if (AP_CoopHub(gGT))
+				kartColor = d->driverID ? CRASH_BLUE : CORTEX_RED;
+#endif
 
 			// If you're in Adventure Arena
 			if ((gGT->gameMode1 & ADVENTURE_ARENA) != 0)

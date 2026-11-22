@@ -29,9 +29,8 @@ static struct {
 	s8 revEngineState;
 } apWarpSnapshot;
 
-static void AH_WarpPad_WarpCapture(struct GameTracker *gGT)
+static void AH_WarpPad_WarpCapture(struct GameTracker *gGT, struct Driver *driver)
 {
-	struct Driver *driver = gGT->drivers[0];
 	apWarpSnapshot.driver = driver;
 	apWarpSnapshot.positionY = driver->posCurr.y;
 	apWarpSnapshot.turnAngle = driver->turnAngleCurr;
@@ -43,9 +42,8 @@ static void AH_WarpPad_WarpCapture(struct GameTracker *gGT)
 	apWarpSnapshot.camera = gGT->cameraDC[driver->driverID].cameraMode;
 }
 
-static void AH_WarpPad_WarpRestore(struct GameTracker *gGT)
+static void AH_WarpPad_WarpRestore(struct GameTracker *gGT, struct Driver *driver)
 {
-	struct Driver *driver = gGT->drivers[0];
 	if (apWarpSnapshot.driver != driver) return;
 	driver->posCurr.y = apWarpSnapshot.positionY;
 	driver->turnAngleCurr = apWarpSnapshot.turnAngle;
@@ -103,6 +101,7 @@ static int apEntryRefusedDest = -1;
 // RECTMENU_APSetReplayRows). The cursor starts on the first row with an open
 // check. Rebuilt on every entry.
 static int apRaceTypeChoice = -2;
+static unsigned apCoopPromptFrame[2];
 static int apRaceTypeRowMode[AP_RS_COUNT];
 static struct MenuRow apRaceTypeRows[AP_RS_COUNT + 1];
 static void AH_WarpPad_RaceTypeMenuProc(struct RectMenu *menu)
@@ -122,6 +121,15 @@ static struct RectMenu apRaceTypeMenu = {
 	.state = 0x803, .rows = apRaceTypeRows,
 	.funcPtr = AH_WarpPad_RaceTypeMenuProc, .drawStyle = 4
 };
+
+int AH_WarpPad_CoopMenuPlayer(const struct RectMenu *menu)
+{
+	const struct GameTracker *gt = sdata->gGT;
+	if (!AP_CoopHub(gt) || (menu != &apRaceTypeMenu && menu != &D232.menuTokenRelic))
+		return 0;
+	return AP_CoopHubWarpDriver(gt) == 1;
+}
+
 static void AH_WarpPad_RaceTypeRows(const ap_rs_rows *rows)
 {
 	static const s16 strings[AP_RS_COUNT] = {LNG_TROPHY_RACE, LNG_CTR_CHALLENGE_TITLE, LNG_RELIC_RACE};
@@ -468,6 +476,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	int modelID;
 	int levelID;
 	int x, y, z, dist;
+	int padPlayer = 0;
 	char *warppadLNG;
 
 	int angleCamToWarppad;
@@ -551,6 +560,20 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			visInstSrc++;
 		}
 	}
+#ifdef CTR_AP
+	if (!boolOpen && AP_CoopHub(gGT))
+	{
+		visInstSrc = gGT->cameraDC[1].visInstSrc;
+		for (; visInstSrc && *visInstSrc; visInstSrc++)
+		{
+			if (*visInstSrc == warppadInst)
+			{
+				boolOpen = true;
+				break;
+			}
+		}
+	}
+#endif
 
 	// array of instances in warppad object
 	instArr = &warppadObj->inst[0];
@@ -591,6 +614,24 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	dist = x * x + y * y + z * z;
 
 	levelID = warppadObj->levelID;
+#ifdef CTR_AP
+	if (AP_CoopHub(gGT) && gGT->drivers[1] && gGT->drivers[1]->instSelf)
+	{
+		struct Instance *partner = gGT->drivers[1]->instSelf;
+		x = warppadMatrix->t[0] - partner->matrix.t[0];
+		y = warppadMatrix->t[1] - partner->matrix.t[1];
+		z = warppadMatrix->t[2] - partner->matrix.t[2];
+		int partnerDist = x * x + y * y + z * z;
+		if (warppadObj->boolEnteredWarppad ? warppadObj->boolEnteredWarppad == 2 :
+		    AP_CoopP2Available() && partnerDist < dist)
+		{
+			padPlayer = 1;
+			driver = gGT->drivers[1];
+			driverInst = partner;
+			dist = partnerDist;
+		}
+	}
+#endif
 #if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
 	const int legacyCortex = ctr_cfg_active() && ctr_cfg.cortex_track.option && levelID == AP_CORTEX_DEST;
 #endif
@@ -603,6 +644,13 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// Once the pad holds the kart the start is handed over.
 	if (ctr_cfg_active() && AP_TrackerLaunchPadArrives(ctr_cfg_warp_phys(levelID), levelID))
 	{
+		// Tracker requests remain owned by Player 1.
+		if (!warppadObj->boolEnteredWarppad)
+		{
+			padPlayer = 0;
+			driver = gGT->drivers[0];
+			driverInst = driver->instSelf;
+		}
 		if (warppadObj->boolEnteredWarppad)
 			AP_TrackerLaunchTaken();
 		else if (apEntryRefusedDest == levelID)
@@ -642,7 +690,17 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		// determined as near the same warppad in the last frame,
 		// then use this warppad as the "closest". Otherwise the
 		// game could run this for two warppads right next to each other
-		if ((D232.levelID == -1) || (D232.levelID == levelID))
+		int drawPrompt = (D232.levelID == -1) || (D232.levelID == levelID);
+#ifdef CTR_AP
+		if (AP_CoopHub(gGT))
+		{
+			const unsigned frame = gGT->frameTimer_MainFrame_ResetDB;
+			drawPrompt = apCoopPromptFrame[padPlayer] != frame;
+			if (drawPrompt)
+				apCoopPromptFrame[padPlayer] = frame;
+		}
+#endif
+		if (drawPrompt)
 		{
 			// saved as nearest warppad
 			D232.levelID = levelID;
@@ -654,7 +712,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			// UI_RenderFrame.c)
 			if (sdata->AkuAkuHintState == 0
 #ifdef CTR_AP
-			    && !AP_CharSwap_HubHudHidden()
+			    && !AP_CharSwap_HubHudHidden() && !AP_CoopMenuOpen()
 #endif
 			)
 			{
@@ -736,7 +794,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 #else
 				int apLift = 0;
 #endif
-				const RECT *padView = &gGT->pushBuffer[0].rect;
+				const RECT *padView = &gGT->pushBuffer[padPlayer].rect;
 				int padX = padView->x + padView->w / 2;
 #if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
 				const char *credit = UI_TrackCredit(ap_content_plan_active() ? ctr_cfg_warp_phys(levelID) : levelID);
@@ -756,7 +814,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				// midpoint X,
 				// 30 pixels above botttom Y
 				DecalFont_DrawLine(warppadLNG, padX,
-				                   gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 30 - apLift, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
+				                   padView->y + padView->h - 30 - apLift, FONT_BIG, (JUSTIFY_CENTER | ORANGE));
 
 #ifdef CTR_AP
 				// Pad Approach Hints (#124, ruling of 2026-07-20): the name is on
@@ -771,10 +829,10 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					// A6-25: two short lines in the unmet red, reusing the stage 2
 					// and boxes slots; both fit the box without scrolling. The pad
 					// takes no kart until the track is installed.
-					int apMissW = gGT->pushBuffer[0].rect.w - 160;
+					int apMissW = padView->w - 160;
 					DecalFont_DrawLineBox("TRACK NOT INSTALLED",
 					                      padX,
-					                      gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 15 - apLift,
+					                      padView->y + padView->h - 15 - apLift,
 					                      apMissW, FONT_SMALL, JUSTIFY_CENTER | RED,
 					                      TEXT_MARQUEE, TEXT_SLOT_PAD, NULL);
 #if defined(CTR_CUSTOM_PACKAGES) && !defined(CTR_AP_AUTHORING)
@@ -783,7 +841,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					DecalFont_DrawLineBox("OPTIONS > CUSTOM CONTENT",
 #endif
 					                      padX,
-					                      gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 15,
+					                      padView->y + padView->h - 15,
 					                      apMissW, FONT_SMALL, JUSTIFY_CENTER | RED,
 					                      TEXT_MARQUEE, TEXT_SLOT_PAD, NULL);
 				}
@@ -791,10 +849,10 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				{
 					// 160 narrower than the view keeps it clear of the
 					// bottom right HUD corner; longer lines scroll.
-					int apS2W = gGT->pushBuffer[0].rect.w - 160;
+					int apS2W = padView->w - 160;
 					DecalFont_DrawLineBox(apStage2Line,
 					                      padX,
-					                      gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 15 - apLift,
+					                      padView->y + padView->h - 15 - apLift,
 					                      apS2W, FONT_SMALL,
 					                      JUSTIFY_CENTER | (apStage2 == AP_S2LINE_MET ? LIGHT_GREEN
 					                                        : apStage2 == AP_S2LINE_DONE ? GRAY : RED),
@@ -807,7 +865,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					snprintf(apBoxLine, sizeof apBoxLine, "AP BOXES LEFT: %d", apBoxesLeft);
 					DecalFont_DrawLine(apBoxLine,
 					                   padX,
-					                   gGT->pushBuffer[0].rect.y + gGT->pushBuffer[0].rect.h - 15,
+					                   padView->y + padView->h - 15,
 					                   FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
 				}
 
@@ -845,8 +903,8 @@ void AH_WarpPad_ThTick(struct Thread *t)
 						// RACER text below sits at h-45; h-82 keeps a clear gap.
 						// h-62 planted the icon straight through the text (Deck
 						// field check, 2026-08-17).
-						short apCy = (short)(gGT->pushBuffer[0].rect.y
-						                     + gGT->pushBuffer[0].rect.h - 82 - racerLift);
+						short apCy = (short)(padView->y
+						                     + padView->h - 82 - racerLift);
 
 #ifdef CTR_CUSTOM_PACKAGES
 						if (credit)
@@ -875,8 +933,8 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 						DecalFont_DrawLine(apHave ? "RACER READY" : apRacerLine,
 						                   apCx,
-						                   (short)(gGT->pushBuffer[0].rect.y
-						                           + gGT->pushBuffer[0].rect.h - 45 - racerLift),
+						                   (short)(padView->y
+						                           + padView->h - 45 - racerLift),
 						                   FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
 					}
 				}
@@ -889,7 +947,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			{
 			}
 
-			else if (
+			else if (padPlayer == 0 &&
 
 			    // gem cup
 			    ((u16)(levelID - AH_WP_ADV_CUP) < 5) &&
@@ -903,7 +961,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				MainFrame_RequestMaskHint(ADV_MASK_HINT_ID_GEM_CUPS_CHALLENGE, 0);
 			}
 
-			else if (
+			else if (padPlayer == 0 &&
 
 			    // Trophy track
 			    (levelID < AH_WP_SLIDE_COLISEUM) &&
@@ -918,7 +976,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				MainFrame_RequestMaskHint(ADV_MASK_HINT_ID_NEED_MORE_TROPHIES, 0);
 			}
 
-			else if (
+			else if (padPlayer == 0 &&
 
 			    // Slide Col
 			    (levelID == AH_WP_SLIDE_COLISEUM) &&
@@ -943,13 +1001,14 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// not near portal
 	else
 	{
-		D232.levelID = -1;
+		if (!padPlayer || D232.levelID == levelID)
+			D232.levelID = -1;
 	}
 
 	// if warppad is locked
 	if (instArr[WPIS_CLOSED_1S] != 0)
 	{
-		angleCamToWarppad = ratan2(warppadMatrix->t[0] - gGT->pushBuffer[0].pos.x, warppadMatrix->t[2] - gGT->pushBuffer[0].pos.z);
+		angleCamToWarppad = ratan2(warppadMatrix->t[0] - gGT->pushBuffer[padPlayer].pos.x, warppadMatrix->t[2] - gGT->pushBuffer[padPlayer].pos.z);
 
 		angleCamToWarppad = -angleCamToWarppad;
 
@@ -1125,6 +1184,18 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	}
 
 #ifdef CTR_AP
+	if (AP_CoopHub(gGT) && !warppadObj->boolEnteredWarppad &&
+	    (AP_CoopHubWarpDriver(gGT) >= 0 || !AP_HubSafeForRequest(gGT)))
+		goto WarpPad_AnimateOpen;
+	if (padPlayer == 1 && warppadObj->boolEnteredWarppad &&
+	    !AP_CoopP2Available() && sdata->Loading.stage == LOAD_IDLE)
+	{
+		RECTMENU_Hide(&apRaceTypeMenu);
+		RECTMENU_APSetReplayRows(0, 0);
+		apRaceTypeChoice = -2;
+		goto WarpPad_RefuseEntry;
+	}
+
 	if (!warppadObj->boolEnteredWarppad && ctr_cfg_active() && !AP_CoopPadReady())
 	{
 		apEntryRefusedDest = levelID;
@@ -1136,7 +1207,10 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 	// Retail repeats this setup every close/warping frame before the
 	// transition/load gate.
-	LOAD_Robots1P(data.characterIDs[0]);
+#ifdef CTR_AP
+	if (!AP_CoopHub(gGT))
+#endif
+		LOAD_Robots1P(data.characterIDs[0]);
 
 	// variable reuse, get track speed champion
 #ifdef CTR_AP
@@ -1226,6 +1300,8 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// load. ctr_cfg_warp_phys is identity-safe: returns its input unchanged when
 	// slot_data is inactive or the map is identity, so this is a no-op pre-shuffle.
 	int physLevelID = ctr_cfg_warp_phys(levelID);
+	if (AP_CoopHub(gGT) && !warppadObj->boolEnteredWarppad)
+		AH_WarpPad_WarpCapture(gGT, driver);
 
 #ifdef CTR_CUSTOM_TRACKS
 	if (ap_content_plan_active())
@@ -1240,10 +1316,11 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		if (!warppadObj->boolEnteredWarppad && AP_PadState(physLevelID, levelID) == 3 &&
 		    !AP_PadReplayable(physLevelID, levelID))
 			goto WarpPad_AnimateOpen;
-		if (!warppadObj->boolEnteredWarppad) AH_WarpPad_WarpCapture(gGT);
-		warppadObj->boolEnteredWarppad = 1;
+		if (!warppadObj->boolEnteredWarppad && !AP_CoopHub(gGT))
+			AH_WarpPad_WarpCapture(gGT, driver);
+		warppadObj->boolEnteredWarppad = padPlayer + 1;
 		if (warppadObj->framesWarping < 0x400) warppadObj->framesWarping++;
-		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
+		driver->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
 		if (warppadObj->framesWarping < 61) goto WarpPad_AnimateOpen;
 		if (!pad->crystal && !pad->cup)
 		{
@@ -1292,7 +1369,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			// hints, as the retail token/relic menu shows them. The choice stays
 			// latched while he speaks; MainFrame_RequestMaskHint returns at once
 			// when the Skip Mask Hints option is on.
-			if (mode == AP_RS_CTR || mode == AP_RS_RELIC)
+			if (padPlayer == 0 && (mode == AP_RS_CTR || mode == AP_RS_RELIC))
 			{
 				int apHint = mode == AP_RS_CTR ? ADV_MASK_HINT_ID_CTR_TOKEN_CHALLENGE
 				                               : ADV_MASK_HINT_ID_RELIC_CHALLENGE;
@@ -1309,8 +1386,8 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		if (host < 0)
 		{
 			warppadObj->boolEnteredWarppad = 0; warppadObj->framesWarping = 0;
-			AH_WarpPad_WarpRestore(gGT);
-			gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
+			AH_WarpPad_WarpRestore(gGT, driver);
+			driver->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
 			goto WarpPad_AnimateOpen;
 		}
 		gGT->gameMode1 &= ~(ADVENTURE_CUP | ADVENTURE_BOSS | RELIC_RACE | CRYSTAL_CHALLENGE | ARCADE_MODE);
@@ -1366,9 +1443,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// gem cups
 	if (levelID >= AH_WP_ADV_CUP)
 	{
-		warppadObj->boolEnteredWarppad = 1;
+		warppadObj->boolEnteredWarppad = padPlayer + 1;
 		warppadObj->framesWarping++;
-		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
+		driver->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
 		if (warppadObj->framesWarping < 61)
 		{
 			goto WarpPad_AnimateOpen;
@@ -1420,9 +1497,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// Slide Col or Turbo Track
 	if (((u16)(levelID - AH_WP_SLIDE_COLISEUM)) < 2)
 	{
-		warppadObj->boolEnteredWarppad = 1;
+		warppadObj->boolEnteredWarppad = padPlayer + 1;
 		warppadObj->framesWarping++;
-		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
+		driver->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
 		if (warppadObj->framesWarping < 61)
 		{
 			goto WarpPad_AnimateOpen;
@@ -1435,9 +1512,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// Battle Tracks
 	if ((((u16)(levelID - AH_WP_NITRO_COURT)) < 2) || (levelID == 21) || (levelID == 23))
 	{
-		warppadObj->boolEnteredWarppad = 1;
+		warppadObj->boolEnteredWarppad = padPlayer + 1;
 		warppadObj->framesWarping++;
-		gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
+		driver->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
 		if (warppadObj->framesWarping < 61)
 		{
 			goto WarpPad_AnimateOpen;
@@ -1446,7 +1523,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		sdata->Loading.OnBegin.AddBitsConfig0 |= CRYSTAL_CHALLENGE;
 
 		// Dont have hint "collect every crystal"
-		if (CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_HINT_COLLECT_EVERY_CRYSTAL) == 0)
+	if (padPlayer == 0 && CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_HINT_COLLECT_EVERY_CRYSTAL) == 0)
 		{
 			MainFrame_RequestMaskHint(ADV_MASK_HINT_ID_COLLECT_EVERY_CRYSTAL, 1);
 		}
@@ -1509,7 +1586,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				}
 
 				// if hint is locked
-				if (CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_FIRST_HINT + i) == 0)
+				if (padPlayer == 0 && CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_FIRST_HINT + i) == 0)
 				{
 					MainFrame_RequestMaskHint(i, 1);
 				}
@@ -1546,9 +1623,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		}
 	}
 
-	warppadObj->boolEnteredWarppad = 1;
+	warppadObj->boolEnteredWarppad = padPlayer + 1;
 	warppadObj->framesWarping++;
-	gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
+	driver->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
 	if (warppadObj->framesWarping < 61)
 	{
 		goto WarpPad_AnimateOpen;
@@ -1588,8 +1665,8 @@ WarpPad_RefuseEntry:
 	sdata->boolOpenTokenRelicMenu = 0;
 	warppadObj->boolEnteredWarppad = 0;
 	warppadObj->framesWarping = 0;
-	AH_WarpPad_WarpRestore(gGT);
-	gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
+	AH_WarpPad_WarpRestore(gGT, driver);
+	driver->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;
 	apEntryRefusedDest = warppadObj->levelID;
 	AP_PadLogEntryRefused(ctr_cfg_warp_phys(warppadObj->levelID), warppadObj->levelID);
 	goto WarpPad_AnimateOpen;
@@ -1602,9 +1679,9 @@ WarpPad_TrophyAnimateOnly:
 		warppadObj->framesWarping++;
 	}
 
-	warppadObj->boolEnteredWarppad = 1;
+	warppadObj->boolEnteredWarppad = padPlayer + 1;
 
-	gGT->drivers[0]->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
+	driver->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
 
 WarpPad_AnimateOpen:
 

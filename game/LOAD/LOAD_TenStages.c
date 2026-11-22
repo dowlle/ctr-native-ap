@@ -221,6 +221,11 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 
 		// default
 		sdata->levelLOD = gGT->numPlyrCurrGame;
+#ifdef CTR_AP
+		// Both views use the same Adventure LEV and the Adventure model pack.
+		if (AP_CoopHub(gGT))
+			sdata->levelLOD = 1;
+#endif
 
 		// main menu or adv garage
 		if ((gGT->gameMode1 & MAIN_MENU) != 0)
@@ -466,6 +471,13 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 				// Adv Arena Packs
 				iVar9 = 0x68800;
 				iVar12 = 0x68800;
+#ifdef CTR_AP
+				if (AP_CoopHub(gGT))
+				{
+					iVar9 += AP_COOP_HUB_VIS_RESERVE;
+					iVar12 += AP_COOP_HUB_VIS_RESERVE;
+				}
+#endif
 			}
 
 			// Allocate room for LEV swapping

@@ -134,6 +134,9 @@ u32 main(void)
 			// Disable End-Of-Race menu
 			gGT->gameMode1 &= ~END_OF_RACE;
 
+#ifdef CTR_AP
+			AP_CoopFinishHubReload(gGT);
+#endif
 			if (gGT->levelID == MAIN_MENU_LEVEL)
 			{
 				if (RaceFlag_IsFullyOffScreen() != 0)

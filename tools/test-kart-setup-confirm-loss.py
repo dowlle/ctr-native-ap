@@ -112,6 +112,7 @@ int AP_CharSwap_PickerOpen(void) { return 0; }
 void AP_CharSwap_RequestPickerFromPause(void) {}
 int AP_CupReturnHub(void) { return 0; }
 int AP_CoopHubAvailable(const struct GameTracker *tracker) { (void)tracker; return 0; }
+int AH_WarpPad_CoopMenuPlayer(const struct RectMenu *menu) { (void)menu; return 0; }
 int AP_CoopReloadOnRetry(struct GameTracker *tracker) { (void)tracker; return 0; }
 static void MM_ConfigOpenHubGameplay(void) {}
 void AP_DeathLinkOnPauseLeave(int quit) { (void)quit; }

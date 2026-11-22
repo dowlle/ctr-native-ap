@@ -16,6 +16,7 @@ def predicates(humans=False):
     code = '\n#ifndef ADVENTURE_BOSS\n#define ADVENTURE_BOSS 0x80000000u\n#endif\n'
     code += '#ifndef TOKEN_RACE\n#define TOKEN_RACE 8u\n#endif\n'
     code += '#ifndef ACTION_BOT\n#define ACTION_BOT 0x100000u\n#endif\n'
+    code += function('ap/ap_coop.h', 'static inline int AP_CoopHub(')
     code += function('ap/ap_coop.h', 'static inline int AP_CoopRace(')
     if humans:
         code += function('ap/ap_coop.h', 'static inline int AP_IsSlotHuman(')

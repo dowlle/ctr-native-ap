@@ -552,6 +552,41 @@ void VehBirth_TeleportSelf(struct Driver *d, u8 spawnFlag, int spawnPosY)
 }
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80058898-0x80058948.
+#ifdef CTR_AP
+void AP_CoopPlaceBeside(struct GameTracker *gt, int leader)
+{
+	struct Driver *from = gt->drivers[leader];
+	struct Driver *partner = gt->drivers[1 - leader];
+	if (!from || !partner)
+		return;
+
+	const int savedMode = gt->gameMode2;
+	const int lateral = from->rotCurr.y + 0x400;
+	const int dx = MATH_Sin(lateral) * 18;
+	const int dz = MATH_Cos(lateral) * 18;
+	// Try each side, probing for ground in the destination LEV. Narrow
+	// tunnels or edges can leave room on only one side of the leading kart.
+	for (int side = 1; side >= -1; side--)
+	{
+		const int offset = side == 1 ? 1 : side == 0 ? -1 : 0;
+		partner->posCurr = from->posCurr;
+		partner->posCurr.x += offset * dx;
+		partner->posCurr.z += offset * dz;
+		partner->rotCurr = from->rotCurr;
+		partner->lastValid = NULL;
+		VehBirth_TeleportSelf(partner, 0, 0);
+		if (partner->lastValid)
+			break;
+	}
+	gt->gameMode2 = savedMode;
+	partner->stepFlagSet = 0;
+	partner->instSelf->matrix.t[0] = partner->posCurr.x >> 8;
+	partner->instSelf->matrix.t[1] = partner->posCurr.y >> 8;
+	partner->instSelf->matrix.t[2] = partner->posCurr.z >> 8;
+	gt->cameraDC[1 - leader].flags |= CAMERA_FLAG_DIRECTION_CHANGED;
+}
+#endif
+
 void VehBirth_TeleportAll(struct GameTracker *gGT, u32 spawnFlags)
 {
 	// NOTE(aalhendi): Retail ignores this parameter and reloads gGT from globals.
@@ -576,6 +611,18 @@ void VehBirth_TeleportAll(struct GameTracker *gGT, u32 spawnFlags)
 
 		else
 		{
+#ifdef CTR_AP
+			if (i == 1 && AP_CoopHub(gGT))
+			{
+				const int savedMode = gGT->gameMode2;
+				d->posCurr = gGT->drivers[0]->posCurr;
+				d->rotCurr = gGT->drivers[0]->rotCurr;
+				VehBirth_TeleportSelf(d, spawnFlags, 0);
+				gGT->gameMode2 = savedMode;
+				AP_CoopPlaceBeside(gGT, 0);
+				continue;
+			}
+#endif
 			VehBirth_TeleportSelf(d, spawnFlags | VEH_BIRTH_SPAWN_USE_LEVEL_POSITION, 0);
 		}
 	}

@@ -310,8 +310,15 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 			{
 				if (iVar4 == 0)
 				{
+#ifdef CTR_AP
+				const int heldDriver = AP_CoopHubHeldDriver(gGT);
+#endif
 					for (psVar12 = gGT->threadBuckets[iVar4].thread; psVar12 != 0; psVar12 = psVar12->siblingThread)
 					{
+#ifdef CTR_AP
+					if (((struct Driver *)psVar12->object)->driverID == heldDriver)
+						continue;
+#endif
 						VehPickupItem_ShootOnCirclePress((struct Driver *)psVar12->object);
 					}
 
@@ -330,6 +337,10 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 							}
 
 							psVar9 = (struct Driver *)psVar12->object;
+#ifdef CTR_AP
+						if (psVar9->driverID == heldDriver)
+							continue;
+#endif
 
 							pcVar5 = psVar9->funcPtrs[iVar11];
 

@@ -282,6 +282,10 @@ void MainInit_PrimMem(struct GameTracker *gGT)
 		                                             (gGT->gameMode1 & ADVENTURE_BOSS) != 0);
 		unsigned long chosen = CustomTrackPolicy_PrimArenaBytesWithDrawDistance(serving, gGT->numPlyrCurrGame, (unsigned long)size,
 		                                                                        g_config.increaseDrawDistance);
+#ifdef CTR_AP
+		if (AP_CoopHub(gGT) && chosen < 1024 * 1024)
+			chosen = 1024 * 1024;
+#endif
 
 		if (chosen != (unsigned long)size)
 		{

@@ -789,6 +789,10 @@ void AH_Map_Main(void)
 	{
 		// Jump meter and landing boost
 		UI_JumpMeter_Update(advDriver);
+#ifdef CTR_AP
+		if (AP_CoopHub(gGT) && gGT->drivers[1])
+			UI_JumpMeter_Update(gGT->drivers[1]);
+#endif
 	}
 
 	// Check a HUD flag
@@ -814,7 +818,7 @@ void AH_Map_Main(void)
 	    //
 	    // Asked through AP_CharSwap_HubHudHidden rather than the picker flag
 	    // directly, so this site and the counters below cannot drift apart.
-	    && !AP_CharSwap_HubHudHidden()
+	    && !AP_CharSwap_HubHudHidden() && !AP_CoopMenuOpen()
 #endif
 	)
 	{
@@ -835,7 +839,18 @@ void AH_Map_Main(void)
 
 		               &gGT->backBuffer->primMem, gGT->pushBuffer_UI.ptrOT, 1);
 
-		UI_DrawSlideMeter(ptrHudData[8].x, ptrHudData[8].y, advDriver);
+#ifdef CTR_AP
+		if (AP_CoopHub(gGT))
+		{
+			for (int i = 0; i < 2; i++)
+			{
+				const RECT *view = &gGT->pushBuffer[i].rect;
+				UI_DrawSlideMeter(view->x + 64, view->y + view->h - 10, gGT->drivers[i]);
+			}
+		}
+		else
+#endif
+			UI_DrawSlideMeter(ptrHudData[8].x, ptrHudData[8].y, advDriver);
 	}
 
 #ifdef CTR_AP
@@ -844,7 +859,12 @@ void AH_Map_Main(void)
 	// screen, where the map guard does not reach, and the picker's own name and
 	// portrait rows are drawn under them. Found in live play on 2026-08-12,
 	// after the map fix had already landed.
-	if (!AP_CharSwap_HubHudHidden())
+	if (AP_CoopHub(gGT) && !AP_CharSwap_HubHudHidden() && !AP_CoopMenuOpen())
+	{
+		AP_CoopDrawHubCounters(gGT);
+		AP_WumpaDrawHub();
+	}
+	else if (!AP_CoopHub(gGT) && !AP_CharSwap_HubHudHidden())
 #endif
 	{
 		UI_DrawNumRelic(ptrHudData[0xE].x + 0x10, ptrHudData[0xE].y - 10);

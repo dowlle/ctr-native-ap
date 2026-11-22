@@ -143,7 +143,7 @@ struct WarpPad
 	u16 thirds[3];
 
 	// 0x74
-	s16 boolEnteredWarppad;
+	s16 boolEnteredWarppad; // zero, or the entering driver's index plus one
 
 	// 0x76
 	s16 framesWarping;

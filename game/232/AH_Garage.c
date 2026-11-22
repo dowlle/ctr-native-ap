@@ -32,6 +32,11 @@ void AH_Garage_Open(struct ScratchpadStruct *sps, void *hitObject)
 	{
 		return;
 	}
+#ifdef CTR_AP
+	if (AP_CoopHub(sdata->gGT) &&
+	    (otherTh->object != sdata->gGT->drivers[0] || AP_CoopHubWarpDriver(sdata->gGT) >= 0))
+		return;
+#endif
 
 	garageThread = sps->Union.ThBuckColl.thread;
 

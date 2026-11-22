@@ -3,6 +3,17 @@
 #include <common.h>
 #include "ap_coop_logic.h"
 #include "ap_deathlink.h"
+static inline int AP_CoopHub(const struct GameTracker *gt)
+{
+	return gt && gt->numPlyrCurrGame == 2 && (gt->gameMode1 & ADVENTURE_ARENA);
+}
+enum { AP_COOP_HUB_VIS_RESERVE = 0x2000 };
+void AP_CoopPlaceBeside(struct GameTracker *gt, int leader);
+void AP_CoopFinishHubReload(const struct GameTracker *gt);
+int AP_CoopHubHeldDriver(const struct GameTracker *gt);
+int AP_CoopHubWarpDriver(const struct GameTracker *gt);
+int AH_WarpPad_CoopMenuPlayer(const struct RectMenu *menu);
+int AH_Door_CoopOpenAt(const SVec3 *pos);
 static inline int AP_CoopRace(const struct GameTracker *gt)
 {
 	return gt && gt->numPlyrCurrGame == 2 &&
@@ -15,7 +26,8 @@ static inline int AP_CoopRace(const struct GameTracker *gt)
 static inline int AP_IsSlotHuman(const struct GameTracker *gt, const struct Driver *driver)
 {
 	if (!gt || !driver) return 0;
-	if (driver != gt->drivers[0] && !(AP_CoopRace(gt) && driver == gt->drivers[1])) return 0;
+	if (driver != gt->drivers[0] &&
+	    !((AP_CoopRace(gt) || AP_CoopHub(gt)) && driver == gt->drivers[1])) return 0;
 	return !(driver->actionsFlagSet & ACTION_BOT);
 }
 int AP_CoopHardRace(void);
@@ -60,5 +72,6 @@ void AP_CoopTick(struct GameTracker *gt);
 void AP_CoopMenuTick(struct GameTracker *gt);
 int AP_CoopMenuOpen(void);
 void AP_CoopDrawMenu(void);
+void AP_CoopDrawHubCounters(const struct GameTracker *gt);
 void AP_CoopConnectReset(void);
 #endif

@@ -183,11 +183,21 @@ void AP_WumpaDrawHub(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	char line[48];
-	if (!AP_WumpaBanking() || gGT == 0 || gGT->numPlyrCurrGame != 1)
+	if (!AP_WumpaBanking() || gGT == 0 || (gGT->numPlyrCurrGame != 1 && !AP_CoopHub(gGT)))
 		return;
 	if (!ap_net_wumpa_ready())
 		return;
 	AP_WumpaHubLine(line, (int)sizeof line, ap_net_wumpa_balance(), ap_net_wumpa_lifetime());
+	if (AP_CoopHub(gGT))
+	{
+		for (int i = 0; i < 2; i++)
+		{
+			const RECT *view = &gGT->pushBuffer[i].rect;
+			DecalFont_DrawLine(line, view->x + 12, view->y + 26,
+			                   FONT_SMALL, ORANGE);
+		}
+		return;
+	}
 	DecalFont_DrawLine(line, 0x100, 0x24, FONT_SMALL, ORANGE | JUSTIFY_CENTER);
 }
 

@@ -52,6 +52,8 @@ void AP_HubPickerFreeze(struct GameTracker *gt, int on)
 }
 int AP_HubFeedOn(void) { return feedOn; }
 void MainRaceTrack_RequestLoad(s16 level) { requestedLevel = level; }
+void AP_HubReloadInPlace(struct GameTracker *gt) { requestedLevel = gt->levelID; }
+void RaceFlag_SetFullyOnScreen(void) {}
 int CustomTrack_ServingLoad(int level, int cup, int cupID)
 {
 	(void)level; (void)cup; (void)cupID;
@@ -220,7 +222,7 @@ static void testDelayedPreference(struct GameTracker *gt)
 	assert(g_config.coopRacer == 10 && !g_config.coopRules && packedValue == 10);
 	assert(writes == before + 1);
 	savePending = 1;
-	assert(!AP_CoopPadReady() && strstr(AP_CoopHelp(), "awaiting"));
+	assert(!AP_CoopPadReady() && strstr(AP_CoopHelp(), "Waiting"));
 	savePending = 0;
 	saveLost = 1;
 	assert(AP_CoopPadReady() && strstr(AP_CoopHelp(), "not saved"));
@@ -266,7 +268,7 @@ int main(void)
 	tapPartner(&gt, 1, RAW_BTN_CROSS);
 	assert(g_config.coopAdventure && g_config.coopRacer == 10);
 	AP_CoopPrepareLoad(&gt);
-	assert(gt.numPlyrCurrGame == 1); /* hub remains solo */
+	assert(gt.numPlyrCurrGame == 2 && AP_CoopHub(&gt));
 	gt.levelID = CRASH_COVE;
 	gt.gameMode1 = ADVENTURE_MODE;
 	AP_CoopPrepareLoad(&gt);

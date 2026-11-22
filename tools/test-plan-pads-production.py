@@ -58,7 +58,7 @@ assert "AP BOXES LEFT: %d" in draw
 
 # Item 4, the pad closes again and floats stage 2.
 closed = plan.index("AP_PadState(physLevelID, levelID) == 3")
-assert closed < plan.index("AH_WarpPad_WarpCapture(gGT)") and "!AP_PadReplayable(physLevelID, levelID)" in plan[closed:closed + 160]
+assert closed < plan.index("AH_WarpPad_WarpCapture(gGT, driver)") and "!AP_PadReplayable(physLevelID, levelID)" in plan[closed:closed + 160]
 build = body(warp, "static void AH_WarpPad_BuildInstances(struct Thread *t)")
 gate = warp[warp.index("if (apGateLayer == AP_PAD_GATE_STAGE2)"):]
 gate = gate[:gate.index("goto ContentPad_BuildGate;")]

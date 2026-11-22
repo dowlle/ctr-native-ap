@@ -17,6 +17,7 @@ static u64 ap_coop_p2_device;
 static int ap_coop_hard_race;
 static int ap_coop_retry_level = -1;
 static int ap_coop_retry_hub;
+static int ap_coop_reload_hub = -1;
 
 enum AP_CoopMenu { COOP_MENU_CLOSED, COOP_MENU_ACTIONS, COOP_MENU_RACER };
 enum AP_CoopAction { COOP_CHANGE_RACER, COOP_DROP_OUT, COOP_BACK, COOP_ACTION_COUNT };
@@ -27,6 +28,29 @@ static int ap_coop_hint_hub = -1;
 static int ap_coop_notice_frames;
 static char ap_coop_notice[64];
 static struct { u64 device; u16 held; } ap_coop_buttons[NATIVE_CONTROLS_MAX_DEVICES];
+
+static void AP_CoopLog(const char *event, const char *reason, int level, int players)
+{
+	char line[160];
+	snprintf(line, sizeof line, "[AP COOP] %s reason=%s level=%d players=%d\n",
+	         event, reason, level, players);
+	AP_LogLine(line);
+}
+
+static void AP_CoopReloadHub(struct GameTracker *gt, const char *reason)
+{
+	AP_CoopLog("hub reload", reason, gt->levelID, g_config.coopAdventure ? 2 : 1);
+	AP_HubReloadInPlace(gt);
+	ap_coop_reload_hub = gt->levelID;
+	RaceFlag_SetFullyOnScreen();
+}
+
+void AP_CoopFinishHubReload(const struct GameTracker *gt)
+{
+	if (gt->levelID == ap_coop_reload_hub && (gt->gameMode1 & ADVENTURE_ARENA))
+		sdata->RaceFlag_TransitionSpeed = 512;
+	ap_coop_reload_hub = -1;
+}
 
 void AP_CoopConnectReset(void)
 {
@@ -141,7 +165,11 @@ int AP_CoopPadReady(void)
 	if (!g_config.coopAdventure)
 		return 1;
 	AP_CoopRestorePreference();
-	return !ap_coop_restore_pending && !ap_net_coop_save_pending();
+	if (!ap_coop_restore_pending && !ap_net_coop_save_pending())
+		return 1;
+	AP_CoopLog("refused", "co-op settings syncing", sdata->gGT->levelID,
+	           sdata->gGT->numPlyrCurrGame);
+	return 0;
 }
 
 static int AP_CoopNextRacer(int racer, int direction)
@@ -155,11 +183,39 @@ static int AP_CoopNextRacer(int racer, int direction)
 	return -1;
 }
 
+int AP_CoopHubWarpDriver(const struct GameTracker *gt)
+{
+	const int players = AP_CoopHub(gt) ? 2 : 1;
+	for (int i = 0; i < players; i++)
+	{
+		const struct Driver *driver = gt->drivers[i];
+		if (driver && (driver->kartState == KS_WARP_PAD ||
+		    driver->funcPtrs[DRIVER_FUNC_INIT] == VehStuckProc_Warp_Init))
+			return i;
+	}
+	return -1;
+}
+
 static int AP_CoopWarpOwnsDriver(const struct GameTracker *gt)
 {
-	const struct Driver *driver = gt->drivers[0];
-	return driver && (driver->kartState == KS_WARP_PAD ||
-	                  driver->funcPtrs[DRIVER_FUNC_INIT] == VehStuckProc_Warp_Init);
+	return AP_CoopHubWarpDriver(gt) >= 0;
+}
+
+int AP_CoopHubHeldDriver(const struct GameTracker *gt)
+{
+	if (!AP_CoopHub(gt))
+		return -1;
+	int warp = AP_CoopHubWarpDriver(gt);
+	if (warp >= 0)
+		return 1 - warp;
+	const struct Driver *primary = gt->drivers[0];
+	if (!LOAD_IsOpen_AdvHub() || (gt->gameMode2 & (GAME_MODE2_VEH_FREEZE_MASK | SPAWN_AT_BOSS)) ||
+	    (gt->cameraDC[0].flags & CAMERA_FLAG_TRANSITION_AWAY) || sdata->AkuAkuHintState ||
+	    (primary && (primary->kartState == KS_FREEZE ||
+	     primary->funcPtrs[DRIVER_FUNC_INIT] == VehPhysProc_FreezeEndEvent_Init)) ||
+	    sdata->ptrActiveMenu || AP_TrackerOpen() || AP_WumpaShopPageOpen() || AP_CoopMenuOpen())
+		return 1;
+	return -1;
 }
 
 static void AP_CoopCloseMenu(struct GameTracker *gt)
@@ -217,6 +273,10 @@ static void AP_CoopMenuInput(struct GameTracker *gt, u16 tap)
 			ap_coop_joined_device = 0;
 			g_config.coopAdventure = 0;
 			AP_CoopNotice("P2 DROPPED OUT", "");
+			AP_CoopLog("drop out", "controller menu", gt->levelID, 1);
+			AP_CoopCloseMenu(gt);
+			AP_CoopReloadHub(gt, "drop out");
+			return;
 		}
 	}
 	else
@@ -229,6 +289,12 @@ static void AP_CoopMenuInput(struct GameTracker *gt, u16 tap)
 			AP_FeedNoticeLine("RECONNECT TO SAVE");
 		else if (ap_net_coop_save_pending())
 			AP_CoopNotice("CO-OP SETTINGS: SAVING", "");
+		if (g_config.coopRacer != data.characterIDs[1] && AP_CoopHub(gt))
+		{
+			AP_CoopCloseMenu(gt);
+			AP_CoopReloadHub(gt, "change racer");
+			return;
+		}
 	}
 	AP_CoopCloseMenu(gt);
 }
@@ -307,13 +373,36 @@ void AP_CoopMenuTick(struct GameTracker *gt)
 	if (!hub || !idle)
 	{
 		if (start)
+		{
+			AP_CoopLog("refused", !idle ? "loading" :
+			           (gt->gameMode1 & ADVENTURE_CUP) ? "cup" : "outside hub",
+			           gt->levelID, gt->numPlyrCurrGame);
 			AP_FeedNoticeLine(!idle ? "P2: WAIT FOR LOADING" :
 			    (gt->gameMode1 & ADVENTURE_CUP) ? "P2: FINISH OR LEAVE THE CUP" : "P2: JOIN OR LEAVE IN THE HUB");
+		}
 		return;
 	}
 	if (warp || !AP_HubSafeForRequest(gt) || AP_CharSwap_PickerOpen() ||
 	    (pads->gamepad[0].buttonsTapped & BTN_START))
+	{
+		if (start)
+			AP_CoopLog("refused", warp ? "warp" : "hub busy", gt->levelID, gt->numPlyrCurrGame);
 		return;
+	}
+#ifndef CTR_CUSTOM_TRACKS
+	if (start)
+	{
+		AP_CoopLog("refused", "retail memory budget", gt->levelID, 1);
+		AP_CoopNotice("SPLIT SCREEN NEEDS THE FULL MEMORY BUILD", "");
+	}
+	return;
+#endif
+	if (!start && AP_CoopHub(gt) && AP_CoopRacerUnlocked(g_config.coopRacer) &&
+	    g_config.coopRacer != data.characterIDs[1])
+	{
+		AP_CoopReloadHub(gt, "restored racer");
+		return;
+	}
 	if (!start && ap_coop_hint_hub != gt->levelID && second &&
 	    !ap_coop_joined_device && AP_HubFeedOn())
 	{
@@ -334,13 +423,19 @@ void AP_CoopMenuTick(struct GameTracker *gt)
 		if (!AP_CoopRacerUnlocked(racer))
 			racer = AP_CoopNextRacer(-1, 1);
 		if (racer < 0 || !NativeControls_SetAdventurePartner(start))
+		{
+			AP_CoopLog("refused", racer < 0 ? "no unlocked racer" : "controller unavailable",
+			           gt->levelID, gt->numPlyrCurrGame);
 			return;
+		}
 		ap_coop_joined_device = start;
 		if (!ap_coop_restore_pending && racer != g_config.coopRacer)
 			AP_CoopPersist(racer, g_config.coopRules);
 		g_config.coopAdventure = 1;
 		g_config.coopRacer = racer;
 		AP_CoopNotice("P2 JOINED: ", data.MetaDataCharacters[racer].name_Debug);
+		AP_CoopLog("join", "controller Start", gt->levelID, 2);
+		AP_CoopReloadHub(gt, "join");
 	}
 }
 
@@ -375,6 +470,18 @@ void AP_CoopDrawMenu(void)
 	RECTMENU_DrawInnerRect(&panel, 0, gt->pushBuffer_UI.ptrOT);
 }
 
+void AP_CoopDrawHubCounters(const struct GameTracker *gt)
+{
+	char line[96];
+	snprintf(line, sizeof line, "TROPHIES %d   KEYS %d   RELICS %d",
+	         AP_GateCount(AP_IDX_TROPHY), AP_GateCount(AP_IDX_KEY), AP_GateCountRelicSum());
+	for (int i = 0; i < 2; i++)
+	{
+		const RECT *view = &gt->pushBuffer[i].rect;
+		DecalFont_DrawLine(line, view->x + 12, view->y + 10, FONT_SMALL, ORANGE);
+	}
+}
+
 void AP_CoopRulesStep(int direction)
 {
 	struct GameTracker *gt = sdata ? sdata->gGT : 0;
@@ -396,9 +503,9 @@ void AP_CoopRulesStep(int direction)
 const char *AP_CoopHelp(void)
 {
 	if (ap_net_coop_save_pending())
-		return "Co-op settings: awaiting save confirmation.";
+		return "Waiting for co-op save.";
 	if (ap_net_coop_save_lost())
-		return "Co-op settings not saved. Change them again.";
+		return "Co-op edit not saved.";
 	return ap_coop_help;
 }
 int AP_CoopHardRace(void) { return ap_coop_hard_race; }
@@ -430,28 +537,39 @@ void AP_CoopPrepareLoad(struct GameTracker *gt)
 	if (!ctr_cfg_active() || !(mode & ADVENTURE_MODE)) return;
 	if (trophy && g_config.coopAdventure)
 		AP_CoopRestorePreference();
-	int two = !soloRetry && AP_CoopSeatsTwo(g_config.coopAdventure == 1, AP_CoopControllers(), 1,
-	                         trophy, retail, (mode & ADVENTURE_CUP) != 0) &&
-	          AP_CoopRacerUnlocked(g_config.coopRacer);
+	int controllers = AP_CoopControllers();
+	int hub = (mode & ADVENTURE_ARENA) != 0;
+	int racer = g_config.coopRacer;
+	int two = !soloRetry && AP_CoopSeatsTwo(g_config.coopAdventure == 1, controllers, 1,
+	                                      trophy, retail, (mode & ADVENTURE_CUP) != 0);
+#ifdef CTR_CUSTOM_TRACKS
+	if (hub && g_config.coopAdventure && controllers == 2)
+		two = 1;
+#endif
+	if (two && !AP_CoopRacerUnlocked(racer))
+		racer = AP_CoopNextRacer(-1, 1);
+	two = two && AP_CoopRacerUnlocked(racer);
 	gt->numPlyrCurrGame = two ? 2 : 1;
 	// If a reconnect starts during the warp, never award a Lenient result
 	// from a provisional or unconfirmed preference.
-	ap_coop_hard_race = two && (g_config.coopRules || ap_coop_restore_pending ||
+	ap_coop_hard_race = two && !hub && (g_config.coopRules || ap_coop_restore_pending ||
 	                           ap_net_coop_save_pending());
-	/* Hub and unsupported races are always solo, without losing the preference. */
 	gt->numPlyrNextGame = 1;
-	if ((soloRetry || g_config.coopAdventure == 1) && !two &&
-	    !(mode & (ADVENTURE_ARENA | MAIN_MENU | GAME_CUTSCENE)))
+	if ((soloRetry || g_config.coopAdventure == 1) && !hub)
 	{
-		AP_FeedNoticeLine(soloRetry || AP_CoopControllers() < 2 ? "P2 DISCONNECTED: SOLO RACE" :
-		    !AP_CoopRacerUnlocked(g_config.coopRacer) ? "P2 RACER LOCKED: SOLO RACE" :
-	    "P2 SITS THIS RACE OUT");
+		const char *reason = two ? (ap_coop_hard_race ? "Hard" : "Lenient") :
+		    soloRetry || controllers < 2 ? "controller unavailable" :
+		    !AP_CoopRacerUnlocked(racer) ? "racer locked" : "solo event";
+		AP_CoopLog("race seats", reason, gt->levelID, gt->numPlyrCurrGame);
+		if (!two)
+			AP_FeedNoticeLine(soloRetry || controllers < 2 ? "P2 DISCONNECTED: SOLO RACE" :
+			    !AP_CoopRacerUnlocked(racer) ? "P2 RACER LOCKED: SOLO RACE" : "P2 SITS THIS RACE OUT");
 	}
 	ap_coop_p2_device = two ? NativeControls_GetPlayerDeviceIdentity(1) : 0;
 	if (two)
 	{
 		NativeControls_SetAdventurePartner(ap_coop_p2_device);
-		data.characterIDs[1] = g_config.coopRacer;
+		data.characterIDs[1] = racer;
 	}
 }
 
@@ -467,7 +585,7 @@ void AP_CoopPrepareGrid(struct GameTracker *gt)
 
 void AP_CoopTick(struct GameTracker *gt)
 {
-	if (sdata && sdata->Loading.stage == LOAD_IDLE && AP_CoopRace(gt) && gt->drivers[1])
+	if (sdata && sdata->Loading.stage == LOAD_IDLE && (AP_CoopRace(gt) || AP_CoopHub(gt)) && gt->drivers[1])
 		AP_CharSwap_ApplyStatPackage(gt->drivers[1]);
 	if (!gt || !(gt->gameMode1 & ADVENTURE_ARENA) ||
 	    (gt->gameMode1 & (ADVENTURE_CUP | MAIN_MENU | GAME_CUTSCENE)) ||

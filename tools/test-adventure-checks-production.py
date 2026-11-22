@@ -164,6 +164,10 @@ if family == 'shop':
 static struct { int hub,cursor; long long buying; } ap_wshop;
 AP_WumpaShopConfig ctr_wumpa_shop;
 static void AP_WShopSay(const char *s) { (void)s; }
+int AP_CoopHubAvailable(const struct GameTracker *g) {
+ return (g->gameMode1 & (ADVENTURE_MODE | ADVENTURE_ARENA)) == (ADVENTURE_MODE | ADVENTURE_ARENA) &&
+        !(g->gameMode1 & (MAIN_MENU | GAME_CUTSCENE));
+}
 int ap_net_wumpa_buy(long long code,int price,int unlock) { assert(code==35028600 && price==10 && unlock==0);sent++;return 0; }
 void OtherFX_Play(unsigned int id,int flags) { (void)id;(void)flags; }
 '''
@@ -221,6 +225,10 @@ if family == 'shop':
 if family == 'perfect':
     fixture += 'gt.gameMode1|=RELIC_RACE;\n'
 fixture += call + '\nassert(sent>0);\n'
+if family == 'shop':
+    fixture += 'sent=0;gt.numPlyrCurrGame=2;AP_WShopBuy();assert(sent==1);\n'
+    fixture += 'gt.gameMode1|=GAME_CUTSCENE;AP_WShopBuy();assert(sent==1);\n'
+    fixture += 'gt.gameMode1=ADVENTURE_MODE;AP_WShopBuy();assert(sent==1);\n'
 if family in ('rewards', 'results'):
     fixture += 'assert(podiumPlace==1); memset(ap_notified_mask,0,sizeof ap_notified_mask); coOpTrophyPlace=2;' + call
     fixture += '\nassert(podiumPlace==2);\n'
