@@ -426,8 +426,8 @@ void AH_Pause_Draw(int pageID, int posX)
 		goalCount = AP_GoalAdvertLines(goals);
 		if (goalCount)
 		{
-			relicY -= 8;
-			totalY = 93;
+			relicY -= 9;
+			totalY = 92;
 		}
 #endif
 		for (int i = 0; i < 3; i++)
@@ -466,7 +466,7 @@ void AH_Pause_Draw(int pageID, int posX)
 		const int width = 448;
 		for (int i = 0; i < goalCount; ++i)
 		{
-			int y = 111 + i * 9;
+			int y = 109 + i * 9;
 			if (DecalFont_GetLineWidth(goals[i], FONT_SMALL) <= width)
 				DecalFont_DrawLine(goals[i], centerX, y, FONT_SMALL, JUSTIFY_CENTER | WHITE);
 			else

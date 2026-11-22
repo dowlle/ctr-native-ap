@@ -46,7 +46,8 @@ int main(void)
 		for (int i = 0; i < count; ++i) {
 			int len = (int)strlen(lines[i]);
 			assert(small_font_width(lines[i], len, NULL) <= 448);
-			assert(111 + i * 9 + 8 <= 146);
+			// The last two pixels belong to the panel border.
+			assert(109 + i * 9 + 8 <= 144);
 			assert(668 - (count - 1 - i) * 19 >= 611);
 		}
 		++cases;
