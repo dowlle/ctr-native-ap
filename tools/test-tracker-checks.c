@@ -30,13 +30,22 @@ static int64_t checked_code;
 static int64_t absent_code;
 int ap_net_location_exists(long long code) { return code>0 && code!=absent_code; }
 int ap_net_location_checked(long long code) { return code == checked_code; }
-static int shared_pending;
+static int shared_pending, cup_pickups_pending;
 int AP_ContentPadSharedChecks(const ctr_content_pad *pad, unsigned modes, ap_pad_shared_check *out) {
+    if (pad == &pads[1]) {
+        assert(modes == 0 && !out);
+        return shared_pending;
+    }
     assert(pad == &pads[0] && modes == AP_CONTENT_PLAIN_MODES);
     if (shared_pending)
         out[0] = (ap_pad_shared_check){35016002, AP_PAD_SHARED_ITEMSANITY};
     return shared_pending;
 }
+int AP_ContentPadPickupsLeft(const ctr_content_pad *pad) {
+    assert(pad == &pads[1]);
+    return cup_pickups_pending;
+}
+int AP_ContentLetterItemReceived(int64_t code) { (void)code; return 0; }
 int AP_ContentCupLegSharedChecks(const ctr_content_pad *pad, int leg, ap_pad_shared_check *out) {
     assert(pad == &pads[1]);
     if (!shared_pending || leg != 2) return 0;
@@ -88,6 +97,32 @@ static void wumpa_mark_test(void) {
     int pixels=0;
     for (int i=0;i<TRACKER_W*TRACKER_H;i++) pixels += ap_tracker.canvas[i] != 0;
     assert(pixels);
+    free(ap_tracker.canvas);
+    ap_tracker.canvas=NULL;
+}
+
+static void cup_card_test(void) {
+    AP_TrackerNode node = {.kind = 2, .physical = 100};
+    ap_tracker.canvas = calloc(TRACKER_W * TRACKER_H, 4);
+    assert(ap_tracker.canvas);
+    pads[1].cup = 1;
+    pads[1].trophy_location = checked_code = 100;
+    for (int i=0;i<AP_CONTENT_CUP_LEGS;i++) pads[1].legs[i].track_pad=-1;
+    for (int mask=0;mask<4;mask++) {
+        shared_pending = mask & 1;
+        cup_pickups_pending = (mask >> 1) & 1;
+        AP_TrackerRect(0,0,376,126,0);
+        AP_TrackerDrawContentNode(&node,0,0);
+        int green=0, white=0;
+        for (int y=62;y<83;y++) for (int x=312;x<338;x++) {
+            uint32_t pixel = ap_tracker.canvas[y*TRACKER_W+x];
+            green += pixel == TRACKER_GREEN;
+            white += pixel == TRACKER_WHITE;
+        }
+        assert(mask ? (!green && white) : (green && !white));
+    }
+    shared_pending = cup_pickups_pending = 0;
+    memset(&pads[1],0,sizeof pads[1]);
     free(ap_tracker.canvas);
     ap_tracker.canvas=NULL;
 }
@@ -224,6 +259,7 @@ int main(int argc,char **argv) {
     AP_TrackerNode node={0}; AP_TrackerCheckCount rows[AP_TRACKER_PICKUP_ROWS + AP_TRACKER_SHARED_ROWS];
     char title[160],route[256];
     wumpa_mark_test();
+    cup_card_test();
     node.physical=7; strcpy(node.title,"ROO'S TUBES");
     strcpy(pads[0].track_id,"retail:7"); strcpy(pads[0].room_title,"ROO'S TUBES");
     pads[0].wumpa_modes=1; pads[0].wumpa_location=100;

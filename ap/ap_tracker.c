@@ -634,12 +634,15 @@ static void AP_TrackerDrawContentNode(const AP_TrackerNode *n, int x, int y)
 			(long)pad->relic_locations[1], (long)pad->relic_locations[2]};
 		for (i = 0; i < 5; i++) AP_TrackerPrize(x+12+i*70,y+61,i,AP_TrackerCodeState(codes[i]>0?codes[i]:-1));
 	} else {
-		/* Done only when the pad is: a cup's sweep and leg checks, the crystals. */
+		/* The cup's card is complete once its rewards, pickups and shared checks are done. */
 		int64_t codes[6]; int slots[6], c = ap_content_cup_codes(pad, codes, slots), state = AP_TrackerCodeState((long)pad->trophy_location);
 		ap_content_cup_track_check rows[AP_CONTENT_CUP_TRACK_CHECKS];
 		for (i = 0; i < c; i++) if (!AP_ContentCodeChecked(codes[i]) && state == 2) state = 1;
 		c = ap_content_cup_track_checks(pad, ap_content_plan_pad, rows);
 		for (i = 0; i < c; i++) if (!AP_ContentCodeChecked(rows[i].code) && state == 2) state = 1;
+		if (pad->cup && state == 2 &&
+		    (AP_ContentPadPickupsLeft(pad) || AP_ContentPadSharedChecks(pad, 0, NULL)))
+			state = 1;
 		for (i = 0; i < pad->crystal_count; i++) if (!AP_ContentCodeChecked(pad->crystal_locations[i]) && state == 2) state = 1;
 		AP_TrackerText(n->kind==1?"CRYSTAL CHECK":"CUP CHECK",x+12,y+64,18,TRACKER_GOLD,300);
 		AP_TrackerTick(x+315,y+65,(int)state);
