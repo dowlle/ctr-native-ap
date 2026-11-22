@@ -49,6 +49,7 @@ extern "C" int XdeltaImportTest_InstallDescriptors(const XdeltaImportScan *scan,
                                                    const char *assets, int *kept, int *needsLaps, char *note,
                                                    size_t noteSize);
 extern "C" const char *XdeltaImportTest_KnownName(const char *levSha256);
+extern "C" void XdeltaImportTest_HideLev(const char *hash);
 extern "C" const char *XdeltaImportTest_CuratedName(const char *patchSha256, int bigfileIndex);
 extern "C" int XdeltaImport_TestOldCopyState(const XdeltaImportScan *scan, unsigned int item, const char *assets);
 extern "C" void XdeltaImportTest_AddCurated(const char *patchSha256, int bigfileIndex, const char *name);
@@ -56,7 +57,8 @@ extern "C" void XdeltaImportTest_AddCuratedFull(const char *patchSha256, int big
 extern "C" void XdeltaImportTest_ClearCurated();
 extern "C" const char *XdeltaImportTest_CuratedAuthor(const char *patchSha256, int bigfileIndex);
 extern "C" const char *XdeltaImportTest_CuratedKey(const char *patchSha256, int bigfileIndex);
-extern "C" void XdeltaImportTest_History(const char *assets, const char *sha, char *out, size_t size);
+extern "C" void XdeltaImportTest_History(const char *assets, const char *sha, char *out, size_t size,
+                                        const XdeltaImportSummary *summary = nullptr);
 extern "C" void XdeltaImportTest_PackLabel(const char *stem, char *out, size_t size);
 using Bytes = std::vector<unsigned char>;
 static int checks, failures;
@@ -117,7 +119,7 @@ enum { START = 0x15, FINISH = 0x23, PU_RANDOM = 8, STATIC_TIME1 = 0x5c, STATIC_T
 #define BODY_MODELS 0xa80
 #define BODY_PTRMAP 0x1200
 
-struct LevSpec { bool race = true; bool crystals = false; bool letters = true; bool relic = true; unsigned seed = 1; size_t junk = 0; };
+struct LevSpec { bool race = true; bool crystals = false; bool letters = true; bool relic = true; unsigned seed = 1; size_t junk = 0; bool navigation = true; };
 
 static Bytes make_lev(const LevSpec &s)
 {
@@ -126,7 +128,9 @@ static Bytes make_lev(const LevSpec &s)
     if (s.letters) { models.push_back(LETTER_C); models.push_back(LETTER_T); models.push_back(LETTER_R); }
     if (s.crystals) for (int i = 0; i < 3; i++) models.push_back(CRYSTAL);
     const uint32_t n = (uint32_t)models.size();
-    std::vector<uint32_t> slots = {0x10, 0x14c, 0x188, BODY_NAV, BODY_NAV + 4, BODY_NAV + 8};
+    std::vector<uint32_t> slots = {0x10, 0x14c};
+    if (s.navigation)
+        slots.insert(slots.end(), {0x188, BODY_NAV, BODY_NAV + 4, BODY_NAV + 8});
     for (uint32_t i = 0; i < n; i++) slots.push_back(BODY_INST + i * 0x40 + 0x10);
     const size_t size = 4 + BODY_PTRMAP + 4 + slots.size() * 4;
     Bytes b(size, 0);
@@ -145,9 +149,12 @@ static Bytes make_lev(const LevSpec &s)
     put32(b, 4 + 0x14c, BODY_CHECK);
     if (s.race)
         for (int i = 0; i < 35; i++) { std::memset(&b[4 + BODY_CHECK + i * 12 + 8], 0xff, 4); b[4 + BODY_CHECK + i * 12 + 8] = (unsigned char)((i + 1) % 35); }
-    put32(b, 4 + 0x188, BODY_NAV);
-    const uint32_t heads[] = {0x740, 0x880, 0x9c0};
-    for (int i = 0; i < 3; i++) { put32(b, 4 + BODY_NAV + i * 4, heads[i]); b[4 + heads[i]] = 0xfd; b[4 + heads[i] + 1] = 0xec; b[4 + heads[i] + 2] = 4; }
+    if (s.navigation)
+    {
+        put32(b, 4 + 0x188, BODY_NAV);
+        const uint32_t heads[] = {0x740, 0x880, 0x9c0};
+        for (int i = 0; i < 3; i++) { put32(b, 4 + BODY_NAV + i * 4, heads[i]); b[4 + heads[i]] = 0xfd; b[4 + heads[i] + 1] = 0xec; b[4 + heads[i] + 2] = 4; }
+    }
     put32(b, 4 + BODY_PTRMAP, (uint32_t)slots.size() * 4);
     for (size_t i = 0; i < slots.size(); i++) put32(b, 4 + BODY_PTRMAP + 4 + i * 4, slots[i]);
     put32(b, 4 + 0x1100, s.seed); /* Distinguishes otherwise equal tracks. */
@@ -403,6 +410,8 @@ static ScanResult scan(const std::string &patch, const std::string &disc, const 
     return r;
 }
 
+extern "C" int XdeltaImportTest_RenameWithoutMarker(XdeltaImportScan *, unsigned int, const char *);
+
 static const XdeltaImportItem *item_for(const XdeltaImportSummary *s, int index)
 {
     for (unsigned i = 0; i < s->count; i++) if (s->items[i].bigfileIndex == index) return &s->items[i];
@@ -551,11 +560,10 @@ int main()
     /* Normalization grants no mode capability and cannot repair bad payloads. */
     {
         DiscSpec changed = base;
-        LevSpec spec; spec.seed = 44;
+        LevSpec spec; spec.seed = 44; spec.navigation = false;
         Bytes ordinary = make_lev(spec);
-        put32(ordinary, 4 + 0x188, 0); /* No AI table, TT remains allowed. */
         changed.bigfile[1] = alternate_lev(ordinary);
-        spec.seed = 45; spec.race = false;
+        spec.seed = 45; spec.race = false; spec.navigation = true;
         ordinary = make_lev(spec);
         changed.bigfile[3] = alternate_lev(ordinary);
         spec.seed = 46; spec.race = true;
@@ -690,7 +698,8 @@ int main()
         changed.bigfile.push_back(filler);                     /* 259 */
         CHECK(XdeltaImport_CutVrm(changed.bigfile[237].data(), changed.bigfile[237].size()) != changed.bigfile[237].size(),
               "fixture: VRM with trailing bytes cuts short");
-        ScanResult r = scan(write_file("Following.xdelta", encode(baseDisc, make_disc(changed))), discPath);
+        const std::string followingPatch = write_file("Following.xdelta", encode(baseDisc, make_disc(changed)));
+        ScanResult r = scan(followingPatch, discPath);
         CHECK(r.ok, "following-texture scan succeeds");
         if (r.ok)
         {
@@ -714,6 +723,24 @@ int main()
                   "following pairs are numbered after every ordinary pair");
             CHECK(last && last->offered && !std::strcmp(last->title, "Following track 6") && !std::strcmp(last->trackKey, "following-track-6"),
                   "a following pair after refused ones takes the next number");
+            if (normalized && last)
+            {
+                XdeltaImportTest_HideLev(normalized->levSha256);
+                ScanResult hidden = scan(followingPatch, discPath);
+                XdeltaImportTest_HideLev("");
+                CHECK(hidden.ok, "the following-texture scan with a hidden LEV succeeds");
+                if (hidden.ok)
+                {
+                    const auto *summary = XdeltaImport_Summary(hidden.scan);
+                    const auto *skip = item_for(summary, 230);
+                    const auto *next = item_for(summary, 257);
+                    CHECK(skip && !skip->offered && !std::strcmp(skip->reason, "This level was left unused in the adventure."),
+                          "a hidden following pair is skipped");
+                    CHECK(next && next->offered && !std::strcmp(next->pin, last->pin),
+                          "a later following pair keeps its package pin");
+                }
+                XdeltaImport_Free(&hidden.scan);
+            }
             const auto *failed = item_for(s, 242);
             CHECK(failed && !failed->offered && !std::strcmp(failed->title, "Following track 5") &&
                   !std::strncmp(failed->reason, "Files failed checks: ", 21),
@@ -1217,6 +1244,25 @@ int main()
         CHECK(t7 && !t7->offered && !std::strcmp(t7->reason, "Same track as Pack track 1"), "duplicate pair deduplicated");
         const XdeltaImportItem *t9 = item_for(s, 9);
         CHECK(t9 && t9->offered && !std::strcmp(t9->tags, "Race TT Arcade"), "grown entry offered; moved entries are not changes");
+        XdeltaImportTest_HideLev(sha_hex(cutLev).c_str());
+        ScanResult hidden = scan(patchPath, discPath);
+        XdeltaImportTest_HideLev("");
+        CHECK(hidden.ok, "scan succeeds with one hidden LEV");
+        if (hidden.ok)
+        {
+            const XdeltaImportSummary *hiddenSummary = XdeltaImport_Summary(hidden.scan);
+            for (int index : {1, 7})
+            {
+                const auto *item = item_for(hiddenSummary, index);
+                CHECK(item && !item->offered && !item->pin[0] &&
+                    !std::strcmp(item->reason, "This level was left unused in the adventure."),
+                    "the same LEV is skipped in either slot");
+            }
+            const auto *other = item_for(hiddenSummary, 9);
+            CHECK(other && t9 && other->offered && !std::strcmp(other->pin, t9->pin),
+                  "the next offered track keeps its original package pin");
+        }
+        XdeltaImport_Free(&hidden.scan);
         CHECK(!item_for(s, 11), "unchanged LEV after a moved entry is not offered");
         const XdeltaImportItem *code = line_with(s, "Game code (");
         CHECK(code && !std::strcmp(code->reason, "Code does not run in this client"), "code line");
@@ -1983,7 +2029,8 @@ int main()
             return assets;
         };
         /* Installs the patch's track 1 under `name` (default label when null); returns its pin. */
-        auto importAs = [&](const std::string &assets, const std::string &patchFile, const char *name, int expectState = -1) {
+        auto importAs = [&](const std::string &assets, const std::string &patchFile, const char *name,
+                            int expectState = -1, bool preserveEdit = false) {
             std::string pin;
             ScanResult r = scan(patchFile, discPath);
             CHECK(r.ok, "A3-20 scan");
@@ -2000,6 +2047,31 @@ int main()
                   "A3-20 install");
             pin = s->items[index].pin;
             XdeltaImport_Free(&r.scan);
+            if (name && !preserveEdit)
+            {
+                const auto store = assets + "/tracks/packages/";
+                const auto folder = store + pin;
+                const auto path = folder + "/metadata/xdelta-source.json";
+                const auto bytes = read_file(path);
+                auto source = nlohmann::json::parse(bytes.begin(), bytes.end());
+                source.erase("edited_title");
+                const auto legacy = source.dump();
+                const Bytes legacyBytes(legacy.begin(), legacy.end());
+                write_path(path, legacyBytes);
+                const auto manifestBytes = read_file(folder + "/manifest.json");
+                auto manifest = nlohmann::json::parse(manifestBytes.begin(), manifestBytes.end());
+                for (auto &file : manifest["files"])
+                    if (file["path"] == "metadata/xdelta-source.json")
+                    {
+                        file["bytes"] = legacyBytes.size();
+                        file["sha256"] = sha_hex(legacyBytes);
+                    }
+                const auto updated = manifest.dump();
+                const Bytes updatedBytes(updated.begin(), updated.end());
+                write_path(folder + "/manifest.json", updatedBytes);
+                pin = sha_hex(updatedBytes);
+                CHECK(std::rename(folder.c_str(), (store + pin).c_str()) == 0, "A3-20 install a historical fixture");
+            }
             return pin;
         };
         auto packages = [&](const std::string &assets) {
@@ -2063,6 +2135,13 @@ int main()
             const std::string newPin = importAs(assets, patch, nullptr, XDELTA_OLD_NONE);
             CHECK(packages(assets).size() == 4 && exists(assets, mine) && exists(assets, wrongSlot) && exists(assets, typed) && exists(assets, newPin),
                   "A3-20 a renamed copy is never replaced, also one that ends in the matching slot");
+        }
+        {
+            const std::string assets = fresh();
+            const std::string named = importAs(assets, patch, "Imported track slot 1", -1, true);
+            const std::string replacement = importAs(assets, patch, "Brand New Name", XDELTA_OLD_NONE);
+            CHECK(packages(assets).size() == 2 && exists(assets, named) && exists(assets, replacement),
+                  "An explicitly typed slot title stays installed on re-import");
         }
         /* A room that names the old copy keeps it. */
         {
@@ -2163,20 +2242,21 @@ int main()
         struct Row { int patch, slot; const char *name; }; /* name nullptr: a boss slot, generic. */
         const Row rows[] = {
             {0, 7, "Crazy In Kartmandu"},
-            {0, 15, "N-Gage Android Alley"},
+            {0, 15, "Android Alley N-Gage"},
             {0, 23, "Tomb Temple"},
             {0, 39, "Skull Cave"},
             {0, 41, "Arctic Alleyway"},
-            {0, 47, "N-Gage Deep Sea Driving"},
+            {0, 47, "Deep Sea Driving N-Gage"},
             {0, 49, "Wumpa World"},
-            {0, 57, "Drive-Thru Danger"},
+            {0, 57, "Drive Thru Danger"},
+            {0, 71, "Hellenic Hijinx"},
             {0, 79, "Crystal Caves"},
             {0, 119, "Dark Ruins"},
-            {0, 127, "N-Gage Assembly Lane"},
-            {0, 135, "N-Gage Out of Time"},
+            {0, 127, "Assembly Lane N-Gage"},
+            {0, 135, "Out Of Time N-Gage"},
             {1, 7, "Haunted Hovel"},
             {1, 9, nullptr},
-            {1, 23, "Dracula's Castle"},
+            {1, 23, "Draculas Castle"},
             {1, 39, "Lunatic Laboratory"},
             {1, 49, nullptr},
             {1, 55, "Sid's House"},
@@ -2185,6 +2265,7 @@ int main()
             {1, 135, "LEGO Dark Forest Dash"},
             {1, 153, nullptr},
             {1, 169, nullptr},
+            {2, 7, "Super Snocross"},
             {2, 9, "Matsuri"},
             {2, 31, "DK Shipwreck Shore"},
             {2, 39, "Kong Dungeon"},
@@ -2198,7 +2279,9 @@ int main()
             {3, 31, "Hasty Hedges"},
             {3, 39, "Holland"},
             {3, 47, "Motor Sports Land"},
-            {3, 135, "N-Gage Jungle Boogie"},
+            {3, 49, "Toxic Dash"},
+            {3, 71, "Hellenic Hijinx"},
+            {3, 135, "Jungle Boogie N-Gage"},
         };
         for (const Row &row : rows)
         {
@@ -2206,7 +2289,7 @@ int main()
             const std::string label = "curated slot " + std::to_string(row.patch) + ":" + std::to_string(row.slot);
             CHECK(row.name ? (got && !std::strcmp(got, row.name)) : !got, label.c_str());
         }
-        CHECK(sizeof rows / sizeof rows[0] == 37, "the tester table has 37 rows");
+        CHECK(sizeof rows / sizeof rows[0] == 41, "the slot fixtures cover 41 rows");
         for (int patch = 0; patch < 4; patch++)
         {
             int listed = 0;
@@ -2343,6 +2426,70 @@ int main()
                     XdeltaImportTest_ClearCurated();
                 }
             }
+            {
+                const std::string assets = root + "/a637-assets";
+                mkdir(assets.c_str(), 0755);
+                auto legacy = scan(patchPath, discPath);
+                const auto *import = XdeltaImport_Summary(legacy.scan);
+                const auto *item = import ? item_for(import, 1) : nullptr;
+                CHECK(item && item->offered, "A6-37 old package fixture is offered");
+                if (item && item->offered)
+                {
+                    unsigned index = unsigned(item - import->items);
+                    char error[256] = {};
+                    std::vector<unsigned char> selected(import->count, 0);
+                    selected[index] = 1;
+                    CHECK(XdeltaImportTest_RenameWithoutMarker(legacy.scan, index, "N-Gage Assembly Lane"),
+                          "A6-37 make a legacy package under its historical name");
+                    CHECK(XdeltaImport_Install(legacy.scan, selected.data(), assets.c_str(),
+                                               CTR_XDELTA_INSTALL_PACKAGES | CTR_XDELTA_INSTALL_ROOM,
+                                               error, sizeof error) == 1,
+                          "A6-37 install the historical package");
+                    const std::string pin = item->pin;
+                    const std::string store = assets + "/tracks/packages";
+                    const std::string path = store + "/" + pin + "/manifest.json";
+                    const auto manifest = read_file(path);
+                    CustomPackageStoreEntry entry = {};
+                    CHECK(CustomPackage_ScanStore(store.c_str(),
+                          [](const CustomPackageStoreEntry *row, void *context) {
+                              *static_cast<CustomPackageStoreEntry *>(context) = *row;
+                          }, &entry, error, sizeof error), "A6-37 scan the installed copy");
+                    CHECK(entry.verified && pin == entry.pin && manifest == read_file(path) &&
+                          !std::strcmp(entry.manifest.title, "N-Gage Assembly Lane") &&
+                          !std::strcmp(entry.displayTitle, "Assembly Lane N-Gage"),
+                          "A6-37 presentation title changes while manifest and package pin stay intact");
+                    char key[65], revision[65], descriptor[16384];
+                    CHECK(CustomPackage_StoreDescriptor(assets.c_str(), pin.c_str(), nullptr,
+                          key, sizeof key, revision, sizeof revision, descriptor, sizeof descriptor,
+                          error, sizeof error) && !std::strcmp(key, "n-gage-assembly-lane") &&
+                          std::strstr(descriptor, "Assembly Lane N-Gage"),
+                          "A6-37 Play Solo descriptor keeps its prior key and uses the corrected title");
+                    const std::string original = store + "/" + pin + "/original/";
+                    const auto levBytes = read_file(original + "bigfile-1.lev").size();
+                    const auto vrmBytes = read_file(original + "bigfile-1.vrm").size();
+                    CustomTrackManagerStatus status = {};
+                    for (const char *lookup : {"n-gage-assembly-lane", "assembly-lane-n-gage"})
+                        CHECK(CustomTrackManager_LocateContentFiles(assets.c_str(), lookup, "Assembly Lane N-Gage",
+                              "1.0.0", item->levSha256, levBytes, item->vrmSha256, vrmBytes, &status) ==
+                              CTR_CT_MANAGER_READY && std::strstr(status.levPath, "/n-gage-assembly-lane/"),
+                              "A6-37 original folder resolves through either key with exact pins");
+                    CHECK(CustomTrackManager_LocateContentFiles(assets.c_str(), "assembly-lane-n-gage",
+                          "Assembly Lane N-Gage", "1.0.0", item->levSha256, levBytes + 1, item->vrmSha256,
+                          vrmBytes, &status) != CTR_CT_MANAGER_READY,
+                          "A6-37 alias lookup cannot bypass file pins");
+                    CHECK(XdeltaImport_RenameItem(legacy.scan, index, "My Assembly Lane", error, sizeof error) &&
+                          XdeltaImport_RenameItem(legacy.scan, index, "N-Gage Assembly Lane", error, sizeof error),
+                          "A6-37 explicitly edit the title to a historical spelling");
+                    CHECK(pin != item->pin && XdeltaImport_Install(legacy.scan, selected.data(), assets.c_str(),
+                          CTR_XDELTA_INSTALL_PACKAGES, error, sizeof error) == 1,
+                          "A6-37 install the explicitly edited title");
+                    CHECK(CustomPackage_StoreDescriptor(assets.c_str(), item->pin, nullptr,
+                          key, sizeof key, revision, sizeof revision, descriptor, sizeof descriptor,
+                          error, sizeof error) && std::strstr(descriptor, "N-Gage Assembly Lane"),
+                          "A6-37 player-entered titles take precedence over alias display names");
+                }
+                XdeltaImport_Free(&legacy.scan);
+            }
             XdeltaImportTest_AddCurated(sha, 1, "Curated Raceway");
             ScanResult r = scan(patchPath, discPath);
             CHECK(r.ok, "scan with a curated row");
@@ -2428,6 +2575,34 @@ int main()
             int pollState = 0;
             for (int i = 0; i < 2000 && (pollState = XdeltaImport_PollPatchStates(polled, CTR_XDELTA_FOLDER_MAX)) == 0; i++) usleep(5000);
             CHECK(pollState == 1 && polled[0].state == XDELTA_STATE_FAILED && polled[2].state == XDELTA_STATE_IMPORTED, "the worker reports the same states");
+            /* Previously installed slots can fall out of the offer list. Keep their
+               history, but do not count them as installed among the current offers. */
+            XdeltaImportSummary previous = *s;
+            const int retiredSlot = 4000;
+            previous.items[previous.count].bigfileIndex = retiredSlot;
+            previous.items[previous.count++].offered = 1;
+            const std::string recordPath = assets + "/tracks/import-record.json";
+            write_path(recordPath, Bytes{});
+            const int oldInstalls[] = {offered[0], retiredSlot};
+            XdeltaImport_RecordResult(assets.c_str(), "Pack.xdelta", &previous, oldInstalls, 2, "");
+            auto legacy = nlohmann::json::parse(read_file(recordPath));
+            legacy["patches"][0].erase("offered_slots");
+            const auto legacyText = legacy.dump();
+            write_path(recordPath, Bytes(legacyText.begin(), legacyText.end()));
+            XdeltaImportTest_History(assets.c_str(), s->patchSha256, note, sizeof note, s);
+            XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr);
+            CHECK(st[2].state == XDELTA_STATE_PARTLY && st[2].imported == 1 &&
+                  st[2].offered == (int)offered.size(), "a rescan updates the chooser before another install");
+            XdeltaImport_RecordResult(assets.c_str(), "Pack.xdelta", s, offered.data(), 1, "");
+            XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr);
+            CHECK(st[2].state == XDELTA_STATE_PARTLY && st[2].imported == 1 &&
+                  st[2].offered == (int)offered.size(), "an installed hidden slot cannot complete a partial import");
+            XdeltaImportTest_History(assets.c_str(), s->patchSha256, note, sizeof note);
+            CHECK(std::strstr(note, "Imported before: 1 of") != nullptr, "history counts the current offers");
+            auto historyBytes = read_file(recordPath);
+            const auto recorded = nlohmann::json::parse(historyBytes);
+            CHECK(recorded["patches"][0]["tracks"] == nlohmann::json({offered[0], retiredSlot}),
+                  "the hidden slot stays in installation history");
             /* A corrupt record is ignored, not fatal. */
             write_path(assets + "/tracks/import-record.json", Bytes(20, '{'));
             CHECK(XdeltaImport_PatchStates(assets.c_str(), names, 4, st, nullptr) && st[2].state == XDELTA_STATE_NEW, "a damaged record reads as empty");

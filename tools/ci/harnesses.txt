@@ -25,6 +25,7 @@ tools/test-boss-lane-ahead.c
 tools/test-boss-lane-production.py
 tools/test-boss-kit-target.c
 tools/test-boss-kit-target-production.py
+tools/test-boss-mine-lifecycle.c
 tools/test-boss-music.c
 tools/test-boss-venue.cpp
 tools/test-boss-venue-production.py
@@ -41,6 +42,7 @@ tools/test-box-seat-production.py
 tools/test-box-spots.cpp
 tools/test-alpha2-presentation-production.py
 tools/test-alpha4-small-fixes.py
+tools/test-client-user-agent.py
 tools/test-clip-record-space.py
 tools/test-draw-distance.py
 tools/test-hub-box-warning.py
@@ -61,12 +63,14 @@ tools/test-custom-exit-window.c
 tools/test-custom-manager.c
 tools/test-custom-tracks-screen.c
 tools/test-custom-music.c
+tools/test-custom-music-playback-production.py
 tools/test-custom-music-routes-production.py
 tools/test-custom-pad-lifecycle.c
 tools/test-custom-records.c
 tools/test-custom-selector.c
 tools/test-custom-selector-player.c
 tools/test-custom-state-identity.c
+tools/test-quick-savestate-race.c
 tools/test-custom-time-trial.c
 tools/test-custom-time-trial-player.c
 tools/test-custom-track-load.c
@@ -119,6 +123,9 @@ tools/test-item-aliases.c
 tools/test-itemsanity.c
 tools/test-itemsanity-unlocked.c
 tools/test-itemsanity-set-held-production.py
+tools/test-kart-setup-confirm-loss.py
+tools/test-kart-setup-production.c
+tools/test-kart-setup-rows.py
 tools/test-lap-checks.cpp
 tools/test-lap-checks-production.py
 tools/test-lap-progress.c
@@ -132,6 +139,7 @@ tools/test-lettersanity.c
 tools/test-menu-scrollbar.c
 tools/test-menu-ux.c
 tools/test-named-blocks.cpp
+tools/test-origin-letters.cpp
 tools/test-native-clip-scratch.c
 tools/test-native-spawn-pools.c
 tools/test-native-ptr-scratch.c
@@ -141,6 +149,7 @@ tools/test-navrec-production.py
 tools/test-net-admission.cpp
 tools/test-net-inflight-checks.cpp
 tools/test-net-planless-refusal.cpp
+tools/test-conn-version-status.py
 tools/test-solo-deathlink.cpp
 tools/test-options-pages.c
 tools/test-oxide-cutscene.c
@@ -217,6 +226,7 @@ tools/test-solo-layout.c
 tools/test-menu-labels.c
 tools/test-menu-actions.py
 tools/test-solo-selection-production.py
+tools/test-hidden-patch-tracks-production.py
 tools/test-solo-publication-production.py
 tools/test-solo-descriptor-records-production.py
 tools/test-solo-toggle-wording-production.py
@@ -247,6 +257,7 @@ tools/test-content-cup-latch.c
 tools/test-content-capability.c
 tools/test-content-hooks-admission.py
 tools/test-content-modes.c
+tools/test-pad-scaling.c
 tools/test-content-stage1-replay.c
 tools/test-content-relic-result.py
 tools/test-content-custom-scores.c
@@ -334,16 +345,18 @@ cmd Release assembly boundary checks :: python3 -m unittest discover -s tools/re
 tools/test-standalone-hub-return.py
 tools/test-credits-roll.py
 tools/test-standalone-race-result.py
-tools/test-content-pad-entry.py skip needs the installed Baby T Park package, a built libap_net.a and optionally a live MultiServer; run by hand
+tools/test-content-pad-entry.py skip full parser/network probe needs the installed Baby T Park package and a built libap_net.a; synthetic pad entry runs in test-content-hooks-admission.py
 tools/test-content-plan-parity.py skip needs a paired apworld checkout and the AP virtualenv; run by hand
 tools/test-arcade-crystals-production.py
 tools/test-arcade-room-hold.py
 tools/test-reverse-camera-production.py
 tools/test-xdelta-import.cpp
+tools/test-custom-road-identity.c
 tools/test-lev-normalize.cpp
 tools/test-track-consent.cpp
 tools/test-track-registry.cpp
 tools/test-track-registry-download-production.py
+tools/test-solo-seed-keys-production.py
 tools/test-feed-trap-lines.c
 tools/test-track-sources.c
 tools/test-custom-finish.c

@@ -42,8 +42,12 @@ expected = dict(retail=[dict(id=i, name=n, location=L[n + ": Trophy Race"], ctr=
                 named_blocks=[dict(key=t.track_key, block=t.block_index, name=t.ap_name)
                               for t in sorted(cp.destinations.NAMED_TRACKS, key=lambda t: t.track_key)])
 expected["sanity"] = cp.sanity.CATALOG
+expected["pickup_ruling_counts"] = cp.sanity.PICKUP_RULING_COUNTS
 expected["sanity_exclusions"] = cp.sanity.crate_exclusions.EXCLUSIONS
 expected["object_rulings"] = json.loads((args.apworld / "worlds/ctr/data/object_rulings.json").read_text())
+expected["track_ruling_revisions"] = cp.track_rulings.REVIEWS
+native_ruling_version = re.search(r"kTrackRulingVersion = (\d+);", (root / "ap/ap_content_plan_impl.hpp").read_text())
+assert int(native_ruling_version[1]) == cp.track_rulings.RULING_VERSION, "track ruling versions differ across the pair"
 expected["sanity_locations"] = {t: [cp.sanity.code(dict(origin="retail", display_name=t), f, 1) for f in range(3)] for t in cp.sanity.BOX_TRACKS}
 expected["sanity_locations"]["Cortex Vortex"] = [35026100, 35026180, 35026200]
 expected["sanity_locations"].update({t.ap_name: [cp.sanity.code(dict(origin="custom", named_block=t.block_index), f, 1)
@@ -194,11 +198,11 @@ for seed in range(12):
 cases.append(("custom-132-fixture", json.loads((root / "tools/fixtures/content-plan/custom-132.json").read_text()), True))
 
 base = cases[0][1]
-def alter(name, change, source=None):
+def alter(name, change, source=None, *, restoring=False):
     case = copy.deepcopy(source or base)
     change(case["content_plan"])
     try:
-        cp.validate(case["content_plan"])
+        cp.validate(case["content_plan"], restoring=restoring)
         accepted = True
     except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
         accepted = False
@@ -349,14 +353,17 @@ def retitle(title):
         t = open_track(p, "fixture-loop"); t["room_title"] = title
         open_check(p, t)["display_name"] = title + ": Trophy Race"
     return change
-alter("identity: named key moved to a generic slot", drop_named, open_base)
+# The slot and title of a saved room predate later registry allocations.
+alter("identity: saved generic slot after its key gains a named block", drop_named, open_base, restoring=True)
 alter("identity: unnamed key claims North Pole's block, name and check", claim_north_pole, open_base)
 alter("identity: named key under another title", lambda p: (open_track(p, "tv-world").__setitem__("room_title", "TV World 2"),
       open_check(p, open_track(p, "tv-world")).__setitem__("display_name", "TV World 2: Trophy Race")), open_base)
 # Clashes only: the apworld also refuses any other title that is not the one it
 # derives (for example a changed case), which native does not recompute.
-for title in ("Crash Cove", "TV World", "North Pole", "tv world", "Fixture Loop"):
+for title in ("Crash Cove", "TV World", "tv world", "Fixture Loop"):
     alter(f"identity: generic room title {title}", retitle(title), open_base)
+alter("identity: saved generic title after an unrelated block is named North Pole",
+      retitle("North Pole"), open_base, restoring=True)
 def two_generic(title):
     def change(p):
         text = json.dumps(p).replace("tv-world", "tv-park")
@@ -1277,19 +1284,22 @@ with spot_files(retail=["CRASH_COVE"], custom=["baby-t-park"]):
             assert cases[-1][2] is False, name + ": the apworld must refuse a forged spot"
 # A3-35: actual generated Ancient Lake rooms, both measured LEV pins and a
 # small count fixture that crosses the 15-seat ceiling. No track bytes shipped.
-from worlds.ctr import crate_exclusions
+from worlds.ctr import crate_exclusions, sanity, track_rulings
 from unittest import mock
-from worlds.ctr.test.test_crate_exclusions import ANCIENT_LAKE, NORTH_POLE, ancient
+from worlds.ctr.test.test_crate_exclusions import (
+    ANCIENT_LAKE, LOCKBOX_4, MATSURI, NORTH_POLE, ancient, lockbox_track_4, matsuri, north_pole,
+)
 from worlds.ctr.test.test_content_item_boxes import box_options, first_world
 # Test fallback exclusions without the later community spot override.
 with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):
     for digest in (*ANCIENT_LAKE, NORTH_POLE):  # custom revisions; the retail Roo's Tubes and Skyway pins are sanity only
         for count in (3, 17):
-            world = first_world(box_options(custom=[ancient(count, digest)]))
+            package = north_pole(count) if digest == NORTH_POLE else ancient(count, digest)
+            world = first_world(box_options(custom=[package]))
             wire = world.fill_slot_data()
             cases.append((f"excluded-{digest[:8]}-{count}", wire, True))
             with mock.patch.dict(crate_exclusions.EXCLUSIONS, {}, clear=True):
-                legacy = first_world(box_options(custom=[ancient(count, digest)]))
+                legacy = first_world(box_options(custom=[package]))
                 legacy_wire = legacy.fill_slot_data()
             cases.append((f"excluded-legacy-{digest[:8]}-{count}", legacy_wire, True))
             for label, change in (
@@ -1299,8 +1309,68 @@ with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):
                 ("position", lambda p: p["item_boxes"]["crate_exclusions"][0]["crates"][0]["pos"].__setitem__(0, 32768)),
             ):
                 alter(f"excluded-{digest[:8]}-{count}-{label}", change, wire)
+    carried_wire = first_world(box_options(custom=[ancient(3, "12" * 32)])).fill_slot_data()
+    assert track_rulings.FEATURE in carried_wire["content_plan"]["required_features"]
+    cases.append(("excluded-carried", carried_wire, True))
+    for label, change in (
+        ("feature", lambda p: p["required_features"].remove(track_rulings.FEATURE)),
+        ("sources", lambda p: p.pop("track_ruling_sources")),
+        ("source-pin", lambda p: p["track_ruling_sources"]["packages"][0]["reviews"][0].__setitem__("lev_sha256", "ab" * 32)),
+        ("ordinal", lambda p: p["item_boxes"]["crate_exclusions"][0]["crates"][0].__setitem__("ordinal", 2)),
+        ("position", lambda p: p["item_boxes"]["crate_exclusions"][0]["crates"][0].__setitem__("pos", [0, 0, 0])),
+    ):
+        alter(f"excluded-carried-{label}", change, carried_wire)
 
 box_env("unchanged copy", lambda c: None)
+with mock.patch.dict(bspots.CUSTOM_FILES, {}, clear=True):
+    options = box_options(custom=[matsuri()], itemboxsanity=50, wumpasanity="both")
+    wire = first_world(options).fill_slot_data()
+    assert wire["content_plan"]["sanity"]["rules_version"] >= 1
+    cases.append(("matsuri-current-sanity-seating", wire, True))
+    with mock.patch.dict(crate_exclusions.EXCLUSIONS, {MATSURI: []}):
+        legacy_wire = first_world(options).fill_slot_data()
+        cases.append(("matsuri-prior-catalog-sanity-seating", legacy_wire, True))
+    alter("matsuri-sanity-missing-feature", lambda p: p["required_features"].remove(sanity.EXCLUSIONS_FEATURE), wire)
+    alter("matsuri-sanity-invalid-version", lambda p: p["sanity"].__setitem__("exclusion_version", 1), wire)
+
+    def remove_matsuri_seating(plan):
+        plan["item_boxes"].pop(crate_exclusions.KEY)
+        plan["required_features"].remove(crate_exclusions.FEATURE)
+
+    def add_matsuri_seating_to_legacy(plan):
+        current = wire["content_plan"]
+        plan["item_boxes"][crate_exclusions.KEY] = current["item_boxes"][crate_exclusions.KEY]
+        plan["required_features"] = [feature for feature in current["required_features"]
+                                     if feature != sanity.EXCLUSIONS_FEATURE]
+
+    alter("matsuri-sanity-missing-seat-exclusions", remove_matsuri_seating, wire)
+    alter("matsuri-legacy-sanity-with-new-seat-exclusions", add_matsuri_seating_to_legacy, legacy_wire)
+    sparse_options = dict(options, itemboxsanity=1)
+    sparse_wire = first_world(sparse_options, seed=1).fill_slot_data()
+    sparse_row = next(r for r in sparse_wire["content_plan"]["sanity"]["tracks"] if r["lev_sha256"] == MATSURI)
+    assert sparse_row["weapon_crate"] == [16]
+    cases.append(("matsuri-sanity-sparse-with-reviewed-seats", sparse_wire, True))
+    alter("matsuri-sanity-sparse-missing-seat-exclusions", remove_matsuri_seating, sparse_wire)
+    alter("matsuri-sanity-sparse-shifted-exclusion",
+          lambda p: p["item_boxes"][crate_exclusions.KEY][0]["crates"][0].__setitem__("pos", [1, 0, 0]), sparse_wire)
+    sanity_only = first_world(dict(sparse_options, box_locations=False), seed=1).fill_slot_data()
+    cases.append(("matsuri-sanity-sparse-with-boxes-off", sanity_only, True))
+
+    mixed_options = box_options(custom=[matsuri(), lockbox_track_4()], itemboxsanity=1, wumpasanity="both")
+    mixed_wire = first_world(mixed_options, seed=1).fill_slot_data()
+    assert all(row["lev_sha256"] != LOCKBOX_4 for row in mixed_wire["content_plan"]["sanity"]["tracks"])
+    cases.append(("matsuri-and-generic-lockbox-reviewed-seats", mixed_wire, True))
+
+    def remove_lockbox_seating(plan):
+        rows = plan["item_boxes"][crate_exclusions.KEY]
+        rows[:] = [row for row in rows if row["lev_sha256"] != LOCKBOX_4]
+
+    def shift_lockbox_exclusion(plan):
+        row = next(r for r in plan["item_boxes"][crate_exclusions.KEY] if r["lev_sha256"] == LOCKBOX_4)
+        row["crates"][0]["pos"][0] = 1
+
+    alter("matsuri-and-generic-lockbox-missing-seat-exclusions", remove_lockbox_seating, mixed_wire)
+    alter("matsuri-and-generic-lockbox-shifted-exclusion", shift_lockbox_exclusion, mixed_wire)
 box_env("box_locations false", lambda c: c["ctr_options"].__setitem__("box_locations", False))
 box_env("box_locations dropped", lambda c: c["ctr_options"].pop("box_locations"))
 box_env("box_locations integer", lambda c: c["ctr_options"].__setitem__("box_locations", 1))
@@ -1684,9 +1754,18 @@ for name, change in [
         ("mode", lambda p: lap_boss_route(p).__setitem__("mode", "boss_cup")),
         ("pad", lambda p: lap_boss_route(p).__setitem__("own_pad_id", "garage:1" if lap_boss_route(p)["own_pad_id"] != "garage:1" else "garage:2")),
         ("award", lambda p: lap_boss_route(p).__setitem__("award", "win")),
-        ("venue check dropped", lambda p: p["checks"].remove(next(c for c in p["checks"] if c["kind"] == "lap" and all(r["encounter_id"] for r in c["routes"])))),
+        ("venue check dropped", lambda p: p["checks"].remove(lap_boss_check(p))),
+        # A6-48: Cortex Vortex raced only by the final has no lap check; one
+        # forged back with the final's route alone is refused.
+        ("final-only venue lap added", lambda p: p["checks"].insert(0, dict(
+            location=registry["cortex_vortex"]["lap"], owner="cortex_vortex", kind="lap",
+            display_name="Cortex Vortex: Complete One Lap",
+            routes=[dict(entry_id="entry/boss:4/1", mode="boss_race", leg_id=None, encounter_id="encounter/garage:4/1",
+                         own_pad_id="garage:4", award="lap")]))),
+        ("final-only venue marker dropped", lambda p: p["required_features"].remove("final_only_venue_v1")),
         ]:
     alter("lap-boss-" + name, change, lap_boss_base)
+assert "final_only_venue_v1" in lap_boss_base["content_plan"]["required_features"]
 # A plan with laps off that declares the feature.
 alter("lap-feature on a plan without laps", lambda p: p["required_features"].append("lap_checks_v1"))
 # One generator row 2: Gem Cups first, surface items and relic checks that
@@ -2179,11 +2258,11 @@ for name, change in [
 # The verifier's copy of the per-track USF finish rulings (#133 PR 8,
 # ap/ap_content_verify.hpp kUsfRulings) equals the apworld's table.
 from worlds.ctr import content_capability as ccap
-native_rows = [((k, r or None, h or None), int(v)) for k, r, h, v in re.findall(
-               r'\{"([a-z0-9-]+)", "([^"]*)", "([0-9a-f]*)", ([012])\}',
+native_rows = [((k, r or None, h or None, *((int(s),) if s else ())), int(v)) for k, r, h, v, s in re.findall(
+               r'\{"([a-z0-9-]+)", "([^"]*)", "([0-9a-f]*)", ([012])(?:, (\d+))?\}',
                re.search(r"kUsfRulings\[\] = \{(.*?)\};", (root / "ap/ap_content_verify.hpp").read_text(), re.S)[1])]
 native_rulings = dict(native_rows)
-# finish_boost returns the first matching row, so a repeated key would hide a mismatch.
+# A repeated key at the same catalog version could hide a mismatch.
 assert len(native_rulings) == len(native_rows), native_rows
 assert native_rulings == ccap.USF_FINISH_RULINGS, (native_rulings, ccap.USF_FINISH_RULINGS)
 # Row 10i parity fixes: Reach 10 Wumpa from cup legs and boss races, rungs
@@ -2381,6 +2460,19 @@ with fifty_spots(custom=True):
             forged = copy.deepcopy(wire)
             forged["content_plan"]["required_features"].remove("box_count_v1")
             cases.append((f"box-count-{count}-feature", forged, False))
+from worlds.ctr.test.test_object_rulings import options as object_ruling_options
+
+for reviewed in (True, False):
+    options = object_ruling_options()
+    if not reviewed:
+        options["content_pool"]["tracks"]["custom"][0]["files"][0]["sha256"] = "ab" * 32
+    wire = make_world(options, seed=52, stop_before="pre_fill").fill_slot_data()
+    picked = next(row["wumpa_crate"] for row in wire["content_plan"]["sanity"]["tracks"]
+                  if row["track_id"] == "custom/tv-world/1.1.0")
+    assert picked == [1, 2, 7, 8, 9]
+    assert ("track_ruling_sources" in wire["content_plan"]) is not reviewed
+    cases.append((f"tv-world-pickup-ruling-exact-lev-{reviewed}", wire, True))
+
 for count, mode in ((5, "off"), (50, "both")):
     wire = make_world(dict(profile_options(), itemboxsanity=count, wumpasanity=mode), seed=3).fill_slot_data()
     assert cp.validate(wire["content_plan"])
@@ -2405,6 +2497,299 @@ for count, mode in ((5, "off"), (50, "both")):
             expected_admit = False
         assert not expected_admit, mutation
         cases.append((f"sanity-{count}-{mode}-{mutation}", bad, False))
+for boost in ("off", "shared_global", "per_character"):
+    for tier in range(3):
+        wire = make_world(dict(profile_options(), itemboxsanity=50, shortcut_knowledge=tier,
+                               progressive_boost=boost), seed=3, stop_before="pre_fill").fill_slot_data()
+        assert cp.validate(wire["content_plan"])
+        cases.append((f"sewer-bridge-{boost}-{tier}", wire, True))
+        for version in (0, 7, True, "1"):
+            bad = copy.deepcopy(wire)
+            bad["content_plan"]["sanity"]["rules_version"] = version
+            cases.append((f"sewer-bridge-version-{boost}-{tier}-{version!r}", bad, False))
+from worlds.ctr.test.test_vortex_sanity import vortex_options
+native_cortex_pin = re.search(r'#define CTR_CFG_CORTEX_LEV_SHA256 "([0-9a-f]{64})"',
+                             (root / "include/platform/native_cortex_asset_pins.h").read_text())[1]
+assert native_cortex_pin == cp.sanity.CORTEX_LEV_SHA256, "Vortex sanity catalog must describe bundled bytes"
+for boost in ("off", "shared_global", "per_character"):
+    wire = make_world(vortex_options(progressive_boost=boost), seed=3, stop_before="pre_fill").fill_slot_data()
+    assert cp.validate(wire["content_plan"])
+    cases.append((f"vortex-shipped-{boost}", wire, True))
+    for digest in ("0" * 64, cp.sanity.CATALOG["cortex_vortex"]["lev_sha256"]):
+        bad = copy.deepcopy(wire)
+        next(r for r in bad["content_plan"]["sanity"]["tracks"] if r["track_id"] == "cortex_vortex")["lev_sha256"] = digest
+        cases.append((f"vortex-new-refuse-digest-{boost}-{digest[:8]}", bad, False))
+    for version in (None, 1):
+        legacy = copy.deepcopy(wire)
+        p = legacy["content_plan"]
+        if version is None:
+            del p["sanity"]["rules_version"]
+        else:
+            p["sanity"]["rules_version"] = version
+        next(r for r in p["sanity"]["tracks"] if r["track_id"] == "cortex_vortex")["lev_sha256"] = cp.sanity.CATALOG["cortex_vortex"]["lev_sha256"]
+        p["checks"] = [c for c in p["checks"] if c["kind"] not in cp.sanity.KINDS]
+        p["checks"].extend(cp.sanity.checks(p["sanity"], p["tracks"], p["entries"], p["pads"], p["encounters"],
+                                          p.get("capability"), {pkg["id"]: pkg for pkg in p["packages"]}))
+        assert cp.validate(p)
+        cases.append((f"vortex-legacy-{boost}-{version}", legacy, True))
+from worlds.ctr.test.test_country_speedway import country_options
+for count in (0, 1, 5, 15, 50):
+    for boost in ("off", "shared_global", "per_character"):
+        for wumpa in ("off", "crates"):
+            wire = make_world(country_options(item_box_count=count, progressive_boost=boost,
+                                             wumpasanity=wumpa), seed=3, stop_before="pre_fill").fill_slot_data()
+            assert cp.validate(wire["content_plan"])
+            cases.append((f"country-{count}-{boost}-{wumpa}", wire, True))
+            if count:
+                for ids in ([], [True], ["retail:0"], ["unknown"],
+                            ["custom/country-speedway/1.3.0"] * 2):
+                    bad = copy.deepcopy(wire)
+                    bad["content_plan"]["item_boxes"]["pickup_rules"] = ids
+                    try:
+                        cp.validate(bad["content_plan"])
+                    except Exception:
+                        pass
+                    else:
+                        raise AssertionError(ids)
+                    cases.append((f"country-marker-{count}-{boost}-{wumpa}-{ids}", bad, False))
+from worlds.ctr.test.test_toasty_terrace import toasty_options
+from worlds.ctr.test.test_country_speedway import PACKAGE as country_package
+for count in (0, 15):
+    for boost in ("off", "shared_global", "per_character"):
+        options = toasty_options(item_box_count=count, progressive_boost=boost)
+        options["content_pool"]["tracks"]["custom"].append(copy.deepcopy(country_package))
+        options["content_pool"]["required_entries"].append("custom/country-speedway/1.3.0")
+        wire = make_world(options, seed=3, stop_before="pre_fill").fill_slot_data()
+        assert cp.validate(wire["content_plan"])
+        cases.append((f"toasty-country-{count}-{boost}", wire, True))
+for count in (0, 1, 5, 15, 50):
+    for boost in ("off", "shared_global", "per_character"):
+        for wumpa in ("off", "crates"):
+            wire = make_world(toasty_options(item_box_count=count, progressive_boost=boost,
+                                            wumpasanity=wumpa), seed=3, stop_before="pre_fill").fill_slot_data()
+            assert cp.validate(wire["content_plan"])
+            cases.append((f"toasty-{count}-{boost}-{wumpa}", wire, True))
+            for mutation in ("version", "hash", "marker"):
+                if mutation == "marker" and not count:
+                    continue
+                bad = copy.deepcopy(wire)
+                plan = bad["content_plan"]
+                if mutation == "version":
+                    plan["sanity"]["rules_version"] = 7
+                elif mutation == "hash":
+                    next(r for r in plan["sanity"]["tracks"]
+                         if r["track_id"] == "custom/toasty-terrace/1.3.0")["lev_sha256"] = "0" * 64
+                else:
+                    plan["item_boxes"]["pickup_rules"] = ["custom/toasty-terrace/1.3.0"] * 2
+                try:
+                    cp.validate(plan)
+                except Exception:
+                    pass
+                else:
+                    raise AssertionError(mutation)
+                cases.append((f"toasty-refuse-{count}-{boost}-{wumpa}-{mutation}", bad, False))
+from worlds.ctr.test.test_royal_raceway import royal_options
+for count in (0, 1, 5, 15, 50):
+    for boost in ("off", "shared_global", "per_character"):
+        for wumpa in ("off", "crates"):
+            wire = make_world(royal_options(item_box_count=count, progressive_boost=boost, wumpasanity=wumpa),
+                              seed=3, stop_before="pre_fill").fill_slot_data()
+            assert cp.validate(wire["content_plan"])
+            cases.append((f"royal-{count}-{boost}-{wumpa}", wire, True))
+            for mutation in ("version", "hash", "marker", "floors-extra", "floors-empty", "floors-unsorted", "floors-missing"):
+                if mutation == "marker" and not count:
+                    continue
+                if mutation.startswith("floors") and boost == "off":
+                    continue
+                bad = copy.deepcopy(wire)
+                plan = bad["content_plan"]
+                if mutation == "version":
+                    plan["sanity"]["rules_version"] = 7
+                elif mutation == "hash":
+                    next(r for r in plan["sanity"]["tracks"]
+                         if r["track_id"] == "custom/royal-raceway/1.0.0")["lev_sha256"] = "0" * 64
+                elif mutation == "marker":
+                    plan["item_boxes"]["pickup_rules"] = ["custom/royal-raceway/1.0.0"] * 2
+                elif mutation == "floors-extra":
+                    plan["capability"]["finish_floors"] = ["custom/royal-raceway/1.0.0", "retail:0"]
+                elif mutation == "floors-empty":
+                    plan["capability"]["finish_floors"] = []
+                elif mutation == "floors-unsorted":
+                    plan["capability"]["finish_floors"] = ["custom/royal-raceway/1.0.0", "custom/royal-raceway/1.0.0"]
+                else:
+                    # Carried new-rule ranks without the marker: the generator refuses; native
+                    # trusts carried ranks, so the parity row is listed as a native trust below.
+                    del plan["capability"]["finish_floors"]
+                try:
+                    cp.validate(plan)
+                except Exception:
+                    pass
+                else:
+                    raise AssertionError(mutation)
+                if mutation == "floors-missing":
+                    native_trusts.add(f"royal-refuse-{count}-{boost}-{wumpa}-{mutation}")
+                cases.append((f"royal-refuse-{count}-{boost}-{wumpa}-{mutation}", bad, False))
+from worlds.ctr.test.test_green_hill_raceway import green_options
+GH = "custom/green-hill-raceway/2.0.0"
+for count in (0, 1, 5, 15, 50):
+    for boost in ("off", "shared_global", "per_character"):
+        for wumpa in ("off", "crates"):
+            wire = make_world(green_options(item_box_count=count, progressive_boost=boost, wumpasanity=wumpa),
+                              seed=3, stop_before="pre_fill").fill_slot_data()
+            assert cp.validate(wire["content_plan"])
+            cases.append((f"green-{count}-{boost}-{wumpa}", wire, True))
+            for mutation in ("version", "hash", "marker", "free-extra", "free-empty", "free-unsorted", "free-missing"):
+                if mutation == "marker" and not count:
+                    continue
+                if mutation.startswith("free") and boost == "off":
+                    continue
+                bad = copy.deepcopy(wire)
+                plan = bad["content_plan"]
+                if mutation == "version":
+                    plan["sanity"]["rules_version"] = 7
+                elif mutation == "hash":
+                    next(r for r in plan["sanity"]["tracks"] if r["track_id"] == GH)["lev_sha256"] = "0" * 64
+                elif mutation == "marker":
+                    plan["item_boxes"]["pickup_rules"] = [GH] * 2
+                elif mutation == "free-extra":
+                    plan["capability"]["finish_free"] = [GH, "retail:0"]
+                elif mutation == "free-empty":
+                    plan["capability"]["finish_free"] = []
+                elif mutation == "free-unsorted":
+                    plan["capability"]["finish_free"] = [GH, GH]
+                else:
+                    # Carried new-rule ranks without the marker: the generator refuses; native
+                    # trusts carried ranks, so the parity row is listed as a native trust below.
+                    del plan["capability"]["finish_free"]
+                try:
+                    cp.validate(plan)
+                except Exception:
+                    pass
+                else:
+                    raise AssertionError(mutation)
+                if mutation == "free-missing":
+                    native_trusts.add(f"green-refuse-{count}-{boost}-{wumpa}-{mutation}")
+                cases.append((f"green-refuse-{count}-{boost}-{wumpa}-{mutation}", bad, False))
+# A mixed Green Hill and Royal room carries both reviewed lists, disjoint.
+from worlds.ctr.test.test_royal_raceway import PACKAGE as royal_package
+options = green_options(item_box_count=5)
+options["content_pool"]["tracks"]["custom"].append(copy.deepcopy(royal_package))
+options["content_pool"]["required_entries"].append("custom/royal-raceway/1.0.0")
+wire = make_world(options, seed=3, stop_before="pre_fill").fill_slot_data()
+assert cp.validate(wire["content_plan"])
+assert wire["content_plan"]["capability"]["finish_free"] == [GH]
+assert wire["content_plan"]["capability"]["finish_floors"] == ["custom/royal-raceway/1.0.0"]
+cases.append(("green-royal-mixed", wire, True))
+bad = copy.deepcopy(wire)
+bad["content_plan"]["capability"]["finish_free"] = [GH, "custom/royal-raceway/1.0.0"]
+cases.append(("green-royal-overlap", bad, False))
+# A pre-change room on an unreviewed Green Hill LEV keeps its generic terms.
+options = green_options(item_box_count=5)
+options["content_pool"]["tracks"]["custom"][0]["files"][0]["sha256"] = "ab" * 32
+with mock.patch.dict(track_rulings.REVIEWS, {}, clear=True):
+    wire = make_world(options, seed=3, stop_before="pre_fill").fill_slot_data()
+assert cp.validate(wire["content_plan"]) and "finish_free" not in wire["content_plan"]["capability"]
+cases.append(("green-legacy-unreviewed-lev", wire, True))
+bad = copy.deepcopy(wire)
+bad["content_plan"]["capability"]["finish_free"] = [GH]
+cases.append(("green-legacy-unreviewed-lev-marker", bad, False))
+# A new room inherits the finish flag and must carry it to the verifier.
+wire = make_world(options, seed=3, stop_before="pre_fill").fill_slot_data()
+assert cp.validate(wire["content_plan"]) and wire["content_plan"]["capability"]["finish_free"] == [GH]
+cases.append(("green-carried-unreviewed-lev", wire, True))
+alter("green-carried-finish-free-missing", lambda p: p["capability"].pop("finish_free"), wire)
+options["content_pool"]["tracks"]["custom"].append(copy.deepcopy(royal_package))
+options["content_pool"]["tracks"]["custom"][-1]["files"][0]["sha256"] = "ac" * 32
+options["content_pool"]["required_entries"].append("custom/royal-raceway/1.0.0")
+wire = make_world(options, seed=3, stop_before="pre_fill").fill_slot_data()
+cases.append(("green-royal-carried", wire, True))
+for field in ("finish_floors", "finish_free"):
+    bad = copy.deepcopy(wire)
+    plan = bad["content_plan"]
+    track_id, = plan["capability"].pop(field)
+    reviews = plan["track_ruling_sources"]["packages"]
+    reviews.remove(next(row for row in reviews if row["package_id"].removeprefix("package/") == track_id.removeprefix("custom/")))
+    plan["item_boxes"]["pickup_rules"].remove(track_id)
+    cases.append((f"green-royal-carried-{field}-and-source-missing", bad, False))
+    bad = copy.deepcopy(wire)
+    plan = bad["content_plan"]
+    plan["capability"].pop(field)
+    source = next(row for row in plan["track_ruling_sources"]["packages"]
+                  if row["package_id"].removeprefix("package/") == track_id.removeprefix("custom/"))
+    source["reviews"].pop(0)
+    plan["item_boxes"]["pickup_rules"].remove(track_id)
+    cases.append((f"green-royal-carried-{field}-and-source-truncated", bad, False))
+# A LEV reviewed under a different track key must not hide Royal's source.
+from worlds.ctr.test.test_carried_pickup_limits import later_revision, sunset_mixed_options
+from worlds.ctr.test.test_green_hill_raceway import PACKAGE as green_package
+
+options = royal_options(item_box_count=5, wumpasanity="both")
+tid, package = later_revision(options, green_package["files"][0]["sha256"])
+package["capabilities"].update(weapon_crates=40, fruit_crates=10, loose_fruit=2)
+wire = make_world(options, seed=3, stop_before="pre_fill").fill_slot_data()
+plan = wire["content_plan"]
+assert tid in plan["capability"]["finish_floors"]
+assert plan["track_ruling_sources"]["pickup_limits"] is True
+row = next(r for r in plan["sanity"]["tracks"] if r["track_id"] == tid)
+assert row["counts"] == [40, 10, 2] and row["wumpa_crate"] == list(range(1, 7)) and not row["wumpa_fruit"]
+cases.append(("royal-foreign-reviewed-lev-with-added-pickups", wire, True))
+alter("royal-foreign-lev-legacy-pool-mismatch", lambda p: p["track_ruling_sources"].pop("pickup_limits"), wire)
+
+for fixture, reviewed in ((matsuri, 27), (lockbox_track_4, 29)):
+    options = box_options(custom=[fixture()], itemboxsanity=50, wumpasanity="both", item_box_count=5)
+    tid, package = later_revision(options, "ab" * 32)
+    package["capabilities"].update(weapon_crates=reviewed + 1, fruit_crates=3, loose_fruit=0)
+    wire = first_world(options, seed=3).fill_slot_data()
+    plan = wire["content_plan"]
+    assert plan["track_ruling_sources"]["version"] == track_rulings.RULING_VERSION
+    assert plan["track_ruling_sources"]["pickup_limits"] is True
+    [excluded] = plan["item_boxes"][crate_exclusions.KEY]
+    assert excluded["track_id"] == tid and excluded["crates"] == [{"ordinal": 1, "pos": None}]
+    cases.append((f"a6-15-carried-{package['content_id']}", wire, True))
+    alter(f"a6-15-carried-{package['content_id']}-forged-position",
+          lambda p: p["item_boxes"][crate_exclusions.KEY][0]["crates"][0].__setitem__("pos", [0, 0, 0]), wire)
+
+nina = lockbox_track_4()
+nina.update(id="package/nina-s-nightmare/9.0.0", revision="9.0.0", content_id="nina-s-nightmare",
+            display_name="Nina's Nightmare")
+wire = first_world(box_options(custom=[nina, matsuri()], itemboxsanity=50, progressive_boost="off"),
+                   seed=3).fill_slot_data()
+cases.append(("mixed-exclusions-foreign-lockbox-pin-keeps-nina-source", wire, True))
+
+for revision, pin in (("1.2.0", None), ("9.0.0", "cd" * 32)):
+    wire = make_world(sunset_mixed_options(revision, pin), seed=3, stop_before="pre_fill").fill_slot_data()
+    cases.append((f"sunset-vista-{revision}-with-carried-royal", wire, True))
+
+from worlds.ctr.test.test_custom_packages import named_fixture
+
+for pin, weapon, wumpa in (
+    ("af764b90d10fa952aac4502c89c5f0466dd4afdbaee7c3a65279624dfeb18aa2", 0, 0),
+    ("65ab90d0024aae57ac09f23932f7bf46e5b6b4640a4fb5d16a214a36063a15a8", 12, 2),
+):
+    package = named_fixture()
+    package.update(id="package/coco-park-2025/1.0.0", content_id="coco-park-2025",
+                   revision="1.0.0", display_name="Coco Park 2025", laps=3)
+    package["files"][0]["sha256"] = pin
+    package["capabilities"].update(weapon_crates=weapon, fruit_crates=wumpa, loose_fruit=0)
+    options = royal_options(itemboxsanity=50, wumpasanity="both", item_box_count=0)
+    later_revision(options, "ab" * 32)
+    options["content_pool"]["tracks"]["custom"].append(package)
+    options["content_pool"]["required_entries"].append("custom/coco-park-2025/1.0.0")
+    wire = make_world(options, seed=3, stop_before="pre_fill").fill_slot_data()
+    plan = wire["content_plan"]
+    row = next(row for row in plan["sanity"]["tracks"] if row["track_id"] == "custom/coco-park-2025/1.0.0")
+    assert row["counts"] == [weapon, wumpa, 0]
+    assert row["weapon_crate"] == list(range(1, weapon + 1))
+    assert row["wumpa_crate"] == list(range(1, wumpa + 1))
+    source = next(row for row in plan["track_ruling_sources"]["packages"] if row["package_id"] == package["id"])
+    assert source["reviews"] == []
+    cases.append((f"coco-park-patch-copy-{pin[:8]}-with-carried-royal", wire, True))
+
+# Switching the LEV in a legacy exact-pin room cannot supply a carried source.
+wire = make_world(royal_options(item_box_count=5), seed=3, stop_before="pre_fill").fill_slot_data()
+bad = copy.deepcopy(wire)
+next(p for p in bad["content_plan"]["packages"] if p["content_id"] == "royal-raceway")["files"][0]["sha256"] = "ab" * 32
+cases.append(("royal-marker-unreviewed-lev", bad, False))
 run = subprocess.run([str(args.parser.resolve()), "--probe"], input="".join(json.dumps(v) + "\n" for _, v, _ in cases),
                      text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, cwd=root)
 answers = run.stdout.splitlines()

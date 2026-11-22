@@ -73,6 +73,15 @@ int CustomPackage_GetRaceLaps(const struct CustomPackageOwned *package, unsigned
 void CustomPackage_Free(struct CustomPackageOwned **package);
 int CustomPackage_GetManifest(const struct CustomPackageOwned *package, struct CustomPackageManifest *out);
 int CustomPackage_GetPairReport(const struct CustomPackageOwned *package, struct CustomContentVerification *out);
+/* Borrow verified audio for the lifetime of the snapshot. A manifest SCA
+   takes precedence over music restored locally for this exact manifest pin. */
+int CustomPackage_GetAudio(const struct CustomPackageOwned *package, const void **data, size_t *size);
+int CustomPackage_InstallMusic(const char *directory, const char *pin, const void *data,
+    size_t size, const char *sha256, int mediaID, const char *previousSha256);
+/* 0 needs a download, 1 already matches, 2 refreshed the local source record.
+   A stale digest is returned for a compare-and-replace after the download. */
+int CustomPackage_ReconcileMusic(const char *directory, const char *pin, size_t size,
+    const char *sha256, int mediaID, char previousSha256[65]);
 struct CustomPackageRelicTargets
 {
     unsigned int laps;
@@ -127,6 +136,7 @@ struct CustomPackageLocalInfo
     unsigned int laps; /* Laps the package races, 0 when its race settings are invalid. */
     char arcadeReason[48], timeTrialReason[48]; /* Short menu text; "" when allowed. */
     char levSha256[65], vrmSha256[65]; /* With uuid and laps: the Time Trial records key. */
+    unsigned long levBytes, vrmBytes;
     /* Capability flags measured on the installed bytes (xdelta importer design,
        2026-10-15). relic: time crates, a pinned relic_targets sidecar and not
        excluded by the pack descriptor. ctrChallenge: exactly one C, one T and
@@ -135,17 +145,24 @@ struct CustomPackageLocalInfo
     char relicReason[48], ctrChallengeReason[48];
     /* Provenance of an imported package (metadata/xdelta-source.json). */
     int xdelta, bigfileIndex;
+    int saphi; /* Verified source metadata identifies Project Saphi. */
     char patchSha256[65];
+    char sourceUrl[129]; /* Public xdelta source page, when the descriptor names one. */
 };
 struct CustomPackageStoreEntry
 {
     char pin[65];
     int verified;
     struct CustomPackageManifest manifest; /* Zero on refusal, not guessed from directory name. */
+    char displayTitle[641]; /* Optional corrected label, outside the pinned manifest. */
     char error[257];
     struct CustomPackageLocalInfo local;
 };
 typedef void (*CustomPackageStoreVisitor)(const struct CustomPackageStoreEntry *entry, void *context);
+/* Read the author and provenance from an already verified snapshot. */
+void CustomPackage_TrackCreditInfo(struct CustomPackageOwned *package, struct CustomPackageLocalInfo *out);
+void CustomPackage_TrackCredit(const struct CustomPackageLocalInfo *local, const char *fallbackAuthor,
+                               char *out, size_t size);
 /* Sorted, bounded read-only discovery of exact lowercase hash names. Staging
    and unrelated names are ignored. Each revision is fully re-acquired; damaged
    entries remain visible with a reason. Copy callback data before returning.
@@ -168,13 +185,20 @@ int CustomPackage_ScanStoreMatching(const char *store, CustomPackageStoreFilter 
 int CustomPackage_FindPinnedFiles(const char *assets, const char *revision, const char *uuid,
     const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
     char *levPath, size_t levCapacity, char *vrmPath, size_t vrmCapacity);
-/* The same lookup for the track's own music: the .sca path, its pinned sha256
-   and size, from the first verified revision of this pair that pins one. The
-   caller verifies the file against the sha256 before use. Returns 0 when no
-   such revision exists. */
-int CustomPackage_FindPinnedMusic(const char *assets, const char *revision, const char *uuid,
+/* Prefer the seed UUID, then accept another manifest with the exact pair. */
+int CustomPackage_FindPinnedFilesWithIdentity(const char *assets, const char *revision, const char *preferredUuid,
+    const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
+    char *levPath, size_t levCapacity, char *vrmPath, size_t vrmCapacity, char outUuid[37]);
+/* Resolve a verified matching pair's SCA path, SHA-256 and size. Embedded
+   music wins over restored audio. Within either tier, favor uuid when
+   supplied. Require it when exactUuid is set. Returns 0 when none match. */
+int CustomPackage_FindPinnedMusic(const char *assets, const char *revision, const char *uuid, int exactUuid,
     const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
     char *scaPath, size_t scaCapacity, char scaSha256[65], unsigned long *scaBytes);
+/* Same lookup, with a static diagnostic when a matching audio candidate is refused. */
+int CustomPackage_FindPinnedMusicWithStatus(const char *assets, const char *revision, const char *uuid, int exactUuid,
+    const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
+    char *scaPath, size_t scaCapacity, char scaSha256[65], unsigned long *scaBytes, const char **refusal);
 /* A descriptor derived from one verified store revision. Return 1 for a
    complete descriptor, 2 when author laps must be picked, or 0 with a reason.
    `key` is the seed key when known; otherwise source metadata or the title

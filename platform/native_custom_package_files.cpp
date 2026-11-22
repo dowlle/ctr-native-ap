@@ -3,6 +3,11 @@
 #endif
 #include <platform/native_custom_package.h>
 #include <platform/native_custom_offline.h>
+#include "native_track_identity.hpp"
+#include "native_xdelta_names.hpp"
+#include "native_xdelta_legacy_titles.hpp"
+#include <platform/native_custom_music.h>
+#include <platform/native_sha256.h>
 extern "C" {
 #include <platform/native_custom_content_verify.h>
 }
@@ -24,6 +29,7 @@ extern "C" {
 #include <windows.h>
 #else
 #include <fcntl.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <cerrno>
@@ -198,6 +204,24 @@ struct Directory
         if (!SetFileInformationByHandle(stage.pinned.back().value, FileRenameInfo, info, (DWORD)storage.size()))
             throw std::runtime_error("Cannot publish package without replacement (Windows error " + std::to_string(GetLastError()) + ")");
     }
+    bool replace_file(const std::string &source, const std::string &target)
+    {
+        return MoveFileExW(child(source).c_str(), child(target).c_str(),
+                           MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+    }
+    void discard_file(const std::string &name) { DeleteFileW(child(name).c_str()); }
+    Handle lock_music()
+    {
+        Handle lock(CreateFileW(child(".lock").c_str(), GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+        BY_HANDLE_FILE_INFORMATION info;
+        OVERLAPPED offset{};
+        if (GetFileType(lock.value) != FILE_TYPE_DISK || !GetFileInformationByHandle(lock.value, &info) ||
+            (info.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY)) ||
+            !LockFileEx(lock.value, LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &offset))
+            throw std::runtime_error("Cannot lock restored music");
+        return lock;
+    }
     void sync_publication() {} // Payloads were flushed; do not claim a Windows directory-flush guarantee.
     std::vector<unsigned char> read(const std::string &relative, size_t maximum)
     {
@@ -329,6 +353,22 @@ struct Directory
         if (syscall(SYS_renameat2, root.value, stageName.c_str(), root.value, name.c_str(), 1u))
             throw std::runtime_error("Cannot publish package without replacement");
     }
+    bool replace_file(const std::string &source, const std::string &target)
+    {
+        return renameat(root.value, source.c_str(), root.value, target.c_str()) == 0;
+    }
+    void discard_file(const std::string &name) { unlinkat(root.value, name.c_str(), 0); }
+    Handle lock_music()
+    {
+        Handle lock(openat(root.value, ".lock", O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, 0600));
+        struct stat info;
+        if (fstat(lock.value, &info) || !S_ISREG(info.st_mode))
+            throw std::runtime_error("Cannot lock restored music");
+        int result;
+        do { result = flock(lock.value, LOCK_EX); } while (result && errno == EINTR);
+        if (result) throw std::runtime_error("Cannot lock restored music");
+        return lock;
+    }
     void sync_publication()
     {
         if (fsync(root.value)) throw std::runtime_error("Revision published but store sync failed; verify before retry");
@@ -361,8 +401,50 @@ struct Directory
     }
 };
 #endif
+constexpr const char *musicDirectory = ".saphi-music";
+
+std::string music_hash(const void *bytes, size_t size)
+{
+    NativeSha256Ctx context;
+    unsigned char digest[32];
+    char hex[65];
+    NativeSha256_Init(&context);
+    NativeSha256_Update(&context, bytes, size);
+    NativeSha256_Final(&context, digest);
+    NativeSha256_ToHex(digest, hex);
+    return hex;
 }
 
+std::vector<unsigned char> read_local_music(Directory &directory, const char *pin,
+                                           std::string *hash = nullptr, int *media = nullptr)
+{
+    try
+    {
+        if (!directory.exists(musicDirectory)) return {};
+        const auto metadata = directory.read(".saphi-music/source.json", 1024);
+        const auto source = nlohmann::json::parse(metadata);
+        if (source.at("schema_version") != 1 || source.at("package_pin") != pin ||
+            !source.at("media_id").is_number_integer() || source["media_id"] <= 0 ||
+            source["media_id"] > 2147483647 || !source.at("bytes").is_number_integer()) return {};
+        const auto sha = source.at("sha256").get<std::string>();
+        if (!revision_name(sha)) return {};
+        auto bytes = directory.read(std::string(musicDirectory) + "/" + sha + ".sca", CTR_SCA_MAX_BYTES);
+        if (source["bytes"] != bytes.size() || music_hash(bytes.data(), bytes.size()) != sha) return {};
+        if (hash) *hash = sha;
+        if (media) *media = source["media_id"].get<int>();
+        return bytes;
+    }
+    catch (const std::exception &) { return {}; }
+}
+
+bool manifest_has_music(const CustomPackageManifest &manifest)
+{
+    return std::any_of(manifest.files, manifest.files + manifest.count,
+        [](const CustomPackageFile &file) { return !std::strcmp(file.role, "sca"); });
+}
+}
+
+extern "C" int CustomPackage_SetLocalAudio(CustomPackageOwned *package, const void *data, size_t size);
 
 extern "C" int CustomPackage_AcquireDirectory(const char *path, const char *expected,
     CustomPackageOwned **out, char *error, size_t errorSize)
@@ -385,14 +467,114 @@ extern "C" int CustomPackage_AcquireDirectory(const char *path, const char *expe
             buffers.push_back(directory.read(file.path, file.bytes));
             inputs.push_back({file.role, buffers.back().data(), buffers.back().size()});
         }
-        return CustomPackage_AcquireBuffers((const char *)json.data(), json.size(), expected,
-            inputs.data(), inputs.size(), out, error, errorSize);
+        if (!CustomPackage_AcquireBuffers((const char *)json.data(), json.size(), expected,
+            inputs.data(), inputs.size(), out, error, errorSize)) return 0;
+        if (!manifest_has_music(manifest))
+        {
+            auto audio = read_local_music(directory, manifest.sha256);
+            if (!audio.empty()) CustomPackage_SetLocalAudio(*out, audio.data(), audio.size());
+        }
+        return 1;
     }
     catch (const std::exception &exception)
     {
         if (error && errorSize) std::snprintf(error, errorSize, "%s", exception.what());
         return 0;
     }
+}
+
+extern "C" int CustomPackage_InstallMusic(const char *path, const char *pin, const void *data,
+    size_t size, const char *sha256, int mediaID, const char *previousSha256)
+{
+    try
+    {
+        if (!path || std::strlen(path) > 32000 || !pin || !revision_name(pin) || !data ||
+            !size || size > CTR_SCA_MAX_BYTES || !sha256 || !revision_name(sha256) || mediaID <= 0 ||
+            music_hash(data, size) != sha256) return 0;
+        Directory directory(path);
+        const auto json = directory.read("manifest.json", 65536);
+        CustomPackageManifest manifest;
+        if (!CustomPackage_ParseManifest((const char *)json.data(), json.size(), pin, &manifest, nullptr, 0) ||
+            manifest_has_music(manifest)) return 0;
+        auto existing = [&] {
+            int media = 0;
+            std::string hash;
+            auto bytes = read_local_music(directory, pin, &hash, &media);
+            if (bytes.empty()) return 0;
+            if (bytes.size() != size || hash != sha256)
+                return previousSha256 && hash == previousSha256 ? 0 : -1;
+            return media == mediaID ? 2 : 0;
+        };
+        directory.mkdir(musicDirectory);
+        Directory music(std::string(path) + "/" + musicDirectory);
+        const auto lock = music.lock_music();
+        if (const int result = existing()) return result == 2 ? 2 : 0;
+
+        static std::atomic<unsigned long> serial{0};
+#ifdef _WIN32
+        const auto process = GetCurrentProcessId();
+#else
+        const auto process = getpid();
+#endif
+        const auto stage = ".pending-" + std::to_string(process) + "-" + std::to_string(++serial);
+        const auto audioStage = stage + ".sca";
+        const auto sourceStage = stage + ".json";
+        const auto source = nlohmann::json({{"schema_version", 1}, {"package_pin", pin},
+            {"media_id", mediaID}, {"bytes", size}, {"sha256", sha256}}).dump();
+        bool audioStaged = false, sourceStaged = false;
+        try
+        {
+            install_checkpoint();
+            music.write(audioStage, data, size);
+            audioStaged = true;
+            install_checkpoint();
+            music.write(sourceStage, source.data(), source.size());
+            sourceStaged = true;
+            install_checkpoint();
+            // Publish bytes by digest first. Every committed source record
+            // names complete bytes, including when two clients write at once.
+            if (!music.replace_file(audioStage, std::string(sha256) + ".sca"))
+                throw std::runtime_error("Cannot publish restored audio");
+            audioStaged = false;
+            music.sync_publication();
+            if (!music.replace_file(sourceStage, "source.json"))
+                throw std::runtime_error("Cannot publish restored audio source");
+            sourceStaged = false;
+            music.sync_publication();
+            directory.sync_publication();
+            return 1;
+        }
+        catch (const std::exception &)
+        {
+            if (audioStaged) music.discard_file(audioStage);
+            if (sourceStaged) music.discard_file(sourceStage);
+            return existing() == 2 ? 2 : 0;
+        }
+    }
+    catch (const std::exception &) { return 0; }
+}
+
+extern "C" int CustomPackage_ReconcileMusic(const char *path, const char *pin, size_t size,
+    const char *sha256, int mediaID, char previousSha256[65])
+{
+    if (!previousSha256) return 0;
+    previousSha256[0] = '\0';
+    try
+    {
+        Directory directory(path);
+        int media = 0;
+        std::string hash;
+        auto bytes = read_local_music(directory, pin, &hash, &media);
+        if (bytes.empty()) return 0;
+        if (bytes.size() != size || hash != sha256)
+        {
+            std::memcpy(previousSha256, hash.c_str(), 65);
+            return 0;
+        }
+        if (media == mediaID) return 1;
+        return CustomPackage_InstallMusic(path, pin, bytes.data(), bytes.size(), sha256, mediaID, nullptr) ? 2 : 0;
+    }
+    catch (const std::exception &) { return 0; }
 }
 
 extern "C" int CustomPackage_Install(const CustomPackageOwned *package, const char *path,
@@ -512,31 +694,34 @@ extern "C" int CustomPackage_InstallInbox(const char *assets, const char *pin, c
 /* Relic and CTR Challenge capability, plus xdelta provenance. Display and
    admission hints only: a missing or damaged provenance file only clears the
    hints, it never refuses the package. */
-static void package_capabilities(CustomPackageOwned *package, CustomPackageStoreEntry &entry)
+static bool package_capabilities(CustomPackageOwned *package, CustomPackageStoreEntry &entry)
 {
-    bool excludeRelic = false, excludeTokens = false;
+    bool excludeRelic = false, excludeTokens = false, generatedTitle = false;
     for (unsigned int i = 0; i < entry.manifest.count; i++)
     {
         const auto &file = entry.manifest.files[i];
-        if (std::strcmp(file.role, "presentation") || file.bytes > 4096 ||
-            (std::strcmp(file.path, "metadata/xdelta-source.json") &&
-             std::strcmp(file.path, "metadata/seed-source.json"))) continue;
+        if (std::strcmp(file.role, "presentation") || file.bytes > 4096) continue;
         std::string bytes(file.bytes, '\0');
         if (!CustomPackage_CopyFile(package, "presentation", bytes.data(), bytes.size(), nullptr)) continue;
         try
         {
             auto source = nlohmann::json::parse(bytes);
             if (source.at("schema_version") != 1) continue;
-            if (source.at("provider") == "ctr-seed")
+            const auto &provider = source.at("provider");
+            const bool seed = provider == "ctr-seed" && !std::strcmp(file.path, "metadata/seed-source.json");
+            const bool saphi = provider == "projectsaphi" && !std::strcmp(file.path, "metadata/saphi-source.json") &&
+                               source.at("version") == entry.manifest.version;
+            if (seed || saphi)
             {
+                entry.local.saphi = saphi;
                 /* A4-74: the ids a seed install recorded, for the permission check. */
-                if (source.contains("saphi_track_id") && source["saphi_track_id"].is_number_integer() &&
+                if (seed && source.contains("saphi_track_id") && source["saphi_track_id"].is_number_integer() &&
                     source["saphi_track_id"] > 0 && source["saphi_track_id"] <= 100000000)
                     entry.local.permissionTrackID = source["saphi_track_id"].get<int>();
-                if (source.contains("saphi_author_id") && source["saphi_author_id"].is_number_integer() &&
+                if (seed && source.contains("saphi_author_id") && source["saphi_author_id"].is_number_integer() &&
                     source["saphi_author_id"] > 0 && source["saphi_author_id"] <= 100000000)
                     entry.local.authorID = source["saphi_author_id"].get<int>();
-                if (source.contains("track_key") && source["track_key"].is_string())
+                if (seed && source.contains("track_key") && source["track_key"].is_string())
                 {
                     auto key = source["track_key"].get<std::string>();
                     if (!key.empty() && key.size() < sizeof entry.local.trackKey &&
@@ -552,13 +737,23 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
                 }
                 continue;
             }
-            if (source.at("provider") != "xdelta") continue;
+            if (provider != "xdelta" || std::strcmp(file.path, "metadata/xdelta-source.json")) continue;
             auto patch = source.at("patch_sha256").get<std::string>();
             int index = source.at("bigfile_index").get<int>();
             if (patch.size() != 64 || patch.find_first_not_of("0123456789abcdef") != std::string::npos || index < 0) continue;
             entry.local.xdelta = 1;
             entry.local.bigfileIndex = index;
             std::memcpy(entry.local.patchSha256, patch.c_str(), sizeof entry.local.patchSha256);
+            if (source.contains("edited_title") && source["edited_title"] == true)
+                std::memcpy(entry.displayTitle, entry.manifest.title, sizeof entry.displayTitle);
+            generatedTitle = source.contains("generated_title") && source["generated_title"] == true;
+            if (source.contains("source_url") && source["source_url"].is_string())
+            {
+                const auto url = source["source_url"].get<std::string>();
+                if (url.size() > 8 && url.size() <= 128 && url.compare(0, 8, "https://") == 0 &&
+                    std::all_of(url.begin(), url.end(), [](unsigned char c) { return c >= 0x21 && c <= 0x7e; }))
+                    std::memcpy(entry.local.sourceUrl, url.c_str(), url.size() + 1);
+            }
             if (source.contains("excluded"))
                 for (const auto &e : source["excluded"])
                 {
@@ -576,7 +771,7 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
         catch (const std::exception &) { /* Optional display metadata cannot grant admission. */ }
     }
     CustomContentVerification report;
-    if (!CustomPackage_GetPairReport(package, &report)) return;
+    if (!CustomPackage_GetPairReport(package, &report)) return generatedTitle;
     const auto &m = report.measured;
     CustomPackageRelicTargets targets;
     const char *relic = !m.relicCrates ? "No time crates"
@@ -588,9 +783,74 @@ static void package_capabilities(CustomPackageOwned *package, CustomPackageStore
     entry.local.ctrChallenge = !*ctr;
     std::snprintf(entry.local.relicReason, sizeof entry.local.relicReason, "%s", relic);
     std::snprintf(entry.local.ctrChallengeReason, sizeof entry.local.ctrChallengeReason, "%s", ctr);
+    return generatedTitle;
+}
+
+extern "C" void CustomPackage_TrackCreditInfo(CustomPackageOwned *package, CustomPackageLocalInfo *out)
+{
+    CustomPackageStoreEntry entry{};
+    if (CustomPackage_GetManifest(package, &entry.manifest))
+    {
+        package_capabilities(package, entry);
+        for (unsigned int i = 0; i < entry.manifest.count; ++i)
+        {
+            const auto &file = entry.manifest.files[i];
+            if (!std::strcmp(file.role, "lev"))
+                std::memcpy(entry.local.levSha256, file.sha256, sizeof entry.local.levSha256);
+            if (!std::strcmp(file.role, "vrm"))
+                std::memcpy(entry.local.vrmSha256, file.sha256, sizeof entry.local.vrmSha256);
+        }
+    }
+    *out = entry.local;
 }
 
 namespace {
+std::string descriptor_title_key(const char *title);
+
+void resolve_display_title(const CustomPackageOwned *package, CustomPackageStoreEntry &entry, bool generatedTitle)
+{
+    if (!entry.local.xdelta || entry.displayTitle[0]) return;
+    const auto &manifest = entry.manifest;
+    // Labels from before generated_title was recorded need a known patch,
+    // slot and title. An arbitrary player title may also end in "track 1".
+    const bool generic = generatedTitle || std::any_of(
+        std::begin(XdeltaNames::kLegacyLabels), std::end(XdeltaNames::kLegacyLabels), [&](const auto &row) {
+            return row.slot == entry.local.bigfileIndex && !std::strcmp(row.patch, entry.local.patchSha256) &&
+                   !std::strcmp(row.title, manifest.title);
+        });
+    for (unsigned int i = 0; i < manifest.count; ++i)
+    {
+        const auto &file = manifest.files[i];
+        if (std::strcmp(file.role, "lev") != 0) continue;
+        std::string title = manifest.title;
+        const std::string old_key = generic ? std::string() : descriptor_title_key(manifest.title);
+        std::string key = old_key;
+        std::vector<unsigned char> lev(file.bytes);
+        if (!CustomPackage_CopyFile(package, "lev", lev.data(), lev.size(), nullptr)) return;
+        if (TrackIdentity::resolve(lev.data(), lev.size(), file.sha256, key, title))
+        {
+            const char *shipped_title = TrackIdentity::find(key, TrackIdentityData::titles);
+            if (!generic && TrackIdentity::canonical_key(old_key) != key &&
+                (!shipped_title || std::strcmp(manifest.title, shipped_title) != 0)) return;
+        }
+        else
+        {
+            const bool old_known = title == "Luigis Mansion" || title == "Knightmare A Thon" ||
+                                   title == "Dark Forest Dash" || title == "Boss race 3";
+            if (!generic && !old_known) return;
+            for (const auto &row : XdeltaNames::kKnownTracks)
+                if (std::strcmp(file.sha256, row.lev) == 0) title = row.name;
+            if (generic)
+                for (const auto &row : XdeltaNames::kCuratedTracks)
+                    if (row.slot == entry.local.bigfileIndex && std::strcmp(row.patch, entry.local.patchSha256) == 0)
+                        title = row.name;
+        }
+        if (title != manifest.title)
+            std::snprintf(entry.displayTitle, sizeof entry.displayTitle, "%s", title.c_str());
+        return;
+    }
+}
+
 /* One store revision, fully re-acquired, as CustomPackage_ScanStore reports it. */
 CustomPackageStoreEntry scan_entry(const std::string &prefix, const std::string &pin)
 {
@@ -611,10 +871,19 @@ CustomPackageStoreEntry scan_entry(const std::string &prefix, const std::string 
         for (unsigned int i=0;i<entry.manifest.count && i<CTR_PACKAGE_FILE_MAX;i++)
         {
             const auto &file=entry.manifest.files[i];
-            if (!std::strcmp(file.role,"lev")) std::memcpy(entry.local.levSha256,file.sha256,sizeof entry.local.levSha256);
-            else if (!std::strcmp(file.role,"vrm")) std::memcpy(entry.local.vrmSha256,file.sha256,sizeof entry.local.vrmSha256);
+            if (!std::strcmp(file.role,"lev"))
+            {
+                std::memcpy(entry.local.levSha256, file.sha256, sizeof entry.local.levSha256);
+                entry.local.levBytes = file.bytes;
+            }
+            else if (!std::strcmp(file.role,"vrm"))
+            {
+                std::memcpy(entry.local.vrmSha256, file.sha256, sizeof entry.local.vrmSha256);
+                entry.local.vrmBytes = file.bytes;
+            }
         }
-        package_capabilities(package, entry);
+        const bool generatedTitle = package_capabilities(package, entry);
+        resolve_display_title(package, entry, generatedTitle);
         for (unsigned int i=0;i<entry.manifest.count;i++)
         {
             const auto &file=entry.manifest.files[i];
@@ -643,6 +912,15 @@ CustomPackageStoreEntry scan_entry(const std::string &prefix, const std::string 
                         std::memcpy(entry.local.trackKey,key.c_str(),key.size()+1);
                 }
             } catch (const std::exception &) { /* Optional display metadata cannot grant admission. */ }
+        }
+        if (!entry.local.scaID && !manifest_has_music(entry.manifest))
+        {
+            try
+            {
+                Directory directory(prefix + pin);
+                read_local_music(directory, pin.c_str(), nullptr, &entry.local.scaID);
+            }
+            catch (const std::exception &) {}
         }
     }
     CustomPackage_Free(&package);
@@ -718,7 +996,7 @@ struct PinnedSearch
 {
     const char *revision, *uuid, *levHash, *vrmHash;
     unsigned long levBytes, vrmBytes;
-    std::string directory, lev, vrm;
+    std::string directory, lev, vrm, matchedUuid;
 };
 /* The pins a revision must carry for find_pinned; any other revision is never
    acquired. Once a pair is found the walk acquires nothing more. */
@@ -760,24 +1038,49 @@ void find_pinned(const CustomPackageStoreEntry *entry, void *opaque)
     {
         search.lev = search.directory + "/" + entry->pin + "/" + lev;
         search.vrm = search.directory + "/" + entry->pin + "/" + vrm;
+        search.matchedUuid = entry->manifest.uuid;
     }
 }
+}
+
+static int resolve_pinned_files(const char *assets, const char *revision, const char *uuid,
+    const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
+    char *levPath, size_t levCapacity, char *vrmPath, size_t vrmCapacity, char *outUuid)
+{
+    if (!assets || !revision || !levSha256 || !vrmSha256 || !levPath || !vrmPath ||
+        !levCapacity || !vrmCapacity) return 0;
+    PinnedSearch search{revision, uuid, levSha256, vrmSha256, levBytes, vrmBytes,
+                        std::string(assets) + "/tracks/packages", {}, {}, {}};
+    char error[256];
+    if (!CustomPackage_ScanStoreMatching(search.directory.c_str(), want_pinned, find_pinned, &search, error, sizeof error) ||
+        search.lev.empty() || search.lev.size() >= levCapacity || search.vrm.size() >= vrmCapacity) return 0;
+    std::memcpy(levPath, search.lev.c_str(), search.lev.size() + 1);
+    std::memcpy(vrmPath, search.vrm.c_str(), search.vrm.size() + 1);
+    if (outUuid)
+        std::memcpy(outUuid, search.matchedUuid.c_str(), search.matchedUuid.size() + 1);
+    return 1;
 }
 
 extern "C" int CustomPackage_FindPinnedFiles(const char *assets, const char *revision, const char *uuid,
     const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
     char *levPath, size_t levCapacity, char *vrmPath, size_t vrmCapacity)
 {
-    if (!assets || !revision || !levSha256 || !vrmSha256 || !levPath || !vrmPath ||
-        !levCapacity || !vrmCapacity) return 0;
-    PinnedSearch search{revision, uuid, levSha256, vrmSha256, levBytes, vrmBytes,
-                        std::string(assets) + "/tracks/packages", {}, {}};
-    char error[256];
-    if (!CustomPackage_ScanStoreMatching(search.directory.c_str(), want_pinned, find_pinned, &search, error, sizeof error) ||
-        search.lev.empty() || search.lev.size() >= levCapacity || search.vrm.size() >= vrmCapacity) return 0;
-    std::memcpy(levPath, search.lev.c_str(), search.lev.size() + 1);
-    std::memcpy(vrmPath, search.vrm.c_str(), search.vrm.size() + 1);
-    return 1;
+    return resolve_pinned_files(assets, revision, uuid, levSha256, levBytes, vrmSha256, vrmBytes,
+                               levPath, levCapacity, vrmPath, vrmCapacity, nullptr);
+}
+
+extern "C" int CustomPackage_FindPinnedFilesWithIdentity(const char *assets, const char *revision, const char *preferredUuid,
+    const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
+    char *levPath, size_t levCapacity, char *vrmPath, size_t vrmCapacity, char outUuid[37])
+{
+    if (!outUuid) return 0;
+    outUuid[0] = '\0';
+    if (preferredUuid && *preferredUuid &&
+        resolve_pinned_files(assets, revision, preferredUuid, levSha256, levBytes, vrmSha256, vrmBytes,
+                             levPath, levCapacity, vrmPath, vrmCapacity, outUuid))
+        return 1;
+    return resolve_pinned_files(assets, revision, nullptr, levSha256, levBytes, vrmSha256, vrmBytes,
+                               levPath, levCapacity, vrmPath, vrmCapacity, outUuid);
 }
 
 namespace {
@@ -787,24 +1090,42 @@ struct MusicSearch
     unsigned long levBytes, vrmBytes;
     std::string directory, sca, scaSha;
     unsigned long scaBytes;
+    int best;
+    bool exactUuid;
+    const char *refusal;
 };
-/* The first verified revision with the seed's LEV and VRM that also pins a
-   .sca. A copy of the same pair installed without music is skipped. */
-int want_pinned_music(const char *, const CustomPackageManifest *manifest, void *opaque)
+int music_rank(const MusicSearch &search, const CustomPackageManifest &manifest, bool embedded)
+{
+    return (embedded ? 2 : 0) + (search.uuid && *search.uuid && !std::strcmp(manifest.uuid, search.uuid));
+}
+/* Prefer a manifest-pinned SCA to a local repair for the same seed pair.
+   A repair remains available if no matching manifest pins audio. */
+int want_pinned_music(const char *pin, const CustomPackageManifest *manifest, void *opaque)
 {
     const auto &search = *static_cast<const MusicSearch *>(opaque);
-    if (!search.sca.empty() || !manifest || !pinned_pair(*manifest, search.revision, search.uuid,
+    if (!manifest || !pinned_pair(*manifest, search.revision, search.exactUuid ? search.uuid : nullptr,
         search.levHash, search.levBytes, search.vrmHash, search.vrmBytes)) return 0;
-    for (unsigned int i = 0; i < manifest->count; i++)
-        if (!std::strcmp(manifest->files[i].role, "sca") && manifest->files[i].bytes) return 1;
+    const bool embedded = manifest_has_music(*manifest);
+    if (music_rank(search, *manifest, embedded) <= search.best) return 0;
+    if (embedded) return 1;
+    try
+    {
+        Directory music(search.directory + "/" + pin + "/" + musicDirectory);
+        return music.exists("source.json");
+    }
+    catch (const std::exception &) {}
     return 0;
 }
 void find_pinned_music(const CustomPackageStoreEntry *entry, void *opaque)
 {
     auto &search = *static_cast<MusicSearch *>(opaque);
-    if (!entry->verified || !search.sca.empty() ||
-        std::strcmp(entry->manifest.version, search.revision) ||
-        (search.uuid && *search.uuid && std::strcmp(entry->manifest.uuid, search.uuid))) return;
+    if (!entry->verified)
+    {
+        search.refusal = "a matching music package failed verification";
+        return;
+    }
+    if (std::strcmp(entry->manifest.version, search.revision) ||
+        (search.exactUuid && search.uuid && *search.uuid && std::strcmp(entry->manifest.uuid, search.uuid))) return;
     bool lev = false, vrm = false;
     const CustomPackageFile *sca = nullptr;
     for (unsigned int i = 0; i < entry->manifest.count; i++)
@@ -814,27 +1135,63 @@ void find_pinned_music(const CustomPackageStoreEntry *entry, void *opaque)
         if (!std::strcmp(f.role, "vrm") && !std::strcmp(f.sha256, search.vrmHash) && f.bytes == search.vrmBytes) vrm = true;
         if (!std::strcmp(f.role, "sca") && f.bytes) sca = &f;
     }
-    if (!lev || !vrm || !sca) return;
-    search.sca = search.directory + "/" + entry->pin + "/" + sca->path;
-    search.scaSha = sca->sha256;
-    search.scaBytes = static_cast<unsigned long>(sca->bytes);
+    if (!lev || !vrm) return;
+    const int rank = music_rank(search, entry->manifest, sca != nullptr);
+    if (rank <= search.best) return;
+    const auto path = search.directory + "/" + entry->pin;
+    if (sca)
+    {
+        search.sca = path + "/" + sca->path;
+        search.scaSha = sca->sha256;
+        search.scaBytes = sca->bytes;
+        search.best = rank;
+        return;
+    }
+    try
+    {
+        Directory directory(path);
+        auto audio = read_local_music(directory, entry->pin, &search.scaSha);
+        if (!audio.empty())
+        {
+            search.sca = path + "/" + musicDirectory + "/" + search.scaSha + ".sca";
+            search.scaBytes = audio.size();
+            search.best = rank;
+            return;
+        }
+    }
+    catch (const std::exception &) {}
+    search.refusal = "restored music failed verification";
 }
 }
 
-extern "C" int CustomPackage_FindPinnedMusic(const char *assets, const char *revision, const char *uuid,
+extern "C" int CustomPackage_FindPinnedMusicWithStatus(const char *assets, const char *revision, const char *uuid, int exactUuid,
     const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
-    char *scaPath, size_t scaCapacity, char scaSha256[65], unsigned long *scaBytes)
+    char *scaPath, size_t scaCapacity, char scaSha256[65], unsigned long *scaBytes, const char **refusal)
 {
+    if (refusal) *refusal = nullptr;
     if (!assets || !revision || !levSha256 || !vrmSha256 || !scaPath || !scaCapacity || !scaSha256 || !scaBytes) return 0;
     MusicSearch search{revision, uuid, levSha256, vrmSha256, levBytes, vrmBytes,
-                       std::string(assets) + "/tracks/packages", {}, {}, 0};
+                       std::string(assets) + "/tracks/packages", {}, {}, 0, -1, exactUuid != 0, nullptr};
     char error[256];
-    if (!CustomPackage_ScanStoreMatching(search.directory.c_str(), want_pinned_music, find_pinned_music, &search, error, sizeof error) ||
-        search.sca.empty() || search.sca.size() >= scaCapacity || search.scaSha.size() != 64) return 0;
+    if (!CustomPackage_ScanStoreMatching(search.directory.c_str(), want_pinned_music, find_pinned_music, &search, error, sizeof error))
+        return 0;
+    if (search.sca.empty() || search.sca.size() >= scaCapacity || search.scaSha.size() != 64)
+    {
+        if (refusal) *refusal = search.sca.empty() ? search.refusal : "invalid verified music path or digest";
+        return 0;
+    }
     std::memcpy(scaPath, search.sca.c_str(), search.sca.size() + 1);
     std::memcpy(scaSha256, search.scaSha.c_str(), 65);
     *scaBytes = search.scaBytes;
     return 1;
+}
+
+extern "C" int CustomPackage_FindPinnedMusic(const char *assets, const char *revision, const char *uuid, int exactUuid,
+    const char *levSha256, unsigned long levBytes, const char *vrmSha256, unsigned long vrmBytes,
+    char *scaPath, size_t scaCapacity, char scaSha256[65], unsigned long *scaBytes)
+{
+    return CustomPackage_FindPinnedMusicWithStatus(assets, revision, uuid, exactUuid, levSha256, levBytes,
+        vrmSha256, vrmBytes, scaPath, scaCapacity, scaSha256, scaBytes, nullptr);
 }
 
 namespace {
@@ -903,7 +1260,8 @@ extern "C" int CustomPackage_StoreDescriptor(const char *assets, const char *pin
             throw std::runtime_error("Installed revision has no verified track pair");
         CustomPackageStoreEntry entry = {};
         entry.manifest = manifest;
-        package_capabilities(owned, entry);
+        const bool generatedTitle = package_capabilities(owned, entry);
+        resolve_display_title(owned, entry, generatedTitle);
         std::string trackKey = key && *key ? key : descriptor_title_key(manifest.title);
         for (unsigned int i = 0; i < manifest.count && (!key || !*key); i++)
         {
@@ -917,7 +1275,20 @@ extern "C" int CustomPackage_StoreDescriptor(const char *assets, const char *pin
             if (source.is_object() && source.contains("provider") && source["provider"].is_string() &&
                 (source["provider"] == "xdelta" || source["provider"] == "ctr-seed") &&
                 source.contains("track_key") && source["track_key"].is_string())
+            {
                 trackKey = source["track_key"].get<std::string>();
+                // Older seed installs used the folder, sometimes <key>-<version>.
+                // Repair only invalid metadata; explicit registry keys stay exact.
+                if (!descriptor_key(trackKey))
+                {
+                    const std::string suffix = std::string("-") + manifest.version;
+                    if (source["provider"] == "ctr-seed" && trackKey.size() > suffix.size() &&
+                        trackKey.compare(trackKey.size() - suffix.size(), suffix.size(), suffix) == 0)
+                        trackKey.resize(trackKey.size() - suffix.size());
+                    if (!descriptor_key(trackKey)) trackKey = descriptor_title_key(trackKey.c_str());
+                    if (!descriptor_key(trackKey)) trackKey = descriptor_title_key(manifest.title);
+                }
+            }
         }
         const std::string id = "package/" + trackKey + "/" + manifest.version;
         if (!descriptor_key(trackKey) || id.size() > 64 || ("custom/" + trackKey + "/" + manifest.version).size() > 64)
@@ -944,9 +1315,16 @@ extern "C" int CustomPackage_StoreDescriptor(const char *assets, const char *pin
             {{"role", "lev"}, {"sha256", lev->sha256}, {"bytes", lev->bytes}, {"format", "ctr-lev"}, {"format_version", 1}},
             {{"role", "vrm"}, {"sha256", vrm->sha256}, {"bytes", vrm->bytes}, {"format", "ctr-vrm"}, {"format_version", 1}}});
         nlohmann::json descriptor = {{"id", id}, {"content_id", trackKey}, {"uuid", manifest.uuid},
-            {"revision", manifest.version}, {"display_name", bounded_label(manifest.title)},
+            {"revision", manifest.version},
+            {"display_name", bounded_label(entry.displayTitle[0] ? entry.displayTitle : manifest.title)},
             {"author", entry.local.author[0] ? entry.local.author : "Unknown"},
             {"capabilities", caps}, {"files", files}, {"evidence", nlohmann::json::array()}};
+        if (entry.local.xdelta && entry.local.bigfileIndex <= 4095)
+        {
+            descriptor["locator"] = {{"kind", "xdelta"}, {"patch_sha256", entry.local.patchSha256},
+                                     {"bigfile_index", entry.local.bigfileIndex}};
+            if (entry.local.sourceUrl[0]) descriptor["locator"]["source_url"] = entry.local.sourceUrl;
+        }
         if (!needsLaps) descriptor["laps"] = laps;
         CustomPackageRelicTargets targets = {};
         if (!needsLaps && entry.local.relic && CustomPackage_GetRelicTargets(owned, &targets, nullptr, 0) &&

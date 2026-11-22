@@ -10,6 +10,8 @@
 struct sData sdata_static;
 struct Data data;
 ctr_seed_config ctr_cfg;
+static int recorded_surface_changes;
+void AP_NavRec_NotePhysicsEffect(void) { recorded_surface_changes++; }
 int ctr_cfg_active(void) { return ctr_cfg.schema_version > 0; }
 void AP_LogLine(const char *line) { (void)line; }
 int AP_TrapWeakenBoostTier(int tier) { return tier; }
@@ -30,6 +32,7 @@ int main(void)
     AP_CapabilityReset();
     AP_CapabilitySelectConnectReset();
     AP_SurfaceReceive(AP_SURFACE_WATER);
+    AP_SurfaceResetLapObservation();
     for (unsigned i = 0; i < sizeof outside / sizeof outside[0]; ++i)
     {
         int reserve = 50000, fire = 0x800;
@@ -59,6 +62,21 @@ int main(void)
     assert(AP_CapabilityBoostTier() == 1 && AP_CapabilityAppliedBoostTier() == -1);
     gt.gameMode1 = ADVENTURE_MODE;
     assert(AP_CapabilityAppliedBoostTier() == 1);
+    sdata->Loading.stage = LOAD_IDLE;
+    AP_SurfaceReceive(AP_SURFACE_ICE);
+    assert(AP_SurfaceTerrain(&local, TERRAIN_ICE, 0) == TERRAIN_ICE && recorded_surface_changes == 0);
+    assert(AP_SurfaceTerrain(&local, TERRAIN_WATER, 1) == TERRAIN_ASPHALT && recorded_surface_changes == 0);
+    assert(AP_SurfaceTerrain(&local, TERRAIN_ICE, 1) == TERRAIN_ASPHALT && recorded_surface_changes == 1);
+    AP_SurfaceReceive(AP_SURFACE_ICE);
+    assert(AP_SurfaceTerrain(&local, TERRAIN_ICE, 1) == TERRAIN_ASPHALT && recorded_surface_changes == 1);
+    AP_SurfaceReceive(AP_SURFACE_DIRT);
+    AP_SurfaceResetLapObservation();
+    assert(AP_SurfaceTerrain(&local, TERRAIN_DIRT, 1) == TERRAIN_ASPHALT && recorded_surface_changes == 1);
+    AP_SurfaceReset();
+    AP_SurfaceReceive(AP_SURFACE_ICE);
+    assert(AP_SurfaceTerrain(&local, TERRAIN_ICE, 1) == TERRAIN_ASPHALT && recorded_surface_changes == 1);
+    AP_SurfaceReset();
+    assert(AP_SurfaceTerrain(&local, TERRAIN_ICE, 1) == TERRAIN_ICE && recorded_surface_changes == 2);
     /* Exercise the capstone, not only the locked rank. The co-op per-racer
      * accessor must preserve the production Adventure-only boundary. */
     ctr_cfg.boost_blue_fire = 1;

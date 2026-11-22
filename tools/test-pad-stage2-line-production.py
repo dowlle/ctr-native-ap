@@ -39,20 +39,28 @@ title = warp.index("AP_PadStage2Line(levelID, apStage2Line, (int)sizeof apStage2
 name = warp.index("DecalFont_DrawLine(warppadLNG")
 assert title < name
 block = warp[title:warp.index("// if track is unlocked, ignore all other ELSE-IFs", title)]
-assert "ap_pad_title_block_lift((apStage2 != AP_S2LINE_NONE) + (apBoxesLeft > 0)" in block
+assert "ap_pad_title_block_lift(apContentMissing ? 2 : (apStage2 != AP_S2LINE_NONE) + (apBoxesLeft > 0)" in block
 assert "rect.h - 30 - apLift, FONT_BIG" in warp
-assert "TEXT_MARQUEE, TEXT_SLOT_PAD, NULL" in block
+stage2_draw = block.split("DecalFont_DrawLineBox(apStage2Line,", 1)[1].split(");", 1)[0]
+assert "TEXT_MARQUEE, TEXT_SLOT_PAD, NULL" in stage2_draw
 assert "int apS2W = gGT->pushBuffer[0].rect.w - 160;" in block
 assert "apStage2 == AP_S2LINE_MET ? LIGHT_GREEN" in block
 assert "apStage2 == AP_S2LINE_DONE ? GRAY : RED" in block
 # Stage 2 sits directly under the name; AP BOXES LEFT keeps the bottom line.
-assert "rect.h - 15 - apLift,\n" in block
-assert block.count("rect.h - 15,\n") == 1
+assert block.count("rect.h - 15 - apLift,\n") == 2
+assert block.count("rect.h - 15,\n") == 2
+assert "apMissingPad->occupied && !AP_ContentPadReady(apMissingPhys)" in block
+assert "if (apBoxesLeft > 0 && !apContentMissing)" in block
 # Racer line and portrait move with the name.
-assert "rect.h - 82 - apLift" in block and "rect.h - 45 - apLift" in block
-# The text slot exists and keeps the feed's five slots last.
+assert "int racerLift = apLift;" in block and "if (credit) racerLift += 11;" in block
+assert "rect.h - 82 - racerLift" in block and "rect.h - 45 - racerLift" in block
+assert "apCy - data.font_charPixHeight[FONT_SMALL] - 4" in block
+assert "AP_FeedHubPadTitle(apPadFeedY)" in block
+assert "bottom - 30 - 11" in block and "bottom - 23" in block
+assert "padX = padView->x + 3 * padView->w / 8;" in block and "width = padView->w - 144;" in block
+# The pad and credit clocks stay outside the feed's five contiguous slots.
 assert "TEXT_SLOT_PAD, TEXT_SLOT_FEED," in box
-assert "TEXT_SLOT_COUNT = TEXT_SLOT_FEED + 5" in box
+assert "TEXT_SLOT_TRACK_CREDIT = TEXT_SLOT_FEED + 5, TEXT_SLOT_PAD_TITLE," in box
 # A non-AP build keeps the retail layout.
 assert "#else\n\t\t\t\tint apLift = 0;\n#endif" in warp
 print("pad stage 2 line production wiring: ok")

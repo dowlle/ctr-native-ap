@@ -5,9 +5,9 @@
 // approach a pad (so when the name is shown in-game)." Off by default
 // (ctr_options.pad_approach_hints, absent = off).
 //
-// When a pad shows its name, the client hints the locations its glow lists
-// with openOnly, filtered by their exported location logic: unchecked checks
-// of the modes that are open now and whose item gates are satisfied. A pad that
+// When a pad shows its name, the client hints its open glow and pickup checks.
+// When an open garage shows its title, it hints its encounter and venue checks.
+// Both use the exported location logic for unchecked candidates. A pad that
 // is closed (its requirement or racer lock not met), empty, or whose custom
 // track is not ready hints nothing (agent decision, conservative: a locked
 // pad's checks are not in logic yet). Each location is hinted once ever: the

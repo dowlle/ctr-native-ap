@@ -229,6 +229,7 @@ int AP_CapabilityFireGrant(struct Driver *driver, int *reserves, uint32_t type, 
 // VehPhysProc_Driving_PhysLinear before anything there reads them. No-op unless
 // the stat pack is active for this seed and this is the local player.
 void AP_CapabilityStats(struct Driver *driver);
+void AP_CapabilityResetLapObservation(void);
 
 // 1 when the race in progress drives the room's kart stats: Adventure only.
 // 0 for every other mode (Arcade, its custom pages, Time Trial, Versus and

@@ -162,6 +162,13 @@ void cseq_opcode_from06and07(struct SongSeq *seq)
 	}
 }
 
+// Some custom songs reference a program their pack omits. Skip that voice.
+static int cseq_has_sample(const struct SongSeq *seq, unsigned int index)
+{
+	return (seq->flags & 4) ? index < sdata->ptrCseqHeader->numShortSamples :
+		seq->instrumentID < sdata->ptrCseqHeader->numLongSamples;
+}
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002a28c-0x8002a3a8
 void cseq_opcode05_noteon(struct SongSeq *seq)
 {
@@ -184,6 +191,11 @@ void cseq_opcode05_noteon(struct SongSeq *seq)
 	}
 
 	currNote = seq->currNote;
+
+	if (!cseq_has_sample(seq, currNote[1]))
+	{
+		return;
+	}
 
 	howl_InitChannelAttr_Music(seq, &attr, currNote[1], currNote[2]);
 
@@ -298,6 +310,10 @@ void cseq_opcode0a(struct SongSeq *seq)
 		}
 
 		int index = curr->drumIndex_pitchIndex;
+		if (!cseq_has_sample(seq, index))
+		{
+			continue;
+		}
 
 		// instrument
 		if ((seq->flags & 4) == 0)

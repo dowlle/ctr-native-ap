@@ -1,5 +1,8 @@
 #include <common.h>
 #include "../RenderLevel/RenderLevelLod.h"
+#ifdef CTR_CUSTOM_PACKAGES
+#include <text_box.h>
+#endif
 
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
@@ -7,6 +10,7 @@
 
 #if defined(CTR_NATIVE) && defined(CTR_INTERNAL)
 #include <platform/native_perf.h>
+#include <platform/native_savestate.h>
 #define MAINFRAME_PERF_BEGIN(bucket) NativePerf_BeginScope(bucket)
 #define MAINFRAME_PERF_END(bucket)   NativePerf_EndScope(bucket)
 #else
@@ -44,7 +48,7 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 	{
 		if (gGT->visMem1 != 0)
 		{
-#ifdef CTR_CUSTOM_TRACKS
+#if defined(CTR_CUSTOM_TRACKS) || defined(CTR_EDITOR)
 			// Every retail LEV has an animated-texture table, so retail can
 			// dereference ptr_anim_tex unconditionally. A custom track need not:
 			// CrashTeamEditor emits a null ptr_anim_tex for a track that authored
@@ -53,7 +57,8 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 			// on load. Written as an extra term on the existing condition rather
 			// than a nested if so the guard-off preprocessor output is unchanged
 			// down to the brace. (Baby T Park itself has a non-null table; the
-			// guard covers the custom-track class, not this one track.)
+			// guard covers the custom-track class, not this one track.) The editor
+			// build loads the same files, so it takes the guard too.
 			if (lev != 0 && lev->ptr_anim_tex != 0)
 #else
 			if (lev != 0)
@@ -223,6 +228,11 @@ void MainFrame_RenderFrame(struct GameTracker *gGT, struct GamepadSystem *gGamep
 	}
 
 	MAINFRAME_PERF_BEGIN(NATIVE_PERF_BUCKET_MAINFRAME_UI);
+#if defined(CTR_NATIVE) && defined(CTR_INTERNAL)
+	// The closest ordering bucket is drawn last. A flag added to it below
+	// draws first within that bucket, leaving the refusal visible on top.
+	NativeSaveState_DrawRefusal(gGT->otSwapchainDB[gGT->swapchainIndex]);
+#endif
 	if ((gGT->renderFlags & 0x1000) != 0)
 	{
 		RaceFlag_DrawSelf();
@@ -501,6 +511,14 @@ void RenderAllHUD(struct GameTracker *gGT)
 	hudFlags = gGT->hudFlags;
 	gameMode1 = gGT->gameMode1;
 
+#ifdef CTR_CUSTOM_PACKAGES
+	if (gameMode1 & PAUSE_ALL)
+	{
+		DecalFont_PauseLineBox(TEXT_SLOT_RACE_TITLE);
+		DecalFont_PauseLineBox(TEXT_SLOT_RACE_CREDIT);
+	}
+#endif
+
 	// if drawing intro-race title bars
 	if ((gGT->numPlyrCurrGame == 1) && ((hudFlags & 8) != 0) && ((gameMode1 & START_OF_RACE) != 0))
 	{
@@ -508,7 +526,12 @@ void RenderAllHUD(struct GameTracker *gGT)
 #ifdef CTR_AP
 		// AP feed: a DeathLink received during the intro / countdown is shown as
 		// ignored right away instead of surfacing after the lights.
-		AP_FeedDrawRace();
+#ifdef CTR_CUSTOM_PACKAGES
+		if (UI_TrackCredit(-1))
+			AP_FeedDrawRaceIntro();
+		else
+#endif
+			AP_FeedDrawRace();
 #endif
 	}
 
@@ -521,7 +544,15 @@ void RenderAllHUD(struct GameTracker *gGT)
 			// if standings
 			if ((hudFlags & 4) != 0)
 			{
+#ifdef CTR_CUSTOM_PACKAGES
+				// Continuing a cup can arm the next leg on the same host level.
+				const char *credit = UI_TrackCredit(-1);
+#endif
 				UI_CupStandings_InputAndDraw();
+#ifdef CTR_CUSTOM_PACKAGES
+				const RECT *view = &gGT->pushBuffer_UI.rect;
+				UI_DrawTrackCredit(credit, view->w / 2, view->h - 11, view->w - 64, TEXT_MARQUEE);
+#endif
 #ifdef CTR_AP
 				// AP feed: a race_loss DeathLink popup must survive the leg ending
 				// straight into the standings.
@@ -548,6 +579,26 @@ void RenderAllHUD(struct GameTracker *gGT)
 					if ((gameMode1 & CRYSTAL_CHALLENGE) == 0)
 					{
 						UI_RenderFrame_Racing();
+#ifdef CTR_CUSTOM_PACKAGES
+						/* A race can start at the lights without a fly-in, including
+						   split screen. Show one banner below the first viewport's
+						   lights and above the second viewport's item slot. */
+						if (gGT->numPlyrCurrGame <= 2 && gGT->trafficLightsTimer > 0 &&
+						    !(gameMode1 & (PAUSE_ALL | END_OF_RACE | START_OF_RACE)) &&
+						    RaceFlag_IsFullyOffScreen() && UI_TrackCreditNeedsCountdown())
+						{
+							const char *credit = UI_TrackCredit(-1);
+							if (credit)
+							{
+								const int viewWidth = gGT->pushBuffer_UI.rect.w;
+								const int width = viewWidth - (gGT->numPlyrCurrGame == 2 ? 192 : 128);
+								const int x = viewWidth / 2;
+								DecalFont_DrawLineBox(UI_TrackName(-1), x, 76, width, FONT_BIG,
+								                      ORANGE | JUSTIFY_CENTER, TEXT_BANNER_MARQUEE, TEXT_SLOT_RACE_TITLE, NULL);
+								UI_DrawTrackCredit(credit, x, 94, width, TEXT_BANNER_MARQUEE);
+							}
+						}
+#endif
 					}
 
 					// if crystal challenge
@@ -562,6 +613,10 @@ void RenderAllHUD(struct GameTracker *gGT)
 				{
 					if ((u32)(sdata->Loading.stage + 5) > 1)
 					{
+#ifdef CTR_CUSTOM_PACKAGES
+						const RECT *view = &gGT->pushBuffer_UI.rect;
+						UI_DrawTrackCredit(UI_TrackCredit(-1), view->w / 2, view->h - 11, view->w - 64, TEXT_MARQUEE);
+#endif
 						if ((gameMode1 & CRYSTAL_CHALLENGE) == 0)
 						{
 							if ((gameMode1 & TIME_TRIAL) == 0)
@@ -918,7 +973,15 @@ void RenderAllLevelGeometry(struct GameTracker *gGT, struct Level *level1, struc
 		}
 
 		// if SCVert
+#if defined(CTR_CUSTOM_TRACKS) || defined(CTR_EDITOR)
+		// Older custom tracks can set the SCVert config flag with no SCVert
+		// table and no packed visibility list for it; AnimateQuad reads the
+		// list before it checks the vertex count, so that null crashes the
+		// first frame. Same guard condition as the animated-texture check.
+		else if (level1->numSCVert != 0 && gGT->visMem1->visSCVertList[0] != 0)
+#else
 		else
+#endif
 		{
 			// draw SCVert (no primitives generated here
 			AnimateQuad(gGT->timer << 7, level1->numSCVert, level1->ptrSCVert, gGT->visMem1->visSCVertList[0]);

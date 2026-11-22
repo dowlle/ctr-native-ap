@@ -43,7 +43,7 @@ NativeConfig g_config = {
 	true,  // itemBoxColours (default on: follow the seed's item box colours)
 	true,  // itemBoxNumbers (default on: show the authored location number)
 	false, // sanityNumbers (default off: ordinary check object ordinals)
-	true,  // itemFeed (default on: the item feed shows, as before)
+	AP_ITEM_FEED_ALL, // itemFeed
 	0,     // aiDifficulty (0 = vanilla)
 	-1,    // deathLink (-1 = follow the seed option)
 	-1,    // dlSendFall (-1 = follow the seed's send triggers)
@@ -62,6 +62,7 @@ NativeConfig g_config = {
 	false, // navRecord (off: this one writes files to the player's disk)
 	false, // navUseRecorded (off: changes how the AI drives)
 	false, // navRepeatLaps (off: one recorded lap per contributor)
+	false, // navOnlyMine
 	"",    // navDriverName (empty = fall back to the Archipelago slot name)
 	false, // discordStatus (off: nothing is opened or sent unless the player opts in)
 	"",    // discordAppId (empty = the built-in AP_DISCORD_APPLICATION_ID)
@@ -75,6 +76,7 @@ NativeConfig g_config = {
 	false, // navRecord
 	false, // navUseRecorded
 	false, // navRepeatLaps
+	false, // navOnlyMine
 	"",    // navDriverName (empty = recordings carry no name)
 #endif
 #endif
@@ -178,7 +180,7 @@ const ConfigEntry g_configEntries[] = {
 	{"Archipelago", "item_box_colours",         "Item Box Colours",             CFG_BOOL, &g_config.itemBoxColours},
 	{"Archipelago", "item_box_numbers",         "Item Box Numbers",             CFG_BOOL, &g_config.itemBoxNumbers},
 	{"Archipelago", "sanity_numbers",           "Crate / Fruit Numbers",        CFG_BOOL, &g_config.sanityNumbers},
-	{"Archipelago", "item_feed",                "Item Feed",                    CFG_BOOL, &g_config.itemFeed},
+	{"Archipelago", "item_feed",                "Item Feed",                    CFG_ENUM, &g_config.itemFeed},
 	// CFG_ENUM: AI-difficulty preset, stepped through a fixed value ladder and
 	// rendered as a preset name (see MM_ConfigMenu.c). Stored as its raw value.
 	{"Archipelago", "ai_difficulty",            "AI Difficulty",                CFG_ENUM, &g_config.aiDifficulty},
@@ -229,6 +231,7 @@ const ConfigEntry g_configEntries[] = {
 	{"Authoring",   "nav_record",               "Save AI Lap Recordings",       CFG_BOOL, &g_config.navRecord},
 	{"Authoring",   "nav_use_recorded",         "Use Recorded AI Laps",         CFG_BOOL, &g_config.navUseRecorded},
 	{"Authoring",   "nav_repeat_laps",          "Several Laps Per Driver",      CFG_BOOL, &g_config.navRepeatLaps},
+	{"Authoring",   "nav_only_mine",            "Only My Recordings",           CFG_BOOL, &g_config.navOnlyMine},
 	// Read-only on the menu, edited in config.ini. Empty renders as "-" and, in
 	// an AP build, means the Archipelago slot name is used instead.
 	{"Authoring",   "nav_driver_name",          "Driver Name",                  CFG_STRING, g_config.navDriverName, 0, (int)sizeof(g_config.navDriverName), 0},
@@ -335,6 +338,15 @@ void NativeConfig_Load(void)
 			if (strcmp(section, e->section) == 0 &&
 			    strcmp(key, e->key) == 0)
 			{
+#ifdef CTR_AP
+				if (e->valuePtr == &g_config.itemFeed)
+				{
+					// Old configs saved true/false and also accepted 1/0.
+					g_config.itemFeed = strcmp(value, "2") == 0 ? AP_ITEM_FEED_IMPORTANT :
+					                    ParseBool(value) ? AP_ITEM_FEED_ALL : AP_ITEM_FEED_OFF;
+				}
+				else
+#endif
 				if (e->type == CFG_BOOL)
 					*(bool *)e->valuePtr = ParseBool(value);
 				else if (e->type == CFG_STRING)

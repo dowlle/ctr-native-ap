@@ -216,12 +216,14 @@ void AP_FeedOnItemReceived(long long item, int player, long long index, unsigned
 void AP_FeedConnectReset(void);
 void AP_FeedEndDrain(int drainedThisFrame);
 void AP_FeedDrawHub(void);
-void AP_FeedHubPadTitle(int visible);
+void AP_FeedHubPadTitle(int feedY);
 void AP_FeedDrawRace(void);
+void AP_FeedDrawRaceIntro(void);
 // The same feed on the end-of-race screens (results, cup standings), drawn a little
 // higher so it clears the "PRESS X TO CONTINUE" prompt. Same 1P / unpaused gates.
 void AP_FeedDrawResults(void);
 int  AP_HubFeedOn(void);
+void AP_FeedDiscardUnimportant(void);
 // One trap-state notice (armed, incoming, active) on the same two surfaces, in the
 // trap class colour. The trap scheduler owns the wording; this is only delivery,
 // so trap presentation cannot drift from the item feed's look. trapSlot and
@@ -871,6 +873,7 @@ int AP_PadUncollectedGlowBits(int destLevelID, int *outBits, int cap);
 #define AP_PAD_DISPLAY_BITS_MAX 256
 // Pad Approach Hints (#124): call while the pad at levelID shows its name.
 void AP_PadApproachHints(int levelID);
+void AP_BossGarageApproachHints(int hubID);
 // A4-59: the stage 2 line under the pad's name. Writes the text into `out` and
 // returns its AP_S2LINE_* state (ap_pad_stage2_line.h), 0 when the pad shows none.
 int AP_PadStage2Line(int levelID, char *out, int cap);

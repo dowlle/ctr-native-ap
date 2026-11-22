@@ -3,6 +3,10 @@
 
 #include <stdbool.h>
 
+#ifdef CTR_AP
+enum { AP_ITEM_FEED_OFF, AP_ITEM_FEED_ALL, AP_ITEM_FEED_IMPORTANT };
+#endif
+
 // User-facing options persisted to "config.ini" (next to the executable) and
 // edited through the in-game options menu (see game/230/MM_ConfigMenu.c). Ported
 // from thecodingbob/ctr-native (branch modularize-improve-config), trimmed to the
@@ -104,7 +108,7 @@ typedef struct
 	                            // (AP_BoxColour_Enabled, ap/ap_box_colour_logic.h).
 	bool itemBoxNumbers;        // Archipelago: local overhead AP box numbers (default on).
 	bool sanityNumbers;         // Local weapon/Wumpa check ordinals (default off).
-	bool itemFeed;              // Archipelago: the AP item feed in the hub and in races
+	int itemFeed;               // Archipelago: AP_ITEM_FEED_* in the hub and in races
 	                            // (default on). Replaces ap-config.txt "hub_feed="
 	                            // when config.ini exists, like mapFlash (AP_HubFeedOn).
 	int  aiDifficulty;          // Archipelago: AI-difficulty preset, stored as the raw
@@ -190,6 +194,7 @@ typedef struct
 	// filled with other laps from the same contributors (never the same lap
 	// twice), seeded by the race seed. Reads files only.
 	bool navRepeatLaps;
+	bool navOnlyMine; // Only recordings whose driver name matches ours.
 	char navDriverName[32];
 	// Discord Rich Presence (issue #366). discordStatus is the local "Discord
 	// Status" option (Archipelago page, default off): on, the game shows what
@@ -213,6 +218,7 @@ typedef struct
 	bool navRecord;
 	bool navUseRecorded;
 	bool navRepeatLaps;
+	bool navOnlyMine;
 	char navDriverName[32];
 #endif
 #endif

@@ -24,7 +24,11 @@
 // and retail globals are defined, so they can snapshot the same process-local
 // regions the game mutates.
 #define NATIVE_CHECKPOINT_MAGIC              NATIVE_CHECKPOINT_FOURCC('C', 'T', 'R', 'C')
+#ifdef CTR_AP
+#define NATIVE_CHECKPOINT_VERSION            3u  // captures boss mine expiry state
+#else
 #define NATIVE_CHECKPOINT_VERSION            2u
+#endif
 #define NATIVE_CHECKPOINT_ADDRESS_RANGE_CAP  16u
 #define NATIVE_CHECKPOINT_POINTER_SLOT_CAP   65536u
 #define NATIVE_CHECKPOINT_CREDITS_STRING_CAP 4096u
@@ -52,6 +56,9 @@ enum NativeCheckpointRegionKind
 	NATIVE_CHECKPOINT_REGION_NATS = NATIVE_CHECKPOINT_FOURCC('N', 'A', 'T', 'S'),  // native subsystem state bundle
 #ifdef CTR_CUSTOM_PACKAGES
 	NATIVE_CHECKPOINT_REGION_CUST = NATIVE_CHECKPOINT_FOURCC('C', 'U', 'S', 'T'),  // loaded custom package identity
+#endif
+#ifdef CTR_AP
+	NATIVE_CHECKPOINT_REGION_BMIN = NATIVE_CHECKPOINT_FOURCC('B', 'M', 'I', 'N'),  // boss mine expiry
 #endif
 };
 
@@ -111,11 +118,14 @@ struct NativeCheckpointHeader
 	u32 addressRangeCount;
 	u32 codeAnchor;
 	struct NativeCheckpointAddressRange addressRanges[NATIVE_CHECKPOINT_ADDRESS_RANGE_CAP];
+	struct NativeCheckpointRegion regions[14
 #ifdef CTR_CUSTOM_PACKAGES
-	struct NativeCheckpointRegion regions[15];
-#else
-	struct NativeCheckpointRegion regions[14];
+	                                      + 1
 #endif
+#ifdef CTR_AP
+	                                      + 1
+#endif
+	];
 };
 
 global_variable void *s_nativeCheckpointPointerSlots[NATIVE_CHECKPOINT_POINTER_SLOT_CAP];
@@ -250,6 +260,10 @@ internal int NativeCheckpoint_GetRegionSize(u32 kind)
 	case NATIVE_CHECKPOINT_REGION_CUST:
 		return (int)sizeof(struct CustomStateIdentity);
 #endif
+#ifdef CTR_AP
+	case NATIVE_CHECKPOINT_REGION_BMIN:
+		return (int)sizeof(s_bossMineState);
+#endif
 	}
 
 	return 0;
@@ -291,6 +305,10 @@ internal void *NativeCheckpoint_GetRegionPtr(u32 kind)
 		return Platform_GetMempackBacking();
 	case NATIVE_CHECKPOINT_REGION_SCRP:
 		return CTR_SCRATCHPAD_BASE;
+#ifdef CTR_AP
+	case NATIVE_CHECKPOINT_REGION_BMIN:
+		return &s_bossMineState;
+#endif
 	}
 
 	return NULL;
@@ -1110,6 +1128,35 @@ internal void NativeCheckpoint_RelocateSelectProfileLoadSaveObj(const struct Nat
 	}
 }
 
+internal void NativeCheckpoint_RelocateGhostTape(const struct NativeCheckpointHeader *oldHeader, const struct NativeCheckpointHeader *liveHeader,
+                                                 struct GhostTape *tape, int active)
+{
+	if (!NativeCheckpoint_IsLivePointer(liveHeader, tape))
+		return;
+
+	uintptr_t savedStart = (uintptr_t)tape->ptrStart;
+	uintptr_t savedEnd = (uintptr_t)tape->ptrEnd;
+	NativeCheckpoint_RelocatePointerOrImageSlot(oldHeader, liveHeader, &tape->gh);
+	NativeCheckpoint_RelocatePointerOrImageSlot(oldHeader, liveHeader, &tape->gh_again);
+	NativeCheckpoint_RelocatePointerOrImageSlot(oldHeader, liveHeader, &tape->ptrStart);
+
+	// The end can be one past the buffer. Use the start's displacement for
+	// the bound, replay cursor and any cached pointers into the tape.
+	uintptr_t displacement = (uintptr_t)tape->ptrStart - savedStart;
+	tape->ptrEnd = (void *)(savedEnd + displacement);
+	if (!active || displacement == 0)
+		return;
+
+	tape->ptrCurr = (void *)((uintptr_t)tape->ptrCurr + displacement);
+	for (u32 i = 0; i < len(tape->packets); i++)
+	{
+		uintptr_t address;
+		memcpy(&address, &tape->packets[i].bufferPacket, sizeof address);
+		if (address >= savedStart && address <= savedEnd)
+			tape->packets[i].bufferPacket = (u8 *)(address + displacement);
+	}
+}
+
 internal void NativeCheckpoint_RelocateThreadObject(const struct NativeCheckpointHeader *oldHeader, const struct NativeCheckpointHeader *liveHeader,
                                                     struct Thread *thread)
 {
@@ -1118,9 +1165,13 @@ internal void NativeCheckpoint_RelocateThreadObject(const struct NativeCheckpoin
 		return;
 	}
 
-	if (thread->funcThTick == GhostReplay_ThTick)
+	// A ghost retains its model index when its replay tick converts to
+	// BOTS_ThTick_Drive or parks after the end of the tape.
+	if (thread->modelIndex == DYNAMIC_GHOST)
 	{
-		NativeCheckpoint_RelocateDriver(oldHeader, liveHeader, (struct Driver *)thread->object);
+		struct Driver *driver = thread->object;
+		NativeCheckpoint_RelocateDriver(oldHeader, liveHeader, driver);
+		NativeCheckpoint_RelocateGhostTape(oldHeader, liveHeader, driver->ghostTape, driver->ghostBoolInit);
 		return;
 	}
 
@@ -1928,27 +1979,25 @@ internal void NativeCheckpoint_RelocateRuntimePointers(const struct NativeCheckp
 	NativeCheckpoint_RelocateRectMenu(oldHeader, liveHeader, &gGarage.menuGarage);
 	NativeCheckpoint_RelocateCreditsPointers(oldHeader, liveHeader);
 	NativeCheckpoint_RelocateGameTrackerPointers(oldHeader, liveHeader);
+}
 
-#if defined(CTR_AP) || defined(CTR_AI_LAP_RECORDER)
-	// LAST, and specifically after RelocateGameTrackerPointers. Relocating the
-	// nav slots is necessary but not sufficient: recorded AI lanes live in
-	// AP-layer statics, which are in no checkpointed region, so a state restored
-	// into a FRESH process finds them zeroed, with pointers that are
-	// arithmetically right and blank data behind them. This reloads the recording
-	// and republishes, or puts the engine back on the level's own nav data.
-	//
-	// The ordering is load-bearing. That fallback reaches gGT->level1->LevNavTable
-	// through BOTS_InitNavPath, and gGT->level1 is not rebased until
-	// RelocateGameTrackerPointers above. Called from inside
-	// RelocateSDataPointers, where the nav slots themselves are handled, it would
-	// dereference the saving process's level pointer: invisible in-process,
-	// because the two ranges coincide, and a fault on a cross-process restore.
-	// The nav slots it depends on are already done by then, and the success path
-	// touches no level data at all.
-	//
-	// A no-op when no recording is in play.
-	AP_NavRec_AfterCheckpointRestore();
-#endif
+internal void NativeCheckpoint_RepairAuthoredNavEnds(struct GameTracker *gGT)
+{
+	if (gGT == NULL || gGT->level1 == NULL ||
+	    (gGT->gameMode1 & (GAME_CUTSCENE | MAIN_MENU | ADVENTURE_ARENA)) != 0)
+		return;
+	struct NavHeader **table = gGT->level1->LevNavTable;
+	if (table == NULL)
+		return;
+
+	for (u32 lane = 0; lane < len(sdata->NavPath_ptrHeader); lane++)
+	{
+		struct NavHeader *header = table[lane];
+		// BOTS_InitNavPath writes this field at runtime. An authored LEV
+		// need not include it in its pointer map.
+		if (header != NULL && header->magicNumber == (s16)-0x1303 && header->numPoints > 0)
+			header->last = NAVHEADER_GETFRAME(header) + header->numPoints;
+	}
 }
 
 internal int NativeCheckpoint_CapturePointerSlotState(void *dst, int dstSize)
@@ -2118,6 +2167,9 @@ internal int NativeCheckpoint_InitHeader(struct NativeCheckpointHeader *header)
 	    NATIVE_CHECKPOINT_REGION_PMAP,  NATIVE_CHECKPOINT_REGION_NATS,
 #ifdef CTR_CUSTOM_PACKAGES
 	    NATIVE_CHECKPOINT_REGION_CUST,
+#endif
+#ifdef CTR_AP
+	    NATIVE_CHECKPOINT_REGION_BMIN,
 #endif
 	};
 
@@ -2318,15 +2370,15 @@ internal int NativeCheckpoint_CustomIdentityAllows(const struct NativeCheckpoint
 	return 0;
 }
 
-// The refusal, on screen for a few seconds of race HUD (UI_RenderFrame_Racing).
-void NativeCheckpoint_DrawCustomRefusal(void)
+void NativeCheckpoint_DrawCustomRefusal(u32 *ot, int visible)
 {
 	if (s_nativeCheckpointCustomRefusalFrames <= 0)
 	{
 		return;
 	}
 	s_nativeCheckpointCustomRefusalFrames--;
-	DecalFont_DrawLine(s_nativeCheckpointCustomRefusal, 0x100, 0x60, FONT_SMALL, (JUSTIFY_CENTER | ORANGE));
+	if (visible)
+		DecalFont_DrawLineOT(s_nativeCheckpointCustomRefusal, 0x100, 0x60, FONT_SMALL, JUSTIFY_CENTER | ORANGE, ot);
 }
 #endif
 
@@ -2348,6 +2400,7 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 		return 0;
 	}
 #ifdef CTR_CUSTOM_PACKAGES
+	s_nativeCheckpointCustomRefusalFrames = 0;
 	if (!NativeCheckpoint_CustomIdentityAllows(header, bytes))
 	{
 		return 0;
@@ -2358,6 +2411,11 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 	// the source-owned static image first, then overlay the captured runtime
 	// fields below.
 	OVR233_ResetRuntimeState();
+#ifdef CTR_AP
+	// A checkpoint is taken between shots. Clear the live shooter before
+	// restoring the saved progress and mine records.
+	RB_MinePool_ResetBossProgress();
+#endif
 
 	for (i = 0; i < header->regionCount; i++)
 	{
@@ -2390,6 +2448,13 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 	Platform_ConfigureMempackArena();
 	NativeCheckpoint_RelocateMempackPointers(header, &liveHeader);
 	NativeCheckpoint_RelocateRuntimePointers(header, &liveHeader);
+#ifdef CTR_AP
+	for (u32 mine = 0; mine < len(s_bossMineState.mines); ++mine)
+	{
+		NativeCheckpoint_RelocatePointerSlot(header, &liveHeader, &s_bossMineState.mines[mine].inst);
+		NativeCheckpoint_RelocatePointerSlot(header, &liveHeader, &s_bossMineState.mines[mine].owner);
+	}
+#endif
 	if (pointerMapRegion == NULL)
 	{
 		return 0;
@@ -2408,6 +2473,14 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 	{
 		return 0;
 	}
+
+	// Both the runtime pointers and the LEV's pointer slots now refer to
+	// this process. Authored lanes need live end pointers, and recorded
+	// lanes need to be reloaded or replaced with those authored lanes.
+	NativeCheckpoint_RepairAuthoredNavEnds(sdata->gGT);
+#if defined(CTR_AP) || defined(CTR_AI_LAP_RECORDER)
+	AP_NavRec_AfterCheckpointRestore();
+#endif
 #ifdef CTR_CUSTOM_TRACKS
 	// The restored VRAM may hold another minimap: decide its mode again.
 	UI_Map_CustomAfterRestore(sdata->gGT);

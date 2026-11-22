@@ -62,7 +62,8 @@ struct CustomTrackSeedDescriptor
 	char vrmSha256[NATIVE_SHA256_HEX_BYTES];
 
 	// The describe step's measured capabilities. Only aiNav and spawns gate the
-	// race today (see CustomTrackPolicy_FlagsSupportRace); the rest are carried
+	// race today, and only when it grids opponents (see
+	// CustomTrackPolicy_FlagsSupportRace); the rest are carried
 	// so the check rungs above the Gem have an honest input when they land. The
 	// first of those rungs has now landed: flagWumpaCollectible is what the
 	// per-track Reach 10 Wumpa check cross-checks the wire against before it
@@ -77,6 +78,7 @@ struct CustomTrackSeedDescriptor
 	int flagSpawns;
 	int flagCheckpoints;
 	int standalone; // 1: content-plan race context, 0: legacy Gem Cup placement
+	int soloRace;   // 1: standalone solo race, with no opponent grid
 };
 
 // Stage only after applying a verified standalone descriptor. Entry sites
@@ -91,6 +93,8 @@ int CustomTrack_StandaloneBusy(void);
 void CustomTrack_SelectRetailRace(void);
 void CustomTrack_OnRaceLoadRequested(int levelID);
 const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int levelID);
+// Copy the solo start position and rotation from the retained package.
+int CustomTrack_GetStandaloneSoloSpawn(int levelID, u8 preferred, struct SpawnPosRot *out);
 // A content-plan race on a custom package, not a retail track (#133 PR 3). It
 // keeps no high scores and never reads, writes or shows its engine host's.
 static inline int CustomTrack_KeepsNoScores(int levelID)
@@ -132,16 +136,41 @@ struct GarageVenueDescriptor
 {
 	int enabled;
 	int hostLevelID;
+	uint64_t roomIdentity;
+	char trackID[65];
+	char packageRevision[65];
+	char navPackageUuid[37];
 	char levPath[1024];
 	char vrmPath[1024];
 	char levSha256[NATIVE_SHA256_HEX_BYTES];
 	char vrmSha256[NATIVE_SHA256_HEX_BYTES];
+#ifdef CTR_CUSTOM_PACKAGES
+	int cortex;
+	char musicPackageRevision[65];
+	char packageUuid[37];
+	unsigned long levBytes, vrmBytes;
+#endif
 };
 int CustomTrack_ApplyGarageVenueDescriptor(int garage, const struct GarageVenueDescriptor *d);
+#ifdef CTR_CUSTOM_PACKAGES
+int CustomTrack_PrepareGarageVenueEntry(int levelID, int bossID);
+#endif
 void CustomTrack_ClearGarageVenueDescriptors(void);
 int CustomTrack_GarageVenueReady(int garage);
 // The garage whose custom venue this load serves, or -1.
 int CustomTrack_GarageVenueServing(int levelID, int bossID, int adventureBossActive);
+#ifdef CTR_CUSTOM_PACKAGES
+// Pin the geometry pair first and return optional verified audio owned by HOWL.
+// A failed pin or read sets a diagnostic. An absent optional SCA leaves it NULL.
+unsigned char *CustomTrack_ReadBossMusic(int levelID, int bossID, size_t *size, const char **error);
+// The retail race level (0..17) whose bank and song this load falls back to
+// when a custom race has no verified music of its own (A6-47): a deterministic
+// pick per track from the room identity and the track's key
+// (CustomMusic_FallbackPick, native_custom_music.h), stable across retries and
+// across sessions of one room. -1 when this load is not a custom race, so a
+// retail track keeps its own music.
+int CustomTrack_MusicFallbackLevel(int levelID, int adventureCupActive, int cupID, int bossID, int adventureBossActive);
+#endif
 
 // ── Cortex Vortex pad track (schema 15) ──────────────────────────────────────
 // See platform/native_cortex_track_latch.h for the state machine. The entry
@@ -309,6 +338,26 @@ int CustomTrack_RaceFeatureEnabled(void);
 int CustomTrack_ServingLoad(int levelID, int adventureCupActive, int cupID);
 /* Authored one-lap finish terrain, or -1 for ordinary circuit racing. */
 int CustomTrack_FinishTerrain(const struct CustomTrackLoadContext *ctx);
+// Provenance of a resident race LEV supplied by the seed-owned loader.
+struct CustomTrackResidentSource
+{
+	int levelID, kind;
+	uint64_t roomIdentity;
+	char trackID[65], packageRevision[65];
+	char packageUuid[37];
+	char levSha256[65], vrmSha256[65];
+	unsigned char legacyNavUuid[CTR_CT_NAV_UUID_BYTES];
+	unsigned int legacyNavRevision;
+	char reserved[4];
+};
+void CustomTrack_ClearResidentSource(void);
+void CustomTrack_NoteLoadedAsset(const struct CustomTrackLoadContext *ctx, int role, int seedOwned);
+int CustomTrack_ResidentAssetsMixed(void);
+const struct CustomTrackResidentSource *CustomTrack_ResidentSource(int levelID);
+int CustomTrack_ResidentSeedRace(int levelID);
+int CustomTrack_ResidentBlocksRecordedLanes(int levelID);
+int CustomTrack_ResidentGarageNavIdentity(int levelID, unsigned char uuid[CTR_CT_NAV_UUID_BYTES],
+                                         unsigned int *revision);
 /* Is the pair served for this load Tizi Madness (native_tizi_madness.h,
    A4-96)? Same precedence as CustomTrack_FinishTerrain. */
 int CustomTrack_TiziMadness(const struct CustomTrackLoadContext *ctx);
@@ -318,17 +367,10 @@ int CustomTrack_TiziMadness(const struct CustomTrackLoadContext *ctx);
 // vehicle, not the custom track's AP identity.
 int CustomTrack_RetailPodiumLevelID(int levelID, int adventureCupActive, int cupID);
 
-// The recording identity this load races under, for the AI-recording seam in
-// ap/ap_navrec.h. Returns 1 and fills outUuid/outRevision only when this load
-// serves the custom track AND config.ini gave the package a well-formed
-// identity. Returns 0 for every retail load -- including the race pad to the
-// host slot in an armed session, and a cup exit -- and for a build whose
-// identity is missing or malformed.
-//
-// The caller turns 0 into AP_NavRec_ClearActiveCustomTrack(), so a 0 always
-// means "this is a retail line's world", never "leave the last answer
-// standing". Keyed on CustomTrack_ServingLoad so a recording's identity cannot
-// disagree with the bytes, the arena, or the character pack.
+// Identity of a served custom pad or cup leg. Content-plan tracks use the
+// staged package UUID and LEV digest. Legacy event races use their configured
+// identity. A zero result leaves it to the caller to distinguish retail from
+// a custom load without usable identity.
 int CustomTrack_NavIdentityForLoad(int levelID, int adventureCupActive, int cupID, unsigned char outUuid[CTR_CT_NAV_UUID_BYTES],
                                    unsigned int *outRevision);
 

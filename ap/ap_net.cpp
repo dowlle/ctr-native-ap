@@ -35,6 +35,9 @@
 #include "ap_stat_select_logic.h" // AP_StatSel_ValueOk: the stored rank selection bound
 #include "ap_solo_logic.hpp" // #89 solo check journal parse and resend set
 
+#include <chrono>
+#include <random>
+
 static APDoorHistory g_doors;
 static unsigned g_doors_sent = 0;
 static void ap_doors_flush();
@@ -202,6 +205,9 @@ static APRetryBudget         g_retry(AP_NET_UNREACHABLE_FAILS);
 static bool                  g_stop_pending = false; // deferred retry-stop teardown
 static std::string           g_host;
 static std::string           g_room_endpoint;
+static std::string           g_feed_room_key;
+static uint64_t              g_feed_room_instance;
+static bool                  g_feed_room_known;
 
 // Seed admission (ticket 05). A slot_data the parser refuses (a REQUIRED block
 // absent/contradictory/malformed/unknown) must never activate: no door storage,
@@ -251,6 +257,24 @@ static std::string ap_net_endpoint_of(const std::string &uri)
 		if (c == '\t' || c == '\r' || c == '\n')
 			c = '_';
 	return endpoint;
+}
+
+// DataStorage belongs to the saved room. A new server using the same seed
+// and address gets a new token. Atomic Set with a default and no operations
+// creates the token once, even if two clients connect to the slot together.
+static void ap_net_feed_room_connect(int team, int slot)
+{
+	g_feed_room_key = "ctr_feed_room_v1:" + std::to_string(team) + "_" + std::to_string(slot);
+	g_feed_room_instance = 0;
+	g_feed_room_known = false;
+	uint64_t token = std::chrono::system_clock::now().time_since_epoch().count();
+	try {
+		std::random_device entropy;
+		token ^= (uint64_t(entropy()) << 32) ^ entropy();
+	} catch (...) {
+		// The clock still gives a room token if the OS RNG is unavailable.
+	}
+	g_ap->Set(g_feed_room_key, token ? token : 1, true, {});
 }
 
 // Set true on every fresh slot-connect (new seed, reconnect, or server switch).
@@ -972,11 +996,16 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			refuse_plan();
 			return;
 		}
-		// One generator: every 0.3.0 room carries a content plan, so a room
-		// without one comes from v0.2.x. Its reader was deleted in row 12; the
-		// parser leaves such a room inactive and it is refused here.
+		// Schema-18 rooms with known generation versions require a plan.
+		// Retain the legacy client advice for the older room envelope.
 		if (!ap_content_plan_present())
 		{
+			if (ap_seed_refusal::expects_plan(slotData))
+			{
+				ap_seedcfg_reject_late("content_plan record is missing");
+				refuse_plan();
+				return;
+			}
 			ap_seedcfg_reject_late("This room was made with v0.2.x. Play it on the v0.2.4 client.");
 			ap_net_refuse_seed(ap_seedcfg_reject_reason());
 			return;
@@ -1096,6 +1125,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		// discarded rather than risk delivering them to the wrong world
 		// (requirement 5).
 		const std::string connectedSeed = g_ap->get_seed();
+		ap_net_feed_room_connect(g_ap->get_team_number(), g_ap->get_player_number());
 		g_doors.connect(g_room_endpoint, connectedSeed, g_ap->get_team_number(), g_ap->get_player_number());
 		g_doors_sent = 0;
 		AP_LogLine("[AP DOOR] connected: session reset, inventory/storage barrier pending\n");
@@ -1345,6 +1375,11 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	                               const nlohmann::json &original) {
 		if (g_rejected)
 			return; // no rejected-seed state may activate
+		if (g_connected && !g_feed_room_key.empty() && key == g_feed_room_key)
+		{
+			g_feed_room_instance = value.is_number_unsigned() ? value.get<uint64_t>() : 0;
+			g_feed_room_known = true;
+		}
 		if (g_connected && key == g_doors.key) {
 			g_doors.reply(value);
 			char line[128];
@@ -2012,6 +2047,14 @@ extern "C" int ap_net_room_endpoint(char *buf, int n)
 		return 0;
 	std::snprintf(buf, (size_t)n, "%s", g_room_endpoint.c_str());
 	return !g_room_endpoint.empty();
+}
+
+extern "C" int ap_net_feed_room_instance(uint64_t *instance)
+{
+	if (!g_connected || !g_feed_room_known)
+		return 0;
+	*instance = g_feed_room_instance;
+	return 1;
 }
 
 extern "C" int ap_net_drain_items(long long *out, int max)
@@ -2923,6 +2966,8 @@ extern "C" void ap_net_shutdown(void)
 	g_reject_stop_pending = false;
 	g_uri_secure = false;
 	g_room_endpoint.clear();
+	g_feed_room_key.clear();
+	g_feed_room_known = false;
 	// Closing marker for field logs. The Steam Deck report of 2026-08-05 turned on
 	// "a reconnect line, then a fresh client run start with no shutdown lines",
 	// and the log had no way to say whether the teardown had completed. Now it

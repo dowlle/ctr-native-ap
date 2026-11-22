@@ -1,4 +1,4 @@
-// g++ -m32 -std=c++17 -Wall -Wextra -Werror -DAP_TRACK_REGISTRY_TEST -I ap -I ap/vendor/json/include tools/test-track-registry.cpp ap/ap_track_registry.cpp -o /tmp/test-track-registry -pthread
+// g++ -m32 -std=c++17 -Wall -Wextra -Werror -DAP_TRACK_REGISTRY_TEST -I ap -I include -I ap/vendor/json/include tools/test-track-registry.cpp ap/ap_track_registry.cpp -o /tmp/test-track-registry -pthread
 //
 // Live track registry lookup for Current Seed (one generator row 10k), with a
 // local fixture registry and a stub transport in place of GitHub:
@@ -17,6 +17,8 @@
 //      with the next live fetch (no client release).
 // With one argument it parses that registry file and prints what it indexes.
 #include "ap_track_registry.h"
+#include <platform/native_track_credit.h>
+#include <platform/native_cortex_asset_pins.h>
 
 #include <nlohmann/json.hpp>
 
@@ -95,9 +97,15 @@ static std::string registry(bool with_new_track)
 	json twice = revision("2.0.0", '1', '2', 100, 200, 7, 8);
 	twice["provenance"]["saphi_downloads"].push_back({{"kind", "lev"}, {"download_id", 9}});
 	tracks.push_back(track("ambiguous", 55, json::array({twice})));
+	json lev_only = revision("1.0.0", '5', '6', 100, 200, 10, 11);
+	lev_only["files"].erase("vrm");
+	tracks.push_back(track("lev-only", 0, json::array({lev_only})));
 	if (with_new_track)
 		tracks.push_back(track("tv-world", 100, json::array({revision("1.1.0", '3', '4', 913816, 458808, 715, 716)})));
-	return json({{"schema_version", 1}, {"id_scheme", json::object()}, {"tracks", tracks}}).dump();
+	return json({{"schema_version", 1}, {"id_scheme", json::object()}, {"tracks", tracks},
+	             {"track_key_aliases", {{"old-lake", "acid-lake"}}},
+	             {"road_sha256", {{h('8'), "acid-lake"}}},
+	             {"patch_lev_keys", {{h('9'), "no-saphi"}}}}).dump();
 }
 
 static int wait_done(int *source, std::string *detail = nullptr)
@@ -155,6 +163,30 @@ int main(int argc, char **argv)
 	// Before any fetch nothing is located.
 	CHECK(ap_track_registry_status(&source, nullptr, 0) == AP_TRACK_REGISTRY_IDLE);
 	CHECK(lookup('a', 810876, 'b', 458808) == AP_TRACK_REGISTRY_NO_INDEX);
+	{
+		char credit[CTR_TRACK_CREDIT_MAX];
+		CustomTrackCredit_Format(credit, sizeof credit,
+		    "cc0aaa1dacfbc6f43f1efc73989e7b7e2479ba8f81583784d507bac97f3d0a87",
+		    "e7a6a0b82cef9ec3e5c4bb5ab9ce2317b28aab198d7cb5263ef0b883c555e2e6",
+		    0, "Lockheart", nullptr);
+		CHECK(!std::strcmp(credit, CTR_CORTEX_CREDIT));
+		CustomTrackCredit_Format(credit, sizeof credit,
+		    CTR_CFG_CORTEX_LEV_SHA256, CTR_CFG_CORTEX_VRM_SHA256, 0, nullptr, nullptr);
+		CHECK(!std::strcmp(credit, CTR_CORTEX_CREDIT));
+	}
+	{
+		// Identical geometry shipped in two packs. A room's locator names
+		// its import even when it has no filename.
+		const char *lev = "185e0a49a9cd7b0f1ffd84abed1d01195937cac305f9119bf1d4d98cd4a081d4";
+		const char *vrm = "39d80a29475891fa9b236fe8483fd775a732788acaf6ab9577caae6e75112e92";
+		const char *patch = "92f4ed21e1c4ada25ce095b0fdaf11c2f3a075f160eb8cf7dcefec9627cddca2";
+		char credit[CTR_TRACK_CREDIT_MAX];
+		CustomTrackCredit_Format(credit, sizeof credit, lev, vrm, 0, "Unknown",
+		                         CustomTrackCredit_PatchSource("", patch));
+		CHECK(!std::strcmp(credit, "From Crash-30Anniversary_Adventure.xdelta"));
+		CustomTrackCredit_Format(credit, sizeof credit, lev, vrm, 0, "Unknown", nullptr);
+		CHECK(!std::strcmp(credit, "From an imported xdelta pack"));
+	}
 
 	// 1. Live fetch: the fixed URL only, published live, cached.
 	serve(true, v1);
@@ -164,6 +196,68 @@ int main(int argc, char **argv)
 	CHECK(g_asked.size() == 1 && g_asked[0] == "raw.githubusercontent.com/dowlle/ctr-track-registry/main/registry.json");
 	CHECK(slurp(cache) == v1 && !exists(cache + ".part"));
 	CHECK(ap_track_registry_generation() != gen);
+	{
+		char credit[CTR_TRACK_CREDIT_MAX];
+		CustomTrackCredit_Format(credit, sizeof credit, h('a').c_str(), h('b').c_str(), 0, "Unknown", nullptr);
+		CHECK(!std::strcmp(credit, "From Project Saphi"));
+		CustomTrackCredit_Format(credit, sizeof credit, h('a').c_str(), h('b').c_str(), 0, "Unknown", "Example Pack");
+		CHECK(!std::strcmp(credit, "From Example Pack"));
+		CustomTrackCredit_Format(credit, sizeof credit, h('e').c_str(), h('f').c_str(), 0, "Unknown", nullptr);
+		CHECK(!std::strcmp(credit, "From a local custom track package"));
+	}
+
+	// Credits are pinned independently of the registry's download eligibility.
+	{
+		auto credited = json::parse(v1);
+		credited["tracks"][0]["credits"] = json::array({
+			{{"name", "PanchoPew"}, {"role", "track"}},
+			{{"name", "Music Writer"}, {"role", "music"}},
+			{{"name", "SecondAuthor"}, {"role", "track"}},
+		});
+		serve(true, credited.dump());
+		CHECK(ap_track_registry_refresh(nullptr) == 1);
+		CHECK(wait_done(&source) == AP_TRACK_REGISTRY_DONE);
+		char credit[CTR_TRACK_CREDIT_MAX];
+		CustomTrackCredit_Format(credit, sizeof credit, h('a').c_str(), h('b').c_str(), 0, "Old name", nullptr);
+		CHECK(!std::strcmp(credit, "Track by PanchoPew and SecondAuthor / Music by Music Writer"));
+		CustomTrackCredit_Format(credit, sizeof credit, h('c').c_str(), h('d').c_str(), 0, nullptr, nullptr);
+		CHECK(!std::strcmp(credit, "Track by PanchoPew and SecondAuthor / Music by Music Writer"));
+		CustomTrackCredit_Format(credit, sizeof credit, h('a').c_str(), h('f').c_str(), 121, "Unknown", "Example Pack");
+		CHECK(!std::strcmp(credit, "From Example Pack"));
+		serve(true, v1);
+		CHECK(ap_track_registry_refresh(cache.c_str()) == 1);
+		CHECK(wait_done(&source) == AP_TRACK_REGISTRY_DONE);
+	}
+	{
+		std::string key = "old-lake", title;
+		CHECK(ap_track_registry_identity("", "", key, title) && key == "acid-lake" && title == "acid-lake");
+		key.clear();
+		CHECK(ap_track_registry_identity("", h('8'), key, title) && key == "acid-lake" && title == "acid-lake");
+		CHECK(ap_track_registry_identity(h('9'), h('8'), key, title) && key == "no-saphi" && title == "no-saphi");
+		CHECK(ap_track_registry_identity(h('5'), "", key, title) && key == "lev-only" && title == "lev-only");
+		key = "unknown";
+		CHECK(!ap_track_registry_identity("", "", key, title) && key == "unknown" && title.empty());
+		CHECK(ap_track_registry_canonical_key("release-st-patrick-adventure-slot-7") ==
+		      "lego-alien-rally-asteroid");
+	}
+	{
+		auto legacy = json::parse(v1);
+		for (const char *field : {"road_sha256", "track_key_aliases", "patch_lev_keys"})
+			legacy.erase(field);
+		serve(true, legacy.dump());
+		{
+			std::lock_guard<std::mutex> blocked_transport(g_mutex);
+			CHECK(ap_track_registry_refresh(cache.c_str()) == 1);
+			ap_track_registry_prepare_identity(cache.c_str(), [](const void *) { return 1; }, nullptr);
+			CHECK(ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_LOADING);
+		}
+		ap_track_registry_prepare_identity(cache.c_str(), nullptr, nullptr);
+		CHECK(ap_track_registry_status(&source, nullptr, 0) == AP_TRACK_REGISTRY_DONE &&
+		      source == AP_TRACK_REGISTRY_SOURCE_LIVE);
+		std::string key = "old-lake", title;
+		CHECK(ap_track_registry_identity("", "", key, title) && key == "acid-lake" && title == "acid-lake");
+		CHECK(slurp(cache) == v1);
+	}
 
 	// 2. Match by the room's pinned hashes, in any case.
 	std::memset(&m, 0, sizeof m);

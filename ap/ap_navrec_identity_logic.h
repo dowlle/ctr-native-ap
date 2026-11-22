@@ -17,7 +17,7 @@
 // resolves to the retail identity replays the host track's lines on custom
 // geometry, and stamps laps driven on custom geometry as the host track's.
 //
-// Three predicates say a load is not the retail track for its slot, and a
+// Several predicates say a load is not the retail track for its slot, and a
 // consumer that asks only some of them gets exactly that bug for the loads it
 // left out. They are gathered here once:
 //
@@ -30,10 +30,11 @@
 //                      not a bytes predicate on purpose: a race the entry site
 //                      admitted as Cortex Vortex must never credit or replay
 //                      Oxide Station, even if the bytes were refused later.
+//   offlineCustomServing a custom-page load is serving custom bytes
+//                      (MainRaceTrack_OfflineCustomLoad)
 //
-// Only the event race carries a recording identity today: the NAV3 UUID in
-// config.ini describes the custom track PACKAGE bound by the seed, and the
-// bundled Cortex Vortex pair is not that package. A served load with no
+// The event race uses the NAV3 identity bound by the seed. An offline custom
+// page uses the identity of its own verified package. A served load with no
 // identity of its own is BLOCKED rather than retail, which is the difference
 // between "no recorded lanes here" and "the host slot's recorded lanes here".
 // ============================================================================
@@ -51,12 +52,21 @@ struct AP_NavRecLoadFacts
 	int eventRaceNavIdentity;  // CustomTrack_NavIdentityForLoad filled a UUID
 	int oxideFinalServing;     // CustomTrack_OxideFinalServing
 	int cortexTrackIntent;     // CustomTrack_CortexTrackIntent
+	int offlineCustomServing;
+	int offlineCustomNavIdentity; // Identity of the bytes served by the custom page.
 };
 
 static inline int AP_NavRecIdentity_ForLoad(const struct AP_NavRecLoadFacts *f)
 {
 	if (f == NULL)
 		return AP_NAVREC_LOAD_RETAIL;
+
+	if (f->oxideFinalServing || f->cortexTrackIntent)
+		return AP_NAVREC_LOAD_BLOCKED;
+
+	// A seed package's identity cannot answer for the offline runtime.
+	if (f->offlineCustomServing)
+		return f->offlineCustomNavIdentity ? AP_NAVREC_LOAD_CUSTOM : AP_NAVREC_LOAD_BLOCKED;
 
 	// A UUID is only ever handed over for a load the byte-serving predicate
 	// already admitted (CustomTrack_NavIdentityForLoad asks ShouldServe first),
@@ -65,7 +75,7 @@ static inline int AP_NavRecIdentity_ForLoad(const struct AP_NavRecLoadFacts *f)
 	if (f->eventRaceServing && f->eventRaceNavIdentity)
 		return AP_NAVREC_LOAD_CUSTOM;
 
-	if (f->eventRaceServing || f->oxideFinalServing || f->cortexTrackIntent)
+	if (f->eventRaceServing)
 		return AP_NAVREC_LOAD_BLOCKED;
 
 	return AP_NAVREC_LOAD_RETAIL;

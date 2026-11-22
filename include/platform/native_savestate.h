@@ -7,6 +7,8 @@
 void NativeSaveState_RequestSave(void);
 void NativeSaveState_RequestLoad(void);
 void NativeSaveState_BeginFrame(void);
+void NativeSaveState_BeginLevelLoad(void);
+void NativeSaveState_DrawRefusal(u32 *ot);
 #endif
 
 #endif

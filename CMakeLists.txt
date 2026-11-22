@@ -224,7 +224,8 @@ if(NOT CTR_AP)
             ${CMAKE_SOURCE_DIR}/ap ${AP_VENDOR}/json/include ${AP_VENDOR}/asio/include
             ${CMAKE_SOURCE_DIR}/vendor/utf8proc)
         target_compile_definitions(custom_package PRIVATE
-            CTR_CUSTOM_TRACKS CTR_CUSTOM_PACKAGES UTF8PROC_STATIC ASIO_STANDALONE)
+            CTR_CUSTOM_TRACKS CTR_CUSTOM_PACKAGES CTR_TRACK_IDENTITY_LIVE UTF8PROC_STATIC ASIO_STANDALONE
+            CTR_NATIVE_VERSION=\"${CTR_NATIVE_VERSION}\")
         if(WIN32)
             target_compile_definitions(custom_package PRIVATE _WIN32_WINNT=0x0601 WIN32_LEAN_AND_MEAN)
         endif()
@@ -361,7 +362,7 @@ if(CTR_AP)
         target_include_directories(custom_package PRIVATE ${CMAKE_SOURCE_DIR}/include
             ${AP_VENDOR}/json/include ${CMAKE_SOURCE_DIR}/vendor/utf8proc)
         target_compile_definitions(custom_package PRIVATE
-            CTR_CUSTOM_TRACKS CTR_CUSTOM_PACKAGES UTF8PROC_STATIC
+            CTR_CUSTOM_TRACKS CTR_CUSTOM_PACKAGES CTR_TRACK_IDENTITY_LIVE UTF8PROC_STATIC
             $<$<BOOL:${CTR_AP_AUTHORING}>:CTR_AP_AUTHORING>)
         target_compile_options(custom_package PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fexceptions;-frtti>)
         target_link_libraries(custom_package PUBLIC Threads::Threads)

@@ -118,7 +118,7 @@ int saphi_revision_permission(int track, int lev, int vrm)
         return CUSTOM_SAPHI_PERMISSION_ALLOW;
     return CUSTOM_SAPHI_PERMISSION_UNKNOWN;
 }
-CustomSaphiMedia source_media(const json &media, int track)
+CustomSaphiMedia source_media(const json &media, int track, int apiVersion = 3)
 {
     CustomSaphiMedia result{};
     result.id = source_integer(media.at("id"), 2147483647);
@@ -130,14 +130,50 @@ CustomSaphiMedia source_media(const json &media, int track)
     if (!crc.is_number_integer() || crc < 0 || crc > UINT32_MAX)
         throw std::runtime_error("Invalid Saphi media checksum");
     result.crc32 = crc.get<uint32_t>();
-    std::string expected = "/api/v3/tracks/" + std::to_string(track) + "/downloads/" + std::to_string(result.id);
+    std::string expected = "/api/v" + std::to_string(apiVersion) + "/tracks/" + std::to_string(track) +
+        "/downloads/" + std::to_string(result.id);
     std::string path = media.at("download_url").get<std::string>();
     const std::string origin = "https://www.projectsaphi.com";
     if (path.compare(0, origin.size(), origin) == 0) path.erase(0, origin.size());
     if (path != expected) throw std::runtime_error("Saphi media URL does not match its source identity");
     std::snprintf(result.path, sizeof result.path, "%s", path.c_str());
+    if (auto hash = media.find("sha256_hash"); hash != media.end() && hash->is_string())
+    {
+        const auto &text = hash->get_ref<const std::string &>();
+        if (text.size() == 64 && text.find_first_not_of("0123456789abcdef") == std::string::npos)
+            std::memcpy(result.sha256, text.c_str(), sizeof result.sha256);
+    }
     return result;
 }
+}
+
+CustomSaphiMedia CustomSaphi_SelectMusic(const json &downloads, int trackID, int apiVersion,
+                                        const char *exactVersion)
+{
+    CustomSaphiMedia selected{};
+    if (!downloads.is_array() || trackID <= 0) return selected;
+    for (const auto &row : downloads)
+    {
+        if (!row.is_object() || row.value("is_current", json(false)) != true ||
+            row.value("type", json()) != "sca" || (exactVersion && row.value("version", json()) != exactVersion))
+            continue;
+        try
+        {
+            auto file = source_media(row, trackID, apiVersion);
+            if (!file.bytes || file.bytes > CTR_SCA_MAX_BYTES)
+            {
+                if (apiVersion == 2) return {};
+                continue;
+            }
+            if (selected.id) return {};
+            selected = file;
+        }
+        catch (const std::exception &)
+        {
+            if (apiVersion == 2) return {};
+        }
+    }
+    return selected;
 }
 
 extern "C" int CustomSaphi_ParseCatalogue(const char *input, size_t size,
@@ -180,21 +216,7 @@ extern "C" int CustomSaphi_ParseCatalogue(const char *input, size_t size,
             std::map<std::tuple<std::string, unsigned int, std::string>, Pair> pairs;
             /* Audio is optional: a malformed or ambiguous .sca row leaves the
                track without its own music instead of failing the catalogue. */
-            CustomSaphiMedia sca{};
-            int currentSca = 0;
-            for (const auto &media : downloads)
-            {
-                try
-                {
-                    if (!media.is_object() || media.at("type") != "sca" || media.at("is_current") != true) continue;
-                    auto file = source_media(media, id);
-                    if (!file.bytes || file.bytes > CTR_SCA_MAX_BYTES) continue;
-                    sca = file;
-                    currentSca++;
-                }
-                catch (const std::exception &) {}
-            }
-            if (currentSca != 1) sca = CustomSaphiMedia{};
+            const auto sca = CustomSaphi_SelectMusic(downloads, id, 3);
             for (const auto &media : downloads)
             {
                 const auto &type = media.at("type");
@@ -224,6 +246,8 @@ extern "C" int CustomSaphi_ParseCatalogue(const char *input, size_t size,
                 pair.revision.current = pair.levCurrent && pair.vrmCurrent;
                 pair.revision.saphiPermission = saphi_revision_permission(trackPermission, pair.levPermission, pair.vrmPermission);
                 if (pair.revision.current) pair.revision.sca = sca;
+                else if (!pair.revision.disabledReason[0])
+                    pair.revision.historicalSca = CustomSaphi_SelectMusic(downloads, id, 3, pair.revision.version);
                 result->rows.push_back(pair.revision);
                 if (result->rows.size() > 1024) throw std::runtime_error("Too many Saphi revisions");
             }

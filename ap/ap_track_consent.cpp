@@ -521,6 +521,7 @@ extern "C" int ap_track_permission(int saphi_track_id, int saphi_author_id, int 
 		char found[65];
 		if (ap_track_registry_key_for_saphi(saphi_track_id, found, sizeof found)) registry_key = found;
 	}
+	if (registry_key.empty() && !key.empty()) registry_key = ap_track_registry_canonical_key(key);
 	if (key.empty()) key.swap(registry_key);
 	std::vector<std::string> names;
 	if (!key.empty()) ap_track_registry_credits(key, names);

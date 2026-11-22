@@ -66,6 +66,43 @@ check("g_config.navRepeatLaps" in load and "AP_NAVREC_POOL_WORK_PER_ENTRY" in lo
 cfg = (root / "platform" / "native_config.c").read_text()
 check('"nav_repeat_laps"' in cfg and "&g_config.navRepeatLaps" in cfg, "nav_repeat_laps is a config row in [Authoring]")
 check(re.search(r"false,\s*//\s*navRepeatLaps", cfg) is not None, "nav_repeat_laps defaults to off")
+check(cfg.count("false, // navOnlyMine") == 2, "Only My Recordings defaults off in both client configurations")
+check("AP_NavRec_ResolveDriverName(name, sizeof name)" in load and "g_config.navOnlyMine" in load
+      and "AP_NavRec_BuildPool(levelID, highest, fetchCtx.onlyKey" in load,
+      "the loader gives the pool the same driver identity used to save laps")
+check(0 <= pool.find("AP_NavRecPool_NameMatches(peeked.driverName, onlyKey)") < pool.find("entries[count].fileIndex"),
+      "the pool applies the name filter before admitting a file")
+check("AP_NavRecPool_NameMatches(info->driverName, onlyKey)" in body("AP_NavRec_ReadCandidate")
+      and "c->onlyKey)" in fetch and "buf, &info, fetchCtx.onlyKey)" in load,
+      "full reads recheck the name during both pick and placement")
+bots = (root / "game" / "BOTS.c").read_text()
+main_loop = (root / "game" / "MAIN" / "MainMain.c").read_text()
+check(main_loop.index("AP_NavRec_ObservePhysics(gGT);") < main_loop.index("AP_OnFrame(gGT);"),
+      "outgoing lap damage is sampled before AP applies new effects")
+check("AP_NavRec_RederiveLoadIdentity(gGT)" in bots
+      and "facts.offlineCustomServing = MainRaceTrack_OfflineCustomLoad();" in body("AP_NavRec_RederiveLoadIdentity")
+      and "MainRaceTrack_OfflineNavIdentity(ctNavUuid, &ctNavRevision)" in body("AP_NavRec_RederiveLoadIdentity"),
+      "race initialization and restore both identify custom-page loads separately")
+check("AP_NavRec_ResetCapture();" in init and re.search(
+      r"if \(iVar8 == LOAD_RESTART\)[\s\S]*?AP_NavRec_ResetCapture\(\);[\s\S]*?MainRaceTrack_OfflineResidentRestart\(\);",
+      main_loop) is not None, "new loads and resident race restarts both discard the previous capture")
+check(0 <= restore.find("AP_NavRec_ResetCapture();") < restore.find("AP_NavRec_RederiveLoadIdentity("),
+      "checkpoint restore discards the flying lap even when its index and identity did not change")
+checkpoint = (root / "platform" / "native_checkpoint.c").read_text()
+checkpoint_restore = checkpoint[checkpoint.index("int NativeCheckpoint_Restore(const void *src, int srcSize)"):]
+check(checkpoint.count("AP_NavRec_AfterCheckpointRestore();") == 1 and
+      0 <= checkpoint_restore.find("NativeCheckpoint_ApplyPointerSlotState(") <
+      checkpoint_restore.find("NativeCheckpoint_RepairAuthoredNavEnds(") <
+      checkpoint_restore.find("AP_NavRec_AfterCheckpointRestore();"),
+      "lane reload and fallback run after the LEV pointer map and authored lane repair")
+check(0 <= load.find("if (MainRaceTrack_OfflineCustomTimeTrial())") < load.find("AP_NavRec_HighestIndex(")
+      and "MainRaceTrack_OfflineCustomLoad() && !MainRaceTrack_OfflineCustomTimeTrial()" in body("AP_NavRec_SyncArmed"),
+      "custom Time Trial keeps authored ghost lanes and custom Arcade skips capture")
+check(re.search(r"if \(!g_config\.navUseRecorded\)\s*return 0;", load) is not None
+      and re.search(r"if \(MainRaceTrack_OfflineCustomTimeTrial\(\)\)\s*return 0;", load) is not None
+      and 0 <= load.find("AP_NavRecIdentity_LanesMayLoad(") < load.find("AP_NavRec_BuildPool(")
+      and "MainRaceTrack_OfflineCustomLoad()" not in load,
+      "an eligible custom Arcade race with recorded AI enabled reaches the existing local pool")
 check("AP_NavRecLane_Select" not in src and "AP_NavRecLane_Plan" not in src, "the newest-first selector is gone")
 check(re.search(r"seed %08x", load) is not None, "the pool log line carries the seed")
 check(re.search(r'lane %d: \\"%s\\" driver', load) is not None, "each recorded lane logs its file and driver")

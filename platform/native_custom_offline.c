@@ -5,6 +5,7 @@
 #include <platform/native_custom_identity.h>
 #include <platform/native_custom_state_identity.h>
 #include <platform/native_custom_content_verify.h>
+#include <platform/native_custom_music.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -12,9 +13,12 @@
 
 struct CustomOfflineRequest { struct CustomPackageOwned *package; };
 static struct CustomOfflineRequest *activeRequest;
+
+struct CustomPackageOwned *CustomOffline_RuntimePackage(void)
+{
+    return activeRequest ? activeRequest->package : NULL;
+}
 static int activeHost = -1;
-/* Retail arcade track the active package replaces (xdelta import), or -1. */
-static int musicFallbackLevel = -1;
 static int activeMode;
 static int activeLaps;
 static int activeFinishTerrain = -1;
@@ -52,9 +56,6 @@ static int targetLoaded;
 static int runCompleted;
 static struct CustomOfflineObservation observation;
 static int clockValid;
-static unsigned char *runtimeAudio;
-static size_t runtimeAudioSize;
-static uint64_t runtimeAudioGeneration;
 #ifdef CTR_PACKAGE_TESTING
 static int testClockEnabled;
 static int64_t testClock;
@@ -232,19 +233,9 @@ int CustomOffline_BeginRuntime(struct CustomOfflineRequest **request, int hostLe
     return 1;
 }
 
-static void release_runtime_audio(void)
-{
-    free(runtimeAudio);
-    runtimeAudio = NULL;
-    runtimeAudioSize = 0;
-    runtimeAudioGeneration = 0;
-}
-
 void CustomOffline_EndRuntime(void)
 {
-    release_runtime_audio();
     CustomOffline_Free(&activeRequest);
-    musicFallbackLevel = -1;
     activeHost = -1;
     activeMode = 0;
     activeLaps = 0;
@@ -253,8 +244,16 @@ void CustomOffline_EndRuntime(void)
 }
 
 int CustomOffline_RuntimeActive(void) { return activeRequest != NULL; }
-int CustomOffline_MusicFallbackLevel(void) { return musicFallbackLevel; }
-void CustomOffline_SetMusicFallbackLevel(int level) { musicFallbackLevel = activeRequest && level >= 0 && level < 18 ? level : -1; }
+// The pick is stable for one package (its complete manifest pin is the key),
+// so one track plays the same retail music in offline Arcade and Time Trial.
+int CustomOffline_MusicFallbackLevel(void)
+{
+    struct CustomPackageManifest manifest;
+    if (!activeRequest) return -1;
+    if (!CustomOffline_RuntimeManifest(&manifest) || !manifest.sha256[0])
+        return CustomMusic_FallbackPick(0, "offline-custom");
+    return CustomMusic_FallbackPick(0, manifest.sha256);
+}
 uint64_t CustomOffline_RuntimeGeneration(void) { return runtimeGeneration; }
 int CustomOffline_RuntimeLaps(void) { return activeLaps; }
 int CustomOffline_RuntimeFinishTerrain(void) { return activeRequest ? activeFinishTerrain : -1; }
@@ -390,32 +389,7 @@ int CustomOffline_RuntimeManifest(struct CustomPackageManifest *out)
 
 int CustomOffline_RuntimeAudio(const void **data, size_t *size)
 {
-    struct CustomPackageManifest manifest;
-    unsigned char *bytes;
-    unsigned int i;
-    if (data) *data = NULL;
-    if (size) *size = 0;
-    if (!data || !size || !activeRequest || !CustomOffline_GetManifest(activeRequest, &manifest)) return 0;
-    for (i = 0; i < manifest.count; i++)
-        if (!strcmp(manifest.files[i].role, "sca")) break;
-    if (i == manifest.count || manifest.files[i].bytes == 0) return 0;
-    if (!runtimeAudio || runtimeAudioGeneration != runtimeGeneration || runtimeAudioSize != manifest.files[i].bytes)
-    {
-        release_runtime_audio();
-        bytes = malloc(manifest.files[i].bytes);
-        if (!bytes) return 0;
-        if (!CustomOffline_CopyFile(activeRequest, "sca", bytes, manifest.files[i].bytes, NULL))
-        {
-            free(bytes);
-            return 0;
-        }
-        runtimeAudio = bytes;
-        runtimeAudioSize = manifest.files[i].bytes;
-        runtimeAudioGeneration = runtimeGeneration;
-    }
-    *data = runtimeAudio;
-    *size = runtimeAudioSize;
-    return 1;
+    return CustomPackage_GetAudio(activeRequest ? activeRequest->package : NULL, data, size);
 }
 
 int CustomOffline_RuntimeFile(int subfile, int levelID, int singleRace, size_t *size)

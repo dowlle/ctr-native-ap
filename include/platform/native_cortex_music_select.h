@@ -1,7 +1,7 @@
 #ifndef NATIVE_CORTEX_MUSIC_SELECT_H
 #define NATIVE_CORTEX_MUSIC_SELECT_H
 
-// Which races play Cortex Vortex's bundled music, freestanding.
+// Driver bank layout for a race with its own .sca music.
 //
 // The .sca level bank goes on the SPU first (Music_AsyncParseBanks stage 0),
 // so its admission check must know every bank stages 1 and 2 load after it.
@@ -15,9 +15,7 @@
 //               outside the undisplaced Purple Gem Cup (a Relic Race)
 //   ROSTER5     the undisplaced Purple Gem Cup: five character banks, one per
 //               roster slot
-// OFF means Oxide Station's bank and song play as before: the race is not the
-// Cortex Vortex race served on host level 13 (CustomTrack_CortexMusicServing).
-// A boss race never asks: stage 0 gives it its boss bank before any track bank.
+// OFF means there is no custom music route for this load.
 
 // Retail gameMode1 bits (namespace_Main.h; the harness checks they agree).
 #define CORTEX_MUSIC_ADVENTURE_MODE 0x80000u
@@ -38,14 +36,14 @@ enum CortexMusicBanks
 // cupDisplaced: CustomTrack_ServingLoad for this level and cup, the term that
 // lets a displaced Purple Gem Cup load bank 54. A served Cortex Vortex race has
 // it set, so ROSTER5 is here for parity with stage 2 only.
-static inline enum CortexMusicBanks CortexMusic_Banks(int cortexServing, unsigned int gameMode1, int cupID,
+static inline enum CortexMusicBanks CortexMusic_Banks(int customMusicServing, unsigned int gameMode1, int cupID,
                                                       int cupDisplaced)
 {
 	int adventure = (gameMode1 & CORTEX_MUSIC_ADVENTURE_MODE) != 0;
 	int purpleRoster = adventure && (gameMode1 & CORTEX_MUSIC_ADVENTURE_CUP) != 0 &&
 	                   cupID == CORTEX_MUSIC_PURPLE_CUP_ID && !cupDisplaced;
 
-	if (!cortexServing)
+	if (!customMusicServing)
 		return CORTEX_MUSIC_OFF;
 	if ((adventure && (gameMode1 & CORTEX_MUSIC_NOT_8_DRIVERS) == 0 && !purpleRoster) ||
 	    (gameMode1 & CORTEX_MUSIC_ARCADE_MODE) != 0)

@@ -9,6 +9,7 @@
 // exactly.
 #include "ap_seedcfg.h"
 #include "ap_content_plan.h"
+#include "ap_verify_logic.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <iostream>
@@ -363,10 +364,81 @@ static void shop_key_budgets() {
     }
 }
 
+static void sanity_versions() {
+    std::ifstream in("tools/fixtures/content-plan/sanity.json");
+    const J legacy = J::parse(in);
+    const auto ids = plan_locations(legacy);
+    expect(!legacy["content_plan"]["sanity"].contains("rules_version") && admit(legacy, ids),
+           "older sanity room retains the Easy bridge selections");
+    for (const J &version : {J(0), J(7), J(true), J("1")}) {
+        J bad = legacy;
+        bad["content_plan"]["sanity"]["rules_version"] = version;
+        expect(!admit(bad, ids), "unsupported or noninteger sanity rules version refused");
+    }
+}
+
+static void markerless_finish_rules() {
+    constexpr int64_t sunset_lap = 35214016;
+    constexpr int64_t shared_boost = 35010000 + AP_VF_BOOST_SHARED;
+    for (const char *name : {"sunset-before-ruling", "sunset-after-ruling"}) {
+        std::ifstream sunset_in(std::string("tools/fixtures/content-plan/") + name + ".json");
+        const J sunset = J::parse(sunset_in);
+        const auto sunset_ids = plan_locations(sunset);
+        const bool admitted = !sunset.at("content_plan").contains("track_ruling_sources") && admit(sunset, sunset_ids);
+        expect(admitted,
+               std::string(name) + ": original markerless room admits");
+        if (admitted) {
+            Room room;
+            room.present.insert(sunset_ids.begin(), sunset_ids.end());
+            for (const auto &row : sunset.at("content_plan").at("items").at("rows"))
+                room.foreign[row.at("item").get<int64_t>()] = 99;
+            room.foreign.erase(shared_boost);
+            const bool free_finish = std::string(name) == "sunset-after-ruling";
+            ap_content_verify_result result;
+            expect((reachable_set(room, result).count(sunset_lap) != 0) == free_finish,
+                   std::string(name) + ": verifier uses the room's finish rank");
+            room.foreign[shared_boost] = 2;
+            expect(reachable_set(room, result).count(sunset_lap) != 0,
+                   std::string(name) + ": Sunset lap is reachable with USF");
+        }
+        J bad = sunset;
+        auto &rule = bad.at("win_logic").at("checks").at(std::to_string(sunset_lap)).at("rule");
+        rule = J::array({"all", rule, J::array({"cap", 3, -1})});
+        expect(!admit(bad, sunset_ids) && std::string(ctr_cfg.seed_reject_reason).find("finish") != std::string::npos,
+               std::string(name) + ": an unrecognized finish rank is refused");
+    }
+
+    // A genuine pre-carry room with Royal Raceway first in a cup and a
+    // standalone Royal pad. Its descriptor has ordinary turbo pads.
+    std::ifstream in("tools/fixtures/content-plan/markerless-finish.json");
+    const J legacy = J::parse(in);
+    const auto ids = plan_locations(legacy);
+    expect(!legacy.at("content_plan").contains("track_ruling_sources") && admit(legacy, ids),
+           "legacy Royal lap and cup finish agree with the exported rules");
+    for (const auto &check : {std::make_pair("35211816", "Royal lap"),
+                              std::make_pair("35016815", "cup leg after Royal")}) {
+        J bad = legacy;
+        auto &rule = bad.at("win_logic").at("checks").at(check.first).at("rule");
+        rule = J::array({"all", rule, J::array({"cap", 2, -1})});
+        expect(!admit(bad, ids) && std::string(ctr_cfg.seed_reject_reason).find("finish") != std::string::npos,
+               std::string("markerless room refuses a different exported rank for ") + check.second);
+    }
+    for (int rank : {2, 3}) {
+        J hidden = legacy;
+        auto &cup_route = hidden.at("win_logic").at("checks").at("35211816").at("rule").at(1);
+        cup_route = J::array({"all", cup_route, J::array({"cap", rank, -1})});
+        expect(!admit(hidden, ids) && std::string(ctr_cfg.seed_reject_reason).find("finish") != std::string::npos,
+               "the four-Key pad does not hide a different rank on the two-Key cup route");
+    }
+}
+
 int main(int argc, char **argv) {
     if (argc > 2 && std::string(argv[1]) == "--probe") probe(argv[2]);
     else { fixtures(); chain(); checked_is_not_reached(); first_race_won(); shop_key_budgets(); one_race_pad();
-           probe("tools/fixtures/content-plan/sanity-verify.jsonl"); }
+           probe("tools/fixtures/content-plan/sanity-verify.jsonl");
+           probe("tools/fixtures/content-plan/oxide-pickups.jsonl");
+           probe("tools/fixtures/content-plan/mask-verifier.jsonl");
+           probe("tools/fixtures/content-plan/final-only-venue.jsonl"); sanity_versions(); markerless_finish_rules(); }
     std::cout << checks << " checks, " << failures << " failures\n";
     return failures ? 1 : 0;
 }

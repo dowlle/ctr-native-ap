@@ -84,21 +84,15 @@ static unsigned char ap_custom_letter_received[AP_CUSTOM_LETTER_SLOT_COUNT][CTR_
 // Received named-block letter items (#133 PR 3b), one bit per block and
 // letter, for content-plan CTR Challenges on named tracks. Rebuilt by the
 // authoritative replay after the connect reset, like the tables above.
-static unsigned char ap_named_letter_received[(AP_NAMED_BLOCK_LIMIT * 3 + 7) / 8] = {0};
-static int AP_NamedLetterBit(int64_t code)
-{
-	if (!ap_named_item_is_letter(code)) return -1;
-	return (int)((code - AP_NAMED_ITEM_BASE) / AP_NAMED_ITEM_BUDGET) * 3 +
-	       (int)((code - AP_NAMED_ITEM_BASE) % AP_NAMED_ITEM_BUDGET);
-}
+static unsigned char ap_named_letter_received[(AP_NAMED_BLOCK_LIMIT * AP_ORIGIN_GLYPH_COUNT + 7) / 8] = {0};
 static void AP_NamedLetterReceive(int64_t code)
 {
-	const int bit = AP_NamedLetterBit(code);
+	const int bit = ap_named_letter_bit(code);
 	if (bit >= 0) ap_named_letter_received[bit / 8] |= (unsigned char)(1u << (bit % 8));
 }
 static int AP_NamedLetterReceived(int64_t code)
 {
-	const int bit = AP_NamedLetterBit(code);
+	const int bit = ap_named_letter_bit(code);
 	return bit >= 0 && (ap_named_letter_received[bit / 8] & (1u << (bit % 8))) != 0;
 }
 // Whether a letter item a content plan pools was received (#133 PR 3b):

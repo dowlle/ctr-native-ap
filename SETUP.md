@@ -239,6 +239,13 @@ seed decides, so the same seed gives the same field. With this on, one name can
 appear on more than one opponent. It changes nothing when three or more
 contributors have recordings.
 
+**Only My Recordings** (`nav_only_mine` under `[Authoring]`, off by default)
+keeps recordings whose driver name matches your Driver Name or, when it is
+empty, your configured Archipelago slot name. Matching ignores case, spaces
+at the ends, and repeated spaces. It works with **Several Laps Per Driver**.
+With no matching name or no matching laps, opponents drive the track's own
+lines.
+
 Recorded lines do not guarantee the original lap time. Crate contact and the
 finish blend still need gameplay testing. A separate recorded line for every
 opponent is planned for a later release. In 2P only player 1's laps are saved,
@@ -374,22 +381,22 @@ internet. Everything solo is stored in the `solo` folder next to the game, so
 back that folder up together with your memory cards. Multiplayer still uses
 **Connect** as before.
 
-## Experimental custom content
+## Custom tracks
 
-The public archive contains no custom-track files. Version 0.2.0 recognizes one
-experimental Baby T Park package supplied by its creator. Open **OPTIONS →
-Custom Content** to inspect it, follow the creator link and verify the installed
-files. **Ready** means the files are compatible; it does not make a generated
-seed use the track.
+Open **Options > Custom Tracks** to inspect installed tracks, follow their
+source links and verify their files. **Ready** means the track files have
+passed the client's checks.
 
-To use a package, copy or save its YAML from the Custom Content page and add
-that entry to the `custom_tracks` list of the player YAML before generating the
-room. The entry is the track's complete descriptor, including its file checks,
-the lap count and what it can do. A track with restart points and AI paths
+To use a Ready track with a public source, open **Options > Custom Tracks**,
+select the track and choose **Export YAML**. Copy or save the entry and add it
+to the `custom_tracks` list of the player YAML. To export your track selections
+in a player YAML, choose **Save YAML for a room** in **Play Solo > Custom Tracks**.
+Each entry uses `track_key`, and includes file checks, the lap count and the
+track's capabilities. A track with restart points and AI paths
 (`checkpoints` and `ai_nav`) can also race a boss.
 
-A Relic Race on a custom track needs the author's target times. On the Custom
-Content page choose **Relic Times** and enter Sapphire, Gold and Platinum as
+A Relic Race on a custom track needs the author's target times. For the managed
+Baby T Park profile, choose **Relic times** and enter Sapphire, Gold and Platinum as
 M:SS.CC: Up and Down change a digit, Left and Right move, Cross saves, Triangle
 cancels. Sapphire must be slower than Gold and Gold slower than Platinum. The
 times are kept beside the package's manifest, never in the track files, and

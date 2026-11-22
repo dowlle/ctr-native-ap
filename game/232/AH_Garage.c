@@ -368,6 +368,10 @@ LAB_800aec34:
 		    (char *)challenge,
 
 		    (view.x + (view.w >> 1)), challengeY, 1, 0xffff8000);
+#ifdef CTR_AP
+		if (bossIsOpen)
+			AP_BossGarageApproachHints(hubID);
+#endif
 	}
 
 #ifdef CTR_AP
@@ -597,8 +601,14 @@ LAB_800aede8:
 			}
 #endif
 			int venue = AP_BossGarageVenue(hubID - 1);
-			if (venue < 0)
+			if (venue < 0
+#ifdef CTR_CUSTOM_PACKAGES
+			    || !CustomTrack_PrepareGarageVenueEntry(venue, gGT->bossID)
+#endif
+			    )
 			{
+				sdata->Loading.OnBegin.RemBitsConfig0 &= ~ADVENTURE_ARENA;
+				sdata->Loading.OnBegin.AddBitsConfig0 &= ~ADVENTURE_BOSS;
 				gGT->pushBuffer_UI.fadeFromBlack_desiredResult = 0x1000;
 				gGT->pushBuffer_UI.fade_step = 0x2AA;
 				return;

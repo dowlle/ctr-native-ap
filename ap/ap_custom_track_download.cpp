@@ -3,6 +3,7 @@
 // real thread runtime; the C unity build only sees the narrow API above.
 
 #include "ap_custom_track_download.h"
+#include "ap_client_identity.h"    // ap_client_user_agent (A6-52)
 #include "ap_seed_content_logic.h" // ap_seed_size_agrees, ap_seed_root_safe (Current Seed, #133 PR 7)
 #include "ap_track_registry.h"     // ap_https_get (row 10k)
 #include "ap_track_consent.h"      // the track author permission check (A4-74)
@@ -10,6 +11,7 @@
 // The Track Manager's Saphi catalogue and package install.
 #include <platform/native_saphi_catalogue.h>
 #include <platform/native_custom_package.h>
+#include <platform/native_custom_music.h>
 #include <zlib.h>
 #include <future>
 #endif
@@ -419,7 +421,13 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 		return false;
 	}
 	const std::string label = host_label(host);
-	HINTERNET session = WinHttpOpen(L"CTR-AP-alpha7/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+	if (!ap_client_request_path_safe(path))
+	{
+		error = label + " returned an unsafe download path.";
+		return false;
+	}
+	const std::wstring user_agent = widen_ascii(ap_client_user_agent());
+	HINTERNET session = WinHttpOpen(user_agent.c_str(), WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
 	                                WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
 	if (!session)
 	{
@@ -629,6 +637,11 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 		return false;
 	}
 	const std::string label = host_label(host);
+	if (!ap_client_request_path_safe(path))
+	{
+		error = label + " returned an unsafe download path.";
+		return false;
+	}
 	try
 	{
 		asio::io_context io;
@@ -653,8 +666,9 @@ bool https_get_host(const std::string &host, const std::string &path, size_t max
 		asio::connect(stream.next_layer(), resolver.resolve(host, "443"));
 		stream.handshake(asio::ssl::stream_base::client);
 #endif
-		const std::string request = "GET " + path + " HTTP/1.1\r\nHost: " + host +
-		                            "\r\nUser-Agent: CTR-AP-alpha7/1.0\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n";
+		const std::string request = "GET " + path + " HTTP/1.1\r\nHost: " + host + "\r\n" +
+		                            ap_client_user_agent_header() +
+		                            "\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n";
 #ifdef CTR_CUSTOM_PACKAGES
 		saphi_await(io, asio::async_write(stream, asio::buffer(request), asio::use_future), deadline);
 #else
@@ -804,6 +818,8 @@ struct MediaFile
 {
 	std::string path;
 	size_t size = 0;
+	bool current = false;
+	std::string version;
 };
 
 // One file in Saphi's listing for a track. `prefix` is the track's own
@@ -833,60 +849,24 @@ bool find_media(const nlohmann::json &root, const std::string &prefix, const std
 			continue;
 		media.path = path;
 		media.size = static_cast<size_t>(size);
+		media.current = row.contains("is_current") && row["is_current"] == true;
+		media.version = row.contains("version") && row["version"].is_string() ? row["version"].get<std::string>() : "";
 		matches++;
 	}
 	return matches == 1;
 }
 
 #ifdef CTR_CUSTOM_PACKAGES
-// The track's own music for the LEV just picked: Saphi's one current .sca whose
-// version is the LEV's. More than one, none, another version or a file past the
-// .sca cap means no music, never an error: the race plays its fallback music.
-// `lev_id` is the registry's LEV download id, 0 to take the LEV by `version`.
-constexpr size_t kScaMax = 1024 * 1024;
-bool find_music(const nlohmann::json &root, const std::string &prefix, const std::string &version,
-	            int lev_id, MediaFile &media, int &media_id)
+bool fetch_saphi_music(const CustomSaphiMedia &media, std::vector<unsigned char> &bytes)
 {
-	std::string lev_version = version;
-	if (!root.contains("data") || !root["data"].is_array())
-		return false;
-	if (lev_id > 0)
-	{
-		lev_version.clear();
-		for (const auto &row : root["data"])
-			if (row.is_object() && row.contains("type") && row["type"] == "lev" && row.contains("id") &&
-			    row["id"].is_number_integer() && row["id"].get<long long>() == lev_id && row.contains("version") &&
-			    row["version"].is_string())
-				lev_version = row["version"].get<std::string>();
-		if (lev_version.empty())
-			return false;
-	}
-	int matches = 0;
-	for (const auto &row : root["data"])
-	{
-		if (!row.is_object() || !row.contains("type") || !row["type"].is_string() || row["type"] != "sca" ||
-		    !row.contains("is_current") ||
-		    row["is_current"] != true || !row.contains("version") || !row["version"].is_string() ||
-		    row["version"].get<std::string>() != lev_version || !row.contains("id") ||
-		    !row["id"].is_number_integer())
-			continue;
-		const long long id = row["id"].get<long long>();
-		const bool typed = row.contains("download_url") && row["download_url"].is_string() &&
-		                   row.contains("file_size") && row["file_size"].is_number_integer();
-		const std::string path = typed ? row["download_url"].get<std::string>() : std::string();
-		const long long size = typed ? row["file_size"].get<long long>() : 0LL;
-		matches++;
-		if (!typed || id <= 0 || id > 2147483647LL || path != prefix + std::to_string(id) || size <= 0 ||
-		    size > static_cast<long long>(kScaMax))
-		{
-			matches = 2; // a row that cannot be taken counts as ambiguous
-			break;
-		}
-		media.path = path;
-		media.size = static_cast<size_t>(size);
-		media_id = static_cast<int>(id);
-	}
-	return matches == 1;
+	std::string error;
+	CustomMusicSca sca{};
+	// The container can be checked now. Slot allocation still depends on
+	// the HOWL table and banks of the selected race.
+	return media.id && https_get(media.path, CTR_SCA_MAX_BYTES, bytes, error) &&
+	       bytes.size() == media.bytes && crc32(0, bytes.data(), static_cast<uInt>(bytes.size())) == media.crc32 &&
+	       (!media.sha256[0] || hash_matches(bytes, media.sha256)) &&
+	       CustomMusic_Parse(bytes.data(), bytes.size(), 1u << 16, &sca, nullptr, 0);
 }
 #endif
 
@@ -1060,12 +1040,13 @@ void worker(std::string package_root, std::string api_url, std::string version,
 	        std::string lev_hash, std::string vrm_hash,
 	        uint32_t lev_pin, uint32_t vrm_pin, std::string tracks, int lev_id, int vrm_id,
 	        std::string seed_uuid, std::string seed_title, std::string seed_author, unsigned int seed_laps,
-	        int relic_sapphire, int relic_gold, int relic_platinum)
+	        int relic_sapphire, int relic_gold, int relic_platinum, std::string seed_key)
 {
 	const bool pinned = !tracks.empty();
 #ifndef CTR_CUSTOM_PACKAGES
 	(void)seed_uuid; (void)seed_title; (void)seed_author; (void)seed_laps;
 	(void)relic_sapphire; (void)relic_gold; (void)relic_platinum;
+	(void)seed_key;
 #endif
 	try
 	{
@@ -1112,33 +1093,28 @@ void worker(std::string package_root, std::string api_url, std::string version,
 			if (tracks.size() < 8 || tracks.compare(tracks.size() - 7, 7, "/tracks"))
 				throw std::runtime_error("The shared package store path is invalid");
 			const std::string packageTitle = CustomPackage_ValidateTitle(seed_title.data(), seed_title.size()) ? seed_title : key;
-			// The track's own music rides along when Saphi lists one for this
-			// LEV. Music is optional: a missing, odd or failed .sca installs
-			// the track without it (the race then plays its fallback music).
+			// Match the catalogue importer: current track files can use
+			// the single current SCA, which is versioned independently.
+			// Historical seed pairs retain their exact-version music match.
 			std::vector<unsigned char> sca_bytes;
 			int sca_id = 0;
-			try
+			const int saphi_track = ap_track_saphi_id_from_url(api_url.c_str());
+			const bool current_pair = lev.current && vrm.current && lev.version == vrm.version;
+			const auto sca = lev.version.empty() ? CustomSaphiMedia{} :
+				CustomSaphi_SelectMusic(root["data"], saphi_track, 2, current_pair ? nullptr : lev.version.c_str());
+			if (sca.id)
 			{
-				MediaFile sca;
-				std::string sca_error;
-				if (find_music(root, api_path + "/", version, lev_id, sca, sca_id))
-				{
-					set_state(AP_CT_DOWNLOAD_RUNNING, "Downloading the track's music from Project Saphi...");
-					if (!https_get(sca.path, kScaMax, sca_bytes, sca_error) || sca_bytes.size() != sca.size)
-						sca_bytes.clear();
-				}
-			}
-			catch (const std::exception &)
-			{
-				sca_bytes.clear(); // a malformed music row costs the music only
+				set_state(AP_CT_DOWNLOAD_RUNNING, "Downloading the track's music from Project Saphi...");
+				if (fetch_saphi_music(sca, sca_bytes)) sca_id = sca.id;
+				else sca_bytes.clear();
 			}
 			nlohmann::json files = nlohmann::json::array({
 				{{"role", "lev"}, {"path", "original/track.lev"}, {"sha256", lev_hash}, {"bytes", lev_bytes.size()}},
 				{{"role", "vrm"}, {"path", "original/track.vrm"}, {"sha256", vrm_hash}, {"bytes", vrm_bytes.size()}}});
 			nlohmann::json seed_source = {{"schema_version", 1}, {"provider", "ctr-seed"},
-				{"track_key", key}, {"author", seed_author}};
+				{"track_key", seed_key}, {"author", seed_author}};
 			// A4-74: what a later permission decision is matched on.
-			if (const int saphi_track = ap_track_saphi_id_from_url(api_url.c_str()))
+			if (saphi_track)
 			{
 				seed_source["saphi_track_id"] = saphi_track;
 				if (const int author_id = ap_track_consent_saphi_author(saphi_track))
@@ -1274,7 +1250,8 @@ int start_worker(const char *package_root, const char *download_api_url, const c
 	             uint32_t lev_bytes, uint32_t vrm_bytes, const char *tracks, int lev_id = 0, int vrm_id = 0,
 	             const char *seed_uuid = nullptr, const char *seed_title = nullptr,
 	             const char *seed_author = nullptr, unsigned int seed_laps = 0,
-	             int relic_sapphire = 0, int relic_gold = 0, int relic_platinum = 0)
+	             int relic_sapphire = 0, int relic_gold = 0, int relic_platinum = 0,
+	             const char *seed_key = nullptr)
 {
 	DownloadState &shared = download_state();
 	// A4-74: every Saphi download this worker makes (Current Seed, the
@@ -1316,7 +1293,7 @@ int start_worker(const char *package_root, const char *download_api_url, const c
 		            std::string(tracks ? tracks : ""), lev_id, vrm_id,
 		            std::string(seed_uuid ? seed_uuid : ""), std::string(seed_title ? seed_title : ""),
 		            std::string(seed_author ? seed_author : ""), seed_laps,
-		            relic_sapphire, relic_gold, relic_platinum).detach();
+		            relic_sapphire, relic_gold, relic_platinum, std::string(seed_key ? seed_key : "")).detach();
 		return 1;
 	}
 	catch (const std::exception &e)
@@ -1392,16 +1369,27 @@ extern "C" int ap_custom_track_download_start_shared(const char *tracks_dir, con
     const char *title, const char *author, unsigned int laps,
     int relic_sapphire, int relic_gold, int relic_platinum,
     const char *lev_sha256, uint32_t lev_bytes, const char *vrm_sha256, uint32_t vrm_bytes,
-    int saphi_track_id, int lev_download_id, int vrm_download_id)
+    int saphi_track_id, int lev_download_id, int vrm_download_id, const char *content_key)
 {
 #ifndef CTR_CUSTOM_PACKAGES
     (void)tracks_dir; (void)package_root; (void)download_api_url; (void)revision; (void)uuid;
     (void)title; (void)author; (void)laps; (void)relic_sapphire; (void)relic_gold; (void)relic_platinum;
     (void)lev_sha256; (void)lev_bytes; (void)vrm_sha256; (void)vrm_bytes;
     (void)saphi_track_id; (void)lev_download_id; (void)vrm_download_id;
+    (void)content_key;
     return 0;
 #else
     char api[96];
+    // A package folder may include its version. Identity comes from slot_data.
+    if (!content_key || !*content_key || std::strlen(content_key) > 64) return 0;
+    bool dash = true;
+    for (const unsigned char *p = reinterpret_cast<const unsigned char *>(content_key); *p; ++p)
+    {
+        if (*p == '-' && !dash) dash = true;
+        else if ((*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9')) dash = false;
+        else return 0;
+    }
+    if (dash || 9 + std::strlen(content_key) + (revision ? std::strlen(revision) : 0) > 64) return 0;
     if (!tracks_dir || !package_root || !revision || !*revision || !uuid || !*uuid ||
         !title || !*title || !author || !*author || laps < 1 || laps > 7 ||
         !lev_sha256 || !vrm_sha256 || !lev_bytes || !vrm_bytes ||
@@ -1416,7 +1404,7 @@ extern "C" int ap_custom_track_download_start_shared(const char *tracks_dir, con
     if (!download_api_url || !*download_api_url) return 0;
     return start_worker(package_root, download_api_url, revision, lev_sha256, vrm_sha256,
                         lev_bytes, vrm_bytes, tracks_dir, lev_download_id, vrm_download_id,
-                        uuid, title, author, laps, relic_sapphire, relic_gold, relic_platinum);
+                        uuid, title, author, laps, relic_sapphire, relic_gold, relic_platinum, content_key);
 #endif
 }
 
@@ -1525,6 +1513,144 @@ extern "C" int CustomSaphi_PollRefresh(CustomSaphiCatalogue **out, char *error, 
     if (error && errorSize) std::snprintf(error, errorSize, "%s", state.error.c_str());
     state.state = -1;
     return result;
+}
+
+namespace {
+std::future<int> &saphi_music_job()
+{
+    static auto *job = new std::future<int>();
+    return *job;
+}
+
+struct SaphiMusicRepair
+{
+    std::string store;
+    std::string registryCache;
+    std::vector<CustomSaphiRevision> revisions;
+    bool checkedRegistry = false;
+    int available = 0;
+
+    void ensure_registry()
+    {
+        if (checkedRegistry) return;
+        checkedRegistry = true;
+        const int state = ap_track_registry_status(nullptr, nullptr, 0);
+        if (state == AP_TRACK_REGISTRY_IDLE || state == AP_TRACK_REGISTRY_UNAVAILABLE)
+            ap_track_registry_refresh(registryCache.c_str());
+        while (ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_LOADING)
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+};
+
+void repair_package_music(const CustomPackageStoreEntry *entry, void *context)
+{
+    if (!entry->verified ||
+        (!entry->local.permissionTrackID && !entry->local.trackKey[0])) return;
+    const auto &manifest = entry->manifest;
+    unsigned int levBytes = 0, vrmBytes = 0;
+    for (unsigned int i = 0; i < manifest.count; i++)
+    {
+        const auto &file = manifest.files[i];
+        if (!std::strcmp(file.role, "sca")) return;
+        if (!std::strcmp(file.role, "lev")) levBytes = file.bytes;
+        if (!std::strcmp(file.role, "vrm")) vrmBytes = file.bytes;
+    }
+
+    auto &job = *static_cast<SaphiMusicRepair *>(context);
+    const CustomSaphiRevision *match = nullptr;
+    std::string registryKey;
+    for (const auto &r : job.revisions)
+    {
+        if ((entry->local.permissionTrackID && entry->local.permissionTrackID != r.trackID) ||
+            std::strcmp(entry->local.levSha256, r.lev.sha256) ||
+            std::strcmp(entry->local.vrmSha256, r.vrm.sha256)) continue;
+        ApTrackRegistryMatch alias{};
+        if (std::strcmp(manifest.version, r.version))
+        {
+            // Registry aliases such as a mode suffix still require the
+            // same Saphi track and both exact hosted media identities.
+            job.ensure_registry();
+            if (ap_track_registry_lookup(entry->local.levSha256, levBytes,
+                    entry->local.vrmSha256, vrmBytes, &alias) != AP_TRACK_REGISTRY_MATCH ||
+                std::strcmp(alias.revision, manifest.version) || alias.saphi_track_id != r.trackID ||
+                alias.lev_download_id != r.lev.id || alias.vrm_download_id != r.vrm.id) continue;
+        }
+        if (match && (match->trackID != r.trackID || match->sca.id != r.sca.id)) return;
+        match = &r;
+        registryKey = alias.track_key;
+    }
+    // The resolver can derive a registry key from this Saphi ID. An installed
+    // descriptor's display key must never supply permission for the download.
+    if (!match || ap_track_permission(match->trackID, match->authorID, match->saphiPermission,
+                                      registryKey.empty() ? nullptr : registryKey.c_str()) != AP_TRACK_PERMISSION_ALLOW) return;
+
+    const auto directory = job.store + "/" + entry->pin;
+    char previousSha256[65];
+    const int local = CustomPackage_ReconcileMusic(directory.c_str(), entry->pin,
+        match->sca.bytes, match->sca.sha256, match->sca.id, previousSha256);
+    if (local)
+    {
+        job.available++;
+        return;
+    }
+    std::vector<unsigned char> audio;
+    if (fetch_saphi_music(match->sca, audio) &&
+        CustomPackage_InstallMusic(directory.c_str(), entry->pin,
+            audio.data(), audio.size(), match->sca.sha256, match->sca.id, previousSha256))
+        job.available++;
+}
+
+int want_music_repair(const char *, const CustomPackageManifest *manifest, void *)
+{
+    if (!manifest) return 0;
+    bool saphiSource = false;
+    for (unsigned int i = 0; i < manifest->count; i++)
+    {
+        const auto &file = manifest->files[i];
+        if (!std::strcmp(file.role, "sca")) return 0;
+        if (!std::strcmp(file.role, "presentation") &&
+            (!std::strcmp(file.path, "metadata/seed-source.json") ||
+             !std::strcmp(file.path, "metadata/saphi-source.json"))) saphiSource = true;
+    }
+    return saphiSource;
+}
+}
+
+extern "C" int CustomSaphi_StartMusicRepair(const CustomSaphiCatalogue *catalogue, const char *assets)
+{
+    auto &worker = saphi_music_job();
+    if (!catalogue || !assets || !*assets || std::strlen(assets) > 31000 || worker.valid()) return 0;
+    try
+    {
+        SaphiMusicRepair repair;
+        repair.store = std::string(assets) + "/tracks/packages";
+        repair.registryCache = std::string(assets) + "/track-registry-cache.json";
+        for (size_t i = 0; i < CustomSaphi_Count(catalogue); i++)
+        {
+            auto r = *CustomSaphi_Row(catalogue, i);
+            if (!r.current) r.sca = r.historicalSca;
+            if (!r.disabledReason[0] && r.sca.id && r.lev.sha256[0] && r.vrm.sha256[0] && r.sca.sha256[0])
+                repair.revisions.push_back(r);
+        }
+        if (repair.revisions.empty()) return 0;
+        worker = std::async(std::launch::async, [repair = std::move(repair)]() mutable {
+            CustomPackage_ScanStoreMatching(repair.store.c_str(), want_music_repair,
+                                            repair_package_music, &repair, nullptr, 0);
+            return repair.available;
+        });
+        return 1;
+    }
+    catch (const std::exception &) { return 0; }
+}
+
+extern "C" int CustomSaphi_PollMusicRepair(int *available)
+{
+    auto &worker = saphi_music_job();
+    if (!worker.valid()) return -1;
+    if (!available || worker.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return 0;
+    try { *available = worker.get(); }
+    catch (const std::exception &) { *available = 0; }
+    return 1;
 }
 
 namespace {

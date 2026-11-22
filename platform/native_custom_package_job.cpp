@@ -1,6 +1,7 @@
 #include <platform/native_custom_package.h>
 #include <platform/native_custom_track_library.h>
 #include <platform/native_custom_offline.h>
+#include "native_track_identity.hpp"
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -53,6 +54,13 @@ extern "C" int CustomPackage_StartStoreScan(const char *store)
     {
         std::string path(store);
         storeJob = std::async(std::launch::async, [path] {
+            const auto packages = path.find_last_of("/\\");
+            if (packages != std::string::npos && packages > 0)
+            {
+                const auto tracks = path.find_last_of("/\\", packages - 1);
+                if (tracks != std::string::npos)
+                    TrackIdentity::refresh(path.substr(0, tracks + 1) + "track-registry-cache.json");
+            }
             StoreResult result;
             result.ok = CustomPackage_ScanStore(path.c_str(), collect_store, &result, result.error, sizeof result.error);
             return result;

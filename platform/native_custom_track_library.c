@@ -261,7 +261,8 @@ int CustomTrackLibrary_ApplyStore(struct CustomTrackLibrary *library,
         if (source->verified)
         {
             if (source->manifest.sha256[64] || strcmp(source->manifest.sha256, source->pin)) goto fail;
-            memcpy(merged[j].title, source->manifest.title, sizeof merged[j].title);
+            memcpy(merged[j].title, source->displayTitle[0] ? source->displayTitle : source->manifest.title,
+                   sizeof merged[j].title);
             memcpy(merged[j].version, source->manifest.version, sizeof merged[j].version);
             merged[j].installed = 1;
             merged[j].local = source->local;

@@ -36,6 +36,7 @@
 #include "../ap/ap_useful.h"     // queued one-shot useful grants
 #include "../ap/ap_pauserow.h"   // hub pause menu SELECT CHARACTER / TRACKER / TRAVEL row wiring (#238, A3-16)
 #include "../ap/ap_tracker.h"    // hub pause menu TRACKER row
+#include "../ap/ap_kartsetup.h" // race pause menu KART SETUP row (2026-11-18)
 #include "../ap/ap_fasttravel.h" // hub fast travel (A3-16)
 #include "../ap/ap_garageskip.h" // adventure-start garage skip session latch (#54/#209)
 #include "../ap/ap_hub_name_entry.h" // A4-60c random hub behind adventure name entry
@@ -438,6 +439,7 @@
 #include "../ap/ap_blue_fire.c"
 #include "../ap/ap_charseat.c"
 #include "../ap/ap_charswap.c"
+#include "../ap/ap_kartsetup.c" // in-race Kart Setup page (after the picker it reuses)
 #include "../ap/ap_tizi.c"
 #include "../ap/ap_tizi_madness.c"
 #include "../ap/ap_turbogrant.c"

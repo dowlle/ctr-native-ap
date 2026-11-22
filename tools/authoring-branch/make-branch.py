@@ -49,6 +49,7 @@ KEEP = {
     "ap/ap_navrec_lane_logic.h",
     # custom tracks: Saphi downloader and the instance pool rule
     "ap/ap_custom_track_download.cpp", "ap/ap_custom_track_download.h",
+    "ap/ap_client_identity.h",
     "ap/ap_instance_pool_logic.h",
     # version stamp written into placement files and recordings
     "ap/ap_version.h",

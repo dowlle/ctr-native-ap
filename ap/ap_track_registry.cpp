@@ -4,10 +4,18 @@
 // Project Saphi and GitHub raw.
 
 #include "ap_track_registry.h"
+#include "ap_track_key_aliases.hpp"
+#include <platform/native_cortex_asset_pins.h>
+#include <platform/native_track_credit.h>
+#include <platform/native_custom_package.h>
+#include <platform/native_track_sources.h>
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -42,8 +50,10 @@ struct Index
 {
 	std::vector<Revision> rows;
 	std::unordered_map<int, std::string> key_by_saphi;
-	std::unordered_map<std::string, std::vector<std::string>> credits;
-	void clear() { rows.clear(); key_by_saphi.clear(); credits.clear(); }
+	struct Credit { std::string name, role; };
+	std::unordered_map<std::string, std::vector<Credit>> credits;
+	std::unordered_map<std::string, std::string> titles, lev_keys, roads, aliases;
+	bool has_identity = false;
 };
 constexpr size_t kMaxCredits = 16;     // per track
 constexpr size_t kCreditNameMax = 80;  // bytes, like a Saphi author
@@ -51,10 +61,12 @@ constexpr size_t kCreditNameMax = 80;  // bytes, like a Saphi author
 struct RegistryState
 {
 	std::mutex mutex;
+	std::condition_variable finished;
 	int state = AP_TRACK_REGISTRY_IDLE;
 	int source = AP_TRACK_REGISTRY_SOURCE_NONE;
 	std::string detail;
 	std::shared_ptr<const Index> index;
+	std::shared_ptr<const Index> identity;
 	uint32_t generation = 0;
 };
 
@@ -161,7 +173,7 @@ void saphi_downloads(const nlohmann::json &revision, Revision &out)
 
 bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::string &error)
 {
-	index.clear();
+	index = {};
 	if (bytes.empty() || bytes.size() > AP_TRACK_REGISTRY_MAX_BYTES)
 	{
 		error = "The track registry is empty or too large.";
@@ -189,10 +201,17 @@ bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::str
 	for (const auto &track : *tracks)
 	{
 		const std::string key = short_text(member(track, "track_key"));
+		const auto *title = member(track, "display_title");
+		if (!key.empty() && title && title->is_string())
+		{
+			const auto &name = title->get_ref<const std::string &>();
+			if (!name.empty() && name.size() <= 128 && name.find('\0') == std::string::npos)
+				index.titles.emplace(key, name);
+		}
 		const nlohmann::json *credits = member(track, "credits");
 		if (!key.empty() && credits && credits->is_array() && credits->size() <= kMaxCredits)
 		{
-			std::vector<std::string> names;
+			std::vector<Index::Credit> names;
 			bool ok = true;
 			for (const auto &credit : *credits)
 			{
@@ -203,7 +222,9 @@ bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::str
 					ok = false; // a credit this client cannot read: no names, so no permission by name
 					break;
 				}
-				names.push_back(name->get<std::string>());
+				const auto *role = member(credit, "role");
+				const auto &text = name->get_ref<const std::string &>();
+				names.push_back({text, role && role->is_string() ? role->get<std::string>() : ""});
 			}
 			if (ok && !names.empty() && !index.credits.count(key)) index.credits.emplace(key, std::move(names));
 		}
@@ -225,8 +246,10 @@ bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::str
 		{
 			Revision row;
 			const nlohmann::json *files = member(revision, "files");
-			if (!file_pin(files, "lev", row.lev, row.lev_size) || !file_pin(files, "vrm", row.vrm, row.vrm_size))
-				continue;
+			if (!file_pin(files, "lev", row.lev, row.lev_size)) continue;
+			auto lev = index.lev_keys.emplace(row.lev, key);
+			if (!lev.second && lev.first->second != key) lev.first->second.clear();
+			if (!file_pin(files, "vrm", row.vrm, row.vrm_size)) continue;
 			row.track_id = static_cast<int>(track_id);
 			row.key = key;
 			row.revision = short_text(member(revision, "revision"));
@@ -234,6 +257,23 @@ bool parse_index(const std::vector<unsigned char> &bytes, Index &index, std::str
 			index.rows.push_back(std::move(row));
 		}
 	}
+	auto read_keys = [&](const char *field, auto &out, bool hashes) {
+		const auto *mapping = member(root, field);
+		if (!mapping || !mapping->is_object()) return false;
+		for (auto it = mapping->begin(); it != mapping->end(); ++it)
+		{
+			if (!it->is_string() || !index.titles.count(it->get_ref<const std::string &>())) return false;
+			std::string from = it.key();
+			if (hashes && !hex64(nlohmann::json(it.key()), from)) return false;
+			if (!hashes && index.titles.count(from)) return false;
+			if (!out.emplace(from, it->get<std::string>()).second) return false;
+		}
+		return true;
+	};
+	index.has_identity = read_keys("road_sha256", index.roads, true) &&
+	                     read_keys("track_key_aliases", index.aliases, false) &&
+	                     read_keys("patch_lev_keys", index.lev_keys, true);
+	if (!index.has_identity) index.aliases.clear();
 	return true;
 }
 
@@ -287,6 +327,7 @@ void publish(Index index, int source)
 	auto shared = std::make_shared<const Index>(std::move(index));
 	RegistryState &s = registry_state();
 	std::lock_guard<std::mutex> lock(s.mutex);
+	if (shared->has_identity) s.identity = shared;
 	s.index = std::move(shared);
 	s.source = source;
 	s.generation++;
@@ -298,6 +339,7 @@ void finish(int state, const std::string &detail)
 	std::lock_guard<std::mutex> lock(s.mutex);
 	s.state = state;
 	s.detail = detail;
+	s.finished.notify_all();
 }
 
 void refresh_worker(std::string cache_path)
@@ -305,12 +347,13 @@ void refresh_worker(std::string cache_path)
 	std::vector<unsigned char> cached, live;
 	std::string error;
 	Index index;
-	bool have_cache = false;
+	bool have_cache = false, cache_has_identity = false;
 	try
 	{
 		if (!cache_path.empty() && read_capped(cache_path, cached) && parse_index(cached, index, error))
 		{
 			have_cache = true;
+			cache_has_identity = index.has_identity;
 			bool empty;
 			{
 				RegistryState &s = registry_state();
@@ -327,8 +370,9 @@ void refresh_worker(std::string cache_path)
 		}
 		else if (parse_index(live, index, error))
 		{
+			const bool preserve_names = cache_has_identity && !index.has_identity;
 			publish(std::move(index), AP_TRACK_REGISTRY_SOURCE_LIVE);
-			if (!cache_path.empty() && (!have_cache || live != cached) && !write_cache(cache_path, live))
+			if (!preserve_names && !cache_path.empty() && (!have_cache || live != cached) && !write_cache(cache_path, live))
 				std::fprintf(stderr, "[CustomTracks] Could not save the track registry cache.\n");
 			finish(AP_TRACK_REGISTRY_DONE, "");
 			return;
@@ -390,6 +434,20 @@ extern "C" int ap_track_registry_refresh(const char *cache_path)
 		finish(usable ? AP_TRACK_REGISTRY_DONE : AP_TRACK_REGISTRY_UNAVAILABLE,
 		       std::string("Could not start the registry check: ") + e.what());
 		return 0;
+	}
+}
+
+extern "C" void ap_track_registry_prepare_identity(const char *cache_path,
+                                                    int (*cancelled)(const void *), const void *context)
+{
+	if (ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_IDLE)
+		ap_track_registry_refresh(cache_path);
+	auto &state = registry_state();
+	std::unique_lock<std::mutex> lock(state.mutex);
+	while (state.state == AP_TRACK_REGISTRY_LOADING && (!cancelled || !cancelled(context)))
+	{
+		if (cancelled) state.finished.wait_for(lock, std::chrono::milliseconds(25));
+		else state.finished.wait(lock);
 	}
 }
 
@@ -468,20 +526,193 @@ extern "C" int ap_track_registry_key_for_saphi(int saphi_track_id, char *key, in
 	return 1;
 }
 
+static std::shared_ptr<const Index> current_index()
+{
+	RegistryState &s = registry_state();
+	std::lock_guard<std::mutex> lock(s.mutex);
+	return s.index;
+}
+
+static std::string canonical_key(const Index *index, const std::string &key)
+{
+	if (index && index->has_identity)
+	{
+		auto alias = index->aliases.find(key);
+		if (alias != index->aliases.end()) return alias->second;
+	}
+	for (const auto &alias : kTrackKeyAliases)
+		if (key == alias[0]) return alias[1];
+	return key;
+}
+
+std::string ap_track_registry_canonical_key(const std::string &key)
+{
+	auto &state = registry_state();
+	std::lock_guard<std::mutex> lock(state.mutex);
+	return canonical_key(state.identity.get(), key);
+}
+
 bool ap_track_registry_credits(const std::string &track_key, std::vector<std::string> &names)
 {
 	std::shared_ptr<const Index> index;
+	std::shared_ptr<const Index> identity;
 	{
 		RegistryState &s = registry_state();
 		std::lock_guard<std::mutex> lock(s.mutex);
 		index = s.index;
+		identity = s.identity;
 	}
 	names.clear();
 	if (!index || track_key.empty()) return false;
-	auto found = index->credits.find(track_key);
+	auto found = index->credits.find(canonical_key(identity.get(), track_key));
 	if (found == index->credits.end()) return false;
-	names = found->second;
+	for (const auto &credit : found->second) names.push_back(credit.name);
 	return true;
+}
+
+static void add_credit_name(std::string &names, const std::string &name)
+{
+	/* Presentation validation is independent of the names used for consent. */
+	if (name.find_first_not_of(' ') == std::string::npos ||
+	    std::any_of(name.begin(), name.end(), [](unsigned char c) { return c < 32 || c == 127; }))
+		return;
+	if (!names.empty()) names += " and ";
+	names += name;
+}
+
+extern "C" void CustomTrackCredit_Format(char *out, size_t size, const char *lev, const char *vrm,
+                                         int saphiID, const char *author, const char *source)
+{
+	if (!out || !size) return;
+	if (lev && vrm && TrackSources_HexEqual(lev, CTR_CFG_CORTEX_LEV_SHA256) &&
+	    TrackSources_HexEqual(vrm, CTR_CFG_CORTEX_VRM_SHA256))
+	{
+		std::snprintf(out, size, "%s", CTR_CORTEX_CREDIT);
+		return;
+	}
+	const auto index = current_index();
+	std::string key, track, music;
+	bool matchedSaphi = false;
+	if (index)
+	{
+		if (lev && vrm && *lev && *vrm)
+		{
+			for (const auto &row : index->rows)
+			{
+				if (row.lev != lev || row.vrm != vrm || row.key.empty()) continue;
+				if (!key.empty() && key != row.key)
+				{
+					key.clear();
+					matchedSaphi = false;
+					break;
+				}
+				key = row.key;
+				matchedSaphi = matchedSaphi || row.track_id > 0;
+			}
+		}
+		else if (const auto found = index->key_by_saphi.find(saphiID); found != index->key_by_saphi.end())
+		{
+			key = found->second;
+			matchedSaphi = !key.empty();
+		}
+		if (key == "cortex-vortex")
+		{
+			std::snprintf(out, size, "%s", CTR_CORTEX_CREDIT);
+			return;
+		}
+		const auto found = index->credits.find(key);
+		if (found != index->credits.end())
+		{
+			for (const auto &credit : found->second)
+			{
+				if (credit.role == "track") add_credit_name(track, credit.name);
+				if (credit.role == "music") add_credit_name(music, credit.name);
+			}
+		}
+	}
+	if (track.empty() && author && std::strcmp(author, "Unknown") &&
+	    std::strcmp(author, "Unknown author"))
+		add_credit_name(track, author);
+	if (matchedSaphi && (!source || !*source))
+		source = "Project Saphi";
+	struct TrackSource known;
+	if ((key.empty() || (track.empty() && (!source || !*source))) &&
+	    lev && *lev && vrm && *vrm && TrackSources_Find(lev, vrm, &known))
+	{
+		/* A cold offline library can still identify a shipped Cortex pair. */
+		if (key.empty() && known.kind == TRACK_SOURCE_SAPHI && known.saphiTrack == 44)
+		{
+			std::snprintf(out, size, "%s", CTR_CORTEX_CREDIT);
+			return;
+		}
+		if (track.empty() && (!source || !*source))
+			source = known.kind == TRACK_SOURCE_PATCH
+				? (known.alsoPatch ? "an imported xdelta pack" : known.patchFile)
+				: "Project Saphi";
+	}
+	if (track.empty())
+		std::snprintf(out, size, "From %s", source && *source ? source : "a local custom track package");
+	else if (!music.empty() && track == music)
+		std::snprintf(out, size, "Track and music by %s", track.c_str());
+	else
+		std::snprintf(out, size, "Track by %s", track.c_str());
+	if (!music.empty() && track != music)
+	{
+		const size_t used = std::strlen(out);
+		std::snprintf(out + used, size - used, " / Music by %s", music.c_str());
+	}
+}
+
+extern "C" const char *CustomTrackCredit_PatchSource(const char *name, const char *sha256)
+{
+	if (name && *name) return name;
+	if (!sha256 || !*sha256) return nullptr;
+	for (const auto &row : g_trackSources)
+		if (row.kind == TRACK_SOURCE_PATCH && TrackSources_HexEqual(row.patchSha256, sha256))
+			return row.patchFile;
+	return "an imported xdelta pack";
+}
+
+extern "C" void CustomPackage_TrackCredit(const struct CustomPackageLocalInfo *local, const char *fallbackAuthor,
+                                          char *out, size_t size)
+{
+	if (!out || !size) return;
+	const char *source = nullptr;
+	if (local->xdelta)
+		source = CustomTrackCredit_PatchSource(nullptr, local->patchSha256);
+	else if (local->saphi || local->permissionTrackID)
+		source = "Project Saphi";
+	CustomTrackCredit_Format(out, size, local->levSha256, local->vrmSha256, local->permissionTrackID,
+	                         local->author[0] ? local->author : fallbackAuthor, source);
+}
+
+extern "C" void CustomTrackCredit_EnsureRegistry(const char *assets)
+{
+	if (assets && *assets && ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_IDLE)
+	{
+		std::string path(assets);
+		if (path.back() != '/' && path.back() != '\\') path += '/';
+		path += "track-registry-cache.json";
+		ap_track_registry_refresh(path.c_str());
+	}
+}
+
+bool ap_track_registry_identity(const std::string &lev, const std::string &road,
+                                std::string &key, std::string &title)
+{
+	auto &state = registry_state();
+	std::lock_guard<std::mutex> lock(state.mutex);
+	const auto &index = state.identity;
+	if (!index) return false;
+	auto exact = index->lev_keys.find(lev);
+	auto layout = index->roads.find(road);
+	auto alias = index->aliases.find(key);
+	if (exact != index->lev_keys.end() && !exact->second.empty()) key = exact->second;
+	else if (layout != index->roads.end()) key = layout->second;
+	else if (alias != index->aliases.end()) key = alias->second;
+	auto name = index->titles.find(key);
+	title = name == index->titles.end() ? std::string() : name->second;
+	return !title.empty();
 }
 
 #ifdef AP_TRACK_REGISTRY_TEST
@@ -494,6 +725,7 @@ void ap_track_registry_test_reset()
 	s.source = AP_TRACK_REGISTRY_SOURCE_NONE;
 	s.detail.clear();
 	s.index.reset();
+	s.identity.reset();
 	s.generation++;
 }
 #endif

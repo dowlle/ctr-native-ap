@@ -1,9 +1,14 @@
 // Included inside the content-plan parser namespace. No runtime dependencies.
 static void sanity_checks(const J &p, State &out, const J &registry, std::map<int64_t, J> &expected) {
     const J &s = p.at("sanity");
+    const int exclusion_version = s.contains("exclusion_version") ? number(s["exclusion_version"], 2, 2) : 1;
     const bool context = s.contains("logic_difficulty");
-    if (context) fields(s, {"itemboxsanity", "wumpasanity", "shortcut_knowledge", "tracks", "logic_difficulty", "boost_blue_fire"});
-    else fields(s, {"itemboxsanity", "wumpasanity", "shortcut_knowledge", "tracks"});
+    const int rules_version = s.contains("rules_version") ? number(s["rules_version"], 1, 6) : 0;
+    J shape = s;
+    shape.erase("rules_version");
+    shape.erase("exclusion_version");
+    if (context) fields(shape, {"itemboxsanity", "wumpasanity", "shortcut_knowledge", "tracks", "logic_difficulty", "boost_blue_fire"});
+    else fields(shape, {"itemboxsanity", "wumpasanity", "shortcut_knowledge", "tracks"});
     const int difficulty = context ? number(s["logic_difficulty"], 0, 2) : out.capability.present ? out.capability.logic_difficulty : 2;
     if (context) need(s["boost_blue_fire"].is_boolean(), "sanity Blue Fire setting");
     const bool blue = context ? s["boost_blue_fire"].get<bool>() : out.capability.boost_blue_fire != 0;
@@ -58,20 +63,33 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
     auto inventory = [&](const J &track) -> const J * {
         std::string key;
         if (track["origin"] == "retail") key = "retail:" + std::to_string(number(track["retail_id"], 0, 17));
-        else if (track["origin"] == "cortex_vortex") key = "cortex_vortex";
+        else if (track["origin"] == "cortex_vortex") key = rules_version >= 2
+            ? "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13" : "cortex_vortex";
         else if (track.contains("named_block")) {
             const J &pkg = *packages.at(track["package_id"]);
             for (const auto &file : pkg["files"]) if (file["role"] == "lev") key = file["sha256"];
+            const auto &catalog = registry.at("sanity");
+            const auto &reviewed_counts = registry.at("pickup_ruling_counts");
+            const std::string source = ruling_pin(out, pkg, key,
+                [&](const std::string &pin) { return catalog.contains(pin) || reviewed_counts.contains(pin); });
+            if (!inherited_ruling_history(out, pkg, key) && catalog.contains(key)) return &catalog.at(key);
             const J &caps = pkg["capabilities"];
-            if (!registry.at("sanity").contains(key) && caps.contains("weapon_crates") && caps.contains("fruit_crates") && caps.contains("loose_fruit")) {
-                measured[key] = J{{"lev_sha256", key}, {"counts", J::array({caps["weapon_crates"], caps["fruit_crates"], caps["loose_fruit"]})}, {"needs", J::object()}};
+            if (caps.contains("weapon_crates") && caps.contains("fruit_crates") && caps.contains("loose_fruit")) {
+                const J needs = catalog.contains(source) ? catalog.at(source).at("needs") : J::object();
+                measured[key] = J{{"lev_sha256", key}, {"counts", J::array({caps["weapon_crates"], caps["fruit_crates"], caps["loose_fruit"]})}, {"needs", needs}};
                 return &measured.at(key);
             }
+            return nullptr;
         }
         return registry.at("sanity").contains(key) ? &registry.at("sanity").at(key) : nullptr;
     };
     std::set<std::string> wanted;
-    for (const auto &t : tracks) if (!uses[t.first].empty() && inventory(*t.second)) wanted.insert(t.first);
+    for (const auto &t : tracks) {
+        const auto &routes = uses[t.first];
+        const bool eligible = std::any_of(routes.begin(), routes.end(),
+                                          [&](const J &route) { return allowed_pickup_route(p, route); });
+        if (eligible && inventory(*t.second)) wanted.insert(t.first);
+    }
     need(s["tracks"].is_array() && s["tracks"].size() == wanted.size(), "sanity track count mismatch");
     static const char *const kinds[] = {"weapon_crate", "wumpa_crate", "wumpa_fruit"};
     static const char *const suffix[] = {"Weapon Crate", "Wumpa Crate", "Wumpa Fruit"};
@@ -81,28 +99,36 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
         const std::string tid = text(row["track_id"]);
         need(wanted.erase(tid) == 1, "unknown or duplicate sanity track");
         const J &track = *tracks.at(tid), &inv = *inventory(track);
-        // A4-52, project ruling 2026-11-11: use the same data-driven eligibility
-        // filter as reviewed shortcut objects. Zero location slots never show or send checks.
-        auto ruled_out = [&](const char *kind, int ordinal) {
-            if (track["origin"] != "custom") return false;
-            const J &pkg = *packages.at(track["package_id"]);
-            for (const auto &rule : registry.at("object_rulings").at("rulings")) {
-                if (rule["content_id"] == pkg["content_id"] && rule["kind"] == kind && rule["ordinal"] == ordinal)
-                    return difficulty < 2 && !blue;
-            }
-            return false;
-        };
         need(row["lev_sha256"] == inv["lev_sha256"] && row["counts"] == inv["counts"], "sanity revision/count mismatch");
+        const J *pkg = track["origin"] == "custom" ? packages.at(track["package_id"]) : nullptr;
+        const std::string lev = row["lev_sha256"];
+        const J *reviewed_counts = pkg ? reviewed_pickup_counts(out, *pkg, lev) : nullptr;
+        const J *history = pkg ? inherited_ruling_history(out, *pkg, lev) : nullptr;
+        const std::string raw_key = pkg ? text(pkg->at("content_id")) : std::string{};
+        // A4-52, project ruling 2026-11-11: use the same data-driven eligibility
+        // filter as the apworld. Older rooms that applied a raw-key ruling
+        // persisted its settings, so keep their original selection.
+        auto ruled_out = [&](const char *kind, int ordinal) {
+            if (!pkg || difficulty >= 2 || blue) return false;
+            const auto &rules = registry.at("object_rulings").at("rulings");
+            const J *row = object_ruling(rules, raw_key, kind, ordinal, pkg->at("revision"), lev,
+                                         history, out.track_ruling_version, context);
+            return row && row->at("hard_rank") != 0;
+        };
         ctr_content_sanity dest{};
         copy(dest.track_id, row["track_id"]); copy(dest.lev_sha256, row["lev_sha256"]);
         std::set<int> excluded_by_kind[3];
-        // Reviewed exclusions are keyed by exact LEV and model family ("family" defaults to a weapon
-        // crate) and apply to every origin (the retail Roo's Tubes crate and the Hot Air Skyway Wumpa
-        // crate included), even on a track with authored spots.
+        // The current LEV supplies counts. The reviewed LEV supplies exclusions by model family.
         {
             const auto &catalog = registry.at("sanity_exclusions");
-            const std::string digest = row["lev_sha256"];
+            std::string digest = row["lev_sha256"];
+            if (track["origin"] == "custom") {
+                const J &pkg = *packages.at(track["package_id"]);
+                digest = ruling_pin(out, pkg, digest,
+                                    [&](const std::string &pin) { return catalog.contains(pin); });
+            }
             if (catalog.contains(digest)) for (const auto &c : catalog[digest]) {
+                if (c.value("sanity_since", 1) > exclusion_version) continue;
                 const std::string family = c.value("family", std::string("weapon_crate"));
                 for (int f = 0; f < 3; ++f) if (family == kinds[f]) excluded_by_kind[f].insert(number(c["ordinal"], 1, 65536));
             }
@@ -110,8 +136,18 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
         std::set<int> &excluded = excluded_by_kind[0];
         if (track["origin"] == "custom") {
             for (const auto &pad : out.pads) if (standalone.count(tid) && tid == pad.track_id && !pad.box_spots) {
+                const std::set<int> carried(pad.box_excluded, pad.box_excluded + pad.box_excluded_count);
+                if (exclusion_version == 1 && count)
+                    need(std::includes(excluded.begin(), excluded.end(), carried.begin(), carried.end()),
+                         "fallback exclusions require the updated sanity catalog");
+                // Version 1 preserves the historical pool. New plans use
+                // the carried exclusions to reproduce the physical seats.
+                const bool legacy = exclusion_version == 1 && !pad.box_reviewed_crates;
+                const auto &seat_excluded = legacy ? excluded : carried;
+                const int raw_count = legacy ? inv["counts"][0].get<int>()
+                    : pad.box_reviewed_crates ? pad.box_reviewed_crates : pad.box_crates;
                 std::vector<int> pool;
-                for (int n = 1; n <= inv["counts"][0].get<int>(); ++n) if (!excluded.count(n)) pool.push_back(n);
+                for (int n = 1; n <= raw_count; ++n) if (!seat_excluded.count(n)) pool.push_back(n);
                 const int seats = std::min((int)pool.size(), pad.box_count);
                 for (int i = 0; i < seats; ++i) excluded.insert(pool[i * pool.size() / seats]);
             }
@@ -120,8 +156,11 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
             dest.counts[f] = number(row["counts"][f], 0, 65536);
             std::set<int> pool;
             const J needs = inv.at("needs").value(kinds[f], J::object());
-            for (int n = 1; n <= std::min(dest.counts[f], budgets[f]); ++n) {
-                const J rule = needs.value(std::to_string(n), J::object());
+            int limit = std::min(dest.counts[f], budgets[f]);
+            if (reviewed_counts) limit = std::min(limit, reviewed_counts->at(f).get<int>());
+            for (int n = 1; n <= limit; ++n) {
+                const J row_rule = needs.value(std::to_string(n), J::object());
+                const J rule = row_rule.value("since", 0) <= rules_version ? row_rule : J::object();
                 if (!excluded_by_kind[f].count(n) && rule.value("shortcut", 0) <= tier && !ruled_out(kinds[f], n)) pool.insert(n);
             }
             const int selected = f ? ((wumpa & f) ? (int)pool.size() : 0) : std::min((int)pool.size(), count);

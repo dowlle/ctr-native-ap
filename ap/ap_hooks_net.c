@@ -616,6 +616,8 @@ static void AP_NetTick(struct GameTracker *gGT)
 
 	AP_FeedEndDrain(n); // hub feed: prime once the initial inventory dump goes quiet
 	AP_UnlockReasonsEndDrain(n); // A3-17: batch-end watch (deferred Wumpa credit)
+	if (ap_feed_primed)
+		AP_FeedLetterReadyUpdates();
 
 	AP_PerfSectionEnd(AP_PERF_SEC_ITEM_APPLY);
 }

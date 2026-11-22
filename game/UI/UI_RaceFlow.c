@@ -4,6 +4,24 @@
 #include <platform/native_custom_tracks.h>
 #endif
 
+#ifdef CTR_CUSTOM_PACKAGES
+#include <text_box.h>
+
+static int s_flyInCreditShown;
+
+void UI_ResetTrackCreditBanner(void)
+{
+	s_flyInCreditShown = 0;
+	DecalFont_ResetLineBox(TEXT_SLOT_RACE_TITLE);
+	DecalFont_ResetLineBox(TEXT_SLOT_RACE_CREDIT);
+}
+
+int UI_TrackCreditNeedsCountdown(void)
+{
+	return !s_flyInCreditShown;
+}
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005572c-0x80055840.
 void UI_RaceEnd_GetDriverClock(struct Driver *driver)
 {
@@ -293,6 +311,20 @@ LAB_80055930:
 
 		// Print the name of the level
 		// Crash Cove, Roos Tubes, etc
+#ifdef CTR_CUSTOM_PACKAGES
+		const char *credit = UI_TrackCredit(-1);
+		if (credit)
+		{
+			s_flyInCreditShown = 1;
+			const RECT *view = &gGT->pushBuffer[0].rect;
+			const int center = view->x + view->w / 2;
+			const int bottom = view->y + view->h + transition;
+			DecalFont_DrawLineBox(UI_TrackName(-1), center, bottom - 29, view->w - 64,
+			                      FONT_BIG, JUSTIFY_CENTER | ORANGE, TEXT_BANNER_MARQUEE, TEXT_SLOT_RACE_TITLE, NULL);
+			UI_DrawTrackCredit(credit, center, bottom - 11, view->w - 64, TEXT_BANNER_MARQUEE);
+		}
+		else
+#endif
 		DecalFont_DrawLineBox(
 
 		    // 83a88 = 110

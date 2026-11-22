@@ -1,6 +1,7 @@
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_package.h>
 #include <platform/native_custom_content_verify.h>
+#include <platform/native_custom_music.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -12,6 +13,8 @@ struct CustomPackageOwned
     atomic_uint references;
     struct CustomPackageManifest manifest;
     unsigned char *bytes[CTR_PACKAGE_FILE_MAX];
+    unsigned char *localAudio;
+    size_t localAudioSize;
     struct CustomContentVerification pairReport;
 };
 
@@ -29,6 +32,7 @@ void CustomPackage_Free(struct CustomPackageOwned **package)
     *package = NULL;
     if (atomic_fetch_sub_explicit(&released->references, 1, memory_order_acq_rel) != 1) return;
     for (i = 0; i < CTR_PACKAGE_FILE_MAX; i++) free(released->bytes[i]);
+    free(released->localAudio);
     free(released);
 }
 
@@ -52,7 +56,7 @@ size_t CustomPackage_SnapshotBytes(const struct CustomPackageOwned *package)
     unsigned int i;
     if (!package) return 0;
     for (i = 0; i < package->manifest.count; i++) total += package->manifest.files[i].bytes;
-    return total;
+    return total + package->localAudioSize;
 }
 
 int CustomPackage_AcquireBuffers(const char *json, size_t size, const char *expected,
@@ -144,6 +148,34 @@ int CustomPackage_GetPairReport(const struct CustomPackageOwned *package, struct
     if (!package || !out) return 0;
     *out = package->pairReport;
     return 1;
+}
+
+/* Called by AcquireDirectory before it hands the snapshot to its caller. */
+int CustomPackage_SetLocalAudio(struct CustomPackageOwned *package, const void *data, size_t size)
+{
+    if (!package || package->localAudio || !data || !size || size > CTR_SCA_MAX_BYTES) return 0;
+    package->localAudio = malloc(size);
+    if (!package->localAudio) return 0;
+    memcpy(package->localAudio, data, size);
+    package->localAudioSize = size;
+    return 1;
+}
+
+int CustomPackage_GetAudio(const struct CustomPackageOwned *package, const void **data, size_t *size)
+{
+    if (data) *data = NULL;
+    if (size) *size = 0;
+    if (!package || !data || !size) return 0;
+    for (unsigned int i = 0; i < package->manifest.count; i++)
+        if (!strcmp(package->manifest.files[i].role, "sca"))
+        {
+            *data = package->bytes[i];
+            *size = package->manifest.files[i].bytes;
+            return 1;
+        }
+    *data = package->localAudio;
+    *size = package->localAudioSize;
+    return *size != 0;
 }
 
 int CustomPackage_CopyFile(const struct CustomPackageOwned *package, const char *role,

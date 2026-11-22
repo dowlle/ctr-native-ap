@@ -112,6 +112,7 @@ struct APSoloTrackInfo
 	char title[AP_SOLO_TEXT];
 	char revision[32];
 	char author[AP_SOLO_TEXT];
+	char creditLev[65], creditVrm[65], creditSource[65];
 	char modes[32];            /* "Trophy, CTR, Relic" */
 	int timeTrial;              /* installed package can run standalone Time Trial */
 	int pick;                  /* enum APSoloTrackPick */
@@ -131,6 +132,11 @@ int AP_Solo_ImportYamlStart(const char *path);
 /* Installed custom tracks from the shared package store or a legacy room
    folder. Picks survive a new list for the tracks still listed. */
 int AP_Solo_TracksStart(const char *yamlPath);
+int AP_Solo_SaveRoomYamlStart(const char *slotName);
+const char *AP_Solo_JobResultYaml(void);
+struct CustomTrackLibraryEntry;
+int AP_Solo_ExportTrackYaml(const struct CustomTrackLibraryEntry *entry, int save,
+                           char *out, size_t size);
 /* yamlPath: preset or saved/inbox YAML. Options from the options screen are
    passed for every YAML opened on the options screen (useOptions 1).
    The picked custom tracks are passed
@@ -189,6 +195,9 @@ int AP_Solo_RecordTrackDescriptor(const char *contentId, const char *revision, c
    An entry for the same track key and version in solo/tracks stays when it
    pins the same files (its laps were picked before); conflicting pins fail. */
 int AP_Solo_RecordTrackNeedsLaps(const char *contentId, const char *revision, const char *json);
+/* Explicit import selects the verified copy for that key and revision in
+   future Play Solo rooms. Previously installed packages keep their pins. */
+int AP_Solo_RecordImportedTrack(const char *contentId, const char *revision, const char *json, int needsLaps);
 /* The importer replaced an old copy of a track (A3-20): drop the descriptor
    files its track key used, keeping the laps the player picked on the key of
    the copy that took its place (under its own revision). 1 when nothing is left to retire. */

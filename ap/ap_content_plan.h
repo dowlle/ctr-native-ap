@@ -106,6 +106,7 @@ typedef struct ctr_content_pad {
     unsigned wumpa_modes;
     int64_t letter_locations[3];
     int64_t letter_items[3];
+    char letter_glyphs[3];     /* zero for the default C/T/R slots */
     /* Relic Race Perfect (#133 PR 3c, #453): the check for breaking every time
      * crate in this pad's Relic Race; 0 when the seed or entry has none. */
     int64_t perfect_location;
@@ -139,9 +140,12 @@ typedef struct ctr_content_pad {
      * (ap_box_seat_logic.h); box_crates is the package's measured weapon
      * crate count those seats are taken from (0 when it has no boxes). */
     int box_count, box_crates;
+    /* Reviewed prefix of the measured crate table when seating is capped. */
+    int box_reviewed_crates;
     /* Reviewed fallback exclusions carried by the world, one-based original
      * crate ordinals. Authored spots bypass these entirely. */
     int box_excluded_count;
+    int box_excluded_ordinals_only;
     int box_excluded[16];
     short box_excluded_pos[16][3];
     int64_t box_locations[50];
@@ -324,6 +328,22 @@ typedef struct ctr_content_item {
     int base, extra, start_from_pool, start_additional, remaining, receipt_cap;
 } ctr_content_item;
 
+/* Admit whole-base-pool random pads (pad_scaling.py), and retain the historical
+ * 8/4 allowance so older small-pool rooms still load. Extras and starts never
+ * raise a cap. Keep arithmetic wide for hostile rooms. */
+static inline int ap_content_random_pad_cap(unsigned mask, int stage, const ctr_content_item *items)
+{
+    int first = 0, last = 0;
+    if (mask == (1u << 14)) return 4;
+    if (mask & 0x000eu) { first = 1; last = 3; }
+    else if (mask & 0x01f0u) { first = 4; last = 8; }
+    else if (mask & 0x3e00u) { first = 9; last = 13; }
+    int64_t total = 0;
+    for (int i = first; i <= last; ++i) total += items[i].base;
+    const int legacy = stage == 1 ? 8 : 4;
+    return total > 99 ? 99 : total < legacy ? legacy : (int)total;
+}
+
 /* The plan's per-track check settings (#133 PR 3b): `lettersanity` 0 off,
  * 1 locations, 2 locations and items, 3 items; `wumpa` 0 off, 1 global,
  * 2 per track, with the global check's code. `relic_perfect` 1 when Relic
@@ -356,10 +376,16 @@ static inline int ap_content_rule_owned(const ctr_content_pad *pad, const int *c
         if (pad->rule_mask & (1u << i)) owned += pad->rule_distinct ? counts[i] > 0 : counts[i];
     return owned;
 }
+/* The pad's own requirement, independent of access to its hub. */
+static inline int ap_content_pad_rule_met(const ctr_content_pad *pad, const int *counts)
+{
+    return pad && pad->occupied &&
+           (!pad->has_rule || ap_content_rule_owned(pad, counts) >= pad->rule_count);
+}
+
 static inline int ap_content_pad_open(const ctr_content_pad *pad, const int *counts)
 {
-    return pad && pad->occupied && counts[14] >= pad->keys &&
-           (!pad->has_rule || ap_content_rule_owned(pad, counts) >= pad->rule_count);
+    return ap_content_pad_rule_met(pad, counts) && counts[14] >= pad->keys;
 }
 /* Position of a mode in the pad's order, or -1 when the entry lacks it. */
 static inline int ap_content_mode_slot(const ctr_content_pad *pad, int mode)
@@ -441,6 +467,8 @@ static inline int64_t ap_content_mode_route(const ctr_content_pad *pad, int mode
 int ap_content_plan_present(void);
 int ap_content_plan_active(void);
 uint64_t ap_content_plan_epoch(void);
+/* Stable identity of the bound seed, team, slot and plan. Zero before bind. */
+uint64_t ap_content_plan_room_identity(void);
 const ctr_content_pad *ap_content_plan_pad(int physical);
 const ctr_content_package *ap_content_plan_package(int index);
 /* The package's descriptor JSON as the room sent it, "" without one (#89). */

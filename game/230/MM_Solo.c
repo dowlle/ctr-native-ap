@@ -1,4 +1,8 @@
 #include <platform/native_menu.h>
+#ifdef CTR_CUSTOM_PACKAGES
+#include <platform/native_track_credit.h>
+#include <platform/native_assets.h>
+#endif
 /* Play Solo (#89): Options > Connection > Play Solo, and the title screen's
    PLAY SOLO row (decision 30), which opens the same pages.
    Included by MM_ConfigMenu.c in the AP player client (CTR_AP, not
@@ -89,6 +93,7 @@ enum SoloBusyJob
 	SOLO_JOB_IMPORT_ROOM,
 	SOLO_JOB_IMPORT_YAML,
 	SOLO_JOB_TRACKS,
+	SOLO_JOB_SAVE_ROOM_YAML,
 };
 
 static int s_soloPage;
@@ -1002,7 +1007,7 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 {
 	static const char *const picks[] = {"-", "In pool", "Own pad"};
 	const int rows = AP_Solo_TrackCount();
-	const int count = rows + 1;
+	const int count = rows + 2;
 	struct APSoloTrackInfo info;
 	char line[200], fit[200];
 	int i;
@@ -1044,6 +1049,16 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 	}
 	else if (s_soloSel == rows && (pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
 	{
+		if (AP_Solo_SaveRoomYamlStart(s_soloName))
+		{
+			OtherFX_Play(1, 1);
+			MM_Solo_Busy(SOLO_JOB_SAVE_ROOM_YAML);
+			return;
+		}
+		OtherFX_Play(5, 1);
+	}
+	else if (s_soloSel == rows + 1 && (pad->buttonsTapped & (BTN_CROSS | BTN_CIRCLE)) != 0)
+	{
 		OtherFX_Play(1, 1);
 		s_soloFromTracks = 1;
 		MM_Solo_Go(SOLO_REVIEW);
@@ -1055,6 +1070,8 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 	{
 		const int y = SOLO_LIST_Y + (i - s_soloTop) * SOLO_ROW_H;
 		if (i == rows)
+			DecalFont_DrawLineOT("Save YAML for a room", SOLO_ROW_X, y, FONT_SMALL, ORANGE, ot);
+		else if (i == rows + 1)
 			DecalFont_DrawLineOT("Continue", SOLO_ROW_X, y, FONT_SMALL, ORANGE, ot);
 		else
 		{
@@ -1082,13 +1099,14 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 	{
 		const int helpY = SOLO_HELP_Y - SOLO_ROW_H;
 		int legendLines = 2;
+		const char *legend = "In pool: the seed may use it. Own pad: it gets a pad.";
 		if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info) && info.needsLaps)
 		{
 			if (s_soloLapsFailed)
 				snprintf(line, sizeof line, "Could not keep the laps. See the client log.");
 			else
-				snprintf(line, sizeof line, NativeMenu_Labels("By %s. Pick its laps, then press * to use it."), info.author);
-			MM_Solo_DrawWrapped(line, 0x100, helpY, SOLO_TEXT_W, 3, JUSTIFY_CENTER | (s_soloLapsFailed ? RED : GRAY),
+				snprintf(line, sizeof line, "%s", NativeMenu_Labels("Pick its laps, then press * to use it."));
+			MM_Solo_DrawWrapped(line, 0x100, helpY, SOLO_TEXT_W, 2, JUSTIFY_CENTER | (s_soloLapsFailed ? RED : GRAY),
 			                    ot);
 			legendLines = 0;
 		}
@@ -1097,22 +1115,40 @@ static void MM_Solo_PageTracks(uint32_t *ot, struct GamepadBuffer *pad)
 			if (!info.modes[0] && info.timeTrial && info.pick)
 				snprintf(line, sizeof line, "%s", NativeMenu_Labels("Time Trial only; press * to remove it from the YAML."));
 			else if (!info.modes[0] && info.timeTrial)
-				snprintf(line, sizeof line, "By %s. Time Trial only; no Adventure pad races.", info.author);
+				snprintf(line, sizeof line, "Time Trial only. No Adventure pad races.");
 			else if (!info.modes[0])
-				snprintf(line, sizeof line, "By %s. No supported races for Adventure pads.", info.author);
-			else if (info.author[0])
-				snprintf(line, sizeof line, "By %s. Modes: %s%s", info.author, info.modes,
-				         info.timeTrial ? ", Time Trial" : "");
+				snprintf(line, sizeof line, "No supported races for Adventure pads.");
 			else
 				snprintf(line, sizeof line, "Modes: %s%s", info.modes, info.timeTrial ? ", Time Trial" : "");
 			MM_Solo_Fit(line, fit, sizeof fit, SOLO_TEXT_W);
 			DecalFont_DrawLineOT(fit, 0x100, helpY, FONT_SMALL, JUSTIFY_CENTER | WHITE, ot);
 		}
+		else if (s_soloSel == rows)
+			MM_Solo_DrawWrapped("Save your selected tracks in a player YAML for a room.", 0x100, helpY,
+			                    SOLO_TEXT_W, 1, JUSTIFY_CENTER | WHITE, ot);
 		else if (!s_soloStart.isPreset)
 			MM_Solo_DrawWrapped("The YAML's own settings stay; the tracks are added.", 0x100, helpY, SOLO_TEXT_W, 1,
 			                    JUSTIFY_CENTER | WHITE, ot);
+#ifdef CTR_CUSTOM_PACKAGES
+		if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info))
+		{
+			char credit[CTR_TRACK_CREDIT_MAX] = CTR_CORTEX_CREDIT;
+			if (strcmp(info.id, "cortex-vortex"))
+			{
+				CustomTrackCredit_EnsureRegistry(NativeAssets_GetAssetDir());
+				CustomTrackCredit_Format(credit, sizeof credit, info.creditLev, info.creditVrm,
+				                         0, info.author, info.creditSource);
+			}
+			UI_DrawTrackCredit(credit, 0x100, SOLO_HELP_Y + SOLO_ROW_H, SOLO_TEXT_W, TEXT_MARQUEE);
+			if (legendLines)
+			{
+				legend = "In pool: random. Own pad: fixed.";
+				legendLines = 1;
+			}
+		}
+#endif
 		if (legendLines)
-			MM_Solo_DrawWrapped("In pool: the seed may use it. Own pad: it gets a pad.", 0x100, SOLO_HELP_Y,
+			MM_Solo_DrawWrapped(legend, 0x100, SOLO_HELP_Y,
 			                    SOLO_TEXT_W, legendLines, JUSTIFY_CENTER | GRAY, ot);
 	}
 	if (s_soloSel < rows && AP_Solo_TrackGet(s_soloSel, &info) && info.needsLaps)
@@ -1239,7 +1275,7 @@ static void MM_Solo_PageBusy(uint32_t *ot, struct GamepadBuffer *pad)
 {
 	const int state = AP_Solo_JobState();
 	static const char *const titles[] = {"Loading", "Loading Options", "Generating", "Importing Room",
-	                                     "Importing YAML", "Finding Custom Tracks"};
+	                                     "Importing YAML", "Finding Custom Tracks", "Saving YAML"};
 	if (state == AP_SOLO_JOB_RUNNING)
 	{
 		if (s_soloBusyJob == SOLO_JOB_GENERATE && (pad->buttonsTapped & (BTN_TRIANGLE | BTN_START)) != 0)
@@ -1274,6 +1310,12 @@ static void MM_Solo_PageBusy(uint32_t *ot, struct GamepadBuffer *pad)
 			s_soloFromOptions = 2; /* the message returns to Options, or to the YAML list */
 			return;
 		}
+		if (s_soloBusyJob == SOLO_JOB_SAVE_ROOM_YAML)
+		{
+			s_soloPage = SOLO_MESSAGE;
+			s_soloFromOptions = 3;
+			return;
+		}
 		if (s_soloBusyJob == SOLO_JOB_GENERATE && s_soloFromTracks)
 		{
 			/* For example a picked track was removed: list the tracks again. */
@@ -1297,6 +1339,11 @@ static void MM_Solo_PageBusy(uint32_t *ot, struct GamepadBuffer *pad)
 		/* The step is only shown when there is a track to pick. */
 		s_soloFromTracks = AP_Solo_TrackCount() > 0;
 		MM_Solo_Go(s_soloFromTracks ? SOLO_TRACKS : SOLO_REVIEW);
+		break;
+	case SOLO_JOB_SAVE_ROOM_YAML:
+		snprintf(s_soloMsg, sizeof s_soloMsg, "Saved to: %.245s", AP_Solo_JobResultYaml());
+		s_soloPage = SOLO_MESSAGE;
+		s_soloFromOptions = 3;
 		break;
 	case SOLO_JOB_GENERATE:
 	{
@@ -1347,7 +1394,7 @@ static void MM_Solo_PageMessage(uint32_t *ot, struct GamepadBuffer *pad)
 		else if (s_soloFromOptions == 3)
 		{
 			s_soloFromOptions = AP_Solo_TracksViaOptions(s_soloStart.isPreset);
-			if (AP_Solo_TracksStart(s_soloStart.path))
+			if (s_soloBusyJob != SOLO_JOB_SAVE_ROOM_YAML && AP_Solo_TracksStart(s_soloStart.path))
 				MM_Solo_Busy(SOLO_JOB_TRACKS);
 			else
 				MM_Solo_Go(SOLO_TRACKS);

@@ -1,9 +1,15 @@
 #ifdef CTR_CUSTOM_TRACKS
 
 #include <platform/native_custom_tracks.h>
+#include <platform/native_cortex_asset_pins.h>
 #include <platform/native_sha256.h>
 #include <platform/native_custom_finish.h>
 #include <platform/native_tizi_madness.h>
+#ifdef CTR_CUSTOM_PACKAGES
+#include <platform/native_assets.h>
+#include <platform/native_custom_package.h>
+#include <platform/native_custom_music.h>
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,7 +52,6 @@ void CustomTrack_Log(const char *fmt, ...)
 #endif
 }
 
-#define CUSTOM_TRACK_PATH_MAX 512
 #define CUSTOM_TRACK_HASH_CHUNK 65536
 
 // One source file: where it is, what it must hash to, and what verifying it
@@ -72,11 +77,11 @@ static int s_oxideFinalVerified;
 
 // Cortex Vortex's own music: the .sca Lockheart published with the track, shipped
 // beside the bundled LEV and VRM. It is read when a content-plan race arms that
-// exact pair (the LEV and VRM pins of ap/ap_seedcfg.h) and kept only when its
+// exact geometry pair and kept only when its
 // sha256 is the pinned one. Optional by design: a missing, changed or unreadable
-// file costs the music only (Oxide Station's plays), never the track.
-#define CORTEX_LEV_SHA256 "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13"
-#define CORTEX_VRM_SHA256 "4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d"
+// file costs the music only (a random retail track's music plays), never the track.
+#define CORTEX_LEV_SHA256 CTR_CFG_CORTEX_LEV_SHA256
+#define CORTEX_VRM_SHA256 CTR_CFG_CORTEX_VRM_SHA256
 #define CORTEX_SCA_SHA256 "ddde81cf1be8042400c717edeeded0d8727e3bb8ba24f0100201708372ef8b1c"
 #define CORTEX_SCA_NAME "CVortex Arcade All.sca"
 #define CORTEX_SCA_MAX_BYTES (2u * 1024u * 1024u)
@@ -118,6 +123,38 @@ static char s_customTrackServeFault[128];
 #define CUSTOM_TRACK_RETAINED_VRM "@ctr/standalone/vrm"
 struct CustomTrackRetainedFile { unsigned char *bytes; u32 size; };
 static struct CustomTrackRetainedFile s_standaloneLev, s_standaloneVrm;
+
+enum CustomTrackResidentKind
+{
+	CTR_RESIDENT_GARAGE = 1,
+	CTR_RESIDENT_OXIDE_FINAL,
+	CTR_RESIDENT_CORTEX_PAD,
+	CTR_RESIDENT_EVENT,
+	CTR_RESIDENT_STANDALONE,
+};
+
+#ifdef CTR_CUSTOM_PACKAGES
+#define CUSTOM_TRACK_BOSS_LEV "@ctr/boss/lev"
+#define CUSTOM_TRACK_BOSS_VRM "@ctr/boss/vrm"
+static struct
+{
+	int active, level, boss, pinnedAtEntry;
+	struct CustomTrackRetainedFile lev, vrm;
+	struct CustomTrackResidentSource source;
+} s_bossVenueLoad;
+
+static void CustomTrack_ResetBossVenueLoad(void)
+{
+	free(s_bossVenueLoad.lev.bytes);
+	free(s_bossVenueLoad.vrm.bytes);
+	memset(&s_bossVenueLoad, 0, sizeof s_bossVenueLoad);
+}
+
+static int CustomTrack_BossVenueLoadMatches(int levelID, int bossID)
+{
+	return s_bossVenueLoad.active && s_bossVenueLoad.level == levelID && s_bossVenueLoad.boss == bossID;
+}
+#endif
 
 static void CustomTrack_ReleaseStandaloneBytes(void)
 {
@@ -346,74 +383,86 @@ static int CustomTrack_DescriptorIsCortex(void)
 	       NativeSha256_HexEquals(CORTEX_VRM_SHA256, s_descriptor.vrmSha256);
 }
 
-// Read the .sca beside the verified LEV whole and keep it only when its sha256
-// is the pinned one.
-static void CustomTrack_LoadCortexMusic(const char *levPath)
+static unsigned char *CustomTrack_ReadMusicFile(const char *path, unsigned long expectedBytes,
+                                                const char *sha256, size_t *size, const char **error)
 {
-	char path[CUSTOM_TRACK_PATH_MAX];
 	struct NativeSha256Ctx ctx;
 	unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
 	char hex[NATIVE_SHA256_HEX_BYTES];
-	struct stat st;
-	unsigned char *bytes;
-	const char *slash = strrchr(levPath, '/');
-	const char *back = strrchr(levPath, '\\');
-	size_t dirLength;
-	FILE *f;
-
-	CustomTrack_ClearCortexMusic();
-	if (back != NULL && (slash == NULL || back > slash))
-		slash = back;
-	dirLength = slash ? (size_t)(slash - levPath) + 1 : 0;
-	if (dirLength + sizeof CORTEX_SCA_NAME <= sizeof path)
+	long length;
+	*size = 0;
+	if (error) *error = "cannot read the pinned music file";
+	FILE *f = fopen(path, "rb");
+	if (!f)
+		return NULL;
+	if (fseek(f, 0, SEEK_END) != 0 || (length = ftell(f)) <= 0 ||
+	    (unsigned long)length > CORTEX_SCA_MAX_BYTES ||
+	    (expectedBytes != 0 && (unsigned long)length != expectedBytes) || fseek(f, 0, SEEK_SET) != 0)
 	{
-		memcpy(path, levPath, dirLength);
-		memcpy(path + dirLength, CORTEX_SCA_NAME, sizeof CORTEX_SCA_NAME);
+		fclose(f);
+		if (error) *error = "invalid pinned music size or file";
+		return NULL;
 	}
-	if (dirLength + sizeof CORTEX_SCA_NAME > sizeof path || stat(path, &st) != 0 || st.st_size <= 0 ||
-	    (unsigned long)st.st_size > CORTEX_SCA_MAX_BYTES)
+	unsigned char *bytes = (unsigned char *)malloc((size_t)length);
+	if (!bytes || fread(bytes, 1, (size_t)length, f) != (size_t)length)
 	{
-		CustomTrack_Log("[CortexVortex] music not available, Oxide Station's music plays\n");
-		return;
-	}
-	bytes = (unsigned char *)malloc((size_t)st.st_size);
-	f = bytes ? fopen(path, "rb") : NULL;
-	if (f == NULL || fread(bytes, 1, (size_t)st.st_size, f) != (size_t)st.st_size)
-	{
-		if (f)
-			fclose(f);
+		fclose(f);
 		free(bytes);
-		CustomTrack_Log("[CortexVortex] music could not be read, Oxide Station's music plays\n");
-		return;
+		return NULL;
 	}
 	fclose(f);
 	NativeSha256_Init(&ctx);
-	NativeSha256_Update(&ctx, bytes, (size_t)st.st_size);
+	NativeSha256_Update(&ctx, bytes, (size_t)length);
 	NativeSha256_Final(&ctx, digest);
 	NativeSha256_ToHex(digest, hex);
-	if (!NativeSha256_HexEquals(CORTEX_SCA_SHA256, hex))
+	if (!NativeSha256_HexEquals(sha256, hex))
 	{
 		free(bytes);
-		CustomTrack_Log("[CortexVortex] music REFUSED: sha256 mismatch, Oxide Station's music plays\n");
+		if (error) *error = "pinned music SHA-256 mismatch";
+		return NULL;
+	}
+	*size = (size_t)length;
+	if (error) *error = NULL;
+	return bytes;
+}
+
+// The bundled SCA lives beside the verified Cortex Vortex LEV.
+static unsigned char *CustomTrack_ReadCortexMusic(const char *levPath, size_t *size, const char **error)
+{
+	char path[CUSTOM_TRACK_PATH_MAX];
+	const char *slash = strrchr(levPath, '/');
+	const char *back = strrchr(levPath, '\\');
+	if (back != NULL && (slash == NULL || back > slash))
+		slash = back;
+	size_t dirLength = slash ? (size_t)(slash - levPath) + 1 : 0;
+	*size = 0;
+	if (dirLength + sizeof CORTEX_SCA_NAME > sizeof path)
+	{
+		if (error) *error = "invalid bundled music path";
+		return NULL;
+	}
+	memcpy(path, levPath, dirLength);
+	memcpy(path + dirLength, CORTEX_SCA_NAME, sizeof CORTEX_SCA_NAME);
+	return CustomTrack_ReadMusicFile(path, 0, CORTEX_SCA_SHA256, size, error);
+}
+
+static void CustomTrack_LoadCortexMusic(const char *levPath)
+{
+	CustomTrack_ClearCortexMusic();
+	s_cortexMusic = CustomTrack_ReadCortexMusic(levPath, &s_cortexMusicSize, NULL);
+	if (!s_cortexMusic)
+	{
+		CustomTrack_Log("[CortexVortex] music unavailable or failed verification, a random retail track's music plays\n");
 		return;
 	}
-	s_cortexMusic = bytes;
-	s_cortexMusicSize = (size_t)st.st_size;
 	CustomTrack_Log("[CortexVortex] music verified (%u bytes)\n", (unsigned)s_cortexMusicSize);
 }
 
 // Read the pending package .sca whole and keep it only when its size and sha256
 // are the package's pin and the descriptor's LEV is the one the pin was made
-// for. Anything else costs the music only: the host slot's own music plays.
+// for. Anything else costs the music only: a random retail track's music plays.
 static void CustomTrack_LoadPackageMusic(void)
 {
-	struct NativeSha256Ctx ctx;
-	unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
-	char hex[NATIVE_SHA256_HEX_BYTES];
-	unsigned char *bytes;
-	FILE *f;
-	long length;
-
 	CustomTrack_ClearCortexMusic();
 	if (s_pendingMusic.path[0] == '\0')
 		return;
@@ -424,30 +473,13 @@ static void CustomTrack_LoadPackageMusic(void)
 		memset(&s_pendingMusic, 0, sizeof s_pendingMusic);
 		return;
 	}
-	bytes = (unsigned char *)malloc((size_t)s_pendingMusic.bytes);
-	f = bytes ? fopen(s_pendingMusic.path, "rb") : NULL;
-	if (f == NULL || fseek(f, 0, SEEK_END) != 0 || (length = ftell(f)) != (long)s_pendingMusic.bytes ||
-	    fseek(f, 0, SEEK_SET) != 0 || fread(bytes, 1, (size_t)length, f) != (size_t)length)
+	s_cortexMusic = CustomTrack_ReadMusicFile(s_pendingMusic.path, s_pendingMusic.bytes,
+	                                        s_pendingMusic.scaSha256, &s_cortexMusicSize, NULL);
+	if (!s_cortexMusic)
 	{
-		if (f)
-			fclose(f);
-		free(bytes);
-		CustomTrack_Log("[CustomTracks] track music could not be read, the host slot's music plays\n");
+		CustomTrack_Log("[CustomTracks] track music unavailable or failed verification, a random retail track's music plays\n");
 		return;
 	}
-	fclose(f);
-	NativeSha256_Init(&ctx);
-	NativeSha256_Update(&ctx, bytes, (size_t)length);
-	NativeSha256_Final(&ctx, digest);
-	NativeSha256_ToHex(digest, hex);
-	if (!NativeSha256_HexEquals(s_pendingMusic.scaSha256, hex))
-	{
-		free(bytes);
-		CustomTrack_Log("[CustomTracks] track music REFUSED: sha256 mismatch, the host slot's music plays\n");
-		return;
-	}
-	s_cortexMusic = bytes;
-	s_cortexMusicSize = (size_t)length;
 	s_musicIsPackage = 1;
 	CustomTrack_Log("[CustomTracks] track music verified (%u bytes)\n", (unsigned)s_cortexMusicSize);
 }
@@ -639,15 +671,171 @@ int CustomTrack_GarageVenueServing(int levelID, int bossID, int adventureBossAct
 {
 	if (!adventureBossActive || bossID < 0 || bossID >= CUSTOM_TRACK_GARAGE_VENUES)
 		return -1;
+#ifdef CTR_CUSTOM_PACKAGES
+	if (CustomTrack_BossVenueLoadMatches(levelID, bossID) && !s_bossVenueLoad.lev.bytes)
+		return -1;
+#endif
 	return s_garageVenueVerified[bossID] && s_garageVenue[bossID].enabled &&
 	       s_garageVenue[bossID].hostLevelID == levelID ? bossID : -1;
 }
 
 int CustomTrack_OxideFinalServing(int levelID, int bossID, int adventureBossActive)
 {
+#ifdef CTR_CUSTOM_PACKAGES
+	if (CustomTrack_BossVenueLoadMatches(levelID, bossID) && !s_bossVenueLoad.lev.bytes)
+		return 0;
+#endif
 	return s_oxideFinalVerified && s_oxideFinalDescriptor.enabled &&
 	       adventureBossActive && levelID == s_oxideFinalDescriptor.hostLevelID && bossID == 5;
 }
+
+static void CustomTrack_DescribeGarage(const struct GarageVenueDescriptor *venue,
+                                      struct CustomTrackResidentSource *resident)
+{
+	memset(resident, 0, sizeof *resident);
+	resident->kind = CTR_RESIDENT_GARAGE;
+	resident->levelID = venue->hostLevelID;
+	resident->roomIdentity = venue->roomIdentity;
+	memcpy(resident->trackID, venue->trackID, sizeof resident->trackID);
+	memcpy(resident->packageRevision, venue->packageRevision, sizeof resident->packageRevision);
+	memcpy(resident->packageUuid, venue->navPackageUuid, sizeof resident->packageUuid);
+	memcpy(resident->levSha256, venue->levSha256, sizeof resident->levSha256);
+	memcpy(resident->vrmSha256, venue->vrmSha256, sizeof resident->vrmSha256);
+}
+
+#ifdef CTR_CUSTOM_PACKAGES
+// A track's id carries a "package/" or "custom/" prefix depending on the
+// route that armed it; the pick ignores the prefix so one track gets one song
+// on a pad, in a cup leg and in a garage venue of the same room.
+static const char *CustomTrack_MusicKey(const char *id)
+{
+	if (!strncmp(id, "package/", 8)) return id + 8;
+	if (!strncmp(id, "custom/", 7)) return id + 7;
+	return id;
+}
+
+// See native_custom_tracks.h. The pick key is the race context's track key for
+// a pad or cup leg, the venue's track key for a garage venue, the bundled
+// pair's LEV pin for the Oxide Final venue and the bundled Cortex Vortex pad
+// track, and the armed descriptor's LEV pin for a legacy event race, which has
+// no standalone context.
+int CustomTrack_MusicFallbackLevel(int levelID, int adventureCupActive, int cupID, int bossID, int adventureBossActive)
+{
+	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(levelID);
+	int garage;
+
+	if (race != NULL)
+		return !race->retail && CustomTrack_ServingLoad(levelID, adventureCupActive, cupID)
+		       ? CustomMusic_FallbackPick(race->roomIdentity, CustomTrack_MusicKey(race->trackID)) : -1;
+	if (CustomTrack_ServingLoad(levelID, adventureCupActive, cupID))
+		return CustomMusic_FallbackPick(0, s_descriptor.levSha256);
+	garage = CustomTrack_GarageVenueServing(levelID, bossID, adventureBossActive);
+	if (garage >= 0)
+		return CustomMusic_FallbackPick(s_garageVenue[garage].roomIdentity, CustomTrack_MusicKey(s_garageVenue[garage].trackID));
+	if (CustomTrack_OxideFinalServing(levelID, bossID, adventureBossActive) ||
+	    CustomTrack_CortexTrackServing(levelID, adventureBossActive))
+		return CustomMusic_FallbackPick(0, s_oxideFinalDescriptor.levSha256);
+	return -1;
+}
+#endif
+
+#ifdef CTR_CUSTOM_PACKAGES
+static int CustomTrack_PrepareBossVenueLoad(int levelID, int bossID)
+{
+	if (CustomTrack_BossVenueLoadMatches(levelID, bossID))
+		return s_bossVenueLoad.lev.bytes != NULL;
+
+	int garage = CustomTrack_GarageVenueServing(levelID, bossID, 1);
+	const struct GarageVenueDescriptor *venue = NULL;
+	const struct CustomTrackSource *lev, *vrm;
+	if (garage >= 0)
+	{
+		venue = &s_garageVenue[garage];
+		lev = &s_garageVenueLev[garage];
+		vrm = &s_garageVenueVrm[garage];
+	}
+	else if (CustomTrack_OxideFinalServing(levelID, bossID, 1))
+	{
+		lev = &s_oxideFinalLev;
+		vrm = &s_oxideFinalVrm;
+	}
+	else
+		return 0;
+
+	// Bind the pair before either the geometry or optional track audio uses it.
+	// The garage refuses entry if it cannot retain the advertised pair.
+	int retained = CustomTrack_RetainFile(lev, &s_bossVenueLoad.lev) &&
+	               CustomTrack_RetainFile(vrm, &s_bossVenueLoad.vrm);
+	if (!retained)
+		CustomTrack_ResetBossVenueLoad();
+	s_bossVenueLoad.active = 1;
+	s_bossVenueLoad.level = levelID;
+	s_bossVenueLoad.boss = bossID;
+	if (!retained)
+		return 0;
+
+	// Keep the provenance with the retained pair across seed preflight refreshes.
+	if (venue)
+		CustomTrack_DescribeGarage(venue, &s_bossVenueLoad.source);
+	else
+	{
+		memset(&s_bossVenueLoad.source, 0, sizeof s_bossVenueLoad.source);
+		s_bossVenueLoad.source.kind = CTR_RESIDENT_OXIDE_FINAL;
+		s_bossVenueLoad.source.levelID = levelID;
+		memcpy(s_bossVenueLoad.source.levSha256, lev->expectedHash, sizeof s_bossVenueLoad.source.levSha256);
+		memcpy(s_bossVenueLoad.source.vrmSha256, vrm->expectedHash, sizeof s_bossVenueLoad.source.vrmSha256);
+	}
+	return 1;
+}
+
+int CustomTrack_PrepareGarageVenueEntry(int levelID, int bossID)
+{
+	CustomTrack_ResetBossVenueLoad();
+	if (CustomTrack_GarageVenueServing(levelID, bossID, 1) < 0)
+		return 1; // A retail garage venue has no package to retain.
+	if (!CustomTrack_PrepareBossVenueLoad(levelID, bossID))
+	{
+		CustomTrack_Log("[CustomTracks] boss garage entry refused: the venue pair could not be verified\n");
+		return 0;
+	}
+	s_bossVenueLoad.pinnedAtEntry = 1;
+	return 1;
+}
+
+unsigned char *CustomTrack_ReadBossMusic(int levelID, int bossID, size_t *size, const char **error)
+{
+	*size = 0;
+	*error = NULL;
+	if (!CustomTrack_PrepareBossVenueLoad(levelID, bossID))
+	{
+		if (CustomTrack_BossVenueLoadMatches(levelID, bossID))
+			*error = "could not retain the verified boss venue pair";
+		return NULL;
+	}
+
+	int garage = CustomTrack_GarageVenueServing(levelID, bossID, 1);
+	const struct GarageVenueDescriptor *venue = garage >= 0 ? &s_garageVenue[garage] : NULL;
+	if (!venue)
+		return s_bossVenueLoad.source.kind == CTR_RESIDENT_OXIDE_FINAL ?
+		       CustomTrack_ReadCortexMusic(s_oxideFinalLev.path, size, error) : NULL;
+	if (!NativeSha256_HexEquals(venue->levSha256, s_bossVenueLoad.source.levSha256) ||
+	    !NativeSha256_HexEquals(venue->vrmSha256, s_bossVenueLoad.source.vrmSha256))
+		return NULL;
+
+	if (venue->cortex && NativeSha256_HexEquals(CORTEX_LEV_SHA256, venue->levSha256) &&
+	    NativeSha256_HexEquals(CORTEX_VRM_SHA256, venue->vrmSha256))
+		return CustomTrack_ReadCortexMusic(s_garageVenueLev[garage].path, size, error);
+
+	char path[512], sha256[NATIVE_SHA256_HEX_BYTES];
+	unsigned long bytes;
+	if (!venue->musicPackageRevision[0] ||
+	    !CustomPackage_FindPinnedMusicWithStatus(NativeAssets_GetAssetDir(), venue->musicPackageRevision, venue->packageUuid, 0,
+	                                          venue->levSha256, venue->levBytes, venue->vrmSha256, venue->vrmBytes,
+	                                          path, sizeof path, sha256, &bytes, error))
+		return NULL;
+	return CustomTrack_ReadMusicFile(path, bytes, sha256, size, error);
+}
+#endif
 
 static struct CortexTrackLatch s_cortexTrackLatch = {-1, 0, 0, -1};
 
@@ -968,6 +1156,7 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 {
 	const char *why = NULL;
 	int cupID;
+	int soloRace;
 
 	if (!s_customTracksLoaded)
 		CustomTrack_Load();
@@ -1025,7 +1214,13 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 		return 0;
 	}
 
-	if (!CustomTrackPolicy_FlagsSupportRace(d->flagAiNav, d->flagSpawns,
+	soloRace = d->standalone && d->soloRace;
+	if (soloRace)
+	{
+		// A solo race needs neither AI paths nor a full starting grid.
+		CustomTrack_Log("[CustomTracks] solo event race: AI nav paths and grid spawns are not required\n");
+	}
+	else if (!CustomTrackPolicy_FlagsSupportRace(d->flagAiNav, d->flagSpawns,
 	                                      d->standalone ? 0 : cupID, &why))
 	{
 		CustomTrack_Log("[CustomTracks] REFUSED: %s (ai_nav=%d spawns=%d, this cup's grid needs %d)\n",
@@ -1059,11 +1254,12 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 	// The field follows the track. Derived once, here, so the driver count, the
 	// standings layout and the harnesses all read one number instead of each
 	// re-clamping the raw spawn count.
-	s_customTrackConfig.raceFieldSize = CustomTrackPolicy_FieldSizeForSpawns(d->flagSpawns);
+	s_customTrackConfig.raceFieldSize = soloRace ? 1 : CustomTrackPolicy_FieldSizeForSpawns(d->flagSpawns);
 	s_customTrackConfig.raceEnabled = 1;
 
-	CustomTrack_Log("[CustomTracks] event race grids %d karts (track reports %d spawn slots, clamped to %d..%d)\n",
-	                s_customTrackConfig.raceFieldSize, d->flagSpawns, CTR_CT_FIELD_MIN, CTR_CT_FIELD_MAX);
+	if (!soloRace)
+		CustomTrack_Log("[CustomTracks] event race grids %d karts (track reports %d spawn slots, clamped to %d..%d)\n",
+		                s_customTrackConfig.raceFieldSize, d->flagSpawns, CTR_CT_FIELD_MIN, CTR_CT_FIELD_MAX);
 
 	CustomTrack_VerifySource(&s_customTrackVrm, "vrm");
 	CustomTrack_VerifySource(&s_customTrackLev, "lev");
@@ -1180,6 +1376,11 @@ int CustomTrack_StageCupLeg(const struct CustomTrackRaceContext *context)
 void CustomTrack_SelectRetailRace(void) { CustomRaceLatch_Retail(&s_standaloneRace); }
 void CustomTrack_OnRaceLoadRequested(int levelID)
 {
+#ifdef CTR_CUSTOM_PACKAGES
+	// An admitted garage race keeps the pair through same-level retries.
+	if (!s_bossVenueLoad.pinnedAtEntry || s_bossVenueLoad.level != levelID)
+		CustomTrack_ResetBossVenueLoad();
+#endif
 	CustomRaceLatch_OnRequest(&s_standaloneRace, levelID);
 	if (!s_standaloneRace.active) CustomTrack_ReleaseStandaloneBytes();
 }
@@ -1187,6 +1388,38 @@ void CustomTrack_OnRaceLoadRequested(int levelID)
 const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int levelID)
 {
 	return CustomRaceLatch_Intent(&s_standaloneRace, levelID) ? &s_standaloneRace.current : NULL;
+}
+
+int CustomTrack_GetStandaloneSoloSpawn(int levelID, u8 preferred, struct SpawnPosRot *out)
+{
+	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(levelID);
+	const size_t offset = sizeof(u32) + offsetof(struct Level, DriverSpawn);
+	const size_t gridBytes = sizeof(((struct Level *)0)->DriverSpawn);
+	const unsigned char empty[sizeof *out] = {0};
+	const size_t slots = gridBytes / sizeof empty;
+	const unsigned char *grid, *spawn;
+	if (!out || !race || race->retail || race->cup || !s_standaloneLev.bytes ||
+	    s_standaloneLev.size < offset + gridBytes || preferred >= slots)
+		return 0;
+
+	// The fly-in camera adjusts heights in the live level. Read the retained
+	// LEV so both initial placement and retries use the authored spawn.
+	grid = s_standaloneLev.bytes + offset;
+	spawn = grid + preferred * sizeof empty;
+	if (memcmp(spawn, empty, sizeof empty) == 0)
+	{
+		for (size_t i = 0; i < slots; ++i)
+		{
+			const unsigned char *candidate = grid + i * sizeof empty;
+			if (memcmp(candidate, empty, sizeof empty) != 0)
+			{
+				spawn = candidate;
+				break;
+			}
+		}
+	}
+	memcpy(out, spawn, sizeof *out);
+	return 1;
 }
 
 const struct CustomTrackRaceContext *CustomTrack_PreviousStandaloneContext(void)
@@ -1217,6 +1450,20 @@ int CustomTrack_GetOverride(int subfileIndex, const struct CustomTrackLoadContex
 
 	if (!s_customTracksLoaded)
 		CustomTrack_Load();
+
+#ifdef CTR_CUSTOM_PACKAGES
+	if (ctx && ctx->adventureBossActive && CustomTrackPolicy_SubfileRole(subfileIndex, ctx->levelID) != CTR_CT_ROLE_NONE)
+		CustomTrack_PrepareBossVenueLoad(ctx->levelID, ctx->bossID);
+	if (ctx && ctx->adventureBossActive && CustomTrack_BossVenueLoadMatches(ctx->levelID, ctx->bossID))
+	{
+		role = CustomTrackPolicy_SubfileRole(subfileIndex, ctx->levelID);
+		if (role == CTR_CT_ROLE_NONE || !s_bossVenueLoad.lev.bytes)
+			return 0;
+		if (outPath) *outPath = role == CTR_CT_ROLE_LEV ? CUSTOM_TRACK_BOSS_LEV : CUSTOM_TRACK_BOSS_VRM;
+		if (outSize) *outSize = role == CTR_CT_ROLE_LEV ? s_bossVenueLoad.lev.size : s_bossVenueLoad.vrm.size;
+		return 1;
+	}
+#endif
 
 	// A content-plan garage venue on custom bytes (#133 PR 6b): the same
 	// shape as the Oxide 2 venue below, one descriptor per garage.
@@ -1324,15 +1571,26 @@ int CustomTrack_ReadFile(const char *path, void *dst, u32 bufBytes, u32 fileByte
 {
 	FILE *f;
 	size_t got;
+	const struct CustomTrackRetainedFile *owned = NULL;
 
 	if (path == NULL || dst == NULL)
 		return 0;
 	if (!strcmp(path, CUSTOM_TRACK_RETAINED_LEV) || !strcmp(path, CUSTOM_TRACK_RETAINED_VRM))
 	{
-		const struct CustomTrackRetainedFile *owned = !strcmp(path, CUSTOM_TRACK_RETAINED_LEV) ?
-			&s_standaloneLev : &s_standaloneVrm;
-		if (!s_standaloneRace.active || !s_customTrackConfig.contentVerified ||
-		    !owned->bytes || owned->size != fileBytes || bufBytes < fileBytes) return 0;
+		if (!s_standaloneRace.active || !s_customTrackConfig.contentVerified)
+			return 0;
+		owned = !strcmp(path, CUSTOM_TRACK_RETAINED_LEV) ? &s_standaloneLev : &s_standaloneVrm;
+	}
+#ifdef CTR_CUSTOM_PACKAGES
+	else if (!strcmp(path, CUSTOM_TRACK_BOSS_LEV))
+		owned = &s_bossVenueLoad.lev;
+	else if (!strcmp(path, CUSTOM_TRACK_BOSS_VRM))
+		owned = &s_bossVenueLoad.vrm;
+#endif
+	if (owned)
+	{
+		if (!owned->bytes || owned->size != fileBytes || bufBytes < fileBytes)
+			return 0;
 		memcpy(dst, owned->bytes, fileBytes);
 		if (bufBytes > fileBytes) memset((char *)dst + fileBytes, 0, bufBytes - fileBytes);
 		return 1;
@@ -1451,6 +1709,119 @@ int CustomTrack_FinishTerrain(const struct CustomTrackLoadContext *ctx)
 	       CustomFinish_Terrain(s_descriptor.levSha256, s_descriptor.vrmSha256) : -1;
 }
 
+static struct CustomTrackResidentSource s_customTrackResident;
+static unsigned int s_customTrackResidentParts;
+static int s_customTrackResidentMismatch;
+
+void CustomTrack_ClearResidentSource(void)
+{
+	memset(&s_customTrackResident, 0, sizeof s_customTrackResident);
+	s_customTrackResidentParts = 0;
+	s_customTrackResidentMismatch = 0;
+}
+
+const struct CustomTrackResidentSource *CustomTrack_ResidentSource(int levelID)
+{
+	return s_customTrackResident.kind && s_customTrackResident.levelID == levelID ? &s_customTrackResident : NULL;
+}
+
+int CustomTrack_ResidentSeedRace(int levelID)
+{
+	const struct CustomTrackResidentSource *resident = CustomTrack_ResidentSource(levelID);
+	return resident && (resident->kind == CTR_RESIDENT_STANDALONE || resident->kind == CTR_RESIDENT_EVENT);
+}
+
+int CustomTrack_ResidentBlocksRecordedLanes(int levelID)
+{
+	const struct CustomTrackResidentSource *resident = CustomTrack_ResidentSource(levelID);
+	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(levelID);
+	return (resident && resident->kind != CTR_RESIDENT_EVENT && resident->kind != CTR_RESIDENT_STANDALONE) ||
+	       (race && race->cortex);
+}
+
+int CustomTrack_ResidentGarageNavIdentity(int levelID, unsigned char uuid[CTR_CT_NAV_UUID_BYTES],
+                                         unsigned int *revision)
+{
+	const struct CustomTrackResidentSource *resident = CustomTrack_ResidentSource(levelID);
+	if (!resident || resident->kind != CTR_RESIDENT_GARAGE || CustomTrack_ResidentAssetsMixed() ||
+	    !CustomTrackPolicy_ParseNavUuid(resident->packageUuid, uuid))
+		return 0;
+	*revision = CustomTrackPolicy_NavRevision(resident->levSha256);
+	return *revision != 0;
+}
+
+int CustomTrack_ResidentAssetsMixed(void)
+{
+	return s_customTrackResidentMismatch ||
+	       (s_customTrackResidentParts && s_customTrackResidentParts != (CTR_CT_ROLE_LEV | CTR_CT_ROLE_VRM));
+}
+
+void CustomTrack_NoteLoadedAsset(const struct CustomTrackLoadContext *ctx, int role, int seedOwned)
+{
+	struct CustomTrackResidentSource current;
+	const struct CustomTrackRaceContext *race = CustomTrack_StandaloneContext(ctx->levelID);
+	const unsigned int previousParts = s_customTrackResidentParts;
+	int garage;
+
+	s_customTrackResidentParts |= (unsigned int)role;
+	// Offline loads keep their own package identity.
+	if (!seedOwned)
+	{
+		if (s_customTrackResident.kind)
+			s_customTrackResidentMismatch = 1;
+		return;
+	}
+#ifdef CTR_CUSTOM_PACKAGES
+	if (ctx->adventureBossActive && CustomTrack_BossVenueLoadMatches(ctx->levelID, ctx->bossID))
+		memcpy(&current, &s_bossVenueLoad.source, sizeof current);
+	else
+#endif
+	if ((garage = CustomTrack_GarageVenueServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive)) >= 0)
+		CustomTrack_DescribeGarage(&s_garageVenue[garage], &current);
+	else if (CustomTrack_OxideFinalServing(ctx->levelID, ctx->bossID, ctx->adventureBossActive) ||
+	         CustomTrack_CortexTrackServing(ctx->levelID, ctx->adventureBossActive))
+	{
+		memset(&current, 0, sizeof current);
+		current.kind = ctx->adventureBossActive ? CTR_RESIDENT_OXIDE_FINAL : CTR_RESIDENT_CORTEX_PAD;
+		current.levelID = ctx->levelID;
+		memcpy(current.levSha256, s_oxideFinalDescriptor.levSha256, sizeof current.levSha256);
+		memcpy(current.vrmSha256, s_oxideFinalDescriptor.vrmSha256, sizeof current.vrmSha256);
+	}
+	else if (race && !race->retail)
+	{
+		memset(&current, 0, sizeof current);
+		current.kind = race->cortex ? CTR_RESIDENT_CORTEX_PAD : CTR_RESIDENT_STANDALONE;
+		current.levelID = race->hostLevelID;
+		current.roomIdentity = race->roomIdentity;
+		memcpy(current.trackID, race->trackID, sizeof current.trackID);
+		memcpy(current.packageRevision, race->packageRevision, sizeof current.packageRevision);
+		memcpy(current.packageUuid, race->packageUuid, sizeof current.packageUuid);
+		memcpy(current.levSha256, race->levSha256, sizeof current.levSha256);
+		memcpy(current.vrmSha256, race->vrmSha256, sizeof current.vrmSha256);
+	}
+	else
+	{
+		if (!CustomTrack_ServingLoad(ctx->levelID, ctx->adventureCupActive, ctx->cupID))
+		{
+			s_customTrackResidentMismatch = 1;
+			return;
+		}
+		memset(&current, 0, sizeof current);
+		current.kind = CTR_RESIDENT_EVENT;
+		current.levelID = ctx->levelID;
+		if (s_customTrackConfig.navIdentityValid)
+		{
+			memcpy(current.legacyNavUuid, s_customTrackConfig.navTrackUuid, sizeof current.legacyNavUuid);
+			current.legacyNavRevision = s_customTrackConfig.navRevision;
+		}
+		memcpy(current.levSha256, s_descriptor.levSha256, sizeof current.levSha256);
+		memcpy(current.vrmSha256, s_descriptor.vrmSha256, sizeof current.vrmSha256);
+	}
+	if (previousParts && memcmp(&s_customTrackResident, &current, sizeof current) != 0)
+		s_customTrackResidentMismatch = 1;
+	memcpy(&s_customTrackResident, &current, sizeof current);
+}
+
 int CustomTrack_TiziMadness(const struct CustomTrackLoadContext *ctx)
 {
 	int garage;
@@ -1489,12 +1860,32 @@ int CustomTrack_NavIdentityForLoad(int levelID, int adventureCupActive, int cupI
 	if (outUuid == NULL || outRevision == NULL)
 		return 0;
 
+	const struct CustomTrackResidentSource *resident = CustomTrack_ResidentSource(levelID);
+	if (resident && resident->kind == CTR_RESIDENT_EVENT)
+	{
+		if (CustomTrack_ResidentAssetsMixed() || !resident->legacyNavRevision)
+			return 0;
+		memcpy(outUuid, resident->legacyNavUuid, sizeof resident->legacyNavUuid);
+		*outRevision = resident->legacyNavRevision;
+		return 1;
+	}
+	if (resident && resident->kind == CTR_RESIDENT_STANDALONE)
+	{
+		if (CustomTrack_ResidentAssetsMixed() || !CustomTrackPolicy_ParseNavUuid(resident->packageUuid, outUuid))
+			return 0;
+		*outRevision = CustomTrackPolicy_NavRevision(resident->levSha256);
+		return *outRevision != 0;
+	}
+
 	// The identity answers for exactly the loads the BYTES answer for. Asking
 	// the same predicate here is what keeps a recording's identity and the
 	// geometry it was recorded against from ever disagreeing: if this load is
 	// not serving the custom track, it is a retail load and carries the retail
 	// identity, whatever config.ini holds.
 	if (!CustomTrack_ServingLoad(levelID, adventureCupActive, cupID))
+		return 0;
+
+	if (CustomTrack_StandaloneContext(levelID))
 		return 0;
 
 	cfg = CustomTrack_Config();

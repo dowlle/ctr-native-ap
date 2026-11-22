@@ -19,10 +19,11 @@
    and writes its best times and ghost in custom-records/
    (native_custom_records.h), never the memory card. */
 #include <platform/native_custom_track_library.h>
+#include <platform/native_custom_track_visibility.h>
 #include <platform/native_custom_offline.h>
-#include <platform/native_custom_music.h>
 #include <platform/native_assets.h>
 #include <platform/native_custom_revision.h>
+#include <platform/native_track_credit.h>
 #include <platform/native_input.h> // Platform_InputRawGamepadButtons
 
 #include <platform/native_custom_identity.h>
@@ -229,6 +230,7 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
             for (size_t i=0;i<s_contentLibrary.count;i++)
             {
                 const struct CustomTrackLibraryEntry *item=&s_contentLibrary.entries[i];
+                if (CustomTrack_IsHiddenLev(item->local.levSha256)) continue;
                 size_t at=0;
                 for (;at<count;at++)
                     if (item->local.uuid[0] && !strcmp(item->local.uuid,eligible[at].local.uuid)) break;
@@ -319,16 +321,6 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
                    Arcade. Only the selected content and authored laps change. */
                 gGT->currLEV = host;
                 gGT->numLaps = CustomOffline_RuntimeLaps();
-                /* No .sca: an imported track plays the retail music of the
-                   track it replaces, any other plays Crash Cove's. */
-                {
-                    const struct CustomTrackLibraryEntry *chosen = rows ? CustomTrackLibrary_Row(&s_arcadeLibrary, first + row) : NULL;
-                    struct CustomPackageManifest running;
-                    /* Only for the entry that was prepared (same pin). */
-                    CustomOffline_SetMusicFallbackLevel(chosen && chosen->local.xdelta &&
-                        CustomOffline_RuntimeManifest(&running) && !strcmp(running.sha256, chosen->manifestSha256) ?
-                        CustomMusic_ReplacedLevel(chosen->local.bigfileIndex) : -1);
-                }
                 D230.trackSel_StartRaceAfterFadeOut = 1;
                 D230.trackSel_transitionState = EXITING_MENU;
                 s_customTimeTrialPending = mode == CTR_OFFLINE_MODE_TIME_TRIAL;
@@ -448,7 +440,13 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
         DecalFont_DrawLineBox(entry->title, 309 + dx, 85 + dy, 174, FONT_SMALL,
             ORANGE, TEXT_MARQUEE, TEXT_SLOT_ARCADE_DETAIL, ot);
         MM_CustomTrackSelect_Text(line, 309 + dx, 98 + dy, 174, 1, WHITE, ot);
-        if (entry->author[0]) MM_CustomTrackSelect_Text(entry->author, 309 + dx, 110 + dy, 174, 1, WHITE, ot);
+        char credit[CTR_TRACK_CREDIT_MAX];
+        CustomTrackCredit_EnsureRegistry(NativeAssets_GetAssetDir());
+        if (entry->installed)
+            CustomPackage_TrackCredit(&entry->local, entry->author, credit, sizeof credit);
+        else
+            CustomTrackCredit_Format(credit, sizeof credit, NULL, NULL, 0, entry->author, "Project Saphi");
+        UI_DrawTrackCredit(credit, 396 + dx, 110 + dy, 174, TEXT_MARQUEE);
         if (entry->installed && entry->local.laps)
         {
             snprintf(line, sizeof line, "%u laps%s", entry->local.laps, entry->local.timeTrial ? " TT" : "");

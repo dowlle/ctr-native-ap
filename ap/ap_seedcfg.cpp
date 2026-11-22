@@ -78,7 +78,7 @@ static void ap_cfg_log(const char *fmt, ...)
 // external file after slot_data is parsed. Remember the wire counts here and
 // compare only when that table is read. -1 means this LevelID has no guard.
 static int s_box_warned_count[CTR_CFG_BOX_TRACK_COUNT];
-static unsigned int s_box_parse_revision;
+static unsigned int s_seedcfg_parse_revision;
 // Diagnostic labels only; LevelID remains the wire identity used for policy.
 static const char *const s_box_track_names[CTR_CFG_BOX_TRACK_COUNT] = {
 	"DINGO_CANYON", "DRAGON_MINES", "BLIZZARD_BLUFF", "CRASH_COVE",
@@ -90,7 +90,7 @@ static const char *const s_box_track_names[CTR_CFG_BOX_TRACK_COUNT] = {
 
 extern "C" unsigned int ctr_cfg_box_placement_revision(void)
 {
-	return s_box_parse_revision;
+	return s_seedcfg_parse_revision;
 }
 
 // Contract 7e: each retail track has at most 15 authored boxes (AP_BOX_SLOTS_PER_TRACK).
@@ -1469,7 +1469,7 @@ extern "C" const char *ctr_cfg_custom_track_title_ascii(void)
 
 void ap_seedcfg_parse_json(const nlohmann::json &j)
 {
-	s_box_parse_revision++;
+	s_seedcfg_parse_revision++;
     std::memset(&ctr_crystal_checks, 0, sizeof ctr_crystal_checks);
     std::memset(&ctr_cup_sweeps, 0, sizeof ctr_cup_sweeps);
     std::memset(&ctr_wumpa_shop, 0, sizeof ctr_wumpa_shop);
@@ -1765,6 +1765,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	// One generator row 6: a plan room's race-loss stakes read the exported logic.
 	if (content_result == 2)
 		ap_seedcfg_parse_win_logic(j);
+	if (content_result == 2 && !content_verify::markerless_finish_matches())
+		ap_seedcfg_reject_late("content_plan: markerless finish differs from the exported rules");
 	// One generator row 12: content_result 1 is a room without a content
 	// plan. It comes from v0.2.x, whose reader was deleted with the original
 	// generator. The config stays inactive (schema_version 0) and the slot

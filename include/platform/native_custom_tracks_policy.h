@@ -1,6 +1,8 @@
 #ifndef NATIVE_CUSTOM_TRACKS_POLICY_H
 #define NATIVE_CUSTOM_TRACKS_POLICY_H
 
+#define CUSTOM_TRACK_PATH_MAX 512
+
 // Custom-track loader DECISIONS, ruled for the Baby T Park event spike. Each
 // decision's own heading carries its rung, so this line cannot go stale.
 // Deliberately freestanding, exactly like ap_cup_box_policy.h: the gather and
@@ -494,6 +496,20 @@ static int CustomTrackPolicy_HexDigit(unsigned char c)
 	return -1;
 }
 
+// The first four bytes of the LEV SHA-256 are interpreted in digest order.
+static inline unsigned int CustomTrackPolicy_NavRevision(const char *levSha)
+{
+	unsigned int revision = 0;
+	for (int i = 0; i < 8; i++)
+	{
+		int digit = CustomTrackPolicy_HexDigit((unsigned char)levSha[i]);
+		if (digit < 0)
+			return 0;
+		revision = (revision << 4) | (unsigned int)digit;
+	}
+	return revision != 0 ? revision : 1;
+}
+
 // Parse the canonical hyphenated UUID text into 16 bytes. Returns 1 only for a
 // completely well-formed value; every malformed shape returns 0 and leaves out
 // untouched, which the caller turns into "no NAV3 identity" rather than into a
@@ -935,6 +951,8 @@ static int CustomTrackPolicy_RetailPodiumLevelID(const struct CustomTrackFeature
 
 // Can the engine actually run the event race on a track with these measured
 // capabilities? Returns 1 when it can, or 0 with *outWhy set to a short reason.
+// Callers apply it only to a race that grids opponents (Trophy, CTR Challenge,
+// cup legs). Solo races need neither AI paths nor a full starting grid.
 //
 // Only two of the eight measured flags are load-bearing today, and both are
 // hard requirements of the ruled semantics rather than preferences:

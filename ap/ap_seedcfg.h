@@ -23,6 +23,7 @@
 #include "ap_cup_sweeps.h"
 #include "ap_lap_checks.h"
 #include "ap_wumpa_shop.h"
+#include "../include/platform/native_cortex_asset_pins.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -187,12 +188,6 @@ typedef struct
 	int chaos;
 	int chaos_lineup[5];
 } ctr_oxide_final_venue;
-
-// The exact Lockheart Cortex Vortex pair. One definition for the Oxide 2 venue
-// and the pad track, which serve the same bundled bytes.
-#define CTR_CFG_CORTEX_LEV_SHA256 "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13"
-#define CTR_CFG_CORTEX_VRM_SHA256 "4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d"
-
 
 // One trophy race's podium rungs, as AP location codes (NOT AdvProgress bits --
 // the game has no bit for "held 3rd" or "finished 2nd", so these fire event-only
@@ -1079,6 +1074,7 @@ int AP_BossGarageVenue(int bossIdx);
 // asks this so the boss keeps its own inherited attack on any venue.
 // IMPLEMENTED C-SIDE in ap_hooks_gates.c.
 int AP_BossRetailRulesLevel(int levelID);
+int AP_BossMineExpiryNow(void);
 
 // "Track: <name>" for the four garages when the seed drew their venues; 0
 // otherwise (retail seed, refused record). Shown on the garage panel whether

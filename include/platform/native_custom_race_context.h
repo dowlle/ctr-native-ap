@@ -16,9 +16,12 @@ struct CustomTrackRaceContext
 	int laps;
 	int retail; // New content-plan retail routes also own a standalone context.
 	uint64_t seedEpoch;
+	uint64_t roomIdentity; // stable seed and slot, if known when the route was armed
 	int64_t trophyLocation;
 	char entryID[65];
 	char trackID[65];
+	char packageRevision[65];
+	char packageUuid[37];
 	char levSha256[65];
 	char vrmSha256[65];
 	int crystal, timeLimitTicks;

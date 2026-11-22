@@ -6376,7 +6376,34 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         6,
         0
       ],
-      "needs": {}
+      "needs": {
+        "weapon_crate": {
+          "8": {
+            "needs": "boost",
+            "shortcut": 1,
+            "reviewed": true,
+            "since": 1
+          },
+          "9": {
+            "needs": "boost",
+            "shortcut": 1,
+            "reviewed": true,
+            "since": 1
+          },
+          "10": {
+            "needs": "boost",
+            "shortcut": 1,
+            "reviewed": true,
+            "since": 1
+          },
+          "11": {
+            "needs": "boost",
+            "shortcut": 1,
+            "reviewed": true,
+            "since": 1
+          }
+        }
+      }
     },
     "retail:8": {
       "lev_sha256": "5be5bfd1a89be3d43ec7c5d607d61c91ca9afdc04ec5cd172fc185608e906dce",
@@ -6385,7 +6412,34 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         6,
         0
       ],
-      "needs": {}
+      "needs": {
+        "weapon_crate": {
+          "8": {
+            "needs": "boost",
+            "shortcut": 1,
+            "reviewed": true,
+            "since": 1
+          },
+          "9": {
+            "needs": "boost",
+            "shortcut": 1,
+            "reviewed": true,
+            "since": 1
+          },
+          "10": {
+            "needs": "boost",
+            "shortcut": 1,
+            "reviewed": true,
+            "since": 1
+          },
+          "11": {
+            "needs": "boost",
+            "shortcut": 1,
+            "reviewed": true,
+            "since": 1
+          }
+        }
+      }
     },
     "e1ba6c76570864f04daf8d345f7cd2664e037e58ee2da43733c28a1b4eb6d509": {
       "lev_sha256": "e1ba6c76570864f04daf8d345f7cd2664e037e58ee2da43733c28a1b4eb6d509",
@@ -7347,7 +7401,347 @@ static const char kContentRegistryJSON[] = R"CTRREG(
         7,
         0
       ],
-      "needs": {}
+      "needs": {
+        "weapon_crate": {
+          "1": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "2": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "3": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "4": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "5": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "6": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "7": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "8": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "9": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "10": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "11": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "12": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "13": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "14": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "15": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "16": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "17": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "18": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "19": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "20": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "21": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "22": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "23": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "24": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "25": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "26": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "27": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "28": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "29": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "30": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "31": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "32": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "33": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "34": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "35": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "36": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "37": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "38": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "39": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "40": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "41": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "42": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "43": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "44": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "45": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "46": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "47": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "48": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "49": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "50": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "51": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "52": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "53": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "54": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "55": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "56": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "57": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "58": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "59": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "60": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "61": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          }
+        },
+        "wumpa_crate": {
+          "2": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "3": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "4": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "5": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "6": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          },
+          "7": {
+            "needs": "usf",
+            "reviewed": true,
+            "since": 2
+          }
+        }
+      }
     },
     "9f85b2d5dbc2fe543ce024751fc6e08f77d7ba649f8ddfec936f016804a9bbf3": {
       "lev_sha256": "9f85b2d5dbc2fe543ce024751fc6e08f77d7ba649f8ddfec936f016804a9bbf3",
@@ -7955,6 +8349,28 @@ static const char kContentRegistryJSON[] = R"CTRREG(
           5680
         ]
       }
+    ],
+    "467f83758d3a0b6aef9f340b144d0d76eb6ca04617aa87d6bc7727fb1d119c96": [
+      {
+        "ordinal": 1,
+        "pos": [
+          0,
+          0,
+          0
+        ],
+        "sanity_since": 2
+      }
+    ],
+    "c978c26a86f5c85d37a665f62ba8b3efd11cb93b71e931b2787f7c7e9f105ae2": [
+      {
+        "ordinal": 1,
+        "pos": [
+          0,
+          0,
+          0
+        ],
+        "sanity_since": 2
+      }
     ]
   },
   "sanity_locations": {
@@ -8494,6 +8910,7 @@ static const char kContentRegistryJSON[] = R"CTRREG(
     "rulings": [
       {
         "content_id": "tv-world",
+        "lev_sha256": "e3d765e824a2de96d06d1f34951b6d2ab51c027fb3353c62d8e7086b8ce1e33a",
         "kind": "wumpa_crate",
         "ordinal": 3,
         "hard_rank": 2,
@@ -8502,6 +8919,7 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       },
       {
         "content_id": "tv-world",
+        "lev_sha256": "e3d765e824a2de96d06d1f34951b6d2ab51c027fb3353c62d8e7086b8ce1e33a",
         "kind": "wumpa_crate",
         "ordinal": 4,
         "hard_rank": 2,
@@ -8510,6 +8928,7 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       },
       {
         "content_id": "tv-world",
+        "lev_sha256": "e3d765e824a2de96d06d1f34951b6d2ab51c027fb3353c62d8e7086b8ce1e33a",
         "kind": "wumpa_crate",
         "ordinal": 5,
         "hard_rank": 2,
@@ -8518,12 +8937,638 @@ static const char kContentRegistryJSON[] = R"CTRREG(
       },
       {
         "content_id": "tv-world",
+        "lev_sha256": "e3d765e824a2de96d06d1f34951b6d2ab51c027fb3353c62d8e7086b8ce1e33a",
         "kind": "wumpa_crate",
         "ordinal": 6,
         "hard_rank": 2,
         "blue_fire_rank": 3,
         "ruling": "Project ruling 2026-11-11 03:14 CET, A4-52: hard needs Boost 2; easy/medium need Blue Fire Boost 3 or remove the check."
       }
+    ]
+  },
+  "track_ruling_revisions": {
+    "acid-lake": [
+      [
+        "abd0f1efa42350fe95727e06bb18c5616d8a9bf41a5cb4fd253effe09b62b1ad",
+        "LRG2Pancho"
+      ]
+    ],
+    "ancient-lake": [
+      [
+        "256d1ed4597aacd081d2806130c28969681ce35df5a5ba53200545cbd1835eb8",
+        "1.1.0"
+      ],
+      [
+        "21e1ffe395f1d5d0a2c4538050d18912577a4dd783026fa9caea8b09ad8d3aee",
+        "1.1.0"
+      ],
+      [
+        "c4497a621a97a8df1c763e0b6a2dc75cd9f3a57b217b0cefa6a938fc83ee6c70",
+        "1.0.2"
+      ],
+      [
+        "2fc45ad5edaf735426b99229cc561293d02badc6a578ef53f328ad3fc2f85360",
+        "1.0.1"
+      ],
+      [
+        "7e5b776f312f500112061b3b95a1f371571fd7dfe7fbd1dc404e7b3d3a3a1e78",
+        "1.0.0"
+      ]
+    ],
+    "android-alley-n-gage": [
+      [
+        "75d743ea3243f8be162e32d99e839a2db6991cec77ff09f0aef82e5edaf3c334",
+        "1.0.0"
+      ]
+    ],
+    "arabian-heights-day": [
+      [
+        "a84dcf7132574b3b2cdd3d51ac4511cd68bbdd38e77ea31208be2029bbb72900",
+        "1.0.0"
+      ]
+    ],
+    "arabian-heights-night": [
+      [
+        "8093b663855d3fd0096fd2980a85bc6efe334c0aff250e8a33eea11909e5c21c",
+        "1.1.0"
+      ]
+    ],
+    "arcane-garden": [
+      [
+        "c9c8acfb4dd491a82b5030fcaa6c1437743c923be68d017da87869fce0b0a4c2",
+        "1.2.0"
+      ]
+    ],
+    "arctic-alleyway": [
+      [
+        "a31f66f5ac7d0fcf1a99cfa4af0d956e655f51a3fbc27b3511e24e23f139dda9",
+        "1.0.0"
+      ]
+    ],
+    "assembly-lane-n-gage": [
+      [
+        "4d82f9383ae28b7460581b24302f981e1e125f0109b0cd6804b6f497d61c262b",
+        "1.0.0"
+      ]
+    ],
+    "baby-t-park": [
+      [
+        "be161e0b11aa03505c501b7db012d830405e69e171f84633c2e24ffe9cc3cbf8",
+        "1.0.2"
+      ],
+      [
+        "96ad9f74f51a02eafcc207cd02c97052d674c950e0f24b6440a227494a705fe8",
+        "1.0.0"
+      ]
+    ],
+    "big-forest": [
+      [
+        "9553863255f8b9a72cf2b8fbe0e3f1f3195e0e502c604ccf0c3f06ff0c3ea535",
+        "1.0.0"
+      ],
+      [
+        "6598755fd3d9b3172bc7a27af250bcf3cb99dd8b709ee5a6e9a2409ee7ef54ec",
+        "LRG2Pancho"
+      ]
+    ],
+    "bowser-castle-1": [
+      [
+        "0b59b54ac3d902d43ee7b798d45dd4979aa5859520460282d22fb6bc85dcbcd9",
+        "1.0.0"
+      ]
+    ],
+    "breeze-harbor": [
+      [
+        "f0914b8dfdaa1cf6cdf43d6578c183cbef2890105f91a309eab15f631c3e9960",
+        "1.2.0"
+      ]
+    ],
+    "chasqui-rally": [
+      [
+        "54d6546d8690c9fe3f3026727fa7af647e4f1736a65637b14337ada0964a5ff9",
+        "2.0.0"
+      ],
+      [
+        "9bba2b381dc77f8dbe208ef140446c77f4119b3f9b713916c0e11f5b7ade3d8a",
+        "LRG2Pancho"
+      ]
+    ],
+    "choco-island-2": [
+      [
+        "4d5a7397feaa242083a59279c28d8e96118ec7074de5f03eeab329207c4472d4",
+        "1.0.0"
+      ]
+    ],
+    "coco-park-2025": [
+      [
+        "ad527ad87af70b4a98e6de5624db8a16ac297b3723701b91b45a0b2987348234",
+        "1.0.0"
+      ]
+    ],
+    "cortex-vortex": [
+      [
+        "4bc283cbe9e52dc75ffdb62bf8f30a84541d4dc17544ae1b47d68114ae20d3d2",
+        "1.1.3"
+      ],
+      [
+        "d3189b6263c2a13c9f289e5ad7776bc78cca1cf64be5afa5085d7a727e6efd36",
+        "1.1.2"
+      ]
+    ],
+    "country-speedway": [
+      [
+        "9fa73436daaf91434ede1d6fb036a8e6dff225c55533cc0be5723d229b5e53bd",
+        "1.3.0"
+      ],
+      [
+        "58d3f92a33e6ac0bc7ad9d176a09e87af011ba0493b63349164af0371351ee9e",
+        "1.2.1"
+      ],
+      [
+        "afe36db1745f65290c551090515bd742d1ecb0e84d97d7267ae330be9d3160e9",
+        "LRG2Pancho"
+      ]
+    ],
+    "crystal-caves": [
+      [
+        "eddcd303e316e8eb41f885e8ec959a2c2d3db06e21727dfc50c61ab8a8048139",
+        "1.0.0"
+      ]
+    ],
+    "cubic-circuit": [
+      [
+        "02baa4cfb90f9e3d16ad3e16c52546289935233c3213f85f4ada3a47823d1478",
+        "1.1.0"
+      ]
+    ],
+    "cursed-trial-roulette": [
+      [
+        "5452798160a19b3f9d4d756e239953192665ed493b7b2c77acf5e1307b88a51b",
+        "1.0.0"
+      ]
+    ],
+    "dark-ruins": [
+      [
+        "ced2df2e83aef4759e0bb132fbd36f44c51d818b623d7950faec2407b8229589",
+        "1.1.0"
+      ]
+    ],
+    "deep-sea-driving-n-gage": [
+      [
+        "21987d52a922a8ae6493eb926e79f3fa55e035b03cf3273db55e150fadc711f7",
+        "1.1.0"
+      ]
+    ],
+    "diwali": [
+      [
+        "8e040bd120bd964134730cce2a9fa2869922e75bbe71f703b863a16c38b730c4",
+        "LRG2Pancho"
+      ]
+    ],
+    "draculas-castle": [
+      [
+        "8c343aa6723ee2dec99d54f815e77e9e20798f657d6f4464f312529ffe4698f4",
+        "1.0.0"
+      ],
+      [
+        "72bf846cd1932a058f5a379f577dd50624fa94527150a1d6fc3e29cdd73013f8",
+        "LRG2Pancho"
+      ]
+    ],
+    "dreamy-heights": [
+      [
+        "9f85b2d5dbc2fe543ce024751fc6e08f77d7ba649f8ddfec936f016804a9bbf3",
+        "1.2.0"
+      ]
+    ],
+    "drive-thru-danger": [
+      [
+        "77706a3b5d46cdd75ffa05e4da316cf5dc400d6e17aad7ccdf0c3f5cd62eee79",
+        "1.0.0"
+      ]
+    ],
+    "ds-rainbow-road": [
+      [
+        "a0d13ac14427cfb9cb30b2564a034757977082f34e08fb05cc1bcd98757f5b17",
+        "1.0.0"
+      ]
+    ],
+    "dust-keepers": [
+      [
+        "1ea0e1c0013d711083bdf237ee28d52f17cbd831960969fc6a5c5cc835f55972",
+        "1.0.0"
+      ]
+    ],
+    "frozen-depths": [
+      [
+        "5b3223248a481a2f856bebf7c4eda22e5147723470ec247bf1751eb377c41981",
+        "1.1.0"
+      ]
+    ],
+    "garden-speedway": [
+      [
+        "a04e15057ee83c80d98f0e88eb513eb51286e123b11e82155203b7ef9a43b23e",
+        "1.0.0"
+      ],
+      [
+        "a24c255c87d062b907dfd052a5691ff1b13875adac3515764ad8e64234705fd0",
+        "LRG2Pancho"
+      ]
+    ],
+    "glazed-dessert": [
+      [
+        "c22269a892780f3c695d76a4954a2af3e4bbd87d1ff423fa50ba349dfbd96b65",
+        "1.0.0"
+      ]
+    ],
+    "green-hill-raceway": [
+      [
+        "50250966e9b31d13b140aaafa9433ffce19269898a0850edd0a1e8cf1207c760",
+        "2.0.0"
+      ],
+      [
+        "7d1d83e29a5aa06615ba1ef87d60e2f5513d267e76691b7ba2f3b6bce7690415",
+        "1.0.0"
+      ]
+    ],
+    "hangtime-harbor": [
+      [
+        "0a10f227dd3d24058cac3cb39a4787f9ffbc970e2041a37db8d1b61c6e6dd090",
+        "1.1.0"
+      ]
+    ],
+    "haven-stadium": [
+      [
+        "c0667cf7709d0d176dd633f77664dd4d016c785063b6b4be18dc351ae154513d",
+        "1.0.0"
+      ]
+    ],
+    "haven-stadium-reverse": [
+      [
+        "3e4c33ae6ca595bb642da2a1e9fbe9cbe4e27dd8a578dd4d833af2c39c58cd3d",
+        "1.0.0"
+      ]
+    ],
+    "holiday-hills": [
+      [
+        "f6aa45f60354a29e40a6d2f973ea500cf94da50e831fb38fce039ae7f1abd021",
+        "1.0.0"
+      ]
+    ],
+    "inferno-island": [
+      [
+        "48508645ad632f483660742208ad9f4005523aad58e2b81600017485d3973fda",
+        "1.3.0"
+      ]
+    ],
+    "jungle-boogie-n-gage": [
+      [
+        "a76595cd5a72e0b612698f0011b4607bce53567a4b3578c78cad50332412c1b2",
+        "1.0.0"
+      ]
+    ],
+    "kong-dungeon": [
+      [
+        "f6c9080c9ff152343631db3047f172e23cdf209e1763f0b510c68cb636f79caf",
+        "1.1.0"
+      ]
+    ],
+    "lava-lane": [
+      [
+        "6ea3b13dc2fa7e2cc93ee88211822218f6215e74f59d941ab92bc5b61ea6527e",
+        "3.0.0"
+      ]
+    ],
+    "lights-out": [
+      [
+        "5ebdb9f235ba0c07ba5c72b715c949afdd6062fcf3208f45a1c13936ffb529c6",
+        "1.0.0"
+      ]
+    ],
+    "lockbox-adventure-track-4": [
+      [
+        "c978c26a86f5c85d37a665f62ba8b3efd11cb93b71e931b2787f7c7e9f105ae2",
+        "1.0.0",
+        2
+      ]
+    ],
+    "mario-circuit-1": [
+      [
+        "a9c8989b857d547eec29b0728899c8f34a878401c2c6dfb2a4b49b9301ab4e83",
+        "1.0.0"
+      ],
+      [
+        "fb7119f056178beff7b48ca13c63a5893b0146ef527973f71b5fc57b3cf80766",
+        "LRG2Pancho"
+      ]
+    ],
+    "mario-circuit-2": [
+      [
+        "62ff293e6367d41f2916ebe7e44ecc90ac141003c33cf3e912582bb54cb1e671",
+        "1.1.0"
+      ]
+    ],
+    "mario-raceway-n64": [
+      [
+        "d30c47c13da5b3592891397327b41ce398ecbea3a81df7ead8d76ed9d11d6bf4",
+        "1.0.0"
+      ]
+    ],
+    "matsuri": [
+      [
+        "467f83758d3a0b6aef9f340b144d0d76eb6ca04617aa87d6bc7727fb1d119c96",
+        "1.0.0",
+        2
+      ]
+    ],
+    "namek": [
+      [
+        "e766b4ac2d57c80b946e930b9ed50eaa8a580e90d410165b4b150cf7f3716fe0",
+        "1.0.0"
+      ]
+    ],
+    "neon-paradise": [
+      [
+        "639434d84fe6de4ba88a31a1dd5a11291d640617ab25af9c7bfbd5d383b53d5d",
+        "1.1.0"
+      ],
+      [
+        "665d19819c437ab9ab6cbccac7c0202979405f16e1af39e06d9ea1d3286be9d0",
+        "1.0.0"
+      ]
+    ],
+    "neonstadion": [
+      [
+        "8c1fde3e60405eb8737e75aa4cfe5cb205cd9d21961eccf4c5d7827ecf484880",
+        "1.0.0"
+      ],
+      [
+        "27e41e0e9c429c500ec9197fb18f66418e395d8d50731c72ba525547a39c59b6",
+        "LRG2Pancho"
+      ]
+    ],
+    "nina-s-nightmare": [
+      [
+        "7fc42abb12130c546a7b500815a3d3a372c4178f4f063b56460730443f4ea0a0",
+        "1.0.3"
+      ]
+    ],
+    "north-pole": [
+      [
+        "17eafea4884285d2d1b6e684519081955347b96196783d06d984f06d72105e3c",
+        "1.1.0"
+      ]
+    ],
+    "out-of-time-n-gage": [
+      [
+        "29a8b5b2b72b7dc83662834d2129272f6036fc06fb5fa1c71d547e791eb70ce8",
+        "1.0.0"
+      ]
+    ],
+    "papu-cave": [
+      [
+        "77cb05cc35040a3eb5a5f8fdef96ddd356e8951eecf1e8e77422b0119b20782e",
+        "1.0.0"
+      ]
+    ],
+    "papu-s-sg-temple": [
+      [
+        "9ddff5eac7ea132aa47c9dbc22f5a5fcc18cc3a1a10d6546a10312b13a6d0c6d",
+        "1.0.0"
+      ]
+    ],
+    "pepsi-city": [
+      [
+        "ca4f7c33f1004afe0678b69eb025f546ce0e2b8fc5d16f20b773cebc635465b6",
+        "1.0.0"
+      ],
+      [
+        "29e821ce632c9f483d3e0711e41cc077ab087a8a6044b7a70db826b7b40e71d0",
+        "LRG2Pancho"
+      ]
+    ],
+    "redrock-ravine": [
+      [
+        "320379a26e12d88fb58eea7c32f349f2e1ff4f1e3907dc746d07cfc7636d1f78",
+        "1.1.0"
+      ]
+    ],
+    "royal-raceway": [
+      [
+        "fca9e96a57c850e68e0226382645b4d6df5b4e7ebeb61459269ec2427ffab96b",
+        "1.0.0"
+      ]
+    ],
+    "sampa-run": [
+      [
+        "e2c6eaa5687a6b323011c74f0858baaa0228275aeabd279dc7c47c2ec3696a6f",
+        "1.0.0"
+      ]
+    ],
+    "sewer-baby-park": [
+      [
+        "4232d4396e59df560678f3d0a370ce874649821ad614139b067250494af8f44c",
+        "LRG2Pancho"
+      ]
+    ],
+    "sid-house": [
+      [
+        "b33df114772ccbc19fa2bae99d7cbf86d6fb015092b5a43a60944ea927876cd7",
+        "1.0.2"
+      ]
+    ],
+    "sids-house": [
+      [
+        "985663bf855f45fd8b71fe23ada322effb738c5fcf55cbd6c2710f95c631b112",
+        "LRG2Pancho"
+      ]
+    ],
+    "skater-s-retreat": [
+      [
+        "a728c5b1846323d544e5b973a00931d2cceb1f0a67cba5ee5752befcd4aaa4a9",
+        "1.1.0"
+      ]
+    ],
+    "skull-cave": [
+      [
+        "04b5cef91ff6e18c14276006458f6b71510a379de8b5c8aa553bfb84ed8fa6a8",
+        "1.0.0"
+      ]
+    ],
+    "snes-bowser-s-castle-2": [
+      [
+        "00913e520398d5408e0214b05cefba3e5ecff1b0e4a922df5009738ad1c91dca",
+        "1.0.0"
+      ]
+    ],
+    "snowfall-keep": [
+      [
+        "80130ec6bc90bc8eb5a1f379a0a2f1666fd3dc180e3c3e84d7eeb6e28f9b2757",
+        "1.0.0"
+      ]
+    ],
+    "snowy-valley": [
+      [
+        "35dd336d697e6ddc1ef68c3d9b9c921ead7ba400f97a28e47933e7f422b39448",
+        "1.0.1"
+      ],
+      [
+        "83406e87505616994f5b539666f1327597212058506c29d66396aac15448529e",
+        "LRG2Pancho"
+      ]
+    ],
+    "space-labs": [
+      [
+        "5cdcff2e56472102b96458cd1e6eee7e769a87129d45aabd7c03095619b48ef9",
+        "1.2.3"
+      ],
+      [
+        "262bc77013b08ccc92abfc814c5d0147a4020f7506e620703d7a0ce84ba1ac20",
+        "1.0.0"
+      ]
+    ],
+    "specter-station": [
+      [
+        "c7cb55dd24a5fdd2a868968a14e1881866e7e97c9cc9cefb208dd394298ebd17",
+        "LRG2Pancho"
+      ]
+    ],
+    "sunset-vista": [
+      [
+        "97fd76f06e3c57207560751728eb23dbf81980887e5f7e25f2296917578735b5",
+        "1.2.0",
+        3
+      ],
+      [
+        "3c4ac895bf8c11ecd44730b40bab7a8d86471f3af55f6ea10146740b90cf37d9",
+        "1.0.0"
+      ]
+    ],
+    "super-snocross-2": [
+      [
+        "db6f51a7857983771eba923883daafd696eaf0224a2d833528361f187a6d7115",
+        "1.1.0"
+      ]
+    ],
+    "the-dairy-track": [
+      [
+        "ffdd944c6fc721d59aefdf23c2f90a9f7e4bf341bf952b501286b1354718fc50",
+        "1.0.0"
+      ],
+      [
+        "a4cfe29c0e3fc7e309d7cfb7c2eeb1fb38bf9359b343d236b46b0c2aedd709e2",
+        "LRG2Pancho"
+      ]
+    ],
+    "the-lab": [
+      [
+        "178cfc70ad88c344b74745de1dcd6c56f14474e1686d2a3d5056c47017357c41",
+        "1.0.0"
+      ]
+    ],
+    "tizi-challenge": [
+      [
+        "e22b87a73009b94251f5216424cf07875a02e076eb8461b902624c2b5277ad45",
+        "LRG2Pancho"
+      ]
+    ],
+    "toasty-terrace": [
+      [
+        "2b18c6305d3cfe591e979eabe42e7815fe475479d49f59d5b7b50b06f701ac5d",
+        "1.3.0"
+      ],
+      [
+        "c62b6b949ab505a1f579ebe0124b1d0d291edfa2b9b6a2367c156cc637cdf4cc",
+        "1.2.0"
+      ],
+      [
+        "8403e3f99ff4927accd15d6bb413181883316d2f1902b9e14bf2ab4eb3b1f0fa",
+        "LRG2Pancho"
+      ]
+    ],
+    "tomb-temple": [
+      [
+        "9a9073fe9d2dd0bbf3222dc1b4d8be8ccf6811890e0919ca05fbc181f7adf082",
+        "1.1.0"
+      ],
+      [
+        "7dd312574cda7a61b0dc216b9667a29d9a65d09bde64a18b8830d8b895b8b103",
+        "LRG2Pancho"
+      ]
+    ],
+    "towers": [
+      [
+        "04c1f7c37d3a26a3c8ac221d4a69167e578036e7d3f0cab77270ca1541e0f591",
+        "1.0.0"
+      ]
+    ],
+    "tribal-trials": [
+      [
+        "e2cc24322951d621c33ce00c976f5da22e6da0f143d5fd0b4ca0f560c130efb9",
+        "1.1.0"
+      ]
+    ],
+    "tv-world": [
+      [
+        "e3d765e824a2de96d06d1f34951b6d2ab51c027fb3353c62d8e7086b8ce1e33a",
+        "1.1.0"
+      ]
+    ],
+    "ursa-glacier": [
+      [
+        "6d083e82a46192284efd23c823fd637e8302d8bb3c4e8356193111566aa313c1",
+        "1.2.0"
+      ]
+    ],
+    "wario-stadium": [
+      [
+        "8d937cdcc724ebbc1f59a5bc5be6290e9bd22ce5fc02e405351da8b10802d95b",
+        "2.0.0"
+      ]
+    ],
+    "yoshi-circuit": [
+      [
+        "5728e57919f873d84c84e8372db4b44bc104c9d7472e89be127def6012293ecf",
+        "1.1.0"
+      ]
+    ],
+    "yoshi-circuit-legacy": [
+      [
+        "ab3e0f8d0abbae1b0aa64efe50de0d5d1cbd0b3ab27967b4132f76b99f557970",
+        "1.1.0"
+      ]
+    ]
+  },
+  "pickup_ruling_counts": {
+    "9fa73436daaf91434ede1d6fb036a8e6dff225c55533cc0be5723d229b5e53bd": [
+      25,
+      5,
+      0
+    ],
+    "2b18c6305d3cfe591e979eabe42e7815fe475479d49f59d5b7b50b06f701ac5d": [
+      20,
+      4,
+      0
+    ],
+    "fca9e96a57c850e68e0226382645b4d6df5b4e7ebeb61459269ec2427ffab96b": [
+      28,
+      6,
+      0
+    ],
+    "50250966e9b31d13b140aaafa9433ffce19269898a0850edd0a1e8cf1207c760": [
+      20,
+      9,
+      0
+    ],
+    "467f83758d3a0b6aef9f340b144d0d76eb6ca04617aa87d6bc7727fb1d119c96": [
+      27,
+      3,
+      0
+    ],
+    "c978c26a86f5c85d37a665f62ba8b3efd11cb93b71e931b2787f7c7e9f105ae2": [
+      29,
+      3,
+      0
     ]
   }
 }

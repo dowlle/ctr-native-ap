@@ -363,76 +363,9 @@ void BOTS_Adv_AdjustDifficulty(void)
 		sdata->const_0x30215400 = 0x30215400;
 		sdata->const_0x493583fe = 0x493583fe;
 	}
-
 #if (defined(CTR_AP) || defined(CTR_AI_LAP_RECORDER)) && defined(CTR_CUSTOM_TRACKS)
-	// Which track's recordings may replay on this load. Settled BEFORE the
-	// BOTS_InitNavPath loop below, because AP_NavRec_AfterBotsInit is what opens
-	// a recording and it runs a few lines further down; by then the answer has
-	// to already be standing.
-	//
-	// Every arm runs unconditionally, so no load can inherit the previous
-	// load's answer: a cup exit, a race pad to the host slot in an armed session
-	// and an ordinary retail race all come through here and all settle it.
-	//
-	// A load that SERVES custom bytes but yields no identity (the config-only
-	// path with a missing or malformed UUID) must BLOCK rather than clear:
-	// cleared, the borrowed host LevelID would match retail recordings onto
-	// custom geometry, and laps recorded here would be stamped as retail lines
-	// of the host slot. The same predicates that decide the bytes decide this,
-	// so geometry and recording policy cannot disagree.
-	//
-	// There is deliberately no CTR_CUSTOM_TRACKS-off arm. Nothing else in the
-	// tree calls AP_NavRec_SetActiveCustomTrack, so a build without the loader
-	// leaves the navrec identity statics at their zero-initialised value, which
-	// IS AP_NAVREC_IDENTITY_RETAIL. Clearing it there would be a no-op that cost
-	// this file its guard-off object identity for nothing.
-	//
-	// All THREE serving predicates are gathered, not just the event race's.
-	// Asking only some of them leaves the loads it skipped resolving to the
-	// borrowed host slot's retail identity, which is issue #356: N. Oxide's
-	// Final Challenge and the Cortex Vortex pad track both borrow LevelID 13,
-	// and Oxide Station's recordings must never replay on either.
-	{
-		unsigned char             ctNavUuid[CTR_CT_NAV_UUID_BYTES];
-		unsigned int              ctNavRevision = 0;
-		struct AP_NavRecLoadFacts facts;
-		int                       advCup = (gameMode1 & ADVENTURE_CUP) != 0;
-		int                       advBoss = (gameMode1 & ADVENTURE_BOSS) != 0;
-
-		facts.eventRaceServing = CustomTrack_ServingLoad((int)gGT->levelID, advCup, gGT->cup.cupID);
-		facts.eventRaceNavIdentity =
-		    CustomTrack_NavIdentityForLoad((int)gGT->levelID, advCup, gGT->cup.cupID, ctNavUuid, &ctNavRevision);
-		// A garage venue on custom bytes (#133 PR 6b) blocks the host's
-		// retail lanes the same way.
-		facts.oxideFinalServing = CustomTrack_OxideFinalServing((int)gGT->levelID, gGT->bossID, advBoss) ||
-		                          CustomTrack_GarageVenueServing((int)gGT->levelID, gGT->bossID, advBoss) >= 0;
-		facts.cortexTrackIntent = CustomTrack_CortexTrackIntent((int)gGT->levelID, advBoss);
-#ifdef CTR_CUSTOM_PACKAGES
-		// An Arcade custom-page race has no recording identity: block the host
-		// slot's retail lanes rather than replay them on custom geometry.
-		if (MainRaceTrack_OfflineCustomLoad())
-		{
-			facts.eventRaceServing = 1;
-			facts.eventRaceNavIdentity = 0;
-		}
-#endif
-
-		int navrecOutcome = AP_NavRecIdentity_ForLoad(&facts);
-		s_bossLaneAhead = AP_BossLane_Applies(navrecOutcome);
-
-		switch (navrecOutcome)
-		{
-		case AP_NAVREC_LOAD_CUSTOM:
-			AP_NavRec_SetActiveCustomTrack(ctNavUuid, ctNavRevision);
-			break;
-		case AP_NAVREC_LOAD_BLOCKED:
-			AP_NavRec_BlockRecordedLanes();
-			break;
-		default:
-			AP_NavRec_ClearActiveCustomTrack();
-			break;
-		}
-	}
+	// Settle identity before either the recorder or the bot paths use this load.
+	s_bossLaneAhead = AP_BossLane_Applies(AP_NavRec_RederiveLoadIdentity(gGT));
 #endif
 
 	for (s16 i = 0; i < BOTS_NAV_PATH_COUNT; i++)
@@ -789,6 +722,9 @@ void BOTS_ThTick_RevEngine(struct Thread *botThread)
 void BOTS_MaskGrab(struct Thread *botThread)
 {
 	struct Driver *bot = botThread->object;
+#ifdef CTR_AP
+	RB_MinePool_BossProgress(bot, 0, 0, -1, NULL);
+#endif
 	struct NavFrame *frame = bot->botData.botNavFrame;
 	struct NavFrame *nextFrame = frame + 1;
 

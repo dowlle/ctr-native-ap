@@ -21,12 +21,6 @@ void AP_HubSaveBoxCloseForLoad(void);
 void AP_DeathLinkOnRaceEnd(struct GameTracker *gGT, struct Driver *player);
 #include "test-custom-time-trial.c"
 
-const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int levelID)
-{
-	(void)levelID;
-	return NULL;
-}
-
 void AP_CupSweepOnLoadRequested(int levelID)
 {
 	(void)levelID;

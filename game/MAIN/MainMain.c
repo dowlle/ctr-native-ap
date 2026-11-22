@@ -228,6 +228,9 @@ u32 main(void)
 
 						// Turn off the "Loading..." flag
 						gGT->gameMode1 &= ~LOADING;
+#if defined(CTR_AP) || defined(CTR_AI_LAP_RECORDER)
+						AP_NavRec_ResetCapture();
+#endif
 #ifdef CTR_CUSTOM_PACKAGES
 						MainRaceTrack_OfflineResidentRestart();
 #endif
@@ -336,6 +339,7 @@ u32 main(void)
 
 			// Archipelago per-frame hook (CTR_AP build only; see ap/ap_hooks.c)
 #ifdef CTR_AP
+			AP_NavRec_ObservePhysics(gGT);
 			AP_OnFrame(gGT);
 #elif defined(CTR_BOX_AUTHORING) || defined(CTR_AI_LAP_RECORDER)
 			// The authoring client without Archipelago drives the same

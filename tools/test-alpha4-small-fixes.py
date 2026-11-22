@@ -25,6 +25,7 @@ fixture = r'''
 #include "include/ctr_menu_scrollbar.h"
 #include "include/text_box.h"
 #define CTR_AP
+#include "include/platform/native_config.h"
 #define CTR_NATIVE
 #define CTR_CUSTOM_TRACKS
 #define CTR_CUSTOM_PACKAGES
@@ -45,7 +46,10 @@ typedef struct { unsigned char r,g,b,code; } Color;
 #define INC_TROPHY 1
 #define AP_FEED_X 8
 #define AP_FEED_BASE_Y 200
+#define AP_FEED_RACE_WIDTH 364
 #define AP_FEED_LINE_H 12
+#define AP_FEED_BOX_WARNING_Y 72
+#define AP_FEED_CONTENT_WARNING_Y 48
 #define PARKING_LOT 20
 #define ADVENTURE_CUP 0x10000000
 typedef short s16;
@@ -70,8 +74,16 @@ static char lastText[128];
 static int ctr_cfg_active(void) { return active; }
 static int AP_GateCount(int i) { assert(i==AP_IDX_TROPHY); return received; }
 static int AP_HubFeedOn(void) { return enabled; }
+static int feedMode = AP_ITEM_FEED_ALL;
+static int AP_ItemFeedMode(void) { return feedMode; }
 static int AP_CharSwap_HubHudHidden(void) { return hidden; }
 static void OtherFX_Play(int fx,int volume) { assert(fx==0x41&&volume==1); }
+static int DecalFont_GetLineWidthStrlen(char *s,int n,int font) {
+    (void)font; return n < 0 ? (int)strlen(s) * 8 : n * 8;
+}
+int DecalFont_LineBoxPrefixLen(const char *s,int w,short font) {
+    (void)font; return (int)strlen(s) * 8 <= w ? (int)strlen(s) : (w > 24 ? w / 8 - 3 : 0);
+}
 static void DecalFont_DrawLine(char *s,int x,int y,int font,int flags) { snprintf(lastText,sizeof lastText,"%s",s);if(draws<8)drawnY[draws]=y;draws++;lastY=y; }
 static void DecalFont_DrawLineOT(char *s,int x,int y,int font,int flags,uint32_t *ot) { DecalFont_DrawLine(s,x,y,font,flags); }
 void DecalFont_DrawLineBox(const char *s,int x,int y,int width,short font,int flags,int mode,int slot,unsigned int *ot) { assert(width==(mode==TEXT_ELLIPSIS?364:480));DecalFont_DrawLine((char *)s,x,y,font,flags); }
@@ -80,9 +92,12 @@ static int CustomTrack_ServingLoad(int level,int cup,int id) { return custom; }
 static int MainRaceTrack_OfflineCustomLoad(void) { return offline; }
 '''
 fixture += function("game/UI/UI_DrawNum.c", "void UI_DrawNumTrophy(s16 posX, s16 posY)")
+fixture += "\nstatic int missingContent;\nstatic int AP_CustomContentWarningVisible(void) {return missingContent;}\n"
+fixture += function("ap/ap_hooks_feed.c", "void AP_FeedDiscardUnimportant(void)")
+fixture += function("ap/ap_hooks_feed.c", "static const char *AP_FeedRaceText(AP_FeedLine *line, char text[AP_FEED_TEXT_CAP])")
 fixture += function("ap/ap_hooks_feed.c", "static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)")
-fixture += "\nstatic int ap_feed_hub_pad_title;\n"
-fixture += function("ap/ap_hooks_feed.c", "void AP_FeedHubPadTitle(int visible)")
+fixture += "\nstatic int ap_feed_hub_pad_y;\n"
+fixture += function("ap/ap_hooks_feed.c", "void AP_FeedHubPadTitle(int feedY)")
 fixture += function("ap/ap_hooks_feed.c", "void AP_FeedDrawHub(void)")
 fixture += function("game/230/MM_ConfigMenu.c", "static void CTR_MenuDrawScrollBar(int x, int y, int h, int total, int visible, int top, uint32_t *ot)")
 fixture += function("game/230/MM_ConfigMenu.c", "static void Config_DrawScrollBar(int top, int pageRows, uint32_t *ot)")
@@ -101,16 +116,18 @@ int main(void) {
     }
     active=0;game.gameMode2=0;UI_DrawNumTrophy(10,20);assert(!strcmp(lastText,"16"));
     game.gameMode2=INC_TROPHY;UI_DrawNumTrophy(10,20);assert(!strcmp(lastText,"15"));
-    for(int title=0;title<2;title++)for(active=0;active<2;active++)for(hidden=0;hidden<2;hidden++)for(enabled=0;enabled<2;enabled++) {
-        AP_FeedHubPadTitle(title);
+    const int anchors[]={0,103,120};
+    for(int row=0;row<3;row++)for(active=0;active<2;active++)for(hidden=0;hidden<2;hidden++)for(enabled=0;enabled<2;enabled++) {
+        int anchor=anchors[row];
+        AP_FeedHubPadTitle(anchor);
         AP_FeedLinesReset(&ap_feed);AP_FeedLinesEnqueue(&ap_feed,"WAITING",WHITE,0);
         draws=0;AP_FeedDrawHub();assert(draws==(active&&!hidden&&enabled));
         assert(ap_feed.qcount==(draws?0:1));
-        if(draws) assert(lastY==(title?120:200));
+        if(draws) assert(lastY==(anchor?anchor:200));
     }
     active=enabled=1;hidden=0;
     // Leaving the pad restores the old anchor on the next frame.
-    AP_FeedHubPadTitle(1);AP_FeedHubPadTitle(0);
+    AP_FeedHubPadTitle(103);AP_FeedHubPadTitle(0);
     draws=0;AP_FeedDrawHub();assert(lastY==200);
     for(int warning=0;warning<2;warning++)for(int count=0;count<=5;count++) {
         AP_FeedLinesReset(&ap_feed);ctr_cfg.box_placement_refused=warning;
@@ -125,6 +142,32 @@ int main(void) {
     }
     // Warning capacity is hub-only: races still draw five lines.
     draws=0;AP_FeedTickAndDraw(8,200,1);assert(draws==5&&drawnY[0]==152);
+    // A raised custom-pad anchor leaves one row below the two warning lines.
+    draws=0;AP_FeedTickAndDraw(8,103,0);assert(draws==1&&drawnY[0]==103&&ap_feed.qcount==1);
+    // Missing content alone leaves three rows. The lower box warning wins when both are drawn.
+    missingContent=1;ctr_cfg.box_placement_refused=0;
+    draws=0;AP_FeedTickAndDraw(8,103,0);assert(draws==3&&drawnY[0]==79&&drawnY[2]==103&&ap_feed.qcount==1);
+    ctr_cfg.box_placement_refused=1;
+    draws=0;AP_FeedTickAndDraw(8,103,0);assert(draws==1&&drawnY[0]==103&&ap_feed.qcount==1);
+    AP_FeedLinesReset(&ap_feed);
+    AP_FeedLinesEnqueue(&ap_feed,"FILLER",WHITE,0)->unimportant = 1;
+    AP_FeedLinesPromote(&ap_feed);
+    AP_FeedLinesEnqueue(&ap_feed,"STOCK",WHITE,0)->unimportant = 1;
+    AP_FeedLinesEnqueue(&ap_feed,"UNLOCK",WHITE,0);
+    ap_feed.stagger = 0;
+    feedMode = AP_ITEM_FEED_IMPORTANT;
+    draws=0;AP_FeedTickAndDraw(8,200,0);
+    assert(draws == 1 && !strcmp(lastText,"UNLOCK") && !ap_feed.qcount);
+    /* The menu applies this discard before the next receipt can evict
+       a progression line from an old, full ALL queue. */
+    AP_FeedLinesReset(&ap_feed);
+    AP_FeedLinesEnqueue(&ap_feed,"PROGRESSION",WHITE,0);
+    for (int i = 1; i < AP_FEED_NORMAL_LIMIT; ++i)
+        AP_FeedLinesEnqueue(&ap_feed,"FILLER",WHITE,0)->unimportant = 1;
+    AP_FeedDiscardUnimportant();
+    AP_FeedLinesEnqueue(&ap_feed,"NEW USEFUL",WHITE,0);
+    assert(ap_feed.qcount == 2 && !strcmp(ap_feed.queue[ap_feed.qhead].text,"PROGRESSION"));
+    feedMode = AP_ITEM_FEED_ALL;
     // A4-36: a slim bar, no text, only when the page scrolls; track and thumb inside the nine-row window.
     draws=0;
     for(int count=0;count<=9;count++) { boxes=0;Config_DrawScrollBar(0,count,NULL);assert(!boxes); }
@@ -165,7 +208,8 @@ with tempfile.TemporaryDirectory() as tmp:
 logic = function("game/MAIN/MainFrame.c", "void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepads)")
 assert logic.index("AP_FeedHubPadTitle(0)") < logic.index("ThTick_RunBucket")
 warp = source("game/232/AH_WarpPad.c")
-title = warp.index("AP_FeedHubPadTitle(1)")
-assert warp.rindex("sdata->AkuAkuHintState == 0", 0, title) < title
-assert "AP_CharSwap_HubHudHidden()" in warp[warp.rindex("sdata->AkuAkuHintState == 0", 0, title):title]
-assert "DecalFont_DrawLine(warppadLNG" in warp[title:title+300]
+title = warp.index("AP_FeedHubPadTitle(apPadFeedY)")
+draws = warp[warp.rindex("sdata->AkuAkuHintState == 0", 0, title):title]
+assert "AP_CharSwap_HubHudHidden()" in draws
+assert "DecalFont_DrawLine(warppadLNG" in draws
+assert "DecalFont_DrawLineBox(warppadLNG" in draws

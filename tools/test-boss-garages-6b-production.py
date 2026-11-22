@@ -80,9 +80,11 @@ tracks = read("platform/native_custom_tracks.c")
 override = tracks[tracks.index("int CustomTrack_GetOverride("):]
 check(override.index("CustomTrack_GarageVenueServing(") < override.index("CustomTrack_OxideFinalServing("),
       "the loader override checks the garage venue before the Oxide 2 venue and the standalone path")
-for rel, count in (("game/MAIN/MainInit.c", 2), ("game/BOTS.c", 1), ("ap/ap_navrec.c", 1),
+for rel, count in (("game/MAIN/MainInit.c", 2), ("ap/ap_navrec.c", 1),
                    ("ap/ap_boxes.c", 1), ("ap/ap_hooks_race.c", 1)):
     check(read(rel).count("CustomTrack_GarageVenueServing(") >= count, rel + " consults the garage venue")
+check("AP_NavRec_RederiveLoadIdentity(gGT)" in read("game/BOTS.c"),
+      "bot setup consults the garage venue through the shared recording resolver")
 gates = read("ap/ap_hooks_gates.c")
 venue = gates[gates.index("int AP_BossGarageVenue(int bossIdx)"):]
 venue = venue[:venue.index("\n}\n")]

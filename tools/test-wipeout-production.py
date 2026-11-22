@@ -18,6 +18,8 @@ fixture = r'''
 #undef main
 int OtherFX_Play(u32 id, int flags) { (void)id; (void)flags; return 0; }
 void AP_WumpaReachedTen(struct Driver *driver) { (void)driver; }
+static int recorder_effects;
+void AP_NavRec_NoteKartEffect(void) { recorder_effects++; }
 '''
 fixture += modify
 fixture += "\n#define AP_TrapSchedEffectDone(a,b) ((void)0)\n"
@@ -33,9 +35,10 @@ int main(void) {
     const int totals[] = {0, 1, 9, 10, 11, 37, 129, 2147483647};
     for (unsigned i = 0; i < sizeof totals / sizeof totals[0]; ++i) {
         g_race_wumpa = totals[i]; d.numWumpas = totals[i] > 10 ? 10 : totals[i];
-        credited = 80; wipeout(&d);
+        credited = 80; recorder_effects = 0; wipeout(&d);
         assert(AP_WumpaRaceCount(&d) == 0 && d.numWumpas == 0);
         assert(credited == 80); /* Already banked currency is never removed. */
+        assert(recorder_effects == 1);
     }
     g_race_wumpa = 37; d.numWumpas = 10;
     d.actionsFlagSet = ACTION_MASK_WEAPON;

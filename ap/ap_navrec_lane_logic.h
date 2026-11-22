@@ -112,6 +112,18 @@ static void AP_NavRecPool_Key(const char *name, char out[AP_NAVREC_NAME_FIELD + 
 	}
 }
 
+// A null filter means all names are allowed. An empty filter means there is no
+// configured identity to match, so anonymous recordings never count as ours.
+static inline int AP_NavRecPool_NameMatches(const char *driverName, const char *onlyKey)
+{
+	char key[AP_NAVREC_NAME_FIELD + 1];
+
+	if (onlyKey == NULL)
+		return 1;
+	AP_NavRecPool_Key(driverName, key);
+	return onlyKey[0] != '\0' && strcmp(key, onlyKey) == 0;
+}
+
 // Does a peeked header belong in this load's pool? Same identity rule the full
 // read applies (AP_NavRecFormat_IdentityMatches), so the pool never offers a file
 // the read would refuse for its track.

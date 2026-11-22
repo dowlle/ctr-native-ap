@@ -167,17 +167,20 @@ u32 Music_AsyncParseBanks(void)
 		{
 #ifdef CTR_CUSTOM_PACKAGES
 			// A custom-page race: the package's own .sca bank when it has one
-			// that fits, the fixed default otherwise (HOWL_CustomMusic.c).
+			// that fits, the picked fallback bank otherwise (HOWL_CustomMusic.c).
 			if (MainRaceTrack_OfflineCustomLoad())
 			{
 				if (HOWL_CustomMusic_LoadBank(&thisBank))
 					break;
 				index = HOWL_CustomMusic_FallbackFXBank();
 			}
-			// The Cortex Vortex race: its bundled music when it fits,
-			// Oxide Station's bank (the host level) otherwise.
-			else if (HOWL_CustomMusic_CortexLoadBank(level, &thisBank))
+			// A seed race or a custom boss venue with Boss Music set to TRACK.
+			else if (HOWL_CustomMusic_ContentLoadBank(level, &thisBank))
 				break;
+			// A custom race without verified music plays the picked retail
+			// level's bank; a retail race keeps its own.
+			else if (HOWL_CustomMusic_FallbackLevel() >= 0)
+				index = HOWL_CustomMusic_FallbackFXBank();
 			else
 #endif
 			index = data.levBank_FX[level];
@@ -457,10 +460,14 @@ u32 Music_AsyncParseBanks(void)
 					break;
 				index = HOWL_CustomMusic_FallbackSongBank();
 			}
-			// Cortex Vortex's song goes with its bank: SetSong answers 0
-			// unless stage 0 loaded the bundled bank.
+			// Seed races and boss venues use the .sca paired with their bank,
+			// or the picked fallback's song when there is none.
 			else if (HOWL_CustomMusic_SetSong())
 				break;
+			else if (HOWL_CustomMusic_FallbackLevel() >= 0)
+			{
+				index = HOWL_CustomMusic_FallbackSongBank();
+			}
 			else
 #endif
 			index = data.levBank_Song[level];
@@ -570,7 +577,31 @@ void Music_Adjust(u32 songID, int newTempo, struct SongSet *set, u32 songSetActi
 	if (sdata->cseqHighestIndex != songID)
 	{
 		//  (loopAtEnd)
-		CseqMusic_Start(songID, newTempo, set, songSetActiveBits, 1);
+		int started = CseqMusic_Start(songID, newTempo, set, songSetActiveBits, 1);
+#ifdef CTR_CUSTOM_PACKAGES
+		if (songID == CSEQ_SONG_LEVEL && s_customSongReady)
+		{
+			// The next race audio update can retry if the sequencer was busy.
+			if (!started)
+			{
+				Music_End();
+				return;
+			}
+			// Once per race: which song data is active when the song starts.
+			if (!s_songStartLogged)
+			{
+				s_songStartLogged = 1;
+				HOWL_CustomMusic_Log("started the track's own music", NULL);
+			}
+		}
+		else if (songID == CSEQ_SONG_LEVEL && started && !s_songStartLogged && s_fallbackLevel >= 0)
+		{
+			s_songStartLogged = 1;
+			HOWL_CustomMusic_LogFallback("started fallback music");
+		}
+#else
+		(void)started;
+#endif
 
 		sdata->cseqBoolPlay = true;
 
@@ -635,6 +666,11 @@ void Music_Restart(void)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002e4ec-0x8002e524
 void Music_Stop(void)
 {
+#ifdef CTR_CUSTOM_PACKAGES
+	// A paused Retry reaches the traffic-light stop without Music_End: the
+	// next song start logs its song data again.
+	s_songStartLogged = 0;
+#endif
 	// quit if no music is playing
 	if (sdata->cseqBoolPlay == 0)
 	{
@@ -659,6 +695,11 @@ void Music_Start(u32 songID)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8002e53c-0x8002e550
 void Music_End(void)
 {
+#ifdef CTR_CUSTOM_PACKAGES
+	// A Retry stops the music and starts the song again on banks that stay
+	// loaded: the next start logs its song data again.
+	s_songStartLogged = 0;
+#endif
 	sdata->cseqBoolPlay = false;
 
 	// no songs are playing

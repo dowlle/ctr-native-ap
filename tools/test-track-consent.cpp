@@ -28,6 +28,7 @@
 // for recorded Saphi catalogue pages, which tracks the real files allow.
 #include "ap_track_consent.h"
 #include "ap_track_registry.h"
+#include <platform/native_track_credit.h>
 #include <platform/native_saphi_catalogue.h>
 
 #include <nlohmann/json.hpp>
@@ -326,6 +327,17 @@ int main(int argc, char **argv)
 	// 3. Matching without an author id: first nothing (no catalogue, no
 	// registry), then by registry credits, then by what the catalogue taught.
 	CHECK(ap_track_permission(2, 0, U, nullptr) == U);
+	{
+		json c = json::parse(v1);
+		c["tracks"].push_back({{"track_key", "unrelated-track"}, {"client_listing", grant("granted", nullptr)}});
+		serve(true, c.dump(), registry_fixture());
+		CHECK(ap_track_consent_refresh(cache.c_str()) == 1 && wait_consent(&source) == AP_TRACK_CONSENT_DONE);
+		CHECK(ap_track_registry_status(nullptr, nullptr, 0) == AP_TRACK_REGISTRY_IDLE);
+		CHECK(ap_track_permission(999, 7, D, "unrelated-track") == A);
+		CHECK(ap_track_permission(999, 7, D, nullptr) == D); // repair only supplies the matched Saphi identity
+		serve(true, v1, registry_fixture());
+		CHECK(ap_track_consent_refresh(cache.c_str()) == 1 && wait_consent(&source) == AP_TRACK_CONSENT_DONE);
+	}
 	ap_track_registry_refresh("");
 	CHECK(wait_registry() == AP_TRACK_REGISTRY_DONE);
 	CHECK(ap_track_permission(2, 0, U, nullptr) == A);            // dreamy-heights, credited to Boxic
@@ -338,6 +350,23 @@ int main(int argc, char **argv)
 	CHECK(ap_track_permission(60, 0, U, nullptr) == A);           // both credited authors said yes
 	CHECK(ap_track_permission(70, 1, U, nullptr) == U);           // a co-author was not asked
 	CHECK(ap_track_permission(122, 0, U, nullptr) == U);          // dk-pass, Blounard not asked
+	{
+		// Presentation may skip a malformed sibling without dropping a refusal.
+		auto registry = json::parse(registry_fixture());
+		registry["tracks"][0]["credits"].push_back({{"name", " \t"}, {"role", "track"}});
+		auto consent = json::parse(v1);
+		consent["authors"][0]["client_listing"] = grant("declined", nullptr);
+		serve(true, consent.dump(), registry.dump());
+		CHECK(ap_track_registry_refresh("") == 1 && wait_registry() == AP_TRACK_REGISTRY_DONE);
+		CHECK(ap_track_consent_refresh(cache.c_str()) == 1 && wait_consent(&source) == AP_TRACK_CONSENT_DONE);
+		CHECK(ap_track_permission(2, 0, A, nullptr) == D);
+		char credit[CTR_TRACK_CREDIT_MAX];
+		CustomTrackCredit_Format(credit, sizeof credit, nullptr, nullptr, 2, nullptr, nullptr);
+		CHECK(!std::strcmp(credit, "Track by Boxic"));
+		serve(true, v1, registry_fixture());
+		CHECK(ap_track_registry_refresh("") == 1 && wait_registry() == AP_TRACK_REGISTRY_DONE);
+		CHECK(ap_track_consent_refresh(cache.c_str()) == 1 && wait_consent(&source) == AP_TRACK_CONSENT_DONE);
+	}
 	CHECK(ap_track_permission(900, 0, U, nullptr) == U);          // a track nobody knows
 	gen = ap_track_consent_generation();
 	ap_track_consent_note_saphi(900, 3, U);                        // the catalogue: Lockheart's track

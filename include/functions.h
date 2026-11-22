@@ -2,6 +2,12 @@
 #define CTR_NATIVE_FUNCTIONS_H
 
 const char *UI_TrackName(int physicalPad);
+#ifdef CTR_CUSTOM_PACKAGES
+const char *UI_TrackCredit(int physicalPad);
+void UI_DrawTrackCredit(const char *credit, int x, int y, int width, int mode);
+void UI_ResetTrackCreditBanner(void);
+int UI_TrackCreditNeedsCountdown(void);
+#endif
 
 // Retail overlay address labels; declared as functions to preserve existing address-taking call sites.
 void OVR_Region1(void);
@@ -455,6 +461,7 @@ void MainRaceTrack_StartLoad(s16 levelID);
 void MainRaceTrack_RequestLoad(s16 levelID);
 #ifdef CTR_CUSTOM_PACKAGES
 int MainRaceTrack_OfflineCustomLoad(void);
+int MainRaceTrack_OfflineNavIdentity(unsigned char uuid[16], unsigned int *revision);
 // Custom runtime engine hooks: they pass the engine's race mode, never the
 // serving yes/no (MainRaceTrack.c).
 int MainRaceTrack_OfflineRuntimeFile(int subfileIndex, size_t *size);
@@ -935,6 +942,11 @@ void RB_Player_KillPlayer(struct Driver *attacker, struct Driver *victim);
 void RB_MinePool_Init(void);
 void RB_MinePool_Remove(struct MineWeapon *mw);
 void RB_MinePool_Add(struct MineWeapon *mw);
+#ifdef CTR_AP
+void RB_MinePool_BossShot(struct Driver *driver);
+void RB_MinePool_BossMine(struct MineWeapon *mw, struct Instance *inst);
+void RB_MinePool_BossProgress(struct Driver *driver, int progress, int length, int checkpoint, const SVec3 *backward);
+#endif
 void RB_Potion_OnShatter_TeethSearch(struct Instance *inst);
 
 void RB_MaskWeapon_FadeAway(struct Thread *t);
