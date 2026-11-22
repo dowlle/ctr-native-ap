@@ -157,6 +157,13 @@ int AH_WarpPad_CoopMenuPlayer(const struct RectMenu *menu)
 		return 0;
 	return AP_CoopHubWarpDriver(gt) == 1;
 }
+
+static int AH_WarpPad_CoopSelectorInView(const struct GameTracker *gt, int player)
+{
+	const struct RectMenu *menu = sdata->ptrActiveMenu;
+	return AP_CoopHub(gt) && menu && menu->stringIndexTitle == LNG_CHOOSE_RACE_TYPE &&
+	       AH_WarpPad_CoopMenuPlayer(menu) == player;
+}
 #endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800abafc-0x800abbdc.
@@ -724,6 +731,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			if (sdata->AkuAkuHintState == 0
 #ifdef CTR_AP
 			    && !AP_CharSwap_HubHudHidden() && !AP_CoopMenuOpen()
+			    && !AH_WarpPad_CoopSelectorInView(gGT, padPlayer)
 #endif
 			)
 			{

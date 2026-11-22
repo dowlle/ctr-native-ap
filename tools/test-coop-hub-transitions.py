@@ -7,6 +7,7 @@ root = Path(__file__).resolve().parents[1]
 rectmenu = (root / "game/RECTMENU.c").read_text()
 hub = (root / "game/LOAD/LOAD_Hub.c").read_text()
 frame = (root / "game/MAIN/MainFrame.c").read_text()
+pad = (root / "game/232/AH_WarpPad.c").read_text()
 
 
 def function(source, signature):
@@ -20,6 +21,7 @@ fixture = r'''
 #include "ap/ap_pauserow.h"
 #include "ap/ap_coop.h"
 struct sData sdata_static;
+struct OverlayDATA_232 D232;
 static struct GameTracker tracker;
 static struct GamepadSystem pads;
 static struct RectMenu p2Menu;
@@ -32,7 +34,6 @@ static const int connected[5][3] = {
 
 int RngDeadCoed(struct RngDeadCoedState *state) { return 0; }
 int OtherFX_Play(u32 sound, int flags) { return 0; }
-int AH_WarpPad_CoopMenuPlayer(const struct RectMenu *menu) { return menu == &p2Menu; }
 int AP_SkipHints(void) { return 0; }
 int AP_CoopMenuOpen(void) { return 0; }
 int AP_CoopHubWarpDriver(const struct GameTracker *gt) { return warpPlayer; }
@@ -54,6 +55,8 @@ void AP_CoopPlaceBeside(struct GameTracker *gt, int enteringPlayer)
     leader = enteringPlayer;
 }
 '''
+fixture += function(pad, "int AH_WarpPad_CoopMenuPlayer(const struct RectMenu *menu)")
+fixture += function(pad, "static int AH_WarpPad_CoopSelectorInView(const struct GameTracker *gt, int player)")
 for name in ("RECTMENU_ClearInput", "RECTMENU_CollectInput"):
     fixture += function(rectmenu, f"void {name}()")
 fixture += function(rectmenu, "int RECTMENU_ProcessInput(struct RectMenu *m)")
@@ -69,23 +72,33 @@ int main(void)
     tracker.numPlyrNextGame = 1;
     struct MenuRow rows[2] = {{.stringIndex = 1, .rowOnPressDown = 1}, {.stringIndex = 2}};
     p2Menu.rows = rows;
-    sdata->ptrActiveMenu = sdata->activeSubMenu = &p2Menu;
+    p2Menu.stringIndexTitle = LNG_CHOOSE_RACE_TYPE;
+    D232.menuTokenRelic = p2Menu;
+    struct RectMenu *selector = &D232.menuTokenRelic;
+    tracker.numPlyrCurrGame = 2;
+    tracker.gameMode1 = ADVENTURE_MODE | ADVENTURE_ARENA;
+    sdata->ptrActiveMenu = sdata->activeSubMenu = selector;
+    for (warpPlayer = 0; warpPlayer < 2; warpPlayer++) {
+        assert(AH_WarpPad_CoopSelectorInView(&tracker, warpPlayer));
+        assert(!AH_WarpPad_CoopSelectorInView(&tracker, 1 - warpPlayer));
+    }
+    warpPlayer = 1;
 
     pads.gamepad[0].buttonsTapped = BTN_CROSS_one;
     RECTMENU_CollectInput();
-    assert(RECTMENU_ProcessInput(&p2Menu) == 0);
+    assert(RECTMENU_ProcessInput(selector) == 0);
     pads.gamepad[0].buttonsTapped = 0;
     pads.gamepad[0].buttonsHeldCurrFrame = BTN_L1;
     pads.gamepad[1].buttonsTapped = BTN_DOWN;
     RECTMENU_CollectInput();
     assert(sdata->AnyPlayerTap == 0);
-    assert(RECTMENU_ProcessInput(&p2Menu) == 0 && p2Menu.rowSelected == 1);
+    assert(RECTMENU_ProcessInput(selector) == 0 && selector->rowSelected == 1);
     pads.gamepad[1].buttonsTapped = BTN_CROSS_one;
     RECTMENU_CollectInput();
-    assert(RECTMENU_ProcessInput(&p2Menu) == 1);
+    assert(RECTMENU_ProcessInput(selector) == 1);
     pads.gamepad[1].buttonsTapped = BTN_TRIANGLE;
     RECTMENU_CollectInput();
-    assert(RECTMENU_ProcessInput(&p2Menu) == -1);
+    assert(RECTMENU_ProcessInput(selector) == -1);
 
     struct Driver drivers[2] = {0};
     tracker.drivers[0] = &drivers[0];
