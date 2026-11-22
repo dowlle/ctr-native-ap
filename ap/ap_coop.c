@@ -15,6 +15,8 @@ static int ap_coop_restore_pending;
 static u64 ap_coop_joined_device;
 static u64 ap_coop_p2_device;
 static int ap_coop_hard_race;
+static int ap_coop_warp_rules = -1;
+static int ap_coop_entry_rules = -1;
 static int ap_coop_retry_level = -1;
 static int ap_coop_retry_hub;
 static int ap_coop_reload_hub = -1;
@@ -160,16 +162,29 @@ static void AP_CoopRestorePreference(void)
 		AP_CoopPersist(g_config.coopRacer, g_config.coopRules);
 }
 
+void AP_CoopCapturePadRules(void)
+{
+	AP_CoopRestorePreference();
+	ap_coop_warp_rules = ap_coop_restore_pending || ap_net_coop_save_pending() ?
+	                    -1 : g_config.coopRules != 0;
+}
+
 int AP_CoopPadReady(void)
 {
-	if (!g_config.coopAdventure)
+	if (!g_config.coopAdventure || AP_CoopControllers() != 2)
 		return 1;
-	AP_CoopRestorePreference();
-	if (!ap_coop_restore_pending && !ap_net_coop_save_pending())
+	if (ap_coop_warp_rules < 0)
+		AP_CoopCapturePadRules();
+	if (ap_coop_warp_rules >= 0)
 		return 1;
 	AP_CoopLog("refused", "co-op settings syncing", sdata->gGT->levelID,
 	           sdata->gGT->numPlyrCurrGame);
 	return 0;
+}
+
+void AP_CoopConfirmPad(void)
+{
+	ap_coop_entry_rules = ap_coop_warp_rules;
 }
 
 static int AP_CoopNextRacer(int racer, int direction)
@@ -223,9 +238,9 @@ static void AP_CoopCloseMenu(struct GameTracker *gt)
 	if (AP_CoopMenuOpen() && (gt->gameMode1 & ADVENTURE_ARENA) &&
 	    !(gt->gameMode1 & LOADING) && sdata->Loading.stage == LOAD_IDLE && !sdata->load_inProgress)
 	{
-		if (AP_CoopWarpOwnsDriver(gt))
+		if (AP_CoopWarpOwnsDriver(gt) || (gt->cameraDC[0].flags & CAMERA_FLAG_TRANSITION_AWAY))
 			gt->gameMode2 &= ~VEH_FREEZE_DOOR;
-		else
+		else if (!sdata->AkuAkuHintState)
 			AP_HubPickerFreeze(gt, 0);
 	}
 	ap_coop_menu = COOP_MENU_CLOSED;
@@ -361,6 +376,7 @@ void AP_CoopMenuTick(struct GameTracker *gt)
 	if (ap_coop_menu != COOP_MENU_CLOSED)
 	{
 		if (!hub || !idle || warp || !pickerConnected || sdata->ptrActiveMenu ||
+		    (gt->cameraDC[0].flags & CAMERA_FLAG_TRANSITION_AWAY) || sdata->AkuAkuHintState ||
 		    (gt->gameMode1 & PAUSE_ALL) || (pads->gamepad[0].buttonsTapped & BTN_START))
 			AP_CoopCloseMenu(gt);
 		else
@@ -513,6 +529,8 @@ int AP_CoopHardRace(void) { return ap_coop_hard_race; }
 void AP_CoopPrepareLoad(struct GameTracker *gt)
 {
 	int mode = gt->gameMode1;
+	const int entryRules = ap_coop_entry_rules;
+	ap_coop_entry_rules = ap_coop_warp_rules = -1;
 	int soloRetry = ap_coop_retry_level >= 0 && ap_coop_retry_level == gt->levelID;
 	ap_coop_retry_level = -1;
 	if (soloRetry)
@@ -550,10 +568,10 @@ void AP_CoopPrepareLoad(struct GameTracker *gt)
 		racer = AP_CoopNextRacer(-1, 1);
 	two = two && AP_CoopRacerUnlocked(racer);
 	gt->numPlyrCurrGame = two ? 2 : 1;
-	// If a reconnect starts during the warp, never award a Lenient result
-	// from a provisional or unconfirmed preference.
-	ap_coop_hard_race = two && !hub && (g_config.coopRules || ap_coop_restore_pending ||
-	                           ap_net_coop_save_pending());
+	// Start a pad race with the confirmed rules that were accepted by the hub.
+	// Other load paths must never award a provisional Lenient result.
+	ap_coop_hard_race = two && !hub && (entryRules >= 0 ? entryRules :
+	    (g_config.coopRules || ap_coop_restore_pending || ap_net_coop_save_pending()));
 	gt->numPlyrNextGame = 1;
 	if ((soloRetry || g_config.coopAdventure == 1) && !hub)
 	{

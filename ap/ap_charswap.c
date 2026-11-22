@@ -878,8 +878,10 @@ static int ap_cs_hubTransitionIdle(struct GameTracker *gGT)
 	// Background hub preloads do not change Loading.stage. A full character
 	// reload invalidates their mempack, and restoring inside a swap-only tunnel
 	// can wait forever for a neighboring level that was never re-queued.
-	if ((gGT->drivers[0]->stepFlagSet &
-	     (COLL_STEP_TRIGGER_HUB_LEVEL_ID_MASK | COLL_STEP_TRIGGER_HUB_SWAP_NOW_MASK)) != 0 ||
+	unsigned stepFlags = gGT->drivers[0]->stepFlagSet;
+	if (AP_CoopHub(gGT) && gGT->drivers[1])
+		stepFlags |= gGT->drivers[1]->stepFlagSet;
+	if ((stepFlags & (COLL_STEP_TRIGGER_HUB_LEVEL_ID_MASK | COLL_STEP_TRIGGER_HUB_SWAP_NOW_MASK)) != 0 ||
 	    gGT->bool_AdvHub_NeedToSwapLEV != 0 ||
 	    sdata->queueLength != 0 || sdata->queueReady == 0 ||
 	    sdata->load_inProgress != 0)

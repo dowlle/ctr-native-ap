@@ -485,6 +485,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	int levelID;
 	int x, y, z, dist;
 	int padPlayer = 0;
+#ifdef CTR_AP
+	int coopTrophy = 0;
+#endif
 	char *warppadLNG;
 
 	int angleCamToWarppad;
@@ -1206,13 +1209,6 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		goto WarpPad_RefuseEntry;
 	}
 
-	if (!warppadObj->boolEnteredWarppad && ctr_cfg_active() && !AP_CoopPadReady())
-	{
-		apEntryRefusedDest = levelID;
-		AP_TrackerLaunchTaken();
-		AP_FeedNoticeLine("CO-OP SETTINGS SYNCING: TRY THE PAD AGAIN");
-		goto WarpPad_AnimateOpen;
-	}
 #endif
 
 	// Retail repeats this setup every close/warping frame before the
@@ -1311,7 +1307,10 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	// slot_data is inactive or the map is identity, so this is a no-op pre-shuffle.
 	int physLevelID = ctr_cfg_warp_phys(levelID);
 	if (AP_CoopHub(gGT) && !warppadObj->boolEnteredWarppad)
+	{
 		AH_WarpPad_WarpCapture(gGT, driver);
+		AP_CoopCapturePadRules();
+	}
 
 #ifdef CTR_CUSTOM_TRACKS
 	if (ap_content_plan_active())
@@ -1392,6 +1391,10 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		}
 		else if (!pad->crystal)
 			mode = pad->modes[0];
+		coopTrophy = !pad->cup && !pad->crystal && !pad->cortex && pad->retail_id >= 0 &&
+		             mode == AP_CONTENT_MODE_TROPHY;
+		if (coopTrophy && !AP_CoopPadReady())
+			goto WarpPad_CoopSync;
 		host = AP_ContentPreparePad(physLevelID, mode);
 		if (host < 0)
 		{
@@ -1421,7 +1424,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		else if (mode == AP_CONTENT_MODE_RELIC)
 		{
 			gGT->gameMode1 |= RELIC_RACE;
-			sdata->Loading.OnBegin.AddBitsConfig0 |= RELIC_RACE;
+		sdata->Loading.OnBegin.AddBitsConfig0 |= RELIC_RACE;
 			sdata->Loading.OnBegin.RemBitsConfig0 &= ~RELIC_RACE;
 		}
 		gGT->numLaps = (char)ap_content_mode_laps(pad, mode);
@@ -1533,7 +1536,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		sdata->Loading.OnBegin.AddBitsConfig0 |= CRYSTAL_CHALLENGE;
 
 		// Dont have hint "collect every crystal"
-	if (padPlayer == 0 && CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_HINT_COLLECT_EVERY_CRYSTAL) == 0)
+		if (padPlayer == 0 && CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_HINT_COLLECT_EVERY_CRYSTAL) == 0)
 		{
 			MainFrame_RequestMaskHint(ADV_MASK_HINT_ID_COLLECT_EVERY_CRYSTAL, 1);
 		}
@@ -1641,6 +1644,16 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		goto WarpPad_AnimateOpen;
 	}
 
+#ifdef CTR_AP
+	coopTrophy = ctr_cfg_active() && levelID >= 0 && levelID <= TURBO_TRACK
+#ifdef CTR_CUSTOM_PACKAGES
+	             && !legacyCortex
+#endif
+		;
+	if (coopTrophy && !AP_CoopPadReady())
+		goto WarpPad_CoopSync;
+#endif
+
 WarpPad_RequestLoad:
 
 	// Rem Adventure Arena
@@ -1657,12 +1670,17 @@ WarpPad_RequestLoad:
 	// lives in AP_OnFrame's levelID-transition watcher (ap_hooks.c), the same
 	// home as the one-lap-cup restore.
 	AP_RacerLock_ForceForWarp(physLevelID);
+	if (coopTrophy)
+		AP_CoopConfirmPad();
 #endif
 
 	MainRaceTrack_RequestLoad(levelID);
 	goto WarpPad_AnimateOpen;
 
 #ifdef CTR_AP
+WarpPad_CoopSync:
+	AP_FeedNoticeLine("CO-OP SETTINGS SYNCING: TRY THE PAD AGAIN");
+
 	// Entry fail-safe (2026-10-09). An open pad whose entry route found nothing
 	// to load must not keep the kart in the warp: AnimateOpen alone leaves
 	// boolEnteredWarppad set and the warp init installed, so the same decision

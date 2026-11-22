@@ -6,6 +6,7 @@ tools/test-coop-grid.py
 tools/test-coop-menu.py
 tools/test-coop-handoffs.py
 tools/test-coop-review-fixes.py
+tools/test-coop-hub-transitions.py
 tools/test-calmer-feed-production.py
 tools/test-instance-pool.c
 tools/test-ai-difficulty-menu.py

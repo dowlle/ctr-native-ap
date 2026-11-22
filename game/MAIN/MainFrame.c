@@ -312,6 +312,9 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 				{
 #ifdef CTR_AP
 				const int heldDriver = AP_CoopHubHeldDriver(gGT);
+				// Keep both karts inside the old LEV until the crossing commits.
+				if (AP_CoopHub(gGT) && LOAD_Hub_CoopCrossing())
+					continue;
 #endif
 					for (psVar12 = gGT->threadBuckets[iVar4].thread; psVar12 != 0; psVar12 = psVar12->siblingThread)
 					{

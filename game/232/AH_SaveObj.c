@@ -64,7 +64,7 @@ void AH_SaveObj_ThTick(struct Thread *t)
 		    // The hub keeps ticking until the checkered flag covers it, and
 		    // a box opened then would outlive the hub.
 		    || !AP_HubSaveBoxMayOpenNow()
-		    || (AP_CoopHub(gGT) && AP_CoopHubWarpDriver(gGT) >= 0)
+		    || (AP_CoopHub(gGT) && AP_CoopHubHeldDriver(gGT) >= 0)
 #endif
 		)
 		{

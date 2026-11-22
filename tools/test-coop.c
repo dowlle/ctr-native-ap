@@ -153,6 +153,12 @@ static void testHubMenu(struct GameTracker *gt)
 	assert(driver->funcPtrs[DRIVER_FUNC_INIT] == VehStuckProc_Warp_Init);
 	driver->funcPtrs[DRIVER_FUNC_INIT] = NULL;
 	tapPartner(gt, 2, RAW_BTN_START);
+	tapPartner(gt, 2, RAW_BTN_DOWN);
+	gt->cameraDC[0].flags |= CAMERA_FLAG_TRANSITION_AWAY;
+	tapPartner(gt, 2, RAW_BTN_CROSS);
+	assert(ap_coop_menu == COOP_MENU_CLOSED && g_config.coopAdventure);
+	gt->cameraDC[0].flags &= ~CAMERA_FLAG_TRANSITION_AWAY;
+	tapPartner(gt, 2, RAW_BTN_START);
 	tapPartner(gt, 1, RAW_BTN_CROSS);
 	assert(ap_coop_menu == COOP_MENU_ACTIONS);
 	tapPartner(gt, 2, RAW_BTN_UP);
@@ -197,12 +203,15 @@ static void testDelayedPreference(struct GameTracker *gt)
 	int before = writes;
 	tapPartner(gt, 2, RAW_BTN_START);
 	assert(g_config.coopAdventure && assignedPartner == 102 && writes == before);
+	u64 previousDevice = p2Device;
+	p2Device = 0;
+	assert(AP_CoopPadReady()); /* A missing partner can still start a solo race. */
+	p2Device = assignedPartner;
+	sdata->gGamepads->gamepadsConnectedByFlag = 3;
+	AP_CoopCapturePadRules();
 	assert(!AP_CoopPadReady());
 	AP_CoopRulesStep(0);
 	assert(!g_config.coopRules && writes == before);
-	u64 previousDevice = p2Device;
-	p2Device = assignedPartner;
-	sdata->gGamepads->gamepadsConnectedByFlag = 3;
 	gt->levelID = CRASH_COVE;
 	gt->gameMode1 = ADVENTURE_MODE;
 	AP_CoopPrepareLoad(gt);
@@ -216,17 +225,28 @@ static void testDelayedPreference(struct GameTracker *gt)
 	revision++;
 	AP_CoopPrepareLoad(gt);
 	assert(data.characterIDs[1] == 10 && AP_CoopHardRace() && !AP_CoopWon(gt));
-	p2Device = previousDevice;
 	gt->gameMode1 |= ADVENTURE_ARENA;
 	AP_CoopRulesStep(0);
 	assert(g_config.coopRacer == 10 && !g_config.coopRules && packedValue == 10);
 	assert(writes == before + 1);
 	savePending = 1;
+	AP_CoopCapturePadRules();
 	assert(!AP_CoopPadReady() && strstr(AP_CoopHelp(), "Waiting"));
 	savePending = 0;
 	saveLost = 1;
 	assert(AP_CoopPadReady() && strstr(AP_CoopHelp(), "not saved"));
 	saveLost = 0;
+	AP_CoopCapturePadRules(); /* Confirm Lenient on entering the beam. */
+	known = 0;
+	AP_CoopConnectReset();
+	assert(AP_CoopPadReady()); /* Reconnect while the kart is warping. */
+	AP_CoopConfirmPad();
+	gt->gameMode1 = ADVENTURE_MODE;
+	AP_CoopPrepareLoad(gt);
+	assert(AP_CoopRace(gt) && !AP_CoopHardRace() && AP_CoopWon(gt));
+	gt->gameMode1 |= ADVENTURE_ARENA;
+	p2Device = previousDevice;
+	known = 1;
 	g_config.coopAdventure = 0;
 	AP_CoopConnectReset();
 	assert(g_config.coopRacer == 10); /* Same-room reconnect while P2 is out. */

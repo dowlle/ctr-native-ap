@@ -326,6 +326,9 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 void LOAD_Hub_Main(struct BigHeader *bigfilePtr);
 void LOAD_Hub_ReadFile(struct BigHeader *bigfile, int levID, int packID);
 #ifdef CTR_AP
+int LOAD_Hub_CoopCrossing(void);
+#endif
+#ifdef CTR_AP
 void LOAD_Hub_ApMaskEvicts(int packID);
 #endif
 void LIST_Init(struct LinkedList *L, struct Item *item, int itemSize, int numItems);

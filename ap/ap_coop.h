@@ -63,6 +63,8 @@ int AP_CoopP2Available(void);
 int AP_CoopReloadOnRetry(struct GameTracker *gt);
 int AP_CoopHubAvailable(const struct GameTracker *gt);
 int AP_CoopPadReady(void);
+void AP_CoopCapturePadRules(void);
+void AP_CoopConfirmPad(void);
 void AP_CoopPrepareGrid(struct GameTracker *gt);
 int LOAD_CoopGridSize(void);
 void LOAD_CoopConvertBotModels(void);

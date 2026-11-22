@@ -174,6 +174,14 @@ static const int s_advHubConnectedLevID[5][3] = {
 #endif
 
 #ifdef CTR_AP
+static int coopCrossingDriver = -1;
+static int coopCrossingTarget;
+
+int LOAD_Hub_CoopCrossing(void)
+{
+	return coopCrossingDriver >= 0;
+}
+
 static void LOAD_Hub_Coop(struct BigHeader *bigfile, struct GameTracker *gt)
 {
 	const int hub = gt->levelID - GEM_STONE_VALLEY;
@@ -186,7 +194,10 @@ static void LOAD_Hub_Coop(struct BigHeader *bigfile, struct GameTracker *gt)
 	// but swapping waits for the hub requested by the driver who crossed.
 	static int targets[2] = {-1, -1};
 	if (gt->framesInThisLEV == 0)
+	{
 		targets[0] = targets[1] = -1;
+		coopCrossingDriver = -1;
+	}
 	for (int i = 0; i < 2; i++)
 	{
 		const CollStepFlags flags = gt->drivers[i]->stepFlagSet;
@@ -194,7 +205,7 @@ static void LOAD_Hub_Coop(struct BigHeader *bigfile, struct GameTracker *gt)
 		if (entry > 0 && entry <= 3)
 			targets[i] = LOAD_HUB_CONNECTED_LEV(hub, entry - 1);
 	}
-	for (int i = 0; i < 2; i++)
+	for (int i = 0; coopCrossingDriver < 0 && i < 2; i++)
 	{
 		const CollStepFlags flags = gt->drivers[i]->stepFlagSet;
 		if (!(flags & COLL_STEP_TRIGGER_HUB_SWAP_NOW_MASK))
@@ -202,11 +213,16 @@ static void LOAD_Hub_Coop(struct BigHeader *bigfile, struct GameTracker *gt)
 		const int target = targets[i] >= 0 ? targets[i] : gt->levID_in_each_mempack[otherPack];
 		if (target < GEM_STONE_VALLEY || target > CITADEL_CITY || target == gt->levelID)
 			continue;
-		if (sdata->queueLength || !sdata->queueReady)
-			return;
+		coopCrossingDriver = i;
+		coopCrossingTarget = target;
+	}
+	if (sdata->queueLength || !sdata->queueReady)
+		return;
+	if (coopCrossingDriver >= 0)
+	{
 		if (!gt->level2)
 			gt->levID_in_each_mempack[otherPack] = -1;
-		LOAD_Hub_ReadFile(bigfile, target, otherPack);
+		LOAD_Hub_ReadFile(bigfile, coopCrossingTarget, otherPack);
 		LOAD_Hub_SwapNow();
 		for (int p = 0; p < 2; p++)
 		{
@@ -214,12 +230,11 @@ static void LOAD_Hub_Coop(struct BigHeader *bigfile, struct GameTracker *gt)
 			gt->drivers[p]->lastValid = NULL;
 			gt->drivers[p]->stepFlagSet = 0;
 		}
-		AP_CoopPlaceBeside(gt, i);
+		AP_CoopPlaceBeside(gt, coopCrossingDriver);
+		coopCrossingDriver = -1;
 		targets[0] = targets[1] = -1;
 		return;
 	}
-	if (sdata->queueLength || !sdata->queueReady)
-		return;
 	for (int i = 0; i < 2; i++)
 	{
 		const CollStepFlags flags = gt->drivers[i]->stepFlagSet;
@@ -251,6 +266,7 @@ void LOAD_Hub_Main(struct BigHeader *bigfilePtr)
 		LOAD_Hub_Coop(bigfilePtr, gGT);
 		return;
 	}
+	coopCrossingDriver = -1;
 
 	// A read held for a mask hint goes first once the hint is over; a held
 	// swap follows on a later tick, after the read is queued, and only into a

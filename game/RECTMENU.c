@@ -797,6 +797,15 @@ void RECTMENU_CollectInput()
 		sdata->AnyPlayerTap |= sdata->buttonTapPerPlayer[i];
 		sdata->AnyPlayerHold |= sdata->buttonHeldPerPlayer[i];
 	}
+#ifdef CTR_AP
+	// The hub still advertises one seat for the next generic menu. Sample
+	// the pad owner's input separately so it cannot operate P1-only menus.
+	if (numListen == 1 && AH_WarpPad_CoopMenuPlayer(sdata->ptrActiveMenu) == 1)
+	{
+		sdata->buttonTapPerPlayer[1] = gb->buttonsTapped;
+		sdata->buttonHeldPerPlayer[1] = gb->buttonsHeldCurrFrame;
+	}
+#endif
 }
 
 
@@ -808,6 +817,7 @@ int RECTMENU_ProcessInput(struct RectMenu *m)
 	int button;
 	int oldRow;
 	int newRow;
+	int inputPlayer = 0;
 
 	int returnVal = 0;
 
@@ -833,12 +843,10 @@ int RECTMENU_ProcessInput(struct RectMenu *m)
 	// if only P1 can use menu
 	if ((m->state & ALL_PLAYERS_USE_MENU) == 0)
 	{
-		// get button from P1
 #ifdef CTR_AP
-		button = sdata->buttonTapPerPlayer[AH_WarpPad_CoopMenuPlayer(m)];
-#else
-		button = sdata->buttonTapPerPlayer[0];
+		inputPlayer = AH_WarpPad_CoopMenuPlayer(m);
 #endif
+		button = sdata->buttonTapPerPlayer[inputPlayer];
 	}
 
 #ifdef CTR_AP
@@ -866,7 +874,7 @@ int RECTMENU_ProcessInput(struct RectMenu *m)
 	    ((button & 0x4007f) != 0) &&
 
 	    // No cheat code entering
-	    ((sdata->buttonHeldPerPlayer[0] & (BTN_L1 | BTN_R1)) == 0))
+	    ((sdata->buttonHeldPerPlayer[inputPlayer] & (BTN_L1 | BTN_R1)) == 0))
 	{
 		oldRow = m->rowSelected;
 		newRow = oldRow;
