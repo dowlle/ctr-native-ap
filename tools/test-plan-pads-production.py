@@ -72,7 +72,10 @@ assert "!AP_PadReplayable(ctr_cfg_warp_phys(warppadObj->levelID), warppadObj->le
 assert body(gates, "int AP_ContentTrackPadState(").count("AP_ContentPadPlainLeft(pad)") == 1
 # A closing pad strands no check that belongs to no pad.
 plain = body(pads, "int AP_ContentPadPlainLeft(")
-assert "fam->wumpa == 1 && pad->wumpa_modes" in plain and "AP_HitEncounterOpportunity(" in plain and "AP_ItemsanityPadOpportunity(host)" in plain
+assert "AP_ContentPadSharedChecks(pad, AP_CONTENT_PLAIN_MODES, NULL)" in plain
+shared = body(pads, "int AP_ContentPadSharedChecks(")
+assert "fam->wumpa == 1 && (pad->wumpa_modes & modes)" in shared
+assert "AP_HitEncounterPendingMask(" in shared and "AP_ItemsanityPadPending(host," in shared
 # A start after a cancelled menu on the same pad is a new entry.
 assert "apEntryRefusedDest = -1;\n\t\t\tdist = 0;" in tick
 

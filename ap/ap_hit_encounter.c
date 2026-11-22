@@ -190,14 +190,26 @@ int AP_HitEncounterGather(unsigned char *eligible, unsigned char *unchecked)
 
 int AP_HitEncounterOpportunity(int destLevelID, int player)
 {
+	unsigned pending = AP_HitEncounterPendingMask(destLevelID, player);
+	for (int i = 0; i < CTR_CFG_HIT_CHARACTER_COUNT; ++i)
+		if (pending & (1u << i))
+			return i;
+	return -1;
+}
+
+unsigned AP_HitEncounterPendingMask(int destLevelID, int player)
+{
 	unsigned char eligible[CTR_CFG_HIT_CHARACTER_COUNT];
 	unsigned char unchecked[CTR_CFG_HIT_CHARACTER_COUNT];
+	unsigned pending = 0;
 
-	if (AP_HitEncounterOrder(destLevelID) == NULL)
-		return -1;
-	if (!AP_HitEncounterGather(eligible, unchecked))
-		return -1;
-	return AP_HitOpportunityPure(eligible, unchecked, player);
+	if (!AP_HitEncounterEnabled() || AP_HitEncounterOrder(destLevelID) == NULL ||
+	    !AP_HitEncounterGather(eligible, unchecked))
+		return 0;
+	for (int i = 0; i < CTR_CFG_HIT_CHARACTER_COUNT; ++i)
+		if (i != player && eligible[i] && unchecked[i])
+			pending |= 1u << i;
+	return pending;
 }
 
 // ── Draw state: per-destination cursors and the seed identity they belong to ──

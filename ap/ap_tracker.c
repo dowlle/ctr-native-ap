@@ -612,6 +612,14 @@ static void AP_TrackerDrawLetterCell(int bx, int by, char glyph, int mode, int s
 	if(cell.tick) AP_TrackerTick(bx+17,by+8,2);
 	if(cell.locked) { AP_TrackerBorder(bx+19,by+8,11,10,TRACKER_GRAY,2); AP_TrackerCircle(bx+24,by+8,4,TRACKER_GRAY,2); }
 }
+
+static void AP_TrackerDrawWumpaMark(int x, int y, long code, int global)
+{
+	int state = code > 0 ? AP_TrackerCodeState(code) : 0;
+	if (!state) return;
+	AP_TrackerText(global ? "10W*" : "10W",x+130,y+96,16,TRACKER_GOLD,55);
+	AP_TrackerTick(x+179,y+99,state);
+}
 /* One generator row 6: a plan pad's checks. Every code comes from the pad, never
  * from a retail table keyed by level: the same five prizes and the same bottom
  * row as an ordinary node, for what this pad holds. */
@@ -641,7 +649,7 @@ static void AP_TrackerDrawContentNode(const AP_TrackerNode *n, int x, int y)
 	snprintf(text,sizeof text,"BOX %d",pad->cup ? ap_content_cup_box_pending(pad,ap_content_plan_pad,AP_ContentCodeChecked)
 	                                            : ap_content_box_pending(pad,AP_ContentCodeChecked));
 	AP_TrackerText(text,x+12,y+96,16,TRACKER_WHITE,110);
-	AP_TrackerText(wumpaGlobal ? "10W*" : "10W",x+130,y+96,16,TRACKER_GOLD,55); AP_TrackerTick(x+179,y+99,AP_TrackerCodeState(wumpa>0?wumpa:-1));
+	AP_TrackerDrawWumpaMark(x,y,wumpa,wumpaGlobal);
 	if (n->kind == 0) for (i = 0; i < 3; i++) {
 		long code = pad->letter_locations[i] > 0 ? (long)pad->letter_locations[i] : -1;
 		AP_TrackerDrawLetterCell(x+216+i*49,y+95,ap_content_letter_glyph(pad,i),fam->lettersanity,AP_TrackerCodeState(code),
@@ -693,7 +701,7 @@ static void AP_TrackerDrawNode(int index)
 		int mode=ctr_cfg.lettersanity_mode;
 		if (ctr_cfg.wumpa.mode == CTR_CFG_WUMPA_GLOBAL && n->kind == 0) wumpa = ctr_cfg.wumpa.global_code;
 		snprintf(text,sizeof text,"BOX %d",boxes); AP_TrackerText(text,x+12,y+96,16,TRACKER_WHITE,110);
-		AP_TrackerText(ctr_cfg.wumpa.mode == CTR_CFG_WUMPA_GLOBAL ? "10W*" : "10W",x+130,y+96,16,TRACKER_GOLD,55); AP_TrackerTick(x+179,y+99,AP_TrackerCodeState(wumpa));
+		AP_TrackerDrawWumpaMark(x,y,wumpa,ctr_cfg.wumpa.mode == CTR_CFG_WUMPA_GLOBAL);
 		if (n->kind==0 && n->destination==AP_CORTEX_DEST && ctr_cfg.cortex_track.valid) for(i=0;i<3;i++) {
 			/* Cortex Vortex letters: the tracker is drawn from the hub, so the
 			 * in-race letter hooks do not recognise this track. Take the codes and
@@ -810,7 +818,9 @@ static int AP_TrackerChecksDetails(const AP_TrackerNode *n)
 	return (rewards.count+AP_TRACKER_REWARDS_VISIBLE-1)/AP_TRACKER_REWARDS_VISIBLE+1;
 }
 
-static void AP_TrackerChecksBuild(const AP_TrackerNode *n, AP_TrackerCheckCount rows[4],
+enum { AP_TRACKER_PICKUP_ROWS = 4, AP_TRACKER_SHARED_ROWS = 2 };
+
+static void AP_TrackerChecksBuild(const AP_TrackerNode *n, AP_TrackerCheckCount rows[AP_TRACKER_PICKUP_ROWS + AP_TRACKER_SHARED_ROWS],
                                   char *title, size_t title_size, char *route, size_t route_size)
 {
 	const ctr_content_pad *pad = AP_TrackerChecksPad(n);
@@ -818,7 +828,7 @@ static void AP_TrackerChecksBuild(const AP_TrackerNode *n, AP_TrackerCheckCount 
 	const ctr_content_sanity *sanity = NULL;
 	AP_TrackerCheckSource source = { AP_ContentCodeChecked, AP_TrackerChecksLogic };
 	int64_t wumpa = 0;
-	memset(rows, 0, 4 * sizeof *rows);
+	memset(rows, 0, (AP_TRACKER_PICKUP_ROWS + AP_TRACKER_SHARED_ROWS) * sizeof *rows);
 	snprintf(title, title_size, "%s", n->title);
 	snprintf(route, route_size, "THIS PAD'S RACE MODES");
 	if (pad && pad->cup) {
@@ -830,8 +840,14 @@ static void AP_TrackerChecksBuild(const AP_TrackerNode *n, AP_TrackerCheckCount 
 		AP_TrackerChecksLegTitle(leg,title,title_size);
 		snprintf(route, route_size, "%s: LEG %d OF %d", n->title, ap_tracker.checks_page + 1, AP_CONTENT_CUP_LEGS);
 	} else if (pad && !pad->crystal) {
+		ap_pad_shared_check shared[AP_PAD_SHARED_CHECKS_MAX];
+		int count = AP_ContentPadSharedChecks(pad, AP_CONTENT_PLAIN_MODES, shared);
 		sanity = ap_content_plan_sanity(pad->track_id);
 		wumpa = pad->wumpa_modes ? (fam->wumpa == 1 ? fam->wumpa_global : pad->wumpa_location) : 0;
+		for (int i = 0; i < count; ++i)
+			if (shared[i].family != AP_PAD_SHARED_WUMPA)
+				AP_TrackerCheckAdd(&rows[AP_TRACKER_PICKUP_ROWS + (shared[i].family == AP_PAD_SHARED_HIT)],
+				                   shared[i].code, source);
 	} else if (n->kind == 3 && ap_content_plan_active()) {
 		int boss = ap_tracker.hub ? ap_tracker.hub - 1 : 4 + ap_tracker.checks_page;
 		sanity = ap_content_plan_sanity_boss(boss);
@@ -849,9 +865,12 @@ static void AP_TrackerChecksBuild(const AP_TrackerNode *n, AP_TrackerCheckCount 
 
 static void AP_TrackerDrawChecks(void)
 {
-	static const char *const names[] = {"REACH 10 WUMPA", "WEAPON CRATES", "WUMPA CRATES", "WUMPA FRUIT"};
+	static const char *const names[] = {
+		"REACH 10 WUMPA", "WEAPON CRATES", "WUMPA CRATES", "WUMPA FRUIT", "ITEMSANITY USE", "HIT CHARACTER"
+	};
 	AP_TrackerNode *n = &ap_tracker.nodes[ap_tracker.focus];
-	AP_TrackerCheckCount rows[4]; char title[160], route[256], text[128]; int i;
+	AP_TrackerCheckCount rows[AP_TRACKER_PICKUP_ROWS + AP_TRACKER_SHARED_ROWS];
+	char title[160], route[256], text[128]; int i;
 	AP_TrackerChecksBuild(n, rows, title, sizeof title, route, sizeof route);
 	AP_TrackerRect(90,140,1100,510,AP_TrackerRGBA(10,15,18,255));
 	AP_TrackerBorder(90,140,1100,510,TRACKER_MINT,3);
@@ -885,22 +904,33 @@ static void AP_TrackerDrawChecks(void)
 	AP_TrackerText("IN LOGIC",654,251,18,TRACKER_WHITE,140);
 	AP_TrackerText("OUT",834,251,18,TRACKER_WHITE,110);
 	AP_TrackerText("UNKNOWN",994,251,18,TRACKER_WHITE,150);
-	for (i=0;i<4;i++) {
-		AP_TrackerCheckCount *r=&rows[i]; int y=294+i*60;
+	int y=294;
+	for (i=0;i<AP_TRACKER_PICKUP_ROWS + AP_TRACKER_SHARED_ROWS;i++) {
+		AP_TrackerCheckCount *r=&rows[i];
+		if (i >= AP_TRACKER_PICKUP_ROWS && !r->total) continue;
 		uint32_t rgb = AP_PadLookRGB(r->total && r->done==r->total ? AP_PAD_LOOK_DONE : AP_PAD_LOOK_OPEN);
 		uint32_t green=AP_TrackerRGBA(AP_PadLookR(rgb),AP_PadLookG(rgb),AP_PadLookB(rgb),255);
 		rgb=AP_PadLookRGB(AP_PAD_LOOK_STAGE2_WAITING);
 		uint32_t red=AP_TrackerRGBA(AP_PadLookR(rgb),AP_PadLookG(rgb),AP_PadLookB(rgb),255);
 		const char *name=i==0 && rows[0].total && ap_content_plan_checks()->wumpa==1 ? "10 WUMPA GLOBAL" : names[i];
 		AP_TrackerText(name,114,y,21,r->total?TRACKER_WHITE:TRACKER_GRAY,310);
-		if (!r->total) { AP_TrackerText("NO CHECK HERE",434,y,19,TRACKER_GRAY,700); continue; }
-		snprintf(text,sizeof text,"%d / %d",r->done,r->total); AP_TrackerText(text,434,y,21,green,170);
-		snprintf(text,sizeof text,"%d",r->in_logic); AP_TrackerText(text,654,y,21,green,140);
-		snprintf(text,sizeof text,"%d",r->out_logic); AP_TrackerText(text,834,y,21,red,110);
-		snprintf(text,sizeof text,"%d",r->unknown); AP_TrackerText(text,994,y,21,TRACKER_GRAY,150);
+		if (!r->total) AP_TrackerText("NO CHECK HERE",434,y,19,TRACKER_GRAY,700);
+		else {
+			if (i < AP_TRACKER_PICKUP_ROWS) {
+				snprintf(text,sizeof text,"%d / %d",r->done,r->total);
+				AP_TrackerText(text,434,y,21,green,170);
+			}
+			snprintf(text,sizeof text,"%d",r->in_logic); AP_TrackerText(text,654,y,21,green,140);
+			snprintf(text,sizeof text,"%d",r->out_logic); AP_TrackerText(text,834,y,21,red,110);
+			snprintf(text,sizeof text,"%d",r->unknown); AP_TrackerText(text,994,y,21,TRACKER_GRAY,150);
+		}
+		y+=40;
 	}
 	AP_TrackerText("WUMPA CRATES + FRUIT: WUMPASANITY   WEAPON CRATES: ITEMBOXSANITY",114,548,15,TRACKER_WHITE,1052);
-	AP_TrackerText("COUNTS ARE SHARED ACROSS RACE, CUP AND BOSS ROUTES",114,575,15,TRACKER_WHITE,1052);
+	AP_TrackerText(rows[4].total && rows[5].total ? "WEAPON USES IN ITEMS | HIT CHECKS IN RACERS" :
+		rows[4].total ? "SEE ITEMS FOR INDIVIDUAL WEAPON USES" :
+		rows[5].total ? "SEE RACERS FOR INDIVIDUAL HIT CHECKS" :
+		"COUNTS ARE SHARED ACROSS RACE, CUP AND BOSS ROUTES",114,575,15,TRACKER_WHITE,1052);
 	}
 	snprintf(text,sizeof text,"L1/R1 TRACK %d/%d   UP/DOWN CHECKS %d/%d   ^ BACK",ap_tracker.checks_page+1,AP_TrackerChecksPages(n),ap_tracker.checks_detail+1,reward_pages+1);
 	AP_TrackerText(NativeMenu_Labels(text),114,610,18,TRACKER_WHITE,1052);
@@ -933,7 +963,11 @@ static void AP_TrackerDrawActivities(void)
 			}
 		}
 	}
-	AP_TrackerText(NativeMenu_Labels("* START   ^ BACK"), x + 16, y + h - 26, 14, TRACKER_WHITE, w - 32);
+	int cursor = ap_tracker.acts_cursor;
+	const char *controls = "^ BACK";
+	if (cursor >= 0 && cursor < ap_tracker.acts.count && ap_tracker.acts.reason[cursor] == AP_PADACT_OPEN)
+		controls = ap_tracker.acts.left[cursor] ? "* START   ^ BACK" : "* REPLAY   ^ BACK";
+	AP_TrackerText(NativeMenu_Labels(controls), x + 16, y + h - 26, 14, TRACKER_WHITE, w - 32);
 }
 static void AP_TrackerDraw(void)
 {
@@ -997,6 +1031,11 @@ static void AP_TrackerDraw(void)
 			snprintf(line,sizeof line,"LEFT: %d RACE, %d BOX, %d LETTER | %d WEAPON CRATES, %d WUMPA CRATES, %d FRUIT",remaining,boxes,letters,
 			         AP_SanityPadPending(n->physical,0),AP_SanityPadPending(n->physical,1),AP_SanityPadPending(n->physical,2));
 		else snprintf(line,sizeof line,"%s: %d RACE CHECKS, %d BOXES, %d LETTERS LEFT",n->title,remaining,boxes,letters);
+		int shared = AP_ContentPadSharedChecks(plan, AP_CONTENT_PLAIN_MODES, NULL);
+		if (shared) {
+			size_t len = strlen(line);
+			snprintf(line + len, sizeof line - len, " | %d SHARED", shared);
+		}
 	} else snprintf(line,sizeof line,"CHECK: O PENDING / TICK DONE    LETTER: ORANGE OWNED / LOCK NEEDED / - OFF%s",ap_net_is_connected()?"":"    OFFLINE");
 	AP_TrackerText(line,32,718,14,TRACKER_WHITE,1210);
 	{
