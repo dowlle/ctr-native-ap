@@ -159,6 +159,7 @@ int AP_ContentCodeChecked(int64_t code) {
     if (code == juiced) return juiced_done;
     return code != families.wumpa_global;
 }
+static int ap_net_location_checked(long long code) { return AP_ContentCodeChecked(code); }
 int AP_SanityPadPending(int physical, int family) {
     assert(physical == 9 || physical == 6 || physical == 102);
     return family == 0 && have_pickups;

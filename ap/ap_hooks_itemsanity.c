@@ -16,7 +16,7 @@ static int AP_ItemsanityActive(void)
 	return ctr_cfg_active() && ap_net_location_exists(35016000L);
 }
 
-int AP_ItemsanityPadPending(int destLevelID, ap_pad_shared_check *out)
+int AP_ItemsanityPadPending(int destLevelID, long *out)
 {
 	int i, count = 0;
 
@@ -35,10 +35,10 @@ int AP_ItemsanityPadPending(int destLevelID, ap_pad_shared_check *out)
 		for (int juiced = 0; juiced <= 1; juiced++)
 		{
 			long code = AP_ItemsanityLocationCode(heldItemID, juiced);
-			if (!ap_net_location_exists(code) || AP_ContentCodeChecked(code))
+			if (!ap_net_location_exists(code) || ap_net_location_checked(code))
 				continue;
 			if (out)
-				out[count] = (ap_pad_shared_check){code, AP_PAD_SHARED_ITEMSANITY};
+				out[count] = code;
 			++count;
 		}
 	}

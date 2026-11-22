@@ -685,8 +685,9 @@ int AP_ContentPadSharedChecks(const ctr_content_pad *pad, unsigned modes, ap_pad
 {
 	const ctr_content_checks *fam = ap_content_plan_checks();
 	const ctr_content_package *package;
+	long itemCodes[AP_ITEMSANITY_WEAPON_COUNT * 2];
 	unsigned hits;
-	int host, count = 0;
+	int host, itemCount, count = 0;
 	if (!pad || !pad->occupied || pad->crystal || pad->cup)
 		return 0;
 	modes &= ap_content_pad_plain_modes(pad);
@@ -704,7 +705,11 @@ int AP_ContentPadSharedChecks(const ctr_content_pad *pad, unsigned modes, ap_pad
 		return count; // The plan excludes crate-free packages from these routes.
 
 	host = ap_content_pad_host(pad);
-	count += AP_ItemsanityPadPending(host, out ? out + count : NULL);
+	itemCount = AP_ItemsanityPadPending(host, out ? itemCodes : NULL);
+	if (out)
+		for (int i = 0; i < itemCount; ++i)
+			out[count + i] = (ap_pad_shared_check){itemCodes[i], AP_PAD_SHARED_ITEMSANITY};
+	count += itemCount;
 	hits = AP_HitEncounterPendingMask(host, AP_HitEffectivePlayer(pad->physical));
 	if (hits)
 	{

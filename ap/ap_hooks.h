@@ -941,7 +941,7 @@ int AP_PadReplayable(int physLevelID, int destLevelID);
 // still has an unchecked plain or juiced use check. Like the Hit opportunity it
 // feeds both AP_PadState counters, so a done pad stays raceable instead of
 // stranding the check, and it counts as a re-race reason in the tier-2 chooser.
-int AP_ItemsanityPadPending(int destLevelID, ap_pad_shared_check *out);
+int AP_ItemsanityPadPending(int destLevelID, long *out);
 
 // Number of unchecked item-box locations owned by a race destination. This is
 // the same server-truth count used by AP_PadState, exposed so the warp-pad HUD

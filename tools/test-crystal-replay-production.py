@@ -46,7 +46,10 @@ int AP_GateCount(int index) { return ap_recv_count[index]; }
 void AP_ContentSelectorBuild(const ctr_content_pad *pad, ap_content_selector *sel) {
     ap_content_selector_build(pad, ap_recv_count, AP_ContentCodeChecked, sel);
 }
-int AP_ContentPadPlainLeft(const ctr_content_pad *pad) { (void)pad; return 0; }
+int AP_ContentPadPickupsLeft(const ctr_content_pad *pad) { (void)pad; return 0; }
+int AP_ContentPadSharedChecks(const ctr_content_pad *pad, unsigned modes, void *out) {
+    (void)pad; (void)modes; (void)out; return 0;
+}
 int AP_ContentStage2Owned(const ctr_content_pad *pad) {
     (void)pad; assert(0 && "Crystal Challenges have no second stage"); return 0;
 }
