@@ -34,6 +34,13 @@ int NativeControls_SetAdventurePartner(u64 id) { assignedPartner = id; return 1;
 void NativeControls_ClearAdventureSeats(void) { assignedPartner = 0; }
 int AP_HubSafeForRequest(struct GameTracker *gt) { (void)gt; return hubSafe; }
 int AP_CharSwap_PickerOpen(void) { return 0; }
+void AP_HubPickerFreeze(struct GameTracker *gt, int on)
+{
+	if (on)
+		gt->gameMode2 |= VEH_FREEZE_DOOR;
+	else
+		gt->gameMode2 &= ~VEH_FREEZE_DOOR;
+}
 int AP_HubFeedOn(void) { return feedOn; }
 void MainRaceTrack_RequestLoad(s16 level) { requestedLevel = level; }
 int CustomTrack_ServingLoad(int level, int cup, int cupID)
@@ -150,6 +157,40 @@ static void testHubMenu(struct GameTracker *gt)
 	tapPartner(gt, 2, RAW_BTN_START);
 	assert(strstr(notice, "LOADING") && writes == before && ap_coop_menu == COOP_MENU_CLOSED);
 	sdata->Loading.stage = LOAD_IDLE;
+}
+
+static void testDelayedPreference(struct GameTracker *gt)
+{
+	gt->gameMode1 = MAIN_MENU;
+	AP_CoopConnectReset();
+	gt->gameMode1 = ADVENTURE_MODE | ADVENTURE_ARENA;
+	int before = writes;
+	tapPartner(gt, 2, RAW_BTN_START);
+	assert(g_config.coopAdventure && assignedPartner == 102 && writes == before);
+	AP_CoopRulesStep(0);
+	assert(!g_config.coopRules && writes == before);
+	/* The AP poll delivered the saved value after the frame's co-op tick. */
+	packedValue = 32 | 10;
+	known = 1;
+	revision++;
+	AP_CoopRulesStep(0);
+	assert(g_config.coopRacer == 10 && !g_config.coopRules && packedValue == 10);
+	assert(writes == before + 1);
+	g_config.coopAdventure = 0;
+	AP_CoopConnectReset();
+	assert(g_config.coopRacer == 10); /* Same-room reconnect while P2 is out. */
+
+	gt->gameMode1 = MAIN_MENU;
+	AP_CoopConnectReset();
+	gt->gameMode1 = ADVENTURE_MODE | ADVENTURE_ARENA;
+	before = writes;
+	tapPartner(gt, 2, RAW_BTN_START);
+	int racer = g_config.coopRacer;
+	assert(g_config.coopAdventure && racer >= 0 && writes == before);
+	packedValue = 64;
+	revision++;
+	AP_CoopMenuTick(gt);
+	assert(g_config.coopRacer == racer && packedValue == racer && writes == before + 1);
 }
 
 int main(void)
@@ -296,6 +337,7 @@ int main(void)
 	assert(AP_CoopNextRacer(7, 1) == 8);
 	g_config.coopRules = 0;
 	testHubMenu(&gt);
+	testDelayedPreference(&gt);
 	puts("PASS co-op production: seating, 162 rank pairs, Hard podium, Retry, storage and grid");
 	puts("PASS P2 hub controls: notice, owner, immediate join, Back, racer change, drop out, race/cup/load refusal");
 	return 0;

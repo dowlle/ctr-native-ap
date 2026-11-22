@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_coop.h"
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800af9f8-0x800afa60.
 void AH_Door_ThDestroy(struct Thread *t)
@@ -228,7 +231,8 @@ void AH_Door_ThTick(struct Thread *t)
 		// every frame. The picker releases both halves itself on close, after
 		// which a genuinely stuck flag is released here on the next frame, exactly
 		// as before.
-		if (((gGT->gameMode2 & VEH_FREEZE_DOOR) != 0) && (AP_CharSwap_PickerOpen() == 0))
+		if (((gGT->gameMode2 & VEH_FREEZE_DOOR) != 0) &&
+		    !AP_CharSwap_PickerOpen() && !AP_CoopMenuOpen())
 		{
 			gGT->gameMode2 &= ~VEH_FREEZE_DOOR;
 			driver->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_Driving_Init;

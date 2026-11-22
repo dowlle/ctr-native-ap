@@ -1450,6 +1450,16 @@ static void TestAdventurePartnerWithSharedGuid(void)
 	Check(NativeControls_GetPlayerDeviceIdentity(1) == 0, "dropout leaves P2 vacant");
 	Check(NativeControls_SetAdventurePartner(ids[1]), "another pad can explicitly reclaim P2");
 	Check(NativeControls_GetPlayerDeviceIdentity(1) == ids[1], "explicit replacement gets P2");
+	SetPref(0, NATIVE_CONTROLS_PREF_PINNED,
+	        s_profiles[s_devices[NativeControls_GetPlayerDevice(0)].profile].key);
+	SDL_DetachVirtualJoystick(ids[0]);
+	NativeControls_Refresh();
+	Check(NativeControls_GetPlayerDeviceIdentity(0) == UINT64_MAX, "P1 can drive with the keyboard while unplugged");
+	ids[0] = SDL_AttachVirtualJoystick(&desc);
+	NativeControls_Refresh();
+	Check(ids[0] && NativeControls_GetPlayerDeviceIdentity(0) == ids[0],
+	      "P1 reclaims the available matching pin behind P2 in SDL enumeration");
+	Check(NativeControls_GetPlayerDeviceIdentity(1) == ids[1], "P2 retains the reserved SDL instance");
 	NativeControls_SetAdventurePartner(0);
 	Check(NativeControls_GetPlayerDeviceIdentity(0) == ids[0], "explicit dropout preserves P1 despite shared pin");
 	NativeControls_ClearAdventureSeats();

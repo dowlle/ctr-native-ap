@@ -936,7 +936,7 @@ int AP_HubSafeForRequest(struct GameTracker *gGT)
 // so a kart carrying speed into the picker keeps that speed and keeps moving.
 // The freeze table is the engine's own answer to "a modal owns the screen", and
 // the pairing below is exactly the one AH_MaskHint and AH_Door use.
-static void ap_cs_applyFreeze(struct GameTracker *gGT, int on)
+void AP_HubPickerFreeze(struct GameTracker *gGT, int on)
 {
 	struct Driver *d = gGT->drivers[0];
 
@@ -970,12 +970,12 @@ static void ap_cs_setFreeze(struct GameTracker *gGT, int on)
 {
 	if (on)
 	{
-		ap_cs_applyFreeze(gGT, 1);
+		AP_HubPickerFreeze(gGT, 1);
 		ap_cs_freeze.held = 1;
 	}
 	else if (ap_cs_freeze.held)
 	{
-		ap_cs_applyFreeze(gGT, 0);
+		AP_HubPickerFreeze(gGT, 0);
 		ap_cs_freeze.held = 0;
 	}
 }
@@ -994,9 +994,9 @@ static void ap_cs_tickFreeze(struct GameTracker *gGT, int hubReady)
 	action = AP_CharFreeze_Step(&ap_cs_freeze, &in);
 
 	if (action == AP_CHARFREEZE_HOLD)
-		ap_cs_applyFreeze(gGT, 1);
+		AP_HubPickerFreeze(gGT, 1);
 	else if (action == AP_CHARFREEZE_RELEASE)
-		ap_cs_applyFreeze(gGT, 0);
+		AP_HubPickerFreeze(gGT, 0);
 	// AP_CHARFREEZE_DROP writes nothing: the level load already took the flag,
 	// and gGT->drivers[0] is not ours to write through any more.
 }

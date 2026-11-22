@@ -1045,7 +1045,7 @@ internal bool NativeControls_DeviceSetUnchanged(void)
 	return unchanged;
 }
 
-internal int NativeControls_FindDeviceByKey(const char *key)
+internal int NativeControls_FindDeviceByKey(const char *key, int unownedOnly)
 {
 	if ((key == NULL) || (key[0] == '\0'))
 	{
@@ -1056,7 +1056,8 @@ internal int NativeControls_FindDeviceByKey(const char *key)
 	{
 		int profile = s_devices[i].profile;
 
-		if (s_devices[i].used && (profile >= 0) && NativeControls_StrEqual(s_profiles[profile].key, key))
+		if ((!unownedOnly || s_deviceOwner[i] == NATIVE_CONTROLS_NO_DEVICE) &&
+		    s_devices[i].used && (profile >= 0) && NativeControls_StrEqual(s_profiles[profile].key, key))
 		{
 			return i;
 		}
@@ -1133,6 +1134,10 @@ internal void NativeControls_ResolveAssignment(void)
 
 	// Pinned preferences first and in player order, so two players pinning the
 	// same device resolve in favour of the lower one.
+	int unownedOnly = 0;
+#ifdef CTR_AP
+	unownedOnly = s_adventurePrimary || s_adventurePartner;
+#endif
 	for (int player = 0; player < PLATFORM_INPUT_PAD_COUNT; player++)
 	{
 #ifdef CTR_AP
@@ -1144,7 +1149,7 @@ internal void NativeControls_ResolveAssignment(void)
 			continue;
 		}
 
-		int device = NativeControls_FindDeviceByKey(s_playerPref[player].deviceKey);
+		int device = NativeControls_FindDeviceByKey(s_playerPref[player].deviceKey, unownedOnly);
 		if ((device == NATIVE_CONTROLS_NO_DEVICE) || (s_deviceOwner[device] != NATIVE_CONTROLS_NO_DEVICE))
 		{
 			// Gone, or already owned by a lower player. The preference is kept so
@@ -1154,6 +1159,10 @@ internal void NativeControls_ResolveAssignment(void)
 
 		s_deviceOwner[device] = player;
 		s_playerDevice[player] = device;
+#ifdef CTR_AP
+		if (player == 0 && s_adventurePartner && NativeControls_GetGamepadIdentity(device))
+			s_adventurePrimary = NativeControls_GetGamepadIdentity(device);
+#endif
 	}
 
 	// Table order is gamepads first and the keyboard last.

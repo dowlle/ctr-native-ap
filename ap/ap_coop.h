@@ -42,6 +42,10 @@ static inline int AP_CoopWon(const struct GameTracker *gt)
 		       AP_CoopHardWon(gt->drivers[0]->driverRank, gt->drivers[1]->driverRank);
 	return AP_CoopRank(gt, 0) == 0;
 }
+static inline int AP_CoopTrophyPlace(const struct GameTracker *gt)
+{
+	return AP_CoopRace(gt) && AP_CoopHardRace() ? 2 : 1;
+}
 void AP_CoopPrepareLoad(struct GameTracker *gt);
 int AP_CoopP2Available(void);
 int AP_CoopReloadOnRetry(struct GameTracker *gt);
@@ -53,6 +57,7 @@ void AP_CoopRulesStep(int direction);
 const char *AP_CoopHelp(void);
 void AP_CoopTick(struct GameTracker *gt);
 void AP_CoopMenuTick(struct GameTracker *gt);
+int AP_CoopMenuOpen(void);
 void AP_CoopDrawMenu(void);
 void AP_CoopConnectReset(void);
 #endif

@@ -358,6 +358,56 @@ int main(void)
 }
 '''
 
+FOLLOWER = function("game/231/RB_Follower.c", "static struct InstDrawPerPlayer *RB_Follower_GetIDPP(")
+FOLLOWER += function("game/231/RB_Follower.c", "void RB_Follower_ProcessBucket(")
+FOLLOWER += r'''
+int main(void)
+{
+    static struct {
+        struct Instance inst;
+        struct InstDrawPerPlayer views[2];
+    } follower, mine;
+    static struct Thread followerThread, mineThread;
+    static struct Follower state;
+    setup();
+    gt.numPlyrNextGame = 1;
+    followerThread.inst = &follower.inst;
+    followerThread.object = &state;
+    mineThread.inst = &mine.inst;
+    state.mineTh = &mineThread;
+    for (int owner = 0; owner < 2; owner++)
+    {
+        state.driver = &drivers[owner];
+        state.driver->driverID = owner;
+        follower.views[0].instFlags = follower.views[1].instFlags = DRAW_SUCCESSFUL;
+        mine.views[0].instFlags = mine.views[1].instFlags = DRAW_SUCCESSFUL;
+        RB_Follower_ProcessBucket(&followerThread);
+        assert(follower.views[owner].instFlags & DRAW_SUCCESSFUL);
+        assert(!(follower.views[!owner].instFlags & DRAW_SUCCESSFUL));
+        assert(!(mine.views[owner].instFlags & DRAW_SUCCESSFUL));
+        assert(mine.views[!owner].instFlags & DRAW_SUCCESSFUL);
+    }
+}
+'''
+
+HUB_FREEZE = r'''
+void VehPhysProc_Driving_Init(struct Thread *t, struct Driver *d) {}
+void VehPhysProc_FreezeEndEvent_Init(struct Thread *t, struct Driver *d) {}
+''' + function("ap/ap_charswap.c", "void AP_HubPickerFreeze(") + r'''
+int main(void)
+{
+    setup();
+    gt.gameMode1 |= ADVENTURE_ARENA;
+    gt.gameMode2 = TOKEN_RACE;
+    AP_HubPickerFreeze(&gt, 1);
+    assert(gt.gameMode2 & VEH_FREEZE_DOOR);
+    assert(drivers[0].funcPtrs[DRIVER_FUNC_INIT] == VehPhysProc_FreezeEndEvent_Init);
+    AP_HubPickerFreeze(&gt, 0);
+    assert(gt.gameMode2 == TOKEN_RACE);
+    assert(drivers[0].funcPtrs[DRIVER_FUNC_INIT] == VehPhysProc_Driving_Init);
+}
+'''
+
 cases = {
     "disconnect": DISCONNECT,
     "forced-loss": FORCED_LOSS,
@@ -366,6 +416,8 @@ cases = {
     "wumpa": WUMPA,
     "steering": STEERING,
     "partner-deathlink": PARTNER_DEATHLINK,
+    "follower": FOLLOWER,
+    "hub-freeze": HUB_FREEZE,
 }
 with tempfile.TemporaryDirectory() as directory:
     for name in sys.argv[1:] or cases:

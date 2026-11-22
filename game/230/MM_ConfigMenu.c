@@ -624,7 +624,7 @@ static void Enum_Advance(const ConfigEntry *e)
 	 * fallback would interpret a refusal as "already at the last value". */
 	if (e->valuePtr == &g_config.coopRules)
 	{
-		AP_CoopRulesStep(g_config.coopRules ? -1 : 1);
+		AP_CoopRulesStep(0);
 		return;
 	}
 #endif

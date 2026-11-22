@@ -33,6 +33,7 @@ void AP_CharPicker_Draw(void);
 // show which racer a locked pad demands; falls back to the short name when the
 // portrait is not resident in this hub's icon table. `dim` = not owned yet.
 void AP_CharSwap_DrawPortraitAt(int characterID, short x, short y, int dim);
+void AP_HubPickerFreeze(struct GameTracker *gGT, int on);
 
 // True while the picker owns input. Used to keep the driver frozen, to refuse a
 // Start press so the pause menu cannot open on top of it, and to stop AH_Door's

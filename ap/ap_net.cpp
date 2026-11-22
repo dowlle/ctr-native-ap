@@ -360,11 +360,12 @@ static int g_coop_value = 0;
 static bool g_coop_known = false;
 static unsigned g_coop_rev = 0;
 static std::string ap_coop_key() { return "ctr_coop_" + g_slot; }
-static void ap_coop_accept(const nlohmann::json &value)
+static void ap_coop_accept(const nlohmann::json &value, bool fromGet)
 {
-	if (!value.is_number_integer() || value < 0 ||
-	    (value > 63 && value != 64 && value != 96)) return;
-	g_coop_value = value.get<int>();
+	const bool valid = value.is_number_integer() && value >= 0 &&
+	                   (value <= 63 || value == 64 || value == 96);
+	if (!valid && !fromGet) return;
+	g_coop_value = valid ? value.get<int>() : 64;
 	g_coop_known = true;
 	g_coop_rev++;
 }
@@ -1350,7 +1351,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			std::fprintf(stderr, "[AP NET] difficulty override retrieved: %d\n", g_diff_value);
 		}
 		auto coop = keys.find(ap_coop_key());
-		if (coop != keys.end()) ap_coop_accept(coop->second);
+		if (coop != keys.end()) ap_coop_accept(coop->second, true);
 		auto ch = keys.find(ap_char_key());
 		int  cv = 0;
 		// A stored racer outside the roster is a key some other tool wrote.
@@ -1455,7 +1456,7 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			std::fprintf(stderr, "[AP NET] difficulty override changed: %d\n", g_diff_value);
 		}
 		int cv = 0;
-		if (key == ap_coop_key()) ap_coop_accept(value);
+		if (key == ap_coop_key()) ap_coop_accept(value, false);
 		if (key == ap_char_key() && ap_char_accept(value, &cv))
 		{
 			g_char_value = cv;
@@ -2532,6 +2533,7 @@ extern "C" unsigned ap_net_character_revision(void)
 extern "C" void ap_net_coop_subscribe(void)
 {
 	if (!g_ap || !g_connected) return;
+	g_coop_known = false;
 	AP_NET_GUARD("coop_subscribe", {
 		const std::string key = ap_coop_key();
 		g_ap->SetNotify({key});
@@ -2541,7 +2543,7 @@ extern "C" void ap_net_coop_subscribe(void)
 
 extern "C" int ap_net_coop_set(int packed)
 {
-	if (!g_ap || !g_connected || packed < 0 ||
+	if (!g_ap || !g_connected || !g_coop_known || packed < 0 ||
 	    (packed > 63 && packed != 64 && packed != 96)) return 0;
 	bool queued = false;
 	AP_NET_GUARD("coop_set", {

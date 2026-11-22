@@ -68,7 +68,9 @@ static void AP_CeremonyLedgerAdd(long code, int bit, int tag) { (void)code;(void
 static void AP_FeedOnRungSent(long code, int tag) { (void)code;(void)tag; }
 static long AP_LookupLocationCode(int bit) { return 35000000 + bit; }
 static const char *AP_TrophyName(int bit) { (void)bit; return "reward"; }
-static void AP_SendPodiumChecks(int track, int position) { (void)track;(void)position; }
+static int podiumPlace, coOpTrophyPlace = 1;
+static void AP_SendPodiumChecks(int track, int position) { (void)track; podiumPlace = position; }
+static int AP_CoopTrophyPlace(const struct GameTracker *g) { (void)g; return coOpTrophyPlace; }
 unsigned ap_net_boss_won_bits(void) { return 0; }
 void ap_net_boss_won_record(unsigned bit) { (void)bit; goalEvents++; }
 static void AP_GoalArmLiveEvent(void) { goalEvents++; }
@@ -219,6 +221,9 @@ if family == 'shop':
 if family == 'perfect':
     fixture += 'gt.gameMode1|=RELIC_RACE;\n'
 fixture += call + '\nassert(sent>0);\n'
+if family in ('rewards', 'results'):
+    fixture += 'assert(podiumPlace==1); memset(ap_notified_mask,0,sizeof ap_notified_mask); coOpTrophyPlace=2;' + call
+    fixture += '\nassert(podiumPlace==2);\n'
 if family == 'hit':
     fixture += 'assert(s_hit_sent_mask==(1u<<1));int before=sent;' + call + '\nassert(sent==before);\n'
 if family not in ('shop', 'rewards', 'goal', 'hit'):

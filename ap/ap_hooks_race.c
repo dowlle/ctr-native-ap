@@ -403,7 +403,7 @@ void AP_NotifyTrialTrackRace(int levelID, int challenge)
 	                  "[AP CHECK] trial track=%d challenge=%d location %ld\n",
 	                  levelID, challenge, code);
 	if (challenge == CTR_CFG_TRIAL_TROPHY && code > 0)
-		AP_SendPodiumChecks(AP_TRIAL_PODIUM_LOGICAL_BASE+levelID-16, 1);
+		AP_SendPodiumChecks(AP_TRIAL_PODIUM_LOGICAL_BASE+levelID-16, AP_CoopTrophyPlace(sdata->gGT));
 }
 
 // Schema 15: the Cortex Vortex pad track's race result. Called from the win
