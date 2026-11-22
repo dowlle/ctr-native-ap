@@ -105,7 +105,7 @@ check('a purchase writes update and waits for the reply',
       'op.operation = "update";' in buy and 'g_ap->Set(g_wumpa.shopKey, nlohmann::json::object(), true, {op})' in buy and
       'ap_net_try_send_location' not in buy)
 check('the set reply passes original_value to the reservation',
-      'g_wumpa.shopReply(value, original)' in net and 'const nlohmann::json &original) {' in net)
+      'g_wumpa.shopReply(value, original)' in net and 'const auto &original = reply.at("original_value");' in net)
 check('only a confirmed purchase sends its check',
       re.search(r'REPLY_CONFIRMED\) \{[^}]*ap_net_try_send_location\(\(int64_t\)code\);', net) is not None)
 resend = body(net, 'static void ap_wumpa_resend_paid()\n{')
