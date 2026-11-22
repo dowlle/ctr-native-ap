@@ -2538,17 +2538,20 @@ extern "C" void ap_net_coop_subscribe(void)
 	});
 }
 
-extern "C" void ap_net_coop_set(int packed)
+extern "C" int ap_net_coop_set(int packed)
 {
-	if (!g_ap || !g_connected || packed < 0 || packed > 31) return;
+	if (!g_ap || !g_connected || packed < 0 || packed > 31) return 0;
+	bool queued = false;
 	AP_NET_GUARD("coop_set", {
 		APClient::DataStorageOperation op;
 		op.operation = "replace";
 		op.value = packed;
-		g_ap->Set(ap_coop_key(), packed, false, {op});
+		queued = g_ap->Set(ap_coop_key(), packed, false, {op});
 	});
+	if (!queued) return 0;
 	g_coop_value = packed;
 	g_coop_known = true;
+	return 1;
 }
 
 extern "C" int ap_net_coop_known(int *out)

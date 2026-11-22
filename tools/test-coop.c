@@ -8,6 +8,7 @@
 #include <common.h>
 #include "platform/native_custom_race_context.h"
 #include "ap/ap_seedcfg.h"
+#include "platform/native_controls.h"
 struct sData sdata_static;
 struct Data data;
 NativeConfig g_config;
@@ -18,8 +19,11 @@ static char notice[64];
 static int customServing, cortex, haveContext, queriedPlayers;
 static struct CustomTrackRaceContext raceContext;
 static u64 p2Device = 101;
+static int p2Pref = NATIVE_CONTROLS_PREF_AUTO;
+static int transportReady = 1;
 static s16 requestedLevel = -1;
 u64 NativeControls_GetPlayerDeviceIdentity(int player) { return player == 1 ? p2Device : 100; }
+int NativeControls_GetPlayerPref(int player) { return player == 1 ? p2Pref : NATIVE_CONTROLS_PREF_AUTO; }
 void MainRaceTrack_RequestLoad(s16 level) { requestedLevel = level; }
 int CustomTrack_ServingLoad(int level, int cup, int cupID)
 {
@@ -36,7 +40,14 @@ int AP_RaceAttemptIsForcedLoss(void) { return 0; }
 void AP_LogLine(const char *line) { (void)line; }
 void AP_CharSwap_ApplyStatPackage(struct Driver *driver) { (void)driver; }
 void AP_FeedNoticeLine(const char *text) { snprintf(notice, sizeof notice, "%s", text); }
-void ap_net_coop_set(int packed) { packedValue = packed; writes++; known = 1; }
+int ap_net_coop_set(int packed)
+{
+	if (!transportReady) return 0;
+	packedValue = packed;
+	writes++;
+	known = 1;
+	return 1;
+}
 int ap_net_coop_known(int *out) { *out = packedValue; return known; }
 unsigned ap_net_coop_revision(void) { return revision; }
 #include "../ap/ap_capability.c"
@@ -105,13 +116,25 @@ int main(void)
 	struct ControllerPacket p2Pad = {.plugged = PLUGGED};
 	pads.gamepad[1].ptrControllerPacket = &p2Pad;
 	assert(AP_CoopP2Available() && !AP_CoopReloadOnRetry(&gt));
+	AP_CoopConnectReset(); /* Same-room socket reconnect during the race. */
+	p2Pref = NATIVE_CONTROLS_PREF_PINNED;
+	p2Device = 102; /* A replug reclaims the pin with a new SDL ID. */
+	assert(AP_CoopP2Available() && !AP_CoopReloadOnRetry(&gt));
+	p2Pref = NATIVE_CONTROLS_PREF_AUTO;
 	p2Device = UINT64_MAX; /* Auto puts the keyboard in the vacated slot. */
 	gt.prevLEV = N_SANITY_BEACH;
 	assert(!AP_CoopP2Available() && AP_CoopReloadOnRetry(&gt));
 	assert(requestedLevel == CRASH_COVE);
+	AP_CoopConnectReset(); /* The same reconnect after requesting the full load. */
 	gt.prevLEV = CRASH_COVE; /* Full load records the last level. */
 	AP_CoopPrepareLoad(&gt);
-	assert(gt.numPlyrCurrGame == 1 && gt.prevLEV == N_SANITY_BEACH && g_config.coopAdventure);
+	assert(gt.numPlyrCurrGame == 1 && gt.prevLEV == N_SANITY_BEACH);
+	gt.gameMode1 = ADVENTURE_MODE | ADVENTURE_ARENA;
+	packedValue = 16 + 10;
+	revision++;
+	AP_CoopTick(&gt);
+	assert(g_config.coopAdventure && g_config.coopRacer == 10);
+	gt.gameMode1 = ADVENTURE_MODE;
 	p2Device = 102;
 	AP_CoopPrepareLoad(&gt);
 	assert(gt.numPlyrCurrGame == 2 && AP_CoopP2Available());

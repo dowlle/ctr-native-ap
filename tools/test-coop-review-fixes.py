@@ -12,6 +12,7 @@ COMMON = r'''
 #include <common.h>
 #include "ap/ap_coop.h"
 #include "ap/ap_seedcfg.h"
+#include "platform/native_controls.h"
 struct sData sdata_static;
 struct Data data;
 ctr_seed_config ctr_cfg;
@@ -41,7 +42,9 @@ void CTR_Box_DrawClearBox(const RECT *r, const Color *color, int flags, u32 *ot)
 DISCONNECT = RESULT_STUBS + r'''
 static u64 ap_coop_p2_device = 101;
 static u64 assignedP2Device = 101;
+static int assignedP2Pref = NATIVE_CONTROLS_PREF_AUTO;
 u64 NativeControls_GetPlayerDeviceIdentity(int player) { return assignedP2Device; }
+int NativeControls_GetPlayerPref(int player) { return assignedP2Pref; }
 ''' + function("ap/ap_coop.c", "int AP_CoopP2Available(") + function(
     "game/UI/UI_VsQuip.c", "void UI_VsWaitForPressX("
 ) + r'''
@@ -61,6 +64,10 @@ int main(void)
     pads.gamepad[0].buttonsTapped = 0;
     UI_VsWaitForPressX();
     assert(gt.timerEndOfRaceVS == 30); /* Connected P2 still confirms. */
+    assignedP2Pref = NATIVE_CONTROLS_PREF_PINNED;
+    assignedP2Device = 102;
+    UI_VsWaitForPressX();
+    assert(gt.timerEndOfRaceVS == 30); /* The replugged pin also confirms. */
     pads.gamepad[1].buttonsTapped = BTN_CROSS_one;
     UI_VsWaitForPressX();
     pads.gamepad[1].buttonsTapped = 0;
@@ -68,6 +75,7 @@ int main(void)
     assert(gt.timerEndOfRaceVS == 0);
 
     gt.timerEndOfRaceVS = 30;
+    assignedP2Pref = NATIVE_CONTROLS_PREF_AUTO;
     assignedP2Device = UINT64_MAX; /* The keyboard still reports a connected pad. */
     pads.gamepad[0].buttonsTapped = BTN_CROSS_one;
     UI_VsWaitForPressX();

@@ -20,13 +20,19 @@ void AP_CoopConnectReset(void)
 	g_config.coopAdventure = 0;
 	g_config.coopRacer = ctr_cfg.starting_character;
 	ap_coop_restored = ap_net_coop_revision();
-	ap_coop_p2_device = 0;
-	ap_coop_retry_level = -1;
+	// A socket reconnect can happen during a race or a requested retry.
+	// The device and return hub belong to the loaded scene.
 }
 
-static void AP_CoopPersist(void)
+static void AP_CoopPersist(int enabling, int racer)
 {
-	ap_net_coop_set(g_config.coopRacer + (g_config.coopAdventure ? 16 : 0));
+	if (!ap_net_coop_set(racer + (enabling ? 16 : 0)))
+	{
+		ap_coop_help = "Could not save co-op. Reconnect and try again.";
+		return;
+	}
+	g_config.coopAdventure = enabling;
+	g_config.coopRacer = racer;
 }
 
 static int AP_CoopControllers(void)
@@ -44,9 +50,13 @@ int AP_CoopP2Available(void)
 	const struct ControllerPacket *packet = sdata->gGamepads->gamepad[1].ptrControllerPacket;
 	if (!packet || packet->plugged != PLUGGED)
 		return 0;
-	// Auto can put the keyboard in a vacated slot. Wait only for the device
-	// that entered this attempt. A pad-bus fixture may have no host device.
-	return !ap_coop_p2_device || ap_coop_p2_device == NativeControls_GetPlayerDeviceIdentity(1);
+	const u64 device = NativeControls_GetPlayerDeviceIdentity(1);
+	if (!ap_coop_p2_device || ap_coop_p2_device == device)
+		return 1;
+	// A replugged gamepad gets a new SDL ID. A pin reclaims its configured
+	// controller, while Auto can put an unrelated device in the vacant seat.
+	return device != 0 && device != UINT64_MAX && ap_coop_p2_device != UINT64_MAX &&
+	       NativeControls_GetPlayerPref(1) == NATIVE_CONTROLS_PREF_PINNED;
 }
 
 int AP_CoopReloadOnRetry(struct GameTracker *gt)
@@ -91,11 +101,11 @@ void AP_CoopStep(int direction)
 {
 	int enabling = direction > 0;
 	if (!AP_CoopCanEdit(enabling)) return;
-	if (enabling && !AP_CoopRacerUnlocked(g_config.coopRacer))
+	int racer = g_config.coopRacer;
+	if (enabling && !AP_CoopRacerUnlocked(racer))
 		for (int i = 0; i < 16; i++)
-			if (AP_CoopRacerUnlocked(i)) { g_config.coopRacer = i; break; }
-	g_config.coopAdventure = enabling;
-	AP_CoopPersist();
+			if (AP_CoopRacerUnlocked(i)) { racer = i; break; }
+	AP_CoopPersist(enabling, racer);
 }
 
 void AP_CoopRacerStep(int direction)
@@ -108,8 +118,7 @@ void AP_CoopRacerStep(int direction)
 		int racer = (base + direction * i + 32) % 16;
 		if (AP_CoopRacerUnlocked(racer))
 		{
-			g_config.coopRacer = racer;
-			AP_CoopPersist();
+			AP_CoopPersist(g_config.coopAdventure, racer);
 			return;
 		}
 	}
@@ -148,7 +157,7 @@ void AP_CoopPrepareLoad(struct GameTracker *gt)
 	gt->numPlyrCurrGame = two ? 2 : 1;
 	/* Hub and unsupported races are always solo, without losing the preference. */
 	gt->numPlyrNextGame = 1;
-	if (g_config.coopAdventure == 1 && !two &&
+	if ((soloRetry || g_config.coopAdventure == 1) && !two &&
 	    !(mode & (ADVENTURE_ARENA | MAIN_MENU | GAME_CUTSCENE)))
 	{
 		AP_FeedNoticeLine(soloRetry || AP_CoopControllers() < 2 ? "P2 DISCONNECTED: SOLO RACE" :

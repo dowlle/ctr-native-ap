@@ -230,7 +230,7 @@ unsigned ap_net_character_revision(void);
 
 // Per-slot client preference: P2 racer + 16 when co-op is enabled.
 void ap_net_coop_subscribe(void);
-void ap_net_coop_set(int packed);
+int ap_net_coop_set(int packed);
 int ap_net_coop_known(int *packed);
 unsigned ap_net_coop_revision(void);
 

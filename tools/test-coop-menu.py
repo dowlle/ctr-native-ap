@@ -56,6 +56,12 @@ int main(void) {
     unlockRacer(10);
     Enum_Advance(&racer); assert(g_config.coopRacer == 10);
     Enum_Advance(&racer); assert(g_config.coopRacer == 0);
+    int saved = writes;
+    transportReady = 0;
+    Enum_Advance(&players); Enum_Advance(&racer);
+    assert(!g_config.coopAdventure && g_config.coopRacer == 0 && writes == saved);
+    assert(strstr(AP_CoopHelp(), "Reconnect"));
+    transportReady = 1;
     gt.gameMode1 |= ADVENTURE_CUP;
     int before = writes;
     Enum_Advance(&players); Enum_Advance(&racer);

@@ -1370,6 +1370,16 @@ static void TestPlayerDeviceIdentitySurvivesTableRebuild(void)
 	NativeControls_ResolveAssignment();
 	Check(NativeControls_GetPlayerDeviceIdentity(1) == device,
 	      "device identity follows the pad across table rebuilds");
+	SetPref(1, NATIVE_CONTROLS_PREF_PINNED, s_testDeviceKeys[1]);
+	SetupDevices(1, pads, &keyboard);
+	NativeControls_ResolveAssignment();
+	Check(NativeControls_GetPlayerDeviceIdentity(1) == 0, "an absent pin has no controller");
+	SetupDevices(2, pads, &keyboard);
+	s_devices[pads[1]].instanceId = 201;
+	NativeControls_ResolveAssignment();
+	Check(NativeControls_GetPlayerDeviceIdentity(1) == 201 &&
+	      NativeControls_GetPlayerPref(1) == NATIVE_CONTROLS_PREF_PINNED,
+	      "a replugged controller reclaims its pin with a new SDL ID");
 }
 
 static void TestKeyboardIsTheLastFallback(void)
