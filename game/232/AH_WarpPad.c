@@ -755,8 +755,8 @@ void AH_WarpPad_ThTick(struct Thread *t)
 #endif
 				const RECT *padView = &gGT->pushBuffer[0].rect;
 				const int padX = padView->x + padView->w / 2;
-				const int padBottom = padView->y + padView->h;
 #ifdef CTR_AP
+				const int padBottom = padView->y + padView->h;
 				const int requirementY = padBottom - 15 - apLift;
 				int requirementWidth = padView->w - 160;
 #endif
