@@ -636,7 +636,8 @@ int AP_NotifyStandaloneRace(void)
 	    (context->mode == AP_CONTENT_MODE_CTR
 	         ? !(gGT->drivers[0]->driverRank == 0 &&
 	             AP_LetterTokenEarned(gGT->levelID, 1, gGT->drivers[0]->PickupLetterHUD.numCollected))
-	         : !ap_content_race_award(context->mode, AP_CoopRank(gGT, 0),
+	         : !ap_content_race_award(context->mode,
+	                                  AP_CoopRace(gGT) ? (AP_CoopWon(gGT) ? 0 : -1) : gGT->drivers[0]->driverRank,
 	                                  gGT->drivers[0]->PickupLetterHUD.numCollected)))
 		return 0;
 	if (context->trophyLocation > 2147483647 ||

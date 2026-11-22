@@ -39,7 +39,7 @@
 #define AP_PAUSEROW_QUIT      5
 #define AP_PAUSEROW_OPTIONS   6
 #define AP_PAUSEROW_DIFFICULTY 7
-#define AP_PAUSEROW_COOP      8
+#define AP_PAUSEROW_GAMEPLAY_OPTIONS 8
 #define AP_PAUSEROW_KINDS     9
 
 // The TRACKER row has no retail string. MenuRow.stringIndex indexes
@@ -57,7 +57,7 @@
 
 #define AP_LNG_AI_DIFFICULTY 0x7f10
 #define AP_LNG_AI_PRESET     0x7f11 // six consecutive preset labels
-#define AP_LNG_COOP          0x7f17
+#define AP_LNG_GAMEPLAY_OPTIONS 0x7f17
 
 // Rows in order for the given AP rows. Returns the row count (4 to 8).
 // (0, 0, 0) is the retail set.

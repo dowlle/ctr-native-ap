@@ -362,7 +362,8 @@ static unsigned g_coop_rev = 0;
 static std::string ap_coop_key() { return "ctr_coop_" + g_slot; }
 static void ap_coop_accept(const nlohmann::json &value)
 {
-	if (!value.is_number_integer() || value < 0 || value > 31) return;
+	if (!value.is_number_integer() || value < 0 ||
+	    (value > 63 && value != 64 && value != 96)) return;
 	g_coop_value = value.get<int>();
 	g_coop_known = true;
 	g_coop_rev++;
@@ -2540,7 +2541,8 @@ extern "C" void ap_net_coop_subscribe(void)
 
 extern "C" int ap_net_coop_set(int packed)
 {
-	if (!g_ap || !g_connected || packed < 0 || packed > 31) return 0;
+	if (!g_ap || !g_connected || packed < 0 ||
+	    (packed > 63 && packed != 64 && packed != 96)) return 0;
 	bool queued = false;
 	AP_NET_GUARD("coop_set", {
 		APClient::DataStorageOperation op;

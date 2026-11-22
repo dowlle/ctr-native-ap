@@ -22,7 +22,11 @@
 // ============================================================================
 
 // ── Send-edge state ──
-static int g_dl_prev_maskgrab = 0; // rising-edge latch on the local KS_MASK_GRABBED
+static unsigned g_dl_prev_maskgrab; // rising-edge bits for the local human karts
+static int g_dl_partner_effect[2];
+static int g_dl_partner_grace[2];
+static int g_dl_partner_hit_cooldown[2];
+static unsigned g_dl_partner_reset_edges;
 static int g_dl_amnesty_count  = 0; // eligible deaths counted toward the amnesty N
 
 // ── Receive state ──
@@ -73,6 +77,31 @@ void AP_DeathLinkSuppressSelfInflicted(int on)
 // death performs, so the hit it lands never sends. Separate from both flags
 // above for the same reason they are separate from each other.
 static int g_dl_applying_received_hit = 0;
+static int AP_DeathLinkWindow(struct GameTracker *gGT);
+
+static void AP_DeathLinkQueuePartner(struct GameTracker *gt, const struct Driver *victim, int trigger)
+{
+	if (!AP_CoopRace(gt) || AP_RaceAttemptIsForcedLoss() ||
+	    AP_DeathLinkWindow(gt) != AP_DL_WIN_LIVE)
+		return;
+	const APDeathLinkState seed = AP_DeathLinkResolve(ctr_cfg.death_link, ctr_cfg.death_link_send,
+	                                                -1, -1, -1, -1);
+	int hard = AP_CoopHardRace();
+	int send = seed.send;
+	if (!hard)
+		send |= AP_DL_TRIG_FALL;
+	if (!(send & trigger))
+		return;
+	int partner = victim == gt->drivers[0] ? 1 : 0;
+	const struct Driver *target = gt->drivers[partner];
+	int effect = hard ? seed.recv : CTR_DL_MASK_RESET;
+	if (target && (effect == CTR_DL_RACE_LOSS ||
+	    (AP_IsSlotHuman(gt, target) && !(target->actionsFlagSet & ACTION_RACE_FINISHED))))
+	{
+		g_dl_partner_effect[partner] = effect;
+		g_dl_partner_grace[partner] = AP_DL_GRACE_FRAMES;
+	}
+}
 
 // Send cooldown (frames). Observed live (2026-07-19 Deck 3-player session): a
 // RECEIVED death's forced mask grab bounces the kart state machine through
@@ -180,6 +209,14 @@ void AP_RaceAttempt_OnLevelStart(struct GameTracker *gGT)
 
 	if (cleared)
 		AP_LogLine("[AP DEATH] new race attempt -> forced-loss latch cleared\n");
+	if (racing && idle)
+	{
+		memset(g_dl_partner_effect, 0, sizeof g_dl_partner_effect);
+		memset(g_dl_partner_hit_cooldown, 0, sizeof g_dl_partner_hit_cooldown);
+		g_dl_partner_reset_edges = 0;
+		if (AP_CoopRace(gGT))
+			g_dl_prev_maskgrab = 0;
+	}
 
 	// #449: the race_loss stakes are fixed when the race starts (ticket 04).
 	AP_WinStakesOnLevelStart(gGT, racing && idle);
@@ -277,9 +314,7 @@ void AP_DeathLinkOnHit(struct Driver *victim, int damageType, int reason)
 {
 	struct GameTracker *gGT;
 
-	if (!ctr_cfg_active() ||
-	    !AP_DeathLinkTriggerSends(AP_DeathLinkSendMaskNow(), AP_DL_TRIG_HIT,
-	                              AP_RaceAttemptIsForcedLoss()))
+	if (!ctr_cfg_active())
 		return;
 	if (damageType < 1 || damageType > 4)
 		return;
@@ -288,14 +323,17 @@ void AP_DeathLinkOnHit(struct Driver *victim, int damageType, int reason)
 	gGT = sdata->gGT;
 	if (!AP_IsSlotHuman(gGT, victim))
 		return; // local player only
-	if (g_dl_swallow_edge)
+	if (g_dl_swallow_edge || (g_dl_partner_reset_edges & (1u << (victim == gGT->drivers[1]))))
 		return; // mid received-death application: never send
 	if (g_dl_trap_self_inflicted)
 		return; // a trap is driving this damage: ruled self-inflicted, never send
 	if (g_dl_applying_received_hit)
 		return; // #483: the hit a received DeathLink lands never sends
 
-	AP_DeathLinkFireLocal(gGT, AP_DeathLinkHitCause(damageType, reason));
+	AP_DeathLinkQueuePartner(gGT, victim, AP_DL_TRIG_HIT);
+	if (AP_DeathLinkTriggerSends(AP_DeathLinkSendMaskNow(), AP_DL_TRIG_HIT,
+	                            AP_RaceAttemptIsForcedLoss()))
+		AP_DeathLinkFireLocal(gGT, AP_DeathLinkHitCause(damageType, reason));
 }
 
 void AP_DeathLinkConnectReset(void)
@@ -528,7 +566,7 @@ static void AP_DeathLinkApplyRelicLoss(struct GameTracker *gGT, struct Driver *l
 // callback in the retail end sequence observes the forced loss. Crystal
 // Challenges and Relic Races have no ranking to force and end through their own
 // routes above.
-static void AP_DeathLinkApplyRaceLoss(struct GameTracker *gGT, struct Driver *local)
+static void AP_DeathLinkApplyRaceLoss(struct GameTracker *gGT, struct Driver *local, int partnerLoss)
 {
 	int order[8];
 	int racers = (int)(u8)gGT->numPlyrCurrGame + (int)(u8)gGT->numBotsNextGame;
@@ -582,16 +620,27 @@ static void AP_DeathLinkApplyRaceLoss(struct GameTracker *gGT, struct Driver *lo
 	}
 	sdata->numPlayersFinishedRace = AP_RaceAttempt_FinishedCountAfterLoss(racers);
 
-	AP_DeathLinkConsumeForLoss(cause, sizeof cause);
+	if (partnerLoss)
+	{
+		snprintf(cause, sizeof cause, "local partner DeathLink");
+		AP_RaceAttempt_ArmForcedLoss(&g_dl_race_attempt);
+	}
+	else
+		AP_DeathLinkConsumeForLoss(cause, sizeof cause);
 
 	// Retail circuit finish: mark finished, drop the held item, hand the kart to
 	// the AI, then enter the common end-of-event initializer (PlayLevel.c:156-204,
 	// MainGameEnd.c:522).
-	local->actionsFlagSet |= ACTION_RACE_FINISHED;
-	local->heldItemID = 0xf;
-	if (local->noItemTimer != 0)
-		local->noItemTimer = 0;
-	BOTS_Driver_Convert(local);
+	for (int i = 0; i < (AP_CoopRace(gGT) ? 2 : 1); i++)
+	{
+		struct Driver *human = gGT->drivers[i];
+		int alreadyBot = (human->actionsFlagSet & ACTION_BOT) != 0;
+		human->actionsFlagSet |= ACTION_RACE_FINISHED;
+		human->heldItemID = 0xf;
+		human->noItemTimer = 0;
+		if (!alreadyBot)
+			BOTS_Driver_Convert(human);
+	}
 	MainGameEnd_Initialize();
 
 	snprintf(msg, sizeof msg, "[AP DEATH] received -> race loss (%s)\n", cause);
@@ -620,6 +669,8 @@ static int AP_DeathLinkApplyWeaponHit(struct Driver *local)
 
 	AP_DeathLinkPopup(1, 0);
 	g_dl_send_cooldown = AP_DL_COOLDOWN_AFTER_RECV; // also mutes a fall the spin causes
+	if (AP_CoopRace(sdata->gGT))
+		g_dl_partner_hit_cooldown[0] = AP_DL_COOLDOWN_AFTER_RECV;
 	g_dl_applying_received_hit = 1;
 	landed = RB_Hazard_HurtDriver(local, 1, 0, 0);
 	g_dl_applying_received_hit = 0;
@@ -659,10 +710,87 @@ static int AP_DeathLinkWindow(struct GameTracker *gGT)
 	return (gGT->gameMode1 & PAUSE_ALL) != 0 ? AP_DL_WIN_PAUSED : AP_DL_WIN_LIVE;
 }
 
+static int AP_DeathLinkTickPartner(struct GameTracker *gt, int window)
+{
+	if (!AP_CoopRace(gt) || window == AP_DL_WIN_OUTSIDE)
+	{
+		memset(g_dl_partner_effect, 0, sizeof g_dl_partner_effect);
+		memset(g_dl_partner_hit_cooldown, 0, sizeof g_dl_partner_hit_cooldown);
+		g_dl_partner_reset_edges = 0;
+		return 0;
+	}
+	if (window != AP_DL_WIN_LIVE)
+		return 0;
+	for (int i = 0; i < 2; i++)
+	{
+		int effect = g_dl_partner_effect[i];
+		struct Driver *d = gt->drivers[i];
+		if (g_dl_partner_hit_cooldown[i] > 0)
+			g_dl_partner_hit_cooldown[i]--;
+		if (!effect)
+			continue;
+		if (--g_dl_partner_grace[i] <= 0)
+		{
+			g_dl_partner_effect[i] = 0;
+			continue;
+		}
+		if (effect == CTR_DL_RACE_LOSS)
+		{
+			g_dl_partner_effect[i] = 0;
+			if (d)
+				AP_DeathLinkApplyRaceLoss(gt, d, 1);
+			if (AP_RaceAttemptIsForcedLoss())
+				return 1;
+		}
+		else if (effect == CTR_DL_WEAPON_HIT)
+		{
+			if (!AP_IsSlotHuman(gt, d) || (d->actionsFlagSet & ACTION_RACE_FINISHED) ||
+			    d->pendingDamageType || (d->kartState != KS_NORMAL && d->kartState != KS_DRIFTING &&
+			    d->kartState != KS_ANTIVSHIFT))
+				continue;
+			g_dl_partner_effect[i] = 0;
+			g_dl_applying_received_hit = 1;
+			g_dl_partner_hit_cooldown[i] = AP_DL_COOLDOWN_AFTER_RECV;
+			if (RB_Hazard_HurtDriver(d, 1, 0, 0))
+				d->damageColorTimer = 0x1e;
+			g_dl_applying_received_hit = 0;
+		}
+	}
+	return 0;
+}
+
+static void AP_DeathLinkFallEdges(struct GameTracker *gt, int raceActive)
+{
+	unsigned grabbed = 0;
+	for (int i = 0; i < (AP_CoopRace(gt) ? 2 : 1); i++)
+	{
+		struct Driver *d = gt->drivers[i];
+		unsigned bit = 1u << i;
+		if (!d || d->kartState != KS_MASK_GRABBED)
+			continue;
+		grabbed |= bit;
+		if (g_dl_prev_maskgrab & bit)
+			continue;
+		int forced = (g_dl_partner_reset_edges & bit) || (i == 0 && g_dl_swallow_edge);
+		g_dl_partner_reset_edges &= ~bit;
+		if (i == 0)
+			g_dl_swallow_edge = 0;
+		if (raceActive && !forced && !g_dl_partner_hit_cooldown[i] &&
+		    (i == 0 || AP_IsSlotHuman(gt, d)))
+		{
+			AP_DeathLinkQueuePartner(gt, d, AP_DL_TRIG_FALL);
+			if (AP_DeathLinkTriggerSends(AP_DeathLinkSendMaskNow(), AP_DL_TRIG_FALL,
+			                            AP_RaceAttemptIsForcedLoss()))
+				AP_DeathLinkFireLocal(gt, "wiped out");
+		}
+	}
+	g_dl_prev_maskgrab = grabbed;
+}
+
 void AP_DeathLinkTick(struct GameTracker *gGT)
 {
 	struct Driver *local;
-	int window, raceActive, maskGrabNow, action;
+	int window, action;
 	char cause[128];
 	char source[64];
 
@@ -676,12 +804,19 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 	if (g_dl_send_cooldown > 0)
 		g_dl_send_cooldown--;
 
+	window = AP_DeathLinkWindow(gGT);
+	if (ctr_cfg_active() && AP_DeathLinkTickPartner(gGT, window))
+		return;
+
 	if (!ctr_cfg_active() || AP_DeathLinkActive() == 0)
 	{
 		// Feature off: keep edge/receive state clean so a later opt-in starts fresh.
 		// g_dl_race_attempt is NOT cleared: DeathLink config becoming inactive must
 		// not re-enable the failed attempt's finish checks.
-		g_dl_prev_maskgrab = 0;
+		if (ctr_cfg_active() && AP_CoopRace(gGT))
+			AP_DeathLinkFallEdges(gGT, window == AP_DL_WIN_LIVE);
+		else
+			g_dl_prev_maskgrab = 0;
 		g_dl_pending_recv = 0;
 		g_dl_grace_left = 0;
 		g_dl_defer_logged = 0;
@@ -698,9 +833,6 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 	// Drain the network inbox. A death is handled the frame it arrives: it applies
 	// inside a live race, is held while that race is paused, or is dropped.
 	AP_DeathLinkDrainInbound();
-
-	window = AP_DeathLinkWindow(gGT);
-	raceActive = window == AP_DL_WIN_LIVE;
 
 	// #286 receive decision. Mode 3 (race_loss) ends the attempt here; modes 1/2
 	// keep the mask-reset path (applied from the physics pipeline). Outside a live
@@ -732,7 +864,7 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 	}
 	else if (action == AP_DL_RECV_RACE_LOSS && local != 0)
 	{
-		AP_DeathLinkApplyRaceLoss(gGT, local);
+		AP_DeathLinkApplyRaceLoss(gGT, local, 0);
 		// Consumed (pending cleared) when it landed; otherwise grace, then drop.
 		if (g_dl_pending_recv && AP_DeathLinkGraceStep(&g_dl_grace_left))
 			AP_DeathLinkDrop("could not apply");
@@ -754,17 +886,7 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 	// mask_grab trigger. A forced-reset edge is swallowed once.
 	// A genuine mask-grab only happens mid-race, so the send is gated on raceActive
 	// too -- belt-and-suspenders against a spurious edge outside a live race.
-	maskGrabNow = (local != 0 && local->kartState == KS_MASK_GRABBED) ? 1 : 0;
-	if (maskGrabNow && !g_dl_prev_maskgrab)
-	{
-		if (g_dl_swallow_edge)
-			g_dl_swallow_edge = 0; // received death caused this edge: never send
-		else if (raceActive &&
-		         AP_DeathLinkTriggerSends(AP_DeathLinkSendMaskNow(), AP_DL_TRIG_FALL,
-		                                  AP_RaceAttemptIsForcedLoss()))
-			AP_DeathLinkFireLocal(gGT, "wiped out");
-	}
-	g_dl_prev_maskgrab = maskGrabNow;
+	AP_DeathLinkFallEdges(gGT, window == AP_DL_WIN_LIVE);
 }
 
 // Apply a received mask-reset death that is inside the grace window. Called from INSIDE COLL_FIXED_PlayerSearch, right
@@ -784,23 +906,18 @@ int AP_DeathLinkForceReset(struct Driver *d)
 	struct GameTracker *gGT;
 	char msg[192];
 
-	if (!ctr_cfg_active() || AP_DeathLinkEffMode() == CTR_DL_OFF)
-		return 0;
-	// #286: race_loss is applied in AP_DeathLinkTick (rank reorder + retail end),
-	// never as a mask reset. Leave the pending death for that path.
-	if (AP_DeathLinkEffMode() == CTR_DL_RACE_LOSS)
-		return 0;
-	// #483: weapon_hit is applied in AP_DeathLinkTick as a spin-out, never as a
-	// mask reset.
-	if (AP_DeathLinkEffMode() == CTR_DL_WEAPON_HIT)
-		return 0;
-	if (!g_dl_pending_recv || d == 0)
-		return 0;
-	if (sdata == 0 || sdata->gGT == 0)
+	if (!ctr_cfg_active() || !d || !sdata || !sdata->gGT)
 		return 0;
 	gGT = sdata->gGT;
-	if (d != gGT->drivers[0])
-		return 0; // local player only
+	int player = d == gGT->drivers[1] ? 1 : 0;
+	int localEffect = AP_CoopRace(gGT) && AP_IsSlotHuman(gGT, d) &&
+	                  (g_dl_partner_effect[player] == CTR_DL_MASK_RESET ||
+	                   g_dl_partner_effect[player] == CTR_DL_ANY_HIT);
+	int recv = AP_DeathLinkEffMode();
+	int remoteEffect = d == gGT->drivers[0] && g_dl_pending_recv &&
+	                   (recv == CTR_DL_MASK_RESET || recv == CTR_DL_ANY_HIT);
+	if (!localEffect && !remoteEffect)
+		return 0;
 	if ((gGT->gameMode1 & ADVENTURE_MODE) == 0)
 		return 0; // receive, like send, only in adventure mode
 
@@ -819,11 +936,22 @@ int AP_DeathLinkForceReset(struct Driver *d)
 	    (d->stepFlagSet & COLL_STEP_TRIGGER_SUPPRESS_MASK_GRAB) != 0)
 		return 0;
 
+	if (localEffect)
+	{
+		g_dl_partner_effect[player] = 0;
+		g_dl_partner_reset_edges |= 1u << player;
+		g_dl_partner_hit_cooldown[player] = AP_DL_COOLDOWN_AFTER_RECV;
+		if (!remoteEffect)
+			return 1;
+	}
+
 	AP_DeathLinkPopup(1, 0);
 	g_dl_pending_recv = 0;
 	g_dl_grace_left = 0;
 	g_dl_swallow_edge = 1; // no-loop guard: the resulting mask-grab edge must not send
 	g_dl_send_cooldown = AP_DL_COOLDOWN_AFTER_RECV; // forced grab multi-edges: mute them all
+	if (AP_CoopRace(gGT))
+		g_dl_partner_hit_cooldown[0] = AP_DL_COOLDOWN_AFTER_RECV;
 	snprintf(msg, sizeof msg, "[AP DEATH] received -> forced mask reset (%s)\n",
 	         g_dl_pending_cause[0] ? g_dl_pending_cause : "a death");
 	AP_LogLine(msg);
@@ -882,7 +1010,7 @@ void AP_DeathLinkOnRaceEnd(struct GameTracker *gGT, struct Driver *player)
 	lost = AP_DeathLinkRaceEndLost((gGT->gameMode1 & ADVENTURE_MODE) != 0,
 	                               (gGT->gameMode1 & ADVENTURE_CUP) != 0,
 	                               (gGT->gameMode1 & RELIC_RACE) != 0, crystal,
-	                               AP_CoopRace(gGT) ? AP_CoopRank(gGT, 0) : (int)player->driverRank, (int)player->numCrystals,
+	                               AP_CoopRace(gGT) ? (AP_CoopWon(gGT) ? 0 : 1) : (int)player->driverRank, (int)player->numCrystals,
 	                               (int)gGT->numCrystalsInLEV);
 	AP_DeathLinkSendLoss(gGT, AP_DL_EV_RACE_END, lost, 0);
 }

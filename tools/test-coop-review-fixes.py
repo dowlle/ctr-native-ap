@@ -42,9 +42,7 @@ void CTR_Box_DrawClearBox(const RECT *r, const Color *color, int flags, u32 *ot)
 DISCONNECT = RESULT_STUBS + r'''
 static u64 ap_coop_p2_device = 101;
 static u64 assignedP2Device = 101;
-static int assignedP2Pref = NATIVE_CONTROLS_PREF_AUTO;
 u64 NativeControls_GetPlayerDeviceIdentity(int player) { return assignedP2Device; }
-int NativeControls_GetPlayerPref(int player) { return assignedP2Pref; }
 ''' + function("ap/ap_coop.c", "int AP_CoopP2Available(") + function(
     "game/UI/UI_VsQuip.c", "void UI_VsWaitForPressX("
 ) + r'''
@@ -64,10 +62,6 @@ int main(void)
     pads.gamepad[0].buttonsTapped = 0;
     UI_VsWaitForPressX();
     assert(gt.timerEndOfRaceVS == 30); /* Connected P2 still confirms. */
-    assignedP2Pref = NATIVE_CONTROLS_PREF_PINNED;
-    assignedP2Device = 102;
-    UI_VsWaitForPressX();
-    assert(gt.timerEndOfRaceVS == 30); /* The replugged pin also confirms. */
     pads.gamepad[1].buttonsTapped = BTN_CROSS_one;
     UI_VsWaitForPressX();
     pads.gamepad[1].buttonsTapped = 0;
@@ -75,7 +69,14 @@ int main(void)
     assert(gt.timerEndOfRaceVS == 0);
 
     gt.timerEndOfRaceVS = 30;
-    assignedP2Pref = NATIVE_CONTROLS_PREF_AUTO;
+    assignedP2Device = 102; /* An unrelated/replugged SDL instance cannot hold results. */
+    pads.gamepad[0].buttonsTapped = BTN_CROSS_one;
+    UI_VsWaitForPressX();
+    pads.gamepad[0].buttonsTapped = 0;
+    UI_VsWaitForPressX();
+    assert(gt.timerEndOfRaceVS == 0);
+
+    gt.timerEndOfRaceVS = 30;
     assignedP2Device = UINT64_MAX; /* The keyboard still reports a connected pad. */
     pads.gamepad[0].buttonsTapped = BTN_CROSS_one;
     UI_VsWaitForPressX();
@@ -106,6 +107,7 @@ int main(void)
 FORCED_LOSS = r'''
 #include "ap/ap_race_attempt_logic.h"
 static APRaceAttemptState g_dl_race_attempt;
+int AP_CoopHardRace(void) { return 0; }
 ''' + function("ap/ap_deathlink.c", "int AP_RaceAttemptIsForcedLoss(") + function(
     "game/MAIN/MainGameEnd.c", "static void MainGameEnd_UpdateAdventureLosses("
 ) + r'''
@@ -311,6 +313,51 @@ int main(void)
 }
 '''
 
+PARTNER_DEATHLINK = r'''
+#include "ap/ap_race_attempt_logic.h"
+static int g_dl_partner_effect[2], g_dl_partner_grace[2], hard, forced, window;
+int AP_CoopHardRace(void) { return hard; }
+int AP_RaceAttemptIsForcedLoss(void) { return forced; }
+static int AP_DeathLinkWindow(struct GameTracker *gt) { (void)gt; return window; }
+'''
+PARTNER_DEATHLINK += function("ap/ap_deathlink.c", "static void AP_DeathLinkQueuePartner(")
+PARTNER_DEATHLINK += r'''
+int main(void)
+{
+    setup();
+    window = AP_DL_WIN_LIVE;
+    AP_DeathLinkQueuePartner(&gt, &drivers[0], AP_DL_TRIG_FALL);
+    assert(g_dl_partner_effect[1] == CTR_DL_MASK_RESET && !g_dl_partner_effect[0]);
+    g_dl_partner_effect[1] = 0;
+    hard = 1;
+    AP_DeathLinkQueuePartner(&gt, &drivers[0], AP_DL_TRIG_FALL);
+    assert(!g_dl_partner_effect[1]); /* Seed off. */
+    ctr_cfg.death_link = CTR_DL_RACE_LOSS;
+    ctr_cfg.death_link_send = AP_DL_TRIG_FALL;
+    drivers[0].actionsFlagSet = ACTION_RACE_FINISHED | ACTION_BOT;
+    AP_DeathLinkQueuePartner(&gt, &drivers[1], AP_DL_TRIG_FALL);
+    assert(g_dl_partner_effect[0] == CTR_DL_RACE_LOSS); /* Still loses the team race. */
+    drivers[0].actionsFlagSet = 0;
+    ctr_cfg.death_link = CTR_DL_WEAPON_HIT;
+    ctr_cfg.death_link_send = AP_DL_TRIG_HIT;
+    AP_DeathLinkQueuePartner(&gt, &drivers[0], AP_DL_TRIG_FALL);
+    assert(!g_dl_partner_effect[1]);
+    AP_DeathLinkQueuePartner(&gt, &drivers[0], AP_DL_TRIG_HIT);
+    assert(g_dl_partner_effect[1] == CTR_DL_WEAPON_HIT);
+    hard = 0;
+    AP_DeathLinkQueuePartner(&gt, &drivers[0], AP_DL_TRIG_HIT);
+    assert(g_dl_partner_effect[1] == CTR_DL_MASK_RESET);
+    g_dl_partner_effect[1] = 0;
+    window = AP_DL_WIN_PAUSED;
+    AP_DeathLinkQueuePartner(&gt, &drivers[0], AP_DL_TRIG_FALL);
+    assert(!g_dl_partner_effect[1]);
+    gt.numPlyrCurrGame = 1;
+    window = AP_DL_WIN_LIVE;
+    AP_DeathLinkQueuePartner(&gt, &drivers[0], AP_DL_TRIG_FALL);
+    assert(!g_dl_partner_effect[1]);
+}
+'''
+
 cases = {
     "disconnect": DISCONNECT,
     "forced-loss": FORCED_LOSS,
@@ -318,6 +365,7 @@ cases = {
     "tizi": TIZI,
     "wumpa": WUMPA,
     "steering": STEERING,
+    "partner-deathlink": PARTNER_DEATHLINK,
 }
 with tempfile.TemporaryDirectory() as directory:
     for name in sys.argv[1:] or cases:

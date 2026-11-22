@@ -15,7 +15,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 out="${HARNESS_OUT:-/tmp/ctr-harness}"
-sdl_build="$out/sdl3-host-m32"
+sdl_build="$out/sdl3-host-m32-virtual"
 jobs="${CONTROLS_TEST_JOBS:-2}"
 
 mkdir -p "$out"
@@ -27,7 +27,7 @@ if [ ! -f "$sdl_build/libSDL3.a" ]; then
 		-DSDL_EXAMPLES=OFF -DSDL_INSTALL=OFF \
 		-DSDL_VIDEO=OFF -DSDL_AUDIO=OFF -DSDL_RENDER=OFF -DSDL_GPU=OFF \
 		-DSDL_CAMERA=OFF -DSDL_SENSOR=OFF -DSDL_DIALOG=OFF -DSDL_TRAY=OFF \
-		-DSDL_POWER=OFF -DSDL_HAPTIC=ON -DSDL_JOYSTICK=ON -DSDL_HIDAPI=OFF \
+		-DSDL_POWER=OFF -DSDL_HAPTIC=ON -DSDL_JOYSTICK=ON -DSDL_HIDAPI=ON -DSDL_VIRTUAL_JOYSTICK=ON \
 		-DSDL_DBUS=OFF -DSDL_IBUS=OFF -DSDL_LIBUDEV=OFF -DSDL_UNIX_CONSOLE_BUILD=ON \
 		>"$out/sdl3-host-configure.log" 2>&1 \
 		|| { tail -40 "$out/sdl3-host-configure.log"; exit 1; }

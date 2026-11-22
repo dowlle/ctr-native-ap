@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_AP
+#include "../../ap/ap_coop.h"
+#endif
+
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
 #include <platform/native_draw_distance.h>
@@ -676,6 +680,10 @@ void MainInit_Drivers(struct GameTracker *gGT)
 		else // if (numPlyrCurrGame == 2)
 		{
 			numDrivers = 6;
+#ifdef CTR_AP
+			if (AP_CoopRace(gGT))
+				numDrivers = LOAD_CoopGridSize();
+#endif
 		}
 
 #ifdef CTR_AP

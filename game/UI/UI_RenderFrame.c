@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_coop.h"
+#endif
 
 // To do: add a header
 
@@ -977,6 +980,7 @@ void UI_RenderFrame_AdvHub(void)
 	// Hub character picker (spike, #54/R7). Self-gates; the other half of the
 	// pair is in AH_Map.c and the two passes are mutually exclusive per frame.
 	AP_CharPicker_Draw();
+	AP_CoopDrawMenu();
 #endif
 }
 

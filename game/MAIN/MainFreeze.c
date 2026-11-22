@@ -8,7 +8,7 @@
 #include <platform/native_menu.h>
 #include <platform/native_renderer.h>
 
-static void MM_ConfigOpenHubCoop(void);
+static void MM_ConfigOpenHubGameplay(void);
 
 // A4-14: a separate selector keeps title-only Options actions out of a live
 // adventure. Confirm saves the existing comfort setting; Back changes nothing.
@@ -1153,10 +1153,10 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 		MainFreeze_ShowAiDifficulty();
 		return;
 	}
-	if (stringID == AP_LNG_COOP)
+	if (stringID == AP_LNG_GAMEPLAY_OPTIONS)
 	{
 		MainFreeze_SafeAdvDestroy();
-		MM_ConfigOpenHubCoop();
+		MM_ConfigOpenHubGameplay();
 		return;
 	}
 #endif
@@ -1452,7 +1452,7 @@ struct RectMenu *MainFreeze_GetMenuPtr(void)
 			int retailCount = AP_PauseRow_Build(0, 0, 0, retailKinds);
 			int count = AP_PauseRow_Build(character, tracker, travel, kinds);
 			if (AP_CoopHubAvailable(gGT))
-				kinds[count++] = AP_PAUSEROW_COOP;
+				kinds[count++] = AP_PAUSEROW_GAMEPLAY_OPTIONS;
 			int onAp = data.menuAdvHub.rows == &apRowsAdvHub[0];
 
 			if (count != retailCount)
@@ -1468,7 +1468,7 @@ struct RectMenu *MainFreeze_GetMenuPtr(void)
 					             : kinds[r] == AP_PAUSEROW_TRACKER   ? AP_LNG_TRACKER
 					             : kinds[r] == AP_PAUSEROW_TRAVEL    ? AP_LNG_TRAVEL
 					             : kinds[r] == AP_PAUSEROW_DIFFICULTY ? AP_LNG_AI_DIFFICULTY
-					             : kinds[r] == AP_PAUSEROW_COOP       ? AP_LNG_COOP
+					             : kinds[r] == AP_PAUSEROW_GAMEPLAY_OPTIONS ? AP_LNG_GAMEPLAY_OPTIONS
 					             : kinds[r] == AP_PAUSEROW_HINTS     ? (s16)hintString
 					             : kinds[r] == AP_PAUSEROW_QUIT      ? LNG_QUIT
 					                                                 : LNG_OPTIONS;

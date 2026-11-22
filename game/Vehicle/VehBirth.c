@@ -611,6 +611,7 @@ internal b32 VehBirth_ModelNameEquals(const struct Model *model, const char *nam
 
 #ifdef CTR_AP
 struct Model *LOAD_ChaosSideModel(int i);
+struct Model *LOAD_CoopBotModel(int i);
 #endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80058948-0x80058a60.
@@ -641,6 +642,11 @@ struct Model *VehBirth_GetModelByName(char *searchName)
 		{
 			return m;
 		}
+	}
+	for (i = 0; (m = LOAD_CoopBotModel(i)) != NULL; i++)
+	{
+		if (VehBirth_ModelNameEquals(m, searchName))
+			return m;
 	}
 #endif
 

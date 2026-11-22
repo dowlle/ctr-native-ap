@@ -19,11 +19,22 @@ static char notice[64];
 static int customServing, cortex, haveContext, queriedPlayers;
 static struct CustomTrackRaceContext raceContext;
 static u64 p2Device = 101;
-static int p2Pref = NATIVE_CONTROLS_PREF_AUTO;
+static u16 physicalButtons[3];
+static u64 assignedPartner;
+static int feedOn = 1;
+static int hubSafe = 1;
 static int transportReady = 1;
 static s16 requestedLevel = -1;
+static int gridSize = 8;
+int LOAD_CoopGridSize(void) { return gridSize; }
 u64 NativeControls_GetPlayerDeviceIdentity(int player) { return player == 1 ? p2Device : 100; }
-int NativeControls_GetPlayerPref(int player) { return player == 1 ? p2Pref : NATIVE_CONTROLS_PREF_AUTO; }
+u64 NativeControls_GetGamepadIdentity(int device) { return device < 3 ? 100 + device : 0; }
+u16 NativeInput_AdventureButtons(int device) { return physicalButtons[device]; }
+int NativeControls_SetAdventurePartner(u64 id) { assignedPartner = id; return 1; }
+void NativeControls_ClearAdventureSeats(void) { assignedPartner = 0; }
+int AP_HubSafeForRequest(struct GameTracker *gt) { (void)gt; return hubSafe; }
+int AP_CharSwap_PickerOpen(void) { return 0; }
+int AP_HubFeedOn(void) { return feedOn; }
 void MainRaceTrack_RequestLoad(s16 level) { requestedLevel = level; }
 int CustomTrack_ServingLoad(int level, int cup, int cupID)
 {
@@ -64,6 +75,83 @@ static void unlockRacer(int racer)
 	assert(0);
 }
 
+static void tapPartner(struct GameTracker *gt, int device, u16 buttons)
+{
+	physicalButtons[device] = buttons;
+	AP_CoopMenuTick(gt);
+	physicalButtons[device] = 0;
+	AP_CoopMenuTick(gt);
+}
+
+static void testHubMenu(struct GameTracker *gt)
+{
+	gt->gameMode1 = ADVENTURE_MODE | ADVENTURE_ARENA;
+	g_config.coopAdventure = 0;
+	g_config.coopRacer = -1;
+	ap_coop_joined_device = 0;
+	p2Device = 101;
+	assignedPartner = 0;
+	ap_coop_notice_frames = 0;
+	feedOn = 0;
+	AP_CoopMenuTick(gt);
+	assert(!ap_coop_notice_frames);
+	feedOn = 1;
+	AP_CoopMenuTick(gt);
+	assert(!strcmp(ap_coop_notice, "P2: PRESS START TO JOIN"));
+	ap_coop_notice_frames = 0;
+	AP_CoopMenuTick(gt);
+	assert(!ap_coop_notice_frames);
+	feedOn = 0;
+
+	tapPartner(gt, 0, RAW_BTN_START);
+	assert(ap_coop_menu == COOP_MENU_CLOSED);
+	int before = writes;
+	tapPartner(gt, 2, RAW_BTN_START);
+	assert(ap_coop_menu == COOP_MENU_CLOSED && !(gt->gameMode2 & VEH_FREEZE_DOOR));
+	assert(writes == before + 1 && g_config.coopAdventure && assignedPartner == 102 && packedValue == 0);
+	assert(strstr(ap_coop_notice, "P2 JOINED:"));
+	p2Device = assignedPartner; /* The input assignment has been published. */
+
+	tapPartner(gt, 1, RAW_BTN_START);
+	assert(ap_coop_menu == COOP_MENU_CLOSED);
+	tapPartner(gt, 2, RAW_BTN_START);
+	assert(ap_coop_menu == COOP_MENU_ACTIONS);
+	tapPartner(gt, 1, RAW_BTN_CROSS);
+	assert(ap_coop_menu == COOP_MENU_ACTIONS);
+	tapPartner(gt, 2, RAW_BTN_UP);
+	tapPartner(gt, 2, RAW_BTN_CROSS);
+	assert(ap_coop_menu == COOP_MENU_CLOSED && g_config.coopAdventure);
+	tapPartner(gt, 2, RAW_BTN_START);
+	tapPartner(gt, 2, RAW_BTN_CROSS);
+	assert(ap_coop_menu == COOP_MENU_RACER);
+	tapPartner(gt, 2, RAW_BTN_RIGHT);
+	tapPartner(gt, 2, RAW_BTN_CROSS);
+	assert(g_config.coopAdventure && g_config.coopRacer == 1 && packedValue == 1);
+	tapPartner(gt, 2, RAW_BTN_START);
+	tapPartner(gt, 2, RAW_BTN_DOWN);
+	tapPartner(gt, 2, RAW_BTN_CROSS);
+	assert(!g_config.coopAdventure && !assignedPartner && packedValue == 1);
+	assert(!strcmp(ap_coop_notice, "P2 DROPPED OUT"));
+	tapPartner(gt, 2, RAW_BTN_START);
+	assert(g_config.coopAdventure && g_config.coopRacer == 1 && packedValue == 1);
+	p2Device = 0; /* Missing pin: a different pad can join without using the picker. */
+	tapPartner(gt, 1, RAW_BTN_START);
+	assert(assignedPartner == 101 && ap_coop_menu == COOP_MENU_CLOSED);
+
+	before = writes;
+	gt->gameMode1 = ADVENTURE_MODE;
+	tapPartner(gt, 2, RAW_BTN_START);
+	assert(strstr(notice, "IN THE HUB"));
+	gt->gameMode1 |= ADVENTURE_CUP;
+	tapPartner(gt, 2, RAW_BTN_START);
+	assert(strstr(notice, "CUP"));
+	gt->gameMode1 = ADVENTURE_MODE | ADVENTURE_ARENA;
+	sdata->Loading.stage = LOAD_RESTART;
+	tapPartner(gt, 2, RAW_BTN_START);
+	assert(strstr(notice, "LOADING") && writes == before && ap_coop_menu == COOP_MENU_CLOSED);
+	sdata->Loading.stage = LOAD_IDLE;
+}
+
 int main(void)
 {
 	static struct GameTracker gt;
@@ -78,34 +166,15 @@ int main(void)
 	ctr_cfg.character_phase_present = 1;
 	ctr_cfg.character_unlocks = 1;
 	gt.gameMode1 = ADVENTURE_MODE | ADVENTURE_ARENA;
-	pads.numGamepadsConnected = 1;
-	AP_CoopStep(1);
-	assert(!g_config.coopAdventure && !writes);
-	pads.numGamepadsConnected = 2;
-	pads.gamepadsConnectedByFlag = 5; /* slots 1 and 3 are insufficient */
-	AP_CoopStep(1);
-	assert(!g_config.coopAdventure && !writes);
 	pads.gamepadsConnectedByFlag = 3;
-	AP_CoopStep(1);
-	assert(g_config.coopAdventure && writes == 1);
-	gt.gameMode1 |= ADVENTURE_CUP;
-	AP_CoopStep(-1);
-	assert(g_config.coopAdventure && writes == 1);
-	gt.gameMode1 = ADVENTURE_MODE;
-	AP_CoopStep(-1);
-	assert(g_config.coopAdventure && writes == 1);
-	gt.gameMode1 |= ADVENTURE_ARENA;
-	sdata->Loading.stage = 0;
-	AP_CoopStep(-1);
-	assert(g_config.coopAdventure && writes == 1);
-	sdata->Loading.stage = LOAD_IDLE;
 	unlockRacer(10);
-	AP_CoopRacerStep(1);
-	assert(g_config.coopRacer == 10);
-	AP_CoopRacerStep(-1);
-	assert(g_config.coopRacer == 0);
-	AP_CoopRacerStep(-1);
-	assert(g_config.coopRacer == 10);
+	AP_CoopMenuTick(&gt);
+	tapPartner(&gt, 1, RAW_BTN_START);
+	tapPartner(&gt, 1, RAW_BTN_START);
+	tapPartner(&gt, 1, RAW_BTN_CROSS);
+	tapPartner(&gt, 1, RAW_BTN_RIGHT);
+	tapPartner(&gt, 1, RAW_BTN_CROSS);
+	assert(g_config.coopAdventure && g_config.coopRacer == 10);
 	AP_CoopPrepareLoad(&gt);
 	assert(gt.numPlyrCurrGame == 1); /* hub remains solo */
 	gt.levelID = CRASH_COVE;
@@ -117,10 +186,10 @@ int main(void)
 	pads.gamepad[1].ptrControllerPacket = &p2Pad;
 	assert(AP_CoopP2Available() && !AP_CoopReloadOnRetry(&gt));
 	AP_CoopConnectReset(); /* Same-room socket reconnect during the race. */
-	p2Pref = NATIVE_CONTROLS_PREF_PINNED;
-	p2Device = 102; /* A replug reclaims the pin with a new SDL ID. */
-	assert(AP_CoopP2Available() && !AP_CoopReloadOnRetry(&gt));
-	p2Pref = NATIVE_CONTROLS_PREF_AUTO;
+	assert(g_config.coopRacer == 10 && g_config.coopAdventure);
+	sdata->Loading.stage = LOAD_RESTART; /* P2 drops after the in-place restart was selected. */
+	p2Device = 102; /* A new instance cannot claim a loaded seat. */
+	assert(!AP_CoopP2Available());
 	p2Device = UINT64_MAX; /* Auto puts the keyboard in the vacated slot. */
 	gt.prevLEV = N_SANITY_BEACH;
 	assert(!AP_CoopP2Available() && AP_CoopReloadOnRetry(&gt));
@@ -129,13 +198,14 @@ int main(void)
 	gt.prevLEV = CRASH_COVE; /* Full load records the last level. */
 	AP_CoopPrepareLoad(&gt);
 	assert(gt.numPlyrCurrGame == 1 && gt.prevLEV == N_SANITY_BEACH);
+	sdata->Loading.stage = LOAD_IDLE;
 	gt.gameMode1 = ADVENTURE_MODE | ADVENTURE_ARENA;
 	packedValue = 16 + 10;
 	revision++;
 	AP_CoopTick(&gt);
 	assert(g_config.coopAdventure && g_config.coopRacer == 10);
 	gt.gameMode1 = ADVENTURE_MODE;
-	p2Device = 102;
+	p2Device = 101;
 	AP_CoopPrepareLoad(&gt);
 	assert(gt.numPlyrCurrGame == 2 && AP_CoopP2Available());
 	assert(AP_IsSlotHuman(&gt, &drivers[0]) && AP_IsSlotHuman(&gt, &drivers[1]));
@@ -154,6 +224,19 @@ int main(void)
 	assert(AP_CoopRank(&gt, 1) == 0 && AP_CoopWon(&gt));
 	assert(!AP_IsSlotHuman(&gt, &drivers[1])); /* finished bot cannot fire checks */
 	drivers[1].actionsFlagSet = 0;
+	ap_coop_hard_race = 1;
+	for (int a = -1; a < 8; a++) for (int b = -1; b < 8; b++)
+	{
+		drivers[0].driverRank = a; drivers[1].driverRank = b;
+		assert(AP_CoopWon(&gt) == ((a == 0 && b == 1) || (a == 1 && b == 0)));
+		assert(AP_CoopRank(&gt, 0) == (a < 0 || b < 0 ? -1 : (a > b ? a : b)));
+	}
+	drivers[0].actionsFlagSet = ACTION_RACE_FINISHED;
+	assert(AP_CoopRank(&gt, 1) == -1);
+	drivers[0].actionsFlagSet = 0;
+	AP_CoopPrepareGrid(&gt);
+	assert(sdata->kartSpawnOrderArray[0] == 7 && sdata->kartSpawnOrderArray[1] == 6 &&
+	       sdata->kartSpawnOrderArray[7] == 5);
 	gt.numPlyrCurrGame = 1;
 	customServing = 1;
 	AP_CoopPrepareLoad(&gt);
@@ -199,42 +282,21 @@ int main(void)
 	assert(gt.numPlyrCurrGame == 1);
 	assert(strstr(notice, "DISCONNECTED"));
 	gt.gameMode1 |= ADVENTURE_ARENA;
-	AP_CoopStep(-1); /* solo remains available after P2 disconnects */
-	assert(!g_config.coopAdventure);
 	AP_CoopConnectReset();
-	packedValue = 16 + 12; known = 1; revision++;
+	packedValue = 32 + 12; known = 1; revision++;
 	AP_CoopTick(&gt);
-	assert(g_config.coopRacer != 12); /* delayed unlock remains pending */
+	assert(g_config.coopRacer == 12 && g_config.coopRules && !AP_CoopRacerUnlocked(12));
 	unlockRacer(12);
-	AP_CoopTick(&gt);
-	assert(g_config.coopRacer == 12 && g_config.coopAdventure);
-	/* The new P2 picker uses the actual unlock predicate even on legacy
-	 * seeds. P1's wider legacy browse UI is deliberately left unchanged. */
+	assert(AP_CoopRacerUnlocked(12));
+	/* Legacy seeds offer the same full portrait roster as P1. */
 	ctr_cfg.character_phase_present = 0;
-	data.characterIDs[0] = 0;
-	pads.gamepadsConnectedByFlag = 3;
-	g_config.coopRacer = 7;
-	AP_CoopRacerStep(1);
-	assert(g_config.coopRacer == 0);
-	data.characterIDs[0] = 10;
-	g_config.coopRacer = 7;
-	AP_CoopRacerStep(1);
-	assert(g_config.coopRacer == 10); /* the currently driven P1 guest is available */
-	g_config.coopRacer = 12;
-	gt.gameMode1 = ADVENTURE_MODE;
-	AP_CoopPrepareLoad(&gt);
-	assert(gt.numPlyrCurrGame == 1 && strstr(notice, "RACER LOCKED"));
-	/* Modern all-unlocked comfort mode still offers all sixteen. */
+	assert(AP_CoopNextRacer(7, 1) == 8 && AP_CoopNextRacer(15, 1) == 0);
 	ctr_cfg.character_phase_present = 1;
 	ctr_cfg.character_unlocks = 0;
-	gt.gameMode1 |= ADVENTURE_ARENA;
-	g_config.coopRacer = 7;
-	AP_CoopRacerStep(1);
-	assert(g_config.coopRacer == 8);
-	g_config.coopRacer = 12;
-	gt.gameMode1 = ADVENTURE_MODE;
-	AP_CoopPrepareLoad(&gt);
-	assert(gt.numPlyrCurrGame == 2);
-	puts("PASS co-op production: option refusals, unlocked racer, custom identity and solo fallback, ownership, 81 rank pairs, finished-bot result, restore");
+	assert(AP_CoopNextRacer(7, 1) == 8);
+	g_config.coopRules = 0;
+	testHubMenu(&gt);
+	puts("PASS co-op production: seating, 162 rank pairs, Hard podium, Retry, storage and grid");
+	puts("PASS P2 hub controls: notice, owner, immediate join, Back, racer change, drop out, race/cup/load refusal");
 	return 0;
 }

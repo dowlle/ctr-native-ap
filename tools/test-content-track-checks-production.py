@@ -65,7 +65,8 @@ enum { AP_RUNG_HELD_1ST, AP_RUNG_HELD_3RD, AP_RUNG_HELD_5TH, AP_RUNG_FINISH_PODI
 typedef struct { long held_1st, held_3rd, held_5th, finish_podium, finish_any; } ctr_podium_rungs;
 struct Driver { int driverRank; struct { int numCollected; } PickupLetterHUD; } driver;
 struct GameTracker { int levelID,gameMode1,gameMode2; struct Driver *drivers[1]; struct { int cupID; } cup; } game;
-int AP_CoopRank(const struct GameTracker *gt, int finishedOnly) { (void)finishedOnly; return gt->drivers[0]->driverRank; }
+int AP_CoopRace(const struct GameTracker *gt) { (void)gt; return 0; }
+int AP_CoopWon(const struct GameTracker *gt) { return gt->drivers[0]->driverRank == 0; }
 static struct { struct GameTracker *gGT; } sdataStore, *sdata=&sdataStore;
 static struct {
  int podium_enabled, custom_tracks_ok, lettersanity_mode, custom_lettersanity_mode;

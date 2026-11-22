@@ -289,25 +289,23 @@ struct RectMenu g_configMenu = {
 };
 
 #ifdef CTR_AP
-// A hub pause opens just the two co-op rows. The connection and other
-// title-only actions remain on the title Options menu.
-static void MM_ConfigOpenHubCoop(void)
+static int s_configFromHub;
+
+static void MM_ConfigOpenHubGameplay(void)
 {
 	if (s_numSections == 0)
 		BuildSectionMap();
-	const int section = CTR_MENU_PAGE_CAP;
-	s_sectionName[section] = "Adventure Co-op";
-	s_sectionCount[section] = 0;
-	for (int i = 0; i < g_numConfigEntries; i++)
+	for (int section = 0; section < s_numSections; section++)
 	{
-		const void *value = g_configEntries[i].valuePtr;
-		if (value == &g_config.coopAdventure || value == &g_config.coopRacer)
-			s_sectionRows[section][s_sectionCount[section]++] = i;
+		if (strcmp(s_sectionName[section], "Gameplay") != 0)
+			continue;
+		s_configFromHub = 1;
+		s_currentSection = section;
+		s_configTop = 0;
+		g_configMenu.rowSelected = 0;
+		sdata->ptrDesiredMenu = &g_configMenu;
+		return;
 	}
-	s_currentSection = section;
-	s_configTop = 0;
-	g_configMenu.rowSelected = 0;
-	sdata->ptrDesiredMenu = &g_configMenu;
 }
 #endif
 
@@ -489,10 +487,8 @@ static int ItemFeed_Index(int value)
 static const char *Enum_Label(const ConfigEntry *e)
 {
 #ifdef CTR_AP
-	if (e->valuePtr == &g_config.coopAdventure)
-		return g_config.coopAdventure ? "2P LENIENT" : "1 PLAYER";
-	if (e->valuePtr == &g_config.coopRacer)
-		return data.MetaDataCharacters[(g_config.coopRacer >= 0 && g_config.coopRacer < 16) ? g_config.coopRacer : 0].name_Debug;
+	if (e->valuePtr == &g_config.coopRules)
+		return g_config.coopRules ? "HARD" : "LENIENT";
 #endif
 	if (e->valuePtr == &g_config.aspectRatio)
 		return s_aspectNames[Aspect_Index(*(int *)e->valuePtr)];
@@ -520,8 +516,7 @@ static const char *Enum_Label(const ConfigEntry *e)
 static void Enum_Step(const ConfigEntry *e, int dir)
 {
 #ifdef CTR_AP
-	if (e->valuePtr == &g_config.coopAdventure) { AP_CoopStep(dir); return; }
-	if (e->valuePtr == &g_config.coopRacer) { AP_CoopRacerStep(dir); return; }
+	if (e->valuePtr == &g_config.coopRules) { AP_CoopRulesStep(dir); return; }
 #endif
 	if (e->valuePtr == &g_config.aspectRatio)
 	{
@@ -627,12 +622,11 @@ static void Enum_Advance(const ConfigEntry *e)
 #ifdef CTR_AP
 	/* Refused co-op edits must keep their refusal text. The generic wrap
 	 * fallback would interpret a refusal as "already at the last value". */
-	if (e->valuePtr == &g_config.coopAdventure)
+	if (e->valuePtr == &g_config.coopRules)
 	{
-		AP_CoopStep(g_config.coopAdventure ? -1 : 1);
+		AP_CoopRulesStep(g_config.coopRules ? -1 : 1);
 		return;
 	}
-	if (e->valuePtr == &g_config.coopRacer) { AP_CoopRacerStep(1); return; }
 #endif
 	const int before = *(int *)e->valuePtr;
 	Enum_Step(e, +1);
@@ -684,10 +678,10 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 {
 	const char *first = 0;
 	const char *second = 0;
-	if (e->valuePtr == &g_config.coopAdventure || e->valuePtr == &g_config.coopRacer)
+	if (e->valuePtr == &g_config.coopRules)
 	{
 		first = AP_CoopHelp();
-		second = "Other events stay solo for now.";
+		second = "Applies to 2P Trophy Races.";
 	}
 
 	if (e->valuePtr == &g_config.itemBoxColours)
@@ -1531,9 +1525,12 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 	{
 		OtherFX_Play(2, 1);
 #ifdef CTR_AP
-		if (s_currentSection == CTR_MENU_PAGE_CAP)
+		if (s_configFromHub)
 		{
+			s_configFromHub = 0;
 			s_currentSection = -1;
+			NativeConfig_Save();
+			AP_AiDifficultyCommit();
 			sdata->ptrDesiredMenu = MainFreeze_GetMenuPtr();
 			return;
 		}

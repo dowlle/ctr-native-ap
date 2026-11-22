@@ -108,6 +108,12 @@ void NativeControls_Init(void);
 // Re-enumerates devices and re-resolves the player assignment. Cheap to call
 // repeatedly; bumps the generation counter only when something actually changed.
 void NativeControls_Refresh(void);
+#ifdef CTR_AP
+u64 NativeControls_GetGamepadIdentity(int device);
+int NativeControls_SetAdventurePartner(u64 instance);
+void NativeControls_ClearAdventureSeats(void);
+u16 NativeInput_AdventureButtons(int device);
+#endif
 
 void NativeControls_Save(void);
 

@@ -6,33 +6,65 @@
 #include "ap_charswap.h"
 #include "ap_hooks.h"
 #include "ap_net.h"
+#include "ap_tracker.h"
 #include <platform/native_controls.h>
 
-static const char *ap_coop_help = "Hub only; connect two controllers.";
+static const char *ap_coop_help = "Change in the Adventure hub.";
 static unsigned ap_coop_restored;
+static u64 ap_coop_joined_device;
 static u64 ap_coop_p2_device;
+static int ap_coop_hard_race;
 static int ap_coop_retry_level = -1;
 static int ap_coop_retry_hub;
+
+enum AP_CoopMenu { COOP_MENU_CLOSED, COOP_MENU_ACTIONS, COOP_MENU_RACER };
+enum AP_CoopAction { COOP_CHANGE_RACER, COOP_DROP_OUT, COOP_BACK, COOP_ACTION_COUNT };
+static enum AP_CoopMenu ap_coop_menu;
+static u64 ap_coop_picker_device;
+static int ap_coop_selection;
+static int ap_coop_hint_hub = -1;
+static int ap_coop_notice_frames;
+static char ap_coop_notice[64];
+static struct { u64 device; u16 held; } ap_coop_buttons[NATIVE_CONTROLS_MAX_DEVICES];
 
 void AP_CoopConnectReset(void)
 {
 	/* A preference never crosses a room boundary through global config.ini. */
-	g_config.coopAdventure = 0;
-	g_config.coopRacer = ctr_cfg.starting_character;
+	if (!sdata || !sdata->gGT || (sdata->gGT->gameMode1 & MAIN_MENU) ||
+	    !(sdata->gGT->gameMode1 & ADVENTURE_MODE))
+	{
+		ap_coop_joined_device = 0;
+		g_config.coopAdventure = 0;
+		NativeControls_ClearAdventureSeats();
+	}
+	if (!g_config.coopAdventure)
+	{
+		g_config.coopRacer = -1;
+		g_config.coopRules = 0;
+	}
 	ap_coop_restored = ap_net_coop_revision();
 	// A socket reconnect can happen during a race or a requested retry.
 	// The device and return hub belong to the loaded scene.
 }
 
-static void AP_CoopPersist(int enabling, int racer)
+static int AP_CoopPersist(int racer, int hard)
 {
-	if (!ap_net_coop_set(racer + (enabling ? 16 : 0)))
+	/* Bit 4 was the persisted join state. Seats are now assigned in the hub. */
+	int packed = (racer < 0 ? 64 : racer) | (hard ? 32 : 0);
+	if (!ap_net_coop_set(packed))
 	{
-		ap_coop_help = "Could not save co-op. Reconnect and try again.";
-		return;
+		ap_coop_help = "Reconnect to save.";
+		return 0;
 	}
-	g_config.coopAdventure = enabling;
 	g_config.coopRacer = racer;
+	g_config.coopRules = hard;
+	return 1;
+}
+
+static void AP_CoopNotice(const char *verb, const char *racer)
+{
+	snprintf(ap_coop_notice, sizeof ap_coop_notice, "%s%s", verb, racer);
+	ap_coop_notice_frames = 120;
 }
 
 static int AP_CoopControllers(void)
@@ -40,7 +72,9 @@ static int AP_CoopControllers(void)
 	if (!sdata || !sdata->gGamepads) return 0;
 	/* numGamepadsConnected is the highest occupied slot, not a population
 	 * count. A controller in slot 3 cannot substitute for missing slot 2. */
-	return (sdata->gGamepads->gamepadsConnectedByFlag & 3u) == 3u ? 2 : 1;
+	u64 partner = NativeControls_GetPlayerDeviceIdentity(1);
+	return partner && partner == ap_coop_joined_device &&
+	       (sdata->gGamepads->gamepadsConnectedByFlag & 3u) == 3u ? 2 : 1;
 }
 
 int AP_CoopP2Available(void)
@@ -53,10 +87,8 @@ int AP_CoopP2Available(void)
 	const u64 device = NativeControls_GetPlayerDeviceIdentity(1);
 	if (!ap_coop_p2_device || ap_coop_p2_device == device)
 		return 1;
-	// A replugged gamepad gets a new SDL ID. A pin reclaims its configured
-	// controller, while Auto can put an unrelated device in the vacant seat.
-	return device != 0 && device != UINT64_MAX && ap_coop_p2_device != UINT64_MAX &&
-	       NativeControls_GetPlayerPref(1) == NATIVE_CONTROLS_PREF_PINNED;
+	// A fresh SDL instance cannot prove it is the same physical controller.
+	return 0;
 }
 
 int AP_CoopReloadOnRetry(struct GameTracker *gt)
@@ -73,58 +105,242 @@ int AP_CoopReloadOnRetry(struct GameTracker *gt)
 int AP_CoopHubAvailable(const struct GameTracker *gt)
 {
 	return gt && ctr_cfg_active() && (gt->gameMode1 & ADVENTURE_ARENA) &&
+	       (gt->gameMode1 & ADVENTURE_MODE) &&
 	       !(gt->gameMode1 & (MAIN_MENU | GAME_CUTSCENE));
 }
 
 static int AP_CoopRacerUnlocked(int racer)
 {
 	return racer >= 0 && racer < 16 &&
-	       AP_CharacterUnlocked(racer);
+	       (!ctr_cfg.character_phase_present || AP_CharacterUnlocked(racer));
 }
 
-static int AP_CoopCanEdit(int enabling)
+static int AP_CoopNextRacer(int racer, int direction)
 {
-	struct GameTracker *gt = sdata ? sdata->gGT : 0;
-	int refusal = AP_CoopToggleRefusal(
-	    AP_CoopHubAvailable(gt),
-	    gt && (gt->gameMode1 & ADVENTURE_CUP),
-	    sdata && sdata->Loading.stage == LOAD_IDLE,
-	    AP_CoopControllers(), enabling);
-	static const char *messages[] = {"Lenient: either human wins.",
-	    "Change players in the hub only.", "Finish or leave the cup first.",
-	    "Connect a second controller first."};
-	ap_coop_help = messages[refusal];
-	return refusal == AP_COOP_OK;
-}
-
-void AP_CoopStep(int direction)
-{
-	int enabling = direction > 0;
-	if (!AP_CoopCanEdit(enabling)) return;
-	int racer = g_config.coopRacer;
-	if (enabling && !AP_CoopRacerUnlocked(racer))
-		for (int i = 0; i < 16; i++)
-			if (AP_CoopRacerUnlocked(i)) { racer = i; break; }
-	AP_CoopPersist(enabling, racer);
-}
-
-void AP_CoopRacerStep(int direction)
-{
-	if (!AP_CoopCanEdit(1)) return;
-	direction = direction < 0 ? -1 : 1;
 	for (int i = 1; i <= 16; i++)
 	{
-		int base = (unsigned)g_config.coopRacer < 16 ? g_config.coopRacer : 0;
-		int racer = (base + direction * i + 32) % 16;
-		if (AP_CoopRacerUnlocked(racer))
+		int next = (racer + direction * i + 32) % 16;
+		if (AP_CoopRacerUnlocked(next))
+			return next;
+	}
+	return -1;
+}
+
+static void AP_CoopCloseMenu(struct GameTracker *gt)
+{
+	if (ap_coop_menu != COOP_MENU_CLOSED)
+		gt->gameMode2 &= ~VEH_FREEZE_DOOR;
+	ap_coop_menu = COOP_MENU_CLOSED;
+	ap_coop_picker_device = 0;
+}
+
+static void AP_CoopOpenPicker(void)
+{
+	int racer = g_config.coopRacer;
+	ap_coop_selection = AP_CoopRacerUnlocked(racer) ? racer : AP_CoopNextRacer(-1, 1);
+	ap_coop_menu = COOP_MENU_RACER;
+}
+
+static void AP_CoopMenuInput(struct GameTracker *gt, u16 tap)
+{
+	if (tap & (RAW_BTN_TRIANGLE | RAW_BTN_START))
+	{
+		if (ap_coop_menu == COOP_MENU_RACER && !(tap & RAW_BTN_START))
 		{
-			AP_CoopPersist(g_config.coopAdventure, racer);
+			ap_coop_menu = COOP_MENU_ACTIONS;
+			ap_coop_selection = COOP_CHANGE_RACER;
 			return;
 		}
+		AP_CoopCloseMenu(gt);
+		return;
+	}
+	if (ap_coop_menu == COOP_MENU_ACTIONS)
+	{
+		if (tap & RAW_BTN_UP)
+			ap_coop_selection = (ap_coop_selection + COOP_ACTION_COUNT - 1) % COOP_ACTION_COUNT;
+		else if (tap & RAW_BTN_DOWN)
+			ap_coop_selection = (ap_coop_selection + 1) % COOP_ACTION_COUNT;
+		if (!(tap & RAW_BTN_CROSS))
+			return;
+		if (ap_coop_selection == COOP_CHANGE_RACER)
+		{
+			AP_CoopOpenPicker();
+			return;
+		}
+		if (ap_coop_selection == COOP_DROP_OUT)
+		{
+			NativeControls_SetAdventurePartner(0);
+			ap_coop_joined_device = 0;
+			g_config.coopAdventure = 0;
+			AP_CoopNotice("P2 DROPPED OUT", "");
+		}
+	}
+	else
+	{
+		if (tap & (RAW_BTN_LEFT | RAW_BTN_RIGHT))
+			ap_coop_selection = AP_CoopNextRacer(ap_coop_selection, (tap & RAW_BTN_LEFT) ? -1 : 1);
+		if (!(tap & RAW_BTN_CROSS) || !AP_CoopRacerUnlocked(ap_coop_selection))
+			return;
+		if (!AP_CoopPersist(ap_coop_selection, g_config.coopRules))
+			AP_FeedNoticeLine("RECONNECT TO SAVE");
+	}
+	AP_CoopCloseMenu(gt);
+}
+
+void AP_CoopMenuTick(struct GameTracker *gt)
+{
+	const u64 primary = NativeControls_GetPlayerDeviceIdentity(0);
+	const u64 partner = NativeControls_GetPlayerDeviceIdentity(1);
+	if (ap_coop_notice_frames > 0)
+		ap_coop_notice_frames--;
+	u64 start = 0;
+	u16 pickerTap = 0;
+	int second = 0, pickerConnected = 0;
+	for (int device = 0; device < NATIVE_CONTROLS_MAX_DEVICES; device++)
+	{
+		u64 id = NativeControls_GetGamepadIdentity(device);
+		u16 held = id ? NativeInput_AdventureButtons(device) : 0;
+		// SDL maintains enumeration order until a hotplug. Treat a device
+		// which moved into this index as already held for the first frame.
+		u16 tap = ap_coop_buttons[device].device == id ? held & ~ap_coop_buttons[device].held : 0;
+		ap_coop_buttons[device].device = id;
+		ap_coop_buttons[device].held = held;
+		if (!id || id == primary)
+			continue;
+		second = 1;
+		if (id == ap_coop_picker_device)
+		{
+			pickerConnected = 1;
+			pickerTap = tap;
+		}
+		if (!start && (tap & RAW_BTN_START) &&
+		    (!ap_coop_joined_device || partner != ap_coop_joined_device || partner == id))
+			start = id;
+	}
+
+	if (!gt || !ctr_cfg_active() || !(gt->gameMode1 & ADVENTURE_MODE) ||
+	    (gt->gameMode1 & MAIN_MENU))
+	{
+		if (gt) AP_CoopCloseMenu(gt);
+		ap_coop_hint_hub = -1;
+		if (gt && (gt->gameMode1 & MAIN_MENU))
+		{
+			NativeControls_ClearAdventureSeats();
+			ap_coop_joined_device = 0;
+			g_config.coopAdventure = 0;
+		}
+		ap_coop_notice_frames = 0;
+		return;
+	}
+
+	struct GamepadSystem *pads = sdata->gGamepads;
+	for (int slot = 1; slot < PLATFORM_INPUT_PAD_COUNT; slot++)
+		pads->gamepad[slot].buttonsTapped &= ~BTN_START;
+	pads->anyoneTapped = (pads->anyoneTapped & ~BTN_START) | (pads->gamepad[0].buttonsTapped & BTN_START);
+
+	int hub = AP_CoopHubAvailable(gt) && !(gt->gameMode1 & ADVENTURE_CUP);
+	int idle = sdata->Loading.stage == LOAD_IDLE && !sdata->load_inProgress &&
+	           !(gt->gameMode1 & LOADING);
+	if (!hub)
+		ap_coop_hint_hub = -1;
+	if (ap_coop_menu != COOP_MENU_CLOSED)
+	{
+		if (!hub || !idle || !pickerConnected || sdata->ptrActiveMenu ||
+		    (gt->gameMode1 & PAUSE_ALL) || (pads->gamepad[0].buttonsTapped & BTN_START))
+			AP_CoopCloseMenu(gt);
+		else
+			AP_CoopMenuInput(gt, pickerTap);
+		return;
+	}
+	if (!hub || !idle)
+	{
+		if (start)
+			AP_FeedNoticeLine(!idle ? "P2: WAIT FOR LOADING" :
+			    (gt->gameMode1 & ADVENTURE_CUP) ? "P2: FINISH OR LEAVE THE CUP" : "P2: JOIN OR LEAVE IN THE HUB");
+		return;
+	}
+	if (!AP_HubSafeForRequest(gt) || AP_CharSwap_PickerOpen() ||
+	    (pads->gamepad[0].buttonsTapped & BTN_START))
+		return;
+	if (!start && ap_coop_hint_hub != gt->levelID && second &&
+	    !ap_coop_joined_device && AP_HubFeedOn())
+	{
+		AP_CoopNotice("P2: PRESS START TO JOIN", "");
+		ap_coop_hint_hub = gt->levelID;
+	}
+	if (start)
+	{
+		if (ap_coop_joined_device == start && partner == start)
+		{
+			ap_coop_picker_device = start;
+			gt->gameMode2 |= VEH_FREEZE_DOOR;
+			ap_coop_selection = COOP_CHANGE_RACER;
+			ap_coop_menu = COOP_MENU_ACTIONS;
+			return;
+		}
+		int racer = g_config.coopRacer;
+		if (!AP_CoopRacerUnlocked(racer))
+			racer = AP_CoopNextRacer(-1, 1);
+		if (racer < 0 || !NativeControls_SetAdventurePartner(start))
+			return;
+		ap_coop_joined_device = start;
+		if (racer != g_config.coopRacer)
+			AP_CoopPersist(racer, g_config.coopRules);
+		g_config.coopAdventure = 1;
+		g_config.coopRacer = racer;
+		AP_CoopNotice("P2 JOINED: ", data.MetaDataCharacters[racer].name_Debug);
+	}
+}
+
+void AP_CoopDrawMenu(void)
+{
+	if (ap_coop_notice_frames > 0 && AP_CoopHubAvailable(sdata->gGT))
+		DecalFont_DrawLine(ap_coop_notice, 256, 29, FONT_SMALL, JUSTIFY_CENTER | WHITE);
+	if (ap_coop_menu == COOP_MENU_CLOSED)
+		return;
+	struct GameTracker *gt = sdata->gGT;
+	const int actions = ap_coop_menu == COOP_MENU_ACTIONS;
+	DecalFont_DrawLine(actions ? "PLAYER 2" : "PLAYER 2 RACER",
+	                   256, 63, FONT_SMALL, JUSTIFY_CENTER | WHITE);
+	if (actions)
+	{
+		static char *labels[] = {"CHANGE RACER", "DROP OUT", "BACK"};
+		for (int row = 0; row < COOP_ACTION_COUNT; row++)
+			DecalFont_DrawLine(labels[row], 256, 83 + row * 17, FONT_SMALL,
+			                   JUSTIFY_CENTER | (ap_coop_selection == row ? ORANGE : WHITE));
+	}
+	else if (AP_CoopRacerUnlocked(ap_coop_selection))
+	{
+		AP_CharSwap_DrawPortraitAt(ap_coop_selection, 240, 76, 0);
+		DecalFont_DrawLine((char *)data.MetaDataCharacters[ap_coop_selection].name_Debug,
+		                   256, 110, FONT_SMALL, JUSTIFY_CENTER | WHITE);
+		DecalFont_DrawLine("LEFT / RIGHT TO BROWSE", 256, 125, FONT_SMALL, JUSTIFY_CENTER | ORANGE);
+	}
+	DecalFont_DrawLine("CROSS: CONFIRM", 256, 143, FONT_SMALL, JUSTIFY_CENTER | WHITE);
+	DecalFont_DrawLine("TRIANGLE: BACK", 256, 156, FONT_SMALL, JUSTIFY_CENTER | WHITE);
+	RECT panel = {101, 51, 310, 121};
+	RECTMENU_DrawInnerRect(&panel, 0, gt->pushBuffer_UI.ptrOT);
+}
+
+void AP_CoopRulesStep(int direction)
+{
+	struct GameTracker *gt = sdata ? sdata->gGT : 0;
+	if (gt && (gt->gameMode1 & ADVENTURE_CUP))
+		ap_coop_help = "Finish or leave the cup first.";
+	else if (!AP_CoopHubAvailable(gt) || (gt->gameMode1 & LOADING) ||
+	         sdata->Loading.stage != LOAD_IDLE || sdata->load_inProgress)
+		ap_coop_help = "Change in the Adventure hub.";
+	else
+	{
+		int hard = direction > 0;
+		ap_coop_help = hard ? "Hard: finish first and second." : "Lenient: either human can win.";
+		if (hard != g_config.coopRules)
+			AP_CoopPersist(g_config.coopRacer, hard);
 	}
 }
 
 const char *AP_CoopHelp(void) { return ap_coop_help; }
+int AP_CoopHardRace(void) { return ap_coop_hard_race; }
 
 void AP_CoopPrepareLoad(struct GameTracker *gt)
 {
@@ -155,6 +371,7 @@ void AP_CoopPrepareLoad(struct GameTracker *gt)
 	                         trophy, retail, (mode & ADVENTURE_CUP) != 0) &&
 	          AP_CoopRacerUnlocked(g_config.coopRacer);
 	gt->numPlyrCurrGame = two ? 2 : 1;
+	ap_coop_hard_race = two && g_config.coopRules;
 	/* Hub and unsupported races are always solo, without losing the preference. */
 	gt->numPlyrNextGame = 1;
 	if ((soloRetry || g_config.coopAdventure == 1) && !two &&
@@ -167,6 +384,7 @@ void AP_CoopPrepareLoad(struct GameTracker *gt)
 	ap_coop_p2_device = two ? NativeControls_GetPlayerDeviceIdentity(1) : 0;
 	if (two)
 	{
+		NativeControls_SetAdventurePartner(ap_coop_p2_device);
 		data.characterIDs[1] = g_config.coopRacer;
 	}
 }
@@ -174,11 +392,11 @@ void AP_CoopPrepareLoad(struct GameTracker *gt)
 void AP_CoopPrepareGrid(struct GameTracker *gt)
 {
 	if (!AP_CoopRace(gt)) return;
-	/* Run after stock difficulty setup copies its 2P grid, before paths,
-	 * launch order and driver birth consume it. Retail 2P has six seats. */
-	sdata->kartSpawnOrderArray[0] = 5;
-	sdata->kartSpawnOrderArray[1] = 4;
-	for (int i = 2; i < 6; i++) sdata->kartSpawnOrderArray[i] = i - 2;
+	int seats = LOAD_CoopGridSize();
+	sdata->kartSpawnOrderArray[0] = seats - 1;
+	sdata->kartSpawnOrderArray[1] = seats - 2;
+	for (int i = 2; i < seats; i++)
+		sdata->kartSpawnOrderArray[i] = i - 2;
 }
 
 void AP_CoopTick(struct GameTracker *gt)
@@ -191,10 +409,7 @@ void AP_CoopTick(struct GameTracker *gt)
 	    sdata->Loading.stage != LOAD_IDLE) return;
 	if (ap_net_coop_revision() == ap_coop_restored || !ap_net_coop_known(&packed)) return;
 	ap_coop_restored = ap_net_coop_revision();
-	/* Unlock catch-up can arrive after the preference. Retain the pending
-	 * choice until its racer is available, rather than discarding it. */
-	if (!AP_CoopRacerUnlocked(packed % 16)) { ap_coop_restored--; return; }
-	g_config.coopRacer = packed % 16;
-	g_config.coopAdventure = packed >= 16;
+	g_config.coopRacer = (packed & 64) ? -1 : packed & 15;
+	g_config.coopRules = (packed & 32) != 0;
 }
 #endif

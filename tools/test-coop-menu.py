@@ -11,22 +11,25 @@ fixture = fixture.replace('#include "../ap/ap_capability.c"', '#include "ap/ap_c
 fixture += '''
 #include "include/ctr_menu_pages.h"
 const ConfigEntry g_configEntries[] = {
-    {.valuePtr = &g_config.coopAdventure},
-    {.valuePtr = &g_config.coopRacer},
-    {.valuePtr = &g_config.volFx},
+    {"Archipelago", "coop_rules", "Co-op Rules", CFG_ENUM, &g_config.coopRules},
+    {"Game", "boss_music", "Boss Music", CFG_ENUM, &g_config.bossMusic},
 };
 const int g_numConfigEntries = sizeof g_configEntries / sizeof g_configEntries[0];
-static int s_numSections = 2, s_currentSection, s_configTop;
+static int s_numSections, s_currentSection, s_configTop, s_configFromHub;
 static const char *s_sectionName[CTR_MENU_PAGE_CAP + 1];
 static int s_sectionCount[CTR_MENU_PAGE_CAP + 1];
 static int s_sectionRows[CTR_MENU_PAGE_CAP + 1][CTR_MENU_PAGE_ROW_CAP];
 static struct RectMenu g_configMenu;
-static void BuildSectionMap(void) { assert(0); }
+static void BuildSectionMap(void)
+{
+    s_numSections = CTR_MenuBuildPages(g_configEntries, g_numConfigEntries,
+                                     s_sectionName, s_sectionRows, s_sectionCount);
+}
 static int legacySteps;
 static void Enum_Step(const ConfigEntry *entry, int direction)
 { (void)entry; (void)direction; legacySteps++; }
 '''
-fixture += function("game/230/MM_ConfigMenu.c", "static void MM_ConfigOpenHubCoop(")
+fixture += function("game/230/MM_ConfigMenu.c", "static void MM_ConfigOpenHubGameplay(")
 menu = (root / 'game/230/MM_ConfigMenu.c').read_text()
 start = menu.index('static void Enum_Advance(')
 fixture += menu[start:menu.index('\n}\n', start) + 3]
@@ -38,39 +41,38 @@ int main(void) {
     sdata->Loading.stage = LOAD_IDLE;
     gt.gameMode1 = ADVENTURE_MODE | ADVENTURE_ARENA;
     assert(AP_CoopHubAvailable(&gt));
-    MM_ConfigOpenHubCoop();
-    assert(sdata->ptrDesiredMenu == &g_configMenu && s_currentSection == CTR_MENU_PAGE_CAP);
+    MM_ConfigOpenHubGameplay();
+    assert(sdata->ptrDesiredMenu == &g_configMenu && s_configFromHub);
+    assert(!strcmp(s_sectionName[s_currentSection], "Gameplay"));
     assert(g_configMenu.rowSelected == 0 && s_sectionCount[s_currentSection] == 2);
-    assert(s_sectionRows[s_currentSection][0] == 0 && s_sectionRows[s_currentSection][1] == 1);
-    ctr_cfg.character_phase_present = 1;
-    ctr_cfg.character_unlocks = 1;
-    ConfigEntry players = {.valuePtr = &g_config.coopAdventure};
-    ConfigEntry racer = {.valuePtr = &g_config.coopRacer};
-    pads.gamepadsConnectedByFlag = 1;
-    Enum_Advance(&players);
-    assert(!g_config.coopAdventure && !writes && !legacySteps);
-    assert(strstr(AP_CoopHelp(), "second controller"));
-    pads.gamepadsConnectedByFlag = 3;
-    Enum_Advance(&players); assert(g_config.coopAdventure && writes == 1);
-    Enum_Advance(&players); assert(!g_config.coopAdventure && writes == 2);
-    unlockRacer(10);
-    Enum_Advance(&racer); assert(g_config.coopRacer == 10);
-    Enum_Advance(&racer); assert(g_config.coopRacer == 0);
+    assert(s_sectionRows[s_currentSection][1] == 0);
+    const ConfigEntry *rules = &g_configEntries[0];
+    g_config.coopRacer = -1;
+    Enum_Advance(rules);
+    assert(g_config.coopRules && !g_config.coopAdventure && packedValue == 96 && writes == 1);
+    Enum_Advance(rules);
+    assert(!g_config.coopRules && packedValue == 64 && writes == 2);
     int saved = writes;
     transportReady = 0;
-    Enum_Advance(&players); Enum_Advance(&racer);
-    assert(!g_config.coopAdventure && g_config.coopRacer == 0 && writes == saved);
-    assert(strstr(AP_CoopHelp(), "Reconnect"));
+    Enum_Advance(rules);
+    assert(!g_config.coopRules && writes == saved);
+    assert(!strcmp(AP_CoopHelp(), "Reconnect to save."));
+    assert(strlen(AP_CoopHelp()) * 13 < 432);
     transportReady = 1;
     gt.gameMode1 |= ADVENTURE_CUP;
     int before = writes;
-    Enum_Advance(&players); Enum_Advance(&racer);
+    Enum_Advance(rules);
     assert(writes == before && !legacySteps && strstr(AP_CoopHelp(), "cup"));
     gt.gameMode1 = ADVENTURE_MODE;
-    Enum_Advance(&players); assert(writes == before && strstr(AP_CoopHelp(), "hub"));
+    Enum_Advance(rules); assert(writes == before && strstr(AP_CoopHelp(), "hub"));
+    gt.gameMode1 |= ADVENTURE_ARENA | LOADING;
+    Enum_Advance(rules); assert(writes == before);
+    gt.gameMode1 &= ~LOADING;
+    sdata->Loading.stage = LOAD_RESTART;
+    Enum_Advance(rules); assert(writes == before);
     int ordinary = 0; ConfigEntry other = {.valuePtr = &ordinary};
     Enum_Advance(&other); assert(legacySteps == 2);
-    puts("PASS co-op menu: confirm toggles, refusals survive wrap fallback, unlocked P2 cycling, unrelated enums unchanged");
+    puts("PASS Gameplay Co-op Rules: per-slot save, offline prompt fits, race/cup/load refusals, unrelated enums unchanged");
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:

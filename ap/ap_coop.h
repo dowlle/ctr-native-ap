@@ -18,31 +18,41 @@ static inline int AP_IsSlotHuman(const struct GameTracker *gt, const struct Driv
 	if (driver != gt->drivers[0] && !(AP_CoopRace(gt) && driver == gt->drivers[1])) return 0;
 	return !(driver->actionsFlagSet & ACTION_BOT);
 }
+int AP_CoopHardRace(void);
 static inline int AP_CoopRank(const struct GameTracker *gt, int finishedOnly)
 {
-	int rank = -1;
+	int ranks[] = {-1, -1};
 	int count = AP_CoopRace(gt) ? 2 : 1;
 	if (!gt) return -1;
 	for (int i = 0; i < count; i++)
 	{
 		const struct Driver *d = gt->drivers[i];
 		if (d && (!finishedOnly || (d->actionsFlagSet & ACTION_RACE_FINISHED)))
-			rank = AP_CoopBetterRank(rank, d->driverRank);
+			ranks[i] = d->driverRank;
 	}
-	return rank;
+	if (count == 2 && AP_CoopHardRace())
+		return AP_CoopWorseRank(ranks[0], ranks[1]);
+	return AP_CoopBetterRank(ranks[0], ranks[1]);
 }
 static inline int AP_CoopWon(const struct GameTracker *gt)
 {
-	return !AP_RaceAttemptIsForcedLoss() && AP_CoopRank(gt, 0) == 0;
+	if (AP_RaceAttemptIsForcedLoss()) return 0;
+	if (AP_CoopRace(gt) && AP_CoopHardRace())
+		return gt->drivers[0] && gt->drivers[1] &&
+		       AP_CoopHardWon(gt->drivers[0]->driverRank, gt->drivers[1]->driverRank);
+	return AP_CoopRank(gt, 0) == 0;
 }
 void AP_CoopPrepareLoad(struct GameTracker *gt);
 int AP_CoopP2Available(void);
 int AP_CoopReloadOnRetry(struct GameTracker *gt);
 int AP_CoopHubAvailable(const struct GameTracker *gt);
 void AP_CoopPrepareGrid(struct GameTracker *gt);
-void AP_CoopStep(int direction);
-void AP_CoopRacerStep(int direction);
+int LOAD_CoopGridSize(void);
+void LOAD_CoopConvertBotModels(void);
+void AP_CoopRulesStep(int direction);
 const char *AP_CoopHelp(void);
 void AP_CoopTick(struct GameTracker *gt);
+void AP_CoopMenuTick(struct GameTracker *gt);
+void AP_CoopDrawMenu(void);
 void AP_CoopConnectReset(void);
 #endif

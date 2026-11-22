@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_coop.h"
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b0b98-0x800b0ce0.
 void AH_Map_LoadSave_Prim(s16 *vertPos, char *vertCol, void *ot, struct PrimMem *primMem)
@@ -873,6 +876,7 @@ void AH_Map_Main(void)
 	// Hub character picker (spike, #54/R7). Self-gates on dev_keys + "picker
 	// open", and rides the same once-per-frame hub UI pass as the feed above.
 	AP_CharPicker_Draw();
+	AP_CoopDrawMenu();
 #endif
 
 #if defined(CTR_NATIVE)

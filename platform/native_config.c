@@ -67,7 +67,8 @@ NativeConfig g_config = {
 	false, // discordStatus (off: nothing is opened or sent unless the player opts in)
 	"",    // discordAppId (empty = the built-in AP_DISCORD_APPLICATION_ID)
 	0,     // coopAdventure (solo by default)
-	0,     // coopRacer (Crash, validated against unlocks before seating)
+	-1,    // coopRacer
+	0,     // coopRules (Lenient)
 #else
 #ifdef CTR_BOX_AUTHORING
 	false, // boxAuthor
@@ -171,8 +172,7 @@ const ConfigEntry g_configEntries[] = {
 	// the boss theme. Not slot_data: a presentation preference each player
 	// picks for themselves. Shown on the Gameplay page.
 	{"Archipelago", "boss_music",               "Boss Music",                   CFG_ENUM, &g_config.bossMusic},
-	{"Archipelago", "coop_adventure",           "Adventure Players",            CFG_ENUM, &g_config.coopAdventure},
-	{"Archipelago", "coop_racer",               "Player 2 Racer",               CFG_ENUM, &g_config.coopRacer},
+	{"Archipelago", "coop_rules",               "Co-op Rules",                   CFG_ENUM, &g_config.coopRules},
 	{"Archipelago", "map_flash",                "Map Flash",                    CFG_BOOL, &g_config.mapFlash},
 	// Item Box Colours: this player's opt-out of the seed's AP item box colours
 	// (color_boxes_by_item). Off = pink boxes for this player only. The menu
@@ -271,6 +271,8 @@ bool NativeConfig_FullscreenNeedsReapply(bool want, bool have, int lastRequested
 	return want != have && lastRequested != (want ? 1 : 0);
 }
 
+static bool ConfigEntrySaved(const ConfigEntry *entry);
+
 static bool ParseBool(const char *s)
 {
 	return strcmp(s, "true") == 0 || strcmp(s, "1") == 0;
@@ -335,7 +337,7 @@ void NativeConfig_Load(void)
 		for (int i = 0; i < g_numConfigEntries; i++)
 		{
 			const ConfigEntry *e = &g_configEntries[i];
-			if (strcmp(section, e->section) == 0 &&
+			if (ConfigEntrySaved(e) && strcmp(section, e->section) == 0 &&
 			    strcmp(key, e->key) == 0)
 			{
 #ifdef CTR_AP
@@ -381,11 +383,22 @@ void NativeConfig_Load(void)
 // Look up the entry table row that owns a section/key pair (i.e. one this build
 // knows about). Returns false for sections/keys outside the current build's
 // table -- those are carried through verbatim on save.
+static bool ConfigEntrySaved(const ConfigEntry *entry)
+{
+#ifdef CTR_AP
+	return entry->valuePtr != &g_config.coopRules;
+#else
+	(void)entry;
+	return true;
+#endif
+}
+
 static bool FindConfigEntry(const char *section, const char *key, int *outIndex)
 {
 	for (int i = 0; i < g_numConfigEntries; i++)
 	{
-		if (strcmp(section, g_configEntries[i].section) == 0 &&
+		if (ConfigEntrySaved(&g_configEntries[i]) &&
+		    strcmp(section, g_configEntries[i].section) == 0 &&
 		    strcmp(key, g_configEntries[i].key) == 0)
 		{
 			if (outIndex)
@@ -451,6 +464,8 @@ void NativeConfig_Save(void)
 		for (int i = 0; i < g_numConfigEntries; i++)
 		{
 			const ConfigEntry *e = &g_configEntries[i];
+			if (!ConfigEntrySaved(e))
+				continue;
 			if (lastSection == NULL || strcmp(e->section, lastSection) != 0)
 			{
 				if (lastSection != NULL)
@@ -543,6 +558,8 @@ void NativeConfig_Save(void)
 		if (i < (int)(sizeof(written) / sizeof(written[0])) && written[i])
 			continue;
 		const ConfigEntry *e = &g_configEntries[i];
+		if (!ConfigEntrySaved(e))
+			continue;
 		if (lastSection == NULL || strcmp(e->section, lastSection) != 0)
 		{
 			fprintf(f, "\n[%s]\n", e->section);

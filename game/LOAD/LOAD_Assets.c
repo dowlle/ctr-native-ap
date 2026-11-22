@@ -4,12 +4,17 @@
 #include <platform/native_checkpoint.h>
 #endif
 
+static void (*const LOAD_DriverMPK_SetPointer)(struct LoadQueueSlot *) = (void (*)(struct LoadQueueSlot *))-2;
+
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
 #endif
 
 #ifdef CTR_AP
 #include "../../ap/ap_net.h" // ap_net_checked_count for the [AP HIT] roster line
+#include "../../ap/ap_coop.h"
+static DriverModelExtraSlot s_coopBotModels[2];
+static int s_coopBotCount;
 #endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800326b4-0x80032700.
@@ -66,6 +71,25 @@ void LOAD_Robots2P(struct BigHeader *bigfile, int p1, int p2, void (*callback)(s
 	data.characterIDs[4] = robotSet[2];
 	data.characterIDs[5] = robotSet[3];
 
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+	// The release client has the expanded native MEMPACK and split-screen
+	// render arenas. Keep the stock pack in retail-memory builds.
+	if (AP_CoopRace(sdata->gGT) && AP_HitQueueFitsPure(sdata->queueLength, 3, 8))
+	{
+		for (int racer = CRASH_BANDICOOT; racer <= PURA && s_coopBotCount < 2; racer++)
+		{
+			int seat = 0;
+			while (seat < 6 && data.characterIDs[seat] != racer)
+				seat++;
+			if (seat != 6)
+				continue;
+			data.characterIDs[6 + s_coopBotCount] = racer;
+			LOAD_AppendQueue(bigfile, LT_GETADDR, BI_RACERMODELMED + racer,
+			                 &s_coopBotModels[s_coopBotCount++].fileBase,
+			                 LOAD_DriverMPK_SetPointer);
+		}
+	}
+#endif
 	LOAD_AppendQueue(bigfile, LT_GETADDR, BI_2PARCADEPACK + i, NULL, callback);
 }
 
@@ -87,9 +111,28 @@ void LOAD_Robots1P(int characterID)
 	}
 }
 
-static void (*const LOAD_DriverMPK_SetPointer)(struct LoadQueueSlot *) = (void (*)(struct LoadQueueSlot *))-2;
-
 #ifdef CTR_AP
+void LOAD_CoopConvertBotModels(void)
+{
+	if (s_coopBotCount != 2 || !s_coopBotModels[0].fileBase || !s_coopBotModels[1].fileBase)
+	{
+		s_coopBotCount = 0;
+		return;
+	}
+	for (int i = 0; i < s_coopBotCount; i++)
+		s_coopBotModels[i].model = (struct Model *)((u8 *)s_coopBotModels[i].fileBase + 4);
+}
+
+struct Model *LOAD_CoopBotModel(int i)
+{
+	return i >= 0 && i < s_coopBotCount ? s_coopBotModels[i].model : NULL;
+}
+
+int LOAD_CoopGridSize(void)
+{
+	return s_coopBotCount == 2 ? 8 : 6;
+}
+
 // Hit Character encounters (ticket 06). The engine ids whose HI models were
 // sideloaded for this ordinary load, so stage 6 can refuse a required model that
 // did not actually load before VehBirth ever dereferences it. Reset per load.
@@ -286,6 +329,8 @@ int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(str
 	// the ordinary branch. A hub/menu/boss load that skips the branch below must
 	// not leave stale required-model ids for stage 6 to validate (ticket 06).
 	LOAD_HitEncounterResetExtras();
+	s_coopBotCount = 0;
+	memset(s_coopBotModels, 0, sizeof s_coopBotModels);
 	// Pool draw: latch whether the previous driver load was an ordinary Hit
 	// race, so a restart/retry reuses its field and any other load in between
 	// makes the next race draw fresh.

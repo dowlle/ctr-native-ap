@@ -41,8 +41,16 @@ int main(void) {
     gt.gameMode1 = ADVENTURE_MODE; gt.numPlyrCurrGame = 2;
     memset(sdata->kartSpawnOrderArray, 0, 8);
     BOTS_Adv_AdjustDifficulty();
-    assert(sdata->kartSpawnOrderArray[0] == 5 && sdata->kartSpawnOrderArray[1] == 4);
+    assert(sdata->kartSpawnOrderArray[0] == 7 && sdata->kartSpawnOrderArray[1] == 6);
     unsigned seats = 0;
+    for (int i = 0; i < 8; i++) seats |= 1u << sdata->kartSpawnOrderArray[i];
+    assert(seats == 255);
+    assert(sdata->driver_pathIndexIDs[0] == 2 && sdata->driver_pathIndexIDs[1] == 2);
+    assert(sdata->accelerateOrder[0] == 5 && sdata->accelerateOrder[1] == 6);
+    gridSize = 6;
+    BOTS_Adv_AdjustDifficulty();
+    assert(sdata->kartSpawnOrderArray[0] == 5 && sdata->kartSpawnOrderArray[1] == 4);
+    seats = 0;
     for (int i = 0; i < 6; i++) seats |= 1u << sdata->kartSpawnOrderArray[i];
     assert(seats == 63);
     /* The actual path and launch consumers must see the final co-op order. */
@@ -55,7 +63,7 @@ int main(void) {
     memcpy(sdata->kartSpawnOrderArray, stock, 8);
     BOTS_Adv_AdjustDifficulty();
     assert(!memcmp(sdata->kartSpawnOrderArray, stock, 8));
-    puts("PASS production co-op grid: stock overwrite precedes six unique seats, humans behind bots, paths and launch use final order, solo and Arcade unchanged");
+    puts("PASS production co-op grid: eight seats, six-seat fallback, paths and launch use final order, solo and Arcade unchanged");
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:

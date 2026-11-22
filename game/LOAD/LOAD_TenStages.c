@@ -445,6 +445,7 @@ int LOAD_TenStages(struct GameTracker *gGT, int loadingStage, struct BigHeader *
 		// it explicitly now, before VehBirth resolves an AI by name and
 		// dereferences the result (ticket 06). Inert when the feature is off.
 		LOAD_ChaosConvertSideSlots();
+		LOAD_CoopConvertBotModels();
 		if (AP_HitEncounterFieldOn() || AP_ChaosFinalNow())
 			LOAD_HitEncounterValidateExtras();
 		LOAD_BossOpponentValidateExtra();

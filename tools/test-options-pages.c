@@ -168,7 +168,7 @@ int main(void)
 			"disable_split_screen_lod", "mute_when_unfocused", NULL};
 		static const char *const gameplay[] = {
 			"skip_intro", "skip_hints", "race_type_selector", "skip_podium", "skip_cutscenes",
-			"boss_music", "ai_difficulty", "coop_adventure", "coop_racer", "device_aware_labels", "update_check", NULL};
+			"boss_music", "ai_difficulty", "coop_rules", "device_aware_labels", "update_check", NULL};
 		static const char *const controls[] = {NULL};
 		static const char *const connection[] = {"uri", "slot", "password", NULL};
 		static const char *const archipelago[] = {
