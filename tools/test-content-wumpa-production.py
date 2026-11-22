@@ -90,15 +90,13 @@ check('the tracker shop line has no content-plan gate',
 
 # 2 and 3 compiled: the pause goal line from production, the race modes through
 # the production decision.
-advert = body(gates, 'int AP_GoalAdvert(char *out, int cap)')
+advert = body(gates, 'int AP_GoalAdvertLines(AP_GoalLines lines)')
 fixture = r'''
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include "ap/ap_goal_line.h"
 #include "ap/ap_wumpa_shop.h"
-#define AP_ITEM_BASE 35010000
-#define AP_IDX_GEM_RED 9
 #define ADVENTURE_MODE 0x80000u
 #define RELIC_RACE 0x4000000u
 #define CRYSTAL_CHALLENGE 0x8000000u
@@ -107,28 +105,39 @@ fixture = r'''
 #define ARCADE_MODE 0x400000u
 #define TIME_TRIAL 0x20000u
 #define BATTLE_MODE 0x20u
-typedef struct { int base; } ctr_content_item;
-static struct { int goal_gems; } ctr_cfg;
+static struct { int goal_gems, goal_oxide, goal_bosses, schema_newer; } ctr_cfg;
 static AP_WumpaShopConfig ctr_wumpa_shop;
 static int active=1, planActive=1, gems[5]; static long long lifetime;
+static int ap_oxide_first_beaten, ap_oxide_final_beaten, firstCleared, bossWins;
+int AP_OxideFirstChallengeCleared(void) { return firstCleared; }
+int AP_ComposedBossesWon(void) { return bossWins; }
 int ctr_cfg_active(void) { return active; }
 int ap_content_plan_active(void) { return planActive; }
-const ctr_content_item *ap_content_plan_item(long id) { static ctr_content_item row={1}; (void)id; return &row; }
 int AP_GateCountGemColour(int i) { return gems[i]; }
+int AP_GateCountGemSum(void) { return gems[0] + gems[1] + gems[2] + gems[3] + gems[4]; }
+int ap_content_plan_gems_held(const int received[5]) { return !!received[0] + !!received[2]; }
 long long ap_net_wumpa_lifetime(void) { return lifetime; }
 ''' + advert + r'''
 int main(void) {
- char line[96]; int cases=0;
- /* A Gem arm and a Wumpa arm. */
- ctr_cfg.goal_gems=3; ctr_wumpa_shop.goal=500; gems[0]=gems[2]=1; lifetime=120;
- assert(AP_GoalAdvert(line,sizeof line)==1 && !strcmp(line,"Goal: 2/3 selected Gem colours - WUMPA 120/500")); cases++;
- lifetime=900; AP_GoalAdvert(line,sizeof line); assert(strstr(line,"WUMPA 500/500")); cases++;
+ AP_GoalLines lines; int cases=0;
+ ctr_cfg.goal_oxide=AP_OXIDE_GOAL_ANY; firstCleared=1;
+ ctr_cfg.goal_bosses=4; bossWins=2;
+ ctr_cfg.goal_gems=3; ctr_wumpa_shop.goal=500; gems[0]=gems[1]=gems[2]=1; lifetime=120;
+ assert(AP_GoalAdvertLines(lines)==4 && !strcmp(lines[0],"Oxide Challenge 1/1") &&
+        !strcmp(lines[1],"Boss wins 2/4") && !strcmp(lines[2],"Gem colours 2/3") &&
+        !strcmp(lines[3],"Wumpa 120/500")); cases++;
+ lifetime=900; assert(AP_GoalAdvertLines(lines)==4 && !strcmp(lines[3],"Wumpa 500/500")); cases++;
+ planActive=0; assert(AP_GoalAdvertLines(lines)==4 && !strcmp(lines[0],"Oxide Challenge 0/1") &&
+        !strcmp(lines[2],"Gem colours 3/3")); cases++;
+ planActive=1; ctr_cfg.schema_newer=1; assert(!AP_GoalAdvertLines(lines)); cases++;
+ ctr_cfg.schema_newer=0; active=0; assert(!AP_GoalAdvertLines(lines)); cases++;
+ active=1; ctr_cfg.goal_oxide=AP_OXIDE_GOAL_DISABLED; ctr_cfg.goal_bosses=0;
  /* A Wumpa-only goal (bosses off, gems_required_goal 0). */
  ctr_cfg.goal_gems=0; lifetime=40;
- assert(AP_GoalAdvert(line,sizeof line)==1 && strstr(line,"WUMPA 40/500") && !strstr(line,"Gem")); cases++;
- /* No Wumpa arm: the line content plans always showed. */
+ assert(AP_GoalAdvertLines(lines)==1 && !strcmp(lines[0],"Wumpa 40/500")); cases++;
+ /* Gem-only goal. */
  ctr_wumpa_shop.goal=0; ctr_cfg.goal_gems=3;
- assert(AP_GoalAdvert(line,sizeof line)==1 && !strcmp(line,"Goal: 2/3 selected Gem colours")); cases++;
+ assert(AP_GoalAdvertLines(lines)==1 && !strcmp(lines[0],"Gem colours 2/3")); cases++;
  /* The goal arm itself (AP_WumpaGoalMet). */
  assert(AP_WumpaGoalMet(0,0) && !AP_WumpaGoalMet(500,499) && AP_WumpaGoalMet(500,500) && !AP_WumpaGoalMet(-1,9999)); cases++;
  /* Race fruit banks in every content-plan race (Adventure), never Arcade, Time Trial or Battle. */

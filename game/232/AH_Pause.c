@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_goal_line.h"
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b1ef8-0x800b1f78.
 void AH_Pause_Destroy(void)
@@ -27,6 +30,9 @@ void AH_Pause_Destroy(void)
 
 void AH_Pause_Draw(int pageID, int posX)
 {
+#ifdef CTR_AP
+	int goalCount = 0;
+#endif
 	RECT r;
 	int levelID = D232.advPausePages[pageID].hubID;
 	int lngIndex = D232.advPausePages[pageID].titleLng;
@@ -444,26 +450,25 @@ void AH_Pause_Draw(int pageID, int posX)
 
 		sprintf(totalString, "%s %d", sdata->lngStrings[LNG_TOTAL], bitIndex);
 
-		DecalFont_DrawLine(totalString, posX + 0x100, 0x6e, FONT_BIG, 0xffff8000);
-
+		int totalY = 0x6e;
 #ifdef CTR_AP
-		// Issue #152 (Q32 ruling): the composed-goal readout, alongside this
-		// existing AP-aware screen and styled to match it (small font, same
-		// colour family as the schema-warning banner, centred under the
-		// Total line). A dedicated new pause PAGE would need to grow
-		// D232.advPausePages, which is a fixed-layout overlay struct
-		// (annotated with retail memory offsets in ovr_232.h) -- resizing it
-		// is a materially larger, higher-risk change than a text-only insert
-		// into an EXISTING page, so this rides the relics page instead. See
-		// the #152 build note for the full reasoning.
-		if (ctr_cfg_active())
+		AP_GoalLines goals;
+		goalCount = AP_GoalAdvertLines(goals);
+		if (goalCount)
+			totalY = 90;
+		const int centerX = posX + 256;
+		const int width = 448;
+		for (int i = 0; i < goalCount; ++i)
 		{
-			char goalLine[160];
-			if (AP_GoalAdvert(goalLine, (int)sizeof goalLine))
-				DecalFont_DrawLine(goalLine, posX + 0x100, 0x7e, FONT_SMALL,
-				                   0xffff8000);
+			int y = 108 + i * 9;
+			if (DecalFont_GetLineWidth(goals[i], FONT_SMALL) <= width)
+				DecalFont_DrawLine(goals[i], centerX, y, FONT_SMALL, JUSTIFY_CENTER | WHITE);
+			else
+				DecalFont_DrawLineBox(goals[i], centerX - width / 2, y, width, FONT_SMALL,
+				                      WHITE, TEXT_MARQUEE, TEXT_SLOT_GOAL + i, gGT->backBuffer->otMem.uiOT);
 		}
 #endif
+		DecalFont_DrawLine(totalString, posX + 0x100, totalY, FONT_BIG, 0xffff8000);
 	}
 
 	int iVar7 = DecalFont_GetLineWidth(str, FONT_BIG);
@@ -490,6 +495,10 @@ void AH_Pause_Draw(int pageID, int posX)
 	r.y = 10;
 	r.w = (s16)iVar11;
 	r.h = 0x82;
+#ifdef CTR_AP
+	if (goalCount == AP_GOAL_MAX_LINES)
+		r.h += 6;
+#endif
 
 	// Draw 2D Menu rectangle background
 	RECTMENU_DrawInnerRect(&r, 4, &ot[3]);

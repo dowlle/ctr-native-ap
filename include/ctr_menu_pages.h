@@ -32,6 +32,7 @@ typedef struct
 } CtrMenuPage;
 
 #define CTR_MENU_PAGE_CONTROLS "Controls"
+#define CTR_MENU_PAGE_SOUND "Sound"
 
 static const char *const s_ctrMenuPageVideo[] = {
 	"fullscreen", "aspect_ratio", "render_scale", "vsync", "smooth_scaling",
@@ -59,6 +60,7 @@ static const char *const s_ctrMenuPageAuthoring[] = {
 static const CtrMenuPage s_ctrMenuPages[] = {
 	{"Video", s_ctrMenuPageVideo, 0},
 	{"Gameplay", s_ctrMenuPageGameplay, 0},
+	{CTR_MENU_PAGE_SOUND, s_ctrMenuPageControls, 1},
 	{CTR_MENU_PAGE_CONTROLS, s_ctrMenuPageControls, 1},
 	{"Connection", s_ctrMenuPageConnection, 0},
 	{"Archipelago", s_ctrMenuPageArchipelago, 0},

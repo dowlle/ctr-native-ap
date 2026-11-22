@@ -454,10 +454,6 @@ static char *RECTMENU_RowString(int index)
 		return (char *)"TRACKER";
 	if (index == AP_LNG_TRAVEL)
 		return (char *)"TRAVEL";
-	if (index == AP_LNG_AI_DIFFICULTY)
-		return (char *)"AI DIFFICULTY";
-	if (index >= AP_LNG_AI_PRESET && index < AP_LNG_AI_PRESET + AI_DIFF_COUNT)
-		return (char *)s_aiDiffNames[index - AP_LNG_AI_PRESET];
 	if (index == AP_LNG_PLAY_SOLO)
 		return (char *)"PLAY SOLO";
 	if (index == AP_LNG_WUMPA_SHOP)
@@ -836,10 +832,8 @@ int RECTMENU_ProcessInput(struct RectMenu *m)
 	}
 
 #ifdef CTR_AP
-	// A4-14's AP selector uses the shared AP convention. Other RectMenus
-	// retain retail input: Cross/Circle confirm, Triangle/Start go back here.
-	if ((m->rows && m->rows[0].stringIndex == AP_LNG_AI_PRESET) ||
-	    (m->stringIndexTitle == LNG_CHOOSE_RACE_TYPE && !(m->state & MENU_CANT_GO_BACK)))
+	// The race-type selector uses the shared AP Back convention.
+	if (m->stringIndexTitle == LNG_CHOOSE_RACE_TYPE && !(m->state & MENU_CANT_GO_BACK))
 	{
 		if (button & BTN_START)
 			button |= BTN_TRIANGLE;

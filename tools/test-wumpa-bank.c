@@ -85,17 +85,16 @@ int main(void)
 	CHECK("banking: a valid shop banks", AP_WumpaBankingActive(&c) && AP_WumpaShopUsable(&c));
 
 	{
-		char line[64];
-		int w = AP_GoalLineFormat(line, (int)sizeof line, AP_OXIDE_GOAL_ANY, 2, 1, 0, 0);
-		CHECK("goal line: Wumpa segment appended",
-		      AP_GoalLineAppendWumpa(line, (int)sizeof line, w, 412, 1000) &&
-		      strcmp(line, "GOAL: OXIDE - BOSS 1/2 - WUMPA 412/1000") == 0);
-		w = AP_GoalLineFormat(line, (int)sizeof line, AP_OXIDE_GOAL_OPTIONAL, 0, 0, 0, 0);
-		CHECK("goal line: Wumpa alone", AP_GoalLineAppendWumpa(line, (int)sizeof line, w, 1500, 1000) &&
-		                                strcmp(line, "GOAL: WUMPA 1000/1000") == 0);
-		w = AP_GoalLineFormat(line, (int)sizeof line, AP_OXIDE_GOAL_ANY, 0, 0, 0, 0);
-		CHECK("goal line: no Wumpa arm leaves the line", AP_GoalLineAppendWumpa(line, (int)sizeof line, w, 5, 0) == w &&
-		                                                 strcmp(line, "GOAL: OXIDE") == 0);
+		AP_GoalLines lines;
+		CHECK("goal line: Wumpa follows Oxide and bosses",
+		      AP_GoalFormatLines(lines, AP_OXIDE_GOAL_ANY, 0, 0, 2, 1, 0, 0, 1000, 412) == 3 &&
+		      strcmp(lines[2], "Wumpa 412/1000") == 0);
+		CHECK("goal line: Wumpa alone",
+		      AP_GoalFormatLines(lines, AP_OXIDE_GOAL_OPTIONAL, 0, 0, 0, 0, 0, 0, 1000, 1500) == 1 &&
+		      strcmp(lines[0], "Wumpa 1000/1000") == 0);
+		CHECK("goal line: disabled Wumpa omitted",
+		      AP_GoalFormatLines(lines, AP_OXIDE_GOAL_ANY, 0, 0, 0, 0, 0, 0, 0, 5) == 1 &&
+		      strcmp(lines[0], "Oxide Challenge 0/1") == 0);
 	}
 	{
 		// The Wumpa arm gates the selected Oxide finale like the Boss and Gem

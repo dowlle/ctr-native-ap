@@ -368,7 +368,8 @@ LAB_800b38cc:
 	    ((sdata->buttonTapPerPlayer[0] & 0x41020) != 0))
 	{
 		RECTMENU_ClearInput();
-		sdata->ptrDesiredMenu = MainFreeze_GetMenuPtr();
+		if (!MM_ConfigReturnFromChild(menu))
+			sdata->ptrDesiredMenu = MainFreeze_GetMenuPtr();
 	}
 	return;
 }

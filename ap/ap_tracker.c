@@ -7,6 +7,8 @@
 #include "ap_tracker_progress.h"
 #include "ap_tracker_tabs.h"
 #include "ap_tracker_checks.h"
+#include "ap_goal_line.h"
+#include "ap_text_clip.h"
 #include <platform/native_assets.h>
 #include <platform/native_disc_image.h>
 #include <platform/native_renderer.h>
@@ -87,24 +89,38 @@ static void AP_TrackerBlit(const uint32_t *pixels, int sw, int sh, int x, int y,
 			src[1] * mod[1] / 255, src[2] * mod[2] / 255, src[3]);
 	}
 }
+static AP_TrackerSprite *AP_TrackerGlyph(unsigned char ch, int index)
+{
+	if (ch >= 'a' && ch <= 'z') ch -= 'a' - 'A';
+	if (ch < 32 || ch > 127) ch = '?';
+	return &ap_tracker.glyphs[index][ch - 32];
+}
+
+static int AP_TrackerGlyphWidth(AP_TrackerSprite *glyph, int height, char ch)
+{
+	return ch == ' ' || !glyph->w ? height / 3 : glyph->w * height * 3 / (4 * (glyph->h ? glyph->h : height));
+}
+
+static int AP_TrackerTextWidth(const char *text, int len, int height)
+{
+	int width = 0;
+	for (int i = 0; i < len; ++i) {
+		AP_TrackerSprite *glyph = AP_TrackerGlyph((unsigned char)text[i], height >= 25);
+		width += AP_TrackerGlyphWidth(glyph, height, text[i]) + 1;
+	}
+	return width ? width - 1 : 0;
+}
+
 static void AP_TrackerText(const char *text, int x, int y, int height, uint32_t color, int max_width)
 {
-	int index = height >= 25 ? 1 : 0, start = x;
-	const char *p; int natural = 0;
-	for (p=text; *p; p++) {
-		unsigned ch=(unsigned char)*p; AP_TrackerSprite *g;
-		if(ch>='a' && ch<='z') ch-='a'-'A';
-		if(ch<32 || ch>127) ch='?';
-		g=&ap_tracker.glyphs[index][ch-32];
-		natural += ch==' ' ? height/3 : (g->w ? g->w*height*3/(4*(g->h?g->h:height)) : height/3)+1;
-	}
+	int index = height >= 25, start = x;
+	int natural = AP_TrackerTextWidth(text, (int)strlen(text), height);
+	if (natural)
+		natural++; // Keep the existing fitting rule's trailing spacer.
 	if(natural>max_width) height=height*max_width/natural;
 	for (; *text; text++) {
-		unsigned ch = (unsigned char)*text; AP_TrackerSprite *g; int w;
-		if (ch >= 'a' && ch <= 'z') ch -= 'a' - 'A';
-		if (ch < 32 || ch > 127) ch = '?';
-		g = &ap_tracker.glyphs[index][ch - 32];
-		w = ch == ' ' ? height / 3 : (g->w ? g->w * height * 3 / (4 * (g->h ? g->h : height)) : height / 3);
+		AP_TrackerSprite *g = AP_TrackerGlyph((unsigned char)*text, index);
+		int w = AP_TrackerGlyphWidth(g, height, *text);
 		if (x + w - start > max_width) break;
 		AP_TrackerBlit(g->pixels, g->w, g->h, x + 2, y + 2, w, height, AP_TrackerRGBA(0,0,0,255));
 		AP_TrackerBlit(g->pixels, g->w, g->h, x, y, w, height, color);
@@ -507,8 +523,13 @@ static void AP_TrackerBuildNodes(void)
 	ap_tracker.map_w = 420; ap_tracker.map_h = h->height * ap_tracker.map_w * 4 / (h->width * 3);
 	/* The game's 512x240 UI mapped to this 1280x800 canvas has a 4/3
 	 * vertical-to-horizontal pixel ratio. Keep paths and pins in one space. */
-	if (ap_tracker.map_h > 560) { ap_tracker.map_h = 560; ap_tracker.map_w = h->width * ap_tracker.map_h * 3 / (h->height * 4); }
-	ap_tracker.map_x = (TRACKER_W - ap_tracker.map_w) / 2; ap_tracker.map_y = 115 + (560 - ap_tracker.map_h) / 2;
+	const int mapHeight = 490;
+	if (ap_tracker.map_h > mapHeight) {
+		ap_tracker.map_h = mapHeight;
+		ap_tracker.map_w = h->width * ap_tracker.map_h * 3 / (h->height * 4);
+	}
+	ap_tracker.map_x = (TRACKER_W - ap_tracker.map_w) / 2;
+	ap_tracker.map_y = 115 + (mapHeight - ap_tracker.map_h) / 2;
 	ap_tracker.count = h->pad_count;
 	for (i = 0; i < h->pad_count; i++) {
 		AP_TrackerNode *n = &ap_tracker.nodes[i]; int physical = h->pads[i].physical, dest = ctr_cfg_warp_dest(physical);
@@ -935,6 +956,31 @@ static void AP_TrackerDrawActivities(void)
 	}
 	AP_TrackerText(NativeMenu_Labels("* START   ^ BACK"), x + 16, y + h - 26, 14, TRACKER_WHITE, w - 32);
 }
+enum { AP_TRACKER_GOAL_FONT = 16, AP_TRACKER_GOAL_WIDTH = 440 };
+
+static int AP_TrackerGoalWidth(const char *text, int len, void *ctx)
+{
+	(void)ctx;
+	return AP_TrackerTextWidth(text, len, AP_TRACKER_GOAL_FONT);
+}
+
+static void AP_TrackerDrawGoals(void)
+{
+	AP_GoalLines goals;
+	int count = AP_GoalAdvertLines(goals);
+	for (int i = 0; i < count; ++i) {
+		char *line = goals[i];
+		int start, shown;
+		AP_TextMarquee(AP_TrackerGoalWidth, NULL, line, (int)strlen(line),
+		               AP_TRACKER_GOAL_WIDTH, sdata->frameCounter, &start, &shown);
+		line[start + shown] = '\0';
+		int width = AP_TrackerGoalWidth(line + start, shown, NULL);
+		int y = 668 - (count - 1 - i) * 19;
+		AP_TrackerText(line + start, (TRACKER_W - width) / 2, y,
+		               AP_TRACKER_GOAL_FONT, TRACKER_GOLD, AP_TRACKER_GOAL_WIDTH);
+	}
+}
+
 static void AP_TrackerDraw(void)
 {
 	AP_TrackerHubAsset *h = &ap_tracker.hubs[ap_tracker.hub]; int i; char line[256];
@@ -976,14 +1022,7 @@ static void AP_TrackerDraw(void)
 		AP_TrackerArrow(x,y,sdata->gGT->drivers[0]->rotCurr.y+0x800,10,TRACKER_GOLD);
 	}
 	for(i=0;i<ap_tracker.count;i++) AP_TrackerDrawNode(i);
-	/* M08: always show the configured Wumpa target, also without a shop.
-	   A dedicated line cannot be clipped off a composed pause-menu goal. */
-	if (ctr_wumpa_shop.goal > 0) {
-		long long have = ap_net_wumpa_lifetime();
-		snprintf(line, sizeof line, "WUMPA GOAL: %lld/%d COLLECTED",
-			have > ctr_wumpa_shop.goal ? ctr_wumpa_shop.goal : have, ctr_wumpa_shop.goal);
-		AP_TrackerText(line,32,668,14,TRACKER_GOLD,1210);
-	}
+	AP_TrackerDrawGoals();
 	/* #249: this hub's Wumpa Shop slots left, open and affordable (decision 21). */
 	if(AP_WumpaShopHubTrackerLine(GEM_STONE_VALLEY+ap_tracker.hub,line,(int)sizeof line))
 		AP_TrackerText(line,32,692,14,TRACKER_GOLD,1210);

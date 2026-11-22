@@ -396,6 +396,9 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 			if (gGT->cooldownfromPauseUntilUnpause == 0)
 			{
 				if (((sdata->ptrActiveMenu != &data.menuRacingWheelConfig) && (sdata->ptrActiveMenu != &D232.menuHintMenu) // in 232
+#ifdef CTR_AP
+				     && !MM_ConfigOwnsPauseInput()
+#endif
 				     ) &&
 				    ((sdata->AnyPlayerTap & BTN_START) != 0))
 				{

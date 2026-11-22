@@ -1,58 +1,8 @@
 #include <common.h>
 
 #ifdef CTR_AP
-#include "../../ap/ap_ai_difficulty.h"
 #include "../../ap/ap_pauserow.h"
 #include "../../ap/ap_kartsetup.h"
-#include <platform/native_menu.h>
-#include <platform/native_renderer.h>
-
-// A4-14: a separate selector keeps title-only Options actions out of a live
-// adventure. Confirm saves the existing comfort setting; Back changes nothing.
-static struct MenuRow ap_difficultyRows[AI_DIFF_COUNT + 1];
-
-static void MainFreeze_AiDifficultyProc(struct RectMenu *menu)
-{
-	if (menu->unk1e != 0)
-	{
-		MainFreeze_SafeAdvDestroy();
-		DecalFont_DrawLine("AI DIFFICULTY: NEXT RACE", 256, 40, FONT_SMALL, ORANGE | JUSTIFY_CENTER);
-		DecalFont_DrawLine(NativeMenu_Labels("* @ SELECT   ^ START BACK"), 256, 160, FONT_SMALL, WHITE | JUSTIFY_CENTER);
-		return;
-	}
-	if (menu->rowSelected >= 0 && menu->rowSelected < AI_DIFF_COUNT && AP_FastTravelAvailable())
-	{
-		g_config.aiDifficulty = s_aiDiffValues[menu->rowSelected];
-		NativeRenderer_CaptureWindowGeometry();
-		NativeConfig_Save();
-		AP_AiDifficultyCommit();
-	}
-	sdata->ptrDesiredMenu = MainFreeze_GetMenuPtr();
-}
-
-static struct RectMenu ap_difficultyMenu = {
-	.stringIndexTitle = 0xFFFF,
-	.posX_curr = 0x100,
-	.posY_curr = 0x6c,
-	.state = 0x8C83,
-	.rows = ap_difficultyRows,
-	.funcPtr = MainFreeze_AiDifficultyProc,
-	.drawStyle = 4,
-};
-
-static void MainFreeze_ShowAiDifficulty(void)
-{
-	for (int i = 0; i < AI_DIFF_COUNT; i++)
-	{
-		ap_difficultyRows[i].stringIndex = AP_LNG_AI_PRESET + i;
-		ap_difficultyRows[i].rowOnPressUp = (char)AP_PauseRow_Up(i, AI_DIFF_COUNT);
-		ap_difficultyRows[i].rowOnPressDown = (char)AP_PauseRow_Down(i, AI_DIFF_COUNT);
-		ap_difficultyRows[i].rowOnPressLeft = ap_difficultyRows[i].rowOnPressRight = (char)i;
-	}
-	ap_difficultyRows[AI_DIFF_COUNT].stringIndex = -1;
-	ap_difficultyMenu.rowSelected = (s16)AiDiff_NearestIndex(g_config.aiDifficulty);
-	sdata->ptrDesiredMenu = &ap_difficultyMenu;
-}
 #endif
 
 #ifdef CTR_AP
@@ -945,7 +895,8 @@ void MainFreeze_MenuPtrOptions(struct RectMenu *menu)
 		OtherFX_Play(1, 1);
 		OptionsMenu_TestSound(0, 0);
 		RECTMENU_ClearInput();
-		sdata->ptrDesiredMenu = MainFreeze_GetMenuPtr();
+		if (!MM_ConfigReturnFromChild(menu))
+			sdata->ptrDesiredMenu = MainFreeze_GetMenuPtr();
 	}
 }
 
@@ -1091,9 +1042,16 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 	stringID = menu->rows[menu->rowSelected].stringIndex;
 
 	// stringID 14: "OPTIONS"
-	if (stringID == 14)
+	if (stringID == LNG_OPTIONS)
 	{
-		// Set Menu to Options
+#ifdef CTR_AP
+		if (menu == &data.menuAdvHub && ctr_cfg_active())
+		{
+			MainFreeze_SafeAdvDestroy();
+			MM_ConfigOpen(menu);
+			return;
+		}
+#endif
 		sdata->ptrDesiredMenu = &data.menuRacingWheelConfig;
 
 		data.menuRacingWheelConfig.rowSelected = 8;
@@ -1143,11 +1101,6 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 	if (stringID == AP_LNG_TRAVEL)
 	{
 		AP_FastTravelShowMenu();
-		return;
-	}
-	if (stringID == AP_LNG_AI_DIFFICULTY)
-	{
-		MainFreeze_ShowAiDifficulty();
 		return;
 	}
 #endif
@@ -1431,15 +1384,21 @@ struct RectMenu *MainFreeze_GetMenuPtr(void)
 		{
 			static signed char retailKinds[AP_PAUSEROW_KINDS], apKinds[AP_PAUSEROW_KINDS];
 			static int apCount;
-			static struct MenuRow apRowsAdvHub[AP_PAUSEROW_KINDS + 1];
+			static struct MenuRow apRowsAdvHub[AP_PAUSEROW_KINDS + 1] = {
+				{LNG_RESUME, 2, 1, 0, 0},
+				{LNG_OPTIONS, 0, 2, 1, 1},
+				{LNG_QUIT, 1, 0, 2, 2},
+				{-1, 0, 0, 0, 0},
+			};
 			signed char kinds[AP_PAUSEROW_KINDS];
+			int apHub = ctr_cfg_active();
 			int character = AP_CharSwap_PauseRowLive(), tracker = AP_TrackerAvailable();
 			int travel = AP_FastTravelAvailable();
-			int retailCount = AP_PauseRow_Build(0, 0, 0, retailKinds);
-			int count = AP_PauseRow_Build(character, tracker, travel, kinds);
+			int retailCount = AP_PauseRow_Build(0, 0, 0, 0, retailKinds);
+			int count = AP_PauseRow_Build(apHub, character, tracker, travel, kinds);
 			int onAp = data.menuAdvHub.rows == &apRowsAdvHub[0];
 
-			if (count != retailCount)
+			if (apHub)
 			{
 				int r;
 				s16 row = data.menuAdvHub.rowSelected;
@@ -1451,8 +1410,6 @@ struct RectMenu *MainFreeze_GetMenuPtr(void)
 					             : kinds[r] == AP_PAUSEROW_CHARACTER ? LNG_SELECT_CHARACTER
 					             : kinds[r] == AP_PAUSEROW_TRACKER   ? AP_LNG_TRACKER
 					             : kinds[r] == AP_PAUSEROW_TRAVEL    ? AP_LNG_TRAVEL
-					             : kinds[r] == AP_PAUSEROW_DIFFICULTY ? AP_LNG_AI_DIFFICULTY
-					             : kinds[r] == AP_PAUSEROW_HINTS     ? (s16)hintString
 					             : kinds[r] == AP_PAUSEROW_QUIT      ? LNG_QUIT
 					                                                 : LNG_OPTIONS;
 					apRowsAdvHub[r].stringIndex = string;
@@ -1471,7 +1428,7 @@ struct RectMenu *MainFreeze_GetMenuPtr(void)
 
 			if (onAp)
 			{
-				// Back to the retail row set: no seed, or no AP row to show.
+				// A hub without an active seed uses the retail row set.
 				data.menuAdvHub.rowSelected =
 				    (s16)AP_PauseRow_Carry(apKinds, apCount, data.menuAdvHub.rowSelected, retailKinds, retailCount);
 				data.menuAdvHub.rows = &data.rowsAdvHub[0];
