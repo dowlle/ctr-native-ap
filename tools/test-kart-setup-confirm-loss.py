@@ -113,7 +113,7 @@ void AP_CharSwap_RequestPickerFromPause(void) {}
 int AP_CupReturnHub(void) { return 0; }
 int AP_CoopHubAvailable(const struct GameTracker *tracker) { (void)tracker; return 0; }
 int AP_CoopReloadOnRetry(struct GameTracker *tracker) { (void)tracker; return 0; }
-static void MM_ConfigOpenHubCoop(void) {}
+static void MM_ConfigOpenHubGameplay(void) {}
 void AP_DeathLinkOnPauseLeave(int quit) { (void)quit; }
 int AP_FastTravelAvailable(void) { return 0; }
 void AP_FastTravelShowMenu(void) {}

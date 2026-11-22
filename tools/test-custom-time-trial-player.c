@@ -40,3 +40,8 @@ void AP_DeathLinkOnRaceEnd(struct GameTracker *gGT, struct Driver *player)
 	(void)gGT;
 	(void)player;
 }
+
+int AP_CoopHardRace(void)
+{
+	return 0;
+}
