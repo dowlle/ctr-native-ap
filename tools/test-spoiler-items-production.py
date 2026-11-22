@@ -288,8 +288,8 @@ int main(void){
 assert "instArr[WPIS_OPEN_PRIZE1 + i]->flags &= ~(0x80);" in warp
 # Both input paths stop only on the seed lock, so the item-locked row toggles.
 proc = menu[menu.index("static void MM_MenuProc_Config(struct RectMenu *menu)\n{"):]
-assert "else if (Config_RowLockedBySeed(e))\n\t\t\t\t; // the seed has item box colours off" in proc
-assert "if (e != NULL && e->type == CFG_BOOL && !Config_RowLockedBySeed(e))" in proc
+assert "else if (Config_RowLockedBySeed(e) || Config_RowLockedByHub(e))" in proc
+assert "if (e != NULL && e->type == CFG_BOOL && !Config_RowLockedBySeed(e) && !Config_RowLockedByHub(e))" in proc
 
 with tempfile.TemporaryDirectory(prefix="ctr-spoiler-items-") as tmp:
     src, exe = Path(tmp)/"test.c", Path(tmp)/"test"
