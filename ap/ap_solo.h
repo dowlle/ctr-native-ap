@@ -112,6 +112,7 @@ struct APSoloTrackInfo
 	char title[AP_SOLO_TEXT];
 	char revision[32];
 	char author[AP_SOLO_TEXT];
+	char creditLev[65], creditVrm[65], creditSource[65];
 	char modes[32];            /* "Trophy, CTR, Relic" */
 	int timeTrial;              /* installed package can run standalone Time Trial */
 	int pick;                  /* enum APSoloTrackPick */

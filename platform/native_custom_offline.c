@@ -13,6 +13,11 @@
 
 struct CustomOfflineRequest { struct CustomPackageOwned *package; };
 static struct CustomOfflineRequest *activeRequest;
+
+struct CustomPackageOwned *CustomOffline_RuntimePackage(void)
+{
+    return activeRequest ? activeRequest->package : NULL;
+}
 static int activeHost = -1;
 static int activeMode;
 static int activeLaps;

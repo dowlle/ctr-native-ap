@@ -216,8 +216,9 @@ void AP_FeedOnItemReceived(long long item, int player, long long index, unsigned
 void AP_FeedConnectReset(void);
 void AP_FeedEndDrain(int drainedThisFrame);
 void AP_FeedDrawHub(void);
-void AP_FeedHubPadTitle(int visible);
+void AP_FeedHubPadTitle(int feedY);
 void AP_FeedDrawRace(void);
+void AP_FeedDrawRaceIntro(void);
 // The same feed on the end-of-race screens (results, cup standings), drawn a little
 // higher so it clears the "PRESS X TO CONTINUE" prompt. Same 1P / unpaused gates.
 void AP_FeedDrawResults(void);

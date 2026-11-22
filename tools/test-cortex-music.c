@@ -528,9 +528,9 @@ static void pins(void)
 {
 	char line[512];
 	int lev = 0, vrm = 0, notices = 0;
-	FILE *f = fopen("ap/ap_seedcfg.h", "r");
+	FILE *f = fopen("include/platform/native_cortex_asset_pins.h", "r");
 
-	// The loader's pins are the client's (ap/ap_seedcfg.h) and the notices'.
+	// The loader uses the client's shared geometry pins and the notices' SCA pin.
 	while (f && fgets(line, sizeof line, f))
 	{
 		if (strstr(line, "#define CTR_CFG_CORTEX_LEV_SHA256") && strstr(line, CORTEX_LEV_SHA256))

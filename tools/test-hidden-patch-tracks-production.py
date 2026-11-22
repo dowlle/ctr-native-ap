@@ -109,6 +109,7 @@ static const std::string &AssetsDir() { return base; }
 '''
 for signature in (
     "bool SoloRootIsLink()", "std::string ReadSmallPlainFile(", "bool CopyText(",
+    "void ReadTrackCreditPins(",
     "bool HiddenTrackDescriptor(", "bool PinnedFilePresent(",
     "void AddNeedsLapsRows(std::vector<APSoloTrackInfo> &rows)\n",
 ):
@@ -136,6 +137,7 @@ int main(int argc, char **argv)
     std::vector<APSoloTrackInfo> rows;
     AddNeedsLapsRows(rows);
     assert(rows.size() == 1 && std::strcmp(rows[0].id, "package/visible/1.0.0") == 0);
+    assert(std::strcmp(rows[0].creditLev, argv[3]) == 0);
     assert(fs::is_regular_file(SoloPath("needs-laps/hidden__1.0.0.json")));
     assert(ReadSmallPlainFile(fs::path(base) / "tracks/hidden/original/level.lev", 64) == "lev!");
 }

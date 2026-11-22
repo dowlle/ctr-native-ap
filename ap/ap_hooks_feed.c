@@ -49,6 +49,12 @@
 #define AP_FEED_BASE_Y             0xC8 // bottom (newest) line anchor
 #define AP_FEED_RESULTS_BASE_Y     0xAC // same anchor on the results screens: clears the prompt
 #define AP_FEED_RACE_WIDTH         364
+#define AP_FEED_BOX_WARNING_Y      0x48
+#define AP_FEED_CONTENT_WARNING_Y  0x30
+
+#ifdef CTR_CUSTOM_TRACKS
+static int AP_CustomContentWarningVisible(void);
+#endif
 
 // ── RACE anchor (bottom-left, matches the hub) ──────────────────────────────
 // Previously the race surface used its own mid-screen band (upper-left of the
@@ -441,10 +447,27 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 	}
 	if (AP_ItemFeedMode() == AP_ITEM_FEED_IMPORTANT)
 		AP_FeedDiscardUnimportant();
-	// The hub's persistent box warning occupies y=72 and y=84. Keep the
-	// newest three lines at 96..120 while it is present; new lines wait in
-	// the queue rather than being promoted into the warning's band.
-	const int visibleLimit = !playableRace && ctr_cfg.box_placement_refused ? 3 : AP_FEED_MAX_VISIBLE;
+	// Leave room below the lowest active hub warning and above the pad.
+	int visibleLimit = AP_FEED_MAX_VISIBLE;
+	if (!playableRace)
+	{
+		int warningY = 0;
+		if (ctr_cfg.box_placement_refused)
+		{
+			warningY = AP_FEED_BOX_WARNING_Y;
+			visibleLimit = 3;
+		}
+#ifdef CTR_CUSTOM_TRACKS
+		else if (AP_CustomContentWarningVisible())
+			warningY = AP_FEED_CONTENT_WARNING_Y;
+#endif
+		if (warningY)
+		{
+			const int firstFeedY = warningY + AP_FEED_LINE_H + 8; // FONT_SMALL height
+			const int rows = baseY >= firstFeedY ? 1 + (baseY - firstFeedY) / AP_FEED_LINE_H : 0;
+			if (rows < visibleLimit) visibleLimit = rows;
+		}
+	}
 	// Promote a pending line into a free slot, rate-limited so a deep queue
 	// cascades in rather than snapping full in one frame.
 	if (ap_feed.vcount < visibleLimit)
@@ -481,12 +504,12 @@ static void AP_FeedTickAndDraw(int x, int baseY, int playableRace)
 	}
 }
 
-static int ap_feed_hub_pad_title;
+static int ap_feed_hub_pad_y;
 
 // Reset before hub threads run; the pad sets this only when it draws its title.
-void AP_FeedHubPadTitle(int visible)
+void AP_FeedHubPadTitle(int feedY)
 {
-	ap_feed_hub_pad_title = visible;
+	ap_feed_hub_pad_y = feedY;
 }
 
 // Leave the bottom title/racer block clear only while it is drawn.
@@ -497,7 +520,7 @@ void AP_FeedDrawHub(void)
 	if (!ctr_cfg_active() || !AP_HubFeedOn() || AP_CharSwap_HubHudHidden())
 		return;
 
-	AP_FeedTickAndDraw(AP_FEED_X, ap_feed_hub_pad_title ? 120 : AP_FEED_BASE_Y, 0);
+	AP_FeedTickAndDraw(AP_FEED_X, ap_feed_hub_pad_y ? ap_feed_hub_pad_y : AP_FEED_BASE_Y, 0);
 }
 
 // In-race surface (issue #192): the same feed, on the race HUD, so an item sent
@@ -514,7 +537,7 @@ void AP_FeedDrawHub(void)
 //     just the draw) also FREEZES the lifetimes: a line does not burn its four
 //     seconds behind a pause menu, it resumes where it was. That mirrors how a
 //     line queued in a menu keeps its full dwell for later.
-void AP_FeedDrawRace(void)
+static void AP_FeedDrawRaceAt(int y)
 {
 	struct GameTracker *gGT = sdata->gGT;
 
@@ -525,7 +548,17 @@ void AP_FeedDrawRace(void)
 	if ((gGT->gameMode1 & PAUSE_ALL) != 0)
 		return;
 
-	AP_FeedTickAndDraw(AP_FEED_X, AP_FEED_BASE_Y, 1);
+	AP_FeedTickAndDraw(AP_FEED_X, y, 1);
+}
+
+void AP_FeedDrawRace(void)
+{
+	AP_FeedDrawRaceAt(AP_FEED_BASE_Y);
+}
+
+void AP_FeedDrawRaceIntro(void)
+{
+	AP_FeedDrawRaceAt(AP_FEED_RESULTS_BASE_Y);
 }
 
 // End-of-race screens: the race HUD pass returns before AP_FeedDrawRace, so the
@@ -567,8 +600,8 @@ void AP_DrawSchemaWarning(void)
 	{
 		static char boxWarn1[] = AP_BOX_WARN_LINE1;
 		static char boxWarn2[] = AP_BOX_WARN_LINE2;
-		DecalFont_DrawLine(boxWarn1, AP_FEED_X, 0x48, FONT_SMALL, RED);
-		DecalFont_DrawLine(boxWarn2, AP_FEED_X, 0x48 + AP_FEED_LINE_H, FONT_SMALL, RED);
+		DecalFont_DrawLine(boxWarn1, AP_FEED_X, AP_FEED_BOX_WARNING_Y, FONT_SMALL, RED);
+		DecalFont_DrawLine(boxWarn2, AP_FEED_X, AP_FEED_BOX_WARNING_Y + AP_FEED_LINE_H, FONT_SMALL, RED);
 	}
 	if (!ctr_cfg.schema_newer)
 		return;

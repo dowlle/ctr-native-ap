@@ -31,6 +31,8 @@
 #include "../../ap/ap_net.h" // ap_net_seed_name, ap_net_slot_name: Seed identity
 #include "../../ap/ap_track_consent.h" // the track author permission check (A4-74)
 #include "../../ap/ap_solo.h"
+#include "../../ap/ap_content_plan.h"
+#include <platform/native_track_credit.h>
 
 enum { CT_TAB_LIBRARY, CT_TAB_SEED, CT_TAB_IMPORT, CT_TAB_COUNT };
 enum { CT_FOCUS_TABS, CT_FOCUS_LIST, CT_FOCUS_CONTROLS, CT_FOCUS_ACTIONS, CT_FOCUS_SUB };
@@ -1467,7 +1469,20 @@ static void CT_LibraryFrame(int tapped, uint32_t *ot)
             CT_DrawPaged(v.title, CT_DETAIL_X, 70, CT_DETAIL_W, 2, ORANGE, ot);
             snprintf(line, sizeof line, "v%.32s", v.version);
             MM_CustomText_Draw(line, CT_DETAIL_X, 96, CT_DETAIL_W, 1, WHITE, ot);
-            MM_CustomText_Draw(v.author && v.author[0] ? v.author : "Unknown author", CT_DETAIL_X, 108, CT_DETAIL_W, 1, WHITE, ot);
+            char credit[CTR_TRACK_CREDIT_MAX];
+            CustomTrackCredit_EnsureRegistry(NativeAssets_GetAssetDir());
+            if (item->kind == CT_ITEM_INSTALLED)
+                CustomPackage_TrackCredit(&v.installed->local, v.author, credit, sizeof credit);
+            else if (item->kind == CT_ITEM_PACKAGE)
+            {
+                const struct CustomTrackManagerPackage *p = AP_CustomContentPackage();
+                CustomTrackCredit_Format(credit, sizeof credit, p->levSha256, p->vrmSha256,
+                                         CT_PackageTrackID(), p->author, "Project Saphi");
+            }
+            else
+                CustomTrackCredit_Format(credit, sizeof credit, v.source->lev.sha256, v.source->vrm.sha256,
+                                         v.trackID, v.author, "Project Saphi");
+            UI_DrawTrackCredit(credit, CT_DETAIL_X + CT_DETAIL_W / 2, 108, CT_DETAIL_W, TEXT_MARQUEE);
             CT_Badges(&v, item->kind, badges, sizeof badges);
             MM_CustomText_Draw(badges, CT_DETAIL_X, 120, CT_DETAIL_W, 1, ORANGE, ot);
             {
@@ -1676,8 +1691,18 @@ static void CT_SeedFrame(int tapped, int installAvailable, uint32_t *ot)
             CT_DrawPaged(r->title, CT_DETAIL_X, 70, CT_DETAIL_W, 2, ORANGE, ot);
             snprintf(line, sizeof line, "Needs v%.40s", r->revision);
             MM_CustomText_Draw(r->source == AP_SEED_SOURCE_BUNDLED ? "Bundled" : line, CT_DETAIL_X, 96, CT_DETAIL_W, 1, WHITE, ot);
-            MM_CustomText_Draw(r->source == AP_SEED_SOURCE_BUNDLED ? "With the client" : r->author[0] ? r->author : "Unknown author",
-                               CT_DETAIL_X, 108, CT_DETAIL_W, 1, WHITE, ot);
+            char credit[CTR_TRACK_CREDIT_MAX] = CTR_CORTEX_CREDIT;
+            const ctr_content_package *p = ap_content_plan_package(r->index);
+            if (p)
+            {
+                CustomTrackCredit_EnsureRegistry(NativeAssets_GetAssetDir());
+                CustomTrackCredit_Format(credit, sizeof credit, p->lev_sha256, p->vrm_sha256,
+                                         0, p->author, CustomTrackCredit_PatchSource(p->locator_name, p->locator_sha256));
+            }
+            else if (r->source != AP_SEED_SOURCE_BUNDLED)
+                CustomTrackCredit_Format(credit, sizeof credit, NULL, NULL, r->saphi_track_id,
+                                         r->author, CustomTrackCredit_PatchSource(r->locator.patch_name, r->locator.patch_sha256));
+            UI_DrawTrackCredit(credit, CT_DETAIL_X + CT_DETAIL_W / 2, 108, CT_DETAIL_W, TEXT_MARQUEE);
             MM_CustomText_Draw(CT_SeedStateLong(r), CT_DETAIL_X, 120, CT_DETAIL_W, 1, ready ? ORANGE : RED, ot);
             ap_seed_instruction(r, instruction, sizeof instruction);
             if (r->index == -2 && s_ctLegacyDownload) snprintf(instruction, sizeof instruction, "%s", s_ctMessage);
