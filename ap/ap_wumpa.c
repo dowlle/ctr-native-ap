@@ -123,7 +123,7 @@ static int AP_WumpaReceiptInRace(void)
 	if (!ctr_cfg_active() || ctr_cfg.schema_newer || !AP_WumpaAdventureRace(gt) ||
 	    (gt->gameMode2 & CHEAT_WUMPA) || !LOAD_IsOpen_RacingOrBattle() ||
 	    (gt->gameMode1 & (END_OF_RACE | MAIN_MENU | GAME_CUTSCENE))) return 0;
-	int humans = AP_CoopRace(gt) ? 2 : 1;
+	int humans = AP_CoopDriving(gt) ? 2 : 1;
 	for (int i = 0; i < humans; i++)
 	{
 		struct Driver *d = gt->drivers[i];
@@ -432,7 +432,7 @@ void AP_WumpaTick(struct GameTracker *gGT)
 			// Starting fruit fills the kart only. It must never produce
 			// overflow credit, including a pickup before this tick.
 			RB_Player_ModifyWumpa(local, grant);
-			if (AP_CoopRace(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]))
+			if (AP_CoopDriving(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]))
 			{
 				int otherGrant = AP_WUMPA_MAX - gGT->drivers[1]->numWumpas;
 				if (otherGrant > g_wumpa_starting) otherGrant = g_wumpa_starting;
@@ -452,14 +452,14 @@ void AP_WumpaTick(struct GameTracker *gGT)
 	int before = local->numWumpas;
 	if (g_wumpa_race_pending > 0)
 	{
-		if (AP_CoopRace(gGT) && !AP_IsSlotHuman(gGT, local))
+		if (AP_CoopDriving(gGT) && !AP_IsSlotHuman(gGT, local))
 		{
 			if (AP_WumpaBanking())
 				AP_WumpaBank(g_wumpa_race_pending, "AP fruit received after P1 finished");
 		}
 		else
 			RB_Player_ModifyWumpa(local, g_wumpa_race_pending);
-		if (AP_CoopRace(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]))
+		if (AP_CoopDriving(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]))
 		{
 			// P2 uses the retail signed-byte counter, without P1's race bank.
 			int grant = g_wumpa_race_pending;
@@ -473,7 +473,7 @@ void AP_WumpaTick(struct GameTracker *gGT)
 	{
 		// The usual fruit-grant path handles the cap, jingle and cheat veto.
 		RB_Player_ModifyWumpa(local, g_wumpa_pending);
-		if (AP_CoopRace(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]))
+		if (AP_CoopDriving(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]))
 			RB_Player_ModifyWumpa(gGT->drivers[1], g_wumpa_pending);
 		snprintf(msg, sizeof msg, "[AP WUMPA] granted +%d in-race (now %d)\n",
 		         g_wumpa_pending, (int)local->numWumpas);

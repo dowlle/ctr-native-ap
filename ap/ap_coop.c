@@ -20,6 +20,7 @@ static int ap_coop_warp_rules = -1;
 static int ap_coop_entry_rules = -1;
 static int ap_coop_retry_level = -1;
 static int ap_coop_retry_hub;
+static int ap_coop_retry_capacity;
 static int ap_coop_reload_hub = -1;
 
 enum AP_CoopMenu { COOP_MENU_CLOSED, COOP_MENU_ACTIONS, COOP_MENU_RACER };
@@ -117,19 +118,25 @@ int AP_CoopP2Available(void)
 	return 0;
 }
 
+static void AP_CoopReloadSolo(struct GameTracker *gt, int capacity)
+{
+	// An in-place restart retains two-player assets and pools.
+	ap_coop_retry_level = gt->levelID;
+	ap_coop_retry_hub = gt->prevLEV;
+	ap_coop_retry_capacity = capacity;
+	MainRaceTrack_RequestLoad(gt->levelID);
+}
+
 int AP_CoopReloadOnRetry(struct GameTracker *gt)
 {
-	if (!AP_CoopRace(gt))
+	if (!AP_CoopDriving(gt))
 		return 0;
 	// A removal can be queued after the last VBlank and before this commit.
 	// Resolve SDL assignments again before keeping the loaded seats.
 	Platform_PollInput();
 	if (AP_CoopP2Available())
 		return 0;
-	// The in-place restart retains the two-player files and pools.
-	ap_coop_retry_level = gt->levelID;
-	ap_coop_retry_hub = gt->prevLEV;
-	MainRaceTrack_RequestLoad(gt->levelID);
+	AP_CoopReloadSolo(gt, 0);
 	return 1;
 }
 
@@ -189,9 +196,21 @@ static int AP_CoopSpecialTrophyRoster(int level)
 	return AP_HitEncounterShouldApply(1, level, 0, 0, 0, 0, 0, 0, 1);
 }
 
-int AP_CoopPadReady(int level)
+int AP_CoopCrystalSupported(int level)
 {
-	if (!g_config.coopAdventure || AP_CoopControllers() != 2 || AP_CoopSpecialTrophyRoster(level))
+	// The retail-memory AP build cannot admit a second Adventure controller.
+#ifdef CTR_CUSTOM_TRACKS
+	return level >= NITRO_COURT && level <= LAB_BASEMENT;
+#else
+	(void)level;
+	return 0;
+#endif
+}
+
+int AP_CoopPadReady(int level, int crystal)
+{
+	if (!g_config.coopAdventure || AP_CoopControllers() != 2 ||
+	    (crystal ? !AP_CoopCrystalSupported(level) : AP_CoopSpecialTrophyRoster(level)))
 		return 1;
 	if (ap_coop_warp_rules < 0)
 		AP_CoopCapturePadRules();
@@ -537,12 +556,43 @@ const char *AP_CoopHelp(void)
 }
 int AP_CoopHardRace(void) { return ap_coop_hard_race; }
 
+int AP_CoopCrystalTimeLimit(const struct GameTracker *gt)
+{
+	// Expanded multiplies by 0.6f and truncates. Keep the original for a solo reload.
+	return AP_CoopCrystal(gt) && AP_CoopHardRace()
+	    ? (int)(gt->originalEventTime * 0.6f) : gt->originalEventTime;
+}
+
+int AP_CoopCrystalFallback(struct GameTracker *gt)
+{
+	if (!AP_CoopCrystal(gt))
+		return 0;
+	AP_CoopLog("crystal fallback", "arena allocation", gt->levelID, 2);
+	AP_CoopNotice("CRYSTAL ARENA RELOADING SOLO", "");
+	AP_CoopReloadSolo(gt, 1);
+	return 1;
+}
+
+void AP_CoopCrystalLogResult(const struct GameTracker *gt)
+{
+	if (!AP_CoopCrystal(gt))
+		return;
+	char line[160];
+	int count = AP_CrystalCount(gt, gt->drivers[0]);
+	const char *result = AP_RaceAttemptIsForcedLoss() ? "forced loss" :
+	    count >= gt->numCrystalsInLEV ? "complete" : "timeout";
+	snprintf(line, sizeof line, "[AP COOP] crystal result=%s level=%d collected=%d total=%d limit=%d\n",
+	         result, gt->levelID, count, gt->numCrystalsInLEV, AP_CoopCrystalTimeLimit(gt));
+	AP_LogLine(line);
+}
+
 void AP_CoopPrepareLoad(struct GameTracker *gt)
 {
 	int mode = gt->gameMode1;
 	const int entryRules = ap_coop_entry_rules;
 	ap_coop_entry_rules = ap_coop_warp_rules = -1;
 	int soloRetry = ap_coop_retry_level >= 0 && ap_coop_retry_level == gt->levelID;
+	int capacityRetry = soloRetry && ap_coop_retry_capacity;
 	ap_coop_retry_level = -1;
 	if (soloRetry)
 		gt->prevLEV = ap_coop_retry_hub;
@@ -554,17 +604,23 @@ void AP_CoopPrepareLoad(struct GameTracker *gt)
 	if (CustomTrack_ServingLoad((int)gt->levelID, (mode & ADVENTURE_CUP) != 0, gt->cup.cupID) ||
 	    AP_CortexTrackActive()) retail = 0;
 	/* Ask about the serving identity before changing the 1P load predicate. */
-	if (CustomTrack_StandaloneContext((int)gt->levelID))
-	{
-		const struct CustomTrackRaceContext *context = CustomTrack_StandaloneContext((int)gt->levelID);
+	const struct CustomTrackRaceContext *context = CustomTrack_StandaloneContext(gt->levelID);
+	if (context)
 		retail = context->retail;
-	}
 #endif
 	int trophy = !(mode & (ADVENTURE_ARENA | ADVENTURE_BOSS | RELIC_RACE |
 	    CRYSTAL_CHALLENGE | ARCADE_MODE | TIME_TRIAL | BATTLE_MODE | MAIN_MENU |
 	    GAME_CUTSCENE)) && !(gt->gameMode2 & TOKEN_RACE);
 	if (!ctr_cfg_active() || !(mode & ADVENTURE_MODE)) return;
-	if (trophy && g_config.coopAdventure)
+	int crystal = (mode & CRYSTAL_CHALLENGE) &&
+	              !(mode & (ADVENTURE_CUP | ADVENTURE_ARENA | ADVENTURE_BOSS | RELIC_RACE |
+	                        ARCADE_MODE | TIME_TRIAL | BATTLE_MODE)) && !(gt->gameMode2 & TOKEN_RACE);
+	int splitCrystal = crystal && AP_CoopCrystalSupported(gt->levelID);
+#ifdef CTR_CUSTOM_TRACKS
+	if (context && (!context->retail || !context->crystal))
+		splitCrystal = 0;
+#endif
+	if ((trophy || splitCrystal) && g_config.coopAdventure)
 		AP_CoopRestorePreference();
 	int controllers = AP_CoopControllers();
 	int hub = (mode & ADVENTURE_ARENA) != 0;
@@ -572,7 +628,8 @@ void AP_CoopPrepareLoad(struct GameTracker *gt)
 	int specialRoster = trophy && retail && !(mode & ADVENTURE_CUP) &&
 	                    AP_CoopSpecialTrophyRoster(gt->levelID);
 	int two = !soloRetry && AP_CoopSeatsTwo(g_config.coopAdventure == 1, controllers, 1,
-	                                      trophy, retail && !specialRoster, (mode & ADVENTURE_CUP) != 0);
+	                                      trophy || splitCrystal, splitCrystal || (retail && !specialRoster),
+	                                      (mode & ADVENTURE_CUP) != 0);
 #ifdef CTR_CUSTOM_TRACKS
 	if (hub && g_config.coopAdventure && controllers == 2)
 		two = 1;
@@ -589,12 +646,14 @@ void AP_CoopPrepareLoad(struct GameTracker *gt)
 	if ((soloRetry || g_config.coopAdventure == 1) && !hub)
 	{
 		const char *reason = two ? (ap_coop_hard_race ? "Hard" : "Lenient") :
+		    capacityRetry ? "arena allocation" :
 		    soloRetry || controllers < 2 ? "controller unavailable" :
 		    specialRoster ? "special opponents" :
 		    !AP_CoopRacerUnlocked(racer) ? "racer locked" : "solo event";
-		AP_CoopLog("race seats", reason, gt->levelID, gt->numPlyrCurrGame);
+		AP_CoopLog(crystal ? "crystal seats" : "race seats", reason, gt->levelID, gt->numPlyrCurrGame);
 		if (!two)
-			AP_FeedNoticeLine(soloRetry || controllers < 2 ? "P2 DISCONNECTED: SOLO RACE" :
+			AP_FeedNoticeLine(capacityRetry ? "CRYSTAL ARENA RELOADING SOLO" :
+			    soloRetry || controllers < 2 ? "P2 DISCONNECTED: SOLO RACE" :
 			    specialRoster ? "SPECIAL OPPONENTS: SOLO RACE" :
 			    !AP_CoopRacerUnlocked(racer) ? "P2 RACER LOCKED: SOLO RACE" : "P2 SITS THIS RACE OUT");
 	}
@@ -618,8 +677,25 @@ void AP_CoopPrepareGrid(struct GameTracker *gt)
 
 void AP_CoopTick(struct GameTracker *gt)
 {
-	if (sdata && sdata->Loading.stage == LOAD_IDLE && (AP_CoopRace(gt) || AP_CoopHub(gt)) && gt->drivers[1])
+	if (sdata && sdata->Loading.stage == LOAD_IDLE && (AP_CoopDriving(gt) || AP_CoopHub(gt)) && gt->drivers[1])
 		AP_CharSwap_ApplyStatPackage(gt->drivers[1]);
+	if (AP_CoopCrystal(gt) && sdata->Loading.stage == LOAD_IDLE &&
+	    !(gt->gameMode1 & (LOADING | END_OF_RACE)) && gt->drivers[0] && gt->drivers[1])
+	{
+		if (!(gt->gameMode1 & (PAUSE_ALL | START_OF_RACE)) && gt->numCrystalsInLEV > 0 &&
+		    (AP_CrystalCount(gt, gt->drivers[0]) >= gt->numCrystalsInLEV ||
+		     gt->elapsedEventTime > AP_CoopCrystalTimeLimit(gt)))
+		{
+			for (int player = 0; player < 2; player++)
+			{
+				gt->drivers[player]->funcPtrs[DRIVER_FUNC_INIT] = VehPhysProc_FreezeEndEvent_Init;
+				gt->drivers[player]->actionsFlagSet |= ACTION_RACE_FINISHED;
+			}
+			MainGameEnd_Initialize();
+		}
+		else if (!AP_CoopP2Available())
+			AP_CoopReloadOnRetry(gt);
+	}
 	if (!gt || !(gt->gameMode1 & ADVENTURE_ARENA) ||
 	    (gt->gameMode1 & (ADVENTURE_CUP | MAIN_MENU | GAME_CUTSCENE)) ||
 	    sdata->Loading.stage != LOAD_IDLE) return;

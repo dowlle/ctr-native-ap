@@ -1,12 +1,11 @@
 #ifndef AP_COOP_LOGIC_H
 #define AP_COOP_LOGIC_H
 
-/* The first slice seats two humans only in retail, standalone Trophy Races.
- * Keep this policy independent of the engine so every refusal is testable. */
+/* Two seats require a supported retail event outside a cup. */
 static inline int AP_CoopSeatsTwo(int enabled, int controllers, int adventure,
-                                  int trophy, int retail, int cup)
+                                  int supportedEvent, int retail, int cup)
 {
-	return enabled && controllers >= 2 && adventure && trophy && retail && !cup;
+	return enabled && controllers >= 2 && adventure && supportedEvent && retail && !cup;
 }
 
 /* Unknown ranks never beat a known rank. Inputs and output are zero-based. */

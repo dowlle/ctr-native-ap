@@ -190,6 +190,9 @@ void UI_DrawNumCrystal(s16 posX, s16 posY, struct Driver *d)
 
 	gGT = sdata->gGT;
 	numCrystalsOwned = d->numCrystals;
+#ifdef CTR_AP
+	numCrystalsOwned = AP_CrystalCount(gGT, d);
+#endif
 	numCrystalsTotal = gGT->numCrystalsInLEV;
 
 	sprintf(&string[0], "%2.02d/%ld", numCrystalsOwned, CTR_PRINTF_PSX_LONG(numCrystalsTotal));

@@ -682,7 +682,7 @@ void AP_CharSwap_ApplyStatPackage(struct Driver *driver)
 	// editable package, Penta MAX table or class override over VehBirth_SetConsts.
 	if (!AP_CapabilityRoomStatsRace())
 		return;
-	if (driver->driverID != 0 && !(AP_CoopRace(gGT) && driver->driverID == 1))
+	if (driver->driverID != 0 && !(AP_CoopDriving(gGT) && driver->driverID == 1))
 		return; // local player only
 	if (gGT->drivers[driver->driverID] != driver)
 		return; // and only the real P1 driver object, never the ghost

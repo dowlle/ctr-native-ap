@@ -22,6 +22,7 @@ fixture = r'''
 #include "ap/ap_coop.h"
 struct sData sdata_static;
 struct OverlayDATA_232 D232;
+struct RectMenu menu221;
 static struct GameTracker tracker;
 static struct GamepadSystem pads;
 static struct RectMenu p2Menu;
@@ -36,6 +37,7 @@ int RngDeadCoed(struct RngDeadCoedState *state) { return 0; }
 int OtherFX_Play(u32 sound, int flags) { return 0; }
 int AP_SkipHints(void) { return 0; }
 int AP_CoopMenuOpen(void) { return 0; }
+int AP_CoopP2Available(void) { return 1; }
 int AP_CoopHubWarpDriver(const struct GameTracker *gt) { return warpPlayer; }
 void VehPhysProc_FreezeEndEvent_Init(struct Thread *t, struct Driver *d) {}
 
@@ -99,6 +101,17 @@ int main(void)
     pads.gamepad[1].buttonsTapped = BTN_TRIANGLE;
     RECTMENU_CollectInput();
     assert(RECTMENU_ProcessInput(selector) == -1);
+
+    tracker.gameMode1 = ADVENTURE_MODE | CRYSTAL_CHALLENGE | END_OF_RACE;
+    menu221.rows = rows;
+    sdata->ptrActiveMenu = sdata->activeSubMenu = &menu221;
+    pads.gamepad[0].buttonsHeldCurrFrame = 0;
+    pads.gamepad[1].buttonsTapped = BTN_DOWN;
+    RECTMENU_CollectInput();
+    assert(RECTMENU_ProcessInput(&menu221) == 0 && menu221.rowSelected == 1);
+    pads.gamepad[1].buttonsTapped = BTN_CROSS_one;
+    RECTMENU_CollectInput();
+    assert(RECTMENU_ProcessInput(&menu221) == 1);
 
     struct Driver drivers[2] = {0};
     tracker.drivers[0] = &drivers[0];

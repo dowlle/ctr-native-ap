@@ -56,12 +56,12 @@ int main(void){
   gt.levelID=levels[a];gt.numPlyrCurrGame=p;
   inst.instDef=&defs[AP_CrystalInstanceBase(a,p)+n];checked=0;
   assert(AP_CrystalPickupCode(&ctr_crystal_checks,gt.levelID,p,AP_CrystalInstanceBase(a,p)+n)==35028400+20*a+n);
-  AP_NotifyCrystalPickup(&inst,0);
-  assert(sent==before+(p==1));
-  if(p==1)assert(sentCode==35028400+20*a+n);
-  AP_NotifyCrystalPickup(&inst,0);assert(sent==before+(p==1));
+  AP_NotifyCrystalPickup(&inst,p==2 ? n%2 : 0);
+  assert(sent==before+(p<=2));
+  if(p<=2)assert(sentCode==35028400+20*a+n);
+  AP_NotifyCrystalPickup(&inst,0);assert(sent==before+(p<=2));
  }
- assert(sent==80&&feed==sent&&perf==sent&&ap_state_gen==sent);
+ assert(sent==160&&feed==sent&&perf==sent&&ap_state_gen==sent);
  gt.levelID=21;gt.numPlyrCurrGame=1;inst.instDef=&defs[8];checked=0;
  #define NO_SEND(statement) do { int before=sent;statement;AP_NotifyCrystalPickup(&inst,0);assert(sent==before); } while(0)
  NO_SEND(active=0);active=1;
@@ -81,7 +81,9 @@ int main(void){
    }
    gt.gameMode1=ADVENTURE_MODE|CRYSTAL_CHALLENGE;
  }
+ gt.gameMode1|=BATTLE_MODE;
  for(int players=2;players<=4;players++){NO_SEND(gt.numPlyrCurrGame=players);}
+ gt.gameMode1=ADVENTURE_MODE|CRYSTAL_CHALLENGE;
  gt.numPlyrCurrGame=1;
  NO_SEND(gt.levelID=20);gt.levelID=21;
  NO_SEND(gt.numPlyrCurrGame=0);gt.numPlyrCurrGame=1;
@@ -107,4 +109,4 @@ branch = collision.index('if (modelID == DYNAMIC_PLAYER)')
 hook = collision.index('AP_NotifyCrystalPickup(crystalInst, driver->driverID);')
 hud = collision.index('driver->PickupWumpaHUD.numCollected++;')
 assert branch < hook < hud
-print('Crystal pickup production dispatch passed (320 authored identities, 80 single-player sends, multiplayer refusals and guards)')
+print('Crystal pickup dispatch passed (320 identities, 80 solo and 80 co-op sends, dedup and mode guards)')

@@ -28,11 +28,37 @@ static inline int AP_CoopRace(const struct GameTracker *gt)
 	                          TIME_TRIAL | BATTLE_MODE | MAIN_MENU | GAME_CUTSCENE)) &&
 	       !(gt->gameMode2 & TOKEN_RACE);
 }
+static inline int AP_CoopCrystal(const struct GameTracker *gt)
+{
+	return gt && gt->numPlyrCurrGame == 2 &&
+	       (gt->gameMode1 & (ADVENTURE_MODE | CRYSTAL_CHALLENGE)) ==
+	           (ADVENTURE_MODE | CRYSTAL_CHALLENGE) &&
+	       !(gt->gameMode1 & (ADVENTURE_ARENA | ADVENTURE_CUP | ADVENTURE_BOSS |
+	                         RELIC_RACE | ARCADE_MODE | TIME_TRIAL | BATTLE_MODE |
+	                         MAIN_MENU | GAME_CUTSCENE)) && !(gt->gameMode2 & TOKEN_RACE);
+}
+
+static inline int AP_CoopDriving(const struct GameTracker *gt)
+{
+	return AP_CoopRace(gt) || AP_CoopCrystal(gt);
+}
+
+static inline int AP_CrystalCount(const struct GameTracker *gt, const struct Driver *driver)
+{
+	if (AP_CoopCrystal(gt))
+		return (gt->drivers[0] ? gt->drivers[0]->numCrystals : 0) +
+		       (gt->drivers[1] ? gt->drivers[1]->numCrystals : 0);
+	return driver ? driver->numCrystals : 0;
+}
+
+int AP_CoopCrystalTimeLimit(const struct GameTracker *gt);
+int AP_CoopCrystalFallback(struct GameTracker *gt);
+void AP_CoopCrystalLogResult(const struct GameTracker *gt);
 static inline int AP_IsSlotHuman(const struct GameTracker *gt, const struct Driver *driver)
 {
 	if (!gt || !driver) return 0;
 	if (driver != gt->drivers[0] &&
-	    !((AP_CoopRace(gt) || AP_CoopHub(gt)) && driver == gt->drivers[1])) return 0;
+	    !((AP_CoopDriving(gt) || AP_CoopHub(gt)) && driver == gt->drivers[1])) return 0;
 	return !(driver->actionsFlagSet & ACTION_BOT);
 }
 int AP_CoopHardRace(void);
@@ -67,7 +93,8 @@ void AP_CoopPrepareLoad(struct GameTracker *gt);
 int AP_CoopP2Available(void);
 int AP_CoopReloadOnRetry(struct GameTracker *gt);
 int AP_CoopHubAvailable(const struct GameTracker *gt);
-int AP_CoopPadReady(int level);
+int AP_CoopCrystalSupported(int level);
+int AP_CoopPadReady(int level, int crystal);
 void AP_CoopCapturePadRules(void);
 void AP_CoopConfirmPad(void);
 void AP_CoopPrepareGrid(struct GameTracker *gt);

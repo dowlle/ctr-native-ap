@@ -203,6 +203,8 @@ static void MainGameEnd_UpdateAdventureLosses(struct GameTracker *gGT, struct Dr
 
 	if (
 #ifdef CTR_AP
+	    AP_CoopCrystal(gGT) ? !AP_RaceAttemptIsForcedLoss() &&
+	                         AP_CrystalCount(gGT, player) >= gGT->numCrystalsInLEV :
 	    AP_CoopRace(gGT) ? AP_CoopWon(gGT) :
 #endif
 	    player->driverRank == 0)
@@ -589,6 +591,7 @@ void MainGameEnd_Initialize(void)
 		// race_loss DeathLink: send the game's own loss result (never a received
 		// death's forced loss: the latch is already armed then).
 		AP_DeathLinkOnRaceEnd(gGT, player);
+		AP_CoopCrystalLogResult(gGT);
 #endif
 
 		gGT->gameMode1 |= END_OF_RACE;
@@ -614,6 +617,10 @@ void MainGameEnd_Initialize(void)
 		MainGameEnd_FinalizeDriverClocks(gGT);
 
 		UI_VsQuipAssignAll();
+#ifdef CTR_AP
+		if (AP_CoopCrystal(gGT))
+			gGT->timerEndOfRaceVS = 0;
+#endif
 		SubmitName_RestoreName(2);
 
 		if ((gGT->gameMode1 & (RELIC_RACE | TIME_TRIAL)) != 0)

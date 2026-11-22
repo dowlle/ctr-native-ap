@@ -28,6 +28,15 @@ static int savePending, saveLost;
 static s16 requestedLevel = -1;
 static int gridSize = 8;
 static int pendingPadRemoval;
+static int crystalResults;
+void MainGameEnd_Initialize(void)
+{
+	struct GameTracker *gt = sdata->gGT;
+	assert((gt->drivers[0]->actionsFlagSet & ACTION_RACE_FINISHED) &&
+	       (gt->drivers[1]->actionsFlagSet & ACTION_RACE_FINISHED));
+	gt->gameMode1 |= END_OF_RACE;
+	crystalResults++;
+}
 static enum { STOCK_ROSTER, HIT_GUEST, HELD_BOSS, GAUNTLET_ONLY } roster;
 int AP_HitEncounterShouldApply(int adventure, int level, int cup, int boss,
                                int arcade, int relic, int token, int crystal, int players)
@@ -224,11 +233,11 @@ static void testDelayedPreference(struct GameTracker *gt)
 	assert(g_config.coopAdventure && assignedPartner == 102 && writes == before);
 	u64 previousDevice = p2Device;
 	p2Device = 0;
-	assert(AP_CoopPadReady(CRASH_COVE)); /* A missing partner can still start a solo race. */
+	assert(AP_CoopPadReady(CRASH_COVE, 0)); /* A missing partner can still start a solo race. */
 	p2Device = assignedPartner;
 	sdata->gGamepads->gamepadsConnectedByFlag = 3;
 	AP_CoopCapturePadRules();
-	assert(!AP_CoopPadReady(CRASH_COVE));
+	assert(!AP_CoopPadReady(CRASH_COVE, 0));
 	AP_CoopRulesStep(0);
 	assert(!g_config.coopRules && writes == before);
 	gt->levelID = CRASH_COVE;
@@ -237,7 +246,7 @@ static void testDelayedPreference(struct GameTracker *gt)
 	{
 		roster = seed;
 		int special = seed != GAUNTLET_ONLY;
-		assert(AP_CoopPadReady(CRASH_COVE) == special);
+		assert(AP_CoopPadReady(CRASH_COVE, 0) == special);
 		AP_CoopPrepareLoad(gt);
 		assert(gt->numPlyrCurrGame == (special ? 1 : 2));
 		if (special)
@@ -261,15 +270,15 @@ static void testDelayedPreference(struct GameTracker *gt)
 	assert(writes == before + 1);
 	savePending = 1;
 	AP_CoopCapturePadRules();
-	assert(!AP_CoopPadReady(CRASH_COVE) && strstr(AP_CoopHelp(), "Waiting"));
+	assert(!AP_CoopPadReady(CRASH_COVE, 0) && strstr(AP_CoopHelp(), "Waiting"));
 	savePending = 0;
 	saveLost = 1;
-	assert(AP_CoopPadReady(CRASH_COVE) && strstr(AP_CoopHelp(), "not saved"));
+	assert(AP_CoopPadReady(CRASH_COVE, 0) && strstr(AP_CoopHelp(), "not saved"));
 	saveLost = 0;
 	AP_CoopCapturePadRules(); /* Confirm Lenient on entering the beam. */
 	known = 0;
 	AP_CoopConnectReset();
-	assert(AP_CoopPadReady(CRASH_COVE)); /* Reconnect while the kart is warping. */
+	assert(AP_CoopPadReady(CRASH_COVE, 0)); /* Reconnect while the kart is warping. */
 	AP_CoopConfirmPad();
 	gt->gameMode1 = ADVENTURE_MODE;
 	AP_CoopPrepareLoad(gt);
@@ -299,6 +308,54 @@ static void testDelayedPreference(struct GameTracker *gt)
 	AP_CoopMenuTick(gt);
 	assert(g_config.coopRacer == AP_CoopNextRacer(-1, 1) && writes == before + 1);
 	assert(!strcmp(ap_coop_notice, "CO-OP SETTINGS NOT SAVED"));
+}
+
+static void testCrystals(struct GameTracker *gt)
+{
+	struct ControllerPacket pad = {.plugged = PLUGGED};
+	sdata->gGamepads->gamepad[1].ptrControllerPacket = &pad;
+	sdata->gGamepads->gamepadsConnectedByFlag = 3;
+	p2Device = ap_coop_joined_device = 101;
+	g_config.coopAdventure = 1;
+	gt->originalEventTime = 79681;
+	gt->numCrystalsInLEV = 20;
+	gt->levelID = SKULL_ROCK;
+	gt->prevLEV = N_SANITY_BEACH;
+	for (int hard = 0; hard < 2; hard++)
+	{
+		gt->gameMode1 = ADVENTURE_MODE | CRYSTAL_CHALLENGE;
+		gt->drivers[0]->actionsFlagSet = gt->drivers[1]->actionsFlagSet = 0;
+		ap_coop_entry_rules = hard;
+		AP_CoopPrepareLoad(gt);
+		assert(AP_CoopCrystal(gt) && AP_CoopHardRace() == hard);
+		int limit = AP_CoopCrystalTimeLimit(gt);
+		assert(limit == (hard ? 47808 : 79681));
+		assert(AP_IsSlotHuman(gt, gt->drivers[1]));
+		gt->drivers[0]->numCrystals = 8;
+		gt->drivers[1]->numCrystals = hard ? 11 : 12;
+		gt->elapsedEventTime = limit;
+		AP_CoopTick(gt);
+		assert(crystalResults == 1);
+		if (hard)
+		{
+			assert(!(gt->gameMode1 & END_OF_RACE));
+			gt->elapsedEventTime++;
+			AP_CoopTick(gt);
+		}
+		assert(gt->gameMode1 & END_OF_RACE);
+		AP_CoopTick(gt);
+		assert(crystalResults == hard + 1);
+	}
+	gt->gameMode1 = ADVENTURE_MODE | CRYSTAL_CHALLENGE;
+	gt->elapsedEventTime = 100;
+	p2Device = 0;
+	AP_CoopTick(gt);
+	assert(requestedLevel == SKULL_ROCK);
+	AP_CoopPrepareLoad(gt);
+	assert(gt->numPlyrCurrGame == 1 && gt->prevLEV == N_SANITY_BEACH);
+	assert(AP_CoopCrystalTimeLimit(gt) == 79681 &&
+	       AP_CrystalCount(gt, gt->drivers[0]) == 8);
+	assert(strstr(notice, "P2 DISCONNECTED"));
 }
 
 int main(void)
@@ -449,7 +506,9 @@ int main(void)
 	g_config.coopRules = 0;
 	testHubMenu(&gt);
 	testDelayedPreference(&gt);
+	testCrystals(&gt);
 	puts("PASS co-op production: seating, 162 rank pairs, Hard podium, Retry, storage and grid");
 	puts("PASS P2 hub controls: notice, owner, immediate join, Back, racer change, drop out, race/cup/load refusal");
+	puts("PASS co-op crystals: pooled result, timeout, preset rounding and solo reload");
 	return 0;
 }

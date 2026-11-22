@@ -451,6 +451,16 @@ static unsigned AP_TrapConditions(struct GameTracker *gGT, struct Driver *local,
 	    !AP_TrapFruitProtected(gGT, local))
 		bits |= AP_TRAP_COND_TWO_WUMPA;
 
+	if (AP_CoopCrystal(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]) &&
+	    !AP_TrapFruitProtected(gGT, gGT->drivers[1]))
+	{
+		struct Driver *partner = gGT->drivers[1];
+		if (partner->numWumpas >= AP_TRAP_JUICED_WUMPA)
+			bits |= AP_TRAP_COND_TEN_WUMPA;
+		if (AP_TrapWumpaLeakAmount(AP_WumpaRaceCount(partner)) > 0)
+			bits |= AP_TRAP_COND_TWO_WUMPA;
+	}
+
 	if (AP_TrapEligibleCrates(epoch))
 		bits |= AP_TRAP_COND_ELIGIBLE_CRATES;
 
@@ -871,7 +881,18 @@ static void AP_TrapPollSpawnedInstants(struct GameTracker *gGT, struct Driver *l
 		if (effect == AP_TRAP_WARPBALL_AMBUSH)
 			done = AP_TrapFireWarpball(gGT, local);
 		else if (effect == AP_TRAP_NITRO || effect == AP_TRAP_RED_POTION)
-			done = AP_TrapApplyHazardHit(local, effect);
+		{
+			if ((g_trap_spawn_pending[effect] & 1u) && AP_TrapApplyHazardHit(local, effect))
+				g_trap_spawn_pending[effect] &= ~1u;
+			if (g_trap_spawn_pending[effect] & 2u)
+			{
+				struct Driver *partner = gGT->drivers[1];
+				if (!AP_CoopP2Available() || (AP_TrapCanActNow(gGT, partner) &&
+				    AP_TrapApplyHazardHit(partner, effect)))
+					g_trap_spawn_pending[effect] &= ~2u;
+			}
+			done = !g_trap_spawn_pending[effect];
+		}
 		if (done)
 		{
 			g_trap_spawn_pending[effect] = 0;
@@ -935,6 +956,9 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, i
 		// normal hit. The predicate has already established that nothing is
 		// protecting the fruit, so this genuinely takes it.
 		RB_Player_ModifyWumpa(local, -AP_WumpaRaceCount(local));
+		if (AP_CoopCrystal(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]) &&
+		    !AP_TrapFruitProtected(gGT, gGT->drivers[1]))
+			RB_Player_ModifyWumpa(gGT->drivers[1], -AP_WumpaRaceCount(gGT->drivers[1]));
 		AP_NavRec_NoteKartEffect();
 		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_WUMPA_WIPEOUT);
 		break;
@@ -960,6 +984,10 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, i
 		// and the mask veto behave as for a normal hit. Half, rounded down: 11
 		// fruit leave 6.
 		RB_Player_ModifyWumpa(local, -AP_TrapWumpaLeakAmount(AP_WumpaRaceCount(local)));
+		if (AP_CoopCrystal(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]) &&
+		    !AP_TrapFruitProtected(gGT, gGT->drivers[1]))
+			RB_Player_ModifyWumpa(gGT->drivers[1],
+			    -AP_TrapWumpaLeakAmount(AP_WumpaRaceCount(gGT->drivers[1])));
 		AP_NavRec_NoteKartEffect();
 		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_WUMPA_LEAK);
 		break;
@@ -974,9 +1002,11 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, i
 			AP_TrapFlattenStageLanded(&g_trap_flatten, AP_TRAP_FLATTEN_GRACE_MS);
 		break;
 	case AP_TRAP_WARPBALL_AMBUSH:
+		g_trap_spawn_pending[effect] = 1;
+		break;
 	case AP_TRAP_NITRO:
 	case AP_TRAP_RED_POTION:
-		g_trap_spawn_pending[effect] = 1;
+		g_trap_spawn_pending[effect] = AP_CoopCrystal(gGT) ? 3 : 1;
 		AP_TrapPollSpawnedInstants(gGT, local);
 		break;
 	default:
@@ -1215,17 +1245,19 @@ static void AP_TrapApplyCamera(struct GameTracker *gGT, int wantFP)
 {
 	if (gGT == 0)
 		return;
-	if (wantFP)
+	unsigned mask = wantFP ? (AP_CoopCrystal(gGT) ? 3u : 1u) : 0u;
+	for (int player = 0; player < 2; player++)
 	{
-		gGT->cameraDC[0].cameraMode = AP_CAM_FIRSTPERSON;
-		g_fp_applied = 1;
+		unsigned seat = 1u << player;
+		if (mask & seat)
+			gGT->cameraDC[player].cameraMode = AP_CAM_FIRSTPERSON;
+		else if (g_fp_applied & seat)
+		{
+			gGT->cameraDC[player].cameraMode = AP_CAM_CHASE;
+			gGT->cameraDC[player].flags |= CAMERA_FLAG_DIRECTION_CHANGED;
+		}
 	}
-	else if (g_fp_applied)
-	{
-		gGT->cameraDC[0].cameraMode = AP_CAM_CHASE;
-		gGT->cameraDC[0].flags |= CAMERA_FLAG_DIRECTION_CHANGED;
-		g_fp_applied = 0;
-	}
+	g_fp_applied = mask;
 }
 
 static void AP_TrapApplyWireframe(int wantWireframe)
@@ -1489,6 +1521,8 @@ void AP_TrapTick(struct GameTracker *gGT)
 	AP_DemoCamSetTrapActive(g_active[AP_TRAP_DEMO_CAMERA]);
 	AP_TrapApplyWireframe(AP_TrapEffectVisible(g_active[AP_TRAP_WIREFRAME], w.paused));
 	AP_TrapApplyBoostBlocker(local, g_active[AP_TRAP_BOOST_BLOCKER]);
+	if (AP_CoopCrystal(gGT))
+		AP_TrapApplyBoostBlocker(gGT->drivers[1], g_active[AP_TRAP_BOOST_BLOCKER]);
 	AP_TrapClampWeakenedFire(local);
 }
 

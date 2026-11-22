@@ -96,7 +96,7 @@ int AP_LocationChecksAllowed(void)
 {
 	// Versus sets no mode bit of its own. The menu can retain RELIC_RACE,
 	// so its two-to-four-player races also need an explicit player-count guard.
-	return sdata && sdata->gGT && (sdata->gGT->numPlyrCurrGame == 1 || AP_CoopRace(sdata->gGT)) &&
+	return sdata && sdata->gGT && (sdata->gGT->numPlyrCurrGame == 1 || AP_CoopDriving(sdata->gGT)) &&
 	       AP_WumpaBankRaceMode(sdata->gGT->gameMode1);
 }
 

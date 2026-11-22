@@ -780,6 +780,11 @@ void RECTMENU_CollectInput()
 	activeSub = sdata->activeSubMenu;
 
 	numListen = sdata->gGT->numPlyrNextGame;
+#ifdef CTR_AP
+	if (AP_CoopCrystal(sdata->gGT) && (sdata->gGT->gameMode1 & END_OF_RACE) &&
+	    AP_CoopP2Available())
+		numListen = 2;
+#endif
 
 	if ((activeSub != NULL) && ((activeSub->state & ALL_PLAYERS_USE_MENU) != 0))
 	{
@@ -841,7 +846,14 @@ int RECTMENU_ProcessInput(struct RectMenu *m)
 	button = sdata->AnyPlayerTap;
 
 	// if only P1 can use menu
-	if ((m->state & ALL_PLAYERS_USE_MENU) == 0)
+#ifdef CTR_AP
+	extern struct RectMenu menu221;
+	int sharedCrystalResult = m == &menu221 && AP_CoopCrystal(sdata->gGT) &&
+	                          (sdata->gGT->gameMode1 & END_OF_RACE);
+#else
+	int sharedCrystalResult = 0;
+#endif
+	if ((m->state & ALL_PLAYERS_USE_MENU) == 0 && !sharedCrystalResult)
 	{
 #ifdef CTR_AP
 		inputPlayer = AH_WarpPad_CoopMenuPlayer(m);

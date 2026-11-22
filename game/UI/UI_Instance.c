@@ -224,6 +224,15 @@ void UI_INSTANCE_InitAll(void)
 	// If you're in Crystal Challenge
 	if ((gameMode1 & CRYSTAL_CHALLENGE) != 0)
 	{
+#ifdef CTR_AP
+		if (AP_CoopCrystal(gGT))
+		{
+			// The split HUD and common results use the same text count.
+			// The retail constructor would create an icon in each viewport.
+			sdata->ptrMenuCrystal = sdata->ptrHudCrystal = sdata->ptrToken = NULL;
+			return;
+		}
+#endif
 		sdata->ptrMenuCrystal = UI_INSTANCE_BirthWithThread(0x60, (int)UI_ThTick_Reward, 0x11, 0, 0, (int)rdata.s_crystal1);
 		sdata->ptrHudCrystal = UI_INSTANCE_BirthWithThread(0x60, (int)UI_ThTick_Reward, 0x11, 0, 0, (int)rdata.s_crystal1);
 

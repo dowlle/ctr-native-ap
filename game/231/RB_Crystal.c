@@ -40,6 +40,18 @@ int RB_Crystal_ThCollide(struct Thread *crystalTh, struct Thread *driverTh, void
 		// get driver object, get screen coords
 		driver = driverTh->object;
 #ifdef CTR_AP
+		struct GameTracker *gt = sdata->gGT;
+		if (AP_CoopCrystal(gt))
+		{
+			if (!AP_IsSlotHuman(gt, driver) ||
+			    (gt->gameMode1 & (PAUSE_ALL | START_OF_RACE | END_OF_RACE)) ||
+			    gt->trafficLightsTimer > 0 || gt->elapsedEventTime > AP_CoopCrystalTimeLimit(gt))
+				return 0;
+			driver->numCrystals++;
+			OtherFX_Play(0x42, 1);
+			AP_NotifyCrystalPickup(crystalInst, driver->driverID);
+			goto collected;
+		}
         AP_NotifyCrystalPickup(crystalInst, driver->driverID);
 #endif
 		pb = &sdata->gGT->pushBuffer[driver->driverID];
@@ -52,6 +64,9 @@ int RB_Crystal_ThCollide(struct Thread *crystalTh, struct Thread *driverTh, void
 		driver->PickupWumpaHUD.numCollected++;
 	}
 
+#ifdef CTR_AP
+collected:
+#endif
 	CTR_WriteU32LE(&crystalInst->scale.x, 0);
 	crystalInst->scale.z = 0;
 	crystalInst->thread = 0;

@@ -23,7 +23,9 @@ void AP_NavRec_NoteKartEffect(void) { recorder_effects++; }
 '''
 fixture += modify
 fixture += "\n#define AP_TrapSchedEffectDone(a,b) ((void)0)\n"
-fixture += "static void wipeout(struct Driver *local) {\n" + effect + "\n}\n"
+start = traps.index("static int AP_TrapFruitProtected(")
+fixture += traps[start:traps.index("\n}\n", start) + 3]
+fixture += "static void wipeout(struct Driver *local) {\nstruct GameTracker *gGT = sdata->gGT;\n" + effect + "\n}\n"
 fixture += r'''
 #include <assert.h>
 int main(void) {
@@ -53,6 +55,15 @@ int main(void) {
     assert(credited == 80); /* A finish cannot bank the wiped fruit. */
     gt.gameMode1 = ARCADE_MODE; d.numWumpas = 10;
     wipeout(&d); assert(d.numWumpas == 0); /* Legacy capped helper still works. */
+    struct Driver partner = {0};
+    gt.drivers[1] = &partner;
+    gt.numPlyrCurrGame = 2;
+    gt.gameMode1 = ADVENTURE_MODE | CRYSTAL_CHALLENGE;
+    g_race_wumpa = 11;
+    d.numWumpas = 10;
+    partner.numWumpas = 10;
+    wipeout(&d);
+    assert(d.numWumpas == 0 && partner.numWumpas == 0);
     puts("PASS: production Wipeout clears the full race count and respects protection and banking");
 }
 '''

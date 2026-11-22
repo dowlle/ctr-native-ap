@@ -543,7 +543,7 @@ static void AP_FeedDrawRaceAt(int y)
 
 	if (!ctr_cfg_active() || !AP_HubFeedOn())
 		return;
-	if (gGT->numPlyrCurrGame != 1 && !AP_CoopRace(gGT))
+	if (gGT->numPlyrCurrGame != 1 && !AP_CoopDriving(gGT))
 		return;
 	if ((gGT->gameMode1 & PAUSE_ALL) != 0)
 		return;
@@ -569,7 +569,7 @@ void AP_FeedDrawResults(void)
 
 	if (!ctr_cfg_active() || !AP_HubFeedOn())
 		return;
-	if (gGT->numPlyrCurrGame != 1 && !AP_CoopRace(gGT))
+	if (gGT->numPlyrCurrGame != 1 && !AP_CoopDriving(gGT))
 		return;
 	if ((gGT->gameMode1 & PAUSE_ALL) != 0)
 		return;

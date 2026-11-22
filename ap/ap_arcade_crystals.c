@@ -5,6 +5,7 @@
 #include "ap_hooks.h"
 #include "ap_content_plan.h"
 #include "ap_arena_content.h"
+#include "ap_coop.h"
 #include "ap_trial_letter_logic.h"
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
@@ -29,7 +30,7 @@ const ctr_content_pad *AP_ContentCrystalPad(void)
        (g->gameMode1 & (ADVENTURE_MODE|CRYSTAL_CHALLENGE)) != (ADVENTURE_MODE|CRYSTAL_CHALLENGE) ||
        (g->gameMode1 & (ARCADE_MODE|ADVENTURE_CUP|ADVENTURE_BOSS|ADVENTURE_ARENA|RELIC_RACE|MAIN_MENU|BATTLE_MODE)) ||
        (g->gameMode2 & TOKEN_RACE) ||
-       g->numPlyrCurrGame!=1) return NULL;
+       (g->numPlyrCurrGame!=1 && !AP_CoopCrystal(g))) return NULL;
     c=CustomTrack_StandaloneContext(g->levelID);
     if(!c || !c->crystal || !c->retail || !c->seedEpoch || c->seedEpoch!=ap_content_plan_epoch())return NULL;
     p=ap_content_plan_pad(c->physicalPad);
@@ -59,19 +60,22 @@ static void AP_ArcadeCrystalTick(struct Thread *t)
     if(i<0 || !AP_ContentCrystalPad())return;
     RB_Crystal_ThTick(t);
     if(sdata->Loading.stage!=LOAD_IDLE || (g->gameMode1 & (PAUSE_ALL|START_OF_RACE|END_OF_RACE)))return;
-    d=g->drivers[0];
-    if(!d || !d->instSelf || !d->instSelf->thread ||
-       (d->actionsFlagSet & (ACTION_RACE_FINISHED|ACTION_WARP)))return;
-    prev.x=(s16)CTR_MipsAddLo(CTR_MipsSra(d->posPrev.x,8),d->originToCenter.x);
-    prev.y=(s16)CTR_MipsAddLo(CTR_MipsSra(d->posPrev.y,8),d->originToCenter.y);
-    prev.z=(s16)CTR_MipsAddLo(CTR_MipsSra(d->posPrev.z,8),d->originToCenter.z);
-    curr.x=(s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.x,8),d->originToCenter.x);
-    curr.y=(s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.y,8),d->originToCenter.y);
-    curr.z=(s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.z,8),d->originToCenter.z);
-    if(AP_TrialLetterHit(&prev,&curr,&ap_arcade_boxes[i])) {
-        struct ScratchpadStruct collision={0};
-        collision.Input1.modelID=DYNAMIC_PLAYER;
-        RB_Crystal_LInC(t->inst,d->instSelf->thread,&collision);
+    for (int player = 0; player < g->numPlyrCurrGame; player++) {
+        d=g->drivers[player];
+        if(!d || !d->instSelf || !d->instSelf->thread ||
+           (d->actionsFlagSet & (ACTION_RACE_FINISHED|ACTION_WARP)))continue;
+        prev.x=(s16)CTR_MipsAddLo(CTR_MipsSra(d->posPrev.x,8),d->originToCenter.x);
+        prev.y=(s16)CTR_MipsAddLo(CTR_MipsSra(d->posPrev.y,8),d->originToCenter.y);
+        prev.z=(s16)CTR_MipsAddLo(CTR_MipsSra(d->posPrev.z,8),d->originToCenter.z);
+        curr.x=(s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.x,8),d->originToCenter.x);
+        curr.y=(s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.y,8),d->originToCenter.y);
+        curr.z=(s16)CTR_MipsAddLo(CTR_MipsSra(d->posCurr.z,8),d->originToCenter.z);
+        if(AP_TrialLetterHit(&prev,&curr,&ap_arcade_boxes[i])) {
+            struct ScratchpadStruct collision={0};
+            collision.Input1.modelID=DYNAMIC_PLAYER;
+            if (RB_Crystal_LInC(t->inst,d->instSelf->thread,&collision))
+                return;
+        }
     }
 }
 
@@ -122,6 +126,7 @@ void AP_ArcadeCrystals_OnFrame(struct GameTracker *g)
     if(ap_arcade_failed && sdata->Loading.stage==LOAD_IDLE) {
         const ctr_content_pad *p=AP_ContentCrystalPad();
         ap_arcade_failed=0;
+        if (AP_CoopCrystalFallback(g)) return;
         sdata->Loading.OnBegin.RemBitsConfig0 |= CRYSTAL_CHALLENGE;
         sdata->Loading.OnBegin.AddBitsConfig0 |= ADVENTURE_ARENA;
         MainRaceTrack_RequestLoad(p?p->hub:26);
@@ -135,7 +140,8 @@ void AP_NotifyContentCrystalPickup(struct Instance *inst,int driverID)
     struct GameTracker *g=sdata->gGT;
     int i,index=-1;
     long code;
-    if(!p || p->crystal_count!=20 || driverID!=0 || !inst || !inst->instDef || !g->level1)return;
+    if(!p || p->crystal_count!=20 || (driverID!=0 && !(driverID==1 && AP_CoopCrystal(g))) ||
+       !inst || !inst->instDef || !g->level1)return;
     if(AP_ArcadeArenaIndex(g->levelID)>=0)index=AP_ArcadeCrystalIndex(inst);
     else if(g->level1->ptrInstDefs) {
         int base=AP_CrystalInstanceBase(AP_CrystalArenaIndex(g->levelID),g->numPlyrCurrGame);
@@ -151,7 +157,7 @@ int AP_NotifyContentCrystalComplete(void)
 {
     const ctr_content_pad *p=AP_ContentCrystalPad();
     struct GameTracker *g=sdata->gGT;
-    if(!p || !g->drivers[0] || g->numCrystalsInLEV!=20 || g->drivers[0]->numCrystals<20 ||
+    if(!p || !g->drivers[0] || g->numCrystalsInLEV!=20 || AP_CrystalCount(g,g->drivers[0])<20 ||
        (AP_ArcadeArenaIndex(g->levelID)>=0 && (ap_arcade_failed || ap_arcade_epoch!=ap_content_plan_epoch())) ||
        AP_RaceAttempt_ProducerBlocked(AP_RESULT_PRODUCER_ADV_REWARD))return 0;
     return AP_EmitClassCheck((long)p->trophy_location,0,-1,-1,1,

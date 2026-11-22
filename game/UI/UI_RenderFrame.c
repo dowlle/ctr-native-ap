@@ -999,6 +999,26 @@ void UI_RenderFrame_CrystChall(void)
 	int iVar5;
 	SVec2 crystalPos;
 
+#ifdef CTR_AP
+	if (AP_CoopCrystal(gGT))
+	{
+		const struct UiElement2D *hud = data.hudStructPtr[1];
+		for (int i = 0; i < 2; i++, hud += 0x14)
+		{
+			struct Driver *driver = gGT->drivers[i];
+			const RECT *view = &gGT->pushBuffer[i].rect;
+			if (!driver)
+				continue;
+			DecalFont_DrawLine("CRYSTALS", view->x + 20, view->y + 28, FONT_SMALL, ORANGE);
+			UI_DrawNumCrystal(view->x + 20, view->y + 37, driver);
+			UI_DrawLimitClock(view->x + 20, view->y + 12, FONT_SMALL);
+			UI_Weapon_DrawSelf(hud[0].x, hud[0].y, hud[0].scale, driver);
+		}
+		AP_FeedDrawRace();
+		return;
+	}
+#endif
+
 	player = gGT->drivers[0];
 	hudStructPtr = data.hudStructPtr[0];
 	hudCrystal = sdata->ptrHudCrystal;
@@ -1181,7 +1201,7 @@ void UI_RenderFrame_Wumpa3D_2P3P4P(struct GameTracker *gGT)
 #ifdef CTR_AP
 	// Adventure hubs draw the shared wallet as text. They never populate
 	// the offscreen texture that the multiplayer race HUD copies here.
-	if (AP_CoopHub(gGT))
+	if (AP_CoopHub(gGT) || AP_CoopCrystal(gGT))
 		return;
 #endif
 	RECT viewport2P;

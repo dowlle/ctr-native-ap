@@ -16,7 +16,8 @@ void AP_NotifyCrystalPickup(struct Instance *inst, int driverID)
     struct GameTracker *gGT = sdata->gGT;
     int index=-1, i;
     long code;
-    if (!ctr_cfg_active() || ctr_crystal_checks.state != 1 || driverID != 0 ||
+    if (!ctr_cfg_active() || ctr_crystal_checks.state != 1 ||
+        (driverID != 0 && !(driverID == 1 && AP_CoopCrystal(gGT))) ||
         !gGT || (gGT->gameMode1 & (ADVENTURE_MODE | CRYSTAL_CHALLENGE)) !=
                     (ADVENTURE_MODE | CRYSTAL_CHALLENGE) || !gGT->level1 || !inst ||
         !inst->instDef || !gGT->level1->ptrInstDefs) return;

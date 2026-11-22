@@ -506,6 +506,10 @@ void UI_DrawLimitClock(s16 posX, s16 posY, s16 fontType)
 	// amount of time event should last, minus, time elapsed in the event.
 	// basically, time remaining in the event
 	timeRemaining = gGT->originalEventTime - gGT->elapsedEventTime;
+#ifdef CTR_AP
+	if (AP_CoopCrystal(gGT))
+		timeRemaining = AP_CoopCrystalTimeLimit(gGT) - gGT->elapsedEventTime;
+#endif
 
 	// if you run out of time
 	if (timeRemaining < 0)
@@ -514,7 +518,11 @@ void UI_DrawLimitClock(s16 posX, s16 posY, s16 fontType)
 		str = RECTMENU_DrawTime(0);
 
 		// If you're not in End-Of-Race menu
-		if ((gGT->gameMode1 & END_OF_RACE) == 0)
+		if ((gGT->gameMode1 & END_OF_RACE) == 0
+#ifdef CTR_AP
+		    && !AP_CoopCrystal(gGT)
+#endif
+		)
 		{
 			// dont check if numPlyrCurrGame != 0,
 			// when would that ever be false

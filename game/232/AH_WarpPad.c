@@ -493,7 +493,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	int x, y, z, dist;
 	int padPlayer = 0;
 #ifdef CTR_AP
-	int coopTrophy = 0;
+	int coopEvent = 0;
 #endif
 	char *warppadLNG;
 
@@ -1402,9 +1402,9 @@ void AH_WarpPad_ThTick(struct Thread *t)
 		}
 		else if (!pad->crystal)
 			mode = pad->modes[0];
-		coopTrophy = !pad->cup && !pad->crystal && !pad->cortex && pad->retail_id >= 0 &&
-		             mode == AP_CONTENT_MODE_TROPHY;
-		if (coopTrophy && !AP_CoopPadReady(pad->retail_id))
+		coopEvent = !pad->cup && !pad->cortex && pad->retail_id >= 0 &&
+		            (pad->crystal || mode == AP_CONTENT_MODE_TROPHY);
+		if (coopEvent && !AP_CoopPadReady(pad->retail_id, pad->crystal))
 			goto WarpPad_CoopSync;
 		host = AP_ContentPreparePad(physLevelID, mode);
 		if (host < 0)
@@ -1544,8 +1544,6 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			goto WarpPad_AnimateOpen;
 		}
 
-		sdata->Loading.OnBegin.AddBitsConfig0 |= CRYSTAL_CHALLENGE;
-
 		// Dont have hint "collect every crystal"
 		if (padPlayer == 0 && CHECK_ADV_BIT(sdata->advProgress.rewards, ADV_REWARD_HINT_COLLECT_EVERY_CRYSTAL) == 0)
 		{
@@ -1560,6 +1558,12 @@ void AH_WarpPad_ThTick(struct Thread *t)
 			goto WarpPad_AnimateOpen;
 		}
 
+#ifdef CTR_AP
+		coopEvent = ctr_cfg_active();
+		if (coopEvent && !AP_CoopPadReady(levelID, 1))
+			goto WarpPad_CoopSync;
+#endif
+		sdata->Loading.OnBegin.AddBitsConfig0 |= CRYSTAL_CHALLENGE;
 		gGT->originalEventTime = D232.timeCrystalChallenge[levelID - AH_WP_NITRO_COURT];
 		goto WarpPad_RequestLoad;
 	}
@@ -1656,12 +1660,14 @@ void AH_WarpPad_ThTick(struct Thread *t)
 	}
 
 #ifdef CTR_AP
-	coopTrophy = ctr_cfg_active() && levelID >= 0 && levelID <= TURBO_TRACK
+	coopEvent = ctr_cfg_active() && levelID >= 0 && levelID <= TURBO_TRACK &&
+	            !(sdata->Loading.OnBegin.AddBitsConfig0 & RELIC_RACE) &&
+	            !(sdata->Loading.OnBegin.AddBitsConfig8 & TOKEN_RACE)
 #ifdef CTR_CUSTOM_PACKAGES
 	             && !legacyCortex
 #endif
 		;
-	if (coopTrophy && !AP_CoopPadReady(levelID))
+	if (coopEvent && !AP_CoopPadReady(levelID, 0))
 		goto WarpPad_CoopSync;
 #endif
 
@@ -1681,7 +1687,7 @@ WarpPad_RequestLoad:
 	// lives in AP_OnFrame's levelID-transition watcher (ap_hooks.c), the same
 	// home as the one-lap-cup restore.
 	AP_RacerLock_ForceForWarp(physLevelID);
-	if (coopTrophy)
+	if (coopEvent)
 		AP_CoopConfirmPad();
 #endif
 
