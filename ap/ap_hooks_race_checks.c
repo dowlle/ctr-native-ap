@@ -175,9 +175,9 @@ static void AP_SendHeldChecks(int track, int position)
 		AP_EmitRung(track, pr->held_5th, AP_RUNG_HELD_5TH, position, "held");
 }
 
-// Recover only the rungs a checked Trophy guarantees. A retail Trophy can
-// have come from Hard co-op, so without a placement only second is proven.
-// The actual finish and award paths still use the observed result.
+// Keep the legacy fallback on solo-only routes. Retail Trophy races deliver
+// podium checks from their recorded finish or award, through the check outbox.
+// A server-granted Trophy on the retail routes supplies no finish evidence.
 static void AP_ReconcilePodiumFromTrophies(void)
 {
 #ifdef CTR_CUSTOM_TRACKS
@@ -193,9 +193,10 @@ static void AP_ReconcilePodiumFromTrophies(void)
 			    AP_ContentPodiumRungs(AP_CONTENT_PODIUM_LOGICAL_BASE + id, &rungs) &&
 			    ap_net_location_checked((long)pad->trophy_location))
 			{
-				int hardPossible = pad->retail_id >= 0 && !pad->cortex &&
+				int retailTrophy = pad->retail_id >= 0 && !pad->cortex &&
 				                   ap_content_rung_mode(pad) == AP_CONTENT_MODE_TROPHY;
-				AP_SendPodiumChecks(AP_CONTENT_PODIUM_LOGICAL_BASE + id, hardPossible ? 2 : 1);
+				if (!retailTrophy)
+					AP_SendPodiumChecks(AP_CONTENT_PODIUM_LOGICAL_BASE + id, 1);
 			}
 			// cup_only_podium_rungs: a checked Cup Leg Victory was a first
 			// place on that track, so the leg's own rungs are earned too.
@@ -216,12 +217,6 @@ static void AP_ReconcilePodiumFromTrophies(void)
 #endif
 	if (!ctr_cfg_active() || !ctr_cfg.podium_enabled)
 		return;
-	for (int lid = 0; lid < CTR_CFG_PODIUM_TRACK_COUNT; lid++)
-		if (AP_LocationCheckedByBit(lid + ADV_REWARD_FIRST_TROPHY))
-			AP_SendPodiumChecks(lid, 2);
-	for (int trial = 0; trial < CTR_CFG_TRIAL_TRACK_COUNT; trial++)
-		if (AP_TrialTrackLocationChecked(16+trial, CTR_CFG_TRIAL_TROPHY))
-			AP_SendPodiumChecks(AP_TRIAL_PODIUM_LOGICAL_BASE+trial, 2);
 	// Schema 15: the Cortex Vortex Trophy is a direct code, restored from the
 	// server's checked set on every connect like every other trophy.
 	if (AP_CortexTrackChecked(AP_CV_SLOT_TROPHY))

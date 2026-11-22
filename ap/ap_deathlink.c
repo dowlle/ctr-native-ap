@@ -776,7 +776,7 @@ static void AP_DeathLinkFallEdges(struct GameTracker *gt, int raceActive)
 		if (i == 0)
 			g_dl_swallow_edge = 0;
 		if (raceActive && !forced && !g_dl_partner_hit_cooldown[i] &&
-		    (i == 0 || AP_IsSlotHuman(gt, d)))
+		    AP_IsSlotHuman(gt, d) && !(d->actionsFlagSet & ACTION_RACE_FINISHED))
 		{
 			AP_DeathLinkQueuePartner(gt, d, AP_DL_TRIG_FALL);
 			if (AP_DeathLinkTriggerSends(AP_DeathLinkSendMaskNow(), AP_DL_TRIG_FALL,

@@ -316,11 +316,16 @@ int main(void)
 PARTNER_DEATHLINK = r'''
 #include "ap/ap_race_attempt_logic.h"
 static int g_dl_partner_effect[2], g_dl_partner_grace[2], hard, forced, window;
+static int g_dl_partner_hit_cooldown[2], g_dl_swallow_edge, sentDeath;
+static unsigned g_dl_prev_maskgrab, g_dl_partner_reset_edges;
 int AP_CoopHardRace(void) { return hard; }
 int AP_RaceAttemptIsForcedLoss(void) { return forced; }
 static int AP_DeathLinkWindow(struct GameTracker *gt) { (void)gt; return window; }
+static int AP_DeathLinkSendMaskNow(void) { return ctr_cfg.death_link_send; }
+static void AP_DeathLinkFireLocal(struct GameTracker *gt, const char *cause) { sentDeath++; }
 '''
 PARTNER_DEATHLINK += function("ap/ap_deathlink.c", "static void AP_DeathLinkQueuePartner(")
+PARTNER_DEATHLINK += function("ap/ap_deathlink.c", "static void AP_DeathLinkFallEdges(")
 PARTNER_DEATHLINK += r'''
 int main(void)
 {
@@ -335,8 +340,12 @@ int main(void)
     ctr_cfg.death_link = CTR_DL_RACE_LOSS;
     ctr_cfg.death_link_send = AP_DL_TRIG_FALL;
     drivers[0].actionsFlagSet = ACTION_RACE_FINISHED | ACTION_BOT;
-    AP_DeathLinkQueuePartner(&gt, &drivers[1], AP_DL_TRIG_FALL);
-    assert(g_dl_partner_effect[0] == CTR_DL_RACE_LOSS); /* Still loses the team race. */
+    drivers[0].kartState = KS_MASK_GRABBED;
+    AP_DeathLinkFallEdges(&gt, 1);
+    assert(!g_dl_partner_effect[1] && !sentDeath); /* The finished kart is bot-driven. */
+    drivers[1].kartState = KS_MASK_GRABBED;
+    AP_DeathLinkFallEdges(&gt, 1);
+    assert(g_dl_partner_effect[0] == CTR_DL_RACE_LOSS && sentDeath == 1);
     drivers[0].actionsFlagSet = 0;
     ctr_cfg.death_link = CTR_DL_WEAPON_HIT;
     ctr_cfg.death_link_send = AP_DL_TRIG_HIT;

@@ -26,12 +26,20 @@ static int hubSafe = 1;
 static int transportReady = 1;
 static s16 requestedLevel = -1;
 static int gridSize = 8;
+static int pendingPadRemoval;
 int LOAD_CoopGridSize(void) { return gridSize; }
 u64 NativeControls_GetPlayerDeviceIdentity(int player) { return player == 1 ? p2Device : 100; }
 u64 NativeControls_GetGamepadIdentity(int device) { return device < 3 ? 100 + device : 0; }
 u16 NativeInput_AdventureButtons(int device) { return physicalButtons[device]; }
 int NativeControls_SetAdventurePartner(u64 id) { assignedPartner = id; return 1; }
 void NativeControls_ClearAdventureSeats(void) { assignedPartner = 0; }
+int Platform_PollInput(void)
+{
+	if (pendingPadRemoval) p2Device = 0;
+	pendingPadRemoval = 0;
+	return 1;
+}
+void VehStuckProc_Warp_Init(struct Thread *t, struct Driver *d) { (void)t; (void)d; }
 int AP_HubSafeForRequest(struct GameTracker *gt) { (void)gt; return hubSafe; }
 int AP_CharSwap_PickerOpen(void) { return 0; }
 void AP_HubPickerFreeze(struct GameTracker *gt, int on)
@@ -119,10 +127,27 @@ static void testHubMenu(struct GameTracker *gt)
 	assert(strstr(ap_coop_notice, "P2 JOINED:"));
 	p2Device = assignedPartner; /* The input assignment has been published. */
 
+	struct Driver *driver = gt->drivers[0];
+	driver->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
+	tapPartner(gt, 2, RAW_BTN_START);
+	assert(ap_coop_menu == COOP_MENU_CLOSED);
+	assert(driver->funcPtrs[DRIVER_FUNC_INIT] == VehStuckProc_Warp_Init);
+	driver->funcPtrs[DRIVER_FUNC_INIT] = NULL;
+	driver->kartState = KS_WARP_PAD;
+	tapPartner(gt, 2, RAW_BTN_START);
+	assert(ap_coop_menu == COOP_MENU_CLOSED);
+	driver->kartState = KS_NORMAL;
+
 	tapPartner(gt, 1, RAW_BTN_START);
 	assert(ap_coop_menu == COOP_MENU_CLOSED);
 	tapPartner(gt, 2, RAW_BTN_START);
 	assert(ap_coop_menu == COOP_MENU_ACTIONS);
+	driver->funcPtrs[DRIVER_FUNC_INIT] = VehStuckProc_Warp_Init;
+	AP_CoopMenuTick(gt);
+	assert(ap_coop_menu == COOP_MENU_CLOSED && !(gt->gameMode2 & VEH_FREEZE_DOOR));
+	assert(driver->funcPtrs[DRIVER_FUNC_INIT] == VehStuckProc_Warp_Init);
+	driver->funcPtrs[DRIVER_FUNC_INIT] = NULL;
+	tapPartner(gt, 2, RAW_BTN_START);
 	tapPartner(gt, 1, RAW_BTN_CROSS);
 	assert(ap_coop_menu == COOP_MENU_ACTIONS);
 	tapPartner(gt, 2, RAW_BTN_UP);
@@ -232,8 +257,11 @@ int main(void)
 	p2Device = 102; /* A new instance cannot claim a loaded seat. */
 	assert(!AP_CoopP2Available());
 	p2Device = UINT64_MAX; /* Auto puts the keyboard in the vacated slot. */
+	assert(!AP_CoopP2Available());
+	p2Device = 101;
+	pendingPadRemoval = 1; /* SDL has a removal that the final VBlank did not publish. */
 	gt.prevLEV = N_SANITY_BEACH;
-	assert(!AP_CoopP2Available() && AP_CoopReloadOnRetry(&gt));
+	assert(AP_CoopP2Available() && AP_CoopReloadOnRetry(&gt) && !AP_CoopP2Available());
 	assert(requestedLevel == CRASH_COVE);
 	AP_CoopConnectReset(); /* The same reconnect after requesting the full load. */
 	gt.prevLEV = CRASH_COVE; /* Full load records the last level. */

@@ -92,7 +92,12 @@ int AP_CoopP2Available(void)
 
 int AP_CoopReloadOnRetry(struct GameTracker *gt)
 {
-	if (!AP_CoopRace(gt) || AP_CoopP2Available())
+	if (!AP_CoopRace(gt))
+		return 0;
+	// A removal can be queued after the last VBlank and before this commit.
+	// Resolve SDL assignments again before keeping the loaded seats.
+	Platform_PollInput();
+	if (AP_CoopP2Available())
 		return 0;
 	// The in-place restart retains the two-player files and pools.
 	ap_coop_retry_level = gt->levelID;
@@ -140,11 +145,23 @@ static int AP_CoopNextRacer(int racer, int direction)
 	return -1;
 }
 
+static int AP_CoopWarpOwnsDriver(const struct GameTracker *gt)
+{
+	const struct Driver *driver = gt->drivers[0];
+	return driver && (driver->kartState == KS_WARP_PAD ||
+	                  driver->funcPtrs[DRIVER_FUNC_INIT] == VehStuckProc_Warp_Init);
+}
+
 static void AP_CoopCloseMenu(struct GameTracker *gt)
 {
 	if (AP_CoopMenuOpen() && (gt->gameMode1 & ADVENTURE_ARENA) &&
 	    !(gt->gameMode1 & LOADING) && sdata->Loading.stage == LOAD_IDLE && !sdata->load_inProgress)
-		AP_HubPickerFreeze(gt, 0);
+	{
+		if (AP_CoopWarpOwnsDriver(gt))
+			gt->gameMode2 &= ~VEH_FREEZE_DOOR;
+		else
+			AP_HubPickerFreeze(gt, 0);
+	}
 	ap_coop_menu = COOP_MENU_CLOSED;
 	ap_coop_picker_device = 0;
 }
@@ -260,11 +277,12 @@ void AP_CoopMenuTick(struct GameTracker *gt)
 	           !(gt->gameMode1 & LOADING);
 	if (hub && idle)
 		AP_CoopRestorePreference();
+	int warp = hub && AP_CoopWarpOwnsDriver(gt);
 	if (!hub)
 		ap_coop_hint_hub = -1;
 	if (ap_coop_menu != COOP_MENU_CLOSED)
 	{
-		if (!hub || !idle || !pickerConnected || sdata->ptrActiveMenu ||
+		if (!hub || !idle || warp || !pickerConnected || sdata->ptrActiveMenu ||
 		    (gt->gameMode1 & PAUSE_ALL) || (pads->gamepad[0].buttonsTapped & BTN_START))
 			AP_CoopCloseMenu(gt);
 		else
@@ -281,7 +299,7 @@ void AP_CoopMenuTick(struct GameTracker *gt)
 			    (gt->gameMode1 & ADVENTURE_CUP) ? "P2: FINISH OR LEAVE THE CUP" : "P2: JOIN OR LEAVE IN THE HUB");
 		return;
 	}
-	if (!AP_HubSafeForRequest(gt) || AP_CharSwap_PickerOpen() ||
+	if (warp || !AP_HubSafeForRequest(gt) || AP_CharSwap_PickerOpen() ||
 	    (pads->gamepad[0].buttonsTapped & BTN_START))
 		return;
 	if (!start && ap_coop_hint_hub != gt->levelID && second &&

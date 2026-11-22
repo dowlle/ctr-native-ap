@@ -1470,6 +1470,43 @@ done:
 	s_inputInitialized = 0;
 	s_padSlotData[0] = s_padSlotData[1] = NULL;
 }
+
+static void TestAdventurePartnerWithKeyboardFallback(void)
+{
+	ResetModule();
+	SDL_VirtualJoystickDesc desc;
+	SDL_INIT_INTERFACE(&desc);
+	desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+	desc.vendor_id = 0x28de;
+	desc.product_id = 0x11ff;
+	desc.name = "Primary Pad";
+	desc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
+	SDL_JoystickID primary = SDL_AttachVirtualJoystick(&desc);
+	NativeControls_Refresh();
+	int device = NativeControls_GetPlayerDevice(0);
+	Check(primary && NativeControls_GetPlayerDeviceIdentity(0) == primary, "P1 starts on the gamepad");
+	if (!primary)
+		return;
+	SetPref(0, NATIVE_CONTROLS_PREF_PINNED, s_profiles[s_devices[device].profile].key);
+
+	SDL_VirtualJoystickDesc secondary = desc;
+	secondary.product_id++;
+	secondary.name = "Partner Pad";
+	SDL_JoystickID partner = SDL_AttachVirtualJoystick(&secondary);
+	SDL_DetachVirtualJoystick(primary);
+	NativeControls_Refresh();
+	Check(NativeControls_GetPlayerDeviceIdentity(0) == UINT64_MAX, "unplugged pin falls back to keyboard before join");
+	Check(partner && NativeControls_SetAdventurePartner(partner), "P2 can join during P1 keyboard fallback");
+	primary = SDL_AttachVirtualJoystick(&desc);
+	NativeControls_Refresh();
+	Check(primary && NativeControls_GetPlayerDeviceIdentity(0) == primary, "temporary keyboard did not replace P1's pin");
+	Check(NativeControls_GetPlayerDeviceIdentity(1) == partner, "P2 remains on the selected pad");
+	NativeControls_SetAdventurePartner(0);
+	Check(NativeControls_GetPlayerDeviceIdentity(0) == primary, "P1 keeps the reclaimed pad after dropout");
+	if (partner) SDL_DetachVirtualJoystick(partner);
+	if (primary) SDL_DetachVirtualJoystick(primary);
+	NativeControls_Refresh();
+}
 #endif
 
 static void TestKeyboardIsTheLastFallback(void)
@@ -2396,6 +2433,7 @@ int main(void)
 	TestPlayerDeviceIdentitySurvivesTableRebuild();
 #ifdef CTR_AP
 	TestAdventurePartnerWithSharedGuid();
+	TestAdventurePartnerWithKeyboardFallback();
 #endif
 	TestKeyboardIsTheLastFallback();
 	TestDisabledPlayerIsSkipped();

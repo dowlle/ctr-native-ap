@@ -1261,7 +1261,11 @@ int NativeControls_SetAdventurePartner(u64 instance)
 				break;
 		if (device == s_deviceCount)
 			return 0;
-		s_adventurePrimary = primary;
+		const struct NativeControlsPlayer *pref = &s_playerPref[0];
+		int temporaryKeyboard = primary == UINT64_MAX &&
+		    pref->kind == NATIVE_CONTROLS_PREF_PINNED &&
+		    !NativeControls_StrEqual(pref->deviceKey, NATIVE_CONTROLS_KEYBOARD_KEY);
+		s_adventurePrimary = temporaryKeyboard ? 0 : primary;
 	}
 	s_adventurePartner = instance;
 	NativeControls_ResolveAndPublish();

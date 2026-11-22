@@ -259,6 +259,18 @@ static std::string ap_net_endpoint_of(const std::string &uri)
 	return endpoint;
 }
 
+static uint64_t ap_storage_token()
+{
+	uint64_t token = std::chrono::system_clock::now().time_since_epoch().count();
+	try {
+		std::random_device entropy;
+		token ^= (uint64_t(entropy()) << 32) ^ entropy();
+	} catch (...) {
+		// The clock still gives a token if the OS RNG is unavailable.
+	}
+	return token ? token : 1;
+}
+
 // DataStorage belongs to the saved room. A new server using the same seed
 // and address gets a new token. Atomic Set with a default and no operations
 // creates the token once, even if two clients connect to the slot together.
@@ -267,14 +279,7 @@ static void ap_net_feed_room_connect(int team, int slot)
 	g_feed_room_key = "ctr_feed_room_v1:" + std::to_string(team) + "_" + std::to_string(slot);
 	g_feed_room_instance = 0;
 	g_feed_room_known = false;
-	uint64_t token = std::chrono::system_clock::now().time_since_epoch().count();
-	try {
-		std::random_device entropy;
-		token ^= (uint64_t(entropy()) << 32) ^ entropy();
-	} catch (...) {
-		// The clock still gives a room token if the OS RNG is unavailable.
-	}
-	g_ap->Set(g_feed_room_key, token ? token : 1, true, {});
+	g_ap->Set(g_feed_room_key, ap_storage_token(), true, {});
 }
 
 // Set true on every fresh slot-connect (new seed, reconnect, or server switch).
@@ -359,13 +364,16 @@ static unsigned    g_char_rev = 0;
 static int g_coop_value = 0;
 static bool g_coop_known = false;
 static unsigned g_coop_rev = 0;
+static uint64_t g_coop_writer = 0;
+static uint64_t g_coop_write = 0;
 static std::string ap_coop_key() { return "ctr_coop_" + g_slot; }
 static void ap_coop_accept(const nlohmann::json &value, bool fromGet)
 {
 	const bool valid = value.is_number_integer() && value >= 0 &&
 	                   (value <= 63 || value == 64 || value == 96);
-	if (!valid && !fromGet) return;
-	g_coop_value = valid ? value.get<int>() : 64;
+	const int packed = valid ? value.get<int>() : 64;
+	if (!fromGet && (!g_coop_known || !valid || packed == g_coop_value)) return;
+	g_coop_value = packed;
 	g_coop_known = true;
 	g_coop_rev++;
 }
@@ -1373,10 +1381,12 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			std::fprintf(stderr, "[AP NET] rank selection retrieved (%d values)\n",
 			             AP_NET_STATSELECT_COUNT);
 	});
-	g_ap->set_set_reply_handler([](const std::string &key, const nlohmann::json &value,
-	                               const nlohmann::json &original) {
+	g_ap->set_set_reply_handler([](const nlohmann::json &reply) {
 		if (g_rejected)
 			return; // no rejected-seed state may activate
+		const auto key = reply.at("key").get<std::string>();
+		const auto &value = reply.at("value");
+		const auto &original = reply.at("original_value");
 		if (g_connected && !g_feed_room_key.empty() && key == g_feed_room_key)
 		{
 			g_feed_room_instance = value.is_number_unsigned() ? value.get<uint64_t>() : 0;
@@ -1456,7 +1466,16 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			std::fprintf(stderr, "[AP NET] difficulty override changed: %d\n", g_diff_value);
 		}
 		int cv = 0;
-		if (key == ap_coop_key()) ap_coop_accept(value, false);
+		if (g_connected && key == ap_coop_key())
+		{
+			// The server echoes the Set metadata to all subscribers. A reply
+			// to an earlier local edit cannot roll back the latest local edit.
+			auto writer = reply.find("ctr_coop_writer");
+			auto write = reply.find("ctr_coop_write");
+			if (!g_coop_writer || writer == reply.end() || *writer != g_coop_writer ||
+			    (write != reply.end() && *write == g_coop_write))
+				ap_coop_accept(value, false);
+		}
 		if (key == ap_char_key() && ap_char_accept(value, &cv))
 		{
 			g_char_value = cv;
@@ -2546,13 +2565,17 @@ extern "C" int ap_net_coop_set(int packed)
 	if (!g_ap || !g_connected || !g_coop_known || packed < 0 ||
 	    (packed > 63 && packed != 64 && packed != 96)) return 0;
 	bool queued = false;
+	const uint64_t write = g_coop_write + 1;
 	AP_NET_GUARD("coop_set", {
+		if (!g_coop_writer) g_coop_writer = ap_storage_token();
 		APClient::DataStorageOperation op;
 		op.operation = "replace";
 		op.value = packed;
-		queued = g_ap->Set(ap_coop_key(), packed, false, {op});
+		queued = g_ap->Set(ap_coop_key(), packed, false, {op},
+		                    {{"ctr_coop_writer", g_coop_writer}, {"ctr_coop_write", write}});
 	});
 	if (!queued) return 0;
+	g_coop_write = write;
 	g_coop_value = packed;
 	g_coop_known = true;
 	return 1;

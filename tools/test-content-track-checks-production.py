@@ -222,10 +222,10 @@ int main(void) {
  assert(sentCount==0); cases++;  /* another pad's identity resolves nothing */
  reset(AP_CONTENT_MODE_TROPHY,1); ctr_cfg.podium_enabled=1; ctr_cfg.podium[3].held_1st=35015012;
  AP_SendPodiumChecks(3,1); assert(sentCount==0); cases++; /* legacy rows are not read in a content plan */
- /* A retail Trophy alone guarantees second; a custom Trophy implies first. */
+ /* Server-granted retail Trophies have no finish evidence. Keep the custom fallback. */
  reset(AP_CONTENT_MODE_TROPHY,1); AP_ReconcilePodiumFromTrophies(); assert(sentCount==0);
  checkedCodes[checkedCount++]=pad.trophy_location; AP_ReconcilePodiumFromTrophies();
- assert(sentCount==3 && !sent(35015100)); AP_ReconcilePodiumFromTrophies(); assert(sentCount==3); cases++;
+ assert(sentCount==0); AP_ReconcilePodiumFromTrophies(); assert(sentCount==0); cases++;
  reset(AP_CONTENT_MODE_TROPHY,0); checkedCodes[checkedCount++]=pad.trophy_location;
  AP_ReconcilePodiumFromTrophies(); assert(sentCount==4 && sent(35015100)); cases++;
  /* Wumpa: the pad's own check from Trophy and CTR, global, never Relic. */
