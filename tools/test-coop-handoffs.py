@@ -11,6 +11,7 @@ fixture = r'''
 #include <string.h>
 #include <common.h>
 #include "ap/ap_coop.h"
+#include "ap/ap_navrec.h"
 #include "ap/ap_seedcfg.h"
 #include "ap/ap_turbogrant.h"
 #include "ap/ap_turbogrant_logic.h"
@@ -26,6 +27,7 @@ static AP_TurboGrantRace g_tg_race;
 static int g_usefulCountdownSeen;
 static unsigned g_usefulReceived, g_usefulApplied;
 static struct Driver *recipient;
+static struct MaskHeadWeapon mask;
 int ctr_cfg_active(void) { return active; }
 int LOAD_IsOpen_RacingOrBattle(void) { return onTrack; }
 int OtherFX_Play(u32 id, int flags) { (void)id; (void)flags; return 0; }
@@ -33,6 +35,10 @@ void AP_LogLine(const char *line) { (void)line; }
 int AP_ItemsanityWeaponAvailable(int item) { (void)item; return 1; }
 void VehPickupItem_ShootNow(struct Driver *driver, int item, int flags)
 { (void)item; (void)flags; recipient = driver; }
+struct MaskHeadWeapon *VehPickupItem_MaskUseWeapon(struct Driver *driver, b32 playSound)
+{ (void)playSound; recipient = driver; return &mask; }
+void AP_NavRec_NoteItemFire(struct Driver *driver, int item) { (void)driver; (void)item; }
+void AP_NavRec_NoteBoostGrant(enum AP_NavRecBoostGrant grant) { (void)grant; }
 static void AP_UsefulStore(void) {}
 static int AP_TurboGrantItemsanityOn(void) { return 1; }
 '''
