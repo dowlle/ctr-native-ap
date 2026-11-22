@@ -46,7 +46,7 @@ int main(void)
 		for (int i = 0; i < count; ++i) {
 			int len = (int)strlen(lines[i]);
 			assert(small_font_width(lines[i], len, NULL) <= 448);
-			assert(108 + i * 9 + 8 <= 147);
+			assert(111 + i * 9 + 8 <= 146);
 			assert(668 - (count - 1 - i) * 19 >= 611);
 		}
 		++cases;

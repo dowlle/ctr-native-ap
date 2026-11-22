@@ -419,6 +419,17 @@ void AH_Pause_Draw(int pageID, int posX)
 			}
 		}
 
+		int relicY = 0x49;
+		int totalY = 0x6e;
+#ifdef CTR_AP
+		AP_GoalLines goals;
+		goalCount = AP_GoalAdvertLines(goals);
+		if (goalCount)
+		{
+			relicY -= 8;
+			totalY = 93;
+		}
+#endif
 		for (int i = 0; i < 3; i++)
 		{
 			s16 instPosX = posX + 0xf6 + ((i - 1) * 90);
@@ -436,13 +447,13 @@ void AH_Pause_Draw(int pageID, int posX)
 				// Remove SelectProfile with regular UI variant
 				inst->matrix.t[0] = UI_ConvertX_2(instPosX, 0x100);
 
-				inst->matrix.t[1] = UI_ConvertY_2(0x49, 0x100);
+				inst->matrix.t[1] = UI_ConvertY_2(relicY, 0x100);
 			}
 
-			SelectProfile_PrintInteger(count[i], instPosX + 0x19, 0x49, 0, 0);
+			SelectProfile_PrintInteger(count[i], instPosX + 0x19, relicY, 0, 0);
 
 			int strX = 'X'; //"X\0\0" + nullterm
-			DecalFont_DrawLine((char *)&strX, instPosX + 10, 0x4e, FONT_SMALL, 0);
+			DecalFont_DrawLine((char *)&strX, instPosX + 10, relicY + 5, FONT_SMALL, 0);
 		}
 
 		// variable reuse
@@ -450,17 +461,12 @@ void AH_Pause_Draw(int pageID, int posX)
 
 		sprintf(totalString, "%s %d", sdata->lngStrings[LNG_TOTAL], bitIndex);
 
-		int totalY = 0x6e;
 #ifdef CTR_AP
-		AP_GoalLines goals;
-		goalCount = AP_GoalAdvertLines(goals);
-		if (goalCount)
-			totalY = 90;
 		const int centerX = posX + 256;
 		const int width = 448;
 		for (int i = 0; i < goalCount; ++i)
 		{
-			int y = 108 + i * 9;
+			int y = 111 + i * 9;
 			if (DecalFont_GetLineWidth(goals[i], FONT_SMALL) <= width)
 				DecalFont_DrawLine(goals[i], centerX, y, FONT_SMALL, JUSTIFY_CENTER | WHITE);
 			else
