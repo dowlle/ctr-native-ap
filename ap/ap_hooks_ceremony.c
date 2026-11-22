@@ -72,6 +72,12 @@ void AP_CupPodiumReset(void)
 	ap_cup_podium_win_code = -1;
 }
 
+void AP_CupPodiumForgetReward(void)
+{
+	if (AP_CupPodiumActive())
+		ap_cup_podium_win_code = 0;
+}
+
 // Cleared when a new race starts (the finish-flag falling edge in the race
 // listener), so each ceremony shows only its own race's just-earned checks.
 static void AP_CeremonyLedgerReset(void)
@@ -587,9 +593,9 @@ void AP_TrophyPodiumCeremonyDraw(int x, int y)
 // born (CS_Podium_FullScene_Init) and consumed by the exit below.
 static ap_podium_exit_state ap_podium_exit;
 
-void AP_PodiumExitReset(void)
+void AP_PodiumExitReset(int prizeOmitted)
 {
-	AP_PodiumExitStateReset(&ap_podium_exit);
+	AP_PodiumExitStateReset(&ap_podium_exit, prizeOmitted);
 }
 
 // Issue #235. CS_Podium_Prize_ThTick3 is the code that raises overlayTransition
@@ -609,9 +615,7 @@ void AP_PodiumExitTerminalWork(void)
 	if (sdata == NULL || sdata->gGT == NULL)
 		return;
 
-	work = AP_PodiumExitWork(ctr_cfg_active(), (int)sdata->gGT->podiumRewardID,
-	                         AP_PodiumSpecialTrack(), AP_CupPodiumActive(),
-	                         &ap_podium_exit);
+	work = AP_PodiumExitWork(&ap_podium_exit);
 
 	// Issue #484: retail CS_Podium_Prize_ThTick1 stops these first.
 	if (work.stopDanceLoops)

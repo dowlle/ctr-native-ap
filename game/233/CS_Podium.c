@@ -695,14 +695,12 @@ void CS_Podium_FullScene_Init(void)
 	// the vanilla prize path unchanged. A6-77: a won content-plan cup reuses
 	// the Trophy model and owns its own presentation the same way, so its
 	// podium takes this branch too (and never the retail count-up).
-	if (!AP_PodiumShouldBirthPrize(ctr_cfg_active(), (int)gGT->podiumRewardID,
-	                               AP_PodiumSpecialTrack(), AP_CupPodiumActive()))
+	int birthPrize = AP_PodiumShouldBirthPrize(ctr_cfg_active(), (int)gGT->podiumRewardID,
+	                                           AP_PodiumSpecialTrack(), AP_CupPodiumActive());
+	AP_PodiumExitReset(!birthPrize);
+	if (!birthPrize)
 	{
 		gGT->gameMode2 &= ~INC_TROPHY;
-
-		// Re-arm the one-shot terminal work the missing prize thread would have
-		// performed at ceremony end (AP_PodiumExitTerminalWork).
-		AP_PodiumExitReset();
 	}
 	else
 #endif

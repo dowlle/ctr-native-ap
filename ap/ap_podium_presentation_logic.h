@@ -89,17 +89,16 @@ typedef struct
 	int stopDanceLoops;    // 1 -> OtherFX_Stop2 both podium dance loops
 } ap_podium_exit_work;
 
-// One-shot latch for the terminal work, scoped to a single podium lifetime.
-// CS_Podium_FullScene_Init resets it when the podium is born; the AP
-// ordinary-Trophy exit consumes it, so the work can never run twice.
+// The scene arms this only if it omits the prize thread. The exit consumes
+// the pending work even if the connection or reward text changed in between.
 typedef struct
 {
-	int consumed;
+	int pending;
 } ap_podium_exit_state;
 
-static inline void AP_PodiumExitStateReset(ap_podium_exit_state *state)
+static inline void AP_PodiumExitStateReset(ap_podium_exit_state *state, int prizeOmitted)
 {
-	state->consumed = 0;
+	state->pending = prizeOmitted;
 }
 
 // The production decision used at podium exit. Returns the terminal work the
@@ -107,9 +106,7 @@ static inline void AP_PodiumExitStateReset(ap_podium_exit_state *state)
 // or content-plan cup presentation, and nothing for every other podium
 // (non-AP Trophy, AP relic, trial/Cortex, custom, and every other reward),
 // whose retail prize thread still performs its own terminal work.
-static inline ap_podium_exit_work AP_PodiumExitWork(
-	int apActive, int rewardId, int specialTrack, int cupPodium,
-	ap_podium_exit_state *state)
+static inline ap_podium_exit_work AP_PodiumExitWork(ap_podium_exit_state *state)
 {
 	ap_podium_exit_work work;
 
@@ -118,12 +115,10 @@ static inline ap_podium_exit_work AP_PodiumExitWork(
 	work.completionSound = 0;
 	work.stopDanceLoops = 0;
 
-	if (AP_PodiumShouldBirthPrize(apActive, rewardId, specialTrack, cupPodium))
-		return work;
-	if (state->consumed)
+	if (!state->pending)
 		return work;
 
-	state->consumed = 1;
+	state->pending = 0;
 	work.overlayTransition = 2;
 	work.releaseFreeze = 1;
 	work.completionSound = 1;

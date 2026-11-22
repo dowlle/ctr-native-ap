@@ -162,13 +162,13 @@ int main(void)
 		ap_podium_exit_work work;
 		exit_effects fx;
 
-		AP_PodiumExitStateReset(&state);
+		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 0, 0));
 		fx.overlayTransition = 0;
 		fx.freezePodium = 1; // as CS_Podium_FullScene_Init sets VEH_FREEZE_PODIUM
 		fx.completionSounds = 0;
 		fx.danceLoopsPlaying = 1; // N. Gin's podium dance started 0xae
 
-		work = AP_PodiumExitWork(1, AP_PODIUM_TROPHY_MODEL, 0, 0, &state);
+		work = AP_PodiumExitWork(&state);
 		expect(work.overlayTransition, 2, "AP Trophy exit requests overlay 2");
 		expect(work.releaseFreeze, 1, "AP Trophy exit releases the freeze");
 		expect(work.completionSound, 1, "AP Trophy exit plays the completion FX");
@@ -180,7 +180,7 @@ int main(void)
 
 		// The camera thread dies on the continue press, so a defensive second
 		// drive must be a no-op: the work is one-shot per podium.
-		work = AP_PodiumExitWork(1, AP_PODIUM_TROPHY_MODEL, 0, 0, &state);
+		work = AP_PodiumExitWork(&state);
 		expect(work.overlayTransition, 0, "AP Trophy exit is one-shot (overlay)");
 		expect(work.releaseFreeze, 0, "AP Trophy exit is one-shot (freeze)");
 		expect(work.completionSound, 0, "AP Trophy exit is one-shot (sound)");
@@ -191,26 +191,28 @@ int main(void)
 		expect(fx.freezePodium, 0, "second drive keeps the player released");
 
 		// A newly born podium re-arms the one-shot.
-		AP_PodiumExitStateReset(&state);
-		work = AP_PodiumExitWork(1, AP_PODIUM_TROPHY_MODEL, 0, 0, &state);
+		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 0, 0));
+		work = AP_PodiumExitWork(&state);
 		expect(work.overlayTransition, 2, "next AP Trophy podium re-arms");
 
 		// A non-AP Trophy, an AP relic, and an AP trial/Cortex Trophy (which
 		// reuses the Trophy model but keeps its prize thread) perform none of
 		// the new exit work; their own prize thread still owns the teardown.
-		AP_PodiumExitStateReset(&state);
-		work = AP_PodiumExitWork(0, AP_PODIUM_TROPHY_MODEL, 0, 0, &state);
+		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(0, AP_PODIUM_TROPHY_MODEL, 0, 0));
+		work = AP_PodiumExitWork(&state);
 		expect(work.overlayTransition, 0, "non-AP Trophy does no exit work");
 		expect(work.releaseFreeze, 0, "non-AP Trophy keeps its prize thread work");
 		expect(work.stopDanceLoops, 0, "non-AP Trophy leaves the stops to its prize thread");
 
-		work = AP_PodiumExitWork(1, TEST_STATIC_RELIC, 0, 0, &state);
+		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(1, TEST_STATIC_RELIC, 0, 0));
+		work = AP_PodiumExitWork(&state);
 		expect(work.overlayTransition, 0, "AP relic does no exit work");
 		expect(work.releaseFreeze, 0, "AP relic keeps its prize thread work");
 		expect(work.completionSound, 0, "AP relic plays no extra FX");
 		expect(work.stopDanceLoops, 0, "AP relic leaves the stops to its prize thread");
 
-		work = AP_PodiumExitWork(1, AP_PODIUM_TROPHY_MODEL, 1, 0, &state);
+		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 1, 0));
+		work = AP_PodiumExitWork(&state);
 		expect(work.overlayTransition, 0, "AP special-track Trophy does no exit work");
 		expect(work.releaseFreeze, 0, "AP special-track Trophy keeps its prize");
 		expect(work.stopDanceLoops, 0, "AP special-track Trophy keeps its prize stops");
@@ -219,23 +221,24 @@ int main(void)
 		// reproduces the same terminal work exactly once, including when the last
 		// leg made prevLEV special (a custom leg, where the ordinary-Trophy
 		// presentation would not fire).
-		AP_PodiumExitStateReset(&state);
-		work = AP_PodiumExitWork(1, AP_PODIUM_TROPHY_MODEL, 0, 1, &state);
+		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 0, 1));
+		work = AP_PodiumExitWork(&state);
 		expect(work.overlayTransition, 2, "AP cup podium exit requests overlay 2");
 		expect(work.releaseFreeze, 1, "AP cup podium exit releases the freeze");
 		expect(work.completionSound, 1, "AP cup podium exit plays the completion FX");
 		expect(work.stopDanceLoops, 1, "AP cup podium exit stops the dance loops");
-		work = AP_PodiumExitWork(1, AP_PODIUM_TROPHY_MODEL, 0, 1, &state);
+		work = AP_PodiumExitWork(&state);
 		expect(work.overlayTransition, 0, "AP cup podium exit is one-shot");
 
-		AP_PodiumExitStateReset(&state);
-		work = AP_PodiumExitWork(1, AP_PODIUM_TROPHY_MODEL, 1, 1, &state);
+		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 1, 1));
+		// The live reward flags are no longer inputs once the scene omits its prize.
+		work = AP_PodiumExitWork(&state);
 		expect(work.overlayTransition, 2, "AP cup podium on a custom leg exits too");
 		expect(work.releaseFreeze, 1, "AP cup podium on a custom leg releases the freeze");
 		expect(work.stopDanceLoops, 1, "AP cup podium on a custom leg stops the loops");
 
-		AP_PodiumExitStateReset(&state);
-		work = AP_PodiumExitWork(0, AP_PODIUM_TROPHY_MODEL, 0, 1, &state);
+		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(0, AP_PODIUM_TROPHY_MODEL, 0, 1));
+		work = AP_PodiumExitWork(&state);
 		expect(work.overlayTransition, 0, "non-AP cup podium does no exit work");
 	}
 
