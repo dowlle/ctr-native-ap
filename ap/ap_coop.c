@@ -294,11 +294,12 @@ void AP_CoopMenuTick(struct GameTracker *gt)
 
 void AP_CoopDrawMenu(void)
 {
-	if (ap_coop_notice_frames > 0 && AP_CoopHubAvailable(sdata->gGT))
+	struct GameTracker *gt = sdata->gGT;
+	if (ap_coop_notice_frames > 0 && AP_CoopHubAvailable(gt) &&
+	    !(gt->gameMode1 & PAUSE_ALL) && !sdata->ptrActiveMenu)
 		DecalFont_DrawLine(ap_coop_notice, 256, 29, FONT_SMALL, JUSTIFY_CENTER | WHITE);
 	if (ap_coop_menu == COOP_MENU_CLOSED)
 		return;
-	struct GameTracker *gt = sdata->gGT;
 	const int actions = ap_coop_menu == COOP_MENU_ACTIONS;
 	DecalFont_DrawLine(actions ? "PLAYER 2" : "PLAYER 2 RACER",
 	                   256, 63, FONT_SMALL, JUSTIFY_CENTER | WHITE);
