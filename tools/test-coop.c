@@ -28,6 +28,7 @@ int AP_CortexTrackActive(void) { return cortex; }
 const struct CustomTrackRaceContext *CustomTrack_StandaloneContext(int level)
 { (void)level; return haveContext ? &raceContext : NULL; }
 int ctr_cfg_active(void) { return active; }
+int AP_RaceAttemptIsForcedLoss(void) { return 0; }
 void AP_LogLine(const char *line) { (void)line; }
 void AP_CharSwap_ApplyStatPackage(struct Driver *driver) { (void)driver; }
 void AP_FeedNoticeLine(const char *text) { snprintf(notice, sizeof notice, "%s", text); }

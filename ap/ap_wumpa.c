@@ -444,7 +444,13 @@ void AP_WumpaTick(struct GameTracker *gGT)
 	{
 		RB_Player_ModifyWumpa(local, g_wumpa_race_pending);
 		if (AP_CoopRace(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]))
-			RB_Player_ModifyWumpa(gGT->drivers[1], g_wumpa_race_pending);
+		{
+			// P2 uses the retail signed-byte counter, without P1's race bank.
+			int grant = g_wumpa_race_pending;
+			if (grant > AP_WUMPA_MAX)
+				grant = AP_WUMPA_MAX;
+			RB_Player_ModifyWumpa(gGT->drivers[1], grant);
+		}
 		g_wumpa_race_pending = 0;
 	}
 	if (g_wumpa_pending > 0)

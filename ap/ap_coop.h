@@ -2,6 +2,7 @@
 #define AP_COOP_H
 #include <common.h>
 #include "ap_coop_logic.h"
+#include "ap_deathlink.h"
 static inline int AP_CoopRace(const struct GameTracker *gt)
 {
 	return gt && gt->numPlyrCurrGame == 2 &&
@@ -32,7 +33,7 @@ static inline int AP_CoopRank(const struct GameTracker *gt, int finishedOnly)
 }
 static inline int AP_CoopWon(const struct GameTracker *gt)
 {
-	return AP_CoopRank(gt, 0) == 0;
+	return !AP_RaceAttemptIsForcedLoss() && AP_CoopRank(gt, 0) == 0;
 }
 void AP_CoopPrepareLoad(struct GameTracker *gt);
 void AP_CoopPrepareGrid(struct GameTracker *gt);

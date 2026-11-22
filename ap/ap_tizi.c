@@ -42,8 +42,8 @@ static int g_tizi_def_count = 0;
 static int g_tizi_resolved = -1;
 static struct Instance *g_tizi_row[AP_TIZI_ROW_SIZE];
 
-// A helper box armed this roll for the local player.
-static int g_tizi_pending = 0;
+// Human slots with a Mask armed for their current roulette.
+static unsigned g_tizi_pending = 0;
 
 void AP_TiziReset(void)
 {
@@ -234,19 +234,19 @@ static int AP_TiziIsRowCrate(struct Instance *crateInst)
 
 void AP_TiziTick(struct GameTracker *gGT)
 {
-	struct Driver *local;
-
 	if (!g_tizi_pending)
 		return;
 
-	// A pending Mask belongs to exactly one roll. If the local player is no
-	// longer rolling and the roll never reached the filter (a restart, a mode
-	// change, a driver that stopped existing), drop it: handing this Mask to
-	// whatever box comes next is the one way this feature could leak.
-	local = (gGT != NULL && g_tizi_pending >= 1 && g_tizi_pending <= 2)
-	    ? gGT->drivers[g_tizi_pending - 1] : NULL;
-	if (local == NULL || local->heldItemID != 0x10)
-		g_tizi_pending = 0;
+	// Drop any Mask whose own roulette ended before reaching the filter.
+	for (int i = 0; i < 2; i++)
+	{
+		unsigned player = 1u << i;
+		if (!(g_tizi_pending & player))
+			continue;
+		struct Driver *driver = gGT != NULL ? gGT->drivers[i] : NULL;
+		if (driver == NULL || driver->heldItemID != 0x10)
+			g_tizi_pending &= ~player;
+	}
 }
 
 void AP_TiziOnWeaponBoxHit(struct Driver *driver, struct Instance *crateInst)
@@ -255,26 +255,25 @@ void AP_TiziOnWeaponBoxHit(struct Driver *driver, struct Instance *crateInst)
 
 	// Local player only, same isolation every other AP hook uses: an AI racer
 	// breaking one of the four is none of our business.
-	if (!AP_IsSlotHuman(gGT, driver) || g_tizi_pending)
+	if (!AP_IsSlotHuman(gGT, driver))
 		return;
 	if (!AP_TiziActive() || !AP_TiziIsRowCrate(crateInst))
 		return;
 
-	g_tizi_pending = driver == gGT->drivers[0] ? 1 : 2;
+	g_tizi_pending |= driver == gGT->drivers[0] ? 1u : 2u;
 }
 
 int AP_TiziFilterRoll(struct Driver *driver, int rolled)
 {
 	struct GameTracker *gGT = sdata->gGT;
 
-	if (!AP_IsSlotHuman(gGT, driver) || g_tizi_pending != (driver == gGT->drivers[0] ? 1 : 2))
+	if (!AP_IsSlotHuman(gGT, driver))
 		return rolled;
 
-	// Any resolved roll for the local player consumes the arm, ours or not, so
-	// a pending Mask can never outlive the roll session that armed it.
-	if (!g_tizi_pending)
+	unsigned player = driver == gGT->drivers[0] ? 1u : 2u;
+	if (!(g_tizi_pending & player))
 		return rolled;
-	g_tizi_pending = 0;
+	g_tizi_pending &= ~player;
 
 	// Re-check activation at USE time, not only at arm time: a slot switch or a
 	// disconnect between the box and the roll must not still pay out.

@@ -118,10 +118,10 @@ static int g_prev_load = LOAD_IDLE;
 // Reverse-recovery accumulator, in milliseconds of near-stationary time.
 static int g_recover_ms = 0;
 
-// Reverse Steering applied its mirror to this frame's steering axis already.
+// Human slots whose steering axis has already been mirrored this frame.
 // Cleared once per frame in AP_TrapTick; see AP_TrapDriveInput for why a mirror
 // cannot simply be reapplied the way the boost-control writes can.
-static int g_trap_steer_mirrored = 0;
+static unsigned g_trap_steer_mirrored = 0;
 
 // ── The alpha3 data package traps (ruled 2026-11-06) ──
 // Stuck Steering's dead side for the running copy: -1 left, +1 right. Picked
@@ -1345,8 +1345,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 
 	AP_TrapEnsureReady();
 
-	// One frame, one steering mirror. Cleared here rather than at the end of the
-	// tick so it is also clear on any frame that returns early below.
+	// Reset before any early returns so each human gets one mirror per frame.
 	g_trap_steer_mirrored = 0;
 
 	// Debug keys work anywhere, title screen included, but only when enabled via
@@ -1703,11 +1702,12 @@ void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
 	// they assign constants. A mirror is its own inverse, so applying it twice
 	// would hand the player back normal steering and the trap would silently do
 	// nothing. The latch is cleared once per frame in AP_TrapTick.
-	if (g_active[AP_TRAP_REVERSE_STEERING] && pad != 0 && !g_trap_steer_mirrored)
+	unsigned player = driver == AP_TrapLocalDriver() ? 1u : 2u;
+	if (g_active[AP_TRAP_REVERSE_STEERING] && pad != 0 && !(g_trap_steer_mirrored & player))
 	{
 		int centre = pad->rwd != 0 ? (int)pad->rwd->gamepadCenter : AP_STICK_NEUTRAL;
 		pad->stickLX = (s16)AP_TrapMirrorStick((int)pad->stickLX, centre);
-		g_trap_steer_mirrored = 1;
+		g_trap_steer_mirrored |= player;
 	}
 
 	// Forced Use. The weapon path fires on a TAPPED circle in a controllable kart
