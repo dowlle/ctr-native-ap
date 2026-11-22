@@ -170,7 +170,7 @@ const char *UI_TrackCredit(int physicalPad)
 	return NULL;
 }
 
-void UI_DrawTrackCredit(const char *credit, int x, int y, int width, int mode)
+void UI_DrawTrackCreditInSlot(const char *credit, int x, int y, int width, int mode, int slot)
 {
 	char plain[CTR_TRACK_CREDIT_MAX];
 	if (credit && CustomPackage_AsciiFold(credit, strlen(credit), plain, sizeof plain))
@@ -178,8 +178,13 @@ void UI_DrawTrackCredit(const char *credit, int x, int y, int width, int mode)
 		/* The byte font treats these glyphs as controls and controller icons. */
 		for (char *c = plain; *c; ++c)
 			if ((unsigned char)*c < 32 || strchr("~@[^*", *c)) *c = ' ';
-		const int slot = mode == TEXT_BANNER_MARQUEE ? TEXT_SLOT_RACE_CREDIT : TEXT_SLOT_TRACK_CREDIT;
 		DecalFont_DrawLineBox(plain, x, y, width, FONT_SMALL, WHITE | JUSTIFY_CENTER, mode, slot, NULL);
 	}
+}
+
+void UI_DrawTrackCredit(const char *credit, int x, int y, int width, int mode)
+{
+	const int slot = mode == TEXT_BANNER_MARQUEE ? TEXT_SLOT_RACE_CREDIT : TEXT_SLOT_TRACK_CREDIT;
+	UI_DrawTrackCreditInSlot(credit, x, y, width, mode, slot);
 }
 #endif

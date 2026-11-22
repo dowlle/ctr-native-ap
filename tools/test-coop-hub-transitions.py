@@ -6,6 +6,7 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 rectmenu = (root / "game/RECTMENU.c").read_text()
 hub = (root / "game/LOAD/LOAD_Hub.c").read_text()
+frame = (root / "game/MAIN/MainFrame.c").read_text()
 
 
 def function(source, signature):
@@ -17,11 +18,13 @@ fixture = r'''
 #include <assert.h>
 #include <common.h>
 #include "ap/ap_pauserow.h"
+#include "ap/ap_coop.h"
 struct sData sdata_static;
 static struct GameTracker tracker;
 static struct GamepadSystem pads;
 static struct RectMenu p2Menu;
 static int requestedLevel, swaps, leader = -1;
+static int warpPlayer = -1;
 static const int connected[5][3] = {
     {26, 27, 29}, {25, 27, 28}, {25, 26, 28}, {26, 27, 29}, {25, 27, 28}
 };
@@ -30,6 +33,10 @@ static const int connected[5][3] = {
 int RngDeadCoed(struct RngDeadCoedState *state) { return 0; }
 int OtherFX_Play(u32 sound, int flags) { return 0; }
 int AH_WarpPad_CoopMenuPlayer(const struct RectMenu *menu) { return menu == &p2Menu; }
+int AP_SkipHints(void) { return 0; }
+int AP_CoopMenuOpen(void) { return 0; }
+int AP_CoopHubWarpDriver(const struct GameTracker *gt) { return warpPlayer; }
+void VehPhysProc_FreezeEndEvent_Init(struct Thread *t, struct Driver *d) {}
 
 int AP_CoopHubHeldDriver(const struct GameTracker *gt) { return -1; }
 void LOAD_Hub_ReadFile(struct BigHeader *file, int level, int pack)
@@ -50,6 +57,7 @@ void AP_CoopPlaceBeside(struct GameTracker *gt, int enteringPlayer)
 for name in ("RECTMENU_ClearInput", "RECTMENU_CollectInput"):
     fixture += function(rectmenu, f"void {name}()")
 fixture += function(rectmenu, "int RECTMENU_ProcessInput(struct RectMenu *m)")
+fixture += function(frame, "void MainFrame_RequestMaskHint(s16 hintId, char interruptWarpPad)")
 fixture += hub[hub.index("static int coopCrossingDriver"):
                hub.index("\n#endif", hub.index("static int coopCrossingDriver"))]
 fixture += r'''
@@ -102,6 +110,17 @@ int main(void)
     LOAD_Hub_Coop(NULL, &tracker);
     assert(!LOAD_Hub_CoopCrossing() && swaps == 1 && leader == 1);
     assert(drivers[0].stepFlagSet == 0 && drivers[1].stepFlagSet == 0);
+
+    tracker.numPlyrCurrGame = 2;
+    tracker.gameMode1 = ADVENTURE_MODE | ADVENTURE_ARENA;
+    sdata->AkuHint_RequestedHint = -1;
+    warpPlayer = 1;
+    MainFrame_RequestMaskHint(ADV_MASK_HINT_ID_NEED_MORE_TROPHIES, 0);
+    assert(sdata->AkuHint_RequestedHint == -1 && !sdata->AkuAkuHintState);
+    warpPlayer = 0;
+    MainFrame_RequestMaskHint(ADV_MASK_HINT_ID_RELIC_CHALLENGE, 1);
+    assert(sdata->AkuHint_RequestedHint == ADV_MASK_HINT_ID_RELIC_CHALLENGE &&
+           sdata->AkuHint_boolInterruptWarppad);
 }
 '''
 
@@ -112,4 +131,4 @@ with tempfile.TemporaryDirectory() as temp:
     subprocess.run(["cc", "-m32", "-DCTR_NATIVE", "-DCTR_AP", "-DBUILD=926", "-I", "include", "-I", ".",
                     str(src), "-o", str(executable)], cwd=root, check=True)
     subprocess.run([str(executable)], check=True)
-print("Split-hub menu ownership and contested crossing pass")
+print("Split-hub menu ownership, contested crossing and mask hint admission pass")

@@ -831,6 +831,7 @@ void MainFrame_VisMemFullFrame(struct GameTracker *gGT, struct Level *level)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80035e20-0x80035e70.
 void MainFrame_RequestMaskHint(s16 hintId, char interruptWarpPad)
 {
+	struct GameTracker *gGT = sdata->gGT;
 #ifdef CTR_AP
 	// AP QoL (ap-config.txt skip_hints=1): suppress all Aku Aku mask hints at the
 	// single choke point -- early-return before any hint is armed, so nothing has
@@ -844,9 +845,12 @@ void MainFrame_RequestMaskHint(s16 hintId, char interruptWarpPad)
 	// "no freeze is ever outstanding".
 	if (AP_SkipHints())
 		return;
+	// The hint animates P1, whose driving callbacks are held during P2's
+	// warp. Either the hint or the warp can take the hub, never both.
+	if (AP_CoopHub(gGT) && (AP_CoopHubWarpDriver(gGT) == 1 ||
+	    AP_CoopHubFadingOut(gGT) || AP_CoopMenuOpen()))
+		return;
 #endif
-
-	struct GameTracker *gGT = sdata->gGT;
 
 	if (((gGT->gameMode1 & PAUSE_ALL) == 0) && (sdata->AkuHint_RequestedHint == -1))
 	{

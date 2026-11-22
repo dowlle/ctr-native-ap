@@ -817,8 +817,10 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					const int width = padView->w - 144;
 					const int bottom = padView->y + padView->h - apLift;
 					DecalFont_DrawLineBox(warppadLNG, padX, bottom - 30 - 11, width,
-					                      FONT_BIG, JUSTIFY_CENTER | ORANGE, TEXT_MARQUEE, TEXT_SLOT_PAD_TITLE, NULL);
-					UI_DrawTrackCredit(credit, padX, bottom - 23, width, TEXT_MARQUEE);
+					                      FONT_BIG, JUSTIFY_CENTER | ORANGE, TEXT_MARQUEE,
+					                      padPlayer ? TEXT_SLOT_PAD_TITLE_P2 : TEXT_SLOT_PAD_TITLE, NULL);
+					UI_DrawTrackCreditInSlot(credit, padX, bottom - 23, width, TEXT_MARQUEE,
+					                         padPlayer ? TEXT_SLOT_PAD_CREDIT_P2 : TEXT_SLOT_TRACK_CREDIT);
 				}
 				else
 #endif
@@ -831,6 +833,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 				// Pad Approach Hints (#124, ruling of 2026-07-20): the name is on
 				// screen, so the pad hints its open checks (off by default).
 				AP_PadApproachHints(levelID);
+				const int padTextSlot = padPlayer ? TEXT_SLOT_PAD_P2 : TEXT_SLOT_PAD;
 
 				// A4-59: what stage 2 asks for, in the A4-10 pad colours: green
 				// met, red not met, grey when its races have nothing left. A long
@@ -845,7 +848,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					                      padX,
 					                      padView->y + padView->h - 15 - apLift,
 					                      apMissW, FONT_SMALL, JUSTIFY_CENTER | RED,
-					                      TEXT_MARQUEE, TEXT_SLOT_PAD, NULL);
+					                      TEXT_MARQUEE, padTextSlot, NULL);
 #if defined(CTR_CUSTOM_PACKAGES) && !defined(CTR_AP_AUTHORING)
 					DecalFont_DrawLineBox("OPTIONS > CUSTOM TRACKS",
 #else
@@ -854,7 +857,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					                      padX,
 					                      padView->y + padView->h - 15,
 					                      apMissW, FONT_SMALL, JUSTIFY_CENTER | RED,
-					                      TEXT_MARQUEE, TEXT_SLOT_PAD, NULL);
+					                      TEXT_MARQUEE, padTextSlot, NULL);
 				}
 				else if (apStage2 != AP_S2LINE_NONE)
 				{
@@ -867,7 +870,7 @@ void AH_WarpPad_ThTick(struct Thread *t)
 					                      apS2W, FONT_SMALL,
 					                      JUSTIFY_CENTER | (apStage2 == AP_S2LINE_MET ? LIGHT_GREEN
 					                                        : apStage2 == AP_S2LINE_DONE ? GRAY : RED),
-					                      TEXT_MARQUEE, TEXT_SLOT_PAD, NULL);
+					                      TEXT_MARQUEE, padTextSlot, NULL);
 				}
 
 				if (apBoxesLeft > 0 && !apContentMissing)

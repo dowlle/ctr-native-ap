@@ -171,7 +171,7 @@ void AH_Door_ThTick(struct Thread *t)
 	dist = distX * distX + distZ * distZ;
 
 #ifdef CTR_AP
-	if (AP_CoopHub(gGT) && (AP_CoopHubWarpDriver(gGT) >= 0 || AP_CoopMenuOpen() ||
+	if (AP_CoopHub(gGT) && (AP_CoopHubFadingOut(gGT) || AP_CoopHubWarpDriver(gGT) >= 0 || AP_CoopMenuOpen() ||
 	    AP_CharSwap_PickerOpen() || AP_TrackerOpen() || AP_WumpaShopPageOpen()))
 		return;
 #endif

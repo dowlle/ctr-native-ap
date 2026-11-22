@@ -41,6 +41,10 @@ int Platform_PollInput(void)
 	return 1;
 }
 void VehStuckProc_Warp_Init(struct Thread *t, struct Driver *d) { (void)t; (void)d; }
+void VehPhysProc_FreezeEndEvent_Init(struct Thread *t, struct Driver *d) { (void)t; (void)d; }
+int LOAD_IsOpen_AdvHub(void) { return 1; }
+int AP_TrackerOpen(void) { return 0; }
+int AP_WumpaShopPageOpen(void) { return 0; }
 int AP_HubSafeForRequest(struct GameTracker *gt) { (void)gt; return hubSafe; }
 int AP_CharSwap_PickerOpen(void) { return 0; }
 void AP_HubPickerFreeze(struct GameTracker *gt, int on)
@@ -158,6 +162,13 @@ static void testHubMenu(struct GameTracker *gt)
 	tapPartner(gt, 2, RAW_BTN_CROSS);
 	assert(ap_coop_menu == COOP_MENU_CLOSED && g_config.coopAdventure);
 	gt->cameraDC[0].flags &= ~CAMERA_FLAG_TRANSITION_AWAY;
+	gt->numPlyrCurrGame = 2;
+	gt->pushBuffer_UI.fade_step = -0x2aa;
+	gt->pushBuffer_UI.fadeFromBlack_desiredResult = 0;
+	assert(AP_CoopHubHeldDriver(gt) == 1); /* Garage still fading, load still idle. */
+	gt->pushBuffer_UI.fade_step = 0x2aa;
+	gt->pushBuffer_UI.fadeFromBlack_desiredResult = 0x1000;
+	assert(AP_CoopHubHeldDriver(gt) == -1); /* Failed garage entry restores control. */
 	tapPartner(gt, 2, RAW_BTN_START);
 	tapPartner(gt, 1, RAW_BTN_CROSS);
 	assert(ap_coop_menu == COOP_MENU_ACTIONS);
@@ -262,6 +273,13 @@ static void testDelayedPreference(struct GameTracker *gt)
 	revision++;
 	AP_CoopMenuTick(gt);
 	assert(g_config.coopRacer == racer && packedValue == racer && writes == before + 1);
+	g_config.coopRacer = 10; /* A local racer edit reached the kart but lost its write. */
+	saveLost = 1;
+	packedValue = 64;
+	revision++;
+	AP_CoopMenuTick(gt);
+	assert(g_config.coopRacer == AP_CoopNextRacer(-1, 1) && writes == before + 1);
+	assert(!strcmp(ap_coop_notice, "CO-OP SETTINGS NOT SAVED"));
 }
 
 int main(void)

@@ -145,20 +145,34 @@ static int AP_CoopRacerUnlocked(int racer)
 	       (!ctr_cfg.character_phase_present || AP_CharacterUnlocked(racer));
 }
 
+static int AP_CoopNextRacer(int racer, int direction)
+{
+	for (int i = 1; i <= 16; i++)
+	{
+		int next = (racer + direction * i + 32) % 16;
+		if (AP_CoopRacerUnlocked(next))
+			return next;
+	}
+	return -1;
+}
+
 static void AP_CoopRestorePreference(void)
 {
 	int packed;
 	if (ap_net_coop_revision() == ap_coop_restored || !ap_net_coop_known(&packed)) return;
 	ap_coop_restored = ap_net_coop_revision();
 	ap_coop_restore_pending = 0;
-	if (ap_net_coop_save_lost())
+	const int saveLost = ap_net_coop_save_lost();
+	if (saveLost)
 		AP_CoopNotice("CO-OP SETTINGS NOT SAVED", "");
 	g_config.coopRules = (packed & 32) != 0;
 	if (!(packed & 64))
 		g_config.coopRacer = packed & 15;
 	else if (!g_config.coopAdventure)
 		g_config.coopRacer = -1;
-	else if (!ap_net_coop_save_lost() && AP_CoopRacerUnlocked(g_config.coopRacer))
+	else if (saveLost)
+		g_config.coopRacer = AP_CoopNextRacer(-1, 1);
+	else if (AP_CoopRacerUnlocked(g_config.coopRacer))
 		AP_CoopPersist(g_config.coopRacer, g_config.coopRules);
 }
 
@@ -187,17 +201,6 @@ void AP_CoopConfirmPad(void)
 	ap_coop_entry_rules = ap_coop_warp_rules;
 }
 
-static int AP_CoopNextRacer(int racer, int direction)
-{
-	for (int i = 1; i <= 16; i++)
-	{
-		int next = (racer + direction * i + 32) % 16;
-		if (AP_CoopRacerUnlocked(next))
-			return next;
-	}
-	return -1;
-}
-
 int AP_CoopHubWarpDriver(const struct GameTracker *gt)
 {
 	const int players = AP_CoopHub(gt) ? 2 : 1;
@@ -224,7 +227,8 @@ int AP_CoopHubHeldDriver(const struct GameTracker *gt)
 	if (warp >= 0)
 		return 1 - warp;
 	const struct Driver *primary = gt->drivers[0];
-	if (!LOAD_IsOpen_AdvHub() || (gt->gameMode2 & (GAME_MODE2_VEH_FREEZE_MASK | SPAWN_AT_BOSS)) ||
+	if (!LOAD_IsOpen_AdvHub() || AP_CoopHubFadingOut(gt) ||
+	    (gt->gameMode2 & (GAME_MODE2_VEH_FREEZE_MASK | SPAWN_AT_BOSS)) ||
 	    (gt->cameraDC[0].flags & CAMERA_FLAG_TRANSITION_AWAY) || sdata->AkuAkuHintState ||
 	    (primary && (primary->kartState == KS_FREEZE ||
 	     primary->funcPtrs[DRIVER_FUNC_INIT] == VehPhysProc_FreezeEndEvent_Init)) ||
@@ -376,6 +380,7 @@ void AP_CoopMenuTick(struct GameTracker *gt)
 	if (ap_coop_menu != COOP_MENU_CLOSED)
 	{
 		if (!hub || !idle || warp || !pickerConnected || sdata->ptrActiveMenu ||
+		    AP_CoopHubFadingOut(gt) ||
 		    (gt->cameraDC[0].flags & CAMERA_FLAG_TRANSITION_AWAY) || sdata->AkuAkuHintState ||
 		    (gt->gameMode1 & PAUSE_ALL) || (pads->gamepad[0].buttonsTapped & BTN_START))
 			AP_CoopCloseMenu(gt);

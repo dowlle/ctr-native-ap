@@ -12,7 +12,7 @@ Two local players share one Archipelago slot. Both can drive around the Adventur
 | Podium checks | Better finishing place | Worse finishing place |
 | Local DeathLink to the partner | Mask reset | The seed's DeathLink mode and send conditions |
 
-The slot remembers the racer and rules in its `ctr_coop_<slot>` Archipelago Data Storage key. Values from older co-op builds still restore the racer and default to Lenient. Press Start to join in each new Adventure session. If the current preference is still syncing, leave the pad and try again when it has settled. A queued edit shows that the save is pending. If the client reconnects and the room still has a different value, the hub reports the unsaved edit and displays the room's value. Change the setting again to retry.
+The slot remembers the racer and rules in its `ctr_coop_<slot>` Archipelago Data Storage key. Values from older co-op builds still restore the racer and default to Lenient. Press Start to join in each new Adventure session. If a two-player Trophy entry reports that the rules are still syncing, leave the pad and try again after sync. Solo entries can proceed while it finishes. A queued edit shows that the save is pending. If the client reconnects and the room still has a different value, the hub reports the unsaved edit and restores the room's value, or the first eligible racer if the room had no saved racer. Change the setting again to retry.
 
 Retail Trophy podium checks require the observed race result. The client retries earned checks when it reconnects to the same room. If an older client left a Trophy checked without sending its podium checks, finish the race again to earn the missing podium checks.
 

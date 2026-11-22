@@ -7,6 +7,11 @@ static inline int AP_CoopHub(const struct GameTracker *gt)
 {
 	return gt && gt->numPlyrCurrGame == 2 && (gt->gameMode1 & ADVENTURE_ARENA);
 }
+static inline int AP_CoopHubFadingOut(const struct GameTracker *gt)
+{
+	return AP_CoopHub(gt) && gt->pushBuffer_UI.fade_step < 0 &&
+	       gt->pushBuffer_UI.fadeFromBlack_desiredResult == 0;
+}
 enum { AP_COOP_HUB_VIS_RESERVE = 0x2000 };
 void AP_CoopPlaceBeside(struct GameTracker *gt, int leader);
 void AP_CoopFinishHubReload(const struct GameTracker *gt);

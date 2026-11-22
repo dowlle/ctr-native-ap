@@ -416,7 +416,7 @@ garage = (root / "game/232/AH_Garage.c").read_text()
 gtick = body(garage, "void AH_Garage_ThTick(struct Thread *t)")
 garrive = gtick.index("AP_TrackerLaunchGarageArrives()")
 # Only reached with the garage open, before its own load.
-assert gtick.index("LAB_800aede8:") < garrive < gtick.index("if (gGT->pushBuffer_UI.fadeFromBlack_currentValue == 0)")
+assert gtick.index("LAB_800aede8:") < garrive < gtick.index("if (gGT->pushBuffer_UI.fadeFromBlack_currentValue == 0")
 assert gtick.index("if (!bossIsOpen)\n\t{\n\t\treturn;") < gtick.index("LAB_800aede8:")
 
 launch = (root / "ap/ap_tracker_launch.c").read_text()

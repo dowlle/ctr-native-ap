@@ -43,7 +43,10 @@ assert "const RECT *padView = &gGT->pushBuffer[padPlayer].rect;" in block
 assert "ap_pad_title_block_lift(apContentMissing ? 2 : (apStage2 != AP_S2LINE_NONE) + (apBoxesLeft > 0)" in block
 assert "padView->h - 30 - apLift, FONT_BIG" in warp
 stage2_draw = block.split("DecalFont_DrawLineBox(apStage2Line,", 1)[1].split(");", 1)[0]
-assert "TEXT_MARQUEE, TEXT_SLOT_PAD, NULL" in stage2_draw
+assert "TEXT_MARQUEE, padTextSlot, NULL" in stage2_draw
+assert "padPlayer ? TEXT_SLOT_PAD_P2 : TEXT_SLOT_PAD" in block
+assert "padPlayer ? TEXT_SLOT_PAD_TITLE_P2 : TEXT_SLOT_PAD_TITLE" in block
+assert "padPlayer ? TEXT_SLOT_PAD_CREDIT_P2 : TEXT_SLOT_TRACK_CREDIT" in block
 assert "int apS2W = padView->w - 160;" in block
 assert "apStage2 == AP_S2LINE_MET ? LIGHT_GREEN" in block
 assert "apStage2 == AP_S2LINE_DONE ? GRAY : RED" in block
