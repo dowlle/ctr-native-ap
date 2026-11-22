@@ -107,6 +107,9 @@ void ElimBG_Deactivate(struct GameTracker *g) { (void)g; elim_off++; }
 void AddPrim(void *ot, void *pri) { (void)ot; (void)pri; }
 void AH_Pause_Destroy(void) {}
 void AH_Pause_Update(void) {}
+int ctr_cfg_active(void) { return live; }
+void MM_ConfigOpen(struct RectMenu *parent) { (void)parent; }
+int MM_ConfigReturnFromChild(struct RectMenu *child) { (void)child; return 0; }
 void AP_AiDifficultyCommit(void) {}
 int AP_CharSwap_PickerOpen(void) { return 0; }
 void AP_CharSwap_RequestPickerFromPause(void) {}
