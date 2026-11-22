@@ -1349,6 +1349,29 @@ static void TestAutoAssignmentPutsFirstGamepadOnPlayerOne(void)
 	CheckDevice(3, NULL, "P4 has no device");
 }
 
+static void TestPlayerDeviceIdentitySurvivesTableRebuild(void)
+{
+	ResetModule();
+	int pads[4];
+	int keyboard;
+	SetupDevices(2, pads, &keyboard);
+	NativeControls_ResolveAssignment();
+	const u64 device = NativeControls_GetPlayerDeviceIdentity(1);
+	Check(device == 101, "P2 keeps the SDL device identity");
+
+	SetupDevices(1, pads, &keyboard);
+	NativeControls_ResolveAssignment();
+	CheckDevice(1, TEST_KEYBOARD_NAME, "Auto gives the keyboard to the empty P2 slot");
+	Check(NativeControls_GetPlayerDeviceIdentity(1) == UINT64_MAX,
+	      "the replacement keyboard reports a different identity");
+	Check(NativeControls_GetPlayerDeviceIdentity(2) == 0, "an empty slot has no identity");
+
+	SetupDevices(2, pads, &keyboard);
+	NativeControls_ResolveAssignment();
+	Check(NativeControls_GetPlayerDeviceIdentity(1) == device,
+	      "device identity follows the pad across table rebuilds");
+}
+
 static void TestKeyboardIsTheLastFallback(void)
 {
 	printf("auto assignment: keyboard is the last fallback\n");
@@ -2270,6 +2293,7 @@ int main(void)
 	TestChangingAPlayerDeviceReachesThePadBus();
 	TestDisablingAPlayerReachesThePadBus();
 	TestAutoAssignmentPutsFirstGamepadOnPlayerOne();
+	TestPlayerDeviceIdentitySurvivesTableRebuild();
 	TestKeyboardIsTheLastFallback();
 	TestDisabledPlayerIsSkipped();
 	TestPinnedPreferencesWinOverAuto();

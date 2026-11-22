@@ -118,6 +118,8 @@ u32 NativeControls_GetGeneration(void);
 // Player index is 0-based. The result indexes the device table, or
 // NATIVE_CONTROLS_NO_DEVICE when the player is disabled.
 int NativeControls_GetPlayerDevice(int player);
+// Stable across device-table rebuilds. Zero means no assigned device.
+u64 NativeControls_GetPlayerDeviceIdentity(int player);
 int NativeControls_GetPlayerPref(int player);
 
 // Changes a player's preference, re-resolves, and persists. `device` is only read

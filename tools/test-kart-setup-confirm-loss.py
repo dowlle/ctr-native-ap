@@ -111,6 +111,9 @@ void AP_AiDifficultyCommit(void) {}
 int AP_CharSwap_PickerOpen(void) { return 0; }
 void AP_CharSwap_RequestPickerFromPause(void) {}
 int AP_CupReturnHub(void) { return 0; }
+int AP_CoopHubAvailable(const struct GameTracker *tracker) { (void)tracker; return 0; }
+int AP_CoopReloadOnRetry(struct GameTracker *tracker) { (void)tracker; return 0; }
+static void MM_ConfigOpenHubCoop(void) {}
 void AP_DeathLinkOnPauseLeave(int quit) { (void)quit; }
 int AP_FastTravelAvailable(void) { return 0; }
 void AP_FastTravelShowMenu(void) {}

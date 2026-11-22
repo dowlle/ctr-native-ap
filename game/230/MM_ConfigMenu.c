@@ -135,9 +135,9 @@ static void MM_MenuProc_Config(struct RectMenu *menu);
 // is a page from include/ctr_menu_pages.h, not a config.ini [section]: the page
 // table decides where a row is shown, the entry's section where it is saved.
 // Audio and State stay config-file-only (see CTR_MenuSectionHidden).
-static int s_sectionRows[CTR_MENU_PAGE_CAP][CTR_MENU_PAGE_ROW_CAP];
-static int s_sectionCount[CTR_MENU_PAGE_CAP];
-static const char *s_sectionName[CTR_MENU_PAGE_CAP];
+static int s_sectionRows[CTR_MENU_PAGE_CAP + 1][CTR_MENU_PAGE_ROW_CAP];
+static int s_sectionCount[CTR_MENU_PAGE_CAP + 1];
+static const char *s_sectionName[CTR_MENU_PAGE_CAP + 1];
 static int s_numSections = 0;
 #if (defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)) || defined(CTR_CUSTOM_PACKAGES)
 static int s_customContentSection = -1;
@@ -287,6 +287,29 @@ struct RectMenu g_configMenu = {
 	.state = EXECUTE_FUNCPTR | DISABLE_INPUT_ALLOW_FUNCPTRS,
 	.funcPtr = MM_MenuProc_Config,
 };
+
+#ifdef CTR_AP
+// A hub pause opens just the two co-op rows. The connection and other
+// title-only actions remain on the title Options menu.
+static void MM_ConfigOpenHubCoop(void)
+{
+	if (s_numSections == 0)
+		BuildSectionMap();
+	const int section = CTR_MENU_PAGE_CAP;
+	s_sectionName[section] = "Adventure Co-op";
+	s_sectionCount[section] = 0;
+	for (int i = 0; i < g_numConfigEntries; i++)
+	{
+		const void *value = g_configEntries[i].valuePtr;
+		if (value == &g_config.coopAdventure || value == &g_config.coopRacer)
+			s_sectionRows[section][s_sectionCount[section]++] = i;
+	}
+	s_currentSection = section;
+	s_configTop = 0;
+	g_configMenu.rowSelected = 0;
+	sdata->ptrDesiredMenu = &g_configMenu;
+}
+#endif
 
 static void Config_UpdateSlider(const struct GamepadBuffer *pad, const int rowSelected,
                               const int localRow, int *value, const int min, const int max, const int step)
@@ -1507,6 +1530,14 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 	)
 	{
 		OtherFX_Play(2, 1);
+#ifdef CTR_AP
+		if (s_currentSection == CTR_MENU_PAGE_CAP)
+		{
+			s_currentSection = -1;
+			sdata->ptrDesiredMenu = MainFreeze_GetMenuPtr();
+			return;
+		}
+#endif
 		if (s_currentSection >= 0)
 		{
 			if (inControls)

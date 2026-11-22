@@ -17,6 +17,10 @@ static unsigned revision;
 static char notice[64];
 static int customServing, cortex, haveContext, queriedPlayers;
 static struct CustomTrackRaceContext raceContext;
+static u64 p2Device = 101;
+static s16 requestedLevel = -1;
+u64 NativeControls_GetPlayerDeviceIdentity(int player) { return player == 1 ? p2Device : 100; }
+void MainRaceTrack_RequestLoad(s16 level) { requestedLevel = level; }
 int CustomTrack_ServingLoad(int level, int cup, int cupID)
 {
 	(void)level; (void)cup; (void)cupID;
@@ -98,6 +102,19 @@ int main(void)
 	AP_CoopPrepareLoad(&gt);
 	assert(gt.numPlyrCurrGame == 2 && gt.numPlyrNextGame == 1);
 	assert(data.characterIDs[1] == 10);
+	struct ControllerPacket p2Pad = {.plugged = PLUGGED};
+	pads.gamepad[1].ptrControllerPacket = &p2Pad;
+	assert(AP_CoopP2Available() && !AP_CoopReloadOnRetry(&gt));
+	p2Device = UINT64_MAX; /* Auto puts the keyboard in the vacated slot. */
+	gt.prevLEV = N_SANITY_BEACH;
+	assert(!AP_CoopP2Available() && AP_CoopReloadOnRetry(&gt));
+	assert(requestedLevel == CRASH_COVE);
+	gt.prevLEV = CRASH_COVE; /* Full load records the last level. */
+	AP_CoopPrepareLoad(&gt);
+	assert(gt.numPlyrCurrGame == 1 && gt.prevLEV == N_SANITY_BEACH && g_config.coopAdventure);
+	p2Device = 102;
+	AP_CoopPrepareLoad(&gt);
+	assert(gt.numPlyrCurrGame == 2 && AP_CoopP2Available());
 	assert(AP_IsSlotHuman(&gt, &drivers[0]) && AP_IsSlotHuman(&gt, &drivers[1]));
 	assert(!AP_IsSlotHuman(&gt, &drivers[2]) && !AP_IsSlotHuman(&gt, NULL));
 	assert(!AP_CoopFinishReady(1, 2, 1));

@@ -2,7 +2,7 @@
 
 This draft implements the first retail Trophy Race slice of two local players on one Archipelago slot. It is not the complete co-op milestone and has not been accepted in a two-controller play test.
 
-In the hub, open Options, Gameplay, Adventure Players and select 2P LENIENT with two controller slots connected. Player 2 Racer cycles through unlocked racers. Both choices are stored together in the slot's `ctr_coop_<slot>` data-storage key: engine racer ID 0 to 15, plus 16 when co-op is selected. Missing or invalid storage starts solo. Global configuration does not carry a choice into another room.
+Pause in the hub and open Adventure Co-op. Set Adventure Players to 2P LENIENT with two controller slots connected. Player 2 Racer cycles through unlocked racers. Both choices are stored together in the slot's `ctr_coop_<slot>` data-storage key: engine racer ID 0 to 15, plus 16 when co-op is selected. Missing or invalid storage starts solo. Global configuration does not carry a choice into another room.
 
 Mute When Unfocused is on Video so Gameplay keeps both co-op rows and Update Check within its eleven visible rows.
 

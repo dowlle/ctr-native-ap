@@ -6,9 +6,13 @@
 #include "ap_charswap.h"
 #include "ap_hooks.h"
 #include "ap_net.h"
+#include <platform/native_controls.h>
 
 static const char *ap_coop_help = "Hub only; connect two controllers.";
 static unsigned ap_coop_restored;
+static u64 ap_coop_p2_device;
+static int ap_coop_retry_level = -1;
+static int ap_coop_retry_hub;
 
 void AP_CoopConnectReset(void)
 {
@@ -16,6 +20,8 @@ void AP_CoopConnectReset(void)
 	g_config.coopAdventure = 0;
 	g_config.coopRacer = ctr_cfg.starting_character;
 	ap_coop_restored = ap_net_coop_revision();
+	ap_coop_p2_device = 0;
+	ap_coop_retry_level = -1;
 }
 
 static void AP_CoopPersist(void)
@@ -31,6 +37,35 @@ static int AP_CoopControllers(void)
 	return (sdata->gGamepads->gamepadsConnectedByFlag & 3u) == 3u ? 2 : 1;
 }
 
+int AP_CoopP2Available(void)
+{
+	if (!sdata->gGamepads)
+		return 0;
+	const struct ControllerPacket *packet = sdata->gGamepads->gamepad[1].ptrControllerPacket;
+	if (!packet || packet->plugged != PLUGGED)
+		return 0;
+	// Auto can put the keyboard in a vacated slot. Wait only for the device
+	// that entered this attempt. A pad-bus fixture may have no host device.
+	return !ap_coop_p2_device || ap_coop_p2_device == NativeControls_GetPlayerDeviceIdentity(1);
+}
+
+int AP_CoopReloadOnRetry(struct GameTracker *gt)
+{
+	if (!AP_CoopRace(gt) || AP_CoopP2Available())
+		return 0;
+	// The in-place restart retains the two-player files and pools.
+	ap_coop_retry_level = gt->levelID;
+	ap_coop_retry_hub = gt->prevLEV;
+	MainRaceTrack_RequestLoad(gt->levelID);
+	return 1;
+}
+
+int AP_CoopHubAvailable(const struct GameTracker *gt)
+{
+	return gt && ctr_cfg_active() && (gt->gameMode1 & ADVENTURE_ARENA) &&
+	       !(gt->gameMode1 & (MAIN_MENU | GAME_CUTSCENE));
+}
+
 static int AP_CoopRacerUnlocked(int racer)
 {
 	return racer >= 0 && racer < 16 &&
@@ -41,8 +76,7 @@ static int AP_CoopCanEdit(int enabling)
 {
 	struct GameTracker *gt = sdata ? sdata->gGT : 0;
 	int refusal = AP_CoopToggleRefusal(
-	    gt && ctr_cfg_active() && (gt->gameMode1 & ADVENTURE_ARENA) &&
-	        !(gt->gameMode1 & (MAIN_MENU | GAME_CUTSCENE)),
+	    AP_CoopHubAvailable(gt),
 	    gt && (gt->gameMode1 & ADVENTURE_CUP),
 	    sdata && sdata->Loading.stage == LOAD_IDLE,
 	    AP_CoopControllers(), enabling);
@@ -86,6 +120,10 @@ const char *AP_CoopHelp(void) { return ap_coop_help; }
 void AP_CoopPrepareLoad(struct GameTracker *gt)
 {
 	int mode = gt->gameMode1;
+	int soloRetry = ap_coop_retry_level >= 0 && ap_coop_retry_level == gt->levelID;
+	ap_coop_retry_level = -1;
+	if (soloRetry)
+		gt->prevLEV = ap_coop_retry_hub;
 	/* The screen/garage loader owns its temporary menu player counts. An
 	 * Adventure flag can still be present while returning to those menus. */
 	if (mode & (MAIN_MENU | GAME_CUTSCENE)) return;
@@ -104,7 +142,7 @@ void AP_CoopPrepareLoad(struct GameTracker *gt)
 	    CRYSTAL_CHALLENGE | ARCADE_MODE | TIME_TRIAL | BATTLE_MODE | MAIN_MENU |
 	    GAME_CUTSCENE)) && !(gt->gameMode2 & TOKEN_RACE);
 	if (!ctr_cfg_active() || !(mode & ADVENTURE_MODE)) return;
-	int two = AP_CoopSeatsTwo(g_config.coopAdventure == 1, AP_CoopControllers(), 1,
+	int two = !soloRetry && AP_CoopSeatsTwo(g_config.coopAdventure == 1, AP_CoopControllers(), 1,
 	                         trophy, retail, (mode & ADVENTURE_CUP) != 0) &&
 	          AP_CoopRacerUnlocked(g_config.coopRacer);
 	gt->numPlyrCurrGame = two ? 2 : 1;
@@ -113,10 +151,11 @@ void AP_CoopPrepareLoad(struct GameTracker *gt)
 	if (g_config.coopAdventure == 1 && !two &&
 	    !(mode & (ADVENTURE_ARENA | MAIN_MENU | GAME_CUTSCENE)))
 	{
-		AP_FeedNoticeLine(AP_CoopControllers() < 2 ? "P2 DISCONNECTED: SOLO RACE" :
+		AP_FeedNoticeLine(soloRetry || AP_CoopControllers() < 2 ? "P2 DISCONNECTED: SOLO RACE" :
 		    !AP_CoopRacerUnlocked(g_config.coopRacer) ? "P2 RACER LOCKED: SOLO RACE" :
 	    "P2 SITS THIS RACE OUT");
 	}
+	ap_coop_p2_device = two ? NativeControls_GetPlayerDeviceIdentity(1) : 0;
 	if (two)
 	{
 		data.characterIDs[1] = g_config.coopRacer;

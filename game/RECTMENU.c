@@ -456,6 +456,8 @@ static char *RECTMENU_RowString(int index)
 		return (char *)"TRAVEL";
 	if (index == AP_LNG_AI_DIFFICULTY)
 		return (char *)"AI DIFFICULTY";
+	if (index == AP_LNG_COOP)
+		return (char *)"ADVENTURE CO-OP";
 	if (index >= AP_LNG_AI_PRESET && index < AP_LNG_AI_PRESET + AI_DIFF_COUNT)
 		return (char *)s_aiDiffNames[index - AP_LNG_AI_PRESET];
 	if (index == AP_LNG_PLAY_SOLO)

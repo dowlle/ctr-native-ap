@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_AP
+extern struct RectMenu g_configMenu;
+#endif
+
 #if defined(CTR_NATIVE)
 static void MainFrame_RegisterGpuLinkRanges(struct GameTracker *gGT)
 {
@@ -396,6 +400,9 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 			if (gGT->cooldownfromPauseUntilUnpause == 0)
 			{
 				if (((sdata->ptrActiveMenu != &data.menuRacingWheelConfig) && (sdata->ptrActiveMenu != &D232.menuHintMenu) // in 232
+#ifdef CTR_AP
+				     && sdata->ptrActiveMenu != &g_configMenu
+#endif
 				     ) &&
 				    ((sdata->AnyPlayerTap & BTN_START) != 0))
 				{

@@ -553,14 +553,10 @@ void UI_VsWaitForPressX(void)
 	for (i = 0; i < numPlyr; i++)
 	{
 #ifdef CTR_AP
-		if (i == 1 && AP_CoopRace(gGT))
+		if (i == 1 && AP_CoopRace(gGT) && !AP_CoopP2Available())
 		{
-			const struct ControllerPacket *packet = sdata->gGamepads->gamepad[i].ptrControllerPacket;
-			if (packet == NULL || packet->plugged != PLUGGED)
-			{
-				ready++;
-				continue;
-			}
+			ready++;
+			continue;
 		}
 #endif
 		// flags, for which players have pressed X to continue

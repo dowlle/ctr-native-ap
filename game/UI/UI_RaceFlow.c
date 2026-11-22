@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_coop.h"
+#endif
 
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
@@ -524,6 +527,10 @@ void UI_RaceEnd_MenuProc(struct RectMenu *menu)
 
 	case 4:
 	{
+#ifdef CTR_AP
+		if (AP_CoopReloadOnRetry(gGT))
+			break;
+#endif
 		// Turn off HUD
 		gGT->hudFlags &= 0xfe;
 

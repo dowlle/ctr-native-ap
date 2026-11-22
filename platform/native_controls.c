@@ -1343,6 +1343,16 @@ int NativeControls_GetAvailableDevices(int player, int *dst, int max)
 	return count;
 }
 
+u64 NativeControls_GetPlayerDeviceIdentity(int player)
+{
+	int device = NativeControls_GetPlayerDevice(player);
+	if (!NativeControls_IsValidDevice(device))
+		return 0;
+	if (s_devices[device].kind == NATIVE_CONTROLS_DEVICE_KEYBOARD)
+		return UINT64_MAX;
+	return s_devices[device].instanceId;
+}
+
 int NativeControls_GetDeviceKind(int device)
 {
 	if (!NativeControls_IsValidDevice(device))

@@ -442,7 +442,13 @@ void AP_WumpaTick(struct GameTracker *gGT)
 	int before = local->numWumpas;
 	if (g_wumpa_race_pending > 0)
 	{
-		RB_Player_ModifyWumpa(local, g_wumpa_race_pending);
+		if (AP_CoopRace(gGT) && !AP_IsSlotHuman(gGT, local))
+		{
+			if (AP_WumpaBanking())
+				AP_WumpaBank(g_wumpa_race_pending, "AP fruit received after P1 finished");
+		}
+		else
+			RB_Player_ModifyWumpa(local, g_wumpa_race_pending);
 		if (AP_CoopRace(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]))
 		{
 			// P2 uses the retail signed-byte counter, without P1's race bank.

@@ -38,7 +38,13 @@ void DecalFont_DrawLine(char *str, int x, int y, s16 font, int flags) {}
 void CTR_Box_DrawClearBox(const RECT *r, const Color *color, int flags, u32 *ot) {}
 '''
 
-DISCONNECT = RESULT_STUBS + function("game/UI/UI_VsQuip.c", "void UI_VsWaitForPressX(") + r'''
+DISCONNECT = RESULT_STUBS + r'''
+static u64 ap_coop_p2_device = 101;
+static u64 assignedP2Device = 101;
+u64 NativeControls_GetPlayerDeviceIdentity(int player) { return assignedP2Device; }
+''' + function("ap/ap_coop.c", "int AP_CoopP2Available(") + function(
+    "game/UI/UI_VsQuip.c", "void UI_VsWaitForPressX("
+) + r'''
 int main(void)
 {
     static struct ControllerPacket p2;
@@ -58,6 +64,14 @@ int main(void)
     pads.gamepad[1].buttonsTapped = BTN_CROSS_one;
     UI_VsWaitForPressX();
     pads.gamepad[1].buttonsTapped = 0;
+    UI_VsWaitForPressX();
+    assert(gt.timerEndOfRaceVS == 0);
+
+    gt.timerEndOfRaceVS = 30;
+    assignedP2Device = UINT64_MAX; /* The keyboard still reports a connected pad. */
+    pads.gamepad[0].buttonsTapped = BTN_CROSS_one;
+    UI_VsWaitForPressX();
+    pads.gamepad[0].buttonsTapped = 0;
     UI_VsWaitForPressX();
     assert(gt.timerEndOfRaceVS == 0);
 
@@ -199,13 +213,13 @@ WUMPA = r'''
 #include "ap/ap_wumpa.c"
 #include "ap/ap_wumpa_dispatch.h"
 AP_WumpaShopConfig ctr_wumpa_shop;
-static int checks;
+static int checks, banked;
 static const long p2Code = 35016100;
 int ctr_cfg_active(void) { return 1; }
 int LOAD_IsOpen_RacingOrBattle(void) { return 1; }
 int AP_RaceAttemptIsForcedLoss(void) { return 0; }
 void AP_LogLine(const char *line) {}
-void ap_net_wumpa_credit(int amount) {}
+void ap_net_wumpa_credit(int amount) { banked += amount; }
 long long ap_net_wumpa_lifetime(void) { return 0; }
 void AP_NavRec_NoteWumpaGrant(int amount) {}
 int OtherFX_Play(u32 id, int flags) { return 0; }
@@ -245,6 +259,18 @@ int main(void)
     assert(checks == 1);
     AP_WumpaTick(&gt);
     assert(checks == 1);
+
+    ctr_wumpa_shop.goal = 1;
+    drivers[0].actionsFlagSet = ACTION_BOT | ACTION_RACE_FINISHED;
+    AP_WumpaTick(&gt);
+    int before = banked;
+    drivers[1].numWumpas = 8;
+    AP_WumpaReceive(120);
+    AP_WumpaTick(&gt);
+    assert(banked - before == 120 && drivers[0].numWumpas == 10);
+    assert(drivers[1].numWumpas == 10 && checks == 2);
+    AP_WumpaTick(&gt);
+    assert(banked - before == 120 && checks == 2);
 }
 '''
 
