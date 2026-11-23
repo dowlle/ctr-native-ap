@@ -14,7 +14,7 @@ assert 'AP_TrapSchedReceive(&g_sched' not in boundary
 assert set(re.findall(r'^\s*owed\[(AP_TRAP_\w+)\]', boundary, re.MULTILINE)) == {
     'AP_TRAP_FORCED_USE', 'AP_TRAP_ITEM_REROLL', 'AP_TRAP_FLATTEN',
     'AP_TRAP_CLOCKED_OUT', 'AP_TRAP_NITRO', 'AP_TRAP_RED_POTION',
-    'AP_TRAP_WARPBALL_AMBUSH',
+    'AP_TRAP_WARPBALL_AMBUSH', 'AP_TRAP_WUMPA_WIPEOUT', 'AP_TRAP_WUMPA_LEAK',
 }
 assert 'AP_TrapReceiveOwed(e, owed[e] & nextSeats, feedSlots, feedSeqs)' in boundary
 net = (root / 'ap/ap_hooks_net.c').read_text()

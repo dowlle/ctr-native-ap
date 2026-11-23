@@ -49,6 +49,10 @@ static int AP_TrapFireWarpball(struct GameTracker *gt, struct Driver *driver)
 {
     (void)gt; (void)driver; assert(0); return 0;
 }
+static int AP_TrapTakeFruit(struct GameTracker *gt, struct Driver *driver, int effect)
+{
+    (void)gt; (void)driver; (void)effect; assert(0); return 0;
+}
 '''
 fixture += trap_inventory()
 for constant in ("AP_TRAP_GRAV_SCALE", "AP_TRAP_BOOST_RESERVES", "AP_TRAP_USF_FIRELEVEL"):
@@ -61,7 +65,7 @@ for signature in ("static int AP_TrapIsLocal(", "int AP_TrapSuppressCrateReward(
                   "int AP_TrapAffectsRecordedLap(", "static void AP_TrapFloorReserves(", "void AP_TrapForceBoost(",
                   "void AP_TrapNoteWeaponRequest(", "void AP_TrapNoteWeaponFire(",
                   "static struct Driver *AP_TrapCrystalPartner(",
-                  "static void AP_TrapPollSpawnedInstants("):
+                  "static void AP_TrapPollPendingInstants("):
     fixture += function(signature)
 fixture += r'''
 int main(void) {
@@ -154,18 +158,18 @@ int main(void) {
     g_sched.slots[slot].state = AP_TRAP_SLOT_ACTIVE;
     g_trap_spawn_pending[AP_TRAP_NITRO] = 3;
     gt.gameMode1 |= PAUSE_ALL;
-    AP_TrapPollSpawnedInstants(&gt, &local);
+    AP_TrapPollPendingInstants(&gt, &local);
     assert(!hazardHits[0] && !hazardHits[1] && g_trap_spawn_pending[AP_TRAP_NITRO] == 3);
     gt.gameMode1 &= ~PAUSE_ALL;
     inRescue[0] = 1;
-    AP_TrapPollSpawnedInstants(&gt, &local);
+    AP_TrapPollPendingInstants(&gt, &local);
     assert(!hazardHits[0] && hazardHits[1] == 1 && g_trap_spawn_pending[AP_TRAP_NITRO] == 1);
     inRescue[0] = 0;
     shielded[0] = 1;
-    AP_TrapPollSpawnedInstants(&gt, &local);
+    AP_TrapPollPendingInstants(&gt, &local);
     assert(!hazardHits[0] && hazardHits[1] == 1 && g_trap_spawn_pending[AP_TRAP_NITRO] == 1);
     shielded[0] = 0;
-    AP_TrapPollSpawnedInstants(&gt, &local);
+    AP_TrapPollPendingInstants(&gt, &local);
     assert(hazardHits[0] == 1 && hazardHits[1] == 1 && !g_trap_spawn_pending[AP_TRAP_NITRO]);
     gt.gameMode1 |= ARCADE_MODE;
     assert(!AP_TrapIsLocal(&other));
