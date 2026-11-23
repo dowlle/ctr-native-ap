@@ -563,6 +563,67 @@ int main(int argc, char **argv) {
     package_refuses("repeated track key", [](J &p) { p[1]["content_id"] = "fixture-loop"; p[1]["id"] = "package/fixture-loop/3"; p[1]["revision"] = "3"; });
     package_refuses("repeated uuid", [](J &p) { p[1]["uuid"] = p[0]["uuid"]; });
     package_refuses("repeated file pair", [](J &p) { p[1]["files"] = p[0]["files"]; });
+    // Merged mode builds: `relic_files`, a second LEV then VRM pair served for
+    // a Relic Race only. Same shape as `files`; refusals match the apworld.
+    {
+        const auto relic_pair = [] {
+            return J::array({J{{"role", "lev"}, {"sha256", std::string(64, 'e')}, {"bytes", 1300000}, {"format", "ctr-lev"}, {"format_version", 1}},
+                             J{{"role", "vrm"}, {"sha256", std::string(64, 'f')}, {"bytes", 450000}, {"format", "ctr-vrm"}, {"format_version", 1}}});
+        };
+        J good = open; good["content_plan"]["packages"][0]["relic_files"] = relic_pair();
+        good["content_plan"]["packages"][0]["relic_revision"] = "2.2";
+        expect(parse(good) && bind_room(good, "seed-RF"), "relic_files with relic_revision admits");
+        {
+            const auto *pkg = ap_content_plan_package(0);
+            expect(pkg && pkg->has_relic_files && std::string(pkg->relic_lev_sha256) == std::string(64, 'e') &&
+                   std::string(pkg->relic_vrm_sha256) == std::string(64, 'f') && pkg->relic_lev_bytes == 1300000 &&
+                   pkg->relic_vrm_bytes == 450000 && std::string(pkg->relic_revision) == "2.2",
+                   "relic pair parsed beside the main pair");
+            expect(pkg && std::string(pkg->lev_sha256).rfind("a1", 0) == 0 && pkg->lev_bytes == 1234567,
+                   "the main pair keeps its pins");
+            const auto *other = ap_content_plan_package(1);
+            expect(other && !other->has_relic_files && other->relic_revision[0] == 0, "a package without relic_files has none");
+        }
+        good = open; good["content_plan"]["packages"][0]["relic_files"] = relic_pair();
+        expect(parse(good), "relic_files without relic_revision admits");
+        good["content_plan"]["packages"][0]["evidence"] = J::array({J{{"capability", "relic"},
+            {"file_hashes", J::array({std::string(64, 'e'), good["content_plan"]["packages"][0]["files"][0]["sha256"]})},
+            {"verifier", "v"}, {"revision", 1}, {"level", "structural"}}});
+        expect(parse(good), "evidence may name a pin from either pair");
+        good = open; good["content_plan"]["packages"][0]["relic_files"] = relic_pair();
+        good["content_plan"]["packages"][0]["relic_files"][0]["sha256"] = good["content_plan"]["packages"][0]["files"][0]["sha256"];
+        expect(parse(good), "a relic pair sharing only the LEV with the main pair admits");
+    }
+    const auto set_relic = [](J &p, const std::function<void(J &)> &tweak = nullptr) {
+        p[0]["relic_files"] = J::array({J{{"role", "lev"}, {"sha256", std::string(64, 'e')}, {"bytes", 1300000}, {"format", "ctr-lev"}, {"format_version", 1}},
+                                         J{{"role", "vrm"}, {"sha256", std::string(64, 'f')}, {"bytes", 450000}, {"format", "ctr-vrm"}, {"format_version", 1}}});
+        if (tweak) tweak(p);
+    };
+    package_refuses("relic_files equal to files", [&](J &p) { set_relic(p, [](J &q) { q[0]["relic_files"] = q[0]["files"]; }); });
+    package_refuses("relic_files reversed", [&](J &p) { set_relic(p, [](J &q) { std::swap(q[0]["relic_files"][0], q[0]["relic_files"][1]); }); });
+    package_refuses("relic_files single pin", [&](J &p) { set_relic(p, [](J &q) { q[0]["relic_files"].erase(1); }); });
+    package_refuses("relic_files third pin", [&](J &p) { set_relic(p, [](J &q) { q[0]["relic_files"].push_back(q[0]["relic_files"][1]); }); });
+    package_refuses("relic_files not an array", [&](J &p) { set_relic(p, [](J &q) { q[0]["relic_files"] = "x"; }); });
+    package_refuses("relic_files uppercase hash", [&](J &p) { set_relic(p, [](J &q) { q[0]["relic_files"][0]["sha256"] = std::string(64, 'E'); }); });
+    package_refuses("relic_files short hash", [&](J &p) { set_relic(p, [](J &q) { q[0]["relic_files"][1]["sha256"] = std::string(63, 'f'); }); });
+    package_refuses("relic_files LEV over 16 MiB", [&](J &p) { set_relic(p, [](J &q) { q[0]["relic_files"][0]["bytes"] = 16 * 1024 * 1024 + 1; }); });
+    package_refuses("relic_files VRM over 4 MiB", [&](J &p) { set_relic(p, [](J &q) { q[0]["relic_files"][1]["bytes"] = 4 * 1024 * 1024 + 1; }); });
+    package_refuses("relic_files zero bytes", [&](J &p) { set_relic(p, [](J &q) { q[0]["relic_files"][0]["bytes"] = 0; }); });
+    package_refuses("relic_files wrong format", [&](J &p) { set_relic(p, [](J &q) { q[0]["relic_files"][1]["format"] = "ctr-lev"; }); });
+    package_refuses("relic_files wrong role", [&](J &p) { set_relic(p, [](J &q) { q[0]["relic_files"][0]["role"] = "vrm"; }); });
+    package_refuses("relic_files format version 2", [&](J &p) { set_relic(p, [](J &q) { q[0]["relic_files"][0]["format_version"] = 2; }); });
+    package_refuses("relic_files extra pin key", [&](J &p) { set_relic(p, [](J &q) { q[0]["relic_files"][0]["path"] = "x"; }); });
+    package_refuses("relic_files without the relic capability", [&](J &p) { set_relic(p); p[0]["capabilities"]["relic"] = false; p[0].erase("relic_targets"); });
+    package_refuses("relic_files without relic_targets", [&](J &p) { set_relic(p); p[0].erase("relic_targets"); });
+    package_refuses("relic_files on a package without relic", [&](J &p) { p[1]["relic_files"] = p[0]["files"]; p[1]["relic_files"][0]["sha256"] = std::string(64, 'e'); });
+    package_refuses("relic_revision with unsupported characters", [&](J &p) { set_relic(p); p[0]["relic_revision"] = ".2"; });
+    package_refuses("relic_revision not text", [&](J &p) { set_relic(p); p[0]["relic_revision"] = 2; });
+    package_refuses("relic pair repeats another package's file pair", [&](J &p) { set_relic(p, [](J &q) { q[0]["relic_files"] = q[1]["files"]; }); });
+    package_refuses("relic pair repeats another package's relic pair", [&](J &p) {
+        set_relic(p); p[1]["relic_files"] = p[0]["relic_files"]; p[1]["capabilities"]["relic"] = true; p[1]["relic_targets"] = p[0]["relic_targets"]; });
+    package_refuses("evidence names a hash of no pair", [&](J &p) {
+        set_relic(p); p[0]["evidence"] = J::array({J{{"capability", "relic"}, {"file_hashes", J::array({std::string(64, '9')})},
+                                                     {"verifier", "v"}, {"revision", 1}, {"level", "structural"}}}); });
     {
         J bad = open;
         for (auto &t : bad["content_plan"]["tracks"]) if (t["origin"] == "custom" && t["laps"] == 3) t["laps"] = 7;

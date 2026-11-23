@@ -61,6 +61,18 @@ int main(void)
 	CHECK(!allowed(&aLev, &a));
 	CHECK(!allowed(&a, &aVrm));
 	CHECK(!allowed(&aVrm, &a));
+	/* Merged mode builds (`relic_files`): a Relic Race serves the relic pair under the
+	   package's UUID, so its quick save carries the relic pins. It restores into
+	   another Relic Race of the same package, never into a race on the main pair. */
+	{
+		struct CustomStateIdentity mainRace, relicRace, relicAgain;
+		CHECK(CustomStateIdentity_Package(&mainRace, UUID_A, SHA_1, SHA_2) == 1);
+		CHECK(CustomStateIdentity_Package(&relicRace, UUID_A, SHA_3, SHA_2) == 1);
+		CHECK(CustomStateIdentity_Package(&relicAgain, UUID_A, SHA_3, SHA_2) == 1);
+		CHECK(allowed(&relicRace, &relicAgain));
+		CHECK(!allowed(&mainRace, &relicRace));
+		CHECK(!allowed(&relicRace, &mainRace));
+	}
 
 	// Same package, other race mode (CustomOffline_RuntimeStateIdentity sets the mode):
 	// a Time Trial state never restores into an Arcade race of the same track,

@@ -101,6 +101,39 @@ int main(void)
 	       !strcmp(AP_ContentCapabilityName(AP_CONTENT_CAP_CTR_TOKENS), "ctr_tokens") &&
 	       !strcmp(AP_ContentCapabilityName(AP_CONTENT_CAP_WUMPA), "wumpa"), "capability names match the descriptor keys");
 
+	/* Merged mode builds (`relic_files`): relic and time_trial are checked on the
+	   relic pair's report, every other flag on the main pair's. */
+	{
+		const unsigned relicCaps = AP_CONTENT_RELIC_PAIR_CAPS;
+		const unsigned otherCaps = AP_CONTENT_CAP_ALL & ~relicCaps;
+		struct CustomContentVerification crates = full_track(), lap = full_track();
+		crates.measured.relicCrates = 0; crates.measured.checkpoints = 0; redo(&crates); /* crate build: no lap graph */
+		lap = full_track(); lap.measured.spawns = 0; lap.measured.navPaths = 0;
+		lap.measured.letterC = lap.measured.letterT = lap.measured.letterR = 0; lap.measured.fruitCrates = 0; redo(&lap);
+		expect(relicCaps == (AP_CONTENT_CAP_RELIC | AP_CONTENT_CAP_TIME_TRIAL), "the relic pair carries relic and time_trial");
+		expect(AP_ContentCapabilitiesHoldMasked(AP_CONTENT_CAP_ALL, relicCaps, &lap, why, sizeof why),
+		       "relic and time_trial hold on the lap-graph build alone");
+		expect(AP_ContentCapabilitiesHoldMasked(AP_CONTENT_CAP_ALL, otherCaps, &crates, why, sizeof why) == 0 &&
+		       strstr(why, "claims time_trial") == NULL,
+		       "the crate build proves arcade but not time_trial: the other flags are what it is asked for");
+		crates = full_track(); crates.measured.relicCrates = 0; redo(&crates);
+		expect(AP_ContentCapabilitiesHoldMasked(AP_CONTENT_CAP_ALL, otherCaps, &crates, why, sizeof why),
+		       "the crate build holds arcade, ctr_tokens and wumpa without relic crates");
+		expect(!AP_ContentCapabilitiesHoldMasked(AP_CONTENT_CAP_ALL, relicCaps, &crates, why, sizeof why) && strstr(why, "claims relic"),
+		       "the crate build refused as the relic pair");
+		expect(!AP_ContentCapabilitiesHoldMasked(AP_CONTENT_CAP_ALL, otherCaps, &lap, why, sizeof why) && strstr(why, "claims arcade"),
+		       "the lap-graph build refused as the main pair");
+		expect(AP_ContentCapabilitiesHoldMasked(AP_CONTENT_CAP_ARCADE, relicCaps, &lap, why, sizeof why),
+		       "flags outside the mask are not checked on that report");
+		expect(!AP_ContentCapabilitiesHoldMasked(0x20u, relicCaps, &lap, why, sizeof why) && strstr(why, "unknown capability"),
+		       "an unknown bit still refuses under a mask");
+		lap.loadable = 0;
+		expect(!AP_ContentCapabilitiesHoldMasked(0, relicCaps, &lap, why, sizeof why) && strstr(why, "structural check"),
+		       "an unloadable relic pair refuses even an empty claim");
+		expect(AP_ContentCapabilitiesHold(AP_CONTENT_CAP_ALL, &(struct CustomContentVerification){0}, NULL, 0) == 0,
+		       "the unmasked check is unchanged");
+	}
+
 	/* Super turbo pads (#133 PR 4c): a stated value must match the bytes in
 	   both directions; an unstated one never refuses. */
 	r = full_track(); r.measured.superTurboPads = 2;

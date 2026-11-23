@@ -41,6 +41,9 @@ static inline unsigned AP_ContentMeasuredCapabilities(const struct CustomContent
 	return caps;
 }
 
+/* The flags a `relic_files` package measures on its relic pair. */
+#define AP_CONTENT_RELIC_PAIR_CAPS (AP_CONTENT_CAP_RELIC | AP_CONTENT_CAP_TIME_TRIAL)
+
 static inline const char *AP_ContentCapabilityName(unsigned bit)
 {
 	switch (bit)
@@ -54,12 +57,17 @@ static inline const char *AP_ContentCapabilityName(unsigned bit)
 	}
 }
 
+// Masked variant: only the flags in `mask` are checked (unknown bits always
+// refuse). A package with `relic_files` checks relic and time_trial on the
+// relic pair's report and the other flags on the main pair's report.
 // 1 when every claimed flag is measured. 0 otherwise, with a one-line reason
 // naming the first missing flag and what was measured.
-static inline int AP_ContentCapabilitiesHold(unsigned claimed, const struct CustomContentVerification *report,
-                                             char *why, size_t whySize)
+static inline int AP_ContentCapabilitiesHoldMasked(unsigned claimed, unsigned mask,
+                                                   const struct CustomContentVerification *report,
+                                                   char *why, size_t whySize)
 {
 	unsigned measured = AP_ContentMeasuredCapabilities(report);
+	claimed &= mask | ~AP_CONTENT_CAP_ALL;
 	unsigned missing = (claimed & AP_CONTENT_CAP_ALL & ~measured) | (claimed & ~AP_CONTENT_CAP_ALL);
 	unsigned bit;
 	if (why && whySize)
@@ -86,6 +94,13 @@ static inline int AP_ContentCapabilitiesHold(unsigned claimed, const struct Cust
 		         m->fruitCrates, m->looseWumpa);
 	}
 	return 0;
+}
+
+// The whole-package check: every claimed flag against one report.
+static inline int AP_ContentCapabilitiesHold(unsigned claimed, const struct CustomContentVerification *report,
+                                             char *why, size_t whySize)
+{
+	return AP_ContentCapabilitiesHoldMasked(claimed, AP_CONTENT_CAP_ALL, report, why, whySize);
 }
 
 // Super turbo pads (#133 PR 4c, ruling 2026-10-17): a custom track whose LEV
