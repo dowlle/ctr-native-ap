@@ -77,6 +77,28 @@ int main(void)
     assert(AP_SurfaceTerrain(&local, TERRAIN_ICE, 1) == TERRAIN_ASPHALT && recorded_surface_changes == 1);
     AP_SurfaceReset();
     assert(AP_SurfaceTerrain(&local, TERRAIN_ICE, 1) == TERRAIN_ICE && recorded_surface_changes == 2);
+    /* Exercise the capstone, not only the locked rank. The co-op per-racer
+     * accessor must preserve the production Adventure-only boundary. */
+    ctr_cfg.boost_blue_fire = 1;
+    AP_CapabilityReceive(AP_CAP_CHAIN_BOOST);
+    AP_CapabilityReceive(AP_CAP_CHAIN_BOOST);
+    assert(AP_CapabilityBoostTier() == AP_CAP_BOOST_BLUEFIRE);
+    assert(AP_CapabilityRetroFueled(&local));
+    for (unsigned i = 0; i < sizeof outside / sizeof outside[0]; ++i)
+    {
+        gt.gameMode1 = outside[i];
+        gt.numPlyrCurrGame = outside[i] ? 1 : 2;
+        assert(!AP_CapabilityRetroFueled(&local));
+    }
+    gt.gameMode1 = ADVENTURE_MODE;
+    gt.numPlyrCurrGame = 2;
+    gt.drivers[1] = &ai;
+    ai.driverID = 1;
+    assert(AP_CapabilityRetroFueled(&local));
+    assert(AP_CapabilityRetroFueled(&ai));
+    gt.gameMode1 = ARCADE_MODE;
+    assert(!AP_CapabilityRetroFueled(&local));
+    assert(!AP_CapabilityRetroFueled(&ai));
     puts("PASS: production boost and surface effects stay in Adventure; inventory survives");
     return 0;
 }

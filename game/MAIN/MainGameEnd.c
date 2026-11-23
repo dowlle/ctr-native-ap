@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_coop.h"
+#endif
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
 #include <platform/native_custom_tracks.h>
 #endif
@@ -193,12 +196,17 @@ static void MainGameEnd_SetBattleConfetti(struct GameTracker *gGT)
 
 static void MainGameEnd_UpdateAdventureLosses(struct GameTracker *gGT, struct Driver *player)
 {
-	if ((gGT->gameMode1 & (ADVENTURE_CUP | RELIC_RACE | ADVENTURE_MODE)) != ADVENTURE_MODE)
+	// Arena results do not affect regular Adventure race difficulty.
+	if ((gGT->gameMode1 & (ADVENTURE_CUP | RELIC_RACE | CRYSTAL_CHALLENGE | ADVENTURE_MODE)) != ADVENTURE_MODE)
 	{
 		return;
 	}
 
-	if (player->driverRank == 0)
+	if (
+#ifdef CTR_AP
+	    AP_CoopRace(gGT) ? AP_CoopWon(gGT) :
+#endif
+	    player->driverRank == 0)
 	{
 		if (IS_BOSS_RACE(gGT->gameMode1))
 		{
@@ -582,6 +590,7 @@ void MainGameEnd_Initialize(void)
 		// race_loss DeathLink: send the game's own loss result (never a received
 		// death's forced loss: the latch is already armed then).
 		AP_DeathLinkOnRaceEnd(gGT, player);
+		AP_CoopCrystalLogResult(gGT);
 #endif
 
 		gGT->gameMode1 |= END_OF_RACE;
@@ -607,6 +616,10 @@ void MainGameEnd_Initialize(void)
 		MainGameEnd_FinalizeDriverClocks(gGT);
 
 		UI_VsQuipAssignAll();
+#ifdef CTR_AP
+		if (AP_CoopCrystal(gGT))
+			gGT->timerEndOfRaceVS = 0;
+#endif
 		SubmitName_RestoreName(2);
 
 		if ((gGT->gameMode1 & (RELIC_RACE | TIME_TRIAL)) != 0)

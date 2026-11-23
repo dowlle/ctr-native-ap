@@ -5,6 +5,7 @@ import re
 import subprocess
 import tempfile
 import ap_hooks_unit
+import coop_fixture
 
 root=Path(__file__).resolve().parents[1]
 hooks=ap_hooks_unit.read()
@@ -52,7 +53,7 @@ struct Instance {struct InstDef *instDef;struct Thread *thread;SVec3 scale;struc
 struct Thread {int flags;struct Instance *inst;void (*funcThTick)(struct Thread *);};
 struct Driver {struct Instance *instSelf;int actionsFlagSet,numCrystals;struct {int x,y,z;}posPrev,posCurr;SVec3 originToCenter;};
 struct Level {int numInstances;struct InstDef *ptrInstDefs;};
-struct GameTracker {unsigned gameMode1,gameMode2;int levelID,numPlyrCurrGame,numCrystalsInLEV;struct Driver *drivers[1];struct Model *modelPtr[97];struct Level *level1;};
+struct GameTracker {unsigned gameMode1,gameMode2;int levelID,numPlyrCurrGame,numCrystalsInLEV;struct Driver *drivers[2];struct Model *modelPtr[97];struct Level *level1;};
 struct Small {struct GameTracker *gGT;struct {int stage;struct {unsigned RemBitsConfig0,AddBitsConfig0;}OnBegin;}Loading;} data,*sdata=&data;
 struct CustomTrackRaceContext {int physicalPad,hostLevelID,returnHub,laps,slot,retail,crystal,timeLimitTicks;uint64_t seedEpoch;int64_t trophyLocation;char entryID[65],trackID[65];}context;
 struct ScratchpadStruct {struct {int modelID;}Input1;};
@@ -62,6 +63,7 @@ static int active=1,bound=1,blocked,exists=1,checked[256],sent,perf,feed,ap_stat
 static long lastCode;
 static struct Instance instances[20];
 static struct Thread threads[20];
+static struct Thread *partnerThread;
 int ctr_cfg_active(void){return active;}
 int ap_content_plan_active(void){return bound;}
 uint64_t ap_content_plan_epoch(void){return bound?epoch:0;}
@@ -73,6 +75,7 @@ void ap_net_send_location(long code){sent++;lastCode=code;checked[code%256]=1;}
 void AP_PerfNoteCheckSent(void){perf++;}
 void AP_FeedOnLocationSent(long code){assert(code==lastCode);feed++;}
 int AP_RaceAttempt_ProducerBlocked(int producer){(void)producer;return blocked;}
+int AP_CoopCrystalFallback(struct GameTracker *g){(void)g;return 0;}
 int AP_EmitClassCheck(long code,int a,int b,int c,int d,const char *fmt,...){(void)a;(void)b;(void)c;(void)d;(void)fmt;if(!exists || ap_net_location_checked(code))return 0;ap_net_send_location(code);return 1;}
 void AP_LogLine(const char *line){(void)line;}
 void MainRaceTrack_RequestLoad(int level){loaded=level;}
@@ -81,7 +84,7 @@ void RB_Crystal_LInB(struct Instance *inst){int i=inst-instances;if(i==fail_thre
 void RB_Crystal_ThTick(struct Thread *t){(void)t;ticks++;}
 int AP_TrialLetterHit(const SVec3 *p,const SVec3 *c,const struct BoundingBox *b){return p->x>=b->min.x-25&&p->x<=b->max.x+25&&c->y>=b->min.y-25&&c->y<=b->max.y+25&&c->z>=b->min.z-25&&c->z<=b->max.z+25;}
 void AP_NotifyContentCrystalPickup(struct Instance *,int);
-int RB_Crystal_LInC(struct Instance *i,struct Thread *d,struct ScratchpadStruct *s){(void)d;assert(s->Input1.modelID==DYNAMIC_PLAYER);collided++;AP_NotifyContentCrystalPickup(i,0);i->thread->flags|=THREAD_FLAG_DEAD;return 1;}
+int RB_Crystal_LInC(struct Instance *i,struct Thread *d,struct ScratchpadStruct *s){assert(s->Input1.modelID==DYNAMIC_PLAYER);collided++;AP_NotifyContentCrystalPickup(i,d==partnerThread);i->thread->flags|=THREAD_FLAG_DEAD;return 1;}
 '''
 tests=r'''
 static void setup(struct GameTracker *g,int level){
@@ -93,23 +96,29 @@ static void setup(struct GameTracker *g,int level){
  context.physicalPad=100;context.hostLevelID=level;context.returnHub=25;context.laps=1;context.retail=context.crystal=1;context.seedEpoch=epoch;
  context.trophyLocation=pad.trophy_location;context.timeLimitTicks=pad.time_limit_ticks;strcpy(context.entryID,pad.entry_id);strcpy(context.trackID,pad.track_id);
  g->gameMode1=ADVENTURE_MODE|CRYSTAL_CHALLENGE;g->levelID=level;g->numPlyrCurrGame=1;g->drivers[0]->numCrystals=0;
+ g->drivers[1]->numCrystals=0;
  active=bound=exists=1;born=0;fail_at=fail_thread_at=-1;loaded=-1;blocked=0;sdata->Loading.stage=LOAD_IDLE;
 }
 int main(void){
- struct Model model={96};struct Instance kart={0};struct Thread driverTh={0};struct Driver driver={0};struct GameTracker g={0};
+ struct Model model={96};struct Instance kart={0}, otherKart={0};struct Thread driverTh={0}, otherTh={0};struct Driver driver={0}, other={0};struct GameTracker g={0};
  driver.instSelf=&kart;kart.thread=&driverTh;struct Level arcadeLev={0};g.level1=&arcadeLev;g.drivers[0]=&driver;g.modelPtr[96]=&model;sdata->gGT=&g;
+ other.instSelf=&otherKart;otherKart.thread=&otherTh;partnerThread=&otherTh;g.drivers[1]=&other;
  for(int a=0;a<3;a++){
   setup(&g,20+2*a);AP_ArcadeCrystals_Spawn(&g);assert(born==20&&g.numCrystalsInLEV==20);
+  g.numPlyrCurrGame=2;
   for(int n=0;n<20;n++){
    struct Instance *i=&instances[n];int before=sent;
    assert(i->instDef==&ap_arcade_defs[n]);assert(i->matrix.t[0]==ap_arcade_anchors[a][n][0]);
-   driver.posPrev.x=driver.posCurr.x=i->matrix.t[0]*256;
-   driver.posPrev.y=driver.posCurr.y=i->matrix.t[1]*256;
-   driver.posPrev.z=driver.posCurr.z=i->matrix.t[2]*256;
+   struct Driver *collector=g.drivers[n%2];
+   collector->posPrev.x=collector->posCurr.x=i->matrix.t[0]*256;
+   collector->posPrev.y=collector->posCurr.y=i->matrix.t[1]*256;
+   collector->posPrev.z=collector->posCurr.z=i->matrix.t[2]*256;
+   g.drivers[1-n%2]->actionsFlagSet=ACTION_WARP;
    i->thread->funcThTick(i->thread);assert(sent==before+1&&lastCode==AP_ArenaPickupCode(g.levelID,n));
    i->thread->funcThTick(i->thread);assert(sent==before+1);
+   g.drivers[1-n%2]->actionsFlagSet=0;
   }
-  assert(!AP_NotifyContentCrystalComplete());driver.numCrystals=20;blocked=1;assert(!AP_NotifyContentCrystalComplete());blocked=0;
+  assert(!AP_NotifyContentCrystalComplete());driver.numCrystals=9;other.numCrystals=11;blocked=1;assert(!AP_NotifyContentCrystalComplete());blocked=0;
   assert(AP_NotifyContentCrystalComplete());assert(lastCode==AP_ArenaCompletionCode(g.levelID));assert(!AP_NotifyContentCrystalComplete());
   /* A new attempt spawns every crystal again but keeps this room's checks.
    * Cover a lost replay and a later successful retry. */
@@ -136,7 +145,7 @@ int main(void){
  DENY(context.timeLimitTicks=1,context.timeLimitTicks=pad.time_limit_ticks);
  DENY(context.entryID[0]='x',context.entryID[0]='e');
  DENY(g.gameMode1=CRYSTAL_CHALLENGE,g.gameMode1=ADVENTURE_MODE|CRYSTAL_CHALLENGE);
- for(int players=2;players<=4;players++){
+ for(int players=3;players<=4;players++){
   DENY(g.numPlyrCurrGame=players,g.numPlyrCurrGame=1);
  }
  {unsigned modes[]={0,ARCADE_MODE,TIME_TRIAL,BATTLE_MODE,
@@ -165,7 +174,8 @@ int main(void){
 '''
 with tempfile.TemporaryDirectory() as tmp:
     src,exe=Path(tmp)/'arcade.c',Path(tmp)/'arcade'
-    src.write_text(mode_enum+fixture+policy+source+tests)
+    count=coop_fixture.function('ap/ap_coop.h','static inline int AP_CrystalCount(')
+    src.write_text(mode_enum+fixture+coop_fixture.predicates()+count+policy+source+tests)
     subprocess.run(['cc','-std=c11','-Wall','-Wextra','-fsanitize=undefined','-I',str(root/'ap'),str(src),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
 print('Arcade production construction/collision/dispatch passed: 60 authored + 80 retail identities, 40 instance/thread allocation failure points and missing model, context guards')

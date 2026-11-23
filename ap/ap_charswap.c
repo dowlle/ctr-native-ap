@@ -1,5 +1,6 @@
 #include <platform/native_menu.h>
 #ifdef CTR_AP
+#include "ap_coop.h"
 
 #include <common.h> // struct Driver / GameTracker / Level, sdata, data, LevelID, BTN_*
 #include <stddef.h> // offsetof
@@ -681,12 +682,12 @@ void AP_CharSwap_ApplyStatPackage(struct Driver *driver)
 	// editable package, Penta MAX table or class override over VehBirth_SetConsts.
 	if (!AP_CapabilityRoomStatsRace())
 		return;
-	if (driver->driverID != 0)
+	if (driver->driverID != 0 && !(AP_CoopDriving(gGT) && driver->driverID == 1))
 		return; // local player only
-	if (gGT->drivers[0] != driver)
+	if (gGT->drivers[driver->driverID] != driver)
 		return; // and only the real P1 driver object, never the ghost
 
-	characterID = data.characterIDs[0];
+	characterID = data.characterIDs[driver->driverID];
 	if ((unsigned)characterID >= AP_CS_TILES)
 		return;
 
@@ -877,8 +878,10 @@ static int ap_cs_hubTransitionIdle(struct GameTracker *gGT)
 	// Background hub preloads do not change Loading.stage. A full character
 	// reload invalidates their mempack, and restoring inside a swap-only tunnel
 	// can wait forever for a neighboring level that was never re-queued.
-	if ((gGT->drivers[0]->stepFlagSet &
-	     (COLL_STEP_TRIGGER_HUB_LEVEL_ID_MASK | COLL_STEP_TRIGGER_HUB_SWAP_NOW_MASK)) != 0 ||
+	unsigned stepFlags = gGT->drivers[0]->stepFlagSet;
+	if (AP_CoopHub(gGT) && gGT->drivers[1])
+		stepFlags |= gGT->drivers[1]->stepFlagSet;
+	if ((stepFlags & (COLL_STEP_TRIGGER_HUB_LEVEL_ID_MASK | COLL_STEP_TRIGGER_HUB_SWAP_NOW_MASK)) != 0 ||
 	    gGT->bool_AdvHub_NeedToSwapLEV != 0 ||
 	    sdata->queueLength != 0 || sdata->queueReady == 0 ||
 	    sdata->load_inProgress != 0)
@@ -920,6 +923,8 @@ static int ap_cs_safeToOpen(struct GameTracker *gGT)
 	// that test.
 	if (sdata->ptrActiveMenu != NULL)
 		return 0;
+	if (AP_CoopHub(gGT) && AP_CoopHubHeldDriver(gGT) >= 0)
+		return 0;
 	return 1;
 }
 
@@ -927,7 +932,7 @@ static int ap_cs_safeToOpen(struct GameTracker *gGT)
 // lets a pad take the kart (ap_tracker_launch.c).
 int AP_HubSafeForRequest(struct GameTracker *gGT)
 {
-	return gGT != NULL && gGT->drivers[0] != NULL && ap_cs_safeToOpen(gGT);
+	return gGT != NULL && gGT->drivers[0] != NULL && !ap_cs_restorePos && ap_cs_safeToOpen(gGT);
 }
 
 // The engine half of the hold, in both directions. See ap/ap_charfreeze.h for
@@ -935,7 +940,7 @@ int AP_HubSafeForRequest(struct GameTracker *gGT)
 // so a kart carrying speed into the picker keeps that speed and keeps moving.
 // The freeze table is the engine's own answer to "a modal owns the screen", and
 // the pairing below is exactly the one AH_MaskHint and AH_Door use.
-static void ap_cs_applyFreeze(struct GameTracker *gGT, int on)
+void AP_HubPickerFreeze(struct GameTracker *gGT, int on)
 {
 	struct Driver *d = gGT->drivers[0];
 
@@ -969,12 +974,12 @@ static void ap_cs_setFreeze(struct GameTracker *gGT, int on)
 {
 	if (on)
 	{
-		ap_cs_applyFreeze(gGT, 1);
+		AP_HubPickerFreeze(gGT, 1);
 		ap_cs_freeze.held = 1;
 	}
 	else if (ap_cs_freeze.held)
 	{
-		ap_cs_applyFreeze(gGT, 0);
+		AP_HubPickerFreeze(gGT, 0);
 		ap_cs_freeze.held = 0;
 	}
 }
@@ -993,9 +998,9 @@ static void ap_cs_tickFreeze(struct GameTracker *gGT, int hubReady)
 	action = AP_CharFreeze_Step(&ap_cs_freeze, &in);
 
 	if (action == AP_CHARFREEZE_HOLD)
-		ap_cs_applyFreeze(gGT, 1);
+		AP_HubPickerFreeze(gGT, 1);
 	else if (action == AP_CHARFREEZE_RELEASE)
-		ap_cs_applyFreeze(gGT, 0);
+		AP_HubPickerFreeze(gGT, 0);
 	// AP_CHARFREEZE_DROP writes nothing: the level load already took the flag,
 	// and gGT->drivers[0] is not ours to write through any more.
 }
@@ -1064,6 +1069,19 @@ static int ap_cs_neighborReadyForRestore(struct GameTracker *gGT)
 	AP_LogLine("[AP CHARSWAP] restoring neighboring hub preload before position\n");
 	LOAD_Hub_ReadFile(sdata->ptrBigfile1, ap_cs_savedNeighborHub, pack);
 	return 0;
+}
+
+void AP_HubReloadInPlace(struct GameTracker *gGT)
+{
+	const struct Driver *driver = gGT->drivers[0];
+	ap_cs_savedPos[0] = driver->posCurr.x;
+	ap_cs_savedPos[1] = driver->posCurr.y;
+	ap_cs_savedPos[2] = driver->posCurr.z;
+	ap_cs_savedRotY = driver->rotCurr.y;
+	ap_cs_savedLevel = gGT->levelID;
+	ap_cs_savedNeighborHub = ap_cs_neighborHub(gGT);
+	ap_cs_restorePos = 1;
+	MainRaceTrack_RequestLoad(gGT->levelID);
 }
 
 static void ap_cs_requestSwap(struct GameTracker *gGT, int characterID)
@@ -1142,6 +1160,8 @@ static void ap_cs_completeSwap(struct GameTracker *gGT)
 		d->posCurr.z = ap_cs_savedPos[2];
 		d->rotCurr.y = (short)ap_cs_savedRotY;
 		VehBirth_TeleportSelf(d, 0, 0);
+		if (AP_CoopHub(gGT))
+			AP_CoopPlaceBeside(gGT, 0);
 	}
 
 	// The package post-pass normally rides on the birth-time SetConsts call.
@@ -1887,7 +1907,7 @@ void AP_CharSwap_Tick(struct GameTracker *gGT)
 	// browse-only roster (see AP_CharSwap_RosterBrowseLive); the dev-key path
 	// survives only as a way in when no seed is connected at all, so the
 	// prototype's manual matrix stays runnable on a bare build.
-	if (!AP_CharSwap_RosterBrowseLive() && !AP_DevKeysEnabled())
+	if (!ap_cs_restorePos && !AP_CharSwap_RosterBrowseLive() && !AP_DevKeysEnabled())
 		return;
 
 	// Apply any editable-stat package that has arrived from the server since the

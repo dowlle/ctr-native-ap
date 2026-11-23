@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_coop.h"
+#endif
 
 // To do: add a header
 
@@ -948,7 +951,12 @@ void UI_RenderFrame_AdvHub(void)
 	// (game/232/AH_Map.c). This pass and that one are mutually exclusive per
 	// frame, so both have to carry the test or the counters come back on
 	// whichever of the two the frame happens to take.
-	if (!AP_CharSwap_HubHudHidden())
+	if (AP_CoopHub(gGT) && !AP_CharSwap_HubHudHidden() && !AP_CoopMenuOpen())
+	{
+		AP_CoopDrawHubCounters(gGT);
+		AP_WumpaDrawHub();
+	}
+	else if (!AP_CoopHub(gGT) && !AP_CharSwap_HubHudHidden())
 #endif
 	{
 		UI_DrawNumRelic(hudStructPtr[0xE].x + 0x10, hudStructPtr[0xE].y - 10);
@@ -977,6 +985,7 @@ void UI_RenderFrame_AdvHub(void)
 	// Hub character picker (spike, #54/R7). Self-gates; the other half of the
 	// pair is in AH_Map.c and the two passes are mutually exclusive per frame.
 	AP_CharPicker_Draw();
+	AP_CoopDrawMenu();
 #endif
 }
 
@@ -989,6 +998,26 @@ void UI_RenderFrame_CrystChall(void)
 	struct Instance *hudCrystal;
 	int iVar5;
 	SVec2 crystalPos;
+
+#ifdef CTR_AP
+	if (AP_CoopCrystal(gGT))
+	{
+		const struct UiElement2D *hud = data.hudStructPtr[1];
+		for (int i = 0; i < 2; i++, hud += 0x14)
+		{
+			struct Driver *driver = gGT->drivers[i];
+			const RECT *view = &gGT->pushBuffer[i].rect;
+			if (!driver)
+				continue;
+			DecalFont_DrawLine("CRYSTALS", view->x + 20, view->y + 28, FONT_SMALL, ORANGE);
+			UI_DrawNumCrystal(view->x + 20, view->y + 37, driver);
+			UI_DrawLimitClock(view->x + 20, view->y + 12, FONT_SMALL);
+			UI_Weapon_DrawSelf(hud[0].x, hud[0].y, hud[0].scale, driver);
+		}
+		AP_FeedDrawRace();
+		return;
+	}
+#endif
 
 	player = gGT->drivers[0];
 	hudStructPtr = data.hudStructPtr[0];
@@ -1169,6 +1198,12 @@ LAB_800545e8:
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005465c-0x80054a08 for the retail path.
 void UI_RenderFrame_Wumpa3D_2P3P4P(struct GameTracker *gGT)
 {
+#ifdef CTR_AP
+	// Adventure hubs draw the shared wallet as text. They never populate
+	// the offscreen texture that the multiplayer race HUD copies here.
+	if (AP_CoopHub(gGT) || AP_CoopCrystal(gGT))
+		return;
+#endif
 	RECT viewport2P;
 	RECT viewport3P4P;
 	RECT *viewport;

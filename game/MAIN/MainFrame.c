@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_AP
+extern struct RectMenu g_configMenu;
+#endif
+
 #if defined(CTR_NATIVE)
 static void MainFrame_RegisterGpuLinkRanges(struct GameTracker *gGT)
 {
@@ -306,8 +310,18 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 			{
 				if (iVar4 == 0)
 				{
+#ifdef CTR_AP
+				const int heldDriver = AP_CoopHubHeldDriver(gGT);
+				// Keep both karts inside the old LEV until the crossing commits.
+				if (AP_CoopHub(gGT) && LOAD_Hub_CoopCrossing())
+					continue;
+#endif
 					for (psVar12 = gGT->threadBuckets[iVar4].thread; psVar12 != 0; psVar12 = psVar12->siblingThread)
 					{
+#ifdef CTR_AP
+					if (((struct Driver *)psVar12->object)->driverID == heldDriver)
+						continue;
+#endif
 						VehPickupItem_ShootOnCirclePress((struct Driver *)psVar12->object);
 					}
 
@@ -326,6 +340,10 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 							}
 
 							psVar9 = (struct Driver *)psVar12->object;
+#ifdef CTR_AP
+						if (psVar9->driverID == heldDriver)
+							continue;
+#endif
 
 							pcVar5 = psVar9->funcPtrs[iVar11];
 
@@ -396,6 +414,9 @@ void MainFrame_GameLogic(struct GameTracker *gGT, struct GamepadSystem *gGamepad
 			if (gGT->cooldownfromPauseUntilUnpause == 0)
 			{
 				if (((sdata->ptrActiveMenu != &data.menuRacingWheelConfig) && (sdata->ptrActiveMenu != &D232.menuHintMenu) // in 232
+#ifdef CTR_AP
+				     && sdata->ptrActiveMenu != &g_configMenu
+#endif
 				     ) &&
 				    ((sdata->AnyPlayerTap & BTN_START) != 0))
 				{
@@ -810,6 +831,7 @@ void MainFrame_VisMemFullFrame(struct GameTracker *gGT, struct Level *level)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80035e20-0x80035e70.
 void MainFrame_RequestMaskHint(s16 hintId, char interruptWarpPad)
 {
+	struct GameTracker *gGT = sdata->gGT;
 #ifdef CTR_AP
 	// AP QoL (ap-config.txt skip_hints=1): suppress all Aku Aku mask hints at the
 	// single choke point -- early-return before any hint is armed, so nothing has
@@ -823,9 +845,12 @@ void MainFrame_RequestMaskHint(s16 hintId, char interruptWarpPad)
 	// "no freeze is ever outstanding".
 	if (AP_SkipHints())
 		return;
+	// The hint animates P1, whose driving callbacks are held during P2's
+	// warp. Either the hint or the warp can take the hub, never both.
+	if (AP_CoopHub(gGT) && (AP_CoopHubWarpDriver(gGT) == 1 ||
+	    AP_CoopHubFadingOut(gGT) || AP_CoopMenuOpen()))
+		return;
 #endif
-
-	struct GameTracker *gGT = sdata->gGT;
 
 	if (((gGT->gameMode1 & PAUSE_ALL) == 0) && (sdata->AkuHint_RequestedHint == -1))
 	{

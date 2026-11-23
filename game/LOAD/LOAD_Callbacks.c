@@ -82,6 +82,31 @@ void LOAD_Callback_PatchMem(struct LoadQueueSlot *lqs)
 
 	LOAD_RunPtrMap((char *)sdata->ptrLevelFile, (int *)patchStart, patchNum);
 
+#ifdef CTR_AP
+	// Allocate while this LEV's pack is current. The lists stay with the
+	// level across swaps and are freed together when the pack is reused.
+	if (AP_CoopHub(sdata->gGT))
+	{
+		struct Level *level = sdata->ptrLevelFile;
+		struct VisMem *vis = level->visMem;
+		struct mesh_info *mesh = level->ptr_mesh_info;
+		int leaf = ((mesh->numBspNodes + 31) >> 5) * 4;
+		int face = ((mesh->numQuadBlock + 31) >> 5) * 4;
+		int vertices = ((mesh->numVertex + 31) >> 5) * 4;
+		int bsp = mesh->numBspNodes * sizeof(*vis->bspList[1]);
+		int size = leaf + face + 2 * vertices + bsp;
+		if (size > AP_COOP_HUB_VIS_RESERVE)
+			Platform_Fatal("CTR Native - Adventure Co-op", "Hub visibility data exceeds its reserved memory.");
+		u8 *second = MEMPACK_AllocMem(size);
+		memset(second, 0, size);
+		vis->visLeafList[1] = (void *)second;
+		vis->visFaceList[1] = (void *)(second + leaf);
+		vis->visOVertList[1] = (void *)(second + leaf + face);
+		vis->visSCVertList[1] = (void *)(second + leaf + face + vertices);
+		vis->bspList[1] = (void *)(second + leaf + face + 2 * vertices);
+	}
+#endif
+
 	MEMPACK_SwapPacks(0);
 	MEMPACK_ClearHighMem();
 	MEMPACK_SwapPacks(sdata->gGT->activeMempackIndex);

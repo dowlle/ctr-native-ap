@@ -27,11 +27,25 @@ static inline struct InstDrawPerPlayer *DecalMP_GetIdpp(struct Instance *inst, i
 	return (struct InstDrawPerPlayer *)((char *)INST_GETIDPP(inst) + (cameraID * sizeof(struct InstDrawPerPlayer)));
 }
 
+static int DecalMP_FieldFits(const struct GameTracker *gGT)
+{
+	int views = gGT->numPlyrCurrGame;
+	int entries = 0;
+	for (int driver = 0; driver < (int)len(gGT->drivers); driver++)
+	{
+		if (gGT->drivers[driver])
+			entries += views - (driver < views);
+	}
+	return entries <= (int)len(gGT->DecalMP);
+}
+
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80023488-0x80023640.
 void DecalMP_01(struct GameTracker *gGT)
 {
-	if (gGT->numPlyrCurrGame == 0)
+	// An eight-racer 2P grid needs 14 cached views. Draw its karts directly
+	// so neither the fixed retail cache nor its VRAM atlas can overflow.
+	if (gGT->numPlyrCurrGame == 0 || !DecalMP_FieldFits(gGT))
 	{
 		return;
 	}
@@ -88,6 +102,8 @@ void DecalMP_01(struct GameTracker *gGT)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80023640-0x80023784.
 void DecalMP_02(struct GameTracker *gGT)
 {
+	if (!DecalMP_FieldFits(gGT))
+		return;
 	for (int index = 0; index < 12; index++)
 	{
 		struct DecalMPEntry *entry = DecalMP_GetEntry(gGT, index);
@@ -143,6 +159,8 @@ void DecalMP_02(struct GameTracker *gGT)
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80023784-0x80023a40.
 void DecalMP_03(struct GameTracker *gGT)
 {
+	if (!DecalMP_FieldFits(gGT))
+		return;
 	RECT viewport;
 	viewport.w = 0x60;
 	viewport.h = 0x40;

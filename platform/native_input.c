@@ -321,6 +321,16 @@ internal u16 NativeInput_ReadDeviceButtons(int device, SDL_Gamepad *gamepad)
 	return buttons;
 }
 
+#ifdef CTR_AP
+u16 NativeInput_AdventureButtons(int device)
+{
+	SDL_Gamepad *gamepad = NativeControls_GetGamepadHandle(device);
+	if (!gamepad || !SDL_GamepadConnected(gamepad))
+		return 0;
+	return (u16)~NativeInput_ReadDeviceButtons(device, gamepad);
+}
+#endif
+
 // Pulls the axis in toward the centre until it clears the deadzone, then stretches what is
 // left of the travel back across the full range. Without that stretch a stick with any
 // deadzone could never report full deflection, and steering would quietly top out short.

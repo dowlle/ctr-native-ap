@@ -1,4 +1,5 @@
 #ifdef CTR_AP
+#include "ap_coop.h"
 
 #include <common.h> // structs Driver/GameTracker + sdata + gameMode/enum flags + functions.h (RB_Player_ModifyWumpa)
 #include "ap_navrec.h"
@@ -115,15 +116,22 @@ static int AP_WumpaRaceTracking(struct Driver *driver)
 
 // Receipts run before the per-frame countdown observer. Classify a receipt
 // from the live scene, without requiring that observer to have run already.
-// A receipt during pause or on the way out belongs to this attempt as well.
+// A receipt during pause belongs to this attempt. A split Crystal load
+// boundary routes new receipts through the existing between-race path.
 static int AP_WumpaReceiptInRace(void)
 {
 	struct GameTracker *gt = sdata->gGT;
-	struct Driver *d = gt ? gt->drivers[0] : 0;
-	return ctr_cfg_active() && !ctr_cfg.schema_newer && AP_WumpaAdventureRace(gt) &&
-	       !(gt->gameMode2 & CHEAT_WUMPA) && LOAD_IsOpen_RacingOrBattle() && d &&
-	       !(d->actionsFlagSet & (ACTION_BOT | ACTION_RACE_FINISHED)) &&
-	       !(gt->gameMode1 & (END_OF_RACE | MAIN_MENU | GAME_CUTSCENE));
+	if (!ctr_cfg_active() || ctr_cfg.schema_newer || !AP_WumpaAdventureRace(gt) ||
+	    (gt->gameMode2 & CHEAT_WUMPA) || !LOAD_IsOpen_RacingOrBattle() ||
+	    (gt->gameMode1 & (END_OF_RACE | MAIN_MENU | GAME_CUTSCENE))) return 0;
+	if (AP_CoopCrystal(gt) && sdata->Loading.stage != LOAD_IDLE) return 0;
+	int humans = AP_CoopDriving(gt) ? 2 : 1;
+	for (int i = 0; i < humans; i++)
+	{
+		struct Driver *d = gt->drivers[i];
+		if (AP_IsSlotHuman(gt, d) && !(d->actionsFlagSet & ACTION_RACE_FINISHED)) return 1;
+	}
+	return 0;
 }
 
 int AP_WumpaRaceCount(struct Driver *driver)
@@ -177,11 +185,21 @@ void AP_WumpaDrawHub(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	char line[48];
-	if (!AP_WumpaBanking() || gGT == 0 || gGT->numPlyrCurrGame != 1)
+	if (!AP_WumpaBanking() || gGT == 0 || (gGT->numPlyrCurrGame != 1 && !AP_CoopHub(gGT)))
 		return;
 	if (!ap_net_wumpa_ready())
 		return;
 	AP_WumpaHubLine(line, (int)sizeof line, ap_net_wumpa_balance(), ap_net_wumpa_lifetime());
+	if (AP_CoopHub(gGT))
+	{
+		for (int i = 0; i < 2; i++)
+		{
+			const RECT *view = &gGT->pushBuffer[i].rect;
+			DecalFont_DrawLine(line, view->x + 12, view->y + 26,
+			                   FONT_SMALL, ORANGE);
+		}
+		return;
+	}
 	DecalFont_DrawLine(line, 0x100, 0x24, FONT_SMALL, ORANGE | JUSTIFY_CENTER);
 }
 
@@ -363,6 +381,12 @@ void AP_WumpaTick(struct GameTracker *gGT)
 	}
 	if (!onTrack || loading || (gGT->gameMode1 & END_OF_RACE) != 0)
 	{
+		// The automatic solo reload can interrupt a paused grant that was
+		// already assigned to the split attempt. Keep unspent receipts.
+		if (g_wumpa_race_pending > 0 && !AP_WumpaBanking() && AP_CoopCrystal(gGT) &&
+		    sdata->Loading.stage == LOAD_REQUESTED &&
+		    sdata->Loading.Lev_ID_To_Load == gGT->levelID)
+			AP_WumpaReceive(g_wumpa_race_pending > AP_WUMPA_MAX ? AP_WUMPA_MAX : g_wumpa_race_pending);
 		AP_WumpaOnRaceLeave();
 		g_countdown_seen = 0;
 		g_starting_applied = 0;
@@ -416,6 +440,12 @@ void AP_WumpaTick(struct GameTracker *gGT)
 			// Starting fruit fills the kart only. It must never produce
 			// overflow credit, including a pickup before this tick.
 			RB_Player_ModifyWumpa(local, grant);
+			if (AP_CoopDriving(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]))
+			{
+				int otherGrant = AP_WUMPA_MAX - gGT->drivers[1]->numWumpas;
+				if (otherGrant > g_wumpa_starting) otherGrant = g_wumpa_starting;
+				if (otherGrant > 0) RB_Player_ModifyWumpa(gGT->drivers[1], otherGrant);
+			}
 			// Starting fruit joins the held count but is never banked by an
 			// abandoned attempt.
 			if (g_race_wumpa >= 0)
@@ -430,13 +460,29 @@ void AP_WumpaTick(struct GameTracker *gGT)
 	int before = local->numWumpas;
 	if (g_wumpa_race_pending > 0)
 	{
-		RB_Player_ModifyWumpa(local, g_wumpa_race_pending);
+		if (AP_CoopDriving(gGT) && !AP_IsSlotHuman(gGT, local))
+		{
+			if (AP_WumpaBanking())
+				AP_WumpaBank(g_wumpa_race_pending, "AP fruit received after P1 finished");
+		}
+		else
+			RB_Player_ModifyWumpa(local, g_wumpa_race_pending);
+		if (AP_CoopDriving(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]))
+		{
+			// P2 uses the retail signed-byte counter, without P1's race bank.
+			int grant = g_wumpa_race_pending;
+			if (grant > AP_WUMPA_MAX)
+				grant = AP_WUMPA_MAX;
+			RB_Player_ModifyWumpa(gGT->drivers[1], grant);
+		}
 		g_wumpa_race_pending = 0;
 	}
 	if (g_wumpa_pending > 0)
 	{
 		// The usual fruit-grant path handles the cap, jingle and cheat veto.
 		RB_Player_ModifyWumpa(local, g_wumpa_pending);
+		if (AP_CoopDriving(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]))
+			RB_Player_ModifyWumpa(gGT->drivers[1], g_wumpa_pending);
 		snprintf(msg, sizeof msg, "[AP WUMPA] granted +%d in-race (now %d)\n",
 		         g_wumpa_pending, (int)local->numWumpas);
 		AP_LogLine(msg);

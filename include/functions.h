@@ -5,6 +5,7 @@ const char *UI_TrackName(int physicalPad);
 #ifdef CTR_CUSTOM_PACKAGES
 const char *UI_TrackCredit(int physicalPad);
 void UI_DrawTrackCredit(const char *credit, int x, int y, int width, int mode);
+void UI_DrawTrackCreditInSlot(const char *credit, int x, int y, int width, int mode, int slot);
 void UI_ResetTrackCreditBanner(void);
 int UI_TrackCreditNeedsCountdown(void);
 #endif
@@ -325,6 +326,9 @@ void LOAD_AppendQueue(struct BigHeader *bigfile, int type, int fileIndex, void *
 int LOAD_DriverMPK(struct BigHeader *bigfile, int levelLOD, void (*callback)(struct LoadQueueSlot *));
 void LOAD_Hub_Main(struct BigHeader *bigfilePtr);
 void LOAD_Hub_ReadFile(struct BigHeader *bigfile, int levID, int packID);
+#ifdef CTR_AP
+int LOAD_Hub_CoopCrossing(void);
+#endif
 #ifdef CTR_AP
 void LOAD_Hub_ApMaskEvicts(int packID);
 #endif
@@ -1276,6 +1280,7 @@ void RB_Burst_Init(struct Instance *weaponInst);
 void GAMEPAD_ShockFreq(struct Driver *d, int frame, int val);
 int RaceFlag_IsTransitioning(void);
 void LOAD_Robots1P(int characterID);
+void LOAD_Robots1PRoster(int characterID, s16 roster[8]);
 void UI_Map_DrawRawIcon( // 1st param is probably a ptr type of some sort (maybe s16*)?, could maybe do `void*` for now
     int ptrMap, int *param_2, int iconID, int colorID, int unused, s16 scale);
 int RaceFlag_GetCanDraw(void);

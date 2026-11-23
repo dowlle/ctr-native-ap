@@ -22,7 +22,10 @@ static void AP_AppendLog(const char *line) { (void)line; }
 static void RB_Player_ModifyWumpa(struct Driver *d, int n) { (void)d; fruit += n; }
 static void AP_EmitClassCheck(long code, ...) { (void)code; }
 static int AP_LocationChecksAllowed(void) { return 1; }
-static int AP_TrapRerollExcludedItem(void) { return rerollExcluded; }
+static int AP_TrapRerollExcludedItem(const struct Driver *driver) { (void)driver; return rerollExcluded; }
+// Ownership is the seam here; test-coop.c drives the production human predicate.
+static int AP_IsSlotHuman(const struct GameTracker *gt, const struct Driver *driver)
+{ return driver != NULL && driver == gt->drivers[0]; }
 #include "../ap/ap_hooks_itemsanity.c"
 
 #define CRYSTAL_ALLOWED_INDEX_MASK 0x667u

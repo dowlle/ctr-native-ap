@@ -191,6 +191,11 @@ void CC_EndEvent_DrawMenu()
 #endif
 	struct AdvProgress *adv = &sdata->advProgress;
 	b32 didLose = driver->numCrystals < gGT->numCrystalsInLEV;
+#ifdef CTR_AP
+	if (AP_CoopCrystal(gGT))
+		didLose = AP_RaceAttemptIsForcedLoss() ||
+		          AP_CrystalCount(gGT, driver) < gGT->numCrystalsInLEV;
+#endif
 	s32 elapsedFrames = sdata->framesSinceRaceEnded;
 
 	if (elapsedFrames < CTR_SECONDS_TO_FRAMES(30))

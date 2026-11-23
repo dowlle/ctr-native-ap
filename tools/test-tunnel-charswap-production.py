@@ -36,6 +36,8 @@ void LOAD_Hub_ReadFile(void *file,int level,int pack) {
 }
 void VehBirth_TeleportSelf(struct Driver *d,int flag,int y) { teleported++; }
 void AP_CharSwap_ApplyStatPackage(struct Driver *d) {}
+int AP_CoopHub(const struct GameTracker *gt) { return 0; }
+void AP_CoopPlaceBeside(struct GameTracker *gt, int leader) {}
 void ap_cs_persistCharacter(int c) { persisted++; }
 void AP_LogLine(const char *s) { }
 void ap_cs_logPackage(const char *s,struct Driver *d,int c) { }

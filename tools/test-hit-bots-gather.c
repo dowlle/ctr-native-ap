@@ -241,8 +241,7 @@ static void test_attribution_flags(void)
 	gGT.gameMode1 = ADVENTURE_MODE;
 	drivers[0].actionsFlagSet = ACTION_BOT;
 	hit(1, 1, 0, 0);
-	// The gather still marks P1 as the local attacker AND as an AI; the pure
-	// decision rejects on the AI bit, so no check is sent.
+	// A finished P1 is an AI attacker, so no check is sent.
 	expect((g_flags & 64u) != 0, "P1 with ACTION_BOT is flagged as an AI attacker");
 
 	// wasDamageActive propagates for the type-1/type-4 distinction.
@@ -250,6 +249,30 @@ static void test_attribution_flags(void)
 	gGT.gameMode1 = ADVENTURE_MODE;
 	hit(1, 4, 0, 1);
 	expect((g_flags & 256u) != 0, "pre-call damage-active flag propagates");
+}
+
+static void test_coop_partner_seats(void)
+{
+	setup();
+	gGT.gameMode1 = ADVENTURE_MODE;
+	gGT.numPlyrCurrGame = 2;
+	drivers[1].actionsFlagSet = 0;
+	hit(2, 1, 1, 0);
+	expect((g_flags & 32u) != 0, "P2 can earn a bot hit");
+	expect((g_flags & 8u) == 0, "AI seat remains eligible");
+	hit(1, 1, 0, 0);
+	expect((g_flags & 8u) != 0, "P2 partner is excluded");
+	hit(0, 1, 1, 0);
+	expect((g_flags & 8u) != 0, "P1 partner is excluded");
+	drivers[1].actionsFlagSet = ACTION_BOT | ACTION_RACE_FINISHED;
+	hit(1, 1, 0, 0);
+	expect((g_flags & 1u) != 0 && (g_flags & 8u) != 0,
+	       "finished P2 bot keeps the partner exclusion");
+	drivers[1].actionsFlagSet = 0;
+	drivers[0].actionsFlagSet = ACTION_BOT | ACTION_RACE_FINISHED;
+	hit(0, 1, 1, 0);
+	expect((g_flags & 1u) != 0 && (g_flags & 8u) != 0,
+	       "finished P1 bot keeps the partner exclusion");
 }
 
 int main(void)
@@ -262,6 +285,7 @@ int main(void)
 	test_unsupported_modes();
 	test_victim_validation();
 	test_attribution_flags();
+	test_coop_partner_seats();
 
 	printf("%s: %d checks, %d failures\n", g_failures ? "FAIL" : "PASS", g_checks, g_failures);
 	return g_failures ? 1 : 0;

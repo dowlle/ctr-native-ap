@@ -456,6 +456,8 @@ static char *RECTMENU_RowString(int index)
 		return (char *)"TRAVEL";
 	if (index == AP_LNG_AI_DIFFICULTY)
 		return (char *)"AI DIFFICULTY";
+	if (index == AP_LNG_GAMEPLAY_OPTIONS)
+		return (char *)"GAMEPLAY OPTIONS";
 	if (index >= AP_LNG_AI_PRESET && index < AP_LNG_AI_PRESET + AI_DIFF_COUNT)
 		return (char *)s_aiDiffNames[index - AP_LNG_AI_PRESET];
 	if (index == AP_LNG_PLAY_SOLO)
@@ -778,6 +780,11 @@ void RECTMENU_CollectInput()
 	activeSub = sdata->activeSubMenu;
 
 	numListen = sdata->gGT->numPlyrNextGame;
+#ifdef CTR_AP
+	if (AP_CoopCrystal(sdata->gGT) && (sdata->gGT->gameMode1 & END_OF_RACE) &&
+	    AP_CoopP2Available())
+		numListen = 2;
+#endif
 
 	if ((activeSub != NULL) && ((activeSub->state & ALL_PLAYERS_USE_MENU) != 0))
 	{
@@ -795,6 +802,15 @@ void RECTMENU_CollectInput()
 		sdata->AnyPlayerTap |= sdata->buttonTapPerPlayer[i];
 		sdata->AnyPlayerHold |= sdata->buttonHeldPerPlayer[i];
 	}
+#ifdef CTR_AP
+	// The hub still advertises one seat for the next generic menu. Sample
+	// the pad owner's input separately so it cannot operate P1-only menus.
+	if (numListen == 1 && AH_WarpPad_CoopMenuPlayer(sdata->ptrActiveMenu) == 1)
+	{
+		sdata->buttonTapPerPlayer[1] = gb->buttonsTapped;
+		sdata->buttonHeldPerPlayer[1] = gb->buttonsHeldCurrFrame;
+	}
+#endif
 }
 
 
@@ -806,6 +822,7 @@ int RECTMENU_ProcessInput(struct RectMenu *m)
 	int button;
 	int oldRow;
 	int newRow;
+	int inputPlayer = 0;
 
 	int returnVal = 0;
 
@@ -829,10 +846,19 @@ int RECTMENU_ProcessInput(struct RectMenu *m)
 	button = sdata->AnyPlayerTap;
 
 	// if only P1 can use menu
-	if ((m->state & ALL_PLAYERS_USE_MENU) == 0)
+#ifdef CTR_AP
+	extern struct RectMenu menu221;
+	int sharedCrystalResult = m == &menu221 && AP_CoopCrystal(sdata->gGT) &&
+	                          (sdata->gGT->gameMode1 & END_OF_RACE);
+#else
+	int sharedCrystalResult = 0;
+#endif
+	if ((m->state & ALL_PLAYERS_USE_MENU) == 0 && !sharedCrystalResult)
 	{
-		// get button from P1
-		button = sdata->buttonTapPerPlayer[0];
+#ifdef CTR_AP
+		inputPlayer = AH_WarpPad_CoopMenuPlayer(m);
+#endif
+		button = sdata->buttonTapPerPlayer[inputPlayer];
 	}
 
 #ifdef CTR_AP
@@ -860,7 +886,7 @@ int RECTMENU_ProcessInput(struct RectMenu *m)
 	    ((button & 0x4007f) != 0) &&
 
 	    // No cheat code entering
-	    ((sdata->buttonHeldPerPlayer[0] & (BTN_L1 | BTN_R1)) == 0))
+	    ((sdata->buttonHeldPerPlayer[inputPlayer] & (BTN_L1 | BTN_R1)) == 0))
 	{
 		oldRow = m->rowSelected;
 		newRow = oldRow;
@@ -1057,7 +1083,16 @@ void RECTMENU_ProcessState()
 			RECTMENU_GetWidth(currMenu, &width, 1);
 
 			// draw
-			RECTMENU_DrawSelf(currMenu, 0, 0, (int)width);
+			int offsetY = 0;
+#ifdef CTR_AP
+			if (AP_CoopHub(sdata->gGT) && currMenu->stringIndexTitle == LNG_CHOOSE_RACE_TYPE)
+			{
+				int owner = AH_WarpPad_CoopMenuPlayer(currMenu);
+				const RECT *view = &sdata->gGT->pushBuffer[owner].rect;
+				offsetY = view->y + view->h / 2 - currMenu->posY_curr;
+			}
+#endif
+			RECTMENU_DrawSelf(currMenu, 0, offsetY, (int)width);
 		}
 	}
 

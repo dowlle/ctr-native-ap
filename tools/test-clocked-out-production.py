@@ -17,23 +17,24 @@ struct Driver {int kartState,squishTimer,invincibleTimer,actionsFlagSet,pendingD
  int clockReceive,clockFlash,numWumpas,heldItemID,itemRollTimer,noItemTimer;void *instBubbleHold;};
 struct GameTracker {unsigned gameMode1;};
 static struct {struct {int stage;}Loading;} data,*sdata=&data;
-static struct Driver *local;
+static struct Driver *local, *partner;
 static int context=AP_TRAP_CTX_RACE,control=1,scripted,finished,suppress,hits,sounds,accept=1;
 static AP_TrapSched g_sched;
-static int AP_TrapIsLocal(struct Driver *d){return d==local;}
+static int AP_TrapIsLocal(struct Driver *d){return d==local || d==partner;}
+static struct Driver *AP_TrapCrystalPartner(struct GameTracker *g){(void)g;return partner;}
 static int AP_TrapContextOf(struct GameTracker *g,int load){(void)g;return load?0:context;}
 static int AP_TrapControlUnlocked(struct GameTracker *g,struct Driver *d){(void)g;(void)d;return control;}
 static int AP_TrapScripted(struct GameTracker *g,struct Driver *d){(void)g;(void)d;return scripted;}
 static int AP_TrapFinishOrPodium(struct GameTracker *g,struct Driver *d){(void)g;(void)d;return finished;}
 static void AP_DeathLinkSuppressSelfInflicted(int on){assert(on!=suppress);suppress=on;}
 static int RB_Hazard_HurtDriver(struct Driver *d,int damage,void *attacker,int reason){
- assert(d==local&&damage==1&&attacker==NULL&&reason==0&&suppress);hits++;return accept;
+ assert(AP_TrapIsLocal(d)&&damage==1&&attacker==NULL&&reason==0&&suppress);hits++;return accept;
 }
 static void OtherFX_Play(int sound,int once){assert(sound==0x44&&once==1);sounds++;}
 #include "ap_trap_clocked_out_runtime.h"
 HELD_FUNCTION
 static void reset(struct Driver *d,struct GameTracker *g){
- AP_TrapClockClear(&g_trap_clocked);AP_TrapSchedReset(&g_sched);
+ AP_TrapClockedOutReset(local, partner);AP_TrapSchedReset(&g_sched);partner=NULL;
  *d=(struct Driver){0};d->kartState=AP_TRAP_KS_NORMAL;local=d;g->gameMode1=0;
  context=AP_TRAP_CTX_RACE;control=accept=1;scripted=finished=sdata->Loading.stage=0;
 }
@@ -43,13 +44,13 @@ static void step(struct GameTracker *g,int ms){
  w.context=context;w.controlUnlocked=control;w.paused=(g->gameMode1&PAUSE_ALL)!=0;
  w.scripted=scripted;w.finishOrPodium=finished;w.elapsedMs=ms;
  AP_TrapSchedStep(&g_sched,&w);
- while(AP_TrapSchedPopEvent(&g_sched,&e))if(e.kind==AP_TRAP_EV_FIRE&&e.effect==AP_TRAP_CLOCKED_OUT)AP_TrapStartClockedOut(g,local);
+ while(AP_TrapSchedPopEvent(&g_sched,&e))if(e.kind==AP_TRAP_EV_FIRE&&e.effect==AP_TRAP_CLOCKED_OUT)AP_TrapStartClockedOut(g,local,partner ? 3u : 1u);
 }
 int main(void){
  struct Driver d={0},other={0};struct GameTracker g={0};
  for(int wumpa=0;wumpa<=10;wumpa++){
   reset(&d,&g);d.numWumpas=wumpa;int before=hits;
-  AP_TrapStartClockedOut(&g,&d);
+  AP_TrapStartClockedOut(&g,&d,1u);
   assert(d.clockReceive==7680&&d.clockFlash==4&&hits==before+1&&!suppress);
   assert(other.clockReceive==0&&other.clockFlash==0);
  }
@@ -71,31 +72,39 @@ int main(void){
    case 12:d.squishTimer=1;break;
    case 13:context=0;break;
   }
-  AP_TrapStartClockedOut(&g,&d);assert(hits==before&&g_trap_clocked.pending&&!g_trap_clocked.applied);
+  AP_TrapStartClockedOut(&g,&d,1u);assert(hits==before&&g_trap_clocked[0].pending&&!g_trap_clocked[0].applied);
  }
  reset(&d,&g);assert(!AP_TrapApplyClockedOut(&g,&other));
  // Rejected engine dispatch remains pending, then exactly one accepted hit.
  reset(&d,&g);accept=0;AP_TrapSchedReceive(&g_sched,AP_TRAP_CLOCKED_OUT);
- step(&g,1000);step(&g,1000);assert(g_trap_clocked.pending&&d.clockReceive==0&&!suppress);
- accept=1;step(&g,32);assert(g_trap_clocked.applied&&d.clockReceive==7680);
+ step(&g,1000);step(&g,1000);assert(g_trap_clocked[0].pending&&d.clockReceive==0&&!suppress);
+ accept=1;step(&g,32);assert(g_trap_clocked[0].applied&&d.clockReceive==7680);
  // Two copies never refresh one timer. Paused/scripted polls preserve it.
  AP_TrapSchedReceive(&g_sched,AP_TRAP_CLOCKED_OUT);int before=hits;
  for(int i=0;i<10;i++)step(&g,1000);
  assert(hits==before&&AP_TrapSchedArmedCount(&g_sched,AP_TRAP_CLOCKED_OUT)==1);
- g.gameMode1=PAUSE_ALL;step(&g,1000);assert(d.clockReceive==7680&&g_trap_clocked.applied);
- g.gameMode1=0;scripted=1;step(&g,1000);assert(g_trap_clocked.applied);
+ g.gameMode1=PAUSE_ALL;step(&g,1000);assert(d.clockReceive==7680&&g_trap_clocked[0].applied);
+ g.gameMode1=0;scripted=1;step(&g,1000);assert(g_trap_clocked[0].applied);
  scripted=0;d.clockReceive=0;step(&g,32);step(&g,1000);step(&g,1000);
  assert(hits==before+1&&d.clockReceive==7680);
  // Applied harm clears on map/reset; a protected pending copy is still owed.
- AP_TrapClockedOutReset(&d);assert(!d.clockReceive&&!d.clockFlash&&!g_trap_clocked.applied);
+ AP_TrapClockedOutReset(&d,NULL);assert(!d.clockReceive&&!d.clockFlash&&!g_trap_clocked[0].applied);
  reset(&d,&g);d.instBubbleHold=&other;AP_TrapSchedReceive(&g_sched,AP_TRAP_CLOCKED_OUT);
- step(&g,1000);step(&g,1000);assert(AP_TrapClockOwed(&g_trap_clocked,AP_TrapSchedPollGate(&g_sched,AP_TRAP_CLOCKED_OUT)));
- d.clockReceive=123;AP_TrapClockedOutReset(&d);assert(d.clockReceive==123); // retail clock untouched
+ step(&g,1000);step(&g,1000);assert(AP_TrapClockOwed(&g_trap_clocked[0],AP_TrapSchedPollGate(&g_sched,AP_TRAP_CLOCKED_OUT)));
+ d.clockReceive=123;AP_TrapClockedOutReset(&d,NULL);assert(d.clockReceive==123); // retail clock untouched
  AP_TrapSchedMapChange(&g_sched);AP_TrapSchedReceive(&g_sched,AP_TRAP_CLOCKED_OUT);
  d.clockReceive=0;d.instBubbleHold=NULL;step(&g,1000);step(&g,1000);assert(d.clockReceive==7680);
  for(int ctx=AP_TRAP_CTX_TIME_TRIAL;ctx<=AP_TRAP_CTX_TIME_TRIAL;ctx++){
-  reset(&d,&g);context=ctx;AP_TrapStartClockedOut(&g,&d);assert(d.clockReceive==7680);
+  reset(&d,&g);context=ctx;AP_TrapStartClockedOut(&g,&d,1u);assert(d.clockReceive==7680);
  }
+ reset(&d,&g);partner=&other;other.instBubbleHold=&other;
+ AP_TrapSchedReceive(&g_sched,AP_TRAP_CLOCKED_OUT);
+ step(&g,1000);step(&g,1000);
+ assert(d.clockReceive==7680 && !other.clockReceive && g_trap_clocked[1].pending);
+ d.clockReceive=0;step(&g,32);
+ assert(AP_TrapSchedPollGate(&g_sched,AP_TRAP_CLOCKED_OUT)==AP_TRAP_POLL_RUN);
+ other.instBubbleHold=NULL;step(&g,32);
+ assert(!d.clockReceive && other.clockReceive==7680);
  d.heldItemID=6;d.clockReceive=1;assert(!AP_TrapHeldItemResolved(&d));
  d.clockReceive=0;assert(AP_TrapHeldItemResolved(&d));
  assert(sounds>0&&!suppress);puts("Clocked Out production effect, retry, local isolation, fixed duration, pause and serialization passed");

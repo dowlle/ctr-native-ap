@@ -304,6 +304,40 @@ static void test_exit_and_restart_bank(void)
 	d->actionsFlagSet = 0;
 }
 
+static void test_crystal_dropout_receipt(void)
+{
+	struct Driver partner = {0};
+	struct GameTracker *gt = &rc_gt;
+	sdata->gGT = gt;
+	gt->drivers[0] = &rc_d;
+	gt->drivers[1] = &partner;
+	gt->numPlyrCurrGame = 2;
+	gt->levelID = SKULL_ROCK;
+	AP_WumpaConnectReset();
+	ctr_wumpa_shop.state = AP_WUMPA_SHOP_ABSENT;
+	int before = credited;
+	const unsigned mode = ADVENTURE_MODE | CRYSTAL_CHALLENGE;
+	rc_attempt(mode, 0);
+	gt->gameMode1 |= PAUSE_1;
+	AP_WumpaReceive(2);
+	AP_WumpaCommitReceived();
+	AP_WumpaTick(gt);
+	CHECK("paused Crystal receipt waits in the live attempt", g_wumpa_race_pending == 2);
+	// Co-op queues the load before the received item drain advances its marker.
+	sdata->Loading.stage = LOAD_REQUESTED;
+	sdata->Loading.Lev_ID_To_Load = SKULL_ROCK;
+	AP_WumpaReceive(3);
+	AP_WumpaCommitReceived();
+	AP_WumpaTick(gt);
+	CHECK("Crystal dropout holds both receipts without banking", g_wumpa_pending == 5 && credited == before);
+	gt->numPlyrCurrGame = 1;
+	gt->drivers[1] = NULL;
+	rc_attempt(mode, 0);
+	CHECK("solo Crystal receives both held bundles", rc_d.numWumpas == 5);
+	AP_WumpaTick(gt);
+	CHECK("solo Crystal receives both bundles only once", rc_d.numWumpas == 5 && g_wumpa_pending == 0);
+}
+
 int main(void)
 {
 	struct GameTracker gt;
@@ -488,6 +522,7 @@ int main(void)
 		CHECK("without banking a marker never creates wallet credit", credited == before);
 	}
 	test_exit_and_restart_bank();
+	test_crystal_dropout_receipt();
 	printf("%s Wumpa ten-fruit counter\n", failures ? "FAIL" : "PASS");
 	return failures != 0;
 }

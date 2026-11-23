@@ -135,9 +135,9 @@ static void MM_MenuProc_Config(struct RectMenu *menu);
 // is a page from include/ctr_menu_pages.h, not a config.ini [section]: the page
 // table decides where a row is shown, the entry's section where it is saved.
 // Audio and State stay config-file-only (see CTR_MenuSectionHidden).
-static int s_sectionRows[CTR_MENU_PAGE_CAP][CTR_MENU_PAGE_ROW_CAP];
-static int s_sectionCount[CTR_MENU_PAGE_CAP];
-static const char *s_sectionName[CTR_MENU_PAGE_CAP];
+static int s_sectionRows[CTR_MENU_PAGE_CAP + 1][CTR_MENU_PAGE_ROW_CAP];
+static int s_sectionCount[CTR_MENU_PAGE_CAP + 1];
+static const char *s_sectionName[CTR_MENU_PAGE_CAP + 1];
 static int s_numSections = 0;
 #if (defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)) || defined(CTR_CUSTOM_PACKAGES)
 static int s_customContentSection = -1;
@@ -287,6 +287,27 @@ struct RectMenu g_configMenu = {
 	.state = EXECUTE_FUNCPTR | DISABLE_INPUT_ALLOW_FUNCPTRS,
 	.funcPtr = MM_MenuProc_Config,
 };
+
+#ifdef CTR_AP
+static int s_configFromHub;
+
+static void MM_ConfigOpenHubGameplay(void)
+{
+	if (s_numSections == 0)
+		BuildSectionMap();
+	for (int section = 0; section < s_numSections; section++)
+	{
+		if (strcmp(s_sectionName[section], "Gameplay") != 0)
+			continue;
+		s_configFromHub = 1;
+		s_currentSection = section;
+		s_configTop = 0;
+		g_configMenu.rowSelected = 0;
+		sdata->ptrDesiredMenu = &g_configMenu;
+		return;
+	}
+}
+#endif
 
 static void Config_UpdateSlider(const struct GamepadBuffer *pad, const int rowSelected,
                               const int localRow, int *value, const int min, const int max, const int step)
@@ -465,6 +486,10 @@ static int ItemFeed_Index(int value)
 
 static const char *Enum_Label(const ConfigEntry *e)
 {
+#ifdef CTR_AP
+	if (e->valuePtr == &g_config.coopRules)
+		return g_config.coopRules ? "HARD" : "LENIENT";
+#endif
 	if (e->valuePtr == &g_config.aspectRatio)
 		return s_aspectNames[Aspect_Index(*(int *)e->valuePtr)];
 	if (e->valuePtr == &g_config.renderScale)
@@ -490,6 +515,9 @@ static const char *Enum_Label(const ConfigEntry *e)
 
 static void Enum_Step(const ConfigEntry *e, int dir)
 {
+#ifdef CTR_AP
+	if (e->valuePtr == &g_config.coopRules) { AP_CoopRulesStep(dir); return; }
+#endif
 	if (e->valuePtr == &g_config.aspectRatio)
 	{
 		int i = Aspect_Index(*(int *)e->valuePtr) + dir;
@@ -591,6 +619,15 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 // A did nothing on VSync). Left/right keep their clamped stepping.
 static void Enum_Advance(const ConfigEntry *e)
 {
+#ifdef CTR_AP
+	/* Refused co-op edits must keep their refusal text. The generic wrap
+	 * fallback would interpret a refusal as "already at the last value". */
+	if (e->valuePtr == &g_config.coopRules)
+	{
+		AP_CoopRulesStep(0);
+		return;
+	}
+#endif
 	const int before = *(int *)e->valuePtr;
 	Enum_Step(e, +1);
 	if (*(int *)e->valuePtr == before)
@@ -641,6 +678,11 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 {
 	const char *first = 0;
 	const char *second = 0;
+	if (e->valuePtr == &g_config.coopRules)
+	{
+		first = AP_CoopHelp();
+		second = "Applies to 2P Trophy Races.";
+	}
 
 	if (e->valuePtr == &g_config.itemBoxColours)
 	{
@@ -1482,6 +1524,17 @@ static void MM_MenuProc_Config(struct RectMenu *menu)
 	)
 	{
 		OtherFX_Play(2, 1);
+#ifdef CTR_AP
+		if (s_configFromHub)
+		{
+			s_configFromHub = 0;
+			s_currentSection = -1;
+			NativeConfig_Save();
+			AP_AiDifficultyCommit();
+			sdata->ptrDesiredMenu = MainFreeze_GetMenuPtr();
+			return;
+		}
+#endif
 		if (s_currentSection >= 0)
 		{
 			if (inControls)

@@ -16,7 +16,8 @@ void AP_NotifyCrystalPickup(struct Instance *inst, int driverID)
     struct GameTracker *gGT = sdata->gGT;
     int index=-1, i;
     long code;
-    if (!ctr_cfg_active() || ctr_crystal_checks.state != 1 || driverID != 0 ||
+    if (!ctr_cfg_active() || ctr_crystal_checks.state != 1 ||
+        (driverID != 0 && !(driverID == 1 && AP_CoopCrystal(gGT))) ||
         !gGT || (gGT->gameMode1 & (ADVENTURE_MODE | CRYSTAL_CHALLENGE)) !=
                     (ADVENTURE_MODE | CRYSTAL_CHALLENGE) || !gGT->level1 || !inst ||
         !inst->instDef || !gGT->level1->ptrInstDefs) return;
@@ -139,15 +140,13 @@ static void AP_NotifyAdvRewardImpl(int rewardBit)
 			AP_FeedOnLocationSent(code); // toast nonlocal sends to the hub feed
 	}
 
-	// Podium backstop (event-time): winning a trophy race == finishing 1st ==
-	// every podium rung earned. Fire them from THIS reliable award path, not only
-	// the live finish-line capture, so a crash/reload/missed edge after the line
-	// still delivers the rungs. Trophy bits are the contiguous block
+	// Podium backstop for the current Trophy win. Hard wins place the team
+	// second for rungs. Trophy bits are the contiguous block
 	// [ADV_REWARD_FIRST_TROPHY, ADV_REWARD_FIRST_SAPPHIRE_RELIC); levelID is the
 	// offset within it. Deduped inside AP_SendPodiumChecks.
 	if (rewardBit >= ADV_REWARD_FIRST_TROPHY &&
 	    rewardBit < ADV_REWARD_FIRST_SAPPHIRE_RELIC)
-		AP_SendPodiumChecks(rewardBit - ADV_REWARD_FIRST_TROPHY, 1);
+		AP_SendPodiumChecks(rewardBit - ADV_REWARD_FIRST_TROPHY, AP_CoopTrophyPlace(sdata->gGT));
 
 	// A personally won boss race can be the last active arm of a composed
 	// goal. Keep this as a live edge rather than deriving it from reconnect

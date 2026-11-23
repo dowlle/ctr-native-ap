@@ -403,7 +403,7 @@ void AP_NotifyTrialTrackRace(int levelID, int challenge)
 	                  "[AP CHECK] trial track=%d challenge=%d location %ld\n",
 	                  levelID, challenge, code);
 	if (challenge == CTR_CFG_TRIAL_TROPHY && code > 0)
-		AP_SendPodiumChecks(AP_TRIAL_PODIUM_LOGICAL_BASE+levelID-16, 1);
+		AP_SendPodiumChecks(AP_TRIAL_PODIUM_LOGICAL_BASE+levelID-16, AP_CoopTrophyPlace(sdata->gGT));
 }
 
 // Schema 15: the Cortex Vortex pad track's race result. Called from the win
@@ -636,7 +636,8 @@ int AP_NotifyStandaloneRace(void)
 	    (context->mode == AP_CONTENT_MODE_CTR
 	         ? !(gGT->drivers[0]->driverRank == 0 &&
 	             AP_LetterTokenEarned(gGT->levelID, 1, gGT->drivers[0]->PickupLetterHUD.numCollected))
-	         : !ap_content_race_award(context->mode, gGT->drivers[0]->driverRank,
+	         : !ap_content_race_award(context->mode,
+	                                  AP_CoopRace(gGT) ? (AP_CoopWon(gGT) ? 0 : -1) : gGT->drivers[0]->driverRank,
 	                                  gGT->drivers[0]->PickupLetterHUD.numCollected)))
 		return 0;
 	if (context->trophyLocation > 2147483647 ||
@@ -1185,7 +1186,7 @@ void AP_WumpaReachedTen(struct Driver *driver)
 	long code;
 
 	if (driver == 0 || sdata == 0 || sdata->gGT == 0 ||
-	    driver != sdata->gGT->drivers[0] || !AP_LocationChecksAllowed())
+	    !AP_IsSlotHuman(sdata->gGT, driver) || !AP_LocationChecksAllowed())
 		return;
 
 #ifdef CTR_CUSTOM_TRACKS

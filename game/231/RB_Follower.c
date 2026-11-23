@@ -16,7 +16,7 @@ void RB_Follower_ProcessBucket(struct Thread *t)
 	struct InstDrawPerPlayer *idpp;
 	struct GameTracker *gGT = sdata->gGT;
 
-	numPlyr = gGT->numPlyrNextGame;
+	numPlyr = gGT->numPlyrCurrGame;
 
 	for (/**/; t != 0; t = t->siblingThread)
 	{

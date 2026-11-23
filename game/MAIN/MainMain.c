@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_coop.h"
+#endif
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_offline.h>
 #endif
@@ -104,6 +107,14 @@ u32 main(void)
 		// NOTE(aalhendi): ASM-verified NTSC-U 926 0x8003c5d0-0x8003c5dc for per-frame XA pause handling.
 		CDSYS_XAPauseAtEnd();
 
+#ifdef CTR_AP
+		// Some fully covered load frames exit before the gameplay input pass.
+		// Sample the physical pads there as well so a held Start cannot join
+		// when the hub becomes playable again.
+		if (gGS && sdata->Loading.stage != LOAD_IDLE)
+			AP_CoopMenuTick(gGT);
+#endif
+
 		switch (sdata->mainGameState)
 		{
 		// Initialize Game (happens once)
@@ -123,6 +134,9 @@ u32 main(void)
 			// Disable End-Of-Race menu
 			gGT->gameMode1 &= ~END_OF_RACE;
 
+#ifdef CTR_AP
+			AP_CoopFinishHubReload(gGT);
+#endif
 			if (gGT->levelID == MAIN_MENU_LEVEL)
 			{
 				if (RaceFlag_IsFullyOffScreen() != 0)
@@ -219,6 +233,10 @@ u32 main(void)
 				{
 					if (RaceFlag_IsFullyOnScreen() == 1)
 					{
+#ifdef CTR_AP
+						if (AP_CoopReloadOnRetry(gGT))
+							break;
+#endif
 						// reinitialize world,
 						// does not reinitialize pools
 						sdata->mainGameState = 2;
@@ -367,6 +385,9 @@ u32 main(void)
 			}
 #endif
 			GAMEPAD_ProcessAnyoneVars(gGS);
+#ifdef CTR_AP
+			AP_CoopMenuTick(gGT);
+#endif
 #if defined(CTR_AP) || defined(CTR_BOX_AUTHORING)
 			// Box Author Mode's controller keys (ap/ap_author_pad.h): read, and
 			// taken out of player 1's pad, before anything reads it this frame.

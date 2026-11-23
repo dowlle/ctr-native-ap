@@ -22,6 +22,9 @@ static struct GameTracker gt;
 static struct Driver driver;
 static struct RectMenu menu;
 static int hub = 1, shown, picker;
+static int ap_cs_restorePos, heldDriver = -1;
+int AP_CoopHub(const struct GameTracker *g) { return g->numPlyrCurrGame == 2; }
+int AP_CoopHubHeldDriver(const struct GameTracker *g) { return heldDriver; }
 int LOAD_IsOpen_AdvHub(void) { return hub; }
 int RaceFlag_IsFullyOnScreen(void) { return 0; }
 int AP_CharSwap_PickerOpen(void) { return picker; }
@@ -55,6 +58,20 @@ int main(void) {
     // CAM clears the flags after the last return frame: both gates reopen.
     gt.cameraDC[0].flags = 0;
     assert(AP_HubSafeForRequest(&gt));
+    gt.numPlyrCurrGame = 2;
+    /* Player 2 owns a warp (P1 held), then P1's garage fade holds P2.
+       A late stored racer uses the common gate directly. */
+    for (heldDriver = 0; heldDriver < 2; heldDriver++) {
+        assert(!ap_cs_safeToOpen(&gt));
+        assert(!AP_HubSafeForRequest(&gt));
+    }
+    heldDriver = -1;
+    assert(ap_cs_safeToOpen(&gt));
+    ap_cs_restorePos = 1;
+    assert(!AP_HubSafeForRequest(&gt));
+    ap_cs_restorePos = 0;
+    assert(AP_HubSafeForRequest(&gt));
+    gt.numPlyrCurrGame = 1;
     MainFreeze_IfPressStart();
     assert(shown == 1 && (gt.gameMode1 & PAUSE_1));
     assert(!AP_HubSafeForRequest(&gt));

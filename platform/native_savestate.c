@@ -13,6 +13,7 @@
 #endif
 #ifdef CTR_AP
 #include "../ap/ap_content_plan.h"
+#include "../ap/ap_coop.h"
 #endif
 
 #include <errno.h>
@@ -222,6 +223,10 @@ internal s32 NativeSaveState_PreparePayload(void)
 internal s32 NativeSaveState_SaveQuick(void)
 {
 	struct NativeSaveStateRaceIdentity identity;
+#ifdef CTR_AP
+	if (AP_CoopRace(sdata->gGT))
+		return NativeSaveState_Refuse("STATE NOT SAVED: CO-OP RACE", "quick state unavailable in a co-op Trophy Race");
+#endif
 	if (!NativeSaveState_SnapshotIdentity(&identity))
 	{
 		Platform_Log("[CTR State] quick save unavailable during level transitions\n");
@@ -268,6 +273,10 @@ internal s32 NativeSaveState_LoadQuick(void)
 	struct NativeCheckpointFileRecordInfo info;
 	struct NativeSaveStateRaceIdentity live, saved;
 
+#ifdef CTR_AP
+	if (AP_CoopRace(sdata->gGT))
+		return NativeSaveState_Refuse("STATE NOT LOADED: CO-OP RACE", "quick state unavailable in a co-op Trophy Race");
+#endif
 	if (!NativeSaveState_SnapshotIdentity(&live))
 		return NativeSaveState_Refuse("STATE NOT LOADED: LEVEL LOADING", "level transition in progress");
 #ifdef CTR_CUSTOM_TRACKS

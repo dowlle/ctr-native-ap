@@ -54,7 +54,7 @@ int AP_ItemsanityUnlockedPool(struct Driver *driver)
 {
 	struct GameTracker *gGT = sdata->gGT;
 	return gGT && AP_ItemsanityShouldFilter(AP_ItemsanityActive(),
-	    driver == gGT->drivers[0], (gGT->gameMode1 & ADVENTURE_MODE) != 0,
+	    AP_IsSlotHuman(gGT, driver), (gGT->gameMode1 & ADVENTURE_MODE) != 0,
 	    (gGT->gameMode1 & BATTLE_MODE) != 0,
 	    (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0) &&
 	    (gGT->gameMode1 & (ADVENTURE_BOSS | CRYSTAL_CHALLENGE)) != 0;
@@ -73,7 +73,7 @@ void AP_ItemsanityOnUse(struct Driver *driver, int heldItemID)
 	struct GameTracker *gGT = sdata->gGT;
 	long plain;
 	long juiced;
-	if (!AP_ItemsanityActive() || !gGT || driver != gGT->drivers[0])
+	if (!AP_ItemsanityActive() || !gGT || !AP_IsSlotHuman(gGT, driver))
 		return;
 
 	// Ownership precondition, ruled 2026-08-20. Every path the itemsanity filters
@@ -115,7 +115,7 @@ int AP_ItemsanityFilterRoll(struct Driver *driver, int rolled, unsigned roll,
 	struct GameTracker *gGT = sdata->gGT;
 	int filtered;
 	if (!gGT || !AP_ItemsanityShouldFilter(AP_ItemsanityActive(),
-	    driver == gGT->drivers[0], (gGT->gameMode1 & ADVENTURE_MODE) != 0,
+	    AP_IsSlotHuman(gGT, driver), (gGT->gameMode1 & ADVENTURE_MODE) != 0,
 	    (gGT->gameMode1 & BATTLE_MODE) != 0,
 	    (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0))
 		return rolled;
@@ -162,10 +162,10 @@ static int AP_TrapRerollFilterPool(struct Driver *driver, int rolled, unsigned r
 	int excluded;
 	int alternative;
 
-	if (!gGT || driver != gGT->drivers[0])
+	if (!gGT || !AP_IsSlotHuman(gGT, driver))
 		return rolled;
 
-	excluded = AP_TrapRerollExcludedItem();
+	excluded = AP_TrapRerollExcludedItem(driver);
 	if (excluded < 0)
 		return rolled;
 
@@ -219,7 +219,7 @@ int AP_ItemsanityFilterCrystalGrant(struct Driver *driver, int proposed, unsigne
 {
 	struct GameTracker *gGT = sdata->gGT;
 	if (!gGT || !AP_ItemsanityShouldFilter(AP_ItemsanityActive(),
-	    driver == gGT->drivers[0], (gGT->gameMode1 & ADVENTURE_MODE) != 0,
+	    AP_IsSlotHuman(gGT, driver), (gGT->gameMode1 & ADVENTURE_MODE) != 0,
 	    (gGT->gameMode1 & BATTLE_MODE) != 0,
 	    (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0))
 		return proposed;
@@ -246,7 +246,7 @@ int AP_ItemsanitySubstituteOwned(struct Driver *driver, int proposed,
 	int crystal;
 	unsigned crystalMask;
 	if (!gGT || !AP_ItemsanityShouldFilter(AP_ItemsanityActive(),
-	    driver == gGT->drivers[0], (gGT->gameMode1 & ADVENTURE_MODE) != 0,
+	    AP_IsSlotHuman(gGT, driver), (gGT->gameMode1 & ADVENTURE_MODE) != 0,
 	    (gGT->gameMode1 & BATTLE_MODE) != 0,
 	    (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0))
 		return proposed;
@@ -287,7 +287,7 @@ int AP_ItemsanityBossAssist(struct Driver *driver, int proposed, int rolled)
 	struct GameTracker *gGT = sdata->gGT;
 	int filtered;
 	if (!gGT || !AP_ItemsanityShouldFilter(AP_ItemsanityActive(),
-	    driver == gGT->drivers[0], (gGT->gameMode1 & ADVENTURE_MODE) != 0,
+	    AP_IsSlotHuman(gGT, driver), (gGT->gameMode1 & ADVENTURE_MODE) != 0,
 	    (gGT->gameMode1 & BATTLE_MODE) != 0,
 	    (gGT->gameMode1 & CRYSTAL_CHALLENGE) != 0))
 		return proposed;

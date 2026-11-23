@@ -93,6 +93,7 @@ public:
 		std::vector<std::string> bounce_tags;
 		std::vector<long long> checked_codes;
 		std::vector<std::string> set_keys;
+		std::vector<nlohmann::json> set_extras;
 		std::vector<std::string> get_keys;
 		void reset()
 		{
@@ -102,6 +103,7 @@ public:
 			bounce_tags.clear();
 			checked_codes.clear();
 			set_keys.clear();
+			set_extras.clear();
 			get_keys.clear();
 		}
 	};
@@ -124,7 +126,7 @@ public:
 	void set_location_info_handler(std::function<void(const std::list<NetworkItem> &)> h) { location_info_ = std::move(h); }
 	void set_slot_refused_handler(std::function<void(const std::list<std::string> &)> h) { slot_refused_ = std::move(h); }
 	void set_retrieved_handler(std::function<void(const std::map<std::string, nlohmann::json> &)> h) { retrieved_ = std::move(h); }
-	void set_set_reply_handler(std::function<void(const std::string &, const nlohmann::json &, const nlohmann::json &)> h) { set_reply_ = std::move(h); }
+	void set_set_reply_handler(std::function<void(const nlohmann::json &)> h) { set_reply_ = std::move(h); }
 	void set_items_received_handler(std::function<void(const std::list<NetworkItem> &)> h) { items_received_ = std::move(h); }
 	void set_location_checked_handler(std::function<void(const std::list<int64_t> &)> h) { location_checked_ = std::move(h); }
 	void set_bounced_handler(std::function<void(const nlohmann::json &)> h) { bounced_ = std::move(h); }
@@ -155,10 +157,12 @@ public:
 	}
 	void LocationScouts(std::list<int64_t>, int) { calls.location_scouts++; }
 	void StatusUpdate(ClientStatus) { calls.status_update++; }
-	bool Set(const std::string &key, const nlohmann::json &, bool, std::list<DataStorageOperation>)
+	bool Set(const std::string &key, const nlohmann::json &, bool, std::list<DataStorageOperation>,
+	         const nlohmann::json &extras = nlohmann::json::object())
 	{
 		calls.data_set++;
 		calls.set_keys.push_back(key);
+		calls.set_extras.push_back(extras);
 		return true;
 	}
 	void Get(std::list<std::string> keys)
@@ -246,10 +250,14 @@ public:
 		if (retrieved_)
 			retrieved_(keys);
 	}
-	void emit_set_reply(const std::string &key, const nlohmann::json &v)
+	void emit_set_reply(const std::string &key, const nlohmann::json &v,
+	                    nlohmann::json extras = nlohmann::json::object())
 	{
+		extras["key"] = key;
+		extras["value"] = v;
+		extras["original_value"] = nullptr;
 		if (set_reply_)
-			set_reply_(key, v, nlohmann::json());
+			set_reply_(extras);
 	}
 	void emit_bounced(const nlohmann::json &packet)
 	{
@@ -290,7 +298,7 @@ private:
 	std::function<void(const std::list<NetworkItem> &)> location_info_;
 	std::function<void(const std::list<std::string> &)> slot_refused_;
 	std::function<void(const std::map<std::string, nlohmann::json> &)> retrieved_;
-	std::function<void(const std::string &, const nlohmann::json &, const nlohmann::json &)> set_reply_;
+	std::function<void(const nlohmann::json &)> set_reply_;
 	std::function<void(const std::list<NetworkItem> &)> items_received_;
 	std::function<void(const nlohmann::json &)> bounced_;
 };

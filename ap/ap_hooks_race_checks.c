@@ -85,10 +85,8 @@ void AP_EmitBoxCheck(int levelID, int slot, long code)
 //   placement in {2,3}  -> held_3rd + held_5th + finish_podium + finish_any
 //   placement in {4,5}  -> held_5th + finish_any
 //   placement >= 6      -> finish_any
-// The held_* rungs are earned LIVE mid-race by AP_RaceListenerTick; the finish is
-// the WIN FALLBACK (decision 5): a trophy win (placement 1) fans out EVERYTHING,
-// covering a missed live capture and server /send_location grants -- and finishing
-// AT a position legitimately satisfies the held rungs at or below it. Sends dedup
+// The held_* rungs are earned live by AP_RaceListenerTick. Finishing at a
+// position also satisfies the held rungs at or below it. Sends dedup
 // against the checked-set, so the live listener + finish fan-out never double-send.
 // MUST be called only for AP_RACE_TROPHY finishes (incl. cup legs), or a CTR
 // Challenge on a ctr_first track (#208, AP_RaceStructureRaceEarnsRungs): relic /
@@ -177,17 +175,13 @@ static void AP_SendHeldChecks(int track, int position)
 		AP_EmitRung(track, pr->held_5th, AP_RUNG_HELD_5TH, position, "held");
 }
 
-// Connect-time backstop: any trophy race whose trophy LOCATION is already
-// checked was, by the engine's win-only rule (a trophy is awarded ONLY on 1st),
-// finished 1st -- so every podium rung for that track is earned. Sweep all 16
-// trophy tracks and fan out (deduped) from that durable signal. Idempotent, so
-// running it each connect/tick just no-ops once the rungs are checked. Covers
-// races won in a prior session and finishes whose live capture was lost.
+// Keep the legacy fallback on solo-only routes. Retail Trophy races deliver
+// podium checks from their recorded finish or award, through the check outbox.
+// A server-granted Trophy on the retail routes supplies no finish evidence.
 static void AP_ReconcilePodiumFromTrophies(void)
 {
 #ifdef CTR_CUSTOM_TRACKS
-	// Content plans (#133 PR 3b): a checked Trophy Race of a pad with rungs
-	// was won, so all its rungs are earned. The legacy rows below are empty.
+	// Custom Trophy Races and CTR-first routes still require a solo first.
 	if (ap_content_plan_active())
 	{
 		int id;
@@ -198,7 +192,12 @@ static void AP_ReconcilePodiumFromTrophies(void)
 			if (pad && pad->occupied && !pad->crystal && pad->trophy_location > 0 &&
 			    AP_ContentPodiumRungs(AP_CONTENT_PODIUM_LOGICAL_BASE + id, &rungs) &&
 			    ap_net_location_checked((long)pad->trophy_location))
-				AP_SendPodiumChecks(AP_CONTENT_PODIUM_LOGICAL_BASE + id, 1);
+			{
+				int retailTrophy = pad->retail_id >= 0 && !pad->cortex &&
+				                   ap_content_rung_mode(pad) == AP_CONTENT_MODE_TROPHY;
+				if (!retailTrophy)
+					AP_SendPodiumChecks(AP_CONTENT_PODIUM_LOGICAL_BASE + id, 1);
+			}
 			// cup_only_podium_rungs: a checked Cup Leg Victory was a first
 			// place on that track, so the leg's own rungs are earned too.
 			if (pad && pad->occupied && pad->cup && pad->physical < AP_CONTENT_GARAGE_CUP_PAD)
@@ -218,12 +217,6 @@ static void AP_ReconcilePodiumFromTrophies(void)
 #endif
 	if (!ctr_cfg_active() || !ctr_cfg.podium_enabled)
 		return;
-	for (int lid = 0; lid < CTR_CFG_PODIUM_TRACK_COUNT; lid++)
-		if (AP_LocationCheckedByBit(lid + ADV_REWARD_FIRST_TROPHY))
-			AP_SendPodiumChecks(lid, 1); // trophy won => 1st => all rungs
-	for (int trial = 0; trial < CTR_CFG_TRIAL_TRACK_COUNT; trial++)
-		if (AP_TrialTrackLocationChecked(16+trial, CTR_CFG_TRIAL_TROPHY))
-			AP_SendPodiumChecks(AP_TRIAL_PODIUM_LOGICAL_BASE+trial, 1);
 	// Schema 15: the Cortex Vortex Trophy is a direct code, restored from the
 	// server's checked set on every connect like every other trophy.
 	if (AP_CortexTrackChecked(AP_CV_SLOT_TROPHY))
@@ -252,8 +245,8 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 
 	// Live-position mirror: only meaningful with a valid player driver in an
 	// adventure context; -1 otherwise so a diff can't misread a stale hub rank.
-	if (p != NULL && (gGT->gameMode1 & ADVENTURE_MODE) != 0)
-		ap_live_position = (p->driverRank >= 0) ? p->driverRank + 1 : -1;
+	if (p != NULL && sdata->Loading.stage == LOAD_IDLE && (gGT->gameMode1 & ADVENTURE_MODE) != 0)
+		ap_live_position = AP_CoopRank(gGT, 0) >= 0 ? AP_CoopRank(gGT, 0) + 1 : -1;
 	else
 		ap_live_position = -1;
 
@@ -271,6 +264,9 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 	             sdata->Loading.stage == LOAD_IDLE;
 
 	int finishedNow = (p->actionsFlagSet & ACTION_RACE_FINISHED) != 0;
+	if (AP_CoopRace(gGT))
+		finishedNow = inRace && finishedNow && gGT->drivers[1] &&
+		    (gGT->drivers[1]->actionsFlagSet & ACTION_RACE_FINISHED);
 	if (finishedNow && !ap_finish_prev && inRace)
 	{
 		int podiumTrack;
@@ -278,7 +274,7 @@ static void AP_RaceListenerTick(struct GameTracker *gGT)
 		// driverRank is frozen once you cross the line (nobody can pass a
 		// finished racer), so this is the authoritative final placement.
 		ap_last_race_track = (int)gGT->levelID;
-		ap_last_race_place = (p->driverRank >= 0) ? p->driverRank + 1 : -1;
+		ap_last_race_place = AP_CoopRank(gGT, 1) >= 0 ? AP_CoopRank(gGT, 1) + 1 : -1;
 		ap_last_race_mode  = AP_ClassifyRace(gGT);
 		podiumTrack = AP_RetailPodiumTrack(gGT);
 

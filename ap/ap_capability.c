@@ -1,4 +1,5 @@
 #ifdef CTR_AP
+#include "ap_coop.h"
 
 #include <common.h> // struct Driver + data + sdata + TurboType / CollStepFlags
 
@@ -38,7 +39,7 @@ static int g_cap_pc_logged;
 // cannot be identified. That path fails open to vanilla, and a bound that drops
 // behaviour silently is the exact pattern Lessons Learned #4 is about.
 static int g_cap_pc_unknown_logged;
-static int g_cap_weaken_stats_applied;
+static int g_cap_weaken_stats_applied[8];
 static int g_cap_observed_boost_tier;
 static int g_cap_boost_observed;
 
@@ -251,7 +252,7 @@ static int AP_CapabilityIsLocal(struct Driver *driver)
 {
 	if (driver == 0 || sdata == 0 || sdata->gGT == 0)
 		return 0;
-	return driver == sdata->gGT->drivers[0];
+	return AP_IsSlotHuman(sdata->gGT, driver);
 }
 
 static int AP_CapabilityRosterSlotForCharacter(int characterID);
@@ -648,12 +649,18 @@ void AP_CapabilitySelectRestore(void)
 // equivalence.
 #define AP_CAP_PAD_RESERVES 0x3c0
 
+int AP_CapabilityAppliedBoostTierForDriver(const struct Driver *driver)
+{
+	return AP_CapabilityRoomStatsRace() && driver && driver->driverID < 8
+	    ? AP_CapabilityAppliedRankForCharacter(AP_CAP_CHAIN_BOOST, data.characterIDs[driver->driverID]) : -1;
+}
+
 int AP_CapabilityFireGrant(struct Driver *driver, int *reserves, uint32_t type, int *fireLevel)
 {
 	// The APPLIED tier: the player may drive below what their items unlock
 	// (rank selector). It is -1 exactly when the ceiling is, so a seed with the
 	// pack off still never reaches a write.
-	const int tier = AP_TrapWeakenBoostTier(AP_CapabilityAppliedBoostTier());
+	const int tier = AP_TrapWeakenBoostTier(AP_CapabilityAppliedBoostTierForDriver(driver));
 
 	if (tier < 0 || !AP_CapabilityIsLocal(driver))
 		return 1;
@@ -722,8 +729,8 @@ int AP_CapabilityFireGrant(struct Driver *driver, int *reserves, uint32_t type, 
 
 int AP_CapabilityRetroFueled(struct Driver *driver)
 {
-	return driver != 0 && AP_CapabilityIsLocal(driver) &&
-	       AP_TrapWeakenBoostTier(AP_CapabilityAppliedBoostTier()) == AP_CAP_BOOST_BLUEFIRE;
+	return AP_CapabilityIsLocal(driver) &&
+	       AP_TrapWeakenBoostTier(AP_CapabilityAppliedBoostTierForDriver(driver)) == AP_CAP_BOOST_BLUEFIRE;
 }
 
 // ── Stat ranks ──────────────────────────────────────────────────────────────
@@ -855,7 +862,8 @@ void AP_CapabilityStats(struct Driver *driver)
 	weakened = AP_TrapWeakenedActive(driver);
 	// Outside Adventure a race drives vanilla stats: the pack counts as off there.
 	statsLive = AP_CapabilityStatsActive() && AP_CapabilityRoomStatsRace();
-	if (!statsLive && !weakened && !g_cap_weaken_stats_applied)
+	if (driver->driverID >= 8) return;
+	if (!statsLive && !weakened && !g_cap_weaken_stats_applied[driver->driverID])
 		return;
 
 	// Written every frame rather than once on a rank change: six stores, no
@@ -872,7 +880,8 @@ void AP_CapabilityStats(struct Driver *driver)
 			continue; // table shape changed under us: leave the engine's own value
 
 		// The applied rank: the player's selection under the received ceiling.
-		rank = statsLive ? AP_CapabilityAppliedStatRankFor(AP_CAP_STAT_ROWS[i].chain) : -1;
+		rank = statsLive && driver->driverID < 8 ? AP_CapabilityAppliedRankForCharacter(
+		    AP_CAP_STAT_ROWS[i].chain, data.characterIDs[driver->driverID]) : -1;
 		if (rank < 0)
 		{
 			// Pack-off: derive the permanent vanilla anchor from the same character
@@ -892,9 +901,9 @@ void AP_CapabilityStats(struct Driver *driver)
 
 		changed |= AP_CapabilityWriteStat(driver, row, AP_CapabilityStatRankValue(row, rank));
 	}
-	if (statsLive && changed)
+	if (statsLive && changed && driver == sdata->gGT->drivers[0])
 		AP_NavRec_NotePhysicsEffect();
-	g_cap_weaken_stats_applied = weakened;
+	g_cap_weaken_stats_applied[driver->driverID] = weakened;
 }
 
 #endif // CTR_AP

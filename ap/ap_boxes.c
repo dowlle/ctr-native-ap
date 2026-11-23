@@ -196,7 +196,7 @@ static int AP_BoxChecked(long code, void *ctx)
 // practice. Extending to TIME_TRIAL needs its own confirmed report.
 static int AP_BoxesRaceCarriesBoxes(struct GameTracker *gGT)
 {
-	return gGT && gGT->numPlyrCurrGame == 1 && AP_WumpaBankRaceMode(gGT->gameMode1);
+	return gGT && (gGT->numPlyrCurrGame == 1 || AP_CoopRace(gGT)) && AP_WumpaBankRaceMode(gGT->gameMode1);
 }
 
 // ── the alternate-route gate (WO-A3 cup legs; boss races ruled 2026-09-12) ──
@@ -987,7 +987,7 @@ static void AP_BoxBreak(struct GameTracker *gGT, int i, struct Instance *boxInst
 // karts and AI-fired weapons alike.
 static int AP_BoxOwnedByLocalPlayer(struct GameTracker *gGT, struct Driver *d)
 {
-	if (d == 0 || d != gGT->drivers[0])
+	if (!AP_IsSlotHuman(gGT, d))
 		return 0;
 	if ((d->actionsFlagSet & ACTION_BOT) != 0)
 		return 0;
@@ -1073,14 +1073,22 @@ static void AP_BoxesTick(struct GameTracker *gGT)
 		if (!AP_BoxPresentationCollectable(s_boxPresent))
 			AP_BoxGhostVisual(inst);
 
-		// The proximity walk the engine uses for its own non-BSP objects. PLAYER
-		// bucket only, which is the whole of the AI pass-through rule.
-		hit = LinkedCollide_Radius(inst, 0, gGT->threadBuckets[PLAYER].thread,
-		                           AP_BOX_HIT_RADIUS_SQUARED);
+		// A finished kart can stay in PLAYER after conversion to a bot. Resume
+		// the co-op search past it so a live teammate can touch the same box.
+		struct Thread *bucket = gGT->threadBuckets[PLAYER].thread;
+		for (;;)
+		{
+			hit = LinkedCollide_Radius(inst, 0, bucket, AP_BOX_HIT_RADIUS_SQUARED);
+			if (hit == 0 || AP_BoxHitByLocalPlayer(gGT, hit))
+				break;
+			if (!AP_CoopRace(gGT) || hit->thread == 0)
+			{
+				hit = 0;
+				break;
+			}
+			bucket = hit->thread->siblingThread;
+		}
 		if (hit == 0)
-			continue;
-
-		if (!AP_BoxHitByLocalPlayer(gGT, hit))
 			continue;
 
 		// #354: a ghost box is driven THROUGH. The refusal is logged once per box

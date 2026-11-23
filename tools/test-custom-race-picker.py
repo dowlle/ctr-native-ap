@@ -27,7 +27,7 @@ typedef struct { s16 x,y,z; } SVec3;
 struct Instance { SVec3 scale; int flags; s16 vertSplit; } instance;
 struct Driver { void (*funcPtrs[1])(void); int driverID, kartState; s8 revEngineState;
  struct { int y; } posCurr; s16 turnAngleCurr; SVec3 rotCurr; struct Instance *instSelf; } driver;
-struct GameTracker { struct Driver *drivers[1]; struct { s16 cameraMode; } cameraDC[1]; } game, *gGT=&game;
+struct GameTracker { struct Driver *drivers[2]; struct { s16 cameraMode; } cameraDC[2]; } game, *gGT=&game;
 struct Warp { int framesWarping, boolEnteredWarppad, levelID; } warp, *warppadObj=&warp;
 struct Menu { int unused; };
 struct { struct Menu menuTokenRelic; } D232;
@@ -41,35 +41,37 @@ void RECTMENU_Hide(struct Menu *menu) { assert(menu==&D232.menuTokenRelic); hidd
 int ctr_cfg_warp_phys(int p) { return p; }
 void AP_PadLogEntryRefused(int p,int d) { assert(p==d&&p==warp.levelID); logged++; }
 '''
-fixture += capture + '\nint evaluate(void) {\n goto WarpPad_RefuseEntry;\n' + refuse + r'''
+fixture += capture + '\nint evaluate(struct Driver *driver) {\n goto WarpPad_RefuseEntry;\n' + refuse + r'''
 WarpPad_AnimateOpen: return 1;
 }
 int main(void) {
- gGT->drivers[0]=&driver;driver.instSelf=&instance;
- data.characterIDs[0]=5;data.MetaDataCharacters[5].engineID=3;
+ driver.instSelf=&instance;
+ data.characterIDs[0]=data.characterIDs[1]=5;data.MetaDataCharacters[5].engineID=3;
+ for(int seat=0;seat<2;seat++)
  for(int physical=0;physical<128;physical++)
  for(int ownedFlags=0;ownedFlags<4;ownedFlags++) {
-  warp.levelID=physical;warp.framesWarping=63;warp.boolEnteredWarppad=1;
+  driver.driverID=seat;
+  warp.levelID=physical;warp.framesWarping=63;warp.boolEnteredWarppad=seat+1;
   sdata->boolOpenTokenRelicMenu=1;apEntryRefusedDest=-1;dropped=hidden=logged=engineInits=0;
   driver.posCurr.y=123;instance.scale=(SVec3){100,200,300};
   driver.turnAngleCurr=-1234;driver.rotCurr.y=2345;driver.revEngineState=ownedFlags&1;
-  instance.flags=16|ownedFlags;instance.vertSplit=42;game.cameraDC[0].cameraMode=7;
-  AH_WarpPad_WarpCapture(gGT);
+  instance.flags=16|ownedFlags;instance.vertSplit=42;game.cameraDC[seat].cameraMode=7;
+  AH_WarpPad_WarpCapture(gGT,&driver);
   driver.posCurr.y=999;instance.scale=(SVec3){1,2,3};
   driver.turnAngleCurr=1000;driver.rotCurr.y=-1000;driver.revEngineState=2;
-  instance.flags=32|REFLECTIVE|HIDE_MODEL;instance.vertSplit=99;game.cameraDC[0].cameraMode=3;
+  instance.flags=32|REFLECTIVE|HIDE_MODEL;instance.vertSplit=99;game.cameraDC[seat].cameraMode=3;
   driver.funcPtrs[0]=0;driver.kartState=(ownedFlags&1)?KS_WARP_PAD:KS_NORMAL;
-  assert(evaluate()==1&&warp.framesWarping==0&&warp.boolEnteredWarppad==0);
+  assert(evaluate(&driver)==1&&warp.framesWarping==0&&warp.boolEnteredWarppad==0);
   assert(driver.funcPtrs[0]==VehPhysProc_Driving_Init);
   assert(driver.revEngineState==(ownedFlags&1));
   assert(driver.posCurr.y==123&&driver.turnAngleCurr==-1234&&driver.rotCurr.y==2345);
   assert(instance.scale.x==100&&instance.scale.y==200&&instance.scale.z==300);
-  assert(instance.flags==(32|ownedFlags)&&instance.vertSplit==42&&game.cameraDC[0].cameraMode==7);
+  assert(instance.flags==(32|ownedFlags)&&instance.vertSplit==42&&game.cameraDC[seat].cameraMode==7);
   assert(apWarpSnapshot.driver==NULL&&sdata->boolOpenTokenRelicMenu==0);
   assert(apEntryRefusedDest==physical&&dropped==1&&hidden==1&&logged==1);
   // A6-2: the engine channel the warp init stopped comes back once, for the
   // right engine and driver slot; no channel when the init never ran.
-  if (ownedFlags&1) assert(engineInits==1&&engineId==12&&engineFlags==0x8080);
+  if (ownedFlags&1) assert(engineInits==1&&engineId==12+seat&&engineFlags==0x8080);
   else assert(engineInits==0);
  }
  return 0;
@@ -80,4 +82,4 @@ with tempfile.TemporaryDirectory() as tmp:
     src.write_text(fixture)
     subprocess.run(["cc", "-std=c99", "-Wall", "-Wextra", "-Werror", "-fsanitize=undefined", str(src), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print("PASS: production plan menu cancellation, 512 kart/camera restore, engine channel return and latch cases")
+print("PASS: production plan menu cancellation, 1,024 kart/camera restore, engine channel return and latch cases")

@@ -187,7 +187,7 @@ int AP_TrapMirrorCullFlip(void);
 // Item Reroll's exclusion, read by the roll filter in ap_hooks.c at the moment
 // VehPhysGeneral_SetHeldItem settles a roll. Returns the held id the trap threw
 // away, or -1 when no reroll is in flight and the filter is inert.
-int AP_TrapRerollExcludedItem(void);
+int AP_TrapRerollExcludedItem(const struct Driver *driver);
 
 // ── The alpha3 data package traps (ruled 2026-11-06) ──
 // VehPhysForce_OnApplyForces, after the engine's speed clamp:

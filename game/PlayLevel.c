@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../ap/ap_coop.h"
+#endif
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_custom_offline.h>
 #endif
@@ -438,7 +441,13 @@ void PlayLevel_UpdateLapStats(void)
 
 	    (
 	        // Multiplayer VS, all finished except one
-	        (numPlyr > 1) && ((gGT->gameMode1 & ARCADE_MODE) == 0) && (iVar13 >= (numPlyr - 1))) ||
+	        (numPlyr > 1) && ((gGT->gameMode1 & ARCADE_MODE) == 0) &&
+#ifdef CTR_AP
+	        AP_CoopFinishReady(AP_CoopRace(gGT), numPlyr, iVar13)
+#else
+	        (iVar13 >= (numPlyr - 1))
+#endif
+	        ) ||
 
 	    (
 	        // Arcade mode, all humans finished

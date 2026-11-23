@@ -13,6 +13,7 @@
 // (AH_WarpPad.c WarpPad_RequestLoad), so it reads 0 during the race itself.
 
 #include <common.h>
+#include "ap_coop.h"
 #include "ap_hit_encounter.h"
 #include "ap_hit_policy.h"
 
@@ -50,11 +51,14 @@ void AP_HitBotsVictim(struct Driver *victim, int damageType,
 	if (victim->instSelf != NULL && victim->instSelf->thread != NULL &&
 	    victim->instSelf->thread->modelIndex == DYNAMIC_GHOST)
 		flags |= 4u;
-	if (victim == gGT->drivers[0])
+	/* Finished humans become bots while their partner is still racing. Their
+	 * seats remain ours, so a later partner hit must never earn a bot check. */
+	if (victim == gGT->drivers[0] ||
+	    (AP_CoopRace(gGT) && victim == gGT->drivers[1]))
 		flags |= 8u;
 	if (attacker != NULL)
 		flags |= 16u;
-	if (attacker != NULL && attacker == gGT->drivers[0])
+	if (AP_IsSlotHuman(gGT, attacker))
 		flags |= 32u;
 	if (attacker != NULL && (attacker->actionsFlagSet & ACTION_BOT) != 0)
 		flags |= 64u;

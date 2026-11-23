@@ -259,6 +259,18 @@ static std::string ap_net_endpoint_of(const std::string &uri)
 	return endpoint;
 }
 
+static uint64_t ap_storage_token()
+{
+	uint64_t token = std::chrono::system_clock::now().time_since_epoch().count();
+	try {
+		std::random_device entropy;
+		token ^= (uint64_t(entropy()) << 32) ^ entropy();
+	} catch (...) {
+		// The clock still gives a token if the OS RNG is unavailable.
+	}
+	return token ? token : 1;
+}
+
 // DataStorage belongs to the saved room. A new server using the same seed
 // and address gets a new token. Atomic Set with a default and no operations
 // creates the token once, even if two clients connect to the slot together.
@@ -267,14 +279,7 @@ static void ap_net_feed_room_connect(int team, int slot)
 	g_feed_room_key = "ctr_feed_room_v1:" + std::to_string(team) + "_" + std::to_string(slot);
 	g_feed_room_instance = 0;
 	g_feed_room_known = false;
-	uint64_t token = std::chrono::system_clock::now().time_since_epoch().count();
-	try {
-		std::random_device entropy;
-		token ^= (uint64_t(entropy()) << 32) ^ entropy();
-	} catch (...) {
-		// The clock still gives a room token if the OS RNG is unavailable.
-	}
-	g_ap->Set(g_feed_room_key, token ? token : 1, true, {});
+	g_ap->Set(g_feed_room_key, ap_storage_token(), true, {});
 }
 
 // Set true on every fresh slot-connect (new seed, reconnect, or server switch).
@@ -355,6 +360,31 @@ static bool        g_char_known = false;
 // applied that value locally, and the server's echo carries the same value, so
 // a re-seat would be a harmless no-op either way.
 static unsigned    g_char_rev = 0;
+
+static int g_coop_value = 0;
+static bool g_coop_known = false;
+static unsigned g_coop_rev = 0;
+static uint64_t g_coop_writer = 0;
+static uint64_t g_coop_write = 0;
+static bool g_coop_save_pending = false;
+static bool g_coop_save_lost = false;
+static std::string g_coop_save_endpoint, g_coop_save_seed, g_coop_save_slot;
+static std::string ap_coop_key() { return "ctr_coop_" + g_slot; }
+static void ap_coop_accept(const nlohmann::json &value, bool fromGet)
+{
+	const bool valid = value.is_number_integer() && value >= 0 &&
+	                   (value <= 63 || value == 64 || value == 96);
+	const int packed = valid ? value.get<int>() : 64;
+	if (fromGet && !g_coop_known && g_coop_save_pending)
+	{
+		g_coop_save_lost = packed != g_coop_value;
+		g_coop_save_pending = false;
+	}
+	if (!fromGet && (!g_coop_known || !valid || packed == g_coop_value)) return;
+	g_coop_value = packed;
+	g_coop_known = true;
+	g_coop_rev++;
+}
 
 static std::string ap_char_key()
 {
@@ -1113,6 +1143,13 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 		// discarded rather than risk delivering them to the wrong world
 		// (requirement 5).
 		const std::string connectedSeed = g_ap->get_seed();
+		g_coop_known = false;
+		if (g_coop_save_endpoint != g_room_endpoint || g_coop_save_seed != connectedSeed ||
+		    g_coop_save_slot != g_slot)
+		{
+			g_coop_save_pending = false;
+			g_coop_save_lost = false;
+		}
 		ap_net_feed_room_connect(g_ap->get_team_number(), g_ap->get_player_number());
 		g_doors.connect(g_room_endpoint, connectedSeed, g_ap->get_team_number(), g_ap->get_player_number());
 		g_doors_sent = 0;
@@ -1336,6 +1373,8 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			g_diff_known = true;
 			std::fprintf(stderr, "[AP NET] difficulty override retrieved: %d\n", g_diff_value);
 		}
+		auto coop = keys.find(ap_coop_key());
+		if (coop != keys.end() && !g_coop_known) ap_coop_accept(coop->second, true);
 		auto ch = keys.find(ap_char_key());
 		int  cv = 0;
 		// A stored racer outside the roster is a key some other tool wrote.
@@ -1357,10 +1396,12 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			std::fprintf(stderr, "[AP NET] rank selection retrieved (%d values)\n",
 			             AP_NET_STATSELECT_COUNT);
 	});
-	g_ap->set_set_reply_handler([](const std::string &key, const nlohmann::json &value,
-	                               const nlohmann::json &original) {
+	g_ap->set_set_reply_handler([](const nlohmann::json &reply) {
 		if (g_rejected)
 			return; // no rejected-seed state may activate
+		const auto key = reply.at("key").get<std::string>();
+		const auto &value = reply.at("value");
+		const auto &original = reply.at("original_value");
 		if (g_connected && !g_feed_room_key.empty() && key == g_feed_room_key)
 		{
 			g_feed_room_instance = value.is_number_unsigned() ? value.get<uint64_t>() : 0;
@@ -1440,6 +1481,19 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 			std::fprintf(stderr, "[AP NET] difficulty override changed: %d\n", g_diff_value);
 		}
 		int cv = 0;
+		if (g_connected && key == ap_coop_key())
+		{
+			// The server echoes the Set metadata to all subscribers. A reply
+			// to an earlier local edit cannot roll back the latest local edit.
+			auto writer = reply.find("ctr_coop_writer");
+			auto write = reply.find("ctr_coop_write");
+			const bool local = g_coop_writer && writer != reply.end() && *writer == g_coop_writer;
+			if (local && g_coop_known && write != reply.end() && *write == g_coop_write &&
+			    value == g_coop_value)
+				g_coop_save_pending = false;
+			if (!local && !g_coop_save_pending)
+				ap_coop_accept(value, false);
+		}
 		if (key == ap_char_key() && ap_char_accept(value, &cv))
 		{
 			g_char_value = cv;
@@ -1619,6 +1673,7 @@ static void ap_net_apply_retry_stop(void)
 	AP_DeathLinkInboxClear(&g_dl_inbox);
 	g_diff_known = false;
 	g_char_known = false;
+	g_coop_known = false;
 	g_edit_known = false;
 	g_statsel_known = false;
 	g_statsel_inflight.clear();
@@ -1665,6 +1720,7 @@ static void ap_net_apply_seed_reject(void)
 	AP_DeathLinkInboxClear(&g_dl_inbox);
 	g_diff_known = false;
 	g_char_known = false;
+	g_coop_known = false;
 	g_edit_known = false;
 	g_statsel_known = false;
 	g_statsel_inflight.clear();
@@ -2511,6 +2567,52 @@ extern "C" unsigned ap_net_character_revision(void)
 	return g_char_rev;
 }
 
+extern "C" void ap_net_coop_subscribe(void)
+{
+	if (!g_ap || !g_connected) return;
+	g_coop_known = false;
+	AP_NET_GUARD("coop_subscribe", {
+		const std::string key = ap_coop_key();
+		g_ap->SetNotify({key});
+		g_ap->Get({key});
+	});
+}
+
+extern "C" int ap_net_coop_set(int packed)
+{
+	if (!g_ap || !g_connected || !g_coop_known || packed < 0 ||
+	    (packed > 63 && packed != 64 && packed != 96)) return 0;
+	bool queued = false;
+	const uint64_t write = g_coop_write + 1;
+	AP_NET_GUARD("coop_set", {
+		if (!g_coop_writer) g_coop_writer = ap_storage_token();
+		APClient::DataStorageOperation op;
+		op.operation = "replace";
+		op.value = packed;
+		queued = g_ap->Set(ap_coop_key(), packed, false, {op},
+		                    {{"ctr_coop_writer", g_coop_writer}, {"ctr_coop_write", write}});
+	});
+	if (!queued) return 0;
+	g_coop_write = write;
+	g_coop_value = packed;
+	g_coop_save_pending = true;
+	g_coop_save_lost = false;
+	g_coop_save_endpoint = g_room_endpoint;
+	g_coop_save_seed = g_ap->get_seed();
+	g_coop_save_slot = g_slot;
+	return 1;
+}
+
+extern "C" int ap_net_coop_known(int *out)
+{
+	if (!g_coop_known) return 0;
+	if (out) *out = g_coop_value;
+	return 1;
+}
+extern "C" unsigned ap_net_coop_revision(void) { return g_coop_rev; }
+extern "C" int ap_net_coop_save_pending(void) { return g_coop_save_pending; }
+extern "C" int ap_net_coop_save_lost(void) { return g_coop_save_lost; }
+
 extern "C" void ap_net_editstats_subscribe(void)
 {
 	if (!g_ap || !g_connected)
@@ -2905,6 +3007,7 @@ extern "C" void ap_net_shutdown(void)
 	AP_DeathLinkInboxClear(&g_dl_inbox); // a pending death must not survive a server switch
 	g_diff_known = false; // a difficulty override must not survive a server switch
 	g_char_known = false; // nor may a racer selection leak into another slot
+	g_coop_known = false;
 	g_edit_known = false; // nor an edited stat package
 	g_statsel_known = false; // nor a rank selection
 	g_statsel_inflight.clear();

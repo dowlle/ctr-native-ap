@@ -1,4 +1,5 @@
 #ifdef CTR_AP
+#include "ap_coop.h"
 
 #include <common.h> // structs Driver/GameTracker/GamepadBuffer/CameraDC + sdata + enums
 #include <stdio.h>
@@ -89,8 +90,6 @@ static int g_sched_ready = 0;
 // keeps their behaviour identical between two calls in one frame.
 static unsigned char g_active[AP_TRAP_EFFECT_COUNT];
 static int g_trap_boost_tainted;
-static int g_trap_forced_press;
-static int g_trap_forced_fire_pending;
 
 // Camera latch: 1 while we own cameraDC[0], so chase is restored exactly once.
 static int g_fp_applied = 0;
@@ -115,12 +114,12 @@ static int g_prev_level = -1;
 static int g_prev_load = LOAD_IDLE;
 
 // Reverse-recovery accumulator, in milliseconds of near-stationary time.
-static int g_recover_ms = 0;
+static int g_recover_ms[2];
 
-// Reverse Steering applied its mirror to this frame's steering axis already.
+// Human slots whose steering axis has already been mirrored this frame.
 // Cleared once per frame in AP_TrapTick; see AP_TrapDriveInput for why a mirror
 // cannot simply be reapplied the way the boost-control writes can.
-static int g_trap_steer_mirrored = 0;
+static unsigned g_trap_steer_mirrored = 0;
 
 // ── The alpha3 data package traps (ruled 2026-11-06) ──
 // Stuck Steering's dead side for the running copy: -1 left, +1 right. Picked
@@ -151,7 +150,7 @@ static struct Driver *AP_TrapLocalDriver(void)
 
 static int AP_TrapIsLocal(struct Driver *driver)
 {
-	return driver != 0 && driver == AP_TrapLocalDriver() && AP_CapabilityRoomStatsRace();
+	return AP_IsSlotHuman(sdata ? sdata->gGT : 0, driver) && AP_CapabilityRoomStatsRace();
 }
 
 int AP_TrapSuppressCrateReward(struct Driver *driver)
@@ -434,7 +433,9 @@ static unsigned AP_TrapConditions(struct GameTracker *gGT, struct Driver *local,
 {
 	unsigned bits = 0;
 
-	if (local != 0 && (local->actionsFlagSet & ACTION_NEW_BOOST) != 0)
+	if ((local != 0 && (local->actionsFlagSet & ACTION_NEW_BOOST) != 0) ||
+	    (AP_CoopCrystal(gGT) && AP_CoopP2Available() && gGT->drivers[1] &&
+	     (gGT->drivers[1]->actionsFlagSet & ACTION_NEW_BOOST) != 0))
 		bits |= AP_TRAP_COND_EARNED_BOOST;
 
 	if (local != 0 && local->numWumpas >= AP_TRAP_JUICED_WUMPA &&
@@ -443,12 +444,25 @@ static unsigned AP_TrapConditions(struct GameTracker *gGT, struct Driver *local,
 
 	if (AP_TrapHeldItemResolved(local))
 		bits |= AP_TRAP_COND_HELD_ITEM;
+	if (AP_CoopCrystal(gGT) && AP_CoopP2Available() &&
+	    AP_TrapHeldItemResolved(gGT->drivers[1]))
+		bits |= AP_TRAP_COND_HELD_ITEM;
 
 	// Wumpa Leak: something to halve, and the same protection Wumpa Wipeout
 	// respects.
 	if (local != 0 && AP_TrapWumpaLeakAmount(AP_WumpaRaceCount(local)) > 0 &&
 	    !AP_TrapFruitProtected(gGT, local))
 		bits |= AP_TRAP_COND_TWO_WUMPA;
+
+	if (AP_CoopCrystal(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]) &&
+	    !AP_TrapFruitProtected(gGT, gGT->drivers[1]))
+	{
+		struct Driver *partner = gGT->drivers[1];
+		if (partner->numWumpas >= AP_TRAP_JUICED_WUMPA)
+			bits |= AP_TRAP_COND_TEN_WUMPA;
+		if (AP_TrapWumpaLeakAmount(AP_WumpaRaceCount(partner)) > 0)
+			bits |= AP_TRAP_COND_TWO_WUMPA;
+	}
 
 	if (AP_TrapEligibleCrates(epoch))
 		bits |= AP_TRAP_COND_ELIGIBLE_CRATES;
@@ -474,26 +488,49 @@ static unsigned AP_TrapConditions(struct GameTracker *gGT, struct Driver *local,
 // own squish and spin recovery. All three of those are ruled to wait rather than
 // be consumed unsuccessfully.
 
-// Item Reroll: the weapon held when the trap fired, so the new roll can avoid it.
-// -1 when no reroll is in flight.
-static int g_trap_reroll_excluded = -1;
-// #486: a reroll that fired while the slot held no resolved weapon, waiting for
-// the next one. Same for Forced Use below.
-static int g_trap_reroll_wait = 0;
-static int g_trap_use_wait = 0;
-// Forced Use: what the player was holding when the trap fired, so the runtime can
-// recognise the moment the engine actually consumed it.
-static int g_trap_use_pending = 0;
-static int g_trap_use_item = -1;
-static int g_trap_use_count = 0;
+struct AP_TrapInventory
+{
+	int rerollExcluded;
+	int rerollWait;
+	int useWait;
+	int usePending;
+	int useItem;
+	int useCount;
+	int forcedPress;
+	int forcedFire;
+};
+static struct AP_TrapInventory g_trap_inventory[2] = {
+	{ .rerollExcluded = -1 }, { .rerollExcluded = -1 },
+};
+
+static struct AP_TrapInventory *AP_TrapInventoryFor(const struct Driver *driver)
+{
+	const struct GameTracker *gt = sdata ? sdata->gGT : NULL;
+	if (AP_CoopCrystal(gt) && driver == gt->drivers[1])
+		return &g_trap_inventory[1];
+	return &g_trap_inventory[0];
+}
+
+static void AP_TrapInventoryReset(void)
+{
+	for (int player = 0; player < 2; player++)
+		g_trap_inventory[player] = (struct AP_TrapInventory){ .rerollExcluded = -1 };
+}
 
 // Flatten walks two stages, because the squish it asks for can be refused and
 // then has an aftermath. The machine itself is AP_TrapFlattenStage in
 // ap_trap_sched_logic.h.
-static AP_TrapFlattenStage g_trap_flatten;
+static AP_TrapFlattenStage g_trap_flatten[2];
 // Instants that fired but have not landed yet: Warpball Ambush (the birth), and
 // since #486 the direct Nitro Drop and Red Potion hits. Retried every tick.
 static unsigned char g_trap_spawn_pending[AP_TRAP_EFFECT_COUNT];
+// A reissued copy remembers its outstanding seats by scheduler slot and receipt.
+static struct { unsigned seq; unsigned seats; } g_trap_owed[AP_TRAP_SCHED_CAP];
+
+static struct Driver *AP_TrapCrystalPartner(struct GameTracker *gt)
+{
+	return AP_CoopCrystal(gt) && AP_CoopP2Available() ? gt->drivers[1] : NULL;
+}
 
 // The kart-state values ap_trap_observe_logic.h repeats as plain integers really
 // are the engine's. If the decomp ever renumbers them, this stops the build here
@@ -547,11 +584,12 @@ static int AP_TrapCanActNow(struct GameTracker *gGT, struct Driver *local)
 // passes the Itemsanity draw filter unchanged, which is what the ruling asks for:
 // the seed's available weapon pool decides, and normal game rules decide whether
 // the result is juiced.
-static void AP_TrapStartReroll(struct GameTracker *gGT, struct Driver *local)
+static void AP_TrapStartReroll(struct GameTracker *gGT, struct Driver *local,
+                               struct AP_TrapInventory *inventory)
 {
 	AP_NavRec_NoteKartEffect();
 	AP_TrapReleaseHeldItemClaims(gGT, local);
-	g_trap_reroll_excluded = (int)local->heldItemID;
+	inventory->rerollExcluded = (int)local->heldItemID;
 
 	local->heldItemID = AP_TRAP_ITEM_ROLLING;
 	local->numHeldItems = 0;
@@ -568,33 +606,34 @@ static void AP_TrapStartReroll(struct GameTracker *gGT, struct Driver *local)
 
 // Has the reroll settled? The roll resolves in VehPhysGeneral_SetHeldItem roughly
 // 90 frames later, and only then has the trap delivered what it promised.
-static void AP_TrapPollReroll(struct GameTracker *gGT, struct Driver *local)
+static void AP_TrapPollReroll(struct GameTracker *gGT, struct Driver *local,
+                              struct AP_TrapInventory *inventory)
 {
 	int gate;
 	// #486: a copy that fired on an empty slot rerolls the next resolved weapon.
-	switch (AP_TrapHeldItemWaitPoll(g_trap_reroll_wait,
+	switch (AP_TrapHeldItemWaitPoll(inventory->rerollWait,
 	                                AP_TrapSchedPollGate(&g_sched, AP_TRAP_ITEM_REROLL),
 	                                AP_TrapCanActNow(gGT, local),
 	                                AP_TrapHeldItemResolved(local)))
 	{
 	case AP_TRAP_HELD_DROP:
-		g_trap_reroll_wait = 0;
+		inventory->rerollWait = 0;
 		return;
 	case AP_TRAP_HELD_APPLY:
-		g_trap_reroll_wait = 0;
-		AP_TrapStartReroll(gGT, local);
+		inventory->rerollWait = 0;
+		AP_TrapStartReroll(gGT, local, inventory);
 		return; // the roll it started is judged from the next tick
 	default:
 		break;
 	}
-	if (g_trap_reroll_excluded < 0)
+	if (inventory->rerollExcluded < 0)
 		return;
 	gate = AP_TrapSchedPollGate(&g_sched, AP_TRAP_ITEM_REROLL);
 	if (gate == AP_TRAP_POLL_GONE)
 	{
 		// The slot went away underneath us (map change, connect reset). Drop the
 		// exclusion so it cannot leak onto an unrelated later roll.
-		g_trap_reroll_excluded = -1;
+		inventory->rerollExcluded = -1;
 		return;
 	}
 	// Suspended by a mask rescue or a mask weapon (#416): the slot is still ours,
@@ -609,39 +648,42 @@ static void AP_TrapPollReroll(struct GameTracker *gGT, struct Driver *local)
 	if (AP_TrapRerollOutcome((int)local->heldItemID, (int)local->itemRollTimer,
 	                         (int)local->noItemTimer) == AP_TRAP_OUTCOME_WAIT)
 		return;
-	g_trap_reroll_excluded = -1;
-	AP_TrapSchedEffectDone(&g_sched, AP_TRAP_ITEM_REROLL);
+	inventory->rerollExcluded = -1;
 }
 
 // The exclusion the roll filter consults. Read once, at the moment the roll
 // resolves; -1 means no reroll is in flight and the filter is inert.
-int AP_TrapRerollExcludedItem(void)
+int AP_TrapRerollExcludedItem(const struct Driver *driver)
 {
-	return AP_CapabilityRoomStatsRace() ? g_trap_reroll_excluded : -1;
+	const struct GameTracker *gt = sdata ? sdata->gGT : NULL;
+	if (!AP_CapabilityRoomStatsRace() || !AP_IsSlotHuman(gt, driver) ||
+	    (driver != gt->drivers[0] && !AP_CoopCrystal(gt)))
+		return -1;
+	return AP_TrapInventoryFor(driver)->rerollExcluded;
 }
 
 // Forced Use: remember what has to leave the slot. The button injection itself
 // happens in AP_TrapDriveInput, because the fire path reads a TAPPED button and
 // the pad is only in hand there.
-static void AP_TrapArmForcedUse(struct Driver *local)
+static void AP_TrapArmForcedUse(struct Driver *local, struct AP_TrapInventory *inventory)
 {
-	g_trap_use_pending = 1;
-	g_trap_use_item = (int)local->heldItemID;
-	g_trap_use_count = (int)local->numHeldItems;
+	inventory->usePending = 1;
+	inventory->useItem = (int)local->heldItemID;
+	inventory->useCount = (int)local->numHeldItems;
 }
 
 // Is a forced use still owed? True while the trap is armed, active and its press
 // has not yet landed. The map boundary consults this as well as the poll, so the
 // two can never disagree about whether the copy was spent.
-static int AP_TrapForcedUseOwed(struct Driver *local)
+static int AP_TrapForcedUseOwed(struct Driver *local, const struct AP_TrapInventory *inventory)
 {
 	// #486: fired on an empty slot and still waiting for a weapon to use.
-	if (AP_TrapHeldItemWaitOwed(g_trap_use_wait,
+	if (AP_TrapHeldItemWaitOwed(inventory->useWait,
 	                            AP_TrapSchedPollGate(&g_sched, AP_TRAP_FORCED_USE)))
 		return 1;
 	// A suspended copy is still owed (#416): a mask rescue pauses it, it does
 	// not spend it.
-	if (!g_trap_use_pending ||
+	if (!inventory->usePending ||
 	    AP_TrapSchedPollGate(&g_sched, AP_TRAP_FORCED_USE) == AP_TRAP_POLL_GONE)
 		return 0;
 	// No driver to read means no evidence the use landed, and the ruling is to
@@ -649,8 +691,8 @@ static int AP_TrapForcedUseOwed(struct Driver *local)
 	if (local == 0)
 		return 1;
 	return AP_TrapForcedUseOutcome((int)local->heldItemID, (int)local->numHeldItems,
-	                               (int)local->noItemTimer, g_trap_use_item,
-	                               g_trap_use_count) == AP_TRAP_OUTCOME_WAIT;
+	                               (int)local->noItemTimer, inventory->useItem,
+	                               inventory->useCount) == AP_TRAP_OUTCOME_WAIT;
 }
 
 // Did the forced use actually happen? The engine refuses the fire request in an
@@ -658,39 +700,39 @@ static int AP_TrapForcedUseOwed(struct Driver *local)
 // head (VehPhysProc.c:485-489), so a consumed trap has to be proven rather than
 // assumed. See AP_TrapForcedUseOutcome for what counts as proof and why an empty
 // slot on its own does not.
-static void AP_TrapPollForcedUse(struct GameTracker *gGT, struct Driver *local)
+static void AP_TrapPollForcedUse(struct GameTracker *gGT, struct Driver *local,
+                                 struct AP_TrapInventory *inventory)
 {
 	int gate;
 	// #486: a copy that fired on an empty slot arms on the next resolved weapon.
-	switch (AP_TrapHeldItemWaitPoll(g_trap_use_wait,
+	switch (AP_TrapHeldItemWaitPoll(inventory->useWait,
 	                                AP_TrapSchedPollGate(&g_sched, AP_TRAP_FORCED_USE),
 	                                AP_TrapCanActNow(gGT, local),
 	                                AP_TrapHeldItemResolved(local)))
 	{
 	case AP_TRAP_HELD_DROP:
-		g_trap_use_wait = 0;
+		inventory->useWait = 0;
 		return;
 	case AP_TRAP_HELD_APPLY:
-		g_trap_use_wait = 0;
-		AP_TrapArmForcedUse(local);
+		inventory->useWait = 0;
+		AP_TrapArmForcedUse(local, inventory);
 		return; // the press is injected and judged from the next tick
 	default:
 		break;
 	}
-	if (!g_trap_use_pending)
+	if (!inventory->usePending)
 		return;
 	gate = AP_TrapSchedPollGate(&g_sched, AP_TRAP_FORCED_USE);
 	if (gate == AP_TRAP_POLL_GONE)
 	{
-		g_trap_use_pending = 0;
+		inventory->usePending = 0;
 		return;
 	}
 	if (gate == AP_TRAP_POLL_HOLD)
 		return;
-	if (AP_TrapForcedUseOwed(local))
+	if (AP_TrapForcedUseOwed(local, inventory))
 		return;
-	g_trap_use_pending = 0;
-	AP_TrapSchedEffectDone(&g_sched, AP_TRAP_FORCED_USE);
+	inventory->usePending = 0;
 }
 
 // ── Flatten ──
@@ -845,10 +887,25 @@ static int AP_TrapApplyHazardHit(struct Driver *local, int effect)
 	return 1;
 }
 
-static void AP_TrapPollSpawnedInstants(struct GameTracker *gGT, struct Driver *local)
+static int AP_TrapTakeFruit(struct GameTracker *gt, struct Driver *driver, int effect)
+{
+	int count = AP_WumpaRaceCount(driver);
+	if (AP_TrapFruitProtected(gt, driver) ||
+	    (effect == AP_TRAP_WUMPA_WIPEOUT ? count < AP_TRAP_JUICED_WUMPA : count < 2))
+		return 0;
+	int loss = effect == AP_TRAP_WUMPA_WIPEOUT ? count : AP_TrapWumpaLeakAmount(count);
+	RB_Player_ModifyWumpa(driver, -loss);
+	AP_NavRec_NoteKartEffect();
+	return 1;
+}
+
+static void AP_TrapPollPendingInstants(struct GameTracker *gGT, struct Driver *local)
 {
 	int effect;
-	if (!AP_TrapCanActNow(gGT, local))
+	struct Driver *partner = AP_TrapCrystalPartner(gGT);
+	int p1Ready = AP_TrapCanActNow(gGT, local);
+	int p2Ready = AP_TrapCanActNow(gGT, partner);
+	if (!p1Ready && !p2Ready)
 		return;
 	for (effect = 0; effect < AP_TRAP_EFFECT_COUNT; effect++)
 	{
@@ -868,9 +925,27 @@ static void AP_TrapPollSpawnedInstants(struct GameTracker *gGT, struct Driver *l
 		if (gate == AP_TRAP_POLL_HOLD)
 			continue;
 		if (effect == AP_TRAP_WARPBALL_AMBUSH)
-			done = AP_TrapFireWarpball(gGT, local);
+			done = p1Ready && AP_TrapFireWarpball(gGT, local);
 		else if (effect == AP_TRAP_NITRO || effect == AP_TRAP_RED_POTION)
-			done = AP_TrapApplyHazardHit(local, effect);
+		{
+			if ((g_trap_spawn_pending[effect] & 1u) && p1Ready &&
+			    AP_TrapApplyHazardHit(local, effect))
+				g_trap_spawn_pending[effect] &= ~1u;
+			if ((g_trap_spawn_pending[effect] & 2u) && p2Ready &&
+			    AP_TrapApplyHazardHit(partner, effect))
+				g_trap_spawn_pending[effect] &= ~2u;
+			done = !g_trap_spawn_pending[effect];
+		}
+		else if (effect == AP_TRAP_WUMPA_WIPEOUT || effect == AP_TRAP_WUMPA_LEAK)
+		{
+			if ((g_trap_spawn_pending[effect] & 1u) && p1Ready &&
+			    AP_TrapTakeFruit(gGT, local, effect))
+				g_trap_spawn_pending[effect] &= ~1u;
+			if ((g_trap_spawn_pending[effect] & 2u) && p2Ready &&
+			    AP_TrapTakeFruit(gGT, partner, effect))
+				g_trap_spawn_pending[effect] &= ~2u;
+			done = !g_trap_spawn_pending[effect];
+		}
 		if (done)
 		{
 			g_trap_spawn_pending[effect] = 0;
@@ -881,31 +956,30 @@ static void AP_TrapPollSpawnedInstants(struct GameTracker *gGT, struct Driver *l
 
 // Drive Flatten's two stages. Runs once per tick alongside the other completion
 // polls, before the map boundary, for the same reason they do.
-static void AP_TrapPollFlatten(struct Driver *local, int elapsedMs)
+static void AP_TrapTryFlatten(struct GameTracker *gt, struct Driver *driver,
+                             AP_TrapFlattenStage *stage)
 {
-	int gate = AP_TrapSchedPollGate(&g_sched, AP_TRAP_FLATTEN);
-	int recovered = local != 0 &&
-	    AP_TrapFlattenRecovered((int)local->kartState, (int)local->squishTimer);
+	if (AP_TrapCanActNow(gt, driver) && AP_TrapApplyFlatten(driver))
+		AP_TrapFlattenStageLanded(stage, AP_TRAP_FLATTEN_GRACE_MS);
+}
 
-	switch (AP_TrapFlattenStagePoll(&g_trap_flatten, gate, local != 0, recovered,
-	                                AP_TRAP_FLATTEN_GRACE_MS, elapsedMs))
+static void AP_TrapPollFlatten(struct GameTracker *gt, struct Driver *local, int elapsedMs)
+{
+	struct Driver *drivers[] = { local, AP_TrapCrystalPartner(gt) };
+	int gate = AP_TrapSchedPollGate(&g_sched, AP_TRAP_FLATTEN);
+	for (int player = 0; player < 2; player++)
 	{
-	case AP_TRAP_FLATTEN_TRY:
-		// Retry until the driver state becomes valid. A mask, a shield, a running
-		// invincibility window or another damage animation all mean "not yet",
-		// and the ruling is to wait for a valid state rather than consume the
-		// copy on a squish that never happened.
-		if (AP_TrapApplyFlatten(local))
-			AP_TrapFlattenStageLanded(&g_trap_flatten, AP_TRAP_FLATTEN_GRACE_MS);
-		break;
-	case AP_TRAP_FLATTEN_DONE:
-		// Recovery and the grace interval are over: release the slot to a
-		// serialized duplicate.
-		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_FLATTEN);
-		break;
-	default:
-		break;
+		struct Driver *driver = drivers[player];
+		AP_TrapFlattenStage *stage = &g_trap_flatten[player];
+		int ready = AP_TrapCanActNow(gt, driver);
+		int recovered = ready && AP_TrapFlattenRecovered(driver->kartState, driver->squishTimer);
+		if (AP_TrapFlattenStagePoll(stage, gate == AP_TRAP_POLL_RUN && !ready ? AP_TRAP_POLL_HOLD : gate, ready,
+		                           recovered, AP_TRAP_FLATTEN_GRACE_MS, elapsedMs) == AP_TRAP_FLATTEN_TRY)
+			AP_TrapTryFlatten(gt, driver, stage);
 	}
+	if (gate == AP_TRAP_POLL_RUN && !g_trap_flatten[0].pending && !g_trap_flatten[0].applied &&
+	    !g_trap_flatten[1].pending && !g_trap_flatten[1].applied)
+		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_FLATTEN);
 }
 
 // #455 engine effect and its retry/recovery state.
@@ -921,46 +995,70 @@ static void AP_TrapStuckPickSide(struct GameTracker *gGT)
 	g_trap_stuck_side = AP_TrapStuckSidePick(gGT != 0 ? (unsigned)gGT->timer : 0u, g_trap_stuck_picks);
 }
 
-static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, int effect)
+static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, AP_TrapEvent ev)
 {
 	if (gGT == 0 || local == 0)
 		return;
 
+	int effect = ev.effect;
+	struct Driver *drivers[] = { local, AP_TrapCrystalPartner(gGT) };
+	unsigned seats = drivers[1] ? 3u : 1u;
+	if (g_trap_owed[ev.slot].seats && g_trap_owed[ev.slot].seq == ev.seq)
+	{
+		seats &= g_trap_owed[ev.slot].seats;
+		g_trap_owed[ev.slot].seats = 0;
+	}
+	if (!seats)
+	{
+		AP_TrapSchedEffectDone(&g_sched, effect);
+		return;
+	}
+
 	switch (effect)
 	{
 	case AP_TRAP_WUMPA_WIPEOUT:
-		// Through the engine's own helper, so the clamp, the juiced-state
-		// bookkeeping and the mask veto all behave exactly as they do for a
-		// normal hit. The predicate has already established that nothing is
-		// protecting the fruit, so this genuinely takes it.
-		RB_Player_ModifyWumpa(local, -AP_WumpaRaceCount(local));
-		AP_NavRec_NoteKartEffect();
-		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_WUMPA_WIPEOUT);
+	case AP_TRAP_WUMPA_LEAK:
+		if (AP_CoopCrystal(gGT))
+		{
+			g_trap_spawn_pending[effect] = seats;
+			AP_TrapPollPendingInstants(gGT, local);
+		}
+		else
+		{
+			int count = AP_WumpaRaceCount(local);
+			int loss = effect == AP_TRAP_WUMPA_WIPEOUT ? count : AP_TrapWumpaLeakAmount(count);
+			RB_Player_ModifyWumpa(local, -loss);
+			AP_NavRec_NoteKartEffect();
+			AP_TrapSchedEffectDone(&g_sched, effect);
+		}
 		break;
 	case AP_TRAP_ITEM_REROLL:
-		// #486: the warning is committed, so the slot may be empty by now (the
-		// weapon was fired during the warning). Then wait for the next one.
-		if (AP_TrapHeldItemResolved(local))
-			AP_TrapStartReroll(gGT, local);
-		else
-			g_trap_reroll_wait = 1;
-		break;
 	case AP_TRAP_FORCED_USE:
-		if (AP_TrapHeldItemResolved(local))
-			AP_TrapArmForcedUse(local);
-		else
-			g_trap_use_wait = 1;
+	{
+		for (int player = 0; player < 2; player++)
+		{
+			if (!(seats & (1u << player)))
+				continue;
+			struct Driver *driver = drivers[player];
+			struct AP_TrapInventory *inventory = &g_trap_inventory[player];
+			const int canApply = AP_TrapCanActNow(gGT, driver) && AP_TrapHeldItemResolved(driver);
+			// The slot can lose its weapon during the warning. Apply on
+			// that kart's next resolved weapon in the same attempt.
+			if (effect == AP_TRAP_ITEM_REROLL)
+			{
+				inventory->rerollWait = !canApply;
+				if (canApply) AP_TrapStartReroll(gGT, driver, inventory);
+			}
+			else
+			{
+				inventory->useWait = !canApply;
+				if (canApply) AP_TrapArmForcedUse(driver, inventory);
+			}
+		}
 		break;
+	}
 	case AP_TRAP_CLOCKED_OUT:
-		AP_TrapStartClockedOut(gGT, local);
-		break;
-	case AP_TRAP_WUMPA_LEAK:
-		// Same engine helper as Wumpa Wipeout, so the clamp, the juiced state
-		// and the mask veto behave as for a normal hit. Half, rounded down: 11
-		// fruit leave 6.
-		RB_Player_ModifyWumpa(local, -AP_TrapWumpaLeakAmount(AP_WumpaRaceCount(local)));
-		AP_NavRec_NoteKartEffect();
-		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_WUMPA_LEAK);
+		AP_TrapStartClockedOut(gGT, local, seats);
 		break;
 	case AP_TRAP_STUCK_STEERING:
 		AP_TrapStuckPickSide(gGT);
@@ -968,15 +1066,22 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, i
 	case AP_TRAP_FLATTEN:
 		// Try immediately, so an ordinary flatten lands on the frame the warning
 		// ends. If the driver is mid-animation or protected, the poll retries.
-		AP_TrapFlattenStageFired(&g_trap_flatten);
-		if (AP_TrapApplyFlatten(local))
-			AP_TrapFlattenStageLanded(&g_trap_flatten, AP_TRAP_FLATTEN_GRACE_MS);
+		for (int player = 0; player < 2; player++)
+		{
+			AP_TrapFlattenStageClear(&g_trap_flatten[player]);
+			if (!(seats & (1u << player)))
+				continue;
+			AP_TrapFlattenStageFired(&g_trap_flatten[player]);
+			AP_TrapTryFlatten(gGT, drivers[player], &g_trap_flatten[player]);
+		}
 		break;
 	case AP_TRAP_WARPBALL_AMBUSH:
+		g_trap_spawn_pending[effect] = 1;
+		break;
 	case AP_TRAP_NITRO:
 	case AP_TRAP_RED_POTION:
-		g_trap_spawn_pending[effect] = 1;
-		AP_TrapPollSpawnedInstants(gGT, local);
+		g_trap_spawn_pending[effect] = seats;
+		AP_TrapPollPendingInstants(gGT, local);
 		break;
 	default:
 		break;
@@ -998,7 +1103,7 @@ static void AP_TrapDrainEvents(struct GameTracker *gGT, struct Driver *local)
 		// The FIRE edge is seen exactly once here, which is what an instant
 		// effect needs: it has no ACTIVE frames of its own to act on.
 		if (ev.kind == AP_TRAP_EV_FIRE)
-			AP_TrapApplyInstant(gGT, local, ev.effect);
+			AP_TrapApplyInstant(gGT, local, ev);
 		// A copy that refreshes a running Stuck Steering picks its side too.
 		if (ev.kind == AP_TRAP_EV_REFRESH && ev.effect == AP_TRAP_STUCK_STEERING)
 			AP_TrapStuckPickSide(gGT);
@@ -1095,18 +1200,15 @@ void AP_Trap_ConnectReset(void)
 	for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 		g_active[e] = 0;
 	g_trap_paused = 0;
-	g_recover_ms = 0;
+	memset(g_recover_ms, 0, sizeof g_recover_ms);
 	g_trap_lead.elapsedMs = 0;
 	g_trap_lead.earned = 0;
-	g_trap_reroll_excluded = -1;
-	g_trap_reroll_wait = 0;
-	g_trap_use_pending = 0;
-	g_trap_use_wait = 0;
-	g_trap_forced_fire_pending = 0;
+	AP_TrapInventoryReset();
 	g_trap_steer_mirrored = 0;
 	g_trap_jump_owned = 0;
-	AP_TrapClockedOutReset(AP_TrapLocalDriver());
-	AP_TrapFlattenStageClear(&g_trap_flatten);
+	AP_TrapClockedOutReset(AP_TrapLocalDriver(), sdata ? AP_TrapCrystalPartner(sdata->gGT) : NULL);
+	memset(g_trap_flatten, 0, sizeof g_trap_flatten);
+	memset(g_trap_owed, 0, sizeof g_trap_owed);
 	for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 		g_trap_spawn_pending[e] = 0;
 
@@ -1214,17 +1316,19 @@ static void AP_TrapApplyCamera(struct GameTracker *gGT, int wantFP)
 {
 	if (gGT == 0)
 		return;
-	if (wantFP)
+	unsigned mask = wantFP ? (AP_CoopCrystal(gGT) ? 3u : 1u) : 0u;
+	for (int player = 0; player < 2; player++)
 	{
-		gGT->cameraDC[0].cameraMode = AP_CAM_FIRSTPERSON;
-		g_fp_applied = 1;
+		unsigned seat = 1u << player;
+		if (mask & seat)
+			gGT->cameraDC[player].cameraMode = AP_CAM_FIRSTPERSON;
+		else if (g_fp_applied & seat)
+		{
+			gGT->cameraDC[player].cameraMode = AP_CAM_CHASE;
+			gGT->cameraDC[player].flags |= CAMERA_FLAG_DIRECTION_CHANGED;
+		}
 	}
-	else if (g_fp_applied)
-	{
-		gGT->cameraDC[0].cameraMode = AP_CAM_CHASE;
-		gGT->cameraDC[0].flags |= CAMERA_FLAG_DIRECTION_CHANGED;
-		g_fp_applied = 0;
-	}
+	g_fp_applied = mask;
 }
 
 static void AP_TrapApplyWireframe(int wantWireframe)
@@ -1263,7 +1367,7 @@ static void AP_TrapClampWeakenedFire(struct Driver *local)
 	if (local == 0 || !g_active[AP_TRAP_WEAKENED_KART] || local->reserves == 0)
 		return;
 
-	tier = AP_TrapWeakenBoostTier(AP_CapabilityAppliedBoostTier()); // what the kart drives
+	tier = AP_TrapWeakenBoostTier(AP_CapabilityAppliedBoostTierForDriver(local));
 	if (tier <= AP_CAP_BOOST_NONE)
 		cap = 0;
 	else if (tier == AP_CAP_BOOST_BOOST)
@@ -1281,14 +1385,14 @@ static void AP_TrapClampWeakenedFire(struct Driver *local)
 // Near-stationary accumulator for the reverse-recovery guard. Kept on the frame
 // tick rather than inside the input hook, which the engine may call more than once
 // per frame.
-static void AP_TrapTrackRecovery(struct Driver *local, int elapsedMs)
+static void AP_TrapTrackRecovery(struct Driver *local, int player, int elapsedMs)
 {
 	int speed, limit;
 
 	if (local == 0 || !(g_active[AP_TRAP_USF_NOBRAKE] || g_active[AP_TRAP_BOOST] ||
 	                    g_active[AP_TRAP_STUCK_STEERING]))
 	{
-		g_recover_ms = 0;
+		g_recover_ms[player] = 0;
 		return;
 	}
 
@@ -1300,14 +1404,16 @@ static void AP_TrapTrackRecovery(struct Driver *local, int elapsedMs)
 		limit = 1;
 
 	if (speed <= limit)
-		g_recover_ms += elapsedMs;
+		g_recover_ms[player] += elapsedMs;
 	else
-		g_recover_ms = 0;
+		g_recover_ms[player] = 0;
 }
 
-static int AP_TrapReverseRestored(void)
+static int AP_TrapReverseRestored(const struct Driver *driver)
 {
-	return g_recover_ms >= AP_TRAP_RECOVER_MS;
+	const struct GameTracker *gt = sdata->gGT;
+	int player = AP_CoopCrystal(gt) && driver == gt->drivers[1];
+	return g_recover_ms[player] >= AP_TRAP_RECOVER_MS;
 }
 
 // Owed effects keep the scheduler's usual fresh priority on reissue; only the
@@ -1325,11 +1431,16 @@ static void AP_TrapSaveFeedIdentities(int *slots, unsigned *seqs)
 		}
 }
 
-static void AP_TrapReceiveOwed(int effect, const int *oldSlots, const unsigned *oldSeqs)
+static void AP_TrapReceiveOwed(int effect, unsigned seats, const int *oldSlots,
+                              const unsigned *oldSeqs)
 {
 	int slot = AP_TrapSchedReceive(&g_sched, effect);
 	if (slot >= 0)
+	{
+		g_trap_owed[slot].seq = g_sched.slots[slot].seq;
+		g_trap_owed[slot].seats = seats;
 		AP_FeedTrapReissue(effect, oldSlots[effect], oldSeqs[effect], slot, g_sched.slots[slot].seq);
+	}
 }
 
 // ── Per-frame lifecycle ──
@@ -1337,6 +1448,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 {
 	AP_TrapWorld w;
 	struct Driver *local;
+	struct Driver *partner;
 	int loadStage;
 	int levelNow;
 	int boundary;
@@ -1344,8 +1456,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 
 	AP_TrapEnsureReady();
 
-	// One frame, one steering mirror. Cleared here rather than at the end of the
-	// tick so it is also clear on any frame that returns early below.
+	// Reset before any early returns so each human gets one mirror per frame.
 	g_trap_steer_mirrored = 0;
 
 	// Debug keys work anywhere, title screen included, but only when enabled via
@@ -1358,6 +1469,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 	loadStage = (sdata != 0) ? sdata->Loading.stage : LOAD_IDLE;
 	levelNow = gGT->levelID;
 	local = gGT->drivers[0];
+	partner = AP_TrapCrystalPartner(gGT);
 
 	// Engine-natural completion for anything that fired on an EARLIER tick.
 	//
@@ -1369,10 +1481,23 @@ void AP_TrapTick(struct GameTracker *gGT)
 	// weapons. Crediting the outcome first means the boundary only ever sees
 	// genuinely unresolved copies.
 	AP_TrapPollClockedOut(gGT, local);
-	AP_TrapPollReroll(gGT, local);
-	AP_TrapPollForcedUse(gGT, local);
-	AP_TrapPollFlatten(local, gGT->elapsedTimeMS > 0 ? gGT->elapsedTimeMS : 32);
-	AP_TrapPollSpawnedInstants(gGT, local);
+	AP_TrapPollReroll(gGT, local, &g_trap_inventory[0]);
+	AP_TrapPollForcedUse(gGT, local, &g_trap_inventory[0]);
+	if (partner)
+	{
+		AP_TrapPollReroll(gGT, partner, &g_trap_inventory[1]);
+		AP_TrapPollForcedUse(gGT, partner, &g_trap_inventory[1]);
+	}
+	if (AP_TrapSchedPollGate(&g_sched, AP_TRAP_ITEM_REROLL) == AP_TRAP_POLL_RUN &&
+	    !g_trap_inventory[0].rerollWait && g_trap_inventory[0].rerollExcluded < 0 &&
+	    !g_trap_inventory[1].rerollWait && g_trap_inventory[1].rerollExcluded < 0)
+		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_ITEM_REROLL);
+	if (AP_TrapSchedPollGate(&g_sched, AP_TRAP_FORCED_USE) == AP_TRAP_POLL_RUN &&
+	    !g_trap_inventory[0].useWait && !g_trap_inventory[0].usePending &&
+	    !g_trap_inventory[1].useWait && !g_trap_inventory[1].usePending)
+		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_FORCED_USE);
+	AP_TrapPollFlatten(gGT, local, gGT->elapsedTimeMS > 0 ? gGT->elapsedTimeMS : 32);
+	AP_TrapPollPendingInstants(gGT, local);
 
 	// Map boundary. Clearing here, on the frame the load BEGINS and while the
 	// source map is still standing, is what fixes the reported First Person
@@ -1389,67 +1514,53 @@ void AP_TrapTick(struct GameTracker *gGT)
 		int feedSlots[AP_TRAP_EFFECT_COUNT];
 		unsigned feedSeqs[AP_TRAP_EFFECT_COUNT];
 		AP_TrapSaveFeedIdentities(feedSlots, feedSeqs);
-		// Forced Use is ruled to wait through transitions rather than be consumed
-		// unsuccessfully, but the shared lifecycle clears every ACTIVE copy at a
-		// map boundary. A copy that fired and never got its weapon away is
-		// therefore re-armed here, so the load costs the player a wait rather
-		// than the trap. Wumpa Wipeout completes within its firing tick, and a
-		// reroll that started has already discarded the weapon by the time the
-		// load starts, so it was genuinely delivered; a reroll still waiting for
-		// a weapon (#486) is re-armed like Forced Use.
-		//
-		// AP_TrapForcedUseOwed, not a bare pending flag: the poll above has
-		// already credited any use that landed, and this asks the same predicate
-		// so the two cannot disagree about whether the copy was spent.
-		int refireForcedUse = AP_TrapForcedUseOwed(local);
-		// #486: a reroll still waiting for a weapon has not delivered anything.
-		int refireReroll = AP_TrapHeldItemWaitOwed(g_trap_reroll_wait,
-		    AP_TrapSchedPollGate(&g_sched, AP_TRAP_ITEM_REROLL));
-		// Same rule for Flatten: only a copy still owed its squish comes back.
-		int refireFlatten = AP_TrapFlattenOwedAtBoundary(
-		    &g_trap_flatten, AP_TrapSchedPollGate(&g_sched, AP_TRAP_FLATTEN));
-		int refireClocked = AP_TrapClockOwed(&g_trap_clocked,
-		    AP_TrapSchedPollGate(&g_sched, AP_TRAP_CLOCKED_OUT));
-		AP_TrapClockedOutReset(local);
-		int refireNitro = g_trap_spawn_pending[AP_TRAP_NITRO];
-		int refirePotion = g_trap_spawn_pending[AP_TRAP_RED_POTION];
-		int refireWarpball = g_trap_spawn_pending[AP_TRAP_WARPBALL_AMBUSH];
+		unsigned owed[AP_TRAP_EFFECT_COUNT] = {0};
+		// A restart can keep the same two seats. Exiting the arena or losing P2
+		// releases P2's pending work. A completed hit never repeats on either seat.
+		unsigned nextSeats = loadStage == LOAD_RESTART && partner ? 3u : 1u;
+		for (int player = 0; player < 2; player++)
+		{
+			struct AP_TrapInventory *inventory = &g_trap_inventory[player];
+			unsigned seat = 1u << player;
+			if (AP_TrapForcedUseOwed(gGT->drivers[player], inventory))
+				owed[AP_TRAP_FORCED_USE] |= seat;
+			if (AP_TrapHeldItemWaitOwed(inventory->rerollWait ||
+			    (nextSeats == 3u && inventory->rerollExcluded >= 0),
+			    AP_TrapSchedPollGate(&g_sched, AP_TRAP_ITEM_REROLL)))
+				owed[AP_TRAP_ITEM_REROLL] |= seat;
+			if (AP_TrapFlattenOwedAtBoundary(&g_trap_flatten[player],
+			    AP_TrapSchedPollGate(&g_sched, AP_TRAP_FLATTEN)))
+				owed[AP_TRAP_FLATTEN] |= seat;
+			if (AP_TrapClockOwed(&g_trap_clocked[player],
+			    AP_TrapSchedPollGate(&g_sched, AP_TRAP_CLOCKED_OUT)))
+				owed[AP_TRAP_CLOCKED_OUT] |= seat;
+		}
+		AP_TrapClockedOutReset(local, AP_CoopCrystal(gGT) ? gGT->drivers[1] : NULL);
+		owed[AP_TRAP_NITRO] = g_trap_spawn_pending[AP_TRAP_NITRO];
+		owed[AP_TRAP_RED_POTION] = g_trap_spawn_pending[AP_TRAP_RED_POTION];
+		owed[AP_TRAP_WARPBALL_AMBUSH] = g_trap_spawn_pending[AP_TRAP_WARPBALL_AMBUSH];
+		owed[AP_TRAP_WUMPA_WIPEOUT] = g_trap_spawn_pending[AP_TRAP_WUMPA_WIPEOUT];
+		owed[AP_TRAP_WUMPA_LEAK] = g_trap_spawn_pending[AP_TRAP_WUMPA_LEAK];
 
 		g_epoch++;
 		g_trap_boost_tainted = 0;
-		g_trap_forced_fire_pending = 0;
 		AP_TrapSchedMapChange(&g_sched);
 		for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 			g_active[e] = 0;
 		AP_TrapApplyCamera(gGT, 0);
 		AP_TrapApplyWireframe(0);
-		g_recover_ms = 0;
+		memset(g_recover_ms, 0, sizeof g_recover_ms);
 		g_trap_lead.elapsedMs = 0;
 		g_trap_lead.earned = 0;
-		g_trap_reroll_excluded = -1;
-		g_trap_reroll_wait = 0;
-		g_trap_use_pending = 0;
-		g_trap_use_wait = 0;
+		AP_TrapInventoryReset();
 		g_trap_jump_owned = 0;
-		// Flatten's stage machine does not survive the load either. A copy that
-		// fired but never got its squish away is re-armed below for the same
-		// reason Forced Use is; one that already landed has delivered its harm,
-		// and its leftover recovery wait belongs to a map that is going away.
-		AP_TrapFlattenStageClear(&g_trap_flatten);
+		memset(g_trap_flatten, 0, sizeof g_trap_flatten);
 		for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 			g_trap_spawn_pending[e] = 0;
 
-		if (refireClocked)
-			AP_TrapReceiveOwed(AP_TRAP_CLOCKED_OUT, feedSlots, feedSeqs);
-		if (refireFlatten)
-			AP_TrapReceiveOwed(AP_TRAP_FLATTEN, feedSlots, feedSeqs);
-		if (refireForcedUse)
-			AP_TrapReceiveOwed(AP_TRAP_FORCED_USE, feedSlots, feedSeqs);
-		if (refireReroll)
-			AP_TrapReceiveOwed(AP_TRAP_ITEM_REROLL, feedSlots, feedSeqs);
-		if (refireNitro) AP_TrapReceiveOwed(AP_TRAP_NITRO, feedSlots, feedSeqs);
-		if (refirePotion) AP_TrapReceiveOwed(AP_TRAP_RED_POTION, feedSlots, feedSeqs);
-		if (refireWarpball) AP_TrapReceiveOwed(AP_TRAP_WARPBALL_AMBUSH, feedSlots, feedSeqs);
+		for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
+			if (owed[e] & nextSeats)
+				AP_TrapReceiveOwed(e, owed[e] & nextSeats, feedSlots, feedSeqs);
 	}
 
 	w.context = AP_TrapContextOf(gGT, loadStage);
@@ -1457,7 +1568,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 	w.controlUnlocked = AP_TrapControlUnlocked(gGT, local);
 	w.paused = (gGT->gameMode1 & PAUSE_ALL) != 0;
 	g_trap_paused = w.paused;
-	w.scripted = AP_TrapScripted(gGT, local);
+	w.scripted = AP_TrapScripted(gGT, local) && (!partner || AP_TrapScripted(gGT, partner));
 	w.finishOrPodium = AP_TrapFinishOrPodium(gGT, local);
 	w.elapsedMs = gGT->elapsedTimeMS > 0 ? gGT->elapsedTimeMS : 32;
 	w.conditions = AP_TrapConditions(gGT, local, g_epoch,
@@ -1477,7 +1588,8 @@ void AP_TrapTick(struct GameTracker *gGT)
 
 	// Paused time is not still time: pausing freezes every trap, its recovery
 	// guard included.
-	AP_TrapTrackRecovery(local, w.paused ? 0 : w.elapsedMs);
+	AP_TrapTrackRecovery(local, 0, w.paused ? 0 : w.elapsedMs);
+	AP_TrapTrackRecovery(partner, 1, w.paused ? 0 : w.elapsedMs);
 	// First Person and Wireframe force presentation every frame while active, so
 	// pause suppresses each the same way the map-boundary reset above already
 	// does: call the apply function with 0, which restores ordinary chase/debug
@@ -1489,7 +1601,10 @@ void AP_TrapTick(struct GameTracker *gGT)
 	AP_DemoCamSetTrapActive(g_active[AP_TRAP_DEMO_CAMERA]);
 	AP_TrapApplyWireframe(AP_TrapEffectVisible(g_active[AP_TRAP_WIREFRAME], w.paused));
 	AP_TrapApplyBoostBlocker(local, g_active[AP_TRAP_BOOST_BLOCKER]);
+	if (AP_CoopCrystal(gGT))
+		AP_TrapApplyBoostBlocker(gGT->drivers[1], g_active[AP_TRAP_BOOST_BLOCKER]);
 	AP_TrapClampWeakenedFire(local);
+	AP_TrapClampWeakenedFire(partner);
 }
 
 // ── Engine physics/input call-sites ──
@@ -1505,7 +1620,7 @@ int AP_TrapAffectsRecordedLap(struct Driver *driver)
 	       g_active[AP_TRAP_REVERSE_STEERING] || g_active[AP_TRAP_ALWAYS_JUMPING] ||
 	       g_active[AP_TRAP_NO_DRIFTING] || g_active[AP_TRAP_MUD_SEASON] ||
 	       g_active[AP_TRAP_LIMP_MODE] || g_active[AP_TRAP_STUCK_STEERING] ||
-	       (g_trap_use_pending && g_active[AP_TRAP_FORCED_USE]);
+	       (AP_TrapInventoryFor(driver)->usePending && g_active[AP_TRAP_FORCED_USE]);
 }
 
 // The Demo Camera prototype must not engage while the First Person trap owns
@@ -1555,8 +1670,10 @@ void AP_TrapDiagCounts(int *armed, int *warning, int *active, int *suspended)
 void AP_TrapRenderTransform(struct PushBuffer *pb)
 {
 	int x;
-	if (pb == 0 || sdata == 0 || sdata->gGT == 0 || pb != &sdata->gGT->pushBuffer[0] ||
-	    !AP_CapabilityRoomStatsRace())
+	if (pb == 0 || sdata == 0 || sdata->gGT == 0 || !AP_CapabilityRoomStatsRace())
+		return;
+	const struct GameTracker *gt = sdata->gGT;
+	if (pb != &gt->pushBuffer[0] && !(AP_CoopCrystal(gt) && pb == &gt->pushBuffer[1]))
 		return;
 
 	// Negating the projection X row mirrors only camera-projected geometry.
@@ -1702,11 +1819,12 @@ void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
 	// they assign constants. A mirror is its own inverse, so applying it twice
 	// would hand the player back normal steering and the trap would silently do
 	// nothing. The latch is cleared once per frame in AP_TrapTick.
-	if (g_active[AP_TRAP_REVERSE_STEERING] && pad != 0 && !g_trap_steer_mirrored)
+	unsigned player = driver == AP_TrapLocalDriver() ? 1u : 2u;
+	if (g_active[AP_TRAP_REVERSE_STEERING] && pad != 0 && !(g_trap_steer_mirrored & player))
 	{
 		int centre = pad->rwd != 0 ? (int)pad->rwd->gamepadCenter : AP_STICK_NEUTRAL;
 		pad->stickLX = (s16)AP_TrapMirrorStick((int)pad->stickLX, centre);
-		g_trap_steer_mirrored = 1;
+		g_trap_steer_mirrored |= player;
 	}
 
 	// Forced Use. The weapon path fires on a TAPPED circle in a controllable kart
@@ -1716,10 +1834,14 @@ void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
 	// held item keeps whatever juiced state it had. An incompatible state simply
 	// ignores the press, and the effect stays active and tries again next frame,
 	// which is the ruled "wait rather than consume unsuccessfully" behaviour.
-	g_trap_forced_press = g_trap_use_pending && g_active[AP_TRAP_FORCED_USE] &&
-	                      buttonsTapped != 0 && !(*buttonsTapped & BTN_CIRCLE);
-	if (g_trap_forced_press)
-		*buttonsTapped |= BTN_CIRCLE;
+	if (driver == AP_TrapLocalDriver() || AP_CoopCrystal(sdata->gGT))
+	{
+		struct AP_TrapInventory *inventory = AP_TrapInventoryFor(driver);
+		inventory->forcedPress = inventory->usePending && g_active[AP_TRAP_FORCED_USE] &&
+		                         buttonsTapped != 0 && !(*buttonsTapped & BTN_CIRCLE);
+		if (inventory->forcedPress)
+			*buttonsTapped |= BTN_CIRCLE;
+	}
 
 	// No Drifting. L1 and R1 are the hop and power-slide buttons, read from
 	// these two words further down this same call (VehPhysProc.c, the jump
@@ -1737,7 +1859,7 @@ void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
 	// its own fixed point, so a second call in one frame changes nothing. The
 	// same nearly-still guard as the boost traps hands steering back to a kart
 	// wedged against a wall.
-	if (g_active[AP_TRAP_STUCK_STEERING] && pad != 0 && !AP_TrapReverseRestored())
+	if (g_active[AP_TRAP_STUCK_STEERING] && pad != 0 && !AP_TrapReverseRestored(driver))
 	{
 		int centre = pad->rwd != 0 ? (int)pad->rwd->gamepadCenter : AP_STICK_NEUTRAL;
 		pad->stickLX = (s16)AP_TrapStuckStick((int)pad->stickLX, centre, g_trap_stuck_side);
@@ -1765,7 +1887,7 @@ void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
 	// The recovery guard releases both the analog path and, for Forced USF, the
 	// forced throttle, once the kart has sat nearly still for about a second. A
 	// wedged kart can then reverse out; a moving one still cannot brake.
-	if (AP_TrapReverseRestored())
+	if (AP_TrapReverseRestored(driver))
 	{
 		if (usf)
 		{
@@ -1784,15 +1906,21 @@ void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
 
 void AP_TrapNoteWeaponRequest(struct Driver *driver)
 {
-	if (AP_TrapIsLocal(driver))
-		g_trap_forced_fire_pending = g_trap_forced_press;
+	if (AP_TrapIsLocal(driver) && (driver == AP_TrapLocalDriver() || AP_CoopCrystal(sdata->gGT)))
+	{
+		struct AP_TrapInventory *inventory = AP_TrapInventoryFor(driver);
+		inventory->forcedFire = inventory->forcedPress;
+	}
 }
 
 void AP_TrapNoteWeaponFire(struct Driver *driver, int weaponID)
 {
-	if (!AP_TrapIsLocal(driver) || !g_trap_forced_fire_pending)
+	if (!AP_TrapIsLocal(driver) || (driver != AP_TrapLocalDriver() && !AP_CoopCrystal(sdata->gGT)))
 		return;
-	g_trap_forced_fire_pending = 0;
+	struct AP_TrapInventory *inventory = AP_TrapInventoryFor(driver);
+	if (!inventory->forcedFire)
+		return;
+	inventory->forcedFire = 0;
 	AP_NavRec_NotePhysicsEffect();
 	if (weaponID == 0) // Turbo
 		AP_NavRec_NoteBoostGrant(AP_NAVREC_GRANT_RESERVES);

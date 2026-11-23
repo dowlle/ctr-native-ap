@@ -83,8 +83,12 @@ leave = body(wumpa, 'static void AP_WumpaOnRaceLeave(void)')
 check('an abandoned attempt banks through the same latch, minus the starting fruit',
       'AP_WumpaLeaveTake(&g_finish_latch, g_race_wumpa, g_race_start)' in leave and 'AP_WumpaBanking()' in leave and
       'g_wumpa_race_pending' in leave)
+boundary_start = tick.index('if (!onTrack || loading ||')
+boundary_end = tick.index('else if (gGT->trafficLightsTimer', boundary_start)
+boundary = tick[boundary_start:boundary_end]
 check('the tick takes the abandoned payout on the boundary before clearing the race state',
-      re.search(r'END_OF_RACE\) != 0\)\s*\{\s*AP_WumpaOnRaceLeave\(\);\s*g_countdown_seen = 0;', tick) is not None)
+      boundary.index('AP_WumpaOnRaceLeave();') < boundary.index('g_countdown_seen = 0;') <
+      boundary.index('g_wumpa_race_pending = 0;'))
 check('a newly seen countdown arms the finish payout',
       re.search(r'if \(!g_countdown_seen\)\s*AP_WumpaFinishArm\(&g_finish_latch\);\s*g_countdown_seen = 1;', tick) is not None)
 check('the Wumpa tick banks on the rising finish edge with the previous frame\'s human state',
@@ -105,7 +109,7 @@ check('a purchase writes update and waits for the reply',
       'op.operation = "update";' in buy and 'g_ap->Set(g_wumpa.shopKey, nlohmann::json::object(), true, {op})' in buy and
       'ap_net_try_send_location' not in buy)
 check('the set reply passes original_value to the reservation',
-      'g_wumpa.shopReply(value, original)' in net and 'const nlohmann::json &original) {' in net)
+      'g_wumpa.shopReply(value, original)' in net and 'const auto &original = reply.at("original_value");' in net)
 check('only a confirmed purchase sends its check',
       re.search(r'REPLY_CONFIRMED\) \{[^}]*ap_net_try_send_location\(\(int64_t\)code\);', net) is not None)
 resend = body(net, 'static void ap_wumpa_resend_paid()\n{')

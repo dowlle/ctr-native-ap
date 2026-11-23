@@ -1,5 +1,9 @@
 #include <common.h>
 
+#ifdef CTR_AP
+#include "../../ap/ap_coop.h"
+#endif
+
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_custom_tracks.h>
 #include <platform/native_draw_distance.h>
@@ -278,6 +282,10 @@ void MainInit_PrimMem(struct GameTracker *gGT)
 		                                             (gGT->gameMode1 & ADVENTURE_BOSS) != 0);
 		unsigned long chosen = CustomTrackPolicy_PrimArenaBytesWithDrawDistance(serving, gGT->numPlyrCurrGame, (unsigned long)size,
 		                                                                        g_config.increaseDrawDistance);
+#ifdef CTR_AP
+		if (AP_CoopHub(gGT) && chosen < 1024 * 1024)
+			chosen = 1024 * 1024;
+#endif
 
 		if (chosen != (unsigned long)size)
 		{
@@ -676,6 +684,10 @@ void MainInit_Drivers(struct GameTracker *gGT)
 		else // if (numPlyrCurrGame == 2)
 		{
 			numDrivers = 6;
+#ifdef CTR_AP
+			if (AP_CoopRace(gGT))
+				numDrivers = LOAD_CoopGridSize();
+#endif
 		}
 
 #ifdef CTR_AP

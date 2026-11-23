@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_coop.h"
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8004cae8-0x8004cec4.
 struct Instance *UI_INSTANCE_BirthWithThread(int param_1, int param_2, int param_3, int param_4, int param_5, int param_6)
@@ -221,6 +224,15 @@ void UI_INSTANCE_InitAll(void)
 	// If you're in Crystal Challenge
 	if ((gameMode1 & CRYSTAL_CHALLENGE) != 0)
 	{
+#ifdef CTR_AP
+		if (AP_CoopCrystal(gGT))
+		{
+			// The split HUD and common results use the same text count.
+			// The retail constructor would create an icon in each viewport.
+			sdata->ptrMenuCrystal = sdata->ptrHudCrystal = sdata->ptrToken = NULL;
+			return;
+		}
+#endif
 		sdata->ptrMenuCrystal = UI_INSTANCE_BirthWithThread(0x60, (int)UI_ThTick_Reward, 0x11, 0, 0, (int)rdata.s_crystal1);
 		sdata->ptrHudCrystal = UI_INSTANCE_BirthWithThread(0x60, (int)UI_ThTick_Reward, 0x11, 0, 0, (int)rdata.s_crystal1);
 
@@ -260,10 +272,16 @@ void UI_INSTANCE_InitAll(void)
 	// If you're in Adventure Arena
 	if ((gameMode1 & ADVENTURE_ARENA) != 0)
 	{
-		// is ignoring the return value of these calls intentional?
-		UI_INSTANCE_BirthWithThread(0x61, (int)UI_ThTick_Reward, 0xe, 1, 0, (int)sdata->s_relic1);
-		UI_INSTANCE_BirthWithThread(99, (int)UI_ThTick_Reward, 0xf, 1, 0, (int)sdata->s_key1);
-		UI_INSTANCE_BirthWithThread(0x62, (int)UI_ThTick_Reward, 0x10, 0, 0, (int)sdata->s_trophy1);
+#ifdef CTR_AP
+		// The split hub uses labeled text in each view. The stock 2P
+		// HUD layout has no positions for these three Adventure models.
+		if (!AP_CoopHub(gGT))
+#endif
+		{
+			UI_INSTANCE_BirthWithThread(0x61, (int)UI_ThTick_Reward, 0xe, 1, 0, (int)sdata->s_relic1);
+			UI_INSTANCE_BirthWithThread(99, (int)UI_ThTick_Reward, 0xf, 1, 0, (int)sdata->s_key1);
+			UI_INSTANCE_BirthWithThread(0x62, (int)UI_ThTick_Reward, 0x10, 0, 0, (int)sdata->s_trophy1);
+		}
 
 		GAMEPROG_AdvPercent(&sdata->advProgress);
 
@@ -386,6 +404,17 @@ void UI_INSTANCE_InitAll(void)
 	{
 		return;
 	}
+
+#ifdef CTR_AP
+	// The Trophy-only co-op race has no CTR ceremony. The split HUD's
+	// ceremony slot overlaps Wumpa, and the solo setup hides only the last
+	// token spawned by UI_INSTANCE_BirthWithThread.
+	if (AP_CoopRace(gGT))
+	{
+		sdata->ptrHudC = sdata->ptrHudT = sdata->ptrHudR = sdata->ptrToken = NULL;
+		return;
+	}
+#endif
 
 	sdata->ptrHudC = UI_INSTANCE_BirthWithThread(0x93, (int)UI_ThTick_CtrLetters, 0x12, 0, 0, (int)sdata->s_hudc);
 	sdata->ptrHudT = UI_INSTANCE_BirthWithThread(0x94, (int)UI_ThTick_CtrLetters, 0x12, 0, 0, (int)sdata->s_hudt);

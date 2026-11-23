@@ -398,7 +398,7 @@ assert "LOAD_RequestLoad" not in tick[arrive:arrive + 1500] and "MainRaceTrack_R
 # Decision 33: the kart is put on the pad on arrival, before the warp capture
 # remembers its height and before the entry gates.
 place = tick.index("AH_WarpPad_PlaceKartOnPad(driver, driverInst, warppadMatrix);", arrive)
-assert place < tick.index("dist = 0;", place) and place < tick.index("AH_WarpPad_WarpCapture(gGT);", arrive)
+assert place < tick.index("dist = 0;", place) and place < tick.index("AH_WarpPad_WarpCapture(gGT, driver);", arrive)
 assert "driver->quadBlockHeight = ground;" in warp[:warp.index("void AH_WarpPad_ThTick")] and "AP_TLKartOnPad(padPos" in warp
 # A pad that refused the kart earlier (the entry latch) is not placed on again.
 assert "else if (apEntryRefusedDest == levelID)" in tick[arrive:arrive + 900]
@@ -416,7 +416,7 @@ garage = (root / "game/232/AH_Garage.c").read_text()
 gtick = body(garage, "void AH_Garage_ThTick(struct Thread *t)")
 garrive = gtick.index("AP_TrackerLaunchGarageArrives()")
 # Only reached with the garage open, before its own load.
-assert gtick.index("LAB_800aede8:") < garrive < gtick.index("if (gGT->pushBuffer_UI.fadeFromBlack_currentValue == 0)")
+assert gtick.index("LAB_800aede8:") < garrive < gtick.index("if (gGT->pushBuffer_UI.fadeFromBlack_currentValue == 0")
 assert gtick.index("if (!bossIsOpen)\n\t{\n\t\treturn;") < gtick.index("LAB_800aede8:")
 
 launch = (root / "ap/ap_tracker_launch.c").read_text()
@@ -440,7 +440,7 @@ assert lframe.index("AP_TLWantsLoad(r)") < lframe.index("MainRaceTrack_RequestLo
 # The tracker never loads a race itself: its only load is a hub.
 assert launch.count("MainRaceTrack_RequestLoad(") == 1
 cs = (root / "ap/ap_charswap.c").read_text()
-assert "return gGT != NULL && gGT->drivers[0] != NULL && ap_cs_safeToOpen(gGT);" in body(cs, "int AP_HubSafeForRequest(")
+assert "gGT != NULL && gGT->drivers[0] != NULL && !ap_cs_restorePos && ap_cs_safeToOpen(gGT)" in body(cs, "int AP_HubSafeForRequest(")
 frame = (root / "ap/ap_hooks_frame.c").read_text()
 assert "AP_TrackerLaunchFrame(gGT);" in body(frame, "void AP_OnFrame(struct GameTracker *gGT)")
 

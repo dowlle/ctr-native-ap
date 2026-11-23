@@ -177,6 +177,58 @@ static void test_confirmed_before_drop(void)
 	ap_net_shutdown();
 }
 
+static void test_coop_preference_replies(void)
+{
+	APClient *m = start("2101");
+	expect(m != nullptr, "co-op: client up");
+	if (!m)
+		return;
+	m->emit_slot_connected(g_fixture);
+	m->calls.reset();
+	const auto key = ap_coop_key();
+	int latest = -1;
+	ap_net_coop_subscribe();
+	expect(!ap_net_coop_set(4) && m->calls.data_set == 0, "co-op: writes wait for Get");
+	m->emit_set_reply(key, 5);
+	expect(!ap_net_coop_known(&latest), "co-op: notification cannot settle the initial read");
+	m->emit_retrieved({{key, nullptr}});
+	expect(ap_net_coop_known(&latest) && latest == 64, "co-op: empty Get supplies the default");
+
+	expect(ap_net_coop_set(32 | 10) && ap_net_coop_set(11), "co-op: two edits queued");
+	const unsigned revision = ap_net_coop_revision();
+	m->emit_set_reply(key, 32 | 10, m->calls.set_extras.at(0));
+	expect(ap_net_coop_known(&latest) && latest == 11 && ap_net_coop_revision() == revision,
+	       "co-op: first echo cannot restore the old racer or rules");
+	m->emit_set_reply(key, 2);
+	expect(ap_net_coop_known(&latest) && latest == 11 && ap_net_coop_revision() == revision,
+	       "co-op: another client cannot change the input to the next toggle");
+	expect(ap_net_coop_set(latest | 32), "co-op: next toggle keeps the newest racer");
+	m->emit_set_reply(key, 11, m->calls.set_extras.at(1));
+	expect(ap_net_coop_known(&latest) && latest == (32 | 11), "co-op: second echo cannot eat the toggle");
+	m->emit_set_reply(key, 32 | 11, m->calls.set_extras.at(2));
+	expect(!ap_net_coop_save_pending(), "co-op: latest matching echo confirms the save");
+	m->emit_set_reply(key, 2);
+	expect(ap_net_coop_known(&latest) && latest == 2, "co-op: subsequent external edit updates the cache");
+
+	// A queued write into a lost socket has no SetReply. The same room's
+	// next Get can confirm the value or expose the failed save.
+	expect(ap_net_coop_set(32 | 2) && ap_net_coop_save_pending(), "co-op: queued save is visibly pending");
+	m->emit_socket_disconnected();
+	m->emit_slot_connected(g_fixture);
+	ap_net_coop_subscribe();
+	m->emit_retrieved({{key, 2}});
+	expect(ap_net_coop_known(&latest) && latest == 2 && ap_net_coop_save_lost() &&
+	       !ap_net_coop_save_pending(), "co-op: dead-socket write is reported unsaved on reconnect");
+	expect(ap_net_coop_set(32 | 2) && !ap_net_coop_save_lost(), "co-op: player can retry the save");
+	m->emit_socket_disconnected();
+	m->emit_slot_connected(g_fixture);
+	ap_net_coop_subscribe();
+	m->emit_retrieved({{key, 32 | 2}});
+	expect(ap_net_coop_known(&latest) && latest == (32 | 2) &&
+	       !ap_net_coop_save_pending() && !ap_net_coop_save_lost(), "co-op: reconnect confirms a save whose echo was lost");
+	ap_net_shutdown();
+}
+
 int main(int argc, char **argv)
 {
 	const char *path = argc > 1 ? argv[1] : "tools/fixtures/content-plan/global-checks.json";
@@ -207,6 +259,7 @@ int main(int argc, char **argv)
 	test_dead_socket_auto_reconnect();
 	test_dead_socket_manual_connect();
 	test_confirmed_before_drop();
+	test_coop_preference_replies();
 
 	std::printf("%d checks, %d failures\n", g_checks, g_failures);
 	return g_failures ? 1 : 0;

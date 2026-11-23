@@ -34,6 +34,7 @@ void AP_CharPicker_Draw(void);
 // portrait is not resident in this hub's icon table. `dim` = not owned yet.
 // When centered is false, use the pad's legacy 16-pixel offset.
 void AP_CharSwap_DrawPortraitAt(int characterID, short x, short y, int dim, int centered);
+void AP_HubPickerFreeze(struct GameTracker *gGT, int on);
 
 // True while the picker owns input. Used to keep the driver frozen, to refuse a
 // Start press so the pause menu cannot open on top of it, and to stop AH_Door's

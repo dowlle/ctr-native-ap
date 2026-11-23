@@ -1,4 +1,5 @@
 #ifdef CTR_AP
+#include "ap_coop.h"
 
 #include <common.h>
 #include <stdio.h>
@@ -101,13 +102,20 @@ void AP_UsefulTick(struct GameTracker *gGT)
 	int effect;
 	char msg[96];
 	if (!gGT) return;
+	if (AP_CoopDriving(gGT) &&
+	    (sdata->Loading.stage != LOAD_IDLE || (gGT->gameMode1 & LOADING) ||
+	     !AP_CoopP2Available()))
+		return;
 	if (!LOAD_IsOpen_RacingOrBattle() || (gGT->gameMode1 & END_OF_RACE))
 		g_usefulCountdownSeen = 0;
 	else if (gGT->trafficLightsTimer >= 1)
 		g_usefulCountdownSeen = 1;
 	if (!AP_UsefulRaceActive(gGT)) return;
 	driver = gGT->drivers[0];
+	if (AP_CoopDriving(gGT) && (!AP_IsSlotHuman(gGT, driver) || driver->heldItemID != 0xf || driver->numHeldItems))
+		driver = gGT->drivers[1];
 	if (!driver) return;
+	if (AP_CoopDriving(gGT) && (!AP_IsSlotHuman(gGT, driver) || driver->heldItemID != 0xf || driver->numHeldItems)) return;
 	pending = AP_UsefulPendingMask(g_usefulReceived, g_usefulApplied);
 	for (effect = 0; effect < AP_USEFUL_ITEM_COUNT; effect++)
 	{

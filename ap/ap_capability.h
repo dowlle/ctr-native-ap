@@ -248,6 +248,7 @@ int AP_CapabilityRoomStatsRace(void);
 // Applied boost tier for the character being driven, or -1 exactly when
 // AP_CapabilityBoostTier() is -1.
 int AP_CapabilityAppliedBoostTier(void);
+int AP_CapabilityAppliedBoostTierForDriver(const struct Driver *driver);
 
 // Applied value for an explicit engine character ID, any chain
 // (AP_CAP_CHAIN_BOOST included). -1 when that chain's ceiling is -1.

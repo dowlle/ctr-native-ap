@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_coop.h"
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b0b98-0x800b0ce0.
 void AH_Map_LoadSave_Prim(s16 *vertPos, char *vertCol, void *ot, struct PrimMem *primMem)
@@ -734,6 +737,24 @@ force_inline void AH_MaskHint_DrawRepeatPrompt(void);
 #endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b1c90-0x800b1ef8.
+static void AH_Map_DrawMinimap(struct GameTracker *gGT, int hubPtrs)
+{
+#ifdef CTR_AP
+	const struct RectMenu *menu = sdata->ptrActiveMenu;
+	if (menu && menu->stringIndexTitle == LNG_CHOOSE_RACE_TYPE &&
+	    AH_WarpPad_CoopMenuPlayer(menu) == 1)
+		return;
+#endif
+	s16 driverIndex = 0;
+	s16 iconIndex[3] = {0};
+	D232.unkModeHubItems = 0;
+	UI_Map_DrawDrivers(hubPtrs, gGT->threadBuckets[0].thread, &driverIndex);
+	AH_Map_Warppads((s16 *)hubPtrs, gGT->threadBuckets[5].thread, iconIndex);
+	AH_Map_HubItems((void *)hubPtrs, iconIndex);
+	UI_Map_DrawMap(gGT->ptrIcons[3], gGT->ptrIcons[4], AH_MAP_RIGHT, AH_MAP_BOTTOM,
+	               &gGT->backBuffer->primMem, gGT->pushBuffer_UI.ptrOT, 1);
+}
+
 void AH_Map_Main(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -741,13 +762,10 @@ void AH_Map_Main(void)
 	struct UiElement2D *ptrHudData;
 	int iVar1;
 	int hubPtrs; // int*?
-	s16 local_20;
-	s16 local_1e[3];
 
 	// force disable speedometer
 	sdata->HudAndDebugFlags &= 0xfffffff7;
 
-	local_20 = 0;
 	advDriver = gGT->drivers[0];
 	ptrHudData = data.hudStructPtr[gGT->numPlyrCurrGame - 1];
 	hubPtrs = 0;
@@ -786,6 +804,10 @@ void AH_Map_Main(void)
 	{
 		// Jump meter and landing boost
 		UI_JumpMeter_Update(advDriver);
+#ifdef CTR_AP
+		if (AP_CoopHub(gGT) && gGT->drivers[1])
+			UI_JumpMeter_Update(gGT->drivers[1]);
+#endif
 	}
 
 	// Check a HUD flag
@@ -811,28 +833,24 @@ void AH_Map_Main(void)
 	    //
 	    // Asked through AP_CharSwap_HubHudHidden rather than the picker flag
 	    // directly, so this site and the counters below cannot drift apart.
-	    && !AP_CharSwap_HubHudHidden()
+	    && !AP_CharSwap_HubHudHidden() && !AP_CoopMenuOpen()
 #endif
 	)
 	{
-		local_1e[0] = 0;
+		AH_Map_DrawMinimap(gGT, hubPtrs);
 
-		D232.unkModeHubItems = 0;
-
-		UI_Map_DrawDrivers(hubPtrs, gGT->threadBuckets[0].thread, &local_20);
-
-		AH_Map_Warppads((s16 *)hubPtrs, gGT->threadBuckets[5].thread,
-		                (s16 *)&local_1e[0]); // local_1e index 1 and 2 are never assigned to, so garbage data?
-
-		AH_Map_HubItems((void *)hubPtrs, &local_1e[0]);
-
-		UI_Map_DrawMap(gGT->ptrIcons[3], gGT->ptrIcons[4],
-
-		               AH_MAP_RIGHT, AH_MAP_BOTTOM,
-
-		               &gGT->backBuffer->primMem, gGT->pushBuffer_UI.ptrOT, 1);
-
-		UI_DrawSlideMeter(ptrHudData[8].x, ptrHudData[8].y, advDriver);
+#ifdef CTR_AP
+		if (AP_CoopHub(gGT))
+		{
+			for (int i = 0; i < 2; i++)
+			{
+				const RECT *view = &gGT->pushBuffer[i].rect;
+				UI_DrawSlideMeter(view->x + 64, view->y + view->h - 10, gGT->drivers[i]);
+			}
+		}
+		else
+#endif
+			UI_DrawSlideMeter(ptrHudData[8].x, ptrHudData[8].y, advDriver);
 	}
 
 #ifdef CTR_AP
@@ -841,7 +859,12 @@ void AH_Map_Main(void)
 	// screen, where the map guard does not reach, and the picker's own name and
 	// portrait rows are drawn under them. Found in live play on 2026-08-12,
 	// after the map fix had already landed.
-	if (!AP_CharSwap_HubHudHidden())
+	if (AP_CoopHub(gGT) && !AP_CharSwap_HubHudHidden() && !AP_CoopMenuOpen())
+	{
+		AP_CoopDrawHubCounters(gGT);
+		AP_WumpaDrawHub();
+	}
+	else if (!AP_CoopHub(gGT) && !AP_CharSwap_HubHudHidden())
 #endif
 	{
 		UI_DrawNumRelic(ptrHudData[0xE].x + 0x10, ptrHudData[0xE].y - 10);
@@ -873,6 +896,7 @@ void AH_Map_Main(void)
 	// Hub character picker (spike, #54/R7). Self-gates on dev_keys + "picker
 	// open", and rides the same once-per-frame hub UI pass as the feed above.
 	AP_CharPicker_Draw();
+	AP_CoopDrawMenu();
 #endif
 
 #if defined(CTR_NATIVE)

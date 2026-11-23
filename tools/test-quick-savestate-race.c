@@ -125,6 +125,11 @@ int main(void)
 	memset(plan.vrmSha256, 'b', 64);
 
 	save();
+	tracker.numPlyrCurrGame = 2;
+	assert(!NativeSaveState_SaveQuick());
+	assert(!strcmp(s_quickRefusal, "STATE NOT SAVED: CO-OP RACE"));
+	loadExpect("STATE NOT LOADED: CO-OP RACE");
+	tracker.numPlyrCurrGame = 1;
 	tracker.gameMode1 |= PAUSE_1 | END_OF_RACE;
 	loadExpect(NULL);
 	tracker.levelID = 7;

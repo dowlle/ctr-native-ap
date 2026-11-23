@@ -27,6 +27,7 @@ void AP_TrackerLaunchDrop(int why);
 int AP_TrackerLaunchPending(void);
 /* ap_charswap.c: the idle-hub test the character swap waits for. */
 int AP_HubSafeForRequest(struct GameTracker *gGT);
+void AP_HubReloadInPlace(struct GameTracker *gGT);
 /* MainFreeze.c: the pause menu's own RESUME, for a tracker start. */
 void MainFreeze_APResumeFromTracker(void);
 #endif

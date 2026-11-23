@@ -1,5 +1,6 @@
 """Execute trap physics/render guards with effects already active on mode exit."""
 from pathlib import Path
+from coop_fixture import trap_inventory
 import subprocess
 import tempfile
 
@@ -14,21 +15,46 @@ fixture = r'''
 #include <stdio.h>
 #include <string.h>
 #include <common.h>
+#include "ap/ap_coop.h"
 #include "ap/ap_traps.h"
 #include "ap/ap_capability.h"
 #include "ap/ap_navrec.h"
 struct sData sdata_static;
 static struct Driver local, other;
-static int adventure, g_fp_applied = 1, g_trap_paused, g_trap_reroll_excluded = 5;
-static int g_trap_boost_tainted, g_trap_use_pending, physics_effects;
-static int g_trap_forced_press, g_trap_forced_fire_pending, forced_grants;
+static int adventure, g_fp_applied = 1, g_trap_paused;
+static int g_trap_boost_tainted, physics_effects;
+static int forced_grants;
 static unsigned char g_active[AP_TRAP_EFFECT_COUNT];
+static unsigned char g_trap_spawn_pending[AP_TRAP_EFFECT_COUNT];
+static int hazardHits[2], shielded[2], inRescue[2];
 static AP_TrapSched g_sched;
 static struct Driver *AP_TrapLocalDriver(void) { return &local; }
+int AP_CoopP2Available(void) { return 1; }
 int AP_CapabilityRoomStatsRace(void) { return adventure; }
 void AP_NavRec_NotePhysicsEffect(void) { physics_effects++; }
 void AP_NavRec_NoteBoostGrant(enum AP_NavRecBoostGrant grant) { forced_grants |= grant; }
+static int AP_TrapCanActNow(struct GameTracker *gt, struct Driver *driver)
+{
+    return !(gt->gameMode1 & PAUSE_ALL) && driver && !inRescue[driver == &other];
+}
+static int AP_TrapApplyHazardHit(struct Driver *driver, int effect)
+{
+    assert(effect == AP_TRAP_NITRO || effect == AP_TRAP_RED_POTION);
+    int seat = driver == &other;
+    if (shielded[seat]) return 0;
+    hazardHits[seat]++;
+    return 1;
+}
+static int AP_TrapFireWarpball(struct GameTracker *gt, struct Driver *driver)
+{
+    (void)gt; (void)driver; assert(0); return 0;
+}
+static int AP_TrapTakeFruit(struct GameTracker *gt, struct Driver *driver, int effect)
+{
+    (void)gt; (void)driver; (void)effect; assert(0); return 0;
+}
 '''
+fixture += trap_inventory()
 for constant in ("AP_TRAP_GRAV_SCALE", "AP_TRAP_BOOST_RESERVES", "AP_TRAP_USF_FIRELEVEL"):
     fixture += next(line for line in source.splitlines() if line.startswith(f"#define {constant} ")) + "\n"
 for signature in ("static int AP_TrapIsLocal(", "int AP_TrapSuppressCrateReward(",
@@ -37,11 +63,14 @@ for signature in ("static int AP_TrapIsLocal(", "int AP_TrapSuppressCrateReward(
                   "int AP_TrapOwnsCamera(", "void AP_TrapRenderTransform(",
                   "int AP_TrapMirrorCullFlip(", "int AP_TrapGravity(",
                   "int AP_TrapAffectsRecordedLap(", "static void AP_TrapFloorReserves(", "void AP_TrapForceBoost(",
-                  "void AP_TrapNoteWeaponRequest(", "void AP_TrapNoteWeaponFire("):
+                  "void AP_TrapNoteWeaponRequest(", "void AP_TrapNoteWeaponFire(",
+                  "static struct Driver *AP_TrapCrystalPartner(",
+                  "static void AP_TrapPollPendingInstants("):
     fixture += function(signature)
 fixture += r'''
 int main(void) {
-    struct GameTracker gt = {0}; sdata->gGT = &gt;
+    struct GameTracker gt = {0}; sdata->gGT = &gt; gt.drivers[0] = &local;
+    g_trap_inventory[0].rerollExcluded = 5;
     struct PushBuffer *pb = &gt.pushBuffer[0];
     memset(g_active, 1, sizeof g_active);
     adventure = 0;
@@ -51,7 +80,7 @@ int main(void) {
     assert(!AP_TrapWeakenedActive(&local));
     assert(AP_TrapWeakenBoostTier(-1) == -1);
     assert(AP_TrapWeakenBoostTier(2) == 2);
-    assert(AP_TrapRerollExcludedItem() == -1);
+    assert(AP_TrapRerollExcludedItem(&local) == -1);
     assert(!AP_TrapOwnsCamera() && !AP_TrapMirrorCullFlip());
     assert(AP_TrapGravity(&local, 1000) == 1000);
     pb->matrix_ViewProj.m[0][0] = 123;
@@ -62,7 +91,7 @@ int main(void) {
     assert(AP_TrapIsLocal(&local) && !AP_TrapIsLocal(&other));
     assert(AP_TrapSuppressCrateReward(&local) && !AP_TrapAllowBoostGrant(&local));
     assert(AP_TrapWeakenedActive(&local) && AP_TrapWeakenBoostTier(2) == 1);
-    assert(AP_TrapRerollExcludedItem() == 5);
+    assert(AP_TrapRerollExcludedItem(&local) == 5);
     assert(AP_TrapOwnsCamera() && AP_TrapMirrorCullFlip());
     assert(AP_TrapGravity(&local, 1000) < 1000);
     for (int effect = AP_TRAP_USF_NOBRAKE; effect <= AP_TRAP_BOOST; effect++) {
@@ -83,10 +112,10 @@ int main(void) {
         assert(physics_effects == 2 && !AP_TrapAffectsRecordedLap(&local));
     }
     physics_effects = 0;
-    g_trap_forced_press = 1;
+    g_trap_inventory[0].forcedPress = 1;
     AP_TrapNoteWeaponRequest(&local);
-    g_trap_forced_press = 0;
-    g_trap_use_pending = 0; /* Scheduler has credited the original request. */
+    g_trap_inventory[0].forcedPress = 0;
+    g_trap_inventory[0].usePending = 0; /* Scheduler has credited the original request. */
     AP_TrapNoteWeaponFire(&other, 0);
     assert(physics_effects == 0 && forced_grants == 0);
     AP_TrapNoteWeaponFire(&local, 0);
@@ -94,7 +123,57 @@ int main(void) {
     AP_TrapNoteWeaponRequest(&local);
     AP_TrapNoteWeaponFire(&local, 0);
     assert(physics_effects == 1);
-    puts("PASS: trap consumers are mode-gated and Forced Use reaches the committed shot");
+
+    memset(g_active, 1, sizeof g_active);
+    gt.gameMode1 = ADVENTURE_MODE; gt.numPlyrCurrGame = 2; gt.drivers[1] = &other;
+    assert(AP_TrapIsLocal(&other) && AP_TrapWeakenedActive(&other));
+    assert(AP_TrapGravity(&other, 1000) < 1000 && !AP_TrapAllowBoostGrant(&other));
+    g_trap_inventory[0].forcedPress = 1;
+    AP_TrapNoteWeaponRequest(&local);
+    g_trap_inventory[0].forcedPress = 0;
+    AP_TrapNoteWeaponRequest(&other);
+    AP_TrapNoteWeaponFire(&other, 7);
+    assert(physics_effects == 1);
+    AP_TrapNoteWeaponFire(&local, 7);
+    assert(physics_effects == 2 && (forced_grants & AP_NAVREC_GRANT_MASK));
+    assert(AP_TrapRerollExcludedItem(&other) == -1);
+    gt.gameMode1 |= CRYSTAL_CHALLENGE;
+    struct PushBuffer *partnerView = &gt.pushBuffer[1];
+    partnerView->matrix_ViewProj.m[0][0] = 145;
+    partnerView->matrix_ViewProj.m[1][0] = 245;
+    AP_TrapRenderTransform(partnerView);
+    assert(partnerView->matrix_ViewProj.m[0][0] == 145 && partnerView->matrix_ViewProj.m[1][0] == -245);
+    assert(AP_TrapRerollExcludedItem(&local) == 5);
+    assert(AP_TrapRerollExcludedItem(&other) == -1);
+    g_trap_inventory[1].rerollExcluded = 7;
+    assert(AP_TrapRerollExcludedItem(&other) == 7 && AP_TrapRerollExcludedItem(&local) == 5);
+    g_trap_inventory[1].forcedPress = 1;
+    AP_TrapNoteWeaponRequest(&other);
+    AP_TrapNoteWeaponFire(&local, 7);
+    assert(physics_effects == 2);
+    AP_TrapNoteWeaponFire(&other, 7);
+    assert(physics_effects == 3);
+    AP_TrapSchedReset(&g_sched);
+    int slot = AP_TrapSchedReceive(&g_sched, AP_TRAP_NITRO);
+    g_sched.slots[slot].state = AP_TRAP_SLOT_ACTIVE;
+    g_trap_spawn_pending[AP_TRAP_NITRO] = 3;
+    gt.gameMode1 |= PAUSE_ALL;
+    AP_TrapPollPendingInstants(&gt, &local);
+    assert(!hazardHits[0] && !hazardHits[1] && g_trap_spawn_pending[AP_TRAP_NITRO] == 3);
+    gt.gameMode1 &= ~PAUSE_ALL;
+    inRescue[0] = 1;
+    AP_TrapPollPendingInstants(&gt, &local);
+    assert(!hazardHits[0] && hazardHits[1] == 1 && g_trap_spawn_pending[AP_TRAP_NITRO] == 1);
+    inRescue[0] = 0;
+    shielded[0] = 1;
+    AP_TrapPollPendingInstants(&gt, &local);
+    assert(!hazardHits[0] && hazardHits[1] == 1 && g_trap_spawn_pending[AP_TRAP_NITRO] == 1);
+    shielded[0] = 0;
+    AP_TrapPollPendingInstants(&gt, &local);
+    assert(hazardHits[0] == 1 && hazardHits[1] == 1 && !g_trap_spawn_pending[AP_TRAP_NITRO]);
+    gt.gameMode1 |= ARCADE_MODE;
+    assert(!AP_TrapIsLocal(&other));
+    puts("PASS: trap guards, both Crystal views, and per-kart hazard and weapon targeting");
 }
 '''
 with tempfile.TemporaryDirectory() as directory:

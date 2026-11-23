@@ -17,6 +17,7 @@
 #include "ap_version.h"             // CTR_AP_VERSION
 #ifdef CTR_AP
 #include "ap_capability.h"
+#include "ap_coop.h"
 #include "ap_deathlink.h"
 #include "ap_surface.h"
 #include "ap_traps.h"
@@ -2106,6 +2107,13 @@ static int AP_NavRec_KartImpaired(const struct Driver *d)
 
 void AP_NavRec_ObservePhysics(const struct GameTracker *gGT)
 {
+#ifdef CTR_AP
+	if (AP_CoopRace(gGT))
+	{
+		s_navrecPhysicsImpaired = -1;
+		return;
+	}
+#endif
 	if (!g_config.navRecord || gGT == NULL || sdata == NULL || sdata->Loading.stage != LOAD_IDLE)
 	{
 		s_navrecPhysicsImpaired = -1;
@@ -2140,6 +2148,13 @@ void AP_NavRec_Tick(struct GameTracker *gGT)
 
 	if (!s_navrecArmed || (gGT == NULL) || (s_navrecScratch == NULL))
 		return;
+
+#ifdef CTR_AP
+	// The recording format tracks one driver's grants and physics. A team
+	// finish and P2 effects cannot be attributed to that driver's lap.
+	if (AP_CoopRace(gGT))
+		return;
+#endif
 
 	// Never sample while a load is in flight. The driver struct survives a level
 	// transition but the level data it points into does not, so a driver field

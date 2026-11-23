@@ -32,6 +32,11 @@ void AH_Garage_Open(struct ScratchpadStruct *sps, void *hitObject)
 	{
 		return;
 	}
+#ifdef CTR_AP
+	if (AP_CoopHub(sdata->gGT) &&
+	    (otherTh->object != sdata->gGT->drivers[0] || AP_CoopHubWarpDriver(sdata->gGT) >= 0))
+		return;
+#endif
 
 	garageThread = sps->Union.ThBuckColl.thread;
 
@@ -458,6 +463,13 @@ LAB_800aede0:
 
 LAB_800aede8:
 
+#ifdef CTR_AP
+	// Once the garage starts fading out, it owns the hub until it loads
+	// the boss or reverses the fade if entry fails.
+	if (AP_CoopHub(gGT) && !AP_CoopHubFadingOut(gGT) && !AP_HubSafeForRequest(gGT))
+		return;
+#endif
+
 	sps->Input1.pos = inst->instDef->pos;
 	sps->Input1.hitRadius = 0x300;
 	sps->Input1.hitRadiusSquared = 0x90000;
@@ -505,7 +517,11 @@ LAB_800aede8:
 #endif
 
 	// If fade complete, start loading level
-	if (gGT->pushBuffer_UI.fadeFromBlack_currentValue == 0)
+	if (gGT->pushBuffer_UI.fadeFromBlack_currentValue == 0
+#ifdef CTR_AP
+	    && (!AP_CoopHub(gGT) || AP_CoopHubFadingOut(gGT))
+#endif
+	)
 	{
 		#ifdef CTR_AP
 		if (levelID == GEM_STONE_VALLEY && AP_OxideOffersFinalChallenge() &&

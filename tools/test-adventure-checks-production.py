@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import ap_hooks_unit
+import coop_fixture
 
 root = Path(__file__).resolve().parents[1]
 hooks = ap_hooks_unit.read()
@@ -36,12 +37,13 @@ fixture = r'''
 #include "ap/ap_hit_policy.h"
 #include "ap/ap_custom_trophy_ceremony_logic.h"
 #include "platform/native_custom_race_context.h"
-struct Driver { int numWumpas,numTimeCrates; };
-struct GameTracker { int gameMode1; unsigned gameMode2; int levelID,numPlyrCurrGame,timeCratesInLEV,podiumRewardID,bossID; struct Driver *drivers[1]; };
+struct Driver { int numWumpas,numTimeCrates,actionsFlagSet; };
+struct GameTracker { int gameMode1; unsigned gameMode2; int levelID,numPlyrCurrGame,timeCratesInLEV,podiumRewardID,bossID; struct Driver *drivers[2]; };
 static struct { struct GameTracker *gGT; } data, *sdata=&data;
 ctr_seed_config ctr_cfg;
 static struct GameTracker gt;
 static struct Driver local;
+static struct Driver partner;
 static int sent, perf, feed, ledger, ap_state_gen;
 static unsigned ap_notified_mask[6];
 static unsigned char ap_itemsanity_owned[AP_ITEMSANITY_WEAPON_COUNT];
@@ -66,7 +68,9 @@ static void AP_CeremonyLedgerAdd(long code, int bit, int tag) { (void)code;(void
 static void AP_FeedOnRungSent(long code, int tag) { (void)code;(void)tag; }
 static long AP_LookupLocationCode(int bit) { return 35000000 + bit; }
 static const char *AP_TrophyName(int bit) { (void)bit; return "reward"; }
-static void AP_SendPodiumChecks(int track, int position) { (void)track;(void)position; }
+static int podiumPlace, coOpTrophyPlace = 1;
+static void AP_SendPodiumChecks(int track, int position) { (void)track; podiumPlace = position; }
+static int AP_CoopTrophyPlace(const struct GameTracker *g) { (void)g; return coOpTrophyPlace; }
 unsigned ap_net_boss_won_bits(void) { return 0; }
 void ap_net_boss_won_record(unsigned bit) { (void)bit; goalEvents++; }
 static void AP_GoalArmLiveEvent(void) { goalEvents++; }
@@ -107,6 +111,7 @@ custom_macros='\n'.join(line for line in (root/'ap/ap_custom_pad_logic.h').read_
 if family in ('custom', 'custom_wumpa'):
     fixture = '#define CTR_CUSTOM_TRACKS 1\n' + fixture
 fixture = modes[start:modes.index('};', start)+2] + '\n' + mode_macros + custom_macros + fixture
+fixture += coop_fixture.predicates(humans=True)
 fixture += function(hooks, 'int AP_LocationChecksAllowed(void)')
 fixture += function(hooks, 'static int AP_EmitClassCheck(long code,')
 
@@ -161,6 +166,10 @@ if family == 'shop':
 static struct { int hub,cursor; long long buying; } ap_wshop;
 AP_WumpaShopConfig ctr_wumpa_shop;
 static void AP_WShopSay(const char *s) { (void)s; }
+int AP_CoopHubAvailable(const struct GameTracker *g) {
+ return (g->gameMode1 & (ADVENTURE_MODE | ADVENTURE_ARENA)) == (ADVENTURE_MODE | ADVENTURE_ARENA) &&
+        !(g->gameMode1 & (MAIN_MENU | GAME_CUTSCENE));
+}
 int ap_net_wumpa_buy(long long code,int price,int unlock) { assert(code==35028600 && price==10 && unlock==0);sent++;return 0; }
 void OtherFX_Play(unsigned int id,int flags) { (void)id;(void)flags; }
 '''
@@ -218,6 +227,13 @@ if family == 'shop':
 if family == 'perfect':
     fixture += 'gt.gameMode1|=RELIC_RACE;\n'
 fixture += call + '\nassert(sent>0);\n'
+if family == 'shop':
+    fixture += 'sent=0;gt.numPlyrCurrGame=2;AP_WShopBuy();assert(sent==1);\n'
+    fixture += 'gt.gameMode1|=GAME_CUTSCENE;AP_WShopBuy();assert(sent==1);\n'
+    fixture += 'gt.gameMode1=ADVENTURE_MODE;AP_WShopBuy();assert(sent==1);\n'
+if family in ('rewards', 'results'):
+    fixture += 'assert(podiumPlace==1); memset(ap_notified_mask,0,sizeof ap_notified_mask); coOpTrophyPlace=2;' + call
+    fixture += '\nassert(podiumPlace==2);\n'
 if family == 'cup':
     # A6-77: a won content-plan cup arms its podium latch with the Win location
     fixture += 'assert(armCode==35000100);\n'
@@ -225,6 +241,12 @@ if family == 'hit':
     fixture += 'assert(s_hit_sent_mask==(1u<<1));int before=sent;' + call + '\nassert(sent==before);\n'
 if family not in ('shop', 'rewards', 'goal', 'hit'):
     fixture += 'sent=0;gt.gameMode1=RELIC_RACE;' + call + '\nassert(sent>0);\n'
+if family in ('wumpa', 'itemsanity', 'boxes', 'letters', 'podium'):
+    fixture += 'sent=0;gt.gameMode1=ADVENTURE_MODE;gt.gameMode2=0;gt.numPlyrCurrGame=2;gt.drivers[1]=&partner;\n'
+    fixture += call.replace('&local', '&partner') + '\nassert(sent>0);\n'
+    if family in ('wumpa', 'itemsanity'):
+        fixture += 'sent=0;partner.actionsFlagSet=ACTION_BOT;\n'
+        fixture += call.replace('&local', '&partner') + '\nassert(sent==0);\n'
 fixture += 'return 0;\n}\n'
 with tempfile.TemporaryDirectory() as tmp:
     source, exe = Path(tmp)/'sender.c', Path(tmp)/'sender'

@@ -1,4 +1,7 @@
 #include <common.h>
+#ifdef CTR_AP
+#include "../../ap/ap_coop.h"
+#endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x80054a08-0x80054a78
 u32 UI_VsQuipReadDriver(struct Driver *d, int offset, int size)
@@ -549,6 +552,13 @@ void UI_VsWaitForPressX(void)
 
 	for (i = 0; i < numPlyr; i++)
 	{
+#ifdef CTR_AP
+		if (i == 1 && AP_CoopRace(gGT) && !AP_CoopP2Available())
+		{
+			ready++;
+			continue;
+		}
+#endif
 		// flags, for which players have pressed X to continue
 		pressedX = &sdata->Battle_EndOfRace.boolPressX[i];
 

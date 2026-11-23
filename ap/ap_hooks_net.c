@@ -197,6 +197,8 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// connect handler, so the tables are already zero before any asynchronous
 		// Retrieved reply for the new slot can land.
 		AP_CharSwap_ConnectReset();
+		AP_CoopConnectReset();
+		ap_net_coop_subscribe();
 		if (ctr_cfg.character_phase_present)
 		{
 			ap_net_character_subscribe(ctr_cfg.starting_character);
@@ -241,11 +243,9 @@ static void AP_NetTick(struct GameTracker *gGT)
 		}
 	}
 
-	// Podium backstop (connect-time): reconcile rungs for any trophy race whose
+	// Podium backstop (connect-time): reconcile provable rungs for a race whose
 	// win was already recorded (a prior session, or a crash that lost the live
-	// capture). Winning == 1st == all rungs, so the durable trophy-checked signal
-	// is sufficient. Deduped + cheap (16 tracks) so it is safe to run every tick;
-	// this is what unblocks an existing stuck save on reconnect WITHOUT re-racing.
+	// capture). Deduped against the checked set, so it is safe to run every tick.
 	AP_ReconcilePodiumFromTrophies();
 
 	// [AP PERF] ITEM_APPLY section: the received-item drain runs AFTER the POLL

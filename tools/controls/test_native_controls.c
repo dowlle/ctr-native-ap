@@ -1349,6 +1349,166 @@ static void TestAutoAssignmentPutsFirstGamepadOnPlayerOne(void)
 	CheckDevice(3, NULL, "P4 has no device");
 }
 
+static void TestPlayerDeviceIdentitySurvivesTableRebuild(void)
+{
+	ResetModule();
+	int pads[4];
+	int keyboard;
+	SetupDevices(2, pads, &keyboard);
+	NativeControls_ResolveAssignment();
+	const u64 device = NativeControls_GetPlayerDeviceIdentity(1);
+	Check(device == 101, "P2 keeps the SDL device identity");
+
+	SetupDevices(1, pads, &keyboard);
+	NativeControls_ResolveAssignment();
+	CheckDevice(1, TEST_KEYBOARD_NAME, "Auto gives the keyboard to the empty P2 slot");
+	Check(NativeControls_GetPlayerDeviceIdentity(1) == UINT64_MAX,
+	      "the replacement keyboard reports a different identity");
+	Check(NativeControls_GetPlayerDeviceIdentity(2) == 0, "an empty slot has no identity");
+
+	SetupDevices(2, pads, &keyboard);
+	NativeControls_ResolveAssignment();
+	Check(NativeControls_GetPlayerDeviceIdentity(1) == device,
+	      "device identity follows the pad across table rebuilds");
+	SetPref(1, NATIVE_CONTROLS_PREF_PINNED, s_testDeviceKeys[1]);
+	SetupDevices(1, pads, &keyboard);
+	NativeControls_ResolveAssignment();
+	Check(NativeControls_GetPlayerDeviceIdentity(1) == 0, "an absent pin has no controller");
+	SetupDevices(2, pads, &keyboard);
+	s_devices[pads[1]].instanceId = 201;
+	NativeControls_ResolveAssignment();
+	Check(NativeControls_GetPlayerDeviceIdentity(1) == 201 &&
+	      NativeControls_GetPlayerPref(1) == NATIVE_CONTROLS_PREF_PINNED,
+	      "a replugged controller reclaims its pin with a new SDL ID");
+}
+
+#ifdef CTR_AP
+static void TestAdventurePartnerWithSharedGuid(void)
+{
+	ResetModule();
+	SDL_VirtualJoystickDesc desc;
+	SDL_INIT_INTERFACE(&desc);
+	desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+	desc.vendor_id = 0x28de;
+	desc.product_id = 0x11ff;
+	desc.name = "Steam Virtual Gamepad";
+	desc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
+	u8 port0[NATIVE_INPUT_MULTITAP_HEADER + NATIVE_INPUT_MAX_CONTROLLERS * NATIVE_INPUT_PAD_PACKET_BYTES] = {0};
+	u8 port1[NATIVE_INPUT_PAD_PACKET_BYTES] = {0};
+	s_padSlotData[0] = port0;
+	s_padSlotData[1] = port1;
+	s_inputInitialized = 1;
+	SDL_JoystickID ids[3];
+	for (int i = 0; i < 3; i++)
+	{
+		ids[i] = SDL_AttachVirtualJoystick(&desc);
+		Check(ids[i] != 0, "attach SDL virtual gamepad");
+		if (!ids[i])
+		{
+			printf("  SDL: %s\n", SDL_GetError());
+			for (int attached = 0; attached < i; attached++)
+				SDL_DetachVirtualJoystick(ids[attached]);
+			NativeControls_Refresh();
+			goto done;
+		}
+		if (i != 0)
+		{
+			SDL_GUID first = SDL_GetGamepadGUIDForID(ids[0]);
+			SDL_GUID next = SDL_GetGamepadGUIDForID(ids[i]);
+			Check(!memcmp(&first, &next, sizeof first), "Steam-style virtual pads share their GUID");
+		}
+		NativeControls_Refresh();
+		if (i >= 1)
+		{
+			Check(NativeControls_GetPlayerDeviceIdentity(0) == ids[0], "P1 is the first virtual gamepad");
+			Check(NativeControls_GetPlayerDeviceIdentity(1) == ids[1], "P2 is the second virtual gamepad");
+			Platform_InputUpdate();
+			Check(PadBusConnected(port0, 0) && PadBusConnected(port0, 1),
+			      "the two assigned SDL pads both publish connected packets");
+		}
+	}
+
+	int partner = NativeControls_GetPlayerDevice(2);
+	SDL_Gamepad *pad = NativeControls_GetGamepadHandle(partner);
+	Check(pad != NULL, "the third pad opens as an SDL gamepad");
+	if (pad)
+	{
+		SDL_SetJoystickVirtualButton(SDL_GetGamepadJoystick(pad), SDL_GAMEPAD_BUTTON_START, true);
+		SDL_UpdateJoysticks();
+		Check(NativeInput_AdventureButtons(partner) & RAW_BTN_START, "the third pad's bound Start is readable");
+	}
+	Check(!NativeControls_SetAdventurePartner(ids[0]), "P1 cannot claim P2's seat");
+	Check(NativeControls_SetAdventurePartner(ids[2]), "P3 can take the Adventure partner seat");
+	Check(NativeControls_GetPlayerDeviceIdentity(0) == ids[0], "claiming P2 preserves P1");
+	Check(NativeControls_GetPlayerDeviceIdentity(1) == ids[2], "the requesting instance becomes P2");
+	Check(NativeControls_GetPlayerDeviceIdentity(2) == ids[1], "the displaced pad remains assigned");
+
+	SetPref(1, NATIVE_CONTROLS_PREF_PINNED, s_profiles[s_devices[partner].profile].key);
+	SDL_DetachVirtualJoystick(ids[2]);
+	NativeControls_Refresh();
+	Check(NativeControls_GetPlayerDeviceIdentity(0) == ids[0], "shared-GUID pin cannot take P1 on dropout");
+	Check(NativeControls_GetPlayerDeviceIdentity(1) == 0, "dropout leaves P2 vacant");
+	Check(NativeControls_SetAdventurePartner(ids[1]), "another pad can explicitly reclaim P2");
+	Check(NativeControls_GetPlayerDeviceIdentity(1) == ids[1], "explicit replacement gets P2");
+	SetPref(0, NATIVE_CONTROLS_PREF_PINNED,
+	        s_profiles[s_devices[NativeControls_GetPlayerDevice(0)].profile].key);
+	SDL_DetachVirtualJoystick(ids[0]);
+	NativeControls_Refresh();
+	Check(NativeControls_GetPlayerDeviceIdentity(0) == UINT64_MAX, "P1 can drive with the keyboard while unplugged");
+	ids[0] = SDL_AttachVirtualJoystick(&desc);
+	NativeControls_Refresh();
+	Check(ids[0] && NativeControls_GetPlayerDeviceIdentity(0) == ids[0],
+	      "P1 reclaims the available matching pin behind P2 in SDL enumeration");
+	Check(NativeControls_GetPlayerDeviceIdentity(1) == ids[1], "P2 retains the reserved SDL instance");
+	NativeControls_SetAdventurePartner(0);
+	Check(NativeControls_GetPlayerDeviceIdentity(0) == ids[0], "explicit dropout preserves P1 despite shared pin");
+	NativeControls_ClearAdventureSeats();
+	SDL_DetachVirtualJoystick(ids[1]);
+	SDL_DetachVirtualJoystick(ids[0]);
+	NativeControls_Refresh();
+done:
+	s_inputInitialized = 0;
+	s_padSlotData[0] = s_padSlotData[1] = NULL;
+}
+
+static void TestAdventurePartnerWithKeyboardFallback(void)
+{
+	ResetModule();
+	SDL_VirtualJoystickDesc desc;
+	SDL_INIT_INTERFACE(&desc);
+	desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+	desc.vendor_id = 0x28de;
+	desc.product_id = 0x11ff;
+	desc.name = "Primary Pad";
+	desc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
+	SDL_JoystickID primary = SDL_AttachVirtualJoystick(&desc);
+	NativeControls_Refresh();
+	int device = NativeControls_GetPlayerDevice(0);
+	Check(primary && NativeControls_GetPlayerDeviceIdentity(0) == primary, "P1 starts on the gamepad");
+	if (!primary)
+		return;
+	SetPref(0, NATIVE_CONTROLS_PREF_PINNED, s_profiles[s_devices[device].profile].key);
+
+	SDL_VirtualJoystickDesc secondary = desc;
+	secondary.product_id++;
+	secondary.name = "Partner Pad";
+	SDL_JoystickID partner = SDL_AttachVirtualJoystick(&secondary);
+	SDL_DetachVirtualJoystick(primary);
+	NativeControls_Refresh();
+	Check(NativeControls_GetPlayerDeviceIdentity(0) == UINT64_MAX, "unplugged pin falls back to keyboard before join");
+	Check(partner && NativeControls_SetAdventurePartner(partner), "P2 can join during P1 keyboard fallback");
+	primary = SDL_AttachVirtualJoystick(&desc);
+	NativeControls_Refresh();
+	Check(primary && NativeControls_GetPlayerDeviceIdentity(0) == primary, "temporary keyboard did not replace P1's pin");
+	Check(NativeControls_GetPlayerDeviceIdentity(1) == partner, "P2 remains on the selected pad");
+	NativeControls_SetAdventurePartner(0);
+	Check(NativeControls_GetPlayerDeviceIdentity(0) == primary, "P1 keeps the reclaimed pad after dropout");
+	if (partner) SDL_DetachVirtualJoystick(partner);
+	if (primary) SDL_DetachVirtualJoystick(primary);
+	NativeControls_Refresh();
+}
+#endif
+
 static void TestKeyboardIsTheLastFallback(void)
 {
 	printf("auto assignment: keyboard is the last fallback\n");
@@ -2270,6 +2430,11 @@ int main(void)
 	TestChangingAPlayerDeviceReachesThePadBus();
 	TestDisablingAPlayerReachesThePadBus();
 	TestAutoAssignmentPutsFirstGamepadOnPlayerOne();
+	TestPlayerDeviceIdentitySurvivesTableRebuild();
+#ifdef CTR_AP
+	TestAdventurePartnerWithSharedGuid();
+	TestAdventurePartnerWithKeyboardFallback();
+#endif
 	TestKeyboardIsTheLastFallback();
 	TestDisabledPlayerIsSkipped();
 	TestPinnedPreferencesWinOverAuto();

@@ -1045,7 +1045,7 @@ internal bool NativeControls_DeviceSetUnchanged(void)
 	return unchanged;
 }
 
-internal int NativeControls_FindDeviceByKey(const char *key)
+internal int NativeControls_FindDeviceByKey(const char *key, int unownedOnly)
 {
 	if ((key == NULL) || (key[0] == '\0'))
 	{
@@ -1056,7 +1056,8 @@ internal int NativeControls_FindDeviceByKey(const char *key)
 	{
 		int profile = s_devices[i].profile;
 
-		if (s_devices[i].used && (profile >= 0) && NativeControls_StrEqual(s_profiles[profile].key, key))
+		if ((!unownedOnly || s_deviceOwner[i] == NATIVE_CONTROLS_NO_DEVICE) &&
+		    s_devices[i].used && (profile >= 0) && NativeControls_StrEqual(s_profiles[profile].key, key))
 		{
 			return i;
 		}
@@ -1078,6 +1079,35 @@ internal int NativeControls_FindKeyboardDevice(void)
 	return NATIVE_CONTROLS_NO_DEVICE;
 }
 
+#ifdef CTR_AP
+static u64 s_adventurePartner;
+static u64 s_adventurePrimary;
+
+u64 NativeControls_GetGamepadIdentity(int device)
+{
+	if (!NativeControls_IsValidDevice(device) ||
+	    s_devices[device].kind != NATIVE_CONTROLS_DEVICE_GAMEPAD ||
+	    !s_devices[device].gamepad)
+		return 0;
+	return s_devices[device].instanceId;
+}
+
+static void NativeControls_ReserveAdventureDevices(void)
+{
+	for (int device = 0; device < s_deviceCount; device++)
+	{
+		u64 id = NativeControls_GetGamepadIdentity(device);
+		if (s_devices[device].kind == NATIVE_CONTROLS_DEVICE_KEYBOARD)
+			id = UINT64_MAX;
+		if (!id || (id != s_adventurePrimary && id != s_adventurePartner))
+			continue;
+		int player = id == s_adventurePrimary ? 0 : 1;
+		s_deviceOwner[device] = player;
+		s_playerDevice[player] = device;
+	}
+}
+#endif
+
 // ---------------------------------------------------------------------------
 // Assignment
 // ---------------------------------------------------------------------------
@@ -1097,16 +1127,29 @@ internal void NativeControls_ResolveAssignment(void)
 		s_playerDevice[i] = NATIVE_CONTROLS_NO_DEVICE;
 	}
 
+#ifdef CTR_AP
+	if (s_adventurePrimary || s_adventurePartner)
+		NativeControls_ReserveAdventureDevices();
+#endif
+
 	// Pinned preferences first and in player order, so two players pinning the
 	// same device resolve in favour of the lower one.
+	int unownedOnly = 0;
+#ifdef CTR_AP
+	unownedOnly = s_adventurePrimary || s_adventurePartner;
+#endif
 	for (int player = 0; player < PLATFORM_INPUT_PAD_COUNT; player++)
 	{
+#ifdef CTR_AP
+		if ((s_adventurePartner && player == 1) || s_playerDevice[player] != NATIVE_CONTROLS_NO_DEVICE)
+			continue;
+#endif
 		if (s_playerPref[player].kind != NATIVE_CONTROLS_PREF_PINNED)
 		{
 			continue;
 		}
 
-		int device = NativeControls_FindDeviceByKey(s_playerPref[player].deviceKey);
+		int device = NativeControls_FindDeviceByKey(s_playerPref[player].deviceKey, unownedOnly);
 		if ((device == NATIVE_CONTROLS_NO_DEVICE) || (s_deviceOwner[device] != NATIVE_CONTROLS_NO_DEVICE))
 		{
 			// Gone, or already owned by a lower player. The preference is kept so
@@ -1116,6 +1159,10 @@ internal void NativeControls_ResolveAssignment(void)
 
 		s_deviceOwner[device] = player;
 		s_playerDevice[player] = device;
+#ifdef CTR_AP
+		if (player == 0 && s_adventurePartner && NativeControls_GetGamepadIdentity(device))
+			s_adventurePrimary = NativeControls_GetGamepadIdentity(device);
+#endif
 	}
 
 	// Table order is gamepads first and the keyboard last.
@@ -1130,6 +1177,10 @@ internal void NativeControls_ResolveAssignment(void)
 	int next = 0;
 	for (int player = 0; player < PLATFORM_INPUT_PAD_COUNT; player++)
 	{
+#ifdef CTR_AP
+		if ((s_adventurePartner && player == 1) || s_playerDevice[player] != NATIVE_CONTROLS_NO_DEVICE)
+			continue;
+#endif
 		if (s_playerPref[player].kind != NATIVE_CONTROLS_PREF_AUTO)
 		{
 			continue;
@@ -1194,12 +1245,53 @@ internal void NativeControls_ResolveAndPublish(void)
 	}
 }
 
+#ifdef CTR_AP
+int NativeControls_SetAdventurePartner(u64 instance)
+{
+	if (instance == s_adventurePartner)
+		return 1;
+	if (instance)
+	{
+		u64 primary = NativeControls_GetPlayerDeviceIdentity(0);
+		if (instance == primary)
+			return 0;
+		int device;
+		for (device = 0; device < s_deviceCount; device++)
+			if (NativeControls_GetGamepadIdentity(device) == instance)
+				break;
+		if (device == s_deviceCount)
+			return 0;
+		const struct NativeControlsPlayer *pref = &s_playerPref[0];
+		int temporaryKeyboard = primary == UINT64_MAX &&
+		    pref->kind == NATIVE_CONTROLS_PREF_PINNED &&
+		    !NativeControls_StrEqual(pref->deviceKey, NATIVE_CONTROLS_KEYBOARD_KEY);
+		s_adventurePrimary = temporaryKeyboard ? 0 : primary;
+	}
+	s_adventurePartner = instance;
+	NativeControls_ResolveAndPublish();
+	return 1;
+}
+
+void NativeControls_ClearAdventureSeats(void)
+{
+	if (!s_adventurePrimary && !s_adventurePartner)
+		return;
+	s_adventurePrimary = 0;
+	s_adventurePartner = 0;
+	NativeControls_ResolveAndPublish();
+}
+#endif
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 void NativeControls_Init(void)
 {
+#ifdef CTR_AP
+	s_adventurePartner = 0;
+	s_adventurePrimary = 0;
+#endif
 	memset(s_profiles, 0, sizeof(s_profiles));
 	memset(s_devices, 0, sizeof(s_devices));
 	memset(s_deviceOwner, 0, sizeof(s_deviceOwner));
@@ -1341,6 +1433,16 @@ int NativeControls_GetAvailableDevices(int player, int *dst, int max)
 	}
 
 	return count;
+}
+
+u64 NativeControls_GetPlayerDeviceIdentity(int player)
+{
+	int device = NativeControls_GetPlayerDevice(player);
+	if (!NativeControls_IsValidDevice(device))
+		return 0;
+	if (s_devices[device].kind == NATIVE_CONTROLS_DEVICE_KEYBOARD)
+		return UINT64_MAX;
+	return s_devices[device].instanceId;
 }
 
 int NativeControls_GetDeviceKind(int device)
