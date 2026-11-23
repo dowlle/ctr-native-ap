@@ -159,8 +159,8 @@ int main(void)
 			EXPECT_TRUE(label, CTR_MenuFindEntry(g_configEntries, g_numConfigEntries, *k) >= 0);
 		}
 
-	EXPECT_TRUE("six pages in the AP build", numPages == 6);
-	if (numPages == 6)
+	EXPECT_TRUE("seven pages in the AP build", numPages == 7);
+	if (numPages == 7)
 	{
 		static const char *const video[] = {
 			"fullscreen", "aspect_ratio", "render_scale", "vsync", "smooth_scaling",
@@ -179,10 +179,11 @@ int main(void)
 
 		ExpectPage(0, "Video", video);
 		ExpectPage(1, "Gameplay", gameplay);
-		ExpectPage(2, "Controls", controls);
-		ExpectPage(3, "Connection", connection);
-		ExpectPage(4, "Archipelago", archipelago);
-		ExpectPage(5, "Authoring", authoring);
+		ExpectPage(2, "Sound", controls);
+		ExpectPage(3, "Controls", controls);
+		ExpectPage(4, "Connection", connection);
+		ExpectPage(5, "Archipelago", archipelago);
+		ExpectPage(6, "Authoring", authoring);
 	}
 
 	ExpectSection("skip_intro", "Video & QoL");

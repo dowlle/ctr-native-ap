@@ -1048,15 +1048,6 @@ int AP_BossMapStarBeaten(int bossIdx);
 // ap_hooks.c.
 int AP_BossGateAdvert(int bossIdx, char *out, int cap);
 
-// #152/#322: the pause menu's composed-goal readout. Writes the approved
-// compact one-line checklist -- "GOAL: OXIDE 2 - BOSS 3/4 - GEM 4/5" -- into
-// `out` and returns 1; returns 0 when there is nothing to advertise (no
-// slot_data, or no active goal arm). Reads the same ctr_cfg fields and
-// AP_GateCount* helpers AP_EvaluateGoal reads, so the two cannot disagree.
-// The shape itself is ap/ap_goal_line.h. This is the completion CHECKLIST, not
-// the next-encounter advert: which Oxide visit is available and why the garage
-// is shut belongs to AP_BossGateAdvert. IMPLEMENTED C-SIDE in ap_hooks.c.
-int AP_GoalAdvert(char *out, int cap);
 
 // #169 tier 1 boss track shuffle (schema 18, ap_boss_venue.h). The seed's
 // four garage venues, parsed from `boss_encounters` and checked against

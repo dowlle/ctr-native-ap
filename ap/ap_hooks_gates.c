@@ -1594,55 +1594,24 @@ static int AP_OxideGateAdvert(char *out, int cap)
 		in.goalGems, in.gemsHeld, out, cap);
 }
 
-// #152/#322: the pause menu's composed-goal readout. Reads the SAME ctr_cfg
-// fields and AP_GateCount*/AP_ComposedBossesWon helpers AP_EvaluateGoal
-// reads, so the two cannot disagree about progress.
-//
-// The SHAPE changed in #322. It used to build one prose sentence -- "Goal: beat
-// N. Oxide's Final Challenge (not yet) and win 2 of 4 boss races (have 1) and
-// hold 3 of 5 Gems (have 1)" -- which AH_Pause.c draws once with
-// DecalFont_DrawLine. That does not wrap, and the longest shape is about three
-// times the safe pause-page width, so a tester on the 1 September Alpha 7
-// stream could not read his own goal. It is now the approved compact
-// checklist, "GOAL: OXIDE 2 - BOSS 3/4 - GEM 4/5", built by
-// ap/ap_goal_line.h -- see that header for the labels, the omission rules and
-// why a wrap and a marquee were both rejected.
-//
-// Returns 1 when a line was written, 0 when there is nothing to advertise (no
-// slot_data -- the vanilla Aku hints stay the only message -- or no active
-// goal arm, which generate_early already rejects on a real seed).
-int AP_GoalAdvert(char *out, int cap)
+int AP_GoalAdvertLines(AP_GoalLines lines)
 {
-	if (out == 0 || cap <= 0)
+	if (!ctr_cfg_active() || ctr_cfg.schema_newer)
 		return 0;
-	if (!ctr_cfg_active())
-		return 0;
+
+	int gemsHeld = AP_GateCountGemSum();
+	int firstWon = ap_oxide_first_beaten;
 	if (ap_content_plan_active())
 	{
-		int owned = 0, i;
-		for (i = 0; i < 5; ++i)
-		{
-			const ctr_content_item *row = ap_content_plan_item(AP_ITEM_BASE + AP_IDX_GEM_RED + i);
-			if (row && row->base && AP_GateCountGemColour(i) > 0) ++owned;
-		}
-		// J11: the plan's Wumpa arm follows the Gem arm; a Wumpa-only
-		// goal shows the Wumpa counter alone. Without a Wumpa arm the line
-		// is the one content plans always showed.
-		if (ctr_cfg.goal_gems > 0 || ctr_wumpa_shop.goal <= 0)
-		{
-			int n = snprintf(out, cap, "Goal: %d/%d selected Gem colours", owned, ctr_cfg.goal_gems);
-			if (ctr_wumpa_shop.goal > 0 && n > 0 && n < cap)
-				snprintf(out + n, (size_t)(cap - n), " - WUMPA %d/%d",
-				         ap_net_wumpa_lifetime() > ctr_wumpa_shop.goal ? ctr_wumpa_shop.goal
-				                                                       : (int)ap_net_wumpa_lifetime(),
-				         ctr_wumpa_shop.goal);
-			return 1;
-		}
-		return AP_GoalLineAppendWumpa(out, cap, 0, ap_net_wumpa_lifetime(), ctr_wumpa_shop.goal);
+		int gems[5];
+		for (int i = 0; i < 5; ++i)
+			gems[i] = AP_GateCountGemColour(i);
+		gemsHeld = ap_content_plan_gems_held(gems);
+		firstWon = firstWon || AP_OxideFirstChallengeCleared();
 	}
-	// One generator row 12: an active config is always a content plan; the
-	// normal-seed goal line was deleted.
-	return 0;
+	return AP_GoalFormatLines(lines, ctr_cfg.goal_oxide, firstWon, ap_oxide_final_beaten,
+	                         ctr_cfg.goal_bosses, AP_ComposedBossesWon(), ctr_cfg.goal_gems, gemsHeld,
+	                         ctr_wumpa_shop.goal, ap_net_wumpa_lifetime());
 }
 
 // Racer lock mirrored from the physical content-plan pad by the parser.

@@ -4,7 +4,6 @@
 // menu row arrays (adding the OPTIONS row) and the options RectMenu.
 extern struct MenuRow s_rowsMainMenuBasicConfig[];
 extern struct MenuRow s_rowsMainMenuWithSBConfig[];
-extern struct RectMenu g_configMenu;
 #if defined(CTR_AP) && !defined(CTR_AP_AUTHORING)
 void MM_Solo_OpenFromTitle(void); // MM_ConfigMenu.c (#89)
 #endif
@@ -300,7 +299,7 @@ void MM_MenuProc_Main(struct RectMenu *mainMenu)
 	// options RectMenu; it returns to menuMainMenu on exit.
 	if (choose == 0x0E)
 	{
-		sdata->ptrDesiredMenu = &g_configMenu;
+		MM_ConfigOpen(&D230.menuMainMenu);
 		return;
 	}
 
@@ -310,7 +309,6 @@ void MM_MenuProc_Main(struct RectMenu *mainMenu)
 	if (choose == AP_LNG_PLAY_SOLO)
 	{
 		MM_Solo_OpenFromTitle();
-		sdata->ptrDesiredMenu = &g_configMenu;
 		return;
 	}
 #endif

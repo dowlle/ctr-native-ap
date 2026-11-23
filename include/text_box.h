@@ -9,7 +9,7 @@ enum {
     TEXT_SLOT_TRACK_CREDIT = TEXT_SLOT_FEED + 5, TEXT_SLOT_PAD_TITLE,
     TEXT_SLOT_RACE_TITLE, TEXT_SLOT_RACE_CREDIT,
     TEXT_SLOT_PAD_RACER, TEXT_SLOT_PAD_INSTALL,
-    TEXT_SLOT_COUNT
+    TEXT_SLOT_GOAL, TEXT_SLOT_COUNT = TEXT_SLOT_GOAL + 4
 };
 
 /* Box coordinates are left anchored UI pixels. Fitting text retains flags. */
