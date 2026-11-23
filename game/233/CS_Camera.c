@@ -415,7 +415,6 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 				// would have performed when the ceremony ended. No-op on every
 				// podium whose prize thread still exists.
 				AP_PodiumExitTerminalWork();
-				AP_CupPodiumReset();
 #endif
 
 				switch (rewardId)
@@ -443,7 +442,16 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 				}
 
 				CDSYS_XAPauseForce();
-				CDSYS_XAPlay(1, hintID);
+#ifdef CTR_AP
+				// The cup uses the Trophy model to open the podium, but its
+				// reward comes from the room and has no matching retail voice line.
+				if (!AP_CupPodiumActive())
+#endif
+					CDSYS_XAPlay(1, hintID);
+
+#ifdef CTR_AP
+				AP_CupPodiumReset();
+#endif
 
 				gGT->podiumRewardID = NOFUNC;
 				return;

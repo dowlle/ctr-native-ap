@@ -232,9 +232,9 @@ int main(void)
 		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 1, 1));
 		// The live reward flags are no longer inputs once the scene omits its prize.
 		work = AP_PodiumExitWork(&state);
-		expect(work.overlayTransition, 2, "AP cup podium on a custom leg exits too");
-		expect(work.releaseFreeze, 1, "AP cup podium on a custom leg releases the freeze");
-		expect(work.stopDanceLoops, 1, "AP cup podium on a custom leg stops the loops");
+		expect(work.overlayTransition, 2, "AP cup podium outside retail track range exits too");
+		expect(work.releaseFreeze, 1, "AP cup podium outside retail track range releases the freeze");
+		expect(work.stopDanceLoops, 1, "AP cup podium outside retail track range stops the loops");
 
 		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(0, AP_PODIUM_TROPHY_MODEL, 0, 1));
 		work = AP_PodiumExitWork(&state);
