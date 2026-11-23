@@ -444,6 +444,12 @@ long AP_StandaloneRelicCode(int tier);
 // package refuses the entry.
 int AP_ContentPreparePad(int physicalPad, int mode);
 int AP_ContentPadReady(int physicalPad);
+// The weapon crates (x, y, z, Y turn, instance-table order) of a package's
+// verified MAIN pair, read from its LEV on disk, for the Item Boxes of a merged
+// Relic Race (relic_files) whose served LEV is the relic pair. Returns the
+// crate count and a malloc'd array the caller frees, or -1 when the main pair
+// is not installed, does not match the seed's pins or cannot be read.
+long AP_ContentMainWeaponCrates(int packageIndex, short (**out)[4]);
 // Content-plan cups (#133 PR 5, ap_hooks_custom_content.c): the running
 // cup's pad and leg, its standings name and hub-return pad, the next leg's
 // load, the leg results (Cup Leg Victory, sweep record) and the cup's end.

@@ -397,6 +397,49 @@ static int AP_ContentTrackReady(int retail, int cortex, int packageIndex)
 	return packageIndex >= 0 && packageIndex < AP_CONTENT_MAX_PACKAGES && ap_content_package_ready[packageIndex];
 }
 
+long AP_ContentMainWeaponCrates(int packageIndex, short (**out)[4])
+{
+	const ctr_content_package *pkg = ap_content_plan_package(packageIndex);
+	struct CustomContentOwnedPair pair;
+	char error[160];
+	short (*rows)[4];
+	long found, kept;
+	*out = 0;
+	if (!pkg || packageIndex < 0 || packageIndex >= AP_CONTENT_MAX_PACKAGES || !ap_content_package_ready[packageIndex] ||
+	    !ap_content_files[packageIndex].levPath[0] || !ap_content_files[packageIndex].vrmPath[0])
+		return -1;
+	// The bytes are read and hashed again against the seed's main pins.
+	if (!CustomContentVerify_ReadPair(ap_content_files[packageIndex].levPath, ap_content_files[packageIndex].vrmPath,
+	                                  &pair, error, sizeof error))
+		return -1;
+	if (strcmp(pair.report.levSha256, pkg->lev_sha256) || strcmp(pair.report.vrmSha256, pkg->vrm_sha256))
+	{
+		CustomContentVerify_FreePair(&pair);
+		return -1;
+	}
+	found = CustomContentVerify_WeaponCrates(&pair, 0, 0);
+	if (found < 0 || found > 65536)
+	{
+		CustomContentVerify_FreePair(&pair);
+		return -1;
+	}
+	rows = (short (*)[4])malloc((size_t)(found ? found : 1) * sizeof *rows);
+	if (!rows)
+	{
+		CustomContentVerify_FreePair(&pair);
+		return -1;
+	}
+	kept = CustomContentVerify_WeaponCrates(&pair, rows, found);
+	CustomContentVerify_FreePair(&pair);
+	if (kept != found)
+	{
+		free(rows);
+		return -1;
+	}
+	*out = rows;
+	return found;
+}
+
 int AP_ContentPadReady(int physicalPad)
 {
 	const ctr_content_pad *pad = ap_content_plan_pad(physicalPad);
@@ -506,13 +549,15 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		}
 		// Merged mode builds: a Relic Race serves the relic pair; every other
 		// mode serves the main pair. The scan above verified both.
-		serveRelic = !p && pkg->has_relic_files && race->mode == AP_CONTENT_MODE_RELIC &&
+		serveRelic = pkg->has_relic_files && race->mode == AP_CONTENT_MODE_RELIC &&
 		             ap_content_files[packageIndex].relicLevPath[0];
 		m = serveRelic ? &ap_content_files[packageIndex].relicMeasured : &ap_content_files[packageIndex].measured;
 		servedLev = serveRelic ? pkg->relic_lev_sha256 : pkg->lev_sha256;
 		servedVrm = serveRelic ? pkg->relic_vrm_sha256 : pkg->vrm_sha256;
 		AP_ContentRaceName(pkg->display_name, raceName, sizeof raceName);
-		used = p ? CustomTrack_UseManagedPackage(p, &ap_custom_content_status)
+		// A compiled profile's main pair loads through the manager; its relic pair
+		// is a plain verified file pair.
+		used = (p && !serveRelic) ? CustomTrack_UseManagedPackage(p, &ap_custom_content_status)
 		         : CustomTrack_UseContentFiles(serveRelic ? ap_content_files[packageIndex].relicLevPath
 		                                                  : ap_content_files[packageIndex].levPath,
 		                                       serveRelic ? ap_content_files[packageIndex].relicVrmPath

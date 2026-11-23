@@ -623,6 +623,9 @@ static struct InstDef *AP_BoxesCrateDef(struct InstDef *defs, long count, long o
 	return 0;
 }
 
+// The Model record the main pair's crates carry in a merged Relic Race (below).
+static struct Model s_mainCrateModel;
+
 // #133 PR 4e: stand a content-plan custom track's Item Box checks on its own
 // weapon crates (ap_box_seat_logic.h). The plan's box codes and measured crate
 // count come from the pad the race was entered from; the crates are read from
@@ -636,7 +639,7 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 	if (pad != 0 && pad->cup)
 		pad = race->leg >= 0 && race->leg < AP_CONTENT_CUP_LEGS && pad->legs[race->leg].track_pad >= 0
 		          ? ap_content_plan_pad(pad->legs[race->leg].track_pad) : 0;
-	struct InstDef *defs;
+	struct InstDef *defs, *synth = 0;
 	long count, k, crates = 0;
 	int seats, i;
 	char msg[224];
@@ -657,14 +660,57 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 		AP_BoxesStandSpots(gGT, pad);
 		return;
 	}
-	if (lev == 0 || lev->ptrInstDefs == 0 || lev->numInstances == 0 ||
-	    lev->numInstances > (u32)AP_BOX_SEAT_CRATES_MAX)
+	// Merged mode builds (relic_files): a Relic Race serves the relic pair, which
+	// can hold other crates than the main pair the seed's box set was built on
+	// (Toasty Terrace 1.3.1 has none). The apworld keeps a Relic Race route on
+	// Item Box checks, so the same boxes stand: they are seated on the MAIN
+	// pair's weapon crates, read from its LEV on disk. Only the standing boxes
+	// change; no crate of the served LEV is hidden. The exclusion ordinals,
+	// reviewed prefix and box_crates all describe the main pair already.
+	if (race->mode == AP_CONTENT_MODE_RELIC && pad->package_index >= 0 &&
+	    ap_content_plan_package(pad->package_index) != 0 &&
+	    ap_content_plan_package(pad->package_index)->has_relic_files)
 	{
-		AP_LogLine("[AP BOX] WARNING: custom track has no readable instance table -- no Item Box seats\n");
-		return;
+		short (*rows)[4] = 0;
+		const long found = AP_ContentMainWeaponCrates(pad->package_index, &rows);
+		if (found <= 0 || found > AP_BOX_SEAT_CRATES_MAX)
+		{
+			free(rows);
+			AP_LogLine("[AP BOX] WARNING: the main pair's weapon crates cannot be read for this Relic Race -- no Item Box seats\n");
+			return;
+		}
+		synth = (struct InstDef *)calloc((size_t)found, sizeof *synth);
+		if (synth == 0)
+		{
+			free(rows);
+			AP_LogLine("[AP BOX] WARNING: no memory for the main pair's weapon crates -- no Item Box seats\n");
+			return;
+		}
+		s_mainCrateModel.id = PU_RANDOM_CRATE;
+		for (k = 0; k < found; k++)
+		{
+			synth[k].model = &s_mainCrateModel;
+			synth[k].pos.x = rows[k][0]; synth[k].pos.y = rows[k][1]; synth[k].pos.z = rows[k][2];
+			synth[k].rot.y = rows[k][3];
+		}
+		free(rows);
+		defs = synth;
+		count = found;
+		snprintf(msg, sizeof msg,
+		         "[AP BOX] Relic Race on a merged package: seating on the main pair's %ld weapon crate(s)\n", found);
+		AP_LogLine(msg);
 	}
-	defs = lev->ptrInstDefs;
-	count = (long)lev->numInstances;
+	else
+	{
+		if (lev == 0 || lev->ptrInstDefs == 0 || lev->numInstances == 0 ||
+		    lev->numInstances > (u32)AP_BOX_SEAT_CRATES_MAX)
+		{
+			AP_LogLine("[AP BOX] WARNING: custom track has no readable instance table -- no Item Box seats\n");
+			return;
+		}
+		defs = lev->ptrInstDefs;
+		count = (long)lev->numInstances;
+	}
 	for (k = 0; k < count; k++)
 		if (defs[k].model != 0 && defs[k].model->id == PU_RANDOM_CRATE)
 			crates++;
@@ -677,6 +723,7 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 		     def->pos.y != pad->box_excluded_pos[i][1] || def->pos.z != pad->box_excluded_pos[i][2])))
 		{
 			AP_LogLine("[AP BOX] WARNING: excluded crate position disagrees with seed; no Item Box stands\n");
+			free(synth);
 			return;
 		}
 	}
@@ -692,6 +739,7 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 		         "with %d box(es) -- no Item Box stands\n",
 		         race->physicalPad, crates, pad->box_crates, pad->box_count);
 		AP_LogLine(msg);
+		free(synth);
 		return;
 	}
 
@@ -744,6 +792,7 @@ static void AP_BoxesSeatCustom(struct GameTracker *gGT, const struct CustomTrack
 	         "(%ld crates)\n",
 	         s_level, race->physicalPad, s_liveCount, seats, crates);
 	AP_LogLine(msg);
+	free(synth);
 }
 #endif
 

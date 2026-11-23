@@ -627,8 +627,8 @@ int main(void)
 	pair_installed[0] = 1; pair_installed[1] = 0;
 	snprintf(packages[1].relic_lev_sha256, sizeof packages[1].relic_lev_sha256, "%s", "00");
 	dl_state = AP_CT_DOWNLOAD_IDLE; reg_starts = 0;
-	expect(!AP_SeedContentInstallStart(message, sizeof message) && reg_starts == 0 && strstr(message, "could not start"),
-	       "a relic pair with no Saphi source is refused, nothing downloads");
+	expect(!AP_SeedContentInstallStart(message, sizeof message) && reg_starts == 0 && strstr(message, "no safe install folder"),
+	       "a relic pair with no Saphi source is refused before anything downloads");
 	/* A failure on the relic pair stops the queue like any other. */
 	snprintf(packages[1].relic_lev_sha256, sizeof packages[1].relic_lev_sha256, "%s", "c62b6b949ab505a1f579ebe0124b1d0d291edfa2b9b6a2367c156cc637cdf4cc");
 	pair_installed[0] = 0; pair_installed[1] = 0;
@@ -640,6 +640,32 @@ int main(void)
 	snprintf(dl_detail, sizeof dl_detail, "The downloaded LEV does not match the pinned file. Nothing was installed.");
 	expect(AP_SeedContentInstallTick(message, sizeof message) == 0 && !AP_SeedContentInstallBusy() && reg_starts == 2 &&
 	       strstr(message, "does not match the pinned file"), "a relic download failure stops the queue and names the failure");
+	/* Fix round 1: a main pair no source knows (installed by hand or by a patch
+	   import) does not keep its relic pair from downloading. */
+	{
+		char keepLev[65];
+		snprintf(keepLev, sizeof keepLev, "%s", packages[1].lev_sha256);
+		snprintf(packages[1].lev_sha256, sizeof packages[1].lev_sha256, "%s", "1111111111111111111111111111111111111111111111111111111111111111");
+		pair_installed[0] = 0; pair_installed[1] = 0;
+		n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+		expect(rows[1].source != AP_SEED_SOURCE_SAPHI, "no source for the main pair, not installed: no download is offered");
+		dl_state = AP_CT_DOWNLOAD_IDLE; reg_starts = 0;
+		expect(!AP_SeedContentInstallStart(message, sizeof message) && reg_starts == 0,
+		       "a main pair no source knows and that is missing is not downloaded");
+		pair_installed[0] = 1; pair_installed[1] = 0;
+		n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+		expect(rows[1].source == AP_SEED_SOURCE_SAPHI, "an installed main pair no source knows: the relic pair's source is offered");
+		dl_state = AP_CT_DOWNLOAD_IDLE; reg_starts = 0;
+		expect(AP_SeedContentInstallStart(message, sizeof message) && reg_starts == 1 && reg_lev_id == 355 &&
+		       reg_vrm_id == 356 && !strcmp(reg_pin_lev, packages[1].relic_lev_sha256) && !strcmp(shared_version, "1.3.1") &&
+		       strstr(message, "Relic Race files"), "the relic pair downloads on its own source");
+		dl_state = AP_CT_DOWNLOAD_SUCCEEDED;
+		expect(AP_SeedContentInstallTick(message, sizeof message) == 0 && reg_starts == 1, "and the entry ends without a main download");
+		pair_installed[0] = 1; pair_installed[1] = 1;
+		n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+		expect(rows[1].source != AP_SEED_SOURCE_SAPHI, "both pairs present: nothing is offered");
+		snprintf(packages[1].lev_sha256, sizeof packages[1].lev_sha256, "%s", keepLev);
+	}
 	pair_installed[0] = pair_installed[1] = 0;
 	packages[1].has_relic_files = 0;
 

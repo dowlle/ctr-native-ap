@@ -126,6 +126,14 @@ int CustomContentVerify_ReadPair(const char *levPath, const char *vrmPath,
 	                              char *error, size_t errorBytes);
 void CustomContentVerify_FreePair(struct CustomContentOwnedPair *pair);
 
+/* The weapon crates (PU_RANDOM_CRATE instances) of an acquired LEV, in
+   instance-table order: out[i] holds x, y, z and the Y turn of the i-th one,
+   exactly as the engine reads them from the instance table. Fills at most
+   `max` rows and returns the number of weapon crates the LEV holds, or -1
+   when the instance table cannot be read. A merged-mode Relic Race seats its
+   Item Boxes on the main pair's crates through this (relic_files). */
+long CustomContentVerify_WeaponCrates(const struct CustomContentOwnedPair *pair, short (*out)[4], long max);
+
 /* Why this pair cannot run an eight-kart Arcade Single Race, as short plain
    text for the menus (at most two 13-character lines: "No AI paths",
    "Grid: 3 of 8", "No lap checkpoints", "Files failed checks"), or "" when the file

@@ -265,6 +265,9 @@ static void AP_SeedPermission(struct AP_SeedContentRow *row, int saphi_track_id,
 	snprintf(row->permission, sizeof row->permission, "%s", ap_track_permission_text());
 }
 
+static int AP_SeedRelicTarget(const ctr_content_package *pkg, struct ApTrackRegistryMatch *match,
+                              struct CustomTrackManagerStatus *paths, char *tracks, size_t tracksSize);
+
 int AP_SeedContentRows(struct AP_SeedContentRow *rows, int max)
 {
 	int i, n = 0;
@@ -313,6 +316,21 @@ int AP_SeedContentRows(struct AP_SeedContentRow *rows, int max)
 				struct TrackSource found;
 				if (TrackSources_Find(pkg->lev_sha256, pkg->vrm_sha256, &found) && found.kind == TRACK_SOURCE_PATCH)
 					TrackSources_Hint(pkg->lev_sha256, pkg->vrm_sha256, row->source_hint, sizeof row->source_hint);
+			}
+			// Merged mode builds: a main pair that is already installed (by patch
+			// import or by hand) needs no source of its own; the relic pair
+			// downloads from the source of its own pins.
+			if (row->source != AP_SEED_SOURCE_SAPHI && row->scan != AP_SEED_SCAN_READY && pkg->has_relic_files &&
+			    AP_ContentPairInstalled(pkg, 0) && !AP_ContentPairInstalled(pkg, 1))
+			{
+				struct ApTrackRegistryMatch relicMatch;
+				struct CustomTrackManagerStatus relicPaths;
+				char relicTracks[CTR_CT_MANAGER_PATH_MAX];
+				if (AP_SeedRelicTarget(pkg, &relicMatch, &relicPaths, relicTracks, sizeof relicTracks))
+				{
+					row->source = AP_SEED_SOURCE_SAPHI;
+					AP_SeedPermission(row, relicMatch.saphi_track_id, pkg->content_id);
+				}
 			}
 		}
 		row->index = i;
@@ -537,7 +555,16 @@ int AP_SeedContentInstallStart(char *message, size_t messageSize)
 		struct CustomTrackManagerStatus paths;
 		char tracks[CTR_CT_MANAGER_PATH_MAX], title[48];
 		ap_seed_plain_text(rows[plan[i]].title, title, sizeof title);
-		if (!AP_SeedInstallTarget(rows[plan[i]].index, &profile, &match, &paths, tracks, sizeof tracks))
+		const ctr_content_package *queued = ap_content_plan_package(rows[plan[i]].index);
+		const int merged = queued && queued->has_relic_files && !AP_ContentPackage(rows[plan[i]].index);
+		// A merged package whose main pair is installed needs only the source of
+		// its relic pair; otherwise the main pair's source is checked, and the
+		// relic pair's too when that one is missing as well.
+		const int mainHere = merged && AP_ContentPairInstalled(queued, 0);
+		if (!(mainHere ? AP_SeedRelicTarget(queued, &match, &paths, tracks, sizeof tracks)
+		               : AP_SeedInstallTarget(rows[plan[i]].index, &profile, &match, &paths, tracks, sizeof tracks)) ||
+		    (merged && !mainHere && !AP_ContentPairInstalled(queued, 1) &&
+		     !AP_SeedRelicTarget(queued, &match, &paths, tracks, sizeof tracks)))
 		{
 			snprintf(message, messageSize, "%s has no safe install folder. Nothing was installed.", title);
 			return 0;

@@ -1940,6 +1940,32 @@ int main(int argc, char **argv) {
         auto &picked = set_of(bad, "custom/country-speedway/1.3.1")["picked"];
         std::swap(picked[0], picked[1]);
         refuse(bad, "community spots b: Country Speedway picks out of order");
+        // Merged mode builds: the spot set stays keyed by the MAIN pair's LEV pin
+        // when the package also carries a relic pair, never by the relic pin.
+        J merged = community_b;
+        for (auto &pkg : merged["content_plan"]["packages"]) {
+            if (pkg["id"] != "package/country-speedway/1.3.1") continue;
+            pkg["capabilities"]["relic"] = true;
+            pkg["relic_targets"] = J{{"sapphire", 96000}, {"gold", 86400}, {"platinum", 76800}};
+            pkg["relic_files"] = J::array({J{{"role", "lev"}, {"sha256", std::string(64, 'e')}, {"bytes", 1300000}, {"format", "ctr-lev"}, {"format_version", 1}},
+                                            J{{"role", "vrm"}, {"sha256", std::string(64, 'f')}, {"bytes", 450000}, {"format", "ctr-vrm"}, {"format_version", 1}}});
+        }
+        const bool merged_parses = parse(merged);
+        expect(merged_parses, "community spots b: Country Speedway with a relic pair and the main pin's spot set admits");
+        if (merged_parses) {
+            expect(bind_room(merged), "community spots b: the merged package room binds");
+            bool spots_stand = false;
+            for (int p = 0; p < 111; ++p) {
+                const ctr_content_pad *pad = ap_content_plan_pad(p);
+                if (pad && pad->occupied && pad->named_block == 17)
+                    spots_stand = pad->box_spots && pad->box_count == 14 && pad->package_index >= 0 &&
+                                  ap_content_plan_package(pad->package_index)->has_relic_files;
+            }
+            expect(spots_stand, "community spots b: its 14 spots stand beside the relic pair");
+            set_of(merged, "custom/country-speedway/1.3.1")["lev_sha256"] = std::string(64, 'e');
+            refuse(merged, "community spots b: a spot set pinned to the relic LEV is refused");
+        }
+        expect(parse(community_b) && bind_room(community_b), "community spots b: the plain room binds again");
     }
     // Cups (#133 PR 5): nine cups over retail, custom (named and generic) and
     // Cortex Vortex legs, shortened laps, sweeps and Cup Leg Victory checks.
