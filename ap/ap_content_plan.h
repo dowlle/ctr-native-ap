@@ -213,6 +213,12 @@ typedef struct ctr_content_package {
     uint32_t lev_bytes, vrm_bytes;
     int laps;              /* authored laps, 1..7 */
     unsigned capabilities; /* AP_CONTENT_CAP_* bits the descriptor claims */
+    /* Optional `relic_files` (merged mode builds): a second pinned LEV/VRM pair
+     * served only for a Relic Race. Identity, music and every other mode stay
+     * on the main pair above. */
+    int has_relic_files;
+    char relic_lev_sha256[65], relic_vrm_sha256[65], relic_revision[65];
+    uint32_t relic_lev_bytes, relic_vrm_bytes;
     int has_relic_targets; /* relic targets in ticks (960 per second) */
     int relic_targets[3];  /* sapphire, gold, platinum */
     int super_turbo_pads;  /* AP_CONTENT_SUPER_PADS_UNSTATED, 0 none, 1 at least one */

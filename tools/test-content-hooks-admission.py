@@ -93,9 +93,31 @@ static char used_lev[CTR_CT_MANAGER_PATH_MAX], used_vrm[CTR_CT_MANAGER_PATH_MAX]
 static struct CustomTrackSeedDescriptor applied_descriptor;
 static struct CustomTrackRaceContext staged_race;
 uint64_t ap_content_plan_room_identity(void) { return UINT64_C(0x123456789abcdef0); }
+/* A compiled managed profile standing in for one whose pins the room matches
+   (the real one, Baby T Park, has no relic_files): its main pair is the files
+   fake_main_lev and fake_main_vrm, loaded through the manager. */
+static int fake_profile_on;
+static struct CustomTrackManagerPackage fake_profile;
+static char fake_main_lev[CTR_CT_MANAGER_PATH_MAX], fake_main_vrm[CTR_CT_MANAGER_PATH_MAX];
+static const struct CustomTrackManagerPackage *harness_find(const char *id, const char *uuid, const char *version,
+                                                            const char *lev, const char *vrm)
+{
+	if (fake_profile_on) return &fake_profile;
+	return CustomTrackManager_FindPackage(id, uuid, version, lev, vrm);
+}
+static int harness_scan(const char *assetsRoot, const struct CustomTrackManagerPackage *p, struct CustomTrackManagerStatus *s)
+{
+	if (!fake_profile_on) return CustomTrackManager_ScanPackage(assetsRoot, p, s);
+	memset(s, 0, sizeof *s);
+	s->state = CTR_CT_MANAGER_READY;
+	snprintf(s->levPath, sizeof s->levPath, "%s", fake_main_lev);
+	snprintf(s->vrmPath, sizeof s->vrmPath, "%s", fake_main_vrm);
+	return s->state;
+}
 static int record_managed(const struct CustomTrackManagerPackage *p, struct CustomTrackManagerStatus *s)
 {
 	used_managed++;
+	if (fake_profile_on) return 1;
 	return CustomTrack_UseManagedPackage(p, s);
 }
 static int record_files(const char *lev, const char *vrm, const char *name)
@@ -120,6 +142,8 @@ static int record_staging(const struct CustomTrackRaceContext *c)
 	return 1;
 }
 #define CustomTrack_UseManagedPackage record_managed
+#define CustomTrackManager_FindPackage harness_find
+#define CustomTrackManager_ScanPackage harness_scan
 #define CustomTrack_UseContentFiles record_files
 #define CustomTrack_ApplySeedDescriptor record_descriptor
 #define CustomTrack_StageStandaloneRace record_staging
@@ -584,6 +608,137 @@ int main(void)
 		                    : "A6-23: an all-zero grid starts at the origin");
 	}
 	reset_calls();
+
+	/* Merged mode builds (`relic_files`): the main pair is a crate build without
+	   time crates, the relic pair the lap build. Relic and time_trial are
+	   measured on the relic pair, everything else on the main pair; only a
+	   Relic Race serves the relic pair; a missing relic pair is not ready. */
+	{
+		unsigned char crates[IMAGE_BYTES], lap[IMAGE_BYTES];
+		unsigned char relicVrmBytes[22] = {0};
+		char mainLev[600], relicLev[600], relicVrm[600];
+		struct CustomContentVerification mainRep, relicRep;
+		ctr_content_pad saved = plan_pad;
+		const ctr_content_package keep = plan_package;
+		size_t crateSize, lapSize;
+		build_lev(crates, 1);
+		/* The one weapon crate stands somewhere the relic build's does not. */
+		put16(crates, 4 + BODY_INST + 2 * INST_SIZE + 0x30, 321); put16(crates, 4 + BODY_INST + 2 * INST_SIZE + 0x32, (unsigned)-45 & 0xffff);
+		put16(crates, 4 + BODY_INST + 2 * INST_SIZE + 0x34, 987); put16(crates, 4 + BODY_INST + 2 * INST_SIZE + 0x38, 2048);
+		/* The two time crate models stop being time crates. */
+		put16(crates, 4 + BODY_MODELS + 3 * MODEL_STRIDE + MODEL_ID, CRYSTAL);
+		put16(crates, 4 + BODY_MODELS + 4 * MODEL_STRIDE + MODEL_ID, CRYSTAL);
+		lapSize = build_lev(lap, 1);
+		crateSize = lapSize;
+		snprintf(mainLev, sizeof mainLev, "%s/crates.lev", dir);
+		snprintf(relicLev, sizeof relicLev, "%s/laps.lev", dir);
+		snprintf(relicVrm, sizeof relicVrm, "%s/laps.vrm", dir);
+		relicVrmBytes[16] = 1; relicVrmBytes[18] = 1; relicVrmBytes[20] = 9;
+		write_bytes(mainLev, crates, crateSize);
+		expect(CustomContentVerify_Files(mainLev, vrm, &mainRep, error, sizeof error), "merged: crate build verifies");
+		expect(!(AP_ContentMeasuredCapabilities(&mainRep) & AP_CONTENT_CAP_RELIC), "merged: the crate build has no time crates");
+		snprintf(plan_package.lev_sha256, sizeof plan_package.lev_sha256, "%s", mainRep.levSha256);
+		snprintf(plan_package.vrm_sha256, sizeof plan_package.vrm_sha256, "%s", mainRep.vrmSha256);
+		plan_package.lev_bytes = (uint32_t)crateSize; plan_package.vrm_bytes = sizeof vrmBytes;
+		plan_package.capabilities = AP_CONTENT_CAP_TIME_TRIAL | AP_CONTENT_CAP_ARCADE | AP_CONTENT_CAP_RELIC | AP_CONTENT_CAP_CTR_TOKENS;
+		plan_package.has_relic_targets = 1;
+		/* Control: claiming relic on the crate build alone is refused. */
+		reset_calls();
+		expect(!preflight() && strstr(ap_custom_content_status.detail, "claims relic"), "merged: relic claim on the crate build alone is refused");
+		/* The relic pair is not installed yet: not ready, like a missing main pair. */
+		write_bytes(relicLev, lap, lapSize);
+		write_bytes(relicVrm, relicVrmBytes, sizeof relicVrmBytes);
+		expect(CustomContentVerify_Files(relicLev, relicVrm, &relicRep, error, sizeof error), "merged: lap build verifies");
+		plan_package.has_relic_files = 1;
+		snprintf(plan_package.relic_lev_sha256, sizeof plan_package.relic_lev_sha256, "%s", relicRep.levSha256);
+		snprintf(plan_package.relic_vrm_sha256, sizeof plan_package.relic_vrm_sha256, "%s", relicRep.vrmSha256);
+		plan_package.relic_lev_bytes = (uint32_t)lapSize; plan_package.relic_vrm_bytes = sizeof relicVrmBytes;
+		unlink(relicLev); unlink(relicVrm);
+		reset_calls();
+		expect(!preflight() && !AP_ContentPadReady(3) && ap_custom_content_status.state != CTR_CT_MANAGER_READY &&
+		       strstr(ap_custom_content_status.detail, "Relic Race files") && strstr(log_text, "content plan refused"),
+		       "merged: a missing relic pair leaves the package not ready");
+		write_bytes(relicLev, lap, lapSize);
+		write_bytes(relicVrm, relicVrmBytes, sizeof relicVrmBytes);
+		plan_pad.laps = 3; plan_pad.relic_laps = 3;
+		plan_pad.mode_count = 2; plan_pad.modes[0] = AP_CONTENT_MODE_TROPHY; plan_pad.modes[1] = AP_CONTENT_MODE_RELIC;
+		plan_pad.stages[0] = plan_pad.stages[1] = 1;
+		plan_pad.relic_route = plan_pad.relic_locations[0] = 35016302;
+		plan_pad.relic_locations[1] = 35016303; plan_pad.relic_locations[2] = 35016304;
+		reset_calls();
+		expect(preflight() && AP_ContentPadReady(3) && strcmp(ap_content_files[0].relicLevPath, relicLev) == 0 &&
+		       strcmp(ap_content_files[0].levPath, mainLev) == 0,
+		       "merged: both pairs verify and are located by their own pins");
+		expect(ap_content_files[0].measured.relicCrates == 0 && ap_content_files[0].relicMeasured.relicCrates == 2,
+		       "merged: each pair keeps its own measurements");
+		reset_calls();
+		expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6 && strcmp(used_lev, mainLev) == 0 &&
+		       strcmp(applied_descriptor.levSha256, plan_package.lev_sha256) == 0 &&
+		       strcmp(applied_descriptor.vrmSha256, plan_package.vrm_sha256) == 0 && applied_descriptor.flagRelicCrates == 0 &&
+		       strcmp(staged_race.levSha256, plan_package.lev_sha256) == 0,
+		       "merged: a Trophy Race serves the main pair and its identity");
+		reset_calls();
+		expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_RELIC) == 6 && strcmp(used_lev, relicLev) == 0 &&
+		       strcmp(used_vrm, relicVrm) == 0 &&
+		       strcmp(applied_descriptor.levSha256, plan_package.relic_lev_sha256) == 0 &&
+		       strcmp(applied_descriptor.vrmSha256, plan_package.relic_vrm_sha256) == 0 && applied_descriptor.flagRelicCrates == 1 &&
+		       strcmp(staged_race.levSha256, plan_package.relic_lev_sha256) == 0 &&
+		       strcmp(staged_race.vrmSha256, plan_package.relic_vrm_sha256) == 0 &&
+		       strcmp(staged_race.packageRevision, plan_package.revision) == 0 && staged_race.mode == AP_CONTENT_MODE_RELIC,
+		       "merged: a Relic Race serves the relic pair, with flags and pins from it, identity on the main package");
+		reset_calls();
+		expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6 && strcmp(used_lev, mainLev) == 0,
+		       "merged: the next Trophy Race serves the main pair again");
+		/* The main pair's weapon crates, read from its own LEV (Item Boxes of a Relic Race). */
+		{
+			short (*rows)[4] = 0;
+			long found = AP_ContentMainWeaponCrates(0, &rows);
+			expect(found == 1 && rows && rows[0][0] == 321 && rows[0][1] == -45 && rows[0][2] == 987 && rows[0][3] == 2048,
+			       "merged: the main pair's weapon crate is read from the main LEV, whatever pair a race serves");
+			free(rows); rows = 0;
+			write_bytes(mainLev, lap, lapSize);
+			expect(AP_ContentMainWeaponCrates(0, &rows) == -1 && rows == 0, "merged: a main LEV that no longer matches its pin yields no crates");
+			write_bytes(mainLev, crates, crateSize);
+		}
+		/* A package whose main pair matches a compiled managed profile still serves
+		   its relic pair in a Relic Race; every other mode uses the manager. */
+		fake_profile_on = 1;
+		snprintf(fake_main_lev, sizeof fake_main_lev, "%s", mainLev); snprintf(fake_main_vrm, sizeof fake_main_vrm, "%s", vrm);
+		reset_calls();
+		expect(preflight() && AP_ContentPadReady(3), "profile: both pairs verify for a managed profile with relic_files");
+		reset_calls();
+		expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == 6 && used_managed == 1 && used_files == 0 &&
+		       strcmp(applied_descriptor.levSha256, plan_package.lev_sha256) == 0,
+		       "profile: a Trophy Race loads the main pair through the manager");
+		reset_calls();
+		expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_RELIC) == 6 && used_managed == 0 && used_files == 1 &&
+		       strcmp(used_lev, relicLev) == 0 && strcmp(used_vrm, relicVrm) == 0 &&
+		       strcmp(applied_descriptor.levSha256, plan_package.relic_lev_sha256) == 0 && applied_descriptor.flagRelicCrates == 1 &&
+		       strcmp(staged_race.levSha256, plan_package.relic_lev_sha256) == 0,
+		       "profile: a Relic Race loads the relic pair, with its pins and flags");
+		fake_profile_on = 0;
+		reset_calls();
+		expect(preflight(), "profile: the fixture is back to open packages");
+		/* A relic pair without time crates is refused as the relic pair. */
+		write_bytes(relicLev, crates, crateSize);
+		snprintf(plan_package.relic_lev_sha256, sizeof plan_package.relic_lev_sha256, "%s", mainRep.levSha256);
+		reset_calls();
+		expect(!preflight() && strstr(ap_custom_content_status.detail, "Relic Race files") &&
+		       strstr(ap_custom_content_status.detail, "claims relic"), "merged: a relic pair without time crates is refused");
+		/* A swapped relic pair is refused at entry, for every mode. */
+		write_bytes(relicLev, lap, lapSize);
+		snprintf(plan_package.relic_lev_sha256, sizeof plan_package.relic_lev_sha256, "%s", relicRep.levSha256);
+		reset_calls();
+		expect(preflight(), "merged: ready again with the right relic pair");
+		unlink(relicLev);
+		reset_calls();
+		expect(AP_ContentPreparePad(3, AP_CONTENT_MODE_TROPHY) == -1 && !AP_ContentPadReady(3) && used_files == 0,
+		       "merged: removing the relic pair after admission refuses even a Trophy Race");
+		unlink(relicVrm); unlink(mainLev);
+		plan_package = keep; plan_pad = saved;
+		reset_calls();
+		expect(preflight(), "merged case leaves the fixture as it was");
+	}
 
 	/* No package record: nothing to scan or enter. */
 	plan_has_package = 0;

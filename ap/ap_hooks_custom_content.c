@@ -96,6 +96,11 @@ struct AP_ContentFiles
 	char vrmPath[CTR_CT_MANAGER_PATH_MAX];
 	char packageUuid[37];
 	struct CustomContentMeasurements measured;
+	// Merged mode builds (`relic_files`): the verified relic pair, served only
+	// for a Relic Race. Empty when the package has none.
+	char relicLevPath[CTR_CT_MANAGER_PATH_MAX];
+	char relicVrmPath[CTR_CT_MANAGER_PATH_MAX];
+	struct CustomContentMeasurements relicMeasured;
 };
 static struct AP_ContentFiles ap_content_files[AP_CONTENT_MAX_PACKAGES];
 
@@ -153,6 +158,27 @@ static int AP_ContentScanPackage(int index, int autoFinalize, struct CustomTrack
 	if (index >= 0 && index < AP_CONTENT_MAX_PACKAGES)
 		ap_content_package_scan[index] = (ready ? CTR_CT_MANAGER_READY : status->state) + 1;
 	return ready;
+}
+
+// 1 when the verified main pair (relic 0) or relic pair (relic 1) of a package
+// is installed, found the way the scan finds it. Used by the installer to
+// fetch only what is missing.
+static int AP_ContentPairInstalled(const ctr_content_package *pkg, int relic)
+{
+	struct CustomTrackManagerStatus found;
+	const char *revision = relic && pkg->relic_revision[0] ? pkg->relic_revision : pkg->revision;
+	const char *lev = relic ? pkg->relic_lev_sha256 : pkg->lev_sha256;
+	const char *vrm = relic ? pkg->relic_vrm_sha256 : pkg->vrm_sha256;
+	const unsigned long levBytes = relic ? pkg->relic_lev_bytes : pkg->lev_bytes;
+	const unsigned long vrmBytes = relic ? pkg->relic_vrm_bytes : pkg->vrm_bytes;
+#ifdef CTR_CUSTOM_PACKAGES
+	char levPath[CTR_CT_MANAGER_PATH_MAX], vrmPath[CTR_CT_MANAGER_PATH_MAX], uuid[37];
+	if (CustomPackage_FindPinnedFilesWithIdentity(NativeAssets_GetAssetDir(), revision, pkg->uuid, lev, levBytes, vrm, vrmBytes,
+	                                              levPath, sizeof levPath, vrmPath, sizeof vrmPath, uuid))
+		return 1;
+#endif
+	return CustomTrackManager_LocateContentFiles(NativeAssets_GetAssetDir(), pkg->content_id, pkg->display_name, revision,
+	                                             lev, levBytes, vrm, vrmBytes, &found) == CTR_CT_MANAGER_READY;
 }
 
 static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct CustomTrackManagerStatus *status)
@@ -215,7 +241,11 @@ static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct Custom
 		AP_AppendLog(line);
 		return 0;
 	}
-	if (!AP_ContentCapabilitiesHold(pkg->capabilities, &report, why, sizeof why) ||
+	// With `relic_files`, relic and time_trial are measured on the relic pair
+	// and every other flag on the main pair.
+	if (!AP_ContentCapabilitiesHoldMasked(pkg->capabilities,
+	                                      pkg->has_relic_files ? AP_CONTENT_CAP_ALL & ~AP_CONTENT_RELIC_PAIR_CAPS : AP_CONTENT_CAP_ALL,
+	                                      &report, why, sizeof why) ||
 	    !AP_ContentSuperTurboPadsHold(pkg->super_turbo_pads, &report, why, sizeof why) ||
 	    !AP_ContentWeaponCratesHold(pkg->weapon_crates, &report, why, sizeof why) ||
 	    !AP_ContentSanityCountsHold(pkg, &report, why, sizeof why) ||
@@ -227,6 +257,69 @@ static int AP_ContentScanPackageFiles(int index, int autoFinalize, struct Custom
 		snprintf(line, sizeof line, "[CustomTracks] content plan refused %s: %s\n", pkg->id, why);
 		AP_AppendLog(line);
 		return 0;
+	}
+	if (pkg->has_relic_files)
+	{
+		struct CustomContentVerification relicReport;
+		struct CustomTrackManagerStatus relic;
+		const char *relicRevision = pkg->relic_revision[0] ? pkg->relic_revision : pkg->revision;
+		int relicShared = 0;
+		memset(&relic, 0, sizeof relic);
+#ifdef CTR_CUSTOM_PACKAGES
+		char relicUuid[37];
+		relicUuid[0] = '\0';
+		relicShared = CustomPackage_FindPinnedFilesWithIdentity(NativeAssets_GetAssetDir(), relicRevision, pkg->uuid,
+		                                      pkg->relic_lev_sha256, pkg->relic_lev_bytes,
+		                                      pkg->relic_vrm_sha256, pkg->relic_vrm_bytes,
+		                                      relic.levPath, sizeof relic.levPath,
+		                                      relic.vrmPath, sizeof relic.vrmPath, relicUuid);
+#endif
+		if (relicShared) relic.state = CTR_CT_MANAGER_READY;
+		else
+			CustomTrackManager_LocateContentFiles(NativeAssets_GetAssetDir(), pkg->content_id, pkg->display_name,
+			                                      relicRevision, pkg->relic_lev_sha256, pkg->relic_lev_bytes,
+			                                      pkg->relic_vrm_sha256, pkg->relic_vrm_bytes, &relic);
+		if (relic.state != CTR_CT_MANAGER_READY)
+		{
+			// A missing relic pair leaves the package not ready, like a missing main pair.
+			*status = relic;
+			snprintf(why, sizeof why, "%.48s %.24s: the Relic Race files (%.24s) are not installed or do not match the seed",
+			         pkg->display_name, pkg->revision, relicRevision);
+			snprintf(status->detail, sizeof status->detail, "%s", why);
+			snprintf(line, sizeof line, "[CustomTracks] content plan refused %s: %s\n", pkg->id, why);
+			AP_AppendLog(line);
+			return 0;
+		}
+		error[0] = '\0';
+		if (AP_ContentPathsTooLong(relic.levPath, relic.vrmPath))
+		{
+			status->state = CTR_CT_MANAGER_PATH_TOO_LONG;
+			snprintf(status->detail, sizeof status->detail, "%s", ap_content_path_too_long);
+			snprintf(line, sizeof line, "[CustomTracks] content plan refused %s: %s\n", pkg->id, status->detail);
+			AP_AppendLog(line);
+			return 0;
+		}
+		if (!CustomContentVerify_Files(relic.levPath, relic.vrmPath, &relicReport, error, sizeof error) ||
+		    strcmp(relicReport.levSha256, pkg->relic_lev_sha256) || strcmp(relicReport.vrmSha256, pkg->relic_vrm_sha256))
+		{
+			status->state = CTR_CT_MANAGER_UNSUPPORTED;
+			snprintf(status->detail, sizeof status->detail, "%.48s %.24s Relic Race files failed the file check: %.120s",
+			         pkg->display_name, pkg->revision, error[0] ? error : "the files changed while reading");
+			snprintf(line, sizeof line, "[CustomTracks] content plan refused %s: %s\n", pkg->id, status->detail);
+			AP_AppendLog(line);
+			return 0;
+		}
+		if (!AP_ContentCapabilitiesHoldMasked(pkg->capabilities, AP_CONTENT_RELIC_PAIR_CAPS, &relicReport, why, sizeof why))
+		{
+			status->state = CTR_CT_MANAGER_UNSUPPORTED;
+			snprintf(status->detail, sizeof status->detail, "%.48s %.24s Relic Race files: %s", pkg->display_name, pkg->revision, why);
+			snprintf(line, sizeof line, "[CustomTracks] content plan refused %s: %s\n", pkg->id, status->detail);
+			AP_AppendLog(line);
+			return 0;
+		}
+		snprintf(ap_content_files[index].relicLevPath, sizeof ap_content_files[index].relicLevPath, "%s", relic.levPath);
+		snprintf(ap_content_files[index].relicVrmPath, sizeof ap_content_files[index].relicVrmPath, "%s", relic.vrmPath);
+		ap_content_files[index].relicMeasured = relicReport.measured;
 	}
 	snprintf(ap_content_files[index].levPath, sizeof ap_content_files[index].levPath, "%s", status->levPath);
 	snprintf(ap_content_files[index].vrmPath, sizeof ap_content_files[index].vrmPath, "%s", status->vrmPath);
@@ -302,6 +395,49 @@ static int AP_ContentTrackReady(int retail, int cortex, int packageIndex)
 	if (retail) return 1;
 	if (cortex) return ap_content_cortex_ready;
 	return packageIndex >= 0 && packageIndex < AP_CONTENT_MAX_PACKAGES && ap_content_package_ready[packageIndex];
+}
+
+long AP_ContentMainWeaponCrates(int packageIndex, short (**out)[4])
+{
+	const ctr_content_package *pkg = ap_content_plan_package(packageIndex);
+	struct CustomContentOwnedPair pair;
+	char error[160];
+	short (*rows)[4];
+	long found, kept;
+	*out = 0;
+	if (!pkg || packageIndex < 0 || packageIndex >= AP_CONTENT_MAX_PACKAGES || !ap_content_package_ready[packageIndex] ||
+	    !ap_content_files[packageIndex].levPath[0] || !ap_content_files[packageIndex].vrmPath[0])
+		return -1;
+	// The bytes are read and hashed again against the seed's main pins.
+	if (!CustomContentVerify_ReadPair(ap_content_files[packageIndex].levPath, ap_content_files[packageIndex].vrmPath,
+	                                  &pair, error, sizeof error))
+		return -1;
+	if (strcmp(pair.report.levSha256, pkg->lev_sha256) || strcmp(pair.report.vrmSha256, pkg->vrm_sha256))
+	{
+		CustomContentVerify_FreePair(&pair);
+		return -1;
+	}
+	found = CustomContentVerify_WeaponCrates(&pair, 0, 0);
+	if (found < 0 || found > 65536)
+	{
+		CustomContentVerify_FreePair(&pair);
+		return -1;
+	}
+	rows = (short (*)[4])malloc((size_t)(found ? found : 1) * sizeof *rows);
+	if (!rows)
+	{
+		CustomContentVerify_FreePair(&pair);
+		return -1;
+	}
+	kept = CustomContentVerify_WeaponCrates(&pair, rows, found);
+	CustomContentVerify_FreePair(&pair);
+	if (kept != found)
+	{
+		free(rows);
+		return -1;
+	}
+	*out = rows;
+	return found;
 }
 
 int AP_ContentPadReady(int physicalPad)
@@ -399,6 +535,8 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		struct CustomTrackSeedDescriptor d;
 		char raceName[CTR_CT_NAME_MAX];
 		int used;
+		int serveRelic;
+		const char *servedLev, *servedVrm;
 		if (!pkg) return 0;
 		ap_content_package_index = packageIndex;
 		// Locate and measure again: a file swapped since connect is refused here.
@@ -409,11 +547,21 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 			ap_state_gen++;
 			return 0;
 		}
-		m = &ap_content_files[packageIndex].measured;
+		// Merged mode builds: a Relic Race serves the relic pair; every other
+		// mode serves the main pair. The scan above verified both.
+		serveRelic = pkg->has_relic_files && race->mode == AP_CONTENT_MODE_RELIC &&
+		             ap_content_files[packageIndex].relicLevPath[0];
+		m = serveRelic ? &ap_content_files[packageIndex].relicMeasured : &ap_content_files[packageIndex].measured;
+		servedLev = serveRelic ? pkg->relic_lev_sha256 : pkg->lev_sha256;
+		servedVrm = serveRelic ? pkg->relic_vrm_sha256 : pkg->vrm_sha256;
 		AP_ContentRaceName(pkg->display_name, raceName, sizeof raceName);
-		used = p ? CustomTrack_UseManagedPackage(p, &ap_custom_content_status)
-		         : CustomTrack_UseContentFiles(ap_content_files[packageIndex].levPath,
-		                                       ap_content_files[packageIndex].vrmPath, raceName);
+		// A compiled profile's main pair loads through the manager; its relic pair
+		// is a plain verified file pair.
+		used = (p && !serveRelic) ? CustomTrack_UseManagedPackage(p, &ap_custom_content_status)
+		         : CustomTrack_UseContentFiles(serveRelic ? ap_content_files[packageIndex].relicLevPath
+		                                                  : ap_content_files[packageIndex].levPath,
+		                                       serveRelic ? ap_content_files[packageIndex].relicVrmPath
+		                                                  : ap_content_files[packageIndex].vrmPath, raceName);
 		if (!used)
 			return AP_ContentLoadRefused(0, packageIndex, CTR_CT_MANAGER_LOAD_FAILED);
 #ifdef CTR_CUSTOM_PACKAGES
@@ -428,7 +576,8 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 			if (CustomPackage_FindPinnedMusic(NativeAssets_GetAssetDir(), pkg->revision, pkg->uuid, 0,
 			                                  pkg->lev_sha256, pkg->lev_bytes, pkg->vrm_sha256, pkg->vrm_bytes,
 			                                  scaPath, sizeof scaPath, scaSha, &scaBytes))
-				CustomTrack_UseContentMusic(scaPath, scaSha, scaBytes, pkg->lev_sha256);
+				// The music stays the main pair's; it binds to the served LEV.
+				CustomTrack_UseContentMusic(scaPath, scaSha, scaBytes, servedLev);
 		}
 #endif
 		memset(&d, 0, sizeof d);
@@ -445,12 +594,12 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		// A Relic Race runs alone: the loader's opponent rule does not apply
 		// (A6-23 F1). Trophy, CTR and cup legs keep it.
 		d.soloRace = race->mode == AP_CONTENT_MODE_RELIC;
-		snprintf(d.levSha256, sizeof d.levSha256, "%s", pkg->lev_sha256);
-		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", pkg->vrm_sha256);
+		snprintf(d.levSha256, sizeof d.levSha256, "%s", servedLev);
+		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", servedVrm);
 		snprintf(race->packageRevision, sizeof race->packageRevision, "%s", pkg->revision);
 		snprintf(race->packageUuid, sizeof race->packageUuid, "%s", ap_content_files[packageIndex].packageUuid);
-		snprintf(race->levSha256, sizeof race->levSha256, "%s", pkg->lev_sha256);
-		snprintf(race->vrmSha256, sizeof race->vrmSha256, "%s", pkg->vrm_sha256);
+		snprintf(race->levSha256, sizeof race->levSha256, "%s", servedLev);
+		snprintf(race->vrmSha256, sizeof race->vrmSha256, "%s", servedVrm);
 		if (!CustomTrack_ApplySeedDescriptor(&d))
 			return AP_ContentLoadRefused(0, packageIndex, AP_ContentDescriptorRefusal(&d));
 		return 1;

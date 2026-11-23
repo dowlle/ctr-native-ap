@@ -179,11 +179,34 @@ static bool lower_uuid(const std::string &s) {
     }
     return true;
 }
+// One LEV then VRM pin pair: same roles, formats, versions and size limits for
+// `files` and `relic_files`. Collects the pair's hashes for the evidence check.
+static void pin_pair(const J &files, std::set<std::string> &hashes, uint32_t &lev_bytes, uint32_t &vrm_bytes, const char *shape_error) {
+    need(files.is_array() && files.size() == 2, shape_error);
+    static const char *roles[2] = {"lev", "vrm"};
+    static const int limits[2] = {16 * 1024 * 1024, 4 * 1024 * 1024};
+    for (int i = 0; i < 2; ++i) {
+        const J &file = files[i];
+        fields(file, {"role", "sha256", "bytes", "format", "format_version"});
+        need(file["role"] == roles[i] && file["format"] == std::string("ctr-") + roles[i] &&
+             file["format_version"].is_number_integer() && file["format_version"] == 1, "package file pin role, format or version mismatch");
+        need(file["sha256"].is_string() && lower_hex(file["sha256"].get<std::string>(), 64), "package file hash is not 64 lowercase hex characters");
+        hashes.insert(file["sha256"].get<std::string>());
+        const int size = number(file["bytes"], 1, limits[i]);
+        (i ? vrm_bytes : lev_bytes) = (uint32_t)size;
+    }
+}
 static void package_record(const J &pkg, ctr_content_package &target) {
     need(pkg.is_object(), "package record is not an object");
     J base = pkg;
     const bool targets = base.contains("relic_targets");
     if (targets) base.erase("relic_targets");
+    const bool relic_files = base.contains("relic_files");
+    if (relic_files) base.erase("relic_files");
+    if (base.contains("relic_revision")) {
+        need(relic_files, "relic_revision is only allowed together with relic_files");
+        base.erase("relic_revision");
+    }
     // `locator` (xdelta importer) is optional and informational: which patch
     // and BIGFILE slot an imported track comes from.
     target.locator_index = -1;
@@ -284,20 +307,28 @@ static void package_record(const J &pkg, ctr_content_package &target) {
         need(target.relic_targets[0] > target.relic_targets[1] && target.relic_targets[1] > target.relic_targets[2],
              "relic targets must get strictly faster from sapphire to platinum");
     }
-    const J &files = pkg["files"];
-    need(files.is_array() && files.size() == 2, "package must pin exactly the LEV then the VRM");
-    static const char *roles[2] = {"lev", "vrm"};
-    static const int limits[2] = {16 * 1024 * 1024, 4 * 1024 * 1024};
     std::set<std::string> hashes;
-    for (int i = 0; i < 2; ++i) {
-        const J &file = files[i];
-        fields(file, {"role", "sha256", "bytes", "format", "format_version"});
-        need(file["role"] == roles[i] && file["format"] == std::string("ctr-") + roles[i] &&
-             file["format_version"].is_number_integer() && file["format_version"] == 1, "package file pin role, format or version mismatch");
-        need(file["sha256"].is_string() && lower_hex(file["sha256"].get<std::string>(), 64), "package file hash is not 64 lowercase hex characters");
-        hashes.insert(file["sha256"].get<std::string>());
-        const int size = number(file["bytes"], 1, limits[i]);
-        (i ? target.vrm_bytes : target.lev_bytes) = (uint32_t)size;
+    pin_pair(pkg["files"], hashes, target.lev_bytes, target.vrm_bytes, "package must pin exactly the LEV then the VRM");
+    const J &files = pkg["files"];
+    // `relic_files` (merged mode builds): a second LEV then VRM pair served
+    // only for a Relic Race, when one build carries the crate modes and a
+    // sibling build carries the time-trial lap graph. Identity stays on `files`.
+    target.has_relic_files = relic_files;
+    target.relic_revision[0] = 0;
+    if (relic_files) {
+        need(relic, "relic_files requires the relic capability");
+        need(targets, "relic_files requires relic_targets");
+        const J &rf = pkg["relic_files"];
+        std::set<std::string> relic_hashes;
+        pin_pair(rf, relic_hashes, target.relic_lev_bytes, target.relic_vrm_bytes, "relic_files must pin exactly the LEV then the VRM");
+        need(!(rf[0]["sha256"] == files[0]["sha256"] && rf[1]["sha256"] == files[1]["sha256"]),
+             "relic_files is the same pair as files");
+        hashes.insert(relic_hashes.begin(), relic_hashes.end());
+        copy(target.relic_lev_sha256, rf[0]["sha256"]); copy(target.relic_vrm_sha256, rf[1]["sha256"]);
+        if (pkg.contains("relic_revision")) {
+            need(pkg["relic_revision"].is_string() && revision_text(pkg["relic_revision"].get<std::string>()), "package revision has unsupported characters");
+            copy(target.relic_revision, pkg["relic_revision"]);
+        }
     }
     const J &evidence = pkg["evidence"];
     need(evidence.is_array() && evidence.size() <= 16, "package evidence array bounds");
@@ -1377,7 +1408,9 @@ static void validate(const J &p, State &out) {
         package_record(pkg, target);
         out.package_json[idx] = pkg.dump();
         need(keys.insert(target.content_id).second && uuids.insert(target.uuid).second &&
-             pairs.insert(std::string(target.lev_sha256) + target.vrm_sha256).second,
+             pairs.insert(std::string(target.lev_sha256) + target.vrm_sha256).second &&
+             (!target.has_relic_files ||
+              pairs.insert(std::string(target.relic_lev_sha256) + target.relic_vrm_sha256).second),
              "a track appears twice in the package list");
     }
     std::set<std::string> used_entries, used_tracks, used_packages;

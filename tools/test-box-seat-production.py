@@ -54,6 +54,7 @@ units = "\n".join(lift(s) for s in (
 
 fixture = r"""
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 typedef unsigned int u32;
@@ -71,7 +72,7 @@ struct InstDef { struct Model *model; struct Instance *ptrInstance; SVec3 pos; S
 struct Level { u32 numInstances; struct InstDef *ptrInstDefs; };
 struct JitPool { int maxItems; u32 itemSize; void *ptrPoolData; };
 struct GameTracker { struct Level *level1; struct { struct JitPool instance; } JitPools; };
-struct CustomTrackRaceContext { int physicalPad; int retail; int leg; };
+struct CustomTrackRaceContext { int physicalPad; int retail; int leg; int mode; };
 #include "ap/ap_content_plan.h"
 #include "ap/ap_box_seat_logic.h"
 
@@ -88,6 +89,20 @@ const ctr_content_pad *ap_content_plan_pad(int p) { return p == g_pad.physical ?
 static int AP_BoxInSeed(long code, void *ctx) { int i; (void)ctx; for (i = 0; i < g_rooms; i++) if (g_room[i] == code) return 1; return 0; }
 static int AP_BoxChecked(long code, void *ctx) { int i; (void)ctx; for (i = 0; i < g_checks; i++) if (g_checked[i] == code) return 1; return 0; }
 static void AP_BoxProbeSeedClass(void) {}
+static ctr_content_package g_pkg;
+const ctr_content_package *ap_content_plan_package(int i) { return i == 0 ? &g_pkg : 0; }
+/* The main pair's weapon crates, as the loader's file read returns them. */
+static short g_main_rows[100][4];
+static long g_main_count;
+static int g_main_fail, g_main_reads;
+long AP_ContentMainWeaponCrates(int packageIndex, short (**out)[4])
+{
+	*out = 0; g_main_reads++;
+	if (packageIndex != 0 || g_main_fail) return -1;
+	*out = malloc(sizeof g_main_rows);
+	memcpy(*out, g_main_rows, sizeof g_main_rows);
+	return g_main_count;
+}
 #define AP_PLACEMENT_SRC_FILE 1
 #define AP_PLACEMENT_FILE "ap-box-placements.json"
 static int g_placement_source;
@@ -95,6 +110,7 @@ static int AP_Author_PlacementSource(void) { return g_placement_source; }
 """
 
 after_record = r"""
+static struct Model s_mainCrateModel;
 static struct ApBoxLive s_live[AP_BOX_LIVE_MAX];
 static void AP_BoxesSpawnOne(struct GameTracker *gGT, int i) { (void)gGT; g_spawned[i]++; }
 """
@@ -108,7 +124,7 @@ static struct InstDef defs[200];
 static struct Instance insts[200];
 static struct Level lev;
 static struct GameTracker gGT;
-static struct CustomTrackRaceContext race = {12, 0, 0};
+static struct CustomTrackRaceContext race = {12, 0, 0, 0};
 
 /* n instances; every third one is not a crate, one has no model. */
 static int table(int crates_wanted) {
@@ -344,6 +360,96 @@ int main(void) {
            strstr(g_log, "not used for them") != 0, "one log line, naming the unused placement file");
     g_placement_source = 0;
     (void)n;
+    /* Merged mode builds (relic_files): a Relic Race serves the relic pair, so
+       the boxes are seated on the MAIN pair's crates, read from its LEV on disk. */
+    {
+        struct ApBoxLive trophy[AP_BOX_LIVE_MAX];
+        int j, same;
+        g_pkg.has_relic_files = 1;
+        g_main_count = 20;
+        for (i = 0; i < 20; i++) {
+            g_main_rows[i][0] = (short)(300 + 11 * i); g_main_rows[i][1] = (short)(-40 - i);
+            g_main_rows[i][2] = (short)(9 * i); g_main_rows[i][3] = (short)(32 * i);
+        }
+        /* Control: the main pair loaded for a Trophy Race, the same positions in its own table. */
+        n = table(20); reset(20, 15);
+        for (i = 0; i < 20; i++) {
+            struct InstDef *d = &defs[crate_index(i, n)];
+            d->pos.x = g_main_rows[i][0]; d->pos.y = g_main_rows[i][1]; d->pos.z = g_main_rows[i][2]; d->rot.y = g_main_rows[i][3];
+        }
+        g_main_reads = 0; race.mode = AP_CONTENT_MODE_TROPHY;
+        AP_BoxesSeatCustom(&gGT, &race);
+        expect(s_liveCount == 15 && g_main_reads == 0, "merged: a Trophy Race seats on the served main pair and reads no other file");
+        memcpy(trophy, s_live, sizeof trophy);
+        /* Relic Race, the relic pair holding no weapon crate (Toasty Terrace 1.3.1). */
+        n = table(8); reset(20, 15);
+        for (i = 0; i < n; i++) if (defs[i].model == &crate_model) defs[i].model = &fruit_model;
+        race.mode = AP_CONTENT_MODE_RELIC; g_main_reads = 0;
+        AP_BoxesSeatCustom(&gGT, &race);
+        expect(s_liveCount == 15 && g_main_reads == 1, "merged: a Relic Race with no crate on the relic pair stands all fifteen boxes");
+        for (same = 1, j = 0; j < 15; j++)
+            same &= s_live[j].used && trophy[j].used && s_live[j].code == trophy[j].code && s_live[j].slot == trophy[j].slot &&
+                    s_live[j].x == trophy[j].x && s_live[j].y == trophy[j].y && s_live[j].z == trophy[j].z &&
+                    s_live[j].rotY == trophy[j].rotY && s_live[j].seated && s_live[j].seatInst == 0 && g_spawned[j] == 1;
+        expect(same, "merged: the relic race boxes equal the main pair's (count, numbers, positions, turns)");
+        expect(untouched(n) && strstr(g_log, "main pair's 20 weapon crate(s)") != 0, "merged: no crate of the served LEV is touched, one log line");
+        /* Relic pair with other crates than the main pair: still the main pair's boxes, its crates untouched. */
+        n = table(5); reset(20, 15); g_main_reads = 0;
+        AP_BoxesSeatCustom(&gGT, &race);
+        for (same = 1, j = 0; j < 15; j++)
+            same &= s_live[j].used && s_live[j].x == trophy[j].x && s_live[j].z == trophy[j].z && s_live[j].code == trophy[j].code;
+        expect(s_liveCount == 15 && same && untouched(n), "merged: a relic pair with five crates of its own seats the same boxes and hides none of them");
+        /* Crate exclusions are the main pair's: ordinal 2 stays an ordinary crate there. */
+        n = table(20); reset(20, 15);
+        for (i = 0; i < 20; i++) {
+            struct InstDef *d = &defs[crate_index(i, n)];
+            d->pos.x = g_main_rows[i][0]; d->pos.y = g_main_rows[i][1]; d->pos.z = g_main_rows[i][2]; d->rot.y = g_main_rows[i][3];
+        }
+        g_pad.box_excluded_count = 1; g_pad.box_excluded[0] = 2;
+        for (i = 0; i < 3; i++) g_pad.box_excluded_pos[0][i] = g_main_rows[1][i];
+        race.mode = AP_CONTENT_MODE_TROPHY;
+        AP_BoxesSeatCustom(&gGT, &race);
+        memcpy(trophy, s_live, sizeof trophy);
+        n = table(0 + 3); reset(20, 15);
+        g_pad.box_excluded_count = 1; g_pad.box_excluded[0] = 2;
+        for (i = 0; i < 3; i++) g_pad.box_excluded_pos[0][i] = g_main_rows[1][i];
+        race.mode = AP_CONTENT_MODE_RELIC;
+        AP_BoxesSeatCustom(&gGT, &race);
+        for (same = 1, j = 0; j < 15; j++)
+            same &= s_live[j].used && s_live[j].x == trophy[j].x && s_live[j].y == trophy[j].y && s_live[j].z == trophy[j].z &&
+                    s_live[j].code == trophy[j].code;
+        expect(s_liveCount == 15 && same, "merged: the relic race boxes keep the main pair's crate exclusion");
+        n = table(3); reset(20, 15);
+        g_pad.box_excluded_count = 1; g_pad.box_excluded[0] = 2;
+        g_pad.box_excluded_pos[0][0] = (short)(g_main_rows[1][0] + 1);
+        AP_BoxesSeatCustom(&gGT, &race);
+        expect(s_liveCount == 0, "merged: an exclusion position the main pair does not hold stands nothing");
+        /* A main pair that cannot be read, or that disagrees with the seed's crate count, stands nothing. */
+        n = table(0 + 3); reset(20, 15); g_main_fail = 1;
+        AP_BoxesSeatCustom(&gGT, &race);
+        expect(s_liveCount == 0 && strstr(g_log, "cannot be read") != 0, "merged: an unreadable main pair stands nothing");
+        g_main_fail = 0;
+        n = table(3); reset(19, 15);
+        AP_BoxesSeatCustom(&gGT, &race);
+        expect(s_liveCount == 0 && strstr(g_log, "has 20 weapon crate(s), the seed was built for 19") != 0,
+               "merged: a main pair with another crate count than the seed stands nothing");
+        /* Hand-placed spots stand as ever, whatever pair is served, and the main file is not read. */
+        n = table(0 + 3); reset(0, 2); g_pad.box_spots = 1; g_main_reads = 0;
+        for (i = 0; i < 2; i++) { g_pad.box_number[i] = i + 1; g_pad.box_pos[i][0] = (short)(500 + i); }
+        AP_BoxesSeatCustom(&gGT, &race);
+        expect(s_liveCount == 2 && s_live[1].x == 501 && g_main_reads == 0 && untouched(n), "merged: spots stand in a Relic Race without reading the main pair");
+        /* No relic_files: a Relic Race behaves as before, on the loaded LEV alone. */
+        g_pkg.has_relic_files = 0; g_main_reads = 0;
+        n = table(8); reset(8, 8);
+        AP_BoxesSeatCustom(&gGT, &race);
+        expect(s_liveCount == 8 && g_main_reads == 0 && s_live[0].seatInst == &insts[crate_index(0, n)],
+               "no relic_files: a Relic Race seats on the loaded LEV's crates");
+        n = table(9); reset(8, 8);
+        AP_BoxesSeatCustom(&gGT, &race);
+        expect(s_liveCount == 0 && g_main_reads == 0 && strstr(g_log, "has 9 weapon crate(s), the seed was built for 8"),
+               "no relic_files: a Relic Race on another crate count stands nothing, as before");
+        race.mode = AP_CONTENT_MODE_TROPHY;
+    }
     printf("%s: %d checks, %d failures\n", failures ? "FAIL" : "PASS", checks, failures);
     return failures ? 1 : 0;
 }

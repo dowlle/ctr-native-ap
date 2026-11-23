@@ -81,7 +81,10 @@ static const struct CustomTrackManagerPackage *compiled_for[4];
 static const struct CustomTrackManagerPackage *AP_ContentPackage(int i) { return i >= 0 && i < package_count ? compiled_for[i] : NULL; }
 static int dl_state = AP_CT_DOWNLOAD_IDLE, starts, refuse_start;
 static char dl_detail[200], start_tracks[512], start_root[512], start_version[80], start_lev[80], start_vrm[80];
-static char start_uuid[40], start_title[130], start_author[130], start_key[65];
+static char start_uuid[40], start_title[130], start_author[130], start_key[65], shared_version[80];
+/* Merged mode builds: which pairs of the package the scan finds installed. */
+static int pair_installed[2];
+static int AP_ContentPairInstalled(const ctr_content_package *pkg, int relic) { (void)pkg; return pair_installed[relic != 0]; }
 static unsigned int start_laps;
 static uint32_t start_lev_bytes, start_vrm_bytes;
 int ap_custom_track_download_start_pinned(const char *tracks, const char *rootDir, const char *api, const char *version,
@@ -181,6 +184,7 @@ int ap_custom_track_download_start_shared(const char *tracks, const char *rootDi
     int track, int levId, int vrmId, const char *contentKey)
 {
     snprintf(start_key, sizeof start_key, "%s", contentKey ? contentKey : "");
+    snprintf(shared_version, sizeof shared_version, "%s", version ? version : "");
     (void)sapphire; (void)gold; (void)platinum;
     snprintf(start_uuid, sizeof start_uuid, "%s", uuid);
     snprintf(start_title, sizeof start_title, "%s", title);
@@ -567,6 +571,103 @@ int main(void)
 		expect(consent_refreshes == before + 1, "Rescan asks for the permission list again");
 	}
 	perm_deny_count = 0;
+
+	/* 10. Merged mode builds (`relic_files`): the relic pair is a second
+	   download of the same entry, found by the relic pins in the built-in
+	   table (Toasty Terrace 1.3.0 and 1.3.1 share a VRM), installed under its
+	   own package identity, and skipped when it is already there. */
+	package(1, "toasty-terrace", "1.3.0", NULL, 2000000, 458808, CTR_CT_MANAGER_NOT_INSTALLED);
+	package_count = 2;
+	snprintf(packages[1].lev_sha256, sizeof packages[1].lev_sha256, "%s", "fcda4022f54a8c70686848f18d6d20f62ab1ba9abb72c783ea92beb21d399502");
+	snprintf(packages[1].vrm_sha256, sizeof packages[1].vrm_sha256, "%s", "1b63009099af915b6f7a0f1a0afbab54754caed515a64f336897c87b458cecaf");
+	snprintf(packages[1].uuid, sizeof packages[1].uuid, "%s", "0f0e0d0c-0b0a-4908-8706-222222222222");
+	packages[1].has_relic_files = 1;
+	snprintf(packages[1].relic_lev_sha256, sizeof packages[1].relic_lev_sha256, "%s", "c62b6b949ab505a1f579ebe0124b1d0d291edfa2b9b6a2367c156cc637cdf4cc");
+	snprintf(packages[1].relic_vrm_sha256, sizeof packages[1].relic_vrm_sha256, "%s", packages[1].vrm_sha256);
+	snprintf(packages[1].relic_revision, sizeof packages[1].relic_revision, "1.3.1");
+	packages[1].relic_lev_bytes = 2100000; packages[1].relic_vrm_bytes = 458808;
+	packages[1].has_relic_targets = 1;
+	packages[1].relic_targets[0] = 96000; packages[1].relic_targets[1] = 86400; packages[1].relic_targets[2] = 76800;
+	ap_content_package_scan[0] = CTR_CT_MANAGER_READY + 1;
+	reg_result = AP_TRACK_REGISTRY_MATCH; reg_state = AP_TRACK_REGISTRY_DONE; reg_source = AP_TRACK_REGISTRY_SOURCE_LIVE;
+	snprintf(reg_lev, sizeof reg_lev, "other"); reg_vrm = REG_VRM; reg_generation++;
+	plan_epoch = 30; dl_state = AP_CT_DOWNLOAD_IDLE; reg_starts = 0; starts = 0; rescans = 0;
+	pair_installed[0] = pair_installed[1] = 0;
+	n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+	expect(rows[1].registry == AP_SEED_REGISTRY_TABLE && rows[1].source == AP_SEED_SOURCE_SAPHI,
+	       "a package with relic_files is offered through its main pair's table row");
+	expect(AP_SeedContentInstallStart(message, sizeof message) && reg_starts == 1 && reg_track == 39 && reg_lev_id == 353 &&
+	       reg_vrm_id == 354 && !strcmp(reg_pin_lev, packages[1].lev_sha256) && !strcmp(shared_version, "1.3.0") &&
+	       !strcmp(start_uuid, packages[1].uuid), "the main pair downloads first, under the room's identity");
+	dl_state = AP_CT_DOWNLOAD_SUCCEEDED;
+	expect(AP_SeedContentInstallTick(message, sizeof message) == 1 && AP_SeedContentInstallBusy() && reg_starts == 2 &&
+	       strstr(message, "Relic Race files") && rescans == 0, "success of the main pair starts the relic pair in the same entry");
+	expect(reg_track == 39 && reg_lev_id == 355 && reg_vrm_id == 356 && !strcmp(reg_pin_lev, packages[1].relic_lev_sha256) &&
+	       !strcmp(reg_pin_vrm, packages[1].relic_vrm_sha256) && reg_lev_bytes == 2100000 && reg_vrm_bytes == 458808 &&
+	       !strcmp(shared_version, "1.3.1") && strcmp(start_uuid, packages[1].uuid) != 0 &&
+	       !strcmp(start_uuid + 1, packages[1].uuid + 1) && !strcmp(start_key, "toasty-terrace"),
+	       "the relic download carries the relic pins, ids, revision and its own package UUID");
+	dl_state = AP_CT_DOWNLOAD_SUCCEEDED;
+	expect(AP_SeedContentInstallTick(message, sizeof message) == 0 && !AP_SeedContentInstallBusy() && reg_starts == 2 &&
+	       rescans == 1, "success of the relic pair ends the entry: one track installed, one rescan");
+	/* The main pair is already installed: only the relic pair downloads. */
+	pair_installed[0] = 1; pair_installed[1] = 0;
+	dl_state = AP_CT_DOWNLOAD_IDLE; reg_starts = 0;
+	expect(AP_SeedContentInstallStart(message, sizeof message) && reg_starts == 1 && reg_lev_id == 355 &&
+	       strstr(message, "Relic Race files"), "an installed main pair downloads the relic pair alone");
+	dl_state = AP_CT_DOWNLOAD_SUCCEEDED;
+	expect(AP_SeedContentInstallTick(message, sizeof message) == 0 && reg_starts == 1, "and finishes without a third download");
+	/* The relic pair is installed already: the main pair alone. */
+	pair_installed[0] = 0; pair_installed[1] = 1;
+	dl_state = AP_CT_DOWNLOAD_IDLE; reg_starts = 0;
+	expect(AP_SeedContentInstallStart(message, sizeof message) && reg_starts == 1 && reg_lev_id == 353, "a present relic pair is not downloaded again");
+	dl_state = AP_CT_DOWNLOAD_SUCCEEDED;
+	expect(AP_SeedContentInstallTick(message, sizeof message) == 0 && reg_starts == 1, "the entry ends after the main pair");
+	/* A relic pair no source knows: the install refuses, nothing starts. */
+	pair_installed[0] = 1; pair_installed[1] = 0;
+	snprintf(packages[1].relic_lev_sha256, sizeof packages[1].relic_lev_sha256, "%s", "00");
+	dl_state = AP_CT_DOWNLOAD_IDLE; reg_starts = 0;
+	expect(!AP_SeedContentInstallStart(message, sizeof message) && reg_starts == 0 && strstr(message, "no safe install folder"),
+	       "a relic pair with no Saphi source is refused before anything downloads");
+	/* A failure on the relic pair stops the queue like any other. */
+	snprintf(packages[1].relic_lev_sha256, sizeof packages[1].relic_lev_sha256, "%s", "c62b6b949ab505a1f579ebe0124b1d0d291edfa2b9b6a2367c156cc637cdf4cc");
+	pair_installed[0] = 0; pair_installed[1] = 0;
+	dl_state = AP_CT_DOWNLOAD_IDLE; reg_starts = 0;
+	expect(AP_SeedContentInstallStart(message, sizeof message), "restart for the relic failure");
+	dl_state = AP_CT_DOWNLOAD_SUCCEEDED;
+	AP_SeedContentInstallTick(message, sizeof message);
+	dl_state = AP_CT_DOWNLOAD_FAILED;
+	snprintf(dl_detail, sizeof dl_detail, "The downloaded LEV does not match the pinned file. Nothing was installed.");
+	expect(AP_SeedContentInstallTick(message, sizeof message) == 0 && !AP_SeedContentInstallBusy() && reg_starts == 2 &&
+	       strstr(message, "does not match the pinned file"), "a relic download failure stops the queue and names the failure");
+	/* Fix round 1: a main pair no source knows (installed by hand or by a patch
+	   import) does not keep its relic pair from downloading. */
+	{
+		char keepLev[65];
+		snprintf(keepLev, sizeof keepLev, "%s", packages[1].lev_sha256);
+		snprintf(packages[1].lev_sha256, sizeof packages[1].lev_sha256, "%s", "1111111111111111111111111111111111111111111111111111111111111111");
+		pair_installed[0] = 0; pair_installed[1] = 0;
+		n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+		expect(rows[1].source != AP_SEED_SOURCE_SAPHI, "no source for the main pair, not installed: no download is offered");
+		dl_state = AP_CT_DOWNLOAD_IDLE; reg_starts = 0;
+		expect(!AP_SeedContentInstallStart(message, sizeof message) && reg_starts == 0,
+		       "a main pair no source knows and that is missing is not downloaded");
+		pair_installed[0] = 1; pair_installed[1] = 0;
+		n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+		expect(rows[1].source == AP_SEED_SOURCE_SAPHI, "an installed main pair no source knows: the relic pair's source is offered");
+		dl_state = AP_CT_DOWNLOAD_IDLE; reg_starts = 0;
+		expect(AP_SeedContentInstallStart(message, sizeof message) && reg_starts == 1 && reg_lev_id == 355 &&
+		       reg_vrm_id == 356 && !strcmp(reg_pin_lev, packages[1].relic_lev_sha256) && !strcmp(shared_version, "1.3.1") &&
+		       strstr(message, "Relic Race files"), "the relic pair downloads on its own source");
+		dl_state = AP_CT_DOWNLOAD_SUCCEEDED;
+		expect(AP_SeedContentInstallTick(message, sizeof message) == 0 && reg_starts == 1, "and the entry ends without a main download");
+		pair_installed[0] = 1; pair_installed[1] = 1;
+		n = AP_SeedContentRows(rows, AP_SEED_ROWS_MAX);
+		expect(rows[1].source != AP_SEED_SOURCE_SAPHI, "both pairs present: nothing is offered");
+		snprintf(packages[1].lev_sha256, sizeof packages[1].lev_sha256, "%s", keepLev);
+	}
+	pair_installed[0] = pair_installed[1] = 0;
+	packages[1].has_relic_files = 0;
 
 	snprintf(path, sizeof path, "rm -rf '%s'", assets_root);
 	if (system(path) != 0) return 2;

@@ -247,6 +247,28 @@ int CustomContentVerify_AnalyzePair(struct CustomContentOwnedPair*p,char*e,size_
 int CustomContentVerify_ValidateLoadablePair(struct CustomContentOwnedPair*p,char*e,size_t en){if(!CustomContentVerify_AnalyzePair(p,e,en))return 0;if(!vrm_valid(p->vrm,p->vrmBytes,e,en)){p->report.loadable=0;return 0;}p->report.loadable=1;seterr(e,en,"");return 1;}
 int CustomContentVerify_ReadPair(const char*a,const char*b,struct CustomContentOwnedPair*p,char*e,size_t en){if(!CustomContentVerify_AcquirePair(a,b,p,e,en))return 0;if(!CustomContentVerify_ValidateLoadablePair(p,e,en)){CustomContentVerify_FreePair(p);return 0;}return 1;}
 void CustomContentVerify_FreePair(struct CustomContentOwnedPair*p){if(!p)return;free(p->lev);free(p->vrm);memset(p,0,sizeof(*p));}
+/* INST_POS 0x30 (three s16) and INST_ROT 0x36 (three s16) in the 0x40-byte instance record. */
+long CustomContentVerify_WeaponCrates(const struct CustomContentOwnedPair*pair,short(*out)[4],long max)
+{
+	struct LevView l;size_t inst=0,i;uint32_t count;long found=0;
+	if(!pair||!pair->lev||!lev_map(pair->lev,pair->levBytes,&l,NULL,0))return -1;
+	count=rd32(l.p+INST_N);
+	if(count>65536||!pointer(&l,INST_P,(size_t)count*INST_SIZE,&inst,NULL,0)||(count&&!inst))return -1;
+	for(i=0;i<count;i++)
+	{
+		size_t model=0;
+		if(!pointer(&l,inst+i*INST_SIZE+INST_MODEL_P,MODEL_ID+2,&model,NULL,0)||!model)return -1;
+		if((uint32_t)(l.p[model+MODEL_ID]|((uint32_t)l.p[model+MODEL_ID+1]<<8))!=PU_RANDOM)continue;
+		if(out&&found<max)
+		{
+			const unsigned char*r=l.p+inst+i*INST_SIZE;
+			out[found][0]=(short)rd16s(r+0x30);out[found][1]=(short)rd16s(r+0x32);
+			out[found][2]=(short)rd16s(r+0x34);out[found][3]=(short)rd16s(r+0x38);
+		}
+		found++;
+	}
+	return found;
+}
 int CustomContentVerify_Files(const char*a,const char*b,struct CustomContentVerification*o,char*e,size_t en){struct CustomContentOwnedPair p;if(!o){seterr(e,en,"output required");return 0;}if(!CustomContentVerify_ReadPair(a,b,&p,e,en)){memset(o,0,sizeof(*o));return 0;}*o=p.report;CustomContentVerify_FreePair(&p);return 1;}
 /* Most basic missing structure first; every text fits two 13-character menu
    lines, and the two usual ones fit one. Time Trial content often has a lap

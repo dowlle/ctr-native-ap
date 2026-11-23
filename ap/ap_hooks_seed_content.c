@@ -207,11 +207,12 @@ static int AP_SeedRegistryRow(int index, const ctr_content_package *pkg, struct 
 // row whose LEV and VRM both equal the room's pins gives the same match the
 // registry would; the download still installs nothing unless the bytes equal
 // the pins.
-static int AP_SeedTableMatch(const ctr_content_package *pkg, struct ApTrackRegistryMatch *match)
+static int AP_SeedTableMatchPins(const ctr_content_package *pkg, const char *lev, const char *vrm, const char *revision,
+                                 struct ApTrackRegistryMatch *match)
 {
 	struct TrackSource found;
-	if (!TrackSources_Find(pkg->lev_sha256, pkg->vrm_sha256, &found) || found.kind != TRACK_SOURCE_SAPHI ||
-	    !TrackSources_HexEqual(found.vrm, pkg->vrm_sha256) || found.saphiTrack <= 0 || found.levDownload <= 0 ||
+	if (!TrackSources_Find(lev, vrm, &found) || found.kind != TRACK_SOURCE_SAPHI ||
+	    !TrackSources_HexEqual(found.vrm, vrm) || found.saphiTrack <= 0 || found.levDownload <= 0 ||
 	    found.vrmDownload <= 0) return 0;
 	if (match)
 	{
@@ -220,9 +221,26 @@ static int AP_SeedTableMatch(const ctr_content_package *pkg, struct ApTrackRegis
 		match->lev_download_id = found.levDownload;
 		match->vrm_download_id = found.vrmDownload;
 		snprintf(match->track_key, sizeof match->track_key, "%s", pkg->content_id);
-		snprintf(match->revision, sizeof match->revision, "%s", pkg->revision);
+		snprintf(match->revision, sizeof match->revision, "%s", revision);
 	}
 	return 1;
+}
+
+static int AP_SeedTableMatch(const ctr_content_package *pkg, struct ApTrackRegistryMatch *match)
+{
+	return AP_SeedTableMatchPins(pkg, pkg->lev_sha256, pkg->vrm_sha256, pkg->revision, match);
+}
+
+// Merged mode builds (`relic_files`): the relic pair is its own package in the
+// shared store, so it gets its own UUID, the room's UUID with the top bit of
+// its first digit flipped. The scan finds it by its exact pins, not by UUID.
+static void AP_SeedRelicUuid(const char *uuid, char out[37])
+{
+	static const char digits[] = "0123456789abcdef";
+	const char c = uuid[0];
+	const int v = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : 0;
+	snprintf(out, 37, "%s", uuid);
+	out[0] = digits[(v + 8) & 15];
 }
 
 void AP_SeedContentRegistryRetry(void)
@@ -246,6 +264,9 @@ static void AP_SeedPermission(struct AP_SeedContentRow *row, int saphi_track_id,
 	row->source = AP_SEED_SOURCE_NOT_ALLOWED;
 	snprintf(row->permission, sizeof row->permission, "%s", ap_track_permission_text());
 }
+
+static int AP_SeedRelicTarget(const ctr_content_package *pkg, struct ApTrackRegistryMatch *match,
+                              struct CustomTrackManagerStatus *paths, char *tracks, size_t tracksSize);
 
 int AP_SeedContentRows(struct AP_SeedContentRow *rows, int max)
 {
@@ -296,6 +317,21 @@ int AP_SeedContentRows(struct AP_SeedContentRow *rows, int max)
 				if (TrackSources_Find(pkg->lev_sha256, pkg->vrm_sha256, &found) && found.kind == TRACK_SOURCE_PATCH)
 					TrackSources_Hint(pkg->lev_sha256, pkg->vrm_sha256, row->source_hint, sizeof row->source_hint);
 			}
+			// Merged mode builds: a main pair that is already installed (by patch
+			// import or by hand) needs no source of its own; the relic pair
+			// downloads from the source of its own pins.
+			if (row->source != AP_SEED_SOURCE_SAPHI && row->scan != AP_SEED_SCAN_READY && pkg->has_relic_files &&
+			    AP_ContentPairInstalled(pkg, 0) && !AP_ContentPairInstalled(pkg, 1))
+			{
+				struct ApTrackRegistryMatch relicMatch;
+				struct CustomTrackManagerStatus relicPaths;
+				char relicTracks[CTR_CT_MANAGER_PATH_MAX];
+				if (AP_SeedRelicTarget(pkg, &relicMatch, &relicPaths, relicTracks, sizeof relicTracks))
+				{
+					row->source = AP_SEED_SOURCE_SAPHI;
+					AP_SeedPermission(row, relicMatch.saphi_track_id, pkg->content_id);
+				}
+			}
 		}
 		row->index = i;
 		// The xdelta patch an imported track comes from, when the room's
@@ -326,6 +362,7 @@ _Static_assert(AP_SEED_ROWS_MAX == AP_CONTENT_MAX_PACKAGES + 1, "one row per pac
 static struct
 {
 	int active, waiting, count, at, installed;
+	int relic_pass; // 1 while the current track's relic pair (relic_files) downloads
 	int queue[AP_SEED_ROWS_MAX];      // package indices
 	char title[AP_SEED_ROWS_MAX][48]; // plain titles for the messages
 	uint64_t epoch;
@@ -383,6 +420,36 @@ static int AP_SeedInstallTarget(int index, const struct CustomTrackManagerPackag
 	return ap_seed_root_safe(tracks, paths->packageRoot);
 }
 
+// Merged mode builds: where and from which Saphi files the relic pair comes.
+// The registry is asked for the relic pins, then the built-in table when the
+// registry is unreachable or does not list them. The folder is the room's
+// track key, as for the main pair.
+static int AP_SeedRelicTarget(const ctr_content_package *pkg, struct ApTrackRegistryMatch *match,
+                              struct CustomTrackManagerStatus *paths, char *tracks, size_t tracksSize)
+{
+	const char *assets = NativeAssets_GetAssetDir();
+	const char *revision;
+	int result;
+	if (!pkg || !pkg->has_relic_files || !assets || !assets[0] || !ap_seed_folder_safe(pkg->content_id)) return 0;
+	revision = pkg->relic_revision[0] ? pkg->relic_revision : pkg->revision;
+	{
+		const size_t len = strlen(assets);
+		const int sep = assets[len - 1] == '/' || assets[len - 1] == '\\';
+		if (snprintf(tracks, tracksSize, sep ? "%stracks" : "%s/tracks", assets) >= (int)tracksSize) return 0;
+	}
+	memset(match, 0, sizeof *match);
+	result = ap_track_registry_lookup(pkg->relic_lev_sha256, pkg->relic_lev_bytes, pkg->relic_vrm_sha256,
+	                                  pkg->relic_vrm_bytes, match);
+	if (result != AP_TRACK_REGISTRY_MATCH &&
+	    !((result == AP_TRACK_REGISTRY_NO_INDEX || result == AP_TRACK_REGISTRY_NOT_LISTED) &&
+	      AP_SeedTableMatchPins(pkg, pkg->relic_lev_sha256, pkg->relic_vrm_sha256, revision, match)))
+		return 0;
+	memset(paths, 0, sizeof *paths);
+	if (snprintf(paths->packageRoot, sizeof paths->packageRoot, "%s/%s", tracks, pkg->content_id) >=
+	    (int)sizeof paths->packageRoot) return 0;
+	return ap_seed_root_safe(tracks, paths->packageRoot);
+}
+
 static void AP_SeedInstallStop(void)
 {
 	ap_seed_install.active = 0;
@@ -398,8 +465,36 @@ static int AP_SeedInstallBegin(int at, char *message, size_t messageSize)
 	struct CustomTrackManagerStatus paths;
 	char tracks[CTR_CT_MANAGER_PATH_MAX], line[400];
 	int started = 0;
+	int relicPass = ap_seed_install.relic_pass;
 	memset(&match, 0, sizeof match);
-	if (pkg && AP_SeedInstallTarget(index, &profile, &match, &paths, tracks, sizeof tracks))
+	// A track with `relic_files` whose main pair is already installed only
+	// needs its relic pair.
+	if (pkg && !relicPass && pkg->has_relic_files && !AP_ContentPackage(index) && AP_ContentPairInstalled(pkg, 0))
+		relicPass = 1;
+	ap_seed_install.relic_pass = relicPass;
+	if (relicPass)
+	{
+		if (AP_SeedRelicTarget(pkg, &match, &paths, tracks, sizeof tracks))
+		{
+			char relicUuid[37];
+			AP_SeedRelicUuid(pkg->uuid, relicUuid);
+			snprintf(line, sizeof line,
+			         "[CustomTracks] Current Seed: %s Relic Race files located: Saphi track %d, files %d and %d, "
+			         "installed only if they equal the room's relic pins\n",
+			         ap_seed_install.title[at], match.saphi_track_id, match.lev_download_id, match.vrm_download_id);
+			AP_AppendLog(line);
+			started = ap_custom_track_download_start_shared(tracks, paths.packageRoot, NULL,
+			                                                pkg->relic_revision[0] ? pkg->relic_revision : pkg->revision,
+			                                                relicUuid, pkg->display_name, pkg->author, pkg->laps,
+			                                                pkg->has_relic_targets ? pkg->relic_targets[0] : 0,
+			                                                pkg->has_relic_targets ? pkg->relic_targets[1] : 0,
+			                                                pkg->has_relic_targets ? pkg->relic_targets[2] : 0,
+			                                                pkg->relic_lev_sha256, pkg->relic_lev_bytes,
+			                                                pkg->relic_vrm_sha256, pkg->relic_vrm_bytes, match.saphi_track_id,
+			                                                match.lev_download_id, match.vrm_download_id, pkg->content_id);
+		}
+	}
+	else if (pkg && AP_SeedInstallTarget(index, &profile, &match, &paths, tracks, sizeof tracks))
 	{
 		if (profile)
 			started = ap_custom_track_download_start_shared(tracks, paths.packageRoot, profile->downloadApiUrl,
@@ -436,8 +531,8 @@ static int AP_SeedInstallBegin(int at, char *message, size_t messageSize)
 		return 0;
 	}
 	ap_seed_install.waiting = 1;
-	snprintf(message, messageSize, "Downloading %s (%d of %d)...", ap_seed_install.title[at], at + 1,
-	         ap_seed_install.count);
+	snprintf(message, messageSize, "Downloading %s%s (%d of %d)...", ap_seed_install.title[at],
+	         relicPass ? " Relic Race files" : "", at + 1, ap_seed_install.count);
 	return 1;
 }
 
@@ -460,7 +555,16 @@ int AP_SeedContentInstallStart(char *message, size_t messageSize)
 		struct CustomTrackManagerStatus paths;
 		char tracks[CTR_CT_MANAGER_PATH_MAX], title[48];
 		ap_seed_plain_text(rows[plan[i]].title, title, sizeof title);
-		if (!AP_SeedInstallTarget(rows[plan[i]].index, &profile, &match, &paths, tracks, sizeof tracks))
+		const ctr_content_package *queued = ap_content_plan_package(rows[plan[i]].index);
+		const int merged = queued && queued->has_relic_files && !AP_ContentPackage(rows[plan[i]].index);
+		// A merged package whose main pair is installed needs only the source of
+		// its relic pair; otherwise the main pair's source is checked, and the
+		// relic pair's too when that one is missing as well.
+		const int mainHere = merged && AP_ContentPairInstalled(queued, 0);
+		if (!(mainHere ? AP_SeedRelicTarget(queued, &match, &paths, tracks, sizeof tracks)
+		               : AP_SeedInstallTarget(rows[plan[i]].index, &profile, &match, &paths, tracks, sizeof tracks)) ||
+		    (merged && !mainHere && !AP_ContentPairInstalled(queued, 1) &&
+		     !AP_SeedRelicTarget(queued, &match, &paths, tracks, sizeof tracks)))
 		{
 			snprintf(message, messageSize, "%s has no safe install folder. Nothing was installed.", title);
 			return 0;
@@ -550,6 +654,25 @@ int AP_SeedContentInstallTick(char *message, size_t messageSize)
 		AP_SeedInstallFinish(message, messageSize, failure);
 		return 0;
 	}
+	// A track with `relic_files` downloads its relic pair next, as part of
+	// the same entry, unless that pair is already installed.
+	if (!ap_seed_install.relic_pass)
+	{
+		const int index = ap_seed_install.queue[ap_seed_install.at];
+		const ctr_content_package *pkg = ap_content_plan_package(index);
+		if (pkg && pkg->has_relic_files && !AP_ContentPackage(index) && !AP_ContentPairInstalled(pkg, 1))
+		{
+			ap_seed_install.relic_pass = 1;
+			if (!AP_SeedInstallBegin(ap_seed_install.at, failure, sizeof failure))
+			{
+				AP_SeedInstallFinish(message, messageSize, failure);
+				return 0;
+			}
+			snprintf(message, messageSize, "%s", failure);
+			return 1;
+		}
+	}
+	ap_seed_install.relic_pass = 0;
 	ap_seed_install.installed++;
 	ap_seed_install.at++;
 	if (ap_seed_install.at >= ap_seed_install.count)
