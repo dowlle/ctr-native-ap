@@ -102,6 +102,10 @@ void AP_UsefulTick(struct GameTracker *gGT)
 	int effect;
 	char msg[96];
 	if (!gGT) return;
+	if (AP_CoopCrystal(gGT) &&
+	    (sdata->Loading.stage != LOAD_IDLE || (gGT->gameMode1 & LOADING) ||
+	     !AP_CoopP2Available()))
+		return;
 	if (!LOAD_IsOpen_RacingOrBattle() || (gGT->gameMode1 & END_OF_RACE))
 		g_usefulCountdownSeen = 0;
 	else if (gGT->trafficLightsTimer >= 1)

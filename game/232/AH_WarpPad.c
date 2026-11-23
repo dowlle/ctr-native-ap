@@ -161,8 +161,10 @@ int AH_WarpPad_CoopMenuPlayer(const struct RectMenu *menu)
 static int AH_WarpPad_CoopSelectorInView(const struct GameTracker *gt, int player)
 {
 	const struct RectMenu *menu = sdata->ptrActiveMenu;
-	return AP_CoopHub(gt) && menu && menu->stringIndexTitle == LNG_CHOOSE_RACE_TYPE &&
-	       AH_WarpPad_CoopMenuPlayer(menu) == player;
+	// Prompts are drawn before this tick can open the selector.
+	return AP_CoopHub(gt) && (AP_CoopHubWarpDriver(gt) == player ||
+	       (menu && menu->stringIndexTitle == LNG_CHOOSE_RACE_TYPE &&
+	        AH_WarpPad_CoopMenuPlayer(menu) == player));
 }
 #endif
 

@@ -449,11 +449,12 @@ static void AP_DeathLinkDrop(const char *why)
 // the newest stays pending (DeathLink is never queued, and the newest is the one
 // that applies). Each death it replaces, in the same frame or still in its grace
 // window or held for a pause, ends here with the ignored popup naming who died.
-static void AP_DeathLinkDrainInbound(void)
+static int AP_DeathLinkDrainInbound(void)
 {
 	char cause[128];
 	char source[64];
 	int dropped;
+	int received = 0;
 
 	// More deaths than the inbox holds arrived in one poll: the oldest were
 	// discarded unread. Say so with one ignored popup for the count. It goes
@@ -478,12 +479,14 @@ static void AP_DeathLinkDrainInbound(void)
 		if (g_dl_pending_recv)
 			AP_DeathLinkDrop("newer death");
 		g_dl_pending_recv = 1;
+		received = 1;
 		g_dl_grace_left = AP_DL_GRACE_FRAMES;
 		g_dl_defer_logged = 0; // a new death gets its own deferral line
 		g_dl_hold_logged = 0;
 		snprintf(g_dl_pending_cause, sizeof g_dl_pending_cause, "%s", cause);
 		snprintf(g_dl_pending_source, sizeof g_dl_pending_source, "%s", source);
 	}
+	return received;
 }
 
 // Common bookkeeping once a forced loss is going to be applied: consume the
@@ -681,11 +684,6 @@ static int AP_DeathLinkApplyWeaponHit(struct Driver *local)
 	g_dl_send_cooldown = AP_DL_COOLDOWN_AFTER_RECV; // also mutes a fall the spin causes
 	if (AP_CoopDriving(sdata->gGT))
 		g_dl_partner_hit_cooldown[0] = AP_DL_COOLDOWN_AFTER_RECV;
-	if (AP_CoopCrystal(sdata->gGT))
-	{
-		g_dl_partner_effect[1] = CTR_DL_WEAPON_HIT;
-		g_dl_partner_grace[1] = AP_DL_GRACE_FRAMES;
-	}
 	g_dl_applying_received_hit = 1;
 	landed = RB_Hazard_HurtDriver(local, 1, 0, 0);
 	g_dl_applying_received_hit = 0;
@@ -847,7 +845,14 @@ void AP_DeathLinkTick(struct GameTracker *gGT)
 
 	// Drain the network inbox. A death is handled the frame it arrives: it applies
 	// inside a live race, is held while that race is paused, or is dropped.
-	AP_DeathLinkDrainInbound();
+	if (AP_DeathLinkDrainInbound() && AP_CoopCrystal(gGT) && window != AP_DL_WIN_OUTSIDE)
+	{
+		// Each kart has its own landing window. P1 being unable to take a
+		// hit must not stop P2 receiving it.
+		int effect = AP_DeathLinkEffMode();
+		g_dl_partner_effect[1] = effect == CTR_DL_RACE_LOSS ? 0 : effect;
+		g_dl_partner_grace[1] = AP_DL_GRACE_FRAMES + 1;
+	}
 
 	// #286 receive decision. Mode 3 (race_loss) ends the attempt here; modes 1/2
 	// keep the mask-reset path (applied from the physics pipeline). Outside a live
@@ -967,11 +972,6 @@ int AP_DeathLinkForceReset(struct Driver *d)
 	g_dl_send_cooldown = AP_DL_COOLDOWN_AFTER_RECV; // forced grab multi-edges: mute them all
 	if (AP_CoopDriving(gGT))
 		g_dl_partner_hit_cooldown[0] = AP_DL_COOLDOWN_AFTER_RECV;
-	if (AP_CoopCrystal(gGT))
-	{
-		g_dl_partner_effect[1] = recv;
-		g_dl_partner_grace[1] = AP_DL_GRACE_FRAMES;
-	}
 	snprintf(msg, sizeof msg, "[AP DEATH] received -> forced mask reset (%s)\n",
 	         g_dl_pending_cause[0] ? g_dl_pending_cause : "a death");
 	AP_LogLine(msg);

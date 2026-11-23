@@ -26,9 +26,11 @@ static int active = 1, onTrack = 1, g_tg_received = 1, g_tg_turbo_weapon = 1;
 static AP_TurboGrantRace g_tg_race;
 static int g_usefulCountdownSeen;
 static unsigned g_usefulReceived, g_usefulApplied;
+static int partnerAvailable = 1;
 static struct Driver *recipient;
 static struct MaskHeadWeapon mask;
 int ctr_cfg_active(void) { return active; }
+int AP_CoopP2Available(void) { return partnerAvailable; }
 int LOAD_IsOpen_RacingOrBattle(void) { return onTrack; }
 int OtherFX_Play(u32 id, int flags) { (void)id; (void)flags; return 0; }
 void AP_LogLine(const char *line) { (void)line; }
@@ -78,6 +80,13 @@ int main(void) {
     AP_UsefulTick(&gt); assert(recipient == &humans[1]);
     reset(); humans[0].actionsFlagSet = humans[1].actionsFlagSet = ACTION_BOT | ACTION_RACE_FINISHED;
     AP_UsefulTick(&gt); assert(!recipient && !g_usefulApplied);
+    reset(); gt.gameMode1 |= CRYSTAL_CHALLENGE; humans[0].heldItemID = 1;
+    partnerAvailable = 0;
+    AP_UsefulTick(&gt); assert(!recipient && !g_usefulApplied);
+    partnerAvailable = 1; sdata->Loading.stage = LOAD_REQUESTED;
+    AP_UsefulTick(&gt); assert(!recipient && !g_usefulApplied);
+    sdata->Loading.stage = LOAD_IDLE;
+    AP_UsefulTick(&gt); assert(recipient == &humans[1] && g_usefulApplied);
     reset(); humans[0].actionsFlagSet = ACTION_BOT | ACTION_RACE_FINISHED;
     assert(AP_WumpaReceiptInRace());
     humans[1].actionsFlagSet = ACTION_BOT | ACTION_RACE_FINISHED;

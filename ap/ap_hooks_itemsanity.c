@@ -166,7 +166,7 @@ static int AP_TrapRerollFilterPool(struct Driver *driver, int rolled, unsigned r
 	if (!gGT || !AP_IsSlotHuman(gGT, driver))
 		return rolled;
 
-	excluded = AP_TrapRerollExcludedItem();
+	excluded = AP_TrapRerollExcludedItem(driver);
 	if (excluded < 0)
 		return rolled;
 

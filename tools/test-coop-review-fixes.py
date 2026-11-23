@@ -4,7 +4,7 @@ import subprocess
 import sys
 import tempfile
 
-from coop_fixture import ROOT, function
+from coop_fixture import ROOT, function, trap_inventory
 
 
 COMMON = r'''
@@ -129,6 +129,16 @@ int main(void)
     drivers[0].driverRank = 0;
     MainGameEnd_UpdateAdventureLosses(&gt, &drivers[0]);
     assert(sdata->advProgress.timesLostRacePerLev[CRASH_COVE] == 0);
+    gt.numPlyrCurrGame = 2;
+    gt.levelID = NITRO_COURT;
+    gt.gameMode1 |= CRYSTAL_CHALLENGE;
+    sdata->advProgress.timesLostCupRace[0] = 3;
+    MainGameEnd_UpdateAdventureLosses(&gt, &drivers[0]);
+    assert(sdata->advProgress.timesLostCupRace[0] == 3);
+    gt.levelID = ROCKY_ROAD;
+    sdata->advProgress.timesLostBossRace[0] = 5;
+    MainGameEnd_UpdateAdventureLosses(&gt, &drivers[0]);
+    assert(sdata->advProgress.timesLostBossRace[0] == 5);
 }
 '''
 
@@ -288,11 +298,12 @@ STEERING = r'''
 #include "ap/ap_traps.h"
 #include "ap/ap_trap_alpha3_logic.h"
 #define AP_STICK_NEUTRAL 0x80
-static int g_trap_use_pending, g_trap_forced_press, g_trap_stuck_side;
+static int g_trap_stuck_side;
 static unsigned char g_active[AP_TRAP_EFFECT_COUNT];
 static int AP_TrapReverseRestored(void) { return 0; }
 int AP_CapabilityRoomStatsRace(void) { return 1; }
 '''
+STEERING += trap_inventory()
 STEERING += next(line for line in (ROOT / "ap/ap_traps.c").read_text().splitlines()
                  if " g_trap_steer_mirrored = " in line and line.startswith("static ")) + "\n"
 for signature in ("static struct Driver *AP_TrapLocalDriver(", "static int AP_TrapIsLocal(",

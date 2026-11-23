@@ -23,3 +23,10 @@ def predicates(humans=False):
     if humans:
         code += function('ap/ap_coop.h', 'static inline int AP_IsSlotHuman(')
     return code
+
+
+def trap_inventory():
+    source = (ROOT / "ap/ap_traps.c").read_text()
+    start = source.index("struct AP_TrapInventory\n")
+    end = source.index("static void AP_TrapInventoryReset", start)
+    return source[start:end]

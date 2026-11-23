@@ -540,7 +540,8 @@ void AP_CoopRulesStep(int direction)
 	{
 		AP_CoopRestorePreference();
 		int hard = direction ? direction > 0 : !g_config.coopRules;
-		ap_coop_help = hard ? "Hard: finish first and second." : "Lenient: either human can win.";
+		ap_coop_help = hard ? "Hard: 1st and 2nd. 60% crystal time."
+		                    : "Lenient: either can win. Full crystal time.";
 		if (hard != g_config.coopRules)
 			AP_CoopPersist(g_config.coopRacer, hard);
 	}

@@ -196,6 +196,11 @@ static void MainGameEnd_SetBattleConfetti(struct GameTracker *gGT)
 
 static void MainGameEnd_UpdateAdventureLosses(struct GameTracker *gGT, struct Driver *player)
 {
+#ifdef CTR_AP
+	// Arena IDs sit beyond the per-track loss array, which sizes race difficulty.
+	if (AP_CoopCrystal(gGT))
+		return;
+#endif
 	if ((gGT->gameMode1 & (ADVENTURE_CUP | RELIC_RACE | ADVENTURE_MODE)) != ADVENTURE_MODE)
 	{
 		return;
@@ -203,8 +208,6 @@ static void MainGameEnd_UpdateAdventureLosses(struct GameTracker *gGT, struct Dr
 
 	if (
 #ifdef CTR_AP
-	    AP_CoopCrystal(gGT) ? !AP_RaceAttemptIsForcedLoss() &&
-	                         AP_CrystalCount(gGT, player) >= gGT->numCrystalsInLEV :
 	    AP_CoopRace(gGT) ? AP_CoopWon(gGT) :
 #endif
 	    player->driverRank == 0)

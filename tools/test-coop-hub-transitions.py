@@ -81,6 +81,10 @@ int main(void)
     tracker.gameMode1 = ADVENTURE_MODE | ADVENTURE_ARENA;
     sdata->ptrActiveMenu = sdata->activeSubMenu = selector;
     for (warpPlayer = 0; warpPlayer < 2; warpPlayer++) {
+        sdata->ptrActiveMenu = NULL;
+        assert(AH_WarpPad_CoopSelectorInView(&tracker, warpPlayer));
+        assert(!AH_WarpPad_CoopSelectorInView(&tracker, 1 - warpPlayer));
+        sdata->ptrActiveMenu = selector;
         assert(AH_WarpPad_CoopSelectorInView(&tracker, warpPlayer));
         assert(!AH_WarpPad_CoopSelectorInView(&tracker, 1 - warpPlayer));
     }

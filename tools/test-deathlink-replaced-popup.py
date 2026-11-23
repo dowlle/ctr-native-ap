@@ -44,7 +44,7 @@ assert 'g_dl_incoming' not in net, 'the old depth-1 latch is back'
 # The tick drains through the function under test, and the feature-off branch
 # drains the whole inbox.
 tick = func(dl, 'void AP_DeathLinkTick(struct GameTracker *gGT)')
-assert 'AP_DeathLinkDrainInbound();' in tick
+assert 'AP_DeathLinkDrainInbound()' in tick
 assert 'AP_DeathLinkInboxTakeDropped(&g_dl_inbox)' in func(net, 'extern "C" int ap_net_deathlink_take_dropped('), 'ap_net no longer reports dropped deaths'
 assert re.search(r'while \(ap_net_deathlink_take\(cause, sizeof cause, source, sizeof source\)\)\s*;', tick)
 
@@ -53,7 +53,7 @@ pieces = '\n'.join([
     state,
     func(dl, 'static void AP_DeathLinkPopup(int applied, const char *why)'),
     func(dl, 'static void AP_DeathLinkDrop(const char *why)'),
-    func(dl, 'static void AP_DeathLinkDrainInbound(void)'),
+    func(dl, 'static int AP_DeathLinkDrainInbound(void)'),
 ])
 
 fixture = r"""

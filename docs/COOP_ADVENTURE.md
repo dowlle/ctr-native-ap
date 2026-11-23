@@ -31,6 +31,6 @@ Custom tracks, Cortex Vortex, cups, bosses, CTR Challenges and Relic Races run s
 
 Ordinary weapon-crate, Wumpa-crate and loose-fruit checks also accept either human and share their checked set. Their instance-count verification remains in place; a 2P level whose pickup counts differ from the room's verified record refuses those checks instead of assigning another object's code. Per-track 2P pickup compatibility still needs inspection.
 
-Physics-based trap restrictions recognize both humans. Some item-slot and camera effects still use Player 1's state. The tracker, box numbers, blue-fire palette and podium presentation need a split-screen pass.
+Physics-based trap restrictions recognize both humans. In Crystal Challenges, Item Reroll and Forced Use track the two weapon slots separately. Flatten and Clocked Out still use Player 1's state. The tracker, box numbers, blue-fire palette and podium presentation need a split-screen pass.
 
 The two-player Adventure race design is based on Coding Bob's [CTR Native Expanded](https://github.com/thecodingbob/ctr-native).
