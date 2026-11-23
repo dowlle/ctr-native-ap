@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Compile the production receipt and trap feed entry points with host stubs."""
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 
@@ -10,7 +11,12 @@ runtime = (root / 'ap/ap_traps.c').read_text()
 boundary = runtime[runtime.index('if (boundary)'):runtime.index('\n\tw.context =')]
 assert boundary.index('AP_TrapSaveFeedIdentities') < boundary.index('AP_TrapSchedMapChange')
 assert 'AP_TrapSchedReceive(&g_sched' not in boundary
-assert boundary.count('AP_TrapReceiveOwed(') == 7
+assert set(re.findall(r'owed\[(AP_TRAP_\w+)\]', boundary)) == {
+    'AP_TRAP_FORCED_USE', 'AP_TRAP_ITEM_REROLL', 'AP_TRAP_FLATTEN',
+    'AP_TRAP_CLOCKED_OUT', 'AP_TRAP_NITRO', 'AP_TRAP_RED_POTION',
+    'AP_TRAP_WARPBALL_AMBUSH',
+}
+assert 'AP_TrapReceiveOwed(e, owed[e] & nextSeats, feedSlots, feedSeqs)' in boundary
 net = (root / 'ap/ap_hooks_net.c').read_text()
 held = net[net.index('if (AP_ArcadeHoldsRoom())'):]
 held = held[:held.index('}') + 1]
@@ -53,6 +59,7 @@ stubs = r'''
 #define CORTEX_RED 7
 static AP_FeedLines ap_feed;
 static AP_TrapSched g_sched;
+static struct { unsigned seq; unsigned seats; } g_trap_owed[AP_TRAP_SCHED_CAP];
 static int active=1, ap_feed_primed=1;
 NativeConfig g_config = { .itemFeed = AP_ITEM_FEED_ALL };
 static long long ap_feed_hwm=-1;
@@ -165,8 +172,9 @@ int main(void) {
     AP_TrapSaveFeedIdentities(oldSlots,oldSeqs);
     AP_TrapSchedMapChange(&g_sched);
     AP_TrapSchedReceive(&g_sched,AP_TRAP_BOOST); // occupies the original slot
-    AP_TrapReceiveOwed(AP_TRAP_FLATTEN,oldSlots,oldSeqs);
+    AP_TrapReceiveOwed(AP_TRAP_FLATTEN,2u,oldSlots,oldSeqs);
     assert(g_sched.slots[1].effect==AP_TRAP_FLATTEN && g_sched.slots[1].seq>first);
+    assert(g_trap_owed[1].seq==g_sched.slots[1].seq && g_trap_owed[1].seats==2u);
     AP_FeedTrapLine(AP_TRAP_FLATTEN,1,g_sched.slots[1].seq,AP_FEED_TRAP_INCOMING,"FLATTEN INCOMING",1);
     assert(ap_feed.vcount==1 && ap_feed.qcount==0 && ap_feed.vis[0].copies==1);
     assert(!strcmp(ap_feed.vis[0].text,"FLATTEN INCOMING"));
@@ -174,10 +182,11 @@ int main(void) {
     g_sched.slots[1].state=AP_TRAP_SLOT_ACTIVE;
     AP_TrapSaveFeedIdentities(oldSlots,oldSeqs);
     AP_TrapSchedMapChange(&g_sched);
-    AP_TrapReceiveOwed(AP_TRAP_FLATTEN,oldSlots,oldSeqs);
+    AP_TrapReceiveOwed(AP_TRAP_FLATTEN,2u,oldSlots,oldSeqs);
     AP_FeedTrapLine(AP_TRAP_FLATTEN,1,g_sched.slots[1].seq,AP_FEED_TRAP_INCOMING,"FLATTEN INCOMING",1);
     assert(ap_feed.vis[0].copies==1);
     int real=AP_TrapSchedReceive(&g_sched,AP_TRAP_FLATTEN);
+    assert(!g_trap_owed[real].seats || g_trap_owed[real].seq!=g_sched.slots[real].seq);
     AP_FeedTrapLine(AP_TRAP_FLATTEN,real,g_sched.slots[real].seq,AP_FEED_TRAP_INCOMING,"FLATTEN INCOMING",1);
     assert(ap_feed.vis[0].copies==2 && !strcmp(ap_feed.vis[0].text,"2 FLATTEN INCOMING"));
     // A queued line follows a later reissue too; an expired line adds a fresh 1.

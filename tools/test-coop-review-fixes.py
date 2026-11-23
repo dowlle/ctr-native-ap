@@ -300,7 +300,7 @@ STEERING = r'''
 #define AP_STICK_NEUTRAL 0x80
 static int g_trap_stuck_side;
 static unsigned char g_active[AP_TRAP_EFFECT_COUNT];
-static int AP_TrapReverseRestored(void) { return 0; }
+static int AP_TrapReverseRestored(const struct Driver *driver) { (void)driver; return 0; }
 int AP_CapabilityRoomStatsRace(void) { return 1; }
 '''
 STEERING += trap_inventory()
