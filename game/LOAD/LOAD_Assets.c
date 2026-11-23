@@ -93,12 +93,11 @@ void LOAD_Robots2P(struct BigHeader *bigfile, int p1, int p2, void (*callback)(s
 	LOAD_AppendQueue(bigfile, LT_GETADDR, BI_2PARCADEPACK + i, NULL, callback);
 }
 
-// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800327dc-0x8003282c.
-void LOAD_Robots1P(int characterID)
+void LOAD_Robots1PRoster(int characterID, s16 roster[8])
 {
 	int newCharacterID = 0;
 
-	data.characterIDs[0] = characterID;
+	roster[0] = characterID;
 
 	for (int i = 1; i < 8; i++, newCharacterID++)
 	{
@@ -107,8 +106,14 @@ void LOAD_Robots1P(int characterID)
 			newCharacterID++;
 		}
 
-		data.characterIDs[i] = newCharacterID;
+		roster[i] = newCharacterID;
 	}
+}
+
+// NOTE(aalhendi): ASM-verified NTSC-U 926 0x800327dc-0x8003282c.
+void LOAD_Robots1P(int characterID)
+{
+	LOAD_Robots1PRoster(characterID, data.characterIDs);
 }
 
 #ifdef CTR_AP

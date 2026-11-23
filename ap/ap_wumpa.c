@@ -381,6 +381,12 @@ void AP_WumpaTick(struct GameTracker *gGT)
 	}
 	if (!onTrack || loading || (gGT->gameMode1 & END_OF_RACE) != 0)
 	{
+		// The automatic solo reload can interrupt a paused grant that was
+		// already assigned to the split attempt. Keep unspent receipts.
+		if (g_wumpa_race_pending > 0 && !AP_WumpaBanking() && AP_CoopCrystal(gGT) &&
+		    sdata->Loading.stage == LOAD_REQUESTED &&
+		    sdata->Loading.Lev_ID_To_Load == gGT->levelID)
+			AP_WumpaReceive(g_wumpa_race_pending > AP_WUMPA_MAX ? AP_WUMPA_MAX : g_wumpa_race_pending);
 		AP_WumpaOnRaceLeave();
 		g_countdown_seen = 0;
 		g_starting_applied = 0;

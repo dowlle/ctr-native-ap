@@ -1280,6 +1280,7 @@ void RB_Burst_Init(struct Instance *weaponInst);
 void GAMEPAD_ShockFreq(struct Driver *d, int frame, int val);
 int RaceFlag_IsTransitioning(void);
 void LOAD_Robots1P(int characterID);
+void LOAD_Robots1PRoster(int characterID, s16 roster[8]);
 void UI_Map_DrawRawIcon( // 1st param is probably a ptr type of some sort (maybe s16*)?, could maybe do `void*` for now
     int ptrMap, int *param_2, int iconID, int colorID, int unused, s16 scale);
 int RaceFlag_GetCanDraw(void);

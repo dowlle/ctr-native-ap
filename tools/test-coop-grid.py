@@ -20,7 +20,20 @@ void LIST_Clear(struct LinkedList *list) { (void)list; }
 void BOTS_InitNavPath(struct GameTracker *gt, s16 index) { (void)gt; (void)index; }
 void BOTS_SetGlobalNavData(u16 index) { (void)index; }
 int RngDeadCoed(struct RngDeadCoedState *seed) { (void)seed; return 0; }
+int ap_content_plan_active(void) { return 0; }
+const ctr_content_pad *ap_content_plan_pad(int dest) { (void)dest; return NULL; }
 '''
+for signature in ("void LOAD_Robots1PRoster(", "void LOAD_Robots1P("):
+    fixture += function("game/LOAD/LOAD_Assets.c", signature)
+warp = (root / "game/232/AH_WarpPad.c").read_text()
+grid_start = warp.index("\t// Retail repeats this setup")
+grid_end = warp.index("\t// if flag is on-screen", grid_start)
+fixture += r'''
+static void pad_grid(struct GameTracker *gGT, struct Driver *driver, int levelID)
+{
+    int i, champID, champSlot, rng1, rng2;
+    char randKartSpawn[8];
+''' + warp[grid_start:grid_end] + "}\n"
 for signature in ('int BOTS_Adv_NumTimesLostEvent(',
                   'internal void BOTS_Adv_LerpDifficulty(',
                   'internal void BOTS_Adv_CopySpawnOrder(',
@@ -65,6 +78,27 @@ int main(void) {
     memcpy(sdata->kartSpawnOrderArray, stock, 8);
     BOTS_Adv_AdjustDifficulty();
     assert(!memcmp(sdata->kartSpawnOrderArray, stock, 8));
+    // A previous solo load left Coco in the AI roster. She then joined the
+    // split hub as P2, and the selected CTR Challenge will load with P1 only.
+    LOAD_Robots1P(CRASH_BANDICOOT);
+    data.characterIDs[1] = COCO_BANDICOOT;
+    data.metaDataLEV[COCO_PARK].characterID_Champion = COCO_BANDICOOT;
+    gt.gameMode1 = ADVENTURE_MODE | ADVENTURE_ARENA;
+    gt.numPlyrCurrGame = 2;
+    struct Driver padOwner = {0};
+    for (int owner = 0; owner < 2; owner++) {
+        padOwner.driverID = owner;
+        pad_grid(&gt, &padOwner, COCO_PARK);
+        assert(data.characterIDs[1] == COCO_BANDICOOT);
+        seats = 0;
+        for (int i = 0; i < 8; i++) seats |= 1u << sdata->kartSpawnOrderArray[i];
+        assert(seats == 255 && sdata->kartSpawnOrderArray[3] == 0);
+    }
+    gt.numPlyrCurrGame = 1;
+    padOwner.driverID = 0;
+    pad_grid(&gt, &padOwner, COCO_PARK);
+    assert(data.characterIDs[1] != COCO_BANDICOOT && sdata->kartSpawnOrderArray[3] == 0);
+    gt.gameMode1 = ADVENTURE_MODE;
     static struct Driver field[8];
     static struct {
         struct Instance inst;

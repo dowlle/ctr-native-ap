@@ -312,23 +312,30 @@ static void test_crystal_dropout_receipt(void)
 	gt->drivers[0] = &rc_d;
 	gt->drivers[1] = &partner;
 	gt->numPlyrCurrGame = 2;
+	gt->levelID = SKULL_ROCK;
 	AP_WumpaConnectReset();
 	ctr_wumpa_shop.state = AP_WUMPA_SHOP_ABSENT;
 	int before = credited;
 	const unsigned mode = ADVENTURE_MODE | CRYSTAL_CHALLENGE;
 	rc_attempt(mode, 0);
+	gt->gameMode1 |= PAUSE_1;
+	AP_WumpaReceive(2);
+	AP_WumpaCommitReceived();
+	AP_WumpaTick(gt);
+	CHECK("paused Crystal receipt waits in the live attempt", g_wumpa_race_pending == 2);
 	// Co-op queues the load before the received item drain advances its marker.
 	sdata->Loading.stage = LOAD_REQUESTED;
+	sdata->Loading.Lev_ID_To_Load = SKULL_ROCK;
 	AP_WumpaReceive(3);
 	AP_WumpaCommitReceived();
 	AP_WumpaTick(gt);
-	CHECK("Crystal dropout holds the receipt without banking", g_wumpa_pending == 3 && credited == before);
+	CHECK("Crystal dropout holds both receipts without banking", g_wumpa_pending == 5 && credited == before);
 	gt->numPlyrCurrGame = 1;
 	gt->drivers[1] = NULL;
 	rc_attempt(mode, 0);
-	CHECK("solo Crystal receives the held bundle", rc_d.numWumpas == 3);
+	CHECK("solo Crystal receives both held bundles", rc_d.numWumpas == 5);
 	AP_WumpaTick(gt);
-	CHECK("solo Crystal receives the held bundle only once", rc_d.numWumpas == 3 && g_wumpa_pending == 0);
+	CHECK("solo Crystal receives both bundles only once", rc_d.numWumpas == 5 && g_wumpa_pending == 0);
 }
 
 int main(void)

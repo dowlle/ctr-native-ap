@@ -1256,8 +1256,19 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 	// Retail repeats this setup every close/warping frame before the
 	// transition/load gate.
+	const s16 *gridRoster = data.characterIDs;
+	int gridRacer = driver->driverID;
 #ifdef CTR_AP
-	if (!AP_CoopHub(gGT))
+	s16 soloRoster[8];
+	if (AP_CoopHub(gGT))
+	{
+		// A solo fallback loads P1's stock opponents. Keep their roster
+		// separate from the two hub racers while planning the grid.
+		LOAD_Robots1PRoster(data.characterIDs[0], soloRoster);
+		gridRoster = soloRoster;
+		gridRacer = 0;
+	}
+	else
 #endif
 		LOAD_Robots1P(data.characterIDs[0]);
 
@@ -1279,12 +1290,12 @@ void AH_WarpPad_ThTick(struct Thread *t)
 
 	// If Speed Champion is on the track (Crash-Pura)
 	// and is not the same characterID as this driver
-	if ((champID >= 0 && champID < 8) && (champID != data.characterIDs[driver->driverID]))
+	if ((champID >= 0 && champID < 8) && (champID != gridRoster[gridRacer]))
 	{
 		// set everyone to spawn in order
 		for (i = 1; i < 8; i++)
 		{
-			if (champID == data.characterIDs[i])
+			if (champID == gridRoster[i])
 			{
 				sdata->kartSpawnOrderArray[i] = 0;
 				champSlot = i;
