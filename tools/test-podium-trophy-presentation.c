@@ -103,34 +103,53 @@ int main(void)
 	// count-up.
 	expect(AP_PodiumIsApTrophyPresentation(1, AP_PODIUM_TROPHY_MODEL, 0), 1,
 	       "AP Trophy is an AP presentation");
-	expect(AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 0), 0,
+	expect(AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 0, 0), 0,
 	       "AP Trophy creates no prize object");
 
 	// A non-AP Trophy keeps the retail prize and its count-up.
 	expect(AP_PodiumIsApTrophyPresentation(0, AP_PODIUM_TROPHY_MODEL, 0), 0,
 	       "non-AP Trophy is not an AP presentation");
-	expect(AP_PodiumShouldBirthPrize(0, AP_PODIUM_TROPHY_MODEL, 0), 1,
+	expect(AP_PodiumShouldBirthPrize(0, AP_PODIUM_TROPHY_MODEL, 0, 0), 1,
 	       "non-AP Trophy still creates the prize object");
 
 	// A trial-track or Cortex Vortex podium reuses STATIC_TROPHY without a
 	// retail trophy bit, so it keeps the vanilla prize path.
-	expect(AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 1), 1,
+	expect(AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 1, 0), 1,
 	       "AP special-track Trophy keeps the prize");
 
+	// A6-77: a won content-plan cup reuses the Trophy model for its podium.
+	// Its podium is an AP presentation too (the cup latch stands in for the
+	// ordinary-trophy bit), so the retail prize and the INC_TROPHY count-up
+	// stay off, and the ordinary-Trophy presentation does not claim it.
+	expect(AP_PodiumIsApCupPresentation(1, AP_PODIUM_TROPHY_MODEL, 1), 1,
+	       "AP content cup podium is an AP presentation");
+	expect(AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 0, 1), 0,
+	       "AP content cup podium creates no prize object");
+	expect(AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 1, 1), 0,
+	       "AP content cup podium creates no prize even on a special track");
+	expect(AP_PodiumIsApCupPresentation(1, AP_PODIUM_TROPHY_MODEL, 0), 0,
+	       "no cup latch, no cup presentation");
+	expect(AP_PodiumIsApCupPresentation(0, AP_PODIUM_TROPHY_MODEL, 1), 0,
+	       "non-AP cup podium is not an AP presentation");
+	expect(AP_PodiumIsApCupPresentation(1, TEST_STATIC_GEM, 1), 0,
+	       "a Gem podium is never the cup presentation");
+	expect(AP_PodiumShouldBirthPrize(0, AP_PODIUM_TROPHY_MODEL, 0, 1), 1,
+	       "non-AP cup podium still creates the prize object");
+
 	// Every other reward, AP or not, keeps its vanilla prize path.
-	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_RELIC, 0), 1,
+	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_RELIC, 0, 0), 1,
 	       "AP Relic keeps the prize");
-	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_KEY, 0), 1,
+	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_KEY, 0, 0), 1,
 	       "AP Key keeps the prize");
-	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_GEM, 0), 1,
+	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_GEM, 0, 0), 1,
 	       "AP Gem keeps the prize");
-	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_TOKEN, 0), 1,
+	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_TOKEN, 0, 0), 1,
 	       "AP Token keeps the prize");
-	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_BIG1, 0), 1,
+	expect(AP_PodiumShouldBirthPrize(1, TEST_STATIC_BIG1, 0, 0), 1,
 	       "Oxide BIG1 keeps the prize");
-	expect(AP_PodiumShouldBirthPrize(1, TEST_NOFUNC, 0), 1,
+	expect(AP_PodiumShouldBirthPrize(1, TEST_NOFUNC, 0, 0), 1,
 	       "NOFUNC keeps the prize");
-	expect(AP_PodiumShouldBirthPrize(0, TEST_STATIC_RELIC, 0), 1,
+	expect(AP_PodiumShouldBirthPrize(0, TEST_STATIC_RELIC, 0, 0), 1,
 	       "non-AP Relic keeps the prize");
 
 	// ── Podium exit teardown the skipped prize thread would have performed ───
@@ -143,13 +162,13 @@ int main(void)
 		ap_podium_exit_work work;
 		exit_effects fx;
 
-		AP_PodiumExitStateReset(&state);
+		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 0, 0));
 		fx.overlayTransition = 0;
 		fx.freezePodium = 1; // as CS_Podium_FullScene_Init sets VEH_FREEZE_PODIUM
 		fx.completionSounds = 0;
 		fx.danceLoopsPlaying = 1; // N. Gin's podium dance started 0xae
 
-		work = AP_PodiumExitWork(1, AP_PODIUM_TROPHY_MODEL, 0, &state);
+		work = AP_PodiumExitWork(&state);
 		expect(work.overlayTransition, 2, "AP Trophy exit requests overlay 2");
 		expect(work.releaseFreeze, 1, "AP Trophy exit releases the freeze");
 		expect(work.completionSound, 1, "AP Trophy exit plays the completion FX");
@@ -161,7 +180,7 @@ int main(void)
 
 		// The camera thread dies on the continue press, so a defensive second
 		// drive must be a no-op: the work is one-shot per podium.
-		work = AP_PodiumExitWork(1, AP_PODIUM_TROPHY_MODEL, 0, &state);
+		work = AP_PodiumExitWork(&state);
 		expect(work.overlayTransition, 0, "AP Trophy exit is one-shot (overlay)");
 		expect(work.releaseFreeze, 0, "AP Trophy exit is one-shot (freeze)");
 		expect(work.completionSound, 0, "AP Trophy exit is one-shot (sound)");
@@ -172,29 +191,54 @@ int main(void)
 		expect(fx.freezePodium, 0, "second drive keeps the player released");
 
 		// A newly born podium re-arms the one-shot.
-		AP_PodiumExitStateReset(&state);
-		work = AP_PodiumExitWork(1, AP_PODIUM_TROPHY_MODEL, 0, &state);
+		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 0, 0));
+		work = AP_PodiumExitWork(&state);
 		expect(work.overlayTransition, 2, "next AP Trophy podium re-arms");
 
 		// A non-AP Trophy, an AP relic, and an AP trial/Cortex Trophy (which
 		// reuses the Trophy model but keeps its prize thread) perform none of
 		// the new exit work; their own prize thread still owns the teardown.
-		AP_PodiumExitStateReset(&state);
-		work = AP_PodiumExitWork(0, AP_PODIUM_TROPHY_MODEL, 0, &state);
+		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(0, AP_PODIUM_TROPHY_MODEL, 0, 0));
+		work = AP_PodiumExitWork(&state);
 		expect(work.overlayTransition, 0, "non-AP Trophy does no exit work");
 		expect(work.releaseFreeze, 0, "non-AP Trophy keeps its prize thread work");
 		expect(work.stopDanceLoops, 0, "non-AP Trophy leaves the stops to its prize thread");
 
-		work = AP_PodiumExitWork(1, TEST_STATIC_RELIC, 0, &state);
+		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(1, TEST_STATIC_RELIC, 0, 0));
+		work = AP_PodiumExitWork(&state);
 		expect(work.overlayTransition, 0, "AP relic does no exit work");
 		expect(work.releaseFreeze, 0, "AP relic keeps its prize thread work");
 		expect(work.completionSound, 0, "AP relic plays no extra FX");
 		expect(work.stopDanceLoops, 0, "AP relic leaves the stops to its prize thread");
 
-		work = AP_PodiumExitWork(1, AP_PODIUM_TROPHY_MODEL, 1, &state);
+		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 1, 0));
+		work = AP_PodiumExitWork(&state);
 		expect(work.overlayTransition, 0, "AP special-track Trophy does no exit work");
 		expect(work.releaseFreeze, 0, "AP special-track Trophy keeps its prize");
 		expect(work.stopDanceLoops, 0, "AP special-track Trophy keeps its prize stops");
+
+		// A6-77: the content-plan cup podium births no prize thread, so its exit
+		// reproduces the same terminal work exactly once, including on a return
+		// pad outside the ordinary-Trophy presentation's retail track range.
+		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 0, 1));
+		work = AP_PodiumExitWork(&state);
+		expect(work.overlayTransition, 2, "AP cup podium exit requests overlay 2");
+		expect(work.releaseFreeze, 1, "AP cup podium exit releases the freeze");
+		expect(work.completionSound, 1, "AP cup podium exit plays the completion FX");
+		expect(work.stopDanceLoops, 1, "AP cup podium exit stops the dance loops");
+		work = AP_PodiumExitWork(&state);
+		expect(work.overlayTransition, 0, "AP cup podium exit is one-shot");
+
+		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(1, AP_PODIUM_TROPHY_MODEL, 1, 1));
+		// The live reward flags are no longer inputs once the scene omits its prize.
+		work = AP_PodiumExitWork(&state);
+		expect(work.overlayTransition, 2, "AP cup podium outside retail track range exits too");
+		expect(work.releaseFreeze, 1, "AP cup podium outside retail track range releases the freeze");
+		expect(work.stopDanceLoops, 1, "AP cup podium outside retail track range stops the loops");
+
+		AP_PodiumExitStateReset(&state, !AP_PodiumShouldBirthPrize(0, AP_PODIUM_TROPHY_MODEL, 0, 1));
+		work = AP_PodiumExitWork(&state);
+		expect(work.overlayTransition, 0, "non-AP cup podium does no exit work");
 	}
 
 	// ── Shared #330 formatter integration on the podium caller path ──────────

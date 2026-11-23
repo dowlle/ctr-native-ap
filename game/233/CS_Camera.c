@@ -249,6 +249,12 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 	if (sdata->ptrActiveMenu == NULL)
 		AP_CustomTrackTrophyCeremonyDraw(0x100, 0x38);
 
+	// A6-77: a content-plan cup podium presents the cup's own Win check here.
+	// Self-gates on the cup podium latch, so it is a no-op on every other
+	// podium.
+	if (sdata->ptrActiveMenu == NULL)
+		AP_ContentCupPodiumCeremonyDraw(0x100, 0x38);
+
 	// Issue #235: an AP retail-Trophy podium bypasses the retail prize/count-up
 	// (CS_Podium_FullScene_Init), so present the AP-owned received count and the
 	// #330 item text here instead. Self-gates on AP-active + an ordinary retail
@@ -436,12 +442,24 @@ void CS_Camera_ThTick_Podium(struct Thread *th)
 				}
 
 				CDSYS_XAPauseForce();
-				CDSYS_XAPlay(1, hintID);
+#ifdef CTR_AP
+				// The cup uses the Trophy model to open the podium, but its
+				// reward comes from the room and has no matching retail voice line.
+				if (!AP_CupPodiumActive())
+#endif
+					CDSYS_XAPlay(1, hintID);
+
+#ifdef CTR_AP
+				AP_CupPodiumReset();
+#endif
 
 				gGT->podiumRewardID = NOFUNC;
 				return;
 			}
 
+#ifdef CTR_AP
+			AP_CupPodiumReset();
+#endif
 			th->funcThTick = CS_Camera_ThTick_Boss;
 
 			if (gGT->podiumRewardID != STATIC_RELIC)

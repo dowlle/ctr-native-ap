@@ -74,6 +74,30 @@ static inline int AP_FT_HubOpen(int hub, int keysHave)
 	return hub >= 0 && hub < AP_FT_HUBS && keysHave >= AP_PadActivityHubKeys(hub, -1);
 }
 
+// A6-77. A hub whose save-screen landing is not drivable overrides the drop.
+// Citadel City's save screen stands on the gem door balcony, and its approach
+// axis walks down the balcony ramp: the generic 1024-unit landing sits on the
+// slope, where the kart rolls backwards down the ramp, and every closer point
+// on that axis is inside the save screen's 767-unit wake, which would open
+// the save/shop box on arrival. The override drops the kart on the flat
+// balcony floor west of the door instead: y 768 ground, 859 units from the
+// save screen (clear of its wake), facing rotY 0 (kart forward (0,+1), down
+// the ramp toward the main hall).
+static inline int AP_FT_HubDropOverride(int hub, int pos[3], int *rotY)
+{
+	if (hub == 4) // Citadel City (levelID - GEM_STONE_VALLEY)
+	{
+		pos[0] = 4400;
+		pos[1] = 768;
+		pos[2] = -20650;
+		*rotY = 0;
+		return 1;
+	}
+	(void)pos;
+	(void)rotY;
+	return 0;
+}
+
 // dirX, dirZ: the save trigger's local X axis in 12-bit fixed point
 // (MATH_Cos(rotY), -MATH_Sin(rotY) of its InstDef rotation). pos: the
 // trigger's world position. out: the landing, AP_FT_LAND_DIST out along the

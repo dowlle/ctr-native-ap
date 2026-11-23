@@ -142,6 +142,20 @@ void AP_CustomTrackTrophyCeremonyEnd(void);
 // Call from the podium camera tick only while no menu obscures the scene.
 void AP_TrophyPodiumCeremonyDraw(int x, int y);
 
+// ── Content-plan cup podium presentation (A6-77, display-only) ──
+// A won content-plan cup reuses the Trophy model for its podium
+// (AP_ContentCupFinish). The finish arms this latch with the cup's Win
+// location code; the podium gates and draws read it so the cup podium shows
+// the cup's own check ("CUP WON" + the scouted item sentence) instead of the
+// ordinary-Trophy presentation's "TROPHIES: n" and unrelated Trophy
+// text. The camera clears the latch after podium exit. A fresh connect
+// clears the location while keeping the cup heading visible until exit.
+void AP_CupPodiumArm(long winCode);
+int  AP_CupPodiumActive(void);
+void AP_CupPodiumReset(void);
+void AP_CupPodiumForgetReward(void);
+void AP_ContentCupPodiumCeremonyDraw(int x, int y);
+
 // 1 when the podium's STATIC_TROPHY model belongs to a trial track or Cortex
 // Vortex rather than an ordinary retail trophy. Those reuse the model but have
 // no prevLEV + ADV_REWARD_FIRST_TROPHY location, so #235 leaves them on the
@@ -156,7 +170,7 @@ int AP_PodiumSpecialTrack(void);
 // podium. Every other podium still relies on its own prize thread, so the
 // self-gating wrapper is a no-op there. AP_PodiumExitReset re-arms the one-shot
 // latch when a podium is born (CS_Podium_FullScene_Init).
-void AP_PodiumExitReset(void);
+void AP_PodiumExitReset(int prizeOmitted);
 void AP_PodiumExitTerminalWork(void);
 
 // ── Local podium-skip option (issue #285) ──
