@@ -2,30 +2,57 @@
 from pathlib import Path
 import subprocess
 import tempfile
+from coop_fixture import function
 
 root = Path(__file__).resolve().parents[1]
 traps = (root / "ap/ap_traps.c").read_text()
 start = traps.index("\tcase AP_TRAP_WUMPA_WIPEOUT:", traps.index("static void AP_TrapApplyInstant"))
-effect = traps[start:traps.index("\n\t\tbreak;", start)].split(":", 1)[1]
+effect = traps[start:traps.index("\n\t\tbreak;", start) + len("\n\t\tbreak;")]
 player = (root / "game/231/RB_Player.c").read_text()
 start = player.index("void RB_Player_ModifyWumpa(")
 modify = player[start:player.index("\n}\n", start) + 3]
 fixture = r'''
+#include <assert.h>
 #define main shipped_counter_main
 #define RB_Player_ModifyWumpa counter_fixture_modify
 #include "tools/test-wumpa-race-counter.c"
 #undef RB_Player_ModifyWumpa
 #undef main
+#include "ap/ap_trap_sched_logic.h"
+#include "ap/ap_trap_observe_logic.h"
+#include "ap/ap_trap_alpha3_logic.h"
+#define AP_TRAP_JUICED_WUMPA 10
 int OtherFX_Play(u32 id, int flags) { (void)id; (void)flags; return 0; }
 void AP_WumpaReachedTen(struct Driver *driver) { (void)driver; }
 static int recorder_effects;
 void AP_NavRec_NoteKartEffect(void) { recorder_effects++; }
+static AP_TrapSched g_sched;
+static unsigned char g_trap_spawn_pending[AP_TRAP_EFFECT_COUNT];
+static struct Driver *AP_TrapCrystalPartner(struct GameTracker *gt)
+{ return AP_CoopCrystal(gt) ? gt->drivers[1] : NULL; }
+static int AP_TrapCanActNow(struct GameTracker *gt, struct Driver *driver)
+{ return driver && sdata->Loading.stage == LOAD_IDLE && !(gt->gameMode1 & PAUSE_ALL); }
+static int AP_TrapFireWarpball(struct GameTracker *gt, struct Driver *driver) { return 0; }
+static int AP_TrapApplyHazardHit(struct Driver *driver, int effect) { return 0; }
 '''
 fixture += modify
-fixture += "\n#define AP_TrapSchedEffectDone(a,b) ((void)0)\n"
-start = traps.index("static int AP_TrapFruitProtected(")
-fixture += traps[start:traps.index("\n}\n", start) + 3]
-fixture += "static void wipeout(struct Driver *local) {\nstruct GameTracker *gGT = sdata->gGT;\n" + effect + "\n}\n"
+for signature in ("static int AP_TrapFruitProtected(", "static int AP_TrapTakeFruit(",
+                  "static void AP_TrapPollPendingInstants("):
+    fixture += function("ap/ap_traps.c", signature)
+fixture += r'''
+static void fire(struct Driver *local, int effect) {
+    struct GameTracker *gGT = sdata->gGT;
+    unsigned seats = AP_CoopCrystal(gGT) ? 3 : 1;
+    AP_TrapSchedReset(&g_sched);
+    int slot = AP_TrapSchedReceive(&g_sched, effect);
+    assert(slot >= 0);
+    g_sched.slots[slot].state = AP_TRAP_SLOT_ACTIVE;
+    switch (effect) {
+''' + effect + r'''
+    }
+}
+static void wipeout(struct Driver *local) { fire(local, AP_TRAP_WUMPA_WIPEOUT); }
+'''
 fixture += r'''
 #include <assert.h>
 int main(void) {
@@ -64,6 +91,30 @@ int main(void) {
     partner.numWumpas = 10;
     wipeout(&d);
     assert(d.numWumpas == 0 && partner.numWumpas == 0);
+    assert(AP_TrapSchedPollGate(&g_sched, AP_TRAP_WUMPA_WIPEOUT) == AP_TRAP_POLL_GONE);
+    g_race_wumpa = d.numWumpas = 6;
+    partner.numWumpas = 1;
+    fire(&d, AP_TRAP_WUMPA_LEAK);
+    assert(d.numWumpas == 3 && partner.numWumpas == 1);
+    assert(AP_TrapSchedPollGate(&g_sched, AP_TRAP_WUMPA_LEAK) == AP_TRAP_POLL_RUN);
+    partner.numWumpas = 8;
+    partner.actionsFlagSet = ACTION_MASK_WEAPON;
+    AP_TrapPollPendingInstants(&gt, &d);
+    assert(d.numWumpas == 3 && partner.numWumpas == 8);
+    partner.actionsFlagSet = 0;
+    AP_TrapPollPendingInstants(&gt, &d);
+    assert(d.numWumpas == 3 && partner.numWumpas == 4);
+    assert(AP_TrapSchedPollGate(&g_sched, AP_TRAP_WUMPA_LEAK) == AP_TRAP_POLL_GONE);
+    g_race_wumpa = d.numWumpas = 10;
+    partner.numWumpas = 9;
+    wipeout(&d);
+    assert(d.numWumpas == 0 && partner.numWumpas == 9);
+    assert(AP_TrapSchedPollGate(&g_sched, AP_TRAP_WUMPA_WIPEOUT) == AP_TRAP_POLL_RUN);
+    g_race_wumpa = d.numWumpas = 10;
+    partner.numWumpas = 10;
+    AP_TrapPollPendingInstants(&gt, &d);
+    assert(d.numWumpas == 10 && partner.numWumpas == 0);
+    assert(AP_TrapSchedPollGate(&g_sched, AP_TRAP_WUMPA_WIPEOUT) == AP_TRAP_POLL_GONE);
     puts("PASS: production Wipeout clears the full race count and respects protection and banking");
 }
 '''

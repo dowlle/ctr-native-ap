@@ -102,7 +102,7 @@ void AP_UsefulTick(struct GameTracker *gGT)
 	int effect;
 	char msg[96];
 	if (!gGT) return;
-	if (AP_CoopCrystal(gGT) &&
+	if (AP_CoopDriving(gGT) &&
 	    (sdata->Loading.stage != LOAD_IDLE || (gGT->gameMode1 & LOADING) ||
 	     !AP_CoopP2Available()))
 		return;

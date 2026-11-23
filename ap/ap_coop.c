@@ -136,6 +136,7 @@ int AP_CoopReloadOnRetry(struct GameTracker *gt)
 	Platform_PollInput();
 	if (AP_CoopP2Available())
 		return 0;
+	AP_CoopLog("drop out", "controller disconnected", gt->levelID, 1);
 	AP_CoopReloadSolo(gt, 0);
 	return 1;
 }

@@ -24,8 +24,6 @@ static struct GameTracker gt;
 static struct Driver humans[2];
 static int active = 1, onTrack = 1, g_tg_received = 1, g_tg_turbo_weapon = 1;
 static AP_TurboGrantRace g_tg_race;
-static int g_usefulCountdownSeen;
-static unsigned g_usefulReceived, g_usefulApplied;
 static int partnerAvailable = 1;
 static struct Driver *recipient;
 static struct MaskHeadWeapon mask;
@@ -43,15 +41,15 @@ struct MaskHeadWeapon *VehPickupItem_MaskUseWeapon(struct Driver *driver, b32 pl
 { (void)playSound; recipient = driver; return &mask; }
 void AP_NavRec_NoteItemFire(struct Driver *driver, int item) { (void)driver; (void)item; }
 void AP_NavRec_NoteBoostGrant(enum AP_NavRecBoostGrant grant) { (void)grant; }
-static void AP_UsefulStore(void) {}
+int ap_net_seed_name(char *out, int len) { return snprintf(out, len, "test-seed"); }
+int ap_net_slot_name(char *out, int len) { return snprintf(out, len, "test-slot"); }
+#include "ap/ap_useful.c"
 static int AP_TurboGrantItemsanityOn(void) { return 1; }
 '''
 for path, signature in (
     ('ap/ap_turbogrant.c', 'static struct Driver *AP_TurboGrantLocalDriver('),
     ('ap/ap_turbogrant.c', 'static int AP_TurboGrantSlotFree('),
     ('ap/ap_turbogrant.c', 'void AP_TurboGrantTick('),
-    ('ap/ap_useful.c', 'static int AP_UsefulRaceActive('),
-    ('ap/ap_useful.c', 'void AP_UsefulTick('),
     ('ap/ap_wumpa.c', 'static int AP_WumpaAdventureRace('),
     ('ap/ap_wumpa.c', 'static int AP_WumpaReceiptInRace('),
     ('game/MAIN/MainGameEnd.c', 'static void MainGameEnd_UpdateAdventureLosses('),
@@ -90,6 +88,22 @@ int main(void) {
     AP_UsefulTick(&gt); assert(!recipient && !g_usefulApplied);
     sdata->Loading.stage = LOAD_IDLE;
     AP_UsefulTick(&gt); assert(recipient == &humans[1] && g_usefulApplied);
+    reset();
+    AP_UsefulConnectReset();
+    AP_UsefulReceive(0);
+    humans[0].heldItemID = 1;
+    partnerAvailable = 0;
+    gt.trafficLightsTimer = 5; AP_UsefulTick(&gt);
+    gt.trafficLightsTimer = -1; AP_UsefulTick(&gt);
+    assert(!recipient && !g_usefulApplied);
+    assert(fopen(AP_USEFUL_FILE, "r") == NULL);
+    gt.numPlyrCurrGame = 1;
+    humans[0].heldItemID = 15;
+    gt.trafficLightsTimer = 5; AP_UsefulTick(&gt);
+    gt.trafficLightsTimer = -1; AP_UsefulTick(&gt);
+    assert(recipient == &humans[0] && g_usefulApplied == 1);
+    AP_UsefulConnectReset();
+    assert(g_usefulApplied == 1);
     reset(); humans[0].actionsFlagSet = ACTION_BOT | ACTION_RACE_FINISHED;
     assert(AP_WumpaReceiptInRace());
     humans[1].actionsFlagSet = ACTION_BOT | ACTION_RACE_FINISHED;
@@ -125,4 +139,4 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(['cc', '-m32', '-std=c99', '-DCTR_AP', '-DCTR_NATIVE', '-DBUILD=926',
                     '-I', str(root), '-I', str(root / 'include'), '-I', str(root / 'ap'),
                     str(src), '-o', str(binary), '-lm'], check=True)
-    subprocess.run([str(binary)], check=True)
+    subprocess.run([str(binary)], cwd=tmp, check=True)

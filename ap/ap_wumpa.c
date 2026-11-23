@@ -116,13 +116,15 @@ static int AP_WumpaRaceTracking(struct Driver *driver)
 
 // Receipts run before the per-frame countdown observer. Classify a receipt
 // from the live scene, without requiring that observer to have run already.
-// A receipt during pause or on the way out belongs to this attempt as well.
+// A receipt during pause belongs to this attempt. A split Crystal load
+// boundary routes new receipts through the existing between-race path.
 static int AP_WumpaReceiptInRace(void)
 {
 	struct GameTracker *gt = sdata->gGT;
 	if (!ctr_cfg_active() || ctr_cfg.schema_newer || !AP_WumpaAdventureRace(gt) ||
 	    (gt->gameMode2 & CHEAT_WUMPA) || !LOAD_IsOpen_RacingOrBattle() ||
 	    (gt->gameMode1 & (END_OF_RACE | MAIN_MENU | GAME_CUTSCENE))) return 0;
+	if (AP_CoopCrystal(gt) && sdata->Loading.stage != LOAD_IDLE) return 0;
 	int humans = AP_CoopDriving(gt) ? 2 : 1;
 	for (int i = 0; i < humans; i++)
 	{

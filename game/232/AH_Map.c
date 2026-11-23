@@ -737,6 +737,24 @@ force_inline void AH_MaskHint_DrawRepeatPrompt(void);
 #endif
 
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x800b1c90-0x800b1ef8.
+static void AH_Map_DrawMinimap(struct GameTracker *gGT, int hubPtrs)
+{
+#ifdef CTR_AP
+	const struct RectMenu *menu = sdata->ptrActiveMenu;
+	if (menu && menu->stringIndexTitle == LNG_CHOOSE_RACE_TYPE &&
+	    AH_WarpPad_CoopMenuPlayer(menu) == 1)
+		return;
+#endif
+	s16 driverIndex = 0;
+	s16 iconIndex[3] = {0};
+	D232.unkModeHubItems = 0;
+	UI_Map_DrawDrivers(hubPtrs, gGT->threadBuckets[0].thread, &driverIndex);
+	AH_Map_Warppads((s16 *)hubPtrs, gGT->threadBuckets[5].thread, iconIndex);
+	AH_Map_HubItems((void *)hubPtrs, iconIndex);
+	UI_Map_DrawMap(gGT->ptrIcons[3], gGT->ptrIcons[4], AH_MAP_RIGHT, AH_MAP_BOTTOM,
+	               &gGT->backBuffer->primMem, gGT->pushBuffer_UI.ptrOT, 1);
+}
+
 void AH_Map_Main(void)
 {
 	struct GameTracker *gGT = sdata->gGT;
@@ -744,13 +762,10 @@ void AH_Map_Main(void)
 	struct UiElement2D *ptrHudData;
 	int iVar1;
 	int hubPtrs; // int*?
-	s16 local_20;
-	s16 local_1e[3];
 
 	// force disable speedometer
 	sdata->HudAndDebugFlags &= 0xfffffff7;
 
-	local_20 = 0;
 	advDriver = gGT->drivers[0];
 	ptrHudData = data.hudStructPtr[gGT->numPlyrCurrGame - 1];
 	hubPtrs = 0;
@@ -822,22 +837,7 @@ void AH_Map_Main(void)
 #endif
 	)
 	{
-		local_1e[0] = 0;
-
-		D232.unkModeHubItems = 0;
-
-		UI_Map_DrawDrivers(hubPtrs, gGT->threadBuckets[0].thread, &local_20);
-
-		AH_Map_Warppads((s16 *)hubPtrs, gGT->threadBuckets[5].thread,
-		                (s16 *)&local_1e[0]); // local_1e index 1 and 2 are never assigned to, so garbage data?
-
-		AH_Map_HubItems((void *)hubPtrs, &local_1e[0]);
-
-		UI_Map_DrawMap(gGT->ptrIcons[3], gGT->ptrIcons[4],
-
-		               AH_MAP_RIGHT, AH_MAP_BOTTOM,
-
-		               &gGT->backBuffer->primMem, gGT->pushBuffer_UI.ptrOT, 1);
+		AH_Map_DrawMinimap(gGT, hubPtrs);
 
 #ifdef CTR_AP
 		if (AP_CoopHub(gGT))

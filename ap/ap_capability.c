@@ -649,13 +649,18 @@ void AP_CapabilitySelectRestore(void)
 // equivalence.
 #define AP_CAP_PAD_RESERVES 0x3c0
 
+int AP_CapabilityAppliedBoostTierForDriver(const struct Driver *driver)
+{
+	return AP_CapabilityRoomStatsRace() && driver && driver->driverID < 8
+	    ? AP_CapabilityAppliedRankForCharacter(AP_CAP_CHAIN_BOOST, data.characterIDs[driver->driverID]) : -1;
+}
+
 int AP_CapabilityFireGrant(struct Driver *driver, int *reserves, uint32_t type, int *fireLevel)
 {
 	// The APPLIED tier: the player may drive below what their items unlock
 	// (rank selector). It is -1 exactly when the ceiling is, so a seed with the
 	// pack off still never reaches a write.
-	const int tier = AP_TrapWeakenBoostTier(AP_CapabilityRoomStatsRace() && driver && driver->driverID < 8
-	    ? AP_CapabilityAppliedRankForCharacter(AP_CAP_CHAIN_BOOST, data.characterIDs[driver->driverID]) : -1);
+	const int tier = AP_TrapWeakenBoostTier(AP_CapabilityAppliedBoostTierForDriver(driver));
 
 	if (tier < 0 || !AP_CapabilityIsLocal(driver))
 		return 1;
@@ -724,9 +729,8 @@ int AP_CapabilityFireGrant(struct Driver *driver, int *reserves, uint32_t type, 
 
 int AP_CapabilityRetroFueled(struct Driver *driver)
 {
-	return AP_CapabilityRoomStatsRace() && driver != 0 && AP_CapabilityIsLocal(driver) &&
-	       driver->driverID < 8 && AP_TrapWeakenBoostTier(AP_CapabilityAppliedRankForCharacter(
-	           AP_CAP_CHAIN_BOOST, data.characterIDs[driver->driverID])) == AP_CAP_BOOST_BLUEFIRE;
+	return AP_CapabilityIsLocal(driver) &&
+	       AP_TrapWeakenBoostTier(AP_CapabilityAppliedBoostTierForDriver(driver)) == AP_CAP_BOOST_BLUEFIRE;
 }
 
 // ── Stat ranks ──────────────────────────────────────────────────────────────

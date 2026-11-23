@@ -8,6 +8,7 @@ rectmenu = (root / "game/RECTMENU.c").read_text()
 hub = (root / "game/LOAD/LOAD_Hub.c").read_text()
 frame = (root / "game/MAIN/MainFrame.c").read_text()
 pad = (root / "game/232/AH_WarpPad.c").read_text()
+hub_map = (root / "game/232/AH_Map.c").read_text()
 
 
 def function(source, signature):
@@ -28,6 +29,7 @@ static struct GamepadSystem pads;
 static struct RectMenu p2Menu;
 static int requestedLevel, swaps, leader = -1;
 static int warpPlayer = -1;
+static unsigned mapDraws;
 static const int connected[5][3] = {
     {26, 27, 29}, {25, 27, 28}, {25, 26, 28}, {26, 27, 29}, {25, 27, 28}
 };
@@ -56,9 +58,15 @@ void AP_CoopPlaceBeside(struct GameTracker *gt, int enteringPlayer)
 {
     leader = enteringPlayer;
 }
+void UI_Map_DrawDrivers(int map, struct Thread *thread, s16 *index) { mapDraws |= 1; }
+void AH_Map_Warppads(s16 *map, struct Thread *thread, s16 *index) { mapDraws |= 2; }
+void AH_Map_HubItems(void *map, s16 *index) { mapDraws |= 4; }
+void UI_Map_DrawMap(struct Icon *top, struct Icon *bottom, s16 x, s16 y,
+                    struct PrimMem *prims, uint32_t *ot, u32 fade) { mapDraws |= 8; }
 '''
 fixture += function(pad, "int AH_WarpPad_CoopMenuPlayer(const struct RectMenu *menu)")
 fixture += function(pad, "static int AH_WarpPad_CoopSelectorInView(const struct GameTracker *gt, int player)")
+fixture += function(hub_map, "static void AH_Map_DrawMinimap(struct GameTracker *gGT, int hubPtrs)")
 for name in ("RECTMENU_ClearInput", "RECTMENU_CollectInput"):
     fixture += function(rectmenu, f"void {name}()")
 fixture += function(rectmenu, "int RECTMENU_ProcessInput(struct RectMenu *m)")
@@ -79,6 +87,8 @@ int main(void)
     struct RectMenu *selector = &D232.menuTokenRelic;
     tracker.numPlyrCurrGame = 2;
     tracker.gameMode1 = ADVENTURE_MODE | ADVENTURE_ARENA;
+    static struct DB backBuffer;
+    tracker.backBuffer = &backBuffer;
     sdata->ptrActiveMenu = sdata->activeSubMenu = selector;
     for (warpPlayer = 0; warpPlayer < 2; warpPlayer++) {
         sdata->ptrActiveMenu = NULL;
@@ -87,7 +97,20 @@ int main(void)
         sdata->ptrActiveMenu = selector;
         assert(AH_WarpPad_CoopSelectorInView(&tracker, warpPlayer));
         assert(!AH_WarpPad_CoopSelectorInView(&tracker, 1 - warpPlayer));
+        mapDraws = 0;
+        AH_Map_DrawMinimap(&tracker, 0);
+        assert(mapDraws == (warpPlayer == 0 ? 15 : 0));
     }
+    tracker.numPlyrCurrGame = 1;
+    mapDraws = 0;
+    AH_Map_DrawMinimap(&tracker, 0);
+    assert(mapDraws == 15);
+    tracker.numPlyrCurrGame = 2;
+    sdata->ptrActiveMenu = NULL;
+    mapDraws = 0;
+    AH_Map_DrawMinimap(&tracker, 0);
+    assert(mapDraws == 15);
+    sdata->ptrActiveMenu = selector;
     warpPlayer = 1;
 
     pads.gamepad[0].buttonsTapped = BTN_CROSS_one;

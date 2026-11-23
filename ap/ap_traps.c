@@ -887,7 +887,19 @@ static int AP_TrapApplyHazardHit(struct Driver *local, int effect)
 	return 1;
 }
 
-static void AP_TrapPollSpawnedInstants(struct GameTracker *gGT, struct Driver *local)
+static int AP_TrapTakeFruit(struct GameTracker *gt, struct Driver *driver, int effect)
+{
+	int count = AP_WumpaRaceCount(driver);
+	if (AP_TrapFruitProtected(gt, driver) ||
+	    (effect == AP_TRAP_WUMPA_WIPEOUT ? count < AP_TRAP_JUICED_WUMPA : count < 2))
+		return 0;
+	int loss = effect == AP_TRAP_WUMPA_WIPEOUT ? count : AP_TrapWumpaLeakAmount(count);
+	RB_Player_ModifyWumpa(driver, -loss);
+	AP_NavRec_NoteKartEffect();
+	return 1;
+}
+
+static void AP_TrapPollPendingInstants(struct GameTracker *gGT, struct Driver *local)
 {
 	int effect;
 	struct Driver *partner = AP_TrapCrystalPartner(gGT);
@@ -921,6 +933,16 @@ static void AP_TrapPollSpawnedInstants(struct GameTracker *gGT, struct Driver *l
 				g_trap_spawn_pending[effect] &= ~1u;
 			if ((g_trap_spawn_pending[effect] & 2u) && p2Ready &&
 			    AP_TrapApplyHazardHit(partner, effect))
+				g_trap_spawn_pending[effect] &= ~2u;
+			done = !g_trap_spawn_pending[effect];
+		}
+		else if (effect == AP_TRAP_WUMPA_WIPEOUT || effect == AP_TRAP_WUMPA_LEAK)
+		{
+			if ((g_trap_spawn_pending[effect] & 1u) && p1Ready &&
+			    AP_TrapTakeFruit(gGT, local, effect))
+				g_trap_spawn_pending[effect] &= ~1u;
+			if ((g_trap_spawn_pending[effect] & 2u) && p2Ready &&
+			    AP_TrapTakeFruit(gGT, partner, effect))
 				g_trap_spawn_pending[effect] &= ~2u;
 			done = !g_trap_spawn_pending[effect];
 		}
@@ -995,16 +1017,20 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, A
 	switch (effect)
 	{
 	case AP_TRAP_WUMPA_WIPEOUT:
-		// Through the engine's own helper, so the clamp, the juiced-state
-		// bookkeeping and the mask veto all behave exactly as they do for a
-		// normal hit. The predicate has already established that nothing is
-		// protecting the fruit, so this genuinely takes it.
-		RB_Player_ModifyWumpa(local, -AP_WumpaRaceCount(local));
-		if (AP_CoopCrystal(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]) &&
-		    !AP_TrapFruitProtected(gGT, gGT->drivers[1]))
-			RB_Player_ModifyWumpa(gGT->drivers[1], -AP_WumpaRaceCount(gGT->drivers[1]));
-		AP_NavRec_NoteKartEffect();
-		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_WUMPA_WIPEOUT);
+	case AP_TRAP_WUMPA_LEAK:
+		if (AP_CoopCrystal(gGT))
+		{
+			g_trap_spawn_pending[effect] = seats;
+			AP_TrapPollPendingInstants(gGT, local);
+		}
+		else
+		{
+			int count = AP_WumpaRaceCount(local);
+			int loss = effect == AP_TRAP_WUMPA_WIPEOUT ? count : AP_TrapWumpaLeakAmount(count);
+			RB_Player_ModifyWumpa(local, -loss);
+			AP_NavRec_NoteKartEffect();
+			AP_TrapSchedEffectDone(&g_sched, effect);
+		}
 		break;
 	case AP_TRAP_ITEM_REROLL:
 	case AP_TRAP_FORCED_USE:
@@ -1034,18 +1060,6 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, A
 	case AP_TRAP_CLOCKED_OUT:
 		AP_TrapStartClockedOut(gGT, local, seats);
 		break;
-	case AP_TRAP_WUMPA_LEAK:
-		// Same engine helper as Wumpa Wipeout, so the clamp, the juiced state
-		// and the mask veto behave as for a normal hit. Half, rounded down: 11
-		// fruit leave 6.
-		RB_Player_ModifyWumpa(local, -AP_TrapWumpaLeakAmount(AP_WumpaRaceCount(local)));
-		if (AP_CoopCrystal(gGT) && AP_IsSlotHuman(gGT, gGT->drivers[1]) &&
-		    !AP_TrapFruitProtected(gGT, gGT->drivers[1]))
-			RB_Player_ModifyWumpa(gGT->drivers[1],
-			    -AP_TrapWumpaLeakAmount(AP_WumpaRaceCount(gGT->drivers[1])));
-		AP_NavRec_NoteKartEffect();
-		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_WUMPA_LEAK);
-		break;
 	case AP_TRAP_STUCK_STEERING:
 		AP_TrapStuckPickSide(gGT);
 		break;
@@ -1067,7 +1081,7 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, A
 	case AP_TRAP_NITRO:
 	case AP_TRAP_RED_POTION:
 		g_trap_spawn_pending[effect] = seats;
-		AP_TrapPollSpawnedInstants(gGT, local);
+		AP_TrapPollPendingInstants(gGT, local);
 		break;
 	default:
 		break;
@@ -1353,7 +1367,7 @@ static void AP_TrapClampWeakenedFire(struct Driver *local)
 	if (local == 0 || !g_active[AP_TRAP_WEAKENED_KART] || local->reserves == 0)
 		return;
 
-	tier = AP_TrapWeakenBoostTier(AP_CapabilityAppliedBoostTier()); // what the kart drives
+	tier = AP_TrapWeakenBoostTier(AP_CapabilityAppliedBoostTierForDriver(local));
 	if (tier <= AP_CAP_BOOST_NONE)
 		cap = 0;
 	else if (tier == AP_CAP_BOOST_BOOST)
@@ -1483,7 +1497,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 	    !g_trap_inventory[1].useWait && !g_trap_inventory[1].usePending)
 		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_FORCED_USE);
 	AP_TrapPollFlatten(gGT, local, gGT->elapsedTimeMS > 0 ? gGT->elapsedTimeMS : 32);
-	AP_TrapPollSpawnedInstants(gGT, local);
+	AP_TrapPollPendingInstants(gGT, local);
 
 	// Map boundary. Clearing here, on the frame the load BEGINS and while the
 	// source map is still standing, is what fixes the reported First Person
@@ -1510,7 +1524,8 @@ void AP_TrapTick(struct GameTracker *gGT)
 			unsigned seat = 1u << player;
 			if (AP_TrapForcedUseOwed(gGT->drivers[player], inventory))
 				owed[AP_TRAP_FORCED_USE] |= seat;
-			if (AP_TrapHeldItemWaitOwed(inventory->rerollWait,
+			if (AP_TrapHeldItemWaitOwed(inventory->rerollWait ||
+			    (nextSeats == 3u && inventory->rerollExcluded >= 0),
 			    AP_TrapSchedPollGate(&g_sched, AP_TRAP_ITEM_REROLL)))
 				owed[AP_TRAP_ITEM_REROLL] |= seat;
 			if (AP_TrapFlattenOwedAtBoundary(&g_trap_flatten[player],
@@ -1524,6 +1539,8 @@ void AP_TrapTick(struct GameTracker *gGT)
 		owed[AP_TRAP_NITRO] = g_trap_spawn_pending[AP_TRAP_NITRO];
 		owed[AP_TRAP_RED_POTION] = g_trap_spawn_pending[AP_TRAP_RED_POTION];
 		owed[AP_TRAP_WARPBALL_AMBUSH] = g_trap_spawn_pending[AP_TRAP_WARPBALL_AMBUSH];
+		owed[AP_TRAP_WUMPA_WIPEOUT] = g_trap_spawn_pending[AP_TRAP_WUMPA_WIPEOUT];
+		owed[AP_TRAP_WUMPA_LEAK] = g_trap_spawn_pending[AP_TRAP_WUMPA_LEAK];
 
 		g_epoch++;
 		g_trap_boost_tainted = 0;
