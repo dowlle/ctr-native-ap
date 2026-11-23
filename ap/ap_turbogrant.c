@@ -143,7 +143,7 @@ void AP_TurboGrantTick(struct GameTracker *gGT)
 
 	local = AP_TurboGrantLocalDriver(gGT);
 	if (AP_CoopDriving(gGT) && (!AP_IsSlotHuman(gGT, local) || !AP_TurboGrantSlotFree(local)))
-		local = gGT->drivers[1];
+		local = AP_CoopP2Available() ? gGT->drivers[1] : NULL;
 	if (AP_CoopDriving(gGT) && !AP_IsSlotHuman(gGT, local)) return;
 	if (local == 0 || !AP_TurboGrantSlotFree(local))
 		return;

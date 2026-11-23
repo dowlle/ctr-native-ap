@@ -51,6 +51,7 @@ for path, signature in (
     ('ap/ap_turbogrant.c', 'static int AP_TurboGrantSlotFree('),
     ('ap/ap_turbogrant.c', 'void AP_TurboGrantTick('),
     ('ap/ap_wumpa.c', 'static int AP_WumpaAdventureRace('),
+    ('ap/ap_wumpa.c', 'static int AP_WumpaCoopRetry('),
     ('ap/ap_wumpa.c', 'static int AP_WumpaReceiptInRace('),
     ('game/MAIN/MainGameEnd.c', 'static void MainGameEnd_UpdateAdventureLosses('),
 ):
@@ -75,6 +76,18 @@ int main(void) {
     AP_TurboGrantTick(&gt); assert(humans[1].heldItemID == 0);
     reset(); humans[0].actionsFlagSet = humans[1].actionsFlagSet = ACTION_BOT | ACTION_RACE_FINISHED;
     AP_TurboGrantTick(&gt); assert(!g_tg_race.givenThisRace);
+    reset();
+    humans[0].heldItemID = 1;
+    g_tg_turbo_weapon = 0;
+    AP_TurboGrantTick(&gt);
+    partnerAvailable = 0;
+    g_tg_turbo_weapon = 1;
+    AP_TurboGrantTick(&gt);
+    assert(humans[1].heldItemID == 15 && !g_tg_race.givenThisRace);
+    humans[0].heldItemID = 15;
+    AP_TurboGrantTick(&gt);
+    assert(humans[0].heldItemID == 0 && humans[1].heldItemID == 15 && g_tg_race.givenThisRace);
+    partnerAvailable = 1;
     reset(); AP_UsefulTick(&gt); assert(recipient == &humans[0]);
     reset(); humans[0].heldItemID = 1; AP_UsefulTick(&gt); assert(recipient == &humans[1]);
     reset(); humans[0].actionsFlagSet = ACTION_BOT | ACTION_RACE_FINISHED;

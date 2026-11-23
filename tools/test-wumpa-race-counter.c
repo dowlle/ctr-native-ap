@@ -304,7 +304,7 @@ static void test_exit_and_restart_bank(void)
 	d->actionsFlagSet = 0;
 }
 
-static void test_crystal_dropout_receipt(void)
+static void test_coop_retry_receipt(unsigned mode, int stage, int nextSeats)
 {
 	struct Driver partner = {0};
 	struct GameTracker *gt = &rc_gt;
@@ -312,30 +312,32 @@ static void test_crystal_dropout_receipt(void)
 	gt->drivers[0] = &rc_d;
 	gt->drivers[1] = &partner;
 	gt->numPlyrCurrGame = 2;
-	gt->levelID = SKULL_ROCK;
+	gt->levelID = (mode & CRYSTAL_CHALLENGE) ? SKULL_ROCK : CRASH_COVE;
 	AP_WumpaConnectReset();
 	ctr_wumpa_shop.state = AP_WUMPA_SHOP_ABSENT;
 	int before = credited;
-	const unsigned mode = ADVENTURE_MODE | CRYSTAL_CHALLENGE;
 	rc_attempt(mode, 0);
 	gt->gameMode1 |= PAUSE_1;
 	AP_WumpaReceive(2);
 	AP_WumpaCommitReceived();
 	AP_WumpaTick(gt);
-	CHECK("paused Crystal receipt waits in the live attempt", g_wumpa_race_pending == 2);
+	CHECK("paused co-op receipt waits in the live attempt", g_wumpa_race_pending == 2);
 	// Co-op queues the load before the received item drain advances its marker.
-	sdata->Loading.stage = LOAD_REQUESTED;
-	sdata->Loading.Lev_ID_To_Load = SKULL_ROCK;
+	sdata->Loading.stage = stage;
+	sdata->Loading.Lev_ID_To_Load = gt->levelID;
 	AP_WumpaReceive(3);
 	AP_WumpaCommitReceived();
 	AP_WumpaTick(gt);
-	CHECK("Crystal dropout holds both receipts without banking", g_wumpa_pending == 5 && credited == before);
-	gt->numPlyrCurrGame = 1;
-	gt->drivers[1] = NULL;
+	CHECK("co-op retry holds both receipts without banking", g_wumpa_pending == 5 && credited == before);
+	gt->numPlyrCurrGame = nextSeats;
+	gt->drivers[1] = nextSeats == 2 ? &partner : NULL;
 	rc_attempt(mode, 0);
-	CHECK("solo Crystal receives both held bundles", rc_d.numWumpas == 5);
+	CHECK("retried race receives both held bundles", rc_d.numWumpas == 5);
 	AP_WumpaTick(gt);
-	CHECK("solo Crystal receives both bundles only once", rc_d.numWumpas == 5 && g_wumpa_pending == 0);
+	CHECK("retried race receives both bundles only once", rc_d.numWumpas == 5 && g_wumpa_pending == 0);
+	if (nextSeats == 2)
+		CHECK("two-seat retry gives the held bundles to P2", partner.numWumpas == 5);
+	gt->drivers[1] = NULL;
 }
 
 int main(void)
@@ -522,7 +524,9 @@ int main(void)
 		CHECK("without banking a marker never creates wallet credit", credited == before);
 	}
 	test_exit_and_restart_bank();
-	test_crystal_dropout_receipt();
+	test_coop_retry_receipt(ADVENTURE_MODE | CRYSTAL_CHALLENGE, LOAD_REQUESTED, 1);
+	test_coop_retry_receipt(ADVENTURE_MODE | CRYSTAL_CHALLENGE, LOAD_RESTART, 2);
+	test_coop_retry_receipt(ADVENTURE_MODE, LOAD_REQUESTED, 1);
 	printf("%s Wumpa ten-fruit counter\n", failures ? "FAIL" : "PASS");
 	return failures != 0;
 }

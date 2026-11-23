@@ -114,6 +114,14 @@ static int AP_WumpaRaceTracking(struct Driver *driver)
 	return g_countdown_seen && LOAD_IsOpen_RacingOrBattle() && sdata->Loading.stage == LOAD_IDLE;
 }
 
+static int AP_WumpaCoopRetry(const struct GameTracker *gt)
+{
+	return AP_CoopDriving(gt) &&
+	       (sdata->Loading.stage == LOAD_RESTART ||
+	        (sdata->Loading.stage == LOAD_REQUESTED &&
+	         sdata->Loading.Lev_ID_To_Load == gt->levelID));
+}
+
 // Receipts run before the per-frame countdown observer. Classify a receipt
 // from the live scene, without requiring that observer to have run already.
 // A receipt during pause belongs to this attempt. A split Crystal load
@@ -124,7 +132,7 @@ static int AP_WumpaReceiptInRace(void)
 	if (!ctr_cfg_active() || ctr_cfg.schema_newer || !AP_WumpaAdventureRace(gt) ||
 	    (gt->gameMode2 & CHEAT_WUMPA) || !LOAD_IsOpen_RacingOrBattle() ||
 	    (gt->gameMode1 & (END_OF_RACE | MAIN_MENU | GAME_CUTSCENE))) return 0;
-	if (AP_CoopCrystal(gt) && sdata->Loading.stage != LOAD_IDLE) return 0;
+	if (AP_WumpaCoopRetry(gt) || (AP_CoopCrystal(gt) && sdata->Loading.stage != LOAD_IDLE)) return 0;
 	int humans = AP_CoopDriving(gt) ? 2 : 1;
 	for (int i = 0; i < humans; i++)
 	{
@@ -381,11 +389,9 @@ void AP_WumpaTick(struct GameTracker *gGT)
 	}
 	if (!onTrack || loading || (gGT->gameMode1 & END_OF_RACE) != 0)
 	{
-		// The automatic solo reload can interrupt a paused grant that was
-		// already assigned to the split attempt. Keep unspent receipts.
-		if (g_wumpa_race_pending > 0 && !AP_WumpaBanking() && AP_CoopCrystal(gGT) &&
-		    sdata->Loading.stage == LOAD_REQUESTED &&
-		    sdata->Loading.Lev_ID_To_Load == gGT->levelID)
+		// A co-op retry can interrupt a paused grant already assigned to
+		// the departing attempt. Carry only its unspent receipts.
+		if (g_wumpa_race_pending > 0 && !AP_WumpaBanking() && AP_WumpaCoopRetry(gGT))
 			AP_WumpaReceive(g_wumpa_race_pending > AP_WUMPA_MAX ? AP_WUMPA_MAX : g_wumpa_race_pending);
 		AP_WumpaOnRaceLeave();
 		g_countdown_seen = 0;

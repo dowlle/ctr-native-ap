@@ -407,12 +407,21 @@ int main(void)
 	p2Device = 101;
 	pendingPadRemoval = 1; /* SDL has a removal that the final VBlank did not publish. */
 	gt.prevLEV = N_SANITY_BEACH;
+	gridSize = 6;
+	sdata->kartSpawnOrderArray[6] = 3;
+	sdata->kartSpawnOrderArray[7] = 7;
+	AP_CoopPrepareGrid(&gt);
 	assert(AP_CoopP2Available() && AP_CoopReloadOnRetry(&gt) && !AP_CoopP2Available());
 	assert(requestedLevel == CRASH_COVE);
 	AP_CoopConnectReset(); /* The same reconnect after requesting the full load. */
 	gt.prevLEV = CRASH_COVE; /* Full load records the last level. */
 	AP_CoopPrepareLoad(&gt);
 	assert(gt.numPlyrCurrGame == 1 && gt.prevLEV == N_SANITY_BEACH);
+	unsigned soloGrid = 0;
+	for (int i = 0; i < 8; i++)
+		soloGrid |= 1u << sdata->kartSpawnOrderArray[i];
+	assert(soloGrid == 255u && sdata->kartSpawnOrderArray[0] == 7);
+	gridSize = 8;
 	sdata->Loading.stage = LOAD_IDLE;
 	gt.gameMode1 = ADVENTURE_MODE | ADVENTURE_ARENA;
 	packedValue = 16 + 10;

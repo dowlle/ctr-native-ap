@@ -124,6 +124,14 @@ static void AP_CoopReloadSolo(struct GameTracker *gt, int capacity)
 	ap_coop_retry_level = gt->levelID;
 	ap_coop_retry_hub = gt->prevLEV;
 	ap_coop_retry_capacity = capacity;
+	if (AP_CoopRace(gt))
+	{
+		// The solo loader uses all eight slots, including entries a
+		// four-bot split grid can leave stale.
+		sdata->kartSpawnOrderArray[0] = 7;
+		for (int i = 1; i < 8; i++)
+			sdata->kartSpawnOrderArray[i] = i - 1;
+	}
 	MainRaceTrack_RequestLoad(gt->levelID);
 }
 
