@@ -601,6 +601,7 @@ int AP_PadState(int physLevelID, int destLevelID)
         if(pad->cup) {
             int bits[6+AP_CONTENT_CUP_TRACK_CHECKS];
             return (AP_PadUncollectedGlowBits(physLevelID,bits,6+AP_CONTENT_CUP_TRACK_CHECKS) ||
+                    AP_ContentPadSharedChecks(pad, 0, NULL) ||
                     AP_SanityPadPending(physLevelID,0) || AP_SanityPadPending(physLevelID,1) || AP_SanityPadPending(physLevelID,2)) ? 2 : 5;
         }
 		// Track modes (#133 PR 3), the states of ap_pad_state.h.
@@ -621,7 +622,10 @@ static int AP_PadLogicLook(int physLevelID, int look)
 {
 	int bits[AP_PAD_DISPLAY_BITS_MAX];
 	int64_t codes[AP_PAD_DISPLAY_BITS_MAX];
-	int n, i, family, in = 0, unknown = 0;
+	ap_pad_shared_check shared[AP_PAD_SHARED_CHECKS_MAX];
+	int n, i, family, sharedCount, in = 0, unknown = 0;
+	unsigned modes = 0;
+	const ctr_content_pad *pad;
 
 	if (look != AP_PAD_LOOK_OPEN && look != AP_PAD_LOOK_STAGE2_OPEN)
 		return look;
@@ -649,7 +653,20 @@ static int AP_PadLogicLook(int physLevelID, int look)
 			else if (st == AP_PAD_LOGIC_UNKNOWN) unknown++;
 		}
 	}
-	return AP_PadLookByLogic(look, n, in, unknown);
+	if (in || unknown)
+		return look;
+	pad = ap_content_plan_pad(physLevelID);
+	for (i = 0; pad && i < pad->mode_count; ++i)
+		if (AP_ContentModeOpen(pad, pad->modes[i]))
+			modes |= 1u << pad->modes[i];
+	sharedCount = AP_ContentPadSharedChecks(pad, modes, shared);
+	for (i = 0; i < sharedCount; ++i)
+	{
+		int st = AP_LocationLogicState(shared[i].code);
+		if (st == AP_PAD_LOGIC_IN) in++;
+		else if (st == AP_PAD_LOGIC_UNKNOWN) unknown++;
+	}
+	return AP_PadLookByLogic(look, n + sharedCount, in, unknown);
 }
 
 int AP_PadLook(int physLevelID, int destLevelID)
@@ -664,25 +681,81 @@ int AP_PadLook(int physLevelID, int destLevelID)
 	return AP_PadLogicLook(physLevelID, AP_PadLookFromState(state, racerMissing));
 }
 
-// A Hit Character or Itemsanity use, or the `wumpa: global` check, a race on this
-// plan pad can still serve (one generator row 6). They belong to no pad, so a
-// closing pad would strand them, and logic counts every first race as a route:
-// they keep the first race open, as on an ordinary pad. Asked for the engine
-// track the pad's race loads.
-int AP_ContentPadPlainLeft(const ctr_content_pad *pad)
+static int AP_SharedWeaponChecks(int hitDest, int player, int itemsanity, ap_pad_shared_check *out)
+{
+	long itemCodes[AP_ITEMSANITY_WEAPON_COUNT * 2];
+	unsigned hits = AP_HitEncounterPendingMask(hitDest, player);
+	int count = itemsanity ? AP_ItemsanityPendingUseChecks(out ? itemCodes : NULL) : 0;
+	if (out)
+		for (int i = 0; i < count; ++i)
+			out[i] = (ap_pad_shared_check){itemCodes[i], AP_PAD_SHARED_ITEMSANITY};
+	if (hits)
+	{
+		const ctr_hit_encounters *hit = ap_seedcfg_hit_encounters();
+		for (int i = 0; i < CTR_CFG_HIT_CHARACTER_COUNT; ++i)
+			if (hits & (1u << i))
+			{
+				if (out)
+					out[count] = (ap_pad_shared_check){hit->locations[i], AP_PAD_SHARED_HIT};
+				++count;
+			}
+	}
+	return count;
+}
+
+// One leg for the Checks page, or any of the legs for the pad and its activity.
+// Every eligible leg uses the cup's same field and shared location codes.
+int AP_ContentCupLegSharedChecks(const ctr_content_pad *pad, int leg, ap_pad_shared_check *out)
+{
+	if (!pad || !pad->cup || pad->physical >= AP_CONTENT_GARAGE_CUP_PAD || leg >= AP_CONTENT_CUP_LEGS)
+		return 0;
+	int first = leg < 0 ? 0 : leg;
+	int end = leg < 0 ? AP_CONTENT_CUP_LEGS : leg + 1;
+	for (int i = first; i < end; ++i)
+		if (pad->legs[i].shared_weapon_route)
+			return AP_SharedWeaponChecks(AP_ContentCupPadHitDestination(pad), AP_HitEffectivePlayer(pad->physical),
+			                             ap_content_plan_checks()->itemsanity_cup_routes, out);
+	return 0;
+}
+
+// Shared checks that still have a route in the supplied race modes, or in
+// any leg of a cup. This follows the accepted plan, including crate-free tracks.
+int AP_ContentPadSharedChecks(const ctr_content_pad *pad, unsigned modes, ap_pad_shared_check *out)
 {
 	const ctr_content_checks *fam = ap_content_plan_checks();
-	int host;
-	if (!pad || !pad->occupied || pad->crystal || pad->cup)
+	const ctr_content_package *package;
+	int count = 0;
+	if (!pad || !pad->occupied || pad->crystal)
 		return 0;
-	if (AP_SanityPadPending(pad->physical,0) || AP_SanityPadPending(pad->physical,1) || AP_SanityPadPending(pad->physical,2))
-		return 1;
-	if (fam->wumpa == 1 && pad->wumpa_modes && fam->wumpa_global > 0 && !AP_ContentCodeChecked(fam->wumpa_global))
-		return 1;
-	host = ap_content_pad_host(pad);
-	return (AP_HitEncounterEnabled() &&
-	        AP_HitEncounterOpportunity(host, AP_HitEffectivePlayer(pad->physical)) >= 0) ||
-	       AP_ItemsanityPadOpportunity(host);
+	if (pad->cup)
+		return AP_ContentCupLegSharedChecks(pad, -1, out);
+	modes &= ap_content_pad_plain_modes(pad);
+	if (!modes)
+		return 0;
+	if (fam->wumpa == 1 && (pad->wumpa_modes & modes) &&
+	    fam->wumpa_global > 0 && !AP_ContentCodeChecked(fam->wumpa_global))
+	{
+		if (out)
+			out[count] = (ap_pad_shared_check){fam->wumpa_global, AP_PAD_SHARED_WUMPA};
+		++count;
+	}
+	package = ap_content_plan_package(pad->package_index);
+	if (package && package->weapon_crates == 0)
+		return count;
+	return count + AP_SharedWeaponChecks(ap_content_pad_host(pad), AP_HitEffectivePlayer(pad->physical),
+	                                     1, out ? out + count : NULL);
+}
+
+int AP_ContentPadPickupsLeft(const ctr_content_pad *pad)
+{
+	return pad && (AP_SanityPadPending(pad->physical, 0) ||
+	               AP_SanityPadPending(pad->physical, 1) ||
+	               AP_SanityPadPending(pad->physical, 2));
+}
+
+int AP_ContentPadPlainLeft(const ctr_content_pad *pad)
+{
+	return AP_ContentPadPickupsLeft(pad) || AP_ContentPadSharedChecks(pad, AP_CONTENT_PLAIN_MODES, NULL);
 }
 
 int AP_PadReplayable(int physLevelID, int destLevelID)

@@ -164,6 +164,16 @@ static inline int ap_content_selector_build(const ctr_content_pad *pad, const in
 // is alone: a Hit Character or Itemsanity use cannot happen there.
 static inline int ap_content_mode_plain(int mode) { return mode != AP_CONTENT_MODE_RELIC; }
 
+#define AP_CONTENT_PLAIN_MODES ((1u << AP_CONTENT_MODE_TROPHY) | (1u << AP_CONTENT_MODE_CTR))
+
+static inline unsigned ap_content_pad_plain_modes(const ctr_content_pad *pad)
+{
+	unsigned modes = 0;
+	for (int i = 0; pad && i < pad->mode_count; ++i)
+		modes |= 1u << pad->modes[i];
+	return modes & AP_CONTENT_PLAIN_MODES;
+}
+
 // The race type menu of a track pad (#208 on plans, one generator row 6): a row
 // per race the pad has open now, in the pad's order; a race not open yet has no
 // row. A row with nothing left is grey and can still be chosen. `plainLeft` is

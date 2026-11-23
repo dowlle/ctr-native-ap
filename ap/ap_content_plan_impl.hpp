@@ -1645,8 +1645,10 @@ static void validate(const J &p, State &out) {
                         wumpa_uses.push_back(RaceUse{dest.legs[n].track_id, title, entry_id, id, "cup", leg_id, "", dest.legs[n].wumpa});
                     if (fam.podium) rung_uses.push_back(RungUse{dest.legs[n].track_id, entry_id, id, leg_id});
                 }
-                if (dest.legs[n].package_index < 0 || out.packages[dest.legs[n].package_index].weapon_crates != 0)
+                if (dest.legs[n].package_index < 0 || out.packages[dest.legs[n].package_index].weapon_crates != 0) {
+                    dest.legs[n].shared_weapon_route = 1;
                     cup_hit_routes.push_back(CupHitRoute{physical, entry_id, id, leg_id});
+                }
             }
             dest.occupied = dest.cup = 1;
             dest.cup_index = gem ? -1 : index;
@@ -2591,6 +2593,7 @@ static void validate(const J &p, State &out) {
     // order).
     std::sort(race_routes.begin(), race_routes.end(),
               [](const RaceRoute &a, const RaceRoute &b) { return a.physical < b.physical; });
+    fam.itemsanity_cup_routes = out.itemsanity && race_routes.empty();
     std::vector<std::pair<int, J>> hit_route_list;
     for (const auto &r : race_routes)
         for (int m = 0; m < 2; ++m)
