@@ -683,7 +683,8 @@ void AP_CoopTick(struct GameTracker *gt)
 	if (AP_CoopCrystal(gt) && sdata->Loading.stage == LOAD_IDLE &&
 	    !(gt->gameMode1 & (LOADING | END_OF_RACE)) && gt->drivers[0] && gt->drivers[1])
 	{
-		if (!(gt->gameMode1 & (PAUSE_ALL | START_OF_RACE)) && gt->numCrystalsInLEV > 0 &&
+		if (gt->trafficLightsTimer < 1 &&
+		    !(gt->gameMode1 & (PAUSE_ALL | START_OF_RACE)) && gt->numCrystalsInLEV > 0 &&
 		    (AP_CrystalCount(gt, gt->drivers[0]) >= gt->numCrystalsInLEV ||
 		     gt->elapsedEventTime > AP_CoopCrystalTimeLimit(gt)))
 		{

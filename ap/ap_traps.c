@@ -114,7 +114,7 @@ static int g_prev_level = -1;
 static int g_prev_load = LOAD_IDLE;
 
 // Reverse-recovery accumulator, in milliseconds of near-stationary time.
-static int g_recover_ms = 0;
+static int g_recover_ms[2];
 
 // Human slots whose steering axis has already been mirrored this frame.
 // Cleared once per frame in AP_TrapTick; see AP_TrapDriveInput for why a mirror
@@ -433,7 +433,9 @@ static unsigned AP_TrapConditions(struct GameTracker *gGT, struct Driver *local,
 {
 	unsigned bits = 0;
 
-	if (local != 0 && (local->actionsFlagSet & ACTION_NEW_BOOST) != 0)
+	if ((local != 0 && (local->actionsFlagSet & ACTION_NEW_BOOST) != 0) ||
+	    (AP_CoopCrystal(gGT) && AP_CoopP2Available() && gGT->drivers[1] &&
+	     (gGT->drivers[1]->actionsFlagSet & ACTION_NEW_BOOST) != 0))
 		bits |= AP_TRAP_COND_EARNED_BOOST;
 
 	if (local != 0 && local->numWumpas >= AP_TRAP_JUICED_WUMPA &&
@@ -500,8 +502,6 @@ struct AP_TrapInventory
 static struct AP_TrapInventory g_trap_inventory[2] = {
 	{ .rerollExcluded = -1 }, { .rerollExcluded = -1 },
 };
-static int g_trap_inventoryRerolled;
-static int g_trap_inventoryUsed;
 
 static struct AP_TrapInventory *AP_TrapInventoryFor(const struct Driver *driver)
 {
@@ -515,21 +515,21 @@ static void AP_TrapInventoryReset(void)
 {
 	for (int player = 0; player < 2; player++)
 		g_trap_inventory[player] = (struct AP_TrapInventory){ .rerollExcluded = -1 };
-	g_trap_inventoryRerolled = g_trap_inventoryUsed = 0;
 }
 
 // Flatten walks two stages, because the squish it asks for can be refused and
 // then has an aftermath. The machine itself is AP_TrapFlattenStage in
 // ap_trap_sched_logic.h.
-static AP_TrapFlattenStage g_trap_flatten;
+static AP_TrapFlattenStage g_trap_flatten[2];
 // Instants that fired but have not landed yet: Warpball Ambush (the birth), and
 // since #486 the direct Nitro Drop and Red Potion hits. Retried every tick.
 static unsigned char g_trap_spawn_pending[AP_TRAP_EFFECT_COUNT];
-static unsigned char g_trap_spawn_landed[AP_TRAP_EFFECT_COUNT];
+// A reissued copy remembers its outstanding seats by scheduler slot and receipt.
+static struct { unsigned seq; unsigned seats; } g_trap_owed[AP_TRAP_SCHED_CAP];
 
-static int AP_TrapSpawnOwed(int effect)
+static struct Driver *AP_TrapCrystalPartner(struct GameTracker *gt)
 {
-	return g_trap_spawn_pending[effect] && !g_trap_spawn_landed[effect];
+	return AP_CoopCrystal(gt) && AP_CoopP2Available() ? gt->drivers[1] : NULL;
 }
 
 // The kart-state values ap_trap_observe_logic.h repeats as plain integers really
@@ -590,7 +590,6 @@ static void AP_TrapStartReroll(struct GameTracker *gGT, struct Driver *local,
 	AP_NavRec_NoteKartEffect();
 	AP_TrapReleaseHeldItemClaims(gGT, local);
 	inventory->rerollExcluded = (int)local->heldItemID;
-	g_trap_inventoryRerolled = 1;
 
 	local->heldItemID = AP_TRAP_ITEM_ROLLING;
 	local->numHeldItems = 0;
@@ -734,7 +733,6 @@ static void AP_TrapPollForcedUse(struct GameTracker *gGT, struct Driver *local,
 	if (AP_TrapForcedUseOwed(local, inventory))
 		return;
 	inventory->usePending = 0;
-	g_trap_inventoryUsed = 1;
 }
 
 // ── Flatten ──
@@ -892,7 +890,10 @@ static int AP_TrapApplyHazardHit(struct Driver *local, int effect)
 static void AP_TrapPollSpawnedInstants(struct GameTracker *gGT, struct Driver *local)
 {
 	int effect;
-	if (!AP_TrapCanActNow(gGT, local))
+	struct Driver *partner = AP_TrapCrystalPartner(gGT);
+	int p1Ready = AP_TrapCanActNow(gGT, local);
+	int p2Ready = AP_TrapCanActNow(gGT, partner);
+	if (!p1Ready && !p2Ready)
 		return;
 	for (effect = 0; effect < AP_TRAP_EFFECT_COUNT; effect++)
 	{
@@ -912,25 +913,15 @@ static void AP_TrapPollSpawnedInstants(struct GameTracker *gGT, struct Driver *l
 		if (gate == AP_TRAP_POLL_HOLD)
 			continue;
 		if (effect == AP_TRAP_WARPBALL_AMBUSH)
-			done = AP_TrapFireWarpball(gGT, local);
+			done = p1Ready && AP_TrapFireWarpball(gGT, local);
 		else if (effect == AP_TRAP_NITRO || effect == AP_TRAP_RED_POTION)
 		{
-			if ((g_trap_spawn_pending[effect] & 1u) && AP_TrapApplyHazardHit(local, effect))
-			{
+			if ((g_trap_spawn_pending[effect] & 1u) && p1Ready &&
+			    AP_TrapApplyHazardHit(local, effect))
 				g_trap_spawn_pending[effect] &= ~1u;
-				g_trap_spawn_landed[effect] = 1;
-			}
-			if (g_trap_spawn_pending[effect] & 2u)
-			{
-				struct Driver *partner = gGT->drivers[1];
-				if (!AP_CoopP2Available())
-					g_trap_spawn_pending[effect] &= ~2u;
-				else if (AP_TrapCanActNow(gGT, partner) && AP_TrapApplyHazardHit(partner, effect))
-				{
-					g_trap_spawn_pending[effect] &= ~2u;
-					g_trap_spawn_landed[effect] = 1;
-				}
-			}
+			if ((g_trap_spawn_pending[effect] & 2u) && p2Ready &&
+			    AP_TrapApplyHazardHit(partner, effect))
+				g_trap_spawn_pending[effect] &= ~2u;
 			done = !g_trap_spawn_pending[effect];
 		}
 		if (done)
@@ -943,31 +934,30 @@ static void AP_TrapPollSpawnedInstants(struct GameTracker *gGT, struct Driver *l
 
 // Drive Flatten's two stages. Runs once per tick alongside the other completion
 // polls, before the map boundary, for the same reason they do.
-static void AP_TrapPollFlatten(struct Driver *local, int elapsedMs)
+static void AP_TrapTryFlatten(struct GameTracker *gt, struct Driver *driver,
+                             AP_TrapFlattenStage *stage)
 {
-	int gate = AP_TrapSchedPollGate(&g_sched, AP_TRAP_FLATTEN);
-	int recovered = local != 0 &&
-	    AP_TrapFlattenRecovered((int)local->kartState, (int)local->squishTimer);
+	if (AP_TrapCanActNow(gt, driver) && AP_TrapApplyFlatten(driver))
+		AP_TrapFlattenStageLanded(stage, AP_TRAP_FLATTEN_GRACE_MS);
+}
 
-	switch (AP_TrapFlattenStagePoll(&g_trap_flatten, gate, local != 0, recovered,
-	                                AP_TRAP_FLATTEN_GRACE_MS, elapsedMs))
+static void AP_TrapPollFlatten(struct GameTracker *gt, struct Driver *local, int elapsedMs)
+{
+	struct Driver *drivers[] = { local, AP_TrapCrystalPartner(gt) };
+	int gate = AP_TrapSchedPollGate(&g_sched, AP_TRAP_FLATTEN);
+	for (int player = 0; player < 2; player++)
 	{
-	case AP_TRAP_FLATTEN_TRY:
-		// Retry until the driver state becomes valid. A mask, a shield, a running
-		// invincibility window or another damage animation all mean "not yet",
-		// and the ruling is to wait for a valid state rather than consume the
-		// copy on a squish that never happened.
-		if (AP_TrapApplyFlatten(local))
-			AP_TrapFlattenStageLanded(&g_trap_flatten, AP_TRAP_FLATTEN_GRACE_MS);
-		break;
-	case AP_TRAP_FLATTEN_DONE:
-		// Recovery and the grace interval are over: release the slot to a
-		// serialized duplicate.
-		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_FLATTEN);
-		break;
-	default:
-		break;
+		struct Driver *driver = drivers[player];
+		AP_TrapFlattenStage *stage = &g_trap_flatten[player];
+		int ready = AP_TrapCanActNow(gt, driver);
+		int recovered = ready && AP_TrapFlattenRecovered(driver->kartState, driver->squishTimer);
+		if (AP_TrapFlattenStagePoll(stage, gate == AP_TRAP_POLL_RUN && !ready ? AP_TRAP_POLL_HOLD : gate, ready,
+		                           recovered, AP_TRAP_FLATTEN_GRACE_MS, elapsedMs) == AP_TRAP_FLATTEN_TRY)
+			AP_TrapTryFlatten(gt, driver, stage);
 	}
+	if (gate == AP_TRAP_POLL_RUN && !g_trap_flatten[0].pending && !g_trap_flatten[0].applied &&
+	    !g_trap_flatten[1].pending && !g_trap_flatten[1].applied)
+		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_FLATTEN);
 }
 
 // #455 engine effect and its retry/recovery state.
@@ -983,10 +973,24 @@ static void AP_TrapStuckPickSide(struct GameTracker *gGT)
 	g_trap_stuck_side = AP_TrapStuckSidePick(gGT != 0 ? (unsigned)gGT->timer : 0u, g_trap_stuck_picks);
 }
 
-static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, int effect)
+static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, AP_TrapEvent ev)
 {
 	if (gGT == 0 || local == 0)
 		return;
+
+	int effect = ev.effect;
+	struct Driver *drivers[] = { local, AP_TrapCrystalPartner(gGT) };
+	unsigned seats = drivers[1] ? 3u : 1u;
+	if (g_trap_owed[ev.slot].seats && g_trap_owed[ev.slot].seq == ev.seq)
+	{
+		seats &= g_trap_owed[ev.slot].seats;
+		g_trap_owed[ev.slot].seats = 0;
+	}
+	if (!seats)
+	{
+		AP_TrapSchedEffectDone(&g_sched, effect);
+		return;
+	}
 
 	switch (effect)
 	{
@@ -1005,33 +1009,30 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, i
 	case AP_TRAP_ITEM_REROLL:
 	case AP_TRAP_FORCED_USE:
 	{
-		const int players = AP_CoopCrystal(gGT) && AP_CoopP2Available() ? 2 : 1;
-		if (effect == AP_TRAP_ITEM_REROLL)
-			g_trap_inventoryRerolled = 0;
-		else
-			g_trap_inventoryUsed = 0;
-		for (int player = 0; player < players; player++)
+		for (int player = 0; player < 2; player++)
 		{
-			struct Driver *driver = gGT->drivers[player];
+			if (!(seats & (1u << player)))
+				continue;
+			struct Driver *driver = drivers[player];
 			struct AP_TrapInventory *inventory = &g_trap_inventory[player];
-			const int hasWeapon = AP_TrapHeldItemResolved(driver);
+			const int canApply = AP_TrapCanActNow(gGT, driver) && AP_TrapHeldItemResolved(driver);
 			// The slot can lose its weapon during the warning. Apply on
 			// that kart's next resolved weapon in the same attempt.
 			if (effect == AP_TRAP_ITEM_REROLL)
 			{
-				inventory->rerollWait = !hasWeapon;
-				if (hasWeapon) AP_TrapStartReroll(gGT, driver, inventory);
+				inventory->rerollWait = !canApply;
+				if (canApply) AP_TrapStartReroll(gGT, driver, inventory);
 			}
 			else
 			{
-				inventory->useWait = !hasWeapon;
-				if (hasWeapon) AP_TrapArmForcedUse(driver, inventory);
+				inventory->useWait = !canApply;
+				if (canApply) AP_TrapArmForcedUse(driver, inventory);
 			}
 		}
 		break;
 	}
 	case AP_TRAP_CLOCKED_OUT:
-		AP_TrapStartClockedOut(gGT, local);
+		AP_TrapStartClockedOut(gGT, local, seats);
 		break;
 	case AP_TRAP_WUMPA_LEAK:
 		// Same engine helper as Wumpa Wipeout, so the clamp, the juiced state
@@ -1051,17 +1052,21 @@ static void AP_TrapApplyInstant(struct GameTracker *gGT, struct Driver *local, i
 	case AP_TRAP_FLATTEN:
 		// Try immediately, so an ordinary flatten lands on the frame the warning
 		// ends. If the driver is mid-animation or protected, the poll retries.
-		AP_TrapFlattenStageFired(&g_trap_flatten);
-		if (AP_TrapApplyFlatten(local))
-			AP_TrapFlattenStageLanded(&g_trap_flatten, AP_TRAP_FLATTEN_GRACE_MS);
+		for (int player = 0; player < 2; player++)
+		{
+			AP_TrapFlattenStageClear(&g_trap_flatten[player]);
+			if (!(seats & (1u << player)))
+				continue;
+			AP_TrapFlattenStageFired(&g_trap_flatten[player]);
+			AP_TrapTryFlatten(gGT, drivers[player], &g_trap_flatten[player]);
+		}
 		break;
 	case AP_TRAP_WARPBALL_AMBUSH:
 		g_trap_spawn_pending[effect] = 1;
 		break;
 	case AP_TRAP_NITRO:
 	case AP_TRAP_RED_POTION:
-		g_trap_spawn_pending[effect] = AP_CoopCrystal(gGT) ? 3 : 1;
-		g_trap_spawn_landed[effect] = 0;
+		g_trap_spawn_pending[effect] = seats;
 		AP_TrapPollSpawnedInstants(gGT, local);
 		break;
 	default:
@@ -1084,7 +1089,7 @@ static void AP_TrapDrainEvents(struct GameTracker *gGT, struct Driver *local)
 		// The FIRE edge is seen exactly once here, which is what an instant
 		// effect needs: it has no ACTIVE frames of its own to act on.
 		if (ev.kind == AP_TRAP_EV_FIRE)
-			AP_TrapApplyInstant(gGT, local, ev.effect);
+			AP_TrapApplyInstant(gGT, local, ev);
 		// A copy that refreshes a running Stuck Steering picks its side too.
 		if (ev.kind == AP_TRAP_EV_REFRESH && ev.effect == AP_TRAP_STUCK_STEERING)
 			AP_TrapStuckPickSide(gGT);
@@ -1181,14 +1186,15 @@ void AP_Trap_ConnectReset(void)
 	for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 		g_active[e] = 0;
 	g_trap_paused = 0;
-	g_recover_ms = 0;
+	memset(g_recover_ms, 0, sizeof g_recover_ms);
 	g_trap_lead.elapsedMs = 0;
 	g_trap_lead.earned = 0;
 	AP_TrapInventoryReset();
 	g_trap_steer_mirrored = 0;
 	g_trap_jump_owned = 0;
-	AP_TrapClockedOutReset(AP_TrapLocalDriver());
-	AP_TrapFlattenStageClear(&g_trap_flatten);
+	AP_TrapClockedOutReset(AP_TrapLocalDriver(), sdata ? AP_TrapCrystalPartner(sdata->gGT) : NULL);
+	memset(g_trap_flatten, 0, sizeof g_trap_flatten);
+	memset(g_trap_owed, 0, sizeof g_trap_owed);
 	for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 		g_trap_spawn_pending[e] = 0;
 
@@ -1365,14 +1371,14 @@ static void AP_TrapClampWeakenedFire(struct Driver *local)
 // Near-stationary accumulator for the reverse-recovery guard. Kept on the frame
 // tick rather than inside the input hook, which the engine may call more than once
 // per frame.
-static void AP_TrapTrackRecovery(struct Driver *local, int elapsedMs)
+static void AP_TrapTrackRecovery(struct Driver *local, int player, int elapsedMs)
 {
 	int speed, limit;
 
 	if (local == 0 || !(g_active[AP_TRAP_USF_NOBRAKE] || g_active[AP_TRAP_BOOST] ||
 	                    g_active[AP_TRAP_STUCK_STEERING]))
 	{
-		g_recover_ms = 0;
+		g_recover_ms[player] = 0;
 		return;
 	}
 
@@ -1384,14 +1390,16 @@ static void AP_TrapTrackRecovery(struct Driver *local, int elapsedMs)
 		limit = 1;
 
 	if (speed <= limit)
-		g_recover_ms += elapsedMs;
+		g_recover_ms[player] += elapsedMs;
 	else
-		g_recover_ms = 0;
+		g_recover_ms[player] = 0;
 }
 
-static int AP_TrapReverseRestored(void)
+static int AP_TrapReverseRestored(const struct Driver *driver)
 {
-	return g_recover_ms >= AP_TRAP_RECOVER_MS;
+	const struct GameTracker *gt = sdata->gGT;
+	int player = AP_CoopCrystal(gt) && driver == gt->drivers[1];
+	return g_recover_ms[player] >= AP_TRAP_RECOVER_MS;
 }
 
 // Owed effects keep the scheduler's usual fresh priority on reissue; only the
@@ -1409,11 +1417,16 @@ static void AP_TrapSaveFeedIdentities(int *slots, unsigned *seqs)
 		}
 }
 
-static void AP_TrapReceiveOwed(int effect, const int *oldSlots, const unsigned *oldSeqs)
+static void AP_TrapReceiveOwed(int effect, unsigned seats, const int *oldSlots,
+                              const unsigned *oldSeqs)
 {
 	int slot = AP_TrapSchedReceive(&g_sched, effect);
 	if (slot >= 0)
+	{
+		g_trap_owed[slot].seq = g_sched.slots[slot].seq;
+		g_trap_owed[slot].seats = seats;
 		AP_FeedTrapReissue(effect, oldSlots[effect], oldSeqs[effect], slot, g_sched.slots[slot].seq);
+	}
 }
 
 // ── Per-frame lifecycle ──
@@ -1421,6 +1434,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 {
 	AP_TrapWorld w;
 	struct Driver *local;
+	struct Driver *partner;
 	int loadStage;
 	int levelNow;
 	int boundary;
@@ -1441,6 +1455,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 	loadStage = (sdata != 0) ? sdata->Loading.stage : LOAD_IDLE;
 	levelNow = gGT->levelID;
 	local = gGT->drivers[0];
+	partner = AP_TrapCrystalPartner(gGT);
 
 	// Engine-natural completion for anything that fired on an EARLIER tick.
 	//
@@ -1454,10 +1469,10 @@ void AP_TrapTick(struct GameTracker *gGT)
 	AP_TrapPollClockedOut(gGT, local);
 	AP_TrapPollReroll(gGT, local, &g_trap_inventory[0]);
 	AP_TrapPollForcedUse(gGT, local, &g_trap_inventory[0]);
-	if (AP_CoopCrystal(gGT) && AP_CoopP2Available())
+	if (partner)
 	{
-		AP_TrapPollReroll(gGT, gGT->drivers[1], &g_trap_inventory[1]);
-		AP_TrapPollForcedUse(gGT, gGT->drivers[1], &g_trap_inventory[1]);
+		AP_TrapPollReroll(gGT, partner, &g_trap_inventory[1]);
+		AP_TrapPollForcedUse(gGT, partner, &g_trap_inventory[1]);
 	}
 	if (AP_TrapSchedPollGate(&g_sched, AP_TRAP_ITEM_REROLL) == AP_TRAP_POLL_RUN &&
 	    !g_trap_inventory[0].rerollWait && g_trap_inventory[0].rerollExcluded < 0 &&
@@ -1467,7 +1482,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 	    !g_trap_inventory[0].useWait && !g_trap_inventory[0].usePending &&
 	    !g_trap_inventory[1].useWait && !g_trap_inventory[1].usePending)
 		AP_TrapSchedEffectDone(&g_sched, AP_TRAP_FORCED_USE);
-	AP_TrapPollFlatten(local, gGT->elapsedTimeMS > 0 ? gGT->elapsedTimeMS : 32);
+	AP_TrapPollFlatten(gGT, local, gGT->elapsedTimeMS > 0 ? gGT->elapsedTimeMS : 32);
 	AP_TrapPollSpawnedInstants(gGT, local);
 
 	// Map boundary. Clearing here, on the frame the load BEGINS and while the
@@ -1485,42 +1500,30 @@ void AP_TrapTick(struct GameTracker *gGT)
 		int feedSlots[AP_TRAP_EFFECT_COUNT];
 		unsigned feedSeqs[AP_TRAP_EFFECT_COUNT];
 		AP_TrapSaveFeedIdentities(feedSlots, feedSeqs);
-		// Forced Use is ruled to wait through transitions rather than be consumed
-		// unsuccessfully, but the shared lifecycle clears every ACTIVE copy at a
-		// map boundary. A copy that fired and never got its weapon away is
-		// therefore re-armed here, so the load costs the player a wait rather
-		// than the trap. Wumpa Wipeout completes within its firing tick, and a
-		// reroll that started has already discarded the weapon by the time the
-		// load starts, so it was genuinely delivered; a reroll still waiting for
-		// a weapon (#486) is re-armed like Forced Use.
-		//
-		// AP_TrapForcedUseOwed, not a bare pending flag: the poll above has
-		// already credited any use that landed, and this asks the same predicate
-		// so the two cannot disagree about whether the copy was spent.
-		int refireForcedUse = 0;
-		int refireReroll = 0;
+		unsigned owed[AP_TRAP_EFFECT_COUNT] = {0};
+		// A restart can keep the same two seats. Exiting the arena or losing P2
+		// releases P2's pending work. A completed hit never repeats on either seat.
+		unsigned nextSeats = loadStage == LOAD_RESTART && partner ? 3u : 1u;
 		for (int player = 0; player < 2; player++)
 		{
 			struct AP_TrapInventory *inventory = &g_trap_inventory[player];
-			int owed = AP_TrapForcedUseOwed(gGT->drivers[player], inventory);
-			if (inventory->usePending && !owed)
-				g_trap_inventoryUsed = 1;
-			refireForcedUse |= owed;
-			refireReroll |= AP_TrapHeldItemWaitOwed(inventory->rerollWait,
-			    AP_TrapSchedPollGate(&g_sched, AP_TRAP_ITEM_REROLL));
+			unsigned seat = 1u << player;
+			if (AP_TrapForcedUseOwed(gGT->drivers[player], inventory))
+				owed[AP_TRAP_FORCED_USE] |= seat;
+			if (AP_TrapHeldItemWaitOwed(inventory->rerollWait,
+			    AP_TrapSchedPollGate(&g_sched, AP_TRAP_ITEM_REROLL)))
+				owed[AP_TRAP_ITEM_REROLL] |= seat;
+			if (AP_TrapFlattenOwedAtBoundary(&g_trap_flatten[player],
+			    AP_TrapSchedPollGate(&g_sched, AP_TRAP_FLATTEN)))
+				owed[AP_TRAP_FLATTEN] |= seat;
+			if (AP_TrapClockOwed(&g_trap_clocked[player],
+			    AP_TrapSchedPollGate(&g_sched, AP_TRAP_CLOCKED_OUT)))
+				owed[AP_TRAP_CLOCKED_OUT] |= seat;
 		}
-		refireForcedUse &= !g_trap_inventoryUsed;
-		refireReroll &= !g_trap_inventoryRerolled;
-		// Same rule for Flatten: only a copy still owed its squish comes back.
-		int refireFlatten = AP_TrapFlattenOwedAtBoundary(
-		    &g_trap_flatten, AP_TrapSchedPollGate(&g_sched, AP_TRAP_FLATTEN));
-		int refireClocked = AP_TrapClockOwed(&g_trap_clocked,
-		    AP_TrapSchedPollGate(&g_sched, AP_TRAP_CLOCKED_OUT));
-		AP_TrapClockedOutReset(local);
-		// A new scene can replay a receipt only if neither kart was hit.
-		int refireNitro = AP_TrapSpawnOwed(AP_TRAP_NITRO);
-		int refirePotion = AP_TrapSpawnOwed(AP_TRAP_RED_POTION);
-		int refireWarpball = g_trap_spawn_pending[AP_TRAP_WARPBALL_AMBUSH];
+		AP_TrapClockedOutReset(local, AP_CoopCrystal(gGT) ? gGT->drivers[1] : NULL);
+		owed[AP_TRAP_NITRO] = g_trap_spawn_pending[AP_TRAP_NITRO];
+		owed[AP_TRAP_RED_POTION] = g_trap_spawn_pending[AP_TRAP_RED_POTION];
+		owed[AP_TRAP_WARPBALL_AMBUSH] = g_trap_spawn_pending[AP_TRAP_WARPBALL_AMBUSH];
 
 		g_epoch++;
 		g_trap_boost_tainted = 0;
@@ -1529,30 +1532,18 @@ void AP_TrapTick(struct GameTracker *gGT)
 			g_active[e] = 0;
 		AP_TrapApplyCamera(gGT, 0);
 		AP_TrapApplyWireframe(0);
-		g_recover_ms = 0;
+		memset(g_recover_ms, 0, sizeof g_recover_ms);
 		g_trap_lead.elapsedMs = 0;
 		g_trap_lead.earned = 0;
 		AP_TrapInventoryReset();
 		g_trap_jump_owned = 0;
-		// Flatten's stage machine does not survive the load either. A copy that
-		// fired but never got its squish away is re-armed below for the same
-		// reason Forced Use is; one that already landed has delivered its harm,
-		// and its leftover recovery wait belongs to a map that is going away.
-		AP_TrapFlattenStageClear(&g_trap_flatten);
+		memset(g_trap_flatten, 0, sizeof g_trap_flatten);
 		for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
 			g_trap_spawn_pending[e] = 0;
 
-		if (refireClocked)
-			AP_TrapReceiveOwed(AP_TRAP_CLOCKED_OUT, feedSlots, feedSeqs);
-		if (refireFlatten)
-			AP_TrapReceiveOwed(AP_TRAP_FLATTEN, feedSlots, feedSeqs);
-		if (refireForcedUse)
-			AP_TrapReceiveOwed(AP_TRAP_FORCED_USE, feedSlots, feedSeqs);
-		if (refireReroll)
-			AP_TrapReceiveOwed(AP_TRAP_ITEM_REROLL, feedSlots, feedSeqs);
-		if (refireNitro) AP_TrapReceiveOwed(AP_TRAP_NITRO, feedSlots, feedSeqs);
-		if (refirePotion) AP_TrapReceiveOwed(AP_TRAP_RED_POTION, feedSlots, feedSeqs);
-		if (refireWarpball) AP_TrapReceiveOwed(AP_TRAP_WARPBALL_AMBUSH, feedSlots, feedSeqs);
+		for (e = 0; e < AP_TRAP_EFFECT_COUNT; e++)
+			if (owed[e] & nextSeats)
+				AP_TrapReceiveOwed(e, owed[e] & nextSeats, feedSlots, feedSeqs);
 	}
 
 	w.context = AP_TrapContextOf(gGT, loadStage);
@@ -1560,7 +1551,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 	w.controlUnlocked = AP_TrapControlUnlocked(gGT, local);
 	w.paused = (gGT->gameMode1 & PAUSE_ALL) != 0;
 	g_trap_paused = w.paused;
-	w.scripted = AP_TrapScripted(gGT, local);
+	w.scripted = AP_TrapScripted(gGT, local) && (!partner || AP_TrapScripted(gGT, partner));
 	w.finishOrPodium = AP_TrapFinishOrPodium(gGT, local);
 	w.elapsedMs = gGT->elapsedTimeMS > 0 ? gGT->elapsedTimeMS : 32;
 	w.conditions = AP_TrapConditions(gGT, local, g_epoch,
@@ -1580,7 +1571,8 @@ void AP_TrapTick(struct GameTracker *gGT)
 
 	// Paused time is not still time: pausing freezes every trap, its recovery
 	// guard included.
-	AP_TrapTrackRecovery(local, w.paused ? 0 : w.elapsedMs);
+	AP_TrapTrackRecovery(local, 0, w.paused ? 0 : w.elapsedMs);
+	AP_TrapTrackRecovery(partner, 1, w.paused ? 0 : w.elapsedMs);
 	// First Person and Wireframe force presentation every frame while active, so
 	// pause suppresses each the same way the map-boundary reset above already
 	// does: call the apply function with 0, which restores ordinary chase/debug
@@ -1595,6 +1587,7 @@ void AP_TrapTick(struct GameTracker *gGT)
 	if (AP_CoopCrystal(gGT))
 		AP_TrapApplyBoostBlocker(gGT->drivers[1], g_active[AP_TRAP_BOOST_BLOCKER]);
 	AP_TrapClampWeakenedFire(local);
+	AP_TrapClampWeakenedFire(partner);
 }
 
 // ── Engine physics/input call-sites ──
@@ -1660,8 +1653,10 @@ void AP_TrapDiagCounts(int *armed, int *warning, int *active, int *suspended)
 void AP_TrapRenderTransform(struct PushBuffer *pb)
 {
 	int x;
-	if (pb == 0 || sdata == 0 || sdata->gGT == 0 || pb != &sdata->gGT->pushBuffer[0] ||
-	    !AP_CapabilityRoomStatsRace())
+	if (pb == 0 || sdata == 0 || sdata->gGT == 0 || !AP_CapabilityRoomStatsRace())
+		return;
+	const struct GameTracker *gt = sdata->gGT;
+	if (pb != &gt->pushBuffer[0] && !(AP_CoopCrystal(gt) && pb == &gt->pushBuffer[1]))
 		return;
 
 	// Negating the projection X row mirrors only camera-projected geometry.
@@ -1847,7 +1842,7 @@ void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
 	// its own fixed point, so a second call in one frame changes nothing. The
 	// same nearly-still guard as the boost traps hands steering back to a kart
 	// wedged against a wall.
-	if (g_active[AP_TRAP_STUCK_STEERING] && pad != 0 && !AP_TrapReverseRestored())
+	if (g_active[AP_TRAP_STUCK_STEERING] && pad != 0 && !AP_TrapReverseRestored(driver))
 	{
 		int centre = pad->rwd != 0 ? (int)pad->rwd->gamepadCenter : AP_STICK_NEUTRAL;
 		pad->stickLX = (s16)AP_TrapStuckStick((int)pad->stickLX, centre, g_trap_stuck_side);
@@ -1875,7 +1870,7 @@ void AP_TrapDriveInput(struct Driver *driver, struct GamepadBuffer *pad,
 	// The recovery guard releases both the analog path and, for Forced USF, the
 	// forced throttle, once the kart has sat nearly still for about a second. A
 	// wedged kart can then reverse out; a moving one still cannot brake.
-	if (AP_TrapReverseRestored())
+	if (AP_TrapReverseRestored(driver))
 	{
 		if (usf)
 		{

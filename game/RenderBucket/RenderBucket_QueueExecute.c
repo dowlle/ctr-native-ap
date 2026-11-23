@@ -2,6 +2,7 @@
 #include <platform/native_draw_distance.h>
 #include <platform/native_sanity_recolour.h>
 #ifdef CTR_AP
+#include "../../ap/ap_coop.h"
 #include "../../ap/ap_title_ring_logic.h"
 #include "../../ap/ap_traps.h"
 #include "../../ap/ap_sanity_colour.h"
@@ -1447,9 +1448,9 @@ static void RenderBucket_BuildMvp(struct PushBuffer *pb, struct InstDrawPerPlaye
 	u32 m4;
 
 #if defined(CTR_NATIVE) && defined(CTR_AP)
-	// Only player 1's view-projection receives the Mirror Mode transform.
 	idpp->mirrorCullFlip = AP_TrapMirrorCullFlip() && sdata != 0 && sdata->gGT != 0 &&
-	                       pb == &sdata->gGT->pushBuffer[0];
+	                       (pb == &sdata->gGT->pushBuffer[0] ||
+	                        (AP_CoopCrystal(sdata->gGT) && pb == &sdata->gGT->pushBuffer[1]));
 #endif
 
 	// NOTE(aalhendi): Source-backs QueueDraw's normal MVP rotation path through
@@ -1474,7 +1475,8 @@ static void RenderBucket_BuildSplitViewMvp(struct PushBuffer *pb, struct InstDra
 
 #if defined(CTR_NATIVE) && defined(CTR_AP)
 	idpp->mirrorCullFlip = AP_TrapMirrorCullFlip() && sdata != 0 && sdata->gGT != 0 &&
-	                       pb == &sdata->gGT->pushBuffer[0];
+	                       (pb == &sdata->gGT->pushBuffer[0] ||
+	                        (AP_CoopCrystal(sdata->gGT) && pb == &sdata->gGT->pushBuffer[1]));
 #endif
 
 	// NOTE(aalhendi): Source-backs QueueDraw 0x80070ea4-0x80070ed8. Retail

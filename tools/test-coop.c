@@ -333,6 +333,12 @@ static void testCrystals(struct GameTracker *gt)
 		assert(AP_IsSlotHuman(gt, gt->drivers[1]));
 		gt->drivers[0]->numCrystals = 8;
 		gt->drivers[1]->numCrystals = hard ? 11 : 12;
+		// Retry can briefly retain an expired timer after the camera clears START_OF_RACE.
+		gt->elapsedEventTime = limit + 1;
+		gt->trafficLightsTimer = 1;
+		AP_CoopTick(gt);
+		assert(!(gt->gameMode1 & END_OF_RACE) && crystalResults == hard);
+		gt->trafficLightsTimer = 0;
 		gt->elapsedEventTime = limit;
 		AP_CoopTick(gt);
 		assert(crystalResults == 1);

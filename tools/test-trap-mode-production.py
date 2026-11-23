@@ -25,11 +25,30 @@ static int adventure, g_fp_applied = 1, g_trap_paused;
 static int g_trap_boost_tainted, physics_effects;
 static int forced_grants;
 static unsigned char g_active[AP_TRAP_EFFECT_COUNT];
+static unsigned char g_trap_spawn_pending[AP_TRAP_EFFECT_COUNT];
+static int hazardHits[2], shielded[2], inRescue[2];
 static AP_TrapSched g_sched;
 static struct Driver *AP_TrapLocalDriver(void) { return &local; }
+int AP_CoopP2Available(void) { return 1; }
 int AP_CapabilityRoomStatsRace(void) { return adventure; }
 void AP_NavRec_NotePhysicsEffect(void) { physics_effects++; }
 void AP_NavRec_NoteBoostGrant(enum AP_NavRecBoostGrant grant) { forced_grants |= grant; }
+static int AP_TrapCanActNow(struct GameTracker *gt, struct Driver *driver)
+{
+    return !(gt->gameMode1 & PAUSE_ALL) && driver && !inRescue[driver == &other];
+}
+static int AP_TrapApplyHazardHit(struct Driver *driver, int effect)
+{
+    assert(effect == AP_TRAP_NITRO || effect == AP_TRAP_RED_POTION);
+    int seat = driver == &other;
+    if (shielded[seat]) return 0;
+    hazardHits[seat]++;
+    return 1;
+}
+static int AP_TrapFireWarpball(struct GameTracker *gt, struct Driver *driver)
+{
+    (void)gt; (void)driver; assert(0); return 0;
+}
 '''
 fixture += trap_inventory()
 for constant in ("AP_TRAP_GRAV_SCALE", "AP_TRAP_BOOST_RESERVES", "AP_TRAP_USF_FIRELEVEL"):
@@ -40,7 +59,9 @@ for signature in ("static int AP_TrapIsLocal(", "int AP_TrapSuppressCrateReward(
                   "int AP_TrapOwnsCamera(", "void AP_TrapRenderTransform(",
                   "int AP_TrapMirrorCullFlip(", "int AP_TrapGravity(",
                   "int AP_TrapAffectsRecordedLap(", "static void AP_TrapFloorReserves(", "void AP_TrapForceBoost(",
-                  "void AP_TrapNoteWeaponRequest(", "void AP_TrapNoteWeaponFire("):
+                  "void AP_TrapNoteWeaponRequest(", "void AP_TrapNoteWeaponFire(",
+                  "static struct Driver *AP_TrapCrystalPartner(",
+                  "static void AP_TrapPollSpawnedInstants("):
     fixture += function(signature)
 fixture += r'''
 int main(void) {
@@ -113,6 +134,11 @@ int main(void) {
     assert(physics_effects == 2 && (forced_grants & AP_NAVREC_GRANT_MASK));
     assert(AP_TrapRerollExcludedItem(&other) == -1);
     gt.gameMode1 |= CRYSTAL_CHALLENGE;
+    struct PushBuffer *partnerView = &gt.pushBuffer[1];
+    partnerView->matrix_ViewProj.m[0][0] = 145;
+    partnerView->matrix_ViewProj.m[1][0] = 245;
+    AP_TrapRenderTransform(partnerView);
+    assert(partnerView->matrix_ViewProj.m[0][0] == 145 && partnerView->matrix_ViewProj.m[1][0] == -245);
     assert(AP_TrapRerollExcludedItem(&local) == 5);
     assert(AP_TrapRerollExcludedItem(&other) == -1);
     g_trap_inventory[1].rerollExcluded = 7;
@@ -123,9 +149,27 @@ int main(void) {
     assert(physics_effects == 2);
     AP_TrapNoteWeaponFire(&other, 7);
     assert(physics_effects == 3);
+    AP_TrapSchedReset(&g_sched);
+    int slot = AP_TrapSchedReceive(&g_sched, AP_TRAP_NITRO);
+    g_sched.slots[slot].state = AP_TRAP_SLOT_ACTIVE;
+    g_trap_spawn_pending[AP_TRAP_NITRO] = 3;
+    gt.gameMode1 |= PAUSE_ALL;
+    AP_TrapPollSpawnedInstants(&gt, &local);
+    assert(!hazardHits[0] && !hazardHits[1] && g_trap_spawn_pending[AP_TRAP_NITRO] == 3);
+    gt.gameMode1 &= ~PAUSE_ALL;
+    inRescue[0] = 1;
+    AP_TrapPollSpawnedInstants(&gt, &local);
+    assert(!hazardHits[0] && hazardHits[1] == 1 && g_trap_spawn_pending[AP_TRAP_NITRO] == 1);
+    inRescue[0] = 0;
+    shielded[0] = 1;
+    AP_TrapPollSpawnedInstants(&gt, &local);
+    assert(!hazardHits[0] && hazardHits[1] == 1 && g_trap_spawn_pending[AP_TRAP_NITRO] == 1);
+    shielded[0] = 0;
+    AP_TrapPollSpawnedInstants(&gt, &local);
+    assert(hazardHits[0] == 1 && hazardHits[1] == 1 && !g_trap_spawn_pending[AP_TRAP_NITRO]);
     gt.gameMode1 |= ARCADE_MODE;
     assert(!AP_TrapIsLocal(&other));
-    puts("PASS: trap consumers are mode-gated and Forced Use reaches the committed shot");
+    puts("PASS: trap guards, both Crystal views, and per-kart hazard and weapon targeting");
 }
 '''
 with tempfile.TemporaryDirectory() as directory:

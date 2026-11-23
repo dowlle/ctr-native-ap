@@ -31,6 +31,7 @@ static struct Driver *recipient;
 static struct MaskHeadWeapon mask;
 int ctr_cfg_active(void) { return active; }
 int AP_CoopP2Available(void) { return partnerAvailable; }
+int AP_CoopWon(const struct GameTracker *game) { (void)game; assert(0); return 0; }
 int LOAD_IsOpen_RacingOrBattle(void) { return onTrack; }
 int OtherFX_Play(u32 id, int flags) { (void)id; (void)flags; return 0; }
 void AP_LogLine(const char *line) { (void)line; }
@@ -52,6 +53,7 @@ for path, signature in (
     ('ap/ap_useful.c', 'void AP_UsefulTick('),
     ('ap/ap_wumpa.c', 'static int AP_WumpaAdventureRace('),
     ('ap/ap_wumpa.c', 'static int AP_WumpaReceiptInRace('),
+    ('game/MAIN/MainGameEnd.c', 'static void MainGameEnd_UpdateAdventureLosses('),
 ):
     fixture += function(path, signature)
 fixture += r'''
@@ -96,6 +98,23 @@ int main(void) {
     gt.gameMode1 |= END_OF_RACE; assert(!AP_WumpaReceiptInRace());
     reset(); gt.gameMode1 = ARCADE_MODE; assert(!AP_WumpaReceiptInRace());
     reset(); onTrack = 0; assert(!AP_WumpaReceiptInRace());
+    reset(); gt.levelID = CRASH_COVE; humans[0].driverRank = 1;
+    gt.numPlyrCurrGame = 1;
+    MainGameEnd_UpdateAdventureLosses(&gt, &humans[0]);
+    assert(sdata->advProgress.timesLostRacePerLev[CRASH_COVE] == 1);
+    memset(&sdata->advProgress, 5, sizeof sdata->advProgress);
+    unsigned char saved[sizeof sdata->advProgress];
+    memcpy(saved, &sdata->advProgress, sizeof saved);
+    gt.gameMode1 |= CRYSTAL_CHALLENGE;
+    for (int seats = 1; seats <= 2; seats++) {
+        gt.numPlyrCurrGame = seats;
+        gt.levelID = seats == 1 ? ROCKY_ROAD : NITRO_COURT;
+        for (int rank = 0; rank <= 1; rank++) {
+            humans[0].driverRank = rank;
+            MainGameEnd_UpdateAdventureLosses(&gt, &humans[0]);
+            assert(!memcmp(saved, &sdata->advProgress, sizeof saved));
+        }
+    }
     puts("PASS production co-op handouts: prefer P1, busy/finished P1 falls back to P2, both finished waits, fruit remains in the live race");
 }
 '''

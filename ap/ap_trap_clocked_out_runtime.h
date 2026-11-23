@@ -2,7 +2,7 @@
 #define AP_TRAP_CLOCKED_OUT_RUNTIME_H
 
 #include "ap_trap_clocked_out_logic.h"
-static AP_TrapClockStage g_trap_clocked;
+static AP_TrapClockStage g_trap_clocked[2];
 
 static int AP_TrapClockedEligible(struct GameTracker *g,struct Driver *d)
 {
@@ -30,31 +30,57 @@ static int AP_TrapApplyClockedOut(struct GameTracker *g,struct Driver *d)
     return 1;
 }
 
-static void AP_TrapStartClockedOut(struct GameTracker *g,struct Driver *d)
+static void AP_TrapTryClockedOut(struct GameTracker *gt, struct Driver *driver,
+                                AP_TrapClockStage *stage)
 {
-    AP_TrapClockFired(&g_trap_clocked);
-    if(AP_TrapApplyClockedOut(g,d))AP_TrapClockLanded(&g_trap_clocked);
+    if (AP_TrapApplyClockedOut(gt, driver))
+        AP_TrapClockLanded(stage);
 }
 
-static void AP_TrapPollClockedOut(struct GameTracker *g,struct Driver *d)
+static void AP_TrapStartClockedOut(struct GameTracker *gt, struct Driver *local, unsigned seats)
 {
-    int gate=AP_TrapSchedPollGate(&g_sched,AP_TRAP_CLOCKED_OUT);
-    switch(AP_TrapClockPoll(&g_trap_clocked,gate,AP_TrapClockedEligible(g,d),d!=0,d?d->clockReceive:0)) {
-    case AP_TRAP_CLOCK_TRY:
-        if(AP_TrapApplyClockedOut(g,d))AP_TrapClockLanded(&g_trap_clocked);
-        break;
-    case AP_TRAP_CLOCK_DONE:
-        AP_TrapSchedEffectDone(&g_sched,AP_TRAP_CLOCKED_OUT);
-        break;
-    default: break;
+    struct Driver *drivers[] = { local, AP_TrapCrystalPartner(gt) };
+    for (int player = 0; player < 2; player++)
+    {
+        AP_TrapClockStage *stage = &g_trap_clocked[player];
+        AP_TrapClockClear(stage);
+        if (!(seats & (1u << player)))
+            continue;
+        AP_TrapClockFired(stage);
+        AP_TrapTryClockedOut(gt, drivers[player], stage);
     }
 }
 
-static void AP_TrapClockedOutReset(struct Driver *d)
+static void AP_TrapPollClockedOut(struct GameTracker *gt, struct Driver *local)
 {
-    // Only an applied trap owns these fields; never clear a retail clock
-    // just because an armed or still-protected trap crossed a boundary.
-    if(g_trap_clocked.applied && d) { d->clockReceive=0;d->clockFlash=0; }
-    AP_TrapClockClear(&g_trap_clocked);
+    struct Driver *drivers[] = { local, AP_TrapCrystalPartner(gt) };
+    int gate = AP_TrapSchedPollGate(&g_sched, AP_TRAP_CLOCKED_OUT);
+    for (int player = 0; player < 2; player++)
+    {
+        struct Driver *driver = drivers[player];
+        AP_TrapClockStage *stage = &g_trap_clocked[player];
+        if (AP_TrapClockPoll(stage, gate, AP_TrapClockedEligible(gt, driver),
+                             driver != NULL, driver ? driver->clockReceive : 0) == AP_TRAP_CLOCK_TRY)
+            AP_TrapTryClockedOut(gt, driver, stage);
+    }
+    if (gate == AP_TRAP_POLL_RUN && !g_trap_clocked[0].pending && !g_trap_clocked[0].applied &&
+        !g_trap_clocked[1].pending && !g_trap_clocked[1].applied)
+        AP_TrapSchedEffectDone(&g_sched,AP_TRAP_CLOCKED_OUT);
+}
+
+static void AP_TrapClockedOutReset(struct Driver *local, struct Driver *partner)
+{
+    struct Driver *drivers[] = { local, partner };
+    for (int player = 0; player < 2; player++)
+    {
+        struct Driver *driver = drivers[player];
+        // Only an applied trap owns these fields.
+        if (g_trap_clocked[player].applied && driver)
+        {
+            driver->clockReceive = 0;
+            driver->clockFlash = 0;
+        }
+        AP_TrapClockClear(&g_trap_clocked[player]);
+    }
 }
 #endif

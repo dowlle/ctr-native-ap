@@ -51,9 +51,11 @@ assert re.search(r'while \(ap_net_deathlink_take\(cause, sizeof cause, source, s
 state = block(dl, 'static int  g_dl_pending_recv', 'static int  g_dl_hold_logged')
 pieces = '\n'.join([
     state,
+    'static int g_dl_remote_partner, g_dl_partner_reported;',
     func(dl, 'static void AP_DeathLinkPopup(int applied, const char *why)'),
     func(dl, 'static void AP_DeathLinkDrop(const char *why)'),
     func(dl, 'static int AP_DeathLinkDrainInbound(void)'),
+    func(dl, 'static void AP_DeathLinkReportPartner(void)'),
 ])
 
 fixture = r"""
@@ -168,6 +170,15 @@ int main(void)
 {
 	int m, i;
 	char c[128], s[64];
+
+	reset();
+	bounce("Alice", "Alice crashed");
+	AP_DeathLinkDrainInbound();
+	g_dl_remote_partner = 1;
+	AP_DeathLinkReportPartner();
+	assert(has_line("DEATHLINK: Alice", 0));
+	AP_DeathLinkDrop("could not apply");
+	assert(!has_line("DEATHLINK IGNORED", 1) && feed_n == 2);
 
 	/* Inbox: arrival order, drained to empty, bounded (oldest discarded). */
 	reset();
