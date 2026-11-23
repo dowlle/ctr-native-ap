@@ -506,7 +506,7 @@ void AP_CoopDrawMenu(void)
 	}
 	else if (AP_CoopRacerUnlocked(ap_coop_selection))
 	{
-		AP_CharSwap_DrawPortraitAt(ap_coop_selection, 240, 76, 0);
+		AP_CharSwap_DrawPortraitAt(ap_coop_selection, 240, 76, 0, 0);
 		DecalFont_DrawLine((char *)data.MetaDataCharacters[ap_coop_selection].name_Debug,
 		                   256, 110, FONT_SMALL, JUSTIFY_CENTER | WHITE);
 		DecalFont_DrawLine("LEFT / RIGHT TO BROWSE", 256, 125, FONT_SMALL, JUSTIFY_CENTER | ORANGE);
