@@ -828,7 +828,7 @@ void AH_Map_Main(void)
 
 		UI_Map_DrawMap(gGT->ptrIcons[3], gGT->ptrIcons[4],
 
-		               500, 195,
+		               AH_MAP_RIGHT, AH_MAP_BOTTOM,
 
 		               &gGT->backBuffer->primMem, gGT->pushBuffer_UI.ptrOT, 1);
 
