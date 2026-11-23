@@ -203,7 +203,10 @@ static void package_record(const J &pkg, ctr_content_package &target) {
     if (targets) base.erase("relic_targets");
     const bool relic_files = base.contains("relic_files");
     if (relic_files) base.erase("relic_files");
-    if (base.contains("relic_revision")) base.erase("relic_revision");
+    if (base.contains("relic_revision")) {
+        need(relic_files, "relic_revision is only allowed together with relic_files");
+        base.erase("relic_revision");
+    }
     // `locator` (xdelta importer) is optional and informational: which patch
     // and BIGFILE slot an imported track comes from.
     target.locator_index = -1;

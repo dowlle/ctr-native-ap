@@ -617,6 +617,7 @@ int main(int argc, char **argv) {
     package_refuses("relic_files without relic_targets", [&](J &p) { set_relic(p); p[0].erase("relic_targets"); });
     package_refuses("relic_files on a package without relic", [&](J &p) { p[1]["relic_files"] = p[0]["files"]; p[1]["relic_files"][0]["sha256"] = std::string(64, 'e'); });
     package_refuses("relic_revision with unsupported characters", [&](J &p) { set_relic(p); p[0]["relic_revision"] = ".2"; });
+    package_refuses("relic_revision without relic_files", [&](J &p) { p[0]["relic_revision"] = "2.2"; });
     package_refuses("relic_revision not text", [&](J &p) { set_relic(p); p[0]["relic_revision"] = 2; });
     package_refuses("relic pair repeats another package's file pair", [&](J &p) { set_relic(p, [](J &q) { q[0]["relic_files"] = q[1]["files"]; }); });
     package_refuses("relic pair repeats another package's relic pair", [&](J &p) {
