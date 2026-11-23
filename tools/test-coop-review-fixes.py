@@ -327,6 +327,7 @@ int main(void)
 PARTNER_DEATHLINK = r'''
 #include "ap/ap_race_attempt_logic.h"
 static int g_dl_partner_effect[2], g_dl_partner_grace[2], hard, forced, window;
+static int g_dl_remote_partner;
 static int g_dl_partner_hit_cooldown[2], g_dl_swallow_edge, sentDeath;
 static unsigned g_dl_prev_maskgrab, g_dl_partner_reset_edges;
 int AP_CoopHardRace(void) { return hard; }
@@ -365,6 +366,10 @@ int main(void)
     AP_DeathLinkQueuePartner(&gt, &drivers[0], AP_DL_TRIG_HIT);
     assert(g_dl_partner_effect[1] == CTR_DL_WEAPON_HIT);
     hard = 0;
+    g_dl_remote_partner = 1;
+    AP_DeathLinkQueuePartner(&gt, &drivers[0], AP_DL_TRIG_HIT);
+    assert(g_dl_partner_effect[1] == CTR_DL_WEAPON_HIT);
+    g_dl_remote_partner = 0;
     AP_DeathLinkQueuePartner(&gt, &drivers[0], AP_DL_TRIG_HIT);
     assert(g_dl_partner_effect[1] == CTR_DL_MASK_RESET);
     g_dl_partner_effect[1] = 0;

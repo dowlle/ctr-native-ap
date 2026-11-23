@@ -31,7 +31,8 @@ static struct Driver *recipient;
 static struct MaskHeadWeapon mask;
 int ctr_cfg_active(void) { return active; }
 int AP_CoopP2Available(void) { return partnerAvailable; }
-int AP_CoopWon(const struct GameTracker *game) { (void)game; assert(0); return 0; }
+int AP_CoopHardRace(void) { return 0; }
+int AP_RaceAttemptIsForcedLoss(void) { return 0; }
 int LOAD_IsOpen_RacingOrBattle(void) { return onTrack; }
 int OtherFX_Play(u32 id, int flags) { (void)id; (void)flags; return 0; }
 void AP_LogLine(const char *line) { (void)line; }

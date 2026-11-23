@@ -11,7 +11,7 @@ runtime = (root / 'ap/ap_traps.c').read_text()
 boundary = runtime[runtime.index('if (boundary)'):runtime.index('\n\tw.context =')]
 assert boundary.index('AP_TrapSaveFeedIdentities') < boundary.index('AP_TrapSchedMapChange')
 assert 'AP_TrapSchedReceive(&g_sched' not in boundary
-assert set(re.findall(r'owed\[(AP_TRAP_\w+)\]', boundary)) == {
+assert set(re.findall(r'^\s*owed\[(AP_TRAP_\w+)\]', boundary, re.MULTILINE)) == {
     'AP_TRAP_FORCED_USE', 'AP_TRAP_ITEM_REROLL', 'AP_TRAP_FLATTEN',
     'AP_TRAP_CLOCKED_OUT', 'AP_TRAP_NITRO', 'AP_TRAP_RED_POTION',
     'AP_TRAP_WARPBALL_AMBUSH',
