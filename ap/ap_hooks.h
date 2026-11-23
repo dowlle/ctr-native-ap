@@ -142,6 +142,20 @@ void AP_CustomTrackTrophyCeremonyEnd(void);
 // Call from the podium camera tick only while no menu obscures the scene.
 void AP_TrophyPodiumCeremonyDraw(int x, int y);
 
+// ── Content-plan cup podium presentation (A6-77, display-only) ──
+// A won content-plan cup reuses the Trophy model for its podium
+// (AP_ContentCupFinish). The finish arms this latch with the cup's Win
+// location code; the podium gates and draws read it so the cup podium shows
+// the cup's own check ("CUP WON" + the scouted item sentence) instead of the
+// ordinary-Trophy presentation's "TROPHIES: n" and unrelated Trophy
+// text. The camera clears the latch after podium exit. A fresh connect
+// clears the location while keeping the cup heading visible until exit.
+void AP_CupPodiumArm(long winCode);
+int  AP_CupPodiumActive(void);
+void AP_CupPodiumReset(void);
+void AP_CupPodiumForgetReward(void);
+void AP_ContentCupPodiumCeremonyDraw(int x, int y);
+
 // 1 when the podium's STATIC_TROPHY model belongs to a trial track or Cortex
 // Vortex rather than an ordinary retail trophy. Those reuse the model but have
 // no prevLEV + ADV_REWARD_FIRST_TROPHY location, so #235 leaves them on the
@@ -156,7 +170,7 @@ int AP_PodiumSpecialTrack(void);
 // podium. Every other podium still relies on its own prize thread, so the
 // self-gating wrapper is a no-op there. AP_PodiumExitReset re-arms the one-shot
 // latch when a podium is born (CS_Podium_FullScene_Init).
-void AP_PodiumExitReset(void);
+void AP_PodiumExitReset(int prizeOmitted);
 void AP_PodiumExitTerminalWork(void);
 
 // ── Local podium-skip option (issue #285) ──
@@ -379,6 +393,19 @@ void AP_ContentMenuRows(const ctr_content_pad *pad, ap_rs_rows *rows);
 int AP_RaceTypeSelectorSetting(void);
 int AP_ContentBoxesLine(const ctr_content_pad *pad);
 int AP_ContentPadPlainLeft(const ctr_content_pad *pad);
+int AP_ContentPadPickupsLeft(const ctr_content_pad *pad);
+enum { AP_PAD_SHARED_WUMPA, AP_PAD_SHARED_ITEMSANITY, AP_PAD_SHARED_HIT };
+#define AP_PAD_SHARED_CHECKS_MAX (1 + 22 + CTR_CFG_HIT_CHARACTER_COUNT)
+typedef struct {
+	int64_t code;
+	int family;
+} ap_pad_shared_check;
+int AP_ContentPadSharedChecks(const ctr_content_pad *pad, unsigned modes, ap_pad_shared_check *out);
+int AP_ContentCupLegSharedChecks(const ctr_content_pad *pad, int leg, ap_pad_shared_check *out);
+static inline int AP_ContentCupPadHitDestination(const ctr_content_pad *pad)
+{
+	return pad->gem_cup ? pad->gem_cup : CTR_CFG_HIT_CONTENT_CUP_DEST + pad->cup_index;
+}
 void AP_ContentLogMenu(const ctr_content_pad *pad, const ap_rs_rows *rows, int decision);
 
 // Per-frame verdict tick + the solo-seed "not completable" banner (drawn at the
@@ -933,7 +960,7 @@ int AP_PadReplayable(int physLevelID, int destLevelID);
 // still has an unchecked plain or juiced use check. Like the Hit opportunity it
 // feeds both AP_PadState counters, so a done pad stays raceable instead of
 // stranding the check, and it counts as a re-race reason in the tier-2 chooser.
-int AP_ItemsanityPadOpportunity(int destLevelID);
+int AP_ItemsanityPendingUseChecks(long *out);
 
 // Number of unchecked item-box locations owned by a race destination. This is
 // the same server-truth count used by AP_PadState, exposed so the warp-pad HUD

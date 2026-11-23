@@ -5,7 +5,8 @@
  * like a tracker start (MainFreeze_APResumeFromTracker), then the trip in
  * ap_fasttravel_logic.h waits for an idle hub, asks for the destination hub's
  * load and lets the level's own birth place the kart at the save screen
- * (VehBirth_TeleportSelf through AP_FastTravelSpawnAt). Every destination,
+ * or on the flat floor beside it (VehBirth_TeleportSelf through
+ * AP_FastTravelSpawnAt). Every destination,
  * the current hub included, takes the same reload path. */
 #include "ap_fasttravel.h"
 #include "ap_fasttravel_logic.h"
@@ -172,7 +173,7 @@ void AP_FastTravelFrame(struct GameTracker *gt)
 int AP_FastTravelSpawnAt(struct Level *level1, int levelID, SVec3 *posBottom, s16 *rotY)
 {
 	struct InstDef *instDef;
-	int i, a, pos[3], out[3];
+	int i, a, pos[3], out[3], facing;
 	if (ap_ft_spawnHub < 0 || levelID != GEM_STONE_VALLEY + ap_ft_spawnHub)
 		return 0;
 	/* One trip arms one spawn: disarm whatever happens below. */
@@ -199,11 +200,15 @@ int AP_FastTravelSpawnAt(struct Level *level1, int levelID, SVec3 *posBottom, s1
 	pos[0] = instDef->pos.x;
 	pos[1] = instDef->pos.y;
 	pos[2] = instDef->pos.z;
-	AP_FT_Landing(pos, MATH_Cos(a), -MATH_Sin(a), out);
+	if (!AP_FT_HubDropOverride(levelID - GEM_STONE_VALLEY, out, &facing))
+	{
+		AP_FT_Landing(pos, MATH_Cos(a), -MATH_Sin(a), out);
+		facing = AP_FT_Facing(a);
+	}
 	posBottom->x = (s16)out[0];
 	posBottom->y = (s16)CTR_MipsAddLo(out[1], 0x80);
 	posBottom->z = (s16)out[2];
-	*rotY = (s16)AP_FT_Facing(a);
+	*rotY = (s16)facing;
 	ap_ft_spawned = 1;
 	{
 		char line[160];

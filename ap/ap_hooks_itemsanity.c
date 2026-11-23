@@ -16,31 +16,30 @@ static int AP_ItemsanityActive(void)
 	return ctr_cfg_active() && ap_net_location_exists(35016000L);
 }
 
-int AP_ItemsanityPadOpportunity(int destLevelID)
+int AP_ItemsanityPendingUseChecks(long *out)
 {
-	unsigned char useLeft[AP_ITEMSANITY_WEAPON_COUNT];
-	int i;
+	int i, count = 0;
 
-	// Retail race tracks only: each has item crates and a plain re-race route,
-	// and any of them can serve a pending use check. Cups, trials, arenas,
-	// boss garages and custom destinations keep their own lifecycle.
-	if (destLevelID < 0 || destLevelID > 15 || !AP_ItemsanityActive())
+	if (!AP_ItemsanityActive())
 		return 0;
 
 	for (i = 0; i < AP_ITEMSANITY_WEAPON_COUNT; i++)
 	{
 		int heldItemID = i <= 4 ? i : i + 1; // inverse of AP_ItemsanityWeaponIndex
-		int juiced;
+		if (!AP_ItemsanityUseIsOwned(heldItemID, ap_itemsanity_owned))
+			continue;
 
-		useLeft[i] = 0;
-		for (juiced = 0; juiced <= 1; juiced++)
+		for (int juiced = 0; juiced <= 1; juiced++)
 		{
 			long code = AP_ItemsanityLocationCode(heldItemID, juiced);
-			if (code > 0 && ap_net_location_exists(code) && !ap_net_location_checked(code))
-				useLeft[i] = 1;
+			if (!ap_net_location_exists(code) || ap_net_location_checked(code))
+				continue;
+			if (out)
+				out[count] = code;
+			++count;
 		}
 	}
-	return AP_ItemsanityUseLeftPure(ap_itemsanity_owned, useLeft);
+	return count;
 }
 
 int AP_ItemsanityWeaponAvailable(int heldItemID)

@@ -154,10 +154,12 @@ if family == 'cup':
     fixture += r'''
 static ctr_content_pad pad;
 static AP_CupSweepAttempt ap_content_cup_attempt;
+static long armCode = -2;
 static const ctr_content_pad *AP_ContentCupPad(void) { return &pad; }
 static int AP_ContentGarageCupRunning(void) { return -1; }
 void AP_NotifyCupAggregateReward(int bit) { (void)bit;assert(0); }
 void AP_SkipPodium(int model) { (void)model; }
+void AP_CupPodiumArm(long winCode) { armCode = winCode; }
 '''
 if family == 'shop':
     fixture += r'''
@@ -232,6 +234,9 @@ if family == 'shop':
 if family in ('rewards', 'results'):
     fixture += 'assert(podiumPlace==1); memset(ap_notified_mask,0,sizeof ap_notified_mask); coOpTrophyPlace=2;' + call
     fixture += '\nassert(podiumPlace==2);\n'
+if family == 'cup':
+    # A6-77: a won content-plan cup arms its podium latch with the Win location
+    fixture += 'assert(armCode==35000100);\n'
 if family == 'hit':
     fixture += 'assert(s_hit_sent_mask==(1u<<1));int before=sent;' + call + '\nassert(sent==before);\n'
 if family not in ('shop', 'rewards', 'goal', 'hit'):

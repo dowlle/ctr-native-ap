@@ -32,7 +32,7 @@ assert "AP_PAD_LOOK_OPEN" in glow and "AP_PAD_LOOK_STAGE2_OPEN" in glow
 assert "ap_content_plan_active()" in glow
 assert "AP_ContentPadGlowBits(physLevelID, bits, codes, AP_PAD_DISPLAY_BITS_MAX, 1)" in glow
 assert "AP_LocationLogicState((long long)codes[i])" in glow
-assert "AP_PadLookByLogic(look, n, in, unknown)" in glow
+assert "AP_PadLookByLogic(look, n + sharedCount, in, unknown)" in glow
 # Asked fresh, never cached: a server update or boss-win reply moves no local
 # counter, so a cached answer could stay green.
 assert "static" not in glow.split("{", 1)[1] and "AP_StateGen" not in glow
@@ -67,14 +67,27 @@ program = r'''
 #include <assert.h>
 #include <stdint.h>
 #include "ap_pad_logic_look.h"
+#include "ap_content_modes.h"
 #define AP_PAD_DISPLAY_BITS_MAX 256
-static int active = 1, glow_count, states[104], checked[104];
-static int ap_content_plan_active(void) { return active; }
+#define AP_PAD_SHARED_CHECKS_MAX 39
+typedef struct { int64_t code; } ap_pad_shared_check;
+static int active = 1, glow_count, states[105], checked[105], mode_open;
+static ctr_content_pad pad = {.mode_count = 1, .modes = { AP_CONTENT_MODE_CTR }};
+int ap_content_plan_active(void) { return active; }
+const ctr_content_pad *ap_content_plan_pad(int physical) { assert(physical == 3); return &pad; }
+static int AP_ContentModeOpen(const ctr_content_pad *p, int mode) {
+    assert(p == &pad && mode == AP_CONTENT_MODE_CTR); return mode_open;
+}
+static int AP_ContentPadSharedChecks(const ctr_content_pad *p, unsigned modes, ap_pad_shared_check *out) {
+    assert(p == &pad);
+    if (modes != (1u << AP_CONTENT_MODE_CTR) || checked[104]) return 0;
+    out[0].code = 104; return 1;
+}
 static int AP_ContentPadGlowBits(int physical, int *bits, int64_t *codes, int cap, int open) {
     (void)physical; (void)bits; (void)cap; assert(open == 1);
     codes[0] = 1; return glow_count;
 }
-static int ap_content_plan_sanity_pad(int physical, int family, int64_t *codes, int cap) {
+int ap_content_plan_sanity_pad(int physical, int family, int64_t *codes, int cap) {
     (void)physical; assert(cap >= 1); codes[0] = 101 + family; return 1;
 }
 static int AP_ContentCodeChecked(int64_t code) { return checked[code]; }
@@ -96,6 +109,12 @@ int main(void) {
     assert(AP_PadLogicLook(3, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_OPEN);
     checked[101] = checked[102] = checked[103] = 1;
     assert(AP_PadLogicLook(3, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_OPEN);
+    mode_open = 1; /* Roo's Tubes: a shared weapon use is the only open check. */
+    assert(AP_PadLogicLook(3, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_STAGE2_WAITING);
+    states[104] = AP_PAD_LOGIC_IN;
+    assert(AP_PadLogicLook(3, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_OPEN);
+    checked[104] = 1;
+    assert(AP_PadLogicLook(3, AP_PAD_LOOK_DONE) == AP_PAD_LOOK_DONE);
     glow_count = 1;
     assert(AP_PadLogicLook(3, AP_PAD_LOOK_OPEN) == AP_PAD_LOOK_STAGE2_WAITING);
     states[1] = AP_PAD_LOGIC_IN;
@@ -113,3 +132,128 @@ with tempfile.TemporaryDirectory(prefix='ctr-pad-sanity-') as folder:
                     str(source), '-o', str(executable)], check=True)
     subprocess.run([str(executable)], check=True)
 print("pad logic look production wiring: ok")
+
+# Execute the same shared-route collector used by the lifecycle, colour and
+# activity list. Room membership and collected codes stand in for AP replies.
+items = (root / "ap/ap_hooks_itemsanity.c").read_text(encoding="utf-8")
+launch = (root / "ap/ap_tracker_launch.c").read_text(encoding="utf-8")
+tracked = body(launch, "int AP_PadActivities(")
+assert "AP_ContentPadSharedChecks(pad, 1u << sel.mode[i], NULL)" in tracked
+assert tracker.count("AP_ContentPadSharedChecks(plan, AP_CONTENT_PLAIN_MODES, NULL)") == 1
+program = r'''
+#define CTR_AP
+#include <assert.h>
+#include "ap_hooks.h"
+#include "ap_itemsanity_logic.h"
+#include "ap_pad_activity_logic.h"
+static unsigned char ap_itemsanity_owned[AP_ITEMSANITY_WEAPON_COUNT];
+static ctr_content_checks families;
+static ctr_content_package package;
+static ctr_hit_encounters encounter;
+static int64_t plain = 35016002, juiced = 35016003;
+static int plain_done, juiced_done, have_pickups;
+static unsigned hit_mask;
+static int ap_net_location_exists(long long code) { return code == plain || code == juiced; }
+int AP_ContentCodeChecked(int64_t code) {
+    if (code == plain) return plain_done;
+    if (code == juiced) return juiced_done;
+    return code != families.wumpa_global;
+}
+static int ap_net_location_checked(long long code) { return AP_ContentCodeChecked(code); }
+int AP_SanityPadPending(int physical, int family) {
+    assert(physical == 9 || physical == 6 || physical == 102 || physical == 16 || physical == 17);
+    return family == 0 && have_pickups;
+}
+const ctr_content_checks *ap_content_plan_checks(void) { return &families; }
+const ctr_content_package *ap_content_plan_package(int index) { return index == 0 ? &package : NULL; }
+const ctr_hit_encounters *ap_seedcfg_hit_encounters(void) { return &encounter; }
+static int AP_HitEffectivePlayer(int physical) { (void)physical; return 0; }
+static unsigned AP_HitEncounterPendingMask(int host, int player) {
+    assert((host == 6 || host == 8 || host == 16 || host == 17 || host == 100 || host == 205) && player == 0);
+    return hit_mask;
+}
+static int AP_ItemsanityActive(void) { return 1; }
+'''
+for implementation, signature in [
+    (items, "int AP_ItemsanityPendingUseChecks("),
+    (pads, "static int AP_SharedWeaponChecks("),
+    (pads, "int AP_ContentCupLegSharedChecks("),
+    (pads, "int AP_ContentPadSharedChecks("),
+    (pads, "int AP_ContentPadPickupsLeft("),
+    (pads, "int AP_ContentPadPlainLeft("),
+]:
+    program += body(implementation, signature) + '\n}\n'
+program += r'''
+int main(void) {
+    const unsigned ctr = 1u << AP_CONTENT_MODE_CTR, relic = 1u << AP_CONTENT_MODE_RELIC;
+    /* Reported tracks, plus the trial hosts with Trophy or CTR routes. */
+    const int ids[] = {102, 6, 9, 16, 17};
+    const int hosts[] = {-1, 8, 6, 16, 17};
+    int counts[15] = {0};
+    ap_pad_shared_check rows[AP_PAD_SHARED_CHECKS_MAX];
+    package.weapon_crates = 8;
+    for (int i = 0; i < 5; ++i) {
+        ctr_content_pad pad = {
+            .physical = ids[i], .occupied = 1, .retail_id = hosts[i],
+            .package_index = i == 0 ? 0 : -1, .racer_lock = -1,
+            .mode_count = 2, .modes = {AP_CONTENT_MODE_CTR, AP_CONTENT_MODE_RELIC},
+            .stages = {1, 2}, .has_stage2 = 1, .ctr_first = 1, .trophy_location = 1,
+            .ctr_location = 2, .relic_locations = {3}
+        };
+        plain_done = juiced_done = 0;
+        ap_itemsanity_owned[1] = 0;
+        assert(!AP_ContentPadPlainLeft(&pad)); /* no owned pending weapon */
+        ap_itemsanity_owned[1] = 1;
+        assert(AP_ContentPadPlainLeft(&pad));
+        assert(ap_content_track_pad_state(&pad, counts, AP_ContentCodeChecked, AP_ContentPadPlainLeft(&pad)) == 4);
+        assert(AP_ContentPadSharedChecks(&pad, ctr, rows) == 2);
+        assert(rows[0].code == plain && rows[1].code == juiced && rows[1].family == AP_PAD_SHARED_ITEMSANITY);
+        assert(!AP_ContentPadSharedChecks(&pad, relic, NULL));
+        plain_done = 1;
+        assert(AP_ContentPadSharedChecks(&pad, ctr, rows) == 1 && rows[0].code == juiced);
+        juiced_done = 1;
+        assert(!AP_ContentPadPlainLeft(&pad));
+        assert(ap_content_track_pad_state(&pad, counts, AP_ContentCodeChecked, AP_ContentPadPlainLeft(&pad)) == 5);
+        have_pickups = 1;
+        assert(AP_ContentPadPlainLeft(&pad) && !AP_ContentPadSharedChecks(&pad, ctr, NULL));
+        have_pickups = 0;
+        families.wumpa = 1; families.wumpa_global = 35013000; pad.wumpa_modes = ctr;
+        assert(AP_ContentPadSharedChecks(&pad, ctr, rows) == 1 && rows[0].family == AP_PAD_SHARED_WUMPA);
+        assert(!AP_ContentPadSharedChecks(&pad, relic, NULL));
+        families.wumpa = 0;
+        hit_mask = 2u; encounter.locations[1] = 35025001;
+        assert(AP_ContentPadSharedChecks(&pad, ctr, rows) == 1 && rows[0].code == 35025001);
+        hit_mask = 0;
+        if (i == 0) {
+            package.weapon_crates = 0; plain_done = 0;
+            assert(!AP_ContentPadPlainLeft(&pad)); /* crate-free custom package */
+            package.weapon_crates = 8;
+        }
+    }
+    ctr_content_pad cup = {.physical = 100, .occupied = 1, .cup = 1, .gem_cup = 100};
+    cup.legs[1].shared_weapon_route = cup.legs[3].shared_weapon_route = 1;
+    plain_done = juiced_done = 0;
+    hit_mask = 2u;
+    assert(AP_ContentPadSharedChecks(&cup, 0, rows) == 1 && rows[0].family == AP_PAD_SHARED_HIT);
+    families.itemsanity_cup_routes = 1;
+    assert(!AP_ContentCupLegSharedChecks(&cup, 0, rows)); /* crate-free leg */
+    assert(AP_ContentCupLegSharedChecks(&cup, 1, rows) == 3);
+    assert(AP_ContentPadSharedChecks(&cup, 0, rows) == 3); /* both eligible legs share the same codes */
+    assert(rows[0].code == plain && rows[1].code == juiced && rows[2].code == 35025001);
+    cup.gem_cup = 0; cup.cup_index = 5;
+    assert(AP_ContentPadSharedChecks(&cup, 0, rows) == 3); /* non-Gem Cup field */
+    hit_mask = 0; plain_done = juiced_done = 1;
+    assert(!AP_ContentPadSharedChecks(&cup, 0, rows));
+    cup.physical = AP_CONTENT_GARAGE_CUP_PAD; plain_done = juiced_done = 0;
+    assert(!AP_ContentPadSharedChecks(&cup, 0, rows)); /* boss cups have no shared field */
+    return 0;
+}
+'''
+with tempfile.TemporaryDirectory(prefix='ctr-pad-shared-') as folder:
+    source, executable = Path(folder) / 'test.c', Path(folder) / 'test'
+    source.write_text(program)
+    subprocess.run(['cc', '-std=gnu99', '-Wall', '-Wextra', '-Wno-unused-function',
+                    '-I', str(root / 'ap'), '-I', str(root / 'include'),
+                    str(source), '-o', str(executable)], check=True)
+    subprocess.run([str(executable)], check=True)
+print("shared pad checks: custom, retail, trials and cup legs, per-mode eligibility, completion, global Wumpa and Hit Character pass")

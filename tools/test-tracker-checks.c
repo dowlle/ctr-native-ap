@@ -29,6 +29,29 @@ static int active=1;
 static int64_t checked_code;
 static int64_t absent_code;
 int ap_net_location_exists(long long code) { return code>0 && code!=absent_code; }
+int ap_net_location_checked(long long code) { return code == checked_code; }
+static int shared_pending, cup_pickups_pending;
+int AP_ContentPadSharedChecks(const ctr_content_pad *pad, unsigned modes, ap_pad_shared_check *out) {
+    if (pad == &pads[1]) {
+        assert(modes == 0 && !out);
+        return shared_pending;
+    }
+    assert(pad == &pads[0] && modes == AP_CONTENT_PLAIN_MODES);
+    if (shared_pending)
+        out[0] = (ap_pad_shared_check){35016002, AP_PAD_SHARED_ITEMSANITY};
+    return shared_pending;
+}
+int AP_ContentPadPickupsLeft(const ctr_content_pad *pad) {
+    assert(pad == &pads[1]);
+    return cup_pickups_pending;
+}
+int AP_ContentLetterItemReceived(int64_t code) { (void)code; return 0; }
+int AP_ContentCupLegSharedChecks(const ctr_content_pad *pad, int leg, ap_pad_shared_check *out) {
+    assert(pad == &pads[1]);
+    if (!shared_pending || leg != 2) return 0;
+    out[0] = (ap_pad_shared_check){35016002, AP_PAD_SHARED_ITEMSANITY};
+    return 1;
+}
 
 int ap_content_plan_active(void) { return active; }
 const ctr_content_pad *ap_content_plan_pad(int physical) {
@@ -59,6 +82,50 @@ static void capture(const char *prefix, const char *name) {
     assert(fwrite(ap_tracker.canvas,4,TRACKER_W*TRACKER_H,f)==TRACKER_W*TRACKER_H);
     fclose(f);
 }
+
+static void wumpa_mark_test(void) {
+    ap_tracker.canvas = calloc(TRACKER_W * TRACKER_H, 4);
+    assert(ap_tracker.canvas);
+    /* Drawing with no room location must leave even the tick area untouched. */
+    absent_code = 100;
+    AP_TrackerDrawWumpaMark(0,0,100,0);
+    AP_TrackerDrawWumpaMark(0,0,0,1);
+    for (int i=0;i<TRACKER_W*TRACKER_H;i++) assert(!ap_tracker.canvas[i]);
+    absent_code = 0;
+    checked_code = 100;
+    AP_TrackerDrawWumpaMark(0,0,100,1);
+    int pixels=0;
+    for (int i=0;i<TRACKER_W*TRACKER_H;i++) pixels += ap_tracker.canvas[i] != 0;
+    assert(pixels);
+    free(ap_tracker.canvas);
+    ap_tracker.canvas=NULL;
+}
+
+static void cup_card_test(void) {
+    AP_TrackerNode node = {.kind = 2, .physical = 100};
+    ap_tracker.canvas = calloc(TRACKER_W * TRACKER_H, 4);
+    assert(ap_tracker.canvas);
+    pads[1].cup = 1;
+    pads[1].trophy_location = checked_code = 100;
+    for (int i=0;i<AP_CONTENT_CUP_LEGS;i++) pads[1].legs[i].track_pad=-1;
+    for (int mask=0;mask<4;mask++) {
+        shared_pending = mask & 1;
+        cup_pickups_pending = (mask >> 1) & 1;
+        AP_TrackerRect(0,0,376,126,0);
+        AP_TrackerDrawContentNode(&node,0,0);
+        int green=0, white=0;
+        for (int y=62;y<83;y++) for (int x=312;x<338;x++) {
+            uint32_t pixel = ap_tracker.canvas[y*TRACKER_W+x];
+            green += pixel == TRACKER_GREEN;
+            white += pixel == TRACKER_WHITE;
+        }
+        assert(mask ? (!green && white) : (green && !white));
+    }
+    shared_pending = cup_pickups_pending = 0;
+    memset(&pads[1],0,sizeof pads[1]);
+    free(ap_tracker.canvas);
+    ap_tracker.canvas=NULL;
+}
 static void pictures(const char *font, const char *prefix) {
     char *strings[]={"ROO'S TUBES"}; sdata->lngStrings=strings;
     FILE *f=fopen(font,"rb"); assert(f);
@@ -88,6 +155,7 @@ static void pictures(const char *font, const char *prefix) {
     capture(prefix,"done");
     families.wumpa=0; pads[0].wumpa_modes=0;
     capture(prefix,"off");
+    shared_pending=1; capture(prefix,"shared-use"); shared_pending=0;
     /* Production reward rows with explicit mixed server/logic state. */
     pads[0].trophy_location=201; pads[0].ctr_location=202;
     for(int i=0;i<3;i++) pads[0].relic_locations[i]=203+i;
@@ -188,7 +256,10 @@ static void reward_tests(void) {
     puts("tracker rewards: named race families, absent membership, old optional fields, distinct cup legs, shared codes, boss cups and Final Challenge pass");
 }
 int main(int argc,char **argv) {
-    AP_TrackerNode node={0}; AP_TrackerCheckCount rows[4]; char title[160],route[256];
+    AP_TrackerNode node={0}; AP_TrackerCheckCount rows[AP_TRACKER_PICKUP_ROWS + AP_TRACKER_SHARED_ROWS];
+    char title[160],route[256];
+    wumpa_mark_test();
+    cup_card_test();
     node.physical=7; strcpy(node.title,"ROO'S TUBES");
     strcpy(pads[0].track_id,"retail:7"); strcpy(pads[0].room_title,"ROO'S TUBES");
     pads[0].wumpa_modes=1; pads[0].wumpa_location=100;
@@ -207,16 +278,21 @@ int main(int argc,char **argv) {
     AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
     expect(&rows[0],1,0,0,0,1);
     pads[0].wumpa_modes=0;
+    shared_pending=1;
     AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
     expect(&rows[0],0,0,0,0,0);
+    expect(&rows[4],1,0,0,0,1);
+    shared_pending=0;
     families.wumpa=2;
     /* Cup-only track, no standalone pad. Every leg gets its own counts. */
     node.physical=100; pads[1].cup=1;
     for(int i=0;i<4;i++) { pads[1].legs[i].track_pad=-1; pads[1].legs[i].retail_id=-1; }
     strcpy(pads[1].legs[2].track_id,"retail:7"); pads[1].legs[2].wumpa=100;
     ap_tracker.checks_page=2;
+    shared_pending=1;
     AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
     expect(&rows[0],1,1,0,0,0); expect(&rows[1],3,0,1,1,1);
+    expect(&rows[4],1,0,0,0,1);
     assert(strstr(route,"LEG 3 OF 4") && AP_TrackerChecksPages(&node)==4);
     /* A cup-only custom leg keeps the accepted room title, not its package name. */
     strcpy(pads[1].legs[2].room_title,"CRASH COVE (CUSTOM)");
@@ -226,6 +302,8 @@ int main(int argc,char **argv) {
     ap_tracker.checks_page=1;
     AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
     expect(&rows[0],0,0,0,0,0); expect(&rows[1],0,0,0,0,0);
+    expect(&rows[4],0,0,0,0,0);
+    shared_pending=0;
     /* Ripper Roo's garage has no physical track pad. */
     node.kind=3; node.physical=-1; ap_tracker.hub=1; ap_tracker.checks_page=0;
     strcpy(node.title,"RIPPER ROO"); bosses.wumpa[0]=100;

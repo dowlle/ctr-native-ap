@@ -1,6 +1,7 @@
 #ifndef CTR_NATIVE_OVR_232_H
 #define CTR_NATIVE_OVR_232_H
 
+enum { AH_MAP_RIGHT = 500, AH_MAP_BOTTOM = 195 };
 
 struct MaskHint
 {
