@@ -165,6 +165,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		AP_CustomTrophyCeremonyReset(&ap_custom_trophy_ceremony);
 		ap_custom_ceremony_bit = AP_CUSTOM_TROPHY_PSEUDO_BIT;
 #endif
+		AP_CupPodiumForgetReward();
 		AP_AppendLog("[AP NET] fresh connect -> reset received-item tally + session state\n");
 #ifdef CTR_CUSTOM_TRACKS
 		// slot_data was parsed by the callback inside ap_net_poll above. Refuse

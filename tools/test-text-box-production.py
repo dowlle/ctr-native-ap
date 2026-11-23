@@ -45,6 +45,7 @@ struct GameTracker { struct DB *backBuffer; struct PushBuffer pushBuffer_UI; uns
 static struct { struct GameTracker *gGT; unsigned frameCounter; } state={&game,0},*sdata=&state;
 static unsigned char arena[8192];
 static char events[256]; static int ne,drawWidth,drawX,drawFlags;
+static char lastGlyph;
 static DRAWENV environments[2];static int envCount;
 static u32 CTR_ReadU32LE(const void *p) { u32 v;memcpy(&v,p,4);return v; }
 static void CTR_WriteU32LE(void *p,u32 v) { memcpy(p,&v,4); }
@@ -61,6 +62,7 @@ for primitive in ("POLY_GT4", "POLY_F4", "LINE_F2"):
 fixture += r'''
 static void DecalFont_DrawLineStrlen(char *s,s16 n,int x,s16 y,s16 f,int flags) {
     (void)y;drawWidth+=DecalFont_GetLineWidthStrlen(s,n,f);drawX=x;drawFlags=flags;events[ne++]='G';
+    if (n > 0) lastGlyph = s[n - 1];
     size_t bytes=(size_t)n*sizeof(POLY_GT4);
     assert((uintptr_t)db.primMem.cursor+bytes<=(uintptr_t)db.primMem.guardEnd);
     memset(db.primMem.cursor,0xA5,bytes);db.primMem.cursor=(unsigned char *)db.primMem.cursor+bytes;
@@ -106,6 +108,28 @@ int main(void) {
     uint32_t ot;
     game.backBuffer=&db;game.pushBuffer_UI.rect.w=512;game.pushBuffer_UI.rect.h=216;game.pushBuffer_UI.ptrOT=&ot;
     game.numPlyrCurrGame=1;db.primMem.guardEnd=arena+sizeof arena-64;
+    {
+        const char *shortLine = "STAGE 2: 4/4 GOLD RELICS";
+        const char *longLine = "STAGE 2 DONE: 3 GREEN CTR TOKENS";
+        const int center = 256, y = game.pushBuffer_UI.rect.h - 15, width = 352;
+        reset();
+        DecalFont_DrawLineBox(shortLine, center, y, width, FONT_SMALL,
+                              JUSTIFY_CENTER, TEXT_MARQUEE, TEXT_SLOT_PAD, &ot);
+        assert(envCount == 0 && drawX == center && (drawFlags & JUSTIFY_CENTER) && lastGlyph == 'S');
+        for (unsigned frame = 0; frame <= 195; frame++) {
+            state.frameCounter = frame;
+            game.frameTimer_VsyncCallback = frame;
+            reset();
+            DecalFont_DrawLineBox(longLine, center, y, width, FONT_SMALL,
+                                  JUSTIFY_CENTER, TEXT_MARQUEE, TEXT_SLOT_PAD, &ot);
+            assert(envCount == 2 && environments[1].clip.x == 80 && environments[1].clip.w == width);
+            /* Both frames are inside the end hold. The glyph run includes
+               TOKENS and its last advance ends within the hardware clip. */
+            if (frame == 180 || frame == 195)
+                assert(lastGlyph == 'S' && drawX + drawWidth == environments[1].clip.x + width);
+        }
+        state.frameCounter = game.frameTimer_VsyncCallback = 0;
+    }
     {
         AP_FeedLine notice = {0};
         char shortened[AP_FEED_TEXT_CAP];

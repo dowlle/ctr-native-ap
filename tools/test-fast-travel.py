@@ -106,6 +106,25 @@ int main(void) {
     AP_FTReset(&r);
     assert(AP_FTFrame(&r, 1, 0, 9, 1, 0, 0, &wantLoad) == AP_FT_DROP_NONE && !wantLoad);
 
+    /* A6-77: only Citadel City overrides its drop; the spot is pinned */
+    {
+        int pos[3], rotY, h;
+        for (h = 0; h < 5; h++)
+        {
+            int o = AP_FT_HubDropOverride(h, pos, &rotY);
+            assert(o == (h == 4));
+        }
+        assert(AP_FT_HubDropOverride(4, pos, &rotY) == 1);
+        assert(pos[0] == 4400 && pos[1] == 768 && pos[2] == -20650 && rotY == 0);
+        /* the override clears the save screen's wake: 859 > 767 */
+        {
+            long dx = pos[0] - 5127, dy = pos[1] - 768, dz = pos[2] - -21107;
+            assert(dx * dx + dy * dy + dz * dz > 0x8FFFF);
+        }
+        assert(AP_FT_HubDropOverride(-1, pos, &rotY) == 0);
+        assert(AP_FT_HubDropOverride(5, pos, &rotY) == 0);
+    }
+
     puts("fixture OK");
     return 0;
 }
@@ -119,7 +138,19 @@ with tempfile.TemporaryDirectory() as directory:
     subprocess.run([str(path / "ft")], check=True)
 
 # ── the landing, per real hub ───────────────────────────────────────────────
+# Citadel City is exempt: its generic landing is the gem door ramp (A6-77), so
+# the drop is the pinned override spot below, verified here against the real
+# save screen position instead.
 for name, pos, rot in HUBS:
+    if name == "Citadel City":
+        # the override spot: flat balcony floor west of the gem door, 859
+        # units from the save screen (clear of its 767 wake), facing rotY 0
+        ox, oy, oz = 4400, 768, -20650
+        dx, dy, dz = ox - pos[0], oy - pos[1], oz - pos[2]
+        dist2 = dx * dx + dy * dy + dz * dz
+        check(dist2 > 0x8FFFF, f"{name}: the override clears the save screen's wake range (dist {math.isqrt(dist2)})")
+        check(850 * 850 <= dist2 <= 870 * 870, f"{name}: the override sits 859 from the save screen ({math.isqrt(dist2)})")
+        continue
     a = 2 * math.pi * rot / 4096
     dirx, dirz = round(math.cos(a) * 4096), round(-math.sin(a) * 4096)
     # the shipped math, mirrored: out = pos + dir * 1024 >> 12
@@ -175,6 +206,8 @@ check("AP_TrackerLaunchPending()" in travel, "a tracker start in flight refuses 
 check("MainFreeze_APResumeFromTracker();" in travel, "a confirmed hub resumes like a tracker start")
 check("AP_FT_Landing(pos, MATH_Cos(a), -MATH_Sin(a), out);" in travel,
       "the landing walks the save camera's approach direction")
+check("AP_FT_HubDropOverride(levelID - GEM_STONE_VALLEY, out, &facing)" in travel,
+      "a hub with an undrivable landing drops at its override spot (A6-77)")
 check("instDef->modelID == STATIC_SAVEOBJ" in travel, "the anchor is the hub's save object instance")
 check("ap_ft_spawnHub = -1;" in travel, "one trip arms one spawn")
 check("a dropped trip keeps no armed spawn" in travel and travel.count("ap_ft_spawnHub = -1;") == 4,

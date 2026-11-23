@@ -67,6 +67,7 @@ int AP_HitEncounterGather(unsigned char *eligible, unsigned char *unchecked);
 // is the EFFECTIVE player engine id (after any racer lock). -1 for a
 // destination without an order.
 int AP_HitEncounterOpportunity(int destLevelID, int player);
+unsigned AP_HitEncounterPendingMask(int destLevelID, int player);
 
 // Draw one FRESH field at `destLevelID` with that destination's cursors and
 // advance them (AP_HitDrawFieldPure). `player` is the effective player;

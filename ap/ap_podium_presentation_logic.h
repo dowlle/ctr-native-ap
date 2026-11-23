@@ -6,7 +6,10 @@
 // Freestanding podium presentation policy for issue #235. The AP Trophy
 // presentation owns its own received-count line and #330 item text, so it must
 // not birth the retail Trophy prize Instance/thread and must not set the
-// INC_TROPHY count-up. Pure and engine-independent, so the host harness
+// INC_TROPHY count-up. A won content-plan cup reuses the Trophy model for its
+// podium and owns its own text the same way (A6-77), so the same suppression
+// applies to it through AP_PodiumIsApCupPresentation. Pure and
+// engine-independent, so the host harness
 // (tools/test-podium-trophy-presentation.c) pins the decision directly;
 // game/233/CS_Podium.c consumes this function rather than keeping a second copy
 // of the policy.
@@ -35,13 +38,30 @@ static inline int AP_PodiumIsApTrophyPresentation(int apActive, int rewardId,
 	return apActive && rewardId == AP_PODIUM_TROPHY_MODEL && !specialTrack;
 }
 
-// 1 when the retail prize Instance/thread must be created for this podium.
-// Every reward keeps its vanilla prize except the AP Trophy presentation, which
-// draws the received count and the #330 item text itself.
-static inline int AP_PodiumShouldBirthPrize(int apActive, int rewardId,
-                                            int specialTrack)
+// 1 when the current podium follows a won content-plan cup (A6-77). The cup
+// ceremony reuses the Trophy model as its podium prop (AP_ContentCupFinish,
+// ap_hooks_content_cups.c), so without this the podium would fall into the AP
+// Trophy presentation above and announce a Trophy the player did not win:
+// "TROPHIES: n" plus the #330 item sentence for the return pad treated as a
+// track (prevLEV + ADV_REWARD_FIRST_TROPHY), or the retail "CONGRATULATIONS! YOU
+// WIN A TROPHY!" fallback when that location is not in the seed. cupPodium is
+// the cup podium latch (AP_CupPodiumActive), set by the cup finish and
+// consumed when the podium ends. The cup presentation owns its own text, so
+// it must not birth the retail prize or run the count-up either.
+static inline int AP_PodiumIsApCupPresentation(int apActive, int rewardId,
+                                               int cupPodium)
 {
-	return !AP_PodiumIsApTrophyPresentation(apActive, rewardId, specialTrack);
+	return apActive && rewardId == AP_PODIUM_TROPHY_MODEL && cupPodium;
+}
+
+// 1 when the retail prize Instance/thread must be created for this podium.
+// Every reward keeps its vanilla prize except the AP Trophy presentation and
+// the AP cup presentation, which draw their own text.
+static inline int AP_PodiumShouldBirthPrize(int apActive, int rewardId,
+                                            int specialTrack, int cupPodium)
+{
+	return !AP_PodiumIsApTrophyPresentation(apActive, rewardId, specialTrack) &&
+	       !AP_PodiumIsApCupPresentation(apActive, rewardId, cupPodium);
 }
 
 // Terminal work the retail prize thread performs when the ceremony ends
@@ -69,26 +89,24 @@ typedef struct
 	int stopDanceLoops;    // 1 -> OtherFX_Stop2 both podium dance loops
 } ap_podium_exit_work;
 
-// One-shot latch for the terminal work, scoped to a single podium lifetime.
-// CS_Podium_FullScene_Init resets it when the podium is born; the AP
-// ordinary-Trophy exit consumes it, so the work can never run twice.
+// The scene arms this only if it omits the prize thread. The exit consumes
+// the pending work even if the connection or reward text changed in between.
 typedef struct
 {
-	int consumed;
+	int pending;
 } ap_podium_exit_state;
 
-static inline void AP_PodiumExitStateReset(ap_podium_exit_state *state)
+static inline void AP_PodiumExitStateReset(ap_podium_exit_state *state, int prizeOmitted)
 {
-	state->consumed = 0;
+	state->pending = prizeOmitted;
 }
 
 // The production decision used at podium exit. Returns the terminal work the
 // exit must perform: all four effects exactly once for an AP ordinary-Trophy
-// presentation, and nothing for every other podium (non-AP Trophy, AP relic,
-// trial/Cortex, custom, and every other reward), whose retail prize thread
-// still performs its own terminal work.
-static inline ap_podium_exit_work AP_PodiumExitWork(
-	int apActive, int rewardId, int specialTrack, ap_podium_exit_state *state)
+// or content-plan cup presentation, and nothing for every other podium
+// (non-AP Trophy, AP relic, trial/Cortex, custom, and every other reward),
+// whose retail prize thread still performs its own terminal work.
+static inline ap_podium_exit_work AP_PodiumExitWork(ap_podium_exit_state *state)
 {
 	ap_podium_exit_work work;
 
@@ -97,12 +115,10 @@ static inline ap_podium_exit_work AP_PodiumExitWork(
 	work.completionSound = 0;
 	work.stopDanceLoops = 0;
 
-	if (!AP_PodiumIsApTrophyPresentation(apActive, rewardId, specialTrack))
-		return work;
-	if (state->consumed)
+	if (!state->pending)
 		return work;
 
-	state->consumed = 1;
+	state->pending = 0;
 	work.overlayTransition = 2;
 	work.releaseFreeze = 1;
 	work.completionSound = 1;

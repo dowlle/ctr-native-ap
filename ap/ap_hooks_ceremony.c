@@ -48,6 +48,36 @@ static ap_custom_trophy_ceremony_state ap_custom_trophy_ceremony;
 static int ap_custom_ceremony_bit = AP_CUSTOM_TROPHY_PSEUDO_BIT;
 #endif
 
+// A6-77. Process-local latch for the one content-plan cup podium that follows
+// a won cup, mirroring the custom Trophy ceremony latch above: the cup finish
+// arms it with the Win location code, the podium draws and presentation gates
+// read it, and the camera clears it after podium exit. Without it the cup
+// podium falls into the ordinary-Trophy presentation and announces a Trophy
+// the player did not win. -1 = no cup podium pending; 0 = pending without a
+// Win location to name; > 0 = pending, the Win location code.
+static long ap_cup_podium_win_code = -1;
+
+void AP_CupPodiumArm(long winCode)
+{
+	ap_cup_podium_win_code = winCode >= 0 ? winCode : 0;
+}
+
+int AP_CupPodiumActive(void)
+{
+	return ap_cup_podium_win_code >= 0;
+}
+
+void AP_CupPodiumReset(void)
+{
+	ap_cup_podium_win_code = -1;
+}
+
+void AP_CupPodiumForgetReward(void)
+{
+	if (AP_CupPodiumActive())
+		ap_cup_podium_win_code = 0;
+}
+
 // Cleared when a new race starts (the finish-flag falling edge in the race
 // listener), so each ceremony shows only its own race's just-earned checks.
 static void AP_CeremonyLedgerReset(void)
@@ -500,22 +530,45 @@ int AP_PodiumSpecialTrack(void)
 	return 0;
 }
 
+// A6-77. The content-plan cup podium presentation: the cup's own Win check,
+// drawn where the ordinary-Trophy presentation would stand. The cup finish
+// (AP_ContentCupFinish) arms the latch with the Win location code and reuses
+// the Trophy model as the podium prop; without this branch the podium would
+// announce a Trophy the player did not win ("TROPHIES: n" plus the #330
+// sentence for prevLEV, which holds the cup's return pad, or the retail
+// "CONGRATULATIONS! YOU WIN A TROPHY!" fallback when that location is not in
+// the seed). Display-only: the check itself was already sent by the finish.
+void AP_ContentCupPodiumCeremonyDraw(int x, int y)
+{
+	long code = ap_cup_podium_win_code;
+
+	if (!AP_PodiumIsApCupPresentation(ctr_cfg_active(),
+	                                  sdata->gGT->podiumRewardID, AP_CupPodiumActive()))
+		return;
+
+	DecalFont_DrawLine("CUP WON", x, y, FONT_SMALL, JUSTIFY_CENTER | ORANGE);
+
+	if (code > 0 && ap_net_location_exists(code))
+		AP_CeremonyDrawEntry(x, y + AP_CEREMONY_ROW_Y, code, -1, -1);
+}
+
 // Issue #235. game/233/CS_Podium.c bypasses the retail Trophy prize (and its
 // INC_TROPHY count-up) for an AP Trophy presentation, so this draws what the
 // ceremony should say instead: the AP-owned received Trophy count, then the
 // #330 item sentence naming what the check actually sent. Self-gating matches
 // the CS_Podium branch exactly (AP active + ordinary retail Trophy), so every
 // non-AP, custom-Trophy, trial/Cortex and other-reward podium draws nothing
-// here. Display-only: the check itself was already sent by the award path. The
-// retail "win a trophy" string is the fallback when the scout is missing,
-// exactly as #330 requires.
+// here. A content-plan cup podium owns its own presentation (A6-77), so it
+// draws nothing here either. Display-only: the check itself was already sent
+// by the award path. The retail "win a trophy" string is the fallback when
+// the scout is missing, exactly as #330 requires.
 void AP_TrophyPodiumCeremonyDraw(int x, int y)
 {
 	char count[24];
 	char *retail;
 	char *text;
 
-	if (sdata->gGT == NULL ||
+	if (sdata->gGT == NULL || AP_CupPodiumActive() ||
 	    !AP_PodiumIsApTrophyPresentation(ctr_cfg_active(),
 	                                     (int)sdata->gGT->podiumRewardID,
 	                                     AP_PodiumSpecialTrack()))
@@ -540,9 +593,9 @@ void AP_TrophyPodiumCeremonyDraw(int x, int y)
 // born (CS_Podium_FullScene_Init) and consumed by the exit below.
 static ap_podium_exit_state ap_podium_exit;
 
-void AP_PodiumExitReset(void)
+void AP_PodiumExitReset(int prizeOmitted)
 {
-	AP_PodiumExitStateReset(&ap_podium_exit);
+	AP_PodiumExitStateReset(&ap_podium_exit, prizeOmitted);
 }
 
 // Issue #235. CS_Podium_Prize_ThTick3 is the code that raises overlayTransition
@@ -562,8 +615,7 @@ void AP_PodiumExitTerminalWork(void)
 	if (sdata == NULL || sdata->gGT == NULL)
 		return;
 
-	work = AP_PodiumExitWork(ctr_cfg_active(), (int)sdata->gGT->podiumRewardID,
-	                         AP_PodiumSpecialTrack(), &ap_podium_exit);
+	work = AP_PodiumExitWork(&ap_podium_exit);
 
 	// Issue #484: retail CS_Podium_Prize_ThTick1 stops these first.
 	if (work.stopDanceLoops)

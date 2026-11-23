@@ -32,6 +32,7 @@ typedef struct ctr_content_leg {
     int cortex;        /* 1 for Cortex Vortex */
     int package_index; /* custom package, or -1 */
     int custom_slot, named_block, laps;
+    int shared_weapon_route; /* this ordinary cup leg can award shared weapon checks */
     int64_t victory;   /* `<Track>: Cup Leg Victory`, 0 when none */
     int64_t lap;       /* `<Track>: Complete One Lap` (#344), 0 when none */
     int64_t wumpa;     /* `<Track>: Reach 10 Wumpa` with per_track, 0 when none (row 10i) */
@@ -352,6 +353,7 @@ typedef struct ctr_content_checks {
     int podium, lettersanity, letters_per_track, wumpa;
     int64_t wumpa_global;
     int relic_perfect;
+    int itemsanity_cup_routes; /* no standalone Trophy or CTR weapon route */
 } ctr_content_checks;
 
 /* The engine LevelID a track entry races on. */

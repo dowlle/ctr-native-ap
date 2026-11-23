@@ -102,7 +102,7 @@ int AP_ContentCupHitDestination(void)
 {
 	const ctr_content_pad *pad = AP_ContentCupPad();
 	if (!pad || AP_ContentGarageCupRunning() >= 0) return -1;
-	return pad->gem_cup ? pad->gem_cup : CTR_CFG_HIT_CONTENT_CUP_DEST + pad->cup_index;
+	return AP_ContentCupPadHitDestination(pad);
 }
 
 // The running cup leg's index, or -1.
@@ -311,6 +311,14 @@ int AP_ContentCupFinish(struct GameTracker *gGT, int won)
 		AP_EmitClassCheck(sweep, 0, -1, -1, 1, "[AP CHECK] cup %s Win All Legs location=%ld\n", pad->entry_id, sweep);
 	gGT->podiumRewardID = STATIC_TROPHY;
 	AP_SkipPodium(gGT->podiumRewardID);
+	// A6-77: the podium reuses the Trophy model, so arm its own presentation
+	// with the cup's Win location. Without the latch the podium would draw the
+	// ordinary-Trophy presentation, which interprets the cup's return pad
+	// as a track and can show its unrelated Trophy text. When the local skip
+	// option consumed the podium (reward id now NOFUNC) there is nothing to
+	// present and the latch stays clear.
+	if (gGT->podiumRewardID == STATIC_TROPHY)
+		AP_CupPodiumArm(win);
 	return 1;
 }
 

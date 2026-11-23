@@ -73,6 +73,7 @@ int AP_PadActivities(int hub, int physical, int dest, ap_padact_list *out)
 	{
 		ap_content_selector sel;
 		int i;
+		int pickupsLeft = f.occupied && AP_ContentPadPickupsLeft(pad);
 		memset(&sel, 0, sizeof sel);
 		if (f.occupied)
 			AP_ContentSelectorBuild(pad, &sel);
@@ -86,7 +87,9 @@ int AP_PadActivities(int hub, int physical, int dest, ap_padact_list *out)
 			f.contentMode[i] = sel.mode[i];
 			f.contentOpen[i] = sel.open[i];
 			f.contentStage2[i] = pad->stages[i] == 2;
-			f.contentLeft[i] = sel.pending[i] || (AP_ContentPadPlainLeft(pad) && ap_content_mode_plain(sel.mode[i]));
+			f.contentLeft[i] = sel.pending[i] ||
+				(ap_content_mode_plain(sel.mode[i]) && pickupsLeft) ||
+				AP_ContentPadSharedChecks(pad, 1u << sel.mode[i], NULL);
 		}
 	}
 	AP_PadActivityDecide(&f, out);
