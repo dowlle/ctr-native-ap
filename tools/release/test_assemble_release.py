@@ -95,9 +95,9 @@ class AssemblerFixtureTests(unittest.TestCase):
         })()
 
     ASSET_MEMBERS = (
+        "assets/looks/komodo-moe/komodo_moe_hi.bin",
         "assets/tracks/cortex-vortex/CVortex Arcade All.lev",
         "assets/tracks/cortex-vortex/CVortex Arcade All.vrm",
-        "assets/looks/komodo-moe/komodo_moe_hi.bin",
     )
 
     def write_build_archive(
