@@ -139,6 +139,7 @@ static void AP_NetTick(struct GameTracker *gGT)
 		// a one-shot effect, so the effect marker above does not apply to it.
 		AP_TurboGrantReset();
 		AP_ReserveTopUpReset();
+		AP_LooksConnectReset(); // JL2: owned looks come back with the replay
 		AP_SpoilerItemsReset(); // #459: both reveal receipts come back with the replay
 		AP_WumpaConnectReset();
 		AP_UsefulConnectReset();
@@ -470,6 +471,15 @@ static void AP_NetTick(struct GameTracker *gGT)
 		else if (idx == AP_RESERVE_TOP_UP_ITEM_INDEX)
 		{
 			AP_ReserveTopUpReceive();
+		}
+		// Character looks (JL2, "Joe Mama" idx 215). Two parts: the owned bit is
+		// rebuilt by every replay (the OPTIONS row and the model read it), and
+		// the newest-wins choice goes through the effect marker, so only a copy
+		// new to this room changes the saved look; a reconnect never does.
+		else if (AP_LookForItem(idx) >= 0)
+		{
+			AP_LooksReceiveOwned(idx);
+			AP_FxOffer(items[i], ap_net_recv_batch_index(i));
 		}
 		// Spoiler Items (#459, idx 204 and 205). Booleans rebuilt by the replay,
 		// so like Turbo Grant they are not filtered through the effect marker.

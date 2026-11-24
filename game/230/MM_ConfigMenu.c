@@ -12,6 +12,7 @@
 #include <platform/native_input.h>
 #include "../../ap/ap_boxes.h"             // AP_Boxes_ColourRowState: the Item Box Colours row
 #include "../../ap/ap_box_colour_logic.h"  // AP_BOX_COLOUR_ROW_SEED_OFF
+#include "../../ap/ap_looks.h"            // Joe Look row (character looks, JL2)
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_assets.h>
 #include <platform/native_custom_track_manager.h>
@@ -552,6 +553,8 @@ static const char *Enum_Label(const ConfigEntry *e)
 		return s_raceMenuNames[RaceMenu_Index(*(int *)e->valuePtr)];
 	if (e->valuePtr == &g_config.bossMusic)
 		return s_bossMusicNames[BossMusic_Index(*(int *)e->valuePtr)];
+	if (AP_LooksIsRowValue((const int *)e->valuePtr))
+		return AP_LooksRowLabel((const int *)e->valuePtr);
 #endif
 	return AiDiff_Label(*(int *)e->valuePtr);
 }
@@ -648,6 +651,12 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 		if (i > BOSSMUSIC_COUNT - 1)
 			i = BOSSMUSIC_COUNT - 1;
 		*(int *)e->valuePtr = s_bossMusicValues[i];
+		return;
+	}
+	// Joe Look: ORIGINAL, then the looks this seed delivered (ap/ap_looks.c).
+	if (AP_LooksIsRowValue((const int *)e->valuePtr))
+	{
+		AP_LooksRowStep((int *)e->valuePtr, dir);
 		return;
 	}
 #endif
@@ -749,6 +758,12 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 	{
 		first = "When race pads ask which race.";
 		second = "SEED uses the seed's setting.";
+	}
+	if (AP_LooksIsRowValue((const int *)e->valuePtr))
+	{
+		first = AP_LooksRowHasChoice((const int *)e->valuePtr) ? "Joe's look, from the next load."
+		                                                       : "Looks arrive as filler items.";
+		second = "Komodo Moe model by Lockheart.";
 	}
 	if (e->valuePtr == &g_config.bossMusic)
 	{

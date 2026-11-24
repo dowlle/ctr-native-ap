@@ -1,0 +1,238 @@
+#ifdef CTR_AP
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <common.h>
+#include <platform/native_assets.h>
+#include <platform/native_config.h>
+#include <platform/native_sha256.h>
+#include "ap_look_logic.h"
+#include "ap_looks.h"
+#include "ap_hooks.h" // AP_LogLine
+
+// Character looks at runtime. Rules and the look table: ap/ap_look_logic.h.
+//
+// Owned looks are rebuilt from the ReceivedItems replay on every connect, like
+// the Tizi Helper and Spoiler Items booleans. The saved choice is a local
+// config.ini value per racer (conservative choice, JL1 decision 4): it stores
+// the look's item index, or 0 for ORIGINAL, and is read through the owned bits,
+// so a look this seed never delivered drives as the original model.
+//
+// A look's file is read once, on first use, into host memory (not MEMPACK),
+// checked against its pin and AP_LookValidateModel, and relocated. Nothing in
+// the loaded driver packs is changed: VehBirth_GetModelByName returns a small
+// look Model (the found model's name and id, the look's one header), so
+// switching back to ORIGINAL needs no undo and a racer born before the change
+// keeps a valid model.
+
+static AP_LookOwned ap_looks_owned;
+
+enum
+{
+	AP_LOOK_FILE_UNTRIED = 0,
+	AP_LOOK_FILE_READY,
+	AP_LOOK_FILE_FAILED,
+};
+
+static struct
+{
+	int state;
+	unsigned char *bytes;    // the whole file, relocated in place after +4
+	struct Model model;      // handed to VehBirth; name and id follow `found`
+	struct ModelHeader *header;
+} ap_look_files[AP_LOOK_COUNT];
+
+static int ap_looks_logged_racer_look[64]; // last logged look + 1 per racer, 0 = none logged
+
+// The OPTIONS row of each racer that has looks. Komodo Joe only for now; a
+// look for another racer adds its config field and one line here.
+static int *AP_LooksConfigFor(int racer)
+{
+	if (racer == AP_LOOK_RACER_JOE)
+		return &g_config.lookJoe;
+	return NULL;
+}
+
+static int AP_LooksRacerForRow(const int *valuePtr)
+{
+	if (valuePtr == &g_config.lookJoe)
+		return AP_LOOK_RACER_JOE;
+	return -1;
+}
+
+void AP_LooksConnectReset(void)
+{
+	ap_looks_owned = 0;
+}
+
+void AP_LooksReceiveOwned(long long itemIndex)
+{
+	int look = AP_LookForItem(itemIndex);
+	if (look >= 0)
+		ap_looks_owned |= 1u << look;
+}
+
+void AP_LooksReceiveNew(long long itemIndex)
+{
+	char msg[160];
+	int look = AP_LookForItem(itemIndex);
+	int *saved;
+
+	if (look < 0)
+		return;
+	ap_looks_owned |= 1u << look;
+	saved = AP_LooksConfigFor(AP_LOOKS[look].racer);
+	if (saved == NULL)
+		return;
+	if (*saved != AP_LOOKS[look].itemIndex)
+	{
+		*saved = AP_LOOKS[look].itemIndex;
+		NativeConfig_Save();
+	}
+	snprintf(msg, sizeof msg, "[AP LOOK] %s arrived: %s is the chosen look from the next load\n",
+	         AP_LOOKS[look].itemName, AP_LOOKS[look].label);
+	AP_LogLine(msg);
+}
+
+static int AP_LooksLoadFile(int look)
+{
+	const AP_LookDef *def = &AP_LOOKS[look];
+	char msg[256], hex[NATIVE_SHA256_HEX_BYTES];
+	unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
+	struct NativeSha256Ctx sha;
+	AP_LookModelInfo info;
+	const char *why = "could not open";
+	unsigned char *buf = NULL;
+	FILE *fp;
+	long size = -1;
+
+	if (ap_look_files[look].state != AP_LOOK_FILE_UNTRIED)
+		return ap_look_files[look].state == AP_LOOK_FILE_READY;
+	ap_look_files[look].state = AP_LOOK_FILE_FAILED;
+	if (sizeof(void *) != 4)
+	{
+		why = "this build's pointers are not 32-bit";
+		goto fail;
+	}
+	fp = NativeAssets_OpenHost(def->assetRel, "rb");
+	if (fp != NULL)
+	{
+		if (fseek(fp, 0, SEEK_END) == 0)
+			size = ftell(fp);
+		if (size == (long)def->size && fseek(fp, 0, SEEK_SET) == 0 && (buf = (unsigned char *)malloc((size_t)size)) != NULL &&
+		    fread(buf, 1, (size_t)size, fp) != (size_t)size)
+		{
+			free(buf);
+			buf = NULL;
+		}
+		fclose(fp);
+		why = size != (long)def->size ? "wrong size" : "could not read";
+	}
+	if (buf == NULL)
+		goto fail;
+	NativeSha256_Init(&sha);
+	NativeSha256_Update(&sha, buf, def->size);
+	NativeSha256_Final(&sha, digest);
+	NativeSha256_ToHex(digest, hex);
+	if (!NativeSha256_HexEquals(def->sha256, hex))
+	{
+		why = "SHA-256 does not match the pin";
+		goto fail;
+	}
+	if (!AP_LookValidateModel(buf, def->size, &info, &why))
+		goto fail;
+	if (info.triangles != def->triangles)
+	{
+		why = "unexpected triangle count";
+		goto fail;
+	}
+	{
+		// Relocate exactly like LOAD_RunPtrMap: every listed slot becomes an
+		// absolute pointer into this buffer.
+		unsigned char *data = buf + 4;
+		for (unsigned k = 0; k < info.numPtrs; k++)
+		{
+			unsigned off = AP_LookU32(data, info.dataLen + 4 + 4 * k) & ~3u;
+			uint32_t v;
+			memcpy(&v, data + off, 4);
+			v += (uint32_t)(uintptr_t)data;
+			memcpy(data + off, &v, 4);
+		}
+		ap_look_files[look].bytes = buf;
+		ap_look_files[look].header = (struct ModelHeader *)(void *)(data + info.headerOff);
+	}
+	ap_look_files[look].state = AP_LOOK_FILE_READY;
+	snprintf(msg, sizeof msg, "[AP LOOK] loaded %s (%u bytes, %d triangles, pin ok)\n", def->assetRel, def->size,
+	         info.triangles);
+	AP_LogLine(msg);
+	return 1;
+
+fail:
+	free(buf);
+	snprintf(msg, sizeof msg, "[AP LOOK] %s not used (%s): the racer keeps the original model\n", def->assetRel, why);
+	AP_LogLine(msg);
+	return 0;
+}
+
+struct Model *AP_LooksModelFor(const char *searchName, struct Model *found)
+{
+	int racer, look;
+	int *saved;
+	struct Model *m;
+
+	if (found == NULL || searchName == NULL)
+		return found;
+	for (racer = 0; racer < (int)(sizeof ap_looks_logged_racer_look / sizeof ap_looks_logged_racer_look[0]); racer++)
+		if (AP_LooksConfigFor(racer) != NULL && data.MetaDataCharacters[racer].name_Debug != NULL &&
+		    strcmp(searchName, data.MetaDataCharacters[racer].name_Debug) == 0)
+			break;
+	if (racer >= (int)(sizeof ap_looks_logged_racer_look / sizeof ap_looks_logged_racer_look[0]))
+		return found;
+	saved = AP_LooksConfigFor(racer);
+	look = AP_LookEffective(ap_looks_owned, racer, *saved);
+	if (look >= 0 && !AP_LooksLoadFile(look))
+		look = -1;
+	if (ap_looks_logged_racer_look[racer] != look + 1)
+	{
+		char msg[128];
+		ap_looks_logged_racer_look[racer] = look + 1;
+		snprintf(msg, sizeof msg, "[AP LOOK] %s wears %s\n", searchName, look < 0 ? "the original model" : AP_LOOKS[look].label);
+		AP_LogLine(msg);
+	}
+	if (look < 0)
+		return found;
+	m = &ap_look_files[look].model;
+	memcpy(m->name, found->name, sizeof m->name);
+	m->id = found->id;
+	m->numHeaders = 1;
+	m->headers = ap_look_files[look].header;
+	// The header keeps the bundled name ("fake_hi" for Komodo Moe); nothing
+	// looks a driver header up by name.
+	return m;
+}
+
+int AP_LooksIsRowValue(const int *valuePtr)
+{
+	return AP_LooksRacerForRow(valuePtr) >= 0;
+}
+
+const char *AP_LooksRowLabel(const int *valuePtr)
+{
+	int racer = AP_LooksRacerForRow(valuePtr);
+	return racer < 0 ? "ORIGINAL" : AP_LookRowLabel(ap_looks_owned, racer, *valuePtr);
+}
+
+void AP_LooksRowStep(int *valuePtr, int dir)
+{
+	int racer = AP_LooksRacerForRow(valuePtr);
+	if (racer >= 0)
+		*valuePtr = AP_LookRowStep(ap_looks_owned, racer, *valuePtr, dir);
+}
+
+int AP_LooksRowHasChoice(const int *valuePtr)
+{
+	int racer = AP_LooksRacerForRow(valuePtr);
+	return racer >= 0 && AP_LookRacerHasOwned(ap_looks_owned, racer);
+}
+#endif
