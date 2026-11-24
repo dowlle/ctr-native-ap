@@ -643,6 +643,7 @@ void AP_Net_Reconnect(const char *uri, const char *slot, const char *password)
 	AP_AppendLog(msg);
 
 	AP_Solo_BeforeReconnect(); // #89: any other connection ends a solo session
+	AP_LooksConnectReset(); // JL2: no look of the old room while the new one dials
 	ap_net_shutdown();
 	if (ap_net_init("ctr-native", "Crash Team Racing", uri) == 0)
 		ap_net_connect_slot(slot, password);

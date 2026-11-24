@@ -39,9 +39,24 @@ static struct
 {
 	int state;
 	unsigned char *bytes;    // the whole file, relocated in place after +4
-	struct Model model;      // handed to VehBirth; name and id follow `found`
 	struct ModelHeader *header;
 } ap_look_files[AP_LOOK_COUNT];
+
+// The look models handed to VehBirth. One per (look, found model) pair: the
+// found model stays the racer's timing source. Driving code reads the frame
+// counts of the driver's animations to time wall-hit, spin and landing
+// recovery (VehFrameInst_GetNumAnimFrames); a static look has none, so those
+// counts come from the original model instead (review round 1). A small ring
+// is enough: one level holds one copy of each racer's model, plus the hub or
+// race just left while it unloads.
+#define AP_LOOK_MODEL_SLOTS 8
+static struct
+{
+	struct Model model;    // name, id: the found model's; the look's one header
+	struct Model *orig;    // the model the engine found (timing source)
+	int look;
+} ap_look_models[AP_LOOK_MODEL_SLOTS];
+static int ap_look_models_next;
 
 static int ap_looks_logged_racer_look[64]; // last logged look + 1 per racer, 0 = none logged
 
@@ -202,13 +217,34 @@ struct Model *AP_LooksModelFor(const char *searchName, struct Model *found)
 	}
 	if (look < 0)
 		return found;
-	m = &ap_look_files[look].model;
+	{
+		int slot = -1;
+		for (int i = 0; i < AP_LOOK_MODEL_SLOTS; i++)
+			if (ap_look_models[i].orig == found && ap_look_models[i].look == look)
+				slot = i;
+		if (slot < 0)
+		{
+			slot = ap_look_models_next;
+			ap_look_models_next = (ap_look_models_next + 1) % AP_LOOK_MODEL_SLOTS;
+		}
+		ap_look_models[slot].orig = found;
+		ap_look_models[slot].look = look;
+		m = &ap_look_models[slot].model;
+	}
 	memcpy(m->name, found->name, sizeof m->name);
 	m->id = found->id;
 	m->numHeaders = 1;
 	m->headers = ap_look_files[look].header;
 	// The header keeps the bundled name ("fake_hi" for Komodo Moe); nothing
 	// looks a driver header up by name.
+	return m;
+}
+
+struct Model *AP_LooksTimingModel(struct Model *m)
+{
+	for (int i = 0; i < AP_LOOK_MODEL_SLOTS; i++)
+		if (m != NULL && m == &ap_look_models[i].model && ap_look_models[i].orig != NULL)
+			return ap_look_models[i].orig;
 	return m;
 }
 
@@ -226,8 +262,15 @@ const char *AP_LooksRowLabel(const int *valuePtr)
 void AP_LooksRowStep(int *valuePtr, int dir)
 {
 	int racer = AP_LooksRacerForRow(valuePtr);
-	if (racer >= 0)
-		*valuePtr = AP_LookRowStep(ap_looks_owned, racer, *valuePtr, dir);
+	int next;
+	if (racer < 0)
+		return;
+	// Write only when the shown value moves, so stepping a row that shows
+	// ORIGINAL because this seed has not delivered the saved look keeps the
+	// saved look for the next seed (review round 1).
+	next = AP_LookRowStep(ap_looks_owned, racer, *valuePtr, dir);
+	if (next != AP_LookRowValue(ap_looks_owned, racer, *valuePtr))
+		*valuePtr = next;
 }
 
 int AP_LooksRowHasChoice(const int *valuePtr)

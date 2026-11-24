@@ -16,6 +16,9 @@ void AP_LooksReceiveNew(long long itemIndex);
 // the model the engine found. Returns `found` unless a look is in effect for
 // that racer and its file loaded and validated.
 struct Model *AP_LooksModelFor(const char *searchName, struct Model *found);
+// The model whose animations time a driver instance: the original model the
+// engine found when `m` is a look model, otherwise `m` itself.
+struct Model *AP_LooksTimingModel(struct Model *m);
 
 // The OPTIONS row (game/230/MM_ConfigMenu.c).
 int AP_LooksIsRowValue(const int *valuePtr);

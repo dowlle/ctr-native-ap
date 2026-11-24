@@ -27,6 +27,9 @@ veh = text("game/Vehicle/VehBirth.c")
 assert "return AP_LooksModelFor(searchName, VehBirth_FindModelByName(searchName));" in veh
 net = text("ap/ap_hooks_net.c")
 assert "AP_LooksConnectReset();" in net
+reconnect = net[net.index("void AP_Net_Reconnect("):]
+assert reconnect.index("AP_LooksConnectReset();") < reconnect.index("ap_net_shutdown();")
+assert "model = AP_LooksTimingModel(model);" in text("game/Vehicle/VehFrame.c")
 arm = net[net.index("else if (AP_LookForItem(idx) >= 0)"):]
 arm = arm[:arm.index("}") + 1]
 assert "AP_LooksReceiveOwned(idx);" in arm and "AP_FxOffer(items[i], ap_net_recv_batch_index(i));" in arm
@@ -125,6 +128,14 @@ int main(int argc, char **argv) {
     assert(frame[0] == -123 && frame[1] == 14 && frame[2] == -121);
     /* The same file serves every later birth: loaded and relocated once. */
     assert(AP_LooksModelFor("joe", &joe) == m && h->ptrCommandList == (unsigned)(uintptr_t)(base + 88));
+    /* The look model times animations by the model the engine found. */
+    assert(AP_LooksTimingModel(m) == &joe && AP_LooksTimingModel(&joe) == &joe && AP_LooksTimingModel(NULL) == NULL);
+    {
+      struct ModelHeader medHeader; struct Model joeMed = joe; joeMed.headers = &medHeader;
+      struct Model *m2 = AP_LooksModelFor("joe", &joeMed);
+      assert(m2 != m && AP_LooksTimingModel(m2) == &joeMed && AP_LooksTimingModel(m) == &joe);
+      assert(m2->headers == m->headers);
+    }
     /* Other racers and unknown names are untouched. */
     assert(AP_LooksModelFor("crash", &crash) == &crash);
     assert(AP_LooksModelFor("joe", NULL) == NULL);
@@ -141,6 +152,12 @@ int main(int argc, char **argv) {
     assert(strcmp(AP_LooksRowLabel(&g_config.lookJoe), "ORIGINAL") == 0);
     AP_LooksReceiveOwned(215);
     assert(AP_LooksModelFor("joe", &joe) == m);
+    /* Stepping a row that shows ORIGINAL because this seed has not delivered
+       the saved look keeps the saved look. */
+    AP_LooksConnectReset();
+    AP_LooksRowStep(&g_config.lookJoe, +1); AP_LooksRowStep(&g_config.lookJoe, -1);
+    assert(g_config.lookJoe == 215);
+    AP_LooksReceiveOwned(215);
     /* A manual ORIGINAL survives a reconnect replay. */
     AP_LooksRowStep(&g_config.lookJoe, -1);
     AP_LooksConnectReset(); AP_LooksReceiveOwned(215);

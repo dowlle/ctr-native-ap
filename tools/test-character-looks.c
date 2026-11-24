@@ -159,6 +159,24 @@ int main(void)
 		EXPECT("pointer slot outside the data refused",
 		       !validates(file, len, data + info.dataLen + 4, info.dataLen + 8, &why));
 		EXPECT("pointer value outside the data refused", !validates(file, len, hdr + 0x2C, info.dataLen + 16, &why));
+		{
+			// Point the texture-table slot's map entry at the colour slot: the
+			// colour pointer is then listed twice and the texture one not at all.
+			const size_t map = data + info.dataLen + 4;
+			unsigned colourSlot = info.headerOff + 0x2C;
+			size_t entry = (size_t)-1;
+			for (unsigned k = 0; k < info.numPtrs; k++)
+				if (AP_LookU32(file, map + 4 * k) == info.headerOff + 0x28)
+					entry = map + 4 * k;
+			EXPECT("texture slot entry found", entry != (size_t)-1);
+			EXPECT("a slot listed twice refused", entry != (size_t)-1 && !validates(file, len, entry, colourSlot, &why) &&
+			                                          strcmp(why, "pointer map lists a slot twice") == 0);
+			for (unsigned k = 0; k < info.numPtrs; k++)
+				if (AP_LookU32(file, map + 4 * k) == info.headerOff + 0x24)
+					entry = map + 4 * k;
+			EXPECT("an unrelocated frame pointer refused", !validates(file, len, entry, info.headerOff + 0x30, &why) &&
+			                                                  strcmp(why, "a model pointer is not in the pointer map") == 0);
+		}
 	}
 	free(file);
 

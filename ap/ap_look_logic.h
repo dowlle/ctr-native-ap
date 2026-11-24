@@ -194,6 +194,13 @@ static inline int AP_LookValidateModel(const unsigned char *file, size_t len, AP
 		unsigned off = AP_LookU32(d, mapOff + 4 + 4 * k) & ~3u;
 		if ((size_t)off + 4 > mapOff || AP_LookU32(d, off) >= mapOff)
 			return 0;
+		// A slot listed twice would be relocated twice.
+		for (unsigned j = 0; j < k; j++)
+			if ((AP_LookU32(d, mapOff + 4 + 4 * j) & ~3u) == off)
+			{
+				*why = "pointer map lists a slot twice";
+				return 0;
+			}
 	}
 	*why = "not one model header";
 	if (AP_LookS16(d, 0x12) != 1)
@@ -201,6 +208,21 @@ static inline int AP_LookValidateModel(const unsigned char *file, size_t len, AP
 	hdr = AP_LookU32(d, 0x14);
 	if ((hdr & 3) || (size_t)hdr + AP_LOOK_HEADER_SIZE > mapOff)
 		return 0;
+	// Every pointer the renderer follows must be relocated by the map.
+	{
+		const unsigned need[4] = {0x14, hdr + 0x20, hdr + 0x24, hdr + 0x2C};
+		for (unsigned n = 0; n < 4; n++)
+		{
+			int listed = 0;
+			for (k = 0; k < mapBytes / 4; k++)
+				listed |= (AP_LookU32(d, mapOff + 4 + 4 * k) & ~3u) == need[n];
+			if (!listed)
+			{
+				*why = "a model pointer is not in the pointer map";
+				return 0;
+			}
+		}
+	}
 	*why = "model is animated";
 	if (AP_LookU32(d, hdr + 0x34) != 0 || AP_LookU32(d, hdr + 0x38) != 0 || AP_LookU32(d, hdr + 0x3C) != 0)
 		return 0;
