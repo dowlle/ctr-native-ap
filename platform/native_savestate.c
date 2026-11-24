@@ -235,6 +235,13 @@ internal s32 NativeSaveState_SaveQuick(void)
 		return 0;
 	}
 #endif
+#ifdef CTR_AP
+	if (AP_LooksGhostWearsLook())
+	{
+		Platform_Log("[CTR State] quick save unavailable while a ghost wears a character look\n");
+		return 0;
+	}
+#endif
 	if (!NativeSaveState_PrepareDir())
 	{
 		Platform_Log("[CTR State] failed to create quick state directory: %s\n", NATIVE_SAVESTATE_DIR);

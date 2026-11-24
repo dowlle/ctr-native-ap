@@ -607,8 +607,10 @@ void AP_Author_MenuPress(int wantOn)
 		}
 	}
 	else if (AP_AuthorGate_CloseOnEnter(ap_net_status()))
+	{
 		AP_LooksConnectReset();
 		ap_net_shutdown(); // a refused or stopped dial: nothing of it stays under the mode
+	}
 
 	s_menuRefusal = AP_AUTHOR_GATE_OK;
 	ap_net_set_dial_block_query(AP_AuthorDialBlock);

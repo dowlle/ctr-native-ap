@@ -32,6 +32,10 @@ assert reconnect.index("AP_LooksConnectReset();") < reconnect.index("ap_net_shut
 assert "model = AP_LooksTimingModel(model);" in text("game/Vehicle/VehFrame.c")
 save = text("platform/native_savestate.c")
 assert save.index("AP_LooksRebindDrivers();") < save.index("loaded quick state checksum")
+assert "if (AP_LooksGhostWearsLook())" in save
+assert "*humanPlyrDriverModel = AP_LooksModelFor(" in text("game/MAIN/MainInit.c")
+author = text("ap/ap_author.c")
+assert "else if (AP_AuthorGate_CloseOnEnter(ap_net_status()))\n\t{\n\t\tAP_LooksConnectReset();" in author
 render = text("game/RenderBucket/RenderBucket_QueueExecute.c")
 assert "return &ctx->packedStack[stackIndex];" in render and "RenderBucket_PackedVertexScratch(stackIndex)" not in render
 arm = net[net.index("else if (AP_LookForItem(idx) >= 0)"):]
@@ -81,7 +85,10 @@ struct MetaDataCharacter { char *name_Debug; };
 static struct { struct MetaDataCharacter MetaDataCharacters[16]; short characterIDs[8]; } data;
 struct Instance { struct Model *model; };
 struct Driver { struct Instance *instSelf; int driverID; };
-struct GameTracker { struct Driver *drivers[8]; };
+struct Thread { struct Instance *inst; struct Thread *siblingThread; };
+struct ThreadBucket { struct Thread *thread; };
+enum { GHOST = 2 };
+struct GameTracker { struct Driver *drivers[8]; struct ThreadBucket threadBuckets[4]; };
 static struct GameTracker gt;
 static struct { struct GameTracker *gGT; } sdata_store = {&gt}, *sdata = &sdata_store;
 static struct Model *found_joe, *found_crash;
@@ -193,6 +200,18 @@ int main(int argc, char **argv) {
       AP_LooksRebindDrivers();
       assert(joeInst.model == &joe);
       gt.drivers[0] = gt.drivers[1] = NULL;
+    }
+    /* A ghost wearing a look is detected for the quick-save refusal. */
+    {
+      struct Instance ghostInst = {&joe}; struct Thread ghost = {&ghostInst, NULL};
+      gt.threadBuckets[GHOST].thread = &ghost;
+      assert(!AP_LooksGhostWearsLook());
+      g_config.lookJoe = 215;
+      ghostInst.model = AP_LooksModelFor("joe", &joe);
+      assert(AP_LooksGhostWearsLook());
+      gt.threadBuckets[GHOST].thread = NULL;
+      g_config.lookJoe = 0;
+      assert(!AP_LooksGhostWearsLook());
     }
     /* Non-look rows and items are ignored. */
     int other = 5;

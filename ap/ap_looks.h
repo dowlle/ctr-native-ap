@@ -22,6 +22,8 @@ struct Model *AP_LooksTimingModel(struct Model *m);
 // After a quick load: each racing driver gets the model its birth would give
 // now, so no restored pointer names a look model of an earlier run.
 void AP_LooksRebindDrivers(void);
+// A Time Trial ghost wears a look (quick save is refused then).
+int AP_LooksGhostWearsLook(void);
 
 // The OPTIONS row (game/230/MM_ConfigMenu.c).
 int AP_LooksIsRowValue(const int *valuePtr);

@@ -273,6 +273,20 @@ void AP_LooksRebindDrivers(void)
 	}
 }
 
+// A Time Trial ghost wearing a look: its model pointer would not survive a
+// quick load in a later run (ghosts are not re-bound), so quick save waits.
+int AP_LooksGhostWearsLook(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+
+	if (gGT == NULL)
+		return 0;
+	for (struct Thread *t = gGT->threadBuckets[GHOST].thread; t != NULL; t = t->siblingThread)
+		if (t->inst != NULL && AP_LooksTimingModel(t->inst->model) != t->inst->model)
+			return 1;
+	return 0;
+}
+
 struct Model *AP_LooksTimingModel(struct Model *m)
 {
 	for (int i = 0; i < AP_LOOK_MODEL_SLOTS; i++)
