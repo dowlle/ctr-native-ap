@@ -47,11 +47,16 @@ struct GameTracker;
 #define AP_AUTHOR_SESSION_SWITCH
 #endif
 
-// Total placements held across ALL tracks. The file is the durable store; this
-// is the in-memory mirror. 512 is roughly 20 per authorable level with room to
-// spare, and overflowing it refuses the drop with a log line rather than
-// dropping earlier work.
-#define AP_AUTHOR_MAX_PLACEMENTS 512
+// Total placements held across ALL tracks of one table. The file is the
+// durable store; this is the in-memory mirror. Retail and custom tracks each
+// have their own table of this size (s_place and s_cplace, ap_author.c), so
+// custom placements never use up the retail room. 2048 holds all 25 authorable
+// levels at the 50-spot maximum (1250) with room to spare; 512 was hit on
+// 2026-11-24 with 8 retail tracks done. Only the current track's rows get a
+// marker, so the per-level spawn table (AP_SPAWN_MAX, ap_spawn.h) is the real
+// marker budget, not this. Overflowing it refuses the drop with a log line
+// rather than dropping earlier work.
+#define AP_AUTHOR_MAX_PLACEMENTS 2048
 
 // Author keys (SDL scancodes, externals/SDL/include/SDL3/SDL_scancode.h).
 // Numpad, continuing where the trap keys (KP_1..KP_6 = 89..94) and the
