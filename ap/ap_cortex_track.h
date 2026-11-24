@@ -193,7 +193,7 @@ struct AP_CortexRelicTargets
 };
 
 static const struct AP_CortexRelicTargets AP_CORTEX_RELIC_TARGETS = {
-	CTR_CFG_CORTEX_LEV_SHA256,
+	CTR_CFG_CORTEX_RELIC_LEV_SHA256, // a Relic Race serves the relic pair (CV1)
 	{0x0002e2c0, 0x00029400, 0x00024180}, // PLACEHOLDER: Oxide Station retail times
 	1,
 };

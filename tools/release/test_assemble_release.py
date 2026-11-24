@@ -97,6 +97,8 @@ class AssemblerFixtureTests(unittest.TestCase):
     ASSET_MEMBERS = (
         "assets/tracks/cortex-vortex/CVortex Arcade All.lev",
         "assets/tracks/cortex-vortex/CVortex Arcade All.vrm",
+        "assets/tracks/cortex-vortex/CVortex Relic.lev",
+        "assets/tracks/cortex-vortex/CVortex Relic.vrm",
     )
 
     def write_build_archive(

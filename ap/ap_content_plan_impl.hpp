@@ -17,6 +17,7 @@
 #include "ap_arena_content.h"
 #include "ap_wumpa_shop.h"
 #include "../include/platform/native_tizi_madness.h"
+#include "../include/platform/native_cortex_asset_pins.h"
 #include <array>
 #include <cstring>
 #include <map>

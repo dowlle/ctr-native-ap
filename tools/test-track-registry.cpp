@@ -173,6 +173,10 @@ int main(int argc, char **argv)
 		CustomTrackCredit_Format(credit, sizeof credit,
 		    CTR_CFG_CORTEX_LEV_SHA256, CTR_CFG_CORTEX_VRM_SHA256, 0, nullptr, nullptr);
 		CHECK(!std::strcmp(credit, CTR_CORTEX_CREDIT));
+		// CV1: a Relic Race serves the bundled relic pair; same credit.
+		CustomTrackCredit_Format(credit, sizeof credit,
+		    CTR_CFG_CORTEX_RELIC_LEV_SHA256, CTR_CFG_CORTEX_RELIC_VRM_SHA256, 0, nullptr, nullptr);
+		CHECK(!std::strcmp(credit, CTR_CORTEX_CREDIT));
 	}
 	{
 		// Identical geometry shipped in two packs. A room's locator names

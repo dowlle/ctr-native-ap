@@ -84,8 +84,7 @@ int AP_ContentModeOpen(const ctr_content_pad *pad, int mode) { return pad != NUL
 static struct CustomTrackManagerStatus ap_custom_content_status;
 static int ap_custom_content_required;
 static int ap_cortex_track_content_required;
-#define CTR_CFG_CORTEX_LEV_SHA256 "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13"
-#define CTR_CFG_CORTEX_VRM_SHA256 "4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d"
+#include "include/platform/native_cortex_asset_pins.h"
 static unsigned ap_state_gen;
 static int used_managed, used_files, applied, staged;
 static int refuse_files;
@@ -427,10 +426,12 @@ int main(void)
 	/* Cortex Vortex (#133 PR 3c): the bundled pair, copied from the repository. */
 	{
 		ctr_content_pad saved = plan_pad;
-		char cvDir[600], cvLev[700], cvVrm[700], cmd[2048];
+		char cvDir[600], cvLev[700], cvVrm[700], cvRelicLev[700], cvRelicVrm[700], cmd[3072];
 		snprintf(cvDir, sizeof cvDir, "%s/tracks/cortex-vortex", assets_root); mkdir(cvDir, 0700);
-		snprintf(cvLev, sizeof cvLev, "%s/CVortex Arcade All.lev", cvDir);
-		snprintf(cvVrm, sizeof cvVrm, "%s/CVortex Arcade All.vrm", cvDir);
+		snprintf(cvLev, sizeof cvLev, "%s/" CTR_CFG_CORTEX_LEV_FILE, cvDir);
+		snprintf(cvVrm, sizeof cvVrm, "%s/" CTR_CFG_CORTEX_VRM_FILE, cvDir);
+		snprintf(cvRelicLev, sizeof cvRelicLev, "%s/" CTR_CFG_CORTEX_RELIC_LEV_FILE, cvDir);
+		snprintf(cvRelicVrm, sizeof cvRelicVrm, "%s/" CTR_CFG_CORTEX_RELIC_VRM_FILE, cvDir);
 		memset(&plan_pad, 0, sizeof plan_pad);
 		plan_pad.physical = 5; plan_pad.hub = 27; plan_pad.occupied = 1; plan_pad.retail_id = -1; plan_pad.cortex = 1;
 		plan_pad.package_index = -1; plan_pad.custom_slot = 0; plan_pad.laps = 3; plan_pad.named_block = -1;
@@ -452,26 +453,58 @@ int main(void)
 		       ap_cortex_track_content_required && used_files == 0, "entry rescans and refuses missing files");
 		snprintf(cmd, sizeof cmd, "cp '%s/assets/tracks/cortex-vortex/CVortex Arcade All.lev' '%s' && "
 		         "cp '%s/assets/tracks/cortex-vortex/CVortex Arcade All.vrm' '%s'", CTR_REPO_ROOT, cvLev, CTR_REPO_ROOT, cvVrm);
-		expect(system(cmd) == 0, "bundled pair copied");
+		expect(system(cmd) == 0, "bundled main pair copied");
+		/* CV1: the merged mode build needs its relic pair too. */
 		reset_calls();
 		ap_content_cortex_ready = AP_ContentScanCortex();
-		expect(ap_content_cortex_ready && AP_ContentPadReady(5), "pinned bundled pair is Ready");
+		expect(!ap_content_cortex_ready && !AP_ContentPadReady(5) && strstr(log_text, "Relic Race files"),
+		       "bundled main pair without the relic pair is not Ready");
+		snprintf(cmd, sizeof cmd, "cp '%s/assets/tracks/cortex-vortex/" CTR_CFG_CORTEX_RELIC_LEV_FILE "' '%s' && "
+		         "cp '%s/assets/tracks/cortex-vortex/" CTR_CFG_CORTEX_RELIC_VRM_FILE "' '%s'",
+		         CTR_REPO_ROOT, cvRelicLev, CTR_REPO_ROOT, cvRelicVrm);
+		expect(system(cmd) == 0, "bundled relic pair copied");
+		/* Swapped pairs: each pair is checked against its own pins. */
+		snprintf(cmd, sizeof cmd, "cp '%s' '%s.main' && cp '%s' '%s'", cvLev, cvLev, cvRelicLev, cvLev);
+		expect(system(cmd) == 0, "relic LEV put in the main LEV's place");
+		reset_calls();
+		expect(!AP_ContentScanCortex() && strstr(log_text, "not the pinned pair"), "a relic LEV in the main place is refused");
+		snprintf(cmd, sizeof cmd, "mv '%s.main' '%s'", cvLev, cvLev);
+		expect(system(cmd) == 0, "main LEV restored");
+		reset_calls();
+		ap_content_cortex_ready = AP_ContentScanCortex();
+		expect(ap_content_cortex_ready && AP_ContentPadReady(5), "pinned bundled pairs are Ready");
 		ap_cortex_track_content_required = 0;
 		expect(AP_ContentPreparePad(5, AP_CONTENT_MODE_RELIC) == 13, "Cortex Vortex enters on host level 13");
-		expect(used_files == 1 && used_managed == 0 && strcmp(used_lev, cvLev) == 0 && strcmp(used_vrm, cvVrm) == 0 &&
-		       strcmp(used_name, "CORTEX VORTEX") == 0, "loader gets the bundled files");
+		expect(used_files == 1 && used_managed == 0 && strcmp(used_lev, cvRelicLev) == 0 && strcmp(used_vrm, cvRelicVrm) == 0 &&
+		       strcmp(used_name, "CORTEX VORTEX") == 0, "a Relic Race loads the bundled relic pair");
 		expect(applied == 1 && applied_descriptor.standalone && applied_descriptor.hostLevelID == 13 && applied_descriptor.laps == 3 &&
-		       applied_descriptor.flagRelicCrates == 1 && applied_descriptor.flagAiNav == 1 && applied_descriptor.flagCtrLetters == 1 &&
+		       applied_descriptor.flagRelicCrates == 1 && applied_descriptor.flagCrates == 0 &&
+		       applied_descriptor.flagAiNav == 1 && applied_descriptor.flagCtrLetters == 1 &&
 		       applied_descriptor.flagSpawns == 8 && applied_descriptor.flagCheckpoints == 255 &&
 		       applied_descriptor.flagWumpaCollectible == 1 && applied_descriptor.replacesCupLevelID == -1 &&
-		       strcmp(applied_descriptor.levSha256, CTR_CFG_CORTEX_LEV_SHA256) == 0 &&
-		       strcmp(applied_descriptor.vrmSha256, CTR_CFG_CORTEX_VRM_SHA256) == 0,
-		       "loader descriptor carries the bundled pair's measured flags and pins");
+		       strcmp(applied_descriptor.levSha256, CTR_CFG_CORTEX_RELIC_LEV_SHA256) == 0 &&
+		       strcmp(applied_descriptor.vrmSha256, CTR_CFG_CORTEX_RELIC_VRM_SHA256) == 0,
+		       "Relic Race descriptor carries the relic pair's measured flags and pins");
 		expect(staged == 1 && staged_race.cortex == 1 && !staged_race.retail && staged_race.slot == 0 &&
 		       staged_race.hostLevelID == 13 && staged_race.mode == AP_CONTENT_MODE_RELIC &&
 		       staged_race.trophyLocation == 35026001 && staged_race.physicalPad == 5 && staged_race.returnHub == 27 &&
 		       CustomRaceContext_Valid(&staged_race) &&
-		       strcmp(staged_race.levSha256, CTR_CFG_CORTEX_LEV_SHA256) == 0, "a valid Cortex Vortex race context is staged");
+		       strcmp(staged_race.levSha256, CTR_CFG_CORTEX_RELIC_LEV_SHA256) == 0, "a valid Cortex Vortex Relic Race context is staged");
+		for (int mode = AP_CONTENT_MODE_TROPHY; mode <= AP_CONTENT_MODE_CTR; ++mode)
+		{
+			reset_calls(); ap_cortex_track_content_required = 0;
+			expect(AP_ContentPreparePad(5, mode) == 13 && used_files == 1 && strcmp(used_lev, cvLev) == 0 &&
+			       strcmp(used_vrm, cvVrm) == 0 && applied == 1 && applied_descriptor.flagCrates == 1 &&
+			       applied_descriptor.flagRelicCrates == 0 && applied_descriptor.flagCtrLetters == 1 &&
+			       strcmp(applied_descriptor.levSha256, CTR_CFG_CORTEX_LEV_SHA256) == 0 &&
+			       strcmp(applied_descriptor.vrmSha256, CTR_CFG_CORTEX_VRM_SHA256) == 0 &&
+			       strcmp(staged_race.levSha256, CTR_CFG_CORTEX_LEV_SHA256) == 0,
+			       mode == AP_CONTENT_MODE_TROPHY ? "a Trophy Race loads the bundled main pair"
+			                                      : "a CTR Challenge loads the bundled main pair");
+		}
+		reset_calls(); ap_cortex_track_content_required = 0;
+		expect(AP_ContentPreparePad(5, AP_CONTENT_MODE_RELIC) == 13 && strcmp(used_lev, cvRelicLev) == 0,
+		       "back to the Relic Race after a Trophy Race: the relic pair again");
 		reset_calls();
 		refuse_files = 1;
 		expect(AP_ContentPreparePad(5, AP_CONTENT_MODE_RELIC) == -1 && !AP_ContentPadReady(5) &&
@@ -496,7 +529,7 @@ int main(void)
 		expect(AP_ContentPreparePad(5, AP_CONTENT_MODE_TROPHY) == -1 && !ap_content_cortex_ready &&
 		       ap_cortex_track_content_required && used_files == 0 && applied == 0 && staged == 0,
 		       "a changed bundled LEV is refused at pad entry");
-		unlink(cvLev); unlink(cvVrm); rmdir(cvDir);
+		unlink(cvLev); unlink(cvVrm); unlink(cvRelicLev); unlink(cvRelicVrm); rmdir(cvDir);
 		plan_pad = saved;
 	}
 

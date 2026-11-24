@@ -584,8 +584,10 @@ extern "C" void CustomTrackCredit_Format(char *out, size_t size, const char *lev
                                          int saphiID, const char *author, const char *source)
 {
 	if (!out || !size) return;
-	if (lev && vrm && TrackSources_HexEqual(lev, CTR_CFG_CORTEX_LEV_SHA256) &&
-	    TrackSources_HexEqual(vrm, CTR_CFG_CORTEX_VRM_SHA256))
+	if (lev && vrm && ((TrackSources_HexEqual(lev, CTR_CFG_CORTEX_LEV_SHA256) &&
+	                    TrackSources_HexEqual(vrm, CTR_CFG_CORTEX_VRM_SHA256)) ||
+	                   (TrackSources_HexEqual(lev, CTR_CFG_CORTEX_RELIC_LEV_SHA256) &&
+	                    TrackSources_HexEqual(vrm, CTR_CFG_CORTEX_RELIC_VRM_SHA256))))
 	{
 		std::snprintf(out, size, "%s", CTR_CORTEX_CREDIT);
 		return;

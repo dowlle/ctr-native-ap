@@ -257,7 +257,7 @@ static void test_relic_targets(void)
 {
 	int t;
 	EXPECT(AP_CORTEX_RELIC_TARGETS.placeholder == 1, "targets are still marked placeholders");
-	EXPECT(!strcmp(AP_CORTEX_RELIC_TARGETS.levSha256, CTR_CFG_CORTEX_LEV_SHA256), "keyed by the pinned LEV");
+	EXPECT(!strcmp(AP_CORTEX_RELIC_TARGETS.levSha256, CTR_CFG_CORTEX_RELIC_LEV_SHA256), "keyed by the pinned relic LEV");
 	for (t = 0; t < 3; t++)
 		EXPECT_EQ(AP_CortexRelicTime(t), relic_time_from_source(13 * 3 + t),
 		          "placeholder equals Oxide Station retail data.RelicTime[39+t]");

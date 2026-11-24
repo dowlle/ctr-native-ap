@@ -135,6 +135,31 @@ static void loader(void)
 		EXPECT(CustomTrack_CortexMusicServing(HOST, 1, 4) == 0, "leaving the cup stops its music");
 	}
 
+	// CV1: a Relic Race arms the bundled relic pair (its own pins, same
+	// folder). It is still the plan's Cortex Vortex entry, so the music plays.
+	{
+		struct CustomTrackSeedDescriptor d = cortex_descriptor();
+		struct CustomTrackRaceContext race = pad_race();
+		char relicLev[sizeof s_lev], relicVrm[sizeof s_vrm];
+		snprintf(relicLev, sizeof relicLev, "%s/tracks/cortex-vortex/" CTR_CFG_CORTEX_RELIC_LEV_FILE, s_dir);
+		snprintf(relicVrm, sizeof relicVrm, "%s/tracks/cortex-vortex/" CTR_CFG_CORTEX_RELIC_VRM_FILE, s_dir);
+		snprintf(d.levSha256, sizeof d.levSha256, "%s", CTR_CFG_CORTEX_RELIC_LEV_SHA256);
+		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", CTR_CFG_CORTEX_RELIC_VRM_SHA256);
+		d.soloRace = 1;
+		EXPECT(CustomTrack_UseContentFiles(relicLev, relicVrm, "CORTEX VORTEX") && CustomTrack_ApplySeedDescriptor(&d) == 1,
+		       "cortex relic pair arms");
+		EXPECT(CustomTrack_CortexMusic(&bytes, &size) == 1 && size == SCA_BYTES, "relic pair: pinned music is served");
+		strcpy(race.levSha256, CTR_CFG_CORTEX_RELIC_LEV_SHA256);
+		strcpy(race.vrmSha256, CTR_CFG_CORTEX_RELIC_VRM_SHA256);
+		EXPECT(CustomTrack_StageStandaloneRace(&race) == 1, "relic pair: the Relic Race stages");
+		CustomTrack_OnRaceLoadRequested(HOST);
+		EXPECT(CustomTrack_ServingLoad(HOST, 0, 0) == 1, "relic pair: the track is served");
+		EXPECT(CustomTrack_CortexMusicServing(HOST, 0, 0) == 1, "relic pair: the race serves the music");
+		CustomTrack_OnRaceLoadRequested(26);
+		CustomTrack_ClearSeedDescriptor();
+		EXPECT(arm() == 1, "main pair arms again after the relic pair");
+	}
+
 	// A withdrawn seed: nothing is served.
 	CustomTrack_ClearSeedDescriptor();
 	EXPECT(CustomTrack_CortexMusic(&bytes, &size) == 0 && bytes == NULL && size == 0, "no music after the seed goes");
