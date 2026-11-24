@@ -325,6 +325,25 @@ static void package_music(void)
 	CustomTrack_ClearSeedDescriptor();
 	EXPECT(CustomTrack_CortexMusic(&bytes, &size) == 0 && s_musicIsPackage == 0, "withdrawn seed drops the package music");
 
+	// CV1: a downloaded package whose bytes equal the bundled relic pair keeps
+	// its own pinned music, served on its own slot.
+	{
+		struct CustomTrackSeedDescriptor d = cortex_descriptor();
+		char relicLev[sizeof s_lev], relicVrm[sizeof s_vrm];
+		snprintf(relicLev, sizeof relicLev, "%s/tracks/cortex-vortex/" CTR_CFG_CORTEX_RELIC_LEV_FILE, s_dir);
+		snprintf(relicVrm, sizeof relicVrm, "%s/tracks/cortex-vortex/" CTR_CFG_CORTEX_RELIC_VRM_FILE, s_dir);
+		d.hostLevelID = PKG_HOST;
+		d.soloRace = 1;
+		snprintf(d.levSha256, sizeof d.levSha256, "%s", CTR_CFG_CORTEX_RELIC_LEV_SHA256);
+		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", CTR_CFG_CORTEX_RELIC_VRM_SHA256);
+		EXPECT(CustomTrack_UseContentFiles(relicLev, relicVrm, "CORTEX VORTEX") == 1 &&
+		       CustomTrack_UseContentMusic(s_pkgSca, s_pkgScaSha, SCA_BYTES, CTR_CFG_CORTEX_RELIC_LEV_SHA256) == 1 &&
+		       CustomTrack_ApplySeedDescriptor(&d) == 1, "downloaded copy of the relic pair arms with its pin");
+		EXPECT(CustomTrack_CortexMusic(&bytes, &size) == 1 && size == SCA_BYTES && s_musicIsPackage == 1,
+		       "downloaded copy of the relic pair: its own music, not the bundled one");
+		CustomTrack_ClearSeedDescriptor();
+	}
+
 	// No pin: the host slot's music plays.
 	EXPECT(arm_package(0, NULL) == 1, "package arms without a pin");
 	EXPECT(CustomTrack_CortexMusic(&bytes, &size) == 0, "no pin, no music");

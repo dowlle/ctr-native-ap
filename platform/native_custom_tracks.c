@@ -1285,7 +1285,11 @@ int CustomTrack_ApplySeedDescriptor(const struct CustomTrackSeedDescriptor *d)
 
 	s_customTrackConfig.contentVerified = 1;
 	s_customTrackServeFault[0] = '\0';
-	if (CustomTrack_DescriptorIsCortex())
+	// A package route hands its music pin over right before arming; the
+	// bundled Cortex Vortex route never does. So a pending pin means a
+	// downloaded package, even one whose bytes equal a bundled pair (CV1:
+	// Saphi 1.1.5 and 1.1.6 are both bundled now).
+	if (s_pendingMusic.path[0] == '\0' && CustomTrack_DescriptorIsCortex())
 		CustomTrack_LoadCortexMusic(s_customTrackLev.path);
 	else
 		CustomTrack_LoadPackageMusic();
