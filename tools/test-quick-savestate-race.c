@@ -73,6 +73,8 @@ const struct CustomTrackResidentSource *CustomTrack_ResidentSource(int levelID)
 
 int CustomTrack_ResidentAssetsMixed(void) { return mixedAssets; }
 uint64_t ap_content_plan_room_identity(void) { return roomIdentity; }
+static int lookRebinds;
+void AP_LooksRebindDrivers(void) { lookRebinds++; }
 
 static void save(void)
 {
@@ -83,11 +85,14 @@ static void save(void)
 static void loadExpect(const char *message)
 {
 	const int before = restored;
+	const int rebindsBefore = lookRebinds;
 	refusal[0] = '\0';
 	NativeSaveState_RequestLoad();
 	NativeSaveState_BeginFrame();
 	NativeSaveState_DrawRefusal(NULL);
 	assert(restored == before + (message == NULL));
+	// Character looks: every successful restore re-binds driver models.
+	assert(lookRebinds == rebindsBefore + (message == NULL));
 	assert(strcmp(refusal, message ? message : "") == 0);
 }
 

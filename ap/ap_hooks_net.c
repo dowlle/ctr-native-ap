@@ -656,6 +656,7 @@ void AP_Net_Reconnect(const char *uri, const char *slot, const char *password)
 // after it.
 void AP_Net_Shutdown(void)
 {
+	AP_LooksConnectReset(); // JL2: leaving a room (quit, Play Solo stop) drops its looks
 	ap_net_shutdown();
 }
 

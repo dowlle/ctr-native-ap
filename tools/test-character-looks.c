@@ -155,6 +155,11 @@ int main(void)
 		EXPECT("textured command refused", !validates(file, len, cmd + 8, 0x10580001u, &why) &&
 		                                       strcmp(why, "model is textured") == 0);
 		EXPECT("missing colour table refused", !validates(file, len, hdr + 0x2C, 0, &why));
+		EXPECT("a delta table on a static model refused", !validates(file, len, hdr + 0x30, 0x40, &why) &&
+		                                                     strcmp(why, "not a plain static frame") == 0);
+		EXPECT("an odd vertex offset refused", !validates(file, len, data + info.frameOff + 0x18, 0x20, &why));
+		EXPECT("a colour cache past the scratchpad refused", !validates(file, len, cmd, 177, &why) &&
+		                                                        strcmp(why, "colour cache larger than the scratchpad") == 0);
 		EXPECT("command list running into the map refused", !validates(file, len, hdr + 0x20, info.frameOff, &why));
 		EXPECT("pointer slot outside the data refused",
 		       !validates(file, len, data + info.dataLen + 4, info.dataLen + 8, &why));

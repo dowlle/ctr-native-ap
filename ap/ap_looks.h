@@ -19,6 +19,9 @@ struct Model *AP_LooksModelFor(const char *searchName, struct Model *found);
 // The model whose animations time a driver instance: the original model the
 // engine found when `m` is a look model, otherwise `m` itself.
 struct Model *AP_LooksTimingModel(struct Model *m);
+// After a quick load: each racing driver gets the model its birth would give
+// now, so no restored pointer names a look model of an earlier run.
+void AP_LooksRebindDrivers(void);
 
 // The OPTIONS row (game/230/MM_ConfigMenu.c).
 int AP_LooksIsRowValue(const int *valuePtr);

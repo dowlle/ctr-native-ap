@@ -30,6 +30,10 @@ assert "AP_LooksConnectReset();" in net
 reconnect = net[net.index("void AP_Net_Reconnect("):]
 assert reconnect.index("AP_LooksConnectReset();") < reconnect.index("ap_net_shutdown();")
 assert "model = AP_LooksTimingModel(model);" in text("game/Vehicle/VehFrame.c")
+save = text("platform/native_savestate.c")
+assert save.index("AP_LooksRebindDrivers();") < save.index("loaded quick state checksum")
+render = text("game/RenderBucket/RenderBucket_QueueExecute.c")
+assert "return &ctx->packedStack[stackIndex];" in render and "RenderBucket_PackedVertexScratch(stackIndex)" not in render
 arm = net[net.index("else if (AP_LookForItem(idx) >= 0)"):]
 arm = arm[:arm.index("}") + 1]
 assert "AP_LooksReceiveOwned(idx);" in arm and "AP_FxOffer(items[i], ap_net_recv_batch_index(i));" in arm
@@ -74,7 +78,18 @@ _Static_assert(offsetof(struct ModelHeader, ptrAnimations) == 0x38, "layout");
 _Static_assert(sizeof(struct ModelHeader) == 0x40, "layout");
 _Static_assert(offsetof(struct Model, headers) == 0x14, "layout");
 struct MetaDataCharacter { char *name_Debug; };
-static struct { struct MetaDataCharacter MetaDataCharacters[16]; } data;
+static struct { struct MetaDataCharacter MetaDataCharacters[16]; short characterIDs[8]; } data;
+struct Instance { struct Model *model; };
+struct Driver { struct Instance *instSelf; int driverID; };
+struct GameTracker { struct Driver *drivers[8]; };
+static struct GameTracker gt;
+static struct { struct GameTracker *gGT; } sdata_store = {&gt}, *sdata = &sdata_store;
+static struct Model *found_joe, *found_crash;
+struct Model *AP_LooksModelFor(const char *searchName, struct Model *found);
+static struct Model *VehBirth_GetModelByName(char *name) {
+  struct Model *f = strcmp(name, "joe") == 0 ? found_joe : strcmp(name, "crash") == 0 ? found_crash : NULL;
+  return AP_LooksModelFor(name, f);
+}
 static struct { int lookJoe; } g_config;
 static int saves;
 static void NativeConfig_Save(void) { saves++; }
@@ -162,6 +177,23 @@ int main(int argc, char **argv) {
     AP_LooksRowStep(&g_config.lookJoe, -1);
     AP_LooksConnectReset(); AP_LooksReceiveOwned(215);
     assert(g_config.lookJoe == 0 && AP_LooksModelFor("joe", &joe) == &joe);
+    /* Quick load: a driver whose restored pointer names a stale model is born
+       again by name; one already right is left alone. */
+    {
+      struct Model stale; struct Instance joeInst = {&stale}, crashInst = {&crash};
+      struct Driver dJoe = {&joeInst, 0}, dCrash = {&crashInst, 1};
+      found_joe = &joe; found_crash = &crash;
+      data.characterIDs[0] = 11; data.characterIDs[1] = 0;
+      gt.drivers[0] = &dJoe; gt.drivers[1] = &dCrash;
+      g_config.lookJoe = 215;
+      AP_LooksRebindDrivers();
+      assert(joeInst.model != &stale && joeInst.model->headers == m->headers && AP_LooksTimingModel(joeInst.model) == &joe);
+      assert(crashInst.model == &crash);
+      g_config.lookJoe = 0;
+      AP_LooksRebindDrivers();
+      assert(joeInst.model == &joe);
+      gt.drivers[0] = gt.drivers[1] = NULL;
+    }
     /* Non-look rows and items are ignored. */
     int other = 5;
     assert(!AP_LooksIsRowValue(&other) && AP_LooksIsRowValue(&g_config.lookJoe));

@@ -240,6 +240,39 @@ struct Model *AP_LooksModelFor(const char *searchName, struct Model *found)
 	return m;
 }
 
+// Quick load (F8) restores instance memory saved by an earlier frame, maybe by
+// an earlier run of the client, so a driver's model pointer can name a look
+// model of that run (review round 2). Quick load only restores into the same
+// live race, so each racing driver is born again by name here: the look in
+// effect now, or the original model. Ghosts are not re-bound.
+void AP_LooksRebindDrivers(void)
+{
+	struct GameTracker *gGT = sdata->gGT;
+	int rebound = 0;
+
+	if (gGT == NULL)
+		return;
+	for (int i = 0; i < 8; i++)
+	{
+		struct Driver *d = gGT->drivers[i];
+		struct Model *m;
+		if (d == NULL || d->instSelf == NULL)
+			continue;
+		m = VehBirth_GetModelByName(data.MetaDataCharacters[data.characterIDs[d->driverID]].name_Debug);
+		if (m != NULL && m != d->instSelf->model)
+		{
+			d->instSelf->model = m;
+			rebound++;
+		}
+	}
+	if (rebound)
+	{
+		char msg[96];
+		snprintf(msg, sizeof msg, "[AP LOOK] quick load: %d driver model(s) re-bound\n", rebound);
+		AP_LogLine(msg);
+	}
+}
+
 struct Model *AP_LooksTimingModel(struct Model *m)
 {
 	for (int i = 0; i < AP_LOOK_MODEL_SLOTS; i++)

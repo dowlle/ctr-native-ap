@@ -145,6 +145,8 @@ static inline int AP_LookRacerHasOwned(AP_LookOwned owned, int racer)
 
 #define AP_LOOK_MODEL_SIZE 0x18
 #define AP_LOOK_HEADER_SIZE 0x40
+#define AP_LOOK_FRAME_SIZE 0x1C          // struct ModelFrame before its vertices
+#define AP_LOOK_COLOR_CACHE_MAX ((0x400 - 0x140) / 4)
 
 typedef struct
 {
@@ -231,7 +233,18 @@ static inline int AP_LookValidateModel(const unsigned char *file, size_t len, AP
 	colors = AP_LookU32(d, hdr + 0x2C);
 	*why = "missing command list, frame or colours";
 	if (cmd == 0 || frame == 0 || colors == 0 || (cmd & 3) || (frame & 3) || (colors & 3) || cmd >= mapOff ||
-	    (size_t)frame + 8 > mapOff || colors >= mapOff)
+	    (size_t)frame + AP_LOOK_FRAME_SIZE > mapOff || colors >= mapOff)
+		return 0;
+	// A static frame: the header's delta-table field (unk3) is read as a
+	// pointer by the renderer, and the vertices start right after the frame
+	// header.
+	*why = "not a plain static frame";
+	if (AP_LookU32(d, hdr + 0x30) != 0 || AP_LookU32(d, frame + 0x18) != AP_LOOK_FRAME_SIZE)
+		return 0;
+	// The renderer copies the first command-list word's count of colours into
+	// the scratchpad from 0x140, which holds 176 words.
+	*why = "colour cache larger than the scratchpad";
+	if (AP_LookU32(d, cmd) > AP_LOOK_COLOR_CACHE_MAX || (size_t)colors + 4u * AP_LookU32(d, cmd) > mapOff)
 		return 0;
 	// The first word is the list's header; commands follow until 0xFFFFFFFF.
 	*why = "command list does not end";
