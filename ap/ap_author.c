@@ -491,7 +491,7 @@ static void AP_AuthorSeedFileFromEmbedded(void)
 
 	n = AP_EMBEDDED_PLACEMENT_COUNT;
 	if (n > AP_AUTHOR_MAX_PLACEMENTS)
-		n = AP_AUTHOR_MAX_PLACEMENTS; // cannot happen at 241 of 512; not a silent bound
+		n = AP_AUTHOR_MAX_PLACEMENTS; // cannot happen at 241 of 2048; not a silent bound
 
 	for (i = 0; i < n; i++)
 	{

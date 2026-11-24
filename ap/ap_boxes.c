@@ -94,7 +94,8 @@ static int s_spawnFull;     // the loader refused a box on this level: stop aski
 static int s_standDown;     // author mode / no seed: logged once per transition
 
 // Scratch for the set builder. Static rather than automatic: the placement
-// table is 512 entries and this is a rebuild path, not a per-frame one.
+// table is AP_AUTHOR_MAX_PLACEMENTS entries and this is a rebuild path, not a
+// per-frame one.
 static AP_BoxPlacement s_scratch[AP_AUTHOR_MAX_PLACEMENTS];
 
 int AP_Boxes_LiveCount(void)
