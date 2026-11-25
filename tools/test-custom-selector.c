@@ -35,6 +35,17 @@ static int busy, allowed = 1, prepared, launched, reloads, ticksSeen, checks, fa
 static void MM_CustomLibrary_Tick(int reload) { reloads += reload; ticksSeen++; }
 static int MM_CustomLibrary_Busy(void) { return busy; }
 int AP_CustomOfflineLaunchAllowed(void) { return allowed; }
+#ifdef CTR_AP
+static int fillAvailable;
+int ap_content_track_fill_available(const char *levSha)
+{
+    return fillAvailable && !strcmp(levSha, "fill fixture");
+}
+int AP_TrackFillStageOffline(const struct CustomOfflineRequest *request)
+{
+    return fillAvailable && request != NULL;
+}
+#endif
 static const char *roomNote = "";
 const char *AP_CustomOfflineRoomNote(void) { return roomNote; }
 static int rawPad, textResult, textActive;
@@ -428,6 +439,21 @@ int main(void)
     /* A retail Time Trial exit is left to the retail ghost selection. */
     CHECK(!MM_CustomTrackSelect_TimeTrialStart());
     tracker.gameMode1=ARCADE_MODE;
+#ifdef CTR_AP
+    /* A time-trial-ready package without AI can run the opt-in relic route. */
+    strcpy(entries[0].local.levSha256, "fill fixture");
+    publish(entries, 3);
+    MM_CustomTrackSelect_Init(); D230.trackSel_transitionState = IN_MENU; tick(0); tick(BTN_RIGHT);
+    s_arcadeRows[0] = 0;
+    int before = prepared;
+    tick(BTN_SQUARE_one); CHECK(prepared == before);
+    fillAvailable = 1;
+    tick(BTN_SQUARE_one); tick(0);
+    CHECK(prepared == before + 1 && s_arcadeConfirm && checkedMode == CTR_OFFLINE_MODE_RELIC);
+    tick(BTN_CROSS_one);
+    CHECK(beganMode == CTR_OFFLINE_MODE_RELIC && tracker.currLEV == 6 && tracker.numLaps == 7);
+    CHECK(D230.trackSel_transitionState == EXITING_MENU && D230.trackSel_StartRaceAfterFadeOut == 1);
+#endif
     CustomTrackLibrary_Free(&s_contentLibrary);
     CustomTrackLibrary_Free(&s_arcadeLibrary);
     printf("custom selector: %d checks, %d failures\n", checks, failures);
