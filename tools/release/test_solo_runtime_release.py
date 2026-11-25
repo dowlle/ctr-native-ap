@@ -50,6 +50,7 @@ class SoloRuntimeReleaseTests(unittest.TestCase):
         folder = self.root / (name or f"rt-{platform}")
         # Names whose string order differs from path order ("a.b" vs "a/b").
         for rel in (INTERPRETER[platform], "ctr_solo.py", "archipelago/MultiServer.py", "presets/standard.yaml",
+                    "presets/presets.json", "options-overlay.json", "LICENSES/ctr-apworld-LICENSE.txt",
                     "python/lib-dynload/x.so", "python/lib.txt", "python-x/y"):
             path = folder / rel
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -207,24 +208,40 @@ class SoloRuntimeReleaseTests(unittest.TestCase):
         with self.assertRaises(VERIFIER.PolicyError):
             VERIFIER.verify_solo_runtime(release, "v0.3.0")
 
-    def test_builder_refuses_an_apworld_without_solo_files(self) -> None:
-        old = self.root / "old.apworld"
-        with zipfile.ZipFile(old, "w") as bundle:
-            bundle.writestr("ctr/__init__.py", "")
-        with self.assertRaises(BUILDER.BuildError):
-            BUILDER.extract_solo(old, self.root / "solo")
+    def source_checkout(self, layout: str = "tools/solo") -> Path:
+        checkout = self.root / layout.replace("/", "-")
+        world = checkout / "worlds" / "ctr"
+        solo = world / layout
+        (solo / "presets").mkdir(parents=True)
+        for name in ("ctr_solo.py", "options-overlay.json", "presets/presets.json",
+                     "presets/standard.yaml", "trim_core.py"):
+            (solo / name).write_bytes(name.encode())
+        (world / "LICENSE").write_bytes(b"LICENSES/ctr-apworld-LICENSE.txt")
+        return checkout
 
-    def test_builder_extracts_solo_files(self) -> None:
-        apworld = self.root / "new.apworld"
-        with zipfile.ZipFile(apworld, "w") as bundle:
-            bundle.writestr("ctr/__init__.py", "")
-            bundle.writestr("ctr/LICENSE", "MIT")
-            bundle.writestr("ctr/solo/ctr_solo.py", "print()")
-            bundle.writestr("ctr/solo/presets/standard.yaml", "name: Player")
-        BUILDER.extract_solo(apworld, self.root / "solo")
-        self.assertTrue((self.root / "solo" / "ctr_solo.py").is_file())
-        self.assertTrue((self.root / "solo" / "presets" / "standard.yaml").is_file())
-        self.assertEqual((self.root / "solo" / "LICENSE").read_text(), "MIT")
+    def test_builder_refuses_a_checkout_without_solo_files(self) -> None:
+        with self.assertRaises(FileNotFoundError):
+            BUILDER.build("linux", self.apworld, self.root, self.root / "out", self.root / "cache")
+        self.assertFalse((self.root / "out").exists())
+
+    def test_builder_reads_solo_files_from_current_and_older_checkouts(self) -> None:
+        for layout in ("tools/solo", "solo"):
+            with self.subTest(layout=layout):
+                checkout = self.source_checkout(layout)
+                solo, sources = BUILDER.solo_source_files(checkout)
+                self.assertEqual(solo, checkout / "worlds" / "ctr" / layout)
+                self.assertEqual(sources["ctr_solo.py"].read_bytes(), b"ctr_solo.py")
+                self.assertEqual(sources["presets/standard.yaml"].read_bytes(), b"presets/standard.yaml")
+                self.assertIn("LICENSES/ctr-apworld-LICENSE.txt", sources)
+                self.assertNotIn("trim_core.py", sources)
+
+    def test_verifier_checks_bundled_solo_files_against_paired_checkout(self) -> None:
+        release = self.write_release("v0.3.0", self.runtime("windows"), self.runtime("linux"))
+        checkout = self.source_checkout()
+        VERIFIER.verify_solo_runtime(release, "v0.3.0", checkout)
+        (checkout / "worlds/ctr/tools/solo/presets/standard.yaml").write_bytes(b"different preset")
+        with self.assertRaisesRegex(VERIFIER.PolicyError, "presets/standard.yaml differs"):
+            VERIFIER.verify_solo_runtime(release, "v0.3.0", checkout)
 
     def test_lock_pins_every_dependency_for_both_platforms(self) -> None:
         import json

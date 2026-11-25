@@ -96,7 +96,7 @@ void NativeText_Begin(char *b, int c, int x, int y, int w, int h, int p)
 #define CONN_ROW_H 0x0C
 
 /* ---- Solo runtime stubs ---- */
-/* The overlay's options (worlds/ctr/solo/options-overlay.json) with their
+/* The overlay's options (worlds/ctr/tools/solo/options-overlay.json) with their
    display names and longest values. */
 static const char *const optLabel[] = {
 	"Oxide Goal", "Bosses Required Goal", "Gems Required Goal", "Oxide's Final Challenge Unlock",

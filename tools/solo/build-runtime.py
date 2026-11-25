@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Assemble the solo runtime folder for one platform (#89).
 
-    build-runtime.py --platform windows|linux --apworld ctr.apworld --out DIR [--cache DIR]
+    build-runtime.py --platform windows|linux --apworld ctr.apworld
+                     --apworld-source CHECKOUT --out DIR [--cache DIR]
 
 The result is the `solo-runtime/` folder that goes into the client archive
 beside ctr_native_ap and ctr.apworld:
@@ -11,7 +12,7 @@ beside ctr_native_ap and ctr.apworld:
     site-packages/   the pinned dependency wheels, unpacked
     archipelago/     the trimmed Archipelago core at the pinned commit
     ctr_solo.py      the wrapper, presets/ and options-overlay.json, taken
-                     from ctr/solo/ inside the given ctr.apworld
+                     from the matching apworld source checkout
     LICENSES/        license texts of every bundled part
     RUNTIME.txt      versions and SHA-256 of every pinned part
 
@@ -23,9 +24,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import io
 import json
-import os
 import py_compile
 import shutil
 import subprocess
@@ -37,6 +36,10 @@ import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent / "release"))
+
+from solo_source import solo_source_files
+
 LOCK = HERE / "runtime-lock.json"
 INTERPRETER = {"windows": "python/python.exe", "linux": "python/bin/python3.12"}
 # Parts of the Linux interpreter the runtime never uses.
@@ -46,7 +49,6 @@ LINUX_DROP = ("include", "share", "bin/2to3", "bin/2to3-3.12", "bin/idle3", "bin
 LINUX_DROP_GLOBS = ("lib/itcl*", "lib/tcl*", "lib/tk*", "lib/Tix*", "lib/thread*")
 STDLIB_DROP = ("test", "idlelib", "tkinter", "turtledemo", "ensurepip", "lib2to3", "pydoc_data",
                "site-packages", "venv", "config-3.12-x86_64-linux-gnu", "__phello__", "turtle.py")
-SOLO_MEMBERS = ("ctr_solo.py", "trim_core.py", "options-overlay.json")
 
 
 class BuildError(Exception):
@@ -169,24 +171,6 @@ def build_core(commit: str, repository: str, runtime: Path, solo: Path, licenses
     shutil.copyfile(runtime / "archipelago" / "LICENSE", licenses / "Archipelago-LICENSE.txt")
 
 
-def extract_solo(apworld: Path, dest: Path) -> None:
-    """Copy ctr/solo/ out of the release apworld. It is the only source."""
-    with zipfile.ZipFile(apworld) as bundle:
-        members = [m for m in bundle.namelist() if m.startswith("ctr/solo/") and not m.endswith("/")]
-        if not members:
-            raise BuildError("ctr.apworld has no ctr/solo/ folder: it predates solo mode")
-        for member in members:
-            rel = Path(member).relative_to("ctr/solo")
-            if ".." in rel.parts:
-                raise BuildError(f"unsafe member {member}")
-            target = dest / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(bundle.read(member))
-        lic = "ctr/LICENSE"
-        if lic in bundle.namelist():
-            (dest / "LICENSE").write_bytes(bundle.read(lic))
-
-
 def precompile(runtime: Path) -> int:
     if sys.version_info[:2] != (3, 12):
         raise BuildError("precompile needs a CPython 3.12 build host (same bytecode as the runtime)")
@@ -220,29 +204,26 @@ def manifest_hashes(runtime: Path) -> str:
     return digest.hexdigest()
 
 
-def build(platform: str, apworld: Path, out: Path, cache: Path) -> Path:
+def build(platform: str, apworld: Path, apworld_source: Path, out: Path, cache: Path) -> Path:
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
     if out.exists():
         raise BuildError(f"{out} exists; use a fresh output folder")
+    apworld_sha = sha256(apworld)
+    solo, source_files = solo_source_files(apworld_source)
     runtime = out
     runtime.mkdir(parents=True)
     licenses = runtime / "LICENSES"
     licenses.mkdir()
-    with tempfile.TemporaryDirectory() as tmp:
-        solo = Path(tmp) / "solo"
-        extract_solo(apworld, solo)
-        for name in ("ctr_solo.py", "options-overlay.json"):
-            shutil.copyfile(solo / name, runtime / name)
-        shutil.copytree(solo / "presets", runtime / "presets")
-        if (solo / "LICENSE").is_file():
-            shutil.copyfile(solo / "LICENSE", licenses / "ctr-apworld-LICENSE.txt")
-        python = lock["python"]
-        build_python(platform, python[platform], cache, runtime, licenses)
-        wheel_lines = install_wheels(platform, lock["wheels"], cache, runtime, licenses)
-        core = lock["archipelago"]
-        build_core(core["commit"], core["repository"], runtime, solo, licenses)
+    for name, source in source_files.items():
+        target = runtime / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+    python = lock["python"]
+    build_python(platform, python[platform], cache, runtime, licenses)
+    wheel_lines = install_wheels(platform, lock["wheels"], cache, runtime, licenses)
+    core = lock["archipelago"]
+    build_core(core["commit"], core["repository"], runtime, solo, licenses)
     compiled = precompile(runtime)
-    apworld_sha = sha256(apworld)
     lines = [
         "# CTR Archipelago solo runtime. Do not edit; the client checks these values.",
         "schema: 1",
@@ -265,11 +246,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--platform", choices=("windows", "linux"), required=True)
     parser.add_argument("--apworld", type=Path, required=True)
+    parser.add_argument("--apworld-source", type=Path, required=True,
+                        help="checkout at the commit or tag that produced ctr.apworld")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--cache", type=Path, default=Path(tempfile.gettempdir()) / "ctr-solo-runtime-cache")
     args = parser.parse_args()
     try:
-        runtime = build(args.platform, args.apworld.resolve(), args.out.resolve(), args.cache.resolve())
+        runtime = build(args.platform, args.apworld.resolve(), args.apworld_source.resolve(),
+                        args.out.resolve(), args.cache.resolve())
     except (BuildError, OSError, subprocess.CalledProcessError, zipfile.BadZipFile, tarfile.TarError) as error:
         print(f"solo runtime build failed: {error}", file=sys.stderr)
         return 1
