@@ -17,6 +17,7 @@
 #include "ap_arena_content.h"
 #include "ap_wumpa_shop.h"
 #include "../include/platform/native_tizi_madness.h"
+#include "../include/platform/native_cortex_asset_pins.h"
 #include <array>
 #include <cstring>
 #include <map>
@@ -3612,6 +3613,9 @@ extern "C" int ap_content_plan_check_boost(int64_t location) {
     if (!ap_content_plan_active()) return 0;
     const auto it = content_plan::state.boosts.find(location);
     return it == content_plan::state.boosts.end() ? 0 : it->second;
+}
+extern "C" int ap_content_plan_check_requires_stats(int64_t location) {
+    return ap_content_plan_active() && content_plan::state.stat_checks.count(location) != 0;
 }
 extern "C" const ctr_content_item_boxes *ap_content_plan_item_boxes(void) {
     static const ctr_content_item_boxes none{};

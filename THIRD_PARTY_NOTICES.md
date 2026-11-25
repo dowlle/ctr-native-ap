@@ -276,21 +276,48 @@ License (icon design): CC BY-NC 4.0.
 
 Paths: `assets/tracks/cortex-vortex/CVortex Arcade All.lev`,
 `assets/tracks/cortex-vortex/CVortex Arcade All.vrm`,
+`assets/tracks/cortex-vortex/CVortex Relic.lev`,
+`assets/tracks/cortex-vortex/CVortex Relic.vrm`,
 `assets/tracks/cortex-vortex/CVortex Arcade All.sca` (the track's music)
 
-Cortex Vortex was created by **Lockheart**. These exact author-supplied files
-are bundled for use as the N. Oxide Final Challenge venue, as a randomized
-track and for its own music, with the author's permission. They are
-redistributed unchanged and are not relicensed by this project.
+Cortex Vortex was created by **Lockheart**. These exact files are bundled for
+use as the N. Oxide Final Challenge venue, as a randomized track and for its
+own music, with the author's permission. The track files are the author's
+Project Saphi releases 1.1.5 (`CVortex Arcade All`, every mode except the
+Relic Race) and 1.1.6 (`CVortex Relic`, the Relic Race); the music is the
+author-supplied file. They are redistributed unchanged and are not relicensed
+by this project.
 
 License: author permission for redistribution inside CTR AP for the described
 Final Challenge and randomized-track uses. No broader license is claimed.
 
-LEV SHA-256: `4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13`
+1.1.5 LEV SHA-256: `cabeba054ad1416a67ab2af2dcaad46e8ded71213319035750377b244fd9aa1a`
 
-VRM SHA-256: `4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d`
+1.1.5 VRM SHA-256: `a81cb4aa483d884b4d6b616bb12e0e8778439c1f4075d79b3807682a19dbe914`
+
+1.1.6 LEV SHA-256: `08afeda329194b737014f29324d0930bafbd0b940d02e72b29b37b0e9cded911`
+
+1.1.6 VRM SHA-256: `9e15a816e547b8a3b3d913a1767d58b1866e9b9d643f11cd3411381da6255500`
 
 SCA SHA-256: `ddde81cf1be8042400c717edeeded0d8727e3bb8ba24f0100201708372ef8b1c`
+
+## Komodo Moe driver model (AP build only)
+
+Path: `assets/looks/komodo-moe/komodo_moe_hi.bin`
+
+The Komodo Moe driver model was created by **Lockheart**. This file is his
+converted model, cut unchanged from the driver model entry his Komodo Moe
+patch writes, and is redistributed unchanged with his permission (2026-11-23:
+"everything I've made is open to the community"). In CTR AP it is the "Joe
+Mama" character look for Komodo Joe. It is not relicensed by this project.
+
+AP executables also embed these same bytes as a fallback. The model source is
+the file at the path above.
+
+License: author permission for redistribution inside CTR AP as a character
+look. No broader license is claimed.
+
+SHA-256: `45634686aaa0ede40a2fe7025911ba7cf89199212057d689bc2289795fb20724`
 
 ## CTR ModSDK Retro-Fueled mechanics and Blue Fire palette (AP build only)
 

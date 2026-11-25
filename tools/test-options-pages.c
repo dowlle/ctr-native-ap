@@ -152,6 +152,8 @@ int main(void)
 		EXPECT_TRUE(label, help->first[0] && strlen(help->first) <= CTR_OPTIONS_HELP_LIMIT
 		                   && strlen(help->second) <= CTR_OPTIONS_HELP_LIMIT);
 	}
+	EXPECT_TRUE("Joe Look has help before receiving a look",
+	            CTR_OptionsHelpFor("look_joe_no_choice") != NULL);
 	// FONT_SMALL uses 13 px per character, including spaces, and 7 px for the colon.
 	const int racePairWidth = 13 * (strlen("Race Type Menu") + strlen("SEED: ONLY IF USEFUL")) - 6;
 	EXPECT_TRUE("connected Race Type Menu label and value clear each other",
@@ -174,7 +176,7 @@ int main(void)
 			s_names[p], s_counts[p], CTR_MENU_PAGE_VISIBLE_ROWS);
 		int extra = 0;
 		if (strcmp(s_names[p], "Gameplay") == 0)
-			extra = 2; // hub hint replay and Joe Look
+			extra = 1; // hub hint replay
 		else if (strcmp(s_names[p], "Archipelago") == 0)
 			extra = 1; // Windows room links
 		else if (strcmp(s_names[p], "Authoring") == 0)
@@ -210,7 +212,7 @@ int main(void)
 			"disable_split_screen_lod", NULL};
 		static const char *const gameplay[] = {
 			"skip_intro", "skip_hints", "race_type_selector", "skip_podium", "skip_cutscenes",
-			"boss_music", "ai_difficulty", "mute_when_unfocused", "device_aware_labels", "update_check", NULL};
+			"boss_music", "look_joe", "ai_difficulty", "mute_when_unfocused", "device_aware_labels", "update_check", NULL};
 		static const char *const controls[] = {NULL};
 		static const char *const connection[] = {"uri", "slot", "password", NULL};
 		static const char *const archipelago[] = {

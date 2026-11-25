@@ -5,7 +5,7 @@ AP_NotifyRelicPerfect and AP_StandalonePerfectCode: a retail track's frozen
 code, Cortex Vortex's 35026005 or a custom track's own code, never the engine
 host's, and only with every time crate broken. A content-plan Cortex Vortex
 race runs on host 13 as a custom-bytes race: its route check, relic targets
-(AP_CortexRelicTime, the real ap_cortex_track.h placeholders) and letter items
+(AP_CortexRelicTime, the real ap_cortex_track.h targets) and letter items
 (35010200 to 35010202) are its own. Engine and network state are controlled
 seams; this does not claim a Steam race.
 """
@@ -202,13 +202,13 @@ int main(void) {
  for (int t=0;t<3;t++) assert(AP_StandaloneRelicTarget(t)==AP_CORTEX_RELIC_TARGETS.time[t]*2/3);
  assert(AP_NotifyStandaloneRelic(AP_CORTEX_RELIC_TARGETS.time[1]*2/3)==2 && sent(35026001) && sent(35026002) && !sent(35026003)); cases++;
  reset(CORTEX); context.laps=pad.laps=2; assert(AP_NotifyStandaloneRelic(AP_CORTEX_RELIC_TARGETS.time[0]*2/3+1)==0); cases++;
- /* A4-70: three generations. Before A4-13 and A4-70 the Relic Race is three laps (the placeholders as authored);
+ /* A4-70: three generations. Before A4-13 and A4-70 the Relic Race is three laps (the targets as authored);
     an A4-13 room (pad two laps, no relic_laps) keeps a two-lap Relic Race with scaled targets; an A4-70 room
     (pad two laps, relic_laps 3) races the Relic Race at three laps against the unscaled targets. */
  reset(CORTEX); pad.laps=2; pad.relic_laps=3; context.laps=3;
  assert(AP_StandaloneRoutePad(&context)==&pad); cases++;
  for (int t=0;t<3;t++) assert(AP_StandaloneRelicTarget(t)==AP_CORTEX_RELIC_TARGETS.time[t]);
- assert(AP_StandaloneRelicTarget(0)==189120 && AP_StandaloneRelicTarget(1)==168960 && AP_StandaloneRelicTarget(2)==147840); cases++;
+ assert(AP_StandaloneRelicTarget(0)==182400 && AP_StandaloneRelicTarget(1)==139200 && AP_StandaloneRelicTarget(2)==100800); cases++;
  assert(AP_NotifyStandaloneRelic(AP_CORTEX_RELIC_TARGETS.time[1])==2 && sent(35026001) && sent(35026002) && !sent(35026003)); cases++;
  reset(CORTEX); pad.laps=2; pad.relic_laps=3; context.laps=3; assert(AP_NotifyStandaloneRelic(AP_CORTEX_RELIC_TARGETS.time[0]+1)==0); cases++;
  reset(CORTEX); pad.laps=2; pad.relic_laps=3; context.laps=2; assert(AP_StandaloneRoutePad(&context)==NULL); cases++; /* a two-lap context is stale on an A4-70 pad */

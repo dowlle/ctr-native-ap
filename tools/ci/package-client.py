@@ -194,15 +194,27 @@ def main():
         if variant in ('ap', 'authoring'):
             cortex = root / 'assets' / 'tracks' / 'cortex-vortex'
             cortex.mkdir(parents=True)
-            for file in ('CVortex Arcade All.lev', 'CVortex Arcade All.vrm', 'CVortex Arcade All.sca'):
+            # A merged mode build (CV1): the main pair (Saphi 1.1.5), its music,
+            # and the relic pair (Saphi 1.1.6) served only in a Relic Race.
+            pins = {'CVortex Arcade All.lev': 'cabeba054ad1416a67ab2af2dcaad46e8ded71213319035750377b244fd9aa1a',
+                    'CVortex Arcade All.vrm': 'a81cb4aa483d884b4d6b616bb12e0e8778439c1f4075d79b3807682a19dbe914',
+                    'CVortex Relic.lev': '08afeda329194b737014f29324d0930bafbd0b940d02e72b29b37b0e9cded911',
+                    'CVortex Relic.vrm': '9e15a816e547b8a3b3d913a1767d58b1866e9b9d643f11cd3411381da6255500'}
+            for file in (*pins, 'CVortex Arcade All.sca'):
                 source = Path('assets/tracks/cortex-vortex') / file
                 shutil.copy2(source, cortex / file)
-            if digest(cortex / 'CVortex Arcade All.lev') != '4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13':
-                raise ValueError('Bundled Cortex Vortex LEV hash mismatch')
-            if digest(cortex / 'CVortex Arcade All.vrm') != '4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d':
-                raise ValueError('Bundled Cortex Vortex VRM hash mismatch')
+            for file, pin in pins.items():
+                if digest(cortex / file) != pin:
+                    raise ValueError(f'Bundled Cortex Vortex {file} hash mismatch')
             if digest(cortex / 'CVortex Arcade All.sca') != 'ddde81cf1be8042400c717edeeded0d8727e3bb8ba24f0100201708372ef8b1c':
                 raise ValueError('Bundled Cortex Vortex music hash mismatch')
+            # Character looks (JL2): Lockheart's Komodo Moe model, pinned like
+            # Cortex Vortex (ap/ap_look_logic.h AP_LOOK_KOMODO_MOE_SHA256).
+            looks = root / 'assets' / 'looks' / 'komodo-moe'
+            looks.mkdir(parents=True)
+            shutil.copy2(Path('assets/looks/komodo-moe/komodo_moe_hi.bin'), looks / 'komodo_moe_hi.bin')
+            if digest(looks / 'komodo_moe_hi.bin') != '45634686aaa0ede40a2fe7025911ba7cf89199212057d689bc2289795fb20724':
+                raise ValueError('Bundled Komodo Moe look hash mismatch')
         for file in (('support-bundle.bat', 'support-bundle.ps1') if platform == 'windows' else ('support-bundle.sh',)):
             shutil.copy2(file, root / file)
         (root / 'versions.txt').write_text(output('bash', 'tools/release-versions.sh'))

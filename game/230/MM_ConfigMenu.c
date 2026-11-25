@@ -15,6 +15,7 @@
 #include "../../ap/ap_net.h"
 #include "../../ap/ap_boxes.h"             // AP_Boxes_ColourRowState: the Item Box Colours row
 #include "../../ap/ap_box_colour_logic.h"  // AP_BOX_COLOUR_ROW_SEED_OFF
+#include "../../ap/ap_looks.h"            // Joe Look row (character looks, JL2)
 #ifdef CTR_CUSTOM_TRACKS
 #include <platform/native_assets.h>
 #include <platform/native_custom_track_manager.h>
@@ -613,6 +614,8 @@ static const char *Enum_Label(const ConfigEntry *e, char *buf, size_t bufSize)
 		return s_raceMenuNames[RaceMenu_Index(*(int *)e->valuePtr)];
 	if (e->valuePtr == &g_config.bossMusic)
 		return s_bossMusicNames[BossMusic_Index(*(int *)e->valuePtr)];
+	if (AP_LooksIsRowValue((const int *)e->valuePtr))
+		return AP_LooksRowLabel((const int *)e->valuePtr);
 #endif
 	(void)buf;
 	(void)bufSize;
@@ -714,6 +717,12 @@ static void Enum_Step(const ConfigEntry *e, int dir)
 		*(int *)e->valuePtr = s_bossMusicValues[i];
 		return;
 	}
+	// Joe Look: ORIGINAL, then the looks this seed delivered (ap/ap_looks.c).
+	if (AP_LooksIsRowValue((const int *)e->valuePtr))
+	{
+		AP_LooksRowStep((int *)e->valuePtr, dir);
+		return;
+	}
 #endif
 	int *difficulty = (int *)e->valuePtr;
 #ifdef CTR_AP
@@ -780,6 +789,9 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 		case AP_BOX_COLOUR_ROW_NO_BOXES: key = "box_no_boxes"; break;
 		case AP_BOX_COLOUR_ROW_ITEM_LOCKED: key = "box_item_locked"; break;
 	}
+	if (AP_LooksIsRowValue((const int *)e->valuePtr) &&
+	    !AP_LooksRowHasChoice((const int *)e->valuePtr))
+		key = "look_joe_no_choice";
 	if (Config_RowLockedByHub(e))
 		key = "box_author_hub";
 	if (e->valuePtr == &g_config.itemFeed && g_config.itemFeed == AP_ITEM_FEED_OFF)

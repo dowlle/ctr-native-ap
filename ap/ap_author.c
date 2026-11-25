@@ -13,6 +13,7 @@
 #include "ap_placement_table.h" // the two tables, the precedence rule, the row shape
 #include "ap_version.h"       // CTR_AP_VERSION, stamped into the exported file
 #include "ap_hooks.h"         // AP_LogLine
+#include "ap_looks.h"         // AP_LooksConnectReset (JL2)
 #include "ap_author_pad.h"     // controller keys: Select and its chords
 #include "ap_author_export.h"  // submission files, one per track
 #ifdef AP_AUTHOR_SESSION_SWITCH
@@ -596,6 +597,7 @@ void AP_Author_MenuPress(int wantOn)
 		// same teardown a Connect press starts with (AP_Net_Reconnect).
 		AP_LogLine("[AP AUTHOR] leaving the room to author boxes\n");
 		AP_Solo_BeforeReconnect();
+		AP_LooksConnectReset(); // JL2: the room's looks leave with it
 		ap_net_shutdown();
 		gate = AP_AuthorGate_Enter(ap_net_status(), AP_Solo_SessionActive());
 		if (gate != AP_AUTHOR_GATE_OK)
@@ -605,7 +607,10 @@ void AP_Author_MenuPress(int wantOn)
 		}
 	}
 	else if (AP_AuthorGate_CloseOnEnter(ap_net_status()))
+	{
+		AP_LooksConnectReset();
 		ap_net_shutdown(); // a refused or stopped dial: nothing of it stays under the mode
+	}
 
 	s_menuRefusal = AP_AUTHOR_GATE_OK;
 	ap_net_set_dial_block_query(AP_AuthorDialBlock);

@@ -53,6 +53,7 @@ NativeConfig g_config = {
 	15,    // trapDuration (recommended default, seconds; 0 = full race)
 	-1,    // raceTypeSelector (-1 = follow the seed's race_type_selector)
 	0,     // bossMusic (0 = BOSS THEME, the behaviour every build had)
+	0,     // lookJoe (0 = ORIGINAL: Komodo Joe's own model)
 	"",    // uri      (empty = no saved room; startup skips the auto-dial)
 	"",    // slot
 	"",    // password
@@ -170,6 +171,11 @@ const ConfigEntry g_configEntries[] = {
 	// the boss theme. Not slot_data: a presentation preference each player
 	// picks for themselves. Shown on the Gameplay page.
 	{"Archipelago", "boss_music",               "Boss Music",                   CFG_ENUM, &g_config.bossMusic},
+	// Joe Look (character looks, JL2, CFG_ENUM): ORIGINAL or a look this seed
+	// delivered as a filler item ("Joe Mama" = KOMODO MOE). Saved as the look's
+	// item index; ap/ap_looks.c steps and labels it. Local, not slot_data.
+	// Shown on the Gameplay page.
+	{"Archipelago", "look_joe",                 "Joe Look",                     CFG_ENUM, &g_config.lookJoe},
 	{"Archipelago", "map_flash",                "Hub Map Flashing",                    CFG_BOOL, &g_config.mapFlash},
 	{"Archipelago", "tracker_partial_colour",   "Tracker: Mark Partial Pads",       CFG_BOOL, &g_config.trackerPartialColour},
 	// Item Box Colours: this player's opt-out of the seed's AP item box colours

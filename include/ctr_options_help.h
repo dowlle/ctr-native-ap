@@ -27,6 +27,8 @@ static const CtrOptionsHelp s_ctrOptionsHelp[] = {
 	{"skip_podium", "Skips the podium after ordinary", "races. Boss and cup podiums stay."},
 	{"skip_cutscenes", "Skips boss and Oxide scenes", "after a podium."},
 	{"boss_music", "Music in boss races and cups:", "the theme or the track's own."},
+	{"look_joe", "Joe's look, from the next load.", "Komodo Moe model by Lockheart."},
+	{"look_joe_no_choice", "Looks arrive as filler items.", "Komodo Moe model by Lockheart."},
 	{"ai_difficulty", "Opponent speed, from next race.", "Never changes what you need."},
 	{"mute_when_unfocused", "Silences the game while another", "window is in front."},
 	{"device_aware_labels", "A/B/X/Y on Xbox and Deck pads,", "or always PlayStation symbols."},

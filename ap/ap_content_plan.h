@@ -494,6 +494,7 @@ const ctr_content_checks *ap_content_plan_checks(void);
 const ctr_content_capability *ap_content_plan_capability(void);
 int ap_content_plan_start_count(int64_t item);
 int ap_content_plan_check_boost(int64_t location);
+int ap_content_plan_check_requires_stats(int64_t location);
 /* Item Box Locations (#133 PR 4e): the record (all zero without one). */
 const ctr_content_item_boxes *ap_content_plan_item_boxes(void);
 int ap_content_plan_goal(const int received_gems[5]);

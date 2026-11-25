@@ -349,16 +349,18 @@ static struct AP_ContentFiles ap_content_cortex_files;
 
 static int AP_ContentScanCortex(void)
 {
-	struct CustomContentVerification report;
+	struct CustomContentVerification report, relicReport;
 	char error[160], why[320], line[640];
 	const char *dir = NativeAssets_GetAssetDir();
 	struct AP_ContentFiles *f = &ap_content_cortex_files;
 	ap_content_cortex_load_error = 0;
 	memset(f, 0, sizeof *f);
 	if (!dir) return 0;
-	if (snprintf(f->levPath, sizeof f->levPath, "%s/tracks/cortex-vortex/CVortex Arcade All.lev", dir) >= (int)sizeof f->levPath ||
-	    snprintf(f->vrmPath, sizeof f->vrmPath, "%s/tracks/cortex-vortex/CVortex Arcade All.vrm", dir) >= (int)sizeof f->vrmPath ||
-	    AP_ContentPathsTooLong(f->levPath, f->vrmPath))
+	if (snprintf(f->levPath, sizeof f->levPath, "%s/tracks/cortex-vortex/" CTR_CFG_CORTEX_LEV_FILE, dir) >= (int)sizeof f->levPath ||
+	    snprintf(f->vrmPath, sizeof f->vrmPath, "%s/tracks/cortex-vortex/" CTR_CFG_CORTEX_VRM_FILE, dir) >= (int)sizeof f->vrmPath ||
+	    snprintf(f->relicLevPath, sizeof f->relicLevPath, "%s/tracks/cortex-vortex/" CTR_CFG_CORTEX_RELIC_LEV_FILE, dir) >= (int)sizeof f->relicLevPath ||
+	    snprintf(f->relicVrmPath, sizeof f->relicVrmPath, "%s/tracks/cortex-vortex/" CTR_CFG_CORTEX_RELIC_VRM_FILE, dir) >= (int)sizeof f->relicVrmPath ||
+	    AP_ContentPathsTooLong(f->levPath, f->vrmPath) || AP_ContentPathsTooLong(f->relicLevPath, f->relicVrmPath))
 	{
 		memset(f, 0, sizeof *f);
 		ap_content_cortex_load_error = CTR_CT_MANAGER_PATH_TOO_LONG + 1;
@@ -375,7 +377,10 @@ static int AP_ContentScanCortex(void)
 		memset(f, 0, sizeof *f);
 		return 0;
 	}
-	if (!AP_ContentCapabilitiesHold(AP_CONTENT_CAP_ALL, &report, why, sizeof why))
+	// A merged mode build (CV1), like a package with `relic_files`: the main
+	// pair holds every mode but the Relic Race, the relic pair holds that one.
+	if (!AP_ContentCapabilitiesHoldMasked(AP_CONTENT_CAP_ALL, AP_CONTENT_CAP_ALL & ~AP_CONTENT_RELIC_PAIR_CAPS,
+	                                      &report, why, sizeof why))
 	{
 		if (AP_ContentArcadeGridMissing(&report))
 			ap_content_cortex_load_error = CTR_CT_MANAGER_RACE_GRID_UNSUPPORTED + 1;
@@ -384,7 +389,26 @@ static int AP_ContentScanCortex(void)
 		memset(f, 0, sizeof *f);
 		return 0;
 	}
+	error[0] = '\0';
+	if (!CustomContentVerify_Files(f->relicLevPath, f->relicVrmPath, &relicReport, error, sizeof error) ||
+	    strcmp(relicReport.levSha256, CTR_CFG_CORTEX_RELIC_LEV_SHA256) ||
+	    strcmp(relicReport.vrmSha256, CTR_CFG_CORTEX_RELIC_VRM_SHA256))
+	{
+		snprintf(line, sizeof line, "[CustomTracks] content plan refused Cortex Vortex: the bundled Relic Race files are "
+		         "missing or not the pinned pair (%.160s)\n", error[0] ? error : "hash mismatch");
+		AP_AppendLog(line);
+		memset(f, 0, sizeof *f);
+		return 0;
+	}
+	if (!AP_ContentCapabilitiesHoldMasked(AP_CONTENT_CAP_ALL, AP_CONTENT_RELIC_PAIR_CAPS, &relicReport, why, sizeof why))
+	{
+		snprintf(line, sizeof line, "[CustomTracks] content plan refused Cortex Vortex Relic Race files: %s\n", why);
+		AP_AppendLog(line);
+		memset(f, 0, sizeof *f);
+		return 0;
+	}
 	f->measured = report.measured;
+	f->relicMeasured = relicReport.measured;
 	return 1;
 }
 
@@ -499,6 +523,8 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 	{
 		const struct CustomContentMeasurements *m;
 		struct CustomTrackSeedDescriptor d;
+		int serveRelic;
+		const char *servedLev, *servedVrm;
 		// Hash and measure again: a file swapped since connect is refused here.
 		if (!(ap_content_cortex_ready = AP_ContentScanCortex()))
 		{
@@ -506,8 +532,15 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 			ap_state_gen++;
 			return 0;
 		}
-		m = &ap_content_cortex_files.measured;
-		if (!CustomTrack_UseContentFiles(ap_content_cortex_files.levPath, ap_content_cortex_files.vrmPath, "CORTEX VORTEX"))
+		// Merged mode build (CV1): a Relic Race serves the relic pair, every
+		// other mode the main pair. The scan above verified both.
+		serveRelic = race->mode == AP_CONTENT_MODE_RELIC;
+		m = serveRelic ? &ap_content_cortex_files.relicMeasured : &ap_content_cortex_files.measured;
+		servedLev = serveRelic ? CTR_CFG_CORTEX_RELIC_LEV_SHA256 : CTR_CFG_CORTEX_LEV_SHA256;
+		servedVrm = serveRelic ? CTR_CFG_CORTEX_RELIC_VRM_SHA256 : CTR_CFG_CORTEX_VRM_SHA256;
+		if (!CustomTrack_UseContentFiles(serveRelic ? ap_content_cortex_files.relicLevPath : ap_content_cortex_files.levPath,
+		                                 serveRelic ? ap_content_cortex_files.relicVrmPath : ap_content_cortex_files.vrmPath,
+		                                 "CORTEX VORTEX"))
 			return AP_ContentLoadRefused(1, -1, CTR_CT_MANAGER_LOAD_FAILED);
 		memset(&d, 0, sizeof d);
 		d.standalone = 1; d.laps = race->laps; d.hostLevelID = race->hostLevelID;
@@ -520,10 +553,10 @@ static int AP_ContentArmTrack(int cortex, int packageIndex, struct CustomTrackRa
 		// A Relic Race runs alone: the loader's opponent rule does not apply
 		// (A6-23 F1). Trophy, CTR and cup legs keep it.
 		d.soloRace = race->mode == AP_CONTENT_MODE_RELIC;
-		snprintf(d.levSha256, sizeof d.levSha256, "%s", CTR_CFG_CORTEX_LEV_SHA256);
-		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", CTR_CFG_CORTEX_VRM_SHA256);
-		snprintf(race->levSha256, sizeof race->levSha256, "%s", CTR_CFG_CORTEX_LEV_SHA256);
-		snprintf(race->vrmSha256, sizeof race->vrmSha256, "%s", CTR_CFG_CORTEX_VRM_SHA256);
+		snprintf(d.levSha256, sizeof d.levSha256, "%s", servedLev);
+		snprintf(d.vrmSha256, sizeof d.vrmSha256, "%s", servedVrm);
+		snprintf(race->levSha256, sizeof race->levSha256, "%s", servedLev);
+		snprintf(race->vrmSha256, sizeof race->vrmSha256, "%s", servedVrm);
 		if (!CustomTrack_ApplySeedDescriptor(&d))
 			return AP_ContentLoadRefused(1, -1, AP_ContentDescriptorRefusal(&d));
 		return 1;
