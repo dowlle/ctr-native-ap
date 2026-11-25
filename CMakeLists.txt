@@ -256,13 +256,15 @@ endif()
 if(CTR_AP)
     target_compile_definitions(ctr_native PRIVATE CTR_AP)
     set(komodo_moe_asset "${CMAKE_CURRENT_SOURCE_DIR}/assets/looks/komodo-moe/komodo_moe_hi.bin")
+    set(look_definitions "${CMAKE_CURRENT_SOURCE_DIR}/ap/ap_look_logic.h")
     set(komodo_moe_generator "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedKomodoMoe.cmake")
     set(komodo_moe_header "${CMAKE_CURRENT_BINARY_DIR}/ap_komodo_moe_embedded.h")
     add_custom_command(
         OUTPUT "${komodo_moe_header}"
         COMMAND "${CMAKE_COMMAND}" "-DINPUT=${komodo_moe_asset}" "-DOUTPUT=${komodo_moe_header}"
+                "-DLOOK_DEFINITIONS=${look_definitions}"
                 -P "${komodo_moe_generator}"
-        DEPENDS "${komodo_moe_asset}" "${komodo_moe_generator}"
+        DEPENDS "${komodo_moe_asset}" "${look_definitions}" "${komodo_moe_generator}"
         VERBATIM
     )
     target_sources(ctr_native PRIVATE "${komodo_moe_header}")

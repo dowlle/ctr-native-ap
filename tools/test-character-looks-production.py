@@ -219,6 +219,12 @@ int main(int argc, char **argv) {
     AP_LooksReceiveNew(203); AP_LooksReceiveOwned(214);
     assert(g_config.lookJoe == 0);
     puts("PASS: production loader, relocation, newest wins, replay and OPTIONS row");
+  } else if (strcmp(argv[2], "reject") == 0) {
+    AP_LooksReceiveNew(215);
+    int before = logs;
+    assert(AP_LooksModelFor("joe", &joe) == &joe);
+    assert(logs == before + 1 && strstr(last_log, "the racer keeps the original model") != NULL);
+    assert(AP_LooksModelFor("joe", &joe) == &joe && logs == before + 1);
   } else {
     /* Missing, altered or short file: use the embedded model. */
     AP_LooksReceiveNew(215);
@@ -264,15 +270,23 @@ with tempfile.TemporaryDirectory(prefix="ctr-character-looks-") as tmp:
     tmp = Path(tmp)
     bundled = root / "assets" / "looks" / "komodo-moe" / "komodo_moe_hi.bin"
     header = tmp / "ap_komodo_moe_embedded.h"
-    subprocess.run(["cmake", f"-DINPUT={bundled}", f"-DOUTPUT={header}", "-P",
-                    str(root / "cmake/EmbedKomodoMoe.cmake")], check=True)
-    initializer = header.read_text().split("{", 1)[1].split("}", 1)[0]
+
+    def generate_header(asset):
+        return subprocess.run(["cmake", f"-DLOOK_DEFINITIONS={root / 'ap/ap_look_logic.h'}",
+                               f"-DOUTPUT={header}", f"-DINPUT={asset}", "-P", str(root / "cmake/EmbedKomodoMoe.cmake")],
+                              text=True, capture_output=True)
+
+    result = generate_header(bundled)
+    assert result.returncode == 0, result.stderr
+    generated = header.read_text()
+    initializer = generated.split("{", 1)[1].split("}", 1)[0]
     assert bytes(int(token, 16) for token in initializer.rstrip().rstrip(",").split(",")) == bundled.read_bytes()
     src, exe = tmp / "looks.c", tmp / "looks"
     src.write_text(fixture)
-    subprocess.run(["cc", "-m32", "-std=c11", "-DCTR_AP", "-Wall", "-Wextra", "-Wno-unused-function",
-                    "-I", str(tmp), "-I", str(root / "ap"), "-I", str(root / "include"),
-                    str(src), "-o", str(exe)], check=True)
+    compile_loader = ["cc", "-m32", "-std=c11", "-DCTR_AP", "-Wall", "-Wextra", "-Wno-unused-function",
+                      "-I", str(tmp), "-I", str(root / "ap"), "-I", str(root / "include"),
+                      str(src), "-o", str(exe)]
+    subprocess.run(compile_loader, check=True)
 
     def check_source(asset_dir, expected, case):
         result = subprocess.run([str(exe), str(asset_dir), expected], check=True, text=True, capture_output=True)
@@ -289,10 +303,24 @@ with tempfile.TemporaryDirectory(prefix="ctr-character-looks-") as tmp:
     data[200] ^= 1
     candidate.write_bytes(data)
     check_source(asset_dir, "embedded fallback", "altered file")
+    result = generate_header(candidate)
+    assert result.returncode != 0 and "model size or SHA-256 differs" in result.stderr, result.stderr
+    assert header.read_text() == generated
+    print("PASS: generator rejects altered source bytes")
     candidate.write_bytes(bundled.read_bytes()[:-4])
     check_source(asset_dir, "embedded fallback", "short file")
     candidate.write_bytes(bundled.read_bytes() + b"\x00")
     check_source(asset_dir, "embedded fallback", "oversized file")
+
+    # Tamper with the generated initializer after generation to exercise the
+    # runtime pin even though the generator rejects a bad source file.
+    first_byte = f"0x{data[0]:02x}"
+    corrupt_byte = f"0x{data[0] ^ 1:02x}"
+    header.write_text(generated.replace(first_byte, corrupt_byte, 1))
+    subprocess.run(compile_loader, check=True)
+    result = subprocess.run([str(exe), str(tmp / "no-assets"), "reject"], check=True, text=True, capture_output=True)
+    assert "SHA-256 does not match the pin" in result.stdout, result.stdout
+    print("PASS: runtime rejects corrupt embedded bytes and keeps original Joe")
 
     src = tmp / "parser.cpp"
     src.write_text(parser)
