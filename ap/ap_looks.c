@@ -46,7 +46,7 @@ static struct
 // found model stays the racer's timing source. Driving code reads the frame
 // counts of the driver's animations to time wall-hit, spin and landing
 // recovery (VehFrameInst_GetNumAnimFrames); a static look has none, so those
-// counts come from the original model instead (review round 1). A small ring
+// counts come from the original model instead. A small ring
 // is enough: one level holds one copy of each racer's model, plus the hub or
 // race just left while it unloads.
 #define AP_LOOK_MODEL_SLOTS 8
@@ -242,7 +242,7 @@ struct Model *AP_LooksModelFor(const char *searchName, struct Model *found)
 
 // Quick load (F8) restores instance memory saved by an earlier frame, maybe by
 // an earlier run of the client, so a driver's model pointer can name a look
-// model of that run (review round 2). Quick load only restores into the same
+// model of that run. Quick load only restores into the same
 // live race, so each racing driver is born again by name here: the look in
 // effect now, or the original model. Ghosts are not re-bound.
 void AP_LooksRebindDrivers(void)
@@ -314,7 +314,7 @@ void AP_LooksRowStep(int *valuePtr, int dir)
 		return;
 	// Write only when the shown value moves, so stepping a row that shows
 	// ORIGINAL because this seed has not delivered the saved look keeps the
-	// saved look for the next seed (review round 1).
+	// saved look for the next seed.
 	next = AP_LookRowStep(ap_looks_owned, racer, *valuePtr, dir);
 	if (next != AP_LookRowValue(ap_looks_owned, racer, *valuePtr))
 		*valuePtr = next;
