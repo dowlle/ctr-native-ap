@@ -39,7 +39,11 @@ def paired_checkout(apworld: Path, checkout: Path, ref: str):
         if packed != archive_members(rebuilt):
             raise ValueError(f"packed apworld differs from the repack of {commit}")
         if (root / "worlds/ctr/tools/solo").is_dir():
-            misplaced = [name for name in packed if name.startswith(("ctr/solo/", "ctr/tools/solo/"))]
+            misplaced = [
+                name for name in packed
+                if name.startswith("ctr/tools/solo/")
+                or (name.startswith("ctr/solo/") and not name.startswith("ctr/solo/presets/"))
+            ]
             if misplaced:
                 raise ValueError(f"packed apworld includes standalone Solo sources: {', '.join(misplaced)}")
         print(f"Apworld {commit}: all {len(packed)} packed files match the source")
@@ -52,16 +56,17 @@ def solo_source_files(checkout: Path) -> tuple[Path, dict[str, Path]]:
     if not solo.exists():
         # Older paired tags and native-only rehearsals still use this layout.
         solo = world / "solo"
+    presets = world / "solo" / "presets"
 
     files = {
         "ctr_solo.py": solo / "ctr_solo.py",
         "options-overlay.json": solo / "options-overlay.json",
         "LICENSES/ctr-apworld-LICENSE.txt": world / "LICENSE",
     }
-    if not (solo / "presets" / "presets.json").is_file():
-        raise FileNotFoundError(f"missing Solo preset index in {solo}")
-    files.update((path.relative_to(solo).as_posix(), path)
-                 for path in sorted((solo / "presets").rglob("*")) if path.is_file())
+    if not (presets / "presets.json").is_file():
+        raise FileNotFoundError(f"missing Solo preset index in {presets}")
+    files.update((f"presets/{path.relative_to(presets).as_posix()}", path)
+                 for path in sorted(presets.rglob("*")) if path.is_file())
     for path in (*files.values(), solo / "trim_core.py"):
         if not path.is_file():
             raise FileNotFoundError(f"missing Solo source file: {path}")

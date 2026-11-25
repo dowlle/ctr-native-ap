@@ -231,10 +231,12 @@ class SoloRuntimeReleaseTests(unittest.TestCase):
         checkout = self.root / layout.replace("/", "-")
         world = checkout / "worlds" / "ctr"
         solo = world / layout
-        (solo / "presets").mkdir(parents=True)
-        for name in ("ctr_solo.py", "options-overlay.json", "presets/presets.json",
-                     "presets/standard.yaml", "trim_core.py"):
+        solo.mkdir(parents=True)
+        for name in ("ctr_solo.py", "options-overlay.json", "trim_core.py"):
             (solo / name).write_bytes(name.encode())
+        (world / "solo" / "presets").mkdir(parents=True, exist_ok=True)
+        for name in ("presets/presets.json", "presets/standard.yaml"):
+            (world / "solo" / name).write_bytes(name.encode())
         (world / "LICENSE").write_bytes(b"LICENSES/ctr-apworld-LICENSE.txt")
         return checkout
 

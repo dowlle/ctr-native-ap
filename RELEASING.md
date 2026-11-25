@@ -251,8 +251,9 @@ and upload steps are scoped to a complete two-platform release in section 7.
       pass `--apworld ctr.apworld --apworld-source <checkout> --apworld-commit <ref>`.
       Use the exact apworld commit or paired tag used to pack that archive.
       The builder compares the archive members against a repack of that Git tree.
-      The builder reads the wrapper, core trimmer, overlay and presets from
-      `worlds/ctr/tools/solo/` in that checkout, and uses the pins in
+      The builder reads the wrapper, core trimmer and overlay from
+      `worlds/ctr/tools/solo/`, and the shared YAML presets from
+      `worlds/ctr/solo/presets/` in that checkout. It uses the pins in
       `tools/solo/runtime-lock.json`. The
       assembler puts it inside both client archives, so the signed manifest
       covers it. Before the tag, add both new archives to the VirusTotal and
