@@ -14,17 +14,17 @@
 //   * the YAML option `character_looks` lists the looks allowed in the pool.
 //
 // The table below is the one place a look is declared. Adding a look is one
-// row here, its files under assets/looks/<folder>/, one minted apworld item and
+// row here, a player-supplied pack, one minted apworld item and
 // one key in the apworld option. A look for a racer that has no OPTIONS row yet
 // also needs that row (see AP_LookConfigValue in ap/ap_looks.c). The table is
 // shaped so a later custom character (its own model, name, icon, voice) can
-// reuse the asset folder, the pin and the loader.
+// reuse the asset folder and the model hook.
 //
 // Everything in this header is freestanding (no engine types), so the host
-// harness tools/test-character-looks.c checks it directly against the bundled
-// file.
+// harness tools/test-character-looks.c checks it directly.
 
 #include <stddef.h>
+#include <ctr_character_looks.h>
 
 #define AP_LOOK_RACER_JOE 11 // engine character id of Komodo Joe
 
@@ -39,22 +39,18 @@ typedef struct
 	int itemIndex;          // native item index (AP id - 35010000), also the
 	                        // stable value the OPTIONS row saves
 	const char *assetRel;   // file under the asset dir
-	const char *sha256;     // pin of the exact bundled bytes
 	unsigned size;          // exact byte size
 	int triangles;          // expected triangle count, a plausibility check
 } AP_LookDef;
 
-// Komodo Moe: Lockheart's model, cut unchanged from BIGFILE entry 256 of his
-// Komodo_Moe.xdelta patch (JL1, 2026-11-23). Credited in THIRD_PARTY_NOTICES.md
-// and the credits roll.
+// Reserved on the wire even while looks are parked.
 #define AP_LOOK_KOMODO_MOE_ITEM_INDEX 215
-#define AP_LOOK_KOMODO_MOE_SHA256 "45634686aaa0ede40a2fe7025911ba7cf89199212057d689bc2289795fb20724"
 #define AP_LOOK_KOMODO_MOE_SIZE 15724u
 #define AP_LOOK_KOMODO_MOE_REL "looks/komodo-moe/komodo_moe_hi.bin"
 
 static const AP_LookDef AP_LOOKS[] = {
 	{"Joe Mama", "KOMODO MOE", AP_LOOK_RACER_JOE, AP_LOOK_KOMODO_MOE_ITEM_INDEX, AP_LOOK_KOMODO_MOE_REL,
-	 AP_LOOK_KOMODO_MOE_SHA256, AP_LOOK_KOMODO_MOE_SIZE, 717},
+	 AP_LOOK_KOMODO_MOE_SIZE, 717},
 };
 #define AP_LOOK_COUNT ((int)(sizeof(AP_LOOKS) / sizeof(AP_LOOKS[0])))
 
