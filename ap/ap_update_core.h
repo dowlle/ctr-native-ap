@@ -23,7 +23,9 @@
 // The archive is then validated member by member, and the install set is
 // taken out of it: the client executable, ctr.apworld, the files under
 // assets/tracks/cortex-vortex/ (the custom track the release ships, whose
-// hashes the client checks at load, so it must move with the executable) and
+// hashes the client checks at load, so it must move with the executable), the
+// files one folder deep under assets/looks/ (character looks, pinned the same
+// way) and
 // the whole solo-runtime/ folder (#89: the bundled Python runtime, replaced as
 // one folder so no file of an older runtime stays behind). Nothing else in
 // the archive is installed: config.ini, ap-config.txt, the rest of assets/,

@@ -73,6 +73,10 @@ const struct CustomTrackResidentSource *CustomTrack_ResidentSource(int levelID)
 
 int CustomTrack_ResidentAssetsMixed(void) { return mixedAssets; }
 uint64_t ap_content_plan_room_identity(void) { return roomIdentity; }
+static int lookRebinds;
+void AP_LooksRebindDrivers(void) { lookRebinds++; }
+static int ghostLook;
+int AP_LooksGhostWearsLook(void) { return ghostLook; }
 
 static void save(void)
 {
@@ -83,11 +87,14 @@ static void save(void)
 static void loadExpect(const char *message)
 {
 	const int before = restored;
+	const int rebindsBefore = lookRebinds;
 	refusal[0] = '\0';
 	NativeSaveState_RequestLoad();
 	NativeSaveState_BeginFrame();
 	NativeSaveState_DrawRefusal(NULL);
 	assert(restored == before + (message == NULL));
+	// Character looks: every successful restore re-binds driver models.
+	assert(lookRebinds == rebindsBefore + (message == NULL));
 	assert(strcmp(refusal, message ? message : "") == 0);
 }
 
@@ -213,6 +220,15 @@ int main(void)
 	loadExpect("STATE NOT LOADED: MIXED TRACK");
 	mixedAssets = 0;
 	loadExpect(NULL); // F5 on the mixed load preserved the valid save.
+
+	// Character looks: no quick save while a ghost wears a look.
+	const int beforeGhost = captured;
+	ghostLook = 1;
+	save();
+	assert(captured == beforeGhost);
+	ghostLook = 0;
+	save();
+	assert(captured == beforeGhost + 1);
 
 	tracker.levelID = 18;
 	tracker.gameMode1 = BATTLE_MODE | POINT_LIMIT;

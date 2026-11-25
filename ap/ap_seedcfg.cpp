@@ -1701,6 +1701,18 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 	                                                    "pad_approach_hints"};
 	// Trap Display (ruled 2026-11-06) adds two integer fields the same way.
 	static const char *const kAdditiveIntFields[] = {"trap_display", "trap_display_salt"};
+	// Character looks (JL2) add one list of item names, present only when the
+	// YAML allows a look. Native reads nothing from it: looks are driven by
+	// received items. It is metadata for trackers and the [AP CFG] log.
+	static const char *const kAdditiveListFields[] = {"character_looks"};
+	auto additive_list = [](const nlohmann::json &v) {
+		if (!v.is_array())
+			return false;
+		for (const auto &e : v)
+			if (!e.is_string())
+				return false;
+		return true;
+	};
 	bool strip_additive = false;
 	if (j.is_object() && j.contains("content_plan") && j.contains("ctr_options") && j["ctr_options"].is_object())
 	{
@@ -1708,6 +1720,8 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 			strip_additive |= j["ctr_options"].contains(key) && j["ctr_options"][key].is_boolean();
 		for (const char *key : kAdditiveIntFields)
 			strip_additive |= j["ctr_options"].contains(key) && j["ctr_options"][key].is_number_integer();
+		for (const char *key : kAdditiveListFields)
+			strip_additive |= j["ctr_options"].contains(key) && additive_list(j["ctr_options"][key]);
 	}
 	int content_result;
 	if (strip_additive)
@@ -1718,6 +1732,9 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 				content_input["ctr_options"].erase(key);
 		for (const char *key : kAdditiveIntFields)
 			if (content_input["ctr_options"].contains(key) && content_input["ctr_options"][key].is_number_integer())
+				content_input["ctr_options"].erase(key);
+		for (const char *key : kAdditiveListFields)
+			if (content_input["ctr_options"].contains(key) && additive_list(content_input["ctr_options"][key]))
 				content_input["ctr_options"].erase(key);
 		// The stripped flag still has to agree with the plan's reveal items.
 		content_plan::envelope_spoiler_items =
@@ -1740,6 +1757,9 @@ void ap_seedcfg_parse_json(const nlohmann::json &j)
 				           ctr_cfg.shop_hints_progression_only);
 			if (ctr_cfg.pad_approach_hints)
 				ap_cfg_log("[AP CFG] pad_approach_hints=1 -> approaching an open pad hints its open checks once\n");
+			if (j["ctr_options"].contains("character_looks") && j["ctr_options"]["character_looks"].is_array())
+				ap_cfg_log("[AP CFG] character_looks: %d look(s) allowed in the item pool\n",
+				           (int)j["ctr_options"]["character_looks"].size());
 			{
 				// Display only, so a value this build does not know shows traps
 				// as traps instead of refusing the room.

@@ -19,23 +19,33 @@ int VehFrameInst_GetStartFrame(int animIndex, int numFrames)
 	}
 }
 
+#ifdef CTR_AP
+struct Model *AP_LooksTimingModel(struct Model *m);
+#endif
+
 // NOTE(aalhendi): ASM-verified NTSC-U 926 0x8005b0f4-0x8005b178.
 u32 VehFrameInst_GetNumAnimFrames(struct Instance *inst, int animIndex)
 {
-	if (inst->model == NULL)
+	struct Model *model = inst->model;
+#ifdef CTR_AP
+	// Character looks (JL2): a static look model times its animations by the
+	// racer's own model, so recovery and landing timings do not change.
+	model = AP_LooksTimingModel(model);
+#endif
+	if (model == NULL)
 	{
 		return 0;
 	}
-	if (inst->model->numHeaders <= 0)
+	if (model->numHeaders <= 0)
 	{
 		return 0;
 	}
-	if (inst->model->headers == NULL)
+	if (model->headers == NULL)
 	{
 		return 0;
 	}
 
-	struct ModelHeader *mh = inst->model->headers;
+	struct ModelHeader *mh = model->headers;
 
 	if (animIndex >= mh->numAnimations)
 	{

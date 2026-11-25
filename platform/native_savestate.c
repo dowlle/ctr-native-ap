@@ -13,6 +13,7 @@
 #endif
 #ifdef CTR_AP
 #include "../ap/ap_content_plan.h"
+#include "../ap/ap_looks.h"
 #endif
 
 #include <errno.h>
@@ -234,6 +235,13 @@ internal s32 NativeSaveState_SaveQuick(void)
 		return 0;
 	}
 #endif
+#ifdef CTR_AP
+	if (AP_LooksGhostWearsLook())
+	{
+		Platform_Log("[CTR State] quick save unavailable while a ghost wears a character look\n");
+		return 0;
+	}
+#endif
 	if (!NativeSaveState_PrepareDir())
 	{
 		Platform_Log("[CTR State] failed to create quick state directory: %s\n", NATIVE_SAVESTATE_DIR);
@@ -299,6 +307,9 @@ internal s32 NativeSaveState_LoadQuick(void)
 		return 0;
 	}
 
+#ifdef CTR_AP
+	AP_LooksRebindDrivers(); // JL2: no restored pointer may name an old look model
+#endif
 	Platform_Log("[CTR State] loaded quick state checksum=0x%08x: %s\n", info.checksum, NATIVE_SAVESTATE_QUICK_PATH);
 	return 1;
 }

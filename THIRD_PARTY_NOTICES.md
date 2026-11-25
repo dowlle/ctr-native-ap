@@ -292,6 +292,24 @@ VRM SHA-256: `4131444b9d1d53971befcfd11349efceaf887c20b795c8890fdcb2c36bdff07d`
 
 SCA SHA-256: `ddde81cf1be8042400c717edeeded0d8727e3bb8ba24f0100201708372ef8b1c`
 
+## Komodo Moe driver model (AP build only)
+
+Path: `assets/looks/komodo-moe/komodo_moe_hi.bin`
+
+The Komodo Moe driver model was created by **Lockheart**. This file is his
+converted model, cut unchanged from the driver model entry his Komodo Moe
+patch writes, and is redistributed unchanged with his permission (2026-11-23:
+"everything I've made is open to the community"). In CTR AP it is the "Joe
+Mama" character look for Komodo Joe. It is not relicensed by this project.
+
+AP executables also embed these same bytes as a fallback. The model source is
+the file at the path above.
+
+License: author permission for redistribution inside CTR AP as a character
+look. No broader license is claimed.
+
+SHA-256: `45634686aaa0ede40a2fe7025911ba7cf89199212057d689bc2289795fb20724`
+
 ## CTR ModSDK Retro-Fueled mechanics and Blue Fire palette (AP build only)
 
 Paths: `ap/ap_blue_fire.c`, `ap/ap_capability.c`,

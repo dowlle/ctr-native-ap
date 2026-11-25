@@ -168,7 +168,7 @@ int main(void)
 			"disable_split_screen_lod", NULL};
 		static const char *const gameplay[] = {
 			"skip_intro", "skip_hints", "race_type_selector", "skip_podium", "skip_cutscenes",
-			"boss_music", "ai_difficulty", "mute_when_unfocused", "device_aware_labels", "update_check", NULL};
+			"boss_music", "look_joe", "ai_difficulty", "mute_when_unfocused", "device_aware_labels", "update_check", NULL};
 		static const char *const controls[] = {NULL};
 		static const char *const connection[] = {"uri", "slot", "password", NULL};
 		static const char *const archipelago[] = {
