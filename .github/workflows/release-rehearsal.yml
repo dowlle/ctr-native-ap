@@ -39,9 +39,42 @@ jobs:
       mode: rehearsal
       version: 0.0.0-rehearsal
       rehearsal_label: ${{ (matrix.branch == 'main' || github.base_ref == 'main') && 'main' || 'dev' }}
-      native_ref: ${{ github.event_name == 'pull_request' && github.sha || matrix.branch }}
+      native_ref: ${{ github.sha }}
       apworld_branch: ${{ inputs.apworld_branch || 'main' }}
       apworld_companion_branch: ${{ github.event_name == 'pull_request' && github.head_ref || inputs.apworld_branch || '' }}
       apworld_companion_required: ${{ github.event_name == 'workflow_dispatch' && inputs.apworld_branch != '' }}
       pr_number: ${{ github.event_name == 'pull_request' && format('{0}', github.event.pull_request.number) || '' }}
       pr_head_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+
+  smoke-solo:
+    name: Bundled Play Solo / ${{ matrix.platform }}
+    needs: rehearse
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+            archive: ctr-archipelago-v0.0.0-rehearsal-windows-x86.zip
+            interpreter: python/python.exe
+          - platform: linux
+            os: ubuntu-24.04
+            archive: ctr-archipelago-v0.0.0-rehearsal-linux-x86.tar.gz
+            interpreter: python/bin/python3.12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ctr-release-rehearsal-${{ (github.ref_name == 'main' || github.base_ref == 'main') && 'main' || 'dev' }}
+          path: rehearsal
+      - name: Generate and serve a Quick room with the bundled interpreter
+        env:
+          ARCHIVE: ${{ matrix.archive }}
+          INTERPRETER: ${{ matrix.interpreter }}
+        shell: bash
+        run: python tools/release/smoke-solo-runtime.py "rehearsal/$ARCHIVE" "$INTERPRETER"

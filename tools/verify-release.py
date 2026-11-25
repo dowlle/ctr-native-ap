@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import shutil
+import string
 import subprocess
 import sys
 import tarfile
@@ -26,6 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / "release"))
 
 import release_policy
+from solo_source import paired_checkout, solo_source_files
 from release_policy import (
     MANIFEST_NAME,
     PLACEHOLDER_PREFIX,
@@ -116,6 +118,7 @@ def verify_archive_hashes(release: Path, artifacts: dict[str, str]) -> None:
 
 
 SOLO_RUNTIME_MANIFEST = "solo-runtime/RUNTIME.txt"
+ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
 
 
 def _runtime_value(text: str, key: str) -> str | None:
@@ -139,9 +142,17 @@ def runtime_tree_from_archive(archive: Path) -> tuple[str, dict[str, str]]:
     """Recompute RUNTIME.txt's tree sha256 from the archive's solo-runtime/
     members. Refuses links, special files, duplicate paths and (Linux) an
     interpreter without execute permission. Returns the digest and the
-    per-file hashes."""
+    per-file hashes. The updater also requires case-insensitive unique
+    member names across the whole client archive."""
     files: dict[str, str] = {}
+    seen: set[str] = set()
     prefix = "solo-runtime/"
+
+    def check_name(name: str) -> None:
+        key = name.translate(ASCII_LOWER)
+        if key in seen:
+            fail(f"{archive.name}: duplicate archive member (case-insensitive): {name}")
+        seen.add(key)
 
     def add(rel: str, data: bytes) -> None:
         if rel in files:
@@ -151,6 +162,7 @@ def runtime_tree_from_archive(archive: Path) -> tuple[str, dict[str, str]]:
     if archive.name.endswith(".zip"):
         with zipfile.ZipFile(archive) as bundle:
             for info in bundle.infolist():
+                check_name(info.filename)
                 rel = info.filename.split("/", 1)[1] if "/" in info.filename else ""
                 if not rel.startswith(prefix) or info.is_dir():
                     continue
@@ -161,6 +173,7 @@ def runtime_tree_from_archive(archive: Path) -> tuple[str, dict[str, str]]:
     else:
         with tarfile.open(archive) as bundle:
             for member in bundle.getmembers():
+                check_name(member.name.rstrip("/") if member.isdir() else member.name)
                 rel = member.name.split("/", 1)[1] if "/" in member.name else ""
                 if not rel.startswith(prefix) or member.isdir():
                     continue
@@ -194,7 +207,7 @@ def read_archive_member(archive: Path, suffix: str) -> bytes | None:
         return stream.read() if stream else None
 
 
-def verify_solo_runtime(release: Path, tag: str) -> None:
+def verify_solo_runtime(release: Path, tag: str, expected_sources: dict[str, str] | None = None) -> None:
     """Each client archive carries solo-runtime/RUNTIME.txt (#89), built for the
     exact ctr.apworld asset of this release, with its interpreter inside."""
     apworld = sha256(release / "ctr.apworld")
@@ -216,13 +229,21 @@ def verify_solo_runtime(release: Path, tag: str) -> None:
             fail(f"{archive.name}: solo runtime files differ from its RUNTIME.txt (tree sha256)")
         if _runtime_value(manifest, "ctr_solo.py sha256") != files.get("ctr_solo.py"):
             fail(f"{archive.name}: solo runtime ctr_solo.py differs from its RUNTIME.txt")
+        if expected_sources:
+            source_names = expected_sources.keys() | {name for name in files if name.startswith("presets/")}
+            for name in sorted(source_names):
+                if files.get(name) != expected_sources.get(name):
+                    fail(f"{archive.name}: solo runtime {name} differs from the paired apworld checkout")
         bundled = read_archive_member(archive, "ctr.apworld")
         if bundled is None or hashlib.sha256(bundled).hexdigest() != apworld:
             fail(f"{archive.name}: bundled ctr.apworld differs from the ctr.apworld asset")
 
 
 def verify(release: Path, version: str, public_key: Path, pre_sign: bool,
-           require_solo_runtime: bool = False) -> None:
+           require_solo_runtime: bool = False, apworld_source: Path | None = None,
+           apworld_commit: str | None = None) -> None:
+    if (apworld_source is None) != (apworld_commit is None):
+        fail("--apworld-source and --apworld-commit must be used together")
     if not release.is_dir():
         fail(f"release directory does not exist: {release}")
     tag = version if version.startswith("v") else f"v{version}"
@@ -250,7 +271,11 @@ def verify(release: Path, version: str, public_key: Path, pre_sign: bool,
 
     verify_archive_hashes(release, artifacts)
     verify_standard_sidecars(release, tag)
-    if require_solo_runtime or solo_runtime_required(tag):
+    if apworld_source is not None and apworld_commit is not None:
+        with paired_checkout(release / "ctr.apworld", apworld_source, apworld_commit) as checkout:
+            _, sources = solo_source_files(checkout)
+            verify_solo_runtime(release, tag, {name: sha256(path) for name, path in sources.items()})
+    elif require_solo_runtime or solo_runtime_required(tag):
         verify_solo_runtime(release, tag)
     release_policy.verify_authoring_sidecars(release, tag)
 
@@ -282,6 +307,15 @@ def parser() -> argparse.ArgumentParser:
         help="require the solo runtime (#89) for a release before 0.3.0 too; from 0.3.0 on it is always required",
     )
     result.add_argument(
+        "--apworld-source",
+        type=Path,
+        help="also verify the bundled Solo files against the paired apworld checkout",
+    )
+    result.add_argument(
+        "--apworld-commit",
+        help="exact apworld commit or paired tag used to pack the release world",
+    )
+    result.add_argument(
         "--public-key",
         type=Path,
         default=Path(__file__).resolve().parents[1] / PUBLIC_KEY_NAME,
@@ -293,8 +327,9 @@ def main() -> int:
     args = parser().parse_args()
     try:
         verify(args.release_directory, args.version, args.public_key, args.pre_sign,
-               args.require_solo_runtime)
-    except (OSError, PolicyError, zipfile.BadZipFile, tarfile.TarError) as error:
+               args.require_solo_runtime, args.apworld_source, args.apworld_commit)
+    except (OSError, PolicyError, ValueError, subprocess.CalledProcessError,
+            zipfile.BadZipFile, tarfile.TarError) as error:
         print(f"release verification failed: {error}", file=sys.stderr)
         return 1
     return 0
