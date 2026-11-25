@@ -28,6 +28,8 @@ static ctr_content_sanity sanity;
 static int active=1;
 static int64_t checked_code;
 static int64_t absent_code;
+static int64_t pending_sanity_code;
+static int cup_sanity_route;
 int ap_net_location_exists(long long code) { return code>0 && code!=absent_code; }
 int ap_net_location_checked(long long code) { return code == checked_code; }
 static int shared_pending, cup_pickups_pending;
@@ -80,6 +82,12 @@ int AP_GateCount(int index) { (void)index; return 0; }
 int ap_content_plan_check_boost(int64_t code) { (void)code; return 0; }
 const int64_t *ap_content_plan_tracker_locations(int node, int *count) {
     static const int64_t codes[] = {103, 106, 108, 111, 112};
+    static int64_t sanity_codes[] = {103, 0};
+    if (pending_sanity_code && (node == 7 || node == 100)) {
+        sanity_codes[1] = pending_sanity_code;
+        *count = node == 7 || cup_sanity_route ? 2 : 1;
+        return sanity_codes;
+    }
     *count = node == 7 ? (int)(sizeof codes / sizeof codes[0]) : node == 100 ? 1 : 0;
     return codes;
 }
@@ -239,6 +247,34 @@ static void partial_and_pickup_tests(void) {
     assert(AP_TrackerCupBoxesInLogic(&pads[1]) == 0);
     checked_code = 0;
     assert(AP_TrackerCupBoxesInLogic(&pads[1]) == 1);
+
+    /* R2 Coco Park: the standalone pad is locked, the shared race rewards
+     * are done, and the only remaining in-logic check is a crate or fruit. */
+    strcpy(pads[1].room_title, "PURPLE GEM CUP");
+    pads[1].legs[2].track_pad = -1;
+    pads[1].legs[0].track_pad = 7;
+    pads[0].wumpa_location = 0;
+    checked_code = 103;
+    for (int family = 0; family < 3; ++family) {
+        pending_sanity_code = sanity.locations[family][31] = 118 + 3 * family;
+        cup_sanity_route = 1;
+        pads[1].trophy_location = 115;
+        assert(!AP_ContentPadOpen(&pads[0]));
+        total = AP_TrackerNodeChecks(&n);
+        expect(&total, 2, 1, 1, 0, 0);
+        assert(AP_TrackerCheckNodeState(total, 0) == AP_TRACKER_NODE_IN);
+        strcpy(route, "THIS PAD'S RACE MODES");
+        AP_TrackerCupRoute(&pads[0], route, sizeof route);
+        assert(!strcmp(route, "SOME SHARED CHECKS VIA PURPLE GEM CUP, RACE 1"));
+        cup_sanity_route = 0;
+        AP_TrackerCupRoute(&pads[0], route, sizeof route);
+        assert(!strcmp(route, "SHARED CHECKS IN LOGIC VIA ANOTHER RACE"));
+        sanity.locations[family][31] = 0;
+    }
+    pending_sanity_code = 0;
+    strcpy(route, "THIS PAD'S RACE MODES");
+    AP_TrackerCupRoute(&pads[0], route, sizeof route);
+    assert(!strcmp(route, "THIS PAD'S RACE MODES"));
 
     memset(pads, 0, sizeof pads);
     strcpy(pads[0].track_id, "retail:7");

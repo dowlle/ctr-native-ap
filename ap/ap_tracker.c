@@ -972,12 +972,23 @@ static void AP_TrackerCupRoute(const ctr_content_pad *track, char *route, size_t
 {
 	if (!track || !track->occupied || track->cup || track->crystal)
 		return;
-	int64_t shared[7] = {track->lap_location, track->wumpa_location};
+	const ctr_content_sanity *sanity = ap_content_plan_sanity(track->track_id);
+	int64_t shared[7 + sizeof sanity->locations / sizeof(int64_t)] = {
+		track->lap_location, track->wumpa_location
+	};
 	for (int i = 0; i < 5; ++i)
 		shared[i+2] = track->rung_locations[i];
 	int pending = 0;
 	for (int i = 0; i < 7; ++i)
 		if (AP_TrackerPendingInLogic(shared[i])) shared[pending++] = shared[i];
+	if (sanity) {
+		for (int family = 0; family < 3; ++family) {
+			for (int slot = 0; slot < 80; ++slot) {
+				int64_t code = sanity->locations[family][slot];
+				if (AP_TrackerPendingInLogic(code)) shared[pending++] = code;
+			}
+		}
+	}
 	if (!pending) return;
 	int own_open = AP_ContentPadOpen(track);
 	for (int physical = 0; physical <= 104; ++physical) {
