@@ -3613,6 +3613,9 @@ extern "C" int ap_content_plan_check_boost(int64_t location) {
     const auto it = content_plan::state.boosts.find(location);
     return it == content_plan::state.boosts.end() ? 0 : it->second;
 }
+extern "C" int ap_content_plan_check_requires_stats(int64_t location) {
+    return ap_content_plan_active() && content_plan::state.stat_checks.count(location) != 0;
+}
 extern "C" const ctr_content_item_boxes *ap_content_plan_item_boxes(void) {
     static const ctr_content_item_boxes none{};
     return ap_content_plan_active() ? &content_plan::state.item_boxes : &none;

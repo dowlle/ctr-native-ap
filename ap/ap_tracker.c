@@ -1003,6 +1003,10 @@ static void AP_TrackerCupRoute(const ctr_content_pad *track, char *route, size_t
 			const int64_t *codes = ap_content_plan_tracker_locations(physical, &count);
 			for (int i = 0; i < pending; ++i) {
 				if (ap_content_plan_check_boost(shared[i]) > cup->trophy_boost) continue;
+				/* The cup win and a stat-gated pickup can be in logic
+				 * for different racers. Membership alone cannot prove it. */
+				if (ctr_cfg.stats_mode == AP_CAP_MODE_PER_CHARACTER &&
+				    ap_content_plan_check_requires_stats(shared[i])) continue;
 				for (int j = 0; j < count; ++j) {
 					if (codes[j] != shared[i]) continue;
 					snprintf(route, size, "SOME SHARED CHECKS VIA %s, RACE %d",
