@@ -437,7 +437,11 @@ LAB_8004f378:
 	// it SAPPHIRE (the photographed bug: sapphire label over a platinum-consistent
 	// time). Override with the tier this run actually won. The ledger is populated
 	// only after a relic finish, so the pre-race "next goal" draw is untouched.
-	if (ctr_cfg_active())
+	int offlineRelic = 0;
+#ifdef CTR_CUSTOM_PACKAGES
+	offlineRelic = AP_TrackFillOfflineTarget(0) > 0;
+#endif
+	if (ctr_cfg_active() || offlineRelic)
 	{
 		int apRelicTier = AP_CeremonyRelicTier();
 		if (apRelicTier == 2)

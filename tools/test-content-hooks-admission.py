@@ -66,6 +66,7 @@ const char *NativeAssets_GetAssetDir(void) { return assets_root; }
 static ctr_content_package plan_package;
 static ctr_content_pad plan_pad;
 static int plan_has_package = 1;
+int AP_TrackFillPrepare(void) { return 1; }
 const ctr_content_package *ap_content_plan_package(int index) { return index == 0 && plan_has_package ? &plan_package : NULL; }
 const char *ap_content_plan_package_json(int index) { return index == 0 && plan_has_package ? "{}" : ""; }
 /* Play Solo keeps the descriptor of a verified package (#89). */

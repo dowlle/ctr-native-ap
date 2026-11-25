@@ -51,6 +51,7 @@ static int s_arcadeSearching, s_arcadeSearchPadPrev;
 static char s_arcadeQuery[CTR_LIBRARY_QUERY_MAX + 1], s_arcadeQueryBackup[CTR_LIBRARY_QUERY_MAX + 1];
 static int s_arcadePrepareBusy;
 static int s_arcadeConfirm;
+static int s_arcadePrepareMode;
 static int s_arcadeMotion, s_arcadeMotionDirection;
 static struct CustomOfflineRequest *s_arcadeRequest;
 static char s_arcadeMessage[512];
@@ -72,6 +73,18 @@ static int MM_CustomTrackSelect_Mode(void)
 static int MM_CustomTrackSelect_Enabled(void)
 {
     return MM_CustomTrackSelect_Mode() != 0;
+}
+
+static int MM_CustomTrackSelect_RelicAvailable(const struct CustomTrackLibraryEntry *entry)
+{
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+    return entry && MM_CustomTrackSelect_Mode() == CTR_OFFLINE_MODE_ARCADE &&
+           CustomTrackLibrary_Admission(entry, 1) == CTR_ADMISSION_READY &&
+           ap_content_track_fill_available(entry->local.levSha256);
+#else
+    (void)entry;
+    return 0;
+#endif
 }
 
 /* Whether a listed revision is Ready for this page's mode, and if not, a
@@ -265,7 +278,7 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
         {
             s_arcadePrepareBusy = 0;
             s_arcadeConfirm = result == 1;
-            if (result == 1 && !CustomOffline_CheckStructure(s_arcadeRequest, MM_CustomTrackSelect_Mode(),
+            if (result == 1 && !CustomOffline_CheckStructure(s_arcadeRequest, s_arcadePrepareMode,
                                                              s_arcadeMessage, sizeof s_arcadeMessage))
             {
                 s_arcadeConfirm = 0;
@@ -313,9 +326,14 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
         else if (tapped & (BTN_CROSS_one | BTN_CIRCLE))
         {
             const int host = MM_CUSTOM_ARCADE_HOST_LEVEL;
-            const int mode = MM_CustomTrackSelect_Mode();
+            const int mode = s_arcadePrepareMode;
+            int ready = 1;
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+            if (mode == CTR_OFFLINE_MODE_RELIC)
+                ready = AP_TrackFillStageOffline(s_arcadeRequest);
+#endif
             if (AP_CustomOfflineLaunchAllowed() && gGT->numPlyrNextGame == 1 &&
-                CustomOffline_BeginRuntime(&s_arcadeRequest, host, 0, mode))
+                ready && CustomOffline_BeginRuntime(&s_arcadeRequest, host, 0, mode))
             {
                 /* Preserve the players, difficulty and characters chosen in
                    Arcade. Only the selected content and authored laps change. */
@@ -371,10 +389,11 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
             OtherFX_Play(2, 1);
         }
         entry = rows ? CustomTrackLibrary_Row(&s_arcadeLibrary, first + row) : NULL;
-        if (entry && !MM_CustomLibrary_Busy() && (tapped & (BTN_CROSS_one | BTN_CIRCLE)))
+        const int relic = (tapped & BTN_SQUARE) && MM_CustomTrackSelect_RelicAvailable(entry);
+        if (entry && !MM_CustomLibrary_Busy() && (relic || (tapped & (BTN_CROSS_one | BTN_CIRCLE))))
         {
             char why[260];
-            if (!MM_CustomTrackSelect_Eligible(entry, why, sizeof why))
+            if (!relic && !MM_CustomTrackSelect_Eligible(entry, why, sizeof why))
                 snprintf(s_arcadeMessage, sizeof s_arcadeMessage, "%s", why);
             else if (!AP_CustomOfflineLaunchAllowed())
                 snprintf(s_arcadeMessage, sizeof s_arcadeMessage, "A room race is still loaded. Try again from the hub.");
@@ -382,6 +401,7 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
                 snprintf(s_arcadeMessage, sizeof s_arcadeMessage, "Custom tracks are one player only. Choose one player.");
             else
             {
+                s_arcadePrepareMode = relic ? CTR_OFFLINE_MODE_RELIC : MM_CustomTrackSelect_Mode();
                 s_arcadePrepareBusy = CustomOffline_StartPrepare(NativeAssets_GetAssetDir(), entry->manifestSha256);
                 snprintf(s_arcadeMessage, sizeof s_arcadeMessage, "%s", s_arcadePrepareBusy ?
                     "Checking selected track..." : "Could not prepare this revision.");
@@ -472,11 +492,14 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
     RECTMENU_DrawInnerRect(&details, 0, ot);
     if (D230.trackSel_transitionState == IN_MENU)
     {
-        MM_CustomText_Draw(s_arcadeConfirm ? NativeMenu_Labels("*: Start  ^: Track list") :
+        MM_CustomText_Draw(s_arcadeConfirm ? NativeMenu_Labels(s_arcadePrepareMode == CTR_OFFLINE_MODE_RELIC ?
+            "*: Start Relic Race  ^: Track list" : "*: Start  ^: Track list") :
             "Left/Right: Pages  Up/Down: Tracks", 256, 181, 464, 1, JUSTIFY_CENTER | WHITE, ot);
         if (!s_arcadeConfirm)
         {
-            MM_CustomText_Draw(NativeMenu_Labels("*: Select  ^: Characters"), 256, 194, 464, 1, JUSTIFY_CENTER | WHITE, ot);
+            MM_CustomText_Draw(NativeMenu_Labels(MM_CustomTrackSelect_RelicAvailable(entry) ?
+                "*: Select  [: Relic Race  ^: Characters" : "*: Select  ^: Characters"),
+                256, 194, 464, 1, JUSTIFY_CENTER | WHITE, ot);
             snprintf(line, sizeof line, "R2 Search: %s%s  L2 Rescan", s_arcadeQuery, s_arcadeSearching ? "_" : "");
             MM_CustomText_Draw(line, 256, 206, 464, 1, JUSTIFY_CENTER | WHITE, ot);
         }

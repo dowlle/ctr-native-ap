@@ -207,7 +207,8 @@ typedef struct ctr_content_pad {
 #define AP_CONTENT_CUSTOM_HOST 6
 #define AP_CONTENT_CORTEX_HOST 13
 #define AP_CONTENT_CORTEX_LAPS 3
-#define AP_CONTENT_MAX_FILL_CRATES 256
+/* The retail perfect bonus reads the driver's crate count as signed. */
+#define AP_CONTENT_MAX_FILL_CRATES 127
 typedef struct ctr_content_fill_crate {
     int16_t pos[3];
     uint8_t type;
@@ -249,6 +250,9 @@ typedef struct ctr_content_package {
     char locator_sha256[65];  /* lowercase hex, "" when absent */
     char locator_name[65];    /* printable ASCII file name, "" when absent */
 } ctr_content_package;
+int ap_content_track_fill_available(const char *lev_sha);
+int ap_content_track_fill_bundled(const char *assets, const char *lev_sha,
+                                 ctr_content_fill_crate *crates, int *targets);
 #define AP_CONTENT_UNSTATED (-1)
 #define AP_CONTENT_WEAPON_CRATES_UNSTATED (-1)
 #define AP_CONTENT_WEAPON_CRATES_MAX 65536 /* the verifier's instance-table ceiling */

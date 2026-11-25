@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <map>
 #include <cstring>
+#include <cstdlib>
 #include <set>
 #include <stdexcept>
 using J = nlohmann::json;
@@ -98,6 +99,45 @@ int main(int argc, char **argv) {
             catch (const std::exception &) { std::cout << "REFUSE" << std::endl; }
         }
         return 0;
+    }
+    {
+        std::ifstream input("tools/fixtures/content-plan/track-fill.json");
+        const J fill = J::parse(input);
+        auto set_fill_switch = [](bool enabled) {
+#ifdef _WIN32
+            _putenv_s("CTR_TRACK_FILL", enabled ? "1" : "");
+#else
+            if (enabled) setenv("CTR_TRACK_FILL", "1", 1);
+            else unsetenv("CTR_TRACK_FILL");
+#endif
+        };
+        set_fill_switch(false);
+        refuse(fill, "the default client refuses a schema-19 track fill room");
+        set_fill_switch(true);
+        const bool loaded = parse(fill) && bind_room(fill);
+        expect(loaded && ctr_cfg.schema_version == 19, "the opted-in client accepts the apworld fill fixture");
+        const auto *package = loaded ? ap_content_plan_package(0) : nullptr;
+        const auto &crates = fill.at("content_plan").at("packages").at(0).at("fill").at("families").at("time_crates");
+        expect(package && package->fill_crate_count == 66 && package->relic_targets[0] == 153600,
+               "the current room carries 66 TV World crates and the published tier targets");
+        if (package && package->fill_crate_count == (int)crates.size()) {
+            for (int i = 0; i < package->fill_crate_count; ++i) {
+                const auto &crate = package->fill_crates[i];
+                expect(crate.pos[0] == crates[i]["pos"][0] && crate.pos[1] == crates[i]["pos"][1] &&
+                       crate.pos[2] == crates[i]["pos"][2] && crate.type == crates[i]["type"],
+                       "the native crate position and type match the generator");
+            }
+        }
+        auto changed = fill;
+        changed["content_plan"]["packages"][0]["fill"]["families"]["time_crates"][0]["pos"][0] = 0;
+        refuse(changed, "a changed crate position fails the fill digest");
+        changed = fill;
+        changed["content_plan"]["packages"][0]["fill"]["counts"]["time_crates"] = 65;
+        refuse(changed, "the package cannot claim a count different from its fill");
+        changed = fill;
+        changed["schema_version"] = changed["ctr_options"]["schema_version"] = 18;
+        refuse(changed, "a room with fill cannot use the old schema");
+        set_fill_switch(false);
     }
     {
         std::ifstream fixture("tools/fixtures/content-plan/oxide-pickups.jsonl");

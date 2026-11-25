@@ -436,6 +436,14 @@ void MM_TrackSelect_MenuProc(struct RectMenu *menu)
 
 				// if you are not in battle mode
 
+#if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
+				if (CustomOffline_RuntimeMode() == CTR_OFFLINE_MODE_RELIC)
+				{
+					gGT->gameMode1 &= ~ARCADE_MODE;
+					gGT->gameMode1 |= RELIC_RACE;
+				}
+#endif
+
 				// if you are in time trial mode
 				if ((gGT->gameMode1 & TIME_TRIAL) != 0)
 				{

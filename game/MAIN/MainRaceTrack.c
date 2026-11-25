@@ -20,6 +20,10 @@ static int MainRaceTrack_OfflineModeOf(u32 gameMode1, u32 gameMode2, int numPlay
 {
 	if (numPlayers != 1 || (gameMode2 & CUP_ANY_KIND))
 		return 0;
+	if ((gameMode1 & RELIC_RACE) &&
+	    !(gameMode1 & (ADVENTURE_MODE | ADVENTURE_CUP | ADVENTURE_ARENA | TIME_TRIAL | ARCADE_MODE |
+	                   BATTLE_MODE | CRYSTAL_CHALLENGE)))
+		return CTR_OFFLINE_MODE_RELIC;
 	if ((gameMode1 & ARCADE_MODE) &&
 	    !(gameMode1 & (ADVENTURE_MODE | ADVENTURE_CUP | ADVENTURE_ARENA | TIME_TRIAL | BATTLE_MODE)))
 		return CTR_OFFLINE_MODE_ARCADE;
@@ -54,6 +58,7 @@ static int MainRaceTrack_OfflinePendingRaceMode(void)
 
 static const char *MainRaceTrack_OfflineModeName(int mode)
 {
+	if (mode == CTR_OFFLINE_MODE_RELIC) return "Relic Race";
 	return mode == CTR_OFFLINE_MODE_TIME_TRIAL ? "Time Trial"
 	       : mode == CTR_OFFLINE_MODE_ARCADE   ? "Arcade"
 	                                           : "another mode";

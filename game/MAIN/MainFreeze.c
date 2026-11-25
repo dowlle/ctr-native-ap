@@ -1277,6 +1277,18 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 	// stringID 13: "EXIT TO MAP"
 	case 13:
 
+#if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
+		if (AP_TrackFillOfflineTarget(0) > 0)
+		{
+			levID = MAIN_MENU_LEVEL;
+			sdata->mainMenuState = MAIN_MENU_TRACK_SELECT;
+			sdata->Loading.OnBegin.AddBitsConfig0 |= MAIN_MENU | ARCADE_MODE;
+			sdata->Loading.OnBegin.RemBitsConfig0 |= RELIC_RACE;
+			gGT->gameMode1 &= ~PAUSE_1;
+			break;
+		}
+#endif
+
 #ifdef CTR_AP
 		// race_loss DeathLink: leaving a race for the map counts as a loss.
 		AP_DeathLinkOnPauseLeave(1);

@@ -870,6 +870,9 @@ void MainInit_FinalizeInit(struct GameTracker *gGT)
 	{
 #ifdef CTR_AP
 		AP_TrialLetters_Register(gGT);
+#ifdef CTR_CUSTOM_TRACKS
+		AP_TrackFillRegister(gGT);
+#endif
 #endif
 		UI_INSTANCE_InitAll();
 	}

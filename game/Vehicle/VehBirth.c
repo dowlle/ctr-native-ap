@@ -111,6 +111,10 @@ static struct SpawnPosRot VehBirth_GetStartlineSpawn(struct Driver *d, const str
 {
 	u8 preferred = sdata->kartSpawnOrderArray[d->driverID];
 	struct SpawnPosRot spawn;
+#if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
+	if (d->driverID == 0 && AP_TrackFillOfflineSpawn(preferred, &spawn))
+		return spawn;
+#endif
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
 	const struct GameTracker *gGT = sdata->gGT;
 	if (d->driverID == 0 && (gGT->gameMode1 & RELIC_RACE) &&

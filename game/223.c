@@ -65,6 +65,10 @@ global_variable char s_countdownFormat223[4] = "-%d";
 void RR_EndEvent_UnlockAward(void)
 {
 #ifdef CTR_AP
+#ifdef CTR_CUSTOM_TRACKS
+	if (AP_TrackFillFailed(sdata->gGT))
+		return;
+#endif
 	// #49: the Relic Race perfect check reads the same crate counters as the
 	// ten-second bonus below, before any tier or Cortex Vortex handling, so it
 	// pays whatever relic (or none) the time reaches. It applies the #286
@@ -86,6 +90,25 @@ void RR_EndEvent_UnlockAward(void)
 	{
 		raceTime -= RR_RACE_TIME_TEN_SECONDS;
 	}
+
+#if defined(CTR_AP) && defined(CTR_CUSTOM_PACKAGES)
+	if (AP_TrackFillOfflineTarget(0) > 0)
+	{
+		const int tier = AP_TrackFillOfflineTier(raceTime);
+		if (tier >= 0)
+		{
+			gGT->podiumRewardID = STATIC_RELIC;
+			gGT->gameModeEnd |= NEW_RELIC;
+			const int relicTime = AP_TrackFillOfflineTarget(tier);
+			sdata->relicTime_1min = relicTime / RR_RACE_TIME_ONE_MINUTE;
+			sdata->relicTime_10sec = (relicTime / RR_RACE_TIME_TEN_SECONDS) % 6;
+			sdata->relicTime_1sec = (relicTime / RR_RACE_TIME_ONE_SECOND) % 10;
+			sdata->relicTime_10ms = (relicTime / (RR_RACE_TIME_ONE_SECOND / 10)) % 10;
+			sdata->relicTime_1ms = ((relicTime * 100) / RR_RACE_TIME_ONE_SECOND) % 10;
+		}
+		return;
+	}
+#endif
 
 #ifdef CTR_AP
 #ifdef CTR_CUSTOM_TRACKS
@@ -231,7 +254,11 @@ void RR_EndEvent_DrawMenu(void)
 	// finished, so they mis-colour the ceremony relic (the SAPPHIRE-label bug's
 	// sibling). Drive the colour from the true just-won tier instead; tier 0 keeps
 	// the model's base sapphire colour.
-	if (ctr_cfg_active())
+	int offlineRelic = 0;
+#ifdef CTR_CUSTOM_PACKAGES
+	offlineRelic = AP_TrackFillOfflineTarget(0) > 0;
+#endif
+	if (ctr_cfg_active() || offlineRelic)
 	{
 		int apRelicTier = AP_CeremonyRelicTier();
 		if (apRelicTier == 2)
@@ -640,7 +667,11 @@ void RR_EndEvent_DrawHighScore(s16 startX, int startY, s16 scoreMode)
 #if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
 	// A content-plan custom track keeps no scores, and the table below would
 	// be its engine host's saved best times.
-	if (CustomTrack_KeepsNoScores(gGT->levelID))
+	if (CustomTrack_KeepsNoScores(gGT->levelID)
+#ifdef CTR_CUSTOM_PACKAGES
+	    || AP_TrackFillOfflineTarget(0) > 0
+#endif
+	   )
 	{
 		return;
 	}

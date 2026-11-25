@@ -8,6 +8,83 @@
 #include <platform/native_custom_tracks.h>
 #include <platform/native_gpu.h>
 #include <platform/native_renderer.h>
+#ifdef CTR_CUSTOM_PACKAGES
+#include <platform/native_assets.h>
+#include <platform/native_custom_offline.h>
+
+static ctr_content_fill_crate apFillOfflineCrates[AP_CONTENT_MAX_FILL_CRATES];
+static ctr_content_package apFillOffline;
+static struct SpawnPosRot apFillOfflineSpawns[8];
+
+int AP_TrackFillStageOffline(const struct CustomOfflineRequest *request)
+{
+	struct CustomPackageManifest manifest;
+	if (!CustomOffline_GetManifest(request, &manifest))
+		return 0;
+	memset(&apFillOffline, 0, sizeof apFillOffline);
+	for (unsigned i = 0; i < manifest.count; ++i)
+	{
+		const struct CustomPackageFile *file = &manifest.files[i];
+		if (strcmp(file->role, "lev"))
+			continue;
+		apFillOffline.fill_crate_count = ap_content_track_fill_bundled(
+		    NativeAssets_GetAssetDir(), file->sha256, apFillOfflineCrates, apFillOffline.relic_targets);
+		if (!apFillOffline.fill_crate_count || !AP_TrackFillPrepare())
+			return 0;
+		const size_t spawn_offset = sizeof(u32) + offsetof(struct Level, DriverSpawn);
+		size_t copied = 0;
+		u8 *lev = malloc(file->bytes);
+		if (!lev)
+			return 0;
+		const int ok = CustomOffline_CopyFile(request, "lev", lev, file->bytes, &copied) &&
+		               copied >= spawn_offset + sizeof apFillOfflineSpawns;
+		if (ok)
+			memcpy(apFillOfflineSpawns, lev + spawn_offset, sizeof apFillOfflineSpawns);
+		free(lev);
+		if (!ok)
+			return 0;
+		apFillOffline.fill_crates = apFillOfflineCrates;
+		memcpy(apFillOffline.content_id, "offline", sizeof "offline");
+		return 1;
+	}
+	return 0;
+}
+
+int AP_TrackFillOfflineSpawn(u8 preferred, struct SpawnPosRot *out)
+{
+	const struct SpawnPosRot empty = {0};
+	if (!out || preferred >= 8 || AP_TrackFillOfflineTarget(0) <= 0)
+		return 0;
+	*out = apFillOfflineSpawns[preferred];
+	if (memcmp(out, &empty, sizeof empty))
+		return 1;
+	for (int i = 0; i < 8; ++i)
+		if (memcmp(&apFillOfflineSpawns[i], &empty, sizeof empty))
+		{
+			*out = apFillOfflineSpawns[i];
+			break;
+		}
+	return 1;
+}
+
+int AP_TrackFillOfflineTarget(int tier)
+{
+	return tier >= 0 && tier <= 2 && sdata->gGT && (sdata->gGT->gameMode1 & RELIC_RACE) &&
+	    CustomOffline_RuntimeServing(sdata->gGT->levelID, CTR_OFFLINE_MODE_RELIC)
+	    ? apFillOffline.relic_targets[tier] : -1;
+}
+
+int AP_TrackFillOfflineTier(int race_time)
+{
+	for (int tier = 2; tier >= 0; --tier)
+	{
+		int target = AP_TrackFillOfflineTarget(tier);
+		if (target >= 0 && race_time <= target)
+			return tier;
+	}
+	return -1;
+}
+#endif
 
 #define AP_FILL_LEV_BYTES 576392
 #define AP_FILL_VRM_BYTES 458808
@@ -132,6 +209,10 @@ static const ctr_content_package *AP_TrackFillRace(const struct GameTracker *g)
 {
 	if (g->numPlyrCurrGame != 1 || !(g->gameMode1 & RELIC_RACE))
 		return NULL;
+#ifdef CTR_CUSTOM_PACKAGES
+	if (CustomOffline_RuntimeServing(g->levelID, CTR_OFFLINE_MODE_RELIC))
+		return apFillOffline.fill_crate_count ? &apFillOffline : NULL;
+#endif
 	const struct CustomTrackRaceContext *context = CustomTrack_StandaloneContext(g->levelID);
 	if (!context || context->retail || context->cortex || context->mode != AP_CONTENT_MODE_RELIC ||
 	    !context->seedEpoch || context->seedEpoch != ap_content_plan_epoch())
@@ -141,14 +222,23 @@ static const ctr_content_package *AP_TrackFillRace(const struct GameTracker *g)
 	return pkg && pkg->fill_crate_count && !strcmp(context->levSha256, pkg->lev_sha256) ? pkg : NULL;
 }
 
+void AP_TrackFillRegister(struct GameTracker *g)
+{
+	if (!AP_TrackFillRace(g) || !AP_TrackFillPrepare())
+		return;
+	for (int i = 0; i < 3; ++i)
+		g->modelPtr[apFillCrateModels[i]->id] = apFillCrateModels[i];
+}
+
 void AP_TrackFillSpawn(struct GameTracker *g)
 {
 	const ctr_content_package *pkg = AP_TrackFillRace(g);
-	if (!pkg || !AP_TrackFillPrepare())
+	if (!pkg)
 		return;
 	struct Instance *spawned[AP_CONTENT_MAX_FILL_CRATES];
 	int count = 0;
-	if (g->timeCratesInLEV || g->JitPools.instance.free.count < pkg->fill_crate_count)
+	if (!AP_TrackFillPrepare() || g->timeCratesInLEV ||
+	    g->JitPools.instance.free.count < pkg->fill_crate_count)
 		goto refused;
 	for (; count < pkg->fill_crate_count; ++count)
 	{
@@ -161,7 +251,7 @@ void AP_TrackFillSpawn(struct GameTracker *g)
 			inst->matrix.t[axis] = crate->pos[axis];
 	}
 	g->timeCratesInLEV = count;
-	char line[96];
+	char line[128];
 	snprintf(line, sizeof line, "[TrackFill] spawned %d time crates for %s\n", count, pkg->content_id);
 	AP_LogLine(line);
 	return;
@@ -169,7 +259,18 @@ void AP_TrackFillSpawn(struct GameTracker *g)
 refused:
 	while (count > 0)
 		INSTANCE_Death(spawned[--count]);
-	AP_LogLine("[TrackFill] could not spawn the complete time crate set\n");
+	g->timeCratesInLEV = -1;
+	AP_LogLine("[TrackFill] could not spawn the complete time crate set; no relic awards for this attempt\n");
+}
+
+int AP_TrackFillFailed(const struct GameTracker *g)
+{
+	return g->timeCratesInLEV < 0 && AP_TrackFillRace(g) != NULL;
+}
+
+static s16 AP_TrackFillBound(int value)
+{
+	return value < -32768 ? -32768 : value > 32767 ? 32767 : (s16)value;
 }
 
 void AP_TrackFillOnFrame(struct GameTracker *g)
@@ -197,7 +298,8 @@ void AP_TrackFillOnFrame(struct GameTracker *g)
 			continue;
 		const int x = inst->matrix.t[0], y = inst->matrix.t[1], z = inst->matrix.t[2];
 		struct BoundingBox box = {
-			.min = {{x - 92, y - 44, z - 92}}, .max = {{x + 92, y + 140, z + 92}},
+			.min = {{AP_TrackFillBound(x - 92), AP_TrackFillBound(y - 44), AP_TrackFillBound(z - 92)}},
+			.max = {{AP_TrackFillBound(x + 92), AP_TrackFillBound(y + 140), AP_TrackFillBound(z + 92)}},
 		};
 		if (AP_TrialLetterHit(&prev, &curr, &box))
 		{

@@ -89,8 +89,18 @@ void AP_ArcadeCrystals_Spawn(struct GameTracker *g);
 void AP_ArcadeCrystals_OnFrame(struct GameTracker *g);
 #ifdef CTR_CUSTOM_TRACKS
 int AP_TrackFillPrepare(void);
+void AP_TrackFillRegister(struct GameTracker *g);
 void AP_TrackFillSpawn(struct GameTracker *g);
 void AP_TrackFillOnFrame(struct GameTracker *g);
+int AP_TrackFillFailed(const struct GameTracker *g);
+#ifdef CTR_CUSTOM_PACKAGES
+struct CustomOfflineRequest;
+int AP_TrackFillStageOffline(const struct CustomOfflineRequest *request);
+struct SpawnPosRot;
+int AP_TrackFillOfflineSpawn(u8 preferred, struct SpawnPosRot *out);
+int AP_TrackFillOfflineTarget(int tier);
+int AP_TrackFillOfflineTier(int race_time);
+#endif
 #endif
 void AP_NotifyContentCrystalPickup(struct Instance *inst,int driverID);
 int AP_NotifyContentCrystalComplete(void);

@@ -192,6 +192,7 @@ def main():
             shutil.copy2('docs/CUSTOM_TRACKS.md', root / 'CUSTOM-TRACKS.md')
         shutil.copy2('tools/extract-assets/extract_assets.py', root / 'extract_assets.py')
         if variant in ('ap', 'authoring'):
+            shutil.copytree(Path('assets/track_fill'), root / 'assets' / 'track_fill')
             cortex = root / 'assets' / 'tracks' / 'cortex-vortex'
             cortex.mkdir(parents=True)
             # A merged mode build (CV1): the main pair (Saphi 1.1.5), its music,

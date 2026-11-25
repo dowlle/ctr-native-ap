@@ -22,6 +22,7 @@
 #include <array>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <map>
 #include <set>
 #include <stdexcept>
@@ -30,6 +31,19 @@
 namespace content_plan {
 using J = nlohmann::json;
 static constexpr const char *kTrackFill = "track_fill_v1";
+static bool fill_enabled() {
+    const char *value = std::getenv("CTR_TRACK_FILL");
+    return value && std::strcmp(value, "1") == 0;
+}
+struct FillIndexEntry { const char *sha, *path, *fill_sha; };
+static const FillIndexEntry *bundled_fill(const char *lev_sha) {
+    static constexpr FillIndexEntry index[] = {
+#include "ap_track_fill_index.inc"
+    };
+    for (const auto &row : index)
+        if (std::strcmp(lev_sha, row.sha) == 0) return &row;
+    return nullptr;
+}
 struct State {
     bool parsed = false, bound = false;
     uint64_t room_identity = 0;
@@ -1513,7 +1527,17 @@ static void validate(const J &p, State &out) {
         package_index.emplace(id, idx);
         auto &target = out.packages[idx];
         package_record(pkg, target, out.fill_crates[idx]);
-        out.package_json[idx] = pkg.dump();
+        if (target.fill_crate_count) {
+            // Solo's library remembers a YAML descriptor. A frozen room's
+            // derived capability and fill must never turn into YAML inputs.
+            J descriptor = pkg;
+            descriptor.erase("fill");
+            descriptor.erase("relic_targets");
+            descriptor["capabilities"]["relic"] = false;
+            out.package_json[idx] = descriptor.dump();
+        } else {
+            out.package_json[idx] = pkg.dump();
+        }
         need(keys.insert(target.content_id).second && uuids.insert(target.uuid).second &&
              pairs.insert(std::string(target.lev_sha256) + target.vrm_sha256).second &&
              (!target.has_relic_files ||
@@ -3340,11 +3364,7 @@ static int parse_content_plan(const nlohmann::json &j) {
              j.contains("schema_version") &&
              j.contains("content_plan") && j.contains("ctr_options"), "unsupported or incomplete record fields");
         const int schema_version = number(j["schema_version"], 18, 19);
-        if (schema_version == 19) {
-            const char *switch_value = std::getenv("CTR_TRACK_FILL");
-            need(switch_value && std::strcmp(switch_value, "1") == 0,
-                 "track fill rooms require CTR_TRACK_FILL=1");
-        }
+        need(schema_version != 19 || fill_enabled(), "track fill rooms require CTR_TRACK_FILL=1");
         const J &co = j["ctr_options"];
         J base=co;
         for(const char *key:{"include_battle_arenas","include_arcade_arenas","crystalsanity"})base.erase(key);
@@ -3666,6 +3686,39 @@ static int parse_content_plan(const nlohmann::json &j) {
 extern "C" int ap_content_plan_present(void) {
     return content_plan::state.parsed && (ctr_cfg.schema_version == 18 || ctr_cfg.schema_version == 19)
         && !ctr_cfg.seed_rejected;
+}
+extern "C" int ap_content_track_fill_available(const char *lev_sha) {
+    return lev_sha && content_plan::fill_enabled() && content_plan::bundled_fill(lev_sha);
+}
+extern "C" int ap_content_track_fill_bundled(const char *assets, const char *lev_sha,
+                                            ctr_content_fill_crate *crates, int *targets) {
+    using namespace content_plan;
+    if (!assets || !lev_sha || !crates || !targets || !fill_enabled()) return 0;
+    const auto *entry = bundled_fill(lev_sha);
+    if (!entry) return 0;
+    try {
+        std::ifstream input(std::string(assets) + "/track_fill/" + entry->path, std::ios::binary | std::ios::ate);
+        const auto size = input.tellg();
+        need(input && size > 0 && size <= 128 * 1024, "missing or oversized bundled track fill");
+        std::string raw((size_t)size, '\0');
+        input.seekg(0);
+        need((bool)input.read(raw.data(), size), "could not read bundled track fill");
+        const auto fill = J::parse(raw);
+        need(fill.at("fill_sha256") == entry->fill_sha, "bundled track fill differs from the client pin");
+        const auto &times = fill.at("relic_targets");
+        const int ticks[3] = {number(times.at("sapphire"), 1, 960 * 60 * 60),
+                              number(times.at("gold"), 1, 960 * 60 * 60),
+                              number(times.at("platinum"), 1, 960 * 60 * 60)};
+        need(ticks[0] > ticks[1] && ticks[1] > ticks[2], "invalid bundled track fill targets");
+        std::vector<ctr_content_fill_crate> parsed;
+        fill_record(fill, lev_sha, ticks, parsed);
+        std::copy(parsed.begin(), parsed.end(), crates);
+        std::copy(ticks, ticks + 3, targets);
+        return (int)parsed.size();
+    } catch (const std::exception &e) {
+        ap_cfg_log("[TrackFill] bundled file refused: %s\n", e.what());
+        return 0;
+    }
 }
 extern "C" int ap_content_plan_active(void) { return ap_content_plan_present() && content_plan::state.bound; }
 extern "C" uint64_t ap_content_plan_epoch(void) { return ap_content_plan_active() ? content_plan::epoch : 0; }

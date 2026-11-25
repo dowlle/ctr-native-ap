@@ -135,6 +135,11 @@ int AP_RelicTimeFor(int levelID, int tier)
 {
 	if (tier < 0 || tier > 2)
 		tier = 0;
+#ifdef CTR_CUSTOM_PACKAGES
+	int offlineTarget = AP_TrackFillOfflineTarget(tier);
+	if (offlineTarget > 0)
+		return offlineTarget;
+#endif
 #ifdef CTR_CUSTOM_TRACKS
 	{
 		// A content-plan Relic Race shows its own track's targets (#133 PR 3).

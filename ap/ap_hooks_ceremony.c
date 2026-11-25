@@ -111,6 +111,15 @@ static void AP_CeremonyLedgerAdd(long code, int bit, int rung)
 // during the pre-race clock draw and the vanilla path stands.
 int AP_CeremonyRelicTier(void)
 {
+#ifdef CTR_CUSTOM_PACKAGES
+	const struct GameTracker *g = sdata->gGT;
+	if (AP_TrackFillOfflineTarget(0) > 0 && g->drivers[0] && (g->gameModeEnd & NEW_RELIC))
+	{
+		const struct Driver *driver = g->drivers[0];
+		const int bonus = driver->numTimeCrates == g->timeCratesInLEV ? 960 * 10 : 0;
+		return AP_TrackFillOfflineTier(driver->timeElapsedInRace - bonus);
+	}
+#endif
 	int best = -1;
 	for (int i = 0; i < ap_ceremony_count; i++)
 	{
@@ -165,6 +174,10 @@ int AP_RelicTargetTier(void)
 // on this track are real checks and which are local-grant.
 static int AP_RelicTierEarnable(int levelID, int tier)
 {
+#ifdef CTR_CUSTOM_PACKAGES
+	if (AP_TrackFillOfflineTarget(tier) > 0)
+		return 1;
+#endif
 	int bit = ADV_REWARD_FIRST_SAPPHIRE_RELIC + ADV_REWARD_RELIC_TIER_STRIDE * tier + levelID;
 #ifdef CTR_CUSTOM_TRACKS
 	// A content-plan Relic Race asks its pad's own tier codes (#133 PR 3).
@@ -202,7 +215,11 @@ int AP_RelicTargetInit(int levelID)
 {
 	ap_relic_target_tier = -1;
 	ap_relic_target_done = 0;
-	if (!ctr_cfg_active())
+	int offline = 0;
+#ifdef CTR_CUSTOM_PACKAGES
+	offline = AP_TrackFillOfflineTarget(0) > 0;
+#endif
+	if (!ctr_cfg_active() && !offline)
 		return 0;
 	for (int t = 2; t >= 0; t--)
 	{
