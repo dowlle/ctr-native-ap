@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import shutil
+import string
 import subprocess
 import sys
 import tarfile
@@ -117,6 +118,7 @@ def verify_archive_hashes(release: Path, artifacts: dict[str, str]) -> None:
 
 
 SOLO_RUNTIME_MANIFEST = "solo-runtime/RUNTIME.txt"
+ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
 
 
 def _runtime_value(text: str, key: str) -> str | None:
@@ -140,9 +142,17 @@ def runtime_tree_from_archive(archive: Path) -> tuple[str, dict[str, str]]:
     """Recompute RUNTIME.txt's tree sha256 from the archive's solo-runtime/
     members. Refuses links, special files, duplicate paths and (Linux) an
     interpreter without execute permission. Returns the digest and the
-    per-file hashes."""
+    per-file hashes. The updater also requires case-insensitive unique
+    member names across the whole client archive."""
     files: dict[str, str] = {}
+    seen: set[str] = set()
     prefix = "solo-runtime/"
+
+    def check_name(name: str) -> None:
+        key = name.translate(ASCII_LOWER)
+        if key in seen:
+            fail(f"{archive.name}: duplicate archive member (case-insensitive): {name}")
+        seen.add(key)
 
     def add(rel: str, data: bytes) -> None:
         if rel in files:
@@ -152,6 +162,7 @@ def runtime_tree_from_archive(archive: Path) -> tuple[str, dict[str, str]]:
     if archive.name.endswith(".zip"):
         with zipfile.ZipFile(archive) as bundle:
             for info in bundle.infolist():
+                check_name(info.filename)
                 rel = info.filename.split("/", 1)[1] if "/" in info.filename else ""
                 if not rel.startswith(prefix) or info.is_dir():
                     continue
@@ -162,6 +173,7 @@ def runtime_tree_from_archive(archive: Path) -> tuple[str, dict[str, str]]:
     else:
         with tarfile.open(archive) as bundle:
             for member in bundle.getmembers():
+                check_name(member.name.rstrip("/") if member.isdir() else member.name)
                 rel = member.name.split("/", 1)[1] if "/" in member.name else ""
                 if not rel.startswith(prefix) or member.isdir():
                     continue

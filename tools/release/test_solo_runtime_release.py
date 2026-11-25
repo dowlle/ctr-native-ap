@@ -204,6 +204,23 @@ class SoloRuntimeReleaseTests(unittest.TestCase):
         with self.assertRaises(VERIFIER.PolicyError):
             VERIFIER.verify_solo_runtime(release, "v0.3.0")
 
+    def test_verifier_refuses_case_collisions_like_the_updater(self) -> None:
+        names = [f"ctr-archipelago-v0.3.0/solo-runtime/presets/{name}"
+                 for name in ("Standard.yaml", "standard.yaml")]
+        windows = self.root / "windows.zip"
+        with zipfile.ZipFile(windows, "w") as bundle:
+            for name in names:
+                bundle.writestr(name, b"")
+        linux = self.root / "linux.tar.gz"
+        with tarfile.open(linux, "w:gz") as bundle:
+            for name in names:
+                bundle.addfile(tarfile.TarInfo(name))
+        for archive in (windows, linux):
+            with self.subTest(platform=archive.name), self.assertRaisesRegex(
+                VERIFIER.PolicyError, r"duplicate archive member \(case-insensitive\)"
+            ):
+                VERIFIER.runtime_tree_from_archive(archive)
+
     def test_verifier_refuses_a_different_bundled_apworld(self) -> None:
         release = self.write_release("v0.3.0", self.runtime("windows"), self.runtime("linux"),
                                      bundled_apworld=b"other")
@@ -275,6 +292,15 @@ class SoloRuntimeReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "differs from the repack"):
             with BUILDER.paired_checkout(self.apworld, checkout, "paired"):
                 self.fail("mismatched archive accepted")
+        with packer.open("a", encoding="utf-8") as handle:
+            handle.write("    archive.writestr('ctr/tools/solo/ctr_solo.py', b'solo')\n")
+        subprocess.run([*git, "add", str(code), str(packer)], check=True)
+        subprocess.run([*git, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                        "commit", "-qm", "pack includes solo"], check=True)
+        subprocess.run([sys.executable, str(packer), str(self.apworld)], check=True)
+        with self.assertRaisesRegex(ValueError, "includes standalone Solo sources"):
+            with BUILDER.paired_checkout(self.apworld, checkout, "HEAD"):
+                self.fail("packed Solo source accepted")
 
     def test_lock_pins_every_dependency_for_both_platforms(self) -> None:
         import json

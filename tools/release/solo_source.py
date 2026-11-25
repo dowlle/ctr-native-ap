@@ -38,6 +38,10 @@ def paired_checkout(apworld: Path, checkout: Path, ref: str):
         packed = archive_members(apworld)
         if packed != archive_members(rebuilt):
             raise ValueError(f"packed apworld differs from the repack of {commit}")
+        if (root / "worlds/ctr/tools/solo").is_dir():
+            misplaced = [name for name in packed if name.startswith(("ctr/solo/", "ctr/tools/solo/"))]
+            if misplaced:
+                raise ValueError(f"packed apworld includes standalone Solo sources: {', '.join(misplaced)}")
         print(f"Apworld {commit}: all {len(packed)} packed files match the source")
         yield root
 
