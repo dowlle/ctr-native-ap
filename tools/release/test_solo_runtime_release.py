@@ -295,12 +295,13 @@ class SoloRuntimeReleaseTests(unittest.TestCase):
             with BUILDER.paired_checkout(self.apworld, checkout, "paired"):
                 self.fail("mismatched archive accepted")
         with packer.open("a", encoding="utf-8") as handle:
-            handle.write("    archive.writestr('ctr/tools/solo/ctr_solo.py', b'solo')\n")
+            handle.write("    archive.writestr('ctr/ctr_solo.py', b'solo')\n"
+                         "    archive.writestr('ctr/solo/presets/trim_core.py', b'solo')\n")
         subprocess.run([*git, "add", str(code), str(packer)], check=True)
         subprocess.run([*git, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
                         "commit", "-qm", "pack includes solo"], check=True)
         subprocess.run([sys.executable, str(packer), str(self.apworld)], check=True)
-        with self.assertRaisesRegex(ValueError, "includes standalone Solo sources"):
+        with self.assertRaisesRegex(ValueError, "ctr/ctr_solo.py, ctr/solo/presets/trim_core.py"):
             with BUILDER.paired_checkout(self.apworld, checkout, "HEAD"):
                 self.fail("packed Solo source accepted")
 

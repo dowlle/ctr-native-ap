@@ -10,6 +10,9 @@ import tempfile
 import zipfile
 
 
+SOLO_TOOL_NAMES = {"ctr_solo.py", "trim_core.py", "options-overlay.json"}
+
+
 def archive_members(path: Path) -> dict[str, bytes]:
     with zipfile.ZipFile(path) as archive:
         entries = [info for info in archive.infolist() if not info.is_dir()]
@@ -43,6 +46,7 @@ def paired_checkout(apworld: Path, checkout: Path, ref: str):
                 name for name in packed
                 if name.startswith("ctr/tools/solo/")
                 or (name.startswith("ctr/solo/") and not name.startswith("ctr/solo/presets/"))
+                or name.rsplit("/", 1)[-1].lower() in SOLO_TOOL_NAMES
             ]
             if misplaced:
                 raise ValueError(f"packed apworld includes standalone Solo sources: {', '.join(misplaced)}")
