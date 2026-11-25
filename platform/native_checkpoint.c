@@ -7,9 +7,6 @@
 #include "ctr_scratchpad.h"
 #include "platform/native_memory.h"
 #include "platform/native_state.h"
-#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
-#include "ap/ap_hooks.h"
-#endif
 
 #include <string.h>
 
