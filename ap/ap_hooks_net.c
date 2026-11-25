@@ -280,10 +280,9 @@ static void AP_NetTick(struct GameTracker *gGT)
 		AP_FeedOnItemReceived(items[i], ap_net_recv_batch_player(i),
 		                      ap_net_recv_batch_index(i), ap_net_recv_batch_flags(i));
 
-		// #449: received count by raw AP item id (progression-flagged copies
-		// only, start inventory at location -2 skipped: the win_logic block's
-		// `start` table counts it) for the race-loss stakes evaluator
-		// (ap_win_logic.h). Read nowhere else; the gate counters below are unchanged.
+		// Logic uses raw AP item IDs from this same replay. Location displays
+		// count all receipts, as the gate counters below do. Race stakes and
+		// approach hints use the progression-only win_logic tally.
 		AP_WinLogicTallyItem(items[i], ap_net_recv_batch_location(i),
 		                     ap_net_recv_batch_flags(i));
 
