@@ -658,12 +658,6 @@ static void AP_TrackerDrawLetterCell(int bx, int by, char glyph, int mode, long 
 
 static int AP_TrackerCupBoxesInLogic(const ctr_content_pad *pad)
 {
-	if (pad->physical < AP_CONTENT_GARAGE_CUP_PAD && !AP_ContentPadOpen(pad)) return 0;
-	if (pad->physical >= AP_CONTENT_GARAGE_CUP_PAD) {
-		int boss = pad->physical - AP_CONTENT_GARAGE_CUP_PAD;
-		if (!AP_BossGarageOpen(boss) || AP_GateCount(AP_IDX_KEY) < AP_PadActivityHubKeys(boss + 1, -1))
-			return 0;
-	}
 	ap_content_cup_track_check rows[AP_CONTENT_CUP_TRACK_CHECKS];
 	int count = ap_content_cup_track_checks(pad, ap_content_plan_pad, rows);
 	int in_logic = 0;

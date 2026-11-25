@@ -44,14 +44,32 @@ static int run(const Json &slot, const Json &states)
     ap_seedcfg_parse_json(slot);
     assert(ap_content_plan_present());
     std::vector<int64_t> locations;
-    std::map<std::string, Codes> by_node;
-    for (const auto &node : slot.at("content_plan").at("pads"))
-        by_node[node.at("id").get<std::string>()];
-    for (const auto &check : slot.at("content_plan").at("checks")) {
+    std::map<std::string, Codes> by_node, boxes_by_track;
+    std::map<std::string, std::string> node_of_entry;
+    const auto &plan = slot.at("content_plan");
+    for (const auto &node : plan.at("pads")) {
+        const auto id = node.at("id").get<std::string>();
+        by_node[id];
+        if (node.at("entry_id").is_string())
+            node_of_entry[node.at("entry_id").get<std::string>()] = id;
+    }
+    if (plan.contains("encounters")) for (const auto &encounter : plan.at("encounters"))
+        node_of_entry[encounter.at("entry_id").get<std::string>()] = encounter.at("pad_id");
+    for (const auto &check : plan.at("checks")) {
         const int64_t code = check.at("location");
         locations.push_back(code);
         for (const auto &route : check.at("routes"))
             by_node[route.at("own_pad_id").get<std::string>()].insert(code);
+        if (check.at("kind") == "box")
+            boxes_by_track[check.at("owner").get<std::string>()].insert(code);
+    }
+    for (const auto &entry : plan.at("entries")) {
+        if (entry.at("kind") != "cup" && entry.at("kind") != "boss_cup") continue;
+        auto &node = by_node.at(node_of_entry.at(entry.at("id").get<std::string>()));
+        for (const auto &leg : entry.at("legs")) {
+            const auto &boxes = boxes_by_track[leg.at("track_id").get<std::string>()];
+            node.insert(boxes.begin(), boxes.end());
+        }
     }
     assert(ap_content_plan_bind("tracker-room", 0, 1, locations.data(), locations.size()));
     int errors = 0;

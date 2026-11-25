@@ -2796,6 +2796,25 @@ static void validate(const J &p, State &out) {
         for (int node : nodes)
             out.tracker_locations[node].push_back(id);
     }
+    // Cup pages also show the boxes their legs can award. The plan keeps the
+    // box's logic on its standalone pad because the leg uses the same check.
+    auto tracker_cup_boxes = [&](const ctr_content_pad &cup) {
+        if (!cup.cup) return;
+        auto &node = out.tracker_locations[cup.physical];
+        for (const auto &leg : cup.legs) {
+            if (leg.track_pad < 0) continue;
+            const auto track = std::find_if(out.pads.begin(), out.pads.end(), [&](const ctr_content_pad &pad) {
+                return pad.physical == leg.track_pad;
+            });
+            if (track == out.pads.end()) continue;
+            for (int i = 0; i < track->box_count; ++i)
+                if (track->box_locations[i] > 0) node.push_back(track->box_locations[i]);
+        }
+        std::sort(node.begin(), node.end());
+        node.erase(std::unique(node.begin(), node.end()), node.end());
+    };
+    for (const auto &cup : out.pads) tracker_cup_boxes(cup);
+    for (const auto &cup : out.garage_cups) tracker_cup_boxes(cup);
     // Hand-placed box spots (A3-14): every set names a pad track, every spot
     // box carried its spot, and the pads take the positions.
     for (const auto &pair : out.spot_sets) need(pair.second.used, "a box spot set names no pad track");
