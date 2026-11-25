@@ -1,3 +1,4 @@
+#include <ctr_options_help.h>
 #include <platform/native_menu.h>
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_track_credit.h>
