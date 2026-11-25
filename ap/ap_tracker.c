@@ -659,9 +659,11 @@ static void AP_TrackerDrawLetterCell(int bx, int by, char glyph, int mode, long 
 static int AP_TrackerCupBoxesInLogic(const ctr_content_pad *pad)
 {
 	if (pad->physical < AP_CONTENT_GARAGE_CUP_PAD && !AP_ContentPadOpen(pad)) return 0;
-	if (pad->physical >= AP_CONTENT_GARAGE_CUP_PAD &&
-	    (!AP_BossGarageOpen(pad->physical - AP_CONTENT_GARAGE_CUP_PAD) ||
-	     AP_GateCount(AP_IDX_KEY) < pad->keys)) return 0;
+	if (pad->physical >= AP_CONTENT_GARAGE_CUP_PAD) {
+		int boss = pad->physical - AP_CONTENT_GARAGE_CUP_PAD;
+		if (!AP_BossGarageOpen(boss) || AP_GateCount(AP_IDX_KEY) < AP_PadActivityHubKeys(boss + 1, -1))
+			return 0;
+	}
 	ap_content_cup_track_check rows[AP_CONTENT_CUP_TRACK_CHECKS];
 	int count = ap_content_cup_track_checks(pad, ap_content_plan_pad, rows);
 	int in_logic = 0;
@@ -1110,15 +1112,15 @@ static void AP_TrackerDrawActivities(void)
 	AP_TrackerNode *n = &ap_tracker.nodes[ap_tracker.focus];
 	const ctr_content_pad *pad = AP_TrackerChecksPad(n);
 	int i, w = 1050, rows = ap_tracker.acts.count ? ap_tracker.acts.count : 1;
-	int h = 116 + rows * 112, x = (TRACKER_W - w) / 2, y = (TRACKER_H - h) / 2;
+	int h = 116 + rows * 120, x = (TRACKER_W - w) / 2, y = (TRACKER_H - h) / 2;
 	AP_TrackerRect(x, y, w, h, AP_TrackerRGBA(10, 15, 18, 240));
 	AP_TrackerBorder(x, y, w, h, TRACKER_MINT, 3);
 	AP_TrackerText(n->title, x + 16, y + 12, 23, TRACKER_GOLD, w - 32);
 	AP_TrackerText(n->pad, x + 16, y + 42, 18, TRACKER_WHITE, w - 32);
 	if (!ap_tracker.acts.count) AP_TrackerText("NOTHING TO START HERE", x + 16, y + 74, 18, TRACKER_GRAY, w - 32);
 	for (i = 0; i < ap_tracker.acts.count; i++) {
-		int ry = y + 72 + i * 112, open = ap_tracker.acts.reason[i] == AP_PADACT_OPEN;
-		if (i == ap_tracker.acts_cursor) AP_TrackerRect(x + 8, ry - 5, w - 16, 104, AP_TrackerRGBA(120, 48, 12, 255));
+		int ry = y + 72 + i * 120, open = ap_tracker.acts.reason[i] == AP_PADACT_OPEN;
+		if (i == ap_tracker.acts_cursor) AP_TrackerRect(x + 8, ry - 5, w - 16, 118, AP_TrackerRGBA(120, 48, 12, 255));
 		AP_TrackerText(AP_PadActivityName(ap_tracker.acts.activity[i]), x + 20, ry + 4, 23, TRACKER_WHITE, 255);
 		if (open) AP_TrackerText(ap_tracker.acts.left[i] ? "START" : "REPLAY", x + 290, ry + 4, 21,
 			ap_tracker.acts.left[i] ? TRACKER_GREEN : TRACKER_GOLD, w - 310);
