@@ -1282,8 +1282,7 @@ void MainFreeze_MenuPtrDefault(struct RectMenu *menu)
 		{
 			levID = MAIN_MENU_LEVEL;
 			sdata->mainMenuState = MAIN_MENU_TRACK_SELECT;
-			sdata->Loading.OnBegin.AddBitsConfig0 |= MAIN_MENU | ARCADE_MODE;
-			sdata->Loading.OnBegin.RemBitsConfig0 |= RELIC_RACE;
+			sdata->Loading.OnBegin.AddBitsConfig0 |= MAIN_MENU;
 			gGT->gameMode1 &= ~PAUSE_1;
 			break;
 		}

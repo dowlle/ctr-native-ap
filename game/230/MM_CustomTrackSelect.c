@@ -100,6 +100,8 @@ static int MM_CustomTrackSelect_Eligible(const struct CustomTrackLibraryEntry *e
     {
         if (admission == CTR_ADMISSION_DISCOVERED)
             snprintf(why, whySize, "%s", entry->disabledReason[0] ? entry->disabledReason : "Not installed");
+        else if (MM_CustomTrackSelect_RelicAvailable(entry))
+            snprintf(why, whySize, "%s. Use Relic Race.", entry->local.arcadeReason);
         else if (!timeTrial && entry->local.timeTrial && MM_CUSTOM_TIME_TRIAL)
             snprintf(why, whySize, "%s. Use Time Trial.", entry->local.arcadeReason);
         else
@@ -343,7 +345,8 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
                 D230.trackSel_transitionState = EXITING_MENU;
                 s_customTimeTrialPending = mode == CTR_OFFLINE_MODE_TIME_TRIAL;
                 fprintf(stderr, "[CustomSelector] custom track %d (bytes via group %d) mode=%s players=%d difficulty=%d laps=%d\n",
-                    CTR_CUSTOM_LEVEL_ID, host, mode == CTR_OFFLINE_MODE_TIME_TRIAL ? "time trial" : "arcade",
+                    CTR_CUSTOM_LEVEL_ID, host, mode == CTR_OFFLINE_MODE_RELIC ? "relic race" :
+                    mode == CTR_OFFLINE_MODE_TIME_TRIAL ? "time trial" : "arcade",
                     gGT->numPlyrNextGame, gGT->arcadeDifficulty, gGT->numLaps);
                 OtherFX_Play(1, 1);
             }
@@ -498,7 +501,7 @@ static int MM_CustomTrackSelect_Tick(struct RectMenu *menu)
         if (!s_arcadeConfirm)
         {
             MM_CustomText_Draw(NativeMenu_Labels(MM_CustomTrackSelect_RelicAvailable(entry) ?
-                "*: Select  [: Relic Race  ^: Characters" : "*: Select  ^: Characters"),
+                "*: Race  [: Relic Race  ^: Back" : "*: Select  ^: Characters"),
                 256, 194, 464, 1, JUSTIFY_CENTER | WHITE, ot);
             snprintf(line, sizeof line, "R2 Search: %s%s  L2 Rescan", s_arcadeQuery, s_arcadeSearching ? "_" : "");
             MM_CustomText_Draw(line, 256, 206, 464, 1, JUSTIFY_CENTER | WHITE, ot);

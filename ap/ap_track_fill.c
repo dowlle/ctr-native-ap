@@ -268,6 +268,12 @@ int AP_TrackFillFailed(const struct GameTracker *g)
 	return g->timeCratesInLEV < 0 && AP_TrackFillRace(g) != NULL;
 }
 
+void AP_TrackFillAfterCheckpointRestore(struct GameTracker *g)
+{
+	if (g && AP_TrackFillRace(g) && !(g->gameMode1 & END_OF_RACE))
+		AP_RelicTargetRestore(g);
+}
+
 static s16 AP_TrackFillBound(int value)
 {
 	return value < -32768 ? -32768 : value > 32767 ? 32767 : (s16)value;

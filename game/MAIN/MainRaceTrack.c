@@ -349,6 +349,14 @@ void MainRaceTrack_RequestLoad(s16 levelID)
 {
 #ifdef CTR_AP
     AP_CupSweepOnLoadRequested(levelID);
+#ifdef CTR_CUSTOM_PACKAGES
+	if (levelID == MAIN_MENU_LEVEL && CustomOffline_RuntimeMode() == CTR_OFFLINE_MODE_RELIC)
+	{
+		sdata->Loading.OnBegin.RemBitsConfig0 |= RELIC_RACE;
+		if (sdata->mainMenuState == MAIN_MENU_CHARACTERS || sdata->mainMenuState == MAIN_MENU_TRACK_SELECT)
+			sdata->Loading.OnBegin.AddBitsConfig0 |= ARCADE_MODE;
+	}
+#endif
 #ifdef CTR_CUSTOM_TRACKS
     AP_ContentCupOnLoadRequested(levelID); // #133 PR 5
 #endif

@@ -93,6 +93,7 @@ void AP_TrackFillRegister(struct GameTracker *g);
 void AP_TrackFillSpawn(struct GameTracker *g);
 void AP_TrackFillOnFrame(struct GameTracker *g);
 int AP_TrackFillFailed(const struct GameTracker *g);
+void AP_TrackFillAfterCheckpointRestore(struct GameTracker *g);
 #ifdef CTR_CUSTOM_PACKAGES
 struct CustomOfflineRequest;
 int AP_TrackFillStageOffline(const struct CustomOfflineRequest *request);
@@ -215,6 +216,9 @@ int  AP_RelicResultsSkipWanted(void);
 // AP_RelicTargetTier is the current shown tier for the HUD label/colour pin
 // (UI_Clock.c); -1 = ladder inactive (vanilla label path).
 int AP_RelicTargetInit(int levelID);
+#ifdef CTR_CUSTOM_TRACKS
+void AP_RelicTargetRestore(const struct GameTracker *g);
+#endif
 int AP_RelicTargetTier(void);
 
 // ── Post-goal credits roll: AP section (issue #117, display-only) ──

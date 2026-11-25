@@ -7,6 +7,9 @@
 #include "ctr_scratchpad.h"
 #include "platform/native_memory.h"
 #include "platform/native_state.h"
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+#include "ap/ap_hooks.h"
+#endif
 
 #include <string.h>
 
@@ -2484,6 +2487,9 @@ int NativeCheckpoint_Restore(const void *src, int srcSize)
 #ifdef CTR_CUSTOM_TRACKS
 	// The restored VRAM may hold another minimap: decide its mode again.
 	UI_Map_CustomAfterRestore(sdata->gGT);
+#ifdef CTR_AP
+	AP_TrackFillAfterCheckpointRestore(sdata->gGT);
+#endif
 #endif
 
 	return 1;

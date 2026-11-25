@@ -388,8 +388,7 @@ void UI_RaceEnd_ExitToMap(void)
 	if (AP_TrackFillOfflineTarget(0) > 0)
 	{
 		sdata->mainMenuState = MAIN_MENU_TRACK_SELECT;
-		sdata->Loading.OnBegin.AddBitsConfig0 |= MAIN_MENU | ARCADE_MODE;
-		sdata->Loading.OnBegin.RemBitsConfig0 |= RELIC_RACE;
+		sdata->Loading.OnBegin.AddBitsConfig0 |= MAIN_MENU;
 		MainRaceTrack_RequestLoad(MAIN_MENU_LEVEL);
 		return;
 	}
