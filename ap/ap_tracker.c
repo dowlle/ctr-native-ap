@@ -1205,23 +1205,34 @@ static void AP_TrackerDrawGoals(void)
 	}
 }
 
-static int AP_TrackerLegendEntry(const char *label, int x, uint32_t colour)
-{
-	const int height = 15;
-	int width = AP_TrackerTextWidth(label, (int)strlen(label), height);
-	AP_TrackerText(label, x, 718, height, colour, width + 2);
-	return x + width + 16;
-}
-
 static void AP_TrackerDrawLegend(void)
 {
-	int x = AP_TrackerLegendEntry(g_config.trackerPartialColour ? "GREEN ALL IN LOGIC" : "GREEN IN LOGIC", 32, TRACKER_GREEN);
-	if (g_config.trackerPartialColour)
-		x = AP_TrackerLegendEntry("ORANGE SOME IN LOGIC", x, TRACKER_ORANGE);
-	x = AP_TrackerLegendEntry("RED OUT", x, TRACKER_RED);
-	x = AP_TrackerLegendEntry("GREY DONE", x, TRACKER_GRAY);
-	x = AP_TrackerLegendEntry("BLUE UNKNOWN", x, TRACKER_UNKNOWN);
-	AP_TrackerLegendEntry("LETTER LOCK NEEDS ITEM", x, TRACKER_WHITE);
+	struct { const char *text; uint32_t colour; } entries[] = {
+		{g_config.trackerPartialColour ? "GREEN ALL IN LOGIC" : "GREEN IN LOGIC", TRACKER_GREEN},
+		{g_config.trackerPartialColour ? "ORANGE SOME IN" : NULL, TRACKER_ORANGE},
+		{"RED OUT", TRACKER_RED},
+		{"GREY DONE", TRACKER_GRAY},
+		{"BLUE UNKNOWN", TRACKER_UNKNOWN},
+		{"LETTER LOCK NEEDS ITEM", TRACKER_WHITE},
+	};
+	const int count = sizeof entries / sizeof entries[0];
+	const int gap = 14;
+	const int available = ap_net_is_connected() ? 1216 : 1070;
+	int height = 15, widths[count], x = 32;
+	for (;; --height) {
+		int width = 0;
+		for (int i = 0; i < count; ++i) {
+			const char *label = entries[i].text;
+			widths[i] = label ? AP_TrackerTextWidth(label, (int)strlen(label), height) + gap : 0;
+			width += widths[i];
+		}
+		if (width <= available || height == 10) break;
+	}
+	for (int i = 0; i < count; ++i) {
+		if (entries[i].text)
+			AP_TrackerText(entries[i].text, x, 718, height, entries[i].colour, widths[i] - gap + 2);
+		x += widths[i];
+	}
 }
 
 static void AP_TrackerDraw(void)
