@@ -1,4 +1,5 @@
 // g++ -m32 -std=c++17 -O1 -DCTR_AP -Iap -Iap/vendor/json/include tools/test-tracker-node-logic.cpp ap/ap_seedcfg.cpp -o /tmp/test-tracker-node-logic
+#include "ap_content_plan.h"
 #include "ap_seedcfg.h"
 #include "ap_pad_logic_look.h"
 #include <nlohmann/json.hpp>
