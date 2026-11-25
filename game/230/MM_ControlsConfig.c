@@ -95,6 +95,7 @@ static bool s_shortcutScreen;
 
 // Footer line under the rows, used for the replace warning during a rebind.
 #define CONTROLS_FOOTER_Y 0xC6
+#define CONTROLS_BINDING_ROW_SPACING 13
 
 static char s_conflictBuffer[NATIVE_CONTROLS_NAME_LENGTH];
 
@@ -684,7 +685,7 @@ static void Controls_DrawRows(struct RectMenu *menu, uint32_t *ot, int device)
 	for (int i = s_scroll; i < visibleEnd; i++)
 	{
 		const struct ControlsRow *row = &s_rows[i];
-		const int y = CONFIG_ROW_START_Y + (i - s_scroll) * CONFIG_ROW_SPACING;
+		const int y = CONFIG_ROW_START_Y + (i - s_scroll) * CONTROLS_BINDING_ROW_SPACING;
 
 		const char *label = "";
 		switch (row->kind)
@@ -762,7 +763,7 @@ static void Controls_DrawRows(struct RectMenu *menu, uint32_t *ot, int device)
 		int shown = s_rowCount - s_scroll;
 		if (shown > CONFIG_MAX_VISIBLE_ROWS)
 			shown = CONFIG_MAX_VISIBLE_ROWS;
-		CTR_MenuDrawScrollBar(0x1E4, CONFIG_ROW_START_Y - 2, CONFIG_MAX_VISIBLE_ROWS * CONFIG_ROW_SPACING,
+		CTR_MenuDrawScrollBar(0x1E4, CONFIG_ROW_START_Y - 2, CONFIG_MAX_VISIBLE_ROWS * CONTROLS_BINDING_ROW_SPACING,
 		                      s_rowCount, shown, s_scroll, ot);
 	}
 }
@@ -957,7 +958,10 @@ static void MM_MenuProc_Controls(struct RectMenu *menu, uint32_t *ot, int enteri
 			case CONTROLS_ROW_DEVICE: key = "control_device"; break;
 			case CONTROLS_ROW_DEADZONE: key = "control_deadzone"; break;
 			case CONTROLS_ROW_RESTORE: key = s_shortcutScreen ? "shortcut_defaults" : "control_restore"; break;
-			case CONTROLS_ROW_SHORTCUT: key = "shortcut_picker"; break;
+			case CONTROLS_ROW_SHORTCUT:
+				if (row->binding == NATIVE_SHORTCUT_CHARACTER_PICKER)
+					key = "shortcut_picker";
+				break;
 			default: break;
 		}
 		const CtrOptionsHelp *help = CTR_OptionsHelpFor(key);

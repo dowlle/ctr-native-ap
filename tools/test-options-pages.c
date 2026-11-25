@@ -158,7 +158,7 @@ int main(void)
 	            CTR_MENU_OPTION_VALUE_X - CTR_MENU_OPTION_LABEL_X >= racePairWidth + 8);
 
 	static const char *const actions[] = {
-		"replay_hints", "room_links", "box_author", "connect", "play_solo",
+		"replay_hints", "room_links", "box_author", "connect", "connect_missing_settings", "play_solo",
 		"control_player", "control_shortcuts", "control_device", "control_binding",
 		"control_deadzone", "control_restore", "shortcut_picker", "shortcut_defaults",
 		"sound_fx", "sound_music", "sound_voice", "sound_mode", "sound_vibrate",

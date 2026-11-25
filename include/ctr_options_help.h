@@ -66,6 +66,7 @@ static const CtrOptionsHelp s_ctrOptionsHelp[] = {
 	{"slot", "Your name from the YAML.", "Case matters. Underlines mark A-Z"},
 	{"password", "Leave empty if the room has none.", ""},
 	{"connect", "Joins the room with these.", ""},
+	{"connect_missing_settings", "Enter a server and slot first.", ""},
 	{"play_solo", "Make and play a seed on your own.", ""},
 	{"connection_hub", "Return to the main menu", "to change the connection."},
 	{"deathlink_page", "SEED follows the room.", "A change here affects only you."},
@@ -83,7 +84,7 @@ static const CtrOptionsHelp s_ctrOptionsHelp[] = {
 	{"sound_analog", "Set up this analog controller.", ""},
 	{"sound_exit", "Back to the options page list.", ""},
 	{"shortcut_picker", "Opens the racer picker in a hub.", "Default: Numpad 9."},
-	{"shortcut_defaults", "Restores the AP shortcut keys.", ""},
+	{"shortcut_defaults", "Resets AP shortcut keys and", "all keyboard gameplay bindings."},
 };
 
 static inline const CtrOptionsHelp *CTR_OptionsHelpFor(const char *key)

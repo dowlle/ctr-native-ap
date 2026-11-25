@@ -1,4 +1,3 @@
-#include <ctr_options_help.h>
 #include <platform/native_menu.h>
 #ifdef CTR_CUSTOM_PACKAGES
 #include <platform/native_track_credit.h>
@@ -591,8 +590,7 @@ static void MM_Solo_PageNew(uint32_t *ot, struct GamepadBuffer *pad)
 	MM_Solo_ScrollBarAt(SOLO_LIST_Y, SOLO_ROWS, count, SOLO_ROWS, s_soloTop, ot);
 	struct APSoloStartInfo focused;
 	if (AP_Solo_StartGet(s_soloSel, &focused) && focused.summary[0])
-		MM_Solo_DrawWrapped(focused.summary, SOLO_ROW_X, 0xB1,
-		                   CTR_OPTIONS_HELP_LIMIT * data.font_charPixWidth[FONT_SMALL], 2, WHITE, ot);
+		MM_Solo_Help(focused.summary, WHITE, ot);
 	MM_Solo_Footer(NativeMenu_Labels("*: CHOOSE   ^: BACK"), ot);
 }
 

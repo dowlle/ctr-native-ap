@@ -1250,6 +1250,7 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	const int numStrings = s_sectionCount[sec]; // uri / slot / password
 	const int numRows = numStrings + 1 + CONN_SOLO_ROWS; // + Connect (+ Play Solo)
 	const char *helpKey = NULL;
+	const int canConnect = !Config_FromHub() && g_config.uri[0] && g_config.slot[0];
 
 	int soloClosed = 0;
 #if !defined(CTR_AP_AUTHORING)
@@ -1304,7 +1305,8 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 			{
 				// Connect action: re-dial with the saved connection settings.
 				// A running solo session ends first (AP_Net_Reconnect).
-				AP_Net_Reconnect(g_config.uri, g_config.slot, g_config.password);
+				if (canConnect)
+					AP_Net_Reconnect(g_config.uri, g_config.slot, g_config.password);
 			}
 #if !defined(CTR_AP_AUTHORING)
 			else
@@ -1375,10 +1377,10 @@ static void MM_ConfigProc_Connection(struct RectMenu *menu, uint32_t *ot, struct
 	// Connect action row.
 	{
 		int y = startY + numStrings * rowSpacing;
-		DecalFont_DrawLineOT("Connect", labelX, y, FONT_SMALL, Config_FromHub() ? GRAY : ORANGE, ot);
+		DecalFont_DrawLineOT("Connect", labelX, y, FONT_SMALL, canConnect ? ORANGE : GRAY, ot);
 		if (menu->rowSelected == numStrings)
 		{
-			helpKey = "connect";
+			helpKey = canConnect ? "connect" : "connect_missing_settings";
 			RECT sel = {0x30, y - 2, 0x1B0, 0x0C};
 			CTR_Box_DrawClearBox(&sel, &sdata->menuRowHighlight_Normal, TRANS_50_DECAL, ot);
 		}
