@@ -50,6 +50,10 @@ static const struct { const char *content_id, *revision, *lev_sha256; int rank; 
     {"neon-paradise", "1.0.0", "665d19819c437ab9ab6cbccac7c0202979405f16e1af39e06d9ea1d3286be9d0", 0},
     {"neon-paradise", "1.1.0", "639434d84fe6de4ba88a31a1dd5a11291d640617ab25af9c7bfbd5d383b53d5d", 0},
     {"sunset-vista", "1.2.0", "97fd76f06e3c57207560751728eb23dbf81980887e5f7e25f2296917578735b5", 0},
+    {"coco-park-2025", "1.1.0", "bbebd28a0c61723b632a1535d26a5f90d061f6c918403a851680f64e487f9a1c", 0, 6},
+    {"country-speedway", "1.3.1", "504946fdd87d040cce6dfadcf158759b53962d2a08b41002ad97949051b3d996", 0, 6},
+    {"haven-stadium", "1.1.0", "37f2daddfe7fd988b091b914536737f77a3ac07384e120a25b7e3d69386e3188", 1, 6},
+    {"inferno-island", "1.3.0", "d8863cf0274fc29ac8e2118e666604ddc80ebbe49d5c747dd91acec6a07dfd32", 0, 6},
 };
 static const int64_t kItemBase = 35010000, kKeyItem = 35010014;
 static const int64_t kItemsanityFirst = 35016000, kItemsanityLast = 35016021;
@@ -177,17 +181,25 @@ static int finish_boost(const J &track, const std::map<std::string, const J *> &
                 && pin == r.lev_sha256
                 && !(content_plan::state.pre_sunset_finish_ruling && is_sunset_finish_ruling(r.content_id, r.revision));
         };
+        // A finish-only review does not change which pickup rulings the LEV inherits.
+        const auto revision = pkg->at("revision").get<std::string>();
+        const auto select_rank = [&](const std::string &rev, const std::string &pin, bool versioned_only) {
+            int rank = -1, latest = -1;
+            for (const auto &r : kUsfRulings)
+                if ((!versioned_only || r.since) && matches(r, rev, pin) && r.since > latest) {
+                    rank = r.rank;
+                    latest = r.since;
+                }
+            return rank;
+        };
+        const int exact_rank = select_rank(revision, lev, true);
+        if (exact_rank >= 0) return exact_rank;
         const auto source = content_plan::scoped_ruling(content_plan::state, *pkg, lev,
             [&](const std::string &revision, const std::string &pin) {
                 for (const auto &r : kUsfRulings) if (matches(r, revision, pin)) return true;
                 return false;
             });
-        int selected_rank = -1, selected_version = -1;
-        for (const auto &r : kUsfRulings)
-            if (matches(r, source.first, source.second) && r.since > selected_version) {
-                selected_rank = r.rank;
-                selected_version = r.since;
-            }
+        const int selected_rank = select_rank(source.first, source.second, false);
         if (selected_rank >= 0) return selected_rank;
         for (const auto &r : kUsfRulings) if (!*r.revision && content == r.content_id) return r.rank;
         const std::string free_source = content_plan::ruling_pin(content_plan::state, *pkg, lev, [](const std::string &pin) {

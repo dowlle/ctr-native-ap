@@ -911,7 +911,7 @@ static bool repeatable_pickups(const J &p) {
     return has_feature(p, "repeatable_pickups_v1");
 }
 static constexpr char kCarriedRulings[] = "carried_track_rulings_v1";
-static constexpr int kTrackRulingVersion = 4;
+static constexpr int kTrackRulingVersion = 6;
 // These exact patch copies share the registry key, but keep their own pickups.
 static constexpr const char *kCocoPatchPins[] = {
     "af764b90d10fa952aac4502c89c5f0466dd4afdbaee7c3a65279624dfeb18aa2", // St. Patrick 55
