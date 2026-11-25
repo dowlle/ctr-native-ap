@@ -3364,7 +3364,7 @@ static int parse_content_plan(const nlohmann::json &j) {
              j.contains("schema_version") &&
              j.contains("content_plan") && j.contains("ctr_options"), "unsupported or incomplete record fields");
         const int schema_version = number(j["schema_version"], 18, 19);
-        need(schema_version != 19 || fill_enabled(), "track fill rooms require CTR_TRACK_FILL=1");
+        need(schema_version != 19 || fill_enabled(), AP_CONTENT_TRACK_FILL_NEEDS_OPT_IN);
         const J &co = j["ctr_options"];
         J base=co;
         for(const char *key:{"include_battle_arenas","include_arcade_arenas","crystalsanity"})base.erase(key);

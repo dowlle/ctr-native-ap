@@ -24,6 +24,7 @@ static struct CustomTrackRaceContext context;
 static ctr_content_pad pad;
 static ctr_content_package package;
 static int born, thread_count;
+static int asset_reads;
 static const char *asset_dir;
 
 uint64_t ap_content_plan_epoch(void) { return 1; }
@@ -73,6 +74,7 @@ struct Instance *INSTANCE_Birth3D(struct Model *model, const char *name, struct 
 	assert(born < AP_CONTENT_MAX_FILL_CRATES && strcmp(name, "ap-fill-crate") == 0 && t == NULL);
 	struct Instance *inst = &instances[born++];
 	memset(inst, 0, sizeof *inst);
+	memset(inst->matrix.m, 0x7a, sizeof inst->matrix.m);
 	inst->model = model;
 	inst->scale = (SVec3){{0x1000, 0x1000, 0x1000}};
 	inst->next = (struct Instance *)tracker.JitPools.instance.taken.first;
@@ -87,6 +89,7 @@ void INSTANCE_Death(struct Instance *inst)
 u8 *AP_RetailAsset_ReadSubfile(int entry, int dram, u8 *dst, int cap, int *size)
 {
 	assert(!dram && (entry == 6 || entry == 7));
+	asset_reads++;
 	if (!asset_dir)
 		return NULL;
 	char file[512];
@@ -106,7 +109,8 @@ void LOAD_RunPtrMap(char *body, int *slots, int count)
 TextureID NativeRenderer_CreateRGBATexture(int w, int h, u8 *rgba)
 {
 	assert(w == 256 && h == 128 && rgba[3] == 255);
-	return 42;
+	static int attempts;
+	return ++attempts == 1 ? 0 : 42;
 }
 void NativeGpu_SetTimeCrateTexture(unsigned id, int w, int h) { assert(id == 42 && w == 256 && h == 128); }
 
@@ -133,9 +137,10 @@ int main(void)
 	package.fill_crate_count = 3;
 
 	assert(!AP_TrackFillPrepare());
+	assert(!AP_TrackFillPrepare() && asset_reads == 2);
 	asset_dir = getenv("CTR_TEST_FILL_ASSETS");
-	apFillAssetState = 0;
 	if (asset_dir) {
+		assert(!AP_TrackFillPrepare()); // transient atlas upload failure
 		assert(AP_TrackFillPrepare());
 		assert(apFillCrateModels[0]->id == STATIC_TIME_CRATE_01);
 		assert(apFillCrateModels[1]->id == STATIC_TIME_CRATE_02);
@@ -145,6 +150,11 @@ int main(void)
 				for (int i = 0; i < (header ? 2 : 20); ++i)
 					assert((apFillCrateModels[model]->headers[header].ptrTexLayout[i]->tpage &
 					        AP_TPAGE_SIDELOAD_MASK) == AP_TPAGE_TIME_CRATE_BITS);
+		const u32 delta = 0x800000;
+		const u32 model = (u32)(uintptr_t)apFillCrateModels[0];
+		u32 rebased;
+		assert(AP_TrackFillRebaseAssetPointer(model - delta, delta, &rebased) && rebased == model);
+		assert(!AP_TrackFillRebaseAssetPointer(model, delta, &rebased));
 		puts("PASS: pinned retail texture and model import");
 	} else {
 		models[0].id = STATIC_TIME_CRATE_01;
@@ -158,8 +168,12 @@ int main(void)
 	tracker.JitPools.instance.free.count = 3;
 	AP_TrackFillSpawn(&tracker);
 	assert(born == 3 && tracker.timeCratesInLEV == 3);
-	for (int i = 0; i < 3; ++i)
+	for (int i = 0; i < 3; ++i) {
 		assert(instances[i].matrix.t[0] == crates[i].pos[0]);
+		for (int row = 0; row < 3; ++row)
+			for (int column = 0; column < 3; ++column)
+				assert(instances[i].matrix.m[row][column] == (row == column ? 0x1000 : 0));
+	}
 	struct Instance before_hit = instances[0];
 	driver.posPrev.x = driver.posCurr.x = 1000 * 256;
 	tracker.gameMode1 |= START_OF_RACE;

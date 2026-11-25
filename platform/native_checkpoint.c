@@ -483,6 +483,13 @@ internal int NativeCheckpoint_RelocateAddress(const struct NativeCheckpointHeade
 	oldRange = NativeCheckpoint_FindAddressOwner(oldHeader, oldAddress, &offset);
 	if (oldRange == NULL)
 	{
+#if defined(CTR_AP) && defined(CTR_CUSTOM_TRACKS)
+		// Model tables, instances and draw caches can name retail crate data
+		// outside the checkpoint regions. It is loaded in the live fill race.
+		if (oldHeader && liveHeader && oldHeader->codeAnchor && liveHeader->codeAnchor &&
+		    AP_TrackFillRebaseAssetPointer(oldAddress, liveHeader->codeAnchor - oldHeader->codeAnchor, newAddressOut))
+			return 1;
+#endif
 		return 0;
 	}
 

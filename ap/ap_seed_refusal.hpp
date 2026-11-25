@@ -1,6 +1,7 @@
 #ifndef CTR_AP_SEED_REFUSAL_HPP
 #define CTR_AP_SEED_REFUSAL_HPP
 
+#include "ap_content_plan.h"
 #include "ap_seedcfg.h"
 #include "ap_version.h"
 #include <nlohmann/json.hpp>
@@ -86,8 +87,10 @@ inline bool expects_plan(const nlohmann::json &slot)
     return has_schema(slot) || has_schema(*options);
 }
 
-inline std::string message(const nlohmann::json &slot, const std::string &checksum)
+inline std::string message(const nlohmann::json &slot, const std::string &checksum, const std::string &reason = {})
 {
+    if (reason == "content_plan: " AP_CONTENT_TRACK_FILL_NEEDS_OPT_IN)
+        return "TRACK FILL IS OFF. SEE LOG FOR LAUNCH SWITCH.";
     const auto plan = slot.find("content_plan");
     const auto options = slot.find("ctr_options");
     const bool has_options = options != slot.end() && options->is_object();

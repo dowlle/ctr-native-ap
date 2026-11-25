@@ -36,6 +36,7 @@ enum RelicRaceEndMenuConstants
 	RR_RELIC_FULL_SCALE = 0xc00,
 	RR_RELIC_GROW_STEP = 0x80,
 	RR_SCREEN_DEPTH = 0x100,
+	RR_SAPPHIRE_RELIC_COLOR = 0x60a5ff0,
 	RR_PLATINUM_RELIC_COLOR = 0xffede90,
 	RR_GOLD_RELIC_COLOR = 0xd8d2090,
 	RR_RELIC_AWARD_SFX = 0x67,
@@ -95,6 +96,7 @@ void RR_EndEvent_UnlockAward(void)
 	if (AP_TrackFillOfflineTarget(0) > 0)
 	{
 		const int tier = AP_TrackFillOfflineTier(raceTime);
+		gGT->offlineRelicTier = tier;
 		if (tier >= 0)
 		{
 			gGT->podiumRewardID = STATIC_RELIC;
@@ -265,6 +267,8 @@ void RR_EndEvent_DrawMenu(void)
 			relic->colorRGBA = RR_PLATINUM_RELIC_COLOR;
 		else if (apRelicTier == 1)
 			relic->colorRGBA = RR_GOLD_RELIC_COLOR;
+		else if (offlineRelic)
+			relic->colorRGBA = RR_SAPPHIRE_RELIC_COLOR;
 	}
 #endif
 

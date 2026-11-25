@@ -113,12 +113,8 @@ int AP_CeremonyRelicTier(void)
 {
 #ifdef CTR_CUSTOM_PACKAGES
 	const struct GameTracker *g = sdata->gGT;
-	if (AP_TrackFillOfflineTarget(0) > 0 && g->drivers[0] && (g->gameModeEnd & NEW_RELIC))
-	{
-		const struct Driver *driver = g->drivers[0];
-		const int bonus = driver->numTimeCrates == g->timeCratesInLEV ? 960 * 10 : 0;
-		return AP_TrackFillOfflineTier(driver->timeElapsedInRace - bonus);
-	}
+	if (AP_TrackFillOfflineTarget(0) > 0)
+		return (g->gameModeEnd & NEW_RELIC) ? g->offlineRelicTier : -1;
 #endif
 	int best = -1;
 	for (int i = 0; i < ap_ceremony_count; i++)

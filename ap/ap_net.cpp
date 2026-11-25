@@ -959,12 +959,13 @@ extern "C" int ap_net_init(const char *uuid, const char *game, const char *uri)
 	});
 	g_ap->set_slot_connected_handler([](const nlohmann::json &slotData) {
 		const auto refuse_plan = [&]() {
-			const std::string advice = ap_seed_refusal::message(slotData, g_refusal_store.ctr_checksum);
+			const std::string reason = ap_seedcfg_reject_reason();
+			const std::string advice = ap_seed_refusal::message(slotData, g_refusal_store.ctr_checksum, reason);
 			const std::string diagnostic = ap_seed_refusal::diagnostics(slotData, g_refusal_store.ctr_checksum);
 			std::fprintf(stderr, "%s[AP NET] %s\n", diagnostic.c_str(), advice.c_str());
 			AP_LogLine(diagnostic.c_str());
 			AP_LogLine(("[AP NET] " + advice + "\n").c_str());
-			ap_net_refuse_seed(ap_seedcfg_reject_reason(), advice);
+			ap_net_refuse_seed(reason, advice);
 		};
 		// ADMISSION FIRST (ticket 05). Clear the accepted latch BEFORE parsing so
 		// the client is never observable as connected while the seed is still

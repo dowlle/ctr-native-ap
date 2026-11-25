@@ -158,10 +158,9 @@ static void AP_TrackFillRemapTexture(struct TextureLayout *layout)
 int AP_TrackFillPrepare(void)
 {
 	if (apFillAssetState)
-		return apFillAssetState > 0;
+		return 1;
 	if (!sdata->ptrBigfile1)
-		return 0;
-	apFillAssetState = -1;
+		goto refused;
 	u8 *raw = (u8 *)apFillRetailLev;
 	int size = 0;
 	if (!AP_RetailAsset_ReadSubfile(7, 0, raw, sizeof apFillRetailLev, &size) ||
@@ -203,6 +202,18 @@ int AP_TrackFillPrepare(void)
 refused:
 	AP_LogLine("[TrackFill] Relic Race unavailable: retail time crate models or textures could not be verified and loaded\n");
 	return 0;
+}
+
+int AP_TrackFillRebaseAssetPointer(u32 saved, u32 imageDelta, u32 *rebased)
+{
+	if (!apFillAssetState || saved == 0xffffffffu || saved == 0xfffffffeu)
+		return 0;
+	const u32 address = saved + imageDelta;
+	const u32 start = (u32)(uintptr_t)apFillRetailLev;
+	if (address - start >= AP_FILL_LEV_BYTES)
+		return 0;
+	*rebased = address;
+	return 1;
 }
 
 static const ctr_content_package *AP_TrackFillRace(const struct GameTracker *g)
@@ -247,8 +258,12 @@ void AP_TrackFillSpawn(struct GameTracker *g)
 		if (!inst)
 			goto refused;
 		spawned[count] = inst;
+		memset(inst->matrix.m, 0, sizeof inst->matrix.m);
 		for (int axis = 0; axis < 3; ++axis)
+		{
+			inst->matrix.m[axis][axis] = 0x1000;
 			inst->matrix.t[axis] = crate->pos[axis];
+		}
 	}
 	g->timeCratesInLEV = count;
 	char line[128];
