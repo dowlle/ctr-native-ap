@@ -41,7 +41,7 @@ static const char *const s_ctrMenuPageVideo[] = {
 };
 static const char *const s_ctrMenuPageGameplay[] = {
 	"skip_intro", "skip_hints", "race_type_selector", "skip_podium", "skip_cutscenes",
-	"boss_music", "ai_difficulty", "mute_when_unfocused", "device_aware_labels", "update_check", NULL,
+	"boss_music", "ai_difficulty", "mute_when_unfocused", "device_aware_labels", "update_check", "tracker_partial_colour", NULL,
 };
 static const char *const s_ctrMenuPageControls[] = {
 	NULL,

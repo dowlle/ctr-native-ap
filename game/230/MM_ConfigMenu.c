@@ -770,6 +770,11 @@ static void Config_DrawRowHelp(const ConfigEntry *e, uint32_t *ot)
 		first = "IMPORTANT hides filler items";
 		second = "and shop stock notices.";
 	}
+	if (e->valuePtr == &g_config.trackerPartialColour)
+	{
+		first = "Orange marks tracker nodes with";
+		second = "some checks in logic.";
+	}
 	if (first == 0)
 		return;
 	Config_DrawHelpLines(first, second, ot);

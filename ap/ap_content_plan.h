@@ -478,6 +478,9 @@ uint64_t ap_content_plan_epoch(void);
 /* Stable identity of the bound seed, team, slot and plan. Zero before bind. */
 uint64_t ap_content_plan_room_identity(void);
 const ctr_content_pad *ap_content_plan_pad(int physical);
+/* Unique check codes for the accepted routes on a physical pad or garage
+ * (AP_CONTENT_GARAGE_CUP_PAD + index, where index 4 denotes N. Oxide). */
+const int64_t *ap_content_plan_tracker_locations(int node, int *count);
 const ctr_content_package *ap_content_plan_package(int index);
 /* The package's descriptor JSON as the room sent it, "" without one (#89). */
 const char *ap_content_plan_package_json(int index);

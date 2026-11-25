@@ -151,18 +151,25 @@ static int AP_WShopSlotState(int hub, int k)
 	                         ap_wshop.buying == s->code);
 }
 
-// #249 tracker line for the hub at engine level `level` (decision 21,
-// 2026-10-28). 0 when the seed has no usable shop or the wallet is not loaded.
+// The tracker can show AP access rules even when the shop wallet is unavailable.
 int AP_WumpaShopHubTrackerLine(int level, char *out, int cap)
 {
-	int hub = AP_WumpaShopHubOfLevel(level), states[AP_WUMPA_SHOP_MAX_SLOTS], k;
+	int hub = AP_WumpaShopHubOfLevel(level);
 	if (out == 0 || cap <= 0 || hub < 0 || !AP_WumpaShopUsable(&ctr_wumpa_shop))
 		return 0;
-	if (!ap_net_wumpa_ready())
-		return 0;
-	for (k = 0; k < ctr_wumpa_shop.slots; k++)
-		states[k] = AP_WShopSlotState(hub, k);
-	AP_WumpaShopTrackerLine(out, cap, AP_WumpaShopTallyStates(states, ctr_wumpa_shop.slots));
+	int left = 0, in_logic = 0, unknown = 0;
+	for (int k = 0; k < ctr_wumpa_shop.slots; ++k) {
+		int64_t code = ctr_wumpa_shop.slot[hub][k].code;
+		if (AP_ContentCodeChecked(code)) continue;
+		++left;
+		int state = AP_LocationLogicState(code);
+		in_logic += state == 1;
+		unknown += state == 2;
+	}
+	if (unknown)
+		snprintf(out, cap, "WUMPA SHOP: %d LEFT, %d IN LOGIC, %d UNKNOWN", left, in_logic, unknown);
+	else
+		snprintf(out, cap, "WUMPA SHOP: %d LEFT, %d IN LOGIC", left, in_logic);
 	return 1;
 }
 

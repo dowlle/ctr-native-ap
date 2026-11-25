@@ -101,6 +101,7 @@ typedef struct
 	                            // slot_data. Consumed by AP_SkipCutscenes
 	                            // (ap/ap_podium_skip.c) from CS_Camera.c.
 	bool mapFlash;              // Archipelago: hub-map "Raceable" flicker (default on)
+	bool trackerPartialColour;  // Archipelago: show mixed tracker nodes in orange
 	bool itemBoxColours;        // Archipelago: "Item Box Colours" (default on). Off
 	                            // shows every AP item box pink for this player even
 	                            // when the seed colours them; it can never turn

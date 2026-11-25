@@ -68,6 +68,14 @@ const ctr_content_sanity *ap_content_plan_sanity(const char *id) {
 const ctr_content_sanity *ap_content_plan_sanity_boss(int boss) { return boss==0 ? &sanity : NULL; }
 int AP_ContentCodeChecked(int64_t code) { return code==checked_code; }
 int AP_LocationLogicState(long long code) { return code%3; }
+int AP_ContentPadOpen(const ctr_content_pad *pad) { return pad == &pads[1]; }
+int AP_BossGarageOpen(int boss) { return boss == 0; }
+int AP_GateCount(int index) { (void)index; return 0; }
+const int64_t *ap_content_plan_tracker_locations(int node, int *count) {
+    static const int64_t codes[] = {103, 106, 108, 111, 112};
+    *count = node == 7 ? (int)(sizeof codes / sizeof codes[0]) : 0;
+    return codes;
+}
 char *NativeMenu_Labels(const char *text) { return (char *)text; }
 
 static void expect(AP_TrackerCheckCount *r,int total,int done,int in,int out,int unknown) {
@@ -181,6 +189,52 @@ static void pictures(const char *font, const char *prefix) {
     absent_code=35011105; bosses.lap[5]=0;
     capture(prefix,"rewards-final-absent");
 }
+static void partial_and_pickup_tests(void) {
+    AP_TrackerNode n = {.physical = 7};
+    AP_TrackerRewards rows;
+    pads[0].occupied = 1;
+    pads[0].physical = 7;
+    pads[0].rung_locations[0] = 103;
+    pads[0].box_count = 2;
+    pads[0].box_spots = 1;
+    pads[0].box_number[0] = 13;
+    pads[0].box_number[1] = 21;
+    pads[0].box_locations[0] = 106;
+    pads[0].box_locations[1] = 108;
+    pads[0].letter_locations[0] = 111;
+    pads[0].letter_glyphs[0] = 'X';
+    pads[0].crystal_count = 1;
+    pads[0].crystal_locations[0] = 112;
+    checked_code = 106;
+    AP_TrackerRewardsBuild(&n, 0, &rows);
+    assert(rows.count == 5);
+    assert(!strcmp(rows.rows[1].name, "CRYSTAL 1"));
+    assert(!strcmp(rows.rows[2].name, "LETTER X"));
+    assert(!strcmp(rows.rows[3].name, "ITEM BOX 13"));
+    assert(!strcmp(rows.rows[4].name, "ITEM BOX 21"));
+    AP_TrackerCheckCount total = AP_TrackerNodeChecks(&n);
+    assert(AP_TrackerCheckNodeState(total, 0) == AP_TRACKER_NODE_IN);
+    assert(AP_TrackerCheckNodeState(total, 1) == AP_TRACKER_NODE_PARTIAL);
+
+    strcpy(pads[1].room_title, "YELLOW GEM CUP");
+    pads[1].cup = 1;
+    pads[1].physical = 100;
+    for (int i = 0; i < AP_CONTENT_CUP_LEGS; ++i) pads[1].legs[i].track_pad = -1;
+    pads[1].legs[2].track_pad = 7;
+    strcpy(pads[1].legs[2].track_id, "retail:7");
+    char route[128] = "";
+    AP_TrackerCupRoute(&pads[0], route, sizeof route);
+    assert(!strcmp(route, "VIA YELLOW GEM CUP, RACE 3"));
+    assert(AP_TrackerCupBoxesInLogic(&pads[1]) == 0);
+    checked_code = 0;
+    assert(AP_TrackerCupBoxesInLogic(&pads[1]) == 1);
+
+    memset(pads, 0, sizeof pads);
+    strcpy(pads[0].track_id, "retail:7");
+    checked_code = 0;
+    puts("tracker parity: cup route, partial colour, sparse box labels, crystals, letters and cup box logic pass");
+}
+
 static void reward_tests(void) {
     AP_TrackerNode n={0}; AP_TrackerRewards r;
     n.physical=7; ap_tracker.checks_page=0;
@@ -188,32 +242,32 @@ static void reward_tests(void) {
     for(int i=0;i<3;i++) pads[0].relic_locations[i]=203+i;
     for(int i=0;i<5;i++) pads[0].rung_locations[i]=206+i;
     pads[0].perfect_location=211; pads[0].lap_location=212;
-    AP_TrackerRewardsBuild(&n,&r); assert(r.count==12 && AP_TrackerChecksDetails(&n)==3);
+    AP_TrackerRewardsBuild(&n,ap_tracker.checks_page,&r); assert(r.count==12 && AP_TrackerChecksDetails(&n)==3);
     assert(!strcmp(r.rows[5].name,"HELD 1ST") && !strcmp(r.rows[10].name,"RELIC RACE PERFECT"));
-    absent_code=211; AP_TrackerRewardsBuild(&n,&r); assert(r.count==11); absent_code=0;
+    absent_code=211; AP_TrackerRewardsBuild(&n,ap_tracker.checks_page,&r); assert(r.count==11); absent_code=0;
     /* Older supported plans omit optional families. No invented rows. */
     memset(pads[0].rung_locations,0,sizeof pads[0].rung_locations);
     pads[0].perfect_location=pads[0].lap_location=0;
-    AP_TrackerRewardsBuild(&n,&r); assert(r.count==5 && AP_TrackerChecksDetails(&n)==2);
+    AP_TrackerRewardsBuild(&n,ap_tracker.checks_page,&r); assert(r.count==5 && AP_TrackerChecksDetails(&n)==2);
     n.kind=2; n.physical=100; pads[1].trophy_location=300; pads[1].sweep_location=301;
     for(int i=0;i<4;i++) { pads[1].legs[i].victory=302+i; pads[1].legs[i].track_pad=-1; }
     strcpy(pads[1].legs[2].room_title,"DISTINCT ROOM TITLE");
     pads[1].legs[2].rungs[0]=310; pads[1].legs[2].lap=311;
     ap_tracker.checks_page=2;
-    AP_TrackerRewardsBuild(&n,&r); assert(r.count==8);
+    AP_TrackerRewardsBuild(&n,ap_tracker.checks_page,&r); assert(r.count==8);
     assert(r.rows[0].code==300 && r.rows[1].code==301);
     assert(r.rows[4].code==304 && strstr(r.rows[4].name,"LEG 3 WIN: DISTINCT ROOM TITLE"));
     /* Pre-title-field rooms retain their retail title in the leg reward. */
     char *strings[]={"OLD ROOM RETAIL TITLE"}; sdata->lngStrings=strings;
     pads[1].legs[0].retail_id=7;
-    AP_TrackerRewardsBuild(&n,&r); assert(strstr(r.rows[2].name,"OLD ROOM RETAIL TITLE"));
+    AP_TrackerRewardsBuild(&n,ap_tracker.checks_page,&r); assert(strstr(r.rows[2].name,"OLD ROOM RETAIL TITLE"));
     pads[1].legs[0].retail_id=-1;
-    ap_tracker.checks_page=1; AP_TrackerRewardsBuild(&n,&r); assert(r.count==6);
+    ap_tracker.checks_page=1; AP_TrackerRewardsBuild(&n,ap_tracker.checks_page,&r); assert(r.count==6);
     /* Shared track rungs are deduplicated by code, never by their label. */
     pads[1].legs[2].track_pad=7; pads[0].rung_locations[0]=310;
-    ap_tracker.checks_page=2; AP_TrackerRewardsBuild(&n,&r); assert(r.count==8);
+    ap_tracker.checks_page=2; AP_TrackerRewardsBuild(&n,ap_tracker.checks_page,&r); assert(r.count==8);
     n.kind=3; n.physical=-1; ap_tracker.hub=1; bosses.cup[0]=1;
-    AP_TrackerRewardsBuild(&n,&r); assert(r.count==8);
+    AP_TrackerRewardsBuild(&n,ap_tracker.checks_page,&r); assert(r.count==8);
     /* A real boss cup (garage pad) whose leg track has a standalone Trophy
      * Race with enabled rungs: the race's held and finish rows belong to that
      * race alone. Cup win, leg lap and the rest stay. Ordinary cup control. */
@@ -222,11 +276,11 @@ static void reward_tests(void) {
         pads[1].legs[2].rungs[0]=0; pads[1].legs[2].lap=330;
         pads[0].rung_locations[0]=331; pads[0].rung_locations[3]=332;
         n.kind=2; n.physical=100; ap_tracker.checks_page=2;
-        AP_TrackerRewardsBuild(&n,&r);
+        AP_TrackerRewardsBuild(&n,ap_tracker.checks_page,&r);
         for(i=0;i<r.count;i++) held|=r.rows[i].code==331 || r.rows[i].code==332;
         assert(held);
         pads[1].physical=AP_CONTENT_GARAGE_CUP_PAD; pads[1].legs[2].rungs[1]=333;
-        AP_TrackerRewardsBuild(&n,&r);
+        AP_TrackerRewardsBuild(&n,ap_tracker.checks_page,&r);
         assert(r.rows[0].code==300 && r.rows[1].code==301);
         for(i=0;i<r.count;i++)
             assert(r.rows[i].code!=331 && r.rows[i].code!=332 && r.rows[i].code!=333);
@@ -236,12 +290,12 @@ static void reward_tests(void) {
         n.kind=3; n.physical=-1;
     }
     bosses.cup[0]=0; bosses.lap[0]=320;
-    AP_TrackerRewardsBuild(&n,&r); assert(r.count==2 && r.rows[0].code==35011100);
+    AP_TrackerRewardsBuild(&n,ap_tracker.checks_page,&r); assert(r.count==2 && r.rows[0].code==35011100);
     ap_tracker.hub=0; ap_tracker.checks_page=1; bosses.lap[5]=321;
-    AP_TrackerRewardsBuild(&n,&r); assert(r.count==2 && r.rows[0].code==35011105);
+    AP_TrackerRewardsBuild(&n,ap_tracker.checks_page,&r); assert(r.count==2 && r.rows[0].code==35011105);
     assert(strstr(r.rows[0].name,"FINAL CHALLENGE"));
     absent_code=35011105; bosses.lap[5]=0;
-    AP_TrackerRewardsBuild(&n,&r); assert(!r.count && AP_TrackerChecksDetails(&n)==1); absent_code=0;
+    AP_TrackerRewardsBuild(&n,ap_tracker.checks_page,&r); assert(!r.count && AP_TrackerChecksDetails(&n)==1); absent_code=0;
     /* These are display reads; checked always wins over location logic. */
     AP_TrackerCheckCount c={0}; AP_TrackerCheckSource src={AP_ContentCodeChecked,AP_TrackerChecksLogic};
     checked_code=321; AP_TrackerCheckAdd(&c,321,src); expect(&c,1,1,0,0,0);
@@ -268,18 +322,18 @@ int main(int argc,char **argv) {
     sanity.locations[0][0]=102; sanity.locations[0][2]=103; sanity.locations[0][79]=104;
     sanity.locations[1][1]=105; sanity.locations[2][31]=106;
     checked_code=102;
-    AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
+    AP_TrackerChecksBuild(&node,ap_tracker.checks_page,rows,title,sizeof title,route,sizeof route);
     expect(&rows[0],1,0,1,0,0); expect(&rows[1],3,1,1,0,1);
     expect(&rows[2],1,0,0,1,0); expect(&rows[3],1,0,1,0,0);
     checked_code=100;
-    AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
+    AP_TrackerChecksBuild(&node,ap_tracker.checks_page,rows,title,sizeof title,route,sizeof route);
     expect(&rows[0],1,1,0,0,0);
     families.wumpa=1; families.wumpa_global=107;
-    AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
+    AP_TrackerChecksBuild(&node,ap_tracker.checks_page,rows,title,sizeof title,route,sizeof route);
     expect(&rows[0],1,0,0,0,1);
     pads[0].wumpa_modes=0;
     shared_pending=1;
-    AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
+    AP_TrackerChecksBuild(&node,ap_tracker.checks_page,rows,title,sizeof title,route,sizeof route);
     expect(&rows[0],0,0,0,0,0);
     expect(&rows[4],1,0,0,0,1);
     shared_pending=0;
@@ -290,38 +344,39 @@ int main(int argc,char **argv) {
     strcpy(pads[1].legs[2].track_id,"retail:7"); pads[1].legs[2].wumpa=100;
     ap_tracker.checks_page=2;
     shared_pending=1;
-    AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
+    AP_TrackerChecksBuild(&node,ap_tracker.checks_page,rows,title,sizeof title,route,sizeof route);
     expect(&rows[0],1,1,0,0,0); expect(&rows[1],3,0,1,1,1);
     expect(&rows[4],1,0,0,0,1);
-    assert(strstr(route,"LEG 3 OF 4") && AP_TrackerChecksPages(&node)==4);
+    assert(strstr(route,"RACE 3 OF 4") && AP_TrackerChecksPages(&node)==4);
     /* A cup-only custom leg keeps the accepted room title, not its package name. */
     strcpy(pads[1].legs[2].room_title,"CRASH COVE (CUSTOM)");
-    AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
+    AP_TrackerChecksBuild(&node,ap_tracker.checks_page,rows,title,sizeof title,route,sizeof route);
     assert(!strcmp(title,"CRASH COVE (CUSTOM)"));
     pads[1].legs[2].room_title[0]=0;
     ap_tracker.checks_page=1;
-    AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
+    AP_TrackerChecksBuild(&node,ap_tracker.checks_page,rows,title,sizeof title,route,sizeof route);
     expect(&rows[0],0,0,0,0,0); expect(&rows[1],0,0,0,0,0);
     expect(&rows[4],0,0,0,0,0);
     shared_pending=0;
     /* Ripper Roo's garage has no physical track pad. */
     node.kind=3; node.physical=-1; ap_tracker.hub=1; ap_tracker.checks_page=0;
     strcpy(node.title,"RIPPER ROO"); bosses.wumpa[0]=100;
-    AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
+    AP_TrackerChecksBuild(&node,ap_tracker.checks_page,rows,title,sizeof title,route,sizeof route);
     expect(&rows[0],1,1,0,0,0); expect(&rows[1],3,0,1,1,1);
     assert(strstr(route,"BOSS RACE"));
     bosses.cup[0]=1; ap_tracker.checks_page=2;
-    AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
+    AP_TrackerChecksBuild(&node,ap_tracker.checks_page,rows,title,sizeof title,route,sizeof route);
     expect(&rows[0],1,1,0,0,0); assert(AP_TrackerChecksPages(&node)==4);
     bosses.cup[0]=0; ap_tracker.hub=0; ap_tracker.checks_page=1; bosses.wumpa[5]=108;
-    AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
+    AP_TrackerChecksBuild(&node,ap_tracker.checks_page,rows,title,sizeof title,route,sizeof route);
     expect(&rows[0],1,0,0,1,0); assert(strstr(route,"REMATCH"));
     /* Zero locations and null records are absent rather than complete. */
     memset(&sanity,0,sizeof sanity); bosses.wumpa[5]=0;
-    AP_TrackerChecksBuild(&node,rows,title,sizeof title,route,sizeof route);
+    AP_TrackerChecksBuild(&node,ap_tracker.checks_page,rows,title,sizeof title,route,sizeof route);
     for(int i=0;i<4;i++) expect(&rows[i],0,0,0,0,0);
     puts("tracker checks: production track, cup-only legs, boss, boss cup, rematch, sparse ordinals, done and unknown pass");
     reward_tests();
     if(argc==3) pictures(argv[1],argv[2]);
+    else partial_and_pickup_tests();
     return 0;
 }

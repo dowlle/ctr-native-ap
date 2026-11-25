@@ -169,8 +169,9 @@ tracker = body(text('ap/ap_tracker.c'), 'static void AP_TrackerDraw(void)')
 check('the tracker hub tab draws the shop line',
       'AP_WumpaShopHubTrackerLine(GEM_STONE_VALLEY+ap_tracker.hub,line,(int)sizeof line)' in tracker)
 tline = body(text('ap/ap_wumpa_shop_ui.c'), 'int AP_WumpaShopHubTrackerLine(')
-check('the shop line tallies the shop page\'s own slot states',
-      'states[k] = AP_WShopSlotState(hub, k);' in tline and 'AP_WumpaShopTallyStates(states, ctr_wumpa_shop.slots)' in tline)
+check('the tracker tallies AP logic for unchecked slots independently of the wallet',
+      'AP_ContentCodeChecked(code)' in tline and 'AP_LocationLogicState(code)' in tline
+      and 'ap_net_wumpa_ready()' not in tline)
 cfg = text('ap/ap_seedcfg.cpp')
 check('the block parser sits before the plan admission',
       cfg.index('#include "ap_wumpa_shop_parser.hpp"') < cfg.index('#include "ap_content_plan_impl.hpp"'))
