@@ -98,6 +98,8 @@ class AssemblerFixtureTests(unittest.TestCase):
         "assets/looks/komodo-moe/komodo_moe_hi.bin",
         "assets/tracks/cortex-vortex/CVortex Arcade All.lev",
         "assets/tracks/cortex-vortex/CVortex Arcade All.vrm",
+        "assets/tracks/cortex-vortex/CVortex Relic.lev",
+        "assets/tracks/cortex-vortex/CVortex Relic.vrm",
     )
 
     def write_build_archive(

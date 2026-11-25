@@ -225,58 +225,31 @@ static void test_results(void)
 	EXPECT_EQ(n, 0, "absent token sends nothing, never Oxide Station's");
 }
 
-static int relic_time_from_source(int index)
-{
-	FILE *f = fopen("game/zGlobal_DATA.c", "rb");
-	static char buf[1 << 22];
-	size_t len;
-	char *p;
-	int i;
-	if (!f)
-		return -1;
-	len = fread(buf, 1, sizeof buf - 1, f);
-	fclose(f);
-	buf[len] = 0;
-	p = strstr(buf, ".RelicTime =");
-	if (!p)
-		return -1;
-	p = strchr(p, '{');
-	for (i = 0; p && i <= index; i++)
-	{
-		p = strstr(p, "0x");
-		if (!p)
-			return -1;
-		if (i == index)
-			return (int)strtol(p, 0, 16);
-		p += 2;
-	}
-	return -1;
-}
-
 static void test_relic_targets(void)
 {
 	int t;
-	EXPECT(AP_CORTEX_RELIC_TARGETS.placeholder == 1, "targets are still marked placeholders");
-	EXPECT(!strcmp(AP_CORTEX_RELIC_TARGETS.levSha256, CTR_CFG_CORTEX_LEV_SHA256), "keyed by the pinned LEV");
-	for (t = 0; t < 3; t++)
-		EXPECT_EQ(AP_CortexRelicTime(t), relic_time_from_source(13 * 3 + t),
-		          "placeholder equals Oxide Station retail data.RelicTime[39+t]");
+	EXPECT(AP_CORTEX_RELIC_TARGETS.placeholder == 0, "targets are approved times, not placeholders");
+	EXPECT(!strcmp(AP_CORTEX_RELIC_TARGETS.levSha256, CTR_CFG_CORTEX_RELIC_LEV_SHA256), "keyed by the pinned relic LEV");
+	// CV3 (approved 2026-11-25): 3:10.00 / 2:25.00 / 1:45.00 in 1/960 s units.
+	EXPECT_EQ(AP_CortexRelicTime(0), 182400, "sapphire 3:10.00");
+	EXPECT_EQ(AP_CortexRelicTime(1), 139200, "gold 2:25.00");
+	EXPECT_EQ(AP_CortexRelicTime(2), 100800, "platinum 1:45.00");
 	EXPECT(AP_CortexRelicTime(0) > AP_CortexRelicTime(1) && AP_CortexRelicTime(1) > AP_CortexRelicTime(2),
 	       "sapphire > gold > platinum");
 	EXPECT_EQ(AP_CortexRelicTiersBeaten(AP_CortexRelicTime(2)), 7, "exact platinum beats all tiers");
 	EXPECT_EQ(AP_CortexRelicTiersBeaten(AP_CortexRelicTime(1)), 3, "exact gold");
 	EXPECT_EQ(AP_CortexRelicTiersBeaten(AP_CortexRelicTime(0) + 1), 0, "too slow");
 	// A4-13 (ruled 2026-11-09): standalone races are two laps, so the targets
-	// scale by the laps raced. Every placeholder divides by three exactly.
+	// scale by the laps raced. Every target divides by three exactly.
 	EXPECT_EQ(AP_CortexRelicTime(0) % 3, 0, "sapphire divides by three exactly");
 	EXPECT_EQ(AP_CortexRelicTime(1) % 3, 0, "gold divides by three exactly");
 	EXPECT_EQ(AP_CortexRelicTime(2) % 3, 0, "platinum divides by three exactly");
-	EXPECT_EQ(AP_CortexRelicTimeForLaps(0, 2), 126080, "two-lap sapphire (2:11.33)");
-	EXPECT_EQ(AP_CortexRelicTimeForLaps(1, 2), 112640, "two-lap gold (1:57.33)");
-	EXPECT_EQ(AP_CortexRelicTimeForLaps(2, 2), 98560, "two-lap platinum (1:42.67)");
+	EXPECT_EQ(AP_CortexRelicTimeForLaps(0, 2), 121600, "two-lap sapphire (2:06.67)");
+	EXPECT_EQ(AP_CortexRelicTimeForLaps(1, 2), 92800, "two-lap gold (1:36.67)");
+	EXPECT_EQ(AP_CortexRelicTimeForLaps(2, 2), 67200, "two-lap platinum (1:10.00)");
 	for (t = 0; t < 3; t++)
 		EXPECT_EQ(AP_CortexRelicTimeForLaps(t, 3), AP_CortexRelicTime(t),
-		          "three laps keeps the placeholder, so legacy and old-plan rooms are unchanged");
+		          "three laps keeps the targets as authored, so legacy and old-plan rooms are unchanged");
 	EXPECT_EQ(AP_CortexRelicTimeForLaps(0, 0), AP_CortexRelicTime(0) / 3, "laps clamp from below");
 	EXPECT_EQ(AP_CortexRelicTimeForLaps(0, 9), AP_CortexRelicTime(0) * 7 / 3, "laps clamp from above");
 	EXPECT_EQ(AP_CortexRelicTiersBeatenForLaps(AP_CortexRelicTimeForLaps(2, 2), 2), 7,

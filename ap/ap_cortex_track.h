@@ -177,14 +177,14 @@ static inline int AP_CortexOpenCount(const ctr_cortex_track *cv, int firstSlot, 
 // ── relic targets ────────────────────────────────────────────────────────────
 // Package-owned relic targets, keyed by the pinned LEV hash. Cortex Vortex has
 // no published target times (not in the LEV, the VRM or the Saphi API as of
-// 2026-09-13), so until Lockheart supplies them these are PLACEHOLDERS: Oxide
-// Station's retail Sapphire / Gold / Platinum targets, data.RelicTime[39..41]
-// (3:17.00 / 2:56.00 / 2:34.00, in 1/960 s race-clock units), authored for the
-// three laps that race then ran. Standalone races are two laps since the
-// ruling of 2026-11-09 (A4-13); AP_CortexRelicTimeForLaps scales these to the
-// laps raced, so the per-lap pace asked of the player is unchanged.
-// tools/test-cortex-track.c pins them against game/zGlobal_DATA.c. Replace the
-// row, not the mechanism, when real times arrive.
+// 2026-09-13), so these are ours, approved by the maintainer on 2026-11-25:
+// Sapphire / Gold / Platinum 3:10.00 / 2:25.00 / 1:45.00, derived from the
+// track's Saphi time trial standards and the retail relic rule against its
+// 192 s of time crates (the lenient set). In 1/960 s race-clock units,
+// authored for the three laps the Relic Race runs. Standalone races are two
+// laps since the ruling of 2026-11-09 (A4-13); AP_CortexRelicTimeForLaps
+// scales these to the laps raced, so the per-lap pace asked of the player is
+// unchanged. tools/test-cortex-track.c pins the values.
 struct AP_CortexRelicTargets
 {
 	const char *levSha256;
@@ -193,9 +193,9 @@ struct AP_CortexRelicTargets
 };
 
 static const struct AP_CortexRelicTargets AP_CORTEX_RELIC_TARGETS = {
-	CTR_CFG_CORTEX_LEV_SHA256,
-	{0x0002e2c0, 0x00029400, 0x00024180}, // PLACEHOLDER: Oxide Station retail times
-	1,
+	CTR_CFG_CORTEX_RELIC_LEV_SHA256, // a Relic Race serves the relic pair (CV1)
+	{0x0002c880, 0x00021fc0, 0x000189c0}, // 3:10.00 / 2:25.00 / 1:45.00, approved 2026-11-25
+	0,
 };
 
 static inline int AP_CortexRelicTime(int tier)
@@ -205,10 +205,9 @@ static inline int AP_CortexRelicTime(int tier)
 	return AP_CORTEX_RELIC_TARGETS.time[tier];
 }
 
-// The placeholder targets are authored for the track's three laps, like the
-// Oxide Station race they were copied from. Standalone races are two laps
-// (ruling of 2026-11-09, A4-13), so a standalone Relic Race compares against
-// the targets scaled by the laps actually raced. Every placeholder divides
+// The targets are authored for the track's three laps. Standalone races are
+// two laps (ruling of 2026-11-09, A4-13), so a standalone Relic Race compares
+// against the targets scaled by the laps actually raced. Every target divides
 // by three exactly, so the scaled times are exact. Cup legs carry no relic
 // tiers and never reach this. A legacy room (schema 15) always races three
 // laps, so its scale is 1 and its targets are unchanged.

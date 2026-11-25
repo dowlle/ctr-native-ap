@@ -60,11 +60,16 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
         }
     }
     std::map<std::string, J> measured;
-    auto inventory = [&](const J &track) -> const J * {
+    // `pin` is a sanity row's lev_sha256. Cortex Vortex rows name the bundled
+    // main LEV; a room from before CV1 named the all-in-one build, whose
+    // crates are 1.1.5's at the same places and in the same order, so it
+    // keeps its own catalog row (CTR_CFG_CORTEX_LEGACY_LEV_SHA256).
+    auto inventory = [&](const J &track, const J *pin = nullptr) -> const J * {
         std::string key;
         if (track["origin"] == "retail") key = "retail:" + std::to_string(number(track["retail_id"], 0, 17));
-        else if (track["origin"] == "cortex_vortex") key = rules_version >= 2
-            ? "4e3a2daf56c67be3ac645d3bb5375e516c828a0bca24c35ac69b3366c466fe13" : "cortex_vortex";
+        else if (track["origin"] == "cortex_vortex") key = rules_version < 2 ? "cortex_vortex"
+            : pin && *pin == CTR_CFG_CORTEX_LEGACY_LEV_SHA256 ? CTR_CFG_CORTEX_LEGACY_LEV_SHA256
+            : CTR_CFG_CORTEX_LEV_SHA256;
         else if (track.contains("named_block")) {
             const J &pkg = *packages.at(track["package_id"]);
             for (const auto &file : pkg["files"]) if (file["role"] == "lev") key = file["sha256"];
@@ -98,7 +103,7 @@ static void sanity_checks(const J &p, State &out, const J &registry, std::map<in
         fields(row, {"track_id", "lev_sha256", "counts", "weapon_crate", "wumpa_crate", "wumpa_fruit"});
         const std::string tid = text(row["track_id"]);
         need(wanted.erase(tid) == 1, "unknown or duplicate sanity track");
-        const J &track = *tracks.at(tid), &inv = *inventory(track);
+        const J &track = *tracks.at(tid), &inv = *inventory(track, &row["lev_sha256"]);
         need(row["lev_sha256"] == inv["lev_sha256"] && row["counts"] == inv["counts"], "sanity revision/count mismatch");
         const J *pkg = track["origin"] == "custom" ? packages.at(track["package_id"]) : nullptr;
         const std::string lev = row["lev_sha256"];
