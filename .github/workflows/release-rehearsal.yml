@@ -64,34 +64,16 @@ jobs:
             archive: ctr-archipelago-v0.0.0-rehearsal-linux-x86.tar.gz
             interpreter: python/bin/python3.12
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ctr-release-rehearsal-${{ (github.ref_name == 'main' || github.base_ref == 'main') && 'main' || 'dev' }}
-      - name: Generate a Quick room with the bundled interpreter
+          path: rehearsal
+      - name: Generate and serve a Quick room with the bundled interpreter
         env:
           ARCHIVE: ${{ matrix.archive }}
           INTERPRETER: ${{ matrix.interpreter }}
-        shell: python
-        run: |
-          import hashlib
-          import json
-          import os
-          import shutil
-          import subprocess
-          from pathlib import Path
-
-          shutil.unpack_archive(os.environ["ARCHIVE"], "client")
-          (client,) = Path("client").iterdir()
-          runtime = client / "solo-runtime"
-          digest = hashlib.sha256((client / "ctr.apworld").read_bytes()).hexdigest()
-          result = subprocess.run([
-              str(runtime / os.environ["INTERPRETER"]), str(runtime / "ctr_solo.py"),
-              "--apworld-sha256", digest, "generate", "--yaml", str(runtime / "presets/quick.yaml"),
-              "--preset", "quick", "--seed", "10725", "--name", "AppieCTR",
-          ], stdout=subprocess.PIPE, text=True, timeout=120)
-          print(result.stdout, end="")
-          result.check_returncode()
-          room = json.loads(result.stdout.splitlines()[-1])
-          if (room["event"] != "result" or room["slot"] != "AppieCTR"
-                  or room["locations_total"] <= 0 or room["apworld_sha256"] != digest):
-              raise SystemExit(f"unexpected Solo generation result: {room}")
+        shell: bash
+        run: python tools/release/smoke-solo-runtime.py "rehearsal/$ARCHIVE" "$INTERPRETER"

@@ -9,6 +9,8 @@ import hashlib
 import importlib.util
 import io
 import os
+import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -220,8 +222,8 @@ class SoloRuntimeReleaseTests(unittest.TestCase):
         return checkout
 
     def test_builder_refuses_a_checkout_without_solo_files(self) -> None:
-        with self.assertRaises(FileNotFoundError):
-            BUILDER.build("linux", self.apworld, self.root, self.root / "out", self.root / "cache")
+        with self.assertRaises(subprocess.CalledProcessError):
+            BUILDER.build("linux", self.apworld, self.root, "HEAD", self.root / "out", self.root / "cache")
         self.assertFalse((self.root / "out").exists())
 
     def test_builder_reads_solo_files_from_current_and_older_checkouts(self) -> None:
@@ -238,10 +240,41 @@ class SoloRuntimeReleaseTests(unittest.TestCase):
     def test_verifier_checks_bundled_solo_files_against_paired_checkout(self) -> None:
         release = self.write_release("v0.3.0", self.runtime("windows"), self.runtime("linux"))
         checkout = self.source_checkout()
-        VERIFIER.verify_solo_runtime(release, "v0.3.0", checkout)
-        (checkout / "worlds/ctr/tools/solo/presets/standard.yaml").write_bytes(b"different preset")
+        _, sources = BUILDER.solo_source_files(checkout)
+        hashes = {name: sha(path.read_bytes()) for name, path in sources.items()}
+        VERIFIER.verify_solo_runtime(release, "v0.3.0", hashes)
+        hashes["presets/standard.yaml"] = sha(b"different preset")
         with self.assertRaisesRegex(VERIFIER.PolicyError, "presets/standard.yaml differs"):
-            VERIFIER.verify_solo_runtime(release, "v0.3.0", checkout)
+            VERIFIER.verify_solo_runtime(release, "v0.3.0", hashes)
+
+    def test_pairing_checks_archive_bytes_and_uses_committed_solo_sources(self) -> None:
+        checkout = self.source_checkout()
+        world = checkout / "worlds" / "ctr"
+        code = world / "__init__.py"
+        code.write_bytes(b"# base world")
+        packer = world / "tools" / "build_apworld.py"
+        packer.write_text(
+            "from pathlib import Path\nimport sys, zipfile\n"
+            "with zipfile.ZipFile(sys.argv[1], 'w') as archive:\n"
+            "    archive.write(Path(__file__).parents[1] / '__init__.py', 'ctr/__init__.py')\n",
+            encoding="utf-8",
+        )
+        git = ["git", "-C", str(checkout)]
+        subprocess.run([*git, "init", "-q"], check=True)
+        subprocess.run([*git, "add", "worlds/ctr"], check=True)
+        subprocess.run([*git, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                        "commit", "-qm", "source"], check=True)
+        subprocess.run([*git, "tag", "paired"], check=True)
+        subprocess.run([sys.executable, str(packer), str(self.apworld)], check=True)
+        (world / "tools/solo/ctr_solo.py").write_bytes(b"uncommitted wrapper")
+        with BUILDER.paired_checkout(self.apworld, checkout, "paired") as source:
+            _, files = BUILDER.solo_source_files(source)
+            self.assertEqual(files["ctr_solo.py"].read_bytes(), b"ctr_solo.py")
+        code.write_bytes(b"# other world")
+        subprocess.run([sys.executable, str(packer), str(self.apworld)], check=True)
+        with self.assertRaisesRegex(ValueError, "differs from the repack"):
+            with BUILDER.paired_checkout(self.apworld, checkout, "paired"):
+                self.fail("mismatched archive accepted")
 
     def test_lock_pins_every_dependency_for_both_platforms(self) -> None:
         import json

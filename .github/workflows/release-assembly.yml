@@ -167,26 +167,7 @@ jobs:
           set -euo pipefail
           test "$(git -C apworld-source rev-parse HEAD)" = "$APWORLD_SOURCE_COMMIT"
           downloaded="$(find apworld-artifact -type f -name ctr.apworld -print -quit)"
-          mkdir -p apworld-repacked
-          python3 apworld-source/worlds/ctr/tools/build_apworld.py apworld-repacked/ctr.apworld
-          python3 - "$downloaded" apworld-repacked/ctr.apworld <<'PY'
-          import sys
-          import zipfile
-
-          def members(path):
-              with zipfile.ZipFile(path) as archive:
-                  entries = [(info.filename, archive.read(info))
-                             for info in archive.infolist() if not info.is_dir()]
-              names = [name for name, _ in entries]
-              if len(names) != len(set(names)):
-                  raise SystemExit(f"duplicate apworld member in {path}")
-              return sorted(entries)
-
-          downloaded, rebuilt = map(members, sys.argv[1:])
-          if downloaded != rebuilt:
-              raise SystemExit("downloaded apworld differs from the exact source repack")
-          print(f"apworld member bytes match ({len(downloaded)} files; ZIP timestamps ignored)")
-          PY
+          python3 tools/release/solo_source.py "$downloaded" apworld-source "$APWORLD_SOURCE_COMMIT"
 
       - name: Install Archipelago for the release template
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -220,12 +201,14 @@ jobs:
           python-version: "3.12"
 
       - name: Build the solo runtimes from the paired apworld checkout
+        env:
+          APWORLD_SOURCE_COMMIT: ${{ steps.select.outputs.apworld_source_commit }}
         run: |
           set -euo pipefail
           apworld="$(find apworld-artifact -type f -name ctr.apworld -print -quit)"
           for platform in windows linux; do
             python tools/solo/build-runtime.py --platform "$platform" \
-              --apworld "$apworld" --apworld-source apworld-source \
+              --apworld "$apworld" --apworld-source apworld-source --apworld-commit "$APWORLD_SOURCE_COMMIT" \
               --out "solo-runtime-$platform" --cache solo-runtime-cache
           done
 
@@ -251,11 +234,13 @@ jobs:
       - name: Verify the unsigned assembly before upload
         env:
           RELEASE_VERSION: ${{ inputs.version }}
+          APWORLD_SOURCE_COMMIT: ${{ steps.select.outputs.apworld_source_commit }}
         run: |
           set -euo pipefail
           python3 tools/verify-release.py release \
             --version "v${RELEASE_VERSION#v}" \
-            --pre-sign --require-solo-runtime --apworld-source apworld-source
+            --pre-sign --require-solo-runtime --apworld-source apworld-source \
+            --apworld-commit "$APWORLD_SOURCE_COMMIT"
 
       - name: Upload prepared release assets
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

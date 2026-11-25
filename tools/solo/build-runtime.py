@@ -2,7 +2,7 @@
 """Assemble the solo runtime folder for one platform (#89).
 
     build-runtime.py --platform windows|linux --apworld ctr.apworld
-                     --apworld-source CHECKOUT --out DIR [--cache DIR]
+                     --apworld-source CHECKOUT --apworld-commit REF --out DIR [--cache DIR]
 
 The result is the `solo-runtime/` folder that goes into the client archive
 beside ctr_native_ap and ctr.apworld:
@@ -38,7 +38,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "release"))
 
-from solo_source import solo_source_files
+from solo_source import paired_checkout, solo_source_files
 
 LOCK = HERE / "runtime-lock.json"
 INTERPRETER = {"windows": "python/python.exe", "linux": "python/bin/python3.12"}
@@ -204,25 +204,26 @@ def manifest_hashes(runtime: Path) -> str:
     return digest.hexdigest()
 
 
-def build(platform: str, apworld: Path, apworld_source: Path, out: Path, cache: Path) -> Path:
+def build(platform: str, apworld: Path, apworld_source: Path, apworld_commit: str,
+          out: Path, cache: Path) -> Path:
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
     if out.exists():
         raise BuildError(f"{out} exists; use a fresh output folder")
     apworld_sha = sha256(apworld)
-    solo, source_files = solo_source_files(apworld_source)
     runtime = out
-    runtime.mkdir(parents=True)
     licenses = runtime / "LICENSES"
-    licenses.mkdir()
-    for name, source in source_files.items():
-        target = runtime / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
-    python = lock["python"]
-    build_python(platform, python[platform], cache, runtime, licenses)
-    wheel_lines = install_wheels(platform, lock["wheels"], cache, runtime, licenses)
-    core = lock["archipelago"]
-    build_core(core["commit"], core["repository"], runtime, solo, licenses)
+    with paired_checkout(apworld, apworld_source, apworld_commit) as checkout:
+        solo, source_files = solo_source_files(checkout)
+        licenses.mkdir(parents=True)
+        for name, source in source_files.items():
+            target = runtime / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+        python = lock["python"]
+        build_python(platform, python[platform], cache, runtime, licenses)
+        wheel_lines = install_wheels(platform, lock["wheels"], cache, runtime, licenses)
+        core = lock["archipelago"]
+        build_core(core["commit"], core["repository"], runtime, solo, licenses)
     compiled = precompile(runtime)
     lines = [
         "# CTR Archipelago solo runtime. Do not edit; the client checks these values.",
@@ -247,14 +248,16 @@ def main() -> int:
     parser.add_argument("--platform", choices=("windows", "linux"), required=True)
     parser.add_argument("--apworld", type=Path, required=True)
     parser.add_argument("--apworld-source", type=Path, required=True,
-                        help="checkout at the commit or tag that produced ctr.apworld")
+                        help="apworld source repository")
+    parser.add_argument("--apworld-commit", required=True, help="exact apworld commit or paired tag")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--cache", type=Path, default=Path(tempfile.gettempdir()) / "ctr-solo-runtime-cache")
     args = parser.parse_args()
     try:
-        runtime = build(args.platform, args.apworld.resolve(), args.apworld_source.resolve(),
+        runtime = build(args.platform, args.apworld.resolve(), args.apworld_source.resolve(), args.apworld_commit,
                         args.out.resolve(), args.cache.resolve())
-    except (BuildError, OSError, subprocess.CalledProcessError, zipfile.BadZipFile, tarfile.TarError) as error:
+    except (BuildError, OSError, ValueError, subprocess.CalledProcessError,
+            zipfile.BadZipFile, tarfile.TarError) as error:
         print(f"solo runtime build failed: {error}", file=sys.stderr)
         return 1
     print((runtime / "RUNTIME.txt").read_text(encoding="utf-8"), end="")

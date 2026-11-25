@@ -26,7 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / "release"))
 
 import release_policy
-from solo_source import solo_source_files
+from solo_source import paired_checkout, solo_source_files
 from release_policy import (
     MANIFEST_NAME,
     PLACEHOLDER_PREFIX,
@@ -195,14 +195,10 @@ def read_archive_member(archive: Path, suffix: str) -> bytes | None:
         return stream.read() if stream else None
 
 
-def verify_solo_runtime(release: Path, tag: str, apworld_source: Path | None = None) -> None:
+def verify_solo_runtime(release: Path, tag: str, expected_sources: dict[str, str] | None = None) -> None:
     """Each client archive carries solo-runtime/RUNTIME.txt (#89), built for the
     exact ctr.apworld asset of this release, with its interpreter inside."""
     apworld = sha256(release / "ctr.apworld")
-    expected_sources = {}
-    if apworld_source is not None:
-        _, sources = solo_source_files(apworld_source)
-        expected_sources = {name: sha256(path) for name, path in sources.items()}
     for platform, interpreter in (("windows", "python/python.exe"), ("linux", "python/bin/python3.12")):
         suffix = ".zip" if platform == "windows" else ".tar.gz"
         archive = release / f"ctr-archipelago-{tag}-{platform}-x86{suffix}"
@@ -232,7 +228,10 @@ def verify_solo_runtime(release: Path, tag: str, apworld_source: Path | None = N
 
 
 def verify(release: Path, version: str, public_key: Path, pre_sign: bool,
-           require_solo_runtime: bool = False, apworld_source: Path | None = None) -> None:
+           require_solo_runtime: bool = False, apworld_source: Path | None = None,
+           apworld_commit: str | None = None) -> None:
+    if (apworld_source is None) != (apworld_commit is None):
+        fail("--apworld-source and --apworld-commit must be used together")
     if not release.is_dir():
         fail(f"release directory does not exist: {release}")
     tag = version if version.startswith("v") else f"v{version}"
@@ -260,8 +259,12 @@ def verify(release: Path, version: str, public_key: Path, pre_sign: bool,
 
     verify_archive_hashes(release, artifacts)
     verify_standard_sidecars(release, tag)
-    if require_solo_runtime or solo_runtime_required(tag) or apworld_source is not None:
-        verify_solo_runtime(release, tag, apworld_source)
+    if apworld_source is not None and apworld_commit is not None:
+        with paired_checkout(release / "ctr.apworld", apworld_source, apworld_commit) as checkout:
+            _, sources = solo_source_files(checkout)
+            verify_solo_runtime(release, tag, {name: sha256(path) for name, path in sources.items()})
+    elif require_solo_runtime or solo_runtime_required(tag):
+        verify_solo_runtime(release, tag)
     release_policy.verify_authoring_sidecars(release, tag)
 
     if pre_sign:
@@ -297,6 +300,10 @@ def parser() -> argparse.ArgumentParser:
         help="also verify the bundled Solo files against the paired apworld checkout",
     )
     result.add_argument(
+        "--apworld-commit",
+        help="exact apworld commit or paired tag used to pack the release world",
+    )
+    result.add_argument(
         "--public-key",
         type=Path,
         default=Path(__file__).resolve().parents[1] / PUBLIC_KEY_NAME,
@@ -308,8 +315,9 @@ def main() -> int:
     args = parser().parse_args()
     try:
         verify(args.release_directory, args.version, args.public_key, args.pre_sign,
-               args.require_solo_runtime, args.apworld_source)
-    except (OSError, PolicyError, zipfile.BadZipFile, tarfile.TarError) as error:
+               args.require_solo_runtime, args.apworld_source, args.apworld_commit)
+    except (OSError, PolicyError, ValueError, subprocess.CalledProcessError,
+            zipfile.BadZipFile, tarfile.TarError) as error:
         print(f"release verification failed: {error}", file=sys.stderr)
         return 1
     return 0

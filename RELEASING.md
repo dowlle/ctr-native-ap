@@ -239,7 +239,7 @@ and upload steps are scoped to a complete two-platform release in section 7.
 - [ ] Confirm the assembly output contains `manifest.json` with a trailing
       newline and exactly the two client archive names above.
 - [ ] The preparation workflow already ran
-      `python3 tools/verify-release.py release --version vX.Y.Z --pre-sign --require-solo-runtime --apworld-source <checkout>` on
+      `python3 tools/verify-release.py release --version vX.Y.Z --pre-sign --require-solo-runtime --apworld-source <checkout> --apworld-commit <ref>` on
       the twelve-file unsigned assembly. Run it again yourself if you assembled
       by hand. `--pre-sign` verifies the archive hashes and the standard
       sidecars without a signature and prints that it is not a signed release.
@@ -248,8 +248,9 @@ and upload steps are scoped to a complete two-platform release in section 7.
       the standalone asset.
 - [ ] Solo runtime (#89): the preparation workflow builds `solo-runtime/` for
       each platform with `tools/solo/build-runtime.py`. For local assembly,
-      pass `--apworld ctr.apworld --apworld-source <checkout>` with a checkout
-      of the exact apworld commit or paired tag used to pack that archive.
+      pass `--apworld ctr.apworld --apworld-source <checkout> --apworld-commit <ref>`.
+      Use the exact apworld commit or paired tag used to pack that archive.
+      The builder compares the archive members against a repack of that Git tree.
       The builder reads the wrapper, core trimmer, overlay and presets from
       `worlds/ctr/tools/solo/` in that checkout, and uses the pins in
       `tools/solo/runtime-lock.json`. The
