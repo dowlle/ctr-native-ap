@@ -70,6 +70,10 @@ int AP_ContentCodeChecked(int64_t code) { return code==checked_code; }
 int AP_LocationLogicState(long long code) { return code%3; }
 int AP_ContentPadOpen(const ctr_content_pad *pad) { return pad == &pads[1]; }
 int AP_BossGarageOpen(int boss) { return boss == 0; }
+int AP_BossGateAdvert(int boss, char *out, int cap) {
+    assert(boss == 2);
+    return snprintf(out, (size_t)cap, "Requires: 8 Trophies (have 2)");
+}
 int AP_GateCount(int index) { (void)index; return 0; }
 int ap_content_plan_check_boost(int64_t code) { (void)code; return 0; }
 const int64_t *ap_content_plan_tracker_locations(int node, int *count) {
@@ -240,6 +244,23 @@ static void partial_and_pickup_tests(void) {
     puts("tracker parity: cup route, partial colour, sparse box labels, crystals, letters and cup box logic pass");
 }
 
+static void activity_reason_tests(void) {
+    AP_TrackerNode node = {.physical = 7};
+    ctr_content_pad pad = {.keys = 4, .has_rule = 1, .rule_count = 2, .rule_mask = 1};
+    char line[160];
+    ap_tracker.hub = 3;
+    AP_TrackerActivityReason(&node, &pad, AP_PADACT_LOCK_HUB, line, sizeof line);
+    assert(!strcmp(line, "NEEDS 4 KEYS"));
+    AP_TrackerActivityReason(&node, &pad, AP_PADACT_LOCK_PAD, line, sizeof line);
+    assert(!strcmp(line, "NEEDS 2 Trophies"));
+    strcpy(ap_tracker.acts.stage2, "1 Red Gem");
+    AP_TrackerActivityReason(&node, &pad, AP_PADACT_LOCK_STAGE2, line, sizeof line);
+    assert(!strcmp(line, "NEEDS 1 Red Gem"));
+    node.kind = 3;
+    AP_TrackerActivityReason(&node, NULL, AP_PADACT_LOCK_BOSS, line, sizeof line);
+    assert(!strcmp(line, "Requires: 8 Trophies (have 2)"));
+}
+
 static void reward_tests(void) {
     AP_TrackerNode n={0}; AP_TrackerRewards r;
     n.physical=7; ap_tracker.checks_page=0;
@@ -382,6 +403,9 @@ int main(int argc,char **argv) {
     puts("tracker checks: production track, cup-only legs, boss, boss cup, rematch, sparse ordinals, done and unknown pass");
     reward_tests();
     if(argc==3) pictures(argv[1],argv[2]);
-    else partial_and_pickup_tests();
+    else {
+        partial_and_pickup_tests();
+        activity_reason_tests();
+    }
     return 0;
 }

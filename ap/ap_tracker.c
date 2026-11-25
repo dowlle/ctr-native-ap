@@ -1121,6 +1121,29 @@ static void AP_TrackerDrawShop(void)
 	snprintf(line,sizeof line,"UP/DOWN SLOTS %d/%d   ^ BACK",ap_tracker.checks_detail+1,pages);
 	AP_TrackerText(NativeMenu_Labels(line),114,610,18,TRACKER_WHITE,1052);
 }
+static void AP_TrackerActivityReason(const AP_TrackerNode *n, const ctr_content_pad *pad, int reason,
+                                     char *out, size_t size)
+{
+	out[0] = '\0';
+	if (reason == AP_PADACT_LOCK_HUB) {
+		int keys = AP_PadActivityHubKeys(ap_tracker.hub, n->physical);
+		if (pad && n->kind != 3 && pad->keys > keys) keys = pad->keys;
+		snprintf(out, size, "NEEDS %d %s", keys, keys == 1 ? "KEY" : "KEYS");
+	} else if (reason == AP_PADACT_LOCK_PAD && pad && pad->has_rule) {
+		char requirement[64];
+		ap_content_requirement_text(pad->rule_mask, pad->rule_count, requirement, sizeof requirement);
+		snprintf(out, size, "NEEDS %s%s", requirement, pad->rule_distinct ? " OF DIFFERENT COLOURS" : "");
+	} else if (reason == AP_PADACT_LOCK_RACER && pad && pad->racer_lock >= 0 &&
+	           pad->racer_lock < AP_TRACKER_PROGRESS_RACERS) {
+		snprintf(out, size, "NEEDS RACER %s", AP_TRACKER_RACER_NAME[pad->racer_lock]);
+	} else if (reason == AP_PADACT_LOCK_STAGE2 && ap_tracker.acts.stage2[0]) {
+		snprintf(out, size, "NEEDS %s", ap_tracker.acts.stage2);
+	} else if (reason == AP_PADACT_LOCK_BOSS) {
+		AP_BossGateAdvert(ap_tracker.hub ? ap_tracker.hub - 1 : 4, out, (int)size);
+	}
+	if (!out[0]) snprintf(out, size, "%s", AP_PadActivityReasonName(reason));
+}
+
 static void AP_TrackerDrawActivities(void)
 {
 	AP_TrackerNode *n = &ap_tracker.nodes[ap_tracker.focus];
@@ -1144,25 +1167,9 @@ static void AP_TrackerDrawActivities(void)
 			int dy = 0;
 			for (int reason = 1; reason < AP_PADACT_REASONS; ++reason) {
 				if (!(mask & AP_PADACT_BIT(reason))) continue;
-				char detail[192] = "";
-				const char *label = AP_PadActivityReasonName(reason);
-				if (reason == AP_PADACT_LOCK_HUB) {
-					int keys = AP_PadActivityHubKeys(ap_tracker.hub, n->physical);
-					if (pad && n->kind != 3 && pad->keys > keys) keys = pad->keys;
-					snprintf(detail, sizeof detail, "NEEDS %d %s", keys, keys == 1 ? "KEY" : "KEYS");
-				} else if (reason == AP_PADACT_LOCK_PAD && pad && pad->has_rule) {
-					char requirement[64];
-					ap_content_requirement_text(pad->rule_mask, pad->rule_count, requirement, sizeof requirement);
-					snprintf(detail, sizeof detail, "NEEDS %s%s", requirement, pad->rule_distinct ? " OF DIFFERENT COLOURS" : "");
-				} else if (reason == AP_PADACT_LOCK_RACER && pad && pad->racer_lock >= 0 &&
-				           pad->racer_lock < AP_TRACKER_PROGRESS_RACERS) {
-					snprintf(detail, sizeof detail, "NEEDS RACER %s", AP_TRACKER_RACER_NAME[pad->racer_lock]);
-				} else if (reason == AP_PADACT_LOCK_STAGE2 && ap_tracker.acts.stage2[0]) {
-					snprintf(detail, sizeof detail, "NEEDS %s", ap_tracker.acts.stage2);
-				} else if (reason == AP_PADACT_LOCK_BOSS) {
-					AP_BossGateAdvert(ap_tracker.hub ? ap_tracker.hub - 1 : 4, detail, sizeof detail);
-				}
-				AP_TrackerText(detail[0] ? detail : label, x + 302, ry + dy + 4, 19, TRACKER_WHITE, w - 326);
+				char detail[192];
+				AP_TrackerActivityReason(n, pad, reason, detail, sizeof detail);
+				AP_TrackerText(detail, x + 302, ry + dy + 4, 19, TRACKER_WHITE, w - 326);
 				dy += 23;
 			}
 		}
