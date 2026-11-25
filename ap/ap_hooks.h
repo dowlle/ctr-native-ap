@@ -87,6 +87,11 @@ int AP_ContentCrystalIntent(void);
 const ctr_content_pad *AP_ContentCrystalPad(void);
 void AP_ArcadeCrystals_Spawn(struct GameTracker *g);
 void AP_ArcadeCrystals_OnFrame(struct GameTracker *g);
+#ifdef CTR_CUSTOM_TRACKS
+int AP_TrackFillPrepare(void);
+void AP_TrackFillSpawn(struct GameTracker *g);
+void AP_TrackFillOnFrame(struct GameTracker *g);
+#endif
 void AP_NotifyContentCrystalPickup(struct Instance *inst,int driverID);
 int AP_NotifyContentCrystalComplete(void);
 

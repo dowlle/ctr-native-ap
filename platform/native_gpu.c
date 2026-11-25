@@ -114,6 +114,9 @@ typedef struct
 	TextureID trialLetterTexture;
 	int trialLetterWidth;
 	int trialLetterHeight;
+	TextureID timeCrateTexture;
+	int timeCrateWidth;
+	int timeCrateHeight;
 
 	int drawPrimMode;
 	bool psxDrawMaskSet;
@@ -163,6 +166,13 @@ void NativeGpu_SetTrialLetterTexture(unsigned int texture, int width, int height
 	s_gpu.trialLetterTexture = (TextureID)texture;
 	s_gpu.trialLetterWidth = width;
 	s_gpu.trialLetterHeight = height;
+}
+
+void NativeGpu_SetTimeCrateTexture(unsigned int texture, int width, int height)
+{
+	s_gpu.timeCrateTexture = (TextureID)texture;
+	s_gpu.timeCrateWidth = width;
+	s_gpu.timeCrateHeight = height;
 }
 
 void ClearSplits(void)
@@ -921,9 +931,19 @@ internal void AddSplit(bool semiTrans, bool textured, bool framebufferFeedback)
 	// This scopes per PRIMITIVE rather than per display-list position, which
 	// matters: a model's prims are spread across depth-sorted OT buckets, so
 	// bracketing packets around a draw could not have scoped reliably.
-	bool trialLetter = (tpage & AP_TPAGE_SIDELOAD_MASK) == AP_TPAGE_TRIAL_LETTER_BIT;
-	TextureID sideloadTexture = trialLetter ? s_gpu.trialLetterTexture : s_gpu.apSideloadTexture;
-	bool apSideload = textured && (tpage & AP_TPAGE_SIDELOAD_MASK) != 0 && sideloadTexture != 0;
+	int sideload = tpage & AP_TPAGE_SIDELOAD_MASK;
+	TextureID sideloadTexture = s_gpu.apSideloadTexture;
+	int sideloadWidth = s_gpu.apSideloadWidth, sideloadHeight = s_gpu.apSideloadHeight;
+	if (sideload == AP_TPAGE_TRIAL_LETTER_BIT) {
+		sideloadTexture = s_gpu.trialLetterTexture;
+		sideloadWidth = s_gpu.trialLetterWidth;
+		sideloadHeight = s_gpu.trialLetterHeight;
+	} else if (sideload == AP_TPAGE_TIME_CRATE_BITS) {
+		sideloadTexture = s_gpu.timeCrateTexture;
+		sideloadWidth = s_gpu.timeCrateWidth;
+		sideloadHeight = s_gpu.timeCrateHeight;
+	}
+	bool apSideload = textured && sideload != 0 && sideloadTexture != 0;
 
 	BlendMode blendMode = semiTrans ? GET_TPAGE_BLEND(tpage) : BM_NONE;
 	TexFormat texFormat = GetTPageFormat(tpage);
@@ -980,8 +1000,8 @@ internal void AddSplit(bool semiTrans, bool textured, bool framebufferFeedback)
 
 	if (apSideload)
 	{
-		split->drawenv.tw.w = trialLetter ? s_gpu.trialLetterWidth : s_gpu.apSideloadWidth;
-		split->drawenv.tw.h = trialLetter ? s_gpu.trialLetterHeight : s_gpu.apSideloadHeight;
+		split->drawenv.tw.w = sideloadWidth;
+		split->drawenv.tw.h = sideloadHeight;
 	}
 	else
 	{

@@ -38,9 +38,11 @@ int NativeGpu_HasPendingSplits(void);
 // layouts only, never level quadblocks or sprite draw environments.
 #define AP_TPAGE_TRIAL_LETTER_BIT 0x4000
 #define AP_TPAGE_SIDELOAD_MASK (AP_TPAGE_SIDELOAD_BIT | AP_TPAGE_TRIAL_LETTER_BIT)
+#define AP_TPAGE_TIME_CRATE_BITS AP_TPAGE_SIDELOAD_MASK
 
 void NativeGpu_SetSideloadTexture(unsigned int texture, int width, int height);
 void NativeGpu_SetTrialLetterTexture(unsigned int texture, int width, int height);
+void NativeGpu_SetTimeCrateTexture(unsigned int texture, int width, int height);
 void ClearSplits(void);
 void DrawAllSplits(void);
 void ParsePrimitivesLinkedList(u32 *p, int singlePrimitive);

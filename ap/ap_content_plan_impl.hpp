@@ -18,7 +18,9 @@
 #include "ap_wumpa_shop.h"
 #include "../include/platform/native_tizi_madness.h"
 #include "../include/platform/native_cortex_asset_pins.h"
+#include "../include/platform/native_sha256.h"
 #include <array>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <set>
@@ -27,11 +29,13 @@
 
 namespace content_plan {
 using J = nlohmann::json;
+static constexpr const char *kTrackFill = "track_fill_v1";
 struct State {
     bool parsed = false, bound = false;
     uint64_t room_identity = 0;
     std::array<ctr_content_pad, 27> pads{};
     std::array<ctr_content_package, AP_CONTENT_MAX_PACKAGES> packages{};
+    std::array<std::vector<ctr_content_fill_crate>, AP_CONTENT_MAX_PACKAGES> fill_crates{};
     // Each package's descriptor as the room sent it (#89: solo keeps it once
     // the files are verified, for its custom-track step).
     std::array<std::string, AP_CONTENT_MAX_PACKAGES> package_json{};
@@ -198,13 +202,104 @@ static void pin_pair(const J &files, std::set<std::string> &hashes, uint32_t &le
         (i ? vrm_bytes : lev_bytes) = (uint32_t)size;
     }
 }
-static void package_record(const J &pkg, ctr_content_package &target) {
+static void fill_position(const J &pos, int16_t (&xyz)[3]) {
+    need(pos.is_array() && pos.size() == 3, "track fill requires three position axes");
+    for (int axis = 0; axis < 3; ++axis)
+        xyz[axis] = (int16_t)number(pos[axis], -32768, 32767);
+}
+
+static void fill_record(const J &fill, const J &lev, const int (&targets)[3],
+                        std::vector<ctr_content_fill_crate> &out) {
+    fields(fill, {"schema", "lev_sha256", "generator", "donors", "families",
+                  "counts", "relic_targets", "fill_sha256"});
+    number(fill.at("schema"), 1, 1);
+    need(fill.at("lev_sha256") == lev, "track fill LEV hash differs from the package pin");
+    const auto &generator = fill.at("generator");
+    fields(generator, {"name", "version"});
+    need(generator.at("name") == "ctr-track-fill", "unsupported track fill generator");
+    number(generator.at("version"), 1, 1);
+    const auto &donors = fill.at("donors");
+    need(donors.is_array() && !donors.empty() && donors.size() <= 2, "track fill donor count");
+    std::set<std::string> seen{lev.get<std::string>()};
+    for (const auto &donor : donors) {
+        fields(donor, {"lev_sha256", "road_sha256", "kind", "overlap"});
+        const auto &sha = donor.at("lev_sha256");
+        const auto &road = donor.at("road_sha256");
+        need(sha.is_string() && lower_hex(sha.get<std::string>(), 64) &&
+             road.is_string() && lower_hex(road.get<std::string>(), 64) &&
+             seen.insert(sha.get<std::string>()).second, "invalid track fill donor identity");
+        const int overlap = number(donor.at("overlap"), 95000, 100000);
+        const auto &kind = donor.at("kind");
+        need(kind == "similar>=0.95" || (kind == "identical" && overlap == 100000),
+             "track fill requires a same-road donor");
+    }
+
+    const auto &families = fill.at("families");
+    const auto &counts = fill.at("counts");
+    fields(families, {"time_crates", "letters", "fruit_crates", "loose_fruit", "weapon_crates", "grid"});
+    fields(counts, {"time_crates", "letters", "fruit_crates", "loose_fruit", "weapon_crates", "grid"});
+    need(families.at("letters") == J::object(), "track fill letters are unsupported");
+    number(counts.at("letters"), 0, 0);
+    for (const char *name : {"fruit_crates", "loose_fruit", "weapon_crates"}) {
+        need(families.at(name) == J::array(), "unsupported track fill crate or fruit family");
+        number(counts.at(name), 0, 0);
+    }
+    const auto &grid = families.at("grid");
+    need(grid.is_null() || (grid.is_array() && grid.size() == 8), "track fill grid shape");
+    const int grid_size = grid.is_null() ? 0 : 8;
+    number(counts.at("grid"), grid_size, grid_size);
+    if (grid.is_array()) {
+        for (const auto &spawn : grid) {
+            fields(spawn, {"pos", "rot_y"});
+            int16_t xyz[3];
+            fill_position(spawn.at("pos"), xyz);
+            number(spawn.at("rot_y"), -32768, 32767);
+        }
+    }
+    const auto &crates = families.at("time_crates");
+    need(crates.is_array() && !crates.empty() && crates.size() <= AP_CONTENT_MAX_FILL_CRATES,
+         "track fill time crate count");
+    const int count = (int)crates.size();
+    number(counts.at("time_crates"), count, count);
+    out.reserve(count);
+    for (const auto &crate : crates) {
+        fields(crate, {"pos", "type"});
+        ctr_content_fill_crate item{};
+        fill_position(crate.at("pos"), item.pos);
+        item.type = (uint8_t)number(crate.at("type"), 1, 3);
+        out.push_back(item);
+    }
+    const auto &times = fill.at("relic_targets");
+    fields(times, {"sapphire", "gold", "platinum", "source"});
+    need(times.at("source") == "saphi" || times.at("source") == "author", "invalid track fill relic target source");
+    const char *tiers[] = {"sapphire", "gold", "platinum"};
+    for (int i = 0; i < 3; ++i)
+        number(times.at(tiers[i]), targets[i], targets[i]);
+
+    const auto &pin = fill.at("fill_sha256");
+    need(pin.is_string() && lower_hex(pin.get<std::string>(), 64), "invalid track fill SHA-256");
+    J data = fill;
+    data.erase("fill_sha256");
+    const std::string canonical = data.dump();
+    NativeSha256Ctx ctx;
+    unsigned char digest[NATIVE_SHA256_DIGEST_BYTES];
+    char hex[NATIVE_SHA256_HEX_BYTES];
+    NativeSha256_Init(&ctx);
+    NativeSha256_Update(&ctx, canonical.data(), canonical.size());
+    NativeSha256_Final(&ctx, digest);
+    NativeSha256_ToHex(digest, hex);
+    need(NativeSha256_HexEquals(pin.get_ref<const std::string &>().c_str(), hex), "track fill SHA-256 mismatch");
+}
+
+static void package_record(const J &pkg, ctr_content_package &target,
+                           std::vector<ctr_content_fill_crate> &crates) {
     need(pkg.is_object(), "package record is not an object");
     J base = pkg;
     const bool targets = base.contains("relic_targets");
     if (targets) base.erase("relic_targets");
     const bool relic_files = base.contains("relic_files");
     if (relic_files) base.erase("relic_files");
+    const bool has_fill = base.erase("fill") != 0;
     if (base.contains("relic_revision")) {
         need(relic_files, "relic_revision is only allowed together with relic_files");
         base.erase("relic_revision");
@@ -312,6 +407,13 @@ static void package_record(const J &pkg, ctr_content_package &target) {
     std::set<std::string> hashes;
     pin_pair(pkg["files"], hashes, target.lev_bytes, target.vrm_bytes, "package must pin exactly the LEV then the VRM");
     const J &files = pkg["files"];
+    if (has_fill) {
+        need(relic && (target.capabilities & AP_CONTENT_CAP_TIME_TRIAL) && !relic_files,
+             "track fill requires Relic Race on the main LEV and VRM pair");
+        fill_record(pkg.at("fill"), files[0].at("sha256"), target.relic_targets, crates);
+        target.fill_crate_count = (int)crates.size();
+        target.fill_crates = crates.data();
+    }
     // `relic_files` (merged mode builds): a second LEV then VRM pair served
     // only for a Relic Race, when one build carries the crate modes and a
     // sibling build carries the time-trial lap graph. Identity stays on `files`.
@@ -1388,6 +1490,9 @@ static void validate(const J &p, State &out) {
         features.push_back(kFinalOnlyVenueFeature);
     }
     if (carry_rulings) features.push_back(kCarriedRulings);
+    if (std::any_of(p.at("packages").begin(), p.at("packages").end(),
+                    [](const J &pkg) { return pkg.contains("fill"); }))
+        features.push_back(kTrackFill);
     need(p.at("required_features") == features,
          "unsupported or inconsistent required content-plan features");
     for (int i = 0; i <= 4; ++i) {
@@ -1407,7 +1512,7 @@ static void validate(const J &p, State &out) {
         const int idx = out.package_count++;
         package_index.emplace(id, idx);
         auto &target = out.packages[idx];
-        package_record(pkg, target);
+        package_record(pkg, target, out.fill_crates[idx]);
         out.package_json[idx] = pkg.dump();
         need(keys.insert(target.content_id).second && uuids.insert(target.uuid).second &&
              pairs.insert(std::string(target.lev_sha256) + target.vrm_sha256).second &&
@@ -3234,7 +3339,12 @@ static int parse_content_plan(const nlohmann::json &j) {
         need(j.is_object() && j.size() == 3u + (traps ? 1u : 0u) + (hit_block ? 1u : 0u) + (win_block ? 1u : 0u) &&
              j.contains("schema_version") &&
              j.contains("content_plan") && j.contains("ctr_options"), "unsupported or incomplete record fields");
-        need(number(j["schema_version"]) == 18, "content-plan global schema must be 18");
+        const int schema_version = number(j["schema_version"], 18, 19);
+        if (schema_version == 19) {
+            const char *switch_value = std::getenv("CTR_TRACK_FILL");
+            need(switch_value && std::strcmp(switch_value, "1") == 0,
+                 "track fill rooms require CTR_TRACK_FILL=1");
+        }
         const J &co = j["ctr_options"];
         J base=co;
         for(const char *key:{"include_battle_arenas","include_arcade_arenas","crystalsanity"})base.erase(key);
@@ -3285,7 +3395,8 @@ static int parse_content_plan(const nlohmann::json &j) {
             base.erase("relic_progression");
         }
         fields(base, {"schema_version", "world_version", "content_plan", "goal", "goal_oxide", "goal_bosses", "goal_gems", "starting_character", "character_unlocks", "progressive_boost", "progressive_stats", "hit_character", "death_link", "deathlink_amnesty"});
-        need(number(co["schema_version"]) == 18 && co["content_plan"] == true, "inconsistent content-plan envelope");
+        need(number(co["schema_version"]) == schema_version && co["content_plan"] == true,
+             "inconsistent content-plan envelope");
         need(co["goal"] == -1 && co["character_unlocks"].is_boolean() && co["hit_character"].is_boolean(),
              "unsupported content-plan options");
         const int boost_mode = number(co["progressive_boost"], 0, 2), stats_mode = number(co["progressive_stats"], 0, 2);
@@ -3293,6 +3404,8 @@ static int parse_content_plan(const nlohmann::json &j) {
         State candidate;
         envelope_box_colours = box_colours && co["color_boxes_by_item"] == true;
         validate(j["content_plan"], candidate);
+        need(has_feature(j["content_plan"], kTrackFill) == (schema_version == 19),
+             "track fill required feature and room schema disagree");
         bool arenas=false,arcade=false,pickups=false;
         for(const auto &pad:candidate.pads)if(pad.occupied && pad.crystal) {
             arenas=true;arcade |= AP_ArcadeArenaIndex(pad.retail_id)>=0;pickups |= pad.crystal_count>0;
@@ -3539,7 +3652,7 @@ static int parse_content_plan(const nlohmann::json &j) {
         }
         state = std::move(candidate);
         if (traps) ap_seedcfg_parse_trap_identities(j, 18);
-        ctr_cfg.schema_version = 18; // commit after complete validation
+        ctr_cfg.schema_version = schema_version; // commit after complete validation
         return 2;
     } catch (const std::exception &e) {
         ctr_cfg.hit.valid = 0; // a Hit block parsed before the refusal never stays active
@@ -3550,7 +3663,10 @@ static int parse_content_plan(const nlohmann::json &j) {
     }
 }
 
-extern "C" int ap_content_plan_present(void) { return content_plan::state.parsed && ctr_cfg.schema_version == 18 && !ctr_cfg.seed_rejected; }
+extern "C" int ap_content_plan_present(void) {
+    return content_plan::state.parsed && (ctr_cfg.schema_version == 18 || ctr_cfg.schema_version == 19)
+        && !ctr_cfg.seed_rejected;
+}
 extern "C" int ap_content_plan_active(void) { return ap_content_plan_present() && content_plan::state.bound; }
 extern "C" uint64_t ap_content_plan_epoch(void) { return ap_content_plan_active() ? content_plan::epoch : 0; }
 extern "C" uint64_t ap_content_plan_room_identity(void) {

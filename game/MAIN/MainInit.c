@@ -921,6 +921,9 @@ void MainInit_FinalizeInit(struct GameTracker *gGT)
 #ifdef CTR_AP
 	AP_TrialLetters_Spawn(gGT);
 	AP_ArcadeCrystals_Spawn(gGT);
+#ifdef CTR_CUSTOM_TRACKS
+	AP_TrackFillSpawn(gGT);
+#endif
 #endif
 
 	// Debug_ToggleNormalSpawn == normal spawn

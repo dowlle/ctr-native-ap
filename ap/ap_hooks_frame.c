@@ -791,6 +791,9 @@ void AP_OnFrame(struct GameTracker *gGT)
 	// A4-60c: the hub behind name entry (handoff, camera, garage fallback).
 	AP_HubNameEntry_OnFrame(gGT);
 	AP_ArcadeCrystals_OnFrame(gGT);
+#ifdef CTR_CUSTOM_TRACKS
+	AP_TrackFillOnFrame(gGT);
+#endif
 	// #375: a tracker start waits for its pad's hub, then for the pad.
 	AP_TrackerLaunchFrame(gGT);
 	// A3-16: a hub fast travel waits for an idle hub, then the destination's

@@ -207,6 +207,12 @@ typedef struct ctr_content_pad {
 #define AP_CONTENT_CUSTOM_HOST 6
 #define AP_CONTENT_CORTEX_HOST 13
 #define AP_CONTENT_CORTEX_LAPS 3
+#define AP_CONTENT_MAX_FILL_CRATES 256
+typedef struct ctr_content_fill_crate {
+    int16_t pos[3];
+    uint8_t type;
+} ctr_content_fill_crate;
+
 typedef struct ctr_content_package {
     char id[65], content_id[65], uuid[37], revision[65];
     char display_name[129], author[129], lev_sha256[65], vrm_sha256[65];
@@ -221,6 +227,8 @@ typedef struct ctr_content_package {
     uint32_t relic_lev_bytes, relic_vrm_bytes;
     int has_relic_targets; /* relic targets in ticks (960 per second) */
     int relic_targets[3];  /* sapphire, gold, platinum */
+    int fill_crate_count;
+    const ctr_content_fill_crate *fill_crates; /* owned by the parsed room */
     int super_turbo_pads;  /* AP_CONTENT_SUPER_PADS_UNSTATED, 0 none, 1 at least one */
     /* Optional measured `weapon_crates` (#133 PR 4e): how many weapon crates
      * (PU_RANDOM_CRATE instances) the LEV holds, or
